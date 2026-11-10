@@ -13,7 +13,7 @@ import { e1GateReadiness, gateRemaining, releaseMonthPresentation, resolveE1Phas
 import { E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Multiply, e1Range, e1Value } from "./e1-state";
 
 export type E1CatalogContext = Pick<EViewCtx, "skus" | "canWriteE1" | "e1InvalidSkus" | "e1Loading" | "e1Error" | "e1Gates" | "e1BundleDiscount" | "phaseCur" | "refreshE1" | "openSku" | "delSku" | "openActionConfirm" | "toast" | "pE"> & {
-  earlyReady: boolean; earlyError: string | null; refreshEarly: () => void;
+  earlyReady: boolean; earlyLoading: boolean; earlyError: string | null; refreshEarly: () => void;
   forceUnlock: boolean; forceLock: boolean; locked: (type: string, id: string) => boolean;
 };
 
@@ -321,7 +321,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
     {available && <>
       <div id="e1-open-plan"><Fold title="商品开放计划" summary={`${releases.length} 条上架条件 · ${gated} 条尚未开放`} icon={SlidersHorizontal} open={planOpen} onOpenChange={setPlanOpen} explain="强制提前开放只跳过运营月数，阶段与设备资格仍须满足。异常条件在商品卡常显。">
         <ConfigList label="升级置换抢先购"><ConfigRow name="升级置换抢先购" value={ctx.earlyReady ? `${earlyEnabled} · 提前 ${earlyLead} 天` : "— · 当前设置未读取"} what="旧设备换新时的提前购买窗口" when="批准后供之后换购判断" effect="只影响升级置换，不改变普通购买" action={canWrite ? <Button size="sm" disabledReason={ctx.earlyReady ? undefined : "当前设置未读取，请先重新读取"} onClick={adjEarlyAccess}>调整</Button> : undefined} /></ConfigList>
-        {!ctx.earlyReady && <BlockState compact state="error" title="抢先购设置暂时读不到" detail={ctx.earlyError ?? undefined} onRetry={ctx.refreshEarly} retryLabel="重新读取" />}
+        {!ctx.earlyReady && <BlockState compact state={ctx.earlyLoading ? "loading" : "error"} title={ctx.earlyLoading ? "正在读取抢先购设置…" : "抢先购设置暂时读不到"} detail={ctx.earlyError ?? undefined} onRetry={ctx.earlyLoading ? undefined : ctx.refreshEarly} retryLabel="重新读取" />}
         <div className="rd-toolbar"><Segments value={planView} onChange={v => { setPlanView(String(v)); setPlanSku(""); }} label="开放计划视图" items={[{ value: "plan", label: "商品开放计划" }, { value: "phases", label: "阶段设置" }]} />{canWrite && (planView === "plan" ? <Button disabledReason={!phaseOptions.length ? "请先配置阶段" : !gateSkuOptions.length ? "所有商品都已设置上架条件" : undefined} onClick={() => openGateEditor()}>+ 新增上架条件</Button> : <Button onClick={() => openPhaseEditor()}>+ 新增阶段</Button>)}</div>
         {planView === "plan" ? <Table label="商品开放计划" className="e1-plan-table"><thead><tr><Th>商品</Th><Th align="right">计划开放</Th><Th>当前状态</Th><Th>阶段</Th><Th>设备资格</Th><Th sticky="end">操作</Th></tr></thead><tbody>
           {!releases.length && <Tr><Td colSpan={6}>暂无上架条件</Td></Tr>}{releases.map(g => {

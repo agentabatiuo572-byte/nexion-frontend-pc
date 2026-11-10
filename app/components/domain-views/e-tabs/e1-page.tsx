@@ -39,6 +39,7 @@ export function E1Page() {
   const session = useAdminAuth(s => s.session);
   const authorities = useAdminAuth(s => s.session?.authorities ?? []);
   const canRead = authorities.includes("device_e1_read");
+  const canReadE3 = authorities.includes("device_e3_read");
   const canWrite = authorities.includes("device_e1_write") && authorities.some(a => a === "platform_a2_proposal_create" || a === "platform_a2_write");
   const canQuery = authorities.some(a => a === "platform_a2_read" || a === "platform_a2_proposal_create");
   const forceUnlock = authorities.includes("device_e1_generation_gate_force_unlock"), forceLock = authorities.includes("device_e1_generation_gate_force_lock");
@@ -79,11 +80,11 @@ export function E1Page() {
   }, []);
   const refreshEarly = useCallback(async () => {
     setEarlyLoading(true); setEarlyError(null);
-    if (!authorities.includes("device_e3_read")) { setEarly({}); setEarlyError("当前账号没有抢先购关联设置的读取权限"); setEarlyLoading(false); return; }
+    if (!canReadE3) { setEarly({}); setEarlyError("当前账号没有抢先购关联设置的读取权限"); setEarlyLoading(false); return; }
     try { const snapshot = await fetchE3Snapshot(); setEarly(snapshot.params); }
     catch (failure) { setEarly({}); setEarlyError(e1Error(failure)); }
     finally { setEarlyLoading(false); }
-  }, [authorities]);
+  }, [canReadE3]);
   useEffect(() => { if (canRead) { void refresh(); void refreshEarly(); } }, [canRead, refresh, refreshEarly]);
   const writesReady = canWrite && !loading && !error && gates !== null && discount !== null;
   const earlyReady = !earlyLoading && !earlyError && ["开", "关"].includes(early["E.release.earlyAccess.enabled"]) && ["7", "14", "30", "60", "90"].includes(early["E.release.earlyAccess.leadDays"]);
@@ -227,7 +228,7 @@ export function E1Page() {
   const currentPending = mc ? pending.find(r => r.commandKey === attemptKey || (mc.sku ? e1Object(r.spec) === `device_sku|${mc.sku.id}` : mc.generationGateId ? e1Object(r.spec) === `device_generation_gate|${mc.generationGateId}` : mc.phaseId ? e1Object(r.spec) === `device_phase|${mc.phaseId}` : mc.op === "bundle-discount" ? e1Object(r.spec) === "store_bundle_discount|canonical" : mc.op === "early-access" ? e1Object(r.spec) === "device_release_early_access|trade-in" : false)) : undefined;
   const ctx: E1CatalogContext = {
     skus, canWriteE1: writesReady, e1InvalidSkus: invalid, e1Loading: loading, e1Error: error, e1Gates: gates, e1BundleDiscount: discount, phaseCur: gates?.phaseCurrent ?? "", refreshE1: async () => { await refresh(); },
-    pE: k => early[k] ?? "—", earlyReady, earlyError: earlyLoading ? "正在读取…" : earlyError, refreshEarly: () => void refreshEarly(),
+    pE: k => early[k] ?? "—", earlyReady, earlyLoading, earlyError, refreshEarly: () => void refreshEarly(),
     forceUnlock, forceLock, locked, openSku, openActionConfirm: openConfirm, toast,
     delSku: (id, name) => openConfirm({ briefKind: "config", name: `删除商品 · ${name}`, op: "sku-delete", target: id, detail: "从商城移除后用户无法再购买，已售设备和原订单不受影响。", businessForm: { kind: "destructive-reason", target: name, impact: "从商城移除，用户无法再购买；已售设备和原订单不受影响。" } }),
   };
