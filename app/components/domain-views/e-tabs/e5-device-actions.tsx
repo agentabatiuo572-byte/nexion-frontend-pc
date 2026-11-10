@@ -20,7 +20,7 @@ import type { EViewCtx } from "./types";
 
 function Fact({ label, value, mono, copy }: { label: string; value?: ReactNode; mono?: boolean; copy?: boolean }) {
   const [feedback, setFeedback] = useState("");
-  return <RdFact k={label}><span data-mono={mono ? "" : undefined}>{value ?? "—"}</span>{copy && value && <Button size="sm" variant="ghost" aria-label={`复制${label}`} onClick={() => {
+  return <RdFact k={label}><span className={mono ? "e5-instance" : undefined} data-mono={mono ? "" : undefined}>{value ?? "—"}</span>{copy && value && <Button size="sm" variant="ghost" aria-label={`复制${label}`} onClick={() => {
     const failed = () => setFeedback("复制失败，请手动选择");
     if (!navigator.clipboard) { failed(); return; }
     void navigator.clipboard.writeText(String(value)).then(() => setFeedback("已复制"), failed);
@@ -48,7 +48,7 @@ interface ActionsState {
 }
 const CommandsContext = createContext<ActionsState | null>(null);
 
-export function E5CommandScope({ children, refresh, toast }: { children: ReactNode; refresh: (successMessage?: string) => Promise<void>; toast: (message: string) => void }) {
+export function E5CommandScope({ children, refresh, readBack, toast }: { children: ReactNode; refresh: (successMessage?: string) => Promise<void>; readBack?: (record: E5Command) => Promise<string>; toast: (message: string) => void }) {
   const actorId = useAdminAuth(s => String(s.session?.adminId ?? ""));
   const authorities = useAdminAuth(s => s.session?.authorities ?? []);
   const role = useAdminAuth(s => s.session?.role);
@@ -57,12 +57,13 @@ export function E5CommandScope({ children, refresh, toast }: { children: ReactNo
   const [old, setOld] = useState<{ commandKey: string; fingerprint: string }[]>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [readResults, setReadResults] = useState<Record<string, string>>({});
   const [rejected, setRejected] = useState<Record<string, string>>({});
   const [releaseChecked, setReleaseChecked] = useState(false);
   const [release, setRelease] = useState<E5Command | null>(null);
   const sync = useCallback(() => setRecords(e5Commands.list().filter(r => r.actorId === actorId)), [actorId]);
   useEffect(() => {
-    sync(); setRelease(null); setRejected({});
+    sync(); setRelease(null); setRejected({}); setReadResults({});
     try { setOld(e5LegacyCommands()); } catch (cause) { setError(`旧操作记录无法读取：${displayAdminError(cause)}`); }
   }, [sync, epoch]);
   const allowed = (r: E5Command) => {
@@ -88,19 +89,24 @@ export function E5CommandScope({ children, refresh, toast }: { children: ReactNo
       if (cause instanceof Error && "status" in cause && (cause.status === 401 || cause.status === 403)) announcePermissionDenied();
       sync();
       if (retry && isExplicitRejection(cause)) setRejected(rows => ({ ...rows, [record.commandKey]: displayAdminError(cause) }));
-      setError(displayAdminError(cause));
+      setError(isExplicitRejection(cause) ? displayAdminError(cause) : cause instanceof Error && cause.message === "提案缺少有效票号" ? "申请回执未包含审批单号，请到操作记录与审批核对。原请求已保留。" : "没有收到可确认的操作回执，原对象、内容、理由和命令号已保留。");
       throw cause;
     } finally { setBusy(""); }
   };
   return <CommandsContext.Provider value={{ records, legacyBlocked: old.length > 0 || !!error && !records.length && !old.length && error.includes("旧操作"), busy, execute, refresh, toast }}>
     {old.map(row => <Notice key={row.commandKey} tone="warn" title="旧操作缺少原请求，不能原样重试" action={<Button size="sm" disabled={!!busy} onClick={() => void refresh()}>读回核对</Button>}><p>原命令号：<code>{row.commandKey}</code></p><p>请到操作记录与审批核对。原记录保留，不能用当前草稿补成原操作。</p></Notice>)}
-    {records.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.label} · 结果待确认`} actionBelow action={<div className="rd-toolbar">
-      <Button size="sm" disabled={!!busy} onClick={() => void refresh()}>读回核对</Button>
-      <Button size="sm" loading={busy === record.commandKey} disabledReason={isRetryExpired(record) ? "已超过 24 小时，只能读回核对" : !allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : undefined} onClick={() => { void execute(record, true).catch(() => { /* The persistent notice displays this failure. */ }); }}>按原操作重试</Button>
-      {rejected[record.commandKey] && <Button size="sm" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>解除待确认</Button>}
+    {records.map(record => <Notice key={record.commandKey} tone={rejected[record.commandKey] ? "danger" : "warn"} title={`${record.label} · ${rejected[record.commandKey] ? "原号重试已拒绝" : "结果待确认"}`} actionBelow action={<div className="rd-toolbar">
+      <Button size="sm" disabled={!!busy} onClick={async () => {
+        setReadResults(values => ({ ...values, [record.commandKey]: "正在读取最新设备状态…" }));
+        const result = readBack ? await readBack(record) : (await refresh(), "已请求刷新，请核对列表与操作记录；原操作继续待确认。");
+        setReadResults(values => ({ ...values, [record.commandKey]: result }));
+      }}>读回核对</Button>
+      <Button size="sm" variant={rejected[record.commandKey] ? "secondary" : "primary"} loading={busy === record.commandKey} disabledReason={isRetryExpired(record) ? "已超过 24 小时，只能读回核对" : !allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : undefined} onClick={() => { void execute(record, true).catch(() => { /* The persistent notice displays this failure. */ }); }}>按原操作重试</Button>
+      {rejected[record.commandKey] && <Button size="sm" variant="primary" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>解除待确认</Button>}
     </div>}>
       <p>{record.device.serial} · {record.device.user} · {formatBusinessTimeCompact(new Date(record.createdAt).toISOString())}</p>
-      <p>当前状态不代表原操作结果。重试会重新发送保存的原请求，后端按原命令号去重。</p>
+      <p>{rejected[record.commandKey] ? "本次原号重试被明确拒绝。核对原操作结果后，可解除本页待确认。" : "当前状态不代表原操作结果。重试会重新发送保存的原请求，后端按原命令号去重。"}</p>
+      {readResults[record.commandKey] && <p role="status">{readResults[record.commandKey]}</p>}
       {isRetryExpired(record) && <p>已超过 24 小时，原操作与对象锁继续保留，请到操作记录与审批核对。</p>}
       <Fold inset title="原操作与技术信息" summary="原对象、内容、理由和命令号已保留"><Facts>
         <Fact label="操作理由" value={record.reason} /><Fact label="命令号" value={record.commandKey} mono copy />
@@ -121,8 +127,14 @@ export function E5CommandScope({ children, refresh, toast }: { children: ReactNo
   </CommandsContext.Provider>;
 }
 
-export function E5Slots({ device: d }: { device: E5Device }) {
-  return <div className="e5-slots" data-full={d.activeDevicesForUser >= d.maxDevicesPerUser ? "" : undefined}><RatioBar label="激活名额（含手机）" value={d.activeDevicesForUser} tone={d.activeDevicesForUser >= d.maxDevicesPerUser ? "warn" : "role-2"} total={d.maxDevicesPerUser} valueText={`${d.activeDevicesForUser}/${d.maxDevicesPerUser} 台（含手机）`} steps quiet invalidText="已超过上限，不能激活" />
+/** The same lock predicate used by actions also marks the affected E5 row. */
+export function E5PendingMark({ device }: { device: E5Device }) {
+  const state = useContext(CommandsContext);
+  return state?.records.some(record => e5CommandBlocks(record, device)) ? <span className="e5-pending-mark" title="此设备有待确认操作，请核对页首原操作">待确认</span> : null;
+}
+
+export function E5Slots({ device: d, phones = false }: { device: E5Device; phones?: boolean }) {
+  return <div className="e5-slots" data-phones={phones ? "" : undefined} data-full={d.activeDevicesForUser >= d.maxDevicesPerUser ? "" : undefined}><RatioBar label="激活名额（含手机）" value={d.activeDevicesForUser} tone={phones ? d.activeDevicesForUser >= d.maxDevicesPerUser ? "warn" : "role-2" : "neutral"} total={d.maxDevicesPerUser} valueText={`${d.activeDevicesForUser}/${d.maxDevicesPerUser} 台（含手机）`} steps quiet invalidText="已超过上限，不能激活" />
     <span>{d.activeDevicesForUser}/{d.maxDevicesPerUser} 台（含手机）</span></div>;
 }
 
@@ -167,7 +179,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
   }
   const proposal = action === "force-activate" || action === "unbind" || action === "legacy";
   return <>
-    {options.length ? inline ? <div className="rd-toolbar">{options.map(option => <Button key={option.key} size="sm" variant={option.danger ? "danger-outline" : "secondary"} disabledReason={option.disabledReason} onClick={option.onSelect}>{option.label}</Button>)}</div> : <MoreMenu label={`操作 ${d.serial}`} items={options} /> : <span className="rd-muted" title={readOnly ? "模拟任务已关闭，只能查看" : "当前权限或状态没有可执行的操作"}>{readOnly || !ctx.canWriteE5 && !ctx.canForceActivateE5 && !ctx.canUnbindE5 ? "只读" : "—"}</span>}
+    {options.length ? inline ? <div className="rd-toolbar">{options.map(option => <Button key={option.key} size="sm" variant={option.danger ? "danger-outline" : "secondary"} disabledReason={option.disabledReason} onClick={option.onSelect}>{option.label}</Button>)}</div> : <MoreMenu label={`操作 ${d.serial}`} items={options} /> : phones ? <span className="rd-muted" title="当前权限或状态没有可执行的操作">{!ctx.canWriteE5 && !ctx.canForceActivateE5 && !ctx.canUnbindE5 ? "只读" : "—"}</span> : d.simState === "CLOSING" ? inline ? <span className="rd-muted">当前任务结算后自动停用，暂时没有可执行的操作。</span> : <span className="rd-muted" title="当前任务结算后自动停用，暂时没有可执行的操作">收尾</span> : inline ? <span className="rd-muted">{readOnly ? "模拟任务已关闭，仅可查看设备事实。" : "当前账号或设备状态没有可执行的操作。"}</span> : null}
     {candidateOpen && <Modal title="旧任务终结资格" onClose={() => setCandidateOpen(false)} busy={reading} footer={<Button onClick={() => setCandidateOpen(false)}>关闭</Button>}>
       <Facts><Fact label="设备" value={d.serial} /><Fact label="用户" value={d.user} /></Facts>
       {reading ? <BlockState state="loading" title="正在核对终结资格…" /> : candidateError ? <BlockState state="error" title="终结资格读取失败" detail={candidateError} onRetry={() => void readCandidate()} /> : candidate && <>
@@ -186,9 +198,9 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
       confirmTone={action === "unbind" || action === "pause" || action === "legacy" ? "danger" : "primary"}
       effect={<><StatusTag tone="progress" filled explain={proposal ? "由另一位具备审批权限及对应业务权限的管理员复核后执行；发起人不能批准自己的申请，批准前设备状态不变。" : undefined}>{proposal ? "批准后生效" : "立即生效"}</StatusTag>{(action === "unbind" || action === "legacy") && <IrreversibleTag />}</>}
       completionCopy={proposal ? "由另一位具备审批权限及对应业务权限的管理员复核后执行。" : "提交后按服务端结果核对设备状态。"}
-      facts={<><Facts><Fact label={action === "pause" || action === "resume" ? "用户" : "设备"} value={action === "pause" || action === "resume" ? d.user : d.deviceName} /><Fact label="实例号" value={d.serial} mono /><Fact label="归属用户" value={d.user} /><Fact label="当前状态" value={d.simState ? E5_STATES[d.simState].label : d.pausedReason ? "已暂停" : ({ active: "在线", busy: "任务中", offline: "离线", inventory: "待激活", "pending-deactivate": "停用中", unbound: "已解绑 / 停用", abnormal: "异常", unknown: "状态未知" }[d.state])} />
+      facts={<><Facts>{action === "pause" || action === "resume" ? <><Fact label="用户" value={d.user} /><Fact label="影响范围" value="这位用户的全部设备（含手机）" /><Fact label="从这台设备发起" value={<>{d.deviceName}<br /><span className="e5-instance" data-mono>{d.serial}</span></>} /><Fact label="发起设备状态" value={d.simState ? E5_STATES[d.simState].label : d.pausedReason ? "已暂停" : ({ active: "在线", busy: "任务中", offline: "离线", inventory: "待激活", "pending-deactivate": "停用中", unbound: "已解绑 / 停用", abnormal: "异常", unknown: "状态未知" }[d.state])} /></> : <><Fact label="设备" value={d.deviceName} /><Fact label="实例号" value={d.serial} mono /><Fact label="归属用户" value={d.user} /><Fact label="当前状态" value={d.simState ? E5_STATES[d.simState].label : d.pausedReason ? "已暂停" : ({ active: "在线", busy: "任务中", offline: "离线", inventory: "待激活", "pending-deactivate": "停用中", unbound: "已解绑 / 停用", abnormal: "异常", unknown: "状态未知" }[d.state])} /></>}
         {action === "legacy" && candidate && <><Fact label="原任务 / 代际" value={`${candidate.taskNo} / ${candidate.requestGeneration}`} /><Fact label="案件" value={candidate.caseId} /><Fact label="退出证明" value={candidate.proofSha} mono copy /><Fact label="后端实例" value={candidate.backendInstanceId} /></>}
-      </Facts>{(action === "activate" || action === "force-activate") && <><E5Slots device={d} /><Facts><RdFact k="激活名额变化"><Change from={`${d.activeDevicesForUser}/${d.maxDevicesPerUser}`} to={`${d.activeDevicesForUser + 1}/${d.maxDevicesPerUser}`} /></RdFact></Facts></>}<Notice tone={action === "unbind" || action === "legacy" || action === "pause" ? "warn" : "neutral"} title={EFFECTS[action]} /></>}
+      </Facts>{(action === "activate" || action === "force-activate") && <><E5Slots device={d} phones={phones} /><Facts><RdFact k="激活名额变化"><Change from={`${d.activeDevicesForUser}/${d.maxDevicesPerUser}`} to={`${d.activeDevicesForUser + 1}/${d.maxDevicesPerUser}`} /></RdFact></Facts></>}<Notice tone={action === "unbind" || action === "legacy" || action === "pause" ? "warn" : "neutral"} title={EFFECTS[action]} /></>}
       blockedReason={locked(action) ?? ((action === "activate" || action === "force-activate") && full ? "已达 6 台激活上限（含手机）" : undefined)}
       detail={proposal ? "提案成功只代表申请已收录；批准前设备状态不变。请到操作记录与审批核对原申请。" : "操作结果以服务端回执为准。"}
       onClose={() => setAction(null)} onConfirm={async reason => {
