@@ -160,8 +160,8 @@ function DeviceBoard() {
                 <Td align="right">
                   <Cell num main={device.credited} sub={(
                     <span className="gx-cell-line">
-                      <ScaleBar compact quiet label="本月收益" valueText={`已到账 ${device.credited} USDT，预估 ${device.low} 到 ${device.high} USDT`} max={Math.max(device.high, device.value)} value={device.value} fill range={{ low: device.low, high: device.high }} tone="role-2" />
                       预估 {device.low.toLocaleString("en-US")}–{device.high.toLocaleString("en-US")}
+                      <ScaleBar compact quiet label="本月收益" valueText={`已到账 ${device.credited} USDT，预估 ${device.low} 到 ${device.high} USDT`} max={Math.max(device.high, device.value)} value={device.value} fill range={{ low: device.low, high: device.high }} tone="role-2" />
                     </span>
                   )} />
                 </Td>
@@ -280,13 +280,15 @@ export function Gallery() {
             <Demo title="值落在区间里：到账 451.20"><ScaleBar label="本月收益" valueText="已到账 451.20 USDT，预估 405.00 到 495.00 USDT" max={495} value={451.2} fill range={{ low: 405, high: 495 }} /></Demo>
             <Demo title="值超过区间：页面把轴扩到 512.75"><ScaleBar label="本月收益" valueText="已到账 512.75 USDT，预估 405.00 到 495.00 USDT" max={512.75} value={512.75} fill range={{ low: 405, high: 495 }} /></Demo>
             <Demo title="区间两端相等：一条刻线"><ScaleBar label="本月收益" valueText="已到账 120.00 USDT，预估 300.00 USDT" max={300} value={120} fill range={{ low: 300, high: 300 }} /></Demo>
-            <Demo title="目标和波动：450.00 ±10%"><ScaleBar label="月收益目标" valueText="目标 450.00 USDT/月，范围 405.00 到 495.00" max={495} target={450} range={{ low: 405, high: 495 }} tone="role-4" /></Demo>
-            <Demo title="目标和波动：450.00 ±50%"><ScaleBar label="月收益目标" valueText="目标 450.00 USDT/月，范围 225.00 到 675.00" max={675} target={450} range={{ low: 225, high: 675 }} tone="role-4" /></Demo>
-            <Demo title="compact：表格一格里">
-              <div className="gx-line">
-                <span className="gx-pair"><ScaleBar compact label="本月收益" valueText="已到账 312.40 USDT，预估 405 到 495 USDT" max={495} value={312.4} fill range={{ low: 405, high: 495 }} />预估 405–495</span>
-                <span className="gx-pair"><ScaleBar compact label="本月收益" valueText="已到账 0.00 USDT，预估 405 到 495 USDT" max={495} value={0} fill range={{ low: 405, high: 495 }} />预估 405–495</span>
-              </div>
+            <Demo title="目标和波动：450.00 ±10%"><ScaleBar label="月收益目标" valueText="目标 450.00 USDT/月，范围 405.00 到 495.00" max={495} target={450} range={{ low: 405, high: 495 }} tone="neutral" /></Demo>
+            <Demo title="目标和波动：450.00 ±50%"><ScaleBar label="月收益目标" valueText="目标 450.00 USDT/月，范围 225.00 到 675.00" max={675} target={450} range={{ low: 225, high: 675 }} tone="neutral" /></Demo>
+            <Demo title="值是 0：点是空心的"><ScaleBar label="本月收益" valueText="已到账 0.00 USDT，预估 405.00 到 495.00 USDT" max={495} value={0} fill range={{ low: 405, high: 495 }} /></Demo>
+            <Demo title="compact：表格一格里，120 宽">
+              <span className="gx-pair"><ScaleBar compact label="本月收益" valueText="已到账 312.40 USDT，预估 405 到 495 USDT" max={495} value={312.4} fill range={{ low: 405, high: 495 }} />还没到区间：312.40</span>
+              <span className="gx-pair"><ScaleBar compact label="本月收益" valueText="已到账 451.20 USDT，预估 405 到 495 USDT" max={495} value={451.2} fill range={{ low: 405, high: 495 }} />在区间里：451.20</span>
+              <span className="gx-pair"><ScaleBar compact label="本月收益" valueText="已到账 512.75 USDT，预估 405 到 495 USDT" max={512.75} value={512.75} fill range={{ low: 405, high: 495 }} />超过上限：512.75</span>
+              <span className="gx-pair"><ScaleBar compact label="本月收益" valueText="已到账 0.00 USDT，预估 405 到 495 USDT" max={495} value={0} fill range={{ low: 405, high: 495 }} />还是 0：0.00</span>
+              <span className="gx-pair"><ScaleBar compact state="loading" label="本月收益" valueText="" max={495} />读取中</span>
             </Demo>
             <Demo title="读取中"><ScaleBar state="loading" label="平均时长" valueText="" max={120} /></Demo>
             <Demo title="空：没有启用任务"><ScaleBar state="empty" emptyText="没有启用任务，无法计算" label="平均时长" valueText="" max={120} /></Demo>
@@ -430,7 +432,7 @@ export function Gallery() {
                 <div className="gx-block-head"><span>月收益目标</span>{product.target ? <b>{product.target.text}<span>USDT/月</span></b> : <span>未设月收益目标</span>}</div>
                 {product.target && (
                   <>
-                    <ScaleBar quiet label="月收益目标" valueText={`目标 ${product.target.text} USDT/月，范围 ${product.target.lowText} 到 ${product.target.highText}`} max={product.target.high} target={product.target.value} range={{ low: product.target.low, high: product.target.high }} tone="role-4" />
+                    <ScaleBar quiet label="月收益目标" valueText={`目标 ${product.target.text} USDT/月，范围 ${product.target.lowText} 到 ${product.target.highText}`} max={product.target.high} target={product.target.value} range={{ low: product.target.low, high: product.target.high }} tone="neutral" />
                     <span className="gx-block-note">{product.target.lowText} – {product.target.highText} · {product.target.band}</span>
                   </>
                 )}
