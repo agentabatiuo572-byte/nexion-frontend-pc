@@ -519,6 +519,7 @@
 .e5-group-choices { display: grid; gap: 12px; }
 .e5-group-choices > button { justify-content: flex-start; }
 .e5-table { table-layout: fixed; }
+.e5-list-panel .rd-table-scroll { scroll-padding-inline: var(--e5-device-width, 132px) 52px; }
 .e5-table :is(th, td):not(:last-child) { padding-right: calc(var(--rd-cell-pad) + var(--e5-column-gap, 0px)); }
 .e5-table :is(.e5-device-col, .e5-user-col) .rd-cell { max-width: none; }
 .e5-table .e5-device-col .rd-cell-main { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
