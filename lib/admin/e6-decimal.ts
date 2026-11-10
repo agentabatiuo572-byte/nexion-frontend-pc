@@ -8,3 +8,12 @@ export function compareE6Decimal(left: string, right: string) {
   const a = scaled(left), b = scaled(right);
   return a === b ? 0 : a > b ? 1 : -1;
 }
+
+/** A display group shares its real precision, with at least two fractional digits. */
+export function e6AmountPrecision(values: readonly string[]) {
+  return Math.max(2, ...values.map(value => (value.split(".")[1] ?? "").replace(/0+$/, "").length));
+}
+export function formatE6Amount(value: string, precision: number) {
+  const [whole, fraction = ""] = value.split(".");
+  return `${whole}.${fraction.replace(/0+$/, "").padEnd(precision, "0")}`;
+}

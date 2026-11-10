@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Btn } from "../design-kit";
-import { Drawer, Decision, Button, Table, Th, Tr, Td, Explain, BlockState } from "@/app/components/rd";
+import { Drawer, Decision, Button, Table, Th, Tr, Td, Explain, BlockState, Fold } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchIosModelPresets } from "@/lib/admin/phone-calibration-client";
 import { IOS_CATALOG_LABELS, IOS_CHANGE_LABELS, blankIosRule, diffIosRules, formatFacts, formatRange, iosRuleFormIssues, normalizeModel, planIosImport,
@@ -93,17 +93,18 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
     setPresets(null); setImportOpen(false);
   }
 
+  const actions = canWrite && <div className="ios-actions">
+    <Btn disabled={!editable || loading || !!presets || !!form} onClick={() => void loadPresets()}>{loading ? "正在读取预设…" : "载入 iPhone 机型预设"}</Btn>
+    <Btn variant="primary" disabled={!editable || rules.length >= 500 || !!form || importOpen || loading}
+      onClick={() => setForm(editing(null, blankIosRule(rules, androidRuleIds)))}>新增机型</Btn>
+  </div>;
+
   // Not a disabled fieldset: search and filters stay usable for read-only viewers.
   return <fieldset className="ios-model-rules" aria-label="iPhone 机型预设">
-    <legend>iPhone 机型预设（{rules.length}/500）</legend>
-    <div className="ios-head">
+    <legend><span className="e6-actions">iPhone 机型预设（{rules.length}/500）
       <Explain label="iPhone 匹配范围的说明" content="按机型匹配，不区分容量、颜色和地区版本。范围是运营预设的平台算力，不是 Apple 性能指标或实测跑分。用户首次校准时，系统在范围内随机取一个值并保存。"/>
-      <div className="ios-actions" hidden={!canWrite}>
-        <Btn disabled={!editable || loading || !!presets || !!form} onClick={() => void loadPresets()}>{loading ? "正在读取预设…" : "载入 iPhone 机型预设"}</Btn>
-        <Btn variant="primary" disabled={!editable || rules.length >= 500 || !!form || importOpen || loading}
-          onClick={() => setForm(editing(null, blankIosRule(rules, androidRuleIds)))}>新增机型</Btn>
-      </div>
-    </div>
+    </span></legend>
+    {rules.length > 0 && actions}
     {error && !importOpen && <p role="alert">{error}</p>}
 
     {importOpen && <Drawer open wide title="载入 iPhone 机型预设" onClose={()=>setImportOpen(false)} footer={presets ? <Decision primary={<Button variant="primary" disabled={!editable || presets.selected.size === 0 && !(presets.fillFacts && presets.plan.factsFilled.length > 0)} onClick={applyImport}>加入草稿</Button>} others={<Button onClick={()=>setImportOpen(false)}>取消</Button>}/> : <Decision others={<Button onClick={()=>setImportOpen(false)}>取消</Button>}/> }><div className="e6-legacy-fields ios-import" aria-label="iPhone 预设导入预览">
@@ -137,18 +138,19 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
     </>}
     </div></Drawer>}
 
-    <div className="e6-hardware-tools">
+    {rules.length > 0 && <div className="e6-hardware-tools">
       <label>搜索机型或别名<input value={query} maxLength={128} onChange={event => setQuery(event.target.value)} /></label>
       <label>状态<select value={status} onChange={event => setStatus(event.target.value as StatusFilter)}>
         <option value="all">全部</option><option value="enabled">启用</option><option value="disabled">停用</option></select></label>
       <label>目录分类<select value={catalog} onChange={event => setCatalog(event.target.value as IosCatalogClass | "all")}>
         <option value="all">全部</option>{Object.entries(IOS_CATALOG_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <div className="ios-clear"><Btn disabled={!filtered} onClick={clearFilters}>清空筛选</Btn></div>
-    </div>
-    <p role="status">共 {rules.length} 个机型{filtered ? ` · 显示 ${visible.length} 个` : ""} · 草稿相对已发布：新增 {counts.added ?? 0}、修改 {counts.modified ?? 0}、停用 {counts.disabled ?? 0}、启用 {counts.enabled ?? 0}、删除 {counts.removed ?? 0}</p>
+    </div>}
+    {filtered && <div className="e6-hardware-summary" role="status">显示 {visible.length} / {rules.length} 个机型</div>}
+    {Object.values(counts).some(count=>count > 0) && <Fold title="iPhone 草稿变化" summary="尚未发布" inset>新增 {counts.added ?? 0}、修改 {counts.modified ?? 0}、停用 {counts.disabled ?? 0}、启用 {counts.enabled ?? 0}、删除 {counts.removed ?? 0}</Fold>}
 
-    {rules.length === 0 ? <p>尚无 iPhone 机型规则。iOS 校准会进入待核验，不授予算力。可载入预设或新增机型。</p>
-      : visible.length === 0 ? <p>没有符合筛选条件的机型。<Btn sm onClick={clearFilters}>清空筛选</Btn></p>
+    {rules.length === 0 ? <BlockState state="empty" title="尚无 iPhone 机型规则，iOS 校准将进入待核验" detail={actions}/>
+      : visible.length === 0 ? <BlockState state="empty" title="没有符合筛选条件的机型" detail={<Button size="sm" onClick={clearFilters}>清空筛选</Button>}/>
       : <div className="ios-table"><Table label="iPhone 机型目录" data-tight>
         <thead><Tr>{["机型 · 草稿变化", "运营预设范围", "设备信息", "目录分类", "状态", "操作"].map(label => <Th key={label}>{label}</Th>)}</Tr></thead>
         <tbody>{visible.map(({ rule, index }) => {

@@ -559,6 +559,32 @@
 .e6-page .rd-table .rd-cell[data-full] { max-width: none; }
 .e6-page .rd-table .rd-cell[data-full] :is(.rd-cell-main,.rd-cell-sub) { white-space: normal; overflow-wrap: anywhere; }
 .e6-page :is(.e6-tasks-table,.e6-phones-table) tbody td:first-child { min-width: 180px; }
-.e6-page .e6-phones-table .e6-phone-user { min-width: 112px; width: 22%; }
+.e6-page .e6-phones-table .e6-phone-user { min-width: 124px; width: 22%; }
 
 .e6-page .e6-tier-long .rd-stepbar-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); }
+
+.e6-original, .e6-original-group { border-radius: var(--rd-radius-control); }
+.e6-original:focus-visible, .e6-original-group:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+.e6-original [data-zero] { color: var(--rd-text-3); }
+.e6-original-tiers { display: grid; gap: 8px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.e6-page .e6-phones-table :is(.rd-cell-main,.rd-cell-sub) { white-space: nowrap; }
+.e6-middle-text { display: inline-flex; max-width: 100%; vertical-align: bottom; }
+.e6-middle-text > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e6-middle-text > :last-child { flex: none; }
+.e6-phone-device .rd-cell-sub > .e6-original, .e6-tasks-table .rd-cell-main > .e6-original { display: block; }
+.e6-phone-telemetry, .e6-phone-status { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.e6-phone-telemetry { justify-content: flex-end; }
+.e6-threshold-block { display: grid; gap: var(--rd-section-gap); }
+.e6-axis .rd-scale { width: 100%; max-width: none; }
+.e6-threshold-inputs { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 16px; }
+.e6-threshold-inputs :is(.rd-number,.rd-input) { width: 100%; }
+.e6-legacy-fields .ios-model-rules { display: grid; gap: 16px; }
+.e6-legacy-fields :is(input,select,textarea):disabled { background: var(--rd-disabled-bg); color: var(--rd-text-disabled); }
+:root[data-theme="light"] .e6-legacy-fields :is(input,select,textarea):not(:disabled):not([readonly]) { background: var(--rd-panel); }
+.e6-hardware-summary { color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.e6-trial-form, .e6-trial-result { display: grid; gap: 16px; }
+.e6-section-link { margin-top: 16px; }
+@container (max-width: 860px) {
+  .e6-threshold-inputs { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .e6-trial-form .e6-form-grid { grid-template-columns: minmax(0,1fr); }
+}

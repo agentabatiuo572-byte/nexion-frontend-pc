@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { Btn } from "../design-kit";
-import { Drawer, Decision, Button, Table, Th, Tr, Td, Explain, BlockState } from "@/app/components/rd";
+import { Drawer, Decision, Button, Table, Th, Tr, Td, Explain, BlockState, Fold } from "@/app/components/rd";
 import { formatRange } from "@/lib/admin/ios-model-rules";
 import { androidRuleIssues, applyAndroidImport, blankAndroidRule, diffAndroidRules, moveChip, planAndroidImport, removeChip, setChipAliases,
   type AndroidImportPlan, type AndroidPresetCatalog, type AndroidPresetRemovals, type AndroidSocChip, type AndroidSocRule } from "@/lib/admin/android-soc-rules";
@@ -62,14 +62,16 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
     setChipForm(null);
   }
 
+  const actions = canWrite && <div className="ios-clear"><Btn disabled={!editable || loading || !!presets || !!chipForm || importOpen} onClick={() => void loadPresets()}>{loading ? "正在读取预设…" : "载入芯片预设"}</Btn>
+    <Btn disabled={!editable} onClick={() => onChange([...rules, blankAndroidRule(rules, iosRuleIds)], removals)}>新增芯片档</Btn></div>;
+
   return <fieldset className="ios-model-rules" aria-label="Android 芯片档">
-    <legend>Android 芯片档（{rules.length} 档 · {rules.reduce((sum, rule) => sum + rule.chips.length, 0)} 颗芯片）</legend>
-    <Explain label="Android 芯片匹配的说明" content="按手机芯片匹配，不区分机型和内存。每档一个运营预设区间，档内所有芯片共用；用户首次校准时服务端在区间内取值并保存。芯片连同它的全部标识一起移档，标识不能拆到别的档。"/>
-    <div className="e6-hardware-tools">
-      <label>搜索芯片或标识<input value={query} maxLength={64} onChange={event => setQuery(event.target.value)} /></label>
-      <div className="ios-clear" hidden={!canWrite}><Btn disabled={!editable || loading || !!presets || !!chipForm || importOpen} onClick={() => void loadPresets()}>{loading ? "正在读取预设…" : "载入芯片预设"}</Btn>
-        <Btn disabled={!editable} onClick={() => onChange([...rules, blankAndroidRule(rules, iosRuleIds)], removals)}>新增芯片档</Btn></div>
-    </div>
+    <legend><span className="e6-actions">Android 芯片档（{rules.length} 档 · {rules.reduce((sum, rule) => sum + rule.chips.length, 0)} 颗芯片）
+    <Explain label="Android 芯片匹配的说明" content="按手机芯片匹配，不区分机型和内存。每档一个运营预设区间，档内所有芯片共用；用户首次校准时服务端在区间内取值并保存。芯片连同它的全部标识一起移档，标识不能拆到别的档。"/></span></legend>
+    {rules.length > 0 && <div className="e6-hardware-tools">
+      <label>搜索芯片或标识<input className="rd-input" value={query} maxLength={64} onChange={event => setQuery(event.target.value)} /></label>
+      {actions}
+    </div>}
     {error && !importOpen && <p role="alert">{error}</p>}
     {importOpen && <Drawer open wide title="载入芯片预设" onClose={()=>setImportOpen(false)} footer={presets ? <Decision primary={<Button variant="primary" disabled={!editable || presets.plan.tiers.length + presets.plan.chips.length + presets.plan.aliases.length === 0 && !(presets.restore && presets.plan.removed.length)} onClick={applyPresets}>加入草稿</Button>} others={<Button onClick={()=>setImportOpen(false)}>取消</Button>}/> : <Decision others={<Button onClick={()=>setImportOpen(false)}>取消</Button>}/> }><div className="e6-legacy-fields ios-import" aria-label="Android 芯片预设导入预览">
       {!presets ? <BlockState state={loading?"loading":"error"} title={loading?"正在读取预设…":"预设加载失败"} detail={error} onRetry={loading?undefined:()=>void loadPresets()}/> : <>
@@ -95,9 +97,9 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
     </>}
     </div></Drawer>}
     {issues.length > 0 && <p role="alert">{issues[0].index >= 0 ? `第 ${issues[0].index + 1} 档：` : ""}{issues[0].message}</p>}
-    <p role="status">草稿相对已发布：{changes.length === 0 ? "没有变化" : changes.map(change => `${CHANGE_LABELS[change.kind]}「${change.name || change.id}」`).join("、")}</p>
+    {changes.length > 0 && <Fold title="Android 草稿变化" summary={`${changes.length} 项，尚未发布`} inset>{changes.map(change=><p key={change.id}>{CHANGE_LABELS[change.kind]}「{change.name || change.id}」</p>)}</Fold>}
     {needle && rules.length > 0 && !rules.some(rule=>rule.chips.some(matches)) && <BlockState state="empty" title="没有匹配芯片" detail={<Button size="sm" onClick={()=>setQuery("")}>清空搜索</Button>}/>}
-    {rules.length === 0 ? <p>尚无芯片档。Android 校准会进入待核验，不授予算力。</p> : rules.map((rule, index) => {
+    {rules.length === 0 ? <BlockState state="empty" title="尚无芯片档，Android 校准将进入待核验" detail={actions}/> : rules.map((rule, index) => {
       const chips = rule.chips.filter(matches);
       if (needle && chips.length === 0) return null;
       const change = changes.find(item => item.id === rule.id);
