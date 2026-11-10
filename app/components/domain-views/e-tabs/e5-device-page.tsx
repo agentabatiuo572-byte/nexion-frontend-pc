@@ -148,7 +148,7 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
       const income = Math.max(widest(".e5-amount", 16, 180), widest(".e5-income-range .e5-sub", 154, 180));
       const taskMin = Math.max(160, ...Array.from(host.querySelectorAll(".e5-task-time"), element => measure(element.textContent ?? "", element.querySelector(".e5-sub")) + (element.querySelector(".rd-ratio") ? 88 : 16)));
       const taskWant = Math.max(taskMin, Math.min(280, taskMin * 1.3));
-      const widths = [deviceMin, user, ...(showProduct ? [Math.min(240, widest(".e5-product-col .rd-cell-main", 16, 176))] : []), ...(showSource ? [80] : []), status, income, taskMin, 52];
+      const widths = [deviceMin, user, ...(showProduct ? [Math.min(240, widest(".e5-product-col .rd-cell-main", 16, 176))] : []), ...(showSource ? [80] : []), status, income, taskMin, 60];
       const taskIndex = widths.length - 2;
       let remaining = Math.max(0, host.clientWidth - widths.reduce((sum, width) => sum + width, 0));
       const deviceGrowth = Math.min(deviceWant - deviceMin, remaining);
