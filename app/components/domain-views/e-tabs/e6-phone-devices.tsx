@@ -33,7 +33,7 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
     return result;
   };
   const scope=confirm?(confirm.action==="pause"||confirm.action==="resume"?`user:${confirm.device.userId}`:phoneScope(confirm.device)):"";
-  const consequence=confirm?.action==="activate"||confirm?.action==="force"?"每人最多 6 台设备，包含手机。激活后占用一个设备名额，强制激活也不能绕过上限。":confirm?.action==="deactivate"?"有运行中任务则在本单完成结算后停用，不再派新任务。":confirm?.action==="unbind"?"设备将不再属于该用户。不退款，购入时间不变；批准后解绑，不能撤销。":confirm?.action==="pause"?"将暂停该用户全部设备（含手机）。停跑期间不计收益、不补发。":"将恢复该用户全部设备派单；停跑期间收益不补发。";
+  const consequence=confirm?.action==="activate"||confirm?.action==="force"?"每人最多 6 台设备，包含手机。激活后占用一个设备名额，强制激活也不能绕过上限。":confirm?.action==="deactivate"?"有任务则在本单完成结算后停用，不再派单。":confirm?.action==="unbind"?"设备将不再属于该用户。不退款，购入时间不变；批准后解绑，不能撤销。":confirm?.action==="pause"?"将暂停该用户全部设备（含手机）。停跑期间不计收益、不补发。":"将恢复该用户全部设备派单；停跑期间收益不补发。";
   return <><E6PendingNotice section="phones" onRead={()=>void ctx.refreshE5()}/>
     <Conclusion state="neutral" icon={Smartphone}>{ctx.e5Loading?"正在查询用户手机":ctx.e5DeviceError?"等手机列表读取成功后可用":`当前查询共 ${ctx.e5Total} 台手机`}{ctx.e5Keyword&& !ctx.e5DeviceError?` · ${ctx.e5Keyword}`:""}</Conclusion>
     <Panel title="用户手机" className="e6-phone-panel" icon={Smartphone} tone="role-2" flush data-proof="e6-phone-devices" explain="每人最多 6 台设备，包含手机。这里显示手机心跳状态，没有商城 SIM 任务进度。" actions={<ColumnPicker columns={columns}/> }>
