@@ -154,7 +154,7 @@ export function monthlyTargetEstimateText(sku: Pick<OpsSku, "monthlyTargetUsdt" 
 
 export function skuBaseRateText(sku: OpsSku): string | undefined {
   return sku.monthlyTargetUsdt != null
-    ? `${monthlyTargetEstimateText(sku)} · ${sku.dailyEarnNEX.toLocaleString()} UVT/天`
+    ? `${monthlyTargetEstimateText(sku)} · ${sku.dailyEarnNEX == null ? "— · 未填写" : sku.dailyEarnNEX.toLocaleString()} UVT/天`
     : sku.baseRate;
 }
 

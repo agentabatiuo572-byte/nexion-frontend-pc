@@ -54,6 +54,11 @@ export function e1Range(target: number | string, band: number | string) {
   return { low: e1Multiply(target, String((1000 - bandThousandths) / 1000)), high: e1Multiply(target, String((1000 + bandThousandths) / 1000)) };
 }
 
+export function e1TargetPrecision(sku: Pick<OpsSku, "monthlyTargetUsdt" | "monthlyTargetBandPct">): number {
+  const range = sku.monthlyTargetUsdt != null && sku.monthlyTargetBandPct != null ? e1Range(sku.monthlyTargetUsdt, sku.monthlyTargetBandPct) : undefined;
+  return e1Precision([sku.monthlyTargetUsdt, range?.low, range?.high]);
+}
+
 export function e1Object(spec: ProposeSpec): string {
   const target = spec.target ?? spec.targets?.[0];
   if (target?.type === "device_generation_gate") {
@@ -135,7 +140,7 @@ export const E1_SKU_FIELDS: readonly { key: keyof OpsSku; label: string; unit?: 
   { key: "allowedPoolCodes", label: "任务等级" }, { key: "monthlyTargetUsdt", label: "月收益目标", unit: "USDT/月" },
   { key: "monthlyTargetBandPct", label: "允许波动", unit: "%" }, { key: "datacenter", label: "托管机房" },
   { key: "dailyEarn", label: "兼容日收益", unit: "USDT/天" }, { key: "dailyEarnNEX", label: "每日收益", unit: "UVT/天" },
-  { key: "phoneDailyEarn", label: "手机每日收益", unit: "USDT/天" }, { key: "phoneDailyEarnNEX", label: "手机每日收益", unit: "UVT/天" },
+  { key: "phoneDailyEarn", label: "手机每日收益 USDT", unit: "USDT/天" }, { key: "phoneDailyEarnNEX", label: "手机每日收益 UVT", unit: "UVT/天" },
   { key: "shareYieldMin", label: "Share参考年奖励率下限", unit: "%" }, { key: "shareYieldMax", label: "Share参考年奖励率上限", unit: "%" },
   { key: "inventoryMode", label: "库存模式" }, { key: "stock", label: "剩余库存" }, { key: "trialEligible", label: "允许试用" },
   { key: "unlock", label: "开放阶段" }, { key: "purchaseGate", label: "购买条件与配额" },
@@ -152,7 +157,7 @@ export const E1_SKU_FIELDS: readonly { key: keyof OpsSku; label: string; unit?: 
 const E1_VALUE_NAMES: Record<string, string> = { on: "在售", off: "已下架", pending: "草稿", active: "现行", legacy: "已停产", FINITE: "有限库存", UNLIMITED: "不限（非实物）", Entry: "入门档", Pro: "专业档", Flagship: "旗舰档", Share: "共享份额" };
 export function e1Value(value: unknown, unit?: string): string {
   const text = value == null || value === "" ? "未设置" : typeof value === "boolean" ? value ? "开" : "关"
-    : typeof value === "number" ? e1Number(value) : Array.isArray(value) ? value.join("、") || "未配置"
+    : typeof value === "number" ? unit && unit !== "%" ? e1Decimal(value) : e1Number(value) : Array.isArray(value) ? value.join("、") || "未配置"
     : typeof value === "object" ? JSON.stringify(value, null, 2) : E1_VALUE_NAMES[String(value)] ?? String(value);
   return `${text}${unit && value != null && value !== "" ? ` ${unit}` : ""}`;
 }
@@ -160,8 +165,8 @@ export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuFo
   const numericInputs = ["price", "computePoints", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins", ...(after.monthlyTargetUsdt == null ? ["dailyEarn", "shareYieldMin", "shareYieldMax"] : [])];
   return E1_SKU_FIELDS.map(({ key, label, unit }) => {
     const input = raw && numericInputs.includes(key) ? raw[key as keyof SkuForm] : undefined;
-    const next = typeof input === "string" && input.trim() ? `${e1Number(input)}${unit ? ` ${unit}` : ""}` : e1Value(after[key], unit);
-    return { key, label, before: before ? e1Value(before[key], unit) : "未创建", after: next,
+    const next = key === "monthlyTargetUsdt" && after.monthlyTargetUsdt != null ? `${e1Decimal(after.monthlyTargetUsdt, e1TargetPrecision(after))} ${unit}` : typeof input === "string" && input.trim() ? `${unit && unit !== "%" ? e1Decimal(input) : e1Number(input)}${unit ? ` ${unit}` : ""}` : e1Value(after[key], unit);
+    return { key, label, before: before ? key === "monthlyTargetUsdt" && before.monthlyTargetUsdt != null ? `${e1Decimal(before.monthlyTargetUsdt, e1TargetPrecision(before))} ${unit}` : e1Value(before[key], unit) : "未创建", after: !before && raw && numericInputs.includes(key) && input === "" ? "未填写" : next,
       note: key === "monthlyTargetUsdt" && after.clearMonthlyTarget ? "关闭月目标，改用兼容展示值" : undefined };
   });
 }

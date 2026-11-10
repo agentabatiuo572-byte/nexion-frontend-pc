@@ -21,13 +21,13 @@ type Media = { kind: "image" | "video"; src: string; name: string; size?: number
 const SECTIONS = [{ id: "e1-basic", label: "基本信息" }, { id: "e1-earnings", label: "收益与任务" }, { id: "e1-stock", label: "库存与购买条件" }, { id: "e1-specs", label: "规格与资料" }];
 
 function EditorSection({ id, title, children }: { id: string; title: string; children: ReactNode }) {
-  return <section id={`section-${id}`} className="e1-editor-section"><h3 tabIndex={-1} data-section-focus>{title}</h3>{children}</section>;
+  return <section id={`section-${id}`} className="e1-editor-section"><h3 tabIndex={-1} data-section-focus>{title}</h3><div className="e1-section-fields">{children}</div></section>;
 }
 
-export function E1Editor({ request, gates, writable, currentSku, onClose, onReview, busy, toast, onMediaChange }: {
+export function E1Editor({ request, gates, writable, currentSku, onClose, onReview, busy, toast, onMediaChange, writeBlockedReason }: {
   request: E1EditRequest | null; gates: E1GenerationGateData | null; writable: boolean; currentSku?: OpsSku;
   onClose: () => void; onReview: (sku: OpsSku, before: OpsSku | undefined, form: SkuForm) => void;
-  busy: boolean; toast: (text: string) => void; onMediaChange: () => void;
+  busy: boolean; toast: (text: string) => void; onMediaChange: (inFlight?: string) => void; writeBlockedReason?: string;
 }) {
   const actor = useAdminAuth(s => String(s.session?.adminId ?? ""));
   const operator = useAdminAuth(s => s.operator || s.session?.operator || s.session?.username || "");
@@ -113,7 +113,7 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
     if (!writable || uploadBusy.current || record.actorId !== actor || isRetryExpired(record)) throw new Error(isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "没有上传权限、原文件正在上传或账号不符");
     e1MediaCommands.remember(record.fingerprint, record.commandKey, record);
     if (!e1MediaCommands.isDurablyStored(record.fingerprint, record.commandKey)) { setMediaError("浏览器无法保存原上传，本次没有发送；请保留原文件核对。"); return; }
-    uploadBusy.current = true; setMediaBusy(true); setMediaRejected(false); setMediaError("");
+    uploadBusy.current = true; setMediaBusy(true); onMediaChange(record.commandKey); setMediaRejected(false); setMediaError("");
     try {
       const body = new FormData(); body.append("file", file);
       const response = await guardedFetch(`/api/admin/media/uploads?${new URLSearchParams(record.params)}`, { method: "POST", body, headers: { "Idempotency-Key": record.commandKey }, cache: "no-store" });
@@ -123,7 +123,7 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
       const message = typeof result?.message === "string" ? result.message : "";
       if (!response.ok || result?.code !== 0 || !data || typeof data.assetId !== "string" || !data.assetId.trim() || typeof data.objectKey !== "string" || !data.objectKey.trim()
         || data.sizeBytes != null && (typeof data.sizeBytes !== "number" || !Number.isFinite(data.sizeBytes) || data.sizeBytes < 0)) {
-        throw Object.assign(new Error(message || "上传结果未确认，请保留原文件和命令号核对"), { status: response.status, backendMessage: message, unknownOutcome: response.status >= 500 || response.ok });
+        throw Object.assign(new Error(message || "上传结果未确认，请保留原文件和命令号核对"), { status: response.status, backendMessage: message, unknownOutcome: result?.unknownOutcome === true || response.status >= 500 || response.ok || response.status === 409 && (!message || message === "MEDIA_REQUEST_FAILED") });
       }
       const assetId = data.assetId, objectKey = data.objectKey, size = data.sizeBytes == null ? record.size : data.sizeBytes as number;
       setMedia(m => ({ kind: record.kind, src: `/api/admin/media/uploads/${encodeURIComponent(assetId)}/content`, name: record.fileName, size, w: m?.w, h: m?.h, duration: m?.duration, assetId, objectKey }));
@@ -132,7 +132,7 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
       if (!retry && isExplicitRejection(error)) { e1MediaCommands.forget(record.fingerprint, record.commandKey); setMediaPending(null); fileRef.current = null; }
       else { setMediaPending(record); if (retry && isExplicitRejection(error)) setMediaRejected(true); }
       setMediaError(displayAdminError(error)); onMediaChange();
-    } finally { uploadBusy.current = false; setMediaBusy(false); }
+    } finally { uploadBusy.current = false; setMediaBusy(false); onMediaChange(); }
   };
   const pickMedia = async (file?: File) => {
     if (!file || uploadBusy.current || !writable) return;
@@ -154,7 +154,7 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
         if (!e1MediaCommands.isDurablyStored(fingerprint, key)) { e1MediaCommands.forget(fingerprint, key); throw new Error("浏览器无法保存原操作，本次没有上传"); }
         record = e1MediaCommands.list().find(r => r.commandKey === key)!;
       }
-      setMediaPending(record); fileRef.current = file; onMediaChange();
+      setMediaPending(record); fileRef.current = file; onMediaChange(mediaPending ? undefined : record.commandKey);
       const src = URL.createObjectURL(file);
       setMedia(m => m?.assetId ? m : { kind, src, name: file.name, size: file.size });
       if (kind === "image") {
@@ -233,19 +233,19 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
   };
   const close = () => { if (busy || mediaBusy) return; if (dirty) setLeave(true); else onClose(); };
   const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: string; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={errors[key]} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
-    {options.number ? <NumberInput aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
+    {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
   </Field>;
-  const blocked = !writable ? "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaPending ? "媒体上传结果未确认" : !dirty || original && !changes.length ? "没有修改" : undefined;
+  const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaPending ? "媒体上传结果未确认" : !dirty || original && !changes.length ? "没有修改" : undefined;
   const sectionItems = SECTIONS.map((s, index) => {
     const keys = index === 0 ? ["name", "id", "tier", "lifecycle", "badge", "tagline", "media"] : index === 1 ? ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "shareYieldMin", "shareYieldMax"] : index === 2 ? ["inventoryMode", "stock", "unlock", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin", "gateQuotaCap", "gateQuotaPeriod"] : ["gpuCount", "uptime", "warranty", "specDocumentTitle", "specDocumentUrl", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"];
     const invalid = keys.some(key => !!errors[key]);
     const state = invalid ? "有错误" : index === 0 ? form.name && form.tier && form.lifecycle ? "已填" : "待填" : index === 1 ? form.price && (!form.allowedPoolCodes.length || form.monthlyTargetUsdt) ? "已填" : "待填" : index === 2 ? form.inventoryMode === "UNLIMITED" || form.stock !== "" ? "已填" : "待填" : "选填";
-    return { ...s, label: `${s.label} · ${state}`, alert: invalid };
+    return { ...s, label: invalid ? s.label : `${s.label} · ${state}`, alert: invalid };
   });
   const hasTarget = form.monthlyTargetUsdt.trim() !== "";
   const canClear = original?.monthlyTargetUsdt != null && original.status !== "on" && !form.allowedPoolCodes.length;
   return <>
-    <Drawer open={!!request} onClose={close} title={editId ? "编辑商品" : "新增商品"} sub={original?.name ?? "草稿 · 批准后生效"} icon={Boxes} wide busy={busy || mediaBusy} explain="四区可直接定位，不需要依次下一步。上传仅保存媒体，商品内容须提交审批。" footer={<Decision note={`${form.name || "未命名商品"} · ${changes.length} 项改动 · 批准后生效`} primary={<Button variant="primary" disabledReason={blocked} onClick={review}>{editId ? "保存修改" : "提交确认"}</Button>} others={<Button disabled={busy || mediaBusy} onClick={close}>取消</Button>} />}>
+    <Drawer open={!!request} onClose={close} title={editId ? "编辑商品" : "新增商品"} sub={original?.name ?? "草稿 · 批准后生效"} icon={Boxes} wide busy={busy || mediaBusy} explain="四区可直接定位，不需要依次下一步。上传仅保存媒体，商品内容须提交审批。" footer={<Decision note={original ? `${original.name} · ${changes.length} 项改动 · 批准后生效` : "新增商品草稿 · 批准后生效"} primary={<Button variant="primary" disabledReason={blocked} onClick={review}>{editId ? "保存修改" : "提交确认"}</Button>} others={<Button disabled={busy || mediaBusy} onClick={close}>取消</Button>} />}>
       {errors.form && <Notice tone="warn" title={errors.form} />}
       {latestChanged && <Notice tone="warn" title="商品修订已变化，本地输入仍保留"><Facts><Fact k="打开时修订">{original.updatedAt}</Fact><Fact k="最新修订">{currentSku?.updatedAt}</Fact></Facts>{currentSku && <Fold inset title="读取期间的商品变化" summary="核对完整前后值"><DiffList rows={e1SkuDiff(original, currentSku)} /></Fold>}<Check label="我已核对最新修订，保留本地改动" checked={versionAccepted} onChange={e => { setVersionAccepted(e.target.checked); if (e.target.checked && currentSku) setOriginal(currentSku); }} /></Notice>}
       <div className="e1-editor-shell"><div className="e1-editor-layout"><SectionNav label="商品编辑分区" items={sectionItems} nav={nav} /><div className="e1-editor-content">
@@ -258,16 +258,17 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
           {(!editId && (form.id || form.name) && !supportsDeviceMonthlyTarget(form.id || form.name, form.tier) || original && !supportsDeviceMonthlyTarget(original.id, form.tier, original.productType)) && <Notice tone="warn" title={SKU_MODEL_UNRECOGNIZED_REASON} />}
           <Field label="产品图 / 视频" error={errors.media} explain="图片≤10 MiB；视频≤200 MiB。直接上传不经审批；关联商品由商品提案批准，移除不删除原资源。">
             <label className="e1-upload" data-drag={drag ? "" : undefined} onDragOver={e => { e.preventDefault(); if (!mediaBusy) setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={e => { e.preventDefault(); setDrag(false); void pickMedia(e.dataTransfer.files[0]); }}>
-              <input type="file" aria-label={mediaPending ? "重新选择原文件" : "上传商品图片或视频"} accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" disabled={!writable || mediaBusy || busy} onChange={e => { void pickMedia(e.target.files?.[0]); e.currentTarget.value = ""; }} />
-              <ImageIcon size={24} aria-hidden /><span>{drag ? "松开即上传" : mediaPending ? "重新选择原文件核对" : "点击或拖拽图片/视频到此"}</span>
+              <input type="file" aria-label={mediaBusy ? "媒体上传中" : mediaPending ? "重新选择原文件" : "上传商品图片或视频"} accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" disabled={!writable || mediaBusy || busy} onChange={e => { void pickMedia(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+              <ImageIcon size={24} aria-hidden /><span>{mediaBusy ? "上传中…" : drag ? "松开即上传" : mediaPending ? "重新选择原文件核对" : "点击或拖拽图片/视频到此"}</span>
             </label>
           </Field>
           {media && <div className="e1-editor-media">{media.src ? media.kind === "video" ? <video src={media.src} controls muted playsInline preload="metadata" onLoadedMetadata={e => { const v = e.currentTarget; setMedia(m => m ? { ...m, w: v.videoWidth, h: v.videoHeight, duration: Number.isFinite(v.duration) ? v.duration : undefined } : m); }} onError={() => setMediaError(media.assetId ? "视频已保存，预览暂时显示不了" : "视频暂时无法预览，请核对上传结果")} /> : <img src={media.src} alt="商品媒体预览" onLoad={e => { const i = e.currentTarget; setMedia(m => m ? { ...m, w: i.naturalWidth, h: i.naturalHeight } : m); }} onError={() => setMediaError(media.assetId ? "图片已保存，预览暂时显示不了" : "图片暂时无法预览，请核对上传结果")} /> : <BlockState compact state="error" title="图片已保存，预览暂时显示不了" />}
             <div className="e1-muted">{media.name} · {media.size == null ? "大小未读取" : `${e1Number(media.size)} 字节`} · {media.w && media.h ? `${media.w}×${media.h}px` : "尺寸未读取"}{media.kind === "video" && ` · ${media.duration == null ? "时长未读取" : `${e1Number(media.duration)} 秒`}`}</div>
             <div className="e1-table-actions">{media.assetId && <Button size="sm" onClick={() => void refreshPreview(media.assetId!)}>重新加载图片</Button>}{media.kind === "image" && media.w && media.h && Math.abs(media.w - media.h) > Math.max(media.w, media.h) * 0.02 && <Button size="sm" disabledReason={mediaBusy || mediaPending ? "先核对上传结果" : undefined} onClick={() => void crop()}>裁剪为 1:1</Button>}<Button size="sm" disabledReason={mediaBusy || mediaPending ? "先核对上传结果" : undefined} onClick={() => setMedia(null)}>移除</Button></div>
           </div>}
-          {mediaError && <Notice tone="warn" title={mediaError} />}
-          {mediaPending && <Notice tone="warn" title="媒体上传结果未确认" actionBelow action={<><Button disabledReason={mediaBusy ? "正在上传" : isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : !fileRef.current ? "请重新选择原文件核对摘要" : undefined} onClick={() => fileRef.current && void upload(mediaPending, fileRef.current, true)}>按原文件重试</Button>{mediaRejected && !isRetryExpired(mediaPending) && <Button onClick={() => setMediaRelease(true)}>解除待确认</Button>}</>}><p>{isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : "只允许原文件、原参数和原命令号重试；新文件不能替代原操作。"}</p><Fold inset title="原上传与技术信息" summary={mediaPending.fileName}><pre className="e1-raw">{JSON.stringify(mediaPending, null, 2)}</pre></Fold></Notice>}
+          {mediaBusy && <Notice tone="neutral" title="媒体上传中"><progress className="e1-upload-progress" aria-label="媒体上传进度" /><p>正在传输并确认上传结果，请等待；原文件与命令号已保存。</p></Notice>}
+          {mediaError && !mediaBusy && <Notice tone="warn" title={mediaError} />}
+          {mediaPending && !mediaBusy && <Notice tone="warn" title="媒体上传结果未确认" actionBelow action={<><Button disabledReason={mediaBusy ? "正在上传" : isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : !fileRef.current ? "请重新选择原文件核对摘要" : undefined} onClick={() => fileRef.current && void upload(mediaPending, fileRef.current, true)}>按原文件重试</Button>{mediaRejected && !isRetryExpired(mediaPending) && <Button onClick={() => setMediaRelease(true)}>解除待确认</Button>}</>}><p>{isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : "只允许原文件、原参数和原命令号重试；新文件不能替代原操作。"}</p><Fold inset title="原上传与技术信息" summary={mediaPending.fileName}><pre className="e1-raw">{JSON.stringify(mediaPending, null, 2)}</pre></Fold></Notice>}
         </EditorSection>
         <EditorSection id="e1-earnings" title="收益与任务">
           <div className="rd-form-grid">{field("price", "售价(USD)", { number: true, unit: "USD", min: 0, required: true, explain: "购买一件商品的目录价，批准后影响新交易；原订单快照不回写。" })}{field("computePoints", "每件算力点", { number: true, min: 0, step: 1, help: editId ? "留空保留原值；0 为真实零" : "留空按售价 × 10", explain: "购买一件计入团队的点数，最多18位非负整数，只影响之后的新订单快照；App为0时当前隐藏。" })}</div>
@@ -320,7 +321,7 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
         </EditorSection>
       </div></div></div>
     </Drawer>
-    {leave && <Modal title="保留未保存的商品改动" onClose={() => setLeave(false)} footer={<><Button onClick={() => setLeave(false)}>继续编辑</Button><Button variant="danger-outline" onClick={() => { setLeave(false); onClose(); }}>放弃改动并返回</Button><Button variant="primary" disabledReason={blocked} onClick={review}>提交确认</Button></>}><p>商品改动还没有提交审批。放弃后关闭本地草稿，已上传的媒体资源不删除。</p></Modal>}
+    {leave && <Modal title="商品改动尚未提交" onClose={() => setLeave(false)} footer={<><Button onClick={() => setLeave(false)}>继续编辑</Button><Button variant="danger-outline" onClick={() => { setLeave(false); onClose(); }}>放弃改动并返回</Button><Button variant="primary" disabledReason={blocked} onClick={review}>提交确认</Button></>}><p>商品改动还没有提交审批。放弃后关闭本地草稿，已上传的媒体资源不删除。</p></Modal>}
     {mediaRelease && mediaPending && <ReleaseModal label={`${mediaPending.fileName} · 媒体上传`} onCancel={() => setMediaRelease(false)} onConfirm={() => { e1MediaCommands.forget(mediaPending.fingerprint, mediaPending.commandKey); setMediaPending(null); fileRef.current = null; setMediaRelease(false); onMediaChange(); }} />}
   </>;
 }

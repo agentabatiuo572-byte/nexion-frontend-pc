@@ -2,11 +2,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { RefreshCw } from "lucide-react";
-import { BlockState, Button, Change, ConflictBar, DiffList, Facts, Fact, Fold, Notice, PageHeader, RdPage, ReleaseModal, StatusTag } from "@/app/components/rd";
+import { BlockState, Button, Change, ConflictBar, DiffList, Facts, Fact, Fold, Notice, Drawer, PageHeader, RdPage, ReleaseModal, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessClock } from "@/lib/admin/business-time";
-import { fetchE1Catalog, type E1CatalogSnapshot, type E1BundleDiscount, type E1GenerationGateData, type E1InvalidSku } from "@/lib/admin/e1-client";
+import { fetchE1Products, fetchE1GenerationGates, fetchE1Discount, type E1CatalogSnapshot, type E1BundleDiscount, type E1GenerationGateData, type E1InvalidSku } from "@/lib/admin/e1-client";
 import { fetchE3Snapshot } from "@/lib/admin/e3-client";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { roleLabel } from "@/lib/nav/console-nav";
@@ -21,12 +21,13 @@ import type { McSpec } from "./types";
 import type { SkuForm } from "./data";
 import { E1Catalog, type E1CatalogContext } from "./e1-catalog";
 import { E1Editor, type E1EditRequest } from "./e1-editor";
-import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1Number, e1Object, e1SkuDiff, e1Value, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
+import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1Number, e1Decimal, e1TargetPrecision, e1Object, e1SkuDiff, e1Value, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
 
 type Confirmation = McSpec & { sku?: OpsSku; beforeSku?: OpsSku; form?: SkuForm; gates?: E1GenerationGateData | null; discount?: E1BundleDiscount | null; early?: Record<string, string> };
 const APPROVAL = "由另一位有批准及商品业务权限的管理员批准。批准前目录不变。";
 
 function e1Error(error: unknown) {
+  if (isA2OutcomeUncertainError(error)) return "提交结果未确认。原对象、内容、理由和命令号已保留，请在本页按原操作重试或读回核对。";
   const value = error as { backendMessage?: string; message?: string } | null;
   const code = value?.backendMessage ?? value?.message ?? "";
   if (code.includes("TASK_POOL_FORMAT_RETIRED")) return "原商品操作使用旧任务格式，请先核对原申请，再从商品管理与上架条件重新配置任务等级。";
@@ -53,7 +54,13 @@ export function E1Page() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [readAt, setReadAt] = useState("");
-  const [receipt, setReceipt] = useState<{ id: string; obj: string } | null>(null);
+  const [receipts, setReceipts] = useState<(ProposeSpec & { id: string; object: string; status: string })[]>([]);
+  const [receiptDetail, setReceiptDetail] = useState<(typeof receipts)[number] | null>(null);
+  const receipt = receipts.at(-1);
+  const [businessValues, setBusinessValues] = useState<Record<string, string>>({});
+  const [mediaSending, setMediaSending] = useState("");
+  const [gatesLoading, setGatesLoading] = useState(true), [gatesError, setGatesError] = useState<string | null>(null);
+  const [discountLoading, setDiscountLoading] = useState(true), [discountError, setDiscountError] = useState<string | null>(null);
   const [early, setEarly] = useState<Record<string, string>>({});
   const [earlyError, setEarlyError] = useState<string | null>(null);
   const [earlyLoading, setEarlyLoading] = useState(true);
@@ -72,15 +79,30 @@ export function E1Page() {
   const [attemptKey, setAttemptKey] = useState("");
   const syncPending = useCallback(() => { setPending(e1Pending(actor)); setLegacy(e1LegacyCommands(actor)); setMedia(e1MediaCommands.list().filter(r => r.actorId === actor)); }, [actor]);
   useEffect(syncPending, [syncPending]);
-  const refresh = useCallback(async () => {
+  const refreshProducts = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const snapshot = await fetchE1Catalog();
-      setSkus(snapshot.skus); setInvalid(snapshot.invalidSkus); setGates(snapshot.gates); setDiscount(snapshot.bundleDiscount); setReadAt(businessClock(Date.now()));
-      return snapshot;
-    } catch (failure) { setError(e1Error(failure)); setSkus([]); setInvalid([]); setGates(null); setDiscount(null); }
+      const result = await fetchE1Products();
+      setSkus(result.skus); setInvalid(result.invalidSkus); setReadAt(businessClock(Date.now())); return result;
+    } catch (failure) { setError(e1Error(failure)); setSkus([]); setInvalid([]); return null; }
     finally { setLoading(false); }
   }, []);
+  const refreshGates = useCallback(async () => {
+    setGatesLoading(true); setGatesError(null);
+    try { const result = await fetchE1GenerationGates(); setGates(result); return result; }
+    catch (failure) { setGates(null); setGatesError(e1Error(failure)); return null; }
+    finally { setGatesLoading(false); }
+  }, []);
+  const refreshDiscount = useCallback(async () => {
+    setDiscountLoading(true); setDiscountError(null);
+    try { const result = await fetchE1Discount(); setDiscount(result); return result; }
+    catch (failure) { setDiscount(null); setDiscountError(e1Error(failure)); return null; }
+    finally { setDiscountLoading(false); }
+  }, []);
+  const refresh = useCallback(async (): Promise<E1CatalogSnapshot | undefined> => {
+    const [products, nextGates, nextDiscount] = await Promise.all([refreshProducts(), refreshGates(), refreshDiscount()]);
+    if (products && nextGates && nextDiscount) return { ...products, gates: nextGates, bundleDiscount: nextDiscount };
+  }, [refreshProducts, refreshGates, refreshDiscount]);
   const refreshEarly = useCallback(async () => {
     setEarlyLoading(true); setEarlyError(null);
     if (!canReadE3) { setEarly({}); setEarlyError("当前账号没有抢先购关联设置的读取权限"); setEarlyLoading(false); return; }
@@ -89,8 +111,9 @@ export function E1Page() {
     finally { setEarlyLoading(false); }
   }, [canReadE3]);
   useEffect(() => { if (canRead) { void refresh(); void refreshEarly(); } }, [canRead, refresh, refreshEarly]);
-  const writesReady = canWrite && !loading && !error && gates !== null && discount !== null;
   const earlyReady = !earlyLoading && !earlyError && ["开", "关"].includes(early["E.release.earlyAccess.enabled"]) && ["7", "14", "30", "60", "90"].includes(early["E.release.earlyAccess.leadDays"]);
+  const readBlock = loading || error ? "商品目录读取成功前不能提交修改" : gatesLoading || gatesError || !gates ? "开放阶段读取成功前不能提交修改" : discountLoading || discountError || !discount ? "组合购折扣读取成功前不能提交修改" : !earlyReady ? "抢先购关联设置读取成功前不能提交修改" : undefined;
+  const writesReady = canWrite && !readBlock;
   const locked = (type: string, id: string) => pending.some(r => e1Object(r.spec) === `${type}|${id}`)
     || legacy.some(r => e1LegacyObject(r) === `${type}|${id}`);
 
@@ -102,6 +125,7 @@ export function E1Page() {
   const openConfirm = (input: McSpec) => {
     if (!writesReady) return;
     setConflict(false); setConflictLatest(null); setAttemptKey("");
+    setBusinessValues(input.businessForm?.kind === "multi-field" ? Object.fromEntries(input.businessForm.fields.map(f => [f.key, f.current ?? ""])) : {});
     setConfirmation({ ...input, sku: skus.find(s => s.id === input.target), gates, discount, early: { ...early } });
   };
   const send = async (record: E1Pending, retry: boolean) => {
@@ -118,15 +142,16 @@ export function E1Page() {
         amplifies: !!spec.amplifies, sos: !!spec.sos, roleGate: spec.gateLabel, reason: spec.reason, sourceDomain: spec.sourceDomain,
         command: spec.command, target: spec.target, targets: spec.targets,
       }, record.commandKey, true);
-      forgetE1(record); toast("已提交，等待审批后执行");
-      setReceipt({ id: result.id, obj: spec.obj });
+      forgetE1(record); toast(`已提交，等待审批后执行 · 审批单 ${result.id}`);
+      setReceipts(rows => [...rows.filter(row => row.object !== e1Object(spec)), { ...spec, id: result.id, object: e1Object(spec), status: result.status }]);
       setConfirmation(null); if (record.spec.command.op === "e1_sku_create" || record.spec.command.op === "e1_sku_update") setEdit(null);
       const latest = await refresh();
-      if (!latest) toast("申请已提交，目录暂时读不到");
+      if (!latest) toast("申请已提交，部分目录或关联设置未读取完整");
     } catch (failure) {
       if (!retry && isExplicitRejection(failure) && !isA2OutcomeUncertainError(failure)) forgetE1(record);
       else if (retry && isExplicitRejection(failure)) setRejected(keys => [...keys, record.commandKey]);
       setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) }));
+      if (!isExplicitRejection(failure)) { setConfirmation(null); setEdit(null); }
       if (String((failure as Error).message).includes("VERSION_CONFLICT") || String((failure as { backendMessage?: string }).backendMessage).includes("VERSION_CONFLICT")) setConflict(true);
       // Throw the original error so OperationConfirmModal keeps reason and fields.
       if (retry) toast(e1Error(failure));
@@ -176,14 +201,14 @@ export function E1Page() {
     } else if ((mc.op === "sku-status" || mc.op === "sku-delete") && mc.sku) {
       obj = mc.sku.id; op = mc.op === "sku-delete" ? "e1_sku_delete" : "e1_sku_status";
       context = { skuId: mc.sku.id, status: mc.status, updatedAt: mc.sku.updatedAt };
-      before = `${mc.sku.name} · ${e1Value(mc.sku.status)} · ${e1Number(mc.sku.price)} USD`;
+      before = `${mc.sku.name} · ${e1Value(mc.sku.status)} · ${e1Decimal(mc.sku.price)} USD`;
       after = mc.op === "sku-delete" ? "已移除" : e1Value(mc.status);
     } else if (mc.op === "bundle-discount" && business && mc.discount) {
-      if ([business.twoItemsPct, business.threeItemsPct, business.fourPlusItemsPct].some(v => !/^\d+(?:\.\d{1,2})?$/.test(v) || Number(v) < 0.01 || Number(v) > 30) || Number(business.threeItemsPct) < Number(business.twoItemsPct) || Number(business.fourPlusItemsPct) < Number(business.threeItemsPct)) throw new Error("折扣须为0.01%～30%，最多2位小数，且件数增加时折扣不能下降");
+      if ([business.twoItemsPct, business.threeItemsPct, business.fourPlusItemsPct].some(v => !/^\d+(?:\.\d{1,2})?$/.test(v) || Number(v) < 0.01 || Number(v) > 30) || Number(business.threeItemsPct) < Number(business.twoItemsPct) || Number(business.fourPlusItemsPct) < Number(business.threeItemsPct)) throw new Error("折扣须为0.01 %～30 %，最多 2 位小数，且件数增加时折扣不能下降");
       op = "e1_bundle_discount"; obj = "App 组合购阶梯折扣"; amplifies = true;
       context = { twoItemsPct: Number(business.twoItemsPct), threeItemsPct: Number(business.threeItemsPct), fourPlusItemsPct: Number(business.fourPlusItemsPct), expectedVersion: mc.discount.version };
-      before = `v${mc.discount.version} · 2件 ${mc.discount.twoItemsPct}% · 3件 ${mc.discount.threeItemsPct}% · 4+件 ${mc.discount.fourPlusItemsPct}%`;
-      after = `2件 ${business.twoItemsPct}% · 3件 ${business.threeItemsPct}% · 4+件 ${business.fourPlusItemsPct}%`;
+      before = `v${mc.discount.version} · 2 件 ${mc.discount.twoItemsPct} % · 3 件 ${mc.discount.threeItemsPct} % · 4+ 件 ${mc.discount.fourPlusItemsPct} %`;
+      after = `2 件 ${business.twoItemsPct} % · 3 件 ${business.threeItemsPct} % · 4+ 件 ${business.fourPlusItemsPct} %`;
       if (Number(business.twoItemsPct) === mc.discount.twoItemsPct && Number(business.threeItemsPct) === mc.discount.threeItemsPct && Number(business.fourPlusItemsPct) === mc.discount.fourPlusItemsPct) throw new Error("没有修改折扣，无需提交");
     } else if (mc.op === "phase-save" && business) {
       if (!business.label?.trim() || !/^\d+$/.test(business.sortOrder) || Number(business.sortOrder) > 9999) throw new Error("请填写阶段名称和0～9999的整数排序");
@@ -224,14 +249,17 @@ export function E1Page() {
       before = `${mc.early?.["E.release.earlyAccess.enabled"]} · ${mc.early?.["E.release.earlyAccess.leadDays"]}天`; after = `${business.enabled} · ${business.leadDays}天`;
     } else throw new Error("原操作数据不完整，请核对后重新打开入口");
     const def = findHighOp(op)!;
-    await submit({ action: mc.name, obj, before, after, type: def.type, amplifies, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1", command: def.buildCommand(context), target: def.buildTarget(context) });
+    await submit({ action: mc.name, obj, before, after, type: def.type, amplifies, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1", command: def.buildCommand(context), target: op === "e1_gate_field" ? { domain: "E", type: "device_generation_gate", id: obj } : def.buildTarget(context) });
   };
   const mc = confirmation;
   const skuDiff = mc?.op === "sku-save" && mc.sku ? e1SkuDiff(mc.beforeSku, mc.sku, mc.form) : null;
   const currentPending = mc ? pending.find(r => r.commandKey === attemptKey || (mc.sku ? e1Object(r.spec) === `device_sku|${mc.sku.id}` : mc.generationGateId ? e1Object(r.spec) === `device_generation_gate|${mc.generationGateId}` : mc.phaseId ? e1Object(r.spec) === `device_phase|${mc.phaseId}` : mc.op === "bundle-discount" ? e1Object(r.spec) === "store_bundle_discount|canonical" : mc.op === "early-access" ? e1Object(r.spec) === "device_release_early_access|trade-in" : false)) : undefined;
   const ctx: E1CatalogContext = {
-    skus, canWriteE1: writesReady, e1InvalidSkus: invalid, e1Loading: loading, e1Error: error, e1Gates: gates, e1BundleDiscount: discount, phaseCur: gates?.phaseCurrent ?? "", refreshE1: async () => { await refresh(); },
+    skus, canWriteE1: canWrite, e1InvalidSkus: invalid, e1Loading: loading, e1Error: error, e1Gates: gates, e1BundleDiscount: discount, phaseCur: gates?.phaseCurrent ?? "", refreshE1: async () => { await refresh(); },
     pE: k => early[k] ?? "—", earlyReady, earlyLoading, earlyError, refreshEarly: () => void refreshEarly(),
+    gatesLoading, gatesError, discountLoading, discountError, refreshGates: () => void refreshGates(), refreshDiscount: () => void refreshDiscount(), writeBlockedReason: readBlock,
+    pendingProposal: id => receipts.find(row => row.status === "pending" && ["device_sku", "device_generation_gate"].some(type => row.object === `${type}|${id}`)),
+    openPending: id => setReceiptDetail(receipts.find(row => row.id === id) ?? null),
     forceUnlock, forceLock, locked, openSku, openActionConfirm: openConfirm, toast,
     delSku: (id, name) => openConfirm({ briefKind: "config", name: `删除商品 · ${name}`, op: "sku-delete", target: id, detail: "从商城移除后用户无法再购买，已售设备和原订单不受影响。", businessForm: { kind: "destructive-reason", target: name, impact: "从商城移除，用户无法再购买；已售设备和原订单不受影响。" } }),
   };
@@ -239,31 +267,32 @@ export function E1Page() {
     <PageHeader pageId="E1" title="商品管理与上架条件" meta={!canRead ? "未读取目录" : error ? "目录读取失败" : readAt ? `${readAt} 读取 · 手动刷新` : "正在读取目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<><Button icon={<RefreshCw size={14} />} disabled={loading} onClick={() => { void refresh(); void refreshEarly(); }}>刷新</Button>{canWrite && <Button variant="primary" disabledReason={!writesReady ? "请先读取完整目录" : edit ? "请先完成当前商品草稿" : undefined} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
     {!canRead ? <BlockState state="denied" title="没有商品目录读取权限" /> : <>
       {receipt && error && <Notice tone="warn" title="申请已提交，目录暂时读不到"><p>{receipt.obj} · 审批单 {receipt.id}</p></Notice>}
-      {pending.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.spec.obj} · ${record.spec.action}结果未确认`} actionBelow action={<>
+      {pending.filter(record => record.commandKey !== busy).map(record => <Notice key={record.commandKey} tone="warn" title="结果未确认" actionBelow action={<>
         <Button disabledReason={!canWrite ? "当前账号不能重试" : busy ? "正在提交原操作" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : undefined} onClick={() => { void send(record, true).catch(failure => toast(e1Error(failure))); }}>按原操作重试</Button>
         {canQuery && <Button disabled={!!busy} onClick={() => void check(record)}>读回核对</Button>}
         {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button disabled={!!busy} onClick={() => setRelease(record)}>解除待确认</Button>}
         {canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}
       </>}>
+        <p><strong>{record.spec.obj}</strong> · {record.spec.action}</p>
         <p>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "原对象、内容、理由和命令号已保留；此对象暂停新修改，只能原样重试。"}</p>
         {!canOpenAudit && <p>可复制原命令号，请有权查看操作记录与审批的管理员核对。</p>}
         {notes[record.commandKey] && <p role="status">{notes[record.commandKey]}</p>}
-        <Fold inset title="原操作与技术信息" summary={`${businessClock(record.createdAt)} · ${record.commandKey}`}><Facts><Fact k="原对象">{record.spec.obj}</Fact><Fact k="原理由">{record.spec.reason}</Fact><Fact k="命令号">{record.commandKey}</Fact></Facts><pre className="e1-raw">{JSON.stringify(record.spec, null, 2)}</pre><Button size="sm" onClick={() => { void navigator.clipboard.writeText(record.commandKey).then(() => toast("已复制命令号"), () => toast("复制失败，请从技术信息选择命令号")); }}>复制命令号</Button></Fold>
+        <Fold inset title="原操作与技术信息" summary={`${businessClock(record.createdAt)} · ${record.commandKey}`}><Facts><Fact k="原对象">{record.spec.obj}</Fact><Fact k="原操作">{record.spec.action}</Fact><Fact k="原理由">{record.spec.reason}</Fact><Fact k="命令号">{record.commandKey}</Fact></Facts><p>完整参数、原版本和理由随原操作保存，可复制后逐项核对。</p><div className="e1-table-actions"><Button size="sm" onClick={() => { void navigator.clipboard.writeText(JSON.stringify(record.spec, null, 2)).then(() => toast("已复制完整原操作"), () => toast("复制失败，请保留原命令号核对")); }}>复制完整原操作</Button><Button size="sm" onClick={() => { void navigator.clipboard.writeText(record.commandKey).then(() => toast("已复制命令号"), () => toast("复制失败，请选择命令号")); }}>复制命令号</Button></div></Fold>
       </Notice>)}
       {legacy.map(record => <Notice key={record.commandKey} tone="warn" title="旧商品操作结果未确认 · 缺完整原请求" action={canQuery && <Button onClick={() => void check(record)}>读回核对</Button>}><p>升级前记录缺少原理由，不能重试或解除；请保留原号，到操作记录与审批核对。</p><Fold inset title="旧记录技术信息" summary={record.commandKey}><pre className="e1-raw">{JSON.stringify(record, null, 2)}</pre></Fold>{notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}</Notice>)}
-      {media.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.fileName} · 媒体上传结果未确认`} action={<Button onClick={() => openSku(record.skuId || undefined)}>核对媒体上传</Button>}><p>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "原文件摘要和命令号已保留；重新打开商品选择同一文件后可原样重试。"}</p></Notice>)}
+      {media.filter(record => record.commandKey !== mediaSending).map(record => <Notice key={record.commandKey} tone="warn" title={`${record.fileName} · 媒体上传结果未确认`} action={<Button onClick={() => openSku(record.skuId || undefined)}>核对媒体上传</Button>}><p>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "原文件摘要和命令号已保留；重新打开商品选择同一文件后可原样重试。"}</p></Notice>)}
       <E1Catalog ctx={ctx} />
     </>}
-    <E1Editor request={edit} gates={gates} writable={writesReady} currentSku={edit?.sku ? skus.find(s => s.id === edit.sku!.id) : undefined} onClose={() => setEdit(null)} busy={!!busy} toast={toast} onMediaChange={syncPending} onReview={(sku, beforeSku, form) => { setConflict(false); setConflictLatest(null); setAttemptKey(""); setConfirmation({ briefKind: "config", name: `${beforeSku ? "编辑" : "新增"}商品 · ${sku.name}`, op: "sku-save", sku, beforeSku, form, gates, isNew: !beforeSku }); }} />
-    {mc && <OperationConfirmModal action={mc.name} title={mc.title ?? mc.name.split(" · ")[0]} briefKind={mc.briefKind} detail={mc.detail ?? "核对完整变更，批准后生效。"} edit={mc.edit} businessForm={mc.businessForm}
+    <E1Editor request={edit} gates={gates} writable={writesReady} writeBlockedReason={readBlock} currentSku={edit?.sku ? skus.find(s => s.id === edit.sku!.id) : undefined} onClose={() => setEdit(null)} busy={!!busy} toast={toast} onMediaChange={key => { setMediaSending(key ?? ""); syncPending(); }} onReview={(sku, beforeSku, form) => { setConflict(false); setConflictLatest(null); setAttemptKey(""); setConfirmation({ briefKind: "config", name: `${beforeSku ? "编辑" : "新增"}商品 · ${sku.name}`, op: "sku-save", sku, beforeSku, form, gates, isNew: !beforeSku }); }} />
+    {mc && <OperationConfirmModal action={mc.name} title={mc.title ?? mc.name.split(" · ")[0]} briefKind={mc.briefKind} detail={mc.detail ?? "核对完整变更，批准后生效。"} edit={mc.edit} businessForm={mc.businessForm?.kind === "multi-field" ? { ...mc.businessForm, onFieldChange: (key, next) => { const value = mc.businessForm?.kind === "multi-field" && mc.businessForm.onFieldChange ? mc.businessForm.onFieldChange(key, next) : next; setBusinessValues(value); return value; } } : mc.businessForm}
       amplifies={!!mc.amplify} reasonMin={8} reasonMax={200} completionCopy={mc.detail ?? APPROVAL} confirmLabel="提交审批" confirmTone={["sku-delete", "phase-archive", "generation-gate-archive"].includes(mc.op) ? "danger" : "primary"}
       effect={<StatusTag tone="progress" filled explain={APPROVAL}>批准后生效</StatusTag>}
       statedBrief={{ impact: mc.detail ?? "商品变更经另一位有权限的管理员批准后执行。", check: "核对对象、完整前后值及操作理由。" }}
-      facts={mc.sku ? <Facts><Fact k="售价" lead unit="USD">{e1Number(mc.sku.price)}</Fact><Fact k="商品">{mc.sku.name}</Fact><Fact k="任务等级">{mc.sku.allowedPoolCodes?.join("、") || "未配置"}</Fact><Fact k="月收益目标">{mc.sku.monthlyTargetUsdt == null ? "未设月收益目标" : `${e1Number(mc.sku.monthlyTargetUsdt)} USDT/月 · ±${e1Number(mc.sku.monthlyTargetBandPct)}%`}</Fact><Fact k="托管机房">{mc.sku.datacenter || "— · 未填写"}</Fact>{mc.op === "sku-status" && <><Fact k="状态"><Change from={e1Value(mc.sku.status)} to={e1Value(mc.status)} /></Fact><Fact k="库存">{mc.sku.inventoryMode === "UNLIMITED" ? "不限（非实物）" : e1Number(mc.sku.stock)}</Fact></>}{mc.op === "sku-delete" && <Fact k="当前状态">{e1Value(mc.sku.status)}</Fact>}</Facts> : mc.facts}
+      facts={mc.sku ? <Facts><Fact k="售价" lead unit="USD">{e1Decimal(mc.sku.price)}</Fact><Fact k="商品">{mc.sku.name}</Fact><Fact k="任务等级">{mc.sku.allowedPoolCodes?.join("、") || "未配置"}</Fact><Fact k="月收益目标">{mc.sku.monthlyTargetUsdt == null ? "未设月收益目标" : `${e1Decimal(mc.sku.monthlyTargetUsdt, e1TargetPrecision(mc.sku))} USDT/月 · ±${e1Number(mc.sku.monthlyTargetBandPct)} %`}</Fact><Fact k="托管机房">{mc.sku.datacenter || "— · 未填写"}</Fact>{mc.op === "sku-status" && <><Fact k="状态"><Change from={e1Value(mc.sku.status)} to={e1Value(mc.status)} /></Fact><Fact k="库存">{mc.sku.inventoryMode === "UNLIMITED" ? "不限（非实物）" : e1Number(mc.sku.stock)}</Fact></>}{mc.op === "sku-delete" && <Fact k="当前状态">{e1Value(mc.sku.status)}</Fact>}</Facts> : mc.facts}
       content={skuDiff ? !mc.beforeSku || skuDiff.filter(row => row.before !== row.after).length > 4
         ? <Fold inset title="完整商品变更" summary="展开核对所有字段的前后值"><DiffList rows={skuDiff} /></Fold>
-        : <DiffList rows={skuDiff} /> : mc.content}
-      blockedReason={currentPending ? "此对象结果未确认，请关闭本框后按页面上方原操作核对" : conflict ? <>
+        : <DiffList rows={skuDiff} /> : <>{mc.businessForm?.kind === "multi-field" && ["bundle-discount", "early-access", "generation-gate-save", "phase-save"].includes(mc.op) && <Facts>{mc.businessForm.fields.map(f => <Fact key={f.key} k={f.label}><Change from={f.optionLabels?.[f.current ?? ""] ?? (f.current || "未设置")} to={(f.optionLabels?.[businessValues[f.key] ?? f.current ?? ""] ?? (businessValues[f.key] ?? f.current)) || "未填写"} /></Fact>)}</Facts>}{mc.content}</>}
+      blockedReason={currentPending && currentPending.commandKey !== busy ? "提交结果未确认，原操作已保留，请在本页按原操作重试或读回核对" : conflict ? <>
         <ConflictBar message="商品或配置版本已变化，本地输入保留；读取最新后请重新核对。" onRead={async () => { const snapshot = await refresh(); if (!snapshot) throw new Error("目录暂时读不到"); setConflictLatest(snapshot); }} />
         {conflictLatest && <Notice tone="warn" title="请核对最新值，再决定是否沿用本地输入">
           {mc.op === "bundle-discount" ? <DiffList rows={[{ key: "two", label: "2件折扣", before: `${mc.discount?.twoItemsPct}%`, after: `${conflictLatest.bundleDiscount.twoItemsPct}%` }, { key: "three", label: "3件折扣", before: `${mc.discount?.threeItemsPct}%`, after: `${conflictLatest.bundleDiscount.threeItemsPct}%` }, { key: "four", label: "4+件折扣", before: `${mc.discount?.fourPlusItemsPct}%`, after: `${conflictLatest.bundleDiscount.fourPlusItemsPct}%` }]} /> : mc.sku && conflictLatest.skus.find(s => s.id === mc.sku!.id) ? <DiffList rows={e1SkuDiff(mc.beforeSku ?? mc.sku, conflictLatest.skus.find(s => s.id === mc.sku!.id)!)} /> : <p>原对象未读取到，请保留草稿并核查。</p>}
@@ -275,6 +304,7 @@ export function E1Page() {
         </Notice>}
       </> : !writesReady ? "当前不能提交，请先核对权限和读取状态" : undefined}
       onClose={() => setConfirmation(null)} onConfirm={confirm} />}
+    {receiptDetail && <Drawer open title="商品变更待审批" sub={receiptDetail.obj} onClose={() => setReceiptDetail(null)} footer={<><Button onClick={() => setReceiptDetail(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">待审批</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptDetail.after}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts><p>{APPROVAL}</p></Drawer>}
     {release && <ReleaseModal label={`${release.spec.obj} · ${release.spec.action}`} onCancel={() => setRelease(null)} onConfirm={() => { forgetE1(release); syncPending(); setRelease(null); }} />}
     {toastNode}
   </RdPage>;
