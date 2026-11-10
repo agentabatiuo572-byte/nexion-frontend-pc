@@ -154,7 +154,8 @@ function approvalCoverageCopy(w: A2OperationRow) {
 }
 
 function approvalExecutorLabel(w: A2OperationRow) {
-  if (w.action === "调整设备型号") return "另一位有批准权限和商品修改权限的管理员";
+  if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位有批准权限和商品修改权限的管理员";
+  if (w.action === "发布规则任务") return "另一位有批准权限和任务池修改权限的管理员";
   return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
     ? "另一位具有审批和大使批准权限、且未参与本版材料核验的管理员"
     : w.roleGate === "超管" ? "超级管理员" : w.roleGate;
