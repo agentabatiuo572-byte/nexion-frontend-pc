@@ -65,6 +65,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const [touched, setTouched] = useState({ count: false, reason: false });
   const [saving, setSaving] = useState(false);
   const [dialogError, setDialogError] = useState("");
+  const [dialogErrorCode, setDialogErrorCode] = useState("");
   const [pendingNote, setPendingNote] = useState("");
   const [receipt, setReceipt] = useState("");
   const [impact, setImpact] = useState<DisableImpact | null>(null);
@@ -166,13 +167,13 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     if (!pool || writeBlock) return;
     const target: PoolDialog = { kind, enabled, pool, key: crypto.randomUUID(), tasks: kind === "status" ? selectedRows.filter(row => row.enabled !== enabled) : [] };
     setCount("10"); setClasses([]); setReason(""); setTouched({ count: false, reason: false });
-    setDialogError(""); setImpact(null); setImpactAt(null); setImpactError(""); setReleasing(false); setDialog(target);
+    setDialogError(""); setDialogErrorCode(""); setImpact(null); setImpactAt(null); setImpactError(""); setReleasing(false); setDialog(target);
     if (kind === "status" && !enabled) void readImpact(target);
   }
   function viewOriginal(record: E2Pending) {
     setDialog({ kind: record.request.kind, enabled: record.request.kind === "status" ? record.request.body.enabled : true,
       pool: record.pool, key: record.commandKey, tasks: record.tasks, original: record });
-    setImpact(record.impact); setImpactAt(record.impactAt); setImpactError(""); setDialogError(""); setReleasing(false);
+    setImpact(record.impact); setImpactAt(record.impactAt); setImpactError(""); setDialogError(""); setDialogErrorCode(""); setReleasing(false);
   }
   function close() { if (!busy.current) { impactSequence.current++; setDialog(null); setReleasing(false); } }
   function retryBlock(record: E2Pending) {
@@ -210,6 +211,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         if (retry && explicit) setRejected(old => [...old.filter(key => key !== record.commandKey), record.commandKey]);
         else setRejected(old => old.filter(key => key !== record.commandKey));
       }
+      setDialogErrorCode(error instanceof TaskPoolApiError ? error.reasonCode : "");
       if (isPermissionDenied(error) || error instanceof TaskPoolApiError && [401, 403].includes(error.status ?? error.httpStatus ?? 0)) { announcePermissionDenied(); setDialog(null); }
     } finally { busy.current = false; setSaving(false); }
   }
@@ -230,7 +232,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     syncPending(); await send(record, false);
   }
 
-  if (!ctx.canReadE2 || denied) return <BlockState state="denied" title="无权限访问" detail="这个账号没有任务池读取权限，请从侧栏返回有权查看的页面。" />;
+  if (!ctx.canReadE2 || denied) return <><BlockState state="denied" title="无权限访问" detail="这个账号没有任务池读取权限，请从侧栏返回有权查看的页面。" /><Button onClick={() => window.history.back()}>返回</Button></>;
   return <>
     <PageHeader pageId="E2" title={<>任务池<Explain label="任务池的说明" content="补充商城任务，查看等级和停用影响。" /></>}
       meta={readAt ? `${businessClock(readAt)} 读取 · ${businessZoneText()}` : "正在读取…"}
@@ -339,7 +341,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           {dialogError && <Notice tone={dialog.original ? "warn" : "danger"}>{dialogError}</Notice>}
           {dialog.original && rejected.includes(dialog.original.commandKey) && !isRetryExpired(dialog.original) && <Button disabled={saving} onClick={() => setReleasing(true)}>解除待确认</Button>}
           <Fold title="执行摘要" summary="立即生效，不经审批"><p>{TASK_RULES}</p></Fold>
-          <Fold title="技术信息" summary="任务池与命令号"><Facts><Fact k="任务池">{dialog.pool.code}</Fact><Fact k="命令号">{dialog.key}<Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(dialog.key).then(() => ctx.toast("命令号已复制"), () => setDialogError("复制失败，请选择完整命令号复制。")); }}>复制命令号</Button></Fact></Facts><p>{GENERATION}</p></Fold>
+          <Fold title="技术信息" summary="任务池与命令号"><Facts><Fact k="任务池">{dialog.pool.code}</Fact><Fact k="命令号">{dialog.key}<Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(dialog.key).then(() => ctx.toast("命令号已复制"), () => setDialogError("复制失败，请选择完整命令号复制。")); }}>复制命令号</Button></Fact>{dialogErrorCode && <Fact k="原错误码">{dialogErrorCode}</Fact>}</Facts><p>{GENERATION}</p></Fold>
         </div>}
     </Modal>}
   </>;

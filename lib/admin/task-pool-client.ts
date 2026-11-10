@@ -105,18 +105,22 @@ async function request(path: string, method = "GET", body?: object): Promise<unk
   let result: unknown;
   try { result = await response.json(); }
   catch { throw new TaskPoolApiError("任务池响应暂时读不到，请保留原操作核对。", undefined, response.status); }
-  const envelope = record(result);
+  let envelope: Record<string, unknown>;
+  try { envelope = record(result); }
+  catch { throw new TaskPoolApiError("任务池响应格式不完整，请保留原操作核对。", undefined, response.status); }
   if (!response.ok || envelope.code !== 0) {
     const code = typeof envelope.message === "string" ? envelope.message : "";
     const businessStatus = typeof envelope.code === "number" && envelope.code >= 400 ? envelope.code : undefined;
     const status = response.status >= 500 ? response.status : businessStatus && businessStatus >= 500 ? businessStatus : !response.ok ? response.status : businessStatus;
     let message = POOL_ERRORS[code] ?? formatAdminApiError(code, "任务池操作结果暂时无法确认，请保留原操作核对。");
     if (code === "TASK_POOL_ENABLED_LIMIT" || code === "TASK_POOL_TOTAL_LIMIT") {
-      const data = record(envelope.data);
-      const limit = integer(data.limit); const requested = integer(data.requested);
-      const currentValue = code === "TASK_POOL_ENABLED_LIMIT" ? data.enabled : data.total;
-      const current = currentValue == null ? null : integer(currentValue);
-      message = `${code === "TASK_POOL_ENABLED_LIMIT" ? "启用任务" : "任务总数"}上限为 ${limit} 个${current == null ? "" : `，当前 ${current} 个`}，本次 ${requested} 个。${code === "TASK_POOL_ENABLED_LIMIT" ? "请减少数量或先停用部分任务。" : "请减少数量；总量已满时请联系任务池负责人。"}`;
+      try {
+        const data = record(envelope.data);
+        const limit = integer(data.limit); const requested = integer(data.requested);
+        const currentValue = code === "TASK_POOL_ENABLED_LIMIT" ? data.enabled : data.total;
+        const current = currentValue == null ? null : integer(currentValue);
+        message = `${code === "TASK_POOL_ENABLED_LIMIT" ? "启用任务" : "任务总数"}上限为 ${limit} 个${current == null ? "" : `，当前 ${current} 个`}，本次 ${requested} 个。${code === "TASK_POOL_ENABLED_LIMIT" ? "请减少数量或先停用部分任务。" : "请减少数量；总量已满时请联系任务池负责人。"}`;
+      } catch { throw new TaskPoolApiError("任务池错误响应不完整，请保留原操作核对。", status, response.status, code, envelope.data); }
     }
     const unknown = !status || status < 400 || status >= 500 || [401, 403, 408, 425, 429].includes(status)
       || !code || code.startsWith("IDEMPOTENCY_") || code === "TASK_POOL_IDEMPOTENCY_CONFLICT";
