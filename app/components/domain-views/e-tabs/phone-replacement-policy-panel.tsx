@@ -229,7 +229,7 @@ function PolicyEditor({ owner, operator, rights }: {
       proposals.remember(pending.fingerprint,pending.commandKey,{owner,input:pending.input,ticketId:id,terminal});syncPending();
       setMessage(terminal?"原提案已结束，请读回当前策略核对。":"提案仍待审批，尚未发布。");
     }
-    return <Panel title="手机绑定与换机策略" icon={ArrowRightLeft} tone="role-3" sub={policy?`当前策略版本 ${policy.policyVersion??"未取得"} · 整组审批`:undefined} data-proof="e6-phone-binding" explain="四项规则一起审批、同时生效。只约束后续换机；首次绑定、同绑定恢复及已运行手机不受追溯影响。" actions={<><Button size="sm" disabled={loading||busy||!!confirm} onClick={()=>!unchanged&&editor?setDiscard(true):void refresh(true)}>重新读取当前策略</Button>{canWrite&&<Button size="sm" disabledReason={pending?"原提案待核查":!policy?.policyVersion?"未取得有效策略版本":undefined} onClick={()=>setEditor(true)}>修改换机规则</Button>}</>}>
+    return <Panel title="手机绑定与换机策略" icon={ArrowRightLeft} tone="role-3" sub={policy?`当前策略版本 ${policy.policyVersion??"未取得"} · 整组审批`:undefined} data-proof="e6-phone-binding" explain="四项规则一起审批、同时生效。只约束后续换机；首次绑定、同绑定恢复及已运行手机不受追溯影响。" actions={<><Button size="sm" disabled={loading||busy||!!confirm} onClick={()=>policy&&!unchanged?setDiscard(true):void refresh(true)}>重新读取当前策略</Button>{canWrite&&<Button size="sm" disabledReason={pending?"原提案待核查":!policy?.policyVersion?"未取得有效策略版本":undefined} onClick={()=>setEditor(true)}>修改换机规则</Button>}</>}>
       {error&&<Notice tone="warn">{error}</Notice>}{message&&!denied&&<Notice tone="neutral">{message}</Notice>}
       {denied?<BlockState state="denied" title="当前没有查看原结果的权限，内容已隐藏"/>:<>
         {loading?<BlockState state="loading" title="正在读取手机策略…"/>:!policy?<BlockState state="error" title="策略读取失败，暂不可提交" onRetry={()=>void refresh(true)}/>:<>

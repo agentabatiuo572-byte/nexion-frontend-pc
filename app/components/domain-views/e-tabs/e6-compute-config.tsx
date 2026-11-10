@@ -34,7 +34,7 @@ function E6Content({ctx}:{ctx:EViewCtx}) {
     const apply=()=>{const u=new URL(window.location.href),wanted=u.hash==="#phone-calibration"?"calibration":u.searchParams.get("tab"),known=TABS.some(t=>t.value===wanted),allowed=visible.some(t=>t.value===wanted);setDenied(known&&!allowed);const next=(allowed?wanted:visible[0]?.value) as E6Section;if(next){setTab(next);u.searchParams.set("tab",next);window.history.replaceState(window.history.state,"",`${u.pathname}${u.search}${u.hash}`);}};
     apply();window.addEventListener("popstate",apply);return()=>window.removeEventListener("popstate",apply);
   },[ctx.canReadE2,ctx.canReadE5,ctx.canReadE6]);
-  const change=(next:E6Section)=>{setTab(next);setDenied(false);const u=new URL(window.location.href);u.searchParams.set("tab",next);window.history.replaceState(window.history.state,"",`${u.pathname}${u.search}${u.hash}`);};
+  const change=(next:E6Section)=>{setTab(next);setDenied(false);const u=new URL(window.location.href);u.searchParams.set("tab",next);if(u.hash==="#phone-calibration")u.hash="";window.history.replaceState(window.history.state,"",`${u.pathname}${u.search}${u.hash}`);};
   return <div className="e6-page">
     <PageHeader pageId="E6" title="手机算力配置" summary="管理手机任务、收益、设备与校准规则。"/>
     {!visible.length?<BlockState state="denied" title="你无权查看这个页面" detail={<Link href="/">返回首页</Link>}/>:<>

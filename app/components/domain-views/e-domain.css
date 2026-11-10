@@ -560,3 +560,5 @@
 .e6-page .rd-table .rd-cell[data-full] :is(.rd-cell-main,.rd-cell-sub) { white-space: normal; overflow-wrap: anywhere; }
 .e6-page :is(.e6-tasks-table,.e6-phones-table) tbody td:first-child { min-width: 180px; }
 .e6-page .e6-phones-table .e6-phone-user { min-width: 112px; width: 22%; }
+
+.e6-page .e6-tier-long .rd-stepbar-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); }
