@@ -10,10 +10,13 @@
  *
  * 一个值对着一段区间（E5 已到账对预估区间）。看它能判断：到账落在预估区间的前面、里面还是后面。
  * <ScaleBar label="本月收益" valueText="已到账 312.40 USDT，预估 405.00 到 495.00 USDT" max={495} value={312.4} fill range={{ low: 405, high: 495 }} tone="role-2" />
- *   max 由页面取，要包住区间和值：到账超过区间上限就传 max={到账}，组件不截顶。表格一格里传 compact：64 宽，不写刻度字。
+ *   max 由页面取，要包住区间和值：到账超过区间上限就传 max={到账}，组件不截顶。
+ *   四种情况一眼能分开：到账是 0，点是空心的；还没到区间，区间带是浅的；进了区间，带里走过的那一段是实色；超过上限，整段带是实色、点在带的右边。
+ *   表格一格里传 compact：120 宽，点和带和大尺一样大，不写刻度字。
  *
  * 一个目标和它的波动范围（E1 月收益目标）。看它能判断：允许的波动有多宽。
- * <ScaleBar label="月收益目标" valueText="目标 450.00 USDT/月，范围 405.00 到 495.00" max={495} target={450} range={{ low: 405, high: 495 }} tone="role-4" />
+ * <ScaleBar label="月收益目标" valueText="目标 450.00 USDT/月，范围 405.00 到 495.00" max={495} target={450} range={{ low: 405, high: 495 }} tone="neutral" />
+ *   配置出来的边界用中性色：它是一把尺，不是一笔数据，也不和同一张卡里的等级金、库存青抢颜色。
  *
  * 几个分界把轴分成几段，最后一段没有上限（E6 档位分界）。看它能判断：分界在哪里，两个版本改了哪几档的界。
  * <ScaleBar label="档位分界" valueText="T1 低于 1.2；T2 1.2 到 2.5；T3 2.5 到 4.8；T4 4.8 到 8；T5 8 及以上" max={8}
@@ -98,7 +101,7 @@ export function ScaleBar({ label, valueText, min = 0, max, value, fill, range, t
   max: number;
   /** 值点。 */
   value?: number | null;
-  /** 从 min 到值点再画一条细线。 */
+  /** 从 min 到值点再画一条细线：值是从起点累出来的量（已到账）。值等于 min 时线没有长度，点画成空心。 */
   fill?: boolean;
   /** 区间带。low 等于 high 时画一条刻线。 */
   range?: { low: number; high: number };
@@ -184,6 +187,8 @@ export function ScaleBar({ label, valueText, min = 0, max, value, fill, range, t
 
   /** 宽 size 的刻线放在 n 上：轴两头的刻线整条留在轴里，不探出去半条。 */
   const edge = (n: number, size: number) => `calc(${at(n) * 100}% - ${at(n) * size}px)`;
+  /** 带细线的值走进区间以后，区间里已经走过的那一段：到值为止，值超过上限就是整段。 */
+  const covered = fill && range && value != null && range.high > range.low && value > range.low ? Math.min(value, range.high) : null;
   const labels = width === null || compact || !ticks ? [] : layoutLabels([...ticks].sort((a, b) => a.value - b.value).map((tick) => ({ x: width * at(tick.value), lead: (width - 1) * at(tick.value), text: tick.text })), width);
   return (
     <span className="rd-scale" data-fill={tone} data-size={size} title={sentence} {...a11y}>
@@ -193,9 +198,10 @@ export function ScaleBar({ label, valueText, min = 0, max, value, fill, range, t
         {range && (range.high > range.low
           ? <i className="rd-scale-band" style={{ left: pct(range.low), width: `${(at(range.high) - at(range.low)) * 100}%` }} />
           : <i className="rd-scale-target" style={{ left: edge(range.low, 2) }} />)}
+        {covered !== null && <i className="rd-scale-cover" data-full={covered >= range!.high ? "" : undefined} style={{ left: pct(range!.low), width: `${(at(covered) - at(range!.low)) * 100}%` }} />}
         {fill && value != null && value > min && <i className="rd-scale-fill" style={{ width: pct(value) }} />}
         {target !== undefined && <i className="rd-scale-target" style={{ left: edge(target, 2) }} />}
-        {value != null && <i className="rd-scale-dot" style={{ left: pct(value) }} />}
+        {value != null && <i className="rd-scale-dot" data-zero={fill && value === min ? "" : undefined} style={{ left: pct(value) }} />}
       </span>
       {labels.length > 0 && <TickLabels labels={labels} />}
     </span>

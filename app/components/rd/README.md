@@ -122,7 +122,7 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 
 `RatioBar`：`value` 是分子、`total` 是分母。0 不画主段，没有最小宽度；等于 `total` 时整条上色。0/0 没有比例可画，页面传 `state="empty"`。`steps` 画成 `total` 个点、`value` 个实点，给名额这类个数用；7/6 这种超额不画成六个实点，写 `invalidText`，真实的数由页面写在旁边。任务时长、当前任务的时间位置这类「占上限多少」也用它，表格里传 `compact`。
 
-`ScaleBar`：一条线性的轴，四种画法可以组合。`value` 是值点，`fill` 再从起点画一条细线到值点；`range` 是区间带，两头相等时画一条刻线；`target` 是目标刻线；`ticks` 是轴下面写字的刻度；`bands` 把轴按分界切成几段，段按等级色阶上色，`openEnd` 时最后一段是固定宽的箭头尾段。两条轴要对着比时传同一个 `max`。刻度字挨得太近时往两边让、中间的换到第二行，再放不下就不写，完整的数在 `valueText` 里。表格里传 `compact`，不写刻度字。只读，不能拖。
+`ScaleBar`：一条线性的轴，四种画法可以组合。`value` 是值点，`fill` 再从起点画一条细线到值点（值是 0 时点是空心的；值走进区间后，带里走过的那一段是实色，超过上限整段实色）；`range` 是区间带，两头相等时画一条刻线；`target` 是目标刻线；`ticks` 是轴下面写字的刻度；`bands` 把轴按分界切成几段，段按等级色阶上色，`openEnd` 时最后一段是固定宽的箭头尾段。两条轴要对着比时传同一个 `max`。刻度字挨得太近时往两边让、中间的换到第二行，再放不下就不写，完整的数在 `valueText` 里。表格里传 `compact`：120 宽，不写刻度字。配置出来的边界（月收益目标和波动）传 `tone="neutral"`，实际发生的数（已到账）才用角色色。只读，不能拖。
 
 `StatusDistributionBar`：画在 `SegmentBar` 上。每类给 `label`、`value`、带单位的 `text`、`tone`，能点的类再给 `onSelect`。段和图例是同一个动作：Tab 只停在图例按钮上，段是鼠标的捷径。`selectedKey` 那一类图例是选中底加勾，条上那一段加高。0 的类不画段、留在图例里；只有一类不是 0 时写「全部为…」；全是 0 时写 `emptyText`。各类的数和总数对不对得上由页面核对。同一条里别同时用 `neutral` 和 `done`：浅色主题下两个都是深灰，分不开。
 

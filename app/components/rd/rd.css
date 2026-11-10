@@ -1143,15 +1143,19 @@ td .rd-flow { margin-bottom: 0; }
 .rd-scale-plot > i { position: absolute; }
 .rd-scale-axis { left: 0; right: 0; top: 5px; height: 2px; border-radius: 1px; background: var(--rd-chart-axis); }
 .rd-scale-tickmark { top: 7px; bottom: 0; width: 1px; background: var(--rd-chart-axis); }
-.rd-scale-band { top: 2px; box-sizing: border-box; height: 8px; min-width: 4px; border-inline: 2px solid var(--fill); border-radius: 2px; background: color-mix(in srgb, var(--fill) 30%, transparent); }
+.rd-scale-band { top: 2px; box-sizing: border-box; height: 8px; min-width: 4px; border-inline: 2px solid var(--fill); border-radius: 2px; background: color-mix(in srgb, var(--fill) 45%, transparent); }
+.rd-scale-cover { top: 2px; height: 8px; border-radius: 2px 0 0 2px; background: var(--fill); }  /* 值走进区间后，带里已经走过的那一段是实色 */
+.rd-scale-cover[data-full] { border-radius: 2px; }
 .rd-scale-fill { left: 0; top: 5px; height: 2px; border-radius: 1px; background: var(--fill); }
 .rd-scale-target { top: 0; bottom: 0; width: 2px; border-radius: 1px; background: var(--fill); }
 .rd-scale-dot { top: 1px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--fill); box-shadow: 0 0 0 2px var(--rd-gfx-surface, var(--rd-panel)); }
-.rd-scale[data-size="compact"] { display: inline-block; width: 64px; margin-inline: 4px; vertical-align: middle; }
-.rd-scale[data-size="compact"] > .rd-scale-plot { height: 8px; }
-.rd-scale[data-size="compact"] :is(.rd-scale-axis, .rd-scale-fill) { top: 3px; }
-.rd-scale[data-size="compact"] .rd-scale-band { top: 1px; height: 6px; }
-.rd-scale[data-size="compact"] .rd-scale-dot { top: 0; width: 8px; height: 8px; margin-left: -4px; box-shadow: 0 0 0 1.5px var(--rd-gfx-surface, var(--rd-panel)); }
+/* 带细线（fill）的值是 0 时线没有长度：点画成空心，一眼看出还没有数。 */
+.rd-scale-dot[data-zero] { background: var(--rd-gfx-surface, var(--rd-panel)); box-shadow: inset 0 0 0 2px var(--fill), 0 0 0 2px var(--rd-gfx-surface, var(--rd-panel)); }
+/* 表格一格里：120 宽，点、带、线和大尺一样大，只是不写刻度字；左右各留 5px，值在两头时点不出格。 */
+.rd-scale[data-size="compact"] { display: inline-block; flex: none; width: 120px; margin-inline: 5px; vertical-align: middle; }
+/* 点外面那圈底色跟着表格行的底走：悬停和选中的行不留一圈面板色。 */
+.rd-table tbody tr[data-clickable]:hover > td { --rd-gfx-surface: var(--rd-hover); }
+.rd-table tbody tr[data-selected] > td, .rd-table tbody tr[data-selected]:hover > td { --rd-gfx-surface: var(--rd-selected); }
 /* 刻度字：第一行紧跟刻度，挨得太近的换到第二行，用引线接回刻度。 */
 .rd-scale-ticks { --rd-scale-lead: 2px; position: relative; display: block; height: calc(var(--rd-scale-lead) + var(--rd-scale-rows, 1) * var(--rd-lh-aux)); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
 .rd-scale-ticks > span { position: absolute; top: calc(var(--rd-scale-lead) + var(--rd-scale-row, 0) * var(--rd-lh-aux)); white-space: nowrap; }
@@ -1170,7 +1174,7 @@ td .rd-flow { margin-bottom: 0; }
 .rd-scale[data-bands] > .rd-scale-ticks > i { height: 4px; }
 .rd-scale[data-bands] > .rd-scale-ticks > i[data-row="1"] { height: calc(4px + var(--rd-lh-aux)); }
 .rd-scale-skeleton { width: 100%; max-width: var(--rd-track-w, 360px); height: 8px; margin: 2px 0 22px; border-radius: var(--rd-radius-bar); }
-.rd-scale-skeleton[data-size="compact"] { display: inline-block; width: 64px; height: 6px; margin: 0 4px; vertical-align: middle; }
+.rd-scale-skeleton[data-size="compact"] { display: inline-block; width: 120px; height: 8px; margin: 0 5px; vertical-align: middle; }
 .rd-scale-skeleton[data-bands] { max-width: var(--rd-track-w, 560px); margin: 24px 0 22px; }
 
 /* 状态分布条：条最宽 560，图例紧跟在条下面；能点的类是带边的小按钮，当前选中的选中底加勾。 */
