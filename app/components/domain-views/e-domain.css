@@ -526,7 +526,7 @@
 .e5-table .e5-user-col .rd-cell { max-width: 80px; }
 .e5-table .e5-income-col { min-width: 176px; }
 .e5-table .e5-task-col { min-width: 144px; }
-.e5-table .e5-status-col { right: 56px; min-width: 136px; max-width: 160px; text-align: left; }
+.e5-table :is(th, td).e5-status-col { right: 56px; min-width: 136px; max-width: 160px; text-align: left; }
 .e5-table .e5-action-col { width: 56px; min-width: 56px; max-width: 56px; }
 .e5-table .e5-status-col .rd-th-inner { justify-content: flex-start; }
 .e5-empty-value { white-space: nowrap; }
