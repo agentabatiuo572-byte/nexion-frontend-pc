@@ -524,6 +524,8 @@
 .e1-plan-table :is(th, td):nth-child(4) { width: 12%; }
 .e1-plan-table :is(th, td):nth-child(5) { width: 12%; }
 .e1-plan-table :is(th, td):last-child { width: 10%; }
+.e1-plan-table td:nth-child(2) .e1-table-stack { align-items: flex-end; }
+.e1-plan-table td:nth-child(2) .e1-table-stack > * { white-space: nowrap; }
 .e1-phase-table :is(th, td):first-child { width: 18%; }
 .e1-phase-table :is(th, td):nth-child(2) { width: 30%; }
 .e1-phase-table :is(th, td):nth-child(3) { width: 18%; }
