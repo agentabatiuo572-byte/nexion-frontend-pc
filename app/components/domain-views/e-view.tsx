@@ -1228,7 +1228,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "E4" && <DomainHeader {...meta} right={headerRight} />}
+      {tab !== "E4" && tab !== "E2" && <DomainHeader {...meta} right={headerRight} />}
 
       {tab === "E1" && monthlyPending.map((record) => <div className="dtint warn" role="status" key={record.commandKey}>
         <strong>{record.spec.obj} · 月收益修改结果未确认</strong>
@@ -1845,5 +1845,5 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  return tab === "E4" ? <RdPage>{page}</RdPage> : <div className="dkpage edom">{page}</div>;
+  return tab === "E4" || tab === "E2" ? <RdPage>{page}</RdPage> : <div className="dkpage edom">{page}</div>;
 }
