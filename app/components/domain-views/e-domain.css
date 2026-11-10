@@ -566,7 +566,7 @@
 .e6-original, .e6-original-group { border-radius: var(--rd-radius-control); }
 .e6-original:focus-visible, .e6-original-group:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
 .e6-original [data-zero] { color: var(--rd-text-3); }
-.e6-original-tip { max-width: min(640px, calc(100vw - 24px)); }
+.e6-original-tip { max-width: min(640px, calc(100vw - 24px)); overflow-wrap: anywhere; }
 .e6-original-tiers { margin-top: 8px; border-collapse: collapse; font: inherit; font-variant-numeric: tabular-nums; }
 .e6-original-tiers :is(th,td) { padding: 4px 0 4px 16px; white-space: nowrap; text-align: right; }
 .e6-original-tiers :is(th,td):first-child { padding-left: 0; text-align: left; }
