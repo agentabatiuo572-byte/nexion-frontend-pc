@@ -46,7 +46,7 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
         {columns.isVisible("daily")&&<Td align="right" data-num="">{d.dailyUsdt==null?"—":<><E6Amount raw={d.dailyUsdtText??String(d.dailyUsdt)} precision={precision} currency="USDT"/> USDT</>}</Td>}
         {columns.isVisible("battery")&&<Td align="right" data-num="">{d.batteryLevel==null?"—":`${d.batteryLevel}%`}</Td>}
         {columns.isVisible("task")&&<Td data-mono="" className="e6-phone-task">{d.activeTaskNo!=="—"?<E6OriginalValues original={d.activeTaskNo}><span className="e6-middle-text"><span>{d.activeTaskNo.slice(0,-8)}</span><span>{d.activeTaskNo.slice(-8)}</span></span></E6OriginalValues>:"—"}</Td>}
-        {canAct&&<Td sticky="end">{items(d).length?<MoreMenu label={`操作 ${d.serial}`} items={items(d)}/>:<span className="e6-no-action">{d.state==="pending-deactivate"?"等待本单结算后停用":"当前状态无可用操作"}</span>}</Td>}
+        {canAct&&<Td sticky="end">{items(d).length?<MoreMenu label={`操作 ${d.serial}`} items={items(d)}/>:<span className="e6-no-action">{d.state==="pending-deactivate"?"本单结算后停用":"当前状态无可用操作"}</span>}</Td>}
       </Tr>)}</tbody></Table>
       {!ctx.e5DeviceError&&ctx.e5Total>0&&<Pager label="用户手机" total={ctx.e5Total} page={ctx.e5Page} pageSize={ctx.e5PageSize} sizes={[10,20,50]} loading={ctx.e5Loading} onPage={p=>{ctx.setE5Page(p);query({phonePage:p});}} onPageSize={s=>{ctx.setE5PageSize(s);query({phonePage:1,phonePageSize:s});}}/>}
     </Panel>
