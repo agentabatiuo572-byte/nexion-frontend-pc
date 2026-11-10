@@ -118,7 +118,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       generationGate: { forceUnlock: true },
       amplify: true,
       facts: <Facts><Fact k="商品">{g.name}</Fact><Fact k="已到达阶段">{phaseLabel(g.phase)}</Fact><Fact k="设备资格">已补齐</Fact><Fact k="当前运营月">第 {platformMonth} 个月</Fact><Fact k="有效开放月">第 {state.effectiveMonth} 个月</Fact><Fact k="仍差运营月数">{Math.max(0, state.effectiveMonth - platformMonth)} 个月</Fact></Facts>,
-      detail: `强制提前开放：只跳过运营月数限制。已到达 ${phaseLabel(g.phase)} 阶段，设备资格已补齐。`,
+      detail: `只跳过运营月数；阶段和设备资格仍须满足。`,
     });
   };
   const genForceLock = (g: E1GenerationRelease) =>
@@ -129,7 +129,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       generationGate: { forceUnlock: false },
       amplify: false,
       facts: <Facts><Fact k="商品">{g.name}</Fact><Fact k="强制状态">已强制提前开放 → 撤销强制</Fact><Fact k="当前运营月">第 {platformMonth} 个月</Fact><Fact k="有效开放月">第 {g.releaseMonth + (g.phaseOffset ?? 0)} 个月</Fact></Facts>,
-      detail: `撤销后重新按运营月数判断是否开放。如果阶段、设备资格和月数本来就满足，商品仍保持开放。`,
+      detail: `阶段、资格、月数满足时，撤销强制仍保持开放。`,
     });
   const openPhaseEditor = (ph?: E1Phase) => {
     const nextSort = phases.reduce((max, item) => Math.max(max, item.sortOrder ?? 0), 0) + 10;
@@ -184,7 +184,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
         { key: "enabled", paramKey: "E.release.earlyAccess.enabled" },
         { key: "leadDays", paramKey: "E.release.earlyAccess.leadDays" },
       ],
-      detail: "开启后，有旧设备可换新的用户能在新机正式上架前 N 天提前换购；关闭后，换购也要等正式上架。",
+      detail: "开启后可提前换购；关闭后等待正式上架。",
     });
 
   const openGateEditor = (g?: E1GenerationRelease) => {
