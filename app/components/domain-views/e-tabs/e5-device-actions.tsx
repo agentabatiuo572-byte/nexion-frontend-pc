@@ -122,7 +122,7 @@ export function E5CommandScope({ children, refresh, toast }: { children: ReactNo
 }
 
 export function E5Slots({ device: d }: { device: E5Device }) {
-  return <div className="e5-slots" data-full={d.activeDevicesForUser >= d.maxDevicesPerUser ? "" : undefined}><RatioBar label="激活名额（含手机）" value={d.activeDevicesForUser} tone={d.activeDevicesForUser >= d.maxDevicesPerUser ? "warn" : "role-2"} total={d.maxDevicesPerUser} valueText={`${d.activeDevicesForUser}/${d.maxDevicesPerUser}台（含手机）`} steps quiet invalidText="已超过上限，不能激活" />
+  return <div className="e5-slots" data-full={d.activeDevicesForUser >= d.maxDevicesPerUser ? "" : undefined}><RatioBar label="激活名额（含手机）" value={d.activeDevicesForUser} tone={d.activeDevicesForUser >= d.maxDevicesPerUser ? "warn" : "role-2"} total={d.maxDevicesPerUser} valueText={`${d.activeDevicesForUser}/${d.maxDevicesPerUser} 台（含手机）`} steps quiet invalidText="已超过上限，不能激活" />
     <span>{d.activeDevicesForUser}/{d.maxDevicesPerUser} 台（含手机）</span></div>;
 }
 

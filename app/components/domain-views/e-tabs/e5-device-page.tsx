@@ -67,7 +67,7 @@ function CurrentTask({ device, readAt }: { device: E5Device; readAt: number }) {
   const valid = Number.isFinite(start) && Number.isFinite(due) && start < due;
   const text = !valid ? "任务时间不可计算" : readAt >= due ? "已到应完成时间，刷新核对" : readAt < start ? "尚未到开始时间" : `距应完成 ${Math.ceil((due - readAt) / 60000)} 分钟`;
   return <div className="e5-task"><div className="e5-task-head"><TaskClassTag taskClass={task.taskClass as TaskClass} /><Explain label="当前任务时间" content={<>
-    <p>{task.name}</p><p>任务号：{task.taskNo}</p><p>开始：{formatBusinessTimeCompact(task.startedAt)}</p><p>应完成：{formatBusinessTimeCompact(task.dueAt)}</p><p>总时长：{valid ? `${Math.ceil((due - start) / 60000)}分钟` : "无法计算"}</p><p>读取：{formatBusinessTimeCompact(new Date(readAt).toISOString())}</p><p>时间位置按读取时刻估算，不是执行完成率。</p>
+    <p>{task.name}</p><p>任务号：{task.taskNo}</p><p>开始：{formatBusinessTimeCompact(task.startedAt)}</p><p>应完成：{formatBusinessTimeCompact(task.dueAt)}</p><p>总时长：{valid ? `${Math.ceil((due - start) / 60000)} 分钟` : "无法计算"}</p><p>读取：{formatBusinessTimeCompact(new Date(readAt).toISOString())}</p><p>时间位置按读取时刻估算，不是执行完成率。</p>
   </>} /></div><div className="e5-task-time">{valid && readAt >= start && readAt < due && <RatioBar label="读取时刻的时间位置" value={readAt - start} total={due - start} valueText={text} tone="progress" compact quiet />}<span className="e5-sub">{text}</span></div></div>;
 }
 function DeviceStatus({ device: d }: { device: E5Device }) {
@@ -261,7 +261,7 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
         </tbody></Table></div>
         {total > 0 && <Pager label="设备" total={total} page={query.pageNum} pageSize={query.pageSize} sizes={[10, 20, 50]} loading={loading} onPage={pageNum => change({ pageNum })} onPageSize={pageSize => change({ pageSize })} />}
       </Panel>
-      <Fold title="最近 24 小时操作" summary={activityLoading ? "正在加载…" : activityError ? "读取失败" : activity ? `最近${activity.activity.length}条` : "尚未读取"} explain="最多 50条，不等于完整操作总数。" open={activityOpen} onOpenChange={setActivityOpen}>
+      <Fold title="最近 24 小时操作" summary={activityLoading ? "正在加载…" : activityError ? "读取失败" : activity ? `最近 ${activity.activity.length} 条` : "尚未读取"} explain="最多 50 条，不等于完整操作总数。" open={activityOpen} onOpenChange={setActivityOpen}>
         {activityLoading ? <BlockState state="loading" title="正在加载…" /> : activityError ? <BlockState state="error" title="操作记录读取失败" detail={activityError} onRetry={() => setActivityVersion(value => value + 1)} /> : activity && !activity.activity.length ? <BlockState state="empty" title="暂无设备操作" /> : activity && <><RecordList label="设备操作" records={activity.activity.map((entry, index) => ({ id: `${entry.aggregateId}:${index}`, value: EVENTS[entry.eventType] ?? "设备操作", object: `${entry.aggregateType === "E5_DEVICE_BATCH" ? "用户设备批量" : "设备"} ${entry.aggregateId}`, at: entry.occurredAt }))} /><Fold inset title="技术信息" summary="原事件类型"><RecordList records={activity.activity.map((entry, index) => ({ id: String(index), value: entry.eventType, reference: entry.aggregateId }))} /></Fold></>}
       </Fold>
       {selected && <Drawer open title="设备详情" sub={selected.serial} onClose={() => select(null)} nav={{ hasPrev: index > 0, hasNext: index < rows.length - 1, onPrev: () => select(rows[index - 1].deviceId), onNext: () => select(rows[index + 1].deviceId) }} footer={<E5DeviceActions device={selected} ctx={ctx} inline />}>
