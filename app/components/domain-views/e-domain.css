@@ -538,6 +538,7 @@
 .e5-serial { display: flex; max-width: 100%; }
 .e5-serial-prefix { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e5-serial-suffix { flex: none; }
+.e5-serial-tip { overflow-wrap: anywhere; }
 .e5-serial:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
 .e5-table .e5-status-col { right: 60px; text-align: left; }
 .e5-table .e5-status-col .rd-th-inner { justify-content: flex-start; }
