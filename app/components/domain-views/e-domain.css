@@ -508,6 +508,8 @@
 .edom .device-activity > summary { cursor:pointer; padding:18px 22px; font-weight:600; }
 .edom .phone-sections { display:flex; flex-direction:column; gap:24px; margin-bottom:24px; }
 /* E1 catalogue: page-local composition of rd graphics and form primitives. */
+.e1-page { gap: var(--rd-space-4); }
+.e1-page .rd-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .e1-page .rd-filter-row { align-items: flex-end; }
 .e1-page .rd-toolbar { justify-content: space-between; }
 .e1-product-actions > .rd-iconbtn, .e1-table-actions > .rd-iconbtn { width: var(--rd-control-h-sm); height: var(--rd-control-h-sm); }
