@@ -30,11 +30,11 @@ function Fact({ label, value, mono, copy }: { label: string; value?: ReactNode; 
 const LABELS: Record<E5Intent, string> = { activate: "激活设备", deactivate: "取消激活", pause: "暂停该用户", resume: "恢复该用户", "force-activate": "强制激活", unbind: "解绑设备", legacy: "结束未确认任务（不计收益）" };
 const CONFIRMS: Record<E5Intent, string> = { activate: "确认激活", deactivate: "确认取消激活", pause: "确认暂停该用户", resume: "确认恢复该用户", "force-activate": "提交强制激活审批", unbind: "提交解绑审批", legacy: "提交终结审批" };
 const EFFECTS: Record<E5Intent, string> = {
-  activate: "激活后占用一个设备名额。每人最多6台，包含手机。",
+  activate: "激活后占用一个设备名额。每人最多 6 台，包含手机。",
   deactivate: "有运行中任务时，本单完成并结算后自动停用；停用期间不再接新任务。不退款。",
   pause: "将暂停该用户的全部设备（含手机）。停跑期间不计收益、不补发。",
   resume: "将恢复该用户的设备派单；停跑期间收益不补发。",
-  "force-activate": "强制激活也不能绕过每人6台上限。批准前设备状态不变。",
+  "force-activate": "强制激活也不能绕过每人 6 台上限。批准前设备状态不变。",
   unbind: "设备将不再属于原用户，不退款，购入时间不变。",
   legacy: "仅取消这条未确认旧任务，不产生USDT/UVT收益。原请求、journal和恢复预算保留，不授予重放。",
 };
@@ -96,12 +96,12 @@ export function E5CommandScope({ children, refresh, toast }: { children: ReactNo
     {old.map(row => <Notice key={row.commandKey} tone="warn" title="旧操作缺少原请求，不能原样重试" action={<Button size="sm" disabled={!!busy} onClick={() => void refresh()}>读回核对</Button>}><p>原命令号：<code>{row.commandKey}</code></p><p>请到操作记录与审批核对。原记录保留，不能用当前草稿补成原操作。</p></Notice>)}
     {records.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.label} · 结果待确认`} actionBelow action={<div className="rd-toolbar">
       <Button size="sm" disabled={!!busy} onClick={() => void refresh()}>读回核对</Button>
-      <Button size="sm" loading={busy === record.commandKey} disabledReason={isRetryExpired(record) ? "已超过24小时，只能读回核对" : !allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : undefined} onClick={() => { void execute(record, true).catch(() => { /* The persistent notice displays this failure. */ }); }}>按原操作重试</Button>
+      <Button size="sm" loading={busy === record.commandKey} disabledReason={isRetryExpired(record) ? "已超过 24 小时，只能读回核对" : !allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : undefined} onClick={() => { void execute(record, true).catch(() => { /* The persistent notice displays this failure. */ }); }}>按原操作重试</Button>
       {rejected[record.commandKey] && <Button size="sm" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>解除待确认</Button>}
     </div>}>
       <p>{record.device.serial} · {record.device.user} · {formatBusinessTimeCompact(new Date(record.createdAt).toISOString())}</p>
       <p>当前状态不代表原操作结果。重试会重新发送保存的原请求，后端按原命令号去重。</p>
-      {isRetryExpired(record) && <p>已超过24小时，原操作与对象锁继续保留，请到操作记录与审批核对。</p>}
+      {isRetryExpired(record) && <p>已超过 24 小时，原操作与对象锁继续保留，请到操作记录与审批核对。</p>}
       <Fold inset title="原操作与技术信息" summary="原对象、内容、理由和命令号已保留"><Facts>
         <Fact label="操作理由" value={record.reason} /><Fact label="命令号" value={record.commandKey} mono copy />
         <Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono />
@@ -147,8 +147,8 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
   const options: MoreMenuItem[] = [];
   const add = (intent: E5Intent, label: string, extra?: string) => options.push({ key: intent, label, danger: intent === "unbind" || intent === "pause", disabledReason: locked(intent) ?? extra, onSelect: () => setAction(intent) });
   if (!readOnly) {
-    if (activatable && ctx.canWriteE5 && (phones ? d.state === "inventory" : d.simState === "WAITING_ACTIVATION")) add("activate", "激活", full ? "已达6台激活上限（含手机）" : undefined);
-    if (activatable && ctx.canForceActivateE5) add("force-activate", "强制激活", !platform ? "还需审批发起权限，请联系管理员" : full ? "已达6台激活上限（含手机）" : undefined);
+    if (activatable && ctx.canWriteE5 && (phones ? d.state === "inventory" : d.simState === "WAITING_ACTIVATION")) add("activate", "激活", full ? "已达 6 台激活上限（含手机）" : undefined);
+    if (activatable && ctx.canForceActivateE5) add("force-activate", "强制激活", !platform ? "还需审批发起权限，请联系管理员" : full ? "已达 6 台激活上限（含手机）" : undefined);
     if (deactivatable && ctx.canWriteE5) add("deactivate", "取消激活");
     if (deactivatable && ctx.canUnbindE5) add("unbind", "解绑", !platform ? "还需审批发起权限，请联系管理员" : undefined);
     if (deactivatable && ctx.canWriteE5) add(d.pausedReason ? "resume" : "pause", d.pausedReason ? "恢复该用户" : "暂停该用户");
@@ -189,7 +189,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
       facts={<><Facts><Fact label={action === "pause" || action === "resume" ? "用户" : "设备"} value={action === "pause" || action === "resume" ? d.user : d.deviceName} /><Fact label="实例号" value={d.serial} mono /><Fact label="归属用户" value={d.user} /><Fact label="当前状态" value={d.simState ? E5_STATES[d.simState].label : d.pausedReason ? "已暂停" : ({ active: "在线", busy: "任务中", offline: "离线", inventory: "待激活", "pending-deactivate": "停用中", unbound: "已解绑 / 停用", abnormal: "异常", unknown: "状态未知" }[d.state])} />
         {action === "legacy" && candidate && <><Fact label="原任务 / 代际" value={`${candidate.taskNo} / ${candidate.requestGeneration}`} /><Fact label="案件" value={candidate.caseId} /><Fact label="退出证明" value={candidate.proofSha} mono copy /><Fact label="后端实例" value={candidate.backendInstanceId} /></>}
       </Facts>{(action === "activate" || action === "force-activate") && <><E5Slots device={d} /><Facts><RdFact k="激活名额变化"><Change from={`${d.activeDevicesForUser}/${d.maxDevicesPerUser}`} to={`${d.activeDevicesForUser + 1}/${d.maxDevicesPerUser}`} /></RdFact></Facts></>}<Notice tone={action === "unbind" || action === "legacy" || action === "pause" ? "warn" : "neutral"} title={EFFECTS[action]} /></>}
-      blockedReason={locked(action) ?? ((action === "activate" || action === "force-activate") && full ? "已达6台激活上限（含手机）" : undefined)}
+      blockedReason={locked(action) ?? ((action === "activate" || action === "force-activate") && full ? "已达 6 台激活上限（含手机）" : undefined)}
       detail={proposal ? "提案成功只代表申请已收录；批准前设备状态不变。请到操作记录与审批核对原申请。" : "操作结果以服务端回执为准。"}
       onClose={() => setAction(null)} onConfirm={async reason => {
         if (locked(action)) throw new Error(String(locked(action)));

@@ -60,7 +60,7 @@ export class E5CommandError extends Error {
 export async function sendE5Command(record: E5Command, retry: boolean) {
   const auth = useAdminAuth.getState();
   if (String(auth.session?.adminId ?? "") !== record.actorId || !retry && auth.authEpoch !== record.authEpoch) throw new Error("管理员会话已变化，请重新进入设备页面。");
-  if (isRetryExpired(record)) throw new Error("已超过24小时，只能读回核对，原操作仍保留。");
+  if (isRetryExpired(record)) throw new Error("已超过 24 小时，只能读回核对，原操作仍保留。");
   if (!e5Commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("原操作无法保存，暂不能提交。");
   let data: Record<string, unknown>;
   try {
