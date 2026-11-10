@@ -5,7 +5,7 @@
  * 颜色传槽位 slot（VS-40）：1 金、2 青、3 紫、4 品红、other 灰。系列是页面角色时用同一个槽位（VS-41）。
  *
  * 构成：<SegmentBar label="应付款构成" segments={[{ key, label, value, slot, text }]} />
- *   8px 段条，段间 2px，0 不画。最多前 3 类加「其他」由页面决定（DP-64）。
+ *   8px 段条，段间 2px，0 不画。最多前 3 类加「其他」由页面决定（DP-64）。按状态分的台数、笔数用 StatusDistributionBar（status-distribution.tsx），它在这条上加了可点的图例。
  * 柱状：<ColumnChart label="每天到期" series={[{ label: "到期", slot: 3 }]} format={money}
  *   data={[{ key: date, tick: "11-05", values: [120], detail: "提现 …" }]} />
  *   两个系列成对画，两个系列以上自动带图例。
@@ -71,14 +71,37 @@ export function ChartLegend({ items }: { items: readonly { key: string; label: R
   );
 }
 
-export function SegmentBar({ label, segments }: { label: string; segments: readonly { key: string; label: ReactNode; value: number; slot: ChartSlot; text: string }[] }) {
+/** 段的颜色传 slot（角色的槽位）或 tone（表示好坏的状态色，VS-43）。段带 onSelect 时能点，selectedKey 是当前选中的那段：它们只是鼠标的捷径，键盘和读屏走图例（StatusDistributionBar 的图例按钮）。legend 传 false 不带图例，传节点换掉默认图例。 */
+export function SegmentBar({ label, segments, legend, selectedKey, activeKey, quiet }: {
+  label: string;
+  segments: readonly { key: string; label: ReactNode; value: number; slot?: ChartSlot; tone?: StateTone; text: string; onSelect?: () => void }[];
+  legend?: ReactNode | false;
+  selectedKey?: string | null;
+  /** 图例上指着或聚焦的那一段，条上跟着标出来。 */
+  activeKey?: string | null;
+  /** 图例已经把每一类的数读出来了：条对读屏隐藏，不读两遍。 */
+  quiet?: boolean;
+}) {
   const drawn = segments.filter((segment) => segment.value > 0);
+  const pick = segments.some((segment) => segment.onSelect);
   return (
     <div className="rd-segbar-wrap">
-      <div className="rd-segbar" role="img" aria-label={`${label}：${drawn.map((segment) => segment.text).join("，")}`}>
-        {drawn.map((segment) => <span key={segment.key} data-slot={segment.slot} title={segment.text} style={{ flexGrow: segment.value }} />)}
+      <div className="rd-segbar" data-pick={pick ? "" : undefined} role={quiet ? undefined : "img"} aria-hidden={quiet ? true : undefined} aria-label={quiet ? undefined : `${label}：${drawn.map((segment) => segment.text).join("，")}`}>
+        {drawn.map((segment) => (
+          <span
+            key={segment.key}
+            data-slot={segment.slot}
+            data-tone={segment.tone}
+            data-selected={pick && segment.key === selectedKey ? "" : undefined}
+            data-active={pick && segment.key === activeKey ? "" : undefined}
+            data-clickable={segment.onSelect ? "" : undefined}
+            title={segment.text}
+            style={{ flexGrow: segment.value }}
+            onClick={segment.onSelect}
+          />
+        ))}
       </div>
-      <ChartLegend items={segments.map((segment) => ({ key: segment.key, slot: segment.slot, label: segment.text }))} />
+      {legend === undefined ? <ChartLegend items={segments.map((segment) => ({ key: segment.key, slot: segment.slot, tone: segment.tone, label: segment.text }))} /> : legend}
     </div>
   );
 }

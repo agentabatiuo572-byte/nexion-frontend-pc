@@ -26,6 +26,30 @@
 [data-tone="role-3"] { --tone: var(--rd-role-3); --tone-bg: var(--rd-role-3-bg); --tone-tile: var(--rd-role-3-tile); --tone-tile-ink: var(--rd-role-3-tile-ink); }
 [data-tone="role-4"] { --tone: var(--rd-role-4); --tone-bg: var(--rd-role-4-bg); --tone-tile: var(--rd-role-4-tile); --tone-tile-ink: var(--rd-role-4-tile-ink); }
 [data-tone="role-other"] { --tone: var(--rd-role-other); --tone-bg: var(--rd-role-other-bg); --tone-tile: var(--rd-role-other-tile); --tone-tile-ink: var(--rd-role-other-tile-ink); }
+/* 等级色阶：同一金色相由浅到深，只表示第几级（tone.ts 的 LevelTone）。五档的组件在外层挂 data-levels="5"，换成五档那套取值。 */
+[data-levels="5"] { --rd-level-1: var(--rd-level5-1); --rd-level-2: var(--rd-level5-2); --rd-level-3: var(--rd-level5-3); --rd-level-4: var(--rd-level5-4); }
+[data-tone="level-1"] { --tone: var(--rd-level-1); }
+[data-tone="level-2"] { --tone: var(--rd-level-2); }
+[data-tone="level-3"] { --tone: var(--rd-level-3); }
+[data-tone="level-4"] { --tone: var(--rd-level-4); }
+[data-tone="level-5"] { --tone: var(--rd-level5-5); }
+/* 小图形件的填充色 --fill：状态色原样，角色色取同槽位的图表色（VS-40），等级取等级色阶。图里的字不用它（VS-44）。 */
+[data-fill="ok"] { --fill: var(--rd-ok); }
+[data-fill="warn"] { --fill: var(--rd-warn); }
+[data-fill="danger"] { --fill: var(--rd-danger); }
+[data-fill="progress"] { --fill: var(--rd-progress); }
+[data-fill="done"] { --fill: var(--rd-done); }
+[data-fill="neutral"] { --fill: var(--rd-text-2); }
+[data-fill="role-1"] { --fill: var(--rd-chart-1); }
+[data-fill="role-2"] { --fill: var(--rd-chart-2); }
+[data-fill="role-3"] { --fill: var(--rd-chart-3); }
+[data-fill="role-4"] { --fill: var(--rd-chart-4); }
+[data-fill="role-other"] { --fill: var(--rd-chart-other); }
+[data-fill="level-1"] { --fill: var(--rd-level-1); }
+[data-fill="level-2"] { --fill: var(--rd-level-2); }
+[data-fill="level-3"] { --fill: var(--rd-level-3); }
+[data-fill="level-4"] { --fill: var(--rd-level-4); }
+[data-fill="level-5"] { --fill: var(--rd-level5-5); }
 
 /* 旧类和旧组件进了改版页后跟新配色走；浅色下旧页面也靠这张映射保持可读。 */
 .rd-page,
@@ -147,6 +171,41 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
   .rd-stats > .rd-stat[data-lead] { flex: 1 1 100%; }
   .rd-stats:has(> .rd-stat[data-lead]) > .rd-stat:not([data-lead]) { flex-basis: auto; }  /* 下面一行按内容分宽，第二行的说明不折行 */
   .rd-stats > .rd-stat[data-lead] + .rd-stat > .rd-tile { margin-inline: 6px; }  /* 28 的图标底和上面 40 的同宽，同列文字一条左边 */
+}
+/* 当选择器用的一格：选中底加品牌色底边，旁边写字（selectedText），不只靠颜色；悬停不盖掉选中色（VS-74）。 */
+.rd-stat[data-selected] > .rd-stat-hit, .rd-stat[data-selected] > .rd-stat-hit:hover { background: var(--rd-selected); box-shadow: inset 0 -2px 0 var(--rd-brand-ink); }
+.rd-stat-now { margin-left: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 500; color: var(--rd-brand-ink); white-space: nowrap; }
+/* 一格一张卡（E2 等级卡）：四张一排，内容区窄于 900 时两两一行，同排同高。卡头、数字、补充区三段，整张卡是一颗选择按钮。 */
+.rd-stats[data-cards] { align-items: stretch; gap: 12px; padding: 0; border-radius: 0; background: none; }
+.rd-stats[data-cards] > .rd-stat { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 0 12px; flex: 1 1 calc(25% - 9px); min-width: 0; padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x); border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
+.rd-stats[data-cards] > .rd-stat:has(> .rd-tile) { grid-template-columns: auto minmax(0, 1fr); }
+.rd-stats[data-cards] .rd-stat-hit { inset: 0; border-radius: inherit; }
+.rd-stat-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; min-height: var(--rd-lh-body); margin-bottom: 12px; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; color: var(--rd-text); }
+.rd-stat-head > .rd-stat-now { margin-left: auto; }
+.rd-stats[data-cards] .rd-stat-main { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; min-width: 0; }
+.rd-stats[data-cards] .rd-stat-label { flex: 0 0 100%; }
+.rd-stat-extra { --rd-track-w: 100%; grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; margin-top: 8px; }  /* 卡里的条和尺跟卡同宽 */
+/* 补充区里的小计：一行一项，名称在左、值在右；几组之间一条线。 */
+.rd-stat-rows { display: grid; gap: 4px; margin: 0; padding-top: 12px; border-top: 1px solid var(--rd-line); }
+.rd-stat-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.rd-stat-row dt { display: inline-flex; align-items: center; gap: 4px; color: var(--rd-text-3); white-space: nowrap; }
+.rd-stat-row dt .rd-explain { height: var(--rd-lh-aux); }
+.rd-stat-row dd { margin: 0; min-width: 0; color: var(--rd-text); font-variant-numeric: tabular-nums; text-align: right; }
+.rd-stat-row dd[data-empty] { color: var(--rd-text-3); }
+.rd-stat-row[data-stack] { display: grid; gap: 2px; }  /* 值是一句话（三组小计）时名称在上、值在下，不挤成右边的两行 */
+.rd-stat-row[data-stack] dd { text-align: left; }
+.rd-stat-rows > .rd-scale { margin: 2px 0 8px; }
+/* 选中的卡：底边中间一个朝下的小尖角，指着下面跟着它变的面板。 */
+.rd-stats[data-cards] > .rd-stat[data-selected] { --rd-gfx-surface: var(--rd-selected); }
+.rd-stats[data-cards] > .rd-stat[data-selected]::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 6px; margin-left: -6px; background: var(--rd-brand-ink); clip-path: polygon(0 0, 100% 0, 50% 100%); }
+/* 要人注意的卡：整卡浅底，选中时底不换，只加底边和尖角。 */
+.rd-stats[data-cards] > .rd-stat[data-surface="warn"] { background: var(--rd-warn-bg); --rd-gfx-surface: var(--rd-warn-bg); }
+.rd-stats[data-cards] > .rd-stat[data-surface="danger"] { background: var(--rd-danger-bg); --rd-gfx-surface: var(--rd-danger-bg); }
+.rd-stats[data-cards] > .rd-stat[data-surface="progress"] { background: var(--rd-progress-bg); --rd-gfx-surface: var(--rd-progress-bg); }
+.rd-stats[data-cards] > .rd-stat[data-surface="ok"] { background: var(--rd-ok-bg); --rd-gfx-surface: var(--rd-ok-bg); }
+.rd-stats[data-cards] > .rd-stat[data-surface] > .rd-stat-hit, .rd-stats[data-cards] > .rd-stat[data-surface] > .rd-stat-hit:hover { background: none; }
+@container (max-width: 900px) {
+  .rd-stats[data-cards] > .rd-stat, .rd-stats[data-cards]:has(> .rd-stat:nth-child(4)):not(:has(> .rd-stat[data-lead])) > .rd-stat[data-cp] { flex: 1 1 calc(50% - 6px); }
 }
 
 /* ── 经营卡：名称、主数、对比、分项四层，层高都是定的，同排同高、四层同一条线，切时段不跳版 ── */
@@ -845,6 +904,15 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-segbar-wrap { display: grid; gap: 8px; }
 .rd-segbar { display: flex; gap: 2px; height: 8px; border-radius: var(--rd-radius-bar); overflow: hidden; }
 .rd-segbar span { flex: 1 1 0; min-width: 0; background: var(--slot); }
+.rd-segbar span[data-tone] { background: var(--tone); }
+/* 段能点时（StatusDistributionBar）：条留 12 高，段平时 8，指着、聚焦图例或选中的那段长到 12，不只靠颜色标出来。 */
+.rd-segbar[data-pick] { align-items: center; height: 12px; overflow: visible; border-radius: 0; }
+.rd-segbar[data-pick] span { height: 8px; border-radius: 2px; transition: height .12s; }
+.rd-segbar[data-pick] span:first-child { border-top-left-radius: var(--rd-radius-bar); border-bottom-left-radius: var(--rd-radius-bar); }
+.rd-segbar[data-pick] span:last-child { border-top-right-radius: var(--rd-radius-bar); border-bottom-right-radius: var(--rd-radius-bar); }
+.rd-segbar[data-pick] span[data-clickable] { cursor: pointer; }
+.rd-segbar[data-pick] span:is([data-selected], [data-active]) { height: 12px; }
+@media (hover: hover) and (pointer: fine) { .rd-segbar[data-pick] span[data-clickable]:hover { height: 12px; } }
 .rd-chart-frame { padding-left: 72px; }
 .rd-chart-plot { position: relative; }
 .rd-chart-grid { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--rd-chart-grid); }
@@ -945,6 +1013,27 @@ td .rd-flow { margin-bottom: 0; }
 .rd-step[data-state="current"] .rd-step-label { color: var(--rd-text); font-weight: 500; }
 .rd-step-sub { grid-column: 2; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-fold-body > .rd-steps { margin-bottom: 16px; }
+/* 阶段线：等距节点只表示先后，连线一律灰；当前节点品牌色加一圈浅底，前面实心、后面空心。放不下时在这一块里横向滚动，两侧影子同表格。 */
+.rd-stageline-scroll { overflow-x: auto; margin: 0 -4px; padding: 0 4px; background:
+  linear-gradient(to right, var(--rd-gfx-surface, var(--rd-panel)) 40%, transparent) left / 24px 100% no-repeat local,
+  linear-gradient(to left, var(--rd-gfx-surface, var(--rd-panel)) 40%, transparent) right / 24px 100% no-repeat local,
+  linear-gradient(to right, var(--rd-table-edge), transparent) left top / 8px 48px no-repeat scroll,
+  linear-gradient(to left, var(--rd-table-edge), transparent) right top / 8px 48px no-repeat scroll; }
+.rd-stageline-scroll:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+.rd-stageline { display: flex; min-width: min-content; margin: 0; padding: 4px 0; list-style: none; }
+.rd-stage { flex: 1 0 128px; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; row-gap: 4px; padding-right: 16px; }
+.rd-stage:last-child { flex: 0 0 auto; padding-right: 0; }
+.rd-stage-node { display: flex; align-items: center; height: 16px; }
+.rd-stage-node > i { flex: none; box-sizing: border-box; width: 8px; height: 8px; margin: 0 2px; border: 1.5px solid var(--rd-control-line); border-radius: 50%; }
+.rd-stage:not(:last-child) > .rd-stage-node::after { content: ""; flex: 1; height: 2px; margin: 0 -12px 0 4px; border-radius: 1px; background: var(--rd-line-strong); }
+.rd-stage[data-state="past"] > .rd-stage-node > i { border: 0; background: var(--rd-text-3); }
+.rd-stage[data-state="current"] > .rd-stage-node > i { width: 12px; height: 12px; margin: 0; border: 0; background: var(--rd-brand-ink); box-shadow: 0 0 0 3px var(--rd-brand-soft); }
+.rd-stage-label { display: flex; align-items: center; gap: 6px; color: var(--rd-text-2); white-space: nowrap; }
+.rd-stage[data-state="next"] > .rd-stage-label { color: var(--rd-text-3); }
+.rd-stage[data-state="current"] > .rd-stage-label { color: var(--rd-text); font-weight: 500; }
+.rd-stage-now { padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-brand-soft); color: var(--rd-brand-ink); font-size: var(--rd-text-aux); line-height: 20px; font-weight: 500; }
+.rd-stage-sub { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.rd-stageline-skeleton { width: 100%; max-width: 560px; height: 16px; margin: 4px 0 30px; }
 
 /* 图和数据左右分区（VS-49）：左边图、宽到 --rd-figure-w 为止，右边数据；容器窄时上下排（默认 560px 以下，data-stack="wide" 是 800px 以下）。 */
 .rd-figure { container-type: inline-size; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px 32px; min-width: 0; }
@@ -1012,6 +1101,120 @@ td .rd-flow { margin-bottom: 0; }
 .rd-tiers-bounds span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .rd-tiers-bounds span[data-edge="start"] { transform: none; }
 .rd-tiers-bounds span[data-edge="end"] { transform: translateX(-100%); }
+
+/* ── 小图形件（E 批）：等级条、比例条、刻度条、状态分布条、任务类型标签、阶梯条。填充色取 --fill，字一律文字色，空位描边 ── */
+/* 不画图时的一句话：没有数是弱文字；读不到、数不合法带警示图标。 */
+.rd-gfx-note { display: inline-flex; align-items: flex-start; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-gfx-note[data-kind="problem"] { color: var(--rd-text-2); }
+.rd-gfx-note[data-kind="problem"] > svg { flex: none; margin-top: 2.5px; color: var(--rd-warn); }
+
+/* 等级条：一格一级，选中实色加勾，没选描边。 */
+.rd-levelstrip { container-type: inline-size; display: flex; gap: 4px; width: 100%; max-width: 420px; min-width: 0; }
+.rd-levelstrip-cell { flex: 1 1 0; display: grid; gap: 4px; min-width: 0; }
+.rd-levelstrip-cell > i { display: block; height: 8px; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--rd-control-line); }
+.rd-levelstrip-cell[data-on] > i { background: var(--fill); box-shadow: none; }
+.rd-levelstrip-text { display: flex; align-items: center; gap: 2px; min-width: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.rd-levelstrip-text > svg { flex: none; }
+.rd-levelstrip-cell[data-on] > .rd-levelstrip-text { color: var(--rd-text); font-weight: 500; }
+.rd-levelstrip-name { display: none; margin-left: 2px; font-weight: 400; color: var(--rd-text-3); }
+@container (min-width: 340px) { .rd-levelstrip-name { display: inline; } }
+.rd-levelstrip[data-variant="mini"] { container-type: normal; display: inline-flex; gap: 2px; width: auto; vertical-align: middle; }
+.rd-levelstrip[data-variant="mini"] > .rd-levelstrip-cell { flex: none; display: block; width: 12px; }
+.rd-levelstrip[data-variant="mini"] > .rd-levelstrip-cell > i { height: 6px; border-radius: 3px; }
+.rd-levelstrip-skeleton { width: 100%; max-width: 420px; height: 8px; margin-bottom: 22px; border-radius: 4px; }
+.rd-levelstrip-skeleton[data-variant="mini"] { display: inline-block; width: 54px; height: 6px; margin-bottom: 0; vertical-align: middle; }
+
+/* 比例条：主段上色，剩下的是轨道灰，中间 2px 缝；0 不画主段。点状的给「n/6」这种个数。 */
+.rd-ratio { display: flex; gap: 2px; width: 100%; max-width: var(--rd-track-w, 320px); height: 8px; overflow: hidden; border-radius: var(--rd-radius-bar); }
+.rd-ratio > i { flex: 1 1 0; min-width: 2px; }
+.rd-ratio-main { background: var(--fill); }
+.rd-ratio-rest { background: var(--rd-line-strong); }
+.rd-ratio[data-size="compact"] { display: inline-flex; flex: none; width: 64px; height: 6px; vertical-align: middle; }
+.rd-ratio-dots { display: inline-flex; gap: 4px; vertical-align: middle; }
+.rd-ratio-dots > i { width: 8px; height: 8px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--rd-control-line); }
+.rd-ratio-dots > i[data-on] { background: var(--fill); box-shadow: none; }
+.rd-ratio-skeleton { width: 100%; max-width: var(--rd-track-w, 320px); height: 8px; border-radius: var(--rd-radius-bar); }
+.rd-ratio-skeleton[data-size="compact"] { display: inline-block; width: 64px; height: 6px; vertical-align: middle; }
+.rd-ratio-skeleton[data-steps] { display: inline-block; width: 68px; vertical-align: middle; }
+
+/* 刻度条：2px 的轴，值是带底色圈的点，区间是两头有实线的浅带，目标是一条刻线。 */
+.rd-scale { display: block; width: 100%; max-width: var(--rd-track-w, 360px); min-width: 0; }
+.rd-scale-plot { position: relative; display: block; height: 12px; }
+.rd-scale-plot > i { position: absolute; }
+.rd-scale-axis { left: 0; right: 0; top: 5px; height: 2px; border-radius: 1px; background: var(--rd-chart-axis); }
+.rd-scale-tickmark { top: 7px; bottom: 0; width: 1px; background: var(--rd-chart-axis); }
+.rd-scale-band { top: 2px; box-sizing: border-box; height: 8px; min-width: 4px; border-inline: 2px solid var(--fill); border-radius: 2px; background: color-mix(in srgb, var(--fill) 30%, transparent); }
+.rd-scale-fill { left: 0; top: 5px; height: 2px; border-radius: 1px; background: var(--fill); }
+.rd-scale-target { top: 0; bottom: 0; width: 2px; border-radius: 1px; background: var(--fill); }
+.rd-scale-dot { top: 1px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--fill); box-shadow: 0 0 0 2px var(--rd-gfx-surface, var(--rd-panel)); }
+.rd-scale[data-size="compact"] { display: inline-block; width: 64px; margin-inline: 4px; vertical-align: middle; }
+.rd-scale[data-size="compact"] > .rd-scale-plot { height: 8px; }
+.rd-scale[data-size="compact"] :is(.rd-scale-axis, .rd-scale-fill) { top: 3px; }
+.rd-scale[data-size="compact"] .rd-scale-band { top: 1px; height: 6px; }
+.rd-scale[data-size="compact"] .rd-scale-dot { top: 0; width: 8px; height: 8px; margin-left: -4px; box-shadow: 0 0 0 1.5px var(--rd-gfx-surface, var(--rd-panel)); }
+/* 刻度字：第一行紧跟刻度，挨得太近的换到第二行，用引线接回刻度。 */
+.rd-scale-ticks { --rd-scale-lead: 2px; position: relative; display: block; height: calc(var(--rd-scale-lead) + var(--rd-scale-rows, 1) * var(--rd-lh-aux)); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+.rd-scale-ticks > span { position: absolute; top: calc(var(--rd-scale-lead) + var(--rd-scale-row, 0) * var(--rd-lh-aux)); white-space: nowrap; }
+.rd-scale-ticks > i { position: absolute; top: 0; width: 1px; height: 0; background: var(--rd-chart-axis); }
+.rd-scale-ticks > i[data-row="1"] { height: calc(var(--rd-scale-lead) + var(--rd-lh-aux)); }
+/* 分界：轴按分界切成几段，段按等级色阶由浅到深，段名在上、分界值在下；最后一段没有上限时是固定宽的箭头尾段。 */
+.rd-scale[data-bands] { max-width: var(--rd-track-w, 560px); }
+.rd-scale-names { position: relative; display: block; height: var(--rd-lh-aux); margin-bottom: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 500; color: var(--rd-text-2); }
+.rd-scale-names > span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.rd-scale-segs { position: relative; display: block; height: 8px; }
+.rd-scale-segs > i { position: absolute; top: 0; bottom: 0; background: var(--fill); }
+.rd-scale-segs > i:first-child { border-radius: var(--rd-radius-bar) 0 0 var(--rd-radius-bar); }
+.rd-scale-segs > i:last-child:not([data-open]) { border-radius: 0 var(--rd-radius-bar) var(--rd-radius-bar) 0; }
+.rd-scale-segs > i[data-open] { clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%); }
+.rd-scale[data-bands] > .rd-scale-ticks { --rd-scale-lead: 6px; }
+.rd-scale[data-bands] > .rd-scale-ticks > i { height: 4px; }
+.rd-scale[data-bands] > .rd-scale-ticks > i[data-row="1"] { height: calc(4px + var(--rd-lh-aux)); }
+.rd-scale-skeleton { width: 100%; max-width: var(--rd-track-w, 360px); height: 8px; margin: 2px 0 22px; border-radius: var(--rd-radius-bar); }
+.rd-scale-skeleton[data-size="compact"] { display: inline-block; width: 64px; height: 6px; margin: 0 4px; vertical-align: middle; }
+.rd-scale-skeleton[data-bands] { max-width: var(--rd-track-w, 560px); margin: 24px 0 22px; }
+
+/* 状态分布条：条最宽 560，图例紧跟在条下面；能点的类是带边的小按钮，当前选中的选中底加勾。 */
+.rd-dist { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; max-width: 560px; min-width: 0; }
+.rd-dist > .rd-segbar-wrap { gap: 4px; }
+.rd-dist-sole { margin: 0; color: var(--rd-text-2); }
+.rd-dist-legend { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 0 -8px; padding: 0; list-style: none; }
+.rd-dist-item { display: inline-flex; align-items: center; gap: 6px; height: var(--rd-control-h-sm); padding: 0 8px; border: 0; border-radius: var(--rd-radius-control); background: none; color: var(--rd-text-2); font: inherit; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: nowrap; }
+.rd-dist-item > b { font-weight: 500; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.rd-dist-item[data-zero], .rd-dist-item[data-zero] > b { font-weight: 400; color: var(--rd-text-3); }
+.rd-dist-item > svg { flex: none; color: var(--rd-brand-ink); }
+button.rd-dist-item { box-shadow: inset 0 0 0 1px var(--rd-line-strong); cursor: pointer; }
+li:first-child > button.rd-dist-item { margin-left: 8px; }  /* 带边的按钮和条的左边线对齐；不带边的项靠内边距对齐色点 */
+button.rd-dist-item:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+button.rd-dist-item[aria-pressed="true"] { background: var(--rd-selected); color: var(--rd-text); }
+@media (hover: hover) and (pointer: fine) { button.rd-dist-item:not([aria-pressed="true"]):hover { background: var(--rd-hover); color: var(--rd-text); } }
+.rd-dist-skeleton { width: 100%; max-width: 560px; height: 8px; margin: 2px 0 30px; border-radius: var(--rd-radius-bar); }
+
+/* 任务类型标签：图标带角色色，字是正文色。 */
+.rd-classtag { display: inline-flex; align-items: center; gap: 6px; color: var(--rd-text); white-space: nowrap; }
+.rd-classtag > svg { flex: none; color: var(--tone); }
+
+/* 阶梯条：每档一张面板内小块，数字在左、柱在右，柱都从同一条零线起；标题、数字、按钮三行各卡对齐。 */
+.rd-stepbar { container: stepbar / inline-size; min-width: 0; }
+.rd-stepbar-list { display: grid; grid-template-columns: repeat(var(--rd-stepbar-count, 5), minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.rd-stepbar-item { --rd-gfx-surface: var(--rd-panel-inner); display: grid; grid-template-rows: subgrid; grid-row: span 2; row-gap: 12px; min-width: 0; padding: 12px 16px 16px; border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
+.rd-stepbar[data-actions] .rd-stepbar-item { grid-row: span 3; }
+.rd-stepbar-item[data-marked] { box-shadow: inset 0 0 0 1px var(--rd-control-line); }
+.rd-stepbar-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; min-height: var(--rd-lh-body); }
+.rd-stepbar-head > b { font-weight: 600; color: var(--rd-text); }
+.rd-stepbar-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-stepbar-mark { margin-left: auto; padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-control); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: 20px; white-space: nowrap; }
+.rd-stepbar-body { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; min-width: 0; min-height: 72px; border-bottom: 1px solid var(--rd-chart-axis); }
+.rd-stepbar-figures { min-width: 0; padding-bottom: 8px; }
+.rd-stepbar-value { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.rd-stepbar-value[data-zero] { color: var(--rd-text-3); }
+.rd-stepbar-unit { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 400; color: var(--rd-text-3); }
+.rd-stepbar-secondary { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+.rd-stepbar-col { flex: none; display: flex; align-items: flex-end; width: 24px; height: 72px; }
+.rd-stepbar-col > i { display: block; width: 100%; border-radius: var(--rd-radius-bar) var(--rd-radius-bar) 0 0; background: var(--fill); }
+.rd-stepbar-actions { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+@container stepbar (max-width: 1099px) { .rd-stepbar[data-long] .rd-stepbar-list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container stepbar (max-width: 879px) { .rd-stepbar-list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container stepbar (max-width: 519px) { .rd-stepbar .rd-stepbar-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* 配置页（CP-87、CP-88、CP-91、CP-54）：配置项一行一项、一行高，名称和提示图标在左，当前值和动作在右；说明都在气泡里（DP-06）；分组导航和页级状态放在内容旁边。 */
 .rd-config { display: grid; }
@@ -1086,6 +1289,9 @@ td .rd-flow { margin-bottom: 0; }
 /* 浅色主题（VS-94）：白面板在浅灰页面上加 1px 边，用内阴影，不改尺寸。 */
 :root[data-theme="light"] :is(.rd-panel:not([data-plain]), .rd-stats, .rd-metric, .rd-fold:not([data-inset]), .rd-conclusion:not([data-alarm]), .rd-control-card, .rd-control-batch) { box-shadow: inset 0 0 0 1px var(--rd-line); }
 :root[data-theme="light"] .rd-panel > .rd-conclusion:not([data-alarm]) { box-shadow: none; }
+/* 一格一张卡时边线画在每张卡上，不画在整条上；用 outline，选中底和悬停底盖不住它。 */
+:root[data-theme="light"] .rd-stats[data-cards] { box-shadow: none; }
+:root[data-theme="light"] .rd-stats[data-cards] > .rd-stat { outline: 1px solid var(--rd-line); outline-offset: -1px; }
 /* 贴边表格的面板：表头底会盖住内阴影，边线改画在最上层。 */
 :root[data-theme="light"] .rd-panel[data-flush] { position: relative; }
 :root[data-theme="light"] .rd-panel[data-flush]::after { content: ""; position: absolute; inset: 0; z-index: 2; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--rd-line); pointer-events: none; }  /* 压过固定列（z-index 1），边线才不断 */

@@ -72,6 +72,14 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 | 一个值落在固定几档里 | `TierBand` 档位带，`current` 由页面传，组件不算档 | `meter.tsx` |
 | 柱图、走势线 | `ColumnChart`、`TrendLine`，传槽位 `slot`；趋势只画真实历史 | `chart.tsx` |
 | 只读的流程进度：走到哪一步 | `Steps`，当前步从现有状态字段取 | `steps.tsx` |
+| 平台走到第几个阶段 | `StageLine` 阶段线：等距节点，当前阶段高亮带「当前」，放不下在这一块里横向滚动 | `steps.tsx` |
+| 属于、能用哪几级（L1–L4、T1–T5） | `LevelStrip` 等级条；卡头用 `variant="mini"` | `level-strip.tsx` |
+| 一个数占另一个数的多少 | `RatioBar` 比例条；个数用 `steps`（n/6 的点），表格一格里用 `compact` | `ratio-bar.tsx` |
+| 值、区间、分界落在一条线性轴上 | `ScaleBar` 刻度条：一个值、值对区间、目标和波动、分界分段四种画法 | `scale-bar.tsx` |
+| 一批东西按状态各有多少，点一类筛列表 | `StatusDistributionBar` 状态分布条 | `status-distribution.tsx` |
+| 一组由低到高的档比高低，每档带数字和按钮 | `StepBar` 阶梯条 | `step-bar.tsx` |
+| 任务是哪一类 | `TaskClassTag`，六类固定图标和中文全名 | `task-class-tag.tsx` |
+| 点一格筛下面的列表，或一格一张卡当选择器 | `Stat` 传 `selected`；一格一张卡再给 `StatBand` 传 `cards`，排法见下面「等级卡」 | `stat.tsx` |
 | 几条线比走势，或要画目标线、事件线 | `TrendLines`，目标线传 `marks`，事件线传 `event` | `chart.tsx` |
 | 表格里看走向 | `Sparkline`，至少两个点才传，数值要在别处读到 | `chart.tsx` |
 | 并排两块 | `.rd-split` 放两个 `Panel`。看板里对等的两块等高，`data-even` 再等宽；左边选一行右边看详情的主从结构传 `data-detail`，高度跟内容走；左边填表、右边随填随算结果（余额调整的「批准后会怎样」）传 `data-detail` 加 `data-preview`，起始宽度 420、300，1024 也并排，结果不落到提交按钮下面，右栏高度跟内容走。放不下时按内容折成上下排，不写窗口宽度；主从结构给明细面板 `id`，点行后 `scrollIntoView` | `rd.css` |
@@ -94,8 +102,83 @@ import { RdPage, PageHeader, Conclusion, StatBand, Stat, Panel } from "@/app/com
 - 状态 `ok`、`warn`、`danger`、`progress`、`done`、`neutral`：这件事现在怎么样。已结束用 `done`，不用 `ok`；列表的默认状态（要处理列表里的待审核）用 `neutral`，颜色留给例外行（VS-21）。
 - 角色 `role-1` 金（持有的钱）、`role-2` 青（往来的钱和物）、`role-3` 紫（人和时限）、`role-4` 品红（规则给的数）、`role-other` 灰：页内的数字和图标底。常见数字的槽位看 VS-12。
 - 域色 `money`、`users`、`devices`、`risk`、`system`：只用在侧栏和表头小图标（`Th` 的 `tone`）。内容区的数字和图标底不用它。
+- 等级色阶 `level-1`…`level-4`，五档 `level-1`…`level-5`（`LevelTone`，`levelTone(第几个)` 取值）：同一金色相由浅到深，只表示「第几级」，不表示好坏和收益高低。只给小图形（格、柱、段），等级名和数字仍是文字色；图标底、状态标签、`Stat` 的数字不收它。五档的取值和四档不同，外层要有 `data-levels="5"`，`LevelStrip`、`StepBar`、`ScaleBar` 自己会挂，页面不用管。
 
 图表的颜色同理：系列传槽位 `slot`（1 金、2 青、3 紫、4 品红、other 灰），只有表示好坏的条才传状态 `tone`（VS-43）。图里的文字和数字永远是文字色。一个数字先问状态，再问角色。深色主题数字用角色色字，浅色主题数字用正文色、身份靠实色图标底（VS-14），这条在 `rd.css` 里，页面不用管。值是 0 或「—」时 `Stat` 自动弱化：字色弱、图标底灰、`lead` 也不放大。链接不用品牌色，`rd-link` 是正文色加下划线（VS-06）。数字用 Inter，等宽只给单号、哈希、地址（VS-52）。页面自己的样式也只写 `var(--rd-*)`，变量表在 `tokens.css`。
+
+## 小图形件：等级条、比例条、刻度条、分布条、阶梯条、阶段线
+
+给卡片和表格里用的小图形，每个文件开头有完整例子。它们共用一套约定：
+
+- **只画接口真给的数。** 组件不发请求、不判权限、不算业务口径、不格式化数字：数字的写法（精度、千分位、单位）由页面给，图只按数值定位置。
+- **数字写在图旁边，图上不写数。** `label` 是这张图的名字，`valueText` 是图上这组数的一句话（「启用 12 个，共 20 个」），两样拼起来给读屏和悬停用。旁边的字已经读得出同一组数时传 `quiet`，图对读屏隐藏，不读两遍。
+- **`state`**：`ready` 画图（默认）；`loading` 画同尺寸的骨架；`empty` 不画，写 `emptyText` 那一句（没传就什么都不显示）；`failed` 不画，写 `failedText`，里面可以放 `InlineRetry`。空是空、失败是失败，都不画成 0。
+- **数不合法就不画，写 `invalidText`。** 负数、分子大于分母、区间反序、值落在轴外、不认识的等级码都算。组件不把它夹成满格或贴边，页面在 `invalidText` 里写原因和该找谁。值超出轴的范围时由页面把 `max` 扩到包住它。
+- **`tone`** 收状态色、角色色、等级色阶。传角色色时图形用同槽位的图表色（`role-2` 画成图表二青），字仍是文字色。没选中的格、空的点一律描边，不靠深浅猜。
+- **宽度**：条和尺跟着容器走，到上限为止（比例条 320、刻度条 360、分界轴和分布条 560）。放在卡片里要和卡同宽时，在卡的样式里写 `--rd-track-w: 100%`；`Stat` 卡的补充区已经写了。
+- 深浅两套主题、1024 和 1440 都按同一份实现；全站的减少动态设置对它们同样生效。
+
+`LevelStrip`：`levels` 是固定顺序的全部等级（`key`、格里写的 `label`、进读屏的 `name`），`selectedKeys` 是选中的几级。选中的格实色、字前有勾，没选的描边。一个都没选是合法的，四格都描边，页面在旁边写「未配置任务等级」。`variant="mini"` 只画小格，等级名必须写在旁边。
+
+`RatioBar`：`value` 是分子、`total` 是分母。0 不画主段，没有最小宽度；等于 `total` 时整条上色。0/0 没有比例可画，页面传 `state="empty"`。`steps` 画成 `total` 个点、`value` 个实点，给名额这类个数用；7/6 这种超额不画成六个实点，写 `invalidText`，真实的数由页面写在旁边。任务时长、当前任务的时间位置这类「占上限多少」也用它，表格里传 `compact`。
+
+`ScaleBar`：一条线性的轴，四种画法可以组合。`value` 是值点，`fill` 再从起点画一条细线到值点；`range` 是区间带，两头相等时画一条刻线；`target` 是目标刻线；`ticks` 是轴下面写字的刻度；`bands` 把轴按分界切成几段，段按等级色阶上色，`openEnd` 时最后一段是固定宽的箭头尾段。两条轴要对着比时传同一个 `max`。刻度字挨得太近时往两边让、中间的换到第二行，再放不下就不写，完整的数在 `valueText` 里。表格里传 `compact`，不写刻度字。只读，不能拖。
+
+`StatusDistributionBar`：画在 `SegmentBar` 上。每类给 `label`、`value`、带单位的 `text`、`tone`，能点的类再给 `onSelect`。段和图例是同一个动作：Tab 只停在图例按钮上，段是鼠标的捷径。`selectedKey` 那一类图例是选中底加勾，条上那一段加高。0 的类不画段、留在图例里；只有一类不是 0 时写「全部为…」；全是 0 时写 `emptyText`。各类的数和总数对不对得上由页面核对。同一条里别同时用 `neutral` 和 `done`：浅色主题下两个都是深灰，分不开。
+
+`StepBar`：每档给 `label`、`name`、`value`（只用来定柱高）、`valueText`（完整数字）、`secondary`（次要的数）、`mark`（标记文字，卡加一圈描边）、`actions`（按钮，没权限不传）。柱从同一条零线起、共用一个高度域，值相等就同高；折成 3+2 后每行仍是同一个高度域。数字有 8 位以上时提早折成三列，不缩字、不折行。
+
+`StageLine`：`stages` 按先后给，`currentId` 是当前阶段。节点等距只表示先后，连线一律是灰的，不暗示进度。`currentId` 对不上时整条不高亮，页面在旁边写「当前阶段待核实」。
+
+`TaskClassTag`：只传 `taskClass`（`EM`、`SP`、`IG`、`LL`、`FT`、`VG`）。名称和顺序取 `lib/admin/task-classes.ts`，图标和颜色在组件里，页面不自己配。类型不是状态，不用状态色。
+
+### 等级卡（E2 任务池的排法）
+
+四张卡是选择器，也是这页的主视觉：一格一张卡，选中的卡是选中底、品牌色底边、底边中间一个朝下的小尖角（指着下面跟着它变的面板）和「当前等级」四个字。卡分三段：卡头（等级名加小等级条）、数字（`Stat` 自己的名称、数、单位，`sub` 排在数字右边）、补充区（比例条、几行小计）。整张卡是一颗页签按钮，补充区里的问号各点各的，点问号不切等级。
+
+```tsx
+const ids = useTabIds();
+const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+  const next = nextTabValue(codes, current, event.key);   // 方向键、Home、End，和 PageTabs 同一条规则
+  if (next === null) return;
+  event.preventDefault();
+  select(next);
+  document.getElementById(ids.tab(next))?.focus();
+};
+
+<StatBand cards role="tablist" label="任务等级">
+  {pools.map((pool) => (
+    <Stat key={pool.code}
+      head={<>{pool.code} {pool.name}<LevelStrip variant="mini" quiet label="等级位置" levels={LEVELS} selectedKeys={[pool.code]} /></>}
+      label="启用任务" value={String(pool.enabled)} unit="个" sub={`共 ${pool.total} 个`} tone="role-2"
+      surface={pool.enabled === 0 ? "warn" : undefined}
+      selected={pool.code === current} selectedText="当前等级" onOpen={() => select(pool.code)}
+      openLabel={`${pool.code} ${pool.name}，启用 ${pool.enabled} 个，共 ${pool.total} 个`}
+      role="tab" id={ids.tab(pool.code)} aria-selected={pool.code === current} aria-controls={ids.panelId(current)}
+      tabIndex={pool.code === current ? 0 : -1} onKeyDown={onKeyDown}>
+      {pool.enabled === 0
+        ? <StatusTag tone="warn" icon={TriangleAlert}>没有启用的任务</StatusTag>
+        : <RatioBar quiet label="启用占比" value={pool.enabled} total={pool.total} valueText={`启用 ${pool.enabled} 个，共 ${pool.total} 个`} tone="role-2" />}
+      <dl className="rd-stat-rows">
+        <div className="rd-stat-row"><dt>平均时长</dt><dd>{pool.avg} 分钟</dd></div>
+        <ScaleBar quiet label="平均时长" valueText={`${pool.avg} 分钟，刻度 0 到 120 分钟`} max={120} value={Number(pool.avg)} ticks={MINUTES} tone="role-2" />
+        <div className="rd-stat-row"><dt>约每天单数</dt><dd>约 {pool.perDay} 单/台/天</dd></div>
+      </dl>
+      <dl className="rd-stat-rows">
+        <div className="rd-stat-row" data-stack=""><dt>使用它的商品<Explain … /></dt><dd>已发布 3 · 草稿 1 · 已下架有设备 0</dd></div>
+      </dl>
+    </Stat>
+  ))}
+</StatBand>
+<Panel {...ids.panel(current)} title="L2 中级任务" flush>…</Panel>
+```
+
+- 补充区用两个类排：`.rd-stat-rows` 是一组小计，上面带一条线；`.rd-stat-row` 一行一项，名称 `dt` 在左、值 `dd` 在右，值是「—」时给 `dd` 加 `data-empty`，值是一句话（三组小计）时给这一行加 `data-stack`，名称在上、值在下。
+- 整卡要人注意时传 `surface="warn"`：整卡浅底，不是整卡涂色；0 仍按 `Stat` 的规则弱化，提醒靠卡里那一行带图标的字。选中和提醒可以同时有，底不换，只加底边和尖角。
+- 没有均值时不画刻度条，值写「—」，原因进名称旁的问号。读取中把 `value` 换成骨架、图形传 `state="loading"`；读不到 `value` 写「—」，图形传 `state="failed"`。
+- 四张卡一排，内容区窄于 900 时两两一行，同排同高。一页只有一组这样的卡。
+
+筛选用的普通统计格（E1、E5 点数字筛列表）不传 `cards`：`<Stat … onOpen={toggle} selected={on} selectedText="已筛选" aria-pressed={on} />`，选中的一格是选中底加品牌色底边。
 
 ## 说明只进提示图标（DP-06）
 

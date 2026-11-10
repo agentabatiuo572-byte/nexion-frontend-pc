@@ -74,6 +74,10 @@
   --rd-chart-label: #989EA9;
   --rd-chart-seq-low: #3D3318; /* 单色渐变（金）：浅端 */
   --rd-chart-seq-high: #F9D46B;/* 单色渐变（金）：深端 */
+  /* 等级色阶：从单色渐变（金）取的离散几档，同一色相由浅到深，只表示「第几级」。最浅一档对面板 4.0:1、对选中底 3.4:1、对注意底 3.2:1；
+     相邻两档明度差四档 0.10、五档 0.075（OKLCH）。最深一档就是 --rd-chart-seq-high。组件传 tone「level-n」，不直接读这些变量。 */
+  --rd-level-1: #91772C;  --rd-level-2: #B3953F;  --rd-level-3: #D5B455;  --rd-level-4: #F9D46B;                            /* 四档 */
+  --rd-level5-1: #91772C; --rd-level5-2: #AA8E3C; --rd-level5-3: #C3A44B; --rd-level5-4: #DEBC5B; --rd-level5-5: #F9D46B;   /* 五档 */
   --rd-chart-neg: #C82D43;     /* 正负对比：负 */
   --rd-chart-pos: #0074CA;     /* 正负对比：正 */
   --rd-chart-mid: #34363C;     /* 正负对比：中点 */
@@ -202,6 +206,9 @@
   --rd-chart-label: #5B616B;
   --rd-chart-seq-low: #F1ECE0;
   --rd-chart-seq-high: #8B6000;
+  /* 等级色阶：最浅一档对白 3.4:1、对面板内小块和选中底 3.1:1，再浅就够不到 3:1，所以深端比 --rd-chart-seq-high 再深两档；相邻两档明度差四档 0.073、五档 0.063。 */
+  --rd-level-1: #B78104;  --rd-level-2: #9B6D00;  --rd-level-3: #815900;  --rd-level-4: #664600;
+  --rd-level5-1: #B78104; --rd-level5-2: #9F7000; --rd-level5-3: #885F00; --rd-level5-4: #714E00; --rd-level5-5: #5A3D00;
   --rd-chart-neg: #D3384E;
   --rd-chart-pos: #3177DC;
   --rd-chart-mid: #C9CED6;

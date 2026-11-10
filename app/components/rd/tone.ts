@@ -9,6 +9,14 @@ export type StateTone = "ok" | "warn" | "danger" | "progress" | "done" | "neutra
 export type RoleTone = "role-1" | "role-2" | "role-3" | "role-4" | "role-other";
 export type DomainTone = "money" | "users" | "devices" | "risk" | "system";
 export type Tone = StateTone | RoleTone | DomainTone;
+/**
+ * 等级色阶：同一金色相由浅到深的几档，只表示「第几级」（商城任务等级 L1–L4、手机档位 T1–T5），不表示好坏，也不表示收益高低。
+ * 四档用 level-1…level-4；五档用 level-1…level-5，外层要挂 data-levels="5" 才换成五档那套取值，LevelStrip、StepBar、ScaleBar 自己会挂。
+ * 等级名和图里的数字仍是文字色，等级色只给小图形（格、柱、段）。不是 Tone：图标底、状态标签不收它。
+ */
+export type LevelTone = "level-1" | "level-2" | "level-3" | "level-4" | "level-5";
+/** 第几个（从 0 数）取哪一档。 */
+export const levelTone = (index: number) => `level-${Math.min(5, Math.max(1, index + 1))}` as LevelTone;
 
 /** 侧栏的业务归属。今日概览、运营总览、内容、数据、平台基础归系统灰。 */
 export const DOMAIN_TONE: Record<string, DomainTone> = {
