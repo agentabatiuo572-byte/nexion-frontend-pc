@@ -104,7 +104,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
   const gateSkuOptions = skus.filter(s => !releases.some(g => g.id === s.id)).map(s => s.id);
   const gateReadiness = (g: E1GenerationRelease) => e1GateReadiness({ release: g, phaseOrder, phases, sku: skus.find(s => s.id === g.id), currentPhase: phaseCur, platformMonth });
   const revealPlan = (skuId?: string) => { setPlanView("plan"); setPlanSku(skuId ?? ""); setPlanOpen(true); window.requestAnimationFrame(() => document.getElementById("e1-open-plan")?.scrollIntoView({ block: "start" })); };
-  const genShift = (g: E1GenerationRelease) => ctx.openActionConfirm({ briefKind: "config", name: `调整开放偏移 · ${g.name}`, op: "param", paramKey: `E.gen.${g.id}.phaseOffset`, edit: { kind: "number", current: String(g.phaseOffset ?? 0), unit: "个月", min: -12, max: 12, step: 1, disallowCurrent: true, hint: "-12～12 的整数；填写新的绝对偏移", preview: (v) => `新有效开放月：第 ${g.releaseMonth + Number(v ?? g.phaseOffset ?? 0)} 个月` }, detail: `计划第 ${g.releaseMonth} 个月，当前偏移 ${g.phaseOffset ?? 0} 个月。`, amplify: false });
+  const genShift = (g: E1GenerationRelease) => ctx.openActionConfirm({ briefKind: "config", name: `调整开放偏移 · ${g.name}`, op: "param", paramKey: `E.gen.${g.id}.phaseOffset`, facts: <Facts><Fact k="商品">{g.name}</Fact><Fact k="计划开放">第 {g.releaseMonth} 个月</Fact><Fact k="当前有效开放">第 {g.releaseMonth + (g.phaseOffset ?? 0)} 个月</Fact></Facts>, edit: { kind: "number", current: String(g.phaseOffset ?? 0), unit: "个月", min: -12, max: 12, step: 1, disallowCurrent: true, hint: "-12～12 的整数；填写新的绝对偏移", preview: (v) => `新有效开放月：第 ${g.releaseMonth + Number(v ?? g.phaseOffset ?? 0)} 个月` }, detail: "批准后按新的绝对偏移判断开放月份。", amplify: false });
   const genForceUnlock = (g: E1GenerationRelease) => {
     const state = gateReadiness(g);
     if (!state.declaredPhase) { ctx.toast(`不能开放：${(g.name)} 没有设置开放阶段，请先检查商品设置`); return; }
@@ -117,6 +117,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       generationGateId: g.id,
       generationGate: { forceUnlock: true },
       amplify: true,
+      facts: <Facts><Fact k="商品">{g.name}</Fact><Fact k="已到达阶段">{phaseLabel(g.phase)}</Fact><Fact k="设备资格">已补齐</Fact><Fact k="当前运营月">第 {platformMonth} 个月</Fact><Fact k="有效开放月">第 {state.effectiveMonth} 个月</Fact><Fact k="仍差运营月数">{Math.max(0, state.effectiveMonth - platformMonth)} 个月</Fact></Facts>,
       detail: `强制提前开放：只跳过运营月数限制。已到达 ${phaseLabel(g.phase)} 阶段，设备资格已补齐。`,
     });
   };
@@ -127,6 +128,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       generationGateId: g.id,
       generationGate: { forceUnlock: false },
       amplify: false,
+      facts: <Facts><Fact k="商品">{g.name}</Fact><Fact k="强制状态">已强制提前开放 → 撤销强制</Fact><Fact k="当前运营月">第 {platformMonth} 个月</Fact><Fact k="有效开放月">第 {g.releaseMonth + (g.phaseOffset ?? 0)} 个月</Fact></Facts>,
       detail: `撤销后重新按运营月数判断是否开放。如果阶段、设备资格和月数本来就满足，商品仍保持开放。`,
     });
   const openPhaseEditor = (ph?: E1Phase) => {
