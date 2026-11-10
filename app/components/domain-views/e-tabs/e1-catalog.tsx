@@ -139,8 +139,8 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
         kind: "multi-field", requireAnyChange: !!ph,
         fields: [
           { key: "label", label: "阶段名称", current: ph?.label ?? "", required: true, explain: "阶段的运营显示名称；修改不会推进当前阶段。" },
-          { key: "meta", label: "门槛说明", current: ph?.meta ?? "", explain: "该阶段的说明资料，批准后目录读取。" },
-          { key: "skus", label: "商品标签", current: ph?.skus ?? "", explain: "阶段旁的商品文字标签，不决定真实商品资格。" },
+          { key: "meta", label: "门槛说明", current: ph?.meta ?? "", required: false, explain: "该阶段的说明资料，批准后目录读取。" },
+          { key: "skus", label: "商品标签", current: ph?.skus ?? "", required: false, explain: "阶段旁的商品文字标签，不决定真实商品资格。" },
           { key: "sortOrder", label: "排序", current: String(ph?.sortOrder ?? Math.min(9999, nextSort)), inputKind: "number", min: 0, max: 9999, step: 1, required: true },
           { key: "status", label: "状态", current: ph?.status ?? "active", inputKind: "select", options: ["active", "archived"], optionLabels: { active: "启用", archived: "已归档" } },
         ],
@@ -209,7 +209,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
         amplifies: v => v.forceUnlock === "true" || !canChangeForce && !!g?.forceUnlock,
         fields: [
           ...(!g && gateSkuOptions.length > 1 ? [{ key: "skuId", label: "商品", current: skuId, inputKind: "select" as const, options: gateSkuOptions, optionLabels: Object.fromEntries(skus.map(s => [s.id, `${s.name} · ${s.id}`])) }] : []),
-          { key: "name", label: "展示名称", current: g?.name ?? "", help: "留空使用商品名称" },
+          { key: "name", label: "展示名称", current: g?.name ?? "", required: false, help: "留空使用商品名称" },
           { key: "releaseMonth", label: "计划开放月", current: String(g?.releaseMonth ?? Math.min(12, Math.max(1, platformMonth))), inputKind: "number", min: 1, max: 12, step: 1, required: true },
           ...(gatePhaseOptions.length > 1 ? [{ key: "phase", label: "开放阶段", current: phase, inputKind: "select" as const, options: gatePhaseOptions, optionLabels: gatePhaseLabels }] : []),
           { key: "phaseOffset", label: "开放偏移（月）", current: String(g?.phaseOffset ?? 0), inputKind: "number", min: -12, max: 12, step: 1, required: true, explain: "绝对偏移，计划月加偏移等于有效开放月。" },
@@ -283,7 +283,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
     {available && !!unknown && <Notice tone="warn" title={`${unknown} 个商品上架状态未核实`} action={<Button variant="ghost" onClick={() => setScope("unknown")}>查看未核实商品</Button>} />}
     {available && !!ctx.e1InvalidSkus.length && <Notice tone="warn" title={`${ctx.e1InvalidSkus.length} 个商品数据有误，暂不显示`} action={<Button onClick={() => void ctx.refreshE1()}>重新加载</Button>}><ul>{ctx.e1InvalidSkus.map(row => <li key={row.skuId}>{row.name} · {row.skuId} · 有误的字段：{row.invalidFields.join("、")}</li>)}</ul></Notice>}
     <section className="e1-stage-summary" aria-label="开放阶段">
-      <div className="e1-stage-identity"><strong>开放阶段<Explain label="开放阶段的说明" content="节点等距只表示先后，不代表各阶段持续时间；这里不能推进当前阶段。" /></strong><span className="e1-muted">{ctx.e1Gates ? `运营第 ${e1Number(platformMonth)} 个月 · ${phaseCurrentKnown ? phaseLabel(phaseCur) : "当前阶段待核实"}` : "正在读取…"}</span></div>
+      <div className="e1-stage-identity"><strong>开放阶段<Explain label="开放阶段的说明" content="节点等距只表示先后，不代表各阶段持续时间；这里不能推进当前阶段。" /></strong><span className="e1-muted">{ctx.e1Gates ? `运营第 ${e1Number(platformMonth)} 个月 · ${phaseCurrentKnown ? phaseLabel(phaseCur) : "当前阶段待核实"}` : ctx.e1Loading ? "正在读取…" : "— · 未读取"}</span></div>
       <StageLine label="开放阶段" stages={phaseOrder.map(id => ({ id, label: <span>{phaseLabel(id)}<Explain label={`${phaseLabel(id)}的阶段资料`} rows={[{ k: "门槛说明", v: phases.find(p => p.p === id)?.meta || "未填写" }, { k: "商品标签", v: phases.find(p => p.p === id)?.skus || "未填写" }, { k: "排序", v: phases.find(p => p.p === id)?.sortOrder ?? "未读取" }, { k: "状态", v: phases.find(p => p.p === id)?.status === "archived" ? "已归档" : "启用" }]} /></span> }))} currentId={phaseCurrentKnown ? phaseCur : null} state={ctx.e1Loading ? "loading" : ctx.e1Error ? "failed" : phases.length ? "ready" : "empty"} emptyText="尚未配置阶段" failedText="阶段暂时读不到" />
       <Button disabled={ctx.e1Loading || !!ctx.e1Error} onClick={() => revealPlan()}>管理开放计划</Button>
     </section>
