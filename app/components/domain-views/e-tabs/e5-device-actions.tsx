@@ -167,7 +167,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
   }
   const proposal = action === "force-activate" || action === "unbind" || action === "legacy";
   return <>
-    {options.length ? inline ? <div className="rd-toolbar">{options.map(option => <Button key={option.key} size="sm" variant={option.danger ? "danger-outline" : "secondary"} disabledReason={option.disabledReason} onClick={option.onSelect}>{option.label}</Button>)}</div> : <MoreMenu label={`操作 ${d.serial}`} items={options} /> : <span className="rd-muted">{readOnly ? "只读" : "暂无可用操作"}</span>}
+    {options.length ? inline ? <div className="rd-toolbar">{options.map(option => <Button key={option.key} size="sm" variant={option.danger ? "danger-outline" : "secondary"} disabledReason={option.disabledReason} onClick={option.onSelect}>{option.label}</Button>)}</div> : <MoreMenu label={`操作 ${d.serial}`} items={options} /> : <span className="rd-muted" title={readOnly ? "模拟任务已关闭，只能查看" : "当前权限或状态没有可执行的操作"}>{readOnly || !ctx.canWriteE5 && !ctx.canForceActivateE5 && !ctx.canUnbindE5 ? "只读" : "—"}</span>}
     {candidateOpen && <Modal title="旧任务终结资格" onClose={() => setCandidateOpen(false)} busy={reading} footer={<Button onClick={() => setCandidateOpen(false)}>关闭</Button>}>
       <Facts><Fact label="设备" value={d.serial} /><Fact label="用户" value={d.user} /></Facts>
       {reading ? <BlockState state="loading" title="正在核对终结资格…" /> : candidateError ? <BlockState state="error" title="终结资格读取失败" detail={candidateError} onRetry={() => void readCandidate()} /> : candidate && <>
