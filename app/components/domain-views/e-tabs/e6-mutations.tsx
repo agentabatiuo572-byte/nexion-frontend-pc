@@ -12,6 +12,8 @@ import { savePhoneRisk, fetchPhoneRisk, type PhoneRiskUpdate } from "@/lib/admin
 import { Button, Notice, Fold, ReleaseModal } from "@/app/components/rd";
 
 export type E6Section = "tasks" | "tiers" | "phones" | "calibration";
+/** These legacy actions belong to E6; other E pages keep their existing expiry policy. */
+export const isE6LegacyCommand = (record: Pick<PendingMutationRecord, "fingerprint">) => /^(e6_[^|]+|e2_phone_tier|e2_task_(create|update|status))\|/.test(record.fingerprint);
 export type E6Proposal = Parameters<typeof createA2OperationProposal>[0];
 type ProposalDraft = Omit<E6Proposal, "operator" | "operatorRole" | "sos" | "roleGate">;
 type DeviceInput = { before: string; serial: string; deviceId: number; userId: number; action: "activate" | "deactivate" | "pause" | "resume"; reason: string; operator: string };
@@ -20,7 +22,7 @@ export type E6Pending = PendingMutationRecord & { owner: number; epoch: number; 
 const commands = createPendingMutationStore<E6Pending>({ storageKey: "nexion-admin-e6-commands-v2", retainExpiredRecords: true,
   isValidRecord: r => Number.isSafeInteger(r.owner) && typeof r.scope === "string" && typeof r.label === "string" && typeof r.body === "string"
     && !!r.payload && ["proposal", "device", "risk"].includes(r.payload.kind) && !!r.payload.input && typeof r.payload.input.reason === "string" });
-const legacyCommands = createPendingMutationStore<PendingMutationRecord & { inputFingerprint: string }>({ storageKey: "nexion-admin-e-domain-commands-v1", retainExpiredRecords: true,
+const legacyCommands = createPendingMutationStore<PendingMutationRecord & { inputFingerprint: string }>({ storageKey: "nexion-admin-e-domain-commands-v1", retainExpiredRecords: isE6LegacyCommand,
   isValidRecord: r => typeof r.inputFingerprint === "string" });
 const legacyPhones = createPendingMutationStore<PendingMutationRecord & { inputFingerprint: string }>({ storageKey: "nexion-admin-e5-device-commands-v1", retainExpiredRecords: true, isValidRecord: r => typeof r.inputFingerprint === "string" });
 const Context = createContext<ReturnType<typeof useMutations> | null>(null);

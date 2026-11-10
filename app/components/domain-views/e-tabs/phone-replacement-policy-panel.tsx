@@ -34,7 +34,7 @@ function PolicyEditor({ owner, operator, rights }: {
     rights: string[];
 }) {
     const canWrite = rights.includes("device_e6_write") && rights.includes("device_e6_flag_toggle") && rights.some(r=>["platform_a2_write","platform_a2_proposal_create"].includes(r));
-    const [editor,setEditor]=useState(false),[release,setRelease]=useState(false),[retryRejected,setRetryRejected]=useState(false),[discard,setDiscard]=useState(false);
+    const [editor,setEditor]=useState(false),[releaseKey,setReleaseKey]=useState<string|null>(null),[retryRejectedKey,setRetryRejectedKey]=useState<string|null>(null),[discard,setDiscard]=useState(false);
     const canRecover = canReadPolicyReceipt(rights);
     const [policy, setPolicy] = useState<PhonePolicy | null>(null), [values, setValues] = useState(["", "", ""]), [allow, setAllow] = useState(false);
     const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState(""), [message, setMessage] = useState("");
@@ -48,6 +48,7 @@ function PolicyEditor({ owner, operator, rights }: {
     const [denied, setDenied] = useState(false);
     const live = useRef(true), generation = useRef(0), mutation = useRef(false);
     const syncPending = () => setPending(proposals.list().find(r => r.owner === owner) ?? null);
+    useEffect(() => { setRetryRejectedKey(null); setReleaseKey(null); }, [pending?.commandKey]);
     async function refresh(preserveDraft = false) {
         const keepDraft = preserveDraft && values.some(v => v !== "");
         const id = ++generation.current;
@@ -161,6 +162,7 @@ function PolicyEditor({ owner, operator, rights }: {
             }
             const id = original.id, status = original.status;
             const terminal = ["approved", "rejected", "withdrawn", "expired"].includes(status.toLowerCase()) ? status.toLowerCase() : undefined;
+            if (terminal) setRetryRejectedKey(null);
             proposals.remember(pending.fingerprint, pending.commandKey, { owner, input: pending.input, ticketId: id, terminal });
             syncPending();
             setMessage(terminal === "approved" ? "原提案已获批准。请刷新当前策略，并由执行审批人使用批准操作的原标识查询发布回执。" : terminal ? "原提案已结束。可核对审批记录后重新准备新变更。" : "提案仍待审批，尚未发布。");
@@ -223,12 +225,13 @@ function PolicyEditor({ owner, operator, rights }: {
         if(original){await checkTicket(original.id,original.status);return;}
         const ticket=await createA2OperationProposal(pending.input,pending.commandKey,true);
         if(live.current){proposals.remember(pending.fingerprint,pending.commandKey,{owner,input:pending.input,ticketId:ticket.id});syncPending();setMessage("已找回原审批提案，请等待另一位审批人核对。");}
-      } catch(failure){if(live.current){setError(failure instanceof Error?failure.message:"原操作结果仍未确认");if(isExplicitRejection(failure))setRetryRejected(true);}}
+      } catch(failure){if(live.current){setError(failure instanceof Error?failure.message:"原操作结果仍未确认");if(isExplicitRejection(failure))setRetryRejectedKey(pending.commandKey);}}
       finally{mutation.current=false;if(live.current)setBusy(false);}
     }
     async function checkTicket(id:string,status:string){
       if(!pending||!live.current)return;
       const terminal=["approved","rejected","withdrawn","expired"].includes(status.toLowerCase())?status.toLowerCase():undefined;
+      if(terminal)setRetryRejectedKey(null);
       proposals.remember(pending.fingerprint,pending.commandKey,{owner,input:pending.input,ticketId:id,terminal});syncPending();
       setMessage(terminal?"原提案已结束，请读回当前策略核对。":"提案仍待审批，尚未发布。");
     }
@@ -249,7 +252,7 @@ function PolicyEditor({ owner, operator, rights }: {
           <Field label="变更理由（8–200 字）" required><Textarea maxLength={200} disabled={busy} value={reason} onChange={e=>setReason(e.target.value)}/></Field><Check disabled={busy} checked={ack} onChange={e=>setAck(e.target.checked)} label="我已核对四项前后值，确认提交给另一位审批人"/>
         </Modal>}
         {pending&&!canRecover&&<Notice tone="warn">有原操作待核实，恢复当前处置权限后才能查看；暂不能发起新提案。</Notice>}
-        {pending&&canRecover&&<Notice tone="warn" title="原审批提案 · 结果待核对" actionBelow action={<><Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>只读查询审批结果</Button>{!pending.ticketId&&!isRetryExpired(pending)&&canWrite&&<Button size="sm" disabled={busy} onClick={()=>void retryOriginal()}>按原操作重试</Button>}{retryRejected&&<Button size="sm" onClick={()=>setRelease(true)}>解除待确认</Button>}{pending.terminal&&<Button size="sm" disabled={busy} onClick={()=>{proposals.forget(pending.fingerprint,pending.commandKey);syncPending();void refresh();}}>原提案已结束，准备新变更</Button>}</>}>
+        {pending&&canRecover&&<Notice tone="warn" title="原审批提案 · 结果待核对" actionBelow action={<><Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>只读查询审批结果</Button>{!pending.ticketId&&!isRetryExpired(pending)&&canWrite&&<Button size="sm" disabled={busy} onClick={()=>void retryOriginal()}>按原操作重试</Button>}{retryRejectedKey===pending.commandKey&&<Button size="sm" onClick={()=>setReleaseKey(pending.commandKey)}>解除待确认</Button>}{pending.terminal&&<Button size="sm" disabled={busy} onClick={()=>{proposals.forget(pending.fingerprint,pending.commandKey);syncPending();void refresh();}}>原提案已结束，准备新变更</Button>}</>}>
           <p>提交：{phoneTime(pending.createdAt)} · 审批单：{pending.ticketId??"结果待核实"}</p><p>原值：{pending.input.beforeValue}</p><p>目标：{pending.input.afterValue}</p>{isRetryExpired(pending)&&<p>{RETRY_EXPIRED_TEXT}</p>}
           <Fold title="原策略与目标策略技术记录" summary={pending.commandKey} inset><p>理由：{pending.input.reason}</p><p>原操作标识：{pending.commandKey}</p><pre className="e6-json">{JSON.stringify(pending.input,null,2)}</pre></Fold>
         </Notice>}
@@ -257,7 +260,7 @@ function PolicyEditor({ owner, operator, rights }: {
         {receipt&&<PhoneReceiptView receipt={receipt}/>}
         {rights.includes("platform_a2_read")&&<Link href="/platform/audit?domain=E">查看审批记录</Link>}
       </>}
-      {release&&pending&&<ReleaseModal label="原手机换机策略提案" onCancel={()=>setRelease(false)} onConfirm={()=>{proposals.forget(pending.fingerprint,pending.commandKey);syncPending();setRelease(false);void refresh();}}/>}
+      {releaseKey&&pending&&<ReleaseModal label="原手机换机策略提案" onCancel={()=>setReleaseKey(null)} onConfirm={()=>{if(releaseKey!==pending.commandKey||retryRejectedKey!==pending.commandKey){setReleaseKey(null);return;}proposals.forget(pending.fingerprint,pending.commandKey);setRetryRejectedKey(null);syncPending();setReleaseKey(null);void refresh();}}/>}
       {discard&&<Modal title="刷新会放弃未提交草稿" onClose={()=>setDiscard(false)} footer={<Decision primary={<Button variant="primary" onClick={()=>{setDiscard(false);void refresh();}}>放弃草稿并刷新</Button>} others={<Button onClick={()=>setDiscard(false)}>继续编辑</Button>}/> }><p>将放弃换机规则普通草稿；原提案和待确认记录继续保留。</p></Modal>}
     </Panel>;
 }
