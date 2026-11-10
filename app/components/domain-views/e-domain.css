@@ -509,6 +509,8 @@
 .edom .phone-sections { display:flex; flex-direction:column; gap:24px; margin-bottom:24px; }
 /* E1 catalogue: page-local composition of rd graphics and form primitives. */
 .e1-page .rd-filter-row { align-items: flex-end; }
+.e1-page .rd-toolbar { justify-content: space-between; }
+.e1-product-actions > .rd-iconbtn, .e1-table-actions > .rd-iconbtn { width: var(--rd-control-h-sm); height: var(--rd-control-h-sm); }
 .e1-plan-table :is(th, td):first-child { min-width: 220px; width: 30%; }
 .e1-plan-table :is(th, td):nth-child(2) { min-width: 110px; width: 14%; }
 .e1-plan-table :is(th, td):nth-child(3) { min-width: 160px; width: 22%; }
