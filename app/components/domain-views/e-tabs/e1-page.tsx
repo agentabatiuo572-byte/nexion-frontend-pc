@@ -1,0 +1,252 @@
+"use client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { Boxes, Plus, RefreshCw } from "lucide-react";
+import { BlockState, Button, Change, ConflictBar, DiffList, Facts, Fact, Fold, Notice, PageHeader, RdPage, ReleaseModal, StatusTag } from "@/app/components/rd";
+import { OperationConfirmModal, useToast } from "../design-kit";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import { businessClock } from "@/lib/admin/business-time";
+import { fetchE1Catalog, type E1BundleDiscount, type E1GenerationGateData, type E1InvalidSku } from "@/lib/admin/e1-client";
+import { fetchE3Snapshot } from "@/lib/admin/e3-client";
+import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
+import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
+import type { OpsSku } from "@/lib/admin/platform-types";
+import type { McSpec } from "./types";
+import type { SkuForm } from "./data";
+import { E1Catalog, type E1CatalogContext } from "./e1-catalog";
+import { E1Editor, type E1EditRequest } from "./e1-editor";
+import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1Number, e1Object, e1SkuDiff, e1Value, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
+
+type Confirmation = McSpec & { sku?: OpsSku; beforeSku?: OpsSku; form?: SkuForm; gates?: E1GenerationGateData | null; discount?: E1BundleDiscount | null; early?: Record<string, string> };
+const APPROVAL = "另一位有批准权限和对应商品业务权限的管理员在「操作记录与审批」中批准；批准前当前目录不变。";
+
+function e1Error(error: unknown) {
+  const value = error as { backendMessage?: string; message?: string } | null;
+  const code = value?.backendMessage ?? value?.message ?? "";
+  if (code.includes("TASK_POOL_FORMAT_RETIRED")) return "原商品操作使用旧任务格式，请先核对原申请，再从商品管理与上架条件重新配置任务等级。";
+  if (code.startsWith("IDEMPOTENCY_")) return "原命令状态仍需核查，请保留原请求和命令号；不要换号重发。";
+  return displayAdminError(error);
+}
+
+export function E1Page() {
+  const [toastNode, toast] = useToast();
+  const actor = useAdminAuth(s => String(s.session?.adminId ?? ""));
+  const authorities = useAdminAuth(s => s.session?.authorities ?? []);
+  const canRead = authorities.includes("device_e1_read");
+  const canWrite = authorities.includes("device_e1_write") && authorities.some(a => a === "platform_a2_proposal_create" || a === "platform_a2_write");
+  const canQuery = authorities.some(a => a === "platform_a2_read" || a === "platform_a2_proposal_create");
+  const forceUnlock = authorities.includes("device_e1_generation_gate_force_unlock"), forceLock = authorities.includes("device_e1_generation_gate_force_lock");
+  const [skus, setSkus] = useState<OpsSku[]>([]);
+  const [invalid, setInvalid] = useState<E1InvalidSku[]>([]);
+  const [gates, setGates] = useState<E1GenerationGateData | null>(null);
+  const [discount, setDiscount] = useState<E1BundleDiscount | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [readAt, setReadAt] = useState("");
+  const [early, setEarly] = useState<Record<string, string>>({});
+  const [earlyError, setEarlyError] = useState<string | null>(null);
+  const [earlyLoading, setEarlyLoading] = useState(true);
+  const [edit, setEdit] = useState<E1EditRequest | null>(null);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [pending, setPending] = useState<E1Pending[]>([]);
+  const [legacy, setLegacy] = useState<E1Legacy[]>([]);
+  const [media, setMedia] = useState<E1MediaPending[]>([]);
+  const [busy, setBusy] = useState("");
+  const sending = useRef(false);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [rejected, setRejected] = useState<string[]>([]);
+  const [release, setRelease] = useState<E1Pending | null>(null);
+  const [conflict, setConflict] = useState(false);
+  const [attemptKey, setAttemptKey] = useState("");
+  const propose = usePropose();
+  const syncPending = useCallback(() => { setPending(e1Pending(actor)); setLegacy(e1LegacyCommands(actor)); setMedia(e1MediaCommands.list().filter(r => r.actorId === actor)); }, [actor]);
+  useEffect(syncPending, [syncPending]);
+  const refresh = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const snapshot = await fetchE1Catalog();
+      setSkus(snapshot.skus); setInvalid(snapshot.invalidSkus); setGates(snapshot.gates); setDiscount(snapshot.bundleDiscount); setReadAt(businessClock(Date.now()));
+    } catch (failure) { setError(e1Error(failure)); setSkus([]); setInvalid([]); setGates(null); setDiscount(null); }
+    finally { setLoading(false); }
+  }, []);
+  const refreshEarly = useCallback(async () => {
+    setEarlyLoading(true); setEarlyError(null);
+    if (!authorities.includes("device_e3_read")) { setEarly({}); setEarlyError("当前账号没有抢先购关联设置的读取权限"); setEarlyLoading(false); return; }
+    try { const snapshot = await fetchE3Snapshot(); setEarly(snapshot.params); }
+    catch (failure) { setEarly({}); setEarlyError(e1Error(failure)); }
+    finally { setEarlyLoading(false); }
+  }, [authorities]);
+  useEffect(() => { if (canRead) { void refresh(); void refreshEarly(); } }, [canRead, refresh, refreshEarly]);
+  const writesReady = canWrite && !loading && !error && gates !== null && discount !== null;
+  const earlyReady = !earlyLoading && !earlyError && ["开", "关"].includes(early["E.release.earlyAccess.enabled"]) && ["7", "14", "30", "60", "90"].includes(early["E.release.earlyAccess.leadDays"]);
+  const locked = (type: string, id: string) => pending.some(r => e1Object(r.spec) === `${type}|${id}`)
+    || legacy.some(r => e1LegacyObject(r) === `${type}|${id}`);
+
+  const openSku = (skuId?: string, unlock?: string) => {
+    if (!writesReady || skuId && locked("device_sku", skuId)) return;
+    if (edit) { toast("请先完成或关闭正在编辑的商品草稿"); return; }
+    setEdit({ sku: skuId ? skus.find(s => s.id === skuId) : undefined, unlock, nonce: Date.now() });
+  };
+  const openConfirm = (input: McSpec) => {
+    if (!writesReady) return;
+    setConflict(false); setAttemptKey("");
+    setConfirmation({ ...input, sku: skus.find(s => s.id === input.target), gates, discount, early: { ...early } });
+  };
+  const send = async (record: E1Pending, retry: boolean) => {
+    if (!canWrite || !actor || record.actorId !== actor || sending.current) throw new Error("账号、权限或提交状态不允许重试，请先核对原操作");
+    if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
+    const store = record.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands;
+    store.remember(record.fingerprint, record.commandKey, { actorId: record.actorId, spec: record.spec });
+    if (!store.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器无法保存原操作，本次没有发送；原记录和对象锁仍保留。");
+    sending.current = true; setBusy(record.commandKey); setRejected(keys => keys.filter(k => k !== record.commandKey));
+    try {
+      await propose(() => {}, { ...record.spec, commandKey: record.commandKey });
+      forgetE1(record); toast("已提交，等待审批后执行");
+      setConfirmation(null); if (record.spec.command.op === "e1_sku_create" || record.spec.command.op === "e1_sku_update") setEdit(null);
+      void refresh();
+    } catch (failure) {
+      if (!retry && isExplicitRejection(failure) && !isA2OutcomeUncertainError(failure)) forgetE1(record);
+      else if (retry && isExplicitRejection(failure)) setRejected(keys => [...keys, record.commandKey]);
+      setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) }));
+      if (String((failure as Error).message).includes("VERSION_CONFLICT") || String((failure as { backendMessage?: string }).backendMessage).includes("VERSION_CONFLICT")) setConflict(true);
+      // Throw the original error so OperationConfirmModal keeps reason and fields.
+      if (retry) toast(e1Error(failure));
+      throw failure;
+    } finally { sending.current = false; setBusy(""); syncPending(); }
+  };
+  const submit = async (spec: ProposeSpec) => {
+    if (!writesReady || !actor || sending.current) throw new Error("目录未读取完整、正在提交或账号没有提交权限，本次没有提交");
+    const object = e1Object(spec);
+    if (e1Pending(actor).some(r => e1Object(r.spec) === object) || locked(object.split("|")[0], object.split("|").slice(1).join("|"))) throw new Error("此对象有原操作结果未确认，请按原操作重试或核对");
+    const commandKey = createA2CommandKey("e1-proposal"), fingerprint = `${actor}|${object}`;
+    const savedSpec = JSON.parse(JSON.stringify(spec)) as ProposeSpec;
+    e1Commands.remember(fingerprint, commandKey, { actorId: actor, spec: savedSpec });
+    if (!e1Commands.isDurablyStored(fingerprint, commandKey)) { e1Commands.forget(fingerprint, commandKey); throw new Error("浏览器无法保存原操作，本次没有提交。请检查浏览器设置后重试。"); }
+    syncPending();
+    setAttemptKey(commandKey);
+    return send(e1Commands.list().find(r => r.commandKey === commandKey)!, false);
+  };
+  const check = async (record: { commandKey: string }) => {
+    try {
+      const row = await fetchA2ProposalByKey(record.commandKey, true);
+      if (!row) { setNotes(n => ({ ...n, [record.commandKey]: "没有查到原审批单，不能据此认定没有提交；请保留原记录核对。" })); return; }
+      setNotes(n => ({ ...n, [record.commandKey]: `原审批单 ${row.id} · ${{ pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[row.status] ?? "状态待核实"}` }));
+      const full = e1Pending(actor).find(r => r.commandKey === record.commandKey);
+      if (full) { forgetE1(full); syncPending(); }
+    } catch (failure) { setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) })); }
+  };
+
+  const confirm = async (reason: string, value?: string, business?: Record<string, string>) => {
+    const mc = confirmation;
+    if (!mc || !writesReady) throw new Error("当前不能提交，请保留输入并刷新目录核对");
+    let op = "", context: Record<string, unknown> = {}, before = "", after = "", obj = "", amplifies = !!mc.amplify;
+    if (mc.op === "sku-save" && mc.sku) {
+      if (gates?.skuReviewContractVersion !== 1) throw new Error("商品审核暂时不可用，请刷新后重试；已填写的内容会保留");
+      const sku = mc.sku, old = mc.beforeSku, changes = e1SkuDiff(old, sku, mc.form).filter(r => r.before !== r.after);
+      op = old ? "e1_sku_update" : "e1_sku_create"; obj = sku.id;
+      context = { ...sku, skuId: sku.id, computePoints: mc.form?.computePoints.trim() || sku.computePoints };
+      for (const key of ["price", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", ...sku.monthlyTargetUsdt == null ? ["dailyEarn", "shareYieldMin", "shareYieldMax"] as const : []] as const) {
+        if (mc.form?.[key].trim()) context[key] = mc.form[key].trim();
+      }
+      // Preserve Long inputs as decimal strings; Jackson accepts them without Number rounding.
+      for (const key of ["aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"] as const) if (mc.form?.[key].trim()) context[key] = mc.form[key].trim();
+      before = changes.map(r => `${r.label}：${r.before}`).join("；") || "未创建";
+      after = changes.map(r => `${r.label}：${r.after}${r.note ? `（${r.note}）` : ""}`).join("；");
+      amplifies = false; // Backend independently evaluates monthly upper-bound amplification.
+    } else if ((mc.op === "sku-status" || mc.op === "sku-delete") && mc.sku) {
+      obj = mc.sku.id; op = mc.op === "sku-delete" ? "e1_sku_delete" : "e1_sku_status";
+      context = { skuId: mc.sku.id, status: mc.status, updatedAt: mc.sku.updatedAt };
+      before = `${mc.sku.name} · ${e1Value(mc.sku.status)} · ${e1Number(mc.sku.price)} USD`;
+      after = mc.op === "sku-delete" ? "已移除" : e1Value(mc.status);
+    } else if (mc.op === "bundle-discount" && business && mc.discount) {
+      if ([business.twoItemsPct, business.threeItemsPct, business.fourPlusItemsPct].some(v => !/^\d+(?:\.\d{1,2})?$/.test(v) || Number(v) < 0.01 || Number(v) > 30) || Number(business.threeItemsPct) < Number(business.twoItemsPct) || Number(business.fourPlusItemsPct) < Number(business.threeItemsPct)) throw new Error("折扣须为0.01%～30%，最多2位小数，且件数增加时折扣不能下降");
+      op = "e1_bundle_discount"; obj = "App 组合购阶梯折扣"; amplifies = true;
+      context = { twoItemsPct: Number(business.twoItemsPct), threeItemsPct: Number(business.threeItemsPct), fourPlusItemsPct: Number(business.fourPlusItemsPct), expectedVersion: mc.discount.version };
+      before = `v${mc.discount.version} · 2件 ${mc.discount.twoItemsPct}% · 3件 ${mc.discount.threeItemsPct}% · 4+件 ${mc.discount.fourPlusItemsPct}%`;
+      after = `2件 ${business.twoItemsPct}% · 3件 ${business.threeItemsPct}% · 4+件 ${business.fourPlusItemsPct}%`;
+      if (Number(business.twoItemsPct) === mc.discount.twoItemsPct && Number(business.threeItemsPct) === mc.discount.threeItemsPct && Number(business.fourPlusItemsPct) === mc.discount.fourPlusItemsPct) throw new Error("没有修改折扣，无需提交");
+    } else if (mc.op === "phase-save" && business) {
+      if (!business.label?.trim() || !/^\d+$/.test(business.sortOrder) || Number(business.sortOrder) > 9999) throw new Error("请填写阶段名称和0～9999的整数排序");
+      op = mc.phaseId ? "e1_phase_patch" : "e1_phase_create"; obj = mc.phaseId ?? business.label.trim();
+      context = { phaseId: mc.phaseId ?? "", label: business.label.trim(), meta: business.meta?.trim() ?? "", skus: business.skus?.trim() ?? "", sortOrder: Number(business.sortOrder), status: business.status || "active" };
+      before = mc.phaseId ? JSON.stringify(mc.gates?.phases.find(p => p.p === mc.phaseId)) : "未创建"; after = JSON.stringify(context);
+      if (mc.phaseId) {
+        const old = mc.gates?.phases.find(p => p.p === mc.phaseId);
+        if (old && old.label === context.label && (old.meta ?? "") === context.meta && old.skus === context.skus && old.sortOrder === context.sortOrder && old.status === context.status) throw new Error("阶段设置没有变化，无需提交");
+      }
+    } else if (mc.op === "phase-archive" && mc.phaseId) {
+      op = "e1_phase_archive"; obj = mc.phaseId; context = { phaseId: mc.phaseId };
+      before = JSON.stringify(mc.gates?.phases.find(p => p.p === mc.phaseId)); after = "已归档";
+    } else if (mc.op === "generation-gate-save" && business) {
+      const old = mc.gates?.releases.find(g => g.id === mc.generationGateId);
+      const force = business.forceUnlock === undefined ? !!mc.generationGate?.forceUnlock : business.forceUnlock === "true";
+      if (force !== !!old?.forceUnlock && !(force ? forceUnlock : forceLock)) throw new Error(force ? "当前账号没有强制提前开放权限" : "当前账号没有撤销强制权限");
+      if (!/^\d+$/.test(business.releaseMonth) || Number(business.releaseMonth) < 1 || Number(business.releaseMonth) > 12 || !/^-?\d+$/.test(business.phaseOffset) || Math.abs(Number(business.phaseOffset)) > 12) throw new Error("计划月须为1～12，开放偏移须为-12～12的整数");
+      op = mc.generationGateId ? "e1_gate_patch" : "e1_gate_create"; obj = business.skuId ?? mc.generationGate?.skuId ?? "";
+      context = { skuId: obj, name: business.name?.trim() ?? "", releaseMonth: Number(business.releaseMonth), phase: business.phase ?? mc.generationGate?.phase, eligibility: business.eligibility === "true", phaseOffset: Number(business.phaseOffset), forceUnlock: force, status: "active" };
+      before = old ? JSON.stringify(old) : "未创建"; after = JSON.stringify(context); amplifies = force;
+    } else if (mc.op === "generation-gate-force" && mc.generationGateId) {
+      const enabled = mc.generationGate?.forceUnlock === true;
+      if (!(enabled ? forceUnlock : forceLock)) throw new Error("当前账号没有这个方向的强制开放权限");
+      op = "e1_gate_field"; obj = mc.generationGateId; context = { key: `E.gen.${obj}.forceUnlock`, value: String(enabled) };
+      before = enabled ? "未强制" : "已强制"; after = enabled ? "强制提前开放（只跳运营月数）" : "撤销强制，自然条件仍满足时继续开放"; amplifies = enabled;
+    } else if (mc.op === "generation-gate-archive" && mc.generationGateId) {
+      op = "e1_gate_archive"; obj = mc.generationGateId; context = { skuId: obj };
+      before = JSON.stringify(mc.gates?.releases.find(g => g.id === obj)); after = "已归档；本页没有恢复入口";
+    } else if (mc.op === "param" && mc.paramKey?.startsWith("E.gen.") && value !== undefined) {
+      if (!/^-?\d+$/.test(value) || Math.abs(Number(value)) > 12) throw new Error("开放偏移须为-12～12的整数");
+      if (Number(value) === Number(mc.edit?.current)) throw new Error("开放偏移没有变化，无需提交");
+      op = "e1_gate_field"; obj = mc.paramKey.replace(/^E\.gen\./, "").replace(/\.phaseOffset$/, ""); context = { key: mc.paramKey, value };
+      before = `绝对偏移 ${mc.edit?.current} 个月`; after = `绝对偏移 ${value} 个月`;
+    } else if (mc.op === "early-access" && business && earlyReady) {
+      if (!["关", "开"].includes(business.enabled) || !["7", "14", "30", "60", "90"].includes(business.leadDays)) throw new Error("请选择开关及7/14/30/60/90天");
+      op = "e1_early_access_update"; obj = "置换侧抢先购"; context = { enabled: business.enabled === "开", leadDays: Number(business.leadDays) };
+      before = `${mc.early?.["E.release.earlyAccess.enabled"]} · ${mc.early?.["E.release.earlyAccess.leadDays"]}天`; after = `${business.enabled} · ${business.leadDays}天`;
+    } else throw new Error("原操作数据不完整，请核对后重新打开入口");
+    const def = findHighOp(op)!;
+    await submit({ action: mc.name, obj, before, after, type: def.type, amplifies, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1", command: def.buildCommand(context), target: def.buildTarget(context) });
+  };
+  const mc = confirmation;
+  const currentPending = mc ? pending.find(r => r.commandKey === attemptKey || (mc.sku ? e1Object(r.spec) === `device_sku|${mc.sku.id}` : mc.generationGateId ? e1Object(r.spec) === `device_generation_gate|${mc.generationGateId}` : mc.phaseId ? e1Object(r.spec) === `device_phase|${mc.phaseId}` : mc.op === "bundle-discount" ? e1Object(r.spec) === "store_bundle_discount|canonical" : mc.op === "early-access" ? e1Object(r.spec) === "device_release_early_access|trade-in" : false)) : undefined;
+  const ctx: E1CatalogContext = {
+    skus, canWriteE1: writesReady, e1InvalidSkus: invalid, e1Loading: loading, e1Error: error, e1Gates: gates, e1BundleDiscount: discount, phaseCur: gates?.phaseCurrent ?? "", refreshE1: refresh,
+    pE: k => early[k] ?? "—", earlyReady, earlyError: earlyLoading ? "正在读取…" : earlyError, refreshEarly: () => void refreshEarly(),
+    forceUnlock, forceLock, locked, openSku, openActionConfirm: openConfirm, toast,
+    delSku: (id, name) => openConfirm({ briefKind: "config", name: `删除商品 · ${name}`, op: "sku-delete", target: id, detail: "从商城移除后用户无法再购买，已售设备和原订单不受影响。", businessForm: { kind: "destructive-reason", target: name, impact: "从商城移除，用户无法再购买；已售设备和原订单不受影响。" } }),
+  };
+  return <RdPage className="e1-page">
+    <PageHeader pageId="E1" title="商品管理与上架条件" summary="管理商品、任务等级和上架条件。" meta={readAt ? `${readAt} 读取 · 手动刷新` : "正在读取目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<><Button icon={<RefreshCw size={14} />} disabled={loading} onClick={() => { void refresh(); void refreshEarly(); }}>刷新</Button>{canWrite && <Button variant="primary" icon={<Plus size={14} />} disabledReason={!writesReady ? "请先读取完整目录" : edit ? "请先完成当前商品草稿" : undefined} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
+    {!canRead ? <BlockState state="denied" title="没有商品目录读取权限" /> : <>
+      {pending.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.spec.obj} · ${record.spec.action}结果未确认`} actionBelow action={<>
+        <Button disabledReason={!canWrite ? "当前账号不能重试" : busy ? "正在提交原操作" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : undefined} onClick={() => { void send(record, true).catch(failure => toast(e1Error(failure))); }}>按原操作重试</Button>
+        {canQuery && <Button disabled={!!busy} onClick={() => void check(record)}>读回核对</Button>}
+        {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button disabled={!!busy} onClick={() => setRelease(record)}>解除待确认</Button>}
+        {canQuery && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}
+      </>}>
+        <p>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "原对象、内容、理由和命令号已保留；此对象暂停新修改，只能原样重试。"}</p>
+        {!canQuery && <p>可复制原命令号，请有权查看操作记录与审批的管理员核对。</p>}
+        {notes[record.commandKey] && <p role="status">{notes[record.commandKey]}</p>}
+        <Fold inset title="原操作与技术信息" summary={`${businessClock(record.createdAt)} · ${record.commandKey}`}><Facts><Fact k="原对象">{record.spec.obj}</Fact><Fact k="原理由">{record.spec.reason}</Fact><Fact k="命令号">{record.commandKey}</Fact></Facts><pre className="e1-raw">{JSON.stringify(record.spec, null, 2)}</pre><Button size="sm" onClick={() => { void navigator.clipboard.writeText(record.commandKey).then(() => toast("已复制命令号"), () => toast("复制失败，请从技术信息选择命令号")); }}>复制命令号</Button></Fold>
+      </Notice>)}
+      {legacy.map(record => <Notice key={record.commandKey} tone="warn" title="旧商品操作结果未确认 · 缺完整原请求" action={canQuery && <Button onClick={() => void check(record)}>读回核对</Button>}><p>升级前记录缺少原理由，不能重试或解除；请保留原号，到操作记录与审批核对。</p><Fold inset title="旧记录技术信息" summary={record.commandKey}><pre className="e1-raw">{JSON.stringify(record, null, 2)}</pre></Fold>{notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}</Notice>)}
+      {media.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.fileName} · 媒体上传结果未确认`} action={<Button onClick={() => openSku(record.skuId || undefined)}>核对媒体上传</Button>}><p>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "原文件摘要和命令号已保留；重新打开商品选择同一文件后可原样重试。"}</p></Notice>)}
+      <E1Catalog ctx={ctx} />
+    </>}
+    <E1Editor request={edit} gates={gates} writable={writesReady} currentSku={edit?.sku ? skus.find(s => s.id === edit.sku!.id) : undefined} onClose={() => setEdit(null)} busy={!!busy} toast={toast} onMediaChange={syncPending} onReview={(sku, beforeSku, form) => { setConflict(false); setConfirmation({ briefKind: "config", name: `${beforeSku ? "编辑" : "新增"}商品 · ${sku.name}`, op: "sku-save", sku, beforeSku, form, gates, isNew: !beforeSku }); }} />
+    {mc && <OperationConfirmModal action={mc.name} title={mc.title ?? mc.name.split(" · ")[0]} briefKind={mc.briefKind} detail={mc.detail ?? "核对完整变更，批准后生效。"} edit={mc.edit} businessForm={mc.businessForm}
+      amplifies={!!mc.amplify} reasonMin={8} reasonMax={200} completionCopy={APPROVAL} confirmLabel="提交审批" confirmTone={["sku-delete", "phase-archive", "generation-gate-archive"].includes(mc.op) ? "danger" : "primary"}
+      effect={<StatusTag tone="progress" filled explain={APPROVAL}>批准后生效</StatusTag>}
+      statedBrief={{ impact: mc.detail ?? "商品变更经另一位有权限的管理员批准后执行。", check: "核对对象、完整前后值及操作理由。" }}
+      facts={mc.sku ? <Facts><Fact k="售价" lead unit="USD">{e1Number(mc.sku.price)}</Fact><Fact k="商品">{mc.sku.name}</Fact><Fact k="任务等级">{mc.sku.allowedPoolCodes?.join("、") || "未配置"}</Fact><Fact k="月收益目标">{mc.sku.monthlyTargetUsdt == null ? "未设月收益目标" : `${e1Number(mc.sku.monthlyTargetUsdt)} USDT/月 · ±${e1Number(mc.sku.monthlyTargetBandPct)}%`}</Fact><Fact k="托管机房">{mc.sku.datacenter || "— · 未填写"}</Fact>{mc.op === "sku-status" && <Fact k="状态"><Change from={e1Value(mc.sku.status)} to={e1Value(mc.status)} /></Fact>}</Facts> : mc.facts}
+      content={mc.op === "sku-save" && mc.sku ? <DiffList rows={e1SkuDiff(mc.beforeSku, mc.sku, mc.form)} /> : mc.content}
+      blockedReason={currentPending ? <Notice tone="warn" title="此对象结果未确认，请关闭本框后按页面上方原操作核对" /> : conflict ? <ConflictBar message="商品或配置版本已变化，本地输入保留；读取最新后请重新核对。" onRead={async () => { await refresh(); }} /> : !writesReady ? "当前不能提交，请先核对权限和读取状态" : undefined}
+      onClose={() => setConfirmation(null)} onConfirm={confirm} />}
+    {release && <ReleaseModal label={`${release.spec.obj} · ${release.spec.action}`} onCancel={() => setRelease(null)} onConfirm={() => { forgetE1(release); syncPending(); setRelease(null); }} />}
+    {toastNode}
+  </RdPage>;
+}
