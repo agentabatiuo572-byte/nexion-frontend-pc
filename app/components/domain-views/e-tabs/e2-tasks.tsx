@@ -330,7 +330,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                   <Facts><Fact lead tone="warn" k="影响设备" unit="台">{impact.devicesAffected}</Fact></Facts><p>当前单照常完成，之后等待配置；停跑期间不计收益、不补发。</p>
                   <Explain label="影响设备的口径" content="按商品全部已发布等级判断候选。设备数只计已激活且当前没有运行单的生产设备，不等于设备管理列表总数。影响是读取时的快照，提交时人数可能变化。" /></Notice>
                   : <Notice tone="neutral">没有商品会失去全部可用任务。</Notice>}</>}</>}
-          {!dialog.original && dialog.kind === "random" && <><Field label="任务数量" required help="1–50 个，整数" explain={<>生成后立即加入当前等级，仅影响之后新派的任务。{GENERATION}</>} error={touched.count && !countReady ? "任务数量要填 1–50 的整数" : undefined}>
+          {!dialog.original && dialog.kind === "random" && <><Field label="任务数量" required help="1–50 个，整数" explain={<><KeepText text="生成后立即加入当前等级，仅影响之后新派的任务。" /><KeepText text={GENERATION} /></>} error={touched.count && !countReady ? "任务数量要填 1–50 的整数" : undefined}>
             <NumberInput unit="个" min={1} max={50} step={1} value={count} disabled={saving} onChange={event => setCount(event.target.value)} onBlur={() => setTouched(old => ({ ...old, count: true }))} /></Field>
             <CheckGroup legend="限定类型" summary={classes.length ? `已选 ${classes.length} 类` : "不限类型"} explain="限制本次随机生成的类型；可多选，不选则不限。不保证每类均匀分到或至少分到一个，不改变已有任务。">
               {TASK_CLASSES.map(value => <Check key={value} label={<TaskClassTag taskClass={value} />} aria-label={TASK_CLASS_LABELS[value]} disabled={saving} checked={classes.includes(value)} onChange={event => setClasses(event.target.checked ? TASK_CLASSES.filter(item => classes.includes(item) || item === value) : classes.filter(item => item !== value))} />)}</CheckGroup></>}
