@@ -85,7 +85,10 @@ function PolicyEditor({ owner, operator, rights }: {
     }
     useEffect(() => { live.current = true; syncPending(); void refresh(); return () => { live.current = false; generation.current++; }; }, []);
     const draftError = phoneDraftError(values);
-    const unchanged = !!policy && allow === policy.allowReplacement && values.every((v, i) => Number(v) === [policy.minReplacementIntervalDays, policy.replacementWindowDays, policy.maxReplacementsInWindow][i]);
+    const unchanged = !!policy && allow === (policy.allowReplacement === true) && values.every((v, i) => {
+        const current = [policy.minReplacementIntervalDays, policy.replacementWindowDays, policy.maxReplacementsInWindow][i];
+        return current == null ? v === "" : v !== "" && Number(v) === current;
+    });
     const blocked = loading || busy || !!confirm || !!pending || !canWrite || !policy?.policyVersion || denied;
     function preview() { if (blocked || draftError || unchanged || !policy?.policyVersion)
         return; setConfirm({ values: phonePolicyValues(allow, values), version: policy.policyVersion, before: policy }); setAck(false); setError(""); }
