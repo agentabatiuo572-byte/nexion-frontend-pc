@@ -548,6 +548,7 @@
 .e1-tags { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .e1-product-price { display: flex; justify-content: space-between; gap: var(--rd-space-2); align-items: baseline; }
 .e1-product-price strong { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.e1-decimal { font-variant-numeric: tabular-nums; }
 .e1-product small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-weight: 400; }
 .e1-product-levels, .e1-product-target, .e1-product-stock, .e1-product-conditions { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; }
 .e1-product-target { padding-block: var(--rd-space-3); border-block: 1px solid var(--rd-line); }

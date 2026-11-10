@@ -13,8 +13,8 @@ import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { EMPTY_SKU_FORM, skuToForm, formToSku, validateSkuSpecs, validateGateForm, type SkuForm } from "./data";
-import { e1MediaCommands, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1SkuDiff, type E1MediaPending } from "./e1-state";
-import { E1TargetRange } from "./e1-catalog";
+import { e1MediaCommands, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1SkuDiff, type E1MediaPending } from "./e1-state";
+import { E1Amount, E1TargetRange } from "./e1-catalog";
 
 export type E1EditRequest = { sku?: OpsSku; unlock?: string; nonce: number };
 type Media = { kind: "image" | "video"; src: string; name: string; size?: number; w?: number; h?: number; duration?: number; assetId?: string; objectKey?: string } | null;
@@ -284,8 +284,8 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
             {!hasTarget && field("dailyEarn", "每日收益 USDT", { number: true, min: 0, step: 0.000001, help: original?.monthlyTargetUsdt != null ? "关闭月目标时须在同一申请中手填" : "兼容展示值" })}
             {field("dailyEarnNEX", "每日收益 UVT", { number: true, min: 0 })}{field("phoneDailyEarn", "手机每日收益 USDT", { number: true, min: 0, step: 0.000001, help: "可留空，留空时不显示对比" })}{field("phoneDailyEarnNEX", "手机每日收益 UVT", { number: true, min: 0, step: 0.000001, help: "可留空，最多6位小数" })}
           </> : <>{!hasTarget && <>{field("shareYieldMin", "共享份额参考年奖励率下限 %", { number: true, min: 0 })}{field("shareYieldMax", "共享份额参考年奖励率上限 %", { number: true, min: 0 })}</>}{field("dailyEarnNEX", "每日额外发放 UVT", { number: true, min: 0 })}</>}</div>
-          {hasTarget && <Facts><Fact k="派生日均">{e1Number(draft.derivedDailyEarnUsdt)} USDT/天</Fact>{form.tier === "Share" && <><Fact k="派生年率下限">{e1Number(draft.derivedShareYieldMinPct)}%</Fact><Fact k="派生年率上限">{e1Number(draft.derivedShareYieldMaxPct)}%</Fact></>}</Facts>}
-          {Number(form.price) > 0 && draft.dailyEarn > 0 && <Fold inset title="旧参考测算" summary="参考口径未换汇" explain="沿旧公式保留参考测算。USD售价与USDT日均未换汇，不是实际利润。手机基准固定0.08，不是E6当前档。"><Facts><Fact k="参考回本天数">≈ {e1Number(Number(form.price) / draft.dailyEarn)} 天</Fact><Fact k="首年净额旧算式">{e1Number(draft.dailyEarn * 365 - Number(form.price))}（USDT日均×365 − USD售价，未换汇）</Fact><Fact k="参考年率">≈ {e1Number(draft.dailyEarn * 365 / Number(form.price) * 100)}%</Fact><Fact k="固定手机基准比">≈ {e1Number(draft.dailyEarn / 0.08)} 倍</Fact><Fact k="售价输入" unit="USD">{e1Number(form.price)}</Fact><Fact k="日均输入" unit="USDT/天">{e1Number(draft.dailyEarn)}</Fact><Fact k="固定手机基准" unit="USDT/天">0.08</Fact></Facts></Fold>}
+          {hasTarget && <Facts><Fact k="派生日均"><E1Amount value={draft.derivedDailyEarnUsdt} unit="USDT/天" /></Fact>{form.tier === "Share" && <><Fact k="派生年率下限"><E1Amount value={draft.derivedShareYieldMinPct} precision={e1Precision([draft.derivedShareYieldMinPct, draft.derivedShareYieldMaxPct])} unit="%" /></Fact><Fact k="派生年率上限"><E1Amount value={draft.derivedShareYieldMaxPct} precision={e1Precision([draft.derivedShareYieldMinPct, draft.derivedShareYieldMaxPct])} unit="%" /></Fact></>}</Facts>}
+          {Number(form.price) > 0 && draft.dailyEarn > 0 && <Fold inset title="旧参考测算" summary="参考口径未换汇" explain="沿旧公式保留参考测算。USD售价与USDT日均未换汇，不是实际利润。手机基准固定0.08，不是E6当前档。"><Facts><Fact k="参考回本天数">≈ <E1Amount value={Number(form.price) / draft.dailyEarn} unit="天" /></Fact><Fact k="首年净额旧算式"><E1Amount value={draft.dailyEarn * 365 - Number(form.price)} />（USDT日均×365 − USD售价，未换汇）</Fact><Fact k="参考年率">≈ <E1Amount value={draft.dailyEarn * 365 / Number(form.price) * 100} unit="%" /></Fact><Fact k="固定手机基准比">≈ <E1Amount value={draft.dailyEarn / 0.08} unit="倍" /></Fact><Fact k="售价输入" unit="USD"><E1Amount value={form.price} /></Fact><Fact k="日均输入" unit="USDT/天"><E1Amount value={draft.dailyEarn} precision={e1Precision([draft.dailyEarn, 0.08])} /></Fact><Fact k="固定手机基准" unit="USDT/天"><E1Amount value={0.08} precision={e1Precision([draft.dailyEarn, 0.08])} /></Fact></Facts></Fold>}
         </EditorSection>
         <EditorSection id="e1-stock" title="库存与购买条件">
           <div className="rd-form-grid">
@@ -316,7 +316,7 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
           {field("specDocumentTitle", "资料名称", { hint: "最多200字", explain: "商品外部资料的入口名称；批准后商品详情在名称与安全链接同时存在时显示。" })}
           {field("specDocumentUrl", "资料链接", { hint: "HTTPS，最多2048字", help: "不能含账号密码；同时清空名称和链接可移除", explain: "公开资料的HTTPS地址，不会自动下载或审核链接内容。" })}
           <Field label="特性清单 · 每行一条" explain="商品特性文字，批准后供目录读取；逐行去除空行。"><Textarea aria-label="特性清单 · 每行一条" value={form.features} onChange={e => update("features", e.target.value)} /></Field>
-          <Fold inset title="保留的历史资料" summary="原快照随完整商品保留"><Facts><Fact k="历史算力标记">{original?.aiUnlocks || "—"}</Fact><Fact k="评分与评价">{e1Number(original?.rating)} / {e1Number(original?.reviews)}</Fact><Fact k="代际">{e1Number(original?.generation)}</Fact><Fact k="替代商品">{original?.supersededBy || "—"}</Fact><Fact k="置换折扣">{e1Number(original?.tradeinDiscount)}</Fact><Fact k="历史标签">{original?.tag || "—"}</Fact></Facts></Fold>
+          <Fold inset title="保留的历史资料" summary="原快照随完整商品保留"><Facts><Fact k="历史算力标记">{original?.aiUnlocks || "—"}</Fact><Fact k="评分与评价">{e1Number(original?.rating)} / {e1Number(original?.reviews)}</Fact><Fact k="代际">{e1Number(original?.generation)}</Fact><Fact k="替代商品">{original?.supersededBy || "—"}</Fact><Fact k="置换折扣"><E1Amount value={original?.tradeinDiscount} /></Fact><Fact k="历史标签">{original?.tag || "—"}</Fact></Facts></Fold>
         </EditorSection>
       </div></div></div>
     </Drawer>

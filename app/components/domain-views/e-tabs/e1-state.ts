@@ -21,6 +21,18 @@ export function e1Number(value: number | string | null | undefined): string {
   return `${negative ? "-" : ""}${integer.replace(/\B(?=(\d{3})+$)/g, ",")}${decimal === undefined ? "" : `.${decimal}`}`;
 }
 
+/** Display precision follows the real digits in one amount/configuration group. */
+export function e1Precision(values: readonly (number | string | null | undefined)[]): number {
+  return Math.max(2, ...values.map(value => (e1Number(value).split(".")[1] ?? "").replace(/0+$/, "").length));
+}
+
+export function e1Decimal(value: number | string | null | undefined, precision = e1Precision([value])): string {
+  const raw = e1Number(value);
+  if (raw === "—") return raw;
+  const [integer, fraction = ""] = raw.split(".");
+  return `${integer}.${fraction.replace(/0+$/, "").padEnd(precision, "0")}`;
+}
+
 /** Exact decimal multiplication for labels and catalogue totals. No currency conversion. */
 export function e1Multiply(a: number | string, b: number | string): string {
   const parts = [a, b].map((value) => {

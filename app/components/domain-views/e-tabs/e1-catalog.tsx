@@ -10,7 +10,7 @@ import type { E1GenerationRelease, E1Phase } from "@/lib/admin/e1-client";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { EViewCtx } from "./types";
 import { e1GateReadiness, gateRemaining, releaseMonthPresentation, resolveE1PhaseId } from "./data";
-import { E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Multiply, e1Range, e1Value } from "./e1-state";
+import { E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Decimal, e1Precision, e1Multiply, e1Range, e1Value } from "./e1-state";
 
 export type E1CatalogContext = Pick<EViewCtx, "skus" | "canWriteE1" | "e1InvalidSkus" | "e1Loading" | "e1Error" | "e1Gates" | "e1BundleDiscount" | "phaseCur" | "refreshE1" | "openSku" | "delSku" | "openActionConfirm" | "toast" | "pE"> & {
   earlyReady: boolean; earlyLoading: boolean; earlyError: string | null; refreshEarly: () => void;
@@ -43,15 +43,21 @@ function SkuMediaThumb({ sku }: { sku: OpsSku }) {
     : <img src={src} alt="" loading="lazy" onError={() => { setFailed(true); setSrc(""); }} />;
 }
 
-export function E1TargetRange({ sku }: { sku: OpsSku }) {
+export function E1Amount({ value, precision, unit }: { value: number | string | null | undefined; precision?: number; unit?: string }) {
+  const raw = value == null || value === "" ? "—" : String(value);
+  return <span className="e1-decimal" tabIndex={raw === "—" ? undefined : 0} title={`${raw}${unit ? ` ${unit}` : ""}`} aria-label={`${raw}${unit ? ` ${unit}` : ""}`}>{e1Decimal(value, precision)}{unit && ` ${unit}`}</span>;
+}
+
+export function E1TargetRange({ sku, precision, bandPrecision }: { sku: OpsSku; precision?: number; bandPrecision?: number }) {
   if (sku.monthlyTargetUsdt == null) return <span className="e1-muted">未设月收益目标</span>;
   const target = sku.monthlyTargetUsdt, band = sku.monthlyTargetBandPct;
-  if (band == null) return <><strong>{e1Number(target)} <small>USDT/月</small></strong><span className="e1-muted">— · 波动未读取</span></>;
+  if (band == null) return <><strong><E1Amount value={target} precision={precision} /> <small>USDT/月</small></strong><span className="e1-muted">— · 波动未读取</span></>;
   const range = e1Range(target, band);
+  const places = precision ?? e1Precision([target, range.low, range.high]);
   return <>
-    <div className="e1-value-line"><strong>{e1Number(target)} <small>USDT/月</small></strong><span className="e1-muted">±{e1Number(band)}%</span></div>
+    <div className="e1-value-line"><strong><E1Amount value={target} precision={places} /> <small>USDT/月</small></strong><span className="e1-muted">±<E1Amount value={band} precision={bandPrecision} />%</span></div>
     <ScaleBar label="月收益目标范围" valueText={`目标 ${e1Number(target)} USDT/月，范围 ${e1Number(range.low)} 至 ${e1Number(range.high)} USDT/月，允许波动 ±${e1Number(band)}%`} max={Number(range.high)} range={{ low: Number(range.low), high: Number(range.high) }} target={target} tone="neutral" />
-    <div className="e1-range-labels"><span>{e1Number(range.low)}</span><span>{e1Number(range.high)} USDT/月</span></div>
+    <div className="e1-range-labels"><E1Amount value={range.low} precision={places} /><E1Amount value={range.high} precision={places} unit="USDT/月" /></div>
   </>;
 }
 
@@ -274,6 +280,11 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
   const valueScale = Math.max(0, ...soldValues.map(v => (v.split(".")[1] ?? "").length));
   const soldValue = soldValues.reduce((sum, v) => sum + BigInt(v.replace(".", "").padEnd(v.replace(".", "").length + valueScale - (v.split(".")[1] ?? "").length, "0")), BigInt("0")).toString().padStart(valueScale + 1, "0");
   const soldValueText = e1Number(valueScale ? `${soldValue.slice(0, -valueScale)}.${soldValue.slice(-valueScale)}` : soldValue);
+  const pricePrecision = e1Precision(skus.map(s => s.price));
+  const targetPrecision = e1Precision(skus.flatMap(s => s.monthlyTargetUsdt == null ? [] : s.monthlyTargetBandPct == null ? [s.monthlyTargetUsdt] : [s.monthlyTargetUsdt, ...Object.values(e1Range(s.monthlyTargetUsdt, s.monthlyTargetBandPct))]));
+  const bandPrecision = e1Precision(skus.map(s => s.monthlyTargetBandPct));
+  const uvtPrecision = e1Precision(skus.map(s => s.dailyEarnNEX));
+  const discountPrecision = e1Precision(ctx.e1BundleDiscount ? [ctx.e1BundleDiscount.twoItemsPct, ctx.e1BundleDiscount.threeItemsPct, ctx.e1BundleDiscount.fourPlusItemsPct] : []);
   const phaseCurrentKnown = phaseOrder.includes(phaseCur);
   return <>
     {available && <Conclusion state={stats[3].value || legacy || unknown || ctx.e1InvalidSkus.length ? "warn" : "neutral"} explain="在售只计通过发布门的商品；仍须同时满足库存、开放阶段和个人购买条件。草稿不是待审批单。">
@@ -306,9 +317,9 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       const sold = s.sold, stock = s.stock == null ? null : Number(s.stock);
       return <article key={s.id} className="e1-product" data-hit={skuLink === s.id ? "" : undefined} aria-label={s.name}>
         <div className="e1-product-identity"><div className="e1-product-media"><SkuMediaThumb sku={s} />{s.badge && <span className="e1-badge">{nexGridBrandText(s.badge)}</span>}</div><div className="e1-product-title"><div className="e1-tags"><span>{operatorSkuTier(s.tier ?? "")}</span><StatusTag tone="neutral">{e1Value(s.status)}</StatusTag></div><h2>{s.name}</h2>{s.tagline && <div className="e1-tagline"><Explain label={`${s.name}完整标语`} content={nexGridBrandText(s.tagline)}>{nexGridBrandText(s.tagline)}</Explain></div>}{canWrite && <Button size="sm" variant="ghost" disabledReason={locked ? "原操作结果未确认，请先核对" : undefined} onClick={() => ctx.openSku(s.id)} aria-label={`改价 / 编辑 ${s.name}`}>改价 / 编辑</Button>}</div></div>
-        <div className="e1-product-price"><span className="e1-muted">售价</span><strong>{e1Number(s.price)} <small>USD</small></strong></div>
+        <div className="e1-product-price"><span className="e1-muted">售价</span><strong><E1Amount value={s.price} precision={pricePrecision} /> <small>USD</small></strong></div>
         <div className="e1-product-levels"><div className="e1-value-line"><span className="e1-muted">任务等级</span>{s.allowedPoolCodes?.length === 0 && <span className="e1-muted">未配置任务等级</span>}</div>{s.allowedPoolCodes == null ? <span className="e1-muted">— · 任务等级未读取</span> : <LevelStrip label={`${s.name}任务等级`} levels={E1_LEVELS} selectedKeys={s.allowedPoolCodes} />}</div>
-        <div className="e1-product-target"><span className="e1-muted">月收益目标<Explain label="月收益目标口径" content="范围是持续运行的设备月目标边界，停跑不补发。各卡刻度独立，不表示实际到账。" /></span><E1TargetRange sku={s} /><span className="e1-muted">{e1Number(s.dailyEarnNEX)} UVT/天{s.dailyEarnNEX == null ? " · 未配置" : ""}</span></div>
+        <div className="e1-product-target"><span className="e1-muted">月收益目标<Explain label="月收益目标口径" content="范围是持续运行的设备月目标边界，停跑不补发。各卡刻度独立，不表示实际到账。" /></span><E1TargetRange sku={s} precision={targetPrecision} bandPrecision={bandPrecision} /><span className="e1-muted"><E1Amount value={s.dailyEarnNEX} precision={uvtPrecision} unit="UVT/天" />{s.dailyEarnNEX == null ? " · 未配置" : ""}</span></div>
         <div className="e1-product-stock">{s.inventoryMode === "UNLIMITED" ? <div className="e1-value-line"><span>不限（非实物）</span><span className="e1-muted">累计已售 {e1Number(sold)}</span></div> : <><div className="e1-value-line"><span className="e1-muted">已售 {e1Number(sold)}</span><span>剩余 {e1Number(stock)}{stock === 0 ? " · 售罄" : ""}</span></div>{sold != null && stock != null && (sold + stock > 0 ? <RatioBar label="已售与剩余库存构成" value={sold} total={sold + stock} valueText={`已售 ${sold}，剩余 ${stock}`} tone="role-2" /> : <span className="e1-muted">暂无已售和库存</span>)}</>}</div>
         <div className="e1-product-conditions"><span className="e1-muted">托管 · {datacenterNameText(s.datacenter || "— · 未填写")}</span><div className="e1-tags"><StatusTag tone="neutral">{s.trialEligible ? "允许试用" : "不可试用"}</StatusTag>{s.purchaseGate && <StatusTag tone={s.purchaseGate.enforce ? "warn" : "neutral"} explain={`会员等级 ${s.purchaseGate.rankMin ?? 0}；活跃直接邀请 ${s.purchaseGate.activeDirectMin ?? 0}；团队算力点 ${e1Number(s.purchaseGate.teamComputePointsMin)}；关系 ${s.purchaseGate.mode === "either" ? "任一满足" : "全部满足"}；剩余配额 ${gateRemaining(s.purchaseGate) ?? "不限"}。配额限制不替代实物库存。`}>购买条件{gateRemaining(s.purchaseGate) == null ? "" : ` · 剩 ${gateRemaining(s.purchaseGate)}`}</StatusTag>}<StatusTag tone={open ? "neutral" : "warn"}>{s.unlock ? phaseLabel(s.unlock) : "无需阶段"}</StatusTag></div>
           {blockers.map((b, i) => <div className="e1-card-warning" key={i}>{b}{release && <Button variant="ghost" onClick={() => revealPlan(s.id)}>查看条件</Button>}</div>)}
@@ -352,21 +363,21 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
             </Tr>;
           })}</tbody></Table>}
       </Fold></div>
-      <Fold title="组合购折扣" icon={PackageCheck} summary={ctx.e1BundleDiscount ? `2 件 ${e1Number(ctx.e1BundleDiscount.twoItemsPct)}% · 3 件 ${e1Number(ctx.e1BundleDiscount.threeItemsPct)}% · 4+ 件 ${e1Number(ctx.e1BundleDiscount.fourPlusItemsPct)}%` : "未读取"} actions={canWrite && <Button size="sm" disabledReason={ctx.locked("store_bundle_discount", "canonical") ? "原操作结果未确认" : undefined} onClick={adjustBundleDiscount}>调整阶梯折扣</Button>}>
-        <ConfigList label="组合购阶梯折扣">{ctx.e1BundleDiscount && [["2 件折扣", ctx.e1BundleDiscount.twoItemsPct], ["3 件折扣", ctx.e1BundleDiscount.threeItemsPct], ["4 件及以上折扣", ctx.e1BundleDiscount.fourPlusItemsPct]].map(([name, value]) => <ConfigRow key={name} name={name} value={`${e1Number(value)}%`} what="购买相应件数的目录折扣" when="批准后新订单按新折扣，已有订单不变" />)}</ConfigList>
+      <Fold title="组合购折扣" icon={PackageCheck} summary={ctx.e1BundleDiscount ? <>2 件 <E1Amount value={ctx.e1BundleDiscount.twoItemsPct} precision={discountPrecision} />% · 3 件 <E1Amount value={ctx.e1BundleDiscount.threeItemsPct} precision={discountPrecision} />% · 4+ 件 <E1Amount value={ctx.e1BundleDiscount.fourPlusItemsPct} precision={discountPrecision} />%</> : "未读取"} actions={canWrite && <Button size="sm" disabledReason={ctx.locked("store_bundle_discount", "canonical") ? "原操作结果未确认" : undefined} onClick={adjustBundleDiscount}>调整阶梯折扣</Button>}>
+        <ConfigList label="组合购阶梯折扣">{ctx.e1BundleDiscount && [["2 件折扣", ctx.e1BundleDiscount.twoItemsPct], ["3 件折扣", ctx.e1BundleDiscount.threeItemsPct], ["4 件及以上折扣", ctx.e1BundleDiscount.fourPlusItemsPct]].map(([name, value]) => <ConfigRow key={name} name={name} value={<E1Amount value={value} precision={discountPrecision} unit="%" />} what="购买相应件数的目录折扣" when="批准后新订单按新折扣，已有订单不变" />)}</ConfigList>
       </Fold>
       <Fold title="目录口径" icon={FileText} summary={`${knownSold.reduce((sum,s) => sum + s.sold!, 0)} 件已知售出 · ${releases.length} 条分批规则`} explain="只计通过发布门的商品。目录计数乘当前售价，不是订单实付 GMV。缺销量或无效行时仅为已知部分。">
-        <Facts><Fact k="目录累计售出额" unit="USD">{soldValueText}</Fact><Fact k="已知售出数量">{e1Number(knownSold.reduce((sum,s) => sum + s.sold!, 0))} 件</Fact><Fact k="分批规则数">{releases.length}</Fact><Fact k="未开放规则数">{gated}</Fact></Facts>
+        <Facts><Fact k="目录累计售出额" unit="USD"><E1Amount value={soldValueText.replaceAll(",", "")} /></Fact><Fact k="已知售出数量">{e1Number(knownSold.reduce((sum,s) => sum + s.sold!, 0))} 件</Fact><Fact k="分批规则数">{releases.length}</Fact><Fact k="未开放规则数">{gated}</Fact></Facts>
         {(ctx.e1InvalidSkus.length > 0 || skus.some(s => s.publishBlocked === false && s.sold == null) || unknown > 0) && <Notice tone="warn" title="小计只含已知部分" />}
       </Fold>
     </>}
     {detail && <Drawer open title="商品资料" sub={detail.name} icon={Boxes} onClose={() => setDetail(null)} footer={<Decision primary={canWrite && <Button variant="primary" disabledReason={ctx.locked("device_sku", detail.id) ? "原操作结果未确认" : undefined} onClick={() => { const id = detail.id; setDetail(null); ctx.openSku(id); }}>改价 / 编辑</Button>} others={<Button onClick={() => setDetail(null)}>关闭</Button>} />}>
-      <JudgmentPoints rows={[{ label: "状态", value: e1Value(detail.status) }, { label: "售价", value: `${e1Number(detail.price)} USD` }, { label: "任务等级", value: detail.allowedPoolCodes?.join("、") || "未配置" }, { label: "月收益目标", value: detail.monthlyTargetUsdt == null ? "未设月收益目标" : `${e1Number(detail.monthlyTargetUsdt)} USDT/月` }, { label: "库存", value: detail.inventoryMode === "UNLIMITED" ? "不限（非实物）" : e1Number(detail.stock) }]} />
-      <Fold inset title="完整规格与购买条件" summary={`${E1_SKU_FIELDS.length} 项资料`} defaultOpen><Facts>{E1_SKU_FIELDS.map(f => <Fact key={f.key} k={f.label}>{e1Value(detail[f.key], f.unit)}</Fact>)}</Facts></Fold>
+      <JudgmentPoints rows={[{ label: "状态", value: e1Value(detail.status) }, { label: "售价", value: <E1Amount value={detail.price} unit="USD" /> }, { label: "任务等级", value: detail.allowedPoolCodes?.join("、") || "未配置" }, { label: "月收益目标", value: detail.monthlyTargetUsdt == null ? "未设月收益目标" : <E1Amount value={detail.monthlyTargetUsdt} unit="USDT/月" /> }, { label: "库存", value: detail.inventoryMode === "UNLIMITED" ? "不限（非实物）" : e1Number(detail.stock) }]} />
+      <Fold inset title="完整规格与购买条件" summary={`${E1_SKU_FIELDS.length} 项资料`} defaultOpen><Facts>{E1_SKU_FIELDS.map(f => <Fact key={f.key} k={f.label}>{f.unit || f.key === "tradeinDiscount" ? <E1Amount value={detail[f.key] as number | null} precision={e1Precision(E1_SKU_FIELDS.filter(other => other.unit === f.unit && (f.unit || other.key === f.key)).map(other => detail[other.key] as number | null))} unit={f.unit} /> : e1Value(detail[f.key])}</Fact>)}</Facts></Fold>
       <Fold inset title="兼容收益与策略" summary={`策略版本 ${detail.productTaskPolicyVersion ?? "—"}`}><Facts>
-        <Fact k="兼容日均 USDT">{e1Number(detail.derivedDailyEarnUsdt ?? detail.dailyEarn)} USDT/天</Fact><Fact k="日 UVT">{e1Number(detail.dailyEarnNEX)} UVT/天</Fact>
-        {detail.tier === "Share" && detail.monthlyTargetUsdt != null && detail.monthlyTargetBandPct != null && <><Fact k="Share 预估日收益下限">{e1Number(Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).low) / 30)} USDT/天</Fact><Fact k="Share 预估日收益上限">{e1Number(Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).high) / 30)} USDT/天</Fact></>}
-        <Fact k="参考年奖励率下限">{e1Number(detail.derivedShareYieldMinPct ?? detail.shareYieldMin)}%</Fact><Fact k="参考年奖励率上限">{e1Number(detail.derivedShareYieldMaxPct ?? detail.shareYieldMax)}%</Fact><Fact k="任务策略版本">{e1Number(detail.productTaskPolicyVersion)}</Fact><Fact k="策略生效时间">{detail.productTaskPolicyEffectiveAt || "—"}</Fact><Fact k="修订时间">{detail.updatedAt || "—"}</Fact><Fact k="媒体资源">{detail.imageAssetId || "—"}</Fact>
+        <Fact k="兼容日均 USDT"><E1Amount value={detail.derivedDailyEarnUsdt ?? detail.dailyEarn} unit="USDT/天" /></Fact><Fact k="日 UVT"><E1Amount value={detail.dailyEarnNEX} unit="UVT/天" /></Fact>
+        {detail.tier === "Share" && detail.monthlyTargetUsdt != null && detail.monthlyTargetBandPct != null && <><Fact k="Share 预估日收益下限"><E1Amount value={Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).low) / 30} precision={e1Precision([Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).low) / 30, Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).high) / 30])} unit="USDT/天" /></Fact><Fact k="Share 预估日收益上限"><E1Amount value={Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).high) / 30} precision={e1Precision([Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).low) / 30, Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).high) / 30])} unit="USDT/天" /></Fact></>}
+        <Fact k="参考年奖励率下限"><E1Amount value={detail.derivedShareYieldMinPct ?? detail.shareYieldMin} precision={e1Precision([detail.derivedShareYieldMinPct ?? detail.shareYieldMin, detail.derivedShareYieldMaxPct ?? detail.shareYieldMax])} unit="%" /></Fact><Fact k="参考年奖励率上限"><E1Amount value={detail.derivedShareYieldMaxPct ?? detail.shareYieldMax} precision={e1Precision([detail.derivedShareYieldMinPct ?? detail.shareYieldMin, detail.derivedShareYieldMaxPct ?? detail.shareYieldMax])} unit="%" /></Fact><Fact k="任务策略版本">{e1Number(detail.productTaskPolicyVersion)}</Fact><Fact k="策略生效时间">{detail.productTaskPolicyEffectiveAt || "—"}</Fact><Fact k="修订时间">{detail.updatedAt || "—"}</Fact><Fact k="媒体资源">{detail.imageAssetId || "—"}</Fact>
       </Facts></Fold>
     </Drawer>}
   </>;
