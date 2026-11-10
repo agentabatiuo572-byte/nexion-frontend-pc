@@ -1505,7 +1505,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         businessForm={mc.businessForm}
         reasonMin={8}
         reasonMax={200}
-        completionCopy={mc.orderId ? undefined : "批准后生效：提交后请另一位超级管理员在「操作记录与审批」中批准。"}
+        completionCopy={mc.orderId ? undefined : isE2TaskMutation(mc.op)
+          ? "批准后生效：提交后请另一位有批准权限和任务池修改权限的管理员在「操作记录与审批」中批准。"
+          : ["sku-save", "sku-status", "sku-delete"].includes(mc.op)
+            ? "批准后生效：提交后请另一位有批准权限和商品修改权限的管理员在「操作记录与审批」中批准。"
+            : "批准后生效：提交后请另一位超级管理员在「操作记录与审批」中批准。"}
         effect={mc.effect}
         confirmLabel={mc.confirmLabel}
         confirmTone={mc.confirmTone}

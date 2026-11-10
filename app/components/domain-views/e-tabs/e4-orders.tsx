@@ -23,8 +23,8 @@ const FAILED_STATES = ["payment_failed", "provisioning_failed", "chargeback"];
 // 状态的白话：这个状态意味着什么、下一步谁来做（DP-35）。流程示意和抽屉共用。
 const STATE_TEXT: Record<string, string> = {
   placed: "用户已下单，还没付款。付款记录确认到账后才算已支付，后台不能手动标记。",
-  paid: "用户已付款。款项结算、设备和托管机房都到位后，才能推进到开通中。",
-  provisioning: "设备放在平台机房托管，不发实物，所以开通时要分配托管机房。设备激活后，才能推进到已激活。",
+  paid: "用户已付款。先确认款项已结算，并在「设备管理」核对设备和托管机房标签，条件齐全后才能推进到开通中。",
+  provisioning: "设备放在平台机房托管，不发实物。先在「设备管理」核对设备和托管机房标签并激活设备，才能推进到已激活。",
   activated: "设备已激活，订单已交付。",
   inventory: "设备已进用户的设备仓库，还没激活。这也算已交付。",
   payment_failed: "下单后未成功扣款",
@@ -267,7 +267,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     </Panel>
 
     <Fold title="订单状态怎么流转" summary={`主流程 4 步，另有 ${ORDER_FINAL_STATES.length} 种异常或结束`} icon={Route}
-      explain="设备放在平台机房托管，不发实物，所以开通时要分配托管机房。只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款，批准执行时会检查平台资金是否够退。「标记失败结果」不会退款。">
+      explain="设备放在平台机房托管，不发实物。开通前先确认款项已结算，并在「设备管理」核对设备和托管机房标签；设备激活后才能推进到已激活。只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款，批准执行时会检查平台资金是否够退。「标记失败结果」不会退款。">
       <Steps label="订单处理流程" items={[
         { label: "已下单", state: "todo", sub: countText("placed") },
         { label: "已支付", state: "todo", sub: countText("paid") },
@@ -333,7 +333,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const progressBlock = eff === "placed"
     ? { code: "ORDER_PAYMENT_CONFIRMATION_REQUIRED", title: "等用户付款", text: "要等付款记录确认用户真的付了款，后台不能手动标记已付款。" }
     : eff === "paid" && (!hasSettledFunding || !hasAllocatedDevice)
-      ? { code: "ORDER_PROVISIONING_EVIDENCE_REQUIRED", title: "等款项结算和设备分配", text: "要先确认款项已结算，并在「设备管理」分配好设备和托管机房。" }
+      ? { code: "ORDER_PROVISIONING_EVIDENCE_REQUIRED", title: "等款项结算和设备事实", text: "要先确认款项已结算，并在「设备管理」核对设备和托管机房标签。" }
       : eff === "provisioning" && !e4Detail?.deviceActivatedAt
         ? { code: "ORDER_DEVICE_ACTIVATION_REQUIRED", title: "等设备激活", text: "要先在「设备管理」激活设备，订单才能完成。" }
         : null;
@@ -516,9 +516,9 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
       </Notice>}
       <JudgmentPoints rows={rows} />
       {e4Detail && e4Detail.orderType !== "TRIAL_CONVERT" && <OrdinaryRefundImpact impact={e4Detail.refundImpact} />}
-      <Fold inset title="订单信息" icon={Package} tone="devices" open={infoOpen} onOpenChange={setInfoOpen} summary={infoOpen ? undefined : `${o.dc === "—" ? "未分配托管机房" : o.dc} · 下单 ${o.age}前`}>
+      <Fold inset title="订单信息" icon={Package} tone="devices" open={infoOpen} onOpenChange={setInfoOpen} summary={infoOpen ? undefined : `${o.dc === "—" ? "托管机房标签未提供" : o.dc} · 下单 ${o.age}前`}>
         <Facts>
-          <Fact k="托管机房">{o.dc}</Fact>
+          <Fact k="托管机房标签">{o.dc}</Fact>
           <Fact k="下单时间">{o.orderedAt ? `${formatBusinessTimeFull(o.orderedAt, "—")}（${businessZone().label}）` : "—"}</Fact>
           {e4Detail && !finalized && !refundableState && <Fact k="兑付覆盖率">{coverageText}</Fact>}
         </Facts>
