@@ -516,3 +516,6 @@
 .e2-task-panel .rd-filter-row > [data-cp="filter"] { display: flex; align-items: center; }
 .e2-duration { display: flex; align-items: center; justify-content: flex-end; gap: var(--rd-space-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .e2-duration-value { min-inline-size: 8ch; text-align: right; }
+
+/* Reserve the selection control column so headings, filters and task-name text share one edge. */
+.e2-task-panel .rd-panel[data-flush] > :is(.rd-panel-head, .rd-pager), .e2-task-panel :is(.rd-filter, .rd-batch) { padding-inline-start: calc(var(--rd-panel-pad-x) + var(--rd-space-4) + var(--rd-space-4)); }
