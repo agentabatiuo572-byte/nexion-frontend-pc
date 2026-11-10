@@ -103,6 +103,9 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
       const chips = rule.chips.filter(matches);
       if (needle && chips.length === 0) return null;
       const change = changes.find(item => item.id === rule.id);
+      const chipActions = canWrite && <div className="ios-actions"><Btn sm disabled={!editable || !!chipForm || importOpen} onClick={() => setChipForm({ tierId: rule.id, isNew: true, aliases: "",
+        chip: { socKey: "", name: "", manufacturer: "", aliases: [] } })}>在本档新增芯片</Btn>
+        {rule.chips.length === 0 && <Btn sm disabled={!editable} onClick={() => onChange(rules.filter(item => item.id !== rule.id), removals)}>删除空档</Btn>}</div>;
       return <details key={rule.id + index} open={!!needle}>
         <summary>{rule.name || "未命名档"} · {formatRange(rule)} · {rule.chips.length} 颗芯片{rule.enabled ? "" : " · 已停用"}
           {change && <small> · {CHANGE_LABELS[change.kind]}{change.details.length ? `：${change.details.join("；")}` : ""}</small>}</summary>
@@ -118,7 +121,7 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
             onChange={event => update(rule.id, { enabled: event.target.checked })} />参加后续校准匹配</label>
         </div>
         <label>运营说明（选填）<input value={rule.note ?? ""} maxLength={500} disabled={!editable} onChange={event => update(rule.id, { note: event.target.value || null })} /></label>
-        <div className="ios-table"><Table label="Android 芯片目录" data-tight>
+        {chips.length === 0 ? <BlockState state="empty" title="本档暂无芯片" detail={chipActions}/> : <><div className="ios-table"><Table label="Android 芯片目录" data-tight>
           <thead><Tr>{["芯片", "厂商", "已核验标识", "操作"].map(label => <Th key={label}>{label}</Th>)}</Tr></thead>
           <tbody>{chips.map(chip => <Tr key={chip.socKey}>
             <Td><strong>{chip.name}</strong><br /><small className="mono">{chip.socKey}</small></Td>
@@ -133,9 +136,7 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
             </div></Td>
           </Tr>)}</tbody>
         </Table></div>
-        <Btn sm disabled={!editable || !!chipForm || importOpen} onClick={() => setChipForm({ tierId: rule.id, isNew: true, aliases: "",
-          chip: { socKey: "", name: "", manufacturer: "", aliases: [] } })}>在本档新增芯片</Btn>
-        <Btn sm disabled={!editable || rule.chips.length > 0} onClick={() => onChange(rules.filter(item => item.id !== rule.id), removals)}>删除空档</Btn>
+        {chipActions}</>}
       </details>;
     })}
     {chipForm && <Drawer open title={chipForm.isNew ? "新增芯片" : `编辑芯片 · ${chipForm.chip.name}`} onClose={()=>setChipForm(null)} footer={<Decision primary={<Button variant="primary" disabled={!editable || !chipForm.chip.socKey || !chipForm.chip.name.trim() || !chipForm.chip.manufacturer.trim() || !chipForm.aliases.trim()} onClick={saveChip}>保存到草稿</Button>} others={<Button onClick={()=>setChipForm(null)}>取消</Button>}/> }><div className="e6-legacy-fields ios-form">

@@ -8,7 +8,7 @@ export function E6OriginalValues({ original, children, group = false }: { origin
   const Trigger = group ? "div" : "span";
   return <Tooltip.Provider delayDuration={100}><Tooltip.Root>
     <Tooltip.Trigger asChild><Trigger tabIndex={0} className={group ? "e6-original-group" : "e6-original"}>{children}</Trigger></Tooltip.Trigger>
-    <Tooltip.Portal><Tooltip.Content className="rd-tip" side="bottom" sideOffset={6} collisionPadding={12}>后端原值：{original}</Tooltip.Content></Tooltip.Portal>
+    <Tooltip.Portal><Tooltip.Content className={group ? "rd-tip e6-original-tip" : "rd-tip"} side="bottom" sideOffset={6} collisionPadding={12}>后端原值：{original}</Tooltip.Content></Tooltip.Portal>
   </Tooltip.Root></Tooltip.Provider>;
 }
 export function E6Amount({ raw, precision, currency }: { raw: string; precision: number; currency: string }) {
