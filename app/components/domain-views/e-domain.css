@@ -523,6 +523,7 @@
 .e5-table :is(th, td):not(:last-child) { padding-right: calc(var(--rd-cell-pad) + var(--e5-column-gap, 0px)); }
 .e5-table :is(.e5-device-col, .e5-user-col) .rd-cell { max-width: none; }
 .e5-table .e5-device-col .rd-cell-main { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+.e5-name-measure { position: fixed; visibility: hidden; pointer-events: none; }
 .e5-table :is(th, td).e5-status-col { left: var(--e5-device-width, 132px); right: 52px; text-align: left; }
 .e5-serial:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
 .e5-table .e5-status-col .rd-th-inner { justify-content: flex-start; }

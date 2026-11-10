@@ -124,11 +124,27 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
     const update = () => {
       const main = host.querySelector(".e5-device-col .rd-cell-main"), sub = host.querySelector(".e5-device-col .rd-cell-sub");
       const nameWidth = Math.max(0, ...rows.map(row => measure(row.deviceName, main)));
+      let deviceMin = 132;
+      if (main) {
+        const probe = document.createElement("span");
+        probe.className = "rd-cell-main e5-name-measure"; probe.setAttribute("aria-hidden", "true");
+        main.parentElement!.append(probe);
+        const twoLines = parseFloat(getComputedStyle(main).lineHeight) * 2;
+        for (const row of rows) {
+          probe.textContent = row.deviceName;
+          let low = 104, high = 312;
+          while (low < high) {
+            const middle = Math.floor((low + high) / 2); probe.style.width = `${middle}px`;
+            if (probe.getBoundingClientRect().height > twoLines + 1) low = middle + 1; else high = middle;
+          }
+          deviceMin = Math.max(deviceMin, low + 28);
+        }
+        probe.remove();
+      }
       // One native table, with content-sized bounded columns. Device and task share the available growth first.
-      const deviceMin = Math.max(132, Math.min(340, Math.ceil(nameWidth / 2) + 28));
       const deviceWant = Math.min(340, Math.max(deviceMin, nameWidth + 28, ...rows.map(row => measure(row.serial, sub) + 28)));
       const user = Math.min(260, widest(".e5-user-meta", 34, 184));
-      const status = widest(".e5-status-col .rd-tag", 48, 136);
+      const status = Math.max(136, ...Array.from(host.querySelectorAll(".e5-status-col .e5-task-head"), head => Array.from(head.children).reduce((width, child) => width + child.getBoundingClientRect().width, 24)));
       const income = Math.max(widest(".e5-amount", 16, 180), widest(".e5-income-range .e5-sub", 154, 180));
       const taskMin = Math.max(160, ...Array.from(host.querySelectorAll(".e5-task-time"), element => measure(element.textContent ?? "", element.querySelector(".e5-sub")) + (element.querySelector(".rd-ratio") ? 88 : 16)));
       const taskWant = Math.max(taskMin, Math.min(280, taskMin * 1.3));
