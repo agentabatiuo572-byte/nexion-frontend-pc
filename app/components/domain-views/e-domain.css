@@ -526,6 +526,7 @@
 .e5-table :is(th, td).e5-status-col { left: var(--e5-device-width, 132px); right: 52px; text-align: left; }
 .e5-serial:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
 .e5-table .e5-status-col .rd-th-inner { justify-content: flex-start; }
+.e5-table .e5-action-col { white-space: nowrap; }
 .e5-empty-value { white-space: nowrap; }
 
 .e5-list-panel > .rd-filter { padding: 0 var(--rd-panel-pad-x) 12px; }

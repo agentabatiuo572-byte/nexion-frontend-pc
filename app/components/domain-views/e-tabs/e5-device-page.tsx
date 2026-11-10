@@ -234,8 +234,9 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
         <Stat icon={CirclePause} label="已停用" value={overviewLoading ? <span className="rd-skeleton" aria-label="正在读取" /> : overview?.stopped ?? "—"} unit="台" tone="done" onOpen={() => change({ simState: "STOPPED" })} openLabel="查已停用" selected={query.simState === "STOPPED"} selectedText="已筛选" />
       </StatBand>
       <Panel title="状态分布" className="e5-distribution" explain="只统计用户通过购买、置换、试用转正、赠送得到的设备，不含手机；四数不随筛选变。点击等待启动或其他后，选择一个真实状态。">
+      {overviewLoading && <BlockState compact state="loading" title="正在读取状态分布…" />}
       {overviewError && <BlockState compact state="error" title="用户设备概览暂时读不到" detail={overviewError} onRetry={() => void readOverview()} />}
-      {overview && other < 0 ? <BlockState compact state="error" title="状态分布暂时无法核对" onRetry={() => void readOverview()} /> : overview && overview.total > 0 && <StatusDistributionBar label={`用户设备状态分布，共 ${overview.total} 台`} selectedKey={selectedGroup} segments={[
+      {overview && other < 0 ? <BlockState compact state="error" title="状态分布暂时无法核对" onRetry={() => void readOverview()} /> : overview && <StatusDistributionBar label={`用户设备状态分布，共 ${overview.total} 台`} emptyText="暂无用户设备" selectedKey={selectedGroup} segments={[
         { key: "running", label: "运行中", value: overview.running, text: `${overview.running} 台`, tone: "ok", onSelect: () => change({ simState: "RUNNING" }) },
         { key: "waiting", label: "等待启动", value: overview.waitingActivation, text: `${overview.waitingActivation} 台`, tone: "neutral", onSelect: () => setGroup("waiting") },
         { key: "stopped", label: "已停用", value: overview.stopped, text: `${overview.stopped} 台`, tone: "done", onSelect: () => change({ simState: "STOPPED" }) },
