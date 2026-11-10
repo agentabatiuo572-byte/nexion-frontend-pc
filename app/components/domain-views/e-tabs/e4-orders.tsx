@@ -151,7 +151,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     : refundWait ? <>有 <b>{refundWait}</b> 单开通失败待核对</> : <>有 <b>{flowWait}</b> 单等开通或激活</>;
   const waitHint = "点一行看下一步；有待审批标记的订单先等审批结束。";
   // 怎么算、去哪做收进结论旁的提示图标（DP-06）。
-  const waitExplain = `${flowWait ? "设备分配和激活在「设备运行管理」做。" : ""}${searchNote}` || undefined;
+  const waitExplain = `${flowWait ? "设备分配和激活在「设备管理」做。" : ""}${searchNote}` || undefined;
   const failedCount = countOf(FAILED_STATES);
   const countState = ctx.e4CountsFailed ? "数量暂时读不到" : counts ? undefined : "读取中";
   const activated = orders.filter((order) => ctx.orderState(order) === "activated");
@@ -333,9 +333,9 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const progressBlock = eff === "placed"
     ? { code: "ORDER_PAYMENT_CONFIRMATION_REQUIRED", title: "等用户付款", text: "要等付款记录确认用户真的付了款，后台不能手动标记已付款。" }
     : eff === "paid" && (!hasSettledFunding || !hasAllocatedDevice)
-      ? { code: "ORDER_PROVISIONING_EVIDENCE_REQUIRED", title: "等款项结算和设备分配", text: "要先确认款项已结算，并在「设备运行管理」分配好设备和托管机房。" }
+      ? { code: "ORDER_PROVISIONING_EVIDENCE_REQUIRED", title: "等款项结算和设备分配", text: "要先确认款项已结算，并在「设备管理」分配好设备和托管机房。" }
       : eff === "provisioning" && !e4Detail?.deviceActivatedAt
-        ? { code: "ORDER_DEVICE_ACTIVATION_REQUIRED", title: "等设备激活", text: "要先在「设备运行管理」激活设备，订单才能完成。" }
+        ? { code: "ORDER_DEVICE_ACTIVATION_REQUIRED", title: "等设备激活", text: "要先在「设备管理」激活设备，订单才能完成。" }
         : null;
   // 开通失败要读完详情才知道付没付款，没读完时先当能退，动作由读取锁挡着。
   const refundableState = ["paid", "provisioning", "activated", "inventory"].includes(eff)
@@ -504,7 +504,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           }}>标记失败结果</Button>}
         </>}
         primary={nextState && <Button variant="primary" disabledReason={waitReason} onClick={() => openActionConfirm({ briefKind: "record", name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, title: "推进订单", op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, effect: approvalTag, confirmLabel: "提交审批", reasonPlaceholder: reasonHint,
-          statedBrief: { impact: nextState === "provisioning" ? "订单进入开通中，接着到「设备运行管理」激活设备" : "订单完成交付，不用再处理", check: "核对状态变化，理由写清依据或工单号。" },
+          statedBrief: { impact: nextState === "provisioning" ? "订单进入开通中，接着到「设备管理」激活设备" : "订单完成交付，不用再处理", check: "核对状态变化，理由写清依据或工单号。" },
           facts: orderFacts(<Fact k="状态变化"><Change from={stateLabel(eff)} to={stateLabel(nextState)} /></Fact>),
           detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Button>}
       />}>

@@ -67,9 +67,10 @@ export function MetricBoard({ title, explain, tools, meta, rows = 3, long, child
   );
 }
 
-export function MetricCard({ label, value, unit, compare, rows = [], bar, tone, icon, explain, href, openLabel, state = "ready", onRetry }: {
+export function MetricCard({ label, value, prefix, unit, compare, rows = [], bar, tone, icon, explain, href, openLabel, state = "ready", onRetry }: {
   label: string;
   value: string;
+  prefix?: string;
   unit?: string;
   compare?: ReactNode;
   /** 最多三行。 */
@@ -100,7 +101,7 @@ export function MetricCard({ label, value, unit, compare, rows = [], bar, tone, 
         : (
           <>
             <div className="rd-metric-value" data-tone={tone} data-zero={quiet ? "" : undefined}>
-              {shown}{unit && shown !== "—" && <span className="rd-metric-unit">{unit}</span>}
+              {prefix && shown !== "—" && `${prefix} `}{shown}{unit && shown !== "—" && <span className="rd-metric-unit">{unit}</span>}
             </div>
             <div className="rd-metric-compare">{state === "failed" ? <>暂时读不到{onRetry && <> · <InlineRetry onRetry={onRetry} /></>}</> : compare}</div>
           </>

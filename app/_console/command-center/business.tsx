@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 经营数据：六张卡和时段切换。只接现成接口，时段切换不重读，三段数据第一次都读齐（B0 5.6）。
+ * 经营数据和时段切换。只接现成接口，时段切换不重读，三段数据第一次都读齐（B0 5.6）。
  * 今天没过完，对比只写昨日全天、上周全周、上月全月，不算百分比（DP-63）；同时段对比等后端汇总接口。
  * 颜色按 VS-12：入金是流入青，提现是流出品红，净入金是差额用正文色（VS-11），销售额金，注册紫；
  * 活跃用户是第五个有角色色的数，用灰（VS-10），一屏主色多一个是产品批准的例外，见重构说明。
@@ -9,7 +9,7 @@
  * 同一个数一页只出现一次（DP-61）：待审核写在待处理那一行，那一行不显示时才写在提现卡上；净入金用比例条，不再写入金、提现金额。
  */
 import { useState } from "react";
-import { Activity, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, CircleDollarSign, UserPlus } from "lucide-react";
+import { Activity, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, CircleDollarSign, Server, UserPlus } from "lucide-react";
 import { Explain, InlineRetry, LONG, MetricBoard, MetricCard, Segments } from "@/app/components/rd";
 import { b0PeriodDays, type fetchB0ActiveUsers, type fetchB0Devices, type fetchB0MoneyFlows, type fetchB0Registrations, type fetchB0Sales, type B0Period } from "@/lib/admin/b0-client";
 import type { B0Blocks } from "@/lib/admin/b0-access";
@@ -69,7 +69,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, moneyFlo
   clock: string | null;
   reach: (href: string) => boolean;
 }) {
-  // 只有注册、活跃两张卡时切时段没有用，不放切换，按今日（00 提供邀请）。
+  // 没有资金或销售卡时切时段没有用，不放切换，按今日（00 提供邀请）。
   const switchable = blocks.moneyFlows || blocks.sales;
   const period = switchable ? chosen : "today";
   const { previous, word } = PERIODS.find((item) => item.value === period)!;
@@ -96,17 +96,11 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, moneyFlo
     ...(blocks.withdrawals ? [countRow("系统处理中", systemProcessing)] : []),
     ...(reviewOnCard ? [countRow("待审核", reviewPending)] : []),
   ];
-  const deviceRows = !blocks.devices ? []
-    : devices.error ? [{ k: "设备", v: <>暂时读不到 · <InlineRetry onRetry={devices.reload} /></> }]
-      : [
-        { k: "在线设备", v: devices.data ? `${fmtNum(devices.data.online)} 台` : "…" },
-        { k: "设备异常", v: devices.data ? `${fmtNum(devices.data.abnormal)} 台` : "…", tone: devices.data?.abnormal ? "warn" as const : undefined },
-      ];
   // 分项区按这组卡最多几行留高：注册 3 行，提现 1～3 行，净入金比例条和销售、设备各算 2 行。
   const reservedRows = Math.max(
     blocks.newUsers ? 3 : 1,
     blocks.moneyFlows ? Math.max(2, 1 + withdrawalCounts.length) : 1,
-    blocks.sales || (blocks.activeUsers && blocks.devices) ? 2 : 1,
+    blocks.sales || blocks.devices ? 2 : 1,
   );
 
   const active = activeUsers.data;
@@ -115,7 +109,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, moneyFlo
       title="经营数据"
       explain={switchable
         ? "今日从 0 点到现在，本周从周一 0 点到现在，本月从 1 日 0 点到现在。今天还没过完，所以只并排写昨日全天、上周全周、上月全月的数，不算百分比。数字大小不分好坏，提现多了不代表不好。金额和注册人数现在还没有排除测试账号。"
-        : "注册用户是上线以来累计，下面三个新增按今日、本周、本月分开写。活跃用户只有今日和昨日。注册人数现在还没有排除测试账号。"}
+        : "注册用户是上线以来累计，下面三个新增按今日、本周、本月分开写。活跃用户只有今日和昨日。注册人数现在还没有排除测试账号。设备是此刻的商城设备，不含手机，不随时段变。"}
       tools={switchable ? <Segments label="经营数据时段" value={period} items={PERIODS} onChange={onPeriodChange} /> : undefined}
       meta={clock ? `${since}截至 ${clock} · ${businessZone().label}` : "正在读取…"}
       rows={reservedRows}
@@ -231,16 +225,33 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, moneyFlo
           unit="人"
           compare={period !== "today" ? "只有今日数据"
             : active ? (active.yesterday === null ? "昨日没有记录" : `昨日全天 ${fmtNum(active.yesterday)} 人`) : undefined}
-          rows={deviceRows}
           explain={<>
             <p>当天用有效的登录状态访问过 App 或 H5 的人数，同一人一天算一次，不算后台账号和测试账号。当天没有记录时写「—」。</p>
             <p>现在只有今日和昨日。本周、本月要跨天去重，不能把每天相加，所以先不写。</p>
-            {blocks.devices && <p>在线设备是上报在线且 10 分钟内有心跳的台数。设备异常是离线或异常的设备，已包含离线，大于 0 时进待处理。</p>}
           </>}
           href={link("/analytics/funnel-cohort")}
           openLabel="查看用户转化与留存"
           state={period === "today" ? cardState(activeUsers) : "ready"}
           onRetry={activeUsers.reload}
+        />
+      )}
+      {blocks.devices && (
+        <MetricCard
+          label="设备"
+          icon={Server}
+          value={devices.data ? fmtNum(devices.data.running) : ""}
+          prefix="运行中"
+          unit="台"
+          compare={devices.data ? `共 ${fmtNum(devices.data.total)} 台 · 仅商城设备，不含手机` : undefined}
+          rows={devices.data ? [
+            { k: <>等待启动<Explain label="等待启动统计范围" content="包含待激活、等待初始化和旧任务未结清的设备。" /></>, v: `${fmtNum(devices.data.waitingActivation)} 台`, tone: devices.data.waitingActivation > 0 ? "warn" : undefined },
+            { k: "已停用", v: `${fmtNum(devices.data.stopped)} 台` },
+          ] : []}
+          explain="只算商城设备，不含手机。总数包含所有商城设备状态；运行中、等待启动和已停用是其中三类，不一定加起来等于总数。等待启动包含待激活、等待初始化和旧任务未结清的设备。这些是此刻的台数，不随时段变。"
+          href={link("/devices/ops")}
+          openLabel="查看设备管理"
+          state={cardState(devices)}
+          onRetry={devices.reload}
         />
       )}
     </MetricBoard>

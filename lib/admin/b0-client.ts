@@ -116,7 +116,12 @@ export async function fetchB0ActiveUsers() {
 
 export async function fetchB0Devices() {
   const data = await read("/api/admin/devices/overview");
-  return { online: amount(data.onlineDevices, "onlineDevices"), abnormal: amount(data.abnormalDevices, "abnormalDevices") };
+  return {
+    total: amount(data.total, "total"),
+    running: amount(data.running, "running"),
+    waitingActivation: amount(data.waitingActivation, "waitingActivation"),
+    stopped: amount(data.stopped, "stopped"),
+  };
 }
 
 export type B0Kpi = {

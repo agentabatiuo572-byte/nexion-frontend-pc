@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 今日概览（首页 /）。「今天」面板：结论句是头，下面是要处理的事和资金安全；再下面是经营数据六张卡；其余收进 5 行带结论的折叠摘要。
+ * 今日概览（首页 /）。「今天」面板：结论句是头，下面是要处理的事和资金安全；再下面是经营数据；其余收进 5 行带结论的折叠摘要。
  * 一屏只有一条结论横幅（VS-23）：资金告警把可覆盖天数和建议并进这一句，不再另起一条。
  * 所有运营角色都能进，每块看自己的读权限，没有权限的块不出现、不发请求（重构说明 5.7）。
  * 每块各自加载、各自报错，一块失败不挡别的块（5.6）。业务处理跳业务页；资金快照导出先登记理由再下载。
@@ -9,7 +9,7 @@
 import "./overview/b-domain.css";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Download, ListChecks, RefreshCw, Server, ShieldAlert, ShieldCheck } from "lucide-react";
+import { ChevronDown, Download, ListChecks, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Button, Conclusion, Explain, Fact, Facts, InlineRetry, PageHeader, RdPage, StatusTag } from "@/app/components/rd";
 import { BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -127,14 +127,6 @@ export default function CommandCenter() {
   risks.forEach((item, index) => rows.push({ key: `risk-${index}`, title: riskFeedTitle(item.t), sub: item.m, owner: "风控", href: item.href, tone: item.sev === "p0" ? "danger" : undefined }));
   if (orphaned.error) rows.push({ key: "orphaned", name: "打款异常", onRetry: orphaned.reload });
   else if (orphaned.data) rows.push({ key: "orphaned", title: `打款异常 ${orphaned.data} 笔`, sub: "需要人工核对", owner: "财务", href: "/finance/withdrawals", tone: "warn" });
-  // 设备异常一定提醒；设备运行管理不可达时这一行照样写，只是不能点（X03）。
-  // 台数只写一处（DP-61）：有活跃用户卡时写在卡上，没有时写在这一行，不再另起设备那一行。
-  if (devices.data && devices.data.abnormal > 0) {
-    const canOpen = reach("/devices/ops");
-    const { online, abnormal } = devices.data;
-    const title = blocks.activeUsers ? (online === 0 ? "设备全部没有心跳" : "有设备异常") : `设备异常 ${fmtNum(abnormal)} 台，在线 ${fmtNum(online)} 台`;
-    rows.push({ key: "devices", title, sub: canOpen ? "到设备运行管理看哪几台不在线" : "这个账号打不开设备运行管理，请转给设备负责人", owner: "设备", href: canOpen ? "/devices/ops" : undefined, tone: "warn" });
-  }
   if (approvals.error) rows.push({ key: "a2", name: "待审批操作", onRetry: approvals.reload });
   else if (approvals.data?.stats.pendingTickets) {
     const queue = approvals.data.operationQueue.filter((row) => row.status === "pending").sort((a, b) => a.ts.localeCompare(b.ts));
@@ -237,7 +229,7 @@ export default function CommandCenter() {
   const fundOpen = folds.isOpen("fund", fundAlert);
 
   const { period, setPeriod } = usePeriodChoice(session?.adminId);
-  const anyBusinessCard = blocks.moneyFlows || blocks.sales || blocks.newUsers || blocks.activeUsers;
+  const anyBusinessCard = blocks.moneyFlows || blocks.sales || blocks.newUsers || blocks.activeUsers || blocks.devices;
   const showFundLine = blocks.fund && !(fundReady && level !== "ok") && !sentence.fundFailed;
 
   const fundLine = !showFundLine ? null : bDomain.error ? (
@@ -263,25 +255,7 @@ export default function CommandCenter() {
     </div>
   );
 
-  // 没有活跃用户卡、也没有设备异常待办时，设备数写在这一行，和资金安全句同一种样子；有异常时台数在待处理那一行（DP-61）。
-  const deviceLine = !blocks.devices || blocks.activeUsers || (devices.data?.abnormal ?? 0) > 0 ? null : devices.error ? (
-    <div className="cc-fundline" role="alert" data-tone="warn">
-      <Server size={16} aria-hidden />
-      <span>设备数据读取失败 · <InlineRetry onRetry={devices.reload} /></span>
-    </div>
-  ) : (
-    <div className="cc-fundline">
-      <Server size={16} aria-hidden />
-      {devices.data ? (
-        <Explain label="设备怎么算" content="在线设备是上报在线且 10 分钟内有心跳的台数。设备异常是离线或异常的设备，已包含离线，大于 0 时进待处理。">
-          设备：在线 {fmtNum(devices.data.online)} 台，异常 <span className="cc-num" data-tone={devices.data.abnormal > 0 ? "warn" : undefined}>{fmtNum(devices.data.abnormal)}</span> 台
-        </Explain>
-      ) : <span>正在读取设备…</span>}
-      {devices.data && reach("/devices/ops") && <Link className="cc-fundline-toggle" href="/devices/ops" prefetch={false}>查看设备管理</Link>}
-    </div>
-  );
-  // 待处理在时资金安全句放在它的标题行；还有设备那一行时两句并排放在待处理下面。
-  const fundInPending = showPending && !deviceLine;
+  const fundInPending = showPending;
 
   const exportSnapshot = () => {
     if (!canExport || !session || (!pendingExport && !fundReady)) return;
@@ -334,10 +308,10 @@ export default function CommandCenter() {
           {sentence.text}
         </Conclusion>
 
-        {(showPending || showFundLine || deviceLine) && (
+        {(showPending || showFundLine) && (
           <div className="cc-brief-body">
             {showPending && <PendingPanel rows={rows} failures={pendingFailed.length} loading={pendingLoading} aside={fundInPending ? fundLine : undefined} />}
-            {((!fundInPending && fundLine) || deviceLine) && <div className="cc-lines">{!fundInPending && fundLine}{deviceLine}</div>}
+            {!fundInPending && fundLine && <div className="cc-lines">{fundLine}</div>}
           </div>
         )}
       </section>
