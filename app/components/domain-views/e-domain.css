@@ -507,3 +507,6 @@
 .edom .device-activity { margin-top:24px; }
 .edom .device-activity > summary { cursor:pointer; padding:18px 22px; font-weight:600; }
 .edom .phone-sections { display:flex; flex-direction:column; gap:24px; margin-bottom:24px; }
+
+/* E2 command lists scroll with the modal body, never inside a second list viewport. */
+.e2-command-tasks { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }

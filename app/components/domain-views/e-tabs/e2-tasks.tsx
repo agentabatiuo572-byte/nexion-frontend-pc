@@ -281,7 +281,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         </Stat>;
       })}
     </StatBand>
-    <section id="e2-current-tasks" role="tabpanel" aria-labelledby={query.code ? tabIds.tab(query.code) : undefined}>
+    <section id="e2-current-tasks" role="tabpanel" aria-labelledby={pool ? tabIds.tab(pool.code) : undefined} aria-label={pool ? undefined : "当前等级任务"}>
       <Panel title={<span id="e2-task-heading" tabIndex={-1}>{pool ? `${pool.code} ${pool.name}任务` : "当前等级任务"}</span>} icon={ClipboardList} flush
         explain={TASK_RULES} actions={ctx.canWriteE2 ? <Button variant="primary" icon={<Plus size={16} />} disabledReason={writeBlock} onClick={() => open("random")}>随机添加任务</Button> : undefined}>
         <FilterBar onClear={() => setQuery(old => ({ ...old, taskClass: "", enabled: "", page: 1 }))} canClear={!!(query.taskClass || query.enabled)}>
@@ -322,11 +322,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             {dialog.kind === "random" && dialog.original && <><Fact k="任务数量">{dialog.original.request.kind === "random" ? dialog.original.request.body.count : "—"} 个</Fact><Fact k="限定类型">{dialog.original.request.kind === "random" && dialog.original.request.body.taskClasses ? dialog.original.request.body.taskClasses.map(value => TASK_CLASS_LABELS[value]).join("、") : "不限类型"}</Fact></>}
           </Facts>
           {dialog.original && <Notice tone="warn"><p>结果未确认，原操作已冻结，只能按原操作重试。</p><p>{retryBlock(dialog.original) ?? RETRY_HELP}</p></Notice>}
-          {dialog.kind === "status" && <div className="rd-impact"><h3 className="rd-impact-title">本次任务</h3><ul className="rd-recipients">{dialog.tasks.map(task => <li key={task.taskTypeId}>{task.name}</li>)}</ul></div>}
+          {dialog.kind === "status" && <div className="rd-impact"><h3 className="rd-impact-title">本次任务</h3><ul className="e2-command-tasks">{dialog.tasks.map(task => <li key={task.taskTypeId}>{task.name}</li>)}</ul></div>}
           {dialog.kind === "status" && !dialog.enabled && <>{impactLoading ? <BlockState state="loading" title="正在计算停用影响…" />
             : impactError ? <BlockState state="error" title="停用影响读取失败" detail={impactError} onRetry={() => void readImpact(dialog)} retryLabel="重新计算影响" />
               : impact && <>{dialog.original && <p className="rd-aux">首次读取的影响 · {impactAt ? businessStamp(impactAt) : "—"}</p>}
-                {impact.productsLosingAllTasks.length > 0 ? <Notice tone="warn" title="以下商品将没有可用任务"><ul className="rd-recipients">{impact.productsLosingAllTasks.map(item => <li key={item.productKey}>{item.productName}</li>)}</ul>
+                {impact.productsLosingAllTasks.length > 0 ? <Notice tone="warn" title="以下商品将没有可用任务"><ul className="e2-command-tasks">{impact.productsLosingAllTasks.map(item => <li key={item.productKey}>{item.productName}</li>)}</ul>
                   <Facts><Fact lead tone="warn" k="影响设备" unit="台">{impact.devicesAffected}</Fact></Facts><p>当前单照常完成，之后等待配置；停跑期间不计收益、不补发。</p>
                   <Explain label="影响设备的口径" content="按商品全部已发布等级判断候选。设备数只计已激活且当前没有运行单的生产设备，不等于设备管理列表总数。影响是读取时的快照，提交时人数可能变化。" /></Notice>
                   : <Notice tone="neutral">没有商品会失去全部可用任务。</Notice>}</>}</>}
