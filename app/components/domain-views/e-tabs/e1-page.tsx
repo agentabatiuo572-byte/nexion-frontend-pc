@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Boxes, Plus, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { BlockState, Button, Change, ConflictBar, DiffList, Facts, Fact, Fold, Notice, PageHeader, RdPage, ReleaseModal, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -223,6 +223,7 @@ export function E1Page() {
     await submit({ action: mc.name, obj, before, after, type: def.type, amplifies, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1", command: def.buildCommand(context), target: def.buildTarget(context) });
   };
   const mc = confirmation;
+  const skuDiff = mc?.op === "sku-save" && mc.sku ? e1SkuDiff(mc.beforeSku, mc.sku, mc.form) : null;
   const currentPending = mc ? pending.find(r => r.commandKey === attemptKey || (mc.sku ? e1Object(r.spec) === `device_sku|${mc.sku.id}` : mc.generationGateId ? e1Object(r.spec) === `device_generation_gate|${mc.generationGateId}` : mc.phaseId ? e1Object(r.spec) === `device_phase|${mc.phaseId}` : mc.op === "bundle-discount" ? e1Object(r.spec) === "store_bundle_discount|canonical" : mc.op === "early-access" ? e1Object(r.spec) === "device_release_early_access|trade-in" : false)) : undefined;
   const ctx: E1CatalogContext = {
     skus, canWriteE1: writesReady, e1InvalidSkus: invalid, e1Loading: loading, e1Error: error, e1Gates: gates, e1BundleDiscount: discount, phaseCur: gates?.phaseCurrent ?? "", refreshE1: async () => { await refresh(); },
@@ -255,9 +256,9 @@ export function E1Page() {
       effect={<StatusTag tone="progress" filled explain={APPROVAL}>批准后生效</StatusTag>}
       statedBrief={{ impact: mc.detail ?? "商品变更经另一位有权限的管理员批准后执行。", check: "核对对象、完整前后值及操作理由。" }}
       facts={mc.sku ? <Facts><Fact k="售价" lead unit="USD">{e1Number(mc.sku.price)}</Fact><Fact k="商品">{mc.sku.name}</Fact><Fact k="任务等级">{mc.sku.allowedPoolCodes?.join("、") || "未配置"}</Fact><Fact k="月收益目标">{mc.sku.monthlyTargetUsdt == null ? "未设月收益目标" : `${e1Number(mc.sku.monthlyTargetUsdt)} USDT/月 · ±${e1Number(mc.sku.monthlyTargetBandPct)}%`}</Fact><Fact k="托管机房">{mc.sku.datacenter || "— · 未填写"}</Fact>{mc.op === "sku-status" && <Fact k="状态"><Change from={e1Value(mc.sku.status)} to={e1Value(mc.status)} /></Fact>}</Facts> : mc.facts}
-      content={mc.op === "sku-save" && mc.sku ? !mc.beforeSku || e1SkuDiff(mc.beforeSku, mc.sku, mc.form).filter(row => row.before !== row.after).length > 4
-        ? <Fold inset title="完整商品变更" summary="展开核对所有字段的前后值"><DiffList rows={e1SkuDiff(mc.beforeSku, mc.sku, mc.form)} /></Fold>
-        : <DiffList rows={e1SkuDiff(mc.beforeSku, mc.sku, mc.form)} /> : mc.content}
+      content={skuDiff ? !mc.beforeSku || skuDiff.filter(row => row.before !== row.after).length > 4
+        ? <Fold inset title="完整商品变更" summary="展开核对所有字段的前后值"><DiffList rows={skuDiff} /></Fold>
+        : <DiffList rows={skuDiff} /> : mc.content}
       blockedReason={currentPending ? <Notice tone="warn" title="此对象结果未确认，请关闭本框后按页面上方原操作核对" /> : conflict ? <>
         <ConflictBar message="商品或配置版本已变化，本地输入保留；读取最新后请重新核对。" onRead={async () => { const snapshot = await refresh(); if (!snapshot) throw new Error("目录暂时读不到"); setConflictLatest(snapshot); }} />
         {conflictLatest && <Notice tone="warn" title="请核对最新值，再决定是否沿用本地输入">

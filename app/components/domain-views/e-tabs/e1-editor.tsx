@@ -1,12 +1,12 @@
 "use client";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Boxes, ImageIcon } from "lucide-react";
-import { BlockState, Button, Check, CheckGroup, Decision, DiffList, Drawer, Explain, Facts, Fact, Field, Fold, Input, LevelStrip, Modal, Notice, NumberInput, ReleaseModal, SectionNav, Select, StatusTag, Textarea, useSectionNav } from "@/app/components/rd";
+import { BlockState, Button, Check, CheckGroup, Decision, DiffList, Drawer, Explain, Facts, Fact, Field, Fold, Input, LevelStrip, Modal, Notice, NumberInput, ReleaseModal, SectionNav, Select, Textarea, useSectionNav } from "@/app/components/rd";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { E1GenerationGateData } from "@/lib/admin/e1-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchSkuDatacenterLabels, fetchTaskPools, type TaskPool } from "@/lib/admin/task-pool-client";
-import { refreshAdminMediaPreviewUrl, type UploadedAsset } from "@/lib/admin/media-client";
+import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import { guardedFetch, displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
