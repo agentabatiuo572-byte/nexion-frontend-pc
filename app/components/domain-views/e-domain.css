@@ -612,6 +612,7 @@
 .e6-page .e6-phones-table .e6-phone-device .rd-cell-main > .e6-original { display: block; }
 .e6-confirm-facts, .e6-fold-content { display: grid; gap: 16px; min-width: 0; }
 .e6-fold-content > :is(p, pre), .e6-confirm-facts p { margin: 0; }
+.e6-page .rd-fold-body > .e6-fold-content { padding-top: 12px; }
 .e6-confirm-facts .e6-fold-content { gap: 8px; }
 .e6-json { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
 .e6-device-slots { display: inline-flex; align-items: center; gap: 12px; }
