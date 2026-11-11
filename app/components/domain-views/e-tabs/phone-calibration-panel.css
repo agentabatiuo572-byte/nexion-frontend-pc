@@ -67,7 +67,7 @@
 .e6-hw-android-table col:nth-child(4) { width: 272px; }
 .e6-hw-ios-table col:nth-child(1) { width: 28%; }
 .e6-hw-ios-table col:nth-child(2) { width: 110px; }
-.e6-hw-ios-table col:nth-child(4) { width: 94px; }
+.e6-hw-ios-table col:nth-child(4) { width: 116px; }  /* 「官方在售机型」放一行；宽度从设备信息列让出 */
 .e6-hw-ios-table col:nth-child(5) { width: 96px; }
 .e6-hw-ios-table col:nth-child(6) { width: 112px; }
 .e6-hw-directory .rd-tag, .e6-hw-nowrap { white-space: nowrap; }
@@ -87,7 +87,7 @@
 @container (max-width: 860px) {
   .e6-hw-ios-table col:nth-child(1) { width: 190px; }
   .e6-hw-ios-table col:nth-child(2) { width: 98px; }
-  .e6-hw-ios-table col:nth-child(4) { width: 84px; }
+  .e6-hw-ios-table col:nth-child(4) { width: 108px; }
   .e6-hw-remove { align-items: flex-start; flex-direction: column; }
 }
 :root .e6-legacy-fields .e6-hw-directory input.rd-check:checked:not(:disabled) { background: var(--rd-brand-ink); }

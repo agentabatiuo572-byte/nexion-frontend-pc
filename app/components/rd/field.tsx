@@ -40,7 +40,7 @@ export function Field({ label, hint, help, explain, error, required, children }:
   const control: FieldControlProps = { id, "aria-describedby": described, "aria-invalid": error ? true : undefined };
   return (
     <div className="rd-form-field">
-      <label className="rd-form-label" htmlFor={id}>{label}{required && <span className="rd-form-required" aria-hidden>*</span>}{explain && <Explain label={`${typeof label === "string" ? label : "这一项"}的说明`} content={explain} />}{hint && <span className="rd-form-hint">{hint}</span>}</label>
+      <label className="rd-form-label" htmlFor={id}>{label}{required && <span className="rd-form-required" aria-hidden>*</span>}{explain && <Explain label={`${typeof label === "string" ? label : "这一项"}的说明`} content={explain} side="top" align="start" />}{hint && <span className="rd-form-hint">{hint}</span>}</label>
       {typeof children === "function" ? children(control)
         : isValidElement(children) && typeof children.type !== "string" ? cloneElement(children as ReactElement<FieldControlProps>, control) : children}
       {help ? <div id={`${id}-help`} className="rd-form-help">{help}</div> : explain && <span id={`${id}-help`} className="rd-sr-only">{explain}</span>}

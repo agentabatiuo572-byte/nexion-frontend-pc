@@ -10,7 +10,7 @@
  * - 宽度按内容定：放得下 min、max 和现在的值，单位紧跟在数字后面，不拉满整行。值比 max 还长时框跟着变宽，不切字。
  * - 只收数字、一个小数点，min 小于 0 或没给 min 时开头可以有负号；合法千分位只去逗号，其他输入整次拒收并提示。
  *   空、填了一半（「-」「.」）和 0 是三种值，原样交给调用方；「-」这类不是数字，调用方按填错处理。
- * - 上下方向键按 step 加减（原生数字框的行为），不超出 min、max。
+ * - 上下方向键对齐从 min（未传则 0）开始的 step 网格，不超出 min、max。
  *
  * 范围当场校验和错误文字由调用方写（OP-141），超范围不取整。
  */
@@ -82,6 +82,9 @@ export const NumberInput = forwardRef<HTMLInputElement, Props>(function NumberIn
     caret.current = null;
   });
 
+  // 拒收只属于这一次输入；调用方清空或重置值后，不沿用旧提示。
+  useLayoutEffect(() => { setRejected(false); }, [raw]);
+
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.target;
     const typed = input.value;
@@ -128,9 +131,15 @@ export const NumberInput = forwardRef<HTMLInputElement, Props>(function NumberIn
     if (event.defaultPrevented || (event.key !== "ArrowUp" && event.key !== "ArrowDown") || rest.disabled || rest.readOnly) return;
     event.preventDefault();
     const now = raw.trim() === "" || !Number.isFinite(Number(raw)) ? (lo ?? 0) : Number(raw);
-    let next = event.key === "ArrowUp" ? now + by : now - by;
+    // 在整数刻度上找相邻网格，避免 0.1 + 0.2 的浮点误差把已对齐值跳过。
+    const precision = Math.max(decimals, decimalsOf(now), decimalsOf(hi));
+    const scale = 10 ** precision;
+    const origin = Math.round((lo ?? 0) * scale), stride = Math.round(by * scale);
+    const position = (Math.round(now * scale) - origin) / stride;
+    let index = event.key === "ArrowUp" ? Math.floor(position) + 1 : Math.ceil(position) - 1;
+    if (hi !== undefined) index = Math.min(index, Math.floor((Math.round(hi * scale) - origin) / stride));
+    let next = (origin + index * stride) / scale;
     if (raw.trim() === "" || !Number.isFinite(Number(raw))) next = now;
-    if (hi !== undefined) next = Math.min(hi, next);
     if (lo !== undefined) next = Math.max(lo, next);
     const input = event.currentTarget;
     setNativeValue(input, format(next.toFixed(Math.max(decimals, decimalsOf(Number(raw) || 0)))));

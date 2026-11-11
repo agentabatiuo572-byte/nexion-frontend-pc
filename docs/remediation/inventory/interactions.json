@@ -106,8 +106,9 @@
     },
     {
       "side": "admin",
-      "route": "/overview/liquidity",
-      "file": "app/(console)/overview/liquidity/page.tsx",
+      "route": "/finance/pool?tab=due&maturity=7d",
+        "compatibilitySource": "/overview/liquidity",
+      "file": "app/components/domain-views/d-tabs/d3-treasury.tsx",
       "routeSource": "lib/nav/console-nav.ts",
       "counts": {
         "clickHandlers": 0,

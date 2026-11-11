@@ -267,7 +267,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
       {error && <div className="gtint" style={{ marginBottom: 12 }}>操作提示 · {error}</div>}
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">本月锁定计划订单</div><div className="v">{fmtNumber(stats.ordersMonth)}</div><div className="sub">锁定金额 {fmtUsdCompact(stats.principalUsd)}</div></div>
-        <div className="f-stat"><div className="k">待到期锁定金额及奖励</div><div className="v">{fmtUsdCompact(stats.matureUsd)}</div><div className="sub">计入「可用资金与应付款」</div></div>
+        <div className="f-stat"><div className="k">待到期锁定金额及奖励</div><div className="v">{fmtUsdCompact(stats.matureUsd)}</div><div className="sub">计入「资金储备与应付款」</div></div>
         <div className="f-stat cyan"><div className="k">本月发出抽奖券</div><div className="v">{fmtNumber(stats.ticketsMonth)} 张</div><div className="sub">创世节点每月开奖</div></div>
         <div className="f-stat"><div className="k">再次锁定率</div><div className="v">{stats.reinvestRateAvailable ? `${stats.reinvestRate.toFixed(1).replace(/\.0$/, "")}%` : "—"}</div><div className="sub">{stats.reinvestRateAvailable ? "到期后再次参与锁定计划的比例" : "数据不足，暂无法计算"}</div></div>
       </div>
@@ -316,7 +316,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
               </div>
             ))}
           </div>
-          <div className="gtint" style={{ marginTop: 10 }}><b>金额分布（本月 {fmtNumber(stats.ordersMonth)} 单）</b> · {overview.amountDistribution} · 待到期锁定金额及奖励 {fmtUsdCompact(stats.matureUsd)}，已计入「可用资金与应付款」。</div>
+          <div className="gtint" style={{ marginTop: 10 }}><b>金额分布（本月 {fmtNumber(stats.ordersMonth)} 单）</b> · {overview.amountDistribution} · 待到期锁定金额及奖励 {fmtUsdCompact(stats.matureUsd)}，已计入「资金储备与应付款」。</div>
         </div>
       </section>
 

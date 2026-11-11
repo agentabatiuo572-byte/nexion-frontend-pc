@@ -36,7 +36,8 @@ function trialText(result: PhonePreview): string {
   if (match.method === "IOS_MODEL_RANGE" || match.method === "ANDROID_SOC_RANGE") {
     const tiers = possibleTiers.length === 0 ? "未知" : possibleTiers.length > 1
       ? `T${possibleTiers[0]}–T${possibleTiers[possibleTiers.length - 1]}` : `T${possibleTiers[0]}`;
-    return `试算：命中 ${match.model}，运营预设范围 ${formatRange(match)}，可能档位 ${tiers}。用户首次校准成功时，系统在范围内随机取值并保存；试算不会产生校准记录。`;
+    const name = match.model?.trim() || (match.method === "ANDROID_SOC_RANGE" ? match.socKey?.trim() : undefined);
+    return `试算：${name ? `命中 ${name}` : "命中规则未返回名称"}，运营预设范围 ${formatRange(match)}，可能档位 ${tiers}。用户首次校准成功时，系统在范围内随机取值并保存；试算不会产生校准记录。`;
   }
   return `试算：T${match.tier}，平台算力 ${match.computeValue}`;
 }
