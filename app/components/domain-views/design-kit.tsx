@@ -875,24 +875,29 @@ function buildOperatorBrief(action: ReactNode, amplifies: boolean, hasEdit: bool
 
 export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink, kind, stated }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history"; kind: OperatorBriefKind; stated?: { impact: string; check: string } }) {
   const surface = useRdSurface();
+  const businessBrief = stated ?? STATED_BRIEF[kind];
   const brief = buildOperatorBrief(action, !!amplifies, !!hasEdit, auditSink === "local-history", kind, stated)
-    .map((row) => row.label === "影响" && completionCopy ? { ...row, text: completionCopy } : row);
+    .map((row) => row.label === "影响" && completionCopy && !businessBrief ? { ...row, text: completionCopy } : row);
+  if (!surface && businessBrief && completionCopy && completionCopy !== businessBrief.impact) brief.push({ label: "生效与复核", text: completionCopy });
   const detailText = compactText(plainText(detail));
-  // 改版页面的摘要也默认收起，标题行写影响（OP-48）。金额、对象、前后值放在框里常显的地方，不靠摘要。
-  // 要做什么就是框的标题；说明和影响一字不差时只写一处（VS-105）。
+  // 业务后果与生效／批准资格分别常显；默认套话只留在详情，不占关键信息层。
   if (surface) {
-    const impact = brief.find((row) => row.label === "影响")?.text;
+    const impact = businessBrief?.impact;
     return (
-      <details className="operator-brief rd-brief">
-        <summary>
-          <span className="rd-brief-head"><b>执行摘要</b>{impact && <span><KeepText text={impact} /></span>}</span>
-          <span className="rd-brief-toggle"><span className="brief-closed">查看详情</span><span className="brief-open">收起</span></span>
-        </summary>
-        <dl className="rd-brief-rows">
-          {brief.filter((row) => row.label !== "要做什么").map((row) => <div key={row.label}><dt>{row.label}</dt><dd><KeepText text={row.text}>{(part) => <AutoGloss>{part}</AutoGloss>}</KeepText></dd></div>)}
-          {detailText && detailText !== compactText(impact ?? "") && <div><dt>说明</dt><dd>{typeof detail === "string" ? <KeepText text={detail}>{(part) => <AutoGloss>{part}</AutoGloss>}</KeepText> : <AutoGloss>{detail}</AutoGloss>}</dd></div>}
-        </dl>
-      </details>
+      <div className="rd-operation-brief">
+        {impact && <p className="rd-operation-impact"><KeepText text={impact} /></p>}
+        {completionCopy && completionCopy !== impact && <p className="rd-operation-completion"><KeepText text={completionCopy} /></p>}
+        <details className="operator-brief rd-brief">
+          <summary>
+            <span className="rd-brief-head"><b>执行摘要</b></span>
+            <span className="rd-brief-toggle"><span className="brief-closed">查看详情</span><span className="brief-open">收起</span></span>
+          </summary>
+          <dl className="rd-brief-rows">
+            {brief.filter((row) => row.label !== "要做什么" && !(row.label === "影响" && (impact || completionCopy))).map((row) => <div key={row.label}><dt>{row.label}</dt><dd><KeepText text={row.text}>{(part) => <AutoGloss>{part}</AutoGloss>}</KeepText></dd></div>)}
+            {detailText && detailText !== compactText(impact ?? "") && detailText !== compactText(completionCopy ?? "") && <div><dt>说明</dt><dd>{typeof detail === "string" ? <KeepText text={detail}>{(part) => <AutoGloss>{part}</AutoGloss>}</KeepText> : <AutoGloss>{detail}</AutoGloss>}</dd></div>}
+          </dl>
+        </details>
+      </div>
     );
   }
   const rows = (
@@ -3522,7 +3527,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
   return (
     <div className="field" data-business-form="destructive-reason">
       <span className="bf-legend">确认影响</span>
-      <div className="tint danger tiny" style={{ marginBottom: 10 }}>
+      <div className="tint danger tiny rd-destructive-impact" style={{ marginBottom: 10 }}>
         目标 <span className="mono">{spec.target}</span> · {spec.impact}
       </div>
       <label className="row" style={{ gap: 8, marginTop: 10, color: "var(--ink-2)", fontSize: 12.5 }}>
@@ -3624,7 +3629,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
   const covBlocked = Boolean(effectiveAmplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
   // 改版页面里的整组审批（不带自定标题、不是内嵌审批）和直接生效的框一个样子：生效方式是标题下的标签，
-  // 谁来批、批准前什么不变进标签的提示；覆盖率够得上红线是安静的一行；不再铺橙黄横幅（VS-103、VS-106、VS-107）。
+  // 业务后果与谁来批分别常显，放大资金提示用同一套警示样式。
   const rdApproval = surface && !!approvalSpec && !approvalSpec.heading && !inlineApproval;
   const requestedMinimum = Number.isFinite(requestedReasonMin)
     ? Math.max(1, Math.min(200, Math.floor(requestedReasonMin!)))
@@ -3762,29 +3767,29 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     }
   };
   const submitLabel = pendingReason !== undefined ? "重试原操作" : approvalRecovery === "retry" ? "按原操作重试" : approval ? "提交审批" : confirmLabel;
-  // 资金信息排在要填的字段前（OP-47）。改一个值的框方向随输入变，放在输入框下面，不然打字时输入框会跳。
-  const coverageFirst = surface && (!approval || rdApproval) && !spec;
+  // 放大提示固定在关键信息层，先于所有填写项。
+  const coverageFirst = surface && (!approval || rdApproval);
   // 事实区随输入变（比如改基准价时买入价写「现在 → 改后」）：新值填好才交给页面。
   const shownFacts = typeof facts === "function" ? facts(editValueOk ? newVal : undefined) : facts;
   const coverageInFacts = coverageFirst && !!shownFacts;
   const checkCopy = rdApproval ? approvalSpec?.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。" : coverageCheck;
   const coverageNotice = effectiveAmplifies && (
-    <div className={surface && !covBlocked ? "alertbar calm" : "alertbar danger"} style={{ marginBottom: coverageInFacts ? 0 : 16, border: 0 }}>
-      <span className="ico"><Icon name="alert" size={16} /></span>
-      {surface && coverage && !covBlocked ? (
-        // 够得上红线时只留数字，后果和检查说明进提示图标（DP-06）。
-        <div className="tiny">
+    surface ? <div className="rd-confirm-funding" style={{ marginBottom: coverageInFacts ? 0 : 16 }}>
+      <RdNotice tone={covBlocked ? "danger" : "warn"} title={<>{coverageLead}{!coverage && auditSink !== "local-history" && <Explain label="什么时候检查" content={checkCopy} />}</>}>
+        {coverage && <div className="rd-funding-coverage">
           兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{fmtConfigPct(coverage.redlinePct)}</b>
-          <Explain label="这项操作对资金的影响" content={<><p>{coverageLead}</p><p>{checkCopy}</p>{coverage.healthyPct !== undefined && <p>健康线 {fmtConfigPct(coverage.healthyPct)}。</p>}</>} />
-        </div>
-      ) : surface && !covBlocked && !coverage && auditSink !== "local-history" ? (
-        // 页面自己把覆盖率写进 coverageLead 时也只留这一句，检查说明进提示图标（DP-06）。
-        <div className="tiny">{typeof coverageLead === "string" ? <b>{coverageLead}</b> : coverageLead}<Explain label="什么时候检查" content={checkCopy} /></div>
-      ) : <div className="tiny">
+          <Explain label="这项操作对资金的影响" content={<><p>{checkCopy}</p>{coverage.healthyPct !== undefined && <p>健康线 {fmtConfigPct(coverage.healthyPct)}。</p>}</>} />
+        </div>}
+        {covBlocked && <p>{checkCopy}低于红线，暂时无法提交。</p>}
+        {!coverage && auditSink === "local-history" && <p>{checkCopy}本页暂不自动检查覆盖率，请自行确认资金影响。</p>}
+      </RdNotice>
+    </div> : <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
+      <span className="ico"><Icon name="alert" size={16} /></span>
+      <div className="tiny">
         <b>{coverageLead}</b> · {checkCopy}
         {coverage ? (
           <>
-            兑付覆盖率 <b className={surface ? undefined : "mono"}>{fmtPct(coverage.coverageRatio)}</b>
+            兑付覆盖率 <b className="mono">{fmtPct(coverage.coverageRatio)}</b>
             {coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
               ? `，高于健康线 ${fmtConfigPct(coverage.healthyPct)}`
               : coverage.coverageRatio > coverage.redlinePct
@@ -3796,7 +3801,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         ) : auditSink === "local-history" ? (
           <>本页暂不自动检查覆盖率，请自行确认资金影响。</>
         ) : null}
-      </div>}
+      </div>
     </div>
   );
   return (
@@ -3822,7 +3827,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       </>}>
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
       <fieldset disabled={submitting} style={{ display: "contents" }}>
-      {(!approval || rdApproval) && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={rdApproval && effectiveStatedBrief ? undefined : completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
+      {(!approval || rdApproval) && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
       {!surface && content}
       {surface ? (blockedReason || submitError) && (
         // 红只给明确失败；被别人改了、结果还不知道是要人处理，用橙黄（VS-107）。
@@ -3859,7 +3864,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           <p style={{ margin: "0 0 14px", lineHeight: 1.5 }}>{completionCopy}</p>
           {coverage && <p className="operation-approval-coverage">兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b> · 红线 <b>{fmtConfigPct(coverage.redlinePct)}</b></p>}
           {approval.comparison}
-        </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} completionCopy={statedBrief ? undefined : completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
+        </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
+        {(approval.heading || compareEdit) && effectiveStatedBrief && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
       </>}
       {!surface && !approval && coverageNotice}
       {!surface && !approval && completionCopy && <div className="tint tiny" style={{ marginBottom: 14 }}>{completionCopy}</div>}
@@ -3963,20 +3969,21 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {surface && !approval && !coverageFirst && coverageNotice}
       <div className={surface ? "field rd-reason-field" : "field"}>
         {surface
-          ? <label htmlFor={reasonFieldId}>{approval && !compactFields && !rdApproval ? "变更理由" : "操作理由"}<span className="rd-form-required" aria-hidden="true">*</span><span className="rd-form-hint">至少 {reasonMin} 字</span></label>
+          ? <label htmlFor={reasonFieldId}>{approval && !compactFields && !rdApproval ? "变更理由" : "操作理由"}<span className="rd-form-required" aria-hidden="true">*</span></label>
           : <label htmlFor={reasonFieldId}>{approval && !compactFields ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}{compactFields ? <span className="muted"> 至少 {reasonMin} 字</span> : `（必填，${reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）`}</label>}
         {/* 字数写在框内角落，够不够看按钮的提示，失焦或点过提交才用警告色（DP-06）。 */}
         <div className={surface ? "rd-reason-box" : compactFields ? "g3-reason-box" : undefined}>
-          <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined} aria-describedby={surface ? `${reasonFieldId}-count${showReasonError ? ` ${reasonFieldId}-length` : ""}` : inlineApproval?.dialogClassName && (compactFields || showReasonError || (reasonOk && reasonMax)) ? `${reasonFieldId}-length` : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : submitting || (!!getPendingReason && pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} onBlur={() => setReasonLeft(true)} placeholder={compactFields ? "填写调整依据或工单号" : reasonPlaceholder} />
+          <textarea id={reasonFieldId} className={surface ? "rd-input rd-textarea" : undefined} rows={3} maxLength={reasonMax} value={reason} aria-invalid={surface && showReasonError ? true : undefined} aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined} aria-describedby={surface ? `${reasonFieldId}-range ${reasonFieldId}-count${showReasonError ? ` ${reasonFieldId}-length` : ""}` : inlineApproval?.dialogClassName && (compactFields || showReasonError || (reasonOk && reasonMax)) ? `${reasonFieldId}-length` : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : submitting || (!!getPendingReason && pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} onBlur={() => setReasonLeft(true)} placeholder={compactFields ? "填写调整依据或工单号" : reasonPlaceholder} />
           {surface && <span id={`${reasonFieldId}-count`} className="rd-reason-count">{reasonMax ? `${reasonLength}/${reasonMax}` : `${reasonLength} 字`}</span>}
         </div>
+        {surface && <div id={`${reasonFieldId}-range`} className="rd-form-help">{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}</div>}
         {pendingReason !== undefined && <div className={surface ? "rd-form-help" : "tiny"} style={{ marginTop: 7 }}>{surface ? "重发原内容，已成功的不会重复执行。" : "原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。"}</div>}
         {!surface && compactFields && <div id={`${reasonFieldId}-length`} className="tiny reason-count-inset">
           {reasonMax && <span>{reasonLength}/{reasonMax}</span>}
           {showReasonError && <span style={{ color: "var(--warning)" }}>{reasonShort}</span>}
         </div>}
         {showReasonError && (surface || !compactFields) && (
-          <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>{reasonShort}</div>
+          <div id={`${reasonFieldId}-length`} className={surface ? "rd-form-error" : "tiny"} role={surface ? "alert" : undefined} style={surface ? undefined : { marginTop: 7, color: "var(--warning)" }}>{reasonShort}</div>
         )}
         {!surface && !compactFields && reasonMax && reasonOk && <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: approval || inlineApproval?.dialogClassName ? "var(--ink-3)" : "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
         {listedMissing.length > 0 && (!surface || attempted) && (

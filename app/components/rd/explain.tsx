@@ -13,7 +13,7 @@
  * - content 是自由内容（多段用 <p>），rows 按「名称 值」分行；两者都传时 content 在上。
  * - 悬停只认鼠标，触屏点一下就打开。悬停打开的气泡不抢焦点；点击或键盘打开的才把焦点交给气泡，再点一下或 Esc 关。
  */
-import { Fragment, useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { CircleHelp } from "lucide-react";
 
@@ -22,10 +22,32 @@ export interface ExplainRow { k: ReactNode; v: ReactNode }
 /** side、align：统计数字的问号向上、配置项的问号向下展开，都从问号左边起（align start），不盖住被解释的数字，也不压到侧栏；放不下时自动翻边。 */
 export function Explain({ label, content, rows, side, align, children }: { label: string; content?: ReactNode; rows?: readonly ExplainRow[]; side?: "top" | "bottom" | "right" | "left"; align?: "start" | "center" | "end"; children?: ReactNode }) {
   const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const bubble = useRef<HTMLDivElement>(null);
+  const [field, setField] = useState<HTMLElement | null>(null);
+  const [fieldPlacement, setFieldPlacement] = useState<{ side: "top" | "left" | "right"; maxWidth?: number }>({ side: "top" });
   const pinned = useRef(false);
   const timer = useRef<number | undefined>(undefined);
   const clear = () => window.clearTimeout(timer.current);
   useEffect(() => clear, []);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const owner = trigger.current?.closest<HTMLElement>(".rd-form-field");
+    if (!owner || !bubble.current) return;
+    // 用整个字段作锚点，侧开时也在输入框和范围说明外，不从问号中间压过去。
+    setField(owner);
+    const place = () => {
+      const rect = owner.getBoundingClientRect();
+      if (rect.top >= (bubble.current?.offsetHeight ?? 0) + 18) setFieldPlacement({ side: "top" });
+      else {
+        const left = rect.left, right = window.innerWidth - rect.right;
+        setFieldPlacement({ side: right >= left ? "right" : "left", maxWidth: Math.min(340, Math.max(left, right) - 18) });
+      }
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open]);
   const hover = {
     onPointerEnter: (event: PointerEvent) => { if (event.pointerType !== "mouse") return; clear(); timer.current = window.setTimeout(() => setOpen(true), 100); },
     onPointerLeave: (event: PointerEvent) => { if (event.pointerType !== "mouse" || pinned.current) return; clear(); timer.current = window.setTimeout(() => setOpen(false), 100); },
@@ -33,7 +55,9 @@ export function Explain({ label, content, rows, side, align, children }: { label
   const shown = rows?.filter((row) => row.v !== undefined && row.v !== null && row.v !== "") ?? [];
   return (
     <Popover.Root open={open} onOpenChange={(next) => { if (!next) { clear(); pinned.current = false; setOpen(false); } }}>
+      {field && <Popover.Anchor virtualRef={{ current: field }} />}
       <Popover.Trigger
+        ref={trigger}
         className="rd-explain"
         data-term={children ? "" : undefined}
         aria-label={label}
@@ -49,7 +73,7 @@ export function Explain({ label, content, rows, side, align, children }: { label
         {children ?? <CircleHelp className="rd-explain-mark" size={14} strokeWidth={1.75} aria-hidden />}
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content className="rd-pop" side={side} align={align} sideOffset={6} collisionPadding={12} {...hover} onOpenAutoFocus={(event) => { if (!pinned.current) event.preventDefault(); }}>
+        <Popover.Content ref={bubble} className="rd-pop" side={field ? fieldPlacement.side : side} align={align} style={field ? { maxWidth: fieldPlacement.maxWidth } : undefined} sideOffset={6} collisionPadding={12} {...hover} onOpenAutoFocus={(event) => { if (!pinned.current) event.preventDefault(); }}>
           {content}
           {shown.length > 0 && (
             <dl className="rd-pop-rows" data-after={content ? "" : undefined}>
