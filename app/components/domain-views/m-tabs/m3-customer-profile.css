@@ -2,7 +2,7 @@
 .m3-profile-identity{display:flex;align-items:center;gap:11px;margin-bottom:12px}
 .m3-profile-identity>div{min-width:0;flex:1}
 /* 名字和等级是一个标题，编码和专属客服是一段两行说明：头部是一个身份块，不按独立块拉开间距。 */
-.m3-profile-name{display:flex;align-items:center;gap:8px;min-width:0;margin:0;font-size:15px;font-weight:600}
+.m3-profile-name{display:flex;align-items:center;gap:8px;min-width:0;margin:0}
 .m3-profile-nick{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .m3-profile-meta>span{display:block}
 .m3-profile-level{flex-shrink:0;font-weight:400;font-size:12.5px;padding:1px 6px;border-radius:4px;background:color-mix(in srgb,var(--admin-violet) 14%,transparent);color:var(--admin-violet)}
