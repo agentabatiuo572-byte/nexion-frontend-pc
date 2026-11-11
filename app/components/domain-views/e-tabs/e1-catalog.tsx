@@ -247,7 +247,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
         kind: "multi-field", requireAnyChange: !!g,
         amplifies: v => v.forceUnlock === "true" || !canChangeForce && !!g?.forceUnlock,
         fields: [
-          ...(!g && gateSkuOptions.length > 1 ? [{ key: "skuId", label: "商品", current: skuId, inputKind: "select" as const, options: gateSkuOptions, optionLabels: Object.fromEntries(skus.map(s => [s.id, `${s.name} · ${s.id}`])) }] : []),
+          ...(!g && gateSkuOptions.length > 1 ? [{ key: "skuId", label: "商品", current: skuId, inputKind: "select" as const, options: gateSkuOptions, optionLabels: Object.fromEntries(skus.map(s => [s.id, `${s.name} · ${s.id}`])), wide: true }] : []),
           { key: "name", label: "展示名称", current: g?.name ?? "", required: false, help: "留空使用商品名称" },
           { key: "releaseMonth", label: "计划开放月", current: String(g?.releaseMonth ?? Math.min(12, Math.max(1, platformMonth))), inputKind: "number", min: 1, max: 12, step: 1, required: true },
           ...(gatePhaseOptions.length > 1 ? [{ key: "phase", label: "开放阶段", current: phase, inputKind: "select" as const, options: gatePhaseOptions, optionLabels: gatePhaseLabels }] : []),
@@ -282,11 +282,11 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
     ctx.openActionConfirm({ briefKind: "config",
       name: "调整 App 组合购阶梯折扣",
       op: "bundle-discount",
-      facts: <Facts><Fact k="2 件当前折扣">{e1Number(discount.twoItemsPct)} %</Fact><Fact k="3 件当前折扣">{e1Number(discount.threeItemsPct)} %</Fact><Fact k="4 件及以上当前折扣">{e1Number(discount.fourPlusItemsPct)} %</Fact></Facts>,
       businessForm: {
         kind: "multi-field",
 
         requireAnyChange: true,
+        amplifies: value => Number(value.twoItemsPct) > discount.twoItemsPct || Number(value.threeItemsPct) > discount.threeItemsPct || Number(value.fourPlusItemsPct) > discount.fourPlusItemsPct,
         fields: [
           { key: "twoItemsPct", label: "2 件折扣（%）", current: String(discount.twoItemsPct), inputKind: "number", min: 0.01, max: 30, step: 0.01, required: true, help: "0.01 %～30 %，最多 2 位小数；件数增加时折扣不能下降" },
           { key: "threeItemsPct", label: "3 件折扣（%）", current: String(discount.threeItemsPct), inputKind: "number", min: 0.01, max: 30, step: 0.01, required: true, help: "0.01 %～30 %，最多 2 位小数；件数增加时折扣不能下降" },
@@ -370,7 +370,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
           <div className="e1-product-meta">
             <span className="e1-meta-item">{s.dailyEarnNEX == null ? "— · 未填写 UVT/天" : <E1Amount value={s.dailyEarnNEX} unit="UVT/天" />}</span>
             <StatusTag tone="neutral" icon={s.trialEligible ? CheckCircle2 : Ban}>{s.trialEligible ? "允许试用" : "不可试用"}</StatusTag>
-            {s.purchaseGate && <Explain label={`${s.name}购买条件`} content={<E1PurchaseConditions sku={s} />}><span><ShieldCheck size={14} aria-hidden />购买条件</span></Explain>}
+            {s.purchaseGate && <Explain label={`${s.name}购买条件`} content={<E1PurchaseConditions sku={s} />}><span className="e1-gate-trigger"><ShieldCheck size={14} aria-hidden />购买条件</span></Explain>}
             <StatusTag tone="neutral" icon={open ? CheckCircle2 : Clock3}>{s.unlock ? ctx.e1Gates ? phaseLabel(s.unlock) : "开放阶段未读取" : "无需阶段"}</StatusTag>
           </div>
           <div className="e1-meta-room">托管 · {s.datacenter?.trim() ? datacenterNameText(s.datacenter) : "— · 未填写"}</div>

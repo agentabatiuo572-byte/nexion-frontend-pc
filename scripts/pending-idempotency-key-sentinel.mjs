@@ -143,7 +143,7 @@ const MIGRATED = [
   "app/components/domain-views/m-tabs/support-bulk-composer.tsx",
   "app/components/domain-views/m-tabs/support-random-assignment.tsx",
   "app/_console/overview/funnel/page.tsx",
-  "app/_console/overview/liquidity/page.tsx",
+  // B2 page removed by SPM-01; D3 above retains both original stores and slots.
   "app/_console/overview/risk-radar/page.tsx",
   "app/_console/users/search/[id]/page.tsx",
 ];

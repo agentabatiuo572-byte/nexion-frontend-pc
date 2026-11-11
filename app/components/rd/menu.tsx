@@ -12,7 +12,7 @@
  * - disabledReason 写在这一项下面，不只放悬停（OP-126）。
  * - 放在可点的表格行里时，点菜单不会打开这一行。
  */
-import { useState, type KeyboardEvent, type ReactNode } from "react";
+import { useState, type KeyboardEvent, type ReactNode, useRef } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { MoreHorizontal } from "lucide-react";
 import { IconTip } from "./button";
@@ -37,9 +37,10 @@ function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
 
 export function MoreMenu({ label = "更多操作", items, disabled = false }: { label?: string; items: readonly MoreMenuItem[]; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   return (
     <Popover.Root open={open && !disabled} onOpenChange={setOpen}>
-      <IconTip label={label}><Popover.Trigger className="rd-iconbtn" aria-label={label} disabled={disabled}><MoreHorizontal size={16} aria-hidden /></Popover.Trigger></IconTip>
+      <IconTip label={label}><Popover.Trigger ref={trigger} className="rd-iconbtn" aria-label={label} disabled={disabled}><MoreHorizontal size={16} aria-hidden /></Popover.Trigger></IconTip>
       <Popover.Portal>
         <Popover.Content className="rd-pop rd-menu" role="menu" aria-label={label} align="end" sideOffset={6} collisionPadding={12} onClick={(event) => event.stopPropagation()} onKeyDown={moveFocus}>
           {items.map((item) => (
@@ -47,6 +48,8 @@ export function MoreMenu({ label = "更多操作", items, disabled = false }: { 
               onClick={() => {
                 if (item.disabledReason) return;
                 setOpen(false);
+                // 先把焦点还给「⋯」：菜单项随即卸载，由它打开的弹窗或抽屉关闭后才有地方把焦点还回来。
+                trigger.current?.focus();
                 item.onSelect();
               }}>
               {item.label}
