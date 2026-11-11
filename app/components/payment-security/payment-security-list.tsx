@@ -36,6 +36,6 @@ export function PaymentSecurityList() {
       <Table aria-label="支付密码异常记录" label="支付密码异常记录" className="c5-payment-table"><thead><tr><Th>用户</Th><Th>状态</Th><Th>异常原因</Th><Th>发生时间</Th><Th sticky="end">操作</Th></tr></thead><tbody>{loading ? <TableLoading columns={5} /> : data?.records.map(row => <Tr key={row.id} selected={selected?.id === row.id} onOpen={() => setSelected(row)}><Td><Cell main={row.userLabel} title={row.userLabel} /></Td><Td><PaymentSecurityState record={row} /></Td><Td><Cell main={row.reason} title={row.reason} /></Td><Td><Cell num main={formatBusinessTimeCompact(row.startedAt)} /></Td><Td sticky="end"><Button size="sm" onClick={() => setSelected(row)}>查看详情</Button></Td></Tr>)}{!loading && !data?.records.length && <TableMessage columns={5}>{error ? "记录尚未确认，请重新加载" : "没有匹配的支付密码异常记录，可调整筛选"}</TableMessage>}</tbody></Table>
       {data && data.total > 0 && <Pager label="支付密码异常记录" total={data.total} page={data.pageNum} pageSize={data.pageSize} sizes={[10, 20, 50]} loading={loading} onPage={setPage} onPageSize={size => { setSize(size); setPage(1); }} />}
     </Panel>}
-    {selected && selectedPort && <PaymentSecurityDetail key={`${selectedPort.key}:${selected.id}:${epoch}`} port={selectedPort} recordId={selected.id} userLabel={selected.userLabel} onClose={() => setSelected(null)} />}
+    {selected && selectedPort && <PaymentSecurityDetail key={`${selectedPort.key}:${selected.id}:${epoch}`} port={selectedPort} recordId={selected.id} userLabel={selected.userLabel} recoveryActions onClose={() => setSelected(null)} />}
   </div>;
 }

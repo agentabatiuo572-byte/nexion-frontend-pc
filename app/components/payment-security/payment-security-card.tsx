@@ -3,11 +3,11 @@ import { useCallback, useEffect, useRef, useState, type ButtonHTMLAttributes } f
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useReasonRule } from "@/lib/admin/use-reason-rule";
-import { pendingPaymentRelease, queryPaymentRelease, submitPaymentRelease, PaymentPasswordApiError, type PaymentSecurityPort } from "@/lib/admin/payment-password-client";
+import { pendingPaymentRelease, queryPaymentRelease, submitPaymentRelease, retryPaymentRelease, releaseRejectedPaymentRelease, isCompletePaymentRelease, PaymentPasswordApiError, type PaymentSecurityPort } from "@/lib/admin/payment-password-client";
 import type { PaymentSecurityRecord, PaymentSecurityDetail as Detail, PaymentSecuritySummary, PaymentReleaseReceipt } from "@/lib/admin/payment-password-contract";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import { BlockState, Button, Cell, Check, Decision, Drawer as RdDrawer, Modal as RdModal, Fact as RdFact, Facts as RdFacts, Field as RdField, Fold, JudgmentPoints, Notice, PageTabs, Panel, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Timeline, Tr, useTabIds, useRdSurface } from "@/app/components/rd";
+import { BlockState, Button, Cell, Check, Decision, Drawer as RdDrawer, Modal as RdModal, Fact as RdFact, Facts as RdFacts, Field as RdField, Fold, JudgmentPoints, Notice, PageTabs, Panel, ReleaseBody, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Timeline, Tr, useTabIds, useRdSurface } from "@/app/components/rd";
 import { ShieldAlert } from "lucide-react";
 import { Modal, DataListPager } from "../domain-views/design-kit";
 import "./payment-security.css";
@@ -34,7 +34,7 @@ function Facts({ record }: { record: PaymentSecurityRecord }) {
 }
 
 /** Existing customer/profile surfaces inject their own scoped port; never fall back to global access. */
-export function PaymentSecurityCard({ port, userLabel, compact = false }: { port: PaymentSecurityPort; userLabel: string; compact?: boolean }) {
+export function PaymentSecurityCard({ port, userLabel, compact = false, recoveryActions = false }: { port: PaymentSecurityPort; userLabel: string; compact?: boolean; recoveryActions?: boolean }) {
   const surface = useRdSurface();
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
   const [summary, setSummary] = useState<PaymentSecuritySummary | null>(null), [error, setError] = useState(""), [loading, setLoading] = useState(true);
@@ -58,7 +58,7 @@ export function PaymentSecurityCard({ port, userLabel, compact = false }: { port
     {record && <><div className="c5-context-line"><PaymentSecurityState record={record} /><span>{record.reason}</span><Button size="sm" onClick={() => setSelected({ id: record.id, release: false })}>查看详情</Button>{record.state === "ACTIVE" && mayRelease(session) && <Button size="sm" disabledReason={pending ? "先查询原操作" : !record.capabilities.releaseAllowed ? record.capabilities.disabledReason || "当前记录不可解除" : undefined} onClick={() => setSelected({ id: record.id, release: true })}>{actionText(record)}</Button>}</div></>}
     {summary && !record && <span>当前没有支付密码异常，历史处置记录仍保留。</span>}
     {pending && <Notice tone="warn" title="解除结果待确认" action={<Button size="sm" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原操作</Button>}>原操作已保留，请先查询结果。</Notice>}
-    {selected && <PaymentSecurityDetail key={`${port.key}:${owner}:${epoch}:${selected.id}`} port={port} recordId={selected.id} userLabel={userLabel} initialAction={selected.release} onClose={() => setSelected(null)} />}
+    {selected && <PaymentSecurityDetail key={`${port.key}:${owner}:${epoch}:${selected.id}`} port={port} recordId={selected.id} userLabel={userLabel} initialAction={selected.release} recoveryActions={recoveryActions} onClose={() => setSelected(null)} />}
   </Panel>;
   return <section className={`payment-security ps-card ${compact ? "ps-compact" : ""}`} data-quiet={quiet ? "" : undefined} aria-label="支付安全">
     <header className="ps-header"><h3 className="ps-payment">支付安全</h3>{record && <PaymentSecurityState record={record} />}</header>
@@ -73,7 +73,7 @@ export function PaymentSecurityCard({ port, userLabel, compact = false }: { port
   </section>;
 }
 
-export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction = false, onClose }: { port: PaymentSecurityPort; recordId: string; userLabel: string; initialAction?: boolean; onClose: () => void }) {
+export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction = false, recoveryActions = false, onClose }: { port: PaymentSecurityPort; recordId: string; userLabel: string; initialAction?: boolean; recoveryActions?: boolean; onClose: () => void }) {
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch), owner = session?.adminId ?? 0;
   const [detail, setDetail] = useState<Detail | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
   const [reviewing, setReviewing] = useState(false), [reason, setReason] = useState(""), [confirmed, setConfirmed] = useState(false), [busy, setBusy] = useState(false);
@@ -85,6 +85,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
   const [reasonLeft, setReasonLeft] = useState(false);
   const [tab, setTab] = useState("info"), [receipt, setReceipt] = useState<PaymentReleaseReceipt | null>(null);
   const [pending, setPending] = useState(() => pendingPaymentRelease(owner, port.userId));
+  const [localRelease, setLocalRelease] = useState(false);
   const generation = useRef(0), live = useRef(true), mutation = useRef(false), started = useRef(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const load = useCallback(async () => {
@@ -102,11 +103,11 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
   const record = detail?.record;
   const canRelease = !!record?.capabilities.releaseAllowed && mayRelease(session) && !pending && owner > 0;
   const reasonValid = reasonRule.ok(reason) && reason.trim().length >= 8 && reason.trim().length <= 200;
-  async function execute(queryOnly: boolean) {
-    if (mutation.current || !queryOnly && (!record || !canRelease || !reasonValid || !confirmed)) return;
+  async function execute(queryOnly: boolean, replay = false) {
+    if (mutation.current || replay && !mayRelease(session) || !queryOnly && !replay && (!record || !canRelease || !reasonValid || !confirmed)) return;
     mutation.current = true; setBusy(true); setError("");
     try {
-      const next = queryOnly ? await queryPaymentRelease(owner, port) : await submitPaymentRelease(owner, port, record!, reason.trim());
+      const next = queryOnly ? await queryPaymentRelease(owner, port) : replay ? await retryPaymentRelease(owner, port) : await submitPaymentRelease(owner, port, record!, reason.trim());
       if (!live.current) return;
       setReceipt(next); setReviewing(false);
       if (next.status === "APPLIED" || next.status === "REJECTED") { await load(); setConfirmed(false); }
@@ -127,7 +128,8 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
   if (surface) return <RdDrawer open title="支付密码异常详情" icon={ShieldAlert} onClose={onClose} busy={busy} wide footer={<Decision others={<Button disabled={busy} onClick={onClose}>关闭</Button>} primary={record?.state === "ACTIVE" && mayRelease(session) && <Button disabledReason={busy ? "正在提交" : loading ? "正在读取" : pending ? "请先查询原解除结果" : !record.capabilities.releaseAllowed ? record.capabilities.disabledReason || "当前记录不可解除" : undefined} onClick={() => { setReviewing(true); setConfirmed(false); }}>{actionText(record)}</Button>} />}>
     {loading && <BlockState state="loading" title="正在读取异常详情" />}
     {error && <Notice tone={pending ? "warn" : "danger"} action={<Button size="sm" disabled={busy} onClick={() => void load()}>重新加载详情</Button>}>{error}</Notice>}
-    {pending && <Notice tone="warn" title="解除结果待确认" action={<Button size="sm" disabledReason={pending.portKey !== port.key ? "请回原操作入口查询" : undefined} loading={busy} onClick={() => void execute(true)}>查询本次结果</Button>}><span data-mono>{pending.commandKey}</span> · {time(new Date(pending.createdAt).toISOString())}{pending.expiresAt <= Date.now() ? " · 已过 24 小时，仅查询" : ""}<Fold inset title="原解除操作" summary="理由、版本与命令号"><RdFacts><RdFact k="原理由">{pending.reason ?? "原记录未保存此项，只查询原操作"}</RdFact><RdFact k="原版本">{pending.expectedVersion ?? "原记录未保存此项，只查询原操作"}</RdFact><RdFact k="原命令号"><span data-mono>{pending.commandKey}</span></RdFact></RdFacts></Fold></Notice>}
+    {pending && <Notice tone="warn" title="解除结果待确认" action={<><Button size="sm" disabledReason={pending.portKey !== port.key ? "请回原操作入口查询" : undefined} loading={busy} onClick={() => void execute(true)}>查询本次结果</Button>{recoveryActions && pending.portKey === port.key && isCompletePaymentRelease(pending) && !pending.rejection && pending.expiresAt > Date.now() && <Button size="sm" disabledReason={!mayRelease(session) ? "当前缺少原操作权限" : busy ? "正在处理原操作" : undefined} onClick={() => void execute(false, true)}>按原操作重试</Button>}{recoveryActions && pending.portKey === port.key && pending.rejection && <Button size="sm" variant="danger-outline" disabled={busy} onClick={() => setLocalRelease(true)}>解除待确认</Button>}</>}><span data-mono>{pending.commandKey}</span> · {time(new Date(pending.createdAt).toISOString())}{pending.expiresAt <= Date.now() ? " · 已过 24 小时，仅查询" : ""}<Fold inset title="原解除操作" summary="理由、版本与命令号"><RdFacts><RdFact k="原理由">{pending.reason ?? "原记录未保存此项，只查询原操作"}</RdFact><RdFact k="原版本">{pending.expectedVersion ?? "原记录未保存此项，只查询原操作"}</RdFact><RdFact k="原命令号"><span data-mono>{pending.commandKey}</span></RdFact></RdFacts></Fold>{pending.rejection && <p>{pending.rejection}</p>}</Notice>}
+    {localRelease && recoveryActions && pending?.rejection && <RdModal title="解除待确认" icon={ShieldAlert} busy={busy} onClose={() => setLocalRelease(false)} footer={<Decision others={<Button onClick={() => setLocalRelease(false)}>返回</Button>} danger={<Button variant="danger" onClick={() => { releaseRejectedPaymentRelease(owner, port, pending.commandKey); setPending(null); setLocalRelease(false); setError(""); }}>确认解除</Button>} />}><ReleaseBody label={userLabel + " · 原支付密码解除"} explain={pending.rejection} /></RdModal>}
     {receipt && <Notice tone={receipt.status === "APPLIED" ? "ok" : receipt.status === "REJECTED" ? "danger" : "warn"} title={receipt.status === "APPLIED" ? "解除已确认，审计记录已核对" : receipt.status === "REJECTED" ? "本次解除未执行，请核对最新状态" : "处理结果尚未确认，请继续查询本次操作"}>{receipt.status === "APPLIED" && `${receipt.auditId} · ${receipt.changedBy} · ${time(receipt.changedAt)}`}</Notice>}
     {record && <>
       <JudgmentPoints rows={[{ label: "操作对象", value: userLabel }, { label: "当前状态", value: <PaymentSecurityState record={record} /> }, { label: "凭证类型", value: "支付密码" }, { label: "原锁定至", value: time(record.lockedUntil) }]} />
