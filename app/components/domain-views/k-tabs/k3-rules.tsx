@@ -244,7 +244,12 @@ function loosensRule(rule: K3Rule, before: BusinessFormValue, after: BusinessFor
   const lowerNarrows = (value: string, op: string, next: string, nextOp: string) => Number(next) > Number(value) || (Number(next) === Number(value) && op === ">=" && nextOp === ">");
   switch (kind) {
     case "amount": return lowerNarrows(before.amount, before.amountOp, after.amount, after.amountOp);
-    case "velocity": return Number(after.count) + (after.countOp === ">" ? 1 : 0) > Number(before.count) + (before.countOp === ">" ? 1 : 0) || lowerNarrows(before.velocityAmount, before.velocityAmountOp, after.velocityAmount, after.velocityAmountOp);
+    case "velocity": {
+      const countBefore = Number(before.count) + (before.countOp === ">" ? 1 : 0);
+      const countAfter = Number(after.count) + (after.countOp === ">" ? 1 : 0);
+      // At least one withdrawal subsumes the old positive count and sum predicates.
+      return countAfter > countBefore || (countAfter > 1 && lowerNarrows(before.velocityAmount, before.velocityAmountOp, after.velocityAmount, after.velocityAmountOp));
+    }
     case "newAccount": return Number(after.days) - (after.accountOp === "<" ? 1 : 0) < Number(before.days) - (before.accountOp === "<" ? 1 : 0);
     case "address": {
       const losesInternal = before.addressSource !== "第三方" && after.addressSource === "第三方";
