@@ -244,8 +244,8 @@ function loosensRule(rule: K3Rule, before: BusinessFormValue, after: BusinessFor
   const lowerNarrows = (value: string, op: string, next: string, nextOp: string) => Number(next) > Number(value) || (Number(next) === Number(value) && op === ">=" && nextOp === ">");
   switch (kind) {
     case "amount": return lowerNarrows(before.amount, before.amountOp, after.amount, after.amountOp);
-    case "velocity": return lowerNarrows(before.count, before.countOp, after.count, after.countOp) || lowerNarrows(before.velocityAmount, before.velocityAmountOp, after.velocityAmount, after.velocityAmountOp);
-    case "newAccount": return Number(after.days) < Number(before.days) || (Number(after.days) === Number(before.days) && before.accountOp === "<=" && after.accountOp === "<");
+    case "velocity": return Number(after.count) + (after.countOp === ">" ? 1 : 0) > Number(before.count) + (before.countOp === ">" ? 1 : 0) || lowerNarrows(before.velocityAmount, before.velocityAmountOp, after.velocityAmount, after.velocityAmountOp);
+    case "newAccount": return Number(after.days) - (after.accountOp === "<" ? 1 : 0) < Number(before.days) - (before.accountOp === "<" ? 1 : 0);
     case "address": {
       const losesInternal = before.addressSource !== "第三方" && after.addressSource === "第三方";
       const losesExternal = before.addressSource !== "内部" && Number(before.addressThreshold) > 0 && (after.addressSource === "内部" || Number(after.addressThreshold) < Number(before.addressThreshold));
@@ -301,11 +301,10 @@ function RuleConfirmation({ draft, pending, submitting, onSubmit, onClose, onReb
       {kind === "dry-run" && <Explain label="模拟样本条件" content="旧状态为 PENDING、REVIEWING、FROZEN、REJECTED、PENDING_CHAIN；第三方请求总预算10秒。没有生效规则时评估0笔。" />}
       {kind === "dry-run" && activeRules === 0 && <Notice tone="warn">没有生效规则，本次不会评估提现样本。</Notice>}
       {kind === "paused" && <p className="k3-secondary-warning">{CASH_NOTICE}</p>}
-      {conflict && !pending && <ConflictBar message="这条规则刚被别人改过。读取最新后请重新核对并填写理由。" onRead={async () => {
-        setRule(await onRebase(rule!)); setRevision((n) => n + 1); setConflict(false);
-      }} />}
     </div>}
-    blockedReason={pending && !submitting ? UNKNOWN_RESULT_TEXT : !allowedState ? "规则当前状态不支持原操作，请关闭后核对最新规则" : conflict ? "请读取最新版本后重新核对" : undefined}
+    blockedReason={pending && !submitting ? UNKNOWN_RESULT_TEXT : !allowedState ? "规则当前状态不支持原操作，请关闭后核对最新规则" : conflict && <ConflictBar message="这条规则刚被别人改过。读取最新后请重新核对并填写理由。" onRead={async () => {
+      setRule(await onRebase(rule!)); setRevision((n) => n + 1); setConflict(false);
+    }} />}
     confirmLabel={kind === "dry-run" ? "开始模拟" : kind === "active" ? "确认启用" : kind === "paused" ? "确认停用" : "确认归档"}
     confirmTone={kind === "archived" ? "danger" : "primary"} onClose={onClose} onConfirm={async (reason) => {
       try { await onSubmit(reason, undefined, rule); } catch (error) { if (error instanceof K1RequestError && error.status === 409 && isExplicitRejection(error)) setConflict(true); throw error; }
@@ -370,7 +369,13 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
     if (ctx.contentError) { setDetail(null); return; }
     if (ctx.contentLoading || !overview) return;
     setAcknowledgedReadFailure(null);
-    setDetail((current) => current ? overview.rules.records.find((rule) => rule.ruleId === current.ruleId) ?? null : null);
+    setDetail((current) => {
+      if (!current) return null;
+      const row = overview.rules.records.find((rule) => rule.ruleId === current.ruleId);
+      if (row) return row;
+      const active = overview.dimensions.find((rule) => rule.ruleId === current.ruleId);
+      return active ? { ...current, state: "active", conditionText: active.conditionText, cond: active.conditionText, action: active.action, act: active.action, priority: active.priority!, version: active.version! } : null;
+    });
   }, [overview, ctx.contentLoading, ctx.contentError]);
   const rules = overview?.rules.records ?? [];
   const dimensions = overview?.dimensions ?? [];
