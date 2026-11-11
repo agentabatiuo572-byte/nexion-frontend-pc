@@ -85,6 +85,13 @@ export async function executeH1(row: H1Pending, onReceipt: (receipt: Partial<H1P
       if (request.kind === "proposal" && isA2OutcomeUncertainError(error)) {
         error.message = "申请提交结果待核对，可能已生成审批单；批准前参数不变。原内容与理由已保留，请查询原操作。";
       }
+      if (error instanceof Error && request.kind === "patch") {
+        if (error.message.startsWith("H1_RESPONSE_INVALID:")) {
+          error.message = "写入回执不完整，结果待核对；原内容与理由已保留，请先读回核对。";
+        }
+        const saved = current.requests.filter((item) => item.acknowledged).map((item) => `${item.label}已保存`).join("，");
+        if (saved) error.message = `${saved}；${request.label}${explicit ? "未保存" : "结果待核对"}。${error.message}`;
+      }
       throw error;
     }
   }
