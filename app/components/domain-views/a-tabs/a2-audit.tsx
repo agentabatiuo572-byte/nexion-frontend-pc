@@ -1,5 +1,6 @@
 "use client";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES } from "@/lib/admin/audit-action-names";
 import { a2ActionText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
@@ -68,7 +69,6 @@ import { isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
-import { fetchE4OrderDetail } from "@/lib/admin/e4-client";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import { normalizeSessionRole } from "@/lib/admin/session-role";
@@ -118,19 +118,6 @@ const LOG_PAGE_SIZES = [10, 20, 50] as const;
 /** 结果名按 TX-32：执行改批准、取消改驳回。已驳回不是失败，不用红（DT-13）。 */
 const HIST_LABEL: Record<string, string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
 const HIST_TONE: Record<string, StateTone> = { pending: "warn", approved: "ok", rejected: "done", withdrawn: "done", expired: "done" };
-
-/** 本页自己的动作码（需要产品决定 1，按 A 定）。其余原样显示，「动作」筛选仍按原码查。 */
-const A2_ACTION_NAMES: Record<string, string> = {
-  A2_OPERATION_PROPOSED: "提交审批",
-  A2_OPERATION_APPROVED: "批准审批单",
-  A2_OPERATION_REJECTED: "驳回审批单",
-  A2_OPERATION_WITHDRAWN: "撤回审批单",
-  A2_OPERATION_EXECUTED: "直接执行",
-  A2_MECHANISM_PARAM_CHANGED: "修改机制参数",
-  A2_AUDIT_EXPORTED: "导出操作记录",
-  A2_AUDIT_RETENTION_MANUAL_EXECUTED: "手动清理到期记录",
-  A2_AUDIT_RETENTION_EXECUTED: "定时清理到期记录",
-};
 
 const OWN_TICKET_REASON = "这是你发起的，需要另一位管理员处理";
 const RETIRED_OPERATION_COPY = "此操作已退役，不能批准或重新发起；保留原申请和历史记录，待审申请可按原权限驳回或撤回。";
@@ -402,9 +389,9 @@ function approvalTiming(w: A2OperationRow) {
   const monthlyChange = monthlyTargetChange(w);
   if (monthlyChange) {
     const impact = monthlyChange === "close"
-      ? "批准后关闭月收益目标，之后新建的任务恢复按单计价；已建任务和历史到账不变。"
-      : "批准后按新目标建立后续任务；已建任务和历史到账不变。";
-    return { tag: "批准后新任务生效", impact, drawer: `${impact}点「驳回」原操作不执行。` };
+      ? "批准后保存并关闭月收益目标；已有发布历史的型号之后新建的任务恢复按单计价。未首次发布的草稿在首次上架时发布；已建任务和历史到账不变。"
+      : "批准后保存新目标；已有发布历史的型号按新目标建立后续任务。未首次发布的草稿在首次上架时发布；已建任务和历史到账不变。";
+    return { tag: "批准后保存", impact, drawer: `${impact}点「驳回」原操作不执行。` };
   }
   const scheduled = phoneScheduledAt(w);
   if (scheduled) return { tag: `按计划在 ${scheduled} 生效`, impact: "批准后登记排程，到点才生效。", drawer: `点「批准」确认后登记排程，到 ${scheduled} 生效；点「驳回」原操作不执行。` };
@@ -572,7 +559,7 @@ const a2Commands = createPendingMutationStore<A2PendingCommand>({
   retainExpiredRecords: true,
 });
 
-type RefundAmount = { state: "loading" } | { state: "ok"; amount: number } | { state: "error"; message: string } | { state: "denied" };
+type RefundAmount = { state: "loading" } | { state: "ok"; amount: number } | { state: "error"; message: string };
 const REFUND_AMOUNT_REQUIRED = "先读到退款金额才能批准";
 
 const DECISION_VERB: Record<"approve" | "reject" | "withdraw", string> = { approve: "批准", reject: "驳回", withdraw: "撤回" };
@@ -827,7 +814,6 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return canApprove && (qualified ?? allowed(decisionRule(ticket), kind));
   };
   const canExport = canAccessA2Export(principal.authorities);
-  const canReadOrders = principal.authorities.includes("device_e4_read");
   // 和顶栏同一份兑付覆盖率；读不到时批准框写「暂时读不到」，批准时后端再查。
   const bDomain = useBDomainDashboard(B_DASHBOARD_READ_AUTHORITIES.every((authority) => principal.authorities.includes(authority)));
   const coverage = bDomain.hasData && !bDomain.error && bDomain.ledger.valuationReliable
@@ -889,21 +875,6 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const [historyId, setHistoryId] = useState<string | null>(null);
   const [confirmListOpen, setConfirmListOpen] = useState(false);
   const tabIds = useTabIds();
-
-  /* 退款单的退款金额：按订单号读订单，金额口径和订单进度的退款框一致，A2 不另算（必须改 1）。 */
-  const [refundAmounts, setRefundAmounts] = useState<Record<string, RefundAmount>>({});
-  const refundAsked = useRef(new Set<string>());
-  const loadRefundAmount = async (orderNo: string) => {
-    refundAsked.current.add(orderNo);
-    if (!canReadOrders) { setRefundAmounts((current) => ({ ...current, [orderNo]: { state: "denied" } })); return; }
-    setRefundAmounts((current) => ({ ...current, [orderNo]: { state: "loading" } }));
-    try {
-      const detail = await fetchE4OrderDetail(orderNo);
-      setRefundAmounts((current) => ({ ...current, [orderNo]: { state: "ok", amount: detail.order.amt } }));
-    } catch (error) {
-      setRefundAmounts((current) => ({ ...current, [orderNo]: isPermissionDenied(error) ? { state: "denied" } : { state: "error", message: displayAdminReadError(error) } }));
-    }
-  };
 
   const syncPending = () => setPendingCommands(a2Commands.list());
 
@@ -975,10 +946,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
   };
 
-  /** 页头「刷新」：重读当前需要的总览（一次或两次）、清理范围、上次手动清理和退款金额，不动已应用条件（ST-50）。 */
+  /** 页头「刷新」：重读当前需要的总览（一次或两次）、清理范围、上次手动清理和提案退款金额，不动已应用条件（ST-50）。 */
   const refreshAll = () => {
-    refundAsked.current.clear();
-    setRefundAmounts({});
     return Promise.all([
       loadMain().catch(() => undefined),
       loadFiltered(appliedRef.current),
@@ -1076,18 +1045,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const qPageRows = queueRows.slice((qSafePage - 1) * qPageSize, qSafePage * qPageSize);
   const queueFiltered = qType !== "all" || qOperator !== "all";
 
-  // 队列里的退款单、待确认条里结果未知的退款批准各读一次订单；行内、抽屉、两个框和待确认条用同一份金额。
-  useEffect(() => {
-    const orders = [...pendingQueue.map((w) => w.refundOrderNo), ...pendingCommands.map((record) => record.kind === "approve" ? recordOrderNo(record) : undefined)];
-    for (const no of orders) if (no && !refundAsked.current.has(no)) void loadRefundAmount(no);
-    // loadRefundAmount 每次渲染都是新函数，只跟着队列和待确认条读。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingQueue, pendingCommands]);
+  // B37：退款金额来自这张提案，不能用订单总额替代；缺少权威金额仍禁用批准。
   const refundAmount = (w: A2OperationRow): RefundAmount | undefined => w.fundEffect === "ORDER_REFUND"
-    ? (w.refundOrderNo ? refundAmounts[w.refundOrderNo] ?? { state: "loading" } : { state: "error", message: "审批单没有带订单号" })
+    ? w.refundAmountUsdt !== undefined ? { state: "ok", amount: w.refundAmountUsdt }
+      : { state: "error", message: "退款金额未读取" }
     : undefined;
   const refundAmountText = (amount: RefundAmount) => amount.state === "ok" ? `${orderAmount(amount.amount)} USDT`
-    : amount.state === "loading" ? "正在读取" : amount.state === "denied" ? "读不到（没有订单查看权限）" : "读取失败";
+    : amount.state === "loading" ? "正在读取" : "退款金额未读取";
 
   // 已应用的条件后端查过了，以后端的结果为准；对象还会命中详情里的命令号这类字段，前端再按窄的字段筛会把查到的记录删掉（M4）。
   const logRows = records?.recentLogs ?? [];
@@ -1242,8 +1206,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /** 重试前退款单要先读到退款金额，和新开的批准框同一个前提（F01）；读不到只能读回核对，原命令照旧保留。 */
   const retryAmount = (record: A2PendingCommand): RefundAmount | undefined => {
     if (record.kind !== "approve" || record.fundEffect !== "ORDER_REFUND") return undefined;
-    const orderNo = recordOrderNo(record);
-    return orderNo ? refundAmounts[orderNo] ?? { state: "loading" } : { state: "error", message: "原命令没有记下订单号" };
+    const ticket = main?.operationQueue.find((w) => w.id === record.target);
+    return mainLoading ? { state: "loading" } : ticket ? refundAmount(ticket)
+      : { state: "error", message: "退款金额未读取" };
   };
   const retryBlock = (record: A2PendingCommand) => {
     if (isRetryExpired(record)) return RETRY_EXPIRED;
@@ -1549,7 +1514,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <Facts>
           <Fact k="范围">{scope || "全部模块，不限时间"}</Fact>
           <Fact k="文件">CSV，最多 5,000 条</Fact>
-          <Fact k="隐藏">操作者、资源编号、业务编号只留首尾两位</Fact>
+          <Fact k="隐藏">操作者、资源编号、业务编号超过 4 个字符时只留首尾两位；不超过 4 个字符时全部隐藏</Fact>
         </Facts>
       ),
       statedBrief: { impact: "按查询条件生成 CSV 下载，这次导出也会记录。", check: "核对导出范围，理由写明导出依据或工单号。" },
@@ -1744,8 +1709,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 操作人 ${record.operator} ｜ 理由 ${record.reason}`} />
         </p>
         {amount && <p>退款金额 {amount.state === "ok" ? <b className="a2-amount">{refundAmountText(amount)}</b> : <span className="a2-warn-text">{refundAmountText(amount)}</span>}
-          {amount.state === "error" && recordOrderNo(record) && <> <InlineRetry onRetry={() => void loadRefundAmount(recordOrderNo(record)!)} /></>}</p>}
-        {record.kind === "approve" && recordRule(record).backendChecks && <p>{BACKEND_CHECKS_NOTE}。</p>}
+          {amount.state === "error" && recordOrderNo(record) && <> <InlineRetry onRetry={() => void loadMain()} /></>}</p>}
+        {(record.kind === "approve" || record.kind === "reject") && recordRule(record).backendChecks && <p>{BACKEND_CHECKS_NOTE}。</p>}
         {pendingNotes[record.fingerprint] && <p>{pendingNotes[record.fingerprint]}</p>}
       </Notice>
     );
@@ -1882,7 +1847,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             <thead><tr>
               <Th sticky="start">时间（{zone}）</Th>
               <Th icon={Users} tone="users">操作者</Th>
-              <Th><span>动作<Explain label="动作名的说明" content="中文是本页的操作；英文是系统动作名，长的中间省略，点开这一行看全文，可以复制到「动作」筛选里查。" /></span></Th>
+              <Th><span>动作<Explain label="动作名的说明" content="已核对的系统动作显示中文；原始动作码在详情的「技术信息」里，可复制到「动作」筛选中查询。" /></span></Th>
               <Th>对象</Th>
               {/* 「前 → 后」是查有没有生效唯一要看的列，留够宽度，对象列让出来（必须改 8）。 */}
               <Th className="a2-col-delta">前 → 后</Th>
@@ -2020,7 +1985,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     // 批准退款是直接出钱、收不回的操作，第一行就是这笔钱（必须改 1，DP-03）。
     ...(shownAmount ? [shownAmount.state === "ok"
       ? { label: "退款金额", value: <span className="a2-amount">{orderAmount(shownAmount.amount)} USDT</span> }
-      : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{" "}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadRefundAmount(shown.refundOrderNo!)} />}</> }] : []),
+      : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{" "}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadMain()} />}</> }] : []),
     { label: "要做什么", value: actionName(shown.action) },
     { label: "对象", value: <span data-mono className="a2-code">{shown.obj}</span> },
     { label: "发起人", icon: Users, tone: "users", value: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""}`, reason: bizTime(shown.rawTs, shown.ts) },
