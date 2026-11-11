@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Clock3, MessageSquare, UserRoundPlus, Users } from "lucide-react";
+import { Clock3, ListChecks, MessageSquare, UserRoundPlus, Users } from "lucide-react";
 import { StatBand, Stat, Conclusion, InlineRetry } from "@/app/components/rd";
 import type { SessionConvo } from "./data";
 import type { MCtx } from "./types";
@@ -41,7 +41,7 @@ export function M1LiveService({ ctx, alertMinutes = ctx.unboundAlertMinutes ?? 5
   const late = facts.oldest !== null && facts.oldest >= alertMinutes * 60000;
   const dash = (ready: boolean, value: number | string) => ready ? value : "—";
   return <section aria-label="实时服务" className="m1-live-service">
-    <Conclusion state={!conversationsReady || !agentsReady ? "unknown" : late ? "warn" : "neutral"} hint={!conversationsReady || !agentsReady ? "重读会话或客服名单后再判断。" : facts.waiting || facts.unassigned ? "打开待回复或有留言待分配客户，继续处理会话。" : "可核对分配、客户和负责组资料。"} explain="待回复与有留言待分配按共享未归档会话的客户去重。可接待人数来自当前可用名册，不代表空闲席位。">{!conversationsReady || !agentsReady ? "部分服务数据暂时读不到" : facts.waiting || facts.unassigned ? "有客户正在等待处理" : "当前没有待回复客户"}</Conclusion>
+    <Conclusion state={!conversationsReady || !agentsReady ? "unknown" : late ? "warn" : "neutral"} icon={conversationsReady && agentsReady && !late && (facts.waiting || facts.unassigned) ? ListChecks : undefined} hint={!conversationsReady || !agentsReady ? "重读会话或客服名单后再判断。" : facts.waiting || facts.unassigned ? "打开待回复或有留言待分配客户，继续处理会话。" : "可核对分配、客户和负责组资料。"} explain="待回复与有留言待分配按共享未归档会话的客户去重。可接待人数来自当前可用名册，不代表空闲席位。">{!conversationsReady || !agentsReady ? "部分服务数据暂时读不到" : facts.waiting || facts.unassigned ? "有客户正在等待处理" : "当前没有待回复客户"}</Conclusion>
     <StatBand label="实时服务"><Stat label="待回复客户" value={dash(conversationsReady, facts.waiting)} unit="位" icon={MessageSquare} lead href="/service/sessions?tab=pending" explain="当前已绑定且有待回复留言的客户，按客户去重。" />
       <Stat label="最长等待" value={!conversationsReady ? "—" : facts.oldest === null ? "无" : durationText(facts.oldest)} icon={Clock3} tone={late ? "warn" : undefined} href="/service/sessions?tab=pending" explain="从最早待回复留言起计；本地每 30 秒只更新等待时长。" />
       <Stat label="待分配（有留言）" value={dash(conversationsReady, facts.unassigned)} unit="位" icon={UserRoundPlus} href="/service/sessions?tab=unassigned" explain="有待回复留言但尚未绑定的客户，全部池客户见待分配页签。" />

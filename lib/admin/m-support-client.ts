@@ -62,7 +62,7 @@ export type SupportCustomer = {
   pendingThroughMessageId: number | null;
 };
 export type SupportCustomerDetail = SupportCustomer & { agentAdminId: number; maintenanceEnabled: boolean; maintenanceVersion: number };
-export type SupportMaintenanceRecord = { id: string; kind: string; occurredAt: string; state?: string };
+export type SupportMaintenanceRecord = { id: string; agentAdminId: string | null; kind: string; occurredAt: string; state?: string };
 export type SupportMaintenanceHistory = { customerId: string; cycles: SupportMaintenanceRecord[]; executions: SupportMaintenanceRecord[]; totalCycles: number; totalExecutions: number; pageNum: number; pageSize: number };
 export type SupportBindingPoolItem = {
   customerId: string;
@@ -489,8 +489,8 @@ export const supportClient = {
       return {
         customerId: id(row.customerId, "maintenance.customerId"), pageNum: positive(row.pageNum, "maintenance.pageNum"), pageSize: positive(row.pageSize, "maintenance.pageSize"),
         totalCycles: count(row.totalCycles, "maintenance.totalCycles"), totalExecutions: count(row.totalExecutions, "maintenance.totalExecutions"),
-        cycles: row.cycles.map((entry) => { const cycle = object(entry, "maintenance.cycle"); return { id: id(cycle.id, "maintenance.cycle.id"), kind: "CYCLE", occurredAt: timestamp(cycle.openedAt, "maintenance.cycle.openedAt"), state: nonempty(cycle.status, "maintenance.cycle.status") }; }),
-        executions: row.executions.map((entry) => { const execution = object(entry, "maintenance.execution"); return { id: id(execution.id, "maintenance.execution.id"), kind: "EXECUTION", occurredAt: timestamp(execution.executedAt, "maintenance.execution.executedAt") }; }),
+        cycles: row.cycles.map((entry) => { const cycle = object(entry, "maintenance.cycle"); return { id: id(cycle.id, "maintenance.cycle.id"), agentAdminId: cycle.agentAdminId == null ? null : id(cycle.agentAdminId, "maintenance.cycle.agentAdminId"), kind: "CYCLE", occurredAt: timestamp(cycle.openedAt, "maintenance.cycle.openedAt"), state: nonempty(cycle.status, "maintenance.cycle.status") }; }),
+        executions: row.executions.map((entry) => { const execution = object(entry, "maintenance.execution"); return { id: id(execution.id, "maintenance.execution.id"), agentAdminId: execution.agentAdminId == null ? null : id(execution.agentAdminId, "maintenance.execution.agentAdminId"), kind: "EXECUTION", occurredAt: timestamp(execution.executedAt, "maintenance.execution.executedAt") }; }),
       };
     }, { signal: options.signal }),
   setMaintenance: (customerId: string, input: { enabled: boolean; reason: string; expectedVersion: number; expectedAssignmentId: string }, idempotencyKey: string, signal?: AbortSignal) =>
@@ -647,13 +647,19 @@ export const supportPhraseClient = {
   remove: (phraseId: string) => request(`/support-workbench/phrases/${encodeURIComponent(id(phraseId, "phrase.id"))}`, phraseList, { method: "DELETE" }),
 };
 
-export async function readSupportPoolCustomer(customerId: string, groupId?: number): Promise<SupportBindingPoolItem> {
+export async function findSupportPoolCustomer(customerId: string, groupId?: number): Promise<SupportBindingPoolItem | null> {
   for (let pageNum = 1; ; pageNum++) {
     const result = await supportClient.bindingPool({ pageNum, pageSize: 100, keyword: customerId, groupId });
     const found = result.records.find(row => row.customerId === customerId);
     if (found) return found;
-    if (!result.records.length || pageNum * result.pageSize >= result.total) throw new Error("SUPPORT_RECOVERY_FACTS_UNAVAILABLE");
+    if (!result.records.length || pageNum * result.pageSize >= result.total) return null;
   }
+}
+
+export async function readSupportPoolCustomer(customerId: string, groupId?: number): Promise<SupportBindingPoolItem> {
+  const current = await findSupportPoolCustomer(customerId, groupId);
+  if (!current) throw new Error("SUPPORT_RECOVERY_FACTS_UNAVAILABLE");
+  return current;
 }
 
 export async function verifySupportTransfer(input: Parameters<typeof supportClient.transfer>[0], status: "SUCCEEDED" | "FAILED", groupId?: number): Promise<void> {

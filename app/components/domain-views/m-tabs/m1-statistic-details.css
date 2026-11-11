@@ -23,14 +23,13 @@
 .s5a .m1-stat-bar + .m1-stat-bar i { background: var(--v5-success); }
 .s5a .m1-stat-bar:hover { background: var(--v5-surface-2); }
 .m1-stat-detail { display: grid; gap: 12px; }
-.m1-stat-detail p { margin: 0; overflow-wrap: anywhere; color: var(--v5-ink-2); }
+.m1-stat-detail p { margin: 0; overflow-wrap: anywhere; color: var(--rd-text-2); }
 .m1-stat-table { overflow-x: auto; }
 .m1-stat-table table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-.m1-stat-table :is(th, td) { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--v5-border); white-space: nowrap; }
-.m1-stat-table th { color: var(--v5-ink-2); background: var(--v5-surface-2); }
+.m1-stat-table :is(th, td) { white-space: nowrap; }
 .m1-stat-detail[data-kind="fund"] .m1-stat-table :is(th, td):last-child { text-align: right; }
-.m1-stat-detail[data-kind="fund"] .m1-stat-table td:last-child { font-family: var(--font-jet-mono); }
+.m1-stat-detail[data-kind="fund"] .m1-stat-table td:last-child { font-variant-numeric: tabular-nums; }
 .m1-stat-table td:nth-child(4) { min-width: 14ch; white-space: normal; overflow-wrap: anywhere; }
-.m1-stat-pager { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.m1-stat-pager { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .m1-stat-footer{display:flex;justify-content:flex-end;align-items:center;gap:12px;width:100%}
 .m1-stat-detail p{overflow-wrap:normal;text-wrap:pretty}

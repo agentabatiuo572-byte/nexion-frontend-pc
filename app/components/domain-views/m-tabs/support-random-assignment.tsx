@@ -4,7 +4,7 @@ import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportEnhancements, parseRandomResult, type RandomPreview, type RandomResult } from "@/lib/admin/m-support-enhancements";
-import { supportClient, SupportClientError, readSupportPoolCustomer, type SupportBindingPoolItem } from "@/lib/admin/m-support-client";
+import { supportClient, SupportClientError, findSupportPoolCustomer, type SupportBindingPoolItem } from "@/lib/admin/m-support-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { canReplayGroupCommand } from "@/lib/admin/support-group-client";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -38,12 +38,15 @@ export function SupportRandomAssignment({ customers, onClose, onDone }: { custom
   async function generatePreview() {
     if (busy || hasPendingRandomAssignment(actorId) || !customers.length) return;
     const owner = stamp(); setBusy(true); setPreview(null); setAck(false); setError(""); setPreviewUnknown(false);
+    let previewRequested = false;
     try {
       // A new snapshot always re-reads the original, exact list; old confirmations are invalidated first.
-      const current = await Promise.all(customers.map(c => readSupportPoolCustomer(c.customerId)));
-      const next = await supportEnhancements.randomPreview(current.map(c => ({ id: c.customerId, poolVersion: c.version })));
-      if (mounted.current && owner === stamp()) setPreview(next);
-    } catch (e) { if (mounted.current && owner === stamp()) { setPreviewUnknown(true); setError(displayAdminError(e)); } }
+      const current = await Promise.all(customers.map(c => findSupportPoolCustomer(c.customerId)));
+      // Keep departed customers in the request so the backend records their exclusion.
+      previewRequested = true;
+      const next = await supportEnhancements.randomPreview(customers.map((original, index) => ({ id: original.customerId, poolVersion: current[index]?.version ?? original.version })));
+      if (mounted.current && owner === stamp()) { setPreview(next); if (current.some(c => c === null)) setError("原名单有客户已离开待分配池；请核对排除名单后确认其余客户。" ); }
+    } catch (e) { if (mounted.current && owner === stamp()) { setPreviewUnknown(previewRequested); setError(previewRequested ? "预览请求结果尚未确认。" + displayAdminError(e) : "原客户名单读取失败，尚未生成新预览。" + displayAdminError(e)); } }
     finally { if (mounted.current && owner === stamp()) setBusy(false); }
   }
   useEffect(() => { if (!hasPendingRandomAssignment(actorId)) void generatePreview(); }, [customers, actorId, epoch]);
@@ -97,15 +100,15 @@ export function SupportRandomAssignment({ customers, onClose, onDone }: { custom
   </>}>
     <div className="m1-command-form">
     {pending && <Notice tone="warn">原操作结果待确认，名单和理由已锁定；不能重新抽签。{expired && "已超过 24 小时，只能查询和核对，不能重新发送。"}</Notice>}
-    {error && <Notice tone={pending || previewUnknown ? "warn" : "danger"}>{error}</Notice>}
-    <Facts><Fact k="原选中客户" lead unit="位">{selected.length}</Fact><Fact k="纳入 / 排除">{preview ? `${preview.count} / ${preview.excluded.length}` : "尚未读取"}</Fact>{preview && <Fact k="预览有效期至">{formatBusinessTimeCompact(preview.expiresAt)}（北京时间）</Fact>}</Facts>
-    <p>只处理本次选中的客户。每位成功客户成为新继承段的起点，未选客户及已有团队成员保持原归属。</p>
-    {result ? <Table label="逐客随机分配结果"><thead><Tr><Th>客户编号</Th><Th>结果</Th><Th>专属客服</Th><Th>原因</Th></Tr></thead><tbody>{result.customers.map(c => <Tr key={c.customerId}><Td>{c.customerId}</Td><Td><StatusTag tone={c.status === "ASSIGNED" ? "ok" : c.status === "CONFLICT" ? "warn" : "done"}>{resultLabels[c.status] ?? "未知"}</StatusTag></Td><Td>{c.agentAdminId ?? "—"}</Td><Td>{c.status === "ASSIGNED" ? "已分配" : resultLabels[c.status] ?? "请核对原结果"}</Td></Tr>)}</tbody></Table> : <>
+    {error && <Notice tone={pending || previewUnknown || preview ? "warn" : "danger"}>{error}</Notice>}
+    <Facts><Fact k="原选中客户" lead unit="位">{result && preview ? preview.count + preview.excluded.length : selected.length}</Fact><Fact k="纳入 / 排除">{preview ? `${preview.count} / ${preview.excluded.length}` : "尚未读取"}</Fact>{preview && <Fact k="预览有效期至">{formatBusinessTimeCompact(preview.expiresAt)}（北京时间）</Fact>}</Facts>
+    <p className="rd-note">只处理本次选中的客户。每位成功客户成为新继承段的起点，未选客户及已有团队成员保持原归属。</p>
+    {result ? <Table label="逐客随机分配结果"><thead><Tr><Th>客户编号</Th><Th>结果</Th><Th>专属客服</Th><Th>原因</Th></Tr></thead><tbody>{result.customers.map(c => <Tr key={c.customerId}><Td><span data-mono>{m1CustomerCode(String(c.customerId))}</span></Td><Td><StatusTag tone={c.status === "ASSIGNED" ? "ok" : c.status === "CONFLICT" ? "warn" : "done"}>{resultLabels[c.status] ?? "未知"}</StatusTag></Td><Td>{c.agentAdminId == null ? "—" : `客服账号 ${c.agentAdminId}`}</Td><Td>{c.status === "ASSIGNED" ? "已分配" : resultLabels[c.status] ?? "请核对原结果"}</Td></Tr>)}</tbody></Table> : <>
       <Segments label="随机预览名单" value={list} onChange={setList} items={[{ value: "included", label: "原选中名单" }, { value: "excluded", label: "排除名单" }]} />
-      <Table label="随机预览名单"><thead><Tr><Th>客户</Th><Th>编码</Th><Th>结果</Th></Tr></thead><tbody>{list === "included" ? selected.map(c => <Tr key={c.customerId}><Td>{operatorNicknameText(c.displayName || "") || `客户 ${c.customerId}`}</Td><Td>{m1CustomerCode(c.customerId)}</Td><Td>{preview ? preview.customers.some(v => v.id === c.customerId) ? "纳入预览" : "已排除" : "待核对"}</Td></Tr>) : preview?.excluded.map(c => <Tr key={c.customerId}><Td>{c.customerId}</Td><Td>—</Td><Td>{exclusionLabels[c.reason] ?? "当前不符合条件，请核对客户池"}</Td></Tr>)}</tbody></Table>
+      <Table label="随机预览名单"><thead><Tr><Th>客户</Th><Th>编码</Th><Th>结果</Th></Tr></thead><tbody>{list === "included" ? selected.map(c => <Tr key={c.customerId}><Td>{operatorNicknameText(c.displayName || "") || `客户 ${c.customerId}`}</Td><Td>{m1CustomerCode(c.customerId)}</Td><Td>{preview ? preview.customers.some(v => v.id === c.customerId) ? "纳入预览" : "已排除" : "待核对"}</Td></Tr>) : preview?.excluded.map(c => { const known = selected.find(item => String(item.customerId) === String(c.customerId)); return <Tr key={c.customerId}><Td>{known ? operatorNicknameText(known.displayName || "") || `客户 ${c.customerId}` : `客户 ${c.customerId}`}</Td><Td>{m1CustomerCode(String(c.customerId))}</Td><Td>{exclusionLabels[c.reason] ?? "当前不符合条件，请核对客户池"}</Td></Tr>; })}</tbody></Table>
       {preview && <Fold inset title="技术信息" summary="规则版本与原命令"><Facts><Fact k="规则版本">{preview.rulesVersion}</Fact>{pending && <Fact k="原命令号">{pending.commandKey}</Fact>}</Facts></Fold>}
-      {!pending && (previewUnknown || preview && Date.parse(preview.expiresAt) <= Date.now()) && <Notice tone="warn" action={<Button disabled={busy} onClick={() => void generatePreview()}>重新生成预览</Button>}>重新读取原名单后生成新快照，旧预览的确认作废；这会生成新的预览。</Notice>}
-      <Field label="处理理由" required help="请填写 8–200 字，将记入操作记录。" error={reasonLeft && !reasonOk ? "请填写 8–200 字的处理理由。" : undefined}>{control => <Textarea {...control} rows={3} value={reason} maxLength={200} count={`${reason.trim().length}/200`} disabled={busy || Boolean(pending)} onBlur={() => setReasonLeft(true)} onChange={e => setReason(e.target.value)} />}</Field>
+      {!pending && (previewUnknown || !preview && error || preview && Date.parse(preview.expiresAt) <= Date.now()) && <Notice tone="warn" action={<Button disabled={busy} onClick={() => void generatePreview()}>{previewUnknown || preview ? "重新生成预览" : "重新读取原名单"}</Button>}>重新读取原名单后生成新快照，旧预览的确认作废；这会生成新的预览。</Notice>}
+      <Field label="处理理由" required help={reasonLeft && !reasonOk ? undefined : "请填写 8–200 字，将记入操作记录。"} error={reasonLeft && !reasonOk ? "请填写 8–200 字的处理理由。" : undefined}>{control => <Textarea {...control} rows={3} value={reason} maxLength={200} count={`${reason.trim().length}/200`} disabled={busy || Boolean(pending)} onBlur={() => setReasonLeft(true)} onChange={e => setReason(e.target.value)} />}</Field>
       <Check checked={ack || Boolean(pending)} disabled={busy || Boolean(pending)} onChange={e => setAck(e.target.checked)} label="已核对人数、排除项和新继承段规则，只处理此名单。" />
     </>}
     </div>

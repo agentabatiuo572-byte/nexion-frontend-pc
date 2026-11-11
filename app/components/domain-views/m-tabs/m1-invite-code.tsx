@@ -138,21 +138,18 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
     anchor.href = qr; anchor.download = `客服邀请码-${code}.png`;
     anchor.click();
   };
-  const errorLine = error && <p className="m1-invite-error" role="alert">{error}</p>;
+  const errorLine = error && <div className="m1-invite-error"><Notice tone="danger">{error}</Notice></div>;
 
   if (confirming && view?.code) return <Modal title="重置邀请码" busy={busy} onClose={() => setConfirming(false)} footer={<><Button disabled={busy} onClick={() => { setConfirming(false); setError(""); }}>取消</Button><Button variant="danger" loading={busy} onClick={() => void issue()}>确认重置</Button></>}>
-    <Facts><Fact k="当前邀请码">{view.code}</Fact></Facts><p>旧码立即失效，之后不能用于注册；已经绑定的客户不受影响。</p>{errorLine}
+    <div className="m1-command-form"><Facts><Fact k="当前邀请码"><span data-mono>{view.code}</span></Fact></Facts><Notice tone="danger">旧码立即失效，之后不能用于注册；已经绑定的客户不受影响。</Notice>{errorLine}</div>
   </Modal>;
 
   return <section className="m1-invite" aria-label="我的邀请码">
 
     {pending ? <>
-      <p className="m1-invite-note m1-invite-muted" role="alert">上次{pending.intent.payload.expectedVersion === null ? "生成" : "重置"}邀请码的结果还没确认；确认前暂不提供复制、链接和二维码。</p>
-      <Button type="button" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void reconcile()}>{busy ? "正在处理…" : "查询原操作"}</Button>
-      {unresolved && canReplayGroupCommand(pending) && <Button type="button" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void replay()}>重试原操作</Button>}
+      <Notice tone="warn" action={<><Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void reconcile()}>{busy ? "正在处理…" : "查询原操作"}</Button>{unresolved && canReplayGroupCommand(pending) && <Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void replay()}>重试原操作</Button>}</>}>上次{pending.intent.payload.expectedVersion === null ? "生成" : "重置"}邀请码的结果还没确认；确认前暂不提供复制、链接和二维码。</Notice>
     </> : readFailed ? <>
-      <p className="m1-invite-note" role="alert">暂时无法读取邀请码，请重试。</p>
-      <Button type="button" className="m1-invite-btn m1-invite-retry" onClick={() => setReload(n => n + 1)}>重试</Button>
+      <Notice tone="danger" action={<Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" onClick={() => setReload(n => n + 1)}>重试</Button>}>暂时无法读取邀请码，请重试。</Notice>
     </> : !view ? <p className="m1-invite-note m1-invite-muted" role="status">正在读取邀请码…</p>
       : view.code === null ? <>
         <p className="m1-invite-note">生成后可以复制邀请码、链接或二维码发给新用户。</p>
@@ -160,19 +157,19 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
       </> : <>
         <div className="m1-invite-box">
           <div className="m1-invite-field"><span>邀请码</span><strong className="m1-invite-code">{view.code}</strong></div>
-          <Button type="button" className="m1-invite-btn" onClick={() => void copy(view.code!, "邀请码")}><InviteIcon name="copy" />复制</Button>
+          <Button type="button" size="sm" className="m1-invite-btn" icon={<InviteIcon name="copy" />} onClick={() => void copy(view.code!, "邀请码")}>复制</Button>
         </div>
         {view.link && qr ? <>
           <div className="m1-invite-box m1-invite-linkbox">
             <div className="m1-invite-field"><span>邀请链接</span><span className="m1-invite-link" title={view.link}>{view.link}</span></div>
-            <Button type="button" className="m1-invite-btn" onClick={() => void copy(view.link!, "邀请链接")}><InviteIcon name="link" />复制链接</Button>
+            <Button type="button" size="sm" className="m1-invite-btn" icon={<InviteIcon name="link" />} onClick={() => void copy(view.link!, "邀请链接")}>复制链接</Button>
           </div>
           <div className="m1-invite-qr">
             <img src={qr} alt={`邀请二维码 ${view.code}`} width={56} height={56} />
-            <Button type="button" className="m1-invite-btn" onClick={() => saveQr(view.code!)}><InviteIcon name="save" />保存二维码</Button>
+            <Button type="button" size="sm" className="m1-invite-btn" icon={<InviteIcon name="save" />} onClick={() => saveQr(view.code!)}>保存二维码</Button>
           </div>
         </> : <p className="m1-invite-note m1-invite-muted">分享地址未配置，暂时只能复制邀请码</p>}
-        <Button type="button" variant="ghost" onClick={() => { setError(""); setConfirming(true); }}><InviteIcon name="reset" />重置</Button>
+        <Button type="button" size="sm" variant="ghost" icon={<InviteIcon name="reset" />} onClick={() => { setError(""); setConfirming(true); }}>重置</Button>
       </>}
     {errorLine}
   </section>;

@@ -2,41 +2,16 @@
 .sa-workbench>.rd-head{margin-bottom:0}
 .sa-workbench .sa-header{display:flex;justify-content:space-between;align-items:center;gap:16px}
 .sa-header h2{margin:0;font:inherit;font-weight:600}
-.sa-header p,.sa-disclosure,.sa-freshness,.sa-pager p{color:var(--rd-muted)}
-.sa-freshness{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sa-header p,.sa-disclosure,.sa-freshness,.sa-pager p{color:var(--rd-text-3)}
 .sa-freshness-delayed{color:var(--rd-warn)}
-.sa-freshness>span:nth-child(2){display:none}
 .sa-freshness button{color:var(--rd-text)}
 .sa-identity{display:flex;align-items:center;gap:8px;min-width:0}
 .sa-identity>div{display:flex;flex-direction:column;min-width:0;max-width:100%}
 .sa-identity .rd-btn{justify-content:flex-start;max-width:100%;padding-inline:0}
 .sa-identity .rd-btn-face{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
 .sa-identity .rd-note{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sa-number-wrap{display:inline-flex;vertical-align:middle;max-width:100%}
-.sa-workbench .sa-number,.sa-workbench .sa-cell-value{font:inherit;font-variant-numeric:tabular-nums;white-space:nowrap}
-.sa-workbench .sa-number,.sa-workbench .sa-cell-value,.sa-workbench .sa-link{padding-inline:0;border-color:transparent;background:transparent;min-width:0}
-.sa-workbench .sa-number .rd-btn-face,.sa-cell-value .rd-btn-face{white-space:nowrap}
-.sa-cell-value.zero,.sa-cell-value.unknown{color:var(--rd-muted)}
-.sa-metrics,.sa-inline-metrics,.sa-personal-primary-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;padding-block:8px}
-.sa-metrics>div,.sa-inline-metrics>div,.sa-personal-primary-metrics>div{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
-.sa-metrics>div>span:first-child,.sa-inline-metrics>div>span:first-child,.sa-personal-primary-metrics>div>span:first-child{color:var(--rd-muted)}
-.sa-current-funds,.sa-personal-summary{display:grid;gap:12px}
-.sa-personal-period-controls,.sa-personal-first-sources{display:flex;align-items:end;flex-wrap:wrap;gap:12px}
-.sa-personal-period-controls>div{flex:1;min-width:150px}
-.sa-personal-first-sources>div{display:flex;align-items:center;gap:8px}
-.sa-coverage{display:flex;flex-wrap:wrap;gap:12px 24px;margin-top:12px}
-.sa-coverage>div{display:flex;gap:8px;align-items:center}
-.sa-group-comparison{display:grid;gap:12px}
-.sa-group-comparison h3{font:inherit;font-weight:600;margin:0}
-.sa-group-comparison>p{color:var(--rd-muted);margin:0}
-.sa-group-comparison>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-.sa-group-comparison>div>div{display:grid;gap:8px;padding:16px;border:1px solid var(--rd-line);border-radius:var(--rd-radius-panel);background:var(--rd-panel)}
-.sa-group-comparison>div>div>span{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
-.sa-active-conditions,.sa-actions,.sa-pager,.sa-session-error,.sa-notice{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.sa-pager{justify-content:space-between}
-.sa-pager>div{display:flex;gap:8px}
+.sa-number-wrap{display:inline-flex;vertical-align:baseline;max-width:100%}
 .sa-legend{display:none}
-.m1-group-scope{max-width:360px}
 .m1-analytics-table{table-layout:fixed;width:100%}
 .m1-analytics-table :is(th,td){white-space:normal;min-width:0;overflow:hidden}
 .m1-analytics-table .rd-btn{max-width:100%}
@@ -46,10 +21,10 @@
 .m1-customer-table col:nth-child(1){width:28%}.m1-customer-table col:nth-child(2){width:11%}.m1-customer-table col:nth-child(3){width:20%}.m1-customer-table col:nth-child(4){width:14%}.m1-customer-table col:nth-child(5){width:14%}.m1-customer-table col:nth-child(6){width:13%}
 .m1-finance-table col:nth-child(1){width:24%}.m1-finance-table col:nth-child(2){width:12%}.m1-finance-table col:nth-child(3){width:15%}.m1-finance-table col:nth-child(4){width:20%}.m1-finance-table col:nth-child(5){width:13%}.m1-finance-table col:nth-child(6){width:16%}
 .m1-device-table col:nth-child(1){width:26%}.m1-device-table col:nth-child(2){width:12%}.m1-device-table col:nth-child(3){width:14%}.m1-device-table col:nth-child(4){width:17%}.m1-device-table col:nth-child(5){width:13%}.m1-device-table col:nth-child(6){width:18%}
-@media(max-width:1100px){.sa-group-comparison>div{grid-template-columns:1fr}.m1-analytics-table :is(th,td){padding-inline:8px}.m1-customer-table .support-avatar,.m1-agent-table .support-avatar{display:none}}
+@media(max-width:1100px){.m1-analytics-table :is(th,td){padding-inline:8px}.m1-customer-table .support-avatar,.m1-agent-table .support-avatar{display:none}}
 
 .m1-pool{display:grid;gap:16px}
-.m1-pool .m-admin-muted{color:var(--rd-muted)}
+.m1-pool .m-admin-muted{color:var(--rd-text-3)}
 .m1-pool-table{table-layout:fixed;width:100%}
 .m1-pool-table col:nth-child(1){width:4%}.m1-pool-table col:nth-child(2){width:24%}.m1-pool-table col:nth-child(3){width:20%}.m1-pool-table col:nth-child(4){width:17%}.m1-pool-table col:nth-child(5){width:17%}.m1-pool-table col:nth-child(6){width:18%}
 .m1-pool-table :is(th,td){white-space:normal;overflow:hidden;padding-inline:8px}
@@ -67,3 +42,100 @@
 @container(max-width:900px){.m1-live-service .rd-stats:has(>.rd-stat[data-lead])>.rd-stat[data-cp],.m1-personal>.rd-stats:has(>.rd-stat[data-lead])>.rd-stat[data-cp]{flex:1 1 calc(50% - 16px)}}
 
 .sa-workbench .rd-filter-row{align-items:flex-end}
+
+/* Data tab / my data: one panel, one data line under the title, the group scope in the panel head. */
+.sa-stats{display:grid;gap:16px}
+.sa-stats>.rd-panel-head{margin-bottom:0}
+.sa-freshness>*+*{margin-left:6px}
+.sa-freshness .rd-explain{height:var(--rd-lh-aux)}
+.sa-freshness .rd-link{padding:0;border:0;background:none;font:inherit;cursor:pointer}
+.m1-group-scope{display:inline-flex;align-items:center;gap:8px;font-size:var(--rd-text-aux);color:var(--rd-text-3)}
+.m1-group-scope .rd-select{min-width:200px;max-width:280px}
+.m1-group-scope .rd-select>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sa-state{display:flex;align-items:center;gap:12px;flex-wrap:wrap;color:var(--rd-text-3)}
+.sa-state[role="alert"]{color:var(--rd-danger)}
+.sa-active-conditions,.sa-actions,.sa-pager{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sa-active-conditions>span:first-child{font-size:var(--rd-text-aux);color:var(--rd-text-3)}
+.sa-pager{justify-content:space-between}
+.sa-pager>p{margin:0;font-size:var(--rd-text-aux);color:var(--rd-text-3);font-variant-numeric:tabular-nums}
+.sa-pager>div{display:flex;gap:8px}
+.sa-pager+.sa-disclosure{margin:-8px 0 0;font-size:var(--rd-text-aux);color:var(--rd-text-3)}
+.sa-nowrap{white-space:nowrap}
+
+/* A drill-down number is a quiet underlined link (not a button box); 0 and 「—」 stay readable but weak. */
+.sa-link{display:inline;height:auto;min-width:0;padding:0;border:0;background:none;font:inherit;font-variant-numeric:tabular-nums;white-space:nowrap;cursor:pointer;color:var(--rd-text)}
+.sa-link.sa-quiet,.sa-link.zero,.sa-link.unknown,.sa-number.sa-quiet{color:var(--rd-text-3);text-decoration-color:var(--rd-line-strong)}
+.sa-number{font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* 经营概况: same-weight tiles, one row; values heavier than labels. */
+.sa-metrics,.sa-inline-metrics{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin:0}
+.sa-metrics>div,.sa-inline-metrics>div,.sa-coverage>div{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;padding:12px 16px;border-radius:var(--rd-radius-control);background:var(--rd-panel-inner)}
+.sa-metrics>div>span:first-child,.sa-inline-metrics>div>span:first-child,.sa-coverage>div>span:first-child{font-size:var(--rd-text-aux);line-height:var(--rd-lh-aux);color:var(--rd-text-3)}
+.sa-metrics .sa-number-wrap,.sa-inline-metrics .sa-number-wrap,.sa-coverage .sa-number-wrap{font-size:var(--rd-text-section);line-height:var(--rd-lh-section);font-weight:600}
+.sa-coverage{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid var(--rd-line)}
+.sa-current-funds{margin-top:12px;padding-top:12px;border-top:1px solid var(--rd-line)}
+.sa-current-funds>p{display:flex;align-items:center;gap:4px;margin:0;font-size:var(--rd-text-aux);color:var(--rd-text-3)}
+
+/* 负责组: up to four cards, the group's net contribution is the one strong number. */
+.sa-group-comparison{display:grid;gap:12px}
+.sa-group-head{display:flex;align-items:center;gap:8px}
+.sa-group-head h3{margin:0;font-size:var(--rd-text-body);line-height:var(--rd-lh-body);font-weight:600}
+.sa-group-head .rd-explain{margin-left:-4px}
+.sa-group-comparison>ul{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin:0;padding:0;list-style:none}
+.sa-group-comparison>ul>li{display:flex;flex-direction:column;gap:12px;min-width:0;padding:16px;border:1px solid var(--rd-line);border-radius:var(--rd-radius-panel);background:var(--rd-panel)}
+.sa-group-name{align-self:flex-start;max-width:100%;padding:0;border:0;background:none;font:inherit;font-weight:600;color:var(--rd-text);text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+@media (hover:hover) and (pointer:fine){.sa-group-name:hover{text-decoration:underline;text-underline-offset:3px}}
+.sa-group-name:focus-visible{outline:2px solid var(--rd-focus,var(--rd-brand));outline-offset:2px;border-radius:2px}
+.sa-group-key{display:flex;flex-direction:column;gap:4px;min-width:0}
+.sa-group-key>span{font-size:var(--rd-text-aux);line-height:var(--rd-lh-aux);color:var(--rd-text-3)}
+.sa-group-key>strong{display:flex;align-items:baseline;gap:6px;font-size:var(--rd-text-title);line-height:var(--rd-lh-title);font-weight:600}
+.sa-group-key>strong>small{font-size:var(--rd-text-aux);font-weight:400;color:var(--rd-text-3)}
+.sa-group-comparison .rd-stat-row dd{display:inline-flex;align-items:baseline;gap:4px}
+
+/* Names in table cells are text buttons aligned with the second line under them. */
+.m1-analytics-table td .rd-btn[data-variant="ghost"],.m1-pool-table td .rd-btn[data-variant="ghost"]{height:auto;padding-inline:0;place-items:center start;color:var(--rd-text);font-weight:500}
+
+/* 我的数据 inside 本人客户与期间业绩: period controls on the heading line, figures as tiles. */
+.sa-personal-summary{display:grid;gap:12px;margin-top:4px;padding-top:16px;border-top:1px solid var(--rd-line)}
+.sa-personal-head{display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px 12px}
+.sa-personal-head>h3{margin:0 0 7px;font-size:var(--rd-text-body);line-height:var(--rd-lh-body);font-weight:600;color:var(--rd-text)}
+.sa-personal-head>.rd-explain{margin:0 0 8px -6px}
+.sa-personal-period-controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-left:auto}
+.sa-personal-period-controls>div{flex:none;min-width:0}
+.sa-personal-period-controls .rd-select{min-width:140px}
+.sa-personal-asof{display:flex;flex-wrap:wrap;gap:4px 16px;margin:0;font-size:var(--rd-text-aux);line-height:var(--rd-lh-aux);color:var(--rd-text-3)}
+.sa-personal-primary-metrics,.sa-personal-first-sources{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin:0}
+.sa-personal-primary-metrics>div,.sa-personal-first-sources>div{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;padding:12px 16px;border-radius:var(--rd-radius-control);background:var(--rd-panel-inner)}
+.sa-personal-primary-metrics>div>span:first-child,.sa-personal-first-sources>div>span:first-child{font-size:var(--rd-text-aux);line-height:var(--rd-lh-aux);color:var(--rd-text-3)}
+.sa-personal-primary-metrics .sa-number-wrap{font-size:var(--rd-text-section);line-height:var(--rd-lh-section);font-weight:600}
+.sa-personal-first-sources .sa-number-wrap{font-weight:500}
+
+.m1-live-service{display:grid;gap:var(--rd-section-gap)}
+.sa-link.sa-dash{text-decoration:none}
+.rd-head-actions>.avatar-control-button{--rd-btn-pad:12px;height:var(--rd-control-h)}
+/* 待分配: the confirm dialog names the customers first, as a compact list. */
+.m1-pool .rd-panel{display:grid;gap:16px}
+.m1-pool .rd-panel>.rd-panel-head{margin-bottom:0}
+.m1-pool-pending.rd-panel,.m1-pool-pending{display:grid;gap:16px}
+.m1-pool-back{display:flex;justify-content:center;margin-top:8px}
+.m1-assign-customers{display:grid;gap:8px}
+.m1-assign-customers>h3{margin:0;font-size:var(--rd-text-body);line-height:var(--rd-lh-body);font-weight:500;color:var(--rd-text-2)}
+.m1-assign-customers>h3>b{font-size:var(--rd-text-section);font-weight:600;color:var(--rd-text);font-variant-numeric:tabular-nums}
+.m1-assign-customers>ul{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 12px;max-height:168px;overflow:auto;margin:0;padding:12px 16px;border-radius:var(--rd-radius-control);background:var(--rd-panel-inner);list-style:none}
+.m1-assign-customers>ul>li{display:flex;gap:8px;min-width:0;font-size:var(--rd-text-aux);line-height:var(--rd-lh-aux)}
+.m1-assign-customers>ul>li>span:last-child{color:var(--rd-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Compact pager shared by the pool, the group pages and dialog candidate lists; only shown with more than one page. */
+.m1-group-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.m1-group-pager>span{margin-right:4px;font-size:var(--rd-text-aux);color:var(--rd-text-3);font-variant-numeric:tabular-nums}
+.m1-inline-pager{justify-content:flex-start;margin-top:8px}
+/* 1024: list times (2026-11-05 14:30) stay on one line; the name column gives up the width. */
+@media(max-width:1100px){
+.m1-customer-table col:nth-child(1){width:24%}.m1-customer-table col:nth-child(2){width:13%}.m1-customer-table col:nth-child(3){width:16%}.m1-customer-table col:nth-child(4){width:19%}.m1-customer-table col:nth-child(5){width:14%}.m1-customer-table col:nth-child(6){width:14%}
+.m1-finance-table col:nth-child(1){width:19%}.m1-finance-table col:nth-child(2){width:11%}.m1-finance-table col:nth-child(3){width:20%}.m1-finance-table col:nth-child(4){width:18%}.m1-finance-table col:nth-child(5){width:13%}.m1-finance-table col:nth-child(6){width:19%}
+.m1-pool-table col:nth-child(2){width:22%}.m1-pool-table col:nth-child(3){width:19%}.m1-pool-table col:nth-child(4){width:20%}.m1-pool-table col:nth-child(5){width:15%}
+}
+.rd-fact-change .s5a-transfer-effect{display:inline-flex;align-items:center;gap:6px;margin:0}
+/* 1024: tile labels wrap evenly instead of leaving one character behind; table avatars give their width to names
+   (SupportAvatar sets display inline, so the narrow rule needs to win over it). */
+.sa-metrics>div>span:first-child,.sa-inline-metrics>div>span:first-child,.sa-coverage>div>span:first-child,.sa-personal-primary-metrics>div>span:first-child{text-wrap:balance}
+@media(max-width:1100px){.m1-customer-table .support-avatar,.m1-agent-table .support-avatar{display:none!important}.m1-analytics-table .sa-identity{gap:0}}
