@@ -2698,8 +2698,10 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
             </RdFacts>
           </div>
           <RdCheckGroup legend="本人声明">
-            <RdCheck data-proof="identity-ack" checked={value.ack === "true"} onChange={(event) => set("ack", event.target.checked ? "true" : "false")}
-              label="我已另行核实是用户本人，不是他人冒充" help="核实方式和依据请写在操作理由中。" />
+            <div style={{ gridColumn: "1 / -1" }}>
+              <RdCheck data-proof="identity-ack" checked={value.ack === "true"} onChange={(event) => set("ack", event.target.checked ? "true" : "false")}
+                label="我已另行核实是用户本人，不是他人冒充" help="核实方式和依据请写在操作理由中。" />
+            </div>
           </RdCheckGroup>
         </div>
       );
