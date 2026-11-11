@@ -785,7 +785,7 @@
 @container (max-width: 860px) {
   .e6-page .rd-config-rail > .rd-section-nav { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 4px; }
   .e6-page .rd-config-rail > .rd-section-nav a { flex: none; white-space: nowrap; }
-
+}
 /* E1 catalogue: page-local composition of rd graphics and form primitives. */
 .e1-page { container-type: inline-size; gap: var(--rd-space-3); }
 .e1-page > .rd-conclusion:not([data-alarm]) { --rd-panel-pad-y: 0; --rd-panel-pad-x: 0; background: none; }
