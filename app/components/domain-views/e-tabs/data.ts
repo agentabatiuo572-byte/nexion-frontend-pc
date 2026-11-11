@@ -196,7 +196,7 @@ export function skuToForm(s: OpsSku): SkuForm {
     gpu: gpuParts.model, vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "", uptime: s.uptime ?? "", warranty: s.warranty ?? "", phoneDailyEarn: str(s.phoneDailyEarn), phoneDailyEarnNEX: str(s.phoneDailyEarnNEX),
     allowedPoolCodes: s.allowedPoolCodes ?? [],
     price: str(s.price), computePoints: str(s.computePoints),
-    dailyEarn: s.monthlyTargetUsdt == null ? str(s.dailyEarn) : "", dailyEarnNEX: str(s.dailyEarnNEX),
+    dailyEarn: s.monthlyTargetUsdt == null ? str(s.dailyEarn) : "", dailyEarnNEX: str(s.dailyEarnNEX ?? undefined),
     shareYieldMin: s.monthlyTargetUsdt == null ? str(s.shareYieldMin) : "", shareYieldMax: s.monthlyTargetUsdt == null ? str(s.shareYieldMax) : "",
     monthlyTargetUsdt: str(s.monthlyTargetUsdt), monthlyTargetBandPct: str(s.monthlyTargetBandPct),
     inventoryMode: s.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE", stock: s.inventoryMode === "UNLIMITED" ? "" : str(s.stock), trialEligible: s.trialEligible ? "true" : "false",

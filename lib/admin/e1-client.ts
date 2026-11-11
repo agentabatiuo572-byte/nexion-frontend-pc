@@ -250,7 +250,7 @@ function fromSku(sku: BackendSku): OpsSku {
     price: toNumber(sku.price),
     computePoints: toOptionalNumber(sku.computePoints),
     dailyEarn: toNumber(sku.derivedDailyEarnUsdt ?? sku.dailyEarn),
-    dailyEarnNEX: toNumber(sku.dailyEarnNex),
+    dailyEarnNEX: toOptionalNumber(sku.dailyEarnNex) ?? null,
     monthlyTargetUsdt: toOptionalNumber(sku.monthlyTargetUsdt),
     monthlyTargetBandPct: toOptionalNumber(sku.monthlyTargetBandPct),
     derivedDailyEarnUsdt: toOptionalNumber(sku.derivedDailyEarnUsdt),
@@ -373,16 +373,10 @@ async function withFreshSkuMediaPreview(sku: OpsSku): Promise<OpsSku> {
   }
 }
 
-export async function fetchE1Catalog(): Promise<E1CatalogSnapshot> {
-  const [rawSkuPage, rawGates, rawBundleDiscount] = await Promise.all([
-    e1Request<unknown>("/skus?pageNum=1&pageSize=100"),
-    e1Request<unknown>("/generation-gates"),
-    e1Request<unknown>("/bundle-discount"),
-  ]);
+export async function fetchE1Products(): Promise<Pick<E1CatalogSnapshot, "skus" | "invalidSkus">> {
+  const rawSkuPage = await e1Request<unknown>("/skus?pageNum=1&pageSize=100");
   const firstSkuPage = parseE1SkuPage<BackendSku>(rawSkuPage);
   if (firstSkuPage.pageNum !== 1) throw new Error("E1_SKU_PAGINATION_CONTRACT_INVALID");
-  const gates = parseE1GenerationGateData<E1GenerationGateData>(rawGates);
-  const bundleDiscount = parseE1BundleDiscount(rawBundleDiscount);
   const skuRows = [...firstSkuPage.records];
   const seenSkuIds = new Set(skuRows.map((row) => row.skuId));
   if (seenSkuIds.size !== skuRows.length) throw new Error("E1_SKU_PAGINATION_DUPLICATE");
@@ -407,7 +401,20 @@ export async function fetchE1Catalog(): Promise<E1CatalogSnapshot> {
   // E1 与 App 读同一张 nx_product;一行历史取值不该把运营后台的商品目录清成 0。
   const { valid, invalid } = inspectE1SkuPage<BackendSku>({ ...firstSkuPage, records: skuRows });
   const skus = await Promise.all(valid.map(fromSku).map(withFreshSkuMediaPreview));
-  return { skus, gates, bundleDiscount, invalidSkus: invalid };
+  return { skus, invalidSkus: invalid };
+}
+
+export async function fetchE1GenerationGates(): Promise<E1GenerationGateData> {
+  return parseE1GenerationGateData<E1GenerationGateData>(await e1Request<unknown>("/generation-gates"));
+}
+
+export async function fetchE1Discount(): Promise<E1BundleDiscount> {
+  return parseE1BundleDiscount(await e1Request<unknown>("/bundle-discount"));
+}
+
+export async function fetchE1Catalog(): Promise<E1CatalogSnapshot> {
+  const [products, gates, bundleDiscount] = await Promise.all([fetchE1Products(), fetchE1GenerationGates(), fetchE1Discount()]);
+  return { ...products, gates, bundleDiscount };
 }
 
 export function parseE1BundleDiscount(value: unknown): E1BundleDiscount {
