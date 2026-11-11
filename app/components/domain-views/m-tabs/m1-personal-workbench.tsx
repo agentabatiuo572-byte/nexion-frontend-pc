@@ -135,6 +135,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [maintenanceNeedsRefresh, setMaintenanceNeedsRefresh] = useState(false);
   const [maintenancePending, setMaintenancePending] = useState<MaintenanceRecord | null>(null);
   // null while unchecked or unreadable: the dialog then gives the real answer. false hides the entry (BUG-040).
   const [transferInScope, setTransferInScope] = useState<boolean | null>(null);
@@ -193,7 +194,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     const actorKey = actorStamp();
     const pending = maintenanceCommands.list().find((row) => row.actorId === adminId && row.payload.customerId === customerId) ?? null;
     setDetailId(customerId); setDetail(null); setHistory(null); setDetailLoading(true); setDetailError(null); setMaintenanceAction(null); setSaveError(pending ? "上次操作结果待确认，请先查询原命令。" : null); setReason(""); setMaintenancePending(pending);
-    setTransferInScope(null);
+    setTransferInScope(null); setMaintenanceNeedsRefresh(false);
     try {
       const next = await supportClient.customerDetail(customerId);
       if (detailsGeneration.current !== generation || actorStamp() !== actorKey) return;
@@ -204,7 +205,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     finally { if (detailsGeneration.current === generation) setDetailLoading(false); }
   }, [adminId, permission]);
   const closeDetail = useCallback(() => {
-    detailsGeneration.current += 1; setDetailId(null); setDetail(null); setHistory(null); setMaintenanceAction(null); setReason(""); setSaveError(null); setMaintenancePending(null); setTransferInScope(null);
+    detailsGeneration.current += 1; setDetailId(null); setDetail(null); setHistory(null); setMaintenanceAction(null); setReason(""); setSaveError(null); setMaintenancePending(null); setTransferInScope(null); setMaintenanceNeedsRefresh(false);
   }, []);
   useEffect(() => { closeDetail(); }, [authEpoch, closeDetail]);
   // A finished transfer moves the customer away from this list; drop the open drawer and reload.
@@ -249,8 +250,19 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     catch (error) { if (detailsGeneration.current === generation && !invalidateCustomerOnDenied(detailId, error)) setHistoryError(errorText(error)); }
     finally { if (detailsGeneration.current === generation) setHistoryLoading(false); }
   };
+  const reloadMaintenanceDetail = async () => {
+    if (!detailId || saving || detailLoading) return;
+    const generation = detailsGeneration.current, actor = actorStamp();
+    setDetailLoading(true); setSaveError(null);
+    try {
+      const current = await supportClient.customerDetail(detailId);
+      if (detailsGeneration.current !== generation || actorStamp() !== actor) return;
+      setDetail(current); setDetailActorKey(actor); setMaintenanceNeedsRefresh(false);
+    } catch (error) { if (detailsGeneration.current === generation && !invalidateCustomerOnDenied(detailId, error)) setSaveError(errorText(error)); }
+    finally { if (detailsGeneration.current === generation) setDetailLoading(false); }
+  };
   const saveMaintenance = async () => {
-    if (!detail || !detail.assignmentId || !maintenanceAction || saving || maintenancePending || detail.agentAdminId !== adminId) return;
+    if (!detail || !detail.assignmentId || !maintenanceAction || saving || detailLoading || maintenanceNeedsRefresh || maintenancePending || detail.agentAdminId !== adminId) return;
     const actor = actorStamp();
     const generation = detailsGeneration.current;
     const payload: MaintenancePayload = { customerId: detail.customerId, assignmentId: detail.assignmentId, enabled: maintenanceAction === "resume", reason: reason.trim(), expectedVersion: detail.maintenanceVersion };
@@ -278,7 +290,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
       setRowsRefresh((value) => value + 1);
     } catch (error) {
       if (actor !== actorStamp()) return;
-      if (!acknowledged && isExplicitRejection(error)) { maintenanceCommands.forget(fingerprint, key); setMaintenancePending(null); setSaveError(errorText(error)); return; }
+      if (!acknowledged && isExplicitRejection(error)) { maintenanceCommands.forget(fingerprint, key); setMaintenancePending(null); setMaintenanceNeedsRefresh(true); setSaveError(errorText(error)); return; }
       if (detailsGeneration.current === generation) {
         setNotice("操作结果尚未核对，原命令已保留。请查询原命令并核对当前授权资料。");
         closeDetail(); setSnapshot(null); setRowsRefresh(value => value + 1);
@@ -304,7 +316,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
         window.dispatchEvent(new Event("support-todo-changed"));
         closeDetail(); setRowsRefresh((value) => value + 1); setNotice(result.status === "FAILED" ? "上次操作没有成功，请重新确认。" : "上次操作已确认，请查看最新资料。");
       } else setNotice("原操作仍待确认，请稍后继续查询。");
-    } catch { if (actor === actorStamp()) { closeDetail(); setSnapshot(null); setNotice("结果暂时无法核对，原命令与理由已保留。"); } }
+    } catch (error) { if (actor === actorStamp()) { closeDetail(); if (!invalidateCustomerOnDenied(record.payload.customerId, error)) setNotice("结果暂时无法核对，原命令与理由已保留；客户名单仍为上次读取的结果。"); } }
     finally { setSaving(false); }
   };
   useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [maintenancePending, saving]);
@@ -362,7 +374,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     {view === "customers" && <Panel title="我的客户" sub={rows ? `共 ${rows.total} 位 · 北京时间` : "总数待确认"} actions={canBulk ? <Button onClick={() => setBulkOpen(true)}>圈选群发</Button> : undefined}>
       {permission !== "agent" && <Fold title="我的邀请码" summary="生成、重置与分享"><SelfInviteCodeBar key={sessionKey} toast={ctx.toast} /></Fold>}
       <FilterBar onSubmit={() => { setPage(1); setKeyword(keywordDraft.trim()); }} onClear={() => { setFilter("ALL"); setKeyword(""); setKeywordDraft(""); setPage(1); }} canClear={filter !== "ALL" || Boolean(keyword)} action={<Button type="submit">搜索</Button>}>
-        <FilterField label="客户" grow><Input aria-label="搜索客户名称或 ID" value={keywordDraft} onChange={e => setKeywordDraft(e.target.value)} placeholder="客户名称或 ID" /></FilterField>
+        <FilterField label="客户" grow><Input aria-label="搜索客户名称或编码" value={keywordDraft} onChange={e => setKeywordDraft(e.target.value)} placeholder="客户名称或编码" /></FilterField>
         <FilterField label="服务状态"><Select aria-label="筛选客户" value={filter} options={filters} onChange={value => { setFilter(value as SupportCustomerFilter); setPage(1); }} /></FilterField>
       </FilterBar>
       {listState ?? <Table label="我的客户" className="m1-personal-table"><colgroup><col /><col /><col /><col /><col /><col /></colgroup><thead><Tr><Th>客户</Th><Th>上次活动</Th><Th>账户状态</Th><Th>维护状态</Th><Th>待办</Th><Th sticky="end">操作</Th></Tr></thead><tbody>{listRecords.map(row => <Tr key={row.customerId} selected={row.customerId === detailId}><Td><div className="m1-customer-name"><SupportAvatar name={customerName(row)} path={row.customerAvatarRef ?? undefined} /><div><Button variant="ghost" size="sm" onClick={() => void openDetail(row.customerId)}>{customerName(row)}</Button><span className="rd-note">{m1CustomerCode(row.customerId)}</span></div></div></Td><Td><span title={formatTime(row.lastEffectiveAt)} tabIndex={0}>{row.lastEffectiveAt ? beijing(row.lastEffectiveAt).slice(5) : "—"}</span></Td><Td><StatusTag tone={accountTone(row)}>{labelForAccount(row.accountState)}</StatusTag></Td><Td><StatusTag tone={maintenanceTone(row)}>{labelForMaintenance(row)}</StatusTag></Td><Td><span>{row.waitingReply ? "待回复" : ""}</span><span className="rd-note">{row.maintenanceEnabled && row.firstContact ? "首次待联系" : row.maintenanceEnabled && row.maintenanceStatus === "DUE" ? "待维护" : row.waitingReply ? "" : "—"}</span></Td><Td sticky="end"><Button size="sm" onClick={() => openChat(row.customerId, !row.waitingReply && row.maintenanceEnabled && row.maintenanceStatus === "DUE")}>{actionFor(row)}</Button></Td></Tr>)}</tbody></Table>}
@@ -374,21 +386,22 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
         <div className="m1-customer-name"><SupportAvatar name={customerName(detail)} path={detail.customerAvatarRef ?? undefined} /><strong>{customerName(detail)}</strong></div>
         <Facts><Fact k="当前专属客服">{detail.agentName ?? "资料未知"}</Fact><Fact k="客户编码">{m1CustomerCode(detail.customerId)}</Fact><Fact k="账户状态"><StatusTag tone={accountTone(detail)}>{labelForAccount(detail.accountState)}</StatusTag></Fact><Fact k="维护状态"><StatusTag tone={maintenanceTone(detail)}>{labelForMaintenance(detail)}</StatusTag></Fact><Fact k="上次账户活动">{formatTime(detail.lastEffectiveAt)}</Fact><Fact k="下次维护">{formatTime(detail.nextMaintenanceAt)}</Fact></Facts>
         {paymentSecurityPort && <PaymentSecurityBlock key={`${sessionKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={customerName(detail)} canRelease={Boolean(session?.authorities.includes("user_c5_payment_password_release"))} />}
+        {maintenancePending && <Notice tone="warn" action={<Button disabled={saving} onClick={() => void checkMaintenance()}>核对维护原操作</Button>}>这位客户有维护操作结果待确认，暂不能再次调整维护；原客户、理由与命令号已保留。</Notice>}
         {detail.accountState === "UNKNOWN" && <Notice tone="warn">账户活动数据不完整，无法判断沉睡或活跃。</Notice>}
         <Button variant="ghost" onClick={() => router.push(`/service/customers/${detail.customerId}?source=M1&returnTo=/service/overview`)}>查看完整客户档案</Button>
         <Fold title="维护记录" summary={history ? `周期 ${history.totalCycles} · 主动联系 ${history.totalExecutions}` : historyError ? "读取失败" : "尚未读取"} onOpenChange={open => { if (open && !history && !historyLoading) void loadHistory(); }}>
           <Button size="sm" disabled={historyLoading} onClick={() => void loadHistory()}>查看维护记录</Button>{historyError && <Notice tone="danger">{historyError}</Notice>}
-          {history && <><Timeline entries={[...history.cycles, ...history.executions].map(item => ({ id: `${item.kind}:${item.id}`, action: historyLabel(item.kind, HISTORY_KINDS), actor: detail.agentName || "原专属客服", at: item.occurredAt, detail: item.state ? historyLabel(item.state, HISTORY_STATES) : undefined }))} />{(history.cycles.length < history.totalCycles || history.executions.length < history.totalExecutions) && <Button disabled={historyLoading} onClick={() => void loadHistory(history.pageNum + 1)}>加载更多维护记录</Button>}</>}
+          {history && <><Timeline entries={[...history.cycles, ...history.executions].map(item => ({ id: `${item.kind}:${item.id}`, action: historyLabel(item.kind, HISTORY_KINDS), actor: item.agentAdminId ? `客服账号 ${item.agentAdminId}` : "操作人未提供", at: item.occurredAt, detail: item.state ? historyLabel(item.state, HISTORY_STATES) : undefined }))} />{(history.cycles.length < history.totalCycles || history.executions.length < history.totalExecutions) && <Button disabled={historyLoading} onClick={() => void loadHistory(history.pageNum + 1)}>加载更多维护记录</Button>}</>}
         </Fold>
         <Fold title="技术信息" summary="客户、绑定与维护版本"><Facts><Fact k="客户编号">{detail.customerId}</Fact><Fact k="绑定编号">{detail.assignmentId || "—"}</Fact><Fact k="维护版本">{detail.maintenanceVersion}</Fact></Facts></Fold>
       </>}
     </Drawer>}
-    {maintenanceAction && detail && <Modal title={maintenanceAction === "stop" ? "暂停主动维护" : "恢复主动维护"} busy={saving} onClose={() => setMaintenanceAction(null)} footer={<><Button disabled={saving} onClick={() => setMaintenanceAction(null)}>取消</Button><Button variant="primary" disabled={saving} disabledReason={maintenancePending ? "先查询原操作" : !reasonOk ? "请填写 8–200 字理由" : undefined} onClick={() => void saveMaintenance()}>{saving ? "提交中…" : maintenanceAction === "stop" ? "确认不再维护" : "确认恢复维护"}</Button></>}>
+    {maintenanceAction && detail && <Modal title={maintenanceAction === "stop" ? "不再维护" : "恢复维护"} busy={saving} onClose={() => setMaintenanceAction(null)} footer={<><Button disabled={saving} onClick={() => setMaintenanceAction(null)}>取消</Button><Button variant="primary" disabled={saving} disabledReason={maintenancePending ? "先查询原操作" : maintenanceNeedsRefresh ? "请先重新读取客户资料" : detailLoading ? "正在重新读取客户资料" : !canMaintain ? "当前客户不再属于本人" : !reasonOk ? "请填写 8–200 字理由" : undefined} onClick={() => void saveMaintenance()}>{saving ? "提交中…" : maintenanceAction === "stop" ? "确认不再维护" : "确认恢复维护"}</Button></>}>
       <div className="m1-command-form">
       <Facts><Fact k="客户">{customerName(detail)} · {m1CustomerCode(detail.customerId)}</Fact><Fact k="当前专属客服">{detail.agentName || "本人"}</Fact><Fact k="维护状态">{detail.maintenanceEnabled ? "主动维护" : "暂停主动维护"} → {maintenanceAction === "stop" ? "暂停主动维护" : "主动维护"}</Fact></Facts>
       <p>{maintenanceAction === "stop" ? "仅停止主动跟进，客户归属、私聊与求助保持可用。" : "旧周期不恢复，不自动产生执行或成功。"}</p>
       <Field label="操作理由" required help="请填写 8–200 字，将记入操作记录。" error={reasonLeft && !reasonOk ? "请填写 8–200 字的理由。" : undefined}>{control => <Textarea {...control} value={reason} maxLength={200} disabled={saving || Boolean(maintenancePending)} count={`${reason.trim().length}/200`} onBlur={() => setReasonLeft(true)} onChange={e => setReason(e.target.value)} />}</Field>
-      {saveError && <Notice tone="danger">{saveError}</Notice>}{maintenancePending && <Notice tone="warn" action={<Button disabled={saving} onClick={() => void checkMaintenance()}>查询原操作</Button>}>上次结果待确认，原理由与命令号已保留。</Notice>}
+      {saveError && <Notice tone="danger">{saveError}</Notice>}{maintenanceNeedsRefresh && <Button disabled={saving || detailLoading} onClick={() => void reloadMaintenanceDetail()}>重新读取客户资料</Button>}{maintenancePending && <Notice tone="warn" action={<Button disabled={saving} onClick={() => void checkMaintenance()}>查询原操作</Button>}>上次结果待确认，原理由与命令号已保留。</Notice>}
       </div>
     </Modal>}
   </section>;

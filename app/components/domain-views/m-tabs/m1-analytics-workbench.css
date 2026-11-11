@@ -5,7 +5,6 @@
 .sa-header p,.sa-disclosure,.sa-freshness,.sa-pager p{color:var(--rd-muted)}
 .sa-freshness{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .sa-freshness-delayed{color:var(--rd-warn)}
-.sa-freshness>span:nth-child(2){display:none}
 .sa-freshness button{color:var(--rd-text)}
 .sa-identity{display:flex;align-items:center;gap:8px;min-width:0}
 .sa-identity>div{display:flex;flex-direction:column;min-width:0;max-width:100%}

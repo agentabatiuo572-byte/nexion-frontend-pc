@@ -167,9 +167,10 @@ function fullAmount(value: string): string {
   return `${parts[1]}${parts[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction}`;
 }
 function CustomerValue({ value, observed, status, kind, label, onClick }: { value: string | null; observed?: string | null; status: Count["status"]; kind: "count" | "amount"; label: string; onClick: () => void }) {
-  const text = value === null ? "—" : kind === "amount" ? fullAmount(value) : value;
-  const note = text !== "-" ? text : status === "FAILED" || status === "UNAVAILABLE" ? "资料暂不可用" : observed == null ? "数据还在同步" : `已观测 ${observed}，完整数值仍在统计`;
-  return <Button type="button" className={`sa-cell-value${text === "0" ? " zero" : text === "-" ? " unknown" : ""}`} title={text === "-" ? note : undefined} aria-label={`${label}：${note}；查看明细`} onClick={onClick}>{text}</Button>;
+  const missing = value === null || status !== "AVAILABLE";
+  const text = missing ? "—" : kind === "amount" ? fullAmount(value) : value;
+  const note = !missing ? text : status === "FAILED" || status === "UNAVAILABLE" ? "资料暂不可用" : observed == null ? "数据还在同步" : `已观测 ${observed}，完整数值仍在统计`;
+  return <Button type="button" className={`sa-cell-value${text === "0" ? " zero" : missing ? " unknown" : ""}`} title={missing ? note : undefined} aria-label={`${label}：${note}；查看明细`} onClick={onClick}>{text}</Button>;
 }
 function countValue(count: Count): string | null { return count.confirmed === null || count.status !== "AVAILABLE" ? null : String(count.confirmed); }
 function activityTime(value: string): string {
@@ -249,7 +250,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const authSession = useAdminAuth(state => state.session);
   const tabIds = useTabIds();
   const pendingTabFocus = useRef<M1Tab | null>(null);
-  const [scope, setScope] = useState<SupportAnalyticsResponse | null>(null), [scopeError, setScopeError] = useState("");
+  const [scope, setScope] = useState<SupportAnalyticsResponse | null>(null), [scopeError, setScopeError] = useState(""), [scopeDenied, setScopeDenied] = useState(false);
   const teamChanged = useRef(false);
   const [scopeRetry, setScopeRetry] = useState(0), [queryState, setQueryState] = useState(initialAnalyticsQuery("PERSONAL"));
   const [data, setData] = useState<SupportAnalyticsResponse | null>(null), [error, setError] = useState("");
@@ -295,6 +296,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     ? { kind: "fund", metric: fundMetric, origin: data, query: analyticsWireQuery(queryState, statisticsCalendar ?? []) } : null, [data, fundMetric, queryState, statisticsCalendar]);
   const readModes = useAdminAuth(state => state.session?.supportReadModes);
   // A session hint only chooses the requested projection. The response still resolves current authority.
+  const noReadableServiceScope = readModes?.length === 0 && authSession?.role !== "super" && authSession?.role !== "superadmin";
+  const noScopedContent = scopeDenied && noReadableServiceScope;
   const entryReadMode = readModes?.includes("ALL") ? "ALL" : readModes?.includes("MANAGED") ? "MANAGED" : readModes?.includes("PERSONAL") ? "PERSONAL" : "ALL";
   const needsCalendar = Boolean(scope && (isPersonal || queryState.basis === "PERIOD_EVENT"));
   // A supervisor who also holds personal service keeps a tab for their own customers, grouped or not (the managed agent list omits an ungrouped self).
@@ -324,7 +327,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     return () => controller.abort();
   }, [needsCalendar, scopeRetry, calendarRetry]);
   useEffect(() => {
-    const controller = new AbortController(); scopeControllerRef.current = controller; entryStatistics.current = null; setScope(null); setScopeError(""); setData(null); setProfileId(null);
+    const controller = new AbortController(); scopeControllerRef.current = controller; entryStatistics.current = null; setScope(null); setScopeError(""); setScopeDenied(false); setData(null); setProfileId(null);
     (async () => {
       const agentId = analyticsEntryAgent(window.location.search);
       let query = analyticsWireQuery(initialAnalyticsQuery(entryReadMode), []);
@@ -381,7 +384,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         if (personal) setPersonalView(tab === "my-customers" ? "customers" : "dashboard");
       } else setSection(current => personal === (current === "personal") || current === "stats" ? current : personal ? "personal" : "stats");
       setScope(next); setQueryState(restored);
-    }).catch(cause => { if (!controller.signal.aborted) setScopeError(analyticsErrorText(cause)); });
+    }).catch(cause => { if (!controller.signal.aborted) { setScopeDenied(cause instanceof SupportClientError && cause.status === 403); setScopeError(analyticsErrorText(cause)); } });
     return () => controller.abort();
   }, [scopeRetry, entryReadMode]);
   useEffect(() => {
@@ -477,9 +480,9 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const visible = authSession ? resolveVisibleDomains(authSession) : [];
   const header = <PageHeader pageId="M1" title="客服工作台" summary="先处理客户待办，再核对分配和维护进展。" actions={<>
     {scope && scope.scopeSummary.mode !== "PERSONAL" && canAccessResolvedPath(visible, "/service/sessions") && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
-    {canAccessResolvedPath(visible, "/service/leaderboard") && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}<Button onClick={() => refreshScope()}>刷新</Button>
+    {authSession && (scope || readModes?.length || authSession.role === "super" || authSession.role === "superadmin") && authSession.authorities.some(code => code === "service_m1_read" || code === "service_m3_read") && canAccessResolvedPath(visible, "/service/leaderboard") && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{!noScopedContent && <Button onClick={() => refreshScope()}>刷新</Button>}
   </>} />;
-  if (!scope) return <section className="sa-workbench" aria-busy={!scopeError}>{header}<BlockState state={scopeError ? "error" : "loading"} title={scopeError || "正在核对当前可见范围…"} onRetry={scopeError ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重新核对范围" /></section>;
+  if (!scope) return <section className="sa-workbench" aria-busy={!scopeError}>{header}<BlockState state={noScopedContent ? "empty" : scopeError ? "error" : "loading"} title={noScopedContent ? "当前账号没有可查看的负责组，也没有可查看的本人客户，这页暂无可查看的内容。" : scopeError || "正在核对当前可见范围…"} onRetry={scopeError && !noScopedContent ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重新核对范围" /></section>;
 
   const mode = scope.scopeSummary.mode, currency = queryState.currency ?? "USDT";
   const leadPermission: Permission = mode === "ALL" ? "superadmin" : "supervisor";
@@ -610,8 +613,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {transferCustomer && <CustomerTransferDialog key={transferCustomer} customerId={transferCustomer} mode={mode === "ALL" ? "ALL" : "MANAGED"} onClose={() => closeTransfer()} onDone={notice => { closeTransfer(); setTransferNotice(notice); setTransferRevision(n => n + 1); setRetry(n => n + 1); }} onOpenOwn={canMine ? () => { closeTransfer(true); openTab("mine"); } : undefined} />}
     {bulkRecovery && <SupportBulkComposer ctx={ctx} onClose={() => setBulkRecovery(false)} />}
     {profileId && <Drawer open wide title="客户资料与原业务明细" onClose={() => setProfileId(null)} footer={<div className="m1-drawer-actions"><Button type="button" onClick={() => setProfileId(null)}>返回统计列表</Button></div>}><p className="sa-disclosure">按你的客户资料查看权限显示；统计可见不增加资金操作或回复权限。</p>{profileStats && ["CUSTOMERS", "ACTIVITY"].includes(data?.view || "") && <Fold title="统计依据" summary={`${m1CustomerCode(profileStats.customerId)} · ${currency}`}><Facts>
-      <Fact k="直接邀请的好友"><CustomerValue kind="count" value={countValue(profileStats.invitations.direct)} status={profileStats.invitations.direct.status} label="直接邀请的好友" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
-      <Fact k="团队成员"><CustomerValue kind="count" value={countValue(profileStats.invitations.descendants)} status={profileStats.invitations.descendants.status} label="团队成员" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
+      <Fact k="直接邀请的好友"><CustomerValue kind="count" value={countValue(profileStats.invitations.direct)} observed={profileStats.invitations.direct.observed === null ? null : String(profileStats.invitations.direct.observed)} status={profileStats.invitations.direct.status} label="直接邀请的好友" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
+      <Fact k="团队成员"><CustomerValue kind="count" value={countValue(profileStats.invitations.descendants)} observed={profileStats.invitations.descendants.observed === null ? null : String(profileStats.invitations.descendants.observed)} status={profileStats.invitations.descendants.status} label="团队成员" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
       <Fact k={`本人累充 / ${currency}`}><MoneyValue money={profileStats.lifetime.find(x => x.currency === currency)?.deposits} label="本人累充" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
       <Fact k={`邀请累充 / ${currency}`}><MoneyValue money={profileStats.invitations.deposits.find(x => x.currency === currency)?.deposits} label="邀请累充" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
     </Facts></Fold>}<M3CustomerProfile key={profileId} ctx={ctx} customerId={profileId} source="M1" onHistory={no => router.push(`/service/sessions?conversationNo=${encodeURIComponent(no)}`)} onRetryMessages={() => void ctx.refreshConversations()} /></Drawer>}

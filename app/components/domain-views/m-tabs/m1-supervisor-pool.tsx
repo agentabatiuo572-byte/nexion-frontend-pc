@@ -18,7 +18,7 @@ import { SupportRandomAssignment, hasPendingRandomAssignment } from "./support-r
 import { compactSupportBoardValue } from "./support-leaderboard";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import { supportGroupClient, type SupportGroup } from "../../../../lib/admin/support-group-client";
-import { setSupportPoolRoute, readSupportPoolCustomer, verifySupportTransfer, type SupportRouteInput, type SupportReadMode } from "../../../../lib/admin/m-support-client";
+import { setSupportPoolRoute, parseSupportPoolRouteResult, readSupportPoolCustomer, verifySupportTransfer, type SupportRouteInput, type SupportReadMode } from "../../../../lib/admin/m-support-client";
 
 const PAGE_SIZE = 8;
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
@@ -61,10 +61,10 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
   }, [item.routeGroupId, targetId, pending, reload, requiresFreshPool]);
   const reasonLength = Array.from(reason.trim()).length;
   const canSave = !pending && !requiresFreshPool && !busy && !error && Boolean(versions) && item.routeState !== "UNKNOWN" && (targetId || null) !== item.routeGroupId && reasonLength >= 8 && reasonLength <= 200;
-  async function verifyRouteFacts(record: RoutePending) {
+  async function verifyRouteFacts(record: RoutePending, receipt: ReturnType<typeof parseSupportPoolRouteResult>) {
     const current = await readSupportPoolCustomer(record.item.customerId);
     if (current.routeGroupId) await supportGroupClient.detail(current.routeGroupId);
-    const matches = current.routeState === "AVAILABLE" && (record.item.routeState === "ABSENT" || current.routeId === record.item.routeId) && current.routeGroupId === record.payload.targetGroupId && current.routeVersion !== null && current.routeVersion > record.payload.expectedRouteVersion;
+    const matches = current.routeState === "AVAILABLE" && current.customerId === receipt.customerId && current.routeId === receipt.id && current.routeGroupId === receipt.groupId && current.routeVersion === receipt.version && current.routeVersion > record.payload.expectedRouteVersion;
     if (!matches) throw new Error("SUPPORT_ROUTE_RECOVERY_FACTS_CHANGED");
   }
   async function save() {
@@ -77,9 +77,9 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
     if (!routeCommands.isDurablyStored(fingerprint, commandKey)) { routeCommands.forget(fingerprint, commandKey); setError("暂时无法保存命令，未提交调整。请恢复浏览器存储后重试。"); return; }
     inFlight.current = true; setBusy(true);
     try {
-      await setSupportPoolRoute(item.customerId, payload, commandKey);
+      const receipt = await setSupportPoolRoute(item.customerId, payload, commandKey);
       if (stamp !== actorStamp() || !mounted.current) return;
-      await verifyRouteFacts(record);
+      await verifyRouteFacts(record, receipt);
       if (stamp !== actorStamp() || !mounted.current || record.actorId !== useAdminAuth.getState().session?.adminId) return;
       routeCommands.forget(fingerprint, commandKey); onDone();
     } catch (cause) {
@@ -91,10 +91,10 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
     if (!pending || inFlight.current) return;
     const stamp = actorStamp(); inFlight.current = true; setBusy(true);
     try {
-      const result = await supportGroupClient.command(pending.commandKey);
+      const result = await supportClient.command(pending.commandKey);
       if (stamp !== actorStamp() || !mounted.current) return;
       if (result.status === "SUCCEEDED" || result.status === "FAILED") {
-        if (result.status === "SUCCEEDED") await verifyRouteFacts(pending);
+        if (result.status === "SUCCEEDED") await verifyRouteFacts(pending, parseSupportPoolRouteResult(result.result, pending.item.customerId, pending.payload));
         if (stamp !== actorStamp() || !mounted.current || pending.actorId !== useAdminAuth.getState().session?.adminId) return;
         routeCommands.forget(pending.fingerprint, pending.commandKey);
         if (result.status === "SUCCEEDED") onDone();
@@ -118,14 +118,14 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
   </Modal>;
 }
 
-function errorText(error: unknown): string {
+function errorText(error: unknown, reading = false): string {
   if (error instanceof Error && "backendMessage" in error && typeof error.backendMessage === "string" && ADMIN_ERROR_MESSAGES[error.backendMessage]) return displayAdminError(error);
   if (isIndeterminateSupportError(error)) return "分配结果待确认，请查询原命令。";
   const status = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
   if (status === 401) return "登录已失效，请重新登录。";
   if (status === 403) return "当前账号无权查看或分配待绑定客户。";
   if (status === 409) return "客户或专属客服状态已变化，已保留选择。请刷新预览后重新确认。";
-  return "待绑定服务暂不可用，请重试；没有提交任何分配。";
+  return reading ? "待分配资料读取失败，请重试。" : "待绑定服务暂不可用，请重试；没有提交任何分配。";
 }
 
 export function M1SupervisorPool({ permission, initialGroupId }: { permission: MSupportPermission; initialGroupId?: number }) {
@@ -209,7 +209,7 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
           for (const item of result.records) next.delete(item.customerId);
           return next;
         });
-      }).catch((cause: unknown) => { if (!controller.signal.aborted) setError(errorText(cause)); })
+      }).catch((cause: unknown) => { if (!controller.signal.aborted) setError(errorText(cause, true)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [page, keyword, reasonFilter, reload, permission, groupId, readableScope, scope, authEpoch]);
@@ -331,14 +331,14 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
       {adminId && hasPendingRandomAssignment(adminId) && <Notice tone="warn" action={<Button onClick={() => setRandomCustomers([])}>查询上次随机分配结果</Button>}>原随机分配结果待确认，不能另发分配。</Notice>}
       <FilterBar onSubmit={() => { setPage(1); setKeyword(keywordInput.trim()); }} onClear={() => { setKeywordInput(""); setKeyword(""); setReasonFilter(""); setPage(1); }} canClear={Boolean(keyword || reasonFilter)} action={<Button type="submit">搜索</Button>}>
         <FilterField label="分配范围"><Select aria-label="选择客服组" value={String(groupId ?? "")} disabled={saving || Boolean(randomCustomers)} onChange={value => { setGroupId(value ? Number(value) : undefined); setPage(1); setAgentPage(1); setPool(null); setAgents(null); setSelected(new Map()); setStaleIds(new Set()); setTarget(null); setAssignmentReason(""); setFailedReason(null); setConfirm(false); }} options={[{ value: "", label: scope.mode === "ALL" ? "全部授权组及未分组客户" : "全部主管管理组" }, ...scope.groups.map(group => ({ value: group.id, label: group.name }))]} /></FilterField>
-        <FilterField label="客户" grow><Input aria-label="搜索客户编号、昵称或手机号" value={keywordInput} onChange={event => setKeywordInput(event.target.value)} placeholder="客户编号、昵称或手机号" /></FilterField>
+        <FilterField label="客户" grow><Input aria-label="搜索客户名称或编码" value={keywordInput} onChange={event => setKeywordInput(event.target.value)} placeholder="客户名称或编码" /></FilterField>
         <FilterField label="入池原因"><Select aria-label="筛选入池原因" value={reasonFilter} onChange={value => { setPage(1); setReasonFilter(value as SupportPoolReason | ""); }} options={[{ value: "", label: "全部入池原因" }, ...Object.entries(POOL_REASONS).map(([value, label]) => ({ value, label }))]} /></FilterField>
       </FilterBar>
       {error && <div role="alert" className="m-admin-error">{error} <Button type="button" size="sm" disabled={Boolean(pending)} onClick={() => setReload((n) => n + 1)}>重新加载</Button></div>}
       {pending && <div role="alert" className="m-admin-error">上次分配结果未确认，已锁定原客户范围与命令。<Button type="button" size="sm" onClick={() => setConfirm(true)}>继续确认上次分配</Button></div>}
       {loading && <div role="status" className="m-admin-muted">正在加载待分配客户…</div>}
       {!loading && pool && !error && <>
-        {records.length === 0 ? <BlockState state="empty" title="当前没有匹配的待分配客户。可清除筛选查看全部。" /> : <Table label="待分配客户" className="m1-pool-table"><colgroup><col /><col /><col /><col /><col /><col /></colgroup><thead><Tr><Th control><Checkbox checked={wholePageSelected} indeterminate={visibleSelected > 0 && !wholePageSelected} disabled={!hasWrite || hasPendingRandomAssignment(adminId ?? 0)} onChange={toggleVisible} aria-label="选择或取消当前页客户" /></Th><Th>客户</Th><Th>入池原因</Th><Th>等待起点</Th><Th>客户留言</Th><Th sticky="end">操作</Th></Tr></thead><tbody>{records.map(item => <Tr key={item.customerId} selected={selected.has(item.customerId)}>
+        {records.length === 0 ? <BlockState state="empty" title={keyword || reasonFilter || groupId !== undefined ? "当前筛选下没有待分配客户，可调整或清除筛选。" : "当前没有待分配客户。"} /> : <Table label="待分配客户" className="m1-pool-table"><colgroup><col /><col /><col /><col /><col /><col /></colgroup><thead><Tr><Th control><Checkbox checked={wholePageSelected} indeterminate={visibleSelected > 0 && !wholePageSelected} disabled={!hasWrite || hasPendingRandomAssignment(adminId ?? 0)} onChange={toggleVisible} aria-label="选择或取消当前页客户" /></Th><Th>客户</Th><Th>入池原因</Th><Th>等待起点</Th><Th>客户留言</Th><Th sticky="end">操作</Th></Tr></thead><tbody>{records.map(item => <Tr key={item.customerId} selected={selected.has(item.customerId)}>
           <Td><Checkbox checked={selected.has(item.customerId)} disabled={!hasWrite || hasPendingRandomAssignment(adminId ?? 0)} onChange={() => toggle(item)} aria-label={`选择客户 ${item.customerNo || item.customerId}`} /></Td>
           <Td><Button variant="ghost" size="sm" title={operatorNicknameText(item.displayName || "") || item.customerNo || item.customerId} onClick={() => setPoolDetail(item)}>{operatorNicknameText(item.displayName || "") || item.customerNo || item.customerId}</Button><span className="rd-note">{m1CustomerCode(item.customerId)} · {item.phoneMasked ?? "—"}</span></Td>
           <Td><span title={POOL_REASONS[item.reason]}>{POOL_REASONS[item.reason]}</span><span className="rd-note">{item.autoEligible == null ? "自动资格未知" : item.autoEligible ? "可自动重试" : "需主管处理"}</span></Td>

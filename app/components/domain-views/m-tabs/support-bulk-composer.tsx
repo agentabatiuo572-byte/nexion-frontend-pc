@@ -18,6 +18,7 @@ import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact } from "
 import { SupportContentTools, type SelectedSupportContent } from "./support-content-tools";
 import type { MCtx } from "./types";
 type Stored = PendingMutationRecord & { actorId:number; payload:BulkContent; batchId?:string; readOnlyRecovery?:boolean; action?:"cancel"|"retry"; mutation?:{expectedVersion:number;reason:string} };
+type PreviewIntent = { input: Parameters<typeof supportEnhancements.bulkPreview>[0]; advance: boolean };
 type UploadPending = PendingMutationRecord & { actorId: number; clientUploadId: string; hash: string; fileName: string; fileMime: string; assetExpiresAt?: number };
 const uploads = createPendingMutationStore<UploadPending>({ storageKey: "nexion-support-bulk-attachment-v1", retainExpiredRecords: true, isValidRecord: r => Number.isSafeInteger(r.actorId) && typeof r.clientUploadId === "string" && typeof r.hash === "string" && typeof r.fileName === "string" && typeof r.fileMime === "string" });
 const commands=createPendingMutationStore<Stored>({storageKey:"nexion-support-bulk-pending",retainExpiredRecords:true,isValidRecord:r=>Number.isSafeInteger(r.actorId)&&Boolean(r.payload?.selectionId)});
@@ -56,6 +57,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   const [selected,setSelected]=useState<Set<string>>(new Set()),[page,setPage]=useState(1),[profiles,setProfiles]=useState<Record<string,SupportProfile>>({});
   const [busy,setBusy]=useState(false),[error,setError]=useState(""),[retry,setRetry]=useState(0),[filterDraft,setFilterDraft]=useState<BulkFilters>({});
   const [previewUnknown,setPreviewUnknown]=useState(false),[notReceived,setNotReceived]=useState(false);
+  const [previewIntent,setPreviewIntent]=useState<PreviewIntent|null>(null);
   const [previewDenied,setPreviewDenied]=useState(false),[identities,setIdentities]=useState<Record<string,{nickname:string;userNo:string}>>({});
   const [text,setText]=useState(""),[intent,setIntent]=useState<"SERVICE"|"MAINTENANCE">("SERVICE"),[choice,setChoice]=useState<SelectedSupportContent|null>(null),[reason,setReason]=useState(""),[reasonLeft,setReasonLeft]=useState(false),[ack,setAck]=useState(false);
   const [draftOwner,setDraftOwner]=useState(0);
@@ -71,7 +73,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   const composerRef=useRef<HTMLTextAreaElement>(null);
   const fileRef=useRef<HTMLInputElement>(null);
   useEffect(()=>{const handle=()=>{generation.current++;for(const record of commands.list())if(record.actorId===actorId)commands.remember(record.fingerprint,record.commandKey,{actorId:record.actorId,payload:record.payload,batchId:record.batchId,action:record.action,mutation:record.mutation,readOnlyRecovery:true});try{sessionStorage.removeItem(`nexion-bulk-draft:${actorId}`);}catch{}setDraftOwner(0);setPending(null);stamp.current=`${scopeKey}:${generation.current}`;setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);setQuery(null);setText("");setChoice(null);setJob(null);setRecipients(null);onClose();};window.addEventListener("support-scope-invalidated",handle);return()=>window.removeEventListener("support-scope-invalidated",handle);},[actorId,epoch,onClose]);
-  useEffect(()=>{if(scopeOwner===scopeKey)return;setScopeOwner(scopeKey);setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);setQuery(null);setJob(null);setRecipients(null);setJobs(null);setPending(null);setStep(1);setBusy(false);setUploading(false);setFilters({});setFilterDraft({});setPage(1);setChoice(null);setReason("");setAck(false);setUploadError("");imageSelection.current++;if(imageRef.current)URL.revokeObjectURL(imageRef.current.url);setImage(null);},[scopeKey]);
+  useEffect(()=>{if(scopeOwner===scopeKey)return;setScopeOwner(scopeKey);setPreviewIntent(null);setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);setQuery(null);setJob(null);setRecipients(null);setJobs(null);setPending(null);setStep(1);setBusy(false);setUploading(false);setFilters({});setFilterDraft({});setPage(1);setChoice(null);setReason("");setAck(false);setUploadError("");imageSelection.current++;if(imageRef.current)URL.revokeObjectURL(imageRef.current.url);setImage(null);},[scopeKey]);
   useEffect(()=>{const old=commands.list().find(r=>r.actorId===actorId);if(old){setPending(old);setStep(3);setError(isRetryExpired(old)?RETRY_EXPIRED_TEXT:"原操作结果待确认，请查询原命令。");}},[scopeKey]);
   useEffect(()=>{if(!actorId)return;try{const saved=JSON.parse(sessionStorage.getItem(`nexion-bulk-draft:${actorId}`)??"{}");setText(typeof saved.text==="string"?saved.text:"");setIntent(saved.intent==="MAINTENANCE"?"MAINTENANCE":"SERVICE");}catch{setError("群发草稿暂不能恢复，请在本页核对。");}setDraftOwner(actorId);},[actorId,epoch]);
   useEffect(()=>{if(!actorId||draftOwner!==actorId)return;try{sessionStorage.setItem(`nexion-bulk-draft:${actorId}`,JSON.stringify({text,intent}));}catch{setError("群发草稿无法保存在浏览器里，请在本页一次完成。");}},[actorId,draftOwner,text,intent]);
@@ -80,7 +82,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   useEffect(()=>{
     if(createBlocked)return;
     const controller=new AbortController(),saved=queryKey,owner=stamp.current;setQuery(null);setError("");setPreviewDenied(false);
-    supportEnhancements.bulkCandidates(filters,page,controller.signal).then(v=>{if(controller.signal.aborted||saved!==requestKey.current||owner!==stamp.current)return;if(v.actorId!==actorId)throw new SupportClientError(403,403,"SUPPORT_SCOPE_FORBIDDEN");if(v.pageNum!==page)throw new Error("SUPPORT_CANDIDATE_PAGE_INVALID");if(page>1&&page>Math.max(1,Math.ceil(v.total/10))){setPage(Math.max(1,Math.ceil(v.total/10)));return;}setQuery({...v,requestKey:saved});setIdentities(old=>({...old,...Object.fromEntries(v.records.map(c=>[c.id,{nickname:c.nickname,userNo:c.userNo}]))}));}).catch(e=>{if(!controller.signal.aborted&&saved===requestKey.current&&owner===stamp.current){setError(bulkPreviewError(e));setPreviewUnknown(!isBulkPreviewDenied(e));setPreviewDenied(isBulkPreviewDenied(e));if(isBulkPreviewDenied(e)){setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);}}});
+    supportEnhancements.bulkCandidates(filters,page,controller.signal).then(v=>{if(controller.signal.aborted||saved!==requestKey.current||owner!==stamp.current)return;if(v.actorId!==actorId)throw new SupportClientError(403,403,"SUPPORT_SCOPE_FORBIDDEN");if(v.pageNum!==page)throw new Error("SUPPORT_CANDIDATE_PAGE_INVALID");if(page>1&&page>Math.max(1,Math.ceil(v.total/10))){setPage(Math.max(1,Math.ceil(v.total/10)));return;}setQuery({...v,requestKey:saved});setIdentities(old=>({...old,...Object.fromEntries(v.records.map(c=>[c.id,{nickname:c.nickname,userNo:c.userNo}]))}));}).catch(e=>{if(!controller.signal.aborted&&saved===requestKey.current&&owner===stamp.current){setError(bulkPreviewError(e));setPreviewDenied(isBulkPreviewDenied(e));if(isBulkPreviewDenied(e)){setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);}}});
     return()=>controller.abort();
   },[filters,page,retry,scopeKey,createBlocked]);
   useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [pending]);
@@ -115,8 +117,39 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   const levels=[...new Set(Object.values(profiles).flatMap(p=>typeof p.identity.data?.level==="string"?[p.identity.data.level]:[]))];
   const currencies=[...new Set(Object.values(profiles).flatMap(p=>Array.isArray(p.finance.data?.byCurrency)?p.finance.data.byCurrency.map((v:Record<string,unknown>)=>v.currency).filter((v):v is string=>typeof v==="string"):[]))];
   const insert=(value:string)=>{const start=composerRef.current?.selectionStart??text.length,end=composerRef.current?.selectionEnd??start;setText(text.slice(0,start)+value+text.slice(end));requestAnimationFrame(()=>{composerRef.current?.focus();composerRef.current?.setSelectionRange(start+value.length,start+value.length);});};
-  async function selectAll(){if(busy||previewDenied||!query)return;const saved=stamp.current,key=requestKey.current;setBusy(true);setError("");setSelection(null);setAck(false);setPreviewUnknown(false);try{await supportEnhancements.bulkCandidates(filters,1);const next=await supportEnhancements.bulkPreview({filters,customerIds:[],excludedIds:[],selectionMode:"ALL_FILTERED"});if(saved!==stamp.current||key!==requestKey.current)return;if(next.actorId!==actorId)throw new SupportClientError(403,403,"SUPPORT_SCOPE_FORBIDDEN");setIdentities(old=>({...old,...Object.fromEntries(next.customers.filter(c=>c.userNo).map(c=>[c.id,{nickname:c.nickname??"客户",userNo:c.userNo!}]))}));setSelected(old=>new Set([...old,...next.customers.map(c=>c.id)]));}catch(e){if(saved===stamp.current&&key===requestKey.current){setError(bulkPreviewError(e));setPreviewUnknown(!isBulkPreviewDenied(e));setPreviewDenied(isBulkPreviewDenied(e));if(isBulkPreviewDenied(e)){setQuery(null);setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);}}}finally{if(saved===stamp.current)setBusy(false);}}
-  async function freeze(){if(!selected.size||busy||previewDenied)return;const saved=stamp.current;setBusy(true);setError("");setSelection(null);setAck(false);setPreviewUnknown(false);try{await supportEnhancements.bulkCandidates(filters,1);const next=await supportEnhancements.bulkPreview({filters:{...filters,keyword:undefined},customerIds:[...selected],excludedIds:[],selectionMode:"CROSS_PAGE"});if(saved!==stamp.current)return;if(next.actorId!==actorId)throw new SupportClientError(403,403,"SUPPORT_SCOPE_FORBIDDEN");if(!next.count){setSelection(next);setError("所选客户均被排除，请核对名单。已保留选择，可逐项移除或清空。");return;}setIdentities(old=>({...old,...Object.fromEntries(next.customers.filter(c=>c.userNo).map(c=>[c.id,{nickname:c.nickname??"客户",userNo:c.userNo!}]))}));setSelection(next);setAck(false);setStep(2);}catch(e){if(saved===stamp.current){setError(bulkPreviewError(e));setPreviewUnknown(!isBulkPreviewDenied(e));setPreviewDenied(isBulkPreviewDenied(e));if(isBulkPreviewDenied(e)){setQuery(null);setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);}}}finally{if(saved===stamp.current)setBusy(false);}}
+  async function generatePreview(intent: PreviewIntent) {
+    if (busy || previewDenied || pending) return;
+    const saved = stamp.current;
+    setBusy(true); setError(""); setSelection(null); setAck(false); setPreviewUnknown(false); setPreviewIntent(intent);
+    let previewRequested = false;
+    try {
+      const current = await supportEnhancements.bulkCandidates(intent.input.filters, 1);
+      if (current.actorId !== actorId) throw new SupportClientError(403, 403, "SUPPORT_SCOPE_FORBIDDEN");
+      previewRequested = true;
+      const next = await supportEnhancements.bulkPreview(intent.input);
+      if (saved !== stamp.current) return;
+      if (next.actorId !== actorId) throw new SupportClientError(403, 403, "SUPPORT_SCOPE_FORBIDDEN");
+      setPreviewIntent(null);
+      setIdentities(old => ({ ...old, ...Object.fromEntries(next.customers.filter(c => c.userNo).map(c => [c.id, { nickname: c.nickname ?? "客户", userNo: c.userNo! }])) }));
+      if (!intent.advance) { setSelected(old => new Set([...old, ...next.customers.map(c => c.id)])); return; }
+      setSelection(next);
+      if (!next.count) { setError("所选客户均被排除，请核对名单。已保留选择，可逐项移除或清空。"); return; }
+      setStep(2);
+    } catch (e) {
+      if (saved !== stamp.current) return;
+      const denied = isBulkPreviewDenied(e);
+      setError(bulkPreviewError(e)); setPreviewUnknown(previewRequested && !denied); setPreviewDenied(denied);
+      if (denied) { setPreviewIntent(null); setQuery(null); setSelected(new Set()); setIdentities({}); setProfiles({}); setSelection(null); }
+    } finally { if (saved === stamp.current) setBusy(false); }
+  }
+  async function selectAll() {
+    if (!query) return;
+    await generatePreview({ input: { filters: { ...filters }, customerIds: [], excludedIds: [], selectionMode: "ALL_FILTERED" }, advance: false });
+  }
+  async function freeze() {
+    if (!selected.size) return;
+    await generatePreview({ input: { filters: { ...filters, keyword: undefined }, customerIds: [...selected], excludedIds: [], selectionMode: "CROSS_PAGE" }, advance: true });
+  }
   async function chooseFile(file?: File) {
     if (!file || busy || uploading) return;
     const chosen = ++imageSelection.current, saved = stamp.current; setUploadError("");
@@ -194,7 +227,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   return <Modal title="圈选客户群发" icon="users" wide busy={busy||uploading} onClose={onClose} footer={<div className="m-admin-toolbar"><Button size="sm" disabled={busy||uploading} onClick={onClose}>{step===4?"关闭结果":"退出群发"}</Button>{!historyOpen&&<>{step>1&&step<4&&!pending&&<Button size="sm" disabled={busy} onClick={()=>setStep(n=>n-1)}>上一步</Button>}{step===1&&!createBlocked&&<Button variant="primary" size="sm" disabledReason={!selected.size?"先勾选客户":undefined} disabled={busy||previewDenied||Boolean(pending)} onClick={()=>void freeze()}>{busy?"核对名单…":"下一步：编写内容"}</Button>}{step===2&&<Button variant="primary" size="sm" disabledReason={uploadPending?"先核对原图片上传结果":(image?!image.assetId:!text.trim())?(image?"先上传图片":"先写发送内容"):undefined} onClick={()=>{setStep(3);setAck(false);setPreviewList("included");}}>下一步：确认名单</Button>}{step===3&&!pending&&<Button variant="primary" size="sm" disabled={busy} disabledReason={!ready&&!busy?"先写操作理由并勾选核对":undefined} onClick={()=>void submit()}>{busy?"提交中…":"确认提交群发"}</Button>}</>}{pending&&notReceived&&!isRetryExpired(pending)&&!pending.readOnlyRecovery&&<Button size="sm" disabled={busy} onClick={()=>void submit(true,true)}>按原操作重试</Button>}{pending&&<Button variant="primary" size="sm" disabled={busy} onClick={()=>void submit(true)}>查询原操作结果</Button>}</div>}>
     <div className="ui-support-workflow ui-support-contact-picker rd-stack"><ol className="ui-workflow-steps" aria-label="群发步骤">{["圈选客户","编写内容","确认提交","逐客结果"].map((title,index) => <li key={title} aria-current={step === index + 1 ? "step" : undefined} className={step === index + 1 ? "current" : step > index + 1 ? "complete" : ""}><span>{index + 1}</span>{title}</li>)}</ol><p className="rd-sr-only" role="status">第 {step} 步：{["","圈选客户","编写内容","确认提交","逐客结果"][step]}</p>{error&&!(pending&&isRetryExpired(pending)&&error===RETRY_EXPIRED_TEXT)&&<Notice tone={pending?"warn":"danger"}>{error}</Notice>}{uploadPending && <Notice tone="warn">原图片上传结果待确认。请选择同一张图片后按原命令重试；超过图片有效期或 24 小时，请联系管理员核对原结果。原命令号 {uploadPending.commandKey}</Notice>}
     {!historyOpen&&<>
-    {previewUnknown&&!pending&&<Notice tone="warn" action={<Button disabled={busy} onClick={()=>void freeze()}>重新生成预览</Button>}>重新读取原名单后生成新快照，旧预览的确认作废；这会生成新的预览。</Notice>}
+    {previewIntent&&!pending&&<Notice tone="warn" action={<Button disabled={busy} onClick={()=>void generatePreview(previewIntent)}>{previewUnknown?"重新生成预览":"重新读取原名单"}</Button>}>按上次{previewIntent.input.selectionMode==="ALL_FILTERED"?"全部筛选结果":"明确选中名单"}重新读取并生成新快照，旧预览的确认作废；这会生成新的预览。</Notice>}
     {step===1&&createBlocked&&<Notice tone="warn">{createBlocked}</Notice>}
     {step===1&&!createBlocked&&<><p className="m-bulk-head">筛选 <Explain label="哪些客户能群发" content="只发送当前本人客户；两种主动群发均排除“不再维护”。选择保持原名单，新匹配客户不会自动加入。"/></p><div className="m-bulk-filters">
       <Field label="搜索昵称、手机号或用户编码">{control=><Input {...control} aria-label="搜索昵称、手机号或用户编码" value={filterDraft.keyword??""} onChange={e=>setFilter("keyword",e.target.value)}/>}</Field>
