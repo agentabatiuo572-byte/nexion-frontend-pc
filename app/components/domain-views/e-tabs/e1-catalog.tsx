@@ -341,7 +341,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       const phaseIndex = phaseOrder.indexOf(resolveE1PhaseId(phases, s.unlock));
       const open = readiness ? readiness.unlocked : (!s.unlock || phaseCurrentKnown && phaseIndex >= 0 && phaseIndex <= phaseOrder.indexOf(phaseCur));
       const needsAttention = readiness ? gateNeedsAttention(readiness) : !!s.unlock && (!phaseCurrentKnown || phaseIndex < 0);
-      const blockers = readiness ? readiness.blockers : !open ? [phaseIndex < 0 ? "开放阶段对不上" : `待${phaseLabel(s.unlock)}`] : [];
+      const blockers = !ctx.e1Gates ? [] : readiness ? readiness.blockers : !open ? [phaseIndex < 0 ? "开放阶段对不上" : `待${phaseLabel(s.unlock)}`] : [];
       const publishReason = s.publishBlockReason === "PRODUCT_TEST_IDENTIFIER" ? "测试标识不能发布" : s.publishBlockReason === "PRODUCT_NO_EFFECTIVE_EARNINGS" ? "未配置有效收益" : s.publishBlockReason || "发布门未通过";
       const locked = ctx.locked("device_sku", s.id);
       const onBlock = writeBlock || (locked ? "此对象有待审批或待核对的操作，请先核对" : s.publishBlocked === true ? publishReason : s.status !== "on" && s.publishBlocked === undefined ? "上架状态未知，请重新加载核对" : s.status !== "on" && !open ? blockers.join("；") : s.status !== "on" && oldModel(s) ? SKU_MODEL_UNRECOGNIZED_REASON : s.status !== "on" && !s.allowedPoolCodes?.length ? "上架前请至少选择一个任务等级" : s.status !== "on" && s.monthlyTargetUsdt == null ? "上架前请设置月收益目标" : s.status !== "on" && !s.datacenter?.trim() ? "上架前请填写托管机房" : s.status !== "on" && s.inventoryMode !== "UNLIMITED" && Number(s.stock) === 0 ? "库存为 0，商品已售罄" : undefined);
@@ -370,7 +370,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
             <span className="e1-meta-item">{s.dailyEarnNEX == null ? "— · 未填写 UVT/天" : <E1Amount value={s.dailyEarnNEX} unit="UVT/天" />}</span>
             <StatusTag tone="neutral" icon={s.trialEligible ? CheckCircle2 : Ban}>{s.trialEligible ? "允许试用" : "不可试用"}</StatusTag>
             {s.purchaseGate && <Explain label={`${s.name}购买条件`} content={<E1PurchaseConditions sku={s} />}><span><ShieldCheck size={14} aria-hidden />购买条件</span></Explain>}
-            <StatusTag tone="neutral" icon={open ? CheckCircle2 : Clock3}>{s.unlock ? phaseLabel(s.unlock) : "无需阶段"}</StatusTag>
+            <StatusTag tone="neutral" icon={open ? CheckCircle2 : Clock3}>{s.unlock ? ctx.e1Gates ? phaseLabel(s.unlock) : "开放阶段未读取" : "无需阶段"}</StatusTag>
           </div>
           <div className="e1-meta-room">托管 · {s.datacenter?.trim() ? datacenterNameText(s.datacenter) : "— · 未填写"}</div>
           {cardReasons.length > 0 && <div className={needsAttention || s.publishBlocked !== false || oldModel(s) ? "e1-card-warning" : "e1-card-note"}>{cardReasons.join("；")}{release && <Button size="sm" variant="ghost" onClick={() => revealPlan(s.id)}>查看条件</Button>}</div>}
