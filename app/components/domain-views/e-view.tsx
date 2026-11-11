@@ -929,7 +929,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
             });
             setSelOrder(null);
           } else if (mc.op === "order-refund" && mc.orderId) {
-            const refundChannel = (businessValue?.refundChannel ?? "").trim();
+            const refundChannel = (businessValue?.refundChannel ?? mc.fixedVal ?? "").trim();
             if (!refundChannel) { throw new Error("请选择退款渠道"); }
             const refundReasonCode = (businessValue?.refundReasonCode ?? "").trim();
             if (!(E4_REFUND_REASONS as readonly string[]).includes(refundReasonCode)) { throw new Error("请选择退款原因"); }
