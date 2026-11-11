@@ -9,7 +9,7 @@ import { supportClient, verifySupportTransfer, isDefiniteSupportRefusal, Support
 import { supportGroupClient, canReplayGroupCommand } from "@/lib/admin/support-group-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Modal } from "../design-kit";
-import { Button, Fact, Facts, Field, Fold, Notice, Select, Textarea } from "@/app/components/rd";
+import { BlockState, Button, Change, Fact, Facts, Field, Fold, Notice, Select, Textarea } from "@/app/components/rd";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import "./m-support-workbench.css";
 
@@ -41,7 +41,7 @@ export async function readTransferTargets(agentAdminId: number, mode: "ALL" | "M
 /** Unconfirmed transfers of this operator; each row reopens the dialog on the original command. */
 export function TransferPendingNotes({ onOpen }: { onOpen: (customerId: string) => void }) {
   const adminId = useAdminAuth((state) => state.session?.adminId);
-  return <>{transferCommands.list().filter((record) => record.actorId === adminId).map((record, index) => <p className="s5a-note" key={record.commandKey}>存在结果尚未确认的转绑。<Button type="button" onClick={() => onOpen(record.payload.customers[0].id)}>查询转绑结果 {index + 1}</Button></p>)}</>;
+  return <>{transferCommands.list().filter((record) => record.actorId === adminId).map((record, index) => <Notice tone="warn" key={record.commandKey} action={<Button type="button" size="sm" onClick={() => onOpen(record.payload.customers[0].id)}>查询转绑结果 {index + 1}</Button>}>存在结果尚未确认的转绑。</Notice>)}</>;
 }
 
 /** BUG-114 / BUG-040: 正式转绑 for one customer, for every role that may do it. Authorization stays on the server; this only shows what it allows. */
@@ -147,18 +147,19 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
 
   return <Modal title="正式转绑客户" icon="users" busy={saving} onClose={onClose} footer={footer}><div className="m1-transfer-form">
     {pending ? <>
-      <p role="status">这次转绑的结果尚未确认，原操作已锁定，不能修改。</p>
-      <Facts><Fact k="客户">{pending.customerName ?? customerId}</Fact><Fact k="变更">{pending.fromName ?? "原专属客服"} → {pending.targetName ?? `专属客服 ${pending.payload.targetAgentAdminId}`}</Fact><Fact k="绑定版本">{pending.payload.customers[0].expectedVersion}</Fact><Fact k="理由">{pending.payload.reason}</Fact></Facts><Fold title="技术信息" summary="原命令号"><span data-mono>{pending.commandKey}</span></Fold>
-    </> : denied ? <p role="alert">{denied}</p>
-      : loadError ? <p role="alert">{loadError}<Button type="button" size="sm" onClick={() => setReload((value) => value + 1)}>重新加载</Button></p>
-      : !detail || !targets ? <p role="status">正在加载客户归属和可接待的专属客服…</p>
+      <Notice tone="warn">这次转绑的结果尚未确认，原操作已锁定，不能修改。</Notice>
+      <Facts><Fact k="客户">{pending.customerName ?? customerId}</Fact><Fact k="专属客服变更"><Change from={pending.fromName ?? "原专属客服"} to={pending.targetName ?? `专属客服 ${pending.payload.targetAgentAdminId}`} /></Fact><Fact k="理由">{pending.payload.reason}</Fact></Facts><Fold inset title="技术信息" summary="原命令号与绑定版本"><Facts><Fact k="原命令号"><span data-mono>{pending.commandKey}</span></Fact><Fact k="绑定版本">{String(pending.payload.customers[0].expectedVersion)}</Fact></Facts></Fold>
+    </> : denied ? <Notice tone="danger">{denied}</Notice>
+      : loadError ? <BlockState state="error" title={loadError} onRetry={() => setReload((value) => value + 1)} retryLabel="重新加载" />
+      : !detail || !targets ? <BlockState state="loading" title="正在加载客户归属和可接待的专属客服…" />
       : <>
-        <p>仅变更当前客户的专属客服；提交后原专属客服立即失去私聊与图片权限。</p>
-        <Facts><Fact k="客户">{detail.displayName || detail.customerNo || detail.customerId}</Fact><Fact k="客户编码">{m1CustomerCode(detail.customerId)}</Fact><Fact k="当前专属客服">{detail.agentName ?? "资料未知"}</Fact><Fact k="绑定版本">{detail.assignmentVersion}</Fact></Facts>
-        {targets.length === 0 ? <p className="s5a-note">暂无可接待的其他专属客服。请到「运营账号与权限」核对接待资格。</p> : <Field label="目标专属客服" required><Select aria-label="目标专属客服" value={String(target ?? "")} disabled={saving} onChange={value => setTarget(Number(value) || null)} options={[{ value: "", label: "请选择专属客服" }, ...targets.map(agent => ({ value: String(agent.adminId), label: `${agent.name}${agent.busy ? " · 忙碌" : ""}` }))]} /></Field>}
-        {chosen && <Facts><Fact k="目标绑定人数">{chosen.assignedUserCount}</Fact><Fact k="当前会话负载">{chosen.currentActiveSessions ?? "—"}</Fact><Fact k="会话并发上限">{chosen.maxConcurrent}</Fact></Facts>}{chosen && <p className="s5a-transfer-effect"><SupportAvatar name={chosen.name} path={chosen.avatarAssetId ? advisorAvatarPath(chosen.adminId) : undefined} version={chosen.avatarVersion} size={28} />将从 {detail.agentName ?? "当前专属客服"} 转给 {chosen.name}</p>}
+        <Facts><Fact k="客户">{detail.displayName || detail.customerNo || detail.customerId}</Fact><Fact k="客户编码">{m1CustomerCode(detail.customerId)}</Fact><Fact k={chosen ? "专属客服变更" : "当前专属客服"}>{chosen ? <Change from={detail.agentName ?? "当前专属客服"} to={<span className="s5a-transfer-effect"><SupportAvatar name={chosen.name} path={chosen.avatarAssetId ? advisorAvatarPath(chosen.adminId) : undefined} version={chosen.avatarVersion} size={20} />{chosen.name}</span>} /> : detail.agentName ?? "资料未知"}</Fact></Facts>
+        <Notice tone="warn">仅变更当前客户的专属客服；提交后原专属客服立即失去私聊与图片权限。</Notice>
+        {targets.length === 0 ? <Notice tone="warn">暂无可接待的其他专属客服。请到「运营账号与权限」核对接待资格。</Notice> : <Field label="目标专属客服" required><Select aria-label="目标专属客服" value={String(target ?? "")} disabled={saving} onChange={value => setTarget(Number(value) || null)} options={[{ value: "", label: "请选择专属客服" }, ...targets.map(agent => ({ value: String(agent.adminId), label: `${agent.name}${agent.busy ? " · 忙碌" : ""}` }))]} /></Field>}
+        {chosen && <Facts><Fact k="目标绑定人数">{chosen.assignedUserCount}</Fact><Fact k="当前会话负载">{chosen.currentActiveSessions ?? "—"}</Fact><Fact k="会话并发上限">{chosen.maxConcurrent}</Fact></Facts>}
         <Field label="转绑理由" required hint="8–200 字"><Textarea value={reason} maxLength={200} disabled={saving} count={`${trimmed.length}/200`} onChange={event => setReason(event.target.value)} /></Field>
+        <Fold inset title="技术信息" summary="绑定版本"><Facts><Fact k="绑定版本">{String(detail.assignmentVersion)}</Fact></Facts></Fold>
       </>}
-    {error && <p role="alert">{error}</p>}
+    {error && <Notice tone={pending ? "warn" : "danger"}>{error}</Notice>}
   </div></Modal>;
 }

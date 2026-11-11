@@ -68,9 +68,6 @@
 .m1-group-subhead{display:flex;align-items:center;gap:8px}
 .m1-group-subhead>h3{margin:0;font-size:var(--rd-text-body);line-height:var(--rd-lh-body);font-weight:600}
 .m1-group-subhead>.rd-explain{margin-left:-4px}
-.m1-group-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px}
-.m1-group-pager>span{margin-right:4px;font-size:var(--rd-text-aux);color:var(--rd-text-3);font-variant-numeric:tabular-nums}
-.m1-inline-pager{justify-content:flex-start;margin-top:8px}
 .m1-group-state{margin:0;font-size:var(--rd-text-aux);color:var(--rd-text-3)}
 .m1-field-value{display:flex;align-items:center;gap:4px;margin:0;color:var(--rd-text)}
 .mdom .m1-group-management .m-invite-code{font-family:var(--font-mono,ui-monospace);color:var(--rd-text)}

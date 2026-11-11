@@ -113,3 +113,18 @@
 .m1-live-service{display:grid;gap:var(--rd-section-gap)}
 .sa-link.sa-dash{text-decoration:none}
 .rd-head-actions>.avatar-control-button{--rd-btn-pad:12px;height:var(--rd-control-h)}
+/* 待分配: the confirm dialog names the customers first, as a compact list. */
+.m1-pool .rd-panel{display:grid;gap:16px}
+.m1-pool .rd-panel>.rd-panel-head{margin-bottom:0}
+.m1-pool-pending.rd-panel,.m1-pool-pending{display:grid;gap:16px}
+.m1-pool-back{display:flex;justify-content:center;margin-top:8px}
+.m1-assign-customers{display:grid;gap:8px}
+.m1-assign-customers>h3{margin:0;font-size:var(--rd-text-body);line-height:var(--rd-lh-body);font-weight:500;color:var(--rd-text-2)}
+.m1-assign-customers>h3>b{font-size:var(--rd-text-section);font-weight:600;color:var(--rd-text);font-variant-numeric:tabular-nums}
+.m1-assign-customers>ul{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 12px;max-height:168px;overflow:auto;margin:0;padding:12px 16px;border-radius:var(--rd-radius-control);background:var(--rd-panel-inner);list-style:none}
+.m1-assign-customers>ul>li{display:flex;gap:8px;min-width:0;font-size:var(--rd-text-aux);line-height:var(--rd-lh-aux)}
+.m1-assign-customers>ul>li>span:last-child{color:var(--rd-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Compact pager shared by the pool, the group pages and dialog candidate lists; only shown with more than one page. */
+.m1-group-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.m1-group-pager>span{margin-right:4px;font-size:var(--rd-text-aux);color:var(--rd-text-3);font-variant-numeric:tabular-nums}
+.m1-inline-pager{justify-content:flex-start;margin-top:8px}

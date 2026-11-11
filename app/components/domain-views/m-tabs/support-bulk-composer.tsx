@@ -17,6 +17,7 @@ import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { SupportContentTools, type SelectedSupportContent } from "./support-content-tools";
 import type { MCtx } from "./types";
+import "./support-bulk-composer.css";
 type Stored = PendingMutationRecord & { actorId:number; payload:BulkContent; batchId?:string; readOnlyRecovery?:boolean; action?:"cancel"|"retry"; mutation?:{expectedVersion:number;reason:string} };
 type PreviewIntent = { input: Parameters<typeof supportEnhancements.bulkPreview>[0]; advance: boolean };
 type UploadPending = PendingMutationRecord & { actorId: number; clientUploadId: string; hash: string; fileName: string; fileMime: string; assetExpiresAt?: number };
