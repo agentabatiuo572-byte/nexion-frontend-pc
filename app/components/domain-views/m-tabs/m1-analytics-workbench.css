@@ -135,3 +135,7 @@
 .m1-pool-table col:nth-child(2){width:22%}.m1-pool-table col:nth-child(3){width:19%}.m1-pool-table col:nth-child(4){width:20%}.m1-pool-table col:nth-child(5){width:15%}
 }
 .rd-fact-change .s5a-transfer-effect{display:inline-flex;align-items:center;gap:6px;margin:0}
+/* 1024: tile labels wrap evenly instead of leaving one character behind; table avatars give their width to names
+   (SupportAvatar sets display inline, so the narrow rule needs to win over it). */
+.sa-metrics>div>span:first-child,.sa-inline-metrics>div>span:first-child,.sa-coverage>div>span:first-child,.sa-personal-primary-metrics>div>span:first-child{text-wrap:balance}
+@media(max-width:1100px){.m1-customer-table .support-avatar,.m1-agent-table .support-avatar{display:none!important}.m1-analytics-table .sa-identity{gap:0}}

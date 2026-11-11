@@ -61,3 +61,4 @@ span.m1-tile-value{cursor:default}
 .m1-personal .rd-fold-body>.rd-tabs-sub+.rd-note{margin-bottom:12px}
 .m1-personal .rd-fold-body>.rd-notice{margin-bottom:12px}
 .m1-nowrap{white-space:nowrap}
+.m1-tiles>li>span:first-child{text-wrap:balance}
