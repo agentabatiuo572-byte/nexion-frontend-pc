@@ -2411,7 +2411,7 @@
       "object": "流动性预测(B2)",
       "action": "查看到期结构、缺口与预测窗口",
       "status": "readonly",
-      "view": "_console/overview/liquidity/page.tsx",
+      "view": "components/domain-views/d-tabs/d3-treasury.tsx",
       "reason": "服务端权威预测结果只读；预测配置由 OPS-B-06 管理"
     },
     {
@@ -2420,9 +2420,9 @@
       "object": "流动性预测配置(B2)",
       "action": "调整预测窗口和告警参数",
       "status": "built",
-      "view": "_console/overview/liquidity/page.tsx",
+      "view": "components/domain-views/d-tabs/d3-treasury.tsx",
       "batch": "done",
-      "restAction": "updateB2ForecastConfig"
+      "restAction": "updateD3ForecastConfig"
     },
     {
       "id": "OPS-B-07",
@@ -2789,9 +2789,9 @@
       "object": "流动性负债导出(B2)",
       "action": "下载服务端生成的负债 CSV",
       "status": "built",
-      "view": "_console/overview/liquidity/page.tsx",
+      "view": "components/domain-views/d-tabs/d3-treasury.tsx",
       "batch": "done",
-      "restAction": "downloadB2LiabilitiesCsv"
+      "restAction": "downloadD3Csv"
     },
     {
       "id": "OPS-B-16",
