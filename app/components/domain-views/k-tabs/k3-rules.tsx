@@ -148,9 +148,9 @@ function k3RuleBusinessForm(kind: K3RuleKind, current: string, action: RuleActio
   ] };
 }
 
-function newK3RuleBusinessForm(): BusinessFormSpec {
+function newK3RuleBusinessForm(initialDimension: K3RuleDimensionName = "金额"): BusinessFormSpec {
   return { kind: "multi-field", fields: [
-    { key: "dimension", label: "规则类型", current: "金额", inputKind: "select", options: DIMENSION_OPTIONS },
+    { key: "dimension", label: "规则类型", current: initialDimension, inputKind: "select", options: DIMENSION_OPTIONS },
     { key: "action", label: "命中处置", current: "延迟", inputKind: "select", options: ACTION_OPTIONS },
     { key: "priority", label: "优先级", current: "50", inputKind: "number", min: 1, max: 100, step: 1 },
     { key: "amountOp", label: "金额比较符", current: ">=", inputKind: "select", options: [">=", ">"], visibleWhen: { key: "dimension", equals: "金额" } },
@@ -630,8 +630,8 @@ function RuleEditor({ draft, pending, onSubmit, onClose, onRebase }: {
   onClose: () => void; onRebase: (rule: K3Rule) => Promise<K3Rule>;
 }) {
   const [rule, setRule] = useState(draft.rule);
-  const form = (draft.kind === "create" ? newK3RuleBusinessForm() : k3RuleBusinessForm(k3KindFromDimension(rule!.dimension), rule!.conditionText, rule!.action, rule!.priority)) as Extract<BusinessFormSpec, { kind: "multi-field" }>;
-  const [value, setValue] = useState<BusinessFormValue>(() => Object.fromEntries(form.fields.map((field) => [field.key, field.key === "dimension" ? draft.initialDimension ?? field.current ?? "" : field.current ?? ""])));
+  const form = (draft.kind === "create" ? newK3RuleBusinessForm(draft.initialDimension) : k3RuleBusinessForm(k3KindFromDimension(rule!.dimension), rule!.conditionText, rule!.action, rule!.priority)) as Extract<BusinessFormSpec, { kind: "multi-field" }>;
+  const [value, setValue] = useState<BusinessFormValue>(() => Object.fromEntries(form.fields.map((field) => [field.key, field.current ?? ""])));
   const [reason, setReason] = useState("");
   const [policy, setPolicy] = useState<{ min: number; max: number } | null>(null);
   const [policyError, setPolicyError] = useState<string | null>(null);
