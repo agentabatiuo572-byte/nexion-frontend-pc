@@ -1,3 +1,4 @@
+import { parseE6DecimalJson } from "./e6-decimal";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import {
   parseE5DevicePage,
@@ -58,6 +59,8 @@ export interface E5Device {
   hashrate: number;
   dailyUsdt: number | null;
   dailyNex: number | null;
+  dailyUsdtText?: string | null;
+  dailyNexText?: string | null;
   monthlyTarget: E5MonthlyTarget | null;
   activeTaskNo: string;
   heartbeatAt: string;
@@ -221,7 +224,7 @@ async function e5Request<T>(path: string, init?: RequestInit & { idempotencyKey?
   if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown") {
     throw new E5OutcomeUncertainError("E5_DEVICE_ACTION_OUTCOME_UNCERTAIN", commandKey);
   }
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(text => path.startsWith("/phones") ? parseE6DecimalJson(text) : JSON.parse(text)).catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
     if (commandKey && outcomeStaysUnknown(response.status, result?.code)) {
@@ -289,6 +292,7 @@ export function mapE5Device(row: BackendDevice): E5Device {
     runtimeStatus: text(row.runtimeStatus, "UNKNOWN"),
     hashrate: toNumber(row.hashrate),
     dailyUsdt: dailyRate.dailyUsdt,
+      dailyUsdtText: row.dailyUsdt == null ? null : String(row.dailyUsdt), dailyNexText: row.dailyNex == null ? null : String(row.dailyNex),
     dailyNex: dailyRate.dailyNex,
     monthlyTarget: row.monthlyTarget == null ? null : {
       ...row.monthlyTarget,
@@ -345,10 +349,11 @@ export async function fetchE5Observability(): Promise<E5Observability> {
   return parseE5Observability(await e5Request<unknown>("/observability"));
 }
 
-export async function activateE5Device(deviceId: number, force: boolean, reason: string, operator: string) {
+export async function activateE5Device(deviceId: number, force: boolean, reason: string, operator: string, originalCommandKey?: string) {
   const action = force ? "force-activate" : "activate";
   const body = { reason, operator };
-  const saved = await e5StableDeviceCommand(
+  const request = (commandKey: string) => e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/${action}`, { method: "POST", body: JSON.stringify(body), idempotencyKey: commandKey });
+  const saved = originalCommandKey ? await request(originalCommandKey) : await e5StableDeviceCommand(
     `e5-device:${deviceId}:${action}`,
     JSON.stringify(body),
     commandKey => e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/${action}`, {
@@ -357,13 +362,15 @@ export async function activateE5Device(deviceId: number, force: boolean, reason:
       idempotencyKey: commandKey,
     }),
   );
+  if (originalCommandKey && Number(saved.id) !== deviceId) throw new E5OutcomeUncertainError("设备操作回执无法核对，结果仍未确认。", originalCommandKey);
   return mapDevices([saved])[0];
 }
 
-export async function deactivateE5Device(deviceId: number, unbind: boolean, reason: string, operator: string) {
+export async function deactivateE5Device(deviceId: number, unbind: boolean, reason: string, operator: string, originalCommandKey?: string) {
   const action = unbind ? "unbind" : "deactivate";
   const body = { reason, operator };
-  const saved = await e5StableDeviceCommand(
+  const request = (commandKey: string) => e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/${action}`, { method: "POST", body: JSON.stringify(body), idempotencyKey: commandKey });
+  const saved = originalCommandKey ? await request(originalCommandKey) : await e5StableDeviceCommand(
     `e5-device:${deviceId}:${action}`,
     JSON.stringify(body),
     commandKey => e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/${action}`, {
@@ -372,12 +379,19 @@ export async function deactivateE5Device(deviceId: number, unbind: boolean, reas
       idempotencyKey: commandKey,
     }),
   );
+  if (originalCommandKey && Number(saved.id) !== deviceId) throw new E5OutcomeUncertainError("设备操作回执无法核对，结果仍未确认。", originalCommandKey);
   return mapDevices([saved])[0];
 }
 
-export async function setE5UserDevicesPaused(userId: number, paused: boolean, reason: string, operator: string) {
+export async function setE5UserDevicesPaused(userId: number, paused: boolean, reason: string, operator: string, originalCommandKey?: string) {
   const action = paused ? "pause" : "resume";
   const body = { userId, reason, operator };
+  if (originalCommandKey) {
+    const result = await e5Request<{ userId: number; changedCount: number; paused: boolean }>(`/batch/${action}`, { method: "POST", body: JSON.stringify(body), idempotencyKey: originalCommandKey });
+    if (result.userId !== userId || !Number.isSafeInteger(result.changedCount) || result.changedCount < 0 || result.paused !== paused)
+      throw new E5OutcomeUncertainError("用户设备操作回执无法核对，结果仍未确认。", originalCommandKey);
+    return result;
+  }
   return e5StableDeviceCommand(
     `e5-user:${userId}:${action}`,
     JSON.stringify(body),

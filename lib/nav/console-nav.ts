@@ -547,6 +547,7 @@ export function canAccessResolvedPath(domains: NavDomain[], pathname: string | n
 export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals", "/finance/pool", "/devices/orders", "/growth/trial", "/analytics/kpi", "/risk/multi-account", "/emergency/kill-switch", "/service/sessions", "/content/disclosures", "/finance/fx-rate", "/finance/payout-vnd", "/finance/recon", "/finance/params", "/finance/ledger", "/users/assets", "/users/search", "/users/actions", "/platform/audit",
   "/devices/tasks",
   "/devices/ops",
+  "/devices/compute-config",
 ];
 /** 不在菜单里的详情页，路径带对象编号，按前缀认。 */
 export const REDESIGNED_DETAIL_PREFIXES: readonly string[] = ["/users/search/", "/service/customers/"];

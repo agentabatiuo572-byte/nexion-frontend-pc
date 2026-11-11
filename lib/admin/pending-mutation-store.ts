@@ -216,7 +216,7 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
   storageKey: string;
   ttlMs?: number;
   /** Keep valid expired evidence for query-only recovery; never authorizes replay. */
-  retainExpiredRecords?: boolean;
+  retainExpiredRecords?: boolean | ((record: T) => boolean);
   /** 公共字段之外的结构校验(元数据字段)。返回 false 的记录读取时即被剔除。 */
   isValidRecord?: (value: T) => boolean;
 }): PendingMutationStore<T> {
@@ -258,12 +258,14 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
   }
 
   function usable(value: unknown, commandKey: string, now: number): value is T {
-    return isBaseRecord(value, commandKey, now, retainExpiredRecords) && (!isValidRecord || isValidRecord(value as T));
+    return isBaseRecord(value, commandKey, now, !!retainExpiredRecords) && (!isValidRecord || isValidRecord(value as T))
+      && (typeof retainExpiredRecords !== "function" || (value as T).expiresAt > now || retainExpiredRecords(value as T));
   }
 
   /** 旧版本这几张表不限期，到期时间超出安全整数。记录要留着核对，重试时限收回到首次尝试 + TTL（OP-96）。 */
   function capped(record: T): T {
-    return retainExpiredRecords && record.expiresAt > record.createdAt + ttlMs ? { ...record, expiresAt: record.createdAt + ttlMs } : record;
+    const retain = typeof retainExpiredRecords === "function" ? retainExpiredRecords(record) : retainExpiredRecords;
+    return retain && record.expiresAt > record.createdAt + ttlMs ? { ...record, expiresAt: record.createdAt + ttlMs } : record;
   }
 
   function syncMemory(value: Record<string, T>) {
@@ -392,7 +394,7 @@ const slotStores = new Map<string, SlotAttemptStore>();
  * 为什么不直接把输入指纹拼进 fingerprint:那样旧尝试会留到 TTL 到期。运营改了值再改回来时会
  * 复用那个可能已被后端消费掉的命令号,让一次真实的新操作被当成重复提交静默吞掉。
  */
-export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: number; retainExpiredRecords?: boolean }): SlotAttemptStore {
+export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: number; retainExpiredRecords?: boolean | ((record: SlotAttemptRecord) => boolean) }): SlotAttemptStore {
   const existing = slotStores.get(options.storageKey);
   if (existing) return existing;
   const store = createPendingMutationStore<SlotAttemptRecord>({

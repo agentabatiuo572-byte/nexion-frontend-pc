@@ -3901,7 +3901,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
               </div>
             ) : <>
               {kind === "number" ? (
-                <RdNumberInput {...control} key={emptyChosen ? "empty" : "value"} aria-label="目标新值" unit={spec.unit} min={spec.min} max={spec.max} step={spec.step} value={newVal} disabled={emptyChosen} aria-invalid={showEditError && !editValueOk && (!!newVal || numberBad) ? true : undefined} onChange={(e) => setNewVal(e.target.value)} onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)} onBlur={() => setEditLeft(true)} />
+                <RdNumberInput {...control} key={emptyChosen ? "empty" : "value"} aria-label="目标新值" unit={spec.unit} min={spec.min} max={spec.max} step={spec.step} value={newVal} disabled={formLocked || emptyChosen} aria-invalid={showEditError && !editValueOk && (!!newVal || numberBad) ? true : undefined} onChange={(e) => setNewVal(e.target.value)} onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)} onBlur={() => setEditLeft(true)} />
               ) : (
                 <input {...control} className="rd-input" aria-label="目标新值" type="text" disabled={formLocked} value={newVal} onChange={(e) => setNewVal(e.target.value)} onBlur={() => setEditLeft(true)} placeholder="输入新值" />
               )}

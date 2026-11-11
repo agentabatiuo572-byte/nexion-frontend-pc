@@ -68,11 +68,12 @@ import { E3Manual } from "./e-tabs/e3-manual";
 import { E4Orders } from "./e-tabs/e4-orders";
 import { E5Ops } from "./e-tabs/e5-ops";
 import { E6ComputeConfig as E6ComputeConfigComp } from "./e-tabs/e6-compute-config";
+import { isE6LegacyCommand } from "./e-tabs/e6-mutations";
 import "./e-domain.css";
 
 /** E 域 A2 提交稳定命令号:槽位=动作 op|目标对象,指纹=终值+结构化命令+目标锁(**不含 reason**)。
  *  落 sessionStorage,结果未知后哪怕刷新页面,同弹窗同业务输入重试仍复用同一命令号被后端去重。 */
-const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-e-domain-commands-v1" });
+const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-e-domain-commands-v1", retainExpiredRecords: isE6LegacyCommand });
 type MonthlySkuCommand = PendingMutationRecord & { actorId: string; spec: ProposeSpec };
 const monthlySkuCommands = createPendingMutationStore<MonthlySkuCommand>({
   storageKey: "nexion-admin-e1-monthly-target-commands-v1",
@@ -1228,7 +1229,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "E4" && tab !== "E2" && tab !== "E5" && <DomainHeader {...meta} right={headerRight} />}
+      {tab !== "E4" && tab !== "E2" && tab !== "E5" && tab !== "E6" && <DomainHeader {...meta} right={headerRight} />}
 
       {tab === "E1" && monthlyPending.map((record) => <div className="dtint warn" role="status" key={record.commandKey}>
         <strong>{record.spec.obj} · 月收益修改结果未确认</strong>
@@ -1845,5 +1846,5 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  return tab === "E4" || tab === "E2" ? <RdPage>{page}</RdPage> : <div className="dkpage edom">{page}</div>;
+  return tab === "E4" || tab === "E2" || tab === "E6" ? <RdPage>{page}</RdPage> : <div className="dkpage edom">{page}</div>;
 }

@@ -4,6 +4,8 @@ export interface E2PhoneTier {
   note: string;
   dailyUsdt: number;
   dailyNex: number;
+  dailyUsdtText: string;
+  dailyNexText: string;
   status: string;
   revision: number;
 }
@@ -13,6 +15,8 @@ export interface E2YieldComparison {
   label: string;
   dailyUsdt: number;
   dailyNex: number;
+  dailyUsdtText: string;
+  dailyNexText: string;
   sortOrder: number;
   revision: number;
   updatedAt?: string;
@@ -71,6 +75,7 @@ function phoneTier(value: unknown): E2PhoneTier {
     // baseRate*. The PC view calls the same values daily* for operator copy.
     dailyUsdt: positiveDecimal18x6(row.baseRateUsdt),
     dailyNex: positiveDecimal18x6(row.baseRateNex),
+    dailyUsdtText: String(row.baseRateUsdt), dailyNexText: String(row.baseRateNex),
     status: text(row.status, "active"),
     revision,
   };
@@ -90,6 +95,7 @@ function yieldComparison(value: unknown): E2YieldComparison {
     label,
     dailyUsdt: positiveDecimal18x6(row.dailyUsdt),
     dailyNex: positiveDecimal18x6(row.dailyNex),
+    dailyUsdtText: String(row.dailyUsdt), dailyNexText: String(row.dailyNex),
     sortOrder,
     revision,
     ...(updatedAt ? { updatedAt } : {}),

@@ -85,7 +85,7 @@ async function request(method: "GET" | "PUT", body?: unknown, key?: string): Pro
   const envelope = await response.json().catch(() => null);
   if (method === "PUT" && (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || !envelope || typeof envelope.code !== "number"
       || (!response.ok || envelope.code !== 0) && outcomeStaysUnknown(response.status, envelope.code))) throw new PhoneRiskOutcomeUnknownError();
-  if (!response.ok || !envelope || envelope.code !== 0) throw new Error(formatAdminApiError(envelope?.message, "机型风控设置读取失败"));
+  if (!response.ok || !envelope || envelope.code !== 0) throw Object.assign(new Error(formatAdminApiError(envelope?.message, "机型风控设置读取失败")), { status: response.ok && typeof envelope?.code === "number" ? envelope.code : response.status, backendMessage: envelope?.message });
   return envelope.data;
 }
 export async function fetchPhoneRisk(): Promise<PhoneRiskOverview> {
