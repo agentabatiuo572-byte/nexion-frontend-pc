@@ -784,7 +784,7 @@ export default function H1Phase({ ctx,
     }
     finally { setBusy(false); }
   };
-  const confirmPending = confirm ? pending.find((row) => row.scope === confirm.scope && row.state !== "approval") : undefined;
+  const confirmPending = confirm ? pending.find((row) => row.scope === confirm.scope && row.state !== "approval" && row.commandKey !== sending) : undefined;
 
   return <>
     <PageHeader pageId="H1" title="运营阶段设置" summary={`安排运营月份和每月生效的参数。${!canWrite && !canControl && !canRevoke ? "你只能查看。" : ""}`} meta={readAt ? `${formatBusinessTimeFull(readAt)} 读取` : undefined}
