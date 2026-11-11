@@ -809,9 +809,9 @@ export default function H1Phase({ ctx,
       }}>原样重试</Button>}
       {row.retryRejected && row.state === "rejected" && checked === row.commandKey && <Button size="sm" onClick={() => setRelease(row)}>解除待确认</Button>}
     </>}>
-      <b>{row.state === "approval" ? "本次申请待审批" : row.state === "rejected" ? "本次提交已被拒绝" : "本次提交结果待核对"}</b> · {row.label}{row.ticket && ` · 票号 ${row.ticket.id}`}
+      <b>{row.state === "approval" ? "本次申请待审批" : row.state === "rejected" ? row.retryRejected ? "原操作重试已被拒绝" : "本次提交已被拒绝" : "本次提交结果待核对"}</b> · {row.label}{row.ticket && ` · 票号 ${row.ticket.id}`}
       {row.state === "rejected" && <p>拒绝原因：{row.rejectionReason ?? "原记录未保存拒绝原因，请读回核对。"}</p>}
-      {row.requests.some((item) => item.acknowledged && item.kind === "patch") && <p>{row.requests.filter((item) => item.acknowledged).map((item) => `${item.label}已保存`).join("，")}；{row.requests.filter((item) => !item.acknowledged).map((item) => `${item.label}${row.state === "rejected" && !row.retryRejected ? "未保存" : "未确认"}`).join("，")}。恢复只处理未确认的一步。</p>}
+      {row.requests.some((item) => item.acknowledged && item.kind === "patch") && <p>{row.requests.filter((item) => item.acknowledged).map((item) => `${item.label}已保存`).join("，")}；{row.requests.filter((item) => !item.acknowledged).map((item) => `${item.label}${row.state === "rejected" ? row.retryRejected ? "重试已被拒绝" : "未保存" : "结果待核对"}`).join("，")}。恢复只处理未确认的一步。</p>}
       {row.state !== "approval" && isRetryExpired(row) && <p>{RETRY_EXPIRED_TEXT}；原记录和对象保护继续保留。</p>}
     </Notice>)}
     {feedback && <Notice tone="warn">{feedback}</Notice>}
@@ -940,8 +940,8 @@ export default function H1Phase({ ctx,
       </div>
     </>}
     {confirm && <OperationConfirmModal {...confirm} facts={(value) => <div className="h1-confirm-facts" data-pending={confirmPending?.state}>
-      {confirmPending && <div className="h1-pending-feedback"><Notice tone="warn" title={confirmPending.state === "rejected" ? "原操作已被拒绝" : "本次提交结果待核对"}>
-        {confirmPending.requests.some((request) => request.acknowledged && request.kind === "patch") && <p>{confirmPending.requests.filter((request) => request.acknowledged && request.kind === "patch").map((request) => `${request.label}已保存`).join("，")}；{confirmPending.requests.filter((request) => !request.acknowledged).map((request) => `${request.label}${confirmPending.state === "rejected" ? "未保存" : "结果待核对"}`).join("，")}。</p>}
+      {confirmPending && <div className="h1-pending-feedback"><Notice tone="warn" title={confirmPending.state === "rejected" ? confirmPending.retryRejected ? "原操作重试已被拒绝" : "本次提交已被拒绝" : "本次提交结果待核对"}>
+        {confirmPending.requests.some((request) => request.acknowledged && request.kind === "patch") && <p>{confirmPending.requests.filter((request) => request.acknowledged && request.kind === "patch").map((request) => `${request.label}已保存`).join("，")}；{confirmPending.requests.filter((request) => !request.acknowledged).map((request) => `${request.label}${confirmPending.state === "rejected" ? confirmPending.retryRejected ? "重试已被拒绝" : "未保存" : "结果待核对"}`).join("，")}。</p>}
         <p>{confirmPending.state === "rejected" ? `拒绝原因：${confirmPending.rejectionReason ?? "原记录未保存拒绝原因，请读回核对。"}` : confirmPending.requests.some((request) => request.kind === "proposal") ? "可能已生成审批单；批准前参数不变。请查询原操作。" : "原内容与理由已保留。请先读回核对，再使用「重试原操作」继续。"}</p>
         <p className="h1-command-line">命令号 <span className="h1-command">{confirmPending.commandKey}</span></p>
       </Notice></div>}
