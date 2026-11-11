@@ -159,8 +159,6 @@
 .h1-matrix th, .h1-matrix td { padding-left: 10px; padding-right: 10px; }
 .h1-matrix th .rd-th-inner { white-space: normal; }
 .h1-matrix th .rd-th-inner > span { white-space: nowrap; }
-.h1-section .rd-panel[data-flush] > .rd-table-scroll .h1-matrix :is(th, td):first-child { padding-left: 12px; }
-.h1-section .rd-panel[data-flush] > .rd-table-scroll .h1-matrix :is(th, td):last-child { padding-right: 12px; }
 .h1-matrix th small { display: block; margin-top: 4px; color: var(--rd-text-3); font: inherit; font-weight: 400; }
 .h1-month-cell { display: flex; flex-direction: column; gap: 4px; white-space: nowrap; }
 .h1-month-cell b { font-weight: 500; }
