@@ -2400,6 +2400,8 @@ ID server mint;配对地址脱敏;时间戳 ms epoch 服务端权威。
 
 #### [C5] 安全 & 会话
 
+> 2026-11-12 逻辑修正：概览重读时关闭旧锁定详情，短锁和长锁均不沿用操作前快照；读回失败保留原待确认。C5、C1 用户详情、M1、M3 共用支付异常详情在翻页或操作收到 401/403/404 后清除详情、验证记录与确认状态，重新核对权限，原待确认保留。手机历史对象按真实类型读取：SUCCESS 使用 sourceId，REQUEST/GRANT 使用 targetInstallationId；无对象值时该格留空。技术详情纳入 eventId/sourceKind/sourceId/sourceEnvironment/runId/resourceId，暂用原字段名；历史原结果查询仅给 PHONE_GRANT_ISSUE/PHONE_REQUEST_CLOSE/PHONE_GRANT_REVOKE。依据后端 fdc9f469 的 PhoneReplacementMapper:20–30,114–121、PhoneReplacementAdminReadService:74–87、PhoneReplacementOperationsService:172–175。使用说明的支付重试描述与 C5 手机日期格式仍需视觉 worker 更新，本轮按 code-only 范围保留页面文案及格式。
+
 > 2026-11-11 支付原操作恢复补充（优先于本节旧的“未知只查询”说明）：支付策略调整保存原值、新值、理由、版本、确认标记、操作者、时间和原请求字节；两种支付解除也保存完整原请求。C5 只在 24 小时内用原请求体和原命令号重试；过期或旧记录缺字段时只查询。403、429、IDEMPOTENCY_* 等非结论不会释放待确认；原样重试被共享 isExplicitRejection 判定明确拒绝后，操作人可确认解除本标签页记录。此解除不撤销后端操作。M1、M3、C1 保持现有确认与查询入口，恢复入口是否扩展另行决定。
 
 

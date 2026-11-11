@@ -86,6 +86,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   useEffect(() => { if (tab === "payment" && !loading && window.location.hash === "#payment-password-panels") document.getElementById("payment-password-panels")?.scrollIntoView({ block: "start" }); }, [tab, loading]);
   useEffect(() => { setShownSession(null); setShownLock(null); setProfile(null); setOverview(null); setPage(1); }, [focus, epoch]);
   const load = useCallback(async () => {
+    setShownLock(null); setLocksOpen(false);
     if (!canRead) { setOverview(null); setLoading(false); return false; }
     const id = ++generation.current;
     setLoading(true); setOverview(null); setError("");

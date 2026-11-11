@@ -10,6 +10,7 @@ export function PhoneIdentifier({ value }: { value: string }) {
 export const phoneTime = (value: unknown) => typeof value === "number" && Number.isFinite(value)
     ? new Date(value).toLocaleString("zh-CN", { hour12: false, timeZone: businessZone().zoneId }) : "待核实";
 const fields: Record<string, string> = {
+    eventId: "eventId", sourceKind: "sourceKind", sourceId: "sourceId", sourceEnvironment: "sourceEnvironment", runId: "runId", resourceId: "resourceId",
     operationId: "操作号", auditRef: "审计引用", requestId: "申请号", requestNo: "申请编号", grantId: "授权号",
     targetInstallationId: "目标安装", installationId: "绑定安装", oldInstallationId: "原安装", newInstallationId: "新安装",
     bindingVersion: "绑定版本", oldBindingVersion: "原绑定版本", newBindingVersion: "新绑定版本", policyVersion: "策略版本",

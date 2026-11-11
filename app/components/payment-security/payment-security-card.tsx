@@ -7,6 +7,7 @@ import { pendingPaymentRelease, queryPaymentRelease, submitPaymentRelease, retry
 import type { PaymentSecurityRecord, PaymentSecurityDetail as Detail, PaymentSecuritySummary, PaymentReleaseReceipt } from "@/lib/admin/payment-password-contract";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { BlockState, Button, Cell, Check, Decision, Drawer as RdDrawer, Modal as RdModal, Fact as RdFact, Facts as RdFacts, Field as RdField, Fold, JudgmentPoints, Notice, PageTabs, Panel, ReleaseBody, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Timeline, Tr, useTabIds, useRdSurface } from "@/app/components/rd";
 import { ShieldAlert } from "lucide-react";
 import { Modal, DataListPager } from "../domain-views/design-kit";
@@ -88,14 +89,18 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
   const [localRelease, setLocalRelease] = useState(false);
   const generation = useRef(0), live = useRef(true), mutation = useRef(false), started = useRef(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const clearInaccessibleDetail = useCallback(() => {
+    setDetail(null); setAttemptDetail(null); setReviewing(false); setConfirmed(false); setReason(""); setReasonLeft(false); setLocalRelease(false); setReceipt(null);
+    announcePermissionDenied();
+  }, []);
   const load = useCallback(async () => {
     const id = ++generation.current; setLoading(true); setError(""); setDetail(null); setAttemptFailure(""); setAttemptDetail(null);
     try {
       const next = await port.detail(recordId);
       if (live.current && id === generation.current) { setDetail(next); if (!started.current) { setReviewing(initialAction && next.record.capabilities.releaseAllowed && !pendingPaymentRelease(owner, port.userId)); started.current = true; } }
-    } catch (failure) { if (live.current && id === generation.current) setError(message(failure)); }
+    } catch (failure) { if (live.current && id === generation.current) { if (failure instanceof PaymentPasswordApiError && [401, 403, 404].includes(failure.status)) clearInaccessibleDetail(); setError(message(failure)); } }
     finally { if (live.current && id === generation.current) setLoading(false); }
-  }, [port, recordId, initialAction, owner, epoch]);
+  }, [port, recordId, initialAction, owner, epoch, clearInaccessibleDetail]);
   useEffect(() => { live.current = true; void load(); return () => { live.current = false; generation.current++; }; }, [load]);
   useEffect(() => {
     if (!busy && document.activeElement === document.body) contentRef.current?.closest<HTMLElement>('[role="dialog"]')?.focus();
@@ -113,7 +118,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
       if (next.status === "APPLIED" || next.status === "REJECTED") { await load(); setConfirmed(false); }
     } catch (failure) {
       if (!live.current) return;
-      if (failure instanceof PaymentPasswordApiError && [401, 403, 404].includes(failure.status)) { setReviewing(false); setDetail(null); }
+      if (failure instanceof PaymentPasswordApiError && [401, 403, 404].includes(failure.status)) clearInaccessibleDetail();
       if (failure instanceof PaymentPasswordApiError && failure.status === 409 && isExplicitRejection(failure)) { setReviewing(false); await load(); setError("异常信息已变化，请核对最新状态后再操作。"); }
       else setError(message(failure));
     } finally { mutation.current = false; if (live.current) { setBusy(false); const next = pendingPaymentRelease(owner, port.userId); setPending(next); if (next) setReviewing(false); window.dispatchEvent(new Event("nexion-payment-security-updated")); } }
@@ -121,7 +126,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
   async function attemptPage(next: number) {
     if (!detail || loading) return; const id = ++generation.current; setLoading(true); setError("");
     try { const attempts = await port.attempts(recordId, next, 10); if (live.current && id === generation.current) setDetail({ ...detail, attempts }); }
-    catch (failure) { if (live.current && id === generation.current) { setError(message(failure)); setAttemptFailure(message(failure)); } }
+    catch (failure) { if (live.current && id === generation.current) { if (failure instanceof PaymentPasswordApiError && [401, 403, 404].includes(failure.status)) clearInaccessibleDetail(); setError(message(failure)); setAttemptFailure(message(failure)); } }
     finally { if (live.current && id === generation.current) setLoading(false); }
   }
   if (!session) return null;
