@@ -199,9 +199,9 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                     {closed.map((gate) => (
                       <li key={gate.dom}>
                         <span>{GATE_NAMES[gate.dom] ?? gate.nm}</span>
-                        {/* 和「紧急停用开关」页同一个词：没人设置过也写已关停，原因放问号。 */}
+                        {/* 和「紧急停用开关」页同一个词：当前没有有效配置也写已关停，原因放问号。 */}
                         <StatusTag tone="warn" icon={XCircle} explain={gate.unset
-                          ? "这个开关还没人设置过，系统按关闭处理，用户现在用不了这项业务。要开放，到「紧急停用开关」页提交恢复审批。"
+                          ? "这个开关当前没有有效配置，系统按关闭处理，用户现在用不了这项业务。要开放，到「紧急停用开关」页提交恢复审批。"
                           : "有人关了这项业务，用户现在用不了。为什么关、怎么恢复，到「紧急停用开关」页看。"}>已关停</StatusTag>
                       </li>
                     ))}

@@ -338,8 +338,8 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
   const [listLoading, setListLoading] = useState(true);
   const [listReload, setListReload] = useState(0);
   const [readAt, setReadAt] = useState<number | null>(null);
-  // 后端按角色裁掉字段（UserProfileListView）：有数据却没有一行带这个字段，就是这个账号看不到。读取中沿用上一次，首次默认显示。
-  const [shape, setShape] = useState({ balance: true, device: true });
+  // 后端按角色裁掉字段（UserProfileListView）：读到相应字段才显示列及选项；零行不推断可见，读取中沿用上一次。
+  const [shape, setShape] = useState({ balance: false, device: false });
   const [overview, setOverview] = useState<Overview | null>(null);
   const [overviewFailed, setOverviewFailed] = useState(false);
   const [overviewLoading, setOverviewLoading] = useState(true);

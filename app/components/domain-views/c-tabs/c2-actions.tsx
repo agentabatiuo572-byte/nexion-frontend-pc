@@ -1561,7 +1561,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     : null;
   const staleNotice = overviewStale && (
     <Notice tone="warn" action={<Button size="sm" loading={overview.loading} onClick={() => void loadOverview()}>重试</Button>}>
-      刷新没成功，下面是 {readAt ? businessClock(readAt) : "—"}（{zone}）读取的数据；冻结、恢复和名单操作先暂停。
+      刷新没成功，下面是 {readAt ? businessClock(readAt) : "—"}（{zone}）读取的数据；列表内的冻结、恢复、结束只读视图及名单操作先暂停。
     </Notice>
   );
 

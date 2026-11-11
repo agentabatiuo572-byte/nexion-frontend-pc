@@ -447,7 +447,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       }
       if (["I.session.convos", "I.session.ticket.__create", "I.session.archiveBatch.__create"].includes(key)
         && (!m3WriteQualifiedRef.current.qualified || m3WriteQualifiedRef.current.authEpoch !== authEpoch || m3WriteQualifiedRef.current.adminId !== session?.adminId)) {
-        setToast("当前坐席身份或会话权限待核对，请刷新后重新确认操作。", "warn");
+        setToast(!session?.adminId || m3WriteQualifiedRef.current.authEpoch !== authEpoch || m3WriteQualifiedRef.current.adminId !== session?.adminId
+          ? "当前登录身份未读取或已变化，暂不能执行此操作。请刷新页面重新登录后再操作。"
+          : !superOperator && !session?.authorities?.includes("service_m3_write")
+            ? "当前账号没有专属会话操作权限，暂不能执行此操作。请联系管理员核对账号权限。"
+            : "当前坐席资料未成功读取，暂不能执行此操作。请刷新页面重新读取；仍失败时请联系管理员核对坐席配置。", "warn");
         return false;
       }
       const fingerprint = `${key}\u0000${value}\u0000${meta?.reason?.trim() ?? ""}`;
@@ -573,7 +577,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       if (onFailure) onFailure(failure); else setToast(failure, refusedWrite(error) ? "error" : "warn");
       return false;
     }
-  }, [authEpoch, reconcileConversationSnapshot, invalidateScope, setToast, session?.adminId]);
+  }, [authEpoch, reconcileConversationSnapshot, invalidateScope, setToast, session?.adminId, session?.authorities, superOperator]);
 
   // 客户标签/备注持久化后刷新完整会话快照；资料编辑器另行回读当前客户资料。
   // 即时标注使用描述性理由；备注删除透传确认理由，并随原命令保留以便未知结果重试。
@@ -668,7 +672,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const m3Banner = tab === "M3" && (mError || permissionUnknown || reconnectExhausted || shownOperationNotice) ? <>
     {shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button>}>{shownOperationNotice}</Notice>}
     {mError && <Notice tone="danger" action={<Button size="sm" onClick={() => void reloadMContent()}>重试</Button>}>客服中心暂时无法同步数据,请稍后重试。</Notice>}
-    {permissionUnknown && <Notice tone="warn" action={<Button size="sm" onClick={() => void reloadMContent()}>重试核对</Button>}>坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。</Notice>}
+    {permissionUnknown && <Notice tone="warn" action={<Button size="sm" onClick={() => void reloadMContent()}>重试核对</Button>}>当前账号的客服查看范围未读取，对客操作和管理入口已暂停。请刷新页面重新读取登录权限。</Notice>}
     {reconnectExhausted && <Notice tone="danger" action={<Button size="sm" onClick={retryConversationStream}>重新连接</Button>}>会话更新已暂停，当前信息可能不是最新状态。请点击“重新连接”或刷新页面。</Notice>}
   </> : null;
 
