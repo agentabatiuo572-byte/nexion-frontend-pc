@@ -101,7 +101,7 @@ export function SupportRandomAssignment({ customers, onClose, onDone }: { custom
     <div className="m1-command-form">
     {pending && <Notice tone="warn">原操作结果待确认，名单和理由已锁定；不能重新抽签。{expired && "已超过 24 小时，只能查询和核对，不能重新发送。"}</Notice>}
     {error && <Notice tone={pending || previewUnknown || preview ? "warn" : "danger"}>{error}</Notice>}
-    <Facts><Fact k="原选中客户" lead unit="位">{selected.length}</Fact><Fact k="纳入 / 排除">{preview ? `${preview.count} / ${preview.excluded.length}` : "尚未读取"}</Fact>{preview && <Fact k="预览有效期至">{formatBusinessTimeCompact(preview.expiresAt)}（北京时间）</Fact>}</Facts>
+    <Facts><Fact k="原选中客户" lead unit="位">{result && preview ? preview.count + preview.excluded.length : selected.length}</Fact><Fact k="纳入 / 排除">{preview ? `${preview.count} / ${preview.excluded.length}` : "尚未读取"}</Fact>{preview && <Fact k="预览有效期至">{formatBusinessTimeCompact(preview.expiresAt)}（北京时间）</Fact>}</Facts>
     <p>只处理本次选中的客户。每位成功客户成为新继承段的起点，未选客户及已有团队成员保持原归属。</p>
     {result ? <Table label="逐客随机分配结果"><thead><Tr><Th>客户编号</Th><Th>结果</Th><Th>专属客服</Th><Th>原因</Th></Tr></thead><tbody>{result.customers.map(c => <Tr key={c.customerId}><Td>{c.customerId}</Td><Td><StatusTag tone={c.status === "ASSIGNED" ? "ok" : c.status === "CONFLICT" ? "warn" : "done"}>{resultLabels[c.status] ?? "未知"}</StatusTag></Td><Td>{c.agentAdminId ?? "—"}</Td><Td>{c.status === "ASSIGNED" ? "已分配" : resultLabels[c.status] ?? "请核对原结果"}</Td></Tr>)}</tbody></Table> : <>
       <Segments label="随机预览名单" value={list} onChange={setList} items={[{ value: "included", label: "原选中名单" }, { value: "excluded", label: "排除名单" }]} />
