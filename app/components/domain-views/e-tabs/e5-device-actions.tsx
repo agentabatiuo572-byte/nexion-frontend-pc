@@ -104,7 +104,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
     } finally { setBusy(""); }
   };
   return <CommandsContext.Provider value={{ records, phoneBlocks, legacyBlocked: old.length > 0 || !!error && !records.length && !old.length && error.includes("旧操作"), busy, execute, refresh, toast }}>
-    {phonePending.map(r => <Notice key={r.commandKey} tone="warn" title={`${r.label} · 手机页有原操作待核对`}><p>原对象、内容、理由和命令号在手机算力配置保留，请回原页面核对。相关设备或整用户的新操作继续暂停。</p><Link href="/devices/compute-config?tab=phones">手机算力配置</Link></Notice>)}
+    {phonePending.map(r => <Notice key={r.commandKey} tone="warn" title={`${r.label} · 手机页有原操作待核对`}><p>原对象、内容、理由和命令号在手机算力配置保留，请回原页面核对。相关设备或整用户的新操作继续暂停。</p><Link className="rd-link" href="/devices/compute-config?tab=phones">手机算力配置</Link></Notice>)}
     {old.map(row => <Notice key={row.commandKey} tone="warn" title="旧操作缺少原请求，不能原样重试" action={<Button size="sm" disabled={!!busy} onClick={() => void refresh()}>读回核对</Button>}><p>原命令号：<code>{row.commandKey}</code></p><p>请到操作记录与审批核对。原记录保留，不能用当前草稿补成原操作。</p></Notice>)}
     {records.map(record => <Notice key={record.commandKey} tone={rejected[record.commandKey] ? "danger" : "warn"} title={`${record.label} · ${rejected[record.commandKey] ? "原号重试已拒绝" : "结果待确认"}`} actionBelow action={<div className="rd-toolbar">
       <Button size="sm" disabled={!!busy} onClick={async () => {
