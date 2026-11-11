@@ -1,138 +1,108 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { RefreshCw } from "lucide-react";
-import "./payment-password-panel.css";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { CheckCircle2, Clock3, KeyRound, RefreshCw, ShieldAlert } from "lucide-react";
+import { BlockState, Button, Cell, Change, Check, ConfigList, ConfigRow, Decision, Drawer, Fact, Facts, Field, Fold, IconButton, Modal, Notice, NumberInput, PageTabs, Pager, Panel, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { formatBusinessTime, formatBusinessTimeCompact, businessZoneText } from "@/lib/admin/business-time";
-import { DataListPager } from "../design-kit";
-import { fetchPaymentPolicy, fetchPaymentStatus, fetchPaymentAttempts, submitPaymentPolicy, queryPaymentPolicy, pendingPaymentPolicy } from "@/lib/admin/payment-password-client";
+import { formatBusinessTimeCompact, businessZoneText } from "@/lib/admin/business-time";
+import { fetchPaymentPolicy, fetchPaymentStatus, fetchPaymentAttempts, submitPaymentPolicy, queryPaymentPolicy, pendingPaymentPolicy, paymentSecurityPorts } from "@/lib/admin/payment-password-client";
 import { paymentPolicyFields, type PaymentPolicy, type PaymentPolicyValues, type PaymentPasswordStatus, type PaymentPasswordAttempts, type PaymentPolicyReceipt } from "@/lib/admin/payment-password-contract";
 import { PaymentSecurityList } from "@/app/components/payment-security/payment-security-list";
 import { PaymentSecurityCard } from "@/app/components/payment-security/payment-security-card";
-import { paymentSecurityPorts } from "@/lib/admin/payment-password-client";
-import { useMemo } from "react";
+import "./payment-password-panel.css";
 
 const labels = { maxAttempts: "窗口内输错上限", windowMinutes: "错误统计窗口", lockMinutes: "锁定时长" };
 const units = { maxAttempts: "次", windowMinutes: "分钟", lockMinutes: "分钟" };
-const time = (value: string | null) => formatBusinessTime(value, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }, "暂无记录");
+const descriptions = { maxAttempts: "触发钱包支付密码锁的错误次数", windowMinutes: "累积支付密码错误的时间窗口", lockMinutes: "新支付密码锁定的持续时间" };
+const time = (value: string | null) => formatBusinessTimeCompact(value, "暂无记录");
 const failureText = (failure: unknown) => failure instanceof Error ? failure.message : "支付密码信息读取失败，请重新加载。";
+const attemptResult = { SUCCEEDED: "验证通过", INCORRECT: "密码不正确", LOCKED: "暂时锁定", BUSINESS_REJECTED: "交易条件不满足，未计为输错" };
 
-export function PaymentPasswordPanel({ userId, userLabel }: { userId: string | null; userLabel: string }) {
-  const session = useAdminAuth(state => state.session);
-  const epoch = useAdminAuth(state => state.authEpoch);
-  const [view, setView] = useState("rules");
-  const port = useMemo(() => userId ? paymentSecurityPorts.global(userId) : null, [userId]);
-  if (!session?.authorities.includes("user_c5_read")) return <section id="payment-password-panels" className="payment-pin payment-pin__card" aria-label="支付密码"><h2>支付密码</h2><p>当前没有查看权限，请联系有权限的管理员。</p></section>;
-  return <div id="payment-password-panels" className="payment-pin">
-    <div className="payment-security ps-tabs" aria-label="支付密码管理视图"><button className="ps-tab" aria-pressed={view === "rules"} onClick={() => setView("rules")}>规则配置</button><button className="ps-tab" aria-pressed={view === "records"} onClick={() => setView("records")}>支付密码异常列表</button></div>
-    <p className="payment-pin__secondary">支付密码仅用于钱包余额付款；HDPay 银行直付和 USDT-BSC / ERC20 链上直付无需支付密码，不受支付密码锁定影响。</p>
-    <div hidden={view !== "rules"}><PaymentPolicySection key={`policy:${session.adminId}:${epoch}`} owner={session.adminId} canWrite={session.authorities.includes("user_c5_payment_password_policy_write")} /></div>
-    {view === "records" && <section className="payment-pin__card"><PaymentSecurityList key={`records:${session.adminId}:${epoch}`} /></section>}
-    {port && <section className="payment-pin__card"><PaymentSecurityCard key={`${port.key}:${session.adminId}:${epoch}`} port={port} userLabel={userLabel} /></section>}
-    {userId ? <PaymentUserSection key={`payment:${session.adminId}:${epoch}:${userId}`} userId={userId} userLabel={userLabel} /> : <section className="payment-pin__card" aria-label="用户支付密码"><h2>用户支付密码</h2><p className="payment-pin__empty">请先在上方用户列表中点击“查看安全信息”，再查看该用户的支付密码状态及验证记录。</p></section>}
+export function PaymentPasswordPanel({ userId, userLabel, active = true, onPendingChange, onBusyChange }: { userId: string | null; userLabel: string; active?: boolean; onPendingChange?: () => void; onBusyChange?: (busy: boolean) => void }) {
+  const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
+  const params = useSearchParams(), router = useRouter(), pathname = usePathname();
+  const view = params?.get("paymentTab") === "exceptions" ? "exceptions" : "policy";
+  const ids = useTabIds(), port = useMemo(() => userId ? paymentSecurityPorts.global(userId) : null, [userId]);
+  if (!session?.authorities.includes("user_c5_read")) return null;
+  return <div id="payment-password-panels" className="c5-payment" aria-label="支付密码规则与用户状态">
+    <PageTabs level={2} ids={ids} label="支付密码管理视图" value={view} onChange={value => { const next = new URLSearchParams(params?.toString() ?? ""); next.set("paymentTab", value); router.replace(`${pathname}?${next}`, { scroll: false }); }} items={[{ value: "policy", label: "规则配置" }, { value: "exceptions", label: "支付密码异常列表" }]} />
+    <div {...ids.panel(view)} className="rd-tab-pane">
+      <div hidden={view !== "policy"}>
+        <PaymentPolicySection key={`policy:${session.adminId}:${epoch}`} visible={active && view === "policy"} owner={session.adminId} canWrite={session.authorities.includes("user_c5_payment_password_policy_write")} onPendingChange={onPendingChange} onBusyChange={onBusyChange} />
+        {userId ? <PaymentUserSection key={`user:${session.adminId}:${epoch}:${userId}`} userId={userId} userLabel={userLabel} visible={active && view === "policy"} /> : <Panel aria-label="用户支付密码" title="用户支付密码"><BlockState state="empty" title="先选择用户，再查看支付密码状态与验证记录" /></Panel>}
+        {active && view === "policy" && port && <PaymentSecurityCard key={`${port.key}:${session.adminId}:${epoch}`} port={port} userLabel={userLabel} compact />}
+      </div>
+      {active && view === "exceptions" && <PaymentSecurityList key={`records:${session.adminId}:${epoch}`} />}
+    </div>
   </div>;
 }
 
-function PaymentPolicySection({ owner, canWrite }: { owner: number; canWrite: boolean }) {
-  const [policy, setPolicy] = useState<PaymentPolicy | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [editing, setEditing] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
-  const [values, setValues] = useState({ maxAttempts: "", windowMinutes: "", lockMinutes: "" });
-  const [reason, setReason] = useState("");
-  const [confirmed, setConfirmed] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [receipt, setReceipt] = useState<PaymentPolicyReceipt | null>(null);
+function PaymentPolicySection({ owner, canWrite, visible, onPendingChange, onBusyChange }: { visible: boolean; owner: number; canWrite: boolean; onPendingChange?: () => void; onBusyChange?: (busy: boolean) => void }) {
+  const [policy, setPolicy] = useState<PaymentPolicy | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
+  const [editing, setEditing] = useState(false), [reviewing, setReviewing] = useState(false), [values, setValues] = useState({ maxAttempts: "", windowMinutes: "", lockMinutes: "" });
+  const [reason, setReason] = useState(""), [leftReason, setLeftReason] = useState(false), [confirmed, setConfirmed] = useState(false), [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(() => pendingPaymentPolicy(owner)), [receipt, setReceipt] = useState<PaymentPolicyReceipt | null>(null);
   const generation = useRef(0), live = useRef(true), mutation = useRef(false);
   const load = useCallback(async () => {
-    const id = ++generation.current;
-    setLoading(true); setError(""); setPolicy(null); setEditing(false); setReviewing(false);
+    const id = ++generation.current; setLoading(true); setError(""); setPolicy(null);
     try { const next = await fetchPaymentPolicy(); if (live.current && id === generation.current) setPolicy(next); }
     catch (failure) { if (live.current && id === generation.current) setError(failureText(failure)); }
     finally { if (live.current && id === generation.current) setLoading(false); }
   }, []);
-  useEffect(() => { live.current = true; setPending(!!pendingPaymentPolicy(owner)); void load(); return () => { live.current = false; generation.current++; }; }, [load, owner]);
+  useEffect(() => { live.current = true; void load(); return () => { live.current = false; generation.current++; }; }, [load]);
   const parsed = Object.fromEntries(paymentPolicyFields.map(key => [key, Number(values[key])])) as PaymentPolicyValues;
   const valid = !!policy?.constraints && paymentPolicyFields.every(key => /^\d+$/.test(values[key]) && Number.isSafeInteger(parsed[key]) && parsed[key] >= policy.constraints![key].min && parsed[key] <= policy.constraints![key].max);
   const changed = !!policy && paymentPolicyFields.some(key => parsed[key] !== policy.values[key]);
-  const reasonLength = reason.trim().length;
-  const reasonValid = reasonLength >= 8 && reasonLength <= 200;
+  const reasonValid = reason.trim().length >= 8 && reason.trim().length <= 200;
   const editable = !!policy && canWrite && policy.editable && !!policy.constraints && !!policy.effectDescription && !pending;
-  const editReason = !canWrite ? "当前只有查看权限" : pending ? "请先查询上一笔调整结果" : policy && (!policy.constraints || !policy.effectDescription) ? "可调整范围或生效说明尚未确认，暂时只能查看" : policy && !policy.editable ? "当前规则只能查看" : "";
+  const editReason = pending ? "请先查询上一笔调整结果" : !policy ? "当前规则尚未读取" : !policy.constraints || !policy.effectDescription ? "可调整范围或生效说明尚未确认" : !policy.editable ? "当前规则只能查看" : undefined;
   async function finish(queryOnly = false) {
     if (mutation.current || !queryOnly && (!editable || !policy || !valid || !changed || !reasonValid || !confirmed)) return;
-    mutation.current = true; setBusy(true); setError(""); setReceipt(null);
+    mutation.current = true; setBusy(true); onBusyChange?.(true); setError(""); setReceipt(null);
     try {
       const result = queryOnly ? await queryPaymentPolicy(owner) : await submitPaymentPolicy(owner, parsed, policy!.version, reason.trim());
       if (!live.current) return;
       setReceipt(result);
       if (result.status !== "PENDING") { setEditing(false); setReviewing(false); setReason(""); setConfirmed(false); await load(); }
     } catch (failure) { if (live.current) setError(failureText(failure)); }
-    finally { mutation.current = false; if (live.current) { setBusy(false); setPending(!!pendingPaymentPolicy(owner)); } }
+    finally { mutation.current = false; onBusyChange?.(false); if (live.current) { setBusy(false); const next = pendingPaymentPolicy(owner); setPending(next); if (next) { setReviewing(false); setEditing(false); } onPendingChange?.(); } }
   }
-  return <section className="payment-pin__card" aria-label="支付密码规则">
-    <header className="payment-pin__header">
-      <div><h2>支付密码规则</h2><p className="payment-pin__secondary">钱包余额付款和修改原支付密码共用错误次数</p></div>
-      <div className="payment-pin__actions">
-        {!editing && <button className="payment-pin__button payment-pin__button--primary" aria-label="调整支付密码规则" disabled={!editable || loading || busy} onClick={() => { setValues({ maxAttempts: String(policy!.values.maxAttempts), windowMinutes: String(policy!.values.windowMinutes), lockMinutes: String(policy!.values.lockMinutes) }); setReason(""); setConfirmed(false); setReceipt(null); setEditing(true); }}>调整规则</button>}
-        <button className="payment-pin__button payment-pin__icon-button" aria-label="重新加载规则" title="重新加载规则" disabled={loading || busy} onClick={() => void load()}><RefreshCw size={16} /></button>
-      </div>
-    </header>
-    {loading && <p className="payment-pin__notice" role="status">正在读取支付密码规则…</p>}
-    {error && <p className="payment-pin__notice payment-pin__notice--error" role="alert">{error}</p>}
-    {pending && <div className="payment-pin__notice payment-pin__notice--warning" role="status"><span>上一笔调整结果还未确认。请先查询，期间不能再次保存。</span><button className="payment-pin__button" disabled={busy} onClick={() => void finish(true)}>{busy ? "正在查询…" : "查询原调整结果"}</button></div>}
-    {policy && !editing && <>
-      <dl className="payment-pin__rules">{paymentPolicyFields.map(key => <div key={key}><dt>{labels[key]}</dt><dd><span className="payment-pin__number">{policy.values[key]}</span><span className="payment-pin__unit">{units[key]}</span></dd></div>)}</dl>
-      <div className="payment-pin__policy-note"><p>{policy.effectDescription || "生效方式尚未确认。"}</p><p className="payment-pin__secondary">最近调整：{time(policy.updatedAt)}{policy.updatedBy ? ` · ${policy.updatedBy}` : ""}</p>{editReason && <p className="payment-pin__secondary">{editReason}</p>}</div>
-    </>}
-    {policy && editing && !pending && <div className="payment-pin__editor">
-      <h3>{reviewing ? "确认本次调整" : "填写新的规则"}</h3>
-      {!reviewing ? <>
-        <div className="payment-pin__fields">{paymentPolicyFields.map(key => <label key={key}>{labels[key]}（{units[key]}）<input type="number" inputMode="numeric" step={1} min={policy.constraints![key].min} max={policy.constraints![key].max} value={values[key]} onChange={event => setValues(current => ({ ...current, [key]: event.target.value }))} /><span className="payment-pin__secondary">允许 {policy.constraints![key].min}–{policy.constraints![key].max} {units[key]}</span></label>)}</div>
-        <p className="payment-pin__secondary">{!valid ? "请填写允许范围内的整数。" : !changed ? "请先调整至少一项规则。" : "下一步核对调整前后数值，并填写调整理由。"}</p>
-      </> : <>
-        <table className="payment-pin__table payment-pin__comparison" aria-label="支付密码规则调整对照"><thead><tr><th>规则</th><th>调整前</th><th>调整后</th></tr></thead><tbody>{paymentPolicyFields.map(key => <tr key={key}><td>{labels[key]}</td><td>{policy.values[key]} {units[key]}</td><td className={policy.values[key] !== parsed[key] ? "payment-pin__changed" : undefined}>{parsed[key]} {units[key]}</td></tr>)}</tbody></table>
-        <p className="payment-pin__secondary payment-pin__effect">{policy.effectDescription}</p>
-        <div className="payment-pin__reason"><label>调整理由（8–200 字）<textarea aria-label="支付密码规则调整理由" value={reason} disabled={busy} onChange={event => setReason(event.target.value)} rows={3} /></label><label className="payment-pin__check"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />我已核对调整前后数值与生效说明</label>{!reasonValid && <p className="payment-pin__secondary">请填写 8–200 字的调整理由后保存。</p>}</div>
-      </>}
-      <footer className="payment-pin__form-actions">
-        <button className="payment-pin__button" disabled={busy} onClick={() => { setEditing(false); setReviewing(false); setReason(""); setConfirmed(false); }}>取消调整</button>
-        {reviewing ? <><button className="payment-pin__button" disabled={busy} onClick={() => setReviewing(false)}>返回修改</button><button className="payment-pin__button payment-pin__button--primary" disabled={busy || !confirmed || !reasonValid || !valid || !changed || !editable} onClick={() => void finish()}>{busy ? "正在保存并核对审计…" : "确认并保存规则"}</button></> : <button className="payment-pin__button payment-pin__button--primary" disabled={!valid || !changed || busy} onClick={() => { setReviewing(true); setConfirmed(false); }}>下一步：核对调整</button>}
-      </footer>
-    </div>}
-    {!policy && !loading && <p className="payment-pin__empty">当前生效规则尚未确认。方案默认：错误上限 5 次、统计窗口 15 分钟、锁定 15 分钟；此处不是当前生效值。</p>}
-    {receipt && <div className={`payment-pin__receipt ${receipt.status === "APPLIED" ? "payment-pin__receipt--success" : ""}`} role="status"><strong>{receipt.status === "APPLIED" ? "规则已保存，审计记录已核对" : receipt.status === "REJECTED" ? "本次调整未生效，请核对当前规则后重试" : "本次调整仍在处理中，请稍后继续查询"}</strong>{receipt.status === "APPLIED" && <><p>审计记录：{receipt.auditId} · {time(receipt.changedAt)} · {receipt.changedBy}</p><p>{paymentPolicyFields.map(key => `${labels[key]}：${receipt.oldValues[key]} → ${receipt.newValues[key]} ${units[key]}`).join("；")}</p><p>调整理由：{receipt.reason}</p><p>{receipt.effectDescription}</p></>}</div>}
-  </section>;
+  return <Panel aria-label="支付密码规则" title="支付密码规则" icon={KeyRound} explain="钱包余额付款和修改原支付密码共用错误次数。登录锁与钱包支付密码锁分开。" actions={<>{canWrite && <Button aria-label="调整支付密码规则" size="sm" disabledReason={loading ? "正在读取规则" : busy ? "正在提交" : editReason} onClick={() => { if (!policy) return; setValues({ maxAttempts: String(policy.values.maxAttempts), windowMinutes: String(policy.values.windowMinutes), lockMinutes: String(policy.values.lockMinutes) }); setReason(""); setConfirmed(false); setReceipt(null); setEditing(true); }}>调整规则</Button>}<IconButton aria-label="重新加载规则" disabled={loading || busy} onClick={() => { setEditing(false); setReviewing(false); setReason(""); setConfirmed(false); void load(); }}><RefreshCw size={16} /></IconButton></>}>
+    {loading && <BlockState state="loading" title="正在读取支付密码规则" />}
+    {error && <Notice tone={pending ? "warn" : "danger"}>{error}</Notice>}
+    {pending && <Notice tone="warn" title="上一笔规则调整结果待确认" action={<Button size="sm" loading={busy} onClick={() => void finish(true)}>查询原调整结果</Button>}><span data-mono>{pending.commandKey}</span> · {time(new Date(pending.createdAt).toISOString())}{pending.expiresAt <= Date.now() ? " · 已过 24 小时，仅查询" : ""}</Notice>}
+    {policy && <><ConfigList label="支付密码规则">{paymentPolicyFields.map(key => <ConfigRow key={key} name={labels[key]} what={descriptions[key]} when={policy.effectDescription || "生效方式未确认"} effect={key === "lockMinutes" ? "只改变之后触发的锁，不解除现有锁" : "后续验证读取当前规则，不改变登录锁"} where="App 支付密码验证与锁定提示" value={`${policy.values[key]} ${units[key]}`} />)}</ConfigList><div className="c5-context-line">最近调整：{time(policy.updatedAt)}{policy.updatedBy ? ` · ${policy.updatedBy}` : ""}{editReason && <span>{editReason}</span>}</div></>}
+    {!policy && !loading && <BlockState state="error" title="当前生效规则尚未确认" onRetry={() => void load()} retryLabel="重新加载规则" />}
+    {receipt && <Notice tone={receipt.status === "APPLIED" ? "ok" : receipt.status === "REJECTED" ? "danger" : "warn"} title={receipt.status === "APPLIED" ? "规则已保存，审计记录已核对" : receipt.status === "REJECTED" ? "本次调整未生效，请核对当前规则" : "本次调整仍在处理中，请继续查询"}>{receipt.status === "APPLIED" && <Fold title="查看调整回执" summary={`${receipt.changedBy} · ${time(receipt.changedAt)}`}><Facts><Fact k="审计记录">{receipt.auditId}</Fact><Fact k="调整理由">{receipt.reason}</Fact><Fact k="生效方式">{receipt.effectDescription}</Fact>{paymentPolicyFields.map(key => <Fact key={key} k={labels[key]}><Change settled from={`${receipt.oldValues[key]} ${units[key]}`} to={`${receipt.newValues[key]} ${units[key]}`} /></Fact>)}</Facts></Fold>}</Notice>}
+    {visible && policy && editing && <Drawer open busy={busy} onClose={() => { setEditing(false); setReviewing(false); setReason(""); setConfirmed(false); }} title="调整支付密码规则" icon={KeyRound} footer={<Decision others={<Button disabled={busy} onClick={() => { setEditing(false); setReason(""); setConfirmed(false); }}>取消调整</Button>} primary={<Button variant="primary" disabledReason={!valid ? "填写允许范围内的整数" : !changed ? "请先调整至少一项规则" : undefined} onClick={() => { setReviewing(true); setConfirmed(false); }}>下一步：核对调整</Button>} />}>
+      <Facts><Fact k="规则版本">{policy.version}</Fact></Facts>{paymentPolicyFields.map(key => <Field key={key} label={labels[key]} help={`允许 ${policy.constraints![key].min}–${policy.constraints![key].max} ${units[key]}，整数`} error={values[key] && (!/^\d+$/.test(values[key]) || parsed[key] < policy.constraints![key].min || parsed[key] > policy.constraints![key].max) ? "请填写允许范围内的整数" : undefined}><NumberInput aria-label={labels[key]} unit={units[key]} step={1} min={policy.constraints![key].min} max={policy.constraints![key].max} value={values[key]} onChange={event => setValues(current => ({ ...current, [key]: event.target.value }))} /></Field>)}
+      {reviewing && <Modal title="核对支付密码规则调整" icon={KeyRound} sub={<StatusTag tone="progress">保存后生效</StatusTag>} busy={busy} onClose={() => setReviewing(false)} footer={<Decision others={<Button disabled={busy} onClick={() => setReviewing(false)}>返回修改</Button>} primary={<Button variant="primary" loading={busy} loadingText="正在保存并核对审计…" disabledReason={!valid || !changed ? "请返回填写有效调整" : !reasonValid ? "请填写 8–200 字的调整理由" : !confirmed ? "请核对数值与生效说明" : !editable ? editReason : undefined} onClick={() => void finish()}>确认并保存规则</Button>} />}>
+        <Facts>{paymentPolicyFields.map(key => <Fact key={key} k={labels[key]}><Change from={`${policy.values[key]} ${units[key]}`} to={`${parsed[key]} ${units[key]}`} /></Fact>)}</Facts><Notice tone="progress">{policy.effectDescription}</Notice><Field label="调整理由" required hint="8–200 字" error={leftReason && !reasonValid ? "请填写 8–200 字的调整理由" : undefined}><Textarea aria-label="支付密码规则调整理由" value={reason} disabled={busy} onChange={event => setReason(event.target.value)} onBlur={() => setLeftReason(true)} rows={3} count={`${reason.trim().length}/200`} /></Field><Check checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} label="我已核对调整前后数值与生效说明" />{error && <Notice tone="danger">{error}</Notice>}
+      </Modal>}
+    </Drawer>}
+  </Panel>;
 }
 
-function PaymentUserSection({ userId, userLabel }: { userId: string; userLabel: string }) {
-  const [status, setStatus] = useState<PaymentPasswordStatus | null>(null);
-  const [attempts, setAttempts] = useState<PaymentPasswordAttempts | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+function PaymentUserSection({ userId, userLabel, visible }: { userId: string; userLabel: string; visible: boolean }) {
+  const [status, setStatus] = useState<PaymentPasswordStatus | null>(null), [attempts, setAttempts] = useState<PaymentPasswordAttempts | null>(null);
+  const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(10), [loading, setLoading] = useState(true), [error, setError] = useState("");
+  const [open, setOpen] = useState(false), [attempt, setAttempt] = useState<PaymentPasswordAttempts["records"][number] | null>(null);
   const generation = useRef(0);
   const load = useCallback(async () => {
-    const id = ++generation.current;
-    setLoading(true); setError(""); setStatus(null); setAttempts(null);
+    const id = ++generation.current; setLoading(true); setError(""); setStatus(null); setAttempts(null); setAttempt(null);
     try { const [nextStatus, nextAttempts] = await Promise.all([fetchPaymentStatus(userId), fetchPaymentAttempts(userId, page, pageSize)]); if (id === generation.current) { setStatus(nextStatus); setAttempts(nextAttempts); } }
     catch (failure) { if (id === generation.current) setError(failureText(failure)); }
     finally { if (id === generation.current) setLoading(false); }
   }, [userId, page, pageSize]);
-  useEffect(() => { void load(); return () => { generation.current++; }; }, [load]);
-  return <section className="payment-pin__card" aria-label="用户支付密码">
-    <header className="payment-pin__header"><div><h2>用户支付密码</h2><p className="payment-pin__secondary">{userLabel} · {businessZoneText()}</p></div><div className="payment-pin__actions">{status && <span className={`payment-pin__status payment-pin__status--${status.state.toLowerCase()}`}>{status.state === "UNSET" ? "未设置" : status.state === "SET" ? "已设置" : "暂时锁定"}</span>}<button className="payment-pin__button payment-pin__icon-button" aria-label="重新加载支付密码信息" title="重新加载支付密码信息" disabled={loading} onClick={() => void load()}><RefreshCw size={16} /></button></div></header>
-    {loading && <p className="payment-pin__notice" role="status">正在读取该用户的支付密码状态与验证记录…</p>}
-    {error && <p className="payment-pin__notice payment-pin__notice--error" role="alert">{error}</p>}
-    {status && <><dl className="payment-pin__facts"><div><dt>最近设置或修改</dt><dd>{formatBusinessTimeCompact(status.updatedAt, "暂无记录")}</dd></div><div><dt>锁定至</dt><dd>{status.state === "LOCKED" ? formatBusinessTimeCompact(status.lockedUntil) : "当前未锁定"}</dd></div><div><dt>查询时间</dt><dd>{formatBusinessTimeCompact(status.observedAt)}</dd></div></dl>{status.state === "LOCKED" && <p className="payment-pin__lock-note">钱包付款的支付密码暂时锁定，HDPay 银行直付、USDT-BSC / ERC20 链上直付和登录不受影响。到期后请重新加载确认。</p>}</>}
-    <details className="payment-pin__help"><summary>忘记支付密码时如何处理</summary><p>用户应在 APP 或 H5 通过“忘记支付密码”验证身份；无法使用恢复渠道时，按既有账号身份核验流程协助处理。这里只查看状态和验证结果。</p></details>
-    <div className="payment-pin__records"><h3>验证记录</h3><div className="payment-pin__table-scroll"><table className="payment-pin__table payment-pin__history" aria-label="支付密码验证记录"><colgroup><col /><col /><col /><col /><col /></colgroup><thead><tr><th>验证时间</th><th>用途</th><th>结果</th><th>来源</th><th>访问地址（已脱敏）</th></tr></thead><tbody>
-      {attempts?.records.map(row => <tr key={row.id}><td>{formatBusinessTimeCompact(row.occurredAt)}</td><td>{row.purpose === "PAYMENT" ? "确认购买或置换" : "修改支付密码"}</td><td>{{ SUCCEEDED: "验证通过", INCORRECT: "密码不正确", LOCKED: "暂时锁定", BUSINESS_REJECTED: "交易条件不满足，未计为输错" }[row.result]}</td><td>{row.channel === "APP" ? "APP" : "H5"}</td><td>{row.clientIpMasked || "未记录"}</td></tr>)}
-      {!attempts?.records.length && <tr><td colSpan={5} className="payment-pin__table-empty">{loading ? "正在加载验证记录…" : error ? "验证记录尚未确认，请重新加载" : "该用户暂无支付密码验证记录"}</td></tr>}
-    </tbody></table></div></div>
-    {attempts && <div className="payment-pin__pagination"><DataListPager label="支付密码验证记录" page={attempts.pageNum} pageSize={attempts.pageSize} total={attempts.total} onPageChange={next => { if (!loading) setPage(next); }} onPageSizeChange={next => { if (!loading) { setPageSize(next); setPage(1); } }} pageSizeOptions={[10, 20, 50]} /></div>}
-  </section>;
+  useEffect(() => { void load(); const refresh = () => void load(); window.addEventListener("nexion-payment-security-updated", refresh); return () => { generation.current++; window.removeEventListener("nexion-payment-security-updated", refresh); }; }, [load]);
+  const state = status?.state === "LOCKED" ? "暂时锁定" : status?.state === "SET" ? "已设置" : status?.state === "UNSET" ? "未设置" : "未确认";
+  return <Panel aria-label="用户支付密码" title="用户支付密码" icon={KeyRound} sub={userLabel} actions={<IconButton aria-label="重新加载支付密码信息" disabled={loading} onClick={() => void load()}><RefreshCw size={16} /></IconButton>}>
+    {loading ? <BlockState state="loading" title="正在读取支付密码状态与验证记录" /> : error ? <BlockState state="error" title="支付密码信息未能读取" detail={error} onRetry={() => void load()} /> : status && <><div className="c5-context-line"><StatusTag tone={status.state === "LOCKED" ? "warn" : status.state === "SET" ? "ok" : "done"} icon={status.state === "LOCKED" ? ShieldAlert : status.state === "SET" ? CheckCircle2 : undefined}>{state}</StatusTag><Button size="sm" onClick={() => setOpen(true)}>查看验证记录</Button></div><Facts><Fact k="最近设置或修改">{time(status.updatedAt)}</Fact><Fact k="锁定至">{status.state === "LOCKED" ? time(status.lockedUntil) : "当前未锁定"}</Fact><Fact k="查询时间">{time(status.observedAt)}</Fact></Facts>{status.state === "LOCKED" && <Notice tone="warn">支付密码暂时锁定，登录锁单独处理。到期后请重新加载确认。</Notice>}</>}
+    {visible && open && <Drawer open onClose={() => setOpen(false)} title="支付密码验证记录" sub={`${userLabel} · ${businessZoneText()}`} icon={Clock3} wide>
+      {error && <BlockState state="error" title="状态与验证记录尚未确认" detail={error} onRetry={() => void load()} />}
+      <Table aria-label="支付密码验证记录" label="支付密码验证记录" className="c5-attempts"><thead><tr><Th>时间</Th><Th>用途</Th><Th>结果</Th><Th>来源</Th></tr></thead><tbody>{loading ? <TableLoading columns={4} /> : attempts?.records.map(row => <Tr key={row.id} selected={attempt?.id === row.id} onOpen={() => setAttempt(row)}><Td><Cell num main={time(row.occurredAt)} /></Td><Td>{row.purpose === "PAYMENT" ? "确认购买或置换" : "修改支付密码"}</Td><Td>{attemptResult[row.result]}</Td><Td>{row.channel}</Td></Tr>)}{!loading && !attempts?.records.length && <TableMessage columns={4}>{error ? "验证记录未能读取" : "该用户暂无支付密码验证记录"}</TableMessage>}</tbody></Table>{attempts && attempts.total > 0 && <Pager label="支付密码验证记录" total={attempts.total} page={page} pageSize={pageSize} sizes={[10, 20, 50]} loading={loading} onPage={setPage} onPageSize={size => { setPageSize(size); setPage(1); }} />}
+      {attempt && <Facts><Fact k="验证时间">{time(attempt.occurredAt)}</Fact><Fact k="结果">{attemptResult[attempt.result]}</Fact><Fact k="访问地址（已脱敏）">{attempt.clientIpMasked || "未记录"}</Fact></Facts>}
+      <Fold title="忘记支付密码时如何处理" summary="用户自行重设"><p>引导用户在 App 或 H5 的“忘记支付密码”完成本人验证后重设，不能索要用户支付密码。</p></Fold>
+    </Drawer>}
+  </Panel>;
 }

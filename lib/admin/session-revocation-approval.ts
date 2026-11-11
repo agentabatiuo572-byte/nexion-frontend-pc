@@ -1,4 +1,4 @@
-import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "./a2-client";
+import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey } from "./a2-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import { displayAdminError } from "./error-messages";
 import { isExplicitRejection } from "./explicit-rejection";
@@ -84,7 +84,7 @@ export async function proposeSessionRevocation(
     // 限流、超时、幂等层要求核查这些都说明不了原命令的结果，记录和对象锁留着（R3）。安全与登录设备也用这里，只会更严。
     const forget = previous
       ? isExplicitRejection(error) && !(error instanceof Error && "status" in error && Number(error.status) === 404)
-      : !isA2OutcomeUncertainError(error);
+      : isExplicitRejection(error);
     if (forget) attempts.forget(slot, key);
     throw error;
   }

@@ -21,7 +21,7 @@ import type { CCtx, ConfirmReq, ActionConfirmReq } from "./c-tabs/types";
 
 const FOLD: Record<string, string> = { C1: "C1", C2: "C2", C3: "C3", C5: "C5", C6: "C6" };
 /** 已改版的页：包 RdPage，页头由页面自己写。 */
-const REDESIGNED = ["C1", "C2", "C3"];
+const REDESIGNED = ["C1", "C2", "C3", "C5"];
 
 
 export function CDomainView({ meta }: { meta: DomainViewMeta }) {

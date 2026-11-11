@@ -1,791 +1,244 @@
 "use client";
-import { operatorNicknameText, userNicknameText, platformSessionDeviceText } from "@/lib/admin/brand-copy";
-import { PhoneReplacementPanel } from "./phone-replacement-panel";
-import { PaymentPasswordPanel } from "./payment-password-panel";
 
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { CheckCircle2, Copy, KeyRound, LockKeyhole, LogOut, MonitorSmartphone, RefreshCw, ShieldCheck, Smartphone, TriangleAlert, UserRound } from "lucide-react";
+import { BlockState, Button, Cell, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IconButton, Input, JudgmentPoints, Modal, Notice, PageHeader, PageTabs, Pager, Panel, ReleaseBody, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTabIds } from "@/app/components/rd";
+import { userNicknameText, platformSessionDeviceText } from "@/lib/admin/brand-copy";
+import { businessZoneText, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { formatAccountStatus } from "@/lib/admin/c1-detail-display";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { pendingC5Commands, prepareC5Command, submitC5Command, forgetC5Command, isCompleteC5Command, type C5CommandKind, type C5Pending } from "@/lib/admin/c5-security-commands";
+import { listSessionRevocationApprovals, pendingSessionRevocationApproval, proposeSessionRevocation } from "@/lib/admin/session-revocation-approval";
+import { fetchUserProfilesPage, fetchUserSecurityOverview, type User360Profile, type UserCredentialParam, type UserSecurityOverview, type UserSecurityUserRow, type UserSession } from "@/lib/admin/user360-client";
+import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { sessionTimeAnomaly } from "@/lib/admin/session-time";
-import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
+import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataListPager, Drawer, type BusinessFormValue } from "../design-kit";
-import {
-  disableUserTwoFactor,
-  fetchUserProfilesPage,
-  fetchUserSecurityOverview,
-  requestUserPasswordReset,
-  revokeUserSession,
-  unlockUserSecurity,
-  updateUserCredentialParam,
-  type User360Profile,
-  type UserCredentialParam,
-  type UserSecurityOverview,
-  type UserSecurityActionEvidence,
-  type UserSecurityUserRow,
-  type UserSession,
-  UsersOutcomeUnknownError,
-} from "@/lib/admin/user360-client";
-import { pendingSessionRevocationApproval, proposeSessionRevocation } from "@/lib/admin/session-revocation-approval";
+import { pendingPaymentPolicy, pendingPaymentRelease } from "@/lib/admin/payment-password-client";
+import { pendingPhoneCommands, pendingModelLockCommands } from "@/lib/admin/phone-replacement-client";
+import { PaymentPasswordPanel } from "./payment-password-panel";
+import { PhoneReplacementPanel } from "./phone-replacement-panel";
 import type { CCtx } from "./types";
 
-const OPERATOR = currentAdminOperator;
-const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
-const NO_USER_SELECTION = "__NO_USER_SELECTION__";
-
-function normalizedPhoneLookup(value: string) {
-  return value.replace(/[^0-9]/g, "");
-}
-
-function isRawPhoneLookup(value: string) {
-  const digits = normalizedPhoneLookup(value);
-  return digits.length >= 8 && digits.length <= 15 && /^[+0-9()\s-]+$/.test(value);
-}
-
-async function sha256(value: string) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
+const TABS = ["security", "credentials", "payment", "phone"] as const;
+type Tab = typeof TABS[number];
+const text = (value: unknown, fallback = "—") => value == null || value === "" ? fallback : String(value);
+const count = (value: unknown) => value == null || value === "" || !Number.isFinite(Number(value)) ? null : Number(value);
+const time = (value: unknown) => formatBusinessTimeCompact(value == null ? null : String(value));
+const userIdOf = (row?: UserSecurityUserRow | null) => row?.userId == null ? "" : String(row.userId);
+const userLabel = (row?: UserSecurityUserRow | null) => row ? `${userNicknameText(text(row.nickname, ""), row.phoneMasked)} · ${text(row.userNo)}` : "未选择用户";
+const maskSessionId = (id: string) => id.length <= 10 ? `${id.slice(0, 3)}•••${id.slice(-2)}` : `${id.slice(0, 6)}••••${id.slice(-4)}`;
+const sessionLabel = (state: unknown) => ({ ACTIVE: "活跃", REVOKED: "已撤销", EXPIRED: "已过期" }[String(state)] ?? "状态未知");
+const lockLabel = (row?: UserSecurityUserRow | null) => !row ? "未确认" : row.lockKind === "SHORT" ? "短时锁定" : row.lockKind === "LONG" ? "长时锁定" : row.lockKind === "NONE" || row.locked === false ? "未锁定" : "未确认";
+const PARAM_HELP: Record<string, { what: string; when: string; effect: string; where: string }> = {
+  accessTtl: { what: "单个访问令牌的有效时长", when: "后续签发令牌时采用", effect: "不改写已签发的令牌", where: "本页登录与改号规则" },
+  refreshTtl: { what: "长期登录刷新的期限", when: "后续创建刷新会话时采用", effect: "不改写已有会话的期限", where: "本页登录与改号规则" },
+  sessionIdle: { what: "无活跃会话的有效天数", when: "下次请求或会话检查时采用", effect: "按新的空闲期判断，不承诺即时推送下线", where: "App 安全设置的设备列表与登录门禁" },
+  phoneChangeWindowDays: { what: "统计个人改号次数的窗口", when: "下一次改号资格检查时采用", effect: "不清除已使用次数，与手机换机分开统计", where: "App 安全设置的更改手机号摘要" },
+  phoneChangeMaxCount: { what: "统计期内个人改号次数的上限", when: "下一次改号资格检查时采用", effect: "不清除已使用次数，只改变后续资格", where: "App 安全设置的更改手机号摘要" },
+  stepUpDays: { what: "敏感操作二次验证的兼容窗口", when: "只读兼容值，本页不能调整", effect: "不代表已核实用户身份", where: "后台会话相关能力" },
+};
 
 async function privacySafeUserLookup(keyword: string) {
-  if (isRawPhoneLookup(keyword)) {
-    return { phoneHash: await sha256(normalizedPhoneLookup(keyword)) };
+  const digits = keyword.replace(/[^0-9]/g, "");
+  if (digits.length >= 8 && digits.length <= 15 && /^[+0-9()\s-]+$/.test(keyword)) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(digits));
+    return { phoneHash: Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("") };
   }
   return { keyword };
 }
 
-function text(value: unknown, fallback = "—") {
-  return value === null || value === undefined || String(value).trim() === "" ? fallback : String(value);
-}
-
-function toNumber(value: unknown, fallback = 0) {
-  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  }
-  return fallback;
-}
-
-function formatDateTime(value: unknown) {
-  if (!value) return "—";
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return text(value);
-  return date.toLocaleString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function userIdOf(row?: UserSecurityUserRow | null) {
-  const raw = row?.userId;
-  return raw === null || raw === undefined || raw === "" ? null : raw;
-}
-
-function userLabel(row?: UserSecurityUserRow | null) {
-  if (!row) return "未选择用户";
-  return `${text(row.userNo)} · ${operatorNicknameText(text(row.nickname))}`;
-}
-
-function profileKey(account?: User360Profile | null) {
-  const raw = account?.userNo || account?.id;
-  return raw === null || raw === undefined || raw === "" ? null : String(raw);
-}
-
-function profileLabel(account?: User360Profile | null) {
-  if (!account) return "未选择用户";
-  return `${text(account.userNo, text(account.id))} · ${userNicknameText(text(account.nickname), account.phoneMasked)}`;
-}
-
-function sessionId(session?: UserSession | null) {
-  return text(session?.refreshTokenId, "—");
-}
-
-function maskSessionId(value: string) {
-  if (!value || value === "—") return "—";
-  if (value.length <= 10) return `${value.slice(0, 3)}•••${value.slice(-2)}`;
-  return `${value.slice(0, 6)}••••${value.slice(-4)}`;
-}
-
-function numericParamValue(value: unknown) {
-  const match = text(value, "").match(/-?\d+(?:\.\d+)?/);
-  return match ? Number(match[0]) : 0;
-}
-
-function rowKey(row: UserSecurityUserRow) {
-  return text(row.userNo, text(row.userId));
-}
-
-function sessionTone(status?: string | null) {
-  const normalized = text(status, "").toUpperCase();
-  if (normalized === "ACTIVE") return "ok";
-  if (normalized === "REVOKED") return "bad";
-  if (normalized === "EXPIRED") return "dim";
-  return "warn";
-}
-
-function sessionStatusLabel(status?: string | null) {
-  const normalized = text(status, "").toUpperCase();
-  if (normalized === "ACTIVE") return "活跃";
-  if (normalized === "REVOKED") return "已撤销";
-  if (normalized === "EXPIRED") return "已过期";
-  return "状态未知";
-}
-
-function errorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error || "C5_DATA_LOAD_FAILED");
-  // client 层已接 guardedFetch 咽喉,网络异常到这里通常已是咽喉中文文案;按原压制意图把判据扩到
-  // 咽喉网络文案前缀(error-messages.ts 未导出该文案常量,就地字面量),命中仍走 C5 自家短文案。
-  if (/failed to fetch|networkerror|network request failed/i.test(message) || message.includes("网络连接失败或系统暂时连不上")) {
-    return "网络连接失败，数据没有变化，请检查网络后重试";
-  }
-  return displayAdminError(error);
-}
-
-function newCommandKey(prefix: string) {
-  const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `${prefix}-${suffix}`;
-}
-
-/** C5 七类安全动作共用一张表,调用点的 fingerprint 已带动作类型前缀 + 目标 id
- *  (`revoke-one|会话号`、`unlock|用户ID|锁类型`…),刷新后仍能用同一命令号重试。 */
-const pendingCommandKeys = createPendingMutationStore({
-  storageKey: "nexion-admin-c5-security-commands-v1",
-});
-
-function clearSelectedUserFromOverview(current: UserSecurityOverview | null): UserSecurityOverview | null {
-  if (!current) return current;
-  return {
-    ...current,
-    selectedUser: null,
-    selectedActiveSessionCount: 0,
-    sessions: {
-      ...(current.sessions ?? {}),
-      total: 0,
-      pageNum: 1,
-      pageSize: current.sessions?.pageSize ?? 10,
-      records: [],
-    },
-  };
-}
-
-function operatorEvidence(
-  businessValue: BusinessFormValue | undefined,
-  lockKind?: "SHORT" | "LONG" | null,
-): UserSecurityActionEvidence {
-  return {
-    operatorConfirmed: businessValue?.ack === "true",
-    lockKind: lockKind ?? null,
-  };
-}
-
-function StatCard({ tone, label, value, sub }: { tone?: string; label: string; value: string | number; sub: string }) {
-  return (
-    <div className={`f-stat ${tone ?? ""}`}>
-      <div className="k">{label}</div>
-      <div className="v">{value}</div>
-      <div className="sub">{sub}</div>
-    </div>
-  );
-}
-
-function SecLabel({ children }: { children: string }) {
-  return <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 4px", color: "var(--ink)" }}>{children}</div>;
-}
-
 export function C5Security({ ctx }: { ctx: CCtx }) {
-  const { toast, openActionConfirm, openConfirm } = ctx;
-  const session = useAdminAuth((state) => state.session);
-  const authorities = session?.authorities ?? [];
-  const canRevokeOne = authorities.includes("user_c5_session_revoke_one");
-  const canRevokeAll = authorities.includes("user_c2_session_revoke_all")
-    && authorities.some((authority) => ["platform_a2_write", "platform_a2_proposal_create"].includes(authority));
-  const canDisable2fa = authorities.includes("user_c5_2fa_disable");
-  const canResetPassword = authorities.includes("user_c5_password_reset");
-  const canUnlockShort = authorities.includes("user_c5_unlock_short");
-  const canUnlockLong = authorities.includes("user_c5_unlock_long");
-  const canWriteConfig = authorities.includes("user_c5_write");
-  const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const focusUserCode = (searchParams?.get("userCode") ?? "").trim().toUpperCase();
-  const [overview, setOverview] = useState<UserSecurityOverview | null>(null);
-  const [selectedUserKey, setSelectedUserKey] = useState(NO_USER_SELECTION);
-  const [userLookup, setUserLookup] = useState("");
-  const [userOptions, setUserOptions] = useState<User360Profile[]>([]);
-  const [userPage, setUserPage] = useState(1);
-  const [userPageSize, setUserPageSize] = useState(20);
-  const [userTotal, setUserTotal] = useState(0);
-  const [userListRetry, setUserListRetry] = useState(0);
-  const [userSearchLoading, setUserSearchLoading] = useState(false);
-  const [userSearchError, setUserSearchError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [ssId, setSsId] = useState<string | null>(null);
-  const [lockId, setLockId] = useState<string | null>(null);
-
-  const replaceFocusUserCode = useCallback((userCode?: string) => {
-    const params = new URLSearchParams(searchParams?.toString() ?? "");
-    if (userCode) {
-      params.set("userCode", userCode);
-    } else {
-      params.delete("userCode");
-    }
-    const query = params.toString();
-    const destination = query ? `${pathname ?? "/"}?${query}` : (pathname ?? "/");
-    router.replace(destination, { scroll: false });
-  }, [pathname, router, searchParams]);
-
-  const dataGeneration = useRef(0);
+  const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
+  const rights = session?.authorities ?? [], owner = session?.adminId ?? 0;
+  const canRead = rights.includes("user_c5_read"), canFind = rights.includes("user_c1_read");
+  const canRevokeOne = rights.includes("user_c5_session_revoke_one");
+  const canRevokeAll = rights.some(code => ["user_c2_session_revoke_all", "user_c5_session_revoke_all"].includes(code)) && rights.some(code => ["platform_a2_write", "platform_a2_proposal_create"].includes(code));
+  const canReset = rights.includes("user_c5_password_reset"), canDisable = rights.includes("user_c5_2fa_disable"), canConfig = rights.includes("user_c5_write");
+  const canUnlock = (row: UserSecurityUserRow) => rights.includes(row.lockKind === "LONG" ? "user_c5_unlock_long" : "user_c5_unlock_short")
+    && (row.lockKind === "LONG" ? ["superadmin", "risk"].includes(session?.role ?? "") : ["superadmin", "risk", "support", "supportlead"].includes(session?.role ?? ""));
+  const reach = useReach(), pathname = usePathname(), router = useRouter(), params = useSearchParams();
+  const focus = (params?.get("userCode") ?? "").trim().toUpperCase();
+  const tab = TABS.includes(params?.get("tab") as Tab) ? params!.get("tab") as Tab : "security";
+  const [overview, setOverview] = useState<UserSecurityOverview | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
+  const [profile, setProfile] = useState<User360Profile | null>(null), [lookup, setLookup] = useState("");
+  const [users, setUsers] = useState<User360Profile[]>([]), [usersLoading, setUsersLoading] = useState(true), [usersError, setUsersError] = useState("");
+  const [userPage, setUserPage] = useState(1), [userSize, setUserSize] = useState(20), [userTotal, setUserTotal] = useState(0), [userRetry, setUserRetry] = useState(0);
+  const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(10), [busy, setBusy] = useState(false);
+  const [picker, setPicker] = useState(false), [locksOpen, setLocksOpen] = useState(false), [shownLock, setShownLock] = useState<UserSecurityUserRow | null>(null), [shownSession, setShownSession] = useState<string | null>(null);
+  const [pendingTick, setPendingTick] = useState(0), [recovery, setRecovery] = useState<C5Pending | null>(null), [release, setRelease] = useState(false), [recoveryMessage, setRecoveryMessage] = useState("");
+  const generation = useRef(0), selectedRef = useRef(focus), mutation = useRef(false);
+  selectedRef.current = focus;
+  const ids = useTabIds();
+  const setUrl = useCallback((changes: Record<string, string | null>, hash?: string) => {
+    const next = new URLSearchParams(params?.toString() ?? "");
+    Object.entries(changes).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
+    router.replace(`${pathname ?? "/users/security"}${next.size ? `?${next}` : ""}${hash ?? ""}`, { scroll: false });
+  }, [params, pathname, router]);
+  const refreshPending = useCallback(() => setPendingTick(value => value + 1), []);
+  useEffect(() => { window.addEventListener("nexion-c5-pending-updated", refreshPending); window.addEventListener("nexion-payment-security-updated", refreshPending); return () => { window.removeEventListener("nexion-c5-pending-updated", refreshPending); window.removeEventListener("nexion-payment-security-updated", refreshPending); }; }, [refreshPending]);
   useEffect(() => {
-    const key = focusUserCode || NO_USER_SELECTION;
-    if (selectedUserKey === key) return;
-    dataGeneration.current++;
-    setOverview(clearSelectedUserFromOverview);
-    setSelectedUserKey(key);
-    setPage(1);
-    setSsId(null);
-    setLockId(null);
-  }, [focusUserCode]);
-
-  const loadData = useCallback(async (silent = false) => {
-    const generation = ++dataGeneration.current;
-    if (!silent) setLoading(true);
+    if (window.location.hash === "#payment-password-panels") { setUrl({ tab: "payment" }, "#payment-password-panels"); }
+  }, []);
+  useEffect(() => { if (tab === "payment" && !loading && window.location.hash === "#payment-password-panels") document.getElementById("payment-password-panels")?.scrollIntoView({ block: "start" }); }, [tab, loading]);
+  useEffect(() => { setShownSession(null); setShownLock(null); setProfile(null); setOverview(null); setPage(1); }, [focus, epoch]);
+  const load = useCallback(async () => {
+    if (!canRead) { setOverview(null); setLoading(false); return false; }
+    const id = ++generation.current;
+    setLoading(true); setOverview(null); setError("");
     try {
-      const key = selectedUserKey === NO_USER_SELECTION ? "" : selectedUserKey.trim();
-      const data = await fetchUserSecurityOverview({ userKey: key || undefined, pageNum: page, pageSize });
-      if (generation !== dataGeneration.current) return false;
-      setOverview(key ? data : clearSelectedUserFromOverview(data));
-      setError(null);
-      return true;
-    } catch (err) {
-      if (generation !== dataGeneration.current) return false;
-      setOverview(null);
-      setError(`加载失败 · ${errorMessage(err)}`);
-      return false;
-    } finally {
-      if (!silent && generation === dataGeneration.current) setLoading(false);
-    }
-  }, [page, pageSize, selectedUserKey]);
-
+      const result = await fetchUserSecurityOverview({ userKey: focus || undefined, pageNum: page, pageSize });
+      if (id !== generation.current) return false;
+      if (focus && ![String(result.selectedUser?.userId), String(result.selectedUser?.userNo)].includes(focus)) throw new Error("返回用户与当前选择不符，请重新选择。");
+      setOverview(result); return true;
+    } catch (failure) { if (id === generation.current) { setError(displayAdminError(failure)); if (failure instanceof Error && "status" in failure && [401, 403].includes(Number(failure.status))) { setProfile(null); announcePermissionDenied(); } } return false; }
+    finally { if (id === generation.current) setLoading(false); }
+  }, [focus, page, pageSize, epoch, canRead]);
+  useEffect(() => { void load(); return () => { generation.current++; }; }, [load]);
   useEffect(() => {
-    void loadData();
-    return () => { dataGeneration.current++; };
-  }, [loadData]);
-
-  useEffect(() => {
+    if (!canRead || !canFind) { setUsers([]); setUsersLoading(false); return; }
     let cancelled = false;
-    setUserSearchLoading(true);
-    setUserOptions([]);
+    setUsersLoading(true); setUsers([]); setUsersError("");
     const timer = window.setTimeout(async () => {
-      try {
-        const keyword = userLookup.trim();
-        const pageData = await fetchUserProfilesPage({
-          ...(keyword ? await privacySafeUserLookup(keyword) : {}),
-          pageNum: userPage,
-          pageSize: userPageSize,
-        });
-        if (!cancelled) {
-          setUserOptions(pageData.records);
-          setUserTotal(pageData.total);
-          setUserSearchError(null);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setUserOptions([]);
-          setUserTotal(0);
-          setUserSearchError(`用户列表加载失败 · ${errorMessage(err)}`);
-        }
-      } finally {
-        if (!cancelled) setUserSearchLoading(false);
-      }
-    }, 260);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [userPage, userPageSize, userLookup, userListRetry]);
+      try { const result = await fetchUserProfilesPage({ ...(lookup.trim() ? await privacySafeUserLookup(lookup.trim()) : {}), pageNum: userPage, pageSize: userSize }); if (!cancelled) { setUsers(result.records); setUserTotal(result.total); } }
+      catch (failure) { if (!cancelled) { setUsersError(displayAdminError(failure)); setUserTotal(0); } }
+      finally { if (!cancelled) setUsersLoading(false); }
+    }, 300);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [lookup, userPage, userSize, userRetry, epoch, canRead, canFind]);
+  const selectedUser = overview?.selectedUser ?? null, userId = userIdOf(selectedUser);
+  useEffect(() => {
+    if (!userId || !canFind || profile && profile.userNo === selectedUser?.userNo) return;
+    let live = true;
+    void fetchUserProfilesPage({ keyword: text(selectedUser?.userNo, userId), pageNum: 1, pageSize: 20 }).then(result => {
+      if (live) setProfile(result.records.find(row => row.userNo === selectedUser?.userNo) ?? null);
+    }).catch(() => { if (live) setProfile(null); });
+    return () => { live = false; };
+  }, [userId, selectedUser?.userNo, canFind, epoch]);
+  const pending = useMemo(() => owner && canRead ? pendingC5Commands(owner) : [], [owner, canRead, pendingTick]);
+  const logoutPending = useMemo(() => owner && canRead ? listSessionRevocationApprovals(owner) : [], [owner, canRead, pendingTick]);
+  const policyPending = owner ? pendingPaymentPolicy(owner) : null, paymentPending = owner && userId ? pendingPaymentRelease(owner, userId) : null;
+  const phonePending = owner && userId ? pendingPhoneCommands(owner, userId) : [], modelPending = owner && userId ? pendingModelLockCommands(owner, userId) : [];
+  const userBlocked = (id: string) => busy ? "正在提交，请稍候" : pending.some(row => !isCompleteC5Command(row) || row.userId === id) || logoutPending.some(row => row.userId === id) ? "此用户有待确认原操作，请先核对" : undefined;
+  const sessions = overview?.sessions?.records ?? [], selectedSession = sessions.find(row => row.refreshTokenId === shownSession);
+  const lockedUsers = overview?.lockedUsers ?? [], credentials = overview?.credentialParams ?? [];
+  const activeCount = count(overview?.selectedActiveSessionCount), shortCount = count(overview?.stats?.lockedShort), longCount = count(overview?.stats?.lockedLong);
+  const lockCount = shortCount !== null && longCount !== null ? shortCount + longCount : null;
+  const rawReturn = params?.get("returnTo") ?? "";
+  const back = /^\/(?!\/)/.test(rawReturn) && !/[\\\u0000-\u001f]/.test(rawReturn) && reach(rawReturn) ? { href: rawReturn, label: rawReturn.startsWith("/users/search/") ? "返回用户详情" : rawReturn.startsWith("/service/sessions") ? "返回原会话" : rawReturn.startsWith("/users/search") ? "返回用户列表" : "返回来源页面" } : null;
 
-  const perform = useCallback(async (
-    fingerprint: string,
-    work: (commandKey: string) => Promise<string>,
-    fallback: string,
-  ) => {
-    setBusy(true);
-    const commandKey = pendingCommandKeys.get(fingerprint) ?? newCommandKey("c5-command");
-    pendingCommandKeys.remember(fingerprint, commandKey);
-    let writeReturned = false;
+  function clearSelection(next: string) {
+    generation.current++; setLookup(next); setUserPage(1); setPage(1); setOverview(null); setProfile(null); setShownSession(null); setShownLock(null); setUrl({ userCode: null });
+  }
+  function choose(row: User360Profile) {
+    const code = text(row.userNo, "").toUpperCase();
+    if (!code) return;
+    generation.current++; setOverview(null); setProfile(row); setPage(1); setPicker(false); setShownSession(null); setShownLock(null); setUrl({ userCode: code });
+  }
+  async function perform(original: Parameters<typeof prepareC5Command>[0]) {
+    if (mutation.current) return false;
+    mutation.current = true; setBusy(true);
+    let row: C5Pending | undefined;
     try {
-      const message = await work(commandKey);
-      writeReturned = true;
-      if (!await loadData(true)) {
-        throw new Error("可能已生效，但页面没刷新出来。请刷新查看，重试不会重复执行");
-      }
-      pendingCommandKeys.forget(fingerprint);
-      toast(message || fallback);
-      setError(null);
+      row = prepareC5Command(original); refreshPending();
+      await submitC5Command(row);
+      if (await load()) { forgetC5Command(row); ctx.toast(original.kind === "revoke-one" ? "该设备已下线" : original.kind === "password-reset" ? "已要求用户下次登录完成密码重设" : original.kind === "disable-2fa" ? "两步验证已关闭" : original.kind === "unlock" ? "登录锁定已解除，请核对账户及密码重置要求" : "登录与改号规则已更新"); }
+      else ctx.toast("操作已返回，页面尚未刷新。请读回核对。", "warn");
       return true;
-    } catch (err) {
-      if (!writeReturned && !(err instanceof UsersOutcomeUnknownError)) {
-        pendingCommandKeys.forget(fingerprint);
-      }
-      const message = errorMessage(err);
-      setError(`操作失败 · ${message}`);
-      toast(`操作失败 · ${message}`);
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  }, [loadData, toast]);
-
-  const selectedUser = overview?.selectedUser ?? null;
-  const selectedUserId = userIdOf(selectedUser);
-  const sessionPage = overview?.sessions;
-  const sessions = useMemo(() => sessionPage?.records ?? [], [sessionPage?.records]);
-  const activeSessionCount = toNumber(overview?.selectedActiveSessionCount);
-  const total = toNumber(sessionPage?.total, sessions.length);
-  const credentialParams = overview?.credentialParams ?? [];
-  const lockedUsers = overview?.lockedUsers ?? [];
-  const activeSessions = toNumber(overview?.stats?.activeSessions);
-  const lockedShort = toNumber(overview?.stats?.lockedShort);
-  const lockedLong = toNumber(overview?.stats?.lockedLong);
-  const tokenReuseToday = toNumber(overview?.stats?.tokenReuseToday);
-  const selectedSession = ssId ? sessions.find((session) => session.refreshTokenId === ssId) : undefined;
-  const selectedLock = lockId ? lockedUsers.find((row) => rowKey(row) === lockId) : undefined;
-
-  const selectLookupUser = (account: User360Profile) => {
-    const key = profileKey(account);
-    if (!key || key === selectedUserKey) return;
-    dataGeneration.current++;
-    setOverview(clearSelectedUserFromOverview);
-    setSelectedUserKey(key);
-    replaceFocusUserCode(key);
-    setPage(1);
-    setSsId(null);
-    setLockId(null);
-  };
-
-  const revokeOne = (id: string) =>
-    openConfirm({ briefKind: "security",
-      action: `退出该设备 · ${maskSessionId(id)}`,
-      detail: "确认后用户在这台设备上立即下线。",
-      chips: [["立即下线", "ready"]],
-      reason: true,
-      okLabel: "确认退出该设备",
-      run: (reason) => {
-        return perform(`revoke-one|${id}|${reason}`, async (commandKey) => {
-          await revokeUserSession(id, reason, OPERATOR(), commandKey);
-          return "该设备已下线";
-        }, "该设备已下线");
+    } catch (failure) {
+      if (!row) throw failure;
+      if (failure instanceof Error && "status" in failure && [401, 403].includes(Number(failure.status))) { setOverview(null); setProfile(null); setShownSession(null); setShownLock(null); announcePermissionDenied(); }
+      ctx.toast("原操作已保留，请到页面上方核对结果。", "warn"); return true;
+    } finally { mutation.current = false; setBusy(false); refreshPending(); }
+  }
+  function begin(kind: C5CommandKind, row: UserSecurityUserRow, device?: UserSession) {
+    const id = userIdOf(row), target = kind === "revoke-one" ? text(device?.refreshTokenId, "") : id;
+    if (!id || !target || userBlocked(id)) return;
+    const unlockKind = row.lockKind === "LONG" ? "LONG" : "SHORT";
+    const label = kind === "revoke-one" ? "退出该设备" : kind === "password-reset" ? "要求重置登录密码" : kind === "disable-2fa" ? "关闭两步验证" : `解除${unlockKind === "LONG" ? "长" : "短"}锁`;
+    const effect = kind === "revoke-one" ? "该设备立即下线。" : kind === "password-reset" ? "全部设备下线，下次登录须由用户设置新密码。" : kind === "disable-2fa" ? "关闭后，登录不再受两步验证保护。" : "清除登录失败次数；账户冻结、封禁或待重置密码要求仍可能阻止登录。";
+    ctx.openActionConfirm({ briefKind: "security", action: `${label} · ${userLabel(row)}`, title: label, detail: effect, reasonMin: 8, reasonMax: 200, confirmLabel: `确认${kind === "password-reset" ? "要求重置密码" : label}`, confirmTone: kind === "revoke-one" || kind === "disable-2fa" ? "danger" : "primary", effect: <StatusTag tone="progress">立即生效</StatusTag>,
+      facts: <Facts><Fact k="用户">{userLabel(row)}</Fact>{device ? <><Fact k="设备">{platformSessionDeviceText(text(device.deviceName))}</Fact><Fact k="设备编号">{maskSessionId(target)}</Fact><Fact k="IP">{text(device.clientIpMasked)}</Fact><Fact k="最近活跃">{time(device.lastActiveAt ?? device.issuedAt)}</Fact></> : <><Fact k="登录锁定">{lockLabel(row)}</Fact><Fact k="密码重置">{row.passwordResetRequired ? "待用户重置密码" : "未要求重置"}</Fact>{kind === "unlock" && <><Fact k="登录失败">{text(row.loginFailCount)} 次</Fact><Fact k="锁定原因">{text(row.lockReason)}</Fact></>}</>}</Facts>,
+      statedBrief: { impact: effect, check: kind === "revoke-one" ? "提交时检查该设备状态与单台退出权限" : "提交时检查当前用户状态、精确权限与本人核验声明" },
+      reasonPlaceholder: "例如：已核实用户与设备，并根据工单说明处置依据",
+      ...(kind === "revoke-one" ? {} : { businessForm: { kind: "identity-verify" as const, subject: `${userLabel(row)} · ${label}`, serverVerification: { channel: "管理员权限", ticket: "当前登录的管理员", verifiedAt: "提交时检查", verifiedBy: currentAdminOperator(), expiresAt: "仅本次" } } }),
+      run: (reason, _value, evidence) => {
+        const operator = currentAdminOperator(), body = kind === "revoke-one" ? { reason, operator } : { reason, operator, operatorConfirmed: evidence?.ack === "true", lockKind: kind === "unlock" ? unlockKind : null };
+        return perform({ owner, kind, userId: id, userNo: text(row.userNo), label: `${label} · ${userLabel(row)}`, target, method: "POST", path: kind === "revoke-one" ? `/api/admin/users/sessions/${encodeURIComponent(target)}/revoke` : `/api/admin/users/profiles/${id}/security/${kind === "unlock" ? "unlock" : kind}`, body: JSON.stringify(body), reason, operator, operatorConfirmed: evidence?.ack === "true", ...(kind === "unlock" ? { lockKind: unlockKind } : {}) });
       },
     });
-
-  const pendingLogout = selectedUserId && session ? pendingSessionRevocationApproval(session.adminId, selectedUserId) : undefined;
-  const revokeAll = () => {
-    if (!selectedUserId || !session) return;
-    openActionConfirm({ briefKind: "security",
-      action: `退出全部设备 · ${userLabel(selectedUser)}`,
-      detail: "提交审批后，由另一位超级管理员批准，该用户的全部在线设备才会退出登录。",
-      completionCopy: "批准后生效；提交审批不会立即退出设备。",
-      amplifies: false,
-      reasonMin: 8,
-      reasonMax: 200,
-      getPendingReason: () => pendingSessionRevocationApproval(session.adminId, selectedUserId)?.reason,
-      run: async (reason) => {
-        setBusy(true);
-        try {
-          await proposeSessionRevocation(session, selectedUserId, userLabel(selectedUser), reason);
-          toast("已提交全部设备登出审批，批准后生效");
-        } finally {
-          setBusy(false);
-        }
-      },
+  }
+  function revokeAll() {
+    if (!session || !selectedUser || !canRevokeAll) return;
+    ctx.openActionConfirm({ briefKind: "security", action: `退出全部设备 · ${userLabel(selectedUser)}`, title: "退出全部设备", detail: "提交后由另一位超级管理员批准，以批准时在线设备为准。", completionCopy: "批准后生效；提交审批不会立即退出设备。", reasonMin: 8, reasonMax: 200, effect: <StatusTag tone="progress">批准后生效</StatusTag>, confirmLabel: "提交全部设备登出审批", getPendingReason: () => pendingSessionRevocationApproval(owner, userId)?.reason,
+      facts: <Facts><Fact k="用户">{userLabel(selectedUser)}</Fact><Fact k="当前在线设备">{activeCount ?? "—"}</Fact></Facts>, statedBrief: { impact: "另一位超级管理员批准后，退出该用户批准时的全部在线设备", check: "提交时检查全部设备退出专权和 A2 提案权" },
+      run: async reason => { setBusy(true); try { await proposeSessionRevocation(session, userId, userLabel(selectedUser), reason); ctx.toast("已提交全部设备登出审批，批准后生效"); } finally { setBusy(false); refreshPending(); } },
     });
-  };
-
-  const disable2fa = () => {
-    if (!selectedUserId) return;
-    openActionConfirm({ briefKind: "security",
-      action: `关闭两步验证 · ${userLabel(selectedUser)}`,
-      detail: <>用于用户丢了验证器设备时帮他恢复登录。请先核实是本人。</>,
-      amplifies: false,
-      businessForm: {
-        kind: "identity-verify",
-        subject: `${userLabel(selectedUser)} · 关闭两步验证`,
-        serverVerification: {
-          channel: "管理员权限",
-          ticket: "当前登录的管理员",
-          verifiedAt: "提交时检查",
-          verifiedBy: OPERATOR(),
-          expiresAt: "仅本次",
-        },
-      },
-      run: (reason, _value, businessValue?: BusinessFormValue) => {
-        if (!selectedUserId) return;
-        return perform(`disable-2fa|${selectedUserId}|${reason}`, async (commandKey) => {
-          await disableUserTwoFactor(selectedUserId, reason, OPERATOR(), operatorEvidence(businessValue), commandKey);
-          return "两步验证已关闭";
-        }, "两步验证已关闭");
-      },
+  }
+  function adjust(param: UserCredentialParam) {
+    if (!param.key || param.readOnly || !canConfig || pending.some(row => row.kind === "credential")) return;
+    const help = PARAM_HELP[param.key];
+    ctx.openActionConfirm({ briefKind: "config", action: `调整账户安全规则 · ${text(param.name)}`, title: `调整${text(param.name)}`, detail: help?.effect ?? text(param.note), reasonMin: 8, reasonMax: 200, confirmLabel: `确认调整${text(param.name)}`, statedBrief: { impact: help?.when ?? "按服务端当前配置生效", check: "提交时检查整数范围、配置版本和规则修改权限" },
+      edit: { kind: "number", current: text(param.value).match(/\d+/)?.[0] ?? "", unit: text(param.unit, ""), min: Number(param.min), max: Number(param.max), step: 1, disallowCurrent: true },
+      run: (reason, value) => { if (!value || !Number.isSafeInteger(Number(param.version))) return false; const operator = currentAdminOperator(), version = Number(param.version); return perform({ owner, kind: "credential", userId: "", userNo: "", label: `调整${text(param.name)}`, target: param.key!, path: `/api/admin/users/security/credential-params/${param.key}`, method: "PATCH", body: JSON.stringify({ value, reason, operator, expectedVersion: version }), reason, operator, value, version }); },
     });
-  };
-
-  const passwordReset = () => {
-    if (!selectedUserId) return;
-    openActionConfirm({ briefKind: "security",
-      action: `密码重置 · ${userLabel(selectedUser)}`,
-      detail: <>后台看不到用户密码。确认后用户在所有设备上下线，下次登录必须先改密码。</>,
-      amplifies: false,
-      businessForm: {
-        kind: "identity-verify",
-        subject: `${userLabel(selectedUser)} · 密码重置`,
-        serverVerification: {
-          channel: "管理员权限",
-          ticket: "当前登录的管理员",
-          verifiedAt: "提交时检查",
-          verifiedBy: OPERATOR(),
-          expiresAt: "仅本次",
-        },
-      },
-      run: (reason, _value, businessValue?: BusinessFormValue) => {
-        if (!selectedUserId) return;
-        return perform(`password-reset|${selectedUserId}|${reason}`, async (commandKey) => {
-          await requestUserPasswordReset(selectedUserId, reason, OPERATOR(), operatorEvidence(businessValue), commandKey);
-          return "已要求用户下次登录完成密码重设";
-        }, "密码重设要求已生效");
-      },
-    });
-  };
-
-  const unlockUser = (row: UserSecurityUserRow) => {
-    const userId = userIdOf(row);
-    if (!userId) return;
-    const longLock = row.lockKind === "LONG";
-    const lockKind = longLock ? "LONG" : "SHORT";
-    openActionConfirm({ briefKind: "security",
-      action: `解除${longLock ? "长" : "短"}锁 · ${userLabel(row)}`,
-      detail: longLock
-        ? "长时锁定只有超级管理员或风控能解除，解除后用户可立即重新登录。"
-        : "短时锁定可由超级管理员、风控或客服解除，解除后输错次数清零，用户可立即重新登录。",
-      amplifies: false,
-      businessForm: {
-        kind: "identity-verify",
-        subject: `${userLabel(row)} · 解除${longLock ? "长" : "短"}锁`,
-        serverVerification: {
-          channel: "管理员权限",
-          ticket: "当前登录的管理员",
-          verifiedAt: "提交时检查",
-          verifiedBy: OPERATOR(),
-          expiresAt: "仅本次",
-        },
-      },
-      run: (reason, _value, businessValue?: BusinessFormValue) => {
-        return perform(`unlock|${userId}|${lockKind}|${reason}`, async (commandKey) => {
-          await unlockUserSecurity(userId, reason, OPERATOR(), operatorEvidence(businessValue, lockKind), commandKey);
-          return `${longLock ? "长" : "短"}锁已立即解除`;
-        }, "账户锁定已解除");
-      },
-    });
-  };
-
-  const updateParam = (param: UserCredentialParam) => {
-    if (!param.key || param.readOnly || !canWriteConfig) return;
-    openActionConfirm({ briefKind: "config",
-      action: `调整账户安全规则 · ${text(param.name)}`,
-      detail: <><b>{text(param.name)}</b> · 当前 {text(param.value)} · {text(param.note)}。
-        {param.key === "phoneChangeWindowDays" || param.key === "phoneChangeMaxCount"
-          ? "对所有用户的下一次改号申请立即生效。"
-          : "无操作登出时间立即生效，其他时长从用户下次登录开始生效。"}</>,
-      amplifies: false,
-      edit: {
-        kind: "number",
-        current: String(numericParamValue(param.value)),
-        unit: text(param.unit, ""),
-        min: toNumber(param.min, 0),
-        max: toNumber(param.max, Number.MAX_SAFE_INTEGER),
-        step: 1,
-        disallowCurrent: true,
-      },
-      run: (reason, nextValue) => {
-        const value = (nextValue ?? "").trim();
-        if (!value) return;
-        const expectedVersion = toNumber(param.version, Number.NaN);
-        if (!Number.isFinite(expectedVersion)) {
-          toast("设置已被修改，请刷新后再操作");
-          return false;
-        }
-        return perform(`credential|${param.key}|${value}|${expectedVersion}|${reason}`, async (commandKey) => {
-          await updateUserCredentialParam(param.key as string, value, reason, OPERATOR(), expectedVersion, commandKey);
-          return `${text(param.name)} 已更新为 ${value}`;
-        }, "账户安全规则已更新");
-      },
-    });
-  };
-
-  return (
-    <>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
-        <a className="l-btn" href="#payment-password-panels" onClick={(event) => {
-          event.preventDefault();
-          window.history.replaceState(window.history.state, "", "#payment-password-panels");
-          document.getElementById("payment-password-panels")?.scrollIntoView({ block: "start", behavior: "auto" });
-        }}>支付密码规则与用户状态</a>
-      </div>
-      <div className="f-stats">
-        <StatCard label="在线设备（全平台）" value={activeSessions.toLocaleString("en-US")} sub="当前登录中" />
-        <StatCard tone="ok" label="两步验证开启率" value={`${text(overview?.stats?.twoFactorRatePct, "0.0")}%`} sub="已开启的用户占比" />
-        <StatCard tone="warn" label="锁定中账户" value={lockedShort + lockedLong} sub={`短时 ${lockedShort} · 长时 ${lockedLong}`} />
-        <StatCard tone="danger" label="今日异常登录" value={tokenReuseToday} sub="发现登录凭证被盗用，已让相关设备全部下线" />
-      </div>
-
-      {error && (
-        <div className="ctint bad" style={{ marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-          <span>{error}</span>
-          <button className="l-btn sm" disabled={loading} onClick={() => void loadData()}>重新加载</button>
-        </div>
-      )}
-      {loading && <div className="ctint" style={{ marginBottom: 12 }}>正在加载…</div>}
-
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">登录安全与更换手机号限制</span>
-          <span className="sub">· 改号次数按每个用户单独统计</span>
-        </div>
-        <div className="l-b" style={{ paddingTop: 4 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "0 32px", minWidth: 0 }}>
-            {credentialParams.map((param) => (
-              <div className="p-row" key={text(param.key)}>
-                <div className="txt">
-                  <div className="k">
-                    {text(param.name)}
-                    {param.readOnly && <span className="bdg dim" style={{ marginLeft: 6 }}>只能查看</span>}
-                  </div>
-                  <div className="s">{text(param.note)}</div>
-                </div>
-                <span className="v">{text(param.value)}</span>
-                <button className="l-btn sm mc" disabled={busy || !!param.readOnly || !canWriteConfig} onClick={() => updateParam(param)}>
-                  {param.readOnly ? "只能查看" : canWriteConfig ? "调整" : "无权限"}
-                </button>
-              </div>
-            ))}
-            {credentialParams.length === 0 && <div className="ctint">暂无设置</div>}
-          </div>
-          <div className="ctint" style={{ marginTop: 10 }}>
-            <b>更换登录手机号</b> · 按最近的统计天数滚动计算每位用户成功改号的次数；达到上限后，须等最早一次改号移出统计期。此规则与更换绑定设备的次数分开。
-          </div>
-          <div className="ctint" style={{ marginTop: 10 }}>
-            <b>自动防盗号</b> · 发现同一登录凭证被两个地方使用时，系统会让相关设备全部下线。
-          </div>
-        </div>
-      </section>
-
-      <div className="two-col r125-1">
-        <section className="l-card">
-          <div className="l-h">
-            <span className="ttl">处理用户账户安全</span>
-            <span className="sub">· 先选择用户，再处理该用户的登录设备、两步验证或密码</span>
-          </div>
-          <div className="l-b" style={{ paddingBottom: 10 }}>
-            <input
-              className="fld"
-              aria-label="搜索用户"
-              value={userLookup}
-              disabled={busy}
-              onChange={(event) => {
-                if (selectedUserKey !== NO_USER_SELECTION) dataGeneration.current++;
-                setUserLookup(event.target.value);
-                setUserPage(1);
-                setSelectedUserKey(NO_USER_SELECTION);
-                if (focusUserCode) replaceFocusUserCode();
-                setOverview(clearSelectedUserFromOverview);
-                setPage(1);
-                setSsId(null);
-                setLockId(null);
-              }}
-              placeholder="搜索用户编码 / 用户名 / 推荐码 / 手机号"
-            />
-            <div className="ctint" style={{ marginTop: 8 }}>
-              点用户右侧的「查看安全信息」，下面的操作只对选中的用户生效。
-            </div>
-            {userSearchError && <div className="ctint bad" role="alert">
-              {userSearchError} <button className="l-btn sm" disabled={userSearchLoading} onClick={() => setUserListRetry((value) => value + 1)}>重新加载</button>
-            </div>}
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <table className="l-tbl" aria-label="用户列表">
-              <thead><tr><th>用户编码</th><th>用户名</th><th>手机号</th><th>操作</th></tr></thead>
-              <tbody>
-                {userOptions.map((account) => {
-                  const key = profileKey(account);
-                  const selected = key === selectedUserKey;
-                  return (
-                    <tr key={key ?? profileLabel(account)} aria-selected={selected}>
-                      <td className="mono">{text(account.userNo, text(account.id))}</td>
-                      <td>{userNicknameText(text(account.nickname), account.phoneMasked)}</td>
-                      <td className="mono">{text(account.phoneMasked)}</td>
-                      <td><button className="l-btn sm" disabled={busy || loading || !key || selected} onClick={() => selectLookupUser(account)}>
-                        {selected ? "已选择" : "查看安全信息"}
-                      </button></td>
-                    </tr>
-                  );
-                })}
-                {userOptions.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", padding: 18 }}>
-                  {userSearchLoading ? "正在加载…" : userSearchError ? "用户列表加载失败，请点击重新加载" : userLookup.trim() ? "没有找到用户，换个关键词试试" : "暂无用户"}
-                </td></tr>}
-              </tbody>
-            </table>
-          </div>
-          <DataListPager label="用户" page={userPage} pageSize={userPageSize} total={userTotal} onPageChange={setUserPage}
-            onPageSizeChange={(next) => { setUserPageSize(next); setUserPage(1); }} pageSizeOptions={[20, 50, 100, 200]} />
-          <div className="l-h">
-            <span className="ttl">{selectedUser ? `当前用户 · ${userLabel(selectedUser)}` : "选择用户后查看安全信息"}</span>
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <table className="l-tbl" style={{ minWidth: 700 }}>
-              <thead>
-                <tr>
-                  <th>设备编号</th>
-                  <th>IP</th>
-                  <th>设备</th>
-                  <th>状态</th>
-                  <th>最近活跃</th>
-                  <th style={{ textAlign: "right" }}>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sessions.map((session) => {
-                  const id = sessionId(session);
-                  const active = text(session.status, "").toUpperCase() === "ACTIVE";
-                  return (
-                    <tr key={id} className="click" style={!active ? { opacity: 0.62 } : undefined} onClick={() => setSsId(id)}>
-                      <td className="mono" style={{ color: "var(--ink)" }}>{maskSessionId(id)} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></td>
-                      <td className="mono" style={{ fontSize: 11.5 }}>{text(session.clientIpMasked)}</td>
-                      <td style={{ fontSize: 12 }}>{platformSessionDeviceText(text(session.deviceName))}</td>
-                      <td><span className={`bdg ${sessionTone(session.status)}`}>{sessionStatusLabel(session.status)}</span></td>
-                      <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
-                        {sessionTimeAnomaly(session) ? <span style={{ color: "var(--v5-warning)" }} title="记录的时间先后有误，请点开查看">时间异常 · 查看详情</span> : formatDateTime(session.lastActiveAt ?? session.issuedAt)}
-                      </td>
-                      <td style={{ textAlign: "right" }}>
-                        {!active ? (
-                          <span className="bdg dim">{sessionStatusLabel(session.status)}</span>
-                        ) : (
-                          <button className="l-btn sm" disabled={busy || !canRevokeOne} onClick={(event) => { event.stopPropagation(); revokeOne(id); }}>
-                            {canRevokeOne ? "退出该设备" : "无权限"}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {sessions.length === 0 && (
-                  <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--ink-4)", padding: "18px 12px" }}>{selectedUserId ? "该用户暂无登录记录" : "请先选择用户"}</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <DataListPager
-            label="用户登录设备"
-            page={page}
-            pageSize={pageSize}
-            total={total}
-            onPageChange={setPage}
-            onPageSizeChange={(next) => {
-              setPageSize(next);
-              setPage(1);
-            }}
-            pageSizeOptions={PAGE_SIZE_OPTIONS}
-          />
-          <div className="l-b" style={{ paddingTop: 10 }}>
-            {selectedUserId && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="l-btn" disabled={!selectedUserId || busy || (!pendingLogout && (!canRevokeAll || activeSessionCount === 0))} onClick={revokeAll}>
-                {pendingLogout ? "重试原操作" : !canRevokeAll ? "退出全部设备（无权限）" : activeSessionCount === 0 ? "退出全部设备（暂无在线设备）" : "退出全部设备"}
-              </button>
-              <button className="l-btn mc" disabled={!selectedUserId || busy || !canDisable2fa || !selectedUser?.twoFactorEnabled} onClick={disable2fa}>
-                {!canDisable2fa ? "关闭两步验证（无权限）" : !selectedUser?.twoFactorEnabled ? "关闭两步验证（未开启）" : "关闭两步验证"}
-              </button>
-              <button className="l-btn mc" disabled={!selectedUserId || busy || !canResetPassword || !!selectedUser?.passwordResetRequired} onClick={passwordReset}>
-                {!canResetPassword ? "密码重置（无权限）" : selectedUser?.passwordResetRequired ? "密码重置（已要求重置）" : "密码重置"}
-              </button>
-            </div>}
-            {selectedUser && (
-              <>
-                <div className="ctint" style={{ marginTop: 10 }}>
-                  <b>两步验证</b> · {selectedUser.twoFactorEnabled ? "已开启" : "已关闭"} · 登录失败 {toNumber(selectedUser.loginFailCount)} 次
-                </div>
-                {selectedUser.passwordResetRequired && (
-                  <div className="ctint warn" style={{ marginTop: 8 }}>
-                    <b>密码重置</b> · 等待用户下次登录时设置新密码
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </section>
-
-        <section className="l-card">
-          <div className="l-h">
-            <span className="ttl">被锁定的账户</span>
-            <span className="sub">· 只显示输错次数最多的 5 个</span>
-          </div>
-          <div className="l-b">
-            {lockedUsers.map((row) => {
-              const longLock = row.lockKind === "LONG";
-              const id = rowKey(row);
-              return (
-                <div className="lock-row" key={id} onClick={() => setLockId(id)}>
-                  <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{text(row.userNo)} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></span>
-                  <span className={`bdg ${longLock ? "bad" : "warn"}`}>{text(row.lockLabel)}</span>
-                  <span style={{ flex: 1, fontSize: 12, color: "var(--ink-3)" }}>{operatorNicknameText(text(row.nickname))} · {text(row.lockReason)}</span>
-                  <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(row.lockLeft)}</span>
-                  <button className={`l-btn sm ${longLock ? "mc" : ""}`} disabled={busy || (longLock ? !canUnlockLong : !canUnlockShort)} onClick={(event) => { event.stopPropagation(); unlockUser(row); }}>
-                    {(longLock ? canUnlockLong : canUnlockShort) ? "解锁" : "无权限"}
-                  </button>
-                </div>
-              );
-            })}
-            {lockedUsers.length === 0 && <div className="ctint">暂无锁定账户</div>}
-          </div>
-        </section>
-      </div>
-
-      <PaymentPasswordPanel userId={!loading && selectedUser && [String(selectedUser.userId), String(selectedUser.userNo)].includes(selectedUserKey) ? String(selectedUserId) : null} userLabel={userLabel(selectedUser)} />
-      <PhoneReplacementPanel userId={!loading && selectedUser && [String(selectedUser.userId), String(selectedUser.userNo)].includes(selectedUserKey) ? String(selectedUserId) : null} userLabel={userLabel(selectedUser)} />
-
-      {selectedSession && (
-        <Drawer title={`登录设备详情 · ${maskSessionId(sessionId(selectedSession))}`} sub={`${userLabel(selectedUser)} · ${sessionStatusLabel(selectedSession.status)}`} onClose={() => setSsId(null)}
-          footer={<button className="l-btn danger" disabled={busy || !canRevokeOne || text(selectedSession.status, "").toUpperCase() !== "ACTIVE"} onClick={() => revokeOne(sessionId(selectedSession))}>退出该设备</button>}>
-          <SecLabel>登录信息 · 北京时间（UTC+08）</SecLabel>
-          <div className="kv"><span className="k">设备编号</span><span className="v mono">{maskSessionId(sessionId(selectedSession))}</span></div>
-          <div className="kv"><span className="k">设备</span><span className="v">{platformSessionDeviceText(text(selectedSession.deviceName))}</span></div>
-          <div className="kv"><span className="k">IP</span><span className="v mono">{text(selectedSession.clientIpMasked)}</span></div>
-          <div className="kv"><span className="k">状态</span><span className="v">{sessionStatusLabel(selectedSession.status)}</span></div>
-          <div className="kv"><span className="k">登录时间</span><span className="v mono">{text(selectedSession.issuedAt)}</span></div>
-          <div className="kv"><span className="k">最近活跃</span><span className="v mono">{text(selectedSession.lastActiveAt ?? selectedSession.issuedAt)}{sessionTimeAnomaly(selectedSession) ? " · 时间记录有误" : ""}</span></div>
-          <div className="kv"><span className="k">过期时间</span><span className="v mono">{text(selectedSession.expiresAt)}</span></div>
-          <div className="kv"><span className="k">下线时间</span><span className="v mono">{text(selectedSession.revokedAt)}</span></div>
-        </Drawer>
-      )}
-
-      {selectedLock && (
-        <Drawer title={`锁定详情 · ${text(selectedLock.userNo)}`} sub={`${operatorNicknameText(text(selectedLock.nickname))} · ${text(selectedLock.lockLabel)}`} onClose={() => setLockId(null)}
-          footer={<button className={`l-btn ${selectedLock.lockKind === "LONG" ? "mc" : "primary"}`} disabled={busy || (selectedLock.lockKind === "LONG" ? !canUnlockLong : !canUnlockShort)} onClick={() => unlockUser(selectedLock)}>解除锁定</button>}>
-          <SecLabel>锁定信息</SecLabel>
-          <div className="kv"><span className="k">用户编码</span><span className="v mono">{text(selectedLock.userNo)}</span></div>
-          <div className="kv"><span className="k">用户昵称</span><span className="v">{operatorNicknameText(text(selectedLock.nickname))}</span></div>
-          <div className="kv"><span className="k">输错次数</span><span className="v mono">{toNumber(selectedLock.loginFailCount)}</span></div>
-          <div className="kv"><span className="k">锁定类型</span><span className="v">{text(selectedLock.lockLabel)}</span></div>
-          <div className="kv"><span className="k">需重置密码</span><span className="v">{selectedLock.passwordResetRequired ? "是" : "否"}</span></div>
-          <div className="kv"><span className="k">说明</span><span className="v">{text(selectedLock.lockReason)}</span></div>
-        </Drawer>
-      )}
-    </>
-  );
+  }
+  async function recover(retry: boolean) {
+    if (!recovery || mutation.current) return;
+    mutation.current = true; setBusy(true); setRecoveryMessage("");
+    try {
+      if (retry) await submitC5Command(recovery);
+      const refreshed = recovery.userId && selectedRef.current !== recovery.userNo ? await fetchUserSecurityOverview({ userKey: recovery.userNo || recovery.userId, pageNum: 1, pageSize: 10 }) : await load();
+      const latest = pendingC5Commands(owner).find(row => row.commandKey === recovery.commandKey);
+      if (refreshed && latest?.returned) { forgetC5Command(latest); setRecovery(null); ctx.toast("原操作已返回，页面已重新读取"); }
+      else { setRecovery(latest ?? recovery); setRecoveryMessage("已读回当前状态。当前状态不能证明原命令的结果，原记录继续保留。"); }
+    } catch (failure) { setRecovery(pendingC5Commands(owner).find(row => row.commandKey === recovery.commandKey) ?? recovery); setRecoveryMessage(displayAdminError(failure)); }
+    finally { mutation.current = false; setBusy(false); refreshPending(); }
+  }
+  const userTable = <><Table aria-label="用户列表" label="用户列表" className="c5-users"><thead><tr><Th>用户</Th><Th className="c5-phone-col">手机号</Th><Th sticky="end">操作</Th></tr></thead><tbody>
+    {usersLoading ? <TableLoading columns={3} /> : usersError ? <TableMessage columns={3}><BlockState compact state="error" title="用户列表未能读取" detail={usersError} onRetry={() => setUserRetry(value => value + 1)} retryLabel="重新加载" /></TableMessage> : !users.length ? <TableMessage columns={3}>{lookup.trim() ? "没有找到用户，换个关键词试试" : "暂无用户"}</TableMessage> : users.map(row => <Tr key={text(row.id ?? row.userNo)} onOpen={() => choose(row)}><Td><Cell main={userNicknameText(text(row.nickname, ""), row.phoneMasked)} sub={text(row.userNo)} title={userNicknameText(text(row.nickname, ""), row.phoneMasked)} /><span className="c5-mobile-phone">{text(row.phoneMasked)}</span></Td><Td className="c5-phone-col"><Cell mono main={text(row.phoneMasked)} /></Td><Td sticky="end"><Button size="sm" disabled={busy} onClick={() => choose(row)}>查看安全信息</Button></Td></Tr>)}
+  </tbody></Table>{userTotal > 0 && <Pager label="用户" total={userTotal} page={userPage} pageSize={userSize} sizes={[20, 50, 100, 200]} loading={usersLoading} onPage={setUserPage} onPageSize={size => { setUserSize(size); setUserPage(1); }} />}</>;
+  if (!canRead) return <><PageHeader pageId="C5" title="安全与登录设备" /><BlockState state="denied" title="当前没有查看权限" detail="恢复读取权限后，可继续查询原待确认操作。" /></>;
+  return <div className="c5-workbench">
+    <PageHeader pageId="C5" title="安全与登录设备" summary="先选用户，再处理登录、支付密码或手机换机。" back={back && <Link href={back.href}>{back.label}</Link>} actions={<Button icon={<RefreshCw size={14} />} loading={loading} disabledReason={busy ? "正在提交，请稍候" : undefined} onClick={() => void load()}>刷新</Button>} readOnly={!rights.some(code => code.startsWith("user_c5_") && code !== "user_c5_read") && !canRevokeAll ? "当前账号只能查看这页" : undefined} />
+    {!canFind && <Notice tone="warn">C5 需要配套用户读取权限，请联系权限管理员核对授权。</Notice>}
+    {!focus && !picker && <Panel title="选择用户" icon={UserRound} explain="原始手机号只用于本地转换，不会发送。输入后 300 毫秒查询；用户编码、昵称、推荐码按关键词查询。"><div className="c5-search"><Input aria-label="搜索用户" data-search value={lookup} disabled={busy || !canFind} onChange={event => clearSelection(event.target.value)} placeholder="用户编码 / 昵称 / 推荐码 / 手机号" /><Explain label="搜索用户的说明" rows={[{ k: "手机号", v: "原始手机号只用于本地转换，不会发送" }]} /></div></Panel>}
+    {focus && <Panel title={<span className="c5-identity"><UserRound size={22} aria-hidden /><span><strong>{userNicknameText(text(selectedUser?.nickname ?? profile?.nickname, ""), profile?.phoneMasked)}</strong><span className="c5-identity-meta"><span data-mono>{text(selectedUser?.userNo, focus)}</span><span>{text(profile?.phoneMasked, "手机号未读取")}</span>{profile?.status ? <StatusTag tone={profile.status === "ACTIVE" ? "ok" : "warn"}>{formatAccountStatus(profile.status).label}</StatusTag> : <span>账户状态未读取</span>}</span></span></span>} actions={<Button disabled={busy} onClick={() => setPicker(true)}>更换用户</Button>}>
+      <div className="c5-login-band" aria-label="用户登录安全状态"><div><LockKeyhole size={16} /><span>登录锁定</span><strong data-tone={selectedUser?.locked ? "warn" : undefined}>{loading ? "读取中" : lockLabel(selectedUser)}</strong>{selectedUser && <small className="c5-login-fails">登录失败 {text(selectedUser.loginFailCount)} 次</small>}</div><div><ShieldCheck size={16} /><span>两步验证</span><strong>{loading ? "读取中" : selectedUser ? selectedUser.twoFactorEnabled ? "已开启" : "已关闭" : "未确认"}</strong></div><div><KeyRound size={16} /><span>密码重置</span><strong data-tone={selectedUser?.passwordResetRequired ? "warn" : undefined}>{loading ? "读取中" : selectedUser ? selectedUser.passwordResetRequired ? "待用户重置密码" : "未要求重置" : "未确认"}</strong></div></div>
+    </Panel>}
+    {pending.map(row => <Notice key={row.commandKey} tone="warn" title={row.label ?? "旧登录处置结果待确认"} action={<Button size="sm" disabled={busy} onClick={() => { setRecovery(row); setRelease(false); setRecoveryMessage(""); }}>查看原操作</Button>}><span>{row.userNo || "原对象见恢复记录"} · {time(new Date(row.createdAt).toISOString())} · {row.returned ? "操作已返回，页面尚未刷新" : row.expiresAt <= Date.now() ? "已过 24 小时，只能读回核对" : "结果待确认"}</span></Notice>)}
+    {logoutPending.map(row => <Notice key={row.commandKey} tone="warn" title={`全部设备登出审批待确认 · ${row.label}`} action={<Button size="sm" disabledReason={busy ? "正在提交" : undefined} onClick={async () => { if (!session) return; setBusy(true); try { await proposeSessionRevocation(session, row.userId, row.label, row.reason); ctx.toast("已查到原审批单，批准后生效"); } catch (failure) { ctx.toast(displayAdminError(failure), "warn"); } finally { setBusy(false); refreshPending(); } }}>查询原操作</Button>}><span>{time(new Date(row.createdAt).toISOString())} · <span data-mono>{row.commandKey}</span></span></Notice>)}
+    {policyPending && tab !== "payment" && <Notice tone="warn" title="支付密码规则调整结果待确认" action={<Button size="sm" onClick={() => setUrl({ tab: "payment", paymentTab: "policy" })}>查询原调整结果</Button>}>原调整记录已保留，请先核对结果。</Notice>}
+    {paymentPending && tab !== "payment" && <Notice tone="warn" title={`支付密码解除结果待确认 · ${userLabel(selectedUser)}`} action={<Button size="sm" onClick={() => setUrl({ tab: "payment", paymentTab: "policy" })}>查询原操作</Button>}>原记录 {paymentPending.recordId} · 只能查询原命令。</Notice>}
+    {(phonePending.length > 0 || modelPending.length > 0) && tab !== "phone" && <Notice tone="warn" title={`手机处置结果待确认 · ${userLabel(selectedUser)}`} action={<Button size="sm" onClick={() => setUrl({ tab: "phone" })}>查看原操作</Button>}>{phonePending.length + modelPending.length} 笔原操作已保留，只能读回核对。</Notice>}
+    <PageTabs ids={ids} label="安全管理内容" value={tab} onChange={value => setUrl({ tab: value })} items={[{ value: "security", label: "用户安全处置", disabled: busy }, { value: "credentials", label: "登录与改号规则", disabled: busy }, { value: "payment", label: "支付密码", disabled: busy }, { value: "phone", label: "手机换机", disabled: busy }]} />
+    <div {...ids.panel(tab)} className="rd-tab-pane">
+      {error && <BlockState state="error" title="登录安全信息未能读取" detail={error} onRetry={() => void load()} retryLabel="重新加载" />}
+      {tab === "security" && <>
+        <Conclusion state={error ? "warn" : selectedUser?.locked || selectedUser?.passwordResetRequired ? "warn" : "neutral"} icon={ShieldCheck}>{loading ? "正在读取登录安全信息" : !focus ? "先选择用户，查看登录设备与安全状态" : selectedUser?.locked ? `${lockLabel(selectedUser)}，请核对本人身份后处置` : selectedUser?.passwordResetRequired ? "待用户重置密码，解除登录锁也不会取消此要求" : selectedUser ? "登录未锁定，其他限制以账户与支付状态为准" : "该用户安全状态未确认"}</Conclusion>
+        <StatBand><Stat label="在线设备（全平台）" value={count(overview?.stats?.activeSessions)?.toLocaleString("en-US") ?? "—"} unit="台" icon={MonitorSmartphone} tone="role-2" explain="全平台当前活跃的登录设备，不是当前用户的设备数" /><Stat label="两步验证开启率" value={count(overview?.stats?.twoFactorRatePct) ?? "—"} unit={overview ? "%" : undefined} icon={ShieldCheck} tone="role-2" explain="服务端返回的全平台比例；没有样本分母，不作风险判断" /><Stat label="锁定中账户" value={lockCount ?? "—"} unit="个" lead={!!lockCount} icon={LockKeyhole} tone={lockCount ? "warn" : "role-2"} sub={overview ? `短时 ${shortCount} · 长时 ${longCount}` : loading ? "读取中" : "未读取"} onOpen={lockCount ? () => setLocksOpen(true) : undefined} openLabel="查看锁定账户 · 最多 5 条" /><Stat label="今日异常登录" value={count(overview?.stats?.tokenReuseToday) ?? "—"} unit="次" icon={TriangleAlert} tone="role-2" explain="今日登录凭证复用次数，不是所有安全异常的用户数" /></StatBand>
+        {overview && <div className="c5-context-line">{lockCount ? <Button variant="ghost" size="sm" onClick={() => setLocksOpen(true)}>查看锁定账户 · 最多 5 条</Button> : "当前统计未见登录锁定"}<Button variant="ghost" size="sm" onClick={() => setUrl({ tab: "payment", paymentTab: "exceptions" })}>查看支付密码异常</Button></div>}
+        {!focus ? !picker && <Panel title="候选用户" sub={usersLoading ? "读取中" : `${userTotal} 位用户`} flush>{userTable}</Panel> : <Panel title="登录设备" icon={MonitorSmartphone} sub={`${activeCount ?? "—"} 台在线 · ${businessZoneText()}`} flush actions={selectedUser && <div className="c5-actions">{canRevokeAll && <Button size="sm" disabledReason={userBlocked(userId) ?? (activeCount === null ? "在线设备尚未确认" : activeCount === 0 ? "当前没有在线设备" : undefined)} onClick={revokeAll}>退出全部设备</Button>}{canRevokeAll && <StatusTag tone="progress">批准后生效</StatusTag>}</div>}>
+          <Table aria-label="用户登录设备" label="用户登录设备" className="c5-sessions"><thead><tr><Th>设备</Th><Th className="c5-ip-col">IP</Th><Th>状态</Th><Th>最近活跃</Th><Th sticky="end">操作</Th></tr></thead><tbody>{loading ? <TableLoading columns={5} /> : !sessions.length ? <TableMessage columns={5}>{error ? "设备记录尚未确认，请重新加载" : "该用户暂无登录记录"}</TableMessage> : sessions.map(device => <Tr key={text(device.refreshTokenId)} selected={device.refreshTokenId === shownSession} onOpen={() => setShownSession(text(device.refreshTokenId))}><Td><Cell main={platformSessionDeviceText(text(device.deviceName))} sub={maskSessionId(text(device.refreshTokenId))} title={platformSessionDeviceText(text(device.deviceName))} /></Td><Td className="c5-ip-col"><Cell mono main={text(device.clientIpMasked)} /></Td><Td><StatusTag tone={device.status === "ACTIVE" ? "ok" : "done"} icon={device.status === "ACTIVE" ? CheckCircle2 : undefined}>{sessionLabel(device.status)}</StatusTag></Td><Td>{sessionTimeAnomaly(device) ? <span className="c5-time-anomaly">时间异常 · 查看详情</span> : <Cell num main={time(device.lastActiveAt ?? device.issuedAt)} />}</Td><Td sticky="end">{canRevokeOne && device.status === "ACTIVE" ? <Button size="sm" disabledReason={userBlocked(userId)} onClick={() => selectedUser && begin("revoke-one", selectedUser, device)}>退出该设备</Button> : <Button size="sm" variant="ghost" onClick={() => setShownSession(text(device.refreshTokenId))}>查看详情</Button>}</Td></Tr>)}</tbody></Table>
+          {overview?.sessions && Number(overview.sessions.total) > 0 && <Pager label="用户登录设备" total={Number(overview.sessions.total)} page={page} pageSize={pageSize} sizes={[5, 10, 20, 50]} loading={loading} onPage={setPage} onPageSize={size => { setPageSize(size); setPage(1); }} />}
+          {selectedUser && <div className="c5-account-actions"><span>账户安全处置<Explain label="账户安全处置的说明" rows={[{ k: "范围", v: "登录密码、两步验证、登录锁和支付密码分别管理" }]} /></span><div className="c5-actions">{canDisable && <Button disabledReason={userBlocked(userId) ?? (!selectedUser.twoFactorEnabled ? "两步验证尚未开启" : undefined)} onClick={() => begin("disable-2fa", selectedUser)}>关闭两步验证</Button>}{canReset && <Button disabledReason={userBlocked(userId) ?? (selectedUser.passwordResetRequired ? "已要求用户下次登录重置密码" : undefined)} onClick={() => begin("password-reset", selectedUser)}>密码重置</Button>}{["SHORT", "LONG"].includes(String(selectedUser.lockKind)) && canUnlock(selectedUser) && <Button disabledReason={userBlocked(userId)} onClick={() => begin("unlock", selectedUser)}>解除{selectedUser.lockKind === "LONG" ? "长" : "短"}锁</Button>}</div></div>}
+        </Panel>}
+      </>}
+      {tab === "credentials" && <Panel title="登录安全与更换手机号限制" icon={KeyRound} explain="更换登录手机号与更换手机设备分开统计。发现登录凭证复用时，系统会撤销相关登录会话。">{loading ? <BlockState state="loading" title="正在读取规则" /> : !credentials.length ? <BlockState state="error" title="当前规则尚未确认" onRetry={() => void load()} /> : <ConfigList label="登录与改号规则">{credentials.map(param => <ConfigRow key={text(param.key)} name={text(param.name)} {...PARAM_HELP[text(param.key)]} note={text(param.note)} value={text(param.value)} sub={param.readOnly ? "只能查看" : undefined} action={canConfig && !param.readOnly ? <Button size="sm" disabledReason={busy ? "正在提交" : pending.some(row => row.kind === "credential" || !isCompleteC5Command(row)) ? "先核对原规则调整结果" : count(param.version) === null ? "规则版本未读取" : undefined} onClick={() => adjust(param)}>调整</Button> : undefined} />)}</ConfigList>}</Panel>}
+      <div hidden={tab !== "payment"}><PaymentPasswordPanel key={`payment:${owner}:${epoch}`} userId={userId || null} userLabel={userLabel(selectedUser)} active={tab === "payment"} onPendingChange={refreshPending} onBusyChange={setBusy} /></div>
+      <div hidden={tab !== "phone"}><PhoneReplacementPanel active={tab === "phone"} userCode={text(selectedUser?.userNo, "")} key={`phone:${owner}:${epoch}:${userId}`} userId={userId || null} userLabel={userLabel(selectedUser)} onPendingChange={refreshPending} onBusyChange={setBusy} /></div>
+    </div>
+    {picker && <Drawer open onClose={() => setPicker(false)} title="更换用户" icon={UserRound} wide><div className="c5-search"><Input data-search aria-label="搜索用户" value={lookup} onChange={event => clearSelection(event.target.value)} placeholder="用户编码 / 昵称 / 推荐码 / 手机号" /><Explain label="搜索用户的说明" rows={[{ k: "手机号", v: "原始手机号只用于本地转换，不会发送" }]} /></div>{userTable}</Drawer>}
+    {tab === "security" && selectedSession && <Drawer open onClose={() => setShownSession(null)} title="登录设备详情" sub={maskSessionId(text(selectedSession.refreshTokenId))} icon={MonitorSmartphone} nav={{ hasPrev: sessions.indexOf(selectedSession) > 0, hasNext: sessions.indexOf(selectedSession) < sessions.length - 1, onPrev: () => setShownSession(text(sessions[sessions.indexOf(selectedSession) - 1]?.refreshTokenId)), onNext: () => setShownSession(text(sessions[sessions.indexOf(selectedSession) + 1]?.refreshTokenId)) }} footer={<Decision primary={canRevokeOne && <Button variant="danger-outline" disabledReason={userBlocked(userId) ?? (selectedSession.status !== "ACTIVE" ? "只有活跃设备可以退出" : undefined)} onClick={() => selectedUser && begin("revoke-one", selectedUser, selectedSession)}>退出该设备</Button>} />}>
+      <JudgmentPoints rows={[{ label: "用户", value: userLabel(selectedUser), icon: UserRound }, { label: "设备", value: platformSessionDeviceText(text(selectedSession.deviceName)) }, { label: "状态", value: sessionLabel(selectedSession.status) }, { label: "最近活跃", value: time(selectedSession.lastActiveAt ?? selectedSession.issuedAt), state: sessionTimeAnomaly(selectedSession) ? "warn" : undefined, reason: sessionTimeAnomaly(selectedSession) ? "时间记录有误" : undefined }]} /><Facts><Fact k="IP">{text(selectedSession.clientIpMasked)}</Fact><Fact k="登录时间">{time(selectedSession.issuedAt)}</Fact><Fact k="过期时间">{time(selectedSession.expiresAt)}</Fact><Fact k="下线时间">{time(selectedSession.revokedAt)}</Fact><Fact k="时区">{businessZoneText()}</Fact></Facts><Fold title="技术详情" summary="原始时间与遮罩编号"><Facts><Fact k="设备编号">{maskSessionId(text(selectedSession.refreshTokenId))}</Fact>{(["issuedAt", "lastActiveAt", "expiresAt", "revokedAt"] as const).map(key => <Fact key={key} k={key}>{text(selectedSession[key])}</Fact>)}</Facts></Fold>
+    </Drawer>}
+    {tab === "security" && locksOpen && !shownLock && <Drawer open onClose={() => setLocksOpen(false)} title="锁定账户" sub="最多 5 条 · 按输错次数排序" icon={LockKeyhole} wide><Table aria-label="被锁定的账户" label="被锁定的账户" className="c5-locks"><thead><tr><Th>用户</Th><Th>锁定类型</Th><Th>原因</Th><Th sticky="end">操作</Th></tr></thead><tbody>{lockedUsers.map(row => <Tr key={userIdOf(row)} onOpen={() => setShownLock(row)}><Td><Cell main={userNicknameText(text(row.nickname, ""), row.phoneMasked)} sub={text(row.userNo)} /></Td><Td><StatusTag tone="warn">{lockLabel(row)}</StatusTag></Td><Td><Cell main={text(row.lockReason)} title={text(row.lockReason)} /></Td><Td sticky="end">{canUnlock(row) ? <Button size="sm" disabledReason={userBlocked(userIdOf(row))} onClick={() => begin("unlock", row)}>解锁</Button> : <Button variant="ghost" size="sm" onClick={() => setShownLock(row)}>查看详情</Button>}</Td></Tr>)}{!lockedUsers.length && <TableMessage columns={4}>当前可见范围没有锁定账户</TableMessage>}</tbody></Table></Drawer>}
+    {tab === "security" && shownLock && <Drawer open onClose={() => setShownLock(null)} title="登录锁定详情" sub={text(shownLock.userNo)} icon={LockKeyhole} footer={<Decision others={<Button onClick={() => setShownLock(null)}>返回列表</Button>} primary={canUnlock(shownLock) && <Button disabledReason={userBlocked(userIdOf(shownLock))} onClick={() => begin("unlock", shownLock)}>解除{shownLock.lockKind === "LONG" ? "长" : "短"}锁</Button>} />}><JudgmentPoints rows={[{ label: "用户", value: userLabel(shownLock) }, { label: "登录锁定", value: lockLabel(shownLock), state: "warn" }, { label: "输错次数", value: `${text(shownLock.loginFailCount)} 次` }, { label: "密码重置", value: shownLock.passwordResetRequired ? "待用户重置密码" : "未要求重置" }]} /><Facts><Fact k="原因">{text(shownLock.lockReason)}</Fact><Fact k="剩余说明">{text(shownLock.lockLeft)}</Fact></Facts></Drawer>}
+    {recovery && <Modal title={release ? "解除待确认" : "核对原登录操作"} icon={ShieldCheck} onClose={() => { setRecovery(null); setRelease(false); }} busy={busy} footer={<Decision others={<Button onClick={() => { if (release) setRelease(false); else setRecovery(null); }}>返回</Button>} danger={release ? <Button variant="danger" onClick={() => { forgetC5Command(recovery); setRecovery(null); setRelease(false); refreshPending(); }}>确认解除</Button> : recovery.rejection && <Button variant="danger-outline" onClick={() => setRelease(true)}>解除待确认</Button>} primary={!release && <><Button disabled={busy} onClick={() => void recover(false)}>读回核对</Button>{isCompleteC5Command(recovery) && !recovery.returned && !recovery.rejection && recovery.expiresAt > Date.now() && <Button variant="primary" disabledReason={!rights.includes(recovery.kind === "credential" ? "user_c5_write" : recovery.kind === "revoke-one" ? "user_c5_session_revoke_one" : recovery.kind === "password-reset" ? "user_c5_password_reset" : recovery.kind === "disable-2fa" ? "user_c5_2fa_disable" : recovery.lockKind === "LONG" ? "user_c5_unlock_long" : "user_c5_unlock_short") ? "当前缺少原操作权限" : undefined} onClick={() => void recover(true)}>原样重试</Button>}</>} />}>
+      {release ? <ReleaseBody label={recovery.label ?? "旧登录操作"} explain={recovery.rejection} /> : <><Facts><Fact k="原对象">{recovery.label ?? "旧登录处置（缺少原对象快照）"}</Fact><Fact k="发起时间">{time(new Date(recovery.createdAt).toISOString())}</Fact><Fact k="命令号"><span data-mono>{recovery.commandKey}</span><IconButton aria-label="复制原命令号" onClick={() => void navigator.clipboard.writeText(recovery.commandKey).then(() => ctx.toast("已复制命令号"), () => ctx.toast("复制失败，请手动复制", "warn"))}><Copy size={14} /></IconButton></Fact>{recovery.reason && <Fact k="原理由">{recovery.reason}</Fact>}{recovery.version !== undefined && <Fact k="原版本">{recovery.version}</Fact>}{recovery.value && <Fact k="原新值">{recovery.value}</Fact>}</Facts><Notice tone="warn">{!isCompleteC5Command(recovery) ? "旧记录缺少完整原请求，只能读回核对；原记录继续保留。" : recovery.expiresAt <= Date.now() ? "原命令已过 24 小时，保留记录，不再重发。" : recovery.returned ? "操作已返回，页面尚未刷新。请读回核对。" : "重试只使用原对象、原内容、原理由和原命令号。读回当前状态不能代替原命令回执。"}</Notice>{recovery.rejection && <Notice tone="danger" title="原操作已明确拒绝">{recovery.rejection}</Notice>}{recoveryMessage && <Notice tone="warn">{recoveryMessage}</Notice>}</>}
+    </Modal>}
+  </div>;
 }

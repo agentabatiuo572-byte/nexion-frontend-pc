@@ -1,4 +1,5 @@
 "use client";
+import { Fact, Facts, Fold, Notice, StatusTag, useRdSurface } from "@/app/components/rd";
 import { businessZone, businessZoneText } from "@/lib/admin/business-time";
 import { phoneLabel, record, type PhoneReceipt } from "@/lib/admin/phone-replacement-contract";
 import "./phone-replacement.css";
@@ -21,9 +22,16 @@ const fields: Record<string, string> = {
 export function PhoneFacts({ value }: {
     value: unknown;
 }) {
+    const surface = useRdSurface();
     if (!record(value))
         return <p>暂无可核对的状态。</p>;
     const nested = record(value.policy) ? value.policy : record(value.binding) ? value.binding : null;
+    if (surface) return <><Facts>{Object.entries(fields).filter(([key]) => value[key] != null).map(([key, label]) => {
+        const raw = value[key];
+        const shown = /At$/.test(key) ? phoneTime(raw) : ["status", "commandType", "conflictType"].includes(key) ? phoneLabel(raw)
+            : typeof raw === "boolean" ? raw ? "是" : "否" : typeof raw === "string" || typeof raw === "number" ? String(raw) : "待核实";
+        return <Fact key={key} k={label}>{shown}</Fact>;
+    })}</Facts>{nested && <PhoneFacts value={nested} />}</>;
     return <><dl className="phone-facts">{Object.entries(fields).filter(([key]) => value[key] != null).map(([key, label]) => {
             const raw = value[key];
             const text = /At$/.test(key) ? phoneTime(raw) : ["status", "commandType", "conflictType"].includes(key) ? phoneLabel(raw)
@@ -34,6 +42,8 @@ export function PhoneFacts({ value }: {
 export function PhoneReceiptView({ receipt }: {
     receipt: PhoneReceipt;
 }) {
+    const surface = useRdSurface();
+    if (surface) return <div className="c5-phone-receipt"><Facts><Fact k="操作">{phoneLabel(receipt.commandType)}</Fact><Fact k="结果"><StatusTag tone={receipt.status === "PENDING" ? "warn" : receipt.status === "FAILED" ? "warn" : "done"}>{phoneLabel(receipt.status)}</StatusTag></Fact><Fact k="操作号">{receipt.operationId}</Fact><Fact k="提交时间">{phoneTime(receipt.submittedAt)}</Fact><Fact k="审计引用">{receipt.auditRef ?? "待生成"}</Fact></Facts><Fold title="原操作结果" summary="原响应事实" open><PhoneFacts value={receipt.originalResult} /></Fold><Fold title="当前状态" summary="读取时的资源状态" open><PhoneFacts value={receipt.currentResource} /></Fold><Notice tone="neutral">原成功事实与当前状态分别核对。查询只读，不会再次授权。</Notice></div>;
     return <section className="phone-receipt" aria-label="原操作回执">
     <h4>{phoneLabel(receipt.commandType)} · {phoneLabel(receipt.status)}</h4>
     <p>操作号：{receipt.operationId} · 提交：{phoneTime(receipt.submittedAt)} · 审计引用：{receipt.auditRef ?? "待生成"}</p>
