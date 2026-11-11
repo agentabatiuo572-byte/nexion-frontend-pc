@@ -384,7 +384,7 @@ SKU 目录管理台,自上而下三区:
 
 **④ 操作与弹窗**：随机添加、批量启停填理由直接生效，记审计，不走 A2 双人审批或兑付覆盖率。弹窗层次为标题→当前等级与数量→要填写的项目→理由与次要说明。头尾固定，停用影响和理由优先常显，完整任务名单放在可展开区，展开后随正文滚动。停用前请求影响预览；如果商品失去所有可用任务，弹窗列出商品名、受影响设备数和「当前单完成后等待配置；停跑期间不计收益、不补发」。影响读取失败时不得提交停用，可以用原等级和原 ids 重新计算，不丢理由。影响统计已激活且未停用、状态合格的非手机生产设备，正在完成当前单的设备也计入；影响是读取快照，提交时设备数可能变化。批量只提交本页所选且与目标状态不同的行，并保留可展开的完整原名单；实际回执 updated 可为 0，按真实数量提示。启用及添加只影响新任务，运行中任务保持冻结版本。
 
-**⑤ 接口**：基础路径 `/api/admin/devices`。`GET /task-pools?kind=DEVICE`；`GET /task-pools/{code}/tasks` 支持 `taskClass/enabled/pageNum/pageSize`；`POST /random-tasks` 携 `count/taskClasses?/reason/idempotencyKey`；`GET /disable-impact?taskTypeIds=…`；`POST /tasks/status` 携 `taskTypeIds/enabled/reason/idempotencyKey`。列表使用 `kind=DEVICE`。筛选立即查询，切级回第一页清选择并保留筛选／页长，默认 20，支持 10／20／50；URL replace 记住 pool、taskClass、enabled、pageNum、pageSize，刷新恢复，不覆盖主题参数。读回当前事实不能当作命令回执。写成功与读失败分开显示，读失败时禁新写入。错误保留原状态码、原因码与结构化数据，按合同显示明确中文，包括启用／总量上限、同键异内容、不属于当前池及 kind 不符。
+**⑤ 接口**：基础路径 `/api/admin/devices`。`GET /task-pools?kind=DEVICE`；`GET /task-pools/{code}/tasks` 支持 `taskClass/enabled/pageNum/pageSize`；`POST /task-pools/{code}/random-tasks` 携 `count/taskClasses?/reason/idempotencyKey`；`GET /task-pools/{code}/disable-impact?taskTypeIds=…`；`POST /task-pools/{code}/tasks/status` 携 `taskTypeIds/enabled/reason/idempotencyKey`。列表使用 `kind=DEVICE`。筛选立即查询，切级回第一页清选择并保留筛选／页长，默认 20，支持 10／20／50；URL replace 记住 pool、taskClass、enabled、pageNum、pageSize，刷新恢复，不覆盖主题参数。读回当前事实不能当作命令回执。写成功与读失败分开显示，读失败时禁新写入。错误保留原状态码、原因码与结构化数据，按合同显示明确中文，包括启用／总量上限、同键异内容、不属于当前池及 kind 不符。
 
 **⑥ 权限与固定等级**：沿用 `device_e2_read/write`。运营只能向四个固定等级随机添加任务和批量启停任务；等级本身没有写入口、客户端方法或代理路由。PHONE 保持独立。
 

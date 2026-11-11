@@ -54,14 +54,14 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
     try{assertOwner(true);if(!status)throw new Error("请刷新配置");
       const held=d1PendingObjectReason(`/cregis${ROOT}/policy${networkQuery}`,{action});if(held)throw new Error(held);
       const current=status,expectedVersion=exceptionVersion(current.version);
-      const title=action==="PAUSE"?"暂停自动资金流程":action==="PROPOSE"?"调整自动流程开关":action==="APPROVE"?"复核自动流程开关":"取消自动流程开关提案";
+      const title=action==="PAUSE"?"暂停本网络自动资金流程":action==="PROPOSE"?"调整自动流程开关":action==="APPROVE"?"复核自动流程开关":"取消自动流程开关提案";
       const pendingFacts=<Facts><Fact k="网络">{network}</Fact><Fact k="待复核">归集 {current.pendingCollection?"开":"关"} · 付款 {current.pendingPayment?"开":"关"}</Fact><Fact k="发起人">{String(current.makerId)}</Fact><Fact k="理由">{String(current.reason)}</Fact></Facts>;
-      openActionConfirm({ briefKind: "config",action:action==="PAUSE"?"暂停自动资金流程":action==="PROPOSE"?"提交自动流程开关提案":action==="APPROVE"?"复核自动流程开关":"取消自动流程开关提案",
-        title,confirmLabel:action==="PAUSE"?"确认暂停":action==="PROPOSE"?"提交审批":action==="APPROVE"?"确认复核":"确认取消",confirmTone:action==="PAUSE"?"danger":"primary",
+      openActionConfirm({ briefKind: "config",action:action==="PAUSE"?"暂停本网络自动资金流程":action==="PROPOSE"?"提交自动流程开关提案":action==="APPROVE"?"复核自动流程开关":"取消自动流程开关提案",
+        title,confirmLabel:action==="PAUSE"?"确认暂停本网络":action==="PROPOSE"?"提交审批":action==="APPROVE"?"确认复核":"确认取消",confirmTone:action==="PAUSE"?"danger":"primary",
         effect:action==="PROPOSE"?approval:<StatusTag tone="progress" filled>立即生效</StatusTag>,
         facts:action==="APPROVE"||action==="CANCEL"?pendingFacts:<Facts><Fact k="网络">{network}</Fact><Fact k="自动归集到 Cregis">{current.collectionEnabled?"开":"关"}</Fact><Fact k="自动 Cregis 转平台收款钱包">{current.paymentEnabled?"开":"关"}</Fact></Facts>,
-        detail:action==="PAUSE"?"停止新的自动资金流程，原单仍继续只读核对。":action==="PROPOSE"?"开启需另一位管理员复核，且运行总开关已批准。":`待审核：归集 ${current.pendingCollection?"开":"关"} · 付款 ${current.pendingPayment?"开":"关"}。`,
-        completionCopy:action==="PAUSE"?"确认后立即停止新的自动资金流程，已发送的原单继续只读核对。":action==="PROPOSE"?"另一位管理员复核后生效。":"自动流程配置已保存，请核对实际开关",
+        detail:action==="PAUSE"?"停止本网络新的自动资金流程，原单仍继续只读核对。":action==="PROPOSE"?"开启需另一位管理员复核，且运行总开关已批准。":`待审核：归集 ${current.pendingCollection?"开":"关"} · 付款 ${current.pendingPayment?"开":"关"}。`,
+        completionCopy:action==="PAUSE"?"确认后立即停止本网络新的自动资金流程，已发送的原单继续只读核对。":action==="PROPOSE"?"另一位管理员复核后生效。":"自动流程配置已保存，请核对实际开关",
         businessForm:action==="PROPOSE"?{kind:"multi-field",requireAnyChange:true,fields:[
           {key:"collect",label:"自动归集到 Cregis",inputKind:"select",options:["true","false"],optionLabels:{true:"开",false:"关"},current:String(current.collectionEnabled===true),showDiff:true,explain:"入账后把充值全额归集到 Cregis 钱包。"},
           {key:"pay",label:"自动 Cregis 转平台收款钱包",inputKind:"select",options:["true","false"],optionLabels:{true:"开",false:"关"},current:String(current.paymentEnabled===true),showDiff:true,explain:"归集确认后，按用户入账净额转入平台收款钱包。"},
@@ -104,7 +104,7 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
     explain={`充值核实入账 → 自动归集到 Cregis（充值全额）→ 链上确认 → 自动 Cregis 转平台收款钱包（用户入账净额）。充值手续费留在 Cregis 归集钱包，${String(status?.gasSymbol??({BEP20:"BNB",ERC20:"ETH",TRC20:"TRX"}[network]))} 链上手续费由平台另付；不重复入账或扣用户余额。仅处理首次启用水位之后的充值事件，暂停和恢复不会重置水位；已发送单在关闭后仍继续只读核对。`}
     actions={<>
       <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden/>} loading={loading} disabled={busy} onClick={()=>void refresh()}>刷新</Button>
-      {canWrite&&status&&<Button size="sm" variant="danger-outline" disabledReason={block} onClick={()=>policy("PAUSE")}>暂停自动资金流程</Button>}
+      {canWrite&&status&&<Button size="sm" variant="danger-outline" disabledReason={block} onClick={()=>policy("PAUSE")}>暂停本网络自动资金流程</Button>}
     </>}>
     <div className="rd-stack">
     <Segments label="自动资金流程网络" value={network} onChange={onNetworkChange} items={(["BEP20","ERC20","TRC20"] as const).map(value=>({value,label:value}))}/>

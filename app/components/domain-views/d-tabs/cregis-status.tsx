@@ -600,6 +600,14 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
 
   return <>
     <PendingNotices items={pendingItems} disabled={busy} />
+    {recoveredChallenge && !entries.some(item => {
+      const source = claimSource(item);
+      return source?.sourceType === recoveredChallenge.request.sourceType && source?.sourceId === recoveredChallenge.request.sourceId;
+    }) && <Notice tone="warn" title="原签名挑战已取回"
+      action={<Button size="sm" loading={loading} onClick={() => { setSub("exceptions"); void refresh(); }}>刷新异常列表</Button>}>
+      来源{recoveredChallenge.request.sourceType === "OBSERVATION" ? "未归属入金" : "低额入金"} #{String(recoveredChallenge.request.sourceId)} 不在当前异常列表里，每类最多显示 50 条。
+      请刷新后到「异常处理」按来源编号查找；仍找不到时，携来源类型 {String(recoveredChallenge.request.sourceType)}、编号 {String(recoveredChallenge.request.sourceId)} 和挑战编号 {String(recoveredChallenge.challenge.challengeId)} 联系值班人员核查。
+    </Notice>}
     {error && <Notice tone="danger" title="USDT 收款状态读取失败" action={<Button size="sm" loading={loading} onClick={() => void refresh()}>重试</Button>}>{error}读不到时，依赖收款状态的操作都先禁用。</Notice>}
     {/* 告警只在页头结论和下面的「未解除告警」一格说，不再另起一条提示（DT-12、DP-61）。 */}
     {/* 根因只写这一处；下面的汇总带、折叠摘要和键值用同一个词（DT-12、DT-14）。 */}

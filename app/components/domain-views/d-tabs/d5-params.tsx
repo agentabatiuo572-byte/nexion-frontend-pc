@@ -66,13 +66,13 @@ import type { DCtx } from "./types";
 
 const OPERATOR = currentAdminOperator;
 
-// 「覆盖率低于红线」按后端译文匹配，在通用文案上再点明这项放宽没生效。
+// 按后端原因码补充这项放宽未生效，不依赖可变的中文译文。
 /** 两句中文接在一起：前一句没有句末标点就补「。」，中间不留空格。 */
 const sentence = (text: string) => /[。！？.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}。`;
 
 function errorText(err: unknown) {
-  const message = err instanceof Error ? err.message : "";
-  if (message.includes("覆盖率低于红线")) return "兑付覆盖率低于红线，这项放宽调整未生效";
+  const code = err instanceof DRequestError ? err.reasonCode : rejectionCode(err);
+  if (code === "COVERAGE_BELOW_REDLINE") return "兑付覆盖率低于红线，这项放宽调整未生效";
   return displayAdminError(err);
 }
 
@@ -837,7 +837,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     else tightenCommands.forget(record.slot, record.commandKey);
     syncPending();
     setReleasing(null);
-    toast(record.loosen ? "已移除本地待确认记录，后端结果和锁定状态不变放宽" : "已移除本地待确认记录，后端结果和锁定状态不变", "success");
+    toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
   const auditHref = "/platform/audit";

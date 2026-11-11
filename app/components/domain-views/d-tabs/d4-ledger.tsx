@@ -13,7 +13,7 @@ import {
   JudgmentPoints, Notice, PageHeader, PageTabs, Pager, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr,
   useTabIds, useTableColumns, type JudgmentRow, type StateTone,
 } from "@/app/components/rd";
-import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import {
   downloadD4BillsCsv,
@@ -132,7 +132,7 @@ function userLabel(row: Pick<D4Bill, "userNo" | "nickname"> | Pick<D4UserLedger,
 
 /** 时间框是存储时钟，后端原样解析，写的就是北京时间。 */
 function timeText(value: string) {
-  return value.replace("T", " ").slice(0, 16);
+  return value.replace("T", " ");
 }
 
 function appliedTimeRange({ from, to }: { from: string; to: string }) {
@@ -285,7 +285,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     }).catch((reason) => {
       if (requestId !== billsRequest.current) return;
       setBills(EMPTY_PAGE);
-      setError(reason instanceof Error ? displayAdminError(reason) : "资金账单加载失败");
+      setError(reason instanceof Error ? displayAdminReadError(reason) : "资金账单加载失败");
     }).finally(() => {
       if (requestId === billsRequest.current) setLoading(false);
     });
@@ -332,7 +332,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     }).catch((reason) => {
       if (requestId !== userRequest.current) return;
       setUserData(null);
-      const message = reason instanceof Error ? displayAdminError(reason) : "该用户账单加载失败";
+      const message = reason instanceof Error ? displayAdminReadError(reason) : "该用户账单加载失败";
       // 用户不存在是查询结果，不是故障：不给重试，改提示核对编号（D4 决定 2、DT-23）。
       setUserError({ message, notFound: message === ADMIN_ERROR_MESSAGES.USER_NOT_FOUND });
     }).finally(() => {
@@ -482,8 +482,6 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     statedBrief: { impact: "这次导出记入操作记录。", check: "核对导出内容，理由写明导出依据或工单号。" },
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
     confirmLabel: "确认导出",
-    reasonMin: 8,
-    reasonMax: 200,
     run: (reason) => exportCsv(reason),
   });
   const exportBlocked = !canGlobalRead ? undefined
@@ -599,7 +597,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     applied.from ? { key: "from", label: `开始 ${timeText(applied.from)}`, onRemove: () => removeCondition({ from: "" }) } : null,
     applied.to ? { key: "to", label: `结束 ${timeText(applied.to)}（不含）`, onRemove: () => removeCondition({ to: "" }) } : null,
   ].filter((chip) => chip !== null);
-  const TIME_EXPLAIN = "时间范围两个页签共用：在一边改了查询，另一边也按新时间重读。结束时间不含当时那一分钟。";
+  const TIME_EXPLAIN = "时间范围两个页签共用：在一边改了查询，另一边也按新时间重读。时间精确到秒，结束时间不含所填时刻。";
   const setFrom = (from: string) => setTimeDraft((value) => ({ ...value, from }));
   const setTo = (to: string) => setTimeDraft((value) => ({ ...value, to }));
   const columnCount = 6 + (columns.isVisible("remark") ? 1 : 0);
@@ -624,14 +622,14 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       more={<>
         <FilterField label="用户编码或系统编号"><Input aria-label="用户编码或系统编号" aria-invalid={filterProblem?.kind === "user" || undefined} placeholder="比如 U00000005 或 5" value={draft.userId} onChange={(event) => setDraft((value) => ({ ...value, userId: event.target.value }))} /></FilterField>
         <FilterField label={<span>开始时间（北京时间）<Explain label="时间范围的说明" content={TIME_EXPLAIN} /></span>}>
-          <Input aria-label="开始时间" aria-invalid={filterProblem?.kind === "time" || undefined} type="datetime-local" value={timeDraft.from} onChange={(event) => setFrom(event.target.value)} />
+          <Input aria-label="开始时间" aria-invalid={filterProblem?.kind === "time" || undefined} type="datetime-local" step="1" value={timeDraft.from} onChange={(event) => setFrom(event.target.value)} />
         </FilterField>
         <FilterField label="结束时间（北京时间，不含）">
-          <Input aria-label="结束时间" aria-invalid={filterProblem?.kind === "time" || undefined} type="datetime-local" value={timeDraft.to} onChange={(event) => setTo(event.target.value)} />
+          <Input aria-label="结束时间" aria-invalid={filterProblem?.kind === "time" || undefined} type="datetime-local" step="1" value={timeDraft.to} onChange={(event) => setTo(event.target.value)} />
         </FilterField>
       </>}
       applied={appliedChips}
-      result={draftChanged ? "条件未应用" : undefined}
+      result={draftChanged ? `条件未应用 · 已应用：${appliedConditions(applied, type, bizNo)}` : undefined}
       notice={filterProblem && (
         <span data-proof="d4-filter-refused">
           {PROBLEM_TEXT[filterProblem.kind]}没有查询{error ? "。" : "，下面仍是上次的结果。"}
@@ -736,11 +734,11 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       <FilterField grow><Input ref={userInputRef} autoFocus={!selectedUserId} aria-label="按用户查账单的用户编码或系统编号" aria-invalid={userProblem?.kind === "user" || undefined} placeholder="用户编码或系统编号" value={userInput} onChange={(event) => setUserInput(event.target.value)} /></FilterField>
       <span className="rd-filter-group">
         <label className="rd-note" htmlFor="d4-user-from">开始时间（北京时间）</label>
-        <Input id="d4-user-from" aria-label="开始时间" aria-invalid={userProblem?.kind === "time" || undefined} type="datetime-local" value={timeDraft.from} onChange={(event) => setFrom(event.target.value)} />
+        <Input id="d4-user-from" aria-label="开始时间" aria-invalid={userProblem?.kind === "time" || undefined} type="datetime-local" step="1" value={timeDraft.from} onChange={(event) => setFrom(event.target.value)} />
       </span>
       <span className="rd-filter-group">
         <label className="rd-note" htmlFor="d4-user-to">结束时间（北京时间，不含）</label>
-        <Input id="d4-user-to" aria-label="结束时间" aria-invalid={userProblem?.kind === "time" || undefined} type="datetime-local" value={timeDraft.to} onChange={(event) => setTo(event.target.value)} />
+        <Input id="d4-user-to" aria-label="结束时间" aria-invalid={userProblem?.kind === "time" || undefined} type="datetime-local" step="1" value={timeDraft.to} onChange={(event) => setTo(event.target.value)} />
         <Explain label="时间范围的说明" content={TIME_EXPLAIN} />
       </span>
     </FilterBar>
@@ -777,7 +775,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
               <Fact k={`${unit(asset)} 期末余额`}>{running.closingBalances[asset] === undefined ? "未提供" : `${amountText(running.closingBalances[asset])} ${unit(asset)}`}</Fact>
             </Fragment>)}</Facts>
           </Panel>}
-          <Panel flush icon={Scale} tone="role-1" title="余额核对" sub={`${userLabel(userData.ledger)} · 最新在前`}
+          <Panel flush icon={Scale} tone="role-1" title="余额核对" sub={`${userLabel(userData.ledger)} · ${userData.from || userData.to ? "这段时间" : "全部"}账单 ${userData.ledger.total.toLocaleString("en-US")} 条 · 最新在前`}
             actions={rowBreaks > 0 ? <Check label={`只看对不上的账单（${rowBreaks} 条）`} checked={onlyBreaks} onChange={(event) => { setOnlyBreaks(event.target.checked); setUserPage(1); }} /> : undefined}>
             <Table label="余额核对" data-tight="">
               <thead><tr>

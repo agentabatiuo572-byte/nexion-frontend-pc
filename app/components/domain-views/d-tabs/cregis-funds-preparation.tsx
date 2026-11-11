@@ -126,7 +126,8 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
     ...(["DRAFT", "REVIEWED"].includes(String(row.state)) ? [{ key: "cancel", label: "取消准备单", primary: false, run: () => decide(row, "CANCEL") }] : []),
   ] : [];
   const amountIssue = amount && !/^(0|[1-9][0-9]{0,11})(\.[0-9]{1,6})?$/.test(amount) ? "金额须大于零，最多十二位整数和六位小数" : undefined;
-  const createBlock = block ?? (kind === "COLLECTION" && !source ? "先选来源子地址" : !amount ? "先填金额" : amountIssue ? amountIssue : !reference.trim() ? "先填业务参考号" : undefined);
+  const checkBlock = block ?? (kind === "COLLECTION" && !source ? "先选来源子地址" : !amount ? "先填金额" : amountIssue);
+  const createBlock = checkBlock ?? (!reference.trim() ? "先填业务参考号" : undefined);
 
   return <Panel icon={ClipboardList} tone="role-2" title="BEP20 人工资金准备"
     explain={<><p>仅适用于 BEP20；这里只保存准备单和复核意见，不会转出资金。真实转账须另行授权后在收款服务后台执行，审批不自动发送。</p><p>1. 选择本项目充值子地址，核对金额后创建归集到 Cregis 准备单。2. 由另一位管理员复核，后续另行授权后在收款服务后台将资金归集到 Cregis 钱包。3. Cregis 钱包到账后，按业务金额创建并复核Cregis 转平台收款钱包准备单；后续在收款服务后台单独付款，保存原单号和交易哈希。</p></>}
@@ -157,7 +158,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
 
     <Drawer open={creating} onClose={() => setCreating(false)} title="新建准备单" icon={ClipboardList} tone="role-2" busy={busy}
       footer={<Decision note={createBlock} explain="只读检查不保存任何东西；创建准备单只保存准备记录，不发送资金。"
-        others={<Button variant="ghost" disabledReason={createBlock} onClick={() => void check()}>只读检查余额与条件</Button>}
+        others={<Button variant="ghost" disabledReason={checkBlock} onClick={() => void check()}>只读检查余额与条件</Button>}
         primary={<Button variant="primary" disabledReason={createBlock} onClick={create}>创建准备单</Button>} />}>
       {config && <>
         <Field label="操作类型" required>
