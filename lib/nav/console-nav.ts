@@ -112,7 +112,6 @@ export const CONSOLE_NAV: NavDomain[] = [
     accentVar: "--admin-domain-b",
     l2: [
       { id: "B1", name: "资金与应付款总览", path: "/overview/dual-ledger", prdAnchor: "B1", batch: "V1", status: "flagship" },
-      { id: "B2", name: "可用资金与应付款", path: "/overview/liquidity", prdAnchor: "B2", batch: "V1", status: "flagship" },
       { id: "B3", name: "用户转化概览", path: "/overview/funnel", prdAnchor: "B3", batch: "V1", status: "flagship" },
       { id: "B4", name: "运营阶段状态", path: "/overview/rhythm", prdAnchor: "B4", batch: "V1", status: "flagship" },
       { id: "B5", name: "风险提醒", path: "/overview/risk-radar", prdAnchor: "B5", batch: "V1", status: "flagship" },
