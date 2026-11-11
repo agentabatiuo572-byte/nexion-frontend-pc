@@ -2,6 +2,14 @@
 
 > **B38 E4 后端增量（2026-11-08）**：[九项契约](B38-后端九项交付契约-20261108.md)规定退款由财务主管／有权超管发起、另一有权超管批准，直接接口无双人旁路；普通订单已完成任务结算一次，未完成停止，已到账设备收益保持。当前候选待正式 TEST；本批前端 UI 不改，B37 金额及促销／试用规则保持各自范围。
 
+> **BE-E 八项后端补充（2026-11-11）**：八项后端已完成 GPT 隔离 HTTP 整体业务验收（2026-11-11）；01／04／05 补修后复验通过，回执见后端 `docs/acceptance/BE-E-20261111.md`。未发布正式 TEST，未接入 PC 页面。BE-E-01／03／08 具体规则见 E1／E6。
+>
+> - **E2／A2（BE-E-02）**：规则任务票及历史记录新增 `ruleTaskAction`，由服务端保存的不可变命令类型导出 `CREATE / UPDATE / ENABLE / DISABLE`，不读取当前任务状态或可编辑说明推断。`e2_task_update` 即使载荷 `enabled=false` 仍为 `UPDATE`；既有通用 `action` 字段保持原义。PC 动作名称调整仍待前端方案确认，本批未改页面。
+> - **E5 概览（BE-E-06）**：`GET /api/admin/devices/overview` 在原分组查询中增加 `errorRetry / legacyPending / waitingConfig`，分别统计列表同一 canonical effective 状态 `ERROR / LEGACY_PENDING / WAITING_CONFIG`；原四项字段和口径保持。模拟模式关闭时新增三项均为 0，不另用原始状态计数。
+> - **E5 筛选（BE-E-07）**：`GET /api/admin/devices` 新增可选 `Long userId`，按用户精确匹配，并与其他筛选及原 `keyword` 模糊匹配取交集；原关键词模糊语义保持。`userId <= 0` 返回 422，不退化成全量查询。
+> - **E6 风控原结果（BE-E-04）**：新增 `GET /api/admin/config/phone-calibration/risk/receipts/by-key?commandKey=...`，返回原命令身份、状态及 `originalResponse`（原 `settings / stats`）。读取须具当前 E6 读权，且为原操作人，或具有未知结果核查权的有效超管；不能借读取重执行，也不能用当前配置推测原结果。缺少原身份绑定的旧记录拒绝恢复；确证原操作成功后仍保留原成功回执。
+> - **E2／E5 受控核查（BE-E-05）**：沿 [B38 未知操作结果核查](B38-后端九项交付契约-20261108.md#2-未知操作结果核查b38-be-03) 绑定原命令及对象。E5 成功证据匹配持久审计的大写 canonical action（`ADMIN.DEVICE_ACTIVATED / ADMIN.DEVICE_DEACTIVATION_REQUESTED / ADMIN.DEVICE_DEACTIVATED / ADMIN.DEVICE_PAUSED / ADMIN.DEVICE_RESUMED`），不拿写入别名的小写字符串作拒绝依据；核查不新增执行权。
+
 **最后更新：2026-10-06**
 
 > **现行裁决(2026-08-07)**:全项目已取消 KYC 与钱包配对；本卷中相关门槛、事件、履约核验和地址确认描述全部失效，不得实现或恢复。
