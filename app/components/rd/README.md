@@ -301,6 +301,8 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 业务表单（`businessForm` 的 `multi-field`）的字段传 `explain` 时，字段名旁出现提示图标；校验不过的提示失焦或点过提交才出现，用橙黄。`multi-field` 不传 `title` 时没有分组小标题，只有一组字段就别传，框的标题已经说了（VS-104）。
 
+`identity-verify` 可传 `presentation: "authorization-and-declaration"`（C5）：把 `serverVerification` 中的 `verifiedBy`、`ticket`、`verifiedAt` 分别显示为只读的授权管理员、授权依据、授权检查时间，再单独显示操作人的本人声明，并提醒把核实方式和依据写进操作理由。这些授权事实不代表系统已有用户本人的核实记录；`channel`、`ticket`、`verifiedAt` 仍按原接口提供，初始化、校验和回调值不变，C5 仍只提交 `operatorConfirmed`。不传此属性的调用保留原有核验字段与勾选文案（A1 两处不变）。
+
 框里的控件在 `RdPage` 里是一套样子：业务表单的下拉都是 rd `Select`，输入框高 32，字段名到控件 8，勾选框是 Ant Design 的样子，`Btn` 就是 rd `Button`，确认按钮不带勾。页面自己写的原生 `<select>` 不在这里面，要换成 `Select`。
 
 改一个值的确认框（`edit`）在 `RdPage` 里自动用 `DiffField`：现在值在左、新值输入在右，数字放大，不再有「新值 · 当前 X」的标签和「当前 X」的占位。再给三个可选项：`hint` 写怎么填（范围只写这里），`preview(value)` 写改了会怎样、随输入变化，这两项只在 `RdPage` 里显示（CP-87）；`emptyOption` 写清空选项的名字，比如「不设上限」，要人点它才算清空，框里没填或填坏了都不算。`disallowCurrent` 时没改动不能保存，框里写原因（OP-18）。

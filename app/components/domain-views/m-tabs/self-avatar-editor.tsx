@@ -5,6 +5,7 @@ import { fetchSelfAvatar, saveSelfAvatar, isA1OutcomeUncertainError, type SelfAv
 import { avatarDrafts, avatarDraftFingerprint, selfAvatarCommands, type SelfAvatarPending } from "@/lib/admin/account-avatar-pending";
 import { AVATAR_GENDER_OPTIONS, type AvatarGender } from "@/lib/admin/account-avatar-contract";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { AccountAvatarPicker } from "../a-tabs/account-avatar-picker";
 import { Drawer } from "../design-kit";
 import { HDSelect } from "./hd-ui";
@@ -23,6 +24,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: s
     if (onSnapshot) void read(true);
     return () => { generation.current++; controller.current?.abort(); };
   }, [actorId, epoch]);
+  useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [pending]);
   const complete = (record: SelfAvatarPending, current: SelfAvatarSnapshot) => {
     selfAvatarCommands.forget(record.fingerprint, record.commandKey);
     avatarDrafts.forget(avatarDraftFingerprint(record.actorId, "self", "self"));
@@ -61,7 +63,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: s
         setError(displayAdminError(e));
         setAllowed(false);
         // Read failure cannot decide whether an earlier write succeeded.
-        if (sent && !saved && !isA1OutcomeUncertainError(e)) {
+        if (sent && !saved && isExplicitRejection(e)) {
           selfAvatarCommands.forget(record.fingerprint, record.commandKey); setPending(null); setAllowed(false);
         }
       }

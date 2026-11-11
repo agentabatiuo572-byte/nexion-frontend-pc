@@ -1,27 +1,33 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, ChevronDown, Clock3, Inbox, RefreshCw, ShieldCheck, Smartphone } from "lucide-react";
+import { Clock3, Inbox, RefreshCw, ShieldCheck, Smartphone } from "lucide-react";
+import { BlockState, Button, Cell, Check, CheckGroup, Decision, Drawer, Fact, Facts, Field, Fold, IconButton, Input, Modal, Notice, Panel, Segments, Select, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr } from "@/app/components/rd";
+import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { PhoneApiError, fetchPhoneOverview, fetchPhoneRequests, fetchPhoneHistory, fetchPhoneOperation, pendingPhoneCommands, preparePhoneCommand, submitPhoneCommand, recoverPhoneCommand, type PendingPhoneCommand } from "@/lib/admin/phone-replacement-client";
 import { PHONE_GRANT, PHONE_REVOKE, phoneLabel, phoneCommandAllowed, record, type PhoneCommand, type PhoneOverview, type PhonePage, type PhoneRequest, type PhoneReceipt, type PhoneVerification } from "@/lib/admin/phone-replacement-contract";
-import { PhoneFacts, PhoneReceiptView, phoneTime } from "../phone-replacement-receipt";
+import { PhoneFacts, PhoneIdentifier, PhoneReceiptView, phoneTime } from "../phone-replacement-receipt";
+
+const historyReceiptTypes = ["PHONE_GRANT_ISSUE", "PHONE_REQUEST_CLOSE", "PHONE_GRANT_REVOKE"];
 import { PhoneModelLockSection } from "./phone-model-lock-section";
-export function PhoneReplacementPanel({ userId, userLabel }: {
+export function PhoneReplacementPanel({ userId, userLabel, userCode, active = true, onPendingChange, onBusyChange }: {
+    onPendingChange?: () => void; onBusyChange?: (busy: boolean) => void;
+    active?: boolean;
+    userCode: string;
     userId: string | null;
     userLabel: string;
 }) {
     const session = useAdminAuth(s => s.session);
     const epoch = useAdminAuth(s => s.authEpoch);
-    if (!session?.authorities.includes("user_c5_read"))
-        return <section className="l-card phone-admin-panel phone-account-panel"><div className="l-h"><span className="ttl">手机绑定与换机特批</span></div><PhoneEmptyState title="当前没有查看权限" detail="请联系有查看权限的管理员。" /></section>;
-    if (!userId)
-        return <section className="l-card phone-admin-panel phone-account-panel"><div className="l-h"><span className="ttl">手机绑定与换机特批</span></div><PhoneEmptyState title="请先选择用户" detail="在上方用户列表中点击“查看安全信息”，再查看该用户的手机绑定和换机申请。" /></section>;
-    return <>
-        <AccountPhonePanel key={`${session.adminId}:${epoch}:${userId}`} userId={userId} userLabel={userLabel} owner={session.adminId} rights={session.authorities}/>
-        <PhoneModelLockSection key={`lock:${session.adminId}:${epoch}:${userId}`} userId={userId} rights={session.authorities}/>
-    </>;
+    if (!session?.authorities.includes("user_c5_read")) return null;
+    if (!userId) return <Panel title="手机绑定与换机特批" icon={Smartphone}><BlockState state="empty" title="先选择用户，再查看手机绑定与换机申请" /></Panel>;
+    return <AccountPhonePanel key={`${session.adminId}:${epoch}:${userId}`} active={active} userId={userId} userLabel={userLabel} userCode={userCode} owner={session.adminId} rights={session.authorities} onPendingChange={onPendingChange} onBusyChange={onBusyChange} />;
 }
-function AccountPhonePanel({ userId, userLabel, owner, rights }: {
+function AccountPhonePanel({ userId, userLabel, userCode, active, owner, rights, onPendingChange, onBusyChange }: {
+    onPendingChange?: () => void; onBusyChange?: (busy: boolean) => void;
+    userCode: string;
+    active: boolean;
     userId: string;
     userLabel: string;
     owner: number;
@@ -59,8 +65,11 @@ function AccountPhonePanel({ userId, userLabel, owner, rights }: {
     const [lookupType, setLookupType] = useState<PhoneCommand>(canGrant ? "PHONE_GRANT_ISSUE" : "PHONE_GRANT_REVOKE");
     const [lookupMode, setLookupMode] = useState("id");
     const live = useRef(true), mutation = useRef(false), generation = useRef(0), historyGeneration = useRef(0);
-    const selection = requests?.items.find(row => row.requestId === selected);
-    const syncPending = useCallback(() => setPendingRows(pendingPhoneCommands(owner, userId)), [owner, userId]);
+    const [detail, setDetail] = useState<"" | "requests" | "models" | "history">("");
+    const [historyRow, setHistoryRow] = useState<Record<string, unknown> | null>(null);
+    const selection = requests?.items.find(row => row.requestId === selected) ?? (overview?.pendingRequest?.request.requestId === selected ? overview.pendingRequest.request : undefined);
+    useEffect(() => { onBusyChange?.(busy); }, [busy, onBusyChange]);
+    const syncPending = useCallback(() => { setPendingRows(pendingPhoneCommands(owner, userId)); onPendingChange?.(); }, [owner, userId, onPendingChange]);
     const fail = useCallback((failure: unknown, accountRead = false) => {
         if (!live.current)
             return;
@@ -68,6 +77,7 @@ function AccountPhonePanel({ userId, userLabel, owner, rights }: {
         if (accountUnavailable || failure instanceof PhoneApiError && [401, 403].includes(failure.status)) {
             generation.current++;
             historyGeneration.current++;
+            if (failure instanceof PhoneApiError && failure.status === 403) announcePermissionDenied();
             setDenied(true);
             setLoading(false);
             setHistoryLoading(false);
@@ -96,7 +106,7 @@ function AccountPhonePanel({ userId, userLabel, owner, rights }: {
                 return;
             setOverview(summary);
             setRequests(rows);
-            setSelected(current => rows.items.some(r => r.requestId === current) ? current : "");
+            setSelected(current => rows.items.some(r => r.requestId === current) ? current : summary.pendingRequest?.request.requestId ?? "");
             syncPending();
         }
         catch (failure) {
@@ -186,7 +196,7 @@ function AccountPhonePanel({ userId, userLabel, owner, rights }: {
     async function submit() {
         if (mutation.current || !confirm || !confirmed || reason.trim().length < 8 || reason.trim().length > 200 || !overview || !phoneCommandAllowed(confirm.type, rights))
             return;
-        if (confirm.type === "PHONE_GRANT_ISSUE" && (!selection || !verification || verification.requestId !== selection.requestId || !(waiveCount || waiveInterval)))
+        if (confirm.type === "PHONE_GRANT_ISSUE" && (!selection || !verification || verification.requestId !== selection.requestId || !(waiveCount || waiveInterval) || !overview.eligibility.historyComplete && !waiveCount || overview.eligibility.binding?.changedAt == null && !waiveInterval))
             return;
         mutation.current = true;
         setBusy(true);
@@ -197,7 +207,7 @@ function AccountPhonePanel({ userId, userLabel, owner, rights }: {
         if (confirm.type === "PHONE_GRANT_ISSUE")
             Object.assign(body, { requestId: selection!.requestId, expectedBindingVersion: selection!.bindingVersion, waiveCount, waiveInterval, evidenceRef: verification!.evidenceRef });
         try {
-            const attempt = preparePhoneCommand(owner, userId, confirm.type, confirm.target, body);
+            const attempt = preparePhoneCommand(owner, userId, confirm.type, confirm.target, body, { label: userLabel, userNo: userCode, supportRef: selection?.supportRef ?? undefined });
             syncPending();
             const result = await submitPhoneCommand(attempt);
             if (!live.current)
@@ -250,93 +260,64 @@ function AccountPhonePanel({ userId, userLabel, owner, rights }: {
     const blocked = busy || loading || denied || !!confirm || pendingRows.length > 0;
     const usableRequest = !!selection && selection.status === "PENDING" && !!overview && selection.expiresAt > overview.eligibility.serverNow;
     const activeGrant = overview?.eligibility.grant ?? overview?.pendingRequest?.grant;
-    return <section className="l-card phone-admin-panel phone-account-panel" data-proof="c5-phone-replacement" aria-label="手机绑定与一次性特批">
-      <div className="l-h">
-        <div className="phone-panel-heading"><Smartphone size={16} aria-hidden="true" /><h3>手机绑定与换机特批</h3><span className="ccode">{userLabel}</span></div>
-        <div className="r"><button className="l-btn sm" disabled={busy || loading || !!confirm || denied} onClick={() => { void load(); void loadHistory(); }}><RefreshCw size={13} aria-hidden="true" />{loading ? "刷新中…" : "刷新"}</button></div>
-      </div>
-      <div className="l-b">
-        <p className="phone-intro">处理更换手机设备的申请，与修改登录手机号分开统计。</p>
-        {error && <div role="alert" className="ctint warn phone-feedback">{error}</div>}
-        {message && !denied && <div role="status" className="ctint cyan phone-feedback">{message}</div>}
-        {denied ? <PhoneEmptyState title="暂时无法查看此用户" detail="请重新选择用户或登录后再试。" /> : <>
-          {loading ? <div className="phone-loading" role="status"><RefreshCw size={16} aria-hidden="true" />正在读取手机与申请状态…</div> : !overview ? <PhoneEmptyState title="手机信息未能加载" detail="请点击右上方“刷新”重试。" /> : <>
-            <div className="phone-summary-grid">
-              <section className="phone-summary-card" aria-label="手机绑定状态">
-                <div className="phone-section-heading"><h4><Smartphone size={14} aria-hidden="true" />手机绑定</h4><span className={`bdg ${overview.eligibility.binding ? "ok" : "dim"}`}>{overview.eligibility.binding ? "已绑定" : "未绑定"}</span></div>
-                {overview.eligibility.binding ? <dl className="phone-summary-facts">
-                  <div><dt>绑定设备</dt><dd className="mono">{overview.eligibility.binding.installationId || "待核实"}</dd></div>
-                  <div><dt>最近绑定时间</dt><dd>{phoneTime(overview.eligibility.binding.changedAt)}</dd></div>
-                  <div><dt>绑定记录版本</dt><dd>{overview.eligibility.binding.bindingVersion}</dd></div>
-                </dl> : <div className="phone-binding-empty"><span className="phone-icon-tile"><Smartphone size={23} strokeWidth={1.5} aria-hidden="true" /></span><div><strong>尚未绑定手机</strong><p>用户绑定后，可在这里查看设备和绑定时间。</p></div></div>}
-                {overview.executionPauseReason && <div className="ctint warn phone-feedback"><b>手机执行已暂停</b> · {phoneLabel(overview.executionPauseReason)}</div>}
-              </section>
-              <section className="phone-summary-card" aria-label="换机条件">
-                <div className="phone-section-heading"><h4><ShieldCheck size={14} aria-hidden="true" />换机条件</h4><span className={`bdg ${overview.eligibility.canReplace ? "ok" : "warn"}`}>{overview.eligibility.canReplace ? "可更换" : "暂不能更换"}</span></div>
-                <div className="phone-metrics"><div><span>统计期内已换机</span><strong>{overview.eligibility.usedCount ?? "待核实"}<small>次</small></strong></div><div><span>剩余可换次数</span><strong>{overview.eligibility.remainingCount ?? "待核实"}<small>次</small></strong></div></div>
-                <dl className="phone-summary-facts">
-                  <div><dt>最早可更换时间</dt><dd>{overview.eligibility.nextAllowedAt == null ? "暂无法确定" : phoneTime(overview.eligibility.nextAllowedAt)}</dd></div>
-                  <div><dt>历史次数</dt><dd><span className={`bdg ${overview.eligibility.historyComplete ? "dim" : "warn"}`}>{overview.eligibility.historyComplete ? "已核实" : "待核实，不按零次计算"}</span></dd></div>
-                </dl>
-              </section>
-            </div>
-            {overview.eligibility.canReplace ? <div className="ctint ok phone-eligibility-note"><ShieldCheck size={15} aria-hidden="true" /><span>已满足换机条件，需由用户在手机应用中确认更换。</span></div> : <div className="ctint warn phone-eligibility-note"><AlertTriangle size={15} aria-hidden="true" /><div><b>暂不能更换手机</b>{overview.eligibility.blockedReasons.length ? <ul>{overview.eligibility.blockedReasons.map((r, i) => <li key={`${r}:${i}`}>{r === "CURRENT_APP_REQUIRED" ? "没有可用于换机的手机应用登录记录" : phoneLabel(r)}</li>)}</ul> : <p>请刷新并核对当前绑定状态和换机条件。</p>}</div></div>}
-
-            <div className="phone-work-grid">
-              <section className="phone-section" aria-label="待处理换机申请">
-                <div className="phone-section-heading"><h4><Inbox size={14} aria-hidden="true" />待处理申请</h4>{!!requests?.items.length && <span className="bdg cyan">本页 {requests.items.length} 条</span>}</div>
-                {requests?.items.length ? <><p className="phone-note">选择申请后，核对关联客服记录，再决定是否特批。</p><div className="phone-request-list">{requests.items.map(row => <button key={row.requestId} className={`phone-request-choice ${selected === row.requestId ? "selected" : ""}`} disabled={blocked} aria-pressed={selected === row.requestId} onClick={() => { setSelected(row.requestId); setVerification(null); setWaiveCount(false); setWaiveInterval(false); }}>
-                  <span><strong>{row.requestNo}</strong><small>{phoneTime(row.createdAt)} · 设备 {row.targetInstallationId}</small></span><span className={`bdg ${row.status === "PENDING" ? "warn" : "dim"}`}>{selected === row.requestId ? "已选择" : phoneLabel(row.status)}</span>
-                </button>)}</div></> : <PhoneEmptyState title="本页暂无换机申请" detail="用户在手机应用中发起申请并关联客服会话后，可在这里处理。" />}
-                {(requestPage > 1 || requests?.hasMore) && <div className="phone-pagination"><span>第 {requestPage} 页</span><div><button className="l-btn sm" disabled={blocked || requestPage === 1} onClick={() => setRequestPage(p => p - 1)}>上一页申请</button><button className="l-btn sm" disabled={blocked || !requests?.hasMore} onClick={() => setRequestPage(p => p + 1)}>下一页申请</button></div></div>}
-                {selection && <div className="phone-record phone-request-detail"><PhoneFacts value={selection}/><p>客服关联：{phoneLabel(selection.supportLinkStatus)}</p>
-                  {selection.supportRef && <p className="phone-note">请核对客服会话 {selection.supportRef} 中的用户和申请。核实不会发送消息。</p>}
-                  {canGrant && <div className="phone-actions"><button className="l-btn sm" disabled={blocked || !usableRequest || selection.supportLinkStatus !== "LINKED"} onClick={() => begin("PHONE_VERIFY", selection.requestId, "确认已人工核实此申请及关联客服记录")}>核实关联记录</button><button className="l-btn sm" disabled={blocked || !usableRequest} onClick={() => begin("PHONE_REQUEST_CLOSE", selection.requestId, "不予授予并关闭此申请")}>不予授予</button></div>}
-                  {canGrant && <><fieldset disabled={blocked || !usableRequest}><legend>本次特批范围</legend><label><input type="checkbox" checked={waiveCount} onChange={e => setWaiveCount(e.target.checked)}/>豁免次数限制</label><label><input type="checkbox" checked={waiveInterval} onChange={e => setWaiveInterval(e.target.checked)}/>豁免间隔限制</label></fieldset>
-                    <p className="phone-note">特批签发后 24 小时内有效，仅可使用一次。历史次数未知时须勾选次数豁免；绑定时间未知时还需间隔豁免，原有未知标记会保留。</p>
-                    <p className="phone-note">{verification?.requestId === selected ? `已核实：${verification.evidenceRef} · ${phoneTime(verification.verifiedAt)}` : "签发前，请先核实本申请的关联客服记录。"}</p>
-                    <button className="l-btn primary" disabled={blocked || !usableRequest || verification?.requestId !== selected || !(waiveCount || waiveInterval) || activeGrant?.status === "ACTIVE"} onClick={() => begin("PHONE_GRANT_ISSUE", selected, "授予此目标安装一次特批")}>确认一次授权</button>
-                    {activeGrant?.status === "ACTIVE" && <p className="phone-note">已有有效特批，不能叠加。需要调整时，请先撤销，再由用户提交新申请。</p>}</>}
-                </div>}
-              </section>
-              <section className="phone-section" aria-label="当前换机特批">
-                <div className="phone-section-heading"><h4><ShieldCheck size={14} aria-hidden="true" />当前特批</h4>{activeGrant && <span className={`bdg ${activeGrant.status === "ACTIVE" ? "ok" : "dim"}`}>{phoneLabel(activeGrant.status)}</span>}</div>
-                {activeGrant ? <><dl className="phone-summary-facts">
-                  <div><dt>有效期至</dt><dd>{phoneTime(activeGrant.expiresAt)}</dd></div>
-                  <div><dt>剩余使用次数</dt><dd>{activeGrant.remainingUses ?? "待核实"} 次</dd></div>
-                  <div><dt>特批内容</dt><dd>{[activeGrant.waiveCount && "豁免次数限制", activeGrant.waiveInterval && "豁免间隔限制"].filter(Boolean).join("、") || "未记录豁免项"}</dd></div>
-                </dl><details className="phone-details"><summary>查看特批详情<ChevronDown size={14} aria-hidden="true" /></summary><PhoneFacts value={activeGrant}/></details>{canRevoke && <button className="l-btn mc" disabled={blocked || activeGrant.status !== "ACTIVE"} onClick={() => begin("PHONE_GRANT_REVOKE", activeGrant.grantId, "撤销此一次性特批")}>撤销授权</button>}</> : <PhoneEmptyState title="暂无有效特批" detail="核实用户的换机申请后，可按需授予一次特批。" />}
-                <p className="phone-section-footnote">特批仅放宽勾选的次数或间隔限制，不会直接绑定或激活手机。</p>
-              </section>
-            </div>
-            {overview.pendingOperations.length > 0 && <section className="phone-section"><div className="phone-section-heading"><h4><Clock3 size={14} aria-hidden="true" />正在处理的操作</h4></div>{overview.pendingOperations.map(row => <div key={row.operationId} className="phone-actions"><span>{phoneLabel(row.commandType)} · {phoneTime(row.submittedAt)}</span>{(canGrant || canRevoke) && <button className="l-btn sm" disabled={busy} onClick={() => void query(row.operationId)}>查询原操作</button>}</div>)}</section>}
-          </>}
-
-          {pendingRows.length > 0 && <div className="phone-record"><h4>提交结果待核实</h4><p className="phone-note">原请求已保存。离开页面不会取消操作；超过 24 小时仍只查询原结果。</p>{pendingRows.some(row => !phoneCommandAllowed(row.type, rights)) && <p>有原操作需要恢复相应处置权限后核实，内容已隐藏。</p>}{pendingRows.filter(row => phoneCommandAllowed(row.type, rights)).map(row => <div key={row.commandKey}><p>{phoneLabel(row.type)} · {phoneTime(row.createdAt)} · 原操作标识：{row.commandKey}</p><p>原确认对象：{row.target}</p><PhoneFacts value={row.body}/><button className="l-btn sm" disabled={busy || !phoneCommandAllowed(row.type, rights)} onClick={() => void recover(row)}>查询原操作结果</button></div>)}</div>}
-          {confirm && <section className="phone-record phone-confirm" aria-label="操作确认"><div className="phone-section-heading"><h4>{confirm.label}</h4><span className="bdg warn">待确认</span></div><p>账号：{userLabel} · 对象：{confirm.target}</p>
-            {confirm.type === "PHONE_GRANT_ISSUE" && <p>目标：{selection?.targetInstallationId} · 绑定版本：{selection?.bindingVersion} · 次数豁免：{waiveCount ? "是" : "否"} · 间隔豁免：{waiveInterval ? "是" : "否"} · 24 小时、一次使用，须用户返回应用确认。</p>}
-            <label>操作理由（8–200 字）<textarea value={reason} maxLength={200} disabled={busy} onChange={e => setReason(e.target.value)}/></label>
-            <label className="phone-confirm-check"><input type="checkbox" checked={confirmed} disabled={busy} onChange={e => setConfirmed(e.target.checked)}/>我已核对账号、对象及上述影响，明确确认此操作</label>
-            <div className="phone-actions"><button className="l-btn primary" disabled={busy || !confirmed || reason.trim().length < 8} onClick={() => void submit()}>确认提交</button><button className="l-btn" disabled={busy} onClick={() => setConfirm(null)}>取消</button></div>
-          </section>}
-
-          <section className="phone-section phone-history" aria-label="换机与处置历史">
-            <div className="phone-section-heading"><h4><Clock3 size={14} aria-hidden="true" />换机与处置历史</h4><div className="chips" role="group" aria-label="记录类型">{([['SUCCESS', '成功换机'], ['REQUEST', '申请记录'], ['GRANT', '特批记录']] as const).map(([value, label]) => <button key={value} className={`chip ${kind === value ? "sel" : ""}`} aria-pressed={kind === value} disabled={historyLoading || busy} onClick={() => { setKind(value); setPage(1); }}>{label}</button>)}</div></div>
-            {historyLoading ? <div className="phone-loading" role="status"><RefreshCw size={15} aria-hidden="true" />正在读取历史记录…</div> : historyError ? <div className="ctint warn" role="alert">{historyError} <button className="l-btn sm" onClick={() => void loadHistory()}>重试历史查询</button></div> : history?.items.length ? history.items.map((row, i) => <div className="phone-record" key={i}><PhoneFacts value={row}/>
-              {Array.isArray(row.operations) && row.operations.filter(record).map((op, j) => <div key={j}><PhoneFacts value={op}/>{(canGrant || canRevoke) && typeof op.operationId === "string" && <button className="l-btn sm" disabled={busy} onClick={() => void query(String(op.operationId))}>查看原操作结果</button>}</div>)}
-              {typeof row.operationId === "string" && (canGrant || canRevoke) && <button className="l-btn sm" disabled={busy} onClick={() => void query(String(row.operationId))}>查看原操作结果</button>}
-            </div>) : <PhoneEmptyState title={`本页暂无${kind === "SUCCESS" ? "成功换机" : kind === "REQUEST" ? "申请" : "特批"}记录`} detail="可切换记录类型，查看其他类别的历史。" />}
-            {(page > 1 || history?.hasMore) && <div className="phone-pagination"><span>第 {page} 页</span><div><button className="l-btn sm" disabled={historyLoading || page === 1} onClick={() => setPage(p => p - 1)}>上一页历史</button><button className="l-btn sm" disabled={historyLoading || !history?.hasMore} onClick={() => setPage(p => p + 1)}>下一页历史</button></div></div>}
-          </section>
-
-          {overview && <details className="phone-details phone-advanced"><summary><span><ShieldCheck size={14} aria-hidden="true" />换机规则与登录设备</span><ChevronDown size={14} aria-hidden="true" /></summary><div className="phone-grid"><section><h4>当前换机规则</h4><PhoneFacts value={overview.eligibility.policy}/><p className="phone-note">特批不能解除禁换、账号限制、风险暂停、校准或条款要求。</p></section><section><h4>登录设备</h4>{overview.sessions.length ? overview.sessions.map((s, i) => <div className="phone-record" key={i}><b>{s.sessionGroup === "APP" ? "手机应用" : "网页版"}</b><dl className="phone-summary-facts"><div><dt>设备标识</dt><dd className="mono">{s.installationId || "未提供"}</dd></div><div><dt>登录记录</dt><dd>{s.sessionCount} 条</dd></div><div><dt>最近活跃</dt><dd>{s.lastActiveAt ?? "待核实"}</dd></div><div><dt>应用版本</dt><dd>{s.appSessionVersion ?? "不适用"}</dd></div><div><dt>手机执行</dt><dd>{s.executionSupported ? "支持" : "不支持"}</dd></div></dl></div>) : <PhoneEmptyState title="暂无有效登录记录" detail="用户在手机应用或网页版登录后，可在这里查看。" />}</section></div></details>}
-          {(canGrant || canRevoke) && <details className="phone-details phone-advanced"><summary><span><Clock3 size={14} aria-hidden="true" />查询此前操作结果</span><ChevronDown size={14} aria-hidden="true" /></summary><p className="phone-note">用原操作号或原操作标识核对结果，不会重复提交。</p><div className="phone-grid"><label>查询方式<select value={lookupMode} onChange={e => setLookupMode(e.target.value)}><option value="id">操作号</option><option value="key">原操作标识</option></select></label>{lookupMode === "key" && <label>操作类型<select value={lookupType} onChange={e => setLookupType(e.target.value as PhoneCommand)}>{(["PHONE_GRANT_ISSUE", "PHONE_REQUEST_CLOSE", "PHONE_GRANT_REVOKE"] as PhoneCommand[]).filter(t => phoneCommandAllowed(t, rights)).map(t => <option key={t} value={t}>{phoneLabel(t)}</option>)}</select></label>}<label>{lookupMode === "id" ? "原操作号" : "当前操作者的原操作标识"}<input value={lookup} maxLength={128} onChange={e => setLookup(e.target.value)}/></label></div><div className="phone-actions"><button className="l-btn sm" disabled={busy || !lookup.trim()} onClick={() => void query()}>只读查询</button></div></details>}
-          {receipt && <><p className="phone-note">{receiptIndependent ? "这条结果可能属于其他账号，不代表当前选中的账号，请按申请号或特批号核对。" : `当前账号 ${userLabel} 的原操作回执`}</p><PhoneReceiptView receipt={receipt}/></>}
+    const grantBlock = blocked ? "先完成当前操作或查询待确认结果" : !usableRequest ? "请选择有效的待处理申请" : verification?.requestId !== selected ? "先核实本申请的关联客服记录" : !(waiveCount || waiveInterval) ? "至少选择一项豁免" : !overview?.eligibility.historyComplete && !waiveCount ? "历史次数未知，须选择次数豁免" : overview.eligibility.binding?.changedAt == null && !waiveInterval ? "绑定时间未知，须选择间隔豁免" : activeGrant?.status === "ACTIVE" ? "已有有效特批，不能叠加" : undefined;
+    const confirmLabel = confirm?.type === "PHONE_VERIFY" ? "确认核实关联记录" : confirm?.type === "PHONE_REQUEST_CLOSE" ? "不予授予并关闭申请" : confirm?.type === "PHONE_GRANT_REVOKE" ? "确认撤销授权" : "确认一次授权";
+    return <div className="c5-phone-workspace" data-proof="c5-phone-replacement" aria-label="手机绑定与一次性特批">
+      {error && <Notice tone="warn">{error}</Notice>}
+      {message && !denied && <Notice tone="progress">{message}</Notice>}
+      {pendingRows.length > 0 && <Notice tone="warn" title="提交结果待核实" actionBelow action={pendingRows.filter(row => phoneCommandAllowed(row.type, rights)).map(row => <Button key={row.commandKey} size="sm" loading={busy} onClick={() => void recover(row)}>查询原操作结果</Button>)}>
+        {pendingRows.filter(row => phoneCommandAllowed(row.type, rights)).map(row => <Fold key={row.commandKey} title={phoneLabel(row.type)} summary={`${row.label ?? userLabel} · ${phoneTime(row.createdAt)}`}><Facts><Fact k="原确认对象">{row.target}</Fact><Fact k="原操作标识">{row.commandKey}</Fact><Fact k="恢复方式">{row.expiresAt <= Date.now() ? "已过 24 小时，保留记录，仅查询" : "只查询原操作，不重新提交"}</Fact></Facts><PhoneFacts value={row.body} /></Fold>)}
+        {pendingRows.some(row => !phoneCommandAllowed(row.type, rights)) && <span>恢复原处置权限后查询，原记录继续保留。</span>}
+      </Notice>}
+      <Panel title="手机绑定与换机条件" icon={Smartphone} explain="处理更换手机设备的申请，与更改登录手机号分开统计。特批只放宽次数或间隔，仍由用户回 App 主动确认。" actions={<IconButton aria-label="刷新手机绑定与换机申请" disabled={busy || loading || !!confirm || denied} onClick={() => { void load(); void loadHistory(); }}><RefreshCw size={16} /></IconButton>}>
+        {denied ? <BlockState state="denied" title="暂时无法查看此用户" detail="请重新选择用户或登录后再试。" /> : loading ? <BlockState state="loading" title="正在读取手机与申请状态" /> : !overview ? <BlockState state="error" title="手机信息未能加载" onRetry={() => void load()} retryLabel="刷新" /> : <>
+          <div className="c5-phone-summary">
+            <Facts><Fact k="手机绑定">{overview.eligibility.binding ? "已绑定" : "未绑定"}</Fact><Fact k="绑定安装"><span data-mono>{overview.eligibility.binding?.installationId ?? "尚未绑定手机"}</span></Fact><Fact k="最近绑定时间">{phoneTime(overview.eligibility.binding?.changedAt)}</Fact></Facts>
+            <Facts><Fact k="换机资格"><StatusTag tone={overview.eligibility.canReplace ? "ok" : "warn"}>{overview.eligibility.canReplace ? "可更换" : "暂不能更换"}</StatusTag></Fact><Fact k="统计期内已换机">{overview.eligibility.usedCount ?? "待核实"} 次</Fact><Fact k="剩余可换次数">{overview.eligibility.remainingCount ?? "待核实"} 次</Fact><Fact k="最早可更换时间">{phoneTime(overview.eligibility.nextAllowedAt)}</Fact></Facts>
+          </div>
+          {overview.eligibility.binding && <Fold title="绑定技术详情" summary={`绑定版本 ${overview.eligibility.binding.bindingVersion}`}><PhoneFacts value={overview.eligibility.binding} /></Fold>}
+          {!overview.eligibility.historyComplete && <Notice tone="warn">历史次数待核实，不按零次计算。</Notice>}
+          {overview.executionPauseReason && <Notice tone="warn" title="手机执行已暂停">{phoneLabel(overview.executionPauseReason)}</Notice>}
+          {!overview.eligibility.canReplace && <Notice tone="warn" title="暂不能更换手机">{overview.eligibility.blockedReasons.length ? <ul className="c5-blocked-reasons">{overview.eligibility.blockedReasons.map((value, index) => <li key={`${value}:${index}`}>{phoneLabel(value)}</li>)}</ul> : "请核对当前绑定状态和换机条件。"}</Notice>}
+          {overview.eligibility.canReplace && <Notice tone="ok">已满足换机条件，需由用户在 App 中确认更换。</Notice>}
         </>}
-      </div>
-    </section>;
-}
-
-function PhoneEmptyState({ title, detail }: { title: string; detail: string }) {
-    return <div className="phone-empty"><Inbox size={24} strokeWidth={1.5} aria-hidden="true" /><strong>{title}</strong><p>{detail}</p></div>;
+      </Panel>
+      {!denied && overview && <>
+        <Panel aria-label="待处理换机申请" title="当前换机申请" icon={Inbox} sub={selection?.requestNo} actions={<Button size="sm" disabled={busy || loading || !!confirm} onClick={() => setDetail(detail === "requests" ? "" : "requests")}>选择换机申请</Button>}>
+          {!selection ? <BlockState state="empty" title="暂无选中的换机申请" detail="可从申请记录选择一条，核对后再处置。" /> : <>
+            <Facts><Fact k="目标安装"><span data-mono>{selection.targetInstallationId}</span></Fact><Fact k="申请状态"><StatusTag tone={selection.status === "PENDING" ? "warn" : "done"}>{phoneLabel(selection.status)}</StatusTag></Fact><Fact k="客服关联">{phoneLabel(selection.supportLinkStatus)}</Fact><Fact k="客服会话引用">{selection.supportRef ?? "未关联"}</Fact><Fact k="申请到期">{phoneTime(selection.expiresAt)}</Fact></Facts>
+            {canGrant && <>
+              <CheckGroup legend="本次特批范围" explain="特批有效 24 小时，仅可使用一次。不会直接绑定或激活手机；不能解除禁换、账户限制、风险暂停、校准或条款要求。"><Check checked={waiveCount} disabled={blocked || !usableRequest} onChange={event => setWaiveCount(event.target.checked)} label="豁免次数限制" /><Check checked={waiveInterval} disabled={blocked || !usableRequest} onChange={event => setWaiveInterval(event.target.checked)} label="豁免间隔限制" /></CheckGroup>
+              {!overview.eligibility.historyComplete && <Notice tone="warn">历史次数未知，须勾选次数豁免；未知标记继续保留。</Notice>}
+              {overview.eligibility.binding?.changedAt == null && <Notice tone="warn">原绑定时间未知，须勾选间隔豁免。</Notice>}
+              <div className="rd-toolbar" data-end=""><span className="rd-toolbar-note">{verification?.requestId === selected ? `已核实 · ${phoneTime(verification.verifiedAt)}` : "签发前先核实关联客服记录"}</span><Button variant="danger-outline" disabledReason={blocked ? "先核对当前操作" : !usableRequest ? "仅有效待处理申请可以关闭" : undefined} onClick={() => begin("PHONE_REQUEST_CLOSE", selection.requestId, "不予授予并关闭申请")}>不予授予</Button><Button disabledReason={blocked ? "先核对当前操作" : !usableRequest ? "申请已到期或不在待处理状态" : selection.supportLinkStatus !== "LINKED" ? "先关联客服记录" : undefined} onClick={() => begin("PHONE_VERIFY", selection.requestId, "核实关联记录")}>核实关联记录</Button><Button variant="primary" disabledReason={grantBlock} onClick={() => begin("PHONE_GRANT_ISSUE", selected, "授予一次换机特批")}>确认一次授权</Button></div>
+            </>}
+            <Fold title="申请技术详情" summary="理由、版本与核实记录"><PhoneFacts value={selection} />{verification && <PhoneFacts value={verification} />}</Fold>
+          </>}
+        </Panel>
+        {!activeGrant && <div className="c5-context-line">暂无有效特批</div>}
+        {activeGrant && <Panel aria-label="当前换机特批" title="当前换机特批" icon={ShieldCheck} actions={canRevoke && <Button variant="danger-outline" size="sm" disabledReason={blocked ? "先核对当前操作" : activeGrant.status !== "ACTIVE" ? "只有仍有效的特批可以撤销" : undefined} onClick={() => begin("PHONE_GRANT_REVOKE", activeGrant.grantId, "撤销一次换机特批")}>撤销授权</Button>}>
+          <Facts><Fact k="授权状态"><StatusTag tone={activeGrant.status === "ACTIVE" ? "ok" : "done"}>{phoneLabel(activeGrant.status)}</StatusTag></Fact><Fact k="有效期至">{phoneTime(activeGrant.expiresAt)}</Fact><Fact k="剩余使用次数">{activeGrant.remainingUses ?? "待核实"} 次</Fact><Fact k="次数豁免">{activeGrant.waiveCount ? "是" : "否"}</Fact><Fact k="间隔豁免">{activeGrant.waiveInterval ? "是" : "否"}</Fact></Facts><Fold title="查看特批详情" summary={activeGrant.grantId}><PhoneFacts value={activeGrant} /></Fold>
+        </Panel>}
+        {overview.pendingOperations.map(row => <Notice key={row.operationId} tone="warn" title="正在处理的操作" action={(canGrant || canRevoke) && <Button size="sm" disabled={busy} onClick={() => void query(row.operationId)}>查询原操作</Button>}>{phoneLabel(row.commandType)} · {phoneTime(row.submittedAt)}</Notice>)}
+      </>}
+      {!denied && <>
+        <div className="c5-detail-switch" aria-label="手机明细"><Button aria-pressed={detail === "requests"} onClick={() => setDetail(detail === "requests" ? "" : "requests")}>申请记录</Button><Button aria-pressed={detail === "models"} onClick={() => setDetail(detail === "models" ? "" : "models")}>手机机型锁</Button><Button aria-pressed={detail === "history"} onClick={() => setDetail(detail === "history" ? "" : "history")}>成功换机与特批历史</Button></div>
+        {detail === "requests" && <Panel title="申请记录" sub={`第 ${requestPage} 页 · 每页 10 条`} flush><Table aria-label="换机申请" label="换机申请" className="c5-phone-requests"><thead><tr><Th>申请</Th><Th>目标安装</Th><Th>状态</Th><Th sticky="end">操作</Th></tr></thead><tbody>{loading ? <TableLoading columns={4} /> : requests?.items.map(row => <Tr key={row.requestId} selected={row.requestId === selected}><Td><Cell main={<PhoneIdentifier value={row.requestNo} />} sub={phoneTime(row.createdAt)} title={row.requestNo} /></Td><Td><Cell mono main={<PhoneIdentifier value={row.targetInstallationId} />} title={row.targetInstallationId} /></Td><Td><StatusTag tone={row.status === "PENDING" ? "warn" : "done"}>{phoneLabel(row.status)}</StatusTag></Td><Td sticky="end"><Button size="sm" disabled={blocked} onClick={() => { setSelected(row.requestId); setVerification(null); setWaiveCount(false); setWaiveInterval(false); setDetail(""); }}>选择申请</Button></Td></Tr>)}{!loading && !requests?.items.length && <TableMessage columns={4}>{error ? "申请尚未确认，请刷新" : "本页暂无换机申请"}</TableMessage>}</tbody></Table>{(requestPage > 1 || requests?.hasMore) && <div className="c5-pager"><span>第 {requestPage} 页</span><Button size="sm" disabled={blocked || requestPage === 1} onClick={() => setRequestPage(value => value - 1)}>上一页申请</Button><Button size="sm" disabled={blocked || !requests?.hasMore} onClick={() => setRequestPage(value => value + 1)}>下一页申请</Button></div>}</Panel>}
+        {detail === "models" && <PhoneModelLockSection active={active} userId={userId} userCode={userCode} userLabel={userLabel} rights={rights} onPendingChange={onPendingChange} onBusyChange={onBusyChange} />}
+        {detail === "history" && <Panel aria-label="换机与处置历史" title="换机与处置历史" icon={Clock3} actions={<Segments label="记录类型" value={kind} onChange={value => { setKind(value); setPage(1); }} items={[{ value: "SUCCESS", label: "成功换机" }, { value: "REQUEST", label: "申请记录" }, { value: "GRANT", label: "特批记录" }]} />} flush>
+          {historyError && <BlockState state="error" title="历史记录未能读取" detail={historyError} onRetry={() => void loadHistory()} retryLabel="重试历史查询" />}
+          <Table aria-label="换机历史" label="换机历史" className="c5-phone-history"><thead><tr><Th>记录</Th><Th>对象</Th><Th>状态</Th><Th sticky="end">操作</Th></tr></thead><tbody>{historyLoading ? <TableLoading columns={4} /> : history?.items.map((row, index) => { const objectId = kind === "SUCCESS" ? row.sourceId : row.targetInstallationId; return <Tr key={index} selected={historyRow === row} onOpen={() => setHistoryRow(row)}><Td><Cell main={<PhoneIdentifier value={String(row.requestNo ?? row.grantId ?? row.operationId ?? row.requestId ?? "换机记录")} />} sub={phoneTime(row.createdAt ?? row.issuedAt ?? row.committedAt)} title={String(row.requestNo ?? row.grantId ?? row.operationId ?? row.requestId ?? "")} /></Td><Td>{objectId != null && <Cell mono main={<PhoneIdentifier value={String(objectId)} />} title={String(objectId)} />}</Td><Td><StatusTag tone={row.status === "PENDING" ? "warn" : row.status === "ACTIVE" ? "ok" : "done"}>{row.status ? phoneLabel(row.status) : kind === "SUCCESS" ? "换机成功" : "未记录"}</StatusTag></Td><Td sticky="end"><Button size="sm" onClick={() => setHistoryRow(row)}>查看详情</Button></Td></Tr>; })}{!historyLoading && !history?.items.length && <TableMessage columns={4}>{historyError ? "历史记录尚未确认" : "本页暂无此类记录"}</TableMessage>}</tbody></Table>{(page > 1 || history?.hasMore) && <div className="c5-pager"><span>第 {page} 页 · 每页 10 条</span><Button size="sm" disabled={historyLoading || page === 1} onClick={() => setPage(value => value - 1)}>上一页历史</Button><Button size="sm" disabled={historyLoading || !history?.hasMore} onClick={() => setPage(value => value + 1)}>下一页历史</Button></div>}
+        </Panel>}
+        {overview && <Fold title="换机规则与登录设备" summary={`策略版本 ${overview.eligibility.policy.policyVersion ?? "待核实"}`}><Panel plain title="当前换机规则"><PhoneFacts value={overview.eligibility.policy} /></Panel><Panel plain title="登录设备">{overview.sessions.length ? overview.sessions.map((row, index) => <Fold key={index} title={row.sessionGroup === "APP" ? "手机应用" : "网页版"} summary={`${row.sessionCount} 条登录记录`}><Facts><Fact k="设备标识">{row.installationId || "未提供"}</Fact><Fact k="最近活跃">{formatBusinessTimeCompact(row.lastActiveAt)}</Fact><Fact k="应用版本">{row.appSessionVersion ?? "不适用"}</Fact><Fact k="手机执行">{row.executionSupported ? "支持" : "不支持"}</Fact></Facts></Fold>) : <BlockState state="empty" title="暂无有效登录记录" />}</Panel></Fold>}
+        {(canGrant || canRevoke) && <Fold title="查询此前操作结果" summary="操作号或原操作标识" explain="只读查询，不会重新提交。可能返回其他用户的结果，须按申请号或特批号核对。"><div className="c5-query-grid"><Field label="查询方式"><Select aria-label="查询方式" value={lookupMode} onChange={setLookupMode} options={[{ value: "id", label: "操作号" }, { value: "key", label: "原操作标识" }]} /></Field>{lookupMode === "key" && <Field label="操作类型"><Select aria-label="操作类型" value={lookupType} onChange={value => setLookupType(value as PhoneCommand)} options={(["PHONE_GRANT_ISSUE", "PHONE_REQUEST_CLOSE", "PHONE_GRANT_REVOKE"] as PhoneCommand[]).filter(value => phoneCommandAllowed(value, rights)).map(value => ({ value, label: phoneLabel(value) }))} /></Field>}<Field label={lookupMode === "id" ? "原操作号" : "当前操作者的原操作标识"}><Input aria-label="原操作查询标识" value={lookup} maxLength={128} onChange={event => setLookup(event.target.value)} /></Field></div><div className="rd-toolbar" data-end=""><Button disabledReason={busy ? "正在查询" : !lookup.trim() ? "填写原操作号或原操作标识" : undefined} onClick={() => void query()}>只读查询</Button></div></Fold>}
+      </>}
+      {active && confirm && <Modal title={confirm.label} icon={ShieldCheck} tone={confirm.type === "PHONE_REQUEST_CLOSE" || confirm.type === "PHONE_GRANT_REVOKE" ? "danger" : "neutral"} sub={<StatusTag tone="progress">立即生效</StatusTag>} busy={busy} onClose={() => setConfirm(null)} footer={<Decision others={<Button disabled={busy} onClick={() => setConfirm(null)}>取消</Button>} primary={<Button variant={confirm.type === "PHONE_REQUEST_CLOSE" || confirm.type === "PHONE_GRANT_REVOKE" ? "danger" : "primary"} loading={busy} disabledReason={reason.trim().length < 8 || reason.trim().length > 200 ? "填写 8–200 字的理由" : !confirmed ? "先核对对象与操作影响" : undefined} onClick={() => void submit()}>{confirmLabel}</Button>} />}>
+        <Facts><Fact k="用户">{userLabel}</Fact><Fact k="确认对象">{confirm.target}</Fact>{confirm.type === "PHONE_GRANT_ISSUE" && <><Fact k="目标安装">{selection?.targetInstallationId}</Fact><Fact k="绑定版本">{selection?.bindingVersion}</Fact><Fact k="次数豁免">{waiveCount ? "是" : "否"}</Fact><Fact k="间隔豁免">{waiveInterval ? "是" : "否"}</Fact><Fact k="有效范围">24 小时、一次使用，须用户回 App 主动确认</Fact></>}{confirm.type === "PHONE_VERIFY" && <Fact k="客服会话引用">{selection?.supportRef}</Fact>}</Facts>
+        <Notice tone="warn">{confirm.type === "PHONE_VERIFY" ? "请人工核对申请与关联客服会话。核实不会发送客服消息。" : confirm.type === "PHONE_REQUEST_CLOSE" ? "关闭申请后，不向此申请签发特批。" : confirm.type === "PHONE_GRANT_REVOKE" ? "仅撤销仍有效且未使用的授权，不能撤回已完成的换机。" : "仅豁免所选次数或间隔限制，不直接绑定或激活手机。"}</Notice>
+        <Field label="操作理由" required hint="8–200 字" error={reason && (reason.trim().length < 8 || reason.trim().length > 200) ? "请填写 8–200 字的理由" : undefined}><Textarea value={reason} disabled={busy} onChange={event => setReason(event.target.value)} rows={3} count={`${reason.trim().length}/200`} /></Field><Check checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} label="我已核对用户、对象及上述影响，明确确认此操作" />
+      </Modal>}
+      {active && historyRow && <Drawer open onClose={() => setHistoryRow(null)} title="换机历史详情" icon={Clock3}><PhoneFacts value={historyRow} />{Array.isArray(historyRow.operations) && historyRow.operations.filter(record).map((operation, index) => <Fold key={index} title="关联原操作" summary={String(operation.operationId ?? "未记录")}><PhoneFacts value={operation} />{(canGrant || canRevoke) && typeof operation.operationId === "string" && historyReceiptTypes.includes(String(operation.commandType)) && <Button size="sm" onClick={() => { setHistoryRow(null); void query(String(operation.operationId)); }}>查看原操作结果</Button>}</Fold>)}{typeof historyRow.operationId === "string" && historyReceiptTypes.includes(String(historyRow.commandType)) && (canGrant || canRevoke) && <Button size="sm" onClick={() => { const id = String(historyRow.operationId); setHistoryRow(null); void query(id); }}>查看原操作结果</Button>}</Drawer>}
+      {active && receipt && <Drawer open onClose={() => setReceipt(null)} title="原操作回执" icon={ShieldCheck}>{receiptIndependent && <Notice tone="warn">这条结果可能属于其他账号，不代表当前选中的账号，请按申请号或特批号核对。</Notice>}<PhoneReceiptView receipt={receipt} /></Drawer>}
+    </div>;
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { Clock3, MessageSquare, UserRoundPlus, Users } from "lucide-react";
+import { StatBand, Stat, Conclusion, InlineRetry } from "@/app/components/rd";
 import type { SessionConvo } from "./data";
 import type { MCtx } from "./types";
 
@@ -9,7 +10,7 @@ function durationText(ms: number): string {
   const minutes = Math.max(1, Math.round(Math.abs(ms) / 60000));
   if (minutes < 60) return `${minutes} 分钟`;
   const hours = Math.floor(minutes / 60);
-  return hours < 48 ? `${hours} 小时${minutes % 60 ? ` ${minutes % 60} 分` : ""}` : `${Math.floor(hours / 24)} 天`;
+  return hours < 48 ? `${hours} 小时${minutes % 60 ? ` ${minutes % 60} 分` : ""}` : `${Math.floor(hours / 24)} 天${hours % 24 ? ` ${hours % 24} 小时` : ""}`;
 }
 
 function parse<T>(raw: string | undefined): T[] {
@@ -38,12 +39,13 @@ export function M1LiveService({ ctx, alertMinutes = ctx.unboundAlertMinutes ?? 5
     };
   }, [ctx, now]);
   const late = facts.oldest !== null && facts.oldest >= alertMinutes * 60000;
-  const dash = (ready: boolean, value: number | string) => ready ? value : "-";
-  return <section className="m1-live" aria-label="实时服务">
-    <h3>实时服务</h3>
-    <Link href="/service/sessions?tab=pending" className="m1-live-item"><span>待回复客户</span><strong>{dash(conversationsReady, facts.waiting)}</strong></Link>
-    <Link href="/service/sessions?tab=pending" className={`m1-live-item${late ? " alert" : ""}`}><span>最长等待</span><strong>{!conversationsReady ? "-" : facts.oldest === null ? "无" : durationText(facts.oldest)}</strong></Link>
-    <Link href="/service/sessions?tab=unassigned" className={`m1-live-item${facts.unassigned ? " alert" : ""}`}><span>待分配（有留言）</span><strong>{dash(conversationsReady, facts.unassigned)}</strong></Link>
-    <div className="m1-live-item"><span>可接待专属客服</span><strong title={agentsFailed ? "客服名单加载失败" : undefined}>{dash(agentsReady, facts.agents)}</strong>{agentsFailed && <button type="button" onClick={() => void ctx.refreshContent().catch(() => ctx.toast("客服名单还是没有加载出来，请稍后重试。"))}>名单加载失败，重试</button>}</div>
+  const dash = (ready: boolean, value: number | string) => ready ? value : "—";
+  return <section aria-label="实时服务" className="m1-live-service">
+    <Conclusion state={!conversationsReady || !agentsReady ? "unknown" : late ? "warn" : "neutral"} hint={!conversationsReady || !agentsReady ? "重读会话或客服名单后再判断。" : facts.waiting || facts.unassigned ? "打开待回复或有留言待分配客户，继续处理会话。" : "可核对分配、客户和负责组资料。"} explain="待回复与有留言待分配按共享未归档会话的客户去重。可接待人数来自当前可用名册，不代表空闲席位。">{!conversationsReady || !agentsReady ? "部分服务数据暂时读不到" : facts.waiting || facts.unassigned ? "有客户正在等待处理" : "当前没有待回复客户"}</Conclusion>
+    <StatBand label="实时服务"><Stat label="待回复客户" value={dash(conversationsReady, facts.waiting)} unit="位" icon={MessageSquare} lead href="/service/sessions?tab=pending" explain="当前已绑定且有待回复留言的客户，按客户去重。" />
+      <Stat label="最长等待" value={!conversationsReady ? "—" : facts.oldest === null ? "无" : durationText(facts.oldest)} icon={Clock3} tone={late ? "warn" : undefined} href="/service/sessions?tab=pending" explain="从最早待回复留言起计；本地每 30 秒只更新等待时长。" />
+      <Stat label="待分配（有留言）" value={dash(conversationsReady, facts.unassigned)} unit="位" icon={UserRoundPlus} href="/service/sessions?tab=unassigned" explain="有待回复留言但尚未绑定的客户，全部池客户见待分配页签。" />
+      <Stat label="可接待专属客服" value={dash(agentsReady, facts.agents)} unit="位" icon={Users} explain="名册中已启用且未停用的专属客服人数，不是空闲席位。" sub={agentsFailed ? <InlineRetry label="名单加载失败，重试" onRetry={() => void ctx.refreshContent().catch(() => ctx.toast("客服名单还是没有加载出来，请稍后重试。"))} /> : undefined} />
+    </StatBand>
   </section>;
 }

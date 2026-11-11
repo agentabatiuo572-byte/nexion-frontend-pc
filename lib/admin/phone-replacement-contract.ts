@@ -183,7 +183,7 @@ export function parsePhonePage<T>(value: unknown): PhonePage<T> {
 }
 export const phoneLabels: Record<string, string> = {
     PENDING: "待处理", GRANTED: "已授权", CLOSED: "已关闭", ACTIVE: "有效", CONSUMED: "已使用", REVOKED: "已撤销",
-    EXPIRED: "已到期", STALE: "绑定已变化", SUCCEEDED: "已成功", FAILED: "已确定失败", LINKED: "已关联", UNLINKED: "未关联",
+    EXPIRED: "已到期", SUPERSEDED: "已被新申请替代", INVALIDATED: "已失效", STALE: "绑定已变化", SUCCEEDED: "已成功", FAILED: "已确定失败", LINKED: "已关联", UNLINKED: "未关联",
     PHONE_GRANT_ISSUE: "授予一次特批", PHONE_REQUEST_CLOSE: "关闭申请", PHONE_GRANT_REVOKE: "撤销特批", PHONE_VERIFY: "核实申请",
     PHONE_POLICY_PUBLISH: "发布手机策略", PHONE_POLICY_PARAM_PUBLISH: "调整手机策略", PHONE_ACTIVATE: "手机激活",
     PHONE_REPLACEMENT_LIMIT_REACHED: "窗口内换机次数已达上限", PHONE_BINDING_TIME_UNKNOWN: "原绑定时间待核实",

@@ -91,7 +91,7 @@ const MIGRATED = [
   "app/components/domain-views/a-tabs/a2-audit.tsx",
   // A3：参数写入在结果未知时必须保留同一幂等键，刷新后仍可安全重试。
   "app/components/domain-views/a-tabs/a3-config.tsx",
-  "app/components/domain-views/c-tabs/c5-security.tsx",
+  "lib/admin/c5-security-commands.ts",
   "app/components/domain-views/c-tabs/c6-regrisk.tsx",
   // C1：导出名单结果未知时保留原命令号、条件和理由，刷新后按原操作重试。
   "app/components/domain-views/c-tabs/c1-search.tsx",

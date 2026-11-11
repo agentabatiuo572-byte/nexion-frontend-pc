@@ -717,6 +717,8 @@ export type BusinessFormSpec =
       subject: string;
       channels?: string[];
       ticketHint?: string;
+      /** 只展示本次操作的授权事实，另由操作人声明已核实本人；不改变表单值或校验。 */
+      presentation?: "authorization-and-declaration";
       serverVerification?: {
         channel: string;
         ticket: string;
@@ -2810,6 +2812,24 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
 
   if (spec.kind === "identity-verify") {
     const verified = spec.serverVerification;
+    if (spec.presentation === "authorization-and-declaration") return (
+      <div className="rd-business-form" data-business-form="identity-verify">
+        <div data-proof="sensitive-action-authorization">
+          <div className="rd-form-group-title">本次操作的授权</div>
+          <RdFacts>
+            <RdFact k="授权管理员">{verified?.verifiedBy || "—"}</RdFact>
+            <RdFact k="授权依据">{verified?.ticket || "—"}</RdFact>
+            <RdFact k="授权检查时间">{verified?.verifiedAt || "—"}</RdFact>
+          </RdFacts>
+        </div>
+        <RdCheckGroup legend="本人声明">
+          <div style={{ gridColumn: "1 / -1" }}>
+            <RdCheck data-proof="identity-ack" checked={value.ack === "true"} onChange={(event) => set("ack", event.target.checked ? "true" : "false")}
+              label="我已另行核实是用户本人，不是他人冒充" help="核实方式和依据请写在操作理由中。" />
+          </div>
+        </RdCheckGroup>
+      </div>
+    );
     if (surface) return (
       <div className="rd-business-form" data-business-form="identity-verify">
         <div className="rd-form-group-title">先核实用户身份</div>

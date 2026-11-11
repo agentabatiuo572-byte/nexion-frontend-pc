@@ -184,7 +184,7 @@ async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPref
     if (init?.idempotencyPrefix && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH", "AVATAR_STATE_CONFLICT"].includes(result?.message ?? "")) {
       throw new A1OutcomeUncertainError("A1_MUTATION_OUTCOME_UNCERTAIN", commandKey);
     }
-    throw new Error(formatAdminApiError(result?.message, `A1_REQUEST_FAILED_${response.status}`));
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `A1_REQUEST_FAILED_${response.status}`)), { status: response.status, backendMessage: result?.message });
   }
 
   return result.data as T;
