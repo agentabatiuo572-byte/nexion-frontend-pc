@@ -301,11 +301,13 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const checkMaintenance = async (record = maintenancePending) => {
     if (!record || saving || record.actorId !== adminId) return;
     const actor = actorStamp();
+    let readingCustomer = false;
     setSaving(true);
     try {
       const result = await supportClient.command(record.commandKey);
       if (actor !== actorStamp()) return;
       if (result.status === "SUCCEEDED" || result.status === "FAILED") {
+        readingCustomer = true;
         const current = await supportClient.customerDetail(record.payload.customerId);
         if (actor !== actorStamp() || record.actorId !== useAdminAuth.getState().session?.adminId) return;
         const matches = current.customerId === record.payload.customerId && current.assignmentId === record.payload.assignmentId && (result.status === "SUCCEEDED"
@@ -316,7 +318,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
         window.dispatchEvent(new Event("support-todo-changed"));
         closeDetail(); setRowsRefresh((value) => value + 1); setNotice(result.status === "FAILED" ? "上次操作没有成功，请重新确认。" : "上次操作已确认，请查看最新资料。");
       } else setNotice("原操作仍待确认，请稍后继续查询。");
-    } catch (error) { if (actor === actorStamp()) { closeDetail(); if (!invalidateCustomerOnDenied(record.payload.customerId, error)) setNotice("结果暂时无法核对，原命令与理由已保留；客户名单仍为上次读取的结果。"); } }
+    } catch (error) { if (actor === actorStamp()) { closeDetail(); if (!readingCustomer || !invalidateCustomerOnDenied(record.payload.customerId, error)) setNotice("结果暂时无法核对，原命令与理由已保留；客户名单仍为上次读取的结果。"); } }
     finally { setSaving(false); }
   };
   useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [maintenancePending, saving]);

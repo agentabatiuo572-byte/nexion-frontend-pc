@@ -119,13 +119,17 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
 }
 
 function errorText(error: unknown, reading = false): string {
+  if (reading) {
+    const status = error instanceof Error && "status" in error ? Number(error.status) : 0;
+    return status === 401 ? "登录已失效，请重新登录后读取待分配资料。" : status === 403 ? "当前账号无权读取待分配资料，请核对获准范围。" : "待分配资料读取失败，请重新读取。";
+  }
   if (error instanceof Error && "backendMessage" in error && typeof error.backendMessage === "string" && ADMIN_ERROR_MESSAGES[error.backendMessage]) return displayAdminError(error);
   if (isIndeterminateSupportError(error)) return "分配结果待确认，请查询原命令。";
   const status = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
   if (status === 401) return "登录已失效，请重新登录。";
   if (status === 403) return "当前账号无权查看或分配待绑定客户。";
   if (status === 409) return "客户或专属客服状态已变化，已保留选择。请刷新预览后重新确认。";
-  return reading ? "待分配资料读取失败，请重试。" : "待绑定服务暂不可用，请重试；没有提交任何分配。";
+  return "待绑定服务暂不可用，请重试；没有提交任何分配。";
 }
 
 export function M1SupervisorPool({ permission, initialGroupId }: { permission: MSupportPermission; initialGroupId?: number }) {
