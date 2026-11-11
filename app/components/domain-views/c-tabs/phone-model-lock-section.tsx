@@ -6,7 +6,7 @@ import { OperationConfirmModal } from "../design-kit";
 import { PhoneApiError, fetchPhoneModelLocks, submitModelLockCommand, pendingModelLockCommands, settleReturnedModelLockCommands, type PhoneModelLock } from "@/lib/admin/phone-replacement-client";
 import { PHONE_GRANT, phonePlatformLabel } from "@/lib/admin/phone-replacement-contract";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { PhoneIdentifier, phoneTime } from "../phone-replacement-receipt";
+import { PhoneIdentifier, phoneTimeCompact as phoneTime } from "../phone-replacement-receipt";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 
 function state(lock: PhoneModelLock) {

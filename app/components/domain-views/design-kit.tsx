@@ -3755,6 +3755,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const [businessSelectionLoading, setBusinessSelectionLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // 结果未知（原操作可能已生效）用警示色，红只给明确失败（VS-107）。
+  const [submitUnknown, setSubmitUnknown] = useState(false);
   // 刚打开不报错：字段错误等失焦或点过提交才显示（DP-06）。
   const [attempted, setAttempted] = useState(false);
   const [reasonLeft, setReasonLeft] = useState(false);
@@ -3880,6 +3882,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     if (!canConfirm) return;
     setSubmitting(true);
     setSubmitError(null);
+    setSubmitUnknown(false);
     try {
       if (retryApproval) await retryApproval();
       else await onConfirm(reason.trim(), submittedValue || undefined, activeBusinessForm ? businessValue : undefined);
@@ -3897,6 +3900,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         setSubmitError(inlineApproval ? `${error.message} 命令号：${error.commandKey}` : `提交结果暂未确认，可能已生成审批单。请查询原操作，或按原配置和理由重试。命令号：${error.commandKey}`);
       } else {
         setApprovalRecovery(null);
+        setSubmitUnknown(error instanceof Error && /Outcome(Uncertain|Unknown)Error$/.test(error.name) || getPendingReason?.() !== undefined);
         setSubmitError(operationConfirmErrorMessage(error));
       }
     } finally {
@@ -4004,7 +4008,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {!surface && content}
       {surface ? (blockedReason || submitError) && (
         // 红只给明确失败；被别人改了、结果还不知道是要人处理，用橙黄（VS-107）。
-        <div className="rd-confirm-alert"><RdNotice tone={blockedReason || approvalRecovery ? "warn" : "danger"}>{blockedReason ?? submitError}</RdNotice></div>
+        <div className="rd-confirm-alert"><RdNotice tone={blockedReason || approvalRecovery || submitUnknown ? "warn" : "danger"}>{blockedReason ?? submitError}</RdNotice></div>
       ) : blockedReason
         ? <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{blockedReason}</div>
         : submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}

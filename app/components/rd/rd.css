@@ -1208,8 +1208,7 @@ td .rd-flow { margin-bottom: 0; }
 .rd-scale-skeleton[data-bands] { max-width: var(--rd-track-w, 560px); margin: 24px 0 22px; }
 
 /* 状态分布条：条最宽 560，图例紧跟在条下面；能点的类是带边的小按钮，当前选中的选中底加勾。 */
-.rd-dist { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; max-width: 560px; min-width: 0; }
-.rd-dist > .rd-segbar-wrap { gap: 4px; }
+.rd-dist { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; max-width: 560px; min-width: 0; }
 .rd-dist-sole { margin: 0; color: var(--rd-text-2); }
 .rd-dist-legend { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 0 -8px; padding: 0; list-style: none; }
 .rd-dist-item { display: inline-flex; align-items: center; gap: 6px; height: var(--rd-control-h-sm); padding: 0 8px; border: 0; border-radius: var(--rd-radius-control); background: none; color: var(--rd-text-2); font: inherit; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: nowrap; }
@@ -1221,7 +1220,7 @@ li:first-child > button.rd-dist-item { margin-left: 8px; }  /* 带边的按钮�
 button.rd-dist-item:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
 button.rd-dist-item[aria-pressed="true"] { background: var(--rd-selected); color: var(--rd-text); }
 @media (hover: hover) and (pointer: fine) { button.rd-dist-item:not([aria-pressed="true"]):hover { background: var(--rd-hover); color: var(--rd-text); } }
-.rd-dist-skeleton { width: 100%; max-width: 560px; height: 8px; margin: 2px 0 30px; border-radius: var(--rd-radius-bar); }
+.rd-dist-skeleton { width: 100%; max-width: 560px; height: 8px; margin: 2px 0 34px; border-radius: var(--rd-radius-bar); }
 
 /* 任务类型标签：图标带角色色，字是正文色。 */
 .rd-classtag { display: inline-flex; align-items: center; gap: 6px; color: var(--rd-text); white-space: nowrap; }

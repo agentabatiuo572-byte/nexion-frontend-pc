@@ -312,7 +312,7 @@ function liabilityRing(rows: D3Main["liabilities"]["breakdown"], total: number |
     return { ring: null, slots: new Map<string, ChartSlot>(), note };
   }
   if (total > 0 && ranked[0].amountUsdt / total >= RING_DOMINANT_SHARE) {
-    return { ring: null, slots: new Map<string, ChartSlot>(), note: <p className="rd-note">几乎全是 {categoryText(ranked[0].category)}，占 {(ranked[0].amountUsdt / total * 100).toFixed(1)}%。</p> };
+    return { ring: null, slots: new Map<string, ChartSlot>(), note: <p className="rd-note">几乎全是{categoryText(ranked[0].category)}，占 {(ranked[0].amountUsdt / total * 100).toFixed(1)}%。</p> };
   }
   const rest = ranked.slice(2);
   const restSum = rest.reduce((sum, row) => sum + row.amountUsdt, 0);
@@ -474,7 +474,7 @@ export function FlowTab({ history }: { history: { data: B2LiquidityHistory | nul
   const activeFlows = flows.filter((row) => row.inflowWan !== 0 || row.outflowWan !== 0);
   const activeMonths = months.filter((row) => row.amountWan !== 0);
   const detail = history.data && (
-    <Panel flush title="明细" sub="万 USDT" explain="图里的数，单位万 USDT。" icon={ReceiptText} tone="role-2">
+    <Panel title="明细" sub="万 USDT" explain="图里的数，单位万 USDT。" icon={ReceiptText} tone="role-2">
       <div className="rd-stack">
         <Fold inset title="资金流入和流出明细" summary={`近 ${flows.length} 天`} open={detailOpen === "flow"} onOpenChange={(open) => setDetailOpen(open ? "flow" : null)}>
         <Table label="近 8 天资金流入和流出明细">
