@@ -107,7 +107,7 @@
 .c5-context-line { justify-content: space-between; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .c5-account-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--rd-space-3); padding: var(--rd-space-4) var(--rd-space-5); border-top: 1px solid var(--rd-line); }
 .c5-account-actions > span { display: inline-flex; align-items: center; gap: var(--rd-space-1); color: var(--rd-text-3); }
-.c5-workbench .rd-table, .rd-drawer .rd-table { table-layout: fixed; min-width: 0; }
+.c5-workbench .rd-table, .rd-drawer .c5-users, .rd-drawer .c5-locks, .rd-drawer .c5-attempts { table-layout: fixed; min-width: 0; }
 .c5-users th:first-child { width: 50%; }
 .c5-users th:nth-child(2) { width: 26%; }
 .c5-users th:last-child { width: 24%; }
