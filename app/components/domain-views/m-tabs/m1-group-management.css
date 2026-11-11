@@ -51,3 +51,28 @@
 .m1-group-management .m-group-count .rd-btn-face{justify-content:flex-end;width:100%}
 .m1-group-form{display:grid;gap:20px}
 .m1-group-form>label{display:grid;gap:8px}
+
+/* Redesign pass: one panel, a facts row for the open group, quiet link counts, compact pager. */
+.m1-group-management.rd-panel{display:grid;gap:16px}
+.m1-group-management>.rd-panel-head{margin-bottom:0}
+.m1-group-management .rd-panel-title{display:inline-flex;align-items:center;gap:8px;min-width:0}
+.m1-group-management .m1-back{color:var(--rd-text-2);font-weight:400}
+.m1-group-management .m-admin-table-wrap{margin-top:0}
+.mdom .m1-group-management .m-group-count{min-width:0;min-height:0;height:auto;padding:0;color:var(--rd-text);text-decoration:underline;text-decoration-color:var(--rd-line-strong);text-underline-offset:3px;place-items:center end}
+.mdom .m1-group-management .m-group-count.m-group-quiet{color:var(--rd-text-3)}
+.m1-group-facts{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin:0}
+.m1-group-facts>div{display:flex;flex-direction:column;gap:4px;min-width:0;padding:12px 16px;border-radius:var(--rd-radius-control);background:var(--rd-panel-inner)}
+.m1-group-facts dt{font-size:var(--rd-text-aux);line-height:var(--rd-lh-aux);color:var(--rd-text-3)}
+.m1-group-facts dd{display:flex;align-items:baseline;gap:4px;min-height:var(--rd-lh-section);margin:0;font-size:var(--rd-text-section);line-height:var(--rd-lh-section);font-weight:600;font-variant-numeric:tabular-nums}
+.m1-group-facts dd>small{font-size:var(--rd-text-aux);font-weight:400;color:var(--rd-text-3)}
+.m1-group-subhead{display:flex;align-items:center;gap:8px}
+.m1-group-subhead>h3{margin:0;font-size:var(--rd-text-body);line-height:var(--rd-lh-body);font-weight:600}
+.m1-group-subhead>.rd-explain{margin-left:-4px}
+.m1-group-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.m1-group-pager>span{margin-right:4px;font-size:var(--rd-text-aux);color:var(--rd-text-3);font-variant-numeric:tabular-nums}
+.m1-inline-pager{justify-content:flex-start;margin-top:8px}
+.m1-group-state{margin:0;font-size:var(--rd-text-aux);color:var(--rd-text-3)}
+.m1-field-value{display:flex;align-items:center;gap:4px;margin:0;color:var(--rd-text)}
+.mdom .m1-group-management .m-invite-code{font-family:var(--font-mono,ui-monospace);color:var(--rd-text)}
+.mdom .m1-group-management .m-invite-muted{color:var(--rd-text-3)}
+.m1-group-management .m-invite-ops{justify-content:flex-end;gap:8px}

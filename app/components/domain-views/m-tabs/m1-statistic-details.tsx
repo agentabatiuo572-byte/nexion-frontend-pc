@@ -17,8 +17,9 @@ export type StatisticSource =
 type Result = { headings: string[]; rows: string[][]; total: number | null; next: boolean; summary: string; note?: string; version?: string };
 type SuccessList = { version: string; rows: string[][]; restricted: number };
 const PAGE_SIZE = 10;
-const beijingTime = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "medium", timeZone: "Asia/Shanghai", hourCycle: "h23" });
-export const beijing = (time: string) => beijingTime.format(new Date(time));
+const beijingTime = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Asia/Shanghai", hourCycle: "h23" });
+/** TX-26 full time in Beijing time, 2026-11-05 14:30:00; callers state the zone once. */
+export const beijing = (time: string) => { const parts = Object.fromEntries(beijingTime.formatToParts(new Date(time)).map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`; };
 const changed = () => new SupportClientError(409, undefined, "SUPPORT_STATISTIC_CHANGED");
 const summaryCounts = (total: number, visible: number, restricted: number, unit: string) => "原统计 " + total + unit + " · 可见 " + visible + unit + " · 受限 " + restricted + unit;
 
