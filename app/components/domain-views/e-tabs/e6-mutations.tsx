@@ -7,20 +7,15 @@ import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey } f
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, hasPersistedPendingCommandOwner, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRedesignedELegacyCommand } from "@/lib/admin/e-domain-commands";
+import { e5Commands, type E5Command } from "@/lib/admin/e5-command";
+import { e6Commands as commands, type E6DeviceInput as DeviceInput, type E6Payload as Payload, type E6Pending, type E6Proposal, type E6Section } from "@/lib/admin/e6-command";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { activateE5Device, deactivateE5Device, setE5UserDevicesPaused, fetchE5Devices } from "@/lib/admin/e5-client";
 import { savePhoneRisk, fetchPhoneRisk, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
 import { Button, Notice, Fold, ReleaseModal } from "@/app/components/rd";
 
-export type E6Section = "tasks" | "tiers" | "phones" | "calibration";
-export type E6Proposal = Parameters<typeof createA2OperationProposal>[0];
+export type { E6Pending, E6Proposal, E6Section } from "@/lib/admin/e6-command";
 type ProposalDraft = Omit<E6Proposal, "operator" | "operatorRole" | "sos" | "roleGate">;
-type DeviceInput = { before: string; serial: string; deviceId: number; userId: number; action: "activate" | "deactivate" | "pause" | "resume"; reason: string; operator: string };
-type Payload = { kind: "proposal"; input: E6Proposal; evidence?: unknown } | { kind: "device"; input: DeviceInput } | { kind: "risk"; revision: number; input: PhoneRiskUpdate };
-export type E6Pending = PendingMutationRecord & { owner: number; epoch: number; label: string; section: E6Section; scope: string; payload: Payload; body: string; ticketId?: string; terminal?: string };
-const commands = createPendingMutationStore<E6Pending>({ storageKey: "nexion-admin-e6-commands-v2", retainExpiredRecords: true,
-  isValidRecord: r => Number.isSafeInteger(r.owner) && typeof r.scope === "string" && typeof r.label === "string" && typeof r.body === "string"
-    && !!r.payload && ["proposal", "device", "risk"].includes(r.payload.kind) && !!r.payload.input && typeof r.payload.input.reason === "string" });
 const legacyCommands = createPendingMutationStore<PendingMutationRecord & { inputFingerprint: string }>({ storageKey: "nexion-admin-e-domain-commands-v1", retainExpiredRecords: isRedesignedELegacyCommand,
   isValidRecord: r => typeof r.inputFingerprint === "string" });
 const legacyPhones = createPendingMutationStore<PendingMutationRecord & { inputFingerprint: string }>({ storageKey: "nexion-admin-e5-device-commands-v1", retainExpiredRecords: true, isValidRecord: r => typeof r.inputFingerprint === "string" });
@@ -30,6 +25,7 @@ function useMutations() {
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   const owner = session!.adminId, rights = session!.authorities;
   const [pending, setPending] = useState<E6Pending[]>([]);
+  const [devicePending, setDevicePending] = useState<E5Command[]>([]);
   const [legacy, setLegacy] = useState<ReturnType<typeof legacyCommands.list>>([]);
   const [busy, setBusy] = useState("");
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -37,7 +33,10 @@ function useMutations() {
   const [rejected, setRejected] = useState<string[]>([]);
   const [release, setRelease] = useState<E6Pending | null>(null);
   const active = useRef(true), sending = useRef(false);
-  const sync = () => setPending(commands.list().filter(r => r.owner === owner));
+  const sync = () => {
+    setPending(commands.list().filter(r => r.owner === owner));
+    setDevicePending(e5Commands.list().filter(r => r.actorId === String(owner)));
+  };
   const canPropose = rights.some(r => ["platform_a2_write", "platform_a2_proposal_create"].includes(r));
   const canAudit = rights.includes("platform_a2_read");
   const visible = (section: E6Section) => rights.includes(section === "tasks" || section === "tiers" ? "device_e2_read" : section === "phones" ? "device_e5_read" : "device_e6_read");
@@ -47,7 +46,10 @@ function useMutations() {
     return () => { active.current = false; };
   }, [owner, epoch]);
   const locked = (scope: string) => pending.some(r => r.scope === scope || scope.startsWith("phone:") && r.scope === `user:${scope.split(":")[2]}` || scope.startsWith("user:") && r.scope.startsWith("phone:") && r.scope.split(":")[2] === scope.slice(5))
-    || legacy.some(r => { const [op,obj] = r.fingerprint.split("|"); return scope === "task:create" ? op === "e2_task_create" : scope.startsWith("task:") ? op.startsWith("e2_task_") && obj === scope.slice(5) : scope.startsWith("tier:") ? op === "e2_phone_tier" && obj === scope.slice(5) : scope === "calibration" ? op === "e6_phone_calibration" : scope.startsWith("param:") && op === "e6_compute_config" && obj === scope.slice(6); });
+    || legacy.some(r => { const [op,obj] = r.fingerprint.split("|"); return scope === "task:create" ? op === "e2_task_create" : scope.startsWith("task:") ? op.startsWith("e2_task_") && obj === scope.slice(5) : scope.startsWith("tier:") ? op === "e2_phone_tier" && obj === scope.slice(5) : scope === "calibration" ? op === "e6_phone_calibration" : scope.startsWith("param:") && op === "e6_compute_config" && obj === scope.slice(6); })
+    || devicePending.some(r => scope.startsWith("user:") ? r.device.userId === scope.slice(5)
+      : scope.startsWith("phone:") && (String(r.device.deviceId) === scope.split(":")[1]
+        || r.device.userId === scope.split(":")[2] && ["pause", "resume"].includes(r.intent)));
   function allowed(record: E6Pending) {
     if (!visible(record.section)) return false;
     if (record.payload.kind === "risk") return rights.includes("device_e6_write");
@@ -128,7 +130,7 @@ function useMutations() {
     } catch (failure) { if (active.current) setNotes(n => ({ ...n, [record.commandKey]: displayAdminError(failure) })); }
     finally { if (active.current) setBusy(""); }
   }
-  return { pending, legacy, busy, notes, technicalErrors, rejected, release, setRelease, sync, locked, visible, allowed, canPropose, canAudit, proposal, start, check, send,
+  return { pending, devicePending, legacy, busy, notes, technicalErrors, rejected, release, setRelease, sync, locked, visible, allowed, canPropose, canAudit, proposal, start, check, send,
     device: (scope: string, label: string, input: Omit<DeviceInput, "operator">) => start(scope, "phones", label, { kind: "device", input: { ...input, operator: session!.operator || session!.username } }),
     risk: (revision: number, input: PhoneRiskUpdate) => start("risk", "calibration", "保存机型风控设置", { kind: "risk", revision, input }),
     legacyPhoneLocked: (serial: string, deviceId: number, userId: string) => legacy.some(r => r.fingerprint.startsWith(`e5-device:${deviceId}:`) || r.fingerprint.startsWith(`e5-user:${userId}:`) || r.fingerprint.startsWith("e5_device_") && r.fingerprint.endsWith(`|${serial}`)),
@@ -146,6 +148,7 @@ export function E6PendingNotice({ section, onRead }: { section: E6Section; onRea
   const records = m.pending.filter(r => r.section === section && m.visible(section));
   const waiting = records.filter(r => r.ticketId && !r.terminal);
   return <>
+    {section === "phones" && m.devicePending.map(r => <Notice key={r.commandKey} tone="warn" title={`${r.label} · 设备管理有原操作待核对`}><p>原对象、内容、理由和命令号在设备管理保留，请回原页面核对。相关设备或整用户的新操作继续暂停。</p><Link href="/devices/ops">设备管理</Link></Notice>)}
     {waiting.length === 1 && <Notice tone="progress" action={<Button size="sm" disabled={!!m.busy} onClick={() => void m.check(waiting[0])}>查审批结果</Button>}>{waiting[0].label}的变更已提交，等待审批 · <span data-mono>{waiting[0].ticketId}</span></Notice>}
     {waiting.length > 1 && <Notice tone="progress"><Fold title={`${waiting.length} 项变更等待审批`} summary="展开查看审批单" inset><div className="e6-pending-list">{waiting.map(r => <div key={r.commandKey} className="e6-pending-row"><span>{r.label} · <span data-mono>{r.ticketId}</span></span><Button size="sm" disabled={!!m.busy} onClick={() => void m.check(r)}>查审批结果</Button></div>)}</div></Fold></Notice>}
     {records.filter(r => !r.ticketId || r.terminal).map(r => <Notice key={r.commandKey} tone={r.terminal ? "done" : "warn"} title={`${r.label} · ${r.terminal ? "原提案已结束" : m.rejected.includes(r.commandKey) ? "原操作重试已被明确拒绝" : "结果未确认，请先核对原操作"}`} actionBelow action={<>

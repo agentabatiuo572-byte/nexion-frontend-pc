@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -12,6 +13,7 @@ import { roleLabel } from "@/lib/nav/console-nav";
 import { fetchLegacyUnknownCandidate, type E5Device } from "@/lib/admin/e5-client";
 import { sameLegacyUnknownProof, type LegacyUnknownCandidate } from "@/lib/admin/legacy-unknown-resolution";
 import { e5Commands, e5LegacyCommands, e5CommandBlocks, sendE5Command, type E5Command, type E5Intent } from "@/lib/admin/e5-command";
+import { e6Commands, type E6Pending } from "@/lib/admin/e6-command";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { BlockState, Button, Change, Check, Fact as RdFact, Facts, Fold, IrreversibleTag, Modal, MoreMenu, Notice, RatioBar, ReleaseBody, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
@@ -40,6 +42,7 @@ const EFFECTS: Record<E5Intent, string> = {
 };
 interface ActionsState {
   records: E5Command[];
+  phoneBlocks: (device: E5Device, intent?: E5Intent) => boolean;
   legacyBlocked: boolean;
   busy: string;
   execute: (record: E5Command, retry: boolean) => Promise<void>;
@@ -54,6 +57,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
   const role = useAdminAuth(s => s.session?.role);
   const epoch = useAdminAuth(s => s.authEpoch);
   const [records, setRecords] = useState<E5Command[]>([]);
+  const [phonePending, setPhonePending] = useState<E6Pending[]>([]);
   const [old, setOld] = useState<{ commandKey: string; fingerprint: string }[]>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -61,7 +65,13 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
   const [rejected, setRejected] = useState<Record<string, string>>({});
   const [releaseChecked, setReleaseChecked] = useState(false);
   const [release, setRelease] = useState<E5Command | null>(null);
-  const sync = useCallback(() => setRecords(e5Commands.list().filter(r => r.actorId === actorId)), [actorId]);
+  const sync = useCallback(() => {
+    setRecords(e5Commands.list().filter(r => r.actorId === actorId));
+    setPhonePending(e6Commands.list().filter(r => String(r.owner) === actorId && r.section === "phones"));
+  }, [actorId]);
+  const phoneBlocks = (device: E5Device, intent?: E5Intent) => phonePending.some(r => r.scope === `user:${device.userId}`
+    || r.scope === `phone:${device.deviceId}:${device.userId}`
+    || (intent === "pause" || intent === "resume") && r.scope.startsWith("phone:") && r.scope.split(":")[2] === device.userId);
   useEffect(() => {
     sync(); setRelease(null); setRejected({}); setReadResults({});
     try { setOld(e5LegacyCommands()); } catch (cause) { setError(`旧操作记录无法读取：${displayAdminError(cause)}`); }
@@ -93,7 +103,8 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
       throw cause;
     } finally { setBusy(""); }
   };
-  return <CommandsContext.Provider value={{ records, legacyBlocked: old.length > 0 || !!error && !records.length && !old.length && error.includes("旧操作"), busy, execute, refresh, toast }}>
+  return <CommandsContext.Provider value={{ records, phoneBlocks, legacyBlocked: old.length > 0 || !!error && !records.length && !old.length && error.includes("旧操作"), busy, execute, refresh, toast }}>
+    {phonePending.map(r => <Notice key={r.commandKey} tone="warn" title={`${r.label} · 手机页有原操作待核对`}><p>原对象、内容、理由和命令号在手机算力配置保留，请回原页面核对。相关设备或整用户的新操作继续暂停。</p><Link href="/devices/compute-config?tab=phones">手机算力配置</Link></Notice>)}
     {old.map(row => <Notice key={row.commandKey} tone="warn" title="旧操作缺少原请求，不能原样重试" action={<Button size="sm" disabled={!!busy} onClick={() => void refresh()}>读回核对</Button>}><p>原命令号：<code>{row.commandKey}</code></p><p>请到操作记录与审批核对。原记录保留，不能用当前草稿补成原操作。</p></Notice>)}
     {records.map(record => <Notice key={record.commandKey} tone={rejected[record.commandKey] ? "danger" : "warn"} title={`${record.label} · ${rejected[record.commandKey] ? "原号重试已拒绝" : "结果待确认"}`} actionBelow action={<div className="rd-toolbar">
       <Button size="sm" disabled={!!busy} onClick={async () => {
@@ -130,7 +141,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
 /** The same lock predicate used by actions also marks the affected E5 row. */
 export function E5PendingMark({ device }: { device: E5Device }) {
   const state = useContext(CommandsContext);
-  return state?.records.some(record => e5CommandBlocks(record, device)) ? <span className="e5-pending-mark" title="此设备有待确认操作，请核对页首原操作">待确认</span> : null;
+  return state && (state.records.some(record => e5CommandBlocks(record, device)) || state.phoneBlocks(device)) ? <span className="e5-pending-mark" title="此设备有待确认操作，请核对页首原操作">待确认</span> : null;
 }
 
 export function E5Slots({ device: d, phones = false }: { device: E5Device; phones?: boolean }) {
@@ -155,7 +166,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
   const deactivatable = phones ? ["active", "busy", "offline", "abnormal", "unknown"].includes(d.state) : ["WAITING_INIT", "LEGACY_PENDING", "RUNNING", "WAITING_CONFIG", "PAUSED", "ERROR"].includes(d.simState ?? "");
   const platform = session.authorities.some(a => ["platform_a2_write", "platform_a2_proposal_create"].includes(a));
   const full = d.activeDevicesForUser >= d.maxDevicesPerUser;
-  const locked = (intent: E5Intent) => state.legacyBlocked ? "旧操作缺少原请求，请先核查" : state.busy ? "设备操作正在提交" : state.records.some(r => e5CommandBlocks(r, d, intent)) ? "这个设备或用户有待确认操作，请先核对原操作" : undefined;
+  const locked = (intent: E5Intent) => state.legacyBlocked ? "旧操作缺少原请求，请先核查" : state.busy ? "设备操作正在提交" : state.records.some(r => e5CommandBlocks(r, d, intent)) || state.phoneBlocks(d, intent) ? "这个设备或用户有待确认操作，请先核对原操作" : undefined;
   const options: MoreMenuItem[] = [];
   const add = (intent: E5Intent, label: string, extra?: string) => options.push({ key: intent, label, danger: intent === "unbind" || intent === "pause", disabledReason: locked(intent) ?? extra, onSelect: () => setAction(intent) });
   if (!readOnly) {
