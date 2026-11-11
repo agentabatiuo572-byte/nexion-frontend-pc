@@ -7,9 +7,11 @@ import { AlarmClock, ArrowDownUp, CalendarClock, Coins, Gauge, Landmark, PieChar
 import { BlockState, Button, Check, CheckGroup, Cell, ColumnChart, Conclusion, DiffList, Donut, Explain, Fact, Facts, Field, Figure, Fold, InlineRetry, KeyValues, LevelList, Notice, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Th, TierBand, Tr, TrendLine, Drawer, type ChartSlot, type StateTone } from "@/app/components/rd";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { D3ForecastConfig, D3Main, D3MaturityForecast, D3NetExposure, D3WaterLevel } from "@/lib/admin/d-client";
+import type { B2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { LIABILITY_EXPLANATIONS, liabilityDisplayName } from "@/lib/admin/liability-labels";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { coverDaysText, formatReserveCoverDays } from "@/lib/admin/treasury-cover-days";
+import { amountDigits, amountText } from "@/lib/admin/treasury-amount";
 import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 
 /** 90 天不再提供。已有的 90 天草稿还看得到，但不能连别的改动一起保存（PCN-38）。 */
@@ -21,7 +23,9 @@ export interface Loadable<T> { data: T | null; loading: boolean; error: string }
 export interface CrossLink { href: string; label: string; reachable: boolean }
 
 export const categoryText = (key: string) => liabilityDisplayName(key, ({ usdt: "USDT 储备", otherLiquid: "其他可用资产" } as Record<string, string>)[key] ?? "其他科目");
-export const amountText = (value: number | null) => value === null ? TREASURY_VALUATION_UNAVAILABLE : Number(value).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+export { amountText } from "@/lib/admin/treasury-amount";
+/** share 是后端给的比例，保留其真实位数，不额外截成一位。 */
+const shareText = (share: number | null) => share === null ? TREASURY_VALUATION_UNAVAILABLE : `${Number((share * 100).toFixed(6))}%`;
 export const money = (value: number | null) => value === null ? TREASURY_VALUATION_UNAVAILABLE : `${amountText(value)} USDT`;
 const compact = (value: number) => {
   const size = Math.abs(value);
@@ -93,23 +97,23 @@ function dueParts(config: ForecastValues, trial: boolean | undefined) {
 
 const TREASURY_SOURCE_LABELS: Record<string, string> = {
   "nx_treasury_reserve_ledger": "储备资金账本",
-  "nx_staking_position.amount_usdt": "生效中的质押锁定金额",
+  "nx_staking_position.amount_usdt": "质押锁定记录",
   "nx_user_wallet": "用户钱包余额",
-  "nx_user_wallet.usdt_available": "用户钱包的可提现余额",
+  "nx_user_wallet.usdt_available": "用户钱包余额",
   "nx_staking_position": "质押锁定金额与奖励",
   "nx_staking_position.estimated_interest_usdt": "待付质押奖励",
   "nx_genesis_holding": "创世节点持仓",
-  "nx_genesis_holding × nx_genesis_series.daily_dividend_rate_pct": "创世节点持仓与每日收益",
+  "nx_genesis_holding × nx_genesis_series.daily_dividend_rate_pct": "创世节点持仓",
   "nx_nex_lock_order": "UVT 锁仓订单",
-  "nx_nex_lock_order active maturity": "生效中的 UVT 锁仓到期额",
+  "nx_nex_lock_order active maturity": "UVT 锁仓订单",
   "nx_withdrawal_order": "提现订单",
   "nx_withdrawal_order active queue": "待处理提现订单",
   "nx_wallet_ledger": "钱包资金流水",
   "nx_wallet_ledger pending commission": "待解锁奖励流水",
   "nx_treasury_legacy_lock_liability": "存量锁定金额及奖励",
-  "nx_treasury_legacy_lock_liability active principal + accrued interest": "生效中的存量锁定金额及奖励",
+  "nx_treasury_legacy_lock_liability active principal + accrued interest": "存量锁定记录",
   "nx_vietqr_reconciliation": "VietQR 银行回单",
-  "nx_vietqr_reconciliation open suspense rows": "待处置 VietQR 银行回单",
+  "nx_vietqr_reconciliation open suspense rows": "VietQR 待核回单",
 };
 
 function treasurySourceLabel(source: string) {
@@ -155,6 +159,7 @@ export function OverviewTab({ main, links }: { main: D3Main; links: readonly Cro
   const water = reserve.waterLevel;
   const tone = WATER_TONE[water.tier];
   const quiet = water.tier === "NORMAL";
+  const statDigits = amountDigits([reserve.reserveTotalUsdt, liabilities.totalUsdt, maturity7.cumulativeUsdt]);
   const sources = Array.from(new Set([...reserve.sources, ...liabilities.sources].map(treasurySourceLabel)));
   const reserveParts = [
     { key: "usdt", name: "USDT 储备", sub: "基础可动用储备", value: reserve.usdtReserveUsdt, slot: 1 as ChartSlot },
@@ -202,9 +207,9 @@ export function OverviewTab({ main, links }: { main: D3Main; links: readonly Cro
   return (
     <>
       <StatBand label="资金概况">
-        <Stat lead tone="role-1" icon={Wallet} label="可用储备" value={amountText(reserve.reserveTotalUsdt)} unit="USDT" sub={`累计注入 ${amountText(reserve.injectedCumulativeUsdt)}`} explain="USDT 储备已扣除质押锁定金额。其他高流动资产暂不参与储备计算。累计注入按登记的凭证汇总，不是当前余额。" />
-        <Stat tone="role-2" icon={ReceiptText} label="应付款" value={amountText(liabilities.totalUsdt)} unit={liabilities.totalUsdt === null ? undefined : "USDT"} explain={`共 9 类，待核实的银行充值算在第 9 类。明细在「应付款与到期」。${UVT_VALUATION_NOTE}`} />
-        <Stat tone={water.tier === "DANGER" ? "danger" : water.tier === "WARNING" ? "warn" : "role-3"} icon={CalendarClock} label="7 天到期应付款" value={amountText(maturity7.cumulativeUsdt)} unit="USDT" explain={`${dueParts(main.config, maturity7.trialStressIncluded)}。固定看未来 7 天。`} />
+        <Stat lead tone="role-1" icon={Wallet} label="可用储备" value={amountText(reserve.reserveTotalUsdt, statDigits)} unit="USDT" sub={`累计注入 ${amountText(reserve.injectedCumulativeUsdt)}`} explain={`USDT 储备已扣除质押锁定金额。其他高流动资产暂不参与储备计算。累计注入按登记的凭证汇总，不是当前余额。接口数值 ${reserve.reserveTotalUsdt} USDT。`} />
+        <Stat tone="role-2" icon={ReceiptText} label="应付款" value={amountText(liabilities.totalUsdt, statDigits)} unit={liabilities.totalUsdt === null ? undefined : "USDT"} explain={`共 9 类，待核实的银行充值算在第 9 类。明细在「应付款与到期」。${UVT_VALUATION_NOTE}${liabilities.totalUsdt === null ? "" : `接口数值 ${liabilities.totalUsdt} USDT。`}`} />
+        <Stat tone={water.tier === "DANGER" ? "danger" : water.tier === "WARNING" ? "warn" : "role-3"} icon={CalendarClock} label="7 天到期应付款" value={amountText(maturity7.cumulativeUsdt, statDigits)} unit="USDT" explain={`${dueParts(main.config, maturity7.trialStressIncluded)}。固定看未来 7 天。接口数值 ${maturity7.cumulativeUsdt} USDT。`} />
       </StatBand>
       {/* 面板位置固定，危险态只换颜色和内容，眼睛靠位置找东西（06 审查 6）。 */}
       {levels}
@@ -218,6 +223,7 @@ export function OverviewTab({ main, links }: { main: D3Main; links: readonly Cro
 }
 
 function MaturityPanel({ maturity, loading, error, onRetry }: { maturity: D3MaturityForecast | null; loading: boolean; error: string; onRetry: () => void }) {
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   if (!maturity) {
     return (
       <Panel title="哪天要付的钱最多" icon={CalendarClock} tone="role-3" data-testid="b2-maturity-chart">
@@ -226,18 +232,21 @@ function MaturityPanel({ maturity, loading, error, onRetry }: { maturity: D3Matu
     );
   }
   const days = maturity.daily.length;
+  const selectedDay = maturity.daily.find((row) => row.date === selectedDate);
+  const digits = amountDigits(maturity.daily.flatMap((row, index) => [row.withdrawDueUsdt, row.interestDueUsdt, row.genesisDividendUsdt, row.trialShadowStressUsdt, row.totalDueUsdt, maturity.cumulative[index].amountUsdt]));
   const noDue = maturity.cumulativeUsdt === 0;
   const trial = maturity.trialStressIncluded;
   const dueDays = maturity.daily.filter((row) => row.totalDueUsdt > 0);
   const peak = dueDays.reduce<D3MaturityForecast["daily"][number] | null>((best, row) => (!best || row.totalDueUsdt > best.totalDueUsdt ? row : best), null);
-  const dim = (value: number) => (value === 0 ? <span className="d3-zero">{amountText(value)}</span> : amountText(value));
+  const dim = (value: number) => (value === 0 ? <span className="d3-zero">{amountText(value, digits)}</span> : amountText(value, digits));
   const partList = (row: D3MaturityForecast["daily"][number]): [string, number][] => [["提现", row.withdrawDueUsdt], ["质押奖励", row.interestDueUsdt], ["创世节点", row.genesisDividendUsdt], ...(trial ? [["试用业务", row.trialShadowStressUsdt] as [string, number]] : [])];
   const partText = (list: [string, number][]) => list.map(([name, value]) => `${name} ${amountText(value)}`).join(" · ");
   const parts = (row: D3MaturityForecast["daily"][number]) => partText(partList(row));
   return (
     <Panel title="哪天要付的钱最多" sub={`未来 ${days} 天 · USDT${dueDays.length > 1 && peak ? ` · 峰值 ${peak.date.slice(5)} ${amountText(peak.totalDueUsdt)}` : ""}`} icon={CalendarClock} tone="role-3" data-testid="b2-maturity-chart"
       explain={maturity.farLiabilityExcluded ? "UVT 锁仓要 24 个月后才到期，不在这张图里，也不算眼下必须付的钱。" : operatorCopyText(maturity.farLiabilityNote)}>
-      <div className="rd-stack">
+      <div className="rd-stack d3-maturity">
+        {trial && <Notice tone="warn">含试用业务压力测试，不是实际应付款。</Notice>}
         {noDue ? <BlockState state="empty" title={`未来 ${days} 天没有到期`} />
           : dueDays.length === 1 && peak ? <BlockState state="empty" title={`只有 ${peak.date.slice(5)} 到期，${money(peak.totalDueUsdt)}`} detail={partText(partList(peak).filter(([, value]) => value > 0))} /> : (
           <div className="rd-split" data-even="" role="group" aria-label="每日预计兑付额柱状图与累计到期负债曲线">
@@ -254,27 +263,37 @@ function MaturityPanel({ maturity, loading, error, onRetry }: { maturity: D3Matu
           </div>
         )}
         <Fold title="每日明细" summary={noDue ? `${days} 天，全部为 0` : `${days} 天，每天的构成和累计`} inset>
-          <Table label="每日到期明细">
+          <Table label="每日到期明细" className="d3-daily">
             <thead><tr>
-              <Th>日期</Th><Th align="right">提现</Th><Th align="right">质押奖励</Th><Th align="right">创世节点收益</Th>
-              {trial && <Th align="right">试用业务压力测试</Th>}
+              <Th>日期</Th><Th className="d3-daily-part" align="right">提现</Th><Th className="d3-daily-part" align="right">质押奖励</Th><Th className="d3-daily-part" align="right">创世节点收益</Th>
+              {trial && <Th className="d3-daily-part" align="right">试用业务压力测试</Th>}
               <Th align="right">当日合计</Th><Th align="right">累计</Th>
+              <Th className="d3-daily-open" align="right">构成</Th>
             </tr></thead>
             <tbody>
               {maturity.daily.map((row, index) => (
                 <Tr key={row.date}>
                   <Td><Cell num main={row.date} /></Td>
-                  <Td align="right"><Cell num main={dim(row.withdrawDueUsdt)} /></Td>
-                  <Td align="right"><Cell num main={dim(row.interestDueUsdt)} /></Td>
-                  <Td align="right"><Cell num main={dim(row.genesisDividendUsdt)} /></Td>
-                  {trial && <Td align="right"><Cell num main={dim(row.trialShadowStressUsdt)} /></Td>}
-                  <Td align="right"><Cell num main={dim(row.totalDueUsdt)} /></Td>
-                  <Td align="right"><Cell num main={amountText(maturity.cumulative[index].amountUsdt)} /></Td>
+                  <Td className="d3-daily-part" align="right"><Cell num full title={String(row.withdrawDueUsdt)} main={dim(row.withdrawDueUsdt)} /></Td>
+                  <Td className="d3-daily-part" align="right"><Cell num full title={String(row.interestDueUsdt)} main={dim(row.interestDueUsdt)} /></Td>
+                  <Td className="d3-daily-part" align="right"><Cell num full title={String(row.genesisDividendUsdt)} main={dim(row.genesisDividendUsdt)} /></Td>
+                  {trial && <Td className="d3-daily-part" align="right"><Cell num full title={String(row.trialShadowStressUsdt)} main={dim(row.trialShadowStressUsdt)} /></Td>}
+                  <Td align="right"><Cell num full title={String(row.totalDueUsdt)} main={dim(row.totalDueUsdt)} /></Td>
+                  <Td align="right"><Cell num full title={String(maturity.cumulative[index].amountUsdt)} main={amountText(maturity.cumulative[index].amountUsdt, digits)} /></Td>
+                  <Td className="d3-daily-open" align="right"><Button variant="ghost" size="sm" onClick={() => setSelectedDate(row.date)}>查看构成</Button></Td>
                 </Tr>
               ))}
             </tbody>
           </Table>
         </Fold>
+        <Drawer open={Boolean(selectedDay)} title={`${selectedDate ?? ""} 到期构成`} icon={CalendarClock} tone="role-3" onClose={() => setSelectedDate(null)}>
+          {selectedDay && <Facts>
+            <Fact k="当日合计" lead tone="role-3" unit="USDT">{amountText(selectedDay.totalDueUsdt, digits)}</Fact>
+            {partList(selectedDay).map(([name, value]) => <Fact key={name} k={name} unit="USDT">{amountText(value, digits)}</Fact>)}
+            <Fact k="累计" unit="USDT">{amountText(maturity.cumulative[maturity.daily.indexOf(selectedDay)].amountUsdt, digits)}</Fact>
+          </Facts>}
+          {selectedDay && trial && <Notice tone="warn">含试用业务压力测试，不是实际应付款。</Notice>}
+        </Drawer>
       </div>
     </Panel>
   );
@@ -336,9 +355,11 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
   const composition = liabilityRing(breakdown, main ? main.liabilities.totalUsdt : 0);
   // 差额是这个页签的答案（够不够付），放第一个，最大。读不到时写原因，不写 0。
   const net = latest?.netExposureUsdt ?? null;
+  const statDigits = amountDigits([net, shown?.cumulativeUsdt ?? null]);
+  const liabilityDigits = amountDigits(breakdown.map((row) => row.amountUsdt));
   const gapStat = canReadExposure && (
     <Stat lead={net !== null} tone={net !== null && net < 0 ? "danger" : undefined} icon={Scale} iconTone="role-1" label="储备和应付款的差额"
-      value={exposure.data?.valuationReliable === false ? TREASURY_VALUATION_UNAVAILABLE : net !== null ? amountText(net) : exposure.loading ? "…" : "—"}
+      value={exposure.data?.valuationReliable === false ? TREASURY_VALUATION_UNAVAILABLE : net !== null ? amountText(net, statDigits) : exposure.loading ? "…" : "—"}
       unit={exposure.data?.valuationReliable !== false && net !== null ? "USDT" : undefined}
       sub={exposure.data?.valuationReliable === false ? undefined
         : net !== null ? (net > 0 ? <StatusTag tone="ok">有富余</StatusTag> : net === 0 ? <StatusTag tone="warn">刚好够</StatusTag> : <StatusTag tone="danger">不够付</StatusTag>)
@@ -354,8 +375,8 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
           return (
             <Tr key={row.category} selected={row.category === selected} onOpen={() => onSelect(row.category)}>
               <Td><Cell main={<>{slot && <span className="rd-chart-swatch" data-slot={slot} aria-hidden />}{categoryText(row.category)}<Explain label={`${categoryText(row.category)}是什么`} content={LIABILITY_EXPLANATIONS[row.category]} /></>} /></Td>
-              <Td align="right"><Cell num main={amountText(row.amountUsdt)} /></Td>
-              <Td align="right"><Cell num main={row.share === null ? TREASURY_VALUATION_UNAVAILABLE : `${(row.share * 100).toFixed(1)}%`} /></Td>
+              <Td align="right"><Cell num full title={row.amountUsdt === null ? undefined : String(row.amountUsdt)} main={amountText(row.amountUsdt, liabilityDigits)} /></Td>
+              <Td align="right"><Cell num full title={row.share === null ? undefined : String(row.share)} main={shareText(row.share)} /></Td>
               <Td><Cell main={treasurySourceLabel(row.source)} /></Td>
             </Tr>
           );
@@ -380,10 +401,10 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
           </div>
           <StatBand label="到期和覆盖">
             {gapStat}
-            <Stat tone="role-3" icon={AlarmClock} label={`未来 ${windowDays(windowValue)}累计到期`} value={shown ? amountText(shown.cumulativeUsdt) : "—"} unit="USDT" explain={`${dueParts(main.config, shown?.trialStressIncluded)}。提现按冷却到期日排，窗口之外的不算在这里，所以可能比待处理提现少。`} />
+            <Stat tone="role-3" icon={AlarmClock} label={`未来 ${windowDays(windowValue)}累计到期`} value={shown ? amountText(shown.cumulativeUsdt, statDigits) : "—"} unit="USDT" explain={`${dueParts(main.config, shown?.trialStressIncluded)}。提现按冷却到期日排，窗口之外的不算在这里，所以可能比待处理提现少。${shown ? `接口数值 ${shown.cumulativeUsdt} USDT。` : ""}`} />
             {/* 能付多久是状态，和资金概况那句话同一个颜色；覆盖率是和红线比的数，角色四（VS-12）。 */}
             <Stat tone={WATER_TONE[water.tier]} icon={Gauge} label="能付多久" value={formatReserveCoverDays(main.maturity7.cumulativeUsdt, water.reserveCoverDays)} explain={main.maturity7.cumulativeUsdt === 0 ? "未来 7 天没有到期，算不出能付多少天。" : `按未来 7 天每天平均到期额算，储备够付多少天。精确值 ${Number(water.reserveCoverDays).toLocaleString("en-US")} 天。`} />
-            <Stat tone="role-4" icon={Landmark} label="兑付覆盖率" value={main.liabilities.totalUsdt === null ? TREASURY_VALUATION_UNAVAILABLE : coverage === null ? "无应付款" : `${coverage.toFixed(1)}%`} explain={`可用储备 ÷ 应付款总额，看全部应付款够不够付。可覆盖天数按最近到期速度算，和覆盖率独立。${UVT_VALUATION_NOTE}`} />
+            <Stat tone="role-4" icon={Landmark} label="兑付覆盖率" value={main.liabilities.totalUsdt === null ? TREASURY_VALUATION_UNAVAILABLE : coverage === null ? "无应付款" : `${coverage.toFixed(1)}%`} explain={`可用储备 ÷ 应付款总额，看全部应付款够不够付。可覆盖天数按最近到期速度算，和覆盖率独立。${UVT_VALUATION_NOTE}${coverage === null ? "" : `完整计算值 ${coverage}%。`}`} />
           </StatBand>
           <MaturityPanel maturity={shown} loading={maturity.loading} error={maturity.error} onRetry={onMaturityRetry} />
           <Panel
@@ -417,11 +438,20 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
             {/* 金额是这个抽屉的主数字，其余按名称和值排（DT-01）。 */}
             <Facts>
               <Fact k="金额" lead tone="role-2" unit={current.amountUsdt === null ? undefined : "USDT"}>{amountText(current.amountUsdt)}</Fact>
-              <Fact k="占比">{current.share === null ? TREASURY_VALUATION_UNAVAILABLE : `${(current.share * 100).toFixed(1)}%`}</Fact>
+              <Fact k="占比">{shareText(current.share)}</Fact>
+              <Fact k="类型编号"><span data-mono>{current.category}</span></Fact>
               <Fact k="差额">{offReason ? `不计入，${offReason}` : "计入"}</Fact>
               <Fact k="到期预测">{!DUE_CATEGORIES.includes(current.category) ? <>这类不进到期预测<Explain label="到期预测算哪些" content="到期预测只算提现、质押奖励和创世节点收益" /></> : offReason ? `不计入，${offReason}` : "计入"}</Fact>
-              <Fact k="数据来源">{treasurySourceLabel(current.source)}<Explain label="技术信息" content={`类型编号 ${current.category}`} /></Fact>
+              <Fact k="数据来源">{treasurySourceLabel(current.source)}</Fact>
             </Facts>
+            <Fold inset title="技术详情" summary="接口原标签、来源和数值">
+              <Facts>
+                <Fact k="原标签">{current.label}</Fact>
+                <Fact k="原来源"><span className="d3-raw" data-mono>{current.source}</span></Fact>
+                <Fact k="原金额" unit={current.amountUsdt === null ? undefined : "USDT"}>{current.amountUsdt === null ? TREASURY_VALUATION_UNAVAILABLE : String(current.amountUsdt)}</Fact>
+                <Fact k="原占比">{current.share === null ? TREASURY_VALUATION_UNAVAILABLE : String(current.share)}</Fact>
+              </Facts>
+            </Fold>
             {current.category === "nex_v2_future" && <p className="rd-note">{UVT_VALUATION_NOTE}</p>}
           </>
         )}
@@ -430,7 +460,8 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
   );
 }
 
-export function FlowTab({ history }: { history: { data: { flowWindows: Array<{ label: string; inflowWan: number; outflowWan: number }>; monthlyNewDeposits: Array<{ label: string; amountWan: number }> } | null; loading: boolean; error: string | null; reload: () => void } }) {
+export function FlowTab({ history }: { history: { data: B2LiquidityHistory | null; loading: boolean; error: string | null; reload: () => void } }) {
+  const [detailOpen, setDetailOpen] = useState<"flow" | "months" | null>(null);
   const wan = (value: number) => `${Number(value.toFixed(2))} 万 USDT`;
   const flows = history.data?.flowWindows ?? [];
   const months = history.data?.monthlyNewDeposits ?? [];
@@ -440,11 +471,12 @@ export function FlowTab({ history }: { history: { data: { flowWindows: Array<{ l
   // 图下面给同一份数的表，数值不只靠图和悬停（VS-47）。
   const flowsEmpty = Boolean(history.data) && flows.every((row) => row.inflowWan === 0 && row.outflowWan === 0);
   const monthsEmpty = Boolean(history.data) && months.every((row) => row.amountWan === 0);
-  const moved = !flowsEmpty || !monthsEmpty;
-  const detail = history.data && moved && (
+  const activeFlows = flows.filter((row) => row.inflowWan !== 0 || row.outflowWan !== 0);
+  const activeMonths = months.filter((row) => row.amountWan !== 0);
+  const detail = history.data && (
     <Panel flush title="明细" sub="万 USDT" explain="图里的数，单位万 USDT。" icon={ReceiptText} tone="role-2">
       <div className="rd-stack">
-        <Fold inset title="资金流入和流出明细" summary={`近 ${flows.length} 天`}>
+        <Fold inset title="资金流入和流出明细" summary={`近 ${flows.length} 天`} open={detailOpen === "flow"} onOpenChange={(open) => setDetailOpen(open ? "flow" : null)}>
         <Table label="近 8 天资金流入和流出明细">
           <thead><tr><Th>日期</Th><Th align="right">流入</Th><Th align="right">流出</Th><Th align="right">净流入</Th></tr></thead>
           <tbody>
@@ -453,14 +485,14 @@ export function FlowTab({ history }: { history: { data: { flowWindows: Array<{ l
                 <Td><Cell num main={row.label} /></Td>
                 <Td align="right"><Cell num main={fixed(row.inflowWan)} /></Td>
                 <Td align="right"><Cell num main={fixed(row.outflowWan)} /></Td>
-                <Td align="right"><Cell num main={row.inflowWan === row.outflowWan ? fixed(0) : signed(row.inflowWan - row.outflowWan)} /></Td>
+                <Td align="right"><Cell num main={row.netWan === 0 ? fixed(0) : signed(row.netWan)} /></Td>
               </Tr>
             ))}
           </tbody>
         </Table>
         </Fold>
-        <Fold inset title="新增入金明细" summary={`近 ${months.length} 个月`}>
-        <Table label="近 8 个月新增入金明细">
+        <Fold inset title="新增入金明细" summary={`近 ${months.length} 个月`} open={detailOpen === "months"} onOpenChange={(open) => setDetailOpen(open ? "months" : null)}>
+        <Table label="近 8 个月新增入金明细" className="d3-months">
           <thead><tr><Th>月份</Th><Th align="right">新增入金</Th></tr></thead>
           <tbody>
             {months.map((row) => (
@@ -477,22 +509,26 @@ export function FlowTab({ history }: { history: { data: { flowWindows: Array<{ l
   );
   return (
     <>
+    {history.data && <p className="rd-note">历史统计时间：{timeText(history.data.generatedAt)} · 日期按接口业务日，金额单位万 USDT</p>}
+    {history.error && !history.data && <BlockState state="error" title="资金流历史暂不可用" detail={history.error} onRetry={history.reload} />}
     <div className="rd-split" data-even="">
       <Panel title="这几天钱是进多还是出多" sub={flowsEmpty ? `近 ${flows.length} 天` : `近 ${flows.length || 8} 天 · 万 USDT`} explain="按储备账已确认的流入、流出统计。流入包括充值、财务注资和储备返还／冲正；流出包括提现扣储备和拒付退回。非银行提现在放行时扣储备，银行提现在付款成功时结算，不代表全部已实际打款。用余额买设备不算。" icon={ArrowDownUp} tone="role-2" data-testid="b2-fund-flow-history">
         {pending ? <BlockState state="loading" title="正在读取资金流…" />
-          : !history.data ? <BlockState state="error" title="资金流历史暂不可用" detail={history.error} onRetry={history.reload} />
+          : !history.data ? <p className="rd-note">资金流图暂不可用</p>
           : flowsEmpty ? <BlockState state="empty" title={`近 ${flows.length} 天没有资金进出`} />
+          : activeFlows.length === 1 ? <BlockState state="empty" title={`只有 ${activeFlows[0].label} 有资金进出`} detail={`流入 ${wan(activeFlows[0].inflowWan)}，流出 ${wan(activeFlows[0].outflowWan)}`} />
           : <ColumnChart label={`近 ${flows.length} 天资金流入和流出`} format={wan} axisFormat={(value) => String(Number(value.toFixed(1)))}
               series={[{ label: "流入", slot: 2 }, { label: "流出", slot: 4 }]}
               data={flows.map((row) => ({ key: row.label, tick: row.label, values: [row.inflowWan, row.outflowWan] }))} />}
       </Panel>
       <Panel title="每个月新增入金有多少" sub={monthsEmpty ? `近 ${months.length} 个月` : `近 ${months.length || 8} 个月 · 万 USDT`} explain="只算用户成功充值，财务注入的储备不算。" icon={Coins} tone="role-2" data-testid="b2-monthly-inflow-history">
         {pending ? <BlockState state="loading" title="正在读取新增入金…" />
-          : !history.data ? <BlockState state="error" title="月新增入金暂不可用" detail={history.error} onRetry={history.reload} />
+          : !history.data ? <p className="rd-note">新增入金图暂不可用</p>
           : monthsEmpty ? <BlockState state="empty" title={`近 ${months.length} 个月没有新增入金`} detail="这里只算用户成功充值，财务注入的储备不算。" />
+          : activeMonths.length === 1 ? <BlockState state="empty" title={`只有 ${activeMonths[0].label} 有新增入金`} detail={wan(activeMonths[0].amountWan)} />
           : <ColumnChart label={`近 ${months.length} 个月新增入金`} format={wan} axisFormat={(value) => String(Number(value.toFixed(1)))}
               series={[{ label: "新增入金", slot: 2 }]}
-              data={months.map((row) => ({ key: row.label, tick: row.label.slice(5), values: [row.amountWan] }))} />}
+              data={months.map((row) => ({ key: row.label, tick: row.label, values: [row.amountWan] }))} />}
       </Panel>
     </div>
     {detail}

@@ -139,6 +139,21 @@
 .d3-levels .rd-tiers { max-width: none; }  /* 宽度由 Figure 管：左右排时到 560，上下排时占满面板。 */
 .d3-window { gap: var(--rd-space-1); }
 .d3-zero { color: var(--rd-text-3); }
+.d3-raw { overflow-wrap: anywhere; white-space: pre-wrap; }
+.d3-maturity { container-type: inline-size; }
+.d3-daily { table-layout: fixed; }
+.d3-daily :is(th, td):first-child { width: 118px; }
+.d3-daily .d3-daily-open { display: none; }
+@container (max-width: 1000px) {
+  .d3-daily .d3-daily-part { display: none; }
+  .d3-daily .d3-daily-open { display: table-cell; width: 100px; }
+}
+.d3-liabilities { table-layout: fixed; }
+.d3-liabilities :is(th, td):first-child { width: 34%; }
+.d3-liabilities :is(th, td):nth-child(2) { width: 29%; }
+.d3-liabilities :is(th, td):nth-child(3) { width: 12%; }
+.d3-liabilities :is(th, td):nth-child(4) { width: 25%; }
+.d3-months { max-width: 480px; table-layout: fixed; }
 .d3-amount { max-width: none; }
 .d3-form { grid-template-columns: repeat(2, minmax(0, 280px)); }  /* 下拉里是两个字，不拉满半屏。 */
 @container (max-width: 799px) { .rd-figure .d3-liabilities :is(th, td):nth-child(4) { display: none; } }  /* 环在左时窄屏放不下四列，数据来源在抽屉里。 */

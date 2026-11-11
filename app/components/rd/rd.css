@@ -587,6 +587,10 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-modal.rd-confirm .rd-brief-toggle { grid-row: 1; grid-column: 2; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .rd-modal.rd-confirm .rd-brief[open] .rd-brief-head > span { display: none; }  /* 展开后「影响」在下面那一行，标题行不重复 */
 /* 展开的摘要和关键信息同一条值线（名称列 128 = 事实块的内边距 16 + 112），不带底块：这是补充说明，不是关键信息，句子也多一点宽度（VS-105）。 */
+/* 上面已经常显后果句和「谁能批」时，这一行只是「再看细节」的入口：不再摆成一行没有内容的小标题，改成贴着说明的文字链；「执行摘要」留给读屏。 */
+.rd-modal.rd-confirm .rd-operation-brief:has(> p) .rd-brief > summary { display: flex; justify-content: flex-start; }
+.rd-modal.rd-confirm .rd-operation-brief:has(> p) .rd-brief-head b { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.rd-modal.rd-confirm .rd-operation-brief:has(> p) .rd-brief-toggle { color: var(--rd-text-2); text-decoration: underline; text-underline-offset: 2px; }
 .rd-brief-rows { display: grid; gap: 8px; margin: 8px 0 0; }
 .rd-brief-rows > div { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 12px; }  /* 和事实底块里 .rd-fact 的值同一条线 */
 /* 事实区只有一行、不带底块时（见下面 .rd-confirm-facts 那条），事实的值线在 112 + 12，摘要跟着收到 112 */
@@ -1413,3 +1417,10 @@ button.rd-dist-item[aria-pressed="true"] { background: var(--rd-selected); color
 .k-confirm-textarea { font-family: inherit; font-size: 12.5px; resize: vertical; }
 .k-confirm-count { margin-top: 7px; color: var(--warning); }
 .k-confirm-count[data-ok] { color: var(--ink-3); }
+/* 确认框的事实块里一行都没有时不留一条空的灰底。 */
+.rd-confirm-facts:has(> .rd-facts:only-child:empty) { display: none; }
+/* 下拉框当前值只占一行：长名字省略，不折出控件。 */
+.rd-select > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 弹窗和抽屉里的数字框不显示浏览器自带的上下箭头（协调人定：不要可见的步进按钮）；键盘上下键照常。 */
+:is(.rd-modal, .rd-drawer) input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+:is(.rd-modal, .rd-drawer) input[type="number"]::-webkit-inner-spin-button, :is(.rd-modal, .rd-drawer) input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }

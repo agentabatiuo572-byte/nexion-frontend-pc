@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { MoreHorizontal } from "lucide-react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -15,7 +16,7 @@ import { sameLegacyUnknownProof, type LegacyUnknownCandidate } from "@/lib/admin
 import { e5Commands, e5LegacyCommands, e5CommandBlocks, sendE5Command, type E5Command, type E5Intent } from "@/lib/admin/e5-command";
 import { e6Commands, type E6Pending } from "@/lib/admin/e6-command";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { BlockState, Button, Change, Check, Fact as RdFact, Facts, Fold, IrreversibleTag, Modal, MoreMenu, Notice, RatioBar, ReleaseBody, StatusTag, type MoreMenuItem } from "@/app/components/rd";
+import { BlockState, Button, Change, Check, Fact as RdFact, Facts, Fold, IconButton, IrreversibleTag, Modal, MoreMenu, Notice, RatioBar, ReleaseBody, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import { E5_STATES } from "./e5-device-state";
 import type { EViewCtx } from "./types";
@@ -38,7 +39,7 @@ const EFFECTS: Record<E5Intent, string> = {
   resume: "将恢复该用户的设备派单；停跑期间收益不补发。",
   "force-activate": "强制激活也不能绕过每人 6 台上限。批准前设备状态不变。",
   unbind: "设备将不再属于原用户，不退款，购入时间不变。",
-  legacy: "仅取消这条未确认旧任务，不产生USDT/UVT收益。原请求、journal和恢复预算保留，不授予重放。",
+  legacy: "仅取消这条未确认旧任务，不产生USDT/UVT收益。原请求、任务执行记录和恢复预算保留，不授予重放。",
 };
 interface ActionsState {
   records: E5Command[];
@@ -145,8 +146,7 @@ export function E5PendingMark({ device }: { device: E5Device }) {
 }
 
 export function E5Slots({ device: d, phones = false }: { device: E5Device; phones?: boolean }) {
-  return <div className="e5-slots" data-phones={phones ? "" : undefined} data-full={d.activeDevicesForUser >= d.maxDevicesPerUser ? "" : undefined}><RatioBar label="激活名额（含手机）" value={d.activeDevicesForUser} tone={phones ? d.activeDevicesForUser >= d.maxDevicesPerUser ? "warn" : "role-2" : "neutral"} total={d.maxDevicesPerUser} valueText={`${d.activeDevicesForUser}/${d.maxDevicesPerUser} 台（含手机）`} steps quiet invalidText="已超过上限，不能激活" />
-    <span>{d.activeDevicesForUser}/{d.maxDevicesPerUser} 台（含手机）</span></div>;
+  return <div className="e5-slots" data-phones={phones ? "" : undefined} data-full={d.activeDevicesForUser >= d.maxDevicesPerUser ? "" : undefined}><RatioBar label="激活名额（含手机）" value={d.activeDevicesForUser} tone={phones ? d.activeDevicesForUser >= d.maxDevicesPerUser ? "warn" : "role-2" : "neutral"} total={d.maxDevicesPerUser} valueText={`${d.activeDevicesForUser}/${d.maxDevicesPerUser} 台（含手机）`} steps invalidText={`${d.activeDevicesForUser}/${d.maxDevicesPerUser} 台（含手机），已超过上限，不能激活`} /></div>;
 }
 
 /** E5 rows, detail footer and E6 phone mode all use these same state/authority/command checks. */
@@ -190,7 +190,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
   }
   const proposal = action === "force-activate" || action === "unbind" || action === "legacy";
   return <>
-    {options.length ? inline ? <div className="rd-toolbar">{options.map(option => <Button key={option.key} size="sm" variant={option.danger ? "danger-outline" : "secondary"} disabledReason={option.disabledReason} onClick={option.onSelect}>{option.label}</Button>)}</div> : <MoreMenu label={`操作 ${d.serial}`} items={options} /> : phones ? <span className="rd-muted" title="当前权限或状态没有可执行的操作">{!ctx.canWriteE5 && !ctx.canForceActivateE5 && !ctx.canUnbindE5 ? "只读" : "—"}</span> : d.simState === "CLOSING" ? inline ? <span className="rd-muted">当前任务结算后自动停用，暂时没有可执行的操作。</span> : <span className="rd-muted" title="当前任务结算后自动停用，暂时没有可执行的操作">收尾</span> : inline ? <span className="rd-muted">{readOnly ? "模拟任务已关闭，仅可查看设备事实。" : "当前账号或设备状态没有可执行的操作。"}</span> : null}
+    {options.length ? inline ? <div className="rd-toolbar">{options.map(option => <Button key={option.key} size="sm" variant={option.danger ? "danger-outline" : "secondary"} disabledReason={option.disabledReason} onClick={option.onSelect}>{option.label}</Button>)}</div> : <MoreMenu label={`操作 ${d.serial}`} items={options} /> : phones ? <span className="rd-muted" title="当前权限或状态没有可执行的操作">{!ctx.canWriteE5 && !ctx.canForceActivateE5 && !ctx.canUnbindE5 ? "只读" : "—"}</span> : d.simState === "CLOSING" ? inline ? <span className="rd-muted">停用中，结算后自动停用，暂时没有可做的操作。</span> : <IconButton aria-label={`操作 ${d.serial}`} disabledReason="停用中，结算后自动停用，暂时没有可做的操作"><MoreHorizontal size={16} aria-hidden /></IconButton> : inline ? <span className="rd-muted">{readOnly ? "任务已关闭，仅可查看设备事实。" : "当前账号或设备状态没有可执行的操作。"}</span> : null}
     {candidateOpen && <Modal title="旧任务终结资格" onClose={() => setCandidateOpen(false)} busy={reading} footer={<Button onClick={() => setCandidateOpen(false)}>关闭</Button>}>
       <Facts><Fact label="设备" value={d.serial} /><Fact label="用户" value={d.user} /></Facts>
       {reading ? <BlockState state="loading" title="正在核对终结资格…" /> : candidateError ? <BlockState state="error" title="终结资格读取失败" detail={candidateError} onRetry={() => void readCandidate()} /> : candidate && <>
