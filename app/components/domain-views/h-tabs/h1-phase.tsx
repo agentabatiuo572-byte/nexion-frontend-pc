@@ -485,6 +485,7 @@ export default function H1Phase({ ctx,
       },
       detail: "先修改月份，再修改本阶段进度；两项分别保存。",
       facts: <Facts>
+        <Fact k="现在">第 {text(rhythm.currentMonth)} 月，本阶段进度 {text(rhythm.phaseProgressPct)}%</Fact>
         <Fact k="当前阶段">{phaseLabel}</Fact>
         <Fact k="保存顺序">月份先保存并同步活跃参数，再保存进度；后一步失败不会回滚前一步。</Fact>
       </Facts>,
@@ -498,19 +499,18 @@ export default function H1Phase({ ctx,
         fields: [
           {
             key: "currentMonth",
-            label: "当前月份",
+            label: "改后当前月份",
             inputKind: "select",
             current: text(rhythm.currentMonth,
               ""),
             options: Array.from({ length: rhythm.totalMonths! },
               (_,
                 index) => String(index + 1)),
-            showDiff: true,
             help: "切换到所选月份的阶段参数；扩大支出时后端会检查资金。"
           },
           {
             key: "phaseProgressPct",
-            label: "本阶段进度",
+            label: "改后本阶段进度",
             inputKind: "number",
             current: text(rhythm.phaseProgressPct,
               ""),
@@ -519,7 +519,6 @@ export default function H1Phase({ ctx,
             step: 1,
             pattern: "^\\d+$",
             patternMessage: "请填 0–100 的整数",
-            showDiff: true,
             help: "0–100 的整数；人工记录，不自动推进月份。"
           },
         ]
