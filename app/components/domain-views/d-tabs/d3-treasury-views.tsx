@@ -99,7 +99,7 @@ const TREASURY_SOURCE_LABELS: Record<string, string> = {
   "nx_treasury_reserve_ledger": "储备资金账本",
   "nx_staking_position.amount_usdt": "生效中的质押锁定金额",
   "nx_user_wallet": "用户钱包余额",
-  "nx_user_wallet.usdt_available": "用户钱包的可提现余额",
+  "nx_user_wallet.usdt_available": "用户钱包余额",
   "nx_staking_position": "质押锁定金额与奖励",
   "nx_staking_position.estimated_interest_usdt": "待付质押奖励",
   "nx_genesis_holding": "创世节点持仓",
@@ -111,7 +111,7 @@ const TREASURY_SOURCE_LABELS: Record<string, string> = {
   "nx_wallet_ledger": "钱包资金流水",
   "nx_wallet_ledger pending commission": "待解锁奖励流水",
   "nx_treasury_legacy_lock_liability": "存量锁定金额及奖励",
-  "nx_treasury_legacy_lock_liability active principal + accrued interest": "生效中的存量锁定金额及奖励",
+  "nx_treasury_legacy_lock_liability active principal + accrued interest": "存量锁定记录",
   "nx_vietqr_reconciliation": "VietQR 银行回单",
   "nx_vietqr_reconciliation open suspense rows": "待处置 VietQR 银行回单",
 };
