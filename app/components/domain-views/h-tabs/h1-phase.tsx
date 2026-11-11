@@ -125,10 +125,11 @@ export default function H1Phase({ ctx, onRhythmChange }: { ctx: HCtx; onRhythmCh
   const freshBlock = loading ? "正在读取最新数据，请稍后操作" : error ? "阶段明细读取失败，请先刷新核对" : undefined;
   const scopeBlock = (scope: string) => freshBlock ?? (pending.some((row) => row.scope === scope) ? LOCKED : undefined);
   const precision = useMemo(() => Object.fromEntries(DIALS.map((dial) => [dial.key, dial.key === "withdrawCooldownDays" || dial.key === "complianceHoldEnabled" ? 0 : Math.max(2, ...rows.map((row) => text(row.dials[dial.key], "").split(".")[1]?.replace(/0+$/, "").length ?? 0))])), [rows]);
-  const permitted = (row: H1Pending) => row.scope === "rhythm" || row.scope.startsWith("dial:") ? canWrite : row.scope.startsWith("control:") ? canControl && canPropose : canRevoke && canPropose;
+  const permitted = (row: H1Pending) => !(row.requests.some((request) => request.kind === "proposal") && !canPropose) && (row.scope === "rhythm" || row.scope.startsWith("dial:") ? canWrite : row.scope.startsWith("control:") ? canControl && canPropose : canRevoke && canPropose);
 
   const afterWrite = async (row: H1Pending, retry = false) => {
     setChecked(undefined);
+    setFeedback(undefined);
     setSending(row.commandKey);
     try {
       const result = await executeH1(row, applyReceipt, retry);
@@ -263,7 +264,7 @@ export default function H1Phase({ ctx, onRhythmChange }: { ctx: HCtx; onRhythmCh
       {row.state !== "approval" && <Button size="sm" disabledReason={!permitted(row) ? "当前账号缺少原操作权限" : isRetryExpired(row) ? RETRY_EXPIRED_TEXT : undefined} loading={busy} onClick={async () => { setBusy(true); try { await afterWrite(row, true); } catch (failure) { ctx.toast(displayAdminError(failure), "warn"); } finally { setBusy(false); } }}>原样重试</Button>}
       {row.retryRejected && row.state === "rejected" && checked === row.commandKey && <Button size="sm" onClick={() => setRelease(row)}>解除待确认</Button>}
     </>}><b>{row.state === "approval" ? "本次申请待审批" : "本次提交结果待核对"}</b> · {row.label}{row.ticket && ` · 票号 ${row.ticket.id}`}
-      {row.requests.some((item) => item.acknowledged && item.kind === "patch") && <p>{row.requests.filter((item) => item.acknowledged).map((item) => `${item.label}已保存`).join("，")}；{row.requests.filter((item) => !item.acknowledged).map((item) => `${item.label}未确认`).join("，")}。恢复只处理未确认的一步。</p>}
+      {row.requests.some((item) => item.acknowledged && item.kind === "patch") && <p>{row.requests.filter((item) => item.acknowledged).map((item) => `${item.label}已保存`).join("，")}；{row.requests.filter((item) => !item.acknowledged).map((item) => `${item.label}${row.state === "rejected" && !row.retryRejected ? "未保存" : "未确认"}`).join("，")}。恢复只处理未确认的一步。</p>}
       {row.state !== "approval" && isRetryExpired(row) && <p>{RETRY_EXPIRED_TEXT}；原记录和对象保护继续保留。</p>}
     </Notice>)}
     {feedback && <Notice tone="warn">{feedback}</Notice>}
@@ -295,7 +296,7 @@ export default function H1Phase({ ctx, onRhythmChange }: { ctx: HCtx; onRhythmCh
           })}</Tr>)}{!rows.length && <TableMessage columns={8}>未提供月度参数，请先核对总体安排。</TableMessage>}
         </tbody></Table>
       </Panel></div>
-      <div id={nav.anchor("controls")} className="h1-section"><Fold title="阶段切换设置" icon={GitBranch} tone="role-other" summary={`${describeH1Schedule(rhythm.schedule)} · ${model.controls.find((row) => row.key === "pin")?.value ? "已保存锁定配置" : "未配置锁定阶段"}`} open={!!folds.controls} onOpenChange={(open) => setFolds((value) => ({ ...value, controls: open }))} explain={CONTROL_EFFECT}>
+      <div id={nav.anchor("controls")} className="h1-section"><Fold title="阶段切换设置" icon={GitBranch} tone="role-other" summary={`${describeH1Schedule(rhythm.schedule)} · ${model.controls.find((row) => row.key === "pin")?.value === "未钉住" ? "未锁定阶段" : model.controls.find((row) => row.key === "pin")?.value ? "已保存锁定配置" : "未配置锁定阶段"}`} open={!!folds.controls} onOpenChange={(open) => setFolds((value) => ({ ...value, controls: open }))} explain={CONTROL_EFFECT}>
         <Notice tone="progress">三个入口只保存配置，后端目前不执行。</Notice><ConfigList label="阶段控制配置">{model.controls.map((control) => <ConfigRow key={control.key} name={CONTROL_NAMES[control.key] ?? control.label} what={control.key === "schedule" ? "保存的阶段排程原文" : control.key === "pin" ? "保存的阶段锁定配置" : "保存的用户群阶段策略原文"} when="批准后保存配置，当前不执行" note={control.key === "pin" ? "未锁定阶段不表示已开启自动推进" : "保留后端原文，不推断实际生效状态"} value={control.key === "pin" && control.value === "未钉住" ? "未锁定阶段" : text(control.value, "未配置")} action={canControl ? <Button size="sm" aria-label={`调整${control.label}`} disabledReason={scopeBlock(`control:${control.key}`)} onClick={() => openControl(control)}>调整</Button> : undefined} />)}</ConfigList>
       </Fold></div>
       <div id={nav.anchor("overrides")} className="h1-section"><Fold title="单独覆盖人群" icon={Users} tone="role-3" summary={model.overrides.length ? `${model.overrides.length} 条覆盖记录` : "当前接口未提供覆盖人群"} open={!!folds.overrides} onOpenChange={(open) => setFolds((value) => ({ ...value, overrides: open }))}>
@@ -304,7 +305,7 @@ export default function H1Phase({ ctx, onRhythmChange }: { ctx: HCtx; onRhythmCh
       <div id={nav.anchor("attribution")} className="h1-section"><Fold title="阶段归因" icon={ChartNoAxesCombined} tone="role-other" summary={`${model.attribution.length} 个阶段的参考资料`} open={!!folds.attribution} onOpenChange={(open) => setFolds((value) => ({ ...value, attribution: open }))} explain="静态目录参考值，不是本月实际参数或业务效果统计；详细数据见运营阶段状态和设备、任务与团队报表。">
         {!model.attribution.length ? <BlockState state="empty" title="未提供阶段参考资料" /> : <div className="h1-attribution">{model.attribution.map((row) => <section key={row.phase} id={`h1-attribution-${row.phase}`} className="h1-attribution-item" data-hit={deepLink?.phase === row.phase ? "" : undefined}>
           <h3>{row.phase} {row.name}{deepLink?.phase === row.phase && <StatusTag tone="progress">跳转定位</StatusTag>}</h3>{["P5", "P6"].includes(row.phase) && <Notice tone="warn">此资料含已退役参数，不作为当前执行依据。</Notice>}
-          <Facts><Fact k="主要驱动">{row.driver}</Fact><Fact k="阶段参数">{DIALS.find((dial) => dial.key === row.paramKey)?.label ?? row.paramKey}</Fact><Fact k="目录参考值">{row.value}{DIALS.find((dial) => dial.key === row.paramKey)?.unit ? ` ${DIALS.find((dial) => dial.key === row.paramKey)?.unit}` : ""}</Fact><Fact k="负责模块">{row.owner}</Fact></Facts>
+          <Facts><Fact k="主要驱动">{row.driver.replaceAll("提现冷却", "到账审查窗口").replaceAll("增强合规审查", "加强合规审查")}</Fact><Fact k="阶段参数">{DIALS.find((dial) => dial.key === row.paramKey)?.label ?? row.paramKey}</Fact><Fact k="目录参考值">{row.value}{DIALS.find((dial) => dial.key === row.paramKey)?.unit ? ` ${DIALS.find((dial) => dial.key === row.paramKey)?.unit}` : ""}</Fact><Fact k="负责模块">{row.owner}</Fact></Facts><Fold inset title="原始资料" summary="后端参考目录原文"><Facts><Fact k="原始阶段名称">{row.name}</Fact><Fact k="原始驱动">{row.driver}</Fact><Fact k="参数标识">{row.paramKey}</Fact></Facts></Fold>
         </section>)}</div>}
       </Fold></div>
     </>}
