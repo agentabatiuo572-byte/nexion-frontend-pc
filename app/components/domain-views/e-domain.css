@@ -510,6 +510,9 @@
 
 /* E2 complete lists expand inside the modal body; product popovers have their own bounded viewport. */
 .e2-command-tasks { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
+/* 停用影响块：商品名之间、名单和「影响设备」、数字框和后果句之间用同一档间距，不再一处松一处贴。 */
+.rd-notice .e2-command-tasks { gap: var(--rd-space-1); margin-top: var(--rd-space-1); }
+.rd-notice .e2-command-tasks + .rd-facts { margin-block: var(--rd-space-2); }
 
 /* E2 follows the panel gutter; each wrapped filter row keeps the shared control baseline. */
 .e2-task-panel .rd-filter { padding-inline: var(--rd-panel-pad-x); }
@@ -533,6 +536,8 @@
 .e2-task-table .e2-control-column { width: 44px; }
 .e2-task-table .e2-name-column { width: 58ch; }
 .e2-task-table th:nth-child(2) { padding-inline-start: var(--rd-cell-pad); }
+/* 右对齐的时长和左对齐的状态之间多留一档，表头不读成「时长状态」。 */
+.e2-task-table :is(th, td):nth-child(5) { padding-inline-start: var(--rd-space-6); }
 @container (max-width: 900px) { .e2-levels .rd-stat[data-selected]::after { display: none; } }
 .e2-task-table .rd-cell-main { white-space: normal; overflow-wrap: break-word; }
 .e2-task-table col:nth-child(4) { width: 24%; }
@@ -622,7 +627,6 @@
 .e5-distribution [data-slot="other"] { --slot: var(--rd-done); }
 :root[data-theme="light"] .e5-distribution [data-tone="done"] { --tone: var(--rd-done); }
 :root[data-theme="light"] .e5-distribution [data-slot="other"] { --slot: var(--rd-chart-other); }
-.e5-distribution .rd-dist-legend li:first-child > button.rd-dist-item { margin-left: 0; }
 .e5-distribution button.rd-dist-item[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--rd-line-strong); }
 
 .e5-user-meta { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
@@ -666,6 +670,31 @@
 
 .e5-amount[data-zero] { color: var(--rd-text-3); font-weight: 400; }
 .rd-drawer[data-e5-detail] .e5-amount[data-zero] { font-size: var(--rd-text-body); }
+
+/* 本页没有一行带预估区间时，收益列只放金额或「—」；也没有当前任务时任务列同样收窄。
+   省下的宽度给设备、用户、状态，1440 下实例号不再省略，中间不留一片空。 */
+.e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-income { width: 152px; }
+.e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-device { width: clamp(126px, calc(var(--e5-column-space) * .36), 430px); }
+.e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-user { width: clamp(190px, calc(var(--e5-column-space) * .18), 240px); }
+.e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-status { width: clamp(152px, calc(var(--e5-column-space) * .15), 200px); }
+.e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-device { width: auto; }
+.e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-user { width: clamp(190px, calc(var(--e5-column-space) * .19), 240px); }
+.e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-status { width: clamp(152px, calc(var(--e5-column-space) * .17), 200px); }
+.e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-task { width: 120px; }
+.e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table td.e5-task-col { text-align: center; }
+@container e5-devices (max-width: 1129px) {
+  /* 1024：状态列让出一点给设备列，常见商品名「NexGridBox Pro」不再截掉型号。 */
+  .e5-table .e5-col-device { width: clamp(132px, calc(var(--e5-column-space) * .19), 236px); }
+  .e5-table .e5-col-status { width: 128px; }
+  .e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-income { width: 136px; }
+  .e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-device { width: clamp(144px, calc(var(--e5-column-space) * .27), 236px); }
+  .e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-user { width: clamp(144px, calc(var(--e5-column-space) * .209), 184px); }
+  .e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-status { width: 128px; }
+  .e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-device { width: auto; }
+  .e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-user { width: clamp(144px, calc(var(--e5-column-space) * .22), 184px); }
+  .e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-status { width: 150px; }
+  .e5-table-host[data-no-range][data-no-task]:not([data-extra]) .e5-table .e5-col-task { width: 96px; }
+}
 
 /* E6 · 手机算力配置：页面专用排版，图形复用 rd。 */
 .e6-page { display: grid; gap: var(--rd-section-gap); min-width: 0; }
@@ -736,6 +765,7 @@
 .e6-middle-text { display: inline-flex; max-width: 100%; vertical-align: bottom; }
 .e6-middle-text > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e6-middle-text > :last-child { flex: none; }
+.e6-middle-text > :first-child, .e6-middle-text > :last-child { white-space: pre; }  /* 断点落在空格上时空格不丢 */
 .e6-phone-device .rd-cell-sub > .e6-original, .e6-tasks-table .rd-cell-main > .e6-original { display: block; }
 .e6-phone-panel { min-width: 0; }
 .e6-page .e6-phones-table .e6-phone-task { min-width: 240px; width: 240px; }
@@ -773,6 +803,7 @@
 .e6-fold-content > :is(p, pre), .e6-confirm-facts p { margin: 0; }
 .e6-page .rd-fold-body > .e6-fold-content { padding-top: 12px; }
 .e6-confirm-facts .e6-fold-content { gap: 8px; }
+.e6-fold-content > .rd-btn { justify-self: start; }  /* 折叠里的查询按钮按内容宽，不拉成一整条灰带 */
 .e6-json { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
 .e6-device-slots { display: inline-flex; align-items: center; gap: 12px; }
 .e6-serial { font-size: var(--rd-text-aux); overflow-wrap: anywhere; }
@@ -782,6 +813,12 @@
 .e6-task-reward > :last-child { text-align: left; }
 .e6-pending-list { display: grid; gap: 12px; }
 .e6-pending-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
+/* 右对齐的数字列后面紧跟左对齐的文字列时多留一档，「每任务奖励」和「状态」、「UVT/天」和「来源」不连读。 */
+.e6-page .e6-tasks-table :is(th, td):nth-child(5), .e6-page .e6-compare-table :is(th, td):nth-child(4) { padding-inline-start: var(--rd-space-6); }
+/* 引导对比：名称列不独占余宽，数字离名字近一些，余下的给来源。 */
+.e6-page .e6-compare-table { table-layout: fixed; }
+.e6-page .e6-compare-table th:first-child { width: 32%; }
+.e6-page .e6-compare-table th:nth-child(2), .e6-page .e6-compare-table th:nth-child(3) { width: 17%; }
 @container (max-width: 860px) {
   .e6-page .rd-config-rail > .rd-section-nav { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 4px; }
   .e6-page .rd-config-rail > .rd-section-nav a { flex: none; white-space: nowrap; }
@@ -804,6 +841,7 @@
 .e1-plan-table :is(th, td):nth-child(5) { width: 12%; }
 .e1-plan-table :is(th, td):last-child { width: 10%; }
 .e1-plan-table td:nth-child(2) .e1-table-stack { align-items: flex-end; }
+.e1-plan-table :is(th, td):nth-child(3) { padding-inline-start: var(--rd-space-6); }  /* 右对齐的「计划开放」和左对齐的「当前状态」之间多留一档 */
 .e1-plan-table td:nth-child(2) .e1-table-stack > * { white-space: nowrap; }
 .e1-phase-table :is(th, td):first-child { width: 18%; }
 .e1-phase-table :is(th, td):nth-child(2) { width: 30%; }
@@ -827,7 +865,7 @@
   .e1-phase-table :is(th, td):nth-child(4) { width: 14%; }
   .e1-phase-table :is(th, td):last-child { width: 27%; }
 }
-.e1-catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: var(--rd-space-2) var(--rd-space-4); }
+.e1-catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: var(--rd-space-4); }
 .e1-product { --rd-track-w: 100%; display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; padding: var(--rd-space-3); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); color: var(--rd-text); }
 .e1-product[data-hit] { border-color: var(--rd-progress); }
 .e1-product-identity { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; gap: var(--rd-space-3); }
@@ -840,6 +878,7 @@
 .e1-middle-text { display: flex; min-width: 0; max-width: 100%; white-space: nowrap; }
 .e1-middle-text > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .e1-middle-text > :last-child, .e1-product-name .rd-tag { flex: none; }
+.e1-middle-text > :first-child, .e1-middle-text > :last-child { white-space: pre; }  /* 断点落在空格上时空格不丢（「Pro v2」不读成「Prov2」） */
 .e1-product-id { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .e1-product-id > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e1-product-id > :not(:first-child) { flex: none; }
@@ -900,6 +939,12 @@
 .e1-product-id > :first-child { font-family: var(--rd-font-mono); }
 .e1-detail-link { max-width: 100%; font: inherit; text-align: left; }
 .e1-product-conditions > :is(.e1-card-warning, .e1-card-note):empty { display: none; }
+/* 卡片细节：带标签的小标题行和不带的等高；「售罄」和剩余数分开；购买条件图标和字同一行；受阻原因不折出孤字。 */
+.e1-product-levels > .e1-value-line { align-items: center; min-height: var(--rd-lh-body); }
+.e1-product-stock > .e1-value-line > .e1-muted { display: inline-flex; align-items: center; gap: var(--rd-space-2); white-space: nowrap; }
+.e1-gate-trigger { display: inline-flex; align-items: center; gap: var(--rd-space-1); white-space: nowrap; }
+.e1-gate-trigger > svg { flex: none; }
+:is(.e1-card-warning, .e1-card-note) { text-wrap: pretty; }
 .e1-stage-summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
 .e1-stage-summary > .rd-btn { justify-self: end; }
 .e1-stage-summary .rd-stageline { min-width: 0; }
