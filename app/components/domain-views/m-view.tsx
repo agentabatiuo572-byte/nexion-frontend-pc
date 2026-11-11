@@ -678,7 +678,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "M3" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
+      {tab !== "M3" && tab !== "M1" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
       {tab !== "M3" && shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<>{operationNotice?.tone === "danger" && <Link className="rd-link" href="/service/sessions">到专属会话核对</Link>}<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button></>}>{shownOperationNotice}</Notice>}
       {tab === "M3" && !safeMData && <PageHeader pageId="M3" title="专属会话" summary={M3_SUMMARY} back={backToCustomers} />}
 
@@ -754,7 +754,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  return tab === "M3" ? <RdPage className="mdom">{page}</RdPage> : <div className="dkpage mdom">{page}</div>;
+  return tab === "M3" || tab === "M1" ? <RdPage className="mdom">{page}</RdPage> : <div className="dkpage mdom">{page}</div>;
 }
 
 /* ============ MP2 持续接待 dock —— 切页不挂断(M3 自身是全屏对话台,故 M3 不显)============ */

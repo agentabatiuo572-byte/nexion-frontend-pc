@@ -14,6 +14,7 @@ import {
   type SupportSla,
   type SupportTicket,
 } from "./data";
+import { Button, Facts, Fact } from "@/app/components/rd";
 import { Icon, type IconName, Modal, Toggle } from "../design-kit";
 import { catCN, MAvatar } from "./hd-ui";
 import type { MCtx } from "./types";
@@ -652,10 +653,9 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
 
 export function SupportSeatRoleModal({ canManage, onClose }: { ctx: MCtx; operatorName: string; currentRole: string; currentAdminId: number; agents: MSupportAgent[]; canManage: boolean; onClose: () => void }) {
   const canManageQualifications = useAdminAuth(state => Boolean(canManage && state.session && ["super", "superadmin"].includes(state.session.role) && state.session.authorities.includes("platform_a1_read") && canAccessResolvedPath(resolveVisibleDomains(state.session), "/platform/rbac")));
-  return <Modal title="客服资格管理" icon="users" onClose={onClose} footer={<button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button>}>
-    <p>人工接待统一由专属客服负责。接待资格和主管资格由超级管理员在「运营账号与权限」里设置。</p>
-    {canManageQualifications && <Link className="btn btn-pri btn-sm" href="/platform/rbac">前往账号管理</Link>}
-    <p className="sub">资格调整后，已有会话、客户资料和绑定关系保留。</p>
+  return <Modal title="客服资格管理" icon="users" onClose={onClose} footer={<><Button onClick={onClose}>关闭</Button>{canManageQualifications && <a className="rd-btn" data-variant="primary" href="/platform/rbac"><span className="rd-btn-face">前往账号管理</span></a>}</>}>
+    <Facts><Fact k="人工接待身份">专属客服</Fact><Fact k="资格设置入口">运营账号与权限</Fact><Fact k="可设置的操作者">超级管理员</Fact></Facts>
+    <p className="rd-note">资格调整后，已有会话、客户资料和绑定关系保留。</p>
   </Modal>;
 }
 
