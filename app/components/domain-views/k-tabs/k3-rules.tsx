@@ -197,7 +197,7 @@ const PAUSE_EFFECT = "之后评估不再使用此规则，可能减少拦截；�
 const ENABLE_EFFECT = "确认后参与之后的提现风控评估；不是放行已有提现。";
 const ARCHIVE_EFFECT = "归档后不能编辑或重新启用，此操作不可撤销。";
 const SIMULATE_EFFECT = "只产生模拟批次与操作记录，不改变真实提现或账目。";
-const SIMULATE_SCOPE = "用当前已启用规则，评估近30天符合后台样本条件的最新最多200笔；使用第三方信誉时最多50笔。草稿与已停用规则不参与，不影响线上提现。";
+const SIMULATE_SCOPE = "用当前已启用规则，评估近30天符合后台样本条件的最新最多200笔；使用第三方信誉时最多50笔。草稿与已停用规则不参与。";
 type WriteKind = "create" | "edit" | "active" | "paused" | "archived" | "dry-run";
 type WriteDraft = { kind: WriteKind; rule?: K3Rule; initialDimension?: K3RuleDimensionName };
 type SavedCommand = PendingMutationRecord & {
@@ -298,8 +298,8 @@ function RuleConfirmation({ draft, pending, submitting, onSubmit, onClose, onReb
   const effect = kind === "active" ? ENABLE_EFFECT : kind === "paused" && lastInDimension ? `停用后，这类提现没有生效规则可检查。${PAUSE_EFFECT}` : kind === "paused" ? PAUSE_EFFECT : kind === "archived" ? ARCHIVE_EFFECT : SIMULATE_EFFECT;
   return <OperationConfirmModal key={revision} action={labelOf(kind, rule)}
     title={kind === "dry-run" ? labelOf(kind) : `${kind === "active" ? "启用" : kind === "paused" ? "停用" : "归档"}提现风控规则`}
-    briefKind={kind === "dry-run" ? "record" : "config"} completionCopy={kind === "dry-run" ? "有规则编辑权限的人员可直接运行，无需审批；完成后显示本次模拟结果。" : kind === "archived" ? "有归档权限的人员可直接执行，无需审批；确认后立即归档。" : "有启停权限的人员可直接执行，无需审批；确认后立即变更规则状态。"} detail={effect} statedBrief={{ impact: effect, check: kind === "dry-run" ? "核对当前生效规则与历史样本范围，并填写模拟依据。" : "核对规则条件、处置、优先级与版本，并填写操作依据。" }}
-    facts={rule ? <><RuleFacts rule={rule} /><Facts><Fact k="状态"><Change from={STATE_LABEL[rule.state]} to={STATE_LABEL[kind as RuleState]} /></Fact></Facts></> : <Facts><Fact k="样本范围">{SIMULATE_SCOPE}</Fact><Fact k="规则范围">当前已启用规则</Fact></Facts>}
+    briefKind={kind === "dry-run" ? "record" : "config"} completionCopy={kind === "dry-run" ? "有规则编辑权限的人员可直接运行，无需审批；完成后显示本次模拟结果。" : kind === "archived" ? "有归档权限的人员可直接执行，无需审批；确认后立即归档。" : "有启停权限的人员可直接执行，无需审批；确认后立即变更规则状态。"} detail="" statedBrief={{ impact: effect, check: kind === "dry-run" ? "核对当前生效规则与历史样本范围，并填写模拟依据。" : "核对规则条件、处置、优先级与版本，并填写操作依据。" }}
+    facts={rule ? <><RuleFacts rule={rule} /><Facts><Fact k="状态"><Change from={STATE_LABEL[rule.state]} to={STATE_LABEL[kind as RuleState]} /></Fact></Facts></> : <Facts><Fact k="样本范围">{SIMULATE_SCOPE}</Fact></Facts>}
     reasonMin={8} reasonMax={200} reasonPlaceholder={REASON_PLACEHOLDER} getPendingReason={() => commands.list().filter(isSavedCommand).find((record) => record.target === targetOf(kind, rule))?.reason}
     effect={<StatusTag tone={kind === "dry-run" ? "neutral" : "progress"} filled>{kind === "dry-run" ? "不影响线上" : "直接生效"}</StatusTag>}
     content={<div className="k3-write-impact" data-last-pause={kind === "paused" && lastInDimension ? "" : undefined}>
