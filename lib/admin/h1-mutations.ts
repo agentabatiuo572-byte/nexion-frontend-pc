@@ -91,8 +91,9 @@ export async function executeH1(row: H1Pending, onReceipt: (receipt: Partial<H1P
       }
       if (error instanceof Error && request.kind === "patch") {
         if (!explicit) error.message = `${request.label}结果待核对。原内容与理由已保留，请先读回核对，再使用「重试原操作」继续。`;
+        else if (retry) error.message = `${request.label}重试已被拒绝。${error.message}`;
         const saved = current.requests.filter((item) => item.acknowledged).map((item) => `${item.label}已保存`).join("，");
-        if (saved) error.message = explicit ? `${saved}；${request.label}未保存。${error.message}` : `${saved}；${error.message}`;
+        if (saved) error.message = explicit && !retry ? `${saved}；${request.label}未保存。${error.message}` : `${saved}；${error.message}`;
       }
       throw error;
     }
