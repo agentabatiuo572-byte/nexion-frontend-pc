@@ -25,7 +25,9 @@ export interface FieldControlProps {
   "aria-invalid"?: true;
 }
 
-export function Field({ label, hint, help, explain, error, required, children }: {
+export function Field({ id: fixedId, label, hint, help, explain, error, required, children }: {
+  /** 调用方已有的控件 id（比如按 id 记失焦的表单）；不传自动生成。 */
+  id?: string;
   label: ReactNode;
   /** 范围、字数这类约束，跟在字段名后面，只写这一处。 */
   hint?: ReactNode;
@@ -35,7 +37,8 @@ export function Field({ label, hint, help, explain, error, required, children }:
   required?: boolean;
   children: ReactNode | ((control: FieldControlProps) => ReactNode);
 }) {
-  const id = useId();
+  const autoId = useId();
+  const id = fixedId ?? autoId;
   const described = [help || explain ? `${id}-help` : "", error ? `${id}-error` : ""].filter(Boolean).join(" ") || undefined;
   const control: FieldControlProps = { id, "aria-describedby": described, "aria-invalid": error ? true : undefined };
   return (
@@ -49,8 +52,9 @@ export function Field({ label, hint, help, explain, error, required, children }:
   );
 }
 
-export function Check({ label, help, explain, ...input }: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & { label: ReactNode; help?: ReactNode; explain?: ReactNode }) {
-  const id = useId();
+export function Check({ label, help, explain, id: fixedId, ...input }: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & { label: ReactNode; help?: ReactNode; explain?: ReactNode }) {
+  const autoId = useId();
+  const id = fixedId ?? autoId;
   return (
     <div className="rd-check-item">
       <Checkbox {...input} id={id} aria-describedby={help || explain ? `${id}-help` : undefined} />
