@@ -56,7 +56,7 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
     const controller = new AbortController(); setVersions(null); setError("");
     Promise.all([item.routeGroupId ? supportGroupClient.detail(item.routeGroupId, controller.signal) : null, targetId ? supportGroupClient.detail(targetId, controller.signal) : null])
       .then(([source, target]) => { if (!controller.signal.aborted) { if (target && target.group.status !== "ENABLED") throw new Error("TARGET_UNAVAILABLE"); setVersions({ source: source?.group.version ?? null, target: target?.group.version ?? null }); } })
-      .catch(cause => { if (!controller.signal.aborted) setError(errorText(cause)); });
+      .catch(cause => { if (!controller.signal.aborted) setError(errorText(cause, true)); });
     return () => controller.abort();
   }, [item.routeGroupId, targetId, pending, reload, requiresFreshPool]);
   const reasonLength = Array.from(reason.trim()).length;
@@ -188,7 +188,7 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
         if (controller.signal.aborted) return;
         if (overview.scope.mode === "PERSONAL") throw new Error("MANAGEMENT_SCOPE_REQUIRED");
         setScope({ mode: overview.scope.mode, groups });
-      }).catch(cause => { if (!controller.signal.aborted) setScopeError(errorText(cause)); });
+      }).catch(cause => { if (!controller.signal.aborted) setScopeError(errorText(cause, true)); });
     return () => controller.abort();
   }, [permission, adminId, authEpoch, scopeReload]);
 
@@ -225,7 +225,7 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
     setAgents(null);
     supportClient.agents({ pageNum: agentPage, pageSize: 100, groupId, signal: controller.signal })
       .then((result) => { if (!controller.signal.aborted) { setAgents(result); setAgentsError(""); } })
-      .catch((cause: unknown) => { if (!controller.signal.aborted) setAgentsError(errorText(cause)); })
+      .catch((cause: unknown) => { if (!controller.signal.aborted) setAgentsError(errorText(cause, true)); })
       .finally(() => { if (!controller.signal.aborted) setAgentsLoading(false); });
     return () => controller.abort();
   }, [agentPage, agentsReload, permission, groupId, readableScope, scope, authEpoch]);
