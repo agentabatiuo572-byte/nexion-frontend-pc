@@ -6,7 +6,7 @@ import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { pendingPaymentRelease, queryPaymentRelease, submitPaymentRelease, PaymentPasswordApiError, type PaymentSecurityPort } from "@/lib/admin/payment-password-client";
 import type { PaymentSecurityRecord, PaymentSecurityDetail as Detail, PaymentSecuritySummary, PaymentReleaseReceipt } from "@/lib/admin/payment-password-contract";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
-import { Button, Field as RdField, Fold, Notice, StatusTag, Textarea, useRdSurface } from "@/app/components/rd";
+import { Button, Field as RdField, Facts as RdFacts, Fact, Fold, Notice, StatusTag, Textarea, useRdSurface } from "@/app/components/rd";
 import { Modal, DataListPager } from "../domain-views/design-kit";
 import "./payment-security.css";
 
@@ -113,7 +113,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
       {error && (surface
         ? <Notice tone={pending ? "warn" : "danger"} action={!busy && <button className="ps-link" onClick={() => void load()}>重新加载详情</button>}>{error}</Notice>
         : <p className="ps-reason" role="alert">{error} {!busy && <button className="ps-link" onClick={() => void load()}>重新加载详情</button>}</p>)}
-      {pending && <div className="ps-pending" role="status">{surface ? !error && <Notice tone="warn">解除结果暂未确认，请查询原操作，不能重复提交。</Notice> : <p>解除结果暂未确认，请查询原操作，不能重复提交。</p>}<PsButton disabled={busy || pending.portKey !== port.key} onClick={() => void execute(true)}>{busy ? "正在查询…" : "查询本次结果"}</PsButton>{pending.portKey !== port.key && <p className="ps-secondary">请回原操作入口查询。</p>}</div>}
+      {pending && <div className="ps-pending" role="status">{surface ? !error && <Notice tone="warn">解除结果暂未确认，请查询原操作，不能重复提交。</Notice> : <p>解除结果暂未确认，请查询原操作，不能重复提交。</p>}{surface && <Fold inset title="原解除操作" summary="理由、版本与命令号"><RdFacts><Fact k="原理由">{pending.reason ?? "原记录未保存此项，只查询原操作"}</Fact><Fact k="原版本">{pending.expectedVersion ?? "原记录未保存此项，只查询原操作"}</Fact><Fact k="原命令号"><span data-mono>{pending.commandKey}</span></Fact></RdFacts></Fold>}<PsButton disabled={busy || pending.portKey !== port.key} onClick={() => void execute(true)}>{busy ? "正在查询…" : "查询本次结果"}</PsButton>{pending.portKey !== port.key && <p className="ps-secondary">请回原操作入口查询。</p>}</div>}
       {receipt?.status === "APPLIED" && <p role="status"><strong className="ps-released">解除已确认，审计记录已核对</strong><br /><span className="ps-secondary">{receipt.auditId} · {receipt.changedBy} · {time(receipt.changedAt)}</span></p>}
       {receipt?.status === "REJECTED" && (surface ? <Notice tone="danger">本次解除未执行，请核对最新状态。</Notice> : <p className="ps-reason" role="status">本次解除未执行，请核对最新状态。</p>)}
       {(receipt?.status === "PENDING" || receipt?.status === "NOT_FOUND") && <p className="ps-secondary">处理结果尚未确认，请继续查询本次操作。</p>}

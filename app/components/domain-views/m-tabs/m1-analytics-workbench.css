@@ -58,4 +58,6 @@
 .m1-pool-table td>.rd-btn .rd-btn-face{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .m1-row-actions{display:flex;gap:4px;align-items:center;justify-content:flex-end}
 .m1-drawer-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;width:100%}
-.rd-drawer:has(.sa-disclosure) .m3-profile-entries{display:flex;justify-content:flex-end;gap:8px;width:100%}
+.rd-drawer:has(.sa-disclosure) .m3-profile-entries{display:flex;justify-content:flex-start;gap:8px;width:100%}
+
+.m1-command-form,.m1-transfer-form{display:grid;gap:16px}

@@ -109,7 +109,7 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
       const absent = cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND";
       setUnresolved(absent);
       const reason = absent ? "尚未找到原命令回执，这不能证明原请求没有执行。" : "暂时无法查询原操作。";
-      setError(reason + (absent && canReplayGroupCommand(pending) ? "可以用原命令重试原操作。" : "原操作已超过可重发时间，不能直接重发，请稍后再查询。"));
+      setError(reason + (!canReplayGroupCommand(pending) ? "原操作已超过可重发时间，不能直接重发，请稍后再查询。" : absent ? "可以用原命令重试原操作。" : "原命令仍保留，请稍后继续查询。"));
     } finally { setBusy(false); }
   };
   // Same key and frozen request body; the server dedupes it if the original did arrive.

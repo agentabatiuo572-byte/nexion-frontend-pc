@@ -44,7 +44,10 @@
 .m1-group-management .m-admin-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .m1-group-management .rd-table{table-layout:fixed;width:100%}
 .m1-group-management .rd-table :is(th,td){min-width:0;white-space:normal;overflow:hidden}
-.m1-group-management .rd-table th:last-child,.m1-group-management .rd-table td:last-child{width:22%}
+.m1-group-management .rd-table th:last-child,.m1-group-management .rd-table td:last-child{width:14%}
 .m1-group-management .rd-note{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .m1-group-management .m-group-name{max-width:100%;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.m1-group-management .m-invite-ops{display:flex;gap:6px;flex-wrap:wrap}.mdom .m1-group-management .m-group-count{min-width:0;justify-content:flex-end}
+.m1-group-management .m-invite-ops{display:flex;gap:6px;flex-wrap:wrap}.mdom .m1-group-management .m-group-count{min-width:40px;justify-content:flex-end}
+.m1-group-management .m-group-count .rd-btn-face{justify-content:flex-end;width:100%}
+.m1-group-form{display:grid;gap:20px}
+.m1-group-form>label{display:grid;gap:8px}
