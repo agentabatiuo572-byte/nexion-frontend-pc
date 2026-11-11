@@ -289,9 +289,9 @@ export function ReleaseModal({ label, explain, onCancel, onConfirm }: { label: R
  */
 export function ReleaseBody({ label, explain }: { label: ReactNode; explain?: ReactNode }) {
   return (
-    <div className="rd-stack">
+    <div className="rd-stack rd-release-body">
       <Facts><Fact k="原操作">{label}</Fact></Facts>
-      <p><KeepText text="确认原操作的结果后再解除。这里只移除本浏览器的待确认记录，不撤销原操作，也不办理后端核查结案。后端仍可能保持对象锁。" />{explain && <Explain label="解除待确认的说明" content={explain} />}</p>
+      <p><KeepText text="确认原操作的结果后再解除。这里只清除本标签页的待确认记录，不撤销原操作，不代替后端核查结案；之后能不能重新提交，以后端校验为准。" />{explain && <Explain label="解除待确认的说明" content={explain} />}</p>
     </div>
   );
 }
