@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { Cpu, FilePenLine } from "lucide-react";
-import "./e6-hardware-rules.css";
+import "./phone-calibration-panel.css";
 import { Drawer, Decision, Button, Table, Th, Tr, Td, Explain, BlockState, Fold, Field, Input, Textarea, Check, Select, Facts, Fact, StatusTag, Notice } from "@/app/components/rd";
 import { formatRange } from "@/lib/admin/ios-model-rules";
 import { androidRuleIssues, applyAndroidImport, blankAndroidRule, diffAndroidRules, moveChip, planAndroidImport, removeChip, setChipAliases,

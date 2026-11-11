@@ -1,7 +1,7 @@
 "use client";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { FilePenLine, Smartphone } from "lucide-react";
-import "./e6-hardware-rules.css";
+import "./phone-calibration-panel.css";
 import { Drawer, Decision, Button, Table, Th, Tr, Td, Explain, BlockState, Fold, Field, Input, Textarea, Check, Select, Facts, Fact, StatusTag, Notice, MoreMenu } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchIosModelPresets } from "@/lib/admin/phone-calibration-client";

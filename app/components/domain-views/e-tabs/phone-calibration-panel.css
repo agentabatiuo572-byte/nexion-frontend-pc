@@ -40,3 +40,57 @@
 .phone-calibration-panel .ios-field.invalid input, .phone-calibration-panel .ios-field.invalid textarea { border-color: var(--danger); }
 .phone-calibration-panel .ios-field small[role="alert"] { color: var(--danger); }
 .phone-calibration-panel textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--border-strong); border-radius: 8px; padding: 9px 11px; color: var(--ink); background: var(--surface); font: inherit; resize: vertical; }
+
+/* Only the E6 hardware directories and their four drawers. */
+.e6-legacy-fields .e6-hw-directory { display: grid; gap: 16px; min-width: 0; }
+.e6-legacy-fields .e6-hw-directory .rd-form-label { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 6px; font-size: var(--rd-text-body); color: var(--rd-text); }
+.e6-legacy-fields .e6-hw-directory input.rd-input { border: 0; font-size: var(--rd-text-body); }
+.e6-legacy-fields .e6-hw-directory .rd-check-item > label { display: block; font-size: var(--rd-text-body); }
+.e6-legacy-fields .e6-hw-directory .rd-check { padding: 0; }
+.e6-legacy-fields .e6-hw-directory .rd-fold { padding-block: 0; }
+.e6-legacy-fields .e6-hw-directory .rd-fold > summary { margin: 0; }
+.e6-legacy-fields .e6-hw-directory .rd-fold-body { display: grid; gap: 16px; }
+.e6-hw-tools { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; }
+.e6-hw-tools > .rd-form-field { flex: 1 1 200px; min-width: 0; }
+.e6-hw-ios-filters > .rd-form-field { flex: 1 1 120px; }
+.e6-hw-ios-filters > .rd-form-field:first-child { flex: 2 1 200px; }
+.e6-hw-tools .rd-select { width: 100%; }
+.e6-hw-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.e6-hw-tier-form { display: grid; gap: 16px; }
+.e6-hw-range { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.e6-hw-row-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; white-space: nowrap; }
+.e6-hw-row-actions[hidden] { display: none; }
+.e6-hw-row-actions .rd-select { width: 136px; min-width: 0; }
+.e6-hw-directory .rd-table { table-layout: fixed; width: 100%; min-width: 0; }
+.e6-hw-android-table col:nth-child(1) { width: 25%; }
+.e6-hw-android-table col:nth-child(2) { width: 72px; }
+.e6-hw-android-table col:nth-child(4) { width: 272px; }
+.e6-hw-ios-table col:nth-child(1) { width: 28%; }
+.e6-hw-ios-table col:nth-child(2) { width: 110px; }
+.e6-hw-ios-table col:nth-child(4) { width: 94px; }
+.e6-hw-ios-table col:nth-child(5) { width: 96px; }
+.e6-hw-ios-table col:nth-child(6) { width: 112px; }
+.e6-hw-directory .rd-tag, .e6-hw-nowrap { white-space: nowrap; }
+.e6-hw-identifiers, .e6-hw-facts-cell > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.e6-hw-facts-cell { display: flex; align-items: center; gap: 4px; }
+.e6-hw-facts-cell > span { min-width: 0; }
+.e6-hw-cell-sub { display: block; color: var(--rd-text-3); }
+.e6-hw-remove { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 8px; }
+.e6-hw-remove > div:first-child { min-width: 0; }
+.e6-hw-remove p { margin-block: 4px 0; color: var(--rd-text-2); }
+.e6-hw-remove .e6-hw-actions { flex-shrink: 0; }
+.e6-hw-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.e6-hw-list li { display: grid; gap: 4px; overflow-wrap: anywhere; }
+.e6-hw-list li > span { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+.e6-hw-preset-models { display: grid; gap: 16px; }
+.e6-hw-form-heading { display: flex; align-items: center; gap: 6px; padding-top: 16px; border-top: 1px solid var(--rd-line); }
+@container (max-width: 860px) {
+  .e6-hw-ios-table col:nth-child(1) { width: 190px; }
+  .e6-hw-ios-table col:nth-child(2) { width: 98px; }
+  .e6-hw-ios-table col:nth-child(4) { width: 84px; }
+  .e6-hw-remove { align-items: flex-start; flex-direction: column; }
+}
+:root .e6-legacy-fields .e6-hw-directory input.rd-check:checked:not(:disabled) { background: var(--rd-brand-ink); }
+
+.e6-hw-model-name { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.e6-hw-model-name > strong { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
