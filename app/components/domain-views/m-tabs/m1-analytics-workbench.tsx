@@ -5,7 +5,7 @@ import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { DomainModuleLoading } from "../domain-module-state";
 import { useRouter } from "next/navigation";
@@ -248,6 +248,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   useEffect(() => { const update = () => setRecoveryRevision(n => n + 1); window.addEventListener("m1-pending-changed", update); window.addEventListener("nexion-payment-security-updated", update); return () => { window.removeEventListener("m1-pending-changed", update); window.removeEventListener("nexion-payment-security-updated", update); }; }, []);
   const authSession = useAdminAuth(state => state.session);
   const tabIds = useTabIds();
+  const pendingTabFocus = useRef<M1Tab | null>(null);
   const [scope, setScope] = useState<SupportAnalyticsResponse | null>(null), [scopeError, setScopeError] = useState("");
   const teamChanged = useRef(false);
   const [scopeRetry, setScopeRetry] = useState(0), [queryState, setQueryState] = useState(initialAnalyticsQuery("PERSONAL"));
@@ -468,6 +469,11 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     window.history.replaceState(null, "", url);
     try { sessionStorage.setItem(`nexion-m1-keyword:${adminId}`, queryState.keyword ?? ""); } catch { /* Search remains usable without memory. */ }
   }, [scope, section, personalView, isPersonal, queryState, adminId]);
+  useLayoutEffect(() => {
+    if (!scope || !pendingTabFocus.current) return;
+    document.getElementById(tabIds.tab(pendingTabFocus.current))?.focus();
+    pendingTabFocus.current = null;
+  }, [section, personalView, queryState.view, scope, tabIds]);
   const visible = authSession ? resolveVisibleDomains(authSession) : [];
   const header = <PageHeader pageId="M1" title="客服工作台" summary="先处理客户待办，再核对分配和维护进展。" actions={<>
     {scope && scope.scopeSummary.mode !== "PERSONAL" && canAccessResolvedPath(visible, "/service/sessions") && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
@@ -501,7 +507,10 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const current = data?.selectedCurrent, personnel = data?.scopeSummary.personnel;
   const deposits = queryState.basis === "PERIOD_EVENT" ? data?.scopeSummary.financial.currencies.find(x => x.currency === currency)?.deposits : current?.ownLifetime.find(x => x.currency === currency)?.deposits;
   const caption = queryState.basis === "PERIOD_EVENT" ? `统计 ${queryState.month} 当月发生的业务（${businessZone().label}）；绑定和设备按当前状态` : queryState.basis === "CURRENT_ASSET" ? "按当前设备和活跃状态统计；不含首充和累计资金" : "按客户注册以来的累计数据统计，不是本月新增";
-  const navigation = <PageTabs ids={tabIds} label="客服工作台" value={currentTab} items={tabs.map(tab => ({ value: tab, label: TAB_LABEL[tab], count: tab === "pool" ? scope.scopeSummary.pending ?? "—" : undefined }))} onChange={openTab} />;
+  const navigation = <PageTabs ids={tabIds} label="客服工作台" value={currentTab} items={tabs.map(tab => ({ value: tab, label: TAB_LABEL[tab], count: tab === "pool" ? scope.scopeSummary.pending ?? "—" : undefined }))} onChange={tab => {
+    if (document.activeElement?.closest('[role="tablist"][aria-label="客服工作台"]')) pendingTabFocus.current = tab;
+    openTab(tab);
+  }} />;
   const unresolvedMaintenance = maintenanceCommands.list().some(r => r.actorId === adminId);
   const unresolvedPool = poolCommands.list().some(r => r.actorId === adminId) || routeCommands.list().some(r => r.actorId === adminId) || randomAssignmentCommands.list().some(r => r.actorId === adminId);
   const unresolvedGroups = groupPendingCommands.list().some(r => r.actorId === adminId && (!isInvitePending(r) || r.intent.kind === "INVITE_REVOKE"));
@@ -510,7 +519,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const unresolvedPayments = pendingPaymentReleases(adminId ?? 0).filter(r => r.portKey.startsWith("support:"));
   const unresolvedBulk = hasBulkPending(adminId ?? 0);
   const profileStats = profileId && data && (data.view === "CUSTOMERS" || data.view === "ACTIVITY") ? data.records.find(row => row.customerId === profileId) : undefined;
-  return <section className="sa-workbench">
+  return <section className="sa-workbench" {...tabIds.panel(currentTab)}>
     {header}
     {!isPersonal && <M1LiveService ctx={ctx} />}
     {(unresolvedMaintenance || unresolvedPool || unresolvedGroups || unresolvedInvite || unresolvedAvatar || unresolvedBulk || unresolvedPayments.length > 0) && <Notice tone="warn" title="有操作结果待确认，先查询原操作" actionBelow action={<>
@@ -529,7 +538,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
 {transferNotice && <div className="sa-notice" role="status">{transferNotice}<Button type="button" onClick={() => setTransferNotice("")}>知道了</Button></div>}
 {isPersonal && <div hidden={section === "stats"}><M1PersonalWorkbench permission="agent" ctx={ctx} view={personalView} active={section !== "stats"} onViewChange={next => { setSection("personal"); setPersonalView(next); }}
   onBrowseCustomers={filter => { if (queryState.view === "CUSTOMERS" && queryState.basis === "CURRENT_CUSTOMER_HISTORY" && queryState.filter === filter) { setSection("stats"); return; } drill({ view: "CUSTOMERS", category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY", filter, firstState: "ALL", keyword: undefined }); }}
-  navigation={navigation} primarySummary={<section className="sa-personal-summary" aria-label="本人客户与期间业绩">
+  navigation={currentTab === "home" ? navigation : undefined} primarySummary={<section className="sa-personal-summary" aria-label="本人客户与期间业绩">
     <AnalyticsFreshness asOf={scope.asOf} label="客户统计" onRefresh={() => refreshScope()} />
     {!monthCalendar && <p role={calendarError ? "alert" : "status"}>{calendarError || "正在读取业绩月份…"}{calendarError && <Button type="button" onClick={() => setCalendarRetry(n => n + 1)}>重试读取月份</Button>}</p>}
     <div className="sa-personal-period-controls"><AnalyticsSelect label="业绩自然月" value={queryState.month} options={monthOptions} onChange={month => change({ month })} /><AnalyticsSelect label="业绩币种" value={currency} options={[{ value: "USDT", label: "USDT" }, { value: "UVT", label: "UVT" }]} onChange={value => { if (value === "USDT" || value === "UVT") change({ currency: value }); }} /></div>
