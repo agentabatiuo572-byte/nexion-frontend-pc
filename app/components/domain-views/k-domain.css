@@ -197,3 +197,110 @@
 .kdom .alert-row .tx { flex: 1; font-size: 12.5px; color: var(--ink-3); line-height: 1.5; }
 .kdom .alert-row .tx b { color: var(--ink-2); }
 .kdom .alert-row .ts { font-family: var(--mono); font-size: 11px; color: var(--ink-4); white-space: nowrap; }
+
+/* K3: coverage, the catalog and supporting drawers. */
+.k3-page { display: grid; gap: 20px; min-width: 0; }
+.k3-page .rd-stats[data-cards] > .rd-stat:has(> .rd-tile) { grid-template-columns: minmax(0, 1fr); }
+.k3-page .rd-stats[data-cards] > .rd-stat > .rd-tile { position: absolute; right: var(--rd-panel-pad-x); top: var(--rd-panel-pad-y); }
+.k3-page .rd-stat-label { padding-right: 32px; }
+.k3-cover-summary { margin: 0; color: var(--rd-text-2); }
+.k3-cover-actions, .k3-row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.k3-row-actions { justify-content: flex-end; flex-wrap: nowrap; }
+.k3-cover-loading { container-type: inline-size; display: flex; flex-wrap: wrap; gap: 12px; }
+.k3-cover-loading > * { flex: 1 1 calc(25% - 9px); min-height: 140px; border: 1px solid var(--rd-line); }
+@container (max-width: 900px) { .k3-cover-loading > * { flex-basis: calc(50% - 6px); } }
+.k3-table-frame { container-type: inline-size; }
+.k3-rules-table, .k3-hits-table { width: 100%; table-layout: fixed; min-width: 0; }
+.k3-rules-table th, .k3-rules-table td, .k3-hits-table th, .k3-hits-table td { padding-inline: 12px; }
+.k3-rules-table .k3-rule-col { width: 17%; }
+.k3-rules-table .k3-condition-col { width: 37%; }
+.k3-rules-table .k3-action-col, .k3-rules-table .k3-state-col { width: 11%; }
+.k3-rules-table .k3-version-col { width: 9%; }
+.k3-rules-table .k3-actions-col { width: 15%; }
+.k3-rules-table[data-extra] .k3-rule-col { width: 16%; }
+.k3-rules-table[data-extra] .k3-condition-col { width: 29%; }
+.k3-rules-table[data-extra] .k3-actions-col { width: 13%; }
+.k3-rules-table .k3-builtin-col { width: 10%; }
+.k3-rules-table th.k3-version-col { white-space: normal; }
+.k3-rules-table th.k3-builtin-col { white-space: nowrap; }
+.k3-rules-table[data-readonly] .k3-rule-col { width: 20%; }
+.k3-rules-table[data-readonly] .k3-condition-col { width: 40%; }
+.k3-rules-table[data-readonly] .k3-action-col, .k3-rules-table[data-readonly] .k3-state-col { width: 14%; }
+.k3-rules-table[data-readonly] .k3-version-col { width: 12%; }
+.k3-rules-table .rd-cell, .k3-hits-table .rd-cell { max-width: none; }
+.k3-rules-table td:nth-child(2) .rd-cell-main { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.k3-rules-table td:nth-child(2) .rd-cell-main > .rd-explain { margin-left: 4px; vertical-align: -2px; }  /* 问号跟在条件最后一个字后面，换行时不漂到列尾（F7） */
+.k3-rules-table .rd-keep, .k3-hits-table .rd-keep { white-space: nowrap; }
+.k3-id { display: flex; min-width: 0; max-width: 100%; }
+.k3-id > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k3-id > :last-child { flex: none; }
+.k3-pending-marker { margin-top: 6px; }
+.k3-hit-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding-block: 16px; }
+/* 触发记录默认四列：抽屉按内容收窄到 880，分布、筛选、表格、分页同一条左右边线；显示原因或时间列时才放宽（F11） */
+.rd-drawer[data-k3-hits]:not([data-k3-extra]) { width: min(880px, calc(100vw - var(--rd-sidebar-w))); }
+.k3-hits-table th:nth-child(1) { width: 32%; }
+.k3-hits-table th:nth-child(2) { width: 22%; }
+.k3-hits-table th:nth-child(3) { width: 28%; }
+.k3-hits-table th:nth-child(4) { width: 18%; }
+.k3-hits-table:has(th:nth-child(5)) th:nth-child(1) { width: 22%; }
+.k3-hits-table:has(th:nth-child(5)) th:nth-child(2) { width: 17%; }
+.k3-hits-table:has(th:nth-child(5)) th:nth-child(3) { width: 20%; }
+.k3-hits-table:has(th:nth-child(5)) th:nth-child(4) { width: 13%; }
+.k3-hits-table:has(th:nth-child(5)) th:nth-child(5) { width: 28%; }
+.k3-hits-table:has(th:nth-child(6)) th:nth-child(1) { width: 19%; }
+.k3-hits-table:has(th:nth-child(6)) th:nth-child(2) { width: 15%; }
+.k3-hits-table:has(th:nth-child(6)) th:nth-child(3) { width: 17%; }
+.k3-hits-table:has(th:nth-child(6)) th:nth-child(4) { width: 12%; }
+.k3-hits-table:has(th:nth-child(6)) th:nth-child(5) { width: 20%; }
+.k3-hits-table:has(th:nth-child(6)) th:nth-child(6) { width: 17%; }
+.k3-request { white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px; background: var(--rd-panel-inner); color: var(--rd-text-2); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); }
+/* 最近一次模拟：左边批次事实（名称和值同一行、值紧跟名称），右边裁决分布；窄于 900 上下排（F12） */
+.k3-simulation { container-type: inline-size; display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: var(--rd-space-4) var(--rd-space-8); align-items: start; }
+@container (max-width: 760px) { .k3-simulation > * { grid-column: 1 / -1; } }
+.k3-simulation-facts .rd-kv-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; min-height: 32px; padding: 2px 0; }
+.k3-simulation-facts .rd-kv dt { max-width: none; }
+.k3-simulation-facts .rd-kv-row dd { text-align: left; }
+.k3-simulation-dist { display: grid; gap: var(--rd-space-3); min-width: 0; padding-top: 6px; }
+.k3-simulation-title { display: flex; align-items: center; gap: 4px; margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
+.k3-editor-content, .k3-editor-fields { display: grid; gap: 20px; min-width: 0; }
+.k3-editor-fields { border: 0; padding: 0; margin: 0; }
+.k3-field-slot { min-width: 0; }
+.k3-field-slot[data-wide] { grid-column: 1 / -1; }
+.k3-field-slot[data-compare] .rd-select { width: 110px; }
+@container (max-width: 850px) {
+  .k3-rules-table .k3-version-col { display: none; }
+  .k3-rules-table .k3-rule-col { width: 22%; }
+  .k3-rules-table .k3-condition-col { width: 32%; }
+  .k3-rules-table .k3-action-col, .k3-rules-table .k3-state-col { width: 12%; }
+  .k3-rules-table .k3-actions-col { width: 22%; }
+  .k3-rules-table[data-extra] .k3-rule-col { width: 20%; }
+  .k3-rules-table[data-extra] .k3-condition-col { width: 28%; }
+  .k3-rules-table[data-extra] .k3-actions-col { width: 18%; }
+  .k3-rules-table[data-show-version] .k3-version-col { display: table-cell; width: 10%; }
+  .k3-rules-table[data-show-version] .k3-rule-col { width: 19%; }
+  .k3-rules-table[data-show-version] .k3-condition-col { width: 27%; }
+  .k3-rules-table[data-show-version] .k3-action-col, .k3-rules-table[data-show-version] .k3-state-col { width: 11%; }
+  .k3-rules-table[data-show-version] .k3-actions-col { width: 22%; }
+  .k3-rules-table[data-extra][data-show-version] .k3-rule-col { width: 17%; }
+  .k3-rules-table[data-extra][data-show-version] .k3-condition-col { width: 23%; }
+  .k3-rules-table[data-show-version] .k3-action-col, .k3-rules-table[data-show-version] .k3-state-col { width: 11%; }
+  .k3-rules-table[data-extra][data-show-version] .k3-actions-col { width: 18%; }
+  .k3-rules-table[data-readonly] .k3-rule-col { width: 26%; }
+  .k3-rules-table[data-readonly] .k3-condition-col { width: 44%; }
+  .k3-rules-table[data-readonly] .k3-action-col, .k3-rules-table[data-readonly] .k3-state-col { width: 15%; }
+}
+
+.k3-rules-table[data-readonly][data-extra] .k3-rule-col { width: 18%; }
+.k3-rules-table[data-readonly][data-extra] .k3-condition-col { width: 36%; }
+.k3-rules-table[data-readonly][data-extra] .k3-action-col, .k3-rules-table[data-readonly][data-extra] .k3-state-col { width: 13%; }
+@container (max-width: 850px) {
+  .k3-rules-table[data-readonly][data-extra] .k3-rule-col { width: 24%; }
+  .k3-rules-table[data-readonly][data-extra] .k3-condition-col { width: 38%; }
+  .k3-rules-table[data-readonly][data-extra] .k3-action-col, .k3-rules-table[data-readonly][data-extra] .k3-state-col { width: 14%; }
+  .k3-rules-table[data-readonly][data-show-version] .k3-rule-col { width: 24%; }
+  .k3-rules-table[data-readonly][data-show-version] .k3-condition-col { width: 36%; }
+  .k3-rules-table[data-readonly][data-show-version] .k3-action-col, .k3-rules-table[data-readonly][data-show-version] .k3-state-col { width: 15%; }
+  .k3-rules-table[data-readonly][data-extra][data-show-version] .k3-rule-col { width: 22%; }
+  .k3-rules-table[data-readonly][data-extra][data-show-version] .k3-condition-col { width: 32%; }
+  .k3-rules-table[data-readonly][data-extra][data-show-version] .k3-action-col, .k3-rules-table[data-readonly][data-extra][data-show-version] .k3-state-col { width: 13%; }
+}

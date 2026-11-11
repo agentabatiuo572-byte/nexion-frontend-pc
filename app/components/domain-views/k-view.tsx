@@ -9,12 +9,12 @@ import "./k-domain.css";
 import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
-import { fetchK1MultiAccountOverview, fetchK2ArbitrageOverview, fetchK3WithdrawRuleOverview, fetchK4ScoringOverview, fetchKRiskOverviews, kRiskActions, type K3DryRunResult, type KRiskActions, type KRiskData, type KRiskOverviewQuery } from "@/lib/admin/k-client";
+import { fetchK1MultiAccountOverview, fetchK2ArbitrageOverview, fetchK3WithdrawRuleOverview, fetchK4ScoringOverview, fetchKRiskOverviews, kRiskActions, type KRiskActions, type KRiskData, type KRiskOverviewQuery } from "@/lib/admin/k-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { K1MultiAccount } from "./k-tabs/k1-multiaccount";
 import { K2HeaderActions, K2Arbitrage } from "./k-tabs/k2-arbitrage";
-import { K3HeaderActions, K3Rules } from "./k-tabs/k3-rules";
+import { K3Rules } from "./k-tabs/k3-rules";
 import { K4HeaderActions, K4Scoring } from "./k-tabs/k4-scoring";
 import type { ConfirmReq, KCtx, ActionConfirmReq } from "./k-tabs/types";
 
@@ -32,7 +32,6 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
   const [contentError, setContentError] = useState<string | null>(null);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
-  const [k3DryRunResult, setK3DryRunResult] = useState<K3DryRunResult | null>(null);
   const requestSequence = useRef(0);
 
   const reloadKRisk = useCallback(async (query?: KRiskOverviewQuery) => {
@@ -112,13 +111,12 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const right =
     tab === "K2" ? <K2HeaderActions />
-    : tab === "K3" ? <K3HeaderActions ctx={ctx} onResult={setK3DryRunResult} />
     : tab === "K4" ? <K4HeaderActions />
     : <span className="f-ro"><span className="d" />设备上报态与后台期望态分离 · 所有操作可追溯</span>;
 
   const page = (
     <>
-      {tab !== "K1" && <DomainHeader {...meta} right={right} />}
+      {tab !== "K1" && tab !== "K3" && <DomainHeader {...meta} right={right} />}
 
       {tab !== "K1" && tab !== "K2" && tab !== "K3" && tab !== "K4" && contentError && (
         <section className="l-card">
@@ -132,7 +130,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
 
       {tab === "K1" && <K1MultiAccount ctx={ctx} />}
       {tab === "K2" && <K2Arbitrage ctx={ctx} />}
-      {tab === "K3" && <K3Rules ctx={ctx} dryRunResult={k3DryRunResult} />}
+      {tab === "K3" && <K3Rules ctx={ctx} />}
       {tab === "K4" && <K4Scoring ctx={ctx} />}
 
       {mc && (
@@ -164,5 +162,5 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
     </>
   );
 
-  return tab === "K1" ? <RdPage className="kdom">{page}</RdPage> : <div className="dkpage kdom">{page}</div>;
+  return tab === "K1" || tab === "K3" ? <RdPage className="kdom">{page}</RdPage> : <div className="dkpage kdom">{page}</div>;
 }
