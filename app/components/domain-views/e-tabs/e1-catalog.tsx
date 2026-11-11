@@ -247,7 +247,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
         kind: "multi-field", requireAnyChange: !!g,
         amplifies: v => v.forceUnlock === "true" || !canChangeForce && !!g?.forceUnlock,
         fields: [
-          ...(!g && gateSkuOptions.length > 1 ? [{ key: "skuId", label: "商品", current: skuId, inputKind: "select" as const, options: gateSkuOptions, optionLabels: Object.fromEntries(skus.map(s => [s.id, `${s.name} · ${s.id}`])) }] : []),
+          ...(!g && gateSkuOptions.length > 1 ? [{ key: "skuId", label: "商品", current: skuId, inputKind: "select" as const, options: gateSkuOptions, optionLabels: Object.fromEntries(skus.map(s => [s.id, `${s.name} · ${s.id}`])), wide: true }] : []),
           { key: "name", label: "展示名称", current: g?.name ?? "", required: false, help: "留空使用商品名称" },
           { key: "releaseMonth", label: "计划开放月", current: String(g?.releaseMonth ?? Math.min(12, Math.max(1, platformMonth))), inputKind: "number", min: 1, max: 12, step: 1, required: true },
           ...(gatePhaseOptions.length > 1 ? [{ key: "phase", label: "开放阶段", current: phase, inputKind: "select" as const, options: gatePhaseOptions, optionLabels: gatePhaseLabels }] : []),
