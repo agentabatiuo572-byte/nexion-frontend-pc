@@ -6,6 +6,7 @@ import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { pendingPaymentRelease, queryPaymentRelease, submitPaymentRelease, PaymentPasswordApiError, type PaymentSecurityPort } from "@/lib/admin/payment-password-client";
 import type { PaymentSecurityRecord, PaymentSecurityDetail as Detail, PaymentSecuritySummary, PaymentReleaseReceipt } from "@/lib/admin/payment-password-contract";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { BlockState, Button, Cell, Check, Decision, Drawer as RdDrawer, Modal as RdModal, Fact as RdFact, Facts as RdFacts, Field as RdField, Fold, JudgmentPoints, Notice, PageTabs, Panel, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Timeline, Tr, useTabIds, useRdSurface } from "@/app/components/rd";
 import { ShieldAlert } from "lucide-react";
 import { Modal, DataListPager } from "../domain-views/design-kit";
@@ -112,7 +113,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
     } catch (failure) {
       if (!live.current) return;
       if (failure instanceof PaymentPasswordApiError && [401, 403, 404].includes(failure.status)) { setReviewing(false); setDetail(null); }
-      if (failure instanceof PaymentPasswordApiError && failure.status === 409 && !failure.unknownOutcome) { setReviewing(false); await load(); setError("异常信息已变化，请核对最新状态后再操作。"); }
+      if (failure instanceof PaymentPasswordApiError && failure.status === 409 && isExplicitRejection(failure)) { setReviewing(false); await load(); setError("异常信息已变化，请核对最新状态后再操作。"); }
       else setError(message(failure));
     } finally { mutation.current = false; if (live.current) { setBusy(false); const next = pendingPaymentRelease(owner, port.userId); setPending(next); if (next) setReviewing(false); window.dispatchEvent(new Event("nexion-payment-security-updated")); } }
   }
@@ -126,7 +127,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
   if (surface) return <RdDrawer open title="支付密码异常详情" icon={ShieldAlert} onClose={onClose} busy={busy} wide footer={<Decision others={<Button disabled={busy} onClick={onClose}>关闭</Button>} primary={record?.state === "ACTIVE" && mayRelease(session) && <Button disabledReason={busy ? "正在提交" : loading ? "正在读取" : pending ? "请先查询原解除结果" : !record.capabilities.releaseAllowed ? record.capabilities.disabledReason || "当前记录不可解除" : undefined} onClick={() => { setReviewing(true); setConfirmed(false); }}>{actionText(record)}</Button>} />}>
     {loading && <BlockState state="loading" title="正在读取异常详情" />}
     {error && <Notice tone={pending ? "warn" : "danger"} action={<Button size="sm" disabled={busy} onClick={() => void load()}>重新加载详情</Button>}>{error}</Notice>}
-    {pending && <Notice tone="warn" title="解除结果待确认" action={<Button size="sm" disabledReason={pending.portKey !== port.key ? "请回原操作入口查询" : undefined} loading={busy} onClick={() => void execute(true)}>查询本次结果</Button>}><span data-mono>{pending.commandKey}</span> · {time(new Date(pending.createdAt).toISOString())}{pending.expiresAt <= Date.now() ? " · 已过 24 小时，仅查询" : ""}</Notice>}
+    {pending && <Notice tone="warn" title="解除结果待确认" action={<Button size="sm" disabledReason={pending.portKey !== port.key ? "请回原操作入口查询" : undefined} loading={busy} onClick={() => void execute(true)}>查询本次结果</Button>}><span data-mono>{pending.commandKey}</span> · {time(new Date(pending.createdAt).toISOString())}{pending.expiresAt <= Date.now() ? " · 已过 24 小时，仅查询" : ""}<Fold inset title="原解除操作" summary="理由、版本与命令号"><RdFacts><RdFact k="原理由">{pending.reason ?? "原记录未保存此项，只查询原操作"}</RdFact><RdFact k="原版本">{pending.expectedVersion ?? "原记录未保存此项，只查询原操作"}</RdFact><RdFact k="原命令号"><span data-mono>{pending.commandKey}</span></RdFact></RdFacts></Fold></Notice>}
     {receipt && <Notice tone={receipt.status === "APPLIED" ? "ok" : receipt.status === "REJECTED" ? "danger" : "warn"} title={receipt.status === "APPLIED" ? "解除已确认，审计记录已核对" : receipt.status === "REJECTED" ? "本次解除未执行，请核对最新状态" : "处理结果尚未确认，请继续查询本次操作"}>{receipt.status === "APPLIED" && `${receipt.auditId} · ${receipt.changedBy} · ${time(receipt.changedAt)}`}</Notice>}
     {record && <>
       <JudgmentPoints rows={[{ label: "操作对象", value: userLabel }, { label: "当前状态", value: <PaymentSecurityState record={record} /> }, { label: "凭证类型", value: "支付密码" }, { label: "原锁定至", value: time(record.lockedUntil) }]} />
