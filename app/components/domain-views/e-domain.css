@@ -815,7 +815,7 @@
 .e6-fold-content > .rd-btn { justify-self: start; }  /* 折叠里的查询按钮按内容宽，不拉成一整条灰带 */
 .e6-json { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
 .e6-device-slots { display: inline-flex; align-items: center; gap: 12px; }
-.e6-serial { font-size: var(--rd-text-aux); overflow-wrap: anywhere; }
+.e6-serial { font-size: var(--rd-text-aux); overflow-wrap: anywhere; word-break: break-all; }  /* 长实例号均匀折行，不在「PHONE-」后断开 */
 .e6-no-action, .e6-help { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
 .e6-no-action { display: block; width: 72px; min-width: 72px; max-width: 72px; line-height: var(--rd-lh-aux); }
 .e6-task-reward { display: inline-grid; grid-template-columns: auto 4ch; align-items: baseline; gap: 4px; }
