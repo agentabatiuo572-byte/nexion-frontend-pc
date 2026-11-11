@@ -233,7 +233,17 @@ export async function fetchH1Phases(): Promise<H1Phases> {
 /** Replays the persisted body and key; never reads the current operator when recovering. */
 export async function sendH1StoredPatch(path: string, body: string, commandKey: string): Promise<Partial<H1Phases> & { rhythm: H1RhythmOverview }> {
   const data = await growthRequest<Record<string, unknown>>(path, { method: "PATCH", body, headers: { "Idempotency-Key": commandKey } });
-  return path.startsWith("/rhythm/") ? { rhythm: normalizeRhythm(data) } : normalizeH1Phases(data);
+  if (path.startsWith("/rhythm/")) {
+    // Read projections may be unavailable; a write needs a complete, parseable receipt.
+    if (!data || ![data.totalMonths, data.currentMonth, data.phaseProgressPct].every((value) => value !== null && value !== "" && Number.isInteger(Number(value)))
+      || typeof data.currentPhase !== "string" || !Array.isArray(data.options)) throw new Error("H1_RESPONSE_INVALID:rhythmReceipt");
+    return { rhythm: normalizeRhythm(data) };
+  }
+  const next = normalizeH1Phases(data);
+  const month = Number(path.match(/\/months\/(\d+)\//)?.[1]);
+  const key = decodeURIComponent(path.split("/").at(-1)!);
+  if (!next.monthlyDials.some((row) => row.month === month && row.dials[key] != null)) throw new Error("H1_RESPONSE_INVALID:monthDialReceipt");
+  return next;
 }
 
 export async function updateH1RhythmParam(
