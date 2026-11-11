@@ -2560,7 +2560,7 @@ export async function downloadD3Csv(
       || outcomeStaysUnknown(response.status, result?.code)) {
       throw new DOutcomeUnknownError(idempotencyKey);
     }
-    throw new Error(formatAdminApiError(result?.message, `D3_EXPORT_FAILED_${response.status}`));
+    throw new DRequestError(formatAdminApiError(result?.message, `D3_EXPORT_FAILED_${response.status}`), response.status, result?.code, result?.message);
   }
   const blob = await response.blob().catch(() => { throw new DOutcomeUnknownError(idempotencyKey); });
   const disposition = response.headers.get("Content-Disposition") || "";

@@ -1,4 +1,5 @@
 import { Cell, Explain, Notice, Table, Td, Th } from "@/app/components/rd";
+import { amountDigits, amountText } from "@/lib/admin/treasury-amount";
 import type { ForecastConfigPreview } from "@/lib/admin/b2-client";
 
 /**
@@ -11,7 +12,6 @@ export function ForecastConfigImpact({ preview, categoryLabel, surface = false }
   surface?: boolean;
 }) {
   const d = preview.forecastDeltaPreview;
-  const amount = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
   const coverage = (status: typeof d.beforeCoverageStatus, value: number | null) =>
     status === "NO_LIABILITIES" ? "无应付款" : status === "VALUATION_UNAVAILABLE" ? "暂时无法估值" : `${value?.toFixed(1)}%`;
   const rows: Array<[string, number, number, number]> = [
@@ -22,6 +22,7 @@ export function ForecastConfigImpact({ preview, categoryLabel, surface = false }
     ["差额", d.beforeNetExposureUsdt, d.afterNetExposureUsdt, d.netExposureDeltaUsdt],
   ];
   if (d.beforeDailyGenesisUsdt !== d.afterDailyGenesisUsdt) rows.push(["每日创世", d.beforeDailyGenesisUsdt, d.afterDailyGenesisUsdt, d.dailyDeltaUsdt]);
+  const digits = [1, 2, 3].map((column) => amountDigits(rows.map((row) => row[column] as number)));
   return (
     <section className="rd-impact" data-surface={surface ? "" : undefined} aria-label="配置影响预览">
       <h4 className="rd-impact-title">配置影响预览 · v{preview.version}<Explain label="配置口径怎么算" content="配置口径：配置储备 ÷ 配置全额应付款。此预览不代表兑付覆盖率，也不是储备除以 7 / 30 天到期预测；保存时系统会重新计算。" /></h4>
@@ -31,9 +32,9 @@ export function ForecastConfigImpact({ preview, categoryLabel, surface = false }
           {rows.map(([label, before, after, delta]) => (
             <tr key={label}>
               <Td>{label}</Td>
-              <Td align="right"><Cell num main={<span className="rd-diff-before">{amount(before)}</span>} /></Td>
-              <Td align="right"><Cell num main={<span className={delta === 0 ? undefined : "rd-diff-after"}>{amount(after)}</span>} /></Td>
-              <Td align="right"><Cell num main={<span className={delta === 0 ? undefined : "rd-diff-after"}>{`${delta > 0 ? "+" : ""}${amount(delta)}`}</span>} /></Td>
+              <Td align="right"><Cell num title={String(before)} main={<span className="rd-diff-before">{amountText(before, digits[0])}</span>} /></Td>
+              <Td align="right"><Cell num title={String(after)} main={<span className={delta === 0 ? undefined : "rd-diff-after"}>{amountText(after, digits[1])}</span>} /></Td>
+              <Td align="right"><Cell num title={String(delta)} main={<span className={delta === 0 ? undefined : "rd-diff-after"}>{`${delta > 0 ? "+" : ""}${amountText(delta, digits[2])}`}</span>} /></Td>
             </tr>
           ))}
           <tr>

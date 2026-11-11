@@ -16,10 +16,6 @@ export const DOMAIN_B: ModuleEntry[] = [
     "平台储备够不够付用户的钱：可用储备、应付款、兑付覆盖率和红线，跌破时在这里处理。",
   ),
   liveDashboard(
-    "/overview/liquidity",
-    "现在能动用的钱和要付给用户的钱：还差多少、什么时候到期。",
-  ),
-  liveDashboard(
     "/overview/funnel",
     "用户从注册到提现，每一步留下多少、流失多少。",
   ),
