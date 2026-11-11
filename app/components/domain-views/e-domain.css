@@ -453,9 +453,10 @@
 /* 宽度沿用 rd Modal 的 wide 档；订单和任务影响并排，促销资金去向仍常显。 */
 .rd-modal:has(.e4-refund-impact-compact) { width: min(680px, calc(100vw - 48px)); }
 .rd-modal:has(.e4-refund-impact-compact) .rd-confirm-facts { padding-inline: var(--rd-space-2); }
+.rd-modal:has(.e4-refund-impact-compact) .rd-confirm-facts [data-mono] { word-break: break-all; }  /* 长单号均匀折行，不在「ORD-」后断开 */
 .rd-modal:has(.e4-refund-impact-compact) .rd-confirm-alert .rd-notice-text { text-wrap: balance; }
 .e4-refund-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--rd-space-4); }
-.e4-refund-impact { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--rd-space-2); min-width: 0; }  /* 标题、提示、事实、表格逐块排，不贴在一起 */
+.e4-refund-impact { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--rd-space-2); min-width: 0; }  /* 标题、提示、事实、表格逐块排，不贴在一起；左栏展开变高时不把提示和表格撑开 */
 .e4-refund-impact > .rd-form-group-title { margin: 0; }
 .e4-refund-impact-compact .rd-table { --rd-cell-pad-y: var(--rd-space-1); --rd-cell-pad: var(--rd-space-2); }
 
