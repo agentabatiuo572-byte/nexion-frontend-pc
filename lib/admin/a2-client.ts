@@ -72,6 +72,7 @@ interface BackendTicket {
   retiredOperation?: boolean | null;
   fundEffect?: A2FundEffect | null;
   refundOrderNo?: string | null;
+  refundAmountUsdt?: number | null;
   operator?: string | null;
   operatorRole?: string | null;
   type?: string | null;
@@ -168,6 +169,7 @@ export interface A2OperationRow {
   retiredOperation?: boolean;
   fundEffect?: A2FundEffect;
   refundOrderNo?: string;
+  refundAmountUsdt?: number;
   id: string;
   action: string;
   obj: string;
@@ -353,6 +355,8 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     ...(ticket.retiredOperation === true ? { retiredOperation: true } : {}),
     fundEffect: ticket.fundEffect ?? undefined,
     refundOrderNo: ticket.refundOrderNo ?? undefined,
+    ...(typeof ticket.refundAmountUsdt === "number" && Number.isFinite(ticket.refundAmountUsdt) && ticket.refundAmountUsdt > 0
+      ? { refundAmountUsdt: ticket.refundAmountUsdt } : {}),
     id: ticket.id,
     action: ticket.action,
     obj: ticket.obj,
