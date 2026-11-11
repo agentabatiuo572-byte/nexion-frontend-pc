@@ -38,7 +38,7 @@ export function PhoneFacts({ value, time = phoneTime }: {
     if (surface) return <><Facts>{Object.entries(fields).filter(([key]) => value[key] != null).map(([key, label]) => {
         const raw = value[key];
         const shown = /At$/.test(key) ? time(raw) : ["status", "commandType", "conflictType"].includes(key) ? phoneLabel(raw)
-            : typeof raw === "boolean" ? raw ? "是" : "否" : typeof raw === "string" || typeof raw === "number" ? String(raw) : "待核实";
+            : typeof raw === "boolean" ? raw ? "是" : "否" : raw === "" ? "—" : typeof raw === "string" || typeof raw === "number" ? String(raw) : "待核实";
         return <Fact key={key} k={label}>{shown}</Fact>;
     })}</Facts>{nested && <PhoneFacts value={nested} time={time} />}</>;
     return <><dl className="phone-facts">{Object.entries(fields).filter(([key]) => value[key] != null).map(([key, label]) => {
