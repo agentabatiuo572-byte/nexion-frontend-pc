@@ -282,11 +282,11 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
     ctx.openActionConfirm({ briefKind: "config",
       name: "调整 App 组合购阶梯折扣",
       op: "bundle-discount",
-      facts: <Facts><Fact k="2 件当前折扣">{e1Number(discount.twoItemsPct)} %</Fact><Fact k="3 件当前折扣">{e1Number(discount.threeItemsPct)} %</Fact><Fact k="4 件及以上当前折扣">{e1Number(discount.fourPlusItemsPct)} %</Fact></Facts>,
       businessForm: {
         kind: "multi-field",
 
         requireAnyChange: true,
+        amplifies: value => Number(value.twoItemsPct) > discount.twoItemsPct || Number(value.threeItemsPct) > discount.threeItemsPct || Number(value.fourPlusItemsPct) > discount.fourPlusItemsPct,
         fields: [
           { key: "twoItemsPct", label: "2 件折扣（%）", current: String(discount.twoItemsPct), inputKind: "number", min: 0.01, max: 30, step: 0.01, required: true, help: "0.01 %～30 %，最多 2 位小数；件数增加时折扣不能下降" },
           { key: "threeItemsPct", label: "3 件折扣（%）", current: String(discount.threeItemsPct), inputKind: "number", min: 0.01, max: 30, step: 0.01, required: true, help: "0.01 %～30 %，最多 2 位小数；件数增加时折扣不能下降" },

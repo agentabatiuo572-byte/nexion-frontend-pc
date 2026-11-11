@@ -20,7 +20,7 @@ const WAITING: E5SimState[] = ["WAITING_ACTIVATION", "WAITING_INIT", "LEGACY_PEN
 const OTHER: E5SimState[] = ["WAITING_CONFIG", "PAUSED", "CLOSING", "UNBOUND", "ERROR", "SIM_OFF"];
 const GROUPS = [
   { label: "待启动与需核对", keys: ["WAITING_ACTIVATION", "WAITING_INIT", "LEGACY_PENDING", "WAITING_CONFIG", "ERROR"] },
-  { label: "运行与收尾", keys: ["RUNNING", "PAUSED", "CLOSING"] },
+  { label: "运行、暂停、停用中", keys: ["RUNNING", "PAUSED", "CLOSING"] },
   { label: "已结束与关闭", keys: ["STOPPED", "UNBOUND", "SIM_OFF"] },
 ];
 interface Query { keyword: string; simState: string; source: string; productCode: string; pageNum: number; pageSize: number }
