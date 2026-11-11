@@ -128,3 +128,9 @@
 .m1-group-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px}
 .m1-group-pager>span{margin-right:4px;font-size:var(--rd-text-aux);color:var(--rd-text-3);font-variant-numeric:tabular-nums}
 .m1-inline-pager{justify-content:flex-start;margin-top:8px}
+/* 1024: list times (2026-11-05 14:30) stay on one line; the name column gives up the width. */
+@media(max-width:1100px){
+.m1-customer-table col:nth-child(1){width:24%}.m1-customer-table col:nth-child(2){width:13%}.m1-customer-table col:nth-child(3){width:16%}.m1-customer-table col:nth-child(4){width:19%}.m1-customer-table col:nth-child(5){width:14%}.m1-customer-table col:nth-child(6){width:14%}
+.m1-finance-table col:nth-child(1){width:19%}.m1-finance-table col:nth-child(2){width:11%}.m1-finance-table col:nth-child(3){width:20%}.m1-finance-table col:nth-child(4){width:18%}.m1-finance-table col:nth-child(5){width:13%}.m1-finance-table col:nth-child(6){width:19%}
+.m1-pool-table col:nth-child(2){width:22%}.m1-pool-table col:nth-child(3){width:19%}.m1-pool-table col:nth-child(4){width:20%}.m1-pool-table col:nth-child(5){width:15%}
+}
