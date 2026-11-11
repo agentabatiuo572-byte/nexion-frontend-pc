@@ -25,9 +25,9 @@ export interface E5MonthlyTarget {
   cycleIndex: number;
   cycleStartAt: string;
   cycleEndAt: string;
-  creditedUsdt: number;
-  rangeLowUsdt: number | null;
-  rangeHighUsdt: number | null;
+  creditedUsdt: number | string;
+  rangeLowUsdt: number | string | null;
+  rangeHighUsdt: number | string | null;
   capacityPct: number;
   targetActive: boolean;
   configChangedInCycle: boolean;
@@ -230,7 +230,9 @@ async function e5Request<T>(path: string, init?: RequestInit & { idempotencyKey?
         commandKey,
       );
     }
-    throw new Error(formatAdminApiError(result?.message, `E5_REQUEST_FAILED_${response.status}`));
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `E5_REQUEST_FAILED_${response.status}`)), {
+      status: response.ok && result && result.code >= 400 && result.code < 500 ? result.code : response.status, backendMessage: result?.message ?? "",
+    });
   }
   if (commandKey && result.data == null) {
     throw new E5OutcomeUncertainError("E5_DEVICE_ACTION_OUTCOME_UNCERTAIN", commandKey);
@@ -290,9 +292,9 @@ export function mapE5Device(row: BackendDevice): E5Device {
     dailyNex: dailyRate.dailyNex,
     monthlyTarget: row.monthlyTarget == null ? null : {
       ...row.monthlyTarget,
-      creditedUsdt: Number(row.monthlyTarget.creditedUsdt),
-      rangeLowUsdt: row.monthlyTarget.rangeLowUsdt == null ? null : Number(row.monthlyTarget.rangeLowUsdt),
-      rangeHighUsdt: row.monthlyTarget.rangeHighUsdt == null ? null : Number(row.monthlyTarget.rangeHighUsdt),
+      creditedUsdt: row.monthlyTarget.creditedUsdt,
+      rangeLowUsdt: row.monthlyTarget.rangeLowUsdt,
+      rangeHighUsdt: row.monthlyTarget.rangeHighUsdt,
       capacityPct: Number(row.monthlyTarget.capacityPct),
     },
     activeTaskNo: text(row.activeTaskNo, "—"),
