@@ -115,7 +115,8 @@ export function E1Page() {
   const readBlock = loading || error ? "商品目录读取成功前不能提交修改" : gatesLoading || gatesError || !gates ? "开放阶段读取成功前不能提交修改" : discountLoading || discountError || !discount ? "组合购折扣读取成功前不能提交修改" : !earlyReady ? "抢先购关联设置读取成功前不能提交修改" : undefined;
   const writesReady = canWrite && !readBlock;
   const locked = (type: string, id: string) => pending.some(r => e1Object(r.spec) === `${type}|${id}`)
-    || legacy.some(r => e1LegacyObject(r) === `${type}|${id}`);
+    || legacy.some(r => e1LegacyObject(r) === `${type}|${id}`)
+    || receipts.some(r => r.status === "pending" && r.object === `${type}|${id}`);
 
   const openSku = (skuId?: string, unlock?: string) => {
     if (!writesReady || skuId && locked("device_sku", skuId)) return;
@@ -161,7 +162,7 @@ export function E1Page() {
   const submit = async (spec: ProposeSpec) => {
     if (!writesReady || !actor || sending.current) throw new Error("目录未读取完整、正在提交或账号没有提交权限，本次没有提交");
     const object = e1Object(spec);
-    if (e1Pending(actor).some(r => e1Object(r.spec) === object) || locked(object.split("|")[0], object.split("|").slice(1).join("|"))) throw new Error("此对象有原操作结果未确认，请按原操作重试或核对");
+    if (e1Pending(actor).some(r => e1Object(r.spec) === object) || locked(object.split("|")[0], object.split("|").slice(1).join("|"))) throw new Error("此对象有待审批或待核对的操作，请先核对原操作");
     const commandKey = createA2CommandKey("e1-proposal"), fingerprint = `${actor}|${object}`;
     const savedSpec = JSON.parse(JSON.stringify(spec)) as ProposeSpec;
     e1Commands.remember(fingerprint, commandKey, { actorId: actor, spec: savedSpec });
