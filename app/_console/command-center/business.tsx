@@ -43,11 +43,11 @@ export function usePeriodChoice(adminId: number | undefined) {
   return {
     period,
     setPeriod: (next: B0Period) => {
-      setPeriod(next);
       try {
         window.localStorage.setItem(key, next);
+        setPeriod(next);
       } catch {
-        // 存不下时只影响下次打开的默认时段。
+        setPeriod("today");
       }
     },
   };

@@ -8,7 +8,7 @@
 import Link from "next/link";
 import { Fragment, type ReactNode } from "react";
 import { Headset, ListChecks, Server, ShieldAlert, Wallet, type LucideIcon } from "lucide-react";
-import { Panel, TodoFailed, TodoItem, TodoList, type DomainTone, type StateTone } from "@/app/components/rd";
+import { InlineRetry, Panel, TodoFailed, TodoItem, TodoList, type DomainTone, type StateTone } from "@/app/components/rd";
 
 export type PendingRow = {
   key: string;
@@ -53,7 +53,7 @@ export function PendingPanel({ rows, failures, loading, aside }: { rows: readonl
           {rest.map((row, index) => (
             <Fragment key={row.key}>
               {index > 0 && "、"}
-              {isFailure(row) ? `${row.name}读取失败` : row.href ? <Link href={row.href} prefetch={false}>{row.title}</Link> : row.title}
+              {isFailure(row) ? <>{row.name}读取失败 · <InlineRetry label={`重试读取${row.name}`} onRetry={row.onRetry} /></> : row.href ? <Link href={row.href} prefetch={false}>{row.title}</Link> : row.title}
             </Fragment>
           ))}
         </p>
