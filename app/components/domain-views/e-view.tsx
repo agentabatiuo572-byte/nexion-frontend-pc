@@ -68,7 +68,7 @@ import { E3Manual } from "./e-tabs/e3-manual";
 import { E4Orders } from "./e-tabs/e4-orders";
 import { E5Ops } from "./e-tabs/e5-ops";
 import { E6ComputeConfig as E6ComputeConfigComp } from "./e-tabs/e6-compute-config";
-import { isRedesignedELegacyCommand } from "./e-tabs/e6-mutations";
+import { isRedesignedELegacyCommand } from "@/lib/admin/e-domain-commands";
 import "./e-domain.css";
 
 /** E 域 A2 提交稳定命令号:槽位=动作 op|目标对象,指纹=终值+结构化命令+目标锁(**不含 reason**)。
@@ -117,7 +117,8 @@ function SkuFld({ label, value, onChange, placeholder, type = "text", hint, tip,
 }
 
 export function EDomainView({ meta }: { meta: DomainViewMeta }) {
-  return meta.l2Id === "E1" ? <E1Page /> : <ELegacyDomainView meta={meta} />;
+  const tab = meta.l2Id;
+  return tab === "E1" ? <E1Page /> : <ELegacyDomainView meta={meta} />;
 }
 
 function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {

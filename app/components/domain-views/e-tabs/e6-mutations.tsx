@@ -6,14 +6,13 @@ import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey } from "@/lib/admin/a2-client";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, hasPersistedPendingCommandOwner, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isRedesignedELegacyCommand } from "@/lib/admin/e-domain-commands";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { activateE5Device, deactivateE5Device, setE5UserDevicesPaused, fetchE5Devices } from "@/lib/admin/e5-client";
 import { savePhoneRisk, fetchPhoneRisk, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
 import { Button, Notice, Fold, ReleaseModal } from "@/app/components/rd";
 
 export type E6Section = "tasks" | "tiers" | "phones" | "calibration";
-/** Every reader of the shared table must retain the redesigned pages' old evidence; E3/E4 keep their expiry policy. */
-export const isRedesignedELegacyCommand = (record: Pick<PendingMutationRecord, "fingerprint">) => /^(e[156]_[^|]+|e2_phone_tier|e2_task_(create|update|status)|device-(activate|deactivate|batch))\|/.test(record.fingerprint);
 export type E6Proposal = Parameters<typeof createA2OperationProposal>[0];
 type ProposalDraft = Omit<E6Proposal, "operator" | "operatorRole" | "sos" | "roleGate">;
 type DeviceInput = { before: string; serial: string; deviceId: number; userId: number; action: "activate" | "deactivate" | "pause" | "resume"; reason: string; operator: string };

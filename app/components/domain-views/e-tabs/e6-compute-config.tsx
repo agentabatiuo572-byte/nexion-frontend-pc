@@ -9,7 +9,7 @@ import { e6YieldKey } from "@/lib/admin/e6-client";
 import { E6ConfirmModal } from "./e6-confirm-modal";
 import { BlockState, Button, ConfigList, ConfigRow, Fact, Facts, Fold, Notice, PageHeader, PageTabs, Panel, SectionNav, useSectionNav, useTabIds } from "@/app/components/rd";
 import { PhoneTasksSection, PhoneTiersSection } from "./phone-tasks-section";
-import { E5Ops } from "./e5-ops";
+import { E6PhoneDevices } from "./e6-phone-devices";
 import { PhoneReplacementPolicyPanel } from "./phone-replacement-policy-panel";
 import { PhoneCalibrationPanel } from "./phone-calibration-panel";
 import { PhoneRiskSection } from "./phone-risk-section";
@@ -41,7 +41,7 @@ function E6Content({ctx}:{ctx:EViewCtx}) {
       {visible.length>1&&<PageTabs ids={ids} label="手机算力配置分区" value={tab} items={visible.map(t=>({...t,count:m.pending.filter(r=>r.section===t.value).length||undefined}))} onChange={change}/>}
       {denied&&<Notice tone="warn">你无权查看这个分区，已显示第一个可查看分区。</Notice>}
       {ctx.canReadE2&&<><div {...ids.panel("tasks")} hidden={tab!=="tasks"} className="e6-tab"><PhoneTasksSection ctx={ctx}/></div><div {...ids.panel("tiers")} hidden={tab!=="tiers"} className="e6-tab"><PhoneTiersSection ctx={ctx}/></div></>}
-      {ctx.canReadE5&&<div {...ids.panel("phones")} hidden={tab!=="phones"} className="e6-tab"><E5Ops ctx={ctx} phones/></div>}
+      {ctx.canReadE5&&<div {...ids.panel("phones")} hidden={tab!=="phones"} className="e6-tab"><E6PhoneDevices ctx={ctx}/></div>}
       {ctx.canReadE6&&<div {...ids.panel("calibration")} hidden={tab!=="calibration"} className="e6-tab">
         {ctx.e6Error&&<BlockState state="error" title="设备配置读取失败" detail={ctx.e6Error} retryLabel="重试" onRetry={()=>void ctx.refreshE6()}/>}
         <div className="rd-config-layout"><div className="rd-config-grid"><div className="rd-config-rail"><SectionNav label="校准与风控主题" items={sections} nav={nav}/></div><div className="rd-config-groups e6-config-groups">
