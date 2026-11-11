@@ -839,7 +839,7 @@ export default function H1Phase({ ctx,
             <div className="h1-progress">
               <span className="h1-value-label">本阶段进度 <Explain label="本阶段进度是什么" content="人工设置的 0–100% 进度，不是月份完成率，不会自动推进阶段。" />
               </span>
-              <strong>{progressValid ? rhythm.phaseProgressPct : "—"}<small>{progressValid ? "%" : " · 不可用"}</small>
+              <strong data-empty={progressValid && rhythm.phaseProgressPct !== 0 ? undefined : ""}>{progressValid ? rhythm.phaseProgressPct : "—"}<small>{progressValid ? "%" : " · 不可用"}</small>
               </strong>
               <ScaleBar label="本阶段进度" valueText={progressValid ? `本阶段进度 ${rhythm.phaseProgressPct}%` : "进度不可用"} max={100} value={rhythm.phaseProgressPct} state={progressValid ? "ready" : "empty"} emptyText="未提供可用进度" fill tone="role-3" ticks={[{
                 value: 0,
