@@ -61,3 +61,7 @@
 .rd-drawer:has(.sa-disclosure) .m3-profile-entries{display:flex;justify-content:flex-start;gap:8px;width:100%}
 
 .m1-command-form,.m1-transfer-form{display:grid;gap:16px}
+
+.sa-workbench .rd-filter-row>button[aria-controls]{margin-left:auto}
+.m1-live-service .rd-stats>.rd-stat,.m1-personal>.rd-stats>.rd-stat{flex:1 1 0}
+@container(max-width:900px){.m1-live-service .rd-stats:has(>.rd-stat[data-lead])>.rd-stat[data-cp],.m1-personal>.rd-stats:has(>.rd-stat[data-lead])>.rd-stat[data-cp]{flex:1 1 calc(50% - 16px)}}

@@ -62,7 +62,7 @@ function formatTime(value: string | null | undefined): string {
   return Number.isNaN(ts) ? "数据未同步" : new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", dateStyle: "medium", timeStyle: "short" }).format(ts);
 }
 function errorText(error: unknown): string {
-  if (isIndeterminateSupportError(error)) return "操作结果待确认，请查询原命令请稍后继续查询。";
+  if (isIndeterminateSupportError(error)) return "操作结果待确认，请稍后查询原命令。";
   if (error instanceof SupportClientError) {
     if (error.backendMessage && ADMIN_ERROR_MESSAGES[error.backendMessage]) return displayAdminError(error);
     if (error.status === 401) return "登录已失效，请重新登录后重试。";
@@ -331,7 +331,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
       <Fold title="我的邀请码" summary="生成、重置与分享" explain="注册时使用客服码建立专属客服绑定。重置会作废旧码，已有绑定保留。"><SelfInviteCodeBar key={sessionKey} toast={ctx.toast} /></Fold>
       <Conclusion state={pendingRecords.length ? "warn" : todoTotal === null ? "unknown" : "neutral"} hint={pendingRecords.length ? "先查询原操作。" : overview?.counts.waitingReplyCustomers ? "先打开待回复客户，继续处理会话。" : "从下方客户卡开始联系。"} explain="待办客户取同一 PERSONAL TODO 快照的去重总数。三类待办可能重叠，不能相加。">{pendingRecords.length ? "有操作结果待确认" : todoTotal === null ? "待办客户暂未读到" : todoTotal ? `有 ${todoTotal} 位待办客户` : "当前没有待办客户"}</Conclusion>
       {overviewError && <BlockState state="error" compact title={overviewError} onRetry={() => setRowsRefresh(n => n + 1)} />}
-      <StatBand cards label="今日服务待办"><Stat label="待办客户" value={todoTotal ?? "—"} unit="位" lead icon={Users} onOpen={() => showCustomers("TODO")} explain="同一快照中按客户去重的待办总数。" />
+      <StatBand label="今日服务待办"><Stat label="待办客户" value={todoTotal ?? "—"} unit="位" lead icon={Users} onOpen={() => showCustomers("TODO")} explain="同一快照中按客户去重的待办总数。" />
         {([ ["waitingReplyCustomers", "待专属客服回复", "WAITING_REPLY", MessageSquare], ["firstContactCustomers", "首次待联系", "FIRST_CONTACT", UserRoundPlus], ["dueMaintenanceCustomers", "待维护", "DUE", Clock3] ] as const).map(([key, label, target, icon]) => <Stat key={key} label={label} value={overviewLoading ? "—" : overview?.counts[key] ?? "—"} unit="位" icon={icon} onOpen={() => showCustomers(target)} explain={key === "waitingReplyCustomers" ? "已读不会清除待回复，须由专属客服回复。" : key === "firstContactCustomers" ? "按当前绑定识别首次待联系。" : "需要主动联系的客户；暂停维护的客户不计入。"} />)}
       </StatBand>
       {navigation}
