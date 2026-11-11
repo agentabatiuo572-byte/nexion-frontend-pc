@@ -1,4 +1,4 @@
-import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, type A2OperationRow } from "./a2-client";
+import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { isExplicitRejection } from "./explicit-rejection";
 import { sendH1StoredPatch, type H1Phases } from "./h-client";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
@@ -82,6 +82,9 @@ export async function executeH1(row: H1Pending, onReceipt: (receipt: Partial<H1P
       const explicit = isExplicitRejection(error);
       if (!retry && explicit && !current.requests.some((item) => item.acknowledged)) h1Pending.forget(current.fingerprint, current.commandKey);
       else rememberH1({ ...current, state: explicit ? "rejected" : "unknown", retryRejected: retry && explicit });
+      if (request.kind === "proposal" && isA2OutcomeUncertainError(error)) {
+        error.message = "申请提交结果待核对，可能已生成审批单；批准前参数不变。原内容与理由已保留，请查询原操作。";
+      }
       throw error;
     }
   }
