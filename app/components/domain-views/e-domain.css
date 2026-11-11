@@ -671,6 +671,12 @@
 .e5-amount[data-zero] { color: var(--rd-text-3); font-weight: 400; }
 .rd-drawer[data-e5-detail] .e5-amount[data-zero] { font-size: var(--rd-text-body); }
 
+/* 第一次读完前排法未定：表头文字先不画，免得按常规列宽画出来再挪位置。 */
+.e5-table-host[data-layout-pending] .e5-table thead th > * { visibility: hidden; }
+/* 同时骨架行不按列画：每行一条通栏的占位，读完再按定下来的排法出列。 */
+.e5-table-host[data-layout-pending] .e5-table tbody tr { position: relative; }
+.e5-table-host[data-layout-pending] .e5-table tbody td > .rd-skeleton { visibility: hidden; }
+.e5-table-host[data-layout-pending] .e5-table tbody td:first-child::after { content: ""; position: absolute; left: var(--rd-panel-pad-x); right: var(--rd-panel-pad-x); top: 50%; height: 12px; margin-top: -6px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); animation: rd-pulse 1.4s ease-in-out infinite; }
 /* 本页没有一行带预估区间时，收益列只放金额或「—」；也没有当前任务时任务列同样收窄。
    省下的宽度给设备、用户、状态，1440 下实例号不再省略，中间不留一片空。 */
 .e5-table-host[data-no-range]:not([data-extra]) .e5-table .e5-col-income { width: 152px; }
@@ -944,6 +950,8 @@
 .e1-product-stock > .e1-value-line > .e1-muted { display: inline-flex; align-items: center; gap: var(--rd-space-2); white-space: nowrap; }
 .e1-gate-trigger { display: inline-flex; align-items: center; gap: var(--rd-space-1); white-space: nowrap; }
 .e1-gate-trigger > svg { flex: none; }
+/* 审批状态抽屉底栏：两个按钮和链接靠左成一组，留间距。 */
+.e1-receipt-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2) var(--rd-space-3); }
 :is(.e1-card-warning, .e1-card-note) { text-wrap: pretty; }
 .e1-stage-summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
 .e1-stage-summary > .rd-btn { justify-self: end; }

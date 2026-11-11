@@ -77,7 +77,7 @@ export function PhoneTasksSection({ ctx }: { ctx: EViewCtx }) {
   }
   return <>
     <E6PendingNotice section="tasks" onRead={()=>void ctx.refreshE2()} />
-    <Conclusion state={ctx.e2Loading || poolLoading ? "neutral" : !ready || poolError ? "neutral" : pool?.enabledCount === 0 ? "warn" : "ok"} icon={Smartphone}>{ctx.e2Loading || poolLoading ? "正在读取手机任务" : !ready || poolError ? "等手机任务读取成功后可用" : pool?.enabledCount === 0 ? "还没有启用的手机任务" : canWrite ? "手机任务已启用，可编辑或新增" : "手机任务已启用，当前可查看配置"}</Conclusion>
+    <Conclusion state={ctx.e2Loading || poolLoading ? "neutral" : !ready || poolError ? "neutral" : pool?.enabledCount === 0 ? "warn" : "ok"} icon={Smartphone}>{ctx.e2Loading || poolLoading ? "正在读取手机任务" : !ready || poolError ? "等手机任务读取成功后可用" : pool?.enabledCount === 0 ? "还没有启用的手机任务" : `${ctx.tasks.filter(task => task.simulation?.enabled).length} 个手机任务启用中`}</Conclusion>
     <Panel title="任务节奏" icon={Activity} tone="role-2" sub={readAt ? `读取于 ${readAt}` : undefined}>
       {poolError ? <BlockState state="error" title="任务节奏暂不可读" detail={poolError} onRetry={()=>void ctx.refreshE2()} /> : <StatBand fit>
         <Stat label="启用任务" icon={ListTodo} tone="role-2" lead value={poolLoading ? "—" : pool?.enabledCount ?? "—"} unit="个" sub={pool ? `共 ${pool.taskCount} 个` : undefined} />
