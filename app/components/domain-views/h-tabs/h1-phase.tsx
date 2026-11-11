@@ -801,7 +801,7 @@ export default function H1Phase({ ctx,
     </Notice>)}
     {feedback && <Notice tone="warn">{feedback}</Notice>}
     {!canRead ? <BlockState state="denied" title="没有运营阶段读取权限" /> : loading && !model ? <BlockState state="loading" title="正在加载运营阶段…" /> : error && !model ? <BlockState state="error" title="运营阶段数据加载失败" detail={error} onRetry={() => void reload()} /> : model && rhythm && <>
-      {error && <Notice tone="danger" action={<Button size="sm" onClick={() => void reload()}>重试</Button>}>运营阶段数据加载失败：{error}。下方为上次读取的值，暂停依赖写入。</Notice>}
+      {error && <Notice tone="danger" action={<Button size="sm" onClick={() => void reload()}>重试</Button>}>运营阶段数据加载失败：{error} 下方为上次读取的值，暂停依赖写入。</Notice>}
       <Conclusion state={unavailable ? "warn" : "neutral"} icon={Flag}>{unavailable ? "阶段配置不可用" : `当前 ${phaseLabel}`} · {describeH1Schedule(rhythm.schedule)}</Conclusion>
       {unavailable && <Notice tone="warn">{unavailable}。请有配置权限的管理员核对；可在总体安排单独补总月数或校准，不写入默认值。</Notice>}
       {fundingBlocked && <Notice tone="warn" action={reach("/finance/pool") ? <Link className="rd-link" href="/finance/pool" prefetch={false}>核对资金储备与应付款 →</Link> : undefined}>放大调整受阻，请核对资金储备与应付款。{!coverage?.reliable ? "兑付覆盖率当前不可靠。" : "兑付覆盖率低于红线或读数不可用。"}</Notice>}
