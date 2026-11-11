@@ -257,7 +257,6 @@
 .m3s-assign { display: flex; flex-direction: column; gap: var(--rd-space-3); }
 .m3-policy-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--rd-space-3); align-items: start; }
 .m3-policy-fields .rd-form-field { min-width: 0; }
-.rd-modal.m3-policy-modal .rd-modal-body > :is(.rd-form-field, .rd-notice, .m3-policy-preview) { margin-top: var(--rd-space-3); }
 .rd-modal.m3-policy-modal .m3-policy-preview { margin-bottom: 0; }
 .rd-modal .m3-entry-note { margin-top: 10px; }
 .rd-modal.m3-policy-modal .rd-notice { padding: 10px 16px; border-radius: var(--rd-radius-control); }

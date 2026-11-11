@@ -181,7 +181,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
           {surface && req.reason && <span className="rd-reason-count">{reasonLength}/{reasonMax}</span>}
         </div>
         {req.reason && (surface ? !reasonOk && (attempted || reasonLeft) : true) && (
-          <div className="tiny k-confirm-count" data-ok={reasonOk ? "" : undefined}>{reasonShort}</div>
+          <div className={surface ? "rd-form-error" : "tiny k-confirm-count"} data-ok={reasonOk ? "" : undefined}>{reasonShort}</div>
         )}
       </div>
       </fieldset>

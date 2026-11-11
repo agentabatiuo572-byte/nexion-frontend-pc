@@ -258,6 +258,8 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 后果不写成灰字：生效方式是标题下的蓝色标签（`<StatusTag tone="progress" filled>立即生效</StatusTag>`），收不回来的操作再加 `<IrreversibleTag />`；不改线上的写操作（保存草稿、业务继续关停、只改你看到的显示）用灰底标签。红只给危险确认、提交失败和真危险的后果；填错、结果未知、被别人改了用橙黄。同一件事只写一处：范围不在标签、占位、说明里各写一遍，没改时不写「还没改动」，确认按钮禁用并写原因就够。
 
+**弹窗正文的块间距由组件给，页面不写。** `Modal` 正文（`.rd-modal-body`）里相邻两块——事实块、提示条、字段、勾选、按钮组——之间统一 16px；两个共用确认框（`OperationConfirmModal`、`KConfirmModal`）里包着内容的 `.rd-contents` 也按这一套排。页面要一组更紧的间距，自己包一层 `rd-stack`（12）或网格，整组算一块，组内间距不变，不会变成双倍。不要再给弹窗里的块写 `margin-top`／`margin-bottom` 或 `.rd-modal-body > …` 的局部补丁。
+
 页面只传内容：`title`、`facts`、`Fact` 的 `lead`、`sub` 或 `effect`。`openActionConfirm`、`openConfirm` 和 `KConfirmModal` 都能传 `title`，`action` 照旧进操作记录，不要动。框里的状态变化写 `<Fact k="状态"><Change from="冻结" to="待审核" /></Fact>`。三个并排的字段放 `<div className="rd-form-grid" data-cols="3">`。540 宽的抽屉里字段一项一行，帮助在窄列里会断词折行（VS-105）。
 
 ```tsx
@@ -293,7 +295,9 @@ const nav = useSectionNav(SECTIONS, { ready: !!model, onReveal: (id) => openFold
 
 理由框失焦或点过提交后，不足字数／未填使用标准 `aria-invalid` 和警示边框；完整字数范围与「还差 n 字」写在框下。危险影响句用正文字体，编号仍可等宽。
 
-`ReleaseBody` 后续的事实、拒绝条、人工核实勾选自动留 16px 间距；解除只清本标签页记录，不撤销原操作、不代替后端结案，重新提交仍由后端校验。`Fold` 普通块在深浅主题均有边界，弹窗折叠边界与字段左边线一致。`Field` 的 `Explain` 优先开在整个字段上方，空间不足时按字段外侧空间选择左右，不盖输入框和范围；其他问号保留原定位。`NumberInput` 的方向键从 min（未传为 0）开始对齐 step 网格，外部 value 变化清除旧拒收提示；保留无可见步进按钮的交互。
+解除只清本标签页记录，不撤销原操作、不代替后端结案，重新提交仍由后端校验。`Fold` 普通块在深浅主题均有边界，弹窗折叠边界与字段左边线一致。`Field` 的 `Explain` 优先开在整个字段上方，空间不足时按字段外侧空间选择左右，不盖输入框和范围；其他问号保留原定位。`NumberInput` 的方向键从 min（未传为 0）开始对齐 step 网格，外部 value 变化清除旧拒收提示；保留无可见步进按钮的交互。
+
+业务表单（`businessForm`）在 `RdPage` 里用 rd 的组件画：字段是 `Field` 加 `Select`、`Input`、`NumberInput`，勾选是 `Check`，警示是 `Notice`，只读事实是 `Facts`，两列用 `<div className="rd-form-grid" data-cols="2" data-dense="">`（列间、行间都是 16）；正文不用等宽字，只有编号、命令号用。已改版页面在用的 `multi-field`、`destructive-reason`、`disclosure-jurisdiction`、`disclosure-matrix`，和改版页会用的 `identity-verify` 都这样画；字段名、取值、校验、提交内容和旧画法一样。其余种类只在旧页面出现，仍是旧样子，改版页要用时先在 `design-kit.tsx` 里补上 rd 画法。
 
 业务表单（`businessForm` 的 `multi-field`）的字段传 `explain` 时，字段名旁出现提示图标；校验不过的提示失焦或点过提交才出现，用橙黄。`multi-field` 不传 `title` 时没有分组小标题，只有一组字段就别传，框的标题已经说了（VS-104）。
 

@@ -14,10 +14,10 @@ interface ApiResult<T> {
 export type H1RhythmParamKey = "totalMonths" | "currentMonth" | "phaseProgressPct";
 
 export interface H1RhythmOverview {
-  totalMonths: number;
-  currentMonth: number;
+  totalMonths: number | null;
+  currentMonth: number | null;
   currentPhase: string;
-  phaseProgressPct: number;
+  phaseProgressPct: number | null;
   options: number[];
   sources: string[];
   /**
@@ -82,32 +82,22 @@ function numberValue(value: unknown) {
   return Number.isFinite(n) ? n : null;
 }
 
-function requiredNumber(value: unknown, field: string) {
-  const n = numberValue(value);
-  if (n == null) throw new Error(`H1_RESPONSE_INVALID:${field}`);
-  return n;
-}
-
-function clampInt(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, Math.round(value)));
-}
-
 function normalizeRhythm(raw?: Record<string, unknown> | null): H1RhythmOverview {
   if (!raw) throw new Error("H1_RESPONSE_INVALID:rhythm");
   const rawOptions = Array.isArray(raw?.options) ? raw.options : [];
   const options = rawOptions.map((item) => Number(item)).filter((item) => Number.isFinite(item));
-  const totalMonths = Math.max(1, Math.round(requiredNumber(raw.totalMonths, "totalMonths")));
-  const rawCurrentMonth = requiredNumber(raw.currentMonth, "currentMonth");
-  const rawPhaseProgress = requiredNumber(raw.phaseProgressPct, "phaseProgressPct");
+  const readNumber = (value: unknown) => value == null || value === "" ? null : numberValue(value);
+  const totalMonths = readNumber(raw.totalMonths);
+  const rawCurrentMonth = readNumber(raw.currentMonth);
+  const rawPhaseProgress = readNumber(raw.phaseProgressPct);
   const currentPhase = typeof raw.currentPhase === "string" && raw.currentPhase.trim()
     ? raw.currentPhase.trim()
-    : null;
-  if (!currentPhase) throw new Error("H1_RESPONSE_INVALID:currentPhase");
+    : "";
   return {
     totalMonths,
-    currentMonth: clampInt(rawCurrentMonth, 1, totalMonths),
+    currentMonth: rawCurrentMonth,
     currentPhase,
-    phaseProgressPct: rawPhaseProgress == null ? 0 : clampInt(rawPhaseProgress, 0, 100),
+    phaseProgressPct: rawPhaseProgress,
     options,
     sources: Array.isArray(raw?.sources) ? raw.sources.map(String) : [],
     schedule: normalizeSchedule(raw.schedule),
@@ -200,9 +190,60 @@ export async function fetchH1Rhythm(): Promise<H1RhythmOverview> {
   return normalizeRhythm(await growthRequest<Record<string, unknown>>("/rhythm"));
 }
 
-export async function fetchH1Phases(): Promise<Record<string, any>> {
-  const data = await growthRequest<Record<string, any>>("/phases");
-  return { ...data, rhythm: normalizeRhythm(data.rhythm) };
+export interface H1Phases {
+  rhythm: H1RhythmOverview;
+  monthlyDials: { month: number; phase: string; current?: boolean; dials: Record<string, string | number | null> }[];
+  controls: { key: string; label: string; description?: string; value: string }[];
+  overrides: { id: string; cohort: string; description?: string; disabled: boolean }[];
+  attribution: { phase: string; name: string; driver: string; paramKey: string; value: string; owner: string }[];
+  coverage: { coverageRatio: number | string | null; redlinePct: number | string | null; reliable: boolean; redlineBreached: boolean };
+}
+
+function normalizeH1Phases(data: Record<string, unknown>): H1Phases {
+  const record = (value: unknown, name: string): Record<string, unknown> => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`H1_RESPONSE_INVALID:${name}`);
+    return value as Record<string, unknown>;
+  };
+  const rows = (name: string) => {
+    if (!Array.isArray(data[name])) throw new Error(`H1_RESPONSE_INVALID:${name}`);
+    return data[name].map((row: unknown) => record(row, name));
+  };
+  const text = (value: unknown) => value == null ? "" : String(value);
+  const decimal = (value: unknown): string | number | null => {
+    if (value == null || value === "") return null;
+    if (typeof value !== "string" && typeof value !== "number") throw new Error("H1_RESPONSE_INVALID:dial");
+    return value;
+  };
+  const coverage = record(data.coverage, "coverage");
+  return {
+    rhythm: normalizeRhythm(record(data.rhythm, "rhythm")),
+    monthlyDials: rows("monthlyDials").map((row) => ({ month: Number(row.month), phase: text(row.phase), current: row.current === true,
+      dials: Object.fromEntries(Object.entries(record(row.dials, "dials")).map(([key, value]) => [key, decimal(value)])) })),
+    controls: rows("controls").map((row) => ({ key: text(row.key), label: text(row.label), description: text(row.description), value: text(row.value) })),
+    overrides: rows("overrides").map((row) => ({ id: text(row.id), cohort: text(row.cohort), description: text(row.description), disabled: row.disabled === true })),
+    attribution: rows("attribution").map((row) => ({ phase: text(row.phase), name: text(row.name), driver: text(row.driver), paramKey: text(row.paramKey), value: text(row.value), owner: text(row.owner) })),
+    coverage: { coverageRatio: decimal(coverage.coverageRatio), redlinePct: decimal(coverage.redlinePct), reliable: coverage.reliable === true, redlineBreached: coverage.redlineBreached !== false },
+  };
+}
+
+export async function fetchH1Phases(): Promise<H1Phases> {
+  return normalizeH1Phases(await growthRequest<Record<string, unknown>>("/phases"));
+}
+
+/** Replays the persisted body and key; never reads the current operator when recovering. */
+export async function sendH1StoredPatch(path: string, body: string, commandKey: string): Promise<Partial<H1Phases> & { rhythm: H1RhythmOverview }> {
+  const data = await growthRequest<Record<string, unknown>>(path, { method: "PATCH", body, headers: { "Idempotency-Key": commandKey } });
+  if (path.startsWith("/rhythm/")) {
+    // Read projections may be unavailable; a write needs a complete, parseable receipt.
+    if (!data || ![data.totalMonths, data.currentMonth, data.phaseProgressPct].every((value) => value !== null && value !== "" && Number.isInteger(Number(value)))
+      || typeof data.currentPhase !== "string" || !Array.isArray(data.options)) throw new Error("H1_RESPONSE_INVALID:rhythmReceipt");
+    return { rhythm: normalizeRhythm(data) };
+  }
+  const next = normalizeH1Phases(data);
+  const month = Number(path.match(/\/months\/(\d+)\//)?.[1]);
+  const key = decodeURIComponent(path.split("/").at(-1)!);
+  if (!next.monthlyDials.some((row) => row.month === month && row.dials[key] != null)) throw new Error("H1_RESPONSE_INVALID:monthDialReceipt");
+  return next;
 }
 
 export async function updateH1RhythmParam(
@@ -210,18 +251,20 @@ export async function updateH1RhythmParam(
   value: string | number,
   reason: string,
   operator = currentAdminOperator(),
+  commandKey?: string,
 ): Promise<H1RhythmOverview> {
   return normalizeRhythm(
     await growthRequest<Record<string, unknown>>(
       `/rhythm/${key}`,
-      { method: "PATCH", body: commandBody(key, value, reason, operator) },
+      { method: "PATCH", body: commandBody(key, value, reason, operator), ...(commandKey ? { headers: { "Idempotency-Key": commandKey } } : {}) },
       "h1-rhythm",
     ),
   );
 }
 
-export async function updateH1MonthDial(month: number, key: string, value: string | number, reason: string) {
+export async function updateH1MonthDial(month: number, key: string, value: string | number, reason: string, commandKey?: string, operator = currentAdminOperator()) {
   validateH1DialValue(key, value);
+  if (commandKey) return sendH1StoredPatch(`/phases/months/${month}/dials/${encodeURIComponent(key)}`, commandBody(key, value, reason, operator), commandKey);
   return fetchH1PhaseMutation(`/phases/months/${month}/dials/${encodeURIComponent(key)}`, key, value, reason, "h1-month-dial");
 }
 

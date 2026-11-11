@@ -340,6 +340,8 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 /* 告警色只给有告警的这一行：data-tone 挂在摘要上，不往折叠里传（DT-13）。 */
 .rd-fold-summary[data-tone] { color: var(--tone); font-weight: 500; }
 .rd-fold-body { min-width: 0; padding: 0 var(--rd-panel-pad-x) 16px calc(var(--rd-panel-pad-x) + 14px + var(--rd-space-2)); color: var(--rd-text-2); }
+/* 弹窗、抽屉里的折叠正文：相邻两块（提示条、事实块、表格、列表、说明）之间 12，和抽屉正文一样（VS-100）；整组包 rd-stack 的算一块。 */
+:is(.rd-modal-body, .rd-drawer-body) .rd-fold-body > :not(:first-child) { margin-top: var(--rd-space-3); }
 
 /* ── 时间线、记录列表（CP-46 / VS-109）── */
 /* 沿用 Ant Design 的单侧时间轴和 List 横排结构；List 默认 12px 0 行内边距。 */
@@ -560,6 +562,10 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-modal-title .rd-explain { margin-left: 4px; }
 .rd-modal-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 20px 16px; }
+/* 正文相邻两块（事实块、提示条、字段、勾选、按钮组）之间统一 16，和抽屉正文同一量级（VS-100）。只排直接子块：页面自己包 rd-stack
+   或网格的是一整块，里面的间距不变；两个共用确认框里 display: contents 的 fieldset（.rd-contents）的子块也算直接子块。
+   用上外边距：块级兄弟的外边距合并，旧块残留的下外边距不会叠成两倍；比 .rd-facts 这类组件自带的 margin: 0 强一档。 */
+.rd-modal-body > :not(:first-child), .rd-modal-body > .rd-contents > :not(:first-child) { margin-top: var(--rd-space-4); }
 /* 框只有一层滚动，头和底栏固定，内容在底栏前渐隐，看得出下面还有（Carbon Overflow content）。滚到底时渐隐落在下内边距上，看不见。 */
 .rd-modal-body::after { content: ""; position: sticky; bottom: calc(-1 * var(--rd-space-4)); display: block; height: var(--rd-space-4); margin-bottom: calc(-1 * var(--rd-space-4)); background: linear-gradient(to top, var(--rd-panel), transparent); pointer-events: none; }
 .rd-dialog-feedback { flex: none; max-height: 25vh; overflow-y: auto; margin: 0 20px 12px; }
@@ -572,7 +578,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 
 /* 确认框外观：OperationConfirmModal 的旧内容块在新框里的样子，逻辑都在旧组件里没动。 */
 .rd-modal.rd-confirm .operator-brief { padding: 0; margin-bottom: 12px; }
-.rd-operation-brief { display: grid; gap: 8px; margin-bottom: 16px; }
+.rd-operation-brief { display: grid; gap: 8px; }
 .rd-modal.rd-confirm .rd-operation-brief .rd-brief { margin-bottom: 0; }
 .rd-operation-impact { color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
 .rd-operation-completion { color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
@@ -636,10 +642,8 @@ body:has(.rd-drawer[data-state="open"]:not([data-wide])) .rd-toast-host { left: 
 .rd-reason-field > .rd-form-help { margin-top: 8px; }
 .rd-reason-field > .rd-form-error { margin-top: 8px; }
 .rd-modal.rd-confirm .rd-destructive-impact { font-family: var(--rd-font); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
-/* ReleaseBody 后面可接原操作事实、拒绝条、人工核实勾选；共享间距不要求页面各自补壳。 */
-.rd-modal-body > .rd-release-body ~ * { margin-top: var(--rd-space-4); }
 .rd-reason-count { position: absolute; right: 10px; bottom: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; pointer-events: none; }
-.rd-confirm-facts { margin-bottom: 16px; padding: 12px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.rd-confirm-facts { padding: 12px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .rd-confirm-facts :is(.rd-facts, .rd-diff) + .rd-notice { margin-top: 12px; }
 .rd-confirm-facts > .rd-confirm-funding { margin-top: 12px; }
 .rd-funding-coverage { margin-top: 4px; color: var(--rd-text-2); }
@@ -649,9 +653,7 @@ body:has(.rd-drawer[data-state="open"]:not([data-wide])) .rd-toast-host { left: 
 .rd-modal.rd-confirm .rd-confirm-facts > .alertbar.calm { padding: 0; background: none; }
 /* 只有一句「现在 → 改后」或一行事实时不用底块，内容太短，底块右边全是空的。 */
 .rd-confirm-facts:is(:has(> .rd-diff-one:only-child), :has(> .rd-facts:only-child > .rd-fact:only-child)) { padding: 0; background: none; }
-.rd-confirm-alert { margin-bottom: 16px; }
 .rd-confirm-alert .rd-notice { padding: 8px 16px; border-radius: var(--rd-radius-control); }
-.rd-confirm-edit { margin-bottom: 16px; }
 .rd-confirm-edit .chip.tab { min-height: var(--rd-control-h-sm); padding: 0 12px; font-size: var(--rd-text-body); }
 .rd-recipients { display: grid; gap: 8px; max-height: 200px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
 .rd-modal.rd-confirm .alertbar.danger .ico { background: var(--rd-danger-tile); color: var(--rd-danger-tile-ink); }
@@ -831,6 +833,14 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-form-error { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-warn); }  /* 填错是「要你处理」，页面上的表单也用橙黄（VS-107） */
 .rd-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--rd-space-6) 20px; }
 .rd-form-grid[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rd-form-grid[data-cols="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.rd-form-grid[data-dense] { gap: var(--rd-space-4); }  /* 弹窗里的表单：字段之间和弹窗正文的块间距一样 */
+/* 确认框里的业务表单（OperationConfirmModal 的 businessForm）：分组名、字段网格、整组提示从上到下排 */
+.rd-business-form { display: grid; gap: var(--rd-space-3); min-width: 0; }
+.rd-business-form > .rd-form-group-title { margin: 0; }  /* 分组名的样子用下面 .rd-form-group-title 的弹窗写法，间距交给网格 */
+.rd-form-warning { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 500; color: var(--rd-warn); }  /* 值合法但要留意（比如超过建议上限），不挡提交 */
+.rd-file-input { height: auto; padding: 6px 12px; }
+.rd-file-input::file-selector-button { height: var(--rd-control-h-sm); margin-right: 12px; padding: 0 12px; border: 0; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); font: inherit; cursor: pointer; }
 :is(.rd-input, .rd-select)[aria-invalid="true"] { outline: 1px solid var(--rd-warn); }
 .rd-filter :is(.rd-input, .rd-select)[aria-invalid="true"] { outline-color: var(--rd-warn); }  /* 筛选条件填错是要改的输入，不是失败（VS-107） */
 /* 弹窗和抽屉里填错了是「要你处理」，用橙黄；红只给失败和不能撤销（VS-107）。 */

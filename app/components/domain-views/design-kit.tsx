@@ -7,7 +7,7 @@
  * 跨域跳转用 next/navigation。导航/外壳仍沿用本项目 shell。
  */
 import { businessZone } from "@/lib/admin/business-time";
-import { Fragment, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
+import { Fragment, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type CSSProperties, type FocusEvent } from "react";
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { announcePermissionDenied, isPermissionDenied, operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
@@ -26,7 +26,6 @@ import { Fold as RdFold } from "@/app/components/rd/fold";
 import { Button as RdButton, type ButtonVariant } from "@/app/components/rd/button";
 import { Select as RdSelect } from "@/app/components/rd/select";
 import { DiffField } from "@/app/components/rd/diff-list";
-import { Facts as RdFacts, Fact as RdFact } from "@/app/components/rd/facts";
 import { Explain } from "@/app/components/rd/explain";
 import { Notice as RdNotice } from "@/app/components/rd/block-state";
 import { StatusTag as RdStatusTag } from "@/app/components/rd/status-tag";
@@ -34,6 +33,8 @@ import { Modal as RdModal } from "@/app/components/rd/overlay";
 import { NumberInput as RdNumberInput } from "@/app/components/rd/number-input";
 import { useRdSurface } from "@/app/components/rd/surface";
 import { KeepText } from "@/app/components/rd/keep-text";
+import { Input as RdInput } from "@/app/components/rd/filter-bar";
+import { Fact as RdFact, Facts as RdFacts } from "@/app/components/rd/facts";
 
 /* ---------------- 域 → 落地路由(ctx.navigate 跨域跳转) ---------------- */
 export const DOMAIN_HOME: Record<string, string> = {
@@ -1776,7 +1777,9 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
       <textarea rows={rows} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
     </label>
   );
-  const input = (key: string, label: ReactNode, placeholder: string, type = "text", maxLength?: number) => (
+  const input = (key: string, label: ReactNode, placeholder: string, type = "text", maxLength?: number) => surface ? (
+    <RdField label={label}>{(control) => <RdInput {...control} type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />}</RdField>
+  ) : (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
       <input className="fld" type={type} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
@@ -1787,13 +1790,16 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
     const labels = typeof proofOrLabels === "string" ? optionLabels : proofOrLabels;
     const current = value[key] ?? options[0] ?? "";
     const displayOption = (option: string) => ({ UVT: "UVT", uvt: "UVT", server: "服务器", client: "客户端", "server+client": "服务器与客户端", string: "文本", number: "数值", boolean: "是或否", enum: "固定选项", timestamp: "时间", id: "编号", "无 PII": "无个人隐私信息", "低(脱敏 ID)": "仅部分隐藏的编号", "默认脱敏": "默认隐藏敏感信息", "上架中 active": "上架中", "已下架 paused": "已下架", "超管": "超级管理员" } as Record<string, string>)[option] ?? option.replace(/^KPI/, "关键指标").replace(/\bStaking\b/g, "质押").replace(/\bGenesis\b/g, "创世节点").replace(/([\u3400-\u9fff])\s+(?:active|paused|fixed|percent|new|all|true|false)\b/g, "$1");
+    const choiceOptions = [
+      ...(unavailableLabel && !options.includes(current) ? [{ value: current, label: unavailableLabel, disabled: true }] : []),
+      ...(options.length === 0 ? [{ value: "", label: "暂无可选项" }] : options.map((o) => ({ value: o, label: typeof labels?.[o] === "string" ? displayOption(String(labels[o])) : labels?.[o] ?? displayOption(o) }))),
+    ];
+    const onValue = (next: string) => onValueChange ? onValueChange(next) : set(key, next);
+    if (surface) return <RdField label={label}>{(control) => <RdSelect {...control} aria-label={label} data-proof={proof} value={current} disabled={options.length === 0} onChange={onValue} options={choiceOptions} />}</RdField>;
     return (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
-      {choice({ label, proof, current, disabled: options.length === 0, onValue: (next) => onValueChange ? onValueChange(next) : set(key, next), options: [
-        ...(unavailableLabel && !options.includes(current) ? [{ value: current, label: unavailableLabel, disabled: true }] : []),
-        ...(options.length === 0 ? [{ value: "", label: "暂无可选项" }] : options.map((o) => ({ value: o, label: typeof labels?.[o] === "string" ? displayOption(String(labels[o])) : labels?.[o] ?? displayOption(o) }))),
-      ] })}
+      {choice({ label, proof, current, disabled: options.length === 0, onValue, options: choiceOptions })}
     </label>
     );
   };
@@ -1902,6 +1908,124 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
       {f.label}{surface ? f.required !== false ? <span className="rd-form-required" aria-hidden="true">*</span> : <span className="rd-form-hint">选填</span> : f.required !== false && <> <b style={{ color: "var(--v5-danger)" }}>· 必填</b></>}
       {surface && f.explain && <Explain label={`${f.label}的说明`} content={f.explain} />}
     </>;
+    const onFormBlur = (event: FocusEvent<HTMLDivElement>) => {
+      setFormLeft(true);
+      const key = event.target.id.startsWith(`${formId}-`) ? event.target.id.slice(formId.length + 1) : "";
+      if (key) setLeftFields((current) => current[key] ? current : { ...current, [key]: true });
+    };
+    // 改版页面：字段用 rd 的 Field 和控件画，名字、取值、校验和 id 与旧画法相同（VS-104、CP-52）。
+    if (surface) return (
+      <div className="rd-business-form" data-business-form="multi-field" onBlur={onFormBlur}>
+        {legend && <div className="rd-form-group-title">{legend}</div>}
+        <div className="rd-form-grid" data-cols={alone ? undefined : "2"} data-dense="">
+          {visibleFields.map((f) => {
+            const span = f.wide || alone ? { gridColumn: "1 / -1" } : undefined;
+            const id = `${formId}-${f.key}`;
+            const error = fieldError(f.key);
+            const help = f.help && !error ? (f.inputKind === "date" && value[f.key] ? `已选 ${value[f.key]}，${f.help}` : f.help) : undefined;
+            const warning = f.warning?.(value) ?? (f.warnAbove != null && Number(value[f.key]) > f.warnAbove ? f.warnText ?? `已超过 ${f.warnAbove} 的建议上限` : undefined);
+            if (f.inputKind === "multi-select") return <div key={f.key} style={f.wide ? { gridColumn: "1 / -1" } : undefined}>{multiSelect(f.key, f.label, f.options ?? [], `multi-select-${f.key}`, f.optionLabels, f.searchable, f.current, f.showDiff)}</div>;
+            if (f.inputKind === "checkbox") return (
+              <div key={f.key} className="rd-form-field" style={span}>
+                <RdCheck id={id} label={<>{f.label}{f.required === false && <span className="rd-form-hint">选填</span>}</>} explain={f.explain} help={help} required={f.required !== false} aria-required={f.required !== false} aria-invalid={error ? true : undefined} checked={value[f.key] === "true"} onChange={(e) => set(f.key, e.target.checked ? "true" : "")} />
+                {warning && <div role="status" className="rd-form-warning">{warning}</div>}
+                {error && <div role="alert" className="rd-form-error">{error}</div>}
+              </div>
+            );
+            if (f.inputKind === "asset-upload") return (
+              <div key={f.key} className="rd-form-field" style={span}>
+                <label className="rd-form-label" htmlFor={id}>{f.label}{f.required !== false ? <span className="rd-form-required" aria-hidden="true">*</span> : <span className="rd-form-hint">选填</span>}{f.explain && <Explain label={`${f.label}的说明`} content={f.explain} />}</label>
+                <input
+                  id={id}
+                  className="rd-input rd-file-input"
+                  type="file"
+                  accept={f.accept ?? "image/jpeg,image/png,image/webp"}
+                  aria-label={f.label}
+                  required={f.required !== false}
+                  aria-required={f.required !== false}
+                  disabled={assetUploading[f.key]}
+                  ref={(input) => { assetInputs.current[f.key] = input; }}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    setAssetErrors((current) => ({ ...current, [f.key]: "" }));
+                    if (!file) {
+                      onUploadStateChange(f.key, undefined);
+                      return;
+                    }
+                    if (!(f.accept ?? "image/jpeg,image/png,image/webp").split(",").includes(file.type) || file.size > 10 * 1024 * 1024) {
+                      onUploadStateChange(f.key, "failed");
+                      setAssetErrors((current) => ({ ...current, [f.key]: "请选择允许的图片格式，大小不超过 10 MB。" }));
+                      return;
+                    }
+                    onUploadStateChange(f.key, "uploading");
+                    setAssetUploading((current) => ({ ...current, [f.key]: true }));
+                    const upload = f.uploadPurpose === "vietqr-receipt"
+                      ? uploadD1VietQrReceiptEvidence(file)
+                      : uploadAdminMedia(file, {
+                          domain: f.uploadDomain ?? "shared",
+                          usage: f.uploadUsage ?? "general",
+                          entityType: "MEDIA_ASSET",
+                          operator: f.uploadOperator,
+                        });
+                    void upload.then((asset) => {
+                      set(f.key, asset.assetId);
+                      setAssetNames((current) => ({ ...current, [f.key]: file.name }));
+                      onUploadStateChange(f.key, undefined);
+                    }).catch((error) => {
+                      onUploadStateChange(f.key, "failed");
+                      setAssetErrors((current) => ({
+                        ...current,
+                        [f.key]: displayAdminError(error),
+                      }));
+                    }).finally(() => {
+                      setAssetUploading((current) => ({ ...current, [f.key]: false }));
+                    });
+                  }}
+                />
+                <div className="rd-form-help">
+                  {assetUploading[f.key] ? "正在上传并校验图片…" : assetNames[f.key] ? `已上传：${assetNames[f.key]}` : (f.help ?? "请上传清晰的银行回单截图")}
+                </div>
+                {assetErrors[f.key] && <div role="alert" className="rd-form-error">{assetErrors[f.key]}</div>}
+                {!assetUploading[f.key] && (value[f.key] || assetNames[f.key] || assetErrors[f.key]) && (
+                  <div><RdButton size="sm" onClick={(event) => {
+                    event.preventDefault();
+                    set(f.key, "");
+                    setAssetNames((current) => ({ ...current, [f.key]: "" }));
+                    setAssetErrors((current) => ({ ...current, [f.key]: "" }));
+                    if (assetInputs.current[f.key]) assetInputs.current[f.key]!.value = "";
+                    onUploadStateChange(f.key, undefined);
+                  }}>{f.required === false ? "移除图片" : "清除图片并重新上传"}</RdButton></div>
+                )}
+              </div>
+            );
+            return (
+              <div key={f.key} style={span}>
+                <RdField id={id} label={f.label} required={f.required !== false} hint={f.required === false ? "选填" : undefined} explain={f.explain} help={help} error={error}>
+                  {(control) => <>
+                    {f.inputKind === "select" ? (
+                      <RdSelect {...control} aria-label={f.label} required={f.required !== false} placeholder={f.mustChoose ? "请选择" : undefined}
+                        value={value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? ""} onChange={(next) => set(f.key, next)}
+                        options={(f.options ?? []).map((o) => ({ value: o, label: f.optionLabels?.[o] ?? o }))} />
+                    ) : f.inputKind === "number" ? (
+                      <RdNumberInput {...control} min={f.min} max={f.max} step={f.step} required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
+                    ) : (
+                      <RdInput {...control} type={f.inputKind === "datetime-local" || f.inputKind === "date" ? f.inputKind : "text"} minLength={f.minLength} maxLength={f.maxLength} required={f.required !== false} aria-required={f.required !== false} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
+                    )}
+                    {warning && <div role="status" className="rd-form-warning">{warning}</div>}
+                  </>}
+                </RdField>
+              </div>
+            );
+          })}
+        </div>
+        {feedback?.message && (!feedback.invalid
+          ? <div role="status" className="rd-form-help">{feedback.message}</div>
+          // 填错是「要你处理」：橙黄，刚打开不报，失焦或点过提交才报（VS-107）。
+          : !feedback.field && (attempted || formLeft) && <div role="alert" className="rd-form-error">{feedback.message}</div>)}
+        {spec.hint && <div className="rd-form-help">{spec.hint}</div>}
+      </div>
+    );
     return (
       <div className="field" data-business-form="multi-field" onBlur={(event) => {
         setFormLeft(true);
@@ -2521,12 +2645,12 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
   if (spec.kind === "disclosure-jurisdiction") {
     const codeError = spec.mode === "create" && (attempted || leftFields.code) && !DISCLOSURE_JURISDICTION_CODE.test((value.code ?? "").trim().toUpperCase()) ? DISCLOSURE_JURISDICTION_CODE_HELP : undefined;
     return (
-      <div className="field" data-business-form="disclosure-jurisdiction">
-        <div className="grid g-2" style={{ gap: 10 }}>
+      <div className={surface ? "rd-business-form" : "field"} data-business-form="disclosure-jurisdiction">
+        <div className={surface ? "rd-form-grid" : "grid g-2"} data-cols={surface ? "2" : undefined} data-dense={surface ? "" : undefined} style={surface ? undefined : { gap: 10 }}>
           <RdField label="适用范围代码" required={spec.mode === "create"} error={codeError}>
             {(control) => <input
               {...control}
-              className="fld"
+              className={surface ? "rd-input" : "fld"}
               value={value.code ?? ""}
               readOnly={spec.mode === "edit"}
               aria-readonly={spec.mode === "edit"}
@@ -2536,9 +2660,11 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
               onBlur={() => setLeftFields((current) => ({ ...current, code: true }))}
             />}
           </RdField>
-          {input("name", <>适用范围名称<span className="rd-form-required" aria-hidden="true">*</span></>, "如 越南司法辖区")}
+          {surface ? <RdField label="适用范围名称" required>
+            {(control) => <RdInput {...control} value={value.name ?? ""} onChange={(e) => set("name", e.target.value)} placeholder="如 越南司法辖区" />}
+          </RdField> : input("name", <>适用范围名称<span className="rd-form-required" aria-hidden="true">*</span></>, "如 越南司法辖区")}
         </div>
-        <div className="rd-form-help" style={{ marginTop: 8 }}>代码创建后不能修改。</div>
+        <div className="rd-form-help" style={surface ? undefined : { marginTop: 8 }}>代码创建后不能修改。</div>
       </div>
     );
   }
@@ -2589,9 +2715,9 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
       onChange({ ...value, countryCodes: Array.from(next).sort().join(",") });
     };
     return (
-      <div className="field" data-business-form="disclosure-matrix">
+      <div className={surface ? "rd-business-form" : "field"} data-business-form="disclosure-matrix">
         {!surface && <span className="bf-legend">{spec.mode === "create" ? "为适用范围指定披露版本" : "修改适用范围的披露版本"}</span>}
-        <div className={spec.mode === "create" ? "grid g-2" : undefined} style={{ gap: 10 }}>
+        <div className={surface ? "rd-form-grid" : spec.mode === "create" ? "grid g-2" : undefined} data-cols={surface && spec.mode === "create" ? "2" : undefined} data-dense={surface ? "" : undefined} style={surface ? undefined : { gap: 10 }}>
           {spec.mode === "create" && select("jurisdictionCode", "适用范围", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
             const selected = spec.jurisdictionOptions?.find((item) => item.value === next);
             const nextVersions = spec.publishedVersionsByJurisdiction?.[next] ?? [];
@@ -2604,13 +2730,13 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
           })}
           {select("version", "已发布版本", spec.publishedVersionsByJurisdiction?.[value.jurisdictionCode ?? ""] ?? [])}
         </div>
-        <div style={{ marginTop: 10 }}>
+        <div style={surface ? undefined : { marginTop: 10 }}>
           <RdCheckGroup legend="适用国家/地区（可多选）" summary={`已选 ${selectedCountries.size} 个`}>
             {(spec.countryOptions ?? []).map((option) => <RdCheck key={option.value} label={option.label} checked={selectedCountries.has(option.value)} onChange={() => toggleCountry(option.value)} />)}
           </RdCheckGroup>
           {(spec.countryOptions ?? []).length === 0 && <div className="rd-form-help">暂无可选国家/地区</div>}
         </div>
-          {spec.unchanged && (value.version !== spec.unchanged.version || (value.countryCodes ?? "") !== [...spec.unchanged.countryCodes].sort().join(",")) && <div className="rd-form-help" style={{ marginTop: 8 }}>{value.version !== spec.unchanged.version ? `版本 ${spec.unchanged.version} → ${value.version}。` : "适用国家有变化。"}批准后新旧国家的用户要重新确认，并收到通知{spec.affected && spec.affected >= 5 ? `，这个地区现有 ${spec.affected.toLocaleString("en-US")} 位用户` : ""}。</div>}
+          {spec.unchanged && (value.version !== spec.unchanged.version || (value.countryCodes ?? "") !== [...spec.unchanged.countryCodes].sort().join(",")) && <div className="rd-form-help" style={surface ? undefined : { marginTop: 8 }}>{value.version !== spec.unchanged.version ? `版本 ${spec.unchanged.version} → ${value.version}。` : "适用国家有变化。"}批准后新旧国家的用户要重新确认，并收到通知{spec.affected && spec.affected >= 5 ? `，这个地区现有 ${spec.affected.toLocaleString("en-US")} 位用户` : ""}。</div>}
       </div>
     );
   }
@@ -2686,26 +2812,44 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
 
   if (spec.kind === "identity-verify") {
     const verified = spec.serverVerification;
-    if (spec.presentation === "authorization-and-declaration") {
-      return (
-        <div className="field" data-business-form="identity-verify">
-          <div data-proof="sensitive-action-authorization">
-            <span className="bf-legend">本次操作的授权</span>
-            <RdFacts>
-              <RdFact k="授权管理员">{verified?.verifiedBy || "—"}</RdFact>
-              <RdFact k="授权依据">{verified?.ticket || "—"}</RdFact>
-              <RdFact k="授权检查时间">{verified?.verifiedAt || "—"}</RdFact>
-            </RdFacts>
-          </div>
-          <RdCheckGroup legend="本人声明">
-            <div style={{ gridColumn: "1 / -1" }}>
-              <RdCheck data-proof="identity-ack" checked={value.ack === "true"} onChange={(event) => set("ack", event.target.checked ? "true" : "false")}
-                label="我已另行核实是用户本人，不是他人冒充" help="核实方式和依据请写在操作理由中。" />
-            </div>
-          </RdCheckGroup>
+    if (spec.presentation === "authorization-and-declaration") return (
+      <div className="rd-business-form" data-business-form="identity-verify">
+        <div data-proof="sensitive-action-authorization">
+          <div className="rd-form-group-title">本次操作的授权</div>
+          <RdFacts>
+            <RdFact k="授权管理员">{verified?.verifiedBy || "—"}</RdFact>
+            <RdFact k="授权依据">{verified?.ticket || "—"}</RdFact>
+            <RdFact k="授权检查时间">{verified?.verifiedAt || "—"}</RdFact>
+          </RdFacts>
         </div>
-      );
-    }
+        <RdCheckGroup legend="本人声明">
+          <div style={{ gridColumn: "1 / -1" }}>
+            <RdCheck data-proof="identity-ack" checked={value.ack === "true"} onChange={(event) => set("ack", event.target.checked ? "true" : "false")}
+              label="我已另行核实是用户本人，不是他人冒充" help="核实方式和依据请写在操作理由中。" />
+          </div>
+        </RdCheckGroup>
+      </div>
+    );
+    if (surface) return (
+      <div className="rd-business-form" data-business-form="identity-verify">
+        <div className="rd-form-group-title">先核实用户身份</div>
+        <RdNotice tone="warn" title={spec.subject}>完成全部核验后才能提交。</RdNotice>
+        {verified && <div data-proof="server-sensitive-action-verification">
+          <RdNotice tone="progress" title="已有核验记录，提交时会再次检查" />
+          <RdFacts><RdFact k="依据"><span data-mono="">{verified.ticket}</span></RdFact><RdFact k="核验人">{verified.verifiedBy || "—"}</RdFact><RdFact k="核验时间">{verified.verifiedAt}</RdFact><RdFact k="有效期至">{verified.expiresAt || "—"}</RdFact></RdFacts>
+        </div>}
+        {verified ? <div className="rd-form-grid" data-cols="2" data-dense="">
+          <RdField label="核验方式">{(control) => <RdInput {...control} value={value.channel ?? ""} readOnly aria-readonly="true" />}</RdField>
+          <RdField label="核验时间">{(control) => <RdInput {...control} value={value.verifiedAt ?? ""} readOnly aria-readonly="true" />}</RdField>
+          <div style={{ gridColumn: "1 / -1" }}><RdField label="核验依据">{(control) => <RdInput {...control} value={value.ticket ?? ""} readOnly aria-readonly="true" />}</RdField></div>
+        </div> : <div className="rd-form-grid" data-cols="2" data-dense="">
+          {select("channel", "核验方式", spec.channels ?? ["视频核实", "当面核实", "回拨预留号码"], "identity-channel")}
+          {input("verifiedAt", "核验时间", "2026-06-18 14:30", "datetime-local")}
+          <div style={{ gridColumn: "1 / -1" }}>{input("ticket", "来源工单号", spec.ticketHint ?? "如 SEC-20260618-001")}</div>
+        </div>}
+        <RdCheck data-proof="identity-ack" label="我已通过上述方式核实是用户本人，不是他人冒充" checked={value.ack === "true"} onChange={(e) => set("ack", e.target.checked ? "true" : "false")} />
+      </div>
+    );
     return (
       <div className="field" data-business-form="identity-verify">
         <span className="bf-legend">先核实用户身份</span>
@@ -3547,6 +3691,12 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
     );
   }
 
+  if (surface) return (
+    <div className="rd-business-form" data-business-form="destructive-reason">
+      <RdNotice tone="danger" title={spec.target}>{spec.impact}</RdNotice>
+      <RdCheck data-proof="destructive-ack" label="我已确认影响范围" checked={value.ack === "true"} onChange={(e) => set("ack", e.target.checked ? "true" : "false")} />
+    </div>
+  );
   return (
     <div className="field" data-business-form="destructive-reason">
       <span className="bf-legend">确认影响</span>
@@ -3797,7 +3947,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const coverageInFacts = coverageFirst && !!shownFacts;
   const checkCopy = rdApproval ? approvalSpec?.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。" : coverageCheck;
   const coverageNotice = effectiveAmplifies && (
-    surface ? <div className="rd-confirm-funding" style={{ marginBottom: coverageInFacts ? 0 : 16 }}>
+    surface ? <div className="rd-confirm-funding">
       <RdNotice tone={covBlocked ? "danger" : "warn"} title={<>{coverageLead}{!coverage && auditSink !== "local-history" && <Explain label="什么时候检查" content={checkCopy} />}</>}>
         {coverage && <div className="rd-funding-coverage">
           兑付覆盖率 <b>{fmtPct(coverage.coverageRatio)}</b>，红线 <b>{fmtConfigPct(coverage.redlinePct)}</b>
@@ -3849,7 +3999,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         ))}
       </>}>
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
-      <fieldset disabled={submitting} style={{ display: "contents" }}>
+      <fieldset disabled={submitting} className="rd-contents" style={{ display: "contents" }}>
       {(!approval || rdApproval) && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
       {!surface && content}
       {surface ? (blockedReason || submitError) && (
@@ -3858,12 +4008,16 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       ) : blockedReason
         ? <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{blockedReason}</div>
         : submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
-      {inlineApproval?.disabledReason && <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.disabledReason}</div>}
-      {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (
-        <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>上一次审批结果待确认，请查询原操作。</div>
+      {inlineApproval?.disabledReason && (surface
+        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">{inlineApproval.disabledReason}</RdNotice></div>
+        : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.disabledReason}</div>)}
+      {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (surface
+        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">上一次审批结果待确认，请查询原操作。</RdNotice></div>
+        : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>上一次审批结果待确认，请查询原操作。</div>
       )}
-      {!reasonPolicyReady && !retryApproval && (!surface || reasonPolicyError) && (
-        <div className="alertbar warn" role="alert" data-policy-state="fail-closed" style={{ marginBottom: 16 }}>
+      {!reasonPolicyReady && !retryApproval && (!surface || reasonPolicyError) && (surface
+        ? <div className="rd-confirm-alert" role="alert" data-policy-state="fail-closed"><RdNotice tone="warn">{reasonPolicyError ?? "正在加载，稍候即可提交。"}</RdNotice></div>
+        : <div className="alertbar warn" role="alert" data-policy-state="fail-closed" style={{ marginBottom: 16 }}>
           {reasonPolicyError ?? "正在加载，稍候即可提交。"}
         </div>
       )}
@@ -3896,16 +4050,20 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {coverageFirst && !shownFacts && coverageNotice}
       {surface && content}
       {activeBusinessForm && (
-        <fieldset disabled={formLocked} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+        <fieldset disabled={formLocked} style={{ border: 0, padding: 0, marginInline: 0, minWidth: 0 }}>
         {inlineApproval?.renderForm ? inlineApproval.renderForm(businessValue, setBusinessValue, formLocked, !!approval) : (
           <BusinessFormBlock spec={activeBusinessForm} value={businessValue} attempted={attempted} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} onUploadStateChange={(key, state) => setUploadStates((current) => ({ ...current, [key]: state }))} />
         )}
         </fieldset>
       )}
-      {uploadBlocked && <div role="alert" className="itint" style={{ marginTop: 8 }}>
+      {uploadBlocked && (surface
+        ? <div role="alert" className="rd-confirm-alert"><RdNotice tone="warn">{Object.values(uploadStates).includes("uploading") ? "图片正在上传，请完成后再提交。" : "图片上传失败，请重新上传或明确清除图片后再提交。"}</RdNotice></div>
+        : <div role="alert" className="itint" style={{ marginTop: 8 }}>
         {Object.values(uploadStates).includes("uploading") ? "图片正在上传，请完成后再提交。" : "图片上传失败，请重新上传或明确清除图片后再提交。"}
-      </div>}
-      {businessSelectionLoading && <div className="itint" style={{ marginTop: 8 }}>正在加载该地区的版本内容…</div>}
+      </div>)}
+      {businessSelectionLoading && (surface
+        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="progress">正在加载该地区的版本内容…</RdNotice></div>
+        : <div className="itint" style={{ marginTop: 8 }}>正在加载该地区的版本内容…</div>)}
       {spec && surface && !compareEdit && (
         // 现在值、新值输入合成一块（VS-103）：范围只写在 hint，没改时不多写一句，确认按钮禁用并写原因。
         <div className="rd-confirm-edit">
@@ -4000,7 +4158,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           {surface && <span id={`${reasonFieldId}-count`} className="rd-reason-count">{reasonMax ? `${reasonLength}/${reasonMax}` : `${reasonLength} 字`}</span>}
         </div>
         {surface && <div id={`${reasonFieldId}-range`} className="rd-form-help">{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}</div>}
-        {pendingReason !== undefined && <div className={surface ? "rd-form-help" : "tiny"} style={{ marginTop: 7 }}>{surface ? "重发原内容，已成功的不会重复执行。" : "原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。"}</div>}
+        {pendingReason !== undefined && <div className={surface ? "rd-form-help" : "tiny"} style={surface ? undefined : { marginTop: 7 }}>{surface ? "重发原内容，已成功的不会重复执行。" : "原操作结果尚未确认，理由已锁定。重试将继续原操作，不会重复执行。"}</div>}
         {!surface && compactFields && <div id={`${reasonFieldId}-length`} className="tiny reason-count-inset">
           {reasonMax && <span>{reasonLength}/{reasonMax}</span>}
           {showReasonError && <span style={{ color: "var(--warning)" }}>{reasonShort}</span>}
@@ -4010,7 +4168,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         )}
         {!surface && !compactFields && reasonMax && reasonOk && <div id={`${reasonFieldId}-length`} className="tiny" style={{ marginTop: 7, color: approval || inlineApproval?.dialogClassName ? "var(--ink-3)" : "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
         {listedMissing.length > 0 && (!surface || attempted) && (
-          <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
+          <div className={surface ? "rd-form-error" : "tiny"} style={surface ? undefined : { marginTop: 7, color: "var(--warning)" }}>
             请检查以下内容： {listedMissing.slice(0, 4).map((message) => message.replace(/。+$/, "")).join(" / ")}{listedMissing.length > 4 ? "…" : ""}。
           </div>
         )}

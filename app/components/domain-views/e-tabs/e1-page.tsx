@@ -115,8 +115,27 @@ export function E1Page() {
   }, [canReadE3]);
   useEffect(() => { if (canRead) { void refresh(); void refreshEarly(); } }, [canRead, refresh, refreshEarly]);
   const earlyReady = !earlyLoading && !earlyError && ["开", "关"].includes(early["E.release.earlyAccess.enabled"]) && ["7", "14", "30", "60", "90"].includes(early["E.release.earlyAccess.leadDays"]);
-  const readBlock = loading || error ? "商品目录读取成功前不能提交修改" : gatesLoading || gatesError || !gates ? "开放阶段读取成功前不能提交修改" : discountLoading || discountError || !discount ? "组合购折扣读取成功前不能提交修改" : undefined;
-  const writesReady = canWrite && !readBlock;
+  const catalogReadBlock = loading || error ? "商品目录读取成功前不能提交修改" : undefined;
+  const gatesReadBlock = gatesLoading || gatesError || !gates ? "开放阶段读取成功前不能提交修改" : undefined;
+  const discountReadBlock = discountLoading || discountError || !discount ? "组合购折扣读取成功前不能提交修改" : undefined;
+  const readBlock: E1CatalogContext["writeBlockedReason"] = input => {
+    switch (input.op) {
+      case "sku-save": return catalogReadBlock ?? (gatesReadBlock ? "商品编辑需要开放阶段和审核契约，请先读取开放阶段" : undefined);
+      case "sku-delete": return catalogReadBlock;
+      case "sku-status": return catalogReadBlock ?? (input.status === "on" ? gatesReadBlock : undefined);
+      case "phase-archive": return gatesReadBlock ?? catalogReadBlock;
+      case "generation-gate-save": return gatesReadBlock ?? (!input.generationGateId ? catalogReadBlock : undefined);
+      case "generation-gate-force": return gatesReadBlock ?? (input.generationGate?.forceUnlock ? catalogReadBlock : undefined);
+      case "phase-save":
+      case "param":
+      case "generation-gate-archive": return gatesReadBlock;
+      case "bundle-discount": return discountReadBlock;
+      case "early-access": return earlyReady ? undefined : "当前设置未读取，请先重新读取抢先购设置";
+      default: return undefined;
+    }
+  };
+  const skuReadBlock = readBlock({ op: "sku-save" });
+  const skuWritesReady = canWrite && !skuReadBlock;
   const refreshReceipt = async (receipt: E1Receipt) => {
     setReceipts(rows => rows.map(row => row.id === receipt.id ? { ...row, reading: true, readError: undefined } : row));
     try {
@@ -141,12 +160,12 @@ export function E1Page() {
     || receipts.some(r => r.status === "pending" && r.object === `${type}|${id}`);
 
   const openSku = (skuId?: string, unlock?: string) => {
-    if (!writesReady || skuId && locked("device_sku", skuId)) return;
+    if (!skuWritesReady || skuId && locked("device_sku", skuId)) return;
     if (edit) { toast("请先完成或关闭正在编辑的商品草稿"); return; }
     setEdit({ sku: skuId ? skus.find(s => s.id === skuId) : undefined, unlock, nonce: Date.now() });
   };
   const openConfirm = (input: McSpec) => {
-    if (!writesReady || input.op === "early-access" && !earlyReady) return;
+    if (!canWrite || readBlock(input)) return;
     setConflict(false); setConflictLatest(null); setAttemptKey("");
     setBusinessValues(input.businessForm?.kind === "multi-field" ? Object.fromEntries(input.businessForm.fields.map(f => [f.key, f.current ?? ""])) : {});
     setConfirmation({ ...input, sku: skus.find(s => s.id === input.target), gates, discount, early: { ...early } });
@@ -182,7 +201,7 @@ export function E1Page() {
     } finally { sending.current = false; setBusy(""); syncPending(); }
   };
   const submit = async (spec: ProposeSpec) => {
-    if (!writesReady || !actor || sending.current) throw new Error("目录未读取完整、正在提交或账号没有提交权限，本次没有提交");
+    if (!canWrite || !actor || sending.current) throw new Error("正在提交或账号没有提交权限，本次没有提交");
     const object = e1Object(spec);
     if (e1Pending(actor).some(r => e1Object(r.spec) === object) || locked(object.split("|")[0], object.split("|").slice(1).join("|"))) throw new Error("此对象有待审批或待核对的操作，请先核对原操作");
     const commandKey = createA2CommandKey("e1-proposal"), fingerprint = `${actor}|${object}`;
@@ -210,7 +229,9 @@ export function E1Page() {
 
   const confirm = async (reason: string, value?: string, business?: Record<string, string>) => {
     const mc = confirmation;
-    if (!mc || !writesReady) throw new Error("当前不能提交，请保留输入并刷新目录核对");
+    if (!mc || !canWrite) throw new Error("当前不能提交，请保留输入并刷新目录核对");
+    const missingSource = readBlock(mc);
+    if (missingSource) throw new Error(missingSource);
     let op = "", context: Record<string, unknown> = {}, before = "", after = "", obj = "", amplifies = !!mc.amplify;
     if (mc.op === "sku-save" && mc.sku) {
       if (gates?.skuReviewContractVersion !== 1) throw new Error("商品审核暂时不可用，请刷新后重试；已填写的内容会保留");
@@ -292,7 +313,7 @@ export function E1Page() {
     delSku: (id, name) => openConfirm({ briefKind: "config", name: `删除商品 · ${name}`, op: "sku-delete", target: id, detail: "从商城移除后用户无法再购买，已售设备和原订单不受影响。", businessForm: { kind: "destructive-reason", target: name, impact: "从商城移除，用户无法再购买；已售设备和原订单不受影响。" } }),
   };
   return <RdPage className="e1-page">
-    <PageHeader pageId="E1" title="商品管理与上架条件" meta={!canRead ? "未读取目录" : error ? "目录读取失败" : readAt ? `${readAt} 读取 · 手动刷新` : "正在读取目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<><Button icon={<RefreshCw size={14} />} disabled={loading} onClick={() => { void refresh(); void refreshEarly(); receipts.filter(row => row.status === "pending").forEach(row => { void refreshReceipt(row); }); }}>刷新</Button>{canWrite && <Button variant="primary" disabledReason={!writesReady ? "请先读取完整目录" : edit ? "请先完成当前商品草稿" : undefined} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
+    <PageHeader pageId="E1" title="商品管理与上架条件" meta={!canRead ? "未读取目录" : error ? "目录读取失败" : readAt ? `${readAt} 读取 · 手动刷新` : "正在读取目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<><Button icon={<RefreshCw size={14} />} disabled={loading} onClick={() => { void refresh(); void refreshEarly(); receipts.filter(row => row.status === "pending").forEach(row => { void refreshReceipt(row); }); }}>刷新</Button>{canWrite && <Button variant="primary" disabledReason={skuReadBlock || (edit ? "请先完成当前商品草稿" : undefined)} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
     {!canRead ? <BlockState state="denied" title="没有商品目录读取权限" /> : <>
       {receipt && error && <Notice tone="warn" title="申请已提交，目录暂时读不到"><p>{receipt.obj} · 审批单 {receipt.id}</p></Notice>}
       {receipts.filter(row => row.status === "pending").map(row => <Notice key={row.id} tone="warn" title={`${row.obj} · 变更待审批`} action={<Button disabled={row.reading} onClick={() => openReceipt(row.id)}>{row.readError ? "重试读取审批状态" : "查看审批状态"}</Button>}><p>审批单 {row.id} · {row.reading ? "正在核对审批状态…" : "审批结束前暂停此对象的新修改。"}</p>{row.readError && <p role="status">{row.readError}；对象锁保留。</p>}</Notice>)}
@@ -312,7 +333,7 @@ export function E1Page() {
       {media.filter(record => record.commandKey !== mediaSending).map(record => <Notice key={record.commandKey} tone="warn" title={`${record.fileName} · 媒体上传结果未确认`} action={<Button onClick={() => openSku(record.skuId || undefined)}>核对媒体上传</Button>}><p>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "原文件摘要和命令号已保留；重新打开商品选择同一文件后可原样重试。"}</p></Notice>)}
       <E1Catalog ctx={ctx} />
     </>}
-    <E1Editor request={edit} gates={gates} writable={writesReady} writeBlockedReason={readBlock} currentSku={edit?.sku ? skus.find(s => s.id === edit.sku!.id) : undefined} onClose={() => setEdit(null)} busy={!!busy} toast={toast} onMediaChange={key => { setMediaSending(key ?? ""); syncPending(); }} onReview={(sku, beforeSku, form) => { setConflict(false); setConflictLatest(null); setAttemptKey(""); setConfirmation({ briefKind: "config", name: `${beforeSku ? "编辑" : "新增"}商品 · ${sku.name}`, op: "sku-save", sku, beforeSku, form, gates, isNew: !beforeSku }); }} />
+    <E1Editor request={edit} gates={gates} writable={skuWritesReady} writeBlockedReason={skuReadBlock} currentSku={edit?.sku ? skus.find(s => s.id === edit.sku!.id) : undefined} onClose={() => setEdit(null)} busy={!!busy} toast={toast} onMediaChange={key => { setMediaSending(key ?? ""); syncPending(); }} onReview={(sku, beforeSku, form) => { setConflict(false); setConflictLatest(null); setAttemptKey(""); setConfirmation({ briefKind: "config", name: `${beforeSku ? "编辑" : "新增"}商品 · ${sku.name}`, op: "sku-save", sku, beforeSku, form, gates, isNew: !beforeSku }); }} />
     {mc && <OperationConfirmModal action={mc.name} title={mc.title ?? mc.name.split(" · ")[0]} briefKind={mc.briefKind} detail={mc.detail ?? "核对完整变更，批准后生效。"} edit={mc.edit} businessForm={mc.businessForm?.kind === "multi-field" ? { ...mc.businessForm, onFieldChange: (key, next) => { const value = mc.businessForm?.kind === "multi-field" && mc.businessForm.onFieldChange ? mc.businessForm.onFieldChange(key, next) : next; setBusinessValues(value); return value; } } : mc.businessForm}
       amplifies={!!mc.amplify} reasonMin={8} reasonMax={200} completionCopy={APPROVAL} confirmLabel="提交审批" confirmTone={["sku-delete", "phase-archive", "generation-gate-archive"].includes(mc.op) ? "danger" : "primary"}
       effect={<StatusTag tone="progress" filled explain={APPROVAL}>批准后生效</StatusTag>}
@@ -331,7 +352,7 @@ export function E1Page() {
             setConflict(false); setConflictLatest(null); setAttemptKey("");
           }}>已核对，保留输入并采用此修订</Button>
         </Notice>}
-      </> : !writesReady ? "当前不能提交，请先核对权限和读取状态" : mc.op === "early-access" && !earlyReady ? "当前设置未读取，请先重新读取抢先购设置" : undefined}
+      </> : !canWrite ? "当前不能提交，请先核对权限和读取状态" : readBlock(mc)}
       onClose={() => setConfirmation(null)} onConfirm={confirm} />}
     {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在读取…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptDetail.after}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? APPROVAL : "审批已结束，此回执不再锁定对象；请按当前目录重新核对后编辑。"}</p></Drawer>}
     {release && <ReleaseModal label={`${release.spec.obj} · ${release.spec.action}`} onCancel={() => setRelease(null)} onConfirm={() => { forgetE1(release); syncPending(); setRelease(null); }} />}
