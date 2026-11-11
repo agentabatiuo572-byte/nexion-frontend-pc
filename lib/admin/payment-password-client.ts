@@ -2,12 +2,13 @@ import { guardedFetch } from "@/lib/admin/error-messages";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isPaymentRecord, parsePaymentPolicy, parsePaymentStatus, parsePaymentAttempts, parsePaymentReceipt, type PaymentPolicyValues } from "@/lib/admin/payment-password-contract";
 import { parsePaymentSecuritySummary, parsePaymentSecurityDetail, parsePaymentSecurityPage, parsePaymentReleaseReceipt, type PaymentSecuritySummary, type PaymentSecurityDetail, type PaymentSecurityRecord, type PaymentReleaseReceipt } from "@/lib/admin/payment-password-contract";
 
 const base = "/api/admin/users/security/payment-password-policy";
-export class PaymentPasswordApiError extends Error { constructor(message: string, readonly status: number, readonly unknownOutcome = false) { super(message); } }
+export class PaymentPasswordApiError extends Error { constructor(message: string, readonly status: number, readonly unknownOutcome = false, readonly backendMessage?: string) { super(message); } }
 class PaymentPasswordOutcomeUnknownError extends PaymentPasswordApiError {
   constructor(status: number) { super("处理结果暂未确认，请查询原操作结果，不要重复提交。", status, true); }
 }
@@ -27,7 +28,7 @@ async function request(path: string, body?: unknown, key?: string): Promise<unkn
   if (!response.ok || !isPaymentRecord(raw) || raw.code !== 0 || raw.data == null) {
     const code = isPaymentRecord(raw) && typeof raw.code === "number" ? raw.code : undefined;
     if (body !== undefined && (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || outcomeStaysUnknown(response.status, code))) throw new PaymentPasswordOutcomeUnknownError(response.status);
-    throw new PaymentPasswordApiError(response.status === 403 ? "当前没有读取或处理这项支付安全信息的权限。" : response.status === 404 || response.status === 501 ? "支付密码服务尚未提供这项信息，请稍后重新加载。" : body === undefined ? "支付密码信息读取失败，请重新加载。" : "本次操作未执行，请重新加载后核对。", response.status);
+    throw new PaymentPasswordApiError(response.status === 403 ? "当前没有读取或处理这项支付安全信息的权限。" : response.status === 404 || response.status === 501 ? "支付密码服务尚未提供这项信息，请稍后重新加载。" : body === undefined ? "支付密码信息读取失败，请重新加载。" : "本次操作结果需要核对，请查询原操作。", response.status, false, isPaymentRecord(raw) && typeof raw.message === "string" ? raw.message : undefined);
   }
   return raw.data;
 }
@@ -87,17 +88,18 @@ export async function fetchPaymentSecurityRecords(query: { keyword: string; stat
   const params = new URLSearchParams(Object.entries(query).map(([key, value]) => [key, String(value)]));
   return parsePaymentSecurityPage(await request(`${recordBase}?${params}`));
 }
-export interface PendingPaymentRelease extends PendingMutationRecord { owner: number; portKey: string; userId: string; recordId: string; operation: PaymentReleaseReceipt["operation"] }
+export interface PendingPaymentRelease extends PendingMutationRecord { owner: number; portKey: string; userId: string; recordId: string; operation: PaymentReleaseReceipt["operation"]; reason?: string; expectedVersion?: number; confirmed?: true }
 const releases = createPendingMutationStore<PendingPaymentRelease>({ storageKey: "nexion-admin-payment-release-commands-v1", retainExpiredRecords: true, isValidRecord: row => Number.isSafeInteger(row.owner) && typeof row.portKey === "string" && typeof row.userId === "string" && typeof row.recordId === "string" && (row.operation === "RELEASE_LOCK" || row.operation === "CLEAR_EXCEPTION") });
+export function pendingPaymentReleases(owner: number) { return releases.list().filter(row => row.owner === owner); }
 export function pendingPaymentRelease(owner: number, userId: string) { return releases.list().find(row => row.owner === owner && row.userId === userId) ?? null; }
 export async function submitPaymentRelease(owner: number, port: PaymentSecurityPort, record: PaymentSecurityRecord, reason: string) {
   if (!Number.isSafeInteger(owner) || owner < 1 || record.userId !== port.userId || !record.capabilities.releaseAllowed || record.version === null || record.type === "UNSUPPORTED" || record.state !== "ACTIVE" || reason.trim().length < 8 || reason.trim().length > 200) throw new Error("当前处置条件或原因不符合要求，请重新核对详情。");
   if (pendingPaymentRelease(owner, port.userId)) throw new Error("请先查询该用户上一笔解除结果，不能重复提交。");
   const commandKey = createA2CommandKey("payment-release"), fingerprint = `payment-release|${owner}|${port.userId}`;
-  releases.remember(fingerprint, commandKey, { owner, portKey: port.key, userId: port.userId, recordId: record.id, operation: record.type === "PAYMENT_PASSWORD_LOCK" ? "RELEASE_LOCK" : "CLEAR_EXCEPTION" });
+  releases.remember(fingerprint, commandKey, { owner, portKey: port.key, userId: port.userId, recordId: record.id, operation: record.type === "PAYMENT_PASSWORD_LOCK" ? "RELEASE_LOCK" : "CLEAR_EXCEPTION", expectedVersion: record.version, reason: reason.trim(), confirmed: true });
   if (!releases.isDurablyStored(fingerprint, commandKey)) { releases.forget(fingerprint, commandKey); throw new Error("浏览器无法保存查询记录，未提交解除。请允许会话存储后重试。"); }
   try { await port.release(record, reason.trim(), commandKey); }
-  catch (failure) { if (failure instanceof PaymentPasswordApiError && !failure.unknownOutcome) releases.forget(fingerprint, commandKey); throw failure; }
+  catch (failure) { if (isExplicitRejection(failure)) releases.forget(fingerprint, commandKey); throw failure; }
   return queryPaymentRelease(owner, port);
 }
 export async function queryPaymentRelease(owner: number, port: PaymentSecurityPort) {
@@ -106,6 +108,7 @@ export async function queryPaymentRelease(owner: number, port: PaymentSecurityPo
   if (row.portKey !== port.key) throw new Error("该用户在其他入口有待确认的操作，请回原入口查询，期间不能重复解除。");
   const receipt = parsePaymentReleaseReceipt(await port.receipt(row.commandKey), row);
   if (receipt.status === "APPLIED" || receipt.status === "REJECTED") {
+    await port.detail(row.recordId);
     releases.forget(row.fingerprint, row.commandKey);
     if (typeof window !== "undefined") window.dispatchEvent(new Event("nexion-payment-security-updated"));
   }

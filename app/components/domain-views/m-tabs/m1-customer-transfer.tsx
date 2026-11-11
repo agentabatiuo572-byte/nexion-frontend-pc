@@ -1,20 +1,22 @@
 "use client";
+import { m1CustomerCode } from "./m1-customer-code";
 
 import { useEffect, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { supportClient, verifySupportTransfer, isDefiniteSupportRefusal, SupportClientError, type SupportAgentCandidate, type SupportCustomerDetail } from "@/lib/admin/m-support-client";
-import { supportGroupClient } from "@/lib/admin/support-group-client";
+import { supportGroupClient, canReplayGroupCommand } from "@/lib/admin/support-group-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Modal } from "../design-kit";
+import { Button, Fact, Facts, Field, Fold, Notice, Select, Textarea } from "@/app/components/rd";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import "./m-support-workbench.css";
 
 type TransferPayload = Parameters<typeof supportClient.transfer>[0];
 type TransferRecord = { fingerprint: string; commandKey: string; createdAt: number; expiresAt: number; actorId: number; payload: TransferPayload; customerName?: string; fromName?: string; targetName?: string };
 // Records from before this file existed have no names; the same storage key keeps them recoverable.
-const transferCommands = createPendingMutationStore<TransferRecord>({ storageKey: "nexion-admin-m-transfer-v1", ttlMs: Math.floor(Number.MAX_SAFE_INTEGER / 2), retainExpiredRecords: true, isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload && Array.isArray(row.payload.customers)) });
+export const transferCommands = createPendingMutationStore<TransferRecord>({ storageKey: "nexion-admin-m-transfer-v1", ttlMs: Math.floor(Number.MAX_SAFE_INTEGER / 2), retainExpiredRecords: true, isValidRecord: (row) => Boolean(Number.isSafeInteger(row.actorId) && row.payload && Array.isArray(row.payload.customers)) });
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
 
 async function allAgents(groupId: number | undefined, signal?: AbortSignal): Promise<SupportAgentCandidate[]> {
@@ -39,7 +41,7 @@ export async function readTransferTargets(agentAdminId: number, mode: "ALL" | "M
 /** Unconfirmed transfers of this operator; each row reopens the dialog on the original command. */
 export function TransferPendingNotes({ onOpen }: { onOpen: (customerId: string) => void }) {
   const adminId = useAdminAuth((state) => state.session?.adminId);
-  return <>{transferCommands.list().filter((record) => record.actorId === adminId).map((record, index) => <p className="s5a-note" key={record.commandKey}>存在结果尚未确认的转绑。<button type="button" onClick={() => onOpen(record.payload.customers[0].id)}>查询转绑结果 {index + 1}</button></p>)}</>;
+  return <>{transferCommands.list().filter((record) => record.actorId === adminId).map((record, index) => <p className="s5a-note" key={record.commandKey}>存在结果尚未确认的转绑。<Button type="button" onClick={() => onOpen(record.payload.customers[0].id)}>查询转绑结果 {index + 1}</Button></p>)}</>;
 }
 
 /** BUG-114 / BUG-040: 正式转绑 for one customer, for every role that may do it. Authorization stays on the server; this only shows what it allows. */
@@ -74,11 +76,13 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
     return () => controller.abort();
   }, [customerId, mode, reload, pending, canWrite]);
 
+  useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [pending]);
   const chosen = targets?.find((agent) => agent.adminId === target);
   const trimmed = reason.trim();
   const reasonOk = trimmed.length >= 8 && trimmed.length <= 200;
 
   async function send(record: TransferRecord, replay = false) {
+    if (replay && !canReplayGroupCommand(record)) { setError("原操作已超过 24 小时，原资料与命令号仍保留；只能查询和核对，不能重新发送。"); return; }
     const actor = actorStamp();
     let written = false;
     setSaving(true); setError(""); setNotReceived(false);
@@ -132,28 +136,28 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
     } catch (cause) {
       if (actor !== actorStamp()) return;
       // Only this code means there is no receipt. A 404 from the scope re-check or the read-back says nothing about the write.
-      if (cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") { setNotReceived(true); setError("系统没有这次转绑的记录，可以按原操作重试；编号和内容都不会变。"); }
+      if (cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") { setNotReceived(canReplayGroupCommand(pending)); setError(canReplayGroupCommand(pending) ? "尚未找到原命令回执；可在 24 小时内按原操作重试，编号和内容保持不变。" : "原操作已超过 24 小时，原资料与命令号仍保留；只能查询和核对，不能重新发送。"); }
       else setError("结果暂时无法核对，原操作和客户范围已保留。");
     } finally { setSaving(false); }
   }
 
   const footer = pending
-    ? <><button type="button" className="l-btn sm" disabled={saving} onClick={onClose}>稍后再查</button>{notReceived && <button type="button" className="l-btn sm" disabled={saving} onClick={() => void send(pending, true)}>按原操作重试</button>}<button type="button" className="l-btn sm primary" disabled={saving} onClick={() => void check()}>{saving ? "查询中…" : "查询原操作"}</button></>
-    : <><button type="button" className="l-btn sm" disabled={saving} onClick={onClose}>返回</button>{onOpenOwn && denied && detail?.agentAdminId === adminId && <button type="button" className="l-btn sm" onClick={onOpenOwn}>查看我的客户资料</button>}{targets && <button type="button" className="l-btn sm primary" disabled={!chosen || !reasonOk || saving} onClick={() => void submit()}>{saving ? "提交中…" : "确认正式转绑"}</button>}</>;
+    ? <><Button type="button" size="sm" disabled={saving} onClick={onClose}>稍后再查</Button>{notReceived && canReplayGroupCommand(pending) && <Button type="button" size="sm" disabled={saving} onClick={() => void send(pending, true)}>按原操作重试</Button>}<Button type="button" variant="primary" disabled={saving} onClick={() => void check()}>{saving ? "查询中…" : "查询原操作"}</Button></>
+    : <><Button type="button" size="sm" disabled={saving} onClick={onClose}>返回</Button>{onOpenOwn && denied && detail?.agentAdminId === adminId && <Button type="button" size="sm" onClick={onOpenOwn}>查看我的客户资料</Button>}{targets && <Button type="button" variant="primary" disabled={saving} disabledReason={!chosen ? "请选择目标专属客服" : !reasonOk ? "请填写 8–200 字转绑理由" : undefined} onClick={() => void submit()}>{saving ? "提交中…" : "确认正式转绑"}</Button>}</>;
 
-  return <Modal title="正式转绑客户" icon="users" busy={saving} onClose={onClose} footer={footer}><div className="s5a-confirm s5a-transfer">
+  return <Modal title="正式转绑客户" icon="users" busy={saving} onClose={onClose} footer={footer}><div className="m1-transfer-form">
     {pending ? <>
       <p role="status">这次转绑的结果尚未确认，原操作已锁定，不能修改。</p>
-      <dl><div><dt>客户</dt><dd>{pending.customerName ?? customerId}</dd></div><div><dt>变更</dt><dd>{pending.fromName ?? "原专属客服"} → {pending.targetName ?? `专属客服 ${pending.payload.targetAgentAdminId}`}</dd></div><div><dt>绑定版本</dt><dd>{pending.payload.customers[0].expectedVersion}</dd></div><div><dt>理由</dt><dd>{pending.payload.reason}</dd></div><div><dt>原操作编号</dt><dd>{pending.commandKey}</dd></div></dl>
+      <Facts><Fact k="客户">{pending.customerName ?? customerId}</Fact><Fact k="变更">{pending.fromName ?? "原专属客服"} → {pending.targetName ?? `专属客服 ${pending.payload.targetAgentAdminId}`}</Fact><Fact k="绑定版本">{pending.payload.customers[0].expectedVersion}</Fact><Fact k="理由">{pending.payload.reason}</Fact></Facts><Fold title="技术信息" summary="原命令号"><span data-mono>{pending.commandKey}</span></Fold>
     </> : denied ? <p role="alert">{denied}</p>
-      : loadError ? <p role="alert">{loadError}<button type="button" className="l-btn sm" onClick={() => setReload((value) => value + 1)}>重新加载</button></p>
+      : loadError ? <p role="alert">{loadError}<Button type="button" size="sm" onClick={() => setReload((value) => value + 1)}>重新加载</Button></p>
       : !detail || !targets ? <p role="status">正在加载客户归属和可接待的专属客服…</p>
       : <>
         <p>仅变更当前客户的专属客服；提交后原专属客服立即失去私聊与图片权限。</p>
-        <dl><div><dt>客户</dt><dd>{detail.displayName || detail.customerNo || detail.customerId}</dd></div><div><dt>当前专属客服</dt><dd>{detail.agentName ?? "资料未知"}</dd></div><div><dt>绑定版本</dt><dd>{detail.assignmentVersion}</dd></div></dl>
-        {targets.length === 0 ? <p className="s5a-note">暂无可接待的其他专属客服。请到「运营账号与权限」核对接待资格。</p> : <label>目标专属客服<select value={target ?? ""} disabled={saving} onChange={(event) => setTarget(Number(event.target.value) || null)}><option value="">请选择专属客服</option>{targets.map((agent) => <option key={agent.adminId} value={agent.adminId}>{agent.name}{agent.busy ? " · 忙碌" : ""}</option>)}</select></label>}
-        {chosen && <p className="s5a-transfer-effect"><SupportAvatar name={chosen.name} path={chosen.avatarAssetId ? advisorAvatarPath(chosen.adminId) : undefined} version={chosen.avatarVersion} size={28} />将从 {detail.agentName ?? "当前专属客服"} 转给 {chosen.name}</p>}
-        <label>转绑理由（8–200 字）<textarea value={reason} maxLength={200} disabled={saving} onChange={(event) => setReason(event.target.value)} /></label><small>{trimmed.length}/200 字</small>
+        <Facts><Fact k="客户">{detail.displayName || detail.customerNo || detail.customerId}</Fact><Fact k="客户编码">{m1CustomerCode(detail.customerId)}</Fact><Fact k="当前专属客服">{detail.agentName ?? "资料未知"}</Fact><Fact k="绑定版本">{detail.assignmentVersion}</Fact></Facts>
+        {targets.length === 0 ? <p className="s5a-note">暂无可接待的其他专属客服。请到「运营账号与权限」核对接待资格。</p> : <Field label="目标专属客服" required><Select aria-label="目标专属客服" value={String(target ?? "")} disabled={saving} onChange={value => setTarget(Number(value) || null)} options={[{ value: "", label: "请选择专属客服" }, ...targets.map(agent => ({ value: String(agent.adminId), label: `${agent.name}${agent.busy ? " · 忙碌" : ""}` }))]} /></Field>}
+        {chosen && <Facts><Fact k="目标绑定人数">{chosen.assignedUserCount}</Fact><Fact k="当前会话负载">{chosen.currentActiveSessions ?? "—"}</Fact><Fact k="会话并发上限">{chosen.maxConcurrent}</Fact></Facts>}{chosen && <p className="s5a-transfer-effect"><SupportAvatar name={chosen.name} path={chosen.avatarAssetId ? advisorAvatarPath(chosen.adminId) : undefined} version={chosen.avatarVersion} size={28} />将从 {detail.agentName ?? "当前专属客服"} 转给 {chosen.name}</p>}
+        <Field label="转绑理由" required hint="8–200 字"><Textarea value={reason} maxLength={200} disabled={saving} count={`${trimmed.length}/200`} onChange={event => setReason(event.target.value)} /></Field>
       </>}
     {error && <p role="alert">{error}</p>}
   </div></Modal>;

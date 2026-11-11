@@ -32,3 +32,5 @@
 .m1-stat-detail[data-kind="fund"] .m1-stat-table td:last-child { font-family: var(--font-jet-mono); }
 .m1-stat-table td:nth-child(4) { min-width: 14ch; white-space: normal; overflow-wrap: anywhere; }
 .m1-stat-pager { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.m1-stat-footer{display:flex;justify-content:flex-end;align-items:center;gap:12px;width:100%}
+.m1-stat-detail p{overflow-wrap:normal;text-wrap:pretty}

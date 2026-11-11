@@ -39,3 +39,12 @@
 .m1-group-management .m-invite-revoke-actions .m-invite-revoke-confirm { border-color:color-mix(in srgb, var(--v5-danger) 55%, transparent); background:var(--v5-danger-soft); color:color-mix(in srgb, var(--v5-danger) 80%, var(--v5-ink)); font-weight:600; }
 .m1-group-management .m-invite-revoke-actions button:disabled { opacity:.5; cursor:not-allowed; }
 .m1-group-management .m-invite-revoke-actions button:focus-visible { outline:2px solid var(--v5-brand); outline-offset:2px; }
+
+.m1-group-management{display:grid;gap:16px}
+.m1-group-management .m-admin-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.m1-group-management .rd-table{table-layout:fixed;width:100%}
+.m1-group-management .rd-table :is(th,td){min-width:0;white-space:normal;overflow:hidden}
+.m1-group-management .rd-table th:last-child,.m1-group-management .rd-table td:last-child{width:22%}
+.m1-group-management .rd-note{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m1-group-management .m-group-name{max-width:100%;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m1-group-management .m-invite-ops{display:flex;gap:6px;flex-wrap:wrap}.mdom .m1-group-management .m-group-count{min-width:0;justify-content:flex-end}

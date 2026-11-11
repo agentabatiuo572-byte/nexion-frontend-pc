@@ -6,6 +6,7 @@ import { avatarDrafts, avatarDraftFingerprint, avatarFileHash, rememberAvatarDra
 import { type AvatarGender, type AvatarScope } from "@/lib/admin/account-avatar-contract";
 import { supportClient } from "@/lib/admin/m-support-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { SupportAvatar } from "../m-tabs/support-avatar";
 import "./account-avatar-controls.css";
 
@@ -76,7 +77,7 @@ export function AccountAvatarPicker({ account, name, disabled, scope = "admin", 
     } catch (e) {
       if (active(token)) {
         setError(displayAdminError(e));
-        if (command && !isA1OutcomeUncertainError(e) && (sent || !wasPending)) { avatarDrafts.forget(command.fingerprint, command.commandKey); updateDraft(null); resetFile(); }
+        if (command && isExplicitRejection(e) && (sent || !wasPending)) { avatarDrafts.forget(command.fingerprint, command.commandKey); updateDraft(null); resetFile(); }
       }
     } finally { if (active(token)) setBusy(false); }
   }
