@@ -110,6 +110,9 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
     }
     throw new K1RequestError(formatAdminApiError(payload.message, `RISK_API_${res.status}`), res.status, payload.message);
   }
+  if (isWrite && path.startsWith("/withdraw-rules") && payload.code !== 0) {
+    throw new K1OutcomeUncertainError("K3_WRITE_RESULT_INVALID", commandKey);
+  }
   return payload.data as T;
 }
 
@@ -1126,6 +1129,27 @@ function requiredK3Page<T>(
   return normalized;
 }
 
+function normalizeK3Rule(row: Record<string, unknown>, path: string): K3Rule {
+  const ruleId = requiredK3String(row.ruleId, `${path}.ruleId`);
+  const dimension = requiredK3String(row.dimension, `${path}.dimension`);
+  const conditionText = requiredK3String(row.conditionText, `${path}.conditionText`);
+  const action = requiredK3RuleAction(row.action, `${path}.action`);
+  return {
+    ruleId,
+    id: ruleId,
+    dimension,
+    dim: dimension,
+    conditionText,
+    cond: conditionText,
+    action,
+    act: action,
+    state: requiredK3RuleState(row.state, `${path}.state`),
+    builtIn: requiredK3Boolean(row.builtIn, `${path}.builtIn`),
+    priority: requiredK3Integer(row.priority, `${path}.priority`, 1, 100),
+    version: requiredK3Integer(row.version, `${path}.version`, 0),
+  };
+}
+
 function normalizeK3(raw: unknown): WithdrawRuleOverview {
   const data = requiredK3Record(raw, "withdrawRules");
   const dimensions = requiredK3Array(data.dimensions, "withdrawRules.dimensions").map((item, index) => {
@@ -1145,26 +1169,7 @@ function normalizeK3(raw: unknown): WithdrawRuleOverview {
       version: requiredK3Integer(row.version, `${path}.version`, 0),
     };
   });
-  const rules = requiredK3Page(data.rules, "withdrawRules.rules", (row, path): K3Rule => {
-    const ruleId = requiredK3String(row.ruleId, `${path}.ruleId`);
-    const dimension = requiredK3String(row.dimension, `${path}.dimension`);
-    const conditionText = requiredK3String(row.conditionText, `${path}.conditionText`);
-    const action = requiredK3RuleAction(row.action, `${path}.action`);
-    return {
-      ruleId,
-      id: ruleId,
-      dimension,
-      dim: dimension,
-      conditionText,
-      cond: conditionText,
-      action,
-      act: action,
-      state: requiredK3RuleState(row.state, `${path}.state`),
-      builtIn: requiredK3Boolean(row.builtIn, `${path}.builtIn`),
-      priority: requiredK3Integer(row.priority, `${path}.priority`, 1, 100),
-      version: requiredK3Integer(row.version, `${path}.version`, 0),
-    };
-  });
+  const rules = requiredK3Page(data.rules, "withdrawRules.rules", normalizeK3Rule);
   const routeCounts = requiredK3Array(data.routeCounts, "withdrawRules.routeCounts").map((item, index) => {
     const path = `withdrawRules.routeCounts[${index}]`;
     const row = requiredK3Record(item, path);
@@ -1540,12 +1545,26 @@ function normalizeK3DryRun(raw: unknown): K3DryRunResult {
 
 function normalizeK3DryRunForWrite(raw: unknown, commandKey: string): K3DryRunResult {
   try {
-    return normalizeK3DryRun(raw);
-  } catch (error) {
+    const result = normalizeK3DryRun(raw);
+    if (result.status !== "COMPLETED" || result.routeCounts.reduce((total, route) => total + route.count, 0) !== result.evaluatedWithdrawals) invalidK3Response("withdrawRules.dryRun.result");
+    return result;
+  } catch {
     throw new K1OutcomeUncertainError(
-      error instanceof Error ? error.message : "K3_DRY_RUN_RESULT_INVALID",
+      "K3_WRITE_RESULT_INVALID",
       commandKey,
     );
+  }
+}
+
+/** K3 recovery sends the saved JSON verbatim, including the original operator and reason. */
+export type K3CommandRequest = { method: "POST" | "PATCH"; path: string; body: string };
+export async function executeK3Command(request: K3CommandRequest, commandKey: string): Promise<K3DryRunResult | void> {
+  const value = await apiRequest(request.path, { method: request.method, body: request.body, commandKey });
+  if (request.path === "/withdraw-rules/dry-runs") return normalizeK3DryRunForWrite(value, commandKey);
+  try {
+    normalizeK3Rule(requiredK3Record(value, "withdrawRules.write"), "withdrawRules.write");
+  } catch {
+    throw new K1OutcomeUncertainError("K3_WRITE_RESULT_INVALID", commandKey);
   }
 }
 

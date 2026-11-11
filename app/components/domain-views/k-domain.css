@@ -197,3 +197,63 @@
 .kdom .alert-row .tx { flex: 1; font-size: 12.5px; color: var(--ink-3); line-height: 1.5; }
 .kdom .alert-row .tx b { color: var(--ink-2); }
 .kdom .alert-row .ts { font-family: var(--mono); font-size: 11px; color: var(--ink-4); white-space: nowrap; }
+
+/* K3: one rule catalog; history and supporting facts remain in drawers. */
+.k3-page { display: grid; gap: 20px; min-width: 0; }
+.k3-cover-summary { margin: 0; color: var(--rd-text-2); }
+.k3-cover-actions, .k3-row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.k3-row-actions { justify-content: flex-end; flex-wrap: nowrap; }
+.k3-cover-actions { margin-top: 12px; }
+.k3-cover-loading { container-type: inline-size; display: flex; flex-wrap: wrap; gap: 12px; }
+.k3-cover-loading > * { flex: 1 1 calc(25% - 9px); min-height: 140px; border: 1px solid var(--rd-line); }
+@container (max-width: 900px) { .k3-cover-loading > * { flex-basis: calc(50% - 6px); } }
+.k3-table-frame { container-type: inline-size; }
+.k3-rules-table, .k3-hits-table { width: 100%; table-layout: fixed; min-width: 0; }
+.k3-rules-table .k3-rule-col { width: 19%; }
+.k3-rules-table .k3-condition-col { width: 29%; }
+.k3-rules-table .k3-action-col { width: 11%; }
+.k3-rules-table .k3-state-col { width: 11%; }
+.k3-rules-table .k3-version-col { width: 12%; }
+.k3-rules-table .k3-actions-col { width: 18%; }
+.k3-rules-table[data-extra] .k3-rule-col { width: 17%; }
+.k3-rules-table[data-extra] .k3-condition-col { width: 23%; }
+.k3-rules-table .k3-builtin-col { width: 8%; }
+.k3-rules-table .rd-cell, .k3-hits-table .rd-cell { max-width: none; }
+.k3-rules-table td:nth-child(2) .rd-cell { display: inline-flex; max-width: calc(100% - 24px); vertical-align: middle; }
+.k3-id { display: flex; min-width: 0; max-width: 100%; }
+.k3-id > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k3-id > :last-child { flex: none; }
+.k3-hit-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding-block: 16px; }
+.k3-hits-table th:nth-child(1) { width: 28%; }
+.k3-hits-table th:nth-child(2) { width: 27%; }
+.k3-hits-table th:nth-child(3) { width: 27%; }
+.k3-hits-table th:nth-child(4) { width: 18%; }
+.k3-hits-table:has(th:nth-child(5)) th:nth-child(1), .k3-hits-table:has(th:nth-child(5)) th:nth-child(2), .k3-hits-table:has(th:nth-child(5)) th:nth-child(3) { width: 20%; }
+.k3-hits-table:has(th:nth-child(5)) th:nth-child(4) { width: 14%; }
+.k3-hits-table:has(th:nth-child(5)) th:nth-child(n+5) { width: 26%; }
+.k3-hits-table:has(th:nth-child(6)) th:nth-child(n+5) { width: 13%; }
+.k3-write-impact { display: grid; gap: 12px; }
+.k3-write-impact > p { margin: 0; }
+.k3-request { white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px; background: var(--rd-panel-inner); color: var(--rd-text-2); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); }
+@container (max-width: 850px) {
+  .k3-rules-table .k3-version-col { display: none; }
+  .k3-rules-table .k3-rule-col { width: 22%; }
+  .k3-rules-table .k3-condition-col { width: 30%; }
+  .k3-rules-table .k3-action-col, .k3-rules-table .k3-state-col { width: 13%; }
+  .k3-rules-table .k3-actions-col { width: 22%; }
+  .k3-rules-table[data-extra] .k3-rule-col { width: 19%; }
+  .k3-rules-table[data-extra] .k3-condition-col { width: 25%; }
+}
+.k3-editor-fields { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 20px; }
+@container (max-width: 850px) {
+  .k3-rules-table[data-show-version] .k3-version-col { display: table-cell; width: 10%; }
+  .k3-rules-table[data-show-version] .k3-rule-col { width: 18%; }
+  .k3-rules-table[data-show-version] .k3-condition-col { width: 26%; }
+  .k3-rules-table[data-show-version] .k3-action-col, .k3-rules-table[data-show-version] .k3-state-col { width: 12%; }
+  .k3-rules-table[data-extra][data-show-version] .k3-rule-col { width: 16%; }
+  .k3-rules-table[data-extra][data-show-version] .k3-condition-col { width: 20%; }
+}
+
+.k3-editor-content { display: grid; gap: 16px; }
+
+.k3-rules-table td:nth-child(2) .rd-cell-main { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
