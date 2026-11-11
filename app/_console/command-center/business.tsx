@@ -109,7 +109,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, moneyFlo
       title="经营数据"
       explain={switchable
         ? "今日从 0 点到现在，本周从周一 0 点到现在，本月从 1 日 0 点到现在。今天还没过完，所以只并排写昨日全天、上周全周、上月全月的数，不算百分比。数字大小不分好坏，提现多了不代表不好。金额和注册人数现在还没有排除测试账号。"
-        : "注册用户是上线以来累计，下面三个新增按今日、本周、本月分开写。活跃用户只有今日和昨日。注册人数现在还没有排除测试账号。设备是此刻的商城设备，不含手机，不随时段变。"}
+        : "注册用户是上线以来累计，下面三个新增按今日、本周、本月分开写。活跃用户只有今日和昨日。注册人数现在还没有排除测试账号。设备是此刻的用户设备，不含手机，不随时段变。"}
       tools={switchable ? <Segments label="经营数据时段" value={period} items={PERIODS} onChange={onPeriodChange} /> : undefined}
       meta={clock ? `${since}截至 ${clock} · ${businessZone().label}` : "正在读取…"}
       rows={reservedRows}
@@ -242,12 +242,12 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, moneyFlo
           value={devices.data ? fmtNum(devices.data.running) : ""}
           prefix="运行中"
           unit="台"
-          compare={devices.data ? `共 ${fmtNum(devices.data.total)} 台 · 仅商城设备，不含手机` : undefined}
+          compare={devices.data ? `共 ${fmtNum(devices.data.total)} 台 · 用户设备，不含手机` : undefined}
           rows={devices.data ? [
             { k: <>等待启动<Explain label="等待启动统计范围" content="包含待激活、等待初始化和旧任务未结清的设备。" /></>, v: `${fmtNum(devices.data.waitingActivation)} 台`, tone: devices.data.waitingActivation > 0 ? "warn" : undefined },
             { k: "已停用", v: `${fmtNum(devices.data.stopped)} 台` },
           ] : []}
-          explain="只算商城设备，不含手机。总数包含所有商城设备状态；运行中、等待启动和已停用是其中三类，不一定加起来等于总数。等待启动包含待激活、等待初始化和旧任务未结清的设备。这些是此刻的台数，不随时段变。"
+          explain="只算用户设备，不含手机。总数包含所有用户设备状态；运行中、等待启动和已停用是其中三类，不一定加起来等于总数。等待启动包含待激活、等待初始化和旧任务未结清的设备。这些是此刻的台数，不随时段变。"
           explainAbove
           href={link("/devices/ops")}
           openLabel="查看设备管理"
