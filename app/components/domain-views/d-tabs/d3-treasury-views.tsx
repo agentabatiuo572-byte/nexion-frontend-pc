@@ -97,15 +97,15 @@ function dueParts(config: ForecastValues, trial: boolean | undefined) {
 
 const TREASURY_SOURCE_LABELS: Record<string, string> = {
   "nx_treasury_reserve_ledger": "储备资金账本",
-  "nx_staking_position.amount_usdt": "生效中的质押锁定金额",
+  "nx_staking_position.amount_usdt": "质押锁定记录",
   "nx_user_wallet": "用户钱包余额",
   "nx_user_wallet.usdt_available": "用户钱包余额",
   "nx_staking_position": "质押锁定金额与奖励",
   "nx_staking_position.estimated_interest_usdt": "待付质押奖励",
   "nx_genesis_holding": "创世节点持仓",
-  "nx_genesis_holding × nx_genesis_series.daily_dividend_rate_pct": "创世节点持仓与每日收益",
+  "nx_genesis_holding × nx_genesis_series.daily_dividend_rate_pct": "创世节点持仓",
   "nx_nex_lock_order": "UVT 锁仓订单",
-  "nx_nex_lock_order active maturity": "生效中的 UVT 锁仓到期额",
+  "nx_nex_lock_order active maturity": "UVT 锁仓订单",
   "nx_withdrawal_order": "提现订单",
   "nx_withdrawal_order active queue": "待处理提现订单",
   "nx_wallet_ledger": "钱包资金流水",
@@ -113,7 +113,7 @@ const TREASURY_SOURCE_LABELS: Record<string, string> = {
   "nx_treasury_legacy_lock_liability": "存量锁定金额及奖励",
   "nx_treasury_legacy_lock_liability active principal + accrued interest": "存量锁定记录",
   "nx_vietqr_reconciliation": "VietQR 银行回单",
-  "nx_vietqr_reconciliation open suspense rows": "待处置 VietQR 银行回单",
+  "nx_vietqr_reconciliation open suspense rows": "VietQR 待核回单",
 };
 
 function treasurySourceLabel(source: string) {
