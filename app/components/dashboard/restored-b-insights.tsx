@@ -4,12 +4,10 @@ import { formatB3RefOption } from "@/lib/admin/b3-ref-display";
 
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { useId, type CSSProperties, type ReactNode } from "react";
-import type { B2Dashboard } from "@/lib/admin/b2-client";
 import { SMALL_SAMPLE_LABEL, type B3Dashboard } from "@/lib/admin/b3-client";
 import type { B5Radar } from "@/lib/admin/b5-client";
 import { summarizePressureHistory } from "@/lib/admin/b5-pressure-summary";
-import { useB2LiquidityHistory, useB4GrowthFlowHistory } from "@/lib/admin/b-restoration-client";
-import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
+import { useB4GrowthFlowHistory } from "@/lib/admin/b-restoration-client";
 import { fmtConfigPct } from "@/lib/format";
 
 const CARD: CSSProperties = {
@@ -82,40 +80,6 @@ function TrendChart({
   );
 }
 
-function MaturityChart({ daily, cumulative }: { daily: Array<{ date: string; totalDueUsdt: number }>; cumulative: Array<{ date: string; amountUsdt: number }> }) {
-  const width = 640;
-  const height = 190;
-  const padX = 36;
-  const padTop = 22;
-  const padBottom = 36;
-  const chartHeight = height - padTop - padBottom;
-  const maxDaily = Math.max(...daily.map((row) => row.totalDueUsdt), 0);
-  const maxCumulative = Math.max(...cumulative.map((row) => row.amountUsdt), 0);
-  const dailyScaleMax = Math.max(maxDaily, 1);
-  const cumulativeScaleMax = Math.max(maxCumulative, 1);
-  const slot = (width - padX * 2) / Math.max(daily.length, 1);
-  const cumulativePoints = cumulative.map((row, index) => ({
-    x: padX + slot * index + slot / 2,
-    y: padTop + chartHeight - row.amountUsdt / cumulativeScaleMax * chartHeight,
-  }));
-  const cumulativePath = cumulativePoints.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ");
-  return <div>
-    <div style={{ display: "flex", gap: 14, fontSize: 11.5, color: "var(--ink-3)", marginBottom: 4 }}><span><i style={{ display: "inline-block", width: 9, height: 9, marginRight: 5, background: "var(--admin-domain-b)" }} />每日到期（左轴）</span><span><i style={{ display: "inline-block", width: 14, borderTop: "3px solid var(--danger)", marginRight: 5, verticalAlign: "middle" }} />累计到期（右轴）</span></div>
-    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="每日预计兑付额柱状图与累计到期负债曲线" style={{ width: "100%", height: 205, overflow: "visible" }}>
-      <line x1={padX} y1={height - padBottom} x2={width - padX} y2={height - padBottom} stroke="var(--border-strong)" />
-      {daily.map((row, index) => {
-        const barHeight = row.totalDueUsdt / dailyScaleMax * chartHeight;
-        const x = padX + slot * index + slot * 0.18;
-        return <g key={row.date}><rect x={x} y={height - padBottom - barHeight} width={slot * 0.64} height={barHeight} rx="4" fill="var(--admin-domain-b)" /><text x={x + slot * 0.32} y={height - 12} textAnchor="middle" fill="var(--ink-4)" fontSize="10">{row.date.slice(5)}</text></g>;
-      })}
-      <path d={cumulativePath} fill="none" stroke="var(--danger)" strokeWidth="3" vectorEffect="non-scaling-stroke" />
-      {cumulativePoints.map((point, index) => <circle key={cumulative[index].date} cx={point.x} cy={point.y} r="3.5" fill="var(--surface)" stroke="var(--danger)" strokeWidth="2" vectorEffect="non-scaling-stroke" />)}
-      <text x={padX} y={13} fill="var(--ink-4)" fontSize="10">每日峰值 {maxDaily.toLocaleString("en-US", { maximumFractionDigits: 2 })} USDT</text>
-      <text x={width - padX} y={13} textAnchor="end" fill="var(--danger)" fontSize="10">累计 {maxCumulative.toLocaleString("en-US", { maximumFractionDigits: 2 })} USDT</text>
-    </svg>
-  </div>;
-}
-
 function Donut({ rows, center }: { rows: Array<{ label: string; value: number; color: string; suffix?: string }>; center: string }) {
   const total = rows.reduce((sum, row) => sum + row.value, 0);
   let cursor = 0;
@@ -133,29 +97,6 @@ function Donut({ rows, center }: { rows: Array<{ label: string; value: number; c
 function Bars({ values, labels, suffix = "" }: { values: number[]; labels: string[]; suffix?: string }) {
   const max = Math.max(...values.map(Math.abs), 1);
   return <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(values.length, 1)}, minmax(34px, 1fr))`, gap: 8, minHeight: 170 }}>{values.map((value, index) => <div key={`${labels[index]}-${index}`} style={{ display: "grid", gridTemplateRows: "20px 126px 20px", textAlign: "center", fontSize: 10.5, color: "var(--ink-4)" }}><b style={{ color: "var(--ink-2)", whiteSpace: "nowrap" }}>{value}{suffix}</b><div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center" }}><i data-zero={value === 0 ? "true" : "false"} style={{ width: "58%", height: value === 0 ? 0 : Math.max(4, Math.abs(value) / max * 112), background: index === values.length - 1 ? "var(--cyan)" : "var(--admin-domain-b)", borderRadius: "5px 5px 0 0" }} /></div><span>{labels[index]}</span></div>)}</div>;
-}
-
-function FlowBars({ rows }: { rows: Array<{ label: string; inflowWan: number; outflowWan: number }> }) {
-  const max = Math.max(...rows.flatMap((row) => [row.inflowWan, row.outflowWan]), 1);
-  return <div style={{ display: "grid", gridTemplateColumns: `repeat(${rows.length}, minmax(42px, 1fr))`, gap: 8, minHeight: 190 }}>{rows.map((row) => <div key={row.label} style={{ display: "grid", gridTemplateRows: "22px 132px 22px", textAlign: "center", fontSize: 10 }}><b style={{ whiteSpace: "nowrap" }}>+{row.inflowWan.toFixed(1)} / -{row.outflowWan.toFixed(1)}</b><div style={{ position: "relative" }}><i style={{ position: "absolute", left: 0, right: 0, top: "50%", borderTop: "1px solid var(--border-strong)" }} /><i data-zero={row.inflowWan === 0 ? "true" : "false"} style={{ position: "absolute", left: "12%", width: "34%", height: row.inflowWan === 0 ? 0 : Math.max(3, row.inflowWan / max * 60), bottom: "50%", background: "var(--success)", borderRadius: "4px 4px 0 0" }} /><i data-zero={row.outflowWan === 0 ? "true" : "false"} style={{ position: "absolute", right: "12%", width: "34%", height: row.outflowWan === 0 ? 0 : Math.max(3, row.outflowWan / max * 60), top: "50%", background: "var(--danger)", borderRadius: "0 0 4px 4px" }} /></div><span>{row.label}</span></div>)}</div>;
-}
-
-export function B2RestoredInsights({ data }: { data: B2Dashboard }) {
-  const history = useB2LiquidityHistory();
-  const liabilityRows = data.liabilities.breakdown.flatMap((row) =>
-    row.amountUsdt !== null && row.amountUsdt > 0 && row.share !== null
-      ? [{ label: operatorCopyText(row.label), value: row.share * 100, suffix: "%" }]
-      : []);
-  return <>
-    <div style={GRID}>
-      <section data-testid="b2-maturity-chart" style={CARD}><Header title={`未来 ${data.maturity.window === "7d" ? 7 : 30} 天到期的应付款`} meta="柱子为每日到期，曲线为累计 · USDT" /><MaturityChart daily={data.maturity.daily} cumulative={data.maturity.cumulative} /></section>
-      <section data-testid="b2-liability-distribution" style={CARD}><Header title="应付款构成" meta={`共 ${data.liabilities.hardLiabilityCategoryCount} 类`} />{data.liabilities.totalUsdt === null ? <Notice>{TREASURY_VALUATION_UNAVAILABLE}</Notice> : liabilityRows.length ? <Donut center="应付负债" rows={liabilityRows.map((row, index) => ({ ...row, color: COLORS[index % COLORS.length] }))} /> : <Notice>目前没有应付款。</Notice>}</section>
-    </div>
-    <div style={GRID}>
-      <section data-testid="b2-fund-flow-history" style={CARD}><Header title="近 8 个时段资金流入 / 流出" meta="单位：万 USDT" />{history.data ? <FlowBars rows={history.data.flowWindows} /> : history.loading ? <Notice>正在加载…</Notice> : <Notice healthState="error">{`资金流历史暂不可用：${history.error ?? "响应为空"}`}</Notice>}</section>
-      <section data-testid="b2-monthly-inflow-history" style={CARD}><Header title="近 8 个月新增入金" meta="用户成功充值 · 万 USDT" />{history.data ? <Bars values={history.data.monthlyNewDeposits.map((row) => row.amountWan)} labels={history.data.monthlyNewDeposits.map((row) => row.label.slice(5))} /> : history.loading ? <Notice>正在加载…</Notice> : <Notice healthState="error">{`月新增入金暂不可用：${history.error ?? "响应为空"}`}</Notice>}</section>
-    </div>
-  </>;
 }
 
 export function B3RestoredInsights({ data }: { data: B3Dashboard }) {

@@ -33,7 +33,7 @@ const FUNNEL_FILTERS = { cohort: "ALL", phase: "ALL", ref: "ALL" };
 const SMALL_SAMPLE = 5;
 
 export type FoldProps = { open: boolean; onOpenChange: (open: boolean) => void };
-type Reach = (href: string) => boolean;
+type Reach = (href: string, read?: string | readonly string[]) => boolean;
 
 /** 第一次展开后一直算打开过，展开才读的数据收起也不重读。 */
 function useOpenedOnce(open: boolean) {
@@ -43,8 +43,8 @@ function useOpenedOnce(open: boolean) {
 }
 
 /** 目标页可达才显示（X03）。 */
-function FoldLink({ href, reach, children }: { href: string; reach: Reach; children: ReactNode }) {
-  return reach(href) ? <Link href={href} prefetch={false}>{children}</Link> : null;
+function FoldLink({ href, read, reach, children }: { href: string; read?: string | readonly string[]; reach: Reach; children: ReactNode }) {
+  return reach(href, read) ? <Link href={href} prefetch={false}>{children}</Link> : null;
 }
 
 /** 目标写成 >95%，页面上写 > 95%。 */
@@ -115,7 +115,7 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
               />
               <div className="cc-cols">
               <section className="cc-bars" aria-label="应付款">
-                <h3 className="cc-sub">应付款最多的几类<FoldLink reach={reach} href="/overview/liquidity">查看全部 9 类</FoldLink></h3>
+                <h3 className="cc-sub">应付款最多的几类<FoldLink reach={reach} href="/finance/pool?tab=due&maturity=7d" read={["overview_b2_read", "finance_d3_read"]}>查看全部 9 类</FoldLink></h3>
                 {accounts.length === 0 ? <p className="cc-line">目前没有应付款</p> : accounts.length === 1 ? <p className="cc-line">全部是{liabilityDisplayName(accounts[0].key, operatorCopyText(accounts[0].label))}，{usdt(accounts[0].amount)}</p> : (
                   <BarList label="应付款最多的几类" slot={2} rows={[
                     ...accounts.slice(0, 3).map((item) => ({ key: item.key, label: liabilityDisplayName(item.key, operatorCopyText(item.label)), value: item.amount, text: usdt(item.amount) })),
@@ -323,7 +323,7 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
         按储备账已确认的流入、流出统计。流入包括充值、财务注资和储备返还／冲正；流出包括提现扣储备和拒付退回。非银行提现在放行时扣储备，银行提现在付款成功时结算，不代表全部已实际打款。用余额买设备不算。
         {netFlow24h != null && ` 另一个算法是滚动近 24 小时：${fmtAmount(netFlow24h)} USDT，时间段不同，数可能不一样。`}{clock && ` 数据时间 ${clock}。`}
       </> : undefined}
-      actions={blocks.netFlow ? <FoldLink reach={reach} href="/overview/liquidity">查看资金流</FoldLink> : undefined}>
+      actions={blocks.netFlow ? <FoldLink reach={reach} href="/finance/pool?tab=flow" read="overview_b2_read">查看资金流</FoldLink> : undefined}>
       <div className="cc-cols">
         {blocks.netFlow && !quiet && (
           <section aria-label="近 8 天资金进出">

@@ -317,6 +317,9 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 
 /* ── 折叠组 ── */
 .rd-fold { background: var(--rd-panel); border-radius: var(--rd-radius-panel); }
+.rd-fold:not([data-inset]) { box-shadow: inset 0 0 0 1px var(--rd-line); }
+/* 表单中的折叠和字段共用左边线；边界常显，深浅主题相同。 */
+.rd-modal-body .rd-stack > .rd-fold:not([data-inset]) > summary { padding-left: 12px; padding-right: 12px; }
 /* 面板和抽屉里的折叠不再套底，用一条线分开（VS-72）。 */
 .rd-fold[data-inset] { background: none; border-radius: 0; border-top: 1px solid var(--rd-line); }
 :is(.rd-drawer-body, .rd-stack, .rd-detail-block) > .rd-fold[data-inset] + .rd-fold[data-inset] { margin-top: -12px; }  /* 只收掉父级的间距，一组折叠只靠线分开；没有间距的父级收了会压住上一行 */
@@ -569,6 +572,10 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 
 /* 确认框外观：OperationConfirmModal 的旧内容块在新框里的样子，逻辑都在旧组件里没动。 */
 .rd-modal.rd-confirm .operator-brief { padding: 0; margin-bottom: 12px; }
+.rd-operation-brief { display: grid; gap: 8px; margin-bottom: 16px; }
+.rd-modal.rd-confirm .rd-operation-brief .rd-brief { margin-bottom: 0; }
+.rd-operation-impact { color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
+.rd-operation-completion { color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
 .rd-page input[type="date"], .rd-page input[type="datetime-local"], .rd-modal input[type="date"], .rd-modal input[type="datetime-local"] { color-scheme: dark; }
 :root[data-theme="light"] :is(.rd-page, .rd-modal) :is(input[type="date"], input[type="datetime-local"]) { color-scheme: light; }
 /* 影响一句是给人读的句子，用正文字号；「执行摘要」和「查看详情」是辅助。 */
@@ -580,6 +587,10 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-modal.rd-confirm .rd-brief-toggle { grid-row: 1; grid-column: 2; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .rd-modal.rd-confirm .rd-brief[open] .rd-brief-head > span { display: none; }  /* 展开后「影响」在下面那一行，标题行不重复 */
 /* 展开的摘要和关键信息同一条值线（名称列 128 = 事实块的内边距 16 + 112），不带底块：这是补充说明，不是关键信息，句子也多一点宽度（VS-105）。 */
+/* 上面已经常显后果句和「谁能批」时，这一行只是「再看细节」的入口：不再摆成一行没有内容的小标题，改成贴着说明的文字链；「执行摘要」留给读屏。 */
+.rd-modal.rd-confirm .rd-operation-brief:has(> p) .rd-brief > summary { display: flex; justify-content: flex-start; }
+.rd-modal.rd-confirm .rd-operation-brief:has(> p) .rd-brief-head b { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.rd-modal.rd-confirm .rd-operation-brief:has(> p) .rd-brief-toggle { color: var(--rd-text-2); text-decoration: underline; text-underline-offset: 2px; }
 .rd-brief-rows { display: grid; gap: 8px; margin: 8px 0 0; }
 .rd-brief-rows > div { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 12px; }  /* 和事实底块里 .rd-fact 的值同一条线 */
 /* 事实区只有一行、不带底块时（见下面 .rd-confirm-facts 那条），事实的值线在 112 + 12，摘要跟着收到 112 */
@@ -621,9 +632,18 @@ body:has(.rd-drawer[data-state="open"]:not([data-wide])) .rd-toast-host { left: 
 .rd-modal.rd-confirm .rd-reason-field { margin-bottom: 0; }
 .rd-reason-box { position: relative; }
 .rd-reason-box textarea { display: block; width: 100%; padding-bottom: 24px; }
+.rd-modal.rd-confirm .field textarea.rd-input[aria-invalid="true"] { outline: 1px solid var(--rd-warn); box-shadow: none; }
+.rd-reason-field > .rd-form-help { margin-top: 8px; }
+.rd-reason-field > .rd-form-error { margin-top: 8px; }
+.rd-modal.rd-confirm .rd-destructive-impact { font-family: var(--rd-font); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
+/* ReleaseBody 后面可接原操作事实、拒绝条、人工核实勾选；共享间距不要求页面各自补壳。 */
+.rd-modal-body > .rd-release-body ~ * { margin-top: var(--rd-space-4); }
 .rd-reason-count { position: absolute; right: 10px; bottom: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; pointer-events: none; }
 .rd-confirm-facts { margin-bottom: 16px; padding: 12px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .rd-confirm-facts :is(.rd-facts, .rd-diff) + .rd-notice { margin-top: 12px; }
+.rd-confirm-facts > .rd-confirm-funding { margin-top: 12px; }
+.rd-funding-coverage { margin-top: 4px; color: var(--rd-text-2); }
+.rd-funding-coverage b { font-weight: 500; color: var(--rd-text); font-variant-numeric: tabular-nums; }
 /* 覆盖率跟在事实后面，是这一块的最后一行：资金信息排在要填的字段前。 */
 .rd-modal.rd-confirm .rd-confirm-facts > .alertbar { margin-top: 8px; }
 .rd-modal.rd-confirm .rd-confirm-facts > .alertbar.calm { padding: 0; background: none; }
@@ -1397,3 +1417,10 @@ button.rd-dist-item[aria-pressed="true"] { background: var(--rd-selected); color
 .k-confirm-textarea { font-family: inherit; font-size: 12.5px; resize: vertical; }
 .k-confirm-count { margin-top: 7px; color: var(--warning); }
 .k-confirm-count[data-ok] { color: var(--ink-3); }
+/* 确认框的事实块里一行都没有时不留一条空的灰底。 */
+.rd-confirm-facts:has(> .rd-facts:only-child:empty) { display: none; }
+/* 下拉框当前值只占一行：长名字省略，不折出控件。 */
+.rd-select > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 弹窗和抽屉里的数字框不显示浏览器自带的上下箭头（协调人定：不要可见的步进按钮）；键盘上下键照常。 */
+:is(.rd-modal, .rd-drawer) input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+:is(.rd-modal, .rd-drawer) input[type="number"]::-webkit-inner-spin-button, :is(.rd-modal, .rd-drawer) input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }

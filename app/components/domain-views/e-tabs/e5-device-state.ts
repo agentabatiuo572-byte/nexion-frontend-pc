@@ -13,7 +13,7 @@ export const E5_STATES: Record<E5SimState, { label: string; tone: StateTone; rea
   STOPPED: { label: "已停用", tone: "done", reason: "设备已停止；重新启动须提交强制激活审批。" },
   UNBOUND: { label: "已解绑", tone: "done", reason: "不再归属原用户，保留历史事实；不能重复解绑。" },
   ERROR: { label: "出错重试中", tone: "danger", reason: "系统每 30 秒自动重试，原错误和下次重试时间见设备详情。" },
-  SIM_OFF: { icon: PowerOff, label: "模拟任务已关闭", tone: "neutral", reason: "模拟任务已关闭，本页只读。" },
+  SIM_OFF: { icon: PowerOff, label: "任务已关闭", tone: "neutral", reason: "任务已关闭，本页只读。" },
 };
 
 /** Known backend pause codes are translated; operator-written reasons stay readable. */

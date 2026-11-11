@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Download, Landmark, RefreshCw, ShieldCheck } from "lucide-react";
 import { OperationConfirmModal, useToast, type OperatorBriefKind } from "../design-kit";
 import { ForecastConfigImpact } from "@/app/components/forecast-config-preview";
-import { KeepText, BlockState, Button, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Input, IrreversibleTag, Modal, Notice, PageHeader, PageTabs, RdPage, ReleaseModal, Select, StatusTag, useTabIds } from "@/app/components/rd";
+import { KeepText, BlockState, Button, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Fold, Input, IrreversibleTag, Modal, Notice, PageHeader, PageTabs, RdPage, ReleaseModal, Select, StatusTag, useTabIds } from "@/app/components/rd";
 import { B2RequestError, previewB2ForecastConfig, type ForecastConfigPreview } from "@/lib/admin/b2-client";
 import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { businessClock, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
@@ -32,7 +32,7 @@ import {
   type D3MaturityForecast,
   type D3NetExposure,
 } from "@/lib/admin/d-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
@@ -97,6 +97,8 @@ interface ConfirmRequest {
 /** 页面上方一条结果未知的操作。重试只发存下来的内容，这里没有能改的东西（OP-94）。 */
 interface PendingItem {
   commandKey: string;
+  /** 完整原记录供核对和复制；不从当前表单重建。 */
+  record: unknown;
   title: string;
   body: ReactNode;
   /** 还能重试时写在 body 后面；过期后换成 RETRY_EXPIRED。 */
@@ -234,7 +236,7 @@ export function D3Treasury() {
       if (generation !== loadGeneration.current) return;
       setMain(null);
       setDraft(null);
-      setMainError(errorText(err, "加载失败，请重试"));
+      setMainError(displayAdminReadError(err));
     } finally {
       if (generation === loadGeneration.current) setLoading(false);
     }
@@ -247,7 +249,7 @@ export function D3Treasury() {
       const data = await fetchD3Maturity("30d");
       if (generation === maturityGeneration.current) setMaturity30({ data, loading: false, error: "" });
     } catch (err) {
-      if (generation === maturityGeneration.current) setMaturity30({ data: null, loading: false, error: errorText(err, "读取失败，请重试") });
+      if (generation === maturityGeneration.current) setMaturity30({ data: null, loading: false, error: displayAdminReadError(err) });
     }
   }, []);
 
@@ -259,7 +261,7 @@ export function D3Treasury() {
       const data = await fetchD3NetExposure("7d");
       if (generation === exposureGeneration.current) setExposure({ data, loading: false, error: "" });
     } catch (err) {
-      if (generation === exposureGeneration.current) setExposure({ data: null, loading: false, error: errorText(err, "读取失败，请重试") });
+      if (generation === exposureGeneration.current) setExposure({ data: null, loading: false, error: displayAdminReadError(err) });
     }
   }, []);
 
@@ -672,6 +674,7 @@ export function D3Treasury() {
   const pendingItems: PendingItem[] = [
     ...unknownCommands.injections.map((record): PendingItem => ({
       commandKey: record.commandKey,
+      record,
       title: "登记储备注入结果未知，可能已经入账",
       body: <>{money(Number(record.amount))}，凭证号 {record.voucherNo}，{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
       hint: "先看累计注入有没有变；重试不会重复登记。",
@@ -691,11 +694,12 @@ export function D3Treasury() {
     })),
     ...(forecastRecord && savedForecast ? [{
       commandKey: forecastRecord.commandKey,
+      record: forecastRecord,
       title: "预测设置保存结果未知，可能已经保存",
       body: <>{timeText(new Date(forecastRecord.createdAt).toISOString())} 提交。</>,
       hint: "先看「预测设置」的版本有没有变；重试不会重复保存。",
       expiresAt: forecastRecord.expiresAt,
-      allowed: canConfig,
+      allowed: canConfig && savedForecast.operator === OPERATOR(),
       auditHref: "/platform/audit?domain=D",
       retryTitle: "按原操作重试保存预测设置",
       retryEffect: effectiveText(),
@@ -710,11 +714,12 @@ export function D3Treasury() {
     }] : []),
     ...unknownCommands.exports.map((record): PendingItem => ({
       commandKey: record.commandKey,
+      record,
       title: `${EXPORT_LABEL[record.exportKind]} 导出结果未知`,
       body: <>{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
       hint: "文件可能没有下载下来，操作记录里可能已经有这次导出；重试不会多记一次。",
       expiresAt: record.expiresAt,
-      allowed: record.exportKind === "liabilities" ? canExportLiabilities : canExportReconciliation,
+      allowed: (record.exportKind === "liabilities" ? canExportLiabilities : canExportReconciliation) && record.operator === OPERATOR(),
       auditHref: "/platform/audit?domain=D",
       retryTitle: "按原操作重试导出",
       retryEffect: "立即生效",
@@ -746,13 +751,17 @@ export function D3Treasury() {
             <>
               <Button size="sm" onClick={refresh}>刷新核对</Button>
               <Button size="sm" disabledReason={item.expiresAt <= Date.now() ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原操作重试</Button>
-              {retryRejected.includes(item.commandKey) && <Button size="sm" onClick={() => setReleasing(item)}>解除待确认</Button>}
+              {item.allowed && retryRejected.includes(item.commandKey) && <Button size="sm" onClick={() => setReleasing(item)}>解除待确认</Button>}
             </>
           )}
         >
           {item.body}{item.expiresAt <= Date.now() ? `${RETRY_EXPIRED}。` : item.hint}
           {reach(item.auditHref, "platform_a2_read") && <> <Link className="rd-link" href={item.auditHref}>到操作记录与审批核对</Link></>}
-          <Explain label="技术信息" content={`命令号 ${item.commandKey}`} />
+          <Fold inset title="原操作技术信息" summary="命令号、完整内容和提交时间">
+            <p className="rd-note d3-raw" data-mono>命令号 {item.commandKey}</p>
+            <pre className="rd-note d3-raw">{JSON.stringify(item.record, null, 2)}</pre>
+            <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(JSON.stringify(item.record, null, 2)).then(() => toast("已复制原操作记录", "success"), () => toast("复制失败，请手动选择原操作记录", "error"))}>复制原操作记录</Button>
+          </Fold>
           {pendingNotes[item.commandKey] && <div><KeepText text={pendingNotes[item.commandKey]} /></div>}
         </Notice>
       ))}

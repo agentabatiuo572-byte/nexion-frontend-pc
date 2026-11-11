@@ -6,7 +6,6 @@ const READ_AUTHORITY_BY_PATH = {
   "/growth/phase": "growth_h1_read",
   "/platform/events": "platform_a4_read",
   "/overview/funnel": "overview_b3_read",
-  "/overview/liquidity": ["overview_b2_read", "finance_d3_read"],
   "/finance/withdrawals": "finance_d2_read",
   "/risk/multi-account": "risk_k1_read",
   "/risk/abuse": "risk_k2_read",

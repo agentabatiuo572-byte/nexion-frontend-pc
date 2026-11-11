@@ -194,6 +194,7 @@ export default function DualLedgerPage() {
     valSmall?: string;
     valColor: string;
     href: string;
+    read?: string;
     arrow: string;
     deltaText: string;
     deltaColor: string;
@@ -205,7 +206,7 @@ export default function DualLedgerPage() {
       deltaColor: reserveChg < 0 ? "var(--negative)" : "var(--success)", ext: "较上一时段",
     },
     {
-      label: "24 小时资金净流入", value: `${netFlow24hUsd >= 0 ? "+" : "−"}${fmtUsdCompact(Math.abs(netFlow24hUsd))}`, valColor: netFlow24hUsd >= 0 ? "var(--success)" : "var(--negative)", href: "/overview/liquidity",
+      label: "24 小时资金净流入", value: `${netFlow24hUsd >= 0 ? "+" : "−"}${fmtUsdCompact(Math.abs(netFlow24hUsd))}`, valColor: netFlow24hUsd >= 0 ? "var(--success)" : "var(--negative)", href: "/finance/pool?tab=flow", read: "overview_b2_read",
       arrow: netFlow24hUsd >= 0 ? "↗" : "↘", deltaText: `${netFlow24hUsd >= 0 ? "流入" : "流出"} ${outflowChg >= 0 ? "+" : ""}${outflowChg}%`, deltaColor: netFlow24hUsd >= 0 ? "var(--success)" : "var(--warning)", ext: "较上一时段",
     },
     {
@@ -553,7 +554,7 @@ export default function DualLedgerPage() {
                   </div>
                 </div>
               </>;
-              return reach(c.href) ? <Link key={c.label} href={c.href} prefetch={false} className="rt">{card}</Link> : <div key={c.label} className="rt">{card}</div>;
+              return reach(c.href, c.read) ? <Link key={c.label} href={c.href} prefetch={false} className="rt">{card}</Link> : <div key={c.label} className="rt">{card}</div>;
             })}
           </div>
 
@@ -640,7 +641,7 @@ export default function DualLedgerPage() {
           <span className="sub">按类型</span>
           <div className="r">
             <span className="liab-total">{valuationReliable ? fmtUsd(liabilitiesUsd) : TREASURY_VALUATION_UNAVAILABLE}</span>
-            <span className="b1-tag">{liabRows.length} 类应付款 · 明细见「可用资金与应付款」</span>
+            <span className="b1-tag">{liabRows.length} 类应付款 · 明细见「资金储备与应付款」的应付款与到期</span>
           </div>
         </div>
 

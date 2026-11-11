@@ -24,7 +24,9 @@ import { E1Editor, type E1EditRequest } from "./e1-editor";
 import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1Number, e1Decimal, e1TargetPrecision, e1Object, e1SkuDiff, e1Value, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
 
 type Confirmation = McSpec & { sku?: OpsSku; beforeSku?: OpsSku; form?: SkuForm; gates?: E1GenerationGateData | null; discount?: E1BundleDiscount | null; early?: Record<string, string> };
+type E1Receipt = ProposeSpec & { id: string; commandKey: string; object: string; status: string; reading?: boolean; readError?: string };
 const APPROVAL = "由另一位有批准及商品业务权限的管理员批准。批准前目录不变。";
+const RECEIPT_STATUS: Record<string, string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
 
 function e1Error(error: unknown) {
   if (isA2OutcomeUncertainError(error)) return "提交结果未确认。原对象、内容、理由和命令号已保留，请在本页按原操作重试或读回核对。";
@@ -54,8 +56,9 @@ export function E1Page() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [readAt, setReadAt] = useState("");
-  const [receipts, setReceipts] = useState<(ProposeSpec & { id: string; object: string; status: string })[]>([]);
-  const [receiptDetail, setReceiptDetail] = useState<(typeof receipts)[number] | null>(null);
+  const [receipts, setReceipts] = useState<E1Receipt[]>([]);
+  const [receiptDetailId, setReceiptDetailId] = useState<string | null>(null);
+  const receiptDetail = receipts.find(row => row.id === receiptDetailId);
   const receipt = receipts.at(-1);
   const [businessValues, setBusinessValues] = useState<Record<string, string>>({});
   const [mediaSending, setMediaSending] = useState("");
@@ -112,8 +115,27 @@ export function E1Page() {
   }, [canReadE3]);
   useEffect(() => { if (canRead) { void refresh(); void refreshEarly(); } }, [canRead, refresh, refreshEarly]);
   const earlyReady = !earlyLoading && !earlyError && ["开", "关"].includes(early["E.release.earlyAccess.enabled"]) && ["7", "14", "30", "60", "90"].includes(early["E.release.earlyAccess.leadDays"]);
-  const readBlock = loading || error ? "商品目录读取成功前不能提交修改" : gatesLoading || gatesError || !gates ? "开放阶段读取成功前不能提交修改" : discountLoading || discountError || !discount ? "组合购折扣读取成功前不能提交修改" : !earlyReady ? "抢先购关联设置读取成功前不能提交修改" : undefined;
+  const readBlock = loading || error ? "商品目录读取成功前不能提交修改" : gatesLoading || gatesError || !gates ? "开放阶段读取成功前不能提交修改" : discountLoading || discountError || !discount ? "组合购折扣读取成功前不能提交修改" : undefined;
   const writesReady = canWrite && !readBlock;
+  const refreshReceipt = async (receipt: E1Receipt) => {
+    setReceipts(rows => rows.map(row => row.id === receipt.id ? { ...row, reading: true, readError: undefined } : row));
+    try {
+      if (!canQuery) throw new Error("当前账号不能读取审批状态，请保留审批单号核对");
+      const result = await fetchA2ProposalByKey(receipt.commandKey, true);
+      if (!result || result.id !== receipt.id) throw new Error("没有读到原审批单，不能解除对象锁，请重试或到操作记录与审批核对");
+      setReceipts(rows => rows.map(row => row.id === receipt.id ? { ...row, status: result.status } : row));
+    } catch (failure) {
+      setReceipts(rows => rows.map(row => row.id === receipt.id ? { ...row, readError: displayAdminReadError(failure) } : row));
+    } finally {
+      setReceipts(rows => rows.map(row => row.id === receipt.id ? { ...row, reading: false } : row));
+    }
+  };
+  const openReceipt = (id: string) => {
+    const receipt = receipts.find(row => row.id === id);
+    if (!receipt) return;
+    setReceiptDetailId(id);
+    void refreshReceipt(receipt);
+  };
   const locked = (type: string, id: string) => pending.some(r => e1Object(r.spec) === `${type}|${id}`)
     || legacy.some(r => e1LegacyObject(r) === `${type}|${id}`)
     || receipts.some(r => r.status === "pending" && r.object === `${type}|${id}`);
@@ -124,7 +146,7 @@ export function E1Page() {
     setEdit({ sku: skuId ? skus.find(s => s.id === skuId) : undefined, unlock, nonce: Date.now() });
   };
   const openConfirm = (input: McSpec) => {
-    if (!writesReady) return;
+    if (!writesReady || input.op === "early-access" && !earlyReady) return;
     setConflict(false); setConflictLatest(null); setAttemptKey("");
     setBusinessValues(input.businessForm?.kind === "multi-field" ? Object.fromEntries(input.businessForm.fields.map(f => [f.key, f.current ?? ""])) : {});
     setConfirmation({ ...input, sku: skus.find(s => s.id === input.target), gates, discount, early: { ...early } });
@@ -144,7 +166,7 @@ export function E1Page() {
         command: spec.command, target: spec.target, targets: spec.targets,
       }, record.commandKey, true);
       forgetE1(record); toast(`已提交，等待审批后执行 · 审批单 ${result.id}`);
-      setReceipts(rows => [...rows.filter(row => row.object !== e1Object(spec)), { ...spec, id: result.id, object: e1Object(spec), status: result.status }]);
+      setReceipts(rows => [...rows.filter(row => row.object !== e1Object(spec)), { ...spec, id: result.id, commandKey: record.commandKey, object: e1Object(spec), status: result.status }]);
       setConfirmation(null); if (record.spec.command.op === "e1_sku_create" || record.spec.command.op === "e1_sku_update") setEdit(null);
       const latest = await refresh();
       if (!latest) toast("申请已提交，部分目录或关联设置未读取完整");
@@ -180,7 +202,7 @@ export function E1Page() {
       const full = e1Pending(actor).find(r => r.commandKey === record.commandKey);
       if (full) {
         const spec = full.spec;
-        setReceipts(rows => [...rows.filter(receipt => receipt.object !== e1Object(spec)), { ...spec, id: row.id, object: e1Object(spec), status: row.status }]);
+        setReceipts(rows => [...rows.filter(receipt => receipt.object !== e1Object(spec)), { ...spec, id: row.id, commandKey: record.commandKey, object: e1Object(spec), status: row.status }]);
         forgetE1(full); syncPending();
       }
     } catch (failure) { setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) })); }
@@ -264,14 +286,16 @@ export function E1Page() {
     pE: k => early[k] ?? "—", earlyReady, earlyLoading, earlyError, refreshEarly: () => void refreshEarly(),
     gatesLoading, gatesError, discountLoading, discountError, refreshGates: () => void refreshGates(), refreshDiscount: () => void refreshDiscount(), writeBlockedReason: readBlock,
     pendingProposal: id => receipts.find(row => row.status === "pending" && ["device_sku", "device_generation_gate"].some(type => row.object === `${type}|${id}`)),
-    openPending: id => setReceiptDetail(receipts.find(row => row.id === id) ?? null),
+    openPending: openReceipt,
+    readPending: id => { receipts.filter(row => row.status === "pending" && ["device_sku", "device_generation_gate"].some(type => row.object === `${type}|${id}`)).forEach(row => { void refreshReceipt(row); }); },
     forceUnlock, forceLock, locked, openSku, openActionConfirm: openConfirm, toast,
     delSku: (id, name) => openConfirm({ briefKind: "config", name: `删除商品 · ${name}`, op: "sku-delete", target: id, detail: "从商城移除后用户无法再购买，已售设备和原订单不受影响。", businessForm: { kind: "destructive-reason", target: name, impact: "从商城移除，用户无法再购买；已售设备和原订单不受影响。" } }),
   };
   return <RdPage className="e1-page">
-    <PageHeader pageId="E1" title="商品管理与上架条件" meta={!canRead ? "未读取目录" : error ? "目录读取失败" : readAt ? `${readAt} 读取 · 手动刷新` : "正在读取目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<><Button icon={<RefreshCw size={14} />} disabled={loading} onClick={() => { void refresh(); void refreshEarly(); }}>刷新</Button>{canWrite && <Button variant="primary" disabledReason={!writesReady ? "请先读取完整目录" : edit ? "请先完成当前商品草稿" : undefined} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
+    <PageHeader pageId="E1" title="商品管理与上架条件" meta={!canRead ? "未读取目录" : error ? "目录读取失败" : readAt ? `${readAt} 读取 · 手动刷新` : "正在读取目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<><Button icon={<RefreshCw size={14} />} disabled={loading} onClick={() => { void refresh(); void refreshEarly(); receipts.filter(row => row.status === "pending").forEach(row => { void refreshReceipt(row); }); }}>刷新</Button>{canWrite && <Button variant="primary" disabledReason={!writesReady ? "请先读取完整目录" : edit ? "请先完成当前商品草稿" : undefined} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
     {!canRead ? <BlockState state="denied" title="没有商品目录读取权限" /> : <>
       {receipt && error && <Notice tone="warn" title="申请已提交，目录暂时读不到"><p>{receipt.obj} · 审批单 {receipt.id}</p></Notice>}
+      {receipts.filter(row => row.status === "pending").map(row => <Notice key={row.id} tone="warn" title={`${row.obj} · 变更待审批`} action={<Button disabled={row.reading} onClick={() => openReceipt(row.id)}>{row.readError ? "重试读取审批状态" : "查看审批状态"}</Button>}><p>审批单 {row.id} · {row.reading ? "正在核对审批状态…" : "审批结束前暂停此对象的新修改。"}</p>{row.readError && <p role="status">{row.readError}；对象锁保留。</p>}</Notice>)}
       {pending.filter(record => record.commandKey !== busy).map(record => <Notice key={record.commandKey} tone="warn" title="结果未确认" actionBelow action={<>
         <Button disabledReason={!canWrite ? "当前账号不能重试" : busy ? "正在提交原操作" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : undefined} onClick={() => { void send(record, true).catch(failure => toast(e1Error(failure))); }}>按原操作重试</Button>
         {canQuery && <Button disabled={!!busy} onClick={() => void check(record)}>读回核对</Button>}
@@ -290,9 +314,9 @@ export function E1Page() {
     </>}
     <E1Editor request={edit} gates={gates} writable={writesReady} writeBlockedReason={readBlock} currentSku={edit?.sku ? skus.find(s => s.id === edit.sku!.id) : undefined} onClose={() => setEdit(null)} busy={!!busy} toast={toast} onMediaChange={key => { setMediaSending(key ?? ""); syncPending(); }} onReview={(sku, beforeSku, form) => { setConflict(false); setConflictLatest(null); setAttemptKey(""); setConfirmation({ briefKind: "config", name: `${beforeSku ? "编辑" : "新增"}商品 · ${sku.name}`, op: "sku-save", sku, beforeSku, form, gates, isNew: !beforeSku }); }} />
     {mc && <OperationConfirmModal action={mc.name} title={mc.title ?? mc.name.split(" · ")[0]} briefKind={mc.briefKind} detail={mc.detail ?? "核对完整变更，批准后生效。"} edit={mc.edit} businessForm={mc.businessForm?.kind === "multi-field" ? { ...mc.businessForm, onFieldChange: (key, next) => { const value = mc.businessForm?.kind === "multi-field" && mc.businessForm.onFieldChange ? mc.businessForm.onFieldChange(key, next) : next; setBusinessValues(value); return value; } } : mc.businessForm}
-      amplifies={!!mc.amplify} reasonMin={8} reasonMax={200} completionCopy={mc.detail ?? APPROVAL} confirmLabel="提交审批" confirmTone={["sku-delete", "phase-archive", "generation-gate-archive"].includes(mc.op) ? "danger" : "primary"}
+      amplifies={!!mc.amplify} reasonMin={8} reasonMax={200} completionCopy={APPROVAL} confirmLabel="提交审批" confirmTone={["sku-delete", "phase-archive", "generation-gate-archive"].includes(mc.op) ? "danger" : "primary"}
       effect={<StatusTag tone="progress" filled explain={APPROVAL}>批准后生效</StatusTag>}
-      statedBrief={{ impact: mc.detail ?? "商品变更经另一位有权限的管理员批准后执行。", check: "核对对象、完整前后值及操作理由。" }}
+      statedBrief={{ impact: mc.detail ?? (mc.isNew ? "批准后创建商品草稿；上架仍须满足购买与开放条件。" : "批准后保存本次商品资料、购买条件和任务配置；售价供之后购买读取，已冻结任务不重算。"), check: "核对对象、完整前后值及操作理由。" }}
       facts={mc.sku ? <Facts><Fact k="售价" lead unit="USD">{e1Decimal(mc.sku.price)}</Fact><Fact k="商品">{mc.sku.name}</Fact><Fact k="任务等级">{mc.sku.allowedPoolCodes?.join("、") || "未配置"}</Fact><Fact k="月收益目标">{mc.sku.monthlyTargetUsdt == null ? "未设月收益目标" : `${e1Decimal(mc.sku.monthlyTargetUsdt, e1TargetPrecision(mc.sku))} USDT/月 · ±${e1Number(mc.sku.monthlyTargetBandPct)} %`}</Fact><Fact k="托管机房">{mc.sku.datacenter || "— · 未填写"}</Fact>{mc.op === "sku-status" && <><Fact k="状态"><Change from={e1Value(mc.sku.status)} to={e1Value(mc.status)} /></Fact><Fact k="库存">{mc.sku.inventoryMode === "UNLIMITED" ? "不限（非实物）" : e1Number(mc.sku.stock)}</Fact></>}{mc.op === "sku-delete" && <Fact k="当前状态">{e1Value(mc.sku.status)}</Fact>}</Facts> : mc.facts}
       content={skuDiff ? !mc.beforeSku || skuDiff.filter(row => row.before !== row.after).length > 4
         ? <Fold inset title="完整商品变更" summary="展开核对所有字段的前后值"><DiffList rows={skuDiff} /></Fold>
@@ -307,9 +331,9 @@ export function E1Page() {
             setConflict(false); setConflictLatest(null); setAttemptKey("");
           }}>已核对，保留输入并采用此修订</Button>
         </Notice>}
-      </> : !writesReady ? "当前不能提交，请先核对权限和读取状态" : undefined}
+      </> : !writesReady ? "当前不能提交，请先核对权限和读取状态" : mc.op === "early-access" && !earlyReady ? "当前设置未读取，请先重新读取抢先购设置" : undefined}
       onClose={() => setConfirmation(null)} onConfirm={confirm} />}
-    {receiptDetail && <Drawer open title="商品变更待审批" sub={receiptDetail.obj} onClose={() => setReceiptDetail(null)} footer={<><Button onClick={() => setReceiptDetail(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">待审批</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptDetail.after}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts><p>{APPROVAL}</p></Drawer>}
+    {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在读取…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptDetail.after}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? APPROVAL : "审批已结束，此回执不再锁定对象；请按当前目录重新核对后编辑。"}</p></Drawer>}
     {release && <ReleaseModal label={`${release.spec.obj} · ${release.spec.action}`} onCancel={() => setRelease(null)} onConfirm={() => { forgetE1(release); syncPending(); setRelease(null); }} />}
     {toastNode}
   </RdPage>;
