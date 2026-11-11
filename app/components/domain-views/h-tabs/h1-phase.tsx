@@ -519,7 +519,7 @@ export default function H1Phase({ ctx,
             step: 1,
             pattern: "^\\d+$",
             patternMessage: "请填 0–100 的整数",
-            help: "0–100 的整数；人工记录，不自动推进月份。"
+            help: "0–100 整数，不自动推进月份。"
           },
         ]
       },
@@ -575,7 +575,12 @@ export default function H1Phase({ ctx,
         <Fact k="月份">第 {row.month} 月{row.month === rhythm?.currentMonth ? "（当前月）" : "（其他月份）"}</Fact>
         <Fact k="生效方式">{value && amplifies(dial.key,
           before,
-          value) ? "批准后写入；当前值在批准前保持不变。" : "收紧直接写入；放大提交审批。"}{row.month !== rhythm?.currentMonth ? "本月配置在切换到该月时取用。" : "写入后供当前规则取用。"}</Fact>
+          value) ? <>
+            批准后写入；当前值在批准前保持不变。
+            {row.month !== rhythm?.currentMonth ? "本月配置在切换到该月时取用。" : "写入后供当前规则取用。"}
+          </> : row.month !== rhythm?.currentMonth
+            ? "收紧直接保存；放大先审批，切换该月后取用。"
+            : "收紧直接保存；放大先审批，供当前规则取用。"}</Fact>
         {value && amplifies(dial.key,
           before,
           value) && <Fact k="谁能批准">{APPROVER}</Fact>}</Facts>,
@@ -666,7 +671,7 @@ export default function H1Phase({ ctx,
         check: "当前后端不执行排程、锁定阶段或创建覆盖人群。"
       },
       detail: CONTROL_EFFECT,
-      facts: <Facts>{!control.value && <Fact k="当前配置">未配置</Fact>}<Fact k="影响">{CONTROL_EFFECT}</Fact>
+      facts: <Facts>{!control.value && <Fact k="当前配置">未配置</Fact>}<Fact k="影响">批准后仅保存配置，不执行控制。</Fact>
         <Fact k="谁能批准">另一位有 A2 批准权和阶段控制业务权限的管理员；发起人不能自批。</Fact>
       </Facts>,
       approval: { disabledReason: !canPropose ? "没有发起审批的权限" : undefined },
