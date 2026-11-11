@@ -38,7 +38,7 @@ const EFFECTS: Record<E5Intent, string> = {
   resume: "将恢复该用户的设备派单；停跑期间收益不补发。",
   "force-activate": "强制激活也不能绕过每人 6 台上限。批准前设备状态不变。",
   unbind: "设备将不再属于原用户，不退款，购入时间不变。",
-  legacy: "仅取消这条未确认旧任务，不产生USDT/UVT收益。原请求、journal和恢复预算保留，不授予重放。",
+  legacy: "仅取消这条未确认旧任务，不产生USDT/UVT收益。原请求、任务执行记录和恢复预算保留，不授予重放。",
 };
 interface ActionsState {
   records: E5Command[];
@@ -145,8 +145,7 @@ export function E5PendingMark({ device }: { device: E5Device }) {
 }
 
 export function E5Slots({ device: d, phones = false }: { device: E5Device; phones?: boolean }) {
-  return <div className="e5-slots" data-phones={phones ? "" : undefined} data-full={d.activeDevicesForUser >= d.maxDevicesPerUser ? "" : undefined}><RatioBar label="激活名额（含手机）" value={d.activeDevicesForUser} tone={phones ? d.activeDevicesForUser >= d.maxDevicesPerUser ? "warn" : "role-2" : "neutral"} total={d.maxDevicesPerUser} valueText={`${d.activeDevicesForUser}/${d.maxDevicesPerUser} 台（含手机）`} steps quiet invalidText="已超过上限，不能激活" />
-    <span>{d.activeDevicesForUser}/{d.maxDevicesPerUser} 台（含手机）</span></div>;
+  return <div className="e5-slots" data-phones={phones ? "" : undefined} data-full={d.activeDevicesForUser >= d.maxDevicesPerUser ? "" : undefined}><RatioBar label="激活名额（含手机）" value={d.activeDevicesForUser} tone={phones ? d.activeDevicesForUser >= d.maxDevicesPerUser ? "warn" : "role-2" : "neutral"} total={d.maxDevicesPerUser} valueText={`${d.activeDevicesForUser}/${d.maxDevicesPerUser} 台（含手机）`} steps invalidText="已超过上限，不能激活" /></div>;
 }
 
 /** E5 rows, detail footer and E6 phone mode all use these same state/authority/command checks. */
