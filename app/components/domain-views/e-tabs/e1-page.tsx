@@ -177,7 +177,11 @@ export function E1Page() {
       setNotes(n => ({ ...n, [record.commandKey]: `原审批单 ${row.id} · ${{ pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[row.status] ?? "状态待核实"}` }));
       toast(`已找到原审批单 ${row.id}，原操作已有回执`);
       const full = e1Pending(actor).find(r => r.commandKey === record.commandKey);
-      if (full) { forgetE1(full); syncPending(); }
+      if (full) {
+        const spec = full.spec;
+        setReceipts(rows => [...rows.filter(receipt => receipt.object !== e1Object(spec)), { ...spec, id: row.id, object: e1Object(spec), status: row.status }]);
+        forgetE1(full); syncPending();
+      }
     } catch (failure) { setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) })); }
   };
 
@@ -279,7 +283,7 @@ export function E1Page() {
         {notes[record.commandKey] && <p role="status">{notes[record.commandKey]}</p>}
         <Fold inset title="原操作与技术信息" summary={`${businessClock(record.createdAt)} · ${record.commandKey}`}><Facts><Fact k="原对象">{record.spec.obj}</Fact><Fact k="原操作">{record.spec.action}</Fact><Fact k="原理由">{record.spec.reason}</Fact><Fact k="命令号">{record.commandKey}</Fact></Facts><p>完整参数、原版本和理由随原操作保存，可复制后逐项核对。</p><div className="e1-table-actions"><Button size="sm" onClick={() => { void navigator.clipboard.writeText(JSON.stringify(record.spec, null, 2)).then(() => toast("已复制完整原操作"), () => toast("复制失败，请保留原命令号核对")); }}>复制完整原操作</Button><Button size="sm" onClick={() => { void navigator.clipboard.writeText(record.commandKey).then(() => toast("已复制命令号"), () => toast("复制失败，请选择命令号")); }}>复制命令号</Button></div></Fold>
       </Notice>)}
-      {legacy.map(record => <Notice key={record.commandKey} tone="warn" title="旧商品操作结果未确认 · 缺完整原请求" action={canQuery && <Button onClick={() => void check(record)}>读回核对</Button>}><p>升级前记录缺少原理由，不能重试或解除；请保留原号，到操作记录与审批核对。</p><Fold inset title="旧记录技术信息" summary={record.commandKey}><pre className="e1-raw">{JSON.stringify(record, null, 2)}</pre></Fold>{notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}</Notice>)}
+      {legacy.map(record => <Notice key={record.commandKey} tone="warn" title="旧商品操作结果未确认 · 缺完整原请求" action={canQuery && <Button onClick={() => void check(record)}>读回核对</Button>}><p><strong>{e1LegacyObject(record).split("|").slice(1).join("|") || "原对象未保留"}</strong></p><p>升级前记录缺少原理由，不能重试或解除；请保留原号，到操作记录与审批核对。</p><Fold inset title="旧记录技术信息" summary={record.commandKey}><Facts><Fact k="原对象">{e1LegacyObject(record).split("|").slice(1).join("|")}</Fact><Fact k="原命令号">{record.commandKey}</Fact><Fact k="原提交时间">{businessClock(record.createdAt)}</Fact></Facts><p>旧记录没有完整原请求和理由，只能核对原操作。</p><Button size="sm" onClick={() => { void navigator.clipboard.writeText(JSON.stringify(record, null, 2)).then(() => toast("已复制完整旧记录"), () => toast("复制失败，请保留原命令号核对")); }}>复制完整旧记录</Button></Fold>{notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}</Notice>)}
       {media.filter(record => record.commandKey !== mediaSending).map(record => <Notice key={record.commandKey} tone="warn" title={`${record.fileName} · 媒体上传结果未确认`} action={<Button onClick={() => openSku(record.skuId || undefined)}>核对媒体上传</Button>}><p>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "原文件摘要和命令号已保留；重新打开商品选择同一文件后可原样重试。"}</p></Notice>)}
       <E1Catalog ctx={ctx} />
     </>}
@@ -291,7 +295,7 @@ export function E1Page() {
       facts={mc.sku ? <Facts><Fact k="售价" lead unit="USD">{e1Decimal(mc.sku.price)}</Fact><Fact k="商品">{mc.sku.name}</Fact><Fact k="任务等级">{mc.sku.allowedPoolCodes?.join("、") || "未配置"}</Fact><Fact k="月收益目标">{mc.sku.monthlyTargetUsdt == null ? "未设月收益目标" : `${e1Decimal(mc.sku.monthlyTargetUsdt, e1TargetPrecision(mc.sku))} USDT/月 · ±${e1Number(mc.sku.monthlyTargetBandPct)} %`}</Fact><Fact k="托管机房">{mc.sku.datacenter || "— · 未填写"}</Fact>{mc.op === "sku-status" && <><Fact k="状态"><Change from={e1Value(mc.sku.status)} to={e1Value(mc.status)} /></Fact><Fact k="库存">{mc.sku.inventoryMode === "UNLIMITED" ? "不限（非实物）" : e1Number(mc.sku.stock)}</Fact></>}{mc.op === "sku-delete" && <Fact k="当前状态">{e1Value(mc.sku.status)}</Fact>}</Facts> : mc.facts}
       content={skuDiff ? !mc.beforeSku || skuDiff.filter(row => row.before !== row.after).length > 4
         ? <Fold inset title="完整商品变更" summary="展开核对所有字段的前后值"><DiffList rows={skuDiff} /></Fold>
-        : <DiffList rows={skuDiff} /> : <>{mc.businessForm?.kind === "multi-field" && ["bundle-discount", "early-access", "generation-gate-save", "phase-save"].includes(mc.op) && <Facts>{mc.businessForm.fields.map(f => <Fact key={f.key} k={f.label}><Change from={f.optionLabels?.[f.current ?? ""] ?? (f.current || "未设置")} to={(f.optionLabels?.[businessValues[f.key] ?? f.current ?? ""] ?? (businessValues[f.key] ?? f.current)) || "未填写"} /></Fact>)}</Facts>}{mc.content}</>}
+        : <DiffList rows={skuDiff} /> : <>{mc.businessForm?.kind === "multi-field" && (mc.op === "bundle-discount" || mc.op === "early-access" || mc.op === "generation-gate-save" && !!mc.generationGateId || mc.op === "phase-save" && !!mc.phaseId) && <Facts>{mc.businessForm.fields.map(f => <Fact key={f.key} k={f.label}><Change from={f.optionLabels?.[f.current ?? ""] ?? (f.current || "未设置")} to={(f.optionLabels?.[businessValues[f.key] ?? f.current ?? ""] ?? (businessValues[f.key] ?? f.current)) || "未填写"} /></Fact>)}</Facts>}{mc.content}</>}
       blockedReason={currentPending && currentPending.commandKey !== busy ? "提交结果未确认，原操作已保留，请在本页按原操作重试或读回核对" : conflict ? <>
         <ConflictBar message="商品或配置版本已变化，本地输入保留；读取最新后请重新核对。" onRead={async () => { const snapshot = await refresh(); if (!snapshot) throw new Error("目录暂时读不到"); setConflictLatest(snapshot); }} />
         {conflictLatest && <Notice tone="warn" title="请核对最新值，再决定是否沿用本地输入">
