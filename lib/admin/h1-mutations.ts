@@ -1,5 +1,6 @@
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { isExplicitRejection } from "./explicit-rejection";
+import { displayAdminError } from "./error-messages";
 import { sendH1StoredPatch, type H1Phases } from "./h-client";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
 
@@ -24,6 +25,7 @@ export type H1Pending = PendingMutationRecord & {
   requests: H1Request[];
   state: "unknown" | "rejected" | "approval";
   retryRejected?: boolean;
+  rejectionReason?: string;
   ticket?: { id: string; status: A2OperationRow["status"] };
 };
 
@@ -33,6 +35,7 @@ export const h1Pending = createPendingMutationStore<H1Pending>({
   isValidRecord: (row) => Number.isSafeInteger(row.actorId) && row.actorId > 0
     && [row.scope, row.label, row.before, row.after, row.reason, row.operator].every((value) => typeof value === "string" && value.length > 0)
     && ["unknown", "rejected", "approval"].includes(row.state)
+    && (row.rejectionReason === undefined || typeof row.rejectionReason === "string")
     && Array.isArray(row.requests) && row.requests.length > 0 && row.requests.every((request) =>
       ["patch", "proposal"].includes(request.kind) && typeof request.path === "string"
       && typeof request.body === "string" && typeof request.commandKey === "string" && typeof request.acknowledged === "boolean"),
@@ -81,16 +84,15 @@ export async function executeH1(row: H1Pending, onReceipt: (receipt: Partial<H1P
     } catch (error) {
       const explicit = isExplicitRejection(error);
       if (!retry && explicit && !current.requests.some((item) => item.acknowledged)) h1Pending.forget(current.fingerprint, current.commandKey);
-      else rememberH1({ ...current, state: explicit ? "rejected" : "unknown", retryRejected: retry && explicit });
+      else rememberH1({ ...current, state: explicit ? "rejected" : "unknown", retryRejected: retry && explicit,
+        rejectionReason: explicit ? displayAdminError(error) : undefined });
       if (request.kind === "proposal" && isA2OutcomeUncertainError(error)) {
         error.message = "申请提交结果待核对，可能已生成审批单；批准前参数不变。原内容与理由已保留，请查询原操作。";
       }
       if (error instanceof Error && request.kind === "patch") {
-        if (error.message.startsWith("H1_RESPONSE_INVALID:")) {
-          error.message = "写入回执不完整，结果待核对；原内容与理由已保留，请先读回核对。";
-        }
+        if (!explicit) error.message = `${request.label}结果待核对。原内容与理由已保留，请先读回核对，再使用「重试原操作」继续。`;
         const saved = current.requests.filter((item) => item.acknowledged).map((item) => `${item.label}已保存`).join("，");
-        if (saved) error.message = `${saved}；${request.label}${explicit ? "未保存" : "结果待核对"}。${error.message}`;
+        if (saved) error.message = explicit ? `${saved}；${request.label}未保存。${error.message}` : `${saved}；${error.message}`;
       }
       throw error;
     }

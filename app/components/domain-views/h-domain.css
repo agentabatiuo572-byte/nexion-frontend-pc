@@ -144,8 +144,8 @@
 .h1-arrangement { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start; margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--rd-line); }
 .h1-month, .h1-progress { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; min-width: 0; }
 .h1-value-label { display: inline-flex; align-items: center; gap: 6px; color: var(--rd-text-3); }
-.h1-month strong, .h1-progress strong { font: inherit; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--rd-text); }
-.h1-month small, .h1-progress small { font: inherit; font-weight: 400; color: var(--rd-text-3); }
+.h1-month strong, .h1-progress strong { font-size: var(--rd-text-key); line-height: var(--rd-lh-key); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--rd-text); }
+.h1-month small, .h1-progress small { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 400; color: var(--rd-text-3); }
 .h1-arrangement-actions { display: flex; gap: 8px; }
 .h1-progress { padding-left: 32px; border-left: 1px solid var(--rd-line); }
 .h1-progress .rd-scale { width: 100%; }
@@ -153,28 +153,49 @@
 .h1-access-note { color: var(--rd-text-3); }
 .h1-matrix { table-layout: fixed; width: 100%; min-width: 0; }
 .h1-col-month { width: 10%; }
-.h1-col-newUserBonusMultiplier, .h1-col-inviteRewardMultiplier, .h1-col-questBonusMultiplier { width: 10.5%; }
-.h1-col-reinvestMultiplier, .h1-col-withdrawCooldownDays { width: 12%; }
-.h1-col-binaryDailyCap { width: 22%; }
-.h1-col-complianceHoldEnabled { width: 12.5%; }
+.h1-col-newUserBonusMultiplier, .h1-col-inviteRewardMultiplier, .h1-col-questBonusMultiplier { width: 11.5%; }
+.h1-col-reinvestMultiplier, .h1-col-withdrawCooldownDays { width: 14%; }
+.h1-col-binaryDailyCap { width: 190px; }
 .h1-matrix th, .h1-matrix td { padding-left: 10px; padding-right: 10px; }
 .h1-matrix th .rd-th-inner { white-space: normal; }
+.h1-matrix th .rd-th-inner > span { white-space: nowrap; }
+.h1-section .rd-panel[data-flush] > .rd-table-scroll .h1-matrix :is(th, td):first-child { padding-left: 12px; }
+.h1-section .rd-panel[data-flush] > .rd-table-scroll .h1-matrix :is(th, td):last-child { padding-right: 12px; }
 .h1-matrix th small { display: block; margin-top: 4px; color: var(--rd-text-3); font: inherit; font-weight: 400; }
 .h1-month-cell { display: flex; flex-direction: column; gap: 4px; white-space: nowrap; }
 .h1-month-cell b { font-weight: 500; }
-.h1-month-cell small { color: var(--rd-text-3); font: inherit; }
+.h1-month-cell small { display: flex; align-items: center; gap: 4px; color: var(--rd-text-3); font: inherit; }
+.h1-current-label { padding: 0 4px; border-radius: var(--rd-radius-control); color: var(--rd-progress); background: var(--rd-progress-bg); font-size: var(--rd-text-aux); }
 .h1-dial-cell { display: inline-flex; align-items: center; justify-content: flex-end; gap: 3px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .h1-value-button { padding-left: 2px; padding-right: 2px; min-width: 0; font-variant-numeric: tabular-nums; }
 .h1-dial-change { color: var(--rd-text-3); }
-.h1-attribution { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; }
-.h1-attribution-item { min-width: 0; }
+.h1-attribution { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.h1-attribution-item { min-width: 0; padding: 20px; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); scroll-margin-top: 20px; }
 .h1-attribution-item h3 { display: flex; gap: 8px; align-items: center; margin: 0 0 16px; font: inherit; font-weight: 600; }
-.h1-attribution-item[data-hit] { border-left: 2px solid var(--rd-progress); padding-left: 12px; }
+.h1-attribution-item[data-hit] { border-color: var(--rd-progress); }
+.h1-attribution-item > .rd-notice { margin-bottom: 20px; }
+.h1-attribution-item .rd-fact { grid-template-columns: 88px 1fr; }
+.h1-unit { font-size: var(--rd-text-body); color: var(--rd-text-3); font-weight: 400; }
+.h1-release-facts { display: grid; gap: 12px; }
+.h1-pending-feedback { margin-bottom: 16px; }
+.h1-command-line { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.h1-command { white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* H1 owns the pending notice above its facts; replace the generic modal error. */
+.rd-modal:has(.h1-confirm-facts[data-pending]) .rd-confirm-alert { display: none; }
+.rd-modal:has(.h1-confirm-facts) .field :is(input, textarea):disabled { background: var(--rd-disabled-bg); color: var(--rd-text-disabled); cursor: not-allowed; }
+.h1-confirm .alertbar + p:empty { display: none; }
+body:has(.h1-confirm-facts) .rd-tip { text-wrap: pretty; }
 .h1-request-list { display: grid; gap: 24px; }
 .h1-request-list pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 @media (max-width: 1100px) {
   .h1-arrangement { gap: 20px; }
   .h1-progress { padding-left: 20px; }
   .h1-matrix th, .h1-matrix td { padding-left: 6px; padding-right: 6px; }
-  .h1-attribution { grid-template-columns: 1fr; }
+  .h1-col-month { width: 11.2%; }
+  .h1-col-newUserBonusMultiplier { width: 10.7%; }
+  .h1-col-inviteRewardMultiplier, .h1-col-questBonusMultiplier { width: 9.6%; }
+  .h1-col-reinvestMultiplier, .h1-col-withdrawCooldownDays { width: 12.8%; }
+  .h1-col-binaryDailyCap { width: 19.4%; }
+  .h1-col-complianceHoldEnabled { width: 13.9%; }
+  .h1-attribution-item { padding: 16px; }
 }

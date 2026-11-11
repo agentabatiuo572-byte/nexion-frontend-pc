@@ -16,6 +16,8 @@ import {
   Flag,
   GitBranch,
   ListChecks,
+  LockKeyhole,
+  MapPin,
   RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
@@ -177,8 +179,8 @@ const CONTROL_NAMES: Record<string,
   override: "单独覆盖策略"
 };
 const LOCKED = "这个对象有待核对或待审批的提交，请先处理原操作";
-const APPROVER = "另一位有 A2 批准权和 H1 业务权的超级管理员批准，发起人不能批准自己的申请。批准前参数不变。";
-const CONTROL_EFFECT = "批准后只保存配置，后端目前不执行自动切换、锁定阶段或创建覆盖人群。";
+const APPROVER = "另一位有 A2 批准权和 H1 业务权的超级管理员；发起人不能自批。";
+const CONTROL_EFFECT = "批准后只保存配置，后端目前不执行自动切换、锁定当前阶段或创建覆盖人群。";
 type Confirm = Omit<ComponentProps<typeof OperationConfirmModal>,
   "onConfirm" | "onClose"> & {
     scope: string; run: (reason: string,
@@ -191,15 +193,20 @@ function text(value: unknown,
   fallback = "—") { return value == null || value === "" ? fallback : String(value); }
 function number(value: string | number | null | undefined) { return value == null || value === "" ? null : Number.isFinite(Number(value)) ? Number(value) : null; }
 function format(value: unknown,
-  places = 2) {
+  places?: number) {
   const raw = text(value);
   if (!/^\d+(?:\.\d+)?$/.test(raw)) return raw;
   const [whole,
     fractional = ""] = raw.split(".");
+  const actual = fractional.replace(/0+$/, "");
+  const width = places ?? Math.max(2, actual.length);
   return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g,
-    ",")}${places ? `.${fractional.replace(/0+$/,
-      "").padEnd(places,
+    ",")}${width ? `.${actual.padEnd(width,
         "0")}` : ""}`;
+}
+function pendingValue(row: H1Pending, value: string) {
+  const dial = DIALS.find((item) => row.scope.startsWith("dial:") && row.scope.endsWith(`:${item.key}`));
+  return dial && dial.unit ? `${format(value, dial.key === "withdrawCooldownDays" ? 0 : undefined)} ${dial.unit}` : value;
 }
 function amplifies(key: string,
   before: string,
@@ -301,6 +308,13 @@ export default function H1Phase({ ctx,
     if (!model || loading || !deepLink) return;
     const target = deepLink.dial === "phaseAttribution" ? "attribution" : DIALS.some((dial) => dial.key === deepLink.dial) ? "monthly" : deepLink.phase ? "attribution" : null;
     if (target) nav.select(target);
+    if (target === "attribution" && deepLink.phase) {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        const card = document.getElementById(`h1-attribution-${deepLink.phase}`);
+        card?.scrollIntoView({ block: "start" });
+        card?.focus({ preventScroll: true });
+      }));
+    }
     // Incoming B4 parameters locate once after the initial read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },
@@ -484,11 +498,6 @@ export default function H1Phase({ ctx,
         check: "两项分别提交，后一步失败不回滚前一步。"
       },
       detail: "先修改月份，再修改本阶段进度；两项分别保存。",
-      facts: <Facts>
-        <Fact k="现在">第 {text(rhythm.currentMonth)} 月，本阶段进度 {text(rhythm.phaseProgressPct)}%</Fact>
-        <Fact k="当前阶段">{phaseLabel}</Fact>
-        <Fact k="保存顺序">月份先保存并同步活跃参数，再保存进度；后一步失败不会回滚前一步。</Fact>
-      </Facts>,
       effect: <StatusTag tone="progress" filled>逐项保存后生效</StatusTag>,
       confirmLabel: "确认校准",
       blockedReason: scopeBlock(scope),
@@ -496,6 +505,10 @@ export default function H1Phase({ ctx,
       businessForm: {
         kind: "multi-field",
         requireAnyChange: true,
+        feedback: (value) => {
+          const invalid = !/^\d+$/.test(value.phaseProgressPct ?? "") || Number(value.phaseProgressPct) > 100;
+          return { field: "phaseProgressPct", invalid, message: invalid ? "本阶段进度须为 0–100 的整数。" : "" };
+        },
         fields: [
           {
             key: "currentMonth",
@@ -517,8 +530,6 @@ export default function H1Phase({ ctx,
             min: 0,
             max: 100,
             step: 1,
-            pattern: "^\\d+$",
-            patternMessage: "请填 0–100 的整数",
             help: "0–100 整数，不自动推进月份。"
           },
         ]
@@ -551,12 +562,13 @@ export default function H1Phase({ ctx,
     if (!canWrite) return;
     const before = text(row.dials[dial.key]);
     const scope = `dial:${row.month}:${dial.key}`;
-    const label = `调整第 ${row.month} 个月 · ${dial.label}`;
+    const label = `调整第 ${row.month} 月 · ${dial.label}`;
     const missingValue = before === "—";
     const approvalBlock = !canPropose ? "没有发起审批的权限，放大调整需要 A2 创建权限" : fundingBlocked ? "放大调整受阻，请核对资金储备与应付款" : undefined;
     const approvalFor = (value: string) => amplifies(dial.key,
       before,
-      value) ? {
+      value) && !h1Pending.list().some((item) => item.scope === scope) ? {
+      heading: "放大 · 提交审批",
       disabledReason: approvalBlock,
       coverageCheckCopy: "批准时后端重新检查兑付覆盖率。"
     } : undefined;
@@ -573,25 +585,24 @@ export default function H1Phase({ ctx,
       confirmLabel: "确认修改",
       facts: (value) => <Facts>
         <Fact k="月份">第 {row.month} 月{row.month === rhythm?.currentMonth ? "（当前月）" : "（其他月份）"}</Fact>
+        {value && !h1DialIssue(dial.key, value) && value !== before && Number(value) !== Number(before) && !amplifies(dial.key, before, value) && <Fact k="修改方向"><StatusTag tone="neutral" icon={LockKeyhole}>收紧 · 确认后直接保存</StatusTag></Fact>}
         <Fact k="生效方式">{value && amplifies(dial.key,
           before,
           value) ? <>
             批准后写入；当前值在批准前保持不变。
             {row.month !== rhythm?.currentMonth ? "本月配置在切换到该月时取用。" : "写入后供当前规则取用。"}
           </> : row.month !== rhythm?.currentMonth
-            ? "收紧直接保存；放大先审批，切换该月后取用。"
-            : "收紧直接保存；放大先审批，供当前规则取用。"}</Fact>
+            ? "保存后，在切换到该月时取用。"
+            : "保存后，供当前规则取用。"}</Fact>
         {value && amplifies(dial.key,
           before,
-          value) && <Fact k="谁能批准">{APPROVER}</Fact>}</Facts>,
-      coverage: ratio != null && redline != null ? {
-        coverageRatio: ratio,
-        redlinePct: redline
-      } : undefined,
+          value) && <><Fact k="谁能批准">{APPROVER}</Fact><Fact k="资金核查">兑付覆盖率 {format(coverage?.coverageRatio)}% · 红线 {format(coverage?.redlinePct, 0)}%；批准时后端重新检查。</Fact></>}</Facts>,
       coverageCheck: "批准时后端重新检查兑付覆盖率。",
       blockedReason: scopeBlock(scope) ?? (unavailable ? "阶段配置不可用，请先核对总体安排" : missingValue ? "当前值缺失，无法比较修改方向，请先读回核对" : undefined),
       getPendingReason: () => h1Pending.list().find((item) => item.scope === scope && item.state !== "approval")?.reason,
       inlineApproval: {
+        fieldLayout: "compact",
+        dialogClassName: "h1-confirm",
         resolve: (_form,
           value) => approvalFor(value),
         recover: async () => {
@@ -607,6 +618,7 @@ export default function H1Phase({ ctx,
       edit: {
         kind: dial.key === "complianceHoldEnabled" ? "select" : "number",
         current: before,
+        optionLabels: dial.unit ? { [before]: <span title={`后端原值 ${before}`}>{format(before, dial.key === "withdrawCooldownDays" ? 0 : undefined)} <small className="h1-unit">{dial.unit}</small></span> } : undefined,
         unit: dial.unit,
         options: ["否",
           "是"],
@@ -621,7 +633,7 @@ export default function H1Phase({ ctx,
         validate: (value) => h1DialIssue(dial.key,
           value),
         hint: dial.key === "complianceHoldEnabled" ? "按原顺序选择否或是" : `${dial.min}–${dial.max.toLocaleString()} ${dial.unit}${dial.key === "withdrawCooldownDays" ? "，整数" : "，最多六位小数"}`,
-        preview: (value) => dial.key === "complianceHoldEnabled" ? value === "是" ? "开启后，三个网络每笔人工审查；本金严格大于 1,000 USDT 才等到账审查窗口。" : "关闭后不再因窗口值强制每笔等待，也不保证每笔自动通过。" : dial.effect
+        preview: (value) => dial.key === "complianceHoldEnabled" ? value === "是" ? "本次收紧：三个网络每笔人工审查；本金严格大于 1,000 USDT 才等到账审查窗口。" : "本次放大：不再因窗口值强制每笔等待，也不保证每笔自动通过。" : `${amplifies(dial.key, before, value) ? "本次放大" : "本次收紧"}：${dial.effect.replace(/^(增加是放大调整；|减少是放大调整。)/, "")}`
       },
       run: async (reason,
         value) => {
@@ -667,15 +679,14 @@ export default function H1Phase({ ctx,
       action: label,
       title: `调整${CONTROL_NAMES[control.key] ?? control.label}`,
       statedBrief: {
-        impact: "批准后只保存当前控制项的配置原文。",
-        check: "当前后端不执行排程、锁定阶段或创建覆盖人群。"
+        impact: CONTROL_EFFECT,
+        check: "核对当前控制项的原文与改后值，理由写明依据。"
       },
       detail: CONTROL_EFFECT,
-      facts: <Facts>{!control.value && <Fact k="当前配置">未配置</Fact>}<Fact k="影响">批准后仅保存配置，不执行控制。</Fact>
-        <Fact k="谁能批准">另一位有 A2 批准权和阶段控制业务权限的管理员；发起人不能自批。</Fact>
-      </Facts>,
+      facts: !control.value ? <Facts><Fact k="当前配置">未配置</Fact></Facts> : undefined,
+      completionCopy: "另一位有 A2 批准权和阶段控制业务权限的管理员；发起人不能自批。",
       approval: { disabledReason: !canPropose ? "没有发起审批的权限" : undefined },
-      effect: <StatusTag tone="progress" filled>批准后保存配置</StatusTag>,
+      effect: <StatusTag tone="progress" filled>提交审批</StatusTag>,
       blockedReason: scopeBlock(scope),
       getPendingReason: () => h1Pending.list().find((row) => row.scope === scope && row.state !== "approval")?.reason,
       edit: {
@@ -690,8 +701,7 @@ export default function H1Phase({ ctx,
           "P6"],
         optionLabels: { "未钉住": "未锁定阶段" },
         disallowCurrent: true,
-        hint: control.key === "pin" ? "未锁定阶段不代表开启自动推进" : "保存非空原文，后端不校验排程或人群表达式",
-        preview: () => CONTROL_EFFECT
+        hint: control.key === "pin" ? "未锁定阶段不代表开启自动推进" : control.key === "schedule" ? "保存非空原文，后端不校验排程表达式" : "保存非空原文，后端不校验人群表达式"
       },
       run: async (reason,
         value) => {
@@ -774,10 +784,10 @@ export default function H1Phase({ ctx,
     }
     finally { setBusy(false); }
   };
+  const confirmPending = confirm ? pending.find((row) => row.scope === confirm.scope && row.state !== "approval") : undefined;
 
   return <>
-    <PageHeader pageId="H1" title="运营阶段设置" summary="安排运营月份和每月生效的参数。" meta={readAt ? `${formatBusinessTimeFull(readAt)} 读取` : undefined}
-      readOnly={!canWrite && !canControl && !canRevoke ? "你只能查看" : undefined}
+    <PageHeader pageId="H1" title="运营阶段设置" summary={`安排运营月份和每月生效的参数。${!canWrite && !canControl && !canRevoke ? "你只能查看。" : ""}`} meta={readAt ? `${formatBusinessTimeFull(readAt)} 读取` : undefined}
       actions={<>{reach("/overview/rhythm", "overview_b4_read") ? <Link className="rd-link" href="/overview/rhythm" prefetch={false}>去运营阶段状态 →</Link> : <span className="h1-access-note">运营阶段状态 · 无访问权限</span>}<Button icon={<RefreshCw size={14} />} loading={loading} onClick={async () => {
         if (await reload()) ctx.toast("已刷新",
           "success");
@@ -799,7 +809,8 @@ export default function H1Phase({ ctx,
       }}>原样重试</Button>}
       {row.retryRejected && row.state === "rejected" && checked === row.commandKey && <Button size="sm" onClick={() => setRelease(row)}>解除待确认</Button>}
     </>}>
-      <b>{row.state === "approval" ? "本次申请待审批" : "本次提交结果待核对"}</b> · {row.label}{row.ticket && ` · 票号 ${row.ticket.id}`}
+      <b>{row.state === "approval" ? "本次申请待审批" : row.state === "rejected" ? "本次提交已被拒绝" : "本次提交结果待核对"}</b> · {row.label}{row.ticket && ` · 票号 ${row.ticket.id}`}
+      {row.state === "rejected" && <p>拒绝原因：{row.rejectionReason ?? "原记录未保存拒绝原因，请读回核对。"}</p>}
       {row.requests.some((item) => item.acknowledged && item.kind === "patch") && <p>{row.requests.filter((item) => item.acknowledged).map((item) => `${item.label}已保存`).join("，")}；{row.requests.filter((item) => !item.acknowledged).map((item) => `${item.label}${row.state === "rejected" && !row.retryRejected ? "未保存" : "未确认"}`).join("，")}。恢复只处理未确认的一步。</p>}
       {row.state !== "approval" && isRetryExpired(row) && <p>{RETRY_EXPIRED_TEXT}；原记录和对象保护继续保留。</p>}
     </Notice>)}
@@ -807,7 +818,7 @@ export default function H1Phase({ ctx,
     {!canRead ? <BlockState state="denied" title="没有运营阶段读取权限" /> : loading && !model ? <BlockState state="loading" title="正在加载运营阶段…" /> : error && !model ? <BlockState state="error" title="运营阶段数据加载失败" detail={error} onRetry={() => void reload()} /> : model && rhythm && <>
       {error && <Notice tone="danger" action={<Button size="sm" onClick={() => void reload()}>重试</Button>}>运营阶段数据加载失败：{error} 下方为上次读取的值，暂停依赖写入。</Notice>}
       <Conclusion state={unavailable ? "warn" : "neutral"} icon={Flag}>{unavailable ? "阶段配置不可用" : `当前 ${phaseLabel}`} · {describeH1Schedule(rhythm.schedule)}</Conclusion>
-      {unavailable && <Notice tone="warn">{unavailable}。请有配置权限的管理员核对；可在总体安排单独补总月数或校准，不写入默认值。</Notice>}
+      {unavailable && <Notice tone="warn">{unavailable}。请联系值班人员核查阶段配置，处理后刷新本页；本页不写入默认值。</Notice>}
       {fundingBlocked && <Notice tone="warn" action={reach("/finance/pool") ? <Link className="rd-link" href="/finance/pool" prefetch={false}>核对资金储备与应付款 →</Link> : undefined}>放大调整受阻，请核对资金储备与应付款。{!coverage?.reliable ? "兑付覆盖率当前不可靠。" : "兑付覆盖率低于红线或读数不可用。"}</Notice>}
       <div className="h1-navigation">
         <SectionNav row label="本页分组" items={SECTIONS} nav={nav} />
@@ -829,7 +840,7 @@ export default function H1Phase({ ctx,
               </span>
               <strong>{progressValid ? rhythm.phaseProgressPct : "—"}<small>{progressValid ? "%" : " · 不可用"}</small>
               </strong>
-              <ScaleBar label="本阶段进度" valueText={progressValid ? `本阶段进度 ${rhythm.phaseProgressPct}%` : "进度不可用"} max={100} value={rhythm.phaseProgressPct} state={progressValid ? "ready" : "empty"} emptyText="请校准进度" fill tone="role-3" ticks={[{
+              <ScaleBar label="本阶段进度" valueText={progressValid ? `本阶段进度 ${rhythm.phaseProgressPct}%` : "进度不可用"} max={100} value={rhythm.phaseProgressPct} state={progressValid ? "ready" : "empty"} emptyText="未提供可用进度" fill tone="role-3" ticks={[{
                 value: 0,
                 text: "0%"
               },
@@ -844,14 +855,9 @@ export default function H1Phase({ ctx,
         </Panel>
       </div>
       <StatBand label="本月摘要">
-        <Stat icon={ShieldCheck} label="兑付覆盖率" value={ratio == null ? "—" : format(coverage?.coverageRatio,
-          Math.max(2,
-            text(coverage?.coverageRatio).split(".")[1]?.replace(/0+$/,
-              "").length ?? 0))} unit={ratio == null ? undefined : "%"} sub={`红线 ${redline == null ? "—" : text(coverage?.redlinePct)}${redline == null ? "" : "%"}`} tone={fundingBlocked ? "warn" : "role-1"} explain="可靠性和红线采用后端事实。未知、非正数或不可靠时不能据此判断资金正常。" />
-        <Stat icon={Users} label="当月邀请加成" value={format(currentRow?.dials.inviteRewardMultiplier,
-          precision.inviteRewardMultiplier)} unit={currentRow?.dials.inviteRewardMultiplier == null ? undefined : "倍"} tone="role-4" />
-        <Stat icon={ListChecks} label="当月任务加成" value={format(currentRow?.dials.questBonusMultiplier,
-          precision.questBonusMultiplier)} unit={currentRow?.dials.questBonusMultiplier == null ? undefined : "倍"} tone="role-4" />
+        <Stat icon={ShieldCheck} label="兑付覆盖率" value={ratio == null ? "—" : format(coverage?.coverageRatio)} unit={ratio == null ? undefined : "%"} sub={`红线 ${redline == null ? "—" : text(coverage?.redlinePct)}${redline == null ? "" : "%"}`} tone={fundingBlocked ? "warn" : undefined} explain="可靠性和红线采用后端事实。未知、非正数或不可靠时不能据此判断资金正常。" />
+        <Stat icon={Users} label="当月邀请加成" value={format(currentRow?.dials.inviteRewardMultiplier)} unit={currentRow?.dials.inviteRewardMultiplier == null ? undefined : "倍"} tone="role-4" />
+        <Stat icon={ListChecks} label="当月任务加成" value={format(currentRow?.dials.questBonusMultiplier)} unit={currentRow?.dials.questBonusMultiplier == null ? undefined : "倍"} tone="role-4" />
         <Stat icon={Clock3} label="当月到账审查窗口" value={format(currentRow?.dials.withdrawCooldownDays,
           0)} unit={currentRow?.dials.withdrawCooldownDays == null ? undefined : "天"} tone="role-3" explain={DIALS[3].effect} />
       </StatBand>
@@ -862,22 +868,22 @@ export default function H1Phase({ ctx,
               <col className="h1-col-month" />{DIALS.map((dial) => <col key={dial.key} className={`h1-col-${dial.key}`} />)}</colgroup>
             <thead>
               <Tr>
-                <Th>月份</Th>{DIALS.map((dial) => <Th key={dial.key} align={dial.unit ? "right" : "left"}>
+                <Th>月份</Th>{DIALS.map((dial) => <Th key={dial.key} align="right">
                   <span>{dial.label}<small>{dial.unit}</small>
                   </span>
                 </Th>)}</Tr>
             </thead>
             <tbody>
               {rows.map((row,
-                index) => <Tr key={row.month}>
+                index) => <Tr key={row.month} mark={row.month === rhythm.currentMonth ? "hit" : undefined} aria-current={row.month === rhythm.currentMonth ? "true" : undefined}>
                   <Td>
                     <span className="h1-month-cell">
                       <b>第 {row.month} 月</b>
-                      <small>{row.phase}{row.month === rhythm.currentMonth ? " · 当前" : ""}</small>
+                      <small>{row.phase}{row.month === rhythm.currentMonth && <b className="h1-current-label">当前</b>}</small>
                     </span>
                   </Td>{DIALS.map((dial) => {
                     const raw = text(row.dials[dial.key]); const changed = index > 0 && row.dials[dial.key] != null && rows[index - 1].dials[dial.key] != null && raw !== text(rows[index - 1].dials[dial.key]) && (dial.key === "complianceHoldEnabled" || Number(raw) !== Number(rows[index - 1].dials[dial.key]));
-                    return <Td key={dial.key} align={dial.unit ? "right" : "left"}>
+                    return <Td key={dial.key} align="right">
                       <span className="h1-dial-cell">{changed && <span className="h1-dial-change" title="较上一月不同" aria-label="较上一月不同">•</span>}{canWrite ? <Button size="sm" variant="ghost" className="h1-value-button" title={`后端原值 ${raw}`} aria-label={`第 ${row.month} 月 ${dial.label}，当前 ${raw}${dial.unit ? ` ${dial.unit}` : ""}，修改`} disabledReason={scopeBlock(`dial:${row.month}:${dial.key}`)} onClick={() => openDial(row,
                         dial)}>{dial.key === "complianceHoldEnabled" ? raw : format(row.dials[dial.key],
                           precision[dial.key])}</Button> : <span title={`后端原值 ${raw}`}>{dial.key === "complianceHoldEnabled" ? raw : format(row.dials[dial.key],
@@ -893,7 +899,7 @@ export default function H1Phase({ ctx,
           ...value,
           controls: open
         }))} explain={CONTROL_EFFECT}>
-          <Notice tone="progress">三个入口只保存配置，后端目前不执行。</Notice>
+          <Notice tone="progress">{canControl ? "三个入口只保存配置，后端目前不执行。" : "当前阶段控制仅保存配置，后端目前不执行。"}</Notice>
           <ConfigList label="阶段控制配置">{model.controls.map((control) => <ConfigRow key={control.key} name={CONTROL_NAMES[control.key] ?? control.label} what={control.key === "schedule" ? "保存的阶段排程原文" : control.key === "pin" ? "保存的阶段锁定配置" : "保存的用户群阶段策略原文"} when="批准后保存配置，当前不执行" note={control.key === "pin" ? "未锁定阶段不表示已开启自动推进" : "保留后端原文，不推断实际生效状态"} value={control.key === "pin" && control.value === "未钉住" ? "未锁定阶段" : text(control.value,
             "未配置")} action={canControl ? <Button size="sm" aria-label={`调整${control.label}`} disabledReason={scopeBlock(`control:${control.key}`)} onClick={() => openControl(control)}>调整</Button> : undefined} />)}</ConfigList>
         </Fold>
@@ -911,8 +917,8 @@ export default function H1Phase({ ctx,
           ...value,
           attribution: open
         }))} explain="静态目录参考值，不是本月实际参数或业务效果统计；详细数据见运营阶段状态和设备、任务与团队报表。">
-          {!model.attribution.length ? <BlockState state="empty" title="未提供阶段参考资料" /> : <div className="h1-attribution">{model.attribution.map((row) => <section key={row.phase} id={`h1-attribution-${row.phase}`} className="h1-attribution-item" data-hit={deepLink?.phase === row.phase ? "" : undefined}>
-            <h3>{row.phase} {row.name}{deepLink?.phase === row.phase && <StatusTag tone="progress">跳转定位</StatusTag>}</h3>{["P5",
+          {!model.attribution.length ? <BlockState state="empty" title="未提供阶段参考资料" /> : <div className="h1-attribution">{model.attribution.map((row) => <section key={row.phase} id={`h1-attribution-${row.phase}`} tabIndex={-1} className="h1-attribution-item" data-hit={deepLink?.phase === row.phase ? "" : undefined}>
+            <h3>{row.phase} {row.name}{deepLink?.phase === row.phase && <StatusTag tone="progress" icon={MapPin}>跳转定位</StatusTag>}</h3>{["P5",
               "P6"].includes(row.phase) && <Notice tone="warn">此资料含已退役参数，不作为当前执行依据。</Notice>}
             <Facts>
               <Fact k="主要驱动">{row.driver.replaceAll("提现冷却",
@@ -933,7 +939,18 @@ export default function H1Phase({ ctx,
         </Fold>
       </div>
     </>}
-    {confirm && <OperationConfirmModal {...confirm} onClose={() => setConfirm(null)} onConfirm={async (reason,
+    {confirm && <OperationConfirmModal {...confirm} facts={(value) => <div className="h1-confirm-facts" data-pending={confirmPending?.state}>
+      {confirmPending && <div className="h1-pending-feedback"><Notice tone="warn" title={confirmPending.state === "rejected" ? "原操作已被拒绝" : "本次提交结果待核对"}>
+        {confirmPending.requests.some((request) => request.acknowledged && request.kind === "patch") && <p>{confirmPending.requests.filter((request) => request.acknowledged && request.kind === "patch").map((request) => `${request.label}已保存`).join("，")}；{confirmPending.requests.filter((request) => !request.acknowledged).map((request) => `${request.label}${confirmPending.state === "rejected" ? "未保存" : "结果待核对"}`).join("，")}。</p>}
+        <p>{confirmPending.state === "rejected" ? `拒绝原因：${confirmPending.rejectionReason ?? "原记录未保存拒绝原因，请读回核对。"}` : confirmPending.requests.some((request) => request.kind === "proposal") ? "可能已生成审批单；批准前参数不变。请查询原操作。" : "原内容与理由已保留。请先读回核对，再使用「重试原操作」继续。"}</p>
+        <p className="h1-command-line">命令号 <span className="h1-command">{confirmPending.commandKey}</span></p>
+      </Notice></div>}
+      {confirm.businessForm && rhythm ? <Facts>
+        <Fact k="现在">第 {text(rhythm.currentMonth)} 月，本阶段进度 {text(rhythm.phaseProgressPct)}%</Fact>
+        <Fact k="当前阶段">{phaseLabel}</Fact>
+        <Fact k="保存顺序">月份先保存并同步活跃参数，再保存进度；后一步失败不会回滚前一步。</Fact>
+      </Facts> : typeof confirm.facts === "function" ? confirm.facts(value) : confirm.facts}
+    </div>} onClose={() => setConfirm(null)} onConfirm={async (reason,
       value,
       form) => {
       await confirm.run(reason,
@@ -945,7 +962,7 @@ export default function H1Phase({ ctx,
         <Facts>
           <Fact k="操作">{detail.label}</Fact>
           <Fact k="前后值">
-            <Change from={detail.before} to={detail.after} />
+            <Change from={pendingValue(detail, detail.before)} to={pendingValue(detail, detail.after)} />
           </Fact>
           <Fact k="原操作理由">{detail.reason}</Fact>
           <Fact k="发起人">{detail.operator}</Fact>
@@ -965,10 +982,10 @@ export default function H1Phase({ ctx,
         </Fold>
       </>}
     </Drawer>
-    {release && <ReleaseModal onCancel={() => setRelease(null)} label={release?.label ?? ""} explain="仅解除本标签页的待确认保护，不代表后台撤销，不写业务审计。已成功的校准步骤不会回滚。" onConfirm={() => {
+    {release && <ReleaseModal onCancel={() => setRelease(null)} label={<div className="h1-release-facts"><b>{release.label}</b><Change from={pendingValue(release, release.before)} to={pendingValue(release, release.after)} /><span>拒绝原因：{release.rejectionReason ?? "原记录未保存，请先核对原操作结果。"}</span></div>} explain="仅解除本标签页的待确认保护，不代表后台撤销，不写业务审计。已成功的校准步骤不会回滚。" onConfirm={() => {
       if (release?.retryRejected && release.state === "rejected" && checked === release.commandKey) {
         h1Pending.forget(release.fingerprint,
-          release.commandKey); syncPending(); setRelease(null); setConfirm(null);
+          release.commandKey); syncPending(); setRelease(null); setConfirm(null); setFeedback(undefined); setChecked(undefined);
       }
     }} />}
   </>;
