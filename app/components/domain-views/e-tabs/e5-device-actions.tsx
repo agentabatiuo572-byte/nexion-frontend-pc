@@ -145,7 +145,7 @@ export function E5PendingMark({ device }: { device: E5Device }) {
 }
 
 export function E5Slots({ device: d, phones = false }: { device: E5Device; phones?: boolean }) {
-  return <div className="e5-slots" data-phones={phones ? "" : undefined} data-full={d.activeDevicesForUser >= d.maxDevicesPerUser ? "" : undefined}><RatioBar label="激活名额（含手机）" value={d.activeDevicesForUser} tone={phones ? d.activeDevicesForUser >= d.maxDevicesPerUser ? "warn" : "role-2" : "neutral"} total={d.maxDevicesPerUser} valueText={`${d.activeDevicesForUser}/${d.maxDevicesPerUser} 台（含手机）`} steps invalidText="已超过上限，不能激活" /></div>;
+  return <div className="e5-slots" data-phones={phones ? "" : undefined} data-full={d.activeDevicesForUser >= d.maxDevicesPerUser ? "" : undefined}><RatioBar label="激活名额（含手机）" value={d.activeDevicesForUser} tone={phones ? d.activeDevicesForUser >= d.maxDevicesPerUser ? "warn" : "role-2" : "neutral"} total={d.maxDevicesPerUser} valueText={`${d.activeDevicesForUser}/${d.maxDevicesPerUser} 台（含手机）`} steps invalidText={`${d.activeDevicesForUser}/${d.maxDevicesPerUser} 台（含手机），已超过上限，不能激活`} /></div>;
 }
 
 /** E5 rows, detail footer and E6 phone mode all use these same state/authority/command checks. */
