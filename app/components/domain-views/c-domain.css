@@ -98,7 +98,7 @@
 .c5-identity strong { color: var(--rd-text); font-size: var(--rd-text-section); }
 .c5-identity-meta { display: flex; align-items: center; gap: var(--rd-space-3); margin-top: var(--rd-space-1); font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); flex-wrap: wrap; }
 .c5-login-band { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--rd-line); padding-top: var(--rd-space-4); gap: var(--rd-space-4); }
-.c5-login-band > div { display: grid; grid-template-columns: auto 1fr; column-gap: var(--rd-space-2); row-gap: var(--rd-space-1); align-items: center; }
+.c5-login-band > div { display: grid; grid-template-columns: auto 1fr; column-gap: var(--rd-space-2); row-gap: var(--rd-space-1); align-items: center; align-content: start; }  /* 三格同一条值线：最高那格不把其余两格的行撑开 */
 .c5-login-band > div > svg { color: var(--rd-text-3); }
 .c5-login-band > div > span { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 .c5-login-band strong { grid-column: 2; color: var(--rd-text); font-size: var(--rd-text-section); font-weight: 500; }
@@ -138,7 +138,7 @@
 .c5-model-locks th:nth-child(2), .c5-model-locks th:nth-child(3) { width: 17%; }
 .c5-model-locks th:nth-child(4) { width: 27%; }
 .c5-model-locks th:last-child { width: 17%; }
-.c5-phone-summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--rd-space-6); }
+.c5-phone-summary { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--rd-space-6); align-items: start; }  /* 两列事实各按自己的行距排，短的一列不被拉开 */
 .c5-phone-summary > .rd-facts { margin: 0; }
 .c5-blocked-reasons { margin: 0; padding-left: var(--rd-space-4); display: grid; gap: var(--rd-space-1); }
 .c5-pager { display: flex; justify-content: flex-end; align-items: center; gap: var(--rd-space-2); padding: var(--rd-space-3) var(--rd-space-5); color: var(--rd-text-3); font-size: var(--rd-text-aux); flex-wrap: wrap; }
@@ -163,3 +163,24 @@
 .c5-phone-id { display: inline-flex; max-width: 100%; min-width: 0; font-family: var(--rd-font-mono); vertical-align: bottom; }
 .c5-phone-id > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .c5-phone-id > span:last-child:not(:first-child) { flex: none; white-space: nowrap; }
+/* 面板正文里相邻两块（事实、折叠、提示条、按钮行、勾选组）隔 12，和标题到正文一样（VS-65）；贴边面板里的表格不算。 */
+.c5-workbench .rd-panel:not([data-flush]) > :not(.rd-panel-head) + :not(.rd-panel-head) { margin-top: var(--rd-space-3); }
+/* 机型锁表格外面多包了一层，贴边面板的表格内边距和提示条要自己对上面板边线 */
+.c5-workbench .rd-panel[data-flush] > [data-proof="c5-phone-model-lock"] > .rd-table-scroll .rd-table :is(th, td):first-child { padding-left: var(--rd-panel-pad-x); }
+.c5-workbench .rd-panel[data-flush] > [data-proof="c5-phone-model-lock"] > .rd-table-scroll .rd-table :is(th, td):last-child { padding-right: var(--rd-panel-pad-x); }
+.c5-workbench .rd-panel[data-flush] > [data-proof="c5-phone-model-lock"] > :is(.rd-notice, .rd-block-state) { margin: 0 var(--rd-panel-pad-x) var(--rd-space-3); }
+/* 抽屉里的上下页和表格同一条左右边线 */
+.rd-drawer .c5-pager { padding-left: 0; padding-right: 0; }
+/* 三个互斥明细：一组分段，按下的那个抬起，和 Segments 同一套样子 */
+.c5-detail-switch { gap: 2px; width: fit-content; max-width: 100%; padding: 2px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.c5-detail-switch > .rd-btn { height: calc(var(--rd-control-h) - 4px); background: transparent; box-shadow: none; color: var(--rd-text-2); font-weight: 400; }
+.c5-detail-switch > .rd-btn[aria-pressed="true"] { background: var(--rd-control); color: var(--rd-text); font-weight: 500; }
+:root[data-theme="light"] .c5-detail-switch { box-shadow: inset 0 0 0 1px var(--rd-line); }
+:root[data-theme="light"] .c5-detail-switch > .rd-btn[aria-pressed="true"] { background: var(--rd-panel-inner); box-shadow: 0 0 0 1px var(--rd-line); }
+@media (hover: hover) and (pointer: fine) { .c5-detail-switch > .rd-btn:not([aria-pressed="true"]):hover { background: var(--rd-hover); color: var(--rd-text); } }
+/* 窄内容区：锁定中账户放大时排在最前独占一行，其余三格排在它下面一行（StatBand 的窄屏排法按关键数字在前写的） */
+@container (max-width: 900px) {
+  .c5-workbench .rd-stats > .rd-stat[data-lead] { order: -1; }
+  .c5-workbench .rd-stats > .rd-stat[data-lead] + .rd-stat > .rd-tile { margin-inline: 0; }
+  .c5-workbench .rd-stats:has(> .rd-stat[data-lead]:not(:first-child)) > .rd-stat:first-child > .rd-tile { margin-inline: 6px; }  /* 下面一行的第一格对齐上面关键数字的图标底 */
+}

@@ -18,3 +18,7 @@
 .rd-modal.payment-security .ps-check{color:var(--rd-text)}
 .rd-modal.payment-security .ps-help{font-size:var(--rd-text-aux);line-height:var(--rd-lh-aux);color:var(--rd-text-3)}
 .rd-modal.payment-security .ps-help summary{color:var(--rd-text-3)}
+
+/* 改版页面的处置审计：每条理由下面单起一行审计编号，等宽字，整串一次选中便于复制。 */
+.ps-audit-ref{display:block;margin-top:4px;font-size:var(--rd-text-aux);line-height:var(--rd-lh-aux);color:var(--rd-text-3)}
+.ps-audit-ref [data-mono]{font-family:var(--rd-font-mono);color:var(--rd-text-2);user-select:all;overflow-wrap:anywhere}
