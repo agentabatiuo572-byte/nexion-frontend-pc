@@ -18,7 +18,7 @@ import { SupportRandomAssignment, hasPendingRandomAssignment } from "./support-r
 import { compactSupportBoardValue } from "./support-leaderboard";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import { supportGroupClient, type SupportGroup } from "../../../../lib/admin/support-group-client";
-import { setSupportPoolRoute, parseSupportPoolRouteResult, readSupportPoolCustomer, verifySupportTransfer, type SupportRouteInput, type SupportReadMode } from "../../../../lib/admin/m-support-client";
+import { setSupportPoolRoute, readSupportPoolCustomer, verifySupportTransfer, type SupportRouteInput, type SupportReadMode } from "../../../../lib/admin/m-support-client";
 
 const PAGE_SIZE = 8;
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
@@ -61,10 +61,10 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
   }, [item.routeGroupId, targetId, pending, reload, requiresFreshPool]);
   const reasonLength = Array.from(reason.trim()).length;
   const canSave = !pending && !requiresFreshPool && !busy && !error && Boolean(versions) && item.routeState !== "UNKNOWN" && (targetId || null) !== item.routeGroupId && reasonLength >= 8 && reasonLength <= 200;
-  async function verifyRouteFacts(record: RoutePending, receipt: ReturnType<typeof parseSupportPoolRouteResult>) {
+  async function verifyRouteFacts(record: RoutePending, receipt?: Awaited<ReturnType<typeof setSupportPoolRoute>>) {
     const current = await readSupportPoolCustomer(record.item.customerId);
     if (current.routeGroupId) await supportGroupClient.detail(current.routeGroupId);
-    const matches = current.routeState === "AVAILABLE" && current.customerId === receipt.customerId && current.routeId === receipt.id && current.routeGroupId === receipt.groupId && current.routeVersion === receipt.version && current.routeVersion > record.payload.expectedRouteVersion;
+    const matches = current.routeState === "AVAILABLE" && current.customerId === record.item.customerId && current.routeGroupId === record.payload.targetGroupId && current.routeId !== record.item.routeId && current.routeVersion !== null && current.routeVersion > record.payload.expectedRouteVersion && (!receipt || current.routeId === receipt.id && current.routeVersion === receipt.version);
     if (!matches) throw new Error("SUPPORT_ROUTE_RECOVERY_FACTS_CHANGED");
   }
   async function save() {
@@ -94,7 +94,7 @@ export function PoolRouteModal({ item, groups, onClose, onDone }: { item: Suppor
       const result = await supportClient.command(pending.commandKey);
       if (stamp !== actorStamp() || !mounted.current) return;
       if (result.status === "SUCCEEDED" || result.status === "FAILED") {
-        if (result.status === "SUCCEEDED") await verifyRouteFacts(pending, parseSupportPoolRouteResult(result.result, pending.item.customerId, pending.payload));
+        if (result.status === "SUCCEEDED") await verifyRouteFacts(pending);
         if (stamp !== actorStamp() || !mounted.current || pending.actorId !== useAdminAuth.getState().session?.adminId) return;
         routeCommands.forget(pending.fingerprint, pending.commandKey);
         if (result.status === "SUCCEEDED") onDone();

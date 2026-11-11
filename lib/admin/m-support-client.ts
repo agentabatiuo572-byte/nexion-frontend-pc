@@ -404,20 +404,19 @@ function parsePoolRoute(row: Record<string, unknown>): Pick<SupportBindingPoolIt
 }
 
 export type SupportRouteInput = { targetGroupId: string | null; expectedRouteVersion: number; sourceGroupVersion: number | null; targetGroupVersion: number | null; reason: string };
-export function parseSupportPoolRouteResult(value: unknown, customerId: string, input: SupportRouteInput) {
-  const row = object(value, "route.result");
-  const groupId = row.groupId === null ? null : id(row.groupId, "route.groupId");
-  const version = positive(row.version, "route.version");
-  if (id(row.customerId, "route.customerId") !== id(customerId, "route.expectedCustomerId") || groupId !== input.targetGroupId || version <= input.expectedRouteVersion) malformed("route.acknowledgement");
-  return { id: id(row.id, "route.id"), customerId, groupId, version };
-}
 export function setSupportPoolRoute(customerId: string, input: SupportRouteInput, key: string, signal?: AbortSignal) {
   const reasonLength = Array.from(input.reason.trim()).length;
   if (reasonLength < 8 || reasonLength > 200) malformed("route.reason");
   const targetGroupId = input.targetGroupId === null ? null : wireId(input.targetGroupId, "route.targetGroupId");
   if (targetGroupId === null ? input.targetGroupVersion !== null : input.targetGroupVersion === null) malformed("route.targetVersion");
   const body = { ...input, targetGroupId, expectedRouteVersion: count(input.expectedRouteVersion, "route.expectedVersion"), sourceGroupVersion: nullablePositive(input.sourceGroupVersion, "route.sourceVersion"), targetGroupVersion: nullablePositive(input.targetGroupVersion, "route.targetVersion") };
-  return request(`/support-agents/groups/customer-routes/${id(customerId, "route.customerId")}`, value => parseSupportPoolRouteResult(value, customerId, input), json("PATCH", body, key, signal));
+  return request(`/support-agents/groups/customer-routes/${id(customerId, "route.customerId")}`, value => {
+    const row = object(value, "route.result");
+    const groupId = row.groupId === null ? null : id(row.groupId, "route.groupId");
+    const version = positive(row.version, "route.version");
+    if (id(row.customerId, "route.customerId") !== id(customerId, "route.expectedCustomerId") || groupId !== input.targetGroupId || version <= input.expectedRouteVersion) malformed("route.acknowledgement");
+    return { id: id(row.id, "route.id"), customerId, groupId, version };
+  }, json("PATCH", body, key, signal));
 }
 
 export function parseSupportSessionHolder(value: unknown, field: string): SupportSessionHolder | null {
