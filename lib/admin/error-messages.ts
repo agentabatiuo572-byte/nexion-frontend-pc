@@ -1,6 +1,26 @@
 import { SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
 
 export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  H1_RHYTHM_MUTEX_UNAVAILABLE: "运营节奏暂时无法锁定，本次未保存，请稍后重试。",
+  RHYTHM_PARAM_KEY_INVALID: "运营节奏参数入口无效，请保留输入并重新打开原入口。",
+  RHYTHM_TOTAL_MONTHS_INVALID: "请从当前提供的运营总月数选项中选择。",
+  RHYTHM_CURRENT_MONTH_OUT_OF_RANGE: "当前月份须为 1 到运营总月数之间的整数。",
+  RHYTHM_PHASE_PROGRESS_OUT_OF_RANGE: "本阶段进度须为 0–100 的整数。",
+  MONTH_OUT_OF_RANGE: "这个月份已不在运营总长内，请读回核对原操作。",
+  PHASE_CONTROL_KEY_INVALID: "阶段控制项无效，请核对原入口。",
+  VALUE_REQUIRED: "请填写非空的新配置值。",
+  PHASE_OVERRIDE_ID_INVALID: "单独覆盖对象标识无效，请读回核对。",
+  BOOLEAN_VALUE_INVALID: "覆盖撤销状态无效，请核对原操作。",
+  COMPLIANCE_DIAL_INVALID: "加强合规审查只能选择否或是。",
+  "Numeric value is required": "请填写有效数值。",
+  "Numeric value is invalid": "请填写有效数值，不使用科学计数法。",
+  "Review days must be a whole number": "到账审查窗口须为 0–90 的整数天。",
+  "Unsupported H1 phase dial": "这个运营阶段参数不支持修改，请核对原入口。",
+  "Phase dial key is required": "缺少月参数标识，请核对原入口。",
+  "Compliance dial value is required": "请选择加强合规审查的新值。",
+  "Rhythm parameter key is required": "缺少运营节奏参数标识，请核对原入口。",
+  "Phase control key is required": "缺少阶段控制标识，请核对原入口。",
+  "Phase override id is required": "缺少单独覆盖标识，请核对原记录。",
   MONTHLY_TARGET_CYCLE_IDENTITY_CONFLICT: "设备月归属信息不一致，请联系值班人员核对原设备与到账记录。",
   // E5 device actions and legacy-task qualification.
   A2_OPERATION_TYPE_INVALID: "审批操作类型无效，请保留输入并核对发起入口。",
