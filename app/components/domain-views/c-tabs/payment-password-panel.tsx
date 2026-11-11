@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, Clock3, KeyRound, RefreshCw, ShieldAlert } from "lucide-react";
-import { BlockState, Button, Cell, Change, Check, ConfigList, ConfigRow, Decision, Drawer, Fact, Facts, Field, Fold, IconButton, Modal, Notice, NumberInput, PageTabs, Pager, Panel, ReleaseBody, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Check, ConfigList, ConfigRow, Decision, Drawer, Fact, Facts, Field, Fold, IconButton, KeepText, Modal, Notice, NumberInput, PageTabs, Pager, Panel, ReleaseBody, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { formatBusinessTimeCompact, businessZoneText } from "@/lib/admin/business-time";
 import { fetchPaymentPolicy, fetchPaymentStatus, fetchPaymentAttempts, submitPaymentPolicy, queryPaymentPolicy, pendingPaymentPolicy, paymentSecurityPorts, retryPaymentPolicy, releaseRejectedPaymentPolicy, isCompletePaymentPolicy } from "@/lib/admin/payment-password-client";
@@ -105,7 +105,7 @@ function PaymentUserSection({ userId, userLabel, visible }: { userId: string; us
       {error && <BlockState state="error" title="状态与验证记录尚未确认" detail={error} onRetry={() => void load()} />}
       <Table aria-label="支付密码验证记录" label="支付密码验证记录" className="c5-attempts"><thead><tr><Th>时间</Th><Th>用途</Th><Th>结果</Th><Th>来源</Th></tr></thead><tbody>{loading ? <TableLoading columns={4} /> : attempts?.records.map(row => <Tr key={row.id} selected={attempt?.id === row.id} onOpen={() => setAttempt(row)}><Td><Cell num main={time(row.occurredAt)} /></Td><Td>{row.purpose === "PAYMENT" ? "确认购买或置换" : "修改支付密码"}</Td><Td>{attemptResult[row.result]}</Td><Td>{row.channel}</Td></Tr>)}{!loading && !attempts?.records.length && <TableMessage columns={4}>{error ? "验证记录未能读取" : "该用户暂无支付密码验证记录"}</TableMessage>}</tbody></Table>{attempts && attempts.total > 0 && <Pager label="支付密码验证记录" total={attempts.total} page={page} pageSize={pageSize} sizes={[10, 20, 50]} loading={loading} onPage={setPage} onPageSize={size => { setPageSize(size); setPage(1); }} />}
       {attempt && <Facts><Fact k="验证时间">{time(attempt.occurredAt)}</Fact><Fact k="结果">{attemptResult[attempt.result]}</Fact><Fact k="访问地址（已脱敏）">{attempt.clientIpMasked || "未记录"}</Fact></Facts>}
-      <Fold title="忘记支付密码时如何处理" summary="用户自行重设"><p>引导用户在 App 或 H5 的“忘记支付密码”完成本人验证后重设，不能索要用户支付密码。</p></Fold>
+      <Fold title="忘记支付密码时如何处理" summary="用户自行重设"><p><KeepText text="引导用户在 App 或 H5 的“忘记支付密码”完成本人验证后重设，不能索要用户支付密码。" /></p></Fold>
     </Drawer>}
   </Panel>;
 }
