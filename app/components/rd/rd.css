@@ -340,6 +340,8 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 /* 告警色只给有告警的这一行：data-tone 挂在摘要上，不往折叠里传（DT-13）。 */
 .rd-fold-summary[data-tone] { color: var(--tone); font-weight: 500; }
 .rd-fold-body { min-width: 0; padding: 0 var(--rd-panel-pad-x) 16px calc(var(--rd-panel-pad-x) + 14px + var(--rd-space-2)); color: var(--rd-text-2); }
+/* 弹窗、抽屉里的折叠正文：相邻两块（提示条、事实块、表格、列表、说明）之间 12，和抽屉正文一样（VS-100）；整组包 rd-stack 的算一块。 */
+:is(.rd-modal-body, .rd-drawer-body) .rd-fold-body > :not(:first-child) { margin-top: var(--rd-space-3); }
 
 /* ── 时间线、记录列表（CP-46 / VS-109）── */
 /* 沿用 Ant Design 的单侧时间轴和 List 横排结构；List 默认 12px 0 行内边距。 */
@@ -835,7 +837,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-form-grid[data-dense] { gap: var(--rd-space-4); }  /* 弹窗里的表单：字段之间和弹窗正文的块间距一样 */
 /* 确认框里的业务表单（OperationConfirmModal 的 businessForm）：分组名、字段网格、整组提示从上到下排 */
 .rd-business-form { display: grid; gap: var(--rd-space-3); min-width: 0; }
-.rd-form-group-title { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.rd-business-form > .rd-form-group-title { margin: 0; }  /* 分组名的样子用下面 .rd-form-group-title 的弹窗写法，间距交给网格 */
 .rd-form-warning { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 500; color: var(--rd-warn); }  /* 值合法但要留意（比如超过建议上限），不挡提交 */
 .rd-file-input { height: auto; padding: 6px 12px; }
 .rd-file-input::file-selector-button { height: var(--rd-control-h-sm); margin-right: 12px; padding: 0 12px; border: 0; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); font: inherit; cursor: pointer; }
