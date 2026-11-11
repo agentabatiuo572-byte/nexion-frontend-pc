@@ -382,6 +382,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
   const hits = overview?.hits.records ?? [];
   const needsInvestigation = (dimension: typeof dimensions[number]) => !DECLARED_DIMENSIONS.includes(dimensionLabel(dimension.name) as K3RuleDimensionName) || dimension.action === "pass" || !!parseK3Condition(k3KindFromDimension(dimension.name, dimension.ruleKey), dimension.conditionText).conditionParseError;
   const invalidActive = dimensions.some(needsInvestigation);
+  const readError = ctx.contentError?.startsWith("操作未完成") ? "没有读到最新规则，请刷新重试。" : ctx.contentError;
   const healthy = canRead && !ctx.contentLoading && !ctx.contentError && !!overview;
   const byDimension = DECLARED_DIMENSIONS.map((name) => ({ name, rules: dimensions.filter((dimension) => dimensionLabel(dimension.name) === name && !needsInvestigation(dimension)), investigate: dimensions.filter((dimension) => dimensionLabel(dimension.name) === name && needsInvestigation(dimension)) }));
   const missing = byDimension.filter((group) => !group.rules.length).map((group) => group.name);
@@ -506,7 +507,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
     })}
     {acknowledgedReadFailure && <Notice tone="ok" title="原操作已成功">{acknowledgedReadFailure}</Notice>}
     {!canRead ? <BlockState state="denied" title="无权查看提现风险规则" detail="需要提现风险规则查看权限，请联系管理员核对。" />
-      : ctx.contentError ? <BlockState state="error" title="提现风险规则读取失败" detail={ctx.contentError} onRetry={() => void reload().catch(() => undefined)} />
+      : ctx.contentError ? <BlockState state="error" title="提现风险规则读取失败" detail={readError} onRetry={() => void reload().catch(() => undefined)} />
       : ctx.contentLoading || !overview ? <><div className="k3-cover-loading" aria-label="正在读取四类检查">{DECLARED_DIMENSIONS.map((name) => <div key={name} className="rd-skeleton" />)}</div><Panel title="规则总表" flush><Table label="规则总表"><tbody><TableLoading columns={6} /></tbody></Table>{lastRulePage && lastRulePage.total > 0 && <Pager label="规则总表" total={lastRulePage.total} page={lastRulePage.pageNum} pageSize={lastRulePage.pageSize} sizes={[5, 10, 20]} loading onPage={(page) => setQuery({ rulePage: page })} onPageSize={(size) => setQuery({ rulePage: 1, rulePageSize: size })} />}</Panel></>
       : <>
         {invalidActive && <Notice tone="warn">生效规则包含历史放行或未知格式条件，请由风控负责人核查；只按原权限停用、归档。</Notice>}
@@ -555,7 +556,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
         <div className="rd-links">{[["提现审核", "/finance/withdrawals"], ["USDT 提现参数", "/finance/params"], ["多账户风险排查", "/risk/multi-account"], ["操作记录与审批", "/platform/audit"]].map(([label, href]) => reach(href) && <Link key={href} href={href}>{label}</Link>)}</div>
       </>}
     <Drawer open={hitsOpen && canRead} onClose={() => { setHitDetail(null); setQuery({ section: null }); }} title="触发记录" icon={History} wide explain="一条记录是一条规则命中，同一提现可以有多条记录；不是最终提现单状态。">
-      {!healthy ? <BlockState state={ctx.contentError ? "error" : "loading"} title={ctx.contentError ? "触发记录读取失败" : "正在读取触发记录"} detail={ctx.contentError} onRetry={ctx.contentError ? () => void reload().catch(() => undefined) : undefined} /> : <>
+      {!healthy ? <BlockState state={ctx.contentError ? "error" : "loading"} title={ctx.contentError ? "触发记录读取失败" : "正在读取触发记录"} detail={readError} onRetry={ctx.contentError ? () => void reload().catch(() => undefined) : undefined} /> : <>
         <Panel title="历史命中处置分布" explain="累计现存的全部命中记录，没有时间筛选、不随下方动作筛选改变；不是全部提现的放行率。"><Distribution rows={overview!.routeCounts} total={overview!.routeTotal} /></Panel>
         <div className="k3-hit-filters"><Segments label="命中处置筛选" value={hitAction} items={[{ value: "all", label: "全部" }, { value: "delay", label: "延迟" }, { value: "freeze", label: "冻结" }, { value: "manual", label: "转人工" }]} onChange={(value) => setQuery({ hitPage: 1, hitAction: value })} />
           <Button variant="ghost" disabledReason={hitAction === "all" ? "当前没有动作筛选" : undefined} onClick={() => setQuery({ hitAction: "all", hitPage: 1 })}>清除筛选</Button><ColumnPicker columns={hitColumns} /></div>
