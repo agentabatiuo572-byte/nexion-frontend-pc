@@ -11,7 +11,7 @@ import { fetchE3Snapshot } from "@/lib/admin/e3-client";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -84,19 +84,19 @@ export function E1Page() {
     try {
       const result = await fetchE1Products();
       setSkus(result.skus); setInvalid(result.invalidSkus); setReadAt(businessClock(Date.now())); return result;
-    } catch (failure) { setError(e1Error(failure)); setSkus([]); setInvalid([]); return null; }
+    } catch (failure) { setError(displayAdminReadError(failure)); setSkus([]); setInvalid([]); return null; }
     finally { setLoading(false); }
   }, []);
   const refreshGates = useCallback(async () => {
     setGatesLoading(true); setGatesError(null);
     try { const result = await fetchE1GenerationGates(); setGates(result); return result; }
-    catch (failure) { setGates(null); setGatesError(e1Error(failure)); return null; }
+    catch (failure) { setGates(null); setGatesError(displayAdminReadError(failure)); return null; }
     finally { setGatesLoading(false); }
   }, []);
   const refreshDiscount = useCallback(async () => {
     setDiscountLoading(true); setDiscountError(null);
     try { const result = await fetchE1Discount(); setDiscount(result); return result; }
-    catch (failure) { setDiscount(null); setDiscountError(e1Error(failure)); return null; }
+    catch (failure) { setDiscount(null); setDiscountError(displayAdminReadError(failure)); return null; }
     finally { setDiscountLoading(false); }
   }, []);
   const refresh = useCallback(async (): Promise<E1CatalogSnapshot | undefined> => {
@@ -107,7 +107,7 @@ export function E1Page() {
     setEarlyLoading(true); setEarlyError(null);
     if (!canReadE3) { setEarly({}); setEarlyError("当前账号没有抢先购关联设置的读取权限"); setEarlyLoading(false); return; }
     try { const snapshot = await fetchE3Snapshot(); setEarly(snapshot.params); }
-    catch (failure) { setEarly({}); setEarlyError(e1Error(failure)); }
+    catch (failure) { setEarly({}); setEarlyError(displayAdminReadError(failure)); }
     finally { setEarlyLoading(false); }
   }, [canReadE3]);
   useEffect(() => { if (canRead) { void refresh(); void refreshEarly(); } }, [canRead, refresh, refreshEarly]);
