@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey } from "@/lib/admin/a2-client";
-import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, hasPersistedPendingCommandOwner, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT, hasPersistedPendingCommandOwner } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import { isRedesignedELegacyCommand } from "@/lib/admin/e-domain-commands";
+import { eDomainLegacyCommands as legacyCommands, e5LegacyCommands as legacyPhones } from "@/lib/admin/e-domain-commands";
 import { e5Commands, type E5Command } from "@/lib/admin/e5-command";
 import { e6Commands as commands, type E6DeviceInput as DeviceInput, type E6Payload as Payload, type E6Pending, type E6Proposal, type E6Section } from "@/lib/admin/e6-command";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -15,10 +15,8 @@ import { savePhoneRisk, fetchPhoneRisk, type PhoneRiskUpdate } from "@/lib/admin
 import { Button, Notice, Fold, ReleaseModal } from "@/app/components/rd";
 
 export type { E6Pending, E6Proposal, E6Section } from "@/lib/admin/e6-command";
+export type E6WriteReceipt = { changedCount?: number; pendingDeactivate?: boolean; readbackFailed?: boolean };
 type ProposalDraft = Omit<E6Proposal, "operator" | "operatorRole" | "sos" | "roleGate">;
-const legacyCommands = createPendingMutationStore<PendingMutationRecord & { inputFingerprint: string }>({ storageKey: "nexion-admin-e-domain-commands-v1", retainExpiredRecords: isRedesignedELegacyCommand,
-  isValidRecord: r => typeof r.inputFingerprint === "string" });
-const legacyPhones = createPendingMutationStore<PendingMutationRecord & { inputFingerprint: string }>({ storageKey: "nexion-admin-e5-device-commands-v1", retainExpiredRecords: true, isValidRecord: r => typeof r.inputFingerprint === "string" });
 const Context = createContext<ReturnType<typeof useMutations> | null>(null);
 
 function useMutations() {
@@ -75,7 +73,7 @@ function useMutations() {
           return;
         }
       }
-      let deviceResult: { changedCount?: number; pendingDeactivate?: boolean } | undefined;
+      let deviceResult: E6WriteReceipt | undefined;
       if (record.payload.kind === "proposal") {
         const ticket = await createA2OperationProposal(record.payload.input, record.commandKey, true);
         commands.remember(record.fingerprint, record.commandKey, { ...record, ticketId: ticket.id });
@@ -84,12 +82,20 @@ function useMutations() {
         if (i.action === "activate") { const result = await activateE5Device(i.deviceId, false, i.reason, i.operator, record.commandKey); deviceResult = { pendingDeactivate: result.pendingDeactivate }; }
         else if (i.action === "deactivate") { const result = await deactivateE5Device(i.deviceId, false, i.reason, i.operator, record.commandKey); deviceResult = { pendingDeactivate: result.pendingDeactivate }; }
         else { const result = await setE5UserDevicesPaused(i.userId, i.action === "pause", i.reason, i.operator, record.commandKey); deviceResult = { changedCount: result.changedCount }; }
-        await fetchE5Devices({ pageNum: 1, pageSize: 10, keyword: i.serial }, true);
         commands.forget(record.fingerprint, record.commandKey);
       } else {
         await savePhoneRisk(record.payload.revision, record.payload.input, record.commandKey);
-        await fetchPhoneRisk();
         commands.forget(record.fingerprint, record.commandKey);
+      }
+      if (record.payload.kind !== "proposal") {
+        // The write receipt settles this command before any independent readback.
+        if (active.current) { sync(); setRejected(keys => keys.filter(key => key !== record.commandKey)); }
+        try {
+          if (record.payload.kind === "device") await fetchE5Devices({ pageNum: 1, pageSize: 10, keyword: record.payload.input.serial }, true);
+          else await fetchPhoneRisk();
+        } catch {
+          deviceResult = { ...deviceResult, readbackFailed: true };
+        }
       }
       if (active.current) { sync(); setNotes(n => ({ ...n, [record.commandKey]: record.payload.kind === "proposal" ? "已提交，等待审批后执行。" : "已取得操作回执，请刷新核对当前值。" })); }
       return deviceResult;
@@ -143,7 +149,7 @@ export function E6MutationProvider({ children }: { children: ReactNode }) {
   return <Context.Provider value={mutations}>{children}</Context.Provider>;
 }
 export function useE6Mutations() { return useContext(Context)!; }
-export function E6PendingNotice({ section, onRead }: { section: E6Section; onRead?: (result?: { changedCount?: number; pendingDeactivate?: boolean }) => void }) {
+export function E6PendingNotice({ section, onRead }: { section: E6Section; onRead?: (result?: E6WriteReceipt) => void }) {
   const m = useE6Mutations();
   const records = m.pending.filter(r => r.section === section && m.visible(section));
   const waiting = records.filter(r => r.ticketId && !r.terminal);

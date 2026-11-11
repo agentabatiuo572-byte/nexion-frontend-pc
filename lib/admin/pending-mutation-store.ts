@@ -394,17 +394,21 @@ const slotStores = new Map<string, SlotAttemptStore>();
  * 为什么不直接把输入指纹拼进 fingerprint:那样旧尝试会留到 TTL 到期。运营改了值再改回来时会
  * 复用那个可能已被后端消费掉的命令号,让一次真实的新操作被当成重复提交静默吞掉。
  */
-export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: number; retainExpiredRecords?: boolean | ((record: SlotAttemptRecord) => boolean) }): SlotAttemptStore {
+export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: number; retainExpiredRecords?: boolean | ((record: SlotAttemptRecord) => boolean) }, pendingStore?: PendingMutationStore<SlotAttemptRecord>): SlotAttemptStore {
   const existing = slotStores.get(options.storageKey);
   if (existing) return existing;
-  const store = createPendingMutationStore<SlotAttemptRecord>({
+  const store = pendingStore ?? createPendingMutationStore<SlotAttemptRecord>({
     ...options,
     isValidRecord: (record) => typeof record.inputFingerprint === "string" && record.inputFingerprint.length > 0,
   });
+  // A shared legacy reader may retain more evidence than a writable slot accepts.
+  const list = pendingStore ? () => store.list().filter(record => record.inputFingerprint.length > 0
+    && (record.expiresAt > Date.now() || (typeof options.retainExpiredRecords === "function"
+      ? options.retainExpiredRecords(record) : options.retainExpiredRecords === true))) : store.list;
   const slotStore: SlotAttemptStore = {
-    peek: store.get,
+    peek: pendingStore ? slot => list().find(record => record.fingerprint === slot)?.commandKey : store.get,
     resolve(slot, inputFingerprint, mint) {
-      const saved = store.list().find((record) => record.fingerprint === slot);
+      const saved = list().find((record) => record.fingerprint === slot);
       if (saved?.inputFingerprint === inputFingerprint) {
         store.remember(slot, saved.commandKey, { inputFingerprint });
         return saved.commandKey;
@@ -431,7 +435,7 @@ export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: nu
       }
     },
     forget: store.forget,
-    list: store.list,
+    list,
   };
   slotStores.set(options.storageKey, slotStore);
   return slotStore;

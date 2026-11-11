@@ -116,13 +116,16 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
   const replay = async () => {
     if (!pending || busy || !canReplayGroupCommand(pending)) return;
     setBusy(true); setError("");
+    let acknowledged = false;
     try {
       const next = await supportGroupClient.issueSelfInviteCode(pending.intent.payload.expectedVersion, pending.commandKey);
+      acknowledged = true;
       const current = await supportGroupClient.selfInviteCode();
       if (current.code !== next.code || current.version !== next.version) throw new Error("SUPPORT_INVITE_READBACK_CHANGED");
       settle(pending);
       toast(pending.intent.payload.expectedVersion === null ? "邀请码已生成。" : "邀请码已重置，旧码已失效。");
     } catch (cause) {
+      if (acknowledged) { setError("已取得操作回执，读回失败，请刷新核对。"); return; }
       if (!commandRejected(cause)) { setError("重试结果仍未确认，原命令已保留，请稍后再查询或重试。"); return; }
       settle(pending);
       setError(errorText(cause));

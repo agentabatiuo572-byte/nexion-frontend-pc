@@ -51,7 +51,6 @@ import { fetchE6ComputeConfig, isE6ParamKey, type E6ComputeConfigView } from "@/
 import { usePropose } from "@/lib/admin/use-propose";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
-import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { summarizeSkuCreation, summarizeSkuProposal } from "@/lib/admin/e1-a2-proposal-summary";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
@@ -68,12 +67,11 @@ import { E3Manual } from "./e-tabs/e3-manual";
 import { E4Orders } from "./e-tabs/e4-orders";
 import { E5Ops } from "./e-tabs/e5-ops";
 import { E6ComputeConfig as E6ComputeConfigComp } from "./e-tabs/e6-compute-config";
-import { isRedesignedELegacyCommand } from "@/lib/admin/e-domain-commands";
+import { eDomainCommandAttempts as commandAttempts, isRedesignedELegacyCommand } from "@/lib/admin/e-domain-commands";
 import "./e-domain.css";
 
 /** E 域 A2 提交稳定命令号:槽位=动作 op|目标对象,指纹=终值+结构化命令+目标锁(**不含 reason**)。
  *  落 sessionStorage,结果未知后哪怕刷新页面,同弹窗同业务输入重试仍复用同一命令号被后端去重。 */
-const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-e-domain-commands-v1", retainExpiredRecords: isRedesignedELegacyCommand });
 const E4_APPROVAL_OPS = ["e4_order_refund", "e4_order_cancel", "e4_order_terminal", "e4_order_state"];
 const E4_PROPOSAL_STATUS: Record<string, string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
 
