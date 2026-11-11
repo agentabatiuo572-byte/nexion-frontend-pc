@@ -159,3 +159,7 @@
   .c5-phone-summary { grid-template-columns: 1fr; gap: var(--rd-space-4); }
 }
 .c5-login-fails { grid-column: 2; color: var(--rd-text-3); font-size: var(--rd-text-aux); font-weight: 400; }
+.c5-workbench .rd-panel-actions > .rd-iconbtn:last-child { margin-right: calc(-1 * var(--rd-space-2)); }
+.c5-phone-id { display: inline-flex; max-width: 100%; min-width: 0; font-family: var(--rd-font-mono); vertical-align: bottom; }
+.c5-phone-id > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.c5-phone-id > span:last-child:not(:first-child) { flex: none; white-space: nowrap; }

@@ -3,6 +3,10 @@ import { Fact, Facts, Fold, Notice, StatusTag, useRdSurface } from "@/app/compon
 import { businessZone, businessZoneText } from "@/lib/admin/business-time";
 import { phoneLabel, record, type PhoneReceipt } from "@/lib/admin/phone-replacement-contract";
 import "./phone-replacement.css";
+/** A phone installation keeps its distinguishing suffix when the column narrows. */
+export function PhoneIdentifier({ value }: { value: string }) {
+    return <span className="c5-phone-id" title={value} tabIndex={0}><span>{value.length > 12 ? value.slice(0, -8) : value}</span>{value.length > 12 && <span>{value.slice(-8)}</span>}</span>;
+}
 export const phoneTime = (value: unknown) => typeof value === "number" && Number.isFinite(value)
     ? new Date(value).toLocaleString("zh-CN", { hour12: false, timeZone: businessZone().zoneId }) : "待核实";
 const fields: Record<string, string> = {
