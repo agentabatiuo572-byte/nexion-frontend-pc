@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Archive, Check as CheckIcon, Clock, Coins, FileText, Gauge, History, Pause, Play, Plus, RefreshCw, ShieldAlert, ShieldCheck, SlidersHorizontal, UserCheck, Users } from "lucide-react";
@@ -231,7 +231,7 @@ const editableReason = (rule: K3Rule) => rule.state === "archived" ? "已归档�
   : rule.action === "pass" ? "历史放行规则只可按原权限停用、归档"
     : parseK3Condition(k3KindFromDimension(rule.dimension), rule.conditionText).conditionParseError ?? undefined;
 function ConditionText({ text }: { text: string }) {
-  return <KeepText text={text} phrases={text.match(/[≥>≤<]\s*[\d,.]+(?:\s*(?:USD|天|笔))?/g) ?? []} />;
+  return <KeepText text={text} phrases={text.match(/[≥>≤<]\s*[\d,.]+(?:\s*(?:USD|天|笔))?|（[^）]*）/g) ?? []} />;
 }
 const hitSummary = (hit: K3Hit) => `${dimensionLabel(hit.dimension)}规则 ${hit.ruleId} 命中 · ${ACTION_LABELS[hit.action]}`;
 /** Compare the hit sets defined by the backend evaluator, then the disposition severity. */
@@ -262,8 +262,8 @@ const readPage = (value: string | null) => /^\d+$/.test(value ?? "") && Number.i
 const readSize = (value: string | null, hits = false) => (hits ? [5, 10, 20, 50] : [5, 10, 20]).includes(Number(value)) ? Number(value) : 5;
 function ActionTag({ action }: { action: RuleAction }) { return <StatusTag tone={ACTION_TONE[action]} icon={ACTION_ICON[action]}>{action === "pass" ? "历史放行" : ACTION_LABELS[action]}</StatusTag>; }
 function RuleTag({ state }: { state: RuleState }) { return <StatusTag tone={STATE_TONE[state]} icon={STATE_ICON[state]}>{STATE_LABEL[state]}</StatusTag>; }
-function RuleFacts({ rule }: { rule: K3Rule }) {
-  return <Facts><Fact k="规则">{rule.ruleId}</Fact><Fact k="条件">{conditionCopy(rule)}</Fact><Fact k="命中处置"><ActionTag action={rule.action} /></Fact><Fact k="优先级 / 版本">P{rule.priority} / v{rule.version}</Fact></Facts>;
+function RuleFacts({ rule, children }: { rule: K3Rule; children?: ReactNode }) {
+  return <Facts><Fact k="规则">{rule.ruleId}</Fact><Fact k="条件">{conditionCopy(rule)}</Fact><Fact k="命中处置"><ActionTag action={rule.action} /></Fact><Fact k="优先级 / 版本">P{rule.priority} / v{rule.version}</Fact>{children}</Facts>;
 }
 function Distribution({ rows, total, simulation = false }: { rows: K3RouteCount[]; total: number; simulation?: boolean }) {
   const counts = new Map(rows.map((row) => [row.key, row.count]));
@@ -295,18 +295,17 @@ function RuleConfirmation({ draft, pending, submitting, onSubmit, onClose, onReb
   const [revision, setRevision] = useState(0);
   const [conflict, setConflict] = useState(false);
   const allowedState = kind === "dry-run" || (kind === "active" && rule?.action !== "pass" && (rule?.state === "draft" || rule?.state === "paused")) || (kind === "paused" && rule?.state === "active") || (kind === "archived" && rule?.state === "paused");
-  const effect = kind === "active" ? ENABLE_EFFECT : kind === "paused" && lastInDimension ? `停用后，这类提现没有生效规则可检查。${PAUSE_EFFECT}` : kind === "paused" ? PAUSE_EFFECT : kind === "archived" ? ARCHIVE_EFFECT : SIMULATE_EFFECT;
+  const effect = kind === "active" ? ENABLE_EFFECT : kind === "paused" ? PAUSE_EFFECT : kind === "archived" ? ARCHIVE_EFFECT : SIMULATE_EFFECT;
   return <OperationConfirmModal key={revision} action={labelOf(kind, rule)}
     title={kind === "dry-run" ? labelOf(kind) : `${kind === "active" ? "启用" : kind === "paused" ? "停用" : "归档"}提现风控规则`}
     briefKind={kind === "dry-run" ? "record" : "config"} completionCopy={kind === "dry-run" ? "有规则编辑权限的人员可直接运行，无需审批；完成后显示本次模拟结果。" : kind === "archived" ? "有归档权限的人员可直接执行，无需审批；确认后立即归档。" : "有启停权限的人员可直接执行，无需审批；确认后立即变更规则状态。"} detail="" statedBrief={{ impact: effect, check: kind === "dry-run" ? "核对当前生效规则与历史样本范围，并填写模拟依据。" : "核对规则条件、处置、优先级与版本，并填写操作依据。" }}
-    facts={rule ? <><RuleFacts rule={rule} /><Facts><Fact k="状态"><Change from={STATE_LABEL[rule.state]} to={STATE_LABEL[kind as RuleState]} /></Fact></Facts></> : <Facts><Fact k="样本范围">{SIMULATE_SCOPE}</Fact></Facts>}
+    facts={rule ? <RuleFacts rule={rule}><Fact k="状态"><Change from={STATE_LABEL[rule.state]} to={STATE_LABEL[kind as RuleState]} /></Fact></RuleFacts>
+      : <Facts><Fact k="样本范围">{SIMULATE_SCOPE}<Explain label="模拟样本条件" content="旧状态为 PENDING、REVIEWING、FROZEN、REJECTED、PENDING_CHAIN；第三方请求总预算10秒。没有生效规则时评估0笔。" /></Fact></Facts>}
     reasonMin={8} reasonMax={200} reasonPlaceholder={REASON_PLACEHOLDER} getPendingReason={() => commands.list().filter(isSavedCommand).find((record) => record.target === targetOf(kind, rule))?.reason}
     effect={<StatusTag tone={kind === "dry-run" ? "neutral" : "progress"} filled>{kind === "dry-run" ? "不影响线上" : "直接生效"}</StatusTag>}
-    content={<div className="k3-write-impact" data-last-pause={kind === "paused" && lastInDimension ? "" : undefined}>
-      {kind === "dry-run" && <Explain label="模拟样本条件" content="旧状态为 PENDING、REVIEWING、FROZEN、REJECTED、PENDING_CHAIN；第三方请求总预算10秒。没有生效规则时评估0笔。" />}
-      {kind === "dry-run" && activeRules === 0 && <Notice tone="warn">没有生效规则，本次不会评估提现样本。</Notice>}
-      {kind === "paused" && <p className="k3-secondary-warning">{CASH_NOTICE}</p>}
-    </div>}
+    content={kind === "dry-run" && activeRules === 0 ? <Notice tone="warn">没有生效规则，本次不会评估提现样本。</Notice>
+      // 停用这一类最后一条是最重要的后果，做成提示的标题；资金未检查是它下面的一行（F3）。
+      : kind === "paused" ? <Notice tone="warn" title={lastInDimension ? "停用后，这类提现没有生效规则可检查。" : undefined}>{CASH_NOTICE}</Notice> : undefined}
     blockedReason={pending && !submitting ? UNKNOWN_RESULT_TEXT : !allowedState ? "规则当前状态不支持原操作，请关闭后核对最新规则" : conflict && <ConflictBar message="这条规则刚被别人改过。读取最新后请重新核对并填写理由。" onRead={async () => {
       setRule(await onRebase(rule!)); setRevision((n) => n + 1); setConflict(false);
     }} />}
@@ -506,7 +505,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
       </>}>
         <p>{targetLabel(saved?.target ?? legacyTarget(record))} · 提交于 {formatBusinessTimeFull(new Date(record.createdAt).toISOString())}（{businessZone().label}）</p>
         <p>{busyKey === record.commandKey ? "正在提交原请求，请等待结果。" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : !saved ? "旧记录缺少完整原请求，不能重发；请核对原命令号与操作记录。" : saved.rejected ? saved.message : UNKNOWN_RESULT_TEXT}</p>
-        {isRetryExpired(record) && (reach("/platform/audit") ? <Link href="/platform/audit">操作记录与审批</Link> : <p>请有权限的人员核对操作记录与审批。</p>)}
+        {isRetryExpired(record) && (reach("/platform/audit") ? <p><Link className="rd-link" href="/platform/audit">操作记录与审批</Link></p> : <p>请有权限的人员核对操作记录与审批。</p>)}
         {readback && <p>{readback}</p>}
       </Notice>;
     })}
@@ -526,9 +525,9 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
           const absent = !group.rules.length && !investigate;
           return <Stat key={group.name} label={group.name} value={investigate ? "待核查" : absent ? "待配置" : fmt(group.rules.length)} unit={!investigate && !absent ? "条生效规则" : undefined}
             icon={investigate || absent ? ShieldAlert : DIM_ICON[group.name]} tone={investigate || absent ? "warn" : "neutral"} surface={investigate || absent ? "warn" : undefined}
-            explain={group.name === "金额" ? "按单笔金额比较，阈值显示为USD；引擎按收到的数值判断，不换汇。" : group.name === "速度" ? "滚动24小时次数或金额任一满足即命中；线上计入本次提交。" : group.name === "新账户" ? "按注册天数及边界判断；0天是合法值。" : "按内部标记、第三方评分或两者组合判断；第三方不可用不当作放行。"}>
+            explain={group.name === "金额" ? <><p>按单笔金额比较，阈值显示为 USD。</p><p>引擎按收到的数值判断，不换汇。</p></> : group.name === "速度" ? "滚动24小时次数或金额任一满足即命中；线上计入本次提交。" : group.name === "新账户" ? "按注册天数及边界判断；0天是合法值。" : "按内部标记、第三方评分或两者组合判断；第三方不可用不当作放行。"}>
             <p className="k3-cover-summary">{investigate ? "存在需要核查的生效规则，暂不计入正常检查" : absent ? "还没有生效规则，这类提现不会被检查" : `${invalidActive ? "规则已配置 · 当前评估待核查" : "已参与检查"} · 含${[...new Set(group.rules.map((rule) => ACTION_LABELS[rule.action]))].join("、")}`}</p>
-            <div className="k3-cover-actions">{absent && canCreate && <Button size="sm" disabledReason={blocked("create")} onClick={() => openWrite("create", undefined, group.name)}>新建规则</Button>}
+            <div className="k3-cover-actions">{absent && canCreate && <Button size="sm" disabledReason={blocked("create")} onClick={() => openWrite("create", undefined, group.name)}><Plus size={14} />新建规则</Button>}
               {canWrite && group.rules.map((dimension) => {
                 const rule = rules.find((row) => row.ruleId === dimension.ruleId) ?? projectionRule(dimension);
                 return <Button size="sm" key={dimension.ruleId} disabledReason={blocked(rule.ruleId) ?? editableReason(rule)} onClick={() => openWrite("edit", rule)}>调整 · {dimension.ruleId}</Button>;
@@ -542,7 +541,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
             <tbody>{rules.length === 0 && <TableMessage columns={5 + Number(showActions) + Number(columns.isVisible("builtIn"))}>暂无提现风控规则{canCreate && <Button variant="ghost" onClick={() => openWrite("create")}>新建规则</Button>}</TableMessage>}
               {rules.map((rule) => <Tr key={rule.ruleId} selected={detail?.ruleId === rule.ruleId} onOpen={() => setDetail(rule)}>
                 <Td><Cell main={<span className="k3-id"><span>{rule.ruleId.slice(0, -8)}</span><span>{rule.ruleId.slice(-8)}</span></span>} sub={dimensionLabel(rule.dimension)} mono title={rule.ruleId} /></Td>
-                <Td><Cell main={<ConditionText text={conditionCopy(rule)} />} title={conditionCopy(rule)} /><Explain label={`${rule.ruleId}条件全文`} content={conditionCopy(rule)} /></Td>
+                <Td><Cell main={<><ConditionText text={conditionCopy(rule)} /><Explain label={`${rule.ruleId}条件全文`} content={conditionCopy(rule)} /></>} title={conditionCopy(rule)} /></Td>
                 <Td><ActionTag action={rule.action} /></Td><Td><RuleTag state={rule.state} />{locked(rule.ruleId) && <div className="k3-pending-marker"><StatusTag tone="warn">{pending.some((record) => isSavedCommand(record) && record.target === rule.ruleId && busyKey === record.commandKey) ? "提交中…" : "待确认"}</StatusTag></div>}</Td><Td className="k3-version-col"><Cell main={`P${rule.priority}`} sub={`v${rule.version}`} num /></Td>
                 {columns.isVisible("builtIn") && <Td>{rule.builtIn ? "内置" : "自建"}</Td>}{showActions && <Td sticky="end">{ruleActions(rule)}</Td>}
               </Tr>)}
@@ -551,18 +550,18 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
             onPage={(page) => setQuery({ rulePage: page })} onPageSize={(size) => setQuery({ rulePage: 1, rulePageSize: size })} />}
         </Panel>
         <Fold title="最近一次模拟" open={simulationOpen} onOpenChange={setSimulationOpen} summary={dryRunResult ? `${dryRunResult.status === "COMPLETED" ? "已完成" : "状态未知"} · 实际评估 ${fmt(dryRunResult.evaluatedWithdrawals)} 笔` : "尚未模拟"}>
-          {dryRunResult ? <><div className="k3-simulation-facts"><KeyValues rows={[
+          {dryRunResult ? <div className="k3-simulation"><div className="k3-simulation-facts"><KeyValues rows={[
             { key: "batch", label: "模拟批次", value: dryRunResult.batchNo, mono: true }, { key: "window", label: "样本窗口", value: `${dryRunResult.sampleWindowDays} 天` },
             { key: "evaluated", label: "实际评估", value: `${fmt(dryRunResult.evaluatedWithdrawals)} 笔` }, { key: "active", label: "已启用规则", value: `${fmt(dryRunResult.activeRules)} 条`, explain: "模拟实际执行时读取的当前生效规则，不是草稿预览。" },
             { key: "hits", label: "命中次数", value: `${fmt(dryRunResult.hitCount)} 次`, explain: "按匹配规则次数累计；同一提现可命中多条，因此可以大于样本笔数。" },
-          ]} /></div><Panel title="模拟样本裁决分布" explain="这一批实际评估的样本，每笔只计一次最终K3裁决；放行只表示K3没有拦截，不等于已打款。"><Distribution rows={dryRunResult.routeCounts} total={dryRunResult.evaluatedWithdrawals} simulation /></Panel></>
+          ]} /></div><section className="k3-simulation-dist" aria-label="模拟样本裁决分布"><h3 className="k3-simulation-title">模拟样本裁决分布<Explain label="模拟样本裁决分布的说明" content="这一批实际评估的样本，每笔只计一次最终K3裁决；放行只表示K3没有拦截，不等于已打款。" /></h3><Distribution rows={dryRunResult.routeCounts} total={dryRunResult.evaluatedWithdrawals} simulation /></section></div>
             : <BlockState state="empty" title="尚未模拟" detail="最近一次结果只在当前页面保留，刷新后不承诺找回。" />}
         </Fold>
         <div className="rd-links">{[["提现审核", "/finance/withdrawals"], ["USDT 提现参数", "/finance/params"], ["多账户风险排查", "/risk/multi-account"], ["操作记录与审批", "/platform/audit"]].map(([label, href]) => reach(href) && <Link key={href} href={href}>{label}</Link>)}</div>
       </>}
-    <Drawer open={hitsOpen && canRead} onClose={() => { setHitDetail(null); setQuery({ section: null }); }} title="触发记录" icon={History} wide explain="一条记录是一条规则命中，同一提现可以有多条记录；不是最终提现单状态。">
+    <Drawer open={hitsOpen && canRead} onClose={() => { setHitDetail(null); setQuery({ section: null }); }} title="触发记录" icon={History} wide data-k3-hits="" data-k3-extra={hitColumns.isVisible("reason") || hitColumns.isVisible("time") ? "" : undefined} explain="一条记录是一条规则命中，同一提现可以有多条记录；不是最终提现单状态。">
       {!healthy ? <BlockState state={ctx.contentError ? "error" : "loading"} title={ctx.contentError ? "触发记录读取失败" : "正在读取触发记录"} detail={readError} onRetry={ctx.contentError ? () => void reload().catch(() => undefined) : undefined} /> : <>
-        <Panel title="历史命中处置分布" explain="累计现存的全部命中记录，没有时间筛选、不随下方动作筛选改变；不是全部提现的放行率。"><Distribution rows={overview!.routeCounts} total={overview!.routeTotal} /></Panel>
+        <Panel title="历史命中处置分布" plain explain="累计现存的全部命中记录，没有时间筛选、不随下方动作筛选改变；不是全部提现的放行率。"><Distribution rows={overview!.routeCounts} total={overview!.routeTotal} /></Panel>
         <div className="k3-hit-filters"><Segments label="命中处置筛选" value={hitAction} items={[{ value: "all", label: "全部" }, { value: "delay", label: "延迟" }, { value: "freeze", label: "冻结" }, { value: "manual", label: "转人工" }]} onChange={(value) => setQuery({ hitPage: 1, hitAction: value })} />
           <Button variant="ghost" disabledReason={hitAction === "all" ? "当前没有动作筛选" : undefined} onClick={() => setQuery({ hitAction: "all", hitPage: 1 })}>清除筛选</Button><ColumnPicker columns={hitColumns} /></div>
         <div className="k3-table-frame"><Table label="触发记录" className="k3-hits-table"><thead><tr><Th>提现 / 账户</Th><Th align="right">金额<Explain label="触发金额口径" content={<KeepText text="接口未提供币种。保留原金额，不作币种推定。" />} /></Th><Th>规则 / 维度</Th><Th>命中处置</Th>{hitColumns.isVisible("reason") && <Th>触发原因</Th>}{hitColumns.isVisible("time") && <Th>时间<Explain label="服务端时间" content="服务端时间，时区尚未提供；保留原值，不按浏览器时区转换。" /></Th>}</tr></thead>
@@ -581,9 +580,8 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
       nav={detail ? { hasPrev: rules.findIndex((rule) => rule.ruleId === detail.ruleId) > 0, hasNext: rules.findIndex((rule) => rule.ruleId === detail.ruleId) < rules.length - 1,
         onPrev: () => setDetail(rules[rules.findIndex((rule) => rule.ruleId === detail.ruleId) - 1]), onNext: () => setDetail(rules[rules.findIndex((rule) => rule.ruleId === detail.ruleId) + 1]) } : undefined}
       footer={detail && <Decision others={ruleActions(detail, true)} />}>
-      {detail && <><JudgmentPoints rows={[{ label: "当前状态", value: <RuleTag state={detail.state} /> }, { label: "条件", value: conditionCopy(detail) }, { label: "命中处置", value: <ActionTag action={detail.action} /> }, { label: "优先级 / 版本", value: `P${detail.priority} / v${detail.version}` }]} />
+      {detail && <><JudgmentPoints rows={[{ label: "当前状态", value: <RuleTag state={detail.state} /> }, { label: "条件", value: conditionCopy(detail) }, { label: "命中处置", value: <ActionTag action={detail.action} /> }, { label: "优先级 / 版本", value: `P${detail.priority} / v${detail.version}` }, { label: "检查维度", value: dimensionLabel(detail.dimension) }, { label: "内置标记", value: detail.builtIn ? "内置" : "自建" }]} />
         {editableReason(detail) && <Notice tone="warn">{editableReason(detail)}</Notice>}{locked(detail.ruleId) && <Notice tone="warn">这条规则有原操作结果待确认，暂时不能发起新的变更。</Notice>}
-        <KeyValues rows={[{ key: "dimension", label: "检查维度", value: dimensionLabel(detail.dimension) }, { key: "builtIn", label: "内置标记", value: detail.builtIn ? "内置" : "自建" }]} />
         <Fold title="技术信息" inset summary="原条件与接口字段"><KeyValues rows={[{ key: "raw", label: "conditionText", value: detail.conditionText }, { key: "state", label: "state", value: detail.state }, { key: "action", label: "action", value: detail.action }]} /></Fold></>}
     </Drawer>
     <Drawer open={!!hitDetail} onClose={() => setHitDetail(null)} title="触发记录详情" sub={hitDetail?.withdrawalNo} icon={History}>
@@ -609,7 +607,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
       <Button onClick={() => void navigator.clipboard.writeText(JSON.stringify(isSavedCommand(inspecting) ? { commandKey: inspecting.commandKey, ...inspecting.request } : inspecting, null, 2)).then(() => ctx.toast("原请求技术信息已复制", "success")).catch(() => ctx.toast("复制失败，请手动复制", "error"))}>复制技术信息</Button></>}>
       <pre className="k3-request">{JSON.stringify(isSavedCommand(inspecting) ? { commandKey: inspecting.commandKey, ...inspecting.request } : inspecting, null, 2)}</pre>
       <p>保留这次实际使用的方法、路径、原请求内容与命令号。本地记录属于本标签页，不提供跨设备恢复。</p>
-      {reach("/platform/audit") ? <Link href="/platform/audit">操作记录与审批</Link> : <p>请有权限的风控或超级管理员核对原操作。</p>}
+      {reach("/platform/audit") ? <p><Link className="rd-link" href="/platform/audit">操作记录与审批</Link></p> : <p>请有权限的风控或超级管理员核对原操作。</p>}
     </Modal>}
     {releasing && <Modal title="解除待确认" icon={ShieldCheck} onClose={() => setReleasing(null)} dirty={releaseVerified}
       footer={<><Button onClick={() => setReleasing(null)}>取消</Button><Button variant="primary" disabledReason={!releaseVerified ? "请先勾选已核实原操作" : undefined} onClick={() => {
@@ -617,7 +615,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
         commands.forget(releasing.fingerprint, releasing.commandKey); syncPending(); setReleasing(null); ctx.toast("已解除本页待确认，请继续核对后端原操作记录", "info");
       }}>确认解除</Button></>}>
       <ReleaseBody label={releasing.label} />
-      <KeyValues rows={[{ key: "target", label: "原对象", value: targetLabel(releasing.target) }, { key: "key", label: "原命令号", value: releasing.commandKey, mono: true }, { key: "reason", label: "原操作理由", value: releasing.reason }]} />
+      <Facts><Fact k="原对象">{targetLabel(releasing.target)}</Fact><Fact k="原命令号"><span data-mono="">{releasing.commandKey}</span></Fact><Fact k="原操作理由">{releasing.reason}</Fact></Facts>
       <Fold title="原请求技术信息" summary="方法、路径、原内容与版本" inset><pre className="k3-request">{JSON.stringify({ request: releasing.request, original: releasing.original }, null, 2)}</pre></Fold>
       <Check label="我已核实原操作的对象、请求和结果" checked={releaseVerified} onChange={(event) => setReleaseVerified(event.target.checked)} />
     </Modal>}
@@ -652,7 +650,7 @@ function RuleEditor({ draft, pending, onSubmit, onClose, onRebase }: {
     const number = Number(raw);
     const valid = raw.trim() !== "" && Number.isFinite(number) && (field.key === "addressThreshold" || Number.isInteger(number))
       && number >= field.min! && number <= field.max! && Math.abs((number - field.min!) / field.step! - Math.round((number - field.min!) / field.step!)) < 1e-8;
-    return [field.key, valid ? undefined : `请填${field.min}–${field.max}${field.key === "addressThreshold" ? "的数值" : "的整数"}，每档${field.step}`];
+    return [field.key, valid ? undefined : `请填 ${fmt(field.min!)}–${fmt(field.max!)} ${field.key === "addressThreshold" ? "的数值" : "的整数"}，每档 ${field.step}`];
   }));
   const dimension = draft.kind === "create" ? dimensionFromForm(value.dimension) : rule!.dimension;
   const condition = visibleFields.some((field) => !["dimension", "action", "priority"].includes(field.key) && issues[field.key]) ? "" : buildK3Condition(k3KindFromDimension(dimension), value);
@@ -695,7 +693,7 @@ function RuleEditor({ draft, pending, onSubmit, onClose, onRebase }: {
         ...visibleFields.filter((field) => !["dimension", "action", "priority"].includes(field.key)),
       ].map((field) => <div className="k3-field-slot" data-wide={field.key === "dimension" || field.key === "addressSource" ? "" : undefined} data-compare={field.key.endsWith("Op") ? "" : undefined} key={field.key}>
         <Field label={field.label} required explain={K3_FIELD_HELP[field.key]} error={touched[field.key] ? issues[field.key] : undefined}
-          help={field.inputKind === "number" ? `${field.min}–${field.max}，每档${field.step}` : undefined}>
+          help={field.inputKind === "number" && !(touched[field.key] && issues[field.key]) ? `${fmt(field.min!)}–${fmt(field.max!)}，每档 ${field.step}` : undefined}>
           {(control) => field.inputKind === "select" ? <Select {...control} aria-label={field.label} value={value[field.key]} options={field.options!.map((option) => ({ value: option, label: option === ">=" ? "≥" : option === "<=" ? "≤" : option }))} onChange={(next) => setValue((current) => ({ ...current, [field.key]: next }))} />
             : <NumberInput {...control} aria-label={field.label} value={value[field.key]} min={field.min} max={field.max} step={field.step} unit={field.key === "amount" || field.key === "velocityAmount" ? "USD" : field.key === "days" ? "天" : field.key === "count" ? "笔" : undefined}
               onBlur={() => setTouched((current) => ({ ...current, [field.key]: true }))} onChange={(event) => setValue((current) => ({ ...current, [field.key]: event.target.value }))} />}

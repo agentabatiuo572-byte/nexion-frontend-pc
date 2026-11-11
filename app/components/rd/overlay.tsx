@@ -261,7 +261,7 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
           <div className="rd-modal-body">{children}</div>
           {/* 读屏用的状态区一直在，有字时才读出来；看得见的提示只在按过一次 Esc 后排进底栏，平时不占位。 */}
           <span className="rd-sr-only" role="status">{escArmed ? escText : ""}</span>
-          {(footer || escArmed) && <div className="rd-modal-foot">{escArmed && <p className="rd-modal-esc" aria-hidden>{escText}</p>}<TipSide side="left">{footer}</TipSide></div>}
+          {(footer || escArmed) && <div className="rd-modal-foot">{escArmed && <p className="rd-modal-esc" aria-hidden>{escText}</p>}<TipSide side="top">{footer}</TipSide></div>}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
