@@ -672,7 +672,7 @@ export default function H1Phase({ ctx,
   const openControl = (control: H1Phases["controls"][number]) => {
     if (!canControl) return;
     const scope = `control:${control.key}`;
-    const label = `阶段切换设置 · ${control.label}`;
+    const label = `阶段切换设置 · ${CONTROL_NAMES[control.key] ?? control.label}`;
     setConfirm({
       scope,
       briefKind: "config",
@@ -699,9 +699,9 @@ export default function H1Phase({ ctx,
           "P4",
           "P5",
           "P6"],
-        optionLabels: { "未钉住": "未锁定阶段" },
+        optionLabels: { "未钉住": "未锁定当前阶段" },
         disallowCurrent: true,
-        hint: control.key === "pin" ? "未锁定阶段不代表开启自动推进" : control.key === "schedule" ? "保存非空原文，后端不校验排程表达式" : "保存非空原文，后端不校验人群表达式"
+        hint: control.key === "pin" ? "未锁定当前阶段不代表开启自动推进" : control.key === "schedule" ? "保存非空原文，后端不校验排程表达式" : "保存非空原文，后端不校验人群表达式"
       },
       run: async (reason,
         value) => {
@@ -895,13 +895,13 @@ export default function H1Phase({ ctx,
         </Panel>
       </div>
       <div id={nav.anchor("controls")} className="h1-section">
-        <Fold title="阶段切换设置" icon={GitBranch} tone="role-other" summary={`${describeH1Schedule(rhythm.schedule)} · ${model.controls.find((row) => row.key === "pin")?.value === "未钉住" ? "未锁定阶段" : model.controls.find((row) => row.key === "pin")?.value ? "已保存锁定配置" : "未配置锁定阶段"}`} open={!!folds.controls} onOpenChange={(open) => setFolds((value) => ({
+        <Fold title="阶段切换设置" icon={GitBranch} tone="role-other" summary={`${describeH1Schedule(rhythm.schedule)} · ${model.controls.find((row) => row.key === "pin")?.value === "未钉住" ? "未锁定当前阶段" : model.controls.find((row) => row.key === "pin")?.value ? "已保存锁定配置" : "未配置锁定当前阶段"}`} open={!!folds.controls} onOpenChange={(open) => setFolds((value) => ({
           ...value,
           controls: open
         }))} explain={CONTROL_EFFECT}>
           <Notice tone="progress">{canControl ? "三个入口只保存配置，后端目前不执行。" : "当前阶段控制仅保存配置，后端目前不执行。"}</Notice>
-          <ConfigList label="阶段控制配置">{model.controls.map((control) => <ConfigRow key={control.key} name={CONTROL_NAMES[control.key] ?? control.label} what={control.key === "schedule" ? "保存的阶段排程原文" : control.key === "pin" ? "保存的阶段锁定配置" : "保存的用户群阶段策略原文"} when="批准后保存配置，当前不执行" note={control.key === "pin" ? "未锁定阶段不表示已开启自动推进" : "保留后端原文，不推断实际生效状态"} value={control.key === "pin" && control.value === "未钉住" ? "未锁定阶段" : text(control.value,
-            "未配置")} action={canControl ? <Button size="sm" aria-label={`调整${control.label}`} disabledReason={scopeBlock(`control:${control.key}`)} onClick={() => openControl(control)}>调整</Button> : undefined} />)}</ConfigList>
+          <ConfigList label="阶段控制配置">{model.controls.map((control) => <ConfigRow key={control.key} name={CONTROL_NAMES[control.key] ?? control.label} what={control.key === "schedule" ? "保存的阶段排程原文" : control.key === "pin" ? "保存的阶段锁定配置" : "保存的用户群阶段策略原文"} when="批准后保存配置，当前不执行" note={control.key === "pin" ? "未锁定当前阶段不表示已开启自动推进" : "保留后端原文，不推断实际生效状态"} value={control.key === "pin" && control.value === "未钉住" ? "未锁定当前阶段" : text(control.value,
+            "未配置")} action={canControl ? <Button size="sm" aria-label={`调整${CONTROL_NAMES[control.key] ?? control.label}`} disabledReason={scopeBlock(`control:${control.key}`)} onClick={() => openControl(control)}>调整</Button> : undefined} />)}</ConfigList>
         </Fold>
       </div>
       <div id={nav.anchor("overrides")} className="h1-section">
