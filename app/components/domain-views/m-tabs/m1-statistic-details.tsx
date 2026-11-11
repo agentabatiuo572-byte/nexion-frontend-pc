@@ -71,8 +71,17 @@ export function fundAmount(funds: SupportAnalyticsCustomer["funds"], metric: Exc
   const amount = metric === "balance" ? funds.balances?.find(row => row.currency === currency) : funds.withdrawals?.find(row => row.currency === currency)?.[metric];
   return { confirmed: amount?.confirmedAmount ?? null, observed: amount?.observedAmount ?? null };
 }
-function amountText(amount?: Amount) {
-  return amount?.confirmed ?? (amount?.observed == null ? "未知" : amount.observed + "（已观测）");
+// Display only: thousands separators, backend-padded zeros dropped, one column shares the decimals it really needs (min 2).
+function amountPlaces(values: ReadonlyArray<string | null | undefined>): number {
+  return values.reduce<number>((max, value) => Math.max(max, (/^-?\d+(?:\.(\d+))?$/.exec(value ?? "")?.[1] ?? "").replace(/0+$/, "").length), 2);
+}
+function groupedAmount(value: string, places = 2): string {
+  const parts = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value);
+  if (!parts) return value;
+  return `${parts[1]}${parts[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(parts[3] ?? "").replace(/0+$/, "").padEnd(Math.max(2, places), "0")}`;
+}
+function amountText(amount?: Amount, places?: number) {
+  return amount?.confirmed != null ? groupedAmount(amount.confirmed, places) : amount?.observed == null ? "未知" : groupedAmount(amount.observed, places) + "（已观测）";
 }
 function exactGroupSum(values: string[], total: string) {
   const digits = Math.max(...[total, ...values].map(value => (value.split(".")[1] ?? "").length));
@@ -106,7 +115,8 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
     const amounts = groups.map(group => group.period.currencies.find(row => row.currency === currency)?.net);
     const known = amounts.flatMap(row => row?.confirmed == null ? [] : [row.confirmed]);
     const matches = original?.confirmed != null && known.length === groups.length && exactGroupSum(known, original.confirmed);
-    const rows = groups.map((group, i) => [group.name ?? "组名未知", group.groupId, amountText(amounts[i])]);
+    const places = amountPlaces(amounts.map(row => row?.confirmed ?? row?.observed));
+    const rows = groups.map((group, i) => [group.name ?? "组名未知", group.groupId, amountText(amounts[i], places)]);
     return { headings: ["负责组", "组编号", "期间净额 / " + nexGridBrandText(currency)], rows: origin.queryVersion ? rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : rows, total: origin.queryVersion ? groups.length : null, next: Boolean(origin.queryVersion) && page * PAGE_SIZE < groups.length, summary, note: (matches ? "已返回的分组净额之和与原统计一致。" : "已返回的分组数据无法完整核对原统计。") + " 期间按发生时归属统计，本页保留组级期间净额投影，不展开新的逐客户或逐笔净额投影。" + (origin.queryVersion ? "" : " 当前显示本次核权回执中的 " + rows.length + " 组。") };
   }
   // Net uses the entire authorized scope. Wallet and withdrawal totals use the selected current customers.
@@ -117,10 +127,9 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
   if (list.view !== "CUSTOMERS") throw new Error("CUSTOMER_PROJECTION_UNAVAILABLE");
   await confirmOrigin();
   checkSummary(list);
-  const rows = list.records.map(row => {
-    const amount = metric === "net" ? row.lifetime.find(item => item.currency === currency)?.net : fundAmount(row.funds, metric, currency);
-    return [row.customerNo ?? row.customerId, operatorNicknameText(row.nickname ?? "") || "未登记", amountText(amount)];
-  });
+  const amountFor = (row: (typeof list.records)[number]) => metric === "net" ? row.lifetime.find(item => item.currency === currency)?.net : fundAmount(row.funds, metric, currency);
+  const places = amountPlaces(list.records.map(row => { const amount = amountFor(row); return amount?.confirmed ?? amount?.observed; }));
+  const rows = list.records.map(row => [row.customerNo ?? row.customerId, operatorNicknameText(row.nickname ?? "") || "未登记", amountText(amountFor(row), places)]);
   const stable = Boolean(origin.queryVersion && list.queryVersion);
   return { headings: ["客户编号", "客户名称", fundLabels[metric] + " / " + nexGridBrandText(currency)], rows, total: stable ? list.total : null, next: stable && list.canContinue, summary, note: (metric === "net" ? "按原范围当前客户的累计净额核对。" : "按原筛选的当前客户逐人核对，不受月份筛选。未知表示缺少可核实金额。") + (stable ? "" : " 当前显示本次核权返回的 " + rows.length + " 名客户。暂无查询版本，暂不能翻页。"), version: stable ? list.queryVersion ?? undefined : undefined };
 }

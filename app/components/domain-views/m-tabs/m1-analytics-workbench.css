@@ -134,3 +134,4 @@
 .m1-finance-table col:nth-child(1){width:19%}.m1-finance-table col:nth-child(2){width:11%}.m1-finance-table col:nth-child(3){width:20%}.m1-finance-table col:nth-child(4){width:18%}.m1-finance-table col:nth-child(5){width:13%}.m1-finance-table col:nth-child(6){width:19%}
 .m1-pool-table col:nth-child(2){width:22%}.m1-pool-table col:nth-child(3){width:19%}.m1-pool-table col:nth-child(4){width:20%}.m1-pool-table col:nth-child(5){width:15%}
 }
+.rd-fact-change .s5a-transfer-effect{display:inline-flex;align-items:center;gap:6px;margin:0}

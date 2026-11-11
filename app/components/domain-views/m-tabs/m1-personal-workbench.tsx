@@ -402,7 +402,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
       <div className="m1-command-form">
       <Facts><Fact k="客户">{customerName(detail)} · {m1CustomerCode(detail.customerId)}</Fact><Fact k="当前专属客服">{detail.agentName || "本人"}</Fact><Fact k="维护状态">{detail.maintenanceEnabled ? "主动维护" : "暂停主动维护"} → {maintenanceAction === "stop" ? "暂停主动维护" : "主动维护"}</Fact></Facts>
       <p>{maintenanceAction === "stop" ? "仅停止主动跟进，客户归属、私聊与求助保持可用。" : "旧周期不恢复，不自动产生执行或成功。"}</p>
-      <Field label="操作理由" required help="请填写 8–200 字，将记入操作记录。" error={reasonLeft && !reasonOk ? "请填写 8–200 字的理由。" : undefined}>{control => <Textarea {...control} value={reason} maxLength={200} disabled={saving || Boolean(maintenancePending)} count={`${reason.trim().length}/200`} onBlur={() => setReasonLeft(true)} onChange={e => setReason(e.target.value)} />}</Field>
+      <Field label="操作理由" required help={reasonLeft && !reasonOk ? undefined : "请填写 8–200 字，将记入操作记录。"} error={reasonLeft && !reasonOk ? "请填写 8–200 字的理由。" : undefined}>{control => <Textarea {...control} value={reason} maxLength={200} disabled={saving || Boolean(maintenancePending)} count={`${reason.trim().length}/200`} onBlur={() => setReasonLeft(true)} onChange={e => setReason(e.target.value)} />}</Field>
       {saveError && <Notice tone="danger">{saveError}</Notice>}{maintenanceNeedsRefresh && <Button disabled={saving || detailLoading} onClick={() => void reloadMaintenanceDetail()}>重新读取客户资料</Button>}{maintenancePending && <Notice tone="warn" action={<Button disabled={saving} onClick={() => void checkMaintenance()}>查询原操作</Button>}>上次结果待确认，原理由与命令号已保留。</Notice>}
       </div>
     </Modal>}

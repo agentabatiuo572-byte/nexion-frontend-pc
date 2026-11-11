@@ -371,7 +371,7 @@ export function M1SupervisorPool({ permission, initialGroupId }: { permission: M
       {target && <Facts><Fact k="目标专属客服">{target.name}</Fact><Fact k="已绑定客户">{target.assignedUserCount} 人</Fact><Fact k="当前会话负载">{target.currentActiveSessions ?? "—"}</Fact><Fact k="会话并发上限">{target.maxConcurrent}</Fact></Facts>}
       {target && !targetFresh && <Notice tone="danger">已选专属客服不在当前有效名单或资料已变化，请返回相应页重新选择。</Notice>}
       {target && <p className="rd-note">专属客服当前{target.busy ? "忙碌" : "可接待"}；忙碌或离线不会自动改派。绑定人数没有额外上限。</p>}
-      <Field label="分配原因" required help="请填写 8–200 字，将记入操作记录。" error={reasonLeft && !reasonOk ? "请填写 8–200 字的分配原因。" : undefined}>{control => <Textarea {...control} value={assignmentReason} maxLength={200} disabled={saving || Boolean(pending)} count={`${assignmentReason.trim().length}/200`} onBlur={() => setReasonLeft(true)} onChange={event => setAssignmentReason(event.target.value)} placeholder="说明本次分配的原因" />}</Field>
+      <Field label="分配原因" required help={reasonLeft && !reasonOk ? undefined : "请填写 8–200 字，将记入操作记录。"} error={reasonLeft && !reasonOk ? "请填写 8–200 字的分配原因。" : undefined}>{control => <Textarea {...control} value={assignmentReason} maxLength={200} disabled={saving || Boolean(pending)} count={`${assignmentReason.trim().length}/200`} onBlur={() => setReasonLeft(true)} onChange={event => setAssignmentReason(event.target.value)} placeholder="说明本次分配的原因" />}</Field>
       {pending && <Notice tone="warn" action={<Button type="button" size="sm" disabled={saving} onClick={() => void checkPending()}>查询上次结果</Button>}>上次提交结果尚未确认；客户范围和目标专属客服已锁定。</Notice>}
       {error && <Notice tone="danger">{error}</Notice>}
       </div>
