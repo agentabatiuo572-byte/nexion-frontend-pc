@@ -65,3 +65,5 @@
 .sa-workbench .rd-filter-row>button[aria-controls]{margin-left:auto}
 .m1-live-service .rd-stats>.rd-stat,.m1-personal>.rd-stats>.rd-stat{flex:1 1 0}
 @container(max-width:900px){.m1-live-service .rd-stats:has(>.rd-stat[data-lead])>.rd-stat[data-cp],.m1-personal>.rd-stats:has(>.rd-stat[data-lead])>.rd-stat[data-cp]{flex:1 1 calc(50% - 16px)}}
+
+.sa-workbench .rd-filter-row{align-items:flex-end}
