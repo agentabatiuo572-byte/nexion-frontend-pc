@@ -60,9 +60,10 @@
 
 /* ---------- 两张表 ---------- */
 .radarpage .b5-lists { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; }
-.radarpage .b5-signals th:nth-child(1), .radarpage .b5-signals td:nth-child(1) { width: 72px; }
-.radarpage .b5-signals th:nth-child(3), .radarpage .b5-signals td:nth-child(3) { width: 150px; }
-.radarpage .b5-signals th:nth-child(4), .radarpage .b5-signals td:nth-child(4) { width: 200px; }
+.radarpage .b5-signals th:nth-child(2), .radarpage .b5-signals td:nth-child(2) { width: 140px; }
+.radarpage .b5-signals th:nth-child(3), .radarpage .b5-signals td:nth-child(3) { width: 180px; }
+.radarpage .b5-signals th:nth-child(4), .radarpage .b5-signals td:nth-child(4) { width: 140px; white-space: nowrap; }
+.radarpage .b5-signal-main { display: inline-flex; align-items: center; gap: var(--rd-space-2); }
 .radarpage .b5-inbox th:nth-child(2), .radarpage .b5-inbox td:nth-child(2) { width: 200px; }
 .radarpage .b5-inbox th:nth-child(3), .radarpage .b5-inbox td:nth-child(3) { width: 160px; }
 .radarpage .b5-inbox th:nth-child(4), .radarpage .b5-inbox td:nth-child(4) { width: 200px; }
@@ -76,3 +77,4 @@
   .radarpage .b5-quiet-row { grid-template-columns: 22px minmax(104px, 140px) minmax(0, 1fr) auto; }
   .radarpage .b5-quiet-actions { grid-column: 2 / -1; justify-content: flex-start; }
 }
+.radarpage .b5-tab-note { margin: 0; padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x) var(--rd-space-1); display: flex; align-items: center; gap: 2px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }

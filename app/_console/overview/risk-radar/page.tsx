@@ -40,7 +40,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import { fmtConfigPct } from "@/lib/format";
 import { buildDimensions, IssueCard, QuietRow, ratioPct, type BuiltDimension, type DimensionKey } from "./dimensions";
-import { AlertDistribution, HANDLING, InboxTable, PressureTrend, SEVERITY, SignalsTable, stamp } from "./insights";
+import { AlertDistribution, HANDLING, InboxTable, PressureTrend, SEVERITY, SignalsTable, TabNote, stamp } from "./insights";
 
 /** B5 阈值 / 订阅 / 分类处理共用一张表,槽位分命名空间(分类处理槽位带维度 = 目标对象)。
  *  阈值与订阅额外把提交值 + 版本当输入指纹:改了值必须换新命令号,否则后端按旧号去重,
@@ -499,14 +499,18 @@ export default function RiskRadarPage() {
           ]} />
           <div {...tabIds.panel(tab)} className="rd-tab-pane">
             {tab === "signals" ? (
-              <Panel flush title="最近风险信号" sub={`近 7 个业务日最新 ${data.recentAlerts.length} 条 · ${openCount} 条待处理`}
-                explain="近 7 个业务日按时间倒序的最新 20 条，不分页；不代表这段时间只有这些。">
+              <Panel flush data-testid="b5-recent-alert-feed" data-capability="b5-signal-disposition">
+                <TabNote label="最近风险信号的范围" explain="近 7 个业务日按时间倒序的最新 20 条，不分页；不代表这段时间只有这些。">
+                  近 7 个业务日最新 {data.recentAlerts.length} 条 · {openCount} 条待处理
+                </TabNote>
                 <SignalsTable alerts={data.recentAlerts} canTriage={canTriage} updating={updatingSignal} reach={canCross}
                   onStatus={(alert, target) => { setStatusReason(""); setStatusError(""); setStatusUnknown(false); setStatusDialog({ alert, target }); }} />
               </Panel>
             ) : (
-              <Panel flush title="我的站内告警" sub={inboxLoading || inboxError ? undefined : `${inbox.length} 条 · ${unacked ?? 0} 条没确认`}
-                explain="只列发给你的站内告警，最多 100 条，不分页。确认已读只记录你看过，不改信号的处理进度。">
+              <Panel flush data-capability="b5-subscriber-inbox">
+                <TabNote label="站内告警的范围" explain="只列发给你的站内告警，最多 100 条，不分页。确认已读只记录你看过，不改信号的处理进度。">
+                  {inboxLoading ? "正在读取…" : inboxError ? "读取失败" : `发给你的 ${inbox.length} 条 · ${unacked ?? 0} 条没确认`}
+                </TabNote>
                 <InboxTable state={inboxError ? "error" : inboxLoading ? "loading" : "ready"} items={inbox} error={inboxError}
                   onRetry={() => setInboxReload((value) => value + 1)} canTriage={canTriage} acknowledging={acknowledgingDelivery}
                   onAcknowledge={(item) => void acknowledgeInbox(item)} />

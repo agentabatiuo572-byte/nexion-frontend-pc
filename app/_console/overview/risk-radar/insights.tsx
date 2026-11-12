@@ -7,7 +7,7 @@
  */
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { BellRing, CalendarRange, ListChecks, TrendingUp } from "lucide-react";
+import { AlertTriangle, CalendarRange, Info, ShieldAlert, TrendingUp, type LucideIcon } from "lucide-react";
 import {
   BlockState, Button, Cell, ColumnChart, Explain, Panel, StatusDistributionBar, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, TrendLines,
 } from "@/app/components/rd";
@@ -19,12 +19,20 @@ import { ratioPct } from "./dimensions";
 
 type Alert = B5Radar["recentAlerts"][number];
 
-export const SEVERITY: Record<Alert["level"], { text: string; tone: StateTone }> = {
-  P0: { text: "紧急", tone: "danger" },
-  P1: { text: "严重", tone: "warn" },
-  P2: { text: "警告", tone: "neutral" },
-  P3: { text: "提示", tone: "neutral" },
+/** 级别不是等待，不用默认的时钟图标。 */
+export const SEVERITY: Record<Alert["level"], { text: string; tone: StateTone; icon: LucideIcon }> = {
+  P0: { text: "紧急", tone: "danger", icon: ShieldAlert },
+  P1: { text: "严重", tone: "warn", icon: AlertTriangle },
+  P2: { text: "警告", tone: "neutral", icon: AlertTriangle },
+  P3: { text: "提示", tone: "neutral", icon: Info },
 };
+
+/** 长单号（K2 的 40 位哈希）中间省略，留开头和能区分的结尾，悬停看全号。 */
+export function SignalNo({ value }: { value: string }) {
+  return value.length > 24
+    ? <span data-mono title={value}>{value.slice(0, 12)}…{value.slice(-8)}</span>
+    : <span data-mono>{value}</span>;
+}
 
 export const HANDLING: Record<Alert["handlingStatus"], { text: string; tone: StateTone }> = {
   open: { text: "待处理", tone: "warn" },
@@ -112,48 +120,46 @@ export function SignalsTable({ alerts, canTriage, updating, reach, onStatus }: {
   onStatus: (alert: Alert, target: "handled" | "resolved") => void;
 }) {
   return (
-    <div data-testid="b5-recent-alert-feed" data-capability="b5-signal-disposition">
       <Table label="最近风险信号" className="b5-signals">
         <thead>
           <tr>
-            <Th>级别</Th>
-            <Th>风险信号</Th>
+            <Th>级别 · 风险信号</Th>
             <Th>发生时间</Th>
             <Th>处理进度 <Explain label="处理进度和发送状态" content={<>
               <p>待处理 → 已处理 → 已解决，只能按这个顺序往前推，不能跳步或退回。标记只记录进度，不会解除风控、不会放行提现。</p>
               <p>处理人接口暂未返回，处理记录到「操作记录与审批」查。发送是这条信号最近一次的发送状态（任一接收人、任一渠道），不一定是发给你的。</p>
             </>} /></Th>
-            <Th align="right">去处理 <Explain label="去处理的说明" content="链接只打开对应页面，不记分诊记录。要留分诊记录，从上面的五项点进去。" /></Th>
+            <Th>去处理 <Explain label="去处理的说明" content="链接只打开对应页面，不记分诊记录。要留分诊记录，从上面的五项点进去。" /></Th>
+            {canTriage && <Th align="right">操作</Th>}
           </tr>
         </thead>
         <tbody>
-          {alerts.length === 0 ? <TableMessage columns={5}>近 7 个业务日没有风险信号</TableMessage> : alerts.map((alert) => {
+          {alerts.length === 0 ? <TableMessage columns={canTriage ? 5 : 4}>近 7 个业务日没有风险信号</TableMessage> : alerts.map((alert) => {
             const page = TARGET_NAME[alert.target] ?? "对应页面";
             const next = alert.handlingStatus === "open" ? "handled" : alert.handlingStatus === "handled" ? "resolved" : null;
             return (
               <Tr key={alert.signalNo}>
-                <Td><StatusTag tone={SEVERITY[alert.level].tone}>{SEVERITY[alert.level].text}</StatusTag></Td>
-                <Td><Cell main={alert.message} sub={<>用户 #{alert.userId} · <span data-mono>{alert.signalNo}</span></>} /></Td>
+                <Td><Cell main={<span className="b5-signal-main"><StatusTag tone={SEVERITY[alert.level].tone} icon={SEVERITY[alert.level].icon}>{SEVERITY[alert.level].text}</StatusTag>{alert.message}</span>}
+                  sub={<>用户 #{alert.userId} · <SignalNo value={alert.signalNo} /></>} /></Td>
                 <Td><Cell num main={stamp(alert.createdAt)} /></Td>
                 <Td><Cell main={<StatusTag tone={HANDLING[alert.handlingStatus].tone}>{HANDLING[alert.handlingStatus].text}</StatusTag>} sub={`发送：${deliveryStatusText(alert.deliveryStatus)}`} /></Td>
-                <Td align="right" data-fit="">
-                  <span className="b5-row-actions">
-                    {reach(alert.target)
-                      ? <Link className="rd-link" href={alert.target} prefetch={false}>去{page}</Link>
-                      : <span className="b5-muted">没有{page}权限</span>}
-                    {canTriage && next && (
+                <Td>{reach(alert.target)
+                  ? <Link className="rd-link" href={alert.target} prefetch={false}>{page}</Link>
+                  : <span className="b5-muted">没有{page}权限</span>}</Td>
+                {canTriage && (
+                  <Td align="right" data-fit="">
+                    {next && (
                       <Button size="sm" loading={updating === alert.signalNo} onClick={() => onStatus(alert, next)}>
                         {next === "handled" ? "标记已处理" : "标记已解决"}
                       </Button>
                     )}
-                  </span>
-                </Td>
+                  </Td>
+                )}
               </Tr>
             );
           })}
         </tbody>
       </Table>
-    </div>
   );
 }
 
@@ -186,10 +192,9 @@ export function InboxTable({ state, items, error, onRetry, canTriage, acknowledg
   onAcknowledge: (item: B5InboxItem) => void;
 }) {
   if (state === "error") {
-    return <div data-capability="b5-subscriber-inbox"><BlockState state="error" title="站内告警读取失败，不是没有告警" detail={error} onRetry={onRetry} /></div>;
+    return <BlockState state="error" title="站内告警读取失败，不是没有告警" detail={error} onRetry={onRetry} />;
   }
   return (
-    <div data-capability="b5-subscriber-inbox">
       <Table label="我的站内告警" className="b5-inbox">
         <thead>
           <tr>
@@ -208,7 +213,7 @@ export function InboxTable({ state, items, error, onRetry, canTriage, acknowledg
               const delivered = item.deliveredAt !== null;
               return (
                 <Tr key={item.id}>
-                  <Td><Cell main={<span data-mono>{item.signalNo}</span>} /></Td>
+                  <Td><Cell main={<SignalNo value={item.signalNo} />} /></Td>
                   <Td><Cell main={<StatusTag tone={DELIVERY_TONE[item.deliveryStatus.toUpperCase()] ?? "neutral"}>{deliveryStatusText(item.deliveryStatus)}</StatusTag>}
                     sub={item.receiptSource ? `渠道：${RECEIPT_SOURCE[item.receiptSource] ?? "未知"}` : undefined} /></Td>
                   <Td><Cell num main={item.deliveredAt ? stamp(item.deliveredAt) : <span className="b5-muted">还没送达</span>} /></Td>
@@ -228,12 +233,10 @@ export function InboxTable({ state, items, error, onRetry, canTriage, acknowledg
             })}
         </tbody>
       </Table>
-    </div>
   );
 }
 
-export function TabNote({ children }: { children: ReactNode }) {
-  return <p className="b5-tab-note">{children}</p>;
+/** 页签下面一行：数量和口径问号。页签已经写了名字，面板不再重复标题。 */
+export function TabNote({ children, explain, label }: { children: ReactNode; explain: ReactNode; label: string }) {
+  return <p className="b5-tab-note">{children}<Explain label={label} content={explain} /></p>;
 }
-
-export const TAB_ICONS = { signals: ListChecks, inbox: BellRing };

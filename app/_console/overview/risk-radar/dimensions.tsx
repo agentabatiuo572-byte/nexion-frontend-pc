@@ -6,7 +6,7 @@
  * 有事的项排前面、展开成卡片，写清数字和线、为什么、去哪页；正常的项收成一行，安静（DP-05）。
  */
 import type { ReactNode } from "react";
-import { ArrowLeftRight, Ban, Gauge, Gem, Hourglass, Landmark, Layers, Power, Scale, Ticket, UserX, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, Ban, CircleHelp, Gauge, Gem, Hourglass, Landmark, Layers, Power, Scale, ShieldAlert, Ticket, UserX, type LucideIcon } from "lucide-react";
 import { BarList, Explain, Fact, Facts, Figure, IconTile, StatusTag, ThresholdMeter } from "@/app/components/rd";
 import type { StateTone } from "@/app/components/rd";
 import type { B5Radar } from "@/lib/admin/b5-client";
@@ -230,6 +230,8 @@ export function buildDimensions(data: B5Radar) {
 export type BuiltDimension = ReturnType<typeof buildDimensions>["issues"][number];
 
 const TAG_TONE: Record<Level, StateTone> = { danger: "danger", warn: "warn", ok: "ok", neutral: "neutral" };
+/** 告警、注意不是等待，不用默认的时钟；无法计算用问号。 */
+const TAG_ICON: Partial<Record<Level, LucideIcon>> = { danger: ShieldAlert, warn: AlertTriangle, neutral: CircleHelp };
 
 /** 有事的项：一张卡说清多严重、为什么、去哪。 */
 export function IssueCard({ item, actions, extra }: { item: BuiltDimension; actions: ReactNode; extra?: ReactNode }) {
@@ -239,7 +241,7 @@ export function IssueCard({ item, actions, extra }: { item: BuiltDimension; acti
         <IconTile icon={item.icon} tone={TAG_TONE[item.level]} size={28} />
         <h2 id={`b5-dim-${item.key}`} className="b5-issue-name">{item.name}</h2>
         <Explain label={`${item.name}怎么算`} content={item.explain} />
-        <StatusTag tone={TAG_TONE[item.level]}>{LEVEL_TAG[item.level]}</StatusTag>
+        <StatusTag tone={TAG_TONE[item.level]} icon={TAG_ICON[item.level]}>{LEVEL_TAG[item.level]}</StatusTag>
         {extra}
       </div>
       <p className="b5-issue-headline">{item.headline}</p>
@@ -257,7 +259,7 @@ export function QuietRow({ item, actions, extra }: { item: BuiltDimension; actio
       <span className="b5-quiet-name">{item.name}<Explain label={`${item.name}怎么算`} content={item.explain} /></span>
       <span className="b5-quiet-value">{item.quiet}</span>
       <span className="b5-quiet-tag">
-        <StatusTag tone={TAG_TONE[item.level]}>{item.level === "neutral" && item.key === "coverage" ? "不用算" : LEVEL_TAG[item.level]}</StatusTag>
+        <StatusTag tone={TAG_TONE[item.level]} icon={TAG_ICON[item.level]}>{item.level === "neutral" && item.key === "coverage" ? "不用算" : LEVEL_TAG[item.level]}</StatusTag>
         {extra}
       </span>
       <span className="b5-quiet-actions">{actions}</span>
