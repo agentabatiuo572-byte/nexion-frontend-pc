@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import type { K4PaginationQuery, KRiskActions, KRiskData, KRiskOverviewQuery, MultiAccountOverview, ScoringOverview } from "@/lib/admin/k-client";
-import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, OperationApproval, OperatorBriefKind } from "../design-kit";
+import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, InlineOperationApproval, OperationApproval, OperatorBriefKind } from "../design-kit";
 import type { ToastKind } from "@/lib/store/ui";
 
 export type ActionConfirmReq = {
+  initialReason?: string;
   action: ReactNode;
   /** 框上写的短标题，只写动作和对象；action 照旧是记进操作记录的名字（VS-101）。 */
   title?: ReactNode;
@@ -24,6 +25,7 @@ export type ActionConfirmReq = {
   getPendingBusinessValue?: () => BusinessFormValue | undefined;
   completionCopy?: string;
   approval?: OperationApproval;
+  inlineApproval?: InlineOperationApproval;
   /** 生效标签，只在 RdPage 里显示。 */
   effect?: ReactNode;
   /** 确认按钮写动作，比如「确认放行」，默认「确认提交」。 */
@@ -58,6 +60,8 @@ export type ActionConfirmReq = {
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type ConfirmReq = {
+  getPendingReason?: () => string | undefined;
+  blockedReason?: string;
   briefKind: OperatorBriefKind;
   action: ReactNode;
   /** 框上写的短标题，不传就用 action（VS-101）。 */

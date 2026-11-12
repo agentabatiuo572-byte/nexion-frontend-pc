@@ -108,10 +108,11 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
       throw new K1OutcomeUncertainError(
         formatAdminApiError(payload.message, `RISK_REQUEST_OUTCOME_UNKNOWN_${res.status}`), commandKey);
     }
-    throw new K1RequestError(formatAdminApiError(payload.message, `RISK_API_${res.status}`), res.status, payload.message);
+    const status = path.startsWith("/arbitrage/") && res.ok && payload.code && payload.code >= 400 && payload.code < 500 ? payload.code : res.status;
+    throw new K1RequestError(formatAdminApiError(payload.message, `RISK_API_${res.status}`), status, payload.message);
   }
-  if (isWrite && path.startsWith("/withdraw-rules") && payload.code !== 0) {
-    throw new K1OutcomeUncertainError("K3_WRITE_RESULT_INVALID", commandKey);
+  if (isWrite && (path.startsWith("/withdraw-rules") || path.startsWith("/arbitrage/")) && payload.code !== 0) {
+    throw new K1OutcomeUncertainError(path.startsWith("/arbitrage/") ? "K2_WRITE_RESULT_INVALID" : "K3_WRITE_RESULT_INVALID", commandKey);
   }
   return payload.data as T;
 }
@@ -277,6 +278,7 @@ export type ArbitrageOverview = {
   domain: "K2";
   stats: K2Stat[];
   params: KRiskParam[];
+  otpInitializationRequired: Record<string, boolean>;
   views: K2ViewGroup[];
   sources?: string[];
 };
@@ -896,8 +898,8 @@ const K2_REQUIRED_SOURCES = [
 
 function validateK2ParamValue(key: string, value: string): boolean {
   if (key === "trialCycleThreshold") {
-    const match = value.match(/^(>=|>)\s*(\d+)\s*次\s*\/\s*(7|14|30|60)\s*天$/);
-    return !!match && Number(match[2]) >= 2 && Number(match[2]) <= 10;
+    const match = value.match(/^(>=|>)\s*(\d+)\s*次\s*\/\s*(\d+)\s*天$/);
+    return !!match && Number(match[2]) >= 2 && Number(match[2]) <= 10 && Number(match[3]) >= 7 && Number(match[3]) <= 60;
   }
   if (key === "welcomeGiftAnomalyThreshold") {
     const match = value.match(/^(>=|>)\s*(\d+)\s*笔\s*\/\s*(实体|账户簇|手机号|设备)$/);
@@ -1027,7 +1029,7 @@ function normalizeK2(raw: unknown): ArbitrageOverview {
           invalidK2Response(`${rowPath}.clusterStatus`);
         }
         const clusterId = row.clusterId == null ? "" : requiredK2String(row.clusterId, `${rowPath}.clusterId`, true);
-        const level = requiredK2Integer(row.level, `${rowPath}.level`, 0, 3);
+        const level = requiredK2Integer(row.level, `${rowPath}.level`, 0, 5);
         return {
           rowId,
           rid: rowId,
@@ -1053,7 +1055,27 @@ function normalizeK2(raw: unknown): ArbitrageOverview {
   if (views.length !== K2_VIEW_KEYS.length || K2_VIEW_KEYS.some((key) => !viewKeys.has(key))) invalidK2Response("arbitrage.views");
   const sources = requiredK2StringArray(data.sources, "arbitrage.sources");
   if (K2_REQUIRED_SOURCES.some((source) => !sources.includes(source))) invalidK2Response("arbitrage.sources");
-  return { serverCanonical: true, domain: "K2", stats, params, views, sources };
+  const initialization = requiredK2Record(data.otpInitializationRequired, "arbitrage.otpInitializationRequired");
+  const otpInitializationRequired: Record<string, boolean> = {};
+  for (const key of K2_PARAM_KEYS.slice(3)) {
+    if (typeof initialization[key] !== "boolean") invalidK2Response(`arbitrage.otpInitializationRequired.${key}`);
+    otpInitializationRequired[key] = initialization[key] as boolean;
+  }
+  return { serverCanonical: true, domain: "K2", stats, params, otpInitializationRequired, views, sources };
+}
+
+/** A serialized K2 write is retained before sending, including the original operator and reason. */
+export type K2CommandRequest = { path: string; method: "PATCH" | "POST"; body: string };
+
+export async function executeK2Command(request: K2CommandRequest, commandKey: string): Promise<void> {
+  const result = await apiRequest<Record<string, unknown>>(request.path, { method: request.method, body: request.body, commandKey });
+  const valid = result && Number.isInteger(result.version) && Number(result.version) >= 0
+    && (request.method === "PATCH"
+      ? typeof result.key === "string" && request.path === `/arbitrage/params/${encodeURIComponent(result.key)}`
+        && typeof result.value === "string" && validateK2ParamValue(result.key, result.value)
+      : typeof result.rowId === "string" && request.path.startsWith(`/arbitrage/rows/${encodeURIComponent(result.rowId)}/`)
+        && typeof result.disposition === "string" && ["account_flagged", "gift_blocked", "leaderboard_flagged", "cluster_frozen"].includes(result.disposition));
+  if (!valid) throw new K1OutcomeUncertainError("K2_WRITE_RESULT_INVALID", commandKey);
 }
 
 const K3_RESPONSE_INVALID = "K3_RESPONSE_INVALID";

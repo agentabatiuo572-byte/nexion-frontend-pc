@@ -1,7 +1,7 @@
 "use client";
 
 import { useReach } from "@/lib/nav/use-reach";
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Eye, Flag, Gift, ListChecks, RefreshCw, Repeat, RotateCcw, ShieldAlert, SlidersHorizontal, TrendingUp, type LucideIcon } from "lucide-react";
 import {
@@ -10,21 +10,47 @@ import {
 } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
-import { K1OutcomeUncertainError, newK1CommandKey, type K2Row, type K2ViewGroup, type KRiskParam } from "@/lib/admin/k-client";
+import { executeK2Command, K1OutcomeUncertainError, K1RequestError, newK1CommandKey, type K2CommandRequest, type K2Row, type K2ViewGroup, type KRiskParam } from "@/lib/admin/k-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
-import { usePropose } from "@/lib/admin/use-propose";
+import { A2OutcomeUncertainError, createA2OperationProposal, fetchA2ProposalByKey } from "@/lib/admin/a2-client";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { fetchE3Snapshot } from "@/lib/admin/e3-client";
-import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { roleLabel } from "@/lib/nav/console-nav";
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { KCtx } from "./types";
 
-/** K2 标记 / 拦礼 / 看板 / 调参 / 联动冻结共用一张表,调用点 scope 已带动作类型前缀 + 目标行号 + 版本
- *  (`k2-flag:行号:版本`、`k2-param:参数键:版本:当前值`),刷新后仍能用同一命令号重试。 */
-const commandAttempt = createPendingMutationStore({
+type K2ProposalInput = Parameters<typeof createA2OperationProposal>[0];
+type K2SavedOperation = {
+  kind: "flag" | "blockgift" | "boardflag" | "freeze" | "param" | "otp-initial";
+  target: string;
+  label: string;
+  reason: string;
+  row?: K2Row;
+  param?: KRiskParam;
+  businessValue?: BusinessFormValue;
+  newValue?: string;
+} & ({ request: K2CommandRequest; proposal?: never } | { request?: never; proposal: K2ProposalInput });
+type K2PendingCommand = PendingMutationRecord & { operation?: K2SavedOperation; proposed?: boolean };
+
+// Keep legacy key-only evidence queryable; never reconstruct a missing original request.
+const commandAttempt = createPendingMutationStore<K2PendingCommand>({
   storageKey: "nexion-admin-k2-arbitrage-commands-v1",
+  retainExpiredRecords: true,
+  isValidRecord: (record) => {
+    if (record.operation === undefined) return true;
+    const op = record.operation;
+    return !!op && ["flag", "blockgift", "boardflag", "freeze", "param", "otp-initial"].includes(op.kind)
+      && typeof op.target === "string" && typeof op.label === "string" && typeof op.reason === "string"
+      && (op.request ? typeof op.request.path === "string" && /^\/arbitrage\/(params|rows)\//.test(op.request.path)
+        && ["POST", "PATCH"].includes(op.request.method) && typeof op.request.body === "string"
+        : !!op.proposal && op.proposal.sourceDomain === "K2" && op.proposal.obj === op.target && op.proposal.reason === op.reason)
+      && (op.param ? op.param.key === op.target && typeof op.param.value === "string" && Number.isInteger(op.param.version)
+        : !!op.row && op.row.rowId === op.target && Array.isArray(op.row.cells) && Array.isArray(op.row.actions) && Number.isInteger(op.row.version));
+  },
 });
 
 function errorText(error: unknown) {
@@ -102,13 +128,6 @@ const OTP_GATE_PARAMS: ExtraParamDef[] = [
 ];
 
 const OTP_UNIT_TEXT: Record<string, string> = { "秒": "秒", "次/24h": "次 / 24 小时", "次": "次", "场景": "" };
-
-/**
- * 六项验证码设置的首次配置状态（W14）。后端在 overview.otpInitializationRequired 里逐项给出，
- * 首次生效要另一位超级管理员批准；现有读取（normalizeK2）还没带出这个字段，提交仍走普通调整。
- * 待代码 worker：接入首次配置字段和审批单状态，"required" 时改走审批提案，"pending" 时锁住入口。
- */
-const OTP_FIRST_CONFIG: Partial<Record<string, "required" | "pending">> = {};
 
 function parseK2Threshold(key: string, value: string): K2Threshold | null {
   const text = value.trim().replace(/X/g, "x");
@@ -292,7 +311,7 @@ const IMMEDIATE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 
 export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const reach = useReach();
-  const propose = usePropose();
+  const session = useAdminAuth((state) => state.session);
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
   const hasAuthority = (authority: string) => authorities.includes(authority);
   const canWrite = hasAuthority("risk_k2_write");
@@ -307,6 +326,16 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const [openRowId, setOpenRowId] = useState<string | null>(null);
   const [paramsOpen, setParamsOpen] = useState(false);
   const [inFlight, setInFlight] = useState<string | null>(null);
+  const formRevision = useRef(0);
+  const [, syncPending] = useState(0);
+  const [otpApprovalRequired, setOtpApprovalRequired] = useState<Record<string, boolean>>({});
+  const pending = commandAttempt.list();
+  const pendingFor = (target: string) => commandAttempt.list().find((record) => record.operation?.target === target || record.fingerprint.split(":")[1] === target);
+  const otpFirstConfig: Partial<Record<string, "required" | "pending">> = {};
+  for (const definition of OTP_GATE_PARAMS) {
+    if (pendingFor(definition.key)?.proposed) otpFirstConfig[definition.key] = "pending";
+    else if (overview?.otpInitializationRequired[definition.key] || otpApprovalRequired[definition.key]) otpFirstConfig[definition.key] = "required";
+  }
   const [readAt, setReadAt] = useState<number | null>(null);
   useEffect(() => { if (overview) setReadAt(Date.now()); }, [overview]);
   const allParams = overview?.params ?? [];
@@ -327,67 +356,115 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     return () => { active = false; };
   }, [ladderReferenceAttempt]);
 
-  const runAction = async (scope: string, work: (commandKey: string) => Promise<void>, ok: string) => {
-    const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
-    commandAttempt.remember(scope, commandKey);
+  const queryProposal = async (record: K2PendingCommand) => {
+    const original = await fetchA2ProposalByKey(record.commandKey, true);
+    if (!original) return false;
+    const expectedAction = record.operation?.kind === "freeze" ? "联动 K1 批量冻结" : `首次配置验证码设置 · ${record.operation?.target}`;
+    if (!original.mine || original.obj !== record.operation?.target
+      || (original.operationCode ? original.operationCode !== record.operation.proposal?.command.op : original.action !== expectedAction)) throw new Error("A2_BUSINESS_CONTEXT_MISMATCH");
+    if (original.status === "pending") commandAttempt.remember(record.fingerprint, record.commandKey, { operation: record.operation, proposed: true });
+    else commandAttempt.forget(record.fingerprint, record.commandKey);
+    syncPending((n) => n + 1);
+    ctx.toast(`已找回原审批单 ${original.id}`);
+    if (original.status !== "pending") {
+      try { await ctx.reloadKRisk(); }
+      catch { ctx.toast("已找回原审批单，但页面刷新失败；请点「重新加载」核对"); }
+    }
+    return true;
+  };
+
+  // A known pending proposal continues to lock its object across refresh; terminal tickets release it.
+  useEffect(() => {
+    if (!overview) return;
+    for (const record of commandAttempt.list().filter((item) => item.proposed)) {
+      void queryProposal(record).catch((error) => ctx.toast(errorText(error)));
+    }
+  // The authoritative refresh is the point at which pending ticket status is checked again.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overview]);
+
+  const sendOperation = async (operation: K2SavedOperation, retained?: K2PendingCommand) => {
+    const scope = retained?.fingerprint ?? `${operation.row ? "k2-row" : "k2-param"}:${operation.target}`;
+    const original = retained ?? pendingFor(operation.target);
+    if (original && !retained) throw new Error("IDEMPOTENCY_RESULT_UNKNOWN");
+    if (!retained) {
+      const authority = operation.row ? `risk_k2_row_${operation.kind}` : "risk_k2_write";
+      if (!useAdminAuth.getState().session?.authorities.includes(authority)) throw new K1RequestError(errorText(new Error("FORBIDDEN")), 403, "FORBIDDEN");
+      if (operation.proposal && !["platform_a2_proposal_create", "platform_a2_write"].some((code) => useAdminAuth.getState().session?.authorities.includes(code))) {
+        throw new K1RequestError(errorText(new Error("FORBIDDEN")), 403, "FORBIDDEN");
+      }
+    }
+    if (retained && (isRetryExpired(retained) || retained.proposed)) throw new Error(RETRY_EXPIRED_TEXT);
+    const commandKey = retained?.commandKey ?? newK1CommandKey();
+    commandAttempt.remember(scope, commandKey, { operation });
+    if (!commandAttempt.isDurablyStored(scope, commandKey)) {
+      if (!retained) commandAttempt.forget(scope, commandKey);
+      throw new Error(retained
+        ? "浏览器存不下原操作，本次没有发送，结果仍未知。原命令继续保留，请查询原操作。"
+        : "浏览器存不下这次操作，没有提交。换一个窗口再试。");
+    }
     setInFlight(scope);
     try {
-      await work(commandKey);
-      commandAttempt.forget(scope);
-    } catch (error) {
-      if (error instanceof K1OutcomeUncertainError) {
-        ctx.toast(`结果暂未确认 · 请保留弹窗直接重试 · 命令号 ${error.commandKey}`);
+      if (operation.proposal) {
+        const receipt = await createA2OperationProposal(operation.proposal, commandKey, true);
+        if (!receipt.mine || receipt.obj !== operation.target) throw new A2OutcomeUncertainError("提交结果不完整，请查询原审批单。", commandKey);
+        if (receipt.status === "pending") {
+          commandAttempt.remember(scope, commandKey, { operation, proposed: true });
+          ctx.toast("已提交，等待审批后执行");
+        } else {
+          commandAttempt.forget(scope, commandKey);
+          ctx.toast(`已找回原审批单 ${receipt.id}`);
+        }
       } else {
-        commandAttempt.forget(scope);
-        ctx.toast(`操作失败，没有生效，已填写的内容还在 · ${errorText(error)}`);
+        await executeK2Command(operation.request, commandKey);
+        commandAttempt.forget(scope, commandKey);
       }
-      throw error;
+    } catch (error) {
+      if (isExplicitRejection(error)) {
+        commandAttempt.forget(scope, commandKey);
+        ctx.toast(`操作失败，没有生效，已填写的内容还在 · ${errorText(error)}`);
+        throw error;
+      }
+      ctx.toast(`结果暂未确认 · 请保留弹窗直接重试 · 命令号 ${commandKey}`);
+      throw operation.proposal ? new A2OutcomeUncertainError(errorText(error), commandKey) : new K1OutcomeUncertainError(errorText(error), commandKey);
     } finally {
       setInFlight(null);
+      syncPending((n) => n + 1);
     }
+    if (operation.proposal) return;
     try {
       await ctx.reloadKRisk();
-      ctx.toast(ok);
+      ctx.toast(operation.label);
     } catch {
-      ctx.toast(`${ok}，但页面刷新失败；请点「重新加载」核对`);
+      ctx.toast(`${operation.label}，但页面刷新失败；请点「重新加载」核对`);
     }
   };
 
-  const proposeK2Freeze = async (r: K2Row, reason: string) => {
-    const scope = `k2-freeze:${r.rowId}:${r.version}:${r.clusterVersion ?? -1}`;
-    const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
-    commandAttempt.remember(scope, commandKey);
-    const def = findHighOp("k2_row_freeze")!;
-    setInFlight(scope);
-    try {
-      const result = await propose(ctx.toast, {
-        action: `冻结关联账户 · ${r.cells[0]}`,
-        obj: r.rowId,
-        before: "已标记可疑",
-        after: "冻结关联账户",
-        type: "acct",
-        amplifies: false,
-        gate: { roles: [] },
-        gateLabel: def.gateLabel,
-        reason,
-        sourceDomain: "K2",
-        commandKey,
-        command: def.buildCommand({
-          rowId: r.rowId,
-          expectedVersion: r.version,
-          clusterExpectedVersion: r.clusterVersion,
-        }),
-        target: def.buildTarget({ rowId: r.rowId }),
-      });
-      commandAttempt.forget(scope);
-      return result;
-    } catch (error) {
-      if (!isA2OutcomeUncertainError(error)) commandAttempt.forget(scope);
-      throw error;
-    } finally {
-      setInFlight(null);
-    }
+  const proposalInput = (op: string, target: string, action: string, beforeValue: string, afterValue: string, reason: string, values: Record<string, unknown>): K2ProposalInput => {
+    const def = findHighOp(op)!;
+    return { action, obj: target, beforeValue, afterValue, operator: currentAdminOperator(), operatorRole: roleLabel(session?.role ?? "risk"),
+      type: def.type, amplifies: def.amplifies, sos: false, roleGate: def.gateLabel, reason, sourceDomain: "K2",
+      command: def.buildCommand(values), target: def.buildTarget(values) };
   };
+
+  const recovery = (target: string, retained?: K2PendingCommand) => ({
+    getPendingReason: () => pendingFor(target)?.operation?.reason,
+    getPendingBusinessValue: () => pendingFor(target)?.operation?.businessValue,
+    blockedReason: retained && isRetryExpired(retained) && !retained.operation?.proposal ? RETRY_EXPIRED_TEXT : undefined,
+    ...(retained?.operation?.proposal ? { inlineApproval: {
+      resolve: () => undefined,
+      pending: true,
+      expired: isRetryExpired(retained),
+      recover: async () => queryProposal(retained),
+      retry: async () => sendOperation(retained.operation!, retained),
+    } } : {}),
+  });
+
+  const rowOperation = (r: K2Row, kind: "flag" | "blockgift" | "boardflag", reason: string, label: string, retained = pendingFor(r.rowId)) => sendOperation(retained?.operation ?? {
+    kind, target: r.rowId, label, reason, row: r,
+    request: { method: "POST", path: `/arbitrage/rows/${encodeURIComponent(r.rowId)}/${({ flag: "mark", blockgift: "block-gift", boardflag: "board-flag" })[kind]}`,
+      body: JSON.stringify({ expectedVersion: r.version, operator: currentAdminOperator(), reason }) },
+  }, retained);
 
   /** 确认框里的事实：是谁、凭什么、涉及多少。四个行操作共用。 */
   const rowFacts = (r: K2Row) => {
@@ -407,9 +484,10 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     );
   };
 
-  const markArb = (r: K2Row) =>
+  const markArb = (r: K2Row, retained?: K2PendingCommand) =>
     ctx.openConfirm({ briefKind: "judgment",
-      errorHandled: true,
+      ...recovery(r.rowId, retained),
+      errorHandled: (error) => error instanceof K1OutcomeUncertainError || isExplicitRejection(error),
       action: `标记套利账户 · ${r.cells[0]}`,
       title: "标记套利账户",
       detail: "标记为套利并附上证据，不冻结、不动钱。之后相关账户不再获得新人礼和邀请奖励。",
@@ -422,16 +500,13 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       reasonPlaceholder: "写清核查依据，例如：同一设备多次开试用、客服工单号",
       reason: true,
       okLabel: "确认标记",
-      run: (reason) => runAction(
-        `k2-flag:${r.rowId}:${r.version}`,
-        (commandKey) => ctx.actions.executeK2Action(r.rowId, "flag", r.version, undefined, reason, commandKey),
-        `${r.cells[0]} 已标记套利`,
-      ),
+      run: (reason) => rowOperation(r, "flag", reason, `${r.cells[0]} 已标记套利`, retained ?? pendingFor(r.rowId)),
     });
 
-  const blockGift = (r: K2Row) =>
+  const blockGift = (r: K2Row, retained?: K2PendingCommand) =>
     ctx.openConfirm({ briefKind: "record",
-      errorHandled: true,
+      ...recovery(r.rowId, retained),
+      errorHandled: (error) => error instanceof K1OutcomeUncertainError || isExplicitRejection(error),
       action: `拦截新人礼 · ${r.cells[0]}`,
       title: "拦截新人礼",
       detail: "之后不再给这组账户发新人礼和邀请奖励，已到账的不动。",
@@ -444,16 +519,13 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       reasonPlaceholder: "写清核查依据，例如：同一账户组集中领取、客服工单号",
       reason: true,
       okLabel: "确认拦截",
-      run: (reason) => runAction(
-        `k2-blockgift:${r.rowId}:${r.version}`,
-        (commandKey) => ctx.actions.executeK2Action(r.rowId, "blockgift", r.version, undefined, reason, commandKey),
-        `${r.cells[0]} 的后续新人礼已拦截`,
-      ),
+      run: (reason) => rowOperation(r, "blockgift", reason, `${r.cells[0]} 的后续新人礼已拦截`, retained ?? pendingFor(r.rowId)),
     });
 
-  const boardFlag = (r: K2Row) =>
+  const boardFlag = (r: K2Row, retained?: K2PendingCommand) =>
     ctx.openConfirm({ briefKind: "judgment",
-      errorHandled: true,
+      ...recovery(r.rowId, retained),
+      errorHandled: (error) => error instanceof K1OutcomeUncertainError || isExplicitRejection(error),
       action: `标记刷榜账户 · ${r.cells[0]}`,
       title: "标记刷榜账户",
       detail: "标记为刷榜，作为排行榜的风险证据；取消排行榜资格要去「奖励池、名额与排行榜」操作。",
@@ -466,15 +538,12 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       reasonPlaceholder: "写清核查依据，例如：邀请集中在同一时段、客服工单号",
       reason: true,
       okLabel: "确认标记",
-      run: (reason) => runAction(
-        `k2-boardflag:${r.rowId}:${r.version}`,
-        (commandKey) => ctx.actions.executeK2Action(r.rowId, "boardflag", r.version, undefined, reason, commandKey),
-        `${r.cells[0]} 已标记刷榜`,
-      ),
+      run: (reason) => rowOperation(r, "boardflag", reason, `${r.cells[0]} 已标记刷榜`, retained ?? pendingFor(r.rowId)),
     });
 
-  const linkFreeze = (r: K2Row) =>
+  const linkFreeze = (r: K2Row, retained?: K2PendingCommand) =>
     ctx.openActionConfirm({ briefKind: "security",
+      ...recovery(r.rowId, retained),
       action: `冻结关联账户 · ${r.cells[0]}`,
       title: "冻结关联账户",
       detail: `冻结 ${r.cluster || r.rowId} 这组关联账户，套利证据会一起记入操作记录。`,
@@ -494,10 +563,17 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       },
       reasonPlaceholder: "写清冻结依据，例如：同一账户组反复领试用并已核实",
       reasonMax: 200,
-      run: (reason) => proposeK2Freeze(r, reason),
+      run: (reason) => {
+        const original = retained ?? pendingFor(r.rowId);
+        return sendOperation(original?.operation ?? {
+          kind: "freeze", target: r.rowId, row: r, reason, label: `冻结关联账户 · ${r.cells[0]}`,
+          proposal: proposalInput("k2_row_freeze", r.rowId, `冻结关联账户 · ${r.cells[0]}`, "已标记可疑", "冻结关联账户", reason,
+            { rowId: r.rowId, expectedVersion: r.version, clusterExpectedVersion: r.clusterVersion }),
+        }, original);
+      },
     });
 
-  const adjParam = (p: KRiskParam) => {
+  const adjParam = (p: KRiskParam, retained?: K2PendingCommand) => {
     const businessForm = k2ParamBusinessForm(p);
     if (!businessForm) {
       ctx.toast(`${p.name} 暂时不能在这里修改`);
@@ -505,6 +581,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     }
     const help = K2_PARAM_HELP[p.key];
     ctx.openActionConfirm({ briefKind: "config",
+      ...recovery(p.key, retained),
       action: `调整检测阈值 · ${p.name}`,
       title: `调整${help?.label ?? p.name}`,
       detail: `${p.name} · 当前 ${boardBaselineText(p.value)}。`,
@@ -526,29 +603,34 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       businessForm,
       reasonMax: 200,
       run: (reason, _newVal, businessValue) => {
+        const original = retained ?? pendingFor(p.key);
+        if (original?.operation) return sendOperation(original.operation, original);
         const nextValue = buildK2ThresholdValue(p, businessValue);
         if (!nextValue) {
           ctx.toast(`${p.name} 参数不完整或超出范围`);
           return;
         }
-        return runAction(
-          `k2-param:${p.key}:${p.version}:${p.value}`,
-          (commandKey) => ctx.actions.updateK2Param(p.key, nextValue, p.version, reason, commandKey),
-          `${p.name} 已更新为 ${boardBaselineText(nextValue)}`,
-        );
+        return sendOperation({ kind: "param", target: p.key, param: p, reason, businessValue, newValue: nextValue,
+          label: `${p.name} 已更新为 ${boardBaselineText(nextValue)}`,
+          request: { method: "PATCH", path: `/arbitrage/params/${encodeURIComponent(p.key)}`,
+            body: JSON.stringify({ value: nextValue, expectedVersion: p.version, operator: currentAdminOperator(), reason }) },
+        });
       },
     });
   };
 
-  const adjExtraParam = (definition: ExtraParamDef) => {
-    const param = allParams.find((item) => item.key === definition.key);
+  const adjExtraParam = (definition: ExtraParamDef, retained?: K2PendingCommand, forceFirstConfig = false, draft?: { reason: string; value: string }) => {
+    const param = retained?.operation?.param ?? allParams.find((item) => item.key === definition.key);
     if (!param) {
       ctx.toast(`${definition.label} 加载失败，请刷新后重试`);
       return;
     }
-    const firstConfig = OTP_FIRST_CONFIG[definition.key] === "required";
+    const firstConfig = forceFirstConfig || retained?.operation?.kind === "otp-initial" || otpFirstConfig[definition.key] === "required";
     const unit = OTP_UNIT_TEXT[definition.unit] ?? definition.unit;
     ctx.openActionConfirm({ briefKind: "config",
+      ...recovery(definition.key, retained),
+      formKey: ++formRevision.current,
+      initialReason: draft?.reason,
       action: `调整验证码设置 · ${definition.label}`,
       title: firstConfig ? `首次配置${definition.label}` : `调整${definition.label}`,
       detail: `${definition.label} · 当前 ${param.value} ${definition.unit}。`,
@@ -559,23 +641,32 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       amplifies: false,
       facts: firstConfig ? <Facts><Fact k="现在" tone="warn">还没有正式配置，按系统默认 {otpValueText(definition, param.value)} 处理</Fact></Facts> : undefined,
       edit: definition.options
-        ? { kind: "select", current: param.value, options: definition.options, optionLabels: Object.fromEntries(definition.options.map((option) => [option, sceneText(option)])) }
-        : { kind: "number", current: param.value, unit, min: definition.min, max: definition.max, step: definition.step, hint: definition.hint },
+        ? { kind: "select", current: param.value, initialValue: retained?.operation?.newValue ?? draft?.value, options: definition.options, optionLabels: Object.fromEntries(definition.options.map((option) => [option, sceneText(option)])) }
+        : { kind: "number", current: param.value, initialValue: retained?.operation?.newValue ?? draft?.value, unit, min: definition.min, max: definition.max, step: definition.step, hint: definition.hint },
       statedBrief: {
         impact: `${firstConfig ? "批准后写入。" : ""}${definition.effect}`,
         check: firstConfig ? "这项还没有正式配置，首次生效要另一位超级管理员批准。" : "核对新值；直接生效，不走审批。",
       },
       reasonPlaceholder: "写清调整依据，例如：短信成本上升、被刷验证码的工单号",
       reasonMax: 200,
-      // 待代码 worker：firstConfig 时改走 W14 首次配置审批提案；现在和普通调整一样提交。
-      run: (reason, value) => {
+      run: async (reason, value) => {
+        const original = retained ?? pendingFor(definition.key);
+        if (original?.operation) return sendOperation(original.operation, original);
         if (value == null || value === "") return;
-        const backendValue = value;
-        return runAction(
-          `k2-param:${definition.key}:${param.version}:${param.value}`,
-          (commandKey) => ctx.actions.updateK2Param(definition.key, backendValue, param.version, reason, commandKey),
-          `${definition.label} 已更新为 ${value} ${definition.unit}`,
-        );
+        const base = { target: definition.key, param, reason, newValue: value, label: `${definition.label} 已更新为 ${value} ${definition.unit}` };
+        if (firstConfig) return sendOperation({ ...base, kind: "otp-initial",
+          proposal: proposalInput("k2_otp_initial_config", definition.key, `首次配置验证码设置 · ${definition.key}`, param.value, value, reason,
+            { key: definition.key, value, expectedVersion: param.version }),
+        });
+        try {
+          await sendOperation({ ...base, kind: "param", request: { method: "PATCH", path: `/arbitrage/params/${encodeURIComponent(definition.key)}`,
+            body: JSON.stringify({ value, expectedVersion: param.version, operator: currentAdminOperator(), reason }) } });
+        } catch (error) {
+          if (!(error instanceof K1RequestError) || error.reasonCode !== "K2_OTP_INITIAL_APPROVAL_REQUIRED" || !isExplicitRejection(error)) throw error;
+          setOtpApprovalRequired((current) => ({ ...current, [definition.key]: true }));
+          // The direct command was definitively rejected; reopen the prepared approval confirmation.
+          adjExtraParam(definition, undefined, true, { reason, value });
+        }
       },
     });
   };
@@ -649,27 +740,26 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       : <Conclusion state="ok" explain={<><p>这是系统检测的结果，不是读取失败。</p><p>系统约每分钟检测一次，打开本页时也会检测。</p></>}>现在没有检出异常套利和刷量</Conclusion>;
 
   // 结果未确认的写操作：命令号还留在本标签页，重新提交同一操作会用同一命令号。
-  const pendingRecords = commandAttempt.list().filter((record) => record.fingerprint !== inFlight);
+  const pendingRecords = pending.filter((record) => !record.proposed && record.fingerprint !== inFlight);
   const allRows = views.flatMap((view) => view.rows);
   const pendingNotices = pendingRecords.map((record) => {
-    const [kind, target, version, extra] = record.fingerprint.split(":");
-    const action = kind.replace(/^k2-/, "");
-    const row = action === "param" ? undefined : allRows.find((item) => item.rowId === target);
-    const param = action === "param" ? allParams.find((item) => item.key === target) : undefined;
+    const [kind, legacyTarget] = record.fingerprint.split(":");
+    const operation = record.operation;
+    const target = operation?.target ?? legacyTarget;
+    const action = operation?.kind ?? kind.replace(/^k2-/, "");
+    const row = operation?.row ?? allRows.find((item) => item.rowId === target);
+    const param = operation?.param ?? allParams.find((item) => item.key === target);
     const otp = OTP_GATE_PARAMS.find((item) => item.key === target);
-    const name = action === "param" ? `调整${K2_PARAM_HELP[target]?.label ?? otp?.label ?? param?.name ?? target}` : ACTION_LABELS[action] ?? action;
-    const object = row ? cell(row, 0) : action === "param" ? undefined : target;
-    const sameRow = row && String(row.version) === version && !row.disposition && (action !== "freeze" || String(row.clusterVersion ?? -1) === extra);
-    const sameParam = param && String(param.version) === version && record.fingerprint === `k2-param:${param.key}:${param.version}:${param.value}`;
-    const retry = sameRow
-      ? () => (action === "flag" ? markArb(row) : action === "blockgift" ? blockGift(row) : action === "boardflag" ? boardFlag(row) : linkFreeze(row))
-      : sameParam ? () => (otp ? adjExtraParam(otp) : adjParam(param)) : undefined;
-    const allowed = action === "flag" ? canFlag : action === "blockgift" ? canBlockGift : action === "boardflag" ? canBoardFlag : action === "freeze" ? canFreeze : canWrite;
+    const name = action === "param" || action === "otp-initial" ? `调整${K2_PARAM_HELP[target]?.label ?? otp?.label ?? param?.name ?? target}` : ACTION_LABELS[action] ?? action;
+    const object = row ? cell(row, 0) : param ? undefined : target;
+    const retry = !operation ? undefined : row
+      ? () => (action === "flag" ? markArb(row, record) : action === "blockgift" ? blockGift(row, record) : action === "boardflag" ? boardFlag(row, record) : linkFreeze(row, record))
+      : param ? () => (otp ? adjExtraParam(otp, record) : adjParam(param, record)) : undefined;
     return (
       <Notice key={record.fingerprint} tone="warn" actionBelow
         title={<>{name}{object ? ` · ${object}` : ""} · 结果未确认</>}
         action={<>
-          {allowed && <Button size="sm" disabledReason={retry ? undefined : "这条记录已经变了，到「操作记录与审批」核对原操作"} onClick={retry}>按原操作重试</Button>}
+          <Button size="sm" disabledReason={!retry ? "这条记录已经变了，到「操作记录与审批」核对原操作" : isRetryExpired(record) && !operation?.proposal ? RETRY_EXPIRED_TEXT : undefined} onClick={retry}>按原操作重试</Button>
           {reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit">到「操作记录与审批」核对</Link> : null}
         </>}>
         <p>系统可能已经执行。重新提交同一操作会沿用命令号 <span data-mono="">{record.commandKey}</span>，不会执行两次；原理由没有保存，要填和上次完全一样的理由，否则会被拒绝。超过 24 小时不能再重试。</p>
@@ -679,14 +769,16 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
 
   const rowActions = (r: K2Row, size: "sm" | "md") => {
     if (r.disposition) return null;
+    const locked = pendingFor(r.rowId);
+    const lockedReason = locked ? errorText(new Error(locked.proposed ? "OBJECT_ALREADY_PENDING" : "IDEMPOTENCY_RESULT_UNKNOWN")) : undefined;
     const buttons = r.actions.map((action) => {
-      if (action === "flag") return canFlag ? <Button key={action} size={size} onClick={() => markArb(r)}>标记套利</Button> : null;
-      if (action === "blockgift") return canBlockGift ? <Button key={action} size={size} onClick={() => blockGift(r)}>拦截新人礼</Button> : null;
-      if (action === "boardflag") return canBoardFlag ? <Button key={action} size={size} onClick={() => boardFlag(r)}>标记刷榜</Button> : null;
+      if (action === "flag") return canFlag ? <Button key={action} size={size} disabledReason={lockedReason} onClick={() => markArb(r)}>标记套利</Button> : null;
+      if (action === "blockgift") return canBlockGift ? <Button key={action} size={size} disabledReason={lockedReason} onClick={() => blockGift(r)}>拦截新人礼</Button> : null;
+      if (action === "boardflag") return canBoardFlag ? <Button key={action} size={size} disabledReason={lockedReason} onClick={() => boardFlag(r)}>标记刷榜</Button> : null;
       if (action === "freeze") {
         if (!canFreeze) return null;
         const ready = r.clusterStatus === "flagged" && r.clusterVersion !== undefined;
-        return <Button key={action} size={size} variant="danger-outline" disabledReason={ready ? undefined : "这组账户要先在「多账户风险排查」标记为可疑，才能提交冻结"} onClick={() => linkFreeze(r)}>冻结关联账户</Button>;
+        return <Button key={action} size={size} variant="danger-outline" disabledReason={lockedReason ?? (ready ? undefined : "这组账户要先在「多账户风险排查」标记为可疑，才能提交冻结")} onClick={() => linkFreeze(r)}>冻结关联账户</Button>;
       }
       return <StatusTag key={action} tone="warn" icon={AlertTriangle}>无法识别的操作，已暂停</StatusTag>;
     }).filter(Boolean);
@@ -785,7 +877,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                   what={help.what} when="保存后下一次检测起" effect={help.effect} note={help.note}
                   value={thresholdText(p.key, p.value)}
                   sub={p.key === "welcomeGiftAnomalyThreshold" ? <StatusTag tone="warn" icon={AlertTriangle}>目前只按账户组检测</StatusTag> : undefined}
-                  action={canWrite ? <Button size="sm" aria-label={`调整${p.name}`} onClick={() => adjParam(p)}>调整</Button> : undefined} />
+                  action={canWrite ? <Button size="sm" aria-label={`调整${p.name}`} disabledReason={pendingFor(p.key) ? errorText(new Error("IDEMPOTENCY_RESULT_UNKNOWN")) : undefined} onClick={() => adjParam(p)}>调整</Button> : undefined} />
               );
             })}
           </ConfigList>
@@ -794,14 +886,14 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
           <ConfigList label="验证码与滑块">
             {OTP_GATE_PARAMS.map((definition) => {
               const param = allParams.find((item) => item.key === definition.key);
-              const firstConfig = OTP_FIRST_CONFIG[definition.key];
+              const firstConfig = otpFirstConfig[definition.key];
               return (
                 <ConfigRow key={definition.key} name={definition.label} explainLabel={`${definition.label}的说明`}
                   what={definition.what} when={firstConfig ? "首次配置要另一位超级管理员批准后才生效" : "保存后立即生效"} effect={definition.effect}
                   value={otpValueText(definition, param?.value)}
                   sub={firstConfig === "required" ? <StatusTag tone="warn" icon={AlertTriangle} explain="这项还没有正式配置，现在按系统默认值处理。首次生效要另一位超级管理员批准。">未正式配置</StatusTag>
                     : firstConfig === "pending" ? <StatusTag tone="progress" explain="首次配置已提交，等另一位超级管理员批准；批准前按系统默认值处理。">首次配置待审批</StatusTag> : undefined}
-                  action={canWrite ? <Button size="sm" aria-label={`调整${definition.label}`} disabledReason={!param ? "这项没有读到，请刷新后重试" : firstConfig === "pending" ? "首次配置待审批，批准或驳回后才能再改" : undefined} onClick={() => adjExtraParam(definition)}>{firstConfig === "required" ? "首次配置" : "调整"}</Button> : undefined} />
+                  action={canWrite ? <Button size="sm" aria-label={`调整${definition.label}`} disabledReason={!param ? "这项没有读到，请刷新后重试" : firstConfig === "pending" ? "首次配置待审批，批准或驳回后才能再改" : pendingFor(definition.key) ? errorText(new Error("IDEMPOTENCY_RESULT_UNKNOWN")) : firstConfig && !["platform_a2_proposal_create", "platform_a2_write"].some(hasAuthority) ? errorText(new Error("K2_OTP_MAKER_FORBIDDEN")) : undefined} onClick={() => adjExtraParam(definition)}>{firstConfig === "required" ? "首次配置" : "调整"}</Button> : undefined} />
               );
             })}
           </ConfigList>

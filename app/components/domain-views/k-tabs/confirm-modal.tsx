@@ -17,7 +17,9 @@ import { Modal, Btn, Chip, OperatorBriefBlock } from "../design-kit";
 import type { ConfirmReq } from "./types";
 
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
-  const [reason, setReason] = useState("");
+  const [pendingReason, setPendingReason] = useState(() => req.getPendingReason?.());
+  const [draftReason, setReason] = useState(pendingReason ?? "");
+  const reason = pendingReason ?? draftReason;
   const [value, setValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   // chips 模式:所选项即非空,用精确判空(防空串 option 误配后按钮静默禁用);文本模式:仍要求 trim 后非空(拒纯空白)。
   const inputOk = !req.input || req.input.required === false || (req.input.options ? value !== "" : value.trim().length >= 1);
   const valueProblem = req.input?.validate?.(value);
-  const can = reasonOk && inputOk && !valueProblem && policySettled;
+  const can = !req.blockedReason && (pendingReason !== undefined || (reasonOk && inputOk && !valueProblem && policySettled));
   const reasonShort = reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `已填写 ${reasonLength}/${reasonMax} 字`;
   const submit = async () => {
     if (!can || submitting) return;
@@ -64,6 +66,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       const handled = typeof req.errorHandled === "function" ? req.errorHandled(cause) : req.errorHandled;
       if (!handled) setError(displayAdminError(cause));
     } finally {
+      setPendingReason(req.getPendingReason?.());
       setSubmitting(false);
     }
   };
@@ -85,7 +88,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
               variant={req.confirmTone ?? "primary"}
               loading={submitting}
               loadingText="提交中…"
-              disabledReason={can || submitting ? undefined : [!policySettled && "正在读取理由规则", !inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
+              disabledReason={can || submitting ? undefined : req.blockedReason ?? [!policySettled && "正在读取理由规则", !inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
               onBlockedClick={() => setAttempted(true)}
               onClick={() => void submit()}
             >
@@ -105,7 +108,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       }
     >
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
-      <fieldset disabled={submitting} className="rd-contents">
+      <fieldset disabled={submitting || pendingReason !== undefined} className="rd-contents">
       {error && (surface
         ? <div className="rd-confirm-alert"><Notice tone="danger">{error}</Notice></div>
         : <div role="alert" className="tint danger">{error}</div>)}

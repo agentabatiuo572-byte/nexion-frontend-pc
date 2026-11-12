@@ -4154,121 +4154,44 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 ---
 
-#### [K2] 套利与刷量检测
-> **当前执行口径（覆盖本小节旧 trade-in 守卫描述）**：K2 不再读取 `minHoldingMonths`，也不把被拒绝的置换尝试当成套利完成事实。置换簇必须来自近 30 天 `status=COMPLETED` 且 `completed_at` 落窗的申请，并同时存在正数佣金或 `direction=IN` 且金额大于 0 的赠送类钱包入账；pending/failed、负数和 OUT 向记录一律不计。详见 `specs/FEAT-DEV02-tradein-ladder.md`。
->
-> **升级置换首档抵扣只读参考（2026-11-04，BUG-131）**：检测阈值区从「设备使用与升级置换」加载首档抵扣比例。加载中、加载失败、成功但未提供、真实比例分别展示；0 正常显示为 0%。任一参考请求失败（含无权限）时，局部提示失败原因并提供「重试」，不持续显示加载中，也不影响本页检测数据和操作；重试仅重新加载该参考。保留前往配置页的链接，实际访问继续按目标页权限判断。
->
-> **E3 风险投影与认证可用性（2026-11-01，缺陷 #704）**：置换风险检测在既有事务快照内读取上述源事实，扫描不得保留钱包账本、佣金或置换源表的行锁/间隙锁，阻塞正常收益入账并扩大为登录、刷新及任务账户锁排队。读取后仅按原风险行标识写入风险投影；近 30 天窗口、命中算法、风险级别、动作、历史软删恢复与既有处置/版本均沿原口径。权限校验、处置确认、幂等和审计要求继续生效。验收须在风险扫描事务仍打开时，确认另一连接可完成同用户账本写入，并核对风险投影内容及重复刷新结果；使用隔离的合成数据验证。
+#### [K2] 异常套利与刷量排查
 
-**① 目的 & 对齐**: 检测套利与刷量的**闭环**——单维度看不到、多维度叠加才显现的行为链路(trial 循环养号 / minHoldingMonths trade-in 套利 / welcome gift 刷取 / 排行榜刷榜),并以 K1 多账户信号为基底联动处置。对齐前端 §9.11e.1(组合攻击闭环:主账号生邀请 → 子账号注册 → sponsor bind 拿 gift → 开试用拿 shadow → 取消 → localStorage reset → 循环,单维度 manageable、叠加才闭合)+ §7.5(`minHoldingMonths` 防「买入立即 trade-in 套利」)+ §8.11(排行榜刷榜)。服务的业务目标:保护 trial / gift / 佣金 / 奖池预算,维持拉新与转化漏斗(B3)及排行榜社会证明的真实性,为 K4 供「套利」维度。
+**2026-11-12 当前执行合同（后端 66ecdb47）**：本节替换历史三层闭环、试用复活和 `minHoldingMonths` 守卫的检测描述。页面路径 `/risk/abuse`，读取 `/api/admin/risk/arbitrage/overview`；没有搜索、分页、排序请求或自动轮询。后端默认每次检测完成后约 60 秒再检测，打开页面也检测。页面结论、四类别卡和当前命中表按记录计数，不按用户去重；风险等级严格接收 0–5，不把合法 4、5 级压成 3。必填字段、九参数、四类别、版本和操作枚举仍严格校验，缺失或非法数据隐藏整页操作。
 
-**② 后台界面**:四类检测视图 + 统一可疑账户处置区。
-1. **(a) trial 循环养号检测**:列出同一实体(关联 K1 簇)在 trial 上「取消 → localStorage reset → 重新开试用」的异常复活记录 `[实体 / 簇 ID / 周期内 trial 复活次数 / 关联账户数 / 累计套取 shadow 试用收益 / 判定]`;对齐 §9.11d.2(`useFreeTrial` 客户端可篡改 = 无限领试用)。**循环养号检测信号的产消方向已定:K2 产 / H2 消(Ch7 H2 已同步对齐)**——草稿采信「H2 检测产出 `risk.trial_cycle_detected`、K2 消费」(依 §Ch7 H2⑦ 正文),但 §Ch7 H2⑧ 埋点表将该事件列为「消费」列、H2 末行亦称其为 H2 消费事件,H2 章节内部存在产消方向自相矛盾;**V4 收口前,本视图所标「H2 产出」须按「已对齐:K2 产 / H2 消」处理**(见 ⑦/⑧)。
-2. **(b) minHoldingMonths trade-in 套利**:列出「买入后未满最短持有月即尝试 trade-in」命中 `[userId / 设备 / 购入时间 / ageMonths / minHoldingMonths / salvage 是否被守卫拦截($0)]`;对齐 §7.5.1 守卫 `if (ageMonths < minHoldingMonths) return 0`。**此阈值 `minHoldingMonths` 由 E3 Trade-in 配置(§3.3 E3,V2)持有**,K2 以只读方式消费 `GET /api/config/tradein` 热改值(E3 owns),仅检测异常并标记账户,不配置该阈值。
-3. **(c) welcome gift 刷取**:同实体多账户批量领取 welcome gift 的闭环视图(与 K1 重复发放检测互链,K2 侧聚焦「闭环行为」而非单纯重复发放)。
-4. **(d) 排行榜刷榜**:列出邀请 / 佣金增速异常的冲榜账户 `[userId / 本期累计 USDT 佣金 / 增速倍数(对基线)/ directs 增长曲线 / 关联簇 / 是否已标记 flagged]`;对齐 §8.11.3(服务端每 5 分钟 snapshot,排序键 = 本期累计 USDT 佣金)。**取消资格的执行接口归 F4d 排行榜 & 反欺诈(§3.3 F4d,V2)接管**,K2(V1)在本视图仅产出刷榜信号 + 标记,见 ④/⑤。
+**检测与显示**：
 
-**③ 可控参数**:
+| 类别 | 实际规则 | 等级与显示边界 |
+|---|---|---|
+| 反复领试用 | 权威 `trial.started` 事件，窗口内按账户组或独立账户计数，不要求取消、清缓存、绑定邀请人 | 次数最低 2、最高 5 级；显示开始试用次数，没有收益金额 |
+| 置换套利 | 固定近 30 天完成至少 3 次升级置换，并有同期正数佣金或 IN 向礼金入账 | 固定 3 级；只读 E3 事实，不读 `minHoldingMonths` |
+| 批量领新人礼 | K1 账户组中全部 SETTLED 新人礼笔数达到检测线，没有时间窗 | 4 笔及以上 5 级、3 笔 4 级、其余 3 级；「已拦」固定 0；USDT/UVT 合计由后端各舍入到两位，页面无法恢复原精度 |
+| 排行榜刷榜 | 本周最近两次 5 分钟佣金快照的正增长，对比未有刷榜信号账户的正增长中位数 | 超过中位数 10 倍为 4 级，其余 3 级；金额、倍数后端舍入到两位；取消资格执行归 F4 |
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| trial 复活异常阈值(`trialCycleThreshold`) | **同实体 ≥ 3 次 / 30 天** | 2–10 次 / 周期 | H2 下一次检测时采用(权威归属待定,见下注) | trial 资格判定 server canonical(§9.11d.2);该阈值供 trial 循环养号检测产出 `risk.trial_cycle_detected`(12 月未覆盖,按 §9.11e.1 循环闭环逻辑设默认;周期取 trial 冷却 30 天同窗) |
-| welcome gift 异常发放阈值(`welcomeGiftAnomalyThreshold`) | 同实体 ≥ 2 笔 | 1–5 笔 | 实时 | 与 K1 `maxAccountsPerDevice`(≤2)对齐:同实体超 1 笔即异常,拦截后续 gift(12 月未覆盖,按反 gift-farming 逻辑设默认) |
-| 刷榜增速异常倍数(`leaderboardVelocityMultiplier`) | **> 5× 全体增长中位数 → 触发信号 + 转人工** | 2×–20× | 实时(下一 snapshot 周期生效) | `/team/leaderboard` 入榜资格:增速 > 倍数 → 标记 + 转人工核(取消资格执行归 F4d V2,见 ④;12 月未覆盖,按 §8.11 刷榜防御逻辑设默认) |
+**九项参数**（写权限 `risk_k2_write`，均带 expectedVersion 与理由）：
 
-> **`trialCycleThreshold` 配置权威归属待定(H2/K2 二选一,V4 收口前明确)**:本参数若检测逻辑在 H2 执行,则 H2 为实际消费方,K2 持有权威存疑,存在 H2/K2 各自维护同一阈值的双源风险。须明确单一归属方向后落地:(A)若权威在 K2(K2 持有、H2 运行时读取),须在 K2⑤ 补充 H2 读取 K2 阈值的方式(如 `GET /api/admin/risk/config?key=trialCycleThreshold`)与推送机制;(B)若权威在 H2(H2 自配),则本行不应列为 K2 可控参数,改为「引用 H2 检测阈值配置」。当前生效时机暂记为「H2 下一次检测时采用」(不暗示 poll 逻辑归 K2),随产消方向核实一并定稿。
->
-> **`minHoldingMonths` 不在 K2 设定**:该值权威归 **E3 Trade-in 配置(§3.3 E3,V2)**,K2 只读消费 `GET /api/config/tradein` 热改值检测套利(§7.5.1),故不列入本子模块可控参数表。
->
-> **比较方式(刷榜,2026-11-04 产品决定)**:后端始终按本期全体未标记用户的增长额中位数比较,页面只显示这一种比较方式「全体增长中位数」,不可选择,运营只调比较符和倍数。阈值文本格式不变(如 `> 5x 基线`),后端接受的基线词(基线 / 上周期 / 7日均值 / 同层级均值)都不改变比较方式,已存的词原样读取和保存,页面一律显示「全体增长中位数」。
->
-> **基线计算口径(刷榜)**:基线 = 同一排行榜周期内所有活跃参榜账户(已确认佣金 > 0)在最近 N 个 snapshot 间隔内的佣金增量中位数;单位 USDT / snapshot 周期;snapshot 周期与 §8.11.3「每 5 分钟 snapshot」一致。触发判定「> 5× 基线」时,**排除已标记 flagged 账户后重新计算基线**,防止被刷账户污染基线导致阈值虚高。
->
-> **默认值依据**:trial 复活阈值 / welcome gift 阈值 / 刷榜倍数为 12 月周期未覆盖项,按 §9.11e.1 组合攻击闭环 + §8.11 排行榜规则设默认;trial 复活周期取 trial 冷却 30 天同窗。
+| 参数 | 合法范围 | 生效与审批 |
+|---|---|---|
+| `trialCycleThreshold` | `>=` 或 `>`；2–10 次；7–60 天任意整数 | 普通保存，下次检测重算已有窗口记录 |
+| `welcomeGiftAnomalyThreshold` | `>=` 或 `>`；1–5 笔；实体/账户簇/手机号/设备四选项保留 | 目前四选项都只按账户组检测；下一次检测重算 |
+| `leaderboardVelocityMultiplier` | `>` 或 `>=`；2–20 整数倍；原基线词保存不变 | 固定全体增长中位数算法，下次检测重算，不查资金覆盖率 |
+| `otpGate.resendSeconds` | 30–300 整数秒 | 后续发码按当前冷却判断；不推送修改已打开页面的倒计时 |
+| `otpGate.dayLimit` | 5–50 整数次/24h | 仍核对既有次数，另有短时/IP 限制 |
+| `otpGate.otpTtlSeconds` | 60–900 秒，整分钟 | 签发时存截止时间；已签发验证码截止时间不改；认证库按分钟存 |
+| `otpGate.maxVerifyAttempts` | 1–10 整数次 | 当前验证立即采用，包括已发但未消费的验证码 |
+| `captchaGate.alwaysScenes` | register/login/reset 的非空组合 | 当前场景、累计次数、H5 强制条件共同决定；临时关闭窗口仍有独立影响 |
+| `captchaGate.afterSends` | 0–50 整数次/同手机号24h（跨场景） | 0 从第一次就要求滑块；历史发送数不清零 |
 
-**判定逻辑(各类型命中规则 + score 映射 · 可实现细则)**
+六项 OTP 是否首次配置只认后端逐键 `otpInitializationRequired`，不能从 risk.version 推断。已正式配置的仍 PATCH `/api/admin/risk/arbitrage/params/{key}`。首次配置提交 A2：`sourceDomain=K2`、`obj=key`、`command={domain:"K",op:"k2_otp_initial_config",params:{values:{key,value,expectedVersion}}}`、唯一 `target={domain:"K",type:"k2_otp_param",id:key}`，不发送 targets、makerAdminId、sourceState 或 proposalReason。发起需业务写权与 A2 创建权，另一位有效超管并有 A2 批准权才能批准；后端绑定两源快照并复核。直写收到 `K2_OTP_INITIAL_APPROVAL_REQUIRED` 明确拒绝后转入现有首次配置确认框。提交成功只是待审批，批准前不称已更新；已有本人提案在刷新后维持参数锁，原票终结后解除。
 
-1. **各类型命中规则三要素**(规则 + 阈值 + 数据源 / 计数):
+**四类处置**：
 
-| 类型 | 命中规则 | 阈值 | 数据源 / 计数 |
-|---|---|---|---|
-| (a) trial 循环养号 | 同实体(K1 簇维度,非单 userId)滑动窗内 trial「资格 false→true」复活次数 ≥ 阈值 | `trialCycleThreshold`(默认同实体 ≥ 3 次 / 30 天) | server 端 trial eligibility 翻转计数;去重键 = K1 `clusterId`(产 `risk.trial_cycle_detected`,产消见 ⑧) |
-| (b) trade-in 套利 | 置换守卫返回 `salvage=0`(`ageMonths < minHoldingMonths`)即命中 | `minHoldingMonths`(E3 持有,只读) | §7.5.1 守卫返回值(`GET /api/config/tradein` + 置换 checkout 校验) |
-| (c) welcome gift 刷取 | 同簇已领 gift 笔数 > 阈值 | `welcomeGiftAnomalyThreshold`(默认同实体 ≥ 2 笔) | K1 簇 + 注册 / sponsor-bind gift 发放记录 |
-| (d) 排行榜刷榜 | 本期佣金增速 > 基线 × 倍数 | `leaderboardVelocityMultiplier`(默认 > 5×) | §8.11.3 每 5min snapshot 佣金增量 vs 基线中位数(基线口径见 ③ 注) |
+- 标记套利、拦截新人礼、标记刷榜分别要求 `risk_k2_row_flag`、`risk_k2_row_blockgift`、`risk_k2_row_boardflag`，再交集后端 actions 与未处置条件。前三个行写接口是 `/rows/{rowId}/mark`、`/block-gift`、`/board-flag`，理由确认后直接生效。前两种处置参与 H8 奖励候选过滤：检查当前新人及该笔奖励的邀请人是否被风险行文字或关联组匹配；不能概括为被命中账户的所有邀请人从此失去所有奖励。已结算钱包不追回。刷榜写风险证据，不取消资格或剔除奖池；同 row/user 信号已存在时不重复发布。
+- 冻结关联账户始终提交 A2，不增加直冻入口。要求 `risk_k2_row_freeze`、A2 创建权，组已可疑并有行/组版本。命令 `K/k2_row_freeze`，obj=rowId，sourceDomain=K2，target=`K/arbitrage_row/rowId`，params 为 rowId、expectedVersion、clusterExpectedVersion。另一位有效且具 A2 批准及业务冻结权的管理员批准后才执行，并非 OTP 首配的超管特例。执行只冻结 ACTIVE 成员、撤会话、冻结待处理提现，没有自动解冻。本人保存的原票用于阻止该行新处置；后端命中行仍不含审批状态，页面尚缺独立的行内待审批标签位置。
 
-2. **命中证据 → `score`(0–100)映射**(⑤ `/arbitrage` 返回 `score`、⑧ `risk.arbitrage_suspected.score`、K4 套利子分三处闭合;口径对齐 K4 判定逻辑表「套利」行):
+**结果未知（R1）**：13 个写入口和六个首配分支全部先在同一 K2 存储保存完整 method/path/body 或提案、对象快照、新值、理由、操作员和命令号；存不下不发送。未知时锁原输入及同对象新修改，刷新仍保留提示；恢复由保存记录驱动，不依赖当前行版本、当前参数值或新修改入口是否可用，只按原体原号重试。只有 `isExplicitRejection` 认定的明确拒绝才释放；401/403/408/425/429 与 IDEMPOTENCY_* 不释放。24 小时后保留证据但不再发写。冻结及首次配置提案可按本人原键查询，404/权限失败不能当作未提交。旧版只有键的记录只能核对，不补造原请求。已确认成功与后续读取失败分别反馈。
 
-| 类型 | `score` 映射(默认) |
-|---|---|
-| trial 循环 | 复活 3 次 = 30;4 次 = 70;≥ 5 次 = 100 |
-| trade-in 套利 | 命中守卫 = 70;累犯(≥ 2 次)= 100 |
-| welcome gift 刷取 | 超额 1 笔 = 40;≥ 2 笔 = 70;同簇 ≥ 4 笔 = 100 |
-| 排行榜刷榜 | 5–10× = 50;> 10× = 90 |
+**权限、审计与外域**：读需有效菜单及 `risk_k2_read`，五个写码独立检查。只读不显示新写入口；原未知记录的恢复入口独立保留。E3 首档抵扣保持读取中/失败重试/未提供/真实值四态，0% 是真实零；H8 金额与发放规则由 H8 维护。全部处置和参数后端按命令号去重并审计。页面文字尚需视觉 worker 按事实登记修正的句子（包括旧待确认条、参数折叠说明、邀请人影响范围、OTP 缺省来源）已列入本次工作报告，逻辑 worker 未改页面文案。
 
-   `/arbitrage?minScore=` 按本 `score` 过滤;该 `score` 即喂 K4 套利维度(K4 判定逻辑表「套利」行消费此分)。
-
-3. **闭环分级判定**(§9.11e.1):闭环三层 = ① K1 多账户(`risk.multi_account_flagged`)+ ② sponsor-bind server 事实 + ③ trial 循环(`risk.trial_cycle_detected`);判定 = **≥ 2 层可疑 → 预警 + 转人工核;3 层命中 → 判定闭环套利并处置**(交集窗口 = 30 天滑动窗,与 trial 冷却同窗)。**§9.11e.1 三层组成与 `risk.trial_cycle_detected` 产消方向(已对齐:K2 产 / H2 消;H2 章节内部矛盾待清)须 V4 收口回源核实定稿**,核实前按本段处理。
-
-> **可实现性**:(a)(c)(d) 据规则 + 阈值 + 数据源可实现确定性判定;(b) 直接读 §7.5.1 守卫命中;`score` 映射使 ⑤ `minScore` 过滤、⑧ 事件 `score`、K4 套利子分三处口径一致。
-
-**④ 操作动作**:
-
-| 动作 | 角色 | 确认弹窗 | 审计点(A2) |
-|---|---|---|---|
-| 标记套利账户 | 风控运营 | 否(直接生效留痕;仅标记) | 命中类型 / 证据链 / operator |
-| 拦截 welcome gift(阻断后续发放) | 风控运营 | 否(直接生效留痕;预防性阻断:gift 尚未发放,不涉及已入账资产变更;K1 三层去重已在注册 / sponsor-bind 入口 server enforce,K2 拦截仅为台账记录 + 阻断未发放笔) | 簇 ID / 拦截笔数 / reason |
-| 标记刷榜账户(产出信号,处置转 F4d) | 风控运营 | 否(直接生效留痕;仅标记 + 产信号;**取消资格 / 奖池剔除执行归 F4d V2**,V1 阶段不在 K2 落地写操作) | userId / period / 增速倍数 / reason |
-| 联动 K1 冻结关联账户 | 风控主管 / 平台管理员(复用 K1 执行门槛:风控 lead / 超管) | K1-MD1(理由必填,跨模块复用 K1 确认弹窗 + `Idempotency-Key`) | 同 K1 冻结审计字段 + 套利证据引用 |
-| 标记 trade-in 套利账户(观察) | 风控运营 | 否(直接生效留痕;salvage 守卫已 server 拦截,此为观察标记) | userId / 设备 / ageMonths |
-
-> **拦截 welcome gift 不入高敏确认门的依据**:该动作为预防性阻断**未发放**的 gift,不变更任何已入账资产;同实体多账户的根因已由 K1 三层去重在注册 / sponsor-bind / 充值入口 server enforce(§9.11e.1),K2 拦截仅记录台账并阻断后续发放笔,故不触发 §1.8 原则二.4 的高敏确认门槛(直接生效 + 留痕)。涉及已发放资产追回时改走 C3 余额调整(高敏,经 C3 确认弹窗)。
-
-**④a 交互与弹窗规格**
-
-**(1) 动作触发总表**
-
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 标记套利账户 | ②(a)-(d) 检测视图行内「标记」+ 统一处置区 | 行内按钮 | 仅未标记记录显示;风控渲染 | 直接生效留痕(就地更新 + toast,落证据链审计),无弹窗 |
-| 拦截 welcome gift | ②(c)刷取视图簇行内「拦截后续发放」 | 行内按钮 | 仅命中异常判定的簇显示;风控渲染;须填 reason(行内必填框) | 直接生效留痕(调 `POST .../welcome-gift/block` + toast),无弹窗 |
-| 标记刷榜账户 | ②(d)刷榜视图行内「标记 flagged」 | 行内按钮 | 仅增速超阈值且未标记行显示;风控渲染 | 直接生效留痕(产 `risk.leaderboard_velocity_flagged` 信号 + toast),无弹窗 |
-| 联动 K1 冻结关联账户 | ②统一处置区「冻结关联簇」(命中记录关联 K1 簇时) | 警示按钮 | 仅关联 K1 簇且簇为 `flagged` 态时显示;风控主管/平台管理员渲染 | 打开弹窗 **K1-MD1**(跨模块复用,信息区附套利证据引用;弹窗规格见 K1④a) |
-| 标记 trade-in 套利账户 | ②(b)trade-in 视图行内「观察标记」 | 行内按钮 | 仅命中守卫记录显示;风控渲染 | 直接生效留痕(就地更新 + toast),无弹窗 |
-| 查看四类检测视图 | ②(a)-(d) 导航 tab | 链接 | 按角色裁剪(客服只读) | 跳转视图,无弹窗 |
-
-> K2 无自有弹窗 ID:唯一高敏动作「联动 K1 冻结」复用 K1-MD1(规格见 K1④a),其余动作均为直接生效留痕的标记 / 拦截类。
-
-**⑤ 接口**:
-- `GET /api/admin/risk/arbitrage` — 套利与刷量统一检测列表;query `?type=trial_cycle|tradein|welcome_gift|leaderboard&minScore=&clusterId=&cursor=`;返回 `{ items:[{type, userId|clusterId, signal, score, evidence:{...}, status}], nextCursor }`,**server-canonical**。
-- `POST /api/admin/risk/welcome-gift/block` — 拦截指定簇后续 welcome gift(payload `{ clusterId, reason }`);**V1 阶段 server 实现归 K2 域**(K1 消费本端点结论,不另建发放拦截端点,避免 `/api/admin/risk/` namespace 双写);gift 发放幂等由 server 注册侧(§9.11e.1 `userId.created` 单次)在 `POST /api/sponsorship/bind` 原子事务内完成,不设独立发放端点。**welcome gift 发放权威域待 C 域(§5,T6)定义后确认**,须在 V4 跨文档收口时与 C 域 gift 发放机制对齐避免双写。
-- 联动冻结复用 `POST /api/admin/risk/cluster/:id/freeze`(K1,`Idempotency-Key` 必带 + 确认弹窗 K1-MD1,执行 = 风控主管 / 平台管理员)。
-- **排行榜取消资格端点归 F4d(V2),不在 K2(V1)持有**:§3.3 IA 明确 F4d「排行榜 & 反欺诈」归 V2,V1 阶段 K2 仅产出 `risk.leaderboard_velocity_flagged` 信号喂 B5 / F4d;`POST /api/admin/risk/leaderboard/:userId/disqualify` 写操作端点与其高敏确认动作由 **F4d(V2)** 接管,排行榜奖池剔除(§8.11.3 派发口径)须等 F4d 落地。V1 阶段如需即时处置可复用 K1 冻结链路临时阻断,但奖池派发剔除不在 K2 实现。**§3.14 跨域归属表须补入「排行榜刷榜处置执行 → F4d 权威 / K2 信号输入方」**。
-
-**⑥ 权限 & 审计**:
-
-| 动作 \ 角色 | 平台管理员 | 风控主管 | 风控运营 | 客服 | 审计员 |
-|---|---|---|---|---|---|
-| 查看套利检测 | ✅ | ✅ | ✅ | ✅(只读) | ✅(只读) |
-| 标记套利 / 拦截 gift / 标记刷榜 | ✅ | ✅ | ✅ | — | — |
-| 联动 K1 冻结(执行,确认弹窗 K1-MD1) | ✅ | ✅(lead) | — | — | — |
-
-> 旧命名映射(A1③):平台管理员 = 超级管理员、风控主管 = 风控 lead、风控运营 = 风控 member、审计员 = 只读审计。排行榜**取消资格 / 奖池剔除**的执行权限矩阵随 F4d(V2)落地定义,V1 阶段不在 K2 列示(K2 仅持「标记 + 产信号」权限)。
-
-审计字段(A2):`action / type / userId|clusterId / signalEvidence / period / operator / reason / ts`。
-
-**⑦ 风控 & 联动**:
-- **组合攻击须多层叠加分级预警**(§9.11e.1 铁律):单条路径分开看 manageable,K2 必须把多层叠加才判定闭环。§9.11e.1 描述的是顺序步骤(注册 → sponsor bind → trial → cancel → reset → 再试),其「三层去重」指 **IP / 设备 / 支付工具三维**(由 K1 处理,产出 `risk.multi_account_flagged`),与 OTP TTL(属 C6 Auth 侧,产出 `auth.login_locked`)是不同层次——**OTP TTL 不是 §9.11e.1 三层叠加的维度,不列为 K2 闭环判定层**。K2 闭环判定的三层(预期为)= ① K1 多账户信号(`risk.multi_account_flagged`,sponsor-bind 在注册时写入 server 的事实不可被 localStorage reset 重置)+ ② sponsor-bind server 事实 + ③ H2 trial 循环信号(`risk.trial_cycle_detected`,产消方向已定:K2 产 / H2 消)。判定逻辑采用**分级预警**而非「AND 同时命中」:**≥ 2 层可疑 → 预警 + 转人工核;3 层命中 → 判定闭环套利并处置**(建议交集计算窗口 = 30 天滑动窗口,与 trial 冷却同窗)。**§9.11e.1 三层叠加的具体三层须回源核实**,核实前本段三层组成按上述预期处理。
-- **trial state 100% server canonical**(§9.11d.2):trial 资格 / 状态以 `GET /api/trial/eligibility` 为单源,客户端 `useFreeTrial` localStorage 仅 UI cache、reset 不改 server 记录;`useFreeTrial` 客户端可篡改 = 无限领试用,故循环养号判定**只信 server 端 trial 复活计数**,不信客户端状态。
-- **trade-in 套利 server 守卫**(§7.5.1):`minHoldingMonths` 守卫在服务端 `GET /api/config/tradein` + 置换 checkout 校验 enforce,salvage credit 永不写余额(§7.5.1 铁律);该阈值由 **E3(V2)** 持有,K2 只读消费做命中观测与账户标记。
-- **跨模块联动**:消费 K1 簇信号 + `risk.trial_cycle_detected`(产消方向已定:K2 产 / H2 消,见 ⑧);命中 → 喂 **B5 风险雷达** + **K4 评分**(套利维度)。trial 循环养号的处置联动方向**已对齐:K2 产 / H2 消**(§Ch7 H2⑦ 正文与 H2⑧ 埋点表内部矛盾,见 ⑧);排行榜刷榜信号喂 F4d(V2)+ B5,取消资格 / 奖池派发剔除由 F4d 落地(§8.11.3 自动派发)。
-
-**⑧ 埋点(事件)**:
-- **产生**:`risk.arbitrage_suspected` — 触发点:套利 / 刷量闭环命中(trade-in 套利 / welcome gift 刷取 / 刷榜);属性(§2.4.5 ⑤,server,已登记):`type(tradein|welcome_gift|leaderboard) / userId|cluster_id / score / rule_id / ts`;喂 K4 + B5。
-- **消费 / 产消方向待核实**:`risk.trial_cycle_detected` — 草稿按「**由 H2 免费试用引擎产生、K2 消费**」处理(依 §Ch7 H2⑦ 正文),属性 `userId / cycleCount / linkedAccounts`(已于 §2.4.5 ⑤ 登记)。**但 §Ch7 H2 章节内部对本事件产消方向自相矛盾**:H2⑦ 正文写「H2 检测产出 `risk.trial_cycle_detected`」,而 H2⑧ 埋点表将其归入「消费」列、H2 末行亦称其为 H2 消费事件。**V4 收口前须回源核实 H2 章节权威产消方向**;在核实前,本章凡声明「H2 产出 → K2 消费」处一律按「已对齐:K2 产 / H2 消」标注,不作为已确认方向落地。
-- **消费(已确认)**:K1 `risk.multi_account_flagged`(簇基底)、§8.11 排行榜 snapshot 增速信号。
-- **喂给**:B5 风险雷达(异常账户)、K4 风险评分(套利维度)、F4d 排行榜 & 反欺诈(V2,刷榜信号 → 取消资格执行)。
 
 ---
 

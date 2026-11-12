@@ -145,6 +145,22 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
           businessForm={mc.businessForm}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
+          getPendingReason={mc.getPendingReason}
+          initialReason={mc.initialReason}
+          getPendingBusinessValue={mc.getPendingBusinessValue}
+          approval={mc.approval}
+          inlineApproval={mc.inlineApproval ? {
+            ...mc.inlineApproval,
+            retry: mc.inlineApproval.retry ? async () => {
+              await mc.inlineApproval!.retry!();
+              setActionConfirm((current) => current === mc ? null : current);
+            } : undefined,
+            recover: async (reason, value, editValue) => {
+              const found = await mc.inlineApproval!.recover(reason, value, editValue);
+              if (found) setActionConfirm((current) => current === mc ? null : current);
+              return found;
+            },
+          } : undefined}
           effect={mc.effect}
           confirmLabel={mc.confirmLabel}
           confirmTone={mc.confirmTone}
@@ -154,7 +170,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
           coverageLead={mc.coverageLead}
           reasonPlaceholder={mc.reasonPlaceholder}
           onClose={() => setActionConfirm(null)}
-          onConfirm={async (reason, newValue, businessValue) => { await mc.run(reason, newValue, businessValue); setActionConfirm(null); }}
+          onConfirm={async (reason, newValue, businessValue) => { await mc.run(reason, newValue, businessValue); setActionConfirm((current) => current === mc ? null : current); }}
         />
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
