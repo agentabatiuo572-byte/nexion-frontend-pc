@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Archive, FlaskConical, ShieldCheck } from "lucide-react";
 import {
-  BlockState, Button, Cell, ConfigList, ConfigRow, Fact, Facts, Field, Fold, Input, Notice, Panel, Select, StatusTag, Table, TableMessage, Td, Th,
+  BlockState, Button, Cell, ConfigList, KeepText, ConfigRow, Fact, Facts, Field, Fold, Input, Notice, Panel, Select, StatusTag, Table, TableMessage, Td, Th,
 } from "@/app/components/rd";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -61,7 +61,7 @@ const CONFIG_HELP: Record<string, { what: string; hint?: string; unit?: string; 
   "eligibility.maxPerUser": { what: "开了资格限制时，每人最多同时持有几个节点（持有中和挂售中都算）", hint: "0–1,000,000 的整数", unit: "个", effect: "按持有数算，不是按单笔订单数；不回写已下的订单" },
   "eligibility.minAccountAgeDays": { what: "开了资格限制时，账号注册满几天才能买", hint: "0–1,000,000 的整数", unit: "天", effect: "下一次购买时按这个天数检查" },
   "presale.enabled": { what: "开了以后，在预售开始和结束时间之间按预售规则卖", effect: "开启前要先填好开始和结束时间；开了也只在时间窗里生效，不等于提交后马上能买" },
-  "presale.showCountdown": { what: "App 上显示不显示预售倒计时", effect: "市场暂未开放或紧急暂停时，App 本来就不显示倒计时" },
+  "presale.showCountdown": { what: "App 上显示不显示预售倒计时", effect: "暂未开放或暂停时 App 本来就不显示" },
   "presale.unitPrice": { what: "预售规则里写的单价", hint: "最多 6 位小数", unit: "USDT", effect: "目前只作为预售规则展示，实际认购价仍按价格档位（后端现行行为）；填 0 时 App 的预售规则显示不可用", note: "改它不会改变用户实际付的价格。" },
   "presale.maxPerUser": { what: "预售期间每人最多买几个", hint: "0–1,000,000 的整数", unit: "个", effect: "和资格的每人上限取较小的那个；不回写已下的订单" },
   "presale.startAt": { what: "预售从什么时候开始（UTC）", hint: "例如 2026-08-01T00:00:00Z", effect: "要早于结束时间；另一端还没填时可以先单独保存" },
@@ -71,7 +71,7 @@ const CONFIG_HELP: Record<string, { what: string; hint?: string; unit?: string; 
   "holder.priorityTop3Percent": { what: "持有排名前多少算「前 3%」的门槛", hint: "1–100 的整数", effect: "后端不检查前 1%、3%、5% 的大小顺序；顺序不对时 App 的持有人权益显示不可用" },
   "holder.priorityTop5Percent": { what: "持有排名前多少算「前 5%」的门槛", hint: "1–100 的整数", effect: "后端不检查前 1%、3%、5% 的大小顺序；顺序不对时 App 的持有人权益显示不可用" },
   "holder.policyVersion": { what: "持有人规则的版本号", effect: "只改版本号，不迁移历史数据" },
-  "holder.effectiveAt": { what: "持有人规则从什么时候起生效（UTC）", hint: "例如 2026-08-01T00:00:00Z", effect: "只保存时间；还没到时 App 显示规则未生效，后端不另排定时任务" },
+  "holder.effectiveAt": { what: "持有人规则从什么时候起生效（UTC）；还没到时 App 显示规则未生效", hint: "例如 2026-08-01T00:00:00Z", effect: "只保存时间，不另排定时任务" },
 };
 
 const GROUPS: { key: string; title: string; explain: string; keys: readonly string[] }[] = [
@@ -111,7 +111,7 @@ export default function G4AdminOperations({ ctx }: { ctx: G4Ctx }) {
       facts: <Facts>
         <Fact k="改的是">{definition.label}</Fact>
         <Fact k="现在">{configValueText(definition.kind, configured)}</Fact>
-        <Fact k="改了会怎样">{help?.effect ?? "—"}</Fact>
+        <Fact k="改了会怎样"><KeepText text={help?.effect ?? "—"} /></Fact>
         <Fact k="付不付钱">不付钱；只改设置，不产生用户资产或成交</Fact>
       </Facts>,
       statedBrief: { impact: "确认后立即保存，App 下次读取时用新设置。", check: "核对新值；时间按 UTC 填写；理由写清依据或工单号。" },

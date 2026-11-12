@@ -17,7 +17,7 @@ import {
   ArrowLeftRight, Banknote, CalendarClock, CircleHelp, Clock3, Coins, Database, Eye, Gift, Layers, ListOrdered, PauseCircle, CircleDot, Store, Users,
 } from "lucide-react";
 import {
-  BlockState, Button, Cell, Change, ConfigList, ConfigRow, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints, Notice,
+  BlockState, Button, Cell, Change, KeepText, ConfigList, ConfigRow, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints, Notice,
   PageHeader, Pager, Panel, RdPage, ScaleBar, Stat, StatBand, StatusTag, StepBar, Table, TableMessage, Td, Th, Tr,
 } from "@/app/components/rd";
 import { OperationConfirmModal, PaginationExemption, useToast } from "../design-kit";
@@ -359,10 +359,10 @@ function G4GenesisPage() {
     : reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去「紧急停用开关」恢复</Link>);
   const header = (
     <PageHeader pageId="G4" title="创世节点销售与收益"
-      summary="管创世节点的总量、价格档位、每日分红和展示开关，看卖了多少、今天分了没有。"
+      summary="管创世节点的总量、档位价、每日分红和展示开关。"
       actions={headerAction || undefined}
       meta={overview ? "打开时读取，不自动刷新；改完重新读取" : undefined}
-      readOnly={overview && !anyWrite ? "你只能查看；这个账号没有修改创世节点参数、档位、市场或分红的权限。" : undefined} />
+      readOnly={overview && !anyWrite ? "你只能查看，这个账号没有修改权限。" : undefined} />
   );
 
   if (loading && !overview) {
@@ -510,8 +510,8 @@ function G4GenesisPage() {
             {dir === "loose" && <Fact k="批准后">后端再核对一次原值{param.key === "dividend" ? "和当前比例版本" : "和当前系列"}、兑付覆盖率，通过后写入{nextText ? ` ${nextText}` : "新值"}</Fact>}
             {dir === "loose" && !canPropose && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，这个方向会被拦下；请有提案权和这项修改权限的同事发起</Fact>}
             {param.key === "divBase" && !param.value.trim() && !original && <Fact k="现在是空的" tone="warn">后端目前不接受把空的计算基数通过审批改成有内容（已提后端），这次审批会被拒</Fact>}
-            <Fact k="改了会怎样">{copy?.effect ?? operatorCopyText(param.note)}</Fact>
-            <Fact k="付不付钱">{copy?.money ?? "—"}</Fact>
+            <Fact k="改了会怎样"><KeepText text={copy?.effect ?? operatorCopyText(param.note)} /></Fact>
+            <Fact k="付不付钱"><KeepText text={copy?.money ?? "—"} /></Fact>
             {dir === "loose" && <Fact k="兑付覆盖率（现在）" tone={overview.coverage.redlineBreached ? "danger" : undefined}>{g4Plain(cov)}%，红线 {g4Plain(String(overview.coverage.redlinePct))}%</Fact>}
           </Facts>
         </div>
@@ -520,7 +520,7 @@ function G4GenesisPage() {
     openActionConfirm({ briefKind: "config",
       action: `修改创世节点参数 · ${operatorCopyText(param.name)}`,
       title: original ? `${name}的原申请` : tighteningDividend ? "调低每日收益比例" : `调整${name}`,
-      detail: <>{copy?.what ?? operatorCopyText(param.sub)}。{copy?.effect}</>,
+      detail: <KeepText text={`${copy?.what ?? operatorCopyText(param.sub)}。`} />,
       effect: tighteningDividend
         ? <StatusTag tone="progress" filled explain="你提交的调高申请在等批准。比例只能调低或保持不变，调低立即生效；原调高申请批准时后端发现比例变了会拒绝，不会覆盖这次的值。">只能调低 · 立即生效</StatusTag>
         : <StatusTag tone="neutral" icon={ArrowLeftRight} explain={copy?.tighten
@@ -637,7 +637,7 @@ function G4GenesisPage() {
       action: next === "closed" ? "创世市场设为「暂未开放」" : "恢复创世市场开放",
       title: next === "closed" ? "把创世市场设为暂未开放" : "恢复创世市场开放",
       detail: next === "closed"
-        ? <>App 照常显示创世节点介绍、档位和权益，只是不能购买和转让；已持有的节点和收益不受影响。商城入口不会隐藏（那是另一个开关），也不显示倒计时和剩余名额。</>
+        ? <KeepText text="App 照常显示介绍、档位和权益，只是不能购买和转让。" />
         : <>只把市场状态改回开放。用户能不能认购还要看紧急暂停、预售时间、购买资格和余额。</>,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: next === "closed" ? "确认设为暂未开放" : "确认恢复开放",
@@ -1217,6 +1217,7 @@ function G4GenesisPage() {
           explain={<>
             <p>三个开关各管各的：「创世市场」是运营节奏，两个方向都能在这页改；「紧急暂停」是止血，这页只能暂停，恢复要去「紧急停用开关」；「App 商城入口」只管入口显示。</p>
             <p>两者并存时 App 显示「暂未开放」；市场开放和没有暂停都满足，用户才可能买卖。</p>
+            <p>封锁地区在「地区访问限制」修改。节点转让后，之后新建的分红批次发给新持有人。</p>
           </>}
           actions={reach("/emergency/geo-block", "emergency_j2_read") ? <Link className="rd-link" href="/emergency/geo-block" prefetch={false}>去「地区访问限制」</Link> : undefined}>
           <ConfigList label="市场开关">
@@ -1234,7 +1235,7 @@ function G4GenesisPage() {
               what="停认购、挂售和用户之间的转让，和「紧急停用开关」里的创世节点开关是同一个"
               when="这页只能暂停（页面右上角）；恢复要去「紧急停用开关」"
               value={<span className="g4x-param"><span className="g4x-value"><span className="g4x-value-num">{marketOn ? "未暂停" : "已暂停"}</span></span>
-                <span className="g4x-dir">{marketOn ? "暂停在页面右上角" : "恢复要去「紧急停用开关」"}</span></span>} />
+                <span className="g4x-dir">{marketOn ? "暂停在页面右上角" : <>恢复要去<span className="rd-keep">「紧急停用开关」</span></>}</span></span>} />
             {showcaseEnabledParam && (
               <ConfigRow key="showcase" name="App 商城入口"
                 what="App 商城里显示不显示创世节点入口"
@@ -1255,7 +1256,7 @@ function G4GenesisPage() {
               <div><dt>挂售中</dt><dd>{fmtInt(stats.secondary.listed)} 个</dd></div>
             </dl>
             <p className="g4x-sources-note">创世市场最近修改：<span className="g4x-wrap" data-mono>{overview.market.lastChange || "暂无记录"}</span></p>
-            <p className="g4x-sources-note">封锁地区：{geoBlocked === "-" ? "—" : geoBlocked}（在「地区访问限制」修改）。节点转让后，之后新建的分红批次发给新持有人。</p>
+            <p className="g4x-sources-note">封锁地区：{geoBlocked === "-" ? "—" : geoBlocked}</p>
           </div>
         </Panel>
       </div>
