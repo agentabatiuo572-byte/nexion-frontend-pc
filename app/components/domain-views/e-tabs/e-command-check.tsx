@@ -17,6 +17,7 @@ const CONCLUSION_HELP: Record<Conclusion, string> = {
   NOT_EXECUTED: "后端只在原操作的事务已确认回滚时确认；确认后解除锁定，可以重新发起。证据不够时记为「仍未知」，继续锁定。",
   STILL_UNKNOWN: "只留下这次核查记录，原操作继续锁定，之后可以再次核查。",
 };
+const RECEIPT_ONLY_HELP = "这类操作后端只凭原操作留下的完成回执确认，不接受操作记录编号作证明。回执缺失时会记为「仍未知」，原操作继续锁定。";
 
 /** Closure is offered after 24 hours or once the backend itself reports the result as unknown; never to an active writer. */
 export function closureOpen(outcome: CommandOutcome | undefined, expired: boolean) {
@@ -64,11 +65,13 @@ export function SettledCommandNotices({ items, onDismiss }: { items: SettledComm
 }
 
 /** Evidence form for a super administrator with investigation rights; the backend decides what the evidence proves. */
-export function CommandClosureModal({ label, commandKey, createdAt, facts, onClose, onSubmit }: {
+export function CommandClosureModal({ label, commandKey, createdAt, facts, receiptOnly = false, onClose, onSubmit }: {
   label: string;
   commandKey: string;
   createdAt: number;
   facts?: ReactNode;
+  /** The backend accepts no success-audit proof for this kind of command (E6 phone-risk saves): only its completed receipt confirms 「已执行」. */
+  receiptOnly?: boolean;
   onClose: () => void;
   onSubmit: (evidence: ECommandEvidence) => Promise<void>;
 }) {
@@ -101,14 +104,14 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, onClo
         <Fact k="命令号"><span data-mono>{commandKey}</span></Fact>
       </Facts>
       <Notice tone="warn">后端按证据核对：证据够才确认「已执行」或「未执行」并解除锁定；不够时记为「仍未知」，原操作继续锁定。确认后不能撤销，也不能改结论。</Notice>
-      <Field label="核查结论" required help={conclusion ? CONCLUSION_HELP[conclusion] : undefined} error={touched && !conclusion ? "请选择核查结论" : undefined}>
+      <Field label="核查结论" required help={conclusion ? receiptOnly && conclusion === "SUCCEEDED" ? RECEIPT_ONLY_HELP : CONCLUSION_HELP[conclusion] : undefined} error={touched && !conclusion ? "请选择核查结论" : undefined}>
         <Select aria-label="核查结论" required value={conclusion} placeholder="请选择核查结论" disabled={busy} onChange={value => setConclusion(value as Conclusion)}
           options={(["SUCCEEDED", "NOT_EXECUTED", "STILL_UNKNOWN"] as const).map(value => ({ value, label: CONCLUSION_TEXT[value] }))} />
       </Field>
       <Field label="核查依据" required hint="最多 512 字" error={touched && (!referenceLength || referenceLength > 512) ? referenceLength ? "核查依据最多 512 字" : "请写明核查依据" : undefined}>
         <Textarea rows={3} maxLength={512} count={`${referenceLength}/512`} disabled={busy} placeholder="写明核对了什么、在哪里看到，例如：操作记录里这台设备 10:42 的激活记录" value={reference} onChange={event => setReference(event.target.value)} />
       </Field>
-      {conclusion === "SUCCEEDED" && <Field label="成功审计编号" help="原操作没有完成回执时填写：操作记录里这条命令的成功记录编号。" error={touched && !auditValid ? "审计编号须为正整数" : undefined}>
+      {conclusion === "SUCCEEDED" && !receiptOnly && <Field label="成功审计编号" help="原操作没有完成回执时填写：操作记录里这条命令的成功记录编号。" error={touched && !auditValid ? "审计编号须为正整数" : undefined}>
         <Input aria-label="成功审计编号" className="e-check-audit" inputMode="numeric" autoComplete="off" placeholder="例如 88123" value={auditId} disabled={busy} onChange={event => setAuditId(event.target.value)} />
       </Field>}
       <Check label="我已核对证据，知道结论确认后不能撤销" checked={acknowledged} disabled={busy} onChange={event => setAcknowledged(event.target.checked)} />
