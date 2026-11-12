@@ -1097,7 +1097,7 @@ function G2ExchangePage() {
       </div>
 
       <Panel title="排队中的兑换" icon={ListOrdered} tone="role-3" className="g2x-queue"
-        sub={stats.queueDepth > queue.length ? `共 ${fmtCount(stats.queueDepth)} 单 · 列表显示最近 ${fmtCount(queue.length)} 单` : `共 ${fmtCount(stats.queueDepth)} 单`}
+        sub={`${stats.queueDepth > queue.length ? `共 ${fmtCount(stats.queueDepth)} 单 · 列表显示最近 ${fmtCount(queue.length)} 单` : `共 ${fmtCount(stats.queueDepth)} 单`} · 时间为${businessZone().label}`}
         explain={<>
           <p>超过个人或平台日额度、用户选了「超额时排队」的兑换在这里等。它们不会自动成交：点「处理排队」时，后端从最早排队的开始逐单检查。</p>
           <p>新排队的单已经从用户的来源币种里预占了金额，成交时不再扣；取消时退回预占的原币。没有预占记录的历史单成交时才扣、取消时不退。</p>
@@ -1125,7 +1125,7 @@ function G2ExchangePage() {
         )}
         <Table label="排队中的兑换" className="g2x-queue-table" data-tight="">
           <thead>
-            <tr><Th>兑换单号</Th><Th>用户</Th><Th align="right">兑换</Th><Th>排队原因</Th><Th>排队时间（{businessZone().label}）</Th></tr>
+            <tr><Th>兑换单号</Th><Th>用户</Th><Th align="right">兑换</Th><Th>排队原因</Th><Th>排队时间</Th></tr>
           </thead>
           <tbody>
             {queue.length === 0 && <TableMessage columns={5}>没有排队中的兑换。</TableMessage>}
