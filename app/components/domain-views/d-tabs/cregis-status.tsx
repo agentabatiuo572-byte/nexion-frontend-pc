@@ -580,12 +580,11 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     if (item.queue === "heldDeposits" && item.row.status === "DUST_HOLD") return { sourceType: "EVENT", sourceId: String(item.row.id), title: `低额入金 #${text(item.row.id)} · ${text(item.row.grossAmount)} USDT`, network: rowNetwork(item.row), dust: true };
     return null;
   };
-  const claimBlock = (source: ClaimSource) => source.network === "ERC20" ? "ERC20 入金这里不能认领或退款" : readBlock;
   const entryAction = (item: ExceptionEntry): { label: string; block?: string; run: () => void } | null => {
     if (!canManage) return null;
     if (item.queue === "heldDeposits" && item.row.status === "REVIEW_HOLD" && item.row.cid != null) return { label: "入金复核", block: readBlock, run: () => setReview({ cid: String(item.row.cid) }) };
     const source = claimSource(item);
-    if (source) return { label: "认领或退款", block: claimBlock(source), run: () => setClaim(source) };
+    if (source) return { label: "认领或退款", block: readBlock, run: () => setClaim(source) };
     return null;
   };
   const pools = FUNDS_NETWORKS.map(network => ({ network, pool: data ? poolOf(data, network) : undefined }));
