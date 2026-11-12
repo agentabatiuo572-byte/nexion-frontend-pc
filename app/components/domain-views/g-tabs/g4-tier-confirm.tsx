@@ -223,7 +223,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, onDirect,
       增加已有系列总供应量或服务端判定提高未售价格时，须另一位有权超管批准；待审期间沿用原档位和原总量。只影响以后的销售，已下单的按下单时价格结算。</>}
     content={<>
       {opening.pending && <RdNotice tone="warn" title="这是原档位申请"><p>档位版本 {basis.expectedTiersVersion} · 命令号 <span data-mono>{opening.pending.commandKey}</span>。查询原单不会把旧方案重新提交为当前配置。</p></RdNotice>}
-      {session.authorities.includes("platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=G">到操作记录查看审批</Link>}
+      {session.authorities.includes("platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=G">到「操作记录与审批」查看</Link>}
     </>}
     briefKind="config" reasonMin={8} reasonMax={200} amplifies={false}
     businessForm={deleting ? undefined : { kind: "multi-field", title: basis.tierId ? `档位 ${basis.tierId}` : "新价格档位", hint: `起点固定为 ${number(basis.from)}。截止和单价都填整数。`, fields: [
