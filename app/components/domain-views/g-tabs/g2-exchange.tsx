@@ -504,7 +504,7 @@ function G2ExchangePage() {
     : reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去「紧急停用开关」恢复</Link>);
   const header = (
     <PageHeader pageId="G2" title="兑换额度与规则"
-      summary="管用户 UVT 和 USDT 互换的每日额度、手续费和排队，必要时紧急暂停。"
+      summary="管 UVT 和 USDT 兑换的额度、手续费和排队。"
       actions={pauseAction || undefined}
       meta={overview ? "打开时读取，不自动刷新；改完用返回的结果刷新" : undefined}
       readOnly={overview && !canWriteAny ? "你只能查看；这个账号没有修改兑换参数、暂停兑换或处理排队的权限。" : undefined} />
@@ -599,7 +599,7 @@ function G2ExchangePage() {
     };
     openActionConfirm({ briefKind: "config",
       action: `调整兑换${isQueueMode ? "超额处理方式" : "参数"} · ${operatorCopyText(cap.name)}`,
-      title: original ? `${name} · 原申请` : `调整${name}`,
+      title: original ? `${name}的原申请` : `调整${name}`,
       detail: <>{copy?.what ?? operatorCopyText(cap.sub)}。{copy?.extra}</>,
       effect: <StatusTag tone="neutral" icon={ArrowLeftRight} explain={<>
         <p>{copy?.loosen ?? "放宽"}是放宽：先提交审批，另一位在职超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p>
@@ -974,14 +974,14 @@ function G2ExchangePage() {
         const detail = gateDetails[gateDrawer];
         const tile = gateTiles.find((row) => row.key === gateDrawer)!;
         return (
-          <Drawer open wide onClose={() => setGateDrawer(null)} title={`拦截记录 · ${tile.label}`} icon={Ban} tone="role-4"
+          <Drawer open wide onClose={() => setGateDrawer(null)} title={`${tile.label}的拦截记录`} icon={Ban} tone="role-4"
             sub={`今天 ${fmtCount(detail.count)} 次${detail.count > detail.rows.length ? ` · 列出最近 ${fmtCount(detail.rows.length)} 条` : ""}`}
             explain={<>
               <p>{tile.explain}</p>
               <p>只能查看。要调额度改「额度和手续费」。后端的额度和地区检查不看信任名单，把用户加进信任名单不能让这些兑换通过。</p>
             </>}
             footer={<Decision primary={<Button onClick={() => setGateDrawer(null)}>关闭</Button>} />}>
-            <Table label={`拦截记录 · ${tile.label}`} className="g2x-gate-table">
+            <Table label={`${tile.label}的拦截记录`} className="g2x-gate-table">
               <thead><tr><Th>用户</Th><Th>兑换单号</Th><Th align="right">兑换</Th><Th>说明</Th></tr></thead>
               <tbody>
                 {detail.rows.length === 0 && <TableMessage columns={4}>暂无拦截记录</TableMessage>}
