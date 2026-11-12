@@ -188,3 +188,67 @@ html[data-theme="dark"] .gdom .g3-market-confirm { --admin-confirm-focus: var(--
 .gdom .param-grid .p .v { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--ink); display: flex; align-items: baseline; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 .gdom .param-grid .p .v .l-btn { margin-left: auto; }
 .gdom .param-grid .p .s { font-size: 11px; color: var(--ink-4); margin-top: 4px; line-height: 1.45; }
+
+/* ============================ G7 锁定计划（改版，RdPage） ============================
+   只用 --rd-* 令牌。首屏：一笔 1,000 USDT 到期和提前解锁的对照条，和规则参数并排；下面是订单。 */
+.g7x-param { display: grid; gap: 2px; min-width: 0; }
+.g7x-value { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.g7x-value-num { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.g7x-value-num[data-empty] { color: var(--rd-text-3); }
+.g7x-dir { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.g7x-recover { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.g7x-recover li { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) auto auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.g7x-recover-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.g7x-recover-change { min-width: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.g7x-recover-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.g7x-recover-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.g7x-recover-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+@media (max-width: 1279px) {
+  .g7x-recover li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto; }
+  .g7x-recover-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+.g7x-paths { display: grid; gap: 20px; --rd-track-w: 100%; }
+.g7x-path { display: grid; gap: 8px; }
+.g7x-path + .g7x-path { padding-top: 20px; border-top: 1px solid var(--rd-line); }
+.g7x-path-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.g7x-path-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.g7x-path-num { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.g7x-path-num small { margin-left: 4px; font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.g7x-path-sub { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+.g7x-path-diff { margin: 0; padding-top: 12px; border-top: 1px solid var(--rd-line); color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
+.g7x-path-diff b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.g7x-capacity { display: grid; gap: 8px; padding-bottom: 16px; margin-bottom: 8px; border-bottom: 1px solid var(--rd-line); --rd-track-w: 100%; }
+.g7x-capacity-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.g7x-capacity-name { display: inline-flex; align-items: center; gap: 4px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.g7x-capacity-num { font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.g7x-orders-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 16px 32px; margin-bottom: 16px; }
+@media (max-width: 1279px) { .g7x-orders-head { grid-template-columns: minmax(0, 1fr); } }
+.g7x-no { display: flex; min-width: 0; max-width: 100%; }
+.g7x-no-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g7x-no-tail { flex: none; white-space: nowrap; }
+.g7x-order-table { table-layout: fixed; }
+.g7x-order-table th:nth-child(1) { width: 25%; }
+.g7x-order-table th:nth-child(2) { width: 15%; }
+.g7x-order-table th:nth-child(3) { width: 18%; }
+.g7x-order-table th:nth-child(4) { width: 13%; }
+.g7x-order-table th:nth-child(5) { width: 13%; }
+@media (max-width: 1279px) {
+  .g7x-order-table th:nth-child(1) { width: 20%; }
+  .g7x-order-table th:nth-child(2) { width: 13%; }
+  .g7x-order-table th:nth-child(3) { width: 18%; }
+  .g7x-order-table th:nth-child(4) { width: 15%; }
+  .g7x-order-table th:nth-child(5) { width: 104px; }
+}
+.g7x-more { display: flex; justify-content: center; margin-top: 16px; }
+.g7x-dist { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; padding: 0; list-style: none; font-variant-numeric: tabular-nums; }
+.g7x-dist li { display: inline-flex; gap: 8px; color: var(--rd-text-2); }
+.g7x-dist b { color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+.g7x-wrap { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; color: var(--rd-text-2); }
+.g7x-flow { margin: 0 0 8px; color: var(--rd-text-2); }
+.g7x-tech { margin: 0 0 8px; overflow-wrap: anywhere; color: var(--rd-text-2); }
+.g7x-tech:last-child { margin-bottom: 0; }
+.g7x-key { margin-right: 6px; vertical-align: 0; }
+.g7x-nowrap { white-space: nowrap; }
+.g7x-relock { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--rd-text-3); }
+.g7x-relock b { margin-left: 8px; font-weight: var(--rd-weight-medium); color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.g7x-relock b[data-empty] { color: var(--rd-text-3); }

@@ -36,6 +36,9 @@ export function GDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   };
 
+  // G7 已改版：整页由 G7Repurchase 自己包 RdPage、写页头、开确认框。
+  if (tab === "G7") return <G7Repurchase />;
+
   return (
     <div className="dkpage gdom">
       <DomainHeader {...meta} />
@@ -44,7 +47,6 @@ export function GDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "G2" && <G2Exchange ctx={ctx} />}
       {tab === "G3" && <G3Market ctx={ctx} />}
       {tab === "G4" && <G4Genesis ctx={ctx} />}
-      {tab === "G7" && <G7Repurchase ctx={ctx} />}
 
       {mc && (
         <OperationConfirmModal briefKind={mc.briefKind}
