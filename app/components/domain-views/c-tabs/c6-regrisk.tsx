@@ -577,8 +577,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         explain="今日计数从业务日的零点起算；多账户关联组按数据库时间往前 7 天。">
         <ConfigList label="统计口径与数据来源">
           <ConfigRow name="数据来源" value={(overview?.sources ?? ["登录风控设置", "用户安全状态", "多账户风控设置"]).map(sourceLabel).join(" · ")} />
-          <ConfigRow name="会出现在哪里" value="注册完成计入用户转化分析；登录锁定出现在风险提醒和「安全与登录设备」" />
-          <ConfigRow name="锁定期间" value="锁定期间，该手机号的所有登录都会被拒绝；已登录的设备不会因此下线，注册发验证码不受影响" />
+          <ConfigRow name="会出现在哪里" value="登录锁定出现在风险提醒和「安全与登录设备」" effect="注册完成会计入用户转化分析" />
+          <ConfigRow name="锁定的影响" value="锁定期间，该手机号的所有登录都会被拒绝" effect="已登录的设备不会因此下线；注册发验证码不受登录锁定影响" />
         </ConfigList>
       </Fold>
     </div>
