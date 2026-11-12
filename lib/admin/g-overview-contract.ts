@@ -161,7 +161,7 @@ export function assertG1OverviewContract<T>(value: T): T {
   return value;
 }
 
-function validateG2Order(module: string, value: unknown, path: string): void {
+export function validateG2Order(module: string, value: unknown, path: string): void {
   const row = record(module, value, path);
   requiredKeys(module, row, path, [
     "id", "userId", "userNo", "nickname", "countryCode", "exchangeNo", "fromAsset", "toAsset",
@@ -220,10 +220,15 @@ export function assertG2OverviewContract<T>(value: T): T {
   });
   const swap = record(module, root.swap, "data.swap");
   requiredKeys(module, swap, "data.swap", ["enabled", "status", "configKey", "linkedDomain"]);
+  if (!("blockedBy" in swap)) fail(module, "data.swap.blockedBy");
   bool(module, swap.enabled, "data.swap.enabled");
   enumText(module, swap.status, "data.swap.status", new Set(["enabled", "disabled"]));
   text(module, swap.configKey, "data.swap.configKey");
   if (swap.linkedDomain !== "J1") fail(module, "data.swap.linkedDomain");
+  if (swap.blockedBy !== null && swap.blockedBy !== "I5_DISCLOSURE_GATE") fail(module, "data.swap.blockedBy");
+  const disclosure = record(module, root.disclosureGate, "data.disclosureGate");
+  requiredKeys(module, disclosure, "data.disclosureGate", ["exchange"]);
+  if (typeof disclosure.exchange !== "boolean") fail(module, "data.disclosureGate.exchange");
   array(module, root.geoBlocked, "data.geoBlocked").forEach((item, index) => {
     const path = `data.geoBlocked[${index}]`;
     const geo = record(module, item, path);
