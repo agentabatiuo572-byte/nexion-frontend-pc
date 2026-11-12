@@ -2562,119 +2562,56 @@ session / 2FA / 锁定态 server-canonical,client 仅订阅(§9.11d.2);时间戳
 
 ---
 
-#### [C6] 注册/登录风控配置
+#### [C6] 注册与登录风险
 
-**① 目的 & 对齐**
-C6 是**注册登录侧风控参数配置面**——OTP 配置、登录锁定配置、CAPTCHA 开关,与 K1 多账户去重**互补不重复**。对齐前端 §4.1(注册:3 步 OTP)+ §4.2(登录:密码 / OTP 双模式)+ §4.6.2(锁定计数器 + OTP TTL + CAPTCHA 触发)+ §16.2.1(CAPTCHA 阈值)。服务的业务目标:注册登录侧反撞库 / 反短信轰炸的运营调节(OTP TTL / 配额 / 登录锁定 / CAPTCHA);**OTP / 锁定 server enforce**(§9.11d.2:OTP client 仅正则校验,真值 server);**与 K1 分工**——C6 owns OTP / 锁定 / CAPTCHA(防撞库),**同 IP / 设备 / 支付工具多账户去重在 K1**(`maxSignupPerIp24h` 等,§3.3 K1),C6 不重复定义。**C6 不持账户解锁处置权**——账户解锁经 C5 执行(§4.6.2 异常解锁),C6 锁定阈值配置仅为解锁触发条件的参数面(见 ④)。
+2026-11-12 对齐后端 `66ecdb47`、App `b52d3152` 和 C6 改版；本节取代旧的 auth/config、独立 2FA 阈值、强制改密和倒计时描述。
 
-**② 后台界面**
-三区:OTP 配置 + 登录锁定配置 + CAPTCHA 开关。
+**① 范围与权限**
 
-1. **OTP 配置**:`[OTP TTL / 重发冷却 / 同号 24h OTP 上限]` 现值 + 配置入口;展示当前触发 CAPTCHA 的阈值联动(同号 24h ≥ 上限 → CAPTCHA,§16.2.1)。
-2. **登录锁定配置**:`[密码连错锁定(5 次 /15min)/ 密码连错升级锁定(10 次 /24h)/ 2FA 连错锁定(5 次 /15min)]` 现值 + 配置入口(§4.6.2 锁定计数器)。
-3. **CAPTCHA 开关**:CAPTCHA 全局开关 + 触发阈值(同号 24h OTP 请求数)现值 + 配置入口。
+`/users/reg-risk` 是平台全局规则页，不按传入的 userCode 限定用户。GET `/api/admin/users/registration-risk/overview` 需要 `user_c6_read`，四个 PATCH 写入需要 `user_c6_write`。默认超管、风控可写，增长、审计只读；服务端以权限码为准。个人解锁属于 C5「安全与登录设备」，短信参数和滑块阈值属于 K2「异常套利与刷量排查」，IP/设备/支付工具多账户限制属于 K1「多账户风险排查」。跨页跳转同时检查目标菜单和读权限。
 
-**③ 可控参数**
+**② 当前页面与统计**
 
-> **默认值口径(§7 硬规则二)**:12 月运营周期 §6 未覆盖注册登录摩擦参数 → 以前端 §4.1 / §4.2 / §4.6.2 / §16.2.1 现状为参考并注明;这些是反撞库 / 反轰炸基础设施参数,非业务杠杆。**同 IP / 设备多账户去重阈值不在本表**——其权威归 K1(见下注)。
+首屏显示人机验证状态、服务器恢复时间和四类统计，下面是两级 App 登录锁定规则与人机验证操作；短信参数、多账户限制、来源信息保留在原折叠中。今日登录锁定是 SHORT/LONG 锁定事件数，同一用户可重复计数，不代表当前被锁人数；今日验证码记录仅统计 `nx_user_otp_challenge`，不含注册验证码，也不证明短信发送成功；人机验证记录统计 `auth.captcha_required`，固定后端未找到生产者，0 不证明无人触发；近 7 天多账户关联组只筛 `threshold_hit=1`，不限定密码/IP 类型或处置状态。今日按业务日零点起算，关联组为数据库当前时刻向前 7 天。
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 / 依据 |
-|---|---|---|---|---|
-| OTP TTL | **5 分钟**(§4.6.2) | 1–15min | 实时(改后新 OTP 按新 TTL) | §4.6.2:6 位 OTP server-side 有效 5 分钟;**12 月未覆盖 → 前端现状参考** |
-| OTP 重发冷却 | **60 秒**(§4.6.2 `RESEND_SECONDS`) | 30–300s | 实时 | §4.6.2:resend 60 秒倒计时防短信轰炸;**前端现状参考** |
-| 同号 24h OTP 上限 | **3 次**(超触发 CAPTCHA,§16.2.1) | 1–10 次 | 实时 | §4.6.2 / §16.2.1:同号 24h 内 ≥ 3 次 send 触发 CAPTCHA;**前端现状参考** |
-| 短锁 · 触发次数 | **5 次**(§4.6.2) | 3–10 次 | 实时 | §4.6.2:密码 / 2FA 连错达此次数 → 触发短锁;触发次数与锁定时长**各自独立可调**(逐项,不合并为一个值) |
-| 短锁 · 锁定时长 | **15 分钟**(§4.6.2) | 5–60min | 实时 | §4.6.2:触发短锁后的锁定时长;**前端现状参考** |
-| 长锁 · 触发次数 | **10 次**(§4.6.2) | 5–20 次 | 实时 | §4.6.2:密码连错达此次数 → 触发长锁 + 强制 reset;触发次数与锁定时长**各自独立可调** |
-| 长锁 · 锁定时长 | **24 小时**(§4.6.2) | 12–48h | 实时 | §4.6.2:触发长锁后的锁定时长;**前端现状参考** |
-| CAPTCHA 开关 | **ON(默认按阈值触发)** | ON / OFF | 实时 | §16.2.1 / §4.6.2:同号 24h ≥ 3 次 OTP 触发 CAPTCHA 为前端既定安全限频规则,默认 ON 与前端现状对齐;开关提供运营紧急关闭能力(12 月周期未覆盖 → 前端现状参考)。**OFF 状态安全风险见 ⑦** |
+**③ 参数与实际执行**
 
-> **同 IP / 设备 / 支付工具多账户去重在 K1,C6 不重复**(§3.3 K1 / §3.14):`maxSignupPerIp24h`(同 IP 24h 注册上限 ≤ 3)、`maxAccountsPerDevice`、`maxAccountsPerPaymentInstrument` 三个**反多账户去重阈值权威归 K1**(§Ch8 K1③),在注册 / sponsor-bind / 充值入口 server enforce。**C6 owns 的是 OTP / 登录锁定 / CAPTCHA(防撞库 / 防轰炸单账户摩擦)**,与 K1 的「同一实体多账户聚集检测」是不同层次——C6 管「单手机号的 OTP / 登录尝试频率」,K1 管「跨账户的实体去重」;二者互补,C6 不定义任何 `maxSignupPerIp24h` 类去重参数,避免反多账户阈值双源。
-
-**④ 操作动作**
-
-| 动作 | 角色 | 确认弹窗 | 审计点 |
+| 参数 | 读取默认值 | 合法范围及单位 | 修改归属／影响 |
 |---|---|---|---|
-| OTP 配置(TTL / 冷却 / 24h 上限) | 风控(lead)/ 超管 | C6-MD1(理由必填) | `admin.auth_config_changed`(field / before / after / operator / reason) |
-| 登录锁定配置(阈值) | 风控(lead)/ 超管 | C6-MD2(理由必填) | `admin.auth_config_changed`(lockout field / before / after / operator / reason) |
-| CAPTCHA 开关 / 阈值 | 风控(lead)/ 超管 | C6-MD3(理由必填;**关闭须填关闭时限**,见 ⑦) | `admin.auth_config_changed`(captcha field / before / after / operator / reason) |
+| 验证码有效期 | 5 分钟 | 1–15 分钟 | K2，C6 只读；新 challenge 的截止使用当时 TTL |
+| 重发冷却 | 60 秒 | 30–300 秒 | K2，C6 只读；下一次发送比较已有 lastSentAt |
+| 同号 24 小时发送上限 | 10 次 | 5–50 次 | K2，C6 只读；同环境规范化手机号跨注册/登录/找回共用预算 |
+| 滑块触发次数 | 2 次 | 0–50 次 | K2，C6 只读；24 小时发送事件计数达 N 后，下一次要求滑块，alwaysScenes/force 可更早触发 |
+| 短锁 | 5 次 / 15 分钟 | 3–10 次 / 5–60 分钟 | C6，一次提交次数和分钟；分钟也用于失败计数窗口 |
+| 长锁 | 10 次 / 24 小时 | 5–20 次 / 12–48 小时 | C6，一次提交次数和小时；次数必须严格大于短锁 |
+| 人机验证临时关闭 | 开启 | 30 分钟、1 小时、2 小时、4 小时后自动恢复 | C6，存服务器计算的绝对截止；可立即恢复 |
 
-> **配置 = 确认弹窗 + 理由必填;C6 不持账户解锁处置权**:OTP / 锁定 / CAPTCHA 参数批改属高敏动作,执行权 = 风控(lead)/超管(2026-06 操作确认决议,原复核层级转执行门槛),经确认弹窗即时生效,落 A2 审计并实时告警。**C6 不提供「人工解锁账户」操作**——账户解锁处置权统一归 C5(§4.6.2 异常解锁,KYC 二验 + 24h 长锁高执行门槛 / 15min 短锁即时,见 C5④);C6 的锁定阈值(5 次 /15min + 10 次 /24h)是**解锁触发条件的参数面**(配置「何时锁」),解锁动作本身(「解谁的锁」)在 C5 执行,二者不双归属、各管一层。
+失败计数从第一次被记录的失败起，在短锁分钟窗口内累计；窗口严格过期后下一次失败从 1 计数。阈值按环境/国家码/手机号登录键计算，IP 另有固定一分钟频率门。达到阈值创建 now+分钟/小时的锁截止；调整配置不直接重写已有截止，也不清累计次数或主动吊销会话。长锁不会设置强制改密标记。密码登录、两步验证先检查已有锁，锁内不记录新失败；OTP 登录校验在 eligible=false 时仍可 recordFailure，可能在窗口内达到长阈值并更新截止。单靠持续输错密码通常不能在短锁期升级长锁，此设计已归入 C6-BE-03。App 映射锁定错误，不消费登录锁截止或显示解锁倒计时。
 
-**④a 交互与弹窗规格**
+人机验证关闭只跳过非 force 的滑块检查（包括普通 alwaysScenes），不取消冷却、发送配额、IP 限制；H5 注册在 `h5 && (installation 为空 || h5_register_captcha)` 时强制验证，关闭窗口不能绕过。overview 不返回 alwaysScenes/H5 强制开关，不能将这些配置当作本页已读取的值。截止到时业务门立即按策略要求验证；后台默认约每 15 秒调度清理过期窗口、增版并记审计。页面手动刷新，无本地倒计时。无窗口/非法持久值返回空恢复时间、false、0 秒；调度清理前可返回过去 ISO 截止、false、0 秒。计数为必填非负整数，空值不显示为 0。
 
-**(1) 动作触发总表**
+**④ 四个写入合同与结果恢复**
 
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| OTP 配置 | ②1 OTP 配置区「编辑」 | 次按钮 | 风控(lead)/超管渲染 | 打开弹窗 C6-MD1 |
-| 登录锁定配置 | ②2 锁定配置区「编辑」 | 次按钮 | 风控(lead)/超管渲染 | 打开弹窗 C6-MD2 |
-| CAPTCHA 开关 / 阈值 | ②3 CAPTCHA 区开关 + 「编辑阈值」 | 开关 / 次按钮 | 风控(lead)/超管渲染 | 打开弹窗 C6-MD3 |
-| 查看 auth 配置 | ②1-3 视图 | 链接 | 按角色裁剪(增长/客服只读) | 跳转视图,无弹窗 |
+| 操作 | PATCH `/api/admin/users/registration-risk/params/{key}` | value |
+|---|---|---|
+| 调整短锁 | lockShort | `N 次 / M 分钟` |
+| 调整长锁 | lockLong | `N 次 / H 小时` |
+| 临时关闭 | captchaOff | 四个固定中文枚举之一，如 `1 小时后自动恢复` |
+| 立即恢复 | captchaOff | 空字符串 `""` |
 
-**(2) 弹窗规格**
+请求体固定为 `{value, reason, operator, expectedVersion}`，头携原 `Idempotency-Key: c6-command-…`。四写都是高影响安全配置，直接生效，不走审批；理由按 A2 动态可见字符规则校验。全页共用 `auth.risk.c6.version`，自动恢复也增版，版本不符拒绝。成功回包为参数行，key/group/value/version 均与后端生成代码对应；关闭回包 value 是 ISO 截止，恢复为空串，version 为原版本+1。
 
-##### [C6-MD1] OTP 配置变更
-- **功能**:调整 OTP TTL / 重发冷却 / 同号 24h 上限,确认即对新 OTP 生效。
-- **布局结构**:1. **信息区**:三参数当前值 / 近 24h OTP 发送量与 CAPTCHA 触发量(server 派生)。2. **影响预览区**:放宽方向(TTL 调长 / 上限调高)提示行「放宽将降低反轰炸摩擦」。3. **输入区**:otpTtlSec(1–15min)/ otpResendCooldownSec(30–300s)/ otpMaxPer24h(1–10)(数字输入,范围引③表)+ reason(必填 8–200 字)。4. **按钮区**:取消 / 确认变更。
-- **错误态**:422(超③表范围,server 回传合法区间)/ 422 `MULTI_ACCOUNT_PARAM_BELONGS_TO_K1`(误携 K1 参数)/ 400 `REASON_REQUIRED` / 403 / 409。
-- **成功反馈**:弹窗关闭;配置区就地更新;toast;事件 `admin.auth_config_changed`;实时告警。
+发请求前保存完整对象、body、理由、operator、版本和命令号到同一个 C6 sessionStorage；存不下不发。未知结果冻结原确认输入，同对象不开放新修改；刷新后提示及恢复动作仍在，概览读取失败也能按原 body/key 重试。查询当前规则只提供核对材料，不凭同值/版本变化删除原命令。只有成功回执或 `isExplicitRejection` 认定的明确业务拒绝才结案；401/403/408/425/429、所有 IDEMPOTENCY_* 和 HTTP200 非明确业务码均保留。后端用 HTTP200 包装的确切 C6 业务拒绝按已核对的 ApiResult.code 和原因码共同判定，不扩大为所有非零业务码。
 
-##### [C6-MD2] 登录锁定配置变更
-- **功能**:调整短锁/长锁阈值,确认即按新阈值判定。
-- **布局结构**:1. **信息区**:三组锁定参数当前值 / 近 7 日触发锁定次数。2. **影响预览区**:放宽方向(次数调高/时长调短)提示「放宽将降低防撞库强度」。3. **输入区**:短锁次数与时长 / 长锁次数与时长(数字输入,范围引③表)+ reason(必填)。4. **按钮区**:取消 / 确认变更。
-- **错误态**:422(超范围 / 长锁阈值 ≤ 短锁阈值互锁违反)/ 400 / 403 / 409。
-- **成功反馈**:弹窗关闭;就地更新;toast;事件 `admin.auth_config_changed`;实时告警。
+24 小时从首次保存起算，过期保留原证据，只能读回核对，不重发。旧 key-only 记录不补造原请求，只读核对。关闭按同号重试若原命令成功，后端回放原截止，不延后；若第一次请求未执行，第一次实际执行时才从服务器 clock 开始算。成功回执不当作当前 overview；结案关闭旧确认，必须成功重读后才能按新基准发新修改，失败不把已确认成功说成操作失败。
 
-##### [C6-MD3] 人机验证紧急关闭 / 恢复
-- **功能**：开启时可紧急关闭；临时关闭时可立即恢复。关闭按所选时限自动恢复。滑块触发阈值只在「异常套利与刷量排查」修改。
-- **当前与目标（BUG-306）**：当前值显示真实「开启」状态；默认选中的「30 分钟后自动恢复」只表示本次关闭后的恢复时间。切换时限不改变当前状态说明。临时关闭时页面显示系统返回的恢复时间。
-- **输入与选择控件**：
+**⑤ 认证链路、审计与待办**
 
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 关闭时限 | 单选（30 分钟 / 1 小时 / 2 小时 / 4 小时后自动恢复） | 紧急关闭时必填 | 只接受提供的选项 | 30 分钟后自动恢复 |
-| reason | 多行文本 | 是 | 按系统理由规则校验，最多 200 字 | 空 |
-
-- **错误态**:422 `SHUTOFF_TTL_REQUIRED`(OFF 未带时限)/ 400 / 403 / 409。
-- **成功反馈**:弹窗关闭;开关态就地更新(OFF 态显示恢复倒计时);toast;事件 `admin.auth_config_changed`;实时告警超管/风控 lead。
-
-**⑤ 接口**
-- `GET /api/admin/auth/config` — 注册登录风控参数现值 `{ otpTtlSec, otpResendCooldownSec, otpMaxPer24h, lockoutShortAttempts, lockoutShortWindowMin, lockoutLongAttempts, lockoutLongWindowH, captchaEnabled, captchaTriggerOtpCount }`;**不含** `maxSignupPerIp24h` 等 K1 去重参数(§3.14:K1 权威)。
-- `PUT /api/admin/auth/config`(参数配置,确认弹窗 C6-MD1~MD3,body 携 reason(空值 400 `REASON_REQUIRED`),执行权 = 风控(lead)/超管;**请求体含 `maxSignupPerIp24h` / `maxAccountsPerDevice` / `maxAccountsPerPaymentInstrument` 时 server 返回 422** + error body `{code:'MULTI_ACCOUNT_PARAM_BELONGS_TO_K1', message:'多账户去重阈值由 K1 反多账户引擎配置', suggestedPath:'/admin/risk/multi-account'}`——这些参数只能经 K1 修改,C6 不接受其写入,从接口层 enforce 分工,防双源。**注:`suggestedPath` 为「建议导航路径」(advisory-only),非 HTTP redirect 语义**;接口文档须注明 advisory-only,消除 422 + redirect 的语义矛盾)。**双向文档对齐**:**K1⑤ 需补「C6 `PUT /api/admin/auth/config` endpoint 会拒绝 K1 三个去重参数写入并给出 `suggestedPath`;K1 是这三个参数的唯一配置入口」**,形成 K1 与 C6 双向文档链。
 - **服务端认证顺序**：正式 App 注册使用 `POST /auth/users/register/otp/send` 发码、`POST /auth/users/register/otp/verify` 预验。预验核对 `countryCode/phone/challengeNo/code` 及注册场景、环境、有效期、剩余试次和未消费状态；错误累计试次并返回 `USER_REGISTRATION_OTP_INVALID`，成功只返回 `REGISTRATION_OTP_VERIFIED`，不消费挑战、不创建账户或会话、不签发 `verifyToken`。最终 `POST /auth/users/register` 再次校验并原子消费，错误或过期回到验码步骤；不能只凭填满 6 位或前端成功标记注册。短信登录 `/auth/users/login/otp/verify` 与二次登录 `/auth/users/login/2fa` 验证成功后才签会话；忘记密码 `/auth/users/password-reset/otp/verify` 先预验，`/auth/users/password-reset/otp/complete` 最终消费并改密、吊销会话。C6 提供 OTP/锁定/CAPTCHA 参数，不改变各场景顺序或允许跨场景复用。
-- 账户解锁:经 C5 `POST /api/admin/users/:userId/unlock`(§4.6.2,账户解锁处置权落 C5,C6 不另设解锁端点)。
 
-参数配置 server-canonical(client 仅 UI 正则校验 OTP 格式,真值 server,§9.11d.2);时间戳 ms epoch 服务端权威。
+锁调整、关闭、恢复分别记 `C6_REGISTRATION_RISK_PARAM_UPDATED`、`C6_CAPTCHA_TEMPORARILY_DISABLED`、`C6_CAPTCHA_RESTORED`，自动恢复记 `C6_CAPTCHA_AUTOMATICALLY_RESTORED`；资源 AUTH_CONFIG，HIGH，必达审计失败会回滚。不是审批提案，也没有本页主动告警、生成多账户组或同步案件的写操作。
 
-**⑥ 权限 & 审计**
-
-| 动作 | 超管 | 财务 | 风控 | 增长 | 客服 | 只读审计 |
-|---|---|---|---|---|---|---|
-| 查看 auth 配置 | ✅ | — | ✅ | ✅(只读)| ✅(只读)| ✅ |
-| OTP / 锁定 / CAPTCHA 配置 | ✅ | — | ✅(lead) | —(增长不持 auth 安全配置写权,见下注)| — | — |
-
-> **增长(Growth)不持 auth 安全配置写权(对齐 §1.1 RBAC)**:OTP / CAPTCHA 参数属安全基础设施,不在 §1.1 增长职责范围(漏斗转化看板 / Phase 节奏 / 邀请·任务·活动参数调优);增长若需观察 CAPTCHA 对注册漏斗的影响,经「查看 auth 配置」只读观察权获取,**不授予写权**。这与 §1.1 RBAC 及已写各章节(B/D/H/K 域均未授予增长安全配置写权)一致。
-
-审计记录字段:`操作者 / 角色 / 动作(auth_config_change) / field / 前值 / 后值 / reason / 时间(ms)`。只读审计可全量追溯注册登录风控参数变更史(单账户解锁记录在 C5 审计追溯,见 C5⑥)。
-
-**⑦ 风控 & 联动**
-- **OTP / 锁定 server enforce(§9.11d.2)**:OTP client 仅做 6 位数字正则校验(§4.1 step 2),真值在 server——`POST /api/auth/otp/verify` 必调 server 校验 TTL + 试次 + idempotency(§4.6.2 / §4.1);登录锁定计数器 server 持有(IP + userId 维度,§4.6.2),client 仅显示倒计时(`error.lockedUntil`),不能本地绕过。锁定期间 server 拒绝该手机号一切登录请求(密码 / OTP / reset),即使新 `send` 也不签发 code(§4.6.2 防绕过短信通道刷量)。
-- **与 K1 分工(§3.14)**:C6 **owns** OTP(TTL / 冷却 / 24h 上限)/ 登录锁定(5 次 /15min + 10 次 /24h)/ CAPTCHA(防撞库 / 防短信轰炸,单手机号摩擦);**同 IP / 设备 / 支付工具多账户去重在 K1**(`maxSignupPerIp24h` 等,§Ch8 K1③),不重复。CAPTCHA 触发(24h ≥ 3 次 OTP)是 C6 的单号频率控制,与 K1 的跨账户实体去重正交——二者共同构成注册登录侧防御但各管一层。
-- **CAPTCHA OFF 状态安全风险(高敏)**:**关闭 CAPTCHA 将关闭 OTP 超频保护,等同开放短信轰炸通道**,仅用于系统级紧急维护(如 CAPTCHA 服务商故障),**不应作为转化优化手段使用**;关闭执行权 = 风控(lead)/超管,**且强制要求填写关闭时限**(到期自动恢复 ON,经 C6-MD3 确认弹窗)。CAPTCHA 开关 / 阈值影响注册漏斗(B3)转化率,增长可只读观察其漏斗影响,不持写权(见 ⑥)。
-- **账户解锁在 C5,C6 持锁定阈值配置**:C6 配置「何时锁」(锁定阈值),**账户解锁动作在 C5 执行**(§4.6.2 异常解锁:KYC 二验 + server 人工 unblock + audit log;24h 长锁高执行门槛 / 15min 短锁即时,见 C5④/⑦);C6 不持解锁处置权,二者不双归属。
-- **server-canonical**:所有 auth 配置 server 权威,client 不缓存为权威;参数下发 enforce 在 server 注册登录 endpoint。
-
-**⑧ 埋点(事件)**
-对齐 A4(Ch2 §2.4),C6 **产生** 注册登录侧 auth 事件(§2.4.5 ① 获客漏斗 + ⑤ 风控):
-
-- **产生(server-authoritative,注册登录侧)**:
-  - `auth.otp_sent` — 触发点:OTP 发送;**该事件已在 §2.4.5 ① 获客漏斗 family 登记**,C6 在此**首次声明完整属性 schema**:`anon_id|user_id / phone_hash / send_count_24h / captcha_required / ts`,**A4 schema registry 以此为规范属性集**;喂 B3 漏斗 + C6 命中观测。
-  - `auth.register_started` / `auth.otp_verified` / `auth.register_completed` — 注册漏斗事件(§2.4.5 ①);`register_completed` 携 `anon_id` + `user_id` 做身份拼接(§2.4.2)+ `ref`(推荐码)。
-  - `auth.login_locked` — 触发点:登录 / 2FA 连错达锁定阈值(§2.4.5 ⑤);属性:`user_id / phone_hash / lock_type(15min|24h) / rule_id(password|2fa) / ts`;喂 B5 风险雷达 + C5(锁定态展示)+ K(撞库信号)。
-  - `admin.auth_config_changed` — 触发点:参数配置确认执行;属性:`field / before / after / operator / reason / ts`;喂 A2 审计。须经 A4 schema registry 注册(归入 §2.4.5 ⑥ admin family)。
-- **消费**:无业务事件作判定(C6 是配置 + enforce 侧);命中观测读 server enforce 计数。
-- **喂给**:**B3 转化漏斗**(`auth.register_*` 注册级)、**B5 风险雷达**(`auth.login_locked` 撞库信号)、**K1**(注册侧 IP / 设备命中喂多账户去重,§Ch8 K1⑧ 消费注册事件)、A2 审计。
+已登记 B48 C6-BE-01（统计来源不全）、02（关联组不等于撞库团伙）、03（锁说明/执行及长锁可达性）、04（关闭范围及读接口缺少强制配置）。当前页面的待确认保留时长、关闭范围及锁升级文案仍须视觉 worker 按事实修改；逻辑 worker 不改屏幕文字。
 
 ---
 

@@ -58,6 +58,8 @@ export type ActionConfirmReq = {
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type ConfirmReq = {
+  /** A saved original freezes inputs while its result remains unresolved. */
+  getPendingReason?: () => string | undefined;
   briefKind: OperatorBriefKind;
   action: ReactNode;
   /** 框上写的短标题，不传就用 action（VS-101）。 */

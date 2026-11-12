@@ -34,6 +34,7 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,
+    closeConfirms: () => { setActionConfirm(null); setCf(null); },
   };
 
   const page = (

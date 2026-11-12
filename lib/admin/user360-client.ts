@@ -547,6 +547,7 @@ export class UsersRequestError extends Error {
     public readonly status: number,
     public readonly code: string | undefined,
     message: string,
+    public readonly businessStatus?: number,
   ) {
     super(message);
     this.name = "UsersRequestError";
@@ -686,6 +687,7 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
       response.status,
       serverMessage,
       formatAdminApiError(serverMessage, `USERS_REQUEST_FAILED_${response.status}`),
+      result?.code,
     ), { reasonCode: serverMessage });
   }
 
@@ -1093,8 +1095,8 @@ function c6ResponseInvalid(): never {
 }
 
 function c6Numeric(value: unknown) {
-  return (typeof value === "number" && Number.isFinite(value))
-    || (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)));
+  return (typeof value === "number" || typeof value === "string" && value.trim() !== "")
+    && Number.isSafeInteger(Number(value)) && Number(value) >= 0;
 }
 
 function requireC6Overview(value: unknown): UserRegistrationRiskOverview {
@@ -1115,6 +1117,12 @@ function requireC6Overview(value: unknown): UserRegistrationRiskOverview {
   if (typeof stats.captchaTemporarilyDisabled !== "boolean" || typeof stats.captchaRestoreAt !== "string") {
     return c6ResponseInvalid();
   }
+  // state() may retain an expired ISO deadline before the recovery scheduler
+  // clears it. No window / malformed persisted window becomes "", false, 0.
+  const deadline = stats.captchaRestoreAt;
+  if (deadline !== "" && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(deadline) || !Number.isFinite(Date.parse(deadline)))
+    || stats.captchaTemporarilyDisabled !== (Number(stats.captchaRemainingSeconds) > 0)
+    || stats.captchaTemporarilyDisabled && deadline === "") return c6ResponseInvalid();
   if (!value.params.every((param) => isJsonRecord(param)
     && typeof param.group === "string"
     && typeof param.key === "string"
