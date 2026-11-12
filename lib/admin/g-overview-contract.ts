@@ -9,6 +9,7 @@ const G4_PARAM_KEYS = new Set(["supply", "price", "dividend", "royalty", "divBas
 const G4_STATES = new Set(["minted", "held", "listed", "sold"]);
 const G7_PARAM_KEYS = new Set(["apy", "lockDays", "nurture", "lottery", "penalty", "presets"]);
 const G7_STATES = new Set(["pending_lock", "active", "mature_unclaimed", "claimed", "early_withdrawn"]);
+const G7_BREAKDOWN_STATES = new Set([...G7_STATES, "slashed", "refunded"]);
 
 function fail(module: string, path: string): never {
   throw new Error(`${module}_RESPONSE_INVALID:${path}`);
@@ -338,7 +339,9 @@ export function assertG7OverviewContract<T>(value: T): T {
     const path = `data.statusBreakdown[${index}]`;
     const status = record(module, item, path);
     requiredKeys(module, status, path, ["status", "label", "count", "principalUsd", "principalDisplay", "tone"]);
-    enumText(module, String(status.status).toLowerCase(), `${path}.status`, G7_STATES);
+    // The fixed lifecycle still has five states, but the historical breakdown
+    // also contains SLASHED / REFUNDED (StakingMapper.repurchaseStatusBreakdown).
+    enumText(module, String(status.status).toLowerCase(), `${path}.status`, G7_BREAKDOWN_STATES);
     text(module, status.label, `${path}.label`);
     numeric(module, status.count, `${path}.count`);
     numeric(module, status.principalUsd, `${path}.principalUsd`);

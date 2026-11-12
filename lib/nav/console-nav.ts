@@ -546,6 +546,7 @@ export function canAccessResolvedPath(domains: NavDomain[], pathname: string | n
 export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals", "/finance/pool", "/devices/orders", "/growth/trial", "/analytics/kpi", "/risk/multi-account", "/emergency/kill-switch", "/service/sessions", "/content/disclosures", "/finance/fx-rate", "/finance/payout-vnd", "/finance/recon", "/finance/params", "/finance/ledger", "/users/assets", "/users/search", "/users/actions", "/platform/audit",
   "/growth/phase",
   "/finance-products/genesis",
+  "/finance-products/repurchase",
   "/risk/withdrawal-rules",
   "/devices/tasks",
   "/devices/ops",
