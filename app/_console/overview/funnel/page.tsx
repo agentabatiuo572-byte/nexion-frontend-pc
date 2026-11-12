@@ -69,6 +69,8 @@ function Funnel({ stages, lowest }: { stages: readonly B3Stage[]; lowest: B3Stag
         const width = base && item.distinctUsers != null ? Math.max((item.distinctUsers / base) * 100, 0.5) : null;
         const dropped = item.previousUsers != null && item.distinctUsers != null ? item.previousUsers - item.distinctUsers : null;
         const isLowest = lowest?.key === item.key;
+        // 条宽是运行时的人数比例，只能写在元素上。
+        const barStyle = width == null ? undefined : { width: `${width}%` };
         return (
           <li key={item.key} className="b3-funnel-item">
             {index > 0 && (
@@ -90,7 +92,7 @@ function Funnel({ stages, lowest }: { stages: readonly B3Stage[]; lowest: B3Stag
               </span>
               <span className="b3-funnel-track">
                 {width != null
-                  ? <span className="b3-funnel-bar" data-lowest={isLowest ? "" : undefined} style={{ width: `${width}%` }} aria-hidden />
+                  ? <span className="b3-funnel-bar" data-lowest={isLowest ? "" : undefined} style={barStyle} aria-hidden />
                   : <span className="b3-funnel-protected">{SMALL_SAMPLE_LABEL}：少于 5 人不显示</span>}
               </span>
               <span className="b3-funnel-value" data-empty={item.distinctUsers == null ? "" : undefined}>
@@ -391,13 +393,12 @@ export default function FunnelPage() {
     );
   }
 
-  const links: Array<[string, string]> = [["/analytics/funnel-cohort", "用户转化与留存"], ["/growth/phase", "运营阶段设置"], ["/platform/events", "用户行为事件"]];
   const continueRow = (
-    <nav className="rd-links b3-links" aria-label="继续分析">
+    <nav className="rd-links b3-links" aria-label="相关页面">
       <span>继续分析</span>
-      {links.map(([href, label]) => canCross(href)
-        ? <Link key={href} className="rd-link" href={href} prefetch={false}>{label}</Link>
-        : <span key={href} aria-disabled="true">{label} · 无权限</span>)}
+      {canCross("/analytics/funnel-cohort") ? <Link className="rd-link" href="/analytics/funnel-cohort" prefetch={false}>用户转化与留存</Link> : <span aria-disabled="true">用户转化与留存 · 无权限</span>}
+      {canCross("/growth/phase") ? <Link className="rd-link" href="/growth/phase" prefetch={false}>运营阶段设置</Link> : <span aria-disabled="true">运营阶段设置 · 无权限</span>}
+      {canCross("/platform/events") ? <Link className="rd-link" href="/platform/events" prefetch={false}>用户行为事件</Link> : <span aria-disabled="true">用户行为事件 · 无权限</span>}
       <Explain label="数据从哪来" content={operatorCopyText(data.sourceStatement)} />
     </nav>
   );
