@@ -36,13 +36,15 @@ export function GDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   };
 
+  // G3 已改版：整页由 G3Market 自己包 RdPage、写页头、开确认框。
+  if (tab === "G3") return <G3Market />;
+
   return (
     <div className="dkpage gdom">
       <DomainHeader {...meta} />
 
       {tab === "G1" && <G1Staking />}
       {tab === "G2" && <G2Exchange ctx={ctx} />}
-      {tab === "G3" && <G3Market ctx={ctx} />}
       {tab === "G4" && <G4Genesis ctx={ctx} />}
       {tab === "G7" && <G7Repurchase ctx={ctx} />}
 
