@@ -11,7 +11,6 @@ import {
 import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   K1OutcomeUncertainError,
-  K1RequestError,
   executeK4Command,
   K4_DIMENSION_KEYS,
   fetchK4WithdrawalAlerts,
@@ -294,8 +293,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         setLookupLoading(false);
       }
     } catch (error) {
-      const code = error instanceof K1RequestError ? error.reasonCode : undefined;
-      if (isExplicitRejection(error) && !(retained && (code === "OBJECT_LOCKED_BY_A2" || code === "OBJECT_ALREADY_PENDING"))) {
+      if (isExplicitRejection(error)) {
         k4Commands.forget(slot, commandKey);
         requireReread();
         syncPending();
@@ -489,7 +487,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
 
   const inboundNotice = INBOUND_USER && (
     <Notice tone="progress" title={`从用户详情带入 ${INBOUND_USER.userNo}`}
-      action={INBOUND_USER.returnTo ? <Link className="rd-link" href={{ pathname: `/users/search/${INBOUND_USER.returnTo.split("/users/search/")[1].split("?")[0]}`, query: Object.fromEntries(new URLSearchParams(INBOUND_USER.returnTo.split("?")[1] ?? "")) }}>返回用户详情</Link> : undefined}>
+      action={INBOUND_USER.returnTo && reach(INBOUND_USER.returnTo, "user_c1_read") ? <Link className="rd-link" href={{ pathname: `/users/search/${INBOUND_USER.returnTo.split("/users/search/")[1].split("?")[0]}`, query: Object.fromEntries(new URLSearchParams(INBOUND_USER.returnTo.split("?")[1] ?? "")) }}>返回用户详情</Link> : undefined}>
       已打开「用户分数」并查这位用户的评分。
     </Notice>
   );
