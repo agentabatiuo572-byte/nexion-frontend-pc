@@ -574,11 +574,11 @@ export async function g4Request<T>(path: string, init?: RequestInit) {
         && result?.message === "G4_CATALOG_APPROVAL_REQUIRED") {
       throw new G4CatalogApprovalRequiredError();
     }
-    throw stableMutationHttpFailure(
+    throw Object.assign(stableMutationHttpFailure(
       formatAdminApiError(result?.message, `G4_REQUEST_FAILED_${response.status}`),
       response.status,
       result?.code,
-    );
+    ), { status: response.status, backendMessage: result?.message });
   }
 
   return result.data as T;

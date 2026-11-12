@@ -287,11 +287,11 @@ async function g7Request<T>(path: string, init?: RequestInit) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw stableMutationHttpFailure(
+    throw Object.assign(stableMutationHttpFailure(
       formatAdminApiError(result?.message, `G7_REQUEST_FAILED_${response.status}`),
       response.status,
       result?.code,
-    );
+    ), { status: response.status, backendMessage: result?.message });
   }
 
   return result.data as T;

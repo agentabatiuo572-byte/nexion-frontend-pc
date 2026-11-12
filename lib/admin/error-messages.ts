@@ -1,6 +1,29 @@
 import { SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
 
 export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  // G2/G4/G7 parameter approvals (backend 66ecdb47).
+  G2_EXCHANGE_PARAM_APPROVAL_REQUIRED: "该兑换参数的放宽方向需要提交审批；另一位有批准权限的超管批准前，当前值不变。",
+  G4_GENESIS_PARAM_APPROVAL_REQUIRED: "该创世参数变更需要提交审批；另一位有批准权和对应参数修改权限的超管批准前，当前值不变。",
+  G7_REPURCHASE_PARAM_APPROVAL_REQUIRED: "该锁定计划参数的放宽方向需要提交审批；另一位有批准权限的超管批准前，当前值不变。",
+  G2G7_PARAM_MAKER_FORBIDDEN: "当前账号没有此兑换或锁定计划参数的修改权限，请由有对应参数权限和提案权的同事发起。",
+  G4_PARAM_MAKER_FORBIDDEN: "当前账号没有此创世参数的修改权限，请由有对应参数权限和提案权的同事发起。",
+  G2_EXCHANGE_PARAM_STALE: "兑换参数当前值已与原审批单的旧值不同，本次批准不会覆盖新值；请核对原审批单并处理后再发起。",
+  G4_GENESIS_PARAM_STALE: "当前创世系列或参数值已与原审批单不同，本次批准不会覆盖新值；请核对原审批单并处理后再发起。",
+  G7_REPURCHASE_PARAM_STALE: "锁定计划参数当前值已与原审批单的旧值不同，本次批准不会覆盖新值；请核对原审批单并处理后再发起。",
+  G2G7_PARAM_MAKER_REQUIRED: "无法确认原提案发起人，请保留原请求和命令号并核对登录身份。",
+  G4_PARAM_MAKER_REQUIRED: "无法确认创世参数提案发起人，请保留原请求和命令号并核对登录身份。",
+  G2G7_PARAM_APPROVAL_FORBIDDEN: "此兑换或锁定计划提案须由另一位在职超管持有 A2 批准权限处理，请核对批准人身份及原审批单。",
+  G4_PARAM_APPROVAL_FORBIDDEN: "此创世参数提案须由另一位在职超管持有 A2 批准权限和对应参数修改权限处理，请核对批准人及原审批单。",
+  G2G7_PARAM_PROPOSAL_INVALID: "兑换或锁定计划提案内容不完整，请核对原参数、拟值和服务端绑定的旧值；未决命令继续保留。",
+  G4_PARAM_PROPOSAL_INVALID: "创世参数提案内容不完整，请核对原参数、拟值、当前系列和决策编号；未决命令继续保留。",
+  G2G7_PARAM_KEY_INVALID: "此参数不存在或锁定计划产品不可用，请读取当前配置并核对原审批单。",
+  G4_PARAM_KEY_INVALID: "当前创世参数或系列不可用，请读取当前配置并核对原审批单。",
+  G2G7_PARAM_VALUE_INVALID: "兑换或锁定计划参数拟值超出允许范围，请核对参数范围与原请求。",
+  G4_PARAM_VALUE_INVALID: "创世参数拟值无效，请核对参数范围与原请求。",
+  G2G7_PARAM_NOT_AMPLIFYING: "按服务端当前值，此修改不属于放宽方向，不能建立该审批单；请核对明确拒绝后读取当前值再调整。",
+  G4_PARAM_APPROVAL_NOT_REQUIRED: "按服务端当前值，此创世参数修改不需要通用审批；请核对明确拒绝后读取当前配置再调整。",
+  G4_DECISION_REF_REQUIRED: "此创世参数修改需要产品或财务决策编号，请补全决策依据后提交。",
+
   LOGIN_ATTEMPT_SESSION_MISSING: "原登录会话暂时无法核对，请保留原操作并重新读取。",
   SESSION_REPLACED: "这条登录会话已被替换，请读取当前登录设备。",
   USER_PHONE_CHANGE_LIMIT_REACHED: "统计期内更换登录手机号次数已达上限，请等待最早一次记录移出统计期。",

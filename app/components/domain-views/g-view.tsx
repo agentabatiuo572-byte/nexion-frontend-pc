@@ -55,6 +55,8 @@ export function GDomainView({ meta }: { meta: DomainViewMeta }) {
           edit={mc.edit}
           businessForm={mc.businessForm}
           reasonMax={mc.reasonMax}
+          getPendingReason={mc.getPendingReason}
+          getPendingBusinessValue={mc.getPendingBusinessValue}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
             await mc.run(reason, newValue, businessValue);

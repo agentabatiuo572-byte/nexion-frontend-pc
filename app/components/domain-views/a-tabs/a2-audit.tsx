@@ -1,4 +1,5 @@
 "use client";
+import { gParamAuthority } from "@/lib/admin/use-g-param-approval";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES } from "@/lib/admin/audit-action-names";
 import { a2ActionText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
@@ -325,6 +326,12 @@ function g4ChangesSupply(w: Pick<A2OperationRow, "before" | "after">) {
 
 function decisionRule(w: TicketIdentity): DecisionRule {
   const code = w.operationCode ?? "";
+  if (code === "g2_exchange_param" || code === "g7_repurchase_param"
+      || w.action === `兑换参数调整 · ${w.obj}` || w.action === `回购参数调整 · ${w.obj}`) return SUPER_ONLY;
+  if (code === "g4_genesis_param" || w.action === `调整创世参数 · ${w.obj}`) {
+    const authority = gParamAuthority("G4", w.obj);
+    return { superadmin: true, approve: [authority], reject: [authority] };
+  }
   if (w.fundEffect === "ORDER_REFUND" || code === "e4_order_refund") return { superadmin: true, approve: ["device_e4_order_refund"], reject: ["device_e4_order_refund"] };
   if (code === "j1_gate_resume") return { superadmin: true, approve: ["emergency_j1_gate_resume"], reject: ["emergency_j1_gate_resume"] };
   if (A4_REGISTRY_CODES.includes(code)) return SUPER_ONLY;

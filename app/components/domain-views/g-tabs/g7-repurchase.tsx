@@ -20,6 +20,7 @@ import {
 } from "@/lib/admin/g7-client";
 import type { GCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { useGParamApproval } from "@/lib/admin/use-g-param-approval";
 
 const PARAM_COPY: Record<string, { name: string; sub: string }> = {
   apy: { name: "参考年奖励率", sub: "只影响新订单" },
@@ -113,6 +114,9 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
   const [orders, setOrders] = useState<G7Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const paramApproval = useGParamApproval("G7", toast, setError, async () => {
+    setOverview(await fetchG7RepurchaseOverview());
+  });
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -219,7 +223,9 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
   const stats = overview.stats;
   const busy = !!busyKey;
 
-  const adjustParam = (param: G7Param) => {
+  const adjustParam = async (param: G7Param) => {
+    const original = await paramApproval.open(param.key);
+    if (original === false) return;
     const label = paramName(param);
     openActionConfirm({ briefKind: "config",
       action: `调整锁定计划参数 · ${label}`,
@@ -232,6 +238,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
       edit: param.key === "presets"
         ? { kind: "text", current: paramEditValue(param), disallowCurrent: true }
         : { kind: "number", current: paramEditValue(param),
+            initialValue: original?.request.command.params.value as string | undefined,
             unit: param.key === "apy" || param.key === "penalty" ? "%" : param.key === "lockDays" ? "天" : undefined,
             min: param.key === "apy" || param.key === "penalty" || param.key === "lottery" ? 0 : 1,
             max: param.key === "apy" ? 300 : param.key === "penalty" || param.key === "lottery" ? 100 : param.key === "lockDays" ? 3650 : 10,
@@ -246,11 +253,25 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
         hint: `本月容量 ${fmtNumber(overview.g4Capacity.monthlyCapacity)} 张 · 已发 ${fmtNumber(overview.g4Capacity.ticketsIssuedThisMonth)} 张`,
         fields: [{ key: "g4Ref", label: "创世奖池核对编号", inputKind: "text", placeholder: "例如 POOL-2026-07", required: true, wide: true }],
       } : undefined,
+      getPendingReason: () => paramApproval.getPendingReason(param.key),
       run: async (reason, value, businessValue) => {
         if (value === undefined || value === null || String(value).trim() === "") return;
-        await mutate(param.key, () => updateG7RepurchaseParam(
-          param.key, String(value), reason, currentAdminOperator(), businessValue?.g4Ref ?? "",
-        ), `${label} 已生效`);
+        setBusyKey(param.key);
+        setError("");
+        try {
+          const result = await paramApproval.run({ key: param.key, current: param.value, value: String(value), reason },
+            () => updateG7RepurchaseParam(param.key, String(value), reason, currentAdminOperator(), businessValue?.g4Ref ?? ""));
+          if ("direct" in result) {
+            setOverview(result.direct);
+            toast(`${label} 已生效`);
+          }
+        } catch (err) {
+          setError(messageOf(err));
+          if (!paramApproval.record(param.key)) toast(`操作失败 · ${messageOf(err)}`);
+          throw err;
+        } finally {
+          setBusyKey(null);
+        }
       },
     });
   };

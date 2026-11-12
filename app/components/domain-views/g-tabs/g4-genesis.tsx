@@ -34,6 +34,7 @@ import { configApprovalOriginalInput, pendingConfigApproval } from "@/lib/admin/
 import G4AdminOperations from "./g4-admin-operations";
 import { G4FirstDividendConfirm } from "./g4-first-dividend-confirm";
 import { G4TierConfirm, hasPendingG4TierApproval, type G4TierChange } from "./g4-tier-confirm";
+import { useGParamApproval } from "@/lib/admin/use-g-param-approval";
 
 const OPERATOR = currentAdminOperator;
 
@@ -102,6 +103,10 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const [overview, setOverview] = useState<G4Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const paramApproval = useGParamApproval("G4", toast, setError, async () => {
+    setOverview(await fetchG4GenesisOverview(nodePageNo, nodePageSize));
+    setRefreshError("");
+  });
   const [refreshError, setRefreshError] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [nodeDrawer, setNodeDrawer] = useState<string | null>(null);
@@ -163,7 +168,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     try {
       await action();
       // 写入回执已确认，附加刷新失败不能再抛给写入确认框。
-      toast(success);
+      if (success) toast(success);
       const [result] = await Promise.allSettled([fetchG4GenesisOverview(nodePageNo, nodePageSize)]);
       if (result.status === "fulfilled") {
         setOverview(result.value);
@@ -264,7 +269,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     }
   };
 
-  const adjustParam = (param: G4Param) => {
+  const adjustParam = async (param: G4Param) => {
     if (!allowed(paramAuthority(param.key))) return;
     if (param.key === "dividend" && firstDividendEntry) {
       void openFirstDividend();
@@ -273,6 +278,8 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     // 主人拍板(2026-08-06):阶梯档位在场时一级单价由档位派生、本参数只读,调价走档位卡
     // (OPS-G-07/G-13 仲裁)。入口已不渲染,这里是钱路径双保险。
     if (param.key === "price" && overview.tierPrice.status !== "legacy") return;
+    const original = param.key === "dividend" ? undefined : await paramApproval.open(param.key);
+    if (original === false) return;
     const numeric = !["divBase", "emissionCurve"].includes(param.key);
     const bounds = param.key === "supply" ? { min: stats.sold, max: 100000, step: 1 }
       : param.key === "price" ? { min: 0.01, max: 1000000, step: 0.01 }
@@ -288,16 +295,29 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       edit: {
         ...(numeric ? { kind: "number", ...bounds } : { kind: "text" }),
         current: paramEditValue(param),
+        initialValue: original?.request.command.params.value as string | undefined,
         submitEditValue: needsDecision,
       },
       businessForm: needsDecision ? { kind: "multi-field", title: "决策依据", fields: [
         { key: "decisionRef", label: "产品或财务决策编号", current: "", inputKind: "text", required: true },
       ] } : undefined,
+      getPendingReason: () => paramApproval.getPendingReason(param.key),
+      getPendingBusinessValue: () => paramApproval.getPendingBusinessValue(param.key),
       run: async (reason, value, businessValue) => {
         if (!value) return;
-        await mutate(`param:${param.key}`, () => updateG4GenesisParam(
-          param.key, String(value), reason, OPERATOR(), businessValue?.decisionRef,
-        ), `${operatorCopyText(param.name)}已立即生效`);
+        if (param.key === "dividend") {
+          await mutate(`param:${param.key}`, () => updateG4GenesisParam(
+            param.key, String(value), reason, OPERATOR(), businessValue?.decisionRef,
+          ), `${operatorCopyText(param.name)}已立即生效`);
+          return;
+        }
+        await mutate(`param:${param.key}`, async () => {
+          const result = await paramApproval.run({ key: param.key, current: param.value, value: String(value), reason, decisionRef: businessValue?.decisionRef },
+            () => updateG4GenesisParam(param.key, String(value), reason, OPERATOR(), businessValue?.decisionRef));
+          if ("direct" in result) {
+            toast(`${operatorCopyText(param.name)}已立即生效`);
+          }
+        }, "");
       },
     });
   };

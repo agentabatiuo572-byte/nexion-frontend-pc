@@ -31,6 +31,7 @@ import type { GCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { classifyStableMutationFailure } from "@/lib/admin/stable-mutation";
 import { summarizeG2BatchResult, type G2BatchResult } from "@/lib/admin/g2-batch-result";
+import { useGParamApproval } from "@/lib/admin/use-g-param-approval";
 
 const OPERATOR = currentAdminOperator;
 const BATCH_AUTHORITY = "finprod_g2_write";
@@ -98,6 +99,9 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
   const [overview, setOverview] = useState<G2Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const paramApproval = useGParamApproval("G2", toast, setError, async () => {
+    setOverview(await fetchG2ExchangeOverview());
+  });
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [gateDrawer, setGateDrawer] = useState<GateKey | null>(null);
   const [queueDrawer, setQueueDrawer] = useState<string | null>(null);
@@ -269,8 +273,11 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     { key: "geo", label: "地域封锁", count: stats.gateGeo, tone: "danger" },
   ];
 
-  const adjCap = (cap: G2Cap) => {
+  const adjCap = async (cap: G2Cap) => {
+    const original = await paramApproval.open(cap.key);
+    if (original === false) return;
     const isQueueMode = cap.key === "queueMode";
+    const originalValue = original?.request.command.params.value as string | undefined;
     openActionConfirm({ briefKind: "config",
       action: `调整兑换${isQueueMode ? "超额处理方式" : "参数"} · ${operatorCopyText(cap.name)}`,
       detail: <>
@@ -285,15 +292,32 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
         保存后立即生效。
       </>,
       edit: isQueueMode
-        ? { kind: "select", current: cap.displayValue, options: ["排队", "拒绝"], amplifiesWhen: { from: "拒绝", to: "排队" } }
+        ? { kind: "select", current: cap.displayValue, initialValue: originalValue === undefined ? undefined : originalValue === "REJECT" ? "拒绝" : "排队", options: ["排队", "拒绝"], amplifiesWhen: { from: "拒绝", to: "排队" } }
         : { kind: "number", current: capEditValue(cap), min: 0,
+            initialValue: originalValue,
             max: cap.key === "userDailyCap" ? 10000 : cap.key === "platformDailyCap" ? 10000000 : cap.key === "fee" ? 10 : cap.key === "feeMin" ? 5 : 1000000,
             step: cap.key === "fee" ? 0.01 : 0.1,
             amplifiesWhen: cap.key === "fee" || cap.key === "feeMin" ? "decrease" : "increase" },
+      getPendingReason: () => paramApproval.getPendingReason(cap.key),
       run: async (reason, value) => {
         const nextValue = normalizeCapSubmitValue(cap, value);
         if (!nextValue) return;
-        await mutate(`param:${cap.key}`, () => updateG2ExchangeParam(cap.key, nextValue, reason, OPERATOR()), `${operatorCopyText(cap.name)}已立即生效`);
+        setBusyKey(`param:${cap.key}`);
+        setError("");
+        try {
+          const result = await paramApproval.run({ key: cap.key, current: cap.value, value: nextValue, reason },
+            () => updateG2ExchangeParam(cap.key, nextValue, reason, OPERATOR()));
+          if ("direct" in result) {
+            setOverview(result.direct);
+            toast(`${operatorCopyText(cap.name)}已立即生效`);
+          }
+        } catch (err) {
+          setError(messageOf(err));
+          if (!paramApproval.record(cap.key)) toast(`操作失败 · ${messageOf(err)}`);
+          throw err;
+        } finally {
+          setBusyKey(null);
+        }
       },
     });
   };
