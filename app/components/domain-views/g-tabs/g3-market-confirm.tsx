@@ -2,10 +2,11 @@
 
 import {
   executeG3MarketChange, g3MarketChangeAuthority, g3MarketCommandExpired,
-  g3MarketRequiresApproval, pendingG3MarketCommand,
-  type G3CommandResult, type G3MarketChange,
+  g3MarketFailureCode, g3MarketRequiresApproval, pendingG3MarketCommand,
+  type G3CommandResult, type G3MarketChange, type G3ReviewedChange,
 } from "@/lib/admin/g3-market-command";
-import type { G3CurveFrame } from "@/lib/admin/g3-client";
+import { useState } from "react";
+import { fetchG3MarketOverview, g3NumberText, serializeG3Frames, type G3CurveFrame, type G3Overview } from "@/lib/admin/g3-client";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import { Info } from "lucide-react";
 import { Fact, Facts, StatusTag } from "@/app/components/rd";
@@ -25,17 +26,21 @@ function price(value: number) {
 
 /**
  * 提高目标价、上涨概率、现价和首次配置排程的确认框（W01、W02、W04、W07）。
- * 提交、查询原审批单和按原操作重试都走 executeG3MarketChange，原样不动；这里只排框里的层次：
+ * 提交、查询原审批单和按原操作重试统一走 executeG3MarketChange，保留原确认框：
  * 标题写动作和对象，标题下是生效方式，事实区随填写的新值说清生效方式、对兑换的影响和后端检查什么。
  */
-export function G3MarketConfirm({ session, epoch, requested, today, frames, tuning, onClose, onDone }: {
-  session: AdminSession; epoch: number; requested: G3MarketChange;
+export function G3MarketConfirm({ session, epoch, requested, today, frames, tuning, onClose, onDone, onStateChange, onFailure, onBusy, onCurrent }: {
+  session: AdminSession; epoch: number; requested: G3ReviewedChange;
   /** 以下只用于显示：今天是第几天、七天计划、后端在当前环境是否允许人工改价（界面已备好，PC 现在读不到环境）。 */
   today: number; frames: G3CurveFrame[]; tuning: "unknown" | "forbidden" | "allowed";
   onClose: () => void; onDone: (result: G3CommandResult) => void;
+  onStateChange: () => void; onFailure: (change: G3MarketChange, failure: unknown) => void; onBusy: (busy: boolean) => void;
+  onCurrent: (overview: G3Overview) => void;
 }) {
+  const [forceApproval, setForceApproval] = useState(false);
+  const [approvalBasis, setApprovalBasis] = useState<G3ReviewedChange>();
   const pending = pendingG3MarketCommand(session.adminId, requested);
-  const change = pending?.change ?? requested;
+  const change = (pending?.change ?? approvalBasis ?? requested) as G3ReviewedChange;
   const schedule = change.action === "schedule";
   const initialSchedule = schedule && change.current === "";
   const probability = change.action === "curve-cell" && change.field === "pumpProbability";
@@ -103,10 +108,33 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
   }
   async function execute(mode: "submit" | "lookup" | "retry", reason = "", value = "") {
     ensureOwner(mode !== "lookup");
-    const result = await executeG3MarketChange(session, change, value, reason, mode);
-    ensureOwner(false);
-    if (result) onDone(result);
-    return !!result;
+    onBusy(true);
+    try {
+      const result = await executeG3MarketChange(session, change, value, reason, mode, forceApproval);
+      ensureOwner(false);
+      if (result) onDone(result);
+      return !!result;
+    } catch (failure) {
+      if (g3MarketFailureCode(failure) === "G3_POLICY_APPROVAL_REQUIRED") {
+        const latest = await fetchG3MarketOverview();
+        ensureOwner(false);
+        if (change.action === "curve-cell") {
+          const frame = latest.frames.find(row => row.dayIndex === change.dayIndex)!;
+          setApprovalBasis({ ...change, current: g3NumberText(frame[change.field], change.field === "pumpProbability" ? 6 : 8),
+            expectedFrames: serializeG3Frames(latest.frames), expectedRevision: latest.curveRevision ?? "" });
+        } else if (change.action === "current-price") {
+          setApprovalBasis({ ...change, current: g3NumberText(latest.currentPrice), expectedRevision: latest.priceRevision ?? "" });
+        } else {
+          const control = latest.controls.find(row => row.key === "schedule");
+          if (!control) throw new Error("当前配置版本未就绪，请关闭弹窗后重新读取页面。");
+          setApprovalBasis({ ...change, current: control.rawValue ?? control.value, expectedRevision: latest.scheduleRevision ?? "" });
+        }
+        onCurrent(latest);
+        setForceApproval(true);
+      }
+      onFailure(change, failure);
+      throw failure;
+    } finally { onBusy(false); onStateChange(); }
   }
 
   return <OperationConfirmModal
@@ -145,12 +173,12 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
     inlineApproval={{
       dialogClassName: `g3m-confirm${schedule ? " g3m-schedule-confirm" : ""}`,
       fieldLayout: "compact",
-      pending: pending?.request.kind === "approval",
+      pending: !!pending && (pending.request.kind === "approval" || g3MarketCommandExpired(pending)),
       expired: !!pending && g3MarketCommandExpired(pending),
       disabledReason: pending && pending.request.kind === "direct" && g3MarketCommandExpired(pending)
         ? "原直接保存请求已过期，仅保留原内容供核对。该入口没有按命令号查询接口，不能重试或另建编号。" : undefined,
       resolve: (_business, value) => {
-        if (!(pending ? pending.request.kind === "approval" : g3MarketRequiresApproval(change, value))) return undefined;
+        if (!(pending ? pending.request.kind === "approval" : forceApproval || g3MarketRequiresApproval(change, value))) return undefined;
         return {
           heading: initialSchedule ? "首次配置需另一位超管批准" : "需另一位超管批准后生效",
           completionCopy: timing,
