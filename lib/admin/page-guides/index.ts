@@ -18,7 +18,7 @@ export interface PageGuideContent {
 
 const PAGE_GUIDES: Record<string, PageGuideContent> = {
   G3: {
-    purpose: "管 UVT 未来七天的价格计划和价格怎么推进。",
+    purpose: "安排 UVT 每天的价格，看现价有没有按计划走，需要时暂停或固定某一天。",
     tasks: [
       { title: "改某一天的目标价", steps: ["在「七天价格计划」找到那一天，点目标价旁的笔", "填新值和理由；降低直接保存，提高要另一位有权超管批准", "改计划不改现价，推进或固定到那一天才发布"] },
       { title: "让价格停在某一天", steps: ["在「运行方式」点「固定生效日」的「调整」，选一天", "确认后马上按那天的目标价发布现价，之后不再自动切换；选「不固定」恢复推进"] },
