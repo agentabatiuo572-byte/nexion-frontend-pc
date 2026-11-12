@@ -19,6 +19,7 @@ import {
   updateH4LocalizedContent,
   updateH4EventFeatured,
   updateH4EventReward,
+  previewH4EventReward,
   updateH4EventStatus,
   createH3Mission,
   editH3Mission,
@@ -43,6 +44,8 @@ import {
   createH4WheelGuard,
   updateH4WheelGuard,
 } from "@/lib/admin/h-client";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import { HI_WHEEL_SCOPE, hiEventScope, hiRewardProposal, pendingHIRewardCommand, submitHIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import type { HCtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { usePropose } from "@/lib/admin/use-propose";
@@ -233,6 +236,25 @@ function wheelRewardText(value: unknown) {
 }
 
 const wheelPointsTier = (tier: Record<string, unknown>) => text(tier.kind).toLowerCase() === "points";
+
+// A2's decimal parser requires a leading digit and no plus sign; keep every entered digit.
+function h4ProposalDecimal(value: string) {
+  return value.trim().replace(/^\+/, "").replace(/^(-?)\./, (_match, sign: string) => `${sign}0.`).replace(/\.$/, "");
+}
+
+// Mirrors OpsGrowthService.increasesUvtFallback, including the backend's ordered comfort pool.
+function increasesUvtFallback(tiers: Array<Record<string, any>>, changed: Record<string, any>, directlyDrawn: boolean) {
+  let afterChanged = false;
+  for (const tier of tiers) {
+    if (boolValue(tier.real) || text(tier.kind).toLowerCase() !== "uvt") continue;
+    if (tier === changed) { afterChanged = true; continue; }
+    const higher = (directlyDrawn || afterChanged) && numericValue(tier.amount) > numericValue(changed.amount);
+    if (higher && (directlyDrawn || tiers.some(draw => draw !== changed && draw !== tier && numericValue(draw.prob) > 0
+      && (boolValue(draw.real) || numericValue(draw.dailyStock) > 0)))) return true;
+    if (numericValue(tier.dailyStock) <= 0) return false;
+  }
+  return false;
+}
 
 function cleanPhaseKey(value: string) {
   return value.replace(/\s*当前\s*/g, "").trim();
@@ -550,15 +572,60 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     });
   };
 
+  const proposeH4 = async (scope: string, op: string, values: Record<string, unknown>, before: string, after: string,
+    reason: string, form?: Record<string, string>, editValue?: string) => {
+    const session = useAdminAuth.getState().session;
+    if (!session) throw new Error("登录已失效，请重新登录后核对原操作。");
+    const result = await submitHIRewardCommand(scope, { kind: "proposal", input: hiRewardProposal(session, op, values, before, after, reason) }, form, editValue);
+    if (result.kind !== "proposal") throw new Error("原退役操作已取得回执，请刷新奖池核对后再修改。");
+    toast("已提交，等待审批后执行");
+  };
+
+  const wheelCommandBlocks = (op: string, tierName?: string) => {
+    const pending = pendingHIRewardCommand(HI_WHEEL_SCOPE);
+    if (!pending) return false;
+    const original = pending.payload;
+    if (original.kind === "proposal" && original.input.command.op === op
+      && (!tierName || (original.input.command.params.values as Record<string, unknown>).tierName === tierName)) return false;
+    const label = original.kind === "proposal" ? `${original.input.action} · ${String((original.input.command.params.values as Record<string, unknown>).tierName ?? original.input.obj)}`
+      : `积分退役 · ${original.tierName}`;
+    toast(`原操作「${label}」结果待确认，请先恢复原操作。命令号：${pending.commandKey}`);
+    return true;
+  };
+
+  const resumeH4Wheel = async () => {
+    const pending = pendingHIRewardCommand(HI_WHEEL_SCOPE);
+    if (!pending) return false;
+    const result = await submitHIRewardCommand(HI_WHEEL_SCOPE, pending.payload);
+    if (result.kind === "retire") { apply(result.overview); toast("原退役操作已取得回执"); }
+    else toast(result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+    return true;
+  };
+
   const openEventReward = (event: QuestEvent) => {
     const current = text(event.reward);
     openActionConfirm({ briefKind: "config",
       action: `活动奖励 · ${event.name}`,
       detail: <>当前奖励 <b>{current}</b>。确认后更新活动奖励。</>,
       amplifies: true,
-      edit: { kind: "text", current },
+      getPendingReason: () => pendingHIRewardCommand(hiEventScope(event.id))?.payload.input.reason,
+      edit: { kind: "text", current, initialValue: pendingHIRewardCommand(hiEventScope(event.id))?.editValue },
       run: async (reason, value) => {
+        const scope = hiEventScope(event.id);
+        const pending = pendingHIRewardCommand(scope);
+        if (pending?.payload.kind === "proposal") {
+          const result = await submitHIRewardCommand(scope, pending.payload);
+          toast(result.kind === "proposal" && result.ticket.status === "pending"
+            ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+          return;
+        }
         if (!value) return;
+        const preview = await previewH4EventReward(event.id, value, current, reason);
+        if (preview.approvalRequired) {
+          await proposeH4(scope, "h4_legacy_event_reward_update", { eventCode: event.id, value, expectedValue: current },
+            preview.current, preview.proposed, reason, undefined, value);
+          return;
+        }
         apply(await updateH4EventReward(event.id, value, current, reason));
         toast(`${event.name} 奖励已更新`);
       },
@@ -1011,12 +1078,16 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const openCreateWheelTier = () => {
+    if (wheelCommandBlocks("h4_wheel_tier_create")) return;
     openActionConfirm({ briefKind: "config",
       action: "新建转盘奖项",
       detail: <>新建一个转盘奖项。概率填 0–100，所有奖项加起来要等于 100%。发真钱的奖项，覆盖率低于红线时无法保存。</>,
       amplifies: true,
+      getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
+      getPendingBusinessValue: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.form,
       businessForm: { kind: "wheel-tier-config", subject: "新档位" },
       run: async (reason, _v, bv) => {
+        if (await resumeH4Wheel()) return;
         if (!bv) return;
         const payload = {
           tierName: String(bv.tierName || "").trim(),
@@ -1029,7 +1100,16 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           dailyStock: Math.max(0, Number(bv.dailyStock) || 0),
         };
         if (!payload.tierName || !payload.rewardName) return;
-        apply(await createH4WheelTier(payload, text(model?.wheelSignature, "__EMPTY__"), reason));
+        const expectedSignature = text(model?.wheelSignature, "__EMPTY__");
+        const amplifies = payload.rewardKind === "uvt" || (["usdt", "coupon"].includes(payload.rewardKind)
+          && Math.floor(payload.probabilityPct * 10000 + 0.5) > 0);
+        if (amplifies) {
+          await proposeH4(HI_WHEEL_SCOPE, "h4_wheel_tier_create", { ...payload,
+            probabilityPct: h4ProposalDecimal(bv.probabilityPct), rewardAmount: h4ProposalDecimal(bv.rewardAmount), expectedSignature },
+            JSON.stringify(model?.wheelTiers ?? []), JSON.stringify(payload), reason, bv);
+          return;
+        }
+        apply(await createH4WheelTier(payload, expectedSignature, reason));
         toast(`奖项「${payload.tierName}」已新建`);
       },
     });
@@ -1081,6 +1161,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   };
 
   const openWheelProbabilities = () => {
+    if (wheelCommandBlocks("h4_wheel_probabilities_update")) return;
     const tiers = model?.wheelTiers ?? [];
     const fixed = tiers.filter(wheelPointsTier);
     const probabilityText = (tier: Record<string, unknown>, values: Record<string, string>) =>
@@ -1089,6 +1170,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       action: "调整转盘奖项概率",
       detail: <>一次设置所有奖项，加起来要等于 100%。调高发钱奖项的概率时，覆盖率低于红线无法保存。</>,
       amplifies: true,
+      getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
+      getPendingBusinessValue: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.form,
       businessForm: {
         kind: "multi-field",
         title: "转盘奖项概率",
@@ -1115,6 +1198,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         })),
       },
       run: async (reason, _value, businessValue) => {
+        if (await resumeH4Wheel()) return;
         if (!businessValue) return;
         const probabilities = Object.fromEntries(tiers.map((tier) => [
           text(tier.tier),
@@ -1123,6 +1207,15 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         const total = Object.values(probabilities).reduce((sum, value) => sum + value, 0);
         if (Math.round(total * 10000) !== 1000000) {
           throw new Error("所有奖项的概率加起来要等于 100%");
+        }
+        const amplifies = tiers.some(tier => ["uvt", "usdt", "coupon"].includes(text(tier.kind).toLowerCase())
+          && probabilities[text(tier.tier)] > numericValue(tier.prob));
+        if (amplifies) {
+          await proposeH4(HI_WHEEL_SCOPE, "h4_wheel_probabilities_update", {
+            probabilities: Object.fromEntries(tiers.map(tier => [text(tier.tier), h4ProposalDecimal(probabilityText(tier, businessValue))])),
+            expectedSignature: text(model?.wheelSignature, "__EMPTY__"),
+          }, JSON.stringify(tiers), JSON.stringify(probabilities), reason, businessValue);
+          return;
         }
         apply(await updateH4WheelProbabilities(
           probabilities,
@@ -1170,10 +1263,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openEditWheelTier = (tier: Record<string, any>) => {
     const tierName = text(tier.tier);
+    if (wheelCommandBlocks("h4_wheel_tier_update", tierName)) return;
     openActionConfirm({ briefKind: "config",
       action: `编辑转盘奖项 · ${tierName}`,
       detail: <>编辑奖项名称、奖励类型、是否发真钱。概率请在「改奖池 / 概率」里统一调，保证加起来是 100%。</>,
       amplifies: true,
+      getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
+      getPendingBusinessValue: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.form,
       businessForm: {
         kind: "multi-field",
         title: `奖项设置 · ${tierName}`,
@@ -1188,8 +1284,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         ],
       },
       run: async (reason, _value, bv) => {
+        if (await resumeH4Wheel()) return;
         if (!bv) return;
-        apply(await updateH4WheelTier(tierName, {
+        const payload = {
           tierName,
           rewardName: String(bv.rewardName || "").trim(),
           probabilityPct: numericValue(tier.prob),
@@ -1198,7 +1295,24 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           rewardAmount: Number(bv.rewardAmount),
           voucherId: bv.rewardKind === "coupon" ? String(bv.voucherId || "").trim() || null : null,
           dailyStock: Math.max(0, Number(bv.dailyStock) || 0),
-        }, text(model?.wheelSignature, "__EMPTY__"), reason));
+        };
+        const expectedSignature = text(model?.wheelSignature, "__EMPTY__");
+        const sameKind = payload.rewardKind.toLowerCase() === text(tier.kind).toLowerCase();
+        const previousStock = numericValue(tier.dailyStock);
+        const increasesAmount = payload.rewardAmount > (sameKind ? numericValue(tier.amount) : 0);
+        const increasesStock = previousStock > 0 && (payload.dailyStock === 0 || payload.dailyStock > previousStock);
+        const reducesUvtStock = sameKind && payload.rewardKind === "uvt" && payload.dailyStock > 0
+          && (previousStock === 0 || payload.dailyStock < previousStock);
+        const amplifies = ["uvt", "usdt", "coupon"].includes(payload.rewardKind)
+          && (increasesAmount || increasesStock || (reducesUvtStock
+            && increasesUvtFallback(model?.wheelTiers ?? [], tier, numericValue(tier.prob) > 0)));
+        if (amplifies) {
+          await proposeH4(HI_WHEEL_SCOPE, "h4_wheel_tier_update", { ...payload,
+            probabilityPct: String(numericValue(tier.prob)), rewardAmount: h4ProposalDecimal(bv.rewardAmount), expectedSignature },
+            JSON.stringify(tier), JSON.stringify(payload), reason, bv);
+          return;
+        }
+        apply(await updateH4WheelTier(tierName, payload, expectedSignature, reason));
         toast(`奖项「${tierName}」已更新`);
       },
     });
@@ -1206,14 +1320,24 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const openDeleteWheelTier = (tier: Record<string, any>) => {
     const tierName = text(tier.tier);
+    if (wheelCommandBlocks("h4_wheel_tier_delete", tierName)) return;
     const probability = numericValue(tier.prob);
     openActionConfirm({ briefKind: "record",
       action: `删除转盘奖项 · ${tierName}`,
       detail: probability === 0
         ? <>删除后至少还要保留 2 个奖项。</>
         : <>请先在「改奖池 / 概率」把这个奖项的概率调成 0%，再删除。</>,
+      getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
       run: async (reason) => {
+        if (await resumeH4Wheel()) return;
         if (probability !== 0) throw new Error("删除前请先把概率调成 0%");
+        const amplifies = !boolValue(tier.real) && text(tier.kind).toLowerCase() === "uvt"
+          && increasesUvtFallback(model?.wheelTiers ?? [], tier, false);
+        if (amplifies) {
+          await proposeH4(HI_WHEEL_SCOPE, "h4_wheel_tier_delete", { tierName, expectedSignature: text(model?.wheelSignature, "__EMPTY__") },
+            JSON.stringify(tier), "删除档位", reason);
+          return;
+        }
         apply(await deleteH4WheelTier(
           tierName,
           text(model?.wheelSignature, "__EMPTY__"),
@@ -1583,7 +1707,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               <span style={{ flex: 1 }}>
                 <b>周冠军加奖</b> · {operatorCopyText(text(model.weeklyChampionBonus))} · 本周累计 UVT 最多的用户额外奖励
               </span>
-              <button className="l-btn sm mc" onClick={() => openSimpleConfig("weekly.champBonus", "周冠军加奖", text(model.weeklyChampionBonus), true)} disabled={!canModuleWrite}>调整</button>
+              <button className="l-btn sm mc" onClick={() => openSimpleConfig("weekly.champBonus", "周冠军加奖", text(model.weeklyChampionBonus), false)} disabled={!canModuleWrite}>调整</button>
             </div>
 
             <div style={{ fontSize: 12, fontWeight: 600, margin: "12px 0 6px", color: "var(--ink-2)" }}>

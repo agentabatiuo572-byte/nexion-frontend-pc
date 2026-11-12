@@ -142,7 +142,7 @@ export function describeH1Schedule(schedule: H1Schedule | null | undefined): str
   return parts.join(" · ");
 }
 
-export async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPrefix?: string): Promise<T> {
+export async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPrefix?: string, strictOutcome = false): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -159,12 +159,13 @@ export async function growthRequest<T>(path: string, init?: RequestInit, idempot
   // 与兄弟 client(e1/f1/a4…)同款:2xx 但响应体不是 JSON(网关 HTML 错误页)时
   // 原写法会抛英文 SyntaxError,绕过下面这条已备中文的归因分支。
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
-  if (!response.ok || !result || result.code !== 0) {
+  const unknownOutcome = strictOutcome && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown";
+  if (!response.ok || !result || result.code !== 0 || unknownOutcome) {
     const error = new Error(formatAdminApiError(result?.message, `GROWTH_REQUEST_FAILED_${response.status}`));
     // 带上 HTTP 状态码 + 回执是否读得出:H8 的稳定命令号靠它们区分「后端明确拒绝(4xx)」与
     // 「结果未知(5xx / 回执读不出)」。growth proxy 后端不可达时返回的是**带 JSON body 的 503**,
     // 只认解析异常会把它误判成确定性失败。网络层异常已由 guardedFetch 接管(抛出的 Error 没有 status)。
-    Object.assign(error, { status: response.status, reasonCode: result?.message, apiCode: result?.code, apiMessage: result?.message, bodyUnreadable: result === null });
+    Object.assign(error, { status: response.status, reasonCode: result?.message, apiCode: result?.code, apiMessage: result?.message, bodyUnreadable: result === null, unknownOutcome });
     throw error;
   }
   return result.data as T;
@@ -403,6 +404,17 @@ export async function updateH3QuestConfig(key: string, value: string, reason: st
     { method: "PATCH", body: commandBody(key, value, reason, currentAdminOperator(), expectedValue) },
     "h3-config",
   );
+}
+
+/** Backend owns rule presence, asset comparison, status and the reward window. This endpoint does not mutate. */
+export async function previewH4EventReward(eventId: string, value: string, expectedValue: string, reason: string) {
+  const result = await growthRequest<{ approvalRequired: boolean; current: string; proposed: string }>(
+    `/quest-events/events/${encodeURIComponent(eventId)}/reward/preview`,
+    { method: "POST", body: commandBody("reward", value, reason, currentAdminOperator(), expectedValue) },
+  );
+  if (!result || typeof result.approvalRequired !== "boolean" || typeof result.current !== "string" || typeof result.proposed !== "string")
+    throw new Error("活动奖励预览不完整，本次未提交；请重新读取活动后核对。");
+  return result;
 }
 
 export async function updateH4EventReward(eventId: string, value: string, expectedValue: string, reason: string) {

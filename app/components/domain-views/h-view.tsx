@@ -91,7 +91,8 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           inlineApproval={mc.inlineApproval}
           reasonMin={mc.inlineApproval ? mc.reasonMin : undefined}
           reasonMax={mc.inlineApproval ? mc.reasonMax : undefined}
-          getPendingReason={mc.inlineApproval ? mc.getPendingReason : undefined}
+          getPendingReason={mc.inlineApproval || tab === "H4" ? mc.getPendingReason : undefined}
+          getPendingBusinessValue={tab === "H4" ? mc.getPendingBusinessValue : undefined}
           completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {

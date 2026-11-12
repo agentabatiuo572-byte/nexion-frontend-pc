@@ -222,6 +222,8 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
           coverageLead={mc.coverageLead}
           blockedReason={mc.blockedReason}
           reasonPlaceholder={mc.reasonPlaceholder}
+          getPendingReason={mc.getPendingReason}
+          getPendingBusinessValue={mc.getPendingBusinessValue}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
           onBusinessSelectionChange={mc.onBusinessSelectionChange}

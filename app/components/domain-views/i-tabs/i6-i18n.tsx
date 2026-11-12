@@ -7,8 +7,8 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
  * 统一来源:后端 /content/i18n-learning/overview;空库时后端写入 MySQL 种子后再查出。
  * 操作确认 显式 edit 契约:奖励调整 / 换推荐课 = 调参传 edit;
  *   课程发布 / 词条发布 / 课程下架 = 处置不传 edit。
- * I 域唯一 amplifies = 课程奖励上调(B1 红线核验,SPEC §4 注:拒绝码 V4 目标 422,
- *   B1 现行 403,以收口裁定为准;审计带 coverageAtSubmit);其余动作 amplifies=false。
+ * 有奖励的课程首次发布、版本发布和回滚走专用 A2 审批，零奖励仍走原直接入口。
+ * 课程奖励调整保留原专用审批，不复用课程启用命令。
  * 完整性扫描 / 新建课程 / 编辑草稿 = 运营设定(仍需操作确认 + 留痕)→ openConfirm。
  */
 import { useEffect, useState } from "react";
@@ -19,6 +19,7 @@ import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
+import { hiCourseScope, hiRewardProposal, pendingHIRewardCommand, submitHIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 type NsFlt = "all" | "issues";
@@ -348,7 +349,48 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
 
   /* ============ tutorial actions ============ */
-  const pubCrs = (c: Course) =>
+  const activateCourse = async (c: Course, kind: "first_publish" | "version_publish" | "version_rollback", reason: string, row?: LearningCourseVersionView) => {
+    const scope = hiCourseScope(c.id);
+    const pending = pendingHIRewardCommand(scope);
+    if (pending) {
+      const result = await submitHIRewardCommand(scope, pending.payload);
+      toast(result.kind === "proposal" && result.ticket.status === "pending"
+        ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+      return;
+    }
+    const target = kind === "first_publish" ? (await actions.fetchI7CourseVersions(c.id)).find(v => v.status === "DRAFT") : row;
+    if (kind !== "first_publish" && !target) throw new Error("目标课程版本读不到，请重新读取版本列表后核对。");
+    const rawReward = target ? target.payload.rewardNex : c.reward;
+    if ((typeof rawReward !== "number" && typeof rawReward !== "string") || String(rawReward).trim() === "" || !Number.isFinite(Number(rawReward)))
+      throw new Error("目标版本奖励读不到，本次未提交；请重新读取课程版本后核对。");
+    if (Number(rawReward) > 0) {
+      const session = useAdminAuth.getState().session;
+      if (!session) throw new Error("登录已失效，请重新登录后核对原操作。");
+      const values = { courseId: c.id, version: target?.version ?? c.v, expectedRevision: target?.revision ?? null,
+        expectedCurrentVersion: c.v, expectedCurrentRevision: c.revision, expectedCurrentStatus: c.status };
+      await submitHIRewardCommand(scope, { kind: "proposal", input: hiRewardProposal(session, `i7_course_${kind}`, values,
+        `${c.v} · ${c.status} · ${c.reward} UVT`, `${values.version} · published · ${rawReward} UVT`, reason) });
+      toast("已提交，等待审批后执行");
+      return;
+    }
+    if (kind === "first_publish") return runBackend(actions.publishI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已发布至 /learn`);
+    if (kind === "version_publish") return runBackend(actions.publishI7CourseVersion(c.id, target!.version, reason), `${target!.version} 已发布`);
+    return runBackend(actions.rollbackI7CourseVersion(c.id, target!.version, reason), `已回滚到 ${target!.version}`);
+  };
+
+  const courseCommandBlocks = (c: Course, op: string, version?: string) => {
+    const pending = pendingHIRewardCommand(hiCourseScope(c.id));
+    if (!pending) return false;
+    const original = pending.payload;
+    if (original.kind === "proposal" && original.input.command.op === op
+      && (!version || original.input.command.params.version === version)) return false;
+    const label = original.kind === "proposal" ? `${original.input.action} · ${String(original.input.command.params.version)}` : original.tierName;
+    toast(`原操作「${label}」结果待确认，请先恢复原操作。命令号：${pending.commandKey}`);
+    return true;
+  };
+
+  const pubCrs = (c: Course) => {
+    if (courseCommandBlocks(c, "i7_course_first_publish")) return;
     openActionConfirm({ briefKind: "content",
       action: <>发布课程新版 · {nexGridBrandText(c.title)}</>,
       detail: (
@@ -357,12 +399,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         </>
       ),
       amplifies: false,
-      run: (reason) => {
-        return runBackend(actions.publishI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已发布至 /learn`);
-      },
+      getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
+      run: (reason) => activateCourse(c, "first_publish", reason),
     });
+  };
 
-  // 唯一 amplifies = 课程奖励调整。
+  // 课程奖励调整沿用原专用审批。
   const adjRwd = (c: Course) =>
     openActionConfirm({ briefKind: "config",
       action: <>课程奖励调整 · {nexGridBrandText(c.title)}</>,
@@ -552,19 +594,27 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     run: (reason) => runBackend(actions.deleteI7CourseVersion(c.id, row.version, reason), `${row.version} 草稿已删除`),
   });
 
-  const publishCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "content",
+  const publishCourseVersion = (c: Course, row: LearningCourseVersionView) => {
+    if (courseCommandBlocks(c, "i7_course_version_publish", row.version)) return;
+    openActionConfirm({ briefKind: "content",
     action: <>发布课程版本 · {nexGridBrandText(c.title)} {row.version}</>,
     detail: <>发布前会检查三语测验、兑付覆盖率和权限；发布后旧版本变为历史版本。</>,
     amplifies: true,
-    run: (reason) => runBackend(actions.publishI7CourseVersion(c.id, row.version, reason), `${row.version} 已发布`),
+    getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
+    run: (reason) => activateCourse(c, "version_publish", reason, row),
   });
+  };
 
-  const rollbackCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "content",
+  const rollbackCourseVersion = (c: Course, row: LearningCourseVersionView) => {
+    if (courseCommandBlocks(c, "i7_course_version_rollback", row.version)) return;
+    openActionConfirm({ briefKind: "content",
     action: <>回滚课程版本 · {nexGridBrandText(c.title)} → {row.version}</>,
     detail: <>回滚后课程内容、测验和奖励设置一起恢复成这个版本；已领过奖励的用户不会重复领取。</>,
     amplifies: true,
-    run: (reason) => runBackend(actions.rollbackI7CourseVersion(c.id, row.version, reason), `已回滚到 ${row.version}`),
+    getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
+    run: (reason) => activateCourse(c, "version_rollback", reason, row),
   });
+  };
 
   const setFeat = () => {
     const cur = liveFeatured();

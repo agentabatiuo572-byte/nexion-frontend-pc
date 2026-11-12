@@ -141,6 +141,8 @@ function approvalCoverageCopy(w: A2OperationRow) {
 }
 
 function approvalExecutorLabel(w: A2OperationRow) {
+  if (["提高旧活动奖励", "放宽转盘奖项配置", "回滚至有奖励的课程版本"].includes(w.action))
+    return "另一位有批准权限的超级管理员";
   if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位有批准权限和商品修改权限的管理员";
   if (w.action === "发布规则任务") return "另一位有批准权限和任务池修改权限的管理员";
   return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
@@ -195,7 +197,7 @@ const SUPER_ONLY: DecisionRule = { superadmin: true };
 const SUPER_ACTIONS = new Set([
   "放宽任务定价", "变更正式任务目录", // E2TaskPricingApproval
   "降低兑付覆盖率红线", "提高提现压力红线", // TreasuryThresholdApproval
-  "首次发布奖励课程", "发布奖励课程版本", "回滚至较高奖励课程版本", // LearningCourseActivationApproval
+  "首次发布奖励课程", "发布奖励课程版本", "回滚至较高奖励课程版本", "回滚至有奖励的课程版本", // LearningCourseActivationApproval
   "放宽用户任务配置", // H3GrowthApproval
   "提高旧活动奖励", "开放旧活动资金奖励", "新增转盘奖项", "放宽转盘奖项配置", "删除转盘奖项并提高安慰奖", "提高转盘奖项概率",
   "启用活动或放宽转盘资金护栏", "发布历史活动只读记录", // H4GrowthApproval
@@ -637,6 +639,19 @@ const CHANGE_LABELS: Record<string, string> = {
   requiredDownlineRank: "分支最低等级", requiredDownlineCount: "达标分支数", unilevelDepth: "团队购买奖励范围",
   peerBonusRate: "同级奖比例", leadershipVotes: "团队激励池票数", rewards: "晋升奖励",
 };
+// Only these three reward contracts override the shared product-field vocabulary.
+const HI_CHANGE_LABELS: Record<string, string> = {
+  ...CHANGE_LABELS,
+  eventCode: "活动编号", rewardName: "奖励名称", rewardType: "奖励资产", rewardAmount: "发放数量",
+  value: "目标值", expectedValue: "原值", tierName: "奖项编号", rewardKind: "奖励类型",
+  probabilityPct: "概率（%）", realOutflow: "实际资金流出", dailyStock: "每日库存（0 为不限）",
+  expectedSignature: "提交时奖池签名", wheelSignature: "奖池签名", tiers: "奖池档位",
+  courseId: "课程编号", version: "课程版本", revision: "修订号", rewardNex: "奖励（UVT）",
+  sourceStatus: "目标版本原状态", expectedRevision: "目标修订号", expectedCurrentVersion: "当前课程版本",
+  expectedCurrentRevision: "当前课程修订号", expectedCurrentStatus: "当前课程状态",
+  tier: "奖项编号", status: "状态", reward: "奖励名称", prob: "概率（%）", kind: "奖励类型", amount: "发放数量", real: "实际资金流出",
+};
+const hiReviewLabels = (operationCode?: string) => ["h4_legacy_event_reward_update", "h4_wheel_tier_update", "i7_course_version_rollback"].includes(operationCode ?? "") ? HI_CHANGE_LABELS : CHANGE_LABELS;
 /** 成组记录的量词：「查看全部 9 个等级」。 */
 const ROW_UNIT: Record<string, string> = { ranks: "个等级", rewards: "项奖励" };
 const ROWS_SHOWN = 5;
@@ -650,7 +665,7 @@ function grouped(text: string) {
   return /^-?\d{4,}(\.\d+)?$/.test(text) ? text.replace(/^-?\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")) : text;
 }
 
-function valueText(key: string | undefined, value: unknown): string {
+function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABELS): string {
   if (value === null || value === undefined) {
     if (key === "clearMonthlyTarget" || key === "trialEligible") return "否";
     return "未设置";
@@ -663,8 +678,8 @@ function valueText(key: string | undefined, value: unknown): string {
   if (key === "peerBonusRate" && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
   if (key === "baseRate" && typeof value === "string") return shareBaseRateText(value);
   if (key === "allowedPoolCodes" && Array.isArray(value)) return value.length ? value.map(code => ({L1:"L1 初级",L2:"L2 中级",L3:"L3 高级",L4:"L4 旗舰",PHONE:"手机任务池"}[String(code)] ?? String(code))).join("、") : "未选择";
-  if (Array.isArray(value)) return value.length ? value.map((item) => valueText(undefined, item)).join("、") : "无";
-  if (isRecord(value)) return Object.entries(value).map(([name, item]) => `${CHANGE_LABELS[name] ?? name} ${valueText(name, item)}`).join("；") || "无";
+  if (Array.isArray(value)) return value.length ? value.map((item) => valueText(undefined, item, labels)).join("、") : "无";
+  if (isRecord(value)) return Object.entries(value).map(([name, item]) => `${labels[name] ?? name} ${valueText(name, item, labels)}`).join("；") || "无";
   return grouped(String(value));
 }
 
@@ -685,7 +700,8 @@ function parseReview(value: string): Review | null {
 }
 
 /** 队列「变更」列：和详情同一套格式。第一项做第一行，原值做第二行，多项时写「等 N 项」（必须改 5）。 */
-function changeSummary(before: string, after: string, omit: readonly string[] = []) {
+function changeSummary(before: string, after: string, omit: readonly string[] = [], operationCode?: string) {
+  const labels = hiReviewLabels(operationCode);
   const b = parseReview(before);
   const a = parseReview(after);
   if (!a) return { main: "—", sub: b ? `原 ${b.kind === "text" ? b.text : "见详情"}` : undefined };
@@ -694,31 +710,31 @@ function changeSummary(before: string, after: string, omit: readonly string[] = 
   if (a.value.clearMonthlyTarget === true) return {
     main: "关闭月收益目标",
     sub: a.value.shareYieldMin != null && a.value.shareYieldMax != null
-      ? `年奖励率 ${valueText("shareYieldMin", a.value.shareYieldMin)}–${valueText("shareYieldMax", a.value.shareYieldMax)}`
-      : `日产收益 ${valueText("dailyEarn", a.value.dailyEarn)}`,
+      ? `年奖励率 ${valueText("shareYieldMin", a.value.shareYieldMin, labels)}–${valueText("shareYieldMax", a.value.shareYieldMax, labels)}`
+      : `日产收益 ${valueText("dailyEarn", a.value.dailyEarn, labels)}`,
   };
   const keys = Object.keys(a.value).filter((key) => !omit.includes(key));
   const changed = b?.kind === "object" ? keys.filter((key) => !same(b.value[key], a.value[key])) : keys;
   const first = changed[0] ?? keys[0];
   if (!first) return { main: "—" };
-  const label = CHANGE_LABELS[first] ?? first;
+  const label = labels[first] ?? first;
   const now = a.value[first];
-  const main = `${label} ${isRowList(now) ? `${now.length} ${ROW_UNIT[first] ?? "行"}` : valueText(first, now)}${changed.length > 1 ? ` 等 ${changed.length} 项` : ""}`;
+  const main = `${label} ${isRowList(now) ? `${now.length} ${ROW_UNIT[first] ?? "行"}` : valueText(first, now, labels)}${changed.length > 1 ? ` 等 ${changed.length} 项` : ""}`;
   const was = b?.kind === "object" ? b.value[first] : undefined;
-  return { main, sub: !b ? "新建" : b.kind === "object" && (first in b.value || typeof now === "boolean") && !isRowList(was) ? `原 ${valueText(first, was)}` : "原 见详情" };
+  return { main, sub: !b ? "新建" : b.kind === "object" && (first in b.value || typeof now === "boolean") && !isRowList(was) ? `原 ${valueText(first, was, labels)}` : "原 见详情" };
 }
 
 /** 成组的记录画成小表，每组一行，列头用字段名；超过 5 行的收在「查看全部」后面（VS-109）。 */
-function ReviewRows({ name, rows }: { name: string; rows: readonly Record<string, unknown>[] }) {
+function ReviewRows({ name, rows, labels = CHANGE_LABELS }: { name: string; rows: readonly Record<string, unknown>[]; labels?: Record<string, string> }) {
   const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
   const unit = ROW_UNIT[name] ?? "行";
   const table = (part: readonly Record<string, unknown>[], label: string) => (
     <Table label={label} data-tight="">
-      <thead><tr>{columns.map((column) => <Th key={column}>{CHANGE_LABELS[column] ?? column}</Th>)}</tr></thead>
-      <tbody>{part.map((row, index) => <Tr key={index}>{columns.map((column) => <Td key={column}><Cell main={valueText(column, row[column])} title={valueText(column, row[column])} /></Td>)}</Tr>)}</tbody>
+      <thead><tr>{columns.map((column) => <Th key={column}>{labels[column] ?? column}</Th>)}</tr></thead>
+      <tbody>{part.map((row, index) => <Tr key={index}>{columns.map((column) => <Td key={column}><Cell main={valueText(column, row[column], labels)} title={valueText(column, row[column], labels)} /></Td>)}</Tr>)}</tbody>
     </Table>
   );
-  const title = CHANGE_LABELS[name] ?? name;
+  const title = labels[name] ?? name;
   return (
     <div className="a2-change-rows">
       {table(rows.slice(0, ROWS_SHOWN), title)}
@@ -734,7 +750,8 @@ function ReviewRows({ name, rows }: { name: string; rows: readonly Record<string
  * - 成组记录（等级、奖励）：小表，不拼成一大片文字（VS-109）；
  * - 变更前是空（首次配置）：不画变更前，标题旁写「新建」。
  */
-export function A2ChangeReview({ before, after, omit = [] }: { before: string; after: string; omit?: readonly string[] }) {
+export function A2ChangeReview({ before, after, omit = [], operationCode }: { before: string; after: string; omit?: readonly string[]; operationCode?: string }) {
+  const labels = hiReviewLabels(operationCode);
   const b = parseReview(before);
   const a = parseReview(after);
   const created = !b;
@@ -742,11 +759,11 @@ export function A2ChangeReview({ before, after, omit = [] }: { before: string; a
   if (!a) {
     body = <Facts><Fact k="变更后">—</Fact></Facts>;
   } else if (a.kind === "text") {
-    body = <Facts><Fact k={created ? "内容" : "变更"}>{!b ? a.text : <Change from={b.kind === "text" ? b.text : valueText(undefined, b.kind === "object" ? b.value : b.rows)} to={a.text} />}</Fact></Facts>;
+    body = <Facts><Fact k={created ? "内容" : "变更"}>{!b ? a.text : <Change from={b.kind === "text" ? b.text : valueText(undefined, b.kind === "object" ? b.value : b.rows, labels)} to={a.text} />}</Fact></Facts>;
   } else if (a.kind === "rows") {
     body = <>
-      <ReviewRows name="" rows={a.rows} />
-      {b && <Fold inset title="变更前" summary={b.kind === "rows" ? `共 ${b.rows.length} 行` : "原来的内容"}>{b.kind === "rows" ? <ReviewRows name="" rows={b.rows} /> : <p className="rd-note">{b.kind === "text" ? b.text : valueText(undefined, b.value)}</p>}</Fold>}
+      <ReviewRows labels={labels} name="" rows={a.rows} />
+      {b && <Fold inset title="变更前" summary={b.kind === "rows" ? `共 ${b.rows.length} 行` : "原来的内容"}>{b.kind === "rows" ? <ReviewRows labels={labels} name="" rows={b.rows} /> : <p className="rd-note">{b.kind === "text" ? b.text : valueText(undefined, b.value, labels)}</p>}</Fold>}
     </>;
   } else {
     const keys = Object.keys(a.value).filter((key) => !omit.includes(key));
@@ -756,12 +773,12 @@ export function A2ChangeReview({ before, after, omit = [] }: { before: string; a
     const plain = [...keys.filter((key) => !isRowList(a.value[key])), ...removed];
     const rows: DiffRow[] = plain.map((key) => ({
       key,
-      label: CHANGE_LABELS[key] ?? key,
-      before: valueText(key, was?.[key]),
-      after: valueText(key, a.value[key]),
+      label: labels[key] ?? key,
+      before: valueText(key, was?.[key], labels),
+      after: valueText(key, a.value[key], labels),
     }));
     body = <>
-      {b && b.kind !== "object" && <Facts><Fact k="变更前">{b.kind === "text" ? b.text : valueText(undefined, b.rows)}</Fact></Facts>}
+      {b && b.kind !== "object" && <Facts><Fact k="变更前">{b.kind === "text" ? b.text : valueText(undefined, b.rows, labels)}</Fact></Facts>}
       {plain.length > 0 && (was
         ? <DiffList rows={rows} restTitle="其余内容" emptyNote="这些项没有改动" />
         : <Facts>{rows.map((row) => <Fact key={row.key} k={String(row.label)}>{row.after}</Fact>)}</Facts>)}
@@ -769,9 +786,9 @@ export function A2ChangeReview({ before, after, omit = [] }: { before: string; a
         const old = was?.[key];
         return (
           <div key={key} className="a2-change-group">
-            <div className="a2-change-sub">{CHANGE_LABELS[key] ?? key}{was && same(old, a.value[key]) && <span className="rd-weak"> · 没有改动</span>}</div>
-            <ReviewRows name={key} rows={a.value[key] as Record<string, unknown>[]} />
-            {isRowList(old) && !same(old, a.value[key]) && <Fold inset title={`变更前的${CHANGE_LABELS[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows name={key} rows={old} /></Fold>}
+            <div className="a2-change-sub">{labels[key] ?? key}{was && same(old, a.value[key]) && <span className="rd-weak"> · 没有改动</span>}</div>
+            <ReviewRows labels={labels} name={key} rows={a.value[key] as Record<string, unknown>[]} />
+            {isRowList(old) && !same(old, a.value[key]) && <Fold inset title={`变更前的${labels[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows labels={labels} name={key} rows={old} /></Fold>}
           </div>
         );
       })}
@@ -1391,7 +1408,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       facts: ticketFacts(w, "approve"),
       content: (
         <div className="rd-stack">
-          <A2ChangeReview before={w.before} after={w.after} omit={g3 ? ["生效时间"] : undefined} />
+          <A2ChangeReview operationCode={w.operationCode} before={w.before} after={w.after} omit={g3 ? ["生效时间"] : undefined} />
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={w.ambassadorMaterialProposal} expectedMaterialRevision={w.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? w.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
           {isRefund && w.refundOrderNo && <PromotionRefundImpact orderNo={w.refundOrderNo} />}
@@ -1776,7 +1793,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     {queueFiltered ? <>没有符合条件的待审批操作 <Button size="sm" onClick={() => { setQType("all"); setQOperator("all"); setQPage(1); }}>清除筛选</Button></> : "没有待审批的操作"}
                   </TableMessage>
                 ) : qPageRows.map((w) => {
-                  const change = changeSummary(w.before, w.after, g3PolicyExecutionTiming(w) ? ["生效时间"] : []);
+                  const change = changeSummary(w.before, w.after, g3PolicyExecutionTiming(w) ? ["生效时间"] : [], w.operationCode);
                   const name = actionName(w.action);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
@@ -2058,7 +2075,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {shown.sos && <Notice tone="danger">{isJ4Execution(shown)
             ? "应急预案逐步执行：中途失败时，前面的步骤可能已经生效。批准前核对值班授权和影响范围，失败后到「监管要求应急处理」的执行追溯里核对每一步。"
             : "应急操作：涉及紧急停用或恢复，请核对值班授权、影响范围和恢复条件后再处理。"}</Notice>}
-          <A2ChangeReview before={shown.before} after={shown.after} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
+          <A2ChangeReview operationCode={shown.operationCode} before={shown.before} after={shown.after} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
           {shown.phoneCalibrationProposal && <PhoneCalibrationReview proposal={shown.phoneCalibrationProposal} />}
           {shown.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={shown.ambassadorMaterialProposal} expectedMaterialRevision={shown.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? shown.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
         </>}
