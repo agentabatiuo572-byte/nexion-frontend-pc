@@ -27,8 +27,8 @@ function view(outcome: CommandOutcome, expired: boolean): { tone: Tone & ("ok" |
   if ("error" in outcome) return { tone: "warn", title: "查询没有完成", text: outcome.error };
   const receipt = outcome.receipt;
   if (!receipt) return { tone: "neutral", title: "后端查不到这条命令", text: expired
-    ? "原请求可能没有送达后端；查不到不等于没有执行。原记录继续保留，请到操作记录与审批核对。"
-    : "原请求可能没有送达后端；查不到不等于没有执行。原记录继续保留，可以按原操作重试，后端按命令号去重。" };
+    ? "原请求可能没送达后端，查不到不等于没执行。原记录保留，请到操作记录与审批核对。"
+    : "原请求可能没送达后端，查不到不等于没执行。原记录保留，可按原操作重试，后端按命令号去重。" };
   if (receipt.originalStatus === "PROCESSING") return { tone: "progress", title: "后端仍在处理", text: "原操作还在执行，稍后再查；不要重复提交。" };
   if (receipt.originalStatus === "FAILED") return { tone: "neutral", title: "原操作以失败结束", text: expired
     ? "后端记录了这次失败。原记录继续保留，请到操作记录与审批核对。"
