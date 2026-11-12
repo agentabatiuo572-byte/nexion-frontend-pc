@@ -184,3 +184,20 @@
   .c5-workbench .rd-stats > .rd-stat[data-lead] + .rd-stat > .rd-tile { margin-inline: 0; }
   .c5-workbench .rd-stats:has(> .rd-stat[data-lead]:not(:first-child)) > .rd-stat:first-child > .rd-tile { margin-inline: 6px; }  /* 下面一行的第一格对齐上面关键数字的图标底 */
 }
+
+/* C6 注册与登录风险 */
+.c6-page { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
+.c6-pending { display: flex; flex-direction: column; gap: var(--rd-space-2); }
+.c6-main .rd-panel:not([data-flush]) > :not(.rd-panel-head) + :not(.rd-panel-head) { margin-top: var(--rd-space-4); }
+/* 两级锁定的分界轴：和卡同宽，到 560 为止 */
+.c6-ladder { --rd-track-w: 100%; display: flex; flex-direction: column; gap: var(--rd-space-2); max-width: 560px; }
+.c6-ladder-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.c6-rule { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; color: var(--rd-text-2); }
+.c6-rule b { color: var(--rd-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.c6-rule > span[aria-hidden] { color: var(--rd-text-3); }
+.c6-elsewhere { color: var(--rd-text-3); font-weight: 400; }
+/* 人机验证的当前状态：状态、一句话、动作一行，动作贴右边线 */
+.c6-captcha { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--rd-space-3); padding: var(--rd-space-3) var(--rd-space-4); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.c6-captcha[data-off] { background: var(--rd-warn-bg); }
+.c6-captcha-state { display: flex; align-items: center; flex-wrap: wrap; gap: var(--rd-space-2) var(--rd-space-3); min-width: 0; }
+.c6-captcha-state strong { color: var(--rd-text); font-size: var(--rd-text-section); font-weight: 500; }

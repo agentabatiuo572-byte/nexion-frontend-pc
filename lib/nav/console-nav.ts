@@ -551,6 +551,7 @@ export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals",
   "/devices/compute-config",
   "/devices/pricing",
   "/users/security",
+  "/users/reg-risk",
   "/service/overview",
 ];
 /** 不在菜单里的详情页，路径带对象编号，按前缀认。 */
