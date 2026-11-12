@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useReducer } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, type A2OperationRow } from "./a2-client";
@@ -11,24 +11,42 @@ import { displayAdminError } from "./error-messages";
 
 type Page = "G2" | "G4" | "G7";
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
-type Change = { key: string; current: string; value: string; reason: string; decisionRef?: string };
-interface PendingParam extends PendingMutationRecord {
+type Change = { key: string; current: string; value: string; reason: string; decisionRef?: string;
+  expectedRevision?: string; batchNo?: string; approvalRequired?: boolean };
+export interface PendingGParam extends PendingMutationRecord {
   adminId: number;
   page: Page;
   request: Proposal;
   ticket?: A2OperationRow;
 }
 
+export interface GParamRecovery extends PendingGParam {
+  status: "unknown" | A2OperationRow["status"];
+  retryExpired: boolean;
+  canQuery: boolean;
+  canRetry: boolean;
+  canRelease: boolean;
+}
+
 const ops = { G2: "g2_exchange_param", G4: "g4_genesis_param", G7: "g7_repurchase_param" } as const;
-const pending = createPendingMutationStore<PendingParam>({
+const pending = createPendingMutationStore<PendingGParam>({
   storageKey: "nexion-admin-g-param-proposals-v1",
   retainExpiredRecords: true,
   isValidRecord: (r) => Number.isSafeInteger(r.adminId) && r.adminId > 0 && r.page in ops
     && !!r.request && typeof r.request.reason === "string" && typeof r.request.obj === "string"
     && r.request.sourceDomain === r.page && r.request.command?.domain === "G"
-    && r.request.command.op === ops[r.page] && r.request.command.params?.paramKey === r.request.obj
-    && typeof r.request.command.params.value === "string"
-    && typeof r.request.command.params.expectedValue === "string"
+    && (r.page === "G4" && r.request.command.op === "g4_genesis_rerun_dividend"
+      ? r.request.command.params?.batchNo === r.request.obj
+        && typeof r.request.command.params.decisionRef === "string"
+        && typeof r.request.command.params.expectedRevision === "string"
+        && /^[0-9a-f]{64}$/.test(r.request.command.params.expectedRevision)
+      : r.request.command.op === ops[r.page] && r.request.command.params?.paramKey === r.request.obj
+        && typeof r.request.command.params.value === "string"
+        && (r.page === "G4" && r.request.obj === "dividend"
+          ? typeof r.request.command.params.decisionRef === "string"
+            && typeof r.request.command.params.expectedRevision === "string"
+            && /^[0-9a-f]{64}$/.test(r.request.command.params.expectedRevision)
+          : typeof r.request.command.params.expectedValue === "string"))
     && r.request.target?.domain === "G" && r.request.target.id === r.request.obj
     && r.fingerprint === `${r.adminId}|${r.page}|${r.request.obj}`,
 });
@@ -58,6 +76,7 @@ function rounded(value: string, scale: number) {
 function amplifies(page: Page, change: Change) {
   const { key, current, value } = change;
   if (page === "G2" && key === "queueMode") return current.trim().toUpperCase() === "REJECT" && value === "QUEUE";
+  if (page === "G4" && change.batchNo) return change.approvalRequired === true;
   if (page === "G4" && ["divBase", "emissionCurve"].includes(key)) return current.trim() !== value.trim();
   if (page === "G4" && ["airdropPct", "airdropLockDays"].includes(key)) {
     const scale = key === "airdropPct" ? 6 : 0;
@@ -77,7 +96,7 @@ function amplifies(page: Page, change: Change) {
   if (page === "G2") return ["userDailyCap", "platformDailyCap"].includes(key) ? newValue > before
     : ["fee", "feeMin"].includes(key) && newValue < before;
   if (page === "G7") return ["apy", "nurture"].includes(key) ? newValue > before : key === "penalty" && newValue < before;
-  return ["supply", "price"].includes(key) ? newValue > before : key === "royalty" && newValue < before;
+  return ["supply", "price", "dividend"].includes(key) ? newValue > before : key === "royalty" && newValue < before;
 }
 
 function reasonCode(error: unknown) {
@@ -88,7 +107,7 @@ function reasonCode(error: unknown) {
 export function useGParamApproval(page: Page, toast: (message: string) => void, showError: (message: string) => void, refresh: () => Promise<void>) {
   const session = useAdminAuth((s) => s.session);
   const adminId = session?.adminId;
-  const locked = useRef(new Set<string>());
+  const [, changed] = useReducer((value: number) => value + 1, 0);
   const record = (key: string) => pending.list().find(r => r.adminId === adminId && r.page === page && r.request.obj === key);
   const requireActor = (key: string, proposing: boolean) => {
     const auth = useAdminAuth.getState();
@@ -99,10 +118,11 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     }
     return auth.session;
   };
-  const checkTicket = (original: PendingParam, ticket: A2OperationRow) => {
+  const checkTicket = (original: PendingGParam, ticket: A2OperationRow) => {
     const action = page === "G2" ? "兑换参数调整" : page === "G4" ? "调整创世参数" : "回购参数调整";
-    if (!ticket.mine || ticket.obj !== original.request.obj || ticket.action !== `${action} · ${ticket.obj}`
-      || ticket.operationCode && ticket.operationCode !== ops[page]) {
+    const dividend = page === "G4" && (original.request.obj === "dividend" || original.request.command.op === "g4_genesis_rerun_dividend");
+    if (!ticket.mine || ticket.obj !== original.request.obj || ticket.action !== (dividend ? "批准创世分红操作" : `${action} · ${ticket.obj}`)
+      || ticket.operationCode && ticket.operationCode !== original.request.command.op) {
       throw new Error("返回的审批单与原参数操作不符，原请求和命令号继续保留，请核对原审批单。");
     }
   };
@@ -110,24 +130,26 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     const status = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[ticket.status];
     toast(`原审批单 ${ticket.id} · ${status} · ${ticket.before} → ${ticket.after}`);
   };
-  const acceptTicket = async (original: PendingParam, ticket: A2OperationRow) => {
+  const acceptTicket = async (original: PendingGParam, ticket: A2OperationRow) => {
     checkTicket(original, ticket);
     showTicket(ticket);
     pending.remember(original.fingerprint, original.commandKey, { ...original, ticket });
+    changed();
     if (ticket.status !== "pending") {
       await refresh();
       pending.forget(original.fingerprint, original.commandKey);
+      changed();
       showError("");
     }
     return ticket;
   };
-  const query = async (original: PendingParam) => {
+  const query = async (original: PendingGParam) => {
     const ticket = await fetchA2ProposalByKey(original.commandKey, true);
     return ticket ? acceptTicket(original, ticket) : undefined;
   };
-  const send = async (original: PendingParam) => {
+  const send = async (original: PendingGParam) => {
     // Lookup remains allowed after expiry; a missing receipt never permits a new command.
-    if (original.ticket || isRetryExpired(original)) {
+    if ((original.ticket && original.ticket.status !== "pending") || isRetryExpired(original)) {
       const ticket = await query(original);
       if (ticket) return ticket;
       throw new Error(original.ticket
@@ -141,37 +163,62 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     try {
       result = await createA2OperationProposal(original.request, original.commandKey, true);
     } catch (error) {
-      if (isExplicitRejection(error)) pending.forget(original.fingerprint, original.commandKey);
-      if (reasonCode(error) === "OBJECT_LOCKED_BY_A2") locked.current.add(original.request.obj);
+      if (!original.ticket && isExplicitRejection(error)) {
+        pending.forget(original.fingerprint, original.commandKey);
+        changed();
+      }
       throw error;
     }
     return acceptTicket(original, result);
   };
   return {
     record,
+    list: (): GParamRecovery[] => pending.list().filter(r => r.adminId === adminId && r.page === page).map(r => {
+      const retryExpired = isRetryExpired(r);
+      const terminal = !!r.ticket && r.ticket.status !== "pending";
+      const auth = useAdminAuth.getState();
+      return { ...r, status: terminal ? r.ticket!.status : retryExpired ? "expired" : r.ticket ? "pending" : "unknown",
+        retryExpired, canQuery: true, canRelease: terminal,
+        canRetry: !terminal && !retryExpired && auth.isAuthenticated && !auth.logoutPending && !!auth.session && auth.session.adminId === adminId
+          && auth.session.authorities.includes(gParamAuthority(page, r.request.obj))
+          && auth.session.authorities.some(a => a === "platform_a2_proposal_create" || a === "platform_a2_write") };
+    }),
     query: (key: string) => {
       const original = record(key);
       return original ? query(original) : Promise.resolve(undefined);
     },
-    // Opening a known pending ticket queries its current status instead of allowing a second edit.
+    retry: (key: string) => {
+      const original = record(key);
+      if (!original) throw new Error("原审批命令已处理，请刷新页面后重新操作。");
+      return send(original);
+    },
+    // Release only after a matching terminal receipt and a successful current read.
+    async release(key: string) {
+      const original = record(key);
+      if (!original) return true;
+      const ticket = await query(original);
+      return !!ticket && ticket.status !== "pending" && !record(key);
+    },
+    recheck: refresh,
+    // Recovery remains independent of whether the page permits a new edit.
     async open(key: string) {
+      const original = record(key);
+      if (!original) return undefined;
       try {
-        if (locked.current.has(key)) throw new Error("OBJECT_LOCKED_BY_A2");
-        const original = record(key);
-        if (original?.ticket) {
-          const ticket = await query(original);
-          if (ticket?.status === "pending") {
-            showError(displayAdminError(new Error("OBJECT_LOCKED_BY_A2")));
-          }
-          if (!ticket) throw new Error("原审批单暂时无法核对，参数继续锁定，请稍后查询原审批单。");
-          // A terminal receipt refreshes current values. Do not edit the pre-query snapshot.
-          return false as const;
-        }
-        return record(key);
+        const ticket = await query(original);
+        if (ticket && ticket.status !== "pending") return false as const;
       } catch (error) {
         showError(displayAdminError(error));
+      }
+      // Expired commands and confirmed terminal receipts cannot be submitted again,
+      // even when the current read or the original-ticket lookup is unavailable.
+      const current = record(key);
+      if (isRetryExpired(original)) {
+        showError(RETRY_EXPIRED_TEXT);
         return false as const;
       }
+      if (current?.ticket && current.ticket.status !== "pending") return false as const;
+      return current;
     },
     getPendingReason: (key: string) => record(key)?.request.reason,
     getPendingBusinessValue: (key: string) => {
@@ -182,17 +229,20 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
       const original = record(change.key);
       if (original) return { proposal: await send(original) };
       requireActor(change.key, false);
-      if (locked.current.has(change.key)) throw new Error(displayAdminError(new Error("OBJECT_LOCKED_BY_A2")));
       if (!amplifies(page, change)) {
         try { return { direct: await direct() }; }
         catch (error) {
-          if (reasonCode(error) === "OBJECT_LOCKED_BY_A2") locked.current.add(change.key);
-          if (reasonCode(error) !== `${page === "G2" ? "G2_EXCHANGE" : page === "G4" ? "G4_GENESIS" : "G7_REPURCHASE"}_PARAM_APPROVAL_REQUIRED`) throw error;
+          const required = page === "G4" && change.batchNo ? "G4_EMISSION_APPROVAL_REQUIRED"
+            : page === "G4" && change.key === "dividend" ? "G4_DIVIDEND_APPROVAL_REQUIRED"
+              : `${page === "G2" ? "G2_EXCHANGE" : page === "G4" ? "G4_GENESIS" : "G7_REPURCHASE"}_PARAM_APPROVAL_REQUIRED`;
+          if (reasonCode(error) !== required) throw error;
         }
       }
       const actor = requireActor(change.key, true);
-      const op = findHighOp(ops[page])!;
-      const context = { paramKey: change.key, value: change.value, expectedValue: change.current, decisionRef: change.decisionRef };
+      const op = findHighOp(change.batchNo ? "g4_genesis_rerun_dividend" : ops[page])!;
+      const context = { paramKey: change.key, value: change.value,
+        ...(page === "G4" && change.key === "dividend" ? {} : { expectedValue: change.current }),
+        decisionRef: change.decisionRef, expectedRevision: change.expectedRevision, batchNo: change.batchNo };
       const request: Proposal = {
         action: op.action, obj: change.key, beforeValue: "", afterValue: "",
         operator: actor.operator || actor.username, operatorRole: roleLabel(actor.role),
@@ -202,6 +252,7 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
       const fingerprint = `${actor.adminId}|${page}|${change.key}`;
       const commandKey = createA2CommandKey(`${page.toLowerCase()}-param-proposal`);
       pending.remember(fingerprint, commandKey, { adminId: actor.adminId, page, request });
+      changed();
       if (!pending.isDurablyStored(fingerprint, commandKey)) {
         pending.forget(fingerprint, commandKey);
         throw new Error("浏览器存不下完整原请求，本次没有提交审批。");

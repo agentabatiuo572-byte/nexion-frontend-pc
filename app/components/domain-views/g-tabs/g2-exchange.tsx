@@ -274,6 +274,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
   ];
 
   const adjCap = async (cap: G2Cap) => {
+    if (!paramApproval.record(cap.key) && !swap.enabled && !["fee", "feeMin"].includes(cap.key)) return;
     const original = await paramApproval.open(cap.key);
     if (original === false) return;
     const isQueueMode = cap.key === "queueMode";
@@ -377,7 +378,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
                   {cap.meterPct !== undefined && <div className="meter"><i style={{ width: meterWidth(cap.meterPct), background: "var(--warning)" }} /></div>}
                 </div>
                 <span className="v">{cap.displayValue}</span>
-                {allowed(capAuthority(cap.key)) && <button className="l-btn sm mc" disabled={busy || (!swap.enabled && !["fee", "feeMin"].includes(cap.key))}
+                {(allowed(capAuthority(cap.key)) || paramApproval.record(cap.key)) && <button className="l-btn sm mc" disabled={busy || (!paramApproval.record(cap.key) && !swap.enabled && !["fee", "feeMin"].includes(cap.key))}
                   title={!swap.enabled && !["fee", "feeMin"].includes(cap.key) ? "兑换已紧急暂停，额度和超额处理方式暂时不能改" : undefined}
                   onClick={() => adjCap(cap)}>调整 {operatorCopyText(cap.name)}</button>}
               </div>

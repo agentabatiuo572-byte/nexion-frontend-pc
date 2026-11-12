@@ -922,6 +922,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({ domain: "G", op: "g4_genesis_param",
       params: { paramKey: String(ctx.paramKey), value: String(ctx.value),
         ...(ctx.expectedValue === undefined ? {} : { expectedValue: String(ctx.expectedValue) }),
+        ...(ctx.expectedRevision === undefined ? {} : { expectedRevision: String(ctx.expectedRevision) }),
         ...(ctx.decisionRef === undefined ? {} : { decisionRef: String(ctx.decisionRef) }) } }),
     buildTarget: (ctx) => ({ domain: "G", type: "genesis_param", id: String(ctx.paramKey) }),
   },
@@ -946,7 +947,9 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "genesis_dividend_batch",
     buildCommand: (ctx) => ({ domain: "G", op: "g4_genesis_rerun_dividend",
-      params: { batchNo: String(ctx.batchNo) } }),
+      params: { batchNo: String(ctx.batchNo),
+        ...(ctx.decisionRef === undefined ? {} : { decisionRef: String(ctx.decisionRef) }),
+        ...(ctx.expectedRevision === undefined ? {} : { expectedRevision: String(ctx.expectedRevision) }) } }),
     buildTarget: (ctx) => ({ domain: "G", type: "genesis_dividend_batch", id: String(ctx.batchNo) }),
   },
   {

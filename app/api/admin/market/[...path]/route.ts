@@ -221,7 +221,11 @@ async function proxy(request: Request, context: RouteContext) {
   const sourceUrl = new URL(request.url);
   if (targetPath === "/api/admin/market/nex/genesis/dividend-approval-state") {
     if (request.method !== "GET") return jsonError(405, "METHOD_NOT_ALLOWED");
-    if (sourceUrl.search) return jsonError(400, "G4_DIVIDEND_APPROVAL_STATE_QUERY_UNSUPPORTED");
+    if ([...sourceUrl.searchParams.keys()].some(key => key !== "batchNo")
+      || sourceUrl.searchParams.getAll("batchNo").length > 1
+      || sourceUrl.searchParams.has("batchNo") && !/^[A-Za-z0-9-]{3,32}$/.test(sourceUrl.searchParams.get("batchNo")!)) {
+      return jsonError(400, "G4_DIVIDEND_APPROVAL_STATE_QUERY_UNSUPPORTED");
+    }
   }
   const targetUrl = `${BACKEND_BASE_URL}${targetPath}${sourceUrl.search}`;
   const g4OverviewRead = request.method === "GET" && targetPath === "/api/admin/market/nex/genesis";

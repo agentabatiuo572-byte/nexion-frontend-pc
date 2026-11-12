@@ -300,7 +300,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
             <div className="p-row" key={param.key}>
               <div className="txt"><div className="k">{paramName(param)}</div><div className="s">{paramSub(param, stats.lockDays)}</div></div>
               <span className="v">{paramDisplayValue(param)}</span>
-              {canEdit(param.key) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(param)}>编辑 {paramName(param)}</button>}
+              {(canEdit(param.key) || paramApproval.record(param.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(param)}>编辑 {paramName(param)}</button>}
             </div>
           ))}
           <div className="p-row">

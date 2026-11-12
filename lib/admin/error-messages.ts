@@ -2141,6 +2141,13 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H3_CONFIG_STALE: "这张审批单提交后，原配置已被改过，不能批准；请驳回后按最新配置重新发起。",
   // 分红设置页直接保存也会收到，不写成只针对审批单。
   G4_DIVIDEND_STALE: "分红设置已被改过，这次没有执行；请刷新后按最新设置处理，审批单请驳回后重新发起。",
+  G4_DIVIDEND_APPROVAL_REQUIRED: "提高每日收益比例需要提交审批，由另一位有权超管批准后生效。",
+  G4_EMISSION_APPROVAL_REQUIRED: "这次补发有真实待付款项，需要提交审批，由另一位有权超管批准后发放。",
+  G4_DIVIDEND_AMPLIFICATION_REQUIRED: "当前每日收益比例已不低于提案值，请核对最新比例后重新操作。",
+  G4_EMISSION_AMOUNT_UNAVAILABLE: "这期没有可审批的待付收益，请重新读取该批次后核对。",
+  G4_PROPOSAL_INVALID: "分红审批内容或快照不完整，请核对原审批单；新申请需重新读取分红快照。",
+  G4_MAKER_REQUIRED: "分红审批缺少当前发起人身份，请重新登录后查询原审批单。",
+  G4_DIVIDEND_APPROVAL_STATE_QUERY_UNSUPPORTED: "分红快照只支持一个有效批次号，请核对原批次编号后查询。",
   G4_CATALOG_SNAPSHOT_CHANGED: "这张审批单提交后，原配置已被改过，不能批准；请驳回后按最新配置重新发起。",
   LEARNING_ACTIVATION_SNAPSHOT_CHANGED: "这张审批单提交后，原配置已被改过，不能批准；请驳回后按最新配置重新发起。",
   G4_EMISSION_ALREADY_COMPLETED: "这期产出已经发过，不能再批准；请驳回这张审批单。",
