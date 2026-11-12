@@ -97,6 +97,11 @@ export type ConfirmReq = {
   remarkHint?: string;
   /** 调用方已展示错误时，共享确认不重复提示。 */
   errorHandled?: boolean | ((error: unknown) => boolean);
+  /**
+   * K 域的结果未知写法（K2、K4 传）：重新打开保存的原操作时标题和按钮写「重试原操作」「按原请求重试」，
+   * 提交后结果未知时框里留一条看得见的提示，理由框的字数范围写在框下。别的域不传，样子不变。
+   */
+  recoveryUi?: boolean;
   okLabel?: string;
   /** 不能撤销的操作传 danger：确认按钮用危险色，标题用警告图标（VS-25）。 */
   confirmTone?: "primary" | "danger";

@@ -20,7 +20,7 @@ import type { ConfirmReq } from "./types";
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
   const [pendingReason, setPendingReason] = useState(() => req.getPendingReason?.());
   // 打开时就带着保存的原操作：这是重试原操作，不是一次新操作。
-  const [retrying] = useState(() => pendingReason !== undefined);
+  const [retrying] = useState(() => Boolean(req.recoveryUi) && pendingReason !== undefined);
   // 提交后结果未知：框里留一条看得见的提示，按钮改成按原请求重试（提示条会消失）。
   const [unknown, setUnknown] = useState(false);
   const [draftReason, setReason] = useState(pendingReason ?? "");
@@ -71,7 +71,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         return;
       }
       const handled = typeof req.errorHandled === "function" ? req.errorHandled(cause) : req.errorHandled;
-      if (cause instanceof K1OutcomeUncertainError && cause.commandKey) setUnknown(true);
+      if (req.recoveryUi && cause instanceof K1OutcomeUncertainError && cause.commandKey) setUnknown(true);
       else if (!handled) setError(displayAdminError(cause));
     } finally {
       setPendingReason(req.getPendingReason?.());
@@ -179,14 +179,14 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         {surface ? (
           // 字段名强，下限跟在后面，上限在框角的字数里，各写一处（VS-104、VS-105）。
           <label htmlFor={`${fieldId}-reason`}>
-            {req.reason ? <>操作理由<span className="rd-form-required" aria-hidden="true">*</span><span className="rd-form-hint">至少 {reasonMin} 字</span></> : <>备注<span className="rd-form-hint">{req.remarkHint ?? "选填，最多 200 字"}</span></>}
+            {req.reason ? <>操作理由<span className="rd-form-required" aria-hidden="true">*</span>{!req.recoveryUi && <span className="rd-form-hint">至少 {reasonMin} 字</span>}</> : <>备注<span className="rd-form-hint">{req.remarkHint ?? "选填，最多 200 字"}</span></>}
           </label>
         ) : (
           <label htmlFor={`${fieldId}-reason`} style={{ display: "block", fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>
             {req.reason ? `操作理由（必填，${reasonMin}–${reasonMax} 字）` : "备注（可选，最多 200 字）"}
           </label>
         )}
-        <div className={surface ? `rd-reason-box${pendingReason !== undefined ? " k-reason-locked" : ""}` : undefined}>
+        <div className={surface ? `rd-reason-box${req.recoveryUi && pendingReason !== undefined ? " k-reason-locked" : ""}` : undefined}>
           <textarea
             id={`${fieldId}-reason`}
             value={reason}
@@ -199,10 +199,10 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
           />
           {surface && req.reason && <span className="rd-reason-count">{reasonLength}/{reasonMax}</span>}
         </div>
-        {surface && pendingReason !== undefined && <p className="k-locked-hint">保存的原理由，重试时原样发送，不能修改</p>}
-        {req.reason && pendingReason === undefined && (surface ? !reasonOk && (attempted || reasonLeft) : true) && (
+        {surface && req.recoveryUi && pendingReason !== undefined && <p className="k-locked-hint">保存的原理由，重试时原样发送，不能修改</p>}
+        {req.reason && !(req.recoveryUi && pendingReason !== undefined) && (surface ? !reasonOk && (attempted || reasonLeft) : true) ? (
           <div className={surface ? "rd-form-error" : "tiny k-confirm-count"} data-ok={reasonOk ? "" : undefined}>{reasonShort}</div>
-        )}
+        ) : surface && req.recoveryUi && req.reason && pendingReason === undefined && <div className="rd-form-help">{reasonMin}–{reasonMax} 字</div>}
       </div>
       </fieldset>
     </Modal>

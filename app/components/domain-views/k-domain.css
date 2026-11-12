@@ -347,7 +347,7 @@
 .k2-hits th:first-child, .k2-hits td:first-child { width: 28%; min-width: 150px; }
 .k2-hits th:nth-last-child(2), .k2-hits td:nth-last-child(2) { width: 150px; }
 .k2-hits th:last-child, .k2-hits td:last-child { width: 250px; }
-.k2-hits[data-view="trial"] th:first-child, .k2-hits[data-view="trial"] td:first-child { width: 36%; }
+.k2-hits[data-view="trial"] th:first-child, .k2-hits[data-view="trial"] td:first-child { width: 46%; }
 
 /* 读不到抵扣比例：失败说明和重试在一行。 */
 .k2-ref-failed { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--rd-text-2); }

@@ -588,7 +588,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
 
   const markArb = (r: K2Row, retained?: K2PendingCommand) => {
     const attempt = { retained };
-    ctx.openConfirm({ briefKind: "judgment",
+    ctx.openConfirm({ recoveryUi: true, briefKind: "judgment",
       ...recovery(attempt),
       errorHandled: (error) => error instanceof K1OutcomeUncertainError || isExplicitRejection(error),
       action: `标记套利账户 · ${r.cells[0]}`,
@@ -609,7 +609,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
 
   const blockGift = (r: K2Row, retained?: K2PendingCommand) => {
     const attempt = { retained };
-    ctx.openConfirm({ briefKind: "record",
+    ctx.openConfirm({ recoveryUi: true, briefKind: "record",
       ...recovery(attempt),
       errorHandled: (error) => error instanceof K1OutcomeUncertainError || isExplicitRejection(error),
       action: `拦截新人礼 · ${r.cells[0]}`,
@@ -630,7 +630,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
 
   const boardFlag = (r: K2Row, retained?: K2PendingCommand) => {
     const attempt = { retained };
-    ctx.openConfirm({ briefKind: "judgment",
+    ctx.openConfirm({ recoveryUi: true, briefKind: "judgment",
       ...recovery(attempt),
       errorHandled: (error) => error instanceof K1OutcomeUncertainError || isExplicitRejection(error),
       action: `标记刷榜账户 · ${r.cells[0]}`,

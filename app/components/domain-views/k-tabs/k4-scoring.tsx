@@ -548,8 +548,8 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     return (
       <>
         {header}
-        {pendingBars}
         <Conclusion state="unknown" icon={ShieldCheck}>风险评分读取失败，这页没有判断</Conclusion>
+        {pendingBars}
         <Panel title="风险评分">
           <BlockState state="error" title="风险评分加载失败" detail={<><p>{ctx.contentError}</p><p>为避免误判，不显示旧数据，也不能保存、发布或改分。</p></>}
             retryLabel="重新加载" onRetry={() => void reloadCurrentScoring().catch(() => undefined)} />
@@ -562,8 +562,8 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     return (
       <>
         {header}
-        {pendingBars}
         <Conclusion state="unknown" icon={ShieldCheck}>风险评分暂不可用，这页没有判断</Conclusion>
+        {pendingBars}
         <Panel title="风险评分">
           <BlockState state="error" title="没有拿到当前生效的评分规则" detail="后端没有返回生效模型，这页不拿默认值代替。请重新加载，仍然没有就联系值班人员。"
             retryLabel="重新加载" onRetry={() => void reloadCurrentScoring().catch(() => undefined)} />
@@ -1030,9 +1030,9 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   return (
     <>
       {header}
+      {conclusion}
       {pendingBars}
       {inboundNotice}
-      {conclusion}
       {tabs}
       {tab === "model" && modelTab}
       {tab === "users" && usersTab}

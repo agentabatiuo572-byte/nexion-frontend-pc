@@ -34,7 +34,7 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
 
   if (operation.kind === "override") {
     const user = operation.user;
-    ctx.openConfirm({ briefKind: "judgment",
+    ctx.openConfirm({ recoveryUi: true, briefKind: "judgment",
       errorHandled: true,
       action: `手动改分 · ${user.userNo}`,
       title: "手动改分",
@@ -56,7 +56,7 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
   }
   if (operation.kind === "recompute") {
     const user = operation.user;
-    ctx.openConfirm({ briefKind: "judgment",
+    ctx.openConfirm({ recoveryUi: true, briefKind: "judgment",
       errorHandled: true,
       action: `恢复系统评分 · ${user.userNo}`,
       title: "恢复系统评分",
