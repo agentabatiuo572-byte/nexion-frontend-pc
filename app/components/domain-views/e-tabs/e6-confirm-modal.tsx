@@ -4,12 +4,13 @@ import { OperationConfirmModal } from "../design-kit";
 import { Notice } from "@/app/components/rd";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
-import { useE6Mutations } from "./e6-mutations";
+import { useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
 
 /** E6 owns its funding explanation and persisted-command recovery feedback. */
-export function E6ConfirmModal({ scope, amplificationBasis, ...props }: ComponentProps<typeof OperationConfirmModal> & {
+export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, ...props }: ComponentProps<typeof OperationConfirmModal> & {
   scope: string;
   amplificationBasis?: ReactNode | ((value?: string) => ReactNode);
+  onRecovered?: (result?: E6WriteReceipt) => void | Promise<void>;
 }) {
   const m = useE6Mutations();
   const [unknown, setUnknown] = useState(false);
@@ -33,10 +34,16 @@ export function E6ConfirmModal({ scope, amplificationBasis, ...props }: Componen
   };
   return <OperationConfirmModal {...props} facts={facts} amplifies={false}
     edit={props.edit ? { ...props.edit, amplifiesWhen: undefined } : undefined}
+    getPendingReason={props.getPendingReason ?? (() => m.pendingReason(scope))}
     blockedReason={blockedReason} confirmLabel={unknown ? "按原操作重试" : props.confirmLabel}
     onConfirm={async (...args) => {
       setUnknown(false);
-      try { await props.onConfirm(...args); }
+      try {
+        if (unknown && record && onRecovered) {
+          const result = await m.send(record, true);
+          await onRecovered(result);
+        } else await props.onConfirm(...args);
+      }
       catch (failure) {
         // A durable original command is the recovery boundary. Permission failures
         // and authoritative rejections still use the shared error handling.

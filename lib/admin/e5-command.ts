@@ -4,6 +4,7 @@ import { isExplicitRejection } from "./explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { E5Device } from "./e5-client";
 import type { LegacyUnknownCandidate } from "./legacy-unknown-resolution";
+import { discoverECommand, investigateECommand, eCommandSettled, type ECommandEvidence } from "./e-command-investigation";
 
 export type E5Intent = "activate" | "deactivate" | "pause" | "resume" | "force-activate" | "unbind" | "legacy";
 export interface E5Command extends PendingMutationRecord {
@@ -54,6 +55,14 @@ export function e5CommandBlocks(record: E5Command, device: E5Device, intent?: E5
 
 export class E5CommandError extends Error {
   constructor(message: string, readonly status?: number, readonly backendMessage = "", readonly unknownOutcome = false) { super(message); }
+}
+
+export async function checkE5Command(record: E5Command, evidence?: ECommandEvidence) {
+  if (!["activate", "deactivate", "pause", "resume"].includes(record.intent)) return null;
+  const locator = { commandKey: record.commandKey, originalMethod: record.method, originalPath: record.path, originalAdminId: record.actorId };
+  const receipt = evidence ? await investigateECommand(record, locator, evidence) : await discoverECommand(locator);
+  if (eCommandSettled(receipt)) e5Commands.forget(record.fingerprint, record.commandKey);
+  return receipt;
 }
 
 /** Only this saved envelope is sent, including on retries after a refresh. */

@@ -20,7 +20,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Select } from "@/app/components/rd";
 import type { EViewCtx } from "./types";
 import { FIXED_DEVICE_LEVELS } from "./task-type-policy";
-import { e2CommandLabel, e2Commands, type E2Pending } from "./e2-pending";
+import { checkE2Command, e2CommandLabel, e2Commands, type E2Pending } from "./e2-pending";
 
 type Query = { code: string; taskClass: string; enabled: string; page: number; size: number; reset: boolean };
 type Read<T> = { state: "loading" | "ready" | "error"; data: T; error: string };
@@ -249,7 +249,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     {query.reset && <Notice tone="warn" action={<Button size="sm" onClick={() => setQuery(old => ({ ...old, reset: false }))}>知道了</Button>}>网址里无效的查询条件已重置。</Notice>}
     {receipt && <Notice tone={receipt.includes("读不到") ? "warn" : "ok"} action={<Button size="sm" onClick={() => void refresh()}>刷新</Button>}>{receipt}</Notice>}
     {pending.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.pool.code} ${record.pool.name} · ${e2CommandLabel(record)}，结果未确认`}
-      actionBelow action={<><Button size="sm" disabled={saving} onClick={() => { setQuery(old => ({ ...old, code: record.pool.code, page: 1 })); if (query.code === record.pool.code && query.page === 1) void refresh(); setPendingNote("正在读回原等级的当前事实；当前数量或状态不能证明原操作结果，待确认继续保留。"); }}>读回核对</Button>
+      actionBelow action={<><Button size="sm" disabled={saving} onClick={async () => { setQuery(old => ({ ...old, code: record.pool.code, page: 1 })); setPendingNote("正在读回原等级的当前事实；当前数量或状态不能证明原操作结果，待确认继续保留。"); try { await checkE2Command(record); syncPending(); } catch (cause) { setPendingNote(displayAdminError(cause)); } if (query.code === record.pool.code && query.page === 1) await refresh(); }}>读回核对</Button>
         {!rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button size="sm" disabledReason={saving ? "正在提交" : retryBlock(record)} onClick={() => { viewOriginal(record); void send(record, true); }}>按原操作重试</Button>}
         <Button size="sm" disabled={saving} onClick={() => viewOriginal(record)}>查看原操作</Button>
         {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button variant="primary" size="sm" disabled={saving} onClick={() => { viewOriginal(record); setReleasing(true); }}>解除待确认</Button>}

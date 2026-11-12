@@ -12,7 +12,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
-import { EMPTY_SKU_FORM, skuToForm, formToSku, validateSkuSpecs, validateGateForm, type SkuForm } from "./data";
+import { EMPTY_SKU_FORM, skuToForm, formToSku, isLegacyOnSaleMaintenance, validateSkuSpecs, validateGateForm, type SkuForm } from "./data";
 import { e1MediaCommands, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1SkuDiff, type E1MediaPending } from "./e1-state";
 import { E1Amount, E1TargetRange } from "./e1-catalog";
 
@@ -192,7 +192,7 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
     if (!editId && !supportsDeviceMonthlyTarget(form.id.trim() || form.name.trim(), form.tier)) e.id = SKU_MODEL_UNRECOGNIZED_REASON;
     if (form.id.trim().toLowerCase() === "phone") e.id = "phone 是手机策略的专用编号";
     if (form.datacenter.trim().length > 128) e.datacenter = "托管机房最多 128 字";
-    if (original?.status === "on") {
+    if (original?.status === "on" && !isLegacyOnSaleMaintenance(form, original)) {
       if (!form.allowedPoolCodes.length) e.allowedPoolCodes = "在售商品至少要选择一个任务等级";
       if (!form.datacenter.trim()) e.datacenter = "在售商品必须填写托管机房";
       if (!form.monthlyTargetUsdt.trim()) e.monthlyTargetUsdt = "在售商品不能清空月收益目标";
