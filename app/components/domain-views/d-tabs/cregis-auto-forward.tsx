@@ -114,7 +114,7 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
         :<div className="rd-stack">
           <p className="rd-note">{network} · {status.executionEnabled?"自动发送已开放":status.configured?"新转账未开放":"地址待配置"}</p>
           {!status.configured&&<Notice tone="warn">地址与运行权限核实后才能启用。</Notice>}
-          {!status.runtimeApproved&&<Notice tone="neutral" title="当前不发送自动转账">未来启用前须确认收款服务的自动审批/签名及套餐权益、绑定钱包和 {String(status.gasSymbol)} 手续费安排，再取得运行总开关批准，并由另一位管理员复核开关。</Notice>}
+          {!status.runtimeApproved&&<Notice tone="neutral" title="当前不发送自动转账">本环境的运行总开关没开（BEP20、ERC20、TRC20 共用一个）。启用前须确认收款服务的自动审批/签名及套餐权益、绑定钱包和 {String(status.gasSymbol)} 手续费安排，再由技术负责人在部署配置里打开总开关，并由另一位管理员复核下面的归集和转出开关。</Notice>}
           {status.makerId!==null&&<Notice tone="progress" title="有一个开关提案待复核"
             action={canWrite?<>
               <Button size="sm" disabledReason={String(status.makerId)===String(owner)?"发起人不能复核自己的提案":block} onClick={()=>policy("APPROVE")}>复核自动流程开关</Button>
@@ -123,7 +123,9 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
             待复核提案：归集 {status.pendingCollection?"开":"关"} · 付款 {status.pendingPayment?"开":"关"} · 理由 {String(status.reason)}
           </Notice>}
           <ConfigList label="自动流程开关">
-            <ConfigRow name="运行总开关" what="自动转账能不能运行" when="批准后生效" value={<SwitchTag on={status.runtimeApproved===true}>{status.runtimeApproved?"已批准":"关闭"}</SwitchTag>}/>
+            <ConfigRow name="运行总开关" what="本环境部署时设定，一个开关同时管 BEP20、ERC20、TRC20" when="改部署配置后生效，后台不能改"
+              note="开着也不一定会发送：这条网络的地址要配好、要允许出款，下面的归集或转出开关也要打开；首次启用还要求收款服务处于正式对接模式。"
+              value={<SwitchTag on={status.runtimeApproved===true}>{status.runtimeApproved?"已开启":"关闭"}</SwitchTag>}/>
             <ConfigRow name="自动归集到 Cregis" what="入账后归集到 Cregis 钱包" when="另一位管理员复核后生效" value={<SwitchTag on={status.collectionEnabled===true}>{status.collectionEnabled?"开启":"关闭"}</SwitchTag>}
               action={canWrite?<Button size="sm" disabledReason={proposeBlock} onClick={()=>policy("PROPOSE")}>调整</Button>:undefined}/>
             <ConfigRow name="自动 Cregis 转平台收款钱包" what="归集后转入平台收款钱包" when="另一位管理员复核后生效" value={<SwitchTag on={status.paymentEnabled===true}>{status.paymentEnabled?"开启":"关闭"}</SwitchTag>}/>
