@@ -132,7 +132,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "K1" && tab !== "K2" && tab !== "K3" && <DomainHeader {...meta} right={right} />}
+      {tab !== "K1" && tab !== "K2" && tab !== "K3" && tab !== "K4" && <DomainHeader {...meta} right={right} />}
 
       {tab !== "K1" && tab !== "K2" && tab !== "K3" && tab !== "K4" && contentError && (
         <section className="l-card">
@@ -194,5 +194,5 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
     </>
   );
 
-  return tab === "K1" || tab === "K2" || tab === "K3" ? <RdPage className="kdom">{page}</RdPage> : <div className="dkpage kdom">{page}</div>;
+  return tab === "K1" || tab === "K2" || tab === "K3" || tab === "K4" ? <RdPage className="kdom">{page}</RdPage> : <div className="dkpage kdom">{page}</div>;
 }

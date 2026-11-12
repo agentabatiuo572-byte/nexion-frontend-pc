@@ -339,3 +339,137 @@
   .k2-hits th:nth-last-child(2), .k2-hits td:nth-last-child(2) { width: 96px; }
   .k2-hits th:first-child, .k2-hits td:first-child { width: 22%; }
 }
+
+/* ── K4 风险评分规则（改版）：只写这页自己的排法，颜色和字号都取 --rd-*。 ── */
+
+/* 页签下面每一块之间用页面的区块间距。 */
+.k4-tab { display: grid; gap: var(--rd-section-gap); min-width: 0; }
+.k4-pending { display: grid; gap: var(--rd-space-3); }
+.k4-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--rd-space-2); }
+.k4-quiet { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.k4-quiet[data-kind="problem"] { color: var(--rd-warn); }
+.k4-unit { color: var(--rd-text-3); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); }
+.k4-was { color: var(--rd-text-3); text-decoration: line-through; text-decoration-color: var(--rd-line-strong); }
+.k4-arrow { margin: 0 4px; color: var(--rd-text-3); }
+.k4-band-value [data-after], .k4-map-row [data-after] { color: var(--rd-progress); }
+
+/* 读取中：结论、页签、两张版本卡、一块内容的骨架，和读到后的版面同高。 */
+.k4-loading { display: grid; gap: var(--rd-section-gap); }
+.k4-skel-line { height: 64px; border-radius: var(--rd-radius-panel); }
+.k4-skel-tabs { height: 40px; width: 360px; max-width: 100%; border-radius: var(--rd-radius-control); }
+.k4-skel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--rd-space-4); }
+.k4-skel-grid > * { height: 168px; border-radius: var(--rd-radius-panel); }
+.k4-skel-block { height: 280px; border-radius: var(--rd-radius-panel); }
+
+/* 两张版本卡等高；卡里名称和值挨着。 */
+.k4-versions > * { min-width: 0; }
+
+/* 五维权重表：维度列占内容宽，两列权重条平分，参与评分只占标签宽。 */
+.k4-weights { table-layout: fixed; }
+.k4-weights th:first-child, .k4-weights td:first-child { width: 30%; }
+.k4-weights th:last-child, .k4-weights td:last-child { width: 132px; }
+.k4-weight { display: inline-flex; align-items: center; gap: var(--rd-space-3); min-width: 0; width: 100%; --rd-track-w: 160px; }
+.k4-weight .rd-ratio { flex: 0 1 160px; }
+.k4-bar-gap { display: inline-block; flex: 0 1 160px; }
+.k4-weight-num { min-width: 40px; color: var(--rd-text); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.k4-weight-num[data-changed] { color: var(--rd-progress); }
+.k4-delta { color: var(--rd-progress); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.k4-source-change { display: inline-flex; align-items: center; gap: var(--rd-space-2); }
+
+/* 分档线和各档人数：左边分数轴，右边人数；窄时上下排。 */
+.k4-bands { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--rd-space-6); align-items: start; }
+@container (max-width: 900px) { .k4-bands { grid-template-columns: minmax(0, 1fr); } }
+.k4-axis-block, .k4-dist-block { display: grid; gap: var(--rd-space-3); min-width: 0; }
+.k4-axis-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: var(--rd-space-3); align-items: center; --rd-track-w: 100%; }
+.k4-axis-label { color: var(--rd-text-2); font-size: var(--rd-text-aux); white-space: nowrap; }
+.k4-band-values { display: flex; flex-wrap: wrap; gap: var(--rd-space-2) var(--rd-space-6); margin: var(--rd-space-1) 0 0; padding-left: calc(72px + var(--rd-space-3)); }
+.k4-band-value { display: flex; align-items: baseline; gap: var(--rd-space-2); }
+.k4-band-value dt { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+.k4-band-value dd { margin: 0; font-variant-numeric: tabular-nums; }
+.k4-band-value b { font-weight: var(--rd-weight-semibold); }
+.k4-block-title { margin: 0; color: var(--rd-text); font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); }
+.k4-block-title .k4-quiet { display: inline; margin-left: var(--rd-space-2); }
+.k4-dist-name { display: inline-flex; align-items: baseline; gap: var(--rd-space-2); white-space: nowrap; }
+.k4-dist-range { color: var(--rd-text-3); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; }
+.k4-dist-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.k4-dist-pct { margin-left: var(--rd-space-2); color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+
+/* 20 项细则：五组两列排，组内名称和值挨着。 */
+.k4-map-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--rd-space-5) var(--rd-space-7); }
+@container (max-width: 900px) { .k4-map-groups { grid-template-columns: minmax(0, 1fr); } }
+.k4-map-list { display: grid; gap: var(--rd-space-2); margin: 0; }
+.k4-map-row { display: grid; grid-template-columns: minmax(0, 220px) auto; gap: var(--rd-space-4); align-items: baseline; }
+.k4-map-row dt { color: var(--rd-text-2); }
+.k4-map-row dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.k4-map-row b { font-weight: var(--rd-weight-semibold); }
+
+/* 版本历史：版本列放得下版本号和状态，理由占剩下的宽度。 */
+.k4-version { display: inline-flex; align-items: center; gap: var(--rd-space-2); font-weight: var(--rd-weight-semibold); white-space: nowrap; }
+
+/* 编辑草稿抽屉：三组，每组一个小标题；一行一项，名称在左、输入和生效值在右。 */
+.k4-edit-section { display: grid; gap: var(--rd-space-3); }
+.k4-edit-section + .k4-edit-section { margin-top: var(--rd-space-6); padding-top: var(--rd-space-5); border-top: 1px solid var(--rd-line); }
+.k4-edit-title { display: flex; align-items: baseline; gap: var(--rd-space-3); margin: 0; color: var(--rd-text); font-size: var(--rd-text-section); font-weight: var(--rd-weight-semibold); }
+.k4-sum { font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; }
+.k4-sum[data-bad] { color: var(--rd-warn); }
+.k4-edit-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--rd-space-2) var(--rd-space-4); align-items: center; }
+.k4-edit-row[data-num] { grid-template-columns: minmax(0, 1fr) auto; }
+.k4-edit-name { display: grid; gap: 2px; min-width: 0; }
+.k4-edit-name > span:first-child { color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+.k4-edit-entry { display: inline-flex; align-items: center; gap: var(--rd-space-3); }
+.k4-edit-was { min-width: 84px; color: var(--rd-text-3); font-size: var(--rd-text-aux); white-space: nowrap; }
+.k4-edit-error { grid-column: 1 / -1; justify-self: end; }
+.k4-edit-section .rd-fold { margin: 0; }
+.k4-edit-section .rd-fold .k4-edit-row + .k4-edit-row { margin-top: var(--rd-space-3); }
+
+/* 用户分数：查询框和按钮一行；查到后大分数和分数轴并排。 */
+.k4-lookup { display: flex; gap: var(--rd-space-3); align-items: center; max-width: 560px; }
+.k4-lookup > :first-child { flex: 1; min-width: 0; }
+.k4-user-title { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.k4-user-top { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--rd-space-6); align-items: center; margin-bottom: var(--rd-space-4); }
+@container (max-width: 900px) { .k4-user-top { grid-template-columns: minmax(0, 1fr); } }
+.k4-score { display: grid; gap: var(--rd-space-1); min-width: 220px; }
+.k4-score-k { display: inline-flex; align-items: center; gap: 4px; color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+.k4-score-v { font-size: var(--rd-text-key); line-height: var(--rd-lh-key); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; color: var(--rd-text); }
+.k4-score-v[data-tone="danger"] { color: var(--rd-danger); }
+.k4-score-v[data-tone="warn"] { color: var(--rd-warn); }
+.k4-score-v .k4-unit { margin-left: 4px; }
+.k4-score-sub { color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.k4-score-sub b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.k4-user-scale { display: grid; gap: var(--rd-space-2); --rd-track-w: 100%; max-width: 480px; }
+.k4-escalate { margin: 0; color: var(--rd-warn); font-size: var(--rd-text-aux); }
+.k4-evidence { color: var(--rd-text-2); word-break: break-word; }
+.k4-evidence-note { margin-top: var(--rd-space-2); margin-bottom: var(--rd-space-4); }
+.k4-contrib { table-layout: fixed; }
+.k4-contrib th:nth-child(1), .k4-contrib td:nth-child(1) { width: 112px; }
+.k4-contrib th:nth-child(2), .k4-contrib td:nth-child(2) { width: 92px; }
+.k4-contrib th:nth-child(3), .k4-contrib td:nth-child(3) { width: 104px; }
+.k4-contrib th:nth-child(4), .k4-contrib td:nth-child(4) { width: 200px; }
+.k4-contrib-total td { border-top: 1px solid var(--rd-line); color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+.k4-user-link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+.k4-change { display: inline-flex; align-items: baseline; gap: 2px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.k4-overrides { table-layout: fixed; }
+.k4-overrides th:nth-child(1), .k4-overrides td:nth-child(1) { width: 128px; }
+.k4-overrides th:nth-child(2), .k4-overrides td:nth-child(2) { width: 132px; }
+.k4-overrides th:nth-child(4), .k4-overrides td:nth-child(4) { width: 172px; }
+.k4-overrides th:nth-child(5), .k4-overrides td:nth-child(5) { width: 96px; }
+.k4-overrides th:nth-child(6), .k4-overrides td:nth-child(6) { width: 136px; }
+.k4-alerts { table-layout: fixed; }
+.k4-alerts th:nth-child(2), .k4-alerts td:nth-child(2) { width: 96px; }
+.k4-alerts th:nth-child(3), .k4-alerts td:nth-child(3) { width: 200px; }
+.k4-alerts th:nth-child(4), .k4-alerts td:nth-child(4) { width: 188px; }
+.k4-alerts th:nth-child(5), .k4-alerts td:nth-child(5) { width: 132px; }
+.k4-alerts th:nth-child(6), .k4-alerts td:nth-child(6) { width: 148px; }
+.k4-panel-note { padding: var(--rd-space-4) var(--rd-panel-pad-x) var(--rd-panel-pad-y); }
+
+/* 1024：权重条和贡献条收窄，数字留着。 */
+@container (max-width: 860px) {
+  .k4-weight { --rd-track-w: 96px; }
+  .k4-weight .rd-ratio, .k4-bar-gap { flex-basis: 96px; }
+  .k4-contrib th:nth-child(4), .k4-contrib td:nth-child(4) { width: 156px; }
+  .k4-overrides th:nth-child(4), .k4-overrides td:nth-child(4) { width: 148px; }
+}
+.k4-facts { display: grid; gap: var(--rd-space-3); margin: 0; }
+.k4-facts > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: var(--rd-space-4); align-items: baseline; }
+.k4-facts dt { color: var(--rd-text-3); }
+.k4-facts dd { margin: 0; color: var(--rd-text); overflow-wrap: anywhere; }
