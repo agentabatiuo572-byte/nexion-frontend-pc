@@ -440,10 +440,11 @@
 .k4-escalate { margin: 0; color: var(--rd-warn); font-size: var(--rd-text-aux); }
 .k4-evidence { color: var(--rd-text-2); word-break: break-word; }
 .k4-contrib { table-layout: fixed; }
-.k4-contrib th:nth-child(1), .k4-contrib td:nth-child(1) { width: 112px; }
-.k4-contrib th:nth-child(2), .k4-contrib td:nth-child(2) { width: 92px; }
-.k4-contrib th:nth-child(3), .k4-contrib td:nth-child(3) { width: 104px; }
-.k4-contrib th:nth-child(4), .k4-contrib td:nth-child(4) { width: 200px; }
+.k4-contrib th:nth-child(1), .k4-contrib td:nth-child(1) { width: 128px; }
+.k4-contrib th:nth-child(2), .k4-contrib td:nth-child(2) { width: 104px; }
+.k4-contrib th:nth-child(3), .k4-contrib td:nth-child(3) { width: 200px; }
+.k4-dim { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.k4-evidence { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .k4-contrib-total td { border-top: 1px solid var(--rd-line); color: var(--rd-text); font-weight: var(--rd-weight-medium); }
 .k4-user-link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
 .k4-change { display: inline-flex; align-items: baseline; gap: 2px; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -465,8 +466,9 @@
 @container (max-width: 860px) {
   .k4-weight { --rd-track-w: 96px; }
   .k4-weight .rd-ratio, .k4-bar-gap { flex-basis: 96px; }
-  .k4-contrib th:nth-child(2), .k4-contrib td:nth-child(2) { width: 84px; }
-  .k4-contrib th:nth-child(4), .k4-contrib td:nth-child(4) { width: 132px; }
+  .k4-contrib th:nth-child(1), .k4-contrib td:nth-child(1) { width: 112px; }
+  .k4-contrib th:nth-child(2), .k4-contrib td:nth-child(2) { width: 92px; }
+  .k4-contrib th:nth-child(3), .k4-contrib td:nth-child(3) { width: 132px; }
   .k4-overrides th:nth-child(1), .k4-overrides td:nth-child(1) { width: 112px; }
   .k4-overrides th:nth-child(2), .k4-overrides td:nth-child(2) { width: 112px; }
   .k4-overrides th:nth-child(4), .k4-overrides td:nth-child(4) { width: 140px; }

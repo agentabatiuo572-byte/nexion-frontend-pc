@@ -223,8 +223,7 @@ export function ContributionTable({ rows, total, label }: { rows: K4Contribution
   return (
     <Table label={label} className="k4-contrib">
       <thead><tr>
-        <Th>维度</Th>
-        <Th>命中</Th>
+        <Th>维度 · 命中</Th>
         <Th align="right">子分 · 权重</Th>
         <Th>贡献</Th>
         <Th><span className="k4-th">证据（后端原文）<Explain label="证据是什么" content="后端拼好的原文：金额带美元符号、四舍五入到 2 位，没有单独的币种和精确金额。这里原样显示，不作为精确金额（已提后端 K4-BE-01）。" /></span></Th>
@@ -232,8 +231,7 @@ export function ContributionTable({ rows, total, label }: { rows: K4Contribution
       <tbody>
         {rows.map((row) => (
           <Tr key={row.dimKey}>
-            <Td>{row.name}</Td>
-            <Td>{row.hit ? <StatusTag tone="warn" icon={Crosshair}>命中</StatusTag> : <StatusTag tone="neutral" icon={Minus}>未命中</StatusTag>}</Td>
+            <Td><span className="k4-dim">{row.name}{row.hit ? <StatusTag tone="warn" icon={Crosshair}>命中</StatusTag> : <StatusTag tone="neutral" icon={Minus}>未命中</StatusTag>}</span></Td>
             <Td align="right"><Cell num main={`${row.subScore} 分`} sub={`权重 ${row.weightPct}%`} /></Td>
             <Td>
               <span className="k4-weight">
@@ -241,11 +239,11 @@ export function ContributionTable({ rows, total, label }: { rows: K4Contribution
                 <span className="k4-weight-num">{row.points} 分</span>
               </span>
             </Td>
-            <Td grow><span className="k4-evidence" data-user-content="">{row.evidence || "—"}</span></Td>
+            <Td grow><span className="k4-evidence" data-user-content="" title={row.evidence || undefined}>{row.evidence || "—"}</span></Td>
           </Tr>
         ))}
       </tbody>
-      <tfoot><tr className="k4-contrib-total"><Td>系统评分</Td><Td /><Td /><Td><b>{total} 分</b></Td><Td /></tr></tfoot>
+      <tfoot><tr className="k4-contrib-total"><Td>系统评分</Td><Td /><Td><b>{total} 分</b></Td><Td /></tr></tfoot>
     </Table>
   );
 }
