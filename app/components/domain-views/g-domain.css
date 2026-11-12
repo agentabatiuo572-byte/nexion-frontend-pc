@@ -211,6 +211,7 @@ html[data-theme="dark"] .gdom .g3-market-confirm { --admin-confirm-focus: var(--
 .g1-lane-count small { margin-left: 4px; font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
 .g1-lane-item[data-tone="warn"]:not([data-zero]) .g1-lane-count { color: var(--rd-warn); }
 .g1-lane-item[data-zero] .g1-lane-count, .g1-lane-item:disabled .g1-lane-count { color: var(--rd-text-3); }
+.g1-lane-flag { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-warn); white-space: nowrap; }
 .g1-positions { table-layout: fixed; }  /* 1024 下六列放得下：列宽按比例分，长名字省略、单号中间省略留尾段 */
 .g1-positions th:nth-child(1) { width: 29%; }  /* 单号 36 位，1440 放得下整串 */
 .g1-positions th:nth-child(2) { width: 14%; }
