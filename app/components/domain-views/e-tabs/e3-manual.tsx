@@ -1,22 +1,11 @@
 /**
- * E3 设备生命周期 & 升级置换 — 运营操作说明手册(右上角「操作说明手册」按钮弹出)。
- * 面向初级运营者:本页是什么、怎么读任务产能曲线、每个参数调高/调低的业务影响、怎么调整一个参数
- * (单值输入原理 + 各段月份在哪改)、高敏参数与 B1 资金护栏、换机 术语中英对照、换机处理。
- * 当前值经 ctx.pE 实时读出，手册随后台当前配置同步，不写死。
+ * E3 设备使用与升级置换 — 操作说明手册（页头「操作说明手册」打开）。
+ * 写给第一次用这页的运营：这页管什么、怎么看产能曲线、每项调高调低会怎样、怎么提交修改、升级置换怎么算、最近 24 小时怎么看。
+ * 当前值经 ctx.pE 实时读出，随后台配置变；每句行为说明对着重构说明「后端事实」写。
  */
-import type { ReactNode } from "react";
-import { Modal } from "../design-kit";
-import { AutoGloss } from "@/app/components/kit/gloss";
+import { BookOpen } from "lucide-react";
+import { Button, Modal, Table, Td, Th, Tr } from "@/app/components/rd";
 import type { EViewCtx } from "./types";
-
-function Sec({ n, title, children }: { n: string; title: string; children: ReactNode }) {
-  return (
-    <section className="e3man-sec">
-      <div className="e3man-h"><span className="e3man-n">{n}</span><h3>{title}</h3></div>
-      <div className="e3man-bd">{children}</div>
-    </section>
-  );
-}
 
 function configuredMonth(value: string) {
   const month = Number(value);
@@ -38,111 +27,75 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
   const subsidy = pE("E.device.capacity.subsidyDays");
   const ladderCuts = [1, 2, 3, 4].map((i) => pE(`E.tradein.ladder.cut${i}`));
   const ladderCredits = [1, 2, 3, 4, 5].map((i) => pE(`E.tradein.ladder.credit${i}`));
-  const requireHigher = pE("E.tradein.requireHigherPrice");
   const exemptCount = ["phone", "cloud-share", "pc-gpu", "stellarbox-s1", "stellarbox-pro", "stellarbox-pro-v2", "stellarrack-p1", "stellarrack-p2"]
     .filter((kind) => pE(`E.device.capacity.applyTo.${kind}`) === "免递减").length;
 
-  // 参数速查:含义 + 调高 / 调低的业务影响(运营视角,非工程视角)。
-  const PARAMS: { zh: string; code: string; cur: string; up: string; down: string; hot?: boolean }[] = [
-    { zh: "前期每月变化", code: "band1DeltaPct", cur: `${early}% / 月`, up: "前期下降变慢；正值时增长更快", down: "前期下降变快；正值时增长更慢" },
-    { zh: "中期每月变化", code: "band2DeltaPct", cur: `${mid}% / 月`, up: "中期下降变慢；正值时增长更快", down: "中期下降变快；正值时增长更慢" },
-    { zh: "后期每月变化", code: "band3DeltaPct", cur: `${late}% / 月`, up: "后期下降变慢；正值时增长更快", down: "后期下降变快；正值时增长更慢", hot: true },
-    { zh: "产能下限", code: "floorPct", cur: `${floor}%`, up: "下限提高，老设备一直有收益（平台应付款更多）", down: "下限降低，老设备更早接近停产" },
-    { zh: "产能分段周期", code: "初期结束月 / 中期结束月 / 总周期月数", cur: `第 ${s1 ?? "—"} / 第 ${s2 ?? "—"} 月 / 显示 ${cyc} 个月`, up: "分界往后 → 各段更长，后期下降来得更晚", down: "分界往前 → 后期下降来得更早，用户更快换新" },
-    { zh: "新机任务补贴天数", code: "subsidyDays", cur: `${subsidy} 天`, up: "「补贴中」显示更久，新用户更安心（只影响显示）", down: "更早显示产能百分比" },
-    { zh: "产能是否逐月下降（按商品）", code: "applyTo.*", cur: `${exemptCount} 个不下降 / ${8 - exemptCount} 个下降`, up: "更多商品会下降 → 更多用户有换新动力", down: "更多商品不下降 → 始终 100%，保护入门体验" },
-    { zh: "分档界线", code: "ladder.cut1–4", cur: `${ladderCuts.join("/")}%`, up: "界线往后 → 高抵扣档持续更久，换新动力更持久（平台让利更多）", down: "界线往前 → 抵扣更快变少，用户更急着换新" },
-    { zh: "各档抵扣比例", code: "ladder.credit1–5", cur: `${ladderCredits.join("/")}%`, up: "调高任一档 → 换新更划算，换新的人更多，但每单收入减少（平台让利更多）", down: "调低 → 每单收入更高，但换新吸引力下降", hot: true },
-    { zh: "仅限升级更高价设备", code: "requireHigherPrice", cur: requireHigher, up: "开 → 只能换更贵的机型，每单平台都有净收入（默认）", down: "关 → 允许换同价机型，抵扣可能接近新机价格，请先看兑付覆盖率" },
-  ];
-
-  // 换机 术语中英对照(呼应右栏「置换配置」中文化)。
-  const TERMS: { code: string; zh: string; note: string }[] = [
-    { code: "enabled", zh: "升级置换开关", note: "关闭后 App 上所有升级置换入口都会隐藏" },
-    { code: "ladder.cut1–4", zh: "分档界线", note: "按「已赚回金额 ÷ 买入价」划分 5 档的 4 条界线" },
-    { code: "ladder.credit1–5", zh: "各档抵扣比例", note: "每档抵扣买入价的百分之几，逐档递减：赚回越多抵扣越少，越早换新抵扣越多" },
-    { code: "requireHigherPrice", zh: "仅限升级更高价设备", note: "只能换比旧机更贵的新机" },
-    { code: "maxDevicesPerOrder", zh: "单笔最多抵扣台数", note: "买一台新机最多能用几台旧机抵扣" },
-    { code: "eligibility", zh: "谁能升级置换", note: "哪些等级的用户可以升级置换" },
+  // 每项调高、调低会怎样：只写后端能保证的结果，不写用户情绪和销量这类推断。
+  const PARAMS: { zh: string; cur: string; up: string; down: string }[] = [
+    { zh: "前期每月变化", cur: `${early}% / 月`, up: "前期产能更高（平台多付任务收益）", down: "前期产能更低" },
+    { zh: "中期每月变化", cur: `${mid}% / 月`, up: "中期产能更高（平台多付任务收益）", down: "中期产能更低" },
+    { zh: "后期每月变化", cur: `${late}% / 月`, up: "后期产能更高（平台多付任务收益）", down: "后期产能更低" },
+    { zh: "产能下限", cur: `${floor}%`, up: "老设备产能更高（平台多付任务收益）；不保证一直有任务或收益", down: "老设备产能可以更低" },
+    { zh: "三段的分界月份", cur: `前期到第 ${s1 ?? "—"} 月 · 中期到第 ${s2 ?? "—"} 月`, up: "分界往后，下降来得晚", down: "分界往前，下降来得早" },
+    { zh: "新机任务补贴天数", cur: `${subsidy} 天`, up: "App 显示「补贴中」更久（只改显示）", down: "更早显示产能百分比" },
+    { zh: "哪些商品逐月下降", cur: `${8 - exemptCount} 类下降 / ${exemptCount} 类始终 100%`, up: "更多商品下降：这些设备产能更低", down: "更多商品始终 100%：平台多付任务收益" },
+    { zh: "分档界线", cur: `${ladderCuts.join(" / ")}%`, up: "界线往后：高抵扣档持续更久（平台多让利）", down: "界线往前：抵扣更快变少" },
+    { zh: "各档抵扣比例", cur: `${ladderCredits.join(" / ")}%`, up: "任一档调高：平台多让利", down: "每单折抵更少" },
   ];
 
   return (
-    <Modal title="操作说明 · 设备产能与升级置换" icon="doc" onClose={onClose} wide
-      footer={null}>
-      <div className="e3man">
-        <p className="e3man-lead">
-          这页管两件事：<b>设备能接的任务随使用时间逐月变化的节奏</b>，以及<b>旧机抵扣买新机（升级置换）的规则</b>。
-          两者一起决定用户多快升级：后期产能下降让用户考虑换新，抵扣力度决定换新有多划算。
-          修改提交审批，另一位超级管理员<b>批准后生效</b>。换新提交时会重新计算报价，已完成交易不回溯。
-        </p>
+    <Modal title="操作说明手册 · 设备使用与升级置换" icon={BookOpen} wide onClose={onClose} footer={<Button onClick={onClose}>关闭</Button>}>
+      <div className="e3p-manual">
+        <p>这页管两件事：<b>设备产能随使用月数怎么变</b>，以及<b>旧设备抵扣买新设备（升级置换）的规则</b>。所有修改都先提交审批，另一位有批准权限的管理员批准后才生效；这页不代用户换机，也不处理单台设备。</p>
 
-        <Sec n="1" title="怎么看产能曲线">
-          <ul className="e3man-ul">
-            <li><b>三个阶段</b>：前期（{earlyMonths}）→ 中期（{midMonths}）→ 后期（{lateMonths}）。颜色从绿到黄到橙。</li>
-            <li><b>最低产能 {floor}%</b>：降到这里就不再下降（虚线）。</li>
-            <li>每个圆点是那个月的设备产能，大圆点是阶段分界。</li>
-            <li>各段每月按当前产能乘以「1 + 每月变化 ÷ 100」：负值下降、0 不变、正值增长，产能不低于配置下限。</li>
-            <li><b>新机任务补贴</b>：新设备激活后前 {subsidy} 天，App 只显示「补贴中」，不显示产能百分比（<b>只影响显示</b>，收益照常计算）。</li>
+        <section>
+          <h3>1. 怎么看产能曲线</h3>
+          <ul>
+            <li>三段：前期（{earlyMonths}）每月 {early}%，中期（{midMonths}）每月 {mid}%，后期（{lateMonths}）每月 {late}%。</li>
+            <li>每个月按当前产能乘以（1 + 每月变化 ÷ 100）：负数下降，0 不变，正数上升；不低于下限 {floor}%。</li>
+            <li>只对参与逐月下降的商品生效，免递减的商品始终 100%。图上画 {cyc} 个月，这个数只决定图的长度。</li>
+            <li>App 目前不接受超过 100% 的产能：每月变化设成正数让产能超过 100% 时，App 显示不了（已提后端）。</li>
+            <li>新机任务补贴：新设备从购买时间（没有时从激活时间）算起 {subsidy} 天，App 显示「补贴中」。只改显示，不改产能和收益。</li>
           </ul>
-        </Sec>
+        </section>
 
-        <Sec n="2" title="每个参数调高、调低会怎样">
-          <p>调高、调低按带正负号的数值比较：-6% 调高到 -3%，下降变慢；-3% 调低到 -6%，下降变快；+3% 调高到 +6%，增长更快。</p>
-          <div className="e3man-tbl">
-            <div className="e3man-tr e3man-th"><span>参数</span><span>当前</span><span>调高 ↑</span><span>调低 ↓</span></div>
-            {PARAMS.map((p) => (
-              <div key={p.code} className={`e3man-tr${p.hot ? " hot" : ""}`}>
-                <span className="e3man-pc"><span className="nm"><b>{p.zh}</b>{p.hot ? <em className="e3man-hot">敏感</em> : null}</span></span>
-                <span className="mono">{p.cur}</span>
-                <span><AutoGloss>{p.up}</AutoGloss></span>
-                <span><AutoGloss>{p.down}</AutoGloss></span>
-              </div>
-            ))}
-          </div>
-        </Sec>
+        <section>
+          <h3>2. 每项调高、调低会怎样</h3>
+          <p>按带正负号的数比较：-6% 调到 -3% 是调高（下降变慢），+3% 调到 +6% 也是调高。</p>
+          <Table label="每项调高、调低会怎样">
+            <thead><tr><Th>参数</Th><Th>现在</Th><Th>调高</Th><Th>调低</Th></tr></thead>
+            <tbody>{PARAMS.map((p) => <Tr key={p.zh}><Td>{p.zh}</Td><Td>{p.cur}</Td><Td>{p.up}</Td><Td>{p.down}</Td></Tr>)}</tbody>
+          </Table>
+        </section>
 
-        <Sec n="3" title="怎么修改参数">
-          <ul className="e3man-ul">
-            <li>点该行右侧的<b>「调整」</b>，填写新值和操作理由（至少 8 字），提交审批，由另一位超级管理员在「操作记录与审批」中批准后生效。</li>
-            <li>一组相关的值（产能分段周期、提示升级的月损失金额、产能是否下降、分档界线、各档抵扣比例）会一起修改、一起保存。</li>
-            <li><b>月份在哪改</b>：三个阶段的分界月份<b>在「产能分段周期」一起改</b>（当前前期到第 {s1 ?? "—"} 月、中期到第 {s2 ?? "—"} 月、显示 {cyc} 个月），须满足 前期 &lt; 中期 &lt; 显示月数，批准后曲线自动更新；各阶段那一行只改每月变化多少。
-            </li>
-            <li>带 <b>⚡</b> 的「调整」会让平台多付钱（后期每月变化、各档抵扣比例），提交时会检查兑付覆盖率，低于红线将无法保存。</li>
+        <section>
+          <h3>3. 怎么提交修改</h3>
+          <ul>
+            <li>点那一行的「调整」，填新值和操作理由，提交审批。提交成功只表示申请已收录，规则还没变。</li>
+            <li>另一位有批准权限的管理员在「操作记录与审批」里批准后才生效，发起人不能批自己的申请。批准后回这页点「刷新」看新规则。</li>
+            <li>成组的值（三段分界月份、哪些商品逐月下降、分档界线、各档抵扣比例、提示升级的月损失金额）一个按钮改一组，一起提交、一起批准。只有提案权的账号目前提交不了成组修改（已提后端）。</li>
+            <li>确认框里标「会让平台多付钱」的修改，批准执行时后端检查兑付覆盖率，产能类还检查各商品的任务奖励上限，不通过就不执行。</li>
           </ul>
-        </Sec>
+        </section>
 
-        <Sec n="4" title="标了「敏感」的参数">
-          <p>
-            标了<em className="e3man-hot">敏感</em>的参数（<b>后期每月变化</b>、<b>各档抵扣比例</b>、<b>升级置换开关</b>）影响最大：
-          </p>
-          <ul className="e3man-ul">
-            <li><b>后期每月变化</b>：直接决定用户多快换新，以及换新带来的收入。</li>
-            <li><b>各档抵扣比例</b>：调高任一档平台都会多让利。只要「仅限升级更高价」和「抵扣不能提现」这两条不同时放开，就不怕被套利。</li>
-            <li><b>升级置换开关</b>：关闭后所有换新入口消失，会影响升级转化，操作前请告知增长同事。</li>
+        <section>
+          <h3>4. 升级置换怎么算</h3>
+          <ul>
+            <li>按旧设备「已赚回 ÷ 实付价」分 5 档：小于界线 1 是第 1 档，等于某条界线算下一档，不小于界线 4 是第 5 档。</li>
+            <li>折抵 = 旧设备实付价 × 那一档的比例，最多抵到新设备价格；只减新设备的应付，不进余额、不能提现。第 5 档可以设成 0。</li>
+            <li>「只能换更贵的新设备」开启时，新设备价格要高于旧设备实付价；关闭后可以换同价或更便宜的，应付可能是 0。</li>
+            <li>「每单最多抵扣台数」目前每单只按 1 台处理；「谁能升级置换」选全部用户时，也仍要满足设备和商品条件。</li>
+            <li>修改只影响之后的报价和提交，用户提交时按当时的规则重新算，已完成的置换不回溯。</li>
           </ul>
-          <p className="e3man-note">
-            「敏感」只是提醒你修改时要慎重，不是勾选状态。
-          </p>
-        </Sec>
+        </section>
 
-        <Sec n="5" title="升级置换设置说明">
-          <div className="e3man-terms">
-            {TERMS.map((t) => (
-              <div key={t.code} className="e3man-term">
-                <div className="t"><b>{t.zh}</b></div>
-                <div className="n"><AutoGloss>{t.note}</AutoGloss></div>
-              </div>
-            ))}
-          </div>
-        </Sec>
-
-        <Sec n="6" title="换机处理（回收 / 换新 / 停用）">
-          <ul className="e3man-ul">
-            <li>回收、换新、停用都是<b>要么全部成功，要么全部撤回</b>（设备、余额、账单一起），不会做一半。</li>
-            <li>换新抵扣<b>只能抵新机货款，不能提现</b>；<b>已回本的设备（超过界线 4）仍有第 5 档抵扣</b>，任何时候换新都有优惠。</li>
-            <li>页面底部「换机处理情况」可以看 24 小时内的成功、失败和撤回数，失败的可以点进去查账单。</li>
+        <section>
+          <h3>5. 最近 24 小时怎么看</h3>
+          <ul>
+            <li>回收、置换、停用三类各看成功、失败、恢复；恢复对回收和停用是之后被恢复的次数，对置换是回退的申请数。</li>
+            <li>「近 30 天高频置换账户」只是参考计数，不代表被拦截；要核查到「异常套利与刷量排查」。</li>
           </ul>
-        </Sec>
+        </section>
       </div>
     </Modal>
   );

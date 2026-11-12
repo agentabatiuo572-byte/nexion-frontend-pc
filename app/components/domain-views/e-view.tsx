@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
-import { Icon, Btn, Chip, Drawer, KV, OperationConfirmModal, useToast } from "./design-kit";
+import { Btn, Chip, Drawer, KV, OperationConfirmModal, useToast } from "./design-kit";
 import { RdPage, ReleaseModal } from "@/app/components/rd";
 import { businessClock } from "@/lib/admin/business-time";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -62,8 +62,7 @@ import type { E4PendingCommand, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types
 import { DevicePoolChoices, FIXED_DEVICE_LEVELS } from "./e-tabs/task-type-policy";
 import { E1Page } from "./e-tabs/e1-page";
 import { E2Tasks } from "./e-tabs/e2-tasks";
-import { E3Lifecycle } from "./e-tabs/e3-lifecycle";
-import { E3Manual } from "./e-tabs/e3-manual";
+import { E3Lifecycle, E3_APPROVER_BATCH, E3_APPROVER_SINGLE, E3_COVERAGE_CHECK } from "./e-tabs/e3-lifecycle";
 import { E4Orders } from "./e-tabs/e4-orders";
 import { E5Ops } from "./e-tabs/e5-ops";
 import { E6ComputeConfig as E6ComputeConfigComp } from "./e-tabs/e6-compute-config";
@@ -128,7 +127,6 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e4Detail, setE4Detail] = useState<E4OrderDetail | null>(null);
   const [e4DetailLoading, setE4DetailLoading] = useState(false);
   const [e4DetailError, setE4DetailError] = useState<string | null>(null);
-  const [manualOpen, setManualOpen] = useState(false); // E3 操作说明手册弹窗
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const canReadE1 = useAdminAuth((s) => s.session?.authorities.includes("device_e1_read") ?? false);
   const canWriteE1 = useAdminAuth((s) => s.session?.authorities.includes("device_e1_write") ?? false);
@@ -769,22 +767,19 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     setToast("E_PARAM_BACKEND_ROUTE_MISSING:" + paramKey);
   };
 
-  const headerRight =
-    tab === "E3" ? <button className="f-cta manual" onClick={() => setManualOpen(true)}><Icon name="doc" size={15} /> 操作说明手册</button>
-          : undefined;
+  // E3 的确认框写真实的批准资格和覆盖率检查时点（单项、成组各一句）。
+  const e3Confirm = mc && ((mc.op === "param" && !!mc.paramKey && isE3ParamKey(mc.paramKey))
+    || (mc.op === "param-multi" && !!mc.paramKeys?.every(({ paramKey }) => isE3ParamKey(paramKey)))) ? mc.op : null;
 
   const page = (
     <>
-      {tab !== "E4" && tab !== "E2" && tab !== "E5" && tab !== "E6" && <DomainHeader {...meta} right={headerRight} />}
+      {tab !== "E4" && tab !== "E2" && tab !== "E3" && tab !== "E5" && tab !== "E6" && <DomainHeader {...meta} />}
 
       {tab === "E2" && <E2Tasks ctx={ctx} />}
       {tab === "E3" && <E3Lifecycle ctx={ctx} />}
       {tab === "E4" && <E4Orders ctx={ctx} />}
       {tab === "E5" && <E5Ops ctx={ctx} />}
       {tab === "E6" && <E6ComputeConfigComp ctx={ctx} />}
-
-      {/* E3 操作说明手册弹窗(右上角按钮触发) */}
-      {tab === "E3" && manualOpen && <E3Manual ctx={ctx} onClose={() => setManualOpen(false)} />}
 
       {taskDrawer && <Drawer title={editTaskId ? "编辑手机任务" : "新增手机任务"} sub="仅用于手机任务池 · 另一位管理员批准后生效" onClose={() => setTaskDrawer(false)}
         footer={<><Btn onClick={() => setTaskDrawer(false)}>取消</Btn><Btn variant="primary" disabled={!canMutateE2Tasks || !taskForm.n.trim()} onClick={editTaskId ? submitTaskEdit : submitTask}>提交审批</Btn></>}>
@@ -817,7 +812,8 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
         } : undefined}
         reasonMin={8}
         reasonMax={200}
-        completionCopy={mc.orderId ? undefined : isE2TaskMutation(mc.op)
+        coverageCheck={e3Confirm ? E3_COVERAGE_CHECK : undefined}
+        completionCopy={mc.orderId ? undefined : e3Confirm ? (e3Confirm === "param" ? E3_APPROVER_SINGLE : E3_APPROVER_BATCH) : isE2TaskMutation(mc.op)
           ? "批准后生效：提交后请另一位有批准权限和任务池修改权限的管理员在「操作记录与审批」中批准。"
           : ["sku-save", "sku-status", "sku-delete"].includes(mc.op)
             ? "批准后生效：提交后请另一位有批准权限和商品修改权限的管理员在「操作记录与审批」中批准。"
@@ -1017,5 +1013,5 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  return tab === "E4" || tab === "E2" || tab === "E6" ? <RdPage>{page}</RdPage> : <div className="dkpage edom">{page}</div>;
+  return tab === "E4" || tab === "E2" || tab === "E3" || tab === "E6" ? <RdPage>{page}</RdPage> : <div className="dkpage edom">{page}</div>;
 }
