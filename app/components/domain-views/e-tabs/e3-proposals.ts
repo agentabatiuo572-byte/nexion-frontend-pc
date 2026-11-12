@@ -19,7 +19,7 @@ export type E3Proposal = PendingMutationRecord & {
   before: Record<string, string>;
   after: Record<string, string>;
   input: Input;
-  state: "unknown" | "pending" | "rejected";
+  state: "unknown" | "submitted" | "pending" | "rejected";
   ticketId?: string;
 };
 
@@ -32,7 +32,7 @@ const commands = createPendingMutationStore<E3Proposal>({
     if (typeof r.owner !== "string" || !r.owner || typeof r.label !== "string" || !Array.isArray(r.keys) || !r.keys.length
       || !r.keys.every(k => typeof k === "string") || !r.before || !r.after
       || !r.keys.every(k => typeof r.before[k] === "string" && typeof r.after[k] === "string")
-      || !["unknown", "pending", "rejected"].includes(r.state) || !i || i.sourceDomain !== "E3"
+      || !["unknown", "submitted", "pending", "rejected"].includes(r.state) || !i || i.sourceDomain !== "E3"
       || i.type !== "param" || i.sos !== false || typeof i.amplifies !== "boolean"
       || typeof i.operator !== "string" || typeof i.operatorRole !== "string" || typeof i.roleGate !== "string"
       || typeof i.action !== "string" || typeof i.beforeValue !== "string" || typeof i.afterValue !== "string"
@@ -100,15 +100,15 @@ export function useE3Proposals() {
     setQueryErrors(errors); sync();
     return errors;
   }
-  async function send(record: E3Proposal) {
+  async function send(record: E3Proposal, retry = true) {
     if (sending.current || !allowed(record.input.command.op === "e3_config_batch")) throw new Error("FORBIDDEN");
     if (record.owner !== owner || isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
     if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("E3_PROPOSAL_STORAGE_UNAVAILABLE");
     sending.current = true; setBusy(record.commandKey);
     try {
       const ticket = await createA2OperationProposal(record.input, record.commandKey, true);
-      // A successful replay is the original receipt, not today's configuration or approval status.
-      commands.remember(record.fingerprint, record.commandKey, { ...record, state: "pending", ticketId: ticket.id });
+      // E3 replays the creation receipt. Only a current-ticket GET can establish pending after retry.
+      commands.remember(record.fingerprint, record.commandKey, { ...record, state: retry ? "submitted" : "pending", ticketId: ticket.id });
     } catch (error) {
       // A2 performs object-lock checks inside command deduplication. A lock refusal is a verdict on this command.
       if (isExplicitRejection(error)) commands.forget(record.fingerprint, record.commandKey);
@@ -132,7 +132,7 @@ export function useE3Proposals() {
       commands.forget(fingerprint, key); sync(); throw new Error("E3_PROPOSAL_STORAGE_UNAVAILABLE");
     }
     const record = commands.list().find(r => r.commandKey === key)!;
-    sync(); await send(record);
+    sync(); await send(record, false);
   }
   /** Visual handoff: only an explicit operator action may release expired, authoritatively absent proposals. */
   async function releaseMissing(record: E3Proposal) {

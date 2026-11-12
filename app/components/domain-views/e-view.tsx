@@ -857,7 +857,6 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
               }
               setActionConfirm(null);
               await refreshE3();
-              setToast("已提交，等待审批后执行");
               return;
             }
             if (!e3Proposals.allowed(e3Confirm === "param-multi") || e3Loading || e3Error || !e3Ready) throw new Error("FORBIDDEN");

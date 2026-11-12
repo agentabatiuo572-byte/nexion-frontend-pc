@@ -139,15 +139,16 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       } catch (error) { ctx.toast(displayAdminError(error)); }
     } : undefined,
     retry: async (p: typeof E3_PROPOSALS[number]) => {
-      try { await e3Proposals.send(p.original); await ctx.refreshE3(); ctx.toast("已提交，等待审批后执行"); }
+      try { await e3Proposals.send(p.original); await ctx.refreshE3(); }
       catch (error) { if (isExplicitRejection(error)) await ctx.refreshE3(); ctx.toast(displayAdminError(error)); }
     },
   };
   const lead = E3_PROPOSALS.filter(p => p.state !== "pending");
-  const recovery = <>{lead.map((p) => p.state === "unknown"
-      ? <Notice key={p.id} tone="warn" title={`${p.label} · 提交结果未确认`} actionBelow
-          action={<>{E3_RECOVERY.lookup && <Button size="sm" disabled={!!e3Proposals.busy} onClick={() => void E3_RECOVERY.lookup!(p)}>查询原操作</Button>}{e3Proposals.allowed(p.input.command.op === "e3_config_batch") && <Button size="sm" disabled={!!e3Proposals.busy} onClick={() => void E3_RECOVERY.retry(p)}>按原操作重试</Button>}</>}>
-          原内容、理由和命令号已保存，可能已经生成审批单。先查原操作；查不到再按原内容重试，不会另建一张。原理由：{p.reason}</Notice>
+  const recovery = <>{lead.map((p) => p.state === "unknown" || p.state === "submitted"
+      ? <Notice key={p.id} tone="warn" title={`${p.label} · ${p.state === "submitted" ? "当前审批状态待核对" : "提交结果未确认"}`} actionBelow
+          action={<>{E3_RECOVERY.lookup && <Button size="sm" disabled={!!e3Proposals.busy} onClick={() => void E3_RECOVERY.lookup!(p)}>查询原操作</Button>}{p.state === "unknown" && e3Proposals.allowed(p.input.command.op === "e3_config_batch") && <Button size="sm" disabled={!!e3Proposals.busy} onClick={() => void E3_RECOVERY.retry(p)}>按原操作重试</Button>}</>}>
+          {p.state === "submitted" ? <>申请已提交过，现在批没批准还没查到。原内容、理由和命令号继续保留，请查询原操作。原理由：{p.reason}</>
+            : <>原内容、理由和命令号已保存，可能已经生成审批单。先查原操作；查不到再按原内容重试，不会另建一张。原理由：{p.reason}</>}</Notice>
       : p.state === "expired"
         ? <Notice key={p.id} tone="warn" title={`${p.label} · 已超过 24 小时，只能查询`} actionBelow action={E3_RECOVERY.lookup && <Button size="sm" disabled={!!e3Proposals.busy} onClick={() => void E3_RECOVERY.lookup!(p)}>查询原操作</Button>}>
             {p.at} 提交的这次修改结果一直没确认。超过 24 小时不再重新发送，只能按原命令号查询有没有生成审批单。</Notice>
@@ -229,7 +230,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     detail: `批准后生效。${m.detail}`, effect: effect(true), facts: m.facts, coverageLead: m.coverageLead,
     statedBrief: { impact: m.impact, check: "核对这一组每一项的现在和改后，理由写清依据或工单号。这一组所有值都会发送，没改的按现在的值。" },
   });
-  const unsettledFor = (keys: readonly string[]) => E3_PROPOSALS.find((p) => (p.state === "unknown" || p.state === "expired") && p.keys.some((key) => keys.includes(key)));
+  const unsettledFor = (keys: readonly string[]) => E3_PROPOSALS.find((p) => (p.state === "unknown" || p.state === "submitted" || p.state === "expired") && p.keys.some((key) => keys.includes(key)));
   const pendingTag = (keys: readonly string[]) => {
     const p = pendingFor(keys), u = unsettledFor(keys);
     const pendingDetail = E3_PROPOSALS.filter(p => p.state === "pending" && p.keys.some(k => keys.includes(k))).map(p =>
@@ -238,7 +239,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           : /stageEarlyEnd|stageMidEnd|cycleMonths/.test(k) ? " 月" : k.endsWith("maxDevicesPerOrder") ? " 台" : "";
         return `${keyName(k)}：${p.after[k]}${unit}`;
       }).join("；")}。`).join("\n");
-    if (u) return <StatusTag tone="warn" explain={`${u.label}：${u.at} 提交的结果还没确认，先在页面上方查询原操作。`}>结果未确认</StatusTag>;
+    if (u) return <StatusTag tone="warn" explain={u.state === "submitted" ? `${u.label}：申请已提交过，现在批没批准还没查到，先在页面上方查询原操作。` : `${u.label}：${u.at} 提交的结果还没确认，先在页面上方查询原操作。`}>结果未确认</StatusTag>;
     return p && <StatusTag tone="progress" icon={Clock3} explain={pendingDetail}>待批准</StatusTag>;
   };
   const adjust = (keys: readonly string[], onClick: () => void, batch = false, label = "调整") => ctx.canWriteE3
