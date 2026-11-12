@@ -548,7 +548,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       {unresolvedInvite && <Button size="sm" onClick={() => openTab(isPersonal ? "home" : "mine")}>核对邀请码原操作</Button>}
       {unresolvedAvatar && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => setRecoveryRevision(n => n + 1)} />}
       {unresolvedBulk && <Button size="sm" onClick={() => setBulkRecovery(true)}>核对群发原操作</Button>}
-      {unresolvedPayments.map(row => <Button size="sm" key={row.commandKey} onClick={() => setProfileId(row.userId)}>核对支付安全原操作</Button>)}
+      {unresolvedPayments.map(row => <Button size="sm" key={row.commandKey} onClick={() => setProfileId(row.userId)}>{unresolvedPayments.length > 1 ? `核对支付安全原操作 · user:${row.userId}` : "核对支付安全原操作"}</Button>)}
     </>}>原对象、内容、理由与命令号保留；超过 24 小时只查询和核对。</Notice>}
 
     {!(isPersonal && currentTab === "home") && navigation}

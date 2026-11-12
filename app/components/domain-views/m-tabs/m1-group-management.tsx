@@ -230,7 +230,8 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
     <Facts><Fact k="专属客服">{invitePending?.intent.payload.name ?? inviteMember?.name}</Fact><Fact k="原邀请码">{invitePending?.intent.payload.code ?? inviteTarget?.code}</Fact></Facts>
     <Notice tone="danger">{invitePending?.intent.payload.code ?? inviteTarget?.code} 会立即失效，之后填这个码注册会提示邀请码无效；已经绑定的客户不受影响。</Notice>
     <Field label="作废原因" required help={inviteReasonTouched && inviteReason.error ? undefined : "请填写 8–200 字，将记入操作记录。"} error={inviteReasonTouched && inviteReason.error ? `${inviteReason.error}。` : undefined}>{control => <Textarea {...control} rows={3} value={inviteReasonInput} count={`${inviteReason.length} / 200`} disabled={inviteBusy || !!invitePending} placeholder="至少 8 个字，会记入操作记录" onChange={e => { const reason = e.target.value; setInviteReasonTouched(true); setInviteRevoke(old => old && { ...old, reason }); }} />}</Field>
-    {inviteError && <Notice tone="danger">{inviteError}</Notice>}
+    {/* 结果还没确认是警示；明确被拒、其他失败才用红。 */}
+    {inviteError && <Notice tone={invitePending && !inviteRejected.includes(invitePending.commandKey) ? "warn" : "danger"}>{inviteError}</Notice>}
 
     </div>
   </Modal>;
