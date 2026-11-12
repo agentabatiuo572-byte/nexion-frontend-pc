@@ -296,7 +296,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
 
       <Panel title="最近 24 小时" icon={Clock3} tone="role-2" sub={rate ? `成功率 ${rate}` : "24 小时内没有处理"}
         explain={<><p>按服务器时间往前 24 小时统计。成功率 = 成功 ÷（成功 + 失败），恢复不算进去；三类来源不同，同一台设备可能被算进多类。</p><p>恢复：回收、停用是之后被恢复的次数；置换是 24 小时内回退的申请数。</p><p>这页不代用户换机，也不处理单台设备；单台设备在「设备管理」里看。</p></>}
-        actions={reach(ledgerHref, "finance_d4_read") && <Link className="rd-link" href={ledgerHref}>查看失败的置换账单</Link>}>
+        actions={reach(ledgerHref, "finance_d4_read") && <Link className="rd-link" href="/finance/ledger?keyword=tradein&status=FAILED">查看失败的置换账单</Link>}>
         <Table label="最近 24 小时的回收、置换、停用">
           <thead><tr><Th>类别</Th><Th align="right">成功</Th><Th align="right">失败</Th><Th align="right">恢复</Th><Th>最近记录</Th></tr></thead>
           <tbody>
