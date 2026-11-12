@@ -414,7 +414,8 @@ function G3MarketEditor() {
     if (staleMarket) setMarketConfirm(null);
     if (staleDirect) openActionConfirm(null);
     toast("原操作已完成，正在重新读取 UVT 价格；读取成功后再发起新修改。");
-  }, [rereadPending, session, marketConfirm, confirm, toast]);
+    // commandVersion：原记录被了结（明确拒绝或成功）后要重新判断，恢复框不能留成一个按旧概览画的新修改框。
+  }, [rereadPending, session, marketConfirm, confirm, toast, commandVersion]);
 
   useEffect(() => {
     let cancelled = false;
