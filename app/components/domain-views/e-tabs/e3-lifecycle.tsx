@@ -10,6 +10,9 @@ import Link from "next/link";
 import { ArrowLeftRight, BookOpen, Clock3, Gauge, Hourglass, Info, PackageOpen, RefreshCw, Wallet } from "lucide-react";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { displayAdminError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { e3ConfigAmplifies } from "@/lib/admin/e3-outflow";
 import { BlockState, Button, Cell, Conclusion, ConfigList, ConfigRow, Explain, Fact, Facts, Fold, Notice, PageHeader, Panel,
   ScaleBar, Stat, StatBand, StatusTag, StepBar, Table, TableMessage, Td, Th, Tr, TrendLines } from "@/app/components/rd";
@@ -93,19 +96,13 @@ const keyName = (key: string) => NAMES[key]
   : key);
 const ELIGIBILITY = ["全部用户", "L2+ 持有者", "L3+ 持有者", "L4+ 持有者", "L5+ 持有者", "L6+ 持有者"];
 
-/**
- * E3 提案的读回：待批准、结果未确认、超过 24 小时只能查询、被驳回。
- * 界面已备好，等代码 worker 接 A2 按命令号读回和 R1 恢复（重构说明 C4、R2-03）。现在恒为空，页面上不出现这些条。
- */
-type E3Proposal = { id: string; label: string; keys: readonly string[]; after: Readonly<Record<string, string>>; state: "pending" | "unknown" | "expired" | "rejected"; at: string; reason?: string };
-const E3_PROPOSALS: readonly E3Proposal[] = [];
-/** 查询原操作、按原操作重试：等代码 worker 接上后传进来，没接时不显示按钮。 */
-const E3_RECOVERY: { lookup?: (proposal: E3Proposal) => void; retry?: (proposal: E3Proposal) => void } = {};
-
 const num = (value: string) => Number(value);
 const signed = (value: string) => `${num(value) > 0 ? "+" : ""}${value}%`;
 const countText = (value: number) => value.toLocaleString("zh-CN");
-const usdtText = (value: number) => `${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDT`;
+const usdtText = (value: string) => {
+  const [whole, fraction = ""] = value.split(".");
+  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.replace(/0+$/, "").padEnd(2, "0")} USDT`;
+};
 const capText = (value: number) => `${Number(value.toFixed(2))}%`;
 
 /** 产能（%）：分段连乘再取下限，和后端 E3CapacityCurve 同一个算法。只用来画图和写预览，不参与提交。 */
@@ -130,7 +127,31 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const reach = useReach();
   const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
   const [manualOpen, setManualOpen] = useState(false);
-  const { pE, e3Loading, e3Error, e3Ready, e3Stats, e3Operations } = ctx;
+  const { pE, e3Loading, e3Error, e3Ready, e3Stats, e3Operations, e3Proposals } = ctx;
+  const E3_PROPOSALS = e3Proposals.records.map(p => ({ ...p, original: p, id: p.commandKey, reason: p.input.reason,
+    state: p.state === "unknown" && isRetryExpired(p) ? "expired" as const : p.state,
+    at: new Date(p.createdAt).toLocaleString("zh-CN") }));
+  const E3_RECOVERY = {
+    lookup: e3Proposals.canQuery ? async (p: typeof E3_PROPOSALS[number]) => {
+      try {
+        if (!await e3Proposals.lookup(p.original)) { ctx.toast("暂未查到原提案，结果仍待核实。原操作继续保留，不会重新提交。"); return; }
+        await ctx.refreshE3();
+      } catch (error) { ctx.toast(displayAdminError(error)); }
+    } : undefined,
+    retry: async (p: typeof E3_PROPOSALS[number]) => {
+      try { await e3Proposals.send(p.original); await ctx.refreshE3(); ctx.toast("已提交，等待审批后执行"); }
+      catch (error) { if (isExplicitRejection(error)) await ctx.refreshE3(); ctx.toast(displayAdminError(error)); }
+    },
+  };
+  const lead = E3_PROPOSALS.filter(p => p.state !== "pending");
+  const recovery = <>{lead.map((p) => p.state === "unknown"
+      ? <Notice key={p.id} tone="warn" title={`${p.label} · 提交结果未确认`} actionBelow
+          action={<>{E3_RECOVERY.lookup && <Button size="sm" disabled={!!e3Proposals.busy} onClick={() => void E3_RECOVERY.lookup!(p)}>查询原操作</Button>}{e3Proposals.allowed(p.input.command.op === "e3_config_batch") && <Button size="sm" disabled={!!e3Proposals.busy} onClick={() => void E3_RECOVERY.retry(p)}>按原操作重试</Button>}</>}>
+          原内容、理由和命令号已保存，可能已经生成审批单。先查原操作；查不到再按原内容重试，不会另建一张。原理由：{p.reason}</Notice>
+      : p.state === "expired"
+        ? <Notice key={p.id} tone="warn" title={`${p.label} · 已超过 24 小时，只能查询`} actionBelow action={E3_RECOVERY.lookup && <Button size="sm" disabled={!!e3Proposals.busy} onClick={() => void E3_RECOVERY.lookup!(p)}>查询原操作</Button>}>
+            {p.at} 提交的这次修改结果一直没确认。超过 24 小时不再重新发送，只能按原命令号查询有没有生成审批单。</Notice>
+        : <Notice key={p.id} tone="done" title={`${p.label} · 已驳回`}>审批人没有同意，规则没有变化。要改请重新提交。</Notice>)}</>;
   const missing = REQUIRED_E3_KEYS.filter((key) => pE(key) === "—");
   const ready = e3Ready && missing.length === 0;
 
@@ -147,6 +168,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   if (!ready) {
     return <div className="e3p">
       {header}
+      {recovery}
       {e3Loading && !e3Ready ? <BlockState state="loading" title="正在读取规则和统计…" />
         : e3Error ? <BlockState state="error" title="规则和统计没有读到" detail={`${e3Error.replace(/[。.]+$/, "")}。这页的数字和规则都不显示，避免把旧值当成现在的。`} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
         : e3Ready ? <BlockState state="error" title={`规则没有读全：缺 ${missing.length} 项`} detail={`缺 ${[...new Set(missing.map(keyName))].slice(0, 6).join("、")}${missing.length > 6 ? " 等" : ""}。读全之前不显示规则，也不能修改，请稍后重新读取或联系后端核对配置。`} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
@@ -165,12 +187,15 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const tradeinOn = pE("E.tradein.enabled") === "开";
   const stats = e3Stats;
   const lateFrom = s2 + 1;
-  const pendingFor = (keys: readonly string[]) => E3_PROPOSALS.find((p) => p.state === "pending" && p.keys.some((key) => keys.includes(key)));
+  const pendingFor = (keys: readonly string[]) => {
+    const proposals = E3_PROPOSALS.filter(p => p.state === "pending" && p.keys.some(k => keys.includes(k)));
+    return proposals.length ? { ...proposals[0], after: Object.assign({}, ...proposals.map(p => p.after)) } : undefined;
+  };
   const proposalOnly = authorities.includes("platform_a2_proposal_create") && !authorities.includes("platform_a2_write");
   const BATCH_BLOCKED = "你的账号只有提案权，后端目前不接受这类账号提交成组修改（已提后端）。单项修改不受影响；这组请有完整审批写权限的同事提交。";
 
   const effect = (batch: boolean) => <StatusTag tone="progress" filled explain={batch ? E3_APPROVER_BATCH : E3_APPROVER_SINGLE}>批准后生效</StatusTag>;
-  const open = (spec: McSpec) => ctx.openActionConfirm(spec);
+  const open = (spec: McSpec) => { if (!e3Loading && !e3Error) ctx.openActionConfirm(spec); };
 
   // ── 单项（9 个里的 7 个数值/开关、2 个选项）：name、op、paramKey、edit 的校验参数和旧页一样 ──
   const numericBounds = (key: string): { min?: number; max?: number; step?: number } => {
@@ -207,12 +232,18 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const unsettledFor = (keys: readonly string[]) => E3_PROPOSALS.find((p) => (p.state === "unknown" || p.state === "expired") && p.keys.some((key) => keys.includes(key)));
   const pendingTag = (keys: readonly string[]) => {
     const p = pendingFor(keys), u = unsettledFor(keys);
+    const pendingDetail = E3_PROPOSALS.filter(p => p.state === "pending" && p.keys.some(k => keys.includes(k))).map(p =>
+      `${p.label}：已提交申请，等另一位管理员批准，批准前仍按现在的值执行。提交于 ${p.at}。${p.keys.map(k => {
+        const unit = /Pct$|ladder\./.test(k) ? "%" : k.startsWith("E.device.taskLock.") ? " USDT" : k.endsWith("subsidyDays") ? " 天"
+          : /stageEarlyEnd|stageMidEnd|cycleMonths/.test(k) ? " 月" : k.endsWith("maxDevicesPerOrder") ? " 台" : "";
+        return `${keyName(k)}：${p.after[k]}${unit}`;
+      }).join("；")}。`).join("\n");
     if (u) return <StatusTag tone="warn" explain={`${u.label}：${u.at} 提交的结果还没确认，先在页面上方查询原操作。`}>结果未确认</StatusTag>;
-    return p && <StatusTag tone="progress" icon={Clock3} explain={`${p.label}：已提交申请，等另一位管理员批准，批准前仍按现在的值执行。提交于 ${p.at}。`}>待批准</StatusTag>;
+    return p && <StatusTag tone="progress" icon={Clock3} explain={pendingDetail}>待批准</StatusTag>;
   };
   const adjust = (keys: readonly string[], onClick: () => void, batch = false, label = "调整") => ctx.canWriteE3
     ? (describedBy: string | undefined) => <Button size="sm" aria-describedby={describedBy} onClick={onClick}
-        disabledReason={unsettledFor(keys) ? "这一项有一次提交结果未确认，先在页面上方查询原操作" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : batch && proposalOnly ? BATCH_BLOCKED : undefined}>{label}</Button>
+        disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : unsettledFor(keys) ? "这一项有一次提交结果未确认，先在页面上方查询原操作" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : batch && proposalOnly ? BATCH_BLOCKED : undefined}>{label}</Button>
     : undefined;
 
   // ── 产能的预览：改后第几个月是多少，超过 100% 时写 App 现状 ──
@@ -243,7 +274,6 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const curve = curveOf(policy, cyc);
   const pendingCurve = pendingFor(["E.device.capacity.band1DeltaPct", "E.device.capacity.band2DeltaPct", "E.device.capacity.band3DeltaPct", "E.device.capacity.floorPct", "E.device.stageEarlyEnd", "E.device.stageMidEnd"]);
   const ledgerHref = "/finance/ledger?keyword=tradein&status=FAILED";
-  const lead = E3_PROPOSALS.filter((p) => p.state !== "pending");
   const pendingCount = E3_PROPOSALS.filter((p) => p.state === "pending").length;
 
   return <div className="e3p">
@@ -254,14 +284,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       {tradeinOn ? "升级置换开启中" : "升级置换已关闭"}：平均月龄 {stats ? `${Number(stats.averageAgeMonths.toFixed(2))} 个月` : "—"}，{stats ? countText(stats.cliffDeviceCount) : "—"} 台已进入后期
     </Conclusion>
 
-    {lead.map((p) => p.state === "unknown"
-      ? <Notice key={p.id} tone="warn" title={`${p.label} · 提交结果未确认`} actionBelow
-          action={(E3_RECOVERY.lookup || E3_RECOVERY.retry) && <>{E3_RECOVERY.lookup && <Button size="sm" onClick={() => E3_RECOVERY.lookup!(p)}>查询原操作</Button>}{E3_RECOVERY.retry && <Button size="sm" onClick={() => E3_RECOVERY.retry!(p)}>按原操作重试</Button>}</>}>
-          原内容、理由和命令号已保存，可能已经生成审批单。先查原操作；查不到再按原内容重试，不会另建一张。原理由：{p.reason}</Notice>
-      : p.state === "expired"
-        ? <Notice key={p.id} tone="warn" title={`${p.label} · 已超过 24 小时，只能查询`} actionBelow action={E3_RECOVERY.lookup && <Button size="sm" onClick={() => E3_RECOVERY.lookup!(p)}>查询原操作</Button>}>
-            {p.at} 提交的这次修改结果一直没确认。超过 24 小时不再重新发送，只能按原命令号查询有没有生成审批单。</Notice>
-        : <Notice key={p.id} tone="done" title={`${p.label} · 已驳回`}>审批人没有同意，规则没有变化。要改请重新提交。</Notice>)}
+    {recovery}
 
     <StatBand label="设备和升级置换">
       <Stat label="在用设备平均月龄" icon={Hourglass} tone="role-3" value={stats ? String(Number(stats.averageAgeMonths.toFixed(2))) : "—"} unit="个月"

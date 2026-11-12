@@ -1,12 +1,12 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { formatAdminApiError, displayAdminReadError, guardedFetch } from "@/lib/admin/error-messages";
 import { operatorDeviceStatus, operatorE3OperationLabel, operatorE3OperationState, operatorE3Reason, operatorTimestamp } from "@/lib/admin/e-operator-display";
 
 export interface E3Stats {
   averageAgeMonths: number;
   cliffDeviceCount: number;
   tradeinMonthCount: number;
-  tradeinDiscountUsdt: number;
+  tradeinDiscountUsdt: string;
   k2ArbitrageHits: number;
 }
 
@@ -120,15 +120,19 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
-function toNumber(value: number | string | null | undefined, fallback = 0) {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : fallback;
-  }
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  }
-  return fallback;
+/** SQL COALESCE/COUNT guarantees these statistics; missing data is a protocol failure, not an empty fleet. */
+function toNumber(value: unknown, integer = false) {
+  if (typeof value !== "number" && (typeof value !== "string" || !value.trim())) throw new Error("E3_READ_MODEL_INVALID");
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || integer && (!Number.isSafeInteger(parsed) || parsed < 0)) throw new Error("E3_READ_MODEL_INVALID");
+  return parsed;
+}
+
+function amount(value: unknown): string {
+  if (typeof value !== "number" && typeof value !== "string") throw new Error("E3_READ_MODEL_INVALID");
+  const raw = String(value);
+  if (!/^\d+(?:\.\d{1,6})?$/.test(raw)) throw new Error("E3_READ_MODEL_INVALID");
+  return raw;
 }
 
 function text(value: string | number | null | undefined, fallback = "") {
@@ -182,9 +186,9 @@ function fromTx(row: BackendTradeinTx): E3OperationMetric {
   return {
     nm: operatorE3OperationLabel(text(row.name || row.operation)),
     endpoint: text(row.endpoint, "POST /api/admin/devices/e3/tradein"),
-    ok: toNumber(row.successCount),
-    fail: toNumber(row.failureCount),
-    roll: toNumber(row.rollbackCount),
+    ok: toNumber(row.successCount, true),
+    fail: toNumber(row.failureCount, true),
+    roll: toNumber(row.rollbackCount, true),
     k: operatorE3OperationState(text(row.latestKind, "")),
     dot: text(row.latestStatus, "ok") === "fail" ? "fail" : "ok",
     ts: timeText(row.latestAt),
@@ -206,13 +210,17 @@ async function e3Request<T>(path: string, init?: RequestInit & { idempotencyPref
     headers,
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  // Preserve the backend BigDecimal token before JSON.parse can round a large USDT sum.
+  const result = (await response.text().then(raw => JSON.parse(raw.replace(
+    /("tradeinDiscountUsdt"\s*:\s*)(\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"',
+  ))).catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(formatAdminApiError(result?.message, `E3_REQUEST_FAILED_${response.status}`));
+    const failure = formatAdminApiError(result?.message, `E3_REQUEST_FAILED_${response.status}`);
+    throw new Error(!init?.method || init.method === "GET" ? displayAdminReadError(failure) : failure);
   }
 
   return result.data as T;
@@ -224,16 +232,18 @@ export async function fetchE3Snapshot(): Promise<E3Snapshot> {
     e3Request<BackendTradeinOverview>("/e3/tradein/overview"),
   ]);
 
+  if (!overview || !overview.config || typeof overview.config !== "object" || Array.isArray(overview.config)
+    || !tradein || !Array.isArray(tradein.txStats)) throw new Error("E3_READ_MODEL_INVALID");
   return {
     params: frontendParams(overview.config),
     stats: {
       averageAgeMonths: toNumber(tradein.averageAgeMonths),
-      cliffDeviceCount: toNumber(tradein.cliffDeviceCount),
-      tradeinMonthCount: toNumber(tradein.tradeinMonthCount),
-      tradeinDiscountUsdt: toNumber(tradein.tradeinDiscountUsdt),
-      k2ArbitrageHits: toNumber(tradein.k2ArbitrageHits),
+      cliffDeviceCount: toNumber(tradein.cliffDeviceCount, true),
+      tradeinMonthCount: toNumber(tradein.tradeinMonthCount, true),
+      tradeinDiscountUsdt: amount(tradein.tradeinDiscountUsdt),
+      k2ArbitrageHits: toNumber(tradein.k2ArbitrageHits, true),
     },
-    operations: (tradein.txStats ?? []).map(fromTx),
+    operations: tradein.txStats.map(fromTx),
   };
 }
 

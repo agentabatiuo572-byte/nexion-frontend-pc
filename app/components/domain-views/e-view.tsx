@@ -18,7 +18,7 @@ import { RdPage, ReleaseModal } from "@/app/components/rd";
 import { businessClock } from "@/lib/admin/business-time";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
@@ -62,6 +62,7 @@ import type { E4PendingCommand, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types
 import { DevicePoolChoices, FIXED_DEVICE_LEVELS } from "./e-tabs/task-type-policy";
 import { E1Page } from "./e-tabs/e1-page";
 import { E2Tasks } from "./e-tabs/e2-tasks";
+import { useE3Proposals } from "./e-tabs/e3-proposals";
 import { E3Lifecycle, E3_APPROVER_BATCH, E3_APPROVER_SINGLE, E3_COVERAGE_CHECK } from "./e-tabs/e3-lifecycle";
 import { E4Orders } from "./e-tabs/e4-orders";
 import { E5Ops } from "./e-tabs/e5-ops";
@@ -156,6 +157,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     s.session?.role === "growth"
       && s.session.authorities.includes("platform_a2_proposal_create"));
   const canToggleE6 = canWriteE6 || hasToggleE6 || canProposeE6;
+  const e3Proposals = useE3Proposals();
   const rawPropose = usePropose(); // E 域高敏动作统一入 A2 后端待确认队列
   // A2 提案咽喉:E 域每一次提案的命令号都由本函数派,调用点携号也一律以稳定号为准。
   // 指纹**不含 reason**:理由是审计元数据不是意图 —— 运营在「结果未知」后补一句理由再点是极自然的
@@ -165,6 +167,12 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     // 槽位用**结构化动作标识**(command.op)而不是 spec.action:后者是运营展示文案,常内嵌输入值
     // (「上架节奏 · 延迟 1 个月 · Gen3」),值进槽位就退化成 store 文档明令避开的形态 ——
     // 换个值提交成功只清了新槽,旧槽的号原样滞留,改回原值时会复用它被后端静默去重。
+    if (spec.sourceDomain === "E3") {
+      if (!e3Ready || e3Loading || e3Error) throw new Error("E3_READ_MODEL_INVALID");
+      await e3Proposals.submit(spec, { ...e3Params });
+      toast("已提交，等待审批后执行");
+      return "proposed" as const;
+    }
     const slot = `${spec.command.op}|${spec.obj}`;
     const retained = commandAttempts.list().find(record => record.fingerprint === slot);
     if (retained && isRedesignedELegacyCommand(retained)) {
@@ -205,6 +213,9 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     k.startsWith("E.device.") || k.startsWith("E.tradein.") || k.startsWith("E.release.earlyAccess.");
   const pE = (k: string): string => isE3ParamKey(k) ? (e3Params[k] ?? "—") : "—";
   const e3Ready = Object.keys(e3Params).length > 0;
+  const e3ConfirmKeys = mc?.op === "param" && mc.paramKey && isE3ParamKey(mc.paramKey) ? [mc.paramKey]
+    : mc?.op === "param-multi" && mc.paramKeys?.every(p => isE3ParamKey(p.paramKey)) ? mc.paramKeys.map(p => p.paramKey) : [];
+  const e3Original = () => e3Proposals.records.find(r => r.state === "unknown" && r.keys.some(k => e3ConfirmKeys.includes(k)));
 
   // ── E1 商品目录 / 上架门:后端接口为单一来源 ──
   const [e1Skus, setE1Skus] = useState<OpsSku[]>([]);
@@ -291,24 +302,31 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [canReadE2]);
   useEffect(() => { if (tab === "E6" && canReadE2) void refreshE2(); }, [tab, canReadE2, refreshE2]);
 
+  const e3Reconcile = useRef(e3Proposals.reconcile);
+  e3Reconcile.current = e3Proposals.reconcile;
   // ── E3 设备使用与升级置换:服务端配置 / 概览 / tx 监控为单一来源 ──
   const refreshE3 = useCallback(async () => {
     setE3Loading(true);
     setE3Error(null);
+    setActionConfirm(current => current && (current.op === "param" && current.paramKey?.startsWith("E.") || current.op === "param-multi" && current.paramKeys?.every(p => p.paramKey.startsWith("E."))) && tab === "E3" ? null : current);
     try {
+      if (tab === "E3") {
+        const queryErrors = await e3Reconcile.current();
+        if (queryErrors.length) setToast(queryErrors[0], "error");
+      }
       const snapshot = await fetchE3Snapshot();
       setE3Params(snapshot.params);
       setE3Stats(snapshot.stats);
       setE3Operations(snapshot.operations);
     } catch (error) {
-      setE3Error(displayAdminError(error));
+      setE3Error(displayAdminReadError(error));
       setE3Params({});
       setE3Stats(null);
       setE3Operations([]);
     } finally {
       setE3Loading(false);
     }
-  }, []);
+  }, [tab]);
   useEffect(() => { if (tab === "E1" || tab === "E3") void refreshE3(); }, [tab, refreshE3]);
 
   // ── E4 订单进度:服务端数据为单一来源 ──
@@ -707,7 +725,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     canWriteE1: false, skus, e1InvalidSkus, e1Loading, e1Error, e1Gates, e1BundleDiscount, phaseCur, refreshE1,
     openSku: () => setToast("请到商品管理与上架条件编辑商品"), delSku: () => setToast("请到商品管理与上架条件删除商品"),
     canReadE2, canWriteE2, tasks, phoneTiers, yieldComparisons, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask,
-    canWriteE3, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
+    canWriteE3, e3Proposals, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4ReadBlock, e4Total, e4Query, e4KeywordInput, e4Counts, e4CountsFailed, e4ReadAt, updateE4Query, setE4KeywordInput, clearE4Filters, refreshE4,
     orderState, e4Pending, e4ReceiptAttempts, checkE4Receipt, e4PendingNotes, e4RetryRejected, e4Retrying, retryE4Pending, checkE4Pending, canQueryE4, e4QueryMissing, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
     canReadE5, canWriteE5, canForceActivateE5, canUnbindE5,
@@ -805,7 +823,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
         amplifies={!!mc.amplify}
         edit={mc.edit}
         businessForm={mc.businessForm}
-        getPendingReason={mc.orderId ? () => e4PendingCommands.list().find(record => record.orderNo === mc.orderId)?.spec.reason : undefined}
+        getPendingReason={e3Confirm ? () => e3Proposals.pendingReason(e3ConfirmKeys) : mc.orderId ? () => e4PendingCommands.list().find(record => record.orderNo === mc.orderId)?.spec.reason : undefined}
         getPendingBusinessValue={mc.orderId ? () => {
           const original = e4PendingCommands.list().find(record => record.orderNo === mc.orderId);
           return original ? Object.fromEntries(Object.entries(original.spec.command.params).map(([key, value]) => [key, String(value)])) : undefined;
@@ -825,10 +843,25 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
         facts={mc.facts}
         statedBrief={mc.statedBrief}
         reasonPlaceholder={mc.reasonPlaceholder}
-        blockedReason={mc.orderId ? e4ReadBlock : undefined}
+        blockedReason={e3Confirm ? (e3Original() ? isRetryExpired(e3Original()!) ? RETRY_EXPIRED_TEXT : !e3Proposals.allowed(e3Confirm === "param-multi") ? "这个账号已没有这项权限，请有权限的同事处理" : undefined : e3Loading || e3Error || !e3Ready ? "规则和统计没有读到" : undefined) : mc.orderId ? e4ReadBlock : undefined}
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;
+          if (e3Confirm) {
+            const saved = e3Original();
+            if (saved) {
+              try { await e3Proposals.send(saved); }
+              catch (error) {
+                if (isExplicitRejection(error)) { setActionConfirm(null); await refreshE3(); }
+                throw error;
+              }
+              setActionConfirm(null);
+              await refreshE3();
+              setToast("已提交，等待审批后执行");
+              return;
+            }
+            if (!e3Proposals.allowed(e3Confirm === "param-multi") || e3Loading || e3Error || !e3Ready) throw new Error("FORBIDDEN");
+          }
           const original = mc.orderId ? e4PendingCommands.list().find(record => record.orderNo === mc.orderId) : undefined;
           if (original) {
             await sendE4Proposal(original.spec, original);
