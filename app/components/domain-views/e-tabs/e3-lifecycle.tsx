@@ -136,7 +136,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
 
   const header = (
     <PageHeader pageId="E3" title="设备使用与升级置换"
-      summary="看设备用了多久、本月有多少升级置换，维护产能随月龄下降和旧设备抵扣的规则。"
+      summary="看设备老化和升级置换，维护产能和抵扣规则。"
       actions={<Button icon={<BookOpen size={15} aria-hidden />} onClick={() => setManualOpen(true)}>操作说明手册</Button>}
       meta={<span className="rd-toolbar"><span>打开时读取，不自动刷新</span>
         <Button variant="ghost" size="sm" loading={e3Loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.refreshE3()}>刷新</Button></span>}
@@ -251,7 +251,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     <Conclusion state={tradeinOn ? "neutral" : "warn"} icon={tradeinOn ? Gauge : undefined}
       explain={<><p>平均月龄和后期台数来自在用设备（已回收、已停用、未激活、已退役的不算），月龄按购买时间、没有时按激活时间算整月。</p><p>后期从第 {lateFrom} 月起，由「中期到第几月」决定。</p></>}
       hint={pendingCount ? `有 ${pendingCount} 张修改申请等批准，批准前按现在的规则执行。` : undefined}>
-      {tradeinOn ? "升级置换开启中" : "升级置换已关闭，App 不再给出置换报价"}：在用设备平均 {stats ? `${Number(stats.averageAgeMonths.toFixed(2))} 个月` : "—"}，{stats ? countText(stats.cliffDeviceCount) : "—"} 台已进入后期（第 {lateFrom} 月起）
+      {tradeinOn ? "升级置换开启中" : "升级置换已关闭"}：平均月龄 {stats ? `${Number(stats.averageAgeMonths.toFixed(2))} 个月` : "—"}，{stats ? countText(stats.cliffDeviceCount) : "—"} 台已进入后期
     </Conclusion>
 
     {lead.map((p) => p.state === "unknown"
@@ -291,15 +291,14 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
               value={stats.averageAgeMonths} range={{ low: s2, high: ageMax }} tone="role-3"
               ticks={[{ value: 0, text: "0" }, { value: s1, text: `${s1} 月` }, { value: s2, text: `${s2} 月` }, { value: ageMax, text: `${ageMax} 月` }]} />}
           </div>
-          <p className="e3p-note">{declining.length} 类商品按这条曲线下降；{exempt.length ? `${exempt.map((s) => s.label).join("、")}始终 100%。` : "没有免递减的商品。"}</p>
         </div>
       </Panel>
 
       <Panel title="最近 24 小时" icon={Clock3} tone="role-2" sub={rate ? `成功率 ${rate}` : "24 小时内没有处理"}
-        explain="按服务器时间往前 24 小时统计。成功率 = 成功 ÷（成功 + 失败），恢复不算进去；三类来源不同，同一台设备可能被算进多类。"
+        explain={<><p>按服务器时间往前 24 小时统计。成功率 = 成功 ÷（成功 + 失败），恢复不算进去；三类来源不同，同一台设备可能被算进多类。</p><p>恢复：回收、停用是之后被恢复的次数；置换是 24 小时内回退的申请数。</p><p>这页不代用户换机，也不处理单台设备；单台设备在「设备管理」里看。</p></>}
         actions={reach(ledgerHref, "finance_d4_read") && <Link className="rd-link" href={ledgerHref}>查看失败的置换账单</Link>}>
         <Table label="最近 24 小时的回收、置换、停用">
-          <thead><tr><Th>类别</Th><Th align="right">成功</Th><Th align="right">失败</Th><Th align="right">恢复<Explain label="恢复是什么" content="回收、停用：之后被恢复的次数；置换：24 小时内回退的申请数。" /></Th><Th>最近记录</Th></tr></thead>
+          <thead><tr><Th>类别</Th><Th align="right">成功</Th><Th align="right">失败</Th><Th align="right">恢复</Th><Th>最近记录</Th></tr></thead>
           <tbody>
             {ops.length === 0 ? <TableMessage columns={5}>24 小时内没有记录</TableMessage> : ops.map((t) => (
               <Tr key={t.nm}>
@@ -311,7 +310,6 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
               </Tr>))}
           </tbody>
         </Table>
-        <p className="e3p-note">这页不代用户换机，也不处理单台设备；单台设备在「设备管理」里看。</p>
       </Panel>
     </div>
 
@@ -384,7 +382,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           effect="关闭后 App 不再给出报价；开启后用户仍要满足设备、等级和商品的条件。开启算多付钱。"
           action={adjust(["E.tradein.enabled"], () => single({ label: NAMES["E.tradein.enabled"], key: "E.tradein.enabled", unit: "", editKind: "select", options: ["开", "关"], optionLabels: { 开: "开启", 关: "关闭" },
             title: tradeinOn ? "关闭升级置换" : "开启升级置换",
-            detail: "开启后用户仍要满足设备、等级、商品库存和上架条件；关闭后报价和提交都被拒绝。只影响之后，已完成的置换不回溯。",
+            detail: "开启后用户仍要满足设备、等级和商品条件；关闭后报价和提交都被拒绝。已完成的置换不回溯。",
             impact: "改 App 能不能升级置换。开启后会产生新的折抵，平台少收货款。",
             coverageLead: "开启升级置换会产生新的折抵，平台少收新设备货款",
             facts: <Facts><Fact k="改的是">升级置换开关</Fact><Fact k="本月申请">{stats ? `${countText(stats.tradeinMonthCount)} 笔` : "—"}</Fact></Facts> }))} />
@@ -401,7 +399,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
               detail: "四条界线一起提交、一起批准，批准后对之后的报价和提交生效，已完成的置换不回溯。",
               impact: "改旧设备按已赚回比例分到哪一档。界线往后挪，高抵扣档持续更久，平台多让利。",
               coverageLead: "这次改动会让某些旧设备落进抵扣更多的档，平台多让利",
-              facts: <Facts><Fact k="现在">{cuts.map((c) => `${c}%`).join(" · ")}</Fact><Fact k="各档比例">{credits.map((c) => `${c}%`).join(" · ")}（这次不改）</Fact></Facts>,
+              facts: <Facts><Fact k="现在">{cuts.map((c) => `${c}%`).join("、")}</Fact><Fact k="各档比例">{credits.map((c) => `${c}%`).join("、")}（这次不改）</Fact></Facts>,
               fields: [
                 { key: "cut1", paramKey: "E.tradein.ladder.cut1", label: "界线 1（%）", inputKind: "number", placeholder: "25" },
                 { key: "cut2", paramKey: "E.tradein.ladder.cut2", label: "界线 2（%）", inputKind: "number", placeholder: "50" },
@@ -411,11 +409,11 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             }), true, "调整分档界线")?.(undefined)}
             {adjust(credits.map((_, i) => `E.tradein.ladder.credit${i + 1}`), () => multi({
               name: "各档抵扣比例", title: "调整各档抵扣比例", amplify: true,
-              hint: "第 1 档（赚回最少）抵扣最多，往后逐档减少。要逐档递减，不然批准时会被拒绝。",
+              hint: "第 1 档抵扣最多，往后逐档减少；不逐档递减会在批准时被拒绝。",
               detail: "五档一起提交、一起批准，批准后对之后的报价和提交生效，已完成的置换不回溯。超过 75% 是提醒，不是上限。",
               impact: "改每一档抵扣实付价的百分之几。调高任一档，平台多让利。",
               coverageLead: "调高抵扣比例，平台多让利",
-              facts: <Facts><Fact k="现在">{credits.map((c) => `${c}%`).join(" · ")}</Fact><Fact k="分档界线">{cuts.map((c) => `${c}%`).join(" · ")}（这次不改）</Fact></Facts>,
+              facts: <Facts><Fact k="现在">{credits.map((c) => `${c}%`).join("、")}</Fact><Fact k="分档界线">{cuts.map((c) => `${c}%`).join("、")}（这次不改）</Fact></Facts>,
               fields: [
                 { key: "credit1", paramKey: "E.tradein.ladder.credit1", label: "第 1 档（低于界线 1，%）", inputKind: "number", placeholder: "75", warnAbove: 75, warnText: "超过 75% 让利很大，提交前请看一下兑付覆盖率",
                   warning: (v) => [v.credit1, v.credit2, v.credit3, v.credit4, v.credit5].map(Number).some((c, i, all) => i > 0 && !(c < all[i - 1])) ? "五档要逐档递减，不然批准时会被拒绝。" : undefined },
@@ -479,7 +477,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             hint: "目前只保存：App 不读这三个金额，改了不会触发升级提示。",
             detail: "三个一起提交、一起批准。目前 App 不读这三个值，改了不会触发升级提示（已提后端）。它们是金额，不是派单等待时间。",
             impact: "只保存三个金额，目前不触发任何提示，不改派单和收益。",
-            facts: <Facts><Fact k="现在">入门 {pE("E.device.taskLock.s1")} USDT · Pro {pE("E.device.taskLock.pro")} USDT · 机柜 {pE("E.device.taskLock.rack")} USDT</Fact><Fact k="生效情况">目前不生效</Fact></Facts>,
+            facts: <Facts><Fact k="入门设备">{pE("E.device.taskLock.s1")} USDT</Fact><Fact k="UVELBox Pro">{pE("E.device.taskLock.pro")} USDT</Fact><Fact k="UVELRack">{pE("E.device.taskLock.rack")} USDT</Fact><Fact k="生效情况">目前不生效</Fact></Facts>,
             fields: [
               { key: "s1", paramKey: "E.device.taskLock.s1", label: "入门设备（USDT）", inputKind: "number", placeholder: "40" },
               { key: "pro", paramKey: "E.device.taskLock.pro", label: "UVELBox Pro（USDT）", inputKind: "number", placeholder: "140" },

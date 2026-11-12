@@ -1020,7 +1020,6 @@
 .e3p .e3p-age-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-2) var(--rd-space-3); color: var(--rd-text-2); }
 .e3p .e3p-age-head b { color: var(--rd-text); font-size: var(--rd-text-section); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
 .e3p .e3p-sub { display: inline-flex; align-items: center; gap: var(--rd-space-1); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
-.e3p .e3p-note { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .e3p .e3p-num { font-variant-numeric: tabular-nums; }
 .e3p .e3p-num[data-zero] { color: var(--rd-text-3); }
 .e3p .e3p-num[data-tone="danger"] { color: var(--rd-danger); font-weight: var(--rd-weight-semibold); }
@@ -1035,4 +1034,7 @@
 .e3p-manual p { margin: 0; }
 .e3p-manual section { display: grid; gap: var(--rd-space-2); }
 .e3p-manual h3 { margin: 0; font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); }
-.e3p-manual ul { margin: 0; padding-inline-start: var(--rd-space-5); display: grid; gap: var(--rd-space-1); }
+.e3p-manual dl { margin: 0; display: grid; gap: var(--rd-space-2); }
+.e3p-manual dl > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: var(--rd-space-3); }
+.e3p-manual dt { color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+.e3p-manual dd { margin: 0; color: var(--rd-text-2); }
