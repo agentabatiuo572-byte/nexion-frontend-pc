@@ -13,7 +13,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   },
   {
     path: "/analytics/funnel-cohort",
-    summary: "细看一批注册用户卡在哪一步、花了多久，以及注册后还有多少人在用。",
+    summary: "看一批注册用户卡在哪一步、留下多少。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

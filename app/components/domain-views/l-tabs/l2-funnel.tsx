@@ -756,6 +756,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const stepPanel = (
     <Panel id={DETAIL_ID} role="tabpanel" aria-labelledby={`l2-step-${safeStage}`}
       title={`第 ${safeStage + 1} 步 · ${s.stage}`} icon={Hourglass} tone="role-3"
+      explain={<><p>这一步怎么算：{STEP_RULE[safeStage]}</p><p>对应事件：{STAGE_EV[safeStage] ?? s.ev}；用户阶段编号：{s.lc}。</p></>}
       sub={s.suppressed ? SMALL_SAMPLE_LABEL : s.users == null ? undefined : `${people(s.users)} 人`}
       actions={<Button size="sm" variant="ghost" loading={queryLoading} onClick={() => void applySlice(L2_STAGE_EVENTS[safeStage])}>刷新这一步</Button>}>
       <div className="rd-stack">
@@ -764,9 +765,6 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
           explain="只算走到这一步的人：从上一步发生到这一步发生隔了多久，按小时分 8 档。没走到这一步的人等了多久不在这里。">
           {dwellBlock}
         </Panel>
-        <p className="rd-note l2-rule">这一步怎么算：{STEP_RULE[safeStage]}
-          <Explain label="这一步的技术信息" content={<><p>对应事件：{STAGE_EV[safeStage] ?? s.ev}</p><p>用户阶段编号：{s.lc}</p></>} />
-        </p>
         {trialBlock}
       </div>
     </Panel>
@@ -799,11 +797,11 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
             }} />
           ))}
         </div>
-        {queryLoading && <span className="rd-note" role="status">读取中…</span>}
+        <span className="rd-toolbar-note l2-toolbar-end" role="status">{queryLoading ? "读取中…" : "改分组只换显示，改天数会重新读取"}</span>
       </div>
       {!RETENTION_SOURCE_READY && (
         <Notice tone="warn" title="留存的数据来源还没接上">
-          记录打开 App 的日活事件还没接上，算出来会是 0%。满了天数的格子先写「未接上」，曲线先不画；人数照常显示。
+          日活事件还没接上，算出来会是 0%。满了天数的格子写「未接上」，曲线不画，人数照常。
         </Notice>
       )}
       <div className="rd-split" data-detail="">
@@ -843,7 +841,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         <Segments<"cvr" | "ret" | "trial"> label="看哪项指标" value={metric}
           items={(["cvr", "ret", "trial"] as const).map((value) => ({ value, label: METRIC_NAME[value] }))}
           onChange={(value) => { if (!queryLoading) void loadCrossMetric(value); }} />
-        {queryLoading && <span className="rd-note" role="status">读取中…</span>}
+        <span className="rd-toolbar-note l2-toolbar-end" role="status">{queryLoading ? "读取中…" : "换指标会重新读取 · 维度固定，没有排序"}</span>
       </div>
       <Panel title={`各渠道、语言的${METRIC_NAME[metric]}`} icon={Languages} tone="role-3" sub={`按注册时的渠道、阶段和语言 · ${scope}`}
         explain={<>

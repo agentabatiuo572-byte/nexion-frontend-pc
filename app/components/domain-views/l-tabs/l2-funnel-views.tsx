@@ -285,8 +285,8 @@ export function RetentionHeatmap({ kind, cohorts, columns, selected, curveFor, d
         </tbody>
       </Table>
       {level
-        ? <HeatLegend low={pct(Math.min(...values))} high={pct(Math.max(...values))}><span>「未到」：这批还有人注册不满这么多天，不算 0%</span></HeatLegend>
-        : <p className="rd-note">「未到」：这批还有人注册不满这么多天；「未接上」：日活事件还没接上，不是 0%。</p>}
+        ? <HeatLegend low={pct(Math.min(...values))} high={pct(Math.max(...values))}><span>未到：还没满这么多天，不是 0%</span></HeatLegend>
+        : <div className="l2-legend"><span>未到：还没满这么多天</span><span>未接上：日活事件没接上，不是 0%</span></div>}
     </div>
   );
 }

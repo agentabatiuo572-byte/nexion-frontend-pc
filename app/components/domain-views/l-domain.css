@@ -215,7 +215,6 @@
 .l2-page .l2-dwell-lead { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-1) var(--rd-space-4); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
 .l2-page .l2-dwell-lead b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
 .l2-page .l2-dwell-lead span { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
-.l2-page .l2-rule { display: flex; align-items: center; gap: var(--rd-space-1); }
 
 /* 试用三步：一行三个格子，中间箭头上写转化率 */
 .l2-page .l2-trial { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
@@ -230,6 +229,7 @@
 
 /* 页签里的工具行：分组方式、看第几天、指标 */
 .l2-page .l2-toolbar { min-height: var(--rd-control-h); }
+.l2-page .l2-toolbar-end { margin-left: auto; }
 .l2-page .l2-days { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); }
 
 /* 热力格：深浅按表里的高低分五档（单色金），数字始终写在格子里；未到、未接上、样本过小、没有组合各一种样子 */
