@@ -2165,7 +2165,7 @@ C2 是账户处置、注销审核、限时用户数据核对及账户名单的�
 
 重新审核仍调用 `review`，`BLOCKED → IN_REVIEW`；确认框标题「重新审核」，常显申请号、系统编号、前后状态和原拦下原因／原拒绝理由，执行摘要「改回审核中，可以再完成注销或拒绝。」，按钮「确认重新审核」。取消调用 `cancel`，`BLOCKED → CANCELLED`；标题「取消注销申请」，执行摘要「申请结束，账号不注销；用户可以再提交。」，按钮「确认取消」。两者只认 `user_c1_write`，详情读到且版本未落后才给入口，发送读到的 `expectedVersion`；版本落后不开框，提示「申请状态已变化，请刷新后再审核。」，后端版本冲突沿用读回处理。
 
-完成注销为不可撤销的危险确认，**须先结清，不作废余额**。按后端 `origin/test@abaf9207` 的 `AccountDeletionAdminService.completeNow` 与 `AppUserSecurityMapper.hasUnsettledFundsOrOrders`，可用 USDT（`usdt_available`）、可用 NEX（`nex_available`）、提现冻结金额（`pending_withdraw`）任一大于 0，或有未结束的提现、充值、兑换、质押、设备订单（同时检查订单和付款状态），就转 `BLOCKED / UNSETTLED_FUNDS_OR_ORDERS`。不新增其他余额种类或结清条件。抽屉列出这些条件，并写「用户结清后，点「重新审核」再「完成注销」；用户也可以在 App 取消申请。」
+完成注销为不可撤销的危险确认，**须先结清，不作废余额**。按后端 `origin/test@abaf9207` 的 `AccountDeletionAdminService.completeNow` 与 `AppUserSecurityMapper.hasUnsettledFundsOrOrders`，可用 USDT（`usdt_available`）、可用 UVT（`nex_available`）、提现冻结金额（`pending_withdraw`）任一大于 0，或有未结束的提现、充值、兑换、质押、设备订单（同时检查订单和付款状态），就转 `BLOCKED / UNSETTLED_FUNDS_OR_ORDERS`。不新增其他余额种类或结清条件。抽屉列出这些条件，并写「用户结清后，点「重新审核」再「完成注销」；用户也可以在 App 取消申请。」
 
 **零头余额处理（产品 2026-11-09 补充）**：低于最低提现额或最低兑换量、用户自己无法清掉的余额，由用户联系客服，财务在「余额与资产调整」（C3）写理由，经审批清零；之后运营重新审核，再完成注销。仅在 `UNSETTLED_FUNDS_OR_ORDERS` 的拦下原因旁问号中说明这一路径。当前账号菜单可达且有 `user_c3_read` 时，复用 C3 已有 `/users/assets?userId={系统编号}&returnTo=…` 跳转；没有该读取入口时只显示文字。C2 不自动清零、不预填金额、不新建 C3 入口或修改 C3 页面。
 
