@@ -486,6 +486,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const canReadA2 = ctx.can("platform_a2_read");
   // 已建成、等别人批的 H4 审批单只在审批中心里；这里读一次，好让运营在本页看到哪项在等批。
   const [h4Approvals, setH4Approvals] = useState<A2OperationRow[] | "error" | null>(null);
+  const [lookupKey, setLookupKey] = useState("");
   const reloadH4Approvals = async () => {
     if (section !== "events" || !canReadA2) return;
     try {
@@ -1447,6 +1448,25 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     });
   };
 
+  // 超过 24 小时的原操作只查原审批单、不重发：查询直接做，不经确认框（共用确认框带锁定理由时按钮固定写「重试原操作」）。
+  const lookupExpiredHICommand = async (record: HIRewardCommand) => {
+    setLookupKey(record.commandKey);
+    try {
+      if (record.scope === HI_WHEEL_SCOPE) {
+        await resumeH4Wheel();
+        return;
+      }
+      const result = await submitHIRewardCommand(record.scope, record.payload);
+      toast(result.kind === "proposal" && result.ticket.status === "pending"
+        ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+      void reloadH4Approvals();
+    } catch (error) {
+      toast(displayAdminError(error), "warn");
+    } finally {
+      setLookupKey("");
+    }
+  };
+
   const openResumeHICommand = (record: HIRewardCommand, subject: string) => {
     const expired = isRetryExpired(record);
     openActionConfirm({ briefKind: "record",
@@ -1496,8 +1516,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     : retire ? "没收到系统回复，不知道这一档退役了没有。核对时按原请求原样重发，同一命令不会重复执行。"
                       : "没收到系统回复，不知道审批单建没建成。核对时先按原命令查询，查不到才按原请求原样重发，不会重复建单。"}
                 </span>
-                {!(expired && retire) && <button className="l-btn sm mc" disabled={!(record.scope === HI_WHEEL_SCOPE ? canWheelWrite : canModuleWrite)}
-                  onClick={() => openResumeHICommand(record, subject)}>{expired ? "查询原审批单" : "核对原操作"}</button>}
+                {!(expired && retire) && <button className="l-btn sm mc" disabled={!(record.scope === HI_WHEEL_SCOPE ? canWheelWrite : canModuleWrite) || !!lookupKey}
+                  onClick={() => expired ? void lookupExpiredHICommand(record) : openResumeHICommand(record, subject)}>{expired ? lookupKey === record.commandKey ? "查询中…" : "查询原审批单" : "核对原操作"}</button>}
                 {expired && retire && <button className="l-btn sm" onClick={() => void reload()}>刷新奖池</button>}
               </div>;
             })}
@@ -2241,7 +2261,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 <b>App 抽奖现在用不了</b> · App 每次抽奖前检查整个奖池：只认 UVT、USDT、代金券三种奖型，概率合计要正好 100%。有一档不合格，整个转盘都会报错。
                 <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
                   {wheelPointsTiers.length > 0 && <li>积分奖项 {wheelPointsTiers.map((tier) => text(tier.tier)).join("、")}：后端已不支持积分奖型，点该行的「退役」停用（不可撤销）。退役后概率合计会少掉这一档，要在「改奖池 / 概率」里用 UVT、USDT 或代金券补足到 100%；调高概率要提交审批单。</li>}
-                  {wheelNexTiers.length > 0 && <li>{wheelNexTiers.map((tier) => text(tier.tier)).join("、")}：奖型存成了旧名 nex，后端只认 uvt。这是后端数据问题，已提给后端修（单号 BUG-426），修好前这里不提供改名。</li>}
+                  {wheelNexTiers.length > 0 && <li id="h4-wheel-nex-note">{wheelNexTiers.map((tier) => text(tier.tier)).join("、")}：奖型存成了旧名 nex，后端只认 uvt。这是后端数据问题，已提给后端修（单号 BUG-426）。修好前这里不提供改名，这几档的「编辑」也先关着：编辑保存会把奖型改成 UVT。</li>}
                   {!wheelProbabilityOk && <li>现在概率合计 {Number(wheelProbabilitySum.toFixed(4))}%，要在「改奖池 / 概率」里用 UVT、USDT 或代金券奖项补足到 100%；调高概率要提交审批单。</li>}
                 </ul>
               </div>
@@ -2265,7 +2285,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     : real ? <span className="bdg bad">发真钱</span> : <span className="bdg dim">{({uvt:"UVT奖励",UVT:"UVT奖励",usdt:"USDT奖励",USDT:"USDT奖励",voucher:"代金券",coupon:"代金券",none:"未中奖"} as Record<string,string>)[text(tier.kind)] ?? "其他奖励"}</span>}</span>
                   <span style={{ display: "flex", gap: 6, justifyContent: "flex-end", minWidth: 100 }}>
                     {wheelPointsTier(tier) ? <button className="l-btn sm" style={{ color: "var(--danger)", borderColor: "var(--danger-border)" }} aria-label={`退役 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openRetirePointsTier(tier)} disabled={!canWheelWrite}>退役</button> : <>
-                      <button className="l-btn sm mc" aria-label={`编辑 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openEditWheelTier(tier)} disabled={!canWheelWrite || wheelLegacyNexTier(tier)} title={wheelLegacyNexTier(tier) ? "这一档的奖型是旧名 nex，编辑保存会把它改成 UVT；等后端修正数据（BUG-426）后再编辑" : undefined}>编辑</button>
+                      <button className="l-btn sm mc" aria-label={`编辑 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openEditWheelTier(tier)} disabled={!canWheelWrite || wheelLegacyNexTier(tier)} aria-describedby={wheelLegacyNexTier(tier) ? "h4-wheel-nex-note" : undefined} title={wheelLegacyNexTier(tier) ? "这一档的奖型是旧名 nex，编辑保存会把它改成 UVT；等后端修正数据（BUG-426）后再编辑" : undefined}>编辑</button>
                       <button className="l-btn sm" aria-label={`删除 ${text(tier.tier)}（${wheelRewardText(tier.reward)}）`} onClick={() => openDeleteWheelTier(tier)} disabled={numericValue(tier.prob) !== 0 || !canWheelWrite} title={numericValue(tier.prob) === 0 ? "删除档位" : "先将概率调为 0%"}>删除</button>
                     </>}
                   </span>

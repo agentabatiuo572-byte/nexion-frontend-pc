@@ -787,9 +787,11 @@ function reviewPair(before: string, after: string, operationCode?: string) {
 
   // Decimal strings and JSON numbers compare without rounding or false scale-only changes.
   const decimal = (value: unknown) => String(value).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  // 奖型和 H4 页面同一套叫法；旧名 nex、points 照实写出来，不当成合法奖型。
+  const kindText = (kind: unknown) => ({ uvt: "UVT", usdt: "USDT", coupon: "代金券", voucher: "代金券", nex: "旧奖型 nex", points: "积分奖型" } as Record<string, string>)[String(kind).toLowerCase()] ?? kind;
   const tiers = snapshot.map(tier => ({
     tierName: tier.tier, rewardName: tier.reward, probabilityPct: decimal(tier.prob),
-    realOutflow: tier.real === true || tier.real === 1, rewardKind: tier.kind,
+    realOutflow: tier.real === true || tier.real === 1, rewardKind: kindText(tier.kind),
     rewardAmount: decimal(tier.amount), voucherId: tier.voucherId || "无", dailyStock: tier.dailyStock,
   }));
   const values = a.value;
@@ -820,15 +822,25 @@ function reviewPair(before: string, after: string, operationCode?: string) {
       tierName: values.tierName, rewardName: values.rewardName,
       probabilityPct: decimal(values.probabilityPct ?? target?.probabilityPct ?? 0),
       realOutflow: values.realOutflow == null ? target?.realOutflow ?? false : values.realOutflow === 1,
-      rewardKind: values.rewardKind ?? target?.rewardKind ?? "uvt",
+      rewardKind: values.rewardKind == null ? target?.rewardKind ?? kindText("uvt") : kindText(values.rewardKind),
       rewardAmount: decimal(values.rewardAmount ?? target?.rewardAmount ?? 0),
       voucherId: values.voucherId == null ? target?.voucherId ?? "无" : String(values.voucherId).trim() || "无",
       dailyStock: values.dailyStock ?? target?.dailyStock ?? 0,
     };
   }
+  // 改一档、删一档时，每一行都带上是哪一档（和改概率的写法一样），不然差异里只看得到「发放数量 1 → 2」。
+  if (operationCode === "h4_wheel_tier_update" || operationCode === "h4_wheel_tier_delete") {
+    const named = (row: Record<string, unknown>) => Object.fromEntries(Object.entries(row).map(([key, value]) => {
+      if (key === "tierName" || !labels[key]) return [key, value];
+      wheelLabels[`tier:${key}`] = `${String(values.tierName)} · ${labels[key]}`;
+      return [`tier:${key}`, value];
+    }));
+    if (was) was = named(was);
+    next = named(next);
+  }
   // Existing row groups keep verification evidence out of the business-field diff.
   next.wheelEvidence = [{ wheelSignature: b.value.wheelSignature, expectedSignature: values.expectedSignature }];
-  next.wheelSnapshot = snapshot;
+  next.wheelSnapshot = tiers;
   return {
     b: was ? { kind: "object" as const, value: was } : null,
     a: { kind: "object" as const, value: next }, labels: wheelLabels,

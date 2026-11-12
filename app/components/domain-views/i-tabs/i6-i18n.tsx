@@ -86,6 +86,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const canReadA2 = isSuperadmin || !!session?.authorities.includes("platform_a2_read");
   // 已建成、等别人批的课程审批单只在审批中心里；这里读一次，在课程区常显哪门课在等批。
   const [courseApprovals, setCourseApprovals] = useState<A2OperationRow[] | "error" | null>(null);
+  const [lookupKey, setLookupKey] = useState("");
   const reloadCourseApprovals = async () => {
     if (view !== "learn" || !canReadA2) return;
     try {
@@ -698,6 +699,20 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         const approvals = Array.isArray(courseApprovals) ? courseApprovals : [];
         if (!records.length && !approvals.length && courseApprovals !== "error") return null;
         const courseTitle = (id: string) => nexGridBrandText(allCourses.find((course) => course.id === id)?.title ?? id);
+        // 超过 24 小时的原操作只查原审批单、不重发：查询直接做，不经确认框（共用确认框带锁定理由时按钮固定写「重试原操作」）。
+        const lookupExpired = async (record: HIRewardCommand) => {
+          setLookupKey(record.commandKey);
+          try {
+            const result = await submitHIRewardCommand(record.scope, record.payload);
+            toast(result.kind === "proposal" && result.ticket.status === "pending"
+              ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+            void reloadCourseApprovals();
+          } catch (error) {
+            toast(displayAdminError(error), "warn");
+          } finally {
+            setLookupKey("");
+          }
+        };
         const subject = (record: HIRewardCommand) => record.payload.kind === "proposal"
           ? `${record.payload.input.action} · ${courseTitle(record.payload.input.obj)} ${String(record.payload.input.command.params.version ?? "")}`.trim()
           : "原操作";
@@ -716,7 +731,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   <b>{label}</b> <span className={`bdg ${expired ? "dim" : "warn"}`}>{expired ? "已超过 24 小时" : "结果未确认"}</span><br />
                   {expired ? "不能再按原请求重发，只能查询原审批单。" : "没收到系统回复，不知道审批单建没建成。核对时先按原命令查询，查不到才按原请求原样重发，不会重复建单。"}
                 </span>
-                <button className="l-btn sm mc" disabled={!canPublishI7} onClick={() => openActionConfirm({ briefKind: "record",
+                <button className="l-btn sm mc" disabled={!canPublishI7 || !!lookupKey} onClick={() => expired ? void lookupExpired(record) : openActionConfirm({ briefKind: "record",
                   action: `核对原操作 · ${label}`,
                   detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原命令查询；查不到才按原请求原样重发，不会重复执行。理由沿用原操作。</>,
                   confirmLabel: expired ? "查询原审批单" : "核对原操作",
@@ -727,7 +742,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
                     void reloadCourseApprovals();
                   },
-                })}>{expired ? "查询原审批单" : "核对原操作"}</button>
+                })}>{expired ? lookupKey === record.commandKey ? "查询中…" : "查询原审批单" : "核对原操作"}</button>
               </div>;
             })}
             {approvals.map((row) => <div className="itint" key={row.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
@@ -746,7 +761,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     return <>{courseRecovery}<section className="l-card"><div className="l-b"><div className="itint">{view === "i18n" ? "多语言词条" : "教程"}数据加载中…</div></div></section></>;
   }
   if (!data) {
-    return <>{courseRecovery}<section className="l-card"><div className="l-b"><div className="itint danger">暂无{view === "i18n" ? "多语言词条" : "教程"}数据</div></div></section></>;
+    return <>{courseRecovery}<section className="l-card"><div className="l-b"><div className="itint danger">{view === "i18n" ? "多语言词条" : "教程"}数据没有读到，请点页面上方的「重新加载」重试</div></div></section></>;
   }
 
   /* ============ render ============ */
