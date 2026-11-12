@@ -86,7 +86,7 @@ export function modelDiffRows(before: EditableModel, after: EditableModel, dimen
   rows.push({ key: "low", label: "中风险起始分", before: `${before.bandLowMax} 分`, after: `${after.bandLowMax} 分` });
   rows.push({ key: "high", label: "高风险起始分", before: `${before.bandHighMin} 分`, after: `${after.bandHighMin} 分` });
   rows.push({ key: "esc", label: "自动升级线", before: `${before.autoEscalateScore} 分`, after: `${after.autoEscalateScore} 分`,
-    note: after.autoEscalateScore < before.autoEscalateScore ? "线变低：发布后更多新提现会转人工审核。" : undefined });
+    note: after.autoEscalateScore < before.autoEscalateScore ? "线变低：分数落在新旧两条线之间的人，新提现也会发升级告警；没被「提现风险规则」冻结或延迟的转人工审核。" : undefined });
   for (const item of K4_MAPPING_FIELDS) rows.push({ key: item.key, label: fieldName(item.label), before: mappingText(item.key, before.scoreMappings[item.key]), after: mappingText(item.key, after.scoreMappings[item.key]) });
   return rows;
 }
@@ -165,7 +165,7 @@ export function WeightTable({ dimensions, active, draft, activeLabel, draftLabel
     return compare !== undefined && compare !== on ? <span className="k4-source-change">{tag}<span className="k4-delta">已改</span></span> : tag;
   };
   return (
-    <Table label="五维权重" className="k4-weights">
+    <Table label="五维权重" className="k4-weights" data-single={draft ? undefined : ""}>
       <thead><tr>
         <Th>维度</Th>
         <Th>{activeLabel}</Th>
@@ -226,7 +226,7 @@ export function ContributionTable({ rows, total, label }: { rows: K4Contribution
         <Th>维度 · 命中</Th>
         <Th align="right">子分 · 权重</Th>
         <Th>贡献</Th>
-        <Th><span className="k4-th">证据（后端原文）<Explain label="证据是什么" content="后端拼好的原文：金额带美元符号、四舍五入到 2 位，没有单独的币种和精确金额。这里原样显示，不作为精确金额（已提后端 K4-BE-01）。" /></span></Th>
+        <Th><span className="k4-th">证据（后端原文）<Explain label="证据是什么" content="评分时记下的原文：金额带美元符号、保留 2 位小数，没有单独的币种和精确金额。这里原样显示，不作为精确金额（已提后端 K4-BE-01）。" /></span></Th>
       </tr></thead>
       <tbody>
         {rows.map((row) => (

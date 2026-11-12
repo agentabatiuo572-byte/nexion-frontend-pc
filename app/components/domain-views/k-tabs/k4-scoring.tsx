@@ -28,6 +28,8 @@ import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { k4Commands, k4Slot, k4Target, saveK4Operation, type K4Attempt, type K4Operation, type K4PendingCommand, type K4Snapshot } from "@/lib/admin/k4-command";
 import { openK4Confirmation } from "./k4-confirmations";
+import { expiredTag, KRecoveryNotice, MidId, unknownTag, type KRecoveryRow } from "./k-recovery";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import type { KCtx } from "./types";
@@ -42,27 +44,26 @@ function errorText(error: unknown) {
 
 type K4Tab = "model" | "users" | "alerts";
 
-/** 待确认记录的槽位名换成运营看得懂的操作名。 */
+/** 原操作的槽位名换成运营看得懂的操作名。 */
 function slotLabel(slot: string) {
-  if (slot.startsWith("alert-read:")) return "标为已读";
+  if (slot.startsWith("alert-read:")) return "告警标为已读";
   if (slot === "model-draft") return "保存评分规则草稿";
   if (slot === "model-publish") return "发布评分规则草稿";
   if (slot === "batch-recompute") return "全部恢复系统评分";
-  if (slot.startsWith("model-restore-")) return `把旧版本 v${slot.slice("model-restore-".length)} 恢复为草稿`;
-  if (slot.startsWith("override:")) return `手动改分 · ${slot.slice("override:".length)}`;
-  if (slot.startsWith("recompute:")) return `恢复系统评分 · ${slot.slice("recompute:".length)}`;
+  if (slot.startsWith("model-restore-")) return "旧版本恢复为草稿";
+  if (slot.startsWith("override:")) return "手动改分";
+  if (slot.startsWith("recompute:")) return "恢复系统评分";
   return "评分操作";
 }
 
-const timeText = (value: number) => {
-  const date = new Date(value);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-};
+/** 后端存的时间（北京时间、不带时区）写成「2026-11-08 09:20」，时区每块标一次。 */
+const stamp = (value: string | null | undefined) => (value ? formatBusinessTimeCompact(value, value) : "—");
+/** 规则版本只有一种写法：「v3」。后端给的「k4-v3」去掉前缀。 */
+const versionText = (value: string | number | null | undefined) => value === null || value === undefined || value === "" ? "—" : `v${String(value).replace(/^k4-v/i, "").replace(/^v/i, "")}`;
 
 const STATE_TEXT: Record<string, string> = { active: "生效中", draft: "草稿", archived: "已归档" };
 const SCORE_STATE_TEXT: Record<string, string> = { "manually-overridden": "人工改分", "model-scored": "系统评分" };
-const PRIORITY_TEXT: Record<string, string> = { ESCALATED: "已转人工审核" };
+const PRIORITY_TEXT: Record<string, string> = { ESCALATED: "已升级" };
 const bandOf = (score: number, model: Pick<K4Model, "bandLowMax" | "bandHighMin">) => score >= model.bandHighMin ? "高风险" : score >= model.bandLowMax ? "中风险" : "低风险";
 /** 分档标签：低风险对勾、中风险警示、高风险盾牌，不用时钟。 */
 function BandTag({ tone, children }: { tone: string; children: ReactNode }) {
@@ -310,7 +311,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         ctx.toast(`操作失败 · ${errorText(error)}`);
         throw error;
       }
-      ctx.toast(`结果暂未确认 · 请保留弹窗直接重试，或先核对 · 命令号 ${commandKey}`);
+      ctx.toast("结果未知 · 可能已经生效，可以在框里按原请求重试，或在页面上方查询原结果");
       throw new K1OutcomeUncertainError(errorText(error), commandKey);
     } finally {
       syncPending();
@@ -326,11 +327,11 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   const openOperation = (operation: K4Operation) => {
     const retained = pendingFor(operation);
     if (retained && !retained.operation) {
-      ctx.toast("原记录没有完整请求，只能重新读取核对；请保留命令号到操作记录核查");
+      ctx.toast("原记录没有保存完整请求，只能查询原结果，或到「操作记录与审批」核对");
       return;
     }
     if (retained?.operation && k4Slot(retained.operation) !== k4Slot(operation)) {
-      ctx.toast("这个对象有原操作结果待确认，请先重新读取核对原记录");
+      ctx.toast("这个对象有结果未知的原操作，先在页面上方查询原结果或按原请求重试");
       return;
     }
     const original = retained?.operation ?? operation;
@@ -468,21 +469,57 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
 
   const header = (
     <PageHeader pageId="K4" title="风险评分规则" summary="维护给用户打风险分的模型，查单个用户为什么是这个分。"
-      meta={readAt && overview && !ctx.contentError ? `读取于 ${timeText(readAt)}（本机时间）· 待重新计算时每 1.5 秒自动刷新，其余手动刷新` : undefined}
-      readOnly={canModelWrite || canOverride || canRecompute ? undefined : "当前账号只能查看这页"}
+      meta={readAt && overview && !ctx.contentError ? `读取于 ${formatBusinessTimeCompact(new Date(readAt).toISOString())}（${businessZone().label}）· 待重新计算时每 1.5 秒自动刷新，其余手动刷新` : undefined}
+      readOnly={canModelWrite || canOverride || canRecompute ? undefined : isSuperAdmin ? "当前账号只能查看评分，提现升级告警可以标为已读" : "当前账号只能查看这页"}
       actions={<Button icon={<RefreshCw size={14} aria-hidden />} loading={ctx.contentLoading && Boolean(overview)} onClick={() => void reloadCurrentScoring().catch(() => undefined)}>刷新</Button>} />
   );
 
-  const pendingBars = pending.length > 0 && (
-    <div className="k4-pending">
-      {pending.map((record) => (
-        <Notice key={record.commandKey} tone="warn" title={`${slotLabel(record.fingerprint)} · 结果待确认`} actionBelow
-          action={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => { void reloadCurrentScoring().catch(() => undefined); if (record.alertId) readWithdrawalAlerts(); else if (record.operation && "user" in record.operation) void loadUser(record.operation.user.userNo); }}>重新读取核对</Button>}>
-          <p>上次提交没有收到明确结果，可能已经生效。先重新读取核对；确认没生效，再用原来的内容和理由重新提交，系统沿用同一个命令号，不会重复执行。</p>
-          <p className="k4-quiet">命令号 <span data-mono="">{record.commandKey}</span> · 本页记录到 {timeText(record.expiresAt)} 失效</p>
-        </Notice>
-      ))}
-    </div>
+  // 原操作提醒：每条写改的是什么、从多少到多少、什么时候提交的。按原请求重试只读保存的原记录，
+  // 调用现成的 openOperation 打开原确认框；概览读不到、原来的按钮不在了也能打开。过期的只能查询。
+  const queryOriginal = (record: K4PendingCommand) => {
+    void reloadCurrentScoring().catch(() => undefined);
+    if (record.alertId) readWithdrawalAlerts();
+    else if (record.operation && "user" in record.operation) void loadUser(record.operation.user.userNo);
+  };
+  const originalChange = (record: K4PendingCommand): ReactNode => {
+    const op = record.operation;
+    if (record.alertId) {
+      const alert = withdrawalAlerts.find((item) => item.id === record.alertId);
+      return alert ? <>提现 <MidId value={alert.withdrawalNo} /> 的告警</> : "一条提现升级告警";
+    }
+    if (!op) return "旧版本留下的记录，没有保存原请求";
+    if (op.kind === "publish") return `生效版本 v${op.overview.model.version} → v${op.overview.draft?.version ?? "—"}`;
+    if (op.kind === "restore") return `v${op.model.version} 的配置 → 草稿`;
+    if (op.kind === "batch") return `${fmt(op.overview.totalUsers)} 人按 v${op.overview.model.version} 重算，清除人工改分`;
+    if (op.kind === "draft") {
+      const base = op.overview.draft ?? op.overview.model;
+      const changed = changedCount(modelDiffRows(editableModel(base), { weights: op.input.weights, inputSources: op.input.inputSources, scoreMappings: op.input.scoreMappings,
+        bandLowMax: op.input.lowMax, bandHighMin: op.input.highMin, autoEscalateScore: op.input.autoEscalateScore }, op.overview.dimensions));
+      return `${op.overview.draft ? `草稿 v${op.overview.draft.version}` : "新草稿"}：改了 ${changed} 项`;
+    }
+    if (op.kind === "override") return `${op.user.userNo}：有效分 ${op.user.effectiveScore} → ${JSON.parse(op.request.body).score} 分`;
+    return `${op.user.userNo}：清除人工改分，按生效规则重算`;
+  };
+  const recoveryRows: KRecoveryRow[] = pending.map((record) => {
+    const expired = isRetryExpired(record);
+    const operation = record.operation;
+    return {
+      key: record.commandKey,
+      name: slotLabel(record.fingerprint),
+      change: originalChange(record),
+      submittedAt: record.createdAt,
+      tag: record.alertId ? unknownTag("noRetry") : expired ? expiredTag("direct") : unknownTag("direct"),
+      state: expired ? "expired" : "unknown",
+      actions: <>
+        <Button size="sm" loading={record.alertId ? alertsReading : undefined} onClick={() => queryOriginal(record)}>查询原结果</Button>
+        {!record.alertId && <Button size="sm" disabledReason={!operation ? "这是旧版本留下的记录，没有保存原请求，只能查询" : expired ? "原请求超过 24 小时，不能再重试，只能查询" : undefined}
+          onClick={() => { if (operation) openOperation(operation); }}>按原请求重试</Button>}
+      </>,
+    };
+  });
+  const pendingBars = (
+    <KRecoveryNotice title={`有 ${recoveryRows.length} 项原操作结果未知`} rows={recoveryRows}
+      explain={<><p>提交时没收到确定结果，可能已经生效。先查询原结果：读回现在的评分规则、用户分数或告警状态。读到的是现在的值，不能单凭它认定原操作成没成。</p><p>24 小时内可以按原请求重试：打开原来的确认框，内容和理由都不变，后端认得出是同一次提交，不会重复执行。告警标为已读不提供重试。</p><p>原请求只保存在这个浏览器标签页里。</p></>} />
   );
 
   const inboundNotice = INBOUND_USER && (
@@ -660,10 +697,10 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   const versionCards = (
     <div className="rd-split k4-versions" data-even="">
       <Panel title={`生效中 · v${overview.model.version}`} icon={ShieldCheck} tone="ok"
-        explain="线上的用户分数、提现审核和提现升级告警都按这一版算。时间是服务端时间，后端没有给时区。">
+        explain={<><p>新的评分和提现时的风控判断按这一版算。发布后用户分批重算，还没算到的人暂时是旧分数；人工改的分保留；已发出的告警保留当时的分数和版本。</p><p>时间为{businessZone().label}。</p></>}>
         <VersionFacts rows={[
-          { key: "pub", label: "发布", value: overview.model.publishedAt ? `${overview.model.publishedBy ?? "—"} · ${overview.model.publishedAt}` : "—" },
-          { key: "by", label: "起草", value: `${overview.model.createdBy} · ${overview.model.createdAt}` },
+          { key: "pub", label: "发布", value: overview.model.publishedAt ? `${overview.model.publishedBy ?? "—"} · ${stamp(overview.model.publishedAt)}` : "—" },
+          { key: "by", label: "起草", value: `${overview.model.createdBy} · ${stamp(overview.model.createdAt)}` },
           { key: "why", label: "理由", value: overview.model.reason },
         ]} />
       </Panel>
@@ -675,7 +712,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         </span>}>
         {overview.draft ? (
           <VersionFacts rows={[
-            { key: "saved", label: "保存", value: `${overview.draft.createdBy} · ${overview.draft.createdAt}` },
+            { key: "saved", label: "保存", value: `${overview.draft.createdBy} · ${stamp(overview.draft.createdAt)}` },
             { key: "diff", label: "和生效版比", value: changedCount(draftRows) > 0 ? `改了 ${changedCount(draftRows)} 项，见下面标出的值` : "配置无变化" },
             { key: "why", label: "理由", value: overview.draft.reason },
           ]} />
@@ -705,7 +742,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         <WeightTable dimensions={overview.dimensions} active={activeEdit} draft={draftEdit ?? undefined} activeLabel={`生效 v${overview.model.version}`} draftLabel={overview.draft ? `草稿 v${overview.draft.version}` : undefined} />
       </Panel>
       <Panel title="分档线和各档人数" icon={Users} tone="role-3"
-        explain={<><p>有效分低于中风险起始分是低风险，达到高风险起始分是高风险，中间是中风险。</p><p>新提现时用户的风险分达到自动升级线，这笔提现转人工审核，并给有改分权限的管理员发提现升级告警；分数本身不冻结账户、不动钱包。</p><p>各档人数按每个人现在存的有效分统计，排队重算的人按旧分数计入；占比保留一位小数，相加不一定正好 100%。</p></>}>
+        explain={<><p>有效分低于中风险起始分是低风险，达到高风险起始分是高风险，中间是中风险。</p><p>新提现时用户的风险分达到自动升级线，会给有改分权限的管理员和超级管理员发提现升级告警；这笔提现没被「提现风险规则」冻结或延迟的，转人工审核（提现风险规则优先）。分数本身不冻结账户、不动钱包。</p><p>各档人数按每个人现在存的有效分统计，排队重算的人按旧分数计入；占比保留一位小数，相加不一定正好 100%。</p></>}>
         <div className="k4-bands">
           <div className="k4-axis-block">
             <div className="k4-axis-row"><span className="k4-axis-label">生效 v{overview.model.version}</span><BandAxis model={activeEdit} label={`生效 v${overview.model.version} 的分档线`} /></div>
@@ -724,15 +761,15 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         <MappingView dimensions={overview.dimensions} active={activeEdit} draft={draftEdit ?? undefined} />
       </Fold>
       <Fold title="版本历史" icon={History} summary={`共 ${overview.modelHistory.length} 个版本 · ${overview.modelHistory.filter((model) => model.state === "archived").length} 个已归档`}
-        explain="所有没删除的版本，按版本号从新到旧，不分页。已归档的版本可以恢复成草稿，核对后再发布；恢复不会直接改线上评分。">
+        explain={<><p>所有没删除的版本，按版本号从新到旧，不分页。已归档的版本可以恢复成草稿，核对后再发布；恢复不会直接改线上评分。</p><p>时间为{businessZone().label}。</p></>}>
         <Table label="版本历史" className="k4-history">
           <thead><tr><Th>版本</Th><Th>起草</Th><Th>发布</Th><Th>理由</Th><Th align="right">操作</Th></tr></thead>
           <tbody>
             {overview.modelHistory.map((model) => (
               <Tr key={`${model.version}-${model.state}`}>
                 <Td><span className="k4-version">v{model.version}<StatusTag tone={model.state === "active" ? "ok" : model.state === "draft" ? "warn" : "done"}>{STATE_TEXT[model.state] ?? "状态未知"}</StatusTag></span></Td>
-                <Td><Cell main={model.createdBy} sub={model.createdAt} /></Td>
-                <Td><Cell main={model.publishedBy ?? "—"} sub={model.publishedAt ?? "未发布"} /></Td>
+                <Td><Cell main={model.createdBy} sub={stamp(model.createdAt)} /></Td>
+                <Td><Cell main={model.publishedBy ?? "—"} sub={model.publishedAt ? stamp(model.publishedAt) : "未发布"} /></Td>
                 <Td grow><Cell main={model.reason} title={model.reason} /></Td>
                 <Td align="right" data-fit="">
                   {canModelWrite && model.state === "archived"
@@ -850,41 +887,41 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         ? <Panel title="用户评分" id="k4-user"><BlockState state="empty" title="请选择用户，查看风险分怎么来的" /></Panel>
         : (
           <Panel id="k4-user" title={<span className="k4-user-title">{userRef(lookupUser.userNo)}<BandTag tone={lookupUser.bandTone}>{lookupUser.bandLabel}</BandTag>{lookupUser.overridden && <StatusTag tone="warn" icon={PenLine}>人工改分</StatusTag>}</span>}
-            sub={`评分时间 ${lookupUser.asOf}`}
+            sub={`评分时间 ${stamp(lookupUser.asOf)}（${businessZone().label}）`}
             actions={<span className="k4-actions">
               {canOverride && <Button onClick={() => openOverride(lookupUser)}>手动改分</Button>}
               {canRecompute && <Button onClick={() => openRecompute(lookupUser)}>恢复系统评分</Button>}
             </span>}>
             {oldModel && (
-              <Notice tone="warn">这个用户还在排队重新计算，这里显示的是 {lookupUser.modelVersion} 下的分{canRecompute ? `；可以点「恢复系统评分」马上按 v${overview.model.version} 计算` : ""}。</Notice>
+              <Notice tone="warn">这个用户还在排队重新计算，这里显示的是 {versionText(lookupUser.modelVersion)} 下的分{canRecompute ? `；可以点「恢复系统评分」马上按 v${overview.model.version} 计算` : ""}。</Notice>
             )}
             <div className="k4-user-top">
               <div className="k4-score">
                 <span className="k4-score-k">有效分<Explain label="有效分是什么" content="提现审核、提现升级告警和分布统计都用有效分：有生效的人工改分就是改后的分，否则等于系统评分。" /></span>
                 <span className="k4-score-v" data-tone={bandState(lookupUser.bandTone)}>{lookupUser.effectiveScore}<span className="k4-unit">分</span></span>
-                <span className="k4-score-sub">{lookupUser.overridden ? "人工改分" : "等于系统评分"} · 系统评分 <b>{lookupUser.modelScore}</b> 分（{bandOf(lookupUser.modelScore, overview.model)}）· 规则版本 {lookupUser.modelVersion}</span>
+                <span className="k4-score-sub">{lookupUser.overridden ? "人工改分" : "等于系统评分"} · 系统评分 <b>{lookupUser.modelScore}</b> 分（{bandOf(lookupUser.modelScore, overview.model)}）· 规则版本 {versionText(lookupUser.modelVersion)}</span>
               </div>
               <div className="k4-user-scale">
                 <ScaleBar label="有效分在分数轴上的位置" valueText={`有效分 ${lookupUser.effectiveScore} 分；中风险从 ${overview.model.bandLowMax} 分，高风险从 ${overview.model.bandHighMin} 分，自动升级线 ${overview.model.autoEscalateScore} 分`}
                   max={100} value={lookupUser.effectiveScore} fill target={overview.model.autoEscalateScore} ticks={scoreTicks} tone={bandState(lookupUser.bandTone)} />
                 <p className={escalated ? "k4-escalate" : "k4-quiet"}>{escalated
-                  ? `已达到自动升级线 ${overview.model.autoEscalateScore} 分：这位用户的新提现会转人工审核`
+                  ? `已达到自动升级线 ${overview.model.autoEscalateScore} 分：新提现会发升级告警，没被「提现风险规则」冻结或延迟的转人工审核`
                   : `离自动升级线 ${overview.model.autoEscalateScore} 分还差 ${overview.model.autoEscalateScore - lookupUser.effectiveScore} 分`}</p>
               </div>
             </div>
             {!canOverride && !canRecompute && <p className="k4-quiet">你没有修改用户风险分的权限。</p>}
             <ContributionTable rows={lookupUser.contributions} total={lookupUser.modelScore} label={`${lookupUser.userNo} 的五维贡献`} />
-            <Fold title="最近评分记录" icon={History} summary={lookupUser.history.length > 0 ? `最近 ${lookupUser.history.length} 次 · 最新 ${lookupUser.history[0].createdAt}` : "暂无记录"}
-              explain="后端只给最近 20 次，按时间从新到旧；点一行看那一次的五维明细和理由。">
+            <Fold title="最近评分记录" icon={History} summary={lookupUser.history.length > 0 ? `最近 ${lookupUser.history.length} 次 · 最新 ${stamp(lookupUser.history[0].createdAt)}` : "暂无记录"}
+              explain={<><p>最多显示最近 20 次，按时间从新到旧；点一行看那一次的五维明细和理由。</p><p>时间为{businessZone().label}。</p></>}>
               {lookupUser.history.length === 0 ? <p className="k4-quiet">暂无历史评分。</p> : (
                 <Table label="最近评分记录" className="k4-score-history">
                   <thead><tr><Th>时间</Th><Th>来源</Th><Th>规则版本</Th><Th align="right">系统评分 → 有效分</Th><Th>操作人</Th></tr></thead>
                   <tbody>
                     {lookupUser.history.map((row, index) => (
                       <Tr key={`${row.createdAt}-${row.modelVersion}-${index}`} selected={historyEntry === row} onOpen={() => setHistoryEntry(row)}>
-                        <Td><Cell num main={row.createdAt} /></Td>
+                        <Td><Cell num main={stamp(row.createdAt)} /></Td>
                         <Td>{row.scoreState === "manually-overridden" ? <StatusTag tone="warn" icon={PenLine}>人工改分</StatusTag> : <StatusTag tone="neutral">{SCORE_STATE_TEXT[row.scoreState] ?? "来源未知"}</StatusTag>}</Td>
-                        <Td>v{row.modelVersion}</Td>
+                        <Td>{versionText(row.modelVersion)}</Td>
                         <Td align="right"><Cell num main={row.modelScore === row.effectiveScore ? `${row.effectiveScore} 分` : `${row.modelScore} → ${row.effectiveScore} 分`} /></Td>
                         <Td><Cell main={row.operator} /></Td>
                       </Tr>
@@ -898,7 +935,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
 
   const overrideTable = (
     <Panel title="手动改分记录" icon={FilePenLine} tone="role-other" sub={`共 ${fmt(overridesPage.total)} 条 · 生效中 ${fmt(overview.overrideActive)} 人`}
-      explain={<><p>谁、改了谁的分、从多少改到多少、为什么。生效中的排在前面。</p><p>「系统评分」是改分那一刻的系统评分快照，之后不随重算变化。「已失效」表示这次改分已经不生效：可能被恢复了系统评分，也可能被之后的又一次改分替换。</p></>}
+      explain={<><p>谁、改了谁的分、改成多少、为什么。生效中的排在前面。</p><p>「系统评分」是改分那一刻的系统评分快照，之后不随重算变化，不一定等于改分前的有效分。「已失效」表示这次改分已经不生效：可能被恢复了系统评分，也可能被之后的又一次改分替换。</p><p>时间为{businessZone().label}。</p></>}
       actions={canRecompute ? <Button variant="danger-outline" disabledReason={overview.totalUsers > 1000 ? "超过 1000 人不能手动全部重算；发布评分规则会分批重算，但保留人工改分" : undefined} onClick={recomputeAll}>全部恢复系统评分</Button> : undefined}
       flush>
       <Table label="手动改分记录" className="k4-overrides">
@@ -910,7 +947,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
               <Td><Cell mono main={<button type="button" className="rd-link k4-user-link" onClick={() => { setUserSearch(row.userNo); void loadUser(row.userNo).then(() => document.getElementById("k4-user")?.scrollIntoView({ block: "start", behavior: "instant" as ScrollBehavior })); }}>{row.userNo}</button>} /></Td>
               <Td align="right"><span className="k4-change"><Change from={String(row.modelScore)} to={String(row.overrideScore)} settled={!row.active} tone={row.active ? (row.overrideScore > row.modelScore ? "danger" : "ok") : undefined} /> <span className="k4-unit">分</span></span></Td>
               <Td grow><Cell main={row.reason} title={row.reason} /></Td>
-              <Td><Cell main={row.operator} sub={row.timeText} /></Td>
+              <Td><Cell main={row.operator} sub={stamp(row.timeText)} /></Td>
               <Td>{row.active ? <StatusTag tone="progress" icon={PenLine}>生效中</StatusTag> : <StatusTag tone="done">已失效</StatusTag>}</Td>
               <Td align="right" data-fit="">
                 {row.active && canRecompute
@@ -939,11 +976,11 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     <div {...tabIds.panel("alerts")} className="k4-tab">
       <Panel title="我的提现升级告警" icon={BellRing} tone="role-other" flush
         sub={alertsLoaded && !withdrawalAlertError ? `最近 ${withdrawalAlerts.length} 条 · 未读 ${unreadAlerts}` : undefined}
-        explain={<><p>新提现时用户的风险分达到当时的自动升级线，这笔提现转人工审核，同时给当时有改分权限的管理员和超级管理员各发一条。</p><p>这里只有发给你本人的最近 50 条；标为已读只改你自己的收件状态，不影响提现，也不影响别人的未读。</p></>}
+        explain={<><p>新提现时用户的风险分达到当时的自动升级线，就给当时有改分权限的管理员和超级管理员各发一条；这笔提现怎么走，「提现风险规则」的冻结和延迟优先，其余转人工审核。</p><p>这里只有发给你本人的最近 50 条；标为已读只改你自己的收件状态，不影响提现，也不影响别人的未读。</p><p>时间为{businessZone().label}。</p></>}
         actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={alertsReading} onClick={() => void readWithdrawalAlerts()}>重新读取</Button>}>
         {!alertsLoaded ? <BlockState state="loading" title="正在读取告警" />
           : withdrawalAlertError ? <BlockState state="error" title="告警加载失败" detail={withdrawalAlertError} onRetry={() => void readWithdrawalAlerts()} />
-            : withdrawalAlerts.length === 0 ? <BlockState state="empty" title="暂无提现升级告警" detail="有新提现达到自动升级线时，会在这里提醒你。" />
+            : withdrawalAlerts.length === 0 ? <BlockState state="empty" title="暂无提现升级告警" detail="有新提现的风险分达到自动升级线时，会在这里提醒你。" />
               : (
                 <Table label="我的提现升级告警" className="k4-alerts">
                   <thead><tr><Th>提现单号</Th><Th align="right">风险分</Th><Th>规则版本 · 评分时间</Th><Th>收到时间</Th><Th>状态</Th><Th align="right">操作</Th></tr></thead>
@@ -952,14 +989,14 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
                       const unknown = alertUnknown.includes(alert.id);
                       return (
                         <Tr key={alert.id}>
-                          <Td><Cell mono full main={alert.withdrawalNo} sub={alert.priority === null ? undefined : PRIORITY_TEXT[alert.priority] ?? alert.priority} /></Td>
+                          <Td><Cell mono main={<MidId value={alert.withdrawalNo} />} title={alert.withdrawalNo} sub={alert.priority === null ? undefined : PRIORITY_TEXT[alert.priority] ?? alert.priority} /></Td>
                           <Td align="right"><Cell num main={alert.riskScore == null ? "—" : `${alert.riskScore} 分`} /></Td>
-                          <Td><Cell main={alert.modelVersion ?? "—"} sub={alert.scoreAsOf ?? "—"} /></Td>
-                          <Td><Cell num main={alert.createdAt.replace("T", " ").slice(0, 10)} sub={alert.createdAt.replace("T", " ").slice(11, 19)} /></Td>
-                          <Td>{alert.read ? <StatusTag tone="done">已读</StatusTag> : unknown ? <StatusTag tone="warn" icon={CircleHelp}>结果待核对</StatusTag> : <StatusTag tone="warn" icon={BellDot}>未读</StatusTag>}</Td>
+                          <Td><Cell main={versionText(alert.modelVersion)} sub={alert.scoreAsOf ? stamp(alert.scoreAsOf) : "—"} /></Td>
+                          <Td><Cell num main={stamp(alert.createdAt).slice(0, 10)} sub={stamp(alert.createdAt).slice(11)} /></Td>
+                          <Td>{alert.read ? <StatusTag tone="done">已读</StatusTag> : unknown ? <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag> : <StatusTag tone="warn" icon={BellDot}>未读</StatusTag>}</Td>
                           <Td align="right" data-fit="">
                             {alert.read ? <span className="k4-quiet">—</span>
-                              : unknown ? <Button size="sm" loading={alertsReading} onClick={() => void readWithdrawalAlerts()}>重新读取核对</Button>
+                              : unknown ? <Button size="sm" loading={alertsReading} onClick={() => void readWithdrawalAlerts()}>查询原结果</Button>
                                 : <Button size="sm" loading={alertBusy === alert.id} onClick={() => void markAlertRead(alert)}>标为已读</Button>}
                           </Td>
                         </Tr>
@@ -968,7 +1005,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
                   </tbody>
                 </Table>
               )}
-        {alertUnknown.length > 0 && !withdrawalAlertError && <div className="k4-panel-note"><Notice tone="warn">标为已读没有收到明确结果。这个操作不按命令号去重，不提供原样重试；点「重新读取核对」看后端记下的状态。</Notice></div>}
+        {alertUnknown.length > 0 && !withdrawalAlertError && <div className="k4-panel-note"><Notice tone="warn">标为已读结果未知。这个操作不提供原样重试；点「查询原结果」读回后端记下的状态。</Notice></div>}
       </Panel>
     </div>
   );
@@ -976,12 +1013,12 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   // ── 单次评分明细 ──
   const historyDrawer = (
     <Drawer open={Boolean(historyEntry && lookupUser)} onClose={() => setHistoryEntry(null)} wide title="这次评分的明细" icon={History}
-      sub={historyEntry ? `${lookupUser?.userNo ?? ""} · ${historyEntry.createdAt}` : undefined}>
+      sub={historyEntry ? `${lookupUser?.userNo ?? ""} · ${stamp(historyEntry.createdAt)}（${businessZone().label}）` : undefined}>
       {historyEntry && <>
         <JudgmentPoints rows={[
           { label: "来源", value: SCORE_STATE_TEXT[historyEntry.scoreState] ?? "来源未知", state: historyEntry.scoreState === "manually-overridden" ? "warn" : undefined },
           { label: "有效分", value: `${historyEntry.effectiveScore} 分` },
-          { label: "系统评分", value: `${historyEntry.modelScore} 分 · 规则版本 v${historyEntry.modelVersion}` },
+          { label: "系统评分", value: `${historyEntry.modelScore} 分 · 规则版本 ${versionText(historyEntry.modelVersion)}` },
           { label: "操作人", value: historyEntry.operator },
           { label: "理由", value: historyEntry.reason },
         ]} />

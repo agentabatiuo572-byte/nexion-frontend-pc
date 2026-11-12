@@ -305,11 +305,39 @@
   .k3-rules-table[data-readonly][data-extra][data-show-version] .k3-action-col, .k3-rules-table[data-readonly][data-extra][data-show-version] .k3-state-col { width: 13%; }
 }
 
+/* ── K 域共用：原操作提醒（k-tabs/k-recovery.tsx），排法同 G 域。 ── */
+.krec { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.krec li { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.krec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.krec-change { min-width: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; color: var(--rd-text); }
+.krec-time { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.krec-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.krec-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.krec-zone { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+@media (max-width: 1279px) {
+  .krec li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
+  .krec-state { grid-column: 3; grid-row: 1; justify-content: flex-end; }
+  .krec-time { grid-column: 1 / 3; grid-row: 2; }
+  .krec-actions { grid-column: 3; grid-row: 2; }
+}
+
+/* 长编号中间省略：前段随宽度收起，尾段（能区分的后缀）始终显示。 */
+.k-id { display: inline-flex; max-width: 100%; min-width: 0; white-space: nowrap; }
+.k-id-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.k-id-tail { flex: none; }
+
+/* 重试原操作：保存的理由锁着，深浅两套都看得出不能改。 */
+.k-reason-locked textarea { background: var(--rd-panel-inner); color: var(--rd-text-2); cursor: not-allowed; border-style: dashed; }
+.k-locked-hint { margin: 4px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+
 /* ── K2 异常套利与刷量排查（改版）：只写这页自己的排法，颜色和字号都取 --rd-*。 ── */
 
 /* 类别卡卡头：图标、类别名、「先处理」挨着排，「正在查看」由组件推到右边。 */
 .k2-card-head { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .k2-card-head > svg { flex: none; color: var(--rd-text-3); }
+
+/* 涉及金额按币种成行，各自完整，不省略。 */
+.k2-amount-line { display: block; }
 
 /* 处置列：按钮一行排开，不折成两行。 */
 .k2-row-actions { display: inline-flex; flex-wrap: nowrap; justify-content: flex-end; gap: 8px; }
@@ -368,6 +396,10 @@
 .k4-weights { table-layout: fixed; }
 .k4-weights th:first-child, .k4-weights td:first-child { width: 30%; }
 .k4-weights th:last-child, .k4-weights td:last-child { width: 132px; }
+/* 没有草稿时只有一列权重：条拉长到这一列的大半，权重之间的差别看得出，后面不空一大段。 */
+.k4-weights[data-single] th:first-child, .k4-weights[data-single] td:first-child { width: 34%; }
+.k4-weights[data-single] .k4-weight { --rd-track-w: 420px; }
+.k4-weights[data-single] .k4-weight .rd-ratio { flex-basis: 420px; }
 .k4-weight { display: inline-flex; align-items: center; gap: var(--rd-space-3); min-width: 0; width: 100%; --rd-track-w: 160px; }
 .k4-weight .rd-ratio { flex: 0 1 160px; }
 .k4-bar-gap { display: inline-block; flex: 0 1 160px; }
@@ -466,6 +498,8 @@
 @container (max-width: 860px) {
   .k4-weight { --rd-track-w: 96px; }
   .k4-weight .rd-ratio, .k4-bar-gap { flex-basis: 96px; }
+  .k4-weights[data-single] .k4-weight { --rd-track-w: 240px; }
+  .k4-weights[data-single] .k4-weight .rd-ratio { flex-basis: 240px; }
   .k4-contrib th:nth-child(1), .k4-contrib td:nth-child(1) { width: 112px; }
   .k4-contrib th:nth-child(2), .k4-contrib td:nth-child(2) { width: 92px; }
   .k4-contrib th:nth-child(3), .k4-contrib td:nth-child(3) { width: 132px; }

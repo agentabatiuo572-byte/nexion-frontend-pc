@@ -13,11 +13,16 @@ import { Notice } from "@/app/components/rd/block-state";
 import { Button as RdButton } from "@/app/components/rd/button";
 import { useRdSurface } from "@/app/components/rd/surface";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
+import { K1OutcomeUncertainError } from "@/lib/admin/k-client";
 import { Modal, Btn, Chip, OperatorBriefBlock } from "../design-kit";
 import type { ConfirmReq } from "./types";
 
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
   const [pendingReason, setPendingReason] = useState(() => req.getPendingReason?.());
+  // 打开时就带着保存的原操作：这是重试原操作，不是一次新操作。
+  const [retrying] = useState(() => pendingReason !== undefined);
+  // 提交后结果未知：框里留一条看得见的提示，按钮改成按原请求重试（提示条会消失）。
+  const [unknown, setUnknown] = useState(false);
   const [draftReason, setReason] = useState(pendingReason ?? "");
   const reason = pendingReason ?? draftReason;
   const [pendingValue, setPendingValue] = useState(() => req.getPendingValue?.());
@@ -66,7 +71,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         return;
       }
       const handled = typeof req.errorHandled === "function" ? req.errorHandled(cause) : req.errorHandled;
-      if (!handled) setError(displayAdminError(cause));
+      if (cause instanceof K1OutcomeUncertainError && cause.commandKey) setUnknown(true);
+      else if (!handled) setError(displayAdminError(cause));
     } finally {
       setPendingReason(req.getPendingReason?.());
       setPendingValue(req.getPendingValue?.());
@@ -75,7 +81,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   };
   return (
     <Modal
-      title={req.title ?? req.action}
+      title={retrying || unknown ? <>重试原操作 · {req.title ?? req.action}</> : req.title ?? req.action}
       icon={req.confirmTone === "danger" ? "alert" : surface ? "shield" : "check"}
       tone={req.confirmTone === "danger" ? "danger" : "neutral"}
       sub={req.effect}
@@ -95,7 +101,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
               onBlockedClick={() => setAttempted(true)}
               onClick={() => void submit()}
             >
-              {req.okLabel ?? "确认"}
+              {retrying || unknown ? "按原请求重试" : req.okLabel ?? "确认"}
             </RdButton>
           ) : (
             <Btn
@@ -112,6 +118,13 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
     >
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
       <fieldset disabled={submitting || pendingReason !== undefined} className="rd-contents">
+      {(retrying || unknown) && surface && (
+        <div className="rd-confirm-alert">
+          {req.blockedReason
+            ? <Notice tone="warn" title="已过期，只能查询">原请求超过 24 小时，不能再重试。关掉这个框，在页面上方的提醒里点「查询原结果」，或到「操作记录与审批」核对。</Notice>
+            : <Notice tone="warn" title="结果未知">{unknown && !retrying ? "刚才提交时没收到确定结果，可能已经生效。" : "这是之前提交、结果未知的原操作。"}按原请求重试会原样再发一次（理由和内容都不变），后端认得出是同一次提交，不会重复执行。也可以关掉，在页面上方的提醒里查询原结果。</Notice>}
+        </div>
+      )}
       {error && (surface
         ? <div className="rd-confirm-alert"><Notice tone="danger">{error}</Notice></div>
         : <div role="alert" className="tint danger">{error}</div>)}
@@ -173,7 +186,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
             {req.reason ? `操作理由（必填，${reasonMin}–${reasonMax} 字）` : "备注（可选，最多 200 字）"}
           </label>
         )}
-        <div className={surface ? "rd-reason-box" : undefined}>
+        <div className={surface ? `rd-reason-box${pendingReason !== undefined ? " k-reason-locked" : ""}` : undefined}>
           <textarea
             id={`${fieldId}-reason`}
             value={reason}
@@ -186,7 +199,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
           />
           {surface && req.reason && <span className="rd-reason-count">{reasonLength}/{reasonMax}</span>}
         </div>
-        {req.reason && (surface ? !reasonOk && (attempted || reasonLeft) : true) && (
+        {surface && pendingReason !== undefined && <p className="k-locked-hint">保存的原理由，重试时原样发送，不能修改</p>}
+        {req.reason && pendingReason === undefined && (surface ? !reasonOk && (attempted || reasonLeft) : true) && (
           <div className={surface ? "rd-form-error" : "tiny k-confirm-count"} data-ok={reasonOk ? "" : undefined}>{reasonShort}</div>
         )}
       </div>
