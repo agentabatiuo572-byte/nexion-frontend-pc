@@ -8,7 +8,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * G4 创世节点销售与收益 — 数据来自后端 /api/admin/market/nex/genesis 及 Genesis 业务表。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Drawer, PaginationExemption } from "../design-kit";
 import {
@@ -35,6 +35,7 @@ import G4AdminOperations from "./g4-admin-operations";
 import { G4FirstDividendConfirm } from "./g4-first-dividend-confirm";
 import { G4TierConfirm, hasPendingG4TierApproval, type G4TierChange } from "./g4-tier-confirm";
 import { useGParamApproval } from "@/lib/admin/use-g-param-approval";
+import { GParamRecovery } from "./g-param-recovery";
 
 const OPERATOR = currentAdminOperator;
 
@@ -103,8 +104,11 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const [overview, setOverview] = useState<G4Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [readFailed, setReadFailed] = useState(false);
   const paramApproval = useGParamApproval("G4", toast, setError, async () => {
+    setReadFailed(true);
     setOverview(await fetchG4GenesisOverview(nodePageNo, nodePageSize));
+    setReadFailed(false);
     setRefreshError("");
   });
   const [refreshError, setRefreshError] = useState("");
@@ -114,13 +118,25 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const [nodePageSize, setNodePageSize] = useState(10);
   const [firstDividend, setFirstDividend] = useState<{ epoch: number; expectedRevision: string } | null>(null);
   const [tierConfirm, setTierConfirm] = useState<{ epoch: number; change?: G4TierChange } | null>(null);
+  const latest = useRef({ overview, loading, busyKey, refreshError, readFailed });
+  latest.current = { overview, loading, busyKey, refreshError, readFailed };
+  const paramRecovery = <GParamRecovery approval={paramApproval} toast={toast} />;
+  const canStartNew = (authority: string) => {
+    const view = latest.current;
+    const auth = useAdminAuth.getState();
+    return !!view.overview && !view.loading && !view.busyKey && !view.refreshError && !view.readFailed
+      && auth.isAuthenticated && !auth.logoutPending && auth.session?.adminId === session?.adminId
+      && !!auth.session?.authorities.includes(authority);
+  };
 
   const reload = useCallback(async (silent = false, page = nodePageNo, pageSize = nodePageSize) => {
     if (!silent) setLoading(true);
+    setReadFailed(true);
     setError("");
     try {
       const next = await fetchG4GenesisOverview(page, pageSize);
       setOverview(next);
+      setReadFailed(false);
       setRefreshError("");
       setNodePageNo(next.nodePage.page);
       setNodePageSize(next.nodePage.pageSize);
@@ -139,11 +155,13 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     let cancelled = false;
     async function load() {
       setLoading(true);
+      setReadFailed(true);
       setError("");
       try {
         const next = await fetchG4GenesisOverview(1, 10);
         if (!cancelled) {
           setOverview(next);
+          setReadFailed(false);
           setNodePageNo(next.nodePage.page);
           setNodePageSize(next.nodePage.pageSize);
         }
@@ -169,9 +187,11 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       await action();
       // 写入回执已确认，附加刷新失败不能再抛给写入确认框。
       if (success) toast(success);
+      setReadFailed(true);
       const [result] = await Promise.allSettled([fetchG4GenesisOverview(nodePageNo, nodePageSize)]);
       if (result.status === "fulfilled") {
         setOverview(result.value);
+        setReadFailed(false);
         setRefreshError("");
         setNodePageNo(result.value.nodePage.page);
         setNodePageSize(result.value.nodePage.pageSize);
@@ -197,15 +217,18 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
   if (loading && !overview) {
     return (
+      <>{paramRecovery}
       <section className="l-card">
         <div className="l-h"><span className="ttl">创世节点销售与收益</span><span className="sub">· 加载中</span></div>
         <div className="l-b"><div className="gtint">创世节点数据加载中…</div></div>
       </section>
+      </>
     );
   }
 
   if (!overview) {
     return (
+      <>{paramRecovery}
       <section className="l-card">
         <div className="l-h"><span className="ttl">创世节点销售与收益</span></div>
         <div className="l-b">
@@ -213,12 +236,16 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
           <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>
         </div>
       </section>
+      </>
     );
   }
 
-  const busy = !!busyKey || !!refreshError;
+  const busy = !!busyKey || !!refreshError || readFailed;
   const canAdjust = (key: string) => allowed(paramAuthority(key)) || !!paramApproval.record(key);
-  const paramDisabled = (key: string) => !!busyKey || (!!refreshError && !paramApproval.record(key));
+  const paramDisabled = (key: string) => {
+    const original = paramApproval.record(key);
+    return !!busyKey || ((!!refreshError || readFailed) && (!original || key === "dividend" && original.ticket?.status === "pending"));
+  };
   const cov = overview.coverage.coverageRatio.toFixed(1);
   const marketOn = overview.market.enabled;
   const stats = overview.stats;
@@ -280,7 +307,9 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     // 主人拍板(2026-08-06):阶梯档位在场时一级单价由档位派生、本参数只读,调价走档位卡
     // (OPS-G-07/G-13 仲裁)。入口已不渲染,这里是钱路径双保险。
     if (param.key === "price" && overview.tierPrice.status !== "legacy") return;
-    const original = await paramApproval.open(param.key);
+    const tighteningDividend = param.key === "dividend" && paramApproval.record(param.key)?.ticket?.status === "pending";
+    if (tighteningDividend && !canStartNew(paramAuthority(param.key))) return;
+    const original = tighteningDividend ? undefined : await paramApproval.open(param.key);
     if (original === false) return;
     const numeric = !["divBase", "emissionCurve"].includes(param.key);
     const bounds = param.key === "supply" ? { min: stats.sold, max: 100000, step: 1 }
@@ -303,15 +332,42 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       businessForm: needsDecision ? { kind: "multi-field", title: "决策依据", fields: [
         { key: "decisionRef", label: "产品或财务决策编号", current: "", inputKind: "text", required: true },
       ] } : undefined,
-      getPendingReason: () => paramApproval.getPendingReason(param.key),
-      getPendingBusinessValue: () => paramApproval.getPendingBusinessValue(param.key),
+      getPendingReason: tighteningDividend ? undefined : () => paramApproval.getPendingReason(param.key),
+      getPendingBusinessValue: tighteningDividend ? undefined : () => paramApproval.getPendingBusinessValue(param.key),
       run: async (reason, value, businessValue) => {
+        const saved = paramApproval.record(param.key);
+        if (saved && !tighteningDividend) {
+          try {
+            await mutate(`param:${param.key}`, () => paramApproval.retry(saved.request.obj), "");
+          } catch (error) {
+            if (!paramApproval.record(saved.request.obj)) openActionConfirm(null);
+            throw error;
+          }
+          return;
+        }
+        if (!canStartNew(paramAuthority(param.key))
+          || !latest.current.overview?.params.some(row => row.key === param.key)
+          || param.key === "price" && latest.current.overview.tierPrice.status !== "legacy"
+          || tighteningDividend && saved?.ticket?.status !== "pending") {
+          openActionConfirm(null);
+          setError("当前创世参数暂不能修改，请重新读取当前状态后操作。");
+          return;
+        }
         if (!value) return;
+        const state = param.key === "dividend" ? await fetchG4DividendApprovalState() : undefined;
+        if (!canStartNew(paramAuthority(param.key))) {
+          openActionConfirm(null);
+          setError("当前创世参数暂不能修改，请重新读取当前状态后操作。");
+          return;
+        }
+        const currentParam = latest.current.overview!.params.find(row => row.key === param.key)!;
         await mutate(`param:${param.key}`, async () => {
-          const state = param.key === "dividend" && !paramApproval.record(param.key) ? await fetchG4DividendApprovalState() : undefined;
-          const result = await paramApproval.run({ key: param.key, current: state?.dividend ?? param.value, value: String(value), reason,
+          const direct = () => updateG4GenesisParam(param.key, String(value), reason, OPERATOR(), businessValue?.decisionRef);
+          const result = tighteningDividend
+            ? { direct: await paramApproval.tightenDividend(state!.dividend, String(value), direct) }
+            : await paramApproval.run({ key: param.key, current: state?.dividend ?? currentParam.value, value: String(value), reason,
             decisionRef: businessValue?.decisionRef, expectedRevision: state?.expectedRevision },
-            () => updateG4GenesisParam(param.key, String(value), reason, OPERATOR(), businessValue?.decisionRef));
+            direct);
           if ("direct" in result) {
             toast(`${operatorCopyText(param.name)}已立即生效`);
           }
@@ -434,11 +490,33 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       getPendingReason: () => paramApproval.getPendingReason(dividend.batchNo),
       getPendingBusinessValue: () => paramApproval.getPendingBusinessValue(dividend.batchNo),
       run: async (reason, _value, businessValue) => {
+        const saved = paramApproval.record(dividend.batchNo);
+        if (saved) {
+          try {
+            await mutate(`batch:${dividend.batchNo}`, () => paramApproval.retry(saved.request.obj), "");
+          } catch (error) {
+            if (!paramApproval.record(saved.request.obj)) openActionConfirm(null);
+            throw error;
+          }
+          return;
+        }
+        if (!canStartNew("finprod_g4_write") || !latest.current.overview!.emissionGate.open
+          || latest.current.overview!.dividend.batchNo !== dividend.batchNo) {
+          openActionConfirm(null);
+          setError("当前收益批次暂不能发起新操作，请重新读取当前状态后操作。");
+          return;
+        }
+        const state = await fetchG4DividendApprovalState(dividend.batchNo);
+        if (!canStartNew("finprod_g4_write") || !latest.current.overview!.emissionGate.open
+          || latest.current.overview!.dividend.batchNo !== dividend.batchNo) {
+          openActionConfirm(null);
+          setError("当前收益批次暂不能发起新操作，请重新读取当前状态后操作。");
+          return;
+        }
         await mutate(`batch:${dividend.batchNo}`, async () => {
-          const state = paramApproval.record(dividend.batchNo) ? undefined : await fetchG4DividendApprovalState(dividend.batchNo);
           const result = await paramApproval.run({ key: dividend.batchNo, batchNo: dividend.batchNo, current: "", value: "rerun", reason,
-            decisionRef: businessValue?.decisionRef, expectedRevision: state?.expectedRevision,
-            approvalRequired: !!state && !state.completed && Number(state.amountUsdt) > 0 },
+            decisionRef: businessValue?.decisionRef, expectedRevision: state.expectedRevision,
+            approvalRequired: !state.completed && Number(state.amountUsdt) > 0 },
           () => rerunG4GenesisDividendBatch(dividend.batchNo, reason, OPERATOR(), businessValue?.decisionRef));
           if ("direct" in result) toast("已重新发放，只补了失败的");
         }, "");
@@ -540,6 +618,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
   return (
     <>
+      {paramRecovery}
       {tierConfirm && session && tierConfirm.epoch === epoch && <G4TierConfirm
         session={session} epoch={epoch} requested={tierConfirm.change}
         readActive={() => fetchG4GenesisOverview(nodePageNo, nodePageSize)}

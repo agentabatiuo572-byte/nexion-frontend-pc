@@ -9,7 +9,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * G2 兑换风险规则 — 数据来自后端 /api/admin/market/exchange;空库返回空态。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Btn, Drawer, Modal } from "../design-kit";
 import {
@@ -28,6 +28,7 @@ import {
   type G2PendingBatch,
 } from "@/lib/admin/g2-client";
 import type { GCtx } from "./types";
+import { GParamRecovery } from "./g-param-recovery";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { classifyStableMutationFailure } from "@/lib/admin/stable-mutation";
 import { summarizeG2BatchResult, type G2BatchResult } from "@/lib/admin/g2-batch-result";
@@ -99,8 +100,11 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
   const [overview, setOverview] = useState<G2Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [readFailed, setReadFailed] = useState(false);
   const paramApproval = useGParamApproval("G2", toast, setError, async () => {
+    setReadFailed(true);
     setOverview(await fetchG2ExchangeOverview());
+    setReadFailed(false);
   });
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [gateDrawer, setGateDrawer] = useState<GateKey | null>(null);
@@ -111,6 +115,9 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
   const [recoveryError, setRecoveryError] = useState<{ message: string; notFound: boolean } | null>(null);
   const ownPendingBatch = canProcessBatch && pendingBatch?.adminId === batchAdminId ? pendingBatch : undefined;
   const recoveryBatch = ownPendingBatch?.commandKey === recoveryKey ? ownPendingBatch : undefined;
+  const latest = useRef({ overview, loading, busyKey, readFailed });
+  latest.current = { overview, loading, busyKey, readFailed };
+  const paramRecovery = <GParamRecovery approval={paramApproval} toast={toast} />;
 
   useEffect(() => {
     setPendingBatch(canProcessBatch ? pendingG2QueueBatch(batchAdminId) : undefined);
@@ -119,9 +126,11 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
 
   const reload = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
+    setReadFailed(true);
     setError("");
     try {
       setOverview(await fetchG2ExchangeOverview());
+      setReadFailed(false);
     } catch (err) {
       setOverview(null);
       setError(messageOf(err));
@@ -134,11 +143,13 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     let cancelled = false;
     async function load() {
       setLoading(true);
+      setReadFailed(true);
       setError("");
       try {
         const next = await fetchG2ExchangeOverview();
         if (!cancelled) {
           setOverview(next);
+          setReadFailed(false);
         }
       } catch (err) {
         if (!cancelled) {
@@ -244,15 +255,18 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
 
   if (loading && !overview) {
     return (
+      <>{paramRecovery}
       <section className="l-card">
         <div className="l-h"><span className="ttl">兑换规则</span><span className="sub">· 加载中</span></div>
         <div className="l-b"><div className="gtint">兑换数据加载中…</div></div>
       </section>
+      </>
     );
   }
 
   if (!overview) {
     return (
+      <>{paramRecovery}
       <section className="l-card">
         <div className="l-h"><span className="ttl">兑换规则</span></div>
         <div className="l-b">
@@ -260,6 +274,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
           <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>
         </div>
       </section>
+      </>
     );
   }
 
@@ -301,19 +316,36 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
             amplifiesWhen: cap.key === "fee" || cap.key === "feeMin" ? "decrease" : "increase" },
       getPendingReason: () => paramApproval.getPendingReason(cap.key),
       run: async (reason, value) => {
-        const nextValue = normalizeCapSubmitValue(cap, value);
-        if (!nextValue) return;
+        const saved = paramApproval.record(cap.key);
+        const view = latest.current;
+        const currentCap = view.overview?.caps.find(row => row.key === cap.key);
+        const auth = useAdminAuth.getState();
+        if (!saved && (!currentCap || view.loading || view.busyKey || view.readFailed
+          || (!view.overview!.swap.enabled && !["fee", "feeMin"].includes(cap.key))
+          || !auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== session?.adminId
+          || !auth.session?.authorities.includes(capAuthority(cap.key)))) {
+          openActionConfirm(null);
+          setError("当前兑换参数暂不能修改，请重新读取当前状态后操作。");
+          return;
+        }
+        const nextValue = saved ? undefined : normalizeCapSubmitValue(currentCap!, value);
+        if (!saved && !nextValue) return;
         setBusyKey(`param:${cap.key}`);
         setError("");
         try {
-          const result = await paramApproval.run({ key: cap.key, current: cap.value, value: nextValue, reason },
-            () => updateG2ExchangeParam(cap.key, nextValue, reason, OPERATOR()));
+          if (saved) {
+            await paramApproval.retry(saved.request.obj);
+            return;
+          }
+          const result = await paramApproval.run({ key: cap.key, current: currentCap!.value, value: nextValue!, reason },
+            () => updateG2ExchangeParam(cap.key, nextValue!, reason, OPERATOR()));
           if ("direct" in result) {
             setOverview(result.direct);
             toast(`${operatorCopyText(cap.name)}已立即生效`);
           }
         } catch (err) {
           setError(messageOf(err));
+          if (saved && !paramApproval.record(saved.request.obj)) openActionConfirm(null);
           if (!paramApproval.record(cap.key)) toast(`操作失败 · ${messageOf(err)}`);
           throw err;
         } finally {
@@ -355,6 +387,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
 
   return (
     <>
+      {paramRecovery}
       {error && <div className="gtint" style={{ marginBottom: 12 }}>操作提示 · {error}</div>}
       <div className="f-stats">
         <div className="f-stat"><div className="k">今日兑换成交</div><div className="v">{fmtUsdK(stats.todayUsd)}</div><div className="sub">占平台每日额度 {stats.poolPct}%</div></div>
@@ -378,7 +411,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
                   {cap.meterPct !== undefined && <div className="meter"><i style={{ width: meterWidth(cap.meterPct), background: "var(--warning)" }} /></div>}
                 </div>
                 <span className="v">{cap.displayValue}</span>
-                {(allowed(capAuthority(cap.key)) || paramApproval.record(cap.key)) && <button className="l-btn sm mc" disabled={busy || (!paramApproval.record(cap.key) && !swap.enabled && !["fee", "feeMin"].includes(cap.key))}
+                {(allowed(capAuthority(cap.key)) || paramApproval.record(cap.key)) && <button className="l-btn sm mc" disabled={busy || (!paramApproval.record(cap.key) && (readFailed || !swap.enabled && !["fee", "feeMin"].includes(cap.key)))}
                   title={!swap.enabled && !["fee", "feeMin"].includes(cap.key) ? "兑换已紧急暂停，额度和超额处理方式暂时不能改" : undefined}
                   onClick={() => adjCap(cap)}>调整 {operatorCopyText(cap.name)}</button>}
               </div>

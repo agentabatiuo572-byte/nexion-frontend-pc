@@ -225,6 +225,20 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
       const original = record(key);
       return original ? { decisionRef: String(original.request.command.params.decisionRef ?? "") } : undefined;
     },
+    async tightenDividend<T>(current: string, value: string, direct: () => Promise<T>): Promise<T> {
+      // G4DividendPolicy explicitly permits non-amplifying direct writes while a
+      // known dividend proposal is pending. Unknown originals keep their lock.
+      if (page !== "G4" || record("dividend")?.ticket?.status !== "pending") {
+        throw new Error("请先查询原日分红审批，再按当前状态操作。");
+      }
+      requireActor("dividend", false);
+      const before = rounded(current, 6);
+      const candidate = rounded(value, 6);
+      if (before === undefined || before <= BigInt(0) || candidate === undefined || candidate > before) {
+        throw new Error("已有待审批的日分红提高申请，本次只能收紧当前非零比例；提高请先处理原审批单。");
+      }
+      return direct();
+    },
     async run<T>(change: Change, direct: () => Promise<T>): Promise<{ direct: T } | { proposal: A2OperationRow }> {
       const original = record(change.key);
       if (original) return { proposal: await send(original) };
