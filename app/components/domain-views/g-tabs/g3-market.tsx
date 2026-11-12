@@ -582,7 +582,7 @@ function G3MarketEditor() {
           coverage={confirm.coverage}
           coverageCheck={confirm.coverageCheck}
           coverageLead={confirm.coverageLead}
-          edit={confirm.edit ? { ...confirm.edit, current: pendingDirect?.change.current ?? confirm.edit.current, initialValue: pendingDirect?.value } : undefined}
+          edit={confirm.edit ? { ...confirm.edit, current: pendingDirect?.change.current ?? confirm.edit.current, currentLabel: pendingDirect ? "提交时" : undefined, initialValue: pendingDirect?.value } : undefined}
           effect={confirm.effect}
           facts={confirm.facts}
           statedBrief={confirm.statedBrief}
