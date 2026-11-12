@@ -51,7 +51,7 @@ function configShown(key: string, kind: string, value: unknown, unit?: string) {
   return unit ? `${shown} ${unit}` : shown;
 }
 /** 数量：去掉补的 0、加千分位，不补小数位。 */
-function g4Count(value: string) {
+export function g4Count(value: string) {
   const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
   if (!match) return value;
   const fraction = (match[3] ?? "").replace(/0+$/, "");
@@ -94,6 +94,12 @@ const CONFIG_HELP: Record<string, { what: string; hint?: string; unit?: string; 
   "holder.policyVersion": { what: "持有人规则的版本号", effect: "只改版本号，不迁移历史数据" },
   "holder.effectiveAt": { what: "持有人规则从什么时候起生效（UTC）；还没到时 App 显示规则未生效", hint: "例如 2026-08-01T00:00:00Z", effect: "只保存时间，不另排定时任务" },
 };
+
+/** 原操作提醒里写一项认购设置的值：和页面同一种写法（带单位、开关写已开启／已关闭、UTC 时间）。 */
+export function g4ConfigValueShown(key: string, value: unknown) {
+  const definition = G4_CONFIGS.find((row) => row.key === key);
+  return definition ? configShown(key, definition.kind, value, CONFIG_HELP[key]?.unit) : String(value ?? "—");
+}
 
 const GROUPS: { key: string; title: string; explain: string; keys: readonly string[] }[] = [
   { key: "eligibility", title: "购买资格", explain: "资格只看这三项。以前的入金、旗舰设备、V 等级、邀请码条件已停用；设备商城的购买条件在另一个页面，不受影响。国家、地区限制、预售时间和市场开关另外限制购买。", keys: ["eligibility.enabled", "eligibility.maxPerUser", "eligibility.minAccountAgeDays"] },

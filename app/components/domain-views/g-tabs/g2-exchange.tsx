@@ -662,7 +662,7 @@ function G2ExchangePage() {
             <Fact k="什么时候生效" tone={loose ? "warn" : undefined}>{originalDirect ? "提交结果未知，可能已经生效。有效期内按原内容重试，后端认得出是同一次提交，不会重复执行；过期后只能查询。" : original
               ? original.ticket?.status === "pending"
                 ? "审批单在等另一位超级管理员批准；批准前参数不变，这一项被锁住"
-                : "原申请结果还没确认：有效期内按原内容、原命令号重试，后端不会重复建单"
+                : "原申请结果还没确认：有效期内按原内容重试，后端认得出是同一次提交，不会重复建单"
               : loose === true
                 ? "放宽：提交审批，另一位超级管理员（需有审批批准权限）批准后才生效；批准前参数不变，这一项被锁住"
                 : loose === false
@@ -681,9 +681,9 @@ function G2ExchangePage() {
     openActionConfirm({ briefKind: "config",
       confirmLabelForValue: value => loosens(value) ? "提交审批" : "确认修改",
       action: `调整兑换${isQueueMode ? "超额处理方式" : "参数"} · ${operatorCopyText(cap.name)}`,
-      title: original ? `${name}的原申请` : `调整${name}`,
+      title: originalDirect ? `${name} · 重试原操作` : original ? `${name}的原申请` : `调整${name}`,
       detail: <>{copy?.what ?? operatorCopyText(cap.sub)}。{copy?.extra}</>,
-      effect: <StatusTag tone="neutral" icon={ArrowLeftRight} explain={<>
+      effect: originalDirect ? <StatusTag tone="warn" icon={CircleHelp} explain="提交结果未知，可能已经生效。有效期内按原内容重试，后端认得出是同一次提交，不会重复执行；过期后只能查询。">结果未知</StatusTag> : <StatusTag tone="neutral" icon={ArrowLeftRight} explain={<>
         <p>{copy?.loosen ?? "放宽"}是放宽：先提交审批，另一位超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p>
         <p>{copy?.tighten ?? "收紧"}是收紧：确认后立即生效。</p>
       </>}>{copy ? `${copy.loosen}要批准 · ${copy.tighten}立即生效` : "按方向生效"}</StatusTag>,

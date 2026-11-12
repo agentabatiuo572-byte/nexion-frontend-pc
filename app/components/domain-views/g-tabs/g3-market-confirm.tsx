@@ -179,7 +179,7 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
       initialRecovery: pending?.request.kind === "approval" ? "lookup" : "retry",
       expired: !!pending && g3MarketCommandExpired(pending),
       disabledReason: pending && pending.request.kind === "direct" && g3MarketCommandExpired(pending)
-        ? "原直接保存请求已过期，仅保留原内容供核对。该入口没有按命令号查询接口，不能重试或另建编号。"
+        ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项没有按原请求查询结果的接口，请到「操作记录与审批」核对。"
         : pending && !canWriteG3MarketChange(session, change) ? "你没有修改这一项的权限。" : undefined,
       resolve: (_business, value) => {
         if (!(pending ? pending.request.kind === "approval" : forceApproval || g3MarketRequiresApproval(change, value))) return undefined;

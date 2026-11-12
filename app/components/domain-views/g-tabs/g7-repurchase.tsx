@@ -531,11 +531,11 @@ function G7RepurchasePage() {
               ? <Fact k="原申请"><Change from={currentText} to={originalValue ? paramValueText(param.key, originalValue) : "—"} /></Fact>
               : directRecovery ? <Fact k="提交时">{currentText}</Fact> : param.key === "presets" && <Fact k="现在">{currentText}</Fact>}
             <Fact k="什么时候生效" tone={loose ? "warn" : undefined}>{directRecovery
-              ? "提交结果未知，可能已经执行。请核对原操作，或在 24 小时内按原内容、原命令号重试。"
+              ? "提交结果未知，可能已经执行。可以查询原结果，或在 24 小时内按原内容重试，后端认得出是同一次提交。"
               : original
               ? original.ticket?.status === "pending"
                 ? "审批单在等另一位超级管理员批准；批准前参数不变，这一项被锁住"
-                : "原申请结果还没确认：有效期内按原内容、原命令号重试，后端不会重复建单"
+                : "原申请结果还没确认：有效期内按原内容重试，后端认得出是同一次提交，不会重复建单"
               : !copy?.loosen
                 ? "确认后立即生效"
                 : loose === true
@@ -560,13 +560,13 @@ function G7RepurchasePage() {
       directRecovery,
       detail: <>{copy?.what ?? operatorCopyText(param.sub)}。{param.key === "lottery" ? "保存时后端核对奖池核对编号至少 3 个字，并检查本月已发张数加新的每单张数不超过创世奖池月容量。" : copy?.note}</>,
       effect: copy?.loosen
-        ? <StatusTag tone="neutral" icon={ArrowLeftRight} explain={directRecovery ? "提交结果未知，可能已经执行。请核对原操作，或在 24 小时内按原内容、原命令号重试。" : <>
+        ? <StatusTag tone="neutral" icon={ArrowLeftRight} explain={directRecovery ? "提交结果未知，可能已经执行。可以查询原结果，或在 24 小时内按原内容重试，后端认得出是同一次提交。" : <>
           <p>{paysMore(param.key) ? `${copy.loosen}会让平台多付钱：` : `${copy.loosen}按规则也要审批（后端目前只记倍率、不发好友奖励）：`}先提交审批，另一位超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p>
           <p>{copy.tighten}确认后立即生效。</p>
         </>}>{directRecovery ? "结果未知" : <>{copy.loosen}要批准 · {copy.tighten}立即生效</>}</StatusTag>
         : <StatusTag tone="progress" filled>{directRecovery ? "结果未知" : "立即生效"}</StatusTag>,
       facts,
-      statedBrief: { impact: "改的是之后新开的订单用的规则，已有订单按下单时的规则。", check: directRecovery ? "提交结果未知，可能已经执行。请核对原操作，或在 24 小时内按原内容、原命令号重试。" : "核对新值和方向；理由写清依据或工单号。" },
+      statedBrief: { impact: "改的是之后新开的订单用的规则，已有订单按下单时的规则。", check: directRecovery ? "提交结果未知，可能已经执行。可以查询原结果，或在 24 小时内按原内容重试，后端认得出是同一次提交。" : "核对新值和方向；理由写清依据或工单号。" },
       coverageLead: paysMore(param.key) ? `${copy?.loosen ?? "放宽"}${label}会让平台多付钱，要另一位超级管理员批准` : `${copy?.loosen ?? "调高"}${label}要另一位超级管理员批准；后端目前不发好友奖励，不会马上多付钱`,
       coverageCheck: "提交审批时和批准时，后端各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
       edit: param.key === "presets"

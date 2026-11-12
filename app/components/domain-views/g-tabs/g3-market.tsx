@@ -155,7 +155,7 @@ function ObjectTag({ state }: { state?: G3ObjectState }) {
   if (!state) return null;
   if (state.verification === "last-observation") return <StatusTag tone="warn" icon={state.kind === "locked" ? Lock : Clock3} explain={state.detail}>上次观察</StatusTag>;
   if (state.kind === "unknown") return <StatusTag tone="warn" icon={CircleHelp} explain={state.detail}>结果未知</StatusTag>;
-  if (state.kind === "approval") return <StatusTag tone="warn" icon={Clock3} explain={state.detail}>有待批申请</StatusTag>;
+  if (state.kind === "approval") return <StatusTag tone="warn" icon={Clock3} explain={state.detail}>待审批</StatusTag>;
   return <StatusTag tone="warn" icon={Lock} explain={state.detail}>审批锁定中</StatusTag>;
 }
 
@@ -546,7 +546,9 @@ function G3MarketEditor() {
   });
   const recoveryNotice = <GRecoveryNotice label="价格的原操作" rows={recoveryRows}
     title={`价格的原操作 · ${recoveryRows.length} 项`}
-    lead="打开那一项查询原结果，24 小时内也可以按原请求重试；有结论之前不要换个值重新提交。"
+    lead={commandRows.every((row) => row.ticketId)
+      ? "这些申请在等另一位超级管理员审批：点「查询原结果」看结论；有结论之前不要换个值重新提交。"
+      : "点「查询原结果」或打开那一项核对；没有审批单的原操作 24 小时内也可以按原请求重试。有结论之前不要换个值重新提交。"}
     explain={<>
       <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的提高申请，和直接保存但没收到结果的修改。原操作只能查询或按原内容重试，不能改值。</p>
       <p>表里同一项也带着标记。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
@@ -594,7 +596,7 @@ function G3MarketEditor() {
             initialRecovery: "retry",
             expired: !!pendingDirect && g3MarketCommandExpired(pendingDirect),
             disabledReason: pendingDirect && g3MarketCommandExpired(pendingDirect)
-              ? "原直接保存请求已过期，仅保留原内容供核对。该入口没有按命令号查询接口，不能重试或另建编号。"
+              ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项没有按原请求查询结果的接口，请到「操作记录与审批」核对。"
               : pendingDirect && session && !canWriteG3MarketChange(session, pendingDirect.change, pendingDirect.value) ? "你没有修改这一项的权限。" : undefined,
             resolve: () => undefined,
             recover: async () => {

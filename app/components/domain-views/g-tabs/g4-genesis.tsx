@@ -42,7 +42,7 @@ import {
 } from "@/lib/admin/g4-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { configApprovalOriginalInput, pendingConfigApproval } from "@/lib/admin/withdrawal-config-approval";
-import G4AdminOperations, { G4_CONFIGS, type G4ConfirmReq } from "./g4-admin-operations";
+import G4AdminOperations, { G4_CONFIGS, g4ConfigValueShown, g4Count, type G4ConfirmReq } from "./g4-admin-operations";
 import { G4FirstDividendConfirm } from "./g4-first-dividend-confirm";
 import { G4TierConfirm, hasPendingG4TierApproval, type G4TierChange } from "./g4-tier-confirm";
 import { canRetryG4DirectCommand, g4DirectAuthority, g4DirectCommandExpired, g4DirectObject, listG4DirectCommands, subscribeG4DirectCommands, g4DirectCommandVersion, type G4DirectCommand } from "@/lib/admin/g4-direct-command";
@@ -420,18 +420,28 @@ function G4GenesisPage() {
     />
   );
 
-  /** 原操作改成了什么，写人话；请求里的理由、操作人和版本号不列。 */
+  /**
+   * 原操作改成了什么，写人话。行内「按原请求重试」直接执行，没有别处能看到原内容，所以保留对象、方向、数量或金额和单位，
+   * 以及决策编号、暂停原因这类执行内容；只省理由、操作人和版本号这类技术字段。
+   */
   const directChangeText = (command: G4DirectCommand) => {
     const object = g4DirectObject(command);
     const body = JSON.parse(command.body) as Record<string, unknown>;
     const text = (value: unknown) => typeof value === "string" || typeof value === "number" ? String(value) : "";
-    if (object.startsWith("params/")) return <>改成 {g4ParamValueText(decodeURIComponent(object.slice(7)), text(body.value))}</>;
-    if (object === "market-status") return <>暂停认购、挂售和转让</>;
-    if (object === "market-open-state") return <>{text(body.value) === "open" ? "暂未开放 → 开放" : "开放 → 暂未开放"}</>;
-    if (object === "tiers") return command.method === "DELETE" ? <>删除这一档</> : <>{body.to !== undefined ? `到第 ${fmtNumber(Number(text(body.to)), 0)} 张` : "档位"}{body.priceUSDT !== undefined ? ` · ${g4Amount(text(body.priceUSDT))} USDT/张` : ""}</>;
-    if (object.startsWith("operations/config/")) return <>改成 {text(body.value) || "—"}</>;
-    if (object === "operations/simulations") return <>新建一条模拟成交</>;
-    if (object.startsWith("operations/simulations/")) return <>归档这条模拟成交</>;
+    const decision = text(body.decisionRef) ? ` · 决策编号 ${text(body.decisionRef)}` : "";
+    if (object.startsWith("params/")) return <>改成 {g4ParamValueText(decodeURIComponent(object.slice(7)), text(body.value))}{decision}</>;
+    if (object === "market-status") return <>暂停认购、挂售和转让{text(body.triggerBasis) ? ` · 暂停原因：${text(body.triggerBasis)}` : ""}{text(body.dispositionPlan) ? ` · 已有持有人：${text(body.dispositionPlan)}` : ""}</>;
+    if (object === "market-open-state") return text(body.value) === "open"
+      ? <>暂未开放 → 开放</>
+      : <>开放 → 暂未开放{text(body.noticeKey) ? ` · App 提示「${NOTICE_LABEL[text(body.noticeKey)] ?? text(body.noticeKey)}」` : ""}</>;
+    if (object === "tiers") return command.method === "DELETE"
+      ? <>删除档位 <span data-mono>{command.path.split("/").at(-1)}</span></>
+      : <>{body.to !== undefined ? `截止第 ${fmtNumber(Number(text(body.to)), 0)} 张` : "档位"}{body.priceUSDT !== undefined ? ` · 单价 ${g4Amount(text(body.priceUSDT))} USDT/张` : ""}</>;
+    if (object === "series/initialize") return <>系列编码 <span data-mono>{text(body.seriesCode) || "—"}</span> · 名称 {text(body.name) || "—"}</>;
+    if (object.startsWith("operations/config/")) return <>改成 {g4ConfigValueShown(decodeURIComponent(object.slice(18)), body.value)}</>;
+    if (object === "operations/simulations") return <>{text(body.side) === "SELL" ? "模拟卖出" : text(body.side) === "BUY" ? "模拟买入" : `方向 ${text(body.side) || "—"}`} · 数量 {g4Count(text(body.quantity))} · 单价 {g4Amount(text(body.unitPrice))} USDT</>;
+    if (object.startsWith("operations/simulations/")) return <>模拟记录 <span data-mono>{command.path.split("/").at(-1)}</span> 改为已归档</>;
+    if (/^dividend-batches\/[^/]+\/rerun$/.test(object)) return <>批次 <span data-mono>{decodeURIComponent(object.split("/")[1])}</span> 按真实待付金额重新发放{decision}</>;
     return <>原操作</>;
   };
   const directName = (command: G4DirectCommand) => {
@@ -463,7 +473,7 @@ function G4GenesisPage() {
       }
       await readCurrentOverview();
       if (command.path.includes("/operations/")) { await fetchG4AdminOperations(); setOperationsRefresh(value => value + 1); }
-      if (!retry) toast("已读回当前数据；这不能确认原命令的结果，原记录继续保留。请到操作记录按原命令号核对。");
+      if (!retry) toast("已读到现在的数据，但不能据此确认原操作的结果；原记录继续保留，可以到「操作记录与审批」核对。");
     } catch (failure) {
       if (verdict) {
         // Even an explicit rejection ends the original mode. Re-read before a new edit.
@@ -531,7 +541,7 @@ function G4GenesisPage() {
     })), ...(!overview && tierPending ? [{
       key: "tiers", name: "价格档位", change: "档位修改的原申请（扩容或未售涨价）",
       tag: <StatusTag tone="warn" icon={Clock3}>待确认</StatusTag>,
-      action: <Button size="sm" disabled={!!busyKey} onClick={() => setTierConfirm({ epoch })}>查询原提交结果</Button>,
+      action: <Button size="sm" disabled={!!busyKey} onClick={() => setTierConfirm({ epoch })}>查询原结果</Button>,
     }] : []), ...(!overview && pendingFirstDividend ? [{
       key: "first-dividend", name: "每日收益比例", change: "首次配置的原申请",
       tag: <StatusTag tone="warn" icon={Clock3}>待确认</StatusTag>,
@@ -687,7 +697,7 @@ function G4GenesisPage() {
             <Fact k="什么时候生效" tone={dir === "loose" ? "warn" : undefined}>{original
               ? original.ticket?.status === "pending"
                 ? "审批单在等另一位超级管理员批准；批准前参数不变"
-                : "原申请结果还没确认：有效期内按原内容、原命令号重试，后端不会重复建单"
+                : "原申请结果还没确认：有效期内按原内容重试，后端认得出是同一次提交，不会重复建单"
               : tighteningDividend
                 ? "这次只能调低或保持不变，确认后立即生效；原调高申请还在，但比例变了以后批准时后端会拒绝它，不会覆盖这次的值"
                 : dir === "loose"
@@ -1112,8 +1122,8 @@ function G4GenesisPage() {
     ...(tierPending ? [{
       key: "tiers", name: "价格档位",
       change: "档位修改的原申请（扩容或未售涨价）",
-      tag: <StatusTag tone="warn" icon={Clock3} explain="提交过一次档位修改，还没读到结论。点「查询原提交结果」按原命令号核对；查到待审批的保留，查到结论后读回当前档位并清掉。">待确认</StatusTag>,
-      action: <Button size="sm" disabled={!!busyKey} onClick={() => setTierConfirm({ epoch })}>查询原提交结果</Button>,
+      tag: <StatusTag tone="warn" icon={Clock3} explain="提交过一次档位修改，还没读到结论。点「查询原结果」核对原申请；查到待审批的保留，查到结论后读回当前档位并清掉。">待确认</StatusTag>,
+      action: <Button size="sm" disabled={!!busyKey} onClick={() => setTierConfirm({ epoch })}>查询原结果</Button>,
     }] : []),
     ...(pendingFirstDividend ? [{
       key: "first-dividend", name: "每日收益比例",
@@ -1180,7 +1190,7 @@ function G4GenesisPage() {
         value={<span className="g4x-param">
           <span className="g4x-value">
             <span className="g4x-value-num">{g4ParamValueText(param.key, param.value)}</span>
-            {recovery && g4RecoveryTag(recovery)}
+            {recovery && g4RecoveryTag(recovery, false, param.key)}
             {!recovery && directRecord(`params/${encodeURIComponent(param.key)}`) && (g4DirectCommandExpired(directRecord(`params/${encodeURIComponent(param.key)}`)!) ? expiredTag("direct") : unknownTag("direct"))}
             {!record && lockedParams[param.key] && <StatusTag tone="warn" icon={Lock} explain={lockedParams[param.key]}>审批锁定中</StatusTag>}
           </span>
@@ -1273,7 +1283,7 @@ function G4GenesisPage() {
           <p>扩大已有系列的总量，或让还没卖出的节点涨价，要另一位超级管理员批准；其余档位修改确认后立即生效。只影响以后的销售，已下单的按下单时价格。</p>
         </>}
         actions={tiers && canPriceTiers ? <span className="g4x-tiers-actions">
-          {tierPending && <Button size="sm" disabledReason={busy ? busyReason : undefined} onClick={() => setTierConfirm({ epoch })}>查询原提交结果</Button>}
+          {tierPending && <Button size="sm" disabledReason={busy ? busyReason : undefined} onClick={() => setTierConfirm({ epoch })}>查询原结果</Button>}
           <Button size="sm" variant="primary" disabledReason={busy ? busyReason : directRecord("tiers") ? "请先核对原操作" : undefined} onClick={addTier}>{tiers.length === 0 ? "+ 创建第一档" : "+ 新增档位"}</Button>
         </span> : undefined}>
         <div className="g4x-sales">
@@ -1353,7 +1363,7 @@ function G4GenesisPage() {
                 value={<span className="g4x-param">
                   <span className="g4x-value">
                     <span className="g4x-value-num">{dividendRateText}</span>
-                    {dividendRecord && (() => { const row = records.find((item) => item.commandKey === dividendRecord.commandKey); return row && g4RecoveryTag(row); })()}
+                    {dividendRecord && (() => { const row = records.find((item) => item.commandKey === dividendRecord.commandKey); return row && g4RecoveryTag(row, false, "dividend"); })()}
                     {pendingFirstDividend && <StatusTag tone="warn" icon={Clock3}>首次配置待确认</StatusTag>}
                   </span>
                   <span className="g4x-dir">基准 0.1%/日</span>
