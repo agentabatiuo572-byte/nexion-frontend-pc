@@ -269,7 +269,7 @@ function AccountPhonePanel({ userId, userLabel, userCode, active, owner, rights,
         {pendingRows.filter(row => phoneCommandAllowed(row.type, rights)).map(row => <Fold key={row.commandKey} title={phoneLabel(row.type)} summary={`${row.label ?? userLabel} · ${phoneTime(row.createdAt)}`}><Facts><Fact k="原确认对象">{row.target}</Fact><Fact k="原操作标识">{row.commandKey}</Fact><Fact k="恢复方式">{row.expiresAt <= Date.now() ? "已过 24 小时，保留记录，仅查询" : "只查询原操作，不重新提交"}</Fact></Facts><PhoneFacts time={phoneTime} value={row.body} /></Fold>)}
         {pendingRows.some(row => !phoneCommandAllowed(row.type, rights)) && <span>恢复原处置权限后查询，原记录继续保留。</span>}
       </Notice>}
-      {detail !== "models" && pendingModelLockCommands(owner, userId).length > 0 && <Notice tone="warn" title="机型锁解除结果待核实" action={<Button size="sm" onClick={() => setDetail("models")}>查看原解除记录</Button>}>原解除记录已保留，只能读回核对。</Notice>}
+      {detail !== "models" && pendingModelLockCommands(owner, userId).length > 0 && <Notice tone="warn" title="机型锁解除结果待核实" action={<Button size="sm" onClick={() => setDetail("models")}>查看原解除记录</Button>}>原解除记录已保留，请展开核对原解除结果。</Notice>}
       <Panel title="手机绑定与换机条件" icon={Smartphone} explain="处理更换手机设备的申请，与更改登录手机号分开统计。特批只放宽次数或间隔，仍由用户回 App 主动确认。" actions={<IconButton aria-label="刷新手机绑定与换机申请" disabled={busy || loading || !!confirm || denied} onClick={() => { void load(); void loadHistory(); }}><RefreshCw size={16} /></IconButton>}>
         {denied ? <BlockState state="denied" title="暂时无法查看此用户" detail="请重新选择用户或登录后再试。" /> : loading ? <BlockState state="loading" title="正在读取手机与申请状态" /> : !overview ? <BlockState state="error" title="手机信息未能加载" onRetry={() => void load()} retryLabel="刷新" /> : <>
           <div className="c5-phone-summary">

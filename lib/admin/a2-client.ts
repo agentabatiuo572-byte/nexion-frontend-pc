@@ -56,8 +56,14 @@ interface BackendStats {
 }
 
 type A2FundEffect = "REWARD_SUSPENSION" | "REWARD_RESUMPTION" | "ORDER_REFUND";
+export type A2RuleTaskAction = "CREATE" | "UPDATE" | "ENABLE" | "DISABLE";
 
 interface BackendTicket {
+  ruleTaskAction?: A2RuleTaskAction | null;
+  approveDeniedCode?: number | null;
+  approveDeniedMessage?: string | null;
+  rejectDeniedCode?: number | null;
+  rejectDeniedMessage?: string | null;
   canApprove?: boolean | null;
   canReject?: boolean | null;
   ambassadorMaterialProposal?: F4AmbassadorMaterialProposal | null;
@@ -86,6 +92,7 @@ interface BackendTicket {
 }
 
 interface BackendHistory {
+  ruleTaskAction?: A2RuleTaskAction | null;
   id: string;
   action: string;
   st: string;
@@ -158,6 +165,9 @@ export interface A2Stats {
 }
 
 export interface A2OperationRow {
+  ruleTaskAction?: A2RuleTaskAction;
+  approveDeniedMessage?: string;
+  rejectDeniedMessage?: string;
   canApprove?: boolean;
   canReject?: boolean;
   ambassadorMaterialProposal?: F4AmbassadorMaterialProposal;
@@ -190,6 +200,7 @@ export interface A2OperationRow {
 }
 
 export interface A2OperationHistory {
+  ruleTaskAction?: A2RuleTaskAction | null;
   id: string;
   action: string;
   st: string;
@@ -344,6 +355,9 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     } catch { phoneCalibrationError = "手机规则申请的详情加载失败，不能执行；可取消后重新提交。"; }
   }
   return {
+    ruleTaskAction: ticket.ruleTaskAction ?? undefined,
+    approveDeniedMessage: ticket.approveDeniedMessage ? formatAdminApiError(ticket.approveDeniedMessage, "这个账号没有批准这张单的权限") : undefined,
+    rejectDeniedMessage: ticket.rejectDeniedMessage ? formatAdminApiError(ticket.rejectDeniedMessage, "这个账号没有驳回这张单的权限") : undefined,
     ...(ambassadorMaterialProposal ? { ambassadorMaterialProposal } : {}),
     ...(ambassadorMaterialError ? { ambassadorMaterialError } : {}),
     ...(phoneCalibrationProposal ? { phoneCalibrationProposal } : {}),

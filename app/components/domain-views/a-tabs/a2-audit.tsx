@@ -141,6 +141,9 @@ function approvalCoverageCopy(w: A2OperationRow) {
 }
 
 function approvalExecutorLabel(w: A2OperationRow) {
+  if (/^(?:兑换|回购)参数调整 · /.test(w.action)) return "另一位有审批批准权限的超级管理员";
+  if (/^调整创世参数 · /.test(w.action)) return "另一位有审批批准权限和该参数业务权限的超级管理员";
+  if (w.action === "回滚至有奖励的课程版本") return "另一位有审批批准权限的超级管理员";
   if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位有批准权限和商品修改权限的管理员";
   if (w.action === "发布规则任务") return "另一位有批准权限和任务池修改权限的管理员";
   return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
@@ -187,7 +190,7 @@ type DecisionRule = { superadmin?: boolean; approve?: readonly Need[]; reject?: 
  */
 const GROWTH_DELEGATE = "@growth-delegate";
 type TicketIdentity = Pick<A2OperationRow, "action" | "obj" | "operationCode" | "fundEffect" | "before" | "after">
-  & Partial<Pick<A2OperationRow, "phoneCalibrationProposal" | "ambassadorMaterialProposal" | "roleGate" | "canApprove" | "canReject">>;
+  & Partial<Pick<A2OperationRow, "phoneCalibrationProposal" | "ambassadorMaterialProposal" | "roleGate" | "canApprove" | "canReject" | "ruleTaskAction">>;
 const A4_REGISTRY_CODES = ["a4_schema_register", "a4_schema_property_add", "a4_domain_extension_register"];
 const J4_CODE = /^SOP-[A-Z0-9-]{1,64}$/;
 /** 有专项审批、要另一位超管处理的单（各自的 validateChecker：超管＋A2 批准权，批准、驳回一样）。 */
@@ -195,7 +198,7 @@ const SUPER_ONLY: DecisionRule = { superadmin: true };
 const SUPER_ACTIONS = new Set([
   "放宽任务定价", "变更正式任务目录", // E2TaskPricingApproval
   "降低兑付覆盖率红线", "提高提现压力红线", // TreasuryThresholdApproval
-  "首次发布奖励课程", "发布奖励课程版本", "回滚至较高奖励课程版本", // LearningCourseActivationApproval
+  "首次发布奖励课程", "发布奖励课程版本", "回滚至较高奖励课程版本", "回滚至有奖励的课程版本", // LearningCourseActivationApproval; retain the legacy action gate.
   "放宽用户任务配置", // H3GrowthApproval
   "提高旧活动奖励", "开放旧活动资金奖励", "新增转盘奖项", "放宽转盘奖项配置", "删除转盘奖项并提高安慰奖", "提高转盘奖项概率",
   "启用活动或放宽转盘资金护栏", "发布历史活动只读记录", // H4GrowthApproval
@@ -440,8 +443,11 @@ function middle(text: string, max: number) {
   return text.length > max ? `${text.slice(0, max - 9)}…${text.slice(-8)}` : text;
 }
 
-function actionName(action: string) {
-  return a2ActionText(nexGridBrandText(action));
+function actionName(ticket: string | { action: string; ruleTaskAction?: A2OperationRow["ruleTaskAction"] | null }) {
+  if (typeof ticket !== "string" && ticket.ruleTaskAction) {
+    return ({ CREATE: "新增手机任务", UPDATE: "编辑手机任务", ENABLE: "启用手机任务", DISABLE: "停用手机任务" })[ticket.ruleTaskAction];
+  }
+  return a2ActionText(nexGridBrandText(typeof ticket === "string" ? ticket : ticket.action));
 }
 
 /** 本页的码翻中文；别的模块的码原样，等宽显示。 */
@@ -548,6 +554,7 @@ type A2PendingCommand = PendingMutationRecord & {
   refundOrderNo?: string;
   /** 审批单的原动作，重试时写进标签。 */
   action?: string;
+  ruleTaskAction?: A2OperationRow["ruleTaskAction"];
   /** 导出时已应用的筛选：重试只用这一份，不读页面上现在的条件（M2）。 */
   filter?: A2AuditFilter;
 };
@@ -1130,8 +1137,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   type DecisionTicket = TicketIdentity & Pick<A2OperationRow, "id" | "refundOrderNo"> & { rule?: DecisionRule | null };
   const runDecision = (kind: "approve" | "reject" | "withdraw", w: DecisionTicket, reason: string, by = operator) => sendCommand(
     `${kind}|${w.id}`,
-    { kind, label: `${DECISION_VERB[kind]} · ${actionName(w.action)}`, target: w.id, reason, operator: by, rule: w.rule !== undefined ? w.rule : decisionRule(w),
-      operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, action: w.action },
+    { kind, label: `${DECISION_VERB[kind]} · ${actionName(w)}`, target: w.id, reason, operator: by, rule: w.rule !== undefined ? w.rule : decisionRule(w),
+      operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, action: w.action, ruleTaskAction: w.ruleTaskAction },
     `a2-${kind}-${w.id}`,
     (key) => kind === "approve" ? approveA2Operation(w.id, reason, key)
       : kind === "reject" ? rejectA2Operation(w.id, reason, key)
@@ -1235,6 +1242,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     try {
       const queued = recordTicket(record);
       const ticketLike = { id: record.target, action: record.action ?? queued?.action ?? record.target, obj: record.obj ?? queued?.obj ?? "",
+        ruleTaskAction: record.ruleTaskAction ?? queued?.ruleTaskAction,
         before: queued?.before ?? "", after: queued?.after ?? "", operationCode: record.operationCode ?? queued?.operationCode,
         fundEffect: record.fundEffect ?? queued?.fundEffect, refundOrderNo: recordOrderNo(record), rule: recordRule(record) };
       const outcome = record.kind === "param" ? await runParam(record.target as "ttl" | "retention" | "schema", record.value ?? "", record.reason, record.operator)
@@ -1310,7 +1318,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const immediate = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 
   /** 框标题只写「批准审批单」，动作名放在标题下面一行，长了省略、悬停看全文（设计偏差二选一的第一种）。 */
-  const subject = (w: A2OperationRow) => <span className="a2-confirm-subject" title={actionName(w.action)}>{shortCodes(actionName(w.action))}</span>;
+  const subject = (w: A2OperationRow) => <span className="a2-confirm-subject" title={actionName(w)}>{shortCodes(actionName(w))}</span>;
 
   /** 本人、已退役、解析不了、有未确认操作、正在读取、读不到退款金额：入口先禁用并写原因（第五节）。没有业务权限的入口不显示（OP-124），这里只兜底。 */
   const decideBlock = (w: A2OperationRow, kind: "approve" | "reject" | "withdraw") => {
@@ -1321,7 +1329,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (isMine(w)) return OWN_TICKET_REASON;
     if (kind === "approve" && w.retiredOperation) return RETIRED_OPERATION_COPY;
     if (kind === "approve" && (w.phoneCalibrationError || w.ambassadorMaterialError)) return w.phoneCalibrationError ?? w.ambassadorMaterialError;
-    if (!canDecide(w, kind)) return NO_DECIDE;
+    if (!canDecide(w, kind)) return (kind === "approve" ? w.approveDeniedMessage : w.rejectDeniedMessage) ?? NO_DECIDE;
     // 读不到退款金额时不能批准（协调人定，同 C3 读不到详情）；驳回不受影响。
     const amount = kind === "approve" ? refundAmount(w) : undefined;
     if (amount?.state === "loading") return "正在读取退款金额，读完再批准";
@@ -1682,7 +1690,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     <Notice tone={locatePending.length ? "warn" : "neutral"}>
       已按「{appliedText(enteredFilter)}」筛选。
       {locatePending.length === 1 && <> 这个对象还有 1 条待审批 · <button type="button" className="rd-link" onClick={() => openTicketFromRecords(locatePending[0].id)}>打开审批单</button></>}
-      {locatePending.length > 1 && <> 这个对象还有 {locatePending.length} 条待审批：{locatePending.slice(0, 3).map((w, index) => <span key={w.id}>{index > 0 && "、"}<button type="button" className="rd-link" onClick={() => openTicketFromRecords(w.id)}>{actionName(w.action)} {w.id}</button></span>)}{locatePending.length > 3 && " 等"}</>}
+      {locatePending.length > 1 && <> 这个对象还有 {locatePending.length} 条待审批：{locatePending.slice(0, 3).map((w, index) => <span key={w.id}>{index > 0 && "、"}<button type="button" className="rd-link" onClick={() => openTicketFromRecords(w.id)}>{actionName(w)} {w.id}</button></span>)}{locatePending.length > 3 && " 等"}</>}
     </Notice>
   );
 
@@ -1777,7 +1785,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   </TableMessage>
                 ) : qPageRows.map((w) => {
                   const change = changeSummary(w.before, w.after, g3PolicyExecutionTiming(w) ? ["生效时间"] : []);
-                  const name = actionName(w.action);
+                  const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
                       <Td sticky="start"><Cell main={shortCodes(name)} title={`${name}\n对象：${w.obj}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`} sub={<>{queueTime(w)} · <span data-mono>{w.id}</span></>} /></Td>
@@ -1894,7 +1902,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 ) : histPageRows.map((h) => (
                   <Tr key={h.id} selected={h.id === historyId} onOpen={() => setHistoryId(h.id)}>
                     <Td sticky="start"><Cell mono full main={h.id} /></Td>
-                    <Td grow><Cell main={actionName(h.action)} title={actionName(h.action)} /></Td>
+                    <Td grow><Cell main={actionName(h)} title={actionName(h)} /></Td>
                     <Td><StatusTag tone={HIST_TONE[h.st] ?? "done"}>{HIST_LABEL[h.st] ?? h.st}</StatusTag></Td>
                     <Td><Cell main={historyActorText(h.chain)} /></Td>
                     <Td><Cell num main={thisYear(bizTime(h.t, h.t))} title={bizTime(h.t, h.t)} /></Td>
@@ -1979,14 +1987,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const shownBlock = shown && (pendingTicketIds.has(shown.id) ? undefined
     : shown.retiredOperation ? RETIRED_OPERATION_COPY
       : shown.phoneCalibrationError ?? shown.ambassadorMaterialError
-        ?? (isMine(shown) ? OWN_TICKET_REASON : !shownCanApprove ? NO_DECIDE
+        ?? (isMine(shown) ? OWN_TICKET_REASON : !shownCanApprove ? shown.approveDeniedMessage ?? NO_DECIDE
           : shownAmount && shownAmount.state !== "ok" && shownAmount.state !== "loading" ? REFUND_AMOUNT_REQUIRED : undefined));
   const judgment: JudgmentRow[] = shown ? [
     // 批准退款是直接出钱、收不回的操作，第一行就是这笔钱（必须改 1，DP-03）。
     ...(shownAmount ? [shownAmount.state === "ok"
       ? { label: "退款金额", value: <span className="a2-amount">{orderAmount(shownAmount.amount)} USDT</span> }
       : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{" "}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadMain()} />}</> }] : []),
-    { label: "要做什么", value: actionName(shown.action) },
+    { label: "要做什么", value: actionName(shown) },
     { label: "对象", value: <span data-mono className="a2-code">{shown.obj}</span> },
     { label: "发起人", icon: Users, tone: "users", value: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""}`, reason: bizTime(shown.rawTs, shown.ts) },
     { label: "发起理由", value: keepCodes(shown.reason) },
@@ -2093,7 +2101,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         nav={{ hasPrev: historyIndex > 0, hasNext: historyIndex >= 0 && historyIndex < histPageRows.length - 1, onPrev: () => { if (historyIndex > 0) setHistoryId(histPageRows[historyIndex - 1].id); }, onNext: () => { if (historyIndex >= 0 && histPageRows[historyIndex + 1]) setHistoryId(histPageRows[historyIndex + 1].id); } }}>
         {shownHistory && <>
           <JudgmentPoints title={`判断要点 · 时间为${zone}`} rows={[
-            { label: "操作", value: actionName(shownHistory.action) },
+            { label: "操作", value: actionName(shownHistory) },
             { label: "发起人", icon: Users, tone: "users", value: shownActors?.proposer ?? "—" },
             { label: "处理人", value: shownActors ? `${shownActors.role} ${shownActors.actor}` : historyActorText(shownHistory.chain) },
             { label: "处理时间", value: bizTime(shownHistory.t, shownHistory.t) },

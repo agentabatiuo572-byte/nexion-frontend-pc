@@ -134,7 +134,7 @@ export type SupportMessageResult = { conversationNo: string };
 /** B15: who currently holds the customer session. Absent fields mean the backend has not shipped B15. */
 export type SupportSessionRole = "ADVISOR" | "SUPERVISOR" | "ADMIN";
 export type SupportSessionHolder = { adminId: number; name: string; role: SupportSessionRole };
-export type SupportSessionHold = { state: "FREE" | "MINE" | "OTHER"; holder: SupportSessionHolder | null; lastSentAt: string | null; autoEndAt: string | null; endMinutes: number | null };
+export type SupportSessionHold = { state: "FREE" | "MINE" | "OTHER"; holder: SupportSessionHolder | null; sessionRef: string | null; lastSentAt: string | null; autoEndAt: string | null; endMinutes: number | null };
 export const SUPPORT_SESSION_ROLE_LABEL: Record<SupportSessionRole, string> = { ADVISOR: "专属客服", SUPERVISOR: "客服主管", ADMIN: "超级管理员" };
 /** Operator wording of an AGENT_SWITCH row; App/H5 show the name only. */
 export function agentSwitchText(name: string | undefined, role: SupportSessionRole | undefined): string {
@@ -429,7 +429,7 @@ function sessionHold(value: unknown): SupportSessionHold {
   const state = enumValue(row.state, ["FREE", "MINE", "OTHER"] as const, "sessionHold.state");
   const holder = parseSupportSessionHolder(row.holder ?? null, "sessionHold.holder");
   if (state === "OTHER" && !holder) malformed("sessionHold.holder");
-  return { state, holder, lastSentAt: nullableTimestamp(row.lastSentAt, "sessionHold.lastSentAt") ?? null, autoEndAt: nullableTimestamp(row.autoEndAt, "sessionHold.autoEndAt") ?? null, endMinutes: row.endMinutes == null ? null : positive(row.endMinutes, "sessionHold.endMinutes") };
+  return { state, holder, sessionRef: row.sessionRef == null ? null : nonempty(row.sessionRef, "sessionHold.sessionRef"), lastSentAt: nullableTimestamp(row.lastSentAt, "sessionHold.lastSentAt") ?? null, autoEndAt: nullableTimestamp(row.autoEndAt, "sessionHold.autoEndAt") ?? null, endMinutes: row.endMinutes == null ? null : positive(row.endMinutes, "sessionHold.endMinutes") };
 }
 /** A send or start refused because someone else holds the session; carries that holder for the locked composer. */
 export function supportSessionBusy(error: unknown): SupportSessionHold | null {
@@ -437,7 +437,7 @@ export function supportSessionBusy(error: unknown): SupportSessionHold | null {
   try {
     const row = object(error.data, "sessionBusy");
     const holder = parseSupportSessionHolder(row.holder, "sessionBusy.holder");
-    return holder ? { state: "OTHER", holder, lastSentAt: nullableTimestamp(row.lastSentAt, "sessionBusy.lastSentAt") ?? null, autoEndAt: nullableTimestamp(row.autoEndAt, "sessionBusy.autoEndAt") ?? null, endMinutes: row.endMinutes == null ? null : positive(row.endMinutes, "sessionBusy.endMinutes") } : null;
+    return holder ? { state: "OTHER", holder, sessionRef: row.sessionRef == null ? null : nonempty(row.sessionRef, "sessionBusy.sessionRef"), lastSentAt: nullableTimestamp(row.lastSentAt, "sessionBusy.lastSentAt") ?? null, autoEndAt: nullableTimestamp(row.autoEndAt, "sessionBusy.autoEndAt") ?? null, endMinutes: row.endMinutes == null ? null : positive(row.endMinutes, "sessionBusy.endMinutes") } : null;
   } catch { return null; }
 }
 
@@ -477,7 +477,7 @@ export const supportClient = {
     (await supportClient.snapshot(options)).customers,
   customerDetail: (customerId: string, signal?: AbortSignal) => request(customerPath(customerId), detail, { signal }),
   sessionHold: (customerId: string, signal?: AbortSignal) => request(`${customerPath(customerId)}/session-hold`, sessionHold, { signal }),
-  endSessionHold: (customerId: string, idempotencyKey: string, signal?: AbortSignal) => request(`${customerPath(customerId)}/session-hold/end`, () => undefined, json("POST", {}, idempotencyKey, signal)),
+  endSessionHold: (customerId: string, idempotencyKey: string, sessionRef: string, signal?: AbortSignal) => request(`${customerPath(customerId)}/session-hold/end`, () => undefined, json("POST", { sessionRef }, idempotencyKey, signal)),
   conversationState: (conversationNo: string, signal?: AbortSignal) => request(`/conversations/${encodeURIComponent(nonempty(conversationNo, "conversationNo"))}`, (value) => {
     const row = object(object(value, "conversation.detail").conversation, "conversation");
     return { status: enumValue(row.status, ["OPEN", "TRANSFERRED", "RESOLVED", "CLOSED"] as const, "conversation.status"), version: count(row.version, "conversation.version") };
