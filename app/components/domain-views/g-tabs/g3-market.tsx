@@ -140,7 +140,8 @@ export function deriveG3RuntimeStatus(paused: boolean, pinValue: string) {
 }
 
 function ObjectTag({ state }: { state?: G3ObjectState }) {
-  if (!state || state.verification === "last-observation") return null;
+  if (!state) return null;
+  if (state.verification === "last-observation") return <StatusTag tone="warn" icon={state.kind === "locked" ? Lock : Clock3} explain={state.detail}>上次观察</StatusTag>;
   if (state.kind === "unknown") return <StatusTag tone="warn" icon={CircleHelp} explain={state.detail}>结果待确认</StatusTag>;
   if (state.kind === "approval") return <StatusTag tone="warn" icon={Clock3} explain={state.detail}>有待批申请</StatusTag>;
   return <StatusTag tone="warn" icon={Lock} explain={state.detail}>审批锁定中</StatusTag>;
@@ -326,10 +327,17 @@ function G3MarketEditor() {
   }
   const hasRecovery = (key: string) => commandRows.some(row => !row.ticketId && g3MarketObjectKey(row.change) === key);
   const syncCommands = useCallback(() => setCommandVersion(version => version + 1), []);
-  const clearObserved = useCallback((change: G3MarketChange) => {
+  const reconcileObservedAfterSave = useCallback((change: G3MarketChange) => {
     const key = g3MarketObjectKey(change);
-    setObservedStates(states => Object.fromEntries(Object.entries(states).filter(([object]) =>
-      change.action === "curve-cell" ? !object.startsWith("weekly:") : object !== key)));
+    // Backend 66ecdb47: updateWeeklyCurve:1381–1422 has no A2 lock check;
+    // updateOverride:1581 excludes currentPrice. Their direct saves do not end a pending ticket.
+    // updateControl:1472 and the other overrides:1581 require no active lock before saving.
+    const bypassesApprovalLock = change.action === "curve-cell" || change.action === "current-price";
+    setObservedStates(states => Object.fromEntries(Object.entries(states).flatMap(([object, state]) => {
+      const sameObject = change.action === "curve-cell" ? object.startsWith("weekly:") : object === key;
+      if (!sameObject) return [[object, state]];
+      return bypassesApprovalLock && state ? [[object, { ...state, verification: "last-observation" as const }]] : [];
+    })));
   }, []);
   const onCommandFailure = (change: G3MarketChange, failure: unknown) => {
     const code = g3MarketFailureCode(failure);
@@ -428,7 +436,7 @@ function G3MarketEditor() {
     setError("");
     try {
       const next = await action();
-      clearObserved(change);
+      reconcileObservedAfterSave(change);
       setOverview(next);
       // 写入成功后回读历史属于附加刷新:历史面失败不能把已成功的写入报成失败。
       const [historyResult] = await Promise.allSettled([fetchG3MarketHistory()]);
@@ -448,7 +456,7 @@ function G3MarketEditor() {
     } finally {
       setBusyKey(null);
     }
-  }, [toast, clearObserved]);
+  }, [toast, reconcileObservedAfterSave]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -484,8 +492,10 @@ function G3MarketEditor() {
     })}
   </Notice>;
   const pendingDirect = confirm && session ? pendingG3MarketCommand(session.adminId, confirm.change) : undefined;
+  const newWriteBlockedReason = overview ? undefined : "UVT 价格读取失败";
   const confirmationPanels = <>
       {marketConfirm && session && <G3MarketConfirm session={session} epoch={epoch} requested={marketConfirm}
+        newWriteBlockedReason={newWriteBlockedReason}
         today={overview?.activeDayIndex} frames={overview?.frames ?? (marketConfirm.action === "curve-cell"
           ? marketConfirm.expectedFrames.map(frame => ({ dayIndex: frame.dayIndex, targetPrice: Number(frame.targetPrice), pumpProbability: Number(frame.pumpProbability), volatilityPct: Number(frame.volatilityPct) })) : [])} tuning={MANUAL_TUNING}
         onStateChange={syncCommands} onFailure={onCommandFailure} onBusy={value => setBusyKey(value ? "market-confirm" : null)}
@@ -493,7 +503,7 @@ function G3MarketEditor() {
         onClose={() => setMarketConfirm(null)}
         onDone={(result) => {
           setMarketConfirm(null);
-          clearObserved(marketConfirm);
+          if (result.active) reconcileObservedAfterSave(marketConfirm);
           if (result.active) setOverview(result.active);
           if (result.ticketKey) setVerifiedApprovals(keys => ({ ...keys, [result.ticketKey!]: Date.now() }));
           toast(result.acknowledgement);
@@ -515,6 +525,7 @@ function G3MarketEditor() {
           completionCopy={confirm.completionCopy}
           confirmLabel={confirm.confirmLabel}
           reasonPlaceholder={confirm.reasonPlaceholder}
+          blockedReason={!pendingDirect ? newWriteBlockedReason : undefined}
           getPendingReason={() => session ? pendingG3MarketCommand(session.adminId, confirm.change)?.reason : undefined}
           inlineApproval={{
             pending: !!pendingDirect,
@@ -532,6 +543,7 @@ function G3MarketEditor() {
           onClose={() => openActionConfirm(null)}
           onConfirm={async (reason, newValue) => {
             if (!session) return;
+            if (newWriteBlockedReason && !pendingG3MarketCommand(session.adminId, confirm.change)) throw new Error(newWriteBlockedReason);
             try {
               await mutate(confirm.change, async () => {
                 const result = await executeG3MarketChange(session, confirm.change, newValue ?? pendingDirect?.value ?? confirm.value ?? "", reason);
@@ -541,6 +553,7 @@ function G3MarketEditor() {
               openActionConfirm(null);
             } catch (failure) {
               onCommandFailure(confirm.change, failure);
+              if (!overview && !pendingG3MarketCommand(session.adminId, confirm.change)) openActionConfirm(null);
               throw failure;
             } finally { syncCommands(); }
           }}
@@ -704,7 +717,7 @@ function G3MarketEditor() {
           const canEdit = allowed(curveAuthority(field)) || hasRecovery(`weekly:D${dayIndex + 1}:${field}`);
           return (
             <Td key={field} align="right">
-              {state?.verification === "current" && <span className="g3-cell-tag"><ObjectTag state={state} /></span>}
+              {state && <span className="g3-cell-tag"><ObjectTag state={state} /></span>}
               <span className="g3-cell">
                 {(up || down) && <span className="g3-delta" data-dir={up ? "up" : "down"} title={up ? "比前一天高" : "比前一天低"}>
                   {up ? <TrendingUp size={13} aria-hidden /> : <TrendingDown size={13} aria-hidden />}<span className="rd-sr-only">{up ? "比前一天高" : "比前一天低"}</span>
@@ -740,7 +753,7 @@ function G3MarketEditor() {
             const state = OBJECT_STATES[`weekly:D${dayIndex + 1}:${field}`];
             return (
               <Td key={frame.dayIndex}>
-                {state?.verification === "current" && <span className="g3-cell-tag"><ObjectTag state={state} /></span>}
+                {state && <span className="g3-cell-tag"><ObjectTag state={state} /></span>}
                 <span className="g3-cell">
                   <span className="g3-num">{fieldText(field, frameValue(frame, field))}</span>
                   {(allowed(curveAuthority(field)) || hasRecovery(`weekly:D${dayIndex + 1}:${field}`)) && <IconButton data-size="sm" aria-label={`修改 D${dayIndex + 1} ${FIELD_NAME[field]}`} disabledReason={busyReason ?? (field === "pumpProbability" && !hasRecovery(`weekly:D${dayIndex + 1}:${field}`) ? tuningBlocked : undefined)} onClick={() => openCurveCellMc(dayIndex, field)}><Pencil size={13} aria-hidden /></IconButton>}
