@@ -564,7 +564,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
           <Fact k="线上">仍按生效的 v{overview.model.version} 评分</Fact>
         </Facts>
       ),
-      content: <div className="rd-impact"><p className="rd-impact-title">这次改的 {editChanged} 项（和{overview.draft ? `草稿 v${overview.draft.version}` : `生效 v${overview.model.version}`}比）</p><ModelDiff rows={editRows} /></div>,
+      content: <div className="rd-impact"><p className="rd-impact-title">这次改的 {editChanged} 项（和{overview.draft ? `草稿 v${overview.draft.version}` : `生效 v${overview.model.version}`} 比）</p><ModelDiff rows={editRows} /></div>,
       statedBrief: {
         impact: "只保存草稿，线上评分、用户分数和提现审核都不变；要有发布权限的超级管理员发布后才生效。",
         check: "提交前已核对：五项权重合计 100%，分档线从低到高，自动升级线在 70–100 分且不低于高风险起始分，20 项细则都在范围内、次序正确。",
@@ -875,7 +875,13 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
 
   const lookup = (
     <Panel title="查用户的风险分" icon={UserRound} tone="role-3" explain="可以按用户编号、昵称、手机号或推荐码查；候选最多 8 个，按 Enter 选第一个，选中后看分数怎么来的。">
-      <div className="k4-lookup">
+      <div className="k4-lookup" onKeyDown={(event) => {
+        // 没有可选的候选时，Enter 按输入的编号直接查（旧页面行为）；有候选时由下拉选第一项。
+        if (event.key === "Enter" && !event.defaultPrevented && !event.nativeEvent.isComposing && (event.target as HTMLElement).tagName === "INPUT") {
+          event.preventDefault();
+          void loadUser(userSearch);
+        }
+      }}>
         <SearchSelect aria-label="搜索用户编号或用户名" placeholder="搜索用户编号 / 用户名 / 手机号"
           value={userSearch}
           onChange={(next) => {

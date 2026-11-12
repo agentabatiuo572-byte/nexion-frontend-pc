@@ -119,7 +119,7 @@ export function BandValues({ model, before }: { model: Pick<EditableModel, "band
   const item = (name: string, value: number, old?: number) => (
     <div className="k4-band-value">
       <dt>{name}</dt>
-      <dd>{old !== undefined && old !== value ? <><span className="k4-was">{old}</span><span className="k4-arrow" aria-hidden>→</span><b data-after="">{value}</b></> : <b>{value}</b>}<span className="k4-unit">分</span></dd>
+      <dd>{old !== undefined && old !== value ? <><span className="k4-was">{old}</span><span className="k4-arrow" aria-hidden>→</span><b data-after="">{value}</b></> : <b>{value}</b>} <span className="k4-unit">分</span></dd>
     </div>
   );
   return (
