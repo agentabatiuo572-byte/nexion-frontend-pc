@@ -28,6 +28,7 @@ import {
   TableMessage, Td, Th, Tr, useTabIds, type DiffRow, type JudgmentRow, type SegmentItem, type StateTone,
 } from "@/app/components/rd";
 import {
+  REVIEW_OPERATION_BY_ACTION,
   approveA2Operation,
   createA2CommandKey,
   exportA2Audit,
@@ -675,15 +676,6 @@ const HI_CHANGE_LABELS: Record<string, string> = {
 const WHEEL_REVIEW_OPERATIONS = ["h4_wheel_tier_create", "h4_wheel_tier_update", "h4_wheel_tier_delete", "h4_wheel_probabilities_update"];
 const COURSE_REVIEW_OPERATIONS = ["i7_course_first_publish", "i7_course_version_publish", "i7_course_version_rollback"];
 const hiReviewLabels = (operationCode?: string) => ["h4_legacy_event_reward_update", ...COURSE_REVIEW_OPERATIONS, ...WHEEL_REVIEW_OPERATIONS].includes(operationCode ?? "") ? HI_CHANGE_LABELS : CHANGE_LABELS;
-/**
- * 后端 66ecdb47 只给少数审批单回 operationCode（OpsAuditCenterService.ticketMetadata），G 参数、H4、课程单是空的。
- * 选展示方式时按后端写死的动作名认（H4GrowthApproval.proposalAction、LearningCourseActivationApproval.action、G2G7ParamApproval.proposalAction）。
- */
-const REVIEW_OPERATION_BY_ACTION: Record<string, string> = {
-  提高旧活动奖励: "h4_legacy_event_reward_update", 新增转盘奖项: "h4_wheel_tier_create", 放宽转盘奖项配置: "h4_wheel_tier_update",
-  删除转盘奖项并提高安慰奖: "h4_wheel_tier_delete", 提高转盘奖项概率: "h4_wheel_probabilities_update",
-  首次发布奖励课程: "i7_course_first_publish", 发布奖励课程版本: "i7_course_version_publish", 回滚至有奖励的课程版本: "i7_course_version_rollback",
-};
 const G_PARAM_ACTION = /^(兑换参数调整|回购参数调整|调整创世参数) · ([A-Za-z]+)$/;
 const reviewOperation = (w: { operationCode?: string; action: string }) =>
   G_PARAM_ACTION.test(w.action) ? "g_param" : w.operationCode ?? REVIEW_OPERATION_BY_ACTION[w.action];

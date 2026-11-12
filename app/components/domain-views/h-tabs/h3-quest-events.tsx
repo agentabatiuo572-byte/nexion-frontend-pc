@@ -2,7 +2,7 @@
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
-import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
+import { REVIEW_OPERATION_BY_ACTION, fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -490,7 +490,12 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     if (section !== "events" || !canReadA2) return;
     try {
       const overview = await fetchA2Overview();
-      setH4Approvals(overview.operationQueue.filter(row => row.status === "pending" && H4_APPROVAL_OPS.has(row.operationCode ?? "")));
+      setH4Approvals(overview.operationQueue.filter(row => {
+        const op = REVIEW_OPERATION_BY_ACTION[row.action];
+        return row.status === "pending" && H4_APPROVAL_OPS.has(op)
+          && (!row.operationCode || row.operationCode === op)
+          && (op === "h4_legacy_event_reward_update" ? !!row.obj : row.obj === "ACTIVE_POOL");
+      }));
     } catch {
       setH4Approvals("error");
     }
@@ -619,6 +624,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     if (!session) throw new Error("登录已失效，请重新登录后核对原操作。");
     const result = await submitHIRewardCommand(scope, { kind: "proposal", input: hiRewardProposal(session, op, values, before, after, reason) }, form, editValue);
     if (result.kind !== "proposal") throw new Error("原退役操作已取得回执，请刷新奖池核对后再修改。");
+    await reloadH4Approvals();
     toast("已提交，等待审批后执行");
   };
 
@@ -638,6 +644,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const pending = pendingHIRewardCommand(HI_WHEEL_SCOPE);
     if (!pending) return false;
     const result = await submitHIRewardCommand(HI_WHEEL_SCOPE, pending.payload);
+    await reloadH4Approvals();
     if (result.kind === "retire") { apply(result.overview); toast("原退役操作已完成，积分奖项已退役。请用合法奖型把概率补足到 100%"); }
     else toast(result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
     return true;
@@ -657,6 +664,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         const pending = pendingHIRewardCommand(scope);
         if (pending?.payload.kind === "proposal") {
           const result = await submitHIRewardCommand(scope, pending.payload);
+          await reloadH4Approvals();
           toast(result.kind === "proposal" && result.ticket.status === "pending"
             ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
           return;
@@ -1461,13 +1469,61 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     });
   };
 
+  const eventName = (id: string) => {
+    const zh = text(model?.contentLocales?.event?.[id]?.zh?.name, "");
+    return zh || text((model?.events ?? []).find((event) => event.id === id)?.name, id);
+  };
+  const hiRecords = section === "events" ? pendingHIRewardCommands().filter((record) => record.scope.startsWith("H/")) : [];
+  const h4Pending = Array.isArray(h4Approvals) ? h4Approvals : [];
+  const hiRecovery = (
+    (hiRecords.length > 0 || h4Pending.length > 0 || h4Approvals === "error") && (
+        <section className="l-card" aria-label="审批中和待核对的修改">
+          <div className="l-h">
+            <span className="ttl">审批中和待核对的修改</span>
+            <span className="sub">· 旧活动奖励和抽奖转盘</span>
+            {canReadA2 && <div className="r"><button className="l-btn sm" onClick={() => void reloadH4Approvals()}>刷新审批进度</button></div>}
+          </div>
+          <div className="l-b" style={{ display: "grid", gap: 8 }}>
+            {hiRecords.map((record) => {
+              const subject = hiCommandSubject(record, eventName);
+              const expired = isRetryExpired(record);
+              const retire = record.payload.kind === "retire";
+              return <div className={`htint${expired ? "" : " warn"}`} key={record.commandKey} role="status" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
+                <span style={{ flex: "1 1 320px", minWidth: 0 }}>
+                  <b>{subject}</b> <span className={`bdg ${expired ? "dim" : "warn"}`}>{expired ? "已超过 24 小时" : "结果未确认"}</span><br />
+                  {expired
+                    ? retire ? "不能再按原请求重发，也查不到回执。请刷新奖池，核对这一档是否已经退役；原记录继续保留。" : "不能再按原请求重发，只能查询原审批单。"
+                    : retire ? "没收到系统回复，不知道这一档退役了没有。核对时按原请求原样重发，同一命令不会重复执行。"
+                      : "没收到系统回复，不知道审批单建没建成。核对时先按原命令查询，查不到才按原请求原样重发，不会重复建单。"}
+                </span>
+                {!(expired && retire) && <button className="l-btn sm mc" disabled={!(record.scope === HI_WHEEL_SCOPE ? canWheelWrite : canModuleWrite)}
+                  onClick={() => openResumeHICommand(record, subject)}>{expired ? "查询原审批单" : "核对原操作"}</button>}
+                {expired && retire && <button className="l-btn sm" onClick={() => void reload()}>刷新奖池</button>}
+              </div>;
+            })}
+            {h4Pending.map((row) => {
+              const subject = REVIEW_OPERATION_BY_ACTION[row.action] === "h4_legacy_event_reward_update" ? `${row.action} · ${eventName(row.obj)}` : `${row.action} · 抽奖转盘`;
+              return <div className="htint" key={row.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
+                <span style={{ flex: "1 1 320px", minWidth: 0 }}>
+                  <b>{subject}</b> <span className="bdg warn">待审批</span><br />
+                  另一位有审批批准权限的超级管理员批准前，{REVIEW_OPERATION_BY_ACTION[row.action] === "h4_legacy_event_reward_update" ? "活动奖励" : "转盘奖池"}不变；这期间同一对象的其他修改会被拦下。{row.mine ? "这张审批单是你发起的。" : ""}
+                </span>
+                <a className="l-btn sm" href="/platform/audit">去操作记录与审批查看</a>
+              </div>;
+            })}
+            {h4Approvals === "error" && <div className="htint warn" role="alert" style={{ fontSize: 12 }}>审批进度读取失败，请点「刷新审批进度」重试。</div>}
+          </div>
+        </section>
+      )
+  );
+
   if (loading) {
-    return <section className="l-card"><div className="l-b">{moduleLabel}数据加载中…</div></section>;
+    return <>{hiRecovery}<section className="l-card"><div className="l-b">{moduleLabel}数据加载中…</div></section></>;
   }
 
   if (error || !model) {
     return (
-      <section className="l-card">
+      <>{hiRecovery}<section className="l-card">
         <div className="l-h"><span className="ttl">{moduleLabel}数据加载失败</span></div>
         <div className="l-b">
           <div>{error ?? "没有收到数据，请重试；一直失败请联系值班同事。"}</div>
@@ -1475,7 +1531,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             重试加载
           </button>
         </div>
-      </section>
+      </section></>
     );
   }
 
@@ -1495,12 +1551,6 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const wheelProbabilityOk = Math.abs(wheelProbabilitySum - 100) < 0.001;
   const wheelPointsTiers = (model.wheelTiers ?? []).filter(wheelPointsTier);
   const wheelNexTiers = (model.wheelTiers ?? []).filter(wheelLegacyNexTier);
-  const eventName = (id: string) => {
-    const zh = text(model.contentLocales?.event?.[id]?.zh?.name, "");
-    return zh || text((model.events ?? []).find((event) => event.id === id)?.name, id);
-  };
-  const hiRecords = section === "events" ? pendingHIRewardCommands().filter((record) => record.scope.startsWith("H/")) : [];
-  const h4Pending = Array.isArray(h4Approvals) ? h4Approvals : [];
   const localizedRows = section === "tasks"
     ? [
         ...[...model.dayOneTasks, ...model.weeklyTier1, ...model.weeklyTier2].map((task) => ({
@@ -1527,45 +1577,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   return (
     <>
-      {(hiRecords.length > 0 || h4Pending.length > 0 || h4Approvals === "error") && (
-        <section className="l-card" aria-label="审批中和待核对的修改">
-          <div className="l-h">
-            <span className="ttl">审批中和待核对的修改</span>
-            <span className="sub">· 旧活动奖励和抽奖转盘</span>
-            {canReadA2 && <div className="r"><button className="l-btn sm" onClick={() => void reloadH4Approvals()}>刷新审批进度</button></div>}
-          </div>
-          <div className="l-b" style={{ display: "grid", gap: 8 }}>
-            {hiRecords.map((record) => {
-              const subject = hiCommandSubject(record, eventName);
-              const expired = isRetryExpired(record);
-              const retire = record.payload.kind === "retire";
-              return <div className={`htint${expired ? "" : " warn"}`} key={record.commandKey} role="status" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
-                <span style={{ flex: "1 1 320px", minWidth: 0 }}>
-                  <b>{subject}</b> <span className={`bdg ${expired ? "dim" : "warn"}`}>{expired ? "已超过 24 小时" : "结果未确认"}</span><br />
-                  {expired
-                    ? retire ? "不能再按原请求重发，也查不到回执。请刷新奖池，核对这一档是否已经退役；原记录继续保留。" : "不能再按原请求重发，只能查询原审批单。"
-                    : retire ? "没收到系统回复，不知道这一档退役了没有。核对时按原请求原样重发，同一命令不会重复执行。"
-                      : "没收到系统回复，不知道审批单建没建成。核对时先按原命令查询，查不到才按原请求原样重发，不会重复建单。"}
-                </span>
-                {!(expired && retire) && <button className="l-btn sm mc" disabled={!(record.scope === HI_WHEEL_SCOPE ? canWheelWrite : canModuleWrite)}
-                  onClick={() => openResumeHICommand(record, subject)}>{expired ? "查询原审批单" : "核对原操作"}</button>}
-                {expired && retire && <button className="l-btn sm" onClick={() => void reload()}>刷新奖池</button>}
-              </div>;
-            })}
-            {h4Pending.map((row) => {
-              const subject = row.operationCode === "h4_legacy_event_reward_update" ? `${row.action} · ${eventName(row.obj)}` : `${row.action} · 抽奖转盘`;
-              return <div className="htint" key={row.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
-                <span style={{ flex: "1 1 320px", minWidth: 0 }}>
-                  <b>{subject}</b> <span className="bdg warn">待审批</span><br />
-                  另一位有审批批准权限的超级管理员批准前，{row.operationCode === "h4_legacy_event_reward_update" ? "活动奖励" : "转盘奖池"}不变；这期间同一对象的其他修改会被拦下。{row.mine ? "这张审批单是你发起的。" : ""}
-                </span>
-                <a className="l-btn sm" href="/platform/audit">去操作记录与审批查看</a>
-              </div>;
-            })}
-            {h4Approvals === "error" && <div className="htint warn" role="alert" style={{ fontSize: 12 }}>审批进度读取失败，请点「刷新审批进度」重试。</div>}
-          </div>
-        </section>
-      )}
+      {hiRecovery}
       {section === "tasks" ? (
         <div className="f-stats">
           <div className="f-stat">

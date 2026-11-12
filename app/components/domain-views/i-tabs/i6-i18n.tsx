@@ -20,7 +20,7 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { hiCourseScope, hiRewardProposal, pendingHIRewardCommand, pendingHIRewardCommands, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
-import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
+import { REVIEW_OPERATION_BY_ACTION, fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -90,7 +90,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     if (view !== "learn" || !canReadA2) return;
     try {
       const overview = await fetchA2Overview();
-      setCourseApprovals(overview.operationQueue.filter(row => row.status === "pending" && COURSE_APPROVAL_OPS.has(row.operationCode ?? "")));
+      setCourseApprovals(overview.operationQueue.filter(row => {
+        const op = REVIEW_OPERATION_BY_ACTION[row.action];
+        return row.status === "pending" && COURSE_APPROVAL_OPS.has(op) && !!row.obj
+          && (!row.operationCode || row.operationCode === op);
+      }));
     } catch {
       setCourseApprovals("error");
     }
@@ -378,6 +382,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const pending = pendingHIRewardCommand(scope);
     if (pending) {
       const result = await submitHIRewardCommand(scope, pending.payload);
+      await reloadCourseApprovals();
       toast(result.kind === "proposal" && result.ticket.status === "pending"
         ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
       return;
@@ -394,6 +399,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         expectedCurrentVersion: c.v, expectedCurrentRevision: c.revision, expectedCurrentStatus: c.status };
       await submitHIRewardCommand(scope, { kind: "proposal", input: hiRewardProposal(session, `i7_course_${kind}`, values,
         `${c.v} · ${c.status} · ${c.reward} UVT`, `${values.version} · published · ${rawReward} UVT`, reason) });
+      await reloadCourseApprovals();
       toast("已提交，等待审批后执行");
       return;
     }
@@ -686,11 +692,61 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     );
   };
 
+  const courseRecovery = (() => {
+        if (view !== "learn") return null;
+        const records = pendingHIRewardCommands().filter((record) => record.scope.startsWith("I/"));
+        const approvals = Array.isArray(courseApprovals) ? courseApprovals : [];
+        if (!records.length && !approvals.length && courseApprovals !== "error") return null;
+        const courseTitle = (id: string) => nexGridBrandText(allCourses.find((course) => course.id === id)?.title ?? id);
+        const subject = (record: HIRewardCommand) => record.payload.kind === "proposal"
+          ? `${record.payload.input.action} · ${courseTitle(record.payload.input.obj)} ${String(record.payload.input.command.params.version ?? "")}`.trim()
+          : "原操作";
+        return <section className="l-card" aria-label="审批中和待核对的课程操作">
+          <div className="l-h">
+            <span className="ttl">审批中和待核对的课程操作</span>
+            <span className="sub">· 有奖励的课程发布和回滚</span>
+            {canReadA2 && <div className="r"><button className="l-btn sm" onClick={() => void reloadCourseApprovals()}>刷新审批进度</button></div>}
+          </div>
+          <div className="l-b" style={{ display: "grid", gap: 8 }}>
+            {records.map((record) => {
+              const expired = isRetryExpired(record);
+              const label = subject(record);
+              return <div className={`itint${expired ? "" : " warn"}`} key={record.commandKey} role="status" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
+                <span style={{ flex: "1 1 320px", minWidth: 0 }}>
+                  <b>{label}</b> <span className={`bdg ${expired ? "dim" : "warn"}`}>{expired ? "已超过 24 小时" : "结果未确认"}</span><br />
+                  {expired ? "不能再按原请求重发，只能查询原审批单。" : "没收到系统回复，不知道审批单建没建成。核对时先按原命令查询，查不到才按原请求原样重发，不会重复建单。"}
+                </span>
+                <button className="l-btn sm mc" disabled={!canPublishI7} onClick={() => openActionConfirm({ briefKind: "record",
+                  action: `核对原操作 · ${label}`,
+                  detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原命令查询；查不到才按原请求原样重发，不会重复执行。理由沿用原操作。</>,
+                  confirmLabel: expired ? "查询原审批单" : "核对原操作",
+                  getPendingReason: () => pendingHIRewardCommands().find((row) => row.commandKey === record.commandKey)?.payload.input.reason,
+                  run: async () => {
+                    const result = await submitHIRewardCommand(record.scope, record.payload);
+                    toast(result.kind === "proposal" && result.ticket.status === "pending"
+                      ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+                    void reloadCourseApprovals();
+                  },
+                })}>{expired ? "查询原审批单" : "核对原操作"}</button>
+              </div>;
+            })}
+            {approvals.map((row) => <div className="itint" key={row.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
+              <span style={{ flex: "1 1 320px", minWidth: 0 }}>
+                <b>{row.action} · {courseTitle(row.obj)}</b> <span className="bdg warn">待审批</span><br />
+                另一位有审批批准权限的超级管理员批准前，课程保持现在的版本；这期间这门课的其他发布或回滚会被拦下。{row.mine ? "这张审批单是你发起的。" : ""}
+              </span>
+              <a className="l-btn sm" href="/platform/audit">去操作记录与审批查看</a>
+            </div>)}
+            {courseApprovals === "error" && <div className="itint warn" role="alert" style={{ fontSize: 12 }}>审批进度读取失败，请点「刷新审批进度」重试。</div>}
+          </div>
+        </section>;
+      })();
+
   if (contentLoading && !data) {
-    return <section className="l-card"><div className="l-b"><div className="itint">{view === "i18n" ? "多语言词条" : "教程"}数据加载中…</div></div></section>;
+    return <>{courseRecovery}<section className="l-card"><div className="l-b"><div className="itint">{view === "i18n" ? "多语言词条" : "教程"}数据加载中…</div></div></section></>;
   }
   if (!data) {
-    return <section className="l-card"><div className="l-b"><div className="itint danger">暂无{view === "i18n" ? "多语言词条" : "教程"}数据</div></div></section>;
+    return <>{courseRecovery}<section className="l-card"><div className="l-b"><div className="itint danger">暂无{view === "i18n" ? "多语言词条" : "教程"}数据</div></div></section></>;
   }
 
   /* ============ render ============ */
@@ -973,54 +1029,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         </div>
       </div>
 
-      {(() => {
-        const records = pendingHIRewardCommands().filter((record) => record.scope.startsWith("I/"));
-        const approvals = Array.isArray(courseApprovals) ? courseApprovals : [];
-        if (!records.length && !approvals.length && courseApprovals !== "error") return null;
-        const courseTitle = (id: string) => nexGridBrandText(allCourses.find((course) => course.id === id)?.title ?? id);
-        const subject = (record: HIRewardCommand) => record.payload.kind === "proposal"
-          ? `${record.payload.input.action} · ${courseTitle(record.payload.input.obj)} ${String(record.payload.input.command.params.version ?? "")}`.trim()
-          : "原操作";
-        return <section className="l-card" aria-label="审批中和待核对的课程操作">
-          <div className="l-h">
-            <span className="ttl">审批中和待核对的课程操作</span>
-            <span className="sub">· 有奖励的课程发布和回滚</span>
-            {canReadA2 && <div className="r"><button className="l-btn sm" onClick={() => void reloadCourseApprovals()}>刷新审批进度</button></div>}
-          </div>
-          <div className="l-b" style={{ display: "grid", gap: 8 }}>
-            {records.map((record) => {
-              const expired = isRetryExpired(record);
-              const label = subject(record);
-              return <div className={`itint${expired ? "" : " warn"}`} key={record.commandKey} role="status" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
-                <span style={{ flex: "1 1 320px", minWidth: 0 }}>
-                  <b>{label}</b> <span className={`bdg ${expired ? "dim" : "warn"}`}>{expired ? "已超过 24 小时" : "结果未确认"}</span><br />
-                  {expired ? "不能再按原请求重发，只能查询原审批单。" : "没收到系统回复，不知道审批单建没建成。核对时先按原命令查询，查不到才按原请求原样重发，不会重复建单。"}
-                </span>
-                <button className="l-btn sm mc" disabled={!canPublishI7} onClick={() => openActionConfirm({ briefKind: "record",
-                  action: `核对原操作 · ${label}`,
-                  detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原命令查询；查不到才按原请求原样重发，不会重复执行。理由沿用原操作。</>,
-                  confirmLabel: expired ? "查询原审批单" : "核对原操作",
-                  getPendingReason: () => pendingHIRewardCommands().find((row) => row.commandKey === record.commandKey)?.payload.input.reason,
-                  run: async () => {
-                    const result = await submitHIRewardCommand(record.scope, record.payload);
-                    toast(result.kind === "proposal" && result.ticket.status === "pending"
-                      ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
-                    void reloadCourseApprovals();
-                  },
-                })}>{expired ? "查询原审批单" : "核对原操作"}</button>
-              </div>;
-            })}
-            {approvals.map((row) => <div className="itint" key={row.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
-              <span style={{ flex: "1 1 320px", minWidth: 0 }}>
-                <b>{row.action} · {courseTitle(row.obj)}</b> <span className="bdg warn">待审批</span><br />
-                另一位有审批批准权限的超级管理员批准前，课程保持现在的版本；这期间这门课的其他发布或回滚会被拦下。{row.mine ? "这张审批单是你发起的。" : ""}
-              </span>
-              <a className="l-btn sm" href="/platform/audit">去操作记录与审批查看</a>
-            </div>)}
-            {courseApprovals === "error" && <div className="itint warn" role="alert" style={{ fontSize: 12 }}>审批进度读取失败，请点「刷新审批进度」重试。</div>}
-          </div>
-        </section>;
-      })()}
+      {courseRecovery}
 
       {/* I7 教程列表 */}
       <section className="l-card">

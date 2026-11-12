@@ -3524,6 +3524,8 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 #### [D7] 越南盾提现参数
 
+待批队列按规范动作「放宽越南盾提现参数」和配置对象 `current` 识别；`operationCode` 在此票种为空，不作为必填筛选。结论、待批准提示和重复放宽阻断共用该队列，直接收紧能力不变。依据后端 `66ecdb47` 的 `AuditReplayBusinessPermissionGuard`、`WithdrawalConfigApproval.target` 与 `OpsAuditCenterService.ticketMetadata`。
+
 **① 目的 & 对齐**
 管理 BANKQR 提现的卖出点差、提现报价有效期、手续费与单笔限额，对齐前端 §9.3 的提现方式选择及银行单恢复。D6 持有基准价和买入点差，D7 只管理出金参数；D2 持有单据处置与资金终态。
 字段及 App 账户、报价、恢复契约见[银行卡提现规格](../../../PRD/specs/FEAT-PAYOUT-VND01-bank-payout-rail.md)。

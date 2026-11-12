@@ -21,7 +21,8 @@ const RECEIPT_ONLY_HELP = "这类操作后端只凭原操作留下的完成回�
 
 /** Closure is offered after 24 hours or once the backend itself reports the result as unknown; never to an active writer. */
 export function closureOpen(outcome: CommandOutcome | undefined, expired: boolean) {
-  return expired || !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "UNKNOWN";
+  const status = outcome && "receipt" in outcome ? outcome.receipt?.originalStatus : undefined;
+  return status !== "PROCESSING" && (expired || status === "UNKNOWN");
 }
 
 function view(outcome: CommandOutcome, expired: boolean): { tone: Tone & ("ok" | "warn" | "progress" | "neutral" | "done"); title: string; text: string } {
