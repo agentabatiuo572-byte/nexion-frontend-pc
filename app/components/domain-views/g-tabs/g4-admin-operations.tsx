@@ -140,8 +140,10 @@ export default function G4AdminOperations({ ctx, refreshVersion = 0, blocked = f
       title: `调整${definition.label}`,
       detail: definition.kind === "text" && /At$/.test(definition.key) ? "只改设置，不会产生用户资产或成交。时间请按 UTC 填写（例如 2026-08-01T00:00:00Z），开始时间要早于结束时间。" : "只改设置，不会产生用户资产或成交。",
       effect: <StatusTag tone="progress" filled explain="确认后立即保存，不走审批。App 下次读取时用新设置，已打开的 App 页面不会自动刷新。">立即生效</StatusTag>,
+      confirmLabel: "确认修改",
       facts: <Facts>
         <Fact k="改的是">{definition.label}</Fact>
+        {definition.kind !== "number" && <Fact k="现在">{configShown(definition.key, definition.kind, configured, help?.unit)}</Fact>}
         <Fact k="改了会怎样"><KeepText text={help?.effect ?? "—"} /></Fact>
         <Fact k="付不付钱">不付钱；只改设置，不产生用户资产或成交</Fact>
       </Facts>,

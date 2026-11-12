@@ -96,6 +96,11 @@ function percent(value: number | string) {
   return `${text.includes(".") ? text.replace(/\.?0+$/, "") : text}%`;
 }
 
+/** 一种资产的数量：USDT 按金额写（至少两位小数），UVT 去掉补的 0。 */
+function assetNum(value: number, asset: string) {
+  return asset === "USDT" ? amount(value) : quantity(value);
+}
+
 function fmtCount(value: number) {
   return value.toLocaleString("en-US");
 }
@@ -237,7 +242,7 @@ function ExchangeNo({ value }: { value: string }) {
 }
 
 function orderAmount(order: G2ExchangeOrder) {
-  return `${quantity(order.fromAmount)} ${order.fromAsset} → ${quantity(order.toAmount)} ${order.toAsset}`;
+  return `${assetNum(order.fromAmount, order.fromAsset)} ${order.fromAsset} → ${assetNum(order.toAmount, order.toAsset)} ${order.toAsset}`;
 }
 
 export function G2Exchange() {
@@ -870,7 +875,7 @@ function G2ExchangePage() {
         <Fact k="兑换单号"><span data-mono>{order.exchangeNo}</span></Fact>
         <Fact k="用户">{order.userNo} · {operatorNicknameText(order.nickname)}</Fact>
         <Fact k="兑换">{orderAmount(order)}</Fact>
-        <Fact k="退款">有预占记录的退回 {quantity(order.fromAmount)} {order.fromAsset}（原来源币种、原数额）；没有预占记录的历史单只取消，不扣不退</Fact>
+        <Fact k="退款">有预占记录的退回 {assetNum(order.fromAmount, order.fromAsset)} {order.fromAsset}（原来源币种、原数额）；没有预占记录的历史单只取消，不扣不退</Fact>
       </Facts>,
       statedBrief: { impact: "这笔兑换马上取消，之后不会再成交；不收取消费。", check: "核对单号和用户，理由写清为什么由后台取消。" },
       getPendingReason: () => pendingG2ExchangeCommand(batchAdminId, path)?.input.reason,
@@ -1128,7 +1133,7 @@ function G2ExchangePage() {
               <Tr key={order.exchangeNo} selected={order.exchangeNo === queueDrawer} onOpen={busy ? undefined : () => setQueueDrawer(order.exchangeNo)}>
                 <Td><ExchangeNo value={order.exchangeNo} /></Td>
                 <Td><Cell main={order.userNo} sub={operatorNicknameText(order.nickname)} title={`${order.userNo} · ${operatorNicknameText(order.nickname)}`} /></Td>
-                <Td align="right"><Cell num main={`${quantity(order.toAmount)} ${order.toAsset}`} sub={`${quantity(order.fromAmount)} ${order.fromAsset} 换`} /></Td>
+                <Td align="right"><Cell num main={`${assetNum(order.toAmount, order.toAsset)} ${order.toAsset}`} sub={`${assetNum(order.fromAmount, order.fromAsset)} ${order.fromAsset} 换`} /></Td>
                 <Td grow><Cell main={order.gateReason} title={order.gateReason} /></Td>
                 <Td><Cell num main={timeText(order.createdAt)} /></Td>
               </Tr>
@@ -1192,7 +1197,7 @@ function G2ExchangePage() {
                   <tr key={row.exchangeNo}>
                     <Td><Cell main={row.userNo} sub={operatorNicknameText(row.nickname)} /></Td>
                     <Td><ExchangeNo value={row.exchangeNo} /></Td>
-                    <Td align="right"><Cell num main={`${quantity(row.toAmount)} ${row.toAsset}`} sub={`${quantity(row.fromAmount)} ${row.fromAsset} 换`} /></Td>
+                    <Td align="right"><Cell num main={`${assetNum(row.toAmount, row.toAsset)} ${row.toAsset}`} sub={`${assetNum(row.fromAmount, row.fromAsset)} ${row.fromAsset} 换`} /></Td>
                     <Td grow><Cell main={row.gateReason} title={row.gateReason} /></Td>
                   </tr>
                 ))}
@@ -1214,8 +1219,8 @@ function G2ExchangePage() {
             { label: "用户所在地区", value: selectedQueue.countryCode, reason: "处理排队时按这个国家判断地区封锁。" },
           ]} />
           <Facts>
-            <Fact k="兑换" lead tone="role-1" unit={selectedQueue.toAsset}>{quantity(selectedQueue.toAmount)}</Fact>
-            <Fact k="付出">{quantity(selectedQueue.fromAmount)} {selectedQueue.fromAsset}</Fact>
+            <Fact k="兑换" lead tone="role-1" unit={selectedQueue.toAsset}>{assetNum(selectedQueue.toAmount, selectedQueue.toAsset)}</Fact>
+            <Fact k="付出">{assetNum(selectedQueue.fromAmount, selectedQueue.fromAsset)} {selectedQueue.fromAsset}</Fact>
             <Fact k="折合">{amount(selectedQueue.amountUsdt)} USDT</Fact>
             <Fact k="方向">{operatorCopyText(selectedQueue.directionLabel)}</Fact>
             <Fact k="汇率">{selectedQueue.rate ? `1 UVT = ${quantity(selectedQueue.rate)} USDT` : "—"}</Fact>

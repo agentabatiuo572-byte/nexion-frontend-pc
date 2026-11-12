@@ -555,7 +555,7 @@ function G7RepurchasePage() {
             <Fact k="改的是">{label}</Fact>
             {original
               ? <Fact k="原申请"><Change from={currentText} to={originalValue ? paramValueText(param.key, originalValue) : "—"} /></Fact>
-              : <Fact k={directRecovery ? "提交时" : "现在"}>{currentText}</Fact>}
+              : directRecovery ? <Fact k="提交时">{currentText}</Fact> : param.key === "presets" && <Fact k="现在">{currentText}</Fact>}
             <Fact k="什么时候生效" tone={loose ? "warn" : undefined}>{directRecovery
               ? "提交结果未知，可能已经执行。请核对原操作，或在 24 小时内按原内容、原命令号重试。"
               : original
