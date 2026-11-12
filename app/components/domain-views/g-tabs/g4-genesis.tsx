@@ -321,8 +321,8 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     const needsDecision = ["dividend", "divBase", "airdropPct", "emissionCurve"].includes(param.key);
     openActionConfirm({ briefKind: "config",
       action: `修改创世节点参数 · ${operatorCopyText(param.name)}`,
-      detail: <><b>{operatorCopyText(param.name)}</b> · 当前 {operatorCopyText(param.displayValue)} · {operatorCopyText(param.note)}<br />{({ supply: "调高发行总量", price: "调高单价", dividend: "提高每日收益比例", royalty: "调低版税" } as Record<string, string>)[param.key]
-        ? `${({ supply: "调高发行总量", price: "调高单价", dividend: "提高每日收益比例", royalty: "调低版税" } as Record<string, string>)[param.key]}要提交审批单，另一位同时有审批批准权限和这项参数修改权限的超级管理员批准后才生效，批准前当前值不变；反方向的修改保存后立即生效。`
+      detail: <><b>{operatorCopyText(param.name)}</b> · 当前 {operatorCopyText(param.displayValue)} · {operatorCopyText(param.note)}<br />{({ supply: "调高节点总量", price: "调高一级购买单价", dividend: "提高每日收益比例", royalty: "调低内部转售手续费" } as Record<string, string>)[param.key]
+        ? `${({ supply: "调高节点总量", price: "调高一级购买单价", dividend: "提高每日收益比例", royalty: "调低内部转售手续费" } as Record<string, string>)[param.key]}要提交审批单，另一位同时有审批批准权限和这项参数修改权限的超级管理员批准后才生效，批准前当前值不变；反方向的修改保存后立即生效。`
         : ["divBase", "emissionCurve", "airdropPct", "airdropLockDays"].includes(param.key)
           ? "修改这项要提交审批单，另一位同时有审批批准权限和这项参数修改权限的超级管理员批准后才生效，批准前当前值不变。"
           : "保存后立即生效。"}<br />当前兑付覆盖率 {cov}%，会多付钱的修改在覆盖率不足时无法保存。</>,

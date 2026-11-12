@@ -26,7 +26,7 @@ import { GParamRecovery } from "./g-param-recovery";
 const PARAM_COPY: Record<string, { name: string; sub: string }> = {
   apy: { name: "参考年奖励率", sub: "只影响新订单" },
   lockDays: { name: "锁仓期限", sub: "整数天 · 只影响新订单" },
-  nurture: { name: "好友升级奖励倍率", sub: "参与锁定计划的用户，好友升级奖励按这个倍率算，马上生效" },
+  nurture: { name: "好友升级奖励倍率", sub: "参与锁定计划的用户，好友升级奖励按这个倍率算 · 调高要审批，调低马上生效" },
   lottery: { name: "创世节点抽奖券", sub: "每笔锁定计划送几张 · 修改前核对奖池容量" },
   penalty: { name: "提前解锁扣款", sub: "扣部分锁定金额，锁定奖励不发放，本单已发且未使用的抽奖券作废" },
   presets: { name: "锁定金额快捷选项", sub: "用户参与锁定计划时可直接点选的金额 · 马上生效" },
