@@ -26,9 +26,10 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
     ],
     terms: [
       { name: "现价", text: "1 UVT 折合多少 USDT，用户兑换按它成交，取最近一次发布的价格。" },
+      { name: "今天", text: "当前生效日：固定的那天，否则上次推进到的那天，都没有时按 UTC 星期几；和现价对不上时现价下面写差多少和原因。" },
       { name: "目标价", text: "七天计划里每一天的价格；推进或固定到那一天时发布成现价。" },
       { name: "推进", text: "按排程切换到下一天并发布它的目标价；同一个 UTC 日期最多一次。" },
-      { name: "目前不生效", text: "能保存、但后端发布价格和兑换都不读的参数：波动幅度、价格来源、偏离告警阈值、初始成本价。" },
+      { name: "目前不生效", text: "能保存、但公布价和兑换都不看的参数：上涨概率、波动幅度、价格来源、偏离告警阈值、初始成本价。" },
     ],
     more: "G3 /finance-products/market。读接口 GET /api/admin/market/nex/curve 和 /curve/history，打开时读一次，点「刷新」重读，不自动刷新。写接口 PUT /nex/curve、PATCH /nex/curve/controls/{key}、PATCH /nex/overrides/{key}；提高目标价、上涨概率、现价和首次配置排程改为 POST /api/admin/platform/audit/operations 提交审批。开发环境以外，后端拒绝人工改上涨概率和直接改现价。",
   },
