@@ -188,3 +188,43 @@ html[data-theme="dark"] .gdom .g3-market-confirm { --admin-confirm-focus: var(--
 .gdom .param-grid .p .v { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--ink); display: flex; align-items: baseline; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 .gdom .param-grid .p .v .l-btn { margin-left: auto; }
 .gdom .param-grid .p .s { font-size: 11px; color: var(--ink-4); margin-top: 4px; line-height: 1.45; }
+
+/* ============================ G1 质押产品配置（改版，RdPage） ============================
+   只用 --rd-* 令牌。三段状态带：还在锁定 / 到期待领取 / 已结束，每种状态一颗单选按钮，选中底加品牌色底边（同 Stat 选中）。 */
+.g1-tier-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.g1-tier-head b { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); }
+.g1-tools { display: grid; gap: 16px; padding: 0 var(--rd-panel-pad-x) 16px; }
+.g1-lane { display: flex; flex-wrap: wrap; gap: 12px; }
+.g1-lane-stage { display: grid; align-content: start; gap: 8px; flex: 1 1 auto; min-width: 0; padding: 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.g1-lane-stage[data-stage="locked"] { flex-grow: 2; }
+.g1-lane-stage[data-stage="ended"] { flex-grow: 4; }
+.g1-lane-title { display: inline-flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.g1-lane-items { display: flex; flex-wrap: wrap; gap: 8px; }
+.g1-lane-item { display: grid; gap: 2px; flex: 1 1 104px; min-width: 104px; padding: 8px 12px; border: 0; border-radius: var(--rd-radius-control); background: var(--rd-panel); color: var(--rd-text); font: inherit; text-align: left; cursor: pointer; }
+.g1-lane-item:hover:not(:disabled) { background: var(--rd-hover); }
+.g1-lane-item:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 0; }
+.g1-lane-item[aria-checked="true"], .g1-lane-item[aria-checked="true"]:hover { background: var(--rd-selected); box-shadow: inset 0 -2px 0 var(--rd-brand-ink); }
+.g1-lane-item:disabled { cursor: not-allowed; color: var(--rd-text-disabled); }
+.g1-lane-name { display: inline-flex; align-items: center; gap: 6px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); white-space: nowrap; }
+.g1-lane-name svg { flex: none; color: var(--tone); }
+.g1-lane-count { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; font-variant-numeric: tabular-nums; }
+.g1-lane-count small { margin-left: 4px; font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
+.g1-lane-item[data-tone="warn"]:not([data-zero]) .g1-lane-count { color: var(--rd-warn); }
+.g1-lane-item[data-zero] .g1-lane-count, .g1-lane-item:disabled .g1-lane-count { color: var(--rd-text-3); }
+.g1-positions { table-layout: fixed; }  /* 1024 下六列放得下：列宽按比例分，长名字省略、单号中间省略留尾段 */
+.g1-positions th:nth-child(1) { width: 29%; }  /* 单号 36 位，1440 放得下整串 */
+.g1-positions th:nth-child(2) { width: 14%; }
+.g1-positions th:nth-child(3) { width: 11%; }
+.g1-positions th:nth-child(4) { width: 14%; }
+.g1-positions th:nth-child(5) { width: 12%; }
+.g1-positions th:nth-child(6) { width: 20%; }
+@media (max-width: 1279px) {
+  .g1-positions th:nth-child(1) { width: 16%; }
+  .g1-positions th:nth-child(3) { width: 14%; }
+  .g1-positions th:nth-child(4) { width: 19%; }
+  .g1-positions th:nth-child(5) { width: 15%; }
+  .g1-positions th:nth-child(6) { width: 22%; }
+}
+.g1-no { display: flex; min-width: 0; }
+.g1-no-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g1-no-tail { flex: none; }

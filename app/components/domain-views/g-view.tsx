@@ -36,11 +36,13 @@ export function GDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   };
 
+  // G1 已改版：整页由 G1Staking 自己包 RdPage、写页头，不再渲染旧的域页头。
+  if (tab === "G1") return <G1Staking />;
+
   return (
     <div className="dkpage gdom">
       <DomainHeader {...meta} />
 
-      {tab === "G1" && <G1Staking />}
       {tab === "G2" && <G2Exchange ctx={ctx} />}
       {tab === "G3" && <G3Market ctx={ctx} />}
       {tab === "G4" && <G4Genesis ctx={ctx} />}
