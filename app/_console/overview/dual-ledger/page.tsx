@@ -82,7 +82,7 @@ function PendingCommands({ items }: { items: readonly B1PendingCommand[] }) {
         <Notice key={item.commandKey} tone="warn" title={item.title} actionBelow
           action={<span className="b1-actions">
             {item.expired ? undefined : <Button size="sm" disabledReason={item.onRetry ? undefined : "等待接入：按原操作重试"} onClick={item.onRetry}>按原操作重试</Button>}
-            <Link className="rd-link" href={item.auditHref} prefetch={false}>到操作记录核对</Link>
+            <Link className="rd-link" href={item.auditHref} prefetch={false}>到「操作记录与审批」核对</Link>
           </span>}>
           <p>{item.body}</p>
           <p>命令号 <span data-mono>{item.commandKey}</span>{item.expired ? "，已超过 24 小时，只能核对，不能重试。" : "。只能按原内容重试，不能换号重发。"}</p>
