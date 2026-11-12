@@ -2190,7 +2190,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                       </td>
                       <td><span className="bdg dim">{({ discount: "限时优惠", referral: "邀请推广", wheel: "幸运转盘", regional: "地区活动", boost: "收益加成", seasonal: "节日活动", onboarding: "新人活动" } as Record<string,string>)[text(event.kind)] ?? "其他活动"}</span></td>
                       <td><span className={`bdg ${tone}`}>{label}</span></td>
-                      <td className="num">{zhRewardName || "中文奖项未配置"}</td>
+                      <td className="num">
+                        {/* 实际发的奖励以后端的奖励字段为准；中文奖项名是给用户看的文字，换资产后不会自动跟着改。 */}
+                        {text(event.reward) ? <div>{text(event.reward)}</div> : null}
+                        {zhRewardName
+                          ? zhRewardName !== text(event.reward) && <div style={{ fontSize: 12, color: text(event.reward) ? "var(--ink-3)" : undefined }}>{text(event.reward) ? `App 显示名：${zhRewardName}` : zhRewardName}</div>
+                          : <div style={{ fontSize: 12, color: "var(--ink-3)" }}>中文奖项未配置</div>}
+                      </td>
                       <td>{event.featured ? <span className="bdg warn">主推</span> : <span style={{ color: "var(--ink-4)" }}>-</span>}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         {wheelEvent ? (
