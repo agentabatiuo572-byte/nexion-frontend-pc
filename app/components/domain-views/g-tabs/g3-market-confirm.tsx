@@ -109,11 +109,12 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
   async function execute(mode: "submit" | "lookup" | "retry", reason = "", value = "") {
     ensureOwner(mode !== "lookup");
     if (mode !== "lookup" && newWriteBlockedReason && !pendingG3MarketCommand(session.adminId, requested)) throw new Error(newWriteBlockedReason);
+    const recovered = !!pendingG3MarketCommand(session.adminId, requested);
     onBusy(true);
     try {
       const result = await executeG3MarketChange(session, change, value, reason, mode, forceApproval);
       ensureOwner(false);
-      if (result) onDone(result);
+      if (result) onDone({ ...result, recovered });
       return !!result;
     } catch (failure) {
       if (g3MarketFailureCode(failure) === "G3_POLICY_APPROVAL_REQUIRED") {

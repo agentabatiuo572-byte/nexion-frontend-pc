@@ -32,7 +32,8 @@ type CommandPayload = {
   ticketId?: string;
 };
 export type G3PendingCommand = PendingMutationRecord & CommandPayload & { legacy?: boolean };
-export type G3CommandResult = { active?: G3Overview; acknowledgement: string; ticketKey?: string };
+/** `recovered`: the reply belongs to a saved original request, so `active` is that request's stored reply, not a current read. */
+export type G3CommandResult = { active?: G3Overview; acknowledgement: string; ticketKey?: string; recovered?: boolean };
 export const G3_ENVIRONMENT_FORBIDDEN = "G3_MANUAL_TUNING_FORBIDDEN_IN_PRODUCTION";
 
 const commands = createPendingMutationStore<PendingMutationRecord & { input: string }>({

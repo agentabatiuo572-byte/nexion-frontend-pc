@@ -431,13 +431,15 @@ function G3MarketEditor() {
     };
   }, []);
 
-  const mutate = useCallback(async (change: G3MarketChange, action: () => Promise<G3Overview>, success: string) => {
+  const mutate = useCallback(async (change: G3MarketChange, action: () => Promise<G3Overview>, success: string, recovered = false) => {
     setBusyKey(g3MarketObjectKey(change));
     setError("");
     try {
       const next = await action();
       reconcileObservedAfterSave(change);
-      setOverview(next);
+      // 按原请求恢复时，后端回放的是当时保存的回包，不是现在的读取：不拿它当当前概览，改为重读；
+      // 重读失败只报读取失败，新修改继续不可用，原操作照常算完成。
+      if (!recovered) setOverview(next);
       // 写入成功后回读历史属于附加刷新:历史面失败不能把已成功的写入报成失败。
       const [historyResult] = await Promise.allSettled([fetchG3MarketHistory()]);
       if (historyResult.status === "fulfilled") {
@@ -448,6 +450,7 @@ function G3MarketEditor() {
         setHistoryError(messageOf(historyResult.reason));
       }
       toast(success);
+      if (recovered) void reload(true);
     } catch (err) {
       const message = messageOf(err);
       setError(message);
@@ -456,7 +459,7 @@ function G3MarketEditor() {
     } finally {
       setBusyKey(null);
     }
-  }, [toast, reconcileObservedAfterSave]);
+  }, [toast, reconcileObservedAfterSave, reload]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -504,7 +507,7 @@ function G3MarketEditor() {
         onDone={(result) => {
           setMarketConfirm(null);
           if (result.active) reconcileObservedAfterSave(marketConfirm);
-          if (result.active) setOverview(result.active);
+          if (result.active && !result.recovered) setOverview(result.active);
           if (result.ticketKey) setVerifiedApprovals(keys => ({ ...keys, [result.ticketKey!]: Date.now() }));
           toast(result.acknowledgement);
           void reload(true);
@@ -549,7 +552,7 @@ function G3MarketEditor() {
                 const result = await executeG3MarketChange(session, confirm.change, newValue ?? pendingDirect?.value ?? confirm.value ?? "", reason);
                 if (!result?.active) throw new Error("原操作结果仍需核对，请保留原记录。");
                 return result.active;
-              }, confirm.success);
+              }, confirm.success, !!pendingDirect);
               openActionConfirm(null);
             } catch (failure) {
               onCommandFailure(confirm.change, failure);
