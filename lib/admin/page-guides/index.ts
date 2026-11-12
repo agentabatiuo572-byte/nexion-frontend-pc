@@ -17,6 +17,21 @@ export interface PageGuideContent {
 }
 
 const PAGE_GUIDES: Record<string, PageGuideContent> = {
+  G2: {
+    purpose: "管用户 UVT 和 USDT 互换的每日额度、手续费和排队，看今天用了多少、队列里压着多少，必要时紧急暂停。",
+    tasks: [
+      { title: "调额度或手续费", steps: ["在「额度和手续费」找到那一项，点「调整」", "填新值和理由；让平台多付的方向（调高额度、调低手续费、从拒绝改成排队）提交审批，另一位在职超级管理员批准后生效", "反方向确认后立即生效；同一项有待批申请时调高调低都改不了"] },
+      { title: "处理排队的兑换", steps: ["在「排队中的兑换」点「处理排队」，填这一批最多几单", "后端从最早排队的开始逐单检查，符合条件的马上成交；结果逐单列在表上面", "排队的单不会自动成交；要取消某一单，点开那一行，再点「取消这笔兑换」"] },
+      { title: "紧急暂停兑换", steps: ["点页面右上角「紧急暂停兑换」，选原因、写理由", "确认后用户马上不能兑换，排队的单留着；恢复要到「紧急停用开关」"] },
+    ],
+    terms: [
+      { name: "放宽", text: "让平台可能多付 USDT 的方向：调高两个日额度、调低手续费率或最低手续费、从拒绝改成排队；要另一位超管批准。" },
+      { name: "收紧", text: "反方向的修改，确认后立即生效；新旧值一样时直接保存。" },
+      { name: "排队", text: "超过日额度、用户又选了超额时排队的兑换；已预占来源币种，等人点「处理排队」。" },
+      { name: "原申请", text: "你提交过、还没确认结果的参数修改；只能查询原审批单或按原内容重试。" },
+    ],
+    more: "G2 /finance-products/exchange。读接口 GET /api/admin/market/exchange，打开时读一次，不自动刷新，写入后用返回的结果刷新。收紧方向 PATCH /exchange/params/{key}；放宽方向 POST /api/admin/platform/audit/operations 提交审批。暂停 PATCH /exchange/swap，只能暂停，恢复在紧急停用开关。取消排队 POST /exchange/queue/{单号}/cancel，处理排队 POST /exchange/queue/process，核对原批次 GET 同一地址并带原命令号。",
+  },
   K3: {
     keep: ["草稿与停用规则不算覆盖。", "放行复核"],
     purpose: "维护提现检查条件和命中后的处置。",

@@ -188,3 +188,64 @@ html[data-theme="dark"] .gdom .g3-market-confirm { --admin-confirm-focus: var(--
 .gdom .param-grid .p .v { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--ink); display: flex; align-items: baseline; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 .gdom .param-grid .p .v .l-btn { margin-left: auto; }
 .gdom .param-grid .p .s { font-size: 11px; color: var(--ink-4); margin-top: 4px; line-height: 1.45; }
+
+/* ============================ G2 兑换额度与规则（改版，RdPage） ============================
+   只用 --rd-* 令牌。首屏：今天的额度（平台额度比例条、单用户额度、三类拦截）和五个参数并排；下面是排队表。 */
+.g2x-param { display: grid; gap: 2px; min-width: 0; }
+.g2x-value { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.g2x-value-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.g2x-dir { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.g2x-recover { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.g2x-recover li { display: grid; grid-template-columns: minmax(96px, max-content) minmax(0, 1fr) auto auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.g2x-recover-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.g2x-recover-change { min-width: 0; font-variant-numeric: tabular-nums; }
+.g2x-recover-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.g2x-recover-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.g2x-recover-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+@media (max-width: 1279px) {
+  .g2x-recover li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto; }
+  .g2x-recover-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+.g2x-quota { display: grid; gap: 8px; padding: 0 0 16px; --rd-track-w: 100%; }
+.g2x-quota-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.g2x-quota-name { display: inline-flex; align-items: center; gap: 4px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.g2x-quota-pct { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.g2x-quota-user .g2x-quota-pct { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); }
+.g2x-quota-user { padding-top: 16px; border-top: 1px solid var(--rd-line); }
+.g2x-quota-nums { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 0; }
+.g2x-quota-nums > div { display: flex; gap: 8px; }
+.g2x-quota-nums dt { color: var(--rd-text-3); }
+.g2x-quota-nums dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.g2x-gates { display: grid; gap: 4px; padding-top: 16px; border-top: 1px solid var(--rd-line); }
+.g2x-gates-title { margin-bottom: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.g2x-gate { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; gap: 16px; padding: 8px 12px; border: 0; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); font: inherit; text-align: left; cursor: pointer; }
+.g2x-gate:hover { background: var(--rd-hover); }
+.g2x-gate:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 0; }
+.g2x-gate-count { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.g2x-gate-count small { margin-left: 4px; font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.g2x-gate[data-zero] .g2x-gate-count { color: var(--rd-text-3); }
+.g2x-gate-more { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); text-decoration: underline; text-underline-offset: 2px; }
+.g2x-no { display: flex; min-width: 0; max-width: 100%; }
+.g2x-no-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g2x-no-tail { flex: none; white-space: nowrap; }
+.g2x-queue-table, .g2x-gate-table, .g2x-batch-table { table-layout: fixed; }
+.g2x-queue-table th:nth-child(1) { width: 27%; }
+.g2x-queue-table th:nth-child(2) { width: 18%; }
+.g2x-queue-table th:nth-child(3) { width: 19%; }
+.g2x-queue-table th:nth-child(5) { width: 15%; }
+@media (max-width: 1279px) {
+  .g2x-queue-table th:nth-child(1) { width: 25%; }
+  .g2x-queue-table th:nth-child(2) { width: 17%; }
+  .g2x-queue-table th:nth-child(3) { width: 18%; }
+  .g2x-queue-table th:nth-child(5) { width: 136px; }
+}
+.g2x-gate-table th:nth-child(1) { width: 24%; }
+.g2x-gate-table th:nth-child(2) { width: 30%; }
+.g2x-gate-table th:nth-child(3) { width: 22%; }
+.g2x-batch-table th:nth-child(1) { width: 30%; }
+.g2x-batch-table th:nth-child(2) { width: 14%; }
+.g2x-batch-table th:nth-child(4) { width: 16%; }
+.g2x-batch { display: grid; gap: 12px; margin-bottom: 16px; }
+.g2x-wrap { overflow-wrap: anywhere; white-space: pre-wrap; }
+.g2x-sources { margin: 0; overflow-wrap: anywhere; color: var(--rd-text-2); }
+.g2x-sources-note { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
