@@ -19,6 +19,7 @@ import { useToast } from "@/app/components/domain-views/design-kit";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { exportB3Cohort, SMALL_SAMPLE_LABEL, useB3Funnel, type B3Dashboard, type B3Filters, type B3Stage } from "@/lib/admin/b3-client";
 import { formatB3RefOption, normalizeB3RefOptions } from "@/lib/admin/b3-ref-display";
+import { businessZone } from "@/lib/admin/business-time";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
@@ -43,11 +44,11 @@ function scopeText(filters: B3Filters, withCohort: boolean) {
 }
 
 const PROTECT_NOTE = "少于 5 人的分组不显示人数和比例，0 人也算，防止从小分组推出具体用户。";
-const CALIBER_NOTE = (
+const caliberNote = () => (
   <>
     <p>同一批用户按时间先后走四步：注册 → 首购 → 锁定计划 → 提现，后一步必须晚于前一步，同一时刻不算。</p>
     <p>首购：这次注册之后最早的一笔购买。锁定计划：首购之后第一次锁定计划，或第二次购买（二次购机也算）。提现：提交了提现申请，不代表已经到账。</p>
-    <p>人数按用户去重。转化率 = 这一步人数 ÷ 上一步人数。日期按平台业务日（北京时间）算，不按你电脑的时区。</p>
+    <p>人数按用户去重。转化率 = 这一步人数 ÷ 上一步人数。日期按平台业务日（{businessZone().label}）算，不按你电脑的时区。</p>
     <p>{PROTECT_NOTE}</p>
   </>
 );
@@ -432,7 +433,7 @@ export default function FunnelPage() {
   const conclusionExplain = (
     <>
       <p>「转化率最低的一步」是首购、锁定计划、提现三步里「从上一步转化」最低的一步，不一定是掉人最多的一步。</p>
-      {CALIBER_NOTE}
+      {caliberNote()}
     </>
   );
   let conclusion: ReactNode;
@@ -456,7 +457,7 @@ export default function FunnelPage() {
       {exportNotice}
       {conclusion}
       <Panel title="同一批用户的四步转化" icon={Filter} tone="role-3" sub={scopeText(data.filters, true)}
-        explain={<><p>条的长度和人数成比例，第一步注册是 100%。两步之间写这一步的转化率和掉了多少人。</p>{CALIBER_NOTE}</>}>
+        explain={<><p>条的长度和人数成比例，第一步注册是 100%。两步之间写这一步的转化率和掉了多少人。</p>{caliberNote()}</>}>
         <div className="rd-stack">
           {register?.distinctUsers == null
             ? <BlockState state="empty" title="这批注册用户少于 5 人，四步的人数和转化率都不显示" detail={PROTECT_NOTE} />
