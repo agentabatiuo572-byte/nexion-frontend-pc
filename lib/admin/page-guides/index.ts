@@ -48,6 +48,22 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
     ],
     more: "G4 /finance-products/genesis。读接口 GET /api/admin/market/nex/genesis?page&pageSize 和 /operations，打开时读一次，不自动刷新，写入后重新读取。参数 PATCH /params/{key}；放宽方向和首次比例、真实补发 POST /api/admin/platform/audit/operations 提交审批。紧急暂停 PATCH /market-status（只能暂停，恢复在紧急停用开关）；市场开闭 PATCH /market-open-state；档位 POST、PATCH、DELETE /tiers；发布系列 POST /series/initialize；补发 POST /dividend-batches/{批次}/rerun；认购设置 PATCH /operations/config/{key}；模拟 POST、DELETE /operations/simulations。",
   },
+  G3: {
+    purpose: "安排 UVT 每天的价格，看现价有没有按计划走，需要时暂停或固定某一天。",
+    tasks: [
+      { title: "改某一天的目标价", steps: ["在「七天价格计划」找到那一天，点目标价旁的笔", "填新值和理由；降低直接保存，提高要另一位有权超管批准", "改计划不改现价，推进或固定到那一天才发布"] },
+      { title: "让价格停在某一天", steps: ["在「运行方式」点「固定生效日」的「调整」，选一天", "确认后马上按那天的目标价发布现价，之后不再自动切换；选「不固定」恢复推进"] },
+      { title: "暂停或恢复价格变化", steps: ["在「运行方式」点「价格自动变化」的「暂停」或「恢复」", "暂停只停自动推进和采样；恢复要超级管理员，后端会先查兑付覆盖率"] },
+    ],
+    terms: [
+      { name: "现价", text: "1 UVT 折合多少 USDT，用户兑换按它成交，取最近一次发布的价格。" },
+      { name: "今天", text: "当前生效日：固定的那天，否则上次推进到的那天，都没有时按 UTC 星期几；和现价对不上时现价下面写差多少和原因。" },
+      { name: "目标价", text: "七天计划里每一天的价格；推进或固定到那一天时发布成现价。" },
+      { name: "推进", text: "按排程切换到下一天并发布它的目标价；同一个 UTC 日期最多一次。" },
+      { name: "目前不生效", text: "能保存、但公布价和兑换都不看的参数：上涨概率、波动幅度、价格来源、偏离告警阈值、初始成本价。" },
+    ],
+    more: "G3 /finance-products/market。读接口 GET /api/admin/market/nex/curve 和 /curve/history，打开时读一次，点「刷新」重读，不自动刷新。写接口 PUT /nex/curve、PATCH /nex/curve/controls/{key}、PATCH /nex/overrides/{key}；提高目标价、上涨概率、现价和首次配置排程改为 POST /api/admin/platform/audit/operations 提交审批。开发环境以外，后端拒绝人工改上涨概率和直接改现价。",
+  },
   K3: {
     keep: ["草稿与停用规则不算覆盖。", "放行复核"],
     purpose: "维护提现检查条件和命中后的处置。",
