@@ -44,6 +44,7 @@ type G7ConfirmReq = ActionConfirmReq & {
   statedBrief?: { impact: string; check: string };
   coverageLead?: ReactNode;
   coverageCheck?: string;
+  directRecovery?: { before: { state: "unknown" } | { state: "at-submission"; value: string }; value: string; commandKey: string };
 };
 
 /** 六个参数的叫法、单位、方向和生效范围。名字和确认框、原申请、操作记录一致；说法照后端现行行为。 */
@@ -232,14 +233,14 @@ function ParamRecoveryNotice({ approval, toast }: {
       setBusy(false);
     }
   };
-  const waiting = records.every((record) => record.status === "pending");
+  const waiting = records.every((record) => record.ticket?.status === "pending");
   return (
     <Notice tone="warn" title={<>{waiting ? `${records.length} 项参数修改在等审批` : `${records.length} 项参数修改申请待确认`}
       <Explain label="原申请怎么处理" content={<>
         <p>这里只列你在这台电脑上提交过的原申请。原申请只能查询原审批单，或在 24 小时内按原内容、原命令号重试，不能改值。</p>
         <p>要改成别的值，等原申请有结论后再发起新修改。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
       </>} /></>}>
-      <p>有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。</p>
+      {waiting && <p>有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。</p>}
       <ul className="g7x-recover" aria-label="原参数申请">
         {records.map((record) => {
           const key = record.request.obj;
@@ -248,7 +249,7 @@ function ParamRecoveryNotice({ approval, toast }: {
           const to = paramValueText(key, typeof params.value === "string" ? params.value : undefined);
           const from = typeof params.expectedValue === "string" ? paramValueText(key, params.expectedValue) : undefined;
           return (
-            <li key={record.commandKey}>
+            <li key={record.commandKey} data-recovery-state={record.ticket?.status === "pending" ? "approval-locked" : record.ticket ? "approval-resolved" : "local-frozen"}>
               <span className="g7x-recover-name">{name}</span>
               <span className="g7x-recover-change">{from ? <Change from={from} to={to} /> : <>申请改成 {to}</>}</span>
               <span className="g7x-recover-state">
@@ -498,12 +499,18 @@ function G7RepurchasePage() {
     if (!direct && !original && (!view.overview || view.loading || view.busyKey || view.readFailed)) return;
     // Saved context drives the recovery facts, even when the original write
     // actually succeeded and today's configuration is different.
-    if (direct) param = { ...param, value: direct.currentValue ?? "", displayValue: direct.currentValue ?? "" };
-    else if (original) param = { ...param, value: String(original.request.command.params.expectedValue), displayValue: String(original.request.command.params.expectedValue) };
+    if (original) param = { ...param, value: String(original.request.command.params.expectedValue), displayValue: String(original.request.command.params.expectedValue) };
+    const directRecovery: G7ConfirmReq["directRecovery"] = direct ? {
+      before: direct.currentValue === undefined ? { state: "unknown" } : { state: "at-submission", value: direct.currentValue },
+      value: direct.input.value,
+      commandKey: direct.commandKey,
+    } : undefined;
     const label = paramName(param);
     const copy = PARAM[param.key];
     const originalCapacity = direct ? direct.g4Capacity : overview.g4Capacity;
-    const currentText = paramValueText(param.key, param.value);
+    const currentText = directRecovery
+      ? directRecovery.before.state === "unknown" ? "未知" : paramValueText(param.key, directRecovery.before.value)
+      : paramValueText(param.key, param.value);
     const originalValue = original?.request.command.params.value as string | undefined;
     const loosens = (value?: string) => {
       if (!copy?.loosen || !value) return undefined;
@@ -513,16 +520,18 @@ function G7RepurchasePage() {
       return param.key === "penalty" ? next < now : next > now;
     };
     const facts = (value?: string) => {
-      const loose = original ? undefined : loosens(value);
+      const loose = directRecovery || original ? undefined : loosens(value);
       const nextText = value ? paramValueText(param.key, value) : undefined;
       return (
-        <div data-proof="g7-param-preview">
+        <div data-proof="g7-param-preview" data-direct-recovery={directRecovery?.before.state} data-original-command={directRecovery?.commandKey}>
           <Facts>
             <Fact k="改的是">{label}</Fact>
             {original
               ? <Fact k="原申请"><Change from={currentText} to={originalValue ? paramValueText(param.key, originalValue) : "—"} /></Fact>
-              : <Fact k="现在">{currentText}</Fact>}
-            <Fact k="什么时候生效" tone={loose ? "warn" : undefined}>{original
+              : <Fact k={directRecovery ? "提交时" : "现在"}>{currentText}</Fact>}
+            <Fact k="什么时候生效" tone={loose ? "warn" : undefined}>{directRecovery
+              ? "提交结果未知，可能已经执行。请核对原操作，或在 24 小时内按原内容、原命令号重试。"
+              : original
               ? original.ticket?.status === "pending"
                 ? "审批单在等另一位在职超级管理员批准；批准前参数不变，这一项被锁住"
                 : "原申请结果还没确认：有效期内按原内容、原命令号重试，后端不会重复建单"
@@ -545,21 +554,22 @@ function G7RepurchasePage() {
     };
     openActionConfirm({ briefKind: "config",
       action: `调整锁定计划参数 · ${label}`,
-      title: original ? `${label}的原申请` : `调整${label}`,
+      title: directRecovery ? `${label} · 重试原操作` : original ? `${label}的原申请` : `调整${label}`,
+      directRecovery,
       detail: <>{copy?.what ?? operatorCopyText(param.sub)}。{param.key === "lottery" ? "保存时后端核对奖池核对编号至少 3 个字，并检查本月已发张数加新的每单张数不超过创世奖池月容量。" : copy?.note}</>,
       effect: copy?.loosen
-        ? <StatusTag tone="neutral" icon={ArrowLeftRight} explain={<>
+        ? <StatusTag tone="neutral" icon={ArrowLeftRight} explain={directRecovery ? "提交结果未知，可能已经执行。请核对原操作，或在 24 小时内按原内容、原命令号重试。" : <>
           <p>{copy.loosen}会让平台多付钱：先提交审批，另一位在职超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p>
           <p>{copy.tighten}确认后立即生效。新旧值一样时后端照常保存，参数不变。</p>
-        </>}>{copy.loosen}要批准 · {copy.tighten}立即生效</StatusTag>
-        : <StatusTag tone="progress" filled>立即生效</StatusTag>,
+        </>}>{directRecovery ? "结果未知" : <>{copy.loosen}要批准 · {copy.tighten}立即生效</>}</StatusTag>
+        : <StatusTag tone="progress" filled>{directRecovery ? "结果未知" : "立即生效"}</StatusTag>,
       facts,
-      statedBrief: { impact: "改的是之后新开的订单用的规则，已有订单按下单时的规则。", check: "核对新值和方向；理由写清依据或工单号。" },
+      statedBrief: { impact: "改的是之后新开的订单用的规则，已有订单按下单时的规则。", check: directRecovery ? "提交结果未知，可能已经执行。请核对原操作，或在 24 小时内按原内容、原命令号重试。" : "核对新值和方向；理由写清依据或工单号。" },
       coverageLead: `${copy?.loosen ?? "放宽"}${label}会让平台多付钱，要另一位超管批准`,
       coverageCheck: "提交审批时和批准时，后端各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
       edit: param.key === "presets"
-        ? { kind: "text", current: paramEditValue(param), initialValue: direct?.input.value, disallowCurrent: true, hint: copy?.hint }
-        : { kind: "number", current: paramEditValue(param),
+        ? { kind: "text", current: directRecovery ? undefined : paramEditValue(param), initialValue: direct?.input.value, disallowCurrent: true, hint: copy?.hint }
+        : { kind: "number", current: directRecovery ? undefined : paramEditValue(param),
             initialValue: direct?.input.value ?? original?.request.command.params.value as string | undefined,
             unit: param.key === "apy" || param.key === "penalty" ? "%" : param.key === "lockDays" ? "天" : undefined,
             min: param.key === "apy" || param.key === "penalty" || param.key === "lottery" ? 0 : 1,
@@ -568,7 +578,7 @@ function G7RepurchasePage() {
             hint: copy?.hint,
             disallowCurrent: true,
             submitEditValue: param.key === "lottery",
-            amplifiesWhen: param.key === "penalty" ? "decrease"
+            amplifiesWhen: directRecovery ? undefined : param.key === "penalty" ? "decrease"
               : param.key === "apy" || param.key === "nurture" ? "increase" : undefined },
       businessForm: param.key === "lottery" ? {
         kind: "multi-field",
