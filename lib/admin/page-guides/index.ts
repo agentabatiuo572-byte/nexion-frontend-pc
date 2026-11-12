@@ -32,6 +32,22 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
     ],
     more: "G2 /finance-products/exchange。读接口 GET /api/admin/market/exchange，打开时读一次，不自动刷新，写入后用返回的结果刷新。收紧方向 PATCH /exchange/params/{key}；放宽方向 POST /api/admin/platform/audit/operations 提交审批。暂停 PATCH /exchange/swap，只能暂停，恢复在紧急停用开关。取消排队 POST /exchange/queue/{单号}/cancel，处理排队 POST /exchange/queue/process，核对原批次 GET 同一地址并带原命令号。",
   },
+  G4: {
+    keep: ["「+ 新增档位」", "「首次配置」", "自己的调高申请待批时也能调低", "批准后才付款", "过期的只能查询"],
+    purpose: "管创世节点的总量、价格档位、每日分红、空投说明和展示开关，看卖了多少、今天分了没有、有没有压着的申请。",
+    tasks: [
+      { title: "改价格档位或总量", steps: ["在「销售进度与价格档位」点某一档的「编辑」「删除」，或右上角「+ 新增档位」", "扩大已有系列的总量、让还没卖出的节点涨价，要另一位在职超级管理员批准；其余修改确认后立即生效", "只影响以后的销售，已下单的按下单时价格"] },
+      { title: "调每日收益比例或发分红", steps: ["在「每日分红」找到每日收益比例，点「调整」；现在是 0% 时点「首次配置」", "调高和首次配置要另一位在职超级管理员批准；调低确认后立即生效，自己的调高申请待批时也能调低", "今天还没发时点「重新发放今日收益」：有真实待付金额时转成审批单，批准后才付款"] },
+      { title: "处理压着的申请", steps: ["结论下面的提醒逐条列出原申请：参数、现在 → 申请的值、状态", "点「查询原审批单」核对，24 小时内可以「按原请求重试」，过期的只能查询", "补发收益按原批次恢复，不会换成今天的批次"] },
+    ],
+    terms: [
+      { name: "放宽", text: "让平台可能多付钱的方向：调高总量、单价、每日收益比例，调低转让手续费；要另一位超管批准。" },
+      { name: "收紧", text: "反方向的修改，确认后立即生效。" },
+      { name: "只是说明", text: "空投占比、收益发放曲线、锁仓天数和收益计算基数，后端只保存这段说明，不按它发放或计算；改动都要批准。" },
+      { name: "原申请", text: "提交过、还没有结论的修改，只能查询或按原内容重试。" },
+    ],
+    more: "G4 /finance-products/genesis。读接口 GET /api/admin/market/nex/genesis?page&pageSize 和 /operations，打开时读一次，不自动刷新，写入后重新读取。参数 PATCH /params/{key}；放宽方向和首次比例、真实补发 POST /api/admin/platform/audit/operations 提交审批。紧急暂停 PATCH /market-status（只能暂停，恢复在紧急停用开关）；市场开闭 PATCH /market-open-state；档位 POST、PATCH、DELETE /tiers；发布系列 POST /series/initialize；补发 POST /dividend-batches/{批次}/rerun；认购设置 PATCH /operations/config/{key}；模拟 POST、DELETE /operations/simulations。",
+  },
   K3: {
     keep: ["草稿与停用规则不算覆盖。", "放行复核"],
     purpose: "维护提现检查条件和命中后的处置。",

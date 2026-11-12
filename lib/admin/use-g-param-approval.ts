@@ -104,7 +104,7 @@ function reasonCode(error: unknown) {
 }
 
 /** Logic only: the existing parameter buttons and confirmation modal own presentation. */
-export function useGParamApproval(page: Page, toast: (message: string) => void, showError: (message: string) => void, refresh: () => Promise<void>) {
+export function useGParamApproval(page: Page, toast: (message: string) => void, showError: (message: string) => void, refresh: () => Promise<void>, onRecoveryStart?: () => void) {
   const session = useAdminAuth((s) => s.session);
   const adminId = session?.adminId;
   const [, changed] = useReducer((value: number) => value + 1, 0);
@@ -130,30 +130,34 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     const status = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[ticket.status];
     toast(`原审批单 ${ticket.id} · ${status} · ${ticket.before} → ${ticket.after}`);
   };
-  const acceptTicket = async (original: PendingGParam, ticket: A2OperationRow) => {
+  const acceptTicket = async (original: PendingGParam, ticket: A2OperationRow, reread = false) => {
     checkTicket(original, ticket);
     showTicket(ticket);
     pending.remember(original.fingerprint, original.commandKey, { ...original, ticket });
     changed();
+    if (reread || ticket.status !== "pending") await refresh();
     if (ticket.status !== "pending") {
-      await refresh();
       pending.forget(original.fingerprint, original.commandKey);
       changed();
       showError("");
     }
     return ticket;
   };
-  const query = async (original: PendingGParam) => {
+  const query = async (original: PendingGParam, reread = page === "G4") => {
+    onRecoveryStart?.();
     const ticket = await fetchA2ProposalByKey(original.commandKey, true);
-    return ticket ? acceptTicket(original, ticket) : undefined;
+    return ticket ? acceptTicket(original, ticket, reread) : undefined;
   };
-  const send = async (original: PendingGParam) => {
-    // Lookup remains allowed after expiry; a missing receipt never permits a new command.
-    if ((original.ticket && original.ticket.status !== "pending") || isRetryExpired(original)) {
-      const ticket = await query(original);
+  const send = async (original: PendingGParam, recovering = true) => {
+    // POST idempotency receipts can retain their historical pending status on all
+    // three pages. Recovery uses the current ticket, then the current overview.
+    if (recovering) {
+      const ticket = await query(original, true);
       if (ticket) return ticket;
-      throw new Error(original.ticket
-        ? "暂时查不到已收录的原审批单，原记录继续保留，不能重新提案。" : RETRY_EXPIRED_TEXT);
+      if (original.ticket || isRetryExpired(original)) {
+        throw new Error(original.ticket
+          ? "暂时查不到已收录的原审批单，原记录继续保留，不能重新提案。" : RETRY_EXPIRED_TEXT);
+      }
     }
     requireActor(original.request.obj, true);
     if (!pending.isDurablyStored(original.fingerprint, original.commandKey)) {
@@ -166,8 +170,15 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
       if (!original.ticket && isExplicitRejection(error)) {
         pending.forget(original.fingerprint, original.commandKey);
         changed();
+        if (recovering && page === "G4") await Promise.allSettled([refresh()]);
       }
       throw error;
+    }
+    if (recovering) {
+      checkTicket(original, result);
+      const ticket = await query(original, true);
+      if (!ticket) throw new Error("暂时查不到已收录的原审批单，原记录继续保留，不能重新提案。");
+      return ticket;
     }
     return acceptTicket(original, result);
   };
@@ -271,7 +282,7 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
         pending.forget(fingerprint, commandKey);
         throw new Error("浏览器存不下完整原请求，本次没有提交审批。");
       }
-      return { proposal: await send(record(change.key)!) };
+      return { proposal: await send(record(change.key)!, false) };
     },
   };
 }
