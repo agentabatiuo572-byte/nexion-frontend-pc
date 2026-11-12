@@ -17,7 +17,7 @@ import {
   PageHeader, Panel, RatioBar, RdPage, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, type StateTone,
 } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
-import { businessClock, parseBusinessTime } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import { PaginationExemption } from "../design-kit";
 import {
@@ -55,10 +55,9 @@ function displayTerm(pool: G1Pool) {
   return match ? `${match[1]} 天` : pool.term;
 }
 
-/** 接口时间是存储时钟的文本，只把「T」换成空格，不换时区。 */
+/** 接口时间按业务时区写成「2026-11-13 09:30（北京时间）」。 */
 function timeText(value: string) {
-  const match = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)/.exec(value);
-  return match ? `${match[1]} ${match[2]}` : value;
+  return /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(value) ? `${formatBusinessTimeCompact(value, value)}（${businessZone().label}）` : value;
 }
 
 /** 表格里只写日期，完整时间在悬停和仓位详情里。 */
@@ -178,7 +177,7 @@ export function G1Staking() {
       summary="查四档原配置和用户的历史仓位，只能查看。"
       meta={overview ? (
         <span className="rd-toolbar">
-          <span>{readAt ? `${businessClock(readAt)} 读取，` : ""}不自动刷新</span>
+          <span>{readAt ? `${businessClock(readAt)} 读取（${businessZone().label}），` : ""}不自动刷新</span>
           <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reload()}>刷新</Button>
         </span>
       ) : undefined}
@@ -298,7 +297,7 @@ export function G1Staking() {
       {conclusion}
 
       {!quiet && <StatBand label="质押历史概况">
-        <Stat lead tone="role-2" icon={Layers} label="没结清的仓位" value={fmtCount(open)} unit="笔"
+        <Stat tone="role-2" icon={Layers} label="没结清的仓位" value={fmtCount(open)} unit="笔"
           sub={`锁定中 ${fmtCount(pending + active)} · 到期未领 ${fmtCount(mature)}`}
           explain={COUNT_EXPLAIN} />
         <Stat tone="role-1" icon={Wallet} label="锁定中的本金" value={usdtText(stats.usdtPoolUsd)} unit="USDT"
@@ -310,7 +309,7 @@ export function G1Staking() {
           explain="后端把所有「计算奖励中」「到期未领」仓位开仓时算好的整期奖励加起来：不按已锁天数折算，也算进了四档以外产品的仓位。它不是已产生或已发放的奖励，后端改成和仓位同一范围之前只作量级参考。" />
       </StatBand>}
 
-      <Panel plain title="四档历史产品" icon={Coins} tone="role-1"
+      <Panel plain={pools.length > 0} title="四档历史产品" icon={Coins} tone="role-1"
         sub={`USDT · 质押总开关${gate.enabled ? "开启" : "已关闭"} · 紧急暂停 ${fmtCount(stats.killedCount)} 档`}
         explain={<><p>质押已退役，这里是四档的原配置，只能查看：不能改奖励率、扣款、最低额，也不能开售、停售、暂停或恢复，App 显示入口同样不在这里。</p><p>原档位状态只说明当时的配置，不代表现在可以买。质押总开关是 J1 紧急停用开关里读到的当前值；紧急暂停数是被暂停的档位数，不是被罚没的仓位数。</p></>}>
         {pools.length === 0

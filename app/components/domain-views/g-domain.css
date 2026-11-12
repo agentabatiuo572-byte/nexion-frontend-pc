@@ -388,3 +388,5 @@
 }
 /* G3 最近 24 小时：最后两个时刻挨得太近时藏掉倒数第二个（最近时刻写在标题旁） */
 .g3-history[data-tick-crowd] .rd-chart-x span:nth-last-child(2) { visibility: hidden; }
+.g4x-head-actions { display: inline-flex; align-items: center; gap: 8px; }
+.g4x-nowrap { white-space: nowrap; }

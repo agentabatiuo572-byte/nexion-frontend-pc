@@ -48,6 +48,8 @@ import { G4TierConfirm, hasPendingG4TierApproval, type G4TierChange } from "./g4
 import { canRetryG4DirectCommand, g4DirectAuthority, g4DirectCommandExpired, g4DirectObject, listG4DirectCommands, subscribeG4DirectCommands, g4DirectCommandVersion, type G4DirectCommand } from "@/lib/admin/g4-direct-command";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { useGParamApproval } from "@/lib/admin/use-g-param-approval";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { expiredTag, unknownTag } from "./g-recovery";
 import { G4_PARAM_NAME, G4RecoveryNotice, g4Amount, g4ParamValueText, g4Plain, g4RecoveryTag, type G4ExtraRecovery } from "./g4-recovery";
 
 const OPERATOR = currentAdminOperator;
@@ -63,6 +65,15 @@ function fmtNumber(value: number, max = 2) {
 /** 后端拼好的金额文字里的 $：换成「数字 USDT」，不舍入。 */
 function usdtText(value: string) {
   return operatorCopyText(value).replace(/\$(-?[\d,]*\d(?:\.\d+)?)/g, (_, num: string) => `${g4Amount(num.replace(/,/g, ""))} USDT`);
+}
+
+/** 后端「时间 操作人 原状态->新状态:理由」这一串：时间按业务时区，状态写中文；认不出的原样显示。 */
+function marketChangeText(raw: string) {
+  if (!raw) return "暂无记录";
+  const match = /^(\S+) (\S+) (\w+)->(\w+):([\s\S]*)$/.exec(raw.trim());
+  if (!match) return <span className="g4x-wrap" data-mono>{raw}</span>;
+  const state = (value: string) => value === "open" ? "开放" : value === "closed" ? "暂未开放" : value;
+  return <>{formatBusinessTimeCompact(match[1], match[1])}（{businessZone().label}）· {match[2]} · {state(match[3])} → {state(match[4])}{match[5].trim() ? ` · 理由：${match[5].trim()}` : ""}</>;
 }
 
 function paramEditValue(param: G4Param) {
@@ -389,6 +400,7 @@ function G4GenesisPage() {
       facts={mc.facts}
       statedBrief={mc.statedBrief}
       confirmLabel={mc.confirmLabel}
+      confirmLabelForValue={mc.confirmLabelForValue}
       confirmTone={mc.confirmTone}
       coverageLead={mc.coverageLead}
       coverageCheck={mc.coverageCheck}
@@ -408,6 +420,20 @@ function G4GenesisPage() {
     />
   );
 
+  /** 原操作改成了什么，写人话；请求里的理由、操作人和版本号不列。 */
+  const directChangeText = (command: G4DirectCommand) => {
+    const object = g4DirectObject(command);
+    const body = JSON.parse(command.body) as Record<string, unknown>;
+    const text = (value: unknown) => typeof value === "string" || typeof value === "number" ? String(value) : "";
+    if (object.startsWith("params/")) return <>改成 {g4ParamValueText(decodeURIComponent(object.slice(7)), text(body.value))}</>;
+    if (object === "market-status") return <>暂停认购、挂售和转让</>;
+    if (object === "market-open-state") return <>{text(body.value) === "open" ? "暂未开放 → 开放" : "开放 → 暂未开放"}</>;
+    if (object === "tiers") return command.method === "DELETE" ? <>删除这一档</> : <>{body.to !== undefined ? `到第 ${fmtNumber(Number(text(body.to)), 0)} 张` : "档位"}{body.priceUSDT !== undefined ? ` · ${g4Amount(text(body.priceUSDT))} USDT/张` : ""}</>;
+    if (object.startsWith("operations/config/")) return <>改成 {text(body.value) || "—"}</>;
+    if (object === "operations/simulations") return <>新建一条模拟成交</>;
+    if (object.startsWith("operations/simulations/")) return <>归档这条模拟成交</>;
+    return <>原操作</>;
+  };
   const directName = (command: G4DirectCommand) => {
     const object = g4DirectObject(command);
     const body = JSON.parse(command.body) as Record<string, string>;
@@ -499,9 +525,9 @@ function G4GenesisPage() {
   const recoveryNotice = (extra: G4ExtraRecovery[] = []) => <G4RecoveryNotice approval={paramApproval} toast={toast} extra={[
     ...directRecords.map(command => ({
       key: command.commandKey, name: directName(command),
-      change: <span data-mono>{Object.entries(JSON.parse(command.body)).filter(([key]) => !["operator"].includes(key)).map(([key, value]) => `${key}: ${value}`).join(" · ")}</span>,
-      tag: <StatusTag tone="warn" icon={CircleHelp} explain={`原命令号 ${command.commandKey}。只读核对不会重发；24 小时后仅可核对。`}>{g4DirectCommandExpired(command) ? "已过期" : "结果未知"}</StatusTag>,
-      action: <><Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, false).catch(() => undefined); }}>查询原提交结果</Button>{canRetryG4DirectCommand(command) && <Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, true).catch(() => undefined); }}>按原请求重试</Button>}</>,
+      change: directChangeText(command), submittedAt: command.createdAt,
+      tag: g4DirectCommandExpired(command) ? expiredTag("direct") : unknownTag("direct"),
+      action: <><Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, false).catch(() => undefined); }}>查询原结果</Button>{canRetryG4DirectCommand(command) && <Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, true).catch(() => undefined); }}>按原请求重试</Button>}</>,
     })), ...(!overview && tierPending ? [{
       key: "tiers", name: "价格档位", change: "档位修改的原申请（扩容或未售涨价）",
       tag: <StatusTag tone="warn" icon={Clock3}>待确认</StatusTag>,
@@ -512,7 +538,7 @@ function G4GenesisPage() {
       action: <Button size="sm" disabled={!!busyKey} onClick={() => {
         const [original] = configApprovalOriginalInput("G4", pendingFirstDividend.input);
         setFirstDividend({ epoch, expectedRevision: original.expectedRevision });
-      }}>查询原审批</Button>,
+      }}>查询原结果</Button>,
     }] : []), ...extra,
   ]} />;
   const anyWrite = ["finprod_g4_write", "finprod_g4_price_write", "finprod_g4_dividend_rate_write", "finprod_g4_royalty_write", "finprod_g4_airdrop_pct_write",
@@ -660,18 +686,18 @@ function G4GenesisPage() {
             {pendingRaise && <Fact k="原调高申请" tone="warn"><Change from={currentText} to={pendingRaiseValue === undefined ? "—" : g4ParamValueText("dividend", pendingRaiseValue)} /> 待审批{pendingRaise.ticket ? `（${pendingRaise.ticket.id}）` : ""}</Fact>}
             <Fact k="什么时候生效" tone={dir === "loose" ? "warn" : undefined}>{original
               ? original.ticket?.status === "pending"
-                ? "审批单在等另一位在职超级管理员批准；批准前参数不变"
+                ? "审批单在等另一位超级管理员批准；批准前参数不变"
                 : "原申请结果还没确认：有效期内按原内容、原命令号重试，后端不会重复建单"
               : tighteningDividend
                 ? "这次只能调低或保持不变，确认后立即生效；原调高申请还在，但比例变了以后批准时后端会拒绝它，不会覆盖这次的值"
                 : dir === "loose"
-                  ? `${copy?.tighten ? "放宽" : "改动"}：提交审批，另一位在职超级管理员批准后才生效`
+                  ? `${copy?.tighten ? "放宽" : "改动"}：提交审批，另一位超级管理员批准后才生效`
                   : dir === "tight"
                     ? "收紧：确认后立即生效"
                     : dir === "same"
                       ? "和现在一样：直接保存，参数不变"
                       : directionTag}</Fact>
-            {dir === "loose" && <Fact k="谁来批">另一位在职超级管理员，要有审批批准权和这项参数的修改权限；你自己不能批</Fact>}
+            {dir === "loose" && <Fact k="谁来批">另一位超级管理员（需有审批批准权和这项参数的修改权限）；你自己不能批</Fact>}
             {dir === "loose" && <Fact k="批准前">{param.key === "dividend"
               ? `仍是 ${currentText}；待审批期间你还可以把比例调低，调低立即生效，原调高申请随后会被后端拒绝`
               : `仍是 ${currentText}；这一项被审批锁住，调高调低都改不了`}</Fact>}
@@ -686,24 +712,25 @@ function G4GenesisPage() {
       );
     };
     openActionConfirm({ briefKind: "config", directObject: `params/${encodeURIComponent(param.key)}`,
+      confirmLabelForValue: (value) => !original && !tighteningDividend && paramDirection(param.key, currentRaw, value) === "loose" ? "提交审批" : "确认修改",
       action: `修改创世节点参数 · ${operatorCopyText(param.name)}`,
       title: original ? `${name}的原申请` : tighteningDividend ? "调低每日收益比例" : `调整${name}`,
       detail: <KeepText text={`${copy?.what ?? operatorCopyText(param.sub)}。`} />,
       effect: tighteningDividend
         ? <StatusTag tone="progress" filled explain="你提交的调高申请在等批准。比例只能调低或保持不变，调低立即生效；原调高申请批准时后端发现比例变了会拒绝，不会覆盖这次的值。">只能调低 · 立即生效</StatusTag>
         : <StatusTag tone="neutral" icon={ArrowLeftRight} explain={copy?.tighten
-          ? <><p>{copy.loosen}是放宽：先提交审批，另一位在职超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p><p>{copy.tighten}是收紧：确认后立即生效。新旧值一样时直接保存，参数不变。</p></>
-          : <p>这一项目前只保存说明。值有任何变化都要提交审批，另一位在职超级管理员批准后才写入；一样的值直接保存。</p>}>{directionTag}</StatusTag>,
+          ? <><p>{copy.loosen}是放宽：先提交审批，另一位超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p><p>{copy.tighten}是收紧：确认后立即生效。新旧值一样时直接保存，参数不变。</p></>
+          : <p>这一项目前只保存说明。值有任何变化都要提交审批，另一位超级管理员批准后才写入；一样的值直接保存。</p>}>{directionTag}</StatusTag>,
       amplifies: false,
       facts,
       statedBrief: copy?.descriptive
         ? { impact: "只改这项说明的存值，不执行发放、释放或公式。", check: "核对新值；决策编号写产品或财务决议号，理由写清依据或工单号。" }
         : { impact: "改的是之后的销售和分红规则，已下单的订单和已建的分红批次不变。", check: "核对新值和方向；理由写清依据或工单号。" },
-      coverageLead: param.key === "supply" ? "调高节点总量要另一位超管批准"
-        : param.key === "price" ? "调高单价会让存量节点每天多发分红，要另一位超管批准"
-          : param.key === "dividend" ? "调高每日收益比例会让平台每天多付 USDT，要另一位超管批准"
-            : param.key === "royalty" ? "调低转让手续费要另一位超管批准"
-              : `改${name}要另一位超管批准`,
+      coverageLead: param.key === "supply" ? "调高节点总量要另一位超级管理员批准"
+        : param.key === "price" ? "调高单价会让存量节点每天多发分红，要另一位超级管理员批准"
+          : param.key === "dividend" ? "调高每日收益比例会让平台每天多付 USDT，要另一位超级管理员批准"
+            : param.key === "royalty" ? "调低转让手续费要另一位超级管理员批准"
+              : `改${name}要另一位超级管理员批准`,
       coverageCheck: param.key === "price" || param.key === "dividend"
         ? "提交审批时和批准时，后端各检查一次：原值和当前系列没被改过；把同系列节点每天多出来的分红算进应付款后，兑付覆盖率不低于红线。低于红线或算不准都拒绝。"
         : "提交审批时和批准时，后端各检查一次：原值和当前系列没被改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
@@ -915,14 +942,14 @@ function G4GenesisPage() {
       action: `重新发放今日收益 ${dividend.batchNo}`,
       title: original ? "补发收益的原申请" : "重新发放今日收益",
       detail: "按这一批的真实待付明细发放：没发成功的（待发、失败）按原用户、原金额补，已发的不重复发；今天还没有批次时按合格持仓新建这一批。",
-      effect: <><StatusTag tone="warn" icon={Banknote} filled explain="提交时后端算这一批真实待付的金额：大于 0 就转成审批单，另一位在职超级管理员批准后才付款；没有待付或这一批已经完成时直接返回结果，不新付钱。">会真实付款</StatusTag><IrreversibleTag>付出后不能撤回</IrreversibleTag></>,
+      effect: <><StatusTag tone="warn" icon={Banknote} filled explain="提交时后端算这一批真实待付的金额：大于 0 就转成审批单，另一位超级管理员批准后才付款；没有待付或这一批已经完成时直接返回结果，不新付钱。">会真实付款</StatusTag><IrreversibleTag>付出后不能撤回</IrreversibleTag></>,
       confirmTone: "danger",
       confirmLabel: "确认发放",
       facts: <Facts>
         <Fact k="批次"><span data-mono>{dividend.batchNo || "—"}</span>{original ? "（原申请的批次）" : ""}</Fact>
         <Fact k="这一批现在">{dividend.paidCount > 0 ? `已发 ${fmtNumber(dividend.paidCount, 0)} 个节点 · ${g4Amount(dividend.paidAmountUsdt)} USDT` : batchRerun ? "这一批已完成" : "还没发"}</Fact>
         <Fact k="今日估算应发">{g4Amount(dividend.payoutToday)} USDT（估算，实际以后端按每个节点算的待付为准）</Fact>
-        <Fact k="谁来批" tone="warn">有真实待付金额时，要另一位在职超级管理员在「操作记录与审批」批准，你自己不能批；批准前不付款</Fact>
+        <Fact k="谁来批" tone="warn">有真实待付金额时，要另一位超级管理员（需有审批批准权）在「操作记录与审批」批准，你自己不能批；批准前不付款</Fact>
         <Fact k="批准后">后端核对这一批的快照没变，给每个待付节点的持有人记 USDT 收益入账</Fact>
         <Fact k="前提">「运营阶段设置」里的开始发放收益是开的，创世节点没有紧急暂停；否则后端拒绝</Fact>
       </Facts>,
@@ -1091,8 +1118,8 @@ function G4GenesisPage() {
     ...(pendingFirstDividend ? [{
       key: "first-dividend", name: "每日收益比例",
       change: "首次配置的原申请",
-      tag: <StatusTag tone="warn" icon={Clock3} explain="首次配置每日收益比例要另一位有权超管批准，批准前仍是 0%。点「查询原审批」按原命令号核对。">待确认</StatusTag>,
-      action: <Button size="sm" disabled={!!busyKey} aria-label="查询原日分红审批" onClick={() => { const [original] = configApprovalOriginalInput("G4", pendingFirstDividend.input); setFirstDividend({ epoch, expectedRevision: original.expectedRevision }); }}>查询原审批</Button>,
+      tag: <StatusTag tone="warn" icon={Clock3} explain="首次配置每日收益比例要另一位超级管理员批准，批准前仍是 0%。点「查询原结果」核对原审批单。">待确认</StatusTag>,
+      action: <Button size="sm" disabled={!!busyKey} aria-label="查询原日分红审批" onClick={() => { const [original] = configApprovalOriginalInput("G4", pendingFirstDividend.input); setFirstDividend({ epoch, expectedRevision: original.expectedRevision }); }}>查询原结果</Button>,
     }] : []),
   ];
   const pendingCount = records.length + extraRecovery.length + directRecords.length;
@@ -1144,7 +1171,7 @@ function G4GenesisPage() {
     return (
       <ConfigRow key={param.key} name={name}
         what={copy?.what ?? operatorCopyText(param.sub)}
-        when={copy ? copy.tighten ? `${copy.loosen}是放宽，提交审批，另一位在职超级管理员批准后生效；${copy.tighten}是收紧，确认后立即生效` : "值有任何变化都要提交审批，另一位在职超级管理员批准后写入" : undefined}
+        when={copy ? copy.tighten ? `${copy.loosen}是放宽，提交审批，另一位超级管理员批准后生效；${copy.tighten}是收紧，确认后立即生效` : "值有任何变化都要提交审批，另一位超级管理员批准后写入" : undefined}
         effect={copy?.effect}
         note={[
           copy?.money ? `付不付钱：${copy.money}` : undefined,
@@ -1154,12 +1181,13 @@ function G4GenesisPage() {
           <span className="g4x-value">
             <span className="g4x-value-num">{g4ParamValueText(param.key, param.value)}</span>
             {recovery && g4RecoveryTag(recovery)}
+            {!recovery && directRecord(`params/${encodeURIComponent(param.key)}`) && (g4DirectCommandExpired(directRecord(`params/${encodeURIComponent(param.key)}`)!) ? expiredTag("direct") : unknownTag("direct"))}
             {!record && lockedParams[param.key] && <StatusTag tone="warn" icon={Lock} explain={lockedParams[param.key]}>审批锁定中</StatusTag>}
           </span>
           {dir && <span className="g4x-dir">{dir}</span>}
         </span>}
         action={canAdjust(param.key) ? (describedBy) => (
-          <Button size="sm" aria-describedby={describedBy} aria-label={`调整 ${param.name}`}
+          <Button size="sm" aria-describedby={describedBy} aria-label={`调整${G4_PARAM_NAME[param.key] ?? operatorCopyText(param.name)}`}
             disabledReason={paramDisabledReason(param.key)} onClick={() => adjustParam(param)}>{record ? "查看原申请" : "调整"}</Button>
         ) : undefined} />
     );
@@ -1242,7 +1270,7 @@ function G4GenesisPage() {
         explain={<>
           <p>看条：卖到第几张、落在哪一档、离下一档还剩多少张。条下的刻度是每一档的截止。</p>
           <p>累计售出数落在 [起点, 截止) 时按这一档的价格卖：起点 0、截止 1,000 的档就是第 1 到第 1,000 张。改截止时下一档的起点跟着改；最后一档的截止就是节点总量。</p>
-          <p>扩大已有系列的总量，或让还没卖出的节点涨价，要另一位在职超级管理员批准；其余档位修改确认后立即生效。只影响以后的销售，已下单的按下单时价格。</p>
+          <p>扩大已有系列的总量，或让还没卖出的节点涨价，要另一位超级管理员批准；其余档位修改确认后立即生效。只影响以后的销售，已下单的按下单时价格。</p>
         </>}
         actions={tiers && canPriceTiers ? <span className="g4x-tiers-actions">
           {tierPending && <Button size="sm" disabledReason={busy ? busyReason : undefined} onClick={() => setTierConfirm({ epoch })}>查询原提交结果</Button>}
@@ -1296,7 +1324,7 @@ function G4GenesisPage() {
             <p>发不发由「运营阶段设置」里的开始发放收益控制，这里只能查看。后端目前查不到每天自动发放的任务（已提后端），要发请点「重新发放今日收益」。</p>
           </>}
           actions={(allowed("finprod_g4_write") || paramApproval.record(dividend.batchNo))
-            ? <Button size="sm" variant="primary" disabledReason={rerunDisabledReason} onClick={runRerunBatch}>重新发放今日收益{batchRerun ? "（已重发）" : ""}</Button>
+            ? <span className="g4x-head-actions">{batchRerun && <StatusTag tone="done" explain="今天这一批已经重新发放过；再点一次后端按真实待付金额判断，没有待付时不新付钱。">今天已重发</StatusTag>}<Button size="sm" variant={batchRerun ? "secondary" : "primary"} disabledReason={rerunDisabledReason} onClick={runRerunBatch}>重新发放今日收益</Button></span>
             : undefined}>
           <div className="g4x-block">
             <div className="g4x-block-head">
@@ -1317,7 +1345,7 @@ function G4GenesisPage() {
             {dividendParam && (
               <ConfigRow key="dividend" name="每日收益比例"
                 what={PARAM_COPY.dividend.what}
-                when={dividendUnset ? "现在是 0%（未配置，不发分红）。首次配置要另一位有权超管批准，批准前仍是 0%" : "调高是放宽，提交审批，另一位在职超级管理员批准后生效；调低是收紧，确认后立即生效"}
+                when={dividendUnset ? "现在是 0%（未配置，不发分红）。首次配置要另一位超级管理员批准，批准前仍是 0%" : "调高是放宽，提交审批，另一位超级管理员批准后生效；调低是收紧，确认后立即生效"}
                 effect={PARAM_COPY.dividend.effect}
                 note={dividendRecord?.ticket?.status === "pending"
                   ? "你提交的调高申请在等批准，期间仍可把比例调低（立即生效）；调低后原调高申请批准时会被后端拒绝，不会覆盖新值。"
@@ -1334,7 +1362,7 @@ function G4GenesisPage() {
                   <Button size="sm" aria-describedby={describedBy} disabledReason={paramDisabledReason(dividendParam.key)}
                     aria-label={pendingFirstDividend ? "查询原日分红审批" : firstDividendEntry ? "首次配置每日收益比例" : `调整 ${dividendParam.name}`}
                     onClick={() => adjustParam(dividendParam)}
-                  >{pendingFirstDividend ? "查询原审批" : firstDividendEntry ? "首次配置" : dividendRecord?.ticket?.status === "pending" ? "调低" : dividendRecord ? "查看原申请" : "调整"}</Button>
+                  >{pendingFirstDividend ? "查询原结果" : firstDividendEntry ? "首次配置" : dividendRecord?.ticket?.status === "pending" ? "调低" : dividendRecord ? "查看原申请" : "调整"}</Button>
                 ) : undefined} />
             )}
             {paramRow(divBaseParam, { dir: "只是说明" })}
@@ -1374,7 +1402,8 @@ function G4GenesisPage() {
               what="停认购、挂售和用户之间的转让，和「紧急停用开关」里的创世节点开关是同一个"
               when="这页只能暂停（页面右上角）；恢复要去「紧急停用开关」"
               value={<span className="g4x-param"><span className="g4x-value"><span className="g4x-value-num">{marketOn ? "未暂停" : "已暂停"}</span></span>
-                <span className="g4x-dir">{marketOn ? "暂停在页面右上角" : <>恢复要去<span className="rd-keep">「紧急停用开关」</span></>}</span></span>} />
+                <span className="g4x-dir">{marketOn ? "暂停在页面右上角" : "这页只能暂停"}</span></span>}
+              action={!marketOn && reach("/emergency/kill-switch") ? <Link className="rd-link g4x-nowrap" href="/emergency/kill-switch" prefetch={false}>去「紧急停用开关」恢复</Link> : undefined} />
             {showcaseEnabledParam && (
               <ConfigRow key="showcase" name="App 商城入口"
                 what="App 商城里显示不显示创世节点入口"
@@ -1382,7 +1411,7 @@ function G4GenesisPage() {
                 effect="只管入口显示；不影响已有持仓和收益、市场状态、紧急暂停和购买资格"
                 value={<span className="g4x-param"><span className="g4x-value"><span className="g4x-value-num">{g4ParamValueText("showcaseEnabled", showcaseEnabledParam.value)}</span></span><span className="g4x-dir">立即生效</span></span>}
                 action={allowed(paramAuthority(showcaseEnabledParam.key)) ? (
-                  <Button size="sm" disabledReason={busy ? busyReason : directRecord("params/showcaseEnabled") ? "请先核对原操作" : undefined} aria-label={`切换 ${showcaseEnabledParam.name}`} onClick={toggleShowcase}>{showcaseEnabledParam.value === "true" ? "隐藏" : "展示"}</Button>
+                  <Button size="sm" disabledReason={busy ? busyReason : directRecord("params/showcaseEnabled") ? "请先核对原操作" : undefined} aria-label={showcaseEnabledParam.value === "true" ? "隐藏 App 商城入口" : "展示 App 商城入口"} onClick={toggleShowcase}>{showcaseEnabledParam.value === "true" ? "隐藏" : "展示"}</Button>
                 ) : undefined} />
             )}
             {paramRow(royaltyParam)}
@@ -1394,7 +1423,7 @@ function G4GenesisPage() {
               <div><dt>24 小时成交额<Explain label="24 小时成交额怎么算" content="过去 24 小时完成的创世节点订单金额合计，含首次认购，不只是转让。" /></dt><dd>{g4Amount(stats.secondary.vol24h)} USDT</dd></div>
               <div><dt>挂售中</dt><dd>{fmtInt(stats.secondary.listed)} 个</dd></div>
             </dl>
-            <p className="g4x-sources-note">创世市场最近修改：<span className="g4x-wrap" data-mono>{overview.market.lastChange || "暂无记录"}</span></p>
+            <p className="g4x-sources-note">创世市场最近修改：{marketChangeText(overview.market.lastChange)}</p>
             <p className="g4x-sources-note">封锁地区：{geoBlocked === "-" ? "—" : geoBlocked}</p>
           </div>
         </Panel>
@@ -1402,7 +1431,7 @@ function G4GenesisPage() {
 
       <Fold title="空投与释放说明" icon={Gift} tone="role-4"
         summary={`${[airdropPctParam, emissionCurveParam, airdropLockDaysParam].filter(Boolean).length} 项 · 目前只保存说明，不执行发放或释放`}
-        explain="这几项后端只保存说明，不会按它们发放 UVT、释放或锁仓。值有任何变化都要另一位在职超级管理员批准；空投占比和发放曲线还要填决策编号。">
+        explain="这几项后端只保存说明，不会按它们发放 UVT、释放或锁仓。值有任何变化都要另一位超级管理员批准；空投占比和发放曲线还要填决策编号。">
         <ConfigList label="空投与释放说明">
           {paramRow(airdropPctParam, { dir: "只是说明" })}
           {paramRow(emissionCurveParam, { dir: "只是说明" })}
