@@ -155,6 +155,8 @@ export default function RiskRadarPage() {
   const [statusReason, setStatusReason] = useState("");
   const [statusError, setStatusError] = useState("");
   const [statusUnknown, setStatusUnknown] = useState(false);
+  const [thresholdUnknown, setThresholdUnknown] = useState(false);
+  const [subscriptionUnknown, setSubscriptionUnknown] = useState(false);
   const [tab, setTab] = useState<"signals" | "inbox">("signals");
   const [triaging, setTriaging] = useState<DimensionKey | null>(null);
   const tabIds = useTabIds();
@@ -344,6 +346,7 @@ export default function RiskRadarPage() {
     if (!session || !threshold || !canThreshold || savingThreshold || (!recover && !canSubmitThreshold)) return;
     setSavingThreshold(true);
     setThresholdError("");
+    setThresholdUnknown(false);
     const approving = requiresApproval || recover;
     try {
       if (approving) {
@@ -378,6 +381,7 @@ export default function RiskRadarPage() {
       } else {
         if (!approving && !(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(THRESHOLD_SLOT);
         if (approving && !pendingConfigApproval("B5", session.adminId)) setApprovalRecovery(null);
+        setThresholdUnknown(cause instanceof B5OutcomeUnknownError);
         setThresholdError(displayAdminError(cause));
       }
     } finally {
@@ -388,6 +392,7 @@ export default function RiskRadarPage() {
     if (!canSubscribe || subscriptionLoading || subscriptionError || savingSubscription || !subscriptionChanged || !subscriptionValid) return;
     setSavingSubscription(true);
     setSubscriptionSaveError("");
+    setSubscriptionUnknown(false);
     const commandKey = b5Commands.resolve(
       SUBSCRIPTION_SLOT,
       JSON.stringify([subscription, subscriptionVersion]),
@@ -404,6 +409,7 @@ export default function RiskRadarPage() {
       setToast("告警订阅已保存，之后的新告警发给你");
     } catch (cause) {
       if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(SUBSCRIPTION_SLOT);
+      setSubscriptionUnknown(cause instanceof B5OutcomeUnknownError);
       setSubscriptionSaveError(displayAdminError(cause));
     } finally {
       setSavingSubscription(false);
@@ -552,7 +558,7 @@ export default function RiskRadarPage() {
             <div className="b5-dialog">
               {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
               {previewError && <Notice tone="danger" title="预览失败">{previewError}</Notice>}
-              {thresholdError && <Notice tone={approvalRecovery ? "warn" : "danger"} title={approvalRecovery ? "审批提交结果还没确认" : "没有调整成功"}>{thresholdError}</Notice>}
+              {thresholdError && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? "审批提交结果还没确认" : thresholdUnknown ? "结果还没确认，可能已经生效" : "没有调整成功"}>{thresholdError}</Notice>}
               {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="上一次提交审批的结果还没确认">先点「查询原操作」查原审批单；查到了就不要重复提交。</Notice>}
               <DiffField size="body" before={fmtConfigPct(threshold.yellowPct)} label="黄线改成" hint="5%–50%" state={yellowDirection}
                 note={yellowDirection ? "黄线只决定什么时候标「注意」，不会自动暂停提现。" : undefined}>
@@ -622,7 +628,7 @@ export default function RiskRadarPage() {
                       onChange={(event) => setSubscription((value) => ({ ...value, webhookUrl: event.target.value }))} />
                   </Field>
                 )}
-                {subscriptionSaveError && <Notice tone="danger" title="没有保存成功">{subscriptionSaveError}</Notice>}
+                {subscriptionSaveError && <Notice tone={subscriptionUnknown ? "warn" : "danger"} title={subscriptionUnknown ? "结果还没确认，可能已经生效" : "没有保存成功"}>{subscriptionSaveError}</Notice>}
               </>
             )}
           </div>
