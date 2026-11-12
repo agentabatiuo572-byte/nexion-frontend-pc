@@ -117,7 +117,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
   const recoveryBatch = ownPendingBatch?.commandKey === recoveryKey ? ownPendingBatch : undefined;
   const latest = useRef({ overview, loading, busyKey, readFailed });
   latest.current = { overview, loading, busyKey, readFailed };
-  const paramRecovery = <GParamRecovery approval={paramApproval} toast={toast} />;
+  const paramRecovery = <GParamRecovery approval={paramApproval} toast={toast} labelOf={key => { const cap = overview?.caps.find(row => row.key === key); return cap && operatorCopyText(cap.name); }} />;
 
   useEffect(() => {
     setPendingBatch(canProcessBatch ? pendingG2QueueBatch(batchAdminId) : undefined);
@@ -305,7 +305,11 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
           <div>{isQueueMode ? "超出额度的兑换按所选方式排队或拒绝。" : cap.key === "fee" || cap.key === "feeMin" ? "调低手续费会少收钱，调高手续费会多收钱。" : "调高额度：更多兑换马上成交，排队变少。调低额度：更多兑换要排队或被拒绝，USDT 流出变少。"}</div>
         </div>
         {isQueueMode && <>从「排队」改成「拒绝」是收紧。需要运营主管操作。</>}
-        保存后立即生效。
+        {({ userDailyCap: "调高额度要提交审批单，另一位有审批批准权限的超级管理员批准后才生效，批准前当前值不变；调低额度保存后立即生效。",
+          platformDailyCap: "调高额度要提交审批单，另一位有审批批准权限的超级管理员批准后才生效，批准前当前值不变；调低额度保存后立即生效。",
+          fee: "调低手续费要提交审批单，另一位有审批批准权限的超级管理员批准后才生效，批准前当前值不变；调高手续费保存后立即生效。",
+          feeMin: "调低手续费要提交审批单，另一位有审批批准权限的超级管理员批准后才生效，批准前当前值不变；调高手续费保存后立即生效。",
+          queueMode: "改回「排队」要提交审批单，另一位有审批批准权限的超级管理员批准后才生效，批准前当前值不变；改成「拒绝」保存后立即生效。" } as Record<string, string>)[cap.key] ?? "保存后立即生效。"}
       </>,
       edit: isQueueMode
         ? { kind: "select", current: cap.displayValue, initialValue: originalValue === undefined ? undefined : originalValue === "REJECT" ? "拒绝" : "排队", options: ["排队", "拒绝"], amplifiesWhen: { from: "拒绝", to: "排队" } }

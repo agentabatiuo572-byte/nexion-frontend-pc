@@ -129,7 +129,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
   const moreInFlight = useRef(false);
   const latest = useRef({ overview, loading, busyKey, readFailed });
   latest.current = { overview, loading, busyKey, readFailed };
-  const paramRecovery = <GParamRecovery approval={paramApproval} toast={toast} />;
+  const paramRecovery = <GParamRecovery approval={paramApproval} toast={toast} labelOf={key => { const param = overview?.params.find(row => row.key === key); return param && paramName(param); }} />;
 
   const reload = useCallback(async (silent = false) => {
     const generation = ++requestGeneration.current;
@@ -245,7 +245,9 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
       detail: (
         <>
           <b>{label}</b> · 当前 {paramDisplayValue(param)} · {({ apy: "设置新订单的参考年奖励率", lockDays: "已有订单按原期限", nurture: "影响之后的好友升级奖励计算", lottery: "系统会检查奖池核对编号至少 3 字，以及本月已发券数加目标张数是否超过创世奖池月容量", penalty: "已有订单按下单时的扣款规则", presets: "保存后 App 上的可选金额立即更新" } as Record<string,string>)[param.key] ?? "修改后按该参数生效规则执行"}。
-          {param.newOnly ? "保存后立即生效，只影响新订单。" : "保存后立即生效。"}
+          {({ apy: "调高年奖励率要提交审批单，另一位有审批批准权限的超级管理员批准后才生效，批准前当前值不变；调低保存后立即生效",
+            nurture: "调高要提交审批单，另一位有审批批准权限的超级管理员批准后才生效，批准前当前值不变；调低保存后立即生效",
+            penalty: "调低扣款比例要提交审批单，另一位有审批批准权限的超级管理员批准后才生效，批准前当前值不变；调高保存后立即生效" } as Record<string, string>)[param.key] ?? "保存后立即生效"}{param.newOnly ? "，只影响新订单。" : "。"}
         </>
       ),
       edit: param.key === "presets"
