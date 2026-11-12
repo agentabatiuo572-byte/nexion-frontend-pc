@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "r
 import Link from "next/link";
 import { AlarmClock, Ban, CalendarClock, CheckCheck, CircleCheck, CircleDashed, CircleSlash, Clock3, Coins, Hourglass, Layers, LogOut, PauseCircle, RefreshCw, Undo2, Wallet, type LucideIcon } from "lucide-react";
 import {
-  BlockState, Button, Cell, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Input, JudgmentPoints, Notice,
+  BlockState, Button, Cell, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Input, JudgmentPoints, KeepText, Notice,
   PageHeader, Panel, RatioBar, RdPage, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, type StateTone,
 } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
@@ -348,7 +348,7 @@ export function G1Staking() {
         <div className="g1-lane" role="radiogroup" aria-label="仓位状态" onKeyDown={onLaneKey}>
           {STAGES.map((stage) => (
             <section key={stage.key} className="g1-lane-stage" data-stage={stage.key} aria-label={stage.title}>
-              <div className="g1-lane-title">{stage.title}<Explain label={`${stage.title}是什么意思`} content={stage.explain} side="top" align="start" /></div>
+              <div className="g1-lane-title">{stage.title}<Explain label={`${stage.title}是什么意思`} content={<KeepText text={stage.explain} phrases={["单独标出。"]} />} side="top" align="start" /></div>
               <div className="g1-lane-items">
                 {stage.states.map((key) => {
                   const meta = POSITION_STATES[key];
