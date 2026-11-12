@@ -34,7 +34,19 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const [k2RereadPending, setK2RereadPending] = useState(false);
   const [k2CommandVersion, setK2CommandVersion] = useState(0);
+  const [k4RereadPending, setK4RereadPending] = useState(false);
+  const [k4CommandVersion, setK4CommandVersion] = useState(0);
   const requestSequence = useRef(0);
+  const requireK4Reread = useCallback(() => {
+    requestSequence.current += 1;
+    setK4RereadPending(true);
+  }, []);
+  const syncK4Commands = useCallback(() => setK4CommandVersion(version => version + 1), []);
+  useEffect(() => {
+    if (tab !== "K4" || (!k4RereadPending && risk.scoring)) return;
+    if (mc && mc.getPendingReason?.() === undefined) setActionConfirm(null);
+    if (cf && cf.getPendingReason?.() === undefined) setCf(null);
+  }, [tab, k4RereadPending, risk.scoring, mc, cf, k4CommandVersion]);
   const requireK2Reread = useCallback(() => {
     // An earlier in-flight read cannot satisfy a recovery that just completed.
     requestSequence.current += 1;
@@ -82,6 +94,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
         const scoring = await fetchK4ScoringOverview(query?.scoring);
         if (sequence === requestSequence.current) {
           setRisk((current) => ({ ...current, scoring }));
+          setK4RereadPending(false);
         }
       } else {
         const next = await fetchKRiskOverviews(query);
@@ -100,6 +113,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
     const scoring = await fetchK4ScoringOverview(query);
     if (activeSequence === requestSequence.current) {
       setRisk((current) => ({ ...current, scoring }));
+      setK4RereadPending(false);
       return scoring;
     }
   }, []);
@@ -147,7 +161,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "K1" && <K1MultiAccount ctx={ctx} />}
       {tab === "K2" && <K2Arbitrage ctx={ctx} rereadPending={k2RereadPending} onRereadRequired={requireK2Reread} onCommandsChange={syncK2Commands} />}
       {tab === "K3" && <K3Rules ctx={ctx} />}
-      {tab === "K4" && <K4Scoring ctx={ctx} />}
+      {tab === "K4" && <K4Scoring ctx={ctx} rereadPending={k4RereadPending} onRereadRequired={requireK4Reread} onCommandsChange={syncK4Commands} />}
 
       {mc && (
         <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}

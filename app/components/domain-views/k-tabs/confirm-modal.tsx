@@ -20,7 +20,9 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const [pendingReason, setPendingReason] = useState(() => req.getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? "");
   const reason = pendingReason ?? draftReason;
-  const [value, setValue] = useState("");
+  const [pendingValue, setPendingValue] = useState(() => req.getPendingValue?.());
+  const [draftValue, setValue] = useState("");
+  const value = pendingValue ?? draftValue;
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 刚打开不报错：字数不够等失焦或点过提交才用警告色（DP-06）。
@@ -67,6 +69,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       if (!handled) setError(displayAdminError(cause));
     } finally {
       setPendingReason(req.getPendingReason?.());
+      setPendingValue(req.getPendingValue?.());
       setSubmitting(false);
     }
   };

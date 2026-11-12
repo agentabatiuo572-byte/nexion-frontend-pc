@@ -61,6 +61,8 @@ export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type ConfirmReq = {
   getPendingReason?: () => string | undefined;
+  /** 原覆盖分，恢复时只展示保存的输入。 */
+  getPendingValue?: () => string | undefined;
   blockedReason?: string;
   briefKind: OperatorBriefKind;
   action: ReactNode;

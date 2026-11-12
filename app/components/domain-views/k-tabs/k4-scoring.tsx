@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { BellDot, BellRing, CircleHelp, FilePenLine, PenLine, History, RefreshCw, RotateCcw, Scale, ShieldAlert, ShieldCheck, TriangleAlert, SlidersHorizontal, Upload, UserRound, Users } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints,
@@ -10,6 +11,8 @@ import {
 import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   K1OutcomeUncertainError,
+  K1RequestError,
+  executeK4Command,
   K4_DIMENSION_KEYS,
   fetchK4WithdrawalAlerts,
   markK4WithdrawalAlertRead,
@@ -22,7 +25,10 @@ import {
   type K4UserOption,
   type K4WithdrawalAlert,
 } from "@/lib/admin/k-client";
-import { createSlotAttemptStore, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { k4Commands, k4Slot, k4Target, saveK4Operation, type K4Attempt, type K4Operation, type K4PendingCommand, type K4Snapshot } from "@/lib/admin/k4-command";
+import { openK4Confirmation } from "./k4-confirmations";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import type { KCtx } from "./types";
@@ -31,27 +37,15 @@ import {
   NumberEditRow, VersionFacts, WeightEditRow, WeightTable, changedCount, editableModel, fieldName, fmt, modelDiffRows, type EditableModel,
 } from "./k4-parts";
 
-/** 一个操作槽位(`override:用户号` / `model-publish` / …)同时只有一次在途尝试:
- *  输入指纹没变就复用命令号,变了铸新号并丢弃旧号。落 sessionStorage,刷新后重试仍去重。 */
-const commandAttempts = createSlotAttemptStore({
-  storageKey: "nexion-admin-k4-scoring-commands-v1",
-});
-
 function errorText(error: unknown) {
   return error instanceof Error ? displayAdminError(error) : "操作失败，请稍后重试";
 }
 
 type K4Tab = "model" | "users" | "alerts";
 
-/**
- * 从用户详情「去风险评分规则」带进来的用户（`/risk/scoring?userCode=…&returnTo=…`）。
- * 界面已备好：带着用户进来时直接打开「用户分数」并查这位用户，顶上给「返回用户详情」。
- * 待代码 worker 接线：从网址读 userCode / returnTo 填到这里（现在没有读，见重构说明 B01）。
- */
-const INBOUND_USER: { userNo: string; returnTo: string | null } | null = null;
-
 /** 待确认记录的槽位名换成运营看得懂的操作名。 */
 function slotLabel(slot: string) {
+  if (slot.startsWith("alert-read:")) return "标为已读";
   if (slot === "model-draft") return "保存评分规则草稿";
   if (slot === "model-publish") return "发布评分规则草稿";
   if (slot === "batch-recompute") return "全部恢复系统评分";
@@ -82,7 +76,18 @@ export function K4HeaderActions() {
   return null;
 }
 
-export function K4Scoring({ ctx }: { ctx: KCtx }) {
+export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChange }: {
+  ctx: KCtx; rereadPending: boolean; onRereadRequired: () => void; onCommandsChange: () => void;
+}) {
+  const searchParams = useSearchParams();
+  const userCode = searchParams?.get("userCode") ?? null;
+  const returnTo = searchParams?.get("returnTo") ?? null;
+  const inboundError = returnTo !== null && userCode === null ? "带入链接缺少用户编号，请从用户详情重新进入"
+    : userCode !== null && (!/^U\d{8,19}$/.test(userCode) || searchParams?.getAll("userCode").length !== 1)
+    ? "带入的用户编号格式无效，请核对用户详情地址后重新进入"
+    : returnTo !== null && (!/^\/users\/search\/[^/?#\\]+(?:\?[^#\\]*)?$/.test(returnTo) || searchParams?.getAll("returnTo").length !== 1)
+      ? "返回用户详情的地址无效，请从用户详情重新进入" : null;
+  const INBOUND_USER = userCode && !inboundError ? { userNo: userCode, returnTo } : null;
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
   const isSuperAdmin = session?.role === "superadmin";
@@ -113,14 +118,21 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
   const [tab, setTab] = useState<K4Tab>(INBOUND_USER ? "users" : "model");
   const [editorOpen, setEditorOpen] = useState(false);
   const [historyEntry, setHistoryEntry] = useState<K4ScoreHistory | null>(null);
-  const [pending, setPending] = useState<SlotAttemptRecord[]>([]);
+  const [pending, setPending] = useState<K4PendingCommand[]>([]);
   const [readAt, setReadAt] = useState<number | null>(null);
   const tabIds = useTabIds();
   const pageEffectMounted = useRef(false);
   const lookupSequence = useRef(0);
-  const inboundLoaded = useRef(false);
+  const inboundLoaded = useRef<string | null>(null);
+  const currentState = useRef({ ctx, rereadPending, lookupUser });
+  currentState.current = { ctx, rereadPending, lookupUser };
 
-  const syncPending = useCallback(() => setPending(commandAttempts.list()), []);
+  const syncPending = useCallback(() => {
+    const records = k4Commands.list();
+    setPending(records);
+    setAlertUnknown(records.flatMap(record => record.alertId ? [record.alertId] : []));
+    onCommandsChange();
+  }, [onCommandsChange]);
   useEffect(() => { syncPending(); }, [syncPending]);
   useEffect(() => { if (overview) setReadAt(Date.now()); }, [overview]);
 
@@ -157,7 +169,10 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
         if (!alive) return;
         setWithdrawalAlerts(data.alerts);
         setWithdrawalAlertError(null);
-        setAlertUnknown([]);
+        for (const record of k4Commands.list()) {
+          if (record.alertId && data.alerts.some(alert => alert.id === record.alertId && alert.read)) k4Commands.forget(record.fingerprint, record.commandKey);
+        }
+        syncPending();
       })
       .catch((error) => {
         if (!alive) return;
@@ -170,7 +185,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
         setAlertsReading(false);
       });
     return () => { alive = false; };
-  }, []);
+  }, [syncPending]);
 
   useEffect(() => {
     if (!canReadWithdrawalAlerts) return;
@@ -204,39 +219,136 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
     };
   }, [ctx.actions, overview, userSearch]);
 
-  const runAction = async (
-    operation: string,
-    fingerprint: string,
-    work: (commandKey: string) => Promise<void>,
-    successText: string,
-    afterReload?: () => Promise<unknown>,
-  ) => {
-    const commandKey = commandAttempts.resolve(operation, fingerprint, newK1CommandKey);
-    let writeConfirmed = false;
+  const originalFor = (attempt: K4Attempt) => attempt.retained
+    ? k4Commands.list().find(record => record.commandKey === attempt.retained!.commandKey && record.fingerprint === attempt.retained!.fingerprint) : undefined;
+  const pendingFor = (operation: K4Operation) => {
+    const target = k4Target({ fingerprint: k4Slot(operation) });
+    return k4Commands.list().find(record => k4Target(record) === target
+      || (target.startsWith("score-user:") && k4Target(record) === "score-users")
+      || (target === "score-users" && k4Target(record).startsWith("score-user:")));
+  };
+  const requireReread = () => {
+    currentState.current.rereadPending = true;
+    onRereadRequired();
+    setEditorOpen(false);
+  };
+  const canWriteOperation = (operation: K4Operation) => {
+    const session = useAdminAuth.getState().session;
+    const code = ["draft", "publish", "restore"].includes(operation.kind) ? "risk_k4_write"
+      : operation.kind === "override" ? "risk_k4_user_override" : "risk_k4_user_recompute";
+    return session?.authorities.includes(code) && (operation.kind !== "publish" || session.role === "superadmin");
+  };
+  const sendOperation = async (operation: K4Operation, attempt: K4Attempt, reason: string, value?: string) => {
+    const retained = originalFor(attempt);
+    if (!canWriteOperation(operation)) {
+      ctx.toast(errorText(new Error("FORBIDDEN")));
+      throw new K1OutcomeUncertainError(errorText(new Error("FORBIDDEN")), retained?.commandKey ?? "");
+    }
+    if (retained && isRetryExpired(retained)) {
+      ctx.toast(RETRY_EXPIRED_TEXT);
+      throw new Error(RETRY_EXPIRED_TEXT);
+    }
+    if (!retained) {
+      // A closed recovery cannot turn into a fresh edit of old facts.
+      if (attempt.retained) throw new Error("请重新读取后从原入口发起新修改");
+      const current = currentState.current;
+      const live = current.ctx.risk.scoring;
+      if (current.rereadPending || current.ctx.contentLoading || current.ctx.contentError || !live?.model) throw new Error("RISK_BACKEND_UNAVAILABLE");
+      if (pendingFor(operation)) throw new Error("IDEMPOTENCY_RESULT_UNKNOWN");
+      if (operation.kind === "draft" || operation.kind === "publish" || operation.kind === "restore") {
+        const before = operation.overview.draft ?? operation.overview.model;
+        const now = live.draft ?? live.model;
+        if (before.state !== now.state || before.version !== now.version || before.rowVersion !== now.rowVersion) throw new Error("K4_MODEL_CONCURRENT_UPDATE");
+        if (operation.kind === "publish" && !live.draft) throw new Error("K4_MODEL_CONCURRENT_UPDATE");
+      } else if (operation.kind === "batch") {
+        if (live.totalUsers > 1000) throw new Error("K4_SCORE_BATCH_TOO_LARGE");
+        if (live.model.version !== operation.overview.model.version) throw new Error("K4_MODEL_VERSION_CONFLICT");
+      } else if (current.lookupUser?.userNo !== operation.user.userNo || current.lookupUser?.rowVersion !== operation.user.rowVersion) {
+        throw new Error("K4_SCORE_CONCURRENT_UPDATE");
+      }
+      if (operation.kind === "override" && (!value?.trim() || !/^\d+$/.test(value.trim()) || Number(value) > 100)) throw new Error("SCORE_OVERRIDE_INVALID");
+    }
+    const saved = retained?.operation ?? saveK4Operation(operation, reason, value);
+    const slot = retained?.fingerprint ?? k4Slot(saved);
+    const commandKey = retained?.commandKey ?? newK1CommandKey();
+    k4Commands.remember(slot, commandKey, { operation: saved });
+    if (!k4Commands.isDurablyStored(slot, commandKey)) {
+      if (!retained) k4Commands.forget(slot, commandKey);
+      syncPending();
+      const message = "浏览器存不下原操作，本次没有发送；请保留原记录并重新读取核对";
+      ctx.toast(message);
+      throw new Error(message);
+    }
+    attempt.retained = k4Commands.list().find(record => record.commandKey === commandKey);
+    syncPending();
+    const refreshUserNo = "user" in saved ? saved.user.userNo
+      : saved.kind === "publish" || saved.kind === "batch" ? currentState.current.lookupUser?.userNo : undefined;
     try {
-      await work(commandKey);
-      writeConfirmed = true;
-      commandAttempts.forget(operation);
-      try {
-        await reloadCurrentScoring();
-        if (afterReload) await afterReload();
-      } catch (error) {
-        ctx.toast(`操作已生效，但页面刷新失败。请不要重复提交，点「重新加载」核对 · ${errorText(error)}`);
-        return;
+      await executeK4Command(saved.request, commandKey);
+      k4Commands.forget(slot, commandKey);
+      requireReread();
+      if (refreshUserNo) {
+        lookupSequence.current += 1;
+        currentState.current.lookupUser = null;
+        setLookupUser(null);
+        setLookupLoading(false);
       }
-      ctx.toast(successText);
     } catch (error) {
-      if (writeConfirmed) return;
-      if (error instanceof K1OutcomeUncertainError) {
-        ctx.toast(`结果暂未确认 · 请保留弹窗直接重试，或先核对 · 命令号 ${commandKey}`);
-      } else {
-        commandAttempts.forget(operation);
+      const code = error instanceof K1RequestError ? error.reasonCode : undefined;
+      if (isExplicitRejection(error) && !(retained && (code === "OBJECT_LOCKED_BY_A2" || code === "OBJECT_ALREADY_PENDING"))) {
+        k4Commands.forget(slot, commandKey);
+        requireReread();
+        syncPending();
+        if ("user" in saved) {
+          lookupSequence.current += 1;
+          currentState.current.lookupUser = null;
+          setLookupUser(null);
+          setLookupLoading(false);
+        }
+        try {
+          await reloadCurrentScoring();
+          if ("user" in saved) await loadUser(saved.user.userNo);
+        } catch { /* The read boundary exposes the error and keeps new writes blocked. */ }
         ctx.toast(`操作失败 · ${errorText(error)}`);
+        throw error;
       }
-      throw error;
+      ctx.toast(`结果暂未确认 · 请保留弹窗直接重试，或先核对 · 命令号 ${commandKey}`);
+      throw new K1OutcomeUncertainError(errorText(error), commandKey);
     } finally {
       syncPending();
     }
+    try {
+      await reloadCurrentScoring();
+      if (refreshUserNo) await loadUser(refreshUserNo);
+      ctx.toast(saved.successText);
+    } catch (error) {
+      ctx.toast(`操作已生效，但页面刷新失败。请不要重复提交，点「重新加载」核对 · ${errorText(error)}`);
+    }
+  };
+  const openOperation = (operation: K4Operation) => {
+    const retained = pendingFor(operation);
+    if (retained && !retained.operation) {
+      ctx.toast("原记录没有完整请求，只能重新读取核对；请保留命令号到操作记录核查");
+      return;
+    }
+    if (retained?.operation && k4Slot(retained.operation) !== k4Slot(operation)) {
+      ctx.toast("这个对象有原操作结果待确认，请先重新读取核对原记录");
+      return;
+    }
+    const original = retained?.operation ?? operation;
+    if (!retained && (currentState.current.rereadPending || ctx.contentLoading || ctx.contentError || !ctx.risk.scoring?.model)) {
+      ctx.toast("这项没有读到，请刷新后重试");
+      return;
+    }
+    const attempt: K4Attempt = { retained };
+    openK4Confirmation(ctx, original, {
+      getPendingReason: () => originalFor(attempt)?.operation?.reason,
+      getPendingValue: () => {
+        const saved = originalFor(attempt)?.operation;
+        return saved?.kind === "override" ? String(JSON.parse(saved.request.body).score) : undefined;
+      },
+      blockedReason: retained && isRetryExpired(retained) ? RETRY_EXPIRED_TEXT : !canWriteOperation(original) ? errorText(new Error("FORBIDDEN")) : undefined,
+    }, (reason, value) => sendOperation(original, attempt, reason, value));
   };
 
   const loadUser = async (id: string): Promise<K4User | null> => {
@@ -272,76 +384,8 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
     await loadUser(option.userNo);
   };
 
-  const userFacts = (user: K4User) => (
-    <Facts>
-      <Fact k="用户">{user.userNo}</Fact>
-      <Fact k="现在的有效分">{user.effectiveScore} 分 · {user.bandLabel}{user.overridden ? "（人工改分）" : ""}</Fact>
-      <Fact k="系统评分">{user.modelScore} 分 · 规则版本 {user.modelVersion}</Fact>
-    </Facts>
-  );
-
-  const openOverride = (user: K4User) => {
-    ctx.openConfirm({ briefKind: "judgment",
-      errorHandled: true,
-      action: `手动改分 · ${user.userNo}`,
-      title: "手动改分",
-      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      detail: `把这个用户的风险分从 ${user.effectiveScore} 改成指定分数，马上生效，并记入操作记录。`,
-      content: userFacts(user),
-      statedBrief: {
-        impact: "有效分立即改成新分数，提现审核和提现升级告警按它判断；之后系统评分照常更新，但发布新规则、后台重算都保留这个改分，直到有人点「恢复系统评分」或「全部恢复系统评分」。",
-        check: "提交前已核对：分数是 0–100 的整数；这位用户的评分在你打开后没有被别人改过（按版本号核对）。",
-      },
-      reasonPlaceholder: "写清依据，例如：工单号、核实过的关联证据",
-      reason: true,
-      input: { label: "新的风险分（0–100）", placeholder: "例如 35", kind: "number", min: 0, max: 100, step: 1,
-        validate: (value) => value.trim() === "" ? undefined : /^\d+$/.test(value.trim()) && Number(value) <= 100 ? undefined : "要填 0–100 的整数" },
-      okLabel: "确认改分",
-      run: (reason, value) => {
-        const score = Number(value);
-        if (!Number.isInteger(score) || score < 0 || score > 100) {
-          ctx.toast("风险分要填 0–100 的整数");
-          throw new Error("SCORE_OVERRIDE_INVALID");
-        }
-        const fingerprint = JSON.stringify({ userNo: user.userNo, score, expectedVersion: user.rowVersion, reason });
-        return runAction(
-          `override:${user.userNo}`,
-          fingerprint,
-          (commandKey) => ctx.actions.overrideK4Score(user.userNo, score, user.rowVersion, reason, commandKey),
-          `用户 ${user.userNo} 的风险分已修改`,
-          async () => { await loadUser(user.userNo); },
-        );
-      },
-    });
-  };
-
-  const openRecompute = (user: K4User) => {
-    ctx.openConfirm({ briefKind: "judgment",
-      errorHandled: true,
-      action: `恢复系统评分 · ${user.userNo}`,
-      title: "恢复系统评分",
-      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      detail: `取消人工改的分，按当前评分规则重新计算。当前分 ${user.effectiveScore}，系统算的分 ${user.modelScore}。`,
-      content: <>{userFacts(user)}{overview && <Notice tone="progress">按当前生效的 v{overview.model.version} 重新计算这一位用户，不是恢复成以前存的旧分；没有人工改分时也可以用它马上重算。</Notice>}</>,
-      statedBrief: {
-        impact: "清除这位用户的人工改分，按当前生效的规则重新计算系统评分，算出的分立即生效。",
-        check: "提交前已核对：这位用户的评分在你打开后没有被别人改过（按版本号核对）。",
-      },
-      reasonPlaceholder: "写清依据，例如：工单号、申诉已核实",
-      reason: true,
-      okLabel: "确认重算",
-      run: (reason) => {
-        const fingerprint = JSON.stringify({ userNo: user.userNo, expectedVersion: user.rowVersion, reason });
-        return runAction(
-          `recompute:${user.userNo}`,
-          fingerprint,
-          (commandKey) => ctx.actions.recomputeK4Score(user.userNo, user.rowVersion, reason, commandKey),
-          `用户 ${user.userNo} 已恢复系统评分`,
-          async () => { await loadUser(user.userNo); },
-        );
-      },
-    });
-  };
+  const openOverride = (user: K4User) => { if (overview?.model) openOperation({ kind: "override", user, overview: overview as K4Snapshot }); };
+  const openRecompute = (user: K4User) => { if (overview?.model) openOperation({ kind: "recompute", user, overview: overview as K4Snapshot }); };
 
   const prepareRecompute = async (userNo: string) => {
     const user = await loadUser(userNo);
@@ -349,14 +393,14 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
   };
 
   useEffect(() => {
-    if (!overview || overview.recomputePending <= 0) return;
+    if (!overview?.model || overview.recomputePending <= 0) return;
     let cancelled = false;
     let timer: number | undefined;
     const poll = async () => {
       try {
         await ctx.refreshK4Scoring({ overridePageNum: overridePage, overridePageSize });
         if (!cancelled && lookupUser
-            && lookupUser.modelVersion !== `k4-v${overview.model.version}`) {
+            && lookupUser.modelVersion !== `k4-v${overview.model!.version}`) {
           await loadUser(lookupUser.userNo);
         }
       } catch {
@@ -372,29 +416,53 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
     };
     // Re-arm only when queue or selected-user version changes; ctx methods are stable in KDomainView.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overview?.recomputePending, overview?.model.version, overridePage, overridePageSize,
+  }, [overview?.recomputePending, overview?.model?.version, overridePage, overridePageSize,
     lookupUser?.userNo, lookupUser?.modelVersion]);
 
-  // 带着用户进来：概览读到后查一次这位用户（入口见 INBOUND_USER）。
   useEffect(() => {
-    if (!overview || !INBOUND_USER || inboundLoaded.current) return;
-    inboundLoaded.current = true;
-    setUserSearch(INBOUND_USER.userNo);
-    void loadUser(INBOUND_USER.userNo);
+    const key = searchParams?.toString() ?? "";
+    if (inboundLoaded.current === key) return;
+    inboundLoaded.current = key;
+    if (userCode !== null || inboundError) setTab("users");
+    if (inboundError) {
+      lookupSequence.current += 1;
+      setLookupUser(null);
+      setLookupLoading(false);
+      setUserSearch(userCode ?? "");
+      setLookupError(inboundError);
+      ctx.toast(inboundError);
+    } else if (INBOUND_USER) {
+      setUserSearch(INBOUND_USER.userNo);
+      void loadUser(INBOUND_USER.userNo);
+    }
+    // The detail request does not depend on a successful overview read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overview]);
+  }, [searchParams, userCode, returnTo, inboundError]);
 
   const markAlertRead = async (alert: K4WithdrawalAlert) => {
+    if (k4Commands.list().some(record => record.alertId === alert.id)) { readWithdrawalAlerts(); return; }
+    const slot = `alert-read:${alert.id}`;
+    const commandKey = newK1CommandKey();
+    k4Commands.remember(slot, commandKey, { alertId: alert.id,
+      alertRequest: { method: "POST", path: `/scoring/withdrawal-alerts/${encodeURIComponent(alert.id)}/read`, body: null },
+    });
+    if (!k4Commands.isDurablyStored(slot, commandKey)) {
+      k4Commands.forget(slot, commandKey);
+      ctx.toast("浏览器存不下原操作，本次没有发送");
+      syncPending();
+      return;
+    }
     setAlertBusy(alert.id);
     try {
-      await markK4WithdrawalAlertRead(alert.id);
+      await markK4WithdrawalAlertRead(alert.id, commandKey);
+      k4Commands.forget(slot, commandKey);
       setWithdrawalAlerts((current) => current.map((item) => item.id === alert.id ? { ...item, read: true } : item));
     } catch (error) {
+      if (isExplicitRejection(error)) k4Commands.forget(slot, commandKey);
       ctx.toast(`标记已读失败 · ${errorText(error)}`);
-      // 告警已读后端不按命令号去重：结果未知只给读回核对，不给原样重试。
-      if (error instanceof K1OutcomeUncertainError) setAlertUnknown((current) => [...current, alert.id]);
     } finally {
       setAlertBusy(null);
+      syncPending();
     }
   };
 
@@ -411,7 +479,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
     <div className="k4-pending">
       {pending.map((record) => (
         <Notice key={record.commandKey} tone="warn" title={`${slotLabel(record.fingerprint)} · 结果待确认`} actionBelow
-          action={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reloadCurrentScoring().catch(() => undefined)}>重新读取核对</Button>}>
+          action={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => { void reloadCurrentScoring().catch(() => undefined); if (record.alertId) readWithdrawalAlerts(); else if (record.operation && "user" in record.operation) void loadUser(record.operation.user.userNo); }}>重新读取核对</Button>}>
           <p>上次提交没有收到明确结果，可能已经生效。先重新读取核对；确认没生效，再用原来的内容和理由重新提交，系统沿用同一个命令号，不会重复执行。</p>
           <p className="k4-quiet">命令号 <span data-mono="">{record.commandKey}</span> · 本页记录到 {timeText(record.expiresAt)} 失效</p>
         </Notice>
@@ -421,7 +489,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
 
   const inboundNotice = INBOUND_USER && (
     <Notice tone="progress" title={`从用户详情带入 ${INBOUND_USER.userNo}`}
-      action={INBOUND_USER.returnTo ? <Link className="rd-link" href={INBOUND_USER.returnTo}>返回用户详情</Link> : undefined}>
+      action={INBOUND_USER.returnTo ? <Link className="rd-link" href={{ pathname: `/users/search/${INBOUND_USER.returnTo.split("/users/search/")[1].split("?")[0]}`, query: Object.fromEntries(new URLSearchParams(INBOUND_USER.returnTo.split("?")[1] ?? "")) }}>返回用户详情</Link> : undefined}>
       已打开「用户分数」并查这位用户的评分。
     </Notice>
   );
@@ -455,7 +523,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
     );
   }
 
-  if (!overview || !sourceModel) {
+  if (!overview?.model || !sourceModel) {
     return (
       <>
         {header}
@@ -544,151 +612,21 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
   const editChanged = changedCount(editRows);
 
   const saveModel = () => {
-    if (!modelValid || !mappingsValid) {
-      ctx.toast("设置有误：权重加起来要等于 100%，自动升级线不能低于高风险下限，各档分数要从低到高");
-      return;
-    }
-    if (!modelDirty) {
-      ctx.toast("没有待保存的模型修改");
-      return;
-    }
-    ctx.openActionConfirm({ briefKind: "config",
-      action: "保存评分规则草稿",
-      title: "保存评分规则草稿",
-      effect: <StatusTag tone="neutral" filled>只存草稿，不改线上评分</StatusTag>,
-      confirmLabel: "保存草稿",
-      detail: `在当前${overview.draft ? "草稿" : "生效规则"}的基础上保存。保存后不影响线上评分，需要超级管理员另外发布。`,
-      facts: (
-        <Facts>
-          <Fact k="保存为">{overview.draft ? `草稿 v${overview.draft.version}（覆盖现在的草稿）` : `新草稿 v${nextDraftVersion}`}</Fact>
-          <Fact k="线上">仍按生效的 v{overview.model.version} 评分</Fact>
-        </Facts>
-      ),
-      content: <div className="rd-impact"><p className="rd-impact-title">这次改的 {editChanged} 项（和{overview.draft ? `草稿 v${overview.draft.version}` : `生效 v${overview.model.version}`} 比）</p><ModelDiff rows={editRows} /></div>,
-      statedBrief: {
-        impact: "只保存草稿，线上评分、用户分数和提现审核都不变；要有发布权限的超级管理员发布后才生效。",
-        check: "提交前已核对：五项权重合计 100%，分档线从低到高，自动升级线在 70–100 分且不低于高风险起始分，20 项细则都在范围内、次序正确。",
-      },
-      reasonPlaceholder: "写清为什么调整，例如：复盘结论、工单号",
-      run: async (reason) => {
-        const fingerprint = JSON.stringify({ ...modelInput, reason });
-        await runAction(
-          "model-draft",
-          fingerprint,
-          (commandKey) => ctx.actions.saveK4ModelDraft(modelInput, reason, commandKey),
-          "评分规则草稿已保存，线上评分不变",
-        );
-        setEditorOpen(false);
-      },
-    });
+    const original = pendingFor({ kind: "draft", input: modelInput, overview: overview as K4Snapshot });
+    if (!original && (!modelValid || !mappingsValid || !modelDirty)) return;
+    openOperation({ kind: "draft", input: modelInput, overview: overview as K4Snapshot });
   };
-
-  const publishModel = () => {
-    const draft = overview.draft;
-    if (!draft) {
-      ctx.toast("当前没有可发布的模型草稿");
-      return;
-    }
-    if (modelDirty) {
-      ctx.toast("请先保存当前修改，再发布最新草稿");
-      return;
-    }
-    ctx.openActionConfirm({ briefKind: "judgment",
-      action: "发布评分规则草稿",
-      title: `发布评分规则 v${draft.version}`,
-      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      confirmLabel: "确认发布",
-      detail: `生效模型 v${overview.model.version} → 草稿 v${draft.version}，共改 ${changedCount(draftRows)} 项。`,
-      facts: (
-        <Facts>
-          <Fact k="生效版本"><Change from={`v${overview.model.version}`} to={`v${draft.version}`} /></Fact>
-          <Fact k="草稿">{draft.createdBy} 保存于 {draft.createdAt}</Fact>
-          <Fact k="评分用户">{fmt(overview.totalUsers)} 人，其中人工改分 {fmt(overview.overrideActive)} 人</Fact>
-        </Facts>
-      ),
-      content: (
-        <>
-          <div className="rd-impact"><p className="rd-impact-title">发布后改变的配置（{changedCount(draftRows)} 项）</p><ModelDiff rows={draftRows} /></div>
-          <Notice tone="progress" title="发布后分数怎么变">
-            <p>发布这一刻先按 v{draft.version} 重算最多 200 人，其余由后台每轮最多 200 人继续，进度看页面上的「待重新计算」，没有完成时限保证。</p>
-            <p>人工改过的分会保留，只更新这些人的系统评分；不用再点「全部恢复系统评分」，那个操作会清掉所有人工改分。</p>
-            <p>已经提交的提现不会重新判断；之后的提现按当时的分数和 v{draft.version} 的自动升级线 {draft.autoEscalateScore} 分转人工审核。</p>
-          </Notice>
-        </>
-      ),
-      statedBrief: {
-        impact: `v${draft.version} 立即成为生效版本，v${overview.model.version} 自动归档；全部评分用户分批按新规则重算，人工改分保留。`,
-        check: "提交前已核对：草稿没有未保存的修改；发布人是有评分规则修改权限的超级管理员（后端会再核一次）。",
-      },
-      reasonPlaceholder: "写清发布依据，例如：复盘结论、审批记录号",
-      run: (reason) => {
-        const fingerprint = JSON.stringify({ expectedVersion: draft.rowVersion, reason });
-        return runAction(
-          "model-publish",
-          fingerprint,
-          (commandKey) => ctx.actions.publishK4ModelDraft(draft.rowVersion, reason, commandKey),
-          `评分规则 v${draft.version} 已发布，旧版本已归档`,
-          async () => { if (lookupUser) await loadUser(lookupUser.userNo); },
-        );
-      },
+  const publishModel = () => { if (overview.draft && !modelDirty) openOperation({ kind: "publish", overview: overview as K4Snapshot }); };
+  const restoreModel = (model: K4Model) => { if (!modelDirty) openOperation({ kind: "restore", model, overview: overview as K4Snapshot }); };
+  const recomputeAll = () => openOperation({ kind: "batch", overview: overview as K4Snapshot });
+  const editModel = () => {
+    const saved = pending.find(record => record.fingerprint === "model-draft")?.operation;
+    if (saved?.kind === "draft") setModelDraft({
+      weights: saved.input.weights, inputSources: saved.input.inputSources, scoreMappings: saved.input.scoreMappings,
+      bandLowMax: saved.input.lowMax, bandHighMin: saved.input.highMin, autoEscalateScore: saved.input.autoEscalateScore,
     });
+    setEditorOpen(true);
   };
-
-  const restoreModel = (model: K4Model) => ctx.openActionConfirm({ briefKind: "config",
-    action: `把旧版本 v${model.version} 恢复为草稿`,
-    title: `把 v${model.version} 恢复为草稿`,
-    effect: <StatusTag tone="neutral" filled>只改草稿，不改线上评分</StatusTag>,
-    confirmLabel: "恢复为草稿",
-    detail: `用 v${model.version} 覆盖当前草稿，线上的 v${overview.model.version} 不变；恢复后还要核对并发布才会生效。`,
-    facts: (
-      <Facts>
-        <Fact k="恢复的版本">v{model.version} · {model.createdBy} 起草于 {model.createdAt}</Fact>
-        <Fact k="现在的草稿">{overview.draft ? `v${overview.draft.version}，会被 v${model.version} 的配置覆盖` : "没有，恢复后生成新草稿"}</Fact>
-        <Fact k="线上">仍按生效的 v{overview.model.version} 评分</Fact>
-      </Facts>
-    ),
-    content: <div className="rd-impact"><p className="rd-impact-title">恢复后草稿和生效 v{overview.model.version} 的差别</p><ModelDiff rows={modelDiffRows(activeEdit, editableModel(model), overview.dimensions)} /></div>,
-    statedBrief: {
-      impact: `把 v${model.version} 的权重、参与评分、20 项细则和分档线复制成草稿；线上 v${overview.model.version} 不变，之后还要核对并发布才生效。`,
-      check: "提交前已核对：页面没有未保存的修改。",
-    },
-    reasonPlaceholder: "写清为什么恢复旧版本",
-    run: (reason) => runAction(
-      `model-restore-${model.version}`,
-      JSON.stringify({ modelVersion: model.version, expectedVersion: modelInput.expectedVersion, reason }),
-      (commandKey) => ctx.actions.restoreK4ModelDraft(model.version, modelInput.expectedVersion, reason, commandKey),
-      `历史模型 v${model.version} 已恢复为草稿`,
-    ),
-  });
-
-  const recomputeAll = () => ctx.openActionConfirm({ briefKind: "judgment",
-    action: "重新计算所有用户的风险分",
-    title: "全部恢复系统评分",
-    effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag>人工改分全部清除</IrreversibleTag></>,
-    confirmTone: "danger",
-    confirmLabel: "确认全部重算",
-    detail: `按当前评分规则 v${overview.model.version} 重新计算 ${overview.totalUsers} 个用户的风险分，人工改过的分会被清除。手动一次最多 1000 人。`,
-    facts: (
-      <Facts>
-        <Fact k="评分用户" lead unit="人">{fmt(overview.totalUsers)}</Fact>
-        <Fact k="规则版本">按生效的 v{overview.model.version} 计算</Fact>
-        <Fact k="人工改分" tone={overview.overrideActive > 0 ? "warn" : undefined}>{overview.overrideActive > 0 ? `${fmt(overview.overrideActive)} 人的人工改分会被清除` : "现在没有生效的人工改分"}</Fact>
-      </Facts>
-    ),
-    content: <Notice tone="warn">在这一次请求里把全部评分用户算完才返回（最多 1000 人），人数多时要等一会儿；有一人算失败整次都不生效。评分历史和人工改分记录保留，但改分不再生效。</Notice>,
-    statedBrief: {
-      impact: `当前全部评分用户按 v${overview.model.version} 重新计算并清除人工改分，新分数立即生效。`,
-      check: "提交前已核对：评分用户不超过 1000 人；后端按提交那一刻的实际名单再核一次，名单变了会拒绝。",
-    },
-    reasonPlaceholder: "写清为什么要全部重算",
-    run: (reason) => runAction(
-      "batch-recompute",
-      JSON.stringify({ modelVersion: overview.model.version, reason }),
-      (commandKey) => ctx.actions.recomputeK4Scores([], overview.model.version, reason, commandKey),
-      "所有用户的风险分已重新计算",
-      async () => { if (lookupUser) await loadUser(lookupUser.userNo); },
-    ),
-  });
 
   // ── 首屏一句话 ──
   const conclusionExplain = <><p>生效版本和草稿取自后端的评分模型；待重新计算是后端这一刻还没按生效规则算好的人数。</p><p>提现升级告警只数发给你本人的最近 50 条里没读的。</p></>;
@@ -734,7 +672,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       <Panel title={overview.draft ? `草稿 · v${overview.draft.version}` : "草稿"} icon={FilePenLine} tone={overview.draft ? "warn" : "role-other"}
         explain="草稿只存在后台，不影响线上评分。有评分规则修改权限的人可以起草；有这项权限的超级管理员才能发布。"
         actions={<span className="k4-actions">
-          {canModelWrite && <Button icon={<SlidersHorizontal size={14} aria-hidden />} onClick={() => setEditorOpen(true)}>{modelDirty ? "继续编辑" : overview.draft ? "编辑草稿" : "起草新版本"}</Button>}
+          {canModelWrite && <Button icon={<SlidersHorizontal size={14} aria-hidden />} onClick={editModel}>{modelDirty ? "继续编辑" : overview.draft ? "编辑草稿" : "起草新版本"}</Button>}
           {canPublish && overview.draft && <Button variant="primary" icon={<Upload size={14} aria-hidden />} disabledReason={publishBlocked} onClick={publishModel}>发布草稿</Button>}
         </span>}>
         {overview.draft ? (
@@ -754,7 +692,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
     <div {...tabIds.panel("model")} className="k4-tab">
       {modelDirty && !editorOpen && (
         <Notice tone="warn" title={`有 ${editChanged} 项修改还没保存`}
-          action={<span className="k4-actions"><Button size="sm" onClick={() => setEditorOpen(true)}>继续编辑</Button><Button size="sm" variant="ghost" onClick={() => setModelDraft(editableModel(sourceModel))}>放弃修改</Button></span>}>
+          action={<span className="k4-actions"><Button size="sm" onClick={editModel}>继续编辑</Button><Button size="sm" variant="ghost" onClick={() => setModelDraft(editableModel(sourceModel))}>放弃修改</Button></span>}>
           修改只在这个页面里，刷新或离开就没了；保存草稿后才能发布或恢复旧版本。
         </Notice>
       )}
@@ -813,6 +751,8 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
 
   // ── 编辑草稿 ──
   const sourceEdit = editableModel(sourceModel);
+  const pendingModel = pending.find(record => k4Target(record) === "score-model");
+  const modelLocked = rereadPending || Boolean(pendingModel);
   const baseLabel = overview.draft ? "草稿" : "生效";
   const setWeight = (key: (typeof K4_DIMENSION_KEYS)[number], value: number) => setModelDraft({ ...edit, weights: { ...edit.weights, [key]: value } });
   const editor = canModelWrite && (
@@ -821,13 +761,13 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       explain="修改只在这个页面里，保存后成为草稿，线上评分不变；关掉抽屉修改还在，页面上会提示。"
       footer={<Decision note={issueCount > 0 ? `有 ${issueCount} 处要改正` : modelDirty ? `改了 ${editChanged} 项` : undefined}
         others={<Button variant="ghost" disabledReason={modelDirty ? undefined : "没有改动"} onClick={() => setModelDraft(editableModel(sourceModel))}>放弃修改</Button>}
-        primary={<Button variant="primary" disabledReason={issueCount > 0 ? "先改正标出的项" : !modelDirty ? "没有改动" : undefined} onClick={saveModel}>保存草稿</Button>} />}>
+        primary={<Button variant="primary" disabledReason={pendingModel && pendingModel.fingerprint !== "model-draft" ? "这个对象有原操作结果待确认，请先重新读取核对原记录" : issueCount > 0 ? "先改正标出的项" : !modelDirty && !pendingModel ? "没有改动" : undefined} onClick={saveModel}>保存草稿</Button>} />}>
       <section className="k4-edit-section" aria-labelledby="k4-edit-weights">
         <h3 id="k4-edit-weights" className="k4-edit-title">五维权重 <span className={issues.weightTotal ? "k4-sum" : "k4-sum k4-quiet"} data-bad={issues.weightTotal ? "" : undefined}>合计 {weightTotal}%</span></h3>
         {issues.weightTotal && <div className="rd-form-error" role="alert">{issues.weightTotal}</div>}
         {overview.dimensions.map((item) => (
           <WeightEditRow key={item.dimKey} item={item} value={edit.weights[item.dimKey]} on={edit.inputSources[item.dimKey]}
-            activeValue={sourceEdit.weights[item.dimKey]} activeOn={sourceEdit.inputSources[item.dimKey]} baseLabel={baseLabel} disabled={false} error={issues[`w-${item.dimKey}`]}
+            activeValue={sourceEdit.weights[item.dimKey]} activeOn={sourceEdit.inputSources[item.dimKey]} baseLabel={baseLabel} disabled={modelLocked} error={issues[`w-${item.dimKey}`]}
             onValue={(value) => setWeight(item.dimKey, value)}
             onSource={(on) => setModelDraft({ ...edit, inputSources: { ...edit.inputSources, [item.dimKey]: on } })} />
         ))}
@@ -835,11 +775,11 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       <section className="k4-edit-section" aria-labelledby="k4-edit-bands">
         <h3 id="k4-edit-bands" className="k4-edit-title">分档线和自动升级线</h3>
         <p className="k4-axis-row"><span className="k4-axis-label">改后</span><BandAxis model={edit} label="改后的分档线" /></p>
-        <NumberEditRow label="中风险起始分" unit="分" min={0} max={100} value={edit.bandLowMax} baseLabel={baseLabel} activeValue={sourceEdit.bandLowMax} disabled={false} error={issues.low} ariaLabel="中风险起始分"
+        <NumberEditRow label="中风险起始分" unit="分" min={0} max={100} value={edit.bandLowMax} baseLabel={baseLabel} activeValue={sourceEdit.bandLowMax} disabled={modelLocked} error={issues.low} ariaLabel="中风险起始分"
           onValue={(value) => setModelDraft({ ...edit, bandLowMax: value })} />
-        <NumberEditRow label="高风险起始分" unit="分" min={0} max={100} value={edit.bandHighMin} baseLabel={baseLabel} activeValue={sourceEdit.bandHighMin} disabled={false} error={issues.high} ariaLabel="高风险起始分"
+        <NumberEditRow label="高风险起始分" unit="分" min={0} max={100} value={edit.bandHighMin} baseLabel={baseLabel} activeValue={sourceEdit.bandHighMin} disabled={modelLocked} error={issues.high} ariaLabel="高风险起始分"
           onValue={(value) => setModelDraft({ ...edit, bandHighMin: value })} />
-        <NumberEditRow label="自动升级线" unit="分" min={70} max={100} value={edit.autoEscalateScore} baseLabel={baseLabel} activeValue={sourceEdit.autoEscalateScore} disabled={false} error={issues.esc} ariaLabel="自动升级线"
+        <NumberEditRow label="自动升级线" unit="分" min={70} max={100} value={edit.autoEscalateScore} baseLabel={baseLabel} activeValue={sourceEdit.autoEscalateScore} disabled={modelLocked} error={issues.esc} ariaLabel="自动升级线"
           onValue={(value) => setModelDraft({ ...edit, autoEscalateScore: value })} />
       </section>
       <section className="k4-edit-section" aria-labelledby="k4-edit-maps">
@@ -853,7 +793,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
               {group.keys.map((key) => {
                 const item = K4_MAPPING_FIELDS.find((entry) => entry.key === key)!;
                 return <NumberEditRow key={key} label={fieldName(item.label)} unit={item.unit} min={item.min} max={item.max} value={edit.scoreMappings[key]}
-                  baseLabel={baseLabel} activeValue={sourceEdit.scoreMappings[key]} disabled={false} error={issues[key]} ariaLabel={item.label}
+                  baseLabel={baseLabel} activeValue={sourceEdit.scoreMappings[key]} disabled={modelLocked} error={issues[key]} ariaLabel={item.label}
                   onValue={(value) => setModelDraft({ ...edit, scoreMappings: { ...edit.scoreMappings, [key]: value } })} />;
               })}
             </MappingEditGroup>
@@ -866,7 +806,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
   // ── 用户分数 ──
   const userHref = (userNo: string) => `/users/search/${encodeURIComponent(userNo)}`;
   const userRef = (userNo: string) => reach(userHref(userNo), "user_c1_read")
-    ? <Link className="rd-link" href={userHref(userNo)}>{userNo}</Link> : userNo;
+    ? <Link className="rd-link" href={{ pathname: `/users/search/${encodeURIComponent(userNo)}` }}>{userNo}</Link> : userNo;
   const oldModel = lookupUser && lookupUser.modelVersion !== `k4-v${overview.model.version}`;
   const escalated = lookupUser ? lookupUser.effectiveScore >= overview.model.autoEscalateScore : false;
   const scoreTicks = [0, overview.model.bandLowMax, overview.model.bandHighMin, overview.model.autoEscalateScore, 100]
@@ -1014,7 +954,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
                       const unknown = alertUnknown.includes(alert.id);
                       return (
                         <Tr key={alert.id}>
-                          <Td><Cell mono full main={alert.withdrawalNo} sub={PRIORITY_TEXT[alert.priority] ?? alert.priority} /></Td>
+                          <Td><Cell mono full main={alert.withdrawalNo} sub={alert.priority === null ? undefined : PRIORITY_TEXT[alert.priority] ?? alert.priority} /></Td>
                           <Td align="right"><Cell num main={alert.riskScore == null ? "—" : `${alert.riskScore} 分`} /></Td>
                           <Td><Cell main={alert.modelVersion ?? "—"} sub={alert.scoreAsOf ?? "—"} /></Td>
                           <Td><Cell num main={alert.createdAt.replace("T", " ").slice(0, 10)} sub={alert.createdAt.replace("T", " ").slice(11, 19)} /></Td>
