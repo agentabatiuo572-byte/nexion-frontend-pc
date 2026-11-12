@@ -46,9 +46,10 @@ export function prepareC6Command(original: C6Original) {
 }
 export function forgetC6Command(row: C6Pending) { commands.forget(row.fingerprint, row.commandKey); }
 
-// OpsUserService returns these ApiResult.fail business verdicts with HTTP 200
-// (66ecdb47: updateRegistrationRiskParam, updateCaptchaOffWindow,
-// updateRegistrationRiskParamLocked, normalizeRegistrationRiskParamValues).
+// In backend 66ecdb47 ApiResultHttpStatusAdvice maps nonzero ApiResult.code
+// to HTTP status; the users proxy preserves it (C6 version conflict is HTTP 409).
+// The HTTP-200 branch below is defensive compatibility only, not a backend
+// response contract or an acceptance fixture for these business verdicts.
 const BUSINESS_REJECTIONS: Record<string, number> = {
   REGISTRATION_RISK_PARAM_REQUIRED: 422, MULTI_ACCOUNT_PARAM_BELONGS_TO_K1: 422, OTP_CONFIG_BELONGS_TO_K2: 422,
   C6_EXPECTED_VERSION_REQUIRED: 422, REGISTRATION_RISK_PARAM_NOT_FOUND: 404, C6_CONFIG_VERSION_CONFLICT: 409,
