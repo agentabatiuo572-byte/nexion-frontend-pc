@@ -473,8 +473,8 @@
   .k4-overrides th:nth-child(5), .k4-overrides td:nth-child(5) { width: 88px; }
   .k4-overrides th:nth-child(6), .k4-overrides td:nth-child(6) { width: 124px; }
   .k4-alerts th:nth-child(2), .k4-alerts td:nth-child(2) { width: 76px; }
-  .k4-alerts th:nth-child(3), .k4-alerts td:nth-child(3) { width: 140px; }
-  .k4-alerts th:nth-child(4), .k4-alerts td:nth-child(4) { width: 148px; }
+  .k4-alerts th:nth-child(3), .k4-alerts td:nth-child(3) { width: 164px; }
+  .k4-alerts th:nth-child(4), .k4-alerts td:nth-child(4) { width: 112px; }
   .k4-alerts th:nth-child(5), .k4-alerts td:nth-child(5) { width: 108px; }
   .k4-alerts th:nth-child(6), .k4-alerts td:nth-child(6) { width: 112px; }
 }

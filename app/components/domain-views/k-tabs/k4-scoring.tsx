@@ -1017,7 +1017,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
                           <Td><Cell mono full main={alert.withdrawalNo} sub={PRIORITY_TEXT[alert.priority] ?? alert.priority} /></Td>
                           <Td align="right"><Cell num main={alert.riskScore == null ? "—" : `${alert.riskScore} 分`} /></Td>
                           <Td><Cell main={alert.modelVersion ?? "—"} sub={alert.scoreAsOf ?? "—"} /></Td>
-                          <Td><Cell num main={alert.createdAt.replace("T", " ").slice(0, 19)} /></Td>
+                          <Td><Cell num main={alert.createdAt.replace("T", " ").slice(0, 10)} sub={alert.createdAt.replace("T", " ").slice(11, 19)} /></Td>
                           <Td>{alert.read ? <StatusTag tone="done">已读</StatusTag> : unknown ? <StatusTag tone="warn" icon={CircleHelp}>结果待核对</StatusTag> : <StatusTag tone="warn" icon={BellDot}>未读</StatusTag>}</Td>
                           <Td align="right" data-fit="">
                             {alert.read ? <span className="k4-quiet">—</span>
