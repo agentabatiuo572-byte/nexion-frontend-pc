@@ -145,7 +145,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
       {rejected[record.commandKey] && <Button size="sm" variant="primary" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>解除待确认</Button>}
     </div>}>
       <p>{record.device.serial} · {record.device.user} · {formatBusinessTimeCompact(new Date(record.createdAt).toISOString())}</p>
-      <p>{rejected[record.commandKey] ? "本次原号重试被明确拒绝。核对原操作结果后，可解除本页待确认。" : direct(record) ? "当前状态不代表原操作结果，先查原操作结果。重试会重新发送保存的原请求，后端按原命令号去重。" : "当前状态不代表原操作结果。重试会重新发送保存的原请求，后端按原命令号去重。"}</p>
+      <p>{rejected[record.commandKey] ? "本次原号重试被明确拒绝。核对原操作结果后，可解除本页待确认。" : direct(record) ? isRetryExpired(record) ? "当前状态不代表原操作结果，先查原操作结果。" : "当前状态不代表原操作结果，先查原操作结果。重试会重新发送保存的原请求，后端按原命令号去重。" : "当前状态不代表原操作结果。重试会重新发送保存的原请求，后端按原命令号去重。"}</p>
       {readResults[record.commandKey] && <p role="status">{readResults[record.commandKey]}</p>}
       {isRetryExpired(record) && <p>{direct(record) ? "已超过 24 小时，不能再重试。原操作与对象锁继续保留，可以查原操作结果。" : "已超过 24 小时，原操作与对象锁继续保留，请到操作记录与审批核对。"}</p>}
       {direct(record) && <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={isRetryExpired(record)} />}
