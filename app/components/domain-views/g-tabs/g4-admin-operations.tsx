@@ -206,7 +206,7 @@ export default function G4AdminOperations({ ctx }: { ctx: G4Ctx }) {
     <Fold title="认购、预售与持有人规则" icon={ShieldCheck} tone="role-3"
       summary={`15 项 · 已配置 ${configuredCount} 项 · 修改后立即保存`}
       explain="每项自己保存，不走审批；App 下次读取时用新设置，已打开的 App 页面不会自动刷新。资格只看资格开关、每人上限和最少注册天数，以前的入金、旗舰设备、V 等级、邀请码条件已停用。">
-      {GROUPS.map((group) => (
+      <div className="g4x-groups">{GROUPS.map((group) => (
         <Panel key={group.key} plain headingLevel={3} title={group.title} explain={group.explain}>
           <ConfigList label={group.title}>
             {group.keys.map((key) => {
@@ -224,7 +224,7 @@ export default function G4AdminOperations({ ctx }: { ctx: G4Ctx }) {
             })}
           </ConfigList>
         </Panel>
-      ))}
+      ))}</div>
     </Fold>
     <Fold title="模拟成交演练" icon={FlaskConical} tone="role-other"
       summary={`${data.simulations.length} 条模拟记录 · 只在后台可见`}

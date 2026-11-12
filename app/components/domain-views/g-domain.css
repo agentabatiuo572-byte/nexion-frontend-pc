@@ -229,6 +229,7 @@ html[data-theme="dark"] .gdom .g3-market-confirm { --admin-confirm-focus: var(--
 .g4x-block-big[data-zero] { color: var(--rd-text-3); }
 .g4x-sub { padding-top: 16px; }
 .g4x-sub-title { margin-bottom: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.g4x-groups { display: grid; gap: 24px; }
 .g4x-wrap { overflow-wrap: anywhere; white-space: pre-wrap; }
 .g4x-sources { margin: 0; overflow-wrap: anywhere; color: var(--rd-text-2); }
 .g4x-sources-note { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }

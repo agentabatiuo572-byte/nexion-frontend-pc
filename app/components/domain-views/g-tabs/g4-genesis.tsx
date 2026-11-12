@@ -14,7 +14,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeftRight, Banknote, CalendarClock, CircleHelp, Clock3, Coins, Database, Eye, Gift, Layers, ListOrdered, MessageSquare, PauseCircle, CircleDot, Store, Users,
+  ArrowLeftRight, Banknote, CalendarClock, CircleHelp, Clock3, Coins, Database, Eye, Gift, Layers, ListOrdered, PauseCircle, CircleDot, Store, Users,
 } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, ConfigList, ConfigRow, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints, Notice,
@@ -1064,7 +1064,7 @@ function G4GenesisPage() {
       {conclusion}
       {!overview.catalogAvailable && (overview.seriesRecoveryRequired || overview.seriesInitializationAvailable
         || (overview.seriesSetupRequired && overview.tradeBlockedReason === "GENESIS_TIERS_UNAVAILABLE")) && (
-        <Notice tone="warn" title="创世节点设置不完整"
+        <Notice tone="warn" title={overview.seriesRecoveryRequired ? "要先恢复原系列" : overview.seriesInitializationAvailable ? "下一步：发布系列" : "下一步：创建第一档"}
           action={<>
             {overview.seriesInitializationAvailable && allowed("finprod_g4_write") && (
               <Button size="sm" variant="primary" disabledReason={busy ? busyReason : undefined} onClick={initializeSeries}>发布系列</Button>
@@ -1224,9 +1224,8 @@ function G4GenesisPage() {
               what="暂未开放时用户能浏览和查看持仓，不能购买和转让"
               when="确认后立即生效；恢复开放时后端检查目录完整和兑付覆盖率"
               value={<span className="g4x-param">
-                <span className="g4x-value"><span className="g4x-value-num">{marketClosed ? "暂未开放" : "开放中"}</span>
-                  {marketClosed && <StatusTag tone="neutral" icon={MessageSquare}>{NOTICE_LABEL[overview.market.closedNoticeKey] ?? "当前市场暂未开放"}</StatusTag>}</span>
-                <span className="g4x-dir">两个方向都在这页改</span>
+                <span className="g4x-value"><span className="g4x-value-num">{marketClosed ? "暂未开放" : "开放中"}</span></span>
+                <span className="g4x-dir">{marketClosed ? `App 提示「${NOTICE_LABEL[overview.market.closedNoticeKey] ?? "当前市场暂未开放"}」` : "两个方向都在这页改"}</span>
               </span>}
               action={allowed("finprod_g4_market_toggle") ? (
                 <Button size="sm" disabledReason={marketDisabledReason} onClick={runMarketOpenState}>{marketClosed ? "恢复市场开放" : "设为暂未开放"}</Button>
