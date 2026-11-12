@@ -71,8 +71,6 @@
 .b3-page .b3-stage-table,
 .b3-page .b3-week-table { width: 100%; }
 
-.b3-page .b3-links { padding: 0 var(--rd-space-1); }
-
 /* 1024：名称列和人数列收窄，条仍占中间 */
 @container (max-width: 760px) {
   .b3-page .b3-funnel-step,
