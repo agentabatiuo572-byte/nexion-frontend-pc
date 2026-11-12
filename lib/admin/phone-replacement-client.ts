@@ -245,7 +245,7 @@ export async function retryModelLockCommand(row: PendingModelLockCommand): Promi
 export function forgetModelLockCommand(row: PendingModelLockCommand) { modelCommands.forget(row.fingerprint, row.commandKey); }
 
 export async function recoverModelLockCommand(row: PendingModelLockCommand): Promise<boolean> {
-    if (!row.receiptSupported) throw new Error("升级前的原记录没有命令回执，只能读回当前安装状态，原记录继续保留。");
+    if (!row.receiptSupported) throw new Error("这条原记录来自早期版本，没有回执可查，只能读回当前安装状态，原记录继续保留。");
     const value = await request(`${row.path.replace(/\/release$/, "/release-receipt")}?${new URLSearchParams({ commandKey: row.commandKey })}`);
     if (!record(value) || value.commandKey !== row.commandKey || String(value.userId) !== row.userId
         || value.installationId !== row.installationId || typeof value.status !== "string") throw new PhoneOutcomeUnknownError(502);
