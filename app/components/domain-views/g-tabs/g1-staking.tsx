@@ -5,15 +5,15 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { ADMIN_ERROR_MESSAGES, displayAdminReadError } from "@/lib/admin/error-messages";
 /**
- * G1 质押产品配置（改版）— 退役产品的原档位与持仓只读查询，数据来自后端业务表。
+ * G1 质押产品配置（改版）— 退役产品的原档位与历史仓位只读查询，数据来自后端业务表。
  * 唯一的业务请求是 GET /api/admin/market/staking（挂载读一次、「刷新」「重新读取」重读），本页没有写操作。
- * 版面：结论（还有没有没结清的历史仓位）→ 四个数 → 四档历史产品卡 → 历史仓位（三段状态带选一种状态 + 一张表，点行看持仓详情）。
+ * 版面：结论（还有没有没结清的历史仓位）→ 四个数 → 四档历史产品卡 → 历史仓位（三段状态带选一种状态 + 一张表，点行看仓位详情）。没有任何要处理的事时收短：不出四个 0，空块一行写完。
  */
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { Ban, CalendarClock, CheckCheck, CircleCheck, CircleDashed, CircleSlash, Clock3, Coins, Hourglass, Layers, LogOut, PauseCircle, RefreshCw, Undo2, Wallet, type LucideIcon } from "lucide-react";
 import {
-  BlockState, Button, Cell, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Input, JudgmentPoints,
+  BlockState, Button, Cell, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Input, JudgmentPoints, Notice,
   PageHeader, Panel, RatioBar, RdPage, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, type StateTone,
 } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
@@ -61,7 +61,7 @@ function timeText(value: string) {
   return match ? `${match[1]} ${match[2]}` : value;
 }
 
-/** 表格里只写日期，完整时间在悬停和持仓详情里。 */
+/** 表格里只写日期，完整时间在悬停和仓位详情里。 */
 function dateText(value: string) {
   return /^\d{4}-\d{2}-\d{2}/.exec(value)?.[0] ?? value;
 }
@@ -85,7 +85,7 @@ const DENIED = new Set<string>([ADMIN_ERROR_MESSAGES.ADMIN_PERMISSION_DENIED, AD
 
 type StateKey = "pending_lock" | "active" | "mature_unclaimed" | "claimed" | "early_withdrawn" | "slashed" | "refunded";
 
-/** 七种持仓状态：名字、色调、图标和它是什么意思（按后端现行行为写，见重构说明「后端事实」）。 */
+/** 七种仓位状态：名字、色调、图标和它是什么意思（按后端现行行为写，见重构说明「后端事实」）。 */
 const POSITION_STATES: Record<StateKey, { label: string; tone: StateTone; icon: LucideIcon; meaning: string }> = {
   pending_lock: { label: "待确认", tone: "neutral", icon: Clock3, meaning: "历史记录里还在等锁仓确认的仓位，本金已计入锁定金额。" },
   active: { label: "计算奖励中", tone: "progress", icon: CircleDashed, meaning: "锁仓中，还没到期；按下单时的奖励率算奖励。" },
@@ -173,8 +173,7 @@ export function G1Staking() {
     <PageHeader
       pageId="G1"
       title="质押产品配置"
-      summary="质押已退役，这里只查历史档位和持仓。"
-      readOnly={overview ? "质押已退役，本页只能查看" : undefined}
+      summary="查四档原配置和用户的历史仓位，只能查看。"
       meta={overview ? (
         <span className="rd-toolbar">
           <span>{readAt ? `${businessClock(readAt)} 读取，` : ""}不自动刷新</span>
@@ -231,11 +230,20 @@ export function G1Staking() {
     : group?.rows ?? [];
   const index = current ? rows.findIndex((row) => row.positionNo === current.positionNo) : -1;
 
+  // 七组都返回了而且都是 0：没有任何历史仓位，仓位块一行写完，不摆七个 0。
+  const noPositions = STATE_ORDER.every((key) => groupByStatus.get(key)?.count === 0);
+  // 四个数都是 0 时不摆一排 0，结论那句已经说了「没有要处理的事」。
+  const quiet = open === 0 && stats.usdtPoolUsd === 0 && stats.interestUsd === 0;
+  // 查找只在已读到的行里找：读到的行数少于总数的状态，可能还有更早的仓位没显示。
+  const cut = STATE_ORDER.filter((key) => { const g = groupByStatus.get(key); return g !== undefined && g.count > g.rows.length; });
+
   const conclusion = mature > 0
     ? <Conclusion state="warn" hint="到期后由用户自己领取，系统不会自动发放；这页只能查看。" explain={COUNT_EXPLAIN}>质押已退役，还有 {fmtCount(open)} 笔历史仓位没结清，其中 {fmtCount(mature)} 笔已到期、等用户领取</Conclusion>
     : open > 0
       ? <Conclusion state="neutral" hint="都还没到期；到期后由用户自己领取。" explain={COUNT_EXPLAIN}>质押已退役，还有 {fmtCount(open)} 笔历史仓位在锁定中</Conclusion>
-      : <Conclusion state="ok" explain={COUNT_EXPLAIN}>质押已退役，历史仓位都已结清，这页只供查历史</Conclusion>;
+      : noPositions
+        ? <Conclusion state="ok" explain={COUNT_EXPLAIN}>质押已退役，没有历史仓位，没有要处理的事</Conclusion>
+        : <Conclusion state="ok" hint="已结束的仓位可以在下面按状态或用户查。" explain={COUNT_EXPLAIN}>质押已退役，历史仓位都已结清，没有要处理的事</Conclusion>;
 
   const selectState = (key: StateKey) => {
     setState(key);
@@ -266,7 +274,7 @@ export function G1Staking() {
       )}
       {conclusion}
 
-      <StatBand label="质押历史概况">
+      {!quiet && <StatBand label="质押历史概况">
         <Stat lead tone="role-2" icon={Layers} label="没结清的仓位" value={fmtCount(open)} unit="笔"
           sub={`锁定中 ${fmtCount(pending + active)} · 到期未领 ${fmtCount(mature)}`}
           explain={COUNT_EXPLAIN} />
@@ -275,14 +283,14 @@ export function G1Staking() {
         <Stat tone={mature > 0 ? "warn" : "role-3"} icon={CalendarClock} label="到期未领" value={fmtCount(mature)} unit="笔"
           explain="已到期、等用户自己领取的仓位。系统不会自动发放，后台也不能代领。" />
         <Stat tone="role-1" icon={Coins} label="奖励估计" value={usdtText(stats.interestUsd)} unit="USDT" sub="整期估计 · 含四档以外产品"
-          explain="后端把所有「计算奖励中」「到期未领」仓位开仓时算好的整期奖励加起来：不按已锁天数折算，也算进了四档以外产品的仓位。它不是已产生或已发放的奖励，后端改成和持仓同一范围之前只作量级参考。" />
-      </StatBand>
+          explain="后端把所有「计算奖励中」「到期未领」仓位开仓时算好的整期奖励加起来：不按已锁天数折算，也算进了四档以外产品的仓位。它不是已产生或已发放的奖励，后端改成和仓位同一范围之前只作量级参考。" />
+      </StatBand>}
 
       <Panel plain title="四档历史产品" icon={Coins} tone="role-1"
         sub={`USDT · 质押总开关${gate.enabled ? "开启" : "已关闭"} · 紧急暂停 ${fmtCount(stats.killedCount)} 档`}
-        explain={<><p>质押已退役，这里是四档的原配置，只能查看：不能改奖励率、扣款、最低额，也不能开售、停售、暂停或恢复，App 显示入口同样不在这里。</p><p>原档位状态只说明当时的配置，不代表现在可以买。质押总开关是 J1 紧急停用开关里读到的当前值；紧急暂停数是被暂停的档位数，不是被罚没的订单数。</p></>}>
+        explain={<><p>质押已退役，这里是四档的原配置，只能查看：不能改奖励率、扣款、最低额，也不能开售、停售、暂停或恢复，App 显示入口同样不在这里。</p><p>原档位状态只说明当时的配置，不代表现在可以买。质押总开关是 J1 紧急停用开关里读到的当前值；紧急暂停数是被暂停的档位数，不是被罚没的仓位数。</p></>}>
         {pools.length === 0
-          ? <BlockState state="empty" title="暂无历史质押档位" detail="退役后没有档位是正常状态。" />
+          ? <BlockState compact state="empty" title="暂无历史质押档位" detail="退役后没有档位是正常状态。" />
           : (
             <StatBand cards label="四档历史产品">
               {pools.map((pool) => {
@@ -310,9 +318,10 @@ export function G1Staking() {
 
       <Panel title="历史仓位" icon={Layers} tone="role-2" flush
         sub={`没结清 ${fmtCount(open)} 笔`}
-        explain={<><p>选一种状态看它的仓位，点一行看持仓详情。每种状态最多列出最近更新的 50 笔，状态上的数字是全部笔数。</p><p>质押已退役，本页只供核对历史配置与持仓。已有订单的条件以订单记录为准，这里不能手动改订单。</p></>}>
+        explain={<><p>选一种状态看它的仓位，点一行看仓位详情。每种状态最多列出最近更新的 50 笔，状态上的数字是全部笔数。</p><p>每笔仓位的条件以开仓时的记录为准，这里不能手动改仓位。</p></>}>
+        {noPositions ? <div className="g1-tools"><BlockState compact state="empty" title="没有历史仓位" detail="七种状态都是 0 笔。" /></div> : <>
         <div className="g1-tools">
-        <div className="g1-lane" role="radiogroup" aria-label="持仓状态" onKeyDown={onLaneKey}>
+        <div className="g1-lane" role="radiogroup" aria-label="仓位状态" onKeyDown={onLaneKey}>
           {STAGES.map((stage) => (
             <section key={stage.key} className="g1-lane-stage" data-stage={stage.key} aria-label={stage.title}>
               <div className="g1-lane-title">{stage.title}<Explain label={`${stage.title}是什么意思`} content={stage.explain} side="top" align="start" /></div>
@@ -345,14 +354,17 @@ export function G1Staking() {
               ? `${positionStateLabel(shownState)} · 共 ${fmtCount(group.count)} 笔${group.count > group.rows.length ? `，列出最近更新的 ${fmtCount(group.rows.length)} 笔` : ""}`
               : ""}</span>}>
           <FilterField grow>
-            <Input type="search" aria-label="按用户或持仓编号找仓位" placeholder="输入用户编号、昵称或持仓编号，在七种状态里一起找" value={query} onChange={(event) => { setQuery(event.target.value); setCurrent(null); }} />
+            <Input type="search" aria-label="按用户或仓位编号找仓位" placeholder="输入用户编号、昵称或仓位编号，在七种状态里一起找" value={query} onChange={(event) => { setQuery(event.target.value); setCurrent(null); }} />
           </FilterField>
         </FilterBar>
+        {needle && cut.length > 0 && (
+          <Notice tone="warn">{cut.map((key) => `「${key === "early_withdrawn" ? "本月" : ""}${positionStateLabel(key)}」共 ${fmtCount(groupByStatus.get(key)?.count ?? 0)} 笔，只读到最近更新的 ${fmtCount(groupByStatus.get(key)?.rows.length ?? 0)} 笔`).join("；")}，可能还有更早的仓位没显示，这次查找不全。</Notice>
+        )}
         </div>
 
-        <Table data-tight="" label={needle ? "找到的仓位" : `锁仓单清单 · ${positionStateLabel(shownState)}`} className="g1-positions">
+        <Table data-tight="" label={needle ? "找到的仓位" : `仓位清单 · ${positionStateLabel(shownState)}`} className="g1-positions">
           <thead><tr>
-            <Th>持仓编号</Th>
+            <Th>仓位编号</Th>
             <Th>用户</Th>
             <Th>档位 · 奖励率</Th>
             <Th align="right">锁定金额（USDT）</Th>
@@ -363,7 +375,7 @@ export function G1Staking() {
             {rows.length === 0 && (
               <TableMessage columns={6}>{needle
                 ? `已读到的记录里没有「${query.trim()}」；每种状态只读到最近更新的 50 笔，更早的不在这里。`
-                : "暂无这个状态的订单"}</TableMessage>
+                : "暂无这个状态的仓位"}</TableMessage>
             )}
             {rows.map((row) => {
               const meta = rowState(row.status);
@@ -380,16 +392,17 @@ export function G1Staking() {
             })}
           </tbody>
         </Table>
+        </>}
       </Panel>
 
       {current && (() => {
         const meta = rowState(current.status);
         const nickname = operatorNicknameText(current.nickname);
         return (
-          <Drawer open onClose={() => setCurrent(null)} title="持仓详情" sub={current.positionNo} icon={Layers} tone="role-2"
-            explain="下单时的奖励率、扣款和期限都以这笔订单的记录为准，后来改档位配置不影响它。时间按后端记录原样显示。金额字段在库里为空时，后端目前会返回 0，看到 0 先别当成真实金额。"
+          <Drawer open onClose={() => setCurrent(null)} title="仓位详情" sub={current.positionNo} icon={Layers} tone="role-2"
+            explain="下单时的奖励率、扣款和期限都以这笔仓位开仓时的记录为准，后来改档位配置不影响它。时间按后端记录原样显示。金额字段在库里为空时，后端目前会返回 0，看到 0 先别当成真实金额。"
             nav={{ onPrev: () => setCurrent(rows[index - 1]), onNext: () => setCurrent(rows[index + 1]), hasPrev: index > 0, hasNext: index >= 0 && index < rows.length - 1 }}
-            footer={<Decision note="只能查看，这里不能手动改订单。" primary={<Button onClick={() => setCurrent(null)}>关闭</Button>} />}>
+            footer={<Decision note="只能查看，这里不能手动改仓位。" primary={<Button onClick={() => setCurrent(null)}>关闭</Button>} />}>
             <JudgmentPoints rows={[
               { label: "状态", value: meta ? <StatusTag tone={meta.tone} icon={meta.icon}>{meta.label}</StatusTag> : operatorCopyText(current.statusLabel), reason: meta?.meaning },
               { label: "锁定金额", value: `${rowAmount(current.amount)} USDT` },
