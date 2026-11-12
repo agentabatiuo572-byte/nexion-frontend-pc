@@ -414,9 +414,9 @@ function G2ExchangePage() {
 
   /**
    * 原操作提醒：走审批的原申请、直接写的原记录（参数、暂停、取消排队）和处理排队的原批次都列在这里；
-   * 概览读取中、失败时也显示。actionsFor 只在概览读到后传，用页面原来的入口打开原确认框或核对框。
+   * 概览读取中、失败时也显示；直接写从保存的上下文打开同一个原确认框，不依赖当前概览。
    */
-  const recoveryNotice = (actionsFor?: (record: G2PendingCommand) => { retry?: () => void; query?: () => void }) => {
+  const recoveryNotice = () => {
     const approvals = paramApproval.list();
     const directs = listG2ExchangeCommands(batchAdminId);
     const recover = async (obj: string, retry: boolean) => {
@@ -457,14 +457,21 @@ function G2ExchangePage() {
           : record.path === "/exchange/swap" ? <Change from="开着" to="暂停" />
           : <><span data-mono>{order?.exchangeNo ?? decodeURIComponent(cancelNo ?? "")}</span>{order ? ` · ${amount(order.amountUsdt)} USDT` : ""}</>;
         const expired = g2ExchangeCommandExpired(record);
-        const handlers = actionsFor?.(record);
-        const query = handlers?.query ?? (batch ? () => void checkOriginalBatch(record as G2PendingBatch) : () => void readOriginalCommand(record));
+        const canRetry = !expired && (param ? !!record.context?.cap && authorities.includes(capAuthority(param))
+          : record.path === "/exchange/swap" ? record.context?.queueDepth !== undefined && authorities.includes("finprod_g2_swap_toggle")
+          : !!order && authorities.includes("finprod_g2_queue_cancel"));
+        const retry = param ? () => void adjCap(record.context!.cap!)
+          : record.path === "/exchange/swap" ? () => toggleSwap()
+          : () => cancelQueue(order!);
+        const query = batch
+          ? () => { if (overview) { setRecoveryError(null); setRecoveryKey(record.commandKey); } else void checkOriginalBatch(record as G2PendingBatch); }
+          : () => void readOriginalCommand(record);
         return {
           key: record.commandKey, name, change, submittedAt: record.createdAt, state: "direct-unknown",
           tag: expired ? expiredTag("direct") : unknownTag("direct"),
           actions: <>
             <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`查询${name}的原结果`} onClick={query}>查询原结果</Button>
-            {!expired && handlers?.retry && <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`按原请求重试${name}`} onClick={handlers.retry}>按原请求重试</Button>}
+            {!batch && canRetry && <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`按原请求重试${name}`} onClick={retry}>按原请求重试</Button>}
           </>,
         };
       }),
@@ -616,50 +623,6 @@ function G2ExchangePage() {
       readOnly={overview && !canWriteAny ? "你只能查看；这个账号没有修改兑换参数、暂停兑换或处理排队的权限。" : undefined} />
   );
 
-  if (loading && !overview) {
-    return (
-      <>
-        {header}
-        {recoveryNotice()}
-        <BlockState state="loading" title="正在读取兑换额度与规则…" />
-        {confirmModal}
-      </>
-    );
-  }
-
-  if (!overview) {
-    return (
-      <>
-        {header}
-        {recoveryNotice()}
-        <BlockState state="error" title="兑换数据读取失败"
-          detail={<>页面不显示任何旧数据。点「重新加载」；一直失败请联系值班同事。<Explain label="失败原因" content={error || "没有收到数据。"} /></>}
-          retryLabel="重新加载" onRetry={() => void reload()} />
-        {confirmModal}
-      </>
-    );
-  }
-
-  const { stats, swap, caps, queue, gateDetails, geoBlocked } = overview;
-  const busy = !!busyKey;
-  const busyReason = busy ? "正在处理上一项，稍候再操作" : undefined;
-  const newWriteBlockedReason = loading || readFailed || rereadPending ? "当前值没读到，重新加载后再改" : undefined;
-  const totalGate = stats.gateUser + stats.gatePlatform + stats.gateGeo;
-  const selectedQueue = queueDrawer ? queue.find((row) => row.exchangeNo === queueDrawer) : null;
-  const gateTiles: { key: GateKey; label: string; count: number; explain: string }[] = [
-    { key: "user", label: "个人额度超限", count: stats.gateUser, explain: "今天创建、现在状态是「个人额度超限」的兑换单数。排进队列的不算在这里。" },
-    { key: "platform", label: "平台额度超限", count: stats.gatePlatform, explain: "今天创建、现在状态是「平台额度超限」的兑换单数。排进队列的不算在这里。" },
-    { key: "geo", label: "地区封锁", count: stats.gateGeo, explain: "今天创建、因用户所在地区被封锁而拦下的兑换单数。" },
-  ];
-  const platformCap = caps.find((cap) => cap.key === "platformDailyCap");
-  const userCap = caps.find((cap) => cap.key === "userDailyCap");
-  const platformCapValue = platformCap ? Number(platformCap.value) : Number.NaN;
-  const usedMicros = micros(stats.todayUsd);
-  const capMicros = Number.isFinite(platformCapValue) ? micros(platformCapValue) : undefined;
-  const leftMicros = capMicros === undefined ? undefined : capMicros - usedMicros;
-  const queueTotalMicros = queue.reduce((sum, row) => sum + micros(row.amountUsdt), BigInt(0));
-  const queueAllVisible = queue.length >= stats.queueDepth;
-
   const adjCap = async (requestedCap: G2Cap) => {
     const originalDirect = pendingG2ExchangeCommand(batchAdminId, `/exchange/params/${requestedCap.key}`);
     let cap = originalDirect?.context?.cap ?? requestedCap;
@@ -668,7 +631,7 @@ function G2ExchangePage() {
       await readOriginalCommand(originalDirect);
       return;
     }
-    if (!originalDirect && !paramApproval.record(cap.key) && swap.emergencyPaused === true && !["fee", "feeMin"].includes(cap.key)) return;
+    if (!originalDirect && !paramApproval.record(cap.key) && overview?.swap.emergencyPaused === true && !["fee", "feeMin"].includes(cap.key)) return;
     const original = originalDirect ? undefined : await paramApproval.open(cap.key);
     if (original === false) return;
     if (original) {
@@ -710,7 +673,7 @@ function G2ExchangePage() {
             {loose === true && !canPropose && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，放宽方向会被拦下；请有提案权和这项修改权限的同事发起</Fact>}
             <Fact k="排队中的兑换">{copy?.queue ?? "—"}</Fact>
             <Fact k="之后的兑换">{copy?.future ?? "—"}</Fact>
-            {loose === true && <Fact k="兑付覆盖率（现在）" tone={overview.coverage.redlineBreached ? "danger" : undefined}>{percent(overview.coverage.coverageRatio)}，红线 {percent(overview.coverage.redlinePct)}</Fact>}
+            {loose === true && <Fact k="兑付覆盖率（现在）" tone={overview!.coverage.redlineBreached ? "danger" : undefined}>{percent(overview!.coverage.coverageRatio)}，红线 {percent(overview!.coverage.redlinePct)}</Fact>}
           </Facts>
         </div>
       );
@@ -817,7 +780,7 @@ function G2ExchangePage() {
       confirmLabel: "确认暂停",
       facts: <Facts>
         <Fact k="暂停的是">全平台 UVT 和 USDT 互换：用户新发起的兑换和「处理排队」都会被拒绝</Fact>
-        <Fact k="排队中的兑换">{fmtCount(original?.context?.queueDepth ?? stats.queueDepth)} 单留在队列，不取消、不退款；暂停期间仍可单笔取消</Fact>
+        <Fact k="排队中的兑换">{fmtCount(original?.context?.queueDepth ?? overview!.stats.queueDepth)} 单留在队列，不取消、不退款；暂停期间仍可单笔取消</Fact>
         <Fact k="已完成的兑换">不受影响，不回退</Fact>
         <Fact k="怎么恢复">只能在「紧急停用开关」页面恢复，这页没有恢复入口</Fact>
       </Facts>,
@@ -896,6 +859,50 @@ function G2ExchangePage() {
       },
     });
   };
+
+  if (loading && !overview) {
+    return (
+      <>
+        {header}
+        {recoveryNotice()}
+        <BlockState state="loading" title="正在读取兑换额度与规则…" />
+        {confirmModal}
+      </>
+    );
+  }
+
+  if (!overview) {
+    return (
+      <>
+        {header}
+        {recoveryNotice()}
+        <BlockState state="error" title="兑换数据读取失败"
+          detail={<>页面不显示任何旧数据。点「重新加载」；一直失败请联系值班同事。<Explain label="失败原因" content={error || "没有收到数据。"} /></>}
+          retryLabel="重新加载" onRetry={() => void reload()} />
+        {confirmModal}
+      </>
+    );
+  }
+
+  const { stats, swap, caps, queue, gateDetails, geoBlocked } = overview;
+  const busy = !!busyKey;
+  const busyReason = busy ? "正在处理上一项，稍候再操作" : undefined;
+  const newWriteBlockedReason = loading || readFailed || rereadPending ? "当前值没读到，重新加载后再改" : undefined;
+  const totalGate = stats.gateUser + stats.gatePlatform + stats.gateGeo;
+  const selectedQueue = queueDrawer ? queue.find((row) => row.exchangeNo === queueDrawer) : null;
+  const gateTiles: { key: GateKey; label: string; count: number; explain: string }[] = [
+    { key: "user", label: "个人额度超限", count: stats.gateUser, explain: "今天创建、现在状态是「个人额度超限」的兑换单数。排进队列的不算在这里。" },
+    { key: "platform", label: "平台额度超限", count: stats.gatePlatform, explain: "今天创建、现在状态是「平台额度超限」的兑换单数。排进队列的不算在这里。" },
+    { key: "geo", label: "地区封锁", count: stats.gateGeo, explain: "今天创建、因用户所在地区被封锁而拦下的兑换单数。" },
+  ];
+  const platformCap = caps.find((cap) => cap.key === "platformDailyCap");
+  const userCap = caps.find((cap) => cap.key === "userDailyCap");
+  const platformCapValue = platformCap ? Number(platformCap.value) : Number.NaN;
+  const usedMicros = micros(stats.todayUsd);
+  const capMicros = Number.isFinite(platformCapValue) ? micros(platformCapValue) : undefined;
+  const leftMicros = capMicros === undefined ? undefined : capMicros - usedMicros;
+  const queueTotalMicros = queue.reduce((sum, row) => sum + micros(row.amountUsdt), BigInt(0));
+  const queueAllVisible = queue.length >= stats.queueDepth;
 
   const openBatch = () => openActionConfirm({ briefKind: "funds",
     action: "处理今天的排队兑换",
@@ -1017,17 +1024,7 @@ function G2ExchangePage() {
       {confirmModal}
       {error && !coveredErrors.current.has(error) && !/^(提交结果暂未确认|处理结果暂未确认)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
       {conclusion}
-      {recoveryNotice((record) => {
-        const param = /^\/exchange\/params\/(\w+)$/.exec(record.path)?.[1];
-        if (record.path === "/exchange/queue/process") return { query: () => { setRecoveryError(null); setRecoveryKey(record.commandKey); } };
-        if (record.path === "/exchange/swap") return { retry: () => toggleSwap() };
-        if (param) {
-          const cap = caps.find((row) => row.key === param) ?? record.context?.cap;
-          return { retry: cap ? () => void adjCap(cap) : undefined };
-        }
-        const order = record.context?.order ?? queue.find((row) => record.path === `/exchange/queue/${encodeURIComponent(row.exchangeNo)}/cancel`);
-        return { retry: order ? () => cancelQueue(order) : undefined };
-      })}
+      {recoveryNotice()}
 
       <StatBand label="兑换摘要">
         <Stat label="兑换开关" icon={swap.emergencyPaused === null ? CircleHelp : swap.enabled ? PlayCircle : PauseCircle} tone={swap.emergencyPaused === null ? "neutral" : swap.enabled ? "ok" : "warn"}

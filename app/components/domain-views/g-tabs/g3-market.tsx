@@ -507,12 +507,13 @@ function G3MarketEditor() {
     openActionConfirm(directConfirmation((original?.change ?? requested) as G3DirectChange, original?.value ?? value, overview));
   };
   const openSavedCommand = (row: G3PendingCommand) => {
+    if (row.ticketId) { void refreshKnownApprovals(); return; }
     const change = row.change;
     if (change.action === "curve-cell" && change.field === "volatilityPct" || change.action === "control" || change.action === "override") {
       openDirect(change as G3DirectChange, row.value);
     } else setMarketConfirm(change as G3ReviewedChange);
   };
-  // 原操作提醒：本机保存的原记录逐条列出（G 域五页同一种列表）；查询和重试都在原确认框里，按钮打开它。
+  // 已有审批单号的记录只查原票；没有单号的未知记录才进入原请求恢复框。
   const recoveryRows: GRecoveryRow[] = commandRows.map((row) => {
     const change = row.change;
     const name = change.action === "curve-cell" ? `D${change.dayIndex + 1} ${FIELD_NAME[change.field]}`
@@ -530,10 +531,17 @@ function G3MarketEditor() {
     };
     return {
       key: row.commandKey, name, submittedAt: row.createdAt, ticket: row.ticketId ?? undefined,
-      state: row.ticketId ? "approval" : "unknown",
+      state: row.ticketId ? verifiedApprovals[row.commandKey] === undefined ? "last-observation" : "approval" : "unknown",
       change: <Change from={show(change.current)} to={show(row.value)} />,
-      tag: row.ticketId ? pendingTag("这次申请批准前不生效。") : unknownTag(row.request.kind === "approval" ? "approval" : "direct"),
-      actions: <Button size="sm" aria-label={`打开${name}的原操作`} onClick={() => openSavedCommand(row)}>查询或重试</Button>,
+      tag: row.ticketId
+        ? verifiedApprovals[row.commandKey] === undefined
+          ? <ObjectTag state={{ kind: "approval", verification: "last-observation", observedAt: row.createdAt,
+              detail: `原审批单 ${row.ticketId} 在等另一位超级管理员批准，批准前不生效。` }} />
+          : pendingTag("这次申请批准前不生效。")
+        : unknownTag(row.request.kind === "approval" ? "approval" : "direct"),
+      actions: row.ticketId
+        ? <Button size="sm" aria-label={`查询${name}的原结果`} onClick={() => void refreshKnownApprovals()}>查询原结果</Button>
+        : <Button size="sm" aria-label={`打开${name}的原操作`} onClick={() => openSavedCommand(row)}>查询或重试</Button>,
     };
   });
   const recoveryNotice = <GRecoveryNotice label="价格的原操作" rows={recoveryRows}

@@ -201,11 +201,11 @@ function paramValueText(key: string, raw: string | undefined) {
   return value;
 }
 
-function paramName(param: G7Param) {
+function paramName(param: Pick<G7Param, "key" | "name">) {
   return PARAM[param.key]?.name || operatorCopyText(param.name);
 }
 
-function paramEditValue(param: G7Param) {
+function paramEditValue(param: Pick<G7Param, "value" | "displayValue">) {
   return param.value || param.displayValue;
 }
 
@@ -349,9 +349,9 @@ function G7RepurchasePage() {
 
   /**
    * 原操作提醒：走审批的原申请和直接写的原记录都列在这里，概览读取中、失败时也显示。
-   * retryFor 只在概览读到后传：按原请求重试要开原来的确认框。
+   * 直接写按保存的参数和值打开同一个原确认框，不要求当前概览读取成功。
    */
-  const recoveryNotice = (retryFor?: (direct: G7DirectCommand) => (() => void) | undefined) => {
+  const recoveryNotice = () => {
     const approvals = paramApproval.list();
     const directs = session ? listG7DirectCommands(session.adminId) : [];
     const recover = async (obj: string, retry: boolean) => {
@@ -385,7 +385,9 @@ function G7RepurchasePage() {
       }),
       ...directs.map((direct) => {
         const name = PARAM[direct.paramKey]?.name ?? direct.paramKey;
-        const retry = canRetryG7DirectCommand(direct) ? retryFor?.(direct) : undefined;
+        const retry = canRetryG7DirectCommand(direct) ? () => void adjustParam({
+          key: direct.paramKey, name, value: direct.currentValue ?? "", displayValue: direct.currentValue ?? "", sub: "",
+        }) : undefined;
         return {
           key: direct.commandKey, name, submittedAt: direct.createdAt, state: "direct-unknown",
           change: <Change from={direct.currentValue === undefined ? "原值未知" : paramValueText(direct.paramKey, direct.currentValue)} to={paramValueText(direct.paramKey, direct.input.value)} />,
@@ -486,41 +488,13 @@ function G7RepurchasePage() {
       readOnly={overview && !canWriteAny ? "你只能查看；这个账号没有修改锁定计划参数的权限。" : undefined} />
   );
 
-  if (loading && !overview) {
-    return (
-      <>
-        {header}
-        {recoveryNotice()}
-        <BlockState state="loading" title="正在读取锁定计划…" />
-        {confirmModal}
-      </>
-    );
-  }
-
-  if (!overview) {
-    return (
-      <>
-        {header}
-        {recoveryNotice()}
-        <BlockState state="error" title="锁定计划数据读取失败"
-          detail={<>页面不显示任何旧数据。点「重新加载」；一直失败请联系值班同事。<Explain label="失败原因" content={error || "没有收到数据。"} /></>}
-          retryLabel="重新加载" onRetry={() => void reload()} />
-        {confirmModal}
-      </>
-    );
-  }
-
-  const stats = overview.stats;
-  const rewardMicros = micros(stats.matureUsd)! - micros(stats.principalUsd)!;
-  const busy = !!busyKey;
-
-  const adjustParam = async (param: G7Param) => {
+  const adjustParam = async (param: Pick<G7Param, "key" | "name" | "value" | "displayValue" | "sub">) => {
     const direct = directRecord(param.key);
     if (direct && !canRetryG7DirectCommand(direct)) {
       await readDirectCommand(direct);
       return;
     }
-    const original = await paramApproval.open(param.key);
+    const original = direct ? undefined : await paramApproval.open(param.key);
     if (original === false) return;
     const view = latest.current;
     if (!direct && !original && (!view.overview || view.loading || view.busyKey || view.readFailed)) return;
@@ -534,7 +508,7 @@ function G7RepurchasePage() {
     } : undefined;
     const label = paramName(param);
     const copy = PARAM[param.key];
-    const originalCapacity = direct ? direct.g4Capacity : overview.g4Capacity;
+    const originalCapacity = direct ? direct.g4Capacity : overview?.g4Capacity;
     const currentText = directRecovery
       ? directRecovery.before.state === "unknown" ? "未知" : paramValueText(param.key, directRecovery.before.value)
       : paramValueText(param.key, param.value);
@@ -574,7 +548,7 @@ function G7RepurchasePage() {
             {loose === true && !canPropose && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，{copy?.loosen}会被拦下；请有提案权和这项修改权限的同事发起</Fact>}
             <Fact k="已有订单">{copy?.existing ?? "—"}</Fact>
             <Fact k="之后的新订单">{copy?.future ?? "—"}</Fact>
-            {loose === true && <Fact k="兑付覆盖率（现在）" tone={overview.coverage.redlineBreached ? "danger" : undefined}>{plain(overview.coverage.coverageRatio)}%，红线 {plain(overview.coverage.redlinePct)}%</Fact>}
+            {loose === true && <Fact k="兑付覆盖率（现在）" tone={overview!.coverage.redlineBreached ? "danger" : undefined}>{plain(overview!.coverage.coverageRatio)}%，红线 {plain(overview!.coverage.redlinePct)}%</Fact>}
           </Facts>
         </div>
       );
@@ -679,6 +653,34 @@ function G7RepurchasePage() {
     });
   };
 
+  if (loading && !overview) {
+    return (
+      <>
+        {header}
+        {recoveryNotice()}
+        <BlockState state="loading" title="正在读取锁定计划…" />
+        {confirmModal}
+      </>
+    );
+  }
+
+  if (!overview) {
+    return (
+      <>
+        {header}
+        {recoveryNotice()}
+        <BlockState state="error" title="锁定计划数据读取失败"
+          detail={<>页面不显示任何旧数据。点「重新加载」；一直失败请联系值班同事。<Explain label="失败原因" content={error || "没有收到数据。"} /></>}
+          retryLabel="重新加载" onRetry={() => void reload()} />
+        {confirmModal}
+      </>
+    );
+  }
+
+  const stats = overview.stats;
+  const rewardMicros = micros(stats.matureUsd)! - micros(stats.principalUsd)!;
+  const busy = !!busyKey;
+
   const byKey = (key: string) => overview.params.find((param) => param.key === key);
   const records = paramApproval.list();
   const lockedNames = Object.keys(lockedParams).filter((key) => !paramApproval.record(key)).map((key) => PARAM[key]?.name ?? key);
@@ -762,10 +764,7 @@ function G7RepurchasePage() {
       {confirmModal}
       {error && !Object.values(lockedParams).includes(error) && !coveredErrors.current.has(error) && !/^提交结果(暂未确认|未知)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
       {conclusion}
-      {recoveryNotice((direct) => {
-        const param = byKey(direct.paramKey);
-        return param ? () => void adjustParam(param) : undefined;
-      })}
+      {recoveryNotice()}
 
       <StatBand label="锁定计划摘要">
         <Stat label="未结束的锁定金额" icon={Lock} tone="role-1" value={amount(stats.principalUsd)} unit="USDT"
