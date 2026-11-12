@@ -63,7 +63,7 @@ const REFUND_RULES = [
 function OrdinaryRefundImpact({ impact, compact = false }: { impact: E4RefundImpact | null; compact?: boolean }) {
   const pending = impact?.runtimeComplete ? impact.completedPending : null;
   const reason = impact?.runtimeUnavailableReason;
-  const runtimeText = reason === "SIMULATED_TASK_RUNTIME_UNRESOLVED" ? "模拟任务的运行关联暂无法核实"
+  const runtimeText = reason === "SIMULATED_TASK_RUNTIME_UNRESOLVED" ? "任务的运行关联暂无法核实"
     : reason === "COMPUTE_V2_COMPLETION_OUTCOME_UNKNOWN" ? "任务完成结果暂无法核实" : "任务运行状态暂无法核实";
   return <section aria-label="普通订单退款影响" className={compact ? "e4-refund-impact e4-refund-impact-compact" : "e4-refund-impact"}>
     <h3 className="rd-form-group-title">退款影响 · {compact ? "普通购买设备" : "购买设备"}{compact && <Explain label="普通订单任务如何处理" content="已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回。只含普通购买设备，不含促销赠品；这是任务影响快照，不是收益已经到账的证明，也不改变应退金额。" />}</h3>

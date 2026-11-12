@@ -612,10 +612,10 @@ type CopyExperimentVersionOption = {
 type CopyExperimentCopyOption = { value: string; label: string; versions: CopyExperimentVersionOption[] };
 export type SchemaPropertyDraft = { name: string; type: string; pii: boolean };
 
-/** 提示里的「命令号：xxx」整串不在连字符处断开（e- / domain-action），放不下就整串换到下一行。文字不变。 */
+/** 提示里的「命令号：xxx」「请求号：xxx」整串不在连字符处断开（e- / domain-action），放不下就整串换到下一行。文字不变。 */
 function keepCommandKey(text: ReactNode): ReactNode {
   if (typeof text !== "string") return text;
-  const at = text.lastIndexOf("命令号：");
+  const at = Math.max(text.lastIndexOf("命令号："), text.lastIndexOf("请求号："));
   const key = at < 0 ? null : text.slice(at + 4).match(/^[\w.:-]+/)?.[0];
   if (!key) return text;
   return <>{text.slice(0, at + 4)}<span data-mono className="rd-keep">{key}</span>{text.slice(at + 4 + key.length)}</>;
