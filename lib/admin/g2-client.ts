@@ -391,11 +391,11 @@ async function g2Request<T>(path: string, init?: RequestInit) {
     }
     const batchStillUnknown = path === BATCH_PATH && init?.method === "POST" && response.status === 409
       && result?.message?.startsWith("IDEMPOTENCY_");
-    throw stableMutationHttpFailure(
+    throw Object.assign(stableMutationHttpFailure(
       formatAdminApiError(result?.message, `G2_REQUEST_FAILED_${response.status}`),
       batchStillUnknown ? 0 : response.status,
       result?.code,
-    );
+    ), { status: response.status, backendMessage: result?.message });
   }
 
   return result.data as T;

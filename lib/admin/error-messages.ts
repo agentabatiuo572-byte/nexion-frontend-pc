@@ -1,6 +1,27 @@
 import { SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
 
 export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  // G2/G4/G7 parameter approvals (backend 66ecdb47).
+  G2_EXCHANGE_PARAM_APPROVAL_REQUIRED: "该兑换参数的放宽方向需要提交审批；另一位有批准权限的超管批准前，当前值不变。",
+  G4_GENESIS_PARAM_APPROVAL_REQUIRED: "该创世参数变更需要提交审批；另一位有批准权和对应参数修改权限的超管批准前，当前值不变。",
+  G7_REPURCHASE_PARAM_APPROVAL_REQUIRED: "该锁定计划参数的放宽方向需要提交审批；另一位有批准权限的超管批准前，当前值不变。",
+  G2G7_PARAM_MAKER_FORBIDDEN: "当前账号没有此兑换或锁定计划参数的修改权限，请由有对应参数权限和提案权的同事发起。",
+  G4_PARAM_MAKER_FORBIDDEN: "当前账号没有此创世参数的修改权限，请由有对应参数权限和提案权的同事发起。",
+  G2_EXCHANGE_PARAM_STALE: "兑换参数当前值已与原审批单的旧值不同，本次批准不会覆盖新值；请核对原审批单并处理后再发起。",
+  G4_GENESIS_PARAM_STALE: "当前创世系列或参数值已与原审批单不同，本次批准不会覆盖新值；请核对原审批单并处理后再发起。",
+  G7_REPURCHASE_PARAM_STALE: "锁定计划参数当前值已与原审批单的旧值不同，本次批准不会覆盖新值；请核对原审批单并处理后再发起。",
+  G2G7_PARAM_MAKER_REQUIRED: "无法确认原提案发起人，请保留原请求和命令号并核对登录身份。",
+  G4_PARAM_MAKER_REQUIRED: "无法确认创世参数提案发起人，请保留原请求和命令号并核对登录身份。",
+  G2G7_PARAM_PROPOSAL_INVALID: "兑换或锁定计划提案内容不完整，请核对原参数、拟值和服务端绑定的旧值；未决命令继续保留。",
+  G4_PARAM_PROPOSAL_INVALID: "创世参数提案内容不完整，请核对原参数、拟值、当前系列和决策编号；未决命令继续保留。",
+  G2G7_PARAM_KEY_INVALID: "此参数不存在或锁定计划产品不可用，请读取当前配置并核对原审批单。",
+  G4_PARAM_KEY_INVALID: "当前创世参数或系列不可用，请读取当前配置并核对原审批单。",
+  G2G7_PARAM_VALUE_INVALID: "兑换或锁定计划参数拟值超出允许范围，请核对参数范围与原请求。",
+  G4_PARAM_VALUE_INVALID: "创世参数拟值无效，请核对参数范围与原请求。",
+  G2G7_PARAM_NOT_AMPLIFYING: "按服务端当前值，此修改不属于放宽方向，不能建立该审批单；请核对明确拒绝后读取当前值再调整。",
+  G4_PARAM_APPROVAL_NOT_REQUIRED: "按服务端当前值，此创世参数修改不需要通用审批；请核对明确拒绝后读取当前配置再调整。",
+  G4_DECISION_REF_REQUIRED: "此创世参数修改需要产品或财务决策编号，请补全决策依据后提交。",
+
   LOGIN_ATTEMPT_SESSION_MISSING: "原登录会话暂时无法核对，请保留原操作并重新读取。",
   SESSION_REPLACED: "这条登录会话已被替换，请读取当前登录设备。",
   USER_PHONE_CHANGE_LIMIT_REACHED: "统计期内更换登录手机号次数已达上限，请等待最早一次记录移出统计期。",
@@ -2137,6 +2158,13 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H3_CONFIG_STALE: "这张审批单提交后，原配置已被改过，不能批准；请驳回后按最新配置重新发起。",
   // 分红设置页直接保存也会收到，不写成只针对审批单。
   G4_DIVIDEND_STALE: "分红设置已被改过，这次没有执行；请刷新后按最新设置处理，审批单请驳回后重新发起。",
+  G4_DIVIDEND_APPROVAL_REQUIRED: "提高每日收益比例需要提交审批，由另一位有权超管批准后生效。",
+  G4_EMISSION_APPROVAL_REQUIRED: "这次补发有真实待付款项，需要提交审批，由另一位有权超管批准后发放。",
+  G4_DIVIDEND_AMPLIFICATION_REQUIRED: "当前每日收益比例已不低于提案值，请核对最新比例后重新操作。",
+  G4_EMISSION_AMOUNT_UNAVAILABLE: "这期没有可审批的待付收益，请重新读取该批次后核对。",
+  G4_PROPOSAL_INVALID: "分红审批内容或快照不完整，请核对原审批单；新申请需重新读取分红快照。",
+  G4_MAKER_REQUIRED: "分红审批缺少当前发起人身份，请重新登录后查询原审批单。",
+  G4_DIVIDEND_APPROVAL_STATE_QUERY_UNSUPPORTED: "分红快照只支持一个有效批次号，请核对原批次编号后查询。",
   G4_CATALOG_SNAPSHOT_CHANGED: "这张审批单提交后，原配置已被改过，不能批准；请驳回后按最新配置重新发起。",
   LEARNING_ACTIVATION_SNAPSHOT_CHANGED: "这张审批单提交后，原配置已被改过，不能批准；请驳回后按最新配置重新发起。",
   G4_EMISSION_ALREADY_COMPLETED: "这期产出已经发过，不能再批准；请驳回这张审批单。",

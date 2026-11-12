@@ -8,7 +8,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * G4 创世节点销售与收益 — 数据来自后端 /api/admin/market/nex/genesis 及 Genesis 业务表。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Drawer, PaginationExemption } from "../design-kit";
 import {
@@ -34,6 +34,8 @@ import { configApprovalOriginalInput, pendingConfigApproval } from "@/lib/admin/
 import G4AdminOperations from "./g4-admin-operations";
 import { G4FirstDividendConfirm } from "./g4-first-dividend-confirm";
 import { G4TierConfirm, hasPendingG4TierApproval, type G4TierChange } from "./g4-tier-confirm";
+import { useGParamApproval } from "@/lib/admin/use-g-param-approval";
+import { GParamRecovery } from "./g-param-recovery";
 
 const OPERATOR = currentAdminOperator;
 
@@ -102,6 +104,13 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const [overview, setOverview] = useState<G4Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [readFailed, setReadFailed] = useState(false);
+  const paramApproval = useGParamApproval("G4", toast, setError, async () => {
+    setReadFailed(true);
+    setOverview(await fetchG4GenesisOverview(nodePageNo, nodePageSize));
+    setReadFailed(false);
+    setRefreshError("");
+  });
   const [refreshError, setRefreshError] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [nodeDrawer, setNodeDrawer] = useState<string | null>(null);
@@ -109,13 +118,25 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const [nodePageSize, setNodePageSize] = useState(10);
   const [firstDividend, setFirstDividend] = useState<{ epoch: number; expectedRevision: string } | null>(null);
   const [tierConfirm, setTierConfirm] = useState<{ epoch: number; change?: G4TierChange } | null>(null);
+  const latest = useRef({ overview, loading, busyKey, refreshError, readFailed });
+  latest.current = { overview, loading, busyKey, refreshError, readFailed };
+  const paramRecovery = <GParamRecovery approval={paramApproval} toast={toast} />;
+  const canStartNew = (authority: string) => {
+    const view = latest.current;
+    const auth = useAdminAuth.getState();
+    return !!view.overview && !view.loading && !view.busyKey && !view.refreshError && !view.readFailed
+      && auth.isAuthenticated && !auth.logoutPending && auth.session?.adminId === session?.adminId
+      && !!auth.session?.authorities.includes(authority);
+  };
 
   const reload = useCallback(async (silent = false, page = nodePageNo, pageSize = nodePageSize) => {
     if (!silent) setLoading(true);
+    setReadFailed(true);
     setError("");
     try {
       const next = await fetchG4GenesisOverview(page, pageSize);
       setOverview(next);
+      setReadFailed(false);
       setRefreshError("");
       setNodePageNo(next.nodePage.page);
       setNodePageSize(next.nodePage.pageSize);
@@ -134,11 +155,13 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     let cancelled = false;
     async function load() {
       setLoading(true);
+      setReadFailed(true);
       setError("");
       try {
         const next = await fetchG4GenesisOverview(1, 10);
         if (!cancelled) {
           setOverview(next);
+          setReadFailed(false);
           setNodePageNo(next.nodePage.page);
           setNodePageSize(next.nodePage.pageSize);
         }
@@ -163,10 +186,12 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     try {
       await action();
       // 写入回执已确认，附加刷新失败不能再抛给写入确认框。
-      toast(success);
+      if (success) toast(success);
+      setReadFailed(true);
       const [result] = await Promise.allSettled([fetchG4GenesisOverview(nodePageNo, nodePageSize)]);
       if (result.status === "fulfilled") {
         setOverview(result.value);
+        setReadFailed(false);
         setRefreshError("");
         setNodePageNo(result.value.nodePage.page);
         setNodePageSize(result.value.nodePage.pageSize);
@@ -192,15 +217,18 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
   if (loading && !overview) {
     return (
+      <>{paramRecovery}
       <section className="l-card">
         <div className="l-h"><span className="ttl">创世节点销售与收益</span><span className="sub">· 加载中</span></div>
         <div className="l-b"><div className="gtint">创世节点数据加载中…</div></div>
       </section>
+      </>
     );
   }
 
   if (!overview) {
     return (
+      <>{paramRecovery}
       <section className="l-card">
         <div className="l-h"><span className="ttl">创世节点销售与收益</span></div>
         <div className="l-b">
@@ -208,10 +236,16 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
           <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>
         </div>
       </section>
+      </>
     );
   }
 
-  const busy = !!busyKey || !!refreshError;
+  const busy = !!busyKey || !!refreshError || readFailed;
+  const canAdjust = (key: string) => allowed(paramAuthority(key)) || !!paramApproval.record(key);
+  const paramDisabled = (key: string) => {
+    const original = paramApproval.record(key);
+    return !!busyKey || ((!!refreshError || readFailed) && (!original || key === "dividend" && original.ticket?.status === "pending"));
+  };
   const cov = overview.coverage.coverageRatio.toFixed(1);
   const marketOn = overview.market.enabled;
   const stats = overview.stats;
@@ -264,15 +298,19 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     }
   };
 
-  const adjustParam = (param: G4Param) => {
-    if (!allowed(paramAuthority(param.key))) return;
-    if (param.key === "dividend" && firstDividendEntry) {
+  const adjustParam = async (param: G4Param) => {
+    if (!allowed(paramAuthority(param.key)) && !paramApproval.record(param.key)) return;
+    if (param.key === "dividend" && firstDividendEntry && !paramApproval.record(param.key)) {
       void openFirstDividend();
       return;
     }
     // 主人拍板(2026-08-06):阶梯档位在场时一级单价由档位派生、本参数只读,调价走档位卡
     // (OPS-G-07/G-13 仲裁)。入口已不渲染,这里是钱路径双保险。
     if (param.key === "price" && overview.tierPrice.status !== "legacy") return;
+    const tighteningDividend = param.key === "dividend" && paramApproval.record(param.key)?.ticket?.status === "pending";
+    if (tighteningDividend && !canStartNew(paramAuthority(param.key))) return;
+    const original = tighteningDividend ? undefined : await paramApproval.open(param.key);
+    if (original === false) return;
     const numeric = !["divBase", "emissionCurve"].includes(param.key);
     const bounds = param.key === "supply" ? { min: stats.sold, max: 100000, step: 1 }
       : param.key === "price" ? { min: 0.01, max: 1000000, step: 0.01 }
@@ -288,16 +326,52 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       edit: {
         ...(numeric ? { kind: "number", ...bounds } : { kind: "text" }),
         current: paramEditValue(param),
+        initialValue: original?.request.command.params.value as string | undefined,
         submitEditValue: needsDecision,
       },
       businessForm: needsDecision ? { kind: "multi-field", title: "决策依据", fields: [
         { key: "decisionRef", label: "产品或财务决策编号", current: "", inputKind: "text", required: true },
       ] } : undefined,
+      getPendingReason: tighteningDividend ? undefined : () => paramApproval.getPendingReason(param.key),
+      getPendingBusinessValue: tighteningDividend ? undefined : () => paramApproval.getPendingBusinessValue(param.key),
       run: async (reason, value, businessValue) => {
+        const saved = paramApproval.record(param.key);
+        if (saved && !tighteningDividend) {
+          try {
+            await mutate(`param:${param.key}`, () => paramApproval.retry(saved.request.obj), "");
+          } catch (error) {
+            if (!paramApproval.record(saved.request.obj)) openActionConfirm(null);
+            throw error;
+          }
+          return;
+        }
+        if (!canStartNew(paramAuthority(param.key))
+          || !latest.current.overview?.params.some(row => row.key === param.key)
+          || param.key === "price" && latest.current.overview.tierPrice.status !== "legacy"
+          || tighteningDividend && saved?.ticket?.status !== "pending") {
+          openActionConfirm(null);
+          setError("当前创世参数暂不能修改，请重新读取当前状态后操作。");
+          return;
+        }
         if (!value) return;
-        await mutate(`param:${param.key}`, () => updateG4GenesisParam(
-          param.key, String(value), reason, OPERATOR(), businessValue?.decisionRef,
-        ), `${operatorCopyText(param.name)}已立即生效`);
+        const state = param.key === "dividend" ? await fetchG4DividendApprovalState() : undefined;
+        if (!canStartNew(paramAuthority(param.key))) {
+          openActionConfirm(null);
+          setError("当前创世参数暂不能修改，请重新读取当前状态后操作。");
+          return;
+        }
+        const currentParam = latest.current.overview!.params.find(row => row.key === param.key)!;
+        await mutate(`param:${param.key}`, async () => {
+          const direct = () => updateG4GenesisParam(param.key, String(value), reason, OPERATOR(), businessValue?.decisionRef);
+          const result = tighteningDividend
+            ? { direct: await paramApproval.tightenDividend(state!.dividend, String(value), direct) }
+            : await paramApproval.run({ key: param.key, current: state?.dividend ?? currentParam.value, value: String(value), reason,
+            decisionRef: businessValue?.decisionRef, expectedRevision: state?.expectedRevision },
+            direct);
+          if ("direct" in result) {
+            toast(`${operatorCopyText(param.name)}已立即生效`);
+          }
+        }, "");
       },
     });
   };
@@ -400,17 +474,52 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   };
 
   const runRerunBatch = () => {
-    if (!allowed("finprod_g4_write")) return;
+    if (!allowed("finprod_g4_write") && !paramApproval.record(dividend.batchNo)) return;
+    void openRerunBatch();
+  };
+
+  const openRerunBatch = async () => {
+    const original = await paramApproval.open(dividend.batchNo);
+    if (original === false) return;
     openActionConfirm({ briefKind: "funds",
       action: `重新发放今日收益 ${dividend.batchNo}`,
       detail: "只补发失败的，已经发成功的不会重复发。",
       businessForm: { kind: "multi-field", title: "决策依据", fields: [
         { key: "decisionRef", label: "财务或产品决策编号", current: "", inputKind: "text", required: true },
       ] },
+      getPendingReason: () => paramApproval.getPendingReason(dividend.batchNo),
+      getPendingBusinessValue: () => paramApproval.getPendingBusinessValue(dividend.batchNo),
       run: async (reason, _value, businessValue) => {
-        await mutate(`batch:${dividend.batchNo}`, () => rerunG4GenesisDividendBatch(
-          dividend.batchNo, reason, OPERATOR(), businessValue?.decisionRef,
-        ), "已重新发放，只补了失败的");
+        const saved = paramApproval.record(dividend.batchNo);
+        if (saved) {
+          try {
+            await mutate(`batch:${dividend.batchNo}`, () => paramApproval.retry(saved.request.obj), "");
+          } catch (error) {
+            if (!paramApproval.record(saved.request.obj)) openActionConfirm(null);
+            throw error;
+          }
+          return;
+        }
+        if (!canStartNew("finprod_g4_write") || !latest.current.overview!.emissionGate.open
+          || latest.current.overview!.dividend.batchNo !== dividend.batchNo) {
+          openActionConfirm(null);
+          setError("当前收益批次暂不能发起新操作，请重新读取当前状态后操作。");
+          return;
+        }
+        const state = await fetchG4DividendApprovalState(dividend.batchNo);
+        if (!canStartNew("finprod_g4_write") || !latest.current.overview!.emissionGate.open
+          || latest.current.overview!.dividend.batchNo !== dividend.batchNo) {
+          openActionConfirm(null);
+          setError("当前收益批次暂不能发起新操作，请重新读取当前状态后操作。");
+          return;
+        }
+        await mutate(`batch:${dividend.batchNo}`, async () => {
+          const result = await paramApproval.run({ key: dividend.batchNo, batchNo: dividend.batchNo, current: "", value: "rerun", reason,
+            decisionRef: businessValue?.decisionRef, expectedRevision: state.expectedRevision,
+            approvalRequired: !state.completed && Number(state.amountUsdt) > 0 },
+          () => rerunG4GenesisDividendBatch(dividend.batchNo, reason, OPERATOR(), businessValue?.decisionRef));
+          if ("direct" in result) toast("已重新发放，只补了失败的");
+        }, "");
       },
     });
   };
@@ -509,6 +618,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
   return (
     <>
+      {paramRecovery}
       {tierConfirm && session && tierConfirm.epoch === epoch && <G4TierConfirm
         session={session} epoch={epoch} requested={tierConfirm.change}
         readActive={() => fetchG4GenesisOverview(nodePageNo, nodePageSize)}
@@ -607,18 +717,18 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
               <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 2 }}>售出进度 {fmtNumber(stats.sold, 0)} / {fmtNumber(stats.totalSlots, 0)}</div>
               <div className="sold"><i style={{ width: `${soldPct}%` }} /></div>
             </div>
-            {supplyParam && <div className="p-row"><div className="txt"><div className="k">节点总量</div><div className="s">{operatorCopyText(supplyParam.sub)}</div></div><span className="v">{operatorCopyText(supplyParam.displayValue)}</span>{allowed(paramAuthority(supplyParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${supplyParam.name}`} onClick={() => adjustParam(supplyParam)}>调整</button>}</div>}
-            {priceParam && <div className="p-row"><div className="txt"><div className="k">单价{tiers && <span className="bdg ok" style={{ fontSize: 9, marginLeft: 6 }}>按价格档位</span>}</div><div className="s">{overview.tierPrice.status === "active" ? "已设置价格档位，单价按卖到第几张自动决定，这里的值不生效。改价请用下方「价格档位」" : tierPriceNote}</div></div><span className="v">{tierPriceText}</span>{overview.tierPrice.status === "legacy" && allowed(paramAuthority(priceParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${priceParam.name}`} onClick={() => adjustParam(priceParam)}>调整</button>}</div>}
-            {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日收益比例 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{operatorCopyText(dividendParam.sub)}</div></div><span className="v">{operatorCopyText(dividendParam.displayValue)}</span>{(firstDividendEntry ? canSetupDividend : allowed(paramAuthority(dividendParam.key))) && <button
-              className="l-btn sm mc" disabled={busy}
+            {supplyParam && <div className="p-row"><div className="txt"><div className="k">节点总量</div><div className="s">{operatorCopyText(supplyParam.sub)}</div></div><span className="v">{operatorCopyText(supplyParam.displayValue)}</span>{canAdjust(supplyParam.key) && <button className="l-btn sm mc" disabled={paramDisabled(supplyParam.key)} aria-label={`调整 ${supplyParam.name}`} onClick={() => adjustParam(supplyParam)}>调整</button>}</div>}
+            {priceParam && <div className="p-row"><div className="txt"><div className="k">单价{tiers && <span className="bdg ok" style={{ fontSize: 9, marginLeft: 6 }}>按价格档位</span>}</div><div className="s">{overview.tierPrice.status === "active" ? "已设置价格档位，单价按卖到第几张自动决定，这里的值不生效。改价请用下方「价格档位」" : tierPriceNote}</div></div><span className="v">{tierPriceText}</span>{overview.tierPrice.status === "legacy" && canAdjust(priceParam.key) && <button className="l-btn sm mc" disabled={paramDisabled(priceParam.key)} aria-label={`调整 ${priceParam.name}`} onClick={() => adjustParam(priceParam)}>调整</button>}</div>}
+            {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日收益比例 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{operatorCopyText(dividendParam.sub)}</div></div><span className="v">{operatorCopyText(dividendParam.displayValue)}</span>{(paramApproval.record(dividendParam.key) || (firstDividendEntry ? canSetupDividend : allowed(paramAuthority(dividendParam.key)))) && <button
+              className="l-btn sm mc" disabled={paramDisabled(dividendParam.key)}
               aria-label={pendingFirstDividend ? "查询原日分红审批" : firstDividendEntry ? "首次配置每日收益比例" : `调整 ${dividendParam.name}`}
               onClick={() => adjustParam(dividendParam)}
             >{pendingFirstDividend ? "查询原审批" : firstDividendEntry ? "首次配置" : "调整"}</button>}</div>}
-            {royaltyParam && <div className="p-row"><div className="txt"><div className="k">转让手续费</div><div className="s">{operatorCopyText(royaltyParam.sub)}</div></div><span className="v">{operatorCopyText(royaltyParam.displayValue)}</span>{allowed(paramAuthority(royaltyParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${royaltyParam.name}`} onClick={() => adjustParam(royaltyParam)}>调整</button>}</div>}
+            {royaltyParam && <div className="p-row"><div className="txt"><div className="k">转让手续费</div><div className="s">{operatorCopyText(royaltyParam.sub)}</div></div><span className="v">{operatorCopyText(royaltyParam.displayValue)}</span>{canAdjust(royaltyParam.key) && <button className="l-btn sm mc" disabled={paramDisabled(royaltyParam.key)} aria-label={`调整 ${royaltyParam.name}`} onClick={() => adjustParam(royaltyParam)}>调整</button>}</div>}
             <div className="p-row"><div className="txt"><div className="k">开始发放收益 <span className="bdg ok" style={{ fontSize: 9 }}>跟随运营阶段</span></div><div className="s">上交易所前不发放；在「运营阶段设置」里控制，这里只能查看</div></div><span className="v">{overview.emissionGate.open ? "已开放" : "未开放"}</span></div>
-            {airdropPctParam && <div className="p-row"><div className="txt"><div className="k">空投占比</div><div className="s">{operatorCopyText(airdropPctParam.sub)}</div></div><span className="v">{operatorCopyText(airdropPctParam.displayValue)}</span>{allowed(paramAuthority(airdropPctParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${airdropPctParam.name}`} onClick={() => adjustParam(airdropPctParam)}>调整</button>}</div>}
-            {emissionCurveParam && <div className="p-row"><div className="txt"><div className="k">收益发放曲线</div><div className="s">{operatorCopyText(emissionCurveParam.sub)}</div></div><span className="v">{operatorCopyText(emissionCurveParam.displayValue).replace("TGE 10% · halve every 6 months", "初始发放 10%，每 6 个月减半")}</span>{allowed(paramAuthority(emissionCurveParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${emissionCurveParam.name}`} onClick={() => adjustParam(emissionCurveParam)}>调整</button>}</div>}
-            {airdropLockDaysParam && <div className="p-row"><div className="txt"><div className="k">早期持有人奖励锁仓期</div><div className="s">{operatorCopyText(airdropLockDaysParam.sub)}</div></div><span className="v">{operatorCopyText(airdropLockDaysParam.displayValue)}</span>{allowed(paramAuthority(airdropLockDaysParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`调整 ${airdropLockDaysParam.name}`} onClick={() => adjustParam(airdropLockDaysParam)}>调整</button>}</div>}
+            {airdropPctParam && <div className="p-row"><div className="txt"><div className="k">空投占比</div><div className="s">{operatorCopyText(airdropPctParam.sub)}</div></div><span className="v">{operatorCopyText(airdropPctParam.displayValue)}</span>{canAdjust(airdropPctParam.key) && <button className="l-btn sm mc" disabled={paramDisabled(airdropPctParam.key)} aria-label={`调整 ${airdropPctParam.name}`} onClick={() => adjustParam(airdropPctParam)}>调整</button>}</div>}
+            {emissionCurveParam && <div className="p-row"><div className="txt"><div className="k">收益发放曲线</div><div className="s">{operatorCopyText(emissionCurveParam.sub)}</div></div><span className="v">{operatorCopyText(emissionCurveParam.displayValue).replace("TGE 10% · halve every 6 months", "初始发放 10%，每 6 个月减半")}</span>{canAdjust(emissionCurveParam.key) && <button className="l-btn sm mc" disabled={paramDisabled(emissionCurveParam.key)} aria-label={`调整 ${emissionCurveParam.name}`} onClick={() => adjustParam(emissionCurveParam)}>调整</button>}</div>}
+            {airdropLockDaysParam && <div className="p-row"><div className="txt"><div className="k">早期持有人奖励锁仓期</div><div className="s">{operatorCopyText(airdropLockDaysParam.sub)}</div></div><span className="v">{operatorCopyText(airdropLockDaysParam.displayValue)}</span>{canAdjust(airdropLockDaysParam.key) && <button className="l-btn sm mc" disabled={paramDisabled(airdropLockDaysParam.key)} aria-label={`调整 ${airdropLockDaysParam.name}`} onClick={() => adjustParam(airdropLockDaysParam)}>调整</button>}</div>}
             {showcaseEnabledParam && <div className="p-row"><div className="txt"><div className="k">App 商城入口</div><div className="s">{operatorCopyText(showcaseEnabledParam.sub)}</div></div><span className="v">{operatorCopyText(showcaseEnabledParam.displayValue)}</span>{allowed(paramAuthority(showcaseEnabledParam.key)) && <button className="l-btn sm mc" disabled={busy} aria-label={`切换 ${showcaseEnabledParam.name}`} onClick={toggleShowcase}>{showcaseEnabledParam.value === "true" ? "隐藏" : "展示"}</button>}</div>}
           </div>
         </section>
@@ -712,8 +822,8 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
           <span className="ttl">收益发放监控</span>
           <span className="sub">· 「运营阶段设置」开启后每天自动发放</span>
           <div className="r">
-            {divBaseParam && allowed(paramAuthority(divBaseParam.key)) && <button className="l-btn mc" disabled={busy} onClick={() => adjustParam(divBaseParam)}>调整收益计算基数</button>}
-            {allowed("finprod_g4_write") && <button className="l-btn" disabled={busy || !overview.emissionGate.open || !dividend.batchNo} onClick={runRerunBatch}>重新发放今日收益{batchRerun ? "（已重发）" : ""}</button>}
+            {divBaseParam && canAdjust(divBaseParam.key) && <button className="l-btn mc" disabled={paramDisabled(divBaseParam.key)} onClick={() => adjustParam(divBaseParam)}>调整收益计算基数</button>}
+            {(allowed("finprod_g4_write") || paramApproval.record(dividend.batchNo)) && <button className="l-btn" disabled={!!busyKey || (!paramApproval.record(dividend.batchNo) && (!!refreshError || !overview.emissionGate.open || !dividend.batchNo))} onClick={runRerunBatch}>重新发放今日收益{batchRerun ? "（已重发）" : ""}</button>}
           </div>
         </div>
         <div className="l-b">

@@ -574,11 +574,11 @@ export async function g4Request<T>(path: string, init?: RequestInit) {
         && result?.message === "G4_CATALOG_APPROVAL_REQUIRED") {
       throw new G4CatalogApprovalRequiredError();
     }
-    throw stableMutationHttpFailure(
+    throw Object.assign(stableMutationHttpFailure(
       formatAdminApiError(result?.message, `G4_REQUEST_FAILED_${response.status}`),
       response.status,
       result?.code,
-    );
+    ), { status: response.status, backendMessage: result?.message });
   }
 
   return result.data as T;
@@ -608,12 +608,15 @@ function g4OverviewMutation(
 function requireG4Ack(
   value: Record<string, unknown>,
   expected: Record<string, unknown>,
+  equivalentValue?: (actual: unknown) => boolean,
 ): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("G4_COMMAND_RESPONSE_INVALID");
   }
   for (const [key, expectedValue] of Object.entries(expected)) {
-    if (value[key] !== expectedValue) throw new Error(`G4_COMMAND_RESPONSE_INVALID:${key}`);
+    if (key === "value" && equivalentValue ? !equivalentValue(value[key]) : value[key] !== expectedValue) {
+      throw new Error(`G4_COMMAND_RESPONSE_INVALID:${key}`);
+    }
   }
   return value;
 }
@@ -624,6 +627,7 @@ function g4AckMutation(
   body: Record<string, unknown>,
   prefix: string,
   expected: Record<string, unknown>,
+  equivalentValue?: (actual: unknown) => boolean,
 ) {
   const serialized = JSON.stringify(body);
   return executeG4Mutation(
@@ -634,7 +638,7 @@ function g4AckMutation(
       headers: { "Idempotency-Key": commandKey },
       body: serialized,
     }),
-    (value) => requireG4Ack(value, expected),
+    (value) => requireG4Ack(value, expected, equivalentValue),
   );
 }
 
@@ -648,10 +652,14 @@ export async function fetchG4GenesisOverview(page = 1, pageSize = 10) {
   }));
 }
 
-export async function fetchG4DividendApprovalState() {
-  const state = await g4Request<{ dividend: string; expectedRevision: string }>("/nex/genesis/dividend-approval-state");
+export async function fetchG4DividendApprovalState(batchNo?: string) {
+  const query = batchNo === undefined ? "" : `?${new URLSearchParams({ batchNo })}`;
+  const state = await g4Request<{ dividend: string; expectedRevision: string; amountUsdt: number | string; count: number; completed: boolean }>(`/nex/genesis/dividend-approval-state${query}`);
   if (typeof state?.dividend !== "string" || !/^\d+(?:\.\d+)?$/.test(state.dividend)
-      || typeof state.expectedRevision !== "string" || !/^[0-9a-f]{64}$/.test(state.expectedRevision)) {
+      || typeof state.expectedRevision !== "string" || !/^[0-9a-f]{64}$/.test(state.expectedRevision)
+      || !["number", "string"].includes(typeof state.amountUsdt) || String(state.amountUsdt).trim() === ""
+      || !Number.isFinite(Number(state.amountUsdt)) || Number(state.amountUsdt) < 0
+      || !Number.isSafeInteger(state.count) || state.count < 0 || typeof state.completed !== "boolean") {
     throw new Error("日分红审批状态不完整，请重新加载后再试。");
   }
   return state;
@@ -799,7 +807,34 @@ export function updateG4AdminOperationConfig(
     { value, reason, operator, expectedValue },
     `g4-ops-config-${key}`,
     { key, value, status: "UPDATED" },
+    (actual) => {
+      if (typeof actual !== "string") return false;
+      if (["presale.unitPrice", "holder.allocationNexPerHolding", "eligibility.maxPerUser", "eligibility.minAccountAgeDays",
+        "presale.maxPerUser", "holder.priorityTop1Percent", "holder.priorityTop3Percent", "holder.priorityTop5Percent"].includes(key)) {
+        return decimalIdentity(actual) !== undefined && decimalIdentity(actual) === decimalIdentity(value);
+      }
+      if (["presale.startAt", "presale.endAt", "holder.effectiveAt"].includes(key)) {
+        // Both the existing UTC form and Instant.toString use Z; preserve all
+        // fractional digits so a genuinely different instant is never accepted.
+        const instant = (text: string) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(text)
+          ? text.replace(/(\.\d*?)0+Z$/, "$1Z").replace(/\.Z$/, "Z") : undefined;
+        return instant(actual) !== undefined && instant(actual) === instant(value.trim());
+      }
+      return actual === (["eligibility.enabled", "presale.enabled", "presale.showCountdown"].includes(key)
+        ? value.trim().toLowerCase() : value.trim());
+    },
   );
+}
+
+/** Compare decimal values exactly, including BigDecimal exponent notation. */
+function decimalIdentity(value: string) {
+  const match = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(value.trim());
+  if (!match || !(match[2] || match[3])) return undefined;
+  const coefficient = BigInt(`${match[1]}${match[2]}${match[3] ?? ""}`);
+  if (coefficient === BigInt(0)) return "0";
+  const digits = coefficient.toString();
+  const significant = digits.replace(/0+$/, "");
+  return `${significant}e${BigInt(match[4] ?? "0") - BigInt((match[3] ?? "").length) + BigInt(digits.length - significant.length)}`;
 }
 
 export function createG4AdminSimulation(side: "BUY" | "SELL", quantity: string, unitPrice: string, reason: string, operator: string) {

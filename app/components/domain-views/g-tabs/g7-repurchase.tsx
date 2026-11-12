@@ -20,6 +20,8 @@ import {
 } from "@/lib/admin/g7-client";
 import type { GCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { gParamAuthority, useGParamApproval } from "@/lib/admin/use-g-param-approval";
+import { GParamRecovery } from "./g-param-recovery";
 
 const PARAM_COPY: Record<string, { name: string; sub: string }> = {
   apy: { name: "参考年奖励率", sub: "只影响新订单" },
@@ -113,18 +115,28 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
   const [orders, setOrders] = useState<G7Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [readFailed, setReadFailed] = useState(false);
+  const paramApproval = useGParamApproval("G7", toast, setError, async () => {
+    setReadFailed(true);
+    setOverview(await fetchG7RepurchaseOverview());
+    setReadFailed(false);
+  });
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const requestGeneration = useRef(0);
   const moreInFlight = useRef(false);
+  const latest = useRef({ overview, loading, busyKey, readFailed });
+  latest.current = { overview, loading, busyKey, readFailed };
+  const paramRecovery = <GParamRecovery approval={paramApproval} toast={toast} />;
 
   const reload = useCallback(async (silent = false) => {
     const generation = ++requestGeneration.current;
     moreInFlight.current = false;
     setLoadingMore(false);
     if (!silent) setLoading(true);
+    setReadFailed(true);
     setError("");
     try {
       const [nextOverview, nextOrders] = await Promise.all([
@@ -132,6 +144,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
       ]);
       if (generation !== requestGeneration.current) return;
       setOverview(nextOverview);
+      setReadFailed(false);
       setOrders(nextOrders.orders);
       setNextCursor(nextOrders.nextCursor);
       setHasMore(nextOrders.hasMore);
@@ -197,15 +210,18 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
 
   if (loading && !overview) {
     return (
+      <>{paramRecovery}
       <section className="l-card">
         <div className="l-h"><span className="ttl">锁定计划</span><span className="sub">· 加载中</span></div>
         <div className="l-b"><div className="gtint">锁定计划数据加载中…</div></div>
       </section>
+      </>
     );
   }
 
   if (!overview) {
     return (
+      <>{paramRecovery}
       <section className="l-card">
         <div className="l-h"><span className="ttl">锁定计划</span></div>
         <div className="l-b">
@@ -213,13 +229,16 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
           <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>
         </div>
       </section>
+      </>
     );
   }
 
   const stats = overview.stats;
   const busy = !!busyKey;
 
-  const adjustParam = (param: G7Param) => {
+  const adjustParam = async (param: G7Param) => {
+    const original = await paramApproval.open(param.key);
+    if (original === false) return;
     const label = paramName(param);
     openActionConfirm({ briefKind: "config",
       action: `调整锁定计划参数 · ${label}`,
@@ -232,6 +251,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
       edit: param.key === "presets"
         ? { kind: "text", current: paramEditValue(param), disallowCurrent: true }
         : { kind: "number", current: paramEditValue(param),
+            initialValue: original?.request.command.params.value as string | undefined,
             unit: param.key === "apy" || param.key === "penalty" ? "%" : param.key === "lockDays" ? "天" : undefined,
             min: param.key === "apy" || param.key === "penalty" || param.key === "lottery" ? 0 : 1,
             max: param.key === "apy" ? 300 : param.key === "penalty" || param.key === "lottery" ? 100 : param.key === "lockDays" ? 3650 : 10,
@@ -246,11 +266,41 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
         hint: `本月容量 ${fmtNumber(overview.g4Capacity.monthlyCapacity)} 张 · 已发 ${fmtNumber(overview.g4Capacity.ticketsIssuedThisMonth)} 张`,
         fields: [{ key: "g4Ref", label: "创世奖池核对编号", inputKind: "text", placeholder: "例如 POOL-2026-07", required: true, wide: true }],
       } : undefined,
+      getPendingReason: () => paramApproval.getPendingReason(param.key),
       run: async (reason, value, businessValue) => {
-        if (value === undefined || value === null || String(value).trim() === "") return;
-        await mutate(param.key, () => updateG7RepurchaseParam(
-          param.key, String(value), reason, currentAdminOperator(), businessValue?.g4Ref ?? "",
-        ), `${label} 已生效`);
+        const saved = paramApproval.record(param.key);
+        const view = latest.current;
+        const currentParam = view.overview?.params.find(row => row.key === param.key);
+        const auth = useAdminAuth.getState();
+        if (!saved && (!currentParam || view.loading || view.busyKey || view.readFailed
+          || !auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== session?.adminId
+          || !auth.session?.authorities.includes(gParamAuthority("G7", param.key)))) {
+          openActionConfirm(null);
+          setError("当前锁定计划参数暂不能修改，请重新读取当前状态后操作。");
+          return;
+        }
+        if (!saved && (value === undefined || value === null || String(value).trim() === "")) return;
+        setBusyKey(param.key);
+        setError("");
+        try {
+          if (saved) {
+            await paramApproval.retry(saved.request.obj);
+            return;
+          }
+          const result = await paramApproval.run({ key: param.key, current: currentParam!.value, value: String(value), reason },
+            () => updateG7RepurchaseParam(param.key, String(value), reason, currentAdminOperator(), businessValue?.g4Ref ?? ""));
+          if ("direct" in result) {
+            setOverview(result.direct);
+            toast(`${label} 已生效`);
+          }
+        } catch (err) {
+          setError(messageOf(err));
+          if (saved && !paramApproval.record(saved.request.obj)) openActionConfirm(null);
+          if (!paramApproval.record(param.key)) toast(`操作失败 · ${messageOf(err)}`);
+          throw err;
+        } finally {
+          setBusyKey(null);
+        }
       },
     });
   };
@@ -264,6 +314,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
 
   return (
     <>
+      {paramRecovery}
       {error && <div className="gtint" style={{ marginBottom: 12 }}>操作提示 · {error}</div>}
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">本月锁定计划订单</div><div className="v">{fmtNumber(stats.ordersMonth)}</div><div className="sub">锁定金额 {fmtUsdCompact(stats.principalUsd)}</div></div>
@@ -279,7 +330,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
             <div className="p-row" key={param.key}>
               <div className="txt"><div className="k">{paramName(param)}</div><div className="s">{paramSub(param, stats.lockDays)}</div></div>
               <span className="v">{paramDisplayValue(param)}</span>
-              {canEdit(param.key) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(param)}>编辑 {paramName(param)}</button>}
+              {(canEdit(param.key) || paramApproval.record(param.key)) && <button className="l-btn sm mc" disabled={busy || (readFailed && !paramApproval.record(param.key))} onClick={() => adjustParam(param)}>编辑 {paramName(param)}</button>}
             </div>
           ))}
           <div className="p-row">

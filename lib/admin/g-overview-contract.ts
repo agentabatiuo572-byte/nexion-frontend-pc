@@ -166,13 +166,18 @@ function validateG2Order(module: string, value: unknown, path: string): void {
   requiredKeys(module, row, path, [
     "id", "userId", "userNo", "nickname", "countryCode", "exchangeNo", "fromAsset", "toAsset",
     "fromAmount", "toAmount", "rate", "status", "statusLabel", "statusTone", "directionLabel",
-    "amountUsdt", "gateReason", "etaLabel", "createdAt", "updatedAt",
+    "amountUsdt", "createdAt", "updatedAt",
   ]);
   text(module, String(row.id), `${path}.id`);
   numeric(module, row.userId, `${path}.userId`, 1);
   ["userNo", "exchangeNo", "fromAsset", "toAsset", "status", "statusLabel", "statusTone", "directionLabel",
     "createdAt"].forEach((key) => text(module, row[key], `${path}.${key}`));
-  ["nickname", "countryCode", "gateReason", "etaLabel", "updatedAt"].forEach((key) => text(module, row[key], `${path}.${key}`, true));
+  ["nickname", "countryCode", "updatedAt"].forEach((key) => text(module, row[key], `${path}.${key}`, true));
+  // The mapper's CASE expressions emit SQL NULL outside their matching state.
+  ["gateType", "gateReason", "etaLabel"].forEach((key) => {
+    if (!(key in row)) fail(module, `${path}.${key}`);
+    if (row[key] !== null) text(module, row[key], `${path}.${key}`, true);
+  });
   ["fromAmount", "toAmount", "rate", "amountUsdt"].forEach((key) => numeric(module, row[key], `${path}.${key}`));
 }
 
