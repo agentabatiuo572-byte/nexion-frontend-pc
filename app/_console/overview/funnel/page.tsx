@@ -131,7 +131,7 @@ function StageTable({ stages }: { stages: readonly B3Stage[] }) {
                 <Td align="right"><Cell num main={item.momDelta == null ? "—" : pct(item.momDelta)} /></Td>
               </>
             )}
-            <Td grow><Cell mono full main={item.event} /></Td>
+            <Td grow><Cell mono title={item.event} main={item.event} /></Td>
           </Tr>
         ))}
       </tbody>
@@ -178,7 +178,7 @@ function DailyPanel({ data }: { data: B3Dashboard }) {
       sub={`近 8 天 · 目标 ${target}%`}
       explain={<><p>当天注册的人里，当天就完成首购的比例，按平台业务日算。注册批次、阶段、渠道三个筛选都生效。</p><p>看它能判断：最近几天新注册的人是不是当天就买。连续低于目标线，先查注册当天的引导和活动。</p></>}>
       {hiddenDays.length === daily.length ? (
-        <BlockState state="empty" title="近 8 天每天注册或首购都少于 5 人，不显示" detail={PROTECT_NOTE} />
+        <BlockState state="empty" title="近 8 天每天注册或首购都少于 5 人，不显示" />
       ) : (
         <div className="rd-stack">
           {linked ? (
@@ -234,6 +234,11 @@ function TrendPanel({ data, stage, onStage }: { data: B3Dashboard; stage: string
   const values = trend.map((point) => (counting ? point.distinctUsers : point.cvrFromPrev));
   const drawable = values.filter((value) => value != null).length;
   const weeks = trend.map((point) => point.cohort.replace(/^\d{4}-/, ""));
+  const caliber = (
+    <span className="rd-toolbar-note b3-caliber" data-tone={cohort ? "warn" : undefined}>
+      {cohort ? `不受注册批次影响：你选了 ${cohort}，这张图仍比较各周` : "不受注册批次影响，只按阶段和渠道比较各周"}
+    </span>
+  );
   return (
     <Panel data-testid="b3-cohort-trend-chart" title="按注册周看转化走势" icon={TrendingUp} tone="role-3"
       sub={trend.length ? `最近 ${trend.length} 个有注册的周 · ${scopeText(data.filters, false)}` : scopeText(data.filters, false)}
@@ -243,15 +248,14 @@ function TrendPanel({ data, stage, onStage }: { data: B3Dashboard; stage: string
           <div className="rd-toolbar">
             <Segments label="看哪一步的走势" value={selected?.key ?? stage} onChange={onStage}
               items={data.stages.map((item) => ({ value: item.key, label: item.stage }))} />
+            {caliber}
           </div>
         )}
-        <p className="b3-caliber" data-tone={cohort ? "warn" : undefined}>
-          {cohort ? `不受注册批次影响：你选了 ${cohort}，这张图仍比较各周` : "不受注册批次影响，只按阶段和渠道比较各周"}
-        </p>
+        {data.stages.length === 0 && caliber}
         {trend.length === 0 ? (
           <div data-testid="b3-cohort-trend-empty"><BlockState state="empty" title="当前筛选下没有可比较的数据，暂无法显示趋势" /></div>
         ) : drawable === 0 ? (
-          <BlockState state="empty" title={counting ? "每周注册人数都少于 5，不显示" : `各周「${selected?.stage}」都没有可显示的转化率`} detail={PROTECT_NOTE} />
+          <BlockState state="empty" title={counting ? "每周注册人数都少于 5，不显示" : `各周「${selected?.stage}」都少于 5 人，转化率不显示`} />
         ) : (
           <TrendLines label={counting ? "按注册周的注册人数" : `按注册周的「${selected?.stage}」转化率`} ticks={weeks}
             format={counting ? (v) => `${people(v)} 人` : pct}
@@ -338,15 +342,14 @@ export default function FunnelPage() {
   const exportBlocked = !data ? (error ? "读取失败，重新读取后再导出" : "正在读取，读完再导出") : !data.available || !data.stages.length ? "当前条件下算不出转化，没有可导出的数据" : undefined;
   const headerActions = canExport ? (
     <span className="b3-pair" data-pair="">
-      <Button icon={<Download size={14} aria-hidden />} loading={exporting} disabledReason={exporting ? undefined : exportBlocked} onClick={() => void exportCohort()}>导出 CSV</Button>
       <Explain label="导出 CSV 的内容" content={<><p>导出当前注册批次、阶段、渠道下四个步骤的人数、上一步人数和转化率，每步一行，不含用户明细。</p><p>和下面「看哪一步的走势」选哪一步无关。少于 5 人的格子留空，并标「样本过小」。导出会记入操作记录。</p></>} />
+      <Button icon={<Download size={14} aria-hidden />} loading={exporting} disabledReason={exporting ? undefined : exportBlocked} onClick={() => void exportCohort()}>导出 CSV</Button>
     </span>
   ) : undefined;
 
   const header = (
     <PageHeader pageId="B3" title="用户转化概览" summary="看同一批用户从注册走到提现，每一步剩多少人。"
       actions={headerActions}
-      meta={<>改筛选或换步骤时重新读取，不自动刷新<Explain label="读取方式说明" content="每次改条件都会重新读取一次，读取会记入操作记录。正在读取时先显示上一次的结果，读完替换。" /></>}
       readOnly={canExport ? undefined : "你只能查看；导出 CSV 需要导出权限。"} />
   );
 
@@ -354,7 +357,8 @@ export default function FunnelPage() {
     <FilterBar
       action={<Button icon={<RefreshCw size={14} aria-hidden />} loading={loading && !!data} disabled={loading} onClick={() => void reload()}>刷新</Button>}
       onClear={() => { setExportError(""); setFilters({ cohort: ALL, phase: ALL, ref: ALL }); }}
-      canClear={filtered}>
+      canClear={filtered}
+      sort={<span className="rd-filter-result">改条件立即重新读取，不自动刷新<Explain label="读取方式说明" content="改筛选或换走势的步骤都会重新读取一次，读取会记入操作记录。正在读取时先显示上一次的结果，读完替换。" /></span>}>
       <FilterField label="注册批次">
         <Select aria-label="注册批次" value={isAll(filters.cohort) ? "" : filters.cohort} onChange={setFilter("cohort")}
           options={[{ value: "", label: "全部批次" }, ...options.cohorts.map((value) => ({ value, label: value === "SYSTEM" ? "系统默认" : value }))]} />
@@ -461,7 +465,7 @@ export default function FunnelPage() {
         explain={<><p>条的长度和人数成比例，第一步注册是 100%。两步之间写这一步的转化率和掉了多少人。</p>{caliberNote()}</>}>
         <div className="rd-stack">
           {register?.distinctUsers == null
-            ? <BlockState state="empty" title="这批注册用户少于 5 人，四步的人数和转化率都不显示" detail={PROTECT_NOTE} />
+            ? <BlockState state="empty" title="这批注册用户少于 5 人，四步的人数和转化率都不显示" />
             : <Funnel stages={data.stages} lowest={lowest} />}
           <Fold inset title="各步骤明细" summary={`${data.stages.length} 步 · 人数、上一步人数、转化率和对应事件`}>
             <StageTable stages={data.stages} />

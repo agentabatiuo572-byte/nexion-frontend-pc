@@ -54,7 +54,7 @@
 .b3-page .b3-funnel-gap[data-tone="warn"] .b3-funnel-gap-text b { color: var(--rd-warn); }
 
 /* 周走势：口径一行常显；选了注册批次时用警示色提醒这张图不跟批次 */
-.b3-page .b3-caliber { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.b3-page .b3-caliber { margin-left: auto; color: var(--rd-text-2); }
 .b3-page .b3-caliber[data-tone="warn"] { color: var(--rd-warn); }
 
 /* 首购渠道：各行共用三列，名称、条、数字上下对齐 */
