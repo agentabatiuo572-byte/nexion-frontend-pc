@@ -1729,6 +1729,58 @@ export const HIGH_OPS: HighOpDef[] = [
   },
   // I7 课程奖励调整(updateCourseReward · courseId 锁 · amplifies 放大未来 NEX 流出,B1 红线前置)
   {
+    op: "i7_course_first_publish", domain: "I", action: "首次发布奖励课程", amplifies: true, type: "fund", gateLabel: "超管", targetType: "learning_course_activation",
+    buildCommand: (ctx) => ({ domain: "I", op: "i7_course_first_publish", params: {
+      courseId: ctx.courseId, version: ctx.version, expectedRevision: ctx.expectedRevision,
+      expectedCurrentVersion: ctx.expectedCurrentVersion, expectedCurrentRevision: ctx.expectedCurrentRevision,
+      expectedCurrentStatus: ctx.expectedCurrentStatus,
+    } }),
+    buildTarget: (ctx) => ({ domain: "I", type: "learning_course_activation", id: String(ctx.courseId) }),
+  },
+  {
+    op: "i7_course_version_publish", domain: "I", action: "发布奖励课程版本", amplifies: true, type: "fund", gateLabel: "超管", targetType: "learning_course_activation",
+    buildCommand: (ctx) => ({ domain: "I", op: "i7_course_version_publish", params: {
+      courseId: ctx.courseId, version: ctx.version, expectedRevision: ctx.expectedRevision,
+      expectedCurrentVersion: ctx.expectedCurrentVersion, expectedCurrentRevision: ctx.expectedCurrentRevision,
+      expectedCurrentStatus: ctx.expectedCurrentStatus,
+    } }),
+    buildTarget: (ctx) => ({ domain: "I", type: "learning_course_activation", id: String(ctx.courseId) }),
+  },
+  {
+    op: "i7_course_version_rollback", domain: "I", action: "回滚至有奖励的课程版本", amplifies: true, type: "fund", gateLabel: "超管", targetType: "learning_course_activation",
+    buildCommand: (ctx) => ({ domain: "I", op: "i7_course_version_rollback", params: {
+      courseId: ctx.courseId, version: ctx.version, expectedRevision: ctx.expectedRevision,
+      expectedCurrentVersion: ctx.expectedCurrentVersion, expectedCurrentRevision: ctx.expectedCurrentRevision,
+      expectedCurrentStatus: ctx.expectedCurrentStatus,
+    } }),
+    buildTarget: (ctx) => ({ domain: "I", type: "learning_course_activation", id: String(ctx.courseId) }),
+  },
+  {
+    op: "h4_legacy_event_reward_update", domain: "H", action: "提高旧活动奖励", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_legacy_event",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_legacy_event_reward_update", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_legacy_event", id: String(ctx.eventCode) }),
+  },
+  {
+    op: "h4_wheel_tier_create", domain: "H", action: "新增转盘奖项", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_wheel_pool",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_wheel_tier_create", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_wheel_pool", id: "ACTIVE_POOL" }),
+  },
+  {
+    op: "h4_wheel_tier_update", domain: "H", action: "放宽转盘奖项配置", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_wheel_pool",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_wheel_tier_update", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_wheel_pool", id: "ACTIVE_POOL" }),
+  },
+  {
+    op: "h4_wheel_tier_delete", domain: "H", action: "删除转盘奖项并提高安慰奖", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_wheel_pool",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_wheel_tier_delete", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_wheel_pool", id: "ACTIVE_POOL" }),
+  },
+  {
+    op: "h4_wheel_probabilities_update", domain: "H", action: "提高转盘奖项概率", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_wheel_pool",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_wheel_probabilities_update", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_wheel_pool", id: "ACTIVE_POOL" }),
+  },
+  {
     op: "i7_course_reward_adjust",
     domain: "I",
     action: "课程奖励调整",
