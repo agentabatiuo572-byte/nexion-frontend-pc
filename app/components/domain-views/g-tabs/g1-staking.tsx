@@ -282,7 +282,7 @@ export function G1Staking() {
         sub={`USDT · 质押总开关${gate.enabled ? "开启" : "已关闭"} · 紧急暂停 ${fmtCount(stats.killedCount)} 档`}
         explain={<><p>质押已退役，这里是四档的原配置，只能查看：不能改奖励率、扣款、最低额，也不能开售、停售、暂停或恢复，App 显示入口同样不在这里。</p><p>原档位状态只说明当时的配置，不代表现在可以买。质押总开关是 J1 紧急停用开关里读到的当前值；紧急暂停数是被暂停的档位数，不是被罚没的订单数。</p></>}>
         {pools.length === 0
-          ? <BlockState state="empty" title="暂无历史质押档位" detail="质押已退役，没有配置档位是正常状态；下面的历史仓位照常可查。" />
+          ? <BlockState state="empty" title="暂无历史质押档位" detail="退役后没有档位是正常状态。" />
           : (
             <StatBand cards label="四档历史产品">
               {pools.map((pool) => {
