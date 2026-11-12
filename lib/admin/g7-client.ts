@@ -1,7 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertG7OrderPageContract, assertG7OverviewContract } from "@/lib/admin/g-overview-contract";
-import { createStableMutationExecutor, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { executeG7DirectCommand, listG7DirectCommands, requireG7DirectReader, type G7DirectCommand } from "@/lib/admin/g7-direct-command";
 
 interface ApiResult<T> {
   code: number;
@@ -180,13 +180,6 @@ export interface G7OrderPage {
   serverCanonical: boolean;
 }
 
-let requestSeq = 0;
-
-function idempotencyKey(prefix: string) {
-  requestSeq = (requestSeq + 1) % 1_000_000;
-  return `${prefix}-${Date.now()}-${requestSeq}`;
-}
-
 function toNumber(value: RawNumber, fallback = 0) {
   if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
   if (typeof value === "string" && value.trim()) {
@@ -287,11 +280,11 @@ async function g7Request<T>(path: string, init?: RequestInit) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw Object.assign(stableMutationHttpFailure(
-      formatAdminApiError(result?.message, `G7_REQUEST_FAILED_${response.status}`),
-      response.status,
-      result?.code,
-    ), { status: response.status, backendMessage: result?.message });
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `G7_REQUEST_FAILED_${response.status}`)), {
+      status: response.ok && result && result.code >= 400 && result.code < 500 ? result.code : response.status,
+      backendMessage: result?.message,
+      unknownOutcome: response.headers.get("X-Nexion-Upstream-Outcome") === "unknown",
+    });
   }
 
   return result.data as T;
@@ -300,8 +293,6 @@ async function g7Request<T>(path: string, init?: RequestInit) {
 export async function fetchG7RepurchaseOverview() {
   return normalizeOverview(await g7Request<BackendOverview>("/nex/repurchase"));
 }
-
-const executeG7Mutation = createStableMutationExecutor(idempotencyKey, "nexion-admin-g7-repurchase-commands-v1");
 
 export async function fetchG7RepurchaseOrders(status = "", cursor: number | null = null) {
   const query = new URLSearchParams();
@@ -330,18 +321,67 @@ export async function fetchG7RepurchaseOrders(status = "", cursor: number | null
   } satisfies G7OrderPage;
 }
 
-export async function updateG7RepurchaseParam(paramKey: string, value: string, reason: string, operator: string, g4Ref = "") {
-  const body = { value, reason, operator, g4Ref };
-  const serialized = JSON.stringify(body);
-  const path = `/nex/repurchase/config/${encodeURIComponent(paramKey)}`;
-  return executeG7Mutation(
-    `g7-param-${paramKey}`,
-    stableMutationFingerprint("PUT", path, serialized),
-    (commandKey) => g7Request<BackendOverview>(path, {
-      method: "PUT",
-      headers: { "Idempotency-Key": commandKey },
-      body: serialized,
-    }),
-    normalizeOverview,
-  );
+// OpsRepurchaseAdminService.normalizeValue: numeric values strip trailing zeros;
+// shortcut amounts round HALF_UP to cents, then deduplicate and sort.
+function g7Decimal(value: string) {
+  const match = /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:[eE]([+-]?\d+))?$/.exec(value.trim());
+  if (!match) throw new Error("G7_RESPONSE_INVALID:updated.newValue");
+  const fraction = match[3] ?? match[4] ?? "";
+  const digits = (match[2] ?? "0") + fraction;
+  const scale = fraction.length - Number(match[5] ?? 0);
+  const padded = scale < 0 ? digits + "0".repeat(-scale) : digits.padStart(scale + 1, "0");
+  const whole = BigInt(scale > 0 ? padded.slice(0, -scale) : padded).toString();
+  const tail = scale > 0 ? padded.slice(-scale).replace(/0+$/, "") : "";
+  return `${match[1] === "-" && (whole !== "0" || tail) ? "-" : ""}${whole}${tail ? `.${tail}` : ""}`;
+}
+
+function canonicalG7Value(key: string, value: string) {
+  if (key === "presets") {
+    const cents = value.replace(/[$,]/g, "").split(/[/;|]/).map(v => v.trim()).filter(Boolean).map(v => {
+      const match = /^(\d+)(?:\.(\d*))?$/.exec(g7Decimal(v));
+      if (!match) throw new Error("G7_RESPONSE_INVALID:updated.newValue");
+      const fraction = match[2] ?? "";
+      return BigInt(match[1] + fraction.slice(0, 2).padEnd(2, "0")) + (Number(fraction[2] ?? "0") >= 5 ? BigInt(1) : BigInt(0));
+    });
+    return [...new Set(cents)].sort((a, b) => a < b ? -1 : a > b ? 1 : 0).map(v => `${v / BigInt(100)}.${String(v % BigInt(100)).padStart(2, "0")}`.replace(/\.?0+$/, "")).join(" / ");
+  }
+  return g7Decimal(value);
+}
+
+async function sendG7DirectCommand(original: G7DirectCommand) {
+  const data = await g7Request<BackendOverview & { updated?: Record<string, unknown> }>(original.path, {
+    method: original.method, headers: { "Idempotency-Key": original.commandKey }, body: original.body,
+  });
+  const overview = normalizeOverview(data);
+  const ack = data.updated;
+  // updateInternal:139–142 returns key/newValue (not obj/value/commandKey).
+  if (!ack || ack.key !== original.paramKey || typeof ack.oldValue !== "string"
+    || ack.newValue !== canonicalG7Value(original.paramKey, original.input.value)
+    || typeof ack.receiptId !== "string" || !ack.receiptId.trim()
+    || !["coverageAtSubmit", "g4Capacity", "g4TicketsIssued"].every(key => (typeof ack[key] === "number" || typeof ack[key] === "string" && ack[key].trim() !== "") && Number.isFinite(Number(ack[key])))) {
+    throw new Error("G7_RESPONSE_INVALID:updated");
+  }
+  return overview;
+}
+
+export async function updateG7RepurchaseParam(paramKey: string, value: string, reason: string, operator: string, g4Ref = "", currentValue?: string, g4Capacity?: G7DirectCommand["g4Capacity"]) {
+  return executeG7DirectCommand(paramKey, { value, reason, operator, g4Ref }, sendG7DirectCommand, undefined, currentValue, g4Capacity);
+}
+
+export async function retryG7DirectCommand(adminId: number, commandKey: string) {
+  const original = listG7DirectCommands(adminId).find(record => record.commandKey === commandKey);
+  if (!original) throw new Error("原操作已结束，请重新读取当前状态。");
+  // This response may be the historical overview. The page must GET current
+  // state before allowing another edit; callers must not install this as current.
+  return executeG7DirectCommand(original.paramKey, original.input, sendG7DirectCommand, original);
+}
+
+export async function queryG7DirectCommand(adminId: number, commandKey: string) {
+  const epoch = requireG7DirectReader(adminId);
+  if (!listG7DirectCommands(adminId).some(record => record.commandKey === commandKey)) throw new Error("原操作已结束，请重新读取当前状态。");
+  const overview = await fetchG7RepurchaseOverview();
+  if (requireG7DirectReader(adminId) !== epoch) throw new Error("登录身份已变化，请重新核对原操作。");
+  // There is no G7 direct receipt lookup endpoint. A current value is not proof
+  // of what happened to the saved command; never clear evidence on this GET.
+  return { overview, confirmed: false as const, message: `已读取当前锁定计划配置，但不能据此确认原命令结果。原请求继续保留，请到操作记录与审批核对。命令号：${commandKey}` };
 }

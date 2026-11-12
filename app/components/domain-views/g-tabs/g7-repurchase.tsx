@@ -10,7 +10,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
  * 首屏回答：App 入口不开放、还有多少单没结束、一笔锁定到期和提前解锁各拿回多少、每个参数改哪个方向要另一位超管批准。
  * 参数审批、结果未知的保存和恢复沿用 use-g-param-approval；这里只排界面，请求和判断照旧。
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import {
   ArrowLeftRight, CalendarDays, CircleHelp, Clock3, Coins, Database, Hourglass, Lock, LockKeyhole, ListOrdered, PieChart, Scale, SlidersHorizontal, Ticket,
@@ -24,6 +24,8 @@ import {
   fetchG7RepurchaseOverview,
   fetchG7RepurchaseOrders,
   updateG7RepurchaseParam,
+  queryG7DirectCommand,
+  retryG7DirectCommand,
   type G7Order,
   type G7Overview,
   type G7Param,
@@ -32,6 +34,7 @@ import type { ActionConfirmReq } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import { gParamAuthority, useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
+import { canRetryG7DirectCommand, g7DirectCommandVersion, listG7DirectCommands, subscribeG7DirectCommands } from "@/lib/admin/g7-direct-command";
 
 /** 本页的确认框请求：在共用的 ActionConfirmReq 上只加显示用的字段，提交仍走 run。 */
 type G7ConfirmReq = ActionConfirmReq & {
@@ -297,9 +300,16 @@ function G7RepurchasePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [readFailed, setReadFailed] = useState(false);
-  const paramApproval = useGParamApproval("G7", toast, setError, async () => {
+  useSyncExternalStore(subscribeG7DirectCommands, g7DirectCommandVersion, () => 0);
+  const directRecord = (key: string) => session ? listG7DirectCommands(session.adminId).find(record => record.paramKey === key) : undefined;
+  const approval = useGParamApproval("G7", toast, setError, async () => {
+    // Terminal proposal results invalidate every confirmation based on the old
+    // overview, including dialogs opened while the receipt lookup was pending.
+    openActionConfirm(null);
+    latest.current.readFailed = true;
     setReadFailed(true);
     setOverview(await fetchG7RepurchaseOverview());
+    setLockedParams({});
     setReadFailed(false);
   });
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -312,8 +322,6 @@ function G7RepurchasePage() {
   const moreInFlight = useRef(false);
   const latest = useRef({ overview, loading, busyKey, readFailed });
   latest.current = { overview, loading, busyKey, readFailed };
-  const paramRecovery = <ParamRecoveryNotice approval={paramApproval} toast={toast} />;
-
   const reload = useCallback(async (silent = false) => {
     const generation = ++requestGeneration.current;
     moreInFlight.current = false;
@@ -327,6 +335,7 @@ function G7RepurchasePage() {
       ]);
       if (generation !== requestGeneration.current) return;
       setOverview(nextOverview);
+      setLockedParams({});
       setReadFailed(false);
       setOrders(nextOrders.orders);
       setNextCursor(nextOrders.nextCursor);
@@ -337,6 +346,28 @@ function G7RepurchasePage() {
       if (generation === requestGeneration.current && !silent) setLoading(false);
     }
   }, []);
+
+  const paramApproval = {
+    ...approval,
+    async retry(key: string) {
+      const original = approval.record(key);
+      try {
+        const receipt = await approval.retry(key);
+        // G7 PROPOSE dedup replays the historical pending ticket, whereas the
+        // by-key GET returns its current status (AuditCenter:948–966,164–177).
+        return approval.record(key) ? await approval.query(key) ?? receipt : receipt;
+      } catch (err) {
+        if (original && !approval.record(key)) {
+          openActionConfirm(null);
+          latest.current.readFailed = true;
+          setReadFailed(true);
+          await reload(true);
+        }
+        throw err;
+      }
+    },
+  };
+  const paramRecovery = <ParamRecoveryNotice approval={paramApproval} toast={toast} />;
 
   useEffect(() => {
     void reload();
@@ -442,10 +473,35 @@ function G7RepurchasePage() {
   const busy = !!busyKey;
 
   const adjustParam = async (param: G7Param) => {
+    const direct = directRecord(param.key);
+    if (direct && !canRetryG7DirectCommand(direct)) {
+      // An expired original or a writer whose authority was removed can still
+      // read current state. This GET is never a receipt and never clears it.
+      openActionConfirm(null);
+      latest.current.readFailed = true;
+      setReadFailed(true);
+      try {
+        const result = await queryG7DirectCommand(direct.adminId, direct.commandKey);
+        setOverview(result.overview);
+        setLockedParams({});
+        setReadFailed(false);
+        setError(result.message);
+      } catch (err) {
+        setError(messageOf(err));
+      }
+      return;
+    }
     const original = await paramApproval.open(param.key);
     if (original === false) return;
+    const view = latest.current;
+    if (!direct && !original && (!view.overview || view.loading || view.busyKey || view.readFailed)) return;
+    // Saved context drives the recovery facts, even when the original write
+    // actually succeeded and today's configuration is different.
+    if (direct) param = { ...param, value: direct.currentValue ?? "", displayValue: direct.currentValue ?? "" };
+    else if (original) param = { ...param, value: String(original.request.command.params.expectedValue), displayValue: String(original.request.command.params.expectedValue) };
     const label = paramName(param);
     const copy = PARAM[param.key];
+    const originalCapacity = direct ? direct.g4Capacity : overview.g4Capacity;
     const currentText = paramValueText(param.key, param.value);
     const originalValue = original?.request.command.params.value as string | undefined;
     const loosens = (value?: string) => {
@@ -501,9 +557,9 @@ function G7RepurchasePage() {
       coverageLead: `${copy?.loosen ?? "放宽"}${label}会让平台多付钱，要另一位超管批准`,
       coverageCheck: "提交审批时和批准时，后端各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
       edit: param.key === "presets"
-        ? { kind: "text", current: paramEditValue(param), disallowCurrent: true, hint: copy?.hint }
+        ? { kind: "text", current: paramEditValue(param), initialValue: direct?.input.value, disallowCurrent: true, hint: copy?.hint }
         : { kind: "number", current: paramEditValue(param),
-            initialValue: original?.request.command.params.value as string | undefined,
+            initialValue: direct?.input.value ?? original?.request.command.params.value as string | undefined,
             unit: param.key === "apy" || param.key === "penalty" ? "%" : param.key === "lockDays" ? "天" : undefined,
             min: param.key === "apy" || param.key === "penalty" || param.key === "lottery" ? 0 : 1,
             max: param.key === "apy" ? 300 : param.key === "penalty" || param.key === "lottery" ? 100 : param.key === "lockDays" ? 3650 : 10,
@@ -516,32 +572,48 @@ function G7RepurchasePage() {
       businessForm: param.key === "lottery" ? {
         kind: "multi-field",
         title: "核对创世奖池容量",
-        hint: `本月容量 ${fmtCount(overview.g4Capacity.monthlyCapacity)} 张 · 已发 ${fmtCount(overview.g4Capacity.ticketsIssuedThisMonth)} 张`,
+        hint: originalCapacity ? `本月容量 ${fmtCount(originalCapacity.monthlyCapacity)} 张 · 已发 ${fmtCount(originalCapacity.ticketsIssuedThisMonth)} 张` : undefined,
         fields: [{ key: "g4Ref", label: "创世奖池核对编号", inputKind: "text", placeholder: "例如 POOL-2026-07", required: true, wide: true }],
       } : undefined,
-      getPendingReason: () => paramApproval.getPendingReason(param.key),
+      getPendingReason: () => directRecord(param.key)?.input.reason ?? paramApproval.getPendingReason(param.key),
+      getPendingBusinessValue: () => {
+        const saved = directRecord(param.key);
+        return saved ? { g4Ref: saved.input.g4Ref } : undefined;
+      },
       run: async (reason, value, businessValue) => {
+        const savedDirect = directRecord(param.key);
         const saved = paramApproval.record(param.key);
         const view = latest.current;
         const currentParam = view.overview?.params.find(row => row.key === param.key);
         const auth = useAdminAuth.getState();
-        if (!saved && (!currentParam || view.loading || view.busyKey || view.readFailed
+        if ((direct || original) && !savedDirect && !saved) {
+          openActionConfirm(null);
+          return;
+        }
+        if (!savedDirect && !saved && (!currentParam || view.loading || view.busyKey || view.readFailed
           || !auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== session?.adminId
           || !auth.session?.authorities.includes(gParamAuthority("G7", param.key)))) {
           openActionConfirm(null);
           setError("当前锁定计划参数暂不能修改，请重新读取当前状态后操作。");
           return;
         }
-        if (!saved && (value === undefined || value === null || String(value).trim() === "")) return;
+        if (!savedDirect && !saved && (value === undefined || value === null || String(value).trim() === "")) return;
         setBusyKey(param.key);
         setError("");
         try {
+          if (savedDirect) {
+            // A replay returns the stored overview; close the original and GET
+            // current state before allowing another intention on any parameter.
+            await retryG7DirectCommand(savedDirect.adminId, savedDirect.commandKey);
+            toast(`${label} 已生效`);
+            return;
+          }
           if (saved) {
             await paramApproval.retry(saved.request.obj);
             return;
           }
           const result = await paramApproval.run({ key: param.key, current: currentParam!.value, value: String(value), reason },
-            () => updateG7RepurchaseParam(param.key, String(value), reason, currentAdminOperator(), businessValue?.g4Ref ?? ""));
+            () => updateG7RepurchaseParam(param.key, String(value), reason, currentAdminOperator(), businessValue?.g4Ref ?? "", currentParam!.value, view.overview!.g4Capacity));
           setLockedParams(rows => { const next = { ...rows }; delete next[param.key]; return next; });
           if ("direct" in result) {
             setOverview(result.direct);
@@ -552,9 +624,15 @@ function G7RepurchasePage() {
           if (code === "OBJECT_LOCKED_BY_A2" || code === "OBJECT_ALREADY_PENDING") setLockedParams((rows) => ({ ...rows, [param.key]: messageOf(err) }));
           setError(messageOf(err));
           if (saved && !paramApproval.record(saved.request.obj)) openActionConfirm(null);
-          if (!paramApproval.record(param.key)) toast(`操作失败 · ${messageOf(err)}`);
+          if (!paramApproval.record(param.key) && !directRecord(param.key)) toast(`操作失败 · ${messageOf(err)}`);
           throw err;
         } finally {
+          if (savedDirect && !directRecord(param.key)) {
+            openActionConfirm(null);
+            latest.current.readFailed = true;
+            setReadFailed(true);
+            await reload(true);
+          }
           setBusyKey(null);
         }
       },
@@ -571,9 +649,10 @@ function G7RepurchasePage() {
     const copy = PARAM[param.key];
     const name = paramName(param);
     const record = paramApproval.record(param.key);
+    const direct = directRecord(param.key);
     const recovery = record ? records.find((row) => row.commandKey === record.commandKey) : undefined;
     const editable = canEdit(param.key);
-    const disabledReason = busy ? "正在处理上一项，稍候再操作" : readFailed && !record ? "当前值没读到，重新加载后再改" : undefined;
+    const disabledReason = busy ? "正在处理上一项，稍候再操作" : readFailed && !record && !direct ? "当前值没读到，重新加载后再改" : undefined;
     return (
       <ConfigRow key={param.key} name={name}
         what={copy?.what ?? operatorCopyText(param.sub)}
@@ -592,7 +671,7 @@ function G7RepurchasePage() {
           </span>
           <span className="g7x-dir">{copy?.loosen ? `${copy.loosen}要批准` : "改了立即生效"}</span>
         </span>}
-        action={editable || record ? (describedBy) => (
+        action={editable || record || direct ? (describedBy) => (
           <Button size="sm" aria-describedby={describedBy} aria-label={record ? `查看${name}的原申请` : `调整${name}`}
             disabledReason={disabledReason} onClick={() => void adjustParam(param)}>{record ? "查看原申请" : "调整"}</Button>
         ) : undefined} />
@@ -601,7 +680,7 @@ function G7RepurchasePage() {
   const coreRows = CORE_ORDER.map(byKey).filter((param): param is G7Param => !!param)
     .concat(overview.params.filter((param) => !CORE_ORDER.includes(param.key) && !MORE_ORDER.includes(param.key)));
   const moreRows = MORE_ORDER.map(byKey).filter((param): param is G7Param => !!param);
-  const moreAlert = moreRows.some((param) => paramApproval.record(param.key) || lockedParams[param.key]);
+  const moreAlert = moreRows.some((param) => paramApproval.record(param.key) || directRecord(param.key) || lockedParams[param.key]);
 
   // 一笔 1,000 USDT 的例子：照后端的算法（预计奖励 = 金额 × 年奖励率 × 天数 ÷ 36500，6 位小数四舍五入；提前解锁扣金额 × 扣款比例）。
   const apyMicros = micros(byKey("apy")?.value ?? "");
