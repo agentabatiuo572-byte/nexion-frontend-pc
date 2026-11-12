@@ -580,12 +580,11 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     if (item.queue === "heldDeposits" && item.row.status === "DUST_HOLD") return { sourceType: "EVENT", sourceId: String(item.row.id), title: `低额入金 #${text(item.row.id)} · ${text(item.row.grossAmount)} USDT`, network: rowNetwork(item.row), dust: true };
     return null;
   };
-  const claimBlock = (source: ClaimSource) => source.network === "ERC20" ? "ERC20 入金这里不能认领或退款" : readBlock;
   const entryAction = (item: ExceptionEntry): { label: string; block?: string; run: () => void } | null => {
     if (!canManage) return null;
     if (item.queue === "heldDeposits" && item.row.status === "REVIEW_HOLD" && item.row.cid != null) return { label: "入金复核", block: readBlock, run: () => setReview({ cid: String(item.row.cid) }) };
     const source = claimSource(item);
-    if (source) return { label: "认领或退款", block: claimBlock(source), run: () => setClaim(source) };
+    if (source) return { label: "认领或退款", block: readBlock, run: () => setClaim(source) };
     return null;
   };
   const pools = FUNDS_NETWORKS.map(network => ({ network, pool: data ? poolOf(data, network) : undefined }));
@@ -882,17 +881,15 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
 
     <Drawer open={!!entry} onClose={() => setEntryKey(null)} title="异常详情" sub={entry ? entry.label : undefined} icon={AlertTriangle} tone="warn"
       nav={{ hasPrev: entryIndex > 0, hasNext: entryIndex >= 0 && entryIndex < entries.length - 1, onPrev: () => setEntryKey(entries[entryIndex - 1]?.key ?? entryKey), onNext: () => setEntryKey(entries[entryIndex + 1]?.key ?? entryKey) }}
-      footer={entry && (() => { const action = entryAction(entry); const source = claimSource(entry); return <Decision
+      footer={entry && (() => { const action = entryAction(entry); return <Decision
         note={action ? action.block : entryGuide(entry) || undefined}
-        explain={source?.network === "ERC20" ? "ERC20 异常入金先由财务人工处理，处理负责人待指定。这里不能认领或退款。" : undefined}
         primary={action ? <Button variant="primary" disabledReason={action.block} onClick={action.run}>{action.label}</Button> : undefined} />; })()}>
       {entry && <>
         <JudgmentPoints rows={[
           { label: "类型", value: entry.label, reason: entry.counted ? "要人处理" : "系统处理中，不用操作" },
           { label: "金额", icon: Coins, tone: "money", value: entryAmount(entry.row) == null ? "—" : `${usdt(String(entryAmount(entry.row)))} USDT` },
           { label: "状态", value: entryState(entry), state: entry.queue === "failedDeliveries" ? "danger" : String(entry.row.state ?? entry.row.status) === "UNKNOWN" ? "warn" : undefined, reason: entry.row.lastError ? "有错误记录，见下方" : undefined },
-          { label: "网络", value: rowNetwork(entry.row) ?? "网络待核实", state: rowNetwork(entry.row) === "ERC20" && claimSource(entry) ? "warn" : undefined,
-            reason: rowNetwork(entry.row) === "ERC20" && claimSource(entry) ? "ERC20 入金这里不能认领或退款，先由财务人工处理，负责人待指定" : undefined },
+          { label: "网络", value: rowNetwork(entry.row) ?? "网络待核实" },
         ]} />
         <Fold inset title="记录" summary={entryObject(entry).main}>
           <KeyValues rows={[

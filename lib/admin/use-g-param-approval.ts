@@ -128,7 +128,9 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
   };
   const showTicket = (ticket: A2OperationRow) => {
     const status = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[ticket.status];
-    toast(`原审批单 ${ticket.id} · ${status} · ${ticket.before} → ${ticket.after}`);
+    toast(ticket.status === "pending"
+      ? `审批单已提交，等待审批：${ticket.before} → ${ticket.after}。批准前当前值不变。`
+      : `审批单${status}：${ticket.before} → ${ticket.after}`);
   };
   const acceptTicket = async (original: PendingGParam, ticket: A2OperationRow, reread = false) => {
     checkTicket(original, ticket);

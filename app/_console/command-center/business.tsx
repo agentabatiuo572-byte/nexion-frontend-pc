@@ -97,10 +97,13 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, moneyFlo
     ...(reviewOnCard ? [countRow("待审核", reviewPending)] : []),
   ];
   // 分项区按这组卡最多几行留高：注册 3 行，提现 1～3 行，净入金比例条和销售、设备各算 2 行。
+  // 出错重试中、旧任务未结清、等待配置按有效状态算，是另一套口径；三项都是 0 时不占行。
+  const deviceAttention = devices.data ? devices.data.errorRetry + devices.data.legacyPending + devices.data.waitingConfig : 0;
   const reservedRows = Math.max(
     blocks.newUsers ? 3 : 1,
     blocks.moneyFlows ? Math.max(2, 1 + withdrawalCounts.length) : 1,
     blocks.sales || blocks.devices ? 2 : 1,
+    blocks.devices && deviceAttention > 0 ? 3 : 1,
   );
 
   const active = activeUsers.data;
@@ -246,6 +249,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, moneyFlo
           rows={devices.data ? [
             { k: <>等待启动<Explain label="等待启动统计范围" content="包含待激活、等待初始化和旧任务未结清的设备。" /></>, v: `${fmtNum(devices.data.waitingActivation)} 台`, tone: devices.data.waitingActivation > 0 ? "warn" : undefined },
             { k: "已停用", v: `${fmtNum(devices.data.stopped)} 台` },
+            ...(deviceAttention > 0 ? [{ k: <>需要处理<Explain label="需要处理统计范围" content={`出错重试中 ${fmtNum(devices.data.errorRetry)} 台、旧任务未结清 ${fmtNum(devices.data.legacyPending)} 台、等待配置 ${fmtNum(devices.data.waitingConfig)} 台。按设备当前的有效状态算，和上面的台数分开统计，同一台设备可能两边都算到，不能相加。逐项入口在「待处理」。`} /></>, v: `${fmtNum(deviceAttention)} 台`, tone: "warn" as const }] : []),
           ] : []}
           explain="只算用户设备，不含手机。总数包含所有用户设备状态；运行中、等待启动和已停用是其中三类，不一定加起来等于总数。等待启动包含待激活、等待初始化和旧任务未结清的设备。这些是此刻的台数，不随时段变。"
           explainAbove

@@ -122,7 +122,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
               <div role="cell" className="casc-status"><span className="casc-mobile-label">发放状态</span><span className="f2-status" data-state={paused}>{paused === "on" ? "已暂停" : paused === "off" ? "未暂停" : paused ? "配置无效" : "未配置"}</span></div>
               <div role="cell" className="casc-action">{direct ? <span className="casc-fixed">{rate ? "L1 费率固定" : "L1 待配置"}<small>{rate ? "不能手动修改" : "不可手动调整"}</small></span> : canRoyaltyRate ? <button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({ briefKind: "config",
                 name: `调整 ${level} USDT 奖励比例`, amplify: true, op: "param", paramKey: `F.unilevel.${level}`,
-                edit: { kind: "number", current: currentRate, min: 0, unit: "%", amplifiesWhen: "increase" },
+                edit: { kind: "number", current: currentRate, min: 0, unit: "%", maxDecimals: 4, amplifiesWhen: "increase" },
                 detail: `${level} USDT 奖励比例 · 当前 ${rate ? `${currentRate}%` : "未配置"}。调高前先看兑付覆盖率；只影响之后的结算。`,
               })}>{rate ? "调整" : "设置比例"}</button> : <span className="casc-fixed">仅可查看</span>}</div>
             </div>;

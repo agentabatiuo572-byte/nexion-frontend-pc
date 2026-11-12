@@ -48,7 +48,7 @@ export const deletionActionLabel = (action: DeletionAction, fromStatus?: string)
 
 /** 被系统拦下的原因写中文，财务读不到写当时的事实；运营写的理由原样。 */
 const BLOCK_REASONS: Record<string, string> = {
-  UNSETTLED_FUNDS_OR_ORDERS: "可用 USDT、可用 NEX、提现冻结金额任一大于 0，或有未结束的提现、充值、兑换、质押、设备订单",
+  UNSETTLED_FUNDS_OR_ORDERS: "可用 USDT、可用 UVT、提现冻结金额任一大于 0，或有未结束的提现、充值、兑换、质押、设备订单",
   UNSETTLED_STATE_UNAVAILABLE: "当时读不到财务状态，没有注销",
   USER_REQUESTED_CANCEL: "用户主动取消申请",
 };
@@ -278,7 +278,7 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
         <Fact k="状态"><Change from={statusLabel(row.status)} to={statusLabel(TARGET[action])} /></Fact>
         {reviewingAgain && <Fact k={SYSTEM_BLOCKS.includes(previousReason) ? "原拦下原因" : "原拒绝理由"}><KeepText text={reasonText(previousReason)} phrases={["提现冻结金额", "设备订单", "提现、", "充值、", "兑换、", "质押、"]} /></Fact>}
         {action === "block" && <Fact k="理由会显示给用户" tone="warn">App「我的 › 安全设置」写「注销受阻：{"{理由}"}」</Fact>}
-        {action === "complete" && <Fact k="系统先查" tone="warn">可用 USDT、可用 NEX、提现冻结金额任一大于 0，或有未结束的提现、充值、兑换、质押、设备订单，就不注销，改成已拒绝</Fact>}
+        {action === "complete" && <Fact k="系统先查" tone="warn">可用 USDT、可用 UVT、提现冻结金额任一大于 0，或有未结束的提现、充值、兑换、质押、设备订单，就不注销，改成已拒绝</Fact>}
       </Facts>
     );
     const impact = {

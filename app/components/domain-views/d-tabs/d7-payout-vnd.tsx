@@ -255,7 +255,8 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     try {
       const overview = await fetchA2Overview({ domain: "D" });
       if (seq !== queueSeq.current) return;
-      setQueue({ rows: overview.operationQueue.filter((row) => row.operationCode === "d7_payout_vnd_config" && row.status === "pending"), failed: false, loading: false, loaded: true });
+      setQueue({ rows: overview.operationQueue.filter((row) => row.status === "pending" && row.action === "放宽越南盾提现参数" && row.obj === "current"
+        && (!row.operationCode || row.operationCode === "d7_payout_vnd_config")), failed: false, loading: false, loaded: true });
     } catch {
       if (seq !== queueSeq.current) return;
       setQueue({ rows: [], failed: true, loading: false, loaded: false });

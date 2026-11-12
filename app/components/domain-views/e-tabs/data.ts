@@ -154,12 +154,23 @@ export function joinGpu(model: string, count: string): string | undefined {
   const value = model.trim();
   return value ? count.trim() ? `${Number(count)}× ${value}` : value : undefined;
 }
+/** Matches the backend's legacy on-sale maintenance exception; never supplies missing values. */
+export function isLegacyOnSaleMaintenance(f: SkuForm, existing?: OpsSku): boolean {
+  if (!existing || existing.status !== "on" || supportsDeviceMonthlyTarget(existing.id, f.tier, existing.productType)) return false;
+  const unchangedAmount = (draft: string, stored: number | string | null | undefined) => stored == null
+    ? !draft.trim() : !!draft.trim() && Number(draft) === Number(stored);
+  const pools = new Set(existing.allowedPoolCodes ?? []);
+  return unchangedAmount(f.monthlyTargetUsdt, existing.monthlyTargetUsdt)
+    && unchangedAmount(f.monthlyTargetBandPct, existing.monthlyTargetBandPct)
+    && pools.size === new Set(f.allowedPoolCodes).size && f.allowedPoolCodes.every(code => pools.has(code));
+}
+
 export function validateSkuSpecs(f: SkuForm, existing?: OpsSku): string | null {
   if (f.datacenter.trim().length > 128) return "托管机房最多 128 字";
   if (!existing && !supportsDeviceMonthlyTarget(f.id.trim() || f.name.trim(), f.tier)) return SKU_MODEL_UNRECOGNIZED_REASON;
   if (existing && !supportsDeviceMonthlyTarget(existing.id, f.tier, existing.productType)
-      && ((f.monthlyTargetUsdt.trim() ? Number(f.monthlyTargetUsdt) : undefined) !== existing.monthlyTargetUsdt
-        || (f.monthlyTargetBandPct.trim() ? Number(f.monthlyTargetBandPct) : undefined) !== existing.monthlyTargetBandPct)) return SKU_MODEL_UNRECOGNIZED_REASON;
+      && ((f.monthlyTargetUsdt.trim() ? Number(f.monthlyTargetUsdt) : undefined) !== (existing.monthlyTargetUsdt == null ? undefined : Number(existing.monthlyTargetUsdt))
+        || (f.monthlyTargetBandPct.trim() ? Number(f.monthlyTargetBandPct) : undefined) !== (existing.monthlyTargetBandPct == null ? undefined : Number(existing.monthlyTargetBandPct)))) return SKU_MODEL_UNRECOGNIZED_REASON;
   if (f.allowedPoolCodes.length && !f.monthlyTargetUsdt.trim()) return existing?.monthlyTargetUsdt != null
     ? "仍选有任务等级，不能清空月收益目标" : "已选任务等级，必须设置月收益目标，用于配平每单收益";
   if (supportsDeviceMonthlyTarget(f.id.trim() || existing?.id || f.name.trim(), f.tier, existing?.productType)) {

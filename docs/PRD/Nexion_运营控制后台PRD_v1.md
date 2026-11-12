@@ -417,6 +417,8 @@ A1 是后台的**运营账号、登录安全与会话治理地基**。A1 负责�
 
 #### [A2] 操作记录与审批
 
+**2026-11-12 后端 66ecdb47 同步**：手机任务审批的 `ruleTaskAction` 从总览、单号详情到历史和原操作恢复原样保留；CREATE／UPDATE／ENABLE／DISABLE 分别显示「新增／编辑／启用／停用手机任务」，字段为空才沿原动作名，不看前后值推断。是否放大及资金类型仍以后端为准。G2 兑换参数、G7 回购参数的批准人是另一位有审批批准权的在职超级管理员；G4 创世参数还须该参数业务权。后端批准前重查旧值（G4 同时重查系列）和候选增量覆盖率，过期提案不应用到现值。课程回滚动作写「回滚至有奖励的课程版本」。能批／能驳仍取后端逐单资格，详情显示其批准／驳回拒因。
+
 **① 定位与边界**
 
 A2 承载各域操作记录、已提交的业务审批与后台记录机制设置。业务事实仍归各域，A2 不代替业务页面发起动作；提交审批的操作须另一位有权管理员批准后生效，直接执行的操作按业务页面提示执行并留记录，不能把全域写入一律说成直做或一律需要超管审批。角色名不替代当前权限、业务范围和工单规则，发起人不能自批。
@@ -1092,6 +1094,8 @@ Nexion 运营控制后台
 ---
 
 #### [B0] 今日概览
+
+**2026-11-12 设备概览后端同步（代码侧）**：`fetchB0Devices` 从原 GET `/api/admin/devices/overview` 增加读取 `errorRetry/legacyPending/waitingConfig` 三个权威台数，不另发列表请求。原 total/running/waitingActivation/stopped 口径保留；新三数按有效状态解析，不能与原四数相加作分布。视觉 worker 在现有设备卡接入三数，点击分别到 `/devices/ops?simState=ERROR`、`LEGACY_PENDING`、`WAITING_CONFIG`；本轮未改设备卡的组成或现有链接。
 
 **2026-11-11 小问题修正：** 时段选择本地读写失败均回到今日；超过 5 条的待处理来源读取失败仍有对应重试入口；`default_off` 仅说明当前没有有效配置、系统按关闭处理，不推断历史设置。
 
@@ -2163,7 +2167,7 @@ C2 是账户处置、注销审核、限时用户数据核对及账户名单的�
 
 重新审核仍调用 `review`，`BLOCKED → IN_REVIEW`；确认框标题「重新审核」，常显申请号、系统编号、前后状态和原拦下原因／原拒绝理由，执行摘要「改回审核中，可以再完成注销或拒绝。」，按钮「确认重新审核」。取消调用 `cancel`，`BLOCKED → CANCELLED`；标题「取消注销申请」，执行摘要「申请结束，账号不注销；用户可以再提交。」，按钮「确认取消」。两者只认 `user_c1_write`，详情读到且版本未落后才给入口，发送读到的 `expectedVersion`；版本落后不开框，提示「申请状态已变化，请刷新后再审核。」，后端版本冲突沿用读回处理。
 
-完成注销为不可撤销的危险确认，**须先结清，不作废余额**。按后端 `origin/test@abaf9207` 的 `AccountDeletionAdminService.completeNow` 与 `AppUserSecurityMapper.hasUnsettledFundsOrOrders`，可用 USDT（`usdt_available`）、可用 NEX（`nex_available`）、提现冻结金额（`pending_withdraw`）任一大于 0，或有未结束的提现、充值、兑换、质押、设备订单（同时检查订单和付款状态），就转 `BLOCKED / UNSETTLED_FUNDS_OR_ORDERS`。不新增其他余额种类或结清条件。抽屉列出这些条件，并写「用户结清后，点「重新审核」再「完成注销」；用户也可以在 App 取消申请。」
+完成注销为不可撤销的危险确认，**须先结清，不作废余额**。按后端 `origin/test@abaf9207` 的 `AccountDeletionAdminService.completeNow` 与 `AppUserSecurityMapper.hasUnsettledFundsOrOrders`，可用 USDT（`usdt_available`）、可用 UVT（`nex_available`）、提现冻结金额（`pending_withdraw`）任一大于 0，或有未结束的提现、充值、兑换、质押、设备订单（同时检查订单和付款状态），就转 `BLOCKED / UNSETTLED_FUNDS_OR_ORDERS`。不新增其他余额种类或结清条件。抽屉列出这些条件，并写「用户结清后，点「重新审核」再「完成注销」；用户也可以在 App 取消申请。」
 
 **零头余额处理（产品 2026-11-09 补充）**：低于最低提现额或最低兑换量、用户自己无法清掉的余额，由用户联系客服，财务在「余额与资产调整」（C3）写理由，经审批清零；之后运营重新审核，再完成注销。仅在 `UNSETTLED_FUNDS_OR_ORDERS` 的拦下原因旁问号中说明这一路径。当前账号菜单可达且有 `user_c3_read` 时，复用 C3 已有 `/users/assets?userId={系统编号}&returnTo=…` 跳转；没有该读取入口时只显示文字。C2 不自动清零、不预填金额、不新建 C3 入口或修改 C3 页面。
 
@@ -2399,6 +2403,10 @@ ID server mint;配对地址脱敏;时间戳 ms epoch 服务端权威。
 ---
 
 #### [C5] 安全 & 会话
+
+> 2026-11-12 机型锁恢复补充：原样重试经 isExplicitRejection 判定明确拒绝后，原请求、理由、修订号和命令号继续保留，并开放既有「解除待确认」确认；只清选定的本地待确认，不撤销后端操作，随后读回当前机型锁。回执 404、403、IDEMPOTENCY_* 不产生解除资格。首次提交、读取和恢复遇到 401/403 时都收起原理由及详情，通知外层重查权限，原命令保留。
+
+> 2026-11-12 后端 66ecdb47 机型锁解除：新命令按操作者、用户、安装、修订号、理由和数据环境／runId 去重。结果未知保存原请求与命令号，24 小时内可「按原操作重试」或「查原解除结果」，不读取新 revision 改写旧请求。回执 GET `/api/admin/users/profiles/{userId}/phone-model-locks/{installationId}/release-receipt?commandKey=` 限原操作者及当前客户范围；核对原命令号、用户、安装及 status，以 `response` 中有效的已解除原结果收尾。仅 SUCCEEDED／CONFIRMED_SUCCEEDED 可确认；404 不能证明未执行，403 不能解除，原记录继续保留。超过 24 小时仅查询；升级前没有 receiptSupported 的旧未知记录只读回，不补发或补造回执。收起明细仍显示待核实入口，无权隐藏原理由，解除仍需原换机特批权限。此增量覆盖下方历史“机型锁只读回”说法。
 
 > 2026-11-12 全域支付解除恢复：异常列表不依赖外层用户选择，按当前操作者枚举所有全域待确认原记录。关闭详情、刷新或原异常已不在默认列表时，仍可从既有待确认提示打开原用户的原记录详情查询或按原操作重试；该记录的恢复入口已显示在详情或用户支付安全区时不重复提示。不将 support 范围原操作改发为 global。
 
@@ -3515,6 +3523,8 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 ---
 
 #### [D7] 越南盾提现参数
+
+待批队列按规范动作「放宽越南盾提现参数」和配置对象 `current` 识别；`operationCode` 在此票种为空，不作为必填筛选。结论、待批准提示和重复放宽阻断共用该队列，直接收紧能力不变。依据后端 `66ecdb47` 的 `AuditReplayBusinessPermissionGuard`、`WithdrawalConfigApproval.target` 与 `OpsAuditCenterService.ticketMetadata`。
 
 **① 目的 & 对齐**
 管理 BANKQR 提现的卖出点差、提现报价有效期、手续费与单笔限额，对齐前端 §9.3 的提现方式选择及银行单恢复。D6 持有基准价和买入点差，D7 只管理出金参数；D2 持有单据处置与资金终态。

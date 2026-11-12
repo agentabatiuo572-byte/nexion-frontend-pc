@@ -14,6 +14,16 @@ import {
 
 export type { A2AuditDomain, A2AuditFilter } from "@/lib/admin/a2-policy";
 
+/**
+ * 后端 66ecdb47 只给少数审批单回 operationCode（OpsAuditCenterService.ticketMetadata），G 参数、H4、课程单是空的。
+ * 选展示方式时按后端写死的动作名认（H4GrowthApproval.proposalAction、LearningCourseActivationApproval.action、G2G7ParamApproval.proposalAction）。
+ */
+export const REVIEW_OPERATION_BY_ACTION: Record<string, string> = {
+  提高旧活动奖励: "h4_legacy_event_reward_update", 新增转盘奖项: "h4_wheel_tier_create", 放宽转盘奖项配置: "h4_wheel_tier_update",
+  删除转盘奖项并提高安慰奖: "h4_wheel_tier_delete", 提高转盘奖项概率: "h4_wheel_probabilities_update",
+  首次发布奖励课程: "i7_course_first_publish", 发布奖励课程版本: "i7_course_version_publish", 回滚至有奖励的课程版本: "i7_course_version_rollback",
+};
+
 export type A2OperationType = "fund" | "param" | "acct" | "sos";
 
 interface ApiResult<T> {
@@ -56,8 +66,14 @@ interface BackendStats {
 }
 
 type A2FundEffect = "REWARD_SUSPENSION" | "REWARD_RESUMPTION" | "ORDER_REFUND";
+export type A2RuleTaskAction = "CREATE" | "UPDATE" | "ENABLE" | "DISABLE";
 
 interface BackendTicket {
+  ruleTaskAction?: A2RuleTaskAction | null;
+  approveDeniedCode?: number | null;
+  approveDeniedMessage?: string | null;
+  rejectDeniedCode?: number | null;
+  rejectDeniedMessage?: string | null;
   canApprove?: boolean | null;
   canReject?: boolean | null;
   ambassadorMaterialProposal?: F4AmbassadorMaterialProposal | null;
@@ -86,6 +102,7 @@ interface BackendTicket {
 }
 
 interface BackendHistory {
+  ruleTaskAction?: A2RuleTaskAction | null;
   id: string;
   action: string;
   st: string;
@@ -158,6 +175,9 @@ export interface A2Stats {
 }
 
 export interface A2OperationRow {
+  ruleTaskAction?: A2RuleTaskAction;
+  approveDeniedMessage?: string;
+  rejectDeniedMessage?: string;
   canApprove?: boolean;
   canReject?: boolean;
   ambassadorMaterialProposal?: F4AmbassadorMaterialProposal;
@@ -190,6 +210,7 @@ export interface A2OperationRow {
 }
 
 export interface A2OperationHistory {
+  ruleTaskAction?: A2RuleTaskAction | null;
   id: string;
   action: string;
   st: string;
@@ -344,6 +365,9 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     } catch { phoneCalibrationError = "手机规则申请的详情加载失败，不能执行；可取消后重新提交。"; }
   }
   return {
+    ruleTaskAction: ticket.ruleTaskAction ?? undefined,
+    approveDeniedMessage: ticket.approveDeniedMessage ? formatAdminApiError(ticket.approveDeniedMessage, "这个账号没有批准这张单的权限") : undefined,
+    rejectDeniedMessage: ticket.rejectDeniedMessage ? formatAdminApiError(ticket.rejectDeniedMessage, "这个账号没有驳回这张单的权限") : undefined,
     ...(ambassadorMaterialProposal ? { ambassadorMaterialProposal } : {}),
     ...(ambassadorMaterialError ? { ambassadorMaterialError } : {}),
     ...(phoneCalibrationProposal ? { phoneCalibrationProposal } : {}),

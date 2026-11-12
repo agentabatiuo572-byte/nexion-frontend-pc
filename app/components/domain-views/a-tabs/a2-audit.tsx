@@ -28,6 +28,7 @@ import {
   TableMessage, Td, Th, Tr, useTabIds, type DiffRow, type JudgmentRow, type SegmentItem, type StateTone,
 } from "@/app/components/rd";
 import {
+  REVIEW_OPERATION_BY_ACTION,
   approveA2Operation,
   createA2CommandKey,
   exportA2Audit,
@@ -142,6 +143,10 @@ function approvalCoverageCopy(w: A2OperationRow) {
 }
 
 function approvalExecutorLabel(w: A2OperationRow) {
+  if (/^(?:兑换|回购)参数调整 · /.test(w.action)) return "另一位有审批批准权限的超级管理员";
+  if (/^调整创世参数 · /.test(w.action)) return "另一位有审批批准权限和该参数业务权限的超级管理员";
+  if (["提高旧活动奖励", "放宽转盘奖项配置", "新增转盘奖项", "删除转盘奖项并提高安慰奖", "提高转盘奖项概率",
+    "首次发布奖励课程", "发布奖励课程版本", "回滚至有奖励的课程版本"].includes(w.action)) return "另一位有审批批准权限的超级管理员";
   if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位有批准权限和商品修改权限的管理员";
   if (w.action === "发布规则任务") return "另一位有批准权限和任务池修改权限的管理员";
   return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
@@ -188,7 +193,7 @@ type DecisionRule = { superadmin?: boolean; approve?: readonly Need[]; reject?: 
  */
 const GROWTH_DELEGATE = "@growth-delegate";
 type TicketIdentity = Pick<A2OperationRow, "action" | "obj" | "operationCode" | "fundEffect" | "before" | "after">
-  & Partial<Pick<A2OperationRow, "phoneCalibrationProposal" | "ambassadorMaterialProposal" | "roleGate" | "canApprove" | "canReject">>;
+  & Partial<Pick<A2OperationRow, "phoneCalibrationProposal" | "ambassadorMaterialProposal" | "roleGate" | "canApprove" | "canReject" | "ruleTaskAction">>;
 const A4_REGISTRY_CODES = ["a4_schema_register", "a4_schema_property_add", "a4_domain_extension_register"];
 const J4_CODE = /^SOP-[A-Z0-9-]{1,64}$/;
 /** 有专项审批、要另一位超管处理的单（各自的 validateChecker：超管＋A2 批准权，批准、驳回一样）。 */
@@ -196,7 +201,7 @@ const SUPER_ONLY: DecisionRule = { superadmin: true };
 const SUPER_ACTIONS = new Set([
   "放宽任务定价", "变更正式任务目录", // E2TaskPricingApproval
   "降低兑付覆盖率红线", "提高提现压力红线", // TreasuryThresholdApproval
-  "首次发布奖励课程", "发布奖励课程版本", "回滚至较高奖励课程版本", // LearningCourseActivationApproval
+  "首次发布奖励课程", "发布奖励课程版本", "回滚至较高奖励课程版本", "回滚至有奖励的课程版本", // LearningCourseActivationApproval; retain the legacy action gate.
   "放宽用户任务配置", // H3GrowthApproval
   "提高旧活动奖励", "开放旧活动资金奖励", "新增转盘奖项", "放宽转盘奖项配置", "删除转盘奖项并提高安慰奖", "提高转盘奖项概率",
   "启用活动或放宽转盘资金护栏", "发布历史活动只读记录", // H4GrowthApproval
@@ -447,7 +452,13 @@ function middle(text: string, max: number) {
   return text.length > max ? `${text.slice(0, max - 9)}…${text.slice(-8)}` : text;
 }
 
-function actionName(action: string) {
+function actionName(ticket: string | { action: string; ruleTaskAction?: A2OperationRow["ruleTaskAction"] | null }) {
+  if (typeof ticket !== "string" && ticket.ruleTaskAction) {
+    return ({ CREATE: "新增手机任务", UPDATE: "编辑手机任务", ENABLE: "启用手机任务", DISABLE: "停用手机任务" })[ticket.ruleTaskAction];
+  }
+  const action = typeof ticket === "string" ? ticket : ticket.action;
+  const gParam = G_PARAM_ACTION.exec(action);
+  if (gParam) return `${gParam[1] === "回购参数调整" ? "锁定计划参数调整" : gParam[1]} · ${G_PARAM_NAMES[gParam[2]] ?? gParam[2]}`;
   return a2ActionText(nexGridBrandText(action));
 }
 
@@ -555,6 +566,7 @@ type A2PendingCommand = PendingMutationRecord & {
   refundOrderNo?: string;
   /** 审批单的原动作，重试时写进标签。 */
   action?: string;
+  ruleTaskAction?: A2OperationRow["ruleTaskAction"];
   /** 导出时已应用的筛选：重试只用这一份，不读页面上现在的条件（M2）。 */
   filter?: A2AuditFilter;
 };
@@ -644,6 +656,50 @@ const CHANGE_LABELS: Record<string, string> = {
   requiredDownlineRank: "分支最低等级", requiredDownlineCount: "达标分支数", unilevelDepth: "团队购买奖励范围",
   peerBonusRate: "同级奖比例", leadershipVotes: "团队激励池票数", rewards: "晋升奖励",
 };
+// Only these three reward contracts override the shared product-field vocabulary.
+const HI_CHANGE_LABELS: Record<string, string> = {
+  ...CHANGE_LABELS,
+  eventCode: "活动编号", rewardName: "奖励名称", rewardType: "奖励资产", rewardAmount: "发放数量",
+  value: "目标值", expectedValue: "原值", tierName: "奖项编号", rewardKind: "奖励类型",
+  probabilityPct: "概率（%）", realOutflow: "实际资金流出", dailyStock: "每日库存（0 为不限）",
+  expectedSignature: "提交时奖池签名", wheelSignature: "奖池签名", tiers: "奖池档位",
+  wheelEvidence: "核对证据", wheelSnapshot: "原奖池快照",
+  courseId: "课程编号", version: "课程版本", revision: "修订号", rewardNex: "奖励（UVT）",
+  sourceStatus: "目标版本原状态", expectedRevision: "目标修订号", expectedCurrentVersion: "当前课程版本",
+  expectedCurrentRevision: "当前课程修订号", expectedCurrentStatus: "当前课程状态",
+  tier: "奖项编号", status: "状态", reward: "奖励名称", prob: "概率（%）", kind: "奖励类型", amount: "发放数量", real: "实际资金流出",
+  voucherId: "代金券 ID", category: "课程分类", format: "课程形式", level: "难度", duration: "时长",
+  titleZh: "中文标题", titleEn: "英文标题", titleVi: "越南语标题", bodyZh: "中文正文", bodyEn: "英文正文", bodyVi: "越南语正文",
+  quizQuestions: "测验题", passScore: "及格题数", retryLimit: "可重试次数", completionCondition: "完成条件", rewardEvent: "奖励事件",
+  courseTarget: "目标版本的其他内容", field: "内容", content: "目标版本",
+};
+const WHEEL_REVIEW_OPERATIONS = ["h4_wheel_tier_create", "h4_wheel_tier_update", "h4_wheel_tier_delete", "h4_wheel_probabilities_update"];
+const COURSE_REVIEW_OPERATIONS = ["i7_course_first_publish", "i7_course_version_publish", "i7_course_version_rollback"];
+const hiReviewLabels = (operationCode?: string) => ["h4_legacy_event_reward_update", ...COURSE_REVIEW_OPERATIONS, ...WHEEL_REVIEW_OPERATIONS].includes(operationCode ?? "") ? HI_CHANGE_LABELS : CHANGE_LABELS;
+const G_PARAM_ACTION = /^(兑换参数调整|回购参数调整|调整创世参数) · ([A-Za-z]+)$/;
+const reviewOperation = (w: { operationCode?: string; action: string }) =>
+  G_PARAM_ACTION.test(w.action) ? "g_param" : w.operationCode ?? REVIEW_OPERATION_BY_ACTION[w.action];
+/** G2、G4、G7 参数的页面名字，和三页参数行一致（G4 取后端 GenesisParamDef 的名字）。 */
+const G_PARAM_NAMES: Record<string, string> = {
+  userDailyCap: "单用户日额度", platformDailyCap: "平台日额度", fee: "兑换手续费率", feeMin: "最低手续费", queueMode: "超额度处置策略",
+  apy: "参考年奖励率", lockDays: "锁仓期限", nurture: "好友升级奖励倍率", lottery: "创世节点抽奖券", penalty: "提前解锁扣款", presets: "锁定金额快捷选项",
+  supply: "节点总量", price: "一级购买单价", dividend: "每日收益比例", royalty: "内部转售手续费", divBase: "每日收益基数公式",
+  airdropPct: "Genesis 释放分配占比", emissionCurve: "释放曲线", airdropLockDays: "OG 倍率锁仓期",
+};
+const gParamText = (text: string) => text.replace(/(^|· )([A-Za-z]+) = /g, (whole, lead: string, key: string) => G_PARAM_NAMES[key] ? `${lead}${G_PARAM_NAMES[key]} = ` : whole);
+/** 对象写运营看得懂的名字：G 参数写参数名，H4 奖池写「抽奖转盘奖池」；其余原样。 */
+function objectText(w: { action: string; obj: string }) {
+  if (G_PARAM_ACTION.test(w.action)) return G_PARAM_NAMES[w.obj] ?? w.obj;
+  if (w.obj === "ACTIVE_POOL" && REVIEW_OPERATION_BY_ACTION[w.action]?.startsWith("h4_wheel")) return "抽奖转盘奖池";
+  return w.obj;
+}
+const COURSE_VALUE_TEXT: Record<string, Record<string, string>> = {
+  status: { published: "已发布", draft: "草稿", archived: "已下架", PUBLISHED: "已发布", DRAFT: "草稿", SUPERSEDED: "历史版本" },
+  sourceStatus: { DRAFT: "草稿", PUBLISHED: "已发布", SUPERSEDED: "历史版本", LEGACY_DRAFT: "旧草稿（无独立版本）" },
+  category: { Basics: "基础", Earn: "赚取", Team: "团队", Wealth: "财富", Security: "安全" },
+  format: { Article: "图文", Video: "视频", "Hands-on": "实操" },
+  level: { Beginner: "入门", Intermediate: "进阶", Advanced: "高级" },
+};
 /** 成组记录的量词：「查看全部 9 个等级」。 */
 const ROW_UNIT: Record<string, string> = { ranks: "个等级", rewards: "项奖励" };
 const ROWS_SHOWN = 5;
@@ -657,7 +713,7 @@ function grouped(text: string) {
   return /^-?\d{4,}(\.\d+)?$/.test(text) ? text.replace(/^-?\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")) : text;
 }
 
-function valueText(key: string | undefined, value: unknown): string {
+function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABELS): string {
   if (value === null || value === undefined) {
     if (key === "clearMonthlyTarget" || key === "trialEligible") return "否";
     return "未设置";
@@ -670,8 +726,8 @@ function valueText(key: string | undefined, value: unknown): string {
   if (key === "peerBonusRate" && typeof value === "number") return `${(value * 100).toFixed(2)}%`;
   if (key === "baseRate" && typeof value === "string") return shareBaseRateText(value);
   if (key === "allowedPoolCodes" && Array.isArray(value)) return value.length ? value.map(code => ({L1:"L1 初级",L2:"L2 中级",L3:"L3 高级",L4:"L4 旗舰",PHONE:"手机任务池"}[String(code)] ?? String(code))).join("、") : "未选择";
-  if (Array.isArray(value)) return value.length ? value.map((item) => valueText(undefined, item)).join("、") : "无";
-  if (isRecord(value)) return Object.entries(value).map(([name, item]) => `${CHANGE_LABELS[name] ?? name} ${valueText(name, item)}`).join("；") || "无";
+  if (Array.isArray(value)) return value.length ? value.map((item) => valueText(undefined, item, labels)).join("、") : "无";
+  if (isRecord(value)) return Object.entries(value).map(([name, item]) => `${labels[name] ?? name} ${valueText(name, item, labels)}`).join("；") || "无";
   return grouped(String(value));
 }
 
@@ -691,41 +747,141 @@ function parseReview(value: string): Review | null {
   }
 }
 
+/** H4 stores a pool snapshot before and command values after, not two replacement configs. */
+function reviewPair(before: string, after: string, operationCode?: string) {
+  const b = parseReview(operationCode === "g_param" ? gParamText(before) : before);
+  const a = parseReview(operationCode === "g_param" ? gParamText(after) : after);
+  const labels = hiReviewLabels(operationCode);
+  const original = { b, a, labels, evidenceKeys: [] as string[] };
+  // 旧活动：前值是锁定时整行活动快照（OpsGrowthService.lockH4LegacyEventState），后值是提案 values，只比奖励。
+  if (operationCode === "h4_legacy_event_reward_update" && b?.kind === "object" && a?.kind === "object" && "eventCode" in b.value) {
+    const status = b.value.status === "1" ? "启用" : b.value.status === "0" ? "停用" : b.value.status;
+    return {
+      b: { kind: "object" as const, value: { eventCode: b.value.eventCode, rewardName: b.value.rewardName } },
+      a: { kind: "object" as const, value: { eventCode: a.value.eventCode, rewardName: a.value.value,
+        legacyEvent: [{ eventStatus: status, startsAt: b.value.startsAt, endsAt: b.value.endsAt }] } },
+      labels: { ...labels, legacyEvent: "提交时的活动状态", eventStatus: "活动状态", startsAt: "开始时间", endsAt: "结束时间" },
+      evidenceKeys: ["legacyEvent"],
+    };
+  }
+  // 课程：前值只有当前版本五项（currentReview），后值是目标版本内容（targetReview）。两边都有的才比，其余作目标版本内容列出。
+  if (COURSE_REVIEW_OPERATIONS.includes(operationCode ?? "") && b?.kind === "object" && a?.kind === "object") {
+    const show = (key: string, value: unknown) => typeof value === "string" ? COURSE_VALUE_TEXT[key]?.[value] ?? value : value;
+    const was: Record<string, unknown> = {};
+    const next: Record<string, unknown> = {};
+    const extra: Record<string, unknown>[] = [];
+    for (const key of Object.keys(a.value)) {
+      if (key in b.value) { was[key] = show(key, b.value[key]); next[key] = show(key, a.value[key]); }
+      else extra.push({ field: labels[key] ?? key, content: valueText(key, show(key, a.value[key]), labels) });
+    }
+    for (const key of Object.keys(b.value)) if (!(key in a.value)) was[key] = show(key, b.value[key]);
+    if (extra.length) next.courseTarget = extra;
+    return { b: { kind: "object" as const, value: was }, a: { kind: "object" as const, value: next }, labels, evidenceKeys: ["courseTarget"] };
+  }
+  if (!WHEEL_REVIEW_OPERATIONS.includes(operationCode ?? "") || b?.kind !== "object" || a?.kind !== "object"
+    || typeof b.value.tiers !== "string") return original;
+  let snapshot: unknown;
+  try { snapshot = JSON.parse(b.value.tiers); }
+  catch { return original; }
+  if (!Array.isArray(snapshot) || !snapshot.every(isRecord)) return original;
+
+  // Decimal strings and JSON numbers compare without rounding or false scale-only changes.
+  const decimal = (value: unknown) => String(value).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  // 奖型和 H4 页面同一套叫法；旧名 nex、points 照实写出来，不当成合法奖型。
+  const kindText = (kind: unknown) => ({ uvt: "UVT", usdt: "USDT", coupon: "代金券", voucher: "代金券", nex: "旧奖型 nex", points: "积分奖型" } as Record<string, string>)[String(kind).toLowerCase()] ?? kind;
+  const tiers = snapshot.map(tier => ({
+    tierName: tier.tier, rewardName: tier.reward, probabilityPct: decimal(tier.prob),
+    realOutflow: tier.real === true || tier.real === 1, rewardKind: kindText(tier.kind),
+    rewardAmount: decimal(tier.amount), voucherId: tier.voucherId || "无", dailyStock: tier.dailyStock,
+  }));
+  const values = a.value;
+  const target = tiers.find(tier => tier.tierName === values.tierName);
+  let was: Record<string, unknown> | null;
+  let next: Record<string, unknown>;
+  const wheelLabels = { ...labels };
+  if (operationCode === "h4_wheel_probabilities_update") {
+    if (!isRecord(values.probabilities)) return original;
+    was = {};
+    next = {};
+    for (const tier of tiers) {
+      const key = `probability:${tier.tierName}`;
+      wheelLabels[key] = `${tier.tierName} · 概率（%）`;
+      was[key] = tier.probabilityPct;
+      next[key] = decimal(values.probabilities[String(tier.tierName)]);
+    }
+  } else if (operationCode === "h4_wheel_tier_delete") {
+    if (!target) return original;
+    was = { ...target, status: "已启用" };
+    next = { ...target, status: "已删除" };
+  } else {
+    const created = operationCode === "h4_wheel_tier_create";
+    if (!created && !target) return original;
+    was = created ? null : { ...target };
+    // Match OpsGrowthService's defaults for omitted optional command fields.
+    next = {
+      tierName: values.tierName, rewardName: values.rewardName,
+      probabilityPct: decimal(values.probabilityPct ?? target?.probabilityPct ?? 0),
+      realOutflow: values.realOutflow == null ? target?.realOutflow ?? false : values.realOutflow === 1,
+      rewardKind: values.rewardKind == null ? target?.rewardKind ?? kindText("uvt") : kindText(values.rewardKind),
+      rewardAmount: decimal(values.rewardAmount ?? target?.rewardAmount ?? 0),
+      voucherId: values.voucherId == null ? target?.voucherId ?? "无" : String(values.voucherId).trim() || "无",
+      dailyStock: values.dailyStock ?? target?.dailyStock ?? 0,
+    };
+  }
+  // 改一档、删一档时，每一行都带上是哪一档（和改概率的写法一样），不然差异里只看得到「发放数量 1 → 2」。
+  if (operationCode === "h4_wheel_tier_update" || operationCode === "h4_wheel_tier_delete") {
+    const named = (row: Record<string, unknown>) => Object.fromEntries(Object.entries(row).map(([key, value]) => {
+      if (key === "tierName" || !labels[key]) return [key, value];
+      wheelLabels[`tier:${key}`] = `${String(values.tierName)} · ${labels[key]}`;
+      return [`tier:${key}`, value];
+    }));
+    if (was) was = named(was);
+    next = named(next);
+  }
+  // Existing row groups keep verification evidence out of the business-field diff.
+  next.wheelEvidence = [{ wheelSignature: b.value.wheelSignature, expectedSignature: values.expectedSignature }];
+  next.wheelSnapshot = tiers;
+  return {
+    b: was ? { kind: "object" as const, value: was } : null,
+    a: { kind: "object" as const, value: next }, labels: wheelLabels,
+    evidenceKeys: ["wheelEvidence", "wheelSnapshot"],
+  };
+}
+
 /** 队列「变更」列：和详情同一套格式。第一项做第一行，原值做第二行，多项时写「等 N 项」（必须改 5）。 */
-function changeSummary(before: string, after: string, omit: readonly string[] = []) {
-  const b = parseReview(before);
-  const a = parseReview(after);
+function changeSummary(before: string, after: string, omit: readonly string[] = [], operationCode?: string) {
+  const { b, a, labels, evidenceKeys } = reviewPair(before, after, operationCode);
   if (!a) return { main: "—", sub: b ? `原 ${b.kind === "text" ? b.text : "见详情"}` : undefined };
   if (a.kind === "text") return { main: a.text, sub: b ? `原 ${b.kind === "text" ? b.text : "见详情"}` : "新建" };
   if (a.kind === "rows") return { main: `共 ${a.rows.length} 行`, sub: b ? "原 见详情" : "新建" };
   if (a.value.clearMonthlyTarget === true) return {
     main: "关闭月收益目标",
     sub: a.value.shareYieldMin != null && a.value.shareYieldMax != null
-      ? `年奖励率 ${valueText("shareYieldMin", a.value.shareYieldMin)}–${valueText("shareYieldMax", a.value.shareYieldMax)}`
-      : `日产收益 ${valueText("dailyEarn", a.value.dailyEarn)}`,
+      ? `年奖励率 ${valueText("shareYieldMin", a.value.shareYieldMin, labels)}–${valueText("shareYieldMax", a.value.shareYieldMax, labels)}`
+      : `日产收益 ${valueText("dailyEarn", a.value.dailyEarn, labels)}`,
   };
-  const keys = Object.keys(a.value).filter((key) => !omit.includes(key));
+  const keys = Object.keys(a.value).filter((key) => !omit.includes(key) && !evidenceKeys.includes(key));
   const changed = b?.kind === "object" ? keys.filter((key) => !same(b.value[key], a.value[key])) : keys;
   const first = changed[0] ?? keys[0];
   if (!first) return { main: "—" };
-  const label = CHANGE_LABELS[first] ?? first;
+  const label = labels[first] ?? first;
   const now = a.value[first];
-  const main = `${label} ${isRowList(now) ? `${now.length} ${ROW_UNIT[first] ?? "行"}` : valueText(first, now)}${changed.length > 1 ? ` 等 ${changed.length} 项` : ""}`;
+  const main = `${label} ${isRowList(now) ? `${now.length} ${ROW_UNIT[first] ?? "行"}` : valueText(first, now, labels)}${changed.length > 1 ? ` 等 ${changed.length} 项` : ""}`;
   const was = b?.kind === "object" ? b.value[first] : undefined;
-  return { main, sub: !b ? "新建" : b.kind === "object" && (first in b.value || typeof now === "boolean") && !isRowList(was) ? `原 ${valueText(first, was)}` : "原 见详情" };
+  return { main, sub: !b ? "新建" : b.kind === "object" && (first in b.value || typeof now === "boolean") && !isRowList(was) ? `原 ${valueText(first, was, labels)}` : "原 见详情" };
 }
 
 /** 成组的记录画成小表，每组一行，列头用字段名；超过 5 行的收在「查看全部」后面（VS-109）。 */
-function ReviewRows({ name, rows }: { name: string; rows: readonly Record<string, unknown>[] }) {
+function ReviewRows({ name, rows, labels = CHANGE_LABELS }: { name: string; rows: readonly Record<string, unknown>[]; labels?: Record<string, string> }) {
   const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
   const unit = ROW_UNIT[name] ?? "行";
   const table = (part: readonly Record<string, unknown>[], label: string) => (
     <Table label={label} data-tight="">
-      <thead><tr>{columns.map((column) => <Th key={column}>{CHANGE_LABELS[column] ?? column}</Th>)}</tr></thead>
-      <tbody>{part.map((row, index) => <Tr key={index}>{columns.map((column) => <Td key={column}><Cell main={valueText(column, row[column])} title={valueText(column, row[column])} /></Td>)}</Tr>)}</tbody>
+      <thead><tr>{columns.map((column) => <Th key={column}>{labels[column] ?? column}</Th>)}</tr></thead>
+      <tbody>{part.map((row, index) => <Tr key={index}>{columns.map((column) => <Td key={column}><Cell main={valueText(column, row[column], labels)} title={valueText(column, row[column], labels)} /></Td>)}</Tr>)}</tbody>
     </Table>
   );
-  const title = CHANGE_LABELS[name] ?? name;
+  const title = labels[name] ?? name;
   return (
     <div className="a2-change-rows">
       {table(rows.slice(0, ROWS_SHOWN), title)}
@@ -741,19 +897,18 @@ function ReviewRows({ name, rows }: { name: string; rows: readonly Record<string
  * - 成组记录（等级、奖励）：小表，不拼成一大片文字（VS-109）；
  * - 变更前是空（首次配置）：不画变更前，标题旁写「新建」。
  */
-export function A2ChangeReview({ before, after, omit = [] }: { before: string; after: string; omit?: readonly string[] }) {
-  const b = parseReview(before);
-  const a = parseReview(after);
+export function A2ChangeReview({ before, after, omit = [], operationCode }: { before: string; after: string; omit?: readonly string[]; operationCode?: string }) {
+  const { b, a, labels } = reviewPair(before, after, operationCode);
   const created = !b;
   let body: ReactNode;
   if (!a) {
     body = <Facts><Fact k="变更后">—</Fact></Facts>;
   } else if (a.kind === "text") {
-    body = <Facts><Fact k={created ? "内容" : "变更"}>{!b ? a.text : <Change from={b.kind === "text" ? b.text : valueText(undefined, b.kind === "object" ? b.value : b.rows)} to={a.text} />}</Fact></Facts>;
+    body = <Facts><Fact k={created ? "内容" : "变更"}>{!b ? a.text : <Change from={b.kind === "text" ? b.text : valueText(undefined, b.kind === "object" ? b.value : b.rows, labels)} to={a.text} />}</Fact></Facts>;
   } else if (a.kind === "rows") {
     body = <>
-      <ReviewRows name="" rows={a.rows} />
-      {b && <Fold inset title="变更前" summary={b.kind === "rows" ? `共 ${b.rows.length} 行` : "原来的内容"}>{b.kind === "rows" ? <ReviewRows name="" rows={b.rows} /> : <p className="rd-note">{b.kind === "text" ? b.text : valueText(undefined, b.value)}</p>}</Fold>}
+      <ReviewRows labels={labels} name="" rows={a.rows} />
+      {b && <Fold inset title="变更前" summary={b.kind === "rows" ? `共 ${b.rows.length} 行` : "原来的内容"}>{b.kind === "rows" ? <ReviewRows labels={labels} name="" rows={b.rows} /> : <p className="rd-note">{b.kind === "text" ? b.text : valueText(undefined, b.value, labels)}</p>}</Fold>}
     </>;
   } else {
     const keys = Object.keys(a.value).filter((key) => !omit.includes(key));
@@ -763,12 +918,12 @@ export function A2ChangeReview({ before, after, omit = [] }: { before: string; a
     const plain = [...keys.filter((key) => !isRowList(a.value[key])), ...removed];
     const rows: DiffRow[] = plain.map((key) => ({
       key,
-      label: CHANGE_LABELS[key] ?? key,
-      before: valueText(key, was?.[key]),
-      after: valueText(key, a.value[key]),
+      label: labels[key] ?? key,
+      before: valueText(key, was?.[key], labels),
+      after: valueText(key, a.value[key], labels),
     }));
     body = <>
-      {b && b.kind !== "object" && <Facts><Fact k="变更前">{b.kind === "text" ? b.text : valueText(undefined, b.rows)}</Fact></Facts>}
+      {b && b.kind !== "object" && <Facts><Fact k="变更前">{b.kind === "text" ? b.text : valueText(undefined, b.rows, labels)}</Fact></Facts>}
       {plain.length > 0 && (was
         ? <DiffList rows={rows} restTitle="其余内容" emptyNote="这些项没有改动" />
         : <Facts>{rows.map((row) => <Fact key={row.key} k={String(row.label)}>{row.after}</Fact>)}</Facts>)}
@@ -776,9 +931,9 @@ export function A2ChangeReview({ before, after, omit = [] }: { before: string; a
         const old = was?.[key];
         return (
           <div key={key} className="a2-change-group">
-            <div className="a2-change-sub">{CHANGE_LABELS[key] ?? key}{was && same(old, a.value[key]) && <span className="rd-weak"> · 没有改动</span>}</div>
-            <ReviewRows name={key} rows={a.value[key] as Record<string, unknown>[]} />
-            {isRowList(old) && !same(old, a.value[key]) && <Fold inset title={`变更前的${CHANGE_LABELS[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows name={key} rows={old} /></Fold>}
+            <div className="a2-change-sub">{labels[key] ?? key}{was && same(old, a.value[key]) && <span className="rd-weak"> · 没有改动</span>}</div>
+            <ReviewRows labels={labels} name={key} rows={a.value[key] as Record<string, unknown>[]} />
+            {isRowList(old) && !same(old, a.value[key]) && <Fold inset title={`变更前的${labels[key] ?? key}`} summary={`${old.length} ${ROW_UNIT[key] ?? "行"}`}><ReviewRows labels={labels} name={key} rows={old} /></Fold>}
           </div>
         );
       })}
@@ -1137,8 +1292,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   type DecisionTicket = TicketIdentity & Pick<A2OperationRow, "id" | "refundOrderNo"> & { rule?: DecisionRule | null };
   const runDecision = (kind: "approve" | "reject" | "withdraw", w: DecisionTicket, reason: string, by = operator) => sendCommand(
     `${kind}|${w.id}`,
-    { kind, label: `${DECISION_VERB[kind]} · ${actionName(w.action)}`, target: w.id, reason, operator: by, rule: w.rule !== undefined ? w.rule : decisionRule(w),
-      operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, action: w.action },
+    { kind, label: `${DECISION_VERB[kind]} · ${actionName(w)}`, target: w.id, reason, operator: by, rule: w.rule !== undefined ? w.rule : decisionRule(w),
+      operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, action: w.action, ruleTaskAction: w.ruleTaskAction },
     `a2-${kind}-${w.id}`,
     (key) => kind === "approve" ? approveA2Operation(w.id, reason, key)
       : kind === "reject" ? rejectA2Operation(w.id, reason, key)
@@ -1242,6 +1397,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     try {
       const queued = recordTicket(record);
       const ticketLike = { id: record.target, action: record.action ?? queued?.action ?? record.target, obj: record.obj ?? queued?.obj ?? "",
+        ruleTaskAction: record.ruleTaskAction ?? queued?.ruleTaskAction,
         before: queued?.before ?? "", after: queued?.after ?? "", operationCode: record.operationCode ?? queued?.operationCode,
         fundEffect: record.fundEffect ?? queued?.fundEffect, refundOrderNo: recordOrderNo(record), rule: recordRule(record) };
       const outcome = record.kind === "param" ? await runParam(record.target as "ttl" | "retention" | "schema", record.value ?? "", record.reason, record.operator)
@@ -1317,7 +1473,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const immediate = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 
   /** 框标题只写「批准审批单」，动作名放在标题下面一行，长了省略、悬停看全文（设计偏差二选一的第一种）。 */
-  const subject = (w: A2OperationRow) => <span className="a2-confirm-subject" title={actionName(w.action)}>{shortCodes(actionName(w.action))}</span>;
+  const subject = (w: A2OperationRow) => <span className="a2-confirm-subject" title={actionName(w)}>{shortCodes(actionName(w))}</span>;
 
   /** 本人、已退役、解析不了、有未确认操作、正在读取、读不到退款金额：入口先禁用并写原因（第五节）。没有业务权限的入口不显示（OP-124），这里只兜底。 */
   const decideBlock = (w: A2OperationRow, kind: "approve" | "reject" | "withdraw") => {
@@ -1328,7 +1484,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (isMine(w)) return OWN_TICKET_REASON;
     if (kind === "approve" && w.retiredOperation) return RETIRED_OPERATION_COPY;
     if (kind === "approve" && (w.phoneCalibrationError || w.ambassadorMaterialError)) return w.phoneCalibrationError ?? w.ambassadorMaterialError;
-    if (!canDecide(w, kind)) return NO_DECIDE;
+    if (!canDecide(w, kind)) return (kind === "approve" ? w.approveDeniedMessage : w.rejectDeniedMessage) ?? NO_DECIDE;
     // 读不到退款金额时不能批准（协调人定，同 C3 读不到详情）；驳回不受影响。
     const amount = kind === "approve" ? refundAmount(w) : undefined;
     if (amount?.state === "loading") return "正在读取退款金额，读完再批准";
@@ -1355,7 +1511,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           ? <Fact k={name} lead tone="role-1" unit="USDT">{orderAmount(amount.amount)}</Fact>
           : <Fact k={name} tone="warn">{refundAmountText(amount)}</Fact>)}
         <Fact k="审批单"><span data-mono>{w.id}</span></Fact>
-        <Fact k="对象"><span data-mono className="a2-code">{w.obj}</span></Fact>
+        <Fact k="对象"><span data-mono className="a2-code">{objectText(w)}</span></Fact>
         <Fact k="发起人">{`${w.operator} · ${roleText(w.operatorRole)}`}</Fact>
         {kind === "approve" && <Fact k="发起理由">{keepCodes(w.reason)}</Fact>}
         {timing && <Fact k="生效时间">{timing}</Fact>}
@@ -1398,7 +1554,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       facts: ticketFacts(w, "approve"),
       content: (
         <div className="rd-stack">
-          <A2ChangeReview before={w.before} after={w.after} omit={g3 ? ["生效时间"] : undefined} />
+          <A2ChangeReview operationCode={reviewOperation(w)} before={w.before} after={w.after} omit={g3 ? ["生效时间"] : undefined} />
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={w.ambassadorMaterialProposal} expectedMaterialRevision={w.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? w.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
           {isRefund && w.refundOrderNo && <PromotionRefundImpact orderNo={w.refundOrderNo} />}
@@ -1467,7 +1623,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     action: <>撤回我的申请 · {w.id}</>,
     effect: <>{subject(w)}{immediate}</>,
     detail: <>撤回后原操作不会执行。只有申请人本人能撤回。</>,
-    facts: <Facts><Fact k="审批单"><span data-mono>{w.id}</span></Fact><Fact k="对象"><span data-mono className="a2-code">{w.obj}</span></Fact></Facts>,
+    facts: <Facts><Fact k="审批单"><span data-mono>{w.id}</span></Fact><Fact k="对象"><span data-mono className="a2-code">{objectText(w)}</span></Fact></Facts>,
     statedBrief: { impact: "改为已撤回，原操作不执行。", check: "理由写清撤回原因或工单号。" },
     amplifies: false,
     reasonMin,
@@ -1689,7 +1845,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     <Notice tone={locatePending.length ? "warn" : "neutral"}>
       已按「{appliedText(enteredFilter)}」筛选。
       {locatePending.length === 1 && <> 这个对象还有 1 条待审批 · <button type="button" className="rd-link" onClick={() => openTicketFromRecords(locatePending[0].id)}>打开审批单</button></>}
-      {locatePending.length > 1 && <> 这个对象还有 {locatePending.length} 条待审批：{locatePending.slice(0, 3).map((w, index) => <span key={w.id}>{index > 0 && "、"}<button type="button" className="rd-link" onClick={() => openTicketFromRecords(w.id)}>{actionName(w.action)} {w.id}</button></span>)}{locatePending.length > 3 && " 等"}</>}
+      {locatePending.length > 1 && <> 这个对象还有 {locatePending.length} 条待审批：{locatePending.slice(0, 3).map((w, index) => <span key={w.id}>{index > 0 && "、"}<button type="button" className="rd-link" onClick={() => openTicketFromRecords(w.id)}>{actionName(w)} {w.id}</button></span>)}{locatePending.length > 3 && " 等"}</>}
     </Notice>
   );
 
@@ -1783,8 +1939,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     {queueFiltered ? <>没有符合条件的待审批操作 <Button size="sm" onClick={() => { setQType("all"); setQOperator("all"); setQPage(1); }}>清除筛选</Button></> : "没有待审批的操作"}
                   </TableMessage>
                 ) : qPageRows.map((w) => {
-                  const change = changeSummary(w.before, w.after, g3PolicyExecutionTiming(w) ? ["生效时间"] : []);
-                  const name = actionName(w.action);
+                  const change = changeSummary(w.before, w.after, g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w));
+                  const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
                       <Td sticky="start"><Cell main={shortCodes(name)} title={`${name}\n对象：${w.obj}\n${w.id} · ${bizTime(w.rawTs, w.ts)}`} sub={<>{queueTime(w)} · <span data-mono>{w.id}</span></>} /></Td>
@@ -1901,7 +2057,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 ) : histPageRows.map((h) => (
                   <Tr key={h.id} selected={h.id === historyId} onOpen={() => setHistoryId(h.id)}>
                     <Td sticky="start"><Cell mono full main={h.id} /></Td>
-                    <Td grow><Cell main={actionName(h.action)} title={actionName(h.action)} /></Td>
+                    <Td grow><Cell main={actionName(h)} title={actionName(h)} /></Td>
                     <Td><StatusTag tone={HIST_TONE[h.st] ?? "done"}>{HIST_LABEL[h.st] ?? h.st}</StatusTag></Td>
                     <Td><Cell main={historyActorText(h.chain)} /></Td>
                     <Td><Cell num main={thisYear(bizTime(h.t, h.t))} title={bizTime(h.t, h.t)} /></Td>
@@ -1986,15 +2142,15 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const shownBlock = shown && (pendingTicketIds.has(shown.id) ? undefined
     : shown.retiredOperation ? RETIRED_OPERATION_COPY
       : shown.phoneCalibrationError ?? shown.ambassadorMaterialError
-        ?? (isMine(shown) ? OWN_TICKET_REASON : !shownCanApprove ? NO_DECIDE
+        ?? (isMine(shown) ? OWN_TICKET_REASON : !shownCanApprove ? shown.approveDeniedMessage ?? NO_DECIDE
           : shownAmount && shownAmount.state !== "ok" && shownAmount.state !== "loading" ? REFUND_AMOUNT_REQUIRED : undefined));
   const judgment: JudgmentRow[] = shown ? [
     // 批准退款是直接出钱、收不回的操作，第一行就是这笔钱（必须改 1，DP-03）。
     ...(shownAmount ? [shownAmount.state === "ok"
       ? { label: "退款金额", value: <span className="a2-amount">{orderAmount(shownAmount.amount)} USDT</span> }
       : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{" "}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadMain()} />}</> }] : []),
-    { label: "要做什么", value: actionName(shown.action) },
-    { label: "对象", value: <span data-mono className="a2-code">{shown.obj}</span> },
+    { label: "要做什么", value: actionName(shown) },
+    { label: "对象", value: <span data-mono className="a2-code">{objectText(shown)}</span> },
     { label: "发起人", icon: Users, tone: "users", value: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""}`, reason: bizTime(shown.rawTs, shown.ts) },
     { label: "发起理由", value: keepCodes(shown.reason) },
     { label: shown.retiredOperation ? "原执行权限" : "谁能批准", value: approvalExecutorLabel(shown),
@@ -2065,7 +2221,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {shown.sos && <Notice tone="danger">{isJ4Execution(shown)
             ? "应急预案逐步执行：中途失败时，前面的步骤可能已经生效。批准前核对值班授权和影响范围，失败后到「监管要求应急处理」的执行追溯里核对每一步。"
             : "应急操作：涉及紧急停用或恢复，请核对值班授权、影响范围和恢复条件后再处理。"}</Notice>}
-          <A2ChangeReview before={shown.before} after={shown.after} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
+          <A2ChangeReview operationCode={reviewOperation(shown)} before={shown.before} after={shown.after} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
           {shown.phoneCalibrationProposal && <PhoneCalibrationReview proposal={shown.phoneCalibrationProposal} />}
           {shown.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={shown.ambassadorMaterialProposal} expectedMaterialRevision={shown.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? shown.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
         </>}
@@ -2100,7 +2256,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         nav={{ hasPrev: historyIndex > 0, hasNext: historyIndex >= 0 && historyIndex < histPageRows.length - 1, onPrev: () => { if (historyIndex > 0) setHistoryId(histPageRows[historyIndex - 1].id); }, onNext: () => { if (historyIndex >= 0 && histPageRows[historyIndex + 1]) setHistoryId(histPageRows[historyIndex + 1].id); } }}>
         {shownHistory && <>
           <JudgmentPoints title={`判断要点 · 时间为${zone}`} rows={[
-            { label: "操作", value: actionName(shownHistory.action) },
+            { label: "操作", value: actionName(shownHistory) },
             { label: "发起人", icon: Users, tone: "users", value: shownActors?.proposer ?? "—" },
             { label: "处理人", value: shownActors ? `${shownActors.role} ${shownActors.actor}` : historyActorText(shownHistory.chain) },
             { label: "处理时间", value: bizTime(shownHistory.t, shownHistory.t) },
