@@ -19,3 +19,6 @@
 
 /* 九类表：类型列吃剩下的宽，金额和占比贴右 */
 .b1-page .b1-liabilities { width: 100%; }
+
+/* 差额走势：分段在左，截至日期和天数在右，不让工具条空出一大截 */
+.b1-page .b1-window-note { margin-left: auto; }

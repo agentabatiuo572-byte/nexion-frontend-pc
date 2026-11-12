@@ -385,12 +385,12 @@ export default function DualLedgerPage() {
   ) : zone === "danger" ? (
     <Conclusion state="danger" strong lead icon={ShieldAlert} explain={conclusionExplain} action={conclusionAction}
       hint={alertAcked ? ackHint : <>请立即暂停会多付钱的操作和收益发放。{ackHint}</>}>
-      资金告警：覆盖率 <b>{pctText(coverageRatio)}</b>，跌破红线 {fmtConfigPct(effRedline)}
+      资金告警：覆盖率 <b>{pctText(coverageRatio)}</b>，跌破红线
     </Conclusion>
   ) : zone === "warning" ? (
     <Conclusion state="warn" lead icon={ShieldAlert} explain={conclusionExplain} action={conclusionAction}
       hint={alertAcked ? ackHint : onRedline ? <>以系统的精确判断为准，先按跌破红线准备。{ackHint}</> : <>建议收紧大额提现，暂缓创世节点收益发放和调高参考年奖励率。{ackHint}</>}>
-      资金需要注意：覆盖率 <b>{pctText(coverageRatio)}</b>，{onRedline ? "正好压在红线上" : `低于健康线 ${fmtConfigPct(healthyPct)}`}
+      资金需要注意：覆盖率 <b>{pctText(coverageRatio)}</b>，{onRedline ? "正好压在红线上" : "低于健康线"}
     </Conclusion>
   ) : onHealthy ? (
     <Conclusion state="warn" lead icon={ShieldAlert} explain={conclusionExplain} hint="以系统的精确判断为准，先别当作已经恢复。">
@@ -472,7 +472,7 @@ export default function DualLedgerPage() {
     : body;
   const flowPanel = (
     <Panel title="资金进出和提现" icon={ArrowDownUp} tone="role-2"
-      explain="这页只提醒和给建议，不会自己停业务。要停用某项业务去「紧急停用开关」。">
+      explain={<><p>{netFlow24hUsd >= 0 ? "资金在净流入" : "资金在净流出"}，{valuationReliable && "结合覆盖率走势，"}建议持续关注大额提现和奖励发放节奏。</p><p>这页只提醒和给建议，不会自己停业务。要停用某项业务去「紧急停用开关」。</p></>}>
       <div className="rd-stack">
         <KeyValues rows={[
           {
@@ -491,7 +491,6 @@ export default function DualLedgerPage() {
             value: <span className="b1-kv-value">{linked("/risk/scoring", scoreLink, "提现风险评分均值，去风险评分", `${avgRiskScore} / 100`)}</span>,
           },
         ]} />
-        <p className="rd-note">{netFlow24hUsd >= 0 ? "资金在净流入" : "资金在净流出"}，{valuationReliable && "结合覆盖率走势，"}建议持续关注大额提现和奖励发放节奏。</p>
         {reach("/emergency/kill-switch") && (
           <nav className="rd-links" aria-label="紧急处理"><span>紧急处理</span><Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去紧急停用开关</Link></nav>
         )}
@@ -546,9 +545,13 @@ export default function DualLedgerPage() {
   const crowded = exposureSeries.length - 1 - lastTicked > 0 && exposureSeries.length - 1 - lastTicked < tickStep / 2 ? lastTicked : -1;
   const exposurePanel = (
     <Panel title="差额走势" icon={TrendingUp} tone="role-1"
-      sub={currentExposure && latest ? `截至 ${latest.date} · 共 ${exposureSeries.length} 天` : undefined}
       explain="每天的差额 = 当天的储备 − 现在的应付款。储备按资金进出倒推，应付款没有历史记录，一律用现在的值，所以线的起伏只来自储备进出。科目按「资金储备与应付款」的预测设置计入，可能和上面的全口径差额不同。切换天数不影响对账 CSV。登记储备或改阈值后这张图不会自动重读，以数据时间为准。"
-      actions={<Segments label="储备与应付款差额趋势时间范围" value={exposureWindow} onChange={setExposureWindow} items={WINDOWS} />}>
+>
+      <div className="rd-stack">
+      <div className="rd-toolbar">
+        <Segments label="储备与应付款差额趋势时间范围" value={exposureWindow} onChange={setExposureWindow} items={WINDOWS} />
+        <span className="rd-toolbar-note b1-window-note">{currentExposure && latest ? `截至 ${latest.date} · 共 ${exposureSeries.length} 天` : exposureError ? "没有读到" : currentExposure ? "这段时间没有点" : "正在读取…"}</span>
+      </div>
       {exposureError ? (
         <BlockState state="error" title="差额走势读取失败，已暂停显示" detail={`${exposureError} 切换时间范围或刷新页面会重新读取。`} />
       ) : exposureLoading ? (
@@ -569,6 +572,7 @@ export default function DualLedgerPage() {
           </Facts>
         </Figure>
       )}
+      </div>
     </Panel>
   );
 
@@ -595,7 +599,7 @@ export default function DualLedgerPage() {
             : `红线从 ${fmtConfigPct(thresholdBaseline.redlinePct)} 提到 ${fmtConfigPct(round2(red))}：覆盖率低于 ${fmtConfigPct(round2(red))} 就停止放行提现，比现在更早触发。`) : undefined}>
           {(control) => <NumberInput {...control} aria-label="红线 (%)" unit="%" min={80} max={150} step={0.1} disabled={locked} value={value.redlinePct ?? ""} onChange={(event) => onChange({ ...value, redlinePct: event.target.value })} />}
         </DiffField>
-        <DiffField before={pointsText(thresholdBaseline.healthyPct)} unit="%" label="健康线" hint="100–200，步长 0.1，要高于红线" error={healthyBad ?? order}
+        <DiffField size="body" before={pointsText(thresholdBaseline.healthyPct)} unit="%" label="健康线" hint="100–200，步长 0.1，要高于红线" error={healthyBad ?? order}
           explain="覆盖率低于健康线算警戒。已确认的告警要等系统读到覆盖率回到健康线以上才会清掉。"
           state={healthyChanged ? <StatusTag tone="progress">{approval ? "批准后生效" : "立即生效"}</StatusTag> : undefined}
           note={healthyChanged ? `健康线从 ${fmtConfigPct(thresholdBaseline.healthyPct)} 改到 ${fmtConfigPct(round2(healthy))}：覆盖率低于 ${fmtConfigPct(round2(healthy))} 就提示警戒，回到它以上才算恢复。` : undefined}>
