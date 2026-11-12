@@ -15,7 +15,7 @@
 .k2-hits[data-view="trial"] th:first-child, .k2-hits[data-view="trial"] td:first-child { width: 36%; }
 
 /* 读不到抵扣比例：失败说明和重试在一行。 */
-.k2-ref-failed { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; color: var(--rd-text-2); }
+.k2-ref-failed { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--rd-text-2); }
 
 @container (max-width: 860px) {
   .k2-hits th:first-child, .k2-hits td:first-child { width: 24%; min-width: 120px; }

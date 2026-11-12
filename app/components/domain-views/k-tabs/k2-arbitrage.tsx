@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Eye, Flag, Gift, ListChecks, RefreshCw, Repeat, RotateCcw, ShieldAlert, SlidersHorizontal, TrendingUp, type LucideIcon } from "lucide-react";
 import {
-  BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, InlineRetry, IrreversibleTag, JudgmentPoints,
+  BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints,
   Notice, PageHeader, Panel, RatioBar, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, useTabIds,
 } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
@@ -811,7 +811,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
           <ConfigList label="相关设置">
             <ConfigRow name="升级置换首档抵扣" explainLabel="升级置换首档抵扣的说明" what="升级置换第一档的抵扣比例，和置换套利有关。" where="在「设备使用与升级置换」设置，这里只读。"
               value={ladderReference.status === "loading" ? "读取中…"
-                : ladderReference.status === "error" ? <span className="k2-ref-failed" role="alert" title={ladderReference.message}>没有读到抵扣比例 <InlineRetry label="重试" onRetry={() => setLadderReferenceAttempt((attempt) => attempt + 1)} /></span>
+                : ladderReference.status === "error" ? <span className="k2-ref-failed" role="alert" title={ladderReference.message}>抵扣比例加载失败 · 请稍后重试<Button size="sm" aria-label="重试加载升级置换首档抵扣" onClick={() => setLadderReferenceAttempt((attempt) => attempt + 1)}>重试</Button></span>
                 : <>{ladderReference.value === null ? "未提供" : `${ladderReference.value}%`}{reach("/devices/trade-in", "device_e3_read") && <> · <Link className="rd-link" href="/devices/trade-in">设备使用与升级置换</Link></>}</>} />
             <ConfigRow name="新人礼金额与发放规则" explainLabel="新人礼金额与发放规则的说明" what="新人礼和邀请奖励发多少、怎么发。" where="在「新人礼与邀请奖励」设置，本页不改金额。"
               value={reach("/growth/referral-rewards", "growth_h8_read") ? <Link className="rd-link" href="/growth/referral-rewards">新人礼与邀请奖励</Link> : "新人礼与邀请奖励（没有查看权限）"} />
