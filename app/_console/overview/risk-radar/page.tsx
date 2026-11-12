@@ -558,7 +558,7 @@ export default function RiskRadarPage() {
                 note={yellowDirection ? "黄线只决定什么时候标「注意」，不会自动暂停提现。" : undefined}>
                 {(control) => <NumberInput {...control} aria-label="黄线（5%–50%）" unit="%" min={5} max={50} value={yellowInput} disabled={thresholdLocked} onChange={(event) => setYellowInput(event.target.value)} />}
               </DiffField>
-              <DiffField before={fmtConfigPct(threshold.redPct)} label="红线改成" hint="10%–80%，要高于黄线" state={redDirection} error={yellowInput && redInput ? orderError : undefined}
+              <DiffField before={fmtConfigPct(threshold.redPct)} label="红线改成" explain="紧急停用开关页把这条线叫挤兑红线，是同一条线。" hint="10%–80%，要高于黄线" state={redDirection} error={yellowInput && redInput ? orderError : undefined}
                 note={redDirection ? (raising ? "红线调高，自动暂停提现会更晚触发。" : "红线调低，自动暂停提现会更早触发，立即生效。") : undefined}>
                 {(control) => <NumberInput {...control} aria-label="红线（10%–80%）" unit="%" min={10} max={80} value={redInput} disabled={thresholdLocked} onChange={(event) => setRedInput(event.target.value)} />}
               </DiffField>
@@ -568,15 +568,16 @@ export default function RiskRadarPage() {
                   : previewKey && !previewError ? "正在按新的线计算…" : "填好两条线后显示按新的线会标什么。"}
               </p>
               <Notice tone="neutral">
-                和「紧急停用开关」共用（那边叫挤兑红线），改了那边也变，是否自动暂停提现由那边按自己的统计判断。
+                <p>和「紧急停用开关」共用，那边也跟着变。</p>
+                <p>是否自动暂停提现，由那边按自己的统计判断。</p>
               </Notice>
               {requiresApproval && (
                 <Notice tone="warn" title="提高红线要审批">
                   提交后由另一位有批准权限的超级管理员批准；批准前红线仍是 {fmtConfigPct(threshold.redPct)}。
                 </Notice>
               )}
-              <Field label="调整理由" required hint="8–200 字" error={reason && !reasonValid && !thresholdLocked ? "理由要写 8–200 个字" : undefined}>
-                <Textarea value={reason} disabled={thresholdLocked} maxLength={200} rows={3} placeholder="例如：工单号、调整依据" count={`${reason.trim().length} / 200`} onChange={(event) => setReason(event.target.value)} />
+              <Field label="调整理由" required error={reason && !reasonValid && !thresholdLocked ? "理由要写 8–200 个字" : undefined}>
+                <Textarea value={reason} disabled={thresholdLocked} maxLength={200} rows={3} placeholder="8–200 字，例如：工单号、调整依据" count={`${reason.trim().length} / 200`} onChange={(event) => setReason(event.target.value)} />
               </Field>
             </div>
           </Modal>
@@ -609,7 +610,7 @@ export default function RiskRadarPage() {
                 </Notice>
                 <CheckGroup legend="发送渠道" summary={subscriptionValid ? undefined : "至少开一个"}>
                   <Check name="inApp" label="站内告警" checked={subscription.inApp} disabled={!canSubscribe} onChange={(event) => setSubscription((value) => ({ ...value, inApp: event.target.checked }))} />
-                  <Check name="email" label="邮件" checked={false} disabled help="暂不可用，邮件服务没有接通，开启会被系统拒绝。" />
+                  <Check name="email" label="邮件" checked={false} disabled help="邮件服务没接通，暂不可用。" />
                   <Check name="webhook" label="外部通知" checked={subscription.webhook}
                     disabled={!canSubscribe || (webhookMode !== "controlled-proxy" && !subscription.webhook)}
                     help={webhookMode === "controlled-proxy" ? "已配置受控代理，可以开启。" : subscription.webhook ? "没有配置受控代理，只能关闭。" : "没有配置受控代理，暂不能开启。"}
@@ -650,8 +651,8 @@ export default function RiskRadarPage() {
                 <Fact k="处理进度"><Change from={HANDLING[alert.handlingStatus].text} to={STATUS_TEXT[target]} /></Fact>
               </Facts>
               <p className="b5-line">标成「{STATUS_TEXT[target]}」只记录进度，不会解除风控，也不会放行提现。真正的处置到对应页面办。</p>
-              <Field label="处理理由" required hint="8–200 字" error={statusReason && !valid ? "理由要写 8–200 个字" : undefined}>
-                <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={200} rows={3} placeholder="例如：已核实、工单号" count={`${statusReason.trim().length} / 200`} onChange={(event) => setStatusReason(event.target.value)} />
+              <Field label="处理理由" required error={statusReason && !valid ? "理由要写 8–200 个字" : undefined}>
+                <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={200} rows={3} placeholder="8–200 字，例如：已核实、工单号" count={`${statusReason.trim().length} / 200`} onChange={(event) => setStatusReason(event.target.value)} />
               </Field>
               {statusError && <Notice tone={statusUnknown ? "warn" : "danger"} title={statusUnknown ? "结果还没确认，可能已经生效" : "没有标记成功"}>
                 {statusUnknown ? "理由已锁住，只能按原内容重试；也可以关掉后刷新页面，看这条的处理进度变了没有。" : statusError}
