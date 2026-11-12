@@ -155,7 +155,7 @@ const PARAM: Record<string, {
     tighten: "调低",
     what: "一个用户一天内兑换（UVT 换 USDT、USDT 换 UVT 都算）折合 USDT 的上限",
     queue: "排队中的单下次处理时按新额度判断，不会自动成交",
-    future: "之后的兑换按新额度判断；超过的按「超额度处置策略」排队或拒绝",
+    future: "之后的兑换按新额度判断；超过的按「超额度处置策略」和用户发起时的选择排队或拒绝",
     hint: "0–10,000",
     unit: "USDT",
   },
@@ -165,7 +165,7 @@ const PARAM: Record<string, {
     tighten: "调低",
     what: "全平台一天内所有兑换折合 USDT 的总上限",
     queue: "排队中的单下次处理时按新额度判断，不会自动成交",
-    future: "之后的兑换按新额度判断；超过的按「超额度处置策略」排队或拒绝",
+    future: "之后的兑换按新额度判断；超过的按「超额度处置策略」和用户发起时的选择排队或拒绝",
     hint: "0–10,000,000",
     unit: "USDT",
   },
@@ -725,7 +725,7 @@ function G2ExchangePage() {
         ? `${copy?.loosen ?? "放宽"}${name}会让平台多付 USDT，要另一位超级管理员批准`
         : `${copy?.loosen ?? "放宽"}${name}会让平台每天可能多付 USDT，要另一位超级管理员批准`,
       coverageCheck: cap.key === "fee" || cap.key === "feeMin"
-        ? "提交审批时和批准时，后端各检查一次：原值没被别人改过；把现在所有排队中的单按新旧费用各算一次到手 USDT，多出来的加进应付款后，兑付覆盖率不低于红线。低于红线或算不准都拒绝。"
+        ? "提交审批时和批准时，后端各检查一次：原值没被别人改过；把现在排队中的真实单（不含停用账户和测试账户）按新旧费用各算一次到手 USDT，多出来的加进应付款后，兑付覆盖率不低于红线。低于红线或算不准都拒绝。"
         : "提交审批时和批准时，后端各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
       edit: isQueueMode
         ? { kind: "select", current: cap.displayValue, disallowCurrent: true, initialValue: originalValue === undefined ? undefined : originalValue === "REJECT" ? "拒绝" : "排队", options: ["排队", "拒绝"], amplifiesWhen: { from: "拒绝", to: "排队" } }
@@ -806,7 +806,7 @@ function G2ExchangePage() {
     openActionConfirm({ briefKind: "emergency",
       action: "紧急暂停全部兑换",
       title: "紧急暂停全部兑换",
-      detail: <>马上停止全平台所有 UVT↔USDT 兑换，并同步到「紧急停用开关」。恢复要去「紧急停用开关」页面操作。</>,
+      detail: <>关闭全平台 UVT↔USDT 兑换，并同步到「紧急停用开关」：之后用户新发起的兑换和「处理排队」都会被拒绝。恢复要去「紧急停用开关」页面操作。</>,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmTone: "danger",
       confirmLabel: "确认暂停",
@@ -816,7 +816,7 @@ function G2ExchangePage() {
         <Fact k="已完成的兑换">不受影响，不回退</Fact>
         <Fact k="怎么恢复">只能在「紧急停用开关」页面恢复，这页没有恢复入口</Fact>
       </Facts>,
-      statedBrief: { impact: "用户马上不能兑换，直到在「紧急停用开关」恢复。", check: "选暂停原因，理由写清事件和工单号；涉及国家只记进这次的操作记录，不会封锁这些地区。" },
+      statedBrief: { impact: "之后用户新发起的兑换会被拒绝，直到在「紧急停用开关」恢复。", check: "选暂停原因，理由写清事件和工单号；涉及国家只记进这次的操作记录，不会封锁这些地区。" },
       amplifies: false,
       businessForm: { kind: "multi-field", title: "暂停原因", fields: [
         { key: "triggerBasis", label: "类型", current: "PRICE_ANOMALY", inputKind: "select", options: ["REGULATORY", "PRICE_ANOMALY", "SECURITY_INCIDENT", "OTHER"], optionLabels: { REGULATORY: "监管要求", PRICE_ANOMALY: "价格异常", SECURITY_INCIDENT: "安全事件", OTHER: "其他" }, required: true },
@@ -908,7 +908,7 @@ function G2ExchangePage() {
         <Fact k="金额">{count === undefined ? `排队中 ${fmtCount(stats.queueDepth)} 单` : queueAllVisible && stats.queueDepth > 0
           ? `最早的 ${fmtCount(Math.min(count, queue.length))} 单合计 ${fromMicros(oldestMicros)} USDT（实际以处理结果为准）`
           : `列表只显示最近 ${fmtCount(queue.length)} 单，算不出这一批的金额；处理结果里逐单列出`}</Fact>
-        <Fact k="每一单">依次检查兑换开关、用户、钱包、平台和个人日额度、地区、手续费；通过的马上成交，额度不够的留在队列，地区被封锁的取消并退回预占</Fact>
+        <Fact k="每一单">依次检查兑换开关、用户、钱包、平台和个人日额度、地区、手续费；通过的马上成交，额度不够的留在队列；额度检查通过后地区被封锁的取消，有预占的退回</Fact>
         {swap.emergencyPaused === true && <Fact k="现在" tone="warn">兑换已暂停，后端会拒绝这一批</Fact>}
       </Facts>;
     },
@@ -1055,7 +1055,7 @@ function G2ExchangePage() {
               valueText={`已兑换 ${amount(stats.todayUsd)} USDT，日额度 ${platformCap ? amount(platformCap.value) : "—"} USDT`} tone="role-1"
               state={capMicros === BigInt(0) ? "empty" : undefined}
               emptyText="平台日额度是 0：之后的兑换都会被拦下"
-              invalidText="今天已兑换超过日额度（额度今天被调低过），之后的兑换会被拦下" />
+              invalidText="今天已兑换的金额超过现在的日额度，条画不出来；这里按到手金额算，后端放行时按自己的已用量判断" />
             <dl className="g2x-quota-nums">
               <div><dt>已兑换</dt><dd>{amount(stats.todayUsd)} USDT</dd></div>
               <div><dt>日额度</dt><dd>{platformCap ? paramValueText("platformDailyCap", platformCap.value) : "—"}</dd></div>
@@ -1206,7 +1206,7 @@ function G2ExchangePage() {
         <Drawer open onClose={() => setQueueDrawer(null)} title="排队中的兑换" icon={ListOrdered} tone="role-3"
           sub={<span data-mono>{selectedQueue.exchangeNo}</span>} busy={busy}
           footer={allowed("finprod_g2_queue_cancel") || directCommands.some(record => record.path === `/exchange/queue/${encodeURIComponent(selectedQueue.exchangeNo)}/cancel`) ? <Decision
-            note="取消后退回预占的原币，之后不会再成交。"
+            note="取消后之后不会再成交；有预占记录的退回原币，没有预占的历史单只取消。"
             danger={<Button variant="danger-outline" disabledReason={busyReason ?? (directCommands.some(record => record.path === `/exchange/queue/${encodeURIComponent(selectedQueue.exchangeNo)}/cancel`) ? undefined : newWriteBlockedReason)} aria-label="取消这笔兑换" onClick={() => cancelQueue(selectedQueue)}>取消这笔兑换</Button>} /> : undefined}>
           <JudgmentPoints rows={[
             { label: "排队原因", value: selectedQueue.gateReason, state: "warn" },
