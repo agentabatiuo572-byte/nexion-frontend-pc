@@ -62,15 +62,15 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
       return <Facts>
         <Fact k="哪一天">{day}{change.dayIndex === today ? "（今天）" : ""}</Fact>
         <Fact k="提交时检查">{raising
-          ? `提交和批准时按改后整周最高目标价（现在 ${price(Math.max(...frames.map((frame) => frame.targetPrice)))} USDT）复核兑付覆盖率，低于红线拒绝${probability ? "；上涨概率不折算成应付款" : ""}`
-          : decided ? "七天计划在你打开后没有被别人改过，否则拒绝" : "提高：复核兑付覆盖率；降低：核对七天计划没被别人改过"}</Fact>
-        {probability && <Fact k="环境限制" tone="warn">开发环境以外，后端拒绝人工改上涨概率：直接保存、提交审批和批准都会被拒。</Fact>}
+          ? `按改后整周最高目标价（现在 ${price(Math.max(...frames.map((frame) => frame.targetPrice)))}）复核覆盖率，低于红线拒绝${probability ? "；概率不折成应付款" : ""}`
+          : decided ? "七天计划在你打开后被改过就拒绝" : "提高复核兑付覆盖率；降低核对计划未变"}</Fact>
+        {probability && <Fact k="环境限制" tone="warn">非开发环境后端一律拒绝改上涨概率（含审批）</Fact>}
       </Facts>;
     }
     if (change.action === "current-price") {
       return <Facts>
-        <Fact k="提交时检查">{raising ? "提交和批准时按新价重估兑付覆盖率，低于红线拒绝" : decided ? "现价在你打开后没有变过，否则拒绝" : "提高：按新价重估兑付覆盖率；降低：核对现价没被改过"}</Fact>
-        <Fact k="环境限制" tone="warn">开发环境以外，后端拒绝直接改现价：直接保存、提交审批和批准都会被拒。</Fact>
+        <Fact k="提交时检查">{raising ? "按新价重估兑付覆盖率，低于红线拒绝" : decided ? "现价在你打开后变过就拒绝" : "提高按新价重估覆盖率；降低核对现价未变"}</Fact>
+        <Fact k="环境限制" tone="warn">非开发环境后端一律拒绝直接改现价（含审批）</Fact>
       </Facts>;
     }
     return <Facts>

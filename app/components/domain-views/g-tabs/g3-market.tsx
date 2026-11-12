@@ -280,7 +280,7 @@ function G3MarketEditor() {
   const canWriteAny = ["finprod_g3_write", "finprod_g3_curve_target_price_write", "finprod_g3_curve_pump_prob_write", "finprod_g3_override_price_write", "finprod_g3_engine_pause_toggle"].some(allowed);
   const header = (
     <PageHeader pageId="G3" title="UVT 价格管理"
-      summary="定 UVT 未来七天的价格计划，看价格按计划推进，必要时暂停、固定某一天或应急改价。"
+      summary="管 UVT 七天价格计划和价格怎么推进。"
       actions={overview ? <Button variant="ghost" size="sm" loading={refreshing} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void refresh()}>刷新</Button> : undefined}
       meta={overview ? "打开时读取，不自动刷新" : undefined}
       readOnly={overview && !canWriteAny ? "你只能查看；这个账号没有修改价格计划和运行方式的权限。" : undefined} />
@@ -574,8 +574,8 @@ function G3MarketEditor() {
       <thead>
         <tr>
           <Th>哪一天</Th>
-          <Th align="right">目标价（USDT）<Explain label="目标价" content={<><p>推进或固定到这一天时，现价按这个值发布。</p><p>提高要另一位有权超管批准，降低直接保存；都只改计划，现价不变。</p></>} /></Th>
-          <Th align="right">上涨概率（0–1）<Explain label="上涨概率" content={<><p>0.35 表示 35%。推进到这一天时写进当天配置；现价按目标价发布，上涨概率不改变发布的价格。</p><p>提高要另一位有权超管批准，降低直接保存。</p><p>{TUNING_RULE}</p></>} /></Th>
+          <Th align="right"><Explain label="目标价" content={<><p>推进或固定到这一天时，现价按这个值发布。</p><p>提高要另一位有权超管批准，降低直接保存；都只改计划，现价不变。</p></>} />目标价（USDT）</Th>
+          <Th align="right"><Explain label="上涨概率" content={<><p>0.35 表示 35%。推进到这一天时写进当天配置；现价按目标价发布，上涨概率不改变发布的价格。</p><p>提高要另一位有权超管批准，降低直接保存。</p><p>{TUNING_RULE}</p></>} />上涨概率（0–1）</Th>
         </tr>
       </thead>
       <tbody>{dayRows}</tbody>
@@ -754,11 +754,11 @@ function G3MarketEditor() {
         explain="这些值能保存，但后端发布价格和兑换时都不读它们。入口先保留，已提给后端接上或退役。">
         <div className="g3-subhead">七天波动幅度<Explain label="七天波动幅度" content="七天计划里每一天的波动幅度（2 表示 ±2%），推进到这一天时抄进当天配置。发布价格直接用目标价，不按它随机涨跌。" /></div>
         <Table label="七天波动幅度" className="g3-vol">
-          <thead><tr>{overview.frames.map((_, index) => <Th key={index} align="right">D{index + 1}</Th>)}</tr></thead>
+          <thead><tr>{overview.frames.map((_, index) => <Th key={index}>D{index + 1}</Th>)}</tr></thead>
           <tbody>
             <tr>
               {overview.frames.map((frame, dayIndex) => (
-                <Td key={frame.dayIndex} align="right">
+                <Td key={frame.dayIndex}>
                   {OBJECT_STATES[`weekly:D${dayIndex + 1}:volatilityPct`] && <span className="g3-cell-tag"><ObjectTag state={OBJECT_STATES[`weekly:D${dayIndex + 1}:volatilityPct`]} /></span>}
                   <span className="g3-cell">
                     <span className="g3-num">±{pctText(frame.volatilityPct)}</span>

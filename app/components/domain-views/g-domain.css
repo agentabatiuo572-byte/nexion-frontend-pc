@@ -193,10 +193,10 @@ html[data-theme="dark"] .gdom .g3-market-confirm { --admin-confirm-focus: var(--
    只用 --rd-* 令牌。七天计划：左边走势图、右边逐日表（Figure）；今天那一行用选中底，值和改的按钮挨着、右对齐。 */
 
 .g3m .g3-plan { table-layout: fixed; }
-.g3m .g3-plan th:nth-child(1) { width: 40%; }
-.g3m .g3-plan th:nth-child(2) { width: 32%; }
-.g3m .g3-plan th:nth-child(3) { width: 28%; }
-.g3m .g3-plan td { padding-block: 8px; }
+.g3m .g3-plan th:nth-child(1) { width: 32%; }
+.g3m .g3-plan th:nth-child(2) { width: 36%; }
+.g3m .g3-plan th:nth-child(3) { width: 32%; }
+.g3m :is(.g3-plan, .g3-vol) td { padding-block: 8px; }
 .g3m .g3-plan tr[data-today] td { background: var(--rd-selected); }
 .g3m .g3-plan tr[data-today] td:not(:last-child) { box-shadow: 1px 0 0 var(--rd-selected); }  /* 列宽带小数时格子之间不露缝（同 rd 选中行） */
 
