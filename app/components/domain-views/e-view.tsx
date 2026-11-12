@@ -496,12 +496,13 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   };
   useEffect(() => { if (tab === "E4") syncE4Pending(); }, [tab, syncE4Pending]);
-  /**
-   * 先把原操作存好再发。确定失败丢号，留在确认框；结果未知保号，关框，转成页面上方的待确认条，这单在有结论前不能再操作。
-   * 重试的是保留下来的原命令时，确定失败也证明不了原命令的结果，继续保留。只有成功才解除。返回 true 表示已提交。
-   */
+  /** 先存完整原请求再发；未知时保留原框并冻结输入。旧指纹记录只查询，不另建一笔。 */
   const sendE4Proposal = async (spec: ProposeSpec, retained?: E4PendingCommand) => {
     const scope = `order|${spec.obj}`;
+    if (commandAttempts.list().some(record => E4_APPROVAL_OPS.some(op => record.fingerprint === `${op}|${spec.obj}`))) {
+      throw new Error("旧操作缺少完整原请求与理由，只能核对原操作，不能重新发送。");
+    }
+    if (retained && isRetryExpired(retained)) throw new Error(RETRY_EXPIRED_TEXT);
     const key = retained?.commandKey ?? createA2CommandKey("e-domain-action");
     e4PendingCommands.remember(scope, key, { label: spec.action, orderNo: spec.obj, spec });
     if (!e4PendingCommands.isDurablyStored(scope, key)) {
@@ -513,12 +514,12 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       await rawPropose(() => undefined, { ...spec, commandKey: key });
     } catch (error) {
-      const unknown = isA2OutcomeUncertainError(error);
-      if (!unknown && !retained) e4PendingCommands.forget(scope);
+      if (isExplicitRejection(error)) {
+        if (!retained) e4PendingCommands.forget(scope, key);
+        else setE4RetryRejected(current => [...current, key]);
+      }
       syncE4Pending();
-      if (!unknown) throw error;
-      setToast("结果未确认，不要重复操作。到页面上方按原操作重试，或到操作记录核查。", "warn");
-      return false;
+      throw error;
     }
     e4PendingCommands.forget(scope);
     syncE4Pending();
@@ -541,11 +542,10 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     setE4Retrying(record.fingerprint);
     setE4RetryRejected((current) => current.filter((key) => key !== record.commandKey));
     try {
-      if (await sendE4Proposal(record.spec, record)) await refreshE4();
-      else noteE4Pending(record, "这次也没有确认结果，原操作继续保留。");
+      await sendE4Proposal(record.spec, record);
+      await refreshE4();
     } catch (error) {
       noteE4Pending(record, `重试没有成功：${displayAdminError(error)} 这说明不了原操作的结果，原操作继续保留。`);
-      if (isExplicitRejection(error)) setE4RetryRejected((current) => [...current, record.commandKey]);
     } finally {
       setE4Retrying("");
     }
@@ -810,6 +810,11 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
         amplifies={!!mc.amplify}
         edit={mc.edit}
         businessForm={mc.businessForm}
+        getPendingReason={mc.orderId ? () => e4PendingCommands.list().find(record => record.orderNo === mc.orderId)?.spec.reason : undefined}
+        getPendingBusinessValue={mc.orderId ? () => {
+          const original = e4PendingCommands.list().find(record => record.orderNo === mc.orderId);
+          return original ? Object.fromEntries(Object.entries(original.spec.command.params).map(([key, value]) => [key, String(value)])) : undefined;
+        } : undefined}
         reasonMin={8}
         reasonMax={200}
         completionCopy={mc.orderId ? undefined : isE2TaskMutation(mc.op)
@@ -828,6 +833,14 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;
+          const original = mc.orderId ? e4PendingCommands.list().find(record => record.orderNo === mc.orderId) : undefined;
+          if (original) {
+            await sendE4Proposal(original.spec, original);
+            setSelOrder(null);
+            setActionConfirm(null);
+            void refreshE4();
+            return;
+          }
           if (isE2TaskMutation(mc.op) && !canMutateE2Tasks) {
             setToast("设备收益设置加载失败，本次没有提交");
             setActionConfirm(null);
@@ -921,7 +934,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
             await proposeParam(mc.paramKey, mc.fixedVal, "—", reason, mc.name, !!mc.amplify);
           } else if (mc.op === "order-state" && mc.orderId && mc.fixedVal) {
             const def = findHighOp("e4_order_state")!;
-            await propose(ctx.toast, {
+            await sendE4Proposal({
               action: mc.name, obj: mc.orderId, before: stateLabel(effOrderState(mc.orderId)), after: stateLabel(mc.fixedVal), type: def.type, amplifies: false,
               gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
               command: def.buildCommand({ orderNo: mc.orderId, state: mc.fixedVal }),
@@ -934,7 +947,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
             const refundReasonCode = (businessValue?.refundReasonCode ?? "").trim();
             if (!(E4_REFUND_REASONS as readonly string[]).includes(refundReasonCode)) { throw new Error("请选择退款原因"); }
             const def = findHighOp("e4_order_refund")!;
-            await propose(ctx.toast, {
+            await sendE4Proposal({
               action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: "已退款", type: def.type, amplifies: true,
               gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
               command: def.buildCommand({ orderNo: mc.orderId, refundChannel, refundReasonCode }),
@@ -945,7 +958,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
             const closeReasonCode = (businessValue?.closeReasonCode ?? "").trim();
             if (!E4_CLOSE_REASONS.cancelled.includes(closeReasonCode)) { throw new Error("请选择取消原因"); }
             const def = findHighOp("e4_order_cancel")!;
-            await propose(ctx.toast, {
+            await sendE4Proposal({
               action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: "已取消", type: def.type, amplifies: false,
               gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
               command: def.buildCommand({ orderNo: mc.orderId, closeReasonCode }),
@@ -953,13 +966,13 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
             });
             setSelOrder(null);
           } else if (mc.op === "order-terminal" && mc.orderId) {
-            const v = (businessValue?.terminalState ?? "").trim();
+            const v = (businessValue?.terminalState ?? mc.fixedVal ?? "").trim();
             if (!v) { throw new Error("请选择失败结果"); }
             const choices = E4_CLOSE_REASONS[v];
             const closeReasonCode = choices ? (businessValue?.closeReasonCode ?? "").trim() : "";
             if (choices && !choices.includes(closeReasonCode)) { throw new Error("请选择原因"); }
             const def = findHighOp("e4_order_terminal")!;
-            await propose(ctx.toast, {
+            await sendE4Proposal({
               action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: stateLabel(v), type: def.type, amplifies: false,
               gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
               command: def.buildCommand({ orderNo: mc.orderId, terminalState: v, closeReasonCode }),

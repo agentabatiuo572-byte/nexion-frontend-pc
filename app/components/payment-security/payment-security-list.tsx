@@ -4,16 +4,18 @@ import { RefreshCw, ShieldAlert } from "lucide-react";
 import { BlockState, Button, Cell, Conclusion, FilterBar, FilterField, IconButton, Input, Panel, Pager, Select, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZoneText, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { fetchPaymentSecurityRecords, paymentSecurityPorts } from "@/lib/admin/payment-password-client";
+import { fetchPaymentSecurityRecords, paymentSecurityPorts, type PendingPaymentRelease } from "@/lib/admin/payment-password-client";
 import type { PaymentSecurityPage, PaymentSecurityRecord } from "@/lib/admin/payment-password-contract";
 import { PaymentSecurityDetail, PaymentSecurityState } from "./payment-security-card";
 
 const initial = { keyword: "", state: "ACTIVE", from: "", to: "" };
-export function PaymentSecurityList() {
+export function PaymentSecurityList({ recovery, onRecoveryClose, onRecordChange }: { recovery?: PendingPaymentRelease | null; onRecoveryClose?: () => void; onRecordChange?: (recordId: string | null) => void }) {
   const epoch = useAdminAuth(state => state.authEpoch), role = useAdminAuth(state => state.session?.role);
   const [draft, setDraft] = useState(initial), [query, setQuery] = useState(initial), [pageNum, setPage] = useState(1), [pageSize, setSize] = useState(10);
   const [data, setData] = useState<PaymentSecurityPage | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState(""), [filterError, setFilterError] = useState("");
-  const [selected, setSelected] = useState<PaymentSecurityRecord | null>(null);
+  const [selectedRow, setSelected] = useState<PaymentSecurityRecord | null>(null);
+  const selected = recovery ? { id: recovery.recordId, userId: recovery.userId, userLabel: recovery.userId } : selectedRow;
+  useEffect(() => { onRecordChange?.(selected?.id ?? null); return () => onRecordChange?.(null); }, [selected?.id, onRecordChange]);
   const generation = useRef(0), selectedPort = useMemo(() => selected ? paymentSecurityPorts.global(selected.userId) : null, [selected?.userId]);
   const scoped = role === "support";
   const load = useCallback(async () => {
@@ -36,6 +38,6 @@ export function PaymentSecurityList() {
       <Table aria-label="支付密码异常记录" label="支付密码异常记录" className="c5-payment-table"><thead><tr><Th>用户</Th><Th>状态</Th><Th>异常原因</Th><Th>发生时间</Th><Th sticky="end">操作</Th></tr></thead><tbody>{loading ? <TableLoading columns={5} /> : data?.records.map(row => <Tr key={row.id} selected={selected?.id === row.id} onOpen={() => setSelected(row)}><Td><Cell main={row.userLabel} title={row.userLabel} /></Td><Td><PaymentSecurityState record={row} /></Td><Td><Cell main={row.reason} title={row.reason} /></Td><Td><Cell num main={formatBusinessTimeCompact(row.startedAt)} /></Td><Td sticky="end"><Button size="sm" onClick={() => setSelected(row)}>查看详情</Button></Td></Tr>)}{!loading && !data?.records.length && <TableMessage columns={5}>{error ? "记录尚未确认，请重新加载" : "没有匹配的支付密码异常记录，可调整筛选"}</TableMessage>}</tbody></Table>
       {data && data.total > 0 && <Pager label="支付密码异常记录" total={data.total} page={data.pageNum} pageSize={data.pageSize} sizes={[10, 20, 50]} loading={loading} onPage={setPage} onPageSize={size => { setSize(size); setPage(1); }} />}
     </Panel></>}
-    {selected && selectedPort && <PaymentSecurityDetail key={`${selectedPort.key}:${selected.id}:${epoch}`} port={selectedPort} recordId={selected.id} userLabel={selected.userLabel} recoveryActions onClose={() => setSelected(null)} />}
+    {selected && selectedPort && <PaymentSecurityDetail key={`${selectedPort.key}:${selected.id}:${epoch}`} port={selectedPort} recordId={selected.id} userLabel={selected.userLabel} recoveryActions onClose={() => { setSelected(null); onRecoveryClose?.(); }} />}
   </div>;
 }

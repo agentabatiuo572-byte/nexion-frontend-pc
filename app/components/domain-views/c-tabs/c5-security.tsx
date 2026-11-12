@@ -17,7 +17,7 @@ import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { sessionTimeAnomaly } from "@/lib/admin/session-time";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { pendingPaymentPolicy, pendingPaymentRelease } from "@/lib/admin/payment-password-client";
+import { pendingPaymentPolicy, pendingPaymentReleases, type PendingPaymentRelease } from "@/lib/admin/payment-password-client";
 import { pendingPhoneCommands, pendingModelLockCommands } from "@/lib/admin/phone-replacement-client";
 import { PaymentPasswordPanel } from "./payment-password-panel";
 import { PhoneReplacementPanel } from "./phone-replacement-panel";
@@ -70,6 +70,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(10), [busy, setBusy] = useState(false);
   const [picker, setPicker] = useState(false), [locksOpen, setLocksOpen] = useState(false), [shownLock, setShownLock] = useState<UserSecurityUserRow | null>(null), [shownSession, setShownSession] = useState<string | null>(null);
   const [pendingTick, setPendingTick] = useState(0), [recovery, setRecovery] = useState<C5Pending | null>(null), [release, setRelease] = useState(false), [recoveryMessage, setRecoveryMessage] = useState("");
+  const [paymentRecovery, setPaymentRecovery] = useState<PendingPaymentRelease | null>(null);
+  const [shownPaymentRecord, setShownPaymentRecord] = useState<string | null>(null);
   const generation = useRef(0), selectedRef = useRef(focus), mutation = useRef(false);
   selectedRef.current = focus;
   const ids = useTabIds();
@@ -122,7 +124,9 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   }, [userId, selectedUser?.userNo, canFind, epoch]);
   const pending = useMemo(() => owner && canRead ? pendingC5Commands(owner) : [], [owner, canRead, pendingTick]);
   const logoutPending = useMemo(() => owner && canRead ? listSessionRevocationApprovals(owner) : [], [owner, canRead, pendingTick]);
-  const policyPending = owner ? pendingPaymentPolicy(owner) : null, paymentPending = owner && userId ? pendingPaymentRelease(owner, userId) : null;
+  const policyPending = owner ? pendingPaymentPolicy(owner) : null;
+  const paymentPending = owner && canRead ? pendingPaymentReleases(owner).filter(row => row.portKey === `global:${row.userId}`
+    && !(tab === "payment" && (params?.get("paymentTab") !== "exceptions" ? row.userId === userId : row.recordId === shownPaymentRecord))) : [];
   const phonePending = owner && userId ? pendingPhoneCommands(owner, userId) : [], modelPending = owner && userId ? pendingModelLockCommands(owner, userId) : [];
   const userBlocked = (id: string) => busy ? "正在提交，请稍候" : pending.some(row => !isCompleteC5Command(row) || row.userId === id) || logoutPending.some(row => row.userId === id) ? "此用户有待确认原操作，请先核对" : undefined;
   const sessions = overview?.sessions?.records ?? [], selectedSession = sessions.find(row => row.refreshTokenId === shownSession);
@@ -214,7 +218,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     {pending.map(row => <Notice key={row.commandKey} tone="warn" title={row.label ?? "旧登录处置结果待确认"} action={<Button size="sm" disabled={busy} onClick={() => { setRecovery(row); setRelease(false); setRecoveryMessage(""); }}>查看原操作</Button>}><span>{row.userNo || "原对象见恢复记录"} · {time(new Date(row.createdAt).toISOString())} · {row.returned ? "操作已返回，页面尚未刷新" : row.expiresAt <= Date.now() ? "已过 24 小时，只能读回核对" : "结果待确认"}</span></Notice>)}
     {logoutPending.map(row => <Notice key={row.commandKey} tone="warn" title={`全部设备登出审批待确认 · ${row.label}`} action={<Button size="sm" disabledReason={busy ? "正在提交" : undefined} onClick={async () => { if (!session) return; setBusy(true); try { await proposeSessionRevocation(session, row.userId, row.label, row.reason); ctx.toast("已查到原审批单，批准后生效"); } catch (failure) { ctx.toast(displayAdminError(failure), "warn"); } finally { setBusy(false); refreshPending(); } }}>查询原操作</Button>}><span>{time(new Date(row.createdAt).toISOString())} · <span data-mono>{row.commandKey}</span></span></Notice>)}
     {policyPending && (tab !== "payment" || params?.get("paymentTab") === "exceptions") && <Notice tone="warn" title="支付密码规则调整结果待确认" action={<Button size="sm" onClick={() => setUrl({ tab: "payment", paymentTab: "policy" })}>查询原调整结果</Button>}>原调整记录已保留，请先核对结果。</Notice>}
-    {paymentPending && (tab !== "payment" || params?.get("paymentTab") === "exceptions") && <Notice tone="warn" title={`支付密码解除结果待确认 · ${userLabel(selectedUser)}`} action={<Button size="sm" onClick={() => setUrl({ tab: "payment", paymentTab: "policy" })}>查询原操作</Button>}>原记录 {paymentPending.recordId} · 只能查询原命令。</Notice>}
+    {paymentPending.map(row => <Notice key={row.commandKey} tone="warn" title={`支付密码解除结果待确认 · ${row.userId === userId ? userLabel(selectedUser) : row.userId}`} action={<Button size="sm" onClick={() => { setPaymentRecovery(row); setUrl({ tab: "payment", paymentTab: "exceptions" }); }}>查询原操作</Button>}>原记录 {row.recordId} · 只能查询原命令。</Notice>)}
     {(phonePending.length > 0 || modelPending.length > 0) && tab !== "phone" && <Notice tone="warn" title={`手机处置结果待确认 · ${userLabel(selectedUser)}`} action={<Button size="sm" onClick={() => setUrl({ tab: "phone" })}>查看原操作</Button>}>{phonePending.length + modelPending.length} 笔原操作已保留，只能读回核对。</Notice>}
     <PageTabs ids={ids} label="安全管理内容" value={tab} onChange={value => setUrl({ tab: value })} items={[{ value: "security", label: "用户安全处置", disabled: busy }, { value: "credentials", label: "登录与改号规则", disabled: busy }, { value: "payment", label: "支付密码", disabled: busy }, { value: "phone", label: "手机换机", disabled: busy }]} />
     <div {...ids.panel(tab)} className="rd-tab-pane">
@@ -230,7 +234,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
         </Panel>}
       </>}
       {tab === "credentials" && <Panel title="登录安全与更换手机号限制" icon={KeyRound} explain="更换登录手机号与更换手机设备分开统计。发现登录凭证复用时，系统会撤销相关登录会话。">{loading ? <BlockState state="loading" title="正在读取规则" /> : !credentials.length ? <BlockState state="error" title="当前规则尚未确认" onRetry={() => void load()} /> : <ConfigList label="登录与改号规则">{credentials.map(param => <ConfigRow key={text(param.key)} name={text(param.name)} {...PARAM_HELP[text(param.key)]} note={text(param.note)} value={text(param.value)} sub={param.readOnly ? "只能查看" : undefined} action={canConfig && !param.readOnly ? <Button size="sm" disabledReason={busy ? "正在提交" : pending.some(row => row.kind === "credential" || !isCompleteC5Command(row)) ? "先核对原规则调整结果" : count(param.version) === null ? "规则版本未读取" : undefined} onClick={() => adjust(param)}>调整</Button> : undefined} />)}</ConfigList>}</Panel>}
-      <div hidden={tab !== "payment"}><PaymentPasswordPanel key={`payment:${owner}:${epoch}`} userId={userId || null} userLabel={userLabel(selectedUser)} active={tab === "payment"} onPendingChange={refreshPending} onBusyChange={setBusy} /></div>
+      <div hidden={tab !== "payment"}><PaymentPasswordPanel key={`payment:${owner}:${epoch}`} userId={userId || null} userLabel={userLabel(selectedUser)} active={tab === "payment"} recovery={paymentRecovery?.owner === owner ? paymentRecovery : null} onRecoveryClose={() => setPaymentRecovery(null)} onRecordChange={setShownPaymentRecord} onPendingChange={refreshPending} onBusyChange={setBusy} /></div>
       <div hidden={tab !== "phone"}><PhoneReplacementPanel active={tab === "phone"} userCode={text(selectedUser?.userNo, "")} key={`phone:${owner}:${epoch}:${userId}`} userId={userId || null} userLabel={userLabel(selectedUser)} onPendingChange={refreshPending} onBusyChange={setBusy} /></div>
     </div>
     {picker && <Drawer open onClose={() => setPicker(false)} title="更换用户" icon={UserRound}><div className="c5-search"><Input data-search aria-label="搜索用户" value={lookup} onChange={event => clearSelection(event.target.value)} placeholder="用户编码 / 昵称 / 推荐码 / 手机号" /><Explain label="搜索用户的说明" rows={[{ k: "手机号", v: "原始手机号只用于本地转换，不会发送" }]} /></div>{userTable}</Drawer>}

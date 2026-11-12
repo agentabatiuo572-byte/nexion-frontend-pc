@@ -5,7 +5,7 @@ import { CheckCircle2, Clock3, KeyRound, RefreshCw, ShieldAlert } from "lucide-r
 import { BlockState, Button, Cell, Change, Check, ConfigList, ConfigRow, Decision, Drawer, Fact, Facts, Field, Fold, IconButton, KeepText, Modal, Notice, NumberInput, PageTabs, Pager, Panel, ReleaseBody, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { formatBusinessTimeCompact, businessZoneText } from "@/lib/admin/business-time";
-import { fetchPaymentPolicy, fetchPaymentStatus, fetchPaymentAttempts, submitPaymentPolicy, queryPaymentPolicy, pendingPaymentPolicy, paymentSecurityPorts, retryPaymentPolicy, releaseRejectedPaymentPolicy, isCompletePaymentPolicy } from "@/lib/admin/payment-password-client";
+import { fetchPaymentPolicy, fetchPaymentStatus, fetchPaymentAttempts, submitPaymentPolicy, queryPaymentPolicy, pendingPaymentPolicy, paymentSecurityPorts, retryPaymentPolicy, releaseRejectedPaymentPolicy, isCompletePaymentPolicy, type PendingPaymentRelease } from "@/lib/admin/payment-password-client";
 import { paymentPolicyFields, type PaymentPolicy, type PaymentPolicyValues, type PaymentPasswordStatus, type PaymentPasswordAttempts, type PaymentPolicyReceipt } from "@/lib/admin/payment-password-contract";
 import { PaymentSecurityList } from "@/app/components/payment-security/payment-security-list";
 import { PaymentSecurityCard } from "@/app/components/payment-security/payment-security-card";
@@ -18,7 +18,7 @@ const time = (value: string | null) => formatBusinessTimeCompact(value, "暂无�
 const failureText = (failure: unknown) => failure instanceof Error ? failure.message : "支付密码信息读取失败，请重新加载。";
 const attemptResult = { SUCCEEDED: "验证通过", INCORRECT: "密码不正确", LOCKED: "暂时锁定", BUSINESS_REJECTED: "交易条件不满足，未计为输错" };
 
-export function PaymentPasswordPanel({ userId, userLabel, active = true, onPendingChange, onBusyChange }: { userId: string | null; userLabel: string; active?: boolean; onPendingChange?: () => void; onBusyChange?: (busy: boolean) => void }) {
+export function PaymentPasswordPanel({ userId, userLabel, active = true, recovery, onRecoveryClose, onRecordChange, onPendingChange, onBusyChange }: { userId: string | null; userLabel: string; active?: boolean; recovery?: PendingPaymentRelease | null; onRecoveryClose?: () => void; onRecordChange?: (recordId: string | null) => void; onPendingChange?: () => void; onBusyChange?: (busy: boolean) => void }) {
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
   const params = useSearchParams(), router = useRouter(), pathname = usePathname();
   const view = params?.get("paymentTab") === "exceptions" ? "exceptions" : "policy";
@@ -32,7 +32,7 @@ export function PaymentPasswordPanel({ userId, userLabel, active = true, onPendi
         {userId ? <PaymentUserSection key={`user:${session.adminId}:${epoch}:${userId}`} userId={userId} userLabel={userLabel} visible={active && view === "policy"} /> : <Panel aria-label="用户支付密码" title="用户支付密码"><BlockState state="empty" title="先选择用户，再查看支付密码状态与验证记录" /></Panel>}
         {active && view === "policy" && port && <PaymentSecurityCard key={`${port.key}:${session.adminId}:${epoch}`} port={port} userLabel={userLabel} compact recoveryActions />}
       </div>
-      {active && view === "exceptions" && <PaymentSecurityList key={`records:${session.adminId}:${epoch}`} />}
+      {active && view === "exceptions" && <PaymentSecurityList key={`records:${session.adminId}:${epoch}`} recovery={recovery} onRecoveryClose={onRecoveryClose} onRecordChange={onRecordChange} />}
     </div>
   </div>;
 }
