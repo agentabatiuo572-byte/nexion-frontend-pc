@@ -25,7 +25,7 @@ export function canManageSupportQualifications(session: { role: string; authorit
 function expiredText() { return "原操作超过回查保护期，请先核对是否已创建或执行，不能直接重发。原命令和理由仍保留。"; }
 const QUERY_PENDING_TEXT = "原操作尚未确认，不能重复提交；请先查询原操作。原命令、资料和理由保持不变。";
 type Intent = GroupPendingRecord["intent"];
-/** 作废已有回执、还没重读到新码时的那一格：旧码已失效（code 为空，不再给作废入口），显示「已作废 · 待刷新」，不和缺数据的「-」「读取失败」混在一起。 */
+/** 作废拿到终局回执（成功或原操作没生效）、还没重读到新码时的那一格：旧码不可信（code 为空，不再给作废入口），显示「待刷新」，不和缺数据的「-」「读取失败」混在一起。 */
 const INVITE_REVOKED = { code: null, link: null, version: null, issuedAt: null };
 /** 有回执、读回失败：不是成功，提示用警示色。 */
 const INVITE_READBACK_FAILED = "已取得操作回执，读回失败，请刷新核对。";
@@ -223,7 +223,7 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
   };
   const replayButton = (record: InviteRevokeRecord) => inviteUnresolved.includes(record.commandKey) && !inviteRejected.includes(record.commandKey) && canReplayGroupCommand(record);
   const openInviteRevoke = (adminId: string) => { setInviteReasonTouched(false); setInviteRevoke({ adminId, reason: "" }); setInviteError(""); };
-  const inviteCell = (invite: InviteRow["inviteCode"], enabled: boolean) => invite === INVITE_REVOKED ? <span className="m-invite-muted">已作废 · 待刷新</span> : invite === undefined ? "-" : invite === null ? <span className="m-invite-muted">读取失败</span> : invite.code === null ? <span className="m-invite-muted">未生成</span> : <span className={enabled ? "m-invite-code" : "m-invite-code m-invite-muted"}>{invite.code}{enabled ? "" : " · 不可使用"}</span>;
+  const inviteCell = (invite: InviteRow["inviteCode"], enabled: boolean) => invite === INVITE_REVOKED ? <span className="m-invite-muted">待刷新</span> : invite === undefined ? "-" : invite === null ? <span className="m-invite-muted">读取失败</span> : invite.code === null ? <span className="m-invite-muted">未生成</span> : <span className={enabled ? "m-invite-code" : "m-invite-code m-invite-muted"}>{invite.code}{enabled ? "" : " · 不可使用"}</span>;
   const revokeButton = (adminId: string, invite: InviteRow["inviteCode"]) => (invite?.code || revokePendings.some(r => r.intent.targetId === adminId)) && <Btn sm disabled={!writeAllowed || saving || inviteBusy} onClick={() => openInviteRevoke(adminId)}>作废邀请码</Btn>;
   const invitePanel = inviteRevoke && (invitePending || inviteMember && inviteTarget) && <Modal title="作废成员邀请码" busy={inviteBusy} onClose={() => { if (!inviteBusy) setInviteRevoke(undefined); }} footer={<div className="m1-drawer-actions"><Button type="button" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteError(""); }}>取消</Button>{invitePending ? <><Button type="button" disabled={inviteBusy} onClick={() => void checkInviteRevoke(invitePending)}>{inviteBusy ? "正在处理…" : "查询原操作"}</Button>{replayButton(invitePending) && <Button type="button" disabled={inviteBusy} onClick={() => void replayInviteRevoke(invitePending)}>重试原操作</Button>}{inviteRejected.includes(invitePending.commandKey) && <Button type="button" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteRelease(invitePending); }}>解除待确认</Button>}</> : <Button type="button" variant="danger" disabled={inviteBusy} disabledReason={!writeAllowed ? "当前账号没有写权限" : inviteReason.error || undefined} onBlockedClick={() => setInviteReasonTouched(true)} onClick={() => void revokeInviteCode()}>{inviteBusy ? "正在作废…" : "确认作废"}</Button>}</div>}>
     <div className="m1-command-form">

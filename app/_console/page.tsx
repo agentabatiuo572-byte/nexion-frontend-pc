@@ -318,7 +318,7 @@ export default function CommandCenter() {
       {/* 导出结果未知：原快照、理由和请求号在浏览器里，刷新后也要看得见，并能回到原确认框（入口同页头按钮）。放在今天的状况下面，不抢首屏结论。 */}
       {canExport && pendingExport && (
         <Notice tone="warn" title="上次导出资金数据的结果待确认" action={<Button size="sm" onClick={exportSnapshot}>查看原导出</Button>}>
-          {formatBusinessTimeCompact(new Date(pendingExport.createdAt).toISOString())}（{businessZone().label}）发起。原快照、理由和请求号已保留，打开原确认框核对后<span className="rd-keep">可按原操作重试。</span>
+          {formatBusinessTimeCompact(new Date(pendingExport.createdAt).toISOString())}（{businessZone().label}）发起。原快照、理由和请求号已保留，打开原确认框核对。
         </Notice>
       )}
 
