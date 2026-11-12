@@ -354,7 +354,7 @@ export function G1Staking() {
           <thead><tr>
             <Th>持仓编号</Th>
             <Th>用户</Th>
-            <Th>档位</Th>
+            <Th>档位 · 奖励率</Th>
             <Th align="right">锁定金额（USDT）</Th>
             <Th>到期 · 开始</Th>
             <Th>状态</Th>
@@ -371,9 +371,9 @@ export function G1Staking() {
                 <Tr key={row.positionNo} selected={row.positionNo === current?.positionNo} onOpen={() => setCurrent(row)}>
                   <Td><Cell mono full main={<span className="g1-no"><span className="g1-no-head">{row.positionNo.slice(0, -8)}</span><span className="g1-no-tail">{row.positionNo.slice(-8)}</span></span>} title={row.positionNo} /></Td>
                   <Td>{userCell(row)}</Td>
-                  <Td><Cell main={operatorCopyText(row.tier)} sub={`年奖励率 ${row.lockedApy}`} title={`${operatorCopyText(row.tier)}，下单时年奖励率 ${row.lockedApy}`} /></Td>
+                  <Td><Cell main={operatorCopyText(row.tier)} sub={row.lockedApy} title={`${operatorCopyText(row.tier)}，下单时年奖励率 ${row.lockedApy}`} /></Td>
                   <Td align="right"><Cell num main={rowAmount(row.amount)} /></Td>
-                  <Td><Cell num main={dateText(row.unlockAt)} sub={`开始 ${dateText(row.lockedAt)}`} title={`到期 ${timeText(row.unlockAt)}，开始 ${timeText(row.lockedAt)}`} /></Td>
+                  <Td><Cell num main={dateText(row.unlockAt)} sub={dateText(row.lockedAt)} title={`到期 ${timeText(row.unlockAt)}，开始 ${timeText(row.lockedAt)}`} /></Td>
                   <Td><Cell main={meta ? <StatusTag tone={meta.tone} icon={meta.icon}>{meta.label}</StatusTag> : <StatusTag tone="neutral">{operatorCopyText(row.statusLabel)}</StatusTag>} sub={noteText(row.note)} title={noteText(row.note)} /></Td>
                 </Tr>
               );
