@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  executeG3MarketChange, g3MarketChangeAuthority, g3MarketCommandExpired,
+  executeG3MarketChange, canWriteG3MarketChange, g3MarketCommandExpired,
   g3MarketFailureCode, g3MarketRequiresApproval, pendingG3MarketCommand,
   type G3CommandResult, type G3MarketChange, type G3ReviewedChange,
 } from "@/lib/admin/g3-market-command";
@@ -32,7 +32,7 @@ function price(value: number) {
 export function G3MarketConfirm({ session, epoch, requested, today, frames, tuning, onClose, onDone, onStateChange, onFailure, onBusy, onCurrent }: {
   session: AdminSession; epoch: number; requested: G3ReviewedChange;
   /** 以下只用于显示：今天是第几天、七天计划、后端在当前环境是否允许人工改价（界面已备好，PC 现在读不到环境）。 */
-  today: number; frames: G3CurveFrame[]; tuning: "unknown" | "forbidden" | "allowed";
+  today?: number; frames: G3CurveFrame[]; tuning: "unknown" | "forbidden" | "allowed";
   onClose: () => void; onDone: (result: G3CommandResult) => void;
   onStateChange: () => void; onFailure: (change: G3MarketChange, failure: unknown) => void; onBusy: (busy: boolean) => void;
   onCurrent: (overview: G3Overview) => void;
@@ -101,8 +101,7 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
     if (!auth.isAuthenticated || auth.session?.adminId !== session.adminId || auth.authEpoch !== epoch) {
       throw new Error("登录身份或权限已变化，请关闭弹窗后重新操作。");
     }
-    if (write && !auth.session.authorities.includes(g3MarketChangeAuthority(change))
-        && auth.session.role !== "super" && auth.session.role !== "superadmin") {
+    if (write && !canWriteG3MarketChange(auth.session, change)) {
       throw new Error("你没有修改这一项的权限。");
     }
   }
@@ -173,10 +172,12 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
     inlineApproval={{
       dialogClassName: `g3m-confirm${schedule ? " g3m-schedule-confirm" : ""}`,
       fieldLayout: "compact",
-      pending: !!pending && (pending.request.kind === "approval" || g3MarketCommandExpired(pending)),
+      pending: !!pending,
+      initialRecovery: pending?.request.kind === "approval" ? "lookup" : "retry",
       expired: !!pending && g3MarketCommandExpired(pending),
       disabledReason: pending && pending.request.kind === "direct" && g3MarketCommandExpired(pending)
-        ? "原直接保存请求已过期，仅保留原内容供核对。该入口没有按命令号查询接口，不能重试或另建编号。" : undefined,
+        ? "原直接保存请求已过期，仅保留原内容供核对。该入口没有按命令号查询接口，不能重试或另建编号。"
+        : pending && !canWriteG3MarketChange(session, change) ? "你没有修改这一项的权限。" : undefined,
       resolve: (_business, value) => {
         if (!(pending ? pending.request.kind === "approval" : forceApproval || g3MarketRequiresApproval(change, value))) return undefined;
         return {

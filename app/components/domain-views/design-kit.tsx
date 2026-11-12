@@ -3742,6 +3742,8 @@ export type InlineOperationApproval = {
   recover: (reason: string, value: BusinessFormValue, editValue: string) => Promise<boolean>;
   retry?: () => Promise<void>;
   pending?: boolean;
+  /** Saved direct commands can expose the existing query and retry actions together. */
+  initialRecovery?: "lookup" | "retry";
   expired?: boolean;
   disabledReason?: string;
   compareEdit?: { rangeLabel?: string };
@@ -3771,7 +3773,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const [reasonLeft, setReasonLeft] = useState(false);
   const [editLeft, setEditLeft] = useState(false);
   const [openedForm] = useState(() => JSON.stringify([newVal, businessValue]));
-  const [approvalRecovery, setApprovalRecovery] = useState<"lookup" | "retry" | null>(inlineApproval?.pending ? "lookup" : null);
+  const [approvalRecovery, setApprovalRecovery] = useState<"lookup" | "retry" | null>(inlineApproval?.pending ? inlineApproval.initialRecovery ?? "lookup" : null);
   const [authoritativeReasonMin, setAuthoritativeReasonMin] = useState<number | null>(null);
   const [authoritativeReasonMax, setAuthoritativeReasonMax] = useState<number | null>(null);
   const [reasonPolicyError, setReasonPolicyError] = useState<string | null>(null);
@@ -3908,7 +3910,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         setApprovalRecovery(recoverApproval ? "lookup" : "retry");
         setSubmitError(inlineApproval ? `${error.message} 命令号：${error.commandKey}` : `提交结果暂未确认，可能已生成审批单。请查询原操作，或按原配置和理由重试。命令号：${error.commandKey}`);
       } else {
-        setApprovalRecovery(null);
+        setApprovalRecovery(inlineApproval?.initialRecovery && getPendingReason?.() !== undefined ? inlineApproval.initialRecovery : null);
         setSubmitUnknown(error instanceof Error && /Outcome(Uncertain|Unknown)Error$/.test(error.name) || getPendingReason?.() !== undefined);
         setSubmitError(operationConfirmErrorMessage(error));
       }

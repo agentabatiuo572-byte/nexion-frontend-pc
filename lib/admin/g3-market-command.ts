@@ -32,7 +32,7 @@ type CommandPayload = {
   ticketId?: string;
 };
 export type G3PendingCommand = PendingMutationRecord & CommandPayload & { legacy?: boolean };
-export type G3CommandResult = { active?: G3Overview; acknowledgement: string };
+export type G3CommandResult = { active?: G3Overview; acknowledgement: string; ticketKey?: string };
 export const G3_ENVIRONMENT_FORBIDDEN = "G3_MANUAL_TUNING_FORBIDDEN_IN_PRODUCTION";
 
 const commands = createPendingMutationStore<PendingMutationRecord & { input: string }>({
@@ -116,16 +116,25 @@ export function g3MarketChangeAuthority(change: G3MarketChange) {
     : change.action === "override" && change.key === "paused" ? "finprod_g3_engine_pause_toggle" : "finprod_g3_write";
 }
 
+export function canWriteG3MarketChange(session: AdminSession, change: G3MarketChange, value = "") {
+  const superAdmin = session.role === "super" || session.role === "superadmin";
+  return (superAdmin || session.authorities.includes(g3MarketChangeAuthority(change)))
+    && (superAdmin || change.action !== "override" || change.key !== "oracle" && (change.key !== "paused" || value !== "false"));
+}
+
 export function g3MarketFailureCode(error: unknown): string {
   return error && typeof error === "object" && "backendMessage" in error ? String(error.backendMessage ?? "") : "";
 }
 
 /** Refresh only the original maker's known tickets; never infer locks from an overview. */
 export async function refreshG3MarketApprovals(adminId: number) {
-  await Promise.all(listG3MarketCommands(adminId).filter(row => row.ticketId).map(async row => {
+  const rows = listG3MarketCommands(adminId).filter(row => row.ticketId);
+  const results = await Promise.allSettled(rows.map(async row => {
     const ticket = await fetchA2ProposalByKey(row.commandKey, true);
     if (ticket && ticket.status !== "pending") commands.forget(row.fingerprint, row.commandKey);
+    return ticket?.status === "pending" ? row.commandKey : undefined;
   }));
+  return results.flatMap(result => result.status === "fulfilled" && result.value ? [result.value] : []);
 }
 
 /** Every new request is saved before sending; recovery uses only that saved request. */
@@ -142,9 +151,7 @@ export async function executeG3MarketChange(
       throw new Error("登录身份或权限已变化，请关闭弹窗后重新操作。");
     }
     if (write) {
-      const superAdmin = auth.session.role === "super" || auth.session.role === "superadmin";
-      if ((!superAdmin && !auth.session.authorities.includes(g3MarketChangeAuthority(change)))
-          || (!superAdmin && change.action === "override" && (change.key === "oracle" || change.key === "paused" && (previous?.value ?? value) === "false"))) {
+      if (!canWriteG3MarketChange(auth.session, change, previous?.value ?? value)) {
         throw new Error("你没有修改这一项的权限。");
       }
     }
@@ -219,7 +226,8 @@ export async function executeG3MarketChange(
       const { change, value, reason, request } = command;
       commands.remember(fingerprint, key, { input: JSON.stringify({ change, value, reason, request, ticketId: ticket.id }) });
     } else forget();
-    return { acknowledgement: `已找到原审批单 ${ticket.id} · ${ticket.status === "pending" ? "等待另一位有权超管批准，尚未生效" : "请核对审批记录及当前配置"}` };
+    return { acknowledgement: `已找到原审批单 ${ticket.id} · ${ticket.status === "pending" ? "等待另一位有权超管批准，尚未生效" : "请核对审批记录及当前配置"}`,
+      ticketKey: ticket.status === "pending" ? key : undefined };
   };
   if (command.request.kind === "approval" && previous) {
     // Only A2_PROPOSAL_NOT_FOUND permits replay. OPERATION_RESULT_UNKNOWN is not absence.
@@ -241,7 +249,7 @@ export async function executeG3MarketChange(
       const ticket = await createA2OperationProposal(command.request.input, key, true);
       ensureOwner(false);
       acknowledgeTicket(ticket);
-      return { acknowledgement: `已提交审批 · ${ticket.id} · 等待另一位有权超管批准，尚未生效` };
+      return { acknowledgement: `已提交审批 · ${ticket.id} · 等待另一位有权超管批准，尚未生效`, ticketKey: key };
     }
     const active = await submitG3MarketCommand(command.request.path, command.request.method, command.request.body, key);
     ensureOwner(false);
@@ -252,8 +260,6 @@ export async function executeG3MarketChange(
       forget();
       throw failure;
     }
-    // The environment error has its own prepared copy, while its 403 evidence remains saved.
-    if (g3MarketFailureCode(failure) === G3_ENVIRONMENT_FORBIDDEN) throw failure;
     const uncertain = new A2OutcomeUncertainError("请保留原请求和命令号，在有效期内按原操作重试；过期后只能核对。", key);
     // The shared approval modal appends the number; do not append it twice here.
     uncertain.message = "提交结果暂未确认，可能已经生效。请查询原操作，或在有效期内按原操作重试；过期后只能核对。";
