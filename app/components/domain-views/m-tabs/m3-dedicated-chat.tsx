@@ -489,8 +489,12 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const hold = holdRead && holdRead.customerId === holdCustomer ? holdRead.hold : undefined;
   useEffect(() => {
     const saved = sessionEndCommands.list().filter(row => row.actorId === adminId && row.customerId === holdCustomer);
-    setHoldEndCommand(saved.find(row => row.sessionRef && row.sessionRef === hold?.sessionRef) ?? saved[0] ?? null);
-    setHoldEnding(false); setHoldEndRejected(null); setHoldEndRelease(null); setLegacyEndChecked(null);
+    setHoldEndCommand(previous => saved.find(row => row.sessionRef && row.sessionRef === hold?.sessionRef)
+      ?? saved.find(row => row.commandKey === previous?.commandKey) ?? saved[0] ?? null);
+    setHoldEnding(false);
+    setHoldEndRejected(previous => saved.some(row => row.commandKey === previous) ? previous : null);
+    setHoldEndRelease(previous => saved.some(row => row.commandKey === previous?.commandKey) ? previous : null);
+    setLegacyEndChecked(null);
   }, [adminId, holdCustomer, authEpoch, hold?.sessionRef]);
   const inboxHolder = selectedSummary?.holder === undefined ? "unknown" : selectedSummary.holder === null ? "none" : `${selectedSummary.holder.adminId}:${selectedSummary.holder.role}`;
   useEffect(() => {
@@ -1306,7 +1310,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     } catch (cause) {
       if (stamp !== identityRef.current) return;
       if (submitted && isExplicitRejection(cause)) {
-        if (current()) { setHoldEndRejected(command.commandKey); setActionError(`这次结束会话被明确拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原操作已保留，请核实原结果后再解除待确认。`); }
+        if (current()) { setHoldEndRejected(command.commandKey); setActionError(`这次结束会话被明确拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原操作已保留，请核实原结果后再解除待确认。`); if (cause instanceof SupportClientError && cause.backendMessage === "SUPPORT_SESSION_CHANGED") setHoldRetry(value => value + 1); }
       }
       else if (current()) { setActionError("结束会话的结果尚未确认。请再点「结束会话」，会先查询原操作，不会重复结束。"); setHoldRetry((value) => value + 1); }
     } finally { if (current()) setHoldEnding(false); }
@@ -1541,8 +1545,8 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   return <>
     {holdEndRelease && <ReleaseModal label="结束会话" onCancel={() => setHoldEndRelease(null)} onConfirm={() => {
       sessionEndCommands.forget(holdEndRelease.fingerprint, holdEndRelease.commandKey);
-      setHoldEndCommand(previous => previous?.commandKey === holdEndRelease.commandKey ? null : previous);
-      setHoldEndRejected(null); setHoldEndRelease(null);
+      setHoldEndCommand(previous => previous?.commandKey === holdEndRelease.commandKey ? sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === holdEndRelease.customerId) ?? null : previous);
+      setHoldEndRejected(null); setHoldEndRelease(null); setHoldRetry(value => value + 1);
     }} />}
     <PageHeader pageId="M3" title="专属会话" back={back}
       summary={<>{summary} <Explain label="时间和更新方式" content={`时间均为${zoneLabel}。${streamReady ? "有新消息时自动更新。" : ""}`} /></>}

@@ -202,6 +202,7 @@ export async function releasePhoneModelLock(userId: string, lock: Pick<PhoneMode
 export interface PendingModelLockCommand extends PendingMutationRecord {
     owner: number; userId: string; installationId: string; label?: string; userNo?: string; lock: PhoneModelLock; returned?: boolean;
     receiptSupported?: true;
+    rejection?: string;
     path: string; body: { reason: string; confirmed: true; expectedRevision: number };
 }
 const modelCommands = createPendingMutationStore<PendingModelLockCommand>({
@@ -228,11 +229,20 @@ export async function submitModelLockCommand(owner: number, userId: string, lock
 
 export async function retryModelLockCommand(row: PendingModelLockCommand): Promise<PhoneModelLock> {
     if (!row.receiptSupported || row.expiresAt <= Date.now()) throw new Error("这条原记录不能重发，请查询原解除结果或读回核对。");
-    const result = parseModelLock(await request(row.path, row.body, row.commandKey));
-    if (result.installationId !== row.installationId || !result.released) throw new PhoneOutcomeUnknownError(502);
-    modelCommands.forget(row.fingerprint, row.commandKey);
-    return result;
+    const original = { ...row, rejection: undefined };
+    modelCommands.remember(row.fingerprint, row.commandKey, original);
+    try {
+        const result = parseModelLock(await request(row.path, row.body, row.commandKey));
+        if (result.installationId !== row.installationId || !result.released) throw new PhoneOutcomeUnknownError(502);
+        modelCommands.forget(row.fingerprint, row.commandKey);
+        return result;
+    } catch (failure) {
+        if (isExplicitRejection(failure)) modelCommands.remember(row.fingerprint, row.commandKey, { ...original, rejection: failure instanceof Error ? failure.message : "原操作已被明确拒绝" });
+        throw failure;
+    }
 }
+
+export function forgetModelLockCommand(row: PendingModelLockCommand) { modelCommands.forget(row.fingerprint, row.commandKey); }
 
 export async function recoverModelLockCommand(row: PendingModelLockCommand): Promise<boolean> {
     if (!row.receiptSupported) throw new Error("升级前的原记录没有命令回执，只能读回当前安装状态，原记录继续保留。");
