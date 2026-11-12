@@ -470,6 +470,7 @@ function G7RepurchasePage() {
   }
 
   const stats = overview.stats;
+  const rewardMicros = micros(stats.matureUsd)! - micros(stats.principalUsd)!;
   const busy = !!busyKey;
 
   const adjustParam = async (param: G7Param) => {
@@ -721,7 +722,7 @@ function G7RepurchasePage() {
           sub={`${fmtCount(openCount)} 单 · 含到期未领取`}
           explain="待锁定、锁仓中、到期未领取三种状态的订单本金合计，不限哪天下单。" />
         <Stat label="到期要付（本金和奖励）" icon={Coins} tone="role-1" value={amount(stats.matureUsd)} unit="USDT"
-          sub={`其中奖励 ${amount(Math.max(0, stats.matureUsd - stats.principalUsd))} USDT`}
+          sub={`其中奖励 ${fromMicros(rewardMicros > BigInt(0) ? rewardMicros : BigInt(0))} USDT`}
           explain="同一批未结束订单的本金加下单时算好的预计奖励。资金储备页的应付款按自己的口径算，两处不一定相等。" />
         <Stat label="本月新订单" icon={CalendarDays} tone="role-3" value={fmtCount(stats.ordersMonth)} unit="单"
           explain="按后端业务日历，本月 1 日起下单的锁定计划订单数，不限状态。上面两个金额不按月算。" />

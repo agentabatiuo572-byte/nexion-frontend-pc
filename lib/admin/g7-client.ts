@@ -99,8 +99,8 @@ interface BackendOrderPage {
 
 export interface G7Stats {
   ordersMonth: number;
-  principalUsd: number;
-  matureUsd: number;
+  principalUsd: string;
+  matureUsd: string;
   ticketsMonth: number;
   reinvestRate: number;
   reinvestRateAvailable: boolean;
@@ -132,7 +132,7 @@ export interface G7Status {
   status: string;
   label: string;
   count: number;
-  principalUsd: number;
+  principalUsd: string;
   principalDisplay: string;
   tone: string;
 }
@@ -163,12 +163,12 @@ export interface G7Order {
   userId: number;
   userNo: string;
   nickname: string;
-  amountUsdt: number;
+  amountUsdt: string;
   apyPct: number;
   lockDays: number;
   lockedAt: string;
   unlockAt: string;
-  estimatedInterestUsdt: number;
+  estimatedInterestUsdt: string;
   status: string;
   billCorrelationPrefix: string;
 }
@@ -212,8 +212,8 @@ function normalizeOverview(data: BackendOverview | null | undefined): G7Overview
     currentNexPrice: toNumber(data?.currentNexPrice),
     stats: {
       ordersMonth: toNumber(stats.ordersMonth),
-      principalUsd: toNumber(stats.principalUsd),
-      matureUsd: toNumber(stats.matureUsd),
+      principalUsd: g7Money(stats.principalUsd),
+      matureUsd: g7Money(stats.matureUsd),
       ticketsMonth: toNumber(stats.ticketsMonth),
       reinvestRate: toNumber(stats.reinvestRate),
       reinvestRateAvailable: toBool(stats.reinvestRateAvailable, false),
@@ -243,7 +243,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): G7Overview
       status: asText(status.status, "unknown"),
       label: asText(status.label, asText(status.status, "状态")),
       count: toNumber(status.count),
-      principalUsd: toNumber(status.principalUsd),
+      principalUsd: g7Money(status.principalUsd),
       principalDisplay: asText(status.principalDisplay),
       tone: asText(status.tone, "dim"),
     })),
@@ -274,7 +274,12 @@ async function g7Request<T>(path: string, init?: RequestInit) {
     headers,
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  // As in E6, preserve the server's decimal lexemes before JSON.parse can turn
+  // them into binary floating point. Counts and ratios keep their numeric types.
+  const result = (await response.text().then(text => JSON.parse(text.replace(
+    /("(?:principalUsd|matureUsd|amountUsdt|estimatedInterestUsdt)"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+    '$1"$2"',
+  ))).catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
@@ -306,12 +311,12 @@ export async function fetchG7RepurchaseOrders(status = "", cursor: number | null
       userId: toNumber(order.userId),
       userNo: asText(order.userNo),
       nickname: asText(order.nickname),
-      amountUsdt: toNumber(order.amountUsdt),
+      amountUsdt: g7Money(order.amountUsdt),
       apyPct: toNumber(order.apyPct),
       lockDays: toNumber(order.lockDays),
       lockedAt: asText(order.lockedAt),
       unlockAt: asText(order.unlockAt),
-      estimatedInterestUsdt: toNumber(order.estimatedInterestUsdt),
+      estimatedInterestUsdt: g7Money(order.estimatedInterestUsdt),
       status: asText(order.status, "UNKNOWN"),
       billCorrelationPrefix: asText(order.billCorrelationPrefix),
     })),
@@ -333,6 +338,12 @@ function g7Decimal(value: string) {
   const whole = BigInt(scale > 0 ? padded.slice(0, -scale) : padded).toString();
   const tail = scale > 0 ? padded.slice(-scale).replace(/0+$/, "") : "";
   return `${match[1] === "-" && (whole !== "0" || tail) ? "-" : ""}${whole}${tail ? `.${tail}` : ""}`;
+}
+
+function g7Money(value: RawNumber) {
+  const decimal = g7Decimal(String(value));
+  if (!/^\d+(?:\.\d{1,6})?$/.test(decimal)) throw new Error("G7_RESPONSE_INVALID:money");
+  return decimal;
 }
 
 function canonicalG7Value(key: string, value: string) {
