@@ -121,6 +121,9 @@ export async function fetchB0Devices() {
     running: amount(data.running, "running"),
     waitingActivation: amount(data.waitingActivation, "waitingActivation"),
     stopped: amount(data.stopped, "stopped"),
+    errorRetry: amount(data.errorRetry, "errorRetry"),
+    legacyPending: amount(data.legacyPending, "legacyPending"),
+    waitingConfig: amount(data.waitingConfig, "waitingConfig"),
   };
 }
 

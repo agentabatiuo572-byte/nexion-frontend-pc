@@ -1095,6 +1095,8 @@ Nexion 运营控制后台
 
 #### [B0] 今日概览
 
+**2026-11-12 设备概览后端同步（代码侧）**：`fetchB0Devices` 从原 GET `/api/admin/devices/overview` 增加读取 `errorRetry/legacyPending/waitingConfig` 三个权威台数，不另发列表请求。原 total/running/waitingActivation/stopped 口径保留；新三数按有效状态解析，不能与原四数相加作分布。视觉 worker 在现有设备卡接入三数，点击分别到 `/devices/ops?simState=ERROR`、`LEGACY_PENDING`、`WAITING_CONFIG`；本轮未改设备卡的组成或现有链接。
+
 **2026-11-11 小问题修正：** 时段选择本地读写失败均回到今日；超过 5 条的待处理来源读取失败仍有对应重试入口；`default_off` 仅说明当前没有有效配置、系统按关闭处理，不推断历史设置。
 
 路由 `/`，给所有运营角色。每天上班第一眼、开会前、收到告警时打开，用 30 秒判断今天要不要动手。这页只读，要处理就跳业务页，不在这里审批。
