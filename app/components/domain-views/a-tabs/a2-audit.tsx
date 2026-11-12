@@ -646,12 +646,14 @@ const HI_CHANGE_LABELS: Record<string, string> = {
   value: "目标值", expectedValue: "原值", tierName: "奖项编号", rewardKind: "奖励类型",
   probabilityPct: "概率（%）", realOutflow: "实际资金流出", dailyStock: "每日库存（0 为不限）",
   expectedSignature: "提交时奖池签名", wheelSignature: "奖池签名", tiers: "奖池档位",
+  wheelEvidence: "核对证据", wheelSnapshot: "原奖池快照",
   courseId: "课程编号", version: "课程版本", revision: "修订号", rewardNex: "奖励（UVT）",
   sourceStatus: "目标版本原状态", expectedRevision: "目标修订号", expectedCurrentVersion: "当前课程版本",
   expectedCurrentRevision: "当前课程修订号", expectedCurrentStatus: "当前课程状态",
   tier: "奖项编号", status: "状态", reward: "奖励名称", prob: "概率（%）", kind: "奖励类型", amount: "发放数量", real: "实际资金流出",
 };
-const hiReviewLabels = (operationCode?: string) => ["h4_legacy_event_reward_update", "h4_wheel_tier_update", "i7_course_version_rollback"].includes(operationCode ?? "") ? HI_CHANGE_LABELS : CHANGE_LABELS;
+const WHEEL_REVIEW_OPERATIONS = ["h4_wheel_tier_create", "h4_wheel_tier_update", "h4_wheel_tier_delete", "h4_wheel_probabilities_update"];
+const hiReviewLabels = (operationCode?: string) => ["h4_legacy_event_reward_update", "i7_course_version_rollback", ...WHEEL_REVIEW_OPERATIONS].includes(operationCode ?? "") ? HI_CHANGE_LABELS : CHANGE_LABELS;
 /** 成组记录的量词：「查看全部 9 个等级」。 */
 const ROW_UNIT: Record<string, string> = { ranks: "个等级", rewards: "项奖励" };
 const ROWS_SHOWN = 5;
@@ -699,11 +701,73 @@ function parseReview(value: string): Review | null {
   }
 }
 
-/** 队列「变更」列：和详情同一套格式。第一项做第一行，原值做第二行，多项时写「等 N 项」（必须改 5）。 */
-function changeSummary(before: string, after: string, omit: readonly string[] = [], operationCode?: string) {
-  const labels = hiReviewLabels(operationCode);
+/** H4 stores a pool snapshot before and command values after, not two replacement configs. */
+function reviewPair(before: string, after: string, operationCode?: string) {
   const b = parseReview(before);
   const a = parseReview(after);
+  const labels = hiReviewLabels(operationCode);
+  const original = { b, a, labels, evidenceKeys: [] as string[] };
+  if (!WHEEL_REVIEW_OPERATIONS.includes(operationCode ?? "") || b?.kind !== "object" || a?.kind !== "object"
+    || typeof b.value.tiers !== "string") return original;
+  let snapshot: unknown;
+  try { snapshot = JSON.parse(b.value.tiers); }
+  catch { return original; }
+  if (!Array.isArray(snapshot) || !snapshot.every(isRecord)) return original;
+
+  // Decimal strings and JSON numbers compare without rounding or false scale-only changes.
+  const decimal = (value: unknown) => String(value).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  const tiers = snapshot.map(tier => ({
+    tierName: tier.tier, rewardName: tier.reward, probabilityPct: decimal(tier.prob),
+    realOutflow: tier.real === true || tier.real === 1, rewardKind: tier.kind,
+    rewardAmount: decimal(tier.amount), voucherId: tier.voucherId || "无", dailyStock: tier.dailyStock,
+  }));
+  const values = a.value;
+  const target = tiers.find(tier => tier.tierName === values.tierName);
+  let was: Record<string, unknown> | null;
+  let next: Record<string, unknown>;
+  const wheelLabels = { ...labels };
+  if (operationCode === "h4_wheel_probabilities_update") {
+    if (!isRecord(values.probabilities)) return original;
+    was = {};
+    next = {};
+    for (const tier of tiers) {
+      const key = `probability:${tier.tierName}`;
+      wheelLabels[key] = `${tier.tierName} · 概率（%）`;
+      was[key] = tier.probabilityPct;
+      next[key] = decimal(values.probabilities[String(tier.tierName)]);
+    }
+  } else if (operationCode === "h4_wheel_tier_delete") {
+    if (!target) return original;
+    was = { ...target, status: "已启用" };
+    next = { ...target, status: "已删除" };
+  } else {
+    const created = operationCode === "h4_wheel_tier_create";
+    if (!created && !target) return original;
+    was = created ? null : { ...target };
+    // Match OpsGrowthService's defaults for omitted optional command fields.
+    next = {
+      tierName: values.tierName, rewardName: values.rewardName,
+      probabilityPct: decimal(values.probabilityPct ?? target?.probabilityPct ?? 0),
+      realOutflow: values.realOutflow == null ? target?.realOutflow ?? false : values.realOutflow === 1,
+      rewardKind: values.rewardKind ?? target?.rewardKind ?? "uvt",
+      rewardAmount: decimal(values.rewardAmount ?? target?.rewardAmount ?? 0),
+      voucherId: values.voucherId == null ? target?.voucherId ?? "无" : String(values.voucherId).trim() || "无",
+      dailyStock: values.dailyStock ?? target?.dailyStock ?? 0,
+    };
+  }
+  // Existing row groups keep verification evidence out of the business-field diff.
+  next.wheelEvidence = [{ wheelSignature: b.value.wheelSignature, expectedSignature: values.expectedSignature }];
+  next.wheelSnapshot = snapshot;
+  return {
+    b: was ? { kind: "object" as const, value: was } : null,
+    a: { kind: "object" as const, value: next }, labels: wheelLabels,
+    evidenceKeys: ["wheelEvidence", "wheelSnapshot"],
+  };
+}
+
+/** 队列「变更」列：和详情同一套格式。第一项做第一行，原值做第二行，多项时写「等 N 项」（必须改 5）。 */
+function changeSummary(before: string, after: string, omit: readonly string[] = [], operationCode?: string) {
+  const { b, a, labels, evidenceKeys } = reviewPair(before, after, operationCode);
   if (!a) return { main: "—", sub: b ? `原 ${b.kind === "text" ? b.text : "见详情"}` : undefined };
   if (a.kind === "text") return { main: a.text, sub: b ? `原 ${b.kind === "text" ? b.text : "见详情"}` : "新建" };
   if (a.kind === "rows") return { main: `共 ${a.rows.length} 行`, sub: b ? "原 见详情" : "新建" };
@@ -713,7 +777,7 @@ function changeSummary(before: string, after: string, omit: readonly string[] = 
       ? `年奖励率 ${valueText("shareYieldMin", a.value.shareYieldMin, labels)}–${valueText("shareYieldMax", a.value.shareYieldMax, labels)}`
       : `日产收益 ${valueText("dailyEarn", a.value.dailyEarn, labels)}`,
   };
-  const keys = Object.keys(a.value).filter((key) => !omit.includes(key));
+  const keys = Object.keys(a.value).filter((key) => !omit.includes(key) && !evidenceKeys.includes(key));
   const changed = b?.kind === "object" ? keys.filter((key) => !same(b.value[key], a.value[key])) : keys;
   const first = changed[0] ?? keys[0];
   if (!first) return { main: "—" };
@@ -751,9 +815,7 @@ function ReviewRows({ name, rows, labels = CHANGE_LABELS }: { name: string; rows
  * - 变更前是空（首次配置）：不画变更前，标题旁写「新建」。
  */
 export function A2ChangeReview({ before, after, omit = [], operationCode }: { before: string; after: string; omit?: readonly string[]; operationCode?: string }) {
-  const labels = hiReviewLabels(operationCode);
-  const b = parseReview(before);
-  const a = parseReview(after);
+  const { b, a, labels } = reviewPair(before, after, operationCode);
   const created = !b;
   let body: ReactNode;
   if (!a) {

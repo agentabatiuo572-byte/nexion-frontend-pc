@@ -238,8 +238,13 @@ function wheelRewardText(value: unknown) {
 const wheelPointsTier = (tier: Record<string, unknown>) => text(tier.kind).toLowerCase() === "points";
 
 // A2's decimal parser requires a leading digit and no plus sign; keep every entered digit.
-function h4ProposalDecimal(value: string) {
-  return value.trim().replace(/^\+/, "").replace(/^(-?)\./, (_match, sign: string) => `${sign}0.`).replace(/\.$/, "");
+function h4ProposalDecimal(value: string | undefined, field: string) {
+  const raw = value?.trim();
+  if (!raw) throw new Error(`请填写${field}`);
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw)) {
+    throw new Error(`${field}请填写普通十进制数字，不支持科学计数法`);
+  }
+  return raw.replace(/^\+/, "").replace(/^(-?)\./, (_match, sign: string) => `${sign}0.`).replace(/\.$/, "");
 }
 
 // Mirrors OpsGrowthService.increasesUvtFallback, including the backend's ordered comfort pool.
@@ -1089,23 +1094,28 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       run: async (reason, _v, bv) => {
         if (await resumeH4Wheel()) return;
         if (!bv) return;
+        const probabilityPct = h4ProposalDecimal(bv.probabilityPct, "中奖概率（%）");
+        const rewardAmount = h4ProposalDecimal(bv.rewardAmount, "实际发放数量");
+        const dailyStock = Number(h4ProposalDecimal(bv.dailyStock, "每日总数量（0 为不限）"));
+        if (Number(probabilityPct) < 0 || Number(probabilityPct) > 100) throw new Error("中奖概率须在 0–100% 之间");
+        if (Number(rewardAmount) <= 0) throw new Error("实际发放数量须大于 0");
+        if (!Number.isInteger(dailyStock) || dailyStock < 0 || dailyStock > 1000000) throw new Error("每日总数量须为 0–1000000 的整数（0 为不限）");
         const payload = {
           tierName: String(bv.tierName || "").trim(),
           rewardName: String(bv.rewardName || "").trim(),
-          probabilityPct: Number(bv.probabilityPct) || 0,
+          probabilityPct,
           realOutflow: bv.realOutflow === "1" ? 1 : 0,
           rewardKind: bv.rewardKind || "uvt",
-          rewardAmount: Number(bv.rewardAmount) || 0,
+          rewardAmount,
           voucherId: String(bv.voucherId || "").trim() || null,
-          dailyStock: Math.max(0, Number(bv.dailyStock) || 0),
+          dailyStock,
         };
         if (!payload.tierName || !payload.rewardName) return;
         const expectedSignature = text(model?.wheelSignature, "__EMPTY__");
         const amplifies = payload.rewardKind === "uvt" || (["usdt", "coupon"].includes(payload.rewardKind)
-          && Math.floor(payload.probabilityPct * 10000 + 0.5) > 0);
+          && Math.floor(Number(payload.probabilityPct) * 10000 + 0.5) > 0);
         if (amplifies) {
-          await proposeH4(HI_WHEEL_SCOPE, "h4_wheel_tier_create", { ...payload,
-            probabilityPct: h4ProposalDecimal(bv.probabilityPct), rewardAmount: h4ProposalDecimal(bv.rewardAmount), expectedSignature },
+          await proposeH4(HI_WHEEL_SCOPE, "h4_wheel_tier_create", { ...payload, expectedSignature },
             JSON.stringify(model?.wheelTiers ?? []), JSON.stringify(payload), reason, bv);
           return;
         }
@@ -1165,7 +1175,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     const tiers = model?.wheelTiers ?? [];
     const fixed = tiers.filter(wheelPointsTier);
     const probabilityText = (tier: Record<string, unknown>, values: Record<string, string>) =>
-      wheelPointsTier(tier) ? String(numericValue(tier.prob)) : values[text(tier.tier)];
+      wheelPointsTier(tier) ? String(numericValue(tier.prob)) : values[text(tier.tier)] ?? "";
     openActionConfirm({ briefKind: "config",
       action: "调整转盘奖项概率",
       detail: <>一次设置所有奖项，加起来要等于 100%。调高发钱奖项的概率时，覆盖率低于红线无法保存。</>,
@@ -1200,10 +1210,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       run: async (reason, _value, businessValue) => {
         if (await resumeH4Wheel()) return;
         if (!businessValue) return;
-        const probabilities = Object.fromEntries(tiers.map((tier) => [
+        const decimalProbabilities = Object.fromEntries(tiers.map((tier) => [
           text(tier.tier),
-          Number(probabilityText(tier, businessValue)),
+          h4ProposalDecimal(probabilityText(tier, businessValue), `${text(tier.tier)} 的中奖概率（%）`),
         ]));
+        const probabilities = Object.fromEntries(Object.entries(decimalProbabilities).map(([tier, value]) => [tier, Number(value)]));
         const total = Object.values(probabilities).reduce((sum, value) => sum + value, 0);
         if (Math.round(total * 10000) !== 1000000) {
           throw new Error("所有奖项的概率加起来要等于 100%");
@@ -1212,7 +1223,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           && probabilities[text(tier.tier)] > numericValue(tier.prob));
         if (amplifies) {
           await proposeH4(HI_WHEEL_SCOPE, "h4_wheel_probabilities_update", {
-            probabilities: Object.fromEntries(tiers.map(tier => [text(tier.tier), h4ProposalDecimal(probabilityText(tier, businessValue))])),
+            probabilities: decimalProbabilities,
             expectedSignature: text(model?.wheelSignature, "__EMPTY__"),
           }, JSON.stringify(tiers), JSON.stringify(probabilities), reason, businessValue);
           return;
@@ -1286,20 +1297,23 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       run: async (reason, _value, bv) => {
         if (await resumeH4Wheel()) return;
         if (!bv) return;
+        const rewardAmount = h4ProposalDecimal(bv.rewardAmount, "每次发放数量");
+        const dailyStock = Number(h4ProposalDecimal(bv.dailyStock, "每日库存（0 为不限）"));
+        if (!Number.isInteger(dailyStock) || dailyStock < 0 || dailyStock > 1000000) throw new Error("每日库存须为 0–1000000 的整数（0 为不限）");
         const payload = {
           tierName,
           rewardName: String(bv.rewardName || "").trim(),
           probabilityPct: numericValue(tier.prob),
           realOutflow: bv.realOutflow === "1" ? 1 : 0,
           rewardKind: bv.rewardKind || "uvt",
-          rewardAmount: Number(bv.rewardAmount),
+          rewardAmount,
           voucherId: bv.rewardKind === "coupon" ? String(bv.voucherId || "").trim() || null : null,
-          dailyStock: Math.max(0, Number(bv.dailyStock) || 0),
+          dailyStock,
         };
         const expectedSignature = text(model?.wheelSignature, "__EMPTY__");
         const sameKind = payload.rewardKind.toLowerCase() === text(tier.kind).toLowerCase();
         const previousStock = numericValue(tier.dailyStock);
-        const increasesAmount = payload.rewardAmount > (sameKind ? numericValue(tier.amount) : 0);
+        const increasesAmount = Number(payload.rewardAmount) > (sameKind ? numericValue(tier.amount) : 0);
         const increasesStock = previousStock > 0 && (payload.dailyStock === 0 || payload.dailyStock > previousStock);
         const reducesUvtStock = sameKind && payload.rewardKind === "uvt" && payload.dailyStock > 0
           && (previousStock === 0 || payload.dailyStock < previousStock);
@@ -1308,7 +1322,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             && increasesUvtFallback(model?.wheelTiers ?? [], tier, numericValue(tier.prob) > 0)));
         if (amplifies) {
           await proposeH4(HI_WHEEL_SCOPE, "h4_wheel_tier_update", { ...payload,
-            probabilityPct: String(numericValue(tier.prob)), rewardAmount: h4ProposalDecimal(bv.rewardAmount), expectedSignature },
+            probabilityPct: String(numericValue(tier.prob)), expectedSignature },
             JSON.stringify(tier), JSON.stringify(payload), reason, bv);
           return;
         }
