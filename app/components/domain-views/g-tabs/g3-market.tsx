@@ -3,6 +3,8 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fmtConfigPct } from "@/lib/format";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { GRecoveryNotice, pendingTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 /**
  * G3 UVT 价格管理（改版，RdPage）。数据来自后端 /api/admin/market/nex/curve 与 /curve/history。
  * 首屏回答「现在价格多少、怎么来的、接下来七天怎么走」：结论一句、四个数、七天计划（走势图 + 逐日表）、最近 24 小时价格和运行方式。
@@ -64,6 +66,10 @@ export type G3ObjectState = { kind: "unknown" | "approval" | "locked"; detail: s
 const TUNING_RULE = "开发环境以外，后端拒绝人工改上涨概率和直接改现价：直接保存、提交审批和批准都会被拒。";
 const FIELD_NAME: Record<G3CurveField, string> = { targetPrice: "目标价", pumpProbability: "上涨概率", volatilityPct: "波动幅度" };
 const CONTROL_ORDER = ["pin", "schedule", "loop"];
+/** 按原请求重试成功后的提示：原操作已完成，页面在重读，读到之前不能发起新修改。 */
+const REREAD_TEXT = "原操作已完成，正在重新读取 UVT 价格";
+/** 结果未知的那句：原操作提醒里已经有一行，不再用「操作失败」或页面提示条重复。 */
+const UNKNOWN_TEXT = /^提交结果(暂未确认|未知)/;
 
 function messageOf(error: unknown) {
   return displayAdminError(error);
@@ -111,9 +117,15 @@ function changePct(points: number[]) {
   return ((last - first) / first) * 100;
 }
 
-/** 后端原样的采样时间，只把 T 换成空格，不换时区（G3-V04）。 */
+/** 采样时间按业务时区写成「2026-11-13 09:30」，时区在区块里写一次。 */
 function sampleText(value: string) {
-  return value.replace("T", " ").slice(0, 16);
+  return formatBusinessTimeCompact(value, "—");
+}
+
+/** 和 TrendLines 同一条取刻度的规则：最后一个时刻不在等距格上时，它和倒数第二个会挤在一起，页面藏掉倒数第二个。 */
+function ticksCrowded(count: number) {
+  const every = count <= 8 ? 1 : count <= 16 ? 2 : Math.ceil(count / 8);
+  return (count - 1) % every !== 0;
 }
 
 export function deriveG3RuntimeStatus(paused: boolean, pinValue: string) {
@@ -121,7 +133,7 @@ export function deriveG3RuntimeStatus(paused: boolean, pinValue: string) {
   if (paused) {
     return {
       label: "已暂停",
-      detail: "价格停在当前值，不再自动变化。",
+      detail: "不再自动推进；应急改现价和固定生效日仍会发布价格。",
       tone: "bad",
     };
   }
@@ -142,7 +154,7 @@ export function deriveG3RuntimeStatus(paused: boolean, pinValue: string) {
 function ObjectTag({ state }: { state?: G3ObjectState }) {
   if (!state) return null;
   if (state.verification === "last-observation") return <StatusTag tone="warn" icon={state.kind === "locked" ? Lock : Clock3} explain={state.detail}>上次观察</StatusTag>;
-  if (state.kind === "unknown") return <StatusTag tone="warn" icon={CircleHelp} explain={state.detail}>结果待确认</StatusTag>;
+  if (state.kind === "unknown") return <StatusTag tone="warn" icon={CircleHelp} explain={state.detail}>结果未知</StatusTag>;
   if (state.kind === "approval") return <StatusTag tone="warn" icon={Clock3} explain={state.detail}>有待批申请</StatusTag>;
   return <StatusTag tone="warn" icon={Lock} explain={state.detail}>审批锁定中</StatusTag>;
 }
@@ -159,13 +171,14 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
   const scheduleMissing = scheduleControl?.value === "";
   const pinV = overview ? controlValue(overview, "pin") : "—";
   const pinned = /^D[1-7]$/.test(pinV.trim().toUpperCase());
+  const loopStop = overview ? controlValue(overview, "loop") === "停在末值" : false;
   if (change.action === "curve-cell") {
     const { dayIndex, field } = change;
     return { briefKind: "config",
       action: `修改一周价格计划 · D${dayIndex + 1} · ${FIELD_NAME[field]}`,
       title: `修改 D${dayIndex + 1} 波动幅度`,
       detail: "七天计划里每一天各有一个波动幅度，推进到这一天时抄进当天配置。",
-      effect: <StatusTag tone="neutral" icon={Info} explain="后端保存这个值，但发布价格时直接用目标价，没有按波动幅度随机涨跌；已提给后端接上或退役。">保存后不影响价格</StatusTag>,
+      effect: <StatusTag tone="neutral" icon={Info} explain="后端保存这个值，但发布价格时直接用目标价，没有按波动幅度随机涨跌；已提给后端接上或退役。">目前不生效</StatusTag>,
       facts: <Facts>
         <Fact k="改的是">D{dayIndex + 1} 的计划波动幅度（百分数，2 表示 ±2%）</Fact>
         <Fact k="现在用不用">后端还没有使用：价格按目标价发布，现价和用户兑换都不变</Fact>
@@ -192,7 +205,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
           <Fact k="什么时候变">确认后马上按 {value} 发布现价，之后不再自动切换</Fact>
           {!priceMissing && target > overview!.currentPrice && <Fact k="提交时检查" tone="warn">比现价高：后端按 {value} 目标价重估兑付覆盖率，低于红线就拒绝；现行规则不需要审批</Fact>}
         </> : value === "未钉住" && overview ? <>
-          <Fact k="选了之后">现价不变，之后按排程从 D{curDay === 7 ? 1 : curDay! + 1} 继续推进</Fact>
+          <Fact k="选了之后">现价不变；之后在排程已配置、没有暂停时，从 D{curDay === 7 ? loopStop ? 7 : 1 : curDay! + 1} 继续推进{curDay === 7 && loopStop ? "（D7 之后选的是停在末值）" : ""}</Fact>
         </> : <Fact k="现价">{priceMissing ? "暂不可用" : `${price(overview!.currentPrice)} USDT`}</Fact>}
       </Facts>;
     };
@@ -241,10 +254,10 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
     action: paused ? "恢复价格自动变化" : "暂停价格自动变化",
     title: paused ? "恢复价格自动变化" : "暂停价格自动变化",
     detail: paused
-      ? <>恢复后价格继续按计划变化。价格上涨会让平台多付钱，覆盖率低于红线时无法恢复（当前 {cov}%，红线 {redline}）。</>
-      : <>暂停后每日推进和 5 分钟采样都停下，UVT 价格停在当前值。</>,
+      ? <>恢复后在下一次排程时刻重新按计划推进（固定或没配置排程时仍不推进）。计划价更高时平台要多付钱，覆盖率低于红线时无法恢复（当前 {cov}%，红线 {redline}）。</>
+      : <>暂停后每日推进和 5 分钟采样都停下；应急改现价和固定生效日仍会发布价格。</>,
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-    coverageLead: paused ? "恢复后价格会继续按计划上涨，平台的 UVT 应付款跟着变" : undefined,
+    coverageLead: paused ? "恢复后价格重新按七天计划推进，计划价更高时平台的 UVT 应付款跟着变" : undefined,
     coverageCheck: "恢复时后端用当前兑付覆盖率检查，低于红线或算不准时拒绝；不需要审批。",
     facts: paused
       ? <Facts>
@@ -257,8 +270,8 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
         <Fact k="仍会改价的">应急改现价、固定生效日照常发布价格，暂停挡不住这两项</Fact>
       </Facts>,
     statedBrief: paused
-      ? { impact: "价格重新按七天计划自动推进，之后的兑换按推进后的价格。", check: "核对兑付覆盖率和固定生效日，理由写清为什么恢复。" }
-      : { impact: "价格停在现在的值，用户兑换按这个价，直到恢复。", check: "理由写清为什么暂停、预计多久恢复。" },
+      ? { impact: "排程已配置、没有固定时，价格重新按七天计划推进，之后的兑换按推进后的价格。", check: "核对兑付覆盖率和固定生效日，理由写清为什么恢复。" }
+      : { impact: "自动推进和采样停下；应急改现价和固定生效日仍会改价。", check: "理由写清为什么暂停、预计多久恢复。" },
     amplifies: paused,
     coverage: paused ? coverageSnapshot : undefined,
     confirmLabel: paused ? "确认恢复" : "确认暂停",
@@ -268,8 +281,8 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
   };
   }
   const overrideKey = change.key;
-  const label = overrideKey === "volatilityPct" ? "波动幅度" : overrideKey === "deviationPct" ? "偏离告警阈值" : "初始成本价";
-  const note = overrideKey === "volatilityPct" ? "可设 0–20%" : overrideKey === "deviationPct" ? "可设 0–50%" : "只用于 App 显示盈亏，不影响价格和兑换";
+  const label = overrideKey === "volatilityPct" ? "当前波动幅度" : overrideKey === "deviationPct" ? "偏离告警阈值" : "初始成本价";
+  const note = overrideKey === "volatilityPct" ? "可设 0–20%" : overrideKey === "deviationPct" ? "可设 0–50%" : "App 现在没有页面显示它，不影响价格和兑换";
   const amp = false;
     const unused = {
       volatilityPct: "后端把它记进当天配置，下次推进时被计划值替换；发布价格直接用目标价，没有按它随机涨跌。",
@@ -321,9 +334,9 @@ function G3MarketEditor() {
   const OBJECT_STATES = { ...observedStates };
   for (const row of commandRows) {
     OBJECT_STATES[g3MarketObjectKey(row.change)] = row.ticketId
-      ? { kind: "approval", detail: `原审批单 ${row.ticketId} 等待另一位有权超管批准，尚未生效。`,
+      ? { kind: "approval", detail: `原审批单 ${row.ticketId} 在等另一位超级管理员批准，批准前不生效。`,
         verification: verifiedApprovals[row.commandKey] === undefined ? "last-observation" : "current", observedAt: verifiedApprovals[row.commandKey] ?? row.createdAt }
-      : { kind: "unknown", detail: `原操作结果待确认，命令号：${row.commandKey}。打开这一项恢复原操作。`, verification: "current", observedAt: row.createdAt };
+      : { kind: "unknown", detail: "提交时没收到确定结果，可能已经生效。打开这一项查询原结果，24 小时内也可以按原请求重试。", verification: "current", observedAt: row.createdAt };
   }
   const hasRecovery = (key: string) => commandRows.some(row => !row.ticketId && g3MarketObjectKey(row.change) === key);
   const syncCommands = useCallback(() => setCommandVersion(version => version + 1), []);
@@ -465,12 +478,12 @@ function G3MarketEditor() {
         setHistory([]);
         setHistoryError(messageOf(historyResult.reason));
       }
-      toast(success);
+      toast(recovered ? REREAD_TEXT : success);
       if (recovered) { setRereadPending(true); void reload(true); }
     } catch (err) {
       const message = messageOf(err);
       setError(message);
-      toast(`操作失败 · ${message}`);
+      toast(UNKNOWN_TEXT.test(message) ? message : `操作失败 · ${message}`);
       throw err;
     } finally {
       setBusyKey(null);
@@ -499,17 +512,37 @@ function G3MarketEditor() {
       openDirect(change as G3DirectChange, row.value);
     } else setMarketConfirm(change as G3ReviewedChange);
   };
-  const objectNotices = Object.entries(OBJECT_STATES).filter(([, state]) => state?.verification === "current");
-  const recoveryNotice = objectNotices.length > 0 && <Notice tone="warn" title={`${objectNotices.length} 项原操作结果待确认或在等审批`}>
-    <p>表里带标记的那一项，打开后按原操作查询或重试；确认之前不要换个值重新提交。</p>
-    {commandRows.filter(row => !row.ticketId).map(row => {
-      const change = row.change;
-      const label = change.action === "curve-cell" ? `修改 D${change.dayIndex + 1} ${FIELD_NAME[change.field]}`
-        : change.action === "current-price" ? "应急改现价" : change.action === "schedule" ? change.current === "" ? "首次配置自动推进时间" : "调整自动推进时间"
-        : directConfirmation(change as G3DirectChange, row.value, overview).title;
-      return <Button key={row.commandKey} size="sm" onClick={() => openSavedCommand(row)}>{label}</Button>;
-    })}
-  </Notice>;
+  // 原操作提醒：本机保存的原记录逐条列出（G 域五页同一种列表）；查询和重试都在原确认框里，按钮打开它。
+  const recoveryRows: GRecoveryRow[] = commandRows.map((row) => {
+    const change = row.change;
+    const name = change.action === "curve-cell" ? `D${change.dayIndex + 1} ${FIELD_NAME[change.field]}`
+      : change.action === "current-price" ? "现价（应急改价）" : change.action === "schedule" ? "自动按日推进"
+      : change.action === "control" ? change.key === "pin" ? "固定生效日" : "D7 之后"
+      : change.action === "override" ? { paused: "价格自动变化", oracle: "价格来源", volatilityPct: "当前波动幅度", deviationPct: "偏离告警阈值", costBasis: "初始成本价" }[change.key]
+      : "原操作";
+    const show = (value: string) => {
+      if (value === "") return "未配置";
+      if (change.action === "curve-cell") return fieldText(change.field, Number(value));
+      if (change.action === "current-price" || change.action === "override" && change.key === "costBasis") return `${price(Number(value))} USDT`;
+      if (change.action === "override" && change.key === "paused") return value === "true" ? "暂停" : "自动变化";
+      if (change.action === "control" && change.key === "pin") return value === "未钉住" ? "不固定" : value;
+      return value;
+    };
+    return {
+      key: row.commandKey, name, submittedAt: row.createdAt, ticket: row.ticketId ?? undefined,
+      state: row.ticketId ? "approval" : "unknown",
+      change: <Change from={show(change.current)} to={show(row.value)} />,
+      tag: row.ticketId ? pendingTag("这次申请批准前不生效。") : unknownTag(row.request.kind === "approval" ? "approval" : "direct"),
+      actions: <Button size="sm" aria-label={`打开${name}的原操作`} onClick={() => openSavedCommand(row)}>查询或重试</Button>,
+    };
+  });
+  const recoveryNotice = <GRecoveryNotice label="价格的原操作" rows={recoveryRows}
+    title={`价格的原操作 · ${recoveryRows.length} 项`}
+    lead="打开那一项查询原结果，24 小时内也可以按原请求重试；有结论之前不要换个值重新提交。"
+    explain={<>
+      <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的提高申请，和直接保存但没收到结果的修改。原操作只能查询或按原内容重试，不能改值。</p>
+      <p>表里同一项也带着标记。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
+    </>} />;
   const pendingDirect = confirm && session ? pendingG3MarketCommand(session.adminId, confirm.change) : undefined;
   const newWriteBlockedReason = !overview ? "UVT 价格读取失败"
     : rereadPending ? "原操作已完成，但 UVT 价格还没有重新读取成功，请先刷新" : undefined;
@@ -527,7 +560,7 @@ function G3MarketEditor() {
           if (result.active && !result.recovered) setOverview(result.active);
           if (result.recovered) setRereadPending(true);
           if (result.ticketKey) setVerifiedApprovals(keys => ({ ...keys, [result.ticketKey!]: Date.now() }));
-          toast(result.acknowledgement);
+          toast(result.recovered ? REREAD_TEXT : result.acknowledgement);
           void reload(true);
         }} />}
       {confirm && (
@@ -619,6 +652,9 @@ function G3MarketEditor() {
 
   const busy = !!busyKey;
   const busyReason = busy ? "正在保存上一项，稍候再改" : undefined;
+  // 原操作重试成功后在重读：新修改先不可用，带着原因；还有原记录的那一项照样能打开。
+  const rereadReason = rereadPending ? "原操作已完成，正在重新读取 UVT 价格；读取成功后再改" : undefined;
+  const lockReason = (key: string) => busyReason ?? (hasRecovery(key) ? undefined : rereadReason);
   const paused = overview.overrides.paused;
   const pendingPause = commandRows.find(row => !row.ticketId && g3MarketObjectKey(row.change) === "paused");
   const pauseActionResumes = pendingPause ? pendingPause.value === "false" : paused;
@@ -648,13 +684,7 @@ function G3MarketEditor() {
   // 现价和今天计划价对不上时，在现价旁写差多少、为什么。原因只写配置能说明的；说明不了的如实写「后端没给原因」。
   const gap = offPlan ? overview.currentPrice - todayTarget : 0;
   const gapText = offPlan ? `比 D${curDay} 计划价 ${price(todayTarget)} ${gap < 0 ? "低" : "高"} ${Math.abs(gap / todayTarget * 100).toFixed(2)}%` : "";
-  const gapReason = !offPlan ? "" : paused
-    ? "推进已暂停"
-    : pinned
-      ? "固定后改过计划价或现价"
-      : scheduleMissing
-        ? "自动推进没配置，可能从没发布过"
-        : "和今天的计划价不一致，后端没给原因";
+  const gapReason = offPlan ? "差多少后端没有给出原因" : "";
 
   const openCurveCellMc = (dayIndex: number, field: G3CurveField) => {
     const frame = overview.frames[dayIndex];
@@ -690,10 +720,10 @@ function G3MarketEditor() {
         : scheduleMissing && !pinned
           ? <Conclusion state="warn" hint={allowed("finprod_g3_write") ? "在「运行方式」里首次配置自动按日推进，批准后启用。" : "请有修改权限的同事在「运行方式」首次配置自动按日推进。"}
             explain={`没有排程时价格不会自动切换。「今天 D${curDay}」是后端算出的当前生效日：固定的那天 > 上次推进记下的那天 > 都没有时按 UTC 星期几，所以没推进过时它每天会变，但现价不跟着变。`}>
-            {offPlan ? <>自动推进还没配置，现价 {price(overview.currentPrice)} USDT 没有按计划变化</> : <>自动推进还没配置，现价 {price(overview.currentPrice)} USDT 不会自动切换</>}</Conclusion>
+            自动推进还没配置，现价 {price(overview.currentPrice)} USDT 不会自动切换</Conclusion>
           : pinned
             ? <Conclusion state="neutral" icon={PinIcon}>价格固定在 {pinV.trim().toUpperCase()}，现价 {price(overview.currentPrice)} USDT，不自动切换</Conclusion>
-            : <Conclusion state="neutral" icon={CalendarRange} explain="这句话只说配置：没有暂停、没有固定、排程已配置。页面看不到排程最近一次有没有真的执行。">按计划推进，今天用 D{curDay}，现价 {price(overview.currentPrice)} USDT</Conclusion>;
+            : <Conclusion state="neutral" icon={CalendarRange} explain="这句话只说配置：没有暂停、没有固定、排程已配置。页面看不到排程最近一次有没有真的执行，现价和计划价可以不同。">排程已配置，今天是 D{curDay}，现价 {price(overview.currentPrice)} USDT</Conclusion>;
 
   const historyLatest = historyPoints.at(-1)?.sampledAt;
   // 横轴只写时刻；24 小时窗口里时刻撞上时才带日期，保证每格名字不同。
@@ -744,7 +774,7 @@ function G3MarketEditor() {
                   {up ? <TrendingUp size={13} aria-hidden /> : <TrendingDown size={13} aria-hidden />}<span className="rd-sr-only">{up ? "比前一天高" : "比前一天低"}</span>
                 </span>}
                 <span className="g3-num">{fieldText(field, current)}</span>
-                {canEdit && <IconButton data-size="sm" aria-label={`修改 D${dayIndex + 1} ${FIELD_NAME[field]}`} disabledReason={busyReason} onClick={() => openCurveCellMc(dayIndex, field)}><Pencil size={13} aria-hidden /></IconButton>}
+                {canEdit && <IconButton data-size="sm" aria-label={`修改 D${dayIndex + 1} ${FIELD_NAME[field]}`} disabledReason={lockReason(`weekly:D${dayIndex + 1}:${field}`)} onClick={() => openCurveCellMc(dayIndex, field)}><Pencil size={13} aria-hidden /></IconButton>}
               </span>
             </Td>
           );
@@ -758,7 +788,7 @@ function G3MarketEditor() {
       <thead>
         <tr>
           <Th>哪一天</Th>
-          <Th align="right"><Explain label="目标价" content={<><p>推进或固定到这一天时，现价按这个值发布。</p><p>提高要另一位有权超管批准，降低直接保存；都只改计划，现价不变。</p></>} />目标价（USDT）</Th>
+          <Th align="right"><Explain label="目标价" content={<><p>推进或固定到这一天时，现价按这个值发布。</p><p>提高要另一位超级管理员批准，降低直接保存；都只改计划，现价不变。</p></>} />目标价（USDT）</Th>
         </tr>
       </thead>
       <tbody>{dayRows}</tbody>
@@ -777,7 +807,7 @@ function G3MarketEditor() {
                 {state && <span className="g3-cell-tag"><ObjectTag state={state} /></span>}
                 <span className="g3-cell">
                   <span className="g3-num">{fieldText(field, frameValue(frame, field))}</span>
-                  {(allowed(curveAuthority(field)) || hasRecovery(`weekly:D${dayIndex + 1}:${field}`)) && <IconButton data-size="sm" aria-label={`修改 D${dayIndex + 1} ${FIELD_NAME[field]}`} disabledReason={busyReason ?? (field === "pumpProbability" && !hasRecovery(`weekly:D${dayIndex + 1}:${field}`) ? tuningBlocked : undefined)} onClick={() => openCurveCellMc(dayIndex, field)}><Pencil size={13} aria-hidden /></IconButton>}
+                  {(allowed(curveAuthority(field)) || hasRecovery(`weekly:D${dayIndex + 1}:${field}`)) && <IconButton data-size="sm" aria-label={`修改 D${dayIndex + 1} ${FIELD_NAME[field]}`} disabledReason={lockReason(`weekly:D${dayIndex + 1}:${field}`) ?? (field === "pumpProbability" && !hasRecovery(`weekly:D${dayIndex + 1}:${field}`) ? tuningBlocked : undefined)} onClick={() => openCurveCellMc(dayIndex, field)}><Pencil size={13} aria-hidden /></IconButton>}
                 </span>
               </Td>
             );
@@ -789,8 +819,8 @@ function G3MarketEditor() {
 
   const controls = [...overview.controls].sort((a, b) => (CONTROL_ORDER.indexOf(a.key) + 99) % 99 - (CONTROL_ORDER.indexOf(b.key) + 99) % 99);
   const controlCopy: Record<string, { name: string; what: string; when: string; effect: string; value: (value: string) => string }> = {
-    pin: { name: "固定生效日", what: "把价格固定在七天里的某一天，自动推进停下", when: "确认后立即生效", effect: "选一天马上按那天的目标价发布现价；选「不固定」现价不变，之后按排程继续推进", value: (value) => value === "未钉住" ? "不固定" : `固定在 ${value}` },
-    schedule: { name: "自动按日推进", what: "每天几点切换到下一天的目标价，时区写在时刻后面，不写按 UTC", when: "已有排程直接保存，从下一次排程时刻起按新时间；第一次配置要另一位有权超管批准", effect: "只改切换时间，现价不当场变；同一个 UTC 日期最多推进一次", value: (value) => value === "" ? "未配置" : value },
+    pin: { name: "固定生效日", what: "把价格固定在七天里的某一天，自动推进停下", when: "确认后立即生效", effect: "选一天马上按那天的目标价发布现价；选「不固定」现价不变，之后在排程已配置、没有暂停时按排程推进", value: (value) => value === "未钉住" ? "不固定" : `固定在 ${value}` },
+    schedule: { name: "自动按日推进", what: "每天几点切换到下一天的目标价，时区写在时刻后面，不写按 UTC", when: "已有排程直接保存，从下一次排程时刻起按新时间；第一次配置要另一位超级管理员批准", effect: "只改切换时间，现价不当场变；同一个 UTC 日期最多推进一次", value: (value) => value === "" ? "未配置" : value },
     loop: { name: "D7 之后", what: "七天走完后回到 D1 循环，还是一直用 D7", when: "确认后立即保存，到 D7 之后的那次推进才用上", effect: "只决定 D7 之后怎么走，现价不变；停在末值不是暂停", value: (value) => value },
   };
 
@@ -799,8 +829,9 @@ function G3MarketEditor() {
       {header}
       {confirmationPanels}
 
-      {error && <Notice tone="warn">{error}</Notice>}
+      {error && !UNKNOWN_TEXT.test(error) && <Notice tone="warn">{error}</Notice>}
       {conclusion}
+      {rereadPending && <Notice tone="progress" title={REREAD_TEXT} action={<Button size="sm" loading={refreshing} onClick={() => void refresh()}>重新读取</Button>}>读到最新价格之前，表里的修改先不可用；还有原记录的那一项照样能打开。</Notice>}
 
       {recoveryNotice}
 
@@ -825,7 +856,7 @@ function G3MarketEditor() {
           sub={`红线 ${redline}`}
           explain={<>
             <p>现在的储备能付多少应付款，来自「资金储备与应付款」的当前快照，不是这次修改后的值。</p>
-            <p>提高价格、固定到更高的一天、恢复自动变化时，后端按拟发布的价格重估，低于红线就拒绝。</p>
+            <p>提高价格、固定到更高的一天时，后端按拟发布的价格重估；恢复自动变化时按现在的覆盖率检查。低于红线就拒绝。</p>
             <p>读不到可靠数据时后端也可能返回 0，这时以「资金储备与应付款」为准。</p>
           </>} />
       </StatBand>
@@ -845,17 +876,17 @@ function G3MarketEditor() {
 
       <div className="rd-split" data-even="">
         <Panel title="最近 24 小时价格" icon={Activity} tone="role-1"
-          sub={chartPrices.length >= 2 ? `${changeText} · 最近 ${sampleText(historyLatest ?? "")}` : undefined}
+          sub={chartPrices.length >= 2 ? `${changeText} · 最近 ${sampleText(historyLatest ?? "")}（${businessZone().label}）` : undefined}
           explain={<>
             <p>看图：价格这一天实际怎么走的，有没有到今天的计划价。</p>
-            <p>后端每 5 分钟记一次已发布的价格；暂停或没有价格时不记。时间按后端记录原样显示。{chartPrices.length >= 2 ? `这 24 小时共 ${historyPoints.length} 个采样点；涨跌按第一个和最后一个采样价算。` : ""}</p>
+            <p>后端每 5 分钟记一次已发布的价格；暂停或没有价格时不记。时间为{businessZone().label}。{chartPrices.length >= 2 ? `这 24 小时共 ${historyPoints.length} 个采样点；涨跌按第一个和最后一个采样价算。` : ""}</p>
           </>}>
           {chartPrices.length >= 2 ? (
-            <TrendLines label={`最近 24 小时 UVT 价格，${changeText}`} height={168}
+            <div className="g3-history" data-tick-crowd={ticksCrowded(historyTicks.length) ? "" : undefined}><TrendLines label={`最近 24 小时 UVT 价格，${changeText}`} height={168}
               ticks={historyTicks}
               series={[{ key: "price", label: "价格", slot: 1, values: historyPoints.map((point) => point.price) }]}
               format={(value) => `${price(value)} USDT`} axisFormat={(value) => price(value)}
-              marks={[{ key: "plan", text: `今天计划 ${price(todayTarget)}`, value: todayTarget, tone: "neutral" }]} />
+              marks={[{ key: "plan", text: `今天计划 ${price(todayTarget)}`, value: todayTarget, tone: "neutral" }]} /></div>
           ) : (
             <div data-proof="g3-history-empty">
               {historyError
@@ -871,12 +902,12 @@ function G3MarketEditor() {
             <ConfigRow name="价格自动变化"
               what="每日推进和 5 分钟采样是否在跑"
               when="确认后立即生效，不需要审批"
-              effect="暂停后现价停在当前值；恢复后等下一次排程再推进，恢复时后端检查兑付覆盖率"
+              effect="暂停后不再自动推进；恢复后等下一次排程再推进，恢复时后端检查兑付覆盖率"
               note="暂停挡不住应急改现价和固定生效日，这两项照常发布价格。暂停只要暂停权限；恢复还要超级管理员。"
               value={<span className="g3-value">{paused ? <StatusTag tone="warn" icon={PauseCircle}>已暂停</StatusTag> : <StatusTag tone="ok">自动变化中</StatusTag>}<ObjectTag state={OBJECT_STATES.paused} /></span>}
               action={allowed("finprod_g3_engine_pause_toggle") || hasRecovery("paused") ? (describedBy) => (
                 <Button size="sm" variant={pauseActionResumes ? "secondary" : "danger-outline"} aria-describedby={describedBy}
-                  disabledReason={busyReason ?? (pauseActionResumes && !isSuper && !hasRecovery("paused") ? "恢复只有超级管理员能操作" : undefined)}
+                  disabledReason={lockReason("paused") ?? (pauseActionResumes && !isSuper && !hasRecovery("paused") ? "恢复只有超级管理员能操作" : undefined)}
                   onClick={pauseEngine}>{pauseActionResumes ? "恢复" : "暂停"}</Button>
               ) : undefined} />
             {controls.map((item) => {
@@ -890,7 +921,7 @@ function G3MarketEditor() {
                   note={item.key === "schedule" && !scheduleMissing ? `当前排程：${scheduleMeta}` : undefined}
                   value={<span className="g3-value">{first ? <StatusTag tone="warn" icon={TriangleAlert}>未配置</StatusTag> : value}<ObjectTag state={OBJECT_STATES[item.key]} /></span>}
                   action={allowed("finprod_g3_write") || hasRecovery(item.key) ? (describedBy) => (
-                    <Button size="sm" aria-describedby={describedBy} disabledReason={busyReason}
+                    <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason(item.key)}
                       onClick={() => openCurveCtlMc(item.key, operatorCopyText(item.name), ctlVals[item.key] || item.value)}>
                       {first ? "首次配置" : "调整"}
                     </Button>
@@ -907,40 +938,40 @@ function G3MarketEditor() {
         <ConfigList label="应急改现价">
           <ConfigRow name="当前价格"
             what="全站 UVT 现价，用户兑换按它成交"
-            when="降低确认后立即发布；提高要另一位有权超管批准后发布"
+            when="降低确认后立即发布；提高要另一位超级管理员批准后发布"
             effect="已完成的兑换不变；下次推进时被计划价替换（暂停或固定期间没有固定的到期时间）"
             note={TUNING_RULE}
             value={<span className="g3-value">{priceMissing ? <StatusTag tone="warn" icon={TriangleAlert}>暂不可用</StatusTag> : `${price(overview.currentPrice)} USDT`}
               <ObjectTag state={OBJECT_STATES.currentPrice} />
               {MANUAL_TUNING === "forbidden" && <StatusTag tone="neutral" icon={Lock}>当前环境不能改</StatusTag>}</span>}
             action={allowed("finprod_g3_override_price_write") || hasRecovery("currentPrice") ? (describedBy) => (
-              <Button size="sm" aria-describedby={describedBy} disabledReason={busyReason ?? (hasRecovery("currentPrice") ? undefined : tuningBlocked)}
+              <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("currentPrice") ?? (hasRecovery("currentPrice") ? undefined : tuningBlocked)}
                 onClick={() => adj("currentPrice", "当前价格", rawValue(overview.currentPrice), "临时改价，下次自动切换时恢复计划值", true)}>调整</Button>
             ) : undefined} />
         </ConfigList>
       </Fold>
 
       <Fold title="目前不生效的参数" icon={CircleHelp} tone="role-other"
-        summary="6 项 · 目前不影响公布价和兑换"
+        summary="6 项 · 目前不生效，不影响公布价和兑换"
         explain="这些值能保存，但后端发布价格和兑换时都不读它们。入口先保留，已提给后端接上或退役。">
-        <div className="g3-subhead">七天上涨概率<span className="g3-subnote">目前不影响公布价</span><Explain label="七天上涨概率" content={<><p>0.35 表示 35%。推进到这一天时写进当天配置；公布价直接用目标价，上涨概率目前不影响公布价。</p><p>提高要另一位有权超管批准，降低直接保存。</p><p>{TUNING_RULE}</p></>} />
+        <div className="g3-subhead">七天上涨概率<span className="g3-subnote">目前不生效</span><Explain label="七天上涨概率" content={<><p>0.35 表示 35%。推进到这一天时写进当天配置；公布价直接用目标价，上涨概率目前不影响公布价。</p><p>提高要另一位超级管理员批准，降低直接保存。</p><p>{TUNING_RULE}</p></>} />
           {MANUAL_TUNING === "forbidden" && <StatusTag tone="neutral" icon={Lock} explain={G3_TUNING_FORBIDDEN}>当前环境不能改</StatusTag>}</div>
         {weekTable("pumpProbability")}
-        <div className="g3-subhead">七天波动幅度<span className="g3-subnote">目前不影响公布价</span><Explain label="七天波动幅度" content="七天计划里每一天的波动幅度（2 表示 ±2%），推进到这一天时抄进当天配置。发布价格直接用目标价，不按它随机涨跌。" /></div>
+        <div className="g3-subhead">七天波动幅度<span className="g3-subnote">目前不生效</span><Explain label="七天波动幅度" content="七天计划里每一天的波动幅度（2 表示 ±2%），推进到这一天时抄进当天配置。发布价格直接用目标价，不按它随机涨跌。" /></div>
         {weekTable("volatilityPct")}
         <ConfigList label="其他不生效的参数">
           <ConfigRow name="当前波动幅度" what="当天配置里的波动幅度" effect="下次推进时被计划值替换；发布价格不按它随机涨跌"
             value={<span className="g3-value">±{pctText(overview.overrides.volatilityPct)}<ObjectTag state={OBJECT_STATES.volatilityPct} /></span>}
-            action={allowed("finprod_g3_write") || hasRecovery("volatilityPct") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={busyReason} onClick={() => adj("volatilityPct", "波动幅度", rawValue(overview.overrides.volatilityPct), "可设 0–20%")}>调整</Button> : undefined} />
+            action={allowed("finprod_g3_write") || hasRecovery("volatilityPct") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("volatilityPct")} onClick={() => adj("volatilityPct", "波动幅度", rawValue(overview.overrides.volatilityPct), "可设 0–20%")}>调整</Button> : undefined} />
           <ConfigRow name="价格来源" what="内部定价或外部价格来源" effect="后端没有接外部价格，选哪个价格都按七天计划发布" note="只有超级管理员能切换。"
             value={<span className="g3-value">{oracle === "内部做市" ? "内部定价" : oracle === "外部喂价" ? "外部价格来源" : "价格来源未知"}<ObjectTag state={OBJECT_STATES.oracle} /></span>}
-            action={isSuper || hasRecovery("oracle") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={busyReason} onClick={switchOracle}>切换</Button> : undefined} />
+            action={isSuper || hasRecovery("oracle") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("oracle")} onClick={switchOracle}>切换</Button> : undefined} />
           <ConfigRow name="偏离告警阈值" what="现价和外部价格相差多少算偏离" effect="后端没有拿现价和外部价格比较，也不会告警"
             value={<span className="g3-value">{overview.overrides.deviationPct == null ? "未配置" : pctText(overview.overrides.deviationPct)}<ObjectTag state={OBJECT_STATES.deviationPct} /></span>}
-            action={allowed("finprod_g3_write") || hasRecovery("deviationPct") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={busyReason} onClick={() => adj("deviationPct", "偏离告警阈值", rawValue(overview.overrides.deviationPct), "可设 0–50%")}>调整</Button> : undefined} />
+            action={allowed("finprod_g3_write") || hasRecovery("deviationPct") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("deviationPct")} onClick={() => adj("deviationPct", "偏离告警阈值", rawValue(overview.overrides.deviationPct), "可设 0–50%")}>调整</Button> : undefined} />
           <ConfigRow name="初始成本价" what="UVT 的初始成本价" effect="App 接口会带上它，但现在没有页面显示盈亏；不影响价格和兑换"
             value={<span className="g3-value">{overview.overrides.costBasis == null ? "未配置" : `${price(overview.overrides.costBasis)} USDT`}<ObjectTag state={OBJECT_STATES.costBasis} /></span>}
-            action={allowed("finprod_g3_write") || hasRecovery("costBasis") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={busyReason} onClick={() => adj("costBasis", "初始成本价", rawValue(overview.overrides.costBasis), "只用于 App 显示盈亏，不影响价格和兑换")}>调整</Button> : undefined} />
+            action={allowed("finprod_g3_write") || hasRecovery("costBasis") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("costBasis")} onClick={() => adj("costBasis", "初始成本价", rawValue(overview.overrides.costBasis), "App 现在没有页面显示它，不影响价格和兑换")}>调整</Button> : undefined} />
         </ConfigList>
       </Fold>
 

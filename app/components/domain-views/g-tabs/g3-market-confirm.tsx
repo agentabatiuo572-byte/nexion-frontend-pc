@@ -53,9 +53,9 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
   const before = change.current || "未配置";
   // 生效方式一处说清：走审批时写在审批标题下，直接保存时写在业务后果下一行。
   const timing = change.action === "curve-cell"
-    ? `另一位有权超管批准后才写进计划，批准前七天计划不变。`
-    : initialSchedule ? "另一位有权超管批准后启用，批准前价格不自动推进。"
-    : "另一位有权超管批准后才发布，待批期间现价不变。";
+    ? `另一位超级管理员批准后才写进计划；这次申请批准前不改七天计划。`
+    : initialSchedule ? "另一位超级管理员批准后启用，批准前价格不自动推进。"
+    : "另一位超级管理员批准后才发布；这次申请批准前不改现价。";
   const directCopy = change.action === "curve-cell"
     ? `确认后直接写进计划，推进到 ${day} 时按它发布。`
     : schedule ? "确认后保存，从下一次排程时刻起按新时间推进。"
@@ -63,13 +63,13 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
   const restricted = probability || change.action === "current-price";
 
   const effect = probability
-    ? <StatusTag tone="neutral" icon={Info} explain="后端把它写进当天配置，公布价直接用目标价。">目前不影响公布价</StatusTag>
+    ? <StatusTag tone="neutral" icon={Info} explain="后端把它写进当天配置，公布价直接用目标价。">目前不生效</StatusTag>
     : change.action === "curve-cell"
     ? <StatusTag tone="progress" filled explain={`改的是计划。推进到 ${day}，或把生效日固定到 ${day} 时，才按它发布现价。`}>推进到 {day} 时生效</StatusTag>
     : change.action === "current-price"
-      ? <StatusTag tone="progress" filled explain="降低：确认后立即发布。提高：另一位有权超管批准后才发布，待批期间现价不变。">发布新现价</StatusTag>
+      ? <StatusTag tone="progress" filled explain="降低：确认后立即发布。提高：另一位超级管理员批准后才发布，这次申请批准前不改现价。">发布新现价</StatusTag>
       : initialSchedule
-        ? <StatusTag tone="progress" filled explain="另一位有权超管批准前不启用这份排程。">批准后启用</StatusTag>
+        ? <StatusTag tone="progress" filled explain="另一位超级管理员批准前不启用这份排程。">批准后启用</StatusTag>
         : <StatusTag tone="progress" filled>下一次排程时刻起生效</StatusTag>;
 
   const facts = (value?: string) => {
@@ -164,7 +164,7 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
     amplifies={false}
     edit={schedule
       ? { kind: "text", label: "运行时间与时区", current: before, initialValue: pending?.value, disallowCurrent: true }
-      : { kind: "number", label: probability ? "目标新值（0–1）" : "目标新值（USDT）", current: change.current, initialValue: pending?.value,
+      : { kind: "number", label: "改后", current: change.current, initialValue: pending?.value,
         min: probability ? 0 : 0.00000001, max: probability ? 1 : 1000000,
         step: probability ? 0.01 : 0.00000001, disallowCurrent: true, unit: unit.trim(),
         hint: probability ? "0–1，0.35 表示 35%" : "大于 0，最多八位小数" }}
@@ -184,7 +184,7 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
       resolve: (_business, value) => {
         if (!(pending ? pending.request.kind === "approval" : forceApproval || g3MarketRequiresApproval(change, value))) return undefined;
         return {
-          heading: initialSchedule ? "首次配置需另一位超管批准" : "需另一位超管批准后生效",
+          heading: initialSchedule ? "首次配置要另一位超级管理员（需有审批批准权限）批准" : "要另一位超级管理员（需有审批批准权限）批准后生效",
           completionCopy: timing,
           disabledReason: !/^[0-9a-f]{64}$/.test(change.expectedRevision) ? "当前配置版本未就绪，请关闭弹窗后重新读取页面。" : undefined,
         };
