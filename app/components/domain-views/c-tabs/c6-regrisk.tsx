@@ -424,9 +424,9 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const k1Confirm = (guard: UserRegistrationRiskK1Guard) => openConfirm({ briefKind: "record",
     action: `422 · ${text(guard.rejectCode, k1RejectCode)}`,
     title: "到「多账户风险排查」修改",
-    detail: <><b>{operatorCopyText(text(guard.name))}</b> 只能在「多账户风险排查」修改。</>,
+    detail: <><b>{operatorCopyText(text(guard.name))}</b> 在「多账户风险排查」修改。</>,
     statedBrief: {
-      impact: "只打开「多账户风险排查」，这一步不保存任何设置，也不写操作记录。",
+      impact: "只打开「多账户风险排查」，这一步不保存任何设置，备注也不会保存，不写操作记录。",
       check: "到那一页后按那一页的规则修改；没有那一页的修改权限时只能查看。",
     },
     content: (
@@ -436,7 +436,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         <Fact k="归属码"><span data-mono>{text(guard.rejectCode, k1RejectCode)}</span></Fact>
       </Facts>
     ),
-    remarkHint: "选填，不会保存",
+    remarkHint: "选填",
     reasonPlaceholder: "不用填写，备注不会保存",
     okLabel: "去修改",
     run: () => {
