@@ -92,7 +92,7 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
     }
     return <Facts>
       <Fact k="怎么写">例如「每日 08:30 Asia/Shanghai 自动推进」（北京时间 08:30）。时区紧跟在时刻后面，不写按 UTC</Fact>
-      <Fact k="现在的排程">{before}</Fact>
+      <Fact k={pending ? "提交时的排程" : "现在的排程"}>{before}</Fact>
       <Fact k="提交时检查">{initialSchedule ? "格式、时刻和时区能被解析；排程在批准前仍未配置" : "格式、时刻和时区能被解析；原排程在你打开后没有被别人改过"}</Fact>
     </Facts>;
   };
@@ -163,8 +163,8 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
     </>}
     amplifies={false}
     edit={schedule
-      ? { kind: "text", label: "运行时间与时区", current: before, initialValue: pending?.value, disallowCurrent: true }
-      : { kind: "number", label: "改后", current: change.current, initialValue: pending?.value,
+      ? { kind: "text", label: "运行时间与时区", current: before, currentLabel: pending ? "提交时" : undefined, initialValue: pending?.value, disallowCurrent: true }
+      : { kind: "number", label: "改后", current: change.current, currentLabel: pending ? "提交时" : undefined, initialValue: pending?.value,
         min: probability ? 0 : 0.00000001, max: probability ? 1 : 1000000,
         step: probability ? 0.01 : 0.00000001, disallowCurrent: true, unit: unit.trim(),
         hint: probability ? "0–1，0.35 表示 35%" : "大于 0，最多八位小数" }}
