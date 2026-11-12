@@ -511,6 +511,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
         ? "浏览器存不下原操作，本次没有发送，结果仍未知。原命令继续保留，请查询原操作。"
         : "浏览器存不下这次操作，没有提交。换一个窗口再试。");
     }
+    if (retained) setE4RetryRejected(current => current.filter(commandKey => commandKey !== key));
     try {
       await rawPropose(() => undefined, { ...spec, commandKey: key });
     } catch (error) {
@@ -540,7 +541,6 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       return;
     }
     setE4Retrying(record.fingerprint);
-    setE4RetryRejected((current) => current.filter((key) => key !== record.commandKey));
     try {
       await sendE4Proposal(record.spec, record);
       await refreshE4();
