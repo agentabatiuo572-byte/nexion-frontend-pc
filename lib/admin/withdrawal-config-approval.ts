@@ -4,6 +4,7 @@ import {
   createA2OperationProposal,
   fetchA2ProposalByKey,
   isA2OutcomeUncertainError,
+  type A2OperationRow,
 } from "./a2-client";
 import { isExplicitRejection } from "./explicit-rejection";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
@@ -11,7 +12,7 @@ import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import type { F4AmbassadorPolicyUpdate } from "./f1-client";
 
-const attempts = createPendingMutationStore<PendingMutationRecord & { input: string }>({
+const attempts = createPendingMutationStore<PendingMutationRecord & { input: string; g4Ticket?: A2OperationRow; g4Request?: Parameters<typeof createA2OperationProposal>[0] }>({
   storageKey: "nexion-admin-withdrawal-config-proposals",
   retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.input === "string",
@@ -118,8 +119,27 @@ export async function submitConfigApproval<T>(
   }
   const input = JSON.stringify([values, reason]);
   const key = previous?.commandKey ?? createA2CommandKey(op);
+  if (sourceDomain === "G4" && previous?.g4Request) {
+    const saved = previous.g4Request;
+    if (saved.sourceDomain !== "G4" || saved.obj !== "dividend" || saved.command?.domain !== "G" || saved.command.op !== op
+      || saved.target?.domain !== "G" || saved.target.type !== "genesis_param" || saved.target.id !== "dividend"
+      || typeof saved.operator !== "string" || typeof saved.operatorRole !== "string"
+      || JSON.stringify([saved.command.params, saved.reason]) !== previous.input) {
+      throw new A2OutcomeUncertainError("原日分红请求不完整，请保留命令号并核对原审批单。", key);
+    }
+  }
+  const objectId = values && sourceDomain === "F3" && "ownerUserId" in values && "settlementDate" in values
+    ? `${values.ownerUserId}:${values.settlementDate}`
+    : sourceDomain === "F4" ? "default" : sourceDomain === "G4" ? "dividend" : scope?.objectId ?? "current";
+  const proposal = sourceDomain === "G4" && previous?.g4Request ? previous.g4Request : values ? {
+    action, obj: objectId, beforeValue: "—", afterValue: "—",
+    operator: session.operator || session.username, operatorRole: roleLabel(session.role),
+    type: "fund" as const, amplifies: true, sos: false, roleGate: "超管", reason, sourceDomain,
+    command: { domain, op, params: sourceDomain === "G4" ? { ...values } : { values } },
+    target: { domain, type, id: objectId },
+  } : undefined;
   if (!previous) {
-    attempts.remember(slot, key, { input });
+    attempts.remember(slot, key, { input, ...(sourceDomain === "G4" ? { g4Request: proposal } : {}) });
     if (!attempts.isDurablyStored(slot, key)) {
       attempts.forget(slot, key);
       throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
@@ -140,7 +160,8 @@ export async function submitConfigApproval<T>(
       }
       canClearOnRejection = ticket === null;
     }
-    if (previous && !ticket && previous.expiresAt <= Date.now()) {
+    if (sourceDomain === "G4" && previous?.g4Ticket && !ticket) throw new A2OutcomeUncertainError("暂未查到已收录的原审批单，请继续核对，不能重新提交。", key);
+    if (previous && !ticket && (previous.expiresAt <= Date.now() || sourceDomain === "G4" && Date.now() < previous.createdAt)) {
       throw new A2OutcomeUncertainError("原审批命令已过期，暂未查到结果。请到操作记录核对，勿重复提交。", key);
     }
     if (lookupOnly && !ticket) return null;
@@ -148,26 +169,8 @@ export async function submitConfigApproval<T>(
       throw new A2OutcomeUncertainError("请用原配置和原理由核对该命令，或在操作记录中查询。", key);
     }
     if (!ticket) {
-      if (!values) throw new Error("请填写完整后提交。");
-      const objectId = sourceDomain === "F3" && "ownerUserId" in values && "settlementDate" in values
-        ? `${values.ownerUserId}:${values.settlementDate}`
-        : sourceDomain === "F4" ? "default" : sourceDomain === "G4" ? "dividend" : scope?.objectId ?? "current";
-      ticket = await createA2OperationProposal({
-        action,
-        obj: objectId,
-        beforeValue: "—",
-        afterValue: "—",
-        operator: session.operator || session.username,
-        operatorRole: roleLabel(session.role),
-        type: "fund",
-        amplifies: true,
-        sos: false,
-        roleGate: "超管",
-        reason,
-        sourceDomain,
-        command: { domain, op, params: sourceDomain === "G4" ? { ...values } : { values } },
-        target: { domain, type, id: objectId },
-      }, key, true);
+      if (!proposal) throw new Error("请填写完整后提交。");
+      ticket = await createA2OperationProposal(proposal, key, true);
     }
   } catch (error) {
     if (error instanceof Error && "backendMessage" in error
@@ -176,10 +179,19 @@ export async function submitConfigApproval<T>(
     }
     // 查无原单后的恢复，只能由带原因码的明确拒绝解除；权限、限流等仍保留原记录。
     // 首次新命令沿用原来的拒绝清理规则。
-    if (canClearOnRejection && (previous ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error))) attempts.forget(slot, key);
+    if (canClearOnRejection && (previous || sourceDomain === "G4" ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error))) attempts.forget(slot, key);
     throw error;
   }
 
+  if (sourceDomain === "G4") {
+    // AuditReplayBusinessPermissionGuard.validateProposalContext canonicalizes
+    // all dividend tickets; OpsAuditCenterService.ticketMetadata adds no G4 code.
+    if (ticket.mine !== true || ticket.obj !== "dividend" || ticket.action !== "批准创世分红操作"
+      || ticket.operationCode && ticket.operationCode !== op) {
+      throw new A2OutcomeUncertainError("回执与原日分红审批不匹配，请继续核对。", key);
+    }
+    attempts.remember(slot, key, { input: previous?.input ?? input, g4Ticket: ticket, g4Request: proposal });
+  }
   let active;
   try {
     active = await readActive();

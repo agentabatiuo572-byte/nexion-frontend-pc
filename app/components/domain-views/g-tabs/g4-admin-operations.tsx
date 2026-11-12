@@ -4,7 +4,7 @@
  * G4 认购、预售与持有人规则（十五项配置）和模拟成交演练（改版，RdPage）。
  * 读取、写入、回执校验沿用原实现，本文件只换界面；确认框由页面（g4-genesis）统一开。
  */
-import { useCallback, useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Archive, FlaskConical, ShieldCheck } from "lucide-react";
 import {
   BlockState, Button, Cell, ConfigList, KeepText, ConfigRow, Fact, Facts, Field, Fold, Input, Notice, Panel, Select, StatusTag, Table, TableMessage, Td, Th,
@@ -18,11 +18,13 @@ import {
   updateG4AdminOperationConfig,
   type G4AdminOperationsOverview,
 } from "@/lib/admin/g4-client";
+import { listG4DirectCommands, g4DirectObject } from "@/lib/admin/g4-direct-command";
 import type { ActionConfirmReq } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 /** 本页的确认框请求：在共用的 ActionConfirmReq 上只加显示用的字段，提交仍走 run。 */
 export type G4ConfirmReq = ActionConfirmReq & {
+  directObject?: string;
   title?: ReactNode;
   effect?: ReactNode;
   facts?: ReactNode | ((value?: string) => ReactNode);
@@ -37,7 +39,7 @@ export type G4Ctx = { toast: (message: string) => void; openActionConfirm: Dispa
 
 const configValueText = (kind: string, value: unknown): string => value == null || value === "" ? "未配置" : kind === "select" ? value === true || value === "true" ? "已开启" : value === false || value === "false" ? "已关闭" : "状态未知" : String(value);
 const sideText = (value: string) => value === "BUY" ? "模拟买入" : value === "SELL" ? "模拟卖出" : "方向未知";
-const CONFIGS = [
+export const G4_CONFIGS = [
   { key: "eligibility.enabled", label: "启用购买资格限制", kind: "select", options: ["true", "false"] },
   { key: "eligibility.maxPerUser", label: "每人最多认购", kind: "number" },
   { key: "eligibility.minAccountAgeDays", label: "最少注册天数", kind: "number" },
@@ -80,22 +82,33 @@ const GROUPS: { key: string; title: string; explain: string; keys: readonly stri
   { key: "holder", title: "持有人规则", explain: "可以分步配置：某一步保存后 App 的持有人权益可能暂时显示不可用（预留为 0、门槛顺序不对、生效时间没到），后端在 App 读取时检查，不在保存时拦。", keys: ["holder.allocationNexPerHolding", "holder.priorityTop1Percent", "holder.priorityTop3Percent", "holder.priorityTop5Percent", "holder.policyVersion", "holder.effectiveAt"] },
 ];
 
-export default function G4AdminOperations({ ctx }: { ctx: G4Ctx }) {
+export default function G4AdminOperations({ ctx, refreshVersion = 0, blocked = false }: { ctx: G4Ctx; refreshVersion?: number; blocked?: boolean }) {
   const session = useAdminAuth((state) => state.session);
   const canWrite = session?.role === "superadmin" || !!session?.authorities.includes("finprod_g4_write");
   const [data, setData] = useState<G4AdminOperationsOverview | null>(null);
   const [error, setError] = useState("");
+  const [readFailed, setReadFailed] = useState(true);
+  const latest = useRef({ data, readFailed, blocked });
+  latest.current = { data, readFailed, blocked };
+  const ensureNew = () => {
+    const auth = useAdminAuth.getState();
+    if (!auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== session?.adminId
+      || !auth.session?.authorities.includes("finprod_g4_write") || latest.current.blocked || latest.current.readFailed || !latest.current.data) {
+      throw new Error("当前设置暂不能修改，请重新读取当前状态并核对权限。 ");
+    }
+  };
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
   const [quantity, setQuantity] = useState("1");
   const [unitPrice, setUnitPrice] = useState("1000");
 
   const load = useCallback(async () => {
-    try { setData(await fetchG4AdminOperations()); setError(""); }
+    setReadFailed(true);
+    try { setData(await fetchG4AdminOperations()); setReadFailed(false); setError(""); }
     catch (cause) { setError(displayAdminError(cause)); }
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); }, [load, refreshVersion]);
 
-  const edit = (definition: (typeof CONFIGS)[number]) => {
+  const edit = (definition: (typeof G4_CONFIGS)[number]) => {
     const configured = data?.config[definition.key];
     const current = configured ?? (definition.kind === "select" ? "false" : "");
     // Missing rows use the backend's empty-string CAS baseline. This keeps a
@@ -103,7 +116,7 @@ export default function G4AdminOperations({ ctx }: { ctx: G4Ctx }) {
     // display fallback "false" into an unavoidable first-write conflict.
     const expectedValue = configured == null ? "" : String(configured);
     const help = CONFIG_HELP[definition.key];
-    ctx.openActionConfirm({ briefKind: "config",
+    ctx.openActionConfirm({ briefKind: "config", directObject: `operations/config/${encodeURIComponent(definition.key)}`,
       action: `修改创世认购设置 · ${definition.label}`,
       title: `调整${definition.label}`,
       detail: `${definition.label} 当前 ${configValueText(definition.kind, configured)}。只改设置，不会产生用户资产或成交。时间请按 UTC 填写（例如 2026-08-01T00:00:00Z），开始时间要早于结束时间。`,
@@ -122,6 +135,8 @@ export default function G4AdminOperations({ ctx }: { ctx: G4Ctx }) {
           ? { kind: "number", current: String(current), min: 0, unit: help?.unit, hint: help?.hint }
           : { kind: "text", current: String(current), hint: help?.hint },
       run: async (reason, value) => {
+        ensureNew();
+        if (String(latest.current.data!.config[definition.key] ?? "") !== expectedValue) throw new Error("这项设置已变化，请关闭后按当前值重新操作。");
         if (value == null || value === "") return;
         let normalized = value;
         if (definition.key === "presale.startAt" || definition.key === "presale.endAt" || definition.key === "holder.effectiveAt") {
@@ -152,7 +167,7 @@ export default function G4AdminOperations({ ctx }: { ctx: G4Ctx }) {
     });
   };
 
-  const createSimulation = () => ctx.openActionConfirm({ briefKind: "record",
+  const createSimulation = () => ctx.openActionConfirm({ briefKind: "record", directObject: "operations/simulations",
     action: "创建模拟成交",
     title: "创建模拟成交",
     detail: `创建 ${sideText(side)} ${quantity} × ${unitPrice} 的模拟记录。只用于后台演练，不影响钱包、账本、真实成交和市场统计，用户也看不到。`,
@@ -167,13 +182,14 @@ export default function G4AdminOperations({ ctx }: { ctx: G4Ctx }) {
     statedBrief: { impact: "只新建一条标记为模拟的后台记录。", check: "核对方向、数量和单价，理由写清演练目的。" },
     amplifies: false,
     run: async (reason) => {
+      ensureNew();
       await createG4AdminSimulation(side, quantity, unitPrice, reason, currentAdminOperator());
       await load();
       ctx.toast("模拟成交已创建");
     },
   });
 
-  const archive = (id: number, no: string) => ctx.openActionConfirm({ briefKind: "record",
+  const archive = (id: number, no: string) => ctx.openActionConfirm({ briefKind: "record", directObject: `operations/simulations/${id}`,
     action: `归档模拟成交 · ${no}`,
     title: "归档模拟成交",
     detail: "只归档这条模拟记录，不影响真实市场、资产和统计。",
@@ -187,6 +203,7 @@ export default function G4AdminOperations({ ctx }: { ctx: G4Ctx }) {
     statedBrief: { impact: "这条模拟记录不再显示。", check: "核对记录编号，理由写清为什么归档。" },
     amplifies: false,
     run: async (reason) => {
+      ensureNew();
       await archiveG4AdminSimulation(id, reason, currentAdminOperator());
       await load();
       ctx.toast(`${no} 已归档`);
@@ -199,8 +216,8 @@ export default function G4AdminOperations({ ctx }: { ctx: G4Ctx }) {
       : <BlockState state="loading" title="创世认购设置加载中…" />;
   }
 
-  const configuredCount = CONFIGS.filter((definition) => data.config[definition.key] != null && data.config[definition.key] !== "").length;
-  const simulationAction = canWrite && <Button size="sm" variant="primary" disabledReason={!(Number(quantity) > 0) || !(Number(unitPrice) > 0) ? "数量和单价都要大于 0" : undefined} onClick={createSimulation}>创建模拟成交</Button>;
+  const configuredCount = G4_CONFIGS.filter((definition) => data.config[definition.key] != null && data.config[definition.key] !== "").length;
+  const simulationAction = canWrite && <Button size="sm" variant="primary" disabledReason={blocked || readFailed ? "页面要先重新读取成功，才能再改" : !!session && listG4DirectCommands(session.adminId).some(row => g4DirectObject(row) === "operations/simulations") ? "请先核对原操作" : !(Number(quantity) > 0) || !(Number(unitPrice) > 0) ? "数量和单价都要大于 0" : undefined} onClick={createSimulation}>创建模拟成交</Button>;
   return <>
     {error && <Notice tone="warn" title="刷新失败，下面是上次加载的数据" action={<Button size="sm" onClick={() => void load()}>重试</Button>}><p>{error}</p></Notice>}
     <Fold title="认购、预售与持有人规则" icon={ShieldCheck} tone="role-3"
@@ -210,7 +227,7 @@ export default function G4AdminOperations({ ctx }: { ctx: G4Ctx }) {
         <Panel key={group.key} plain headingLevel={3} title={group.title} explain={group.explain}>
           <ConfigList label={group.title}>
             {group.keys.map((key) => {
-              const definition = CONFIGS.find((row) => row.key === key)!;
+              const definition = G4_CONFIGS.find((row) => row.key === key)!;
               const help = CONFIG_HELP[key];
               const value = data.config[key];
               return (
@@ -218,7 +235,7 @@ export default function G4AdminOperations({ ctx }: { ctx: G4Ctx }) {
                   when="确认后立即保存，App 下次读取时生效"
                   value={<span className={value == null || value === "" ? "g4x-dir" : "g4x-value-num"}>{configValueText(definition.kind, value)}{help?.unit && value != null && value !== "" && definition.kind === "number" ? ` ${help.unit}` : ""}</span>}
                   action={canWrite ? (describedBy) => (
-                    <Button size="sm" aria-describedby={describedBy} aria-label={`调整${definition.label}`} onClick={() => edit(definition)}>调整</Button>
+                    <Button size="sm" disabled={blocked || readFailed || !!session && listG4DirectCommands(session.adminId).some(row => g4DirectObject(row) === `operations/config/${encodeURIComponent(key)}`)} aria-describedby={describedBy} aria-label={`调整${definition.label}`} onClick={() => edit(definition)}>调整</Button>
                   ) : undefined} />
               );
             })}
@@ -247,7 +264,7 @@ export default function G4AdminOperations({ ctx }: { ctx: G4Ctx }) {
             <Td align="right"><Cell num main={String(row.notional)} /></Td>
             <Td><StatusTag tone="neutral" icon={FlaskConical}>{row.recordType === "SIMULATED" ? "模拟记录" : "类型未知"}</StatusTag></Td>
             <Td><Cell main={row.operator} title={row.operator} /></Td>
-            {canWrite && <Td align="right" data-fit=""><Button size="sm" onClick={() => archive(row.id, row.simulationNo)}>归档</Button></Td>}
+            {canWrite && <Td align="right" data-fit=""><Button size="sm" disabled={blocked || readFailed || !!session && listG4DirectCommands(session.adminId).some(command => g4DirectObject(command) === `operations/simulations/${row.id}`)} onClick={() => archive(row.id, row.simulationNo)}>归档</Button></Td>}
           </tr>)}
           {!data.simulations.length && <TableMessage columns={canWrite ? 8 : 7}>暂无模拟成交记录</TableMessage>}
         </tbody>

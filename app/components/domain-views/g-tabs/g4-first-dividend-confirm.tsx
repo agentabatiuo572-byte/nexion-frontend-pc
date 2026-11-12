@@ -2,35 +2,49 @@
 
 import { fetchG4GenesisOverview, type G4Overview } from "@/lib/admin/g4-client";
 import { configApprovalOriginalInput, pendingConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import { Fact, Facts, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 
-export function G4FirstDividendConfirm({ session, epoch, expectedRevision, readActive, onClose, onDone }: {
+export function G4FirstDividendConfirm({ session, epoch, expectedRevision, readActive, canStartNew, onError, onClose, onDone }: {
   session: AdminSession;
   epoch: number;
   expectedRevision: string;
   readActive: typeof fetchG4GenesisOverview;
+  canStartNew: () => boolean;
+  onError: (error: unknown) => void;
   onClose: () => void;
   onDone: (active: G4Overview, acknowledgement: string) => void;
 }) {
   const pending = pendingConfigApproval("G4", session.adminId);
   const original = pending ? configApprovalOriginalInput("G4", pending.input) : undefined;
 
-  function requireCurrentMaker() {
+  function requireCurrentMaker(write: boolean) {
     const auth = useAdminAuth.getState();
-    if (!auth.isAuthenticated || auth.session?.adminId !== session.adminId || auth.authEpoch !== epoch
-      || !auth.session.authorities.includes("finprod_g4_dividend_rate_write")) {
+    if (!auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== session.adminId || auth.authEpoch !== epoch
+      || write && !auth.session.authorities.includes("finprod_g4_dividend_rate_write")) {
       throw new Error("登录身份或权限已变化，请关闭弹窗后重新操作。");
     }
   }
 
   async function submit(mode: boolean | "retry-original", reason = "", value = "", decisionRef = "") {
-    requireCurrentMaker();
-    const result = await submitConfigApproval("G4", session, mode === false ? {
-      paramKey: "dividend", value: value.trim(), decisionRef: decisionRef.trim(), expectedRevision,
-    } : null, reason, readActive, mode);
-    requireCurrentMaker();
+    requireCurrentMaker(mode !== true);
+    if (mode === false && !pendingConfigApproval("G4", session.adminId) && !canStartNew()) {
+      onClose();
+      throw new Error("当前创世参数暂不能修改，请重新读取当前状态后操作。");
+    }
+    const recovering = !!pendingConfigApproval("G4", session.adminId);
+    let result;
+    try {
+      result = await submitConfigApproval("G4", session, mode === false ? {
+        paramKey: "dividend", value: value.trim(), decisionRef: decisionRef.trim(), expectedRevision,
+      } : null, reason, readActive, mode);
+    } catch (error) {
+      if (recovering && isExplicitRejection(error) && !pendingConfigApproval("G4", session.adminId)) { onError(error); onClose(); }
+      throw error;
+    }
+    requireCurrentMaker(false);
     if (!result) return false;
     onDone(result.active, result.ticket.status === "pending"
       ? `审批单 ${result.ticket.id} · 等待另一位有权超管批准，尚未生效`
@@ -64,7 +78,7 @@ export function G4FirstDividendConfirm({ session, epoch, expectedRevision, readA
     }}
     inlineApproval={{
       pending: !!pending,
-      expired: !!pending && Date.now() >= pending.expiresAt,
+      expired: !!pending && (Date.now() < pending.createdAt || Date.now() >= pending.expiresAt),
       resolve: () => ({
         heading: "首次配置需另一位有权超管批准",
         completionCopy: "待审期间每日收益比例仍为 0%。提交审批时和批准时后端各检查一次比例版本和兑付覆盖率。",

@@ -3,6 +3,14 @@ import { SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
 export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   // G2/G4/G7 parameter approvals (backend 66ecdb47).
   // G4 创世节点销售与收益（后端 66ecdb47）：参数、市场、档位、分红、认购设置和模拟的拒绝原因。
+  GENESIS_MARKET_PAUSED: "创世节点买卖已紧急暂停。请在「紧急停用开关」核对状态；恢复需由有权同事处理。",
+  GENESIS_SERIES_UNAVAILABLE: "创世节点系列尚不可用。请核对目录；已有持仓时应恢复原系列，不能另建替代系列。",
+  GENESIS_SERIES_INVALID: "创世节点系列的总量或价格有误。请核对系列和价格档位后重新读取。",
+  GENESIS_SOLD_OUT: "创世节点已售罄，本次没有继续成交。请重新读取销售进度。",
+  GENESIS_WALLET_INSUFFICIENT: "用户可用余额不足，本次没有成交。请核对钱包余额后再操作。",
+  GENESIS_ORDER_CONFLICT: "创世节点订单状态发生冲突。请核对原订单结果，勿重复提交。",
+  GENESIS_HOLDING_CONFLICT: "创世节点持仓状态发生冲突。请重新读取持仓和原订单结果，勿重复提交。",
+  GENESIS_LEDGER_CONFLICT: "创世节点资金流水写入冲突。请按原命令号核对订单和流水，勿另建命令重试。",
   G4_GENESIS_PARAM_VALUE_INVALID: "创世节点参数的新值超出范围或格式不对，本次没有保存。请按框下的范围重新填写。",
   G4_GENESIS_SERIES_NOT_FOUND: "没有找到启用中的创世节点系列，本次没有执行。请先在「创世节点销售与收益」核对系列和价格档位。",
   G4_FIRST_CONFIG_REQUIRES_APPROVAL: "每日收益比例现在是 0%，首次配置要提交审批，本次没有直接保存。请点「首次配置」发起审批。",

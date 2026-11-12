@@ -1,9 +1,13 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertG4OverviewContract } from "@/lib/admin/g-overview-contract";
-import { createStableMutationExecutor, StableMutationFailure, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { StableMutationFailure, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+
+import { executeG4DirectCommand, type G4DirectCommand } from "./g4-direct-command";
 
 export class G4CatalogApprovalRequiredError extends StableMutationFailure {
+  readonly status = 409;
+  readonly backendMessage = "G4_CATALOG_APPROVAL_REQUIRED";
   constructor() {
     super("deterministic", "该档位调整需另一位有权超管批准后生效，请核对原输入后提交审批。");
   }
@@ -348,17 +352,8 @@ export interface G4Overview {
   sources: string[];
 }
 
-let requestSeq = 0;
-// 服务端代理先在 20 秒将 Genesis 概览的上游挂起转为 503；浏览器 deadline 留出余量，
-// 只保护 GET 概览，不改变任何 G4 写命令的结果未知/幂等语义。
+// GETs have their own deadline; commands retain their original key after a timeout.
 const G4_OVERVIEW_READ_TIMEOUT_MS = 25_000;
-
-function idempotencyKey(prefix: string) {
-  requestSeq = (requestSeq + 1) % 1_000_000;
-  return `${prefix}-${Date.now()}-${requestSeq}`;
-}
-
-const executeG4Mutation = createStableMutationExecutor(idempotencyKey, "nexion-admin-g4-genesis-commands-v1");
 
 function toNumber(value: RawNumber, fallback = 0) {
   if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
@@ -578,7 +573,7 @@ export async function g4Request<T>(path: string, init?: RequestInit) {
       formatAdminApiError(result?.message, `G4_REQUEST_FAILED_${response.status}`),
       response.status,
       result?.code,
-    ), { status: response.status, backendMessage: result?.message });
+    ), { status: response.ok && result && result.code >= 400 && result.code < 500 ? result.code : response.status, backendMessage: result?.message, unknownOutcome: response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" });
   }
 
   return result.data as T;
@@ -588,21 +583,8 @@ function g4OverviewMutation(
   path: string,
   method: "PATCH" | "POST" | "DELETE",
   body: Record<string, unknown>,
-  prefix: string,
 ) {
-  const serialized = JSON.stringify(body);
-  return executeG4Mutation(
-    prefix,
-    stableMutationFingerprint(method, path, serialized),
-    (commandKey) => g4Request<BackendOverview>(path, {
-      method,
-      headers: { "Idempotency-Key": commandKey },
-      body: serialized,
-    }),
-    // Historical idempotency receipts can predate the paid fields. The page reads
-    // the current overview separately after the command acknowledgement.
-    (value) => assertG4OverviewContract(value),
-  );
+  return executeG4DirectCommand({ path, method, body: JSON.stringify(body) }, submitG4DirectRequest);
 }
 
 function requireG4Ack(
@@ -625,21 +607,32 @@ function g4AckMutation(
   path: string,
   method: "PATCH" | "POST" | "DELETE",
   body: Record<string, unknown>,
-  prefix: string,
-  expected: Record<string, unknown>,
-  equivalentValue?: (actual: unknown) => boolean,
 ) {
-  const serialized = JSON.stringify(body);
-  return executeG4Mutation(
-    prefix,
-    stableMutationFingerprint(method, path, serialized),
-    (commandKey) => g4Request<Record<string, unknown>>(path, {
-      method,
-      headers: { "Idempotency-Key": commandKey },
-      body: serialized,
-    }),
-    (value) => requireG4Ack(value, expected, equivalentValue),
-  );
+  return executeG4DirectCommand({ path, method, body: JSON.stringify(body) }, submitG4DirectRequest);
+}
+
+/** Validate original receipts, including replayed historical overviews, without treating them as current reads. */
+async function submitG4DirectRequest(original: G4DirectCommand) {
+  const value = await g4Request<Record<string, unknown>>(original.path, {
+    method: original.method, headers: { "Idempotency-Key": original.commandKey }, body: original.body,
+  });
+  const body = JSON.parse(original.body) as Record<string, string>;
+  const config = original.path.match(/^\/nex\/genesis\/operations\/config\/(.+)$/);
+  if (config) {
+    const key = decodeURIComponent(config[1]);
+    return requireG4Ack(value, { key, value: body.value, status: "UPDATED" }, actual => g4ConfigValueMatches(key, body.value, actual));
+  }
+  if (original.path === "/nex/genesis/operations/simulations") {
+    return requireG4Ack(value, { recordType: "SIMULATED", scope: "ADMIN_ONLY", ledgerImpact: "NONE" });
+  }
+  if (original.path.startsWith("/nex/genesis/operations/simulations/")) {
+    return requireG4Ack(value, { id: Number(original.path.split("/").at(-1)), status: "ARCHIVED" });
+  }
+  return assertG4OverviewContract(value);
+}
+
+export function retryG4DirectCommand(original: G4DirectCommand) {
+  return executeG4DirectCommand(original, submitG4DirectRequest, original);
 }
 
 export async function fetchG4GenesisOverview(page = 1, pageSize = 10) {
@@ -670,7 +663,6 @@ export async function updateG4GenesisParam(paramKey: string, value: string, reas
     `/nex/genesis/params/${encodeURIComponent(paramKey)}`,
     "PATCH",
     { value, reason, operator, decisionRef },
-    `g4-param-${paramKey}`,
   );
 }
 
@@ -679,7 +671,6 @@ export async function updateG4GenesisMarketStatus(enabled: boolean, reason: stri
     "/nex/genesis/market-status",
     "PATCH",
     { value: String(enabled), reason, operator, dispositionPlan: context?.dispositionPlan, triggerBasis: context?.triggerBasis },
-    "g4-market-status",
   );
 }
 
@@ -705,7 +696,6 @@ export async function updateG4GenesisMarketOpenState(
     "/nex/genesis/market-open-state",
     "PATCH",
     { value: status, reason, operator, noticeKey, expectedMarketOpenStateVersion },
-    "g4-market-open-state",
   );
 }
 
@@ -719,7 +709,6 @@ export async function initializeG4GenesisSeries(input: {
     "/nex/genesis/series/initialize",
     "POST",
     input,
-    "g4-series-initialize",
   );
 }
 
@@ -730,14 +719,13 @@ export async function initializeG4GenesisSeries(input: {
  * 契约要点:①新档 id 由服务端分配且须历史全局唯一(原型语义 t{历史最大号+1}——删中间档
  * 再增档不得复用旧号,否则审计轨与在途引用会串档);②三动作都带 expectedTiersVersion 做
  * 整表 CAS(区间耦合:删/改会顺移邻档,基于旧档表的提交必须被拒,幂等键防不了这个);
- * ③增档扩大总供应 = 放大远期排放负债,服务端应做 B1 覆盖率预检并越线整单拒绝。
+ * ③已有系列扩容或未售区间涨价走目录审批；目录审批不查B1，独立供应/开市路径另核B1。
  */
 export async function createG4GenesisTier(to: number, priceUSDT: number, expectedTiersVersion: number, reason: string, operator: string) {
   return g4OverviewMutation(
     "/nex/genesis/tiers",
     "POST",
     { to, priceUSDT, expectedTiersVersion, reason, operator },
-    "g4-tier-create",
   );
 }
 
@@ -746,7 +734,6 @@ export async function updateG4GenesisTier(tierId: string, to: number, priceUSDT:
     `/nex/genesis/tiers/${encodeURIComponent(tierId)}`,
     "PATCH",
     { to, priceUSDT, expectedTiersVersion, reason, operator },
-    `g4-tier-update-${tierId}`,
   );
 }
 
@@ -755,7 +742,6 @@ export async function deleteG4GenesisTier(tierId: string, expectedTiersVersion: 
     `/nex/genesis/tiers/${encodeURIComponent(tierId)}`,
     "DELETE",
     { expectedTiersVersion, reason, operator },
-    `g4-tier-delete-${tierId}`,
   );
 }
 
@@ -764,7 +750,6 @@ export async function rerunG4GenesisDividendBatch(batchNo: string, reason: strin
     `/nex/genesis/dividend-batches/${encodeURIComponent(batchNo)}/rerun`,
     "POST",
     { value: "rerun", reason, operator, decisionRef },
-    `g4-rerun-${batchNo}`,
   );
 }
 
@@ -805,25 +790,24 @@ export function updateG4AdminOperationConfig(
     `/nex/genesis/operations/config/${encodeURIComponent(key)}`,
     "PATCH",
     { value, reason, operator, expectedValue },
-    `g4-ops-config-${key}`,
-    { key, value, status: "UPDATED" },
-    (actual) => {
-      if (typeof actual !== "string") return false;
-      if (["presale.unitPrice", "holder.allocationNexPerHolding", "eligibility.maxPerUser", "eligibility.minAccountAgeDays",
-        "presale.maxPerUser", "holder.priorityTop1Percent", "holder.priorityTop3Percent", "holder.priorityTop5Percent"].includes(key)) {
-        return decimalIdentity(actual) !== undefined && decimalIdentity(actual) === decimalIdentity(value);
-      }
-      if (["presale.startAt", "presale.endAt", "holder.effectiveAt"].includes(key)) {
-        // Both the existing UTC form and Instant.toString use Z; preserve all
-        // fractional digits so a genuinely different instant is never accepted.
-        const instant = (text: string) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(text)
-          ? text.replace(/(\.\d*?)0+Z$/, "$1Z").replace(/\.Z$/, "Z") : undefined;
-        return instant(actual) !== undefined && instant(actual) === instant(value.trim());
-      }
-      return actual === (["eligibility.enabled", "presale.enabled", "presale.showCountdown"].includes(key)
-        ? value.trim().toLowerCase() : value.trim());
-    },
   );
+}
+
+function g4ConfigValueMatches(key: string, value: string, actual: unknown) {
+  if (typeof actual !== "string") return false;
+  if (["presale.unitPrice", "holder.allocationNexPerHolding", "eligibility.maxPerUser", "eligibility.minAccountAgeDays",
+    "presale.maxPerUser", "holder.priorityTop1Percent", "holder.priorityTop3Percent", "holder.priorityTop5Percent"].includes(key)) {
+    return decimalIdentity(actual) !== undefined && decimalIdentity(actual) === decimalIdentity(value);
+  }
+  if (["presale.startAt", "presale.endAt", "holder.effectiveAt"].includes(key)) {
+    // Both the existing UTC form and Instant.toString use Z; preserve all
+    // fractional digits so a genuinely different instant is never accepted.
+    const instant = (text: string) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(text)
+      ? text.replace(/(\.\d*?)0+Z$/, "$1Z").replace(/\.Z$/, "Z") : undefined;
+    return instant(actual) !== undefined && instant(actual) === instant(value.trim());
+  }
+  return actual === (["eligibility.enabled", "presale.enabled", "presale.showCountdown"].includes(key)
+    ? value.trim().toLowerCase() : value.trim());
 }
 
 /** Compare decimal values exactly, including BigDecimal exponent notation. */
@@ -842,8 +826,6 @@ export function createG4AdminSimulation(side: "BUY" | "SELL", quantity: string, 
     "/nex/genesis/operations/simulations",
     "POST",
     { side, quantity, unitPrice, reason, operator },
-    "g4-admin-simulation",
-    { recordType: "SIMULATED", scope: "ADMIN_ONLY", ledgerImpact: "NONE" },
   );
 }
 
@@ -852,7 +834,5 @@ export function archiveG4AdminSimulation(id: number, reason: string, operator: s
     `/nex/genesis/operations/simulations/${id}`,
     "DELETE",
     { value: "ARCHIVED", reason, operator },
-    `g4-admin-simulation-archive-${id}`,
-    { id, status: "ARCHIVED" },
   );
 }

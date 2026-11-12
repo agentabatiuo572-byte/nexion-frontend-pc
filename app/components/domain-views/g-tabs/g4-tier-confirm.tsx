@@ -4,9 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal,
-  fetchA2ProposalByKey, isA2OutcomeUncertainError,
+  fetchA2ProposalByKey, type A2OperationRow,
 } from "@/lib/admin/a2-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { g4DirectObject, listG4DirectCommands } from "@/lib/admin/g4-direct-command";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import { G4CatalogApprovalRequiredError, type G4Overview } from "@/lib/admin/g4-client";
@@ -28,7 +30,7 @@ export type G4TierChange = {
   expectedTiersVersion: number;
 };
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
-type Original = { change: G4TierChange; form: BusinessFormValue; reason: string; proposal: Proposal };
+type Original = { change: G4TierChange; form: BusinessFormValue; reason: string; proposal: Proposal; ticket?: A2OperationRow };
 const attempts = createPendingMutationStore<PendingMutationRecord & { input: string }>({
   storageKey: "nexion-admin-g4-catalog-proposals-v1",
   retainExpiredRecords: true,
@@ -65,9 +67,11 @@ function pendingApproval(adminId: number) {
   return { ...record, ...original };
 }
 
-export function G4TierConfirm({ session, epoch, requested, readActive, onDirect, onClose, onDone }: {
+export function G4TierConfirm({ session, epoch, requested, readActive, canStartNew, onDirect, onError, onClose, onDone }: {
   session: AdminSession; epoch: number; requested?: G4TierChange;
   readActive: () => Promise<G4Overview>;
+  canStartNew: (version: number) => boolean;
+  onError: (error: unknown) => void;
   onDirect: (change: G4TierChange, reason: string, to: number, priceUSDT: number) => Promise<void>;
   onClose: () => void; onDone: (active: G4Overview, acknowledgement: string) => void;
 }) {
@@ -89,6 +93,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, onDirect,
   const requiresApproval = (value: BusinessFormValue) => !!pendingRecord(session.adminId)
     || approvalRequiredFor === inputKey(value)
     || changesSupply(value) && Number(value.to) > basis.totalSupply;
+  const directOriginal = () => listG4DirectCommands(session.adminId).find(row => g4DirectObject(row) === "tiers");
   const form = opening.pending?.form ?? (deleting ? {} : {
     to: basis.tierId ? String(basis.currentTo) : "",
     priceUSDT: basis.currentPrice === undefined ? "" : String(basis.currentPrice),
@@ -99,7 +104,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, onDirect,
 
   function ensureOwner(approval: boolean, value: BusinessFormValue = form) {
     const auth = useAdminAuth.getState();
-    if (!auth.isAuthenticated || auth.session?.adminId !== session.adminId || auth.authEpoch !== epoch) {
+    if (!auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== session.adminId || auth.authEpoch !== epoch) {
       throw new Error("登录身份或权限已变化，请关闭弹窗后重新操作。");
     }
     if (approval && (!auth.session.authorities.includes("finprod_g4_price_write")
@@ -116,6 +121,10 @@ export function G4TierConfirm({ session, epoch, requested, readActive, onDirect,
     }
     if (mode !== "submit" && !command) throw new Error("原档位操作已处理，请关闭后重新读取页面。");
     if (!command && mode === "submit") {
+      if (!canStartNew(basis.expectedTiersVersion)) {
+        onClose();
+        throw new Error("价格档位已变化或页面尚未就绪，请重新读取后操作。");
+      }
       const to = deleting ? basis.currentTo : Number(value.to), priceUSDT = deleting ? basis.currentPrice! : Number(value.priceUSDT);
       if (!deleting && (!value.to?.trim() || !value.priceUSDT?.trim() || !Number.isInteger(to) || !Number.isInteger(priceUSDT))) {
         throw new Error("截止数量和单价要填整数");
@@ -157,13 +166,13 @@ export function G4TierConfirm({ session, epoch, requested, readActive, onDirect,
       command = pendingApproval(session.adminId)!;
     }
     const original = command!;
-    ensureOwner(true, original.form);
+    ensureOwner(mode !== "lookup", original.form);
     let ticket;
     // Every recovery checks the exact original key, including already decided tickets.
     if (hadPending) {
-      try { ticket = await fetchA2ProposalByKey(original.commandKey); }
+      try { ticket = await fetchA2ProposalByKey(original.commandKey, true); }
       catch { throw new A2OutcomeUncertainError("暂时无法查询原档位审批，请稍后再查。", original.commandKey); }
-      ensureOwner(true, original.form);
+      ensureOwner(false, original.form);
       if (!ticket && mode === "lookup") return false;
     }
     if (!ticket) {
@@ -172,24 +181,23 @@ export function G4TierConfirm({ session, epoch, requested, readActive, onDirect,
       }
       try { ticket = await createA2OperationProposal(original.proposal, original.commandKey, true); }
       catch (failure) {
-        const code = failure && typeof failure === "object" && "backendMessage" in failure ? String(failure.backendMessage) : "";
-        const rejected = failure && typeof failure === "object" && "backendMessage" in failure && "status" in failure && typeof failure.status === "number";
-        if (hadPending || isA2OutcomeUncertainError(failure)
-            || !rejected || ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(code)) {
+        if (original.ticket || !isExplicitRejection(failure)) {
           throw new A2OutcomeUncertainError("原档位提案结果待确认，请查询原操作，或按原输入和原键重试。", original.commandKey);
         }
         attempts.forget(slot(session.adminId), original.commandKey);
+        if (hadPending) { onError(failure); onClose(); }
         throw failure;
       }
     }
-    ensureOwner(true, original.form);
+    ensureOwner(false, original.form);
     if (ticket.mine !== true || ticket.obj !== "tiers" || ticket.action !== "调整创世节点价格档位") {
       throw new A2OutcomeUncertainError("回执与本人的原档位审批不匹配，请继续核对原操作。", original.commandKey);
     }
+    attempts.remember(slot(session.adminId), original.commandKey, { input: JSON.stringify({ change: original.change, form: original.form, reason: original.reason, proposal: original.proposal, ticket }) });
     let active;
     try { active = await readActive(); }
     catch { throw new A2OutcomeUncertainError(`审批单 ${ticket.id} 已登记，当前配置回读失败，请查询原操作。`, original.commandKey); }
-    ensureOwner(true, original.form);
+    ensureOwner(false, original.form);
     if (ticket.status !== "pending") attempts.forget(slot(session.adminId), original.commandKey);
     const status = { pending: "查询时待审，须另一位有权超管批准后生效", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[ticket.status];
     onDone(active, `原审批单 ${ticket.id} · ${status}；当前配置已重新读取`);
@@ -237,8 +245,8 @@ export function G4TierConfirm({ session, epoch, requested, readActive, onDirect,
         : `系列总供应量：${number(basis.totalSupply)} 张 → ${target}。`;
       return { message: `末档截止数量：${number(basis.currentTo)} 张 → ${target}；${supply}末档截止数量和系列总供应量均不能少于已售的 ${number(basis.sold)} 张。`, invalid: false };
     } }}
-    getPendingReason={() => opening.error ? undefined : pendingApproval(session.adminId)?.reason}
-    getPendingBusinessValue={() => opening.error ? undefined : pendingApproval(session.adminId)?.form}
+    getPendingReason={() => opening.error ? undefined : pendingApproval(session.adminId)?.reason ?? (directOriginal() ? JSON.parse(directOriginal()!.body).reason : undefined)}
+    getPendingBusinessValue={() => opening.error ? undefined : pendingApproval(session.adminId)?.form ?? (directOriginal() ? Object.fromEntries(Object.entries(JSON.parse(directOriginal()!.body)).map(([key, value]) => [key, String(value)])) : undefined)}
     inlineApproval={{
       pending: !!opening.pending,
       expired: !!opening.pending && (Date.now() < opening.pending.createdAt || Date.now() >= opening.pending.expiresAt),
