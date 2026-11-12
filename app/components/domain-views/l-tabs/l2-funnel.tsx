@@ -11,7 +11,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { CalendarCheck, CalendarRange, Download, Filter, Gift, Hourglass, Languages, Route, TrendingDown, TrendingUp, Users, Wallet } from "lucide-react";
 import { BlockState, Button, Check, Conclusion, Explain, Fact, Facts, FilterBar, FilterField, Fold, Input, Notice, PageHeader, PageTabs, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Th, Tr, Cell, TrendLines, useTabIds } from "@/app/components/rd";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import {
   fetchL2Cross,
   fetchL2FunnelDrilldown,
@@ -361,7 +361,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       ctx.setL2SliceExportable?.(true);
       ctx.toast(stage ? "已按当前筛选加载明细" : "已按当前筛选重新计算", "success");
     } catch (error) {
-      if (generation === queryGeneration.current) setQueryError(error instanceof Error ? displayAdminError(error) : "查询失败");
+      if (generation === queryGeneration.current) setQueryError(error instanceof Error ? displayAdminReadError(error) : "查询失败");
     } finally {
       if (generation === queryGeneration.current) {
         setQueryLoading(false);
@@ -614,7 +614,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     } catch (error) {
       if (generation !== queryGeneration.current) return;
       ctx.setL2SliceExportable?.(false);
-      setQueryError(error instanceof Error ? displayAdminError(error) : "留存矩阵查询失败");
+      setQueryError(error instanceof Error ? displayAdminReadError(error) : "留存矩阵查询失败");
     } finally {
       if (generation === queryGeneration.current) setQueryLoading(false);
     }
@@ -636,7 +636,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     } catch (error) {
       if (generation !== queryGeneration.current) return;
       ctx.setL2SliceExportable?.(false);
-      setQueryError(error instanceof Error ? displayAdminError(error) : "交叉分析查询失败");
+      setQueryError(error instanceof Error ? displayAdminReadError(error) : "交叉分析查询失败");
     } finally {
       if (generation === queryGeneration.current) setQueryLoading(false);
     }
@@ -676,7 +676,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     } catch (error) {
       if (generation !== queryGeneration.current) return;
       ctx.setL2SliceExportable?.(false);
-      setQueryError(error instanceof Error ? displayAdminError(error) : "留存曲线查询失败");
+      setQueryError(error instanceof Error ? displayAdminReadError(error) : "留存曲线查询失败");
     } finally {
       if (generation === queryGeneration.current) setQueryLoading(false);
     }
@@ -701,10 +701,10 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const stats = (
     <StatBand label="这批用户的关键数字">
       <Stat label={`最近一个注册${cohortKind}`} value={latestCohort.suppressed ? SMALL_SAMPLE_LABEL : latestCohort.size == null ? "—" : people(latestCohort.size)} unit={latestCohort.suppressed || latestCohort.size == null ? undefined : "人"}
-        sub={latestCohort.suppressed ? `${latestCohort.w} · 少于 5 人，不显示` : `${latestCohort.w} 注册`} tone="role-3" icon={Users}
+        sub={latestCohort.suppressed ? `${latestCohort.w} · 少于 5 人，不显示` : `${latestCohort.w} 注册`} tone={latestCohort.suppressed ? "role-other" : "role-3"} icon={Users}
         explain={`按注册${cohortKind}分组后最新的一组，可能是还没过完的这一${cohortKind}，也可能是更早的一${cohortKind}。`} />
       <Stat label="注册到提现" value={FUNNEL[0].suppressed || FUNNEL[FUNNEL.length - 1].suppressed ? SMALL_SAMPLE_LABEL : fullCvr == null ? "—" : `${fullCvr}%`}
-        sub={FUNNEL[0].suppressed || FUNNEL[FUNNEL.length - 1].suppressed ? "少于 5 人，不显示" : registrations && withdrawals != null ? `${people(withdrawals)} ÷ ${people(registrations)} 人` : "注册 0 人，算不出"} tone="role-3" icon={Route}
+        sub={FUNNEL[0].suppressed || FUNNEL[FUNNEL.length - 1].suppressed ? "少于 5 人，不显示" : registrations && withdrawals != null ? `${people(withdrawals)} ÷ ${people(registrations)} 人` : "注册 0 人，算不出"} tone={fullCvr == null || FUNNEL[0].suppressed || FUNNEL[FUNNEL.length - 1].suppressed ? "role-other" : "role-3"} icon={Route}
         explain="同一批注册用户里最后提交了提现申请的比例，不是到账率。" />
       <Stat label="第 7 天仍活跃" value={day7Value} tone={RETENTION_SOURCE_READY ? "role-3" : "role-other"} icon={CalendarCheck}
         sub={!RETENTION_SOURCE_READY ? `App 日活事件还没接上 · 目标 ${String(day7.target ?? 60)}%` : day7.value == null && day7.suppressed !== true ? "还没有注册满 7 天的周" : `最近满 7 天的注册周 · 目标 ${String(day7.target ?? 60)}%`}
