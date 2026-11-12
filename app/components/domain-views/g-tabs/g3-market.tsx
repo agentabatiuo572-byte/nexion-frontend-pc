@@ -367,6 +367,8 @@ function G3MarketEditor() {
       ? "finprod_g3_curve_pump_prob_write"
       : "finprod_g3_write";
   const [overview, setOverview] = useState<G3Overview | null>(null);
+  // 按原请求恢复成功后，手里的概览已经不是那次写入之后的状态；重读成功之前不能拿它当新修改的基准。
+  const [rereadPending, setRereadPending] = useState(false);
   const [history, setHistory] = useState<G3HistoryPoint[]>([]);
   // 概览与历史是两个独立服务面:历史读取失败必须有自己的原因与重试入口,
   // 不能只留一句「未返回」让运营无从定位(简报 #66)。
@@ -389,6 +391,7 @@ function G3MarketEditor() {
     ]);
     if (overviewResult.status === "fulfilled") {
       setOverview(overviewResult.value);
+      setRereadPending(false);
     } else {
       setError(messageOf(overviewResult.reason));
     }
@@ -450,7 +453,7 @@ function G3MarketEditor() {
         setHistoryError(messageOf(historyResult.reason));
       }
       toast(success);
-      if (recovered) void reload(true);
+      if (recovered) { setRereadPending(true); void reload(true); }
     } catch (err) {
       const message = messageOf(err);
       setError(message);
@@ -495,7 +498,8 @@ function G3MarketEditor() {
     })}
   </Notice>;
   const pendingDirect = confirm && session ? pendingG3MarketCommand(session.adminId, confirm.change) : undefined;
-  const newWriteBlockedReason = overview ? undefined : "UVT 价格读取失败";
+  const newWriteBlockedReason = !overview ? "UVT 价格读取失败"
+    : rereadPending ? "原操作已完成，但 UVT 价格还没有重新读取成功，请先刷新" : undefined;
   const confirmationPanels = <>
       {marketConfirm && session && <G3MarketConfirm session={session} epoch={epoch} requested={marketConfirm}
         newWriteBlockedReason={newWriteBlockedReason}
@@ -508,6 +512,7 @@ function G3MarketEditor() {
           setMarketConfirm(null);
           if (result.active) reconcileObservedAfterSave(marketConfirm);
           if (result.active && !result.recovered) setOverview(result.active);
+          if (result.recovered) setRereadPending(true);
           if (result.ticketKey) setVerifiedApprovals(keys => ({ ...keys, [result.ticketKey!]: Date.now() }));
           toast(result.acknowledgement);
           void reload(true);
