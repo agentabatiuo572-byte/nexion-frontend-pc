@@ -7,8 +7,17 @@ import {
 } from "@/lib/admin/g3-market-command";
 import type { G3CurveFrame } from "@/lib/admin/g3-client";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
+import { Info } from "lucide-react";
 import { Fact, Facts, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
+
+/** 当前环境不允许人工调价时入口和确认框上的话：说清是环境规则，不是账号权限。 */
+export const G3_TUNING_FORBIDDEN = "当前环境不允许人工改现价和上涨概率，这不是账号权限问题，换账号也一样。要调价请改七天计划的目标价。";
+/**
+ * 后端拒绝（403 G3_MANUAL_TUNING_FORBIDDEN_IN_PRODUCTION）时确认框里的话，界面已备好、等代码 worker 接：
+ * 这条拒绝不能按「没有权限」关框，要留在框里用明确拒绝的红条显示这句，再把页面的 MANUAL_TUNING 置为 forbidden。
+ */
+export const G3_TUNING_FORBIDDEN_REJECTED = "没有执行：当前环境不允许人工改现价和上涨概率，这不是账号权限问题，换账号也一样。要调价请改七天计划的目标价。";
 
 function price(value: number) {
   return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 });
@@ -47,7 +56,9 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
     : "确认后立即发布新现价。";
   const restricted = probability || change.action === "current-price";
 
-  const effect = change.action === "curve-cell"
+  const effect = probability
+    ? <StatusTag tone="neutral" icon={Info} explain="后端把它写进当天配置，公布价直接用目标价。">目前不影响公布价</StatusTag>
+    : change.action === "curve-cell"
     ? <StatusTag tone="progress" filled explain={`改的是计划。推进到 ${day}，或把生效日固定到 ${day} 时，才按它发布现价。`}>推进到 {day} 时生效</StatusTag>
     : change.action === "current-price"
       ? <StatusTag tone="progress" filled explain="降低：确认后立即发布。提高：另一位有权超管批准后才发布，待批期间现价不变。">发布新现价</StatusTag>
@@ -107,14 +118,15 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
     effect={effect}
     facts={facts}
     statedBrief={change.action === "curve-cell"
-      ? { impact: change.dayIndex === today
+      ? { impact: probability ? `只改计划里 ${day} 的上涨概率，目前不影响公布价，现价和用户兑换都不变。`
+        : change.dayIndex === today
         ? `只改计划，现价和用户兑换现在不变。${day} 就是今天，改了不会马上发布，要等下一轮推进到 ${day} 或固定到 ${day}。`
-        : probability ? `只改计划，现价和用户兑换不变；推进到 ${day} 时写进当天配置，现价仍按目标价发布。` : `只改计划，现价和用户兑换现在不变；推进到 ${day} 时按新目标价发布，之后的兑换按新价。`,
+        : `只改计划，现价和用户兑换现在不变；推进到 ${day} 时按新目标价发布，之后的兑换按新价。`,
         check: "核对是哪一天、新值和生效方式，理由写清调价依据。" }
       : change.action === "current-price"
         ? { impact: "发布后新的兑换按新价成交，已完成的兑换不变；七天计划不变，下次推进时恢复计划价。", check: "核对新价和生效方式，理由写清为什么要应急改价。" }
         : { impact: "只改自动推进的时间，现价不当场变；同一个 UTC 日期最多推进一次。", check: "核对时刻和时区，理由写清依据或工单号。" }}
-    blockedReason={tuning === "forbidden" && restricted && !pending ? "当前环境后端禁止人工修改，提交会被拒绝" : undefined}
+    blockedReason={tuning === "forbidden" && restricted && !pending ? G3_TUNING_FORBIDDEN : undefined}
     confirmLabel="确认修改"
     detail={<>
       当前 {before}{unit}。{schedule ? <>填写运行时间与时区，例如「每日 08:30 Asia/Shanghai 自动推进」（北京时间 08:30）。未填时区按 UTC。</> : <>提高走审批，降低直接保存。</>}

@@ -118,9 +118,8 @@
    只用 --rd-* 令牌。七天计划：左边走势图、右边逐日表（Figure）；今天那一行用选中底，值和改的按钮挨着、右对齐。 */
 
 .g3m .g3-plan { table-layout: fixed; }
-.g3m .g3-plan th:nth-child(1) { width: 32%; }
-.g3m .g3-plan th:nth-child(2) { width: 36%; }
-.g3m .g3-plan th:nth-child(3) { width: 32%; }
+.g3m .g3-plan th:nth-child(1) { width: 50%; }
+.g3m .g3-plan th:nth-child(2) { width: 50%; }
 .g3m :is(.g3-plan, .g3-vol) td { padding-block: 8px; }
 .g3m .g3-plan tr[data-today] td { background: var(--rd-selected); }
 .g3m .g3-plan tr[data-today] td:not(:last-child) { box-shadow: 1px 0 0 var(--rd-selected); }  /* 列宽带小数时格子之间不露缝（同 rd 选中行） */
@@ -143,3 +142,6 @@
 .g3m .g3-subhead { display: flex; align-items: center; gap: 4px; margin: 0 0 8px; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
 .g3m .g3-vol { table-layout: fixed; margin-bottom: 16px; }
 .g3m .g3-note { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.g3m .g3-gap { display: grid; gap: 2px; }
+.g3m .g3-chart-note { display: flex; align-items: center; gap: 4px; margin: 8px 0 0 72px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }  /* 72 = 图的纵轴宽，和横轴第一格对齐 */
+.g3m .g3-subnote { margin-left: 8px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); }
