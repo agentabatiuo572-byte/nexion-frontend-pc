@@ -38,6 +38,8 @@ interface Dimension {
   headline: ReactNode;
   /** 正常时收成一行写的值。 */
   quiet: ReactNode;
+  /** 这一行的值是 0：弱化，不和有数的行一样亮。 */
+  zero?: boolean;
   /** 有事时卡片里的图和明细。 */
   body: ReactNode;
   explain: ReactNode;
@@ -73,6 +75,7 @@ function bankrunDimension(data: B5Radar): Dimension {
     icon: Gauge,
     level,
     headline,
+    zero: b.ratio24h === 0,
     quiet: b.ratio24h === null ? "无法计算" : <>{ratioPct(b.ratio24h)} <span className="b5-muted">· 黄线 {yellow} · 红线 {red}</span></>,
     body: b.ratio24h === null ? facts : (
       <Figure width={420} stack="wide" graphic={
@@ -98,6 +101,7 @@ function abnormalDimension(data: B5Radar): Dimension {
     // 和今日概览同一个比较：大于 0 就要注意（B0 风险与开关）。
     level: a.count > 0 ? "warn" : "ok",
     headline: a.count > 0 ? <>异常账户 <b>{fmtNum(a.count)}</b> 个，最多的是「{operatorCopyText(rows[0].label)}」</> : <>没有异常账户</>,
+    zero: a.count === 0,
     quiet: a.count > 0 ? `${fmtNum(a.count)} 个` : "0 个",
     body: <BarList label="异常账户按类别" slot={3} rows={rows.map((row) => ({ key: row.category, label: operatorCopyText(row.label), value: row.count, text: `${fmtNum(row.count)} 个` }))} />,
     explain: <>
@@ -118,6 +122,7 @@ function backlogDimension(data: B5Radar): Dimension {
     level: w.light === "yellow" ? "warn" : "ok",
     headline: w.overSlaCount > 0 ? <><b>{fmtNum(w.overSlaCount)}</b> 单提现超过 {w.slaHours} 小时还没处理完</>
       : w.totalCount > 0 ? <>积压 {fmtNum(w.totalCount)} 单，都没超过 {w.slaHours} 小时</> : <>没有积压的提现</>,
+    zero: w.totalCount === 0,
     quiet: w.totalCount > 0 ? <>{fmtNum(w.totalCount)} 单 <span className="b5-muted">· 没有超过 {w.slaHours} 小时的</span></> : "0 单",
     body: (
       <div className="b5-backlog">
@@ -257,7 +262,7 @@ export function QuietRow({ item, actions, extra }: { item: BuiltDimension; actio
     <li className="b5-quiet-row">
       <IconTile icon={item.icon} tone="role-other" size={22} />
       <span className="b5-quiet-name">{item.name}<Explain label={`${item.name}怎么算`} content={item.explain} /></span>
-      <span className="b5-quiet-value">{item.quiet}</span>
+      <span className="b5-quiet-value" data-zero={item.zero ? "" : undefined}>{item.quiet}</span>
       <span className="b5-quiet-tag">
         <StatusTag tone={TAG_TONE[item.level]} icon={TAG_ICON[item.level]}>{item.level === "neutral" && item.key === "coverage" ? "不用算" : LEVEL_TAG[item.level]}</StatusTag>
         {extra}

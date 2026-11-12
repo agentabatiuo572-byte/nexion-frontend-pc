@@ -9,7 +9,7 @@ import "./risk-radar.css";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, BellRing, CheckCheck, LockOpen, Lock, Power, ShieldQuestion, SlidersHorizontal } from "lucide-react";
+import { ArrowUpRight, BellRing, CheckCheck, FileText, LockOpen, Lock, Power, ShieldQuestion, SlidersHorizontal } from "lucide-react";
 import {
   BlockState, Button, Change, Check, CheckGroup, Conclusion, DiffField, Explain, Fact, Facts, Field, Input, Modal, Notice, NumberInput,
   PageHeader, PageTabs, Panel, RdPage, StatusTag, Textarea, useTabIds,
@@ -432,16 +432,22 @@ export default function RiskRadarPage() {
   const others = issues.slice(1);
   const unacked = inboxError || inboxLoading ? null : inbox.filter((item) => !item.acknowledgedAt).length;
   const inboxHint = unacked ? `你有 ${unacked} 条站内告警没确认。` : "";
-  const conclusion = !first ? (
-    <Conclusion state="ok" hint={`没有要马上处理的。${inboxHint}`} explainTitle="五项怎么判断" explain="每一项的颜色都按系统现有的线判断：提现压力看黄线、红线，覆盖率看红线、健康线，积压看有没有超过 48 小时，业务开关看有没有关停，异常账户看有没有。">
+  const unknownItems = quiet.filter((item) => item.level === "neutral");
+  const conclusionExplain = "每一项的颜色都按系统现有的线判断：提现压力看黄线、红线，覆盖率看红线、健康线，积压看有没有超过 48 小时，业务开关看有没有关停，异常账户看有没有。";
+  const conclusion = !first ? (unknownItems.length ? (
+    <Conclusion state="neutral" icon={ShieldQuestion} hint={`没有要马上处理的。${inboxHint}`} explainTitle="五项怎么判断" explain={conclusionExplain}>
+      风险提醒：没有报警，{unknownItems.map((item) => item.name).join("、")}无法计算
+    </Conclusion>
+  ) : (
+    <Conclusion state="ok" hint={`没有要马上处理的。${inboxHint}`} explainTitle="五项怎么判断" explain={conclusionExplain}>
       风险提醒：五项都正常
     </Conclusion>
-  ) : first.level === "danger" ? (
+  )) : first.level === "danger" ? (
     <Conclusion state="danger" lead hint={<>{others.length ? `另有 ${others.length} 项要注意：${others.map((item) => item.name).join("、")}。` : "在下面卡片里点按钮去处理。"}{inboxHint}</>}>
-      {first.name}告警：{first.headline}
+      风险告警：{first.headline}
     </Conclusion>
   ) : issues.length === 1 ? (
-    <Conclusion state="warn" hint={`在下面卡片里点按钮去处理。${inboxHint}`}>{first.name}要注意：{first.headline}</Conclusion>
+    <Conclusion state="warn" hint={`在下面卡片里点按钮去处理。${inboxHint}`}>风险提醒：{first.headline}</Conclusion>
   ) : (
     <Conclusion state="warn" hint={`先看${first.name}。${inboxHint}`}>风险提醒：<b>{issues.length}</b> 项要注意，{issues.map((item) => item.name).join("、")}</Conclusion>
   );
@@ -548,6 +554,10 @@ export default function RiskRadarPage() {
                 <Fact k="现在的提现压力" lead>{data.bankrun.ratio24h === null ? "暂无法计算" : ratioPct(data.bankrun.ratio24h)}</Fact>
                 <Fact k="现在的状态">{formatB5RiskLight(data.bankrun.light)}</Fact>
               </Facts>
+              {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
+              {previewError && <Notice tone="danger" title="预览失败">{previewError}</Notice>}
+              {thresholdError && <Notice tone={approvalRecovery ? "warn" : "danger"} title={approvalRecovery ? "审批提交结果还没确认" : "没有调整成功"}>{thresholdError}</Notice>}
+              {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="上一次提交审批的结果还没确认">先点「查询原操作」查原审批单；查到了就不要重复提交。</Notice>}
               <DiffField before={fmtConfigPct(threshold.yellowPct)} label="黄线改成" hint="5%–50%" state={yellowDirection}
                 note={yellowDirection ? "黄线只决定什么时候标「注意」，不会自动暂停提现。" : undefined}>
                 {(control) => <NumberInput {...control} unit="%" min={5} max={50} value={yellowInput} disabled={thresholdLocked} onChange={(event) => setYellowInput(event.target.value)} />}
@@ -561,7 +571,7 @@ export default function RiskRadarPage() {
                   : previewKey && !previewError ? "正在按新的线计算…" : "填好两条线后，这里显示按新的线现在会标什么。"}
               </p>
               <Notice tone="neutral">
-                这两条线和「紧急停用开关」共用（那边叫挤兑红线），改了那边也跟着变。是否自动暂停提现由紧急停用开关按它自己的统计判断。
+                和「紧急停用开关」共用（那边叫挤兑红线），改了那边也变；是否自动暂停提现由那边按自己的统计判断。
               </Notice>
               {requiresApproval && (
                 <Notice tone="warn" title="提高红线要审批">
@@ -571,10 +581,6 @@ export default function RiskRadarPage() {
               <Field label="调整理由" required hint="8–200 字" error={reason && !reasonValid && !thresholdLocked ? "理由要写 8–200 个字" : undefined}>
                 <Textarea value={reason} disabled={thresholdLocked} maxLength={200} rows={3} placeholder="例如：工单号、调整依据" count={`${reason.trim().length} / 200`} onChange={(event) => setReason(event.target.value)} />
               </Field>
-              {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
-              {previewError && <Notice tone="danger" title="预览失败">{previewError}</Notice>}
-              {thresholdError && <Notice tone={approvalRecovery ? "warn" : "danger"} title={approvalRecovery ? "审批提交结果还没确认" : "没有调整成功"}>{thresholdError}</Notice>}
-              {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="上一次提交审批的结果还没确认">先点「查询原操作」查原审批单；查到了就不要重复提交。</Notice>}
             </div>
           </Modal>
         );
@@ -582,7 +588,7 @@ export default function RiskRadarPage() {
 
       {subscriptionOpen && canSubscribe && (
         <Modal title="告警订阅" icon={BellRing} busy={savingSubscription} dirty={subscriptionChanged}
-          sub={<><StatusTag tone="progress" filled>立即生效</StatusTag><StatusTag tone="neutral">和资金与应付款总览共用</StatusTag></>}
+          sub={<StatusTag tone="progress" filled>立即生效</StatusTag>}
           onClose={() => setSubscriptionOpen(false)}
           footer={<>
             <Button disabled={savingSubscription} onClick={() => setSubscriptionOpen(false)}>取消</Button>
@@ -631,7 +637,7 @@ export default function RiskRadarPage() {
         const busy = updatingSignal === alert.signalNo;
         return (
           <Modal title={target === "handled" ? "标记已处理" : "标记已解决"} icon={CheckCheck} busy={busy} dirty
-            sub={<StatusTag tone="neutral" explain="只更新这条信号的处理进度并留操作记录。不会解冻账户、不会放行提现、不会重发告警，也不改站内告警的已读。">只记录进度</StatusTag>}
+            sub={<StatusTag tone="neutral" icon={FileText} explain="只更新这条信号的处理进度并留操作记录。不会解冻账户、不会放行提现、不会重发告警，也不改站内告警的已读。">只记录进度</StatusTag>}
             onClose={() => setStatusDialog(null)}
             footer={<>
               <Button disabled={busy} onClick={() => setStatusDialog(null)}>取消</Button>

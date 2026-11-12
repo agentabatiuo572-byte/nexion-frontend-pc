@@ -105,7 +105,7 @@ export function AlertDistribution({ data }: { data: B5Radar }) {
           <div data-testid="b4-alert-volume-history" className="b5-volume">
             <span className="b5-caption">每天的条数</span>
             <ColumnChart label="近 7 个业务日每天的风险信号条数" height={120} series={[{ label: "风险信号", slot: 3 }]}
-              format={(value) => `${fmtNum(value)} 条`} axisFormat={(value) => fmtNum(value)}
+              format={(value) => `${fmtNum(value)} 条`} axisFormat={(value) => (Number.isInteger(value) ? fmtNum(value) : "")}
               data={data.alertVolume.map((row) => ({ key: row.label, tick: dayTick(row.label), values: [row.count] }))} />
           </div>
         </div>
