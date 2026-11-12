@@ -290,8 +290,7 @@ export function ReleaseModal({ label, explain, onCancel, onConfirm }: { label: R
 export function ReleaseBody({ label, explain }: { label: ReactNode; explain?: ReactNode }) {
   return (
     <div className="rd-stack rd-release-body">
-      {/* 「动作 · 单号」按段整段换行，长单号不在连字符处断开（ORD- / 5624…）。 */}
-      <Facts><Fact k="原操作">{typeof label === "string" ? <KeepText text={label} phrases={label.split(" · ").filter(Boolean)} /> : label}</Fact></Facts>
+      <Facts><Fact k="原操作">{label}</Fact></Facts>
       <p><KeepText text="确认原操作的结果后再解除。这里只清除本标签页的待确认记录，不撤销原操作，不代替后端核查结案；之后能不能重新提交，以后端校验为准。" />{explain && <Explain label="解除待确认的说明" content={explain} />}</p>
     </div>
   );
