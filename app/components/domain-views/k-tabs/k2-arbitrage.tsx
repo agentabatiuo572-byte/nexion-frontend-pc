@@ -20,7 +20,6 @@ import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { KCtx } from "./types";
-import "./k2-arbitrage.css";
 
 /** K2 标记 / 拦礼 / 看板 / 调参 / 联动冻结共用一张表,调用点 scope 已带动作类型前缀 + 目标行号 + 版本
  *  (`k2-flag:行号:版本`、`k2-param:参数键:版本:当前值`),刷新后仍能用同一命令号重试。 */
@@ -508,7 +507,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     ctx.openActionConfirm({ briefKind: "config",
       action: `调整检测阈值 · ${p.name}`,
       title: `调整${help?.label ?? p.name}`,
-      detail: `${p.name} · 当前 ${boardBaselineText(p.value)}。${help?.what ?? p.note}`,
+      detail: `${p.name} · 当前 ${boardBaselineText(p.value)}。`,
       effect: IMMEDIATE,
       confirmLabel: "确认调整",
       // 检测阈值不动钱，后端也不查覆盖率，不挂「多付钱」提示（后端事实：三阈值摘要不符）。
@@ -552,7 +551,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     ctx.openActionConfirm({ briefKind: "config",
       action: `调整验证码设置 · ${definition.label}`,
       title: firstConfig ? `首次配置${definition.label}` : `调整${definition.label}`,
-      detail: `${definition.label} · 当前 ${param.value} ${definition.unit}。${definition.what}`,
+      detail: `${definition.label} · 当前 ${param.value} ${definition.unit}。`,
       effect: firstConfig
         ? <StatusTag tone="progress" filled explain="首次配置要另一位超级管理员批准后才写入，不能自己批。批准前 App 仍按系统默认值处理。">批准后生效</StatusTag>
         : IMMEDIATE,
@@ -584,7 +583,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const reload = () => void ctx.reloadKRisk().catch(() => undefined);
   const canAnyWrite = canWrite || canFlag || canFreeze || canBlockGift || canBoardFlag;
   const header = (
-    <PageHeader pageId="K2" title="异常套利与刷量排查" summary="找出反复领试用、置换套利、批量领新人礼和刷榜的账户，核对证据后处置。"
+    <PageHeader pageId="K2" title="异常套利与刷量排查" summary="查四类薅羊毛命中，核对证据后处置。"
       meta={readAt && overview && !ctx.contentError ? `读取于 ${formatBusinessTimeFull(new Date(readAt).toISOString())}（${businessZone().label}）· 打开时检测，手动刷新` : undefined}
       readOnly={canAnyWrite ? undefined : "当前账号只能查看这页"}
       actions={<Button icon={<RefreshCw size={14} aria-hidden />} loading={ctx.contentLoading && Boolean(overview)} onClick={reload}>刷新</Button>} />
