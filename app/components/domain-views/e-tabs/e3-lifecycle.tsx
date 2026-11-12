@@ -84,6 +84,13 @@ const NAMES: Record<string, string> = {
   "E.tradein.maxDevicesPerOrder": "每单最多抵扣台数",
   "E.tradein.eligibility": "谁能升级置换",
 };
+/** 缺项提示用：每个必需键都有中文名。 */
+const keyName = (key: string) => NAMES[key]
+  ?? (key.match(/ladder\.cut(\d)$/) ? `分档界线 ${key.slice(-1)}`
+  : key.match(/ladder\.credit(\d)$/) ? `第 ${key.slice(-1)} 档抵扣比例`
+  : key.startsWith("E.device.capacity.applyTo.") ? `${APPLY_TO_SKUS.find((s) => key.endsWith(`.${s.kind}`))?.label ?? key}是否逐月下降`
+  : key.startsWith("E.device.taskLock.") ? "提示升级的月损失金额"
+  : key);
 const ELIGIBILITY = ["全部用户", "L2+ 持有者", "L3+ 持有者", "L4+ 持有者", "L5+ 持有者", "L6+ 持有者"];
 
 /**
@@ -141,8 +148,8 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     return <div className="e3p">
       {header}
       {e3Loading && !e3Ready ? <BlockState state="loading" title="正在读取规则和统计…" />
-        : e3Error ? <BlockState state="error" title="规则和统计没有读到" detail={`${e3Error}。这页的数字和规则都不显示，避免把旧值当成现在的。`} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
-        : e3Ready ? <BlockState state="error" title={`规则没有读全：缺 ${missing.length} 项`} detail={`缺 ${missing.map((key) => NAMES[key] ?? key).slice(0, 6).join("、")}${missing.length > 6 ? " 等" : ""}。读全之前不显示规则，也不能修改，请稍后重新读取或联系后端核对配置。`} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
+        : e3Error ? <BlockState state="error" title="规则和统计没有读到" detail={`${e3Error.replace(/[。.]+$/, "")}。这页的数字和规则都不显示，避免把旧值当成现在的。`} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
+        : e3Ready ? <BlockState state="error" title={`规则没有读全：缺 ${missing.length} 项`} detail={`缺 ${[...new Set(missing.map(keyName))].slice(0, 6).join("、")}${missing.length > 6 ? " 等" : ""}。读全之前不显示规则，也不能修改，请稍后重新读取或联系后端核对配置。`} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
         : <BlockState state="loading" title="正在读取规则和统计…" />}
       {manual}
     </div>;
@@ -197,13 +204,15 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     detail: `批准后生效。${m.detail}`, effect: effect(true), facts: m.facts, coverageLead: m.coverageLead,
     statedBrief: { impact: m.impact, check: "核对这一组每一项的现在和改后，理由写清依据或工单号。这一组所有值都会发送，没改的按现在的值。" },
   });
+  const unsettledFor = (keys: readonly string[]) => E3_PROPOSALS.find((p) => (p.state === "unknown" || p.state === "expired") && p.keys.some((key) => keys.includes(key)));
   const pendingTag = (keys: readonly string[]) => {
-    const p = pendingFor(keys);
+    const p = pendingFor(keys), u = unsettledFor(keys);
+    if (u) return <StatusTag tone="warn" explain={`${u.label}：${u.at} 提交的结果还没确认，先在页面上方查询原操作。`}>结果未确认</StatusTag>;
     return p && <StatusTag tone="progress" icon={Clock3} explain={`${p.label}：已提交申请，等另一位管理员批准，批准前仍按现在的值执行。提交于 ${p.at}。`}>待批准</StatusTag>;
   };
   const adjust = (keys: readonly string[], onClick: () => void, batch = false, label = "调整") => ctx.canWriteE3
     ? (describedBy: string | undefined) => <Button size="sm" aria-describedby={describedBy} onClick={onClick}
-        disabledReason={pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : batch && proposalOnly ? BATCH_BLOCKED : undefined}>{label}</Button>
+        disabledReason={unsettledFor(keys) ? "这一项有一次提交结果未确认，先在页面上方查询原操作" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : batch && proposalOnly ? BATCH_BLOCKED : undefined}>{label}</Button>
     : undefined;
 
   // ── 产能的预览：改后第几个月是多少，超过 100% 时写 App 现状 ──
@@ -306,6 +315,8 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       </Panel>
     </div>
 
+    {proposalOnly && ctx.canWriteE3 && <Notice tone="warn" title="成组修改暂时不能提交">{BATCH_BLOCKED}</Notice>}
+
     {/* 任务产能节奏：产能随月龄下降（参与任务递减的商品） */}
     <Panel title="产能规则" icon={Gauge} tone="role-4" sub="7 项" data-proof="e3-capacity-rules"
       explain="设备用得越久，能接的任务越少。修改都先提交审批，另一位管理员批准后才生效。">
@@ -349,7 +360,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             impact: "改 App 显示「补贴中」的天数，不改产能和收益的计算。", hint: "0 到 1,000,000 的整数，0 表示不显示补贴",
             facts: <Facts><Fact k="改的是">新机任务补贴天数</Fact><Fact k="影响谁">参与逐月下降的设备在 App 上的显示</Fact></Facts> }))} />
         <ConfigRow name="哪些商品逐月下降" value={`${declining.length} 类下降 · ${exempt.length} 类始终 100%`}
-          sub={<>{pendingTag(APPLY_TO_SKUS.map((s) => `E.device.capacity.applyTo.${s.kind}`))}<span className="e3p-chips">{APPLY_TO_SKUS.map((s) => <span key={s.kind} className="e3p-chip" data-on={pE(`E.device.capacity.applyTo.${s.kind}`) === "参与递减" ? "" : undefined}>{s.label}</span>)}</span></>}
+          sub={<>{pendingTag(APPLY_TO_SKUS.map((s) => `E.device.capacity.applyTo.${s.kind}`))}<span className="e3p-sub">始终 100%：{exempt.map((s) => s.label).join("、") || "无"}<Explain label="逐月下降的商品" content={`按曲线下降：${declining.map((s) => s.label).join("、") || "无"}。`} /></span></>}
           what="每类商品是按上面的曲线下降，还是始终 100%（参与任务递减）" when="八项一起提交，批准后对这类商品的所有设备生效"
           effect="从下降改成始终 100%，这类设备产能更高，平台多付任务收益（上面设成正数增长时相反）。"
           action={adjust(APPLY_TO_SKUS.map((s) => `E.device.capacity.applyTo.${s.kind}`), () => multi({
@@ -362,7 +373,6 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             fields: APPLY_TO_SKUS.map((s) => ({ key: s.kind, paramKey: `E.device.capacity.applyTo.${s.kind}`, label: s.label, inputKind: "select" as const, options: ["参与递减", "免递减"] })),
           }), true)} />
       </ConfigList>
-      {proposalOnly && ctx.canWriteE3 && <Notice tone="warn">{BATCH_BLOCKED}</Notice>}
     </Panel>
 
     {/* 升级置换阶梯：旧设备按已赚回比例分 5 档抵扣 */}
