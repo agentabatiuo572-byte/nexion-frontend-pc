@@ -14,7 +14,7 @@ export function PaymentSecurityList({ recovery, onRecoveryClose, onRecordChange 
   const [draft, setDraft] = useState(initial), [query, setQuery] = useState(initial), [pageNum, setPage] = useState(1), [pageSize, setSize] = useState(10);
   const [data, setData] = useState<PaymentSecurityPage | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState(""), [filterError, setFilterError] = useState("");
   const [selectedRow, setSelected] = useState<PaymentSecurityRecord | null>(null);
-  const selected = recovery ? { id: recovery.recordId, userId: recovery.userId, userLabel: recovery.userId } : selectedRow;
+  const selected = recovery ? { id: recovery.recordId, userId: recovery.userId, userLabel: `user:${recovery.userId}` } : selectedRow;
   useEffect(() => { onRecordChange?.(selected?.id ?? null); return () => onRecordChange?.(null); }, [selected?.id, onRecordChange]);
   const generation = useRef(0), selectedPort = useMemo(() => selected ? paymentSecurityPorts.global(selected.userId) : null, [selected?.userId]);
   const scoped = role === "support";

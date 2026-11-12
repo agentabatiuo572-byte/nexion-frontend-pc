@@ -62,7 +62,7 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
         if(original)result=await m.send(original,true);
         else if(action==="force"||action==="unbind") {const def=findHighOp(action==="force"?"e5_device_force_activate":"e5_device_unbind")!,params={deviceId:d.deviceId};await m.proposal(scope,"phones",{action:`${LABELS[action]} · ${d.serial}`,obj:String(d.deviceId),beforeValue:STATES[d.state],afterValue:action==="force"?"激活":"解绑",type:def.type,amplifies:false,reason,sourceDomain:"E5",command:def.buildCommand(params),target:def.buildTarget(params)});}
         else result=await m.device(scope,`${LABELS[action]} · ${d.serial}`,{before:`${STATES[d.state]}；已占 ${d.activeDevicesForUser}/6 台；暂停原因 ${d.pausedReason||"—"}`,serial:d.serial,deviceId:d.deviceId,userId:Number(d.userId),action,reason});
-        await ctx.refreshE5();setConfirm(null);ctx.toast(result?.readbackFailed?"已取得操作回执，读回失败，请刷新核对。":action==="force"||action==="unbind"?"已提交，等待审批后执行":action==="pause"||action==="resume"?result?.changedCount===undefined?"已取得用户设备操作回执，请核对列表":`${action==="pause"?"暂停":"恢复"}成功 · ${result.changedCount} 台设备`:action==="deactivate"&&result?.pendingDeactivate?"已申请停用，等待当前任务结算后自动停用":"已取得操作回执并读取手机列表，请核对当前状态");
+        await ctx.refreshE5();setConfirm(null);ctx.toast(result?.readbackFailed?"已取得操作回执，读回失败，请刷新核对。":action==="force"||action==="unbind"?"已提交，等待审批后执行":action==="pause"||action==="resume"?result?.changedCount===undefined?"已取得用户设备操作回执，请核对列表":`${action==="pause"?"暂停":"恢复"}成功 · ${result.changedCount} 台设备`:action==="deactivate"&&result?.pendingDeactivate?"已申请停用，等待当前任务结算后自动停用":"已取得操作回执并读取手机列表，请核对当前状态",result?.readbackFailed?"warn":undefined);
       }}/>}
   </>;
 }

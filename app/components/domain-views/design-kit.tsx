@@ -612,6 +612,15 @@ type CopyExperimentVersionOption = {
 type CopyExperimentCopyOption = { value: string; label: string; versions: CopyExperimentVersionOption[] };
 export type SchemaPropertyDraft = { name: string; type: string; pii: boolean };
 
+/** 提示里的「命令号：xxx」整串不在连字符处断开（e- / domain-action），放不下就整串换到下一行。文字不变。 */
+function keepCommandKey(text: ReactNode): ReactNode {
+  if (typeof text !== "string") return text;
+  const at = text.lastIndexOf("命令号：");
+  const key = at < 0 ? null : text.slice(at + 4).match(/^[\w.:-]+/)?.[0];
+  if (!key) return text;
+  return <>{text.slice(0, at + 4)}<span data-mono className="rd-keep">{key}</span>{text.slice(at + 4 + key.length)}</>;
+}
+
 function initEditValue(spec?: EditSpec | null): string {
   if (!spec) return "";
   const kind = spec.kind ?? "text";
@@ -4008,7 +4017,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {!surface && content}
       {surface ? (blockedReason || submitError) && (
         // 红只给明确失败；被别人改了、结果还不知道是要人处理，用橙黄（VS-107）。
-        <div className="rd-confirm-alert"><RdNotice tone={blockedReason || approvalRecovery || submitUnknown ? "warn" : "danger"}>{blockedReason ?? submitError}</RdNotice></div>
+        <div className="rd-confirm-alert"><RdNotice tone={blockedReason || approvalRecovery || submitUnknown ? "warn" : "danger"}>{keepCommandKey(blockedReason ?? submitError)}</RdNotice></div>
       ) : blockedReason
         ? <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{blockedReason}</div>
         : submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
