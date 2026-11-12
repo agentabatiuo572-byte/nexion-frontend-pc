@@ -19,8 +19,19 @@ import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
-import { hiCourseScope, hiRewardProposal, pendingHIRewardCommand, submitHIRewardCommand } from "@/lib/admin/hi-reward-commands";
+import { hiCourseScope, hiRewardProposal, pendingHIRewardCommand, pendingHIRewardCommands, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
+import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+
+const COURSE_APPROVAL_OPS = new Set(["i7_course_first_publish", "i7_course_version_publish", "i7_course_version_rollback"]);
+
+/** 有奖励的发布和回滚在框里常显怎么生效（LearningCourseActivation：目标版本奖励 > 0 一律审批）。 */
+function CourseApprovalFact() {
+  return <div style={{ fontSize: 12.5, lineHeight: 1.7 }}>
+    <b>怎么生效</b> · 目标版本奖励大于 0 时要提交审批单（等额、降额也一样），另一位有审批批准权限的超级管理员批准后才执行，批准前课程不变；奖励为 0 的确认后直接执行。
+  </div>;
+}
 
 type NsFlt = "all" | "issues";
 type CatFlt = string;
@@ -72,6 +83,19 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const canAdjustI7Reward = isSuperadmin || !!session?.authorities.includes("content_i7_course_reward_adjust");
   const canPublishI7 = canWriteI7 && canAdjustI7Reward;
   const propose = usePropose();
+  const canReadA2 = isSuperadmin || !!session?.authorities.includes("platform_a2_read");
+  // 已建成、等别人批的课程审批单只在审批中心里；这里读一次，在课程区常显哪门课在等批。
+  const [courseApprovals, setCourseApprovals] = useState<A2OperationRow[] | "error" | null>(null);
+  const reloadCourseApprovals = async () => {
+    if (view !== "learn" || !canReadA2) return;
+    try {
+      const overview = await fetchA2Overview();
+      setCourseApprovals(overview.operationQueue.filter(row => row.status === "pending" && COURSE_APPROVAL_OPS.has(row.operationCode ?? "")));
+    } catch {
+      setCourseApprovals("error");
+    }
+  };
+  useEffect(() => { void reloadCourseApprovals(); }, [view, canReadA2]);
   const [nsFlt, setNsFlt] = useState<NsFlt>("all");
   const [catFlt, setCatFlt] = useState<CatFlt>("all");
   const [nsDrawer, setNsDrawer] = useState<NsDrawer | null>(null);
@@ -395,9 +419,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       action: <>发布课程新版 · {nexGridBrandText(c.title)}</>,
       detail: (
         <>
-          分类「{categoryLabel(c.cat)}」 · 奖励 {c.reward} UVT/课。发布到 /learn。这次只发布内容，不提高奖励。
+          分类「{categoryLabel(c.cat)}」 · 奖励 {c.reward} UVT/课。发布到 /learn。
         </>
       ),
+      facts: <CourseApprovalFact />,
       amplifies: false,
       getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
       run: (reason) => activateCourse(c, "first_publish", reason),
@@ -599,6 +624,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     openActionConfirm({ briefKind: "content",
     action: <>发布课程版本 · {nexGridBrandText(c.title)} {row.version}</>,
     detail: <>发布前会检查三语测验、兑付覆盖率和权限；发布后旧版本变为历史版本。</>,
+    facts: <CourseApprovalFact />,
     amplifies: true,
     getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
     run: (reason) => activateCourse(c, "version_publish", reason, row),
@@ -610,6 +636,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     openActionConfirm({ briefKind: "content",
     action: <>回滚课程版本 · {nexGridBrandText(c.title)} → {row.version}</>,
     detail: <>回滚后课程内容、测验和奖励设置一起恢复成这个版本；已领过奖励的用户不会重复领取。</>,
+    facts: <CourseApprovalFact />,
     amplifies: true,
     getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
     run: (reason) => activateCourse(c, "version_rollback", reason, row),
@@ -946,6 +973,55 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         </div>
       </div>
 
+      {(() => {
+        const records = pendingHIRewardCommands().filter((record) => record.scope.startsWith("I/"));
+        const approvals = Array.isArray(courseApprovals) ? courseApprovals : [];
+        if (!records.length && !approvals.length && courseApprovals !== "error") return null;
+        const courseTitle = (id: string) => nexGridBrandText(allCourses.find((course) => course.id === id)?.title ?? id);
+        const subject = (record: HIRewardCommand) => record.payload.kind === "proposal"
+          ? `${record.payload.input.action} · ${courseTitle(record.payload.input.obj)} ${String(record.payload.input.command.params.version ?? "")}`.trim()
+          : "原操作";
+        return <section className="l-card" aria-label="审批中和待核对的课程操作">
+          <div className="l-h">
+            <span className="ttl">审批中和待核对的课程操作</span>
+            <span className="sub">· 有奖励的课程发布和回滚</span>
+            {canReadA2 && <div className="r"><button className="l-btn sm" onClick={() => void reloadCourseApprovals()}>刷新审批进度</button></div>}
+          </div>
+          <div className="l-b" style={{ display: "grid", gap: 8 }}>
+            {records.map((record) => {
+              const expired = isRetryExpired(record);
+              const label = subject(record);
+              return <div className={`itint${expired ? "" : " warn"}`} key={record.commandKey} role="status" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
+                <span style={{ flex: "1 1 320px", minWidth: 0 }}>
+                  <b>{label}</b> <span className={`bdg ${expired ? "dim" : "warn"}`}>{expired ? "已超过 24 小时" : "结果未确认"}</span><br />
+                  {expired ? "不能再按原请求重发，只能查询原审批单。" : "没收到系统回复，不知道审批单建没建成。核对时先按原命令查询，查不到才按原请求原样重发，不会重复建单。"}
+                </span>
+                <button className="l-btn sm mc" disabled={!canPublishI7} onClick={() => openActionConfirm({ briefKind: "record",
+                  action: `核对原操作 · ${label}`,
+                  detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原命令查询；查不到才按原请求原样重发，不会重复执行。理由沿用原操作。</>,
+                  confirmLabel: expired ? "查询原审批单" : "核对原操作",
+                  getPendingReason: () => pendingHIRewardCommands().find((row) => row.commandKey === record.commandKey)?.payload.input.reason,
+                  run: async () => {
+                    const result = await submitHIRewardCommand(record.scope, record.payload);
+                    toast(result.kind === "proposal" && result.ticket.status === "pending"
+                      ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+                    void reloadCourseApprovals();
+                  },
+                })}>{expired ? "查询原审批单" : "核对原操作"}</button>
+              </div>;
+            })}
+            {approvals.map((row) => <div className="itint" key={row.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
+              <span style={{ flex: "1 1 320px", minWidth: 0 }}>
+                <b>{row.action} · {courseTitle(row.obj)}</b> <span className="bdg warn">待审批</span><br />
+                另一位有审批批准权限的超级管理员批准前，课程保持现在的版本；这期间这门课的其他发布或回滚会被拦下。{row.mine ? "这张审批单是你发起的。" : ""}
+              </span>
+              <a className="l-btn sm" href="/platform/audit">去操作记录与审批查看</a>
+            </div>)}
+            {courseApprovals === "error" && <div className="itint warn" role="alert" style={{ fontSize: 12 }}>审批进度读取失败，请点「刷新审批进度」重试。</div>}
+          </div>
+        </section>;
+      })()}
+
       {/* I7 教程列表 */}
       <section className="l-card">
         <div className="l-h">
@@ -1210,7 +1286,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       </>}
 
       <p className="f-foot">
-        {view === "i18n" ? <><b>权限</b>：保存词条草稿时会检查中英越三语和变量；发布、归档需要内容主管或超级管理员确认。<b>说明</b>：文案测试、推送、信任中心和教程的文字都来自这里的词条。</> : <><b>权限</b>：课程草稿可以直接保存；发布、下架、换推荐课需要内容主管或超级管理员确认。<b>调高课程奖励</b>需要审批，且覆盖率不能低于红线。</>}
+        {view === "i18n" ? <><b>权限</b>：保存词条草稿时会检查中英越三语和变量；发布、归档需要内容主管或超级管理员确认。<b>说明</b>：文案测试、推送、信任中心和教程的文字都来自这里的词条。</> : <><b>权限</b>：课程草稿可以直接保存；发布、下架、换推荐课需要内容主管或超级管理员确认。<b>有奖励的课程</b>首次发布、发布新版本和回滚都要提交审批单，另一位有审批批准权限的超级管理员批准后才执行，批准前课程不变；奖励为 0 的直接执行。<b>调高课程奖励</b>需要审批，且覆盖率不能低于红线。</>}
       </p>
       <PaginationExemptionList
         items={view === "i18n" ? [
