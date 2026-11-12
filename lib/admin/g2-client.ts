@@ -164,6 +164,8 @@ export interface G2Coverage {
 
 export interface G2Swap {
   enabled: boolean;
+  /** I5 masks the J1 value in this response; null is not a confirmed emergency pause. */
+  emergencyPaused: boolean | null;
   status: string;
   configKey: string;
   linkedDomain: string;
@@ -293,6 +295,7 @@ export function normalizeG2ExchangeOverview(data: BackendOverview | null | undef
   const stats = data?.stats ?? {};
   const coverage = data?.coverage ?? {};
   const swap = data!.swap!;
+  const swapEnabled = toBool(swap.enabled, true);
   const gateDetails = data?.gateDetails ?? {};
   return {
     stats: {
@@ -311,7 +314,8 @@ export function normalizeG2ExchangeOverview(data: BackendOverview | null | undef
       geo: normalizeGate("geo", gateDetails.geo),
     },
     swap: {
-      enabled: toBool(swap.enabled, true),
+      enabled: swapEnabled,
+      emergencyPaused: swap.blockedBy === "I5_DISCLOSURE_GATE" ? null : !swapEnabled,
       status: asText(swap.status, "enabled"),
       configKey: asText(swap.configKey, "killswitch.exchange"),
       linkedDomain: asText(swap.linkedDomain, "J1"),

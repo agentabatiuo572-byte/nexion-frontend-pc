@@ -3,10 +3,10 @@ import { displayAdminError } from "./error-messages";
 import { isExplicitRejection } from "./explicit-rejection";
 import { normalizeG2BatchResult } from "./g2-batch-result";
 import {
-  fetchG2ExchangeOverview, g2Request, normalizeG2ExchangeOverview, type BackendOverview, type G2Cap, type G2ExchangeOrder,
+  fetchG2ExchangeOverview, g2Request, normalizeG2ExchangeOverview, type BackendOverview, type G2Cap, type G2ExchangeOrder, type G2Overview,
 } from "./g2-client";
 import {
-  createPendingMutationStore, hasPersistedPendingCommandOwner, type PendingMutationRecord,
+  createPendingMutationStore, hasPersistedPendingCommandOwner, RETRY_EXPIRED_TEXT, type PendingMutationRecord,
 } from "./pending-mutation-store";
 import { validateG2Order } from "./g-overview-contract";
 import { stableMutationFingerprint } from "./stable-mutation";
@@ -17,6 +17,9 @@ export type G2PendingCommand = PendingMutationRecord & {
   adminId: number; path: string; method: "PATCH" | "POST"; body: string; input: CommandBody; context?: G2CommandContext;
 };
 export type G2PendingBatch = G2PendingCommand & { limit: number; reason: string };
+export type G2CommandQueryResult =
+  | { confirmed: true; overview: G2Overview; batch: ReturnType<typeof normalizeG2BatchResult> }
+  | { confirmed: false; overview: G2Overview; message: string };
 const BATCH_PATH = "/exchange/queue/process";
 const commands = createPendingMutationStore<PendingMutationRecord & { adminId?: number; context?: G2CommandContext }>({
   storageKey: "nexion-admin-g2-exchange-commands-v1",
@@ -109,18 +112,22 @@ export async function recoverG2ExchangeQueue(adminId: number, commandKey: string
   return confirmBatch(response, original);
 }
 
-export async function queryG2ExchangeCommand(adminId: number, commandKey: string) {
+export async function queryG2ExchangeCommand(adminId: number, commandKey: string): Promise<G2CommandQueryResult> {
   requireActor(adminId, "/exchange", false);
   const original = listG2ExchangeCommands(adminId).find(record => record.commandKey === commandKey);
   if (!original) throw new Error("原操作记录已结束，请关闭弹窗后重新读取页面。");
-  if (original.path === BATCH_PATH && useAdminAuth.getState().session!.authorities.includes("finprod_g2_write")) return recoverG2ExchangeQueue(adminId, commandKey);
-  await fetchG2ExchangeOverview();
-  throw new G2OutcomeUnknownError(commandKey, "已读取当前配置，但不能据此确认原命令结果。请保留原记录，到操作记录与审批按原命令号核对。");
+  if (original.path === BATCH_PATH && useAdminAuth.getState().session!.authorities.includes("finprod_g2_write")) {
+    return { confirmed: true, ...await recoverG2ExchangeQueue(adminId, commandKey) };
+  }
+  const overview = await fetchG2ExchangeOverview();
+  requireActor(adminId, original.path, false);
+  return { confirmed: false, overview, message: new G2OutcomeUnknownError(commandKey,
+    "已读取当前配置，但不能据此确认原命令结果。请保留原记录，到操作记录与审批按原命令号核对。").message };
 }
 
 async function send(original: G2PendingCommand, recovering = false) {
   if (g2ExchangeCommandExpired(original)) {
-    return queryG2ExchangeCommand(original.adminId, original.commandKey);
+    throw new G2OutcomeUnknownError(original.commandKey, RETRY_EXPIRED_TEXT);
   }
   const epoch = requireActor(original.adminId, original.path, true);
   if (!commands.isDurablyStored(original.fingerprint, original.commandKey)) {
