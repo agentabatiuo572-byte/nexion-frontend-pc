@@ -49,10 +49,8 @@ const pctText = (value: number) => `${value.toLocaleString("en-US", { maximumFra
 const pointsText = (value: number) => value.toLocaleString("en-US", { maximumFractionDigits: 2 });
 const money = (value: number | null, digits?: number) => (value === null ? TREASURY_VALUATION_UNAVAILABLE : `${amountText(value, digits)} USDT`);
 const signedMoney = (value: number) => `${value > 0 ? "+" : value < 0 ? "−" : ""}${amountText(Math.abs(value))} USDT`;
-const axisMoney = (value: number) => {
-  const size = Math.abs(value);
-  return size >= 1_000_000_000 ? `${Number((value / 1_000_000_000).toFixed(2))}B` : size >= 1_000_000 ? `${Number((value / 1_000_000).toFixed(2))}M` : size >= 1_000 ? `${Number((value / 1_000).toFixed(1))}K` : String(Number(value.toFixed(2)));
-};
+/** 纵轴刻度是取整的整齐数，写完整数字加千分位，不用 K、M（F04）。 */
+const axisMoney = (value: number) => `${value < 0 ? "−" : ""}${Math.abs(value).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 const UVT_NOTE = "UVT 锁仓到期应付按最新有效价格折算。没有有效价格时，这一类金额、应付款合计、覆盖率、差额和各类占比都写「暂时无法估值」；储备和其余 8 类照常显示。";
 /** 一类占到这个比例时，环几乎是单色，说明不了构成，写一句话（和资金储备与应付款一致）。 */
 const RING_DOMINANT_SHARE = 0.9;
@@ -233,7 +231,8 @@ export default function DualLedgerPage() {
     slope < -0.01 && coverageRatio > effRedline
       ? Math.max(1, Math.round((coverageRatio - effRedline) / -slope))
       : null;
-  const trendMsg = windowsToRedline != null ? `持续下降，照这个速度约 ${windowsToRedline} 个时段后跌破红线` : slope < -0.01 ? "还在下降" : slope > 0.01 ? "在回升" : "趋势平稳";
+  // 历史点是当时的储备 ÷ 现在的应付款，线的起伏只说明储备在变（决定 B1-走势）。估算是旧页面就有的，只按储备变化的速度算。
+  const trendMsg = windowsToRedline != null ? `储备在减少，按这个速度约 ${windowsToRedline} 个时段后跌破红线` : slope < -0.01 ? "储备在减少" : slope > 0.01 ? "储备在增加" : "储备没有明显变化";
   const seriesTicks = coverageSeries.map((_, index) => {
     const back = coverageSeries.length - 1 - index;
     if (back === 0) return "现在";
@@ -445,9 +444,11 @@ export default function DualLedgerPage() {
             ]} />
           <p className="b1-distance" data-tone={coverTone}>{distanceText}</p>
           <div className="b1-trend-head">
-            <h3 className="b1-sub">近 {coverageSeries.length} 个时段<Explain label="覆盖率走势怎么算" content={`每 ${coverageSeriesIntervalHours ?? "—"} 小时一个点。储备按资金账本倒推当时的值，应付款一律用现在的值（应付款没有历史记录），所以起伏只来自储备进出。「照这个速度」按第一个点和最后一个点估，不是系统预测。`} /></h3>
+            <h3 className="b1-sub">近 {coverageSeries.length} 个时段<Explain label="覆盖率走势怎么算" content={`每 ${coverageSeriesIntervalHours ?? "—"} 小时一个点。储备按资金账本倒推当时的值，应付款一律用现在的值（应付款没有历史记录），所以这条线不是当时真实的覆盖率，起伏只来自储备进出。「按这个速度」只用第一个点和最后一个点的储备变化估，没算应付款的变化，不是系统预测。`} /></h3>
             <span className="b1-trend-msg" data-tone={windowsToRedline != null || (slope < -0.01 && zone !== "success") ? "warn" : undefined}>{trendMsg}</span>
           </div>
+          <p className="b1-caliber">历史点 = 当时的储备 ÷ 现在的应付款，只反映储备变化</p>
+          {windowsToRedline != null && <p className="b1-caliber">只按储备减少的速度估算，没算应付款的变化</p>}
           <TrendLines label="近几个时段的覆盖率" ticks={seriesTicks} format={pctText} axisFormat={(v) => `${Number(v.toFixed(1))}%`} height={120}
             series={[{ key: "coverage", label: "覆盖率", slot: 2, values: coverageSeries }]}
             marks={[
@@ -545,9 +546,10 @@ export default function DualLedgerPage() {
   const crowded = exposureSeries.length - 1 - lastTicked > 0 && exposureSeries.length - 1 - lastTicked < tickStep / 2 ? lastTicked : -1;
   const exposurePanel = (
     <Panel title="差额走势" icon={TrendingUp} tone="role-1"
-      explain="每天的差额 = 当天的储备 − 现在的应付款。储备按资金进出倒推，应付款没有历史记录，一律用现在的值，所以线的起伏只来自储备进出。科目按「资金储备与应付款」的预测设置计入，可能和上面的全口径差额不同。切换天数不影响对账 CSV。登记储备或改阈值后这张图不会自动重读，以数据时间为准。"
+      explain="每天的差额 = 当天的储备 − 现在的应付款。储备按资金进出倒推，应付款没有历史记录，一律用现在的值，所以这不是当时真实的差额，线的起伏只来自储备进出。科目按「资金储备与应付款」的预测设置计入，可能和上面的全口径差额不同。切换天数不影响对账 CSV。登记储备或改阈值后这张图不会自动重读，以数据时间为准。"
 >
       <div className="rd-stack">
+      <p className="b1-caliber">历史点 = 当时的储备 − 现在的应付款，只反映储备变化</p>
       <div className="rd-toolbar">
         <Segments label="储备与应付款差额趋势时间范围" value={exposureWindow} onChange={setExposureWindow} items={WINDOWS} />
         <span className="rd-toolbar-note b1-window-note">{currentExposure && latest ? `截至 ${latest.date} · 共 ${exposureSeries.length} 天` : exposureError ? "没有读到" : currentExposure ? "这段时间没有点" : "正在读取…"}</span>

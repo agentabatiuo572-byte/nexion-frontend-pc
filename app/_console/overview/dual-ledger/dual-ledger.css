@@ -22,3 +22,6 @@
 
 /* 差额走势：分段在左，截至日期和天数在右，不让工具条空出一大截 */
 .b1-page .b1-window-note { margin-left: auto; }
+
+/* 走势图标题下的口径：历史点用现在的应付款，常显一行，不藏进问号（决定 B1-走势） */
+.b1-page .b1-caliber { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
