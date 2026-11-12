@@ -372,7 +372,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const queryProposal = async (record: K2PendingCommand) => {
     const original = await fetchA2ProposalByKey(record.commandKey, true);
     if (!original) return false;
-    const expectedAction = record.operation?.kind === "freeze" ? "联动 K1 批量冻结" : `首次配置验证码设置 · ${record.operation?.target}`;
+    const expectedAction = record.operation?.kind === "freeze" ? `联动 K1 批量冻结 · ${record.operation.target}` : `首次配置验证码设置 · ${record.operation?.target}`;
     if (!original.mine || original.obj !== record.operation?.target
       || (original.operationCode ? original.operationCode !== record.operation.proposal?.command.op : original.action !== expectedAction)) throw new Error("A2_BUSINESS_CONTEXT_MISMATCH");
     if (original.status === "pending") commandAttempt.remember(record.fingerprint, record.commandKey, { operation: record.operation, proposed: true });
@@ -509,8 +509,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
 
   /** 确认框里的事实：是谁、凭什么、涉及多少。四个行操作共用。 */
   const rowFacts = (r: K2Row) => {
-    const view = views.find((item) => item.key === r.viewKey);
-    const ui = view ? viewUi(view) : undefined;
+    const ui = VIEW_UI[r.viewKey];
     const evidence = ui?.columns[0];
     return (
       <Facts>
