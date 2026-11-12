@@ -263,7 +263,7 @@ export function QuietRow({ item, actions, extra }: { item: BuiltDimension; actio
       <IconTile icon={item.icon} tone="role-other" size={22} />
       <span className="b5-quiet-name">{item.name}<Explain label={`${item.name}怎么算`} content={item.explain} /></span>
       <span className="b5-quiet-value" data-zero={item.zero ? "" : undefined}>{item.quiet}</span>
-      <span className="b5-quiet-tag">
+      <span className="b5-quiet-state">
         <StatusTag tone={TAG_TONE[item.level]} icon={TAG_ICON[item.level]}>{item.level === "neutral" && item.key === "coverage" ? "不用算" : LEVEL_TAG[item.level]}</StatusTag>
         {extra}
       </span>

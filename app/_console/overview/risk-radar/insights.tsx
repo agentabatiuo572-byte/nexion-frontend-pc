@@ -127,9 +127,9 @@ export function SignalsTable({ alerts, canTriage, updating, reach, onStatus }: {
           <tr>
             <Th>级别 · 风险信号</Th>
             <Th>发生时间</Th>
-            <Th>处理进度 <Explain label="处理进度和发送状态" content={<>
+            <Th>处理进度 · 发送 <Explain label="处理进度和发送状态" content={<>
               <p>待处理 → 已处理 → 已解决，只能按这个顺序往前推，不能跳步或退回。标记只记录进度，不会解除风控、不会放行提现。</p>
-              <p>处理人接口暂未返回，处理记录到「操作记录与审批」查。发送是这条信号最近一次的发送状态（任一接收人、任一渠道），不一定是发给你的。</p>
+              <p>处理人接口暂未返回，处理记录到「操作记录与审批」查。第二行是这条信号最近一次的发送状态（任一接收人、任一渠道），不一定是发给你的。</p>
             </>} /></Th>
             <Th>去处理 <Explain label="去处理的说明" content="链接只打开对应页面，不记分诊记录。要留分诊记录，从上面的五项点进去。" /></Th>
             {canTriage && <Th align="right">操作</Th>}
@@ -144,7 +144,7 @@ export function SignalsTable({ alerts, canTriage, updating, reach, onStatus }: {
                 <Td><Cell main={<span className="b5-signal-main"><StatusTag tone={SEVERITY[alert.level].tone} icon={SEVERITY[alert.level].icon}>{SEVERITY[alert.level].text}</StatusTag>{alert.message}</span>}
                   sub={<>用户 #{alert.userId} · <SignalNo value={alert.signalNo} /></>} /></Td>
                 <Td><Cell num main={shortStamp(alert.createdAt)} /></Td>
-                <Td><Cell main={<StatusTag tone={HANDLING[alert.handlingStatus].tone}>{HANDLING[alert.handlingStatus].text}</StatusTag>} sub={`发送：${deliveryStatusText(alert.deliveryStatus)}`} /></Td>
+                <Td><Cell main={<StatusTag tone={HANDLING[alert.handlingStatus].tone}>{HANDLING[alert.handlingStatus].text}</StatusTag>} sub={deliveryStatusText(alert.deliveryStatus)} /></Td>
                 <Td>{reach(alert.target)
                   ? <Link className="rd-link" href={alert.target} prefetch={false}>{page}</Link>
                   : <span className="b5-muted">没有{page}权限</span>}</Td>
@@ -167,8 +167,8 @@ export function SignalsTable({ alerts, canTriage, updating, reach, onStatus }: {
 
 /** 后端真实的发送状态（含 SENDING，B5-D09）。认不出的写待核实，不猜。 */
 export const deliveryStatusText = (value: string) => ({
-  PENDING: "待发送", SENDING: "发送中", PROCESSING: "发送中", DELIVERED: "已送达", SANDBOX_DELIVERED: "测试送达", NOT_QUEUED: "还没发送",
-  FAILED_RETRY: "失败，等重试", DEAD: "发送已终止", SENT: "已发送", FAILED: "发送失败",
+  PENDING: "待发送", SENDING: "发送中", PROCESSING: "发送中", DELIVERED: "已送达", SANDBOX_DELIVERED: "测试送达", NOT_QUEUED: "尚未加入发送队列",
+  FAILED_RETRY: "发送失败，等待重试", DEAD: "发送已终止", SENT: "已发送", FAILED: "发送失败",
 } as Record<string, string>)[value.toUpperCase()] ?? "发送状态待核实";
 
 const DELIVERY_TONE: Record<string, StateTone> = {

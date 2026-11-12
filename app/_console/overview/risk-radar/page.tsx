@@ -481,7 +481,7 @@ export default function RiskRadarPage() {
         {conclusion}
 
         {issues.length > 0 && (
-          <div className="b5-issues" data-count={issues.length}>
+          <div className="rd-split b5-issues" data-even="">
             {issues.map((item) => <IssueCard key={item.key} item={item} actions={actionsFor(item, true)} extra={item.key === "bankrun" ? approvalTag : undefined} />)}
           </div>
         )}
@@ -550,28 +550,25 @@ export default function RiskRadarPage() {
               {!lookupOnly && <Button variant="primary" loading={savingThreshold} loadingText="提交中…" disabledReason={canSubmitThreshold ? undefined : blocked ?? "暂不能提交"} onClick={() => void submitThreshold()}>{submitLabel}</Button>}
             </>}>
             <div className="b5-dialog">
-              <Facts>
-                <Fact k="现在的提现压力" lead>{data.bankrun.ratio24h === null ? "暂无法计算" : ratioPct(data.bankrun.ratio24h)}</Fact>
-                <Fact k="现在的状态">{formatB5RiskLight(data.bankrun.light)}</Fact>
-              </Facts>
               {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
               {previewError && <Notice tone="danger" title="预览失败">{previewError}</Notice>}
               {thresholdError && <Notice tone={approvalRecovery ? "warn" : "danger"} title={approvalRecovery ? "审批提交结果还没确认" : "没有调整成功"}>{thresholdError}</Notice>}
               {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="上一次提交审批的结果还没确认">先点「查询原操作」查原审批单；查到了就不要重复提交。</Notice>}
-              <DiffField before={fmtConfigPct(threshold.yellowPct)} label="黄线改成" hint="5%–50%" state={yellowDirection}
+              <DiffField size="body" before={fmtConfigPct(threshold.yellowPct)} label="黄线改成" hint="5%–50%" state={yellowDirection}
                 note={yellowDirection ? "黄线只决定什么时候标「注意」，不会自动暂停提现。" : undefined}>
-                {(control) => <NumberInput {...control} unit="%" min={5} max={50} value={yellowInput} disabled={thresholdLocked} onChange={(event) => setYellowInput(event.target.value)} />}
+                {(control) => <NumberInput {...control} aria-label="黄线（5%–50%）" unit="%" min={5} max={50} value={yellowInput} disabled={thresholdLocked} onChange={(event) => setYellowInput(event.target.value)} />}
               </DiffField>
               <DiffField before={fmtConfigPct(threshold.redPct)} label="红线改成" hint="10%–80%，要高于黄线" state={redDirection} error={yellowInput && redInput ? orderError : undefined}
                 note={redDirection ? (raising ? "红线调高，自动暂停提现会更晚触发。" : "红线调低，自动暂停提现会更早触发，立即生效。") : undefined}>
-                {(control) => <NumberInput {...control} unit="%" min={10} max={80} value={redInput} disabled={thresholdLocked} onChange={(event) => setRedInput(event.target.value)} />}
+                {(control) => <NumberInput {...control} aria-label="红线（10%–80%）" unit="%" min={10} max={80} value={redInput} disabled={thresholdLocked} onChange={(event) => setRedInput(event.target.value)} />}
               </DiffField>
               <p className="b5-preview" role="status">
-                {previewReady ? <>按新的线，现在的提现压力会标 <StatusTag tone={preview!.light === "red" ? "danger" : preview!.light === "yellow" ? "warn" : preview!.light === "green" ? "ok" : "neutral"}>{formatB5RiskLight(preview!.light)}</StatusTag></>
-                  : previewKey && !previewError ? "正在按新的线计算…" : "填好两条线后，这里显示按新的线现在会标什么。"}
+                现在的提现压力 {data.bankrun.ratio24h === null ? "暂无法计算" : ratioPct(data.bankrun.ratio24h)}，标「{formatB5RiskLight(data.bankrun.light)}」；
+                {previewReady ? <>按新的线会标 <StatusTag tone={preview!.light === "red" ? "danger" : preview!.light === "yellow" ? "warn" : preview!.light === "green" ? "ok" : "neutral"}>{formatB5RiskLight(preview!.light)}</StatusTag></>
+                  : previewKey && !previewError ? "正在按新的线计算…" : "填好两条线后显示按新的线会标什么。"}
               </p>
               <Notice tone="neutral">
-                和「紧急停用开关」共用（那边叫挤兑红线），改了那边也变；是否自动暂停提现由那边按自己的统计判断。
+                和「紧急停用开关」共用（那边叫挤兑红线），改了那边也变，是否自动暂停提现由那边按自己的统计判断。
               </Notice>
               {requiresApproval && (
                 <Notice tone="warn" title="提高红线要审批">
@@ -612,7 +609,7 @@ export default function RiskRadarPage() {
                 </Notice>
                 <CheckGroup legend="发送渠道" summary={subscriptionValid ? undefined : "至少开一个"}>
                   <Check name="inApp" label="站内告警" checked={subscription.inApp} disabled={!canSubscribe} onChange={(event) => setSubscription((value) => ({ ...value, inApp: event.target.checked }))} />
-                  <Check name="email" label="邮件" checked={false} disabled help="暂不可用：邮件服务没有接通，开启会被系统拒绝。" />
+                  <Check name="email" label="邮件" checked={false} disabled help="暂不可用，邮件服务没有接通，开启会被系统拒绝。" />
                   <Check name="webhook" label="外部通知" checked={subscription.webhook}
                     disabled={!canSubscribe || (webhookMode !== "controlled-proxy" && !subscription.webhook)}
                     help={webhookMode === "controlled-proxy" ? "已配置受控代理，可以开启。" : subscription.webhook ? "没有配置受控代理，只能关闭。" : "没有配置受控代理，暂不能开启。"}

@@ -5,8 +5,7 @@
 .radarpage .b5-row-actions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; }
 
 /* ---------- 有事的项：卡片，排在最前 ---------- */
-.radarpage .b5-issues { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: var(--rd-section-gap); }
-.radarpage .b5-issues[data-count="1"] { grid-template-columns: minmax(0, 1fr); }
+.radarpage .b5-issues { align-items: stretch; }
 .radarpage .b5-issue {
   display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0;
   padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x);
@@ -33,7 +32,7 @@
 .radarpage .b5-quiet-name { display: inline-flex; align-items: center; gap: 2px; color: var(--rd-text-2); white-space: nowrap; }
 .radarpage .b5-quiet-value { min-width: 0; color: var(--rd-text); font-variant-numeric: tabular-nums; }
 .radarpage .b5-quiet-value[data-zero] { color: var(--rd-text-3); }
-.radarpage .b5-quiet-tag { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.radarpage .b5-quiet-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
 .radarpage .b5-quiet-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--rd-space-2); }
 
 /* ---------- 卡片里的明细 ---------- */
