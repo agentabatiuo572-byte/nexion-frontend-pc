@@ -32,7 +32,22 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
   const [contentError, setContentError] = useState<string | null>(null);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
+  const [k2RereadPending, setK2RereadPending] = useState(false);
+  const [k2CommandVersion, setK2CommandVersion] = useState(0);
   const requestSequence = useRef(0);
+  const requireK2Reread = useCallback(() => {
+    // An earlier in-flight read cannot satisfy a recovery that just completed.
+    requestSequence.current += 1;
+    setK2RereadPending(true);
+  }, []);
+  const syncK2Commands = useCallback(() => setK2CommandVersion((version) => version + 1), []);
+
+  useEffect(() => {
+    if (tab !== "K2" || (!k2RereadPending && risk.arbitrage)) return;
+    if (mc && mc.getPendingReason?.() === undefined) setActionConfirm(null);
+    if (cf && cf.getPendingReason?.() === undefined) setCf(null);
+    // Settlement can turn the same recovery dialog into a stale new-edit dialog.
+  }, [tab, k2RereadPending, risk.arbitrage, mc, cf, k2CommandVersion]);
 
   const reloadKRisk = useCallback(async (query?: KRiskOverviewQuery) => {
     const sequence = ++requestSequence.current;
@@ -61,6 +76,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
         const arbitrage = await fetchK2ArbitrageOverview();
         if (sequence === requestSequence.current) {
           setRisk((current) => ({ ...current, arbitrage }));
+          setK2RereadPending(false);
         }
       } else if (query?.scoring || tab === "K4") {
         const scoring = await fetchK4ScoringOverview(query?.scoring);
@@ -129,7 +145,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
       )}
 
       {tab === "K1" && <K1MultiAccount ctx={ctx} />}
-      {tab === "K2" && <K2Arbitrage ctx={ctx} />}
+      {tab === "K2" && <K2Arbitrage ctx={ctx} rereadPending={k2RereadPending} onRereadRequired={requireK2Reread} onCommandsChange={syncK2Commands} />}
       {tab === "K3" && <K3Rules ctx={ctx} />}
       {tab === "K4" && <K4Scoring ctx={ctx} />}
 

@@ -310,7 +310,12 @@ const ACTION_LABELS: Record<string, string> = { flag: "标记套利", blockgift:
 
 const IMMEDIATE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 
-export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
+export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsChange }: {
+  ctx: KCtx;
+  rereadPending: boolean;
+  onRereadRequired: () => void;
+  onCommandsChange: () => void;
+}) {
   const reach = useReach();
   const session = useAdminAuth((state) => state.session);
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
@@ -328,11 +333,21 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const [paramsOpen, setParamsOpen] = useState(false);
   const [inFlight, setInFlight] = useState<string | null>(null);
   const formRevision = useRef(0);
-  const [, syncPending] = useState(0);
+  const [, setPendingVersion] = useState(0);
+  const syncPending = () => {
+    setPendingVersion((version) => version + 1);
+    onCommandsChange();
+  };
   const [otpApprovalRequired, setOtpApprovalRequired] = useState<Record<string, boolean>>({});
   // Open confirmations keep their callbacks; new writes must read the latest page state.
-  const currentState = useRef({ ctx, otpApprovalRequired });
-  currentState.current = { ctx, otpApprovalRequired };
+  const currentState = useRef({ ctx, otpApprovalRequired, rereadPending });
+  currentState.current = { ctx, otpApprovalRequired, rereadPending };
+  const requireReread = () => {
+    currentState.current.rereadPending = true;
+    onRereadRequired();
+  };
+  const newWriteBlockedReason = rereadPending || ctx.contentLoading || ctx.contentError || !overview
+    ? "这项没有读到，请刷新后重试" : undefined;
   const pending = commandAttempt.list();
   const pendingFor = (target: string) => commandAttempt.list().find((record) => record.operation?.target === target || record.fingerprint.split(":")[1] === target);
   const originalFor = (attempt: K2ConfirmationAttempt) => {
@@ -369,7 +384,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     return () => { active = false; };
   }, [ladderReferenceAttempt]);
 
-  const queryProposal = async (record: K2PendingCommand) => {
+  const queryProposal = async (record: K2PendingCommand, refresh = true) => {
     const original = await fetchA2ProposalByKey(record.commandKey, true);
     if (!original) return false;
     const expectedAction = record.operation?.kind === "freeze" ? `联动 K1 批量冻结 · ${record.operation.target}` : `首次配置验证码设置 · ${record.operation?.target}`;
@@ -377,9 +392,10 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       || (original.operationCode ? original.operationCode !== record.operation.proposal?.command.op : original.action !== expectedAction)) throw new Error("A2_BUSINESS_CONTEXT_MISMATCH");
     if (original.status === "pending") commandAttempt.remember(record.fingerprint, record.commandKey, { operation: record.operation, proposed: true });
     else commandAttempt.forget(record.fingerprint, record.commandKey);
-    syncPending((n) => n + 1);
+    syncPending();
     ctx.toast(`已找回原审批单 ${original.id}`);
-    if (original.status !== "pending") {
+    if (refresh && (!record.proposed || original.status !== "pending")) {
+      requireReread();
       try { await ctx.reloadKRisk(); }
       catch { ctx.toast("已找回原审批单，但页面刷新失败；请点「重新加载」核对"); }
     }
@@ -403,7 +419,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     if (!retained) {
       const current = currentState.current.ctx;
       const currentOverview = current.risk.arbitrage;
-      if (current.contentLoading || current.contentError || !currentOverview) throw new Error("RISK_BACKEND_UNAVAILABLE");
+      if (currentState.current.rereadPending || current.contentLoading || current.contentError || !currentOverview) throw new Error("RISK_BACKEND_UNAVAILABLE");
       const authority = operation.row ? `risk_k2_row_${operation.kind}` : "risk_k2_write";
       if (!useAdminAuth.getState().session?.authorities.includes(authority)) throw new K1RequestError(errorText(new Error("FORBIDDEN")), 403, "FORBIDDEN");
       if (operation.proposal && !["platform_a2_proposal_create", "platform_a2_write"].some((code) => useAdminAuth.getState().session?.authorities.includes(code))) {
@@ -435,7 +451,10 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       if (operation.proposal) {
         const receipt = await createA2OperationProposal(operation.proposal, commandKey, true);
         if (!receipt.mine || receipt.obj !== operation.target) throw new A2OutcomeUncertainError("提交结果不完整，请查询原审批单。", commandKey);
-        if (receipt.status === "pending") {
+        // A replay confirms creation, not the ticket's current decision.
+        if (retained) {
+          requireReread();
+        } else if (receipt.status === "pending") {
           commandAttempt.remember(scope, commandKey, { operation, proposed: true });
           ctx.toast("已提交，等待审批后执行");
         } else {
@@ -445,6 +464,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       } else {
         await executeK2Command(operation.request, commandKey);
         commandAttempt.forget(scope, commandKey);
+        if (retained) requireReread();
       }
     } catch (error) {
       if (isExplicitRejection(error)) {
@@ -456,9 +476,17 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       throw operation.proposal ? new A2OutcomeUncertainError(errorText(error), commandKey) : new K1OutcomeUncertainError(errorText(error), commandKey);
     } finally {
       setInFlight(null);
-      syncPending((n) => n + 1);
+      syncPending();
     }
-    if (operation.proposal) return;
+    if (operation.proposal) {
+      if (!retained) return;
+      // Reads are outside the mutation catch: a failed lookup/reread cannot undo creation.
+      try { await queryProposal(retained, false); }
+      catch (error) { ctx.toast(errorText(error)); }
+      try { await ctx.reloadKRisk(); }
+      catch { ctx.toast("已找回原审批单，但页面刷新失败；请点「重新加载」核对"); }
+      return;
+    }
     try {
       await ctx.reloadKRisk();
       ctx.toast(operation.label);
@@ -821,7 +849,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const rowActions = (r: K2Row, size: "sm" | "md") => {
     if (r.disposition) return null;
     const locked = pendingFor(r.rowId);
-    const lockedReason = locked ? errorText(new Error(locked.proposed ? "OBJECT_ALREADY_PENDING" : "IDEMPOTENCY_RESULT_UNKNOWN")) : undefined;
+    const lockedReason = locked ? errorText(new Error(locked.proposed ? "OBJECT_ALREADY_PENDING" : "IDEMPOTENCY_RESULT_UNKNOWN")) : newWriteBlockedReason;
     const buttons = r.actions.map((action) => {
       if (action === "flag") return canFlag ? <Button key={action} size={size} disabledReason={lockedReason} onClick={() => markArb(r)}>标记套利</Button> : null;
       if (action === "blockgift") return canBlockGift ? <Button key={action} size={size} disabledReason={lockedReason} onClick={() => blockGift(r)}>拦截新人礼</Button> : null;
@@ -928,7 +956,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                   what={help.what} when="保存后下一次检测起" effect={help.effect} note={help.note}
                   value={thresholdText(p.key, p.value)}
                   sub={p.key === "welcomeGiftAnomalyThreshold" ? <StatusTag tone="warn" icon={AlertTriangle}>目前只按账户组检测</StatusTag> : undefined}
-                  action={canWrite ? <Button size="sm" aria-label={`调整${p.name}`} disabledReason={pendingFor(p.key) ? errorText(new Error("IDEMPOTENCY_RESULT_UNKNOWN")) : undefined} onClick={() => adjParam(p)}>调整</Button> : undefined} />
+                  action={canWrite ? <Button size="sm" aria-label={`调整${p.name}`} disabledReason={pendingFor(p.key) ? errorText(new Error("IDEMPOTENCY_RESULT_UNKNOWN")) : newWriteBlockedReason} onClick={() => adjParam(p)}>调整</Button> : undefined} />
               );
             })}
           </ConfigList>
@@ -944,7 +972,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                   value={otpValueText(definition, param?.value)}
                   sub={firstConfig === "required" ? <StatusTag tone="warn" icon={AlertTriangle} explain="这项还没有正式配置，现在按系统默认值处理。首次生效要另一位超级管理员批准。">未正式配置</StatusTag>
                     : firstConfig === "pending" ? <StatusTag tone="progress" explain="首次配置已提交，等另一位超级管理员批准；批准前按系统默认值处理。">首次配置待审批</StatusTag> : undefined}
-                  action={canWrite ? <Button size="sm" aria-label={`调整${definition.label}`} disabledReason={!param ? "这项没有读到，请刷新后重试" : firstConfig === "pending" ? "首次配置待审批，批准或驳回后才能再改" : pendingFor(definition.key) ? errorText(new Error("IDEMPOTENCY_RESULT_UNKNOWN")) : firstConfig && !["platform_a2_proposal_create", "platform_a2_write"].some(hasAuthority) ? errorText(new Error("K2_OTP_MAKER_FORBIDDEN")) : undefined} onClick={() => adjExtraParam(definition)}>{firstConfig === "required" ? "首次配置" : "调整"}</Button> : undefined} />
+                  action={canWrite ? <Button size="sm" aria-label={`调整${definition.label}`} disabledReason={!param ? "这项没有读到，请刷新后重试" : firstConfig === "pending" ? "首次配置待审批，批准或驳回后才能再改" : pendingFor(definition.key) ? errorText(new Error("IDEMPOTENCY_RESULT_UNKNOWN")) : firstConfig && !["platform_a2_proposal_create", "platform_a2_write"].some(hasAuthority) ? errorText(new Error("K2_OTP_MAKER_FORBIDDEN")) : newWriteBlockedReason} onClick={() => adjExtraParam(definition)}>{firstConfig === "required" ? "首次配置" : "调整"}</Button> : undefined} />
               );
             })}
           </ConfigList>
