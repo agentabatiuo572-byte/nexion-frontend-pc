@@ -131,7 +131,7 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
     getPendingReason={() => pendingG3MarketCommand(session.adminId, requested)?.reason}
     completionCopy={directCopy}
     inlineApproval={{
-      dialogClassName: `g3-market-confirm${schedule ? " g3-schedule-confirm" : ""}`,
+      dialogClassName: `g3m-confirm${schedule ? " g3m-schedule-confirm" : ""}`,
       fieldLayout: "compact",
       pending: pending?.request.kind === "approval",
       expired: !!pending && g3MarketCommandExpired(pending),
