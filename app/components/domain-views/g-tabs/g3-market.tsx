@@ -36,7 +36,6 @@ import { useReach } from "@/lib/nav/use-reach";
 import type { G3MarketChange } from "@/lib/admin/g3-market-command";
 import { OperationConfirmModal, useToast, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
 import { G3MarketConfirm } from "./g3-market-confirm";
-import "./g3-market.css";
 
 const OPERATOR = currentAdminOperator;
 
