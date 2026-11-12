@@ -234,8 +234,9 @@ function ParamRecoveryNotice({ approval, toast }: {
     <Notice tone="warn" title={<>{waiting ? `${records.length} 项参数修改在等审批` : `${records.length} 项参数修改申请待确认`}
       <Explain label="原申请怎么处理" content={<>
         <p>这里只列你在这台电脑上提交过的原申请。原申请只能查询原审批单，或在 24 小时内按原内容、原命令号重试，不能改值。</p>
-        <p>有原申请的那一项被锁住：批准、驳回或撤回之前，调高调低都改不了；其他参数照常可改。要改成别的值，等原申请有结论后再发起新修改。</p>
+        <p>要改成别的值，等原申请有结论后再发起新修改。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
       </>} /></>}>
+      <p>有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。</p>
       <ul className="g7x-recover" aria-label="原参数申请">
         {records.map((record) => {
           const key = record.request.obj;
@@ -480,7 +481,6 @@ function G7RepurchasePage() {
             {loose === true && !canPropose && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，{copy?.loosen}会被拦下；请有提案权和这项修改权限的同事发起</Fact>}
             <Fact k="已有订单">{copy?.existing ?? "—"}</Fact>
             <Fact k="之后的新订单">{copy?.future ?? "—"}</Fact>
-            {param.key === "lottery" && <Fact k="创世奖池（本月）">已发 {fmtCount(overview.g4Capacity.ticketsIssuedThisMonth)} 张，月容量 {fmtCount(overview.g4Capacity.monthlyCapacity)} 张</Fact>}
             {loose === true && <Fact k="兑付覆盖率（现在）" tone={overview.coverage.redlineBreached ? "danger" : undefined}>{plain(overview.coverage.coverageRatio)}%，红线 {plain(overview.coverage.redlinePct)}%</Fact>}
           </Facts>
         </div>
@@ -615,15 +615,10 @@ function G7RepurchasePage() {
   const early = deduction === undefined || deduction > principal ? undefined : principal - deduction;
   const exampleReady = maturity !== undefined && early !== undefined;
 
-  const conclusion = records.length > 0
-    ? <Conclusion state="warn" icon={Clock3}
-        hint="在下面逐条查询原审批单。有原申请的那一项在有结论前改不了，其他参数照常可改。"
-        explain="只列你在这台电脑上提交过、还没处理完的参数修改。别人提交的审批单不在这里，要到「操作记录与审批」看。">
-        有 {records.length} 项参数修改还没有结论</Conclusion>
-    : lockedNames.length > 0
+  const conclusion = lockedNames.length > 0
       ? <Conclusion state="warn" icon={LockKeyhole}
-          hint="到「操作记录与审批」找这一项的审批单；批准、驳回或撤回之后再改。其他参数照常可改。"
-          explain="直接修改时后端答复这一项有一张审批单还没处理完。页面看不到单号，也不知道是谁提交的。">
+          hint="到「操作记录与审批」找这张审批单，有结论后再改。"
+          explain="直接修改时后端答复这一项有一张审批单还没处理完：批准、驳回或撤回之前调高调低都改不了，其他参数照常可改。页面看不到单号，也不知道是谁提交的。">
           {lockedNames.join("、")}被一张审批单锁住，现在改不了</Conclusion>
       : <Conclusion state="neutral" icon={Lock}
           hint="改规则只影响之后新开的订单。"
@@ -638,12 +633,9 @@ function G7RepurchasePage() {
     <>
       {header}
       {confirmModal}
-      {error && <Notice tone="warn" title="操作提示">{error}</Notice>}
+      {error && !Object.values(lockedParams).includes(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
       {conclusion}
       {paramRecovery}
-      {lockedNames.length > 0 && records.length > 0 && <Notice tone="warn" title={`${lockedNames.join("、")}被一张审批单锁住`}>
-        <p>这张审批单不是你在这台电脑上提交的，页面看不到单号。到「操作记录与审批」找到它，批准、驳回或撤回之后再改。</p>
-      </Notice>}
 
       <StatBand label="锁定计划摘要">
         <Stat label="未结束的锁定金额" icon={Lock} tone="role-1" value={amount(stats.principalUsd)} unit="USDT"
@@ -694,7 +686,7 @@ function G7RepurchasePage() {
               <p className="g7x-path-diff">提前解锁比到期少拿 <b>{fromMicros(maturity! - early!)} USDT</b></p>
             </div>
           ) : (
-            <BlockState state="empty" compact title="规则没配齐，算不出例子"
+            <BlockState state="empty" compact title={overview.params.length === 0 ? "没有规则参数，算不出例子" : "规则没配齐，算不出例子"}
               detail="锁仓期限、参考年奖励率、提前解锁扣款三项都配好后，这里画到期和提前解锁的对照。" />
           )}
         </Panel>
@@ -704,10 +696,9 @@ function G7RepurchasePage() {
             <p>每项自己保存，只影响之后新开的订单。往「让平台多付」的方向改（调高年奖励率、调高好友升级奖励倍率、调低提前解锁扣款）要另一位在职超级管理员批准，批准前什么都不变；反方向确认后立即生效。</p>
             <p>一项有待批的申请时，这一项被审批锁住，调高调低都改不了，直到批准、驳回或撤回；其他参数不受影响。</p>
           </>}>
-          {coreRows.length === 0
-            ? <BlockState state="empty" compact title="后端没有返回锁定计划参数" detail="锁定计划产品不存在时后端返回空参数，不是默认值。请联系后端核对 REPURCHASE_90D 产品。" />
-            : <ConfigList label="锁定计划参数">
-              {coreRows.map(paramRow)}
+          {coreRows.length === 0 && <BlockState state="empty" compact title="后端没有返回锁定计划参数" detail="锁定计划产品不存在时后端返回空参数，不是默认值。请联系后端核对 REPURCHASE_90D 产品。" />}
+          <ConfigList label="锁定计划参数">
+            {coreRows.map(paramRow)}
               <ConfigRow name="限时锁定计划倍率"
                 what="运营阶段给锁定计划的限时倍率，和好友升级奖励倍率相乘；按参与当时的倍率算"
                 where="跟随运营阶段的当前月份"
@@ -717,7 +708,7 @@ function G7RepurchasePage() {
                   <span className="g7x-dir">跟随运营阶段</span>
                 </span>}
                 action={phaseHref ? <Link className="rd-link g7x-nowrap" href="/growth/phase" prefetch={false}>去运营阶段设置</Link> : undefined} />
-            </ConfigList>}
+          </ConfigList>
         </Panel>
       </div>
 
@@ -797,7 +788,7 @@ function G7RepurchasePage() {
       </Fold>
 
       <Fold title="技术信息（状态代码和数据来源）" icon={Database} tone="role-other" summary={`${fmtCount(overview.sources.length)} 个来源 · 订单状态 ${fmtCount(overview.stateMachine.length)} 种`}>
-        <p className="g7x-flow">{overview.stateMachine.map((state) => STATE_NAME[state] ?? "状态未知").join(" → ")}</p>
+        <p className="g7x-flow">订单状态 {fmtCount(overview.stateMachine.length)} 种：{overview.stateMachine.map((state) => STATE_NAME[state] ?? "状态未知").join("、")}</p>
         <p className="g7x-tech" data-mono>{overview.stateMachine.map((state) => `${state} = ${STATE_NAME[state] ?? "未知状态"}`).join(" · ")}</p>
         <p className="g7x-tech" data-mono>{overview.sources.join(" / ")}</p>
       </Fold>
