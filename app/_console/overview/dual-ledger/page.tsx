@@ -51,6 +51,8 @@ const money = (value: number | null, digits?: number) => (value === null ? TREAS
 const signedMoney = (value: number) => `${value > 0 ? "+" : value < 0 ? "−" : ""}${amountText(Math.abs(value))} USDT`;
 /** 纵轴刻度是取整的整齐数，写完整数字加千分位，不用 K、M（F04）。 */
 const axisMoney = (value: number) => `${value < 0 ? "−" : ""}${Math.abs(value).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+/** 一亿以上纵轴写不下完整数字：刻度改用「万」，单位写在图上方（提示框和右侧仍是完整金额）。 */
+const AXIS_WAN_FROM = 100_000_000;
 const UVT_NOTE = "UVT 锁仓到期应付按最新有效价格折算。没有有效价格时，这一类金额、应付款合计、覆盖率、差额和各类占比都写「暂时无法估值」；储备和其余 8 类照常显示。";
 /** 一类占到这个比例时，环几乎是单色，说明不了构成，写一句话（和资金储备与应付款一致）。 */
 const RING_DOMINANT_SHARE = 0.9;
@@ -540,6 +542,7 @@ export default function DualLedgerPage() {
   const latest = exposureSeries.at(-1);
   const exposureDigits = amountDigits(exposureSeries.map((point) => point.netExposureUsdt));
   const exposureLoading = !exposureError && !currentExposure;
+  const axisWan = exposureSeries.some((point) => Math.abs(point.netExposureUsdt) >= AXIS_WAN_FROM);
   // 走势图隔几个点写一个日期，最后一个点总写；倒数第二个写出来的日期离它太近时让给最后一个，日期挪进悬停提示。
   const tickStep = exposureSeries.length <= 8 ? 1 : exposureSeries.length <= 16 ? 2 : Math.ceil(exposureSeries.length / 8);
   const lastTicked = Math.floor((exposureSeries.length - 1) / tickStep) * tickStep;
@@ -552,7 +555,7 @@ export default function DualLedgerPage() {
       <p className="b1-caliber">历史点 = 当时的储备 − 现在的应付款，只反映储备变化</p>
       <div className="rd-toolbar">
         <Segments label="储备与应付款差额趋势时间范围" value={exposureWindow} onChange={setExposureWindow} items={WINDOWS} />
-        <span className="rd-toolbar-note b1-window-note">{currentExposure && latest ? `截至 ${latest.date} · 共 ${exposureSeries.length} 天` : exposureError ? "没有读到" : currentExposure ? "这段时间没有点" : "正在读取…"}</span>
+        <span className="rd-toolbar-note b1-window-note">{currentExposure && latest ? `截至 ${latest.date} · 共 ${exposureSeries.length} 天${axisWan ? " · 纵轴单位 万 USDT" : ""}` : exposureError ? "没有读到" : currentExposure ? "这段时间没有点" : "正在读取…"}</span>
       </div>
       {exposureError ? (
         <BlockState state="error" title="差额走势读取失败，已暂停显示" detail={`${exposureError} 切换时间范围或刷新页面会重新读取。`} />
@@ -564,7 +567,7 @@ export default function DualLedgerPage() {
         <BlockState state="empty" title="这段时间暂无数据" />
       ) : (
         <Figure width={720} stack="wide" graphic={
-          <TrendLine label={`近 ${exposureSeries.length} 天储备与应付款差额`} format={(v) => money(v, exposureDigits)} axisFormat={axisMoney} slot={1} height={160}
+          <TrendLine label={`近 ${exposureSeries.length} 天储备与应付款差额`} format={(v) => money(v, exposureDigits)} axisFormat={axisWan ? (v) => axisMoney(v / 10_000) : axisMoney} slot={1} height={160}
             data={exposureSeries.map((point, index) => (index === crowded ? { key: point.date, tick: "", value: point.netExposureUsdt, detail: <span>{point.date}</span> } : { key: point.date, tick: point.date.slice(5), value: point.netExposureUsdt }))} />
         }>
           <Facts>
