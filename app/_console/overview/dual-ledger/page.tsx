@@ -51,12 +51,46 @@ const money = (value: number | null, digits?: number) => (value === null ? TREAS
 const signedMoney = (value: number) => `${value > 0 ? "+" : value < 0 ? "−" : ""}${amountText(Math.abs(value))} USDT`;
 const axisMoney = (value: number) => {
   const size = Math.abs(value);
-  return size >= 1_000_000 ? `${Number((value / 1_000_000).toFixed(2))}M` : size >= 1_000 ? `${Number((value / 1_000).toFixed(1))}K` : String(Number(value.toFixed(2)));
+  return size >= 1_000_000_000 ? `${Number((value / 1_000_000_000).toFixed(2))}B` : size >= 1_000_000 ? `${Number((value / 1_000_000).toFixed(2))}M` : size >= 1_000 ? `${Number((value / 1_000).toFixed(1))}K` : String(Number(value.toFixed(2)));
 };
 const UVT_NOTE = "UVT 锁仓到期应付按最新有效价格折算。没有有效价格时，这一类金额、应付款合计、覆盖率、差额和各类占比都写「暂时无法估值」；储备和其余 8 类照常显示。";
 /** 一类占到这个比例时，环几乎是单色，说明不了构成，写一句话（和资金储备与应付款一致）。 */
 const RING_DOMINANT_SHARE = 0.9;
 const WINDOWS = [{ value: "7d", label: "7 天" }, { value: "30d", label: "30 天" }, { value: "90d", label: "90 天" }] as const;
+
+/**
+ * 直接写入（改阈值、登记注入、导出、确认告警）结果未知时的待确认条。界面已备好，逻辑待代码 worker 接：
+ * 现在这四条路径关框就丢原命令（F01），按 R1 要保存原内容、理由、命令号和首次时间后填进这里。
+ * 写法照资金储备与应付款的待确认条：页头下、结论句上，一条一个 Notice，24 小时后只核对不重试。
+ */
+interface B1PendingCommand {
+  commandKey: string;
+  title: string;
+  body: ReactNode;
+  expired: boolean;
+  onRetry?: () => void;
+  auditHref: string;
+}
+// TODO(code worker): 按 R1 从本标签页的待确认记录读出 W1、W3、W4、W5 的原命令。
+const PENDING_PLACEHOLDER: readonly B1PendingCommand[] = [];
+
+function PendingCommands({ items }: { items: readonly B1PendingCommand[] }) {
+  if (!items.length) return null;
+  return (
+    <>
+      {items.map((item) => (
+        <Notice key={item.commandKey} tone="warn" title={item.title} actionBelow
+          action={<span className="b1-actions">
+            {item.expired ? undefined : <Button size="sm" disabledReason={item.onRetry ? undefined : "等待接入：按原操作重试"} onClick={item.onRetry}>按原操作重试</Button>}
+            <Link className="rd-link" href={item.auditHref} prefetch={false}>到操作记录核对</Link>
+          </span>}>
+          <p>{item.body}</p>
+          <p>命令号 <span data-mono>{item.commandKey}</span>{item.expired ? "，已超过 24 小时，只能核对，不能重试。" : "。只能按原内容重试，不能换号重发。"}</p>
+        </Notice>
+      ))}
+    </>
+  );
+}
 
 function GapTag({ net }: { net: number }) {
   return net > 0 ? <StatusTag tone="ok">有富余</StatusTag> : net === 0 ? <StatusTag tone="warn">刚好够</StatusTag> : <StatusTag tone="danger">不够付</StatusTag>;
@@ -237,7 +271,9 @@ export default function DualLedgerPage() {
       ...(restSum > 0 ? [{ key: "rest", label: `其他 ${rest.length} 类`, value: restSum, slot: "other" as ChartSlot, text: money(restSum), share: fmtPct(round2((restSum / liabilitiesUsd) * 100)) }] : []),
     ];
     rest.forEach((a) => slots.set(a.key, "other"));
-    ring = <Donut legend={false} label="应付款构成" center={amountText(liabilitiesUsd)} centerLabel="USDT" segments={parts} />;
+    // 环中间放不下 10 位以上的金额时写有金额的类数，合计在面板标题旁和统计里都有，不缩写金额。
+    const total = amountText(liabilitiesUsd);
+    ring = <Donut legend={false} label="应付款构成" center={total.length <= 12 ? total : `${positive.length} 类`} centerLabel={total.length <= 12 ? "USDT" : "有金额"} segments={parts} />;
   }
 
   const statDigits = amountDigits(valuationReliable ? [reserveUsd, liabilitiesUsd] : [reserveUsd]);
@@ -691,6 +727,7 @@ export default function DualLedgerPage() {
     <RdPage className="b1-page">
       {header(<>数据时间 {timeText(generatedAt)} · 打开页面和写入后读取<Explain label="数据时间说明" content="上面的储备、应付款、覆盖率和告警是同一次读取。差额走势是另一次读取，时间写在那一块里，登记储备或改阈值后它不会自动重读。" /></>, headerActions, readOnly)}
       {warningNotice}
+      <PendingCommands items={PENDING_PLACEHOLDER} />
       {conclusion}
       {stats}
       <div className="rd-split" data-even="">
