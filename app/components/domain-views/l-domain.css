@@ -144,6 +144,136 @@
 .ldom .xd-tbl td.xv.alert { background: var(--danger-soft); color: var(--danger); border-radius: 6px; }
 .ldom .xd-foot { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
 
+/* ======================= L2 用户转化与留存（改版，rd） =======================
+   只放这页自己的排法，颜色、字号、间距都取 --rd-* 令牌。漏斗和「用户转化概览」同一种画法。 */
+.l2-page .l2-pair { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
+.l2-page .rd-filter-row { align-items: flex-end; }
+
+/* 四步漏斗：名称 | 条（居中，宽度按人数） | 人数；整行是一颗页签按钮，两步之间写转化率和掉了多少人 */
+.l2-page .l2-funnel { container-type: inline-size; display: flex; flex-direction: column; }
+.l2-page .l2-funnel-step,
+.l2-page .l2-funnel-gap {
+  display: grid;
+  grid-template-columns: minmax(104px, 148px) minmax(0, 1fr) minmax(88px, 112px);
+  column-gap: var(--rd-space-3);
+  align-items: center;
+}
+.l2-page .l2-funnel-step {
+  width: 100%; min-height: 44px; padding: var(--rd-space-1) var(--rd-space-2); margin: 0;
+  border: 1px solid transparent; border-radius: var(--rd-radius-control); background: transparent;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) { .l2-page .l2-funnel-step:hover:not(:disabled) { background: var(--rd-hover); } }
+.l2-page .l2-funnel-step[aria-selected="true"] { background: var(--rd-selected); border-color: var(--rd-brand); }
+.l2-page .l2-funnel-step:disabled { cursor: default; opacity: 1; }
+.l2-page .l2-funnel-step:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+.l2-page .l2-funnel-name { display: inline-flex; align-items: center; gap: var(--rd-space-2); min-width: 0; }
+.l2-page .l2-funnel-name b { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.l2-page .l2-funnel-index {
+  flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  border: 1px solid var(--rd-line-strong); font-size: var(--rd-text-aux); line-height: 1; color: var(--rd-text-2);
+  font-variant-numeric: tabular-nums;
+}
+.l2-page .l2-funnel-step[aria-selected="true"] .l2-funnel-index { border-color: var(--rd-brand); color: var(--rd-text); }
+.l2-page .l2-funnel-track { display: flex; justify-content: center; align-items: center; height: 32px; min-width: 0; }
+.l2-page .l2-funnel-bar { display: block; height: 100%; min-width: 4px; border-radius: var(--rd-radius-bar); background: var(--rd-chart-3); }
+.l2-page .l2-funnel-protected {
+  display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;
+  border: 1px dashed var(--rd-line-strong); border-radius: var(--rd-radius-bar);
+  font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3);
+}
+.l2-page .l2-funnel-value {
+  justify-self: end; display: inline-flex; align-items: baseline; gap: var(--rd-space-1);
+  font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold);
+  color: var(--rd-text); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.l2-page .l2-funnel-value small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.l2-page .l2-funnel-value[data-empty] { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
+.l2-page .l2-funnel-gap { min-height: 30px; padding: 0 var(--rd-space-2); }
+.l2-page .l2-funnel-gap-mid { grid-column: 2; display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: var(--rd-space-1) var(--rd-space-2); min-width: 0; }
+.l2-page .l2-funnel-gap-text {
+  display: inline-flex; align-items: baseline; gap: var(--rd-space-1);
+  padding-left: var(--rd-space-3); border-left: 2px solid var(--rd-line-strong);
+  font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); white-space: nowrap;
+}
+.l2-page .l2-funnel-gap-text b { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.l2-page .l2-funnel-gap[data-tone="warn"] .l2-funnel-gap-text { border-left-color: var(--rd-warn); }
+.l2-page .l2-funnel-gap[data-tone="warn"] .l2-funnel-gap-text b { color: var(--rd-warn); }
+@container (max-width: 520px) {
+  .l2-page .l2-funnel-step,
+  .l2-page .l2-funnel-gap { grid-template-columns: 96px minmax(0, 1fr) 84px; column-gap: var(--rd-space-2); }
+  .l2-page .l2-funnel-gap-mid { grid-column: 1 / -1; }
+}
+
+/* 所选一步：三个数一排，等宽；数字比标签大，0 和「—」弱化 */
+.l2-page .l2-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--rd-space-3); }
+.l2-page .l2-figures > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-bg); }
+.l2-page .l2-figures > div > span { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.l2-page .l2-figures b { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.l2-page .l2-figures b[data-empty] { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); font-size: var(--rd-text-body); line-height: var(--rd-lh-section); }
+.l2-page .l2-figures small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.l2-page .l2-dwell-lead { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-1) var(--rd-space-4); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
+.l2-page .l2-dwell-lead b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.l2-page .l2-dwell-lead span { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.l2-page .l2-rule { display: flex; align-items: center; gap: var(--rd-space-1); }
+
+/* 试用三步：一行三个格子，中间箭头上写转化率 */
+.l2-page .l2-trial { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.l2-page .l2-trial li { display: flex; align-items: center; gap: var(--rd-space-2); }
+.l2-page .l2-trial-step { display: flex; flex-direction: column; gap: 2px; padding: var(--rd-space-2) var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
+.l2-page .l2-trial-step span { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.l2-page .l2-trial-step b { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.l2-page .l2-trial-step b[data-empty] { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
+.l2-page .l2-trial-arrow { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.l2-page .l2-trial-arrow::after { content: " →"; }
+.l2-page .l2-trial-arrow b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+
+/* 页签里的工具行：分组方式、看第几天、指标 */
+.l2-page .l2-toolbar { min-height: var(--rd-control-h); }
+.l2-page .l2-days { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); }
+
+/* 热力格：深浅按表里的高低分五档（单色金），数字始终写在格子里；未到、未接上、样本过小、没有组合各一种样子 */
+.l2-page .l2-heat-table,
+.l2-page .l2-cross-table,
+.l2-page .l2-stage-table { width: 100%; }
+.l2-page .l2-heat-table th:first-child { width: 148px; }
+.l2-page .l2-heat-table tbody tr[data-picked] td { background: var(--rd-selected); }
+.l2-page .l2-cohort-pick span { white-space: nowrap; }
+.l2-page .l2-cross-table { table-layout: fixed; }
+.l2-page .l2-cross-table th:first-child { width: 168px; }
+.l2-page .l2-heat-cell {
+  display: inline-flex; flex-direction: column; align-items: flex-end; justify-content: center;
+  min-width: 56px; min-height: 28px; padding: 2px var(--rd-space-2); margin: 0;
+  border: 1px solid transparent; border-radius: var(--rd-radius-tag); background: transparent;
+  font: inherit; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium);
+  color: var(--rd-text); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.l2-page button.l2-heat-cell { cursor: pointer; }
+.l2-page .l2-heat-cell small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-semibold); }
+.l2-page [data-heat="0"] { background: var(--rd-chart-seq-low); }
+.l2-page [data-heat="1"] { background: color-mix(in srgb, var(--rd-chart-seq-high) 25%, var(--rd-chart-seq-low)); }
+.l2-page [data-heat="2"] { background: color-mix(in srgb, var(--rd-chart-seq-high) 50%, var(--rd-chart-seq-low)); }
+.l2-page [data-heat="3"] { background: color-mix(in srgb, var(--rd-chart-seq-high) 75%, var(--rd-chart-seq-low)); color: var(--rd-bg); }
+.l2-page [data-heat="4"] { background: var(--rd-chart-seq-high); color: var(--rd-bg); }
+.l2-page .l2-heat-cell[data-mark] { border-color: var(--rd-text); }
+.l2-page .l2-heat-cell[data-state] { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); font-size: var(--rd-text-aux); }
+.l2-page .l2-heat-cell[data-state="young"],
+.l2-page .l2-heat-cell[data-state="small"] { border: 1px dashed var(--rd-line-strong); }
+.l2-page .l2-heat-cell[data-state="nosource"] { border: 1px dashed var(--rd-warn); color: var(--rd-text-2); }
+.l2-page .l2-heat-empty { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.l2-page .l2-cohort-pick {
+  display: inline-flex; align-items: center; gap: var(--rd-space-2); padding: 0; border: 0; background: none;
+  font: inherit; color: var(--rd-text); font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; cursor: pointer;
+  text-decoration: underline; text-decoration-color: var(--rd-line-strong); text-underline-offset: 3px;
+}
+.l2-page .l2-cohort-pick[aria-pressed="true"] { text-decoration: none; }
+.l2-page .l2-cohort-pick small { padding: 0 var(--rd-space-1); border-radius: var(--rd-radius-tag); background: var(--rd-brand-soft); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text); }
+.l2-page .l2-cohort-pick:focus-visible,
+.l2-page button.l2-heat-cell:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+.l2-page .l2-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-4); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.l2-page .l2-legend-scale { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-variant-numeric: tabular-nums; }
+.l2-page .l2-legend-scale i { width: 18px; height: 10px; border-radius: 2px; }
+
 /* ============================ L3 ============================ */
 @container ldom (max-width: 1100px) { .ldom .two-col { grid-template-columns: 1fr; } }
 .ldom .rev-stack { display: flex; height: 30px; border-radius: 8px; overflow: hidden; margin-bottom: 14px; }
