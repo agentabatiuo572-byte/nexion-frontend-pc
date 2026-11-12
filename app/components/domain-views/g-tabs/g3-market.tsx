@@ -404,6 +404,18 @@ function G3MarketEditor() {
     if (!silent) setLoading(false);
   }, [refreshKnownApprovals]);
 
+  // 重读成功之前不留着按旧概览画出来的新修改确认框：它的事实和基准不会随重读更新。
+  // 属于已保存原记录的恢复框不受影响。
+  useEffect(() => {
+    if (!rereadPending || !session) return;
+    const staleMarket = marketConfirm && !pendingG3MarketCommand(session.adminId, marketConfirm);
+    const staleDirect = confirm && !pendingG3MarketCommand(session.adminId, confirm.change);
+    if (!staleMarket && !staleDirect) return;
+    if (staleMarket) setMarketConfirm(null);
+    if (staleDirect) openActionConfirm(null);
+    toast("原操作已完成，正在重新读取 UVT 价格；读取成功后再发起新修改。");
+  }, [rereadPending, session, marketConfirm, confirm, toast]);
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -506,7 +518,7 @@ function G3MarketEditor() {
         today={overview?.activeDayIndex} frames={overview?.frames ?? (marketConfirm.action === "curve-cell"
           ? marketConfirm.expectedFrames.map(frame => ({ dayIndex: frame.dayIndex, targetPrice: Number(frame.targetPrice), pumpProbability: Number(frame.pumpProbability), volatilityPct: Number(frame.volatilityPct) })) : [])} tuning={MANUAL_TUNING}
         onStateChange={syncCommands} onFailure={onCommandFailure} onBusy={value => setBusyKey(value ? "market-confirm" : null)}
-        onCurrent={setOverview}
+        onCurrent={current => { setOverview(current); setRereadPending(false); }}
         onClose={() => setMarketConfirm(null)}
         onDone={(result) => {
           setMarketConfirm(null);
