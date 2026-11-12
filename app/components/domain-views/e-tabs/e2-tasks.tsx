@@ -9,7 +9,7 @@ import { BatchBar, BlockState, Button, Cell, Check, CheckGroup, Checkbox, Conclu
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { businessClock, businessStamp, businessZoneText } from "@/lib/admin/business-time";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
@@ -21,6 +21,8 @@ import { Select } from "@/app/components/rd";
 import type { EViewCtx } from "./types";
 import { FIXED_DEVICE_LEVELS } from "./task-type-policy";
 import { checkE2Command, e2CommandLabel, e2Commands, type E2Pending } from "./e2-pending";
+import { canInvestigateECommand, eCommandSettled } from "@/lib/admin/e-command-investigation";
+import { ClosureContact, CommandClosureModal, CommandOutcomeLine, SettledCommandNotices, closureOpen, type CommandOutcome, type SettledCommand } from "./e-command-check";
 
 type Query = { code: string; taskClass: string; enabled: string; page: number; size: number; reset: boolean };
 type Read<T> = { state: "loading" | "ready" | "error"; data: T; error: string };
@@ -67,6 +69,9 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const [dialogError, setDialogError] = useState("");
   const [dialogErrorCode, setDialogErrorCode] = useState("");
   const [pendingNote, setPendingNote] = useState("");
+  const [outcomes, setOutcomes] = useState<Record<string, CommandOutcome>>({});
+  const [settled, setSettled] = useState<SettledCommand[]>([]);
+  const [closing, setClosing] = useState<E2Pending | null>(null);
   const [receipt, setReceipt] = useState("");
   const [impact, setImpact] = useState<DisableImpact | null>(null);
   const [impactAt, setImpactAt] = useState<number | null>(null);
@@ -234,6 +239,14 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     syncPending(); await send(record, false);
   }
 
+  const canInvestigate = canInvestigateECommand("device_e2_read");
+  /** A settled command leaves the pending list; its authoritative outcome stays visible until dismissed. */
+  function showOutcome(record: E2Pending, outcome: CommandOutcome) {
+    if ("receipt" in outcome && outcome.receipt && eCommandSettled(outcome.receipt)) {
+      const status = outcome.receipt.originalStatus;
+      setSettled(rows => [...rows.filter(row => row.key !== record.commandKey), { key: record.commandKey, label: `${record.pool.code} ${record.pool.name} · ${e2CommandLabel(record)}`, status }]);
+    } else setOutcomes(values => ({ ...values, [record.commandKey]: outcome }));
+  }
   const originalExpired = !!dialog?.original && isRetryExpired(dialog.original);
   const originalRejected = !!dialog?.original && rejected.includes(dialog.original.commandKey);
 
@@ -249,15 +262,26 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     {query.reset && <Notice tone="warn" action={<Button size="sm" onClick={() => setQuery(old => ({ ...old, reset: false }))}>知道了</Button>}>网址里无效的查询条件已重置。</Notice>}
     {receipt && <Notice tone={receipt.includes("读不到") ? "warn" : "ok"} action={<Button size="sm" onClick={() => void refresh()}>刷新</Button>}>{receipt}</Notice>}
     {pending.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.pool.code} ${record.pool.name} · ${e2CommandLabel(record)}，结果未确认`}
-      actionBelow action={<><Button size="sm" disabled={saving} onClick={async () => { setQuery(old => ({ ...old, code: record.pool.code, page: 1 })); setPendingNote("正在读回原等级的当前事实；当前数量或状态不能证明原操作结果，待确认继续保留。"); try { await checkE2Command(record); syncPending(); } catch (cause) { setPendingNote(displayAdminError(cause)); } if (query.code === record.pool.code && query.page === 1) await refresh(); }}>读回核对</Button>
+      actionBelow action={<><Button size="sm" disabled={saving} onClick={async () => { setQuery(old => ({ ...old, code: record.pool.code, page: 1 })); setPendingNote("正在读回原等级的当前事实；当前数量或状态不能证明原操作结果，待确认继续保留。"); try { const receipt = await checkE2Command(record); syncPending(); showOutcome(record, { receipt }); } catch (cause) { showOutcome(record, { error: displayAdminReadError(cause) }); } if (query.code === record.pool.code && query.page === 1) await refresh(); setPendingNote("已读回原等级的当前事实；当前数量或状态不能证明原操作结果，待确认继续保留。"); }}>查原操作结果</Button>
         {!rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button size="sm" disabledReason={saving ? "正在提交" : retryBlock(record)} onClick={() => { viewOriginal(record); void send(record, true); }}>按原操作重试</Button>}
         <Button size="sm" disabled={saving} onClick={() => viewOriginal(record)}>查看原操作</Button>
+        {canInvestigate && closureOpen(outcomes[record.commandKey], isRetryExpired(record)) && <Button size="sm" variant="danger-outline" disabled={saving} onClick={() => setClosing(record)}>核查结案</Button>}
         {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button variant="primary" size="sm" disabled={saving} onClick={() => { viewOriginal(record); setReleasing(true); }}>解除待确认</Button>}
         <Explain label="原样重试的说明" content={RETRY_HELP} /></>}>
       <p>首次提交 {businessStamp(record.createdAt)} · {businessZoneText()}</p>
       <p>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "原对象、内容、理由和命令号已保留。这个等级暂停新操作。"}</p>
       {pendingNote && <p>{pendingNote}</p>}
+      <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={isRetryExpired(record)} />
+      {!canInvestigate && closureOpen(outcomes[record.commandKey], isRetryExpired(record)) && <ClosureContact />}
     </Notice>)}
+    <SettledCommandNotices items={settled} onDismiss={key => setSettled(rows => rows.filter(row => row.key !== key))} />
+    {closing && <CommandClosureModal label={`${closing.pool.code} ${closing.pool.name} · ${e2CommandLabel(closing)}`} commandKey={closing.commandKey} createdAt={closing.createdAt}
+      facts={<Fact k="原理由">{closing.request.body.reason}</Fact>} onClose={() => setClosing(null)} onSubmit={async evidence => {
+        const receipt = await checkE2Command(closing, evidence);
+        syncPending(); showOutcome(closing, { receipt }); setClosing(null);
+        if (eCommandSettled(receipt)) await refresh();
+        else ctx.toast("核查结论已记录，后端仍记为结果未知，原操作继续锁定。");
+      }} />}
     {pools.state === "error" && <BlockState state="error" title={pools.data.length ? "任务等级读取失败，以下为上次快照，暂不能操作" : "任务等级读取失败"} detail={pools.error} onRetry={() => void refresh()} />}
     {(pools.state !== "error" || pools.data.length > 0) && <div className="e2-levels"><StatBand cards role="tablist" label="任务等级">
       {(pools.data.length ? pools.data.map(data => ({ code: data.code, name: data.name, data })) : FIXED_DEVICE_LEVELS.map(card => ({ ...card, data: undefined }))).map(({ data: level, ...card }, index) => {

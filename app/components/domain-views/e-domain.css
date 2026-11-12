@@ -632,6 +632,13 @@
 :root[data-theme="light"] .e5-distribution [data-tone="done"] { --tone: var(--rd-done); }
 :root[data-theme="light"] .e5-distribution [data-slot="other"] { --slot: var(--rd-chart-other); }
 .e5-distribution button.rd-dist-item[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--rd-line-strong); }
+/* Effective-state counts that need someone to look; zero states are omitted. */
+.e5-attention { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--rd-line); }
+.e5-attention-label { display: inline-flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.e5-attention .e5-attention-item { gap: 8px; box-shadow: inset 0 0 0 1px var(--rd-line); }
+.e5-attention .e5-attention-item[data-selected] { box-shadow: inset 0 0 0 1px var(--rd-line-strong); background: var(--rd-selected); }
+.e5-attention-count { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--rd-text); }
+.e5-attention-item > svg, .e5-attention-on { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 
 .e5-user-meta { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .e5-user-meta > a { color: var(--rd-text-2); text-decoration: underline; text-underline-offset: 2px; }

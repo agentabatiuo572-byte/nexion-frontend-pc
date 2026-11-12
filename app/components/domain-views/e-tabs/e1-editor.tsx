@@ -255,7 +255,12 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
             <Field label="生命周期" required error={errors.lifecycle} explain="现行或已停产，与商城上下架状态独立。"><Select aria-label="生命周期" required value={form.lifecycle} onChange={v => update("lifecycle", v)} placeholder="请选择生命周期" options={[{ value: "active", label: "现行" }, { value: "legacy", label: "已停产" }]} /></Field>
             {field("badge", "营销角标", { explain: "商品媒体旁的活动文字，批准后显示在商品卡。" })}{field("tagline", "商品标语", { explain: "商品识别文案，批准后供商品卡和商品详情读取。" })}
           </div>
-          {(!editId && (form.id || form.name) && !supportsDeviceMonthlyTarget(form.id || form.name, form.tier) || original && !supportsDeviceMonthlyTarget(original.id, form.tier, original.productType)) && <Notice tone="warn" title={SKU_MODEL_UNRECOGNIZED_REASON} />}
+          {original?.status === "on" && !supportsDeviceMonthlyTarget(original.id, form.tier, original.productType)
+            ? <Notice tone="neutral" title="旧编号在售商品，可以直接维护">
+              <p>名称、售价、库存、媒体等资料可以直接改，也可以下架，不用先补齐任务等级、月收益目标和托管机房。</p>
+              <p>改任务等级时，要同时补齐这三项。旧编号不能设置或修改月收益目标；需要时请新建编号含型号标识的商品。下架后不能用这个编号重新上架。</p>
+            </Notice>
+            : (!editId && (form.id || form.name) && !supportsDeviceMonthlyTarget(form.id || form.name, form.tier) || original && !supportsDeviceMonthlyTarget(original.id, form.tier, original.productType)) && <Notice tone="warn" title={SKU_MODEL_UNRECOGNIZED_REASON} />}
           <Field label="产品图 / 视频" error={errors.media} explain="图片≤10 MiB；视频≤200 MiB。直接上传不经审批；关联商品由商品提案批准，移除不删除原资源。">
             <label className="e1-upload" data-drag={drag ? "" : undefined} onDragOver={e => { e.preventDefault(); if (!mediaBusy) setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={e => { e.preventDefault(); setDrag(false); void pickMedia(e.dataTransfer.files[0]); }}>
               <input type="file" aria-label={mediaBusy ? "媒体上传中" : mediaPending ? "重新选择原文件" : "上传商品图片或视频"} accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" disabled={!writable || mediaBusy || busy} onChange={e => { void pickMedia(e.target.files?.[0]); e.currentTarget.value = ""; }} />

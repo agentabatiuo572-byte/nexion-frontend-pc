@@ -75,7 +75,7 @@ export function parsePhoneRiskOverview(value: unknown): PhoneRiskOverview {
 }
 
 /** A save whose response was lost may have been applied: say so instead of reporting a failure. */
-const UNKNOWN_SAVE = "保存结果暂不确定：设置可能已经生效。请关闭后点「刷新」核对版本号和当前设置，不要直接重复保存。";
+const UNKNOWN_SAVE = "保存结果暂不确定：原保存可能已经生效。原内容和命令号已保留，可以查原保存结果，或按原操作重试；后端按命令号去重，不会重复保存。";
 class PhoneRiskOutcomeUnknownError extends Error { constructor() { super(UNKNOWN_SAVE); } }
 async function request(method: "GET" | "PUT", body?: unknown, key?: string, suffix = ""): Promise<unknown> {
   let response: Response;

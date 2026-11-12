@@ -138,6 +138,15 @@ export default function CommandCenter() {
   }
   if (supportTodo.error) rows.push({ key: "support", name: "客服待跟进", onRetry: supportTodo.reload });
   else if (supportTodo.data) rows.push({ key: "support", title: `客服待跟进 ${supportTodo.data} 位`, owner: "客服", href: "/service/overview" });
+  // 设备读取失败已在结论句和设备卡上写过，这里不再重复；为 0 的状态不占行。
+  if (devices.data) {
+    const deviceRows = [
+      { state: "ERROR", count: devices.data.errorRetry, title: "设备出错重试中", sub: "系统每 30 秒自动重试，持续出错看设备详情" },
+      { state: "LEGACY_PENDING", count: devices.data.legacyPending, title: "旧任务未结清", sub: "结清前不接新单，先核对旧任务" },
+      { state: "WAITING_CONFIG", count: devices.data.waitingConfig, title: "设备等待配置", sub: "没有可用任务，去任务池核对" },
+    ];
+    for (const row of deviceRows) if (row.count > 0) rows.push({ key: `device-${row.state}`, title: `${row.title} ${fmtNum(row.count)} 台`, sub: row.sub, owner: "设备", href: reach("/devices/ops") ? `/devices/ops?simState=${row.state}` : undefined, tone: "warn" });
+  }
 
   const pendingFailed = rows.flatMap((row) => ("onRetry" in row ? [row.name] : []));
   const pendingRows = rows.length - pendingFailed.length;
