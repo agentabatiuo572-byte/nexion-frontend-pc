@@ -11,13 +11,13 @@ import { e5Commands, type E5Command } from "@/lib/admin/e5-command";
 import { e6Commands as commands, type E6DeviceInput as DeviceInput, type E6Payload as Payload, type E6Pending, type E6Proposal, type E6Section } from "@/lib/admin/e6-command";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { activateE5Device, deactivateE5Device, setE5UserDevicesPaused, fetchE5Devices } from "@/lib/admin/e5-client";
-import { savePhoneRisk, fetchPhoneRisk, fetchPhoneRiskReceipt, type PhoneRiskReceipt, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
+import { savePhoneRisk, fetchPhoneRisk, fetchPhoneRiskReceipt, type PhoneRiskReceipt, type PhoneRiskOverview, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
 import { canInvestigateECommand, discoverECommand, investigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { Button, Notice, Fold, ReleaseModal, StatusTag, Fact } from "@/app/components/rd";
 import { ClosureContact, CommandClosureModal, CommandOutcomeLine, SettledCommandNotices, closureOpen, type CommandOutcome, type SettledCommand } from "./e-command-check";
 
 export type { E6Pending, E6Proposal, E6Section } from "@/lib/admin/e6-command";
-export type E6WriteReceipt = { changedCount?: number; pendingDeactivate?: boolean; readbackFailed?: boolean };
+export type E6WriteReceipt = { changedCount?: number; pendingDeactivate?: boolean; readbackFailed?: boolean; originalRiskResponse?: PhoneRiskOverview };
 type ProposalDraft = Omit<E6Proposal, "operator" | "operatorRole" | "sos" | "roleGate">;
 const Context = createContext<ReturnType<typeof useMutations> | null>(null);
 
@@ -81,18 +81,19 @@ function useMutations() {
           return;
         }
       }
-      let deviceResult: E6WriteReceipt | undefined;
+      let writeResult: E6WriteReceipt | undefined;
       if (record.payload.kind === "proposal") {
         const ticket = await createA2OperationProposal(record.payload.input, record.commandKey, true);
         commands.remember(record.fingerprint, record.commandKey, { ...record, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies } });
       } else if (record.payload.kind === "device") {
         const i = record.payload.input;
-        if (i.action === "activate") { const result = await activateE5Device(i.deviceId, false, i.reason, i.operator, record.commandKey); deviceResult = { pendingDeactivate: result.pendingDeactivate }; }
-        else if (i.action === "deactivate") { const result = await deactivateE5Device(i.deviceId, false, i.reason, i.operator, record.commandKey); deviceResult = { pendingDeactivate: result.pendingDeactivate }; }
-        else { const result = await setE5UserDevicesPaused(i.userId, i.action === "pause", i.reason, i.operator, record.commandKey); deviceResult = { changedCount: result.changedCount }; }
+        if (i.action === "activate") { const result = await activateE5Device(i.deviceId, false, i.reason, i.operator, record.commandKey); writeResult = { pendingDeactivate: result.pendingDeactivate }; }
+        else if (i.action === "deactivate") { const result = await deactivateE5Device(i.deviceId, false, i.reason, i.operator, record.commandKey); writeResult = { pendingDeactivate: result.pendingDeactivate }; }
+        else { const result = await setE5UserDevicesPaused(i.userId, i.action === "pause", i.reason, i.operator, record.commandKey); writeResult = { changedCount: result.changedCount }; }
         commands.forget(record.fingerprint, record.commandKey);
       } else {
-        await savePhoneRisk(record.payload.revision, record.payload.input, record.commandKey);
+        const originalRiskResponse = await savePhoneRisk(record.payload.revision, record.payload.input, record.commandKey);
+        writeResult = { originalRiskResponse };
         commands.forget(record.fingerprint, record.commandKey);
       }
       if (record.payload.kind !== "proposal") {
@@ -102,11 +103,11 @@ function useMutations() {
           if (record.payload.kind === "device") await fetchE5Devices({ pageNum: 1, pageSize: 10, keyword: record.payload.input.serial }, true);
           else await fetchPhoneRisk();
         } catch {
-          deviceResult = { ...deviceResult, readbackFailed: true };
+          writeResult = { ...writeResult, readbackFailed: true };
         }
       }
       if (active.current) { sync(); setNotes(n => ({ ...n, [record.commandKey]: record.payload.kind === "proposal" ? "已提交，等待审批后执行。" : "已取得操作回执，请刷新核对当前值。" })); }
-      return deviceResult;
+      return writeResult;
     } catch (failure) {
       if (!retry && isExplicitRejection(failure)) commands.forget(record.fingerprint, record.commandKey);
       if (active.current) {
@@ -151,6 +152,12 @@ function useMutations() {
       if (record.payload.kind === "risk") {
         // Records from before bound idempotency have no durable receipt; retain their readback-only policy.
         if (record.payload.receiptVersion !== 1) return null;
+        if (evidence) {
+          const receipt = await investigateECommand(record, { commandKey: record.commandKey, originalMethod: "PUT",
+            originalPath: "/api/admin/config/phone-calibration/risk", originalAdminId: String(record.owner) }, evidence);
+          if (eCommandSettled(receipt)) commands.forget(record.fingerprint, record.commandKey);
+          return receipt;
+        }
         const receipt = await fetchPhoneRiskReceipt(record.commandKey, record.owner);
         if (["SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED"].includes(receipt.status))
           commands.forget(record.fingerprint, record.commandKey);
@@ -171,6 +178,7 @@ function useMutations() {
   }
   return { pending, devicePending, legacy, busy, notes, technicalErrors, rejected, release, setRelease, sync, locked, visible, allowed, canRetry, canPropose, canAudit, proposal, start, check, checkDirect, send,
     canInvestigate: canInvestigateECommand("device_e5_read"),
+    canInvestigateRisk: canInvestigateECommand("device_e6_read"),
     device: (scope: string, label: string, input: Omit<DeviceInput, "operator">) => start(scope, "phones", label, { kind: "device", input: { ...input, operator: session!.operator || session!.username } }),
     risk: (revision: number, input: PhoneRiskUpdate) => start("risk", "calibration", "保存机型风控设置", { kind: "risk", revision, input: { ...input, reason: input.reason.trim() }, receiptVersion: 1 }),
     legacyPhoneLocked: (serial: string, deviceId: number, userId: string) => legacy.some(r => r.fingerprint.startsWith(`e5-device:${deviceId}:`) || r.fingerprint.startsWith(`e5-user:${userId}:`) || r.fingerprint.startsWith("e5_device_") && r.fingerprint.endsWith(`|${serial}`)),
@@ -192,7 +200,7 @@ function TicketVerdict({ record }: { record: E6Pending }) {
 }
 const RISK_STATUS: Partial<Record<PhoneRiskReceipt["status"], { tone: "progress" | "warn" | "neutral"; title: string; text: string }>> = {
   PROCESSING: { tone: "progress", title: "原保存仍在处理", text: "后端还在保存，稍后再查；不要重复保存。" },
-  UNKNOWN: { tone: "warn", title: "后端结果仍未知", text: "原保存的处理过程中断，按原操作重试只会得到同样的结果。请把命令号发给有调查权限的超级管理员核查。" },
+  UNKNOWN: { tone: "warn", title: "后端结果仍未知", text: "原操作的处理过程中断，按原操作重试只会得到同样的结果；需要按证据核查结案。" },
   FAILED: { tone: "neutral", title: "原保存以失败结束", text: "后端记录了这次失败。24 小时内可以按原操作重试，后端会用原命令号再执行一次。" },
 };
 type RiskDone = { key: string; status: PhoneRiskReceipt["status"] | "RETRIED"; revision?: number };
@@ -237,7 +245,8 @@ export function E6PendingNotice({ section, onRead }: { section: E6Section; onRea
       {r.payload.kind === "device" && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showDevice(r, receipt as ECommandInvestigation | null), () => { /* checkDirect keeps the query failure in the notice. */ }).finally(() => onRead?.()); }}>查原操作结果</Button>}
       {r.payload.kind !== "risk" && !r.ticketId && !isRetryExpired(r) && !m.rejected.includes(r.commandKey) && <Button size="sm" disabled={!m.allowed(r) || !!m.busy} onClick={() => { void m.send(r, true).then(onRead).catch(() => { /* send has recorded the failure in the persistent notice. */ }); }}>按原操作重试</Button>}
       {r.payload.kind === "risk" && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showRisk(r, receipt as PhoneRiskReceipt | null), () => { /* The original notice retains the query failure. */ }).finally(() => window.dispatchEvent(new Event("e6-read-risk"))); }}>{r.payload.receiptVersion === 1 ? "查原保存结果" : "读取当前风控设置"}</Button>}
-      {r.payload.kind === "risk" && m.canRetry(r) && !m.rejected.includes(r.commandKey) && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.send(r, true).then(result => { setRiskDone(rows => [...rows.filter(row => row.key !== r.commandKey), { key: r.commandKey, status: "RETRIED" }]); window.dispatchEvent(new Event("e6-read-risk")); onRead?.(result); }).catch(() => { /* send has recorded the failure in the persistent notice. */ }); }}>按原操作重试</Button>}
+      {r.payload.kind === "risk" && m.canRetry(r) && !m.rejected.includes(r.commandKey) && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.send(r, true).then(result => { setRiskDone(rows => [...rows.filter(row => row.key !== r.commandKey), { key: r.commandKey, status: "RETRIED", revision: result?.originalRiskResponse?.settings.revision }]); window.dispatchEvent(new Event("e6-read-risk")); onRead?.(result); }).catch(() => { /* send has recorded the failure in the persistent notice. */ }); }}>按原操作重试</Button>}
+      {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && m.canInvestigateRisk && (closureOpen(outcomes[r.commandKey], isRetryExpired(r)) || riskReceipts[r.commandKey]?.status === "UNKNOWN") && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
       {r.payload.kind === "device" && m.canInvestigate && closureOpen(outcomes[r.commandKey], isRetryExpired(r)) && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
       {r.terminal && <Button size="sm" onClick={() => { m.forget(r); onRead?.(); }}>原提案已结束，准备新变更</Button>}
       {m.rejected.includes(r.commandKey) && <Button variant="primary" size="sm" onClick={() => m.setRelease(r)}>解除待确认</Button>}
@@ -247,15 +256,21 @@ export function E6PendingNotice({ section, onRead }: { section: E6Section; onRea
       {isRetryExpired(r) && <p>{RETRY_EXPIRED_TEXT}</p>}{m.notes[r.commandKey] && m.notes[r.commandKey] !== answered[r.commandKey] && !["原请求已保留，结果仍待核实。","原操作重试已被明确拒绝，可核对后解除待确认。"].includes(m.notes[r.commandKey]) && <p>{m.notes[r.commandKey]}</p>}
       {r.payload.kind === "device" && <CommandOutcomeLine outcome={outcomes[r.commandKey]} expired={isRetryExpired(r)} />}
       {r.payload.kind === "device" && !m.canInvestigate && closureOpen(outcomes[r.commandKey], isRetryExpired(r)) && <ClosureContact />}
-      {r.payload.kind === "risk" && riskReceipts[r.commandKey] && RISK_STATUS[riskReceipts[r.commandKey].status] && <div className="e-check-outcome" role="status"><StatusTag tone={RISK_STATUS[riskReceipts[r.commandKey].status]!.tone}>{RISK_STATUS[riskReceipts[r.commandKey].status]!.title}</StatusTag><p>{RISK_STATUS[riskReceipts[r.commandKey].status]!.text}</p></div>}
+      {r.payload.kind === "risk" && !outcomes[r.commandKey] && riskReceipts[r.commandKey] && RISK_STATUS[riskReceipts[r.commandKey].status] && <div className="e-check-outcome" role="status"><StatusTag tone={RISK_STATUS[riskReceipts[r.commandKey].status]!.tone}>{RISK_STATUS[riskReceipts[r.commandKey].status]!.title}</StatusTag><p>{RISK_STATUS[riskReceipts[r.commandKey].status]!.text}</p></div>}
+      {r.payload.kind === "risk" && outcomes[r.commandKey] && <CommandOutcomeLine outcome={outcomes[r.commandKey]} expired={isRetryExpired(r)} />}
+      {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && !m.canInvestigateRisk && (closureOpen(outcomes[r.commandKey], isRetryExpired(r)) || riskReceipts[r.commandKey]?.status === "UNKNOWN") && <ClosureContact />}
       <Fold title="原操作与技术信息" summary={r.commandKey} inset><div className="e6-fold-content"><p>命令号：<code>{r.commandKey}</code></p><p>发起：{new Date(r.createdAt).toLocaleString("zh-CN")}</p><p>原对象：{r.label}</p>{r.payload.kind === "device" && <p>原状态：{r.payload.input.before}</p>}<p>理由：{r.payload.input.reason}</p><pre className="e6-json">{JSON.stringify({ scope: r.scope, request: JSON.parse(r.body) }, null, 2)}</pre>{m.technicalErrors[r.commandKey] && <pre className="e6-json">{m.technicalErrors[r.commandKey]}</pre>}</div></Fold>
     </Notice>)}
     {m.legacy.filter(r => section === "tasks" ? r.fingerprint.startsWith("e2_task_") : section === "tiers" ? r.fingerprint.startsWith("e2_phone_tier") : section === "phones" ? r.fingerprint.startsWith("e5") : r.fingerprint.startsWith("e6_")).map(r => <Notice key={r.commandKey} tone="warn" title="升级前的原提案待核查"><p>旧记录缺少完整内容与理由，只能凭原命令号到操作记录与审批核对，不能重试或解除。原命令号：{r.commandKey}</p></Notice>)}
-    {closing && closing.payload.kind === "device" && <CommandClosureModal label={closing.label} commandKey={closing.commandKey} createdAt={closing.createdAt}
-      facts={<><Fact k="原状态">{closing.payload.input.before}</Fact><Fact k="原理由">{closing.payload.input.reason}</Fact></>}
+    {closing && (closing.payload.kind === "device" || closing.payload.kind === "risk") && <CommandClosureModal label={closing.label} commandKey={closing.commandKey} createdAt={closing.createdAt}
+      facts={<>{closing.payload.kind === "device" && <Fact k="原状态">{closing.payload.input.before}</Fact>}<Fact k="原理由">{closing.payload.input.reason}</Fact></>}
       onClose={() => setClosing(null)} onSubmit={async evidence => {
         const receipt = await m.checkDirect(closing, evidence) as ECommandInvestigation | null;
-        showDevice(closing, receipt); setClosing(null); onRead?.();
+        showDevice(closing, receipt);
+        if (closing.payload.kind === "risk") {
+          window.dispatchEvent(new Event("e6-read-risk"));
+        }
+        setClosing(null); onRead?.();
       }} />}
     {m.release?.section === section && <ReleaseModal label={m.release.label} onCancel={() => m.setRelease(null)} onConfirm={() => { m.forget(m.release!); m.setRelease(null); onRead?.(); }} />}
   </>;
