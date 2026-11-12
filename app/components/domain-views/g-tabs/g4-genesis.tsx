@@ -233,14 +233,7 @@ function G4GenesisPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [readFailed, setReadFailed] = useState(false);
-  const paramApproval = useGParamApproval("G4", toast, setError, async () => {
-    setReadFailed(true);
-    const active = await fetchG4GenesisOverview(nodePageNo, nodePageSize);
-    setOverview(active);
-    setLockedParams({});
-    setReadFailed(false);
-    setRefreshError("");
-  });
+  const paramApproval = useGParamApproval("G4", toast, setError, async () => { await readCurrentOverview(); }, invalidateOverview);
   const [refreshError, setRefreshError] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [nodeDrawer, setNodeDrawer] = useState<string | null>(null);
@@ -250,6 +243,33 @@ function G4GenesisPage() {
   const [tierConfirm, setTierConfirm] = useState<{ epoch: number; change?: G4TierChange } | null>(null);
   const latest = useRef({ overview, loading, busyKey, refreshError, readFailed });
   latest.current = { overview, loading, busyKey, refreshError, readFailed };
+  function invalidateOverview() {
+    latest.current.readFailed = true;
+    setReadFailed(true);
+    // Saved originals remain recoverable; confirmations built from the old read do not.
+    openActionConfirm(current => current && (current.getPendingReason?.() !== undefined
+      || session && listG4DirectCommands(session.adminId).some(row => g4DirectObject(row) === current.directObject)) ? current : null);
+    setTierConfirm(current => session && (hasPendingG4TierApproval(session.adminId)
+      || listG4DirectCommands(session.adminId).some(row => g4DirectObject(row) === "tiers")) ? current : null);
+    setFirstDividend(current => session && pendingConfigApproval("G4", session.adminId) ? current : null);
+  }
+  async function readCurrentOverview() {
+    invalidateOverview();
+    openActionConfirm(null);
+    try {
+      const active = await fetchG4GenesisOverview(nodePageNo, nodePageSize);
+      setOverview(active); setLockedParams({}); setReadFailed(false); setRefreshError("");
+      return active;
+    } catch (failure) {
+      setRefreshError(messageOf(failure));
+      throw failure;
+    }
+  }
+  async function recoverRejectedApproval(failure: unknown) {
+    const message = messageOf(failure);
+    setError(message); toast(message);
+    await Promise.allSettled([readCurrentOverview()]);
+  }
   const canStartNew = (authority: string, openingKey?: string) => {
     const view = latest.current;
     const auth = useAdminAuth.getState();
@@ -404,7 +424,8 @@ function G4GenesisPage() {
   async function recoverDirect(command: G4DirectCommand, retry: boolean) {
     setBusyKey(`original:${command.commandKey}`);
     // A replay receipt contains the original overview, never the current view.
-    if (retry) { setReadFailed(true); openActionConfirm(null); setTierConfirm(null); }
+    invalidateOverview();
+    if (retry) { openActionConfirm(null); setTierConfirm(null); }
     let verdict = false;
     try {
       if (retry) {
@@ -414,16 +435,13 @@ function G4GenesisPage() {
           throw failure;
         }
       }
-      const active = await fetchG4GenesisOverview(nodePageNo, nodePageSize);
-      setOverview(active); setLockedParams({}); setReadFailed(false); setRefreshError("");
+      await readCurrentOverview();
       if (command.path.includes("/operations/")) { await fetchG4AdminOperations(); setOperationsRefresh(value => value + 1); }
       if (!retry) toast("已读回当前数据；这不能确认原命令的结果，原记录继续保留。请到操作记录按原命令号核对。");
     } catch (failure) {
       if (verdict) {
         // Even an explicit rejection ends the original mode. Re-read before a new edit.
-        const [active] = await Promise.allSettled([fetchG4GenesisOverview(nodePageNo, nodePageSize)]);
-        if (active.status === "fulfilled") { setOverview(active.value); setLockedParams({}); setReadFailed(false); setRefreshError(""); }
-        else setRefreshError(messageOf(active.reason));
+        await Promise.allSettled([readCurrentOverview()]);
         setOperationsRefresh(value => value + 1);
       }
       toast(messageOf(failure));
@@ -437,8 +455,10 @@ function G4GenesisPage() {
         session={session} epoch={epoch} requested={tierConfirm.change}
         canStartNew={(version) => canStartNew("finprod_g4_price_write") && latest.current.overview!.tiersVersion === version
           && !listG4DirectCommands(session.adminId).some(row => g4DirectObject(row) === "tiers")}
-        readActive={() => fetchG4GenesisOverview(nodePageNo, nodePageSize)}
-        onError={(failure) => { const message = messageOf(failure); setError(message); toast(message); }}
+        readActive={readCurrentOverview}
+        onRecoveryStart={invalidateOverview}
+        onRecoverDirect={command => recoverDirect(command, true)}
+        onError={recoverRejectedApproval}
         onDirect={async (change, reason, to, priceUSDT) => {
           if (!canStartNew("finprod_g4_price_write") || latest.current.overview!.tiersVersion !== change.expectedTiersVersion) {
             setTierConfirm(null); throw new Error("价格档位已变化或页面尚未就绪，请重新读取后操作。");
@@ -464,8 +484,9 @@ function G4GenesisPage() {
         session={session} epoch={epoch} expectedRevision={firstDividend.expectedRevision}
         canStartNew={() => canStartNew("finprod_g4_dividend_rate_write")
           && Number(latest.current.overview!.params.find(row => row.key === "dividend")?.value) === 0}
-        readActive={() => fetchG4GenesisOverview(nodePageNo, nodePageSize)}
-        onError={(failure) => { const message = messageOf(failure); setError(message); toast(message); }}
+        readActive={readCurrentOverview}
+        onRecoveryStart={invalidateOverview}
+        onError={recoverRejectedApproval}
         onClose={() => setFirstDividend(null)}
         onDone={(active, acknowledgement) => {
           setOverview(active);

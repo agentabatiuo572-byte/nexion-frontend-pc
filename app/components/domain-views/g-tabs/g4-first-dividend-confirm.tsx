@@ -7,13 +7,14 @@ import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import { Fact, Facts, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 
-export function G4FirstDividendConfirm({ session, epoch, expectedRevision, readActive, canStartNew, onError, onClose, onDone }: {
+export function G4FirstDividendConfirm({ session, epoch, expectedRevision, readActive, canStartNew, onRecoveryStart, onError, onClose, onDone }: {
   session: AdminSession;
   epoch: number;
   expectedRevision: string;
   readActive: typeof fetchG4GenesisOverview;
   canStartNew: () => boolean;
-  onError: (error: unknown) => void;
+  onRecoveryStart: () => void;
+  onError: (error: unknown) => Promise<void>;
   onClose: () => void;
   onDone: (active: G4Overview, acknowledgement: string) => void;
 }) {
@@ -35,13 +36,14 @@ export function G4FirstDividendConfirm({ session, epoch, expectedRevision, readA
       throw new Error("当前创世参数暂不能修改，请重新读取当前状态后操作。");
     }
     const recovering = !!pendingConfigApproval("G4", session.adminId);
+    if (recovering) onRecoveryStart();
     let result;
     try {
       result = await submitConfigApproval("G4", session, mode === false ? {
         paramKey: "dividend", value: value.trim(), decisionRef: decisionRef.trim(), expectedRevision,
       } : null, reason, readActive, mode);
     } catch (error) {
-      if (recovering && isExplicitRejection(error) && !pendingConfigApproval("G4", session.adminId)) { onError(error); onClose(); }
+      if (recovering && isExplicitRejection(error) && !pendingConfigApproval("G4", session.adminId)) { onClose(); await onError(error); }
       throw error;
     }
     requireCurrentMaker(false);

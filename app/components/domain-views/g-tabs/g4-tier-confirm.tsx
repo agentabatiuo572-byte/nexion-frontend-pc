@@ -8,7 +8,7 @@ import {
 } from "@/lib/admin/a2-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import { g4DirectObject, listG4DirectCommands } from "@/lib/admin/g4-direct-command";
+import { g4DirectObject, listG4DirectCommands, type G4DirectCommand } from "@/lib/admin/g4-direct-command";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import { G4CatalogApprovalRequiredError, type G4Overview } from "@/lib/admin/g4-client";
@@ -67,11 +67,13 @@ function pendingApproval(adminId: number) {
   return { ...record, ...original };
 }
 
-export function G4TierConfirm({ session, epoch, requested, readActive, canStartNew, onDirect, onError, onClose, onDone }: {
+export function G4TierConfirm({ session, epoch, requested, readActive, canStartNew, onDirect, onRecoverDirect, onRecoveryStart, onError, onClose, onDone }: {
   session: AdminSession; epoch: number; requested?: G4TierChange;
   readActive: () => Promise<G4Overview>;
   canStartNew: (version: number) => boolean;
-  onError: (error: unknown) => void;
+  onRecoveryStart: () => void;
+  onRecoverDirect: (command: G4DirectCommand) => Promise<void>;
+  onError: (error: unknown) => Promise<void>;
   onDirect: (change: G4TierChange, reason: string, to: number, priceUSDT: number) => Promise<void>;
   onClose: () => void; onDone: (active: G4Overview, acknowledgement: string) => void;
 }) {
@@ -116,10 +118,16 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
     ensureOwner(false);
     let command = pendingApproval(session.adminId);
     const hadPending = !!command;
+    const direct = directOriginal();
+    if (!command && direct && mode === "submit") {
+      await onRecoverDirect(direct);
+      return true;
+    }
     if (opening.pending && command?.commandKey !== opening.pending.commandKey) {
       throw new Error("原档位操作已处理，请关闭后重新读取页面。");
     }
     if (mode !== "submit" && !command) throw new Error("原档位操作已处理，请关闭后重新读取页面。");
+    if (hadPending) onRecoveryStart();
     if (!command && mode === "submit") {
       if (!canStartNew(basis.expectedTiersVersion)) {
         onClose();
@@ -185,7 +193,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
           throw new A2OutcomeUncertainError("原档位提案结果待确认，请查询原操作，或按原输入和原键重试。", original.commandKey);
         }
         attempts.forget(slot(session.adminId), original.commandKey);
-        if (hadPending) { onError(failure); onClose(); }
+        if (hadPending) { onClose(); await onError(failure); }
         throw failure;
       }
     }
