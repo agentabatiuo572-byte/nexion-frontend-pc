@@ -300,7 +300,7 @@ export function G2Exchange() {
 function G2ExchangePage() {
   const reach = useReach();
   const [, toast] = useToast();
-  const [mc, openActionConfirm] = useState<G2ConfirmReq | null>(null);
+  const [mc, setActionConfirm] = useState<G2ConfirmReq | null>(null);
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
   const batchAdminId = session?.adminId ?? 0;
@@ -315,12 +315,29 @@ function G2ExchangePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [readFailed, setReadFailed] = useState(false);
+  // 原命令回包不是当前概览；重读完成前不能按旧概览发起新修改。
+  const [rereadPending, setRereadPending] = useState(false);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const latest = useRef({ overview, loading, busyKey, readFailed, rereadPending });
+  latest.current = { overview, loading, busyKey, readFailed, rereadPending };
+  const confirmationRecovery = useRef<{ request: G2ConfirmReq; saved: boolean } | null>(null);
+  const openActionConfirm = useCallback((request: G2ConfirmReq | null) => {
+    const view = latest.current;
+    if (request && (view.loading || view.readFailed || view.rereadPending) && request.getPendingReason?.() === undefined) {
+      setError("当前值没读到，重新加载后再改");
+      return;
+    }
+    setActionConfirm(request);
+  }, []);
   const paramApproval = useGParamApproval("G2", toast, setError, async () => {
+    latest.current.readFailed = true;
+    latest.current.rereadPending = true;
+    setRereadPending(true);
     setReadFailed(true);
     setOverview(await fetchG2ExchangeOverview());
     setReadFailed(false);
+    setRereadPending(false);
   });
-  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [gateDrawer, setGateDrawer] = useState<GateKey | null>(null);
   const [queueDrawer, setQueueDrawer] = useState<string | null>(null);
   const [batchResult, setBatchResult] = useState<G2BatchResult | null>(null);
@@ -332,9 +349,15 @@ function G2ExchangePage() {
   const [lockedParams, setLockedParams] = useState<Record<string, string>>({});
   const ownPendingBatch = pendingBatch?.adminId === batchAdminId ? pendingBatch : undefined;
   const recoveryBatch = ownPendingBatch?.commandKey === recoveryKey ? ownPendingBatch : undefined;
-  const latest = useRef({ overview, loading, busyKey, readFailed });
-  latest.current = { overview, loading, busyKey, readFailed };
   const paramRecovery = <ParamRecoveryNotice approval={paramApproval} toast={toast} />;
+  const pendingConfirmReason = mc?.getPendingReason?.();
+  useEffect(() => {
+    if (!mc) { confirmationRecovery.current = null; return; }
+    const saved = pendingConfirmReason !== undefined;
+    if (confirmationRecovery.current?.request !== mc) confirmationRecovery.current = { request: mc, saved: saved && !busyKey };
+    if (saved && !busyKey) confirmationRecovery.current.saved = true;
+    if ((!saved && confirmationRecovery.current.saved) || (rereadPending && !saved)) openActionConfirm(null);
+  }, [mc, pendingConfirmReason, rereadPending, busyKey, openActionConfirm]);
 
   useEffect(() => {
     setPendingBatch(pendingG2QueueBatch(batchAdminId));
@@ -344,12 +367,16 @@ function G2ExchangePage() {
   }, [batchAdminId, canProcessBatch]);
 
   const reload = useCallback(async (silent = false) => {
+    latest.current.readFailed = true;
+    latest.current.rereadPending = true;
+    setRereadPending(true);
     if (!silent) setLoading(true);
     setReadFailed(true);
     setError("");
     try {
       setOverview(await fetchG2ExchangeOverview());
       setReadFailed(false);
+      setRereadPending(false);
     } catch (err) {
       setOverview(null);
       setError(messageOf(err));
@@ -385,11 +412,13 @@ function G2ExchangePage() {
     };
   }, []);
 
-  const mutate = useCallback(async (key: string, action: () => Promise<G2Overview>, success: string) => {
+  const mutate = useCallback(async (key: string, action: () => Promise<G2Overview>, success: string, recovered = false) => {
+    if (recovered) { latest.current.rereadPending = true; setRereadPending(true); }
     setBusyKey(key);
     setError("");
     try {
       setOverview(await action());
+      if (recovered) { setReadFailed(false); setRereadPending(false); }
       if (key.startsWith("param:")) setLockedParams(rows => { const next = { ...rows }; delete next[key.slice(6)]; return next; });
       toast(success);
     } catch (err) {
@@ -406,11 +435,14 @@ function G2ExchangePage() {
   const showBatchResult = useCallback((result: Awaited<ReturnType<typeof processG2ExchangeQueue>>) => {
     setOverview(result.overview);
     setBatchResult(result.batch);
+    setReadFailed(false);
+    setRereadPending(false);
     toast(summarizeG2BatchResult(result.batch));
   }, [toast]);
 
   const processQueueBatch = useCallback(async (limit: number, reason: string) => {
     requireBatchActor(batchAdminId);
+    if (pendingG2QueueBatch(batchAdminId)) { latest.current.rereadPending = true; setRereadPending(true); }
     setBusyKey("queue:batch");
     setError("");
     setBatchResult(null);
@@ -426,6 +458,8 @@ function G2ExchangePage() {
           const current = await fetchG2ExchangeOverview();
           requireBatchActor(batchAdminId);
           setOverview(current);
+          setReadFailed(false);
+          setRereadPending(false);
         } catch {
           // POST 的原始错误仍是主证据；回读失败不能改写成确定失败。
         }
@@ -446,6 +480,8 @@ function G2ExchangePage() {
   }, [batchAdminId, showBatchResult, toast]);
 
   const checkOriginalBatch = async (original: G2PendingBatch) => {
+    latest.current.rereadPending = true;
+    setRereadPending(true);
     setBusyKey("queue:batch");
     setError("");
     setRecoveryError(null);
@@ -456,6 +492,14 @@ function G2ExchangePage() {
       showBatchResult(result);
       setRecoveryKey(null);
     } catch (error) {
+      try {
+        setOverview(await fetchG2ExchangeOverview());
+        setReadFailed(false);
+        setRereadPending(false);
+      } catch (readError) {
+        setReadFailed(true);
+        setError(messageOf(readError));
+      }
       setRecoveryError({ message: messageOf(error), notFound: error instanceof G2BatchReceiptNotFound });
     } finally {
       setPendingBatch(pendingG2QueueBatch(original.adminId));
@@ -483,10 +527,26 @@ function G2ExchangePage() {
       coverageLead={mc.coverageLead}
       coverageCheck={mc.coverageCheck}
       reasonPlaceholder={mc.reasonPlaceholder}
+      blockedReason={pendingConfirmReason === undefined && (loading || readFailed || rereadPending) ? "当前值没读到，重新加载后再改" : undefined}
       onClose={() => openActionConfirm(null)}
       onConfirm={async (reason, newValue, businessValue) => {
-        await mc.run(reason, newValue, businessValue);
-        openActionConfirm(null);
+        const saved = mc.getPendingReason?.() !== undefined;
+        if (confirmationRecovery.current?.request === mc && confirmationRecovery.current.saved && !saved) {
+          openActionConfirm(null);
+          throw new Error("原操作记录已结束，请关闭弹窗后重新读取页面。");
+        }
+        const view = latest.current;
+        if (!saved && (view.loading || view.readFailed || view.rereadPending)) {
+          openActionConfirm(null);
+          throw new Error("当前值没读到，重新加载后再改");
+        }
+        if (saved) confirmationRecovery.current = { request: mc, saved: true };
+        try {
+          await mc.run(reason, newValue, businessValue);
+          openActionConfirm(null);
+        } finally {
+          if (mc.getPendingReason?.() !== undefined) confirmationRecovery.current = { request: mc, saved: true };
+        }
       }}
     />
   );
@@ -497,7 +557,7 @@ function G2ExchangePage() {
   const pendingPause = directCommands.find(record => record.path === "/exchange/swap");
   const pauseAction = overview && (swapEnabled || pendingPause
     ? (allowed("finprod_g2_swap_toggle") || pendingPause) && <Button variant="danger-outline" size="sm" icon={<PauseCircle size={14} aria-hidden />}
-      disabledReason={busyKey ? "正在处理上一项，稍候再操作" : undefined} onClick={() => toggleSwap()}>紧急暂停兑换</Button>
+      disabledReason={busyKey ? "正在处理上一项，稍候再操作" : !pendingPause && (loading || readFailed || rereadPending) ? "当前值没读到，重新加载后再改" : undefined} onClick={() => toggleSwap()}>紧急暂停兑换</Button>
     : reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去「紧急停用开关」恢复</Link>);
   const header = (
     <PageHeader pageId="G2" title="兑换额度与规则"
@@ -534,6 +594,7 @@ function G2ExchangePage() {
   const { stats, swap, caps, queue, gateDetails, geoBlocked } = overview;
   const busy = !!busyKey;
   const busyReason = busy ? "正在处理上一项，稍候再操作" : undefined;
+  const newWriteBlockedReason = loading || readFailed || rereadPending ? "当前值没读到，重新加载后再改" : undefined;
   const totalGate = stats.gateUser + stats.gatePlatform + stats.gateGeo;
   const selectedQueue = queueDrawer ? queue.find((row) => row.exchangeNo === queueDrawer) : null;
   const gateTiles: { key: GateKey; label: string; count: number; explain: string }[] = [
@@ -636,7 +697,7 @@ function G2ExchangePage() {
         if (originalDirect || savedDirect) {
           if (!savedDirect) throw new Error("原操作记录已结束，请关闭弹窗后重新读取页面。");
           try {
-            await mutate(`param:${cap.key}`, async () => await retryG2ExchangeCommand(batchAdminId, savedDirect.commandKey) as G2Overview, `${operatorCopyText(cap.name)}已立即生效`);
+            await mutate(`param:${cap.key}`, async () => await retryG2ExchangeCommand(batchAdminId, savedDirect.commandKey) as G2Overview, `${operatorCopyText(cap.name)}已立即生效`, true);
           } catch (error) {
             await reload(true);
             if (!pendingG2ExchangeCommand(batchAdminId, savedDirect.path)) openActionConfirm(null);
@@ -649,7 +710,7 @@ function G2ExchangePage() {
         const view = latest.current;
         const currentCap = view.overview?.caps.find(row => row.key === cap.key);
         const auth = useAdminAuth.getState();
-        if (!saved && (!currentCap || view.loading || view.busyKey || view.readFailed
+        if (!saved && (!currentCap || view.loading || view.busyKey || view.readFailed || view.rereadPending
           || (!view.overview!.swap.enabled && !["fee", "feeMin"].includes(cap.key))
           || !auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== session?.adminId
           || !auth.session?.authorities.includes(capAuthority(cap.key)))) {
@@ -724,11 +785,11 @@ function G2ExchangePage() {
         const saved = pendingG2ExchangeCommand(batchAdminId, "/exchange/swap");
         if (original || saved) {
           if (!saved) throw new Error("原操作记录已结束，请关闭弹窗后重新读取页面。");
-          try { await mutate("swap:pause", async () => await retryG2ExchangeCommand(batchAdminId, saved.commandKey) as G2Overview, "兑换已紧急暂停"); }
+          try { await mutate("swap:pause", async () => await retryG2ExchangeCommand(batchAdminId, saved.commandKey) as G2Overview, "兑换已紧急暂停", true); }
           catch (error) { await reload(true); if (!pendingG2ExchangeCommand(batchAdminId, saved.path)) openActionConfirm(null); throw error; }
           return;
         }
-        if (!latest.current.overview?.swap.enabled || latest.current.loading || latest.current.readFailed || latest.current.busyKey) {
+        if (!latest.current.overview?.swap.enabled || latest.current.loading || latest.current.readFailed || latest.current.rereadPending || latest.current.busyKey) {
           throw new Error("当前兑换参数暂不能修改，请重新读取当前状态后操作。");
         }
         const countries = (businessValue?.geoBlock ?? "").split(",").map((value) => value.trim()).filter(Boolean);
@@ -770,12 +831,12 @@ function G2ExchangePage() {
         const saved = pendingG2ExchangeCommand(batchAdminId, path);
         if (original || saved) {
           if (!saved) throw new Error("原操作记录已结束，请关闭弹窗后重新读取页面。");
-          try { await mutate(`cancel:${order.exchangeNo}`, async () => await retryG2ExchangeCommand(batchAdminId, saved.commandKey) as G2Overview, "已取消"); }
+          try { await mutate(`cancel:${order.exchangeNo}`, async () => await retryG2ExchangeCommand(batchAdminId, saved.commandKey) as G2Overview, "已取消", true); }
           catch (error) { await reload(true); if (!pendingG2ExchangeCommand(batchAdminId, path)) openActionConfirm(null); throw error; }
           return;
         }
         const view = latest.current;
-        if (view.loading || view.readFailed || view.busyKey || !view.overview?.queue.some(row => row.exchangeNo === order.exchangeNo && row.status === "QUEUED")) {
+        if (view.loading || view.readFailed || view.rereadPending || view.busyKey || !view.overview?.queue.some(row => row.exchangeNo === order.exchangeNo && row.status === "QUEUED")) {
           throw new Error("当前兑换参数暂不能修改，请重新读取当前状态后操作。");
         }
         await mutate(`cancel:${order.exchangeNo}`, () => cancelG2ExchangeQueueOrder(order.exchangeNo, reason, OPERATOR(), order), "已取消");
@@ -809,7 +870,7 @@ function G2ExchangePage() {
     run: async (reason, value) => {
       const saved = pendingG2QueueBatch(batchAdminId);
       if (saved && g2ExchangeCommandExpired(saved)) { await checkOriginalBatch(saved); return; }
-      if (!saved && (!latest.current.overview?.swap.enabled || latest.current.loading || latest.current.readFailed || latest.current.busyKey)) {
+      if (!saved && (!latest.current.overview?.swap.enabled || latest.current.loading || latest.current.readFailed || latest.current.rereadPending || latest.current.busyKey)) {
         throw new Error("兑换已暂停，这一批没有处理。恢复兑换要到「紧急停用开关」页面。");
       }
       try {
@@ -848,7 +909,7 @@ function G2ExchangePage() {
     const recovery = record ? paramApproval.list().find((row) => row.commandKey === record.commandKey) : undefined;
     const pausedBlocked = !swap.enabled && !["fee", "feeMin"].includes(cap.key);
     const canEdit = allowed(capAuthority(cap.key));
-    const disabledReason = busyReason ?? (!record && !direct && readFailed ? "当前值没读到，重新加载后再改"
+    const disabledReason = busyReason ?? (!record && !direct && newWriteBlockedReason ? newWriteBlockedReason
       : !record && !direct && pausedBlocked ? "兑换已暂停，额度和超额度处置策略暂时不能改；手续费仍可改" : undefined);
     return (
       <ConfigRow key={cap.key} name={name}
@@ -880,7 +941,7 @@ function G2ExchangePage() {
       setRecoveryError(null);
       setRecoveryKey(ownPendingBatch.commandKey);
     }}>核对原处理</Button>
-    : <Button size="sm" variant="primary" disabledReason={busyReason ?? (!swap.enabled ? "兑换已暂停，后端会拒绝这一批" : queue.length === 0 ? "队列是空的，没有可处理的单" : undefined)} onClick={openBatch}>处理排队</Button>);
+    : <Button size="sm" variant="primary" disabledReason={busyReason ?? newWriteBlockedReason ?? (!swap.enabled ? "兑换已暂停，后端会拒绝这一批" : queue.length === 0 ? "队列是空的，没有可处理的单" : undefined)} onClick={openBatch}>处理排队</Button>);
 
   const batchItems = batchResult ? [
     ...batchResult.completed.map((row) => ({ ...row, kind: "completed" as const })),
@@ -1083,7 +1144,7 @@ function G2ExchangePage() {
           sub={<span data-mono>{selectedQueue.exchangeNo}</span>} busy={busy}
           footer={allowed("finprod_g2_queue_cancel") || directCommands.some(record => record.path === `/exchange/queue/${encodeURIComponent(selectedQueue.exchangeNo)}/cancel`) ? <Decision
             note="取消后退回预占的原币，之后不会再成交。"
-            danger={<Button variant="danger-outline" disabledReason={busyReason} aria-label="取消这笔兑换" onClick={() => cancelQueue(selectedQueue)}>取消这笔兑换</Button>} /> : undefined}>
+            danger={<Button variant="danger-outline" disabledReason={busyReason ?? (directCommands.some(record => record.path === `/exchange/queue/${encodeURIComponent(selectedQueue.exchangeNo)}/cancel`) ? undefined : newWriteBlockedReason)} aria-label="取消这笔兑换" onClick={() => cancelQueue(selectedQueue)}>取消这笔兑换</Button>} /> : undefined}>
           <JudgmentPoints rows={[
             { label: "排队原因", value: selectedQueue.gateReason, state: "warn" },
             { label: "后端标注", value: selectedQueue.etaLabel === "—" ? "—" : `${selectedQueue.etaLabel} 处理`, reason: "这是后端固定写的文字，不是排好的处理时间；目前要在这页点「处理排队」才会成交。" },
