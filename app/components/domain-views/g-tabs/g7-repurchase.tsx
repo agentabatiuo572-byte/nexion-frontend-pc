@@ -91,7 +91,7 @@ const PARAM: Record<string, {
     loosen: "调高",
     tighten: "调低",
     existing: "已有订单开仓时记下的倍率不变",
-    future: "之后新开的订单按新倍率记录；目前不据此发放好友奖励",
+    future: "之后新开的订单按新倍率记录",
     hint: "1–10，最多两位小数",
     unit: "倍",
     note: "产品已定好友倍率先不发奖：改了只影响记录的倍率，不会马上多发或少发钱。",
@@ -408,7 +408,7 @@ function G7RepurchasePage() {
 
   const header = (
     <PageHeader pageId="G7" title="锁定计划"
-      summary="App 里的锁定计划入口目前不开放；这页维护锁定计划的规则，查看历史订单。"
+      summary="App 入口目前不开放；这页维护规则、查看历史订单。"
       meta={overview ? "打开时读取，不自动刷新；改完用返回的结果刷新" : undefined}
       readOnly={overview && !canWriteAny ? "你只能查看；这个账号没有修改锁定计划参数的权限。" : undefined} />
   );
@@ -626,8 +626,8 @@ function G7RepurchasePage() {
           explain="直接修改时后端答复这一项有一张审批单还没处理完。页面看不到单号，也不知道是谁提交的。">
           {lockedNames.join("、")}被一张审批单锁住，现在改不了</Conclusion>
       : <Conclusion state="neutral" icon={Lock}
-          hint="改规则只影响之后新开的订单；已有订单按下单时的规则到期或提前解锁。"
-          explain="未结束是待锁定、锁仓中、到期未领取三种状态的订单，不限哪天下单。用户到期后要自己领取，这页不能代领、不能提前解锁。">
+          hint="改规则只影响之后新开的订单。"
+          explain="未结束是待锁定、锁仓中、到期未领取三种状态的订单，不限哪天下单。已有订单按下单时的规则到期或提前解锁；用户到期后要自己领取，这页不能代领、不能提前解锁。">
           {openCount > 0 ? `还有 ${fmtCount(openCount)} 单锁定计划没有结束` : "没有未结束的锁定计划订单"}</Conclusion>;
 
   const distRows = distributionRows(overview.amountDistribution);
