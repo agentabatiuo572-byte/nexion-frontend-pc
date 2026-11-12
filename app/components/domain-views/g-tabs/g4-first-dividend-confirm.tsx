@@ -3,6 +3,7 @@
 import { fetchG4GenesisOverview, type G4Overview } from "@/lib/admin/g4-client";
 import { configApprovalOriginalInput, pendingConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
+import { Fact, Facts, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 
 export function G4FirstDividendConfirm({ session, epoch, expectedRevision, readActive, onClose, onDone }: {
@@ -39,15 +40,26 @@ export function G4FirstDividendConfirm({ session, epoch, expectedRevision, readA
 
   return <OperationConfirmModal
     action="首次配置每日收益比例"
+    title={pending ? "每日收益比例首次配置的原申请" : "首次配置每日收益比例"}
+    effect={<StatusTag tone="progress" filled explain="首次把 0% 改成正数要另一位有日分红权限和审批批准权的在职超级管理员批准；批准前仍是 0%，不发分红。">批准后生效</StatusTag>}
+    facts={<Facts>
+      <Fact k="改的是">每日收益比例（每个合格节点每天按「所属系列单价 × 这个比例」发收益）</Fact>
+      <Fact k="现在">0%（未配置，不发分红）</Fact>
+      <Fact k="谁来批">另一位在职超级管理员，要有审批批准权和每日收益比例权限；你自己不能批</Fact>
+      <Fact k="批准前">仍是 0%，不发分红</Fact>
+      <Fact k="批准后">后端再核对一次比例版本和兑付覆盖率，通过后写入新比例；之后新建的分红批次按它算</Fact>
+      <Fact k="付不付钱">批准本身不付钱；之后每天发分红时才付 USDT</Fact>
+    </Facts>}
+    statedBrief={{ impact: "首次配置要批准，批准前不发分红。", check: "核对比例和决策编号；理由写清依据或工单号。" }}
     detail="当前每日收益比例为 0%。"
     briefKind="config"
     reasonMin={8}
     reasonMax={200}
     edit={{ kind: "number", label: "目标每日收益比例（%）", current: "0", unit: "%",
-      min: 0.000001, max: 5, step: 0.000001, initialValue: original?.[0].value, submitEditValue: true }}
+      min: 0.000001, max: 5, step: 0.000001, initialValue: original?.[0].value, submitEditValue: true, hint: "0.000001–5，单位 %/日" }}
     businessForm={{ kind: "multi-field", fields: [{
       key: "decisionRef", label: "产品或财务决策编号", inputKind: "text",
-      current: original?.[0].decisionRef ?? "", minLength: 3, maxLength: 128, required: true,
+      current: original?.[0].decisionRef ?? "", minLength: 3, maxLength: 128, required: true, help: "3–128 字，写产品或财务决议的编号",
     }] }}
     getPendingReason={() => {
       const record = pendingConfigApproval("G4", session.adminId);
@@ -58,7 +70,7 @@ export function G4FirstDividendConfirm({ session, epoch, expectedRevision, readA
       expired: !!pending && Date.now() >= pending.expiresAt,
       resolve: () => ({
         heading: "首次配置需另一位有权超管批准",
-        completionCopy: "待审期间每日收益比例仍为 0%。提交和批准时均检查兑付覆盖率。",
+        completionCopy: "待审期间每日收益比例仍为 0%。提交审批时和批准时后端各检查一次比例版本和兑付覆盖率。",
       }),
       recover: () => submit(true),
       retry: () => submit("retry-original").then(() => undefined),

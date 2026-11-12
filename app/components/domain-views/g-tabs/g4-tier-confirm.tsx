@@ -10,6 +10,8 @@ import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/ad
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import { G4CatalogApprovalRequiredError, type G4Overview } from "@/lib/admin/g4-client";
+import { ArrowLeftRight } from "lucide-react";
+import { Fact, Facts, Notice as RdNotice, StatusTag as RdStatusTag } from "@/app/components/rd";
 import { Modal, OperationConfirmModal, type BusinessFormValue } from "../design-kit";
 
 export type G4TierChange = {
@@ -194,15 +196,34 @@ export function G4TierConfirm({ session, epoch, requested, readActive, onDirect,
     return true;
   }
 
+  // ——以下只用于显示——
+  const tierFacts = (value?: string) => {
+    void value;
+    return <Facts>
+      <Fact k="改的是">{deleting ? `删除档位 ${basis.tierId}` : basis.tierId ? `档位 ${basis.tierId}` : "在最后一档后面新增一档"}</Fact>
+      <Fact k="区间">{deleting ? `${number(basis.from)}–${number(basis.currentTo)} 张` : `起点 ${number(basis.from)}，截止填大于起点的整数`}</Fact>
+      {deleting && <Fact k="空出来的区间">{basis.previousTierId ? <>上一档 {basis.previousTierId} 的截止延长到 {number(basis.currentTo)}</> : <>下一档 {basis.nextTierId} 的起点提前到 {number(basis.from)}</>}；系列总量不变，至少保留一档</Fact>}
+      {!deleting && basis.nextTierId && <Fact k="下一档">改截止时下一档 {basis.nextTierId} 的起点跟着改，系列总量不变</Fact>}
+      {!deleting && !basis.nextTierId && <Fact k="系列总量">{basis.seriesSetupRequired ? "还没发布系列；发布时按最后一档的截止定总量" : `最后一档的截止就是系列总量，现在 ${number(basis.totalSupply)} 张，不能少于已售 ${number(basis.sold)} 张`}</Fact>}
+      <Fact k="什么时候生效">扩大已有系列的总量，或让还没卖出的节点涨价（删除也可能抬价）：提交审批，另一位有价格档位权限的在职超级管理员批准后才生效，批准前沿用原档位和原总量。其余修改确认后立即生效</Fact>
+      <Fact k="付不付钱">不付钱；只影响以后的销售，已下单的按下单时价格。目录审批不查兑付覆盖率</Fact>
+    </Facts>;
+  };
   return <OperationConfirmModal
     action={deleting ? `删除价格档位 · ${basis.tierId}` : basis.tierId ? `修改价格档位 · ${basis.tierId}` : "新增价格档位"}
+    title={opening.pending ? "价格档位的原申请" : deleting ? `删除价格档位 ${basis.tierId}` : basis.tierId ? `修改价格档位 ${basis.tierId}` : "新增价格档位"}
+    effect={<RdStatusTag tone="neutral" icon={ArrowLeftRight} explain="后端在提交时判断方向：扩容或未售涨价要另一位有权超管批准；其余修改确认后立即生效。直接保存时后端答复要审批的，框不关，输入留着，再点一次确认才提交审批。">扩容或未售涨价要批准 · 其余立即生效</RdStatusTag>}
+    facts={tierFacts}
+    statedBrief={{ impact: "改的是以后销售的档位和价格，已下单的订单不变。", check: "截止和单价都填整数；理由写清依据或工单号。" }}
+    confirmTone={deleting ? "danger" : undefined}
+    confirmLabel={deleting ? "确认删除" : undefined}
     detail={<>{deleting
       ? <>删除 <b>{basis.tierId}</b> 档（{number(basis.from)}–{number(basis.currentTo)}）。空出来的区间会自动补上（{basis.previousTierId ? <>上一档 <b>{basis.previousTierId}</b> 的截止延长到 {number(basis.currentTo)}</> : <>下一档 <b>{basis.nextTierId}</b> 的起点提前到 {number(basis.from)}</>}），至少保留一档。</>
       : <>起点 {number(basis.from)}，截止和单价都填整数。{basis.nextTierId && <>改截止时下一档 <b>{basis.nextTierId}</b> 的起点会跟着调整，系列总量不变。</>}尚未发布系列时仍需单独发布，不会自动开放销售。</>}
       增加已有系列总供应量或服务端判定提高未售价格时，须另一位有权超管批准；待审期间沿用原档位和原总量。只影响以后的销售，已下单的按下单时价格结算。</>}
     content={<>
-      {opening.pending && <p className="tiny" role="status">核对原提案 · 档位版本 {basis.expectedTiersVersion} · 命令号 {opening.pending.commandKey}。查询原单不会把旧方案重新提交为当前配置。</p>}
-      {session.authorities.includes("platform_a2_read") && <Link className="l-btn sm" href="/platform/audit?domain=G">到操作记录查看审批</Link>}
+      {opening.pending && <RdNotice tone="warn" title="这是原档位申请"><p>档位版本 {basis.expectedTiersVersion} · 命令号 <span data-mono>{opening.pending.commandKey}</span>。查询原单不会把旧方案重新提交为当前配置。</p></RdNotice>}
+      {session.authorities.includes("platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=G">到操作记录查看审批</Link>}
     </>}
     briefKind="config" reasonMin={8} reasonMax={200} amplifies={false}
     businessForm={deleting ? undefined : { kind: "multi-field", title: basis.tierId ? `档位 ${basis.tierId}` : "新价格档位", hint: `起点固定为 ${number(basis.from)}。截止和单价都填整数。`, fields: [
@@ -225,7 +246,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, onDirect,
       resolve: value => requiresApproval(value) ? {
         heading: "需另一位有权超管批准后生效",
         disabledReason: approvalPermissionError(value),
-        completionCopy: "待审期间档位和系列总量保持原值，批准后同步生效。提交与批准均按服务端版本及覆盖率规则检查。",
+        completionCopy: "待审期间档位和系列总量保持原值，批准后同步生效。提交和批准时后端核对档位版本和快照；目录审批不查兑付覆盖率。",
       } : undefined,
       recover: () => execute("lookup"),
       retry: () => execute("retry").then(() => undefined),

@@ -36,6 +36,9 @@ export function GDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   };
 
+  // G4 已改版：整页由 G4Genesis 自己包 RdPage、写页头、开确认框。
+  if (tab === "G4") return <G4Genesis />;
+
   return (
     <div className="dkpage gdom">
       <DomainHeader {...meta} />
@@ -43,7 +46,6 @@ export function GDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "G1" && <G1Staking />}
       {tab === "G2" && <G2Exchange ctx={ctx} />}
       {tab === "G3" && <G3Market ctx={ctx} />}
-      {tab === "G4" && <G4Genesis ctx={ctx} />}
       {tab === "G7" && <G7Repurchase ctx={ctx} />}
 
       {mc && (

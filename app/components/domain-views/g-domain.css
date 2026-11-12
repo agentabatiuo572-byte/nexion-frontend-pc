@@ -188,3 +188,61 @@ html[data-theme="dark"] .gdom .g3-market-confirm { --admin-confirm-focus: var(--
 .gdom .param-grid .p .v { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--ink); display: flex; align-items: baseline; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 .gdom .param-grid .p .v .l-btn { margin-left: auto; }
 .gdom .param-grid .p .s { font-size: 11px; color: var(--ink-4); margin-top: 4px; line-height: 1.45; }
+
+/* ============================ G4 创世节点销售与收益（改版，RdPage） ============================
+   只用 --rd-* 令牌。首屏：卖到第几张、落在哪一档（刻度条 + 档位阶梯），今天的分红，原申请；下面是市场与转让、各组设置和持有记录。 */
+.g4x-param { display: grid; gap: 2px; min-width: 0; }
+.g4x-value { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.g4x-value-num { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.g4x-dir { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.g4x-recover { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.g4x-recover li { display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr) auto auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.g4x-recover-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.g4x-recover-change { min-width: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.g4x-recover-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.g4x-recover-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.g4x-recover-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+@media (max-width: 1279px) {
+  .g4x-recover li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto; }
+  .g4x-recover-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+.g4x-sales { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr); gap: 24px; align-items: start; }
+@media (max-width: 1279px) { .g4x-sales { grid-template-columns: minmax(0, 1fr); } }
+.g4x-progress { display: grid; gap: 12px; --rd-track-w: 100%; }
+.g4x-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.g4x-progress-name { display: inline-flex; align-items: center; gap: 4px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.g4x-progress-pct { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.g4x-nums { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 0; }
+.g4x-nums > div { display: flex; gap: 8px; }
+.g4x-nums dt { color: var(--rd-text-3); }
+.g4x-nums dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.g4x-tiers { display: grid; gap: 12px; min-width: 0; }
+.g4x-tiers-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.g4x-tiers-title { display: inline-flex; align-items: center; gap: 4px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.g4x-tiers-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.g4x-tier-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.g4x-block { display: grid; gap: 8px; padding-bottom: 16px; border-bottom: 1px solid var(--rd-line); }
+.g4x-block-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.g4x-block-name { display: inline-flex; align-items: center; gap: 4px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.g4x-block-big { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; color: var(--rd-text); }
+.g4x-block-big small { margin-left: 4px; font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.g4x-block-big[data-zero] { color: var(--rd-text-3); }
+.g4x-sub { padding-top: 16px; }
+.g4x-sub-title { margin-bottom: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.g4x-wrap { overflow-wrap: anywhere; white-space: pre-wrap; }
+.g4x-sources { margin: 0; overflow-wrap: anywhere; color: var(--rd-text-2); }
+.g4x-sources-note { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.g4x-sim-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; gap: 16px; margin-bottom: 16px; }
+@media (max-width: 1279px) { .g4x-sim-form { grid-template-columns: repeat(3, minmax(0, 1fr)); } .g4x-sim-form > :last-child { grid-column: 1 / -1; justify-self: start; } }
+.g4x-node-table, .g4x-sim-table { table-layout: fixed; }
+.g4x-node-table th:nth-child(1) { width: 22%; }
+.g4x-node-table th:nth-child(2) { width: 18%; }
+.g4x-node-table th:nth-child(3) { width: 22%; }
+.g4x-node-table th:nth-child(4) { width: 18%; }
+.g4x-sim-table th:nth-child(1) { width: 26%; }
+.g4x-sim-table th:nth-child(2) { width: 12%; }
+.g4x-sim-table th:nth-child(6) { width: 14%; }
+@media (max-width: 1279px) {
+  .g4x-node-table th:nth-child(1) { width: 24%; }
+  .g4x-sim-table th:nth-child(1) { width: 24%; }
+}
