@@ -4,9 +4,9 @@
  * K4 风险评分规则的展示件：只画已读到的数据，不发请求、不判权限、不改请求内容。
  * 状态和提交处理都在 k4-scoring.tsx，这里只收值和回调。
  */
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { CircleOff, Crosshair, Minus } from "lucide-react";
-import { BarList, Cell, Check, DiffList, Fold, NumberInput, Panel, RatioBar, ScaleBar, StatusTag, Table, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
+import { BarList, Cell, Check, DiffList, Explain, Fold, NumberInput, Panel, RatioBar, ScaleBar, StatusTag, Table, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
 import { K4_DIMENSION_KEYS, type K4Contribution, type K4Dimension, type K4DimensionKey, type K4Distribution, type K4Model, type K4ScoreMappingKey, type K4ScoreMappings } from "@/lib/admin/k-client";
 
 export const fmt = (value: number) => value.toLocaleString("en-US");
@@ -110,7 +110,7 @@ export const bandsText = (model: Pick<EditableModel, "bandLowMax" | "bandHighMin
 /** 分档线和自动升级线落在 0–100 分数轴上哪里。看它能判断：多少分算中、高风险，升级线在高风险里的哪个位置。 */
 export function BandAxis({ model, label }: { model: Pick<EditableModel, "bandLowMax" | "bandHighMin" | "autoEscalateScore">; label: string }) {
   const valid = model.bandLowMax >= 0 && model.bandLowMax < model.bandHighMin && model.bandHighMin <= 100 && model.autoEscalateScore >= model.bandHighMin && model.autoEscalateScore <= 100;
-  if (!valid) return <p className="k4-quiet" data-kind="problem">分档线的次序不对，改正后这里画分数轴。</p>;
+  if (!valid) return <span className="k4-quiet" data-kind="problem">分档线的次序不对，改正后这里画分数轴。</span>;
   return <ScaleBar label={label} valueText={bandsText(model)} max={100} bands={bandSegments(model)} />;
 }
 
@@ -227,7 +227,7 @@ export function ContributionTable({ rows, total, label }: { rows: K4Contribution
         <Th>命中</Th>
         <Th align="right">子分 · 权重</Th>
         <Th>贡献</Th>
-        <Th>证据（后端原文）</Th>
+        <Th><span className="k4-th">证据（后端原文）<Explain label="证据是什么" content="后端拼好的原文：金额带美元符号、四舍五入到 2 位，没有单独的币种和精确金额。这里原样显示，不作为精确金额（已提后端 K4-BE-01）。" /></span></Th>
       </tr></thead>
       <tbody>
         {rows.map((row) => (
@@ -264,11 +264,12 @@ export function WeightEditRow({ item, value, on, activeValue, activeOn, baseLabe
   onSource: (on: boolean) => void;
   error?: string;
 }) {
+  const id = useId();
   return (
     <div className="k4-edit-row" data-invalid={error ? "" : undefined}>
-      <div className="k4-edit-name"><span>{item.name}</span><span className="k4-quiet">{item.source}</span></div>
+      <label className="k4-edit-name" htmlFor={id}><span>{item.name}</span><span className="k4-quiet">{item.source}</span></label>
       <div className="k4-edit-entry">
-        <NumberInput unit="%" min={0} max={100} step={1} disabled={disabled} value={String(value)} aria-invalid={error ? true : undefined}
+        <NumberInput id={id} unit="%" min={0} max={100} step={1} disabled={disabled} value={String(value)} aria-invalid={error ? true : undefined}
           aria-label={`${item.name} 权重百分比`} onChange={(event) => onValue(Number(event.target.value))} />
         <span className="k4-edit-was">{[activeValue !== value ? `${baseLabel} ${activeValue}%` : "", activeOn !== on ? (activeOn ? `${baseLabel}参与` : `${baseLabel}不参与`) : ""].filter(Boolean).join(" · ") || null}</span>
       </div>
@@ -292,11 +293,12 @@ export function NumberEditRow({ label, unit, min, max, value, activeValue, baseL
   onValue: (value: number) => void;
   ariaLabel: string;
 }) {
+  const id = useId();
   return (
     <div className="k4-edit-row" data-num="" data-invalid={error ? "" : undefined}>
-      <div className="k4-edit-name"><span>{label}</span><span className="k4-quiet">{fmt(min)}–{fmt(max)} {unit}</span></div>
+      <label className="k4-edit-name" htmlFor={id}><span>{label}</span><span className="k4-quiet">{fmt(min)}–{fmt(max)} {unit}</span></label>
       <div className="k4-edit-entry">
-        <NumberInput unit={unit} min={min} max={max} step={1} disabled={disabled} value={String(value)} aria-invalid={error ? true : undefined}
+        <NumberInput id={id} unit={unit} min={min} max={max} step={1} disabled={disabled} value={String(value)} aria-invalid={error ? true : undefined}
           aria-label={ariaLabel} onChange={(event) => onValue(Number(event.target.value))} />
         <span className="k4-edit-was">{activeValue !== value ? <>{baseLabel} {fmt(activeValue)} {unit}</> : null}</span>
       </div>

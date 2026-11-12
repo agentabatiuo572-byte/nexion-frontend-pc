@@ -743,7 +743,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
             { key: "diff", label: "和生效版比", value: changedCount(draftRows) > 0 ? `改了 ${changedCount(draftRows)} 项，见下面标出的值` : "配置无变化" },
             { key: "why", label: "理由", value: overview.draft.reason },
           ]} />
-        ) : <p className="k4-quiet">没有草稿，线上一直按 v{overview.model.version} 评分。{canModelWrite ? "要调整就起草新版本，保存后再发布。" : ""}</p>}
+        ) : <p className="k4-quiet">暂无草稿</p>}
         {!canModelWrite && <p className="k4-quiet">你没有修改评分规则的权限，请联系管理员在「角色管理」里开通。</p>}
         {canModelWrite && !canPublish && overview.draft && <p className="k4-quiet">发布要由有评分规则修改权限的超级管理员操作。</p>}
       </Panel>
@@ -769,7 +769,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
         <WeightTable dimensions={overview.dimensions} active={activeEdit} draft={draftEdit ?? undefined} activeLabel={`生效 v${overview.model.version}`} draftLabel={overview.draft ? `草稿 v${overview.draft.version}` : undefined} />
       </Panel>
       <Panel title="分档线和各档人数" icon={Users} tone="role-3"
-        explain={<><p>有效分低于中风险起始分是低风险，达到高风险起始分是高风险，中间是中风险。</p><p>新提现时用户的风险分达到自动升级线，这笔提现转人工审核，并给有改分权限的管理员发提现升级告警；分数本身不冻结账户、不动钱包。</p></>}>
+        explain={<><p>有效分低于中风险起始分是低风险，达到高风险起始分是高风险，中间是中风险。</p><p>新提现时用户的风险分达到自动升级线，这笔提现转人工审核，并给有改分权限的管理员发提现升级告警；分数本身不冻结账户、不动钱包。</p><p>各档人数按每个人现在存的有效分统计，排队重算的人按旧分数计入；占比保留一位小数，相加不一定正好 100%。</p></>}>
         <div className="k4-bands">
           <div className="k4-axis-block">
             <div className="k4-axis-row"><span className="k4-axis-label">生效 v{overview.model.version}</span><BandAxis model={activeEdit} label={`生效 v${overview.model.version} 的分档线`} /></div>
@@ -779,7 +779,6 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
           <div className="k4-dist-block">
             <p className="k4-block-title">各档人数 <span className="k4-quiet">按生效 v{overview.model.version} 的线 · 共 {fmt(overview.totalUsers)} 人</span></p>
             <Distribution rows={dist} total={overview.totalUsers} />
-            <p className="k4-quiet">人数按每个人现在存的有效分统计，排队重算的人按旧分数计入；占比保留一位小数，相加不一定正好 100%。</p>
           </div>
         </div>
       </Panel>
@@ -835,7 +834,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       </section>
       <section className="k4-edit-section" aria-labelledby="k4-edit-bands">
         <h3 id="k4-edit-bands" className="k4-edit-title">分档线和自动升级线</h3>
-        <div className="k4-axis-row"><span className="k4-axis-label">改后</span><BandAxis model={edit} label="改后的分档线" /></div>
+        <p className="k4-axis-row"><span className="k4-axis-label">改后</span><BandAxis model={edit} label="改后的分档线" /></p>
         <NumberEditRow label="中风险起始分" unit="分" min={0} max={100} value={edit.bandLowMax} baseLabel={baseLabel} activeValue={sourceEdit.bandLowMax} disabled={false} error={issues.low} ariaLabel="中风险起始分"
           onValue={(value) => setModelDraft({ ...edit, bandLowMax: value })} />
         <NumberEditRow label="高风险起始分" unit="分" min={0} max={100} value={edit.bandHighMin} baseLabel={baseLabel} activeValue={sourceEdit.bandHighMin} disabled={false} error={issues.high} ariaLabel="高风险起始分"
@@ -910,7 +909,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
     : lookupError
       ? <Panel title="用户评分" id="k4-user"><BlockState state="error" title="查询失败" detail={lookupError} onRetry={userSearch.trim() ? () => void loadUser(userSearch) : undefined} /></Panel>
       : !lookupUser
-        ? <Panel title="用户评分" id="k4-user"><BlockState state="empty" title="请选择用户，查看风险分怎么来的" detail="选中后能看到有效分、系统评分、五个维度的证据和最近的评分记录。" /></Panel>
+        ? <Panel title="用户评分" id="k4-user"><BlockState state="empty" title="请选择用户，查看风险分怎么来的" /></Panel>
         : (
           <Panel id="k4-user" title={<span className="k4-user-title">{userRef(lookupUser.userNo)}<BandTag tone={lookupUser.bandTone}>{lookupUser.bandLabel}</BandTag>{lookupUser.overridden && <StatusTag tone="warn" icon={PenLine}>人工改分</StatusTag>}</span>}
             sub={`评分时间 ${lookupUser.asOf}`}
@@ -937,7 +936,6 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
             </div>
             {!canOverride && !canRecompute && <p className="k4-quiet">你没有修改用户风险分的权限。</p>}
             <ContributionTable rows={lookupUser.contributions} total={lookupUser.modelScore} label={`${lookupUser.userNo} 的五维贡献`} />
-            <p className="k4-quiet k4-evidence-note">证据是后端拼好的原文：金额带美元符号、四舍五入到 2 位，没有单独的币种和精确金额，这里原样显示，不作为精确金额（已提后端 K4-BE-01）。</p>
             <Fold title="最近评分记录" icon={History} summary={lookupUser.history.length > 0 ? `最近 ${lookupUser.history.length} 次 · 最新 ${lookupUser.history[0].createdAt}` : "暂无记录"}
               explain="后端只给最近 20 次，按时间从新到旧；点一行看那一次的五维明细和理由。">
               {lookupUser.history.length === 0 ? <p className="k4-quiet">暂无历史评分。</p> : (
