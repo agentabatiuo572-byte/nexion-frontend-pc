@@ -654,7 +654,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     ctx.openActionConfirm({ briefKind: "security",
       ...recovery(attempt),
       action: `冻结关联账户 · ${r.cells[0]}`,
-      title: "冻结关联账户",
+      title: retained ? "重试原操作 · 冻结关联账户" : "冻结关联账户",
       detail: `冻结 ${r.cluster || r.rowId} 这组关联账户，套利证据会一起记入操作记录。`,
       effect: <StatusTag tone="progress" filled explain="另一位管理员批准后才执行，不能自己批。批准前账户、登录和提现都不变。">批准后生效</StatusTag>,
       confirmLabel: "提交审批",
@@ -695,7 +695,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     ctx.openActionConfirm({ briefKind: "config",
       ...recovery(attempt),
       action: `调整检测阈值 · ${p.name}`,
-      title: `调整${help?.label ?? p.name}`,
+      title: `${retained ? "重试原操作 · " : ""}调整${help?.label ?? p.name}`,
       detail: `${p.name} · 当前 ${boardBaselineText(p.value)}。`,
       effect: IMMEDIATE,
       confirmLabel: "确认修改",
@@ -744,7 +744,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       formKey: ++formRevision.current,
       initialReason: draft?.reason,
       action: `调整验证码设置 · ${definition.label}`,
-      title: firstConfig ? `首次配置${definition.label}` : `调整${definition.label}`,
+      title: `${retained ? "重试原操作 · " : ""}${firstConfig ? "首次配置" : "调整"}${definition.label}`,
       detail: `${definition.label} · 当前 ${param.value} ${definition.unit}。`,
       effect: firstConfig
         ? <StatusTag tone="progress" filled explain="首次配置要另一位超级管理员批准后才写入，不能自己批。批准前 App 仍按系统默认值处理。">批准后生效</StatusTag>
