@@ -8,13 +8,13 @@ import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * G2 兑换额度与规则（改版，RdPage）— 数据来自后端 /api/admin/market/exchange。
- * 首屏回答：兑换开着还是暂停、今天的额度用了多少、队列里压着多少；每个参数旁写清改哪个方向要另一位超管批准。
+ * 首屏回答：兑换开着还是暂停、今天的额度用了多少、队列里压着多少；每个参数旁写清改哪个方向要另一位超级管理员批准。
  * 参数审批沿用共用实现；直接写由 G2 命令记录保存原请求和恢复上下文。
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
-  ArrowLeftRight, Ban, CircleHelp, Clock3, Coins, Database, Gauge, Globe2, Hourglass, ListOrdered, Lock, PauseCircle, PlayCircle, ShieldCheck, SlidersHorizontal,
+  ArrowLeftRight, Ban, CircleHelp, ShieldAlert, Clock3, Coins, Database, Gauge, Globe2, Hourglass, ListOrdered, Lock, PauseCircle, PlayCircle, ShieldCheck, SlidersHorizontal,
 } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, ConfigList, ConfigRow, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints, Modal, Notice,
@@ -43,6 +43,8 @@ import {
 } from "@/lib/admin/g2-exchange-command";
 import { summarizeG2BatchResult, type G2BatchResult } from "@/lib/admin/g2-batch-result";
 import { useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 
 const OPERATOR = currentAdminOperator;
 const BATCH_AUTHORITY = "finprod_g2_write";
@@ -111,9 +113,9 @@ function fromMicros(value: bigint) {
   return amount(`${negative ? "-" : ""}${whole}.${fraction}`);
 }
 
-/** 后端时间原样显示：只把 T 换成空格、去掉秒，不换时区。 */
+/** 后端时间按业务时区写成「2026-11-13 09:30」；时区在列头或区块里写一次。 */
 function timeText(value: string) {
-  return value ? value.replace("T", " ").slice(0, 16) : "—";
+  return value ? formatBusinessTimeCompact(value, "—") : "—";
 }
 
 function capEditValue(cap: G2Cap) {
@@ -219,68 +221,12 @@ function paramValueText(key: string, raw: string | undefined, display?: string) 
   return value;
 }
 
-/** 原申请记录的状态：标签、色调和气泡。 */
+/** 原申请记录的状态：标签、色调和气泡（G 域五页同一写法）。 */
 function recoveryTag(record: GParamRecovery) {
-  if (record.status === "unknown") return <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原审批单；24 小时内也可以按原请求重试，后端按原命令号去重，不会建第二张。">结果未知</StatusTag>;
-  if (record.status === "pending") return <StatusTag tone="warn" icon={Clock3} explain="等另一位在职超级管理员在「操作记录与审批」批准。批准前参数不变；这一项被审批锁住，调高调低都改不了。">待审批</StatusTag>;
-  if (record.status === "expired") return <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查不到也不能据此认定没提交。">已过期</StatusTag>;
-  const label = { approved: "已批准", rejected: "已驳回", withdrawn: "已撤回" }[record.status];
-  return <StatusTag tone="done" explain="原审批单已有结论。点「查询原审批单」读回当前值后，这条记录会清掉。">{label}</StatusTag>;
-}
-
-/**
- * 原参数申请：待审批、结果未知、过期的都列在这里，每条写哪个参数、申请改成什么、现在什么状态、能做什么。
- * 只看本机保存的原记录，不依赖概览读取；按钮只查原单或按原请求重试，不拼新申请。
- */
-function ParamRecoveryNotice({ approval, toast }: {
-  approval: ReturnType<typeof useGParamApproval>;
-  toast: (message: string) => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const records = approval.list();
-  if (records.length === 0) return null;
-  const recover = async (obj: string, retry: boolean) => {
-    setBusy(true);
-    try {
-      if (retry) await approval.retry(obj);
-      else if (!await approval.query(obj)) toast("暂未查到原审批单，原记录继续保留。");
-    } catch (error) {
-      toast(displayAdminError(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const waiting = records.every((record) => record.status === "pending");
-  return (
-    <Notice tone="warn" title={<>{waiting ? `${records.length} 项参数修改在等审批` : `${records.length} 项参数修改申请待确认`}
-      <Explain label="原申请怎么处理" content={<>
-        <p>这里只列你在这台电脑上提交过的原申请。原申请只能查询原审批单，或在 24 小时内按原内容、原命令号重试，不能改值。</p>
-        <p>要改成别的值，等原申请有结论后再在「额度和手续费」里发起新修改。</p>
-      </>} /></>}>
-      <ul className="g2x-recover" aria-label="原参数申请">
-        {records.map((record) => {
-          const key = record.request.obj;
-          const params = record.request.command.params as { value?: unknown; expectedValue?: unknown };
-          const to = paramValueText(key, typeof params.value === "string" ? params.value : undefined);
-          const from = typeof params.expectedValue === "string" ? paramValueText(key, params.expectedValue) : undefined;
-          return (
-            <li key={record.commandKey}>
-              <span className="g2x-recover-name">{paramName(key)}</span>
-              <span className="g2x-recover-change">{from ? <Change from={from} to={to} /> : <>申请改成 {to}</>}</span>
-              <span className="g2x-recover-state">
-                {recoveryTag(record)}
-                {record.ticket && <span className="g2x-recover-ticket">审批单 <span data-mono>{record.ticket.id}</span></span>}
-              </span>
-              <span className="g2x-recover-actions">
-                <Button size="sm" disabled={busy} aria-label={`查询${paramName(key)}的原审批单`} onClick={() => void recover(key, false)}>查询原审批单</Button>
-                {record.canRetry && <Button size="sm" disabled={busy} aria-label={`按原请求重试${paramName(key)}`} onClick={() => void recover(key, true)}>按原请求重试</Button>}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </Notice>
-  );
+  if (record.status === "unknown") return unknownTag("approval");
+  if (record.status === "pending") return pendingTag();
+  if (record.status === "expired") return expiredTag("approval");
+  return resolvedTag(record.status);
 }
 
 /** 兑换单号：放不下时中间省略，留尾段区分。 */
@@ -350,7 +296,9 @@ function G2ExchangePage() {
   const [lockedParams, setLockedParams] = useState<Record<string, string>>({});
   const ownPendingBatch = pendingBatch?.adminId === batchAdminId ? pendingBatch : undefined;
   const recoveryBatch = ownPendingBatch?.commandKey === recoveryKey ? ownPendingBatch : undefined;
-  const paramRecovery = <ParamRecoveryNotice approval={paramApproval} toast={toast} />;
+  const [recoverBusy, setRecoverBusy] = useState(false);
+  /** 只用于显示：这些错误句已经由原操作提醒里的一行承接，不再在「操作提示」里重复。 */
+  const coveredErrors = useRef(new Set<string>());
   const pendingConfirmReason = mc?.getPendingReason?.();
   useEffect(() => {
     if (!mc) { confirmationRecovery.current = null; return; }
@@ -424,6 +372,7 @@ function G2ExchangePage() {
       toast(success);
     } catch (err) {
       const message = messageOf(err);
+      if (err instanceof G2OutcomeUnknownError) coveredErrors.current.add(message);
       setError(message);
       toast(err instanceof G2OutcomeUnknownError ? message : `操作失败 · ${message}`);
       throw err;
@@ -456,6 +405,75 @@ function G2ExchangePage() {
     } catch (error) {
       setError(messageOf(error));
     }
+  };
+
+  /**
+   * 原操作提醒：走审批的原申请、直接写的原记录（参数、暂停、取消排队）和处理排队的原批次都列在这里；
+   * 概览读取中、失败时也显示。actionsFor 只在概览读到后传，用页面原来的入口打开原确认框或核对框。
+   */
+  const recoveryNotice = (actionsFor?: (record: G2PendingCommand) => { retry?: () => void; query?: () => void }) => {
+    const approvals = paramApproval.list();
+    const directs = listG2ExchangeCommands(batchAdminId);
+    const recover = async (obj: string, retry: boolean) => {
+      setRecoverBusy(true);
+      try {
+        if (retry) await paramApproval.retry(obj);
+        else if (!await paramApproval.query(obj)) toast("暂未查到原审批单，原记录继续保留。");
+      } catch (err) {
+        toast(displayAdminError(err));
+      } finally {
+        setRecoverBusy(false);
+      }
+    };
+    const rows: GRecoveryRow[] = [
+      ...approvals.map((record) => {
+        const key = record.request.obj;
+        const params = record.request.command.params as { value?: unknown; expectedValue?: unknown };
+        const to = paramValueText(key, typeof params.value === "string" ? params.value : undefined);
+        const from = typeof params.expectedValue === "string" ? paramValueText(key, params.expectedValue) : undefined;
+        return {
+          key: record.commandKey, name: paramName(key), submittedAt: record.createdAt, ticket: record.ticket?.id, tag: recoveryTag(record),
+          change: from ? <Change from={from} to={to} /> : <>申请改成 {to}</>,
+          actions: <>
+            <Button size="sm" disabled={recoverBusy} aria-label={`查询${paramName(key)}的原结果`} onClick={() => void recover(key, false)}>查询原结果</Button>
+            {record.canRetry && <Button size="sm" disabled={recoverBusy} aria-label={`按原请求重试${paramName(key)}`} onClick={() => void recover(key, true)}>按原请求重试</Button>}
+          </>,
+        };
+      }),
+      ...directs.map((record) => {
+        const param = /^\/exchange\/params\/(\w+)$/.exec(record.path)?.[1];
+        const batch = record.path === "/exchange/queue/process";
+        const cancelNo = /^\/exchange\/queue\/([^/]+)\/cancel$/.exec(record.path)?.[1];
+        const order = record.context?.order;
+        const name = param ? paramName(param) : batch ? "处理排队" : record.path === "/exchange/swap" ? "紧急暂停兑换" : "取消排队兑换";
+        const change = param
+          ? record.context?.cap ? <Change from={paramValueText(param, record.context.cap.value, record.context.cap.displayValue)} to={paramValueText(param, record.input.value)} /> : <>改成 {paramValueText(param, record.input.value)}</>
+          : batch ? <>这一批最多 {fmtCount(record.input.limit ?? 0)} 单</>
+          : record.path === "/exchange/swap" ? <Change from="开着" to="暂停" />
+          : <><span data-mono>{order?.exchangeNo ?? decodeURIComponent(cancelNo ?? "")}</span>{order ? ` · ${amount(order.amountUsdt)} USDT` : ""}</>;
+        const expired = g2ExchangeCommandExpired(record);
+        const handlers = actionsFor?.(record);
+        const query = handlers?.query ?? (batch ? () => void checkOriginalBatch(record as G2PendingBatch) : () => void readOriginalCommand(record));
+        return {
+          key: record.commandKey, name, change, submittedAt: record.createdAt, state: "direct-unknown",
+          tag: expired ? expiredTag("direct") : unknownTag("direct"),
+          actions: <>
+            <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`查询${name}的原结果`} onClick={query}>查询原结果</Button>
+            {!expired && handlers?.retry && <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`按原请求重试${name}`} onClick={handlers.retry}>按原请求重试</Button>}
+          </>,
+        };
+      }),
+    ];
+    const waiting = directs.length === 0 && approvals.length > 0 && approvals.every((record) => record.status === "pending");
+    return <GRecoveryNotice label="兑换的原操作" rows={rows}
+      title={`兑换的原操作 · ${rows.length} 项`}
+      lead={waiting
+        ? "有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。"
+        : `这些操作先只能查询原结果或按原请求重试，不能改成别的值${directs.some((record) => record.path === "/exchange/queue/process") ? "；处理排队的原批次确认之前不能开新的一批" : ""}。`}
+      explain={<>
+        <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的参数申请，直接生效但没收到结果的参数修改、紧急暂停、取消排队，以及处理排队的原批次。原操作只能查询，或在 24 小时内按原内容重试，不能改值。</p>
+        <p>要改成别的值，等原操作有结论后再在「额度和手续费」里发起新修改。处理排队的原批次只能查原回执，不会重发。</p>
+      </>} />;
   };
 
   const processQueueBatch = useCallback(async (limit: number, reason: string) => {
@@ -597,7 +615,7 @@ function G2ExchangePage() {
     return (
       <>
         {header}
-        {paramRecovery}
+        {recoveryNotice()}
         <BlockState state="loading" title="正在读取兑换额度与规则…" />
         {confirmModal}
       </>
@@ -608,7 +626,7 @@ function G2ExchangePage() {
     return (
       <>
         {header}
-        {paramRecovery}
+        {recoveryNotice()}
         <BlockState state="error" title="兑换数据读取失败"
           detail={<>页面不显示任何旧数据。点「重新加载」；一直失败请联系值班同事。<Explain label="失败原因" content={error || "没有收到数据。"} /></>}
           retryLabel="重新加载" onRetry={() => void reload()} />
@@ -673,17 +691,17 @@ function G2ExchangePage() {
           <Facts>
             <Fact k="改的是">{name}</Fact>
             {original && <Fact k="原申请"><Change from={currentText} to={nextText ?? "—"} /></Fact>}
-            <Fact k="什么时候生效" tone={loose ? "warn" : undefined}>{originalDirect ? new G2OutcomeUnknownError(originalDirect.commandKey).message : original
+            <Fact k="什么时候生效" tone={loose ? "warn" : undefined}>{originalDirect ? "提交结果未知，可能已经生效。有效期内按原内容重试，后端认得出是同一次提交，不会重复执行；过期后只能查询。" : original
               ? original.ticket?.status === "pending"
-                ? "审批单在等另一位在职超级管理员批准；批准前参数不变，这一项被锁住"
+                ? "审批单在等另一位超级管理员批准；批准前参数不变，这一项被锁住"
                 : "原申请结果还没确认：有效期内按原内容、原命令号重试，后端不会重复建单"
               : loose === true
-                ? "放宽：提交审批，另一位在职超级管理员批准后才生效；批准前参数不变，这一项被锁住"
+                ? "放宽：提交审批，另一位超级管理员（需有审批批准权限）批准后才生效；批准前参数不变，这一项被锁住"
                 : loose === false
                   ? "收紧：确认后立即生效"
                   : value
-                    ? "和现在一样：直接保存，参数不变"
-                    : `${copy?.loosen ?? "放宽"}要另一位超管批准；${copy?.tighten ?? "收紧"}确认后立即生效`}</Fact>
+                    ? "和现在一样，没有改动，不保存"
+                    : `${copy?.loosen ?? "放宽"}要另一位超级管理员批准；${copy?.tighten ?? "收紧"}确认后立即生效`}</Fact>
             {loose === true && !canPropose && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，放宽方向会被拦下；请有提案权和这项修改权限的同事发起</Fact>}
             <Fact k="排队中的兑换">{copy?.queue ?? "—"}</Fact>
             <Fact k="之后的兑换">{copy?.future ?? "—"}</Fact>
@@ -698,14 +716,14 @@ function G2ExchangePage() {
       title: original ? `${name}的原申请` : `调整${name}`,
       detail: <>{copy?.what ?? operatorCopyText(cap.sub)}。{copy?.extra}</>,
       effect: <StatusTag tone="neutral" icon={ArrowLeftRight} explain={<>
-        <p>{copy?.loosen ?? "放宽"}是放宽：先提交审批，另一位在职超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p>
-        <p>{copy?.tighten ?? "收紧"}是收紧：确认后立即生效。新旧值一样时直接保存，参数不变。</p>
+        <p>{copy?.loosen ?? "放宽"}是放宽：先提交审批，另一位超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p>
+        <p>{copy?.tighten ?? "收紧"}是收紧：确认后立即生效。</p>
       </>}>{copy ? `${copy.loosen}要批准 · ${copy.tighten}立即生效` : "按方向生效"}</StatusTag>,
       facts: capFacts,
       statedBrief: { impact: "改的是之后的兑换和排队单下次处理时的规则，已完成的兑换不变。", check: "核对新值和方向；理由写清依据或工单号。" },
       coverageLead: cap.key === "fee" || cap.key === "feeMin"
-        ? `${copy?.loosen ?? "放宽"}${name}会让平台多付 USDT，要另一位超管批准`
-        : `${copy?.loosen ?? "放宽"}${name}会让平台每天可能多付 USDT，要另一位超管批准`,
+        ? `${copy?.loosen ?? "放宽"}${name}会让平台多付 USDT，要另一位超级管理员批准`
+        : `${copy?.loosen ?? "放宽"}${name}会让平台每天可能多付 USDT，要另一位超级管理员批准`,
       coverageCheck: cap.key === "fee" || cap.key === "feeMin"
         ? "提交审批时和批准时，后端各检查一次：原值没被别人改过；把现在所有排队中的单按新旧费用各算一次到手 USDT，多出来的加进应付款后，兑付覆盖率不低于红线。低于红线或算不准都拒绝。"
         : "提交审批时和批准时，后端各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
@@ -764,6 +782,7 @@ function G2ExchangePage() {
         } catch (err) {
           const code = (err as { backendMessage?: string } | null)?.backendMessage;
           if (code === "OBJECT_LOCKED_BY_A2" || code === "OBJECT_ALREADY_PENDING") setLockedParams((rows) => ({ ...rows, [cap.key]: messageOf(err) }));
+          if (paramApproval.record(cap.key) || err instanceof G2OutcomeUnknownError) coveredErrors.current.add(messageOf(err));
           setError(messageOf(err));
           if (saved && !paramApproval.record(saved.request.obj)) { await reload(true); openActionConfirm(null); }
           if (!paramApproval.record(cap.key)) toast(err instanceof G2OutcomeUnknownError ? messageOf(err) : `操作失败 · ${messageOf(err)}`);
@@ -800,8 +819,8 @@ function G2ExchangePage() {
       statedBrief: { impact: "用户马上不能兑换，直到在「紧急停用开关」恢复。", check: "选暂停原因，理由写清事件和工单号；涉及国家只记进这次的操作记录，不会封锁这些地区。" },
       amplifies: false,
       businessForm: { kind: "multi-field", title: "暂停原因", fields: [
-        { key: "triggerBasis", label: "原因", current: "PRICE_ANOMALY", inputKind: "select", options: ["REGULATORY", "PRICE_ANOMALY", "SECURITY_INCIDENT", "OTHER"], optionLabels: { REGULATORY: "监管要求", PRICE_ANOMALY: "价格异常", SECURITY_INCIDENT: "安全事件", OTHER: "其他" }, required: true },
-        { key: "geoBlock", label: "涉及国家（可选，用逗号分隔）", current: "", inputKind: "text", required: false, help: "写国家代码，例如 VN, TH；只记进这次暂停的操作记录，不会封锁这些地区" },
+        { key: "triggerBasis", label: "类型", current: "PRICE_ANOMALY", inputKind: "select", options: ["REGULATORY", "PRICE_ANOMALY", "SECURITY_INCIDENT", "OTHER"], optionLabels: { REGULATORY: "监管要求", PRICE_ANOMALY: "价格异常", SECURITY_INCIDENT: "安全事件", OTHER: "其他" }, required: true },
+        { key: "geoBlock", label: "涉及国家（用逗号分隔）", current: "", inputKind: "text", required: false, help: "写国家代码，例如 VN, TH；只记进这次暂停的操作记录，不会封锁这些地区" },
       ] },
       getPendingReason: () => pendingG2ExchangeCommand(batchAdminId, "/exchange/swap")?.input.reason,
       getPendingBusinessValue: () => {
@@ -912,13 +931,21 @@ function G2ExchangePage() {
   });
 
   // 一句话结论：先说开着还是暂停，再说有没有要人处理的排队。
-  const conclusion = swap.emergencyPaused === null ? null : swap.emergencyPaused
-    ? <Conclusion state="warn" icon={PauseCircle}
-        hint={reach("/emergency/kill-switch") ? <>恢复要到 <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>紧急停用开关</Link>。暂停期间仍可改手续费、取消排队单。</> : "恢复要请有「紧急停用开关」权限的同事操作。暂停期间仍可改手续费、取消排队单。"}
+  const killSwitchLink = reach("/emergency/kill-switch") ? <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>紧急停用开关</Link> : "「紧急停用开关」";
+  const conclusion = swap.emergencyPaused === null
+    ? <Conclusion state="warn" icon={ShieldAlert}
+        hint={<>披露闸门在{reach("/content/disclosures") ? <> <Link className="rd-link" href="/content/disclosures" prefetch={false}>法律条款与风险披露</Link> </> : "「法律条款与风险披露」"}管；兑换开关的真实状态到 {killSwitchLink} 看。</>}
         explain={<>
-          <p>暂停可能是有人在这页或「紧急停用开关」关了兑换，也可能是风险披露没有确认（后端会因此关闭兑换）；页面目前读不到是哪一种。</p>
-          <p>暂停时用户不能兑换，「处理排队」也会被后端拒绝；额度和超额度处置策略要等恢复后再改。</p>
-        </>}>兑换已暂停，用户现在不能兑换</Conclusion>
+          <p>风险披露闸门对兑换开着时，后端在这页把兑换开关显示成关，分不出「紧急停用开关」里的兑换开关是开是关（已提后端分开给出）。</p>
+          <p>所以这页不据此判断用户现在能不能兑换，也不当成暂停：「紧急暂停兑换」照常可用，「处理排队」由后端按真实开关判断。</p>
+        </>}>兑换的风险披露闸门开着，兑换开关的状态这页读不到</Conclusion>
+    : swap.emergencyPaused
+    ? <Conclusion state="warn" icon={PauseCircle}
+        hint={<>恢复要到 {killSwitchLink}。{canWriteAny ? "暂停期间仍可改手续费、取消排队单。" : ""}</>}
+        explain={<>
+          <p>「紧急停用开关」里的兑换开关现在是关的，可能是在这页或那一页关的。</p>
+          <p>暂停时后端拒绝用户新发起的兑换，「处理排队」也会被拒绝；额度和超额度处置策略要等恢复后再改。</p>
+        </>}>兑换已暂停，新发起的兑换会被拒绝</Conclusion>
     : stats.queueDepth > 0
       ? <Conclusion state="warn" icon={ListOrdered}
           hint={canProcessBatch ? "排队的单不会自动成交，在下面「排队中的兑换」点「处理排队」。" : "排队的单不会自动成交，请有处理权限的同事处理。"}
@@ -943,7 +970,7 @@ function G2ExchangePage() {
     return (
       <ConfigRow key={cap.key} name={name}
         what={copy?.what ?? operatorCopyText(cap.sub)}
-        when={copy ? `${copy.loosen}是放宽，提交审批，另一位在职超级管理员批准后生效；${copy.tighten}是收紧，确认后立即生效` : undefined}
+        when={copy ? `${copy.loosen}是放宽，提交审批，另一位超级管理员批准后生效；${copy.tighten}是收紧，确认后立即生效` : undefined}
         effect={copy ? `${copy.future}；${copy.queue}` : undefined}
         note={[
           copy?.extra,
@@ -954,13 +981,14 @@ function G2ExchangePage() {
           <span className="g2x-value">
             <span className="g2x-value-num">{paramValueText(cap.key, cap.value, cap.displayValue)}</span>
             {recovery && recoveryTag(recovery)}
+            {!recovery && direct && (g2ExchangeCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct"))}
             {!record && lockedParams[cap.key] && <StatusTag tone="warn" icon={Lock} explain={lockedParams[cap.key]}>审批锁定中</StatusTag>}
           </span>
           {copy && <span className="g2x-dir">{copy.short}要批准</span>}
         </span>}
         action={canEdit || record || direct ? (describedBy) => (
-          <Button size="sm" aria-describedby={describedBy} aria-label={record ? `查看${name}的原申请` : `调整${name}`}
-            disabledReason={disabledReason} onClick={() => void adjCap(cap)}>{record ? "查看原申请" : "调整"}</Button>
+          <Button size="sm" aria-describedby={describedBy} aria-label={record ? `查看${name}的原申请` : direct ? `查看${name}的原操作` : `调整${name}`}
+            disabledReason={disabledReason} onClick={() => void adjCap(cap)}>{record ? "查看原申请" : direct ? "查看原操作" : "调整"}</Button>
         ) : undefined} />
     );
   });
@@ -982,14 +1010,24 @@ function G2ExchangePage() {
     <>
       {header}
       {confirmModal}
-      {(error || directCommands.length > 0) && <Notice tone="warn" title="操作提示">{error || new G2OutcomeUnknownError(directCommands[0].commandKey).message}</Notice>}
+      {error && !coveredErrors.current.has(error) && !/^(提交结果暂未确认|处理结果暂未确认)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
       {conclusion}
-      {paramRecovery}
+      {recoveryNotice((record) => {
+        const param = /^\/exchange\/params\/(\w+)$/.exec(record.path)?.[1];
+        if (record.path === "/exchange/queue/process") return { query: () => { setRecoveryError(null); setRecoveryKey(record.commandKey); } };
+        if (record.path === "/exchange/swap") return { retry: () => toggleSwap() };
+        if (param) {
+          const cap = caps.find((row) => row.key === param) ?? record.context?.cap;
+          return { retry: cap ? () => void adjCap(cap) : undefined };
+        }
+        const order = record.context?.order ?? queue.find((row) => record.path === `/exchange/queue/${encodeURIComponent(row.exchangeNo)}/cancel`);
+        return { retry: order ? () => cancelQueue(order) : undefined };
+      })}
 
       <StatBand label="兑换摘要">
-        <Stat label="兑换开关" icon={swap.enabled ? PlayCircle : PauseCircle} tone={swap.enabled ? "ok" : "warn"}
-          value={swap.emergencyPaused === null ? "—" : swap.enabled ? "开着" : "已暂停"} sub={swap.emergencyPaused === null ? undefined : swap.enabled ? "用户可以兑换" : "用户现在不能兑换"}
-          explain={swap.emergencyPaused === null ? undefined : "和「紧急停用开关」里的兑换开关是同一个。风险披露没确认时后端也会关闭兑换。"} />
+        <Stat label="兑换开关" icon={swap.emergencyPaused === null ? CircleHelp : swap.enabled ? PlayCircle : PauseCircle} tone={swap.emergencyPaused === null ? "neutral" : swap.enabled ? "ok" : "warn"}
+          value={swap.emergencyPaused === null ? "—" : swap.enabled ? "开着" : "已暂停"} sub={swap.emergencyPaused === null ? "披露闸门开着，读不到" : swap.enabled ? "用户可以发起兑换" : "新发起的兑换会被拒绝"}
+          explain={swap.emergencyPaused === null ? "风险披露闸门对兑换开着时，后端把这里显示成关，分不出真实的开关状态；到「紧急停用开关」看。" : "和「紧急停用开关」里的兑换开关是同一个。"} />
         <Stat label="排队中" icon={ListOrdered} tone={stats.queueDepth > 0 ? "warn" : "role-3"}
           value={fmtCount(stats.queueDepth)} unit="单"
           sub={stats.queueDepth > queue.length ? `列表显示最近 ${fmtCount(queue.length)} 单` : stats.queueDepth > 0 ? `合计 ${fromMicros(queueTotalMicros)} USDT` : undefined}
@@ -1045,7 +1083,7 @@ function G2ExchangePage() {
 
         <Panel title="额度和手续费" icon={SlidersHorizontal} tone="role-4"
           explain={<>
-            <p>每项自己保存。往「让平台多付」的方向改（调高额度、调低手续费、从拒绝改成排队）要另一位在职超级管理员批准，批准前什么都不变；反方向确认后立即生效。</p>
+            <p>每项自己保存。往「让平台多付」的方向改（调高额度、调低手续费、从拒绝改成排队）要另一位超级管理员批准，批准前什么都不变；反方向确认后立即生效。</p>
             <p>同一项有待批的申请时被审批锁住，调高调低都改不了，直到批准、驳回或撤回。</p>
             <p>兑换暂停时，两个额度和超额度处置策略不能改，两项手续费仍可改。</p>
           </>}>
@@ -1061,9 +1099,6 @@ function G2ExchangePage() {
           <p>列表按排队时间从新到旧，最多显示 50 单，没有翻页。</p>
         </>}
         actions={batchAction || undefined}>
-        {ownPendingBatch && <Notice tone="warn" title="上一批处理的结果还没确认">
-          <p>点「核对原处理」查原批次回执，确认之前不能开新的一批。</p>
-        </Notice>}
         {batchResult && (
           <div data-proof="g2-batch-result" className="g2x-batch">
             <Notice tone={batchResult.outcome === "FAILED" ? "danger" : batchResult.outcome === "COMPLETED" || batchResult.outcome === "EMPTY" ? "ok" : "warn"}
@@ -1085,7 +1120,7 @@ function G2ExchangePage() {
         )}
         <Table label="排队中的兑换" className="g2x-queue-table" data-tight="">
           <thead>
-            <tr><Th>兑换单号</Th><Th>用户</Th><Th align="right">兑换</Th><Th>排队原因</Th><Th>排队时间</Th></tr>
+            <tr><Th>兑换单号</Th><Th>用户</Th><Th align="right">兑换</Th><Th>排队原因</Th><Th>排队时间（{businessZone().label}）</Th></tr>
           </thead>
           <tbody>
             {queue.length === 0 && <TableMessage columns={5}>没有排队中的兑换。</TableMessage>}
@@ -1125,17 +1160,16 @@ function G2ExchangePage() {
         sub={<StatusTag tone="neutral">只查原回执，不发新批次</StatusTag>}
         footer={<>
           <Button disabled={busy} onClick={() => setRecoveryKey(null)}>取消</Button>
-          {recoveryError?.notFound && <Button disabledReason="查不到不代表原批次没执行。">结束本机核对</Button>}
           <Button variant="primary" loading={busy} onClick={() => void checkOriginalBatch(recoveryBatch)}>{busy ? "核对中…" : "核对原处理"}</Button>
         </>}>
         <Facts>
           <Fact k="原处理笔数">{recoveryBatch.limit} 单</Fact>
           <Fact k="原操作理由"><span className="g2x-wrap">{recoveryBatch.reason}</span></Fact>
-          <Fact k="命令号"><span data-mono className="g2x-wrap">{recoveryBatch.commandKey}</span></Fact>
+          <Fact k="原批次编号"><span data-mono className="g2x-wrap">{recoveryBatch.commandKey}</span></Fact>
         </Facts>
         {recoveryError && <Notice tone={recoveryError.notFound ? "warn" : "danger"} title={recoveryError.notFound ? "没有查到原回执" : "这次没核对成"}>
           <p>{recoveryError.message}</p>
-          {recoveryError.notFound && <p>查不到不代表原批次没执行。「结束本机核对」只清除这台电脑上的待核对记录，不撤销原批次、不退款。</p>}
+          {recoveryError.notFound && <p>查不到不代表原批次没执行。原记录继续保留在这台电脑上，可以稍后再核对；要确认结果，到「操作记录与审批」或请后端核对这一批的账本。</p>}
         </Notice>}
       </Modal>}
 
@@ -1188,8 +1222,8 @@ function G2ExchangePage() {
             <Fact k="用户编码">{selectedQueue.userNo}</Fact>
             <Fact k="用户名">{operatorNicknameText(selectedQueue.nickname)}</Fact>
             <Fact k="状态">{operatorCopyText(selectedQueue.statusLabel)}</Fact>
-            <Fact k="排队时间">{timeText(selectedQueue.createdAt)}</Fact>
-            <Fact k="最后更新">{timeText(selectedQueue.updatedAt)}</Fact>
+            <Fact k="排队时间">{timeText(selectedQueue.createdAt)}（{businessZone().label}）</Fact>
+            <Fact k="最后更新">{timeText(selectedQueue.updatedAt)}（{businessZone().label}）</Fact>
           </Facts>
         </Drawer>
       )}

@@ -394,5 +394,5 @@ export async function queryG7DirectCommand(adminId: number, commandKey: string) 
   if (requireG7DirectReader(adminId) !== epoch) throw new Error("登录身份已变化，请重新核对原操作。");
   // There is no G7 direct receipt lookup endpoint. A current value is not proof
   // of what happened to the saved command; never clear evidence on this GET.
-  return { overview, confirmed: false as const, message: `已读取当前锁定计划配置，但不能据此确认原命令结果。原请求继续保留，请到操作记录与审批核对。命令号：${commandKey}` };
+  return { overview, confirmed: false as const, message: `已读到现在的锁定计划配置，但不能据此确认原操作的结果。原记录继续保留，可以到「操作记录与审批」核对。` };
 }

@@ -154,10 +154,11 @@
 .g2x-no-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .g2x-no-tail { flex: none; white-space: nowrap; }
 .g2x-queue-table, .g2x-gate-table, .g2x-batch-table { table-layout: fixed; }
-.g2x-queue-table th:nth-child(1) { width: 27%; }
-.g2x-queue-table th:nth-child(2) { width: 18%; }
-.g2x-queue-table th:nth-child(3) { width: 19%; }
-.g2x-queue-table th:nth-child(5) { width: 15%; }
+.g2x-queue-table th:nth-child(1) { width: 22%; }
+.g2x-queue-table th:nth-child(2) { width: 22%; }
+.g2x-queue-table th:nth-child(3) { width: 18%; }
+.g2x-queue-table th:nth-child(5) { width: 17%; }
+.g2x-queue-table th:nth-child(4), .g2x-queue-table td:nth-child(4) { padding-left: 32px; }  /* 右对齐的兑换数和左对齐的原因之间留出空 */
 @media (max-width: 1279px) {
   .g2x-queue-table th:nth-child(1) { width: 25%; }
   .g2x-queue-table th:nth-child(2) { width: 17%; }
@@ -336,22 +337,24 @@
 .g7x-capacity-name { display: inline-flex; align-items: center; gap: 4px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
 .g7x-capacity-num { font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
 .g7x-orders-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 16px 32px; margin-bottom: 16px; }
+.g7x-orders-head .rd-dist { max-width: none; }  /* 分布条和图例占满这一行，图例带本金后不挤成两行 */
 @media (max-width: 1279px) { .g7x-orders-head { grid-template-columns: minmax(0, 1fr); } }
 .g7x-no { display: flex; min-width: 0; max-width: 100%; }
 .g7x-no-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .g7x-no-tail { flex: none; white-space: nowrap; }
 .g7x-order-table { table-layout: fixed; }
-.g7x-order-table th:nth-child(1) { width: 25%; }
-.g7x-order-table th:nth-child(2) { width: 15%; }
+.g7x-order-table th:nth-child(1) { width: 21%; }
+.g7x-order-table th:nth-child(2) { width: 19%; }
 .g7x-order-table th:nth-child(3) { width: 18%; }
 .g7x-order-table th:nth-child(4) { width: 13%; }
 .g7x-order-table th:nth-child(5) { width: 13%; }
 @media (max-width: 1279px) {
-  .g7x-order-table th:nth-child(1) { width: 20%; }
-  .g7x-order-table th:nth-child(2) { width: 13%; }
-  .g7x-order-table th:nth-child(3) { width: 18%; }
-  .g7x-order-table th:nth-child(4) { width: 15%; }
-  .g7x-order-table th:nth-child(5) { width: 104px; }
+  /* 1024：单号中间省略留尾段；用户编号、金额、时间完整，昵称可以省略。 */
+  .g7x-order-table th:nth-child(1) { width: 17%; }
+  .g7x-order-table th:nth-child(2) { width: 15%; }
+  .g7x-order-table th:nth-child(3) { width: 19%; }
+  .g7x-order-table th:nth-child(4) { width: 12%; }
+  .g7x-order-table th:nth-child(5) { width: 16%; }
 }
 .g7x-more { display: flex; justify-content: center; margin-top: 16px; }
 .g7x-dist { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; padding: 0; list-style: none; font-variant-numeric: tabular-nums; }
@@ -366,3 +369,20 @@
 .g7x-relock { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--rd-text-3); }
 .g7x-relock b { margin-left: 8px; font-weight: var(--rd-weight-medium); color: var(--rd-text); font-variant-numeric: tabular-nums; }
 .g7x-relock b[data-empty] { color: var(--rd-text-3); }
+
+/* ===== G 域共用：原操作提醒（g-tabs/g-recovery.tsx） ===== */
+.grec { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.grec li { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.grec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.grec-change { min-width: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; color: var(--rd-text); }
+.grec-time { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.grec-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.grec-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.grec-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.grec-zone { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+@media (max-width: 1279px) {
+  .grec li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
+  .grec-state { grid-column: 3; grid-row: 1; justify-content: flex-end; }
+  .grec-time { grid-column: 1 / 3; grid-row: 2; }
+  .grec-actions { grid-column: 3; grid-row: 2; }
+}

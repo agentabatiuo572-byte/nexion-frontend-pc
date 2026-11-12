@@ -108,7 +108,7 @@ export async function executeG4DirectCommand<T>(request: G4DirectRequest, send: 
       throw error;
     }
     changed();
-    const uncertain = new A2OutcomeUncertainError("提交结果未知，可能已经执行。请查询原操作，或在 24 小时内按原内容、原命令号重试。", command.commandKey);
+    const uncertain = new A2OutcomeUncertainError("", command.commandKey);
     throw Object.assign(uncertain, { backendMessage: (error as { backendMessage?: string })?.backendMessage });
   }
 }

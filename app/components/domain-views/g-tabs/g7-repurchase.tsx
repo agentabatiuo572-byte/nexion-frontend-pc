@@ -5,9 +5,10 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 /**
  * G7 锁定计划（改版，RdPage）— 数据来自后端 /api/admin/market/nex/repurchase;空库返回空态。
- * 首屏回答：App 入口不开放、还有多少单没结束、一笔锁定到期和提前解锁各拿回多少、每个参数改哪个方向要另一位超管批准。
+ * 首屏回答：App 入口不开放、还有多少单没结束、一笔锁定到期和提前解锁各拿回多少、每个参数改哪个方向要另一位超级管理员批准。
  * 参数审批、结果未知的保存和恢复沿用 use-g-param-approval；这里只排界面，请求和判断照旧。
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -34,7 +35,8 @@ import type { ActionConfirmReq } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import { gParamAuthority, useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
-import { canRetryG7DirectCommand, g7DirectCommandVersion, listG7DirectCommands, subscribeG7DirectCommands } from "@/lib/admin/g7-direct-command";
+import { canRetryG7DirectCommand, g7DirectCommandExpired, g7DirectCommandVersion, listG7DirectCommands, subscribeG7DirectCommands, type G7DirectCommand } from "@/lib/admin/g7-direct-command";
+import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 
 /** 本页的确认框请求：在共用的 ActionConfirmReq 上只加显示用的字段，提交仍走 run。 */
 type G7ConfirmReq = ActionConfirmReq & {
@@ -44,6 +46,7 @@ type G7ConfirmReq = ActionConfirmReq & {
   statedBrief?: { impact: string; check: string };
   coverageLead?: ReactNode;
   coverageCheck?: string;
+  confirmLabelForValue?: (value?: string) => string;
   directRecovery?: { before: { state: "unknown" } | { state: "at-submission"; value: string }; value: string; commandKey: string };
 };
 
@@ -51,7 +54,7 @@ type G7ConfirmReq = ActionConfirmReq & {
 const PARAM: Record<string, {
   name: string;
   what: string;
-  /** 让平台多付的方向（要另一位超管批准）；没有的参数确认后立即生效。 */
+  /** 走审批的方向（要另一位超级管理员批准）；没有的参数确认后立即生效。 */
   loosen?: string;
   tighten?: string;
   existing: string;
@@ -98,7 +101,7 @@ const PARAM: Record<string, {
     future: "之后新开的订单按新倍率记录",
     hint: "1–10，最多两位小数",
     unit: "倍",
-    note: "产品已定好友倍率先不发奖：改了只影响记录的倍率，不会马上多发或少发钱。",
+    note: "后端目前只把倍率记进开仓记录，不发好友奖励：改了不会马上多发或少发钱；调高仍要批准。",
   },
   lottery: {
     name: "创世节点抽奖券",
@@ -112,8 +115,8 @@ const PARAM: Record<string, {
     name: "锁定金额快捷选项",
     what: "用户加入锁定计划时可以直接点选的金额",
     existing: "不影响已有订单",
-    future: "保存后 App 读到的快捷金额立即换成新列表；App 入口目前不开放，用户暂时看不到",
-    hint: "用 / 分隔，1–12 个大于 0 的金额，最多两位小数",
+    future: "保存后后端给 App 的快捷金额换成新列表；App 入口目前不开放，用户看不到",
+    hint: "用 / 分隔，1–12 个大于 0 的金额；后端保存时四舍五入到两位小数、去重并从小到大排",
     unit: "USDT",
   },
 };
@@ -127,6 +130,8 @@ const STATE_NAME: Record<string, string> = {
   mature_unclaimed: "到期未领取",
   claimed: "已领取",
   early_withdrawn: "已提前解锁",
+  slashed: "已扣罚",
+  refunded: "已退款",
 };
 const OPEN_STATES = ["pending_lock", "active", "mature_unclaimed"];
 const DIST_TONE: Record<string, "role-other" | "progress" | "role-3" | "done" | "role-2"> = {
@@ -168,9 +173,20 @@ function fromMicros(value: bigint) {
   return amount(`${whole}.${fraction}`);
 }
 
-/** 后端时间原样显示：只把 T 换成空格、去掉秒，不换时区。 */
+/** 后端时间按业务时区写成「2026-11-13 09:30」；时区在列头写一次。 */
 function timeText(value: string) {
-  return value && value !== "-" ? value.replace("T", " ").slice(0, 16) : "—";
+  return value && value !== "-" ? formatBusinessTimeCompact(value, "—") : "—";
+}
+
+/** 后端给的「×1.5 · 月 3」：倍率和运营阶段的月份分开写；认不出的原样显示。 */
+function phaseMultiplier(raw: string) {
+  const match = /^×(\d+(?:\.\d+)?) · 月 (\d+)$/.exec(raw.trim());
+  return match ? { value: `${match[1]} 倍`, month: `运营阶段第 ${match[2]} 月` } : undefined;
+}
+
+/** 好友升级奖励倍率调高也走审批，但后端目前只记倍率、不发好友奖励，不能说会多付钱。 */
+function paysMore(key: string) {
+  return key !== "nurture";
 }
 
 /** 参数值的写法：写单位，不用 $；空值写「未配置」。 */
@@ -181,7 +197,7 @@ function paramValueText(key: string, raw: string | undefined) {
   if (key === "lockDays") return `${value} 天`;
   if (key === "nurture") return `${plain(value)} 倍`;
   if (key === "lottery") return `${value} 张 / 单`;
-  if (key === "presets") return `${value} USDT`;
+  if (key === "presets") return `${value.split(" / ").map((part) => /^\d+(\.\d+)?$/.test(part) ? part.replace(/^\d+/, (whole) => BigInt(whole).toLocaleString("en-US")) : part).join(" / ")} USDT`;
   return value;
 }
 
@@ -202,70 +218,12 @@ function orderStatus(status: string) {
   return <StatusTag tone="done">{name}</StatusTag>;
 }
 
-/** 原申请记录的状态：标签、色调和气泡（和 G2、G4 同一写法）。 */
+/** 原申请记录的状态：标签、色调和气泡（G 域五页同一写法）。 */
 function recoveryTag(record: GParamRecovery) {
-  if (record.status === "unknown") return <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原审批单；24 小时内也可以按原请求重试，后端按原命令号去重，不会建第二张。">结果未知</StatusTag>;
-  if (record.status === "pending") return <StatusTag tone="warn" icon={Clock3} explain="等另一位在职超级管理员在「操作记录与审批」批准。批准前参数不变；这一项被审批锁住，调高调低都改不了。">待审批</StatusTag>;
-  if (record.status === "expired") return <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查不到也不能据此认定没提交。">已过期</StatusTag>;
-  const label = { approved: "已批准", rejected: "已驳回", withdrawn: "已撤回" }[record.status];
-  return <StatusTag tone="done" explain="原审批单已有结论。点「查询原审批单」读回当前值后，这条记录会清掉。">{label}</StatusTag>;
-}
-
-/**
- * 原参数申请：待审批、结果未知、过期的都列在这里，每条写哪个参数、申请改成什么、现在什么状态、能做什么。
- * 只看本机保存的原记录，不依赖概览读取；按钮只查原单或按原请求重试，调用照临时组件 g-param-recovery 的写法。
- */
-function ParamRecoveryNotice({ approval, toast }: {
-  approval: ReturnType<typeof useGParamApproval>;
-  toast: (message: string) => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const records = approval.list();
-  if (records.length === 0) return null;
-  const recover = async (obj: string, retry: boolean) => {
-    setBusy(true);
-    try {
-      if (retry) await approval.retry(obj);
-      else if (!await approval.query(obj)) toast("暂未查到原审批单，原记录继续保留。");
-    } catch (error) {
-      toast(displayAdminError(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const waiting = records.every((record) => record.ticket?.status === "pending");
-  return (
-    <Notice tone="warn" title={<>{waiting ? `${records.length} 项参数修改在等审批` : `${records.length} 项参数修改申请待确认`}
-      <Explain label="原申请怎么处理" content={<>
-        <p>这里只列你在这台电脑上提交过的原申请。原申请只能查询原审批单，或在 24 小时内按原内容、原命令号重试，不能改值。</p>
-        <p>要改成别的值，等原申请有结论后再发起新修改。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
-      </>} /></>}>
-      {waiting && <p>有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。</p>}
-      <ul className="g7x-recover" aria-label="原参数申请">
-        {records.map((record) => {
-          const key = record.request.obj;
-          const name = PARAM[key]?.name ?? key;
-          const params = record.request.command.params as { value?: unknown; expectedValue?: unknown };
-          const to = paramValueText(key, typeof params.value === "string" ? params.value : undefined);
-          const from = typeof params.expectedValue === "string" ? paramValueText(key, params.expectedValue) : undefined;
-          return (
-            <li key={record.commandKey} data-recovery-state={record.ticket?.status === "pending" ? "approval-locked" : record.ticket ? "approval-resolved" : "local-frozen"}>
-              <span className="g7x-recover-name">{name}</span>
-              <span className="g7x-recover-change">{from ? <Change from={from} to={to} /> : <>申请改成 {to}</>}</span>
-              <span className="g7x-recover-state">
-                {recoveryTag(record)}
-                {record.ticket && <span className="g7x-recover-ticket">审批单 <span data-mono>{record.ticket.id}</span></span>}
-              </span>
-              <span className="g7x-recover-actions">
-                <Button size="sm" disabled={busy} aria-label={`查询${name}的原审批单`} onClick={() => void recover(key, false)}>查询原审批单</Button>
-                {record.canRetry && <Button size="sm" disabled={busy} aria-label={`按原请求重试${name}`} onClick={() => void recover(key, true)}>按原请求重试</Button>}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </Notice>
-  );
+  if (record.status === "unknown") return unknownTag("approval");
+  if (record.status === "pending") return pendingTag();
+  if (record.status === "expired") return expiredTag("approval");
+  return resolvedTag(record.status);
 }
 
 /** 订单号：放不下时中间省略，留尾段区分。 */
@@ -314,6 +272,9 @@ function G7RepurchasePage() {
     setReadFailed(false);
   });
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [recoverBusy, setRecoverBusy] = useState(false);
+  /** 只用于显示：这些错误句已经由原操作提醒里的一行承接，不再在「操作提示」里重复。 */
+  const coveredErrors = useRef(new Set<string>());
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -368,7 +329,85 @@ function G7RepurchasePage() {
       }
     },
   };
-  const paramRecovery = <ParamRecoveryNotice approval={paramApproval} toast={toast} />;
+  /** 直接写的原记录只读核对：读当前配置装上，不当回执、不清记录（参数行和原操作提醒共用这一段）。 */
+  const readDirectCommand = async (direct: G7DirectCommand) => {
+    // An expired original or a writer whose authority was removed can still
+    // read current state. This GET is never a receipt and never clears it.
+    openActionConfirm(null);
+    latest.current.readFailed = true;
+    setReadFailed(true);
+    try {
+      const result = await queryG7DirectCommand(direct.adminId, direct.commandKey);
+      setOverview(result.overview);
+      setLockedParams({});
+      setReadFailed(false);
+      setError(result.message);
+    } catch (err) {
+      setError(messageOf(err));
+    }
+  };
+
+  /**
+   * 原操作提醒：走审批的原申请和直接写的原记录都列在这里，概览读取中、失败时也显示。
+   * retryFor 只在概览读到后传：按原请求重试要开原来的确认框。
+   */
+  const recoveryNotice = (retryFor?: (direct: G7DirectCommand) => (() => void) | undefined) => {
+    const approvals = paramApproval.list();
+    const directs = session ? listG7DirectCommands(session.adminId) : [];
+    const recover = async (obj: string, retry: boolean) => {
+      setRecoverBusy(true);
+      try {
+        if (retry) await paramApproval.retry(obj);
+        else if (!await paramApproval.query(obj)) toast("暂未查到原审批单，原记录继续保留。");
+      } catch (err) {
+        toast(displayAdminError(err));
+      } finally {
+        setRecoverBusy(false);
+      }
+    };
+    const rows: GRecoveryRow[] = [
+      ...approvals.map((record) => {
+        const key = record.request.obj;
+        const name = PARAM[key]?.name ?? key;
+        const params = record.request.command.params as { value?: unknown; expectedValue?: unknown };
+        const to = paramValueText(key, typeof params.value === "string" ? params.value : undefined);
+        const from = typeof params.expectedValue === "string" ? paramValueText(key, params.expectedValue) : undefined;
+        return {
+          key: record.commandKey, name, submittedAt: record.createdAt,
+          state: record.ticket?.status === "pending" ? "approval-locked" : record.ticket ? "approval-resolved" : "local-frozen",
+          change: from ? <Change from={from} to={to} /> : <>申请改成 {to}</>,
+          tag: recoveryTag(record), ticket: record.ticket?.id,
+          actions: <>
+            <Button size="sm" disabled={recoverBusy} aria-label={`查询${name}的原结果`} onClick={() => void recover(key, false)}>查询原结果</Button>
+            {record.canRetry && <Button size="sm" disabled={recoverBusy} aria-label={`按原请求重试${name}`} onClick={() => void recover(key, true)}>按原请求重试</Button>}
+          </>,
+        };
+      }),
+      ...directs.map((direct) => {
+        const name = PARAM[direct.paramKey]?.name ?? direct.paramKey;
+        const retry = canRetryG7DirectCommand(direct) ? retryFor?.(direct) : undefined;
+        return {
+          key: direct.commandKey, name, submittedAt: direct.createdAt, state: "direct-unknown",
+          change: <Change from={direct.currentValue === undefined ? "原值未知" : paramValueText(direct.paramKey, direct.currentValue)} to={paramValueText(direct.paramKey, direct.input.value)} />,
+          tag: g7DirectCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct"),
+          actions: <>
+            <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`查询${name}的原结果`} onClick={() => void readDirectCommand(direct)}>查询原结果</Button>
+            {retry && <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`按原请求重试${name}`} onClick={retry}>按原请求重试</Button>}
+          </>,
+        };
+      }),
+    ];
+    const waiting = directs.length === 0 && approvals.length > 0 && approvals.every((record) => record.ticket?.status === "pending");
+    return <GRecoveryNotice label="原参数操作" rows={rows}
+      title={`参数修改的原操作 · ${rows.length} 项`}
+      lead={waiting
+        ? "有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。"
+        : "这些参数先只能查询原结果或按原请求重试，不能改成别的值；其他参数照常可改。"}
+      explain={<>
+        <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的参数申请，和直接生效但没收到结果的修改。原操作只能查询，或在 24 小时内按原内容重试，不能改值。</p>
+        <p>要改成别的值，等原操作有结论后再发起新修改。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
+      </>} />;
+  };
 
   useEffect(() => {
     void reload();
@@ -423,6 +462,7 @@ function G7RepurchasePage() {
       statedBrief={mc.statedBrief}
       coverageLead={mc.coverageLead}
       coverageCheck={mc.coverageCheck}
+      confirmLabelForValue={mc.confirmLabelForValue}
       onClose={() => setActionConfirm(null)}
       onConfirm={async (reason, newValue, businessValue) => {
         await mc.run(reason, newValue, businessValue);
@@ -450,7 +490,7 @@ function G7RepurchasePage() {
     return (
       <>
         {header}
-        {paramRecovery}
+        {recoveryNotice()}
         <BlockState state="loading" title="正在读取锁定计划…" />
         {confirmModal}
       </>
@@ -461,7 +501,7 @@ function G7RepurchasePage() {
     return (
       <>
         {header}
-        {paramRecovery}
+        {recoveryNotice()}
         <BlockState state="error" title="锁定计划数据读取失败"
           detail={<>页面不显示任何旧数据。点「重新加载」；一直失败请联系值班同事。<Explain label="失败原因" content={error || "没有收到数据。"} /></>}
           retryLabel="重新加载" onRetry={() => void reload()} />
@@ -477,20 +517,7 @@ function G7RepurchasePage() {
   const adjustParam = async (param: G7Param) => {
     const direct = directRecord(param.key);
     if (direct && !canRetryG7DirectCommand(direct)) {
-      // An expired original or a writer whose authority was removed can still
-      // read current state. This GET is never a receipt and never clears it.
-      openActionConfirm(null);
-      latest.current.readFailed = true;
-      setReadFailed(true);
-      try {
-        const result = await queryG7DirectCommand(direct.adminId, direct.commandKey);
-        setOverview(result.overview);
-        setLockedParams({});
-        setReadFailed(false);
-        setError(result.message);
-      } catch (err) {
-        setError(messageOf(err));
-      }
+      await readDirectCommand(direct);
       return;
     }
     const original = await paramApproval.open(param.key);
@@ -533,17 +560,17 @@ function G7RepurchasePage() {
               ? "提交结果未知，可能已经执行。请核对原操作，或在 24 小时内按原内容、原命令号重试。"
               : original
               ? original.ticket?.status === "pending"
-                ? "审批单在等另一位在职超级管理员批准；批准前参数不变，这一项被锁住"
+                ? "审批单在等另一位超级管理员批准；批准前参数不变，这一项被锁住"
                 : "原申请结果还没确认：有效期内按原内容、原命令号重试，后端不会重复建单"
               : !copy?.loosen
                 ? "确认后立即生效"
                 : loose === true
-                  ? `${copy.loosen}：提交审批，另一位在职超级管理员批准后才生效；批准前参数不变，这一项被锁住`
+                  ? `${copy.loosen}：提交审批，另一位超级管理员（需有审批批准权限）批准后才生效；批准前参数不变，这一项被锁住`
                   : loose === false
                     ? `${copy.tighten}：确认后立即生效`
                     : nextText
-                      ? "和现在一样：后端照常保存，参数不变"
-                      : `${copy.loosen}要另一位超管批准；${copy.tighten}确认后立即生效`}</Fact>
+                      ? "和现在一样，没有改动，不保存"
+                      : `${copy.loosen}要另一位超级管理员批准；${copy.tighten}确认后立即生效`}</Fact>
             {loose === true && !canPropose && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，{copy?.loosen}会被拦下；请有提案权和这项修改权限的同事发起</Fact>}
             <Fact k="已有订单">{copy?.existing ?? "—"}</Fact>
             <Fact k="之后的新订单">{copy?.future ?? "—"}</Fact>
@@ -553,19 +580,20 @@ function G7RepurchasePage() {
       );
     };
     openActionConfirm({ briefKind: "config",
+      confirmLabelForValue: (value) => loosens(value) ? "提交审批" : "确认修改",
       action: `调整锁定计划参数 · ${label}`,
       title: directRecovery ? `${label} · 重试原操作` : original ? `${label}的原申请` : `调整${label}`,
       directRecovery,
       detail: <>{copy?.what ?? operatorCopyText(param.sub)}。{param.key === "lottery" ? "保存时后端核对奖池核对编号至少 3 个字，并检查本月已发张数加新的每单张数不超过创世奖池月容量。" : copy?.note}</>,
       effect: copy?.loosen
         ? <StatusTag tone="neutral" icon={ArrowLeftRight} explain={directRecovery ? "提交结果未知，可能已经执行。请核对原操作，或在 24 小时内按原内容、原命令号重试。" : <>
-          <p>{copy.loosen}会让平台多付钱：先提交审批，另一位在职超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p>
-          <p>{copy.tighten}确认后立即生效。新旧值一样时后端照常保存，参数不变。</p>
+          <p>{paysMore(param.key) ? `${copy.loosen}会让平台多付钱：` : `${copy.loosen}按规则也要审批（后端目前只记倍率、不发好友奖励）：`}先提交审批，另一位超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p>
+          <p>{copy.tighten}确认后立即生效。</p>
         </>}>{directRecovery ? "结果未知" : <>{copy.loosen}要批准 · {copy.tighten}立即生效</>}</StatusTag>
         : <StatusTag tone="progress" filled>{directRecovery ? "结果未知" : "立即生效"}</StatusTag>,
       facts,
       statedBrief: { impact: "改的是之后新开的订单用的规则，已有订单按下单时的规则。", check: directRecovery ? "提交结果未知，可能已经执行。请核对原操作，或在 24 小时内按原内容、原命令号重试。" : "核对新值和方向；理由写清依据或工单号。" },
-      coverageLead: `${copy?.loosen ?? "放宽"}${label}会让平台多付钱，要另一位超管批准`,
+      coverageLead: paysMore(param.key) ? `${copy?.loosen ?? "放宽"}${label}会让平台多付钱，要另一位超级管理员批准` : `${copy?.loosen ?? "调高"}${label}要另一位超级管理员批准；后端目前不发好友奖励，不会马上多付钱`,
       coverageCheck: "提交审批时和批准时，后端各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
       edit: param.key === "presets"
         ? { kind: "text", current: directRecovery ? undefined : paramEditValue(param), initialValue: direct?.input.value, disallowCurrent: true, hint: copy?.hint }
@@ -633,6 +661,7 @@ function G7RepurchasePage() {
         } catch (err) {
           const code = (err as { backendMessage?: string } | null)?.backendMessage;
           if (code === "OBJECT_LOCKED_BY_A2" || code === "OBJECT_ALREADY_PENDING") setLockedParams((rows) => ({ ...rows, [param.key]: messageOf(err) }));
+          if (paramApproval.record(param.key) || directRecord(param.key)) coveredErrors.current.add(messageOf(err));
           setError(messageOf(err));
           if (saved && !paramApproval.record(saved.request.obj)) openActionConfirm(null);
           if (!paramApproval.record(param.key) && !directRecord(param.key)) toast(`操作失败 · ${messageOf(err)}`);
@@ -667,7 +696,7 @@ function G7RepurchasePage() {
     return (
       <ConfigRow key={param.key} name={name}
         what={copy?.what ?? operatorCopyText(param.sub)}
-        when={copy?.loosen ? `${copy.loosen}会让平台多付钱，提交审批，另一位在职超级管理员批准后生效；${copy.tighten}确认后立即生效` : "确认后立即生效"}
+        when={copy?.loosen ? `${paysMore(param.key) ? `${copy.loosen}会让平台多付钱，` : `${copy.loosen}按规则要审批（目前只记倍率），`}提交审批，另一位超级管理员批准后生效；${copy.tighten}确认后立即生效` : "确认后立即生效"}
         effect={copy ? `${copy.future}；${copy.existing}` : undefined}
         note={[
           copy?.note,
@@ -678,13 +707,14 @@ function G7RepurchasePage() {
           <span className="g7x-value">
             <span className="g7x-value-num" data-empty={param.value.trim() ? undefined : ""}>{paramValueText(param.key, param.value)}</span>
             {recovery && recoveryTag(recovery)}
+            {!recovery && direct && (g7DirectCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct"))}
             {!record && lockedParams[param.key] && <StatusTag tone="warn" icon={LockKeyhole} explain={lockedParams[param.key]}>审批锁定中</StatusTag>}
           </span>
           <span className="g7x-dir">{copy?.loosen ? `${copy.loosen}要批准` : "改了立即生效"}</span>
         </span>}
         action={editable || record || direct ? (describedBy) => (
-          <Button size="sm" aria-describedby={describedBy} aria-label={record ? `查看${name}的原申请` : `调整${name}`}
-            disabledReason={disabledReason} onClick={() => void adjustParam(param)}>{record ? "查看原申请" : "调整"}</Button>
+          <Button size="sm" aria-describedby={describedBy} aria-label={record ? `查看${name}的原申请` : direct ? `查看${name}的原操作` : `调整${name}`}
+            disabledReason={disabledReason} onClick={() => void adjustParam(param)}>{record ? "查看原申请" : direct ? "查看原操作" : "调整"}</Button>
         ) : undefined} />
     );
   };
@@ -705,11 +735,17 @@ function G7RepurchasePage() {
   const early = deduction === undefined || deduction > principal ? undefined : principal - deduction;
   const exampleReady = maturity !== undefined && early !== undefined;
 
+  const originalCount = records.length + (session ? listG7DirectCommands(session.adminId).length : 0);
   const conclusion = lockedNames.length > 0
       ? <Conclusion state="warn" icon={LockKeyhole}
           hint="到「操作记录与审批」找这张审批单，有结论后再改。"
           explain="直接修改时后端答复这一项有一张审批单还没处理完：批准、驳回或撤回之前调高调低都改不了，其他参数照常可改。页面看不到单号，也不知道是谁提交的。">
           {lockedNames.join("、")}被一张审批单锁住，现在改不了</Conclusion>
+      : originalCount > 0
+      ? <Conclusion state="warn" icon={Clock3}
+          hint="在下面逐条查询原结果；24 小时内也可以按原请求重试。"
+          explain="提交过的参数修改还没有确定结论：有的在等另一位超级管理员审批，有的没收到结果。有结论之前这几项不能改成别的值，其他参数照常可改。">
+          有 {fmtCount(originalCount)} 项参数修改还没有结论</Conclusion>
       : <Conclusion state="neutral" icon={Lock}
           hint="改规则只影响之后新开的订单。"
           explain="未结束是待锁定、锁仓中、到期未领取三种状态的订单，不限哪天下单。已有订单按下单时的规则到期或提前解锁；用户到期后要自己领取，这页不能代领、不能提前解锁。">
@@ -718,14 +754,18 @@ function G7RepurchasePage() {
   const distRows = distributionRows(overview.amountDistribution);
   const reinvest = stats.reinvestRateAvailable ? `${stats.reinvestRate.toFixed(1).replace(/\.0$/, "")}%` : "—";
   const phaseHref = reach("/growth/phase");
+  const phase = phaseMultiplier(overview.phaseGate.value);
 
   return (
     <>
       {header}
       {confirmModal}
-      {error && !Object.values(lockedParams).includes(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
+      {error && !Object.values(lockedParams).includes(error) && !coveredErrors.current.has(error) && !/^提交结果(暂未确认|未知)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
       {conclusion}
-      {paramRecovery}
+      {recoveryNotice((direct) => {
+        const param = byKey(direct.paramKey);
+        return param ? () => void adjustParam(param) : undefined;
+      })}
 
       <StatBand label="锁定计划摘要">
         <Stat label="未结束的锁定金额" icon={Lock} tone="role-1" value={amount(stats.principalUsd)} unit="USDT"
@@ -783,7 +823,7 @@ function G7RepurchasePage() {
 
         <Panel title="规则参数" icon={SlidersHorizontal} tone="role-4"
           explain={<>
-            <p>每项自己保存，只影响之后新开的订单。往「让平台多付」的方向改（调高年奖励率、调高好友升级奖励倍率、调低提前解锁扣款）要另一位在职超级管理员批准，批准前什么都不变；反方向确认后立即生效。</p>
+            <p>每项自己保存，只影响之后新开的订单。调高年奖励率、调低提前解锁扣款会让平台多付钱，调高好友升级奖励倍率按规则也算放大方向（后端目前只记倍率、不发好友奖励）；这三种改动要另一位超级管理员批准，批准前什么都不变；反方向确认后立即生效。</p>
             <p>一项有待批的申请时，这一项被审批锁住，调高调低都改不了，直到批准、驳回或撤回；其他参数不受影响。</p>
           </>}>
           {coreRows.length === 0 && <BlockState state="empty" compact title="后端没有返回锁定计划参数" detail="锁定计划产品不存在时后端返回空参数，不是默认值。请联系后端核对 REPURCHASE_90D 产品。" />}
@@ -794,8 +834,8 @@ function G7RepurchasePage() {
                 where="跟随运营阶段的当前月份"
                 when="在「运营阶段设置」修改，这页只能查看"
                 value={<span className="g7x-param">
-                  <span className="g7x-value"><span className="g7x-value-num" data-empty={overview.phaseGate.value && overview.phaseGate.value !== "未配置" ? undefined : ""}>{operatorCopyText(overview.phaseGate.value) || "—"}</span></span>
-                  <span className="g7x-dir">跟随运营阶段</span>
+                  <span className="g7x-value"><span className="g7x-value-num" data-empty={phase ? undefined : ""}>{phase?.value ?? (operatorCopyText(overview.phaseGate.value) || "—")}</span></span>
+                  <span className="g7x-dir">{phase ? phase.month : "跟随运营阶段"}</span>
                 </span>}
                 action={phaseHref ? <Link className="rd-link g7x-nowrap" href="/growth/phase" prefetch={false}>去运营阶段设置</Link> : undefined} />
           </ConfigList>
@@ -823,18 +863,18 @@ function G7RepurchasePage() {
       </Fold>
 
       <Panel title="锁定计划订单" icon={ListOrdered} tone="role-3"
-        sub={`已显示 ${fmtCount(orders.length)} 单${hasMore ? " · 还有更早的" : ""}`}
+        sub={`已显示 ${fmtCount(orders.length)} 单${hasMore ? " · 还有更早的" : ""} · 金额单位 USDT · 时间为${businessZone().label}`}
         explain={<>
           <p>全部锁定计划订单，从新到旧，每次读 20 单，点「加载更多」接着读更早的。这页只能查看，不能领取、提前解锁或退款。</p>
           <p>每单的年奖励率、期限和预计奖励是下单时记下的，改规则不会重算。</p>
         </>}>
         <div className="g7x-orders-head">
-          <StatusDistributionBar label="订单状态分布（全部历史）"
+          <StatusDistributionBar label="订单状态分布（全部历史，单数和本金）"
             segments={overview.statusBreakdown.map((row) => ({
               key: row.status,
               label: STATE_NAME[row.status.toLowerCase()] ?? operatorCopyText(row.label),
               value: row.count,
-              text: `${fmtCount(row.count)} 单`,
+              text: `${fmtCount(row.count)} 单 · ${amount(row.principalUsd)} USDT`,
               tone: DIST_TONE[row.status.toLowerCase()] ?? "role-other",
             }))}
             emptyText="还没有锁定计划订单" />
@@ -842,7 +882,7 @@ function G7RepurchasePage() {
         </div>
         <Table label="锁定计划订单" className="g7x-order-table" data-tight="">
           <thead>
-            <tr><Th>订单号</Th><Th>用户</Th><Th align="right">锁定金额 / 预计奖励</Th><Th>下单时的规则</Th><Th>状态</Th><Th>开始 / 到期</Th></tr>
+            <tr><Th>订单号</Th><Th>用户</Th><Th align="right">金额 / 预计奖励</Th><Th>下单时规则</Th><Th>状态</Th><Th>开始 / 到期</Th></tr>
           </thead>
           <tbody>
             {orders.length === 0 && <TableMessage columns={6}>暂无锁定计划订单</TableMessage>}
@@ -852,7 +892,7 @@ function G7RepurchasePage() {
                   ? "账单流水：单号-*"
                   : <>账单流水：<span data-mono>{order.billCorrelationPrefix}-*</span></>} /></Td>
                 <Td><Cell main={order.userNo} sub={operatorNicknameText(order.nickname)} title={`${order.userNo} · ${operatorNicknameText(order.nickname)}`} /></Td>
-                <Td align="right"><Cell num main={`${amount(order.amountUsdt)} USDT`} sub={`奖励 ${amount(order.estimatedInterestUsdt)} USDT`} /></Td>
+                <Td align="right"><Cell num main={amount(order.amountUsdt)} sub={`奖励 ${amount(order.estimatedInterestUsdt)}`} /></Td>
                 <Td><Cell num main={`${plain(order.apyPct)}% / 年`} sub={`锁 ${order.lockDays} 天`} /></Td>
                 <Td>{orderStatus(order.status)}</Td>
                 <Td><Cell num main={timeText(order.lockedAt)} sub={timeText(order.unlockAt)} /></Td>

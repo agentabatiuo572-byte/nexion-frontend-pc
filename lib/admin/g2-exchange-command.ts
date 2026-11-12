@@ -28,8 +28,8 @@ const commands = createPendingMutationStore<PendingMutationRecord & { adminId?: 
 let requestSeq = 0;
 
 export class G2OutcomeUnknownError extends Error {
-  constructor(readonly commandKey: string, message = "提交结果暂未确认，可能已经生效。请保留原请求和命令号，在有效期内按原操作重试；过期后只能核对。") {
-    super(`${message} 命令号：${commandKey}`);
+  constructor(readonly commandKey: string, message = "提交结果暂未确认，可能已经生效。原请求已保留：有效期内可以按原请求重试，过期后只能查询。") {
+    super(message);
     this.name = "G2OutcomeUnknownError";
   }
 }
@@ -122,7 +122,7 @@ export async function queryG2ExchangeCommand(adminId: number, commandKey: string
   const overview = await fetchG2ExchangeOverview();
   requireActor(adminId, original.path, false);
   return { confirmed: false, overview, message: new G2OutcomeUnknownError(commandKey,
-    "已读取当前配置，但不能据此确认原命令结果。请保留原记录，到操作记录与审批按原命令号核对。").message };
+    "已读到现在的配置，但不能据此确认原操作的结果。原记录继续保留，可以到「操作记录与审批」核对。").message };
 }
 
 async function send(original: G2PendingCommand, recovering = false) {
@@ -149,7 +149,7 @@ async function send(original: G2PendingCommand, recovering = false) {
       commands.forget(original.fingerprint, original.commandKey);
       throw error;
     }
-    throw new G2OutcomeUnknownError(original.commandKey, `${displayAdminError(error)} 请保留原请求和命令号，按原操作核对或重试。`);
+    throw new G2OutcomeUnknownError(original.commandKey, `提交结果暂未确认，可能已经生效（${displayAdminError(error).replace(/[。.]$/, "")}）。原请求已保留，可以查询原结果或按原请求重试。`);
   }
 }
 

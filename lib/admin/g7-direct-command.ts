@@ -116,12 +116,12 @@ export async function executeG7DirectCommand<T>(paramKey: string, input: G7Direc
     if (recoveryLocked) {
       // The shared A2 formatter replaces its detail with generic retry copy.
       // Keep this G7 non-verdict and its current-lock explanation together.
-      throw Object.assign(new Error(`提交结果未知，可能已经执行。这一项有一张审批单还没处理完，原记录继续保留。请核对原操作。命令号：${original.commandKey}`), {
+      throw Object.assign(new Error("提交结果未知，可能已经执行。这一项现在有一张审批单还没处理完，原记录继续保留，请查询原结果。"), {
         name: "G7DirectRecoveryLockedError", unknownOutcome: true,
         commandKey: original.commandKey, reasonCode: backendMessage, cause: error,
       });
     }
-    throw Object.assign(new A2OutcomeUncertainError("提交结果未知，可能已经执行。请核对原操作，或在 24 小时内按原内容、原命令号重试。", original.commandKey),
+    throw Object.assign(new A2OutcomeUncertainError("", original.commandKey),
       { backendMessage });
   }
 }
