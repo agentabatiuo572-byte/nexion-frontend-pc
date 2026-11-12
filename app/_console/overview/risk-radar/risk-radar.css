@@ -60,7 +60,7 @@
 
 /* ---------- 两张表 ---------- */
 .radarpage .b5-lists { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; }
-.radarpage .b5-signals th:nth-child(2), .radarpage .b5-signals td:nth-child(2) { width: 140px; }
+.radarpage .b5-signals th:nth-child(2), .radarpage .b5-signals td:nth-child(2) { width: 110px; }
 .radarpage .b5-signals th:nth-child(3), .radarpage .b5-signals td:nth-child(3) { width: 180px; }
 .radarpage .b5-signals th:nth-child(4), .radarpage .b5-signals td:nth-child(4) { width: 140px; white-space: nowrap; }
 .radarpage .b5-signal-main { display: inline-flex; align-items: center; gap: var(--rd-space-2); }
@@ -73,6 +73,10 @@
 .b5-dialog .b5-line { margin: 0; color: var(--rd-text-2); }
 .b5-dialog .b5-preview { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); color: var(--rd-text-2); }
 
+@media (max-width: 1280px) {
+  .radarpage .b5-signals th:nth-child(3), .radarpage .b5-signals td:nth-child(3) { width: 146px; }
+  .radarpage .b5-signals th:nth-child(4), .radarpage .b5-signals td:nth-child(4) { width: 132px; white-space: normal; }
+}
 @media (max-width: 1180px) {
   .radarpage .b5-quiet-row { grid-template-columns: 22px minmax(104px, 140px) minmax(0, 1fr) auto; }
   .radarpage .b5-quiet-actions { grid-column: 2 / -1; justify-content: flex-start; }

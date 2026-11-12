@@ -51,6 +51,8 @@ export const TARGET_NAME: Record<string, string> = {
 
 /** 存储时间不带时区，原样只换 T（和旧队列一样，不按浏览器时区换算）。 */
 export const stamp = (value: string) => value.replace("T", " ").slice(0, 16);
+/** 近 7 个业务日的信号表里只写月日和时分，年份都一样；悬停看完整时间。 */
+const shortStamp = (value: string) => <span title={stamp(value)}>{stamp(value).slice(5)}</span>;
 const dayTick = (label: string) => (/^\d{4}-/.test(label) ? label.slice(5) : label);
 
 export function PressureTrend({ data }: { data: B5Radar }) {
@@ -141,7 +143,7 @@ export function SignalsTable({ alerts, canTriage, updating, reach, onStatus }: {
               <Tr key={alert.signalNo}>
                 <Td><Cell main={<span className="b5-signal-main"><StatusTag tone={SEVERITY[alert.level].tone} icon={SEVERITY[alert.level].icon}>{SEVERITY[alert.level].text}</StatusTag>{alert.message}</span>}
                   sub={<>用户 #{alert.userId} · <SignalNo value={alert.signalNo} /></>} /></Td>
-                <Td><Cell num main={stamp(alert.createdAt)} /></Td>
+                <Td><Cell num main={shortStamp(alert.createdAt)} /></Td>
                 <Td><Cell main={<StatusTag tone={HANDLING[alert.handlingStatus].tone}>{HANDLING[alert.handlingStatus].text}</StatusTag>} sub={`发送：${deliveryStatusText(alert.deliveryStatus)}`} /></Td>
                 <Td>{reach(alert.target)
                   ? <Link className="rd-link" href={alert.target} prefetch={false}>{page}</Link>
@@ -165,8 +167,8 @@ export function SignalsTable({ alerts, canTriage, updating, reach, onStatus }: {
 
 /** 后端真实的发送状态（含 SENDING，B5-D09）。认不出的写待核实，不猜。 */
 export const deliveryStatusText = (value: string) => ({
-  PENDING: "待发送", SENDING: "发送中", PROCESSING: "发送中", DELIVERED: "已送达", SANDBOX_DELIVERED: "测试送达", NOT_QUEUED: "还没排进发送队列",
-  FAILED_RETRY: "发送失败，等待重试", DEAD: "发送已终止", SENT: "已发送", FAILED: "发送失败",
+  PENDING: "待发送", SENDING: "发送中", PROCESSING: "发送中", DELIVERED: "已送达", SANDBOX_DELIVERED: "测试送达", NOT_QUEUED: "还没发送",
+  FAILED_RETRY: "失败，等重试", DEAD: "发送已终止", SENT: "已发送", FAILED: "发送失败",
 } as Record<string, string>)[value.toUpperCase()] ?? "发送状态待核实";
 
 const DELIVERY_TONE: Record<string, StateTone> = {
