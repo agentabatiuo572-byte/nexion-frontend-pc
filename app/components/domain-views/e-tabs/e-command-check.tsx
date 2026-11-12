@@ -5,7 +5,6 @@ import { Button, Check, Facts, Fact, Field, Input, IrreversibleTag, Modal, Notic
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { ECommandEvidence, ECommandInvestigation } from "@/lib/admin/e-command-investigation";
-import "./e-command-check.css";
 
 /** The last authoritative lookup of one original command; `receipt: null` means the backend found no bound record. */
 export type CommandOutcome = { receipt: ECommandInvestigation | null } | { error: string };
