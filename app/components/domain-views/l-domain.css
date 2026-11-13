@@ -381,4 +381,5 @@
 .l5-page .l5-params > div:last-child > * { border-bottom: 0; }
 .l5-page .l5-params dt { padding-right: var(--rd-space-6); color: var(--rd-text-2); }
 .l5-page .l5-params dd { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.l5-page .l5-nowrap { white-space: nowrap; }
 .l5-page .l5-mask-look { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }

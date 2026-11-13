@@ -196,9 +196,9 @@ export function MaskRuleTable({ rules }: { rules: MaskRule[] }) {
       <tbody>
         {rules.map((rule) => (
           <Tr key={rule.f}>
-            <Td><b className="l5-strong">{rule.f}</b></Td>
+            <Td><b className="l5-strong l5-nowrap">{rule.f}</b></Td>
             <Td><StatusTag tone={rule.catTone === "bad" ? "warn" : "neutral"}>{rule.cat}</StatusTag></Td>
-            <Td grow><span className="l5-mask-look">{rule.rule && <MaskTag mask={(rule.rule === "masked" || rule.rule === "partial" || rule.rule === "decrypted") ? rule.rule : "—"} />}<span>{rule.ruleNote}</span></span></Td>
+            <Td><span className="l5-mask-look">{rule.rule && <MaskTag mask={(rule.rule === "masked" || rule.rule === "partial" || rule.rule === "decrypted") ? rule.rule : "—"} />}<span>{rule.ruleNote}</span></span></Td>
             <Td>{rule.dec}</Td>
             <Td>{rule.appr}</Td>
           </Tr>
@@ -218,20 +218,19 @@ function auditTime(ts: string) {
 export function AuditTable({ rows, loading, error }: { rows: LExportAuditRow[]; loading: boolean; error: string | null }) {
   return (
     <Table label="导出记录">
-      <thead><tr><Th>时间</Th><Th>导出人</Th><Th>导出了什么</Th><Th align="right">行数</Th><Th>隐私与脱敏</Th><Th>经过的检查</Th><Th>下载</Th></tr></thead>
+      <thead><tr><Th>时间</Th><Th>导出人</Th><Th>导出了什么</Th><Th align="right">行数</Th><Th>隐私与脱敏</Th><Th>下载</Th></tr></thead>
       <tbody>
-        {loading && <TableLoading columns={7} rows={4} />}
-        {!loading && error && <TableMessage columns={7} role="alert">导出记录读取失败，不显示旧记录：{error}</TableMessage>}
-        {!loading && !error && rows.length === 0 && <TableMessage columns={7}>还没有导出记录</TableMessage>}
+        {loading && <TableLoading columns={6} rows={4} />}
+        {!loading && error && <TableMessage columns={6} role="alert">导出记录读取失败，不显示旧记录：{error}</TableMessage>}
+        {!loading && !error && rows.length === 0 && <TableMessage columns={6}>还没有导出记录</TableMessage>}
         {!loading && !error && rows.map((row, index) => (
           <Tr key={`${row.ts}-${index}`} mark={row.mask === "decrypted" ? "danger" : undefined}>
             <Td><Cell num main={auditTime(row.ts)} /></Td>
             <Td><Cell main={row.who} title={row.who} /></Td>
-            <Td grow><Cell main={row.what} title={row.what} /></Td>
+            <Td grow><Cell main={row.what} sub={row.chain} title={`${row.what} · ${row.chain}`} /></Td>
             <Td align="right"><Cell num main={String(row.rows)} /></Td>
             <Td><span className="l5-pii">{row.pii ? <StatusTag tone="warn">含隐私</StatusTag> : <span className="l5-weak">无隐私</span>}<MaskTag mask={row.mask} /></span></Td>
-            <Td><Cell main={row.chain} title={row.chain} /></Td>
-            <Td><span className="l5-weak">{row.dl}</span></Td>
+            <Td><span className="l5-weak l5-nowrap">{row.dl}</span></Td>
           </Tr>
         ))}
       </tbody>
