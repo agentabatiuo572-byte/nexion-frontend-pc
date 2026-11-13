@@ -166,7 +166,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     const multiplierName = param.key === "inviter.nex" ? "邀请加成" : "新用户加成";
     const pendingCount = countText(data.pending);
     const gateNow = gateText(data.effectiveAt);
-    const resetFact = (when = "保存或批准") => `${when}后，生效时间改成那一刻：现在等结算的 ${pendingCount} 位不再进入结算`;
+    const resetFact = (when = "保存或批准") => `${when}后，现在等结算的 ${pendingCount} 位不再进入结算`;
     const approvalCopy = numeric
       ? "批准前仍按原金额发；批准时按那时的当月加成重算，并检查兑付覆盖率。"
       : isEnabled
