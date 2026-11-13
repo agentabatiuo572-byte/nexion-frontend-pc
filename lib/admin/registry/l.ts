@@ -33,7 +33,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   },
   {
     path: "/analytics/behavior-heatmap",
-    summary: "看用户在 App 各页面的浏览和点击分布，找出用户最关注和最容易忽略的位置。",
+    summary: "看 App 哪些页面用得多、哪些留不住、大家点哪里。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];
