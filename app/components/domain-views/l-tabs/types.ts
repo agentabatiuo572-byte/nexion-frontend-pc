@@ -21,6 +21,8 @@ export type ActionConfirmReq = {
   businessForm?: BusinessFormSpec;
   completionCopy?: string;
   confirmLabel?: string;
+  /** 不能撤回、放出高敏数据的确认传 danger：确认按钮危险色、标题前红底图标。 */
+  confirmTone?: "primary" | "danger";
   /** 生效标签，只在 RdPage 里显示。 */
   effect?: ReactNode;
   /** 理由框的占位，按场景写（TX-11）。 */
