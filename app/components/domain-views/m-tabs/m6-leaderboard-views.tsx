@@ -184,7 +184,7 @@ export function RankingTable({ board, state, currency, month, places, privateRea
             <Td><span className="m6-identity">
               <Avatar row={row} />
               <span className="m6-identity-text">
-                <span className="sl-person-name"><button type="button" className="m6-name" title={`${row.name} · ${row.groupName || "待分组"}`} onClick={() => onOpen(row.id)}>{row.name}</button>{self && <span className="m6-me">我</span>}</span>
+                <span className="sl-person-name"><Button variant="ghost" size="sm" className="m6-name" title={`${row.name} · ${row.groupName || "待分组"}`} onClick={() => onOpen(row.id)}>{row.name}</Button>{self && <span className="m6-me">我</span>}</span>
                 <span className="rd-note">{row.groupName || "待分组"}<QualificationTag row={row} /></span>
               </span>
             </span></Td>

@@ -52,8 +52,8 @@
 .m6-page .m6-table { table-layout: fixed; }
 .m6-page .m6-table th:nth-child(1) { width: 104px; }
 .m6-page .m6-table th:nth-child(2) { width: auto; }
-.m6-page .m6-table th:nth-child(3) { width: 21%; }
-.m6-page .m6-table th:nth-child(4), .m6-page .m6-table th:nth-child(5) { width: 14%; }
+.m6-page .m6-table th:nth-child(3) { width: 22%; }
+.m6-page .m6-table th:nth-child(4), .m6-page .m6-table th:nth-child(5) { width: 17%; }
 .m6-page .m6-table th:nth-child(6) { width: 120px; }
 .m6-page .m6-th { display: inline-flex; flex-direction: column; align-items: flex-end; }
 .m6-page .m6-th small { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); }
@@ -69,9 +69,8 @@
 .m6-page .m6-identity-text { display: flex; flex-direction: column; min-width: 0; }
 .m6-page .m6-identity-text .sl-person-name { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; }
 .m6-page .m6-identity-text .rd-note { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.m6-page .m6-name { min-width: 0; max-width: 100%; padding: 0; border: 0; background: none; color: var(--rd-text); font: inherit; font-weight: var(--rd-weight-medium); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-@media (hover: hover) and (pointer: fine) { .m6-page .m6-name:hover { text-decoration: underline; text-underline-offset: 3px; } }
-.m6-page .m6-name:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; border-radius: 2px; }
+.m6-page .m6-identity-text .m6-name { min-width: 0; max-width: 100%; justify-content: flex-start; padding-inline: 0; font-weight: var(--rd-weight-medium); }
+.m6-page .m6-identity-text .m6-name .rd-btn-face { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m6-page .m6-count-link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
 .m6-page .m6-empty { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-2); }
 .m6-page .m6-empty .rd-link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
