@@ -162,7 +162,7 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
             </Tr>}
           </tbody>
         </Table>
-        <p className="h9-band-rule">最多 20 档，名称 1–60 字；占比最多两位小数、合计 100%；算力 0–1,000,000,000 TOPS，最多六位小数，最低不大于最高。</p>
+        <p className="h9-band-rule">最多 20 档，名称 1–60 字；占比最多两位小数、合计 100%；算力 0–1,000,000,000 TOPS，<span className="rd-keep">最多六位小数，最低不大于最高。</span></p>
       </>}
       <ModuleToolbar note={note} tone={dirty && validation ? "warn" : undefined}>
         {refresh}
