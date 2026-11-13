@@ -165,7 +165,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       facts: (
         <Facts>
           <Fact k="时间段和阶段">{scope}</Fact>
-          <Fact k="文件内容">设备 8 项、任务 5 项、团队 6 项和每个阶段 4 项汇总<Explain label="运营汇总里有什么" content={<>
+          <Fact k="文件内容">设备、任务、团队和各阶段的汇总数<Explain label="运营汇总里有什么" content={<>
             <p>设备：在用设备、购置、退役、锁定、首次产出、产出 USDT、产出 UVT、衰减影响。任务：派发、完成、任务承接率、队列饱和度、签到活跃。团队：新增直接邀请、奖励笔数、团队奖励发放、团队成交额、推广率、团队奖励触发率。每个阶段：活跃人数、留存率、转化率、产出。</p>
             <p>不含按时间段的数、分布、衰减分段、阶段切换和参数调整次数；这是现在能导出的全部范围。算不出的比例那一行不写。</p>
             <p>六列：分类、周期/阶段、运营指标、值、单位、数据来源。</p>
@@ -470,7 +470,7 @@ function L4Body({ data, tab, setTab, tabIds, reach }: {
     </Conclusion>
   ) : rate !== null ? (
     <Conclusion state="ok" icon={ListChecks} explain={ACCEPTANCE_EXPLAIN} explainTitle="任务承接率怎么算">
-      运营报表：{scope}，任务承接率 {pct(rate)}，不低于 60% 预警线
+      运营报表：{scope}，任务承接率 {pct(rate)}，不低于 60% 预警线{rate > 100 ? "（完成数多于派发数，可以超过 100%）" : ""}
     </Conclusion>
   ) : (
     <Conclusion state="neutral" icon={Activity} explain={ACCEPTANCE_EXPLAIN} explainTitle="任务承接率怎么算">

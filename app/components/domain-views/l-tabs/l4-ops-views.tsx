@@ -68,7 +68,7 @@ function BucketChart({ label, history, pick, series, format, unit }: {
   if (history.length === 0) return <p className="rd-note">这段时间没有事件，不画。</p>;
   if (history.every((row) => pick(row).every((value) => value === 0))) return <p className="rd-note">这段时间每一段都是 0 {unit}。</p>;
   return (
-    <ColumnChart label={label} series={series} format={(value) => `${format(value)} ${unit}`} axisFormat={format} height={140}
+    <ColumnChart label={label} series={series} format={(value) => `${format(value)} ${unit}`} axisFormat={(value) => value.toLocaleString("en-US", { maximumFractionDigits: 2 })} height={140}
       data={history.map((row) => ({ key: row.bucket, tick: row.bucket.slice(5), values: pick(row), detail: <span>{row.bucket} 起</span> }))} />
   );
 }
@@ -202,11 +202,11 @@ export function TaskReport({ data, scope, links, panel }: { data: L4OperationsDa
       explain="按所选时间段和阶段里的任务事件算。这页只能看，不改任务规则。">
       <div className="l4-stack">
         <div className="l4-flow" role="group" aria-label="派发、完成和承接率">
-          <div className="l4-flow-cell"><span>派发</span><b data-empty={s.dispatched === 0 ? "" : undefined}>{count(s.dispatched)}<small>次</small></b></div>
+          <div className="l4-flow-cell"><span className="l4-flow-label">派发</span><b data-empty={s.dispatched === 0 ? "" : undefined}>{count(s.dispatched)}<small>次</small></b></div>
           <span className="l4-flow-arrow" aria-hidden />
-          <div className="l4-flow-cell"><span>完成</span><b data-empty={s.completed === 0 ? "" : undefined}>{count(s.completed)}<small>次</small></b></div>
+          <div className="l4-flow-cell"><span className="l4-flow-label">完成</span><b data-empty={s.completed === 0 ? "" : undefined}>{count(s.completed)}<small>次</small></b></div>
           <div className="l4-flow-cell" data-ratio="" data-tone={low ? "warn" : undefined}>
-            <span>任务承接率（完成 ÷ 派发）<Explain label="任务承接率怎么算" content={ACCEPTANCE_EXPLAIN} /></span>
+            <span className="l4-flow-label">任务承接率（完成 ÷ 派发）<Explain label="任务承接率怎么算" content={ACCEPTANCE_EXPLAIN} /></span>
             <b data-empty={rate === null ? "" : undefined}>{pct(rate)}</b>
             {rate === null
               ? <small className="rd-note">{s.dispatched === 0 ? "没有派发记录，算不出" : "有的事件缺少用户或任务编号，算不出"}</small>

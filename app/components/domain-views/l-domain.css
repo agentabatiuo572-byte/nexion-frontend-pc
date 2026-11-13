@@ -329,11 +329,11 @@
 .l4-page .l4-groups { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); gap: var(--rd-space-4) var(--rd-space-6); }
 .l4-page .l4-group { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; }
 .l4-page .l4-group[data-now] { padding-left: var(--rd-space-5); border-left: 1px solid var(--rd-line); }
-.l4-page .l4-nums { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--rd-space-3) var(--rd-space-4); }
+.l4-page .l4-nums { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: var(--rd-space-3) var(--rd-space-4); }
 .l4-page .l4-group[data-now] .l4-nums { grid-template-columns: minmax(0, 1fr); }
 .l4-page .l4-nums > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .l4-page .l4-nums dt { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
-.l4-page .l4-nums dd { margin: 0; display: inline-flex; align-items: baseline; gap: var(--rd-space-1); font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.l4-page .l4-nums dd { margin: 0; display: inline-flex; align-items: baseline; gap: var(--rd-space-1); font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
 .l4-page .l4-nums dd small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
 .l4-page .l4-nums dd[data-empty] { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
 .l4-page .l4-nums dd.l4-nums-sub { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
@@ -346,7 +346,7 @@
 /* 任务：派发 → 完成两格加承接率一格（刻度包住超过 100% 的值） */
 .l4-page .l4-flow { display: grid; grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr) minmax(0, 1.6fr); align-items: stretch; gap: var(--rd-space-2); }
 .l4-page .l4-flow-cell { display: flex; flex-direction: column; gap: var(--rd-space-1); min-width: 0; padding: var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-bg); }
-.l4-page .l4-flow-cell > span { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.l4-page .l4-flow-cell > .l4-flow-label { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .l4-page .l4-flow-cell > b { display: inline-flex; align-items: baseline; gap: var(--rd-space-1); font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .l4-page .l4-flow-cell > b small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
 .l4-page .l4-flow-cell > b[data-empty] { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
@@ -363,6 +363,7 @@
 /* 分布、阶段对照：排序条名称列定宽，几行的条从同一条线起 */
 .l4-page .rd-barlist li { grid-template-columns: minmax(0, 112px) minmax(96px, 1fr) max-content; }
 .l4-page .l4-dists { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--rd-section-gap); }
-.l4-page .l4-phase-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: var(--rd-space-5) var(--rd-section-gap); }
+.l4-page .l4-phase-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--rd-space-5) var(--rd-section-gap); }
+@container (max-width: 640px) { .l4-page .l4-phase-grid { grid-template-columns: minmax(0, 1fr); } }
 .l4-page .l4-table { width: 100%; }
 .l4-page .l4-table th:not(:first-child), .l4-page .l4-table td:not(:first-child) { white-space: nowrap; }
