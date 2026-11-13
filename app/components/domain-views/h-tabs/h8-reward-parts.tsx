@@ -63,7 +63,7 @@ export function RewardFlow({ pending, blocked, settled, mode, gateUnset }: { pen
               <p>没有邀请人的新人也有新人礼；这时邀请人那一份不发。</p>
             </>} />
           </span>
-          <span className="h8-flow-sub">{gateUnset ? "生效时间未设置：所有注册都算" : "生效时间之后注册的"}，有没有邀请人都算</span>
+          <span className="h8-flow-sub">{gateUnset ? "所有注册都算" : "生效时间之后"}，有没有邀请人都算</span>
         </div>
       </li>
       <li className="h8-flow-step">

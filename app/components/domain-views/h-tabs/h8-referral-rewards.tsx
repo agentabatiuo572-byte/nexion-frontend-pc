@@ -340,7 +340,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       return <Facts>
         {targeted
           ? <Fact k="新人用户编号" lead>{invitedUserId}</Fact>
-          : <Fact k="这一批最多" lead unit="位新人">{value ? countText(limit) : "—"}</Fact>}
+          : <Fact k="这一批最多" lead unit={value ? "位新人" : undefined}>{value ? countText(limit) : "—"}</Fact>}
         {targeted
           ? <Fact k="这位新人">{loaded
             ? "已结算过，不会再发一份"
