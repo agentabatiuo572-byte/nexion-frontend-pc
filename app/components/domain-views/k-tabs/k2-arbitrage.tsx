@@ -361,6 +361,11 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     setPendingVersion((version) => version + 1);
     onCommandsChange();
   };
+  // Persisted proposed proves creation only. Current pending status belongs to this read.
+  const [verifiedApprovals, setVerifiedApprovals] = useState<Record<string, { overview: typeof overview }>>({});
+  const approvalVerified = (record: K2PendingCommand | undefined) => Boolean(record
+    && !ctx.contentLoading && verifiedApprovals[record.commandKey]
+    && verifiedApprovals[record.commandKey].overview === overview);
   const [otpApprovalRequired, setOtpApprovalRequired] = useState<Record<string, boolean>>({});
   // Open confirmations keep their callbacks; new writes must read the latest page state.
   const currentState = useRef({ ctx, otpApprovalRequired, rereadPending });
@@ -381,7 +386,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
   };
   const otpFirstConfig: Partial<Record<string, "required" | "pending">> = {};
   for (const definition of OTP_GATE_PARAMS) {
-    if (pendingFor(definition.key)?.proposed) otpFirstConfig[definition.key] = "pending";
+    if (approvalVerified(pendingFor(definition.key))) otpFirstConfig[definition.key] = "pending";
     else if (overview?.otpInitializationRequired[definition.key] || otpApprovalRequired[definition.key]) otpFirstConfig[definition.key] = "required";
   }
   const [readAt, setReadAt] = useState<number | null>(null);
@@ -410,13 +415,23 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
   }, [ladderReferenceAttempt]);
 
   const queryProposal = async (record: K2PendingCommand, refresh = true) => {
+    const queriedOverview = currentState.current.ctx.risk.arbitrage;
+    setVerifiedApprovals((current) => {
+      const next = { ...current };
+      delete next[record.commandKey];
+      return next;
+    });
     const original = await fetchA2ProposalByKey(record.commandKey, true);
     if (!original) return false;
     const expectedAction = record.operation?.kind === "freeze" ? `联动 K1 批量冻结 · ${record.operation.target}` : `首次配置验证码设置 · ${record.operation?.target}`;
     if (!original.mine || original.obj !== record.operation?.target
       || (original.operationCode ? original.operationCode !== record.operation.proposal?.command.op : original.action !== expectedAction)) throw new Error("A2_BUSINESS_CONTEXT_MISMATCH");
-    if (original.status === "pending") commandAttempt.remember(record.fingerprint, record.commandKey, { operation: record.operation, proposed: true });
-    else commandAttempt.forget(record.fingerprint, record.commandKey);
+    if (original.status === "pending") {
+      commandAttempt.remember(record.fingerprint, record.commandKey, { operation: record.operation, proposed: true });
+      if (currentState.current.ctx.risk.arbitrage === queriedOverview) {
+        setVerifiedApprovals((current) => ({ ...current, [record.commandKey]: { overview: queriedOverview } }));
+      }
+    } else commandAttempt.forget(record.fingerprint, record.commandKey);
     syncPending();
     ctx.toast(`已找回原审批单 ${original.id}`);
     if (refresh && (!record.proposed || original.status !== "pending")) {
@@ -427,14 +442,16 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     return true;
   };
 
-  // A known pending proposal continues to lock its object across refresh; terminal tickets release it.
+  // Keep the saved lock, but recheck current approval status after each overview read.
   useEffect(() => {
+    setVerifiedApprovals({});
+    if (ctx.contentLoading) return;
     for (const record of commandAttempt.list().filter((item) => item.proposed)) {
       void queryProposal(record).catch((error) => ctx.toast(errorText(error)));
     }
   // The authoritative refresh is the point at which pending ticket status is checked again.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overview]);
+  }, [overview, ctx.contentLoading]);
 
   const sendOperation = async (operation: K2SavedOperation, attempt: K2ConfirmationAttempt) => {
     const retained = originalFor(attempt);
@@ -476,16 +493,10 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       if (operation.proposal) {
         const receipt = await createA2OperationProposal(operation.proposal, commandKey, true);
         if (!receipt.mine || receipt.obj !== operation.target) throw new A2OutcomeUncertainError("提交结果不完整，请查询原审批单。", commandKey);
-        // A replay confirms creation, not the ticket's current decision.
-        if (retained) {
-          requireReread();
-        } else if (receipt.status === "pending") {
-          commandAttempt.remember(scope, commandKey, { operation, proposed: true });
-          ctx.toast("已提交，等待审批后执行");
-        } else {
-          commandAttempt.forget(scope, commandKey);
-          ctx.toast(`已找回原审批单 ${receipt.id}`);
-        }
+        // Both fresh and replayed receipts prove creation, not the current decision.
+        commandAttempt.remember(scope, commandKey, { operation, proposed: true });
+        if (retained) requireReread();
+        ctx.toast("申请已提交，当前审批状态待查询");
       } else {
         await executeK2Command(operation.request, commandKey);
         commandAttempt.forget(scope, commandKey);
@@ -504,10 +515,11 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       syncPending();
     }
     if (operation.proposal) {
-      if (!retained) return;
       // Reads are outside the mutation catch: a failed lookup/reread cannot undo creation.
-      try { await queryProposal(retained, false); }
+      const submitted = originalFor(attempt)!;
+      try { await queryProposal(submitted, !retained); }
       catch (error) { ctx.toast(errorText(error)); }
+      if (!retained) return;
       try { await ctx.reloadKRisk(); }
       catch { ctx.toast("已找回原审批单，但页面刷新失败；请点「重新加载」核对"); }
       return;
@@ -820,16 +832,19 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     const query = approval
       ? () => void queryProposal(record).then((found) => { if (!found) ctx.toast("暂未找到原审批单，记录继续保留；可以稍后再查，或到「操作记录与审批」核对"); }).catch((error) => ctx.toast(errorText(error)))
       : reload;
-    const tag = record.proposed
+    const verified = approvalVerified(record);
+    const tag = verified
       ? pendingTag(action === "freeze" ? "另一位管理员" : "另一位超级管理员", action === "freeze" ? "批准前这组账户、登录和提现都不变；这条命中的处置按钮先锁住。" : "批准前 App 仍按系统默认值处理；这一项先锁住。")
-      : expired ? expiredTag(approval ? "approval" : "direct") : unknownTag(approval ? "approval" : "direct");
+      : record.proposed
+        ? <StatusTag tone="warn" explain="申请已提交，当前审批状态未查到。原记录和锁定保留，请查询原结果。">结果未知</StatusTag>
+        : expired ? expiredTag(approval ? "approval" : "direct") : unknownTag(approval ? "approval" : "direct");
     return {
       key: record.fingerprint,
       name,
       change,
       submittedAt: record.createdAt,
       tag,
-      state: record.proposed ? "pending" : expired ? "expired" : "unknown",
+      state: verified ? "pending" : expired ? "expired" : "unknown",
       actions: <>
         <Button size="sm" onClick={query}>查询原结果</Button>
         {!record.proposed && <Button size="sm" disabledReason={!retry ? "这是旧版本留下的记录，没有保存原请求，只能查询" : expired ? "原请求超过 24 小时，不能再重试，只能查询" : undefined} onClick={retry}>按原请求重试</Button>}
@@ -864,7 +879,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
 
   const stat = (key: string) => overview.stats.find((item) => item.key === key)?.value ?? "—";
   // 本人提交、查询确认还在等批准的冻结申请：行上打「待审批」，不算进待处置。
-  const awaitingApproval = (row: K2Row) => !row.disposition && Boolean(pendingFor(row.rowId)?.proposed);
+  const awaitingApproval = (row: K2Row) => !row.disposition && approvalVerified(pendingFor(row.rowId));
   const summaries = views.map((view) => {
     const awaiting = view.rows.filter(awaitingApproval).length;
     const pendingRows = view.rows.filter((row) => !row.disposition && !awaitingApproval(row));
@@ -911,7 +926,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
   const rowActions = (r: K2Row, size: "sm" | "md") => {
     if (r.disposition) return null;
     const locked = pendingFor(r.rowId);
-    const lockedReason = locked ? errorText(new Error(locked.proposed ? "OBJECT_ALREADY_PENDING" : "IDEMPOTENCY_RESULT_UNKNOWN")) : newWriteBlockedReason;
+    const lockedReason = locked ? errorText(new Error(approvalVerified(locked) ? "OBJECT_ALREADY_PENDING" : "IDEMPOTENCY_RESULT_UNKNOWN")) : newWriteBlockedReason;
     const buttons = r.actions.map((action) => {
       if (action === "flag") return canFlag ? <Button key={action} size={size} disabledReason={lockedReason} onClick={() => markArb(r)}>标记套利</Button> : null;
       if (action === "blockgift") return canBlockGift ? <Button key={action} size={size} disabledReason={lockedReason} onClick={() => blockGift(r)}>拦截新人礼</Button> : null;

@@ -13,14 +13,16 @@ import { Notice } from "@/app/components/rd/block-state";
 import { Button as RdButton } from "@/app/components/rd/button";
 import { useRdSurface } from "@/app/components/rd/surface";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { K1OutcomeUncertainError } from "@/lib/admin/k-client";
 import { Modal, Btn, Chip, OperatorBriefBlock } from "../design-kit";
 import type { ConfirmReq } from "./types";
 
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
   const [pendingReason, setPendingReason] = useState(() => req.getPendingReason?.());
-  // 打开时就带着保存的原操作：这是重试原操作，不是一次新操作。
-  const [retrying] = useState(() => Boolean(req.recoveryUi) && pendingReason !== undefined);
+  const [reopened] = useState(() => Boolean(req.recoveryUi) && pendingReason !== undefined);
+  // Only a still-retained original request is a retry, including after a failed submit.
+  const retrying = Boolean(req.recoveryUi) && pendingReason !== undefined;
   // 提交后结果未知：框里留一条看得见的提示，按钮改成按原请求重试（提示条会消失）。
   const [unknown, setUnknown] = useState(false);
   const [draftReason, setReason] = useState(pendingReason ?? "");
@@ -71,10 +73,11 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         return;
       }
       const handled = typeof req.errorHandled === "function" ? req.errorHandled(cause) : req.errorHandled;
-      if (req.recoveryUi && cause instanceof K1OutcomeUncertainError && cause.commandKey) setUnknown(true);
-      else if (!handled) setError(displayAdminError(cause));
+      if (!(req.recoveryUi && cause instanceof K1OutcomeUncertainError && cause.commandKey) && !handled) setError(displayAdminError(cause));
     } finally {
-      setPendingReason(req.getPendingReason?.());
+      const retainedReason = req.getPendingReason?.();
+      setPendingReason(retainedReason);
+      if (req.recoveryUi) setUnknown(retainedReason !== undefined);
       setPendingValue(req.getPendingValue?.());
       setSubmitting(false);
     }
@@ -120,9 +123,11 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       <fieldset disabled={submitting || pendingReason !== undefined} className="rd-contents">
       {(retrying || unknown) && surface && (
         <div className="rd-confirm-alert">
-          {req.blockedReason
+          {req.blockedReason === RETRY_EXPIRED_TEXT
             ? <Notice tone="warn" title="已过期，只能查询">原请求超过 24 小时，不能再重试。关掉这个框，在页面上方的提醒里点「查询原结果」，或到「操作记录与审批」核对。</Notice>
-            : <Notice tone="warn" title="结果未知">{unknown && !retrying ? "刚才提交时没收到确定结果，可能已经生效。" : "这是之前提交、结果未知的原操作。"}按原请求重试会原样再发一次（理由和内容都不变），后端认得出是同一次提交，不会重复执行。也可以关掉，在页面上方的提醒里查询原结果。</Notice>}
+            : req.blockedReason
+              ? <Notice tone="warn" title="结果未知">{req.blockedReason}原记录继续保留，可以关掉这个框，在页面上方的提醒里查询原结果。</Notice>
+            : <Notice tone="warn" title="结果未知">{unknown && !reopened ? "刚才提交时没收到确定结果，可能已经生效。" : "这是之前提交、结果未知的原操作。"}按原请求重试会原样再发一次（理由和内容都不变），后端认得出是同一次提交，不会重复执行。也可以关掉，在页面上方的提醒里查询原结果。</Notice>}
         </div>
       )}
       {error && (surface
