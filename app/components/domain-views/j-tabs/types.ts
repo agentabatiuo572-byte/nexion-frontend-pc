@@ -41,7 +41,8 @@ export type JCtx = {
   params: Record<string, unknown>;
   setParam: (k: string, v: string, meta: { action: string; reason: string }) => void;
   toast: (s: string, kind?: ToastKind) => void;
-  openActionConfirm: (req: ActionConfirmReq) => void;
+  /** 传 null 关掉确认框（J2 从确认框「返回修改」回到选国家）。 */
+  openActionConfirm: (req: ActionConfirmReq | null) => void;
   emergency: JEmergencyData;
   actions: JEmergencyActions;
   contentLoading: boolean;

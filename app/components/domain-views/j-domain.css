@@ -501,3 +501,158 @@
 .jdom .exec-tbl .acts button { padding: 5px 9px; border-radius: 6px; border: 1px solid var(--border-strong);
   background: var(--surface-2); color: var(--ink-2); font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
 @media (hover: hover) and (pointer: fine) { .jdom .exec-tbl .acts button:hover { background: var(--surface-3); color: var(--ink); } }
+
+/* ============================ J2 地区访问限制（改版） ============================ */
+.j2-page { display: contents; }
+.j2-page .j2-muted { color: var(--rd-text-3); }
+.j2-page .j2-note { margin: 12px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.j2-page .j2-num { font-variant-numeric: tabular-nums; }
+.j2-page .j2-num[data-zero] { color: var(--rd-text-3); }
+:is(.j2-page, .j2-editor, .rd-confirm) .j2-linkbtn { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; white-space: nowrap; }
+
+/* 一个国家：中文名在前，代码等宽小一档 */
+:is(.j2-page, .j2-editor, .rd-confirm) .j2-cc-label { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
+:is(.j2-page, .j2-editor, .rd-confirm) .j2-cc-code { font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+
+/* 名单卡：后果一行、国家墙、按账户国家的人数和余额 */
+.j2-page .j2-scope { display: flex; align-items: center; gap: 6px; margin: 0 0 12px; color: var(--rd-text-2); }
+.j2-page .j2-scope svg { flex: none; color: var(--rd-text-3); }
+.j2-page .j2-empty { margin: 0; padding: 16px 0; color: var(--rd-text-3); }
+.j2-page .j2-wall { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.j2-page .j2-cc { display: inline-flex; align-items: center; gap: 8px; height: var(--rd-control-h); padding: 0 10px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); white-space: nowrap; }
+.j2-page .j2-cc[data-small] { height: var(--rd-control-h-sm); padding: 0 8px; font-size: var(--rd-text-aux); }
+.j2-page .j2-cc-hits { padding-left: 8px; border-left: 1px solid var(--rd-line); font-size: var(--rd-text-aux); color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
+:root[data-theme="light"] .j2-page .j2-cc { box-shadow: inset 0 0 0 1px var(--rd-line); }
+.j2-page .j2-wall .rd-link { display: inline-flex; align-items: center; height: var(--rd-control-h); }
+.j2-page .j2-impact { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--rd-line); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.j2-page .j2-impact b { color: var(--rd-text); font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; }
+.j2-page .rd-split > .rd-panel { display: flex; flex-direction: column; }
+.j2-page .rd-split > .rd-panel > .j2-impact { margin-top: auto; }
+.j2-page .rd-split > .rd-panel > .j2-wall + .j2-impact, .j2-page .rd-split > .rd-panel > .j2-empty + .j2-impact { margin-top: 16px; }
+
+/* 功能入口规则：判断顺序、看一个国家、对照表 */
+.j2-page .j2-endpoints-top { display: grid; gap: 12px; padding: 0 var(--rd-panel-pad-x) 16px; }
+.j2-page .j2-order { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; counter-reset: none; }
+.j2-page .j2-order li { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: start; gap: 2px 8px; padding: 10px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+:root[data-theme="light"] .j2-page .j2-order li { box-shadow: inset 0 0 0 1px var(--rd-line); }
+.j2-page .j2-order-n { grid-row: span 2; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--rd-control); color: var(--rd-text-2); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.j2-page .j2-order-if { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.j2-page .j2-order-then { display: inline-flex; align-items: center; gap: 4px; color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+.j2-page .j2-order-then svg { flex: none; }
+.j2-page .j2-order-then[data-tone="danger"] svg { color: var(--rd-danger); }
+.j2-page .j2-order-then[data-tone="warn"] svg { color: var(--rd-warn); }
+@container jdom (max-width: 900px) { .j2-page .j2-order { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.j2-page .j2-lookup { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.j2-page .j2-lookup-label { font-size: var(--rd-text-aux); color: var(--rd-text-2); white-space: nowrap; }
+.j2-page .j2-lookup-box { flex: 0 1 320px; min-width: 220px; }
+.j2-page .j2-endpoints-empty { padding: 0 var(--rd-panel-pad-x) var(--rd-panel-pad-y); }
+.j2-page .j2-endpoint-table { table-layout: fixed; }
+.j2-page .j2-endpoint-table th:nth-child(1) { width: 22%; }
+.j2-page .j2-endpoint-table th:nth-child(2) { width: 120px; }
+.j2-page .j2-endpoint-table[data-lookup] th:nth-child(4) { width: 25%; }
+.j2-page .j2-endpoint-table th:nth-last-child(2) { width: 128px; }
+.j2-page .j2-endpoint-table th:last-child { width: 112px; }
+@container jdom (max-width: 900px) {
+  .j2-page .j2-endpoint-table th:nth-child(1) { width: 20%; }
+  .j2-page .j2-endpoint-table th:nth-child(2) { width: 104px; }
+  .j2-page .j2-endpoint-table th:nth-last-child(2) { width: 112px; }
+  .j2-page .j2-endpoint-table[data-lookup] th:nth-child(1) { width: 18%; }
+  .j2-page .j2-endpoint-table[data-lookup] th:nth-child(2) { width: 88px; }
+  .j2-page .j2-endpoint-table[data-lookup] th:nth-child(4) { width: 24%; }
+  .j2-page .j2-endpoint-table[data-lookup] th:nth-last-child(2) { width: 88px; }
+  .j2-page .j2-endpoint-table[data-lookup] th:last-child { width: 96px; }
+}
+.j2-page .j2-mode[data-mode="explicit"] { color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+.j2-page .j2-mode[data-mode="derived"] { color: var(--rd-text-2); }
+.j2-page .j2-entry-cc { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.j2-page .j2-more { font-size: var(--rd-text-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+
+/* 地区识别：两个识别源并排 */
+.j2-page .j2-sources { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.j2-page .rd-notice + .j2-sources { margin-top: 12px; }
+.j2-page .j2-source { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); box-shadow: inset 0 0 0 1px var(--rd-line); }
+.j2-page .j2-source[data-current] { box-shadow: inset 0 0 0 1px var(--rd-line-strong); }
+.j2-page .j2-source-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.j2-page .j2-source-name { font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.j2-page .j2-source-health { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: var(--rd-text-aux); }
+.j2-page .j2-source .rd-kv { margin: 0; }
+.j2-page .j2-source-foot { margin-top: auto; display: flex; justify-content: flex-end; }
+
+/* 名单国家明细 */
+.j2-page .j2-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
+.j2-page .j2-filter-search { width: 240px; }
+.j2-page .j2-country-table { table-layout: fixed; }
+.j2-page .j2-country-table th:nth-child(1) { width: 18%; }
+.j2-page .j2-country-table th:nth-child(2) { width: 88px; }
+.j2-page .j2-country-table th:nth-child(3) { width: 128px; }
+.j2-page .j2-country-table th:nth-child(4) { width: 132px; }
+.j2-page .j2-country-table th:nth-child(5) { width: 160px; }
+
+/* 拦截记录 */
+.j2-page .j2-hits { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px 32px; }
+.j2-page .j2-sub-title { margin: 0 0 12px; font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.j2-page .j2-hits .rd-barlist li { grid-template-columns: 9em minmax(120px, var(--rd-track-w, 320px)) max-content; }
+
+/* 最近修改 */
+.j2-page .j2-change-table { table-layout: fixed; }
+.j2-page .j2-change-table th:nth-child(1) { width: 140px; }
+.j2-page .j2-change-table th:nth-child(2) { width: 13%; }
+.j2-page .j2-change-table th:nth-child(3) { width: 16%; }
+.j2-page .j2-change-table th:nth-child(4) { width: 34%; }
+
+/* 结果未知的原操作，和 G 域的逐条提醒一个样子 */
+.j2-page .j2-rec { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.j2-page .j2-rec li { display: grid; grid-template-columns: minmax(96px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.j2-page .j2-rec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.j2-page .j2-rec-change { min-width: 0; overflow-wrap: anywhere; color: var(--rd-text); }
+.j2-page .j2-rec-time { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.j2-page .j2-rec-state { display: inline-flex; align-items: center; gap: 8px; }
+.j2-page .j2-rec-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.j2-page .j2-rec-note { grid-column: 1 / -1; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.j2-page .j2-rec-zone { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+@container jdom (max-width: 900px) {
+  .j2-page .j2-rec li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
+  .j2-page .j2-rec-state { grid-column: 3; grid-row: 1; justify-content: flex-end; }
+  .j2-page .j2-rec-time { grid-column: 1 / 3; grid-row: 2; }
+  .j2-page .j2-rec-actions { grid-column: 3; grid-row: 2; }
+}
+
+/* 选国家的框和确认框里的差异对照 */
+:is(.j2-editor, .rd-confirm) .j2-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+:is(.j2-editor, .rd-confirm) .j2-chip { height: auto; min-height: var(--rd-control-h-sm); padding: 2px 4px 2px 8px; color: var(--rd-text); font-size: var(--rd-text-aux); }
+:is(.j2-editor, .rd-confirm) .j2-chip:not(:has(.rd-chip-x)) { padding-right: 8px; }
+:is(.j2-editor, .rd-confirm) .j2-chip-mark { margin-left: 2px; padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-progress-pill); color: var(--rd-progress); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.j2-editor .j2-chip[data-removed] .j2-cc-label > span:first-child { text-decoration: line-through; color: var(--rd-text-2); }
+.j2-editor .j2-editor-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.j2-editor .j2-editor-label { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.j2-editor .j2-editor-diff { display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 10px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.j2-editor .j2-editor-count { display: inline-flex; align-items: center; gap: 4px; color: var(--rd-text-2); }
+.j2-editor .j2-editor-count b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.j2-editor .j2-editor-count[data-tone="add"] svg { color: var(--rd-progress); }
+.j2-editor .j2-editor-count[data-tone="remove"] svg { color: var(--rd-warn); }
+.j2-editor .j2-editor-block { display: grid; gap: 8px; }
+.j2-editor .j2-editor-removed { display: grid; gap: 8px; margin-top: 4px; }
+.j2-editor .j2-editor-removed .j2-editor-label { font-size: var(--rd-text-aux); color: var(--rd-text-2); }
+.j2-editor .j2-editor-empty, .j2-editor .j2-editor-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.j2-editor .j2-editor-empty .rd-link { margin-left: 8px; }
+.j2-editor .j2-editor-search { position: relative; display: block; }
+.j2-editor .j2-editor-search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--rd-text-3); pointer-events: none; }
+.j2-editor .j2-editor-search .rd-input { padding-left: 32px; }
+.j2-editor .j2-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 2px 12px; max-height: 260px; margin: 0; padding: 4px; overflow-y: auto; list-style: none; border-radius: var(--rd-radius-control); box-shadow: inset 0 0 0 1px var(--rd-line); }
+.j2-editor .j2-pick-row { display: flex; align-items: center; gap: 8px; min-height: var(--rd-control-h); padding: 0 8px; border-radius: var(--rd-radius-tag); color: var(--rd-text); cursor: pointer; }
+.j2-editor .j2-pick-row[data-on] { background: var(--rd-selected); }
+@media (hover: hover) and (pointer: fine) { .j2-editor .j2-pick-row:hover { background: var(--rd-hover); } }
+.j2-editor .j2-pick-status { margin-left: auto; font-size: var(--rd-text-aux); color: var(--rd-text-3); white-space: nowrap; }
+.rd-confirm .j2-diff { display: grid; gap: 12px; }
+.rd-confirm .j2-diff-group { display: grid; gap: 8px; }
+.rd-confirm .j2-diff-group + .j2-diff-group { padding-top: 12px; border-top: 1px solid var(--rd-line); }
+.rd-confirm .j2-diff-group[data-tone="add"] .j2-diff-head svg { color: var(--rd-danger); }
+.rd-confirm .j2-diff-group[data-tone="remove"] .j2-diff-head svg { color: var(--rd-warn); }
+.rd-confirm .j2-diff-head { display: flex; align-items: center; gap: 4px; margin: 0; font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.rd-confirm .j2-diff-head b { font-variant-numeric: tabular-nums; }
+.rd-confirm .j2-diff-effect { margin: 0; color: var(--rd-text); }
+.rd-confirm .j2-diff-impact { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.rd-confirm .j2-diff-impact b { color: var(--rd-text); font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; }
+.rd-confirm .j2-diff-none { margin: 0; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.rd-confirm .j2-diff-back { display: flex; }
+.rd-confirm .j2-muted { color: var(--rd-text-3); }
