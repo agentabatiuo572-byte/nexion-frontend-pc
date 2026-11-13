@@ -267,7 +267,7 @@ const VIEW_UI: Record<string, ViewUi> = {
     measure: "涉及金额是这组已结算新人礼的合计，USDT 和 UVT 分开写，各保留 2 位小数。",
     columns: [
       { label: "涉及金额", main: 3, num: true, kind: "amounts", explain: "这组已结算新人礼的合计，USDT 和 UVT 分开写，各保留 2 位小数。" },
-      { label: "已结算新人礼", main: 4, num: true, kind: "settled", explain: "这组账户已结算的新人礼笔数，统计全部记录，没有时间窗。" },
+      { label: "已结算", main: 4, num: true, kind: "settled", explain: "这组账户已结算的新人礼笔数，统计全部记录，没有时间窗。" },
     ],
   },
   board: {

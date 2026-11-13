@@ -366,6 +366,9 @@
   .k2-level-word { display: none; }
   .k2-hits th:nth-last-child(2), .k2-hits td:nth-last-child(2) { width: 96px; }
   .k2-hits th:first-child, .k2-hits td:first-child { width: 22%; }
+  /* 新人礼：九位数金额要整行放下，笔数列只留数字宽。 */
+  .k2-hits[data-view="gift"] th:nth-child(2), .k2-hits[data-view="gift"] td:nth-child(2) { width: 172px; }
+  .k2-hits[data-view="gift"] th:nth-child(3), .k2-hits[data-view="gift"] td:nth-child(3) { width: 84px; }
 }
 
 /* ── K4 风险评分规则（改版）：只写这页自己的排法，颜色和字号都取 --rd-*。 ── */

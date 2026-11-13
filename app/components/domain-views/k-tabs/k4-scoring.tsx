@@ -989,7 +989,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
                       const unknown = alertUnknown.includes(alert.id);
                       return (
                         <Tr key={alert.id}>
-                          <Td><Cell mono main={<MidId value={alert.withdrawalNo} />} title={alert.withdrawalNo} sub={alert.priority === null ? undefined : PRIORITY_TEXT[alert.priority] ?? alert.priority} /></Td>
+                          <Td><Cell mono full main={<MidId value={alert.withdrawalNo} />} title={alert.withdrawalNo} sub={alert.priority === null ? undefined : PRIORITY_TEXT[alert.priority] ?? alert.priority} /></Td>
                           <Td align="right"><Cell num main={alert.riskScore == null ? "—" : `${alert.riskScore} 分`} /></Td>
                           <Td><Cell main={versionText(alert.modelVersion)} sub={alert.scoreAsOf ? stamp(alert.scoreAsOf) : "—"} /></Td>
                           <Td><Cell num main={stamp(alert.createdAt).slice(0, 10)} sub={stamp(alert.createdAt).slice(11)} /></Td>
