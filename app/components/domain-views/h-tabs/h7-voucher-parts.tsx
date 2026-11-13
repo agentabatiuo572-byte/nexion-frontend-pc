@@ -206,10 +206,10 @@ export function expiredTag() {
   return <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查不到也不能据此认定没提交。">已过期</StatusTag>;
 }
 
-export function H7RecoveryNotice({ title, explain, rows, action }: { title: ReactNode; explain: ReactNode; rows: H7RecoveryRow[]; action?: ReactNode }) {
+export function H7RecoveryNotice({ title, explain, rows, link }: { title: ReactNode; explain: ReactNode; rows: H7RecoveryRow[]; link?: ReactNode }) {
   if (rows.length === 0) return null;
   return (
-    <Notice tone="warn" title={<>{title}<Explain label="原申请怎么处理" content={explain} /></>} action={action}>
+    <Notice tone="warn" title={<>{title}<Explain label="原申请怎么处理" content={explain} /></>}>
       <ul className="h7-rec" aria-label="原申请">
         {rows.map((row) => (
           <li key={row.key}>
@@ -221,7 +221,7 @@ export function H7RecoveryNotice({ title, explain, rows, action }: { title: Reac
           </li>
         ))}
       </ul>
-      <p className="h7-rec-zone">提交时间为{businessZone().label}</p>
+      <p className="h7-rec-zone">提交时间为{businessZone().label}{link && <> · {link}</>}</p>
     </Notice>
   );
 }

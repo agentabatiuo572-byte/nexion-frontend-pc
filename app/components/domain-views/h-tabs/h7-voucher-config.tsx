@@ -450,7 +450,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         <p>先「查询原结果」；查不到、又没过 24 小时，可以「按原请求重试」，后端认得出是同一次提交，不会建第二张审批单。过了 24 小时只能查询。</p>
         <p>结果确认之前，这张券不能再提交删除或作废。</p>
       </>}
-      action={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link> : undefined} />
+      link={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link> : undefined} />
   );
 
   const header = (
