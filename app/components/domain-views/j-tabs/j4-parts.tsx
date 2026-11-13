@@ -48,7 +48,7 @@ export function stepInfo(step: Pick<PlaybookStep, "dom" | "ax" | "ref">, notify?
   const dom = (step.dom || "").toUpperCase();
   const ref = (step.ref || "").trim();
   const arg = ref.includes(":") ? ref.slice(ref.indexOf(":") + 1) : "";
-  const page = DOMAIN_PAGE[dom] ?? "未知页面";
+  const page = DOMAIN_PAGE[dom] ?? "";
   if (dom === "J1" && ref === "withdraw") return { title: "关停提现", impact: "停止新提现申请、审核放行和未派发的链上打款；已交给打款方的不保证撤回", undo: "here", undoText: "执行完成后可以在这页恢复这个开关（直接生效，不走审批）", page };
   if (dom === "J1" && ref === "genesis") return { title: "关停创世节点", impact: "暂停创世节点交易和转让市场入口", undo: "here", undoText: "执行完成后可以在这页恢复这个开关（直接生效，不走审批）", page };
   if (dom === "J2" && ref.startsWith("geo-block:")) return { title: "封锁国家或地区", target: arg.toUpperCase(), impact: "来自这个国家或地区的 App 请求全部被拒：注册、登录、浏览和资金操作都不行", undo: "elsewhere", undoText: "这页收不回；要放开，到「地区访问限制」从封锁名单去掉", page };
@@ -89,7 +89,7 @@ export function StepTimeline({ steps, notify, confirm, label = "执行步骤" }:
                 {step.approve && <StatusTag tone="neutral" icon={ListChecks} explain="预案定义里这一步标了「需确认」。提交执行时每一步都要你逐项勾选；批准后系统按顺序自动执行，执行中途不会停下来等人确认。">需确认</StatusTag>}
               </div>
               <p className="j4-step-impact">{info.impact}</p>
-              <p className="j4-step-page">在「{info.page}」执行</p>
+              {info.page && <p className="j4-step-page">在「{info.page}」执行</p>}
             </div>
             {confirm && (
               <label className="j4-step-check">
@@ -366,7 +366,7 @@ export function PlaybookEditor({ spec, onClose }: { spec: EditorSpec; onClose: (
               return (
                 <li key={`${line}-${index}`}>
                   <span className="j4-step-n" aria-hidden>{index + 1}</span>
-                  <span className="j4-added-main"><span className="j4-step-title">{info.title}</span>{info.target && <span className="j4-step-target" data-mono="">{info.target}</span>}<span className="j4-added-page">{info.page}</span></span>
+                  <span className="j4-added-main"><span className="j4-step-title">{info.title}</span>{info.target && <span className="j4-step-target" data-mono="">{info.target}</span>}{info.page && <span className="j4-added-page">{info.page}</span>}</span>
                   <UndoTag info={info} />
                   <Button size="sm" variant="ghost" icon={<Trash2 size={14} aria-hidden />} onClick={() => set({ lines: draft.lines.filter((_, i) => i !== index) })}>移除</Button>
                 </li>

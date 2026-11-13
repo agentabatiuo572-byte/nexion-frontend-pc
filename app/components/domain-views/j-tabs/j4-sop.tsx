@@ -198,7 +198,6 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       const message = displayAdminError(error);
       if (/中途失败|未收到执行结果|结果暂未确认/.test(message)) {
         await actions.reloadJEmergency().catch(() => undefined);
-        toast(`${message} 页面已刷新，请到执行记录核对每一步。`, "warn");
       }
       // 明确失败的原因写在确认框里（权限层的 403 由确认框提示并关框），不再弹同一句。
       throw error;
@@ -505,7 +504,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
           const outcome = row.status === "pending" ? "还没开始，记为跳过"
             : dom === "J1" || dom === "I3" ? "按系统记录核对：能证明做成的记成功，否则记失败"
             : "系统没有这一步的完成记录，会记为失败；实际可能已经生效，到对应页面核对";
-          return <Fact key={row.index} k={`第 ${row.index + 1} 步`} tone={row.status === "running" && dom !== "J1" && dom !== "I3" ? "warn" : undefined}>{outcome}</Fact>;
+          const title = row.action ? stepInfo({ dom, ax: String(row.action.action ?? ""), ref: row.action.ref ? String(row.action.ref) : dom === "J1" ? String(row.action.configKey ?? "").replace("killswitch.", "") : dom === "I3" ? "campaign-notify" : null }).title : "";
+          return <Fact key={row.index} k={`第 ${row.index + 1} 步`} tone={row.status === "running" && dom !== "J1" && dom !== "I3" ? "warn" : undefined}>{title ? `${title}：` : ""}{outcome}</Fact>;
         })}
         <Fact k="之后">不会自动执行剩下的步骤；有失败或跳过时这次执行记为部分完成</Fact>
       </Facts>,
@@ -524,7 +524,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     const live = contractReady && canRun && Boolean(e.executionId) && e.mode !== "drill" && e.steps.some((step) => step === "pending" || step === "running");
     const restorable = contractReady && canRun && canRestore && Boolean(e.executionId) && e.reversible && !e.steps.some((step) => step === "pending" || step === "running" || step === "recovering") && e.mode !== "drill" && e.rollbackStatus !== "ROLLED_BACK";
     return <span className="j4-row-acts">
-      <Button size="sm" variant={compact ? "secondary" : "ghost"} icon={<ScanSearch size={14} aria-hidden />} onClick={() => setTraceExecution(e)}>追溯</Button>
+      {compact && <Button size="sm" icon={<ScanSearch size={14} aria-hidden />} onClick={() => setTraceExecution(e)}>追溯</Button>}
       {live && <Button size="sm" icon={<Square size={14} aria-hidden />} disabledReason={contentLoading ? READING : undefined} onClick={() => cancelExecution(e)}>取消</Button>}
       {live && <Button size="sm" disabledReason={contentLoading ? READING : undefined} onClick={() => resumeExecution(e)}>恢复核对</Button>}
       {restorable && <Button size="sm" variant="danger-outline" icon={<RotateCcw size={14} aria-hidden />} disabledReason={contentLoading ? READING : undefined} onClick={() => rollbackPb(e)}>恢复开关</Button>}
@@ -533,13 +533,13 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
 
   // ---------- 结论 ----------
   const conclusion = !contractReady ? (
-    <Conclusion state="danger" hint="请联系技术人员检查应急执行服务。">应急执行服务尚未就绪，现在只能查看</Conclusion>
+    <Conclusion state="danger" hint="请联系技术人员检查后再进行操作。">应急执行服务尚未就绪，当前仅可查看</Conclusion>
   ) : active.length > 0 ? (
-    <Conclusion state="warn" lead hint="在下面「正在执行」看做到哪一步；超过 2 分钟没进展可以恢复核对。">{count(active.length)} 次正式执行进行中</Conclusion>
+    <Conclusion state="warn" lead hint={canRun ? "在下面「正在执行」看做到哪一步；超过 2 分钟没进展可以恢复核对。" : "在下面「正在执行」看做到哪一步；取消和恢复核对请找有执行权限的同事。"}>{count(active.length)} 次正式执行进行中</Conclusion>
   ) : recoveryRows.length > 0 ? (
     <Conclusion state="warn" hint="到上方逐条查询原结果。">{count(recoveryRows.length)} 项操作结果未知；{count(ready)} 个预案可执行</Conclusion>
   ) : PLAYBOOKS.length === 0 ? (
-    <Conclusion state="neutral" hint={canWrite ? "点右上角「新增预案」，保存后演练通过才能用。" : "请有预案维护权限的同事新增。"}>还没有应急预案，出事时没有可用的预案</Conclusion>
+    <Conclusion state="warn" hint={canWrite ? "点右上角「新增预案」，保存后演练通过才能用。" : "请有预案维护权限的同事新增。"}>还没有应急预案，出事时没有可用的预案</Conclusion>
   ) : ready === 0 ? (
     <Conclusion state="warn" hint={canWrite ? "在「预案库」选预案点「演练」，演练通过才能正式执行。" : "请有预案维护权限的同事演练。"}>{count(PLAYBOOKS.length)} 个预案都还不能正式执行</Conclusion>
   ) : (
@@ -590,8 +590,9 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const sceneCounts = (s: string) => s === "全部" ? PLAYBOOKS.length : PLAYBOOKS.filter((p) => p.scene === s).length;
   const statusTag = (p: Playbook) => {
     const gate = executionGate(p);
-    if (gate.legacyStepCount > 0) return <StatusTag tone="warn" icon={TriangleAlert} explain={gate.hint}>历史预案 · 需迁移</StatusTag>;
+    if (gate.legacyStepCount > 0) return <StatusTag tone="warn" icon={TriangleAlert} explain={`历史预案：${gate.hint}`}>需迁移</StatusTag>;
     if (gate.state === "active") return <StatusTag tone="ok" icon={ShieldCheck}>可执行</StatusTag>;
+    if (!contractReady) return <StatusTag tone="neutral" icon={TriangleAlert} explain={NOT_READY}>服务未就绪</StatusTag>;
     return <StatusTag tone="warn" explain={p.readinessReason || undefined}>{p.readinessReason ? (p.readinessReason.length > 12 ? "待演练" : p.readinessReason) : "草稿 · 待演练"}</StatusTag>;
   };
   const libraryPanel = (
@@ -639,7 +640,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         ]} />
         {gate.state !== "active" && (gate.legacyStepCount > 0
           ? <Notice tone="warn">{gate.legacyStepCount} 个动作已经不能执行，先编辑预案换掉，再重新演练。</Notice>
-          : <Notice tone="warn">{p.readinessReason || "还没演练"}。演练通过才能正式执行。</Notice>)}
+          : !contractReady ? <Notice tone="danger">{NOT_READY}。</Notice>
+          : <Notice tone="warn">{p.readinessReason || "待演练"}。演练通过才能正式执行。</Notice>)}
         <h3 className="j4-sub-title">按下去会依次发生 <span className="j4-muted">{count(p.seq.length)} 步 · {undoSummary(supported)}</span></h3>
         {p.seq.length === 0 ? <p className="j4-muted">这个预案没有步骤。</p> : <StepTimeline steps={p.seq} notify={{ campaignNo: p.notifyCampaignNo, template: p.notifyTemplate }} />}
         <KeyValues rows={[
@@ -669,9 +671,9 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   // ---------- 执行记录 ----------
   const historyPanel = (
     <Panel title="执行记录" icon={History} tone="role-other" flush sub={EXECS.length >= 20 ? "最近 20 次" : `${count(EXECS.length)} 次`}
-      explain="正式执行和演练都在这里，最近的在上，最多列 20 次；更早的到「操作记录与审批」查。等批准的申请批准前不在这里。失败前已完成的步骤保持生效。"
+      explain="正式执行和演练都在这里，最近的在上，最多列 20 次；点一行看逐步追溯。更早的到「操作记录与审批」查。等批准的申请批准前不在这里。失败前已完成的步骤保持生效。"
       actions={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=J" prefetch={false}>查看操作记录与审批</Link> : undefined}>
-      <Table label="执行记录" className="j4-exec-table">
+      <Table label="执行记录" className="j4-exec-table" rowFocus>
         <thead><tr><Th>开始时间</Th><Th>预案</Th><Th>方式</Th><Th>进度</Th><Th>执行人</Th><Th>恢复情况</Th><Th align="right">操作</Th></tr></thead>
         <tbody>
           {EXECS.length === 0
@@ -679,7 +681,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
             : EXECS.map((e) => {
               const live = isActiveExecution(e);
               return (
-                <Tr key={e.executionId || `${e.ts}-${e.code}-${e.trig}`} data-testid={e.executionId ? `j4-execution-${e.executionId}` : undefined} mark={live ? "hit" : undefined}>
+                <Tr key={e.executionId || `${e.ts}-${e.code}-${e.trig}`} data-testid={e.executionId ? `j4-execution-${e.executionId}` : undefined} mark={live ? "hit" : undefined}
+                  selected={traceExecution === e} onOpen={() => setTraceExecution(e)} aria-label={`查看追溯：${e.name || e.code} ${e.executionId || ""}`}>
                   <Td><Cell num main={j4Time(e.ts)} /></Td>
                   <Td><Cell main={e.name || "—"} sub={<span data-mono="">{e.executionId || e.code}</span>} title={e.trig ? `业务原因：${e.trig}` : undefined} /></Td>
                   <Td>{e.mode === "drill"
@@ -760,7 +763,6 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   return (
     <div className="j4-page">
       {header(createAction)}
-      {!contractReady && <Notice tone="danger">应急执行服务尚未就绪，当前仅可查看。请联系技术人员检查后再进行操作。</Notice>}
       {recovery}
       {conclusion}
       {missingDrillLedger > 0 && <Notice tone="warn">{count(missingDrillLedger)} 个预案有演练时间，但找不到演练成功的记录，已暂停执行，请重新演练。</Notice>}

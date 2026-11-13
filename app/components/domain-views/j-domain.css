@@ -532,7 +532,7 @@
 .j4-page .j4-lib-table { table-layout: fixed; }
 .j4-page .j4-lib-table th:nth-child(2) { width: 96px; }
 .j4-page .j4-lib-table th:nth-child(3) { width: 64px; }
-.j4-page .j4-lib-table th:nth-child(4) { width: 132px; }
+.j4-page .j4-lib-table th:nth-child(4) { width: 120px; }
 .j4-page .j4-sub-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 16px 0 12px; font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
 .j4-page .j4-sub-title .j4-muted { font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); }
 .j4-page #j4-detail > .rd-notice, .j4-page #j4-detail .rd-kv + .rd-kv, .j4-page #j4-detail .j4-steps + .rd-kv { margin-top: 16px; }
@@ -568,15 +568,15 @@
 .j4-page .j4-exec-table th:nth-child(4) { width: 168px; }
 .j4-page .j4-exec-table th:nth-child(5) { width: 136px; }
 .j4-page .j4-exec-table th:nth-child(6) { width: 124px; }
-.j4-page .j4-exec-table th:last-child { width: 248px; }
+.j4-page .j4-exec-table th:last-child { width: 196px; }
 @container jdom (max-width: 1100px) {
-  .j4-page .j4-exec-table th:nth-child(1) { width: 136px; }
-  .j4-page .j4-exec-table th:nth-child(3) { width: 104px; }
-  .j4-page .j4-exec-table th:nth-child(4) { width: 132px; }
+  .j4-page .j4-exec-table th:nth-child(1) { width: 148px; }
+  .j4-page .j4-exec-table th:nth-child(3) { width: 100px; }
+  .j4-page .j4-exec-table th:nth-child(4) { width: 124px; }
   /* 窄时执行人收起，追溯抽屉里仍写 */
   .j4-page .j4-exec-table :is(th, td):nth-child(5) { display: none; }
-  .j4-page .j4-exec-table th:nth-child(6) { width: 112px; }
-  .j4-page .j4-exec-table th:last-child { width: 176px; }
+  .j4-page .j4-exec-table th:nth-child(6) { width: 108px; }
+  .j4-page .j4-exec-table th:last-child { width: 120px; }
 }
 .j4-page .j4-row-acts { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 8px; }
 .j4-page .j4-dots { display: grid; gap: 4px; min-width: 0; }
@@ -600,7 +600,7 @@
 :is(.j4-editor, .j4-execute) .j4-editor-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
 :is(.j4-editor, .j4-execute) .j4-editor-hint { font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
 .j4-editor .j4-editor-empty { margin: 0; color: var(--rd-text-3); }
-.j4-editor .j4-editor-note { margin: -8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.j4-editor .j4-editor-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .j4-editor .j4-added { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .j4-editor .j4-added li, .j4-editor .j4-pick-list li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto; align-items: center; gap: 8px 12px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 :root[data-theme="light"] :is(.j4-editor .j4-added li, .j4-editor .j4-pick-list li) { box-shadow: inset 0 0 0 1px var(--rd-line); }
@@ -632,7 +632,8 @@
 
 /* 结果未知逐条提醒（界面备好，等接 R1） */
 .j4-page .j4-rec { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.j4-page .j4-rec li { display: grid; grid-template-columns: minmax(160px, 1.2fr) minmax(0, 2fr) auto auto auto; align-items: center; gap: 4px 12px; }
+.j4-page .j4-rec li { display: grid; grid-template-columns: minmax(180px, 1.2fr) minmax(0, 2fr) 136px 140px 208px; align-items: center; gap: 4px 12px; }
+.j4-page .j4-rec-actions { justify-content: flex-end; }
 .j4-page .j4-rec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
 .j4-page .j4-rec-time { font-size: var(--rd-text-aux); color: var(--rd-text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .j4-page .j4-rec-actions { display: inline-flex; gap: 8px; }
