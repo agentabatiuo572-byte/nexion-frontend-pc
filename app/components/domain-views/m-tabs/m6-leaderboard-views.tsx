@@ -188,16 +188,23 @@ export function RankingTable({ board, state, currency, month, places, privateRea
                 <span className="rd-note">{row.groupName || "待分组"}<QualificationTag row={row} /></span>
               </span>
             </span></Td>
-            <Td align="right" data-primary={primary("netContribution")}><Cell num main={amountShown(row.amount, places)} sub={row.amount.coverage === "complete" ? undefined : row.amount.coverage === "partial" ? `暂定 · ${row.amount.reason}` : row.amount.reason || "金额未同步"} /></Td>
-            <Td align="right" data-primary={primary("firstPayment")}><Cell num main={countShown(row.firstPayment)} sub={row.firstPayment.coverage === "complete" ? undefined : row.firstPayment.coverage === "partial" ? `暂定 · ${row.firstPayment.reason}` : row.firstPayment.reason} /></Td>
+            <Td align="right" data-primary={primary("netContribution")}><Cell num main={amountShown(row.amount, places)} {...gapNote(row.amount, "金额未同步")} /></Td>
+            <Td align="right" data-primary={primary("firstPayment")}><Cell num main={countShown(row.firstPayment)} {...gapNote(row.firstPayment)} /></Td>
             <Td align="right" data-primary={primary("customers")}><Cell num main={customers !== "—" && row.canViewCustomers && privateRead
               ? <button type="button" className="rd-link m6-count-link" aria-label={`查看${row.name}的当前绑定客户，${customers} 人`} onClick={() => onCustomers(row.id)}>{customers}</button>
-              : customers} sub={row.customers.coverage === "complete" ? undefined : row.customers.reason} /></Td>
+              : customers} {...gapNote(row.customers)} /></Td>
             <Td sticky="end"><Button size="sm" onClick={() => onOpen(row.id)}>查看成绩<span className="rd-sr-only">：{row.name}</span></Button></Td>
           </Tr>;
         })}
     </tbody>
   </Table>;
+}
+
+/** 暂定或缺数：格子第二行写短词，完整原因在 title 里（窄屏被切时悬停、聚焦能看全）。 */
+function gapNote(metric: SupportBoardCount, fallback = "数据未同步") {
+  if (metric.coverage === "complete") return {};
+  const reason = metric.reason || fallback;
+  return metric.coverage === "partial" ? { sub: "暂定", title: `暂定：${reason}` } : { sub: reason, title: reason };
 }
 
 /** 分页：覆盖不完整时不写总人数（M6-Q04），所以不用共用 Pager（它总写「共 N 条」）；样子和 Pager 一样。 */
