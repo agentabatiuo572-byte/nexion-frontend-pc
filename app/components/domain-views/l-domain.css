@@ -316,6 +316,7 @@
    浏览、点击、停留按这一列最多的那页比（青），跳出率按本身分档（橙）。字永远是正文色。 */
 .l6-page .l6-actions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--rd-space-2) var(--rd-space-4); }
 .l6-page .l6-pair { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
+.l6-page .l6-actions > .l6-pair:last-child > .rd-explain:last-child { margin-right: -3px; }
 .l6-page .l6-now { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1); }
 .l6-page .l6-now > .rd-explain:last-child { margin-right: -3px; }
 .l6-page .l6-keep { white-space: nowrap; }

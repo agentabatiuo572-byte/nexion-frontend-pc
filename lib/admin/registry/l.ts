@@ -33,7 +33,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   },
   {
     path: "/analytics/behavior-heatmap",
-    summary: "看 App 各页面用得多不多、用户进来就走没有、在页面上点哪里。",
+    summary: "看 App 哪些页面用得多、哪些留不住、大家点哪里。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];
