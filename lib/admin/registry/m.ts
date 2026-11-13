@@ -23,7 +23,7 @@ export const DOMAIN_M: ModuleEntry[] = [
   },
   {
     path: "/service/leaderboard",
-    summary: "查看客服业绩榜和名次。",
+    summary: "看客服团队这个月谁做得好、我排第几。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
