@@ -98,21 +98,59 @@
 /* 影响预览里「保存后会变」的那格 —— 与 dial-tbl 同一视觉语言。 */
 .hdom .l-tbl .chg { color: var(--warning); font-weight: 700; }
 
-.hdom .h9-workspace [hidden] { display: none !important; }
-.hdom .h9-navigation { margin-bottom: 20px; padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
-.hdom .h9-navigation [role="tablist"] { display: flex; flex-wrap: wrap; gap: 8px; }
-.hdom .h9-help { color: var(--ink-4); font-size: 11.5px; line-height: 1.65; margin: 10px 0; }
-.hdom .h9-switch { display: flex; align-items: center; gap: 10px; margin: 18px 0; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; font-size: 12.5px; }
-.hdom .h9-switch input { width: 17px; height: 17px; accent-color: var(--h-ac); }
-.hdom .h9-switch .h9-help { display: inline; margin-left: 10px; }
-.hdom .h9-editor .h9-table-wrap { overflow-x: auto; margin-top: 16px; }
-.hdom .h9-editor .l-tbl { min-width: 660px; }
-.hdom .h9-editor .l-tbl .l-inp { width: 100%; min-width: 90px; box-sizing: border-box; }
-.hdom .h9-form-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; padding: 18px 0; }
-.hdom .h9-form-grid label { display: flex; flex-direction: column; gap: 8px; color: var(--ink-3); font-size: 12px; }
-.hdom .h9-form-grid .l-inp { width: 100%; box-sizing: border-box; }
-.hdom .h9-footer { border-top: 1px solid var(--border); border-bottom: 0; }
-@container hdom (max-width: 800px) { .hdom .h9-form-grid { grid-template-columns: 1fr; } }
+/* ===== 首页与网络展示设置（H9）：六张卡当页签，每块左边 App 上的样子、右边参数 ===== */
+.h9-page { container: h9 / inline-size; display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
+.h9-page [hidden] { display: none !important; }
+.h9-page .rd-panel > * + :not(.rd-panel-head) { margin-top: var(--rd-space-4); }
+.h9-page .rd-panel > .rd-panel-head + * { margin-top: 0; }
+@container h9 (min-width: 901px) {
+  .h9-cards .rd-stats[data-cards] > .rd-stat { flex: 1 1 calc(33.333% - 8px); }
+}
+.h9-cards .rd-stat-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.h9-module { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: var(--rd-space-4); align-items: start; }
+@container h9 (max-width: 900px) { .h9-module { grid-template-columns: minmax(0, 1fr); } }
+.h9-group { display: flex; flex-direction: column; gap: var(--rd-space-3); padding-top: var(--rd-space-4); border-top: 1px solid var(--rd-line); }
+.h9-group[data-idle] .rd-form-label { color: var(--rd-text-3); }
+.h9-group-title { display: flex; align-items: center; gap: var(--rd-space-2); margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 500; color: var(--rd-text-2); }
+.h9-pair, .h9-triple, .h9-globe-fields { display: grid; gap: var(--rd-space-3) var(--rd-space-4); }
+.h9-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.h9-triple { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.h9-globe-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@container h9 (max-width: 900px) { .h9-triple { grid-template-columns: repeat(2, minmax(0, 1fr)); } .h9-globe-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.h9-toolbar { padding-top: var(--rd-space-4); border-top: 1px solid var(--rd-line); }
+.h9-app { margin: 0; padding: var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
+.h9-app-head { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-2); margin-bottom: var(--rd-space-3); }
+.h9-app-where { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.h9-app-body { display: flex; flex-wrap: wrap; gap: var(--rd-space-3) var(--rd-space-7); }
+.h9-app-number { display: flex; flex-direction: column; gap: var(--rd-space-1); min-width: 0; }
+.h9-app-label, .h9-app-sub { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.h9-app-value { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--rd-text); overflow-wrap: anywhere; }
+.h9-app-value small { margin-left: var(--rd-space-1); font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
+.h9-app-number[data-empty] .h9-app-value { color: var(--rd-text-3); }
+.h9-app-note { margin: var(--rd-space-3) 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.h9-chart, .h9-confirm-chart { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; }
+.h9-chart-title { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 500; color: var(--rd-text-2); }
+.h9-chart-note, .h9-band-rule, .h9-foot { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.h9-changed { color: var(--rd-progress); font-weight: 500; }
+.h9-row-error { color: var(--rd-warn); }
+.h9-band-pct, .h9-share, .h9-share-total { display: inline-flex; align-items: center; gap: var(--rd-space-3); }
+.h9-rank-state { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.h9-rank-switch { display: flex; align-items: center; gap: var(--rd-space-3); }
+.h9-rank-switch-label { display: inline-flex; align-items: center; font-weight: 500; color: var(--rd-text); }
+.h9-rank-switch .rd-segs { gap: 2px; padding: 2px; border-radius: var(--rd-radius-control); background: var(--rd-bg); }
+.h9-rank { display: flex; flex-direction: column; gap: var(--rd-space-4); }
+.h9-recovery { display: grid; gap: var(--rd-space-2); margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }
+.h9-recovery li { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.h9-recovery-name { font-weight: 500; color: var(--rd-text); white-space: nowrap; }
+.h9-recovery-change { min-width: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; color: var(--rd-text); }
+.h9-recovery-time, .h9-recovery-zone { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.h9-recovery-zone { margin: var(--rd-space-2) 0 0; }
+.h9-recovery-actions { display: inline-flex; gap: var(--rd-space-2); justify-content: flex-end; }
+@container h9 (max-width: 900px) {
+  .h9-recovery li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
+  .h9-recovery-time { grid-column: 1 / 3; grid-row: 2; }
+  .h9-recovery-actions { grid-column: 3; grid-row: 2; }
+}
 
 /* ============================ H8 参数卡栅格 ============================
    .param-grid 的样式只存在于 .kdom / .ldom —— 各域 CSS 互相独立,H8 抄了个类名过来,
