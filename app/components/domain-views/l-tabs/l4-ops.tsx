@@ -325,7 +325,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
         </span>
       )}
       {ctx.canExport && !ctx.canExportNetworkTree && <span className="rd-toolbar-note">团队关系明细需要专门的导出权限</span>}
-      {!ctx.canExport && <span className="rd-toolbar-note">你只能查看，导出需要报表导出权限</span>}
+      {!ctx.canExport && <span className="rd-toolbar-note">运营汇总导出需要报表导出权限</span>}
     </span>
   ) : undefined;
 
