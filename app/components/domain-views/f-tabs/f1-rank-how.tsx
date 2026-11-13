@@ -19,6 +19,8 @@ function row(value: unknown): Row { return value && typeof value === "object" &&
 function text(value: unknown) { return typeof value === "string" ? value : ""; }
 function list(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
 const LOCALE_NAMES: Record<string, string> = { zh: "中文", "zh-cn": "简体中文", en: "英语", vi: "越南语" };
+/** 和共用编辑器同一个测试钩子：data-testid="published-content-rankHow"。 */
+const KIND = "rankHow";
 
 export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
   const session = useAdminAuth((state) => state.session);
@@ -97,7 +99,7 @@ export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
   </span>;
 
   return (
-    <Panel title="App 等级说明" icon={BookOpenText} tone="role-4"
+    <Panel data-testid={`published-content-${KIND}`} title="App 等级说明" icon={BookOpenText} tone="role-4"
       sub={document ? (document.hasPublishedVersion ? "App 读的是最近一次发布的版本" : "还没发布过，App 读的是内置默认说明") : undefined}
       explain="App「等级怎么升」页面的说明文字，按语言分开写。保存草稿不替换 App 正在读的版本；保存并发布后，App 下一次打开这页就读新内容。保存直接生效，不走审批。"
       actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void refresh()}>重新读取</Button>}>

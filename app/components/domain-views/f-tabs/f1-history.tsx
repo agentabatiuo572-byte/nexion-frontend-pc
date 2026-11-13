@@ -11,11 +11,11 @@ import {
   TableMessage, Td, Th, Tr,
 } from "@/app/components/rd";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
+import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import type { F1PromotionRecord, F1RewardPayout, F1VRankRow } from "@/lib/admin/f1-client";
 import type { FViewCtx } from "./types";
 import { ADMIN_APPROVER, PAYOUT_STATUS, PAYOUT_TYPES, payoutReward, rewardKind, type F1Confirm } from "./f1-shared";
 
-const ZONE = "北京时间";
 const dash = (value: string) => value || "—";
 const snapshotText = (snapshot: unknown) => {
   if (snapshot == null || snapshot === "") return "";
@@ -47,12 +47,12 @@ export function F1PromotionHistory({ ctx, rows, canPromote, onOverride }: { ctx:
           options={[{ value: "", label: "全部等级" }, ...rows.map((row) => ({ value: row.v, label: row.v }))]} /></FilterField>
       </FilterBar>
     <Panel title="晋升记录" icon={History} tone="role-3" flush
-      sub={`当前筛选 ${ctx.promotionTotal.toLocaleString("en-US")} 条 · 时间为${ZONE}`}
+      sub={`当前筛选 ${ctx.promotionTotal.toLocaleString("en-US")} 条`}
       explain="自动评估和人工调整都会留一条；按记录先后倒序，每次读 100 条。自动评估每次最多升一级；人工调整可以一次跨几级。"
       actions={canPromote ? <Button size="sm" icon={<UserCog size={14} aria-hidden />} onClick={onOverride}>人工调整等级</Button> : undefined}>
       <Table label="晋升记录" className="f1-table">
         <colgroup><col className="f1-col-user" /><col className="f1-col-change" /><col className="f1-col-way" /><col className="f1-col-reason" /><col className="f1-col-time" /></colgroup>
-        <thead><tr><Th>用户</Th><Th>等级变化</Th><Th>方式</Th><Th>触发原因</Th><Th>时间</Th></tr></thead>
+        <thead><tr><Th>用户</Th><Th>等级变化</Th><Th>方式</Th><Th>触发原因</Th><Th>时间（{businessZone().label}）</Th></tr></thead>
         <tbody>
           {ctx.f1PromotionError ? <TableMessage columns={5} role="alert">晋升记录读取失败 · {ctx.f1PromotionError}</TableMessage>
             : records.length === 0 ? ctx.f1PromotionLoading ? <TableLoading columns={5} /> : <TableMessage columns={5}>没有符合条件的晋升记录</TableMessage>
@@ -63,7 +63,7 @@ export function F1PromotionHistory({ ctx, rows, canPromote, onOverride }: { ctx:
                   <Td><Cell main={record.isManual ? <StatusTag tone="progress" icon={UserCog}>人工</StatusTag> : <StatusTag tone="neutral" icon={Cpu}>自动</StatusTag>}
                     sub={record.isManual ? dash(record.operator) : record.cohort ? `批次 ${record.cohort}` : undefined} /></Td>
                   <Td grow><Cell main={dash(record.reason)} title={record.reason || undefined} /></Td>
-                  <Td><Cell main={dash(record.createdAt)} num /></Td>
+                  <Td><Cell main={formatBusinessTimeCompact(record.createdAt, "—")} num /></Td>
                 </Tr>
               ))}
         </tbody>
@@ -92,7 +92,7 @@ function PromotionDetail({ record }: { record: F1PromotionRecord }) {
       { key: "reason", label: "触发原因", value: dash(record.reason) },
       { key: "event", label: "触发事件", value: dash(record.triggerEventId), mono: !!record.triggerEventId },
       { key: "audit", label: "审计编号", value: dash(record.auditNo), mono: !!record.auditNo },
-      { key: "at", label: `时间（${ZONE}）`, value: dash(record.createdAt) },
+      { key: "at", label: `时间（${businessZone().label}）`, value: formatBusinessTimeFull(record.createdAt, "—"), explain: "抽屉里写到秒，方便和操作记录、审计编号逐条对时间。" },
     ]} />
     <Fold inset title="当时的达标情况" summary={snapshot ? "评估时记下的原始数据" : "没有记录"}>
       {snapshot ? <pre className="f1-json">{snapshot}</pre> : <p className="f1-empty">这条记录没有达标快照。</p>}
@@ -176,11 +176,11 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
           options={[{ value: "", label: "全部状态" }, ...Object.entries(PAYOUT_STATUS).map(([value, item]) => ({ value, label: item.label }))]} /></FilterField>
       </FilterBar>
     <Panel title="奖励发放记录" icon={ReceiptText} tone="role-2" flush
-      sub={`当前筛选 ${ctx.payoutTotal.toLocaleString("en-US")} 条 · 时间为${ZONE}`}
+      sub={`当前筛选 ${ctx.payoutTotal.toLocaleString("en-US")} 条`}
       explain="每次有人升级、按模板发出的每一项奖励各一条。已冲正的可以重发，已发放、已重发、待发放的可以冲正，都要提交审批；发放失败的这页没有重试入口。">
       <Table label="奖励发放记录" className="f1-table">
         <colgroup><col className="f1-col-payout" /><col className="f1-col-reward" /><col className="f1-col-status" /><col className="f1-col-time" />{canAct && <col className="f1-col-act" />}</colgroup>
-        <thead><tr><Th>发放单</Th><Th>等级 · 奖励</Th><Th>状态</Th><Th>时间</Th>{canAct && <Th align="right" sticky="end">操作</Th>}</tr></thead>
+        <thead><tr><Th>发放单</Th><Th>等级 · 奖励</Th><Th>状态</Th><Th>时间（{businessZone().label}）</Th>{canAct && <Th align="right" sticky="end">操作</Th>}</tr></thead>
         <tbody>
           {ctx.f1PayoutError ? <TableMessage columns={cols} role="alert">发放记录读取失败 · {ctx.f1PayoutError}</TableMessage>
             : records.length === 0 ? ctx.f1PayoutLoading ? <TableLoading columns={cols} /> : <TableMessage columns={cols}>没有符合条件的发放记录</TableMessage>
@@ -192,7 +192,7 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
                     <Td><Cell main={<span data-mono>{record.payoutId}</span>} sub={`用户 ${record.userId}`} /></Td>
                     <Td><Cell main={<span title={reward.raw}>{reward.main}{reward.unit && <small className="f1-unit"> {reward.unit}</small>}</span>} sub={`${dash(record.rankCode)} · ${record.rewardType.toUpperCase() === "USDT" || record.rewardType.toUpperCase() === "UVT" ? "资金" : PAYOUT_TYPES.find((item) => item.value === record.rewardType.toUpperCase())?.label ?? dash(record.rewardType)}`} /></Td>
                     <Td>{status ? <StatusTag tone={status.tone} icon={status.icon}>{status.label}</StatusTag> : <StatusTag tone="warn">状态未知</StatusTag>}</Td>
-                    <Td><Cell main={dash(record.reversedAt || record.grantedAt)} sub={record.reversedAt ? "冲正时间" : record.grantedAt ? "发放时间" : undefined} num /></Td>
+                    <Td><Cell main={formatBusinessTimeCompact(record.reversedAt || record.grantedAt, "—")} sub={record.reversedAt ? "冲正时间" : record.grantedAt ? "发放时间" : undefined} num /></Td>
                     {canAct && <Td align="right" sticky="end" data-fit="">{actions(record) ?? <span className="f1-weak">—</span>}</Td>}
                   </Tr>
                 );
@@ -227,7 +227,7 @@ function PayoutDetail({ record }: { record: F1RewardPayout }) {
     { key: "trigger", label: "触发事件", value: dash(record.triggerEventId), mono: !!record.triggerEventId },
     { key: "operator", label: "操作人", value: dash(record.operator) },
     { key: "reason", label: "原因", value: dash(record.reason) },
-    { key: "granted", label: `发放时间（${ZONE}）`, value: dash(record.grantedAt) },
-    { key: "reversed", label: `冲正时间（${ZONE}）`, value: dash(record.reversedAt) },
+    { key: "granted", label: `发放时间（${businessZone().label}）`, value: formatBusinessTimeFull(record.grantedAt, "—"), explain: "抽屉里写到秒，方便和账单、奖励记录逐条对时间。" },
+    { key: "reversed", label: `冲正时间（${businessZone().label}）`, value: formatBusinessTimeFull(record.reversedAt, "—") },
   ]} />;
 }
