@@ -28,7 +28,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   },
   {
     path: "/analytics/export",
-    summary: "看有没有等你放行的导出、文件在哪下载，按授权导出汇总、当前披露快照和 8 类账单。",
+    summary: "看有没有等你放行的导出，在哪下载，按授权新建导出。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

@@ -90,7 +90,7 @@ type Outcome =
   | { kind: "reg-done"; text: string }
   | { kind: "reg-unknown"; text: string };
 
-type RefTab = "rules" | "masks" | "audit";
+type RefTab = "tasks" | "rules" | "masks" | "audit";
 
 export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; summary: string }) {
   const { toast } = ctx;
@@ -112,7 +112,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   // 以下只管界面：页上方的结果条、行内按钮转圈、参考页签。
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [busyTask, setBusyTask] = useState<string | null>(null);
-  const [refTab, setRefTab] = useState<RefTab>("rules");
+  const [refTab, setRefTab] = useState<RefTab>("tasks");
   const refIds = useTabIds();
   const createRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -193,7 +193,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       pageId="L5"
       title={title}
       summary={summary}
-      actions={canCreateSomething && data ? <Button icon={<FilePlus2 size={14} aria-hidden />} onClick={() => scrollTo(createRef.current)}>新建导出</Button> : undefined}
+      actions={canCreateSomething && data ? <Button icon={<FilePlus2 size={14} aria-hidden />} onClick={() => { setRefTab("tasks"); requestAnimationFrame(() => scrollTo(createRef.current)); }}>新建导出</Button> : undefined}
       meta={<span className="rd-toolbar">
         <span>打开页面时读取，不自动刷新</span>
         <Button variant="ghost" size="sm" loading={ctx.biLoading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.reloadBi?.()}>刷新</Button>
@@ -201,7 +201,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       readOnly={readOnly}
     />
   );
-  const listLink = <button type="button" className="rd-link l5-inline-link" onClick={() => { setFilter(0); setTaskPageNum(1); scrollTo(listRef.current); }}>到下面任务列表</button>;
+  const listLink = <button type="button" className="rd-link l5-inline-link" onClick={() => { setFilter(0); setTaskPageNum(1); setRefTab("tasks"); requestAnimationFrame(() => scrollTo(listRef.current)); }}>到下面任务列表</button>;
   const outcomeNotice = outcome && (() => {
     const close = <Button size="sm" onClick={() => setOutcome(null)}>知道了</Button>;
     if (outcome.kind === "summary-done") return (
@@ -351,10 +351,8 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     },
     facts: (
       <Facts>
-        <Fact k="这个账号能导">{aggregateNames(exportTypes)}</Fact>
         <Fact k="时间范围怎么算">关键指标按所选时间窗取数<Explain label="时间范围怎么算" content={<><p>关键指标：按所选的近 1、7、30 天或自选日期（{businessZone().label}业务日，最长 400 天，不含未来）。</p><p>转化与留存：时间范围只记在任务里，不按它筛日期。</p><p>财务：此刻的财务快照，不按时间筛。</p><p>运营：只认「period=…;phase=…」这种写法，其他文字按近一周、全部阶段算。</p></>} /></Fact>
-        <Fact k="个人信息">不含，只有汇总值</Fact>
-        <Fact k="去哪下载">生成后在下面任务列表下载，不用放行</Fact>
+        <Fact k="去哪下载">生成后在任务列表下载，不用放行</Fact>
       </Facts>
     ),
     confirmLabel: "确认导出",
@@ -415,7 +413,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         <Facts>
           <Fact k="报告里有什么">所选地区当前版本的七章完整性、确认进度、拦截数，加模板对应的汇总<Explain label="报告里有什么" content={<><p>三个模板共有：披露章节、影响用户、确认进度、被拦截用户、此前导出记录数、应急预案执行数。</p><p>提现发放、反洗钱：再加储备、应付款、覆盖率、24 小时净流量、提现队列和账单行数。适用地区专项：再加设备、算力任务、团队关系、佣金和以旧换新，按本月、全部阶段。</p><p>财务和账单是全平台的数，不按地区和报告期间筛。缺的数在文件里写 UNAVAILABLE，不估算。</p></>} /></Fact>
         <Fact k="个人信息">不含单个用户明细</Fact>
-        <Fact k="地区和版本">来自「{i5Name}」当前生效的设置，生成时再核对一次</Fact>
+        <Fact k="地区和版本">「{i5Name}」当前生效的设置<Explain label="地区和版本" content="生成时后端再核对一次：所选版本已不是当前版本、或不再 7 章齐全，会被拒。" /></Fact>
         <Fact k="去哪下载">下面任务列表，生成后立即可下载，不用放行</Fact>
       </Facts>
     ),
@@ -467,7 +465,8 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   };
   const toggleFilter = (next: number) => {
     selectFilter(filter === next ? 0 : next);
-    scrollTo(listRef.current);
+    setRefTab("tasks");
+    requestAnimationFrame(() => scrollTo(listRef.current));
   };
   const conclusion = pending > 0
     ? ctx.canApproveExportTasks
@@ -615,24 +614,22 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const createPanel = (
     <div ref={createRef} className="l5-anchor">
       <Panel title={<span tabIndex={-1} data-l5-focus="">新建导出</span>} explainLabel="新建导出" icon={FilePlus2} sub="三种出口，去向不同"
-        explain="汇总和当前披露快照生成后进上面的任务列表，直接可下载；8 类账单确认后浏览器直接下载，不进任务列表。三种都不含原文隐私，都要填理由并写进记录。">
+        explain={<><p>汇总和当前披露快照生成后进上面的任务列表，直接可下载；8 类账单确认后浏览器直接下载，不进任务列表。三种都不含原文隐私，都要填理由并写进记录。</p><p>脱敏资金明细在 {linkTo(L3_PAGE, "财务报表")} 申请，团队树明细在 {linkTo(L4_PAGE, "设备、任务与团队报表")} 导出，都在上面任务列表里放行和下载。</p></>}>
         <div className="l5-create">
           <article className="l5-create-card" aria-labelledby="l5-create-agg">
-            <div className="l5-create-head"><IconTile tone="role-2" icon={FileSpreadsheet} size={28} /><h3 id="l5-create-agg">汇总数据</h3></div>
-            <p className="l5-create-what">关键指标、转化与留存、财务、运营四类汇总，不含个人信息</p>
+            <div className="l5-create-head"><IconTile tone="role-2" icon={FileSpreadsheet} size={28} /><h3 id="l5-create-agg">汇总数据</h3><Explain label="汇总数据是什么" content="关键指标、转化与留存、财务、运营四类汇总，不含个人信息。创建那一刻取数，以后下载还是那一刻的数。" /></div>
             <RouteFacts rows={[["进任务列表", "进"], ["要放行", "不用"], ["拿到文件", "生成后在任务列表下载", true]]} />
             {ctx.canExport && exportTypes.length > 0 && <p className="l5-create-types">这个账号能导：{aggregateNames(exportTypes)}</p>}
             <div className="l5-create-foot"><Button icon={<FileSpreadsheet size={14} aria-hidden />} disabledReason={exportBlocked} onClick={newExport}>导出汇总数据</Button></div>
           </article>
           <article className="l5-create-card" aria-labelledby="l5-create-reg">
-            <div className="l5-create-head"><IconTile tone="role-3" icon={ScrollText} size={28} /><h3 id="l5-create-reg">当前披露快照</h3></div>
-            <p className="l5-create-what">按「{i5Name}」当前生效的版本，生成给监管看的汇总报告</p>
+            <div className="l5-create-head"><IconTile tone="role-3" icon={ScrollText} size={28} /><h3 id="l5-create-reg">当前披露快照</h3><Explain label="当前披露快照是什么" content={`按「${i5Name}」当前生效的版本，生成给监管看的汇总报告，不含单个用户明细。`} /></div>
             <RouteFacts rows={[["进任务列表", "进"], ["要放行", "不用"], ["拿到文件", "生成后在任务列表下载", true]]} />
             {regulatoryLoading && <BlockState compact state="loading" title="正在读取可用的地区和版本…" />}
             {!regulatoryLoading && regulatoryError && <BlockState compact state="error" title="披露版本读取失败" detail={regulatoryError} onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
             {!regulatoryLoading && !regulatoryError && disclosures.length === 0 && <p className="l5-create-types">还没有 7 章齐全的当前版本，到「{i5Name}」发布后再来</p>}
             {!regulatoryLoading && !regulatoryError && disclosures.length > 0 && (
-              <Fold inset title="可用的地区和版本" summary={`${disclosures.length} 个，都是 7 章齐全的当前版本`}>
+              <Fold inset title="可用地区" summary={`${disclosures.length} 个`}>
                 <ul className="l5-disclosures" aria-label="可用的地区和版本">
                   {disclosures.map((item) => (
                     <li key={`${item.jurisdictionCode}-${item.disclosureVersion}`}>
@@ -647,28 +644,28 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
             <div className="l5-create-foot"><Button icon={<ScrollText size={14} aria-hidden />} disabledReason={regulatoryBlocked} onClick={requestRegulatoryReport}>生成当前披露快照</Button></div>
           </article>
           <article className="l5-create-card" aria-labelledby="l5-create-ledger">
-            <div className="l5-create-head"><IconTile tone="role-1" icon={ReceiptText} size={28} /><h3 id="l5-create-ledger">8 类账单明细</h3></div>
-            <p className="l5-create-what">兑换、充值、提现、收益、团队奖励、退款、奖励、购买；用户编号只保留首尾字符，不导出昵称、备注</p>
+            <div className="l5-create-head"><IconTile tone="role-1" icon={ReceiptText} size={28} /><h3 id="l5-create-ledger">8 类账单明细</h3><Explain label="8 类账单明细是什么" content={<><p>兑换、充值、提现、收益、团队奖励、退款、奖励、购买，全平台所有时间。</p><p>用户编号只保留首尾字符，不导出昵称、备注。要按日期、用户筛，到「{ledgerName}」导出。</p></>} /></div>
             <RouteFacts rows={[["进任务列表", "不进"], ["要放行", "不用"], ["拿到文件", "确认后直接下载 CSV，最多 10 万行", true]]} />
             <div className="l5-create-foot">{ctx.canExportLedger
               ? <Button icon={<ReceiptText size={14} aria-hidden />} loading={ledgerExporting} loadingText="正在导出…" onClick={requestLedgerDownload}>导出 8 类账单明细</Button>
               : <span className="rd-toolbar-note">当前角色没有账单明细导出权限</span>}</div>
           </article>
         </div>
-        <p className="l5-create-note">脱敏资金明细在 {linkTo(L3_PAGE, "财务报表")} 申请，团队树明细在 {linkTo(L4_PAGE, "设备、任务与团队报表")} 导出；都在上面任务列表里放行和下载。</p>
       </Panel>
     </div>
   );
 
   /* ---------------- 参考：导出规则、字段脱敏、导出记录 ---------------- */
   const refTabs = [
+    { value: "tasks" as const, label: "导出任务", count: pending > 0 ? pending : undefined },
     { value: "rules" as const, label: "导出规则" },
     { value: "masks" as const, label: "字段脱敏规则" },
     { value: "audit" as const, label: "导出记录", count: auditLoading ? undefined : auditError ? "—" : AUDIT_ROWS.length },
   ];
   const reference = (
     <div className="l5-ref">
-      <PageTabs<RefTab> label="导出规则和记录" value={refTab} items={refTabs} onChange={setRefTab} ids={refIds} />
+      <PageTabs<RefTab> label="导出任务、规则和记录" value={refTab} items={refTabs} onChange={setRefTab} ids={refIds} />
+      {refTab === "tasks" && <div {...refIds.panel("tasks")} className="l5-ref-main">{taskPanel}{createPanel}</div>}
       {refTab === "rules" && (
         <Panel {...refIds.panel("rules")} title="导出规则" icon={ShieldCheck} sub="固定规则，不能在这页改"
           explain="这些是后端写死的安全规则，页面只展示。">
@@ -712,8 +709,6 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       <L5RecoveryNotice rows={recoveryRows} />
       {conclusion}
       {stats}
-      {taskPanel}
-      {createPanel}
       {reference}
     </>
   );

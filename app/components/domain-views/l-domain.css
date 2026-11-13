@@ -357,13 +357,11 @@
 
 /* 新建导出：三张等高卡，去向三行在同一高度 */
 .l5-page .l5-create { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: var(--rd-space-4); }
-.l5-page .l5-create-card { display: grid; grid-template-rows: auto auto auto 1fr auto; gap: var(--rd-space-3); padding: var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); min-width: 0; }
+.l5-page .l5-create-card { display: grid; grid-template-rows: auto auto 1fr auto; gap: var(--rd-space-3); padding: var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); min-width: 0; }
 .l5-page .l5-create-head { display: flex; align-items: center; gap: var(--rd-space-2); }
 .l5-page .l5-create-head h3 { margin: 0; font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
-.l5-page .l5-create-what, .l5-page .l5-create-types { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
-.l5-page .l5-create-types { align-self: start; color: var(--rd-text-3); }
+.l5-page .l5-create-types { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); align-self: start; }
 .l5-page .l5-create-foot { display: flex; align-items: center; justify-content: flex-start; gap: var(--rd-space-2); padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
-.l5-page .l5-create-note { margin: var(--rd-space-4) 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .l5-page .l5-route { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--rd-space-1) var(--rd-space-3); }
 .l5-page .l5-route > div { display: contents; }
 .l5-page .l5-route dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
@@ -375,6 +373,8 @@
 
 /* 参考：导出规则一项一行，值紧跟名称 */
 .l5-page .l5-ref { display: grid; gap: var(--rd-space-3); }
+.l5-page .l5-ref-main { display: grid; gap: var(--rd-section-gap); }
+.l5-page .l5-create-head .rd-explain { margin-left: calc(var(--rd-space-1) * -1); }
 .l5-page .l5-params { margin: 0; display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr); }
 .l5-page .l5-params > div { display: contents; }
 .l5-page .l5-params dt, .l5-page .l5-params dd { padding: var(--rd-space-3) 0; border-bottom: 1px solid var(--rd-line); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
