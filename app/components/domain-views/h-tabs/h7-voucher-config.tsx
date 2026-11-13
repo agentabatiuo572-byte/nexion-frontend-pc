@@ -148,7 +148,6 @@ function parseServerVoucher(raw: unknown): OpsVoucher {
 
 /** 谁来批：后端要另一位有效管理员，有审批权限和代金券修改权限，不限超级管理员。 */
 const APPROVER = "另一位管理员";
-const APPROVER_NEED = "需有审批权限和代金券修改权限，不能是提交人自己";
 const LOCAL_PENDING = "这张券有结果未知的删除或作废申请，先处理页面上方的提醒";
 
 /**
@@ -258,7 +257,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     const preview = parseVoucher(bv, "preview");
     openActionConfirm({ briefKind: "config",
       action: "新增代金券",
-      title: `新增代金券 · ${bv.name.trim()}`,
+      title: "新增代金券",
       detail: "新增一张代金券模板：满减或折扣、使用门槛、适用商品、发给谁、有效期和领取入口。只是券的规则，不给任何人发券；代金券只抵扣订单金额，不增加平台应付款。",
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       statedBrief: {
@@ -267,6 +266,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       },
       facts: (
         <Facts>
+          <Fact k="名称">{bv.name.trim()}</Fact>
           <Fact k="券面" lead={preview.type === "fixed"} unit={preview.type === "fixed" ? UNIT : undefined}>{preview.type === "fixed" ? amountText(preview.amountUSD) : faceValue(preview).value}</Fact>
           <Fact k="怎么用">{voucherSentence(preview, skuLabels)}</Fact>
           <Fact k="领取入口">{surfacesText(preview.claimSurfaces)}</Fact>
@@ -292,7 +292,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     const touchesIssued = v.issuedCount > 0 && rows.some((row) => "note" in row);
     openActionConfirm({ briefKind: "config",
       action: `编辑代金券 · ${v.name}`,
-      title: `编辑代金券 · ${v.name}`,
+      title: "编辑代金券",
       detail: `${v.name} · 改面值、门槛、适用商品、发给谁、有效期、领取入口或弹窗设置。${v.issuedCount > 0 ? "已发券的模板类型不可修改。" : "尚未发券，可修改类型。"}代金券不算平台负债，不受覆盖率限制。`,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       statedBrief: {
@@ -302,12 +302,15 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         check: "核对每一项改前改后，理由写清依据或工单号。",
       },
       facts: (
-        <>
+        <div className="rd-stack">
+          <Facts><Fact k="代金券">{v.name}</Fact></Facts>
           <DiffList rows={rows} emptyNote="没有改动的项；仍会保存一次并记下理由。" />
           {v.issuedCount > 0 && <Facts>
-            <Fact k="已发出">{`${countText(v.issuedCount)} 张 · 未使用 ${countText(v.availableCount)} · 已使用 ${countText(v.redeemedCount)}`}</Fact>
+            <Fact k="已发出">{`${countText(v.issuedCount)} 张`}</Fact>
+            <Fact k="还没用">{`${countText(v.availableCount)} 张`}</Fact>
+            <Fact k="已使用">{`${countText(v.redeemedCount)} 张`}</Fact>
           </Facts>}
-        </>
+        </div>
       ),
       confirmLabel: "确认保存",
       reasonPlaceholder: "例如：活动调整依据或工单号",
@@ -325,7 +328,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     const label = next === "active" ? "投放" : "暂停";
     openActionConfirm({ briefKind: "content",
       action: `${label}代金券 · ${v.name}`,
-      title: `${label}代金券 · ${v.name}`,
+      title: `${label}代金券`,
       detail: next === "paused"
         ? `${v.name} · 暂停后用户不能再领这张券；已领到的不收回，有效期内仍能用。`
         : `${v.name} · 投放后符合条件的用户可以领；还要符合有效期、发给谁、发行上限和领取入口。`,
@@ -335,9 +338,10 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         : { impact: "符合条件的用户可以领：还要在有效期内、符合发给谁、没到发行上限、从开放的入口领；不会自动发给任何人。", check: "确认有效期和发行上限，App 下次读取时才看到变化。" },
       facts: (
         <Facts>
+          <Fact k="代金券">{v.name}</Fact>
           <Fact k="状态"><Change from={v.status === "active" ? "投放中" : "已暂停"} to={next === "active" ? "投放中" : "已暂停"} /></Fact>
           <Fact k="有效期">{periodText(v)}</Fact>
-          <Fact k="已发出">{`${countText(v.issuedCount)} 张 · 未使用 ${countText(v.availableCount)}`}</Fact>
+          <Fact k="还没用">{`${countText(v.availableCount)} 张`}</Fact>
         </Facts>
       ),
       confirmLabel: `确认${label}`,
@@ -380,7 +384,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     openActionConfirm({
       briefKind: "record",
       action: `${H7_VOUCHER_ACTIONS[input.op]} · ${input.voucherName}`,
-      title: `${H7_VOUCHER_ACTIONS[input.op]} · ${input.voucherName}`,
+      title: H7_VOUCHER_ACTIONS[input.op],
       detail: completionCopy,
       effect: <><StatusTag tone="progress" filled explain={`${APPROVER}批准后才执行。`}>批准后生效</StatusTag><IrreversibleTag /></>,
       confirmTone: "danger",
@@ -392,11 +396,14 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
           {deletion
             ? <Fact k="已发出" lead unit="张">{v ? countText(v.issuedCount) : "—"}</Fact>
             : <Fact k="现在还没用" lead unit="张">{v ? countText(v.availableCount) : "—"}</Fact>}
-          {v && <Fact k="其中">{deletion
-            ? `未使用 ${countText(v.availableCount)} · 已使用 ${countText(v.redeemedCount)} · 已作废 ${countText(v.revokedCount)}`
-            : `已发出 ${countText(v.issuedCount)} · 已使用 ${countText(v.redeemedCount)}（不变）`}</Fact>}
+          <Fact k="代金券">{input.voucherName}</Fact>
+          {v && (deletion ? <>
+            <Fact k="还没用">{`${countText(v.availableCount)} 张，不收回`}</Fact>
+            <Fact k="已使用">{`${countText(v.redeemedCount)} 张`}</Fact>
+          </> : <Fact k="已使用">{`${countText(v.redeemedCount)} 张，不变`}</Fact>)}
           {v && <Fact k="券模板">{deletion ? <Change from={v.status === "active" ? "投放中" : "已暂停"} to="删除（批准后）" tone="danger" /> : `${v.status === "active" ? "投放中" : "已暂停"}，批准后不变`}</Fact>}
-          <Fact k="谁来批">{`${APPROVER}（${APPROVER_NEED}）`}</Fact>
+          <Fact k="谁来批">{`${APPROVER}，不能是提交人`}</Fact>
+          <Fact k="需有权限">审批权限和代金券修改权限</Fact>
         </Facts>
       ),
       getPendingReason: () => original()?.reason,
@@ -630,7 +637,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
               <h3 className="h7-form-title">删除和作废<Explain label="删除和作废有什么不同" content={<>
                 <p>作废未使用的券：只把还没用的券作废，券模板照常投放。</p>
                 <p>删除代金券：删掉券模板，已发出的券不收回、还能用。</p>
-                <p>两样都要{APPROVER}批准后才执行（{APPROVER_NEED}）；只想停发用「暂停」。</p>
+                <p>两样都要{APPROVER}批准后才执行；只想停发用「暂停」。</p>
               </>} /></h3>
               <div className="h7-dispose-item">
                 <div>

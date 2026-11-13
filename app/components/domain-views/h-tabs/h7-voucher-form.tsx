@@ -197,13 +197,13 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
                   ? <Field label="减百分之几" required hint="1–99 的整数" error={shown.percent} help="8 表示按订单金额减 8%，不是八折；App 上显示「8% 折扣」。">
                     {(control) => <NumberInput {...control} unit="%" min={1} max={99} step={1} value={value.percent} onChange={(e) => set("percent", e.target.value)} />}
                   </Field>
-                  : <Field label="面额" required hint="1–1,000,000" error={shown.amountUSD} help="下单时直接减这么多，最多减到 0。">
+                  : <Field label="面额" required hint="1–1,000,000" error={shown.amountUSD} help="下单直接减这么多。">
                     {(control) => <NumberInput {...control} unit={UNIT} min={1} max={1_000_000} value={value.amountUSD} onChange={(e) => set("amountUSD", e.target.value)} />}
                   </Field>}
-                <Field label="使用门槛" hint="不填或 0 为无门槛" help="订单满这个金额才能用。">
+                <Field label="使用门槛" hint="0＝无门槛" help="订单满这个数才能用。">
                   {(control) => <NumberInput {...control} unit={UNIT} min={0} value={value.minPurchaseUSD} onChange={(e) => set("minPurchaseUSD", e.target.value)} />}
                 </Field>
-                {showMax && <Field label="最多减" hint="不填或 0 为不封顶" help={percent ? "一单最多减这么多。" : "满减券也按这一项封顶；比面额小时，一单最多只减这么多。"}>
+                {showMax && <Field label="最多减" hint="0＝不封顶" help={percent ? "一单最多减这么多。" : "满减券也按它封顶。"}>
                   {(control) => <NumberInput {...control} unit={UNIT} min={0} value={value.maxDiscountUSD} onChange={(e) => set("maxDiscountUSD", e.target.value)} />}
                 </Field>}
               </div>
@@ -221,7 +221,7 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
                 <Segments label="发给谁" value={value.audience} onChange={(next) => set("audience", next)} items={[{ value: "all", label: AUDIENCE_LABEL.all }, { value: "new", label: AUDIENCE_LABEL.new }]} />
               </Field>
               <CheckGroup legend="领取入口" summary={selectedSurfaces.length ? `已选 ${selectedSurfaces.length} 个` : "不选＝不限"}
-                help="App 目前只有首页和商城能手动领券；选「我的」「收益」不会多出领券入口。">
+                help="App 目前只有首页和商城能领券，选别的不会多出入口。">
                 {SURFACES.map((id) => <Check key={id} label={SURFACE_LABEL[id]} checked={selectedSurfaces.includes(id)} onChange={() => toggle("claimSurfaces", id)} />)}
               </CheckGroup>
               {shown.claimSurfaces && <p className="rd-form-error" role="alert">{shown.claimSurfaces}</p>}
@@ -242,8 +242,8 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
             <section className="h7-form-section" aria-labelledby="h7-f-issue">
               <h3 id="h7-f-issue" className="h7-form-title">发行和状态</h3>
               <div className="rd-form-grid" data-cols="2" data-dense="">
-                <Field label="发行上限" hint="0–10,000,000，0＝不限" error={shown.issuanceLimit}
-                  help={issued > 0 ? `已发出 ${countText(issued)} 张；用掉和作废的也占上限，改小不收回已发的券。` : "发满后用户领不到；用掉和作废的也占上限。"}>
+                <Field label="发行上限" hint="0–10,000,000" error={shown.issuanceLimit}
+                  help={issued > 0 ? `0＝不限；已发 ${countText(issued)} 张，改小不收回。` : "0＝不限；用掉、作废的也算。"}>
                   {(control) => <NumberInput {...control} unit="张" min={0} max={10_000_000} step={1} value={value.issuanceLimit} onChange={(e) => set("issuanceLimit", e.target.value)} />}
                 </Field>
                 <Field label={voucher ? "状态" : "保存后的状态"} required error={shown.status}>
@@ -255,7 +255,7 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
             <Fold title="首页弹窗" icon={BellOff} tone="role-other" inset summary={`App 目前不自动弹出 · ${bool("popupEnabled") ? "参与" : "不参与"}`}
               alert={!!(shown.popupDelayMs || shown.popupCooldownHours || shown.popupMaxPerSession)}
               open={folds.popup || !!(shown.popupDelayMs || shown.popupCooldownHours || shown.popupMaxPerSession)} onOpenChange={(open) => setFolds((f) => ({ ...f, popup: open }))}>
-              <Notice tone="neutral">App 目前不自动弹出：这些设置会保存，但现在不会让券自动弹出来。</Notice>
+              <Notice tone="neutral">App 目前不自动弹出，这些设置只保存。</Notice>
               <div className="rd-form-grid" data-cols="2" data-dense="">
                 <Check label="参与首页弹窗" checked={bool("popupEnabled")} onChange={(e) => set("popupEnabled", e.target.checked ? "true" : "false")} />
                 <Check label="弹窗节奏开关" explain="这张券自己的开关，不是全平台的总开关。" checked={bool("popupCadenceEnabled")} onChange={(e) => set("popupCadenceEnabled", e.target.checked ? "true" : "false")} />
@@ -277,7 +277,7 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
               open={folds.stack} onOpenChange={(open) => setFolds((f) => ({ ...f, stack: open }))}>
               <Check label="可拆分" help="目前整张核销：用一次就整张用掉，勾了也不会分次使用。" checked={bool("splittable")} onChange={(e) => set("splittable", e.target.checked ? "true" : "false")} />
               <Check label="可与试用收益叠加" help="下单时后端目前不检查这一项，只有 App 选券时会参考。" checked={bool("stackWithTrial")} onChange={(e) => set("stackWithTrial", e.target.checked ? "true" : "false")} />
-              <Check label="可与其它优惠叠加" help="下单时按这一项判断能不能和促销活动一起用；不是一单能用两张券。" checked={bool("stackWithOthers")} onChange={(e) => set("stackWithOthers", e.target.checked ? "true" : "false")} />
+              <Check label="可与其它优惠叠加" help="决定能不能和促销活动一起用；不是一单用两张券。" checked={bool("stackWithOthers")} onChange={(e) => set("stackWithOthers", e.target.checked ? "true" : "false")} />
             </Fold>
           </div>
 

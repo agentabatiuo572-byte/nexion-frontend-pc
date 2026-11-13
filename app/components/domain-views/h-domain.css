@@ -266,7 +266,7 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h7-form-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .h7-locked-type { display: inline-flex; }
 .h7-preview { position: sticky; top: 0; align-self: flex-start; display: flex; flex-direction: column; gap: var(--rd-space-3); padding: var(--rd-space-4); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
-.h7-preview-ticket { overflow: hidden; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.h7-preview-ticket { display: flex; flex-direction: column; gap: var(--rd-space-2); overflow: hidden; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
 .h7-preview-ticket > .h7-face { border-right: 0; border-bottom: 1px dashed var(--rd-line-strong); background: var(--rd-panel); }
 .h7-preview-name { padding: var(--rd-space-2) var(--rd-space-3); overflow-wrap: anywhere; font-weight: 600; color: var(--rd-text); }
 .h7-preview-sentence { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text); overflow-wrap: anywhere; }
@@ -281,3 +281,5 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h7-dispose-item b { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
 .h7-dispose-item p { margin: var(--rd-space-1) 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 .h7-dispose-item > .rd-btn { flex: none; }
+[data-h7-form] .rd-form-help { text-wrap: pretty; }
+.h7-preview-sentence { text-wrap: balance; }
