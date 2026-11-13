@@ -135,7 +135,7 @@ export function VoucherFace({ v, size = "card" }: { v: Pick<H7Voucher, "type" | 
   return (
     <div className="h7-face" data-size={size} data-type={v.type}>
       <span className="h7-face-kind">{face.kind}</span>
-      <strong className="h7-face-value" data-empty={face.value === "—" ? "" : undefined}>{face.value}{face.unit && <small>{face.unit}</small>}</strong>
+      <strong className="h7-face-value" data-empty={face.value === "—" ? "" : undefined}><span className="h7-face-num">{face.value}</span>{face.unit && <small>{face.unit}</small>}</strong>
       <span className="h7-face-cond">{conditionLines(v).join("\n")}</span>
     </div>
   );

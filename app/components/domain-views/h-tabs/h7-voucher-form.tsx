@@ -6,10 +6,10 @@
  * 点「下一步」后由页面打开确认框写理由，提交内容仍由页面原来的 parseVoucher 生成。
  */
 import { useMemo, useState } from "react";
-import { BellOff, Layers, Ticket } from "lucide-react";
+import { BellOff, Layers, Lock, Ticket } from "lucide-react";
 import { Button, Check, CheckGroup, Decision, Drawer, Field, Fold, Input, Modal, Notice, NumberInput, Segments, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
-import { AUDIENCE_LABEL, SURFACE_LABEL, UNIT, VoucherFace, countText, voucherSentence, type H7Voucher } from "./h7-voucher-parts";
+import { AUDIENCE_LABEL, SURFACE_LABEL, UNIT, VoucherFace, amountText, countText, voucherSentence, type H7Voucher } from "./h7-voucher-parts";
 
 export type H7FormValue = Record<string, string>;
 const SURFACES = ["home", "store", "me", "earn"] as const;
@@ -107,7 +107,7 @@ export function displayValue(key: string, state: H7FormValue, skuLabels: Record<
       const n = num(raw);
       if (n === undefined) return key === "amountUSD" ? "—" : key === "minPurchaseUSD" ? "无门槛" : "不封顶";
       if (n === 0 && key !== "amountUSD") return key === "minPurchaseUSD" ? "无门槛" : "不封顶";
-      return `${raw} ${UNIT}`;
+      return `${amountText(n)} ${UNIT}`;
     }
     case "percent": return raw ? `${raw}%` : "—";
     case "issuanceLimit": return Number(raw) === 0 ? "不限量" : `${countText(Number(raw))} 张`;
@@ -189,7 +189,7 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
               </Field>
               <Field label="类型" required help={typeLocked ? `已经发出过 ${countText(issued)} 张，类型不能改；其余各项都能改。` : "满减券减固定金额；折扣券按订单金额减一个百分比。"}>
                 {typeLocked
-                  ? <span className="h7-locked-type"><StatusTag tone="neutral">{value.type === "percent" ? "折扣券" : "满减券"}</StatusTag></span>
+                  ? <span className="h7-locked-type"><StatusTag tone="neutral" icon={Lock}>{value.type === "percent" ? "折扣券" : "满减券"}</StatusTag></span>
                   : <Segments label="类型" value={value.type} onChange={(next) => set("type", next)} items={[{ value: "fixed", label: "满减券" }, { value: "percent", label: "折扣券" }]} />}
               </Field>
               <div className="rd-form-grid" data-cols={showMax ? "3" : "2"} data-dense="">

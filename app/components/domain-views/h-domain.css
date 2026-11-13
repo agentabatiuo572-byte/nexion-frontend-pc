@@ -219,7 +219,8 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h7-ticket > .h7-face::before { top: -7px; }
 .h7-ticket > .h7-face::after { bottom: -7px; }
 .h7-face-kind { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
-.h7-face-value { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--rd-role-4); white-space: nowrap; }
+.h7-face-value { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--rd-role-4); }
+.h7-face-num { white-space: nowrap; }
 :root[data-theme="light"] .h7-face-value { color: var(--rd-text); }
 .h7-face-value[data-empty], .h7-card[data-dim] .h7-face-value { color: var(--rd-text-3); }
 .h7-face-value small { display: inline-block; margin-left: var(--rd-space-1); font-size: var(--rd-text-aux); font-weight: 500; color: var(--rd-text-3); }

@@ -303,8 +303,9 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       },
       facts: (
         <div className="rd-stack">
-          <Facts><Fact k="代金券">{v.name}</Fact></Facts>
-          <DiffList rows={rows} emptyNote="没有改动的项；仍会保存一次并记下理由。" />
+          {rows.length === 1
+            ? <Facts><Fact k="代金券">{v.name}</Fact><Fact k={rows[0].label}><Change from={rows[0].before} to={rows[0].after} /></Fact></Facts>
+            : <><Facts><Fact k="代金券">{v.name}</Fact></Facts><DiffList rows={rows} emptyNote="没有改动的项；仍会保存一次并记下理由。" /></>}
           {v.issuedCount > 0 && <Facts>
             <Fact k="已发出">{`${countText(v.issuedCount)} 张`}</Fact>
             <Fact k="还没用">{`${countText(v.availableCount)} 张`}</Fact>
