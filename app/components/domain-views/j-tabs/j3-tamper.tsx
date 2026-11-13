@@ -431,7 +431,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
           <thead>
             <tr>
               <Th>用户编号</Th>
-              <Th align="right">拦截次数 · 最近一次</Th>
+              <Th align="right">拦截次数（次）· 最近一次</Th>
               <Th>集中在</Th>
               <Th>告警送达</Th>
               <Th sticky="end">下一步</Th>
@@ -499,7 +499,7 @@ function J3AccountRow({ account: a, feedK4, zone, userRef, pathName, canViewK1, 
   return (
     <Tr>
       <Td><Cell mono main={userRef(a.userCode)} sub={a.cluster ? <>关联组 <span data-mono>{a.cluster}</span></> : "没有关联账户组"} /></Td>
-      <Td align="right"><Cell num main={`${num(a.cnt)} 次`} sub={<span className="j3-last">最近 {a.last || "—"}<span className="rd-sr-only">（{zone}）</span></span>} /></Td>
+      <Td align="right"><Cell num main={num(a.cnt)} sub={<span className="j3-last">最近 {a.last || "—"}<span className="rd-sr-only">（{zone}）</span></span>} /></Td>
       <Td grow><Cell main={names.length ? names.join("、") : "—"} title={a.paths.length ? a.paths.map((key) => `${pathName(key)}（${key}）`).join("、") : undefined} /></Td>
       <Td><span className="j3-feed-tags">{k4}{b5}</span></Td>
       <Td sticky="end">
