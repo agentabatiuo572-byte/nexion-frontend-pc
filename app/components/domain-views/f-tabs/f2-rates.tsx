@@ -277,7 +277,7 @@ function ParamRow({ ctx, m, paramKey, openConfirm, shown }: { ctx: FViewCtx; m: 
     edit: enumSpec ? { kind: "select", current: parsed?.normalized ?? value, options: enumSpec.options, unit: enumSpec.unit }
       : { kind: "number", current: value, ...(promo ? { min: 1, max: 3, unit: "倍", amplifiesWhen: "increase" as const } : merge ? { min: 0, max: 100, unit: "%" } : {}), hint: help.hint },
     facts: parsed && !parsed.legal ? <Facts><Fact k="现在存的值" tone="danger">{value}（不是有效值）</Fact></Facts>
-      : !value ? <Facts><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK[paramKey]}</Fact></Facts> : undefined,
+      : !value ? <Facts><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK[paramKey].replace(/^没配[^，]*时，/, "")}</Fact></Facts> : undefined,
     statedBrief: { impact: `${help.what}。${help.effect}。批准后对之后新算的订单生效，已经算好的不重算。`, check: promo ? COVERAGE_CHECK : "后端只检查取值范围。" },
     detail: `${name} · 现在 ${value || "未配置"}。只影响之后的购买奖励结算。`,
     completionCopy: approvalCopy(help.perm), coverageCheck: COVERAGE_CHECK, coverageLead: "调高倍率，每层都多付钱",
@@ -342,7 +342,7 @@ export function F2Limits({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
     edit: { kind: "number", current: coolingDays, unit: "天", min: 0, max: 90, step: 1, hint: "0–90 的整数",
       ...(coolingDays !== "" ? { amplifiesWhen: "decrease" as const } : {}) },
     facts: coolingRaw && coolingDays === "" ? <Facts><Fact k="现在存的值" tone="danger">{coolingRaw}（不是 0–90 的整数）</Fact></Facts>
-      : !coolingRaw ? <Facts><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK["F.cooldown"]}</Fact></Facts> : undefined,
+      : !coolingRaw ? <Facts><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK["F.cooldown"].replace(/^没配[^，]*时，/, "")}</Fact></Facts> : undefined,
     statedBrief: { impact: "批准后，之后新算的购买奖励和其他团队奖励按新天数冷却；已经在冷却中的到期日不变。缩短会让钱更早能提。不影响好友设备收益奖励的冷却。", check: COVERAGE_CHECK },
     detail: `购买与其他奖励冷却期 · ${coolingState}。缩短前先看兑付覆盖率；不影响好友设备收益奖励的冷却期。`,
     completionCopy: approvalCopy("团队奖励规则"), coverageCheck: COVERAGE_CHECK, coverageLead: "缩短冷却，钱更早能提",
