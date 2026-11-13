@@ -7,7 +7,7 @@
  * 两种结算都只提交审批，另一位管理员批准后才发。请求、校验、权限和结果未知的处理照旧，界面只换排法。
  */
 import { useReach } from "@/lib/nav/use-reach";
-import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -165,6 +165,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     const unit = numeric ? param.unit : "";
     const multiplierName = param.key === "inviter.nex" ? "邀请加成" : "新用户加成";
     const pendingCount = countText(data.pending);
+    const gateNow = gateText(data.effectiveAt);
     const resetFact = (when = "保存或批准") => `${when}后，生效时间改成那一刻：现在等结算的 ${pendingCount} 位不再进入结算`;
     const approvalCopy = numeric
       ? "批准前仍按原金额发；批准时按那时的当月加成重算，并检查兑付覆盖率。"
@@ -211,11 +212,13 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           ? <Fact k="奖励开关"><Change from={current} to={enabling ? "已启用" : "已停用"} /></Fact>
           : <Fact k="改的是">{numeric ? `${WHO[param.key].per}的${param.label} 基础额` : "新人礼发放方式"}</Fact>}
         {numeric && <Fact k="当月加成">第 {data.rhythmMonth} 月{multiplierName} {multiplierText(multiplier)}，在运营阶段设置改</Fact>}
+        {numeric && <Fact k="生效时间"><Change from={gateNow} to="保存或批准那一刻" /></Fact>}
         {numeric && <Fact k="等结算的注册">{resetFact()}</Fact>}
         {numeric && <Fact k="已结算和已冻结">金额不变</Fact>}
         {isEnabled && enabling && <Fact k="谁能批准">{APPROVER}（需有审批批准权限）</Fact>}
         {isEnabled && !enabling && <Fact k="App 和结算">App 不再显示奖励金额；新的结算不再发</Fact>}
         {isEnabled && !enabling && <Fact k="已冻结的新人礼">首笔实付订单后照常解冻</Fact>}
+        {isEnabled && <Fact k="生效时间">{enabling ? <Change from={gateNow} to="批准那一刻" /> : `不变：${gateNow}`}</Fact>}
         {isEnabled && <Fact k="等结算的注册">{enabling
           ? "启用批准后生效时间改成批准那一刻，在那之前注册的不进入结算"
           : `${pendingCount} 位照常统计，停用期间不能结算`}</Fact>}
@@ -270,6 +273,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
               <Facts>
                 <Fact k="改后">{directionTag(value) ?? "—"}</Fact>
                 <Fact k="改后怎么筛">{MODE_HELP[value] ?? MODE_HELP[rawCurrent]}</Fact>
+                <Fact k="生效时间"><Change from={gateNow} to={dir === "loosen" ? "批准那一刻" : "保存那一刻"} /></Fact>
                 <Fact k="等结算的注册">{resetFact(dir === "loosen" ? "批准" : "保存")}</Fact>
               </Facts>
             </div>
@@ -375,7 +379,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     confirmTone: "danger",
     reasonPlaceholder: "例如：本周新人礼例行结算、工单号",
     amplifies: true,
-    edit: targeted ? undefined : { kind: "number", label: "这一批最多结算", initialValue: "20", unit: "位", min: 1, max: 100, step: 1, hint: "1–100 位，按注册先后从最早的开始" },
+    edit: targeted ? undefined : { kind: "number", label: "这一批最多结算", current: "20", currentLabel: "默认", unit: "位", min: 1, max: 100, step: 1, hint: "1–100 位，填了才能提交；按注册先后从最早的开始" },
     run: async (reason, value) => {
       const limit = targeted ? 1 : Math.max(1, Math.min(100, Number(value) || 20));
       const def = targeted ? findHighOp("h8_referral_settlement_user")! : findHighOp("h8_referral_settlement")!;
@@ -516,6 +520,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const targetUserValid = /^[1-9]\d*$/.test(invitedUserIdInput.trim()) && Number.isSafeInteger(targetUserId);
   const zone = businessZone().label;
   const effectiveAtText = formatBusinessTimeFull(data.effectiveAt, "—");
+  const gateUnset = Date.parse(data.effectiveAt) === 0;
   const modeLabel = LOCK_MODE_LABELS[String(data.params["newcomer.lockMode"])] ?? "—";
   const pending = Number(data.pending ?? 0);
   const allZero = AMOUNT_PARAMS.every((param) => Number(data.effectiveRewards[param.key]) === 0);
@@ -616,14 +621,16 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
             <ConfigRow name="生效时间"
               what="只有这个时间之后注册的新人进入结算"
               effect="改金额、改发放方式（含和现在一样的保存）和启用批准后，都改成那一刻；之前注册、还没结算的不再自动结算。停用不改它"
-              value={<span className="h8-time" title={`${effectiveAtText}（${zone}）`}>{effectiveAtText}<small>{zone}</small></span>} />
+              value={gateUnset
+                ? <span className="h8-time" title={`后端原值 ${data.effectiveAt}`}>未设置<small>所有注册都算</small></span>
+                : <span className="h8-time" title={`${effectiveAtText}（${zone}）`}>{formatBusinessTimeCompact(data.effectiveAt, "—")}<small>{zone}</small></span>} />
           </ConfigList>
         </Panel>
 
       <Panel title="结算" icon={Route} tone="role-3" sub={`待结算 ${countText(pending)} 位`}
         explain="不会自动结算。批量和指定新人两种结算都只提交审批，另一位管理员批准后才发；同一时间只能有一张结算审批单。"
         actions={canSettle ? <Button variant="primary" disabledReason={settleBlock} onClick={() => settle()}>批量结算</Button> : undefined}>
-        <RewardFlow pending={`${countText(pending)} 位`} blocked={`${countText(data.blockedByK2)} 位`} settled={`${countText(data.settled)} 位`} mode={modeLabel} />
+        <RewardFlow gateUnset={gateUnset} pending={`${countText(pending)} 位`} blocked={`${countText(data.blockedByK2)} 位`} settled={`${countText(data.settled)} 位`} mode={modeLabel} />
         <div className="h8-settle-foot">
           {canSettle ? (
             <form className="h8-target" onSubmit={(event) => { event.preventDefault(); if (data.enabled && targetUserValid) settle(targetUserId); }}>
@@ -689,6 +696,11 @@ function timesText(per: string | number | undefined, count: number, decimals: nu
   if (a === null || b === null) return "—";
   const total = (a + b) * BigInt(count);
   return amountText(`${total / BigInt(1000000)}.${String(total % BigInt(1000000)).padStart(6, "0")}`, decimals);
+}
+
+/** 生效时间的写法：后端的初始值 1970-01-01T00:00:00Z 表示从没设过，所有注册都算（迁移种子；SQL 按 created_at ≥ 生效时间）。 */
+function gateText(effectiveAt: string) {
+  return Date.parse(effectiveAt) === 0 ? "未设置（所有注册都算）" : `${formatBusinessTimeCompact(effectiveAt, "—")}（${businessZone().label}）`;
 }
 
 function valueText(param: H8Param, value: string | undefined) {
