@@ -1,14 +1,20 @@
 "use client";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
 
+/**
+ * B5 风险提醒。先答「现在哪一项在报警、有多严重、去哪页处理」：一句结论，有事的项展开成卡片排在前面，
+ * 正常的收成一行；再看出金压力走势、告警分布，最后是最近风险信号和我的站内告警。
+ * 读取、权限判断、五类写入口（黄线红线、提高红线审批、告警订阅、五项分诊、确认已读、信号处理进度）的请求和判断沿用改版前的写法，只换界面。
+ */
 import "./risk-radar.css";
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowUpRight, BellRing, CheckCheck, FileText, LockOpen, Lock, Power, ShieldQuestion, SlidersHorizontal } from "lucide-react";
+import {
+  BlockState, Button, Change, Check, CheckGroup, Conclusion, DiffField, Explain, Fact, Facts, Field, Input, Modal, Notice, NumberInput,
+  PageHeader, PageTabs, Panel, RdPage, StatusTag, Textarea, useTabIds,
+} from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { fmtConfigPct } from "@/lib/format";
-import { AlertTriangle, BellRing, Gauge, Landmark, Radar, ShieldAlert, ShieldCheck } from "lucide-react";
-import { BPageHeader } from "../b-page-header";
-import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
 import { useToast } from "@/app/components/domain-views/design-kit";
 import {
   fetchB5Radar,
@@ -25,14 +31,16 @@ import {
   type B5Radar,
   type B5InboxItem,
 } from "@/lib/admin/b5-client";
-import { formatB5RiskLight, formatB5WithdrawalState } from "@/lib/admin/b5-display-labels";
+import { formatB5RiskLight } from "@/lib/admin/b5-display-labels";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { pendingConfigApproval, pendingThresholdConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { B5RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
 import { useReach } from "@/lib/nav/use-reach";
-import { ThresholdComparison } from "../threshold-comparison";
+import { fmtConfigPct } from "@/lib/format";
+import { buildDimensions, IssueCard, QuietRow, ratioPct, type BuiltDimension, type DimensionKey } from "./dimensions";
+import { AlertDistribution, HANDLING, InboxTable, PressureTrend, SEVERITY, SignalsTable, TabNote, stamp } from "./insights";
 
 /** B5 阈值 / 订阅 / 分类处理共用一张表,槽位分命名空间(分类处理槽位带维度 = 目标对象)。
  *  阈值与订阅额外把提交值 + 版本当输入指纹:改了值必须换新命令号,否则后端按旧号去重,
@@ -51,22 +59,58 @@ const TRIAGE = {
   coverage: "/overview/dual-ledger",
 } as const;
 
-const GATE_LABELS: Record<string, string> = {
-  withdraw: "提现",
-  staking: "质押",
-  genesis: "创世节点交易",
-  exchange: "兑换",
-  trial: "试用入口",
+/** 五项分诊的按钮名：写去哪一页。 */
+const TRIAGE_LABEL: Record<DimensionKey, string> = {
+  bankrun: "去提现审核",
+  "abnormal-accounts": "去多账户风险排查",
+  "withdraw-backlog": "去提现审核",
+  "kill-switches": "去紧急停用开关",
+  coverage: "去资金与应付款总览",
 };
 
-const deliveryStatusText = (value: string) => ({ PENDING: "待发送", DELIVERED: "已送达", SANDBOX_DELIVERED: "测试送达", NOT_QUEUED: "尚未加入发送队列", PROCESSING: "发送中", FAILED_RETRY: "发送失败，等待重试", DEAD: "发送已终止", SENT: "已发送", FAILED: "发送失败" } as Record<string,string>)[value.toUpperCase()] ?? "发送状态待核实";
+const STATUS_TEXT = { handled: "已处理", resolved: "已解决" } as const;
 
-function pct(ratio: number | null) {
-  return ratio === null ? "暂无法计算" : `${(ratio * 100).toFixed(1)}%`;
+/** 全页时间一种写法：2026-11-13 14:30（北京时间），和资金与应付款总览一致。 */
+const timeText = (value: string) => `${formatBusinessTimeCompact(value, "—")}（${businessZone().label}）`;
+
+/**
+ * 直接写入（黄线红线、告警订阅、确认已读、信号处理进度）结果未知时的待确认条。界面已备好，逻辑待代码 worker 接：
+ * 现在这几条路径只在本标签页按槽位留命令号，不存原内容、关框后不能按原内容恢复（B5-F02）。按 R1 存好原对象、内容、理由、命令号和首次时间后填进这里。
+ * 写法照资金与应付款总览：页头下、结论句上，一条一个 Notice，24 小时后只核对不重试。
+ */
+interface B5PendingCommand {
+  commandKey: string;
+  title: string;
+  body: ReactNode;
+  expired: boolean;
+  onRetry?: () => void;
 }
+// TODO(code worker): 按 R1 从本标签页的待确认记录读出 W01、W03、W09～W11 的原命令。
+const PENDING_PLACEHOLDER: readonly B5PendingCommand[] = [];
 
-function money(value: number) {
-  return `$${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+/**
+ * 提高红线的审批单已登记、等另一位超管批准时，提现压力卡上的「待审批」标记。界面已备好：
+ * 这页现在读不到审批单状态（提交成功后只提示一次），等代码 worker 接 A2 待批读取后填进来。
+ */
+// TODO(code worker): 接 A2 读取 B/bankrun_thresholds/current 的待批单。
+const APPROVAL_PENDING_PLACEHOLDER: { redPct: number; ticketId: string } | null = null;
+
+function PendingCommands({ items, auditReachable }: { items: readonly B5PendingCommand[]; auditReachable: boolean }) {
+  if (!items.length) return null;
+  return (
+    <>
+      {items.map((item) => (
+        <Notice key={item.commandKey} tone="warn" title={item.title} actionBelow
+          action={<span className="b5-row-actions">
+            {item.expired ? undefined : <Button size="sm" disabledReason={item.onRetry ? undefined : "等待接入：按原操作重试"} onClick={item.onRetry}>按原操作重试</Button>}
+            {auditReachable && <Link className="rd-link" href="/platform/audit" prefetch={false}>到「操作记录与审批」核对</Link>}
+          </span>}>
+          <p>{item.body}</p>
+          <p>命令号 <span data-mono>{item.commandKey}</span>{item.expired ? "，已超过 24 小时，只能核对，不能重试。" : "。只能按原内容重试，不能换号重发。"}</p>
+        </Notice>
+      ))}
+    </>
+  );
 }
 
 export default function RiskRadarPage() {
@@ -104,6 +148,18 @@ export default function RiskRadarPage() {
   const [inboxError, setInboxError] = useState("");
   const [inboxReload, setInboxReload] = useState(0);
   const [acknowledgingDelivery, setAcknowledgingDelivery] = useState<number | null>(null);
+  // 以下只管界面：弹窗开关、页签、分诊进行中。
+  const [subscriptionOpen, setSubscriptionOpen] = useState(false);
+  const [subscriptionSaveError, setSubscriptionSaveError] = useState("");
+  const [statusDialog, setStatusDialog] = useState<{ alert: B5Radar["recentAlerts"][number]; target: "handled" | "resolved" } | null>(null);
+  const [statusReason, setStatusReason] = useState("");
+  const [statusError, setStatusError] = useState("");
+  const [statusUnknown, setStatusUnknown] = useState(false);
+  const [thresholdUnknown, setThresholdUnknown] = useState(false);
+  const [subscriptionUnknown, setSubscriptionUnknown] = useState(false);
+  const [tab, setTab] = useState<"signals" | "inbox">("signals");
+  const [triaging, setTriaging] = useState<DimensionKey | null>(null);
+  const tabIds = useTabIds();
 
   useEffect(() => {
     let alive = true;
@@ -189,23 +245,26 @@ export default function RiskRadarPage() {
   );
   const subscriptionValid = subscription.inApp || subscription.email || subscription.webhook;
 
-  const changeSignalStatus = async (alert: B5Radar["recentAlerts"][number], targetStatus: "handled" | "resolved") => {
-    const input = window.prompt(`请输入将 ${alert.signalNo} 标记为 ${targetStatus} 的理由（8–200 字）`);
-    if (input === null) return;
+  // 旧页面用浏览器原生输入框收理由；现在在确认框里填，请求、命令号槽位和指纹不变。
+  const changeSignalStatus = async (alert: B5Radar["recentAlerts"][number], targetStatus: "handled" | "resolved", input: string) => {
     const reason = input.trim();
-    if (reason.length < 8 || reason.length > 200) { setToast("理由必须为 8–200 字"); return; }
+    if (reason.length < 8 || reason.length > 200) { setStatusError("理由要写 8–200 个字"); return; }
     const slot = `signal-status:${alert.signalNo}`;
     const fingerprint = JSON.stringify([alert.signalNo, alert.handlingStatus, alert.handlingVersion, targetStatus, reason]);
     const commandKey = b5Commands.resolve(slot, fingerprint, () => `b5-signal-status-${crypto.randomUUID()}`);
     setUpdatingSignal(alert.signalNo);
+    setStatusError("");
+    setStatusUnknown(false);
     try {
       await updateB5SignalStatus(alert.signalNo, targetStatus, alert.handlingStatus as "open" | "handled", alert.handlingVersion, reason, operator, commandKey);
       b5Commands.forget(slot);
+      setStatusDialog(null);
       await radar.reload();
-      setToast(`${alert.signalNo} 已标记为${targetStatus}`);
+      setToast(`已标记为${STATUS_TEXT[targetStatus]}：${alert.message}`);
     } catch (cause) {
       if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(slot);
-      setToast(displayAdminError(cause));
+      setStatusUnknown(cause instanceof B5OutcomeUnknownError);
+      setStatusError(displayAdminError(cause));
     } finally { setUpdatingSignal(""); }
   };
 
@@ -217,7 +276,7 @@ export default function RiskRadarPage() {
       await acknowledgeB5Inbox(delivery.id, commandKey);
       b5Commands.forget(slot);
       setInboxReload((value) => value + 1);
-      setToast(`${delivery.signalNo} 已确认`);
+      setToast(`已确认：${delivery.signalNo}`);
     } catch (cause) {
       if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(slot);
       setToast(displayAdminError(cause));
@@ -226,30 +285,30 @@ export default function RiskRadarPage() {
     }
   };
 
+  const canJ1 = canCross("/emergency/kill-switch");
+  const header = (meta?: ReactNode, actions?: ReactNode, readOnly?: ReactNode) => (
+    <PageHeader pageId="B5" title="风险提醒" summary="看五项风险有没有报警，报警的去哪页处理。" meta={meta} actions={actions} readOnly={readOnly} />
+  );
+  // 页头直达紧急停用开关：只是导航，不记分诊（B5-L02）。
+  const killSwitchLink = canJ1
+    ? <Link className="rd-btn" data-variant="secondary" data-size="md" href="/emergency/kill-switch" prefetch={false}><span className="rd-btn-face"><Power size={14} aria-hidden />紧急停用开关</span></Link>
+    : null;
+
   if (radar.loading && !radar.data || radar.error || !radar.data) {
+    const loading = radar.loading && !radar.error;
     return (
-      <div className="dkpage bpage radarpage">
-        <BPageHeader
-          id="B5"
-          title="风险提醒"
-          desc="正在加载…"
-          ctaLabel="紧急停用开关"
-          ctaHref="/emergency/kill-switch"
-          ctaAllowed={canCross("/emergency/kill-switch")}
-        />
-        <BDomainDataState title="风险提醒" loading={radar.loading && !radar.error} error={radar.error} onRetry={radar.reload} />
-      </div>
+      <RdPage className="radarpage">
+          {header(undefined, killSwitchLink)}
+          <Conclusion state="unknown" icon={ShieldQuestion} hint={loading ? undefined : "数据读到之前不判断有没有风险。"}>
+            {loading ? "风险提醒：正在读取" : "风险提醒：读取失败，暂时无法判断"}
+          </Conclusion>
+          <BlockState state={loading ? "loading" : "error"} title={loading ? "正在读取五项风险…" : "风险数据读取失败"} detail={radar.error ?? undefined} onRetry={loading ? undefined : radar.reload} retrying={radar.loading} />
+        {toastNode}
+      </RdPage>
     );
   }
 
   const data = radar.data;
-  // Compatibility aliases keep the pre-existing J1/B5 same-source regression guard explicit.
-  const riskRadar = {
-    bankRunYellowPct: data.bankrun.yellowPct,
-    bankRunRedlinePct: data.bankrun.redPct,
-  };
-  const bankRunYellowPct = riskRadar.bankRunYellowPct;
-  const bankRunRedlinePct = riskRadar.bankRunRedlinePct;
   const canTriageDimension = (dimension: keyof typeof TRIAGE) => {
     if (!canTriage) return false;
     if (!canCross(TRIAGE[dimension])) return false;
@@ -259,6 +318,7 @@ export default function RiskRadarPage() {
   const triage = async (dimension: keyof typeof TRIAGE) => {
     const triageSlot = `triage|${dimension}`;
     const commandKey = b5Commands.resolve(triageSlot, dimension, () => `b5-triage-${crypto.randomUUID()}`);
+    setTriaging(dimension);
     try {
       const target = TRIAGE[dimension];
       await recordB5Triage(dimension, target, operator, commandKey);
@@ -266,7 +326,10 @@ export default function RiskRadarPage() {
       router.push(target);
     } catch (cause) {
       if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(triageSlot);
-      setToast(cause instanceof Error ? displayAdminError(cause) : "处理失败，请稍后重试");
+      // 分诊只留一条审计，失败了如实说没成功、重新点一次即可（决定 B4-PD02）。
+      setToast(`没有跳转：分诊记录没有确认记上，请重新点一次。${cause instanceof Error ? displayAdminError(cause) : ""}`);
+    } finally {
+      setTriaging(null);
     }
   };
   const openThreshold = () => {
@@ -283,6 +346,7 @@ export default function RiskRadarPage() {
     if (!session || !threshold || !canThreshold || savingThreshold || (!recover && !canSubmitThreshold)) return;
     setSavingThreshold(true);
     setThresholdError("");
+    setThresholdUnknown(false);
     const approving = requiresApproval || recover;
     try {
       if (approving) {
@@ -307,7 +371,7 @@ export default function RiskRadarPage() {
         );
         b5Commands.forget(THRESHOLD_SLOT);
         radar.setData(next);
-        setToast("提现压力阈值已更新");
+        setToast("提现压力的黄线和红线已更新");
       }
       setThreshold(null);
     } catch (cause) {
@@ -317,6 +381,7 @@ export default function RiskRadarPage() {
       } else {
         if (!approving && !(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(THRESHOLD_SLOT);
         if (approving && !pendingConfigApproval("B5", session.adminId)) setApprovalRecovery(null);
+        setThresholdUnknown(cause instanceof B5OutcomeUnknownError);
         setThresholdError(displayAdminError(cause));
       }
     } finally {
@@ -326,6 +391,8 @@ export default function RiskRadarPage() {
   const saveSubscription = async () => {
     if (!canSubscribe || subscriptionLoading || subscriptionError || savingSubscription || !subscriptionChanged || !subscriptionValid) return;
     setSavingSubscription(true);
+    setSubscriptionSaveError("");
+    setSubscriptionUnknown(false);
     const commandKey = b5Commands.resolve(
       SUBSCRIPTION_SLOT,
       JSON.stringify([subscription, subscriptionVersion]),
@@ -338,227 +405,269 @@ export default function RiskRadarPage() {
       setSubscription(normalized);
       setSavedSubscription(normalized);
       setSubscriptionVersion(saved.version);
-      setToast("告警订阅已保存");
+      setSubscriptionOpen(false);
+      setToast("告警订阅已保存，之后的新告警发给你");
     } catch (cause) {
       if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(SUBSCRIPTION_SLOT);
-      setToast(displayAdminError(cause));
+      setSubscriptionUnknown(cause instanceof B5OutcomeUnknownError);
+      setSubscriptionSaveError(displayAdminError(cause));
     } finally {
       setSavingSubscription(false);
     }
   };
 
+  // ---------- 五项 ----------
+  const { issues, quiet } = buildDimensions(data);
+  const triageButton = (key: DimensionKey, variant: "primary" | "secondary" | "ghost", size: "md" | "sm") => canTriageDimension(key)
+    ? <Button key="triage" variant={variant} size={size} loading={triaging === key} loadingText="正在记录…" icon={<ArrowUpRight size={14} aria-hidden />}
+      onClick={() => void triage(key)}>{TRIAGE_LABEL[key]}</Button>
+    : null;
+  const thresholdButton = (size: "md" | "sm") => canThreshold
+    ? <Button key="threshold" variant="ghost" size={size} icon={<SlidersHorizontal size={14} aria-hidden />} onClick={openThreshold}>调整黄线 / 红线</Button>
+    : null;
+  const approvalTag = APPROVAL_PENDING_PLACEHOLDER
+    ? <StatusTag tone="progress" explain={`审批号 ${APPROVAL_PENDING_PLACEHOLDER.ticketId}。另一位有批准权限的超级管理员批准前，红线不变。`}>红线提高到 {fmtConfigPct(APPROVAL_PENDING_PLACEHOLDER.redPct)} 待审批</StatusTag>
+    : null;
+  const actionsFor = (item: BuiltDimension, issue: boolean) => {
+    const list = [triageButton(item.key, issue ? "primary" : "ghost", issue ? "md" : "sm"), item.key === "bankrun" ? thresholdButton(issue ? "md" : "sm") : null].filter(Boolean);
+    return list.length ? <>{list}</> : null;
+  };
+
+  // ---------- 结论 ----------
+  const first = issues[0];
+  const others = issues.slice(1);
+  const unacked = inboxError || inboxLoading ? null : inbox.filter((item) => !item.acknowledgedAt).length;
+  const inboxHint = unacked ? `你有 ${unacked} 条站内告警没确认。` : "";
+  const unknownItems = quiet.filter((item) => item.level === "neutral");
+  const conclusionExplain = "每一项的颜色都按系统现有的线判断：提现压力看黄线、红线，覆盖率看红线、健康线，积压看有没有超过 48 小时，业务开关看有没有关停，异常账户看有没有。";
+  const conclusion = !first ? (unknownItems.length ? (
+    <Conclusion state="neutral" icon={ShieldQuestion} hint={`没有要马上处理的。${inboxHint}`} explainTitle="五项怎么判断" explain={conclusionExplain}>
+      风险提醒：没有报警，{unknownItems.map((item) => item.name).join("、")}无法计算
+    </Conclusion>
+  ) : (
+    <Conclusion state="ok" hint={`没有要马上处理的。${inboxHint}`} explainTitle="五项怎么判断" explain={conclusionExplain}>
+      风险提醒：五项都正常
+    </Conclusion>
+  )) : first.level === "danger" ? (
+    <Conclusion state="danger" lead hint={<>{others.length ? `另有 ${others.length} 项要注意：${others.map((item) => item.name).join("、")}。` : "在下面卡片里点按钮去处理。"}{inboxHint}</>}>
+      风险告警：{first.headline}
+    </Conclusion>
+  ) : issues.length === 1 ? (
+    <Conclusion state="warn" hint={`在下面卡片里点按钮去处理。${inboxHint}`}>风险提醒：{first.headline}</Conclusion>
+  ) : (
+    <Conclusion state="warn" hint={`先看${first.name}。${inboxHint}`}>风险提醒：<b>{issues.length}</b> 项要注意，{issues.map((item) => item.name).join("、")}</Conclusion>
+  );
+
+  const meta = (
+    <span className="b5-meta">
+      数据时间 {timeText(data.generatedAt)}
+      <Explain label="数据多久更新" content="打开页面时读一次，之后每 30 秒自动重读；站内告警和告警订阅不跟着自动重读。" />
+      {radar.streamWarning && <span className="b5-muted"> · 实时连接正在重连，先显示最近一次数据</span>}
+    </span>
+  );
+  const headerActions = (killSwitchLink || canSubscribe) ? (
+    <>
+      {canSubscribe && <Button icon={<BellRing size={14} aria-hidden />} onClick={() => { setSubscriptionSaveError(""); setSubscriptionOpen(true); }}>告警订阅</Button>}
+      {killSwitchLink}
+    </>
+  ) : undefined;
+  const readOnly = !canThreshold && !canSubscribe && !canTriage ? "你只能查看；分诊、调整黄线红线和告警订阅需要对应权限。" : undefined;
+  const openCount = data.recentAlerts.filter((alert) => alert.handlingStatus === "open").length;
+
   return (
-    <div className="dkpage bpage radarpage">
-      <BPageHeader
-        id="B5"
-        title="风险提醒"
-        desc="提现压力、异常账户、提现积压、业务开关和兑付覆盖率集中查看。这里只看风险，处理请点各卡片进入对应页面。"
-        ctaLabel="紧急停用开关"
-        ctaHref="/emergency/kill-switch"
-        ctaAllowed={canCross("/emergency/kill-switch")}
-      />
+    <RdPage className="radarpage">
+        {header(meta, headerActions, readOnly)}
+        <PendingCommands items={PENDING_PLACEHOLDER} auditReachable={canCross("/platform/audit")} />
+        {canThreshold && pendingApproval && (
+          <Notice tone="warn" title="提高红线的审批：提交结果还没确认"
+            action={<Button size="sm" onClick={openThreshold}>{pendingApproval.expiresAt <= Date.now() ? "查询原审批" : "核对原审批"}</Button>}>
+            红线 {fmtConfigPct(pendingApproval.values.redPct)}、黄线 {fmtConfigPct(pendingApproval.values.yellowPct)}。先查原审批单，查到了就不要重复提交。
+          </Notice>
+        )}
+        {conclusion}
 
-      <div className="b5-summary">
-        <span><Radar size={15} /> 实时汇总</span>
-        <span>更新于 {new Date(data.generatedAt).toLocaleString()}</span>
-        <span>提现与充值比率红线 {fmtConfigPct(data.bankrun.pressureRedLine * 100)}（只提醒，不自动处理）</span>
-      </div>
-      {radar.streamWarning && <div className="b5-error" role="status">{radar.streamWarning}</div>}
+        {issues.length > 0 && (
+          <div className="rd-split b5-issues" data-even="">
+            {issues.map((item) => <IssueCard key={item.key} item={item} actions={actionsFor(item, true)} extra={item.key === "bankrun" ? approvalTag : undefined} />)}
+          </div>
+        )}
+        {quiet.length > 0 && (
+          <Panel title={issues.length ? "其余各项" : "五项风险"} sub={`${quiet.length} 项没有报警`} explain="点「去…」会先记一条分诊记录（谁、什么时候、从哪一项进去），再打开对应页面；不改任何业务数据。" className="b5-quiet">
+            <ul className="b5-quiet-list">
+              {quiet.map((item) => <QuietRow key={item.key} item={item} actions={actionsFor(item, false)} extra={item.key === "bankrun" ? approvalTag : undefined} />)}
+            </ul>
+          </Panel>
+        )}
 
-      <div className="b5-dimensions">
-        <section className={`b5-dimension ${data.bankrun.light}`}>
-          <div className="b5-card-head">
-            <div><Gauge size={18} /><b>提现压力</b></div>
-            <span className={`b5-light ${data.bankrun.light}`}>{formatB5RiskLight(data.bankrun.light)}</span>
-          </div>
-          <div className="b5-bankrun-grid">
-            <div>
-              <span>24 小时提现 ÷ 可用储备</span>
-              <strong>{pct(data.bankrun.ratio24h)}</strong>
-              <small>{money(data.bankrun.withdraw24hUsdt)} ÷ {money(data.bankrun.reserveUsdt)}</small>
-              {!data.bankrun.ratioCalculable && <small>{data.bankrun.withdraw24hUsdt > 0 ? "可用储备为 0，无法计算，按高风险处理。" : "提现和储备都是 0，暂无法计算。"}</small>}
-            </div>
-            <div>
-              <span>提现与充值比率</span>
-              <strong>{pct(data.bankrun.pressureRatio)}</strong>
-              <small>{data.bankrun.pressureCalculable ? `红线 ${fmtConfigPct(data.bankrun.pressureRedLine * 100)} · 只提醒` : "近 24 小时没有充值，暂无法计算"}</small>
-            </div>
-          </div>
-          <p>提现压力（24 小时提现 ÷ 可用储备）：黄线 {bankRunYellowPct}% · 红线 {bankRunRedlinePct}%。超过红线会触发最高级告警，并自动暂停提现。</p>
-          <div className="b5-actions">
-            {canTriageDimension("bankrun") && <button onClick={() => void triage("bankrun")}>去处理提现 →</button>}
-            {canThreshold && <button className="secondary" onClick={openThreshold}>调整黄线 / 红线</button>}
-          </div>
-        </section>
-
-        <section className="b5-dimension">
-          <div className="b5-card-head">
-            <div><ShieldAlert size={18} /><b>异常账户</b></div>
-            <strong>{data.abnormalAccounts.count}</strong>
-          </div>
-          <div className="b5-list">
-            {data.abnormalAccounts.byCategory.map((item) => (
-              <div key={item.category}><span>{operatorCopyText(item.label)}</span><b>{item.count}</b></div>
-            ))}
-          </div>
-          <div className="b5-actions">
-            {canTriageDimension("abnormal-accounts") && <button onClick={() => void triage("abnormal-accounts")}>去风控处理 →</button>}
-          </div>
-        </section>
-
-        <section className={`b5-dimension ${data.withdrawBacklog.light}`}>
-          <div className="b5-card-head">
-            <div><Landmark size={18} /><b>提现积压</b></div>
-            <span className={`b5-light ${data.withdrawBacklog.light}`}>须在 {data.withdrawBacklog.slaHours} 小时内处理</span>
-          </div>
-          <div className="b5-backlog">
-            {data.withdrawBacklog.byState.map((item) => (
-              <div key={item.state}>
-                <span>{formatB5WithdrawalState(item.state)}</span>
-                <b>{item.count} 单</b>
-                <strong>{money(item.amountUsdt)}</strong>
-                <small>已超时 {item.overSlaCount} 单</small>
-              </div>
-            ))}
-          </div>
-          <p>合计 {data.withdrawBacklog.totalCount} 单 · {money(data.withdrawBacklog.totalAmountUsdt)} · 已超时 {data.withdrawBacklog.overSlaCount} 单</p>
-          <div className="b5-actions">
-            {canTriageDimension("withdraw-backlog") && <button onClick={() => void triage("withdraw-backlog")}>去处理提现 →</button>}
-          </div>
-        </section>
-
-        <section className="b5-dimension">
-          <div className="b5-card-head">
-            <div><ShieldCheck size={18} /><b>业务开关（5 个）</b></div>
-            <span>地区限制见「地区访问限制」</span>
-          </div>
-          <div className="b5-gates">
-            {data.killSwitches.map((gate) => (
-              <div key={gate.key}>
-                <i className={`b5-dot ${gate.enabled ? "green" : "red"}`} />
-                <span>{GATE_LABELS[gate.key]}</span>
-                <b>{gate.enabled ? "开放" : "已暂停"}</b>
-              </div>
-            ))}
-          </div>
-          <div className="b5-actions">
-            {canTriageDimension("kill-switches") && <button onClick={() => void triage("kill-switches")}>去紧急停用开关 →</button>}
-          </div>
-        </section>
-
-        <section className={`b5-dimension ${data.coverage.light}`}>
-          <div className="b5-card-head">
-            <div><AlertTriangle size={18} /><b>兑付覆盖率</b></div>
-            <span className={`b5-light ${data.coverage.light}`}>{formatB5RiskLight(data.coverage.light)}</span>
-          </div>
-          <div className="b5-coverage">
-            <strong>{data.coverage.ratio === null ? "—" : `${data.coverage.ratio}%`}</strong>
-            <span>红线 {data.coverage.redlinePct}%</span>
-            <small>储备 {money(data.coverage.reserveUsdt)} · 应付款 {money(data.coverage.liabilitiesUsdt)}</small>
-            {data.coverage.ratio === null && <small>目前没有应付款，无需计算覆盖率。</small>}
-          </div>
-          <div className="b5-actions">
-            {canTriageDimension("coverage") && <button onClick={() => void triage("coverage")}>查看资金总览 →</button>}
-          </div>
-        </section>
-      </div>
-
-      {canSubscribe && <section className="b5-subscription">
-        <div className="b5-card-head">
-          <div><BellRing size={18} /><b>告警订阅配置</b></div>
-          <span>与「资金与应付款总览」共用</span>
+        <div className="rd-split" data-even="">
+          <PressureTrend data={data} />
+          <AlertDistribution data={data} />
         </div>
-        {subscriptionLoading || subscriptionError ? <>
-          <BDomainDataState title="告警订阅配置" loading={subscriptionLoading} error={subscriptionError} onRetry={() => setSubscriptionReload((value) => value + 1)} />
-          <button disabled>保存订阅</button>
-        </> : <div className="b5-channel-row">
-          <label><input type="checkbox" name="inApp" checked={subscription.inApp} disabled={!canSubscribe} onChange={(event) => setSubscription((value) => ({ ...value, inApp: event.target.checked }))} />站内</label>
-          <label title="邮件服务未设置，暂不能发送"><input type="checkbox" name="email" checked={false} disabled />邮件（暂不可用）</label>
-          <label title={webhookMode === "controlled-proxy" ? "通过外部接口发送" : "外部接口未设置，暂不能发送"}><input type="checkbox" name="webhook" checked={subscription.webhook} disabled={!canSubscribe || (webhookMode !== "controlled-proxy" && !subscription.webhook)} onChange={(event) => setSubscription((value) => ({ ...value, webhook: event.target.checked }))} />外部消息通知（{webhookMode === "controlled-proxy" ? "已配置受控代理" : "未配置"}）</label>
-          {subscription.webhook && (
-            <input
-              aria-label="外部通知接收地址"
-              value={subscription.webhookUrl}
-              disabled={!canSubscribe}
-              placeholder="https://..."
-              onChange={(event) => setSubscription((value) => ({ ...value, webhookUrl: event.target.value }))}
-            />
-          )}
-          <button disabled={!subscriptionChanged || !subscriptionValid || savingSubscription} onClick={() => void saveSubscription()}>
-            {savingSubscription ? "保存中…" : "保存订阅"}
-          </button>
-        </div>}
-      </section>}
 
-      <section className="b5-subscription" data-capability="b5-subscriber-inbox">
-        <div className="b5-card-head"><div><BellRing size={18} /><b>我的站内告警</b></div><span>只显示发给你的告警</span></div>
-        {inboxLoading || inboxError ? (
-          <BDomainDataState title="站内告警" loading={inboxLoading} error={inboxError} onRetry={() => setInboxReload((value) => value + 1)} />
-        ) : <>
-        {inbox.map((delivery) => <div className="b5-channel-row" key={delivery.id}>
-          <b>{delivery.signalNo}</b><span>{deliveryStatusText(delivery.deliveryStatus)}</span>
-          <span>渠道：{({ "durable-inbox": "站内", "controlled-proxy": "外部接口", provider: "外部通知服务", mock: "测试" } as Record<string,string>)[delivery.receiptSource] ?? "未知"} · 送达 {delivery.deliveredAt}</span>
-          <span>{delivery.readAt ? `已读 ${delivery.readAt}` : "未读"}</span>
-          <span>{delivery.acknowledgedAt ? `已确认 ${delivery.acknowledgedAt}` : "未确认"}</span>
-          {canTriage && !delivery.acknowledgedAt && <button disabled={acknowledgingDelivery === delivery.id} onClick={() => void acknowledgeInbox(delivery)}>确认已读</button>}
-        </div>)}
-        {!inbox.length && <p>当前没有站内告警。</p>}
-        </>}
-      </section>
-
-      <section className="b5-subscription" data-capability="b5-signal-disposition">
-        <div className="b5-card-head"><div><ShieldAlert size={18} /><b>近期风险信号</b></div><span>发送和处理进度</span></div>
-        {data.recentAlerts.map((alert) => <div className="b5-channel-row" key={alert.signalNo}>
-          <b>{alert.signalNo}</b><span>{alert.message}</span><span>发送：{deliveryStatusText(alert.deliveryStatus)}</span><span>处理：{({ open: "待处理", handled: "已处理", resolved: "已解决" } as Record<string,string>)[alert.handlingStatus] ?? "状态未知"}</span>
-          {canTriage && alert.handlingStatus === "open" && <button disabled={updatingSignal === alert.signalNo} onClick={() => void changeSignalStatus(alert, "handled")}>标记已处理</button>}
-          {canTriage && alert.handlingStatus === "handled" && <button disabled={updatingSignal === alert.signalNo} onClick={() => void changeSignalStatus(alert, "resolved")}>标记已解决</button>}
-        </div>)}
-        {!data.recentAlerts.length && <p>当前没有近期风险信号。</p>}
-      </section>
-
-      <B5RestoredInsights data={data} canAccessPath={canCross} />
-
-      <p className="b-foot">
-        这页只用来查看风险，处理请到对应页面。提现压力超过红线会自动暂停提现，事后请补记处理结论。
-      </p>
-
-      {threshold && (
-        <div className="b5-modal-mask" role="presentation" onMouseDown={(event) => !savingThreshold && event.target === event.currentTarget && setThreshold(null)}>
-          <div className="b5-modal" role="dialog" aria-modal="true" aria-busy={savingThreshold} aria-labelledby="b5-threshold-title">
-            <h2 id="b5-threshold-title">调整提现压力黄线 / 红线</h2>
-            {requiresApproval && <div className="alertbar warn b5-approval-notice">
-              <AlertTriangle size={16} aria-hidden="true" />
-              <div><b>放宽配置 · 批准后生效</b>
-                <div>调高红线后，自动暂停提现会更晚触发。另一位超管批准前，当前红线仍为 {threshold.redPct}%。</div>
-              </div>
-            </div>}
-            <p>提现压力 = 24 小时提现 ÷ 可用储备。超过红线会触发最高级告警并自动暂停提现。当前提现压力 {pct(data.bankrun.ratio24h)}；提现与充值比率 {pct(data.bankrun.pressureRatio)}（{data.bankrun.pressureCalculable ? `红线 ${fmtConfigPct(data.bankrun.pressureRedLine * 100)}，只提醒，不在这里调整` : "近 24 小时没有充值，暂无法计算"}）</p>
-            <ThresholdComparison approval={requiresApproval} fields={[
-              { label: "黄线（5%–50%）", current: threshold.yellowPct, input: <input className="w-full" aria-label="黄线（5%–50%）" value={yellowInput} disabled={thresholdLocked} onChange={(event) => setYellowInput(event.target.value)} inputMode="decimal" /> },
-              { label: "红线（10%–80%）", current: threshold.redPct, input: <input className="w-full" aria-label="红线（10%–80%）" value={redInput} disabled={thresholdLocked} onChange={(event) => setRedInput(event.target.value)} inputMode="decimal" /> },
-            ]} />
-            {!thresholdValid && <div className="b5-error">红线须高于黄线，且都在允许范围内。</div>}
-            <div className="b5-preview">
-              {previewReady ? <>按新的黄线 / 红线，当前状态为 <b>{formatB5RiskLight(preview.light)}</b></> : previewKey && !previewError ? "正在计算…" : "暂无法预览拟调整阈值。"}
-            </div>
-            <label className="b5-reason">调整理由（8–200 字）<textarea value={reason} disabled={thresholdLocked} maxLength={200} onChange={(event) => setReason(event.target.value)} /></label>
-            {staleThreshold && <div className="b5-error" role="alert">当前阈值已更新，请关闭弹窗后重新调整。</div>}
-            {previewError && <div className="b5-error" role="alert">{previewError}</div>}
-            {thresholdError && <div className="b5-error" role="alert">{thresholdError}</div>}
-            {approvalRecovery === "lookup" && !thresholdError && <p role="status">上一次审批结果待确认，请查询原操作。</p>}
-            <div className="b5-modal-actions">
-              <button className="secondary" disabled={savingThreshold} onClick={() => setThreshold(null)}>取消</button>
-              {approvalRecovery && <button className={lookupOnly ? "b5-approval-submit" : "secondary"} disabled={savingThreshold || !canThreshold} onClick={() => void submitThreshold(true)}>
-                {savingThreshold ? "查询中…" : "查询原操作"}
-              </button>}
-              {!lookupOnly && <button className={requiresApproval ? "b5-approval-submit" : undefined} disabled={!canSubmitThreshold} onClick={() => void submitThreshold()}>
-                {savingThreshold ? "提交中…" : approvalRecovery ? "重试原操作" : requiresApproval ? "提交审批" : "确认调整"}
-              </button>}
-            </div>
+        <section className="b5-lists" aria-label="风险信号和站内告警">
+          <PageTabs label="风险信号和站内告警" ids={tabIds} value={tab} onChange={setTab} items={[
+            { value: "signals", label: "最近风险信号", count: openCount },
+            { value: "inbox", label: "我的站内告警", count: inboxError || inboxLoading ? "—" : unacked ?? 0 },
+          ]} />
+          <div {...tabIds.panel(tab)} className="rd-tab-pane">
+            {tab === "signals" ? (
+              <Panel flush data-testid="b5-recent-alert-feed" data-capability="b5-signal-disposition">
+                <TabNote label="最近风险信号的范围" explain="近 7 个业务日按时间倒序的最新 20 条，不分页；不代表这段时间只有这些。">
+                  近 7 个业务日最新 {data.recentAlerts.length} 条 · {openCount} 条待处理
+                </TabNote>
+                <SignalsTable alerts={data.recentAlerts} canTriage={canTriage} updating={updatingSignal} reach={canCross}
+                  onStatus={(alert, target) => { setStatusReason(""); setStatusError(""); setStatusUnknown(false); setStatusDialog({ alert, target }); }} />
+              </Panel>
+            ) : (
+              <Panel flush data-capability="b5-subscriber-inbox">
+                <TabNote label="站内告警的范围" explain="只列发给你的站内告警，最多 100 条，不分页。确认已读只记录你看过，不改信号的处理进度。">
+                  {inboxLoading ? "正在读取…" : inboxError ? "读取失败" : `发给你的 ${inbox.length} 条 · ${unacked ?? 0} 条没确认`}
+                </TabNote>
+                <InboxTable state={inboxError ? "error" : inboxLoading ? "loading" : "ready"} items={inbox} error={inboxError}
+                  onRetry={() => setInboxReload((value) => value + 1)} canTriage={canTriage} acknowledging={acknowledgingDelivery}
+                  onAcknowledge={(item) => void acknowledgeInbox(item)} />
+              </Panel>
+            )}
           </div>
-        </div>
+        </section>
+
+      {threshold && (() => {
+        const raising = redPct > threshold.redPct;
+        const redDirection = !Number.isFinite(redPct) || redPct === threshold.redPct ? null : raising
+          ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="done" icon={Lock}>收紧</StatusTag>;
+        const yellowDirection = !Number.isFinite(yellowPct) || yellowPct === threshold.yellowPct ? null : yellowPct > threshold.yellowPct
+          ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="done" icon={Lock}>收紧</StatusTag>;
+        const orderError = thresholdValid ? undefined : "黄线 5%–50%，红线 10%–80%，红线要高于黄线";
+        const submitLabel = approvalRecovery ? "重试原操作" : requiresApproval ? "提交审批" : "确认调整";
+        const blocked = staleThreshold ? "阈值刚被改过，关掉重新打开再调整"
+          : !thresholdValid ? "先把黄线、红线填在范围内"
+            : !reasonValid && approvalRecovery !== "retry" ? "理由要写 8–200 个字"
+              : !previewReady && approvalRecovery !== "retry" ? (previewError ? "预览失败，暂不能提交" : "正在按新的线计算，请稍等")
+                : undefined;
+        return (
+          <Modal title="调整提现压力的黄线和红线" icon={SlidersHorizontal} busy={savingThreshold} dirty
+            sub={requiresApproval
+              ? <StatusTag tone="warn" icon={LockOpen} explain={<>提高红线要另一位有批准权限的超级管理员批准，自己不能批。批准前红线仍是 {fmtConfigPct(threshold.redPct)}；批准时系统再核一次版本，期间有人改过线，这张单会被拒。</>}>批准后生效</StatusTag>
+              : <StatusTag tone="progress" filled>立即生效</StatusTag>}
+            onClose={() => setThreshold(null)}
+            footer={<>
+              <Button disabled={savingThreshold} onClick={() => setThreshold(null)}>取消</Button>
+              {approvalRecovery && <Button variant={lookupOnly ? "primary" : "secondary"} loading={savingThreshold && lookupOnly} loadingText="查询中…" disabledReason={canThreshold ? undefined : "没有调整黄线红线的权限"} onClick={() => void submitThreshold(true)}>查询原操作</Button>}
+              {!lookupOnly && <Button variant="primary" loading={savingThreshold} loadingText="提交中…" disabledReason={canSubmitThreshold ? undefined : blocked ?? "暂不能提交"} onClick={() => void submitThreshold()}>{submitLabel}</Button>}
+            </>}>
+            <div className="b5-dialog">
+              {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
+              {previewError && <Notice tone="danger" title="预览失败">{previewError}</Notice>}
+              {thresholdError && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? "审批提交结果还没确认" : thresholdUnknown ? "结果还没确认，可能已经生效" : "没有调整成功"}>{thresholdError}</Notice>}
+              {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="上一次提交审批的结果还没确认">先点「查询原操作」查原审批单；查到了就不要重复提交。</Notice>}
+              <DiffField size="body" before={fmtConfigPct(threshold.yellowPct)} label="黄线改成" hint="5%–50%" state={yellowDirection}
+                note={yellowDirection ? "黄线只决定什么时候标「注意」，不会自动暂停提现。" : undefined}>
+                {(control) => <NumberInput {...control} aria-label="黄线（5%–50%）" unit="%" min={5} max={50} value={yellowInput} disabled={thresholdLocked} onChange={(event) => setYellowInput(event.target.value)} />}
+              </DiffField>
+              <DiffField before={fmtConfigPct(threshold.redPct)} label="红线改成" explain="紧急停用开关页把这条线叫挤兑红线，是同一条线。" hint="10%–80%，要高于黄线" state={redDirection} error={yellowInput && redInput ? orderError : undefined}
+                note={redDirection ? (raising ? "红线调高，自动暂停提现会更晚触发。" : "红线调低，自动暂停提现会更早触发，立即生效。") : undefined}>
+                {(control) => <NumberInput {...control} aria-label="红线（10%–80%）" unit="%" min={10} max={80} value={redInput} disabled={thresholdLocked} onChange={(event) => setRedInput(event.target.value)} />}
+              </DiffField>
+              <p className="b5-preview" role="status">
+                现在的提现压力 {data.bankrun.ratio24h === null ? "暂无法计算" : ratioPct(data.bankrun.ratio24h)}，标「{formatB5RiskLight(data.bankrun.light)}」；
+                {previewReady ? <>按新的线会标 <StatusTag tone={preview!.light === "red" ? "danger" : preview!.light === "yellow" ? "warn" : preview!.light === "green" ? "ok" : "neutral"}>{formatB5RiskLight(preview!.light)}</StatusTag></>
+                  : previewKey && !previewError ? "正在按新的线计算…" : "填好两条线后显示按新的线会标什么。"}
+              </p>
+              <Notice tone="neutral">
+                <p>和「紧急停用开关」共用，那边也跟着变。</p>
+                <p>是否自动暂停提现，由那边按自己的统计判断。</p>
+              </Notice>
+              {requiresApproval && (
+                <Notice tone="warn" title="提高红线要审批">
+                  提交后由另一位有批准权限的超级管理员批准；批准前红线仍是 {fmtConfigPct(threshold.redPct)}。
+                </Notice>
+              )}
+              <Field label="调整理由" required error={reason && !reasonValid && !thresholdLocked ? "理由要写 8–200 个字" : undefined}>
+                <Textarea value={reason} disabled={thresholdLocked} maxLength={200} rows={3} placeholder="8–200 字，例如：工单号、调整依据" count={`${reason.trim().length} / 200`} onChange={(event) => setReason(event.target.value)} />
+              </Field>
+            </div>
+          </Modal>
+        );
+      })()}
+
+      {subscriptionOpen && canSubscribe && (
+        <Modal title="告警订阅" icon={BellRing} busy={savingSubscription} dirty={subscriptionChanged}
+          sub={<StatusTag tone="progress" filled>立即生效</StatusTag>}
+          onClose={() => setSubscriptionOpen(false)}
+          footer={<>
+            <Button disabled={savingSubscription} onClick={() => setSubscriptionOpen(false)}>取消</Button>
+            <Button variant="primary" loading={savingSubscription} loadingText="保存中…"
+              disabledReason={subscriptionLoading ? "正在读取现在的订阅" : subscriptionError ? "现在的订阅没读到，不能保存" : !subscriptionChanged ? "还没有改动" : !subscriptionValid ? "至少开一个渠道" : undefined}
+              onClick={() => void saveSubscription()}>保存订阅</Button>
+          </>}>
+          <div className="b5-dialog">
+            {subscriptionLoading || subscriptionError ? (
+              <BlockState state={subscriptionLoading ? "loading" : "error"} title={subscriptionLoading ? "正在读取现在的订阅…" : "现在的订阅没读到"} detail={subscriptionError || undefined}
+                onRetry={subscriptionLoading ? undefined : () => setSubscriptionReload((value) => value + 1)} />
+            ) : (
+              <>
+                <Facts>
+                  {/* TODO(code worker): 接口返回 subscriber，b5-client 的 normalizeSubscription 现在丢掉了它；接上后写现在的接收人。 */}
+                  <Fact k="现在的接收人">—</Fact>
+                  <Fact k="保存后的接收人">你</Fact>
+                </Facts>
+                <Notice tone="warn">
+                  这份订阅全平台只有一份，和「资金与应付款总览」共用。保存后你会成为唯一的接收人，之后的新告警只发给你；排队中的外部通知也会按新地址发。
+                </Notice>
+                <CheckGroup legend="发送渠道" summary={subscriptionValid ? undefined : "至少开一个"}>
+                  <Check name="inApp" label="站内告警" checked={subscription.inApp} disabled={!canSubscribe} onChange={(event) => setSubscription((value) => ({ ...value, inApp: event.target.checked }))} />
+                  <Check name="email" label="邮件" checked={false} disabled help="邮件服务没接通，暂不可用。" />
+                  <Check name="webhook" label="外部通知" checked={subscription.webhook}
+                    disabled={!canSubscribe || (webhookMode !== "controlled-proxy" && !subscription.webhook)}
+                    help={webhookMode === "controlled-proxy" ? "已配置受控代理，可以开启。" : subscription.webhook ? "没有配置受控代理，只能关闭。" : "没有配置受控代理，暂不能开启。"}
+                    onChange={(event) => setSubscription((value) => ({ ...value, webhook: event.target.checked }))} />
+                </CheckGroup>
+                {subscription.webhook && (
+                  <Field label="外部通知接收地址" hint="https 开头，最多 500 字" help="保存时系统检查地址是否在允许名单内、是不是公网地址；保存时不试发。">
+                    <Input aria-label="外部通知接收地址" value={subscription.webhookUrl} disabled={!canSubscribe} placeholder="https://..."
+                      onChange={(event) => setSubscription((value) => ({ ...value, webhookUrl: event.target.value }))} />
+                  </Field>
+                )}
+                {subscriptionSaveError && <Notice tone={subscriptionUnknown ? "warn" : "danger"} title={subscriptionUnknown ? "结果还没确认，可能已经生效" : "没有保存成功"}>{subscriptionSaveError}</Notice>}
+              </>
+            )}
+          </div>
+        </Modal>
       )}
+
+      {statusDialog && (() => {
+        const { alert, target } = statusDialog;
+        const valid = statusReason.trim().length >= 8 && statusReason.trim().length <= 200;
+        const busy = updatingSignal === alert.signalNo;
+        return (
+          <Modal title={target === "handled" ? "标记已处理" : "标记已解决"} icon={CheckCheck} busy={busy} dirty
+            sub={<StatusTag tone="neutral" icon={FileText} explain="只更新这条信号的处理进度并留操作记录。不会解冻账户、不会放行提现、不会重发告警，也不改站内告警的已读。">只记录进度</StatusTag>}
+            onClose={() => setStatusDialog(null)}
+            footer={<>
+              <Button disabled={busy} onClick={() => setStatusDialog(null)}>取消</Button>
+              <Button variant="primary" loading={busy} loadingText="提交中…" disabledReason={valid ? undefined : "理由要写 8–200 个字"}
+                onClick={() => void changeSignalStatus(alert, target, statusReason)}>{statusUnknown ? "按原内容重试" : target === "handled" ? "确认标记已处理" : "确认标记已解决"}</Button>
+            </>}>
+            <div className="b5-dialog">
+              <Facts>
+                <Fact k="风险信号">{alert.message}</Fact>
+                <Fact k="级别">{SEVERITY[alert.level].text}</Fact>
+                <Fact k="用户 · 信号号"><>#{alert.userId} · <span data-mono>{alert.signalNo}</span></></Fact>
+                <Fact k="发生时间">{stamp(alert.createdAt)}</Fact>
+                <Fact k="处理进度"><Change from={HANDLING[alert.handlingStatus].text} to={STATUS_TEXT[target]} /></Fact>
+              </Facts>
+              <p className="b5-line">标成「{STATUS_TEXT[target]}」只记录进度，不会解除风控，也不会放行提现。真正的处置到对应页面办。</p>
+              <Field label="处理理由" required error={statusReason && !valid ? "理由要写 8–200 个字" : undefined}>
+                <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={200} rows={3} placeholder="8–200 字，例如：已核实、工单号" count={`${statusReason.trim().length} / 200`} onChange={(event) => setStatusReason(event.target.value)} />
+              </Field>
+              {statusError && <Notice tone={statusUnknown ? "warn" : "danger"} title={statusUnknown ? "结果还没确认，可能已经生效" : "没有标记成功"}>
+                {statusUnknown ? "理由已锁住，只能按原内容重试；也可以关掉后刷新页面，看这条的处理进度变了没有。" : statusError}
+              </Notice>}
+            </div>
+          </Modal>
+        );
+      })()}
       {toastNode}
-    </div>
+    </RdPage>
   );
 }
