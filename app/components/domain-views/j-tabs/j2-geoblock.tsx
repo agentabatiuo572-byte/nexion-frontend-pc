@@ -408,7 +408,6 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       effect: <>{IMMEDIATE}<StatusTag tone="neutral" icon={Plus}>只加不减</StatusTag></>,
       facts: <div className="rd-stack">
         <Facts>
-          <Fact k="加进封锁名单" lead unit="个">{count(codes.length)}</Fact>
           <Fact k="现有封锁">{count(banned.length)} 个，不变</Fact>
           <Fact k="怎么撤销">没有一键撤销。要放开，到「封锁名单」点「编辑封锁名单」把它们去掉</Fact>
         </Facts>

@@ -547,11 +547,17 @@
 .j2-page .j2-lookup-box { flex: 0 1 320px; min-width: 220px; }
 .j2-page .j2-endpoints-empty { padding: 0 var(--rd-panel-pad-x) var(--rd-panel-pad-y); }
 .j2-page .j2-endpoint-table { table-layout: fixed; }
-.j2-page .j2-endpoint-table th:nth-child(1) { width: 24%; }
-.j2-page .j2-endpoint-table th:nth-child(2) { width: 14%; }
-.j2-page .j2-endpoint-table[data-lookup] th:nth-child(4) { width: 20%; }
-.j2-page .j2-endpoint-table th:nth-last-child(2) { width: 15%; }
-.j2-page .j2-endpoint-table th:last-child { width: 120px; }
+.j2-page .j2-endpoint-table th:nth-child(1) { width: 22%; }
+.j2-page .j2-endpoint-table th:nth-child(2) { width: 120px; }
+.j2-page .j2-endpoint-table[data-lookup] th:nth-child(4) { width: 25%; }
+.j2-page .j2-endpoint-table th:nth-last-child(2) { width: 128px; }
+.j2-page .j2-endpoint-table th:last-child { width: 112px; }
+@container jdom (max-width: 900px) {
+  .j2-page .j2-endpoint-table th:nth-child(1) { width: 20%; }
+  .j2-page .j2-endpoint-table th:nth-child(2) { width: 104px; }
+  .j2-page .j2-endpoint-table th:nth-last-child(2) { width: 112px; }
+  .j2-page .j2-endpoint-table[data-lookup] th:nth-child(4) { width: 30%; }
+}
 .j2-page .j2-mode[data-mode="explicit"] { color: var(--rd-text); font-weight: var(--rd-weight-medium); }
 .j2-page .j2-mode[data-mode="derived"] { color: var(--rd-text-2); }
 .j2-page .j2-entry-cc { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -572,11 +578,11 @@
 .j2-page .j2-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
 .j2-page .j2-filter-search { width: 240px; }
 .j2-page .j2-country-table { table-layout: fixed; }
-.j2-page .j2-country-table th:nth-child(1) { width: 20%; }
-.j2-page .j2-country-table th:nth-child(2) { width: 96px; }
+.j2-page .j2-country-table th:nth-child(1) { width: 18%; }
+.j2-page .j2-country-table th:nth-child(2) { width: 88px; }
 .j2-page .j2-country-table th:nth-child(3) { width: 128px; }
-.j2-page .j2-country-table th:nth-child(4) { width: 18%; }
-.j2-page .j2-country-table th:nth-child(5) { width: 18%; }
+.j2-page .j2-country-table th:nth-child(4) { width: 132px; }
+.j2-page .j2-country-table th:nth-child(5) { width: 160px; }
 
 /* 拦截记录 */
 .j2-page .j2-hits { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px 32px; }
