@@ -124,6 +124,8 @@
 .h8-cards .rd-stats[data-cards] { flex-wrap: nowrap; }
 @container hdom (max-width: 900px) {
   .h8-cards[data-long] .rd-stats[data-cards] { flex-direction: column; }
+  .h8-formula { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .h8-card-foot { flex-direction: column; align-items: flex-start; }
 }
 .h8-card-head { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
 .h8-card-head svg { color: var(--rd-text-3); }
