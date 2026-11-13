@@ -279,7 +279,7 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h7-dispose { display: flex; flex-direction: column; gap: var(--rd-space-3); padding-top: var(--rd-space-4); border-top: 1px solid var(--rd-line); }
 .h7-dispose-item { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-4); padding: var(--rd-space-3) var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
 .h7-dispose-item b { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
-.h7-dispose-item p { margin: var(--rd-space-1) 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.h7-dispose-item p { text-wrap: pretty; margin: var(--rd-space-1) 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 .h7-dispose-item > .rd-btn { flex: none; }
 [data-h7-form] .rd-form-help { text-wrap: pretty; }
 .h7-preview-sentence { text-wrap: balance; }

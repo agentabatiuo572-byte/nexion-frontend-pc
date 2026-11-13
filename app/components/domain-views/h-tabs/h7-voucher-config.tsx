@@ -492,7 +492,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
 
   const conclusion = list.length === 0
     ? <Conclusion state="neutral" icon={Ticket} hint={canWrite ? "点右上角「新增代金券」建第一张。" : undefined}>还没有代金券</Conclusion>
-    : <Conclusion state={expiredActive.length || fullActive.length ? "warn" : "ok"}
+    : <Conclusion state={expiredActive.length || fullActive.length || recoveryRows.length ? "warn" : "ok"}
       explain={<>
         <p>投放中只看券的状态，不核对有效期、发给谁、发行上限和用户是否已领，不是「现在有多少人能领」。</p>
         <p>发出和使用是这页现有券的合计，按领取记录数算（不是人数）；删掉的券不再计入。</p>
@@ -502,6 +502,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       {`${countText(activeN)} 张券在投放，共发出 ${countText(issuedSum)} 张，已用 ${countText(redeemedSum)} 张`}
       {expiredActive.length > 0 && `；${expiredActive.length} 张已过有效期但还是投放中，可以暂停`}
       {fullActive.length > 0 && `；${fullActive.length} 张已发完，用户领不到`}
+      {recoveryRows.length > 0 && `；${recoveryRows.length} 个申请结果未知，先查询原结果`}
     </Conclusion>;
 
   return (
