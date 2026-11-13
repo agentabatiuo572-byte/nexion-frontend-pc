@@ -460,9 +460,11 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     </div>;
   };
 
-  const homeModule = <div className="h9-module" hidden={module !== "home"} {...ids.panel("home")} aria-label="首页数字增长">
+  const homeModule = <div className="rd-split h9-module" data-detail="" data-even="" hidden={module !== "home"} {...ids.panel("home")} aria-label="首页数字增长">
     <Panel title="App 上的样子" icon={Smartphone} tone="role-2" explain="App 介绍页、首页和网络脉搏的在线设备都是这个数；累计已发放在介绍页。数字由服务端按秒生成，所有用户看到同一个数。">
-      <AppPreview where="App 介绍页 · 网络脉搏" note={<>增长{values.homeDisplayEnabled ? "开着：每秒在区间里随机增加。" : "已暂停：App 上的数停住不动，再开启从那里接着涨。"}保存参数不会改开关；App 打开着时一般 60 秒内读到新参数。</>}>
+      <AppPreview where="App 介绍页 · 网络脉搏"
+        explain={<><p>增长开着时，两个数每秒在区间里随机增加，所有用户看到同一个数；暂停后停在暂停那一刻，再开启从那里接着涨。保存参数不会改开关。</p><p>App 页面开着时一般 60 秒内读到新参数，退到后台或断网时不保证。</p></>}
+        status={values.homeDisplayEnabled ? <><StatusTag tone="progress">增长中</StatusTag>每秒在区间里随机增加</> : <><StatusTag tone="neutral">已暂停</StatusTag>App 上的数停住不动</>}>
         <AppNumber label="在线设备 · 设定值" value={count(values.homeOnlineCurrent)} unit="台" />
         <AppNumber label="累计已发放 · 设定值" value={usd(values.homePaidCurrent)} unit="USD" />
       </AppPreview>
@@ -492,11 +494,13 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   // 网络脉搏注册人数。
   const members = membersAt(memberModels!.saved, readAt);
   const spread = memberModels!.saved.tick ? memberSpread(memberModels!.saved.tick.stepMin, memberModels!.saved.tick.stepMax) : 0;
-  const networkModule = <div className="h9-module" hidden={module !== "network"} {...ids.panel("network")}>
+  const networkModule = <div className="rd-split h9-module" data-detail="" data-even="" hidden={module !== "network"} {...ids.panel("network")}>
     <Panel title="App 上的样子" icon={Smartphone} tone="role-3" explain="注册人数是按参数推算的展示数字，不改真实账户，也不参与设备预估排名。">
-      <AppPreview where="App 首页 · 网络脉搏" note={savedTick
-        ? <>按读取这页的时刻推算。App 上会比这里多 0–{count(spread)} 人（每跳一次的固定随机偏移），所有用户一致。</>
-        : <>只配了月增长率：网络脉搏卡片显示这个数，网络快照等位置会显示「不可用」。</>}>
+      <AppPreview where="App 首页 · 网络脉搏"
+        explain={savedTick
+          ? <>按读取这页的时刻、用后端同一个公式推算。每跳一次另有 0–{count(spread)} 人的固定随机偏移，所以 App 上会比这里多 0–{count(spread)} 人，所有用户一致。</>
+          : <>只配了月增长率：网络脉搏卡片显示这个数，网络快照等位置会显示「不可用」。</>}
+        status={savedTick ? `App 上比这里多 0–${count(spread)} 人` : <><StatusTag tone="warn">部分位置不显示</StatusTag>网络快照显示「不可用」</>}>
         <AppNumber label="注册用户 · 现在约" value={members == null ? "—" : count(members)} unit={members == null ? undefined : "人"} empty={members == null} />
       </AppPreview>
       <div className="h9-chart">
@@ -537,9 +541,11 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
 
   // 全球作业基座。
   const jobs = values.activeJobsBase;
-  const jobsModule = <div className="h9-module" hidden={module !== "jobs"} {...ids.panel("jobs")}>
+  const jobsModule = <div className="rd-split h9-module" data-detail="" data-even="" hidden={module !== "jobs"} {...ids.panel("jobs")}>
     <Panel title="App 上的样子" icon={Smartphone} tone="role-2" explain="赚取页任务中心和全球网络页用同一个数，基座只加一次。">
-      <AppPreview where="App 赚取页 · 任务中心" note={<>真实进行中作业数这页读不到。真实数读不到时，只有当天两种币的已实现收益都确为 0，App 才只显示基座；否则显示不可用。</>}>
+      <AppPreview where="App 赚取页 · 任务中心"
+        explain="真实进行中作业数这页读不到。真实数读不到时，只有当天两种币的已实现收益都确为 0，App 才只显示基座；否则显示不可用。全球网络页的进行中任务也是这个数。"
+        status="真实进行中作业数这页读不到">
         <AppNumber label="全球作业进行中" value={jobs == null ? "真实数" : <>真实数 + {count(jobs)}</>} unit="个" empty={jobs == null}
           sub={jobs == null ? "基座未发布，只显示真实进行中作业数" : jobs === 0 ? "发布了 0，显示的就是真实数" : undefined} />
       </AppPreview>
@@ -561,7 +567,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   ].map((row) => ({ ...row, next: row.next.includes("NaN") || row.next.startsWith("—") ? "—" : row.next })) : [];
   const historyModule = <div className="h9-stack" hidden={module !== "history"} {...ids.panel("history")}>
     <Notice tone="neutral" title="这组参数目前不生效">App 正式页面不读历史估算，在线设备、已完成提现和设备预估排名都不用它。保存后只改变这页的估算。</Notice>
-    <div className="h9-module">
+    <div className="rd-split h9-module" data-detail="" data-even="">
       <Panel title="估算结果" icon={TableProperties} tone="role-other" sub={`每台每日 ${usd(data.publishedDailyUsdPerDevice)} USD`}
         explain="按你填的值随填随算，保存前就能看到。日金额 = 设备总数 × 每台每日；不是实付金额，也不改账户、设备或资金账单。">
         <Table label="历史估算的影响">

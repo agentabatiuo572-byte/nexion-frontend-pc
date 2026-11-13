@@ -104,11 +104,10 @@
 .h9-page .rd-panel > * + :not(.rd-panel-head) { margin-top: var(--rd-space-4); }
 .h9-page .rd-panel > .rd-panel-head + * { margin-top: 0; }
 @container h9 (min-width: 901px) {
-  .h9-cards .rd-stats[data-cards] > .rd-stat { flex: 1 1 calc(33.333% - 8px); }
+  .h9-page > .rd-stats[data-cards] > .rd-stat { flex: 1 1 calc(33.333% - 8px); }
 }
-.h9-cards .rd-stat-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
-.h9-module { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: var(--rd-space-4); align-items: start; }
-@container h9 (max-width: 900px) { .h9-module { grid-template-columns: minmax(0, 1fr); } }
+.h9-page > .rd-stats[data-cards] .rd-stat-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.h9-page .rd-split.h9-module { gap: var(--rd-space-4); }
 .h9-group { display: flex; flex-direction: column; gap: var(--rd-space-3); padding-top: var(--rd-space-4); border-top: 1px solid var(--rd-line); }
 .h9-group[data-idle] .rd-form-label { color: var(--rd-text-3); }
 .h9-page .rd-form-label > .rd-tag { margin: 0 4px 0 8px; }
@@ -127,7 +126,7 @@
 .h9-app-value { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--rd-text); overflow-wrap: anywhere; }
 .h9-app-value small { margin-left: var(--rd-space-1); font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
 .h9-app-number[data-empty] .h9-app-value { color: var(--rd-text-3); }
-.h9-app-note { margin: var(--rd-space-3) 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.h9-app-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); margin-top: var(--rd-space-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .h9-chart, .h9-confirm-chart { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; }
 .h9-chart-title { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 500; color: var(--rd-text-2); }
 .h9-chart-note, .h9-band-rule, .h9-foot { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }

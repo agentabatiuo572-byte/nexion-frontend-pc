@@ -86,16 +86,16 @@ export function memberSpread(stepMin: number, stepMax: number): number {
   return Math.max(0, Math.min(Math.floor(sum / 2) - stepMin, stepMax - Math.ceil(sum / 2)));
 }
 
-/** App 上的样子：一块浅底的手机卡片，左上角写这是 App 的哪一页，右上角写「展示值」。 */
-export function AppPreview({ where, children, note }: { where: ReactNode; children: ReactNode; note?: ReactNode }) {
+/** App 上的样子：一块浅底的卡片，左上角写这是 App 的哪一页（旁边问号讲 App 怎么用这个数），右上角写「展示值」；status 是一句短状态。 */
+export function AppPreview({ where, explain, children, status }: { where: ReactNode; explain?: ReactNode; children: ReactNode; status?: ReactNode }) {
   return (
     <figure className="h9-app">
       <figcaption className="h9-app-head">
-        <span className="h9-app-where"><Smartphone size={14} aria-hidden />{where}</span>
+        <span className="h9-app-where"><Smartphone size={14} aria-hidden />{where}{explain && <Explain label="App 怎么用这个数" content={explain} />}</span>
         <StatusTag tone="neutral" explain="这里的数字只给用户看，不是真实经营数据，不改账户、设备、算力和资金。">展示值</StatusTag>
       </figcaption>
       <div className="h9-app-body">{children}</div>
-      {note && <p className="h9-app-note">{note}</p>}
+      {status && <div className="h9-app-status">{status}</div>}
     </figure>
   );
 }

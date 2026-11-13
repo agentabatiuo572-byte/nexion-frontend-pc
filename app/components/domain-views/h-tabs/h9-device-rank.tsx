@@ -124,7 +124,7 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
       {loading && !data && <BlockState state="loading" title="设备预估排名读取中…" />}
       {!loading && !data && <BlockState state="error" title="设备预估排名读取失败" detail={`${error} 这一块看不到也改不了，其余五块不受影响。`} onRetry={() => void load()} />}
       {data && <>
-        <AppPreview where="App 首页 · 网络脉搏" note={<>App 拿服务端记录的手机算力和这些档位比，估一个名次（参考）。在线设备不在 1–10,000,000 台之间时显示「暂不可用」；没有手机算力时显示「未排名」。</>}>
+        <AppPreview where="App 首页 · 网络脉搏" explain="App 拿服务端记录的手机算力和这些档位比，估一个名次（参考，不是真实榜单）。在线设备不在 1–10,000,000 台之间时显示「暂不可用」；没有手机算力时显示「未排名」。">
           <div className="h9-rank-state">
             <StatusTag tone={data.enabled ? "ok" : "neutral"}>{data.enabled ? "已开启" : "已关闭"}</StatusTag>
             <span>{data.enabled ? `App 按 ${data.tiers.length} 档分布给用户估设备排名` : "App 显示占位，说明排名没有开启"}</span>

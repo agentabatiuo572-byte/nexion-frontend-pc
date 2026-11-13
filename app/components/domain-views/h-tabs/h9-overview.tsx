@@ -66,8 +66,7 @@ export function H9ModuleCards({ data, failed, rank, module, onSelect, ids, readA
   const jobs = values?.activeJobsBase;
 
   return (
-    <div className="h9-cards">
-      <StatBand cards role="tablist" label="六块展示数字">
+    <StatBand cards role="tablist" label="六块展示数字">
         <Stat {...tab("home", "首页数字增长")} icon={Activity} tone="role-2"
           head={<>首页数字增长{values ? <StatusTag tone={values.homeDisplayEnabled ? "progress" : "neutral"}>{values.homeDisplayEnabled ? "增长中" : "已暂停"}</StatusTag> : unreadTag}</>}
           label="在线设备 · 设定值" value={values ? count(values.homeOnlineCurrent) : "—"} unit={values ? "台" : undefined}
@@ -124,6 +123,5 @@ export function H9ModuleCards({ data, failed, rank, module, onSelect, ids, readA
           </dl>
         </Stat>
       </StatBand>
-    </div>
   );
 }
