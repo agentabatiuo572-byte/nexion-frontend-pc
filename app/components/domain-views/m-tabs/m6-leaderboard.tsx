@@ -10,7 +10,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { fetchLeaderboardAvatar, locateLeaderboardSelf, supportLeaderboardClient, type LeaderboardDetail, type LeaderboardPage, type LeaderboardQuery } from "@/lib/admin/support-leaderboard-client";
-import { BlockState, Button, Conclusion, Explain, FilterBar, FilterField, Input, Modal, Notice, PageHeader, PageTabs, RdPage, Select, useTabIds } from "@/app/components/rd";
+import { BlockState, Button, Conclusion, Explain, FilterBar, FilterField, Input, Modal, Notice, PageHeader, PageTabs, RdPage, Select, StatusTag, useTabIds } from "@/app/components/rd";
 import type { SupportBoardKey, SupportBoardQuery, SupportBoardRow } from "./support-leaderboard";
 import { BOARD_DEFINITION, BOARD_LABEL, BoardPager, PerformanceBody, Podium, RankingPanel, RankingTable, amountPlaces, amountText, countText } from "./m6-leaderboard-views";
 import "./m6-leaderboard.css";
@@ -188,11 +188,7 @@ export function M6Leaderboard() {
       <PageTabs label="榜单" ids={tabs} value={board} onChange={(next: SupportBoardKey) => changeQuery({ ...currentQuery, board: next })}
         items={(["netContribution", "firstPayment", "customers"] as const).map(key => ({ value: key, label: BOARD_LABEL[key], disabled: !ready && key !== board }))} />
       <div {...tabs.panel(board)} className="m6-board">
-        <p className="m6-board-line">
-          <span>{BOARD_DEFINITION[board].line}{board === "netContribution" && groupScope && <b className="m6-board-pd">组榜按贡献发生时所在的组统计，调组后历史贡献仍算在原来的组。</b>}</span>
-          <Explain label={`${BOARD_LABEL[board]}怎么算`} rows={[...BOARD_DEFINITION[board].rows, { k: "范围", v: "只列出这个账号现在能看的范围：全员榜、本组榜、负责组榜和负责的单个组。" }, { k: "发布", v: "系统每 10 分钟发布一次新的一版；刷新只读取最新发布的那一版，不会马上重算。" }]} />
-        </p>
-        <FilterBar>
+        <FilterBar sort={<span className="m6-board-line">{BOARD_DEFINITION[board].line}<Explain label={`${BOARD_LABEL[board]}怎么算`} rows={[...BOARD_DEFINITION[board].rows, { k: "范围", v: "只列出这个账号现在能看的范围：全员榜、本组榜、负责组榜和负责的单个组。" }, { k: "发布", v: "系统每 10 分钟发布一次新的一版；刷新只读取最新发布的那一版，不会马上重算。" }]} /></span>}>
           <FilterField label="月份">{board === "customers"
             ? <Select aria-label="月份" disabled value="now" onChange={() => undefined} options={[{ value: "now", label: "不分月份" }]} />
             : <Select aria-label="月份" disabled={!data?.selectableMonths.length} value={data ? currentQuery.month : ""} onChange={value => changeQuery({ ...currentQuery, month: value })} options={(data?.selectableMonths ?? []).map(value => ({ value, label: value }))} placeholder="读取后可选" />}</FilterField>
@@ -201,6 +197,7 @@ export function M6Leaderboard() {
             groups={[{ label: "榜单范围", options: scopeSelect.map(option => ({ value: option.scope, label: option.scope === "ownGroup" ? `${scopeLabels.ownGroup}（${option.groups[0]?.name ?? "本组"}）` : option.scope === "managedGroups" ? `${scopeLabels.managedGroups}（全部负责组）` : scopeLabels[option.scope] })) },
               ...(managedOption ? [{ label: "负责的单个组", options: managedOption.groups.map(group => ({ value: scopeValue("managedGroups", group.id), label: group.name })) }] : [])]} /></FilterField>
         </FilterBar>
+        {board === "netContribution" && groupScope && <Notice tone="done">组榜按贡献发生时所在的组统计：调组后历史贡献仍算在原来的组，所以榜上可能有现在已经不在这个组的客服。</Notice>}
         {notice && !(ready && notice === "正在重新加载…") && <Notice tone={notice.includes("已更新") ? "warn" : notice.startsWith("已") ? "ok" : "progress"}>{notice}</Notice>}
         {data?.stale && <Notice tone="warn" title="当前显示上次发布的榜单" action={<Button size="sm" onClick={() => resetFirstPage("正在重新加载…")}>重新加载</Button>}>{data.refreshFailed ? "榜单更新暂未成功，请稍后读取最新结果。" : "榜单更新延迟，请稍后读取最新结果。"}</Notice>}
         {conclusion}
@@ -228,7 +225,7 @@ export function M6Leaderboard() {
             </div>
           </>}
       </div>
-      {visibleDetail && <Modal title={`${detailName ?? "客服"} · ${BOARD_LABEL[board]}`} icon={UserRound} onClose={closeDetail}
+      {visibleDetail && <Modal title={`${detailName ?? "客服"}的公开成绩`} sub={<StatusTag tone="neutral">{BOARD_LABEL[board]}榜</StatusTag>} icon={UserRound} onClose={closeDetail}
         footer={<>
           <Button onClick={closeDetail}>关闭</Button>
           {visibleDetail.error && <Button onClick={() => openDetail(visibleDetail.agentId)}>重试</Button>}

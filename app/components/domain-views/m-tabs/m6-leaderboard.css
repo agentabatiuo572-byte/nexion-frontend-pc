@@ -5,10 +5,8 @@
 .m6-page .m6-ranking-anchor { min-width: 0; outline: none; scroll-margin-top: var(--rd-space-4); }
 .m6-page .m6-ranking-anchor:focus-visible > .rd-panel { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
 
-/* 榜单口径一句话：紧跟页签，像页签面板的说明行。 */
-.m6-page .m6-board-line { display: flex; align-items: flex-start; gap: var(--rd-space-2); margin: 0; color: var(--rd-text-2); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
-.m6-page .m6-board-line > span:first-child { min-width: 0; }
-.m6-page .m6-board-pd { display: inline; margin-left: var(--rd-space-1); color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+/* 榜单口径：筛选栏右端一行短语加问号。 */
+.m6-page .m6-board-line { display: inline-flex; align-items: center; gap: var(--rd-space-2); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 
 /* 头像：和 M1、M3 一样的圆形，读不到图写姓名首字。 */
 .m6-avatar { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; overflow: hidden; background: var(--rd-brand-soft); color: var(--rd-text); font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); }

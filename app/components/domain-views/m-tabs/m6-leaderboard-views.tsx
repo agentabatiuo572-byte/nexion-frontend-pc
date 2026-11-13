@@ -16,7 +16,7 @@ export const BOARD_LABEL: Record<SupportBoardKey, string> = { netContribution: "
 /** 三类榜各一句话：管什么数，跟不跟月份和币种。细则在问号里。 */
 export const BOARD_DEFINITION: Record<SupportBoardKey, { line: string; rows: { k: string; v: string }[] }> = {
   netContribution: {
-    line: "所选月份里客户付款给客服带来的贡献，减去当月退款、提现冲回的部分，可以是负数；USDT 和 UVT 分开排。",
+    line: "按所选月份 · 付款贡献减去退款、提现冲回 · 可以是负数 · USDT 和 UVT 分开排",
     rows: [
       { k: "计入", v: "充值计入贡献；用余额消费时，只把还没算过的部分计入，同一笔钱不重复算。" },
       { k: "冲减", v: "后台退款只冲减消费时新增的那部分；成功提现只冲减已经算过贡献的部分，收益提现不冲减原业绩。冲减记在发生的那个月。" },
@@ -25,7 +25,7 @@ export const BOARD_DEFINITION: Record<SupportBoardKey, { line: string; rows: { k
     ],
   },
   firstPayment: {
-    line: "所选月份里完成第一笔付款（充值或购机）的客户数，算在付款时的专属客服名下；不分币种。",
+    line: "按所选月份 · 第一笔充值或购机的客户数 · 算给付款时的专属客服 · 不分币种",
     rows: [
       { k: "算谁", v: "每个客户一生只算一次：最早一笔成功的充值或购机。同一时刻两笔时先算充值。" },
       { k: "算给谁", v: "算给付款那一刻这位客户的专属客服，按这笔付款所在的月份计数。" },
@@ -33,7 +33,7 @@ export const BOARD_DEFINITION: Record<SupportBoardKey, { line: string; rows: { k
     ],
   },
   customers: {
-    line: "发布这一版时名下有效绑定的客户数，是现在的数，不分月份，也不是这个月新增的数。",
+    line: "现在的数 · 发布时名下有效绑定的客户 · 不分月份 · 不是这个月新增",
     rows: [
       { k: "算谁", v: "当前有效绑定、账号未删除的真实客户，按客服去重。" },
       { k: "时间", v: "每次发布时重新数一次，不随所选月份变；表里的净贡献额、首充人数是这个月的参考数。" },
@@ -125,7 +125,7 @@ export function Podium({ board, rows, total, unit, places, status, onOpen, onVie
   return <Panel title="前三名" icon={Trophy} tone="role-1" className="m6-podium-panel"
     explain="同一版榜单里成绩最好的前三个名次；成绩相同的并列，最多列 4 位，其余并列的在全部排名里。不受搜索和翻页影响。">
     {status.kind === "loading" ? <BlockState state="loading" title="正在读取前三名…" />
-      : status.kind === "provisional" ? <BlockState state="empty" compact title={`这一版还在汇总，暂不评前三名（${status.reason}）`} />
+      : status.kind === "provisional" ? <BlockState state="empty" compact title="这一版还在汇总，暂不评前三名" />
       : rows.length === 0 ? <BlockState state="empty" title="这个范围还没有排出名次的客服" />
       : <ol className="m6-podium" data-count={rows.length}>
         {rows.map((row) => (
