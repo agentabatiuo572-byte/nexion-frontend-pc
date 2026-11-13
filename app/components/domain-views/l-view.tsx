@@ -16,7 +16,7 @@ import { L1Kpi } from "./l-tabs/l1-kpi";
 import type { L1ExportSource } from "./l-tabs/l1-export-contract";
 import { L2Funnel } from "./l-tabs/l2-funnel";
 import { L3Finance } from "./l-tabs/l3-finance";
-import { L4HeaderActions, L4Ops } from "./l-tabs/l4-ops";
+import { L4Ops } from "./l-tabs/l4-ops";
 import { readL4Operations } from "./l-tabs/l4-live-data";
 import { L5HeaderActions, L5Export } from "./l-tabs/l5-export";
 import { L6HeaderActions, L6BehaviorHeatmap } from "./l-tabs/l6-behavior-heatmap";
@@ -123,18 +123,18 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
     tab === "L1" ? null
     : tab === "L2" ? null
     : tab === "L3" ? null
-    : tab === "L4" ? <L4HeaderActions ctx={ctx} />
+    : tab === "L4" ? null
     : tab === "L5" ? <L5HeaderActions ctx={ctx} />
     : <L6HeaderActions ctx={ctx} />;
 
   const page = (
     <>
-      {tab !== "L1" && tab !== "L2" && tab !== "L3" && <DomainHeader {...meta} right={right} />}
+      {tab !== "L1" && tab !== "L2" && tab !== "L3" && tab !== "L4" && <DomainHeader {...meta} right={right} />}
 
       {tab === "L1" && <L1Kpi key={session ? `${session.adminId}:${session.username}` : "anonymous"} ctx={ctx} onExportSource={setL1ExportSource} source={l1ExportSource?.parentData === biData?.l1 ? l1ExportSource : undefined} title={meta.l2Name} summary={meta.summary} />}
       {tab === "L2" && <L2Funnel ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
       {tab === "L3" && <L3Finance ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
-      {tab === "L4" && <L4Ops ctx={ctx} />}
+      {tab === "L4" && <L4Ops ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
       {tab === "L5" && <L5Export ctx={ctx} />}
       {tab === "L6" && <L6BehaviorHeatmap ctx={ctx} />}
 
@@ -173,5 +173,5 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  return tab === "L1" || tab === "L2" || tab === "L3" ? <RdPage className={tab === "L2" ? "l2-page" : tab === "L3" ? "l3-page" : undefined}>{page}</RdPage> : <div className="dkpage ldom">{page}</div>;
+  return tab === "L1" || tab === "L2" || tab === "L3" || tab === "L4" ? <RdPage className={tab === "L2" ? "l2-page" : tab === "L3" ? "l3-page" : tab === "L4" ? "l4-page" : undefined}>{page}</RdPage> : <div className="dkpage ldom">{page}</div>;
 }
