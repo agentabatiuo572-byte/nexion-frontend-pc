@@ -37,7 +37,7 @@ import type { LCtx } from "./types";
 import { clampL5Page, l5PageCount } from "./l5-pagination";
 import { isL5KpiExport, l5KpiRange } from "./l5-kpi-range";
 import {
-  AuditTable, L5RecoveryNotice, MaskRuleTable, MaskTag, PendingCard, RouteFacts, TaskStatusTag, pageName, rowsText, taskSource, taskTitle,
+  AuditTable, L5RecoveryNotice, MASK_LABEL, MaskRuleTable, PendingCard, RouteFacts, TaskStatusTag, pageName, rowsText, taskSource, taskTitle,
   type L5RecoveryItem, type MaskRule,
 } from "./l5-export-views";
 
@@ -505,7 +505,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const approveAction = (t: LExportTask) => {
     const approvalBlocked = !ctx.canApproveExportTasks ? "你没有放行权限，要有导出任务审批权的管理员放行"
       : t.approvalEligibility === "SELF" ? "这是你申请的，要另一位管理员放行"
-      : t.approvalEligibility === "ELIGIBLE" ? null : "发起记录核对不上，暂时不能放行；请联系技术同事核对";
+      : t.approvalEligibility === "ELIGIBLE" ? null : "暂时不能放行，请技术同事核对发起记录";
     if (recoveryIds.has(t.id)) return <span className="rd-toolbar-note">结果未知，先在页面上方查询原结果</span>;
     return approvalBlocked
       ? <span className="rd-toolbar-note" data-tone={t.approvalEligibility === "MAKER_UNVERIFIED" ? "warn" : undefined}>{approvalBlocked}</span>
@@ -564,22 +564,21 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
           <>
             {pendingTasks.length > 0 && <h3 className="l5-sub-title">其他任务</h3>}
             <Table label="导出任务" data-tight="">
-              <thead><tr><Th>导出内容</Th><Th>范围</Th><Th>字段</Th><Th>脱敏</Th><Th align="right">行数</Th><Th>状态</Th><Th align="right" sticky="end">操作</Th></tr></thead>
+              <thead><tr><Th>导出内容</Th><Th>范围</Th><Th>字段和脱敏</Th><Th align="right">行数</Th><Th>状态</Th><Th align="right" sticky="end">操作</Th></tr></thead>
               <tbody>
-                {listState === "loading" && <TableLoading columns={7} rows={4} />}
+                {listState === "loading" && <TableLoading columns={6} rows={4} />}
                 {listState === "ready" && otherTasks.map((t) => (
                   <Tr key={t.id}>
-                    <Td><Cell main={taskTitle(t, exportTypeText)} sub={<><span data-mono="">{t.id}</span> · {taskSource(t)}</>} title={`${t.id} · ${taskSource(t)}`} /></Td>
+                    <Td><Cell main={taskTitle(t, exportTypeText)} sub={<span data-mono="">{t.id}</span>} title={`${taskTitle(t, exportTypeText)} · ${t.id} · ${taskSource(t)}`} /></Td>
                     <Td><Cell main={reportScopeText(t.scope)} title={reportScopeText(t.scope)} /></Td>
-                    <Td grow><Cell main={operatorCopyText(t.fields)} sub={t.pii ? "含隐私（已脱敏）" : undefined} title={operatorCopyText(t.fields)} /></Td>
-                    <Td><MaskTag mask={t.mask} /></Td>
+                    <Td grow><Cell main={operatorCopyText(t.fields)} sub={`${t.pii ? "含隐私 · " : ""}${t.mask === "—" ? "不含隐私" : MASK_LABEL[t.mask]}`} title={operatorCopyText(t.fields)} /></Td>
                     <Td align="right"><Cell num main={rowsText(t.rows)} /></Td>
                     <Td><TaskStatusTag task={t} unknown={recoveryIds.has(t.id)} /></Td>
                     <Td align="right" sticky="end" data-fit="">{rowActions(t)}</Td>
                   </Tr>
                 ))}
                 {listState === "ready" && visibleTasks.length === 0 && (
-                  <TableMessage columns={7}>{filter === 0 ? "还没有导出任务" : `没有「${L5_TASK_FILTERS[filter]}」的任务`}</TableMessage>
+                  <TableMessage columns={6}>{filter === 0 ? "还没有导出任务" : `没有「${L5_TASK_FILTERS[filter]}」的任务`}</TableMessage>
                 )}
               </tbody>
             </Table>
