@@ -13,7 +13,7 @@ import {
   RefreshCw, Route, ShieldAlert, ShieldCheck, SlidersHorizontal, TriangleAlert, UsersRound,
 } from "lucide-react";
 import {
-  BarList, BlockState, Button, Cell, ColumnChart, Conclusion, DiffField, Explain, Fact, Facts, Field, Fold, Modal,
+  BarList, BlockState, Button, Cell, ColumnChart, Conclusion, DiffField, Explain, Fact, Facts, Field, FilterBar, Fold, Modal,
   Notice, NumberInput, PageHeader, Panel, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr,
 } from "@/app/components/rd";
 import type { JCtx } from "./types";
@@ -209,7 +209,10 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={ctx.contentLoading} onClick={reload}>刷新</Button>
       </span>}
       readOnly={!canExport && !canConfigure ? <>你只能查看 <Explain label="只读说明" content="导出报表和修改告警设置各要单独的权限，请联系超级管理员。" /></> : undefined}
-      guideExtra={<p>这个账号：{canExport ? "能导出脱敏报表" : "不能导出报表"}，{canConfigure ? "能修改告警设置" : "不能修改告警设置"}，{canFreezeC2 ? "能去账户操作处理账户" : "不能去账户操作处理账户"}，{canViewK1 ? "能去多账户排查看关联账户组" : "不能去多账户排查"}。</p>} />
+      guideExtra={<>
+        <p>这个账号：{canExport ? "能导出报表" : "不能导出报表"}，{canConfigure ? "能改告警设置" : "不能改告警设置"}。</p>
+        <p>处理账户：{canFreezeC2 ? "能去账户操作" : "不能去账户操作"}，{canViewK1 ? "能去多账户排查" : "不能去多账户排查"}。</p>
+      </>} />
   );
 
   const savedNotice = saved && (
@@ -362,13 +365,11 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
       </Notice>
     )}
 
-    <div className="j3-scope">
-      <span className="j3-scope-label" id="j3-window-label">时间范围</span>
-      <Segments<J3Window> label="篡改趋势时间范围" value={win}
-        items={WINDOWS.map((value) => ({ value, label: WINDOW_SPAN[value], disabled: accountLoading && value !== win }))}
-        onChange={loadWindow} />
-      <span className="j3-scope-note">拦截次数、走势、接口、告警账户和导出都按这个范围</span>
-    </div>
+    <FilterBar
+      scope={<Segments<J3Window> label="篡改趋势时间范围" value={win}
+        items={WINDOWS.map((value) => ({ value, label: WINDOW_TEXT[value], disabled: accountLoading && value !== win }))}
+        onChange={loadWindow} />}
+      sort={<span className="rd-filter-result">时间范围管拦截次数、走势、接口、告警账户和导出</span>} />
 
     <StatBand label="篡改拦截统计" fit>
       <Stat lead={accountTotal === 0 && totalPath > 0} tone="role-2" icon={ShieldAlert} label={`${W}拦截`} value={num(totalPath)} unit="次" sub={deltaText}

@@ -505,10 +505,6 @@
 /* ============================ J3 篡改防御监控（改版页） ============================ */
 .j3-page { display: flex; flex-direction: column; gap: var(--rd-section-gap); }
 .j3-page > .rd-head { margin-bottom: 0; }
-/* 时间范围：管下面全部区块，和统计带同一条左边线 */
-.j3-page .j3-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-.j3-page .j3-scope-label { font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
-.j3-page .j3-scope-note { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 /* 走势：最多的一段 */
 .j3-page .j3-peak { margin: 12px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
 /* 接口排序条：名称列定宽，条从同一条线起 */
