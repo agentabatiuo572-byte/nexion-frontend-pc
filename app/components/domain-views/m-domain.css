@@ -612,8 +612,8 @@
 
 /* 帮助中心里大概的样子：手机宽度的一张卡，问题一行，回答按原换行 */
 .m4-preview { max-width: 360px; padding: var(--rd-space-3) var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
-.m4-preview-q { padding-bottom: var(--rd-space-2); border-bottom: 1px solid var(--rd-line); font-weight: var(--rd-weight-semibold); color: var(--rd-text); overflow-wrap: anywhere; }
-.m4-preview-a { padding-top: var(--rd-space-2); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow-y: auto; }
+.m4-preview-q { margin-bottom: var(--rd-space-2); padding-bottom: var(--rd-space-2); border-bottom: 1px solid var(--rd-line); font-weight: var(--rd-weight-semibold); color: var(--rd-text); overflow-wrap: anywhere; }
+.m4-preview-a { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow-y: auto; }
 .m4-preview-empty { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
 .m4-block-title { display: flex; align-items: center; gap: var(--rd-space-1); margin: 0 0 var(--rd-space-2); font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
 .m4-translation { display: grid; gap: var(--rd-space-2); }
@@ -629,7 +629,7 @@
 .m4-form { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: var(--rd-space-6); align-items: start; }
 .m4-form-fields { display: grid; gap: var(--rd-space-4); min-width: 0; }
 .m4-form-preview { position: sticky; top: 0; }
-.m4-form .m4-answer { min-height: 200px; line-height: var(--rd-lh-body); }
+.m4-form .m4-answer { min-height: 152px; line-height: var(--rd-lh-body); }
 @container (max-width: 760px) {
   .m4-form { grid-template-columns: minmax(0, 1fr); }
   .m4-form-preview { position: static; }

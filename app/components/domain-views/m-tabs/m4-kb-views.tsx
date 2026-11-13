@@ -90,8 +90,8 @@ export function audienceSub(faq: Pick<M4Faq, "surface" | "language">) {
 export function FaqPreview({ question, answer, empty = "还没写" }: { question: string; answer: string; empty?: string }) {
   return (
     <div className="m4-preview">
-      <div className="m4-preview-q">{question.trim() || <span className="m4-preview-empty">问题{empty}</span>}</div>
-      <div className="m4-preview-a">{answer.trim() || <span className="m4-preview-empty">回答{empty}</span>}</div>
+      <div className="m4-preview-q" data-user-content="">{question.trim() || <span className="m4-preview-empty">问题{empty}</span>}</div>
+      <div className="m4-preview-a" data-user-content="">{answer.trim() || <span className="m4-preview-empty">回答{empty}</span>}</div>
     </div>
   );
 }

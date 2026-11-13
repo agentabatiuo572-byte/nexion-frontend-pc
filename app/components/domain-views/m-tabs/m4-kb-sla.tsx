@@ -431,20 +431,20 @@ function FaqModal({
           <Field label="问题" required hint="最多 160 字" error={show("question")}>
             {(control) => <Input {...control} data-proof="support-faq-question" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="用户会怎么问，就怎么写。例如：提现审核要多久？" />}
           </Field>
-          <Field label="回答" required hint="最多 4000 字" error={show("answer")}>
-            {(control) => <Textarea {...control} className="m4-answer" data-proof="support-faq-answer" rows={8} value={answer} count={`${answer.trim().length}/4000`} onChange={(e) => setAnswer(e.target.value)} placeholder={"写清用户自己能做的步骤；换行会原样显示。\n例如：提现提交后一般 24 小时内审核完成。"} />}
+          <Field label="回答" required error={show("answer")}>
+            {(control) => <Textarea {...control} className="m4-answer" data-proof="support-faq-answer" rows={6} value={answer} count={`${answer.trim().length}/4000`} onChange={(e) => setAnswer(e.target.value)} placeholder={"写清用户自己能做的步骤；换行会原样显示。\n例如：提现提交后一般 24 小时内审核完成。"} />}
           </Field>
-          <div className="rd-form-grid" data-cols="2" data-dense="">
+          <div className="rd-form-grid" data-cols="3" data-dense="">
             <Field label="分类">
               {(control) => <Select {...control} aria-label="问答分类" value={category} onChange={(value) => setCategory(value as SupportFaq["category"])} options={FAQ_CATEGORY_OPTIONS.map((c) => ({ value: c, label: catCN(c) }))} />}
             </Field>
-            <Field label="排序" hint="0–999999，小值靠前" error={show("sort")}>
-              {(control) => <NumberInput {...control} aria-label="排序值" min={0} max={999999} step={1} value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />}
+            <Field label="排序" hint="小值靠前" explain="0–999999 的整数。列表和帮助中心都按排序值从小到大排，同值的后更新的在前。" error={show("sort")}>
+              {(control) => <NumberInput {...control} min={0} max={999999} step={1} value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />}
+            </Field>
+            <Field label="发布状态">
+              <Segments label="发布状态" value={status} onChange={setStatus} items={[{ value: "published", label: "已发布" }, { value: "draft", label: "草稿" }]} />
             </Field>
           </div>
-          <Field label="发布状态">
-            <Segments label="发布状态" value={status} onChange={setStatus} items={[{ value: "published", label: "已发布" }, { value: "draft", label: "草稿" }]} />
-          </Field>
           <Field label="修改理由" required hint="至少 8 字" error={show("reason")}>
             {(control) => <Textarea {...control} data-proof="support-faq-reason" rows={2} value={reason} count={`${reason.trim().length}/200`} onChange={(e) => setReason(e.target.value)} placeholder="例如：帮助中心提现板块补齐" />}
           </Field>
