@@ -556,7 +556,11 @@
   .j2-page .j2-endpoint-table th:nth-child(1) { width: 20%; }
   .j2-page .j2-endpoint-table th:nth-child(2) { width: 104px; }
   .j2-page .j2-endpoint-table th:nth-last-child(2) { width: 112px; }
-  .j2-page .j2-endpoint-table[data-lookup] th:nth-child(4) { width: 30%; }
+  .j2-page .j2-endpoint-table[data-lookup] th:nth-child(1) { width: 18%; }
+  .j2-page .j2-endpoint-table[data-lookup] th:nth-child(2) { width: 88px; }
+  .j2-page .j2-endpoint-table[data-lookup] th:nth-child(4) { width: 24%; }
+  .j2-page .j2-endpoint-table[data-lookup] th:nth-last-child(2) { width: 88px; }
+  .j2-page .j2-endpoint-table[data-lookup] th:last-child { width: 96px; }
 }
 .j2-page .j2-mode[data-mode="explicit"] { color: var(--rd-text); font-weight: var(--rd-weight-medium); }
 .j2-page .j2-mode[data-mode="derived"] { color: var(--rd-text-2); }
