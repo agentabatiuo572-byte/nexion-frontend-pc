@@ -695,3 +695,141 @@
   .j3-page .j3-recovery-time { grid-column: 1 / 3; grid-row: 2; }
   .j3-page .j3-recovery-actions { grid-column: 3; grid-row: 2; }
 }
+/* ============================ J4 监管要求应急处理 ============================ */
+.j4-page { display: contents; }
+:is(.j4-page, .j4-editor, .j4-execute, .rd-confirm, .j4-trace) .j4-muted { color: var(--rd-text-3); }
+:is(.j4-page, .j4-trace) .j4-note { margin: 12px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.j4-page .j4-note-pad { margin: 0; padding: 12px var(--rd-panel-pad-x) var(--rd-panel-pad-y); }
+.j4-page .j4-num { font-variant-numeric: tabular-nums; }
+:is(.j4-page, .rd-confirm) .j4-back { display: flex; justify-content: flex-start; }
+.rd-confirm .j4-detail-steps { display: grid; gap: 2px; margin: 4px 0; }
+
+/* 步骤时间线：第几步、做什么、对象、影响、收不收得回 */
+:is(.j4-page, .j4-editor, .j4-execute, .rd-confirm, .j4-trace) .j4-steps { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+:is(.j4-page, .j4-execute, .rd-confirm) .j4-step { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: start; gap: 4px 12px; padding: 0 0 16px; }
+:is(.j4-page, .j4-execute, .rd-confirm) .j4-step:last-child { padding-bottom: 0; }
+:is(.j4-page, .j4-execute, .rd-confirm) .j4-step:not(:last-child)::before { content: ""; position: absolute; top: 28px; bottom: 4px; left: 11.5px; width: 1px; background: var(--rd-line-strong); }
+:is(.j4-page, .j4-editor, .j4-execute, .rd-confirm, .j4-trace) .j4-step-n { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--rd-control); color: var(--rd-text-2); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+:is(.j4-page, .j4-execute, .rd-confirm) .j4-step-body { display: grid; gap: 2px; min-width: 0; padding-top: 1px; }
+:is(.j4-page, .j4-execute, .rd-confirm) .j4-step-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+:is(.j4-page, .j4-editor, .j4-execute, .rd-confirm, .j4-trace) .j4-step-title { color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+:is(.j4-page, .j4-editor, .j4-execute, .rd-confirm, .j4-trace) .j4-step-target { margin-left: 6px; font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); color: var(--rd-text-2); }
+:is(.j4-page, .j4-execute, .rd-confirm) .j4-step-head .j4-step-target { margin-left: 0; }
+:is(.j4-page, .j4-execute, .rd-confirm) .j4-step-impact { margin: 0; color: var(--rd-text-2); }
+:is(.j4-page, .j4-execute, .rd-confirm) .j4-step-page { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.j4-execute .j4-step-check { display: inline-flex; align-items: center; gap: 6px; padding-top: 2px; color: var(--rd-text-2); cursor: pointer; white-space: nowrap; }
+.j4-execute .j4-step[data-checked] .j4-step-n { background: var(--rd-brand-soft); color: var(--rd-text); }
+
+/* 预案库：左边列表，右边详情 */
+.j4-page .j4-lib-filter { padding: 0 var(--rd-panel-pad-x) 12px; overflow-x: auto; }
+.j4-page .j4-lib-table { table-layout: fixed; }
+.j4-page .j4-lib-table th:nth-child(2) { width: 96px; }
+.j4-page .j4-lib-table th:nth-child(3) { width: 64px; }
+.j4-page .j4-lib-table th:nth-child(4) { width: 120px; }
+.j4-page .j4-sub-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 16px 0 12px; font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.j4-page .j4-sub-title .j4-muted { font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); }
+.j4-page #j4-detail > .rd-notice, .j4-page #j4-detail .rd-kv + .rd-kv, .j4-page #j4-detail .j4-steps + .rd-kv { margin-top: 16px; }
+.j4-page .j4-detail-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--rd-line); }
+.j4-page .j4-routine { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.j4-page .j4-routine-note { display: inline-flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.j4-page .j4-real { margin-left: auto; }
+
+/* 正在执行 */
+.j4-page .j4-live { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.j4-page .j4-live-item { display: grid; gap: 12px; padding: 12px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+:root[data-theme="light"] .j4-page .j4-live-item { box-shadow: inset 0 0 0 1px var(--rd-line); }
+.j4-page .j4-live-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.j4-page .j4-live-name { font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.j4-page .j4-live-head .j4-row-acts { margin-left: auto; }
+.j4-page .j4-live-steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.j4-page .j4-live-steps li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 0 8px; align-items: center; padding: 8px 10px; border-radius: var(--rd-radius-control); background: var(--rd-panel); box-shadow: inset 0 0 0 1px var(--rd-line); }
+.j4-page .j4-live-n { grid-row: span 2; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--rd-control); font-size: var(--rd-text-aux); color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
+.j4-page .j4-live-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text); }
+.j4-page .j4-live-label .j4-step-target { margin-left: 6px; }
+.j4-page .j4-live-state { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.j4-page .j4-live-steps li[data-state="done"] .j4-live-n { background: var(--rd-done); color: var(--rd-panel); }
+.j4-page .j4-live-steps li[data-state="running"], .j4-page .j4-live-steps li[data-state="recovering"] { box-shadow: inset 0 0 0 1px var(--rd-progress); }
+.j4-page .j4-live-steps li[data-state="running"] .j4-live-n, .j4-page .j4-live-steps li[data-state="recovering"] .j4-live-n { background: var(--rd-progress); color: var(--rd-text-on-brand); }
+.j4-page .j4-live-steps li[data-state="running"] .j4-live-state, .j4-page .j4-live-steps li[data-state="recovering"] .j4-live-state { color: var(--rd-progress); font-weight: var(--rd-weight-medium); }
+.j4-page .j4-live-steps li[data-state="failed"] .j4-live-n { background: var(--rd-danger); color: var(--rd-text-on-danger); }
+.j4-page .j4-live-steps li[data-state="failed"] .j4-live-state { color: var(--rd-danger); }
+
+/* 执行记录 */
+.j4-page .j4-exec-table { table-layout: fixed; }
+.j4-page .j4-exec-table th:nth-child(1) { width: 156px; }
+.j4-page .j4-exec-table th:nth-child(3) { width: 112px; }
+.j4-page .j4-exec-table th:nth-child(4) { width: 168px; }
+.j4-page .j4-exec-table th:nth-child(5) { width: 136px; }
+.j4-page .j4-exec-table th:nth-child(6) { width: 124px; }
+.j4-page .j4-exec-table th:last-child { width: 196px; }
+@container jdom (max-width: 1100px) {
+  .j4-page .j4-exec-table th:nth-child(1) { width: 148px; }
+  .j4-page .j4-exec-table th:nth-child(3) { width: 100px; }
+  .j4-page .j4-exec-table th:nth-child(4) { width: 124px; }
+  /* 窄时执行人收起，追溯抽屉里仍写 */
+  .j4-page .j4-exec-table :is(th, td):nth-child(5) { display: none; }
+  .j4-page .j4-exec-table th:nth-child(6) { width: 108px; }
+  .j4-page .j4-exec-table th:last-child { width: 120px; }
+}
+.j4-page .j4-row-acts { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 8px; }
+.j4-page .j4-dots { display: grid; gap: 4px; min-width: 0; }
+.j4-page .j4-dots-row { display: flex; flex-wrap: wrap; gap: 3px; }
+.j4-page .j4-dot { width: 10px; height: 10px; border-radius: 2px; background: transparent; box-shadow: inset 0 0 0 1px var(--rd-line-strong); }
+.j4-page .j4-dot:is([data-state="done"], [data-state="validated"]) { background: var(--rd-done); box-shadow: none; }
+.j4-page .j4-dot:is([data-state="running"], [data-state="recovering"]) { background: var(--rd-progress); box-shadow: none; }
+.j4-page .j4-dot[data-state="failed"] { background: var(--rd-danger); box-shadow: none; }
+.j4-page .j4-dot[data-state="rolled_back"] { background: var(--rd-ok); box-shadow: none; }
+.j4-page .j4-dots-text { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.j4-page .j4-action-table { table-layout: fixed; }
+.j4-page .j4-action-table th:nth-child(2) { width: 160px; }
+.j4-page .j4-action-table th:nth-child(3) { width: 160px; }
+.j4-page .j4-action-table th:nth-child(4) { width: 140px; }
+.j4-page .j4-action-table + .rd-kv { margin-top: 16px; }
+.j4-page .j4-notify-table { table-layout: fixed; }
+.j4-page .j4-notify-table th:nth-child(2) { width: 96px; }
+
+/* 新增、编辑预案 */
+.j4-editor .j4-editor-block { display: grid; gap: 12px; }
+:is(.j4-editor, .j4-execute) .j4-editor-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+:is(.j4-editor, .j4-execute) .j4-editor-hint { font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.j4-editor .j4-editor-empty { margin: 0; color: var(--rd-text-3); }
+.j4-editor .j4-added { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.j4-editor .j4-added li, .j4-editor .j4-pick-list li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto; align-items: center; gap: 8px 12px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+:root[data-theme="light"] :is(.j4-editor .j4-added li, .j4-editor .j4-pick-list li) { box-shadow: inset 0 0 0 1px var(--rd-line); }
+.j4-editor .j4-added-main, .j4-editor .j4-pick-main { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+:is(.j4-editor, .j4-trace) .j4-added-page { margin-left: 8px; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.j4-editor .j4-added-main .j4-added-page, .j4-editor .j4-pick-main .j4-added-page { margin-left: 0; }
+.j4-editor .j4-pick { display: grid; gap: 8px; }
+.j4-editor .j4-pick-search { display: flex; align-items: center; gap: 8px; color: var(--rd-text-3); }
+.j4-editor .j4-pick-search .rd-input { flex: 1; }
+.j4-editor .j4-pick-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.j4-editor .j4-pick-list li { grid-template-columns: minmax(0, 1fr) auto auto; }
+.j4-editor .j4-pick-list li:not(:has(.j4-pick-target)) { grid-template-columns: minmax(0, 1fr) auto; }
+.j4-editor .j4-pick-target { width: 168px; }
+
+/* 发起正式执行 */
+.j4-execute .j4-execute-steps { display: grid; gap: 12px; }
+
+/* 执行追溯 */
+.j4-trace { display: grid; gap: 16px; }
+.j4-trace .j4-trace-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.j4-trace .j4-trace-list li { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; }
+.j4-trace .j4-trace-list[data-wide] li { padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+:root[data-theme="light"] .j4-trace .j4-trace-list[data-wide] li { box-shadow: inset 0 0 0 1px var(--rd-line); }
+.j4-trace .j4-trace-list li > :nth-child(3):not(.rd-tag) { justify-self: start; }
+.j4-trace .j4-trace-n { font-size: var(--rd-text-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+.j4-trace .j4-trace-more { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.j4-trace .j4-trace-fail { color: var(--rd-danger); }
+.j4-trace .j4-trace-list:not([data-wide]) li { grid-template-columns: 56px auto auto minmax(0, 1fr); }
+
+/* 结果未知逐条提醒（界面备好，等接 R1） */
+.j4-page .j4-rec { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.j4-page .j4-rec li { display: grid; grid-template-columns: minmax(180px, 1.2fr) minmax(0, 2fr) 136px 140px 208px; align-items: center; gap: 4px 12px; }
+.j4-page .j4-rec-actions { justify-content: flex-end; }
+.j4-page .j4-rec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.j4-page .j4-rec-time { font-size: var(--rd-text-aux); color: var(--rd-text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.j4-page .j4-rec-actions { display: inline-flex; gap: 8px; }
+.j4-page .j4-rec-note { grid-column: 1 / -1; font-size: var(--rd-text-aux); color: var(--rd-text-2); }
+.j4-page .j4-rec-zone { margin: 8px 0 0; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+@container jdom (max-width: 900px) { .j4-page .j4-rec li { grid-template-columns: minmax(0, 1fr) auto; } }
+.j4-trace .rd-facts + .j4-trace-list, .j4-trace .rd-facts + p { margin-top: 12px; }

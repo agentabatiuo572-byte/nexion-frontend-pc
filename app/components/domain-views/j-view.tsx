@@ -16,7 +16,7 @@ import { fetchJEmergencyOverviews, jEmergencyActions, type JEmergencyData } from
 import { J1KillSwitch } from "./j-tabs/j1-killswitch";
 import { J2GeoBlock } from "./j-tabs/j2-geoblock";
 import { J3Tamper } from "./j-tabs/j3-tamper";
-import { J4HeaderActions, J4Sop } from "./j-tabs/j4-sop";
+import { J4Sop } from "./j-tabs/j4-sop";
 import type { JCtx, ActionConfirmReq } from "./j-tabs/types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 
@@ -144,12 +144,14 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
   if (tab === "J2") return <RdPage className="jdom"><J2GeoBlock ctx={ctx} />{confirmModal}{toastNode}</RdPage>;
   // J3 改版页自己写页头、读取失败和空态（和 J1 一样）。
   if (tab === "J3") return <RdPage className="jdom"><J3Tamper ctx={ctx} />{confirmModal}{toastNode}</RdPage>;
+  // J4 也自己写页头和读取失败：结果未知的提醒在读取失败时也要留着。
+  if (tab === "J4") return <RdPage className="jdom"><J4Sop ctx={ctx} />{confirmModal}{toastNode}</RdPage>;
 
   return (
     <div className="dkpage jdom">
       <DomainHeader
         {...meta}
-        right={tab === "J4" && !contentLoading && !contentError ? <J4HeaderActions ctx={ctx} /> : undefined}
+        right={undefined}
       />
 
       {contentError && (
@@ -162,7 +164,6 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
         </section>
       )}
 
-      {!contentError && tab === "J4" && <J4Sop ctx={ctx} />}
 
       {confirmModal}
       {toastNode}
