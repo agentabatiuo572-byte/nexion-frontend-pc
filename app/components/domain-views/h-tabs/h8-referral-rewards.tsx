@@ -64,7 +64,7 @@ const MODE_PARAM = PARAMS[2];
 const WHO: Record<string, { who: string; per: string; icon: typeof Gift }> = {
   "newcomer.usdt": { who: "新人", per: "每位新人", icon: Gift },
   "newcomer.nex": { who: "新人", per: "每位新人", icon: Gift },
-  "inviter.nex": { who: "邀请人", per: "每位有效邀请人", icon: Users },
+  "inviter.nex": { who: "邀请人", per: "每位邀请人", icon: Users },
 };
 const APPROVER = "另一位超级管理员";
 const SETTLE_APPROVER = "另一位管理员";
