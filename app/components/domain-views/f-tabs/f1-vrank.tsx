@@ -349,8 +349,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       requireAnyChange: false,
       fields: [
         { key: "userId", label: "用户编号", inputKind: "number", min: 1, required: true, placeholder: "请输入用户编号" },
-        { key: "targetV", label: "目标等级", inputKind: "select", options: rows.map((row) => row.v), required: true },
-        { key: "direction", label: "调整方向", inputKind: "select", options: ["promote", "rollback"], optionLabels: { promote: "升级", rollback: "降级" }, required: true },
+        { key: "targetV", label: "目标等级", inputKind: "select", options: rows.map((row) => row.v), required: true, mustChoose: true },
+        { key: "direction", label: "调整方向", inputKind: "select", options: ["promote", "rollback"], optionLabels: { promote: "升级", rollback: "降级" }, required: true, mustChoose: true },
       ],
     },
     detail: "会改变用户的权益和之后的奖励资格。提交后需在「操作记录与审批」确认才生效。",

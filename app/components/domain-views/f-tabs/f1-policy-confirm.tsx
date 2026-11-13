@@ -137,7 +137,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, pendingApprov
         : `增加资金奖励（加金额、改成资金、按 UVT 现价折算后变多）要提交审批，${SUPER_APPROVER}（需有审批批准权限）批准后才生效。其余改动确认后立即生效。`}>
         {isCondition ? "调低要批准 · 调高立即生效" : "增加资金要批准 · 其余立即生效"}</StatusTag>;
   const facts = <Facts>
-    <Fact k={isCondition ? `现在的${fieldLabel}` : remove ? "要移除的奖励" : editor.reward ? "现在的奖励" : "等级"}>{isCondition || editor.reward ? currentLabel : `${editor.row.v} · 现在 ${(ctx.rewards[editor.row.v] ?? []).length} 项奖励`}</Fact>
+    {!isCondition && <Fact k={remove ? "要移除的奖励" : editor.reward ? "现在的奖励" : "等级"}>{editor.reward ? currentLabel : `${editor.row.v} · 现在 ${(ctx.rewards[editor.row.v] ?? []).length} 项奖励`}</Fact>}
     {isCondition && (prev || next) && <Fact k="相邻等级">{[prev, next].filter(Boolean).join(" · ")}</Fact>}
     {opening.pending && <Fact k="原操作提交于">{businessStamp(opening.pending.createdAt)}</Fact>}
     {pendingApproval && !opening.pending && <Fact k="待审批的申请" tone="warn">这一级有一张门槛或奖励的申请还没批；现在直接修改，那张申请批准时会因版本对不上失败</Fact>}
@@ -174,8 +174,8 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, pendingApprov
         completionCopy: isCondition
           ? `${SUPER_APPROVER}（需有审批批准权限）批准前继续使用当前条件。提交和批准时检查兑付覆盖率，批准后从之后的评估使用新值。`
           : `${SUPER_APPROVER}（需有审批批准权限）批准前继续使用当前奖励模板。提交和批准时检查兑付覆盖率，批准后之后的发放使用新值。`,
-        comparison: <div className="f1-policy-comparison">
-          <Facts><Fact k={fieldLabel}><Change from={currentLabel} to={isCondition ? valueLabel(values.value ?? "") : afterRewardLabel(values)} /></Fact></Facts>
+        comparison: isCondition ? undefined : <div className="f1-policy-comparison">
+          <Facts><Fact k={fieldLabel}><Change from={currentLabel} to={isF1FundReward(values.rtype) && !(values.amount ?? "").trim() ? `${values.rtype.toUpperCase()} · 金额还没填` : afterRewardLabel(values)} /></Fact></Facts>
           {!isCondition && isF1FundReward(editor.reward?.type) && isF1FundReward(values.rtype) && editor.reward!.type !== values.rtype
             && <p className="f1-policy-note">换币种按 B1 现在的 UVT 价格精确折算，提交和批准时各重新判断一次是否变多。</p>}
         </div>,

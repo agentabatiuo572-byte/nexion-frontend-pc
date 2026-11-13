@@ -92,7 +92,7 @@ export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
   const statusLine = document && <span className="f1-how-status">
     {baseStatus === "PUBLISHED" ? <StatusTag tone="ok">已发布</StatusTag> : <StatusTag tone="neutral">草稿</StatusTag>}
     <span>版本号 {document.version || "—"}</span>
-    <span>第 {document.revision} 次保存</span>
+    <span>修订号 {document.revision}</span>
     {document.revision === 0 && <StatusTag tone="warn" icon={CircleHelp} explain="后台还没保存过，或者读取时后端用了内置的默认说明。这不代表运营已经保存或发布过。">内置默认内容</StatusTag>}
   </span>;
 

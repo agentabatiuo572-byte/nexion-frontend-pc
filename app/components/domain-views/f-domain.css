@@ -591,6 +591,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f1-page .f1-how > .f1-how-phone { flex: 4 1 280px; max-width: 400px; position: sticky; top: 16px; }
 .f1-page .f1-how-locales { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .f1-page .f1-how-locale-tools { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.f1-page .f1-how-locale-tools .rd-input { width: 136px; }
 .f1-page .f1-how-sections { display: flex; flex-direction: column; gap: 8px; }
 .f1-page .f1-how-sections .f1-subhead { margin: 0; }
 .f1-page .f1-how-section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
