@@ -629,7 +629,7 @@
 .m4-form { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: var(--rd-space-6); align-items: start; }
 .m4-form-fields { display: grid; gap: var(--rd-space-4); min-width: 0; }
 .m4-form-preview { position: sticky; top: 0; }
-.m4-form .m4-answer { min-height: 152px; line-height: var(--rd-lh-body); }
+.m4-form .m4-answer { min-height: 120px; line-height: var(--rd-lh-body); }
 @container (max-width: 760px) {
   .m4-form { grid-template-columns: minmax(0, 1fr); }
   .m4-form-preview { position: static; }

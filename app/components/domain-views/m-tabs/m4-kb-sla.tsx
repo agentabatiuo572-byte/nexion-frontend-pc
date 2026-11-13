@@ -428,11 +428,11 @@ function FaqModal({
             <h3 className="m4-block-title">{status === "published" ? "保存后谁读得到" : "发布后谁读得到"}</h3>
             <ReachList faq={{ surface, language }} label={status === "published" ? "保存后谁读得到" : "发布后谁读得到"} />
           </section>
-          <Field label="问题" required hint="最多 160 字" error={show("question")}>
-            {(control) => <Input {...control} data-proof="support-faq-question" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="用户会怎么问，就怎么写。例如：提现审核要多久？" />}
+          <Field label="问题" required error={show("question")}>
+            {(control) => <Textarea {...control} data-proof="support-faq-question" rows={1} value={question} count={`${question.trim().length}/160`} onChange={(e) => setQuestion(e.target.value)} placeholder="用户会怎么问，就怎么写。例如：提现审核要多久？" />}
           </Field>
           <Field label="回答" required error={show("answer")}>
-            {(control) => <Textarea {...control} className="m4-answer" data-proof="support-faq-answer" rows={6} value={answer} count={`${answer.trim().length}/4000`} onChange={(e) => setAnswer(e.target.value)} placeholder={"写清用户自己能做的步骤；换行会原样显示。\n例如：提现提交后一般 24 小时内审核完成。"} />}
+            {(control) => <Textarea {...control} className="m4-answer" data-proof="support-faq-answer" rows={5} value={answer} count={`${answer.trim().length}/4000`} onChange={(e) => setAnswer(e.target.value)} placeholder={"写清用户自己能做的步骤；换行会原样显示。\n例如：提现提交后一般 24 小时内审核完成。"} />}
           </Field>
           <div className="rd-form-grid" data-cols="3" data-dense="">
             <Field label="分类">
