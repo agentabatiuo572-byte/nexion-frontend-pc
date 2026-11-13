@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { RefreshCw, SlidersHorizontal, Smartphone, TableProperties } from "lucide-react";
-import { BlockState, Button, Change, Conclusion, DiffList, Explain, Fact, Facts, Field, Notice, NumberInput, PageHeader, Panel, RatioBar, StatusTag, Table, Td, Th, Tr, TrendLines, useTabIds, type DiffRow } from "@/app/components/rd";
+import { BlockState, Button, Change, Conclusion, DiffList, Explain, Fact, KeepText, Facts, Field, Notice, NumberInput, PageHeader, Panel, RatioBar, StatusTag, Table, Td, Th, Tr, TrendLines, useTabIds, type DiffRow } from "@/app/components/rd";
 import { PaginationExemption } from "../design-kit";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import {
@@ -388,10 +388,10 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       {loading
         ? <Conclusion state="unknown">展示设置读取中…</Conclusion>
         /* 文案拼接走 h9PlaceholderCopy:字典整句自带句号,直接再拼「。」就是双句号(P2-15 回归)。 */
-        : <Notice tone="danger" title="主配置读取失败，这页暂时不能改" action={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => void load()}>重新读取</Button>}>{h9PlaceholderCopy(error)}</Notice>}
+        : <Notice tone="danger" title="主配置读取失败，这页暂时不能改" action={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => void load()}>重新读取</Button>}><KeepText text={h9PlaceholderCopy(error)} /></Notice>}
       {cards}
       {module !== "rank" && <div {...ids.panel(module)}>
-        <BlockState state={loading ? "loading" : "error"} title={loading ? "读取中…" : `${moduleLabel(module)}暂时看不到`} detail={loading ? undefined : "主配置读到后才显示这一块。设备预估排名是独立的设置，照常可以查看和修改。"} />
+        <BlockState state={loading ? "loading" : "error"} title={loading ? "读取中…" : `${moduleLabel(module)}暂时看不到`} detail={loading ? undefined : "主配置读到后才显示这一块；设备预估排名照常可用。"} />
       </div>}
       {rankPanel}
     </div>;
