@@ -210,12 +210,11 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 
 /* ============================ H7 代金券（.h7-page 一段：券卡、券面、使用情况条、结果未知列表、填写抽屉、详情） ============================ */
 .h7-page { display: contents; }
-.h7-panel-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
 .h7-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--rd-space-4); }
 .h7-card { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; padding: var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel); color: var(--rd-text); }
 .h7-card[data-selected] { border-color: var(--rd-brand); }
 .h7-ticket { position: relative; display: grid; grid-template-columns: minmax(156px, max-content) minmax(96px, 1fr); overflow: hidden; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
-.h7-face { position: relative; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: var(--rd-space-3); background: var(--rd-panel-inner); border-right: 1px dashed var(--rd-line-strong); }
+.h7-face { position: relative; display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; padding: var(--rd-space-3); background: var(--rd-panel-inner); border-right: 1px dashed var(--rd-line-strong); }
 .h7-ticket > .h7-face::before, .h7-ticket > .h7-face::after { content: ""; position: absolute; right: -7px; width: 12px; height: 12px; border: 1px solid var(--rd-line); border-radius: 50%; background: var(--rd-panel); }
 .h7-ticket > .h7-face::before { top: -7px; }
 .h7-ticket > .h7-face::after { bottom: -7px; }
@@ -224,13 +223,11 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 :root[data-theme="light"] .h7-face-value { color: var(--rd-text); }
 .h7-face-value[data-empty], .h7-card[data-dim] .h7-face-value { color: var(--rd-text-3); }
 .h7-face-value small { display: inline-block; margin-left: var(--rd-space-1); font-size: var(--rd-text-aux); font-weight: 500; color: var(--rd-text-3); }
-.h7-face-cond { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.h7-face-cond { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); white-space: pre-line; }
 .h7-card-body { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: var(--rd-space-3); }
 .h7-card-title { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; }
 .h7-card-title h3 { margin: 0; min-width: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; }
-.h7-name { display: -webkit-box; max-width: 100%; padding: 0; overflow: hidden; border: 0; background: none; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; cursor: pointer; }
-.h7-name:hover { text-decoration: underline; }
-.h7-name:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; border-radius: 2px; }
+.h7-name { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .h7-tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
 .h7-card-meta { display: grid; gap: var(--rd-space-1); margin: 0; }
 .h7-card-meta > div { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: var(--rd-space-2); }

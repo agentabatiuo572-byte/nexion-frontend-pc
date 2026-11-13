@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Ban, BellOff, LayoutGrid, List, Pencil, Play, Pause, Plus, ReceiptText, RefreshCw, Send, Ticket, TicketCheck, Trash2 } from "lucide-react";
 import {
-  BlockState, Button, Cell, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, Notice,
+  BlockState, Button, Cell, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, FilterBar, Fold, IrreversibleTag, Notice,
   PageHeader, Panel, RatioBar, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr,
 } from "@/app/components/rd";
 import {
@@ -450,7 +450,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     <PageHeader
       pageId="H7"
       title="代金券"
-      summary="看有哪些券在投放、用得怎么样；新增、编辑、暂停或投放。删除和作废要另一位管理员批准。"
+      summary="看券的投放和使用，新增、编辑、暂停或投放。"
       meta={readAt ? <span className="rd-toolbar">
         <span>{`${businessClock(readAt)} 读取（${businessZone().label}）· 打开时读取`}</span>
         <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reload()}>刷新</Button>
@@ -517,17 +517,15 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       <Panel title="代金券" icon={Ticket} tone="role-4" data-proof="h7-voucher-config"
         sub={`${shown.length} 张 · 时间为${businessZone().label}`}
         explain="每张卡是一张券的模板：左边是券面，右边是谁能用、什么时候能用，下面是已发出的券用了多少。点名字或「详情」看全部设置；删除和作废在详情里。"
-        actions={<span className="h7-panel-tools">
-          <Segments label="按状态筛选" value={filter} onChange={setFilter} items={[
-            { value: "all", label: "全部", count: list.length },
-            { value: "active", label: "投放中", count: list.filter((v) => v.status === "active").length },
-            { value: "paused", label: "已暂停", count: list.filter((v) => v.status === "paused").length },
-          ]} />
-          <Segments label="显示方式" value={view} onChange={setView} items={[
-            { value: "cards", label: <><LayoutGrid size={14} aria-hidden /> 卡片</> },
-            { value: "table", label: <><List size={14} aria-hidden /> 列表</> },
-          ]} />
-        </span>}>
+        >
+        <FilterBar scope={<Segments label="按状态筛选" value={filter} onChange={setFilter} items={[
+          { value: "all", label: "全部", count: list.length },
+          { value: "active", label: "投放中", count: list.filter((v) => v.status === "active").length },
+          { value: "paused", label: "已暂停", count: list.filter((v) => v.status === "paused").length },
+        ]} />} sort={<Segments label="显示方式" value={view} onChange={setView} items={[
+          { value: "cards", label: <><LayoutGrid size={14} aria-hidden /> 卡片</> },
+          { value: "table", label: <><List size={14} aria-hidden /> 列表</> },
+        ]} />} />
         {shown.length === 0
           ? <BlockState state="empty" title={list.length === 0 ? "新增的代金券会显示在这里" : "这个状态下没有代金券"} detail={list.length === 0 ? (canWrite ? undefined : "有修改权限的同事新增后会显示在这里。") : "换一个状态看看。"} />
           : view === "cards"

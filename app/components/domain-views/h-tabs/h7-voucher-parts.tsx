@@ -136,7 +136,7 @@ export function VoucherFace({ v, size = "card" }: { v: Pick<H7Voucher, "type" | 
     <div className="h7-face" data-size={size} data-type={v.type}>
       <span className="h7-face-kind">{face.kind}</span>
       <strong className="h7-face-value" data-empty={face.value === "—" ? "" : undefined}>{face.value}{face.unit && <small>{face.unit}</small>}</strong>
-      {conditionLines(v).map((line) => <span key={line} className="h7-face-cond">{line}</span>)}
+      <span className="h7-face-cond">{conditionLines(v).join("\n")}</span>
     </div>
   );
 }
@@ -171,7 +171,7 @@ export function VoucherCard({ v, now, skuLabels, selected, onOpen, actions }: { 
         <VoucherFace v={v} />
         <div className="h7-card-body">
           <div className="h7-card-title">
-            <h3><button type="button" className="h7-name" title={v.name} onClick={onOpen}>{v.name}</button></h3>
+            <h3 className="h7-name" title={v.name}>{v.name}</h3>
             <VoucherTags v={v} now={now} />
           </div>
         </div>
@@ -183,7 +183,7 @@ export function VoucherCard({ v, now, skuLabels, selected, onOpen, actions }: { 
       <UsageBar v={v} />
       <div className="h7-card-actions">
         {actions}
-        <Button size="sm" variant="ghost" onClick={onOpen}>详情</Button>
+        <Button size="sm" variant="ghost" aria-label={`详情 ${v.name}`} onClick={onOpen}>详情</Button>
       </div>
     </article>
   );
