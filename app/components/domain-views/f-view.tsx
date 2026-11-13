@@ -417,21 +417,27 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!def) throw new Error(`F_OP_NOT_FOUND:${op}`);
     const ambassadorId = key.match(/^F\.ambassador\.(\d+)\.status$/)?.[1];
     if (ambassadorId && value === "approved" && expectedMaterialRevision === undefined) throw new Error("缺少材料版本，请重新打开申请核对后提交。");
-    await proposeStable(`f-config:${key}`, JSON.stringify(expectedMaterialRevision === undefined ? [value, reason] : [value, reason, expectedMaterialRevision]), {
+    const usdtLevel = key.match(/^F\.unilevel\.(L[2-7])$/)?.[1];
+    const currentUsdt = usdtLevel ? f2Overview?.unilevel.find((row) => row.l === usdtLevel)?.usdt : undefined;
+    // F2 edits percentage points; percentRatio otherwise treats bare values <= 1 as ratios.
+    // Keep the entered decimal text intact, including in the approval summary.
+    const commandValue = usdtLevel ? `${value}%` : value;
+    const rateAmplifies = usdtLevel && currentUsdt !== undefined ? Number(value) > currentUsdt : undefined;
+    await proposeStable(`f-config:${key}`, JSON.stringify(expectedMaterialRevision === undefined ? [commandValue, reason] : [commandValue, reason, expectedMaterialRevision]), {
       action: ambassadorId ? `${value === "approved" ? "批准" : "驳回"}大使申请 #${ambassadorId}` : `${def.action} · ${key}`,
       obj: ambassadorId ?? key,
-      before: "—",
-      after: value,
+      before: usdtLevel && currentUsdt !== undefined ? `${currentUsdt}%` : "—",
+      after: commandValue,
       type: ambassadorId && value === "approved" ? "fund" : def.type === "fund" ? "fund" : "param",
-      // F3 数值编辑按实际方向标记；其他参数保留既有分类，系统执行时仍须按当前值复核。
-      amplifies: ambassadorId ? value === "approved" : amplifies ?? (isFFundAmplifyingKey(key) || def.amplifies),
+      // F2 USDT and F3 edits compare current and proposed values in percentage points.
+      amplifies: ambassadorId ? value === "approved" : rateAmplifies ?? amplifies ?? (isFFundAmplifyingKey(key) || def.amplifies),
       gate: { roles: [] },
       gateLabel: def.gateLabel,
       reason,
       sourceDomain,
       commandKey: fProposalCommandKey(mc?.commandKey, sourceDomain, key),
-      command: def.buildCommand({ key, value, expectedVersion, expectedMaterialRevision }),
-      target: def.buildTarget({ key, value, expectedVersion }),
+      command: def.buildCommand({ key, value: commandValue, expectedVersion, expectedMaterialRevision }),
+      target: def.buildTarget({ key, value: commandValue, expectedVersion }),
     });
   };
 

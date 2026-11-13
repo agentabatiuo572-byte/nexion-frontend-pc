@@ -1271,7 +1271,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     command ??= sessionEndCommands.list().find(row => row.actorId === adminId && row.customerId === holdCustomer
       && !!row.sessionRef && row.sessionRef === hold?.sessionRef) ?? null;
     const recovering = Boolean(command);
-    if (!command && !hold?.sessionRef) { setActionError("这次接待的标识尚未读到，请刷新接待状态后再结束会话。"); setHoldRetry(value => value + 1); return; }
+    if (!command && !hold?.sessionRef) { setActionError("还没读到这次接待的信息，请刷新接待状态后再结束会话。"); setHoldRetry(value => value + 1); return; }
     const fingerprint = `session-end:${adminId}:${holdCustomer}:${hold?.sessionRef}`;
     if (!command) {
       const commandKey = newKey();
@@ -1299,7 +1299,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (recovering && !command.sessionRef) {
         if (current()) {
           setLegacyEndChecked(command.commandKey);
-          setActionError(laterReception ? "原号未查到结果，旧记录继续保留且不会补发。当前是后来开始的接待；再次点「结束会话」会独立绑定并结束当前接待，旧操作不结案。" : "旧结束请求缺少接待标识，不能补发，也不能改绑当前接待。原记录继续保留，请稍后查询原结果。");
+          setActionError(laterReception ? "按原操作查不到结果，原记录继续保留，不会重发。现在是之后新开始的一次接待；再点「结束会话」只结束这一次接待，原操作仍保留待核对。" : "原结束请求没有记下是哪一次接待，不能重发，也不能算到现在这次接待上。原记录继续保留，请稍后查询原结果。");
         }
         return;
       }
@@ -1650,7 +1650,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           </div>
         </header>
         {(endPending && !holdEnding || serviceStatus && conversationsAvailable || actionError || actionResult || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
-          {endPending && !holdEnding && <Notice tone="warn" action={mayEndLaterReception ? <Button size="sm" onClick={() => void endHold(true)}>查原结束结果</Button> : holdEndCommand && holdEndRejected === holdEndCommand.commandKey ? <Button size="sm" onClick={() => setHoldEndRelease(holdEndCommand)}>解除待确认</Button> : undefined}>{holdEndCommand && !holdEndCommand.sessionRef ? "上次结束请求缺少接待标识，只查询原号，不会补发到当前接待；旧记录继续保留。" : holdEndCommand && isRetryExpired(holdEndCommand) ? RETRY_EXPIRED_TEXT : "上次结束会话的结果尚未确认，原操作已保留。点「结束会话」会先查询原操作，不会重复结束。"}</Notice>}
+          {endPending && !holdEnding && <Notice tone="warn" action={mayEndLaterReception ? <Button size="sm" onClick={() => void endHold(true)}>查原结束结果</Button> : holdEndCommand && holdEndRejected === holdEndCommand.commandKey ? <Button size="sm" onClick={() => setHoldEndRelease(holdEndCommand)}>解除待确认</Button> : undefined}>{holdEndCommand && !holdEndCommand.sessionRef ? "上次的结束请求没有记下是哪一次接待：点「结束会话」只查询原操作的结果，不会重发，也不会算到现在这次接待上；原记录继续保留。" : holdEndCommand && isRetryExpired(holdEndCommand) ? RETRY_EXPIRED_TEXT : "上次结束会话的结果尚未确认，原操作已保留。点「结束会话」会先查询原操作，不会重复结束。"}</Notice>}
           {serviceStatus && conversationsAvailable && <Notice tone="danger">{serviceStatus}</Notice>}
           {actionResult && <Notice tone="progress" action={<Button size="sm" onClick={() => setActionResult("")}>知道了</Button>}>{actionResult}</Notice>}
           {actionError && <Notice tone="danger" action={<Button size="sm" onClick={() => setActionError("")}>知道了</Button>}>{actionError}</Notice>}

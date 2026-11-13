@@ -60,7 +60,7 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
   if (previous && original.kind === "proposal") {
     const ticket = await fetchA2ProposalByKey(key, true);
     if (ticket) {
-      if (!ticket.mine || ticket.obj !== original.input.obj || ticket.operationCode !== original.input.command.op)
+      if (!ticket.mine || ticket.obj !== original.input.obj || (ticket.operationCode && ticket.operationCode !== original.input.command.op))
         throw new A2OutcomeUncertainError("查询回执与原操作不符，请保留原命令核对。", key);
       commands.forget(record.fingerprint, key);
       return { kind: "proposal" as const, ticket };
@@ -70,7 +70,7 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
   try {
     if (original.kind === "proposal") {
       const ticket = await createA2OperationProposal(JSON.parse(record.body) as HIProposal, key, true);
-      if (!ticket.mine || ticket.obj !== original.input.obj || ticket.operationCode !== original.input.command.op)
+      if (!ticket.mine || ticket.obj !== original.input.obj || (ticket.operationCode && ticket.operationCode !== original.input.command.op))
         throw new A2OutcomeUncertainError("审批回执与原操作不符，请保留原命令核对。", key);
       commands.forget(record.fingerprint, key);
       return { kind: "proposal" as const, ticket };

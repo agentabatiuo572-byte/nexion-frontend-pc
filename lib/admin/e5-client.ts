@@ -81,9 +81,10 @@ export interface E5Device {
   slot: string;
 }
 
-export interface E5Overview { total: number; running: number; waitingActivation: number; stopped: number }
+export interface E5Overview { total: number; running: number; waitingActivation: number; stopped: number; errorRetry: number; legacyPending: number; waitingConfig: number }
 export interface E5DeviceQuery {
   keyword?: string;
+  userId?: string;
   simState?: string;
   source?: string;
   productCode?: string;
@@ -250,6 +251,7 @@ function queryString(query: E5DeviceQuery) {
     const value = query[key]?.trim();
     if (value && value !== "all") params.set(key, value);
   }
+  if (query.userId?.trim()) params.set("userId", query.userId.trim());
   params.set("pageNum", String(query.pageNum ?? 1));
   params.set("pageSize", String(query.pageSize ?? 10));
   return `?${params}`;

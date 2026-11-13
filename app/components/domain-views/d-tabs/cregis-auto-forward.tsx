@@ -60,7 +60,7 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
         title,confirmLabel:action==="PAUSE"?"确认暂停本网络":action==="PROPOSE"?"提交审批":action==="APPROVE"?"确认复核":"确认取消",confirmTone:action==="PAUSE"?"danger":"primary",
         effect:action==="PROPOSE"?approval:<StatusTag tone="progress" filled>立即生效</StatusTag>,
         facts:action==="APPROVE"||action==="CANCEL"?pendingFacts:<Facts><Fact k="网络">{network}</Fact><Fact k="自动归集到 Cregis">{current.collectionEnabled?"开":"关"}</Fact><Fact k="自动 Cregis 转平台收款钱包">{current.paymentEnabled?"开":"关"}</Fact></Facts>,
-        detail:action==="PAUSE"?"停止本网络新的自动资金流程，原单仍继续只读核对。":action==="PROPOSE"?"开启需另一位管理员复核，且运行总开关已批准。":`待审核：归集 ${current.pendingCollection?"开":"关"} · 付款 ${current.pendingPayment?"开":"关"}。`,
+        detail:action==="PAUSE"?"停止本网络新的自动资金流程，原单仍继续只读核对。":action==="PROPOSE"?"开启需另一位管理员复核，且本环境的运行总开关已打开。":`待审核：归集 ${current.pendingCollection?"开":"关"} · 付款 ${current.pendingPayment?"开":"关"}。`,
         completionCopy:action==="PAUSE"?"确认后立即停止本网络新的自动资金流程，已发送的原单继续只读核对。":action==="PROPOSE"?"另一位管理员复核后生效。":"自动流程配置已保存，请核对实际开关",
         businessForm:action==="PROPOSE"?{kind:"multi-field",requireAnyChange:true,fields:[
           {key:"collect",label:"自动归集到 Cregis",inputKind:"select",options:["true","false"],optionLabels:{true:"开",false:"关"},current:String(current.collectionEnabled===true),showDiff:true,explain:"入账后把充值全额归集到 Cregis 钱包。"},
@@ -91,7 +91,7 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
     finally{if(owns()&&at===read.current)setLoading(false);}
   };
   const block=loading?"正在读取最新数据":busy?"正在提交":undefined;
-  const proposeBlock=block??d1PendingObjectReason(`/cregis${ROOT}/policy${networkQuery}`,{action:"PROPOSE"})??(!status?.configured?"地址与运行权限核实后才能启用。":!status.runtimeApproved?"运行总开关还没批准，不能开启自动流程":status.makerId!==null?"有待复核的提案，先复核或取消":undefined);
+  const proposeBlock=block??d1PendingObjectReason(`/cregis${ROOT}/policy${networkQuery}`,{action:"PROPOSE"})??(!status?.configured?"地址与运行权限核实后才能启用。":!status.runtimeApproved?"本环境的运行总开关没开，不能开启自动流程":status.makerId!==null?"有待复核的提案，先复核或取消":undefined);
   const records=page.records,index=records.findIndex(row=>String(row.id)===selected),task=index>=0?records[index]:null;
   const taskActions=(row:ExceptionRecord)=>{
     const state=String(row.state),stage=state.startsWith("COLLECTION")?"collection":"payment";
@@ -114,7 +114,7 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
         :<div className="rd-stack">
           <p className="rd-note">{network} · {status.executionEnabled?"自动发送已开放":status.configured?"新转账未开放":"地址待配置"}</p>
           {!status.configured&&<Notice tone="warn">地址与运行权限核实后才能启用。</Notice>}
-          {!status.runtimeApproved&&<Notice tone="neutral" title="当前不发送自动转账">未来启用前须确认收款服务的自动审批/签名及套餐权益、绑定钱包和 {String(status.gasSymbol)} 手续费安排，再取得运行总开关批准，并由另一位管理员复核开关。</Notice>}
+          {!status.runtimeApproved&&<Notice tone="neutral" title="当前不发送自动转账">本环境的运行总开关没开（BEP20、ERC20、TRC20 共用一个）。启用前须确认收款服务的自动审批/签名及套餐权益、绑定钱包和 {String(status.gasSymbol)} 手续费安排，再由技术负责人在部署配置里打开总开关，并由另一位管理员复核下面的归集和转出开关。</Notice>}
           {status.makerId!==null&&<Notice tone="progress" title="有一个开关提案待复核"
             action={canWrite?<>
               <Button size="sm" disabledReason={String(status.makerId)===String(owner)?"发起人不能复核自己的提案":block} onClick={()=>policy("APPROVE")}>复核自动流程开关</Button>
@@ -123,7 +123,9 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
             待复核提案：归集 {status.pendingCollection?"开":"关"} · 付款 {status.pendingPayment?"开":"关"} · 理由 {String(status.reason)}
           </Notice>}
           <ConfigList label="自动流程开关">
-            <ConfigRow name="运行总开关" what="自动转账能不能运行" when="批准后生效" value={<SwitchTag on={status.runtimeApproved===true}>{status.runtimeApproved?"已批准":"关闭"}</SwitchTag>}/>
+            <ConfigRow name="运行总开关" what="本环境部署时设定，一个开关同时管 BEP20、ERC20、TRC20" when="改部署配置后生效，后台不能改"
+              note="开着也不一定会发送：收款服务要处于正式对接模式，这条网络的地址要配好、要允许出款，下面的归集或转出开关也要打开。"
+              value={<SwitchTag on={status.runtimeApproved===true}>{status.runtimeApproved?"已开启":"关闭"}</SwitchTag>}/>
             <ConfigRow name="自动归集到 Cregis" what="入账后归集到 Cregis 钱包" when="另一位管理员复核后生效" value={<SwitchTag on={status.collectionEnabled===true}>{status.collectionEnabled?"开启":"关闭"}</SwitchTag>}
               action={canWrite?<Button size="sm" disabledReason={proposeBlock} onClick={()=>policy("PROPOSE")}>调整</Button>:undefined}/>
             <ConfigRow name="自动 Cregis 转平台收款钱包" what="归集后转入平台收款钱包" when="另一位管理员复核后生效" value={<SwitchTag on={status.paymentEnabled===true}>{status.paymentEnabled?"开启":"关闭"}</SwitchTag>}/>

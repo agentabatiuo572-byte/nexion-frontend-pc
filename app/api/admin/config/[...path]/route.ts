@@ -12,6 +12,7 @@ const ROUTE_METHODS: readonly (readonly [string, readonly string[]])[] = [
   ["phone-calibration/ios-model-presets", ["GET"]],
   ["phone-calibration/android-soc-presets", ["GET"]],
   ["phone-calibration/risk", ["GET", "PUT"]],
+  ["phone-calibration/risk/receipts/by-key", ["GET"]],
 ];
 
 type RouteContext = { params: Promise<{ path?: string[] }> };
@@ -41,7 +42,7 @@ async function proxy(request: Request, context: RouteContext) {
   if (contentType) headers.set("Content-Type", contentType);
   if (idempotencyKey) headers.set("Idempotency-Key", idempotencyKey);
   try {
-    const upstream = await fetch(`${BACKEND_BASE_URL}/api/admin/config/${route}`, {
+    const upstream = await fetch(`${BACKEND_BASE_URL}/api/admin/config/${route}${new URL(request.url).search}`, {
       method: request.method,
       headers,
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.text(),

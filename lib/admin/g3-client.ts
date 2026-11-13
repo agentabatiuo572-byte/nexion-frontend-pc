@@ -1,6 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { createStableMutationExecutor, StableMutationFailure, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { createPendingMutationStore } from "./pending-mutation-store";
 
 interface ApiResult<T> {
   code: number;
@@ -155,7 +156,12 @@ function parseNumber(value: RawNumber) {
   return null;
 }
 
-const executeG3Mutation = createStableMutationExecutor(idempotencyKey, "nexion-admin-g3-market-commands-v1");
+// The G3 editor also reads these legacy fingerprints to recover their exact bodies.
+// Share this instance so reading another G page cannot expire or resurrect evidence.
+export const g3LegacyCommands = createPendingMutationStore({
+  storageKey: "nexion-admin-g3-market-commands-v1", retainExpiredRecords: true,
+});
+const executeG3Mutation = createStableMutationExecutor(idempotencyKey, g3LegacyCommands);
 
 function requireNumber(value: RawNumber, field: string) {
   const parsed = parseNumber(value);
@@ -198,7 +204,13 @@ function normalizeFrame(frame: BackendFrame | null | undefined, index: number): 
 function normalizeOverview(data: BackendOverview | null | undefined): G3Overview {
   if (!data) throw new Error("UVT 价格数据加载失败，请刷新重试");
   const frames = (data?.frames ?? []).map(normalizeFrame);
-  const activeDayIndex = Math.max(0, requireNumber(data.activeDayIndex, "activeDayIndex"));
+  const activeDayIndex = requireNumber(data.activeDayIndex, "activeDayIndex");
+  if (frames.length !== 7 || new Set(frames.map(frame => frame.dayIndex)).size !== 7
+      || frames.some(frame => !Number.isInteger(frame.dayIndex) || frame.dayIndex < 0 || frame.dayIndex > 6)
+      || !Number.isInteger(activeDayIndex) || activeDayIndex < 0 || activeDayIndex > 6) {
+    throw new Error("UVT 价格计划不完整，请刷新核对七天计划。");
+  }
+  frames.sort((a, b) => a.dayIndex - b.dayIndex);
   const activeFrame = data?.activeFrame
     ? normalizeFrame(data.activeFrame, activeDayIndex)
     : frames.find((frame) => frame.dayIndex === activeDayIndex);
@@ -273,7 +285,9 @@ async function g3Request<T>(path: string, init?: RequestInit, strictOutcome = fa
 
   if (strictOutcome && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || !result || !Number.isInteger(result.code) || result.code >= 500 || result.code !== 0 && result.code < 400)) {
-    throw new StableMutationFailure("outcome-unknown", "提交结果暂未确认，请保留原操作后重试核对。");
+    throw Object.assign(new StableMutationFailure("outcome-unknown", "提交结果暂未确认，请保留原操作后重试核对。"), {
+      unknownOutcome: true, status: response.status, backendMessage: result?.message,
+    });
   }
 
   if (!response.ok || !result || result.code !== 0) {
@@ -284,7 +298,10 @@ async function g3Request<T>(path: string, init?: RequestInit, strictOutcome = fa
       formatAdminApiError(result?.message, `G3_REQUEST_FAILED_${response.status}`),
       response.status,
       result?.code,
-    ), { backendMessage: result?.message });
+    ), {
+      status: response.ok && result && result.code >= 400 ? result.code : response.status,
+      backendMessage: result?.message,
+    });
   }
 
   return result.data as T;
@@ -351,7 +368,7 @@ export async function updateG3CurveFrame(
   );
 }
 
-/** The four G3 confirmations persist this exact request before sending it. */
+/** Every G3 confirmation persists this exact request before sending it. */
 export async function submitG3MarketCommand(path: string, method: "PUT" | "PATCH", body: string, commandKey: string) {
   return normalizeOverview(await g3Request<BackendOverview>(path, {
     method,

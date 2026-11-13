@@ -36,15 +36,23 @@ export function GDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   };
 
+  // G2 已改版：整页由 G2Exchange 自己包 RdPage、写页头、开确认框。
+  if (tab === "G2") return <G2Exchange />;
+
+  // G4 已改版：整页由 G4Genesis 自己包 RdPage、写页头、开确认框。
+  if (tab === "G4") return <G4Genesis />;
+
+  // G3 已改版：整页由 G3Market 自己包 RdPage、写页头、开确认框。
+  if (tab === "G3") return <G3Market />;
+  // G1 已改版：整页由 G1Staking 自己包 RdPage、写页头，不再渲染旧的域页头。
+  if (tab === "G1") return <G1Staking />;
+  // G7 已改版：整页由 G7Repurchase 自己包 RdPage、写页头、开确认框。
+  if (tab === "G7") return <G7Repurchase />;
+
   return (
     <div className="dkpage gdom">
       <DomainHeader {...meta} />
 
-      {tab === "G1" && <G1Staking />}
-      {tab === "G2" && <G2Exchange ctx={ctx} />}
-      {tab === "G3" && <G3Market ctx={ctx} />}
-      {tab === "G4" && <G4Genesis ctx={ctx} />}
-      {tab === "G7" && <G7Repurchase ctx={ctx} />}
 
       {mc && (
         <OperationConfirmModal briefKind={mc.briefKind}
@@ -55,6 +63,8 @@ export function GDomainView({ meta }: { meta: DomainViewMeta }) {
           edit={mc.edit}
           businessForm={mc.businessForm}
           reasonMax={mc.reasonMax}
+          getPendingReason={mc.getPendingReason}
+          getPendingBusinessValue={mc.getPendingBusinessValue}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
             await mc.run(reason, newValue, businessValue);

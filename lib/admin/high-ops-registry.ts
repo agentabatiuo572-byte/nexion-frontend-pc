@@ -849,7 +849,8 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "exchange_param",
     buildCommand: (ctx) => ({ domain: "G", op: "g2_exchange_param",
-      params: { paramKey: String(ctx.paramKey), value: String(ctx.value) } }),
+      params: { paramKey: String(ctx.paramKey), value: String(ctx.value),
+        ...(ctx.expectedValue === undefined ? {} : { expectedValue: String(ctx.expectedValue) }) } }),
     buildTarget: (ctx) => ({ domain: "G", type: "exchange_param", id: String(ctx.paramKey) }),
   },
   {
@@ -932,7 +933,10 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "genesis_param",
     buildCommand: (ctx) => ({ domain: "G", op: "g4_genesis_param",
-      params: { paramKey: String(ctx.paramKey), value: String(ctx.value) } }),
+      params: { paramKey: String(ctx.paramKey), value: String(ctx.value),
+        ...(ctx.expectedValue === undefined ? {} : { expectedValue: String(ctx.expectedValue) }),
+        ...(ctx.expectedRevision === undefined ? {} : { expectedRevision: String(ctx.expectedRevision) }),
+        ...(ctx.decisionRef === undefined ? {} : { decisionRef: String(ctx.decisionRef) }) } }),
     buildTarget: (ctx) => ({ domain: "G", type: "genesis_param", id: String(ctx.paramKey) }),
   },
   {
@@ -956,7 +960,9 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "genesis_dividend_batch",
     buildCommand: (ctx) => ({ domain: "G", op: "g4_genesis_rerun_dividend",
-      params: { batchNo: String(ctx.batchNo) } }),
+      params: { batchNo: String(ctx.batchNo),
+        ...(ctx.decisionRef === undefined ? {} : { decisionRef: String(ctx.decisionRef) }),
+        ...(ctx.expectedRevision === undefined ? {} : { expectedRevision: String(ctx.expectedRevision) }) } }),
     buildTarget: (ctx) => ({ domain: "G", type: "genesis_dividend_batch", id: String(ctx.batchNo) }),
   },
   {
@@ -968,7 +974,8 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "repurchase_param",
     buildCommand: (ctx) => ({ domain: "G", op: "g7_repurchase_param",
-      params: { paramKey: String(ctx.paramKey), value: String(ctx.value) } }),
+      params: { paramKey: String(ctx.paramKey), value: String(ctx.value),
+        ...(ctx.expectedValue === undefined ? {} : { expectedValue: String(ctx.expectedValue) }) } }),
     buildTarget: (ctx) => ({ domain: "G", type: "repurchase_param", id: String(ctx.paramKey) }),
   },
   // —— E 域设备(批 6) ——

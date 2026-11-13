@@ -7,81 +7,6 @@
 
 .gdom { container: gdom / inline-size; }
 
-/* G3 confirmed price / first-schedule dialogs; existing G actions keep their chrome. */
-.gdom .g3-market-confirm {
-  --admin-confirm-brand: #25c595;
-  --admin-confirm-brand-hover: #20ae83;
-  --admin-confirm-focus: #167258;
-  --brand: var(--admin-confirm-focus);
-  --brand-soft: color-mix(in srgb, var(--admin-confirm-brand) 14%, var(--surface));
-  --warning: var(--admin-confirm-warning);
-  max-width: 640px;
-  border-radius: 12px;
-  box-shadow: none;
-}
-html[data-theme="dark"] .gdom .g3-market-confirm { --admin-confirm-focus: var(--admin-confirm-brand); }
-.gdom .g3-market-confirm .modal-b { display: flex; flex-direction: column; }
-.gdom .g3-market-confirm .g3-market-comparison {
-  order: -3;
-  padding: 10px 12px;
-  margin-bottom: 14px;
-  background: var(--surface-2);
-  border-radius: 8px;
-  font-size: 14px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-.gdom .g3-market-confirm .modal-b > .field:has(input[aria-label="目标新值"]) { order: -2; }
-.gdom .g3-market-confirm .modal-b > .alertbar:not([role]) { order: -1; }
-.gdom .g3-market-confirm .g3-market-check { margin: 0 0 14px; color: var(--ink-3); font-size: 12.5px; line-height: 1.6; }
-.gdom .g3-market-confirm .field :is(input, textarea) { font-size: 14px; }
-.gdom .g3-market-confirm .field > .tiny:has(.mono) { display: none; }
-.gdom .g3-schedule-confirm .field input { max-width: 100% !important; width: 100%; }
-.gdom .g3-market-confirm:has(.g3-market-comparison) .field:has(> .row > input[aria-label="目标新值"]) {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-  align-items: center;
-  gap: 8px 12px;
-}
-.gdom .g3-market-confirm:has(.g3-market-comparison) .field:has(> .row > input[aria-label="目标新值"]) > .tiny { grid-column: 1 / -1; }
-.gdom .g3-market-confirm:has(.g3-market-comparison) .row:has(> input[aria-label="目标新值"]) { position: relative; min-width: 0; }
-.gdom .g3-market-confirm:has(.g3-market-comparison) input[aria-label="目标新值"] { max-width: none !important; width: 100%; min-width: 0; }
-.gdom .g3-market-confirm:has(.g3-market-comparison) input[aria-label="目标新值"]:has(+ .tiny) { padding-inline-end: 4.25rem; }
-.gdom .g3-market-confirm:has(.g3-market-comparison) input[aria-label="目标新值"] + .tiny {
-  position: absolute;
-  inset-inline-end: 12px;
-  pointer-events: none;
-}
-.gdom .g3-market-confirm .field:has(> .reason-count-inset) { display: grid; grid-template-columns: minmax(0, 1fr); }
-.gdom .g3-market-confirm .field:has(> .reason-count-inset) > .g3-reason-box {
-  grid-area: 2 / 1;
-}
-.gdom .g3-market-confirm .g3-reason-box > textarea {
-  padding-bottom: 28px;
-}
-.gdom .g3-market-confirm .reason-count-inset {
-  grid-area: 2 / 1;
-  place-self: end;
-  display: flex;
-  gap: 10px;
-  margin: 0 18px 8px 0;
-  color: var(--ink-3);
-  pointer-events: none;
-}
-@media (max-width: 600px) {
-  .gdom .g3-market-confirm:has(.g3-market-comparison) .field:has(> .row > input[aria-label="目标新值"]) {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-.gdom .g3-market-confirm .modal-f .btn.primary {
-  background: var(--admin-confirm-brand);
-  border-color: var(--admin-confirm-brand);
-  color: var(--admin-confirm-on-brand);
-}
-@media (hover: hover) and (pointer: fine) {
-  .gdom .g3-market-confirm .modal-f .btn.primary:hover { background: var(--admin-confirm-brand-hover); }
-}
-
 /* ===== 共享 chrome(g-chrome 真值) ===== */
 @container gdom (max-width: 980px) { .gdom .f-stats { grid-template-columns: repeat(2, 1fr); } }
 .gdom .f-live { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px;
@@ -188,3 +113,280 @@ html[data-theme="dark"] .gdom .g3-market-confirm { --admin-confirm-focus: var(--
 .gdom .param-grid .p .v { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--ink); display: flex; align-items: baseline; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 .gdom .param-grid .p .v .l-btn { margin-left: auto; }
 .gdom .param-grid .p .s { font-size: 11px; color: var(--ink-4); margin-top: 4px; line-height: 1.45; }
+
+/* ============================ G2 兑换额度与规则（改版，RdPage） =======
+   只用 --rd-* 令牌。首屏：今天的额度（平台额度比例条、单用户额度、三类拦截）和五个参数并排；下面是排队表。 */
+.g2x-param { display: grid; gap: 2px; min-width: 0; }
+.g2x-value { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.g2x-value-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.g2x-dir { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.g2x-recover { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.g2x-recover li { display: grid; grid-template-columns: minmax(96px, max-content) minmax(0, 1fr) auto auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.g2x-recover-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.g2x-recover-change { min-width: 0; font-variant-numeric: tabular-nums; }
+.g2x-recover-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.g2x-recover-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.g2x-recover-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+@media (max-width: 1279px) {
+  .g2x-recover li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto; }
+  .g2x-recover-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+.g2x-quota { display: grid; gap: 8px; padding: 0 0 16px; --rd-track-w: 100%; }
+.g2x-quota-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.g2x-quota-name { display: inline-flex; align-items: center; gap: 4px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.g2x-quota-pct { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.g2x-quota-user .g2x-quota-pct { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); }
+.g2x-quota-user { padding-top: 16px; border-top: 1px solid var(--rd-line); }
+.g2x-quota-nums { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 0; }
+.g2x-quota-nums > div { display: flex; gap: 8px; }
+.g2x-quota-nums dt { color: var(--rd-text-3); }
+.g2x-quota-nums dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.g2x-gates { display: grid; gap: 4px; padding-top: 16px; border-top: 1px solid var(--rd-line); }
+.g2x-gates-title { margin-bottom: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.g2x-gate { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; gap: 16px; padding: 8px 12px; border: 0; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); font: inherit; text-align: left; cursor: pointer; }
+.g2x-gate:hover { background: var(--rd-hover); }
+.g2x-gate:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 0; }
+.g2x-gate-count { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.g2x-gate-count small { margin-left: 4px; font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.g2x-gate[data-zero] .g2x-gate-count { color: var(--rd-text-3); }
+.g2x-gate-more { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); text-decoration: underline; text-underline-offset: 2px; }
+.g2x-no { display: flex; min-width: 0; max-width: 100%; }
+.g2x-no-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g2x-no-tail { flex: none; white-space: nowrap; }
+.g2x-queue-table, .g2x-gate-table, .g2x-batch-table { table-layout: fixed; }
+.g2x-queue-table th:nth-child(1) { width: 22%; }
+.g2x-queue-table th:nth-child(2) { width: 22%; }
+.g2x-queue-table th:nth-child(3) { width: 18%; }
+.g2x-queue-table th:nth-child(5) { width: 17%; }
+.g2x-queue-table th:nth-child(4), .g2x-queue-table td:nth-child(4) { padding-left: 32px; }  /* 右对齐的兑换数和左对齐的原因之间留出空 */
+@media (max-width: 1279px) {
+  .g2x-queue-table th:nth-child(1) { width: 25%; }
+  .g2x-queue-table th:nth-child(2) { width: 17%; }
+  .g2x-queue-table th:nth-child(3) { width: 18%; }
+  .g2x-queue-table th:nth-child(5) { width: 136px; }
+}
+.g2x-gate-table th:nth-child(1) { width: 24%; }
+.g2x-gate-table th:nth-child(2) { width: 30%; }
+.g2x-gate-table th:nth-child(3) { width: 22%; }
+.g2x-batch-table th:nth-child(1) { width: 30%; }
+.g2x-batch-table th:nth-child(2) { width: 14%; }
+.g2x-batch-table th:nth-child(4) { width: 16%; }
+.g2x-batch { display: grid; gap: 12px; margin-bottom: 16px; }
+.g2x-wrap { overflow-wrap: anywhere; white-space: pre-wrap; }
+.g2x-sources { margin: 0; overflow-wrap: anywhere; color: var(--rd-text-2); }
+.g2x-sources-note { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+/* ============================ G4 创世节点销售与收益（改版，RdPage） ============================
+   只用 --rd-* 令牌。首屏：卖到第几张、落在哪一档（刻度条 + 档位阶梯），今天的分红，原申请；下面是市场与转让、各组设置和持有记录。 */
+.g4x-param { display: grid; gap: 2px; min-width: 0; }
+.g4x-value { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.g4x-value-num { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.g4x-dir { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.g4x-recover { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.g4x-recover li { display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr) auto auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.g4x-recover-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.g4x-recover-change { min-width: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.g4x-recover-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.g4x-recover-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.g4x-recover-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+@media (max-width: 1279px) {
+  .g4x-recover li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto; }
+  .g4x-recover-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+.g4x-sales { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr); gap: 24px; align-items: start; }
+@media (max-width: 1279px) { .g4x-sales { grid-template-columns: minmax(0, 1fr); } }
+.g4x-progress { display: grid; gap: 12px; --rd-track-w: 100%; }
+.g4x-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.g4x-progress-name { display: inline-flex; align-items: center; gap: 4px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.g4x-progress-pct { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.g4x-nums { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 0; }
+.g4x-nums > div { display: flex; gap: 8px; }
+.g4x-nums dt { color: var(--rd-text-3); }
+.g4x-nums dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.g4x-tiers { display: grid; gap: 12px; min-width: 0; }
+.g4x-tiers-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.g4x-tiers-title { display: inline-flex; align-items: center; gap: 4px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.g4x-tiers-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.g4x-tier-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.g4x-block { display: grid; gap: 8px; padding-bottom: 16px; border-bottom: 1px solid var(--rd-line); }
+.g4x-block-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.g4x-block-name { display: inline-flex; align-items: center; gap: 4px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.g4x-block-big { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; color: var(--rd-text); }
+.g4x-block-big small { margin-left: 4px; font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.g4x-block-big[data-zero] { color: var(--rd-text-3); }
+.g4x-sub { padding-top: 16px; }
+.g4x-sub-title { margin-bottom: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.g4x-groups { display: grid; gap: 24px; }
+.g4x-wrap { overflow-wrap: anywhere; white-space: pre-wrap; }
+.g4x-sources { margin: 0; overflow-wrap: anywhere; color: var(--rd-text-2); }
+.g4x-sources-note { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.g4x-sim-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; gap: 16px; margin-bottom: 16px; }
+@media (max-width: 1279px) { .g4x-sim-form { grid-template-columns: repeat(3, minmax(0, 1fr)); } .g4x-sim-form > :last-child { grid-column: 1 / -1; justify-self: start; } }
+.g4x-node-table, .g4x-sim-table { table-layout: fixed; }
+.g4x-node-table th:nth-child(1) { width: 22%; }
+.g4x-node-table th:nth-child(2) { width: 18%; }
+.g4x-node-table th:nth-child(3) { width: 22%; }
+.g4x-node-table th:nth-child(4) { width: 18%; }
+.g4x-sim-table th:nth-child(1) { width: 26%; }
+.g4x-sim-table th:nth-child(2) { width: 12%; }
+.g4x-sim-table th:nth-child(6) { width: 14%; }
+@media (max-width: 1279px) {
+  .g4x-node-table th:nth-child(1) { width: 24%; }
+  .g4x-sim-table th:nth-child(1) { width: 24%; }
+}
+/* ============================ G3 UVT 价格管理（改版，RdPage） ============================
+   只用 --rd-* 令牌。七天计划：左边走势图、右边逐日表（Figure）；今天那一行用选中底，值和改的按钮挨着、右对齐。 */
+
+.g3m .g3-plan { table-layout: fixed; }
+.g3m .g3-plan th:nth-child(1) { width: 50%; }
+.g3m .g3-plan th:nth-child(2) { width: 50%; }
+.g3m :is(.g3-plan, .g3-vol) td { padding-block: 8px; }
+.g3m .g3-plan tr[data-today] td { background: var(--rd-selected); }
+.g3m .g3-plan tr[data-today] td:not(:last-child) { box-shadow: 1px 0 0 var(--rd-selected); }  /* 列宽带小数时格子之间不露缝（同 rd 选中行） */
+
+.g3m .g3-day { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+.g3m .g3-day b { font-weight: 600; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.g3m .g3-peak { display: inline-flex; align-items: center; gap: 2px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.g3m .g3-peak svg { color: var(--rd-text-3); }
+
+/* 值、和前一天比的方向、改的按钮排一行，贴右边线；按钮固定宽，没有按钮的行数字仍对齐。 */
+.g3m .g3-cell { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; max-width: 100%; }
+.g3m .g3-cell-tag { display: flex; justify-content: flex-end; margin-bottom: 4px; }
+.g3m .g3-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.g3m .g3-delta { display: inline-flex; color: var(--rd-text-3); }
+.g3m .g3-delta[data-dir="up"] { color: var(--rd-text-2); }
+
+.g3m .g3-value { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+
+/* 折叠里的小标题和七天波动表：一行七格，1024 也放得下。 */
+.g3m .g3-subhead { display: flex; align-items: center; gap: 4px; margin: 0 0 8px; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 500; color: var(--rd-text); }
+.g3m .g3-vol { table-layout: fixed; margin-bottom: 16px; }
+.g3m .g3-note { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.g3m .g3-gap { display: grid; gap: 2px; }
+.g3m .g3-chart-note { display: flex; align-items: center; gap: 4px; margin: 8px 0 0 72px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }  /* 72 = 图的纵轴宽，和横轴第一格对齐 */
+.g3m .g3-subnote { margin-left: 8px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); }
+/* ============================ G1 质押产品配置（改版，RdPage） ============================
+   只用 --rd-* 令牌。三段状态带：还在锁定 / 到期待领取 / 已结束，每种状态一颗单选按钮，选中底加品牌色底边（同 Stat 选中）。 */
+.g1-tier-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.g1-tier-head b { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); }
+.g1-tools { display: grid; gap: 16px; padding: 0 var(--rd-panel-pad-x) 16px; }
+.g1-lane { display: flex; flex-wrap: wrap; gap: 12px; }
+.g1-lane-stage { display: grid; align-content: start; gap: 8px; flex: 1 1 auto; min-width: 0; padding: 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.g1-lane-stage[data-stage="locked"] { flex-grow: 2; }
+.g1-lane-stage[data-stage="ended"] { flex-grow: 4; }
+.g1-lane-title { display: inline-flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.g1-lane-items { display: flex; flex-wrap: wrap; gap: 8px; }
+.g1-lane-item { display: grid; gap: 2px; flex: 1 1 104px; min-width: 104px; padding: 8px 12px; border: 0; border-radius: var(--rd-radius-control); background: var(--rd-panel); color: var(--rd-text); font: inherit; text-align: left; cursor: pointer; }
+.g1-lane-item:hover:not(:disabled) { background: var(--rd-hover); }
+.g1-lane-item:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 0; }
+.g1-lane-item[aria-checked="true"], .g1-lane-item[aria-checked="true"]:hover { background: var(--rd-selected); box-shadow: inset 0 -2px 0 var(--rd-brand-ink); }
+.g1-lane-item:disabled { cursor: not-allowed; color: var(--rd-text-disabled); }
+.g1-lane-name { display: inline-flex; align-items: center; gap: 6px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); white-space: nowrap; }
+.g1-lane-name svg { flex: none; color: var(--tone); }
+.g1-lane-count { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; font-variant-numeric: tabular-nums; }
+.g1-lane-count small { margin-left: 4px; font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
+.g1-lane-item[data-tone="warn"]:not([data-zero]) .g1-lane-count { color: var(--rd-warn); }
+.g1-lane-item[data-zero] .g1-lane-count, .g1-lane-item:disabled .g1-lane-count { color: var(--rd-text-3); }
+.g1-lane-flag { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-warn); white-space: nowrap; }
+.g1-positions { table-layout: fixed; }  /* 1024 下六列放得下：列宽按比例分，长名字省略、单号中间省略留尾段 */
+.g1-positions th:nth-child(1) { width: 29%; }  /* 单号 36 位，1440 放得下整串 */
+.g1-positions th:nth-child(2) { width: 14%; }
+.g1-positions th:nth-child(3) { width: 11%; }
+.g1-positions th:nth-child(4) { width: 14%; }
+.g1-positions th:nth-child(5) { width: 12%; }
+.g1-positions th:nth-child(6) { width: 20%; }
+@media (max-width: 1279px) {
+  .g1-positions th:nth-child(1) { width: 16%; }
+  .g1-positions th:nth-child(3) { width: 14%; }
+  .g1-positions th:nth-child(4) { width: 19%; }
+  .g1-positions th:nth-child(5) { width: 15%; }
+  .g1-positions th:nth-child(6) { width: 22%; }
+}
+.g1-no { display: flex; min-width: 0; }
+.g1-no-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g1-no-tail { flex: none; }
+/* ============================ G7 锁定计划（改版，RdPage） ============================
+   只用 --rd-* 令牌。首屏：一笔 1,000 USDT 到期和提前解锁的对照条，和规则参数并排；下面是订单。 */
+.g7x-param { display: grid; gap: 2px; min-width: 0; }
+.g7x-value { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.g7x-value-num { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.g7x-value-num[data-empty] { color: var(--rd-text-3); }
+.g7x-dir { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.g7x-recover { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.g7x-recover li { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) auto auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.g7x-recover-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.g7x-recover-change { min-width: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.g7x-recover-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.g7x-recover-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.g7x-recover-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+@media (max-width: 1279px) {
+  .g7x-recover li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto; }
+  .g7x-recover-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+.g7x-paths { display: grid; gap: 20px; --rd-track-w: 100%; }
+.g7x-path { display: grid; gap: 8px; }
+.g7x-path + .g7x-path { padding-top: 20px; border-top: 1px solid var(--rd-line); }
+.g7x-path-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.g7x-path-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.g7x-path-num { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.g7x-path-num small { margin-left: 4px; font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.g7x-path-sub { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+.g7x-path-diff { margin: 0; padding-top: 12px; border-top: 1px solid var(--rd-line); color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
+.g7x-path-diff b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.g7x-capacity { display: grid; gap: 8px; padding-bottom: 16px; margin-bottom: 8px; border-bottom: 1px solid var(--rd-line); --rd-track-w: 100%; }
+.g7x-capacity-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.g7x-capacity-name { display: inline-flex; align-items: center; gap: 4px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.g7x-capacity-num { font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.g7x-orders-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 16px 32px; margin-bottom: 16px; }
+.g7x-orders-head .rd-dist { max-width: none; }  /* 分布条和图例占满这一行，图例带本金后不挤成两行 */
+@media (max-width: 1279px) { .g7x-orders-head { grid-template-columns: minmax(0, 1fr); } }
+.g7x-no { display: flex; min-width: 0; max-width: 100%; }
+.g7x-no-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g7x-no-tail { flex: none; white-space: nowrap; }
+.g7x-order-table { table-layout: fixed; }
+.g7x-order-table th:nth-child(1) { width: 21%; }
+.g7x-order-table th:nth-child(2) { width: 19%; }
+.g7x-order-table th:nth-child(3) { width: 18%; }
+.g7x-order-table th:nth-child(4) { width: 13%; }
+.g7x-order-table th:nth-child(5) { width: 13%; }
+@media (max-width: 1279px) {
+  /* 1024：单号中间省略留尾段；用户编号、金额、时间完整，昵称可以省略。 */
+  .g7x-order-table th:nth-child(1) { width: 17%; }
+  .g7x-order-table th:nth-child(2) { width: 15%; }
+  .g7x-order-table th:nth-child(3) { width: 19%; }
+  .g7x-order-table th:nth-child(4) { width: 12%; }
+  .g7x-order-table th:nth-child(5) { width: 16%; }
+}
+.g7x-more { display: flex; justify-content: center; margin-top: 16px; }
+.g7x-dist { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; padding: 0; list-style: none; font-variant-numeric: tabular-nums; }
+.g7x-dist li { display: inline-flex; gap: 8px; color: var(--rd-text-2); }
+.g7x-dist b { color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+.g7x-wrap { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; color: var(--rd-text-2); }
+.g7x-flow { margin: 0 0 8px; color: var(--rd-text-2); }
+.g7x-tech { margin: 0 0 8px; overflow-wrap: anywhere; color: var(--rd-text-2); }
+.g7x-tech:last-child { margin-bottom: 0; }
+.g7x-key { margin-right: 6px; vertical-align: 0; }
+.g7x-nowrap { white-space: nowrap; }
+.g7x-relock { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--rd-text-3); }
+.g7x-relock b { margin-left: 8px; font-weight: var(--rd-weight-medium); color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.g7x-relock b[data-empty] { color: var(--rd-text-3); }
+
+/* ===== G 域共用：原操作提醒（g-tabs/g-recovery.tsx） ===== */
+.grec { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.grec li { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.grec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.grec-change { min-width: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; color: var(--rd-text); }
+.grec-time { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.grec-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.grec-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.grec-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.grec-zone { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+@media (max-width: 1279px) {
+  .grec li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
+  .grec-state { grid-column: 3; grid-row: 1; justify-content: flex-end; }
+  .grec-time { grid-column: 1 / 3; grid-row: 2; }
+  .grec-actions { grid-column: 3; grid-row: 2; }
+}
+/* G3 最近 24 小时：最后两个时刻挨得太近时藏掉倒数第二个（最近时刻写在标题旁） */
+.g3-history[data-tick-crowd] .rd-chart-x span:nth-last-child(2) { visibility: hidden; }
+.g4x-head-actions { display: inline-flex; align-items: center; gap: 8px; }
+.g4x-nowrap { white-space: nowrap; }

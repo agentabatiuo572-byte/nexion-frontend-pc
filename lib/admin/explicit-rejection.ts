@@ -2,7 +2,7 @@
  * 「解除待确认」的判断（OP-96、OP-153）：按原操作重试失败后，只有后端对这条命令下了结论，才给人核实后放开本页的锁。
  *
  * 明确拒绝 = 带原因码的 4xx。下面这些都不算，原命令照旧保留，页面不放出「解除待确认」：
- * - 401、403、408、425、429：登录、权限、超时、太早、限流，说的是这次请求没被处理，不是对命令的结论；
+ * - 401、403、408、425、429：登录、权限、超时、太早、限流，不是对命令的结论；403 仅下方精确业务码名单例外；
  * - IDEMPOTENCY_*：幂等层的状态（处理中、结果查不清、内容和原号对不上）；
  * - 结果未知、处理中、响应读不懂、本地没发出去（没有状态码）。
  *
@@ -14,6 +14,15 @@ import { isDOutcomeUnknownError } from "./d-client";
 import { isOutcomeUnknownError } from "./outcome-classification";
 
 const NOT_A_VERDICT = new Set([401, 403, 408, 425, 429]);
+const BUSINESS_REJECTION_BEFORE_WRITE = new Set([
+  // Backend 66ecdb47, market/application/OpsNexMarketService.java:
+  // prepareMarketPolicy:1248–1250 rejects before review and A2 ticket/lock inserts;
+  // updateWeeklyCurve:1413 rejects before applyWeeklyCurve's first config write (:1428);
+  // updateOverride:1588–1589 rejects before applyCurrentPriceOverride writes/publishes (:1737–1748).
+  // All three paths have made no market mutation; command/A2 requireSuccess also rolls back failure.
+  // validateLegacyMarketProposal:1210 rejects older proposal commands before A2 ticket/lock inserts too.
+  "G3_MANUAL_TUNING_FORBIDDEN_IN_PRODUCTION",
+]);
 
 export function isExplicitRejection(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
@@ -21,6 +30,7 @@ export function isExplicitRejection(error: unknown): boolean {
   const value = error as { status?: unknown; reasonCode?: unknown; backendMessage?: unknown; unknownOutcome?: unknown };
   if (value.unknownOutcome === true) return false;
   const code = typeof value.reasonCode === "string" ? value.reasonCode : typeof value.backendMessage === "string" ? value.backendMessage : "";
-  return typeof value.status === "number" && value.status >= 400 && value.status < 500 && !NOT_A_VERDICT.has(value.status)
+  return typeof value.status === "number" && value.status >= 400 && value.status < 500
+    && (!NOT_A_VERDICT.has(value.status) || value.status === 403 && BUSINESS_REJECTION_BEFORE_WRITE.has(code))
     && code !== "" && !code.startsWith("IDEMPOTENCY_");
 }

@@ -11,6 +11,8 @@ export type ActionConfirmReq = {
   businessForm?: BusinessFormSpec;
   /** 理由字数上限(与 k-tabs / l-tabs 同款透传)。不传时沿用弹窗默认(下限恒 8 字)。 */
   reasonMax?: number;
+  getPendingReason?: () => string | undefined;
+  getPendingBusinessValue?: () => BusinessFormValue | undefined;
   run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;
 };
 

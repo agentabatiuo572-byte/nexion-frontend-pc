@@ -1,4 +1,5 @@
 "use client";
+import { gParamAuthority } from "@/lib/admin/use-g-param-approval";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES } from "@/lib/admin/audit-action-names";
 import { a2ActionText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
@@ -27,6 +28,7 @@ import {
   TableMessage, Td, Th, Tr, useTabIds, type DiffRow, type JudgmentRow, type SegmentItem, type StateTone,
 } from "@/app/components/rd";
 import {
+  REVIEW_OPERATION_BY_ACTION,
   approveA2Operation,
   createA2CommandKey,
   exportA2Audit,
@@ -143,7 +145,8 @@ function approvalCoverageCopy(w: A2OperationRow) {
 function approvalExecutorLabel(w: A2OperationRow) {
   if (/^(?:兑换|回购)参数调整 · /.test(w.action)) return "另一位有审批批准权限的超级管理员";
   if (/^调整创世参数 · /.test(w.action)) return "另一位有审批批准权限和该参数业务权限的超级管理员";
-  if (["提高旧活动奖励", "放宽转盘奖项配置", "回滚至有奖励的课程版本"].includes(w.action)) return "另一位有审批批准权限的超级管理员";
+  if (["提高旧活动奖励", "放宽转盘奖项配置", "新增转盘奖项", "删除转盘奖项并提高安慰奖", "提高转盘奖项概率",
+    "首次发布奖励课程", "发布奖励课程版本", "回滚至有奖励的课程版本"].includes(w.action)) return "另一位有审批批准权限的超级管理员";
   if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位有批准权限和商品修改权限的管理员";
   if (w.action === "发布规则任务") return "另一位有批准权限和任务池修改权限的管理员";
   return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
@@ -328,6 +331,12 @@ function g4ChangesSupply(w: Pick<A2OperationRow, "before" | "after">) {
 
 function decisionRule(w: TicketIdentity): DecisionRule {
   const code = w.operationCode ?? "";
+  if (code === "g2_exchange_param" || code === "g7_repurchase_param"
+      || w.action === `兑换参数调整 · ${w.obj}` || w.action === `回购参数调整 · ${w.obj}`) return SUPER_ONLY;
+  if (code === "g4_genesis_param" || w.action === `调整创世参数 · ${w.obj}`) {
+    const authority = gParamAuthority("G4", w.obj);
+    return { superadmin: true, approve: [authority], reject: [authority] };
+  }
   if (w.fundEffect === "ORDER_REFUND" || code === "e4_order_refund") return { superadmin: true, approve: ["device_e4_order_refund"], reject: ["device_e4_order_refund"] };
   if (code === "j1_gate_resume") return { superadmin: true, approve: ["emergency_j1_gate_resume"], reject: ["emergency_j1_gate_resume"] };
   if (A4_REGISTRY_CODES.includes(code)) return SUPER_ONLY;
@@ -447,7 +456,10 @@ function actionName(ticket: string | { action: string; ruleTaskAction?: A2Operat
   if (typeof ticket !== "string" && ticket.ruleTaskAction) {
     return ({ CREATE: "新增手机任务", UPDATE: "编辑手机任务", ENABLE: "启用手机任务", DISABLE: "停用手机任务" })[ticket.ruleTaskAction];
   }
-  return a2ActionText(nexGridBrandText(typeof ticket === "string" ? ticket : ticket.action));
+  const action = typeof ticket === "string" ? ticket : ticket.action;
+  const gParam = G_PARAM_ACTION.exec(action);
+  if (gParam) return `${gParam[1] === "回购参数调整" ? "锁定计划参数调整" : gParam[1]} · ${G_PARAM_NAMES[gParam[2]] ?? gParam[2]}`;
+  return a2ActionText(nexGridBrandText(action));
 }
 
 /** 本页的码翻中文；别的模块的码原样，等宽显示。 */
@@ -656,9 +668,38 @@ const HI_CHANGE_LABELS: Record<string, string> = {
   sourceStatus: "目标版本原状态", expectedRevision: "目标修订号", expectedCurrentVersion: "当前课程版本",
   expectedCurrentRevision: "当前课程修订号", expectedCurrentStatus: "当前课程状态",
   tier: "奖项编号", status: "状态", reward: "奖励名称", prob: "概率（%）", kind: "奖励类型", amount: "发放数量", real: "实际资金流出",
+  voucherId: "代金券 ID", category: "课程分类", format: "课程形式", level: "难度", duration: "时长",
+  titleZh: "中文标题", titleEn: "英文标题", titleVi: "越南语标题", bodyZh: "中文正文", bodyEn: "英文正文", bodyVi: "越南语正文",
+  quizQuestions: "测验题", passScore: "及格题数", retryLimit: "可重试次数", completionCondition: "完成条件", rewardEvent: "奖励事件",
+  courseTarget: "目标版本的其他内容", field: "内容", content: "目标版本",
 };
 const WHEEL_REVIEW_OPERATIONS = ["h4_wheel_tier_create", "h4_wheel_tier_update", "h4_wheel_tier_delete", "h4_wheel_probabilities_update"];
-const hiReviewLabels = (operationCode?: string) => ["h4_legacy_event_reward_update", "i7_course_version_rollback", ...WHEEL_REVIEW_OPERATIONS].includes(operationCode ?? "") ? HI_CHANGE_LABELS : CHANGE_LABELS;
+const COURSE_REVIEW_OPERATIONS = ["i7_course_first_publish", "i7_course_version_publish", "i7_course_version_rollback"];
+const hiReviewLabels = (operationCode?: string) => ["h4_legacy_event_reward_update", ...COURSE_REVIEW_OPERATIONS, ...WHEEL_REVIEW_OPERATIONS].includes(operationCode ?? "") ? HI_CHANGE_LABELS : CHANGE_LABELS;
+const G_PARAM_ACTION = /^(兑换参数调整|回购参数调整|调整创世参数) · ([A-Za-z]+)$/;
+const reviewOperation = (w: { operationCode?: string; action: string }) =>
+  G_PARAM_ACTION.test(w.action) ? "g_param" : w.operationCode ?? REVIEW_OPERATION_BY_ACTION[w.action];
+/** G2、G4、G7 参数的页面名字，和三页参数行一致（G4 取后端 GenesisParamDef 的名字）。 */
+const G_PARAM_NAMES: Record<string, string> = {
+  userDailyCap: "单用户日额度", platformDailyCap: "平台日额度", fee: "兑换手续费率", feeMin: "最低手续费", queueMode: "超额度处置策略",
+  apy: "参考年奖励率", lockDays: "锁仓期限", nurture: "好友升级奖励倍率", lottery: "创世节点抽奖券", penalty: "提前解锁扣款", presets: "锁定金额快捷选项",
+  supply: "节点总量", price: "一级购买单价", dividend: "每日收益比例", royalty: "内部转售手续费", divBase: "每日收益基数公式",
+  airdropPct: "Genesis 释放分配占比", emissionCurve: "释放曲线", airdropLockDays: "OG 倍率锁仓期",
+};
+const gParamText = (text: string) => text.replace(/(^|· )([A-Za-z]+) = /g, (whole, lead: string, key: string) => G_PARAM_NAMES[key] ? `${lead}${G_PARAM_NAMES[key]} = ` : whole);
+/** 对象写运营看得懂的名字：G 参数写参数名，H4 奖池写「抽奖转盘奖池」；其余原样。 */
+function objectText(w: { action: string; obj: string }) {
+  if (G_PARAM_ACTION.test(w.action)) return G_PARAM_NAMES[w.obj] ?? w.obj;
+  if (w.obj === "ACTIVE_POOL" && REVIEW_OPERATION_BY_ACTION[w.action]?.startsWith("h4_wheel")) return "抽奖转盘奖池";
+  return w.obj;
+}
+const COURSE_VALUE_TEXT: Record<string, Record<string, string>> = {
+  status: { published: "已发布", draft: "草稿", archived: "已下架", PUBLISHED: "已发布", DRAFT: "草稿", SUPERSEDED: "历史版本" },
+  sourceStatus: { DRAFT: "草稿", PUBLISHED: "已发布", SUPERSEDED: "历史版本", LEGACY_DRAFT: "旧草稿（无独立版本）" },
+  category: { Basics: "基础", Earn: "赚取", Team: "团队", Wealth: "财富", Security: "安全" },
+  format: { Article: "图文", Video: "视频", "Hands-on": "实操" },
+  level: { Beginner: "入门", Intermediate: "进阶", Advanced: "高级" },
+};
 /** 成组记录的量词：「查看全部 9 个等级」。 */
 const ROW_UNIT: Record<string, string> = { ranks: "个等级", rewards: "项奖励" };
 const ROWS_SHOWN = 5;
@@ -708,10 +749,35 @@ function parseReview(value: string): Review | null {
 
 /** H4 stores a pool snapshot before and command values after, not two replacement configs. */
 function reviewPair(before: string, after: string, operationCode?: string) {
-  const b = parseReview(before);
-  const a = parseReview(after);
+  const b = parseReview(operationCode === "g_param" ? gParamText(before) : before);
+  const a = parseReview(operationCode === "g_param" ? gParamText(after) : after);
   const labels = hiReviewLabels(operationCode);
   const original = { b, a, labels, evidenceKeys: [] as string[] };
+  // 旧活动：前值是锁定时整行活动快照（OpsGrowthService.lockH4LegacyEventState），后值是提案 values，只比奖励。
+  if (operationCode === "h4_legacy_event_reward_update" && b?.kind === "object" && a?.kind === "object" && "eventCode" in b.value) {
+    const status = b.value.status === "1" ? "启用" : b.value.status === "0" ? "停用" : b.value.status;
+    return {
+      b: { kind: "object" as const, value: { eventCode: b.value.eventCode, rewardName: b.value.rewardName } },
+      a: { kind: "object" as const, value: { eventCode: a.value.eventCode, rewardName: a.value.value,
+        legacyEvent: [{ eventStatus: status, startsAt: b.value.startsAt, endsAt: b.value.endsAt }] } },
+      labels: { ...labels, legacyEvent: "提交时的活动状态", eventStatus: "活动状态", startsAt: "开始时间", endsAt: "结束时间" },
+      evidenceKeys: ["legacyEvent"],
+    };
+  }
+  // 课程：前值只有当前版本五项（currentReview），后值是目标版本内容（targetReview）。两边都有的才比，其余作目标版本内容列出。
+  if (COURSE_REVIEW_OPERATIONS.includes(operationCode ?? "") && b?.kind === "object" && a?.kind === "object") {
+    const show = (key: string, value: unknown) => typeof value === "string" ? COURSE_VALUE_TEXT[key]?.[value] ?? value : value;
+    const was: Record<string, unknown> = {};
+    const next: Record<string, unknown> = {};
+    const extra: Record<string, unknown>[] = [];
+    for (const key of Object.keys(a.value)) {
+      if (key in b.value) { was[key] = show(key, b.value[key]); next[key] = show(key, a.value[key]); }
+      else extra.push({ field: labels[key] ?? key, content: valueText(key, show(key, a.value[key]), labels) });
+    }
+    for (const key of Object.keys(b.value)) if (!(key in a.value)) was[key] = show(key, b.value[key]);
+    if (extra.length) next.courseTarget = extra;
+    return { b: { kind: "object" as const, value: was }, a: { kind: "object" as const, value: next }, labels, evidenceKeys: ["courseTarget"] };
+  }
   if (!WHEEL_REVIEW_OPERATIONS.includes(operationCode ?? "") || b?.kind !== "object" || a?.kind !== "object"
     || typeof b.value.tiers !== "string") return original;
   let snapshot: unknown;
@@ -721,9 +787,11 @@ function reviewPair(before: string, after: string, operationCode?: string) {
 
   // Decimal strings and JSON numbers compare without rounding or false scale-only changes.
   const decimal = (value: unknown) => String(value).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  // 奖型和 H4 页面同一套叫法；旧名 nex、points 照实写出来，不当成合法奖型。
+  const kindText = (kind: unknown) => ({ uvt: "UVT", usdt: "USDT", coupon: "代金券", voucher: "代金券", nex: "旧奖型 nex", points: "积分奖型" } as Record<string, string>)[String(kind).toLowerCase()] ?? kind;
   const tiers = snapshot.map(tier => ({
     tierName: tier.tier, rewardName: tier.reward, probabilityPct: decimal(tier.prob),
-    realOutflow: tier.real === true || tier.real === 1, rewardKind: tier.kind,
+    realOutflow: tier.real === true || tier.real === 1, rewardKind: kindText(tier.kind),
     rewardAmount: decimal(tier.amount), voucherId: tier.voucherId || "无", dailyStock: tier.dailyStock,
   }));
   const values = a.value;
@@ -754,15 +822,25 @@ function reviewPair(before: string, after: string, operationCode?: string) {
       tierName: values.tierName, rewardName: values.rewardName,
       probabilityPct: decimal(values.probabilityPct ?? target?.probabilityPct ?? 0),
       realOutflow: values.realOutflow == null ? target?.realOutflow ?? false : values.realOutflow === 1,
-      rewardKind: values.rewardKind ?? target?.rewardKind ?? "uvt",
+      rewardKind: values.rewardKind == null ? target?.rewardKind ?? kindText("uvt") : kindText(values.rewardKind),
       rewardAmount: decimal(values.rewardAmount ?? target?.rewardAmount ?? 0),
       voucherId: values.voucherId == null ? target?.voucherId ?? "无" : String(values.voucherId).trim() || "无",
       dailyStock: values.dailyStock ?? target?.dailyStock ?? 0,
     };
   }
+  // 改一档、删一档时，每一行都带上是哪一档（和改概率的写法一样），不然差异里只看得到「发放数量 1 → 2」。
+  if (operationCode === "h4_wheel_tier_update" || operationCode === "h4_wheel_tier_delete") {
+    const named = (row: Record<string, unknown>) => Object.fromEntries(Object.entries(row).map(([key, value]) => {
+      if (key === "tierName" || !labels[key]) return [key, value];
+      wheelLabels[`tier:${key}`] = `${String(values.tierName)} · ${labels[key]}`;
+      return [`tier:${key}`, value];
+    }));
+    if (was) was = named(was);
+    next = named(next);
+  }
   // Existing row groups keep verification evidence out of the business-field diff.
   next.wheelEvidence = [{ wheelSignature: b.value.wheelSignature, expectedSignature: values.expectedSignature }];
-  next.wheelSnapshot = snapshot;
+  next.wheelSnapshot = tiers;
   return {
     b: was ? { kind: "object" as const, value: was } : null,
     a: { kind: "object" as const, value: next }, labels: wheelLabels,
@@ -1433,7 +1511,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           ? <Fact k={name} lead tone="role-1" unit="USDT">{orderAmount(amount.amount)}</Fact>
           : <Fact k={name} tone="warn">{refundAmountText(amount)}</Fact>)}
         <Fact k="审批单"><span data-mono>{w.id}</span></Fact>
-        <Fact k="对象"><span data-mono className="a2-code">{w.obj}</span></Fact>
+        <Fact k="对象"><span data-mono className="a2-code">{objectText(w)}</span></Fact>
         <Fact k="发起人">{`${w.operator} · ${roleText(w.operatorRole)}`}</Fact>
         {kind === "approve" && <Fact k="发起理由">{keepCodes(w.reason)}</Fact>}
         {timing && <Fact k="生效时间">{timing}</Fact>}
@@ -1476,7 +1554,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       facts: ticketFacts(w, "approve"),
       content: (
         <div className="rd-stack">
-          <A2ChangeReview operationCode={w.operationCode} before={w.before} after={w.after} omit={g3 ? ["生效时间"] : undefined} />
+          <A2ChangeReview operationCode={reviewOperation(w)} before={w.before} after={w.after} omit={g3 ? ["生效时间"] : undefined} />
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={w.ambassadorMaterialProposal} expectedMaterialRevision={w.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? w.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
           {isRefund && w.refundOrderNo && <PromotionRefundImpact orderNo={w.refundOrderNo} />}
@@ -1545,7 +1623,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     action: <>撤回我的申请 · {w.id}</>,
     effect: <>{subject(w)}{immediate}</>,
     detail: <>撤回后原操作不会执行。只有申请人本人能撤回。</>,
-    facts: <Facts><Fact k="审批单"><span data-mono>{w.id}</span></Fact><Fact k="对象"><span data-mono className="a2-code">{w.obj}</span></Fact></Facts>,
+    facts: <Facts><Fact k="审批单"><span data-mono>{w.id}</span></Fact><Fact k="对象"><span data-mono className="a2-code">{objectText(w)}</span></Fact></Facts>,
     statedBrief: { impact: "改为已撤回，原操作不执行。", check: "理由写清撤回原因或工单号。" },
     amplifies: false,
     reasonMin,
@@ -1861,7 +1939,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     {queueFiltered ? <>没有符合条件的待审批操作 <Button size="sm" onClick={() => { setQType("all"); setQOperator("all"); setQPage(1); }}>清除筛选</Button></> : "没有待审批的操作"}
                   </TableMessage>
                 ) : qPageRows.map((w) => {
-                  const change = changeSummary(w.before, w.after, g3PolicyExecutionTiming(w) ? ["生效时间"] : [], w.operationCode);
+                  const change = changeSummary(w.before, w.after, g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w));
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
@@ -2072,7 +2150,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       ? { label: "退款金额", value: <span className="a2-amount">{orderAmount(shownAmount.amount)} USDT</span> }
       : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{" "}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadMain()} />}</> }] : []),
     { label: "要做什么", value: actionName(shown) },
-    { label: "对象", value: <span data-mono className="a2-code">{shown.obj}</span> },
+    { label: "对象", value: <span data-mono className="a2-code">{objectText(shown)}</span> },
     { label: "发起人", icon: Users, tone: "users", value: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""}`, reason: bizTime(shown.rawTs, shown.ts) },
     { label: "发起理由", value: keepCodes(shown.reason) },
     { label: shown.retiredOperation ? "原执行权限" : "谁能批准", value: approvalExecutorLabel(shown),
@@ -2143,7 +2221,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {shown.sos && <Notice tone="danger">{isJ4Execution(shown)
             ? "应急预案逐步执行：中途失败时，前面的步骤可能已经生效。批准前核对值班授权和影响范围，失败后到「监管要求应急处理」的执行追溯里核对每一步。"
             : "应急操作：涉及紧急停用或恢复，请核对值班授权、影响范围和恢复条件后再处理。"}</Notice>}
-          <A2ChangeReview operationCode={shown.operationCode} before={shown.before} after={shown.after} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
+          <A2ChangeReview operationCode={reviewOperation(shown)} before={shown.before} after={shown.after} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
           {shown.phoneCalibrationProposal && <PhoneCalibrationReview proposal={shown.phoneCalibrationProposal} />}
           {shown.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={shown.ambassadorMaterialProposal} expectedMaterialRevision={shown.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? shown.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
         </>}

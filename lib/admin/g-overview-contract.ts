@@ -9,6 +9,7 @@ const G4_PARAM_KEYS = new Set(["supply", "price", "dividend", "royalty", "divBas
 const G4_STATES = new Set(["minted", "held", "listed", "sold"]);
 const G7_PARAM_KEYS = new Set(["apy", "lockDays", "nurture", "lottery", "penalty", "presets"]);
 const G7_STATES = new Set(["pending_lock", "active", "mature_unclaimed", "claimed", "early_withdrawn"]);
+const G7_BREAKDOWN_STATES = new Set([...G7_STATES, "slashed", "refunded"]);
 
 function fail(module: string, path: string): never {
   throw new Error(`${module}_RESPONSE_INVALID:${path}`);
@@ -161,18 +162,23 @@ export function assertG1OverviewContract<T>(value: T): T {
   return value;
 }
 
-function validateG2Order(module: string, value: unknown, path: string): void {
+export function validateG2Order(module: string, value: unknown, path: string): void {
   const row = record(module, value, path);
   requiredKeys(module, row, path, [
     "id", "userId", "userNo", "nickname", "countryCode", "exchangeNo", "fromAsset", "toAsset",
     "fromAmount", "toAmount", "rate", "status", "statusLabel", "statusTone", "directionLabel",
-    "amountUsdt", "gateReason", "etaLabel", "createdAt", "updatedAt",
+    "amountUsdt", "createdAt", "updatedAt",
   ]);
   text(module, String(row.id), `${path}.id`);
   numeric(module, row.userId, `${path}.userId`, 1);
   ["userNo", "exchangeNo", "fromAsset", "toAsset", "status", "statusLabel", "statusTone", "directionLabel",
     "createdAt"].forEach((key) => text(module, row[key], `${path}.${key}`));
-  ["nickname", "countryCode", "gateReason", "etaLabel", "updatedAt"].forEach((key) => text(module, row[key], `${path}.${key}`, true));
+  ["nickname", "countryCode", "updatedAt"].forEach((key) => text(module, row[key], `${path}.${key}`, true));
+  // The mapper's CASE expressions emit SQL NULL outside their matching state.
+  ["gateType", "gateReason", "etaLabel"].forEach((key) => {
+    if (!(key in row)) fail(module, `${path}.${key}`);
+    if (row[key] !== null) text(module, row[key], `${path}.${key}`, true);
+  });
   ["fromAmount", "toAmount", "rate", "amountUsdt"].forEach((key) => numeric(module, row[key], `${path}.${key}`));
 }
 
@@ -215,10 +221,15 @@ export function assertG2OverviewContract<T>(value: T): T {
   });
   const swap = record(module, root.swap, "data.swap");
   requiredKeys(module, swap, "data.swap", ["enabled", "status", "configKey", "linkedDomain"]);
+  if (!("blockedBy" in swap)) fail(module, "data.swap.blockedBy");
   bool(module, swap.enabled, "data.swap.enabled");
   enumText(module, swap.status, "data.swap.status", new Set(["enabled", "disabled"]));
   text(module, swap.configKey, "data.swap.configKey");
   if (swap.linkedDomain !== "J1") fail(module, "data.swap.linkedDomain");
+  if (swap.blockedBy !== null && swap.blockedBy !== "I5_DISCLOSURE_GATE") fail(module, "data.swap.blockedBy");
+  const disclosure = record(module, root.disclosureGate, "data.disclosureGate");
+  requiredKeys(module, disclosure, "data.disclosureGate", ["exchange"]);
+  if (typeof disclosure.exchange !== "boolean") fail(module, "data.disclosureGate.exchange");
   array(module, root.geoBlocked, "data.geoBlocked").forEach((item, index) => {
     const path = `data.geoBlocked[${index}]`;
     const geo = record(module, item, path);
@@ -328,7 +339,9 @@ export function assertG7OverviewContract<T>(value: T): T {
     const path = `data.statusBreakdown[${index}]`;
     const status = record(module, item, path);
     requiredKeys(module, status, path, ["status", "label", "count", "principalUsd", "principalDisplay", "tone"]);
-    enumText(module, String(status.status).toLowerCase(), `${path}.status`, G7_STATES);
+    // The fixed lifecycle still has five states, but the historical breakdown
+    // also contains SLASHED / REFUNDED (StakingMapper.repurchaseStatusBreakdown).
+    enumText(module, String(status.status).toLowerCase(), `${path}.status`, G7_BREAKDOWN_STATES);
     text(module, status.label, `${path}.label`);
     numeric(module, status.count, `${path}.count`);
     numeric(module, status.principalUsd, `${path}.principalUsd`);
