@@ -18,7 +18,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   },
   {
     path: "/analytics/financial",
-    summary: "看这一期进了多少、出了多少，现在付不付得起，接下来要付多少。",
+    summary: "看这一期进出多少、现在付不付得起、接下来要付多少。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

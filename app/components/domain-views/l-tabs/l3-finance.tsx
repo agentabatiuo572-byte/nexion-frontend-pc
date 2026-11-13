@@ -138,7 +138,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       statedBrief: { impact: "生成一份此刻的资金汇总 CSV，不改任何数据，操作记录里留痕。", check: "它不跟页面上的周期和注册业务月走；要本期收入和提现，看这页上的数。" },
       facts: (
         <Facts>
-          <Fact k="文件内容">此刻的资金储备、九类应付款、未来 7 天到期、钱包账单分类计数<Explain label="汇总里有什么" content={<><p>生成那一刻读一次资金数据，存成文件；以后再下载还是那一刻的数。</p><p>不含本期四类收入、提现笔数、确认 ÷ 申请和 30 天到期。</p></>} /></Fact>
+          <Fact k="文件内容">此刻的储备、应付款、到期和账单计数<Explain label="汇总里有什么" content={<><p>此刻的资金储备、九类应付款、未来 7 天到期和钱包账单分类计数。</p><p>生成那一刻读一次资金数据，存成文件；以后再下载还是那一刻的数。</p><p>不含本期四类收入、提现笔数、确认 ÷ 申请和 30 天到期。</p></>} /></Fact>
           <Fact k="周期">不受页面筛选影响</Fact>
           <Fact k="个人信息">不含</Fact>
           <Fact k="文件格式">CSV</Fact>
@@ -370,7 +370,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       onClear={() => ctx.setL3Query?.({ ...(ctx.l3Query ?? { period: "month" }), cohort: undefined })}
       canClear={Boolean(cohort) && !ctx.biLoading}
       clearLabel="不限注册月"
-      result={<span className="l3-scope">
+      sort={<span className="l3-scope rd-filter-result">
         现在看：{periodFrom && periodTo && !periodLabel.includes(periodFrom) ? `${periodLabel}（${periodFrom === periodTo ? periodFrom : `${periodFrom} 至 ${periodTo}`}）` : periodLabel} · {cohort ? `${cohort} 注册的用户` : "全部用户"}{customChanged ? " · 日期还没应用" : ""}
         {scopeExplain}
       </span>}
@@ -632,7 +632,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
             <Segments<"7d" | "30d"> label="到期窗口" value={matWin}
               items={[{ value: "7d", label: "未来 7 天" }, { value: "30d", label: "未来 30 天" }]}
               onChange={(next) => { setMatWin(next); ctx.toast(`到期窗口已切换为${next === "7d" ? "未来 7 天" : "未来 30 天"}`, "info"); }} />
-            <span className="rd-toolbar-note">只换这一块，不重新读取</span>
+            <span className="rd-toolbar-note l3-toolbar-end">只换这一块，不重新读取</span>
           </div>
           <p className="l3-due-total"><span>{matWin === "7d" ? "未来 7 天" : "未来 30 天"}合计</span><b data-empty={shownDueTotal === 0 ? "" : undefined}>{amountText(shownDueTotal, dueDigits)}<small>USDT</small></b></p>
           {shownDueTotal === 0

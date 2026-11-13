@@ -381,3 +381,5 @@
 .l3-page .l3-groups[data-kind="due"] .l3-groups-label { flex-direction: row; }
 .l3-page .l3-groups[data-kind="due"] .l3-groups-bar i { flex: 1 1 auto; }
 .l3-page .rd-filter-group > label { white-space: nowrap; }
+.l3-page .l3-toolbar-end { margin-left: auto; }
+.l3-page .l3-actions > .l3-pair:last-child > .rd-explain:last-child { margin-right: -3px; }
