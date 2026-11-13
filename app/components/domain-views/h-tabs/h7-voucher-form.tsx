@@ -194,7 +194,7 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
               </Field>
               <div className="rd-form-grid" data-cols={showMax ? "3" : "2"} data-dense="">
                 {percent
-                  ? <Field label="减百分之几" required hint="1–99 的整数" error={shown.percent} help="8 表示按订单金额减 8%，不是八折；App 上显示「8% 折扣」。">
+                  ? <Field label="减百分之几" required hint="1–99 的整数" error={shown.percent} help="8 是减订单金额的 8%，不是八折；App 显示「8% 折扣」。">
                     {(control) => <NumberInput {...control} unit="%" min={1} max={99} step={1} value={value.percent} onChange={(e) => set("percent", e.target.value)} />}
                   </Field>
                   : <Field label="面额" required hint="1–1,000,000" error={shown.amountUSD} help="下单直接减这么多。">
