@@ -220,7 +220,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         {isEnabled && !enabling && <Fact k="已冻结的新人礼">首笔实付订单后照常解冻</Fact>}
         {isEnabled && <Fact k="生效时间">{enabling ? <Change from={gateNow} to="批准那一刻" /> : `不变：${gateNow}`}</Fact>}
         {isEnabled && <Fact k="等结算的注册">{enabling
-          ? "启用批准后生效时间改成批准那一刻，在那之前注册的不进入结算"
+          ? `批准后，现在等结算的 ${pendingCount} 位不再进入结算`
           : `${pendingCount} 位照常统计，停用期间不能结算`}</Fact>}
       </Facts> : undefined,
       statedBrief: isEnabled
