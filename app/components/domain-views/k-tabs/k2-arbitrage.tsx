@@ -22,7 +22,7 @@ import { roleLabel } from "@/lib/nav/console-nav";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { KCtx } from "./types";
-import { expiredTag, KRecoveryNotice, MidId, pendingTag, unknownTag, type KRecoveryRow } from "./k-recovery";
+import { expiredTag, KRecoveryNotice, MidId, pendingTag, submittedTag, unknownTag, type KRecoveryRow } from "./k-recovery";
 
 type K2ProposalInput = Parameters<typeof createA2OperationProposal>[0];
 type K2SavedOperation = {
@@ -123,7 +123,7 @@ const OTP_GATE_PARAMS: ExtraParamDef[] = [
     label: "每次都要求滑块的场景",
     unit: "场景",
     options: ["register", "login", "reset", "register,login", "register,reset", "login,reset", "register,login,reset"],
-    what: "在这些场景里，发验证码前都要先过滑块；滑块临时关闭期间放行。", effect: "之后的发送按新场景判断；累计发送次数和 H5 注册的强制滑块另外照算。",
+    what: "在这些场景里，发验证码前都要先过滑块；滑块临时关闭期间放行，H5 注册的强制滑块不放行。", effect: "之后的发送按新场景判断；累计发送次数和 H5 注册的强制滑块另外照算。",
   },
   { key: "captchaGate.afterSends", label: "累计发送后要求滑块", unit: "次/24h", min: 0, max: 50, step: 1,
     what: "同一手机号 24 小时内成功发送达到这个次数后（注册、登录、找回密码合计），再发要先过滑块。", effect: "之后的发送按新次数判断，已发的次数照算。填 0 表示从第一次发送起就要滑块，不是关闭滑块。", hint: "0–50 的整数，0 表示每次都要" },
@@ -496,7 +496,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
         // Both fresh and replayed receipts prove creation, not the current decision.
         commandAttempt.remember(scope, commandKey, { operation, proposed: true });
         if (retained) requireReread();
-        ctx.toast("申请已提交，当前审批状态待查询");
+        ctx.toast("申请已提交，正在查询原审批单");
       } else {
         await executeK2Command(operation.request, commandKey);
         commandAttempt.forget(scope, commandKey);
@@ -681,7 +681,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       ),
       statedBrief: {
         impact: "批准后：这组里状态正常的账户全部冻结，登录会话失效，待处理的提现一并冻结；已注销等非正常账户不受影响。不会到期自动解冻，误判要到「多账户风险排查」解除。",
-        check: "核对账户组和命中依据。提交后生成待审批单，批准执行前本页的命中仍显示为待处置。",
+        check: "核对账户组和命中依据。提交后生成待审批单；查到它还在等批准时，这条命中标「待审批」，不算进待处置。",
       },
       reasonPlaceholder: "写清冻结依据，例如：同一账户组反复领试用并已核实",
       reasonMax: 200,
@@ -765,10 +765,10 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       amplifies: false,
       facts: firstConfig
         ? <Facts><Fact k="配置状态" tone="warn">还没有正式配置，App 按系统默认值处理</Fact><Fact k="谁来批">另一位超级管理员</Fact></Facts>
-        : retained ? <Facts><Fact k="提交时">{otpValueText(definition, param.value)}</Fact></Facts> : undefined,
+        : undefined,
       edit: definition.options
-        ? { kind: "select", current: param.value, initialValue: retained?.operation?.newValue ?? draft?.value, options: definition.options, optionLabels: Object.fromEntries(definition.options.map((option) => [option, sceneText(option)])) }
-        : { kind: "number", current: param.value, initialValue: retained?.operation?.newValue ?? draft?.value, unit, min: definition.min, max: definition.max, step: definition.step, hint: definition.hint },
+        ? { kind: "select", current: param.value, currentLabel: retained ? "提交时" : undefined, initialValue: retained?.operation?.newValue ?? draft?.value, options: definition.options, optionLabels: Object.fromEntries(definition.options.map((option) => [option, sceneText(option)])) }
+        : { kind: "number", current: param.value, currentLabel: retained ? "提交时" : undefined, initialValue: retained?.operation?.newValue ?? draft?.value, unit, min: definition.min, max: definition.max, step: definition.step, hint: definition.hint },
       statedBrief: {
         impact: `${firstConfig ? "批准后写入。" : ""}${definition.effect}`,
         check: firstConfig ? "这项还没有正式配置，首次生效要另一位超级管理员批准。" : "核对新值；直接生效，不走审批。",
@@ -836,7 +836,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     const tag = verified
       ? pendingTag(action === "freeze" ? "另一位管理员" : "另一位超级管理员", action === "freeze" ? "批准前这组账户、登录和提现都不变；这条命中的处置按钮先锁住。" : "批准前 App 仍按系统默认值处理；这一项先锁住。")
       : record.proposed
-        ? <StatusTag tone="warn" explain="申请已提交，当前审批状态未查到。原记录和锁定保留，请查询原结果。">结果未知</StatusTag>
+        ? submittedTag()
         : expired ? expiredTag(approval ? "approval" : "direct") : unknownTag(approval ? "approval" : "direct");
     return {
       key: record.fingerprint,
@@ -853,7 +853,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
   });
   const pendingNotices = (
     <KRecoveryNotice key="k2-recovery" title={`有 ${recoveryRows.length} 项原操作要处理`} rows={recoveryRows}
-      explain={<><p>结果未知：提交时没收到确定结果，可能已经生效（审批类是申请可能已经提交）。先查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行。</p><p>待审批：你提交的冻结或首次配置还在等批准，批准或驳回前对应的按钮先锁住。</p><p>原请求只保存在这个浏览器标签页里。</p></>}
+      explain={<><p>结果未知有两种：提交时没收到确定结果的，可能已经生效（审批类是申请可能已经提交），先查询原结果，24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行；申请已经提交、但还没查到审批状态的，只能查询原结果。</p><p>待审批：查到你提交的冻结或首次配置还在等批准，批准或驳回前对应的按钮先锁住。</p><p>已过期：超过 24 小时，只能查询。</p><p>原请求只保存在这个浏览器标签页里。</p></>}
       lead={reach("/platform/audit", "platform_a2_read") ? <>也可以<Link className="rd-link" href="/platform/audit">到「操作记录与审批」核对</Link>。</> : undefined} />
   );
   const rereadNotice = rereadPending && overview && !ctx.contentError

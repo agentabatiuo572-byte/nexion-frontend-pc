@@ -33,6 +33,11 @@ export function unknownTag(kind: "direct" | "approval" | "noRetry") {
       : "提交时没收到确定结果。这个操作不提供原样重试，点「查询原结果」读回后端记下的状态。"}>结果未知</StatusTag>;
 }
 
+/** 申请确实建好了，但这次读取还没查到它现在的审批状态：只能查询，对象先锁着。 */
+export function submittedTag() {
+  return <StatusTag tone="warn" icon={CircleHelp} explain="申请已经提交，但还没查到它现在的审批状态。原记录保留，对应的按钮先锁住；点「查询原结果」查原审批单，查到还在等批准就标「待审批」。">结果未知</StatusTag>;
+}
+
 /** 本人提交、查询确认还在等批准的申请。approver 按后端要求写「另一位管理员」或「另一位超级管理员」。 */
 export function pendingTag(approver: string, note: string) {
   return <StatusTag tone="warn" icon={Clock3} explain={`等${approver}在「操作记录与审批」批准。${note}`}>待审批</StatusTag>;

@@ -73,7 +73,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
         return;
       }
       const handled = typeof req.errorHandled === "function" ? req.errorHandled(cause) : req.errorHandled;
-      if (!(req.recoveryUi && cause instanceof K1OutcomeUncertainError && cause.commandKey) && !handled) setError(displayAdminError(cause));
+      // K 域的恢复框：被明确拒绝后框回到普通新操作，拒绝原因要留在框里，不只靠会消失的提示条。
+      if (!(req.recoveryUi && cause instanceof K1OutcomeUncertainError && cause.commandKey) && (!handled || req.recoveryUi)) setError(displayAdminError(cause));
     } finally {
       const retainedReason = req.getPendingReason?.();
       setPendingReason(retainedReason);
@@ -126,7 +127,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
           {req.blockedReason === RETRY_EXPIRED_TEXT
             ? <Notice tone="warn" title="已过期，只能查询">原请求超过 24 小时，不能再重试。关掉这个框，在页面上方的提醒里点「查询原结果」，或到「操作记录与审批」核对。</Notice>
             : req.blockedReason
-              ? <Notice tone="warn" title="结果未知">{req.blockedReason}原记录继续保留，可以关掉这个框，在页面上方的提醒里查询原结果。</Notice>
+              ? <Notice tone="warn" title="结果未知，当前账号不能重试">{req.blockedReason}原请求和理由继续保留；关掉这个框，在页面上方的提醒里点「查询原结果」。</Notice>
             : <Notice tone="warn" title="结果未知">{unknown && !reopened ? "刚才提交时没收到确定结果，可能已经生效。" : "这是之前提交、结果未知的原操作。"}按原请求重试会原样再发一次（理由和内容都不变），后端认得出是同一次提交，不会重复执行。也可以关掉，在页面上方的提醒里查询原结果。</Notice>}
         </div>
       )}
