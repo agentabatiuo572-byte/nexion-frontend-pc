@@ -292,16 +292,12 @@ export function ClickPanel({ gradId, row, heat, aggregate, loaded, failed, scope
           </>} />
         </div>
         {zones.length ? (
-          <ul className="l6-zone-list">
-            {zones.map((z, i) => (
-              <li key={z.label}>
-                <span className="l6-zone-name">{zoneName(z.label)}</span>
-                <span className="l6-zone-track" aria-hidden><i style={{ width: `${Math.round(z.share * 100)}%` }} /></span>
-                <span className="l6-zone-val">{Math.round(z.share * 100)}%</span>
-                {i === 0 && !small ? <StatusTag tone="progress">最多</StatusTag> : <span className="l6-zone-tag" aria-hidden />}
-              </li>
-            ))}
-          </ul>
+          <BarList label="点击区域占比" slot={2} max={1} rows={zones.map((z, i) => ({
+            key: z.label,
+            label: zoneName(z.label),
+            value: z.share,
+            text: <span className="l6-zone-val">{Math.round(z.share * 100)}%{i === 0 && !small && <StatusTag tone="progress">最多</StatusTag>}</span>,
+          }))} />
         ) : <p className="rd-note">没有区域记录。</p>}
         {small && <p className="rd-note">点击少，占比容易大起大落，换成近 30 天或全部设备再看。</p>}
       </div>

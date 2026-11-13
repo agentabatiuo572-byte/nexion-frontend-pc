@@ -349,7 +349,7 @@
 .l6-page .l6-table-wrap[data-busy] { opacity: 0.55; transition: opacity 0.15s; }
 .l6-page .l6-table { width: 100%; }
 .l6-page .l6-table th:not(:first-child), .l6-page .l6-table td:not(:first-child) { white-space: nowrap; width: 1%; }
-.l6-page .l6-route { color: var(--rd-text-3); font-family: var(--rd-font-mono); font-size: 12px; }
+.l6-page .l6-route { color: var(--rd-text-3); font-family: var(--rd-font-mono); }
 .l6-page .l6-heat { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--rd-space-1); min-width: 72px; padding: 2px var(--rd-space-2); border-radius: var(--rd-radius-tag); color: var(--rd-text); font-variant-numeric: tabular-nums; }
 .l6-page .l6-heat[data-empty] { color: var(--rd-text-3); }
 .l6-page .l6-heat[data-level="1"], .l6-page .l6-swatch[data-level="1"] { background: color-mix(in srgb, var(--rd-chart-2) 4%, transparent); }
@@ -373,17 +373,14 @@
 .l6-page .l6-phone-body { fill: var(--rd-panel-inner); stroke: var(--rd-line-strong); }
 .l6-page .l6-phone-screen { fill: var(--rd-bg); stroke: var(--rd-line); }
 .l6-page .l6-phone-split { stroke: var(--rd-line-strong); stroke-dasharray: 4 4; }
-.l6-page .l6-phone-label { fill: var(--rd-text-3); font-size: 11px; font-family: var(--rd-font); }
+.l6-page .l6-phone-label { fill: var(--rd-text-3); font-size: var(--rd-text-aux); font-family: var(--rd-font); }
 .l6-page .l6-blob-core { stop-color: var(--rd-chart-2); stop-opacity: 0.95; }
 .l6-page .l6-blob-mid { stop-color: var(--rd-chart-2); stop-opacity: 0.4; }
 .l6-page .l6-blob-edge { stop-color: var(--rd-chart-2); stop-opacity: 0; }
 .l6-page .l6-zones { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: var(--rd-space-3); }
 .l6-page .l6-zones-head { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
-.l6-page .l6-zone-list { display: grid; gap: var(--rd-space-3); margin: 0; padding: 0; list-style: none; }
-.l6-page .l6-zone-list li { display: grid; grid-template-columns: 64px minmax(48px, 1fr) 40px 44px; align-items: center; gap: var(--rd-space-2); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
-.l6-page .l6-zone-track { display: block; height: 8px; border-radius: var(--rd-radius-bar); background: var(--rd-panel-inner); overflow: hidden; }
-.l6-page .l6-zone-track > i { display: block; height: 100%; border-radius: 0 var(--rd-radius-bar) var(--rd-radius-bar) 0; background: var(--rd-chart-2); }
-.l6-page .l6-zone-val { text-align: right; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.l6-page .l6-zones .rd-barlist li { grid-template-columns: 64px minmax(64px, 1fr) max-content; }
+.l6-page .l6-zone-val { display: inline-flex; align-items: center; gap: var(--rd-space-2); color: var(--rd-text); font-variant-numeric: tabular-nums; }
 
 /* 访问趋势：按日、按周两张柱图并排 */
 .l6-page .l6-trends > * { flex-basis: 360px; }
