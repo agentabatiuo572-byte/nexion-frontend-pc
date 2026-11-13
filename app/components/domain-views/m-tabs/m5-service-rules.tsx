@@ -1,16 +1,16 @@
 "use client";
 
 import { useReach } from "@/lib/nav/use-reach";
-import { M5UnboundPolicy } from "./m5-unbound-policy";
-import { M5WelcomeMessage } from "./m5-welcome-message";
 import { useEffect, useMemo, useState } from "react";
+import { Route, Save, Tags } from "lucide-react";
+import { BlockState, Button, DiffList, Fact, Facts, Field, Modal, Notice, NumberInput, Panel, Segments, StatusTag, Textarea } from "@/app/components/rd";
 import { supportClient, isIndeterminateSupportError, SupportClientError, type SupportRules } from "../../../../lib/admin/m-support-client";
-import { Modal } from "../design-kit";
-import { HDSelect } from "./hd-ui";
+import { businessStamp, businessZone } from "../../../../lib/admin/business-time";
 import { createPendingMutationStore, PENDING_MUTATION_TTL_MS } from "../../../../lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
 import "./m-support-admin.css";
+import { M5PendingWrites, type M5RulesSummary } from "./m5-views";
 
 export type MSupportPermission = "superadmin" | "supervisor" | "agent";
 type RuleDraft = { dormantDays: string; maintenanceDays: string; activityWindowDays: string; inheritanceMode: SupportRules["inheritanceMode"]; maxInheritanceDepth: string; unboundAssignmentMode?: SupportRules["unboundAssignmentMode"] };
@@ -23,7 +23,8 @@ const LABELS: Record<Field, string> = {
   dormantDays: "沉睡判定天数", maintenanceDays: "主动维护间隔天数", activityWindowDays: "活跃统计窗口天数", inheritanceMode: "自动继承方式", maxInheritanceDepth: "自动继承的邀请次数上限",
 };
 const dayFields = ["dormantDays", "maintenanceDays", "activityWindowDays"] as const;
-const RETRY_EXPIRED = "原操作已超过 24 小时，不能再用原编号重试。请查询上次结果，核对最新规则。";
+const RETRY_EXPIRED = "原请求已超过 24 小时，不能再重试，只能查询原结果；请核对最新规则。";
+const isIndeterminateText = (text: string) => /结果未知|还在处理|查不到|读不到最新|24 小时/.test(text);
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
 
 function toDraft(rules: SupportRules): RuleDraft {
@@ -65,16 +66,16 @@ function labelValue(key: Field, value: SupportRules[Field]): string {
 }
 
 function errorText(error: unknown): string {
-  if (isIndeterminateSupportError(error)) return "操作结果待确认，请查询原命令或用原命令重试。";
+  if (isIndeterminateSupportError(error)) return "结果未知：请查询原结果，或按原请求重试。";
   const status = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
   if (status === 401) return "登录已失效，请重新登录。";
   if (status === 403) return "当前账号无权修改服务规则。";
-  if (status === 409) return "规则已被其他管理员修改，请查看差异后重新确认。";
+  if (status === 409) return "规则已被别人改过，请看清差异后重新确认。";
   if (status === 400 || status === 422) return "输入未通过校验，请检查天数、继承次数上限和修改理由后再提交。";
   return "服务规则暂不可用，请重试；当前输入已保留。";
 }
 
-export function M5ServiceRules({ permission }: { permission: MSupportPermission }) {
+export function M5ServiceRules({ permission, onSummary }: { permission: MSupportPermission; onSummary?: (summary: M5RulesSummary) => void }) {
   const reach = useReach();
   const adminId = useAdminAuth((state) => state.session?.adminId);
   const [current, setCurrent] = useState<SupportRules | null>(null);
@@ -176,12 +177,12 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
         setCurrent(value); setDraft(toDraft(value)); setRetry(null); setReason(""); setConfirm(false); setError("");
       } else if (result.status === "FAILED") {
         ruleCommands.forget(`support-rules:${retry.payload.expectedVersion}`);
-        setRetry(null); setError("原命令已失败，输入已保留；请检查后重新提交。");
-      } else setError("原命令仍在处理中，请稍后查询或使用同一命令重试。");
+        setRetry(null); setError("原请求没有成功，你填的内容还在；请检查后重新提交。");
+      } else setError("原请求还在处理，请稍后再查询原结果，或按原请求重试。");
     } catch (cause) {
       if (actor !== actorStamp()) return;
       if (Date.now() >= retry.expiresAt && cause instanceof SupportClientError && cause.status === 404) await showLatestAfterExpiry(actor);
-      else setError("暂时无法确认原命令结果；输入与命令已保留。");
+      else setError("暂时查不到原结果；你填的内容和原请求都还在。");
     }
     finally { setSaving(false); }
   }
@@ -192,64 +193,115 @@ export function M5ServiceRules({ permission }: { permission: MSupportPermission 
       if (actor !== actorStamp()) return;
       ruleCommands.forget(`support-rules:${retry.payload.expectedVersion}`);
       setCurrent(value); setDraft(toDraft(value)); setRetry(null); setReason(""); setConfirm(false);
-      setError("原操作已超过 24 小时，查不到记录了。下方是最新规则，请核对后再决定是否修改。");
-    } catch { if (actor === actorStamp()) setError("暂时无法加载最新规则；输入与命令已保留。"); }
+      setError("原请求已超过 24 小时，查不到记录了。下面是最新规则，请核对后再决定要不要改。");
+    } catch { if (actor === actorStamp()) setError("暂时读不到最新规则；你填的内容和原请求都还在。"); }
   }
 
-  if (permission === "agent") return <div className="m-admin-error">当前账号无权查看服务规则。</div>;
+  const summaryMode = current?.unboundAssignmentMode ?? (current ? "SUPERVISOR" : undefined);
+  useEffect(() => {
+    onSummary?.({ state: current ? "ready" : loading ? "loading" : "failed", mode: summaryMode, inheritance: current?.inheritanceMode, depth: current?.maxInheritanceDepth, pending: Boolean(retry) });
+  }, [onSummary, current, loading, summaryMode, retry]);
+
+  if (permission === "agent") return <BlockState state="denied" title="当前账号不能查看服务规则" />;
+  // 只显示用：每个框自己的问题写在框下；能不能保存仍只看 parsed（逻辑不变）。
+  const dayProblem = (value: string) => {
+    const text = value.trim();
+    return text === "" || (/^\d+$/.test(text) && Number(text) > 0 && Number.isSafeInteger(Number(text))) ? "" : "要填正整数；留空表示不配置";
+  };
+  const dormantShown = draft && !dayProblem(draft.dormantDays) && draft.dormantDays.trim() ? Number(draft.dormantDays) : null;
+  const windowProblem = draft && !dayProblem(draft.activityWindowDays) && draft.activityWindowDays.trim() && dormantShown !== null && Number(draft.activityWindowDays) > dormantShown ? `不能大于沉睡判定天数（${dormantShown} 天）` : "";
+  const depthProblem = draft?.inheritanceMode !== "LIMITED" ? "" : draft.maxInheritanceDepth.trim() === "" ? "限定次数时要填次数，可以填 0" : /^\d+$/.test(draft.maxInheritanceDepth.trim()) ? "" : "要填 0 或正整数";
+  const inheritItems = [
+    { value: "UNLIMITED" as const, label: "不限制", disabled: !editable },
+    { value: "LIMITED" as const, label: "限定次数", disabled: !editable },
+    // F01：已经配置过的规则后端不让退回「未配置」，只给原本就是未配置的保留这一项。
+    ...(current?.inheritanceMode === "UNCONFIGURED" ? [{ value: "UNCONFIGURED" as const, label: "未配置", disabled: !editable }] : []),
+  ];
+  const submittedAt = retry ? retry.expiresAt - PENDING_MUTATION_TTL_MS : 0;
+  const DAY_HELP: Record<(typeof dayFields)[number], string> = {
+    dormantDays: "有效账户活动超过这么多天、且活动记录完整，客户才算沉睡。留空表示不判定沉睡。",
+    maintenanceDays: "距上次维护满这么多天，客户进专属客服的主动维护待办。改天数不会补记维护。",
+    activityWindowDays: "统计活跃客户时往回看几天，和沉睡分开算，不能大于沉睡天数。",
+  };
+  const changeText = retry && current ? changedFields(current, { ...current, ...retry.payload }).map((field) => `${LABELS[field]} ${labelValue(field, current[field])} → ${labelValue(field, retry.payload[field as keyof typeof retry.payload] as SupportRules[Field])}`).join("；") : "";
+
   return (
-    <section className="m-admin-grid m5-service-rules" aria-label="服务规则">
-      <div className="m-admin-panel">
-        <h2>服务规则</h2>
-        <div className="m-admin-muted">沉睡、维护与活跃统计分别配置。未配置的能力会显示不可用，不影响其他已配置规则。</div>
-        {permission === "supervisor" && <div className="m-admin-error">仅超级管理员可修改服务规则；当前为只读视图。</div>}
-        {readOnlyPending && <div className="m-admin-error" role="status">此账号有一笔规则提交结果尚未确认；下方显示最近已保存的规则。请恢复超级管理员权限后查询原命令。</div>}
-        {loading && <div className="m-admin-muted" role="status">正在加载规则…</div>}
-        {error && <div className="m-admin-error" role="alert">{error} {readUnavailable && <button type="button" className="btn btn-sec btn-sm" disabled={Boolean(retry)} onClick={() => setReload((n) => n + 1)}>重试</button>}</div>}
-        {!loading && !current && <div className="m-admin-muted">规则暂不可用，无法保存。</div>}
-        {draft && current && <>
-          <fieldset disabled={!editable} className="m-assignment-mode" aria-describedby="m-assignment-help">
-            <legend>无专属客服客户分配方式</legend>
-            <div className="m-assignment-options">
-              <label className="m-assignment-option"><input type="radio" name="unbound-mode" value="AUTO_RANDOM" checked={draft.unboundAssignmentMode === "AUTO_RANDOM"} onChange={() => setField("unboundAssignmentMode", "AUTO_RANDOM")} /><span>客户首次咨询时按负载自动分配</span></label>
-              <label className="m-assignment-option"><input type="radio" name="unbound-mode" value="SUPERVISOR" checked={draft.unboundAssignmentMode === "SUPERVISOR"} onChange={() => setField("unboundAssignmentMode", "SUPERVISOR")} /><span>客服主管分配</span></label>
-            </div>
-            <p id="m-assignment-help" className="m-assignment-help">有效邀请继承优先。自动模式在客户第一次发消息时分配给负载最低的专属客服；主管模式由主管分配，等待超时后按下方「待分配客户」设置自动兜底。已绑定专属客服离线或忙碌不会重新分配。</p>
-          </fieldset>
-          {dayFields.map((field) => <div className="m-admin-row" key={field}>
-            <div><label htmlFor={`m-rule-${field}`}>{LABELS[field]}</label><p>{field === "dormantDays" ? "有效账户活动超出设定天数且记录完整，才可判定沉睡。" : field === "maintenanceDays" ? "已到维护时间的客户会进入主动维护待办。" : "用于活跃客户统计，与当前沉睡状态分别计算。"}</p></div>
-            <input id={`m-rule-${field}`} type="number" min="1" step="1" placeholder="未配置" value={draft[field]} disabled={!editable} onChange={(event) => setField(field, event.target.value)} />
-          </div>)}
-          <div className="m-admin-row">
-            <div><label htmlFor="m-rule-inheritanceMode">自动继承方式</label><p>人工分配的客户之后邀请注册的用户，会沿邀请关系自动归给同一位专属客服；这里设置最多沿几次邀请继承。</p></div>
-            <HDSelect id="m-rule-inheritanceMode" value={draft.inheritanceMode} disabled={!editable} options={[{ value: "UNCONFIGURED", label: "未配置" }, { value: "LIMITED", label: "限定次数" }, { value: "UNLIMITED", label: "不限制" }]} onChange={(value) => { if (editable) setDraft((old) => old ? { ...old, inheritanceMode: value as RuleDraft["inheritanceMode"], maxInheritanceDepth: value === "LIMITED" ? old.maxInheritanceDepth : "" } : old); }} />
+    <section className="m5-rules" aria-label="服务规则">
+      {retry && permission === "superadmin" && <M5PendingWrites rows={[{
+        key: retry.key, name: "服务规则", change: changeText || "规则保存", submittedAt, expired: retryExpired,
+        actions: <>
+          <Button size="sm" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>
+          {!retryExpired && <Button size="sm" variant="primary" disabled={saving} onClick={() => { setError(""); setConfirm(true); }}>按原请求重试</Button>}
+        </>,
+      }]} />}
+      <Panel icon={Route} tone="role-3" title="分配与继承规则" sub={current ? `第 ${current.version} 版` : undefined}
+        explain="保存后立即生效，只影响之后：继承只看之后注册的用户，分配方式在客户之后第一次发消息时用。现有客户的归属和待分配客户不会重排。">
+        {permission === "supervisor" && <Notice tone="neutral">只有超级管理员能改服务规则，你现在只能查看。</Notice>}
+        {readOnlyPending && <Notice tone="warn">这个账号有一次保存规则的结果未知；下面是最近读到的规则。恢复超级管理员权限后到这里查询原结果。</Notice>}
+        {loading && !current && <BlockState state="loading" title="正在读取服务规则…" />}
+        {!loading && !current && <BlockState state="error" title="服务规则读不到，暂时不能查看和保存" detail={error || undefined} onRetry={retry ? undefined : () => setReload((n) => n + 1)} />}
+        {current && error && !confirm && !conflict && <Notice tone={isIndeterminateText(error) ? "warn" : "danger"}>{error}</Notice>}
+        {draft && current && <div className="m5-form">
+          <Field label="新客户怎么分" help={draft.unboundAssignmentMode === "AUTO_RANDOM"
+            ? "客户第一次发消息时，马上分给负载最低的专属客服。"
+            : "客服主管手动分；等待超过下面「超时兜底」的时长还没人分，按负载自动兜底。"}
+            explain="邀请继承优先：能继承的客户注册时就归给邀请人的专属客服，不走这里。已经有专属客服的客户，客服离线或忙碌也不会重新分配。">
+            <Segments label="新客户怎么分" value={draft.unboundAssignmentMode ?? "SUPERVISOR"} onChange={(value) => setField("unboundAssignmentMode", value)}
+              items={[{ value: "AUTO_RANDOM", label: "首次咨询时按负载自动分配", disabled: !editable }, { value: "SUPERVISOR", label: "客服主管分配", disabled: !editable }]} />
+          </Field>
+          <div className="rd-form-grid" data-cols="2" data-dense="">
+            <Field label="邀请来的用户归谁" help={draft.inheritanceMode === "UNLIMITED" ? "沿邀请关系一直继承到同一位专属客服。" : draft.inheritanceMode === "LIMITED" ? "从人工分配的客户算起，最多沿邀请关系继承这么多次。" : "历史上没配置过：邀请来的用户不继承，直接进待分配。保存成别的方式后不能再改回未配置。"}
+              explain="人工分配过的客户邀请来的新用户，注册时自动归给同一位专属客服；超出次数的进待分配。只影响之后注册的用户。">
+              <Segments label="邀请来的用户归谁" value={draft.inheritanceMode} onChange={(value) => { if (editable) setDraft((old) => old ? { ...old, inheritanceMode: value, maxInheritanceDepth: value === "LIMITED" ? old.maxInheritanceDepth : "" } : old); }} items={inheritItems} />
+            </Field>
+            {draft.inheritanceMode === "LIMITED" && <Field label="最多继承几次" hint="0 或正整数" error={depthProblem || undefined}
+              explain="填 0：只有主管人工分配的那位客户归这位客服，他邀请来的人不继承。">
+              {(control) => <NumberInput {...control} unit="次" min={0} step={1} placeholder="填次数" value={draft.maxInheritanceDepth} disabled={!editable} onChange={(event) => setField("maxInheritanceDepth", event.target.value)} />}
+            </Field>}
           </div>
-          {draft.inheritanceMode === "LIMITED" && <div className="m-admin-row">
-            <div><label htmlFor="m-rule-maxInheritanceDepth">自动继承的邀请次数上限</label><p>可填 0，表示仅人工分配的起点客户归属专属客服。</p></div>
-            <input id="m-rule-maxInheritanceDepth" type="number" min="0" step="1" placeholder="请输入次数" value={draft.maxInheritanceDepth} disabled={!editable} onChange={(event) => setField("maxInheritanceDepth", event.target.value)} />
+          <div className="m5-subhead"><Tags size={14} aria-hidden />客户标签按几天算<span className="m5-subhead-note">留空表示不配置，这项标签不显示</span></div>
+          <div className="rd-form-grid" data-cols="3" data-dense="">
+            {dayFields.map((field) => (
+              <Field key={field} label={LABELS[field]} explain={DAY_HELP[field]} error={dayProblem(draft[field]) || (field === "activityWindowDays" ? windowProblem : "") || undefined}>
+                {(control) => <NumberInput {...control} id={`m-rule-${field}`} unit="天" min={1} step={1} placeholder="未配置" value={draft[field]} disabled={!editable} onChange={(event) => setField(field, event.target.value)} />}
+              </Field>
+            ))}
+          </div>
+          {conflict && <Notice tone="warn" title="规则已被别人改过" actionBelow
+            action={latest ? <Button size="sm" onClick={reviewLatest} disabled={!parsed}>以最新规则重审</Button> : <Button size="sm" onClick={() => void refreshLatest()}>读取最新规则</Button>}>
+            <p>{latest ? `现在是第 ${latest.version} 版，你改的是第 ${current.version} 版。` : "还没读到最新版本。"}你填的内容还在。</p>
+            {latest && <ul className="m5-plain-list">{changedFields(current, latest).map((field) => <li key={field}>{LABELS[field]}：{labelValue(field, current[field])} → {labelValue(field, latest[field])}</li>)}</ul>}
+          </Notice>}
+          {permission === "superadmin" && <div className="rd-toolbar" data-end="">
+            <span className="rd-toolbar-note">{retry ? "上次保存结果未知，先处理它" : changed.length > 0 ? `改了 ${changed.length} 项，还没保存` : "没有改动"}</span>
+            <Button variant="primary" icon={<Save size={14} aria-hidden />} disabled={permission !== "superadmin" || (retry ? false : !editable || !parsed || changed.length === 0)}
+              disabledReason={!retry && editable && changed.length === 0 ? "还没有改动" : !retry && editable && !parsed ? "有填写不对的项，先改正" : undefined}
+              onClick={() => { if (retryExpired) setError(""); setConfirm(true); }}>{retry ? "查看结果未知的保存" : "预览并保存"}</Button>
           </div>}
-          {!parsed && <div className="m-admin-error" role="alert">天数须为正整数，继承次数上限须为非负整数；同时设置沉睡与活跃天数时，活跃窗口不得大于沉睡天数。</div>}
-          {conflict && <div className="m-admin-error" role="alert">规则版本已变化。{latest ? `新版本为 ${latest.version}，原版本为 ${current.version}。` : "尚未取得最新版本。"}输入已保留。{latest && <ul>{changedFields(current, latest).map((field) => <li key={field}>{LABELS[field]}：原值 {labelValue(field, current[field])} → 最新 {labelValue(field, latest[field])}</li>)}</ul>}{latest ? <button type="button" className="btn btn-sec btn-sm" onClick={reviewLatest} disabled={!parsed}>以最新规则重审</button> : <button type="button" className="btn btn-sec btn-sm" onClick={() => void refreshLatest()}>读取最新规则</button>}</div>}
-          <div className="m-admin-toolbar"><span className="m-admin-muted">当前版本 {current.version} · {changed.length} 项变更</span><button type="button" className="btn btn-pri btn-sm" disabled={permission !== "superadmin" || (retry ? false : !editable || !parsed || changed.length === 0)} onClick={() => { if (retryExpired) setError(""); setConfirm(true); }}>{retry ? "继续确认上次提交" : "预览并保存"}</button></div>
-        </>}
-      </div>
-      <M5UnboundPolicy permission={permission} />
-      <aside className="m-admin-panel m5-impact-preview">
-        <h2>影响预览</h2>
-        {reach("/service/overview", "service_m1_read") && <a className="btn btn-sec btn-sm" href="/service/overview?view=pool">核对历史池并明确分配</a>}
-        <div className="m-admin-muted">已配置的能力按新规则计算；未配置的能力保持不可用。</div>
-        <div className="m-admin-stats"><div className="m-admin-stat">沉睡判定<strong>{parsed?.dormantDays == null ? "未配置" : "可用"}</strong></div><div className="m-admin-stat">维护待办<strong>{parsed?.maintenanceDays == null ? "未配置" : "可用"}</strong></div><div className="m-admin-stat">活跃统计<strong>{parsed?.activityWindowDays == null ? "未配置" : "可用"}</strong></div></div>
-        <div className="m-admin-muted">继承规则只影响之后的新注册；现有客户归属和待绑定池不会自动重排。变更天数只重算对应标签，不生成维护执行或成功记录。</div>
-      </aside>
-      <M5WelcomeMessage permission={permission} />
-      {confirm && current && parsed && permission === "superadmin" && <Modal title="确认保存服务规则" icon="gauge" onClose={() => { if (!saving) setConfirm(false); }} busy={saving} wide footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => setConfirm(false)}>返回</button><button type="button" className="btn btn-pri btn-sm" disabled={permission !== "superadmin" || (!canConfirm && !retry) || saving || Boolean(latest) || retryExpired} onClick={() => void save()}>{saving ? "保存中…" : retry ? "使用同一命令重试" : "确认保存"}</button></>}>
-        <div className="m-admin-muted">仅保存下列实际修改；其余规则保留。更新后按新规则重新计算对应标签，继承只作用于未来注册。</div>
-        <div className="m-admin-list">{changed.map((field) => <div key={field}>{LABELS[field]}：{labelValue(field, current[field])} → {labelValue(field, parsed[field])}</div>)}</div>
-        <label className="field"><span>修改理由（8–200 字）</span><textarea value={reason} maxLength={200} disabled={saving || Boolean(retry)} onChange={(event) => setReason(event.target.value)} /></label>
-        <div className="m-admin-muted">已输入 {reason.trim().length}/200 字</div>
-        {retry && <div className="m-admin-error">{retryExpired ? RETRY_EXPIRED : "上次提交结果未确认。请先查询结果，或使用同一命令重试。"}<button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={() => void checkPending()}>查询上次结果</button></div>}
-        {error && <div className="m-admin-error" role="alert">{error}</div>}
+        </div>}
+        {reach("/service/overview", "service_m1_read") && <p className="m5-link-line">改规则不会重排已经在待分配里的客户：<a className="rd-link" href="/service/overview?view=pool">核对历史池并明确分配</a></p>}
+      </Panel>
+      {confirm && current && parsed && permission === "superadmin" && <Modal title={changed.length === 1 ? `修改${LABELS[changed[0]]}` : "保存服务规则"} icon={Route} busy={saving} wide onClose={() => { if (!saving) setConfirm(false); }}
+        sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">第 {current.version} 版</span></>}
+        footer={<>
+          <Button disabled={saving} onClick={() => setConfirm(false)}>返回</Button>
+          <Button variant="primary" loading={saving} disabled={permission !== "superadmin" || (!canConfirm && !retry) || saving || Boolean(latest) || retryExpired}
+            disabledReason={saving ? undefined : retryExpired ? "原请求超过 24 小时，只能查询原结果" : !retry && !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>
+        </>}>
+        <DiffList rows={changed.map((field) => ({ key: field, label: LABELS[field], before: labelValue(field, current[field]), after: labelValue(field, parsed[field]) }))} />
+        <Facts>
+          <Fact k="影响谁">之后注册的用户、之后第一次发消息的客户</Fact>
+          <Fact k="不变的">现有客户的归属、已在待分配的客户；改天数不补记维护</Fact>
+        </Facts>
+        {retry && <Notice tone="warn" title="结果未知" action={<Button size="sm" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}>
+          {retryExpired ? RETRY_EXPIRED : `上次保存在 ${businessStamp(submittedAt)}（${businessZone().label}）提交，没收到确定结果，可能已经生效。先查询原结果；也可以按原请求重试，后端认得出是同一次提交。`}
+        </Notice>}
+        <Field label="操作理由" required hint="8–200 字">
+          {(control) => <Textarea {...control} rows={3} value={reason} maxLength={200} disabled={saving || Boolean(retry)} count={`${reason.trim().length}/200`} placeholder="例如：客服人手调整，新客户改为主管分配" onChange={(event) => setReason(event.target.value)} />}
+        </Field>
+        {error && <Notice tone={isIndeterminateText(error) ? "warn" : "danger"}>{error}</Notice>}
       </Modal>}
     </section>
   );
+
 }
