@@ -512,7 +512,7 @@
 
 /* 一个国家：中文名在前，代码等宽小一档 */
 :is(.j2-page, .j2-editor, .rd-confirm) .j2-cc-label { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
-:is(.j2-page, .j2-editor, .rd-confirm) .j2-cc-code { font-family: var(--rd-font-mono); font-size: 12px; color: var(--rd-text-3); }
+:is(.j2-page, .j2-editor, .rd-confirm) .j2-cc-code { font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 
 /* 名单卡：后果一行、国家墙、按账户国家的人数和余额 */
 .j2-page .j2-scope { display: flex; align-items: center; gap: 6px; margin: 0 0 12px; color: var(--rd-text-2); }
@@ -535,7 +535,7 @@
 .j2-page .j2-order { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; counter-reset: none; }
 .j2-page .j2-order li { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: start; gap: 2px 8px; padding: 10px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 :root[data-theme="light"] .j2-page .j2-order li { box-shadow: inset 0 0 0 1px var(--rd-line); }
-.j2-page .j2-order-n { grid-row: span 2; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--rd-control); color: var(--rd-text-2); font-size: 12px; font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.j2-page .j2-order-n { grid-row: span 2; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--rd-control); color: var(--rd-text-2); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
 .j2-page .j2-order-if { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .j2-page .j2-order-then { display: inline-flex; align-items: center; gap: 4px; color: var(--rd-text); font-weight: var(--rd-weight-medium); }
 .j2-page .j2-order-then svg { flex: none; }
@@ -621,7 +621,7 @@
 :is(.j2-editor, .rd-confirm) .j2-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
 :is(.j2-editor, .rd-confirm) .j2-chip { height: auto; min-height: var(--rd-control-h-sm); padding: 2px 4px 2px 8px; color: var(--rd-text); font-size: var(--rd-text-aux); }
 :is(.j2-editor, .rd-confirm) .j2-chip:not(:has(.rd-chip-x)) { padding-right: 8px; }
-:is(.j2-editor, .rd-confirm) .j2-chip-mark { margin-left: 2px; padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-progress-pill); color: var(--rd-progress); font-size: 12px; line-height: 18px; }
+:is(.j2-editor, .rd-confirm) .j2-chip-mark { margin-left: 2px; padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-progress-pill); color: var(--rd-progress); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .j2-editor .j2-chip[data-removed] .j2-cc-label > span:first-child { text-decoration: line-through; color: var(--rd-text-2); }
 .j2-editor .j2-editor-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .j2-editor .j2-editor-label { display: inline-flex; align-items: center; gap: 4px; margin: 0; font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
@@ -642,7 +642,7 @@
 .j2-editor .j2-pick-row { display: flex; align-items: center; gap: 8px; min-height: var(--rd-control-h); padding: 0 8px; border-radius: var(--rd-radius-tag); color: var(--rd-text); cursor: pointer; }
 .j2-editor .j2-pick-row[data-on] { background: var(--rd-selected); }
 @media (hover: hover) and (pointer: fine) { .j2-editor .j2-pick-row:hover { background: var(--rd-hover); } }
-.j2-editor .j2-pick-status { margin-left: auto; font-size: 12px; color: var(--rd-text-3); white-space: nowrap; }
+.j2-editor .j2-pick-status { margin-left: auto; font-size: var(--rd-text-aux); color: var(--rd-text-3); white-space: nowrap; }
 .rd-confirm .j2-diff { display: grid; gap: 12px; }
 .rd-confirm .j2-diff-group { display: grid; gap: 8px; }
 .rd-confirm .j2-diff-group + .j2-diff-group { padding-top: 12px; border-top: 1px solid var(--rd-line); }
