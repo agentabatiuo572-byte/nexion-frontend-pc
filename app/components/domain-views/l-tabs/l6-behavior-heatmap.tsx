@@ -404,7 +404,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
   return page(<>
     {pending}
     {conclusion}
-    <SummaryBand summary={summaryNums} scope={scope} />
+    <SummaryBand summary={summaryNums} scope={scope} device={device} />
     {outsideNotice}
     {rows.length > 0 && <RankPanels rows={rows} onPick={selectRow} scope={winLabel} />}
     <div className="rd-split l6-main" data-detail="">

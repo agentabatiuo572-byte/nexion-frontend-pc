@@ -84,7 +84,7 @@ function bounceLevel(rate: number): number {
 }
 
 /* ---------------- 四个合计（L6-V01） ---------------- */
-export function SummaryBand({ summary, scope }: { summary: HeatSummary; scope: string }) {
+export function SummaryBand({ summary, scope, device }: { summary: HeatSummary; scope: string; device: string }) {
   const noView = summary.totalPv === 0;
   const scopeNote = `${scope}；含这段时间有事件的已退役页面。`;
   return (
@@ -92,7 +92,7 @@ export function SummaryBand({ summary, scope }: { summary: HeatSummary; scope: s
       <Stat label="浏览次数" icon={Eye} tone="role-2" value={n(summary.totalPv)} unit="次"
         explain={`离开一页（换到下一页）时记一次浏览，同一页看两次算两次。${scopeNote}`} />
       <Stat label="点击次数" icon={MousePointerClick} tone="role-2" value={n(summary.totalClicks)} unit="次"
-        sub={noView ? "没有浏览，点击率算不出" : `点击率 ${pct(summary.totalClicks / summary.totalPv)}`}
+        sub={device === "APP" || device === "MP" ? "这一端还没上报点击" : noView ? "没有浏览，点击率算不出" : `点击率 ${pct(summary.totalClicks / summary.totalPv)}`}
         explain={`App 上报的点击事件次数，不是人数。点击率是点击次数 ÷ 浏览次数，可能超过 100%。${scopeNote}`} />
       <Stat label="平均停留" icon={Clock3} tone="role-3" value={noView ? "—" : dwell(summary.avgDwellMs)}
         sub={noView ? "没有浏览，算不出" : undefined} explain={DWELL_EXPLAIN} />
@@ -166,8 +166,9 @@ function HeatLegend() {
   );
 }
 
-function HeatCell({ level, kind, warn, empty, children, title }: { level: number; kind?: "bounce"; warn?: boolean; empty?: boolean; children: ReactNode; title?: string }) {
+function HeatCell({ level, kind, warn, empty, zero, children, title }: { level: number; kind?: "bounce"; warn?: boolean; empty?: boolean; zero?: boolean; children: ReactNode; title?: string }) {
   if (empty) return <span className="l6-heat" data-empty="" title={title}>—</span>;
+  if (zero) return <span className="l6-heat" data-empty="">{children}</span>;
   return (
     <span className="l6-heat" data-level={level} data-kind={kind} title={title}>
       {warn && <TriangleAlert size={13} aria-label="超过 50%" />}
@@ -231,9 +232,9 @@ export function HeatTable({ rows, activeKey, onPick, sort, sortDir, onSort, onFl
                     <Cell main={behaviorPageTitle(r)} title={r.key}
                       sub={<>{levelName(r)}{r.pageCount > 1 ? ` · 一组 ${r.pageCount} 页` : ""} · <span className="l6-route">{r.key.replace(/^\/?pages\//, "")}</span></>} />
                   </Td>
-                  <Td align="right"><HeatCell level={activityLevel(r.pv, maxPv)}>{n(r.pv)}</HeatCell></Td>
-                  <Td align="right"><HeatCell level={activityLevel(r.uv, maxUv)}>{n(r.uv)}</HeatCell></Td>
-                  <Td align="right"><HeatCell level={activityLevel(r.clicks, maxClicks)}>{n(r.clicks)}</HeatCell></Td>
+                  <Td align="right"><HeatCell level={activityLevel(r.pv, maxPv)} zero={r.pv === 0}>{n(r.pv)}</HeatCell></Td>
+                  <Td align="right"><HeatCell level={activityLevel(r.uv, maxUv)} zero={r.uv === 0}>{n(r.uv)}</HeatCell></Td>
+                  <Td align="right"><HeatCell level={activityLevel(r.clicks, maxClicks)} zero={r.clicks === 0}>{n(r.clicks)}</HeatCell></Td>
                   <Td align="right"><HeatCell level={activityLevel(r.dwellMs, maxDwell)} empty={noView} title={noView ? "没有浏览，算不出" : undefined}>{dwell(r.dwellMs)}</HeatCell></Td>
                   <Td align="right"><HeatCell kind="bounce" level={bounceLevel(r.bounceRate)} warn={r.bounceRate > BOUNCE_WARN} empty={noView} title={noView ? "没有浏览，算不出" : undefined}>{pct(r.bounceRate)}</HeatCell></Td>
                 </Tr>
