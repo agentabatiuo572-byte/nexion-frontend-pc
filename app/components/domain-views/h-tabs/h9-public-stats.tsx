@@ -41,7 +41,7 @@ import type { HCtx } from "./types";
 import { H9DeviceRank } from "./h9-device-rank";
 import { H9GlobeDisplay } from "./h9-globe-display";
 import { H9ModuleCards, moduleLabel, type H9Module, type RankSnapshot } from "./h9-overview";
-import { AppNumber, AppPreview, AuditFoot, DAY_LABELS, DAY_TICKS, H9RecoveryNotice, HOUR_LABELS, HOUR_TICKS, ModuleToolbar, averageGain, count, memberSpread, membersAt, saveIssueKind, usd, usdApprox, usdProduct, type MemberModel, type SaveIssueKind } from "./h9-parts";
+import { AppNumber, AppPreview, AuditFoot, axisShort, ConfirmFacts, DAY_LABELS, DAY_TICKS, H9RecoveryNotice, HOUR_LABELS, HOUR_TICKS, ModuleToolbar, averageGain, count, memberSpread, membersAt, saveIssueKind, usd, usdApprox, usdProduct, type MemberModel, type SaveIssueKind } from "./h9-parts";
 import { reconcileH9Editor, type H9EditorState } from "@/lib/admin/h9-module-drafts";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 
@@ -296,22 +296,20 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
           : module === "jobs" ? `保存后 App 赚取页任务中心和全球网络页显示${nextValues.activeJobsBase == null ? "真实进行中作业数，不加基座" : `真实进行中作业数 + ${count(nextValues.activeJobsBase)}`}。`
             : "这组参数 App 正式页面不读，保存后只改变这页的历史估算。";
     const homeCompare = (module === "home" || toggled) && stepsChanged;
-    const facts = <>
-      <Facts>
+    const facts = <ConfirmFacts rows={rows} facts={<>
         <Fact k="改的是">{label}</Fact>
         <Fact k="主配置版本"><Change from={`v${data.version}`} to={`v${data.version + 1}`} /></Fact>
         {toggled && dirty && <Fact k="一起保存">首页填写中的 {rows.length - 1} 项改动</Fact>}
         {module === "network" && memberModels?.resets && <Fact k="推算起点"><Change from={businessStamp(data.values.registeredUsersAnchorAt)} to="保存时刻" /></Fact>}
         <Fact k="操作记录">记一条高风险操作记录（不走审批）</Fact>
-      </Facts>
-      <DiffList rows={rows} emptyNote="参数没有改动" />
+      </>}>
       {fleetChanged && impact && <Notice tone="neutral" title="历史估算会跟着变">
         日金额估算从 {usd(impact.current.daily)} USD 变成 {usd(usdProduct(nextValues.fleetDevices, data.publishedDailyUsdPerDevice))} USD（每台每日 {usd(data.publishedDailyUsdPerDevice)} USD 不变）。这是内部估算，不是实付，App 不显示。
       </Notice>}
       {virtualZero && <Notice tone="neutral">虚拟人口填了 0：历史估算分母只按注册账号总数（{count(data.realUserCount)} 人）算。</Notice>}
       {homeCompare && <div className="h9-confirm-chart">
         <p className="h9-chart-title">开启时接下来 24 小时平均增加的在线设备</p>
-        <TrendLines label="新旧参数下 24 小时在线设备平均增加量" ticks={HOUR_LABELS} height={120} format={(value) => `${count(Math.round(value))} 台`}
+        <TrendLines label="新旧参数下 24 小时在线设备平均增加量" ticks={HOUR_LABELS} height={120} format={(value) => `${count(Math.round(value))} 台`} axisFormat={axisShort("台")}
           series={[
             { key: "before", label: "现在的参数", slot: "other", values: HOUR_TICKS.map((hour) => averageGain(data.values.homeOnlineStepMin, data.values.homeOnlineStepMax, hour)) },
             { key: "after", label: "改后", slot: 2, values: HOUR_TICKS.map((hour) => averageGain(nextValues.homeOnlineStepMin, nextValues.homeOnlineStepMax, hour)) },
@@ -319,13 +317,13 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       </div>}
       {module === "network" && memberModels?.draft && <div className="h9-confirm-chart">
         <p className="h9-chart-title">接下来 30 天的注册人数</p>
-        <TrendLines label="新旧参数下 30 天注册人数推算" ticks={DAY_LABELS} height={120} format={(value) => `${count(value)} 人`}
+        <TrendLines label="新旧参数下 30 天注册人数推算" ticks={DAY_LABELS} height={120} format={(value) => `${count(value)} 人`} axisFormat={axisShort("人")}
           series={[
             { key: "before", label: "现在的参数", slot: "other", values: memberSeries(memberModels.saved) },
             { key: "after", label: "改后", slot: 3, values: memberSeries(memberModels.draft) },
           ]} />
       </div>}
-    </>;
+    </ConfirmFacts>;
 
     ctx.openActionConfirm({ briefKind: "config",
       action: `保存${label}`,
@@ -404,10 +402,10 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     const defaultable = DEFAULTABLE.includes(module);
     const isDefault = defaultable && h9DraftText(values[key]) === h9DraftText(data.defaults[key]) && values[key] !== undefined;
     const range = `${count(field.min)}–${count(field.max)} ${field.unit}${field.integer ? "，整数" : ""}`;
-    const defaultText = defaultable ? ` · 默认 ${data.defaults[key] == null ? "不发布" : `${count(data.defaults[key])} ${field.unit}`}` : "";
+    const defaultText = defaultable && !isDefault ? `默认 ${data.defaults[key] == null ? "不发布" : `${count(data.defaults[key])} ${field.unit}`}` : "";
     return <Field key={key} label={<>{FIELD_COPY[key].name}{isDefault && <StatusTag tone="neutral">默认值</StatusTag>}</>}
-      explain={FIELD_COPY[key].what} hint={`${range}${defaultText}`}
-      help={MONEY_KEYS.has(key) ? "最多两位小数，超过两位后端会拒绝" : field.clearable ? "留空表示不发布" : pending ? "后端还没返回这一项，暂时不能改" : undefined}
+      explain={FIELD_COPY[key].what} hint={range}
+      help={[field.clearable ? "留空表示不发布" : pending ? "后端还没返回这一项，暂时不能改" : "", defaultText].filter(Boolean).join("；") || undefined}
       error={fieldErrors[key] || undefined}>
       {(control) => <NumberInput {...control}
         aria-label={`${field.label}目标值`}
@@ -443,7 +441,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     const perDay = (min: number, max: number) => kind === "online" ? `${count(min * 86_400)}–${count(max * 86_400)} 台` : `${usd(usdProduct(min, 86_400))}–${usd(usdProduct(max, 86_400))} USD`;
     return <div className="h9-chart">
       <p className="h9-chart-title">{kind === "online" ? "在线设备" : "累计已发放"} · 开启时 24 小时平均增加</p>
-      <TrendLines label={`${kind === "online" ? "在线设备" : "累计已发放"}开启后 24 小时平均增加量`} ticks={HOUR_LABELS} height={120} format={format}
+      <TrendLines label={`${kind === "online" ? "在线设备" : "累计已发放"}开启后 24 小时平均增加量`} ticks={HOUR_LABELS} height={120} format={format} axisFormat={axisShort(kind === "online" ? "台" : "USD")}
         series={[
           { key: "saved", label: "现在的参数", slot: showDraft ? "other" : 2, values: homeSeries(values[minKey], values[maxKey]) },
           ...(showDraft ? [{ key: "draft", label: "填写中", slot: 2 as const, values: homeSeries(num(drafts[minKey]), num(drafts[maxKey])) }] : []),
@@ -473,7 +471,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         <div className="h9-pair">{renderField("homeOnlineStepMin")}{renderField("homeOnlineStepMax")}</div>
       </div>
       <div className="h9-group">
-        <h3 className="h9-group-title">累计已发放</h3>
+        <h3 className="h9-group-title">累计已发放 <span className="h9-group-rule">金额最多两位小数，多了后端会拒绝</span></h3>
         {renderField("homePaidCurrent")}
         <div className="h9-pair">{renderField("homePaidStepMin")}{renderField("homePaidStepMax")}</div>
       </div>
@@ -493,7 +491,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       </AppPreview>
       <div className="h9-chart">
         <p className="h9-chart-title">接下来 30 天</p>
-        <TrendLines label="接下来 30 天注册人数推算" ticks={DAY_LABELS} height={140} format={(value) => `${count(value)} 人`}
+        <TrendLines label="接下来 30 天注册人数推算" ticks={DAY_LABELS} height={140} format={(value) => `${count(value)} 人`} axisFormat={axisShort("人")}
           series={[
             { key: "saved", label: "现在的参数", slot: memberModels!.draft ? "other" : 3, values: memberSeries(memberModels!.saved) },
             ...(memberModels!.draft ? [{ key: "draft", label: "填写中", slot: 3 as const, values: memberSeries(memberModels!.draft) }] : []),
@@ -510,7 +508,8 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       {renderField("registeredUsersBase")}
       <div className="h9-group">
         <h3 className="h9-group-title">按跳动增长</h3>
-        <div className="h9-triple">{renderField("registeredUsersTickIntervalSec")}{renderField("registeredUsersTickStepMin")}{renderField("registeredUsersTickStepMax")}</div>
+        {renderField("registeredUsersTickIntervalSec")}
+        <div className="h9-pair">{renderField("registeredUsersTickStepMin")}{renderField("registeredUsersTickStepMax")}</div>
       </div>
       {savedTick
         ? <div className="h9-group" data-idle="">
@@ -530,7 +529,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   const jobsModule = <div className="h9-module" hidden={module !== "jobs"} {...ids.panel("jobs")}>
     <Panel title="App 上的样子" icon={Smartphone} tone="role-2" explain="赚取页任务中心和全球网络页用同一个数，基座只加一次。">
       <AppPreview where="App 赚取页 · 任务中心" note={<>真实进行中作业数这页读不到。真实数读不到时，只有当天两种币的已实现收益都确为 0，App 才只显示基座；否则显示不可用。</>}>
-        <AppNumber label="全球作业进行中" value={jobs == null ? "真实数" : <>真实数 + {count(jobs)}</>} unit="个"
+        <AppNumber label="全球作业进行中" value={jobs == null ? "真实数" : <>真实数 + {count(jobs)}</>} unit="个" empty={jobs == null}
           sub={jobs == null ? "基座未发布，只显示真实进行中作业数" : jobs === 0 ? "发布了 0，显示的就是真实数" : undefined} />
       </AppPreview>
     </Panel>
@@ -549,7 +548,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     { key: "monthly", label: "30 天金额估算", now: `${usd(impact.current.monthly)} USD`, next: `${usd(impact.next.monthly)} USD` },
     { key: "denominator", label: "历史估算分母", now: `${count(impact.current.denominator)} 人`, next: `${count(impact.next.denominator)} 人` },
   ].map((row) => ({ ...row, next: row.next.includes("NaN") || row.next.startsWith("—") ? "—" : row.next })) : [];
-  const historyModule = <div hidden={module !== "history"} {...ids.panel("history")}>
+  const historyModule = <div className="h9-stack" hidden={module !== "history"} {...ids.panel("history")}>
     <Notice tone="neutral" title="这组参数目前不生效">App 正式页面不读历史估算，在线设备、已完成提现和设备预估排名都不用它。保存后只改变这页的估算。</Notice>
     <div className="h9-module">
       <Panel title="估算结果" icon={TableProperties} tone="role-other" sub={`每台每日 ${usd(data.publishedDailyUsdPerDevice)} USD`}

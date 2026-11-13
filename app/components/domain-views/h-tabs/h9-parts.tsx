@@ -7,7 +7,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { CircleHelp, Smartphone } from "lucide-react";
-import { Explain, Notice, StatusTag } from "@/app/components/rd";
+import { Change, DiffList, Explain, Fact, Facts, Notice, StatusTag, type DiffRow } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 
@@ -168,4 +168,33 @@ export function ModuleToolbar({ note, tone, children }: { note: ReactNode; tone?
 /** 页尾：修改记录去哪看（L01）。目标页自己判断能不能看。 */
 export function AuditFoot() {
   return <p className="h9-foot">每次保存都记进 <Link href="/platform/audit" className="rd-link" prefetch={false}>操作记录与审批</Link>。</p>;
+}
+
+/** 图的纵轴刻度：大数写成「万」「亿」，不让刻度字挤出图外；完整的数在悬停和图下的一句里。 */
+export function axisShort(unit: string) {
+  return (value: number) => {
+    const abs = Math.abs(value);
+    const text = abs >= 1e8 ? `${Number((value / 1e8).toFixed(2))} 亿` : abs >= 1e4 ? `${Number((value / 1e4).toFixed(1))} 万` : count(Math.round(value));
+    return `${text}${unit ? ` ${unit}` : ""}`;
+  };
+}
+
+/**
+ * 确认框里的事实块和改动：只改了一项时写成事实块里的一行「名称 现在 → 改后」，不丢名称；改了几项时事实块下面接 DiffList。
+ * 外面包 rd-stack，块和块之间统一 12。
+ */
+export function ConfirmFacts({ facts, rows, rest, children }: { facts: ReactNode; rows: readonly DiffRow[]; rest?: string; children?: ReactNode }) {
+  const changed = rows.filter((row) => row.before !== row.after);
+  const single = changed.length === 1 ? changed[0] : null;
+  return (
+    <div className="rd-stack">
+      <Facts>
+        {facts}
+        {single && <Fact k={typeof single.label === "string" ? single.label : "改动"}><Change from={single.before} to={single.after} /></Fact>}
+      </Facts>
+      {single?.note && <p className="h9-confirm-note">{single.note}</p>}
+      {!single && <DiffList rows={rows} emptyNote="参数没有改动" restTitle={rest} />}
+      {children}
+    </div>
+  );
 }

@@ -6,12 +6,12 @@
  */
 import { useEffect, useState } from "react";
 import { Globe2, RefreshCw } from "lucide-react";
-import { Button, Change, DiffList, Fact, Facts, Field, Notice, NumberInput, Panel, RatioBar, StatusTag, Table, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
+import { Button, Change, Fact, Field, Notice, NumberInput, Panel, RatioBar, StatusTag, Table, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
 import { parseGlobeDisplay, type GlobeDisplayConfig } from "@/lib/admin/globe-display-config";
 import { updateH9PublicStats, type H9PublicStatsOverview } from "@/lib/admin/h9-client";
 import { h9DraftNumber } from "@/lib/admin/h9-validation";
 import type { HCtx } from "./types";
-import { ModuleToolbar, count } from "./h9-parts";
+import { ConfirmFacts, ModuleToolbar, count } from "./h9-parts";
 
 type ScalarKey = "intervalMs" | "throughputMin" | "throughputMax" | "latencyJitterMs";
 type Draft = Record<ScalarKey, string> & { centers: { id: string; sharePct: string; latencyMs: string }[] };
@@ -89,14 +89,11 @@ export function H9GlobeDisplay({ ctx, data, refreshing, onSaved, onRefresh, onIs
       confirmLabel: "确认保存",
       statedBrief: { impact: "保存后 App 全球网络页按新的占比、延迟和吞吐模拟展示；首页数字、注册人数和设备排名不变。", check: "核对改动和 8 个中心的占比合计，理由写清调整依据。" },
       reasonPlaceholder: "例如：运营活动安排、工单号",
-      facts: <>
-        <Facts>
-          <Fact k="改的是">全球网络{sharesSupported ? "（占比、" : "（"}每小时任务量与延迟）</Fact>
-          <Fact k="主配置版本"><Change from={`v${data.version}`} to={`v${data.version + 1}`} /></Fact>
-          <Fact k="操作记录">记一条高风险操作记录（不走审批）</Fact>
-        </Facts>
-        <DiffList rows={rows} emptyNote="参数没有改动" restTitle="没改的项" />
-      </>,
+      facts: <ConfirmFacts rows={rows} rest="没改的项" facts={<>
+        <Fact k="改的是">全球网络{sharesSupported ? "（占比、" : "（"}每小时任务量与延迟）</Fact>
+        <Fact k="主配置版本"><Change from={`v${data.version}`} to={`v${data.version + 1}`} /></Fact>
+        <Fact k="操作记录">记一条高风险操作记录（不走审批）</Fact>
+      </>} />,
       detail: "只用于模拟展示，不改变真实设备、任务、收益或资金。别的块没保存的草稿不会带上。",
       run: async reason => {
         setSaving(true);

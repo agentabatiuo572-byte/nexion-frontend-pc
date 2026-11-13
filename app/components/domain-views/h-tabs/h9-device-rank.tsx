@@ -6,13 +6,13 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Plus, RefreshCw, Trophy } from "lucide-react";
-import { BlockState, Button, Change, DiffList, Explain, Fact, Facts, Input, Notice, NumberInput, Panel, RatioBar, Segments, StatusTag, Table, TableMessage, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
+import { BlockState, Button, Change, Explain, Fact, Input, Notice, NumberInput, Panel, RatioBar, Segments, StatusTag, Table, TableMessage, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
 import { fetchDeviceRankConfig, updateDeviceRankConfig } from "@/lib/admin/device-rank-client";
 import { deviceRankConfigError, type DeviceRankConfig, type DeviceRankTierDraft } from "@/lib/admin/device-rank-config";
 import { h9DraftNumber } from "@/lib/admin/h9-validation";
 import type { HCtx } from "./types";
 import type { RankSnapshot } from "./h9-overview";
-import { AppPreview, H9RecoveryNotice, ModuleToolbar, count, saveIssueKind, type SaveIssueKind } from "./h9-parts";
+import { AppPreview, ConfirmFacts, H9RecoveryNotice, ModuleToolbar, count, saveIssueKind, type SaveIssueKind } from "./h9-parts";
 
 const tierDrafts = (config: DeviceRankConfig): DeviceRankTierDraft[] => config.tiers.map((tier) => ({
   name: tier.name, sharePct: String(tier.sharePct), minTops: String(tier.minTops), maxTops: String(tier.maxTops),
@@ -71,14 +71,11 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
       confirmLabel: "确认保存",
       statedBrief: { impact: enabled ? "保存后 App 按新档位给用户估一个设备排名（参考，不是真实榜单），不影响真实算力、收益和奖励。" : "保存后 App 不再显示设备排名，改为占位说明；档位留着，下次开启照用。", check: "核对档位占比合计 100% 和算力范围，理由写清调整依据。" },
       reasonPlaceholder: "例如：运营活动安排、工单号",
-      facts: <>
-        <Facts>
-          <Fact k="排名设置版本"><Change from={`v${data.version}`} to={`v${data.version + 1}`} /></Fact>
-          <Fact k="参考样本">{sameDistribution ? "不变（只改了开关或名称）" : "按新的档位分布重新生成"}</Fact>
-          <Fact k="操作记录">记一条高风险操作记录（不走审批）</Fact>
-        </Facts>
-        <DiffList rows={diff} emptyNote="档位没有改动" restTitle="没改的档" />
-      </>,
+      facts: <ConfirmFacts rows={diff} rest="没改的档" facts={<>
+        <Fact k="排名设置版本"><Change from={`v${data.version}`} to={`v${data.version + 1}`} /></Fact>
+        <Fact k="参考样本">{sameDistribution ? "不变（只改了开关或名称）" : "按新的档位分布重新生成"}</Fact>
+        <Fact k="操作记录">记一条高风险操作记录（不走审批）</Fact>
+      </>} />,
       detail: "在线设备数取自首页数字增长。排名是独立的一套设置，不受本页其他块的保存影响。",
       run: async (reason) => {
         setSaving(true);
