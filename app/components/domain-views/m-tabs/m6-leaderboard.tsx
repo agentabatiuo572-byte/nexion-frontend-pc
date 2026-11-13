@@ -4,7 +4,7 @@ import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
 import { useEffect, useRef, useState } from "react";
-import { MapPin, RefreshCw, UserRound } from "lucide-react";
+import { ListOrdered, MapPin, RefreshCw, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
@@ -225,7 +225,7 @@ export function M6Leaderboard() {
             </div>
           </>}
       </div>
-      {visibleDetail && <Modal title={`${detailName ?? "客服"}的公开成绩`} sub={<StatusTag tone="neutral">{BOARD_LABEL[board]}榜</StatusTag>} icon={UserRound} onClose={closeDetail}
+      {visibleDetail && <Modal title={`${detailName ?? "客服"}的公开成绩`} sub={<StatusTag tone="neutral" icon={ListOrdered}>{BOARD_LABEL[board]}榜</StatusTag>} icon={UserRound} onClose={closeDetail}
         footer={<>
           <Button onClick={closeDetail}>关闭</Button>
           {visibleDetail.error && <Button onClick={() => openDetail(visibleDetail.agentId)}>重试</Button>}
