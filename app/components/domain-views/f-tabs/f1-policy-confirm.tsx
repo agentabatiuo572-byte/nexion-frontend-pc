@@ -9,7 +9,7 @@ import { useState } from "react";
 import { CircleHelp, LockOpen, ShieldCheck, Zap } from "lucide-react";
 import { Button, Change, DiffField, Fact, Facts, Field, Input, Notice, Select, StatusTag } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { businessStamp } from "@/lib/admin/business-time";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import {
   f1ConditionLabels, f1PolicyInitialForm, f1PolicyInputError, f1PolicyNeedsApproval,
@@ -47,7 +47,7 @@ export function F1RemovalRecovery({ rank, onRecover }: { rank: string; onRecover
       const current = pendingF1Policy(owner, original.editor);
       if (current?.commandKey === commandKey) onRecover({ ...original.editor, recoveryCommandKey: commandKey });
     }}>核对原操作</Button>}>
-    移除「{label(original.editor.reward)}」，{businessStamp(createdAt)} 提交。这项奖励可能已经不在列表里了。
+    移除「{label(original.editor.reward)}」，{businessStamp(createdAt)}（{businessZone().label}）提交。这项奖励可能已经不在列表里了。
   </Notice>)}</>;
 }
 
@@ -139,7 +139,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, pendingApprov
   const facts = <Facts>
     {!isCondition && <Fact k={remove ? "要移除的奖励" : editor.reward ? "现在的奖励" : "等级"}>{editor.reward ? currentLabel : `${editor.row.v} · 现在 ${(ctx.rewards[editor.row.v] ?? []).length} 项奖励`}</Fact>}
     {isCondition && (prev || next) && <Fact k="相邻等级">{[prev, next].filter(Boolean).join(" · ")}</Fact>}
-    {opening.pending && <Fact k="原操作提交于">{businessStamp(opening.pending.createdAt)}</Fact>}
+    {opening.pending && <Fact k="原操作提交于">{businessStamp(opening.pending.createdAt)}（{businessZone().label}）</Fact>}
     {pendingApproval && !opening.pending && <Fact k="待审批的申请" tone="warn">这一级有一张门槛或奖励的申请还没批；现在直接修改，那张申请批准时会因版本对不上失败</Fact>}
   </Facts>;
   const statedBrief = isCondition

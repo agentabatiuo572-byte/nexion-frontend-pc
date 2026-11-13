@@ -109,6 +109,8 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
   const records = ctx.payoutRecords;
   const current = records.find((record) => record.payoutId === openId) ?? null;
   const at = current ? records.indexOf(current) : -1;
+  const canAct = canReissue || canReverse;
+  const cols = canAct ? 5 : 4;
   const allowed = (record: F1RewardPayout) => ({
     reissue: canReissue && record.status === "REVERSED",
     reverse: canReverse && ["GRANTED", "REISSUED", "PENDING_GRANT"].includes(record.status),
@@ -177,11 +179,11 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
       sub={`当前筛选 ${ctx.payoutTotal.toLocaleString("en-US")} 条 · 时间为${ZONE}`}
       explain="每次有人升级、按模板发出的每一项奖励各一条。已冲正的可以重发，已发放、已重发、待发放的可以冲正，都要提交审批；发放失败的这页没有重试入口。">
       <Table label="奖励发放记录" className="f1-table">
-        <colgroup><col className="f1-col-payout" /><col className="f1-col-reward" /><col className="f1-col-status" /><col className="f1-col-time" /><col className="f1-col-act" /></colgroup>
-        <thead><tr><Th>发放单</Th><Th>等级 · 奖励</Th><Th>状态</Th><Th>时间</Th><Th align="right" sticky="end">操作</Th></tr></thead>
+        <colgroup><col className="f1-col-payout" /><col className="f1-col-reward" /><col className="f1-col-status" /><col className="f1-col-time" />{canAct && <col className="f1-col-act" />}</colgroup>
+        <thead><tr><Th>发放单</Th><Th>等级 · 奖励</Th><Th>状态</Th><Th>时间</Th>{canAct && <Th align="right" sticky="end">操作</Th>}</tr></thead>
         <tbody>
-          {ctx.f1PayoutError ? <TableMessage columns={5} role="alert">发放记录读取失败 · {ctx.f1PayoutError}</TableMessage>
-            : records.length === 0 ? ctx.f1PayoutLoading ? <TableLoading columns={5} /> : <TableMessage columns={5}>没有符合条件的发放记录</TableMessage>
+          {ctx.f1PayoutError ? <TableMessage columns={cols} role="alert">发放记录读取失败 · {ctx.f1PayoutError}</TableMessage>
+            : records.length === 0 ? ctx.f1PayoutLoading ? <TableLoading columns={cols} /> : <TableMessage columns={cols}>没有符合条件的发放记录</TableMessage>
               : records.map((record) => {
                 const reward = payoutReward(record);
                 const status = PAYOUT_STATUS[record.status];
@@ -191,7 +193,7 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
                     <Td><Cell main={<span title={reward.raw}>{reward.main}{reward.unit && <small className="f1-unit"> {reward.unit}</small>}</span>} sub={`${dash(record.rankCode)} · ${record.rewardType.toUpperCase() === "USDT" || record.rewardType.toUpperCase() === "UVT" ? "资金" : PAYOUT_TYPES.find((item) => item.value === record.rewardType.toUpperCase())?.label ?? dash(record.rewardType)}`} /></Td>
                     <Td>{status ? <StatusTag tone={status.tone} icon={status.icon}>{status.label}</StatusTag> : <StatusTag tone="warn">状态未知</StatusTag>}</Td>
                     <Td><Cell main={dash(record.reversedAt || record.grantedAt)} sub={record.reversedAt ? "冲正时间" : record.grantedAt ? "发放时间" : undefined} num /></Td>
-                    <Td align="right" sticky="end" data-fit="">{actions(record) ?? <span className="f1-weak">—</span>}</Td>
+                    {canAct && <Td align="right" sticky="end" data-fit="">{actions(record) ?? <span className="f1-weak">—</span>}</Td>}
                   </Tr>
                 );
               })}

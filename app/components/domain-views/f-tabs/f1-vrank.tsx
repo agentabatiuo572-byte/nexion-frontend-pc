@@ -462,7 +462,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
                     <span className={value === "不要求" || value === "不看分支" || value === "未设置" ? "f1-weak" : "f1-strong"}>{value}</span>
                     {steps(field)}
                     {pending ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。点「查看原操作」查询或按原内容重试。">结果未知</StatusTag> : null}
-                    {raw0(field, row) ? null : <span className="f1-dir">调低要批准</span>}
+                    {!canWrite || raw0(field, row) ? null : <span className="f1-dir">调低要批准</span>}
                   </span>}
                   sub={value === undefined ? "后端没给这一项" : [prevText !== undefined && prev ? `${prev.v} ${prevText}` : undefined, nextText !== undefined && next ? `${next.v} ${nextText}` : undefined].filter(Boolean).join(" · ") || undefined}
                   action={value !== undefined && (canWrite || pending) ? (describedBy) => (
