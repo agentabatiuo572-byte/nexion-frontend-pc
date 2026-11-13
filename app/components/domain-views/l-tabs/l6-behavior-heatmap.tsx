@@ -1,18 +1,21 @@
 "use client";
-import { behaviorPageTitle } from "@/lib/admin/l6-page-labels";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
- * L6 · 用户行为热力图 — 前端操作按页面/层级聚合的热力矩阵 + 单页点击坐标热力。
- * 形态:① 页面活跃热力矩阵(行=页面[按所选层级上卷],列=PV/UV·点击·停留·跳出,格色=强度);
- *      ② 点行查看明细到单页 SVG 手机框坐标热力(看该页内用户点哪)。
- * 粒度可设:全部 / 一级 / 二级 / 三级(按 UX 层级上卷,即「统计到哪个层级的页面」)。
- * 只读报表域:无任何写业务规则动作;唯一写动作=聚合导出(confirm + BI export task)。
+ * L6 · 用户行为热力图（改版，rd）。
+ * 页头（两个导出、刷新）→ 筛选栏（时间范围、页面层级、设备、语言，「现在看」）→ 一句结论 → 四个合计 →
+ * 浏览最多、跳出率最高两张榜 → 页面热力表（左）和单页点击位置（右）→ 访问趋势 → 统计范围和口径（折叠）。
+ * 读取、热区请求、两个导出的请求沿用改版前的写法（请求逐字节不变），这里只换界面。
+ * 两个导出的理由框已经做好，理由还没传给后端（BUG-352），由代码 worker 接。
  */
-import { useEffect, useId, useMemo, useState } from "react";
-import { AutoGloss } from "@/app/components/kit/gloss";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { FileSpreadsheet, MousePointerClick, RefreshCw, TriangleAlert } from "lucide-react";
+import {
+  BlockState, Button, Conclusion, Explain, Fact, Facts, FilterBar, FilterField, Notice, PageHeader, Segments, Select, StatusTag,
+} from "@/app/components/rd";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { downloadL6Behavior, fetchL6Behavior, fetchL6ClickHeat } from "@/lib/admin/l-client";
+import { behaviorPageTitle } from "@/lib/admin/l6-page-labels";
 import {
   aggregateByDepth,
   activityForWindow,
@@ -23,100 +26,13 @@ import {
   type HeatRow,
   type TimeWindow,
 } from "./l6-live-data";
-import { LDataState } from "./live-data";
+import {
+  BOUNCE_WARN, ClickPanel, CSV_COLUMNS, DEPTH_HINT, DEPTHS, DEVICES, HeatTable, LOCALES, n, pct, RankPanels, ScopeFold, SummaryBand, TrendPanel,
+  WINDOWS, type SortKey,
+} from "./l6-behavior-views";
 import type { LCtx } from "./types";
 
-const DEPTHS: { v: DepthFilter; lb: string }[] = [
-  { v: "all", lb: "全部" },
-  { v: "L1", lb: "一级" },
-  { v: "L2", lb: "二级" },
-  { v: "L3", lb: "三级" },
-];
-const DEPTH_HINT: Record<DepthFilter, string> = {
-  all: "全部被追踪页逐页",
-  L1: "上卷到一级入口页",
-  L2: "上卷到二级板块页",
-  L3: "仅三级叶子页(详情 / 指南)",
-};
-const WINDOWS: { v: TimeWindow; lb: string }[] = [
-  { v: "24h", lb: "近 24 小时" },
-  { v: "7d", lb: "近 7 天" },
-  { v: "30d", lb: "近 30 天" },
-];
-type SortKey = "pv" | "clicks" | "dwellMs" | "bounceRate";
-const SORTS: { v: SortKey; lb: string }[] = [
-  { v: "pv", lb: "按 PV" },
-  { v: "clicks", lb: "按点击" },
-  { v: "dwellMs", lb: "按停留" },
-  { v: "bounceRate", lb: "按跳出" },
-];
-
-const n = (x: number): string => x.toLocaleString("en-US");
-const fmtDwell = (ms: number): string => {
-  const s = Math.round(ms / 1000);
-  return s >= 60 ? `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s` : `${s}s`;
-};
-const fmtPct = (r: number): string => `${(r * 100).toFixed(1)}%`;
-
-/** 活跃强度色阶(cyan 系,按本列最大值归一化):深=高频。暗字仅给最深档,保证 dark 下对比度。 */
-function activityCell(v: number, max: number): React.CSSProperties {
-  const t = max > 0 ? v / max : 0;
-  const a = t >= 0.8 ? 72 : t >= 0.55 ? 48 : t >= 0.3 ? 26 : t >= 0.08 ? 12 : 4;
-  return { background: `color-mix(in srgb, var(--cyan) ${a}%, transparent)`, color: a >= 60 ? "#0A0A0A" : "var(--ink-2)" };
-}
-/** 跳出率警示色阶(绝对阈值:>50% 红 · 35–50% 橙 · 低=淡橙):高=问题,不是「热」。 */
-function bounceCell(rate: number): React.CSSProperties {
-  const hot = rate > 0.5 ? "var(--danger)" : "var(--warning)";
-  const a = rate > 0.5 ? 58 : rate >= 0.35 ? 40 : rate >= 0.22 ? 22 : 10;
-  return { background: `color-mix(in srgb, ${hot} ${a}%, transparent)`, color: a >= 55 ? "#0A0A0A" : "var(--ink-2)" };
-}
-
-export function L6HeaderActions({ ctx }: { ctx: LCtx }) {
-  let available = false;
-  let invalid = false;
-  try {
-    const normalized = normalizeL6BehaviorHeatmap(ctx.biData?.l6 ?? null);
-    available = normalized.available && activityForWindow(normalized, "7d").length > 0;
-    invalid = !normalized.available && normalized.status !== "LOADING";
-  } catch {
-    invalid = true;
-  }
-  const loading = Boolean(ctx.biLoading);
-  const failed = Boolean(ctx.biError) || invalid || (!loading && !ctx.biData?.l6);
-  const [exporting, setExporting] = useState(false);
-  const exportCsv = async () => {
-    if (loading || failed || !available || !ctx.canExport || exporting) return;
-    setExporting(true);
-    try {
-      const file = await downloadL6Behavior({ window: "7d", device: "ALL", locale: "ALL" });
-      const href = URL.createObjectURL(file.blob);
-      const link = document.createElement("a");
-      link.href = href;
-      link.download = file.fileName;
-      link.click();
-      URL.revokeObjectURL(href);
-      ctx.toast("行为热力聚合 CSV 已导出 · 不含 PII");
-    } catch (error) {
-      ctx.toast(error instanceof Error ? displayAdminError(error) : "行为热力导出失败");
-    } finally {
-      setExporting(false);
-    }
-  };
-  return (
-    <>
-      <span className="f-ro">
-        <span className="d" />
-        只读报表域 · 不改任何业务规则
-      </span>
-      <button className="f-cta" onClick={() => void exportCsv()} disabled={loading || failed || !available || !ctx.canExport || exporting}
-        title={!ctx.canExport ? "当前角色只有查看权限" : loading ? "行为数据加载中，暂时不能导出" : failed ? "行为数据加载失败，暂时不能导出" : !available ? "当前结果没有可导出的生产事件" : undefined}>
-        {exporting ? "导出中…" : loading ? "行为数据加载中…" : failed ? "行为数据加载失败" : available ? "导出近 7 天全端" : "当前暂无生产事件"}
-      </button>
-    </>
-  );
-}
-
-export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
+export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; summary: string }) {
   const [depth, setDepth] = useState<DepthFilter>("all");
   const [win, setWin] = useState<TimeWindow>("7d");
   const [sort, setSort] = useState<SortKey>("pv");
@@ -129,10 +45,11 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
   const [refreshing, setRefreshing] = useState(false);
   const [liveError, setLiveError] = useState("");
   const [exporting, setExporting] = useState(false);
-  const [reloadRevision, setReloadRevision] = useState(0);
+  const [reloadRevision] = useState(0);
   const gradId = "l6heat-" + useId().replace(/:/g, "");
   const overviewRaw = ctx.biData?.l6 ?? null;
 
+  /* ---------------- 局部条件读取：沿用改版前（L6-H03、L6-S05、L6-S07） ---------------- */
   useEffect(() => {
     let cancelled = false;
     setRefreshing(true);
@@ -184,19 +101,14 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
   const heatmapData = useMemo(() => normalizeL6BehaviorHeatmap(liveRaw), [liveRaw]);
 
   const stats = useMemo(() => activityForWindow(heatmapData, win), [heatmapData, win]);
-  const summary = useMemo(() => summarize(stats), [stats]);
+  const summaryNums = useMemo(() => summarize(stats), [stats]);
   const rows = useMemo<HeatRow[]>(() => {
     const r = aggregateByDepth(heatmapData.pageTree, stats, "all");
     const dir = sortDir === "desc" ? 1 : -1;
     return [...r].sort((a, b) => (b[sort] - a[sort]) * dir);
-  }, [heatmapData.pageTree, stats, depth, sort, sortDir]);
+  }, [heatmapData.pageTree, stats, depth, sort, sortDir]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 每列最大值(按当前行集归一化)
-  const maxPv = Math.max(1, ...rows.map((r) => r.pv));
-  const maxClicks = Math.max(1, ...rows.map((r) => r.clicks));
-  const maxDwell = Math.max(1, ...rows.map((r) => r.dwellMs));
-
-  // 查看明细:默认选最热行,可点切换
+  // 查看明细：默认选第一行，可点切换（L6-Q05）
   const activeKey = sel ?? rows[0]?.key ?? null;
   const activeRow = rows.find((r) => r.key === activeKey) ?? null;
   useEffect(() => {
@@ -215,7 +127,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
         }
       });
     return () => { cancelled = true; };
-  }, [activeKey, activeRow, depth, device, locale, sort, win]);
+  }, [activeKey, activeRow, depth, device, locale, sort, win]); // eslint-disable-line react-hooks/exhaustive-deps
   const heat = useMemo(() => {
     if (!activeKey) return null;
     if (!liveHeat || liveHeat.route !== activeKey) return clickHeatForRoute(heatmapData, activeKey);
@@ -223,391 +135,307 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
     return clickHeatForRoute(withHeat, activeKey);
   }, [activeKey, heatmapData, liveHeat, liveRaw]);
   const aggregateSelection = depth === "L1" || depth === "L2" || (activeRow?.pageCount ?? 0) > 1;
+  // 只管显示：这一页的点击位置读到了没有。读取中、读取失败不当成「没有点击」。
+  const heatLoaded = Boolean(liveHeat && activeKey && liveHeat.route === activeKey);
 
-  const depthLb = DEPTHS.find((d) => d.v === depth)?.lb ?? "全部";
+  /* ---------------- 页头「导出近 7 天全端」：可导条件沿用改版前的 L6HeaderActions（L6-A02） ---------------- */
+  const parent = useMemo(() => {
+    try {
+      const normalized = normalizeL6BehaviorHeatmap(overviewRaw);
+      return {
+        available: normalized.available && activityForWindow(normalized, "7d").length > 0,
+        invalid: !normalized.available && normalized.status !== "LOADING",
+        rows7d: activityForWindow(normalized, "7d").length,
+      };
+    } catch {
+      return { available: false, invalid: true, rows7d: 0 };
+    }
+  }, [overviewRaw]);
+  const parentLoading = Boolean(ctx.biLoading);
+  const parentFailed = Boolean(ctx.biError) || parent.invalid || (!parentLoading && !ctx.biData?.l6);
+  const [allExporting, setAllExporting] = useState(false);
+
+  const runExportAll = async (reason: string) => {
+    void reason; // BUG-352：理由已在框里收好，代码 worker 把它接进导出请求（URLSearchParams 的 reason）。这里请求不变。
+    if (parentLoading || parentFailed || !parent.available || !ctx.canExport || allExporting) return;
+    setAllExporting(true);
+    try {
+      const file = await downloadL6Behavior({ window: "7d", device: "ALL", locale: "ALL" });
+      saveFile(file.blob, file.fileName);
+      ctx.toast("已下载近 7 天全端页面数据（CSV，不含用户身份）", "success");
+    } finally {
+      setAllExporting(false);
+    }
+  };
+  const exportScopeExplain = (
+    <Explain label="八列分别是什么" content={<>
+      <p>每个页面一行：页面路径、页面名、层级（1–3）、浏览次数、浏览人数、点击次数、平均停留（毫秒）、跳出率（0–1 的小数）。数字是原值，不换算。</p>
+      <p>不含点击位置、区域占比、访问趋势，也不含任何用户身份。</p>
+      <p>已退役、但这段时间还有历史事件的页面也在里面，所以行数可能比页面热力表多；查不到名字的页面，页面名写路径、层级写 3。</p>
+    </>} />
+  );
+  const openExportAll = () => {
+    ctx.openActionConfirm({
+      briefKind: "export",
+      title: "导出近 7 天全端页面数据",
+      action: "导出近 7 天全端",
+      detail: "按确认那一刻往前 7 天，导出全部设备、全部语言的逐页汇总，不跟下面的筛选。",
+      effect: <StatusTag tone="progress" filled>直接下载</StatusTag>,
+      statedBrief: {
+        impact: "确认后按那一刻重新统计，下载一个 CSV 到这台电脑；不改任何数据，导出留一条操作记录。",
+        check: "范围固定是近 7 天、全部设备、全部语言、逐页，和页面上现在选的条件无关。",
+      },
+      facts: (
+        <Facts>
+          <Fact k="范围">近 7 天 · 全部设备 · 全部语言 · 逐页<Explain label="近 7 天怎么算" content={`从确认那一刻往前滚动 7×24 小时，不是自然周；时区 ${businessZone().label}。`} /></Fact>
+          <Fact k="排序">按浏览次数从多到少</Fact>
+          <Fact k="文件内容">{CSV_COLUMNS}{exportScopeExplain}</Fact>
+          <Fact k="行数">现在约 {n(parent.rows7d)} 行，以确认时为准</Fact>
+          <Fact k="记录">每次导出留一条操作记录</Fact>
+        </Facts>
+      ),
+      confirmLabel: "确认并下载",
+      reasonPlaceholder: "写这份数据给谁、做什么用，例如：周会复盘各页面跳出",
+      reasonMin: 8,
+      reasonMax: 200,
+      run: runExportAll,
+    });
+  };
+
+  /* ---------------- 「导出当前筛选」：可导条件和请求沿用改版前（L6-A03） ---------------- */
   const canExportCurrent = ctx.canExport && heatmapData.available && stats.length > 0 && !liveError && !refreshing;
+  const winLabel = WINDOWS.find((w) => w.v === win)?.lb ?? "";
+  const deviceLabel = DEVICES.find((d) => d.v === device)?.lb ?? "";
+  const localeLabel = LOCALES.find((l) => l.v === locale)?.lb ?? "";
+  const depthLabel = DEPTHS.find((d) => d.v === depth)?.lb ?? "";
+  const sortLabel = { pv: "浏览次数", clicks: "点击次数", dwellMs: "平均停留", bounceRate: "跳出率" }[sort];
+  const scope = `${winLabel} · ${deviceLabel} · ${localeLabel} · ${depthLabel}`;
 
-  const exportCurrent = async () => {
+  const runExportCurrent = async (reason: string) => {
+    void reason; // BUG-352：同上，代码 worker 接理由；请求不变。
     if (!canExportCurrent || exporting) return;
     setExporting(true);
     try {
       const file = await downloadL6Behavior({ window: win, device, locale, depth, sort, sortDir });
-      const href = URL.createObjectURL(file.blob);
-      const link = document.createElement("a");
-      link.href = href;
-      link.download = file.fileName;
-      link.click();
-      URL.revokeObjectURL(href);
-      ctx.toast("当前筛选的聚合 CSV 已导出 · 不含 PII");
-    } catch (error) {
-      ctx.toast(error instanceof Error ? displayAdminError(error) : "行为热力导出失败");
+      saveFile(file.blob, file.fileName);
+      ctx.toast("已下载当前筛选的页面数据（CSV，不含用户身份）", "success");
     } finally {
       setExporting(false);
     }
   };
+  const openExportCurrent = () => {
+    ctx.openActionConfirm({
+      briefKind: "export",
+      title: "导出当前筛选的页面数据",
+      action: "导出当前筛选",
+      detail: <>按现在看的 <b>{scope}</b> 导出逐行汇总，不含点击位置和访问趋势。</>,
+      effect: <StatusTag tone="progress" filled>直接下载</StatusTag>,
+      statedBrief: {
+        impact: "确认后按那一刻重新统计，下载一个 CSV 到这台电脑；不改任何数据，导出留一条操作记录。",
+        check: "核对时间范围、设备、语言和页面层级；时间范围从确认那一刻往前滚动，数可能和页面上差一点。",
+      },
+      facts: (
+        <Facts>
+          <Fact k="范围">{scope}</Fact>
+          <Fact k="排序">按{sortLabel}{sortDir === "desc" ? "从多到少" : "从少到多"}</Fact>
+          <Fact k="文件内容">{CSV_COLUMNS}{exportScopeExplain}</Fact>
+          <Fact k="行数">现在约 {n(stats.length)} 行，以确认时为准</Fact>
+          <Fact k="不含">选中页面的点击位置、区域占比、访问趋势</Fact>
+          <Fact k="记录">每次导出留一条操作记录</Fact>
+        </Facts>
+      ),
+      confirmLabel: "确认并下载",
+      reasonPlaceholder: "写这份数据给谁、做什么用，例如：核对新版首页的跳出",
+      reasonMin: 8,
+      reasonMax: 200,
+      run: runExportCurrent,
+    });
+  };
 
+  /* ---------------- 页头 ---------------- */
+  const readAt = useMemo(() => (overviewRaw ? formatBusinessTimeCompact(new Date().toISOString(), "") : ""), [overviewRaw]);
+  const allBlocked = parentLoading ? "正在读取，读完再导出" : parentFailed ? "行为数据读取失败，暂时不能导出" : !parent.available ? "近 7 天没有页面浏览和点击，没有可导出的数据" : undefined;
+  const currentBlocked = refreshing ? "正在按新条件读取，读完再导出"
+    : liveError ? "这组条件有读取失败，刷新或换一个条件后再导出"
+      : !heatmapData.available || !stats.length ? "这组条件下没有页面浏览和点击，没有可导出的数据" : undefined;
+  const actions = ctx.canExport ? (
+    <span className="l6-actions">
+      <span className="l6-pair" data-pair="">
+        <Button icon={<FileSpreadsheet size={14} aria-hidden />} loading={allExporting} loadingText="正在下载…" disabledReason={allBlocked} onClick={openExportAll}>导出近 7 天全端</Button>
+        <Explain label="导出近 7 天全端是什么" content={<><p>固定导出近 7 天、全部设备、全部语言的逐页汇总，不跟下面的筛选。</p><p>写理由后直接下载 CSV，不含点击位置和用户身份，每次导出留操作记录。</p></>} />
+      </span>
+      <span className="l6-pair" data-pair="">
+        <Button icon={<FileSpreadsheet size={14} aria-hidden />} loading={exporting} loadingText="正在下载…" disabledReason={currentBlocked} onClick={openExportCurrent}>导出当前筛选</Button>
+        <Explain label="导出当前筛选是什么" content={<><p>按现在看的时间范围、设备、语言、页面层级和排序导出，和页面热力表是同一组条件。</p><p>写理由后直接下载 CSV，不含选中页面的点击位置和访问趋势。</p></>} />
+      </span>
+    </span>
+  ) : undefined;
+  const header = (
+    <PageHeader
+      pageId="L6"
+      title={title}
+      summary={summary}
+      actions={actions}
+      meta={<span className="rd-toolbar">
+        <span>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}打开页面时读取，不自动刷新</span>
+        <Button variant="ghost" size="sm" loading={parentLoading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.reloadBi?.()}>刷新</Button>
+      </span>}
+      readOnly={!ctx.canExport ? "当前角色只有查看权限，不能导出" : undefined}
+    />
+  );
+
+  /* ---------------- 筛选栏（L6-Q01、L6-Q02、L6-Q03） ---------------- */
+  const filterBar = (
+    <FilterBar
+      scope={<>
+        <Segments<TimeWindow> label="时间范围" value={win} items={WINDOWS.map((w) => ({ value: w.v, label: w.lb }))}
+          onChange={(value) => { setWin(value); setSel(null); }} />
+        <Segments<DepthFilter> label="页面层级" value={depth} items={DEPTHS.map((d) => ({ value: d.v, label: d.lb }))}
+          onChange={(value) => { setDepth(value); setSel(null); }} />
+      </>}
+      sort={<span className="l6-now rd-filter-result">
+        现在看：{refreshing ? `${scope} · 正在读取` : scope}
+        <Explain label="这几个条件管什么" content={<>
+          <p>时间范围从读取那一刻往前滚动 24 小时、7 天、30 天，不是自然日、周、月；时区 {heatmapData.available ? heatmapData.businessTimeZone : businessZone().label}。</p>
+          <p>页面层级：{DEPTH_HINT[depth]}。按一级、二级汇总时一行是一组页面，浏览人数在组内去重。</p>
+          <p>设备、语言只按 App 上报的标记筛，「全部语言」里也包含这三种以外的语言。条件不保存，刷新页面回到近 7 天、全部。</p>
+          <p>页头「导出近 7 天全端」不跟这些条件。</p>
+        </>} />
+      </span>}
+    >
+      <FilterField>
+        <Select aria-label="设备筛选" value={device} onChange={(value) => setDevice(value as typeof device)}
+          options={DEVICES.map((d) => ({ value: d.v, label: d.lb }))} />
+      </FilterField>
+      <FilterField>
+        <Select aria-label="语言筛选" value={locale} onChange={setLocale}
+          options={LOCALES.map((l) => ({ value: l.v, label: l.lb }))} />
+      </FilterField>
+    </FilterBar>
+  );
+
+  const page = (body: ReactNode) => (
+    <>
+      {header}
+      {filterBar}
+      {body}
+    </>
+  );
+
+  /* ---------------- 数据源状态（L6-S03、L6-S04） ---------------- */
   if (!heatmapData.available && heatmapData.status === "BLOCKED_CROSS_MODULE") {
-    return (
-      <div>
-        <section className="l-card">
-          <div className="l-h">
-            <span className="ttl">用户行为热力图 · 数据接入状态</span>
-            <div className="r"><span className="bdg warn">跨模块验收</span></div>
-          </div>
-          <div className="l-b">
-            <div className="ltint warn" style={{ fontSize: 12.5 }}>
-              <b>当前状态：等待跨模块接入</b> · <AutoGloss>{heatmapData.message || "行为热力数据源尚未接入，页面不会用业务表行数冒充用户行为事件。"}</AutoGloss>
-            </div>
-            <div className="liab-split" style={{ marginTop: 14 }}>
-              <div className="rev-row" style={{ gridTemplateColumns: "1fr auto" }}>
-                <span className="nm">页面浏览事件<span className="src">应用行为采集</span></span>
-                <span className="lcode">app.page_viewed</span>
-              </div>
-              <div className="rev-row" style={{ gridTemplateColumns: "1fr auto" }}>
-                <span className="nm">元素点击事件<span className="src">应用行为采集</span></span>
-                <span className="lcode">app.element_clicked</span>
-              </div>
-            </div>
-            <div className="ltint" style={{ marginTop: 14, fontSize: 12 }}>
-              <b>还没上线</b> · 要等 App 开始上报上面两类数据后才能使用。目前不显示热力数据、不能导出，也不会用假数据凑数。
-            </div>
-          </div>
-        </section>
-      </div>
-    );
+    return page(<>
+      <Conclusion state="unknown">用户行为热力图：等待跨模块接入</Conclusion>
+      <BlockState state="empty" title="还没上线：行为数据还没接入"
+        detail={<>{heatmapData.message || "行为热力数据源尚未接入，页面不会用业务表行数冒充用户行为事件。"} 要等 App 开始上报页面浏览（app.page_viewed）和元素点击（app.element_clicked）后才能使用；目前不显示热力数据、不能导出，也不会用假数据凑数。</>} />
+    </>);
   }
-
   if (!heatmapData.available && heatmapData.status === "RETIRED_ENVIRONMENT") {
-    return (
-      <div><section className="l-card">
-          <div className="l-h">
-            <span className="ttl">用户行为热力图 · 数据来源无效</span>
-          </div>
-          <div className="l-b">
-            <div className="ltint warn" style={{ fontSize: 12.5 }}>
-              <b>数据来源不对，已停止显示。</b> · <AutoGloss>{heatmapData.message || "收到的是已停用的数据来源。"}</AutoGloss>
-            </div>
-          </div>
-        </section></div>
-    );
+    return page(<>
+      <Conclusion state="unknown">用户行为热力图：数据来源无效</Conclusion>
+      <BlockState state="error" title="数据来源不对，已停止显示。" detail={heatmapData.message || "收到的是已停用的数据来源。"} />
+    </>);
   }
 
+  /* ---------------- 读取中、失败、没有页面目录（L6-S01、L6-A01） ---------------- */
   if (!heatmapData.pageTree.length) {
-    return <div><LDataState ctx={{ ...ctx, biLoading: refreshing || ctx.biLoading, biError: liveError || ctx.biError }} label="L6" /></div>;
+    const loading = refreshing || ctx.biLoading;
+    const error = liveError || ctx.biError;
+    return page(<>
+      <Conclusion state="unknown">{loading ? "用户行为热力图：正在读取" : error ? "用户行为热力图：读取失败，暂时无法判断" : "用户行为热力图：还没有页面目录"}</Conclusion>
+      {loading
+        ? <BlockState state="loading" title="正在读取页面目录和行为数据…" />
+        : error
+          ? <BlockState state="error" title="行为数据读取失败，不显示旧数据" detail={<>{error === ctx.biError ? `${error} ` : ""}筛选条件还留着，重新加载后按这组条件再读；还是失败的话，请把错误信息发给技术同事。{error !== ctx.biError && <ErrorText text={error} />}</>} onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
+          : <BlockState state="empty" title="页面目录是空的，没有可统计的页面" detail="请先重新加载；仍然为空，说明页面目录还没有登记页面。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
+    </>);
   }
 
   const selectRow = (key: string) => {
     setSel(key);
-    // 让查看明细卡进入视野(已在视野则不滚动)
+    // 让单页点击位置进入视野（已在视野则不滚动）
     requestAnimationFrame(() => document.getElementById("l6-drill")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   };
 
-  return (
-    <div>
-      {/* stat strip */}
-      {(refreshing || liveError) && (
-        <div className={`ltint ${liveError ? "warn" : "cyan"}`} style={{ marginBottom: 12, fontSize: 12 }}>
-          {liveError || "正在加载…"}
-        </div>
-      )}
-      <div className="f-stats">
-        <div className="f-stat cyan">
-          <div className="k">总页面浏览 PV</div>
-          <div className="v">{n(summary.totalPv)}</div>
-          <div className="sub">{WINDOWS.find((w) => w.v === win)?.lb} · 全部被追踪页</div>
-        </div>
-        <div className="f-stat">
-          <div className="k">总点击 / 点按</div>
-          <div className="v">{n(summary.totalClicks)}</div>
-          <div className="sub">界面内点击次数合计</div>
-        </div>
-        <div className="f-stat cyan">
-          <div className="k">点击率</div>
-          <div className="v">{fmtPct(summary.totalPv ? summary.totalClicks / summary.totalPv : 0)}</div>
-          <div className="sub">点击事件 / 页面曝光 PV</div>
-        </div>
-        <div className="f-stat">
-          <div className="k">平均停留</div>
-          <div className="v">{fmtDwell(summary.avgDwellMs)}</div>
-          <div className="sub">按 PV 加权 · 单页会话内停留</div>
-        </div>
-        <div className="f-stat warn">
-          <div className="k">平均跳出率</div>
-          <div className="v">{fmtPct(summary.avgBounceRate)}</div>
-          <div className="sub">进入即离开占比 · 越高越需关注</div>
-        </div>
-      </div>
-
-      {/* view-bar:粒度 + 时间窗 + 排序 */}
-      <div className="view-bar">
-        <div className="chips">
-          <span className="lb">页面粒度</span>
-          {DEPTHS.map((d) => (
-            <button
-              key={d.v}
-              className={"chip" + (depth === d.v ? " sel" : "")}
-              onClick={() => {
-                setDepth(d.v);
-                setSel(null);
-                ctx.toast(`统计粒度:${d.lb} · ${DEPTH_HINT[d.v]} · 仅视图`);
-              }}
-            >
-              {d.lb}
-            </button>
-          ))}
-        </div>
-        <div className="sep" />
-        <div className="chips">
-          <span className="lb">设备</span>
-          <select aria-label="设备筛选" value={device} onChange={(event) => setDevice(event.target.value as typeof device)}>
-            <option value="ALL">全部</option><option value="H5">移动网页</option><option value="APP">原生应用</option><option value="MP">小程序</option>
-          </select>
-          <span className="lb">语言</span>
-          <select aria-label="语言筛选" value={locale} onChange={(event) => setLocale(event.target.value)}>
-            <option value="ALL">全部</option><option value="zh-CN">简体中文</option><option value="en-US">英语</option><option value="vi-VN">越南语</option>
-          </select>
-          <button className="chip" disabled={!canExportCurrent || exporting} onClick={() => void exportCurrent()}>
-            {exporting ? "导出中…" : !ctx.canExport ? "无导出权限" : !stats.length ? "空结果不可导出" : liveError ? "数据异常不可导出" : "导出当前筛选"}
-          </button>
-        </div>
-        <div className="sep" />
-        <div className="chips">
-          <span className="lb">时间范围</span>
-          {WINDOWS.map((w) => (
-            <button
-              key={w.v}
-              className={"chip" + (win === w.v ? " sel" : "")}
-              onClick={() => {
-                setWin(w.v);
-                setSel(null);
-                ctx.toast(`时间范围：${w.lb}`);
-              }}
-            >
-              {w.lb}
-            </button>
-          ))}
-        </div>
-        <div className="sep" />
-        <div className="chips">
-          <span className="lb">排序</span>
-          {SORTS.map((s) => (
-            <button
-              key={s.v}
-              className={"chip" + (sort === s.v ? " sel" : "")}
-              title={sort === s.v ? "再次点击切换升/降序" : undefined}
-              onClick={() => {
-                if (sort === s.v) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
-                else { setSort(s.v); setSortDir("desc"); }
-              }}
-            >
-              {s.lb}
-              {sort === s.v ? (sortDir === "desc" ? " ↓" : " ↑") : ""}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <section className="l-card">
-        <div className="l-h"><span className="ttl">访问趋势</span><span className="sub">· 按日、按周的访问趋势</span></div>
-        <div className="l-b" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 16 }}>
-          {[{ label: "按日", values: heatmapData.dailyTrend }, { label: "按周", values: heatmapData.weeklyTrend }].map((series) => (
-            <div key={series.label}>
-              <div className="zone-h">{series.label}</div>
-              {series.values.length ? series.values.slice(-8).map((point) => (
-                <div className="rev-row" key={point.bucket} style={{ gridTemplateColumns: "1fr auto auto" }}>
-                  <span className="nm">{point.bucket}</span><span className="lcode">PV {n(point.pv)}</span><span className="lcode">点击 {n(point.clicks)}</span>
-                </div>
-              )) : <div className="ltint" style={{ fontSize: 12 }}>当前筛选暂无事件</div>}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* (a) 页面活跃热力矩阵 */}
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">页面活跃热力矩阵</span>
-          <span className="sub">
-            · <AutoGloss>{`行=页面(${depthLb}粒度)· 列=操作维度 · 格色越深=该维度越活跃 · 点行看单页点击分布`}</AutoGloss>
-          </span>
-          <div className="r">
-            <div className="ret-legend" title="活跃维度(PV/点击/停留)按本列最大值归一化">
-              <span>活跃低</span>
-              {[4, 12, 26, 48, 72].map((a) => (
-                <i key={a} style={{ background: `color-mix(in srgb, var(--cyan) ${a}%, transparent)` }} />
-              ))}
-              <span>高</span>
-            </div>
-            <div className="bounce-legend" title="跳出率按绝对阈值(>50% 红线)">
-              <span>跳出</span>
-              <i style={{ background: "color-mix(in srgb, var(--warning) 22%, transparent)" }} />
-              <i style={{ background: "color-mix(in srgb, var(--warning) 40%, transparent)" }} />
-              <i style={{ background: "color-mix(in srgb, var(--danger) 58%, transparent)" }} />
-              <span>&gt;50%</span>
-            </div>
-          </div>
-        </div>
-        <div className="l-b">
-          <div style={{ overflowX: "auto" }}>
-            <table className="l-tbl heat-tbl" style={{ minWidth: 720 }}>
-              <thead>
-                <tr>
-                  <th>页面</th>
-                  <th style={{ textAlign: "center" }}>PV / UV</th>
-                  <th style={{ textAlign: "center" }}>点击</th>
-                  <th style={{ textAlign: "center" }}>平均停留</th>
-                  <th style={{ textAlign: "center" }}>跳出率</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr
-                    key={r.key}
-                    className={"heat-row" + (r.key === activeKey ? " sel" : "")}
-                    onClick={() => selectRow(r.key)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectRow(r.key); } }}
-                  >
-                    <td>
-                      <div className="pg-nm">
-                        {behaviorPageTitle(r)}
-                        <span className="lc">L{r.level}</span>
-                        {r.pageCount > 1 && <span className="bdg dim">聚合 {r.pageCount} 页</span>}
-                        <span className="pg-go" aria-hidden>›</span>
-                      </div>
-                      <div className="pg-route">{r.key.replace(/^pages\//, "")}</div>
-                    </td>
-                    <td className="cellv" style={activityCell(r.pv, maxPv)} title={`UV ${n(r.uv)}`}>
-                      {n(r.pv)}
-                      <span className="cu">UV {n(r.uv)}</span>
-                    </td>
-                    <td className="cellv" style={activityCell(r.clicks, maxClicks)}>
-                      {n(r.clicks)}
-                    </td>
-                    <td className="cellv" style={activityCell(r.dwellMs, maxDwell)}>
-                      {fmtDwell(r.dwellMs)}
-                    </td>
-                    <td className="cellv" style={bounceCell(r.bounceRate)}>
-                      {fmtPct(r.bounceRate)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="ltint" style={{ marginTop: 12, fontSize: 12 }}>
-            <b>读法</b> ·{" "}
-            <AutoGloss>
-              {`横看一页四维强弱(高 PV + 低停留 + 高跳出 = 流量大但留不住);纵看同维度跨页对比找最热/最冷入口。跳出率用橙→红绝对阈值(>50% 红线),其余维度按当前行集相对归一化。`}
-            </AutoGloss>
-          </div>
-        </div>
-      </section>
-
-      {/* (b) 单页点击坐标热力(查看明细) */}
-      {heat && activeRow && (
-        <section className="l-card" id="l6-drill">
-          <div className="l-h">
-            <span className="ttl">单页点击热力 · {behaviorPageTitle(activeRow)}</span>
-            <span className="sub">
-              ·{" "}
-              <AutoGloss>
-                {aggregateSelection
-                  ? `聚合行(含 ${activeRow.pageCount} 页)· 坐标热力按单页统计`
-                  : `在手机界面线框上叠加点击密度热区 · 看用户在该页具体点哪`}
-              </AutoGloss>
-            </span>
-          </div>
-          {aggregateSelection ? (
-            <div className="l-b">
-              <div className="ltint warn" style={{ fontSize: 12.5 }}>
-                <b>聚合行不提供单页坐标热力</b> ·{" "}
-                <AutoGloss>{`「${behaviorPageTitle(activeRow)}」聚合了 ${activeRow.pageCount} 个页面,点击坐标按单页统计、跨异构页面叠加无意义。切到「全部」粒度并点击具体页,查看该页的点击热区。`}</AutoGloss>
-              </div>
-            </div>
-          ) : (
-          <div className="heat-drill">
-            <div className="phone-pane">
-              <PhoneHeatFrame gradId={gradId} points={heat.points} zones={heat.zones} />
-            </div>
-            <div className="zone-pane">
-              <div className="zone-h">点击区域占比</div>
-              {[...heat.zones]
-                .sort((a, b) => b.share - a.share)
-                .map((z, i) => (
-                  <div key={z.label} className="zone-row">
-                    <span className="zsw" style={{ opacity: 0.25 + z.share }} />
-                    <span className="znm">{({TOP:"页面顶部",MIDDLE:"页面中部",BOTTOM:"页面底部",top:"页面顶部",middle:"页面中部",bottom:"页面底部"} as Record<string,string>)[z.label] ?? operatorCopyText(z.label)}</span>
-                    <span className="ztrack">
-                      <i style={{ width: `${Math.round(z.share * 100)}%` }} />
-                    </span>
-                    <span className="zpct">{Math.round(z.share * 100)}%</span>
-                    {i === 0 && <span className="bdg cyan">最热</span>}
-                  </div>
-                ))}
-              <div className="ltint cyan" style={{ marginTop: 12, fontSize: 12 }}>
-                <b>提示</b> · <AutoGloss>按页面区域统计点击；颜色越深，点的人越多。</AutoGloss>
-              </div>
-            </div>
-          </div>
-          )}
-        </section>
-      )}
-
-      {/* 覆盖面 + 排除声明(不静默截断) */}
-      <p className="f-foot">
-        <b>统计覆盖</b> ·{" "}
-        <AutoGloss>{`共追踪 ${heatmapData.trackedCount} / ${heatmapData.totalPages} 个前端页面;`}</AutoGloss>
-        <b>不纳入统计的系统页({heatmapData.excludedPages.length})</b>:
-        <AutoGloss>{heatmapData.excludedPages.map((p) => behaviorPageTitle(p)).join(" · ")}（纯会话/工具页,无行为分析价值）。</AutoGloss>{" "}
-        <b>这页只能查看，不会改任何数据</b>：
-        <AutoGloss>页面层级、时间范围、排序只影响你自己看到的视图。时区：{heatmapData.businessTimeZone}。</AutoGloss>
-      </p>
-    </div>
+  /* ---------------- 一句结论 ---------------- */
+  const viewed = rows.filter((r) => r.pv > 0);
+  const topPv = [...viewed].sort((a, b) => b.pv - a.pv)[0];
+  const overLine = [...viewed].filter((r) => r.bounceRate > BOUNCE_WARN).sort((a, b) => b.bounceRate - a.bounceRate);
+  const conclusion = !rows.length ? (
+    <Conclusion state="neutral" icon={MousePointerClick} hint="换一个时间范围、设备或语言再看。">
+      {winLabel}，{deviceLabel}、{localeLabel}：没有页面浏览和点击记录
+    </Conclusion>
+  ) : overLine.length ? (
+    <Conclusion state="warn" lead icon={TriangleAlert} explainTitle="跳出率怎么算"
+      explain="同一次打开 App 里，看完这一页后到统计截止都没再打开别的页面，就算一次跳出；和停留长短无关。50% 是这页固定的预警线，不能调。"
+      hint={<>点下面热力表里的这一页，看用户在页面上点了哪里。</>}>
+      <b>{overLine.length}</b> 个页面跳出率超过 50%，<span className="l6-keep">最高「{behaviorPageTitle(overLine[0])}」<b>{pct(overLine[0].bounceRate)}</b></span>
+    </Conclusion>
+  ) : (
+    <Conclusion state="ok" icon={MousePointerClick} explainTitle="跳出率怎么算"
+      explain="同一次打开 App 里，看完这一页后到统计截止都没再打开别的页面，就算一次跳出；和停留长短无关。50% 是这页固定的预警线，不能调。">
+      {winLabel}：{topPv ? <>浏览最多的是「{behaviorPageTitle(topPv)}」{n(topPv.pv)} 次，</> : "只有点击、没有浏览记录，"}没有页面跳出率超过 50%
+    </Conclusion>
   );
+
+  /* ---------------- 合计和矩阵范围不同时写明（L6-X02、P-L6-04） ---------------- */
+  const catalogRoutes = new Set(heatmapData.pageTree.map((node) => node.route));
+  const outside = stats.filter((stat) => !catalogRoutes.has(stat.route));
+  const outsideNotice = outside.length ? (
+    <Notice tone="progress" title={`合计里含 ${n(outside.length)} 个已不在页面目录里的页面`}>
+      这些页面已退役，但这段时间还有历史事件（共 {n(outside.reduce((sum, stat) => sum + stat.pv, 0))} 次浏览、{n(outside.reduce((sum, stat) => sum + stat.clicks, 0))} 次点击）。上面四个合计和导出的 CSV 都算它们；页面热力表只列当前页面目录里的页面，所以表里加起来会比合计少，不是数错了。
+    </Notice>
+  ) : null;
+
+  // 换条件后重读期间，旧数据不一定覆盖新的时间范围，整块换成读取中，不显示可能是错的数（L6-S05）。
+  if (refreshing) {
+    return page(<>
+      <Conclusion state="unknown">用户行为热力图：正在按新条件读取</Conclusion>
+      <BlockState state="loading" title={`正在读取 ${scope} 的页面数据…`} detail="读完自动显示；这期间不能导出当前筛选。" />
+    </>);
+  }
+
+  const pending = liveError ? (
+    <Notice tone="warn" title="有一部分没读到" action={<Button size="sm" onClick={() => void ctx.reloadBi?.()}>重新加载</Button>}>
+      这一页的点击位置没有读到，页面热力表照常显示；重新加载或换一个条件之前，「导出当前筛选」暂时不能用。<ErrorText text={liveError} />
+    </Notice>
+  ) : null;
+
+  return page(<>
+    {pending}
+    {conclusion}
+    <SummaryBand summary={summaryNums} scope={scope} />
+    {outsideNotice}
+    {rows.length > 0 && <RankPanels rows={rows} onPick={selectRow} scope={winLabel} />}
+    <div className="rd-split l6-main" data-detail="">
+      <HeatTable rows={rows} activeKey={activeKey} onPick={selectRow} sort={sort} sortDir={sortDir} busy={refreshing}
+        depthLabel={depthLabel}
+        onSort={(next) => {
+          if (sort === next) setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+          else { setSort(next); setSortDir("desc"); }
+        }}
+        onFlip={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))} />
+      {heat && activeRow && (
+        <ClickPanel gradId={gradId} row={activeRow} heat={heat} aggregate={aggregateSelection} loaded={heatLoaded}
+          failed={Boolean(liveError) && !heatLoaded} scope={`${winLabel} · ${deviceLabel} · ${localeLabel}`}
+          device={device} onRetry={() => void ctx.reloadBi?.()} />
+      )}
+    </div>
+    <TrendPanel daily={heatmapData.dailyTrend} weekly={heatmapData.weeklyTrend} scope={`${winLabel} · ${deviceLabel} · ${localeLabel}`} zone={heatmapData.businessTimeZone} />
+    <ScopeFold data={heatmapData} />
+  </>);
 }
 
-/* ── 手机界面线框 + 点击热区(纯 SVG,颜色全 token) ── */
-function PhoneHeatFrame({
-  gradId,
-  points,
-  zones,
-}: {
-  gradId: string;
-  points: { x: number; y: number; weight: number }[];
-  zones: { label: string; cx: number; cy: number; share: number }[];
-}) {
-  const W = 200;
-  const H = 400;
-  const PAD = 12; // 屏幕内边距
-  const sx = (x: number) => PAD + x * (W - PAD * 2);
-  const sy = (y: number) => PAD + y * (H - PAD * 2);
-  return (
-    <svg className="phone-frame" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="单页点击坐标热力">
-      <defs>
-        <radialGradient id={gradId}>
-          <stop offset="0%" stopColor="var(--cyan)" stopOpacity="0.9" />
-          <stop offset="60%" stopColor="var(--cyan)" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="var(--cyan)" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      {/* 设备屏幕底 */}
-      <rect x={6} y={6} width={W - 12} height={H - 12} rx={20} fill="var(--surface-2)" stroke="var(--border)" />
-      {/* 顶部状态条 + 底部导航条(界面线框示意) */}
-      <rect x={PAD} y={PAD} width={W - PAD * 2} height={26} rx={7} fill="var(--surface-3)" />
-      <rect x={PAD} y={H - PAD - 30} width={W - PAD * 2} height={30} rx={7} fill="var(--surface-3)" />
-      {/* 内容卡线框 */}
-      <rect x={PAD} y={56} width={W - PAD * 2} height={70} rx={9} fill="var(--surface)" />
-      <rect x={PAD} y={136} width={W - PAD * 2} height={110} rx={9} fill="var(--surface)" />
-      {/* 热区 blob(底层,柔和) */}
-      {zones.map((z) => (
-        <circle key={z.label} cx={sx(z.cx)} cy={sy(z.cy)} r={18 + z.share * 60} fill={`url(#${gradId})`} opacity={0.18 + z.share * 0.5} />
-      ))}
-      {/* 点击点(上层,按 weight) */}
-      {points.map((p, i) => (
-        <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r={8 + p.weight * 16} fill={`url(#${gradId})`} opacity={0.25 + p.weight * 0.55} />
-      ))}
-    </svg>
-  );
+/** 局部读取的错误句现在还是写操作的口吻（事实 D03，代码 worker 改成读取口吻），先收进提示图标，不放正文。 */
+function ErrorText({ text }: { text: string }) {
+  return <Explain label="错误信息" content={text} />;
+}
+
+function saveFile(blob: Blob, fileName: string) {
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(href);
 }

@@ -310,3 +310,82 @@
 
 /* 规则表：放得下时计算方式一行，1024 放不下时折行，上线批次留在屏内（DT-16）。 */
 .l1-rule-fx .rd-cell-main { white-space: normal; text-wrap: balance; }  /* 两行匀开，第二行不留单字 */
+
+/* ======================= L6 用户行为热力图（改版，rd） =======================
+   只放这页自己的排法，颜色、字号、间距都取 --rd-* 令牌。热力格的颜色只表示一个量：
+   浏览、点击、停留按这一列最多的那页比（青），跳出率按本身分档（橙）。字永远是正文色。 */
+.l6-page .l6-actions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--rd-space-2) var(--rd-space-4); }
+.l6-page .l6-pair { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
+.l6-page .l6-now { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1); }
+.l6-page .l6-now > .rd-explain:last-child { margin-right: -3px; }
+.l6-page .l6-keep { white-space: nowrap; }
+
+/* 两张榜：页面名是按钮，点了看这一页的点击位置 */
+.l6-page .l6-ranks .rd-barlist li { grid-template-columns: minmax(0, 168px) minmax(96px, 1fr) max-content; }
+.l6-page .l6-page-link { all: unset; cursor: pointer; display: inline; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); text-decoration: underline; text-decoration-color: var(--rd-line-strong); text-underline-offset: 3px; }
+.l6-page .l6-page-link:hover { text-decoration-color: currentColor; }
+.l6-page .l6-page-link:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; border-radius: var(--rd-radius-tag); }
+.l6-page .l6-page-link small { font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.l6-page .l6-bar-sub { margin-left: var(--rd-space-2); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.l6-page .rd-barlist-text { color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.l6-page .l6-bounce-list { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
+.l6-page .l6-bounce-list li { display: grid; grid-template-columns: minmax(0, 168px) minmax(96px, 1fr) 72px; align-items: center; gap: var(--rd-space-3); }
+.l6-page .l6-bounce-name { min-width: 0; overflow: hidden; display: flex; }
+.l6-page .l6-bounce-val { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--rd-space-1); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.l6-page .l6-bounce-list li[data-warn] .l6-bounce-val { color: var(--rd-warn); font-weight: var(--rd-weight-semibold); }
+
+/* 热力表和点击位置并排：表宽、明细窄；放不下时上下排 */
+.l6-page .l6-main > :first-child { flex: 8 1 640px; }
+.l6-page .l6-main > .l6-drill-panel { flex: 4 1 340px; position: sticky; top: var(--rd-space-4); }
+.l6-page .l6-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--rd-space-2) var(--rd-space-4); margin-bottom: var(--rd-space-3); }
+.l6-page .l6-sort { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.l6-page .l6-legend { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.l6-page .l6-legend-group { display: inline-flex; align-items: center; gap: 3px; }
+.l6-page .l6-legend-group > span:first-child { margin-right: 3px; }
+.l6-page .l6-legend-group > span + .rd-explain, .l6-page .l6-legend-group > span:nth-last-child(2) { margin-left: 3px; }
+.l6-page .l6-legend-group > .rd-explain:last-child { margin-right: -3px; }
+.l6-page .l6-swatch { display: inline-block; width: 14px; height: 10px; border-radius: 2px; border: 1px solid var(--rd-line); }
+
+.l6-page .l6-table-wrap[data-busy] { opacity: 0.55; transition: opacity 0.15s; }
+.l6-page .l6-table { width: 100%; }
+.l6-page .l6-table th:not(:first-child), .l6-page .l6-table td:not(:first-child) { white-space: nowrap; width: 1%; }
+.l6-page .l6-route { color: var(--rd-text-3); font-family: var(--rd-font-mono); font-size: 12px; }
+.l6-page .l6-heat { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--rd-space-1); min-width: 72px; padding: 2px var(--rd-space-2); border-radius: var(--rd-radius-tag); color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.l6-page .l6-heat[data-empty] { color: var(--rd-text-3); }
+.l6-page .l6-heat[data-level="1"], .l6-page .l6-swatch[data-level="1"] { background: color-mix(in srgb, var(--rd-chart-2) 4%, transparent); }
+.l6-page .l6-heat[data-level="2"], .l6-page .l6-swatch[data-level="2"] { background: color-mix(in srgb, var(--rd-chart-2) 12%, transparent); }
+.l6-page .l6-heat[data-level="3"], .l6-page .l6-swatch[data-level="3"] { background: color-mix(in srgb, var(--rd-chart-2) 24%, transparent); }
+.l6-page .l6-heat[data-level="4"], .l6-page .l6-swatch[data-level="4"] { background: color-mix(in srgb, var(--rd-chart-2) 40%, transparent); }
+.l6-page .l6-heat[data-level="5"], .l6-page .l6-swatch[data-level="5"] { background: color-mix(in srgb, var(--rd-chart-2) 60%, transparent); }
+.l6-page .l6-heat[data-kind="bounce"][data-level="1"], .l6-page .l6-swatch[data-kind="bounce"][data-level="1"] { background: color-mix(in srgb, var(--rd-warn) 4%, transparent); }
+.l6-page .l6-heat[data-kind="bounce"][data-level="2"], .l6-page .l6-swatch[data-kind="bounce"][data-level="2"] { background: color-mix(in srgb, var(--rd-warn) 14%, transparent); }
+.l6-page .l6-heat[data-kind="bounce"][data-level="3"], .l6-page .l6-swatch[data-kind="bounce"][data-level="3"] { background: color-mix(in srgb, var(--rd-warn) 26%, transparent); }
+.l6-page .l6-heat[data-kind="bounce"][data-level="4"], .l6-page .l6-swatch[data-kind="bounce"][data-level="4"] { background: color-mix(in srgb, var(--rd-warn) 44%, transparent); }
+.l6-page .l6-heat[data-kind="bounce"][data-level="4"] { font-weight: var(--rd-weight-semibold); }
+
+/* 单页点击位置：手机画板 + 区域占比 */
+.l6-page .l6-drill-sub { display: inline-flex; flex-wrap: wrap; gap: 0 var(--rd-space-1); }
+.l6-page .l6-drill-sub b { color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+.l6-page .l6-drill { display: flex; flex-wrap: wrap; gap: var(--rd-space-5); align-items: flex-start; }
+.l6-page .l6-phone { margin: 0 auto; flex: 0 0 168px; display: flex; flex-direction: column; gap: var(--rd-space-2); }
+.l6-page .l6-phone figcaption { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.l6-page .l6-phone-svg { display: block; width: 168px; height: auto; }
+.l6-page .l6-phone-body { fill: var(--rd-panel-inner); stroke: var(--rd-line-strong); }
+.l6-page .l6-phone-screen { fill: var(--rd-bg); stroke: var(--rd-line); }
+.l6-page .l6-phone-split { stroke: var(--rd-line-strong); stroke-dasharray: 4 4; }
+.l6-page .l6-phone-label { fill: var(--rd-text-3); font-size: 11px; font-family: var(--rd-font); }
+.l6-page .l6-blob-core { stop-color: var(--rd-chart-2); stop-opacity: 0.95; }
+.l6-page .l6-blob-mid { stop-color: var(--rd-chart-2); stop-opacity: 0.4; }
+.l6-page .l6-blob-edge { stop-color: var(--rd-chart-2); stop-opacity: 0; }
+.l6-page .l6-zones { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: var(--rd-space-3); }
+.l6-page .l6-zones-head { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.l6-page .l6-zone-list { display: grid; gap: var(--rd-space-3); margin: 0; padding: 0; list-style: none; }
+.l6-page .l6-zone-list li { display: grid; grid-template-columns: 64px minmax(48px, 1fr) 40px 44px; align-items: center; gap: var(--rd-space-2); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); }
+.l6-page .l6-zone-track { display: block; height: 8px; border-radius: var(--rd-radius-bar); background: var(--rd-panel-inner); overflow: hidden; }
+.l6-page .l6-zone-track > i { display: block; height: 100%; border-radius: 0 var(--rd-radius-bar) var(--rd-radius-bar) 0; background: var(--rd-chart-2); }
+.l6-page .l6-zone-val { text-align: right; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+
+/* 访问趋势：按日、按周两张柱图并排 */
+.l6-page .l6-trends > * { flex-basis: 360px; }
+.l6-page .l6-trend { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; }
+.l6-page .l6-trend-title { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
