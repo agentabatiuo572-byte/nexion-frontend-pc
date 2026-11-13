@@ -14,7 +14,6 @@ import Link from "next/link";
 import { Ban, Globe2, Replace, Unplug, History, ListOrdered, Plus, Radar, RefreshCw, ShieldMinus, Siren, Waypoints } from "lucide-react";
 import { BarList, BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, Input, KeyValues, Notice, PageHeader, Panel, SearchSelect, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { displayAdminError } from "@/lib/admin/error-messages";
 import { isEmergencyOutcomeUncertain, type GeoCountry, type GeoEndpoint, type GeoRecentChange } from "@/lib/admin/j-client";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -244,9 +243,8 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         } catch {
           toast("结果未知，页面也刷新不了。请不要重复提交，等网络恢复后刷新页面并核对最近修改。", "warn");
         }
-      } else {
-        toast(`操作未完成 · ${error instanceof Error ? displayAdminError(error) : "请稍后重试"}`, "error");
       }
+      // 明确失败的原因写在确认框里（权限层的 403 由确认框提示并关框），不再弹同一句。
       throw error;
     }
     try {
