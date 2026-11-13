@@ -618,6 +618,7 @@
 @media (max-width: 1280px) { .m5-page .m5-rules-grid { grid-template-columns: minmax(0, 1fr); } }
 .m5-page .m5-rules, .m5-page .m5-welcome { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
 .m5-page .m5-form { display: grid; gap: var(--rd-space-4); min-width: 0; }
+.m5-page .m5-unbound-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--rd-space-4); align-items: start; min-width: 0; }
 .m5-page .m5-subhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
 .m5-page .m5-subhead > svg { color: var(--rd-text-3); }
 .m5-page .m5-subhead-note { font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
@@ -681,7 +682,8 @@
 .m5-page .m5-chip [data-mono] { color: var(--rd-text-3); }
 .m5-page .m5-served-count, .m5-page .m5-cap { font-variant-numeric: tabular-nums; color: var(--rd-text); }
 .m5-page .m5-served-count[data-empty], .m5-page .m5-cap[data-empty] { color: var(--rd-text-3); }
-@media (max-width: 1180px) { .m5-page .m5-roster th.m5-col-tags, .m5-page .m5-roster td:nth-child(5) { display: none; } }
+.m5-page .m5-roster td:first-child { min-width: 200px; }
+@media (max-width: 1180px) { .m5-page .m5-roster th.m5-col-tags, .m5-page .m5-roster td:nth-child(5) { display: none; } .m5-page .m5-roster .m5-chip [data-mono] { display: none; } .m5-page .m5-roster td:first-child { min-width: 180px; } }
 
 /* 话术与模板 */
 .m5-page .m5-content-table th.m5-col-id { width: 268px; }

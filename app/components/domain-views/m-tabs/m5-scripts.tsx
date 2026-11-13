@@ -608,7 +608,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
                         <Td>
                           <span className="m5-served">
                             <span className="m5-served-count" data-empty={agent.assignedUserCount === 0 ? "" : undefined}>{compactSupportBoardValue(agent.assignedUserCount, "count") === "-" ? "—" : `${agent.assignedUserCount} 位`}</span>
-                            {assignments.slice(0, 4).map((row) => <span key={row.id} className="m5-chip">{row.nickname} <span data-mono="">{row.userNo}</span></span>)}
+                            {assignments.slice(0, 4).map((row) => <span key={row.id} className="m5-chip" title={`${row.nickname} ${row.userNo}`}>{row.nickname} <span data-mono="">{row.userNo}</span></span>)}
                             {assignments.length > 4 && <span className="m5-more">+{assignments.length - 4}</span>}
                           </span>
                         </Td>
