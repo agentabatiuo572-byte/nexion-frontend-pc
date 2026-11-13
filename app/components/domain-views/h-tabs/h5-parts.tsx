@@ -4,7 +4,7 @@
  * H5 签到与UVT奖励的排版件：七天签到条、连签奖励线、原操作提醒列表、数字写法。
  * 只负责画：数字、文字和按钮由页面算好传进来，这里不发请求、不判权限、不判方向。
  */
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { CircleHelp, Clock3, Gift, Hourglass } from "lucide-react";
 import { Explain, Notice, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
@@ -133,7 +133,7 @@ export type TrackNode = {
  */
 export function MilestoneTrack({ label, nodes }: { label: string; nodes: readonly TrackNode[] }) {
   return (
-    <ol className="h5-track" aria-label={label} style={{ "--h5-track-count": nodes.length } as CSSProperties}>
+    <ol className="h5-track" aria-label={label}>
       {nodes.map((node) => (
         <li key={node.key} className="h5-track-node" data-kind={node.kind}>
           <span className="h5-track-dot" aria-hidden />
