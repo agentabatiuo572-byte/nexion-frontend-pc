@@ -25,6 +25,16 @@ export function usd(value: number | null | undefined): string {
   return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction.padEnd(2, "0")}`;
 }
 
+/**
+ * 首页「累计已发放」的单位照 App 原样写：App（home-display-stats.vue）显示为「$」加两位小数，
+ * 后端字段 homePaidCurrent 本身不带币种。页面不换算、不改名。
+ */
+export const PAID_UNIT = "$";
+export const PAID_UNIT_NOTE = "App 上显示为 $（例如 $2,865,400.50），这是展示值的单位，页面照 App 原样写，不换算、不代表真实结算币种。";
+export function paid(value: number | null | undefined): string {
+  return value == null || !Number.isFinite(value) ? "—" : `$${usd(value)}`;
+}
+
 /** 两个金额相乘：按两边的小数位定精度，避开浮点尾差（28432 × 0.06 = 1,705.92）。 */
 export function usdProduct(a: number, b: number): number {
   const places = (value: number) => (String(value).split(".")[1]?.length ?? 0);

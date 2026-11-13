@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { RefreshCw, SlidersHorizontal, Smartphone, TableProperties } from "lucide-react";
-import { BlockState, Button, Change, Conclusion, DiffList, Fact, Facts, Field, Notice, NumberInput, PageHeader, Panel, RatioBar, StatusTag, Table, Td, Th, Tr, TrendLines, useTabIds, type DiffRow } from "@/app/components/rd";
+import { BlockState, Button, Change, Conclusion, DiffList, Explain, Fact, Facts, Field, Notice, NumberInput, PageHeader, Panel, RatioBar, StatusTag, Table, Td, Th, Tr, TrendLines, useTabIds, type DiffRow } from "@/app/components/rd";
 import { PaginationExemption } from "../design-kit";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import {
@@ -41,7 +41,7 @@ import type { HCtx } from "./types";
 import { H9DeviceRank } from "./h9-device-rank";
 import { H9GlobeDisplay } from "./h9-globe-display";
 import { H9ModuleCards, moduleLabel, type H9Module, type RankSnapshot } from "./h9-overview";
-import { AppNumber, AppPreview, AuditFoot, axisShort, ConfirmFacts, DAY_LABELS, DAY_TICKS, H9RecoveryNotice, HOUR_LABELS, HOUR_TICKS, ModuleToolbar, averageGain, count, memberSpread, membersAt, saveIssueKind, usd, usdApprox, usdProduct, type MemberModel, type SaveIssueKind } from "./h9-parts";
+import { AppNumber, AppPreview, AuditFoot, axisShort, ConfirmFacts, PAID_UNIT, PAID_UNIT_NOTE, paid, DAY_LABELS, DAY_TICKS, H9RecoveryNotice, HOUR_LABELS, HOUR_TICKS, ModuleToolbar, averageGain, count, memberSpread, membersAt, saveIssueKind, usd, usdApprox, usdProduct, type MemberModel, type SaveIssueKind } from "./h9-parts";
 import { reconcileH9Editor, type H9EditorState } from "@/lib/admin/h9-module-drafts";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 
@@ -63,7 +63,7 @@ const FIELD_COPY: Record<ScalarKey, { name: string; what: string }> = {
   homeOnlineCurrent: { name: "当前值", what: "App 上在线设备从这个数开始。只有改了它，保存后才从这个数重新开始；没改就接着 App 上已经涨到的数。" },
   homeOnlineStepMin: { name: "每秒最少增加", what: "开启增长时，每秒在最少和最多之间随机加一个整数，所有用户看到同一个数。" },
   homeOnlineStepMax: { name: "每秒最多增加", what: "开启增长时，每秒在最少和最多之间随机加一个整数，所有用户看到同一个数。" },
-  homePaidCurrent: { name: "当前值", what: "App 上累计已发放从这个金额开始。只有改了它，保存后才从这个金额重新开始。这是展示数字，不是真实已完成提现。" },
+  homePaidCurrent: { name: "当前值", what: "App 上累计已发放从这个金额开始，App 上显示为 $。只有改了它，保存后才从这个金额重新开始。这是展示数字，不是真实已完成提现。" },
   homePaidStepMin: { name: "每秒最少增加", what: "开启增长时，每秒在最少和最多之间随机加一个金额（按整数分）。" },
   homePaidStepMax: { name: "每秒最多增加", what: "开启增长时，每秒在最少和最多之间随机加一个金额（按整数分）。" },
   registeredUsersBase: { name: "注册人数基数", what: "网络脉搏注册人数从这个数开始推算。改了它，推算起点重置为保存时刻。" },
@@ -111,7 +111,7 @@ function valueText(key: ScalarKey, value: number | null | undefined): string {
   if (value === undefined) return "未设置";
   if (value === null) return "不发布";
   const field = H9_FIELDS.find((item) => item.key === key)!;
-  return MONEY_KEYS.has(key) ? `${usd(value)} USD` : `${count(value)} ${field.unit}`;
+  return MONEY_KEYS.has(key) ? paid(value) : `${count(value)} ${field.unit}`;
 }
 
 export function H9PublicStats({ ctx }: { ctx: HCtx }) {
@@ -411,7 +411,8 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     const pending = key === "activeJobsBase" && !jobsBaseSupported;
     const defaultable = DEFAULTABLE.includes(module);
     const isDefault = defaultable && h9DraftText(values[key]) === h9DraftText(data.defaults[key]) && values[key] !== undefined;
-    const range = `${count(field.min)}–${count(field.max)} ${field.unit}${field.integer ? "，整数" : ""}`;
+    const unit = MONEY_KEYS.has(key) ? PAID_UNIT : field.unit;
+    const range = MONEY_KEYS.has(key) ? `${paid(field.min)}–${paid(field.max)}` : `${count(field.min)}–${count(field.max)} ${unit}${field.integer ? "，整数" : ""}`;
     const defaultText = defaultable && !isDefault ? `默认 ${data.defaults[key] == null ? "不发布" : `${count(data.defaults[key])} ${field.unit}`}` : "";
     return <Field key={key} label={<>{FIELD_COPY[key].name}{isDefault && <StatusTag tone="neutral">默认值</StatusTag>}</>}
       explain={FIELD_COPY[key].what} hint={range}
@@ -419,7 +420,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       error={fieldErrors[key] || undefined}>
       {(control) => <NumberInput {...control}
         aria-label={`${field.label}目标值`}
-        unit={field.unit} min={field.min} max={field.max} step={field.step}
+        unit={unit} min={field.min} max={field.max} step={field.step}
         inputMode={field.integer ? "numeric" : "decimal"}
         value={drafts[key]}
         placeholder={pending ? "后端待支持" : field.clearable ? "不发布" : undefined}
@@ -447,10 +448,10 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   const growthChart = (kind: "online" | "paid") => {
     const [minKey, maxKey] = kind === "online" ? ["homeOnlineStepMin", "homeOnlineStepMax"] as const : ["homePaidStepMin", "homePaidStepMax"] as const;
     const showDraft = homeStepsDirty && homeDraftValid;
-    const format = kind === "online" ? (value: number) => `${count(Math.round(value))} 台` : (value: number) => `${usd(Number(value.toFixed(2)))} USD`;
-    const perDay = (min: number, max: number) => kind === "online" ? `${count(min * 86_400)}–${count(max * 86_400)} 台` : `${usd(usdProduct(min, 86_400))}–${usd(usdProduct(max, 86_400))} USD`;
+    const format = kind === "online" ? (value: number) => `${count(Math.round(value))} 台` : (value: number) => paid(Number(value.toFixed(2)));
+    const perDay = (min: number, max: number) => kind === "online" ? `${count(min * 86_400)}–${count(max * 86_400)} 台` : `${paid(usdProduct(min, 86_400))}–${paid(usdProduct(max, 86_400))}`;
     return <div className="h9-chart">
-      <p className="h9-chart-title">{kind === "online" ? "在线设备" : "累计已发放（USD）"} · 开启时 24 小时平均增加</p>
+      <p className="h9-chart-title">{kind === "online" ? "在线设备" : "累计已发放（$）"} · 开启时 24 小时平均增加</p>
       <TrendLines label={`${kind === "online" ? "在线设备" : "累计已发放"}开启后 24 小时平均增加量`} ticks={HOUR_LABELS} height={120} format={format} axisFormat={axisShort(kind === "online" ? "台" : "")}
         series={[
           { key: "saved", label: "现在的参数", slot: showDraft ? "other" : 2, values: homeSeries(values[minKey], values[maxKey]) },
@@ -466,7 +467,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         explain={<><p>增长开着时，两个数每秒在区间里随机增加，所有用户看到同一个数；暂停后停在暂停那一刻，再开启从那里接着涨。保存参数不会改开关。</p><p>App 页面开着时一般 60 秒内读到新参数，退到后台或断网时不保证。</p></>}
         status={values.homeDisplayEnabled ? <><StatusTag tone="progress">增长中</StatusTag>每秒在区间里随机增加</> : <><StatusTag tone="neutral">已暂停</StatusTag>App 上的数停住不动</>}>
         <AppNumber label="在线设备 · 设定值" value={count(values.homeOnlineCurrent)} unit="台" />
-        <AppNumber label="累计已发放 · 设定值" value={usd(values.homePaidCurrent)} unit="USD" />
+        <AppNumber label={<>累计已发放 · 设定值<Explain label="累计已发放的单位" content={PAID_UNIT_NOTE} /></>} value={paid(values.homePaidCurrent)} />
       </AppPreview>
       {growthChart("online")}
       {growthChart("paid")}
@@ -483,7 +484,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         <div className="h9-pair">{renderField("homeOnlineStepMin")}{renderField("homeOnlineStepMax")}</div>
       </div>
       <div className="h9-group">
-        <h3 className="h9-group-title">累计已发放 <span className="h9-group-rule">金额最多两位小数，多了后端会拒绝</span></h3>
+        <h3 className="h9-group-title">累计已发放<Explain label="累计已发放的单位" content={PAID_UNIT_NOTE} /> <span className="h9-group-rule">App 上显示为 $，金额最多两位小数，多了后端会拒绝</span></h3>
         {renderField("homePaidCurrent")}
         <div className="h9-pair">{renderField("homePaidStepMin")}{renderField("homePaidStepMax")}</div>
       </div>
