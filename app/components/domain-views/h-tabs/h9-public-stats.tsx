@@ -106,10 +106,6 @@ function sameBands(a: H9PercentileBand[], b: H9PercentileBand[]) {
   return a.length === b.length && a.every((row, index) => row.tops === b[index].tops && row.cumPct === b[index].cumPct);
 }
 
-function bandsText(rows: H9PercentileBand[]) {
-  return rows.map((row) => `${count(row.tops)} TOPS → ${row.cumPct}%`).join("，") || "（空）";
-}
-
 /** 一个参数值写成人话：金额两位起、不舍入；空写清楚是什么。 */
 function valueText(key: ScalarKey, value: number | null | undefined): string {
   if (value === undefined) return "未设置";
@@ -266,6 +262,14 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   }, [data, drafts, fieldErrors, readAt]);
 
   const memberSeries = (model: MemberModel) => DAY_TICKS.map((day) => membersAt(model, readAt + day * 86_400_000));
+  /** 保存后 App 上的注册人数会不会突然跳：按读取时刻比一比现在的数和按草稿保存后的数。 */
+  const memberJump = memberModels?.draft ? { from: membersAt(memberModels.saved, readAt), to: membersAt(memberModels.draft, readAt) } : null;
+  const jumpNotice = memberJump && memberJump.from != null && memberJump.to != null && memberJump.from !== memberJump.to
+    ? <Notice tone="warn" title={`App 上的注册人数会从约 ${count(memberJump.from)} 人${memberJump.to < memberJump.from ? "跳回" : "跳到"} ${count(memberJump.to)} 人`}>
+      {memberModels?.resets
+        ? <>改了基数或跳动参数，推算起点重置为保存时刻、从新基数重新开始。要接着现在的数涨，把基数填成约 {count(memberJump.from)}。</>
+        : <>只改月增长率不重置推算起点，会按原起点重算整段。</>}
+    </Notice> : null;
 
   const save = (enabled?: boolean) => {
     if (!data || !nextValues) return;
@@ -276,8 +280,11 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       .filter((field) => submitted[field.key] !== data.values[field.key])
       .map((field) => ({ key: field.key, label: FIELD_COPY[field.key].name, before: valueText(field.key, data.values[field.key]), after: valueText(field.key, submitted[field.key]) }));
     if (!sameBands(submitted.hashratePercentileTable, data.values.hashratePercentileTable)) {
-      rows.push({ key: "bands", label: "算力分位表", before: `${data.values.hashratePercentileTable.length} 档`, after: `${submitted.hashratePercentileTable.length} 档`,
-        note: `保存后：${bandsText(submitted.hashratePercentileTable)}` });
+      const before = data.values.hashratePercentileTable, after = submitted.hashratePercentileTable;
+      const band = (row?: H9PercentileBand) => row ? `${count(row.tops)} TOPS · ${row.cumPct}%` : "没有";
+      for (let index = 0; index < Math.max(before.length, after.length); index += 1) {
+        if (band(before[index]) !== band(after[index])) rows.push({ key: `band-${index}`, label: `分位表第 ${index + 1} 档`, before: band(before[index]), after: after[index] ? band(after[index]) : "删除" });
+      }
     }
     const toggled = submitted.homeDisplayEnabled !== data.values.homeDisplayEnabled;
     if (toggled) rows.unshift({ key: "enabled", label: "首页数字增长", before: data.values.homeDisplayEnabled ? "增长中" : "已暂停", after: submitted.homeDisplayEnabled ? "增长中" : "已暂停" });
@@ -315,6 +322,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
             { key: "after", label: "改后", slot: 2, values: HOUR_TICKS.map((hour) => averageGain(nextValues.homeOnlineStepMin, nextValues.homeOnlineStepMax, hour)) },
           ]} />
       </div>}
+      {module === "network" && jumpNotice}
       {module === "network" && memberModels?.draft && <div className="h9-confirm-chart">
         <p className="h9-chart-title">接下来 30 天的注册人数</p>
         <TrendLines label="新旧参数下 30 天注册人数推算" ticks={DAY_LABELS} height={120} format={(value) => `${count(value)} 人`} axisFormat={axisShort("人")}
@@ -391,10 +399,12 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
 
   const values = data.values;
   const savedTick = values.registeredUsersTickIntervalSec !== undefined;
+  const changedBands = module !== "history" ? 0 : Array.from({ length: Math.max(bands.length, values.hashratePercentileTable.length) },
+    (_, index) => bands[index]?.tops.trim() !== h9DraftText(values.hashratePercentileTable[index]?.tops) || bands[index]?.cumPct.trim() !== h9DraftText(values.hashratePercentileTable[index]?.cumPct)).filter(Boolean).length;
   const changedKeys = MODULE_KEYS[module].filter((key) => drafts[key].trim() !== h9DraftText(values[key]));
   const badCount = MODULE_KEYS[module].filter((key) => fieldErrors[key]).length + (module === "history" ? rowErrors.filter(Boolean).length + (bandCountError ? 1 : 0) : 0);
   const saveBlock = loading ? "正在读取最新数据，读完再保存" : conflict ? "这块已被别人改过，先刷新这一块" : !dirty ? "没有改动" : !allValid ? "有填错的项，按框下的提示改" : undefined;
-  const toolbarNote = loading ? "正在读取…" : !dirty ? "没有改动" : badCount ? `有 ${badCount} 处要改` : `改了 ${changedKeys.length || 1} 项，还没保存`;
+  const toolbarNote = loading ? "正在读取…" : !dirty ? "没有改动" : badCount ? `有 ${badCount} 处要改` : `改了 ${changedKeys.length + changedBands || 1} 项，还没保存`;
 
   const renderField = (key: ScalarKey) => {
     const field = H9_FIELDS.find((item) => item.key === key)!;
@@ -440,8 +450,8 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     const format = kind === "online" ? (value: number) => `${count(Math.round(value))} 台` : (value: number) => `${usd(Number(value.toFixed(2)))} USD`;
     const perDay = (min: number, max: number) => kind === "online" ? `${count(min * 86_400)}–${count(max * 86_400)} 台` : `${usd(usdProduct(min, 86_400))}–${usd(usdProduct(max, 86_400))} USD`;
     return <div className="h9-chart">
-      <p className="h9-chart-title">{kind === "online" ? "在线设备" : "累计已发放"} · 开启时 24 小时平均增加</p>
-      <TrendLines label={`${kind === "online" ? "在线设备" : "累计已发放"}开启后 24 小时平均增加量`} ticks={HOUR_LABELS} height={120} format={format} axisFormat={axisShort(kind === "online" ? "台" : "USD")}
+      <p className="h9-chart-title">{kind === "online" ? "在线设备" : "累计已发放（USD）"} · 开启时 24 小时平均增加</p>
+      <TrendLines label={`${kind === "online" ? "在线设备" : "累计已发放"}开启后 24 小时平均增加量`} ticks={HOUR_LABELS} height={120} format={format} axisFormat={axisShort(kind === "online" ? "台" : "")}
         series={[
           { key: "saved", label: "现在的参数", slot: showDraft ? "other" : 2, values: homeSeries(values[minKey], values[maxKey]) },
           ...(showDraft ? [{ key: "draft", label: "填写中", slot: 2 as const, values: homeSeries(num(drafts[minKey]), num(drafts[maxKey])) }] : []),
@@ -497,6 +507,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
             ...(memberModels!.draft ? [{ key: "draft", label: "填写中", slot: 3 as const, values: memberSeries(memberModels!.draft) }] : []),
           ]} />
       </div>
+      {jumpNotice}
       <Facts>
         <Fact k="推算起点">{businessStamp(values.registeredUsersAnchorAt)}（{businessZone().label}）</Fact>
       </Facts>
@@ -591,8 +602,8 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
               <Td>{index + 1}</Td>
               <Td><NumberInput aria-label={`第 ${index + 1} 档算力档位`} unit="TOPS" min={H9_BAND_TOPS_MIN} inputMode="decimal" value={row.tops} disabled={!canWrite} onChange={(event) => setBand(index, "tops", event.target.value)} /></Td>
               <Td><span className="h9-band-pct">
-                <NumberInput aria-label={`第 ${index + 1} 档累计占比`} unit="%" min={0} max={100} inputMode="decimal" value={row.cumPct} disabled={!canWrite} onChange={(event) => setBand(index, "cumPct", event.target.value)} />
                 {Number.isFinite(pct) && pct >= 0 && pct <= 100 && <RatioBar compact quiet label="累计占比" value={pct} total={100} valueText={`累计 ${pct}%`} tone="role-other" />}
+                <NumberInput aria-label={`第 ${index + 1} 档累计占比`} unit="%" min={0} max={100} inputMode="decimal" value={row.cumPct} disabled={!canWrite} onChange={(event) => setBand(index, "cumPct", event.target.value)} />
               </span></Td>
               <Td>{rowErrors[index] ? <span className="h9-row-error">{rowErrors[index]}</span> : h9BandMeaning(row.tops, row.cumPct)}</Td>
               {canWrite && <Td align="right"><Button size="sm" variant="ghost" aria-label={`删除第 ${index + 1} 档`} onClick={() => removeBand(index)}>删除</Button></Td>}

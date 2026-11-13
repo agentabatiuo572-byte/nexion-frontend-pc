@@ -134,8 +134,8 @@
 .h9-confirm-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .h9-changed { color: var(--rd-progress); font-weight: 500; }
 .h9-row-error { color: var(--rd-warn); }
+.h9-band-pct > .rd-ratio, .h9-share > .rd-ratio { flex: none; }
 .h9-band-pct, .h9-share, .h9-share-total { display: inline-flex; align-items: center; gap: var(--rd-space-3); }
-.h9-band-pct > .rd-number, .h9-share > .rd-number { width: 112px !important; flex: none; }
 .h9-stack { display: flex; flex-direction: column; gap: var(--rd-section-gap); }
 .h9-rank-state { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
 .h9-rank-switch { display: flex; align-items: center; gap: var(--rd-space-3); }

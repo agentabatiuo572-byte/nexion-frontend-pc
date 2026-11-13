@@ -56,12 +56,18 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
       && tier.minTops === data.tiers[index].minTops && tier.maxTops === data.tiers[index].maxTops);
     const diff: DiffRow[] = [
       { key: "enabled", label: "状态", before: data.enabled ? "已开启" : "已关闭", after: enabled ? "已开启" : "已关闭" },
-      ...Array.from({ length: Math.max(tiers.length, data.tiers.length) }, (_, index) => {
+      ...Array.from({ length: Math.max(tiers.length, data.tiers.length) }, (_, index): DiffRow[] => {
         const before = data.tiers[index];
         const after = tiers[index];
-        return { key: `tier-${index}`, label: `第 ${index + 1} 档${after?.name || before?.name ? ` · ${after?.name || before?.name}` : ""}`,
-          before: before ? `${before.name !== after?.name && after ? `${before.name} · ` : ""}${tierText(before)}` : "没有", after: after ? `${before && before.name !== after.name ? `${after.name} · ` : ""}${tierText(after)}` : "删除" };
-      }),
+        const name = after?.name || before?.name || `第 ${index + 1} 档`;
+        if (!before) return [{ key: `tier-${index}`, label: `新增 · ${name}`, before: "没有", after: tierText(after!) }];
+        if (!after) return [{ key: `tier-${index}`, label: `删除 · ${name}`, before: tierText(before), after: "删除" }];
+        return [
+          { key: `tier-${index}-name`, label: `第 ${index + 1} 档名称`, before: before.name, after: after.name },
+          { key: `tier-${index}-share`, label: `${name} · 占比`, before: `${before.sharePct}%`, after: `${after.sharePct}%` },
+          { key: `tier-${index}-tops`, label: `${name} · 算力`, before: `${count(before.minTops)}–${count(before.maxTops)} TOPS`, after: `${count(after.minTops)}–${count(after.maxTops)} TOPS` },
+        ];
+      }).flat(),
     ];
     const changed = diff.filter((row) => row.before !== row.after);
     ctx.openActionConfirm({ briefKind: "config",
@@ -137,8 +143,8 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
               return <Tr key={index}>
                 <Td><Input aria-label={`第${index + 1}档${"名称"}`} value={row.name} disabled={locked} onChange={(event) => change(index, "name", event.target.value)} /></Td>
                 <Td><span className="h9-share">
-                  <NumberInput aria-label={`第${index + 1}档${"占比"}`} unit="%" min={0} max={100} inputMode="decimal" value={row.sharePct} disabled={locked} onChange={(event) => change(index, "sharePct", event.target.value)} />
                   {Number.isFinite(share) && share >= 0 && share <= 100 && <RatioBar compact quiet label="占比" value={share} total={100} valueText={`占 ${share}%`} tone="role-4" />}
+                  <NumberInput aria-label={`第${index + 1}档${"占比"}`} unit="%" min={0} max={100} inputMode="decimal" value={row.sharePct} disabled={locked} onChange={(event) => change(index, "sharePct", event.target.value)} />
                 </span></Td>
                 <Td><NumberInput aria-label={`第${index + 1}档${"最低算力"}`} unit="TOPS" min={0} max={1_000_000_000} inputMode="decimal" value={row.minTops} disabled={locked} onChange={(event) => change(index, "minTops", event.target.value)} /></Td>
                 <Td><NumberInput aria-label={`第${index + 1}档${"最高算力"}`} unit="TOPS" min={0} max={1_000_000_000} inputMode="decimal" value={row.maxTops} disabled={locked} onChange={(event) => change(index, "maxTops", event.target.value)} /></Td>

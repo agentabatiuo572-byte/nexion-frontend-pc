@@ -139,10 +139,10 @@ export function H9GlobeDisplay({ ctx, data, refreshing, onSaved, onRefresh, onIs
               return <Tr key={center.id}>
                 <Td>{CENTER_NAMES[center.id]}</Td>
                 <Td><span className="h9-share">
+                  {Number.isFinite(share) && share >= 0 && share <= 100 && <RatioBar compact quiet label="占比" value={share} total={100} valueText={`占 ${share}%`} tone="role-2" />}
                   <NumberInput aria-label={`${CENTER_NAMES[center.id]}${"分布比例"}`} unit="%" min={0} max={100} inputMode="decimal" value={center.sharePct}
                     disabled={locked || !sharesSupported}
                     onChange={event => setDraft({ ...draft, centers: draft.centers.map((row, i) => i === index ? { ...row, sharePct: event.target.value } : row) })} />
-                  {Number.isFinite(share) && share >= 0 && share <= 100 && <RatioBar compact quiet label="占比" value={share} total={100} valueText={`占 ${share}%`} tone="role-2" />}
                 </span></Td>
                 <Td><NumberInput aria-label={`${CENTER_NAMES[center.id]}${"基础延迟"}`} unit="毫秒" min={0} max={60000} inputMode="numeric" value={center.latencyMs} disabled={locked}
                   onChange={event => setDraft({ ...draft, centers: draft.centers.map((row, i) => i === index ? { ...row, latencyMs: event.target.value } : row) })} /></Td>
@@ -163,7 +163,6 @@ export function H9GlobeDisplay({ ctx, data, refreshing, onSaved, onRefresh, onIs
           </tbody>
         </Table>
         <p className="h9-band-rule">占比 0–100%、最多两位小数，8 个中心合计 100%；基础延迟 0–60,000 的整数毫秒。</p>
-        {shareError && <Notice tone="warn">{shareError}</Notice>}
         {!next && !shareError && <Notice tone="warn">请检查填写范围、整数要求以及上下限顺序。</Notice>}
       </>}
       <ModuleToolbar note={note} tone={dirty && (!!shareError || !next) ? "warn" : undefined}>
