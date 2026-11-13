@@ -40,7 +40,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, HCtx } from "./types";
 import {
   CheckInStrip, H5RecoveryNotice, MilestoneTrack, amountText, countText, dayNumber, expiredTag, legacyRewardName, pendingTag,
-  positiveInteger, rewardKindText, unknownTag,
+  positiveInteger, rewardKindText, streakRewardView, unknownTag,
   type CheckInRule, type EarnMilestone, type H5Model, type H5RecoveryRow, type PowerUp, type StreakMilestone, type StripMilestone,
 } from "./h5-parts";
 
@@ -273,10 +273,11 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
 
   const openStreak = (milestone: StreakMilestone) => {
     const legacy = legacyRewardName(milestone.reward);
+    const view = streakRewardView(milestone.reward, milestone.kind, operatorCopyText);
     openActionConfirm({ briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
       action: `连签里程碑 · ${milestone.day}`,
       title: `改连签 ${milestone.day}奖励`,
-      detail: <>当前奖励 <b>{operatorCopyText(milestone.reward)}</b>。</>,
+      detail: legacy ? <>当前是 <b>{view.main}</b>，名称还是旧写法「{view.legacyName}」。</> : <>当前奖励 <b>{view.main}</b>。</>,
       effect: <StatusTag tone="neutral" icon={ArrowUpDown} explain={<>
         <p>数量变多，或换成 UVT、USDT、转盘票里别的一种：提交审批，{FUND_APPROVER}批准后才生效，提交人不能批自己的。</p>
         <p>数量变少或不变、改成徽章：确认后立即生效。方向按后端记的真实种类和数量判断，不看名称里的数字。</p>
@@ -284,9 +285,10 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       facts: (
         <Facts>
           <Fact k="连签">{milestone.day}</Fact>
-          <Fact k="现在的奖励">{operatorCopyText(milestone.reward)}</Fact>
-          <Fact k="种类">{rewardKindText(milestone.kind)}</Fact>
-          {legacy && <Fact k="注意" tone="warn">名称是旧写法，改时要换成新写法</Fact>}
+          <Fact k="现在的奖励">{view.main}</Fact>
+          {legacy
+            ? <Fact k="名称" tone="warn">{`${view.legacyName}（旧名称，改时换成新写法）`}</Fact>
+            : <Fact k="种类">{rewardKindText(milestone.kind)}</Fact>}
           {fundApproverFacts("变多或换种类")}
         </Facts>
       ),
@@ -294,7 +296,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       coverageLead: "数量变多或换成别的资金、转盘票，平台会多付",
       coverageCheck: "提交审批时和批准时，后端检查兑付覆盖率不低于红线；变少、不变、改成徽章不检查。",
       amplifies: true,
-      edit: { kind: "text", current: milestone.reward, hint: "一种奖励、数量是正整数：+5 UVT、+1 USDT、转盘票 ×2" },
+      edit: { kind: "text", current: milestone.reward, currentLabel: "现在的名称", hint: "一种奖励、数量是正整数：+5 UVT、+1 USDT、转盘票 ×2" },
       run: async (reason, value) => {
         if (!value) return;
         apply(await updateH5StreakMilestone(milestone.id, value, milestone.reward, reason));
@@ -540,9 +542,12 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   for (const milestone of model.streakMilestones) {
     const day = dayNumber(milestone.day);
     if (day !== null && day >= 1 && day <= 7) {
-      (stripGifts[day] ??= []).push({ key: String(milestone.id), text: operatorCopyText(milestone.reward), kind: String(milestone.kind ?? "").toLowerCase() });
+      const view = streakRewardView(milestone.reward, milestone.kind, operatorCopyText);
+      (stripGifts[day] ??= []).push({ key: String(milestone.id), text: view.main, legacyName: view.legacyName, kind: String(milestone.kind ?? "").toLowerCase() });
     }
   }
+  const legacyCount = model.streakMilestones.filter((milestone) => legacyRewardName(milestone.reward)).length;
+  const openTab = (next: Tab) => { setTab(next); tabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); };
   const multiplierPowerUp = model.powerUps.find((item) => item.effectType === "CHECKIN_MULTIPLIER" && item.businessAvailable !== false);
   const p15Number = Number(p15?.cur);
   const p2Number = Number(p2?.cur);
@@ -624,14 +629,15 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           ? <MilestoneTrack label="连签奖励，按天数先后" nodes={model.streakMilestones.map((milestone) => {
             const pending = pendingOf(`streak:${milestone.id}`);
             const kind = String(milestone.kind ?? "").toLowerCase();
+            const view = streakRewardView(milestone.reward, milestone.kind, operatorCopyText);
             return {
               key: String(milestone.id),
               day: milestone.day,
               kind,
-              reward: operatorCopyText(milestone.reward),
+              reward: <>{view.main}{view.legacyName && <span className="h5-track-legacy">{`名称 ${view.legacyName}`}</span>}</>,
               tags: <>
-                <span className="h5-kind">{rewardKindText(milestone.kind)}</span>
-                {legacyRewardName(milestone.reward) && <StatusTag tone="warn" icon={AlertTriangle} explain="名称还写着旧名称（NEX、积分这类）。种类按后端记的算，这一档照常能领；改奖励时要写成 UVT、USDT 或转盘票的格式。">旧名称</StatusTag>}
+                {!view.legacyName && <span className="h5-kind">{rewardKindText(milestone.kind)}</span>}
+                {view.legacyName && <StatusTag tone="warn" icon={AlertTriangle} explain="后端存的名称还是旧写法（NEX、积分这类）。种类和数量按后端记的算，这一档照常能领；App 按种类和数量显示，不显示这个名称。改奖励时写成 UVT、USDT 或转盘票的新写法。">旧名称</StatusTag>}
                 {pending && pendingTag(pending.approver)}
               </>,
               action: canWrite ? <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`修改连签 ${milestone.day}奖励`}
@@ -781,7 +787,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
             <p>{multiplierPowerUp ? `连签满 ${multiplierPowerUp.day} 天的人激活签到加成后，整笔再乘 ${text(multiplierPowerUp.note, "—")}。` : "激活签到加成的人，整笔再乘加成倍率。"}</p>
             <p>格子上的礼物是连签到那天能领的连签奖励，要用户在 App 里自己领。</p>
           </>}
-          actions={<Button variant="ghost" size="sm" onClick={() => { setTab("rules"); tabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>看签到规则</Button>}>
+          actions={<Button variant="ghost" size="sm" onClick={() => openTab("rules")}>看签到规则</Button>}>
           <div className="h5-strip-block">
             <CheckInStrip
               base={text(baseline?.cur, "—")} baseOk={!baseline || positiveInteger(text(baseline.cur, ""))}
@@ -797,6 +803,9 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 ]} />
                 : <p className="h5-note">{p15 && p2 ? "两档概率读不出或合计超过 100%，不画；到「签到规则」核对。" : "没有读到幸运倍率的设置。"}</p>}
             </div>
+            {legacyCount > 0 && <Notice tone="warn" actionBelow action={<Button size="sm" variant="ghost" onClick={() => openTab("streak")}>去连签奖励改</Button>}>
+              {`有 ${legacyCount} 档连签奖励的名称还是旧写法（NEX）；App 按种类和数量显示，不显示名称。`}
+            </Notice>}
           </div>
         </Panel>
 

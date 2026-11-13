@@ -228,6 +228,8 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h5-strip-gift b { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; color: var(--rd-text); overflow-wrap: anywhere; }
 .h5-strip-gift small { display: inline-flex; align-items: center; gap: 2px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
 .h5-strip-gift small > svg { flex: none; color: var(--rd-chart-4); }
+.h5-strip-gift .h5-strip-legacy { display: flex; flex-direction: column; align-items: flex-start; margin-top: 2px; white-space: normal; overflow-wrap: anywhere; color: var(--rd-text-2); }
+.h5-strip-gift .h5-strip-legacy > span:first-child { color: var(--rd-warn); }
 .h5-strip-gift[data-kind="badge"] small > svg { color: var(--rd-chart-other); }
 .h5-lucky { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: start; gap: var(--rd-space-2) var(--rd-space-4); }
 .h5-lucky-title { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); white-space: nowrap; padding-top: 1px; }
@@ -243,6 +245,7 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h5-track-day { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); font-variant-numeric: tabular-nums; }
 .h5-track-card { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: var(--rd-space-2); min-width: 0; padding: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .h5-track-reward { max-width: 100%; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; color: var(--rd-text); overflow-wrap: anywhere; }
+.h5-track-legacy { display: block; margin-top: 2px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-2); }
 .h5-track-tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1); }
 .h5-track-action { margin-top: auto; padding-top: var(--rd-space-1); }
 .h5-kind { display: inline-flex; align-items: center; padding: 0 var(--rd-space-2); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tag); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); white-space: nowrap; }

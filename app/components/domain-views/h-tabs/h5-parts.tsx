@@ -74,12 +74,22 @@ export function legacyRewardName(reward: string) {
   return /NEX|POINTS|积分/i.test(reward);
 }
 
+/**
+ * 连签奖励怎么写：名称是旧写法（NEX、积分）时，读模型拿不到真实数量，只写种类，原名称另起一行标「旧名称」；
+ * 其他照名称写。只改显示，提交时匹配用的原名称不变。
+ */
+export function streakRewardView(reward: string, kind?: string, copy: (text: string) => string = (text) => text) {
+  return legacyRewardName(reward)
+    ? { main: `${rewardKindText(kind)} 奖励`, legacyName: copy(reward) }
+    : { main: copy(reward), legacyName: undefined };
+}
+
 /** 签到规则的值是不是正整数（PD01：App 只发正整数）。 */
 export function positiveInteger(value: string) {
   return /^\s*[1-9]\d*\s*$/.test(value);
 }
 
-export type StripMilestone = { key: string; text: ReactNode; kind: string };
+export type StripMilestone = { key: string; text: ReactNode; kind: string; legacyName?: string };
 
 /**
  * 七天签到条：一格一天，基础奖励、第 7 天加奖、连签到这一天能领的连签奖励标在对应的格子上。
@@ -109,6 +119,7 @@ export function CheckInStrip({ base, baseOk, bonus, bonusOk, milestones, unit = 
               <span key={item.key} className="h5-strip-gift" data-kind={item.kind}>
                 <b>{item.text}</b>
                 <small><Gift size={12} aria-hidden />连签奖励</small>
+                {item.legacyName && <small className="h5-strip-legacy"><span>旧名称</span><span>{item.legacyName}</span></small>}
               </span>
             ))}
           </li>
