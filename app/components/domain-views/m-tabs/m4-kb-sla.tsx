@@ -2,13 +2,20 @@
 
 /** M4 help center content. Retired ticket configuration remains stored on the server. */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BookOpenText, CheckCircle2, FilePen, Pencil, Plus, Trash2, Upload, Archive } from "lucide-react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { Icon, Modal } from "../design-kit";
+import {
+  Button, Cell, Conclusion, Explain, Fact, Facts, Field, FilterBar, FilterField, Input, IrreversibleTag, Modal, MoreMenu, Notice, NumberInput,
+  PageHeader, Pager, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr,
+} from "@/app/components/rd";
 import {
   type SupportFaq,
   type SupportTicketCategory,
 } from "./data";
 import { catCN } from "./hd-ui";
+import {
+  FaqPreview, FaqStatusTag, M4FaqDrawer, M4PendingWrites, M4StatusConfirm, M4_LANGUAGES, ReachList, audienceSub, languageName, reachesUsers, surfaceName,
+} from "./m4-kb-views";
 import type { MCtx } from "./types";
 
 const FAQ_KEY = "I.support.faqs";
@@ -16,12 +23,6 @@ const FAQ_KEY = "I.support.faqs";
 const CATEGORY_OPTIONS: SupportTicketCategory[] = ["withdrawal", "deposit", "hardware", "account", "earnings", "genesis", "technical", "other"];
 const FAQ_CATEGORY_OPTIONS: SupportFaq["category"][] = ["general", ...CATEGORY_OPTIONS];
 const SURFACES: SupportFaq["surface"][] = ["Help Center", "Nova"];
-const SURFACE_CN: Record<SupportFaq["surface"], string> = { "Help Center": "帮助中心", "Ticket Create": "创建工单页", Nova: "Nova AI" };
-const LANGUAGE_OPTIONS: Array<{ value: SupportFaq["language"]; label: string }> = [
-  { value: "zh-CN", label: "简体中文" },
-  { value: "en-US", label: "英语" },
-  { value: "vi-VN", label: "越南语" },
-];
 const FAQ_PAGE_SIZE = 5;
 
 function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
@@ -40,7 +41,9 @@ function nextFaqId(): string {
 }
 const minReason = (r: string) => r.trim().length >= 8 && r.trim().length <= 200;
 
-export function M4KbSla({ ctx }: { ctx: MCtx }) {
+type FaqForm = { category: SupportFaq["category"]; surface: SupportFaq["surface"]; language: string; sortOrder: string; question: string; answer: string; status: SupportFaq["status"]; reason: string };
+
+export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: string; summary: string; loadError: string | null }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
   const authorities = useAdminAuth((state) => state.session?.authorities);
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
@@ -50,30 +53,42 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
   // strict M4 response validator explicitly publishes a successful "1".
   const knowledgeAvailable = pget("I.support.knowledgeAvailable") === "1";
   const faqs = useMemo(() => parseParamArray<SupportFaq>(pget(FAQ_KEY), []), [ctx.params, pget]);
+  const canEdit = canWriteM4 && knowledgeAvailable;
 
   const [showAddFaq, setShowAddFaq] = useState(false);
   const [editFaq, setEditFaq] = useState<SupportFaq | null>(null);
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<"all" | SupportFaq["category"]>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | SupportFaq["status"]>("all");
+  const [surfaceFilter, setSurfaceFilter] = useState<"all" | SupportFaq["surface"]>("all");
+  const [languageFilter, setLanguageFilter] = useState("all");
   const [page, setPage] = useState(1);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [statusTarget, setStatusTarget] = useState<SupportFaq | null>(null);
+  const [statusFailure, setStatusFailure] = useState("");
   const [writePending, setWritePending] = useState(false);
   const writeInFlight = useRef(false);
   const createFaqTempId = useRef<string | null>(null);
 
-  const filteredFaqs = useMemo(() => {
+  const visibleFaqs = useMemo(() => faqs.filter(faq => faq.surface !== "Ticket Create"), [faqs]);
+  const conditions = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return faqs
-      .filter(faq => faq.surface !== "Ticket Create")
-      .filter((faq) => categoryFilter === "all" || faq.category === categoryFilter)
-      .filter((faq) => statusFilter === "all" || faq.status === statusFilter)
-      .filter((faq) => !q || [faq.id, faq.question, faq.answer, faq.surface].some((value) => value.toLowerCase().includes(q)))
-      .sort((a, b) => a.sortOrder - b.sortOrder || b.updatedAt.localeCompare(a.updatedAt));
-  }, [categoryFilter, faqs, query, statusFilter]);
+    return [
+      { key: "q", on: Boolean(q), label: `关键词「${query.trim()}」`, noun: `含「${query.trim()}」`, test: (faq: SupportFaq) => [faq.id, faq.question, faq.answer, faq.surface].some((value) => value.toLowerCase().includes(q)), clear: () => setQuery("") },
+      { key: "surface", on: surfaceFilter !== "all", label: surfaceName(surfaceFilter), noun: `显示在${surfaceName(surfaceFilter)}`, test: (faq: SupportFaq) => faq.surface === surfaceFilter, clear: () => setSurfaceFilter("all") },
+      { key: "language", on: languageFilter !== "all", label: languageName(languageFilter), noun: `${languageName(languageFilter)}`, test: (faq: SupportFaq) => faq.language === languageFilter, clear: () => setLanguageFilter("all") },
+      { key: "category", on: categoryFilter !== "all", label: `分类：${catCN(categoryFilter)}`, noun: `「${catCN(categoryFilter)}」分类`, test: (faq: SupportFaq) => faq.category === categoryFilter, clear: () => setCategoryFilter("all") },
+      { key: "status", on: statusFilter !== "all", label: statusFilter === "published" ? "已发布" : "草稿", noun: statusFilter === "published" ? "已发布" : "草稿", test: (faq: SupportFaq) => faq.status === statusFilter, clear: () => setStatusFilter("all") },
+    ].filter((condition) => condition.on);
+  }, [categoryFilter, languageFilter, query, statusFilter, surfaceFilter]);
+  const filteredFaqs = useMemo(() => visibleFaqs
+    .filter((faq) => conditions.every((condition) => condition.test(faq)))
+    .sort((a, b) => a.sortOrder - b.sortOrder || b.updatedAt.localeCompare(a.updatedAt)), [conditions, visibleFaqs]);
   const pageCount = Math.max(1, Math.ceil(filteredFaqs.length / FAQ_PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const pagedFaqs = filteredFaqs.slice((currentPage - 1) * FAQ_PAGE_SIZE, currentPage * FAQ_PAGE_SIZE);
-  useEffect(() => setPage(1), [query, categoryFilter, statusFilter]);
+  useEffect(() => setPage(1), [query, categoryFilter, statusFilter, surfaceFilter, languageFilter]);
+  const clearFilters = () => conditions.forEach((condition) => condition.clear());
 
   const commitM4Write = async (write: () => Promise<boolean>, successMessage: string): Promise<boolean> => {
     if (writeInFlight.current) {
@@ -93,7 +108,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
     }
   };
 
-  const saveFaq = async (form: { category: SupportFaq["category"]; surface: SupportFaq["surface"]; language: SupportFaq["language"]; sortOrder: string; question: string; answer: string; status: SupportFaq["status"]; reason: string }) => {
+  const saveFaq = async (form: FaqForm, onFailure: (message: string) => void) => {
     const sortOrder = Number(form.sortOrder);
     if (!form.question.trim() || !form.answer.trim() || !minReason(form.reason)) {
       toast("请填写问题、回答，以及 8 字以上的修改理由");
@@ -117,7 +132,8 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
       answer: form.answer.trim(),
       status: form.status,
       surface: form.surface,
-      language: form.language,
+      // 表单列出后端合法的九种语言；读取层还只认三种（M4-B02，代码 worker 改类型和读取）。
+      language: form.language as SupportFaq["language"],
       sortOrder,
       version: editFaq ? editFaq.version + 1 : 1,
       updatedAt: new Date().toISOString().slice(0, 10),
@@ -127,6 +143,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
       () => setParam(FAQ_KEY, JSON.stringify(next), {
         action: `${editFaq ? "编辑" : "新建"}支持 常见问答 ${row.id} · admin.support_faq_${editFaq ? "updated" : "created"}`,
         reason: form.reason.trim(),
+        onFailure,
       }),
       `${row.id} 已保存 · ${catCN(row.category)}常见问答`,
     );
@@ -138,20 +155,36 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
     return succeeded;
   };
 
-  const changeFaqStatus = async (id: string, status: SupportFaq["status"]) => {
-    await commitM4Write(
+  const changeFaqStatus = async (id: string, status: SupportFaq["status"], onFailure: (message: string) => void) => {
+    return commitM4Write(
       () => setParam(FAQ_KEY, JSON.stringify(faqs.map((faq) => (faq.id === id ? { ...faq, status, version: faq.version + 1, updatedAt: new Date().toISOString().slice(0, 10) } : faq))), {
         action: `${status === "published" ? "发布" : "下架"}支持 常见问答 ${id} · admin.support_faq_${status === "published" ? "published" : "unpublished"}`,
         reason: status === "published" ? "常见问答 发布例行审核留档" : "常见问答 下架例行审核留档",
+        onFailure,
       }),
       status === "published" ? `${id} 已发布` : `${id} 已下架为草稿`,
     );
   };
   const requestDeleteFaq = (faq: SupportFaq) => {
+    const published = faq.status === "published";
     openActionConfirm({
       action: <>删除常见问答 <span className="mono">{faq.id}</span></>,
+      title: "删除这条问答",
+      effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag>本页不能恢复</IrreversibleTag></>,
+      confirmTone: "danger",
+      confirmLabel: "确认删除",
       briefKind: "faq-delete",
-      detail: <>删除后将从帮助中心内容池移除“{faq.question}”,且不可在本页恢复。</>,
+      statedBrief: {
+        impact: published ? "删除后所有位置都不再读到这条问答，本页也找不回来；账号和资金不受影响。" : "这是草稿，用户本来就看不到；删除后本页找不回来，账号和资金不受影响。",
+        check: "核对问题和回答，确认不再需要。只想先不让用户看到，用「下架」，以后还能重新发布。",
+      },
+      facts: <Facts>
+        <Fact k="问题"><span className="m4-fact-text">{faq.question}</span></Fact>
+        <Fact k="给谁看">{surfaceName(faq.surface)} · {languageName(faq.language)}</Fact>
+        <Fact k="状态">{published ? "已发布，删除后马上从线上消失" : "草稿"}</Fact>
+      </Facts>,
+      detail: <>删除后这条问答从知识库里消失，所有位置都不再读到“{faq.question}”，且不可在本页恢复。</>,
+      reasonPlaceholder: "例如：内容已过时，已由新问答替代",
       reasonMin: 8,
       run: (reason) => commitM4Write(
         () => setParam("I.support.faq.__delete", JSON.stringify({ faqId: faq.id, expectedStatus: faq.status, expectedVersion: faq.version }), { action: `删除支持 常见问答 ${faq.id} · admin.support_faq_deleted`, reason }),
@@ -160,79 +193,156 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
     });
   };
 
+  const openCreate = () => { createFaqTempId.current = nextFaqId(); setEditFaq(null); setShowAddFaq(true); };
+  const openEdit = (faq: SupportFaq) => { createFaqTempId.current = null; setShowAddFaq(false); setEditFaq(faq); };
+  const openStatus = (faq: SupportFaq) => { setStatusFailure(""); setStatusTarget(faq); };
+
+  // 首屏数字：只算这页的问答，不随筛选变。读不到时写「—」，不当成 0。
+  const published = visibleFaqs.filter((faq) => faq.status === "published");
+  const drafts = visibleFaqs.length - published.length;
+  const unreachable = published.filter((faq) => !reachesUsers(faq));
+  const byLanguage = M4_LANGUAGES.map((language) => ({ name: language.name, count: published.filter((faq) => faq.language === language.code).length })).filter((row) => row.count > 0);
+  const otherLanguage = published.filter((faq) => !M4_LANGUAGES.some((language) => language.code === faq.language)).length;
+  const loading = !knowledgeAvailable && ctx.contentLoading;
+  const failed = !knowledgeAvailable && !ctx.contentLoading;
+  const toggleStatus = (status: SupportFaq["status"]) => setStatusFilter((current) => current === status ? "all" : status);
+  const languageOptions = [...M4_LANGUAGES.map((language) => language.code), ...new Set(visibleFaqs.map((faq) => faq.language).filter((code) => !M4_LANGUAGES.some((language) => language.code === code)))];
+
+  // 没有结果时分清是「没有这类问答」还是「几个条件合起来太窄」。
+  const narrowMessage = () => {
+    const empty = conditions.find((condition) => !visibleFaqs.some(condition.test));
+    if (empty) return `知识库里没有${empty.noun}的问答。`;
+    return conditions.length > 1 ? "每个条件单独都有问答，合在一起没有：少选一个条件试试。" : "没有符合当前筛选条件的问答。";
+  };
+
+  const current = openId ? visibleFaqs.find((faq) => faq.id === openId) ?? null : null;
+  const currentIndex = current ? pagedFaqs.findIndex((faq) => faq.id === current.id) : -1;
+  const drawerNav = currentIndex >= 0 ? {
+    onPrev: () => setOpenId(pagedFaqs[currentIndex - 1]?.id ?? null),
+    onNext: () => setOpenId(pagedFaqs[currentIndex + 1]?.id ?? null),
+    hasPrev: currentIndex > 0,
+    hasNext: currentIndex < pagedFaqs.length - 1,
+  } : undefined;
+  const tableColumns = canEdit ? 7 : 6;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <>
+      <PageHeader pageId="M4" title={title} summary={summary}
+        actions={canEdit && <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabled={writePending} onClick={openCreate}>新建问答</Button>}
+        readOnly={knowledgeAvailable && !canWriteM4 ? "你只能查看；新建、编辑、发布、下架和删除问答需要知识库编辑权限" : undefined} />
 
-      {!knowledgeAvailable && <div className="callout warn" data-module-health-state="error">知识库当前不可用，暂时无法修改。请稍后刷新重试。</div>}
-      {knowledgeAvailable && !canWriteM4 && <div className="callout">当前账号只有查看权限;编辑常见问答与发布状态需要知识库编辑权限。</div>}
+      {/* 结果未知的写操作：界面已备好，等代码 worker 按 R1 从本标签页保存的原请求拼行（M4-B01）。 */}
+      <M4PendingWrites rows={[]} />
 
-      <div>
-        <div className="card">
-          <div className="card-pad" style={{ paddingBottom: 10, display: "flex", alignItems: "center" }}>
-            <div className="sec-h" style={{ margin: 0 }}>
-              <span className="t">帮助内容管理</span>
-              <span className="n">{knowledgeAvailable ? faqs.filter(f => f.surface !== "Ticket Create").length : "-"} 篇</span>
-            </div>
-            {canWriteM4 && knowledgeAvailable && <button type="button" className="btn btn-pri btn-sm" style={{ marginLeft: "auto" }} disabled={writePending} onClick={() => { createFaqTempId.current = nextFaqId(); setEditFaq(null); setShowAddFaq(true); }}>
-              <Icon name="plus" size={16} />
-              新增文章
-            </button>}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 1fr) 130px 110px", gap: 8, padding: "0 12px 10px" }}>
-            <input className="fld" aria-label="搜索常见问答" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索编号、问题或回答" />
-            <select className="fld" aria-label="常见问答 分类筛选" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as typeof categoryFilter)}>
-              <option value="all">全部分类</option>
-              {FAQ_CATEGORY_OPTIONS.map((category) => <option key={category} value={category}>{catCN(category)}</option>)}
-            </select>
-            <select className="fld" aria-label="常见问答 状态筛选" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}>
-              <option value="all">全部状态</option>
-              <option value="published">已发布</option>
-              <option value="draft">草稿</option>
-            </select>
-          </div>
-          <div style={{ padding: "0 8px 10px" }}>
-            {pagedFaqs.map((f) => (
-              <div key={f.id} data-proof="support-faq-row" data-faq-id={f.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderTop: "1px solid var(--border)" }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 500, color: "var(--ink)" }}>{f.question}</div>
-                  <div className="dim" style={{ fontSize: 12, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.answer}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
-                    <span className="idtag" style={{ fontSize: 11 }}>{f.id}</span>
-                    <span className="chip" style={{ height: 18, fontSize: 11, border: "none" }}>{catCN(f.category)}</span>
-                    <span className="dim2" style={{ fontSize: 11 }}>{SURFACE_CN[f.surface]} · {f.language} · 排序 {f.sortOrder} · v{f.version} · <span className="mono">{f.updatedAt}</span></span>
-                  </div>
-                </div>
-                <span className={`stat ${f.status === "published" ? "resolved" : "wait"}`} style={{ height: 20 }}>{f.status === "published" ? "已发布" : "草稿"}</span>
-                {canWriteM4 && knowledgeAvailable && <button type="button" className="btn btn-ghost btn-icon btn-sm" disabled={writePending} title="编辑 常见问答" onClick={() => { createFaqTempId.current = null; setShowAddFaq(false); setEditFaq(f); }}><Icon name="doc" size={16} /></button>}
-                {canWriteM4 && knowledgeAvailable && (f.status === "draft" ? (
-                  <button type="button" data-proof="support-faq-publish" className="btn btn-sec btn-sm" disabled={writePending} onClick={() => changeFaqStatus(f.id, "published")}>
-                    <Icon name="download" size={16} />
-                    发布
-                  </button>
-                ) : (
-                  <button type="button" data-proof="support-faq-unpublish" className="btn btn-sec btn-sm" disabled={writePending} onClick={() => changeFaqStatus(f.id, "draft")}>
-                    <Icon name="box" size={16} />
-                    下架
-                  </button>
-                ))}
-                {canWriteM4 && knowledgeAvailable && <button type="button" className="btn btn-ghost btn-icon btn-sm" disabled={writePending} title="删除常见问答" onClick={() => requestDeleteFaq(f)}><Icon name="x" size={16} /></button>}
-              </div>
-            ))}
-            {pagedFaqs.length === 0 && <div className="empty" style={{ margin: 12 }}>没有符合当前筛选条件的 常见问答</div>}
-            {filteredFaqs.length > 0 && <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px 0", borderTop: "1px solid var(--border)" }}>
-              <span className="dim2" style={{ fontSize: 11 }}>第 {currentPage}/{pageCount} 页 · 共 {filteredFaqs.length} 篇</span>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button type="button" className="btn btn-sec btn-sm" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>上一页</button>
-                <button type="button" className="btn btn-sec btn-sm" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>下一页</button>
-              </div>
-            </div>}
-          </div>
-        </div>
 
-      </div>
+      {loading ? <Conclusion state="unknown">正在读取问答…</Conclusion>
+        : failed ? <div className="m4-health" data-module-health-state="error"><Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshContent()}>重新读取</Button>}
+            hint={`暂时不能新建和修改。${loadError ? "客服中心的其他数据也没同步成功。" : ""}`}
+            explain="知识库和旧的工单处理时限数据一起读取、一起校验，任何一部分不完整，问答都会读不到。点「重新读取」会重读整个客服中心。">问答读不到，现在不知道线上有哪些</Conclusion></div>
+          : visibleFaqs.length === 0 ? <Conclusion state="neutral" icon={BookOpenText} hint={canEdit ? "点右上角「新建问答」写第一条。" : undefined}>还没有问答</Conclusion>
+            : unreachable.length > 0
+              ? <Conclusion state="warn" hint="可以筛「显示位置」和「语言」找到它们。"
+                  explain="Nova 智能助手现在读不到普通问答（后端语言代码对不上，已提后端）；App 帮助中心只按中文、英语、越南语读取。这些问答状态是已发布，但用户看不到。">
+                  {published.length} 条在线上，其中 {unreachable.length} 条用户实际看不到
+                </Conclusion>
+              : <Conclusion state="ok" hint={drafts > 0 ? `${drafts} 条草稿还没发布，用户看不到。` : undefined}>{published.length} 条问答在线上</Conclusion>}
+
+      <StatBand label="问答数量" fit>
+        <Stat icon={BookOpenText} tone="role-2" label="全部问答" value={knowledgeAvailable ? visibleFaqs.length : "—"} unit={knowledgeAvailable ? "条" : undefined}
+          sub={knowledgeAvailable && visibleFaqs.length > 0 ? `帮助中心 ${visibleFaqs.filter((faq) => faq.surface === "Help Center").length} · Nova ${visibleFaqs.filter((faq) => faq.surface === "Nova").length}` : undefined}
+          explain="知识库里全部问答，含草稿；不随下面的筛选变。" />
+        <Stat icon={CheckCircle2} tone="role-2" label="已发布" value={knowledgeAvailable ? published.length : "—"} unit={knowledgeAvailable ? "条" : undefined}
+          sub={knowledgeAvailable && published.length > 0 ? [...byLanguage.map((row) => `${row.name} ${row.count}`), ...(otherLanguage ? [`其他 ${otherLanguage}`] : [])].join(" · ") : undefined}
+          explain="在线上的问答，按语言分。点这一格只看已发布的。"
+          onOpen={knowledgeAvailable && (published.length > 0 || statusFilter === "published") ? () => toggleStatus("published") : undefined} openLabel="只看已发布的问答"
+          selected={statusFilter === "published"} selectedText="已筛选" aria-pressed={statusFilter === "published"} />
+        <Stat icon={FilePen} tone="role-2" label="草稿" value={knowledgeAvailable ? drafts : "—"} unit={knowledgeAvailable ? "条" : undefined}
+          sub={knowledgeAvailable && drafts > 0 ? "用户看不到" : undefined}
+          explain="只在后台，用户和客服都读不到。点这一格只看草稿。"
+          onOpen={knowledgeAvailable && (drafts > 0 || statusFilter === "draft") ? () => toggleStatus("draft") : undefined} openLabel="只看草稿"
+          selected={statusFilter === "draft"} selectedText="已筛选" aria-pressed={statusFilter === "draft"} />
+      </StatBand>
+
+      <FilterBar
+        more={<>
+          <FilterField label="分类">
+            <Select aria-label="常见问答 分类筛选" value={categoryFilter === "all" ? "" : categoryFilter} onChange={(value) => setCategoryFilter((value || "all") as typeof categoryFilter)}
+              options={[{ value: "", label: "全部分类" }, ...FAQ_CATEGORY_OPTIONS.map((category) => ({ value: category, label: catCN(category) }))]} />
+          </FilterField>
+          <FilterField label="状态">
+            <Select aria-label="常见问答 状态筛选" value={statusFilter === "all" ? "" : statusFilter} onChange={(value) => setStatusFilter((value || "all") as typeof statusFilter)}
+              options={[{ value: "", label: "全部状态" }, { value: "published", label: "已发布" }, { value: "draft", label: "草稿" }]} />
+          </FilterField>
+        </>}
+        moreCount={(categoryFilter !== "all" ? 1 : 0) + (statusFilter !== "all" ? 1 : 0)}
+        applied={conditions.filter((condition) => condition.key === "category" || condition.key === "status").map((condition) => ({ key: condition.key, label: condition.label, onRemove: condition.clear }))}
+        onClear={clearFilters}
+        canClear={conditions.length > 0}
+        result={knowledgeAvailable && conditions.length > 0 ? `筛出 ${filteredFaqs.length} 条，共 ${visibleFaqs.length} 条` : undefined}
+      >
+        <FilterField grow><Input aria-label="搜索常见问答" placeholder="搜索编号、问题或回答" value={query} onChange={(event) => setQuery(event.target.value)} /></FilterField>
+        <FilterField>
+          <Select aria-label="常见问答 位置筛选" value={surfaceFilter === "all" ? "" : surfaceFilter} onChange={(value) => setSurfaceFilter((value || "all") as typeof surfaceFilter)}
+            options={[{ value: "", label: "全部位置" }, ...SURFACES.map((surface) => ({ value: surface, label: surfaceName(surface) }))]} />
+        </FilterField>
+        <FilterField>
+          <Select aria-label="常见问答 语言筛选" value={languageFilter === "all" ? "" : languageFilter} onChange={(value) => setLanguageFilter(value || "all")}
+            options={[{ value: "", label: "全部语言" }, ...languageOptions.map((code) => ({ value: code, label: languageName(code) }))]} />
+        </FilterField>
+      </FilterBar>
+
+      <Panel flush icon={BookOpenText} tone="role-2" title="问答" explain="按排序值从小到大排，同值的后更新的在前；帮助中心也按排序值排。点一行看全文和谁读得到。">
+        <Table label="问答列表" className="m4-table">
+          <thead><tr>
+            <Th>问题</Th>
+            <Th className="m4-col-cat">分类</Th>
+            <Th className="m4-col-who"><Explain label="给谁看怎么算" content="显示位置加语言。帮助中心的问答给 App 里界面是这个语言的用户看；中文问答客服回复时也能查到。Nova 智能助手现在读不到普通问答。">给谁看</Explain></Th>
+            <Th className="m4-col-state">状态</Th>
+            <Th className="m4-col-sort" align="right">排序</Th>
+            <Th className="m4-col-upd">最近更新</Th>
+            {canEdit && <Th sticky="end">操作</Th>}
+          </tr></thead>
+          <tbody>
+            {loading ? <TableLoading columns={tableColumns} rows={FAQ_PAGE_SIZE} />
+              : failed ? <TableMessage columns={tableColumns} role="alert">列表先不显示，读到后再列出。</TableMessage>
+                : visibleFaqs.length === 0 ? <TableMessage columns={tableColumns} role="status">知识库里还没有问答</TableMessage>
+                  : pagedFaqs.length === 0 ? <TableMessage columns={tableColumns} role="status">{narrowMessage()} <Button size="sm" onClick={clearFilters}>清除筛选</Button></TableMessage>
+                    : pagedFaqs.map((f) => (
+                      <Tr key={f.id} data-proof="support-faq-row" data-faq-id={f.id} selected={openId === f.id} onOpen={() => setOpenId(f.id)}>
+                        <Td grow><Cell main={f.question} sub={f.answer} title={f.question} /></Td>
+                        <Td><Cell main={catCN(f.category)} /></Td>
+                        <Td><Cell main={surfaceName(f.surface)} sub={audienceSub(f)} /></Td>
+                        <Td><FaqStatusTag status={f.status} /></Td>
+                        <Td align="right"><Cell num main={f.sortOrder} /></Td>
+                        <Td><Cell num main={f.updatedAt} sub={`第 ${f.version} 版`} /></Td>
+                        {canEdit && <Td sticky="end" data-fit="">
+                          <span className="m4-row-actions">
+                            <Button size="sm" variant="ghost" icon={<Pencil size={14} aria-hidden />} disabled={writePending} onClick={() => openEdit(f)}>编辑</Button>
+                            {f.status === "draft"
+                              ? <Button size="sm" data-proof="support-faq-publish" icon={<Upload size={14} aria-hidden />} disabled={writePending} onClick={() => openStatus(f)}>发布</Button>
+                              : <Button size="sm" data-proof="support-faq-unpublish" icon={<Archive size={14} aria-hidden />} disabled={writePending} onClick={() => openStatus(f)}>下架</Button>}
+                            <MoreMenu label={`更多操作：${f.question}`} disabled={writePending} items={[{ key: "delete", label: <><Trash2 size={14} aria-hidden /> 删除</>, danger: true, onSelect: () => requestDeleteFaq(f) }]} />
+                          </span>
+                        </Td>}
+                      </Tr>
+                    ))}
+          </tbody>
+        </Table>
+        {knowledgeAvailable && filteredFaqs.length > 0 && <Pager label="问答列表" total={filteredFaqs.length} page={currentPage} pageSize={FAQ_PAGE_SIZE} sizes={[FAQ_PAGE_SIZE]} onPage={setPage} onPageSize={() => setPage(1)} />}
+      </Panel>
+
+      <M4FaqDrawer faq={current} nav={drawerNav} busy={writePending} canWrite={canEdit}
+        onClose={() => setOpenId(null)} onEdit={() => current && openEdit(current)} onStatus={() => current && openStatus(current)} onDelete={() => current && requestDeleteFaq(current)} />
+
+      {statusTarget && <M4StatusConfirm faq={statusTarget} busy={writePending} failure={statusFailure}
+        onCancel={() => setStatusTarget(null)}
+        onConfirm={async () => {
+          setStatusFailure("");
+          if (await changeFaqStatus(statusTarget.id, statusTarget.status === "draft" ? "published" : "draft", setStatusFailure)) setStatusTarget(null);
+        }} />}
 
       {(showAddFaq || editFaq) && <FaqModal key={editFaq?.id ?? "new"} row={editFaq} pending={writePending} onClose={() => { createFaqTempId.current = null; setShowAddFaq(false); setEditFaq(null); }} onSave={saveFaq} />}
-    </div>
+    </>
   );
 }
 
@@ -245,61 +355,104 @@ function FaqModal({
   row: SupportFaq | null;
   pending: boolean;
   onClose: () => void;
-  onSave: (form: { category: SupportFaq["category"]; surface: SupportFaq["surface"]; language: SupportFaq["language"]; sortOrder: string; question: string; answer: string; status: SupportFaq["status"]; reason: string }) => Promise<boolean>;
+  onSave: (form: FaqForm, onFailure: (message: string) => void) => Promise<boolean>;
 }) {
   const [category, setCategory] = useState<SupportFaq["category"]>(row?.category ?? "general");
   const [surface, setSurface] = useState<SupportFaq["surface"]>(row?.surface ?? "Help Center");
-  const [language, setLanguage] = useState<SupportFaq["language"]>(row?.language ?? "zh-CN");
+  const [language, setLanguage] = useState<string>(row?.language ?? "zh-CN");
   const [sortOrder, setSortOrder] = useState(String(row?.sortOrder ?? 10));
   const [question, setQuestion] = useState(row?.question ?? "");
   const [answer, setAnswer] = useState(row?.answer ?? "");
   const [status, setStatus] = useState<SupportFaq["status"]>(row?.status ?? "published");
   const [reason, setReason] = useState("");
+  const [tried, setTried] = useState(false);
+  const [failure, setFailure] = useState("");
+  // 和 saveFaq 同一套规则，只用来把错写在对应的框下面；真正挡写入的仍是 saveFaq。
+  const sortValue = Number(sortOrder);
+  const errors = {
+    question: !question.trim() ? "请写问题" : question.trim().length > 160 ? `超出 ${question.trim().length - 160} 字，后台最多收 160 字` : "",
+    answer: !answer.trim() ? "请写回答" : answer.trim().length > 4000 ? `超出 ${answer.trim().length - 4000} 字，后台最多收 4000 字` : "",
+    sort: !Number.isInteger(sortValue) || sortValue < 0 || sortValue > 999999 ? "填 0–999999 的整数" : "",
+    reason: !minReason(reason) ? (reason.trim().length < 8 ? `还差 ${8 - reason.trim().length} 字` : "最多 200 字") : "",
+  };
+  const blocking = Boolean(errors.question && !question.trim() || errors.answer && !answer.trim() || errors.sort || errors.reason);
+  const show = (key: keyof typeof errors) => (tried ? errors[key] : "") || undefined;
+  const live = row?.status === "published" || status === "published";
+  const unknown = failure.startsWith("结果未确认");
+  const dirty = question !== (row?.question ?? "") || answer !== (row?.answer ?? "") || reason !== "" || category !== (row?.category ?? "general")
+    || surface !== (row?.surface ?? "Help Center") || language !== (row?.language ?? "zh-CN") || sortOrder !== String(row?.sortOrder ?? 10) || status !== (row?.status ?? "published");
+  const save = () => {
+    setTried(true);
+    setFailure("");
+    if (blocking) return;
+    void onSave({ category, surface, language, sortOrder, question, answer, status, reason }, setFailure);
+  };
   return (
     <Modal
-      title={row ? `编辑帮助内容 · ${row.id}` : "新增帮助内容"}
-      icon="doc"
+      title={row ? "编辑问答" : "新建问答"}
+      icon={row ? Pencil : Plus}
+      className="m4-faq-form"
+      wide
+      busy={pending}
+      dirty={dirty}
+      sub={<>
+        {live ? <StatusTag tone="progress" filled>{row?.status === "published" && status === "draft" ? "保存后立即下架" : "保存后立即生效"}</StatusTag> : <StatusTag tone="neutral" filled>保存草稿，线上不变</StatusTag>}
+        {row && <span className="m4-form-id" data-mono="">{row.id} · 第 {row.version} 版</span>}
+      </>}
       onClose={onClose}
       footer={
         <>
-          <span style={{ flex: 1 }} />
-          <button type="button" className="btn btn-sec btn-sm" disabled={pending} onClick={onClose}>取消</button>
-          <button type="button" data-proof="support-faq-save" className="btn btn-pri btn-sm" disabled={pending} onClick={() => onSave({ category, surface, language, sortOrder, question, answer, status, reason })}>{pending ? "提交中…" : "保存 常见问答"}</button>
+          <Button disabled={pending} onClick={onClose}>取消</Button>
+          <Button variant="primary" data-proof="support-faq-save" loading={pending} onClick={save}>{row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>
         </>
       }
     >
-      <div className="grid g-2" style={{ gap: 12, marginBottom: 12 }}>
-        <label className="field"><span className="bf-legend">分类</span>
-          <select className="fld" value={category} onChange={(e) => setCategory(e.target.value as SupportFaq["category"])}>
-            {FAQ_CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{catCN(c)}</option>)}
-          </select>
-        </label>
-        <label className="field"><span className="bf-legend">可见位置</span>
-          <select className="fld" value={surface} onChange={(e) => setSurface(e.target.value as SupportFaq["surface"])}>
-            {SURFACES.map((s) => <option key={s} value={s}>{SURFACE_CN[s]}</option>)}
-          </select>
-        </label>
-      </div>
-      <div style={{ display: "grid", gap: 12 }}>
-        <label className="field"><span className="bf-legend">问题</span><input className="fld" data-proof="support-faq-question" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="如:提现审核要多久?" /></label>
-        <label className="field"><span className="bf-legend">回答</span><textarea className="fld" data-proof="support-faq-answer" rows={4} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="写清用户可执行步骤、后台处理队列与 处理时限" style={{ resize: "vertical" }} /></label>
-        <div className="grid g-2" style={{ gap: 12 }}>
-          <label className="field"><span className="bf-legend">语言</span>
-            <select className="fld" value={language} onChange={(e) => setLanguage(e.target.value as SupportFaq["language"])}>
-              {LANGUAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </label>
-          <label className="field"><span className="bf-legend">排序(小值靠前)</span><input className="fld mono" type="number" min={0} max={999999} step={1} value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} /></label>
+      {row?.status === "published" && <Notice tone="warn">这条在线上，保存后用户马上看到新内容。</Notice>}
+      {failure && <Notice tone={unknown ? "warn" : "danger"} title={unknown ? "结果未知" : "没有保存成功"}>
+        {unknown
+          ? <><p>请求已经发出，可能已经保存。先关掉表单，在列表里核对这条问答；{row ? "内容已经变了就不要再保存" : "列表里已经有了就不要再保存，再存可能多出一条"}。</p></>
+          : <p>{failure}</p>}
+      </Notice>}
+      <div className="m4-form">
+        <div className="m4-form-fields">
+          <div className="rd-form-grid" data-cols="2" data-dense="">
+            <Field label="显示位置" explain="帮助中心：App 里「我的 › 帮助中心」。Nova 智能助手现在读不到普通问答，已提后端。">
+              <Segments label="显示位置" value={surface} onChange={setSurface} items={SURFACES.map((value) => ({ value, label: surfaceName(value) }))} />
+            </Field>
+            <Field label="语言">
+              {(control) => <Select {...control} aria-label="问答语言" value={language} onChange={setLanguage}
+                options={[...M4_LANGUAGES.map((option) => ({ value: option.code, label: option.name })), ...(M4_LANGUAGES.some((option) => option.code === language) ? [] : [{ value: language, label: language }])]} />}
+            </Field>
+          </div>
+          <section aria-label={status === "published" ? "保存后谁读得到" : "发布后谁读得到"}>
+            <h3 className="m4-block-title">{status === "published" ? "保存后谁读得到" : "发布后谁读得到"}</h3>
+            <ReachList faq={{ surface, language }} label={status === "published" ? "保存后谁读得到" : "发布后谁读得到"} />
+          </section>
+          <Field label="问题" required error={show("question")}>
+            {(control) => <Textarea {...control} data-proof="support-faq-question" rows={1} value={question} count={`${question.trim().length}/160`} onChange={(e) => setQuestion(e.target.value)} placeholder="用户会怎么问，就怎么写。例如：提现审核要多久？" />}
+          </Field>
+          <Field label="回答" required error={show("answer")}>
+            {(control) => <Textarea {...control} className="m4-answer" data-proof="support-faq-answer" rows={5} value={answer} count={`${answer.trim().length}/4000`} onChange={(e) => setAnswer(e.target.value)} placeholder={"写清用户自己能做的步骤；换行会原样显示。\n例如：提现提交后一般 24 小时内审核完成。"} />}
+          </Field>
+          <div className="rd-form-grid" data-cols="3" data-dense="">
+            <Field label="分类">
+              {(control) => <Select {...control} aria-label="问答分类" value={category} onChange={(value) => setCategory(value as SupportFaq["category"])} options={FAQ_CATEGORY_OPTIONS.map((c) => ({ value: c, label: catCN(c) }))} />}
+            </Field>
+            <Field label="排序" hint="小值靠前" explain="0–999999 的整数。列表和帮助中心都按排序值从小到大排，同值的后更新的在前。" error={show("sort")}>
+              {(control) => <NumberInput {...control} min={0} max={999999} step={1} value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />}
+            </Field>
+            <Field label="发布状态">
+              <Segments label="发布状态" value={status} onChange={setStatus} items={[{ value: "published", label: "已发布" }, { value: "draft", label: "草稿" }]} />
+            </Field>
+          </div>
+          <Field label="修改理由" required hint="至少 8 字" error={show("reason")}>
+            {(control) => <Textarea {...control} data-proof="support-faq-reason" rows={2} value={reason} count={`${reason.trim().length}/200`} onChange={(e) => setReason(e.target.value)} placeholder="例如：帮助中心提现板块补齐" />}
+          </Field>
         </div>
-        <div className="grid g-2" style={{ gap: 12 }}>
-          <label className="field"><span className="bf-legend">发布状态</span>
-            <select className="fld" value={status} onChange={(e) => setStatus(e.target.value as SupportFaq["status"])}>
-              <option value="published">已发布</option>
-              <option value="draft">草稿</option>
-            </select>
-          </label>
-          <label className="field"><span className="bf-legend">修改理由（至少 8 字）</span><input className="fld" data-proof="support-faq-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:帮助中心提现板块缺口补齐" /></label>
-        </div>
+        <aside className="m4-form-preview" aria-label="帮助中心里大概这样">
+          <h3 className="m4-block-title">帮助中心里大概这样<Explain label="预览怎么来的" content="按 App 帮助中心的排版近似画出：问题一行，展开是回答，换行原样保留。实际字号和折行以 App 为准。" /></h3>
+          <FaqPreview question={question} answer={answer} />
+        </aside>
       </div>
     </Modal>
   );

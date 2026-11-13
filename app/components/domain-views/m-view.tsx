@@ -678,11 +678,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "M3" && tab !== "M1" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
+      {tab !== "M3" && tab !== "M1" && tab !== "M4" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
       {tab !== "M3" && shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<>{operationNotice?.tone === "danger" && <Link className="rd-link" href="/service/sessions">到专属会话核对</Link>}<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button></>}>{shownOperationNotice}</Notice>}
       {tab === "M3" && !safeMData && <PageHeader pageId="M3" title="专属会话" summary={M3_SUMMARY} back={backToCustomers} />}
 
-      {tab !== "M3" && mError && (
+      {tab !== "M3" && tab !== "M4" && mError && (
         <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Icon name="bell" size={16} />
           <span className="dim" style={{ fontSize: 13 }}>客服中心暂时无法同步数据,请稍后重试。</span>
@@ -701,9 +701,10 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       )}
 
       {tab === "M1" && <M1AnalyticsWorkbench key={authEpoch} permission={permission} ctx={ctx} />}
+      {tab === "M4" && <M4KbSla ctx={ctx} title={meta.l2Name} summary={meta.summary} loadError={mError} />}
       {tab === "M5" && permission !== "agent" && <nav className="s5a-nav" aria-label="服务配置"><button type="button" className={m5Pane === "rules" ? "active" : ""} onClick={() => setM5Pane("rules")}>服务规则</button><button type="button" className={m5Pane === "templates" ? "active" : ""} onClick={() => setM5Pane("templates")}>话术与模板</button></nav>}
       {tab === "M5" && effectiveM5Pane === "rules" && <M5ServiceRules key={authEpoch} permission={permission} />}
-      {tab !== "M1" && !(tab === "M5" && effectiveM5Pane === "rules") && !safeMData ? (
+      {tab !== "M1" && tab !== "M4" && !(tab === "M5" && effectiveM5Pane === "rules") && !safeMData ? (
         <div className="card card-pad">
           <span className="dim" style={{ fontSize: 13 }}>
             {mError ? "客服中心暂时无法同步数据,请稍后重试。" : mLoading ? "正在加载客服中心…" : "暂无可展示的客服信息"}
@@ -713,7 +714,6 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         <>
           {tab === "M2" && <p>工单服务已下线，请通过客户会话继续联系。</p>}
           {tab === "M3" && <M3DedicatedChat ctx={ctx} back={backToCustomers} summary={M3_SUMMARY} banner={m3Banner} streamReady={conversationStreamReady} reconnectExhausted={reconnectExhausted} />}
-          {tab === "M4" && <M4KbSla ctx={ctx} />}
           {tab === "M5" && effectiveM5Pane === "templates" && <M5Scripts ctx={ctx} showSeatOperations={false} showSeatProfiles={permission !== "agent"} />}
         </>
       )}
@@ -754,7 +754,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  return tab === "M3" || tab === "M1" ? <RdPage className="mdom">{page}</RdPage> : <div className="dkpage mdom">{page}</div>;
+  return tab === "M3" || tab === "M1" || tab === "M4" ? <RdPage className={tab === "M4" ? "mdom m4-page" : "mdom"}>{page}</RdPage> : <div className="dkpage mdom">{page}</div>;
 }
 
 /* ============ MP2 持续接待 dock —— 切页不挂断(M3 自身是全屏对话台,故 M3 不显)============ */
