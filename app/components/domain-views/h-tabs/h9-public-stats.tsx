@@ -404,7 +404,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   const changedKeys = MODULE_KEYS[module].filter((key) => drafts[key].trim() !== h9DraftText(values[key]));
   const badCount = MODULE_KEYS[module].filter((key) => fieldErrors[key]).length + (module === "history" ? rowErrors.filter(Boolean).length + (bandCountError ? 1 : 0) : 0);
   const saveBlock = loading ? "正在读取最新数据，读完再保存" : conflict ? "这块已被别人改过，先刷新这一块" : !dirty ? "没有改动" : !allValid ? "有填错的项，按框下的提示改" : undefined;
-  const toolbarNote = loading ? "正在读取…" : !dirty ? "没有改动" : badCount ? `有 ${badCount} 处要改` : `改了 ${changedKeys.length + changedBands || 1} 项，还没保存`;
+  const toolbarNote = loading ? "正在读取…" : !canWrite ? "只能查看" : !dirty ? "没有改动" : badCount ? `有 ${badCount} 处要改` : `改了 ${changedKeys.length + changedBands || 1} 项，还没保存`;
 
   const renderField = (key: ScalarKey) => {
     const field = H9_FIELDS.find((item) => item.key === key)!;

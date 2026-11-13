@@ -104,7 +104,7 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
   const shareTotal = tiers.reduce((sum, tier) => sum + (Number.isFinite(tier.sharePct) ? Math.round(tier.sharePct * 100) : 0), 0) / 100;
   const shareGap = Number((100 - shareTotal).toFixed(2));
   const saveBlock = loading ? "正在读取最新数据，读完再保存" : saving ? undefined : conflict ? issue?.kind === "conflict" ? "排名设置已被别人改过，先刷新这一块" : "这次保存没得到确定结果，先刷新这一块" : !dirty ? "没有改动" : validation || undefined;
-  const note = loading ? "正在读取…" : !dirty ? "没有改动" : validation ? validation : "有改动，还没保存";
+  const note = loading ? "正在读取…" : !canWrite ? "只能查看" : !dirty ? "没有改动" : validation ? validation : "有改动，还没保存";
   const refresh = <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} disabled={loading || saving} onClick={() => void load()}>刷新这一块</Button>;
 
   const issueNotice = issue && (issue.kind === "conflict"

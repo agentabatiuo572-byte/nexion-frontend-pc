@@ -111,7 +111,7 @@ export function H9GlobeDisplay({ ctx, data, refreshing, onSaved, onRefresh, onIs
   };
 
   const saveBlock = refreshing ? "正在读取最新数据，读完再保存" : saving ? "正在保存" : conflict ? "这块已被别人改过，先刷新这一块" : !dirty ? "没有改动" : shareError ? "8 个中心的占比合计要等于 100%" : !next ? "有填错的项，按提示改" : undefined;
-  const note = refreshing ? "正在读取…" : !dirty ? "没有改动" : shareError || !next ? "有要改的地方" : "有改动，还没保存";
+  const note = refreshing ? "正在读取…" : !canWrite ? "只能查看" : !dirty ? "没有改动" : shareError || !next ? "有要改的地方" : "有改动，还没保存";
   const jitter = draft ? h9DraftNumber(draft.latencyJitterMs) : Number.NaN;
   const shareGap = Number((100 - shareTotal).toFixed(2));
 
