@@ -310,3 +310,59 @@
 
 /* 规则表：放得下时计算方式一行，1024 放不下时折行，上线批次留在屏内（DT-16）。 */
 .l1-rule-fx .rd-cell-main { white-space: normal; text-wrap: balance; }  /* 两行匀开，第二行不留单字 */
+
+/* ======================= L4 设备、任务与团队报表（改版，rd） =======================
+   只放这页自己的排法，颜色、字号、间距都取 --rd-* 令牌。 */
+.l4-page .l4-actions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--rd-space-2) var(--rd-space-4); }
+.l4-page .l4-pair { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
+.l4-page .l4-scope { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1); }
+.l4-page .l4-stack { display: flex; flex-direction: column; gap: var(--rd-space-5); min-width: 0; }
+.l4-page .l4-block { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; }
+.l4-page .l4-sub { margin: 0; display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.l4-page .l4-sub-note { margin-left: var(--rd-space-1); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.l4-page .l4-links { flex-wrap: wrap; }
+
+/* 四张报表卡：同时是页签，选中的卡尖角指着下面的报表 */
+.l4-page .l4-cards .rd-stat-head { font-weight: var(--rd-weight-medium); }
+
+/* 这段时间 | 读取那一刻：两组数并排，读取那一刻这组带左边线 */
+.l4-page .l4-groups { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); gap: var(--rd-space-4) var(--rd-space-6); }
+.l4-page .l4-group { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; }
+.l4-page .l4-group[data-now] { padding-left: var(--rd-space-5); border-left: 1px solid var(--rd-line); }
+.l4-page .l4-nums { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--rd-space-3) var(--rd-space-4); }
+.l4-page .l4-group[data-now] .l4-nums { grid-template-columns: minmax(0, 1fr); }
+.l4-page .l4-nums > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.l4-page .l4-nums dt { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.l4-page .l4-nums dd { margin: 0; display: inline-flex; align-items: baseline; gap: var(--rd-space-1); font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.l4-page .l4-nums dd small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.l4-page .l4-nums dd[data-empty] { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
+.l4-page .l4-nums dd.l4-nums-sub { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+@container (max-width: 760px) {
+  .l4-page .l4-groups { grid-template-columns: minmax(0, 1fr); }
+  .l4-page .l4-group[data-now] { padding-left: 0; padding-top: var(--rd-space-4); border-left: 0; border-top: 1px solid var(--rd-line); }
+  .l4-page .l4-group[data-now] .l4-nums { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+}
+
+/* 任务：派发 → 完成两格加承接率一格（刻度包住超过 100% 的值） */
+.l4-page .l4-flow { display: grid; grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr) minmax(0, 1.6fr); align-items: stretch; gap: var(--rd-space-2); }
+.l4-page .l4-flow-cell { display: flex; flex-direction: column; gap: var(--rd-space-1); min-width: 0; padding: var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-bg); }
+.l4-page .l4-flow-cell > span { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.l4-page .l4-flow-cell > b { display: inline-flex; align-items: baseline; gap: var(--rd-space-1); font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.l4-page .l4-flow-cell > b small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.l4-page .l4-flow-cell > b[data-empty] { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
+.l4-page .l4-flow-cell[data-ratio] { background: transparent; border: 1px solid var(--rd-line); --rd-track-w: 100%; }
+.l4-page .l4-flow-cell[data-tone="warn"] { border-color: var(--rd-warn); }
+.l4-page .l4-flow-cell[data-tone="warn"] > b { color: var(--rd-warn); }
+.l4-page .l4-flow-arrow { align-self: center; justify-self: center; width: 16px; height: 2px; border-radius: 1px; background: var(--rd-line-strong); position: relative; }
+.l4-page .l4-flow-arrow::after { content: ""; position: absolute; right: -1px; top: -3px; border: 4px solid transparent; border-left: 6px solid var(--rd-line-strong); border-right: 0; }
+@container (max-width: 640px) {
+  .l4-page .l4-flow { grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr); }
+  .l4-page .l4-flow-cell[data-ratio] { grid-column: 1 / -1; }
+}
+
+/* 分布、阶段对照：排序条名称列定宽，几行的条从同一条线起 */
+.l4-page .rd-barlist li { grid-template-columns: minmax(0, 112px) minmax(96px, 1fr) max-content; }
+.l4-page .l4-dists { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--rd-section-gap); }
+.l4-page .l4-phase-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: var(--rd-space-5) var(--rd-section-gap); }
+.l4-page .l4-table { width: 100%; }
+.l4-page .l4-table th:not(:first-child), .l4-page .l4-table td:not(:first-child) { white-space: nowrap; }

@@ -23,7 +23,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   },
   {
     path: "/analytics/operations",
-    summary: "汇总在线设备、任务完成和邀请网络的增长情况。",
+    summary: "按时间段和运营阶段看设备、任务、团队现在怎样，哪个阶段效果好。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
