@@ -96,7 +96,7 @@ export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; op
   return (
     <Panel className="f2-settle" aria-label="团队购买奖励结算状态" title="整体结算" icon={state === "off" ? PowerOff : state === "paused" ? PauseCircle : Power} tone={state === "running" ? "ok" : state ? "warn" : "role-other"}
       sub={policy?.cutoverAt ? <>启用于 <time dateTime={policy.cutoverAt}>{stamp(policy.cutoverAt)}</time></> : undefined}
-      explain="整体结算管新订单要不要按七层规则算团队奖励。启用、暂停、恢复都要另一位管理员批准，都不改比例、冷却和好友拆分；暂停和恢复不改启用时间，也不补发以前的奖励。"
+      explain="整体结算管新订单要不要按七层规则算团队奖励。启用、暂停、恢复都要另一位管理员批准，都不改比例、冷却和好友拆分。启用后不补发启用前的订单；暂停期间已在冷却的奖励、退款和解锁照常处理，恢复后只重新处理因这次暂停没算的订单；暂停和恢复不改启用时间。"
       actions={allowed ? <Button variant={action === "PAUSE" ? "secondary" : "primary"} disabledReason={blockedReason} onClick={submit}>{label}</Button> : undefined}>
       <div className="f2-settle-body">
         <div className="f2-settle-state" role="status" aria-live="polite">
@@ -105,8 +105,8 @@ export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; op
               : <span className="f2-settle-name" data-state={state}>{stateName[state]}</span>}
           <p className="f2-settle-what">
             {busy ? "结算状态读取中" : !state ? "结算状态读取失败，这部分没有判断。刷新后再看。"
-              : state === "off" ? "七层结算还没启用；启用前的订单按原来的规则结算，启用后不补发以前的。"
-                : state === "paused" ? "新订单的团队奖励先不计算；已在冷却的奖励、退款和解锁照常。恢复后，因暂停没算的订单会重新处理。"
+              : state === "off" ? "七层结算还没启用，按原来的规则结算。"
+                : state === "paused" ? "新订单的奖励先不算；冷却、退款、解锁照常。"
                   : "新订单按下面「每层分多少」的比例计算团队奖励。"}
           </p>
           {!allowed && <p className="f2-settle-note">只能查看：申请启用、暂停、恢复需有「团队奖励规则」和「发起审批」权限。</p>}

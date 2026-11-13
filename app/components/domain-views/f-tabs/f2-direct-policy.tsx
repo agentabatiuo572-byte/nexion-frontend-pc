@@ -116,7 +116,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
             {draft && <div className="f2-policy-cards">
               <fieldset className="f2-policy-card" disabled={lock}>
                 <legend><ShoppingCart size={16} aria-hidden />好友购买奖励</legend>
-                {policy && !policy.purchaseSplitConfigured && <p className="f2-policy-hint">还没设置拆分，现在全额发 USDT；下面的比例只是默认值。</p>}
+                {policy && !policy.purchaseSplitConfigured && <p className="f2-policy-hint">还没设置拆分，现在全额发 USDT</p>}
                 <dl className="f2-policy-ref">
                   <div><dt>第 1 层比例</dt><dd aria-label="好友购买奖励 L1 奖励比例（只读）">{ref?.baseRatePct == null ? "未配置" : `${num(ref.baseRatePct)}%`}</dd></div>
                   <div><dt>购买冷却</dt><dd aria-label="好友购买奖励购买冷却天数（只读）">{ref?.coolingDays == null ? "未配置" : `${ref.coolingDays} 天`}</dd></div>
@@ -125,7 +125,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
               </fieldset>
               <fieldset className="f2-policy-card" disabled={lock}>
                 <legend><Smartphone size={16} aria-hidden />好友设备收益奖励</legend>
-                <p className="f2-policy-hint">好友有设备收益时，平台另给邀请人；不扣成员自己的收益。</p>
+                <p className="f2-policy-hint">平台另给邀请人，不扣成员自己的收益</p>
                 <Field label="开关">
                   <Segments label="好友设备收益奖励启用状态" value={draft.deviceEarning.enabled ? "enabled" : "disabled"}
                     items={[{ value: "disabled", label: "停用" }, { value: "enabled", label: "启用" }]}

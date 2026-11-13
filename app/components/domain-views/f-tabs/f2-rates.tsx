@@ -7,7 +7,7 @@
 import { useState, type ReactNode } from "react";
 import { Ban, Clock3, Gauge, Layers, Lock, PauseCircle, ShieldCheck, Users } from "lucide-react";
 import {
-  BlockState, Button, Cell, ConfigList, ConfigRow, Explain, Figure, Notice, Panel, RatioBar, ScaleBar, StatusTag, Table, TableMessage, Td, Th,
+  BlockState, Button, Cell, ConfigList, KeepText, ConfigRow, Explain, Figure, Notice, Panel, RatioBar, ScaleBar, StatusTag, Table, TableMessage, Td, Th,
 } from "@/app/components/rd";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { F2_DEPTH_GATE_RANKS, f2EnumGateSpec, parseF2DepthGateLayer, parseF2DepthGateRank } from "@/lib/admin/f2-depth-gate";
@@ -117,7 +117,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
           {rates.length > 0 && <Fact k="七层合计占订单"><Change from={`${num(total.before)}%`} to={`${num(total.after)}%`} /></Fact>}
         </Facts>;
       },
-      content: rates.length ? undefined : <Notice tone="warn" title="这一层还没有规则">批准时后端只更新已有的规则，没有规则的层会执行失败。目前要由后端初始化七层规则。</Notice>,
+      content: rates.length ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text="批准时后端只更新已有的规则，没有规则的层会执行失败。目前要由后端初始化七层规则。" /></Notice>,
       statedBrief: { impact: "批准后，之后新算的订单这一层按新比例算；已经算好的订单不重算。调高会让平台多付钱。", check: COVERAGE_CHECK },
       detail: `${level} USDT 奖励比例 · 现在 ${rate ? `${current}%` : "未配置"}。只影响之后的结算。`,
       completionCopy: approvalCopy("团队奖励比例"), coverageCheck: COVERAGE_CHECK, coverageLead: "调高这一层，平台每笔订单多付钱",
@@ -135,9 +135,9 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
         hint: "这一层每发 1 USDT 奖励，另发多少 UVT",
         preview: (next) => rates.length ? <LayerCompare rates={rates} level={level} next={Number(next || current || 0)} field="nex" /> : null },
       facts: (next) => <Facts>
-        <Fact k="示例订单里这一层另发">{rate ? <Change from={`${num(sampleUsdt(rate.usdt) * rate.nex)} UVT`} to={`${num(sampleUsdt(rate.usdt) * Number(next ?? current))} UVT`} /> : "这一层还没有规则"}</Fact>
+        <Fact k="这一层另发 UVT">{rate ? <Change from={`${num(sampleUsdt(rate.usdt) * rate.nex)} UVT`} to={`${num(sampleUsdt(rate.usdt) * Number(next ?? current))} UVT`} /> : "这一层还没有规则"}</Fact>
       </Facts>,
-      content: rates.length ? undefined : <Notice tone="warn" title="这一层还没有规则">批准时后端只更新已有的规则，没有规则的层会执行失败。目前要由后端初始化七层规则。</Notice>,
+      content: rates.length ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text="批准时后端只更新已有的规则，没有规则的层会执行失败。目前要由后端初始化七层规则。" /></Notice>,
       statedBrief: { impact: "批准后，之后新算的订单这一层按新系数另发 UVT；已经算好的不重算。调高会让平台多付钱。", check: COVERAGE_CHECK },
       detail: `${level} 每发 1 USDT 奖励，另发多少 UVT · 现在 ${current || "未配置"}。只影响之后的结算。`,
       completionCopy: approvalCopy("团队奖励比例"), coverageCheck: COVERAGE_CHECK, coverageLead: "调高这一层，平台每笔订单多发 UVT",
@@ -205,7 +205,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
             const nexLocked = direct && m.l1NexReadonly;
             return (
               <tr key={level} data-paused={pausedRaw === "on" ? "" : undefined}>
-                <Td><Cell main={<span className="f2-layer"><span className="f2-layer-chip" data-direct={direct ? "" : undefined}>{level}</span>{LAYER_WHO[level]}</span>} /></Td>
+                <Td><span className="f2-layer"><span className="f2-layer-chip" data-direct={direct ? "" : undefined}>{level}</span>{LAYER_WHO[level]}</span></Td>
                 <Td align="right">{rate ? <span className="f2-rate">
                   <RatioBar compact quiet label={`${level} 比例`} value={rate.usdt} total={barMax || 1} valueText={`${num(rate.usdt)}%`} tone={pausedRaw === "on" ? "role-other" : "role-4"} />
                   <strong>{num(rate.usdt)}%</strong>
@@ -237,7 +237,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       <ConfigList label="对七层一起起作用的设置">
         <ConfigRow name="按层暂停" what="把某几层的团队奖励停发，其余层照常" when="批准后，对之后新算的订单生效"
           effect="暂停的层记 0、不补发；不影响好友设备收益奖励，也不是整体结算暂停" note={DELEGATED_GAP}
-          value={LAYERS.every((level) => m.paused(level) === "") ? <span className="f2-muted">未配置</span> : pausedLayers.length ? `${pausedLayers.join("、")} 已暂停` : "七层都在发放"}
+          value={LAYERS.every((level) => m.paused(level) === "") ? "未配置" : pausedLayers.length ? `${pausedLayers.join("、")} 已暂停` : "七层都在发放"}
           sub={pausedLayers.length ? `其余 ${7 - pausedLayers.length} 层发放` : undefined}
           action={m.canPolicyAmplify ? <Button size="sm" aria-label="按 L1–L7 暂停" disabledReason={pendingFor("f-config-batch:F2") ? "等另一位管理员批准" : undefined} onClick={openPause}>设置</Button> : undefined} />
         <ParamRow ctx={ctx} m={m} paramKey="F.promo.weekMultiplier" openConfirm={openConfirm}
@@ -287,7 +287,7 @@ function ParamRow({ ctx, m, paramKey, openConfirm, shown }: { ctx: FViewCtx; m: 
     <ConfigRow name={name.replace(/（L1–L7）|（占订单）/, "")} what={help.what} effect={help.effect} when="批准后，对之后新算的订单生效"
       note={[parsed && !parsed.legal ? enumSpec?.illegalCopy : null, !value ? SETTLEMENT_FALLBACK[paramKey] : null, help.note].filter(Boolean).join("；") || undefined}
       value={parsed && !parsed.legal ? <span className="f2-bad"><StatusTag tone="danger" icon={Ban}>配置无效</StatusTag>{value}</span>
-        : display ?? <span className="f2-muted">未配置</span>}
+        : display ?? "未配置"}
       sub={pending ? <StatusTag tone="warn" icon={Clock3} explain="等另一位管理员批准；批准前按原设置执行。">待审批</StatusTag> : param?.vcls === "warn" && promo && value && Number(value) > 1 ? "活动中" : undefined}
       action={allowed ? <Button size="sm" aria-label={`调整${name}`} disabledReason={pending ? "等另一位管理员批准" : undefined} onClick={open}>{value ? "调整" : "配置"}</Button> : undefined} />
   );
@@ -354,12 +354,12 @@ export function F2Limits({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
         <ConfigRow name="购买与其他奖励冷却" what="购买奖励和其他团队奖励记入后，要等几天才能提" when="批准后，对之后新算的奖励生效；已在冷却中的不重算"
           effect="缩短让钱更早能提；到期后还有冻结、风控等检查，不保证到点一定能提"
           note={[coolingRaw && coolingDays === "" ? `现在存的是「${coolingRaw}」，不是 0–90 的整数` : null, coolingDays === "" ? SETTLEMENT_FALLBACK["F.cooldown"] : null, "好友设备收益奖励的冷却单独设置，在「好友奖励政策」里改"].filter(Boolean).join("；")}
-          value={coolingDays !== "" ? `${coolingDays} 天` : coolingRaw ? <span className="f2-bad"><StatusTag tone="danger" icon={Ban}>配置无效</StatusTag>{coolingRaw}</span> : <span className="f2-muted">未配置</span>}
+          value={coolingDays !== "" ? `${coolingDays} 天` : coolingRaw ? <span className="f2-bad"><StatusTag tone="danger" icon={Ban}>配置无效</StatusTag>{coolingRaw}</span> : "未配置"}
           sub={pending ? <StatusTag tone="warn" icon={Clock3}>待审批</StatusTag> : undefined}
           action={m.canPolicyAmplify ? <Button size="sm" aria-label="调整购买与其他奖励冷却" disabledReason={pending ? "等另一位管理员批准" : undefined} onClick={openCooling}>{coolingDays === "" ? "配置" : "调整"}</Button> : undefined} />
         <ConfigRow name="好友设备收益冷却" what="好友设备收益奖励记入后要等几天才能提" when="随好友奖励政策一起批准生效"
           note="这里只读，和好友奖励政策一起改"
-          value={deviceCooling ?? <span className="f2-muted">{ctx.f2DirectPolicy ? "未配置" : "—"}</span>}
+          value={deviceCooling ?? (ctx.f2DirectPolicy ? "未配置" : "—")}
           sub={<StatusTag tone="neutral" icon={Clock3}>只读</StatusTag>}
           action={<a className="rd-link f2-nowrap" href="#f2-friend">去好友奖励政策</a>} />
       </ConfigList>
