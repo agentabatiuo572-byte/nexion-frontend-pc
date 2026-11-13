@@ -47,8 +47,7 @@ import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 
 const M3DedicatedChat = dynamic(() => import("./m-tabs/m3-dedicated-chat").then(m => m.M3DedicatedChat), { loading: DomainModuleLoading });
 const M4KbSla = dynamic(() => import("./m-tabs/m4-kb-sla").then(m => m.M4KbSla), { loading: DomainModuleLoading });
-const M5Scripts = dynamic(() => import("./m-tabs/m5-scripts").then(m => m.M5Scripts), { loading: DomainModuleLoading });
-const M5ServiceRules = dynamic(() => import("./m-tabs/m5-service-rules").then(m => m.M5ServiceRules), { loading: DomainModuleLoading });
+const M5Page = dynamic(() => import("./m-tabs/m5-page").then(m => m.M5Page), { loading: DomainModuleLoading });
 
 /**
  * M 域两类写入的命令号共用一张表,靠 fingerprint 前缀分命名空间:
@@ -153,7 +152,6 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "M1", [meta.l2Id]);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const session = useAdminAuth((state) => state.session);
-  const [m5Pane, setM5Pane] = useState<"rules" | "templates">("rules");
   // M3 opened from the 客户 list (发起会话) links back to that list with its filters and page.
   const [fromCustomers, setFromCustomers] = useState(false);
   useEffect(() => { setFromCustomers(tab === "M3" && new URLSearchParams(window.location.search).get("from") === "customers"); }, [tab]);
@@ -647,7 +645,6 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     ? "superadmin"
     : session?.supportReadModes?.includes("MANAGED")
       ? "supervisor" : "agent";
-  const effectiveM5Pane = permission === "agent" ? "templates" : m5Pane;
 
   // 实时计数:M1/M2/M3 的「实时计数/汇总」从后端会话 / 工单快照派生;
   // M4/M5 是描述标签(未声称计数)保留原文。
@@ -678,11 +675,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "M3" && tab !== "M1" && tab !== "M4" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
+      {tab !== "M3" && tab !== "M1" && tab !== "M4" && tab !== "M5" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
       {tab !== "M3" && shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<>{operationNotice?.tone === "danger" && <Link className="rd-link" href="/service/sessions">到专属会话核对</Link>}<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button></>}>{shownOperationNotice}</Notice>}
       {tab === "M3" && !safeMData && <PageHeader pageId="M3" title="专属会话" summary={M3_SUMMARY} back={backToCustomers} />}
 
-      {tab !== "M3" && tab !== "M4" && mError && (
+      {tab !== "M3" && tab !== "M4" && tab !== "M5" && mError && (
         <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Icon name="bell" size={16} />
           <span className="dim" style={{ fontSize: 13 }}>客服中心暂时无法同步数据,请稍后重试。</span>
@@ -693,7 +690,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           </button>
         </div>
       )}
-      {(permissionUnknown && (tab === "M1" || tab === "M2" || tab === "M5") || tab === "M2" && safeMData && !safeMData.supportAgentsAvailable) && <div className="card card-pad" role="status">坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。<button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>重试核对</button></div>}
+      {(permissionUnknown && (tab === "M1" || tab === "M2") || tab === "M2" && safeMData && !safeMData.supportAgentsAvailable) && <div className="card card-pad" role="status">坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。<button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>重试核对</button></div>}
 
       {tab === "M3" && !safeMData && m3Banner}
       {tab === "M3" && !reconnectExhausted && safeMData?.conversationsAvailable && (
@@ -702,9 +699,8 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
 
       {tab === "M1" && <M1AnalyticsWorkbench key={authEpoch} permission={permission} ctx={ctx} />}
       {tab === "M4" && <M4KbSla ctx={ctx} title={meta.l2Name} summary={meta.summary} loadError={mError} />}
-      {tab === "M5" && permission !== "agent" && <nav className="s5a-nav" aria-label="服务配置"><button type="button" className={m5Pane === "rules" ? "active" : ""} onClick={() => setM5Pane("rules")}>服务规则</button><button type="button" className={m5Pane === "templates" ? "active" : ""} onClick={() => setM5Pane("templates")}>话术与模板</button></nav>}
-      {tab === "M5" && effectiveM5Pane === "rules" && <M5ServiceRules key={authEpoch} permission={permission} />}
-      {tab !== "M1" && tab !== "M4" && !(tab === "M5" && effectiveM5Pane === "rules") && !safeMData ? (
+      {tab === "M5" && <M5Page ctx={ctx} permission={permission} permissionUnknown={permissionUnknown} hasData={Boolean(safeMData)} loading={mLoading} loadError={mError} title={meta.l2Name} summary={meta.summary} authEpoch={authEpoch} />}
+      {tab !== "M1" && tab !== "M4" && tab !== "M5" && !safeMData ? (
         <div className="card card-pad">
           <span className="dim" style={{ fontSize: 13 }}>
             {mError ? "客服中心暂时无法同步数据,请稍后重试。" : mLoading ? "正在加载客服中心…" : "暂无可展示的客服信息"}
@@ -714,7 +710,6 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         <>
           {tab === "M2" && <p>工单服务已下线，请通过客户会话继续联系。</p>}
           {tab === "M3" && <M3DedicatedChat ctx={ctx} back={backToCustomers} summary={M3_SUMMARY} banner={m3Banner} streamReady={conversationStreamReady} reconnectExhausted={reconnectExhausted} />}
-          {tab === "M5" && effectiveM5Pane === "templates" && <M5Scripts ctx={ctx} showSeatOperations={false} showSeatProfiles={permission !== "agent"} />}
         </>
       )}
 
@@ -754,7 +749,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  return tab === "M3" || tab === "M1" || tab === "M4" ? <RdPage className={tab === "M4" ? "mdom m4-page" : "mdom"}>{page}</RdPage> : <div className="dkpage mdom">{page}</div>;
+  return tab === "M3" || tab === "M1" || tab === "M4" || tab === "M5" ? <RdPage className={tab === "M4" ? "mdom m4-page" : tab === "M5" ? "mdom m5-page" : "mdom"}>{page}</RdPage> : <div className="dkpage mdom">{page}</div>;
 }
 
 /* ============ MP2 持续接待 dock —— 切页不挂断(M3 自身是全屏对话台,故 M3 不显)============ */
