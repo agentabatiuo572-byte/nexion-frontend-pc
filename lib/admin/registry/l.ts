@@ -18,7 +18,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   },
   {
     path: "/analytics/financial",
-    summary: "按周期汇总平台收入、成本、兑付支出和储备缺口，判断平台能否持续兑付。",
+    summary: "看这一期进出多少、现在付不付得起、接下来要付多少。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
