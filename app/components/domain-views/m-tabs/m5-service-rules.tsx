@@ -243,14 +243,14 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
         {current && error && !confirm && !conflict && <Notice tone={isIndeterminateText(error) ? "warn" : "danger"}>{error}</Notice>}
         {draft && current && <div className="m5-form">
           <Field label="新客户怎么分" help={draft.unboundAssignmentMode === "AUTO_RANDOM"
-            ? "客户第一次发消息时，马上分给负载最低的专属客服。"
-            : "客服主管手动分；等待超过下面「超时兜底」的时长还没人分，按负载自动兜底。"}
+            ? "第一次发消息时，马上分给负载最低的客服。"
+            : "主管手动分；超时没人分就按负载兜底。"}
             explain="邀请继承优先：能继承的客户注册时就归给邀请人的专属客服，不走这里。已经有专属客服的客户，客服离线或忙碌也不会重新分配。">
             <Segments label="新客户怎么分" value={draft.unboundAssignmentMode ?? "SUPERVISOR"} onChange={(value) => setField("unboundAssignmentMode", value)}
               items={[{ value: "AUTO_RANDOM", label: "首次咨询时按负载自动分配", disabled: !editable }, { value: "SUPERVISOR", label: "客服主管分配", disabled: !editable }]} />
           </Field>
           <div className="rd-form-grid" data-cols="2" data-dense="">
-            <Field label="邀请来的用户归谁" help={draft.inheritanceMode === "UNLIMITED" ? "沿邀请关系一直继承到同一位专属客服。" : draft.inheritanceMode === "LIMITED" ? "从人工分配的客户算起，最多沿邀请关系继承这么多次。" : "历史上没配置过：邀请来的用户不继承，直接进待分配。保存成别的方式后不能再改回未配置。"}
+            <Field label="邀请来的用户归谁" help={draft.inheritanceMode === "UNLIMITED" ? "一直沿邀请关系归给同一位专属客服。" : draft.inheritanceMode === "LIMITED" ? "从人工分配的客户算起，最多继承这么多次。" : "历史未配置：邀请来的用户直接进待分配。"}
               explain="人工分配过的客户邀请来的新用户，注册时自动归给同一位专属客服；超出次数的进待分配。只影响之后注册的用户。">
               <Segments label="邀请来的用户归谁" value={draft.inheritanceMode} onChange={(value) => { if (editable) setDraft((old) => old ? { ...old, inheritanceMode: value, maxInheritanceDepth: value === "LIMITED" ? old.maxInheritanceDepth : "" } : old); }} items={inheritItems} />
             </Field>

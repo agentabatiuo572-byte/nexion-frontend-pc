@@ -34,7 +34,7 @@ export function M5Flow({ rules, policy }: { rules: M5RulesSummary; policy: M5Pol
   const auto = ruleReady && rules.mode === "AUTO_RANDOM";
   const inherit = !ruleReady ? "—" : rules.inheritance === "UNLIMITED" ? "不限次数" : rules.inheritance === "LIMITED" ? `最多 ${rules.depth ?? "—"} 次` : "未配置";
   const steps: { key: string; icon: typeof UserPlus; when: string; value: ReactNode; what: ReactNode; muted?: boolean; explain: ReactNode }[] = [
-    { key: "register", icon: UserPlus, when: "新用户注册", value: inherit, what: "沿邀请关系继承专属客服；继承不到的进待分配",
+    { key: "register", icon: UserPlus, when: "新用户注册", value: inherit, what: "继承邀请人的专属客服",
       explain: "注册时先看邀请关系：人工分配过的客户邀请来的用户，按「自动继承方式」归给同一位专属客服。继承不到的用户进待分配，等他第一次发消息。注册时不会分配。" },
     { key: "inquiry", icon: MessageSquareText, when: "第一次发消息", value: !ruleReady ? "—" : auto ? "马上自动分配" : "等主管分配", what: !ruleReady ? "分配方式没读到" : auto ? "按负载选一位专属客服" : "客服主管在客服工作台「待分配」里分",
       explain: "按负载：当前绑定客户数加上 2 倍待回复会话数，最低的那位；一样低的随机选一位。欢迎语不算客户发消息。" },

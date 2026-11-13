@@ -114,7 +114,7 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
           <Field label="等待提醒" hint="1–120 分钟" error={alertProblem || undefined} explain="客户发消息后超过这么久还没分到客服，专属会话的待分配里标红提醒主管。">
             {(control) => <NumberInput {...control} id="m-unbound-alert" unit="分钟" min={1} max={120} step={1} value={draft.alert} disabled={!editable || saving} onChange={(event) => setDraft((old) => ({ ...old, alert: event.target.value }))} />}
           </Field>
-          <Field label="超时兜底" hint="比提醒长，最多 1440 分钟" error={fallbackProblem || undefined} explain="只在「客服主管分配」模式下用：等待超过这么久按负载自动分配，主管事后可以改派。">
+          <Field label="超时兜底" hint="2–1440 分钟" error={fallbackProblem || undefined} explain="只在「客服主管分配」模式下用：等待超过这么久按负载自动分配，主管事后可以改派。">
             {(control) => <NumberInput {...control} id="m-unbound-fallback" unit="分钟" min={2} max={1440} step={1} value={draft.fallback} disabled={!editable || saving} onChange={(event) => setDraft((old) => ({ ...old, fallback: event.target.value }))} />}
           </Field>
           <Field label="默认接收组" explain="从来没被分过组的客户，自动分配或兜底时先进这个组；主管手动调过组的不受影响。保存时只检查这个组启用着，组里有没有能接的客服要到分配时才知道。">

@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Archive, CheckCircle2, CircleOff, Headset, Lock, Megaphone, MessageSquareText, MessagesSquare, PauseCircle, Plus, SlidersHorizontal, Upload, Zap } from "lucide-react";
 import {
   BlockState, Button, Change, Check, CheckGroup, ConfigList, ConfigRow, DiffField, Explain, Fact, Facts, Field, IrreversibleTag, Modal as RdModal, Notice, NumberInput,
-  Pager as RdPager, Panel, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, type TabIds,
+  PageTabs, Pager as RdPager, Panel, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type TabIds,
 } from "@/app/components/rd";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import { ContentStatusTag, type M5Tab } from "./m5-views";
@@ -187,6 +187,8 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   const [agentPageError, setAgentPageError] = useState("");
   const [agentPageRetry, setAgentPageRetry] = useState(0);
   const [writePending, setWritePending] = useState(false);
+  const [contentView, setContentView] = useState<"scripts" | "templates">("scripts");
+  const contentIds = useTabIds();
   const pendingReplyTemplateDraftIds = useRef(new Map<string, string>());
 
   const catEnabled = (cat: { type: SessionType; enabled: boolean }): boolean => (pget(CAT_KEY(cat.type)) ?? (cat.enabled ? "on" : "off")) === "on";
@@ -440,7 +442,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       facts: <Facts><Fact k="编号"><span data-mono="">{id}</span></Fact><Fact k="正文">{scriptFact(id)}</Fact><Fact k="状态"><Change from={currentStatus === "published" ? "已发布，客服能选到" : "草稿，客服看不到"} to={currentStatus === "published" ? "已归档，客服选不到" : "已发布，客服能选到"} /></Fact></Facts>,
       reasonPlaceholder: currentStatus === "published" ? "例如：活动结束，这条话术不再使用" : "例如：新话术内容已核对，上线给客服用",
       briefKind: currentStatus === "published" ? "record" : "content",
-      detail: currentStatus === "published" ? <>归档后客服就选不到这条话术了，不能再发布；已发出的消息不受影响。</> : <>发布后客服回复时能选到这条话术。只写了中文也能发布。</>,
+      detail: currentStatus === "published" ? <>归档后客服选不到，不能再发布。</> : <>发布后客服回复时能选到，只写中文也行。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -494,7 +496,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       facts: <Facts><Fact k="编号"><span data-mono="">{id}</span></Fact><Fact k="正文">{templateFact(id)}</Fact><Fact k="状态"><Change from={currentStatus === "published" ? "已发布，客服能选到" : "草稿，客服看不到"} to={currentStatus === "published" ? "已归档，客服选不到" : "已发布，客服能选到"} /></Fact></Facts>,
       reasonPlaceholder: currentStatus === "published" ? "例如：这句回复已过时，不再使用" : "例如：新模板内容已核对，上线给客服用",
       briefKind: "content",
-      detail: currentStatus === "published" ? <>归档后客服就选不到这个模板了，不能再发布；已发出的消息不受影响。</> : <>发布后客服回复时能选到这个模板。只写了中文也能发布。</>,
+      detail: currentStatus === "published" ? <>归档后客服选不到，不能再发布。</> : <>发布后客服回复时能选到，只写中文也行。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -593,8 +595,8 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
                           <div className="m5-agent">
                             <SupportAvatar name={agent.name || "客服"} path={agent.avatarAssetId ? advisorAvatarPath(agent.adminId) : undefined} version={agent.avatarVersion} size={32} />
                             <div className="m5-agent-text">
-                              <span className="m5-agent-name">{agent.name || "名称未同步"}</span>
-                              <span className="rd-note" data-proof="m5-seat-position-label">{seatLabel(agent.position)} · {agent.email || "—"}</span>
+                              <span className="m5-agent-name" title={agent.name || undefined}>{agent.name || "名称未同步"}</span>
+                              <span className="rd-note" data-proof="m5-seat-position-label" title={`${seatLabel(agent.position)} · ${agent.email || "—"} · 账号 #${agent.adminId}`}>{seatLabel(agent.position)} · {agent.email || "—"}</span>
                             </div>
                           </div>
                         </Td>
@@ -638,6 +640,11 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   const content = <>
     {!sessionTemplatesAvailable && <BlockState state="error" title="话术与模板读不到，暂时不能修改" onRetry={() => void ctx.refreshContent()} retryLabel="重新读取" />}
     {sessionTemplatesAvailable && !canManageM5Content && <Notice tone="neutral">你只能查看；新建、发布和归档要超级管理员、内容运营或客服主管。</Notice>}
+    <PageTabs level={2} label="话术与模板分类" ids={contentIds} value={contentView} onChange={setContentView} items={[
+      { value: "scripts", label: "专属客服话术" },
+      { value: "templates", label: "即时回复模板" },
+    ]} />
+    <div {...contentIds.panel("scripts")} hidden={contentView !== "scripts"} className="rd-tab-pane">
     <Panel flush icon={MessageSquareText} tone="role-2" title="专属客服话术" sub={sessionTemplatesAvailable ? countSub(scriptCount) : undefined}
       explain="客服在专属会话里主动发话时可选的话术。只有已发布的能选到；草稿只在后台；归档后选不到，也不能再发布。不会自动发给客户。每页 5 条，按排序值和更新时间排，新建的不一定在最后一页。"
       actions={canManageM5Content && <Button variant="primary" size="sm" data-proof="session-script-new" icon={<Plus size={14} aria-hidden />} disabled={!sessionTemplatesAvailable || writePending || audienceOptions.length === 0}
@@ -667,6 +674,8 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       </Table>
       {sessionTemplatesAvailable && scriptTotal > 0 && <RdPager label="专属客服话术" total={scriptTotal} page={clampPage(scriptPage, scriptTotal, SCRIPT_PAGE_SIZE)} pageSize={SCRIPT_PAGE_SIZE} sizes={[SCRIPT_PAGE_SIZE]} onPage={setScriptPage} onPageSize={() => undefined} />}
     </Panel>
+    </div>
+    <div {...contentIds.panel("templates")} hidden={contentView !== "templates"} className="rd-tab-pane">
     <Panel flush icon={Zap} tone="role-2" title="即时回复模板" sub={sessionTemplatesAvailable ? countSub(templateCount) : undefined}
       explain="客服在专属会话回复框里一键选用的短回复。只有已发布的能选到；草稿只在后台；归档后选不到，也不能再发布。每页 5 条。"
       actions={canManageM5Content && <Button variant="primary" size="sm" data-proof="session-tpl-new" icon={<Plus size={14} aria-hidden />} disabled={!sessionTemplatesAvailable || writePending} onClick={newReplyTemplate}>新建模板</Button>}>
@@ -695,6 +704,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       </Table>
       {sessionTemplatesAvailable && replyTemplateTotal > 0 && <RdPager label="即时回复模板" total={replyTemplateTotal} page={clampPage(replyTemplatePage, replyTemplateTotal, REPLY_TEMPLATE_PAGE_SIZE)} pageSize={REPLY_TEMPLATE_PAGE_SIZE} sizes={[REPLY_TEMPLATE_PAGE_SIZE]} onPage={setReplyTemplatePage} onPageSize={() => undefined} />}
     </Panel>
+    </div>
   </>;
 
   const policyRow = (field: string, name: string, value: string, unit: string, proof: string, what: string) => (
@@ -817,14 +827,18 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
       <DiffField label="同时接待上限" before={String(agent.maxConcurrent)} unit="位" hint="0–40 的整数，0 表示不接" error={capProblem || undefined} note={capNote}>
         {(control) => <NumberInput {...control} unit="位" min={0} max={40} step={1} value={maxConcurrent} disabled={saving} onChange={(event) => setMaxConcurrent(event.target.value)} />}
       </DiffField>
+      <div className="m5-profile-grid">
       <CheckGroup legend="接待开关">
-        <Check label="开放接待" help="关闭后不参与自动分配，邀请来的用户也不再继承给他" checked={enabled} disabled={saving} onChange={() => setEnabled((v) => !v)} />
-        <Check label="允许被转交" help="关闭后，别人转交会话时选不到这位客服" checked={transferable} disabled={saving} onChange={() => setTransferable((v) => !v)} />
-        <Check label="暂停接新单" help="人工转接时选不到他；自动分配目前仍会分给他" checked={busy} disabled={saving} onChange={() => setBusy((v) => !v)} />
+        <Check label="开放接待" help="关闭后不参与自动分配和邀请继承" checked={enabled} disabled={saving} onChange={() => setEnabled((v) => !v)} />
+        <Check label="允许被转交" help="关闭后转交会话时选不到他" checked={transferable} disabled={saving} onChange={() => setTransferable((v) => !v)} />
+        <Check label="暂停接新单" help="人工转接选不到他；自动分配仍会分给他" checked={busy} disabled={saving} onChange={() => setBusy((v) => !v)} />
       </CheckGroup>
-      <CheckGroup legend="标签" help={tagOptions.length === 0 ? "名册里还没有任何标签，这里只能从已有标签里选。" : "只能从名册里已有的标签里选，最多 10 个。"}>
-        {tagOptions.map((tag) => <Check key={tag} label={tag} checked={tags.includes(tag)} disabled={saving} onChange={() => setTags((rows) => toggleList(rows, tag))} />)}
-      </CheckGroup>
+      <div className="m5-tag-checks">
+        <CheckGroup legend="标签" explain="只能从名册里已有的标签里选，最多 10 个。" help={tagOptions.length === 0 ? "名册里还没有任何标签。" : undefined}>
+          {tagOptions.map((tag) => <Check key={tag} label={tag} checked={tags.includes(tag)} disabled={saving} onChange={() => setTags((rows) => toggleList(rows, tag))} />)}
+        </CheckGroup>
+      </div>
+      </div>
       <Field label="操作理由" required hint="8–200 字">
         {(control) => <Textarea {...control} rows={3} maxLength={200} value={reason} disabled={saving} count={`${reason.trim().length}/200`} onChange={(e) => setReason(e.target.value)} placeholder="例如：主管调整分工，这位客服本周只接高价值客户" />}
       </Field>

@@ -698,3 +698,6 @@
 .m5-page .m5-row-actions { display: inline-flex; align-items: center; gap: var(--rd-space-3); white-space: nowrap; }
 .m5-page .m5-title-tag { display: inline-flex; align-items: center; gap: var(--rd-space-2); }
 @media (max-width: 1180px) { .m5-page .m5-id { max-width: 140px; } .m5-page .m5-content-table th.m5-col-id { width: 150px; } .m5-page .m5-content-table th.m5-col-aud { width: 96px; } }
+.m5-profile-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--rd-space-6); align-items: start; }
+.m5-profile-grid > .rd-check-group .rd-check-grid { grid-template-columns: minmax(0, 1fr); }
+.m5-tag-checks .rd-check-grid { display: flex; flex-wrap: wrap; gap: var(--rd-space-2) var(--rd-space-4); }
