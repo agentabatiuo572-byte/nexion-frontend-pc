@@ -172,7 +172,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
 
   const header = (actionsSlot?: ReactNode) => (
     <PageHeader pageId="J2" title="地区访问限制"
-      summary="按来访地区限制使用：封锁整个 App，或只拦资金和奖励类操作。改动立即生效。"
+      summary="按来访地区封锁整个 App，或只拦资金和奖励类操作。"
       actions={actionsSlot}
       meta={<span className="rd-toolbar">
         {readAt && <span>{readAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动更新；改完会自动重读一次。" /></span>}
@@ -443,7 +443,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       draft,
       statusOf,
       names: countryNames,
-      excludedNote: banned.length > 0 ? `已经封锁的 ${banned.length} 个不在这里。` : undefined,
+      excludedNote: `${banned.length > 0 ? `已经封锁的 ${banned.length} 个不在这里。` : ""}只加不减；要撤销，到「封锁名单」去掉。`,
       onNext: (result) => { setEditor(null); confirmEmergency(result.codes); },
     });
   };
@@ -455,25 +455,25 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   };
 
   // ---------- 结论 ----------
-  const counts = <>封锁 <b>{count(banned.length)}</b> 个、受限 <b>{count(limited.length)}</b> 个国家或地区</>;
+  const counts = <>封锁 <b>{count(banned.length)}</b> 个、受限 <b>{count(limited.length)}</b> 个</>;
   const sourceBroken = !edgeSourceKnown || healthStatus === "degraded";
   const switchHint = canEdge
     ? edgeSwitchCandidates.length > 0 ? "到下面「地区识别」切到健康的识别源。" : "现在没有健康的备用识别源可切，请联系技术值班。"
     : "请有权限的超级管理员到「地区识别」处理。";
   const conclusion = !edgeSourceKnown ? (
-    <Conclusion state="danger" hint={switchHint} explainTitle="识别源没登记会怎样" explain="现在设置的识别源不在登记表里，App 请求拿不到地区，会被拒绝（提示无法确认地区）。">地区识别不可用：现在设置的识别源没有登记；{counts}</Conclusion>
+    <Conclusion state="danger" hint={switchHint} explainTitle="识别源没登记会怎样" explain="现在设置的识别源不在登记表里，App 请求拿不到地区，会被拒绝（提示无法确认地区）。">识别源没有登记，地区判断不可用；{counts}</Conclusion>
   ) : healthStatus === "degraded" ? (
-    <Conclusion state="danger" hint={switchHint} explainTitle="识别源异常会怎样" explain={`当前识别源给不出国家时，App 请求会被拒绝（提示无法确认地区），这类拒绝不算进拦截次数。${HEALTH_RULE}`}>识别源「{currentEdgeLabel}」异常，近 5 分钟识别失败太多；{counts}</Conclusion>
+    <Conclusion state="danger" hint={switchHint} explainTitle="识别源异常会怎样" explain={`当前识别源给不出国家时，App 请求会被拒绝（提示无法确认地区），这类拒绝不算进拦截次数。${HEALTH_RULE}`}>识别源「{currentEdgeLabel}」异常，识别失败太多；{counts}</Conclusion>
   ) : recoveryRows.length > 0 ? (
     <Conclusion state="warn" hint="到上方逐条查询原结果。">{recoveryRows.length} 项修改结果未知；{counts}</Conclusion>
   ) : healthStatus === "stale" ? (
-    <Conclusion state="warn" explainTitle="没有新样本是什么意思" explain={`近 5 分钟没有经过可信代理的 App 请求，识别源健康不健康判断不了。${HEALTH_RULE}`}>{counts}；识别源「{currentEdgeLabel}」近 5 分钟没有新样本，健康状况判断不了</Conclusion>
+    <Conclusion state="warn" explainTitle="没有新样本是什么意思" explain={`近 5 分钟没有经过可信代理的 App 请求，识别源健康不健康判断不了。${HEALTH_RULE}`}>{counts}；识别源近 5 分钟没有新样本</Conclusion>
   ) : healthStatus !== "healthy" ? (
-    <Conclusion state="unknown" explainTitle="样本不足是什么意思" explain={`近 5 分钟经过可信代理的 App 请求不到 20 个，识别源健康不健康暂时判断不了。${HEALTH_RULE}`}>{counts}；识别源「{currentEdgeLabel}」样本不足，健康状况暂时判断不了</Conclusion>
+    <Conclusion state="unknown" explainTitle="样本不足是什么意思" explain={`近 5 分钟经过可信代理的 App 请求不到 20 个，识别源健康不健康暂时判断不了。${HEALTH_RULE}`}>{counts}；识别源样本不足，健康暂时判断不了</Conclusion>
   ) : pendingEndpoints.length > 0 || geoEndpoints.length === 0 ? (
-    <Conclusion state="neutral" explainTitle="没接入的入口怎么管" explain="没接入的入口不能单独设规则，单独规则也不会生效；封锁名单和受限名单照常管它们。">{counts}；识别源正常，{geoEndpoints.length === 0 ? "还没有登记功能入口" : `${count(pendingEndpoints.length)} 个功能入口还没接入单独规则`}</Conclusion>
+    <Conclusion state="neutral" explainTitle="没接入的入口怎么管" explain="没接入的入口不能单独设规则，单独规则也不会生效；封锁名单和受限名单照常管它们。">{counts}；识别源正常，{geoEndpoints.length === 0 ? "还没有登记功能入口" : `${count(pendingEndpoints.length)} 个入口还没接入`}</Conclusion>
   ) : (
-    <Conclusion state="ok">{counts}；识别源正常，功能入口都已接入</Conclusion>
+    <Conclusion state="ok">{counts}；识别源正常，入口都已接入</Conclusion>
   );
 
   // ---------- 名单卡 ----------
@@ -742,13 +742,11 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     </Fold>
   );
 
+  // 说明写在选国家框的「只加不减」和「这页怎么用」里，按钮旁不再放问号（页头动作贴右边线）。
   const emergencyAction = canEmergency && (
-    <span data-pair="">
       <Button variant="danger-outline" icon={<Siren size={14} aria-hidden />}
         disabledReason={contentLoading ? READING : emergencyCandidates.length === 0 ? "所有国家和地区都已封锁，没有可以加封的" : undefined}
         onClick={() => openEmergencyEditor()}>应急批量封锁</Button>
-      <Explain label="应急批量封锁说明" content="遇监管点名、制裁名单更新或安全事件时，一次把多个国家或地区加进封锁名单，立即生效。只加不减；要撤销，到「封锁名单」点「编辑封锁名单」把它们去掉。" />
-    </span>
   );
 
   return (
