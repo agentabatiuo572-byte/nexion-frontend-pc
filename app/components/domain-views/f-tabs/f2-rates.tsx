@@ -185,7 +185,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
         </Figure>
       )}
       {rates.length > 0 && m.cap !== null && activeSum > m.cap && <Notice tone="warn" title={`按比例合计 ${num(activeSum)}%，超过总额上限 ${num(m.cap)}%`}>结算时从 L1 往下分，分完 {num(sampleUsdt(m.cap))} USDT（示例）为止，后面的层少发或不发。</Notice>}
-      <Table label="七层比例和系数" className="f2-layer-table">
+      <Table label="团队购买奖励比例" className="f2-layer-table">
         <thead><tr>
           <Th>哪一层</Th>
           <Th align="right">USDT 比例</Th>

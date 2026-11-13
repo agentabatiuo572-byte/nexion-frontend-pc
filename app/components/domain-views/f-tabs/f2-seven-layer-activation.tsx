@@ -94,7 +94,7 @@ export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; op
   const pending = ctx.f2ActivationPending;
 
   return (
-    <Panel className="f2-settle" title="整体结算" icon={state === "off" ? PowerOff : state === "paused" ? PauseCircle : Power} tone={state === "running" ? "ok" : state ? "warn" : "role-other"}
+    <Panel className="f2-settle" aria-label="团队购买奖励结算状态" title="整体结算" icon={state === "off" ? PowerOff : state === "paused" ? PauseCircle : Power} tone={state === "running" ? "ok" : state ? "warn" : "role-other"}
       sub={policy?.cutoverAt ? <>启用于 <time dateTime={policy.cutoverAt}>{stamp(policy.cutoverAt)}</time></> : undefined}
       explain="整体结算管新订单要不要按七层规则算团队奖励。启用、暂停、恢复都要另一位管理员批准，都不改比例、冷却和好友拆分；暂停和恢复不改启用时间，也不补发以前的奖励。"
       actions={allowed ? <Button variant={action === "PAUSE" ? "secondary" : "primary"} disabledReason={blockedReason} onClick={submit}>{label}</Button> : undefined}>

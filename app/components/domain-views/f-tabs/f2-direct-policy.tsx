@@ -95,7 +95,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
   </>;
 
   return (
-    <Panel id="f2-friend" title="好友奖励政策" icon={HandCoins} tone="role-2"
+    <Panel id="f2-friend" aria-label="好友奖励设置" title="好友奖励政策" icon={HandCoins} tone="role-2"
       sub={policy ? policy.configured ? <>第 {policy.policyVersion} 版 · 生效于 <time dateTime={policy.effectiveAt!}>{stamp(policy.effectiveAt!)}</time></> : "还没设置" : undefined}
       explain="好友购买奖励怎么拆成 USDT 和 UVT、好友有设备收益时平台另给邀请人多少，这两项是一组：一起提交审批、批准后一起生效。只影响直接邀请的好友（第 1 层），L2–L7 不变。">
       {busy && !draft ? <BlockState state="loading" title="好友奖励政策读取中" />
