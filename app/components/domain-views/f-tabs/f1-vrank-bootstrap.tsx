@@ -89,7 +89,8 @@ export function F1VrankBootstrap({ ctx, openConfirm }: { ctx: FViewCtx; openConf
       explain="九级要一次建好，另一位管理员批准后才出现。没有门槛或比例的项填 0；V1–V8 每级至少一项晋升条件大于 0。升级奖励在等级建好后逐级添加。已经提交过的申请在「操作记录与审批」里看，不要重复提交。">
       {!editing ? <div className="f1-boot-start">
         <ol className="f1-boot-preview" aria-label="要建立的九级">{bootstrapRankCodes.map((code) => <li key={code}>{code}</li>)}</ol>
-        <p>九级还没建。填完九级的晋升条件、头衔、票数后一起提交审批，批准前这页保持空的。已提交的申请看 {auditLink}。</p>
+        <p>填完九级后一起提交审批。</p>
+        <p>已提交的申请看 {auditLink}</p>
         <Button variant="primary" onClick={() => setEditing(true)}>首次配置 V0–V8</Button>
       </div> : <>
         <div className="f1-boot-steps" role="group" aria-label="选择要配置的等级">

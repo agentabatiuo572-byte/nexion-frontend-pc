@@ -7,7 +7,7 @@
  * 「等级与奖励」是九级阶梯（选择器，柱高按所选口径）+ 选中一级的详情（五项门槛、奖励模板、只读参数）+ 九级共用的设置。
  * 请求、校验、权限全部沿用旧页面：门槛和奖励走 F1PolicyConfirm（lib/admin/f1-policy-change），其余走 ctx 上现成的提交函数。
  */
-import { useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import {
   ArrowUpCircle, CircleHelp, Gift, Layers3, Lock, Pencil, Plus, RefreshCw, Settings2, ShieldCheck, ShieldOff, Trash2, TriangleAlert, Users,
@@ -189,7 +189,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     <Panel title="九级阶梯" icon={Layers3} tone="role-3" sub={`柱高：${lensInfo.label}`}
       explain="点一级看它的晋升条件和升级奖励。九根柱用同一个刻度；切换上面的口径看人数或某项门槛在九级之间怎么变化，柱跳得最高的地方就是门槛跳得最多的地方。门槛为 0 表示这一级不看这一项，不画柱。">
       <div className="f1-lens"><Segments label="柱高口径" value={lens} items={LENSES.map(({ value, label }) => ({ value, label }))} onChange={setLens} /></div>
-      <div className="f1-ladder-wrap"><div className="f1-ladder" role="tablist" aria-label="会员等级" style={{ "--f1-count": rows.length } as CSSProperties}>
+      <div className="f1-ladder-wrap"><div className="f1-ladder" role="tablist" aria-label="会员等级">
         {rows.map((row) => {
           const value = lensValue(row);
           const isSelected = row.v === selected.v;
@@ -207,7 +207,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               <span className="f1-step-head"><b>{row.v}</b><span className="f1-step-title" title={title}>{title || "—"}</span></span>
               <span className="f1-step-col" aria-hidden>
                 <span className="f1-step-value" data-empty={!value ? "" : undefined}>{valueText}</span>
-                {height > 0 && <span className="f1-step-bar" data-lens={lens} style={{ height: `${height}px` }} />}
+                {height > 0 && <svg className="f1-step-bar" data-lens={lens} width="36" height={height} viewBox={`0 0 36 ${height}`} aria-hidden><rect width="36" height={height} rx="2" /></svg>}
               </span>
               <span className="f1-step-foot" aria-hidden>
                 {rewards.length
@@ -425,7 +425,12 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
     const max = Math.max(1, ...values);
     return (
       <span className="f1-mini" aria-hidden>
-        {values.map((value, i) => <span key={rows[i].v} data-on={i === index ? "" : undefined} style={{ height: value > 0 ? `${Math.max(12, (value / max) * 100)}%` : 0 }} />)}
+        <svg width="61" height="20" viewBox="0 0 61 20">
+          {values.map((value, i) => {
+            const h = value > 0 ? Math.max(3, (value / max) * 20) : 0;
+            return <rect key={rows[i].v} data-on={i === index ? "" : undefined} x={i * 7} y={20 - h} width="5" height={h} rx="1" />;
+          })}
+        </svg>
       </span>
     );
   };

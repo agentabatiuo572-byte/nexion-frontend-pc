@@ -524,7 +524,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 
 /* 九级阶梯：一格一级，是选择器；柱从同一条底线起、共用一个刻度 */
 .f1-page .f1-lens { margin-bottom: 12px; }
-.f1-page .f1-ladder { display: grid; grid-template-columns: repeat(var(--f1-count, 9), minmax(0, 1fr)); gap: 8px; }
+.f1-page .f1-ladder { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; }
 .f1-page .f1-step { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 10px 12px; border: 0; border-radius: var(--rd-radius-tile); background: var(--rd-panel-inner); color: var(--rd-text); font: inherit; text-align: left; cursor: pointer; }
 @media (hover: hover) and (pointer: fine) { .f1-page .f1-step:not([data-selected]):hover { background: var(--rd-hover); } }
 .f1-page .f1-step:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
@@ -536,8 +536,8 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f1-page .f1-step-col { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 96px; border-bottom: 1px solid var(--rd-chart-axis); }
 .f1-page .f1-step-value { margin-bottom: 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
 .f1-page .f1-step-value[data-empty] { font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
-.f1-page .f1-step-bar { display: block; width: 56%; max-width: 36px; border-radius: var(--rd-radius-bar) var(--rd-radius-bar) 0 0; background: var(--rd-chart-4); }
-.f1-page .f1-step-bar[data-lens="pop"] { background: var(--rd-chart-3); }
+.f1-page .f1-step-bar { display: block; flex: none; fill: var(--rd-chart-4); }
+.f1-page .f1-step-bar[data-lens="pop"] { fill: var(--rd-chart-3); }
 .f1-page .f1-step-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 20px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 .f1-page .f1-step-kinds { display: inline-flex; align-items: center; gap: 3px; }
 .f1-page .f1-step-kinds svg { color: var(--rd-chart-2); flex: none; }
@@ -547,7 +547,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 /* 窄的时候一行放不下九格的完整数字：折成 5 + 4，两行仍用同一个刻度，数字不截断 */
 .f1-page .f1-ladder-wrap { container: f1-ladder / inline-size; }
 @container f1-ladder (max-width: 900px) {
-  .f1-page .f1-ladder { grid-template-columns: repeat(5, minmax(0, 1fr)); row-gap: 14px; }
+  .f1-page .f1-ladder { grid-auto-flow: row; grid-template-columns: repeat(5, minmax(0, 1fr)); row-gap: 14px; }
 }
 
 /* 选中一级的详情 */
@@ -556,9 +556,10 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f1-page .f1-detail-split > .rd-panel { display: flex; flex-direction: column; gap: 12px; }
 .f1-page .f1-th { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; }
 .f1-page .f1-dir { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
-.f1-page .f1-mini { display: inline-flex; align-items: flex-end; gap: 2px; height: 20px; padding-bottom: 1px; border-bottom: 1px solid var(--rd-chart-axis); }
-.f1-page .f1-mini span { display: block; width: 5px; border-radius: 1px 1px 0 0; background: var(--rd-line-strong); }
-.f1-page .f1-mini span[data-on] { background: var(--rd-chart-4); }
+.f1-page .f1-mini { display: inline-flex; padding-bottom: 1px; border-bottom: 1px solid var(--rd-chart-axis); }
+.f1-page .f1-mini svg { display: block; }
+.f1-page .f1-mini rect { fill: var(--rd-line-strong); }
+.f1-page .f1-mini rect[data-on] { fill: var(--rd-chart-4); }
 .f1-page .f1-rewards { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .f1-page .f1-reward { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--rd-radius-tile); background: var(--rd-panel-inner); }
 .f1-page .f1-reward-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: var(--rd-radius-tile-sm); background: var(--rd-role-2-tile); color: var(--rd-role-2-tile-ink); }
