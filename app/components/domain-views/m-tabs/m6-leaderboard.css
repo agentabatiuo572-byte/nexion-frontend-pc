@@ -13,15 +13,15 @@
 .m6-avatar[data-size="lg"] { width: 48px; height: 48px; font-size: var(--rd-text-section); }
 .m6-avatar img { width: 100%; height: 100%; object-fit: cover; }
 
-/* 前三名：名次从左到右，台阶由高到低；整张卡是一颗按钮，点开公开成绩。 */
-.m6-page .m6-podium { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(var(--m6-cols, 3), minmax(0, 1fr)); gap: var(--rd-space-4); align-items: end; }
+/* 前三名：名次从左到右，三张卡等高；第 1 名描金边。整张卡是一颗按钮，点开公开成绩。 */
+.m6-page .m6-podium { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(var(--m6-cols, 3), minmax(0, 1fr)); gap: var(--rd-space-4); align-items: stretch; }
 .m6-page .m6-podium[data-count="1"] { --m6-cols: 1; max-width: 360px; }
 .m6-page .m6-podium[data-count="2"] { --m6-cols: 2; max-width: 720px; }
 .m6-page .m6-podium[data-count="4"] { --m6-cols: 4; }
-.m6-page .m6-podium > li { min-width: 0; }
+.m6-page .m6-podium > li { display: flex; min-width: 0; }
 .m6-page .m6-podium-card {
-  display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "avatar rank" "avatar name" "group group" "value value" "step step";
-  column-gap: var(--rd-space-3); row-gap: var(--rd-space-1); width: 100%; padding: var(--rd-space-4) var(--rd-space-4) 0; text-align: left;
+  display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "avatar rank" "avatar name" "group group" "value value"; align-content: start; height: 100%;
+  column-gap: var(--rd-space-3); row-gap: var(--rd-space-1); width: 100%; padding: var(--rd-space-4); text-align: left;
   border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); color: var(--rd-text); font: inherit; cursor: pointer; overflow: hidden;
 }
 @media (hover: hover) and (pointer: fine) { .m6-page .m6-podium-card:hover { border-color: var(--rd-line-strong); background: var(--rd-hover); } }
@@ -37,9 +37,6 @@
 .m6-page .m6-podium-value { grid-area: value; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-1); margin-top: var(--rd-space-1); }
 .m6-page .m6-podium-value b { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .m6-page .m6-podium-value small { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
-.m6-page .m6-podium-step { grid-area: step; display: block; height: 12px; margin: var(--rd-space-3) calc(-1 * var(--rd-space-4)) 0; border-top: 1px solid var(--rd-line); background: var(--rd-panel); }
-.m6-page .m6-podium > li[data-rank="1"] .m6-podium-step { height: 40px; }
-.m6-page .m6-podium > li[data-rank="2"] .m6-podium-step { height: 26px; }
 .m6-page .m6-podium > li[data-rank="1"] .m6-podium-card { border-color: var(--rd-role-1); }
 .m6-page .m6-podium > li[data-rank="1"] .m6-podium-rank b { color: var(--rd-role-1); }
 :root[data-theme="light"] .m6-page .m6-podium > li[data-rank="1"] .m6-podium-rank b { color: var(--rd-text); }

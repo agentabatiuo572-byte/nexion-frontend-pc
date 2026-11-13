@@ -136,7 +136,6 @@ export function Podium({ board, rows, total, unit, places, status, onOpen, onVie
               <span className="m6-podium-name">{row.name}</span>
               <span className="m6-podium-group">{row.groupName || "待分组"}<QualificationTag row={row} /></span>
               <span className="m6-podium-value"><b>{mainValue(row, board, places)}</b><small>{unit}</small></span>
-              <span className="m6-podium-step" aria-hidden />
             </button>
           </li>
         ))}
