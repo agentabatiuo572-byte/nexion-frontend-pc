@@ -622,7 +622,6 @@
 /* 确认框和表单里的长问题、补充说明 */
 .m4-fact-text { white-space: normal; overflow-wrap: anywhere; }
 .m4-confirm-note { margin: 0; font-size: var(--rd-text-aux); color: var(--rd-text-2); }
-.m4-failure-detail { font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .m4-form-id { font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 
 /* 新建、编辑问答：左边按写的顺序填，右边跟着显示帮助中心里的样子 */

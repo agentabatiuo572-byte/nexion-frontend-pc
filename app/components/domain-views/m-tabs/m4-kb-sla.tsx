@@ -234,13 +234,11 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       {/* 结果未知的写操作：界面已备好，等代码 worker 按 R1 从本标签页保存的原请求拼行（M4-B01）。 */}
       <M4PendingWrites rows={[]} />
 
-      {failed && <div className="m4-health" data-module-health-state="error"><Notice tone="danger" title="问答读不到"
-        action={<Button size="sm" onClick={() => void ctx.refreshContent()}>重新读取</Button>}>
-        <p>知识库当前不可用，暂时无法修改。{loadError ? "客服中心的数据也没有同步成功。" : ""}<Explain label="为什么会读不到" content="知识库和旧的工单处理时限数据一起读取、一起校验；任何一部分不完整，问答都会显示为读不到。点「重新读取」会重读整个客服中心。" /></p>
-      </Notice></div>}
 
       {loading ? <Conclusion state="unknown">正在读取问答…</Conclusion>
-        : failed ? <Conclusion state="unknown">问答读不到，现在不知道线上有哪些</Conclusion>
+        : failed ? <div className="m4-health" data-module-health-state="error"><Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshContent()}>重新读取</Button>}
+            hint={`暂时不能新建和修改。${loadError ? "客服中心的其他数据也没同步成功。" : ""}`}
+            explain="知识库和旧的工单处理时限数据一起读取、一起校验，任何一部分不完整，问答都会读不到。点「重新读取」会重读整个客服中心。">问答读不到，现在不知道线上有哪些</Conclusion></div>
           : visibleFaqs.length === 0 ? <Conclusion state="neutral" icon={BookOpenText} hint={canEdit ? "点右上角「新建问答」写第一条。" : undefined}>还没有问答</Conclusion>
             : unreachable.length > 0
               ? <Conclusion state="warn" hint="可以筛「显示位置」和「语言」找到它们。"
@@ -251,17 +249,17 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
 
       <StatBand label="问答数量" fit>
         <Stat icon={BookOpenText} tone="role-2" label="全部问答" value={knowledgeAvailable ? visibleFaqs.length : "—"} unit={knowledgeAvailable ? "条" : undefined}
-          sub={knowledgeAvailable ? `帮助中心 ${visibleFaqs.filter((faq) => faq.surface === "Help Center").length} · Nova ${visibleFaqs.filter((faq) => faq.surface === "Nova").length}` : undefined}
+          sub={knowledgeAvailable && visibleFaqs.length > 0 ? `帮助中心 ${visibleFaqs.filter((faq) => faq.surface === "Help Center").length} · Nova ${visibleFaqs.filter((faq) => faq.surface === "Nova").length}` : undefined}
           explain="知识库里全部问答，含草稿；不随下面的筛选变。" />
         <Stat icon={CheckCircle2} tone="role-2" label="已发布" value={knowledgeAvailable ? published.length : "—"} unit={knowledgeAvailable ? "条" : undefined}
           sub={knowledgeAvailable && published.length > 0 ? [...byLanguage.map((row) => `${row.name} ${row.count}`), ...(otherLanguage ? [`其他 ${otherLanguage}`] : [])].join(" · ") : undefined}
           explain="在线上的问答，按语言分。点这一格只看已发布的。"
-          onOpen={knowledgeAvailable ? () => toggleStatus("published") : undefined} openLabel="只看已发布的问答"
+          onOpen={knowledgeAvailable && (published.length > 0 || statusFilter === "published") ? () => toggleStatus("published") : undefined} openLabel="只看已发布的问答"
           selected={statusFilter === "published"} selectedText="已筛选" aria-pressed={statusFilter === "published"} />
         <Stat icon={FilePen} tone="role-2" label="草稿" value={knowledgeAvailable ? drafts : "—"} unit={knowledgeAvailable ? "条" : undefined}
           sub={knowledgeAvailable && drafts > 0 ? "用户看不到" : undefined}
           explain="只在后台，用户和客服都读不到。点这一格只看草稿。"
-          onOpen={knowledgeAvailable ? () => toggleStatus("draft") : undefined} openLabel="只看草稿"
+          onOpen={knowledgeAvailable && (drafts > 0 || statusFilter === "draft") ? () => toggleStatus("draft") : undefined} openLabel="只看草稿"
           selected={statusFilter === "draft"} selectedText="已筛选" aria-pressed={statusFilter === "draft"} />
       </StatBand>
 
@@ -306,8 +304,8 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
           </tr></thead>
           <tbody>
             {loading ? <TableLoading columns={tableColumns} rows={FAQ_PAGE_SIZE} />
-              : failed ? <TableMessage columns={tableColumns} role="alert">问答读不到，列表先不显示。<Button size="sm" onClick={() => void ctx.refreshContent()}>重新读取</Button></TableMessage>
-                : visibleFaqs.length === 0 ? <TableMessage columns={tableColumns} role="status">知识库里还没有问答{canEdit && <> <Button size="sm" variant="primary" onClick={openCreate}>新建问答</Button></>}</TableMessage>
+              : failed ? <TableMessage columns={tableColumns} role="alert">列表先不显示，读到后再列出。</TableMessage>
+                : visibleFaqs.length === 0 ? <TableMessage columns={tableColumns} role="status">知识库里还没有问答</TableMessage>
                   : pagedFaqs.length === 0 ? <TableMessage columns={tableColumns} role="status">{narrowMessage()} <Button size="sm" onClick={clearFilters}>清除筛选</Button></TableMessage>
                     : pagedFaqs.map((f) => (
                       <Tr key={f.id} data-proof="support-faq-row" data-faq-id={f.id} selected={openId === f.id} onOpen={() => setOpenId(f.id)}>
@@ -412,7 +410,7 @@ function FaqModal({
       {row?.status === "published" && <Notice tone="warn">这条在线上，保存后用户马上看到新内容。</Notice>}
       {failure && <Notice tone={unknown ? "warn" : "danger"} title={unknown ? "结果未知" : "没有保存成功"}>
         {unknown
-          ? <><p>请求已经发出，可能已经保存。先关掉表单，在列表里核对这条问答；{row ? "内容已经变了就不要再保存" : "列表里已经有了就不要再保存，再存可能多出一条"}。</p><p className="m4-failure-detail">{failure}</p></>
+          ? <><p>请求已经发出，可能已经保存。先关掉表单，在列表里核对这条问答；{row ? "内容已经变了就不要再保存" : "列表里已经有了就不要再保存，再存可能多出一条"}。</p></>
           : <p>{failure}</p>}
       </Notice>}
       <div className="m4-form">

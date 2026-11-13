@@ -182,7 +182,6 @@ export function M4StatusConfirm({ faq, busy, failure, onCancel, onConfirm }: {
       <p className="m4-confirm-note">操作记录会记下这次{publish ? "发布" : "下架"}，理由固定写「{publish ? "常见问答 发布例行审核留档" : "常见问答 下架例行审核留档"}」。</p>
       {failure && <Notice tone={unknown ? "warn" : "danger"} title={unknown ? "结果未知" : "没有成功"}>
         {unknown ? <p>请求已经发出，可能已经{publish ? "发布" : "下架"}。先关掉这个框，看列表里这条的状态；状态没变再重新操作。</p> : <p>{failure}</p>}
-        {unknown && <p className="m4-failure-detail">{failure}</p>}
       </Notice>}
     </Modal>
   );
