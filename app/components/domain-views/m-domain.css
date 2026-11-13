@@ -642,7 +642,7 @@
 .m5-page .m5-phone-bar { margin: 0 calc(-1 * var(--rd-space-3)); padding: var(--rd-space-2) var(--rd-space-3); border-bottom: 1px solid var(--rd-line); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-medium); color: var(--rd-text); text-align: center; }
 .m5-page .m5-bubble { justify-self: start; max-width: 92%; padding: var(--rd-space-2) var(--rd-space-3); border-radius: 4px 12px 12px 12px; background: var(--rd-panel); color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); white-space: pre-wrap; overflow-wrap: anywhere; }
 .m5-page .m5-bubble[data-old] { color: var(--rd-text-3); }
-.m5-bubble-tag { display: block; margin-bottom: 2px; font-size: 12px; line-height: 16px; font-weight: var(--rd-weight-medium); color: var(--rd-text-3); white-space: normal; }
+.m5-bubble-tag { display: block; margin-bottom: 2px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-medium); color: var(--rd-text-3); white-space: normal; }
 .m5-bubble-tag[data-new] { color: var(--rd-progress); }
 .m5-bubble-empty { color: var(--rd-text-3); }
 .m5-page .m5-preview-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
@@ -677,7 +677,7 @@
 .m5-page .m5-tags, .m5-page .m5-served { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1); }
 .m5-page .m5-served-count { margin-right: var(--rd-space-1); }
 .m5-page .m5-more { font-size: var(--rd-text-aux); color: var(--rd-text-3); }
-.m5-page .m5-chip { display: inline-flex; align-items: center; gap: var(--rd-space-1); max-width: 100%; height: 22px; padding: 0 var(--rd-space-2); border-radius: var(--rd-radius-tag); background: var(--rd-panel-inner); color: var(--rd-text-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m5-page .m5-chip { display: inline-flex; align-items: center; gap: var(--rd-space-1); max-width: 100%; height: 22px; padding: 0 var(--rd-space-2); border-radius: var(--rd-radius-tag); background: var(--rd-panel-inner); color: var(--rd-text-2); font-size: var(--rd-text-aux); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m5-page .m5-chip [data-mono] { color: var(--rd-text-3); }
 .m5-page .m5-served-count, .m5-page .m5-cap { font-variant-numeric: tabular-nums; color: var(--rd-text); }
 .m5-page .m5-served-count[data-empty], .m5-page .m5-cap[data-empty] { color: var(--rd-text-3); }

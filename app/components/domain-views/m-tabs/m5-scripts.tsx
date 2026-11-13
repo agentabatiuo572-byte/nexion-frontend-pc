@@ -627,11 +627,11 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
 
   const contentActions = (kind: "script" | "template", id: string, status: string) => {
     const published = status === "published", archived = status === "archived";
-    const proof = kind === "script" ? `session-script-publish-${id}` : `session-tpl-publish-${id}`;
-    const act = () => kind === "script" ? publishScript(id, status as AdvisorScript["status"]) : toggleTpl(id, status as SessionReplyTpl["status"]);
+    const look = { size: "sm" as const, variant: published ? "danger-outline" as const : "secondary" as const, icon: published ? <Archive size={14} aria-hidden /> : <Upload size={14} aria-hidden />, disabled: !sessionTemplatesAvailable || writePending };
     return <span className="m5-row-actions">
-      {canManageM5Content && !archived && <Button size="sm" data-proof={proof} variant={published ? "danger-outline" : "secondary"} icon={published ? <Archive size={14} aria-hidden /> : <Upload size={14} aria-hidden />}
-        disabled={!sessionTemplatesAvailable || writePending} onClick={act}>{published ? "归档" : "发布"}</Button>}
+      {canManageM5Content && !archived && (kind === "script"
+        ? <Button {...look} data-proof={`session-script-publish-${id}`} onClick={() => publishScript(id, status as AdvisorScript["status"])}>{published ? "归档" : "发布"}</Button>
+        : <Button {...look} data-proof={`session-tpl-publish-${id}`} onClick={() => toggleTpl(id, status as SessionReplyTpl["status"])}>{published ? "归档" : "发布"}</Button>)}
       {canTranslate && <a className="rd-link" href="/content/i18n">维护翻译</a>}
       {!canTranslate && (!canManageM5Content || archived) && <span className="rd-note">—</span>}
     </span>;
@@ -707,10 +707,14 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
     </div>
   </>;
 
-  const policyRow = (field: string, name: string, value: string, unit: string, proof: string, what: string) => (
+  const policyRow = (field: "delayMs" | "cooldownHours" | "maxPerSession", name: string, value: string, unit: string, what: string) => (
     <ConfigRow key={field} name={name} what={what} when="保存后立即记下；主动推送上线前不会推送" value={value}
-      action={canManageM5Operations ? (describedBy) => <Button size="sm" aria-describedby={describedBy} data-proof={proof} disabled={!sessionTemplatesAvailable || writePending}
-        onClick={() => editPolicy(field, name, policyVal(field, DEFAULT_ADVISOR_POLICY[field as keyof typeof DEFAULT_ADVISOR_POLICY]), unit)}>调整</Button> : undefined} />
+      action={canManageM5Operations ? (describedBy) => {
+        const props = { size: "sm" as const, "aria-describedby": describedBy, disabled: !sessionTemplatesAvailable || writePending, onClick: () => editPolicy(field, name, policyVal(field, DEFAULT_ADVISOR_POLICY[field]), unit) };
+        return field === "delayMs" ? <Button {...props} data-proof="session-policy-delay">调整</Button>
+          : field === "cooldownHours" ? <Button {...props} data-proof="session-policy-cooldown">调整</Button>
+            : <Button {...props} data-proof="session-policy-max">调整</Button>;
+      } : undefined} />
   );
   const channels = <>
     {!sessionTemplatesAvailable && <BlockState state="error" title="会话类别和推送设置读不到，暂时不能修改" onRetry={() => void ctx.refreshContent()} retryLabel="重新读取" />}
@@ -734,9 +738,9 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
         <ConfigRow name="总开关" what="主动推送开不开" when="后端目前只接受停用" value={<StatusTag tone="done" icon={CircleOff}>{masterOn ? "已启用（未推送）" : "已停用"}</StatusTag>}
           action={canManageM5Operations ? (describedBy) => <Button size="sm" aria-describedby={describedBy} data-proof="session-policy-enabled" disabled={!sessionTemplatesAvailable || writePending || (!masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE)}
             disabledReason={sessionTemplatesAvailable && !masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE ? "主动推送还没有执行器，后端不接受启用" : undefined} onClick={toggleAdvisorPush}>{masterOn ? "停用" : "启用"}</Button> : undefined} />
-        {policyRow("delayMs", "首推延迟", sessionTemplatesAvailable ? shown(delayText()) : "—", " 毫秒", "session-policy-delay", "用户进会话后等多久发第一条")}
-        {policyRow("cooldownHours", "冷却时间", shown(policyDisplay("cooldownHours")) === "—" ? "—" : `${policyDisplay("cooldownHours")} 小时`, " 小时", "session-policy-cooldown", "同一用户两次主动推送至少隔多久")}
-        {policyRow("maxPerSession", "单会话上限", shown(policyDisplay("maxPerSession")) === "—" ? "—" : `${policyDisplay("maxPerSession")} 条`, " 条", "session-policy-max", "一次会话里最多主动发几条")}
+        {policyRow("delayMs", "首推延迟", sessionTemplatesAvailable ? shown(delayText()) : "—", " 毫秒", "用户进会话后等多久发第一条")}
+        {policyRow("cooldownHours", "冷却时间", shown(policyDisplay("cooldownHours")) === "—" ? "—" : `${policyDisplay("cooldownHours")} 小时`, " 小时", "同一用户两次主动推送至少隔多久")}
+        {policyRow("maxPerSession", "单会话上限", shown(policyDisplay("maxPerSession")) === "—" ? "—" : `${policyDisplay("maxPerSession")} 条`, " 条", "一次会话里最多主动发几条")}
         <ConfigRow name="受众" what="主动推送发给哪类用户；是整体的，不是某一条话术的" when="保存后立即记下；主动推送上线前不会推送"
           value={sessionTemplatesAvailable ? audienceOptions.length > 0 ? currentAudience || "—" : "后端没给可选受众" : "—"}
           action={canManageM5Operations ? (describedBy) => <Button size="sm" aria-describedby={describedBy} data-proof="session-policy-audience" disabled={!sessionTemplatesAvailable || writePending || audienceOptions.length === 0} onClick={editAudience}>调整</Button> : undefined} />
