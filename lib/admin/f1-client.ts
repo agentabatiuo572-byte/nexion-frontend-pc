@@ -521,6 +521,8 @@ export interface F1RewardPayout {
   rankCode: string;
   rewardType: string;
   amount: number;
+  /** 后端给的金额原文，显示用；amount 已转成数字，会丢小数位。 */
+  amountText: string;
   voucherId: string;
   skuId: string;
   customLabel: string;
@@ -1225,6 +1227,8 @@ function normalizePayoutPage(data: Record<string, unknown> | null | undefined): 
         rankCode: asText(row.rankCode),
         rewardType: asText(row.rewardType),
         amount: toNumber(row.amount),
+        // 后端给的金额原文：转成数字再显示会丢小数位（F1-B04），页面显示用这一份。
+        amountText: asScalarText(row.amount),
         voucherId: asText(row.voucherId),
         skuId: asText(row.skuId),
         customLabel: asText(row.customLabel),

@@ -57,6 +57,7 @@ import { findHighOp, isFFundAmplifyingKey } from "@/lib/admin/high-ops-registry"
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { Mc, McSpec, FViewCtx } from "./f-tabs/types";
 import { F1Vrank } from "./f-tabs/f1-vrank";
+import { RdPage } from "@/app/components/rd";
 import { F2Rates } from "./f-tabs/f2-rates";
 import { F2SevenLayerActivation } from "./f-tabs/f2-seven-layer-activation";
 import { F3Binary } from "./f-tabs/f3-binary";
@@ -820,9 +821,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   };
   const cta = CTA[tab];
 
-  return (
-    <div className="dkpage fdom">
-      {tab === "F2" ? <div className="f2-page-header"><div><div className="f2-breadcrumb">网络 <span aria-hidden="true">›</span> 团队奖励设置</div><h1>团队奖励设置</h1></div><span className="f2-page-meta">{f2DirectPolicy?.effectiveAt ? `当前政策生效于 ${new Date(f2DirectPolicy.effectiveAt).toLocaleString()}` : "配置尚未生效"}</span></div> : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
+  const page = (
+    <>
+      {tab === "F1" ? null : tab === "F2" ? <div className="f2-page-header"><div><div className="f2-breadcrumb">网络 <span aria-hidden="true">›</span> 团队奖励设置</div><h1>团队奖励设置</h1></div><span className="f2-page-meta">{f2DirectPolicy?.effectiveAt ? `当前政策生效于 ${new Date(f2DirectPolicy.effectiveAt).toLocaleString()}` : "配置尚未生效"}</span></div> : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
 
       {tab === "F1" && <F1Vrank ctx={ctx} />}
       {tab === "F2" && <><F2SevenLayerActivation ctx={ctx} /><F2Rates ctx={ctx} /></>}
@@ -928,6 +929,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           }
         }} />}
       {toastNode}
-    </div>
+    </>
   );
+  // F1 已改版：页头在页面里，整页包 RdPage。
+  return tab === "F1" ? <RdPage className="fdom">{page}</RdPage> : <div className="dkpage fdom">{page}</div>;
 }
