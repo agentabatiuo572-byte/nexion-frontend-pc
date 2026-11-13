@@ -224,7 +224,9 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       action: "导出团队明细",
       detail: (
         <div>
-          将按当前 <b>{data.period.label}</b> 周期导出团队关系；预计 <b>{data.liveFacts.teamRelationships}</b> 条（以实际导出为准）。只包含部分隐藏的用户编码、关系深度、会员等级、关系记录上的团队 GMV 和加入时间，不含手机号、昵称。下载链接 24 小时有效，导出留一条高风险操作记录。
+          <p>按 <b>{data.period.label}</b> 导出团队关系，预计 <b>{data.liveFacts.teamRelationships}</b> 条，以实际为准。</p>
+          <p>用户编码部分隐藏，不含手机号、昵称。</p>
+          <p>下载链接 24 小时有效，导出留高风险操作记录。</p>
         </div>
       ),
       effect: <StatusTag tone="warn" icon={LockKeyhole}>敏感导出 · 留高风险记录</StatusTag>,
@@ -394,11 +396,13 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
           items={PERIODS.map(([value, label]) => ({ value, label }))}
           onChange={(period) => period === "custom" ? updateQuery({ period }) : updateQuery({ period, from: undefined, to: undefined })} />
       </span>}
-      sort={<span className="l4-pair" data-pair="">
+      sort={<span className="l4-sort">
+        <span className="l4-scope rd-filter-result">现在看：{shown}{customChanged && query.period === "custom" && query.from ? " · 输入框里的日期还没应用" : ""}{scopeExplain}</span>
+        <span className="l4-pair" data-pair="">
         <Button icon={<Save size={14} aria-hidden />} onClick={saveView}>保存为视图</Button>
         <Explain label="保存为视图存什么" content={<><p>只存在这台电脑的浏览器里，换电脑、换浏览器或清浏览器数据就没了；同一台电脑上的其他账号也会用到它。</p><p>存已经应用的时间段、阶段和正在看的报表，不存还没应用的日期，不存数字，不改统计方式。</p><p>下次打开这页按保存的条件读取。</p></>} />
+        </span>
       </span>}
-      result={<span className="l4-scope">现在看：{shown}{customChanged && query.period === "custom" && query.from ? " · 输入框里的日期还没应用" : ""}{scopeExplain}</span>}
     >
       <FilterField label="运营阶段">
         <Select aria-label="运营阶段 筛选" value={query.phase}
@@ -460,7 +464,7 @@ function L4Body({ data, tab, setTab, tabIds, reach }: {
   const taskPage = findByPath("/devices/tasks");
 
   const conclusion = !data.available ? (
-    <Conclusion state="neutral" icon={Activity} hint="换一个时间段或阶段再看；「读取那一刻」的在用设备、置换和团队关系照常显示。">
+    <Conclusion state="neutral" icon={Activity} hint="换一个时间段或阶段再看。" explain="在用设备、置换和团队关系是读取那一刻的数，照常显示。">
       运营报表：{scope}没有可核验的运营事件
     </Conclusion>
   ) : low ? (
@@ -504,7 +508,6 @@ function L4Body({ data, tab, setTab, tabIds, reach }: {
   const singlePhase = data.phaseEffect.length === 1 ? data.phaseEffect[0] : null;
   const max = rate === null ? 100 : acceptanceScale(rate);
   const cards = (
-    <div className="l4-cards">
       <StatBand cards role="tablist" label="四类运营报表">
         <Stat head="设备" icon={Cpu} tone="role-2" label="在用设备" value={count(data.liveFacts.activeUserDevices)} unit="台" sub="读取那一刻"
           openLabel={`设备报表：在用设备 ${count(data.liveFacts.activeUserDevices)} 台`} {...tabProps("device")}>
@@ -546,7 +549,6 @@ function L4Body({ data, tab, setTab, tabIds, reach }: {
           </dl>
         </Stat>
       </StatBand>
-    </div>
   );
 
   const links = (key: ReportTab) => {

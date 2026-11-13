@@ -323,7 +323,13 @@
 .l4-page .l4-links { flex-wrap: wrap; }
 
 /* 四张报表卡：同时是页签，选中的卡尖角指着下面的报表 */
-.l4-page .l4-cards .rd-stat-head { font-weight: var(--rd-weight-medium); }
+.l4-page .rd-stats[data-cards] .rd-stat-head { font-weight: var(--rd-weight-medium); }
+/* 筛选栏右侧：现在看一句和保存为视图排一行，放不下时换行 */
+.l4-page .l4-sort { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--rd-space-2) var(--rd-space-4); }
+.l4-page .l4-sort > .rd-filter-result { margin-left: 0; }
+/* 行尾的提示图标贴右边线（同 L3） */
+.l4-page .l4-actions > .l4-pair:last-child > .rd-explain:last-child,
+.l4-page .l4-sort > .l4-pair:last-child > .rd-explain:last-child { margin-right: -3px; }
 
 /* 这段时间 | 读取那一刻：两组数并排，读取那一刻这组带左边线 */
 .l4-page .l4-groups { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr); gap: var(--rd-space-4) var(--rd-space-6); }

@@ -23,7 +23,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   },
   {
     path: "/analytics/operations",
-    summary: "按时间段和运营阶段看设备、任务、团队现在怎样，哪个阶段效果好。",
+    summary: "看设备、任务、团队这段时间怎样，哪个阶段效果好。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
