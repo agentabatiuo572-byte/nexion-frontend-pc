@@ -136,6 +136,8 @@ export interface FViewCtx {
   // F3 参数类配置(如双轨暂停开关)· 读后端 configValues map + 写经 updateF3Config。
   f3ConfigValues: Record<string, string>;
   f3DailyCap: F3DailyCap | null;
+  /** 兑付覆盖率快照，F3 自己开的确认框用来做放大方向的前端拦截（和外壳确认框同一个数）。 */
+  f3Coverage?: { coverageRatio: number; redlinePct: number };
   f3ParticipantCount: number;
   f3BlockedCount: number;
   f3MonthlyMatchedUsd: number;

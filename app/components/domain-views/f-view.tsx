@@ -60,6 +60,7 @@ import { F1Vrank } from "./f-tabs/f1-vrank";
 import { F2Rates } from "./f-tabs/f2-rates";
 import { F2SevenLayerActivation } from "./f-tabs/f2-seven-layer-activation";
 import { F3Binary } from "./f-tabs/f3-binary";
+import { RdPage } from "@/app/components/rd";
 import { F4Ops } from "./f-tabs/f4-ops";
 import { F5Audit } from "./f-tabs/f5-audit";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
@@ -677,6 +678,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f3Config: f3Overview?.config ?? null,
     f3ConfigValues: f3Overview?.configValues ?? {},
     f3DailyCap: f3Overview?.dailyCap ?? null,
+    f3Coverage: f3Overview?.coverage,
     f3ParticipantCount: f3Overview?.participantCount ?? 0,
     f3BlockedCount: f3Overview?.blockedCount ?? 0,
     f3MonthlyMatchedUsd: f3Overview?.monthlyMatchedUsd ?? 0,
@@ -820,9 +822,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   };
   const cta = CTA[tab];
 
-  return (
-    <div className="dkpage fdom">
-      {tab === "F2" ? <div className="f2-page-header"><div><div className="f2-breadcrumb">网络 <span aria-hidden="true">›</span> 团队奖励设置</div><h1>团队奖励设置</h1></div><span className="f2-page-meta">{f2DirectPolicy?.effectiveAt ? `当前政策生效于 ${new Date(f2DirectPolicy.effectiveAt).toLocaleString()}` : "配置尚未生效"}</span></div> : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
+  const page = (
+    <>
+      {tab === "F3" ? null : tab === "F2" ? <div className="f2-page-header"><div><div className="f2-breadcrumb">网络 <span aria-hidden="true">›</span> 团队奖励设置</div><h1>团队奖励设置</h1></div><span className="f2-page-meta">{f2DirectPolicy?.effectiveAt ? `当前政策生效于 ${new Date(f2DirectPolicy.effectiveAt).toLocaleString()}` : "配置尚未生效"}</span></div> : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
 
       {tab === "F1" && <F1Vrank ctx={ctx} />}
       {tab === "F2" && <><F2SevenLayerActivation ctx={ctx} /><F2Rates ctx={ctx} /></>}
@@ -928,6 +930,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           }
         }} />}
       {toastNode}
-    </div>
+    </>
   );
+  // F3 已改版：页头在页面里，整页包 RdPage。
+  return tab === "F3" ? <RdPage className="fdom">{page}</RdPage> : <div className="dkpage fdom">{page}</div>;
 }
