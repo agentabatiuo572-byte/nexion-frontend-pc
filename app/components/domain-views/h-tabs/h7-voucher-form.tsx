@@ -175,7 +175,7 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
 
   return (
     <>
-      <Drawer open wide className="h7-form-drawer" onClose={close} title={voucher ? "编辑代金券" : "新增代金券"} sub={voucher?.name ?? "保存后立即生效"} icon={Ticket} tone="role-4"
+      <Drawer open wide data-h7-form="" onClose={close} title={voucher ? "编辑代金券" : "新增代金券"} sub={voucher?.name ?? "保存后立即生效"} icon={Ticket} tone="role-4"
         explain="左边填，右边随时看这张券最后是什么意思。点「下一步」后核对改动、写理由再保存；保存后立即生效，不走审批。"
         footer={<Decision note={attempted && missing.length ? `还有 ${missing.length} 项要改：${missing.join("；")}` : voucher ? (changed.length ? `改了 ${changed.length} 项` : "还没有改动") : undefined}
           primary={<Button variant="primary" onClick={review}>下一步：核对并保存</Button>}

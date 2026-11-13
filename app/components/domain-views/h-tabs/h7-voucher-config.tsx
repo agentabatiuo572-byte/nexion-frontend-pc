@@ -375,8 +375,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     const deletion = input.op === "h7_voucher_delete";
     const v = list.find((item) => item.id === input.voucherId);
     const completionCopy = deletion
-      ? `${APPROVER}批准后才删除，批准前券模板和已发出的券都不变。批准后券模板从列表消失、用户不能再领；已发出的券不收回，还没用的仍可按现有规则在有效期内使用。只想临时停发用「暂停」。`
-      : `${APPROVER}批准后才作废，批准前什么都不变。批准时把这张券届时还没用的全部作废（含已过有效期还没用的）；已用掉的不变，券模板照常投放，之后还能继续发。`;
+      ? `批准前券模板和已发出的券都不变。批准后券模板从列表消失、用户不能再领；已发出的券不收回，还没用的仍可按现有规则在有效期内使用。只想临时停发用「暂停」。`
+      : `批准前什么都不变。批准时把这张券届时还没用的全部作废（含已过有效期还没用的）；已用掉的不变，券模板照常投放，之后还能继续发。`;
     openActionConfirm({
       briefKind: "record",
       action: `${H7_VOUCHER_ACTIONS[input.op]} · ${input.voucherName}`,
@@ -529,7 +529,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
           ]} />
         </span>}>
         {shown.length === 0
-          ? <BlockState state="empty" title={list.length === 0 ? "还没有代金券" : "这个状态下没有代金券"} detail={list.length === 0 ? (canWrite ? "点右上角「新增代金券」建第一张。" : "有修改权限的同事新增后会显示在这里。") : "换一个状态看看。"} />
+          ? <BlockState state="empty" title={list.length === 0 ? "新增的代金券会显示在这里" : "这个状态下没有代金券"} detail={list.length === 0 ? (canWrite ? undefined : "有修改权限的同事新增后会显示在这里。") : "换一个状态看看。"} />
           : view === "cards"
             ? <div className="h7-cards">
               {shown.map((v) => <VoucherCard key={v.id} v={v} now={now} skuLabels={skuLabels} selected={v.id === detailId} onOpen={() => setDetailId(v.id)} actions={rowActions(v)} />)}
@@ -548,13 +548,13 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
               <tbody>
                 {shown.map((v) => (
                   <Tr key={v.id} selected={v.id === detailId} onOpen={() => setDetailId(v.id)}>
-                    <Td><Cell main={v.name} title={v.name} sub={`${faceValue(v).value}${faceValue(v).unit ? ` ${faceValue(v).unit}` : ""} · ${conditionLines(v).join(" · ")}`} /></Td>
+                    <Td grow><Cell main={v.name} title={v.name} sub={`${faceValue(v).value}${faceValue(v).unit ? ` ${faceValue(v).unit}` : ""} · ${conditionLines(v).join(" · ")}`} /></Td>
                     <Td><VoucherTags v={v} now={now} /></Td>
                     <Td><Cell main={skuText(v.applicableSkus, skuLabels)} sub={AUDIENCE_LABEL[v.audience]} /></Td>
                     <Td><Cell main={periodText(v)} /></Td>
                     <Td align="right"><span className="h7-table-usage">
                       <Cell num main={`${countText(v.redeemedCount)} / ${countText(v.issuedCount)}`} sub={v.issuanceLimit > 0 ? `上限 ${countText(v.issuanceLimit)}` : "不限量"} />
-                      {v.issuedCount > 0 ? <RatioBar compact quiet label="已使用占已发出" value={v.redeemedCount} total={v.issuedCount} valueText={`已使用 ${v.redeemedCount}，已发出 ${v.issuedCount}`} /> : null}
+                      {v.issuedCount > 0 ? <RatioBar compact quiet label="已使用占已发出" value={v.redeemedCount} total={v.issuedCount} valueText={`已使用 ${v.redeemedCount}，已发出 ${v.issuedCount}`} /> : <span aria-hidden />}
                     </span></Td>
                     {canWrite && <Td sticky="end"><span className="rd-row-actions">{rowActions(v)}</span></Td>}
                   </Tr>

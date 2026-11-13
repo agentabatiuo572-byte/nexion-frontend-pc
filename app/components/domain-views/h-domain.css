@@ -214,21 +214,21 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h7-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--rd-space-4); }
 .h7-card { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; padding: var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel); color: var(--rd-text); }
 .h7-card[data-selected] { border-color: var(--rd-brand); }
-.h7-ticket { position: relative; display: grid; grid-template-columns: 128px minmax(0, 1fr); overflow: hidden; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
+.h7-ticket { position: relative; display: grid; grid-template-columns: minmax(156px, max-content) minmax(96px, 1fr); overflow: hidden; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
 .h7-face { position: relative; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: var(--rd-space-3); background: var(--rd-panel-inner); border-right: 1px dashed var(--rd-line-strong); }
 .h7-ticket > .h7-face::before, .h7-ticket > .h7-face::after { content: ""; position: absolute; right: -7px; width: 12px; height: 12px; border: 1px solid var(--rd-line); border-radius: 50%; background: var(--rd-panel); }
 .h7-ticket > .h7-face::before { top: -7px; }
 .h7-ticket > .h7-face::after { bottom: -7px; }
 .h7-face-kind { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
-.h7-face-value { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--rd-role-4); overflow-wrap: anywhere; }
+.h7-face-value { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--rd-role-4); white-space: nowrap; }
 :root[data-theme="light"] .h7-face-value { color: var(--rd-text); }
 .h7-face-value[data-empty], .h7-card[data-dim] .h7-face-value { color: var(--rd-text-3); }
-.h7-face-value small { margin-left: var(--rd-space-1); font-size: var(--rd-text-aux); font-weight: 500; color: var(--rd-text-3); }
+.h7-face-value small { display: inline-block; margin-left: var(--rd-space-1); font-size: var(--rd-text-aux); font-weight: 500; color: var(--rd-text-3); }
 .h7-face-cond { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 .h7-card-body { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: var(--rd-space-3); }
 .h7-card-title { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; }
 .h7-card-title h3 { margin: 0; min-width: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; }
-.h7-name { display: block; max-width: 100%; padding: 0; overflow: hidden; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.h7-name { display: -webkit-box; max-width: 100%; padding: 0; overflow: hidden; border: 0; background: none; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; cursor: pointer; }
 .h7-name:hover { text-decoration: underline; }
 .h7-name:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; border-radius: 2px; }
 .h7-tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
@@ -244,7 +244,8 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h7-usage .rd-segbar-wrap { max-width: none; }
 .h7-card-actions { display: flex; align-items: center; gap: var(--rd-space-2); margin-top: auto; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
 .h7-card-actions > :last-child { margin-left: auto; }
-.h7-table-usage { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--rd-space-3); }
+.h7-table-usage { display: inline-grid; grid-template-columns: auto 64px; align-items: center; justify-items: end; gap: var(--rd-space-3); }
+.h7-table-usage > :last-child { justify-self: stretch; }
 /* 结果未知逐条列表（和 G 域原操作提醒同一排法） */
 .h7-rec { display: grid; gap: var(--rd-space-2); margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }
 .h7-rec li { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
@@ -274,7 +275,7 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h7-preview-sentence { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text); overflow-wrap: anywhere; }
 .h7-preview-notes { display: grid; gap: var(--rd-space-1); margin: 0; padding-left: 18px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 /* 详情抽屉 */
-.h7-detail-ticket { display: grid; grid-template-columns: 148px minmax(0, 1fr); align-items: start; gap: var(--rd-space-4); }
+.h7-detail-ticket { display: grid; grid-template-columns: 172px minmax(0, 1fr); align-items: start; gap: var(--rd-space-4); }
 .h7-detail-ticket > .h7-face { border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
 .h7-detail-head { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; }
 .h7-detail-block { display: flex; flex-direction: column; gap: var(--rd-space-3); }

@@ -101,7 +101,8 @@ export function voucherSentence(v: Pick<H7Voucher, "type" | "amountUSD" | "perce
     ? `只能用于 ${v.applicableSkus.map((id) => labels[id] ?? `已不在目录的商品（${id}）`).join("、")}`
     : `只能用于选中的 ${v.applicableSkus.length} 个商品`;
   const who = v.audience === "new" ? "发给新用户" : "发给全部用户";
-  return `${gate}，${benefit}；${scope}；${who}；${periodText(v)}可领可用。`;
+  const period = periodText(v);
+  return `${gate}，${benefit}；${scope}；${who}；${period === "长期有效" ? "长期有效" : `有效期 ${period}`}。`;
 }
 
 export type H7Phase = "expired" | "upcoming" | "running";
