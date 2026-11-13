@@ -114,17 +114,92 @@
 .hdom .h9-footer { border-top: 1px solid var(--border); border-bottom: 0; }
 @container hdom (max-width: 800px) { .hdom .h9-form-grid { grid-template-columns: 1fr; } }
 
-/* ============================ H8 参数卡栅格 ============================
-   .param-grid 的样式只存在于 .kdom / .ldom —— 各域 CSS 互相独立,H8 抄了个类名过来,
-   选择器根本不命中,参数卡一直退化成无栅格的堆叠(tsc / build / verify 全绿也看不出来)。 */
-.hdom .param-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-@container hdom (max-width: 900px) { .hdom .param-grid { grid-template-columns: 1fr; } }
-.hdom .param-grid .p { background: var(--surface-2); border-radius: 9px; padding: 12px 14px; }
-.hdom .param-grid .p .k { font-size: 12px; color: var(--ink-3); }
-.hdom .param-grid .p .v { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--ink); display: flex; align-items: baseline; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
-.hdom .param-grid .p .v .vu { font-size: 12px; color: var(--ink-4); font-weight: 500; }
-.hdom .param-grid .p .v .l-btn { margin-left: auto; }
-.hdom .param-grid .p .s { font-size: 11px; color: var(--ink-4); margin-top: 4px; line-height: 1.45; }
+/* ============================ H8 新人礼与邀请奖励 ============================
+   只写 .h8- 开头的规则；颜色、字号、间距全部取 --rd-*。 */
+.h8-page { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
+.h8-muted { color: var(--rd-text-3); }
+
+/* 每位发多少：三张卡在面板里用内层底，和面板分得开 */
+.h8-page .rd-panel .rd-stats[data-cards] > .rd-stat { flex: 1 1 0; background: var(--rd-panel-inner); }
+.h8-cards .rd-stats[data-cards] { flex-wrap: nowrap; }
+@container hdom (max-width: 900px) {
+  .h8-cards[data-long] .rd-stats[data-cards] { flex-direction: column; }
+}
+.h8-card-head { display: inline-flex; align-items: center; gap: 6px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.h8-card-head svg { color: var(--rd-text-3); }
+.h8-card-head small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.h8-formula { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px 24px; padding-top: 12px; border-top: 1px solid var(--rd-line); }
+.h8-formula-term { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.h8-formula-term small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.h8-formula-term b { font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; color: var(--rd-text); }
+.h8-amount { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; column-gap: 4px; font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; color: var(--rd-text); }
+.h8-amount > span { white-space: nowrap; }
+.h8-amount small { font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.h8-amount[data-empty] { color: var(--rd-text-3); }
+.h8-card-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.h8-dir { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+
+/* 开关和发放方式 */
+.h8-row-value { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.h8-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.h8-time small { margin-left: 8px; }
+
+/* 一笔奖励的去向：四步一排，步和步之间一条细线；窄时一步一行 */
+.h8-flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.4fr); gap: 16px; margin: 0; padding: 0; list-style: none; }
+.h8-flow-step { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 4px 10px; align-content: start; min-width: 0; }
+.h8-flow-step + .h8-flow-step::before { content: ""; position: absolute; top: 12px; left: -16px; width: 12px; height: 1px; background: var(--rd-line-strong); }
+.h8-flow-mark { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--rd-panel-inner); color: var(--rd-text-3); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; }
+.h8-flow-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding-top: 1px; }
+.h8-flow-title { display: inline-flex; align-items: center; gap: 4px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.h8-flow-sub, .h8-flow-branch, .h8-flow-lanes { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.h8-flow-branch, .h8-flow-lanes { display: flex; flex-direction: column; gap: 2px; }
+.h8-flow b { font-weight: var(--rd-weight-medium); color: var(--rd-text); font-variant-numeric: tabular-nums; }
+@container hdom (max-width: 900px) {
+  .h8-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 20px; }
+  .h8-flow-step:nth-child(3)::before { display: none; }
+}
+
+/* 结算：指定新人和最近一次 */
+.h8-settle-foot { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--rd-line); }
+.h8-target { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin: 0; }
+.h8-target .rd-form-field { width: 220px; }
+.h8-settle-foot > p { margin: 0; }
+.h8-latest { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+
+/* 结算记录 */
+.h8-records { table-layout: fixed; width: 100%; }
+.h8-col-no { width: 25%; }
+.h8-col-user { width: 12%; }
+.h8-col-gift { width: 20%; }
+.h8-col-invite { width: 19%; }
+.h8-col-state { width: 12%; }
+.h8-no { display: flex; min-width: 0; font-family: var(--rd-font-mono); }
+.h8-no-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.h8-no-tail { flex: none; white-space: nowrap; }
+.h8-records td:last-child, .h8-records th:last-child { padding-left: 16px; }
+.h8-pair { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 0 12px; }
+.h8-more-error { padding: 12px var(--rd-panel-pad-x) 0; }
+.h8-records-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 16px var(--rd-panel-pad-x) var(--rd-panel-pad-y); }
+
+/* 原操作提醒 */
+.h8-rec { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.h8-rec li { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.h8-rec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.h8-rec-change { min-width: 0; font-variant-numeric: tabular-nums; color: var(--rd-text); }
+.h8-rec-time { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.h8-rec-state { display: inline-flex; align-items: center; gap: 8px; }
+.h8-rec-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.h8-rec-zone { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+@container hdom (max-width: 900px) {
+  .h8-rec li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
+  .h8-rec-time { grid-column: 1 / 3; grid-row: 2; }
+}
+
+/* 修改框 */
+.h8-mode-form { display: grid; gap: 16px; }
+.rd-modal.h8-param-confirm fieldset:empty { display: none; }
+.h8-preview { display: flex; flex-direction: column; gap: 4px; }
+.h8-preview b { font-weight: var(--rd-weight-medium); color: var(--rd-text); font-variant-numeric: tabular-nums; }
 
 /* ===== 免费试用设置：目标商品选项，一行一个商品，单选圆点；能选的名字用主文字，选中不用整块亮色 ===== */
 .rd-modal.rd-confirm .chip:has(> .h2-product-option) { display: block; width: 100%; height: auto; padding: 8px 12px; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); background: transparent; color: var(--rd-text); white-space: normal; text-align: left; }
