@@ -442,7 +442,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       const [owner, kind, target] = record.fingerprint.split("|");
       let input: unknown[] = [];
       try { input = JSON.parse(record.inputFingerprint) as unknown[]; } catch { input = []; }
-      const audit = reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录核对</Link> : undefined;
+      const audit = reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link> : undefined;
       if (kind === "param" && owner === String(session.adminId)) {
         const param = [ENABLED_PARAM, ...PARAMS].find((item) => item.key === target) as H8Param | undefined;
         if (!param) continue;
