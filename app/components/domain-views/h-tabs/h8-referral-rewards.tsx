@@ -492,7 +492,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   );
 
   const header = <PageHeader pageId="H8" title="新人礼与邀请奖励"
-    summary="管新用户注册和邀请的奖励：每位发多少、怎么发、结算到哪一步。"
+    summary="新人礼和邀请奖励发多少、怎么发、结算到哪一步。"
     readOnly={!canWrite && !canSettle ? "只读：可以查看奖励和结算记录，不能改奖励、不能结算" : undefined} />;
 
   if (loading && !data) return <>

@@ -125,9 +125,9 @@
 @container hdom (max-width: 900px) {
   .h8-cards[data-long] .rd-stats[data-cards] { flex-direction: column; }
 }
-.h8-card-head { display: inline-flex; align-items: center; gap: 6px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.h8-card-head { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
 .h8-card-head svg { color: var(--rd-text-3); }
-.h8-card-head small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.h8-card-head small { white-space: nowrap; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
 .h8-formula { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px 24px; padding-top: 12px; border-top: 1px solid var(--rd-line); }
 .h8-formula-term { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .h8-formula-term small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
