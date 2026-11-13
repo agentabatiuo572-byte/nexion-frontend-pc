@@ -103,7 +103,8 @@ export function PendingCard({ task, title, source, scope, fields, requester, act
   source: string;
   scope: string;
   fields: string;
-  requester: ReactNode;
+  /** 没有放行权限时接口不给是不是本人，不显示这一行。 */
+  requester?: ReactNode;
   action: ReactNode;
 }) {
   return (
@@ -122,7 +123,7 @@ export function PendingCard({ task, title, source, scope, fields, requester, act
         <div><dt>字段</dt><dd title={fields}>{fields}</dd></div>
         <div><dt>行数</dt><dd data-num="">{task.rows === "—" ? <span className="l5-weak">—</span> : <>{rowsText(task.rows)} 行</>}</dd></div>
         <div><dt>脱敏</dt><dd><MaskTag mask={task.mask} /></dd></div>
-        <div><dt>申请人</dt><dd>{requester}</dd></div>
+        {requester !== undefined && <div><dt>申请人</dt><dd>{requester}</dd></div>}
       </dl>
       <div className="l5-pending-foot">{action}</div>
     </li>

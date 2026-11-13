@@ -18,7 +18,7 @@ import {
   Segments, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTabIds,
 } from "@/app/components/rd";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { num, rec, rows, str } from "./live-data";
 import {
   fetchL5ExportAudits,
@@ -79,6 +79,10 @@ function downloadBlob(blob: Blob, fileName: string) {
 }
 
 function exportTypeText(value: string) { return value.replace(/^KPI/, "关键指标").replaceAll("聚合", "汇总"); }
+
+/** 这个账号能导的汇总类型，按全站页名写；提交仍用原 label（协议依赖）。 */
+const AGGREGATE_NAME: Record<string, string> = { "KPI 序列": "关键指标", "漏斗序列": "转化与留存", "财务聚合": "财务", "运营聚合": "运营" };
+function aggregateNames(types: readonly string[]) { return types.map((type) => AGGREGATE_NAME[type] ?? exportTypeText(type)).join("、"); }
 
 type Outcome =
   | { kind: "summary-done"; text: string }
@@ -144,7 +148,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         setTaskPage({ source: data, status: filterStatus, pageNum: taskPageNum, page });
       })
       .catch((error) => {
-        if (alive) setTaskError(error instanceof Error ? displayAdminError(error) : "导出任务加载失败");
+        if (alive) setTaskError(error instanceof Error ? displayAdminReadError(error) : "导出任务加载失败");
       })
       .finally(() => {
         if (alive) setTaskLoading(false);
@@ -164,13 +168,13 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     setRegulatoryError(null);
     void fetchL5RegulatoryOptions()
       .then((value) => { if (alive) setRegulatoryOptions(value); })
-      .catch((error) => { if (alive) setRegulatoryError(error instanceof Error ? displayAdminError(error) : "当前披露快照选项加载失败"); })
+      .catch((error) => { if (alive) setRegulatoryError(error instanceof Error ? displayAdminReadError(error) : "当前披露快照选项加载失败"); })
       .finally(() => { if (alive) setRegulatoryLoading(false); });
     setAuditLoading(true);
     setAuditError(null);
     void fetchL5ExportAudits()
       .then((value) => { if (alive) setAuditRows(value); })
-      .catch((error) => { if (alive) setAuditError(error instanceof Error ? displayAdminError(error) : "导出记录加载失败"); })
+      .catch((error) => { if (alive) setAuditError(error instanceof Error ? displayAdminReadError(error) : "导出记录加载失败"); })
       .finally(() => { if (alive) setAuditLoading(false); });
     return () => { alive = false; };
   }, [data]);
@@ -189,7 +193,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       pageId="L5"
       title={title}
       summary={summary}
-      actions={canCreateSomething ? <Button icon={<FilePlus2 size={14} aria-hidden />} onClick={() => scrollTo(createRef.current)}>新建导出</Button> : undefined}
+      actions={canCreateSomething && data ? <Button icon={<FilePlus2 size={14} aria-hidden />} onClick={() => scrollTo(createRef.current)}>新建导出</Button> : undefined}
       meta={<span className="rd-toolbar">
         <span>打开页面时读取，不自动刷新</span>
         <Button variant="ghost" size="sm" loading={ctx.biLoading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.reloadBi?.()}>刷新</Button>
@@ -275,8 +279,8 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     },
     facts: (
       <Facts>
-        <Fact k="导出的是什么">{taskTitle(t, exportTypeText)} · <span data-mono="">{t.id}</span></Fact>
         <Fact k="行数" lead={t.rows !== "—"} unit={t.rows !== "—" ? "行" : undefined}>{rowsText(t.rows)}</Fact>
+        <Fact k="导出的是什么">{taskTitle(t, exportTypeText)} · <span data-mono="">{t.id}</span></Fact>
         <Fact k="范围">{reportScopeText(t.scope)}</Fact>
         <Fact k="字段">{operatorCopyText(t.fields)}</Fact>
         <Fact k="脱敏到什么程度" tone="warn">只隐藏用户编码，留前 2 位和后 2 位<Explain label="脱敏到什么程度" content={<><p>用户编码 4 位以内整个写成 ***。</p><p>业务编号、金额、余额、交易时间都是原值；不导出手机号、昵称、备注。系统不允许解密导出。</p></>} /></Fact>
@@ -347,7 +351,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     },
     facts: (
       <Facts>
-        <Fact k="这个账号能导">{exportTypes.map(exportTypeText).join("、")}</Fact>
+        <Fact k="这个账号能导">{aggregateNames(exportTypes)}</Fact>
         <Fact k="时间范围怎么算">关键指标按所选时间窗取数<Explain label="时间范围怎么算" content={<><p>关键指标：按所选的近 1、7、30 天或自选日期（{businessZone().label}业务日，最长 400 天，不含未来）。</p><p>转化与留存：时间范围只记在任务里，不按它筛日期。</p><p>财务：此刻的财务快照，不按时间筛。</p><p>运营：只认「period=…;phase=…」这种写法，其他文字按近一周、全部阶段算。</p></>} /></Fact>
         <Fact k="个人信息">不含，只有汇总值</Fact>
         <Fact k="去哪下载">生成后在下面任务列表下载，不用放行</Fact>
@@ -421,7 +425,6 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       reasonMax: 200,
       businessForm: {
         kind: "multi-field",
-        hint: "地区和版本来自「风险披露」当前生效的设置。",
         fields: [
           { key: "templateCode", label: "报告模板", inputKind: "select", current: templates[0].code, options: templates.map((item) => item.code), optionLabels: Object.fromEntries(templates.map((item) => [item.code, item.label])) },
           { key: "jurisdictionVersion", label: "适用地区 / 披露版本", inputKind: "select", current: disclosureValues[0], options: disclosureValues, optionLabels: Object.fromEntries(disclosures.map((item) => [`${item.jurisdictionCode}|${item.disclosureVersion}`, `${item.jurisdictionName} (${item.jurisdictionCode}) · ${item.disclosureVersion} · ${item.chapterCount}章`])) },
@@ -553,7 +556,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
               {pendingTasks.map((t) => (
                 <PendingCard key={t.id} task={t} title={taskTitle(t, exportTypeText)} source={taskSource(t)}
                   scope={reportScopeText(t.scope)} fields={operatorCopyText(t.fields)}
-                  requester={requesterText(t)} action={approveAction(t)} />
+                  requester={ctx.canApproveExportTasks ? requesterText(t) : undefined} action={approveAction(t)} />
               ))}
             </ul>
           </section>
@@ -618,7 +621,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
             <div className="l5-create-head"><IconTile tone="role-2" icon={FileSpreadsheet} size={28} /><h3 id="l5-create-agg">汇总数据</h3></div>
             <p className="l5-create-what">关键指标、转化与留存、财务、运营四类汇总，不含个人信息</p>
             <RouteFacts rows={[["进任务列表", "进"], ["要放行", "不用"], ["拿到文件", "生成后在任务列表下载", true]]} />
-            {ctx.canExport && exportTypes.length > 0 && <p className="l5-create-types">这个账号能导：{exportTypes.map(exportTypeText).join("、")}</p>}
+            {ctx.canExport && exportTypes.length > 0 && <p className="l5-create-types">这个账号能导：{aggregateNames(exportTypes)}</p>}
             <div className="l5-create-foot"><Button icon={<FileSpreadsheet size={14} aria-hidden />} disabledReason={exportBlocked} onClick={newExport}>导出汇总数据</Button></div>
           </article>
           <article className="l5-create-card" aria-labelledby="l5-create-reg">
