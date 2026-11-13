@@ -60,7 +60,7 @@ export function G4FirstDividendConfirm({ session, epoch, expectedRevision, readA
     effect={<StatusTag tone="progress" filled explain="首次把 0% 改成正数要另一位超级管理员批准；批准前仍是 0%，不发分红。">批准后生效</StatusTag>}
     facts={<Facts>
       <Fact k="现在">0%，未配置，不发分红；批准前不变</Fact>
-      <Fact k="谁来批">另一位超级管理员（需有审批批准权和每日收益比例权限）；你自己不能批</Fact>
+      <Fact k="谁来批">另一位超级管理员（需有审批批准权限和每日收益比例的修改权限）；你自己不能批</Fact>
       <Fact k="批准后">后端再核对一次比例版本和兑付覆盖率，通过后写入新比例；之后新建的分红批次按它算</Fact>
       <Fact k="付不付钱">批准本身不付钱；之后每天发分红时才付 USDT</Fact>
     </Facts>}

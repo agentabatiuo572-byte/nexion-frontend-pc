@@ -4,7 +4,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fmtConfigPct } from "@/lib/format";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { GRecoveryNotice, pendingTag, unknownTag, type GRecoveryRow } from "./g-recovery";
+import { expiredTag, GRecoveryNotice, pendingTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 /**
  * G3 UVT 价格管理（改版，RdPage）。数据来自后端 /api/admin/market/nex/curve 与 /curve/history。
  * 首屏回答「现在价格多少、怎么来的、接下来七天怎么走」：结论一句、四个数、七天计划（走势图 + 逐日表）、最近 24 小时价格和运行方式。
@@ -538,10 +538,11 @@ function G3MarketEditor() {
           ? <ObjectTag state={{ kind: "approval", verification: "last-observation", observedAt: row.createdAt,
               detail: `原审批单 ${row.ticketId} 在等另一位超级管理员批准，批准前不生效。` }} />
           : pendingTag("这次申请批准前不生效。")
-        : unknownTag(row.request.kind === "approval" ? "approval" : "direct"),
+        : g3MarketCommandExpired(row) ? expiredTag(row.request.kind === "approval" ? "approval" : "direct")
+          : unknownTag(row.request.kind === "approval" ? "approval" : "direct"),
       actions: row.ticketId
         ? <Button size="sm" aria-label={`查询${name}的原结果`} onClick={() => void refreshKnownApprovals()}>查询原结果</Button>
-        : <Button size="sm" aria-label={`打开${name}的原操作`} onClick={() => openSavedCommand(row)}>查询或重试</Button>,
+        : <Button size="sm" aria-label={`打开${name}的原操作`} onClick={() => openSavedCommand(row)}>{g3MarketCommandExpired(row) ? "查询原结果" : "查询或重试"}</Button>,
     };
   });
   const recoveryNotice = <GRecoveryNotice label="价格的原操作" rows={recoveryRows}

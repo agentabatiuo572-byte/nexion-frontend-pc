@@ -141,6 +141,7 @@ export default function G4AdminOperations({ ctx, refreshVersion = 0, blocked = f
     // display fallback "false" into an unavoidable first-write conflict.
     const expectedValue = configured == null ? "" : String(configured);
     const help = CONFIG_HELP[definition.key];
+    const currentShown = configShown(definition.key, definition.kind, configured, help?.unit);
     ctx.openActionConfirm({ briefKind: "config", directObject: `operations/config/${encodeURIComponent(definition.key)}`,
       action: `修改创世认购设置 · ${definition.label}`,
       title: `调整${definition.label}`,
@@ -149,7 +150,8 @@ export default function G4AdminOperations({ ctx, refreshVersion = 0, blocked = f
       confirmLabel: "确认修改",
       facts: <Facts>
         <Fact k="改的是">{definition.label}</Fact>
-        {definition.kind !== "number" && <Fact k="现在">{configShown(definition.key, definition.kind, configured, help?.unit)}</Fact>}
+        {/* 开关读到「已开启 / 已关闭」时，下面「现在 → 改后」已写着；没配置或读不懂时只有这里写得出来。 */}
+        {definition.kind !== "number" && !(definition.kind === "select" && ["已开启", "已关闭"].includes(currentShown)) && <Fact k="现在">{currentShown}</Fact>}
         <Fact k="改了会怎样"><KeepText text={help?.effect ?? "—"} /></Fact>
         <Fact k="付不付钱">不付钱；只改设置，不产生用户资产或成交</Fact>
       </Facts>,

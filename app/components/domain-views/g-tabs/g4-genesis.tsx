@@ -707,7 +707,7 @@ function G4GenesisPage() {
                     : dir === "same"
                       ? "和现在一样：直接保存，参数不变"
                       : directionTag}</Fact>
-            {dir === "loose" && <Fact k="谁来批">另一位超级管理员（需有审批批准权和这项参数的修改权限）；你自己不能批</Fact>}
+            {dir === "loose" && <Fact k="谁来批">另一位超级管理员（需有审批批准权限和这项参数的修改权限）；你自己不能批</Fact>}
             {dir === "loose" && <Fact k="批准前">{param.key === "dividend"
               ? `仍是 ${currentText}；待审批期间你还可以把比例调低，调低立即生效，原调高申请随后会被后端拒绝`
               : `仍是 ${currentText}；这一项被审批锁住，调高调低都改不了`}</Fact>}
