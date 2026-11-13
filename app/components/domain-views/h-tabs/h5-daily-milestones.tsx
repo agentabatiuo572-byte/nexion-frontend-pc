@@ -276,7 +276,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     openActionConfirm({ briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
       action: `连签里程碑 · ${milestone.day}`,
       title: `改连签 ${milestone.day}奖励`,
-      detail: <>当前奖励 <b>{operatorCopyText(milestone.reward)}</b>。数量变多或换成别的资金、转盘票要另一位超级管理员批准；变少、不变、改成徽章立即生效。</>,
+      detail: <>当前奖励 <b>{operatorCopyText(milestone.reward)}</b>。</>,
       effect: <StatusTag tone="neutral" icon={ArrowUpDown} explain={<>
         <p>数量变多，或换成 UVT、USDT、转盘票里别的一种：提交审批，{FUND_APPROVER}批准后才生效，提交人不能批自己的。</p>
         <p>数量变少或不变、改成徽章：确认后立即生效。方向按后端记的真实种类和数量判断，不看名称里的数字。</p>
@@ -469,7 +469,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     <PageHeader
       pageId="H5"
       title="签到与UVT奖励"
-      summary="看签到的人多不多、用户签到一天拿多少；维护签到奖励、连签奖励、成长权益和收益里程碑。"
+      summary="看签到情况和用户签到拿多少，维护签到和奖励规则。"
       meta={readAt ? <span className="rd-toolbar">
         <span>{`${businessClock(readAt)} 读取（${businessZone().label}）· 打开时读取`}</span>
         <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reload()}>刷新</Button>
@@ -609,7 +609,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         explain="每天签到给多少、抽倍率的机会多大。改动都要提交审批，另一位管理员批准后才生效；批准前仍按现在的值发。">
         {signRules.length
           ? <ConfigList label="签到规则">{signRules.map(ruleRow)}</ConfigList>
-          : <BlockState state="empty" title="没有读到签到规则" detail="也可能是后端读取失败返回了空，这页分不出来；刷新后还是空请联系值班同事。" />}
+          : <BlockState state="empty" title="没有读到签到规则" detail="也可能是读取失败，这页分不出来。" />}
       </Panel>
     ),
     streak: (
@@ -638,7 +638,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 disabledReason={pending ? "这一档有等批准的申请，审批结束前不能再提交" : undefined} onClick={() => openStreak(milestone)}>改奖励</Button> : undefined,
             };
           })} />
-          : <BlockState state="empty" title="还没有连签奖励" detail="也可能是后端读取失败返回了空，这页分不出来。" />}
+          : <BlockState state="empty" title="还没有连签奖励" detail="也可能是读取失败，这页分不出来。" />}
         <ChartLegend items={[
           { key: "fund", slot: 4, label: "UVT、USDT、转盘票：数量变多要批准" },
           { key: "badge", slot: "other", label: "徽章：只能改文字，立即生效" },
@@ -665,9 +665,9 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               name: multiplier ? `签到奖励 ×${text(powerUp.note, "—")}` : `前往${rewardDestination(powerUp.downstream)}`,
               value: Number(powerUp.day),
               valueText: countText(powerUp.day),
-              secondary: retired ? "现在用不了，已获得的记录保留"
-                : unknown ? "暂时无法确认能不能用"
-                : multiplier ? "激活后每天的签到奖励再乘它" : operatorCopyText(text(powerUp.sub, "")),
+              secondary: retired ? "用不了，已获得的保留"
+                : unknown ? "暂时确认不了能不能用"
+                : multiplier ? "激活后生效" : "解锁后可进入",
               mark: retired ? "业务已停用" : unknown ? "状态未知" : pending ? "待审批" : undefined,
               actions: canWrite && !retired
                 ? <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`调整成长奖励 ${operatorCopyText(powerUp.label)}（${powerUp.day} 天）`}
@@ -675,7 +675,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 : canWrite && retired ? <span className="h5-readonly">只读</span> : undefined,
             };
           })} />
-          : <BlockState state="empty" title="还没有成长权益" detail="也可能是后端读取失败返回了空，这页分不出来。" />}
+          : <BlockState state="empty" title="还没有成长权益" detail="也可能是读取失败，这页分不出来。" />}
       </Panel>
     ),
     earn: (
@@ -700,7 +700,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 disabledReason={pending ? "这一档有等批准的申请，审批结束前不能再提交" : undefined} onClick={() => openEarn(milestone)}>调整</Button> : undefined,
             };
           })} />
-          : <BlockState state="empty" title="还没有收益里程碑" detail="也可能是后端读取失败返回了空，这页分不出来；这页不能新增档位。" />}
+          : <BlockState state="empty" title="还没有收益里程碑" detail="也可能是读取失败，这页分不出来。" />}
       </Panel>
     ),
     idle: (
@@ -801,7 +801,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         </Panel>
 
         <Panel title="连签人数分布" icon={BarChart3} tone="role-3"
-          sub={distribution.length ? `${countText(distributionTotal)} 人 · 按连签天数${distribution.length >= 30 ? " · 只列前 30 组" : ""}` : undefined}
+          sub={distribution.length ? `${countText(distributionTotal)} 人 · 按连签天数${distribution.length >= 30 ? " · 只列前 30 组" : ""}` : `近 7 天补救记录 ${stats.weekRevive == null ? "—" : `${countText(stats.weekRevive)} 条`}`}
           explain={<>
             <p>每个有连签记录的人按现在记下的连签天数分组。看它能判断大部分人签几天就断了。</p>
             <p>断签的人要等下次签到才从第 1 天重新算，在那之前还算在原来的天数里。最多列 30 组，天数更长的不列。</p>
@@ -814,7 +814,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 series={[{ label: "人数", slot: 3 }]} format={(value) => `${countText(value)} 人`} axisFormat={(value) => countText(value)} />
               <p className="h5-note">{topGroup ? `最多的是连签 ${topGroup.day}，${countText(topGroup.count)} 人` : ""}{` · 近 7 天补救记录 ${stats.weekRevive == null ? "—" : `${countText(stats.weekRevive)} 条`}`}</p>
             </div>
-            : <BlockState state="empty" title="还没有人在连签" detail={`有人签到后会按连签天数分组显示；也可能是后端读取失败返回了空，这页分不出来。近 7 天补救记录 ${stats.weekRevive == null ? "—" : `${countText(stats.weekRevive)} 条`}。`} />}
+            : <BlockState state="empty" title="还没有人在连签" detail="也可能是读取失败，这页分不出来。" />}
         </Panel>
       </div>
 
