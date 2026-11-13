@@ -139,7 +139,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
 
   const header = (actionsSlot?: ReactNode) => (
     <PageHeader pageId="J4" title="监管要求应急处理"
-      summary={<AutoGloss>出事时按事先写好的应急预案一步步止损，平时维护预案、做演练。</AutoGloss>}
+      summary={<AutoGloss>出事时按预案一步步止损；平时维护预案和演练。</AutoGloss>}
       actions={actionsSlot}
       meta={<span className="rd-toolbar">
         {readAt && <span>{readAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动更新；操作成功后自动重读一次。审批通过后这页不会自己变，要点「刷新」。" /></span>}
@@ -714,7 +714,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       {(data.actionOptions ?? []).length === 0
         ? <BlockState state="empty" compact title="没有可用的动作" detail="请刷新；仍然没有请联系值班人员。" />
         : <Table label="预案能用的动作" className="j4-action-table">
-          <thead><tr><Th>动作</Th><Th>在哪个页面</Th><Th>对象</Th><Th>收得回吗</Th></tr></thead>
+          <thead><tr><Th>动作</Th><Th>在哪个页面</Th><Th>对象</Th><Th align="right">收得回吗</Th></tr></thead>
           <tbody>
             {(data.actionOptions ?? []).map((item) => {
               const info = stepInfo({ dom: item.domain, ax: item.action, ref: item.ref?.replace("{target}", "") ?? null });
@@ -722,7 +722,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
                 <Td><Cell main={info.title} sub={info.impact} title={info.impact} /></Td>
                 <Td>{info.page}</Td>
                 <Td>{item.parameterLabel ? item.parameterLabel.replace("ISO 两位国家码", "两位国家代码").replace("用户数字 ID", "用户数字编号").replace("账户簇 ID", "账户组编号") : item.domain === "I3" ? "预案绑定的通知活动" : "整个业务"}</Td>
-                <Td><UndoTag info={info} /></Td>
+                <Td align="right"><UndoTag info={info} /></Td>
               </Tr>;
             })}
           </tbody>

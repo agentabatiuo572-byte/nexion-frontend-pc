@@ -410,6 +410,7 @@ export function PlaybookEditor({ spec, onClose }: { spec: EditorSpec; onClose: (
       </section>
 
       <Field label="通知活动" required={hasNotifyStep} hint="步骤里有「发送通知活动」时必选"
+        help={spec.notifyTemplatesError && draft.notifyCampaignNo ? <>已绑定 <span data-mono="">{draft.notifyCampaignNo}</span>：候选读不到不代表绑定不存在。</> : undefined}
         explain="只能选已排期的通知活动。保存预案不会新建或发送通知；正式执行到这一步时才按活动设定的受众发送。">
         {(control) => spec.notifyTemplatesError
           ? <Notice tone="warn">通知活动读不到或没有查看权限，其他步骤不受影响；要发通知请联系管理员。</Notice>
@@ -423,9 +424,8 @@ export function PlaybookEditor({ spec, onClose }: { spec: EditorSpec; onClose: (
                 onSelect={(value) => { const item = spec.notifyTemplates.find((row) => row.value === value); if (item) set({ notifyCampaignNo: item.value, notifyTemplate: item.label, notifySearch: item.label }); }} />
             </div>}
       </Field>
-      {spec.notifyTemplatesError && draft.notifyCampaignNo && <p className="j4-editor-note">已绑定 <span data-mono="">{draft.notifyCampaignNo}</span>：候选读不到不代表绑定不存在。</p>}
 
-      <Field label="回滚方案" required explain="执行后恢复时按这个方案做。现在只能恢复这次关停的提现、创世节点这类开关，其他步骤收不回。">
+      <Field label="回滚方案" required help={selectedRollback?.plan} explain="执行后恢复时按这个方案做。现在只能恢复这次关停的提现、创世节点这类开关，其他步骤收不回。">
         {(control) => spec.rollbackOptions.length === 0
           ? <Notice tone="warn">没有可用的回滚方案，请刷新后重试。</Notice>
           : <div data-proof="sop-rollback-template-select">
@@ -436,7 +436,6 @@ export function PlaybookEditor({ spec, onClose }: { spec: EditorSpec; onClose: (
               onSelect={(value) => { const item = spec.rollbackOptions.find((row) => row.value === value); if (item) set({ rollbackTemplate: item.value, rollback: item.plan, rollbackSearch: item.label }); }} />
           </div>}
       </Field>
-      {selectedRollback && <p className="j4-editor-note">{selectedRollback.plan}</p>}
       <Check label="保存后先演练，演练通过才能正式执行" checked readOnly disabled data-proof="sop-drill" />
     </Modal>
   );
