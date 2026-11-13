@@ -231,7 +231,7 @@ export function M6Leaderboard() {
           {visibleDetail.error && <Button onClick={() => openDetail(visibleDetail.agentId)}>重试</Button>}
           {detailRow && privateRead && detailRow.canViewCustomers && <Button variant="primary" onClick={() => customers(detailRow)}>查看当前绑定客户</Button>}
         </>}>
-        {!visibleDetail.data ? <BlockState state={visibleDetail.error ? "error" : "loading"} title={visibleDetail.error ?? "正在读取成绩…"} />
+        {!visibleDetail.data ? <Notice tone={visibleDetail.error ? "danger" : "progress"}>{visibleDetail.error ?? "正在读取成绩…"}</Notice>
           : detailRow && <PerformanceBody row={withPhoto(detailRow)} board={board} month={visibleDetail.data.referenceMonth} places={amountPlaces([detailRow.amount.value])} asOf={asOf(visibleDetail.data)}
             stale={visibleDetail.data.stale} refreshFailed={visibleDetail.data.refreshFailed} privateRead={privateRead} />}
       </Modal>}
