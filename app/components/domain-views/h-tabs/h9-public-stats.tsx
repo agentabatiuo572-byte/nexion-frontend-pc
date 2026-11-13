@@ -412,7 +412,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     const defaultable = DEFAULTABLE.includes(module);
     const isDefault = defaultable && h9DraftText(values[key]) === h9DraftText(data.defaults[key]) && values[key] !== undefined;
     const unit = MONEY_KEYS.has(key) ? PAID_UNIT : field.unit;
-    const range = MONEY_KEYS.has(key) ? `${paid(field.min)}–${paid(field.max)}` : `${count(field.min)}–${count(field.max)} ${unit}${field.integer ? "，整数" : ""}`;
+    const range = MONEY_KEYS.has(key) ? `$${count(field.min)}–$${count(field.max)}` : `${count(field.min)}–${count(field.max)} ${unit}${field.integer ? "，整数" : ""}`;
     const defaultText = defaultable && !isDefault ? `默认 ${data.defaults[key] == null ? "不发布" : `${count(data.defaults[key])} ${field.unit}`}` : "";
     return <Field key={key} label={<>{FIELD_COPY[key].name}{isDefault && <StatusTag tone="neutral">默认值</StatusTag>}</>}
       explain={FIELD_COPY[key].what} hint={range}
