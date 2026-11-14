@@ -70,6 +70,9 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
 
   const [showAddFaq, setShowAddFaq] = useState(false);
   const [editFaq, setEditFaq] = useState<SupportFaq | null>(null);
+  useEffect(() => {
+    if (!recovery) setEditFaq(current => current ? faqs.find(faq => faq.id === current.id) ?? current : current);
+  }, [faqs, recovery]);
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<"all" | SupportFaq["category"]>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | SupportFaq["status"]>("all");

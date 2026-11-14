@@ -127,7 +127,12 @@ export default function DualLedgerPage() {
   const pendingApproval = session ? pendingThresholdConfigApproval("B1", session.adminId) : undefined;
   useEffect(() => { setPendingRevision(value => value + 1); }, [session?.adminId]);
   useEffect(() => {
-    if (bDomain.hasData && !bDomain.loading && !bDomain.error) setNeedsRead(false);
+    if (bDomain.hasData && !bDomain.loading && !bDomain.error) {
+      setNeedsRead(false);
+      setActionConfirm(current => current?.kind === "threshold" && !current.original && !current.approvalRecovery
+        && current.baseline.thresholdVersion !== bDomain.ledger.thresholdVersion
+        ? { ...current, baseline: bDomain.ledger, facts: undefined } : current);
+    }
   }, [bDomain.data, bDomain.hasData, bDomain.loading, bDomain.error]);
   const [showZero, setShowZero] = useState(false);
   const [exposureWindow, setExposureWindow] = useState<"7d" | "30d" | "90d">("30d");
@@ -279,7 +284,11 @@ export default function DualLedgerPage() {
     setNeedsRead(true);
     setExposureRevision(value => value + 1);
     const next = await bDomain.reload();
-    if (next) setNeedsRead(false);
+    if (next) {
+      setNeedsRead(false);
+      setActionConfirm(current => current?.kind === "threshold" && !current.original && !current.approvalRecovery
+        ? { ...current, baseline: next.ledger, facts: undefined } : current);
+    }
     return next;
   };
   const readActive = async () => {
@@ -347,7 +356,10 @@ export default function DualLedgerPage() {
           if (!Number.isFinite(redline) || redline < 80 || redline > 150) throw new Error("红线必须在 80%–150%");
           if (!Number.isFinite(healthy) || healthy < 100 || healthy > 200) throw new Error("健康线必须在 100%–200%");
           if (healthy <= redline) throw new Error("健康线必须高于红线");
-          if (current.baseline.thresholdVersion !== LEDGER.thresholdVersion) throw new Error("当前阈值已更新，请关闭弹窗后重新调整。");
+          if (current.baseline.thresholdVersion !== LEDGER.thresholdVersion) {
+            setActionConfirm({ ...current, baseline: LEDGER, facts: undefined, draft: form, draftReason: reason });
+            throw new Error("当前阈值已更新，请核对后再保存。");
+          }
           if (redline < current.baseline.redlinePct) {
             if (current.baseline.thresholdVersion === null) throw new Error("暂未取得当前阈值版本，请刷新后重试。");
             await submitThresholdApproval(reason, form);
@@ -386,11 +398,15 @@ export default function DualLedgerPage() {
         }
         throw error;
       } finally { syncPending(); }
+      const success = current.kind === "threshold" ? "红线和健康线已更新"
+        : current.kind === "injection" ? "储备注入已登记" : "已标记为已处理";
+      setToast(success);
       setActionConfirm(null);
       const refreshed = await refreshB1();
       if (refreshed) setToast(current.kind === "threshold"
         ? `已更新 · 红线 ${fmtConfigPct(refreshed.ledger.redlinePct)} / 健康线 ${fmtConfigPct(refreshed.ledger.healthyPct)}`
         : current.kind === "injection" ? refreshed.ledger.valuationReliable ? "储备注入已登记，覆盖率已重算" : "储备注入已登记；UVT 暂时无法估值，覆盖率算不出" : "已标记为已处理");
+      else setToast(`${success}；当前数据读取失败，新的修改暂不可用。`);
     } catch (err) {
       if (current.kind === "export") {
         const message = displayAdminReadError(err instanceof DOutcomeUnknownError ? "B1_EXPORT_FAILED" : err);
@@ -726,7 +742,7 @@ export default function DualLedgerPage() {
   const factWhen = mc?.original || mc?.facts ? "提交时" : "现在";
   const coverageFact = dialogFacts.valuationReliable ? <Fact k={`${factWhen}的覆盖率`} tone={dialogCoverTone}>{pctText(dialogFacts.coverageRatio)}</Fact> : <Fact k={`${factWhen}的覆盖率`}>{TREASURY_VALUATION_UNAVAILABLE}</Fact>;
   const dialog = mc && (
-    <OperationConfirmModal key={mc.idempotencyKey} blockedReason={mc.original ? !writePermission(mc.original.kind) ? "当前账号没有此操作权限，请重新读取权限后核对原操作。" : undefined : mc.approvalRecovery ? undefined : mc.kind !== "export" && newWriteBlocked ? "请先重新读取并核对原操作，再发起新修改。" : undefined} briefKind={mc.kind === "export" ? "export" : mc.kind === "threshold" ? "config" : mc.kind === "injection" ? "funds" : "record"}
+    <OperationConfirmModal key={mc.idempotencyKey} businessFormRevision={mc.kind === "threshold" ? mc.baseline.thresholdVersion : undefined} blockedReason={mc.original ? !writePermission(mc.original.kind) ? "当前账号没有此操作权限，请重新读取权限后核对原操作。" : undefined : mc.approvalRecovery ? undefined : mc.kind !== "export" && newWriteBlocked ? "请先重新读取并核对原操作，再发起新修改。" : undefined} briefKind={mc.kind === "export" ? "export" : mc.kind === "threshold" ? "config" : mc.kind === "injection" ? "funds" : "record"}
       action={
         mc.kind === "threshold"
           ? "设置兑付覆盖率红线和健康线"
@@ -799,9 +815,7 @@ export default function DualLedgerPage() {
       } : thresholdBaseline ? {
         pending: !!pendingApproval,
         expired: !!pendingApproval && pendingApproval.expiresAt <= Date.now(),
-        disabledReason: pendingApproval && !canConfigureThresholds ? "当前账号缺少设置兑付覆盖率阈值的权限。" : !pendingApproval && thresholdBaseline.thresholdVersion !== LEDGER.thresholdVersion
-          ? "当前阈值已更新，请关闭弹窗后重新调整。"
-          : undefined,
+        disabledReason: pendingApproval && !canConfigureThresholds ? "当前账号缺少设置兑付覆盖率阈值的权限。" : undefined,
         resolve: (value) => pendingApproval || value.redlinePct?.trim() && round2(Number(value.redlinePct)) < thresholdBaseline.redlinePct ? {
           coverageCheckCopy: "提交和批准时都按拟调整的红线校验覆盖率。",
           completionCopy: pendingApproval ? `提交时红线是 ${fmtConfigPct(thresholdBaseline.redlinePct)}；批没批以查询原审批单为准。` : `另一位超级管理员批准前，红线仍是 ${fmtConfigPct(thresholdBaseline.redlinePct)}。`,

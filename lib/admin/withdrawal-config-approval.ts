@@ -187,11 +187,15 @@ export async function submitB5ThresholdApproval<T>(
     ticket = await queryOriginal();
     if (!ticket) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
   }
-  const active = await readActive();
+  let active: T | null = null;
+  let activeReadFailed = false;
+  try { active = await readActive(); }
+  catch { activeReadFailed = true; }
   if (ticket.status !== "pending") attempts.forget(slot, key);
-  return { active, ticket, acknowledgement: ticket.status === "pending"
+  return { active, activeReadFailed, ticket, acknowledgement: (ticket.status === "pending"
     ? `已提交审批 · 审批单 ${ticket.id} · 等待另一位超级管理员批准`
-    : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果` };
+    : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果`)
+      + (activeReadFailed ? "；当前数据读取失败，新的修改暂不可用。" : "") };
 }
 
 /** Call only after the existing confirmation UI confirms R1-提案过期 release. */
@@ -263,11 +267,15 @@ export async function submitB1ThresholdApproval<T>(
     if (!ticket) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
   }
   // Re-read current data. A successful replay must never publish its old snapshot.
-  const active = await readActive();
+  let active: T | null = null;
+  let activeReadFailed = false;
+  try { active = await readActive(); }
+  catch { activeReadFailed = true; }
   if (ticket.status !== "pending") attempts.forget(slot, key);
-  return { active, ticket, acknowledgement: ticket.status === "pending"
+  return { active, activeReadFailed, ticket, acknowledgement: (ticket.status === "pending"
     ? `已提交审批 · 审批单 ${ticket.id} · 等待另一位超级管理员批准`
-    : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果` };
+    : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果`)
+      + (activeReadFailed ? "；当前数据读取失败，新的修改暂不可用。" : "") };
 }
 
 export function configApprovalOriginalInput(sourceDomain: "H8", input: string): H8ConfigApprovalInput;

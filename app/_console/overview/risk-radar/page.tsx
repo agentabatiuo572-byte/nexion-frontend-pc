@@ -214,6 +214,11 @@ export default function RiskRadarPage() {
   const pendingApproval = session && pendingThresholdConfigApproval("B5", session.adminId);
   const requiresApproval = !thresholdOriginal && (!!pendingApproval || !!threshold && redPct > threshold.redPct);
   const staleThreshold = !thresholdOriginal && !approvalRecovery && !!threshold && radar.data?.bankrun.version !== threshold.version;
+  useEffect(() => {
+    if (radar.data && !thresholdOriginal && !approvalRecovery && !savingThreshold) {
+      setThreshold(current => current && current.version !== radar.data!.bankrun.version ? radar.data!.bankrun : current);
+    }
+  }, [radar.data, thresholdOriginal, approvalRecovery, savingThreshold]);
   const thresholdVersion = threshold?.version;
   const ratio24h = radar.data?.bankrun.ratio24h;
   const withdraw24hUsdt = radar.data?.bankrun.withdraw24hUsdt;
@@ -235,6 +240,7 @@ export default function RiskRadarPage() {
     void submitB5ThresholdApproval(session, pendingApproval.values, pendingApproval.reason, fetchB5Radar, "query")
       .then((result) => {
         if (alive && result?.ticket.status === "pending") setApprovalVerifiedKey(pendingApproval.commandKey);
+        if (alive && result?.activeReadFailed) { setNeedsFreshRadar(true); setToast(result.acknowledgement); }
         if (alive && result && result.ticket.status !== "pending") {
           setThreshold(null); setApprovalRecovery(null); setNeedsFreshRadar(true); void radar.reload();
         }
@@ -287,6 +293,15 @@ export default function RiskRadarPage() {
     await radar.reload();
   };
 
+  useEffect(() => {
+    if (!statusOriginal && !updatingSignal && radar.data) {
+      setStatusDialog(current => {
+        const latest = current && radar.data!.recentAlerts.find(alert => alert.signalNo === current.alert.signalNo);
+        return current && latest && latest !== current.alert ? { ...current, alert: latest } : current;
+      });
+    }
+  }, [radar.data, statusOriginal, updatingSignal]);
+
   const changeSignalStatus = async (alert: B5Radar["recentAlerts"][number], targetStatus: "handled" | "resolved", input: string) => {
     const reason = input.trim();
     if (!session || !canTriage || updatingSignal || (!statusOriginal && newWriteBlocked)) return;
@@ -306,7 +321,10 @@ export default function RiskRadarPage() {
       setStatusUnknown(false);
       setToast(`已标记为${STATUS_TEXT[targetStatus]}：${original.facts.message}`);
     } catch (cause) {
-      if (!statusOriginal && isBCommandRejection(cause, false)) { setStatusOriginal(null); setStatusUnknown(false); }
+      if (!statusOriginal && isBCommandRejection(cause, false)) {
+        setStatusOriginal(null); setStatusUnknown(false); setNeedsFreshRadar(true);
+        await radar.reload();
+      }
       else if (isExplicitRejection(cause)) { await refreshAfterWrite(); setStatusUnknown(false); }
       else setStatusUnknown(!!original);
       setStatusError(displayAdminError(cause));
@@ -330,7 +348,7 @@ export default function RiskRadarPage() {
       setInboxReload((value) => value + 1);
       setToast(`已确认：${delivery.signalNo}`);
     } catch (cause) {
-      if (isExplicitRejection(cause)) { setInboxNeedsRead(true); setInboxReload((value) => value + 1); }
+      setInboxNeedsRead(true); setInboxReload((value) => value + 1);
       setToast(displayAdminError(cause));
     } finally { setAcknowledgingDelivery(null); syncPending(value => value + 1); }
   };
@@ -392,6 +410,7 @@ export default function RiskRadarPage() {
     if (!session || !pendingApproval) return;
     try {
       const result = await submitB5ThresholdApproval(session, pendingApproval.values, pendingApproval.reason, fetchB5Radar, "query");
+      setApprovalVerifiedKey(result?.ticket.status === "pending" ? pendingApproval.commandKey : null);
       setToast(result?.acknowledgement ?? "暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
       if (result) { setThreshold(null); setNeedsFreshRadar(true); await radar.reload(); }
       else setApprovalRecovery("retry");
@@ -409,6 +428,7 @@ export default function RiskRadarPage() {
         const result = await submitB5ThresholdApproval(session, pendingApproval?.values ?? { expectedVersion: threshold.version, yellowPct, redPct },
           pendingApproval?.reason ?? reason.trim(), fetchB5Radar, pendingApproval ? "retry" : "new", facts);
         if (!result) return;
+        setApprovalVerifiedKey(result.ticket.status === "pending" ? pendingThresholdConfigApproval("B5", session.adminId)?.commandKey ?? null : null);
         setToast(result.acknowledgement);
       } else {
         original ??= rememberB5Command(String(session.adminId), THRESHOLD_SLOT, "b5-threshold", {
@@ -424,12 +444,12 @@ export default function RiskRadarPage() {
     } catch (cause) {
       const rejected = isBCommandRejection(cause, !!thresholdOriginal || !!pendingApproval);
       if (rejected) {
-        const approvalRequired = cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "B5_BANKRUN_THRESHOLDS_APPROVAL_REQUIRED";
-        if (thresholdOriginal || pendingApproval || approvalRequired) await refreshAfterWrite();
-        else { setThresholdOriginal(null); setApprovalRecovery(null); }
-        if (approvalRequired) {
-          const fresh = await fetchB5Radar();
-          setThreshold(fresh.bankrun); setApprovalRecovery(null);
+        if (thresholdOriginal || pendingApproval) await refreshAfterWrite();
+        else {
+          setThresholdOriginal(null); setApprovalRecovery(null); setPreview(null);
+          setNeedsFreshRadar(true);
+          const fresh = await radar.reload();
+          if (fresh) setThreshold(fresh.bankrun);
         }
       } else if (requiresApproval && pendingThresholdConfigApproval("B5", session.adminId)) setApprovalRecovery("lookup");
       setThresholdUnknown(!!original && !rejected);
@@ -727,7 +747,7 @@ export default function RiskRadarPage() {
         );
         const subscriptionConflict = subscriptionDraftPreserved && !subscriptionOriginal && !subscriptionLoading && !subscriptionError;
         return (
-        <Modal title="告警订阅" icon={BellRing} busy={savingSubscription} dirty={subscriptionChanged}
+        <Modal title="告警订阅" icon={BellRing} busy={savingSubscription} dirty={subscriptionChannelsChanged}
           sub={<StatusTag tone="progress" filled>立即生效</StatusTag>}
           onClose={() => setSubscriptionOpen(false)}
           footer={<>
