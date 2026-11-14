@@ -107,7 +107,7 @@
 /* 标题栏的三个点贴到右边线，和表格行内同一个做法，图标按钮自带的留白不算。 */
 .idom .rd-panel-actions > .rd-iconbtn:last-child { margin-right: -8px; }
 
-/* ============================ I2 Nova 消息推送（.i2-page 一段：频道卡、App 消息样子、概率条、三语并排、事件详情） ============================ */
+/* ============================ I2 消息推送（.i2-page 一段：频道卡、App 消息样子、概率条、三语并排、事件详情） ============================ */
 .i2-page { display: contents; }
 .i2-page .i2-muted { color: var(--rd-text-3); }
 .i2-sentence { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
@@ -122,7 +122,7 @@
 .i2-channel-title { display: grid; gap: 2px; min-width: 0; }
 .i2-channel-title b { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); overflow-wrap: anywhere; }
 .i2-channel[data-off] .i2-channel-title b { color: var(--rd-text-2); }
-.i2-channel-source { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); overflow-wrap: anywhere; }
+.i2-channel-source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .i2-channel-warn { display: flex; flex-wrap: wrap; gap: var(--rd-space-2); }
 .i2-channel-rows { display: grid; gap: var(--rd-space-2); margin: 0; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
 .i2-channel-rows > div { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: var(--rd-space-2); align-items: start; }
@@ -134,26 +134,29 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i2-channel-key { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 
 /* App 里 Nova 消息的样子：通知列表的一行，照 App 消息中心的排法。 */
-.i2-phone { display: grid; align-content: start; margin: 0; overflow: hidden; border: 1px solid var(--rd-line); border-radius: 14px; background: var(--rd-bg); }
+.i2-phone { display: grid; align-content: start; gap: var(--rd-space-2); margin: 0; overflow: hidden; border: 1px solid var(--rd-line); border-radius: 14px; background: var(--rd-bg); }
 .i2-phone-bar { padding: var(--rd-space-2) var(--rd-space-3); border-bottom: 1px solid var(--rd-line); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-medium); color: var(--rd-text-3); }
-.i2-phone-row { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--rd-space-2); padding: var(--rd-space-3); }
+.i2-phone-row { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--rd-space-2); padding: 0 var(--rd-space-3) var(--rd-space-3); }
 .i2-phone-icon { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--rd-role-2-tile); color: var(--rd-role-2-tile-ink); }
-.i2-phone-main { display: grid; gap: 4px; min-width: 0; justify-items: start; }
+/* 图标按 App 通知的类别：资金金、设备青、团队紫、活动品红、系统灰。 */
+.i2-phone-icon[data-category="finance"] { background: var(--rd-role-1-tile); color: var(--rd-role-1-tile-ink); }
+.i2-phone-icon[data-category="team"] { background: var(--rd-role-3-tile); color: var(--rd-role-3-tile-ink); }
+.i2-phone-icon[data-category="rewards"] { background: var(--rd-role-4-tile); color: var(--rd-role-4-tile-ink); }
+.i2-phone-icon[data-category="system"] { background: var(--rd-role-other-tile); color: var(--rd-role-other-tile-ink); }
+.i2-phone-main { display: grid; gap: var(--rd-space-2); min-width: 0; justify-items: start; }
 .i2-phone-top { display: flex; justify-content: space-between; gap: var(--rd-space-2); width: 100%; }
 .i2-phone-top b { min-width: 0; font-weight: var(--rd-weight-semibold); overflow-wrap: anywhere; }
 .i2-phone-top span { flex: none; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .i2-phone-body { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .i2-phone-cta { display: inline-flex; margin-top: 4px; padding: 2px 10px; border: 1px solid var(--rd-line-strong); border-radius: 999px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text); }
-.i2-phone-missing { margin: 0; padding: var(--rd-space-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.i2-phone-missing { margin: 0; padding: 0 var(--rd-space-3) var(--rd-space-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 
-/* 三语并排：每种语言一列，输入（或原文）在上，App 里的样子在下，三列对着比。 */
-.i2-langs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--rd-space-4); align-items: start; }
-@container (max-width: 600px) { .i2-langs { grid-template-columns: minmax(0, 1fr); } .i2-lang + .i2-lang { margin-top: var(--rd-space-4); } }
-.i2-lang { display: grid; gap: var(--rd-space-3); min-width: 0; }
-/* 三列共用行线：标题、输入（或原文）、App 样子各占一行，三种语言的预览对齐在同一高度。 */
-.i2-langs:has(> .i2-lang[data-rows]) { row-gap: 0; }
-.i2-lang[data-rows="3"] { grid-row: span 3; grid-template-rows: subgrid; }
-.i2-lang[data-rows="4"] { grid-row: span 4; grid-template-rows: subgrid; }
+/* 三种语言上下三行：每行左边是标题正文（输入或原文），右边是这种语言在 App 里的样子，行和行之间一条线。 */
+.i2-langs { display: grid; gap: var(--rd-space-4); }
+.i2-lang { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: var(--rd-space-5); row-gap: var(--rd-space-3); align-items: start; min-width: 0; padding-top: var(--rd-space-4); border-top: 1px solid var(--rd-line); }
+.i2-lang > :not(.i2-phone) { grid-column: 1; }
+.i2-lang > .i2-phone { grid-column: 2; grid-row: 1 / span 4; }
+@container (max-width: 560px) { .i2-lang { grid-template-columns: minmax(0, 1fr); } .i2-lang > .i2-phone { grid-column: 1; grid-row: auto; } }
 .i2-lang-head { display: flex; align-items: center; gap: var(--rd-space-2); margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
 .i2-lang-text { display: grid; align-content: start; gap: var(--rd-space-2); margin: 0; }
 .i2-lang-text dt { font-size: var(--rd-text-aux); color: var(--rd-text-3); }

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * I2 Nova 消息推送（改版页）。Nova 把平台上真实发生的事做成动态消息推给 App 用户；运营在这里管频道、
+ * I2 消息推送（改版页，原名 Nova 消息推送）。服务端把平台上真实发生的事做成业务推送，发到 App「消息 · 通知」；运营在这里管频道、
  * 中越英模板、五类事件概率和真实事件素材。16 个写动作都直接生效，不走审批（见重构说明「写操作合同」）。
  * 统一来源：后端 /content/nova/overview 和 /social-events；空库时保持后端空态，不补前端业务样例。
  * 请求、校验、命令号和结果处理照改版前的写法（runBackend、两类共用确认框），这里只换界面。
@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 import { Ban, Database, Eye, FileText, History, Pencil, Percent, Plus, Power, PowerOff, Radio, RefreshCw, RotateCcw, Send, Shuffle, Timer, Trash2 } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IrreversibleTag, MoreMenu, Notice,
-  PageHeader, Pager, Panel, SegmentBar, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, DiffList,
+  PageHeader, PageTabs, Pager, Panel, SegmentBar, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, DiffList, useTabIds,
 } from "@/app/components/rd";
 import { PaginationExemptionList, useDataListPager } from "../design-kit";
 import {
@@ -28,7 +28,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import type { NovaSocialEventSampleView } from "@/lib/admin/i-client";
 import {
   AppNotice, ChannelCard, DIST_SLOT, NO_SOURCE, PHASE_CHANNELS, PhaseNote, SOCIAL_CHANNEL, TEMPLATE_STATE_TEXT, TemplateTag,
-  catalogName, channelName, cooldownSentence, readable, orderDist, placeholdersOf, previewText, sourceText, tickSentence,
+  catalogName, channelName, cooldownSentence, noticeCategory, readable, orderDist, placeholdersOf, previewText, sourceText, tickSentence,
 } from "./i2-parts";
 import { ChannelDrawer, DistDrawer, TemplateDrawer, UNREACHABLE_CTA, UNREACHABLE_TEXT, ctaLabel, type ChannelFormValue, type TemplateFormValue } from "./i2-forms";
 
@@ -152,7 +152,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         cooldown: cd,
         ctr: prev?.ctr ?? 0,
         enabled: prev?.on ?? true,
-      }, "后台编辑 消息频道"), `消息频道已更新:${prev?.name ?? editNovaKey} → ${name}`, closeDrawer);
+      }, "后台编辑 消息频道"), `消息频道已更新:${prev?.name ?? editNovaKey} → ${name}`, closeDrawer).catch(() => undefined);
     } else {
       const key = `${slug(name).slice(0, 50)}-${Date.now().toString(36).slice(-6)}`;
       runBackend(actions.createI2NovaChannel({
@@ -163,7 +163,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         cooldown: cd,
         ctr: 0,
         enabled: false,
-      }, "后台新增 消息频道"), `消息频道已新增:${name}`, closeDrawer);
+      }, "后台新增 消息频道"), `消息频道已新增:${name}`, closeDrawer).catch(() => undefined);
     }
   };
 
@@ -178,7 +178,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   // ── 单频道 停用 / 启用:走操作确认(不传 edit) ──
   const toggleNova = (n: OpsNova) => openActionConfirm({ briefKind: "config",
     action: <>{n.on ? "停推" : "恢复"} 消息频道 · {n.name}</>,
-    title: `${n.on ? "停用" : "启用"}频道 · ${channelName(n.key, n.name)}`,
+    title: `${n.on ? "停用" : "启用"}频道`,
     detail: n.on
       ? <>停用后系统扫描时跳过这个频道，不再给它生成新消息；已经发出的消息不撤回。要再推时点「启用」。</>
       : <>启用只打开开关：系统按扫描间隔检查业务事件，有满足条件的事、这个人又过了个人间隔，才会发出。</>,
@@ -191,7 +191,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         <Fact k="频道">{channelName(n.key, n.name)}</Fact>
         <Fact k="状态"><Change from={n.on ? "已启用" : "已停用"} to={n.on ? "已停用" : "已启用"} /></Fact>
         <Fact k="模板">{tplFact(n.key)}</Fact>
-        <Fact k="节奏">{`${tickSentence(n.tick)}，${cooldownSentence(n.cd)}`}</Fact>
+        <Fact k="扫描">{tickSentence(n.tick)}</Fact>
+        <Fact k="个人间隔">{cooldownSentence(n.cd)}</Fact>
       </Facts>
     ),
     confirmLabel: n.on ? "确认停用" : "确认启用",
@@ -211,7 +212,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const removeNova = (n: OpsNova) => openConfirm({ briefKind: "content",
     errorHandled: true,
     action: <>删除推送通道 · {n.name}</>,
-    title: `删除频道 · ${channelName(n.key, n.name)}`,
+    title: "删除频道",
     detail: <>删除这个频道，连它的模板一起删除（已发布的也删）；之后不再推送。已经发出的消息不撤回。</>,
     effect: <>{LIVE}<IrreversibleTag /></>,
     statedBrief: { impact: tplOf(n.key) ? "频道和它的模板一起删除，包括已发布的模板；已经发出的消息不撤回。" : "频道删除后不再推送；已经发出的消息不撤回。", check: "页面上没有恢复入口；只想暂停用「停用」。" },
@@ -236,12 +237,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const t = tplOf(ch);
     return openActionConfirm({ briefKind: "content",
       action: <>发布模板 · {name}</>,
-      title: `发布模板 · ${name}`,
+      title: "发布模板",
       detail: <>频道 <b>{ch}</b>。发布后，这个频道之后生成的消息用这份内容；频道不会自动启用。中文和越南语必须完整、正文变量一致（英文可选），含已退役品牌词时会被拒。</>,
       effect: LIVE,
       statedBrief: { impact: "这个频道之后生成的消息用这份内容；频道不会自动启用，已经发出的不变。", check: "后端会查中文、越南语是否完整、正文变量是否一致、有没有已退役的品牌词，不通过会被拒。" },
       facts: (
         <Facts>
+          <Fact k="模板">{name}</Fact>
           <Fact k="频道">{displayOf(ch)}</Fact>
           <Fact k="模板状态"><Change from="草稿" to="已发布" /></Fact>
           <Fact k="版本">{t?.v ?? "—"}</Fact>
@@ -262,7 +264,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const n = novas.find((x) => x.key === ch);
     return openActionConfirm({ briefKind: "content",
       action: <>归档模板 · {name}</>,
-      title: `归档模板 · ${name}`,
+      title: "归档模板",
       detail: <>归档后这个模板不再使用，对应频道如果开着会同时被停用；已经发出的消息不撤回。归档后不能改回草稿，要换内容就删掉归档的模板再新建。</>,
       effect: LIVE,
       statedBrief: n?.on
@@ -270,6 +272,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         : { impact: "模板不再使用；已发出的不撤回。", check: "归档后不能改回草稿；要换内容，先删掉归档的模板再新建。" },
       facts: (
         <Facts>
+          <Fact k="模板">{name}</Fact>
           <Fact k="频道">{displayOf(ch)}</Fact>
           <Fact k="模板状态"><Change from="已发布" to="已归档" /></Fact>
           <Fact k="频道状态">{n?.on ? <Change from="已启用" to="已停用" tone="warn" /> : n ? "已停用，不变" : "—"}</Fact>
@@ -307,7 +310,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     return openConfirm({ briefKind: "config",
       errorHandled: true,
       action: <>{editTplChannel ? "编辑" : "新增"}推送模板 · {tplForm.name}</>,
-      title: `${editTplChannel ? "保存" : "新建"}模板草稿 · ${tplForm.name}`,
+      title: editTplChannel ? "保存模板草稿" : "新建模板草稿",
       detail: <>保存后是草稿，用户还看不到；发布前会再检查中文、越南语是否完整、正文变量是否一致。对应频道如果开着，保存后会被停用。</>,
       effect: n?.on ? <><StatusTag tone="done" filled>保存为草稿</StatusTag><StatusTag tone="warn">频道会被停用</StatusTag></> : <StatusTag tone="done" filled>保存为草稿</StatusTag>,
       statedBrief: n?.on
@@ -337,7 +340,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const removeTpl = (t: (typeof NOVA_TPLS)[number]) => openConfirm({ briefKind: "content",
     errorHandled: true,
     action: <>删除推送模板 · {t.name}</>,
-    title: `删除模板 · ${t.name}`,
+    title: "删除模板",
     detail: <>已发布模板不能直接删除，要先归档。删除后对应频道启用不了，要先新建并发布模板。</>,
     effect: <>{LIVE}<IrreversibleTag /></>,
     statedBrief: { impact: "删除后这个频道启用不了，要先新建并发布模板；已经发出的不撤回。", check: "只有草稿和已归档的模板能删；页面上没有恢复入口。" },
@@ -459,7 +462,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     : <StatusTag tone="done">{statusLabel(status)}</StatusTag>;
   const eventFacts = (event: SocialEvent, change?: { to: string; tone?: "warn" }) => (
     <Facts>
-      <Fact k="事件">{eventText(event)}</Fact>
+      <Fact k="事件">{`#${event.id} · ${eventText(event)}`}</Fact>
       <Fact k="类型">{eventType(event)}</Fact>
       <Fact k="状态">{change ? <Change from={statusLabel(event.status)} to={change.to} tone={change.tone} /> : statusLabel(event.status)}</Fact>
       <Fact k="过期时间">{`${formatEventTime(event.expiresAt)}（${businessZone().label}）`}</Fact>
@@ -514,7 +517,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const changeSocialEventStatus = (event: SocialEvent, status: "ACTIVE" | "DISABLED" | "EXPIRED") => openConfirm({ briefKind: "content",
     errorHandled: true,
     action: <>{status === "ACTIVE" ? "恢复" : status === "DISABLED" ? "停用" : "立即过期"}真实事件 · #{event.id}</>,
-    title: `${STATUS_COPY[status].verb}事件 · #${event.id}`,
+    title: `${STATUS_COPY[status].verb}事件`,
     detail: <>只能控制这条事件是否推送，不能改来源、人物、金额和时间。</>,
     effect: status === "EXPIRED" ? <>{LIVE}<IrreversibleTag /></> : LIVE,
     statedBrief: { impact: STATUS_COPY[status].impact, check: STATUS_COPY[status].check },
@@ -533,7 +536,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const deleteSocialEvent = (event: SocialEvent) => openConfirm({ briefKind: "record",
     errorHandled: true,
     action: <>删除真实事件 · #{event.id}</>,
-    title: `删除事件 · #${event.id}`,
+    title: "删除事件",
     detail: <>删除后不再推送；已推送的记录仍保留。同一来源不会再同步回来，原业务记录不变。</>,
     effect: <>{LIVE}<IrreversibleTag /></>,
     statedBrief: { impact: "从列表里删掉，之后不会再被抽到；同一来源不会再同步回来。已经发出的消息和原业务记录都不变。", check: "只想暂时不用，选「停用」。" },
@@ -550,6 +553,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     },
   });
 
+  // 页内两个页签：模板和真实动态素材，一屏只露一个主列表（DP-67）。
+  const lowerIds = useTabIds();
+  const [lower, setLower] = useState<"templates" | "material">("templates");
   const [detailTpl, setDetailTpl] = useState<string | null>(null);
   const [detailEvent, setDetailEvent] = useState<number | null>(null);
 
@@ -567,7 +573,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const ctrComparable = Number.isFinite(ctrValue) && Number.isFinite(ctrTargetValue) && String(I2_STATS.ctr).trim() !== "—";
 
   const header = (
-    <PageHeader pageId="I2" title="Nova 消息推送" summary="管 Nova 推给用户的动态消息：频道、模板、事件概率和真实素材。"
+    <PageHeader pageId="I2" title="消息推送" summary="管发到 App 消息通知里的业务推送。"
       readOnly={!canWriteI2 ? "你只能查看；改频道、模板、概率和事件要有这页的修改权限。" : undefined}
       meta={readAt ? <span className="rd-toolbar">
         <span>{`${businessClock(readAt)} 读取（${businessZone().label}）`}</span>
@@ -607,9 +613,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const distBad = SOCIAL_DIST.length > 0 && distTotal !== 100;
   const problems = noPublished.length > 0 || socialDry || distBad;
   const conclusion = novas.length === 0
-    ? <Conclusion state="neutral" icon={Radio} hint={canWriteI2 ? "点右上角「新增频道」建第一个。" : undefined}>还没有频道，Nova 不会推送</Conclusion>
+    ? <Conclusion state="neutral" icon={Radio} hint={canWriteI2 ? "点右上角「新增频道」建第一个。" : undefined}>还没有频道，不会推送</Conclusion>
     : <Conclusion state={problems ? "warn" : "ok"} icon={Radio}
-      hint={noPublished.length > 0 ? "到「消息模板」给它们写好模板并发布。" : socialDry ? "点「同步事件」从业务表取新素材。" : undefined}
+      hint={noPublished.length > 0 ? "到「消息模板」给它们写好模板并发布。" : socialDry ? "到「真实动态素材」点「同步事件」取新素材。" : undefined}
       explain={<>
         <p>在推＝频道已启用。启用只说明开关开着；真正发出还要有已发布模板、有素材、到了扫描时间、过了个人间隔，用户也要允许系统通知。</p>
         <p>素材按最近读到的 20 条真实事件看，只对「真实动态」频道有意义。</p>
@@ -734,6 +740,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         </Fold>
       </Panel>
 
+      <PageTabs ids={lowerIds} label="模板和真实动态素材" value={lower} onChange={setLower}
+        items={[{ value: "templates", label: "消息模板" }, { value: "material", label: "真实动态素材" }]} />
+      <div {...lowerIds.panel("templates")} hidden={lower !== "templates"} className="rd-tab-pane">
       <Panel title="消息模板" icon={FileText} tone="role-4" sub={`${templatePager.total} 个 · 每个频道一个`}
         explain="模板就是用户收到的标题和正文。中文、越南语必填，英语可选；草稿 → 发布 → 归档。点一行看三种语言并排和 App 里的样子。"
         actions={canWriteI2 ? <Button icon={<Plus size={14} aria-hidden />} disabledReason={templateChannelOptions.length === 0 ? "每个频道都有模板了；要换内容，先删掉旧模板" : undefined} onClick={newTpl}>新建模板</Button> : undefined}>
@@ -765,6 +774,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         {templatePager.total > templatePager.pageSize && <Pager label="消息模板" total={templatePager.total} page={templatePager.page} pageSize={templatePager.pageSize} sizes={[7]} onPage={templatePager.setPage} onPageSize={templatePager.setPageSize} />}
       </Panel>
 
+      </div>
+      <div {...lowerIds.panel("material")} hidden={lower !== "material"} className="rd-tab-pane">
       <Panel title="事件概率" icon={Percent} tone="role-2" sub={`五类 · 合计 ${distTotal}%`}
         explain="只管「真实动态」频道：每次先按这组概率选一类，再从这一类有效的最近 100 条里随机取一条。某一类没有有效事件，就按其余几类的比例重新分。"
         actions={canWriteI2 ? <Button icon={<Percent size={14} aria-hidden />} disabledReason={SOCIAL_DIST.length === 0 ? "没有读到五类概率" : undefined} onClick={openDistDrawer}>调整概率</Button> : undefined}>
@@ -777,29 +788,27 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       </Panel>
 
       <Panel title="真实事件" icon={Database} tone="role-3" sub={eventReadable ? `${visibleEventTotal} 条${eventFiltered ? "（已筛选）" : ""} · 时间为${zone}` : `时间为${zone}`}
-        explain="「真实动态」频道的素材，都从业务表同步来，不能手工添加人物、金额和时间。人物和地区只露第一个字，金额写成区间。"
-        actions={<span className="rd-row-actions">
-          <Select aria-label="预览语言" value={previewLanguage} onChange={(value) => setPreviewLanguage(value as "ZH" | "VI" | "EN")}
-            options={[{ value: "VI", label: "越南语" }, { value: "ZH", label: "中文" }, { value: "EN", label: "英语" }]} />
-          <Button icon={<Eye size={14} aria-hidden />} loading={eventBusy === "preview"} disabledReason={eventBusy !== null && eventBusy !== "preview" ? "等当前操作完成" : undefined} onClick={previewSocialEvent}>抽一条预览</Button>
-          {canWriteI2 && <Button icon={<Shuffle size={14} aria-hidden />} loading={eventBusy === "sync"} disabledReason={eventBusy !== null && eventBusy !== "sync" ? "等当前操作完成" : undefined} onClick={syncSocialEvents}>同步事件</Button>}
-          <Explain label="同步事件做什么" content={<>
-            <p>从提现、V 等级、创世节点成交、整点新增注册这些业务表取最近 24 小时的新事件，每条从发生起 12 小时后过期。</p>
-            <p>只加新素材：不发消息、不改业务数据；重复的跳过，删过的不会再同步回来。AI 客户消费没有数据源。</p>
-            <p>后台大约每 10 分钟也会自动同步一次。</p>
-          </>} />
-        </span>}>
+        explain={<>
+          <p>「真实动态」频道的素材，都从业务表同步来，不能手工添加人物、金额和时间；人物和地区只露第一个字，金额写成区间。</p>
+          <p>同步事件：取提现、V 等级、创世节点成交、整点新增注册最近 24 小时的新事件，每条从发生起 12 小时后过期；不发消息、不改业务数据，重复的跳过，删过的不会再同步回来。后台大约每 10 分钟也会自动同步。</p>
+        </>}
+        actions={canWriteI2 ? <Button icon={<Shuffle size={14} aria-hidden />} loading={eventBusy === "sync"} disabledReason={eventBusy !== null && eventBusy !== "sync" ? "等当前操作完成" : undefined} onClick={syncSocialEvents}>同步事件</Button> : undefined}>
         {sample && (
           <div className="i2-sample">
             {sample.value
               ? <>
-                <AppNotice lang={sample.lang} title={sample.value.title ?? ""} body={sample.value.body} />
+                <AppNotice lang={sample.lang} title={sample.value.title ?? ""} body={sample.value.body} category={noticeCategory(SOCIAL_CHANNEL)} />
                 <p className="i2-sentence">{`${businessClock(sample.at)} 抽到${sample.value.id !== undefined ? ` #${sample.value.id}` : ""}：只是预览，不会发出，也不计投递次数。`}</p>
               </>
               : <Notice tone="warn">现在没有能发的真实事件，这一轮不会推送。</Notice>}
           </div>
         )}
-        <FilterBar onClear={() => { setEventTypeFilter(""); setEventStatusFilter(""); setEventPage(1); }} canClear={eventFiltered}>
+        <FilterBar onClear={() => { setEventTypeFilter(""); setEventStatusFilter(""); setEventPage(1); }} canClear={eventFiltered}
+          sort={<span className="rd-row-actions">
+            <Select aria-label="预览语言" value={previewLanguage} onChange={(value) => setPreviewLanguage(value as "ZH" | "VI" | "EN")}
+              options={[{ value: "VI", label: "越南语" }, { value: "ZH", label: "中文" }, { value: "EN", label: "英语" }]} />
+            <Button icon={<Eye size={14} aria-hidden />} loading={eventBusy === "preview"} disabledReason={eventBusy !== null && eventBusy !== "preview" ? "等当前操作完成" : undefined} onClick={previewSocialEvent}>抽一条预览</Button>
+          </span>}>
           <FilterField label="类型">
             <Select aria-label="事件类型筛选" value={eventTypeFilter} onChange={(value) => { setEventTypeFilter(value); setEventPage(1); }} placeholder="全部类型"
               options={SOCIAL_EVENT_TYPE_OPTIONS.map((option) => ({ value: option.value, label: operatorCopyText(option.label) }))} />
@@ -810,7 +819,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           </FilterField>
         </FilterBar>
         {!eventError && !eventLoading && eventReadable && visibleEventTotal === 0 && !eventFiltered
-          ? <BlockState state="empty" title="还没有真实事件" detail={`「真实动态」频道没有素材，不会发送，也不会生成虚假内容。${canWriteI2 ? "点「同步事件」从业务表取新事件。" : ""}`} />
+          ? <BlockState state="empty" title="还没有真实事件" detail={`没有素材就不发送，不会造假内容。${canWriteI2 ? "点「同步事件」取新事件。" : ""}`} />
           : <Table label="真实事件" className="i2-event-table">
             <thead>
               <tr><Th>事件</Th><Th>状态</Th><Th>发生时间</Th><Th>过期时间</Th><Th align="right">投递</Th>{canWriteI2 && <Th sticky="end">操作</Th>}</tr>
@@ -844,6 +853,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           <Pager label="真实事件" total={visibleEventTotal} page={eventPage} pageSize={EVENT_PAGE_SIZE} sizes={[EVENT_PAGE_SIZE]} onPage={setEventPage} onPageSize={() => undefined} />
         )}
       </Panel>
+
+      </div>
 
       <PaginationExemptionList
         items={[
@@ -882,13 +893,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               {([["ZH", "中文", t.titleZh, t.bodyZh, true], ["VI", "越南语", t.titleVi, t.bodyVi, true], ["EN", "英语", t.titleEn, t.bodyEn, false]] as const).map(([lang, label, title, body, req]) => {
                 const filled = langState(title, body);
                 const shown = social ? previewText(title, body, lang, sampleEvent) : { title, body };
-                return <section key={lang} className="i2-lang" data-rows="3" aria-label={label}>
+                return <section key={lang} className="i2-lang" aria-label={label}>
                   <h3 className="i2-lang-head">{label}{filled ? <StatusTag tone="ok">已填</StatusTag> : req ? <StatusTag tone="warn">缺</StatusTag> : <StatusTag tone="done">可选，未填</StatusTag>}</h3>
                   <dl className="i2-lang-text">
                     <div><dt>标题</dt><dd>{nexGridBrandText(title) || "—"}</dd></div>
                     <div><dt>正文</dt><dd>{nexGridBrandText(body) || "—"}</dd></div>
                   </dl>
-                  <AppNotice lang={lang} title={shown.title} body={shown.body} cta={t.cta} ctaNote={ctaNote} raw={!social}
+                  <AppNotice lang={lang} title={shown.title} body={shown.body} cta={t.cta} ctaNote={ctaNote} raw={!social} category={noticeCategory(t.ch)}
                     missing={filled ? undefined : req ? `${label}没填，发布会被拒` : social ? "没填英语：中文、越南语以外的用户收到通用英文提示" : "没填英语：中文、越南语以外的用户收到空白的标题和正文"} />
                 </section>;
               })}

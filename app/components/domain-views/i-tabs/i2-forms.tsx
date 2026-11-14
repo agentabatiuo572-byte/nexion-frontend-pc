@@ -9,7 +9,7 @@ import { Button, Decision, Drawer, Field, Input, Notice, NumberInput, Select, St
 import { formatNovaDuration, NOVA_TIME_UNITS, type NovaTimeUnit } from "@/lib/admin/nova-cadence";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import type { NovaOptionView, NovaSocialEventView } from "@/lib/admin/i-client";
-import { AppNotice, DistEditor, DIST_SLOT, NO_SOURCE, PLACEHOLDERS, PLACEHOLDER_TEXT, cooldownSentence, placeholdersOf, previewText, tickSentence } from "./i2-parts";
+import { AppNotice, DistEditor, noticeCategory, DIST_SLOT, NO_SOURCE, PLACEHOLDERS, PLACEHOLDER_TEXT, cooldownSentence, placeholdersOf, previewText, tickSentence } from "./i2-parts";
 
 export const UNREACHABLE_CTA = new Set(["/devices", "/support", "/me/weekly"]);
 export const UNREACHABLE_TEXT = "App 目前打不开这个去向";
@@ -68,7 +68,7 @@ export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, f
             <Select aria-label="多久找一次的单位" value={form.tickUnit} onChange={(value) => setForm({ ...form, tickUnit: value as NovaTimeUnit })} options={unitOptions} />
           </span>}
         </Field>
-        <Field label="同一个人至少隔多久" required hint="不能比「多久找一次」短" error={shown?.[0] === "cooldown" ? shown[1] : undefined}>
+        <Field label="同一个人至少隔多久" required hint="正整数" explain="同一个人收到这个频道一条后，这段时间内不再收到；不能比「多久找一次」短。" error={shown?.[0] === "cooldown" ? shown[1] : undefined}>
           {(control) => <span className="i2-duration">
             <NumberInput {...control} min={1} step={1} value={form.cooldownValue} onChange={(e) => setForm({ ...form, cooldownValue: e.target.value })} placeholder="6" />
             <Select aria-label="同一个人至少隔多久的单位" value={form.cooldownUnit} onChange={(value) => setForm({ ...form, cooldownUnit: value as NovaTimeUnit })} options={unitOptions} />
@@ -154,7 +154,7 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
             const filled = !!title.trim() && !!body.trim();
             const shown = social ? previewText(title, body, l.lang, sample) : { title, body };
             return (
-              <section key={l.key} className="i2-lang" data-rows="4" aria-label={l.label}>
+              <section key={l.key} className="i2-lang" aria-label={l.label}>
                 <h3 className="i2-lang-head">{l.label}{filled ? <StatusTag tone="ok">已填</StatusTag> : l.required ? <StatusTag tone="warn">缺</StatusTag> : <StatusTag tone="done">可选，未填</StatusTag>}</h3>
                 <Field label="标题" required={l.required} error={l.key === "En" && enPair && !title.trim() ? "英语标题和正文要么都填，要么都空" : undefined}>
                   <Input value={title} maxLength={255} onChange={(e) => setForm({ ...form, [`title${l.key}`]: e.target.value })} placeholder={`${l.label}标题`} />
@@ -162,7 +162,7 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
                 <Field label="正文" required={l.required} error={l.key === "En" && enPair && !body.trim() ? "英语标题和正文要么都填，要么都空" : undefined}>
                   {(control) => <Textarea {...control} rows={4} maxLength={4000} value={body} count={`${body.length}/4000`} onChange={(e) => setForm({ ...form, [`body${l.key}`]: e.target.value })} placeholder={l.key === "Zh" ? "例如：{actor} 在 {city} 刚刚提现到账 {amount}" : `${l.label}正文`} />}
                 </Field>
-                <AppNotice lang={l.lang} title={shown.title} body={shown.body} cta={form.cta} ctaNote={ctaNote} raw={!social}
+                <AppNotice lang={l.lang} title={shown.title} body={shown.body} cta={form.cta} ctaNote={ctaNote} raw={!social} category={noticeCategory(form.channel)}
                   missing={filled ? undefined : l.required ? `${l.label}还没填，发布前要补上` : social ? "没填英语：中文、越南语以外的用户收到通用英文提示" : "没填英语：中文、越南语以外的用户收到空白的标题和正文"} />
               </section>
             );

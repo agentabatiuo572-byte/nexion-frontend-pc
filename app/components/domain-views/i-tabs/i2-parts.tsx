@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * I2 Nova 消息推送的展示件：频道卡、App 里的消息样子、概率条（可拖）、文字换算。
+ * I2 消息推送的展示件：频道卡、App 通知的样子、概率条（可拖）、文字换算。
  * 这里只管怎么画，不发请求、不判权限；数字和状态都由 i2-nova.tsx 传进来。
  */
 import { useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
-import { Bell, Clock, FileText, Radio, Timer, UserRound } from "lucide-react";
+import { Bell, Clock, Cpu, FileText, Gift, Radio, Timer, UserRound, Users, Wallet } from "lucide-react";
 import { Explain, StatusTag } from "@/app/components/rd";
 import { NOVA_TIME_UNITS, parseNovaDuration } from "@/lib/admin/nova-cadence";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -104,7 +104,7 @@ export function ChannelCard({ name, keyText, on, source, tick, cooldown, phase, 
         <span className="i2-channel-icon" aria-hidden><Radio size={16} /></span>
         <span className="i2-channel-title">
           <b>{name}</b>
-          <span className="i2-channel-source">{`取材：${source}`}</span>
+          <span className="i2-channel-source" title={`取材：${source}`}>{`取材：${source}`}</span>
         </span>
         {on ? <StatusTag tone="ok">已启用</StatusTag> : <StatusTag tone="done">已停用</StatusTag>}
       </header>
@@ -158,12 +158,32 @@ export function previewText(title: string, body: string, lang: "ZH" | "VI" | "EN
   return { title: fill(title), body: hasVar ? fill(body) : `${fill(body)} · ${SUMMARY[lang](event)}` };
 }
 
+
+/**
+ * App「消息 › 通知」把推送按通知类型归类（App src/lib/notification-category.ts）：业务频道的类型是 NOVA_ 加频道编号，
+ * 真实动态是 NOVA_SOCIAL。这里照同一张表算出这一频道的消息归在哪一类、用哪个图标。
+ */
+export type NoticeCategory = "finance" | "device" | "team" | "rewards" | "system";
+export function noticeCategory(channelKey: string): NoticeCategory {
+  const kind = `nova_${channelKey}`.toLowerCase();
+  if (["nova_commission"].includes(kind)) return "finance";
+  if (["nova_dailysummary", "nova_upgrade", "nova_tradein"].includes(kind)) return "device";
+  if (["nova_team", "nova_team_event"].includes(kind)) return "team";
+  if (["nova_market", "nova_staking", "nova_staking_event", "nova_market_event", "nova_genesis", "nova_eventclaim", "nova_quest", "nova_tasklockmonthly"].includes(kind)) return "rewards";
+  return "system";
+}
+const CATEGORY_ICON: Record<NoticeCategory, typeof Bell> = { finance: Wallet, device: Cpu, team: Users, rewards: Gift, system: Bell };
+export const CATEGORY_TEXT: Record<NoticeCategory, string> = { finance: "资金", device: "设备", team: "团队", rewards: "活动", system: "系统" };
+
 const LANG_LABEL = { ZH: "中文", VI: "越南语", EN: "英语" } as const;
 const OPEN_LABEL = { ZH: "打开", VI: "Mở", EN: "Open" } as const;
 const NOW_LABEL = { ZH: "刚刚", VI: "Vừa xong", EN: "Just now" } as const;
 
-/** 「App 里 Nova 消息的样子」：通知列表里的一行，点开后的正文和跳转按钮。标题、正文按 App 截到 128、512 字。 */
-export function AppNotice({ lang, title, body, cta, ctaNote, missing, raw }: {
+/**
+ * 「App 上的样子」：App「消息 › 通知」列表里的一条（点开后）：类别图标、标题、时间、正文、跳转按钮「打开」。
+ * 没有头像、名字和对话气泡；标题、正文按后端截到 128、512 字。
+ */
+export function AppNotice({ lang, title, body, cta, ctaNote, missing, raw, category = "system" }: {
   lang: "ZH" | "VI" | "EN";
   title: string;
   body: string;
@@ -175,19 +195,21 @@ export function AppNotice({ lang, title, body, cta, ctaNote, missing, raw }: {
   missing?: ReactNode;
   /** 变量原样显示（业务频道）。 */
   raw?: boolean;
+  category?: NoticeCategory;
 }) {
   const shownTitle = title.slice(0, 128);
   const shownBody = body.slice(0, 512);
+  const Icon = CATEGORY_ICON[category];
   return (
-    <figure className="i2-phone" aria-label={`App 里的样子（${LANG_LABEL[lang]}）`}>
-      <figcaption className="i2-phone-bar">{`App 消息 · ${LANG_LABEL[lang]}`}</figcaption>
+    <figure className="i2-phone" aria-label={`App 上的样子（${LANG_LABEL[lang]}）`}>
+      <figcaption className="i2-phone-bar">{`App 通知 · ${LANG_LABEL[lang]} · 归在「${CATEGORY_TEXT[category]}」`}</figcaption>
       {missing ? <p className="i2-phone-missing">{missing}</p> : (
         <div className="i2-phone-row">
-          <span className="i2-phone-icon" aria-hidden><Bell size={14} /></span>
+          <span className="i2-phone-icon" data-category={category} aria-hidden><Icon size={14} /></span>
           <div className="i2-phone-main">
             <div className="i2-phone-top"><b>{shownTitle || "（没有标题）"}</b><span>{NOW_LABEL[lang]}</span></div>
             <p className="i2-phone-body" data-raw={raw ? "" : undefined}>{shownBody || "（没有正文）"}</p>
-            {cta && cta !== "NONE" && <span className="i2-phone-cta">{`${OPEN_LABEL[lang]} ›`}</span>}
+            {cta && cta !== "NONE" && <span className="i2-phone-cta">{`${OPEN_LABEL[lang]} →`}</span>}
             {ctaNote}
           </div>
         </div>
