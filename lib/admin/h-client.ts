@@ -507,8 +507,90 @@ export async function updateH5EarnTickInterval(value: string | number, reason: s
   );
 }
 
-export async function fetchH7Vouchers(): Promise<Record<string, any>> {
-  return growthRequest<Record<string, any>>("/vouchers");
+export type H7PendingApproval = {
+  action: string | null; ticketId: string | null; submittedBy: string | null; submittedAt: string | null;
+};
+
+export type H7Voucher = {
+  id: string; name: string; type: "fixed" | "percent";
+  amountUSD?: number; percent?: number; minPurchaseUSD?: number; maxDiscountUSD?: number;
+  applicableSkus: string[]; audience: "new" | "all"; startAt: number; endAt: number; claimSurfaces: string[];
+  popupEnabled: boolean; popupDelayMs: number; popupCooldownHours: number; popupMaxPerSession: number;
+  popupCadenceEnabled: boolean; stackWithTrial: boolean; stackWithOthers: boolean; splittable: boolean;
+  issuanceLimit: number; version: number; issuedCount: number; availableCount: number;
+  redeemedCount: number; revokedCount: number; batchCount: number; status: "active" | "paused";
+  /** GET is authoritative. Write receipts deliberately do not project locks. */
+  pendingApproval?: H7PendingApproval | null;
+};
+export type H7Overview = {
+  vouchers: H7Voucher[];
+  skus: { id: string; name: string; status: "on" | "off" }[];
+  stats: { total: number; active: number; paused: number; popup: number };
+};
+
+/** Decode the GET boundary once; null is never a numeric zero or an unlocked object. */
+export function parseH7Voucher(raw: unknown): H7Voucher {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("H7_VOUCHER_RESPONSE_INVALID");
+  const row = raw as Record<string, unknown>;
+  const number = (key: string, integer = true, min = 0, max = Number.MAX_SAFE_INTEGER) => {
+    const value = row[key];
+    if (typeof value !== "number" || !Number.isFinite(value) || integer && !Number.isSafeInteger(value)
+      || value < min || value > max) throw new Error(`H7_VOUCHER_RESPONSE_INVALID:${key}`);
+    return value;
+  };
+  const boolean = (key: string) => {
+    if (typeof row[key] !== "boolean") throw new Error(`H7_VOUCHER_RESPONSE_INVALID:${key}`);
+    return row[key];
+  };
+  const strings = (key: string) => {
+    const value = row[key];
+    if (!Array.isArray(value) || value.some(v => typeof v !== "string")) throw new Error(`H7_VOUCHER_RESPONSE_INVALID:${key}`);
+    return value as string[];
+  };
+  if (typeof row.id !== "string" || !row.id.trim() || typeof row.name !== "string" || !row.name.trim()
+    || row.type !== "fixed" && row.type !== "percent" || row.audience !== "new" && row.audience !== "all"
+    || row.status !== "active" && row.status !== "paused") throw new Error("H7_VOUCHER_RESPONSE_INVALID");
+  let pendingApproval: H7PendingApproval | null | undefined;
+  if (row.pendingApproval === null) pendingApproval = null;
+  else if (row.pendingApproval !== undefined) {
+    if (!row.pendingApproval || typeof row.pendingApproval !== "object" || Array.isArray(row.pendingApproval)) throw new Error("H7_VOUCHER_RESPONSE_INVALID:pendingApproval");
+    const pending = row.pendingApproval as Record<string, unknown>;
+    for (const key of ["action", "ticketId", "submittedBy", "submittedAt"]) {
+      if (pending[key] !== null && typeof pending[key] !== "string") throw new Error("H7_VOUCHER_RESPONSE_INVALID:pendingApproval");
+    }
+    pendingApproval = pending as H7PendingApproval;
+  }
+  return {
+    id: row.id, name: row.name, type: row.type, audience: row.audience, status: row.status,
+    amountUSD: number("amountUSD", false), percent: number("percent", false),
+    minPurchaseUSD: number("minPurchaseUSD", false), maxDiscountUSD: number("maxDiscountUSD", false),
+    applicableSkus: strings("applicableSkus"), claimSurfaces: strings("claimSurfaces"),
+    startAt: number("startAt"), endAt: number("endAt"), issuanceLimit: number("issuanceLimit"), version: number("version", true, 1),
+    issuedCount: number("issuedCount"), availableCount: number("availableCount"), redeemedCount: number("redeemedCount"),
+    revokedCount: number("revokedCount"), batchCount: number("batchCount"),
+    popupEnabled: boolean("popupEnabled"), popupCadenceEnabled: boolean("popupCadenceEnabled"),
+    popupDelayMs: number("popupDelayMs", true, 0, 60000), popupCooldownHours: number("popupCooldownHours", true, 0, 720),
+    popupMaxPerSession: number("popupMaxPerSession", true, 1, 10),
+    stackWithTrial: boolean("stackWithTrial"), stackWithOthers: boolean("stackWithOthers"), splittable: boolean("splittable"),
+    pendingApproval,
+  };
+}
+
+export async function fetchH7Vouchers(): Promise<H7Overview> {
+  const payload = await growthRequest<Record<string, unknown>>("/vouchers");
+  if (!payload || !Array.isArray(payload.vouchers) || !Array.isArray(payload.skus)
+    || !payload.stats || typeof payload.stats !== "object") throw new Error("H7_VOUCHER_RESPONSE_INVALID");
+  const vouchers = payload.vouchers.map(parseH7Voucher);
+  if (vouchers.some(v => v.pendingApproval === undefined)) throw new Error("H7_VOUCHER_RESPONSE_INVALID:pendingApproval");
+  const skus = payload.skus.map<H7Overview["skus"][number]>((raw: unknown) => {
+    if (!raw || typeof raw !== "object") throw new Error("H7_VOUCHER_RESPONSE_INVALID:skus");
+    const sku = raw as Record<string, unknown>;
+    if (typeof sku.id !== "string" || typeof sku.name !== "string" || sku.status !== "on" && sku.status !== "off") throw new Error("H7_VOUCHER_RESPONSE_INVALID:skus");
+    return { id: sku.id, name: sku.name, status: sku.status };
+  });
+  const stats = payload.stats as H7Overview["stats"];
+  if (![stats.total, stats.active, stats.paused, stats.popup].every(n => typeof n === "number" && Number.isSafeInteger(n) && n >= 0)) throw new Error("H7_VOUCHER_RESPONSE_INVALID:stats");
+  return { vouchers, skus, stats };
 }
 
 export async function createH7Voucher(voucher: Record<string, any>, reason: string) {

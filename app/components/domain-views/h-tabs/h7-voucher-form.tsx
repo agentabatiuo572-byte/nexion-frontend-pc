@@ -8,8 +8,8 @@
 import { useMemo, useState } from "react";
 import { BellOff, Layers, Lock, Ticket } from "lucide-react";
 import { Button, Check, CheckGroup, Decision, Drawer, Field, Fold, Input, Modal, Notice, NumberInput, Segments, StatusTag } from "@/app/components/rd";
-import { businessStamp, businessZone } from "@/lib/admin/business-time";
-import { AUDIENCE_LABEL, SURFACE_LABEL, UNIT, VoucherFace, amountText, countText, voucherSentence, type H7Voucher } from "./h7-voucher-parts";
+import { h7Stamp, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
+import { AUDIENCE_LABEL, SURFACE_LABEL, UNIT, VoucherFace, amountText, countText, voucherSentence, startText, endText, type H7Voucher } from "./h7-voucher-parts";
 
 export type H7FormValue = Record<string, string>;
 const SURFACES = ["home", "store", "me", "earn"] as const;
@@ -71,11 +71,11 @@ export function formErrors(state: H7FormValue): Record<string, string> {
 
 const list = (csv: string | undefined) => (csv ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 const num = (s: string | undefined) => (s && s.trim() !== "" && Number.isFinite(Number(s)) ? Number(s) : undefined);
-/** 日期框的值按原逻辑转成 UTC 当天 0 点，再按业务时区写给人看。 */
-const dateStamp = (date: string, toMs: (date: string) => number) => { const ms = toMs(date); return ms ? businessStamp(ms) : ""; };
+/** 预览、字段帮助和实际提交使用同一套北京时间整日换算。 */
+const dateStamp = (date: string, toMs: (date: string, end?: boolean) => number, end = false) => { const ms = toMs(date, end); return ms ? h7Stamp(ms) : ""; };
 
 /** 填写中的值拼成一张券的样子，给预览用；不进提交。 */
-function previewVoucher(state: H7FormValue, toMs: (date: string) => number) {
+function previewVoucher(state: H7FormValue, toMs: (date: string, end?: boolean) => number) {
   return {
     type: state.type === "percent" ? "percent" as const : "fixed" as const,
     amountUSD: num(state.amountUSD),
@@ -85,7 +85,7 @@ function previewVoucher(state: H7FormValue, toMs: (date: string) => number) {
     applicableSkus: list(state.applicableSkus),
     audience: state.audience === "new" ? "new" as const : "all" as const,
     startAt: toMs(state.startDate),
-    endAt: toMs(state.endDate),
+    endAt: toMs(state.endDate, true),
   };
 }
 
@@ -99,7 +99,7 @@ const FIELD_LABEL: Record<string, string> = {
 const AFFECTS_ISSUED = new Set(["amountUSD", "percent", "minPurchaseUSD", "maxDiscountUSD", "applicableSkus", "startDate", "endDate"]);
 
 /** 表单值写成给人看的话，确认框的前后值用。 */
-export function displayValue(key: string, state: H7FormValue, skuLabels: Record<string, string>, toMs: (date: string) => number): string {
+export function displayValue(key: string, state: H7FormValue, skuLabels: Record<string, string>, toMs: (date: string, end?: boolean) => number): string {
   const raw = state[key] ?? "";
   switch (key) {
     case "type": return raw === "percent" ? "折扣券" : "满减券";
@@ -116,7 +116,7 @@ export function displayValue(key: string, state: H7FormValue, skuLabels: Record<
     case "audience": return AUDIENCE_LABEL[raw === "new" ? "new" : "all"];
     case "status": return raw === "paused" ? "已暂停" : "投放中";
     case "startDate": return raw ? dateStamp(raw, toMs) || raw : "立即";
-    case "endDate": return raw ? dateStamp(raw, toMs) || raw : "长期有效";
+    case "endDate": return raw ? dateStamp(raw, toMs, true) || raw : "长期有效";
     case "popupDelayMs": return `${raw} 毫秒`;
     case "popupCooldownHours": return `${raw} 小时`;
     case "popupMaxPerSession": return `${raw} 次`;
@@ -126,10 +126,10 @@ export function displayValue(key: string, state: H7FormValue, skuLabels: Record<
 }
 
 /** 编辑时改了哪些项：只比实际会提交的项（满减不交比例、折扣不交面额，和 parseVoucher 一致）。 */
-export function changedRows(before: H7FormValue, after: H7FormValue, skuLabels: Record<string, string>, toMs: (date: string) => number, issued: number) {
+export function changedRows(before: H7FormValue, after: H7FormValue, skuLabels: Record<string, string>, toMs: (date: string, end?: boolean) => number, issued: number, voucher?: H7Voucher) {
   const keys = Object.keys(FIELD_LABEL).filter((key) => !(key === "amountUSD" && after.type !== "fixed") && !(key === "percent" && after.type !== "percent"));
   return keys
-    .map((key) => ({ key, label: FIELD_LABEL[key], before: displayValue(key, before, skuLabels, toMs), after: displayValue(key, after, skuLabels, toMs) }))
+    .map((key) => ({ key, label: FIELD_LABEL[key], before: voucher && key === "startDate" ? startText(voucher.startAt) : voucher && key === "endDate" ? endText(voucher.endAt) : displayValue(key, before, skuLabels, toMs), after: displayValue(key, after, skuLabels, toMs) }))
     .filter((row) => row.before !== row.after)
     .map((row) => issued > 0 && AFFECTS_ISSUED.has(row.key) ? { ...row, note: "已发出还没用的券也按改后的值使用" } : row);
 }
@@ -139,7 +139,7 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
   initial: H7FormValue;
   skuOptions: string[];
   skuLabels: Record<string, string>;
-  toMs: (date: string) => number;
+  toMs: (date: string, end?: boolean) => number;
   onClose: () => void;
   onReview: (value: H7FormValue) => void;
 }) {
@@ -168,9 +168,9 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
   const close = () => { if (dirty) setLeaving(true); else onClose(); };
   const review = () => { setAttempted(true); if (missing.length === 0) onReview(value); };
   const issued = voucher?.issuedCount ?? 0;
-  const zone = businessZone().label;
-  const startAt = dateStamp(value.startDate, toMs), endAt = dateStamp(value.endDate, toMs);
-  const changed = voucher ? changedRows(initial, value, skuLabels, toMs, issued) : [];
+  const zone = H7_TIME_ZONE.label;
+  const startAt = dateStamp(value.startDate, toMs), endAt = dateStamp(value.endDate, toMs, true);
+  const changed = voucher ? changedRows(initial, value, skuLabels, toMs, issued, voucher) : [];
   const touchesIssued = changed.some((row) => AFFECTS_ISSUED.has(row.key));
 
   return (

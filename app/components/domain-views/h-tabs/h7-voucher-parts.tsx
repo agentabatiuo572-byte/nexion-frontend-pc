@@ -9,36 +9,9 @@ import { CalendarClock, CheckCircle2, CircleHelp, Clock3, Hourglass, PauseCircle
 import { Button, Explain, Notice, SegmentBar, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 
-export type H7Voucher = {
-  id: string;
-  name: string;
-  type: "fixed" | "percent";
-  amountUSD?: number;
-  percent?: number;
-  minPurchaseUSD?: number;
-  maxDiscountUSD?: number;
-  applicableSkus: string[];
-  audience: "new" | "all";
-  startAt: number;
-  endAt: number;
-  claimSurfaces: string[];
-  popupEnabled: boolean;
-  popupDelayMs: number;
-  popupCooldownHours: number;
-  popupMaxPerSession: number;
-  popupCadenceEnabled: boolean;
-  stackWithTrial: boolean;
-  stackWithOthers: boolean;
-  splittable: boolean;
-  issuanceLimit: number;
-  version: number;
-  issuedCount: number;
-  availableCount: number;
-  redeemedCount: number;
-  revokedCount: number;
-  batchCount: number;
-  status: "active" | "paused";
-};
+import type { H7Voucher } from "@/lib/admin/h-client";
+import { h7Stamp } from "@/lib/admin/h7-voucher-time";
+export type { H7Voucher } from "@/lib/admin/h-client";
 
 export const SURFACE_LABEL: Record<string, string> = { home: "首页", store: "商城", me: "我的", earn: "收益" };
 export const AUDIENCE_LABEL = { new: "新用户", all: "全部用户" } as const;
@@ -56,14 +29,14 @@ export function amountText(value: number | undefined | null): string {
 
 export const countText = (value: number) => value.toLocaleString("en-US");
 
-/** 起止是 UTC 当天 0 点的毫秒，按业务时区写到分钟；0 是哨兵值。 */
-export function startText(ms: number) { return ms ? businessStamp(ms) : "立即"; }
-export function endText(ms: number) { return ms ? businessStamp(ms) : "长期有效"; }
+/** 按真实毫秒显示北京时间；0 是立即／长期的合同哨兵。 */
+export function startText(ms: number) { return ms ? h7Stamp(ms) : "立即"; }
+export function endText(ms: number) { return ms ? h7Stamp(ms) : "长期有效"; }
 export function periodText(v: Pick<H7Voucher, "startAt" | "endAt">) {
   if (!v.startAt && !v.endAt) return "长期有效";
-  if (!v.startAt) return `至 ${businessStamp(v.endAt)}`;
-  if (!v.endAt) return `${businessStamp(v.startAt)} 起，长期有效`;
-  return `${businessStamp(v.startAt)} 至 ${businessStamp(v.endAt)}`;
+  if (!v.startAt) return `至 ${h7Stamp(v.endAt)}`;
+  if (!v.endAt) return `${h7Stamp(v.startAt)} 起，长期有效`;
+  return `${h7Stamp(v.startAt)} 至 ${h7Stamp(v.endAt)}`;
 }
 
 /** 券面的大字：满减写面额，折扣写「减 8%」（App 显示「8% 折扣」，意思是按订单金额减 8%）。 */
@@ -114,16 +87,17 @@ export function voucherPhase(v: Pick<H7Voucher, "startAt" | "endAt">, now: numbe
 export const limitReached = (v: Pick<H7Voucher, "issuanceLimit" | "issuedCount">) => v.issuanceLimit > 0 && v.issuedCount >= v.issuanceLimit;
 
 /** 状态标签：投放状态之外，过期、未开始、发完各一枚；过期的不再写「投放中」。 */
-export function VoucherTags({ v, now }: { v: H7Voucher; now: number }) {
+export function VoucherTags({ v, now, showPending = true }: { v: H7Voucher; now: number; showPending?: boolean }) {
   const phase = voucherPhase(v, now);
   return (
     <span className="h7-tags">
+      {showPending && v.pendingApproval && pendingTag(v.pendingApproval.action)}
       {phase === "expired"
         ? <StatusTag tone="done" icon={Hourglass} explain={`有效期已过，用户不能再领，已领到的也不能再用。模板状态还是「${v.status === "active" ? "投放中" : "已暂停"}」。`}>已过期</StatusTag>
         : v.status === "active"
           ? <StatusTag tone="ok" icon={CheckCircle2} explain="用户可以领；还要符合有效期、发给谁、发行上限和领取入口。">投放中</StatusTag>
           : <StatusTag tone="done" icon={PauseCircle} explain="用户不能再领；已领到的不收回，有效期内仍能用。">已暂停</StatusTag>}
-      {phase === "upcoming" && <StatusTag tone="progress" icon={CalendarClock}>{`${businessStamp(v.startAt).slice(5, 10)} 开始`}</StatusTag>}
+      {phase === "upcoming" && <StatusTag tone="progress" icon={CalendarClock}>{`${h7Stamp(v.startAt).slice(5, 10)} 开始`}</StatusTag>}
       {phase !== "expired" && limitReached(v) && <StatusTag tone="warn" icon={TriangleAlert} explain="已发出的张数到了发行上限，用户领不到了；作废或用掉的也占上限。要继续发，调高发行上限。">已发完</StatusTag>}
     </span>
   );
@@ -198,8 +172,8 @@ export function unknownTag(kind: "direct" | "approval") {
     : "提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会建第二张。"}>结果未知</StatusTag>;
 }
 
-export function pendingTag() {
-  return <StatusTag tone="warn" icon={Clock3} explain="等另一位管理员在「操作记录与审批」批准。批准前券模板和已发出的券都不变，这张券也不能编辑、暂停或投放。">待审批</StatusTag>;
+export function pendingTag(action?: string | null) {
+  return <StatusTag tone="warn" icon={Clock3} explain="等另一位管理员在「操作记录与审批」批准。批准前券模板和已发出的券都不变，这张券也不能编辑、暂停或投放。">{action ? `${action}待审批` : "待审批"}</StatusTag>;
 }
 
 export function expiredTag() {

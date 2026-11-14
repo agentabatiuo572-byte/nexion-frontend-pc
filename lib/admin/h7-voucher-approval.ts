@@ -1,11 +1,12 @@
 import {
-  A2OutcomeUncertainError,
-  createA2CommandKey,
-  createA2OperationProposal,
-  fetchA2ProposalByKey,
-  isA2OutcomeUncertainError,
+  A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey,
+  isA2OutcomeUncertainError, type A2OperationRow,
 } from "./a2-client";
-import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
+import { isExplicitRejection } from "./explicit-rejection";
+import { isDeterministicRejection } from "./outcome-classification";
+import { requireH7Actor } from "./h7-voucher-mutation";
+import { parseH7Voucher, type H7Voucher } from "./h-client";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 
@@ -19,93 +20,105 @@ export type H7VoucherApprovalInput = {
   voucherId: string;
   voucherName: string;
   expectedVersion: number;
+  /** Original confirmation facts, never replaced by today's voucher. */
+  voucher?: H7Voucher;
 };
-
 export type H7VoucherApprovalMode = "submit" | "lookup" | "retry";
-type Attempt = PendingMutationRecord & H7VoucherApprovalInput & { reason: string };
+type Proposal = Parameters<typeof createA2OperationProposal>[0];
+export type H7VoucherApprovalAttempt = PendingMutationRecord & H7VoucherApprovalInput & {
+  reason: string; proposal?: Proposal; acknowledged?: boolean;
+};
 
 export function isH7VoucherApproval(op: string | undefined): op is H7VoucherApprovalInput["op"] {
   return op !== undefined && Object.hasOwn(H7_VOUCHER_ACTIONS, op);
 }
 
-const attempts = createPendingMutationStore<Attempt>({
-  storageKey: "nexion-admin-h7-voucher-proposals",
-  retainExpiredRecords: true,
-  isValidRecord: (record) => isH7VoucherApproval(record.op)
-    && typeof record.voucherId === "string" && typeof record.voucherName === "string"
-    && Number.isSafeInteger(record.expectedVersion) && record.expectedVersion > 0
-    && typeof record.reason === "string",
+const attempts = createPendingMutationStore<H7VoucherApprovalAttempt>({
+  storageKey: "nexion-admin-h7-voucher-proposals", retainExpiredRecords: true,
+  isValidRecord: record => {
+    if (!isH7VoucherApproval(record.op) || typeof record.voucherId !== "string" || typeof record.voucherName !== "string"
+      || !Number.isSafeInteger(record.expectedVersion) || record.expectedVersion <= 0 || typeof record.reason !== "string") return false;
+    try {
+      if (record.voucher && parseH7Voucher(record.voucher).id !== record.voucherId) return false;
+      // Older records can still be queried, but lack a complete original envelope for replay.
+      if (!record.proposal) return true;
+      const p = record.proposal;
+      return p.sourceDomain === "H7" && p.obj === record.voucherId && p.reason === record.reason
+        && typeof p.operator === "string" && typeof p.operatorRole === "string"
+        && p.command.domain === "H" && p.command.op === record.op
+        && p.command.params.voucherId === record.voucherId && p.command.params.expectedVersion === record.expectedVersion
+        && p.target?.domain === "H" && p.target.type === "voucher" && p.target.id === record.voucherId;
+    } catch { return false; }
+  },
 });
 
 export function pendingH7VoucherApprovals(adminId: number) {
-  return attempts.list().filter((record) => record.fingerprint === `${adminId}:${record.voucherId}`);
+  return attempts.list().filter(record => record.fingerprint === `${adminId}:${record.voucherId}`);
 }
+export const canRetryH7VoucherApproval = (record: H7VoucherApprovalAttempt) => !isRetryExpired(record) && !!record.proposal && !record.acknowledged;
 
-export async function submitH7VoucherApproval(
-  session: AdminSession,
-  input: H7VoucherApprovalInput,
-  reason: string,
-  mode: H7VoucherApprovalMode = "submit",
-) {
+export async function submitH7VoucherApproval(session: AdminSession, input: H7VoucherApprovalInput, reason: string, mode: H7VoucherApprovalMode = "submit") {
+  requireH7Actor(session.adminId, false);
   const slot = `${session.adminId}:${input.voucherId}`;
-  const previous = pendingH7VoucherApprovals(session.adminId).find((record) => record.fingerprint === slot);
+  const previous = pendingH7VoucherApprovals(session.adminId).find(record => record.fingerprint === slot);
   if (mode === "lookup" && !previous) return null;
-  if (mode === "retry" && !previous) throw new Error("原审批命令已处理，请刷新后核对结果。");
+  if (mode === "retry" && !previous) throw new Error("H7_ORIGINAL_RESOLVED");
   const original = previous ?? { ...input, reason };
   const key = previous?.commandKey ?? createA2CommandKey(original.op);
-  if (!previous) {
-    attempts.remember(slot, key, original);
-    if (!attempts.isDurablyStored(slot, key)) {
-      attempts.forget(slot, key);
-      throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
+  const checkTicket = (ticket: A2OperationRow) => {
+    // 111e00cd OpsAuditCenterService.ticketMetadata explicitly supplies H7 operationCode.
+    if (!ticket.mine || ticket.obj !== original.voucherId || ticket.operationCode !== original.op
+      || !["pending", "approved", "rejected", "expired", "withdrawn"].includes(ticket.status)) {
+      throw new A2OutcomeUncertainError("审批回执与原操作不符，请到操作记录核对。", key);
     }
-  }
-
-  let ticket;
+  };
   if (previous) {
-    try {
-      ticket = await fetchA2ProposalByKey(key);
-    } catch {
-      throw new A2OutcomeUncertainError("暂时无法查询原审批单，请稍后再查。", key);
-    }
-    if (!ticket && mode === "lookup") return null;
-    if (!ticket && previous.expiresAt <= Date.now()) {
-      throw new A2OutcomeUncertainError("原命令已过期，暂未查到审批单。请继续核对原操作。", key);
-    }
+    let current;
+    try { current = await fetchA2ProposalByKey(key, true); }
+    catch { throw new A2OutcomeUncertainError("暂时无法查询原审批单，请稍后再查。", key); }
+    if (current) { checkTicket(current); attempts.forget(slot, key); return current; }
+    if (mode === "lookup") return null;
+    if (!canRetryH7VoucherApproval(previous)) throw new A2OutcomeUncertainError("原请求不能再重发，请继续查询原审批单。", key);
+  }
+  requireH7Actor(session.adminId, true);
+  const proposal: Proposal = previous?.proposal ?? {
+    action: H7_VOUCHER_ACTIONS[original.op], obj: original.voucherId, beforeValue: "—", afterValue: "—",
+    operator: session.operator || session.username, operatorRole: roleLabel(session.role), type: "param",
+    amplifies: false, sos: false, roleGate: "门槛者", reason: original.reason, sourceDomain: "H7",
+    command: { domain: "H", op: original.op, params: { voucherId: original.voucherId, expectedVersion: original.expectedVersion } },
+    target: { domain: "H", type: "voucher", id: original.voucherId },
+  };
+  attempts.remember(slot, key, { ...original, proposal });
+  if (!attempts.isDurablyStored(slot, key)) {
+    if (!previous) attempts.forget(slot, key);
+    throw new Error("H7_REQUEST_STORAGE_UNAVAILABLE");
   }
   try {
-    ticket ??= await createA2OperationProposal({
-      action: H7_VOUCHER_ACTIONS[original.op],
-      obj: original.voucherId,
-      beforeValue: "—",
-      afterValue: "—",
-      operator: session.operator || session.username,
-      operatorRole: roleLabel(session.role),
-      type: "param",
-      amplifies: false,
-      sos: false,
-      roleGate: "门槛者",
-      reason: original.reason,
-      sourceDomain: "H7",
-      command: { domain: "H", op: original.op, params: {
-        voucherId: original.voucherId, expectedVersion: original.expectedVersion,
-      } },
-      target: { domain: "H", type: "voucher", id: original.voucherId },
-    }, key, true);
+    const receipt = await createA2OperationProposal(proposal, key, true);
+    checkTicket(receipt);
   } catch (error) {
-    if (error instanceof Error && "backendMessage" in error
-        && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
-      throw new A2OutcomeUncertainError("原审批命令仍待确认，请查询原操作。", key);
-    }
-    if (!isA2OutcomeUncertainError(error)
-        && (!previous || !(error instanceof Error && "status" in error && [401, 403, 404].includes(Number(error.status))))) {
-      attempts.forget(slot, key);
-    }
+    const e = error as { status?: number; backendMessage?: string; apiCode?: number };
+    const rejected = !isA2OutcomeUncertainError(error) && !(e.backendMessage ?? "").startsWith("IDEMPOTENCY_")
+      && (previous ? isExplicitRejection(error) : isDeterministicRejection(e.status ?? 0, e.apiCode));
+    if (rejected) attempts.forget(slot, key);
     throw error;
   }
-  if (!ticket.mine || ticket.obj !== original.voucherId || ticket.operationCode !== original.op) {
-    throw new A2OutcomeUncertainError("审批回执与原操作不符，请到操作记录核对。", key);
-  }
+  // An idempotent POST can replay the ticket's creation state. Only an exact GET
+  // establishes whether it is pending now. Keep query-only evidence if GET fails.
+  attempts.remember(slot, key, { ...original, proposal, acknowledged: true });
+  let current;
+  try { current = await fetchA2ProposalByKey(key, true); }
+  catch { throw new A2OutcomeUncertainError("申请已建单，批没批准还没查到。请查询原结果。", key); }
+  if (!current) throw new A2OutcomeUncertainError("申请已建单，批没批准还没查到。请查询原结果。", key);
+  checkTicket(current);
   attempts.forget(slot, key);
-  return ticket;
+  return current;
+}
+
+/** UI must obtain an explicit confirmation before calling this for an expired proposal. */
+export async function releaseExpiredH7VoucherApproval(session: AdminSession, record: H7VoucherApprovalAttempt) {
+  requireH7Actor(session.adminId, false);
+  const current = pendingH7VoucherApprovals(session.adminId).find(r => r.commandKey === record.commandKey);
+  if (!current || !isRetryExpired(current) || await fetchA2ProposalByKey(current.commandKey, true) !== null) throw new Error("H7_PROPOSAL_RELEASE_FORBIDDEN");
+  attempts.forget(current.fingerprint, current.commandKey);
 }
