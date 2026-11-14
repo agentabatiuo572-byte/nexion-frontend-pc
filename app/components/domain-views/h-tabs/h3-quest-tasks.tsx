@@ -268,7 +268,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       action: label,
       detail: <>当前值 <b>{current}</b>。如果别人刚改过，需要刷新后再改。</>,
       ...shown,
-      edit: { kind: "number", current: expected === "__MISSING__" ? "" : expected, min, max, step, disallowCurrent: true, amplifiesWhen, hint, preview },
+      edit: { kind: "number", current: expected === "__MISSING__" ? "" : expected, min, max,
+        step: key === "promoBanner.multiplier" ? 0.000001 : key === "promoBanner.targetDaily" ? undefined : step,
+        inputStep: key === "promoBanner.multiplier" || key === "promoBanner.targetDaily" ? step : undefined,
+        disallowCurrent: true, amplifiesWhen, hint, preview },
       run: async (reason, value) => {
         if (!value) return;
         await updateConfigWithExpected(key, value, expected, reason, label);
