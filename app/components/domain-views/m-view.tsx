@@ -1061,24 +1061,6 @@ async function applyMBackendWrite(
     }
     return;
   }
-  if (key === "I.support.seatAssignment.__update") {
-    const payload = parseRecord<{
-      adminId?: number;
-      position?: string;
-      serviceTypes?: Array<"support" | "advisor">;
-      tags?: string[];
-      maxConcurrent?: number;
-      enabled?: boolean;
-      transferable?: boolean;
-      busy?: boolean;
-      userIds?: number[];
-      expectedVersion?: number;
-    }>(value);
-    if (payload?.adminId && payload.position && Number.isSafeInteger(payload.expectedVersion)) {
-      await mContentActions.assignSupportSeat(payload.adminId, { ...payload, position: payload.position, expectedVersion: payload.expectedVersion! }, reason, idempotencyKey);
-    }
-    return;
-  }
   if (key === "I.support.advisorAssignment.__create") {
     const payload = parseRecord<{ adminId?: number; userId?: number; userIds?: number[] }>(value);
     const userIds = Array.isArray(payload?.userIds)
