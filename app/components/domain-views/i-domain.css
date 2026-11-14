@@ -179,10 +179,10 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i2-dist { display: grid; gap: var(--rd-space-3); --rd-track-w: 100%; }
 .i2-dist .rd-segbar-wrap { max-width: 720px; }
 .i2-dist-edit { display: grid; gap: var(--rd-space-2); }
-.i2-dist-track { position: relative; display: flex; height: 16px; margin: 4px 6px 0; border-radius: var(--rd-radius-bar); background: var(--rd-panel-inner); touch-action: none; }
-.i2-dist-seg { height: 100%; background: var(--slot); }
-.i2-dist-seg:first-child { border-radius: var(--rd-radius-bar) 0 0 var(--rd-radius-bar); }
-.i2-dist-handle { position: absolute; top: -4px; bottom: -4px; width: 12px; margin-left: -6px; border-radius: 3px; background: var(--rd-panel); border: 2px solid var(--rd-text-2); cursor: ew-resize; }
+.i2-dist-svg { display: block; width: calc(100% - 12px); margin: 0 6px; overflow: visible; touch-action: none; }
+.i2-dist-bg { fill: var(--rd-panel-inner); }
+.i2-dist-seg { fill: var(--slot); }
+.i2-dist-handle { fill: var(--rd-panel); stroke: var(--rd-text-2); stroke-width: 2; cursor: ew-resize; }
 .i2-dist-handle:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
 .i2-dist-edit[data-disabled] .i2-dist-handle { cursor: default; }
 .i2-dist-help { margin: 0; font-size: var(--rd-text-aux); color: var(--rd-text-3); }

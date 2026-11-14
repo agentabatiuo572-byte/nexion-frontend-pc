@@ -237,7 +237,7 @@ export function DistEditor({ items, values, onChange, disabled }: {
   onChange: (next: Record<string, string>) => void;
   disabled?: boolean;
 }) {
-  const bar = useRef<HTMLDivElement>(null);
+  const bar = useRef<SVGSVGElement>(null);
   const drag = useRef<{ index: number; startX: number; a: number; b: number } | null>(null);
   const num = (key: string) => { const v = Number(values[key]); return Number.isFinite(v) && v > 0 ? v : 0; };
   const total = items.reduce((sum, item) => sum + num(item.key), 0);
@@ -251,43 +251,44 @@ export function DistEditor({ items, values, onChange, disabled }: {
     if (!d && !base) return;
     onChange({ ...values, [left]: String(Math.round(a0 + d)), [right]: String(Math.round(b0 - d)) });
   };
-  const down = (index: number) => (event: PointerEvent<HTMLSpanElement>) => {
+  const down = (index: number) => (event: PointerEvent<SVGRectElement>) => {
     if (disabled) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     drag.current = { index, startX: event.clientX, a: num(items[index].key), b: num(items[index + 1].key) };
   };
-  const moving = (event: PointerEvent<HTMLSpanElement>) => {
+  const moving = (event: PointerEvent<SVGRectElement>) => {
     const state = drag.current;
-    const width = bar.current?.clientWidth ?? 0;
+    const width = bar.current?.getBoundingClientRect().width ?? 0;
     if (!state || !width) return;
     move(state.index, Math.round(((event.clientX - state.startX) / width) * scale), state);
   };
   const up = () => { drag.current = null; };
-  const key = (index: number) => (event: KeyboardEvent<HTMLSpanElement>) => {
+  const key = (index: number) => (event: KeyboardEvent<SVGRectElement>) => {
     if (disabled) return;
     const step = event.shiftKey ? 5 : 1;
     if (event.key === "ArrowRight" || event.key === "ArrowUp") { event.preventDefault(); move(index, step); }
     if (event.key === "ArrowLeft" || event.key === "ArrowDown") { event.preventDefault(); move(index, -step); }
   };
-  let acc = 0;
+  // 用 SVG 的百分比坐标画段和分界，位置写在属性里，不写内联样式。
+  let start = 0;
+  const segs = items.map((item) => { const v = num(item.key); const seg = { item, x: (start / scale) * 100, w: (v / scale) * 100, v }; start += v; return seg; });
   return (
     <div className="i2-dist-edit" data-disabled={disabled ? "" : undefined}>
-      <div className="i2-dist-track" ref={bar}>
-        {items.map((item) => {
-          const v = num(item.key);
-          return <span key={item.key} className="i2-dist-seg" data-slot={DIST_SLOT[item.key] ?? "other"} style={{ width: `${(v / scale) * 100}%` }} title={`${item.name} ${v}%`} />;
-        })}
-        {items.slice(0, -1).map((item, index) => {
-          acc += num(item.key);
+      <svg className="i2-dist-svg" ref={bar} width="100%" height="24" role="group" aria-label="五类事件概率">
+        <rect className="i2-dist-bg" x="0" y="4" width="100%" height="16" rx="4" />
+        {segs.map(({ item, x, w, v }) => <rect key={item.key} className="i2-dist-seg" data-slot={DIST_SLOT[item.key] ?? "other"} x={`${x}%`} y="4" width={`${w}%`} height="16"><title>{`${item.name} ${v}%`}</title></rect>)}
+        {segs.slice(0, -1).map(({ item, x, w }, index) => {
           const next = items[index + 1];
           return (
-            <span key={`${item.key}-edge`} className="i2-dist-handle" style={{ left: `${(acc / scale) * 100}%` }}
-              role="slider" tabIndex={disabled ? -1 : 0} aria-label={`${item.name}和${next.name}的分界`}
-              aria-valuemin={0} aria-valuemax={100} aria-valuenow={acc} aria-valuetext={`${item.name} ${num(item.key)}%，${next.name} ${num(next.key)}%`}
-              onPointerDown={down(index)} onPointerMove={moving} onPointerUp={up} onPointerCancel={up} onKeyDown={key(index)} />
+            <svg key={`${item.key}-edge`} x={`${x + w}%`} y="0" overflow="visible">
+              <rect className="i2-dist-handle" x="-6" y="1" width="12" height="22" rx="3"
+                role="slider" tabIndex={disabled ? -1 : 0} aria-label={`${item.name}和${next.name}的分界`}
+                aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(((x + w) / 100) * scale)} aria-valuetext={`${item.name} ${num(item.key)}%，${next.name} ${num(next.key)}%`}
+                onPointerDown={down(index)} onPointerMove={moving} onPointerUp={up} onPointerCancel={up} onKeyDown={key(index)} />
+            </svg>
           );
         })}
-      </div>
+      </svg>
       <p className="i2-dist-help">拖分界线调整相邻两类，或在下面直接填数</p>
     </div>
   );
