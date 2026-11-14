@@ -21,7 +21,7 @@ import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { A1Accounts } from "./a-tabs/a1-accounts";
 import { A2Audit } from "./a-tabs/a2-audit";
-import { A3Config } from "./a-tabs/a3-config";
+import { A3Page } from "./a-tabs/a3-page";
 import { A4Events } from "./a-tabs/a4-events";
 import { A9DeveloperAccess } from "./a-tabs/a9-developer-access";
 import type { ACtx, ConfirmReq, ActionConfirmReq } from "./a-tabs/types";
@@ -31,7 +31,7 @@ import { fetchA4Overview } from "@/lib/admin/a4-client";
 
 const FOLD: Record<string, string> = { A1: "A1", A2: "A2", A3: "A3", A4: "A4", A9: "A9" };
 /** 已改版的页：包 RdPage，页头和统计由页面自己写，这里不再另读一次（A2-H06）。 */
-const REDESIGNED = ["A1", "A2"];
+const REDESIGNED = ["A1", "A2", "A3"];
 
 
 export function ADomainView({ meta }: { meta: DomainViewMeta }) {
@@ -92,7 +92,7 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
 
       {tab === "A1" && <A1Accounts ctx={ctx} />}
       {tab === "A2" && <A2Audit ctx={ctx} />}
-      {tab === "A3" && <A3Config ctx={ctx} />}
+      {tab === "A3" && <A3Page ctx={ctx} />}
       {tab === "A4" && <A4Events ctx={ctx} />}
       {tab === "A9" && <A9DeveloperAccess />}
 
