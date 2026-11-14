@@ -117,3 +117,146 @@
 .adom .a4-pipe .ar { color: var(--ink-4); font-size: 11px; font-family: var(--mono); }
 .adom .a4-dom { display: inline-flex; padding: 3px 9px; border-radius: 5px; background: var(--surface-3); color: var(--ink-3); font-family: var(--mono); font-size: 11px; font-weight: 600; margin: 2px 3px 2px 0; }
 .adom .a4-dom.new { background: var(--warning-soft); color: var(--warning); }
+
+/* ============================ A3 系统配置（改版） ============================
+   页面根 .a3-page 不占版面（display: contents），块间距仍由 .rd-page 给。只用 --rd-* 令牌。 */
+.a3-page { display: contents; }
+.a3-page [role="tabpanel"][hidden] { display: none; }
+
+/* 开关与门槛：两张参数卡并排，现在的值大字，下面写这意味着什么 */
+.a3-page .a3-params { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: var(--rd-section-gap); }
+.a3-page .a3-param-value { display: flex; align-items: baseline; gap: 6px; }
+.a3-page .a3-param-value strong { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; color: var(--rd-text); }
+.a3-page .a3-param-value span { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.a3-page .a3-param-value[data-empty] strong { color: var(--rd-text-3); }
+.a3-page .a3-meaning { display: grid; gap: var(--rd-space-2); margin: var(--rd-space-3) 0 0; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
+.a3-page .a3-meaning > div { display: grid; grid-template-columns: minmax(120px, 160px) minmax(0, 1fr); gap: var(--rd-space-3); align-items: baseline; }
+.a3-page .a3-meaning dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.a3-page .a3-meaning dd { margin: 0; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.a3-page .a3-param-foot { margin: var(--rd-space-3) 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+
+/* 应急与运行：只读的状态卡 */
+.a3-page .a3-gates, .a3-page .a3-health { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--rd-space-3); grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.a3-page .a3-gates li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--rd-space-1) var(--rd-space-2); align-items: center; padding: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); }
+.a3-page .a3-gate-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.a3-page .a3-gate-meta { grid-column: 1 / -1; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.a3-page .a3-health { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.a3-page .a3-health li { display: grid; gap: var(--rd-space-2); padding: var(--rd-space-3) var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); }
+.a3-page .a3-health li[data-tone="danger"] { border-color: var(--rd-danger); background: var(--rd-danger-bg); }
+.a3-page .a3-health li[data-tone="warn"] { border-color: var(--rd-warn); background: var(--rd-warn-bg); }
+.a3-page .a3-health-head { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-2); }
+.a3-page .a3-health-name { display: inline-flex; align-items: center; gap: 4px; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.a3-page .a3-health-metric { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.a3-page .a3-health-time { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+
+/* 业务日历：两条轨道的版本时间线，「现在」一列竖着标出来，安排中的虚线框 */
+.a3-page .a3-cal { display: grid; margin-top: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); overflow: hidden; }
+.a3-page .a3-cal-row { display: grid; grid-template-columns: minmax(150px, 190px) repeat(var(--a3-cols, 2), minmax(0, 1fr)); align-items: stretch; }
+.a3-page .a3-cal[data-cols="2"] { --a3-cols: 2; }
+.a3-page .a3-cal[data-cols="3"] { --a3-cols: 3; }
+.a3-page .a3-cal[data-cols="4"] { --a3-cols: 4; }
+.a3-page .a3-cal[data-cols="5"] { --a3-cols: 5; }
+.a3-page .a3-cal[data-cols="6"] { --a3-cols: 6; }
+.a3-page .a3-cal-row + .a3-cal-row { border-top: 1px solid var(--rd-line); }
+.a3-page .a3-cal-head { background: var(--rd-panel-inner); }
+.a3-page .a3-cal-lane { display: grid; align-content: center; gap: 2px; padding: var(--rd-space-3); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.a3-page .a3-cal-head .a3-cal-lane { font-weight: var(--rd-weight-regular); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.a3-page .a3-cal-lane small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.a3-page .a3-cal-date { display: grid; align-content: center; justify-items: center; gap: 2px; padding: var(--rd-space-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
+.a3-page .a3-cal-date small { color: var(--rd-progress); }
+.a3-page .a3-cal-date small.a3-cal-today { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
+.a3-page .a3-cal-date[data-now] { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.a3-page .a3-cal-cell { position: relative; display: grid; place-items: center; padding: var(--rd-space-3) var(--rd-space-2); min-height: 64px; }
+.a3-page .a3-cal-cell::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 2px solid var(--rd-line-strong); }
+.a3-page :is(.a3-cal-cell, .a3-cal-date)[data-now] { background: var(--rd-selected); }
+.a3-page .a3-cal-node { position: relative; display: grid; justify-items: center; gap: 0; min-width: 0; max-width: 100%; padding: 4px 12px; border: 1px solid var(--rd-line-strong); border-radius: var(--rd-radius-control); background: var(--rd-panel); text-align: center; }
+.a3-page .a3-cal-node b { font-weight: var(--rd-weight-medium); color: var(--rd-text); overflow-wrap: anywhere; }
+.a3-page .a3-cal-node small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.a3-page .a3-cal-node[data-current] { border-color: var(--rd-role-3); }
+.a3-page .a3-cal-node[data-past] b { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
+.a3-page .a3-cal-node[data-pending] { border-style: dashed; border-color: var(--rd-progress); }
+.a3-page .a3-cal-node[data-pending] small { color: var(--rd-progress); }
+.a3-page .a3-cal-gap { position: relative; color: var(--rd-text-3); }
+.a3-page .a3-cal-now { position: relative; width: 10px; height: 10px; border-radius: 50%; background: var(--rd-brand); }
+.a3-page .a3-cal-note { margin-top: var(--rd-space-3); }
+.a3-page .a3-switch { display: grid; gap: var(--rd-space-3); margin-top: var(--rd-space-4); padding-top: var(--rd-space-4); border-top: 1px solid var(--rd-line); }
+.a3-page .a3-switch-title { display: flex; align-items: center; gap: var(--rd-space-2); font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); }
+
+/* App 分享与下载、说明内容：左边填，右边「App 上的样子」 */
+.a3-page .a3-with-preview { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: var(--rd-space-6); align-items: start; }
+.a3-page .a3-preview { position: sticky; top: var(--rd-space-4); display: grid; gap: var(--rd-space-3); padding: var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); min-width: 0; }
+.a3-page .a3-preview-label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.a3-page .a3-preview-rows { display: grid; gap: var(--rd-space-3); margin: 0; }
+.a3-page .a3-preview-rows > div { display: grid; gap: 2px; }
+.a3-page .a3-preview-rows dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.a3-page .a3-preview-rows dd { margin: 0; display: grid; gap: 2px; color: var(--rd-text); }
+.a3-page .a3-preview-link { font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); overflow-wrap: anywhere; color: var(--rd-text); }
+.a3-page .a3-preview-link mark { background: var(--rd-progress-bg); color: var(--rd-progress); border-radius: var(--rd-radius-tag); padding: 0 2px; }
+.a3-page .a3-preview-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.a3-page .a3-preview-sub, .a3-page .a3-preview-note { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); margin: 0; }
+.a3-page .a3-preview-empty { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-warn); }
+.a3-page .a3-download { display: grid; gap: var(--rd-space-2); padding: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.a3-page .a3-download[data-empty] b { color: var(--rd-text-2); }
+.a3-page .a3-download[data-empty] span { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.a3-page .a3-langs { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--rd-space-3); align-content: start; }
+.a3-page .a3-lang { display: grid; gap: 0; }
+.a3-page .a3-lang b { font-weight: var(--rd-weight-medium); }
+.a3-page .a3-lang small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.a3-page .a3-preview-langs { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--rd-space-2); }
+.a3-page .a3-preview-langs li { padding: 2px var(--rd-space-2); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tag); background: var(--rd-panel); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.a3-page .a3-readonly { display: flex; flex-wrap: wrap; gap: var(--rd-space-3) var(--rd-space-7); margin: 0; }
+.a3-page .a3-readonly > div { display: grid; gap: var(--rd-space-1); }
+.a3-page .a3-readonly dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.a3-page .a3-readonly dd { margin: 0; }
+.a3-page .a3-savebar { padding: var(--rd-space-3) var(--rd-panel-pad-x); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
+.a3-page .a3-version { width: 220px; }
+
+/* 说明内容 */
+.a3-page .a3-locale-bar { margin-bottom: var(--rd-space-4); }
+.a3-page .a3-locale-bar { align-items: flex-end; }
+.a3-page .a3-versions { display: flex; flex-wrap: wrap; gap: var(--rd-space-3); margin-left: auto; }
+.a3-page .a3-inline { display: flex; align-items: center; gap: var(--rd-space-2); }
+.a3-page .a3-inline .rd-input { width: 200px; }
+.a3-page .a3-code { font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); }
+.a3-page .a3-list { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; border: 0; min-width: 0; }
+.a3-page .a3-list legend { padding: 0; margin-bottom: var(--rd-space-2); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.a3-page .a3-list-row { display: grid; gap: var(--rd-space-2); align-items: center; grid-template-columns: minmax(0, 1fr) auto; }
+.a3-page .a3-list-row[data-kind="endpoint"] { grid-template-columns: 96px minmax(0, 1fr) auto; }
+.a3-page .a3-doc-preview { display: grid; gap: var(--rd-space-2); min-width: 0; }
+.a3-page .a3-doc-preview b { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-medium); color: var(--rd-text-3); }
+.a3-page .a3-doc-preview ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.a3-page .a3-doc-preview li { display: flex; gap: var(--rd-space-2); align-items: baseline; min-width: 0; }
+.a3-page .a3-method { flex: none; min-width: 48px; padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-role-2-bg); color: var(--rd-text); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); text-align: center; }
+.a3-page .a3-path { font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); overflow-wrap: anywhere; }
+.a3-page .a3-events { flex-direction: row; }
+.a3-page .a3-doc-preview pre, .a3-page .a3-json { margin: 0; max-height: 220px; overflow: auto; padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--rd-text-2); }
+.a3-page .a3-json { max-height: 360px; }
+.a3-page .a3-pages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--rd-space-3); margin-bottom: var(--rd-space-4); }
+.a3-page .a3-page-card { display: grid; gap: var(--rd-space-1); align-content: start; min-height: 88px; padding: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel); color: var(--rd-text); font: inherit; text-align: left; cursor: pointer; }
+@media (hover: hover) and (pointer: fine) { .a3-page .a3-page-card:hover:not(:disabled) { background: var(--rd-hover); } }
+.a3-page .a3-page-card[aria-pressed="true"] { background: var(--rd-selected); border-color: var(--rd-brand); box-shadow: inset 0 -2px 0 var(--rd-brand); }
+.a3-page .a3-page-card:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+.a3-page .a3-page-card:disabled { cursor: not-allowed; }
+.a3-page .a3-page-name { font-weight: var(--rd-weight-medium); }
+.a3-page .a3-page-meta { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+.a3-page .a3-page-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.a3-page .a3-blocks-title { font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); }
+.a3-page .a3-blocks-title:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+.a3-page .a3-how-preview { display: grid; gap: var(--rd-space-3); max-height: 640px; overflow: auto; min-width: 0; }
+.a3-page .a3-how-page { font-weight: var(--rd-weight-semibold); }
+.a3-page .a3-how-preview section { display: grid; gap: 4px; }
+.a3-page .a3-how-preview section[data-kind="callout"] { padding: var(--rd-space-2) var(--rd-space-3); border-left: 3px solid var(--rd-progress); background: var(--rd-progress-bg); border-radius: var(--rd-radius-tag); }
+.a3-page .a3-how-preview section[data-kind="ruleRef"] { padding: var(--rd-space-2) var(--rd-space-3); border: 1px dashed var(--rd-warn); border-radius: var(--rd-radius-tag); }
+.a3-page .a3-how-preview h4 { margin: 0; font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); }
+.a3-page .a3-how-preview p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--rd-text-2); }
+.a3-page .a3-how-preview ul { margin: 0; padding-left: 20px; color: var(--rd-text-2); }
+.a3-page .a3-how-preview mark { background: var(--rd-warn-bg); color: var(--rd-warn); border-radius: var(--rd-radius-tag); padding: 0 2px; }
+
+/* 窄的内容区：预览排到下面，页面卡两列 */
+@container adom (max-width: 1100px) {
+  .a3-page .a3-with-preview { grid-template-columns: minmax(0, 1fr); }
+  .a3-page .a3-preview { position: static; }
+  .a3-page .a3-pages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .a3-page .a3-cal-row { grid-template-columns: minmax(120px, 140px) repeat(var(--a3-cols, 2), minmax(0, 1fr)); }
+  .a3-page .a3-cal-lane small { display: none; }
+}
