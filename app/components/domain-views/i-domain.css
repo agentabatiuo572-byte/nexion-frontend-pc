@@ -129,10 +129,10 @@
 .i4-page .i4-app-lines dt { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .i4-page .i4-app-lines dd { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .i4-page .i4-card-tags { display: flex; flex-wrap: wrap; gap: var(--rd-space-2); }
-.i4-page .i4-card-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--rd-space-2); margin-top: auto; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
+.i4-page .i4-card-foot { display: flex; flex-direction: column; gap: var(--rd-space-2); margin-top: auto; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
 .i4-page .i4-card-change { display: flex; flex-direction: column; min-width: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); overflow-wrap: anywhere; }
 .i4-page .i4-card-who { font-variant-numeric: tabular-nums; }
-.i4-page .i4-card-foot .rd-row-actions { flex: none; }
+.i4-page .i4-card-foot .rd-row-actions { align-self: flex-end; }
 
 /* 四份资料卡 */
 .i4-page .i4-docs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--rd-space-3); }
