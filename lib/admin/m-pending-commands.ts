@@ -1,5 +1,6 @@
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import { isM4FaqCommand, type M4FaqCommand } from "./m4-faq-command";
+import { isM5Command, type M5Command } from "./m5-command";
 
 export interface MCommandRecord extends PendingMutationRecord {
   /** 本次提交的值:带 commandKey 的调用点靠它保证重试提交的仍是同一个值。 */
@@ -10,6 +11,7 @@ export interface MCommandRecord extends PendingMutationRecord {
   /** The exact normalized reason of a pending M3 end command survives refresh. */
   closeReason?: string;
   faq?: M4FaqCommand;
+  m5?: M5Command;
 }
 export const mCommands = createPendingMutationStore<MCommandRecord>({
   storageKey: "nexion-admin-m-content-commands-v1",
@@ -18,5 +20,6 @@ export const mCommands = createPendingMutationStore<MCommandRecord>({
     && (record.paramFingerprint === undefined || typeof record.paramFingerprint === "string")
     && (record.clientMessageId === undefined || typeof record.clientMessageId === "string")
     && (record.closeReason === undefined || typeof record.closeReason === "string")
-    && (record.faq === undefined || isM4FaqCommand(record.faq)),
+    && (record.faq === undefined || isM4FaqCommand(record.faq))
+    && (record.m5 === undefined || isM5Command(record.m5)),
 });

@@ -15,6 +15,8 @@ export type MCtx = {
   setParam: (k: string, v: string, meta: { action: string; reason: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void; /** 传了就把失败原因交给调用方，写在确认框里，不弹 toast。 */ onFailure?: (message: string) => void }) => Promise<boolean>;
   refreshConversations: () => Promise<void>;
   refreshContent: () => Promise<void>;
+  /** M5 recovery needs a fresh authoritative snapshot before another edit. */
+  refreshM5Content?: () => Promise<void>;
   /** A full content load is running; availability flags are not final yet. */
   contentLoading: boolean;
   /** Re-reads only the knowledge base. A full refresh rebuilds the open conversation and would close the picker. */

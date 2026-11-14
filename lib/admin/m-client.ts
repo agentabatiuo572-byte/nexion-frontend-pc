@@ -1,5 +1,6 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { M4FaqCommand } from "./m4-faq-command";
+import type { M5Command } from "./m5-command";
 import { formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
 import { compareM3Messages } from "./m3-message-order";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -1643,6 +1644,67 @@ export async function sendM4FaqCommand(command: M4FaqCommand, commandKey: string
   assertSupportFaq(result);
   if (command.kind !== "create" && result.id !== command.row.id || result.version !== (command.before ? command.before.version + 1 : 1)
     || result.status?.toLowerCase() !== command.row.status) throw new Error("CONTENT_API_MALFORMED_RESPONSE");
+}
+
+/** M5 materializes its existing REST adapter before saving the original request. */
+export function buildM5Command(key: string, value: string, params: Record<string, string>, meta: { reason: string; action: string }, actorId: number, successMessage: string, profile?: MSupportAgent): M5Command {
+  let path: string, body: Record<string, unknown>, method: "POST" | "PATCH" = "PATCH";
+  let beforeValue = params[key] ?? "", text = "", audience = "";
+  if (key === "I.support.agentProfile.__update") {
+    body = JSON.parse(value);
+    path = `/support-agents/${body.adminId}/profile`;
+    beforeValue = JSON.stringify(profile);
+  } else if (key === "I.session.script.__create") {
+    const row = JSON.parse(value);
+    body = { scriptGroup: row.scriptGroup || "开场", text: row.text, ctaPath: row.ctaPath || "—", audience: row.audience.trim(), status: row.status || "draft" };
+    path = "/session-templates/scripts"; method = "POST"; text = row.text; audience = row.audience;
+  } else if (key === "I.session.replyTemplates") {
+    const previous = JSON.parse(params[key] ?? "[]") as SessionReplyTpl[];
+    const row = (JSON.parse(value) as SessionReplyTpl[]).find(item => !previous.some(before => before.id === item.id));
+    if (!row) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+    body = { type: row.type, text: row.text, status: row.status };
+    path = "/session-templates/reply-templates"; method = "POST"; text = row.text; beforeValue = "";
+  } else {
+    const category = /^I\.session\.cat\.(advisor)\.enabled$/.exec(key);
+    const policy = /^I\.session\.advisor\.policy\.(enabled|delayMs|cooldownHours|maxPerSession|audience)$/.exec(key);
+    const status = /^I\.session\.(script|tpl)\.(.+)\.status$/.exec(key);
+    if (category) {
+      body = { enabled: value === "on", expectedEnabled: beforeValue === "on" };
+      path = `/session-templates/categories/${category[1]}`;
+      text = (JSON.parse(params["I.session.categories"] ?? "[]") as SessionCategory[]).find(row => row.type === "advisor")?.name ?? "";
+    } else if (policy) {
+      body = { value, expectedValue: beforeValue };
+      path = `/session-templates/advisor-policy/${policy[1]}`;
+    } else if (status) {
+      body = { status: templateStatus(value), expectedStatus: templateStatus(beforeValue) };
+      path = `/session-templates/${status[1] === "script" ? "scripts" : "reply-templates"}/${encodeURIComponent(status[2])}/status`;
+      const rows = JSON.parse(params[status[1] === "script" ? "I.session.scripts" : "I.session.replyTemplates"] ?? "[]") as (AdvisorScript | SessionReplyTpl)[];
+      text = rows.find(row => row.id === status[2])?.text ?? "";
+    } else throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  }
+  return { actorId, key, value: key === "I.session.replyTemplates" ? JSON.stringify(body) : value, reason: meta.reason, action: meta.action, successMessage,
+    resource: key === "I.support.agentProfile.__update" ? `profile:${profile?.adminId}` : key,
+    beforeValue, text, audience, profile, request: { path, method, body: JSON.stringify(withReason(body, meta.reason)) } };
+}
+
+export async function sendM5Command(command: M5Command, commandKey: string): Promise<void> {
+  const value = await apiRequest<unknown>(command.request.path, { method: command.request.method, body: command.request.body, headers: { "Idempotency-Key": commandKey } });
+  const result = supportObject(value, "m5.receipt"), input = JSON.parse(command.request.body);
+  if (command.profile) {
+    if (result.adminId !== command.profile.adminId || result.version !== command.profile.version + 1
+      || result.maxConcurrent !== input.maxConcurrent || result.enabled !== input.enabled || result.transferable !== input.transferable || result.busy !== input.busy
+      || JSON.stringify(result.tags) !== JSON.stringify(input.tags)) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  } else if (command.request.path.includes("/categories/")) {
+    if (result.type !== "advisor" || result.enabled !== input.enabled) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  } else if (command.request.path.includes("/advisor-policy/")) {
+    const field = command.request.path.split("/").at(-1)!;
+    const expected = field === "enabled" ? input.value === "on" : field === "audience" ? input.value : Number(input.value);
+    if (result[field] !== expected) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  } else {
+    if (typeof result.id !== "string" || !result.id || typeof result.text !== "string" || result.status !== input.status
+      || command.request.method === "POST" && result.text !== input.text
+      || command.request.method === "PATCH" && result.id !== decodeURIComponent(command.request.path.split("/").at(-2)!)) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  }
 }
 
 export async function readSupportKnowledge() {

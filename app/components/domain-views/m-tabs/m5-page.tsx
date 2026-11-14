@@ -34,7 +34,7 @@ export function M5Page({ ctx, permission, permissionUnknown, hasData, loading, l
 
   const auto = rules.mode === "AUTO_RANDOM";
   const rulePending = (rules.pending ? 1 : 0) + (policy.pending ? 1 : 0);
-  const pendingCount = rulePending + (welcome.pending ? 1 : 0);
+  const pendingCount = rulePending + (welcome.pending ? 1 : 0) + (content?.pending ?? 0);
   const contentReady = hasData && content?.contentAvailable;
   const agentsReady = hasData && content?.agentsAvailable;
   const welcomeDate = welcome.updatedAt ? formatBusinessTime(welcome.updatedAt, { year: "numeric", month: "2-digit", day: "2-digit" }) : null;
@@ -98,13 +98,12 @@ export function M5Page({ ctx, permission, permissionUnknown, hasData, loading, l
       {manager && <div {...ids.panel("welcome")} hidden={shownTab !== "welcome"} className="rd-tab-pane m5-pane">
         <M5WelcomeMessage permission={permission} onSummary={onWelcome} />
       </div>}
-      {hasData
-        ? <M5Scripts ctx={ctx} tab={shownTab} ids={ids} showSeatOperations={false} showSeatProfiles={manager} onSummary={onContent} />
-        : <>
+      <M5Scripts key={authEpoch} ctx={ctx} tab={shownTab} ids={ids} showSeatOperations={false} showSeatProfiles={manager} onSummary={onContent} hasData={hasData}
+        fallback={<>
           {manager && <div {...ids.panel("roster")} hidden={shownTab !== "roster"} className="rd-tab-pane m5-pane">{notLoaded("客服名册")}</div>}
           <div {...ids.panel("content")} hidden={shownTab !== "content"} className="rd-tab-pane m5-pane">{notLoaded("话术与模板")}</div>
           <div {...ids.panel("channels")} hidden={shownTab !== "channels"} className="rd-tab-pane m5-pane">{notLoaded("会话类别和推送设置")}</div>
-        </>}
+        </>} />
     </>
   );
 }

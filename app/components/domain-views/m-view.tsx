@@ -169,8 +169,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     setUiParams(session?.adminId ? readDockUi(session.adminId) : {});
   }, [authEpoch, session?.adminId]);
 
-  const reloadMContent = useCallback(async () => {
-    if (currentAuthEpoch.current !== authEpoch) return;
+  const reloadMContent = useCallback(async (requireM5Snapshot = false) => {
+    if (currentAuthEpoch.current !== authEpoch) {
+      if (requireM5Snapshot) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+      return;
+    }
     const generation = mLoadCoordinator.current.beginFullLoad();
     const isCurrent = () => currentAuthEpoch.current === authEpoch
       && mLoadCoordinator.current.isFullLoadCurrent(generation);
@@ -189,13 +192,22 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         if (!isCurrent()) return;
         setMData((previous) => preserveVerifiedSupportAgentsDuringReload(previous, partial));
       }, tab);
-      if (!isCurrent()) return;
+      if (!isCurrent()) {
+        if (requireM5Snapshot) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+        return;
+      }
+      if (requireM5Snapshot && (!next.sessionTemplatesAvailable
+        || session?.authorities.includes("service_m1_read") && !next.supportAgentsAvailable)) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
       setMData((previous) => preserveVerifiedSupportAgentsDuringReload(previous, next));
       setMError(null);
     } catch (error) {
-      if (!isCurrent()) return;
+      if (!isCurrent()) {
+        if (requireM5Snapshot) throw error;
+        return;
+      }
       setMData((previous) => failClosedSupportAgentsAfterReload(previous));
       setMError(displayAdminError(error));
+      if (requireM5Snapshot) throw error;
     } finally {
       if (isCurrent()) setMLoading(false);
     }
@@ -609,6 +621,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       }
     },
     refreshContent: reloadMContent,
+    refreshM5Content: () => reloadMContent(true),
     contentLoading: mLoading,
     refreshKnowledge,
     loadConversationDetail,
@@ -701,8 +714,8 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       {mc && (
         <OperationConfirmModal
           action={mc.action}
-          getPendingReason={tab === "M4" ? mc.getPendingReason : undefined}
-          initialReason={tab === "M4" ? mc.initialReason : undefined}
+          getPendingReason={tab === "M4" || tab === "M5" ? mc.getPendingReason : undefined}
+          initialReason={tab === "M4" || tab === "M5" ? mc.initialReason : undefined}
           title={mc.title}
           detail={mc.detail}
           amplifies={mc.amplifies}

@@ -14,11 +14,12 @@ import {
   PageTabs, Pager as RdPager, Panel, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type TabIds,
 } from "@/app/components/rd";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
-import { ContentStatusTag, type M5Tab } from "./m5-views";
+import { ContentStatusTag, M5PendingWrites, type M5Tab } from "./m5-views";
 import { compactSupportBoardValue } from "./support-leaderboard";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { Icon, Modal, Toggle, type IconName } from "../design-kit";
 import {
+  buildM5Command, sendM5Command,
   fetchMAdvisorBindingUsers,
   type MAdvisorBindingUser,
   fetchMSupportAgentsPage,
@@ -28,6 +29,12 @@ import {
   type MSupportAgent,
   type MSupportServiceType,
 } from "@/lib/admin/m-client";
+import { mCommands, type MCommandRecord } from "@/lib/admin/m-pending-commands";
+import type { M5Command } from "@/lib/admin/m5-command";
+import { MContentReadError } from "@/lib/admin/m-support-read-contract";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportAnalyticsClient } from "@/lib/admin/support-analytics-client";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
@@ -37,7 +44,7 @@ import {
   type SessionReplyTpl,
   type SessionType,
 } from "./data";
-import type { MCtx } from "./types";
+import type { ActionConfirmReq, MCtx } from "./types";
 
 const CAT_KEY = (t: SessionType) => `I.session.cat.${t}.enabled`;
 const POLICY_KEY = (f: string) => `I.session.advisor.policy.${f}`;
@@ -154,11 +161,44 @@ const POLICY_HINT: Record<string, string> = {
   maxPerSession: "0–20 的整数，单位条",
 };
 
-export type M5ScriptsSummary = { contentAvailable: boolean; published: number; draft: number; archived: number; agentsAvailable: boolean; agentsOpen: number; agentsBusy: number; agentsTotal: number };
+export type M5ScriptsSummary = { contentAvailable: boolean; published: number; draft: number; archived: number; agentsAvailable: boolean; agentsOpen: number; agentsBusy: number; agentsTotal: number; pending: number };
 
-export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatProfiles = false, onSummary }: { ctx: MCtx; tab: M5Tab; ids: TabIds; showSeatOperations?: boolean; showSeatProfiles?: boolean; onSummary?: (summary: M5ScriptsSummary) => void }) {
+export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatProfiles = false, onSummary, hasData = true, fallback }: { ctx: MCtx; tab: M5Tab; ids: TabIds; showSeatOperations?: boolean; showSeatProfiles?: boolean; onSummary?: (summary: M5ScriptsSummary) => void; hasData?: boolean; fallback?: ReactNode }) {
   const reach = useReach();
-  const { pget, setParam, toast, openActionConfirm } = ctx;
+  const { pget, toast } = ctx;
+  const [pendingCommands, setPendingCommands] = useState<MCommandRecord[]>([]);
+  const [needsRead, setNeedsRead] = useState(false);
+  const [profileRecovery, setProfileRecovery] = useState<MCommandRecord>();
+  const restoring = useRef<MCommandRecord | undefined>(undefined);
+  const activeConfirm = useRef<{ original?: MCommandRecord }>({});
+  const inFlight = useRef(false);
+  const syncPending = () => setPendingCommands(mCommands.list().filter(row => row.m5?.actorId === useAdminAuth.getState().session?.adminId
+    || !row.m5 && !row.faq && /^cmd\|(?:m5:|I\.session\.(?:cat\.|advisor\.policy\.|script\.|tpl\.|replyTemplates)|I\.support\.agentProfile)/.test(row.fingerprint)));
+  useEffect(syncPending, []);
+  useEffect(() => {
+    const next = pendingCommands.map(row => row.expiresAt).filter(deadline => deadline > Date.now()).sort((a, b) => a - b)[0];
+    if (next === undefined) return;
+    const timer = window.setTimeout(syncPending, next - Date.now());
+    return () => window.clearTimeout(timer);
+  }, [pendingCommands]);
+  const blocked = (key: string, adminId?: number) => pendingCommands.some(row => !row.m5 || row.m5.resource === (adminId ? `profile:${adminId}` : key));
+  const canRetry = (command: M5Command) => Boolean(useAdminAuth.getState().session?.authorities.includes(command.profile ? "service_m1_write" : "service_m5_write"));
+  const openActionConfirm = (request: ActionConfirmReq) => {
+    const state = { original: restoring.current };
+    activeConfirm.current = state;
+    ctx.openActionConfirm({ ...request,
+      initialReason: state.original?.m5?.reason,
+      edit: request.edit && { ...request.edit, initialValue: state.original?.m5 ? recoveredEditValue(state.original.m5) : request.edit.initialValue },
+      getPendingReason: () => state.original?.m5 && mCommands.list().some(row => row.commandKey === state.original?.commandKey) ? state.original.m5.reason : undefined,
+      blockedReason: state.original && (isRetryExpired(state.original) ? RETRY_EXPIRED_TEXT : state.original.m5 && !canRetry(state.original.m5) ? "当前账号没有查看或操作此功能的权限，请联系管理员核对菜单、按钮和接口权限。" : undefined),
+      run: async (reason, value, businessValue) => state.original?.m5
+        ? commitOriginal(state.original, true) : request.run(reason, value, businessValue),
+    });
+  };
+  const recoveredEditValue = (command: M5Command) => {
+    const body = JSON.parse(command.request.body);
+    return command.key.startsWith("I.session.advisor.policy.") ? body.value : body.text;
+  };
   const currentRole = useAdminAuth((s) => s.session?.role ?? s.role);
   const currentAdminId = useAdminAuth((s) => s.session?.adminId ?? 0);
   const authorities = useAdminAuth((s) => s.session?.authorities);
@@ -175,8 +215,8 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
     return rows;
   }, [ctx.params, pget]);
   const defaultAudience = audienceOptions[0] ?? "";
-  const scriptFact = (id: string) => <span className="m5-fact-text">{scripts.find((row) => row.id === id)?.text ?? "—"}</span>;
-  const templateFact = (id: string) => <span className="m5-fact-text">{replyTemplates.find((row) => row.id === id)?.text ?? "—"}</span>;
+  const scriptFact = (id: string) => <span className="m5-fact-text">{restoring.current?.m5?.text ?? scripts.find((row) => row.id === id)?.text ?? "—"}</span>;
+  const templateFact = (id: string) => <span className="m5-fact-text">{restoring.current?.m5?.text ?? replyTemplates.find((row) => row.id === id)?.text ?? "—"}</span>;
   const [profileAgent, setProfileAgent] = useState<MSupportAgent | null>(null);
   const [assignAgent, setAssignAgent] = useState<MSupportAgent | null>(null);
   const [agentPage, setAgentPage] = useState(1);
@@ -236,7 +276,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       .catch(() => { /* A denied or unavailable scope grants no management qualification. */ });
     return () => controller.abort();
   }, [actorStamp, hasM1ReadAuthority, currentRoleKey, currentAdminId]);
-  const sessionTemplatesAvailable = pget("I.session.templatesAvailable") === "1";
+  const sessionTemplatesAvailable = pget("I.session.templatesAvailable") === "1" && !needsRead && !ctx.contentLoading;
   const policyDisplay = (field: string) => sessionTemplatesAvailable && compactSupportBoardValue(pget(POLICY_KEY(field)), "count") !== "-" ? pget(POLICY_KEY(field)) : "-";
   // M-48: show delays in seconds ("1.5 秒"), not raw milliseconds.
   const delayText = () => { const ms = Number(policyDisplay("delayMs")); return Number.isFinite(ms) ? `${Number((ms / 1000).toFixed(1))} 秒` : "-"; };
@@ -252,25 +292,86 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   const visibleScripts = pageSlice(keptScripts, scriptPage, SCRIPT_PAGE_SIZE);
   const visibleReplyTemplates = pageSlice(keptReplyTemplates, replyTemplatePage, REPLY_TEMPLATE_PAGE_SIZE);
 
-  const commitM5Write = async (
-    key: string,
-    value: string,
-    meta: { action: string; reason: string; commandKey?: string },
-    successMessage: string,
-  ): Promise<boolean> => {
-    if (writePending) return false;
-    setWritePending(true);
+  const readCurrent = async () => {
+    setNeedsRead(true);
     try {
-      const succeeded = await setParam(key, value, meta);
-      if (succeeded) toast(successMessage);
-      return succeeded;
-    } finally {
-      setWritePending(false);
+      if (!ctx.refreshM5Content) return false;
+      await ctx.refreshM5Content(); setNeedsRead(false); setAgentPageRetry(n => n + 1); return true;
+    } catch (cause) { setAgentPageError(displayAdminError(cause)); toast(displayAdminError(cause), "warn"); return false; }
+  };
+  const commitOriginal = async (record: MCommandRecord, recovered: boolean): Promise<boolean> => {
+    const command = record.m5;
+    if (!command || inFlight.current || command.actorId !== useAdminAuth.getState().session?.adminId || !canRetry(command)) return false;
+    if (isRetryExpired(record)) { toast(RETRY_EXPIRED_TEXT, "warn"); return false; }
+    if (!mCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
+      if (!recovered) { mCommands.forget(record.fingerprint, record.commandKey); syncPending(); }
+      toast("浏览器未能保存原操作，尚未提交。请恢复会话存储后重试。", "warn"); return false;
     }
+    inFlight.current = true; setWritePending(true);
+    const epoch = useAdminAuth.getState().authEpoch;
+    const current = () => epoch === useAdminAuth.getState().authEpoch && command.actorId === useAdminAuth.getState().session?.adminId;
+    try {
+      await sendM5Command(command, record.commandKey);
+      if (!current()) return false;
+      mCommands.forget(record.fingerprint, record.commandKey); syncPending();
+      activeConfirm.current.original = undefined;
+      ctx.closeActionConfirm?.(); setProfileAgent(null); setProfileRecovery(undefined);
+      await readCurrent(); if (!command.profile) toast(command.successMessage); return true;
+    } catch (error) {
+      if (!current()) return false;
+      const rejected = recovered ? isExplicitRejection(error)
+        : error instanceof MContentReadError && !error.backendMessage?.startsWith("IDEMPOTENCY_") && isDeterministicRejection(error.status, error.apiCode);
+      if (rejected) {
+        mCommands.forget(record.fingerprint, record.commandKey); syncPending();
+        activeConfirm.current.original = undefined;
+        if (recovered) { ctx.closeActionConfirm?.(); setProfileAgent(null); setProfileRecovery(undefined); await readCurrent(); }
+        toast(displayAdminError(error), "error");
+        throw new Error(displayAdminError(error));
+      }
+      activeConfirm.current.original = record;
+      if (command.profile) setProfileRecovery(record);
+      syncPending(); toast(`结果未知 · ${displayAdminError(error)}`, "warn");
+      throw new OutcomeUnknownError(displayAdminError(error));
+    } finally { inFlight.current = false; if (current()) setWritePending(false); }
+  };
+  const commitM5Write = async (key: string, value: string, meta: { action: string; reason: string; commandKey?: string }, successMessage: string): Promise<boolean> => {
+    if (key === "I.support.advisorAssignment.__delete") return ctx.setParam(key, value, meta);
+    if (activeConfirm.current.original?.m5) return commitOriginal(activeConfirm.current.original, true);
+    const profile = key === "I.support.agentProfile.__update" ? profileAgent ?? undefined : undefined;
+    if (currentAdminId !== useAdminAuth.getState().session?.adminId
+      || !useAdminAuth.getState().session?.authorities.includes(profile ? "service_m1_write" : "service_m5_write")) return false;
+    const allowed = profile ? canManageSupportSeats && agentPageAvailable : key.startsWith("I.session.cat.") || key.startsWith("I.session.advisor.policy.") ? canManageM5Operations : canManageM5Content;
+    if (!allowed || needsRead || ctx.contentLoading || (profile ? !agentPageAvailable : !sessionTemplatesAvailable) || inFlight.current || blocked(key, profile?.adminId)) return false;
+    const command = buildM5Command(key, value, ctx.params, meta, currentAdminId, successMessage, profile);
+    const fingerprint = `m5|${command.resource}`, commandKey = `m-${Date.now()}-${crypto.randomUUID()}`;
+    mCommands.remember(fingerprint, commandKey, { m5: command });
+    const record = mCommands.list().find(row => row.commandKey === commandKey)!;
+    return commitOriginal(record, false);
+  };
+  const recover = (record: MCommandRecord) => {
+    const command = record.m5;
+    if (!command) return;
+    restoring.current = record;
+    try {
+      if (command.profile) { setProfileRecovery(record); setProfileAgent(command.profile); }
+      else if (command.key === CAT_KEY("advisor")) toggleCat({ type: "advisor", name: command.text, enabled: command.beforeValue === "on" });
+      else if (command.key === "I.session.script.__create") newScript();
+      else if (command.key === REPLY_TEMPLATE_LIST_KEY) newReplyTemplate();
+      else if (command.key === POLICY_KEY("audience")) editAudience();
+      else if (command.key.startsWith("I.session.advisor.policy.")) {
+        const field = command.key.split(".").at(-1)!;
+        if (field === "enabled") toggleAdvisorPush();
+        else editPolicy(field, field === "delayMs" ? "首推延迟" : field === "cooldownHours" ? "冷却时间" : "单会话上限", command.beforeValue, field === "delayMs" ? " 毫秒" : field === "cooldownHours" ? " 小时" : " 条");
+      } else {
+        const match = /^I\.session\.(script|tpl)\.(.+)\.status$/.exec(command.key);
+        if (match?.[1] === "script") publishScript(match[2], command.beforeValue as AdvisorScript["status"]);
+        else if (match) toggleTpl(match[2], command.beforeValue as SessionReplyTpl["status"]);
+      }
+    } finally { restoring.current = undefined; }
   };
 
   useEffect(() => {
-    if (!hasM1ReadAuthority) {
+    if (!hasM1ReadAuthority || !hasData) {
       setAgentPageData(null);
       setAgentPageError("");
       setAgentPageLoading(false);
@@ -294,7 +395,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
     return () => {
       alive = false;
     };
-  }, [agentPage, agentSnapshot, assignmentSnapshot, hasM1ReadAuthority, actorStamp, agentPageRetry]);
+  }, [agentPage, agentSnapshot, assignmentSnapshot, hasM1ReadAuthority, actorStamp, agentPageRetry, hasData]);
 
   useEffect(() => {
     if (agentPageAvailable) setAgentPage((page) => clampPage(page, agentTotal, SUPPORT_AGENT_PAGE_SIZE));
@@ -324,8 +425,8 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
 
   // ── 类别启停:处置(不传 edit)──
   const toggleCat = (cat: { type: SessionType; name: string; enabled: boolean }) => {
-    if (!canManageM5Operations || !sessionTemplatesAvailable || writePending || cat.type !== "advisor") return;
-    const on = catEnabled(cat);
+    if (!restoring.current && (!canManageM5Operations || !sessionTemplatesAvailable || writePending || blocked(CAT_KEY(cat.type))) || cat.type !== "advisor") return;
+    const on = restoring.current?.m5 ? restoring.current.m5.beforeValue === "on" : catEnabled(cat);
     openActionConfirm({
       action: <>{on ? "禁用" : "启用"}会话类别 · {cat.name}</>,
       title: on ? `停用「${cat.name}」会话` : `启用「${cat.name}」会话`,
@@ -351,8 +452,8 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   };
 
   const toggleAdvisorPush = () => {
-    if (!canManageM5Operations || !sessionTemplatesAvailable || writePending
-      || (!masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE)) return;
+    if (!restoring.current && (!canManageM5Operations || !sessionTemplatesAvailable || writePending
+      || (!masterOn && !ADVISOR_AUTOPUSH_EXECUTOR_AVAILABLE))) return;
     openActionConfirm({
       action: <>{masterOn ? "停用" : "启用"}专属客服主动推送</>,
       title: masterOn ? "停用主动推送" : "启用主动推送",
@@ -376,7 +477,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
 
   // ── AutoPushPolicy 调参:传 edit ──
   const editPolicy = (field: string, label: string, current: string, unit: string) =>
-    canManageM5Operations && sessionTemplatesAvailable && !writePending && openActionConfirm({
+    (restoring.current || canManageM5Operations && sessionTemplatesAvailable && !writePending && !blocked(POLICY_KEY(field))) && openActionConfirm({
       action: <>调整专属客服推送 · {label}</>,
       title: `调整${label}`,
       effect: <StatusTag tone="neutral" filled>只保存设置，目前不会推送</StatusTag>,
@@ -403,7 +504,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
 
   // ── 受众圈定:调参(select edit)──
   const editAudience = () =>
-    canManageM5Operations && sessionTemplatesAvailable && !writePending && audienceOptions.length > 0 && openActionConfirm({
+    (restoring.current || canManageM5Operations && sessionTemplatesAvailable && !writePending && !blocked(POLICY_KEY("audience")) && audienceOptions.length > 0) && openActionConfirm({
       action: <>圈定专属客服推送受众</>,
       title: "调整主动推送受众",
       effect: <StatusTag tone="neutral" filled>只保存设置，目前不会推送</StatusTag>,
@@ -415,7 +516,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
         ? <>限定专属客服主动触达的人群范围;对新会话即时生效,已在会话中的用户不受影响。</>
         : <>主动推送当前不可用；保存受众设置不会触发主动推送。</>,
       amplifies: false,
-      edit: { kind: "select", current: currentAudience, options: audienceOptions },
+      edit: { kind: "select", current: restoring.current?.m5?.beforeValue ?? currentAudience, options: restoring.current?.m5 ? [restoring.current.m5.beforeValue, recoveredEditValue(restoring.current.m5)] : audienceOptions },
       reasonMin: 8,
       reasonMax: 200,
       run: (reason: string, v?: string) => v
@@ -430,7 +531,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
 
   // ── 话术发布 / 下架 / 新增:处置(新增传 edit 录 key)──
   const publishScript = (id: string, currentStatus: AdvisorScript["status"]) =>
-    canManageM5Content && sessionTemplatesAvailable && !writePending && currentStatus !== "archived" && openActionConfirm({
+    (restoring.current || canManageM5Content && sessionTemplatesAvailable && !writePending && !blocked(SCRIPT_KEY(id))) && currentStatus !== "archived" && openActionConfirm({
       action: <>{currentStatus === "published" ? "归档" : "发布"}专属客服话术 · {id}</>,
       title: currentStatus === "published" ? "归档这条话术" : "发布这条话术",
       effect: currentStatus === "published" ? <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag>归档后不能再发布</IrreversibleTag></> : <StatusTag tone="progress" filled>立即生效</StatusTag>,
@@ -454,13 +555,13 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       ),
     });
   const newScript = () =>
-    canManageM5Content && sessionTemplatesAvailable && !writePending && audienceOptions.length > 0 && openActionConfirm({
+    (restoring.current || canManageM5Content && sessionTemplatesAvailable && !writePending && !blocked("I.session.script.__create") && audienceOptions.length > 0) && openActionConfirm({
       action: <>新增专属客服话术</>,
       title: "新建话术",
       effect: <StatusTag tone="neutral" filled>存为草稿，客服暂时看不到</StatusTag>,
       confirmLabel: "保存草稿",
       statedBrief: { impact: "新建的是草稿，客服回复时还选不到；发布后才能选。不会发给任何客户。", check: "正文最多 400 字，不能以 { 或 [ 开头，不能带网址。" },
-      facts: <Facts><Fact k="分类">开场</Fact><Fact k="受众">{currentAudience || defaultAudience || "—"}</Fact></Facts>,
+      facts: <Facts><Fact k="分类">开场</Fact><Fact k="受众">{restoring.current?.m5?.audience || currentAudience || defaultAudience || "—"}</Fact></Facts>,
       reasonPlaceholder: "例如：补一条新客户开场话术",
       briefKind: "config",
       detail: <>新建的是草稿，发布后客服才能选到。</>,
@@ -484,7 +585,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
 
   // ── 模板发布 / 归档:处置(不传 edit)──
   const toggleTpl = (id: string, currentStatus: SessionReplyTpl["status"]) =>
-    canManageM5Content && sessionTemplatesAvailable && !writePending && currentStatus !== "archived" && openActionConfirm({
+    (restoring.current || canManageM5Content && sessionTemplatesAvailable && !writePending && !blocked(TPL_KEY(id))) && currentStatus !== "archived" && openActionConfirm({
       action: <>{currentStatus === "published" ? "归档" : "发布"}回复模板 · {id}</>,
       title: currentStatus === "published" ? "归档这个即时回复模板" : "发布这个即时回复模板",
       effect: currentStatus === "published" ? <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag>归档后不能再发布</IrreversibleTag></> : <StatusTag tone="progress" filled>立即生效</StatusTag>,
@@ -508,7 +609,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       ),
     });
   const newReplyTemplate = () =>
-    canManageM5Content && sessionTemplatesAvailable && !writePending && openActionConfirm({
+    (restoring.current || canManageM5Content && sessionTemplatesAvailable && !writePending && !blocked(REPLY_TEMPLATE_LIST_KEY)) && openActionConfirm({
       action: <>新增即时回复模板</>,
       title: "新建即时回复模板",
       effect: <StatusTag tone="neutral" filled>存为草稿，客服暂时看不到</StatusTag>,
@@ -565,8 +666,8 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   const publishedTotal = scriptCount.published + templateCount.published, draftTotal = scriptCount.draft + templateCount.draft, archivedTotal = scriptCount.archived + templateCount.archived;
   const agentsOpen = supportAgents.filter((agent) => agent.enabled).length, agentsBusy = supportAgents.filter((agent) => agent.busy).length, agentsTotal = supportAgents.length;
   useEffect(() => {
-    onSummary?.({ contentAvailable: sessionTemplatesAvailable, published: publishedTotal, draft: draftTotal, archived: archivedTotal, agentsAvailable: agentsListed, agentsOpen, agentsBusy, agentsTotal });
-  }, [onSummary, sessionTemplatesAvailable, publishedTotal, draftTotal, archivedTotal, agentsListed, agentsOpen, agentsBusy, agentsTotal]);
+    onSummary?.({ contentAvailable: sessionTemplatesAvailable, published: publishedTotal, draft: draftTotal, archived: archivedTotal, agentsAvailable: agentsListed, agentsOpen, agentsBusy, agentsTotal, pending: pendingCommands.length });
+  }, [onSummary, sessionTemplatesAvailable, publishedTotal, draftTotal, archivedTotal, agentsListed, agentsOpen, agentsBusy, agentsTotal, pendingCommands.length]);
 
   const roster = !hasM1ReadAuthority
     ? <BlockState state="denied" title="当前账号没有客服名册权限" detail="话术与模板照常能维护。" />
@@ -585,7 +686,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
           </tr></thead>
           <tbody>
             {agentPageLoading ? <TableLoading columns={rosterColumns} rows={SUPPORT_AGENT_PAGE_SIZE} />
-              : agentPageError ? <TableMessage columns={rosterColumns} role="alert">客服名册读不到：{agentPageError} <Button size="sm" onClick={() => setAgentPageRetry((n) => n + 1)}>重新加载客服</Button></TableMessage>
+              : agentPageError ? <TableMessage columns={rosterColumns} role="alert">客服名册读不到：{agentPageError} <Button size="sm" onClick={() => { if (needsRead) void readCurrent(); else setAgentPageRetry(n => n + 1); }}>重新加载客服</Button></TableMessage>
                 : !agentPageAvailable ? <TableMessage columns={rosterColumns} role="status">客服名册暂时不可用，读到后再列出。</TableMessage>
                   : agentTotal === 0 ? <TableMessage columns={rosterColumns} role="status">还没有客服。先在平台管理员里给账号分配客服角色。</TableMessage>
                     : visibleSupportAgents.map((agent) => {
@@ -616,7 +717,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
                         </Td>
                         <Td align="right"><span className="m5-cap" data-empty={agent.maxConcurrent === 0 ? "" : undefined}>{compactSupportBoardValue(agent.maxConcurrent, "count") === "-" ? "—" : `${agent.maxConcurrent} 位`}</span></Td>
                         <Td>{agent.tags?.length ? <span className="m5-tags">{agent.tags.map((tag) => <span key={tag} className="m5-chip">{tag}</span>)}</span> : <span className="rd-note">—</span>}</Td>
-                        {canManageSupportSeats && <Td sticky="end"><Button size="sm" icon={<SlidersHorizontal size={14} aria-hidden />} disabled={writePending} onClick={() => setProfileAgent(agent)}>配置接待</Button></Td>}
+                        {canManageSupportSeats && <Td sticky="end"><Button size="sm" icon={<SlidersHorizontal size={14} aria-hidden />} disabled={writePending || needsRead || blocked("I.support.agentProfile.__update", agent.adminId)} onClick={() => { activeConfirm.current = {}; setProfileRecovery(undefined); setProfileAgent(agent); }}>配置接待</Button></Td>}
                       </Tr>;
                     })}
           </tbody>
@@ -627,7 +728,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
 
   const contentActions = (kind: "script" | "template", id: string, status: string) => {
     const published = status === "published", archived = status === "archived";
-    const look = { size: "sm" as const, variant: published ? "danger-outline" as const : "secondary" as const, icon: published ? <Archive size={14} aria-hidden /> : <Upload size={14} aria-hidden />, disabled: !sessionTemplatesAvailable || writePending };
+    const look = { size: "sm" as const, variant: published ? "danger-outline" as const : "secondary" as const, icon: published ? <Archive size={14} aria-hidden /> : <Upload size={14} aria-hidden />, disabled: !sessionTemplatesAvailable || writePending || blocked(kind === "script" ? SCRIPT_KEY(id) : TPL_KEY(id)) };
     return <span className="m5-row-actions">
       {canManageM5Content && !archived && (kind === "script"
         ? <Button {...look} data-proof={`session-script-publish-${id}`} onClick={() => publishScript(id, status as AdvisorScript["status"])}>{published ? "归档" : "发布"}</Button>
@@ -638,7 +739,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   };
 
   const content = <>
-    {!sessionTemplatesAvailable && <BlockState state="error" title="话术与模板读不到，暂时不能修改" onRetry={() => void ctx.refreshContent()} retryLabel="重新读取" />}
+    {!sessionTemplatesAvailable && <BlockState state="error" title="话术与模板读不到，暂时不能修改" onRetry={() => void readCurrent()} retryLabel="重新读取" />}
     {sessionTemplatesAvailable && !canManageM5Content && <Notice tone="neutral">你只能查看；新建、发布和归档要超级管理员、内容运营或客服主管。</Notice>}
     <PageTabs level={2} label="话术与模板分类" ids={contentIds} value={contentView} onChange={setContentView} items={[
       { value: "scripts", label: "专属客服话术" },
@@ -647,7 +748,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
     <div {...contentIds.panel("scripts")} hidden={contentView !== "scripts"} className="rd-tab-pane">
     <Panel flush icon={MessageSquareText} tone="role-2" title="专属客服话术" sub={sessionTemplatesAvailable ? countSub(scriptCount) : undefined}
       explain="客服在专属会话里主动发话时可选的话术。只有已发布的能选到；草稿只在后台；归档后选不到，也不能再发布。不会自动发给客户。每页 5 条，按排序值和更新时间排，新建的不一定在最后一页。"
-      actions={canManageM5Content && <Button variant="primary" size="sm" data-proof="session-script-new" icon={<Plus size={14} aria-hidden />} disabled={!sessionTemplatesAvailable || writePending || audienceOptions.length === 0}
+      actions={canManageM5Content && <Button variant="primary" size="sm" data-proof="session-script-new" icon={<Plus size={14} aria-hidden />} disabled={!sessionTemplatesAvailable || writePending || audienceOptions.length === 0 || blocked("I.session.script.__create")}
         disabledReason={sessionTemplatesAvailable && audienceOptions.length === 0 ? "后端没给可选受众，暂时不能新建" : undefined} onClick={newScript}>新建话术</Button>}>
       <Table label="专属客服话术" className="m5-content-table">
         <thead><tr>
@@ -678,7 +779,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
     <div {...contentIds.panel("templates")} hidden={contentView !== "templates"} className="rd-tab-pane">
     <Panel flush icon={Zap} tone="role-2" title="即时回复模板" sub={sessionTemplatesAvailable ? countSub(templateCount) : undefined}
       explain="客服在专属会话回复框里一键选用的短回复。只有已发布的能选到；草稿只在后台；归档后选不到，也不能再发布。每页 5 条。"
-      actions={canManageM5Content && <Button variant="primary" size="sm" data-proof="session-tpl-new" icon={<Plus size={14} aria-hidden />} disabled={!sessionTemplatesAvailable || writePending} onClick={newReplyTemplate}>新建模板</Button>}>
+      actions={canManageM5Content && <Button variant="primary" size="sm" data-proof="session-tpl-new" icon={<Plus size={14} aria-hidden />} disabled={!sessionTemplatesAvailable || writePending || blocked(REPLY_TEMPLATE_LIST_KEY)} onClick={newReplyTemplate}>新建模板</Button>}>
       <Table label="即时回复模板" className="m5-content-table">
         <thead><tr>
           <Th className="m5-col-id">编号</Th>
@@ -710,14 +811,14 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   const policyRow = (field: "delayMs" | "cooldownHours" | "maxPerSession", name: string, value: string, unit: string, what: string) => (
     <ConfigRow key={field} name={name} what={what} when="保存后立即记下；主动推送上线前不会推送" value={value}
       action={canManageM5Operations ? (describedBy) => {
-        const props = { size: "sm" as const, "aria-describedby": describedBy, disabled: !sessionTemplatesAvailable || writePending, onClick: () => editPolicy(field, name, policyVal(field, DEFAULT_ADVISOR_POLICY[field]), unit) };
+        const props = { size: "sm" as const, "aria-describedby": describedBy, disabled: !sessionTemplatesAvailable || writePending || blocked(POLICY_KEY(field)), onClick: () => editPolicy(field, name, policyVal(field, DEFAULT_ADVISOR_POLICY[field]), unit) };
         return field === "delayMs" ? <Button {...props} data-proof="session-policy-delay">调整</Button>
           : field === "cooldownHours" ? <Button {...props} data-proof="session-policy-cooldown">调整</Button>
             : <Button {...props} data-proof="session-policy-max">调整</Button>;
       } : undefined} />
   );
   const channels = <>
-    {!sessionTemplatesAvailable && <BlockState state="error" title="会话类别和推送设置读不到，暂时不能修改" onRetry={() => void ctx.refreshContent()} retryLabel="重新读取" />}
+    {!sessionTemplatesAvailable && <BlockState state="error" title="会话类别和推送设置读不到，暂时不能修改" onRetry={() => void readCurrent()} retryLabel="重新读取" />}
     <Panel icon={MessagesSquare} tone="role-3" title="会话类别"
       explain="用户在 App 客服入口能新建哪几类会话。这里只管专属客服会话；AI 会话由 AI 平台统一管理。停用全部客服能力到全局运营开关。">
       <ConfigList label="会话类别">
@@ -728,7 +829,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
             what={managed ? "AI 助手会话，由 AI 平台统一管理" : "用户能不能新建专属客服会话"}
             effect={managed ? undefined : "停用后用户不能再新建这类会话，进行中的会话保留"}
             value={<span className="m5-tags">{on ? <StatusTag tone="ok" icon={CheckCircle2}>已启用</StatusTag> : <StatusTag tone="done" icon={CircleOff}>已停用</StatusTag>}{managed && <span className="m5-inline-note"><Lock size={12} aria-hidden />AI 平台管理</span>}</span>}
-            action={!managed && canManageM5Operations ? (describedBy) => <Button size="sm" aria-describedby={describedBy} data-proof={`session-cat-toggle-${c.type}`} variant={on ? "danger-outline" : "secondary"} disabled={!sessionTemplatesAvailable || writePending} onClick={() => toggleCat(c)}>{on ? "停用" : "启用"}</Button> : undefined} />;
+            action={!managed && canManageM5Operations ? (describedBy) => <Button size="sm" aria-describedby={describedBy} data-proof={`session-cat-toggle-${c.type}`} variant={on ? "danger-outline" : "secondary"} disabled={!sessionTemplatesAvailable || writePending || blocked(CAT_KEY(c.type))} onClick={() => toggleCat(c)}>{on ? "停用" : "启用"}</Button> : undefined} />;
         })}
       </ConfigList>
     </Panel>
@@ -743,17 +844,38 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
         {policyRow("maxPerSession", "单会话上限", shown(policyDisplay("maxPerSession")) === "—" ? "—" : `${policyDisplay("maxPerSession")} 条`, " 条", "一次会话里最多主动发几条")}
         <ConfigRow name="受众" what="主动推送发给哪类用户；是整体的，不是某一条话术的" when="保存后立即记下；主动推送上线前不会推送"
           value={sessionTemplatesAvailable ? audienceOptions.length > 0 ? currentAudience || "—" : "后端没给可选受众" : "—"}
-          action={canManageM5Operations ? (describedBy) => <Button size="sm" aria-describedby={describedBy} data-proof="session-policy-audience" disabled={!sessionTemplatesAvailable || writePending || audienceOptions.length === 0} onClick={editAudience}>调整</Button> : undefined} />
+          action={canManageM5Operations ? (describedBy) => <Button size="sm" aria-describedby={describedBy} data-proof="session-policy-audience" disabled={!sessionTemplatesAvailable || writePending || audienceOptions.length === 0 || blocked(POLICY_KEY("audience"))} onClick={editAudience}>调整</Button> : undefined} />
       </ConfigList>
     </Panel>
   </>;
 
+  const pendingRows = pendingCommands.map(record => {
+    const command = record.m5;
+    const body = command ? JSON.parse(command.request.body) : null;
+    const statusName = (status: string) => status === "published" ? "已发布" : status === "archived" ? "已归档" : "草稿";
+    const change = !command ? "结果未知" : command.profile
+      ? `${command.profile.name} · 同时接待上限 ${command.profile.maxConcurrent} → ${body.maxConcurrent}`
+      : command.request.method === "POST" ? command.text
+        : command.key === CAT_KEY("advisor") ? `${command.text} · ${body.expectedEnabled ? "已启用" : "已停用"} → ${body.enabled ? "已启用" : "已停用"}`
+          : command.key.startsWith("I.session.advisor.policy.") ? `${command.beforeValue} → ${body.value}`
+            : `${statusName(body.expectedStatus)} → ${statusName(body.status)} · ${command.text}`;
+    return { key: record.commandKey, name: command?.action.split(" · admin.")[0] ?? "结果未知", change, submittedAt: record.createdAt, expired: isRetryExpired(record), actions: <>
+      <Button size="sm" disabled={writePending} onClick={() => void readCurrent()}>查询原结果</Button>
+      {command && !isRetryExpired(record) && <Button size="sm" variant="primary" disabled={writePending || !canRetry(command)} onClick={() => recover(record)}>按原请求重试</Button>}
+    </> };
+  });
   return (
     <>
+      <M5PendingWrites rows={pendingRows} />
+      {hasData ? <>
       {(showSeatOperations || showSeatProfiles) && pane("roster", roster)}
       {pane("content", content)}
       {pane("channels", channels)}
-      {canManageSupportSeats && profileAgent && <AgentProfileModal agent={profileAgent} agents={supportAgents} ctx={ctx} onClose={() => setProfileAgent(null)} />}
+      </> : fallback}
+      {profileAgent && (canManageSupportSeats || profileRecovery) && <AgentProfileModal agent={profileAgent} agents={supportAgents} pending={profileRecovery} ctx={{ ...ctx, setParam: async (key, value, meta) => {
+        try { return profileRecovery ? await commitOriginal(profileRecovery, true) : await commitM5Write(key, value, meta, `${profileAgent.name} 接派单配置已保存`); }
+        catch (cause) { toast(displayAdminError(cause), "warn"); return false; }
+      } }} onClose={() => { setProfileAgent(null); setProfileRecovery(undefined); }} />}
       {canManageSupportSeats && assignAgent && <AdvisorAssignModal agent={assignAgent} ctx={ctx} onClose={() => setAssignAgent(null)} />}
     </>
   );
@@ -763,21 +885,22 @@ function toggleList<T extends string>(rows: T[], item: T): T[] {
   return rows.includes(item) ? rows.filter((row) => row !== item) : [...rows, item];
 }
 
-function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAgent; agents: MSupportAgent[]; ctx: MCtx; onClose: () => void }) {
+function AgentProfileModal({ agent, agents, ctx, pending, onClose }: { agent: MSupportAgent; agents: MSupportAgent[]; ctx: MCtx; pending?: MCommandRecord; onClose: () => void }) {
+  const originalInput = pending?.m5 ? JSON.parse(pending.m5.request.body) : null;
   const tagOptions = useMemo(
-    () => Array.from(new Set(agents.flatMap((item) => item.tags ?? []).filter(Boolean))),
-    [agents],
+    () => Array.from(new Set([...agents.flatMap(item => item.tags ?? []), ...agent.tags, ...(originalInput?.tags ?? [])].filter(Boolean))) as string[],
+    [agents, agent, pending],
   );
   const position = agent.position;
-  const [tags, setTags] = useState<string[]>(agent.tags ?? []);
-  const [maxConcurrent, setMaxConcurrent] = useState(String(agent.maxConcurrent || 10));
-  const [enabled, setEnabled] = useState(agent.enabled);
-  const [transferable, setTransferable] = useState(agent.transferable);
-  const [busy, setBusy] = useState(agent.busy);
-  const [reason, setReason] = useState("");
+  const [tags, setTags] = useState<string[]>(originalInput?.tags ?? agent.tags ?? []);
+  const [maxConcurrent, setMaxConcurrent] = useState(String(originalInput?.maxConcurrent ?? agent.maxConcurrent));
+  const [enabled, setEnabled] = useState<boolean>(originalInput?.enabled ?? agent.enabled);
+  const [transferable, setTransferable] = useState<boolean>(originalInput?.transferable ?? agent.transferable);
+  const [busy, setBusy] = useState<boolean>(originalInput?.busy ?? agent.busy);
+  const [reason, setReason] = useState(pending?.m5?.reason ?? "");
   const [saving, setSaving] = useState(false);
   const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
-  const canSave = !saving && reasonOk && Number(maxConcurrent) >= 0;
+  const canSave = !saving && (pending ? !isRetryExpired(pending) && Boolean(useAdminAuth.getState().session?.authorities.includes("service_m1_write")) : reasonOk && maxConcurrent.trim() !== "" && Number.isInteger(Number(maxConcurrent)) && Number(maxConcurrent) >= 0 && Number(maxConcurrent) <= 40);
 
   const save = async () => {
     if (!canSave) return;
@@ -789,7 +912,7 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
         // M-56: the displayed type ("advisor") is the canonical role; the stored legacy routing flag is
         // left alone, so saving tags or capacity no longer rewrites it.
         tags,
-        maxConcurrent: Math.max(0, Math.min(40, Math.round(Number(maxConcurrent) || 0))),
+        maxConcurrent: Number(maxConcurrent),
         enabled,
         transferable,
         busy,
@@ -829,22 +952,22 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
       </Facts>
       <Notice tone="warn">暂停接新单目前只对人工转接生效；同时接待上限目前不参与任何分配。自动分配仍按负载选人（已提后端）。接待资格和主管资格在账号管理里改。</Notice>
       <DiffField label="同时接待上限" before={String(agent.maxConcurrent)} unit="位" hint="0–40 的整数，0 表示不接" error={capProblem || undefined} note={capNote}>
-        {(control) => <NumberInput {...control} unit="位" min={0} max={40} step={1} value={maxConcurrent} disabled={saving} onChange={(event) => setMaxConcurrent(event.target.value)} />}
+        {(control) => <NumberInput {...control} unit="位" min={0} max={40} step={1} value={maxConcurrent} disabled={saving || Boolean(pending)} onChange={(event) => setMaxConcurrent(event.target.value)} />}
       </DiffField>
       <div className="m5-profile-grid">
       <CheckGroup legend="接待开关">
-        <Check label="开放接待" help="关闭后不参与自动分配和邀请继承" checked={enabled} disabled={saving} onChange={() => setEnabled((v) => !v)} />
-        <Check label="允许被转交" help="关闭后转交会话时选不到他" checked={transferable} disabled={saving} onChange={() => setTransferable((v) => !v)} />
-        <Check label="暂停接新单" help="人工转接选不到他；自动分配仍会分给他" checked={busy} disabled={saving} onChange={() => setBusy((v) => !v)} />
+        <Check label="开放接待" help="关闭后不参与自动分配和邀请继承" checked={enabled} disabled={saving || Boolean(pending)} onChange={() => setEnabled((v) => !v)} />
+        <Check label="允许被转交" help="关闭后转交会话时选不到他" checked={transferable} disabled={saving || Boolean(pending)} onChange={() => setTransferable((v) => !v)} />
+        <Check label="暂停接新单" help="人工转接选不到他；自动分配仍会分给他" checked={busy} disabled={saving || Boolean(pending)} onChange={() => setBusy((v) => !v)} />
       </CheckGroup>
       <div className="m5-tag-checks">
         <CheckGroup legend="标签" explain="只能从名册里已有的标签里选，最多 10 个。" help={tagOptions.length === 0 ? "名册里还没有任何标签。" : undefined}>
-          {tagOptions.map((tag) => <Check key={tag} label={tag} checked={tags.includes(tag)} disabled={saving} onChange={() => setTags((rows) => toggleList(rows, tag))} />)}
+          {tagOptions.map((tag) => <Check key={tag} label={tag} checked={tags.includes(tag)} disabled={saving || Boolean(pending)} onChange={() => setTags((rows) => toggleList(rows, tag))} />)}
         </CheckGroup>
       </div>
       </div>
       <Field label="操作理由" required hint="8–200 字">
-        {(control) => <Textarea {...control} rows={3} maxLength={200} value={reason} disabled={saving} count={`${reason.trim().length}/200`} onChange={(e) => setReason(e.target.value)} placeholder="例如：主管调整分工，这位客服本周只接高价值客户" />}
+        {(control) => <Textarea {...control} rows={3} maxLength={200} value={reason} disabled={saving || Boolean(pending)} count={`${reason.trim().length}/200`} onChange={(e) => setReason(e.target.value)} placeholder="例如：主管调整分工，这位客服本周只接高价值客户" />}
       </Field>
     </RdModal>
   );

@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { supportUnboundPolicyClient, type SupportUnboundPolicy, type SupportUnboundPolicyUpdate } from "@/lib/admin/m-support-client";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
-import { useSupportManagementCommand, type SupportIntent } from "@/lib/admin/use-support-management-command";
+import { useM5ManagementCommand, type M5ManagementRecord } from "@/lib/admin/use-m5-management-command";
+import { isM5ManagementPayload } from "@/lib/admin/m5-management-record";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportGroupClient, type SupportGroupDirectory } from "@/lib/admin/support-group-client";
 import { Timer, Save } from "lucide-react";
@@ -12,9 +13,9 @@ import { BlockState, Button, DiffList, Fact, Facts, Field, Modal, Notice, Number
 import { M5PendingWrites, type M5PolicySummary } from "./m5-views";
 import type { MSupportPermission } from "./m5-service-rules";
 
-const policyCommands = createPendingMutationStore<SupportIntent<SupportUnboundPolicyUpdate>>({
+const policyCommands = createPendingMutationStore<M5ManagementRecord<SupportUnboundPolicyUpdate, SupportUnboundPolicy>>({
   storageKey: "nexion-m5-unbound-policy-v1", retainExpiredRecords: true,
-  isValidRecord: row => Number.isSafeInteger(row.payload?.expectedVersion) && typeof row.payload.reason === "string",
+  isValidRecord: row => isM5ManagementPayload("policy", row.payload) && (row.before === undefined || isM5ManagementPayload("policy", row.before, true)),
 });
 const draftOf = (row: Pick<SupportUnboundPolicy, "alertMinutes" | "fallbackMinutes" | "defaultGroupId">) => ({
   alert: String(row.alertMinutes), fallback: String(row.fallbackMinutes), group: row.defaultGroupId == null ? "" : String(row.defaultGroupId),
@@ -33,21 +34,27 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
   // BUG-122: a failed directory read is not an empty one; the saved group stays shown and stays the value saved.
   const [groupsFailed, setGroupsFailed] = useState(false);
   const preserveDraft = useRef(false);
+  const awaitingSavedRead = useRef(false);
   const editable = permission === "superadmin" && Boolean(session?.authorities.includes("service_m1_write"));
-  const command = useSupportManagementCommand<SupportUnboundPolicyUpdate, SupportUnboundPolicy>({
-    store: policyCommands, slot: `unbound-policy:${session?.adminId}`, canQuery: editable, canWrite: editable,
+  const command = useM5ManagementCommand<SupportUnboundPolicyUpdate, SupportUnboundPolicy, SupportUnboundPolicy>({
+    store: policyCommands, legacySlot: `unbound-policy:${session?.adminId}`, fingerprint: () => `unbound-policy:${session?.adminId}`,
+    canQuery: Boolean(session?.authorities.some(code => code === "service_m1_read" || code === "service_m3_read" || code === "service_m1_write")), canWrite: editable, requireMissingReceipt: true,
     write: supportUnboundPolicyClient.update,
     query: supportUnboundPolicyClient.command,
-    onSuccess: row => {
-      setConfirming(false); setSavedVersion(row.version); setPolicy(row); setDraft(draftOf(row)); setReason("");
+    onSuccess: () => {
+      awaitingSavedRead.current = true;
+      setConfirming(false); setSavedVersion(undefined); setPolicy(null); setReason("");
       preserveDraft.current = false; setLoading(true); setReload(value => value + 1);
     },
-    onFailure: payload => {
-      setConfirming(false); setDraft(draftOf(payload)); setReason(payload.reason); preserveDraft.current = true;
+    onRefusal: (_cause, recovered, payload) => {
+      setDraft(draftOf(payload)); setReason(payload.reason);
+      if (recovered) setConfirming(false);
+      preserveDraft.current = true;
       setLoading(true); setReload(value => value + 1);
     },
   });
   const { busy: saving, pending } = command;
+  const denied = pending?.denied === true;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -55,6 +62,7 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
     Promise.all([supportUnboundPolicyClient.read(controller.signal), supportGroupClient.groups(controller.signal).catch(() => null)]).then(([row, list]) => {
       if (controller.signal.aborted) return;
       setPolicy(row); setGroupsFailed(list === null); setGroups((list ?? []).filter((group) => group.status === "ENABLED"));
+      if (awaitingSavedRead.current) { setSavedVersion(row.version); awaitingSavedRead.current = false; }
       if (!preserveDraft.current) setDraft(draftOf(row));
     }).catch((cause) => { if (!controller.signal.aborted) { setPolicy(null); setError(displayAdminError(cause)); } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -73,7 +81,7 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
   function save() {
     if (!policy || !editable || !valid || !changed || !reasonOk || saving || loading || pending || groupBlocked) return;
     setSavedVersion(undefined);
-    void command.run("submit", { alertMinutes: alert, fallbackMinutes: fallback, defaultGroupId: draft.group ? Number(draft.group) : null, expectedVersion: policy.version, reason: reason.trim() });
+    void command.run("submit", { alertMinutes: alert, fallbackMinutes: fallback, defaultGroupId: draft.group ? Number(draft.group) : null, expectedVersion: policy.version, reason: reason.trim() }, policy);
   }
 
   useEffect(() => {
@@ -91,9 +99,9 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
   ].filter((row) => row.before !== row.after) : [];
 
   return <>
-    {pending && editable && <M5PendingWrites rows={[{
-      key: pending.commandKey, name: "待分配设置", submittedAt: pending.createdAt, expired: !command.denied && Date.now() >= pending.expiresAt,
-      change: command.denied ? "当前无权查看原内容" : `提醒 ${pending.payload.alertMinutes} 分钟 · 兜底 ${pending.payload.fallbackMinutes} 分钟 · 默认接收组 ${groupName(pending.payload.defaultGroupId)}`,
+    {pending && <M5PendingWrites rows={[{
+      key: pending.commandKey, name: "待分配设置", submittedAt: pending.createdAt, expired: !denied && Date.now() >= pending.expiresAt,
+      change: denied ? "当前无权查看原内容" : `提醒 ${pending.payload.alertMinutes} 分钟 · 兜底 ${pending.payload.fallbackMinutes} 分钟 · 默认接收组 ${groupName(pending.payload.defaultGroupId)}`,
       actions: <>
         <Button size="sm" variant={command.canReplay ? "secondary" : "primary"} disabled={saving} onClick={() => void command.run("query")}>查询原结果</Button>
         <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving || !command.canReplay} disabledReason={!saving && !command.canReplay ? "先查询原结果；查不到回执、还在 24 小时内才能重试" : undefined} onClick={() => void command.run("replay")}>按原请求重试</Button>
@@ -102,14 +110,14 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
     <Panel icon={Timer} tone="role-3" title="没人接的客户" sub={policy ? `第 ${policy.version} 版` : undefined}
       explain="客户发来消息后还没有专属客服时，按这里的时长提醒主管和自动兜底。保存后立即生效，正在等待的客户也按新时长算。">
       {!editable && <Notice tone="neutral">只有带客服管理修改权限的超级管理员能改，你现在只能查看。</Notice>}
-      {editable && pending && <Notice tone="warn" title="上次保存结果未知">
+      {pending && <Notice tone="warn" title="上次保存结果未知">
         <p>{saving ? "正在查询原结果…" : command.message || "先查询原结果；有结论前这里不能再改。"}</p>
-        {!command.denied && <p className="m5-pending-reason">原理由：{pending.payload.reason}</p>}
+        {!denied && <p className="m5-pending-reason">原理由：{pending.payload.reason}</p>}
       </Notice>}
       {editable && !pending && command.message && <Notice tone="warn">{command.message}</Notice>}
       {savedVersion !== undefined && <Notice tone="ok">已保存，现在是第 {savedVersion} 版。</Notice>}
       {error && <BlockState state="error" title="待分配设置读不到" detail={error} onRetry={() => setReload((n) => n + 1)} retryLabel="重新加载" />}
-      {!policy ? !error && <BlockState state="loading" title="正在读取待分配设置…" /> : pending && editable ? null : <div className="m5-form">
+      {!policy ? !error && <BlockState state="loading" title="正在读取待分配设置…" /> : pending ? null : <div className="m5-form">
         <div className="m5-unbound-fields">
           <Field label="等待提醒" hint="1–120 分钟" error={alertProblem || undefined} explain="客户发消息后超过这么久还没分到客服，专属会话的待分配里标红提醒主管。">
             {(control) => <NumberInput {...control} id="m-unbound-alert" unit="分钟" min={1} max={120} step={1} value={draft.alert} disabled={!editable || saving} onChange={(event) => setDraft((old) => ({ ...old, alert: event.target.value }))} />}
