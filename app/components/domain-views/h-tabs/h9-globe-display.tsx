@@ -4,11 +4,13 @@
  * 全球网络：8 个中心的占比、延迟和吞吐。一张八行的对照表，每行带占比条，合计是不是 100% 写在表尾。
  * 和主配置同一个版本：单独保存只是把这一块的草稿合进已保存的全量值提交，不带别的块的草稿。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { Globe2, RefreshCw } from "lucide-react";
 import { Button, Change, Fact, Field, Notice, NumberInput, Panel, RatioBar, StatusTag, Table, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
 import { parseGlobeDisplay, type GlobeDisplayConfig } from "@/lib/admin/globe-display-config";
-import { updateH9PublicStats, type H9PublicStatsOverview } from "@/lib/admin/h9-client";
+import { prepareH9PublicStats, updateH9PublicStats, type H9PublicStatsOverview } from "@/lib/admin/h9-client";
+import { pendingH9Command, type H9Command } from "@/lib/admin/h9-command";
+import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { h9DraftNumber } from "@/lib/admin/h9-validation";
 import type { HCtx } from "./types";
 import { ConfirmFacts, ModuleToolbar, count } from "./h9-parts";
@@ -34,8 +36,9 @@ function draftsFrom(config: GlobeDisplayConfig): Draft {
     centers: config.centers.map(center => ({ id: center.id, sharePct: shareText(config, center), latencyMs: String(center.latencyMs) })) } as Draft;
 }
 
-export function H9GlobeDisplay({ ctx, data, refreshing, onSaved, onRefresh, onIssue }: {
+export function H9GlobeDisplay({ ctx, data, refreshing, blocked, ready, onPending, onSaved, onRefresh, onIssue }: {
   ctx: HCtx; data: H9PublicStatsOverview; refreshing: boolean; onSaved: (next: H9PublicStatsOverview) => void;
+  blocked: boolean; ready: RefObject<boolean>; onPending: () => void;
   onRefresh: () => Promise<H9PublicStatsOverview | undefined>;
   /** 保存没得到明确结果时交给页面，写进页面上方的提醒。 */
   onIssue: (cause: unknown, change: string) => void;
@@ -50,7 +53,7 @@ export function H9GlobeDisplay({ ctx, data, refreshing, onSaved, onRefresh, onIs
   useEffect(() => { if (!dirty) { setBaseline(saved); setDraft(saved ? draftsFrom(saved) : null); } }, [savedKey, dirty]);
   const accept = (config: GlobeDisplayConfig) => { setBaseline(config); setDraft(draftsFrom(config)); };
   const canWrite = ctx.can("growth_h9_write");
-  const locked = !canWrite || saving || refreshing;
+  const locked = !canWrite || saving || refreshing || blocked;
   const sharesSupported = !!saved && hasShares(saved);
   // 不再编辑的字段(节点数、节点浮动、任务占比)按当前已保存值原样回传;后端未支持前不提交分布比例。
   const next = draft && saved ? parseGlobeDisplay({
@@ -82,7 +85,10 @@ export function H9GlobeDisplay({ ctx, data, refreshing, onSaved, onRefresh, onIs
     const { registeredUsersAnchorAt: _anchor, ...current } = data.values;
     const rows = diffRows(next);
     const changed = rows.filter(row => row.before !== row.after);
+    const change = changed.slice(0, 2).map(row => `${row.label} ${row.before} → ${row.after}`).join("；") + (changed.length > 2 ? `；等 ${changed.length} 项` : "");
+    let command: H9Command | undefined;
     ctx.openActionConfirm({ briefKind: "config",
+      getPendingReason: () => command && pendingH9Command("main")?.commandKey === command.commandKey ? command.original?.reason : undefined,
       action: "保存全球网络展示", reasonMin: 8, reasonMax: 200,
       title: "保存全球网络",
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
@@ -96,21 +102,40 @@ export function H9GlobeDisplay({ ctx, data, refreshing, onSaved, onRefresh, onIs
       </>} />,
       detail: "只用于模拟展示，不改变真实设备、任务、收益或资金。别的块没保存的草稿不会带上。",
       run: async reason => {
+        const recovering = !!command && pendingH9Command("main")?.commandKey === command.commandKey;
+        if (!recovering && !ready.current) throw new Error("H9_CURRENT_READ_REQUIRED");
+        command ??= prepareH9PublicStats({ ...current, globeDisplay: next }, data.version, reason, {
+          module: "globe", title: "保存全球网络", action: "保存全球网络展示",
+          objectLabel: `全球网络${sharesSupported ? "（占比、" : "（"}每小时任务量与延迟）`,
+          impact: "保存后 App 全球网络页按新的占比、延迟和吞吐模拟展示；首页数字、注册人数和设备排名不变。", change,
+          rows: rows.map(row => ({ key: String(row.key), label: String(row.label), before: String(row.before), after: String(row.after) })),
+        });
+        ready.current = false;
         setSaving(true);
         try {
-          const result = await updateH9PublicStats({ ...current, globeDisplay: next }, data.version, reason);
-          onSaved(result);
-          if (result.values.globeDisplay) accept(result.values.globeDisplay);
+          const result = await updateH9PublicStats(command, recovering);
+          if (recovering) {
+            ctx.openActionConfirm(null);
+            const latest = await onRefresh();
+            if (latest?.values.globeDisplay) accept(latest.values.globeDisplay);
+          } else {
+            onSaved(result);
+            if (result.values.globeDisplay) accept(result.values.globeDisplay);
+          }
           ctx.toast("全球网络展示已保存", "success");
         } catch (cause) {
-          onIssue(cause, changed.slice(0, 2).map(row => `${row.label} ${row.before} → ${row.after}`).join("；") + (changed.length > 2 ? `；等 ${changed.length} 项` : ""));
+          onIssue(cause, change);
+          if (!pendingH9Command("main")) {
+            command = undefined;
+            if (recovering) { ctx.openActionConfirm(null); await onRefresh(); }
+          }
           throw cause;
-        } finally { setSaving(false); }
+        } finally { setSaving(false); onPending(); }
       },
     });
   };
 
-  const saveBlock = refreshing ? "正在读取最新数据，读完再保存" : saving ? "正在保存" : conflict ? "这块已被别人改过，先刷新这一块" : !dirty ? "没有改动" : shareError ? "8 个中心的占比合计要等于 100%" : !next ? "有填错的项，按提示改" : undefined;
+  const saveBlock = blocked ? formatAdminApiError(pendingH9Command("main") ? "H9_ORIGINAL_UNRESOLVED" : "H9_CURRENT_READ_REQUIRED", "H9_SAVE_FAILED") : refreshing ? "正在读取最新数据，读完再保存" : saving ? "正在保存" : conflict ? "这块已被别人改过，先刷新这一块" : !dirty ? "没有改动" : shareError ? "8 个中心的占比合计要等于 100%" : !next ? "有填错的项，按提示改" : undefined;
   const note = refreshing ? "正在读取…" : !canWrite ? "只能查看" : !dirty ? "没有改动" : shareError || !next ? "有要改的地方" : "有改动，还没保存";
   const jitter = draft ? h9DraftNumber(draft.latencyJitterMs) : Number.NaN;
   const shareGap = Number((100 - shareTotal).toFixed(2));
@@ -168,7 +193,7 @@ export function H9GlobeDisplay({ ctx, data, refreshing, onSaved, onRefresh, onIs
       <ModuleToolbar note={note} tone={dirty && (!!shareError || !next) ? "warn" : undefined}>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} disabled={saving || refreshing} onClick={async () => { const result = await onRefresh(); if (result?.values.globeDisplay) accept(result.values.globeDisplay); }}>刷新这一块</Button>
         {canWrite && <>
-          <Button size="sm" disabled={!dirty || saving || refreshing} onClick={() => saved && accept(saved)}>放弃改动</Button>
+          <Button size="sm" disabled={!dirty || locked} onClick={() => saved && accept(saved)}>放弃改动</Button>
           <Button variant="primary" size="sm" loading={saving} loadingText="保存中…" disabledReason={saving ? undefined : saveBlock} onClick={save}>保存全球网络展示</Button>
         </>}
       </ModuleToolbar>

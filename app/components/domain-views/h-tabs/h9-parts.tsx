@@ -9,7 +9,7 @@ import Link from "next/link";
 import { CircleHelp, Smartphone } from "lucide-react";
 import { Change, DiffList, Explain, Fact, Facts, Notice, StatusTag, type DiffRow } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { h9CommandRejected } from "@/lib/admin/h9-command";
 
 /** 整数、个数：千分位，原值有小数就照写，不舍入。 */
 export function count(value: number | null | undefined): string {
@@ -124,10 +124,11 @@ export function AppNumber({ label, value, unit, sub, empty }: { label: ReactNode
 /** 保存没得到明确结果时怎么归类：只决定页面上写在哪、用什么颜色，不改原逻辑。 */
 export type SaveIssueKind = "conflict" | "rejected" | "unknown";
 
-export function saveIssueKind(cause: unknown, conflictCodes: readonly string[]): SaveIssueKind {
+export function saveIssueKind(cause: unknown, conflictCodes: readonly string[], recovering = false): SaveIssueKind {
+  if (!h9CommandRejected(cause, recovering)) return "unknown";
   const code = (cause as { reasonCode?: unknown } | null)?.reasonCode;
   if (typeof code === "string" && conflictCodes.includes(code)) return "conflict";
-  return isExplicitRejection(cause) ? "rejected" : "unknown";
+  return "rejected";
 }
 
 export type H9RecoveryRow = {
@@ -143,7 +144,7 @@ export type H9RecoveryRow = {
 
 /**
  * 结果未知的提醒：逐条写改的是哪一块、从多少到多少、什么时候提交的，按钮在每条的右边。
- * 按钮由页面传：现在只有「刷新核对」；原请求保存好以后，代码 worker 在这里接「查询原结果」「按原请求重试」。
+ * 页面传入「查询原结果」「按原请求重试」，由原请求记录决定可用性；本件不解除记录。
  */
 export function H9RecoveryNotice({ rows, explain }: { rows: readonly H9RecoveryRow[]; explain: ReactNode }) {
   if (rows.length === 0) return null;

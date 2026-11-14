@@ -10,7 +10,7 @@
  * 页面里没有任何平台数字的字面量：当前值、默认值、历史日产锚都从服务端读模型来。
  * 「改了设备总数会连带改掉哪些金额」由历史估算的影响预览现算，不靠运营心算，也不在后台另存一份日产档。
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { RefreshCw, SlidersHorizontal, Smartphone, TableProperties } from "lucide-react";
 import { BlockState, Button, Change, Conclusion, DiffList, Explain, Fact, KeepText, Facts, Field, Notice, NumberInput, PageHeader, Panel, RatioBar, StatusTag, Table, Td, Th, Tr, TrendLines, useTabIds, type DiffRow } from "@/app/components/rd";
 import { PaginationExemption } from "../design-kit";
@@ -18,6 +18,7 @@ import { formatAdminApiError } from "@/lib/admin/error-messages";
 import {
   H9_FIELDS,
   fetchH9PublicStats,
+  prepareH9PublicStats,
   updateH9PublicStats,
   type H9EditableValues,
   type H9FieldDef,
@@ -28,6 +29,7 @@ import {
 // 🔴 分位表值域规则唯一来源(与前端 network-rank.ts 行为等价,契约测试钉着)——
 //    面板不许手写第二份判据;parity 门查的是「用途位」出现,不是 import 位。
 import {
+  h9MoneyPrecisionValid,
   H9_BAND_MIN,
   H9_BAND_TOPS_MIN,
   h9BandRowErrors,
@@ -43,6 +45,9 @@ import { H9GlobeDisplay } from "./h9-globe-display";
 import { H9ModuleCards, moduleLabel, type H9Module, type RankSnapshot } from "./h9-overview";
 import { AppNumber, AppPreview, AuditFoot, axisShort, ConfirmFacts, PAID_UNIT, PAID_UNIT_NOTE, paid, DAY_LABELS, DAY_TICKS, H9RecoveryNotice, HOUR_LABELS, HOUR_TICKS, ModuleToolbar, averageGain, count, memberSpread, membersAt, saveIssueKind, usd, usdApprox, usdProduct, type MemberModel, type SaveIssueKind } from "./h9-parts";
 import { reconcileH9Editor, type H9EditorState } from "@/lib/admin/h9-module-drafts";
+import { canRetryH9Command, pendingH9Command, type H9Command } from "@/lib/admin/h9-command";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { useSearchParams } from "next/navigation";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 
 type ScalarKey = H9FieldDef["key"];
@@ -99,6 +104,7 @@ function scalarError(field: H9FieldDef, raw: string): string {
   if (!Number.isFinite(value)) return "请填数字";
   if (value < field.min || value > field.max) return `要在 ${field.min}–${field.max}${field.unit} 之间`;
   if (field.integer && !Number.isInteger(value)) return "只能填整数";
+  if (MONEY_KEYS.has(field.key) && !h9MoneyPrecisionValid(raw)) return "金额最多两位小数";
   return "";
 }
 
@@ -117,7 +123,18 @@ function valueText(key: ScalarKey, value: number | null | undefined): string {
 export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   const canWrite = ctx.can("growth_h9_write");
   const ids = useTabIds();
-  const [module, setModule] = useState<H9Module>("home");
+  const search = useSearchParams();
+  const selected = search.get("module");
+  const module: H9Module = selected && ["home", "network", "jobs", "globe", "rank", "history"].includes(selected) ? selected as H9Module : "home";
+  const setModule = (next: H9Module) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("module", next);
+    window.history.replaceState(null, "", url);
+  };
+  const [, syncPending] = useReducer(n => n + 1, 0);
+  const pending = pendingH9Command("main");
+  const [saving, setSaving] = useState(false);
+  const ready = useRef(false);
   const [rank, setRank] = useState<RankSnapshot>({ state: "loading" });
   const [data, setData] = useState<H9PublicStatsOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -125,13 +142,17 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   const [saveError, setSaveError] = useState<SaveIssue | null>(null);
   const [editor, setEditor] = useState<H9EditorState | null>(null);
   const [readAt, setReadAt] = useState(0);
+  const currentVersion = useRef(data?.version);
+  currentVersion.current = data?.version;
   const drafts = editor?.drafts ?? null;
   const bands = editor?.bands ?? [];
   const setDrafts = (update: (current: ScalarDrafts) => ScalarDrafts) => setEditor(current => current ? { ...current, drafts: update(current.drafts) } : current);
   const setBands = (update: BandDraft[] | ((current: BandDraft[]) => BandDraft[])) => setEditor(current => current ? { ...current, bands: typeof update === "function" ? update(current.bands) : update } : current);
 
   const load = useCallback(async (scope?: H9Module) => {
+    ready.current = false;
     setLoading(true);
+    ctx.openActionConfirm(null);
     try {
       const next = await fetchH9PublicStats();
       setData(next);
@@ -148,7 +169,8 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { syncPending(); void load(); }, [load]);
+  ready.current = !!data && !loading && !error && !saving && !pending && saveError?.kind !== "conflict";
 
   const fieldErrors = useMemo(() => {
     if (!drafts) return {} as Record<ScalarKey, string>;
@@ -175,7 +197,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     : "";
   const conflict = !!data && !!editor && (MODULE_KEYS[module].some(key => h9DraftText(editor.baseline[key]) !== h9DraftText(data.values[key]))
     || module === "history" && !sameBands(editor.baseline.hashratePercentileTable, data.values.hashratePercentileTable));
-  const allValid = !loading && !conflict && MODULE_KEYS[module].every(key => !fieldErrors[key])
+  const allValid = !loading && !error && !saving && !pending && saveError?.kind !== "conflict" && !conflict && MODULE_KEYS[module].every(key => !fieldErrors[key])
     && (module !== "history" || rowErrors.every(text => !text) && !bandCountError);
 
   /** 后端还没返回全球作业基座时,这一项不可编辑、也不提交。 */
@@ -272,10 +294,9 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     </Notice> : null;
 
   const save = (enabled?: boolean) => {
-    if (!data || !nextValues) return;
+    if (!canWrite || !ready.current || !data || !nextValues) return;
     const submitted = { ...nextValues, homeDisplayEnabled: enabled ?? data.values.homeDisplayEnabled };
-    // 🔴 这里不铸防重复提交编号:键由 updateH9PublicStats 从槽位存储按「值 + 版本 + 理由」取,
-    //    否则每点一次「保存变更」都是一条全新命令,同一次保存的原样重试就会被当成新命令。
+    // 完整原请求在确认提交时创建一次；未知后只恢复该记录，不按草稿或理由变化换号。
     const rows: DiffRow[] = H9_FIELDS
       .filter((field) => submitted[field.key] !== data.values[field.key])
       .map((field) => ({ key: field.key, label: FIELD_COPY[field.key].name, before: valueText(field.key, data.values[field.key]), after: valueText(field.key, submitted[field.key]) }));
@@ -333,7 +354,10 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       </div>}
     </ConfirmFacts>;
 
+    const change = rows.slice(0, 2).map(row => `${row.label} ${row.before} → ${row.after}`).join("；") + (rows.length > 2 ? `；等 ${rows.length} 项` : "");
+    let command: H9Command | undefined;
     ctx.openActionConfirm({ briefKind: "config",
+      getPendingReason: () => command && pendingH9Command("main")?.commandKey === command.commandKey ? command.original?.reason : undefined,
       action: `保存${label}`,
       title,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
@@ -348,21 +372,43 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       reasonMin: 8,
       reasonMax: 200,
       run: async (reason) => {
+        const recovering = !!command && pendingH9Command("main")?.commandKey === command.commandKey;
+        if (!recovering && (!ready.current || data.version !== currentVersion.current)) throw new Error("H9_CURRENT_READ_REQUIRED");
+        command ??= prepareH9PublicStats(submitted, data.version, reason, {
+          module, title, action: `保存${label}`, impact: impactText, change: change || title,
+          rows: rows.map(row => ({ key: String(row.key), label: String(row.label), before: String(row.before), after: String(row.after) })),
+          extraFacts: [
+            ...(toggled && dirty ? [{ label: "一起保存", value: `首页填写中的 ${rows.length - 1} 项改动` }] : []),
+            ...(module === "network" && memberModels?.resets ? [{ label: "推算起点", before: businessStamp(data.values.registeredUsersAnchorAt), after: "保存时刻" }] : []),
+          ],
+        });
+        ready.current = false;
+        setSaving(true);
         try {
-          const saved = await updateH9PublicStats(submitted, data.version, reason);
-          setData(saved);
-          setEditor(current => reconcileH9Editor(current, saved.values, H9_FIELDS.map(field => field.key), MODULE_KEYS[module], module === "history"));
+          const saved = await updateH9PublicStats(command, recovering);
+          if (recovering) {
+            ctx.openActionConfirm(null);
+            await load(module);
+          } else {
+            setData(saved);
+            setEditor(current => reconcileH9Editor(current, saved.values, H9_FIELDS.map(field => field.key), MODULE_KEYS[module], module === "history"));
+            setReadAt(Date.now());
+          }
           setSaveError(null);
-          setReadAt(Date.now());
           ctx.toast(`${label}已保存，主配置 v${saved.version}`, "success");
         } catch (cause) {
+          const unresolved = pendingH9Command("main");
           const message = formatAdminApiError(cause instanceof Error ? cause.message : null, "H9_SAVE_FAILED");
-          const kind = saveIssueKind(cause, ["H9_CONFIG_VERSION_CONFLICT"]);
-          const change = rows.slice(0, 2).map((row) => `${row.label} ${row.before} → ${row.after}`).join("；") + (rows.length > 2 ? `；等 ${rows.length} 项` : "");
-          setSaveError({ kind, message, module, change: change || title, at: Date.now() });
+          const kind = unresolved ? "unknown" : saveIssueKind(cause, ["H9_CONFIG_VERSION_CONFLICT"], recovering);
+          if (kind === "conflict") ready.current = false;
+          setSaveError({ kind, message, module, change: change || title, at: command.createdAt });
+          if (!unresolved) {
+            command = undefined;
+            if (recovering) { ctx.openActionConfirm(null); await load(module); }
+          }
           ctx.toast(kind === "unknown" ? `保存结果未知 · ${message}` : message, kind === "unknown" ? "warn" : "error");
           throw cause;
-        }
+        } finally { setSaving(false); syncPending(); }
       },
     });
   };
@@ -373,6 +419,48 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     setSaveError({ kind: saveIssueKind(cause, ["H9_CONFIG_VERSION_CONFLICT"]), message, module: "globe", change, at: Date.now() });
   };
 
+  const recover = (record: H9Command) => {
+    const original = record.original;
+    if (!original) return;
+    const display = original.display;
+    ctx.openActionConfirm({ briefKind: "config", action: display.action, title: display.title,
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>, confirmLabel: "按原请求重试",
+      statedBrief: { impact: display.impact, check: "核对改动和对 App 的影响，理由写清调整依据。" },
+      detail: "主配置整组保存：任何一项不合法，整组都不保存；页面上其他块没保存的草稿不会带上。",
+      getPendingReason: () => pendingH9Command("main")?.commandKey === record.commandKey ? original.reason : undefined,
+      blockedReason: !canRetryH9Command(record) ? RETRY_EXPIRED_TEXT : !canWrite ? formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED") : undefined,
+      facts: <ConfirmFacts rows={display.rows} facts={<>
+        <Fact k="改的是">{display.objectLabel ?? moduleLabel(display.module)}</Fact>
+        <Fact k="主配置版本"><Change from={`v${original.expectedVersion}`} to={`v${original.expectedVersion + 1}`} /></Fact>
+        {display.extraFacts?.map(fact => <Fact key={fact.label} k={fact.label}>{fact.value ?? <Change from={fact.before} to={fact.after} />}</Fact>)}
+        <Fact k="操作记录">记一条高风险操作记录（不走审批）</Fact>
+      </>} />,
+      run: async () => {
+        ready.current = false;
+        setSaving(true);
+        try {
+          const saved = await updateH9PublicStats(record, true);
+          ctx.openActionConfirm(null);
+          await load(display.module);
+          ctx.toast(`${moduleLabel(display.module)}已保存，主配置 v${saved.version}`, "success");
+        } catch (cause) {
+          if (!pendingH9Command("main")) { ctx.openActionConfirm(null); await load(display.module); }
+          throw cause;
+        } finally { setSaving(false); syncPending(); }
+      },
+    });
+  };
+  const recoveryRows = pending ? [{
+    key: pending.commandKey, name: pending.original ? moduleLabel(pending.original.display.module) : "首页与网络展示设置",
+    change: pending.original?.display.change ?? formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE"), submittedAt: pending.createdAt,
+    actions: <>
+      <Button size="sm" disabled={loading} onClick={() => { if (pending.original) setModule(pending.original.display.module); void load(pending.original?.display.module); }}>查询原结果</Button>
+      <Button size="sm" disabledReason={!canRetryH9Command(pending) ? pending.original ? RETRY_EXPIRED_TEXT : formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE") : !canWrite ? formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED") : undefined}
+        disabled={saving} onClick={() => recover(pending)}>按原请求重试</Button>
+    </>,
+  }] : [];
+  const recoveryNotice = <H9RecoveryNotice rows={recoveryRows} explain={RECOVERY_EXPLAIN} />;
+
   const header = (
     <PageHeader pageId="H9" title="首页与网络展示设置" summary="管 App 首页和网络页给用户看的展示数字。"
       meta={data ? <>主配置 v{data.version} · {businessStamp(Date.parse(data.effectiveAt))} 生效（{businessZone().label}）· 打开时读取</> : undefined}
@@ -380,11 +468,12 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   );
 
   const cards = <H9ModuleCards data={data} failed={!data && !loading} rank={rank} module={module} onSelect={setModule} ids={ids} readAt={readAt} />;
-  const rankPanel = <div hidden={module !== "rank"} {...ids.panel("rank")}><H9DeviceRank ctx={ctx} onData={setRank} /></div>;
+  const rankPanel = <div key="rank" hidden={module !== "rank"} {...ids.panel("rank")}><H9DeviceRank ctx={ctx} onData={setRank} /></div>;
 
   if (!data || !drafts) {
     return <div className="h9-page">
       {header}
+      {recoveryNotice}
       {loading
         ? <Conclusion state="unknown">展示设置读取中…</Conclusion>
         /* 文案拼接走 h9PlaceholderCopy:字典整句自带句号,直接再拼「。」就是双句号(P2-15 回归)。 */
@@ -403,7 +492,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     (_, index) => bands[index]?.tops.trim() !== h9DraftText(values.hashratePercentileTable[index]?.tops) || bands[index]?.cumPct.trim() !== h9DraftText(values.hashratePercentileTable[index]?.cumPct)).filter(Boolean).length;
   const changedKeys = MODULE_KEYS[module].filter((key) => drafts[key].trim() !== h9DraftText(values[key]));
   const badCount = MODULE_KEYS[module].filter((key) => fieldErrors[key]).length + (module === "history" ? rowErrors.filter(Boolean).length + (bandCountError ? 1 : 0) : 0);
-  const saveBlock = loading ? "正在读取最新数据，读完再保存" : conflict ? "这块已被别人改过，先刷新这一块" : !dirty ? "没有改动" : !allValid ? "有填错的项，按框下的提示改" : undefined;
+  const saveBlock = pending ? formatAdminApiError("H9_ORIGINAL_UNRESOLVED", "H9_ORIGINAL_UNRESOLVED") : error ? formatAdminApiError("H9_CURRENT_READ_REQUIRED", "H9_CURRENT_READ_REQUIRED") : saving ? "正在保存" : loading ? "正在读取最新数据，读完再保存" : conflict ? "这块已被别人改过，先刷新这一块" : !dirty ? "没有改动" : !allValid ? "有填错的项，按框下的提示改" : undefined;
   const toolbarNote = loading ? "正在读取…" : !canWrite ? "只能查看" : !dirty ? "没有改动" : badCount ? `有 ${badCount} 处要改` : `改了 ${changedKeys.length + changedBands || 1} 项，还没保存`;
 
   const renderField = (key: ScalarKey) => {
@@ -424,7 +513,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         inputMode={field.integer ? "numeric" : "decimal"}
         value={drafts[key]}
         placeholder={pending ? "后端待支持" : field.clearable ? "不发布" : undefined}
-        disabled={!canWrite || loading || pending}
+        disabled={!canWrite || loading || !!error || saving || !!pendingH9Command("main") || pending}
         onChange={(event) => setDraft(key, event.target.value)} />}
     </Field>;
   };
@@ -432,10 +521,10 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   const toolbar = (extra?: ReactNode) => <ModuleToolbar note={toolbarNote} tone={dirty && badCount ? "warn" : undefined}>
     <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} disabled={loading} onClick={() => void load(module)}>刷新这一块</Button>
     {canWrite && extra}
-    {canWrite && <Button size="sm" disabled={!dirty} onClick={restoreCurrent}>放弃改动</Button>}
+    {canWrite && <Button size="sm" disabled={!dirty || !!pending || saving || loading || !!error} onClick={restoreCurrent}>放弃改动</Button>}
     {canWrite && <Button variant="primary" size="sm" disabledReason={saveBlock} onClick={() => save()}>保存变更</Button>}
   </ModuleToolbar>;
-  const defaultsButton = <Button size="sm" disabled={loading} onClick={fillDefaults}>恢复默认</Button>;
+  const defaultsButton = <Button size="sm" disabled={loading || !!error || saving || !!pending} onClick={fillDefaults}>恢复默认</Button>;
 
   const conflictNotice = conflict && <Notice tone="warn" title="这块已被别人改过" action={<Button size="sm" onClick={() => void load(module)}>刷新这一块</Button>}>
     你填的内容还在。刷新会读最新值并放弃这一块没保存的改动，再按最新值重新改，避免盖掉别人的设置。
@@ -474,7 +563,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     </Panel>
     <Panel title="参数" icon={SlidersHorizontal} tone="role-4" sub={`主配置 v${data.version}`}
       actions={canWrite && <Button size="sm" variant={values.homeDisplayEnabled ? "secondary" : "primary"}
-        disabledReason={loading ? "正在读取最新数据" : conflict ? "这块已被别人改过，先刷新这一块" : !allValid ? "首页有填错的项，改好后才能切换" : undefined}
+        disabledReason={pending ? formatAdminApiError("H9_ORIGINAL_UNRESOLVED", "H9_ORIGINAL_UNRESOLVED") : error ? formatAdminApiError("H9_CURRENT_READ_REQUIRED", "H9_CURRENT_READ_REQUIRED") : saving ? "正在保存" : loading ? "正在读取最新数据" : conflict ? "这块已被别人改过，先刷新这一块" : !allValid ? "首页有填错的项，改好后才能切换" : undefined}
         onClick={() => save(!values.homeDisplayEnabled)}>{values.homeDisplayEnabled ? "暂停增长" : "开启增长"}</Button>}
       explain="开启或暂停会把首页这块填写中的改动一起保存；只保存参数不会改开关。">
       {conflictNotice}
@@ -597,7 +686,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       explain={<>累计占比是算力达到或低于这一档的人占历史估算分母的比例；100% 表示覆盖全部。只用于历史估算，设备预估排名用的是自己的档位。</>}
       actions={<>
         <PaginationExemption label="算力分位表" reason="整表统一保存，需同时检查各行数值顺序" maxRows={bands.length} kind="fixed-matrix" />
-        {canWrite && <Button size="sm" onClick={addBand}>添加档</Button>}
+        {canWrite && <Button size="sm" disabled={loading || !!error || saving || !!pending} onClick={addBand}>添加档</Button>}
       </>}>
       {bandCountError && <Notice tone="warn">{bandCountError}。{canWrite ? "点「添加档」补齐，少于两档没法换算成百分比。" : ""}</Notice>}
       {bands.length > 0 && <Table label="算力分位表">
@@ -607,13 +696,13 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
             const pct = num(row.cumPct);
             return <Tr key={index}>
               <Td>{index + 1}</Td>
-              <Td><NumberInput aria-label={`第 ${index + 1} 档算力档位`} unit="TOPS" min={H9_BAND_TOPS_MIN} inputMode="decimal" value={row.tops} disabled={!canWrite} onChange={(event) => setBand(index, "tops", event.target.value)} /></Td>
+              <Td><NumberInput aria-label={`第 ${index + 1} 档算力档位`} unit="TOPS" min={H9_BAND_TOPS_MIN} inputMode="decimal" value={row.tops} disabled={!canWrite || loading || !!error || saving || !!pending} onChange={(event) => setBand(index, "tops", event.target.value)} /></Td>
               <Td><span className="h9-band-pct">
                 {Number.isFinite(pct) && pct >= 0 && pct <= 100 && <RatioBar compact quiet label="累计占比" value={pct} total={100} valueText={`累计 ${pct}%`} tone="role-other" />}
-                <NumberInput aria-label={`第 ${index + 1} 档累计占比`} unit="%" min={0} max={100} inputMode="decimal" value={row.cumPct} disabled={!canWrite} onChange={(event) => setBand(index, "cumPct", event.target.value)} />
+                <NumberInput aria-label={`第 ${index + 1} 档累计占比`} unit="%" min={0} max={100} inputMode="decimal" value={row.cumPct} disabled={!canWrite || loading || !!error || saving || !!pending} onChange={(event) => setBand(index, "cumPct", event.target.value)} />
               </span></Td>
               <Td>{rowErrors[index] ? <span className="h9-row-error">{rowErrors[index]}</span> : h9BandMeaning(row.tops, row.cumPct)}</Td>
-              {canWrite && <Td align="right"><Button size="sm" variant="ghost" aria-label={`删除第 ${index + 1} 档`} onClick={() => removeBand(index)}>删除</Button></Td>}
+              {canWrite && <Td align="right"><Button size="sm" variant="ghost" aria-label={`删除第 ${index + 1} 档`} disabled={loading || !!error || saving || !!pending} onClick={() => removeBand(index)}>删除</Button></Td>}
             </Tr>;
           })}
         </tbody>
@@ -624,14 +713,10 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   </div>;
 
   const issue = saveError;
-  const recoveryRows = issue?.kind === "unknown" ? [{
-    key: "main", name: moduleLabel(issue.module), change: issue.change, submittedAt: issue.at,
-    actions: <Button size="sm" disabled={loading} onClick={() => { setModule(issue.module); void load(issue.module); }}>刷新核对</Button>,
-  }] : [];
 
   return <div className="h9-page">
     {header}
-    <H9RecoveryNotice rows={recoveryRows} explain={RECOVERY_EXPLAIN} />
+    {recoveryNotice}
     {issue?.kind === "conflict" && <Notice tone="warn" title={`保存没成功：${moduleLabel(issue.module)}所在的主配置已被别人改过`}
       action={<Button size="sm" onClick={() => { setModule(issue.module); void load(issue.module); }}>刷新这一块</Button>}>
       这次没有保存。刷新读到最新值后再改，避免盖掉别人的设置。
@@ -646,8 +731,8 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     {networkModule}
     {jobsModule}
     <div hidden={module !== "globe"} {...ids.panel("globe")}>
-      <H9GlobeDisplay ctx={ctx} data={data} refreshing={loading} onIssue={onGlobeIssue} onSaved={next => {
-        setData(next); setEditor(current => reconcileH9Editor(current, next.values, H9_FIELDS.map(field => field.key))); setSaveError(null);
+      <H9GlobeDisplay ctx={ctx} data={data} refreshing={loading} blocked={!!error || saving || !!pending || saveError?.kind === "conflict"} ready={ready} onPending={syncPending} onIssue={onGlobeIssue} onSaved={next => {
+        setData(next); setEditor(current => reconcileH9Editor(current, next.values, H9_FIELDS.map(field => field.key))); setSaveError(null); setReadAt(Date.now());
       }} onRefresh={() => load("globe")} />
     </div>
     {rankPanel}
