@@ -1,47 +1,40 @@
 "use client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import { F4_MATERIAL_PERMISSIONS } from "@/lib/admin/f4-ambassador-display";
 
-const credentialStatusText = (value?: string | null) => value === "PASSWORD_CHANGE_REQUIRED" ? "下次登录需修改密码" : value === "ACTIVE" ? "正常" : "—";
-
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { KeyRound, LogOut, PencilLine, RefreshCw, ShieldCheck, ShieldPlus, ShieldUser, UserCog, UserMinus, UserPlus, Users, MonitorSmartphone, ClipboardCheck, Headset, UsersRound, LockKeyhole } from "lucide-react";
+import { BlockState, Button, Cell, Check, ConfigList, ConfigRow, Conclusion, Explain, Fact, Facts, Change, Field, Fold, Input, MoreMenu, Notice, PageHeader, Pager, Panel, Select, Stat, StatBand, StatusDistributionBar, StatusTag, Table, TableMessage, Td, Th, Tr, type MoreMenuItem } from "@/app/components/rd";
 import { readAdminSessionBaseline } from "@/lib/admin/session-baseline";
-import { Drawer } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import {
-  changeA1AccountRole,
   createA1Account,
   fetchA1Overview,
   isA1OutcomeUncertainError,
-  resetA1Account2fa,
   resetA1AccountPassword,
   registerA1Permission,
-  revokeA1AccountSessions,
   revokeA1AccountSession,
-  updateA1AccountProfile,
-  updateA1AccountStatus,
-  updateA1SecurityBaseline,
   type A1CreateAccountInput,
   type A1Operator,
   type A1Overview,
   type A1PasswordResetResult,
-  type A1RoleDefinition,
   type A1SecurityBaseline,
   type A1UpdateAccountInput,
 } from "@/lib/admin/a1-client";
 import { fetchA6RoleDetail, fetchA6RolesOverview } from "@/lib/admin/a6-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { ACtx } from "./types";
-import { AccountAvatarPicker } from "./account-avatar-picker";
-import { HDSelect } from "../m-tabs/hd-ui";
-import { AVATAR_GENDER_OPTIONS, type AvatarGender } from "@/lib/admin/account-avatar-contract";
 import { avatarDrafts, avatarDraftFingerprint } from "@/lib/admin/account-avatar-pending";
 import { SupportAvatar } from "../m-tabs/support-avatar";
 import { SupportQualificationEditor, canManageSupportQualifications } from "../m-tabs/m1-group-management";
 import {createPendingMutationStore,type PendingMutationRecord} from "@/lib/admin/pending-mutation-store";
+import {
+  A1RecoveryNotice, AccountDetailDrawer, EditAccountDrawer, NewAccountDrawer, PasswordResetDrawer, RoleChangeModal,
+  approvalTag, approverFact, credentialStatusText, directTag, expiredTag, minuteText, operatorDisplayLabel, operatorDisplayName,
+  permSummary, roleName, unknownTag, zoneNote, type A1AccountAction,
+} from "./a1-account-views";
 type CreationPending=PendingMutationRecord&{actorId:number;form:A1CreateAccountInput&{reason:string};reason:string;operator:string};
 const creationCommands=createPendingMutationStore<CreationPending>({storageKey:"nexion-a1-support-avatar-account-create",retainExpiredRecords:true,isValidRecord:r=>Number.isSafeInteger(r.actorId)&&Boolean(r.form?.username&&r.reason)});
 
@@ -69,13 +62,12 @@ const SECURITY_BASELINE_META: Record<string, SecurityBaselineMeta> = {
   lock_long_hour: { key: "lock_long_hour", name: "长时锁定 · 锁定时长", sub: "锁定多久后可重试", unit: "小时" },
 };
 
+/** 账号列表的筛选：只在已读到的全部账号里筛，不发请求。 */
+type ListFilter = "all" | "ok" | "unbound" | "disabled" | "super";
+const FILTER_TEXT: Record<Exclude<ListFilter, "all">, string> = { ok: "启用且已绑定两步验证", unbound: "启用但未绑定两步验证", disabled: "已停用", super: "超级管理员" };
+
 function errorMessage(error: unknown) {
   return displayAdminError(error);
-}
-
-function roleName(roles: A1RoleDefinition[], role: string) {
-  if (!role || role === "unassigned") return "暂未分配";
-  return roles.find((r) => r.key === role)?.name ?? role;
 }
 
 function roleKeyFromCode(roleCode: string) {
@@ -106,31 +98,6 @@ function forceLogoutRole(role: string | undefined | null) {
   if (role === "risk") return "risk";
   if (role === "auditor") return "audit";
   return role ?? "";
-}
-
-function operatorDisplayName(op: Pick<A1Operator, "name" | "username" | "email">) {
-  return op.name?.trim() || op.username?.trim() || op.email?.trim() || "运营账号";
-}
-
-function operatorDisplayLabel(op: Pick<A1Operator, "name" | "username" | "email">) {
-  const name = operatorDisplayName(op);
-  const username = op.username?.trim();
-  if (username && username !== name) return `${name}(${username})`;
-  const email = op.email?.trim();
-  return email && email !== name ? `${name}(${email})` : name;
-}
-
-function stopRowAction(event: MouseEvent<HTMLButtonElement>, work: () => void) {
-  event.stopPropagation();
-  work();
-}
-
-function openRowAction(event: KeyboardEvent<HTMLTableRowElement>, work: () => void) {
-  if (event.key !== "Enter" && event.key !== " ") {
-    return;
-  }
-  event.preventDefault();
-  work();
 }
 
 export function A1Accounts({ ctx }: { ctx: ACtx }) {
@@ -167,6 +134,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const [editAccountTarget, setEditAccountTarget] = useState<A1Operator | null>(null);
   const [passwordReset, setPasswordReset] = useState<A1PasswordResetResult | null>(null);
   const [permissionDraft, setPermissionDraft] = useState({ code: "", name: "", path: "", type: "WRITE" as "READ" | "WRITE", amplifies: false });
+  // 以下只管界面：列表筛选、改角色的第一步、临时密码来自新建还是重置。
+  const [filter, setFilter] = useState<ListFilter>("all");
+  const [roleTarget, setRoleTarget] = useState<A1Operator | null>(null);
+  const [passwordFromCreate, setPasswordFromCreate] = useState(false);
 
   const refreshOverview = useCallback(async (quiet = false) => {
     if (!quiet) {
@@ -189,7 +160,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         setPermissionDiffReady(true);
       } catch (error) {
         setPermissionCodesByRole({});
-        setPermissionDiffError(`权限变化预览加载失败：${errorMessage(error)}，暂时不能改角色`);
+        setPermissionDiffError(`角色权限没有读到：${errorMessage(error)}`);
       }
     } catch (error) {
       setLoadError(errorMessage(error));
@@ -218,7 +189,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         return true;
       } catch (error) {
         if (isA1OutcomeUncertainError(error)) {
-          toast(`提交结果暂未确认（命令号 ${error.commandKey}）。请先刷新，在操作记录里核对，不要重复提交。`);
+          toast("提交结果未知。请先刷新，在「操作记录与审批」里核对，不要重复提交。");
         } else {
           toast(`提交失败:${errorMessage(error)}`);
         }
@@ -246,19 +217,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const effectiveSupers = stats?.effectiveSupers ?? 0;
   const governanceFrozen = effectiveSupers < 2;
   const profileEditBlockReason = !canEditAccount ? "你没有编辑账号资料的权限"
-    : governanceFrozen ? "可用的超级管理员不足 2 个，暂时不能编辑账号资料"
+    : governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能编辑账号资料"
     : mutatingAction ? "正在提交，请稍候" : null;
-  const permissionActions = useMemo(() => {
-    const codes = [...new Set(Object.values(permissionCodesByRole).flat())].sort();
-    return codes.map((code) => ({ code, label: F4_MATERIAL_PERMISSIONS.find((item) => item.code === code)?.label ?? code, domainGroup: code.split("_")[0]?.toUpperCase() || "OTHER" }));
-  }, [permissionCodesByRole]);
-  const grantsByRole = useMemo(() => Object.fromEntries(
-    Object.entries(permissionCodesByRole).map(([role, codes]) => {
-      const owned = new Set(codes);
-      return [role, permissionActions.map((action) => owned.has(action.code) ? "R" : "-")];
-    }),
-  ), [permissionActions, permissionCodesByRole]);
-  const supersTone = effectiveSupers <= 1 ? "danger" : effectiveSupers === 2 ? "warn" : "ok";
   const backendSessionBaseline = securityBaselines.find((b) => b.key === "session")?.value;
   const parsedSessionBaseline = readAdminSessionBaseline(backendSessionBaseline);
   const backendLockBaseline = securityBaselines.find((b) => b.key === "lock")?.value;
@@ -293,27 +253,34 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const baselineDisplay = (baseline: SecurityBaselineRow) => (
     baseline.current == null ? "—" : `${baseline.current} ${baseline.unit ?? ""}`.trim()
   );
-  const sessionBaseline = parsedSessionBaseline.idleDisabled
-    ? `无操作自动登出已关闭 / ${parsedSessionBaseline.unlimited ? "无固定登录上限"
-      : parsedSessionBaseline.absoluteHours ? `最长保持登录 ${parsedSessionBaseline.absoluteHours} 小时` : "最长登录时间未获取到"}`
-    : backendSessionBaseline || "未获取到";
   const lockBaseline = backendLockBaseline || "未获取到";
 
-  const totalPages = Math.max(1, Math.ceil(operators.length / perPage));
+  // 列表筛选只看已读到的账号，不改请求；分页沿用原来的组件内状态。
+  const enabledOps = operators.filter((op) => op.status === "enabled");
+  const unboundOps = enabledOps.filter((op) => !op.tfa);
+  const okOps = enabledOps.filter((op) => op.tfa);
+  const disabledOps = operators.filter((op) => op.status !== "enabled");
+  const enabledSupers = enabledOps.filter((op) => op.role === "super");
+  const onlineAccounts = operators.filter((op) => op.sessions > 0).length;
+  const listed = filter === "all" ? operators
+    : filter === "ok" ? okOps : filter === "unbound" ? unboundOps : filter === "disabled" ? disabledOps : operators.filter((op) => op.role === "super");
+  const pickFilter = (next: ListFilter) => { setFilter((current) => current === next ? "all" : next); setPage(0); };
+
+  const totalPages = Math.max(1, Math.ceil(listed.length / perPage));
   const safePage = Math.min(page, totalPages - 1);
-  const pageStart = operators.length ? safePage * perPage : 0;
-  const pageEnd = Math.min(pageStart + perPage, operators.length);
-  const pageRows = operators.slice(pageStart, pageEnd);
+  const pageStart = listed.length ? safePage * perPage : 0;
+  const pageEnd = Math.min(pageStart + perPage, listed.length);
+  const pageRows = listed.slice(pageStart, pageEnd);
   const forceLogoutBlockReason = (op: A1Operator) => {
     const targetId = operatorAccountId(op.id);
     if (currentAdminId !== null && targetId !== null && targetId === currentAdminId) {
-      return "不能强制登出自己的当前账号";
+      return "不能撤销自己的登录";
     }
     if (currentForceLogoutRole !== "super") {
-      return "只有超级管理员可以强制登出运营账号";
+      return "只有超级管理员可以撤销运营账号的登录";
     }
     if (op.role === "super") {
-      return "超级管理员账号不能被强制登出";
+      return "超级管理员账号的登录不能被撤销";
     }
     if (op.sessions === 0) {
       return "该账号当前未登录";
@@ -324,22 +291,22 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     op.role === "super" && op.status === "enabled" && op.tfa && effectiveSupers <= 2;
   const changeRoleBlockReason = (op: A1Operator) => {
     if (!canChangeRole) return "你没有变更账号角色的权限";
-    if (!permissionDiffReady) return permissionDiffError ?? "权限变化预览加载失败，暂时不能改角色";
+    if (!permissionDiffReady) return permissionDiffError ? "角色权限没有读到，暂时不能改角色" : "角色权限没有读到，暂时不能改角色";
     if (governanceFrozen && op.role === "super") return "恢复期间只能把其他账号提升为超级管理员";
-    if (protectsEffectiveSuperFloor(op)) return "操作后可用的超级管理员会少于 2 个";
+    if (protectsEffectiveSuperFloor(op)) return "改后有效的超级管理员会少于 2 人";
     return null;
   };
   const reset2faBlockReason = (op: A1Operator) => {
     if (!canReset2fa) return "你没有重置两步验证的权限";
     if (!op.tfa) return "该账号尚未绑定两步验证，无需重置";
-    if (governanceFrozen) return "可用的超级管理员不足 2 个，账号操作已暂停";
-    if (protectsEffectiveSuperFloor(op)) return "重置后可用的超级管理员会少于 2 个";
+    if (governanceFrozen) return "有效的超级管理员不足 2 人，账号操作已暂停";
+    if (protectsEffectiveSuperFloor(op)) return "重置后有效的超级管理员会少于 2 人";
     return null;
   };
   const disableAccountBlockReason = (op: A1Operator) => {
     if (!canChangeStatus) return "你没有启停账号的权限";
-    if (governanceFrozen) return "可用的超级管理员不足 2 个，账号操作已暂停";
-    if (protectsEffectiveSuperFloor(op)) return "禁用后可用的超级管理员会少于 2 个";
+    if (governanceFrozen) return "有效的超级管理员不足 2 人，账号操作已暂停";
+    if (protectsEffectiveSuperFloor(op)) return "停用后有效的超级管理员会少于 2 人";
     return null;
   };
 
@@ -349,34 +316,51 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     }
   }, [page, totalPages]);
 
+  const codesOf = (role: string) => role === "unassigned" || !role ? [] : permissionCodesByRole[role] ?? [];
+  const gainLoss = (from: string, to: string) => {
+    const before = new Set(codesOf(from)), after = new Set(codesOf(to));
+    return { gained: [...after].filter((code) => !before.has(code)).length, lost: [...before].filter((code) => !after.has(code)).length };
+  };
+
+  // 改角色第一步：在页面自己的框里选新角色、对照权限；第二步才打开确认框填理由。
   const changeRole = (op: A1Operator) => {
     const blocked = changeRoleBlockReason(op);
     if (blocked) {
       toast(blocked);
       return;
     }
+    setRoleTarget(op);
+  };
+
+  const confirmRoleChange = (op: A1Operator, picked: string) => {
+    setRoleTarget(null);
     const displayName = operatorDisplayName(op);
     const displayLabel = operatorDisplayLabel(op);
     const allowedRoles = governanceFrozen ? roleOptions.filter((role) => role.key === op.role || role.key === "super") : roleOptions;
+    const diff = gainLoss(op.role, picked);
     openActionConfirm({ briefKind: "security",
       action: `变更角色 · ${displayName}`,
-      detail: (
-        <>
-          <b>{displayLabel}</b> · 当前 <b>{roleName(roles, op.role)}</b>。
-          {governanceFrozen ? "恢复期间只能提升为超级管理员，批准后生效；启用并完成两步验证后计入可用人数。" : "选择新角色，下方会显示权限的变化，批准后生效。可用的超级管理员不能少于 2 个。"}
-        </>
-      ),
+      title: "改角色",
+      detail: `${displayLabel}：${roleName(roles, op.role)} 改成 ${roleName(roles, picked)}。`,
       amplifies: false,
-      businessForm: {
-        kind: "role-select",
-        currentRole: op.role,
-        roles: allowedRoles.map((r) => ({ key: r.key, label: r.name, scope: r.scope })),
-        actions: permissionActions,
-        grantsByRole: { unassigned: permissionActions.map(() => "-"), ...grantsByRole },
-        guardHint: `当前可用超级管理员 ${effectiveSupers} 个，至少保留 2 个`,
+      effect: approvalTag("批准前角色和权限不变。"),
+      confirmLabel: "提交改角色审批",
+      facts: (
+        <Facts>
+          <Fact k="账号">{displayLabel}</Fact>
+          <Fact k="角色"><Change from={roleName(roles, op.role)} to={roleName(roles, picked)} /></Fact>
+          <Fact k="权限变化" tone={diff.gained > 0 ? "warn" : undefined}>多出 {diff.gained} 项 · 少掉 {diff.lost} 项</Fact>
+          {approverFact()}
+        </Facts>
+      ),
+      statedBrief: {
+        impact: picked === "unassigned"
+          ? "批准后这个账号没有任何权限和菜单；已登录的设备不会被踢下线。"
+          : "批准后按新角色的权限生效，已登录的设备不会被踢下线。转出客服角色会移除客服资格，名下还有客户或组成员时会被拒绝。",
+        check: "提交时检查改角色权限和账号版本；批准时再检查有效的超级管理员不少于 2 人。",
       },
-      run: async (reason, value) => {
-        const roleStr = (value || "").trim();
+      run: async (reason) => {
+        const roleStr = (picked || "").trim();
         if (!allowedRoles.some((r) => r.key === roleStr)) {
           toast(`无法保存：角色无效（${roleStr}）`);
           return;
@@ -386,7 +370,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           return;
         }
         if (op.role === "super" && op.status === "enabled" && roleStr !== "super" && effectiveSupers - 1 < 2) {
-          toast("不能执行：可用的超级管理员会少于 2 个");
+          toast("不能执行：有效的超级管理员会少于 2 人");
           return;
         }
         const def = findHighOp("a1_account_change_role")!;
@@ -410,20 +394,24 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
   const reset2fa = (op: A1Operator) => openActionConfirm({ briefKind: "security",
     action: `重置两步验证 · ${operatorDisplayName(op)}`,
-    detail: (
-      <>
-        <div className="atint danger" style={{ marginBottom: 12 }}>
-          <b>骗子常用这一步盗号</b> · 提交前请通过另一种方式核实是本人。
-        </div>
-        <div className="dlg-sec">重置后会发生什么</div>
-        <div style={{ marginTop: 6, marginBottom: 4 }}>
-          <div>1 · 当前绑定的验证器立即失效</div>
-          <div>2 · 重新绑定前无法登录后台</div>
-          <div>3 · 下次登录强制重新绑定两步验证</div>
-        </div>
-      </>
-    ),
+    title: "重置两步验证",
+    detail: "核实是本人后提交；批准后旧验证器失效，下次登录重新绑定。",
     amplifies: false,
+    effect: approvalTag("批准前两步验证不变，账号照常可以登录。"),
+    confirmTone: "danger",
+    confirmLabel: "提交重置两步验证审批",
+    facts: (
+      <Facts>
+        <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
+        <Fact k="两步验证"><Change from="已绑定" to="待重新绑定" /></Fact>
+        <Fact k="在线设备">{op.sessions} 台，批准后全部下线</Fact>
+        {approverFact()}
+      </Facts>
+    ),
+    statedBrief: {
+      impact: "骗子常用这一步盗号，先用另一种方式核实是本人。批准后旧验证器失效、所有设备下线，下次登录重新绑定。",
+      check: "提交时检查重置两步验证权限、账号版本和是否已绑定；核验方式、时间和工单号写进理由，后端不另外核对。",
+    },
     businessForm: {
       kind: "identity-verify",
       subject: operatorDisplayLabel(op),
@@ -452,15 +440,24 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
   const resetPassword = (op: A1Operator) => openActionConfirm({ briefKind: "security",
     action: `重置密码 · ${operatorDisplayName(op)}`,
-    detail: (
-      <>
-        <div className="atint danger" style={{ marginBottom: 12 }}>
-          系统会生成临时密码并让该账号下线，对方下次登录须先改密码。
-        </div>
-        <b>{operatorDisplayLabel(op)}</b> · 登录名 <span className="acode">{op.username || "未返回"}</span>。
-      </>
-    ),
+    title: "重置密码",
+    detail: "系统生成临时密码并让该账号所有设备下线，对方下次登录须先改密码。",
     amplifies: false,
+    effect: <>{directTag()}</>,
+    confirmTone: "danger",
+    confirmLabel: "确认重置密码",
+    facts: (
+      <Facts>
+        <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
+        <Fact k="登录名"><span data-mono>{op.username || "未返回"}</span></Fact>
+        <Fact k="在线设备">{op.sessions} 台，确认后马上全部下线</Fact>
+        <Fact k="两步验证">不变</Fact>
+      </Facts>
+    ),
+    statedBrief: {
+      impact: "确认后马上生成 20 位临时密码，只在结果里显示一次；这个账号所有设备下线，下次登录先改密码。",
+      check: "提交时检查重置密码权限、账号版本和当前身份；核验方式、时间和工单号写进理由。",
+    },
     businessForm: {
       kind: "identity-verify",
       subject: operatorDisplayLabel(op),
@@ -473,6 +470,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       setMutatingAction(action);
       resetA1AccountPassword(op.id, `${reason}；${verify}`, operator, op.version)
         .then(async (result) => {
+          setPasswordFromCreate(false);
           setPasswordReset(result);
           await refreshOverview(true);
           toast(`${operatorDisplayName(op)} 密码已重置 · 临时密码只展示在当前弹窗`);
@@ -485,15 +483,30 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   });
 
   const editAccount = (op: A1Operator, form: A1UpdateAccountInput & { reason: string }) => {
+    const usernameChanged = form.username !== (op.username || "").trim().toLowerCase();
     openActionConfirm({ briefKind: "security",
       action: `编辑账号 · ${operatorDisplayName(op)}`,
-      detail: (
-        <>
-          <b>{operatorDisplayLabel(op)}</b> · 登录名从 <span className="acode">{op.username || "未返回"}</span> 更新为 <span className="acode">{form.username}</span>。
-          登录名和邮箱不能与其他账号重复；改登录名后该账号会被强制下线。
-        </>
-      ),
+      title: "提交资料修改",
+      detail: "登录名和邮箱不能与其他账号重复；改登录名后该账号会被强制下线。",
       amplifies: false,
+      effect: approvalTag("批准前资料和头像都不变。"),
+      confirmLabel: "提交修改审批",
+      facts: (
+        <Facts>
+          <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
+          {usernameChanged && <Fact k="登录名"><Change from={op.username || "未返回"} to={form.username} /></Fact>}
+          {form.displayName !== operatorDisplayName(op) && <Fact k="显示名"><Change from={operatorDisplayName(op)} to={form.displayName} /></Fact>}
+          {(form.email ?? "") !== (op.email || "") && <Fact k="工作邮箱"><Change from={op.email || "未填写"} to={form.email || "未填写"} /></Fact>}
+          {form.avatarAssetId && form.avatarAssetId !== op.avatarAssetId && <Fact k="头像">换成新头像</Fact>}
+          {approverFact()}
+        </Facts>
+      ),
+      statedBrief: {
+        impact: usernameChanged
+          ? "批准后改资料；登录名改了，这个账号所有设备下线，要用新登录名重新登录。"
+          : "批准后改资料，已登录的设备不下线；新头像批准后才换上。",
+        check: "提交时检查资料修改权限和账号版本；批准时再检查登录名、邮箱不重复。",
+      },
       run: async (reason) => {
         const finalReason = `${form.reason}；${reason}`;
         const def = findHighOp("a1_account_update_profile")!;
@@ -528,20 +541,33 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
   const disableAcct = (op: A1Operator) => {
     if (op.role === "super" && op.status === "enabled" && effectiveSupers - 1 < 2) {
-      toast("不能执行：可用的超级管理员会少于 2 个");
+      toast("不能执行：有效的超级管理员会少于 2 人");
       return;
     }
     const displayName = operatorDisplayName(op);
+    const countsAsEffective = op.role === "super" && op.status === "enabled" && op.tfa;
     openActionConfirm({ briefKind: "security",
       action: `禁用账号 · ${displayName}`,
-      detail: (
-        <>
-          <b>{operatorDisplayLabel(op)}</b> · 角色 {roleName(roles, op.role)}。
-          禁用后该账号立即下线且无法登录；它提交但还没确认的操作，请到「操作记录与审批」处理。
-          {op.role === "super" && <>  禁用后剩余可用超级管理员 {effectiveSupers - 1} 个。</>}
-        </>
-      ),
+      title: "停用账号",
+      detail: "停用后该账号不能登录；它提交但还没确认的操作，请到「操作记录与审批」处理。",
       amplifies: false,
+      effect: approvalTag("批准前账号照常可以登录。"),
+      confirmTone: "danger",
+      confirmLabel: "提交停用审批",
+      facts: (
+        <Facts>
+          <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
+          <Fact k="角色">{roleName(roles, op.role)}，停用后保留</Fact>
+          <Fact k="状态"><Change from="启用" to="已停用" /></Fact>
+          <Fact k="在线设备">{op.sessions} 台，批准后全部下线</Fact>
+          {countsAsEffective && <Fact k="有效的超级管理员"><Change from={`${effectiveSupers} 人`} to={`${effectiveSupers - 1} 人`} /></Fact>}
+          {approverFact()}
+        </Facts>
+      ),
+      statedBrief: {
+        impact: "批准后这个账号所有设备下线、不能再登录，角色保留；它发起的待审批单不会自动撤回。有主管资格时要先交接负责的组。",
+        check: "提交时检查启停权限和账号版本；批准时再检查有效的超级管理员不少于 2 人、客服交接。",
+      },
     run: (reason) => {
       const def = findHighOp("a1_account_status_update")!;
       void propose(toast, {
@@ -573,12 +599,24 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     if (blocked) { toast(blocked); return; }
     openActionConfirm({ briefKind: "security",
     action: `启用账号 · ${operatorDisplayName(op)}`,
-    detail: (
-      <>
-        <b>{operatorDisplayLabel(op)}</b> · 批准后生效。启用后可重新登录，角色仍为 <b>{roleName(roles, op.role)}</b>，登录时需通过两步验证。
-      </>
-    ),
+    title: "启用账号",
+    detail: "批准后可以重新登录，角色不变，登录时需通过两步验证。",
     amplifies: false,
+    effect: approvalTag("批准前账号仍是停用的。"),
+    confirmLabel: "提交启用审批",
+    facts: (
+      <Facts>
+        <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
+        <Fact k="状态"><Change from="已停用" to="启用" /></Fact>
+        <Fact k="角色">{roleName(roles, op.role)}，不变</Fact>
+        <Fact k="两步验证">{op.tfa ? "已绑定，不变" : "未绑定，登录时先绑定"}</Fact>
+        {approverFact()}
+      </Facts>
+    ),
+    statedBrief: {
+      impact: "批准后可以重新登录，角色和两步验证保持原样；之前撤掉的客服资格不会自动恢复。",
+      check: "提交时检查启停权限和账号版本；恢复期间只能启用已绑定两步验证的超级管理员。",
+    },
     run: async (reason) => {
       const def = findHighOp("a1_account_status_update")!;
       await propose(toast, {
@@ -608,17 +646,23 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     }
     openActionConfirm({ briefKind: "security",
       action: `强制登出 · ${displayName}`,
-      detail: (
-        <>
-          <b>{operatorDisplayLabel(op)}</b> · 当前在 <b>{op.sessions}</b> 台设备上登录。
-          确认后该账号在所有设备上立即下线，重新登录需再次通过两步验证。
-          <div style={{ marginTop: 8, fontSize: 12, color: "var(--ink-4)" }}>
-
-            只有超级管理员能操作；不能登出自己，也不能登出其他超级管理员。
-          </div>
-        </>
-      ),
+      title: "撤销全部登录",
+      detail: "只有超级管理员能操作；不能撤销自己的登录，也不能撤销其他超级管理员的登录。",
       amplifies: false,
+      effect: approvalTag("批准前设备仍在线。"),
+      confirmLabel: "提交撤销全部登录审批",
+      facts: (
+        <Facts>
+          <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
+          <Fact k="在线设备">现在 {op.sessions} 台，批准时在线的全部下线</Fact>
+          <Fact k="密码和两步验证">不变，可以马上重新登录</Fact>
+          {approverFact()}
+        </Facts>
+      ),
+      statedBrief: {
+        impact: "另一位超级管理员批准后，批准时在线的设备全部下线；不改密码和两步验证，对方可以马上重新登录。要让对方登录不了，用「停用账号」。",
+        check: "提交时检查当前身份和账号版本；批准时再检查目标不是超级管理员、不是批准人自己。",
+      },
       run: (reason) => {
         const def = findHighOp("a1_account_force_logout")!;
         void propose(toast, {
@@ -669,12 +713,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     }
     openActionConfirm({ briefKind: "config",
       action: `调整 · ${baseline.name}`,
-      detail: (
-        <>
-          <b>{baseline.name}</b> · 当前 <span className="acode">{curN} {baseline.unit}</span> · 可填范围 <span className="acode">{baseline.min}–{baseline.max} {baseline.unit}</span>。
-          从下次登录开始生效，已登录的不受影响。
-        </>
-      ),
+      detail: `${baseline.name}：当前 ${curN} ${baseline.unit ?? ""}，可填 ${baseline.min}–${baseline.max} ${baseline.unit ?? ""}。`,
       amplifies: false,
       edit: { kind: "number", current: `${curN} ${baseline.unit}`, unit: baseline.unit },
       run: (reason, value) => {
@@ -721,15 +760,32 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     });
   };
 
+  const createFacts = (form: A1CreateAccountInput & { reason: string }) => (
+    <Facts>
+      <Fact k="显示名">{form.displayName}</Fact>
+      <Fact k="登录名"><span data-mono>{form.username}</span></Fact>
+      <Fact k="工作邮箱">{form.email || "未填写"}</Fact>
+      <Fact k="角色">{roleName(roles, form.role)} · {permSummary(form.role ? permissionDiffReady ? codesOf(form.role) : null : [])}</Fact>
+      {form.role === "support" && <Fact k="头像">{form.useDefaultAvatar ? "随机默认头像" : form.avatarAssetId ? "已上传的新头像" : "暂不设置"}</Fact>}
+    </Facts>
+  );
+
   const createAccount = (form: A1CreateAccountInput & { reason: string }) => {
     if (governanceFrozen && !creationPending) {
       const definition = findHighOp("a1_account_create")!;
       const commandKey = crypto.randomUUID();
       openActionConfirm({ briefKind: "security",
         action: `提交新建账号审批 · ${form.displayName}`,
-        detail: <><b>{form.displayName}</b> · 登录名 <span className="acode">{form.username}</span> · 角色 <b>{roleName(roles, form.role)}</b>。这里只提交提案，须另一位超级管理员批准后才创建账号。</>,
-        completionCopy: "另一位超级管理员批准后创建账号；请随后在账号列表点「重置密码」，把临时密码交给账号持有人。",
+        title: "提交新建超级管理员审批",
+        detail: "这里只提交提案，须另一位超级管理员批准后才创建账号。",
         amplifies: false,
+        effect: approvalTag("批准前账号不会建好。"),
+        confirmLabel: "提交创建审批",
+        facts: <>{createFacts(form)}<Facts>{approverFact()}</Facts></>,
+        statedBrief: {
+          impact: "另一位超级管理员批准后才创建账号；本页拿不到临时密码，批准后到账号列表点「重置密码」，把临时密码交给本人。",
+          check: "提交时检查当前身份和审批发起权限；批准时再检查登录名、邮箱不重复，恢复期只能建超级管理员。",
+        },
         run: async (reason) => {
           await propose(toast, {
             action: definition.action, obj: form.username, before: "账号尚未创建",
@@ -745,16 +801,18 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     }
     openActionConfirm({ briefKind: "security",
       action: `新建运营账号 · ${form.displayName}`,
-      detail: (
-        <>
-          <b>{form.displayName}</b> · 登录名 <span className="acode">{form.username}</span> · 角色 <b>{roleName(roles, form.role)}</b>。
-          <div style={{ marginTop: 8 }}>
-            按所选角色开通权限；首次登录须修改密码。
-            {form.role === "support" && <> 专属客服仅服务本人绑定客户，主管资格需另行授予。</>}
-          </div>
-        </>
-      ),
+      title: "新建运营账号",
+      detail: form.role === "support" ? "按所选角色开通权限；首次登录须修改密码。专属客服仅服务本人绑定客户，主管资格需另行授予。" : "按所选角色开通权限；首次登录须修改密码。",
       amplifies: false,
+      effect: directTag(),
+      confirmLabel: "确认创建账号",
+      facts: createFacts(form),
+      statedBrief: {
+        impact: form.role === "support"
+          ? "确认后马上建好启用的账号，显示一次 20 位临时密码；首次登录先绑定两步验证再改密码。客服账号自动有专属客服资格（未分组）。"
+          : "确认后马上建好启用的账号，显示一次 20 位临时密码；首次登录先绑定两步验证再改密码。",
+        check: "提交时检查当前身份、登录名和邮箱不重复、角色可用；同一次提交重试不会建第二个账号。",
+      },
       run: async (reason) => {
         const finalReason = `${form.reason}；${reason}`;
         if(!currentAdminId)return false;
@@ -776,6 +834,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
             }
             creationCommands.forget(command.fingerprint);setCreationPending(null);
             avatarDrafts.forget(avatarDraftFingerprint(command.actorId, "admin", "new"));
+            setPasswordFromCreate(true);
             setPasswordReset({ account: created, temporaryPassword: created.temporaryPassword });
             defaultAvatarMissing = Boolean(command.form.useDefaultAvatar && !created.avatarAssetId);
             return created;
@@ -792,8 +851,25 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     if (governanceFrozen || !canRegisterPermission || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()) return;
     openActionConfirm({ briefKind: "config",
       action: `登记动作权限 · ${permissionDraft.code.trim()}`,
-      detail: <>把新操作加入权限清单，<b>不会自动分给任何角色</b>。需要时到「角色管理」授权。</>,
+      title: "登记新权限",
+      detail: "把新操作加入权限清单，不会自动分给任何角色。需要时到「角色管理」授权。",
       amplifies: permissionDraft.amplifies,
+      coverageLead: "这项权限标记为「会让平台多付钱」",
+      coverageCheck: "登记本身不付款、不检查覆盖率；按现在的规则，标记后类型要选高危，页面暂时选不了，提交会被拒绝。",
+      effect: <>{directTag()}<StatusTag tone="neutral">不改任何人的权限</StatusTag></>,
+      confirmLabel: "确认登记",
+      facts: (
+        <Facts>
+          <Fact k="权限编码"><span data-mono>{permissionDraft.code.trim()}</span></Fact>
+          <Fact k="权限名称">{permissionDraft.name.trim()}</Fact>
+          <Fact k="资源路径"><span data-mono>{permissionDraft.path.trim()}</span></Fact>
+          <Fact k="权限类型">{permissionDraft.type === "READ" ? "查询" : "修改"}</Fact>
+        </Facts>
+      ),
+      statedBrief: {
+        impact: "确认后写进权限清单，不分给任何角色；要用这项权限，到「角色管理」分配给角色。",
+        check: "提交时检查权限码格式、资源路径和这个码还没登记过。",
+      },
       reasonMin: 8,
       reasonMax: 200,
       run: async (reason) => {
@@ -807,228 +883,239 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     });
   };
 
+  const revokeOneSession = (target: A1Operator, sessionId: string) => {
+    const session = (target.sessionDetails ?? []).find((row) => row.sessionId === sessionId);
+    openActionConfirm({ briefKind: "security",
+      action: `让单台设备下线 · ${operatorDisplayName(target)}`,
+      title: "让这台设备下线",
+      detail: `只让这台设备（${sessionId}）下线，不影响该账号的其他设备。`,
+      amplifies: false,
+      effect: directTag(),
+      confirmLabel: "确认让这台设备下线",
+      facts: (
+        <Facts>
+          <Fact k="账号">{operatorDisplayLabel(target)}</Fact>
+          <Fact k="设备">{session?.device || "未知设备"}</Fact>
+          <Fact k="IP"><span data-mono>{session?.ipAddress || "未返回"}</span></Fact>
+          <Fact k="最近活动">{minuteText(session?.lastSeenAt)}</Fact>
+        </Facts>
+      ),
+      statedBrief: {
+        impact: "确认后只让这台设备马上下线，这个账号的其他设备不受影响；对方可以重新登录。",
+        check: "提交时检查撤销登录权限、账号版本和这台设备还在线。",
+      },
+      run: (reason) => {
+        setMutatingAction(`吊销会话 ${target.username}`);
+        revokeA1AccountSession(target.id, sessionId, reason, operator, target.version)
+          .then(async () => {
+            await refreshOverview(true);
+            setDetailAccount(null);
+            toast("该设备已下线");
+          })
+          .catch((error) => toast(`提交失败:${errorMessage(error)}`))
+          .finally(() => setMutatingAction(null));
+      },
+    });
+  };
+
+  // 每个账号能做的事：行尾菜单和详情抽屉用同一份，按钮上写明为什么不能做。
+  const busyReason = mutatingAction ? "正在提交，请稍候" : null;
+  const accountActions = (op: A1Operator): A1AccountAction[] => {
+    const enabled = op.status === "enabled";
+    const list: A1AccountAction[] = [
+      { key: "edit", label: "编辑资料", verb: "编辑", icon: PencilLine, mode: "approval", impact: "改登录名会让全部设备下线", disabledReason: profileEditBlockReason, onSelect: () => { setDetailAccount(null); setEditAccountTarget(op); } },
+      { key: "role", label: "改角色", verb: "改角色", icon: UserCog, mode: "approval", impact: "权限随新角色变，已登录的不下线", disabledReason: busyReason ?? (!roles.length ? "角色目录没有读到" : changeRoleBlockReason(op)), onSelect: () => changeRole(op) },
+      { key: "password", label: "重置密码", verb: "重置", icon: KeyRound, mode: "direct", impact: "全部设备马上下线，下次先改密码", disabledReason: !canResetPassword ? "需要超级管理员和重置密码权限" : busyReason ?? (governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能重置密码" : null), onSelect: () => resetPassword(op) },
+      { key: "2fa", label: "重置两步验证", verb: "重置", icon: ShieldUser, mode: "approval", impact: "全部设备下线，下次登录重新绑定", disabledReason: busyReason ?? reset2faBlockReason(op), onSelect: () => reset2fa(op) },
+      { key: "logout", label: "撤销全部登录", verb: "撤销", icon: LogOut, mode: "approval", impact: "全部设备下线，可以马上重新登录", disabledReason: busyReason ?? forceLogoutBlockReason(op), onSelect: () => kickAllSessions(op) },
+      enabled
+        ? { key: "status", label: "停用账号", verb: "停用", icon: UserMinus, mode: "approval", impact: "全部设备下线，之后不能再登录", danger: true, disabledReason: busyReason ?? disableAccountBlockReason(op), onSelect: () => disableAcct(op) }
+        : { key: "status", label: "启用账号", verb: "启用", icon: UserPlus, mode: "approval", impact: "可以重新登录，角色不变", disabledReason: busyReason ?? enableAccountBlockReason(op), onSelect: () => enableAcct(op) },
+    ];
+    if (canManageQualifications) {
+      const blocked = busyReason ?? (governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能改资格" : null);
+      list.push(
+        { key: "service", label: "专属客服资格", verb: "管理", icon: Headset, mode: "direct", impact: "不改角色，管能否接待本人客户", explain: "资格不是角色，单独管理；首次启用会把账号放进未分组成员，不会自动绑定或改派客户。停用、移除前要先交接本人客户并退出组。", disabledReason: blocked, onSelect: () => setQualificationTarget({ id: op.id, kind: "SERVICE" }) },
+        { key: "supervisor", label: "主管资格", verb: "管理", icon: UsersRound, mode: "direct", impact: "不改角色，管客服组", explain: "和专属客服资格互相独立，可以兼任；主管资格不带账号管理权限。停用、移除前要把负责的组（含已归档的）交接给别的主管。", disabledReason: blocked, onSelect: () => setQualificationTarget({ id: op.id, kind: "SUPERVISOR" }) },
+      );
+    }
+    return list;
+  };
+  const menuItems = (op: A1Operator): MoreMenuItem[] => accountActions(op).map((action) => ({ key: action.key, label: action.label, danger: action.danger, disabledReason: action.disabledReason ?? undefined, onSelect: action.onSelect }));
+
+  const canWriteSomething = canCreateAccount || canEditAccount || canChangeRole || canReset2fa || canResetPassword || canChangeStatus || canRegisterPermission || canManageQualifications;
+  const header = (
+    <PageHeader pageId="A1" title="运营账号与权限" summary="管谁能登录后台、是什么角色、能做什么。"
+      readOnly={overview && !canWriteSomething ? "当前账号只能查看，账号操作都不可用" : undefined}
+      actions={<>
+        <Button icon={<RefreshCw size={14} />} loading={loading && Boolean(overview)} disabledReason={mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => void refreshOverview(true)}>刷新</Button>
+        <Button variant="primary" icon={<UserPlus size={14} />} disabledReason={!canCreateAccount ? "需要超级管理员和账号管理权限" : !roles.length ? "角色目录没有读到" : mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => setNaOpen(true)}>{governanceFrozen && overview ? "新建超级管理员" : "新建账号"}</Button>
+      </>} />
+  );
+
+  const recoveryRows = creationPending ? [{
+    key: creationPending.commandKey,
+    name: "新建账号",
+    change: <>{creationPending.form.displayName} · <span data-mono>{creationPending.form.username}</span> · {roleName(roles, creationPending.form.role)} · {creationPending.form.email || "未填邮箱"}</>,
+    submittedAt: creationPending.createdAt,
+    tag: Date.now() >= creationPending.expiresAt ? expiredTag() : unknownTag("direct"),
+    actions: <Button size="sm" variant="primary" disabledReason={mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => createAccount(creationPending.form)}>按原请求重试</Button>,
+  }] : [];
+  const recovery = <A1RecoveryNotice title={`${recoveryRows.length} 个账号操作结果未知`} rows={recoveryRows} />;
+
   if (loading && !overview) {
-    return (
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">运营账号与权限</span>
-        </div>
-        <div className="l-b">
-          <div className="atint">正在加载…</div>
-        </div>
-      </section>
-    );
+    return <div className="a1-page">{header}{recovery}<BlockState state="loading" title="正在读取运营账号与权限" /></div>;
   }
 
   if (!overview) {
     return (
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">运营账号与权限</span>
-        </div>
-        <div className="l-b">
-          <div className="atint danger">加载失败：{loadError || "请重试，持续失败请联系值班人员。"}</div>
-          <button className="l-btn sm mc" onClick={() => void refreshOverview()}>重试</button>
-        </div>
-      </section>
+      <div className="a1-page">
+        {header}
+        {recovery}
+        <Conclusion state="warn" icon={ShieldCheck}>运营账号没有读到，安全状况这部分没有判断</Conclusion>
+        <BlockState state="error" title="运营账号没有读到" detail={loadError || "请重试，持续失败请联系值班人员。"} onRetry={() => void refreshOverview()} retryLabel="重试" />
+      </div>
     );
   }
 
+  const sessionSummary = parsedSessionBaseline.idleDisabled ? "无操作不自动登出" : parsedSessionBaseline.idleMinutes ? `无操作 ${parsedSessionBaseline.idleMinutes} 分钟登出` : "登录时长没有读到";
+  const lockSummary = baselineCurrent("lock_short_cnt") && baselineCurrent("lock_short_min") ? `连续输错 ${baselineCurrent("lock_short_cnt")} 次锁 ${baselineCurrent("lock_short_min")} 分钟` : "锁定规则没有读到";
+  const pending = stats?.pendingAcctTickets;
+
+  const conclusion = !stats
+    ? { state: "warn" as const, text: "账号统计没有读到，有效的超级管理员人数这部分没有判断", hint: "点「刷新」重读。" }
+    : governanceFrozen
+      ? { state: "danger" as const, text: `有效的超级管理员只有 ${effectiveSupers} 人，低于 2 人，账号管理处于恢复期`, hint: "先新建或恢复一位超级管理员。" }
+      : creationPending
+        ? { state: "warn" as const, text: "有 1 个新建账号结果未知，先核对再继续", hint: "在上方点「按原请求重试」，不会建第二个。" }
+        : unboundOps.length
+          ? { state: "warn" as const, text: `${unboundOps.length} 个启用中的账号还没绑定两步验证`, hint: "提醒本人登录后完成绑定。" }
+          : effectiveSupers === 2
+            ? { state: "ok" as const, text: "后台账号安全正常，有效的超级管理员正好 2 人", hint: "再停用或降级一位会被拦下。" }
+            : { state: "ok" as const, text: `后台账号安全正常：有效的超级管理员 ${effectiveSupers} 人，启用账号都已绑定两步验证`, hint: undefined };
+
+  const detailIndex = detailAccount ? pageRows.findIndex((row) => row.id === detailAccount.id) : -1;
+  const roleCodesOf = (op: A1Operator) => permissionDiffReady ? codesOf(op.role) : null;
+
   return (
-    <>
-      {loadError && (
-        <div className="atint danger" data-module-health-state="error" style={{ marginBottom: 12 }}>
-          刷新失败：{loadError}
-          <button className="l-btn sm mc" onClick={() => void refreshOverview()} style={{ marginLeft: 8 }}>重试</button>
-        </div>
+    <div className="a1-page">
+      {header}
+      {loadError && <Notice tone="danger" title="刷新失败，下面是上次读到的数据" action={<Button size="sm" onClick={() => void refreshOverview()}>重试</Button>}>{loadError}</Notice>}
+      {mutatingAction && <Notice tone="progress">正在提交：{mutatingAction}</Notice>}
+      {governanceFrozen && stats && (
+        <Notice tone="danger" title="有效的超级管理员不足 2 人：账号管理进入恢复期">
+          <p>现在只能新建或提升超级管理员、启用已绑定两步验证的超级管理员，都要另一位超级管理员批准。</p>
+          <p>资料、密码、两步验证、停用、资格和权限登记暂停；撤销登录不受影响。没有第二位能批准的超级管理员时，请运维执行服务器恢复。</p>
+        </Notice>
       )}
-      {mutatingAction && (
-        <div className="atint" style={{ marginBottom: 12 }}>
-          正在提交：{mutatingAction}
-        </div>
-      )}
-      {governanceFrozen && (
-        <div className="atint danger" style={{ marginBottom: 12 }}>
-          <b>可用超级管理员不足 2 人</b> · 仅可新建或提升超管、启用已绑定两步验证的超管、完成两步验证及撤销会话；新建、提升、启用都需另一位超管批准。没有第二位可用超管时，请运维执行服务器恢复。
-        </div>
-      )}
+      {recovery}
+      <Conclusion state={conclusion.state} icon={ShieldCheck} hint={conclusion.hint}
+        explain="有效的超级管理员要同时满足：启用、超级管理员角色、已绑定两步验证，只按真实绑定计算。两步验证按账号列表里启用中的账号统计。">{conclusion.text}</Conclusion>
 
-      <div className="f-stats">
-        <div className="f-stat">
-          <div className="k">运营账号</div>
-          <div className="v">{stats?.totalAccounts ?? operators.length} 个</div>
-          <div className="sub">启用 {stats?.activeAccounts ?? 0} · 已禁用 {stats?.disabledAccounts ?? 0}</div>
-        </div>
-        <div className="f-stat">
-          <div className="k">在线登录</div>
-          <div className="v">{stats?.activeSessions ?? 0} 个</div>
-          <div className="sub">{sessionBaseline}</div>
-        </div>
-        <div className={`f-stat ${supersTone}`}>
-          <div className="k">可用超级管理员</div>
-          <div className="v">{effectiveSupers} 个</div>
-          <div className="sub">至少 2 个 · {governanceFrozen ? "不足，账号操作已暂停" : effectiveSupers === 2 ? "已到下限" : "正常"}</div>
-        </div>
-        <div className="f-stat">
-          <div className="k">待确认的账号操作</div>
-          <div className="v">{stats?.pendingAcctTickets ?? 0} 件</div>
-          <div className="sub">
-            <Link className="l-btn sm" href="/platform/audit">去处理 →</Link>
-          </div>
-        </div>
-      </div>
+      <StatBand label="账号安全">
+        <Stat lead icon={ShieldUser} tone={!stats ? undefined : effectiveSupers < 2 ? "danger" : "role-3"} label="有效的超级管理员" value={stats ? String(effectiveSupers) : "—"} unit={stats ? "人" : undefined}
+          sub={`底线 2 人 · 启用的超级管理员 ${enabledSupers.length} 人`}
+          explain="启用、超级管理员角色、已绑定两步验证三样都满足才算。少于 2 人时进入恢复期，只能新建或恢复超级管理员。点这格只看超级管理员。"
+          onOpen={() => pickFilter("super")} openLabel="只看超级管理员" selected={filter === "super"} selectedText="已筛选" aria-pressed={filter === "super"} />
+        <Stat icon={ShieldCheck} tone={unboundOps.length ? "warn" : "role-3"} label="未绑定两步验证" value={String(unboundOps.length)} unit="个"
+          sub={`启用账号 ${enabledOps.length} 个`}
+          explain="启用中的账号里还没绑定的。没绑定的账号登录时要先绑定，绑定前不能正常使用后台。点这格只看这些账号。"
+          onOpen={() => pickFilter("unbound")} openLabel="只看未绑定两步验证的账号" selected={filter === "unbound"} selectedText="已筛选" aria-pressed={filter === "unbound"} />
+        <Stat icon={ClipboardCheck} tone="role-3" label="待审批的账号变更" value={pending === undefined || pending === null ? "—" : String(pending)} unit={pending === undefined || pending === null ? undefined : "件"}
+          explain="按操作名统计，资料、角色、两步验证、启停、撤销全部登录的申请目前可能没算进来，数字会偏少。以「操作记录与审批」里的待审批为准。"
+          href="/platform/audit" openLabel="去操作记录与审批" />
+        <Stat icon={MonitorSmartphone} tone="role-3" label="在线登录" value={stats ? stats.activeSessions.toLocaleString("en-US") : "—"} unit={stats ? "个" : undefined}
+          sub={`${onlineAccounts} 个账号在线`}
+          explain="后台登录会话总数，一个账号在几台设备上登录就算几个，不是在线人数。" />
+      </StatBand>
 
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">运营账号</span>
-          <span className="sub">
-            · 角色能做什么在 <Link href="/platform/roles">角色管理</Link> 设置
-          </span>
-          <div className="r">
-            <button className="l-btn sm" onClick={() => void refreshOverview(true)} disabled={!!mutatingAction}>刷新</button>
-            <button className="l-btn sm mc" onClick={() => setNaOpen(true)} disabled={!canCreateAccount || !roles.length || !!mutatingAction}>+ 新建账号</button>
-          </div>
+      <Panel title="运营账号" icon={Users} tone="role-3" flush
+        sub={`${operators.length} 个 · 启用 ${stats ? stats.activeAccounts : enabledOps.length} · 已停用 ${stats ? stats.disabledAccounts : disabledOps.length} · 时间为${zoneNote()}`}
+        actions={<Link className="rd-link" href="/platform/roles">角色管理</Link>}
+        explain="角色能做什么在「角色管理」设置；这里只给账号分配角色。点一行看详情和全部操作。">
+        <div className="a1-list-tools">
+          <StatusDistributionBar label="账号按安全状态" selectedKey={filter === "all" || filter === "super" ? null : filter} segments={[
+            { key: "ok", label: "启用且已绑定两步验证", value: okOps.length, text: `${okOps.length} 个`, tone: "ok", onSelect: () => pickFilter("ok") },
+            { key: "unbound", label: "启用但未绑定两步验证", value: unboundOps.length, text: `${unboundOps.length} 个`, tone: "warn", onSelect: () => pickFilter("unbound") },
+            { key: "disabled", label: "已停用", value: disabledOps.length, text: `${disabledOps.length} 个`, tone: "done", onSelect: () => pickFilter("disabled") },
+          ]} emptyText="暂无运营账号" />
+          {filter !== "all" && <span className="a1-filter-note">只看{FILTER_TEXT[filter]} · {listed.length} 个<Button size="sm" variant="ghost" onClick={() => { setFilter("all"); setPage(0); }}>显示全部</Button></span>}
         </div>
         {permissionDiffError && (
-          <div className="atint danger" style={{ margin: "0 12px 12px" }}>
-            {permissionDiffError}。请刷新重试，其他账号操作不受影响。
-          </div>
+          <div className="a1-inset"><Notice tone="warn" title="角色权限没有读到，暂时不能改角色" action={<Button size="sm" onClick={() => void refreshOverview(true)}>重新读取</Button>}>{permissionDiffError}。其他账号操作不受影响。</Notice></div>
         )}
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 1120 }}>
-            <thead>
-              <tr>
-                <th>账号</th>
-                <th>角色</th>
-                <th>两步验证</th>
-                <th>状态</th>
-                <th>最近登录</th>
-                <th>登录会话数</th>
-                <th style={{ textAlign: "right" }}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageRows.map((op) => {
-                const logoutBlock = forceLogoutBlockReason(op);
-                return (
-                  <tr
-                    key={op.id}
-                    className="click"
-                    tabIndex={0}
-                    aria-label={`查看账号详情 ${operatorDisplayName(op)}`}
-                    onClick={() => setDetailAccount(op)}
-                    onKeyDown={(event) => openRowAction(event, () => setDetailAccount(op))}
-                    style={{ cursor: "pointer" }}
-                  >
-                    <td>
-                      <span onClick={event=>event.stopPropagation()}><SupportAvatar name={operatorDisplayName(op)} path={op.avatarAssetId?`/api/admin/platform/accounts/${op.id}/avatar`:undefined} version={op.avatarVersion??undefined}/></span>
-                      <div style={{ fontWeight: 700, color: "var(--ink)" }}>{operatorDisplayName(op)}</div>
-                      <div style={{ fontSize: 12, color: "var(--ink-4)", marginTop: 2 }}>
-                        登录名: {op.username || "未返回"}{op.email ? ` · ${op.email}` : ""}
-                      </div>
-                    </td>
-                    <td>
-                      <span className="mc">{roleName(roles, op.role)}</span>
-                    </td>
-                    <td>{op.tfa ? <span className="mc ok">已绑定</span> : <span className="mc danger">未绑定</span>}</td>
-                    <td>{op.status === "enabled" ? <span className="mc ok">启用</span> : <span className="mc danger">已禁用</span>}</td>
-                    <td style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{op.lastLogin || "—"}</td>
-                    <td><span className="mono">{op.sessions}</span></td>
-                    <td style={{ textAlign: "right" }}>
-                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                        <button className="l-btn sm" aria-label={`编辑 ${operatorDisplayLabel(op)}`} title={profileEditBlockReason ?? undefined} onClick={(event) => stopRowAction(event, () => setEditAccountTarget(op))} disabled={!!profileEditBlockReason}>编辑</button>
-                        {canManageQualifications && <><button className="l-btn sm" aria-label={`管理 ${operatorDisplayLabel(op)} 的专属客服资格`} onClick={event => stopRowAction(event, () => setQualificationTarget({ id: op.id, kind: "SERVICE" }))} disabled={!!mutatingAction || governanceFrozen}>专属客服资格</button><button className="l-btn sm" aria-label={`管理 ${operatorDisplayLabel(op)} 的主管资格`} onClick={event => stopRowAction(event, () => setQualificationTarget({ id: op.id, kind: "SUPERVISOR" }))} disabled={!!mutatingAction || governanceFrozen}>主管资格</button></>}
-                        <button className="l-btn sm" aria-label={`修改 ${operatorDisplayLabel(op)} 的角色`} title={changeRoleBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => changeRole(op))} disabled={!!mutatingAction || !roles.length || !!changeRoleBlockReason(op)}>改角色</button>
-                        <button className="l-btn sm" aria-label={`重置 ${operatorDisplayLabel(op)} 的两步验证`} title={reset2faBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => reset2fa(op))} disabled={!!mutatingAction || !!reset2faBlockReason(op)}>重置 两步验证</button>
-                        <button className="l-btn sm" aria-label={`重置 ${operatorDisplayLabel(op)} 的密码`} onClick={(event) => stopRowAction(event, () => resetPassword(op))} disabled={!canResetPassword || !!mutatingAction || governanceFrozen}>重置密码</button>
-                        <button
-                          className="l-btn sm"
-                          aria-label={`强制登出 ${operatorDisplayLabel(op)}`}
-                          onClick={(event) => stopRowAction(event, () => kickAllSessions(op))}
-                          disabled={!!mutatingAction || !!logoutBlock}
-                          data-blocked={logoutBlock ? "true" : undefined}
-                          title={logoutBlock ?? "强制退出该账号的所有后台登录"}
-                          style={logoutBlock ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
-                        >
-                          强制登出
-                        </button>
-                        {op.status === "enabled" ? (
-                          <button className="l-btn sm dgr" aria-label={`禁用 ${operatorDisplayLabel(op)}`} title={disableAccountBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => disableAcct(op))} disabled={!!mutatingAction || !!disableAccountBlockReason(op)}>禁用</button>
-                        ) : (
-                          <button className="l-btn sm mc" aria-label={`启用 ${operatorDisplayLabel(op)}`} title={enableAccountBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => enableAcct(op))} disabled={!!mutatingAction || !!enableAccountBlockReason(op)}>启用</button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {!pageRows.length && (
-                <tr>
-                  <td colSpan={7} style={{ color: "var(--ink-4)", textAlign: "center", padding: 24 }}>
-                    暂无运营账号
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="l-b" style={{ paddingTop: 10 }}>
-          <div className="pager">
-            <span className="pager-info">显示 {operators.length ? pageStart + 1 : 0}–{pageEnd} / {operators.length}</span>
-            <button className="pager-btn" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>‹</button>
-            <span className="pager-num">{safePage + 1} / {totalPages}</span>
-            <button className="pager-btn" disabled={safePage >= totalPages - 1} onClick={() => setPage(safePage + 1)}>›</button>
-            <select className="pager-size" value={perPage} onChange={(e) => { setPerPage(Number(e.target.value)); setPage(0); }}>
-              {[10, 20, 50].map((n) => <option key={n} value={n}>{n}/页</option>)}
-            </select>
-          </div>
+        <Table label="运营账号" className="a1-accounts">
+          <thead><tr><Th>账号</Th><Th>角色</Th><Th>两步验证</Th><Th>状态</Th><Th align="right">最近登录</Th><Th align="right">在线设备</Th><Th sticky="end">操作</Th></tr></thead>
+          <tbody>
+            {pageRows.map((op) => {
+              const self = currentAdminId !== null && operatorAccountId(op.id) === currentAdminId;
+              return (
+                <Tr key={op.id} selected={detailAccount?.id === op.id} onOpen={() => setDetailAccount(op)} aria-label={`查看账号详情 ${operatorDisplayName(op)}`}>
+                  <Td>
+                    <span className="a1-who">
+                      <SupportAvatar name={operatorDisplayName(op)} path={op.avatarAssetId?`/api/admin/platform/accounts/${op.id}/avatar`:undefined} version={op.avatarVersion??undefined}/>
+                      <Cell main={<>{operatorDisplayName(op)}{self && <span className="a1-self">你</span>}</>} sub={<span data-mono>{op.username || "登录名未返回"}</span>} title={operatorDisplayLabel(op)} />
+                    </span>
+                  </Td>
+                  <Td><Cell main={roleName(roles, op.role)} sub={permissionDiffReady ? permSummary(codesOf(op.role)) : undefined} /></Td>
+                  <Td>{op.tfa ? <StatusTag tone="ok" icon={ShieldCheck}>已绑定</StatusTag> : <StatusTag tone="warn" icon={LockKeyhole}>未绑定</StatusTag>}</Td>
+                  <Td><Cell main={op.status === "enabled" ? "启用" : <StatusTag tone="done">已停用</StatusTag>} sub={op.credentialDeliveryStatus === "PASSWORD_CHANGE_REQUIRED" ? credentialStatusText(op.credentialDeliveryStatus) : undefined} /></Td>
+                  <Td align="right"><Cell num main={minuteText(op.lastLogin)} /></Td>
+                  <Td align="right"><span className="a1-sessions-count" data-empty={op.sessions > 0 ? undefined : ""}>{op.sessions > 0 ? `${op.sessions.toLocaleString("en-US")} 台` : "未登录"}</span></Td>
+                  <Td sticky="end" data-fit=""><MoreMenu label={`账号操作 ${operatorDisplayLabel(op)}`} items={menuItems(op)} /></Td>
+                </Tr>
+              );
+            })}
+            {!pageRows.length && <TableMessage columns={7}>{filter === "all" ? "暂无运营账号" : `没有${FILTER_TEXT[filter]}的账号`}</TableMessage>}
+          </tbody>
+        </Table>
+        {listed.length > 0 && <Pager label="运营账号" total={listed.length} page={safePage + 1} pageSize={perPage} sizes={[10, 20, 50]} onPage={(next) => setPage(next - 1)} onPageSize={(size) => { setPerPage(size); setPage(0); }} />}
+      </Panel>
 
-        </div>
-      </section>
-
-      <section className="l-card" data-capability="a1-permission-registration">
-        <div className="l-h"><span className="ttl">登记新权限</span><span className="sub">· 登记后不会自动分给任何角色</span></div>
-        <div className="l-b ui-form-grid">
-          <label>权限编码<input aria-label="权限编码" placeholder="domain_action_write" value={permissionDraft.code} onChange={(e) => setPermissionDraft((v) => ({ ...v, code: e.target.value }))} /></label>
-          <label>权限名称<input aria-label="权限名称" placeholder="权限名称" value={permissionDraft.name} onChange={(e) => setPermissionDraft((v) => ({ ...v, name: e.target.value }))} /></label>
-          <label>资源路径<input aria-label="资源路径" placeholder="/api/admin/..." value={permissionDraft.path} onChange={(e) => setPermissionDraft((v) => ({ ...v, path: e.target.value }))} /></label>
-          <label>权限类型<select aria-label="权限类型" value={permissionDraft.type} onChange={(e) => setPermissionDraft((v) => ({ ...v, type: e.target.value as "READ" | "WRITE" }))}><option value="READ">查询</option><option value="WRITE">修改</option></select></label>
-          <label><input type="checkbox" checked={permissionDraft.amplifies} onChange={(e) => setPermissionDraft((v) => ({ ...v, amplifies: e.target.checked }))} />会让平台多付钱</label>
-          <button className="l-btn sm mc" disabled={governanceFrozen || !canRegisterPermission || !!mutatingAction || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()} onClick={submitPermissionRegistration}>登记权限</button>
-        </div>
-      </section>
-
-      <section className="l-card">
-          <div className="l-h">
-            <span className="ttl">后台登录安全</span>
-            <span className="sub">· 只针对后台账号，App 用户的登录规则在「注册与登录风险」设置</span>
-          </div>
-          <div className="l-b" style={{ paddingTop: 4 }}>
+      <Fold icon={LockKeyhole} title="后台登录规则" summary={securityBaselineRows.length ? `${sessionSummary} · ${lockSummary}` : "登录规则没有读到"}
+        explain="只针对后台账号，App 用户的登录规则在「注册与登录风险」设置。这些规则由系统固定，这里只能看。">
+        {securityBaselineRows.length ? (
+          <ConfigList label="后台登录规则">
             {securityBaselineRows.map((baseline) => (
-              <div className="a-vrow" key={baseline.key}>
-                <span className="nm">{baseline.name}<small>{baseline.sub}</small></span>
-                <span className={baseline.locked ? "acode lock" : "v"} title={baseline.locked ? "登录时强制验证，不能关闭" : undefined}>
-                  {baselineDisplay(baseline)}
-                </span>
-                {!baseline.locked && (
-                  <button className="l-btn sm mc" onClick={() => adjustBaseline(baseline)} disabled={!!mutatingAction || governanceFrozen}>调整</button>
-                )}
-              </div>
+              <ConfigRow key={baseline.key} name={baseline.name} what={baseline.sub} when={baseline.locked ? "由系统固定，不能在这里改" : "从下次登录开始生效"} value={baselineDisplay(baseline)}
+                action={baseline.locked ? undefined : (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={mutatingAction ? "正在提交，请稍候" : governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能调整" : undefined} onClick={() => adjustBaseline(baseline)}>调整</Button>} />
             ))}
-            {securityBaselineRows.length === 0 && (
-              <div className="atint">暂未获取到登录安全设置。</div>
-            )}
-            <div className="atint" style={{ marginTop: 10 }}>
-              <b>账号疑似被盗？</b> 超级管理员可在上方列表点「强制登出」让它立即下线；要彻底收回权限，点「禁用」。当前锁定规则：<b>{operatorCopyText(lockBaseline)}</b>
+          </ConfigList>
+        ) : <BlockState compact state="empty" title="暂未获取到登录安全设置。" />}
+        <p className="a1-help">账号疑似被盗：先在详情里「让此设备下线」，再「重置密码」；要彻底收回，停用账号。<Explain label="锁定规则原文" content={`后端给的锁定规则：${operatorCopyText(lockBaseline)}`} /></p>
+      </Fold>
+
+      <Fold icon={ShieldPlus} title="登记新权限" summary="登记后不会自动分给任何角色"
+        explain="登记只是把新操作写进权限清单，不等于任何人有了这个权限；要在「角色管理」里分配给角色才生效。">
+        <div className="a1-register" data-capability="a1-permission-registration">
+          <div className="rd-form-grid" data-cols="3" data-dense="">
+            <Field label="权限编码" required hint="小写字母开头">
+              <Input aria-label="权限编码" data-mono="" placeholder="domain_action_write" value={permissionDraft.code} onChange={(e) => setPermissionDraft((v) => ({ ...v, code: e.target.value }))} />
+            </Field>
+            <Field label="权限名称" required>
+              <Input aria-label="权限名称" placeholder="权限名称" value={permissionDraft.name} onChange={(e) => setPermissionDraft((v) => ({ ...v, name: e.target.value }))} />
+            </Field>
+            <Field label="资源路径" required hint="/api/admin/ 开头">
+              <Input aria-label="资源路径" data-mono="" placeholder="/api/admin/..." value={permissionDraft.path} onChange={(e) => setPermissionDraft((v) => ({ ...v, path: e.target.value }))} />
+            </Field>
+            <Field label="权限类型">
+              {(control) => <Select {...control} aria-label="权限类型" value={permissionDraft.type} onChange={(value) => setPermissionDraft((v) => ({ ...v, type: value as "READ" | "WRITE" }))} options={[{ value: "READ", label: "查询" }, { value: "WRITE", label: "修改" }]} />}
+            </Field>
+            <div className="a1-register-check">
+              <Check label="会让平台多付钱" checked={permissionDraft.amplifies} onChange={(e) => setPermissionDraft((v) => ({ ...v, amplifies: e.target.checked }))}
+                help={permissionDraft.amplifies ? "勾选后后端要求类型为「高危」，页面暂时选不了，提交会被拒绝。" : undefined} />
             </div>
           </div>
-        </section>
-
-
+          <div className="rd-toolbar" data-end="">
+            <Button variant="primary" disabledReason={governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能登记" : !canRegisterPermission ? "你没有登记权限的权限" : mutatingAction ? "正在提交，请稍候" : !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim() ? "先填权限编码、名称和资源路径" : undefined} onClick={submitPermissionRegistration}>登记权限</Button>
+          </div>
+        </div>
+      </Fold>
 
       {naOpen && (
         <NewAccountDrawer
           roles={roles}
+          codesByRole={permissionDiffReady ? permissionCodesByRole : null}
           recoveryMode={governanceFrozen}
           disabled={!!mutatingAction||Boolean(creationPending)}
           initialForm={creationPending?.form}
@@ -1036,40 +1123,35 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           onSubmit={createAccount}
         />
       )}
-      {creationPending&&<div className="atint" role="alert"><p>原账号创建结果待确认：{creationPending.form.username} · {creationPending.form.displayName} · {creationPending.form.email||"未填邮箱"}。原资料、头像素材和命令号已保留。</p><button className="l-btn primary" disabled={Boolean(mutatingAction)} onClick={()=>createAccount(creationPending.form)}>使用原资料与命令查询重试</button></div>}
       {qualificationTarget && canManageQualifications && <SupportQualificationEditor adminId={qualificationTarget.id} kind={qualificationTarget.kind} onClose={() => setQualificationTarget(null)} onChanged={() => void refreshOverview(true)} />}
       {detailAccount && (
         <AccountDetailDrawer
           account={detailAccount}
-          materialPermissionCodes={permissionDiffReady ? permissionCodesByRole[detailAccount.role] ?? [] : null}
           roles={roles}
+          roleCodes={roleCodesOf(detailAccount)}
+          materialPermissionCodes={permissionDiffReady ? permissionCodesByRole[detailAccount.role] ?? [] : null}
+          isSelf={currentAdminId !== null && operatorAccountId(detailAccount.id) === currentAdminId}
           sessionRevokeBlockReason={forceLogoutBlockReason(detailAccount)}
           editBlockReason={profileEditBlockReason}
+          actions={accountActions(detailAccount)}
+          busy={Boolean(mutatingAction)}
+          nav={detailIndex >= 0 ? {
+            hasPrev: detailIndex > 0, hasNext: detailIndex < pageRows.length - 1,
+            onPrev: () => setDetailAccount(pageRows[detailIndex - 1] ?? detailAccount),
+            onNext: () => setDetailAccount(pageRows[detailIndex + 1] ?? detailAccount),
+          } : undefined}
           onClose={() => setDetailAccount(null)}
           onEdit={() => {
             setEditAccountTarget(detailAccount);
             setDetailAccount(null);
           }}
-          onRevokeSession={(sessionId) => {
-            const target = detailAccount;
-            openActionConfirm({ briefKind: "security",
-              action: `让单台设备下线 · ${operatorDisplayName(target)}`,
-              detail: <>只让这台设备（<span className="acode">{sessionId}</span>）下线，不影响该账号的其他设备。</>,
-              amplifies: false,
-              run: (reason) => {
-                setMutatingAction(`吊销会话 ${target.username}`);
-                revokeA1AccountSession(target.id, sessionId, reason, operator, target.version)
-                  .then(async () => {
-                    await refreshOverview(true);
-                    setDetailAccount(null);
-                    toast("该设备已下线");
-                  })
-                  .catch((error) => toast(`提交失败:${errorMessage(error)}`))
-                  .finally(() => setMutatingAction(null));
-              },
-            });
-          }}
+          onRevokeSession={(sessionId) => revokeOneSession(detailAccount, sessionId)}
         />
+      )}
+      {roleTarget && (
+        <RoleChangeModal account={roleTarget} roles={roles} codesByRole={permissionCodesByRole} effectiveSupers={effectiveSupers} recovery={governanceFrozen}
+          options={governanceFrozen ? roleOptions.filter((role) => role.key === roleTarget.role || role.key === "super") : roleOptions}
+          onClose={() => setRoleTarget(null)} onNext={(picked) => confirmRoleChange(roleTarget, picked)} />
       )}
       {editAccountTarget && (
         <EditAccountDrawer
@@ -1082,511 +1164,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       {passwordReset && (
         <PasswordResetDrawer
           result={passwordReset}
+          created={passwordFromCreate}
           onClose={() => setPasswordReset(null)}
         />
       )}
-    </>
+    </div>
   );
 }
 
-type NaForm = A1CreateAccountInput & {
-  reason: string;
-};
-
-type EditAccountForm = A1UpdateAccountInput & {
-  reason: string;
-};
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
-function isValidEmail(email: string) {
-  const normalized = email.trim();
-  return !normalized || EMAIL_PATTERN.test(normalized);
-}
-
-function isValidUsername(username: string) {
-  return USERNAME_PATTERN.test(username.trim());
-}
-
-function NewAccountDrawer({
-  roles,
-  recoveryMode,
-  disabled,
-  initialForm,
-  onClose,
-  onSubmit,
-}: {
-  roles: A1RoleDefinition[];
-  recoveryMode: boolean;
-  disabled?: boolean;
-  initialForm?:NaForm;
-  onClose: () => void;
-  onSubmit: (form: NaForm) => void;
-}) {
-  const defaultRole = "support";
-  const actorId = useAdminAuth(state => state.session?.adminId);
-  const [username, setUsername] = useState(initialForm?.username??"");
-  const [displayName, setDisplayName] = useState(initialForm?.displayName??"");
-  const [email, setEmail] = useState(initialForm?.email??"");
-  const [role, setRole] = useState(initialForm?.role??defaultRole);
-  const [reason, setReason] = useState(initialForm?.reason??"");
-  const [avatarGenderValue, setAvatarGenderValue] = useState<AvatarGender>(initialForm?.avatarGender ?? "UNSPECIFIED");
-  const [avatarMode, setAvatarMode] = useState<"default" | "manual">(initialForm?.avatarAssetId || initialForm?.useDefaultAvatar === false || actorId && avatarDrafts.list().some(row => row.fingerprint === avatarDraftFingerprint(actorId, "admin", "new")) ? "manual" : "default");
-  const [avatarAssetId,setAvatarAssetId]=useState<string|undefined>(),[avatarBlocking,setAvatarBlocking]=useState(false);
-  const useDefaultAvatar = role === "support" && avatarMode === "default";
-  useEffect(() => { if (avatarBlocking || avatarAssetId) setAvatarMode("manual"); }, [avatarBlocking, avatarAssetId]);
-
-  useEffect(() => {
-    if (recoveryMode && roles.some((item) => item.key === "super")) {
-      setRole("super");
-    } else if (role && !roles.some((item) => item.key === role)) {
-      setRole("");
-    }
-  }, [recoveryMode, role, roles]);
-
-  const emailOk = isValidEmail(email);
-  const usernameOk = isValidUsername(username);
-  const missingItems = [
-    !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
-    !displayName.trim() ? "显示名未填写" : "",
-    email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
-    recoveryMode && role !== "super" ? "恢复模式只能创建超级管理员账号" : "",
-    !reason.trim() ? "操作理由未填写" : "",
-  ].filter(Boolean);
-  const disabledReason = disabled ? "正在加载，稍后再创建" : "";
-  const submitBlockers = [disabledReason, ...missingItems].filter(Boolean);
-  const canSubmit = !disabled && !avatarBlocking && missingItems.length === 0;
-
-  return (
-    <Drawer
-      title="新建运营账号"
-      sub={<ol className="account-profile-steps" aria-label="账号创建步骤">{["登录资料", "初始角色", "首次登录", "操作理由"].map((title, index) => <li key={title}><span className="account-profile-step-number" aria-hidden="true">{index + 1}</span>{title}</li>)}</ol>}
-      onClose={onClose}
-      footer={
-        <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)" }}>
-          {submitBlockers.length > 0 && (
-            <div style={{ marginBottom: 8, fontSize: 13, color: "var(--danger)", lineHeight: 1.6 }}>
-              不能创建: {submitBlockers.join("、")}
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="l-btn" onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>取消</button>
-            <button
-              className="l-btn primary"
-              disabled={!canSubmit}
-              title={canSubmit ? recoveryMode ? "提交创建审批" : "确认创建账号" : `不能创建:${submitBlockers.join("、")}`}
-              style={{ flex: 2, justifyContent: "center", opacity: canSubmit ? 1 : 0.5, cursor: canSubmit ? "pointer" : "not-allowed" }}
-              onClick={() => canSubmit && onSubmit({
-                username: username.trim().toLowerCase(),
-                displayName: displayName.trim(),
-                email: email.trim() || undefined,
-                role,
-                ...(useDefaultAvatar ? { useDefaultAvatar: true, avatarGender: avatarGenderValue } : { avatarAssetId, ...(role === "support" ? { useDefaultAvatar: false, avatarGender: avatarGenderValue } : {}) }),
-                reason: reason.trim(),
-              })}
-            >{recoveryMode ? "提交创建审批" : "确认创建账号"}</button>
-          </div>
-        </div>
-      }
-    >
-      <fieldset className="account-profile-form" disabled={disabled} style={{border:0,padding:0,margin:0}}>
-      <h3 className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">1</span>登录资料</h3>
-      <div className="account-profile-fields">
-        <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
-          登录名 *
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value.toLowerCase())}
-            placeholder="risk.shift"
-            autoComplete="username"
-            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 14 }}
-          />
-          {username.trim() && !usernameOk && (
-            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 13 }}>
-              3-32 位,仅小写字母、数字、点、下划线或短横线。
-            </span>
-          )}
-        </label>
-        <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
-          显示名 *
-          <input
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="姓名,如:张三"
-            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 14 }}
-          />
-        </label>
-        <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
-          工作邮箱
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="name@example.com"
-            autoComplete="email"
-            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 14 }}
-          />
-          {email.trim() && !emailOk && (
-            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 13 }}>
-              请输入有效邮箱格式。
-            </span>
-          )}
-        </label>
-      </div>
-
-      {role === "support" && <fieldset className="account-avatar-controls" disabled={disabled || avatarBlocking || Boolean(avatarAssetId)}><legend>客服默认头像</legend>
-        <label className="account-avatar-field">头像分类<HDSelect value={avatarGenderValue} options={AVATAR_GENDER_OPTIONS} onChange={value => setAvatarGenderValue(value as AvatarGender)} /></label>
-        <div className="account-avatar-modes">
-          <label><input type="radio" name="avatar-mode" checked={avatarMode === "default"} onChange={() => setAvatarMode("default")} />创建时随机使用默认头像</label>
-          <label><input type="radio" name="avatar-mode" checked={avatarMode === "manual"} onChange={() => setAvatarMode("manual")} />自行上传头像</label>
-        </div>
-        <p>创建后可更换头像。</p>
-      </fieldset>}
-      {!useDefaultAvatar && <AccountAvatarPicker name={displayName} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}/>}
-      {avatarBlocking&&<p className="account-avatar-feedback" role="status">新头像尚未上传成功；上传或取消新头像后可继续创建。</p>}
-      <h3 className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">2</span>初始角色（可暂不分配）</h3>
-      <div className="account-initial-roles">
-        <label className="l-btn" style={{ justifyContent: "flex-start", padding: "10px 12px", background: role === "" ? "var(--a-ac-soft)" : "var(--surface-2)", color: role === "" ? "var(--a-ac)" : "var(--ink-2)", cursor: recoveryMode ? "not-allowed" : "pointer" }}>
-          <input type="radio" name="operator-role" value="" checked={role === ""} disabled={recoveryMode} onChange={() => setRole("")} style={{ accentColor: "var(--a-ac)" }} />
-          <span style={{ fontSize: 14 }}>暂不分配</span>
-          <span style={{ fontSize: 13, color: "var(--ink-4)", marginLeft: 8 }}>无业务权限</span>
-        </label>
-        {roles.map((item) => (
-          <label
-            key={item.key}
-            className="l-btn"
-            style={{
-              justifyContent: "flex-start",
-              padding: "10px 12px",
-              background: role === item.key ? "var(--a-ac-soft)" : "var(--surface-2)",
-              color: role === item.key ? "var(--a-ac)" : "var(--ink-2)",
-              fontWeight: role === item.key ? 600 : 500,
-              cursor: "pointer",
-            }}
-          >
-            <input
-              type="radio"
-              name="operator-role"
-              value={item.key}
-              checked={role === item.key}
-              onChange={() => setRole(item.key)}
-              style={{ accentColor: "var(--a-ac)" }}
-            />
-            <span style={{ fontSize: 14 }}>{item.name}</span>
-            <span style={{ fontSize: 13, color: "var(--ink-4)", marginLeft: 8 }}>{item.scope}</span>
-          </label>
-        ))}
-      </div>
-
-      {role === "support" && <p className="account-profile-note">仅服务本人绑定客户，主管资格需另行授予。</p>}
-      <h3 className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">3</span>首次登录</h3>
-      <div className="atint" style={{ marginBottom: 10, fontSize: 13, lineHeight: 1.5 }}>
-        {recoveryMode ? "这里只提交提案，另一位超级管理员批准后创建账号；请随后在账号列表点「重置密码」，把临时密码交给账号持有人。" : "创建后将显示一次 20 位临时密码，请妥善交给账号持有人。"}
-      </div>
-
-      <div className="atint" style={{ marginBottom: 14, fontSize: 13, lineHeight: 1.5 }}>
-        按所选角色开通权限；首次登录须修改密码。
-      </div>
-
-      <h3 id="account-create-reason-title" className="account-profile-section-title"><span className="account-profile-step-number" aria-hidden="true">4</span>操作理由（必填）</h3>
-      <div>
-        <textarea
-          aria-labelledby="account-create-reason-title"
-          aria-required="true"
-          rows={2}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder="为什么开这个账号（入职、换岗、外部审计…）"
-          style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 14, resize: "vertical" }}
-        />
-      </div>
-      </fieldset>
-    </Drawer>
-  );
-}
-
-function AccountDetailDrawer({
-  account,
-  materialPermissionCodes,
-  roles,
-  sessionRevokeBlockReason,
-  editBlockReason,
-  onClose,
-  onEdit,
-  onRevokeSession,
-}: {
-  account: A1Operator;
-  materialPermissionCodes: string[] | null;
-  roles: A1RoleDefinition[];
-  sessionRevokeBlockReason: string | null;
-  editBlockReason: string | null;
-  onClose: () => void;
-  onEdit: () => void;
-  onRevokeSession: (sessionId: string) => void;
-}) {
-  const rows = [
-    ["账号编号", account.id],
-    ["登录名", account.username || "未返回"],
-    ["显示名", operatorDisplayName(account)],
-    ["工作邮箱", account.email || "未填写"],
-    ["角色", roleName(roles, account.role)],
-    ["状态", account.status === "enabled" ? "启用" : "已禁用"],
-    ["两步验证", account.tfa ? "已绑定" : "未绑定"],
-    ["最近登录", account.lastLogin || "—"],
-    ["在线设备", `${account.sessions}`],
-    ["密码状态", credentialStatusText(account.credentialDeliveryStatus)],
-  ];
-
-  return (
-    <Drawer
-      title={`账号详情 · ${operatorDisplayName(account)}`}
-      sub={account.username || account.email || account.id}
-      onClose={onClose}
-      footer={
-        <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)", display: "flex", gap: 8 }}>
-          <button className="l-btn" onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>关闭</button>
-          <button className="l-btn primary" onClick={onEdit} disabled={!!editBlockReason} title={editBlockReason ?? undefined} style={{ flex: 2, justifyContent: "center" }}>编辑账号</button>
-        </div>
-      }
-    >
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginBottom: 14 }}>
-        <div className="f-stat">
-          <div className="k">角色</div>
-          <div className="v" style={{ fontSize: 18 }}>{roleName(roles, account.role)}</div>
-          <div className="sub">{account.status === "enabled" ? "账号启用中" : "账号已禁用"}</div>
-        </div>
-        <div className="f-stat">
-          <div className="k">在线设备</div>
-          <div className="v" style={{ fontSize: 18 }}>{account.sessions} 个</div>
-          <div className="sub">{credentialStatusText(account.credentialDeliveryStatus)}</div>
-        </div>
-      </div>
-      <table className="l-tbl">
-        <caption style={{textAlign:"left",paddingBottom:12}}><SupportAvatar name={operatorDisplayName(account)} path={account.avatarAssetId?`/api/admin/platform/accounts/${account.id}/avatar`:undefined} version={account.avatarVersion??undefined} size={64}/></caption>
-        <tbody>
-          {rows.map(([label, value]) => (
-            <tr key={label}>
-              <td style={{ width: 120, color: "var(--ink-4)", fontSize: 12 }}>{label}</td>
-              <td style={{ color: "var(--ink-2)", fontSize: 13 }}>{value}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="amb-permission-summary"><b>区域大使独立核验权限</b>
-        {F4_MATERIAL_PERMISSIONS.map((permission) => <div key={permission.code}><span>{permission.label}</span><span className={`bdg ${materialPermissionCodes?.includes(permission.code) ? "ok" : "dim"}`}>{materialPermissionCodes == null ? "尚未核实" : materialPermissionCodes.includes(permission.code) ? "已授权" : "未授权"}</span></div>)}
-        <p>按当前角色的实际授权显示；核验权限与最终批准权限分别管理。</p>
-      </div>
-      <div className="dlg-sec" style={{ marginTop: 16 }}>角色变更记录</div>
-      <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-        {(account.roleHistory ?? []).map((history, index) => (
-          <div key={`${history.changedAt || "current"}-${index}`} className="atint">
-            <div>
-              <b>{history.source === "CURRENT_ASSIGNMENT" ? "当前生效" : `${roleName(roles, history.fromRole)} → ${roleName(roles, history.toRole)}`}</b>
-              {history.source === "CURRENT_ASSIGNMENT" && <> · {roleName(roles, history.toRole)}</>}
-            </div>
-            <div style={{ marginTop: 3, color: "var(--ink-4)" }}>
-              {history.source === "CURRENT_ASSIGNMENT"
-                ? "没有更早的角色变更"
-                : `${history.changedAt || "时间未返回"} · 操作者 ${history.operator || "系统"}`}
-            </div>
-          </div>
-        ))}
-        {!(account.roleHistory ?? []).length && <div className="atint">暂无角色变更记录。</div>}
-      </div>
-      <div className="dlg-sec" style={{ marginTop: 16 }}>在线设备</div>
-      <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-        {(account.sessionDetails ?? []).map((session) => (
-          <div key={session.sessionId} className="atint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-            <div style={{ minWidth: 0 }}>
-              <div><b>{session.device || "未知设备"}</b> · <span className="mono">{session.ipAddress || "未返回"}</span></div>
-              <div style={{ marginTop: 3, color: "var(--ink-4)" }}>开始 {session.issuedAt || "—"} · 最近活动 {session.lastSeenAt || "—"}</div>
-            </div>
-            <button
-              className="l-btn sm dgr"
-              type="button"
-              disabled={!!sessionRevokeBlockReason}
-              title={sessionRevokeBlockReason || "只让这台设备下线"}
-              onClick={() => onRevokeSession(session.sessionId)}
-            >
-              让此设备下线
-            </button>
-          </div>
-        ))}
-        {!(account.sessionDetails ?? []).length && <div className="atint">当前没有在线设备。</div>}
-      </div>
-    </Drawer>
-  );
-}
-
-function EditAccountDrawer({
-  account,
-  disabled,
-  onClose,
-  onSubmit,
-}: {
-  account: A1Operator;
-  disabled?: boolean;
-  onClose: () => void;
-  onSubmit: (form: EditAccountForm) => void;
-}) {
-  const [username, setUsername] = useState(account.username || "");
-  const [displayName, setDisplayName] = useState(operatorDisplayName(account));
-  const [email, setEmail] = useState(account.email || "");
-  const [reason, setReason] = useState("");
-  const [avatarAssetId,setAvatarAssetId]=useState<string|undefined>(),[avatarBlocking,setAvatarBlocking]=useState(false);
-  const [avatarGenderValue, setAvatarGenderValue] = useState<AvatarGender>(account.avatarGender ?? "UNSPECIFIED");
-  const usernameOk = isValidUsername(username);
-  const emailOk = isValidEmail(email);
-  const changed =
-    username.trim().toLowerCase() !== (account.username || "").trim().toLowerCase()
-    || displayName.trim() !== operatorDisplayName(account)
-    || email.trim().toLowerCase() !== (account.email || "").trim().toLowerCase()
-    || Boolean(avatarAssetId && avatarAssetId !== account.avatarAssetId)
-    || avatarGenderValue !== (account.avatarGender ?? "UNSPECIFIED");
-  const missingItems = [
-    !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
-    !displayName.trim() ? "显示名未填写" : "",
-    email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
-    !changed ? "资料没有变化" : "",
-    !reason.trim() ? "操作理由未填写" : "",
-  ].filter(Boolean);
-  const disabledReason = disabled ? "正在提交，稍后再编辑" : "";
-  const submitBlockers = [disabledReason, ...missingItems].filter(Boolean);
-  const canSubmit = !disabled && !avatarBlocking && missingItems.length === 0;
-
-  return (
-    <Drawer
-      title={`编辑账号 · ${operatorDisplayName(account)}`}
-      sub={account.username || account.id}
-      onClose={onClose}
-      footer={
-        <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)" }}>
-          {submitBlockers.length > 0 && (
-            <div style={{ marginBottom: 8, fontSize: 13, color: "var(--danger)", lineHeight: 1.6 }}>
-              不能保存: {submitBlockers.join("、")}
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="l-btn" onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>取消</button>
-            <button
-              className="l-btn primary"
-              disabled={!canSubmit}
-              title={canSubmit ? "保存账号资料" : `不能保存:${submitBlockers.join("、")}`}
-              style={{ flex: 2, justifyContent: "center", opacity: canSubmit ? 1 : 0.5, cursor: canSubmit ? "pointer" : "not-allowed" }}
-              onClick={() => canSubmit && onSubmit({
-                username: username.trim().toLowerCase(),
-                displayName: displayName.trim(),
-                email: email.trim() || undefined,
-                avatarAssetId,
-                ...(avatarGenderValue !== (account.avatarGender ?? "UNSPECIFIED") ? { avatarGender: avatarGenderValue } : {}),
-                reason: reason.trim(),
-              })}
-            >保存账号资料</button>
-          </div>
-        </div>
-      }
-    >
-      <div className="account-profile-fields">
-        <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
-          登录名 *
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value.toLowerCase())}
-            autoComplete="username"
-            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 14 }}
-          />
-          {username.trim() && !usernameOk && (
-            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 13 }}>
-              3-32 位,仅小写字母、数字、点、下划线或短横线。
-            </span>
-          )}
-        </label>
-        <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
-          显示名 *
-          <input
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 14 }}
-          />
-        </label>
-        <label style={{ fontSize: 14, color: "var(--ink-3)", gridColumn: "1 / -1" }}>
-          工作邮箱
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
-            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 14 }}
-          />
-          {email.trim() && !emailOk && (
-            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 13 }}>
-              请输入有效邮箱格式。
-            </span>
-          )}
-        </label>
-      </div>
-      <fieldset className="account-avatar-controls" disabled={disabled || avatarBlocking}><legend>头像分类</legend><HDSelect value={avatarGenderValue} options={AVATAR_GENDER_OPTIONS} onChange={value => setAvatarGenderValue(value as AvatarGender)} /><p>修改分类不换图；提交新头像后才会更换。</p></fieldset>
-      <AccountAvatarPicker account={account} name={displayName} gender={avatarGenderValue} allowDefault={account.role === "support"} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}/>
-      {avatarBlocking&&<p className="account-avatar-feedback" role="status">新头像尚未上传成功；上传或取消新头像后可提交。</p>}
-      <p className="account-profile-note">提交后需在「操作记录与审批」确认才会生效。</p>
-      <label style={{ fontSize: 14, color: "var(--ink-3)" }}>
-        操作理由 *
-        <textarea
-          rows={2}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder="为什么修改这个账号资料"
-          style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 14, resize: "vertical" }}
-        />
-      </label>
-    </Drawer>
-  );
-}
-
-function PasswordResetDrawer({
-  result,
-  onClose,
-}: {
-  result: A1PasswordResetResult;
-  onClose: () => void;
-}) {
-  const [copied, setCopied] = useState(false);
-  const account = result.account;
-  const copyPassword = () => {
-    void navigator.clipboard.writeText(result.temporaryPassword).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    });
-  };
-
-  return (
-    <Drawer
-      title="密码已重置"
-      sub="临时密码只在本次结果中展示"
-      onClose={onClose}
-      footer={
-        <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)", display: "flex", gap: 8 }}>
-          <button className="l-btn" onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>关闭</button>
-          <button className="l-btn primary" onClick={copyPassword} style={{ flex: 2, justifyContent: "center" }}>
-            {copied ? "已复制" : "复制临时密码"}
-          </button>
-        </div>
-      }
-    >
-      <div className="atint danger" style={{ marginBottom: 14 }}>
-        关闭后不会再显示临时密码，请通过可靠渠道告诉账号本人。
-      </div>
-      <div style={{ fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.7, marginBottom: 12 }}>
-        账号 <b style={{ color: "var(--ink-2)" }}>{operatorDisplayName(account)}</b>
-        {" · "}登录名 <span className="acode">{account.username || "未返回"}</span>
-      </div>
-      <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
-        <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6 }}>临时密码</div>
-        <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: "var(--ink)", wordBreak: "break-all" }}>
-          {result.temporaryPassword}
-        </div>
-      </div>
-      <div className="atint" style={{ marginTop: 14 }}>
-        对方用临时密码登录后，须先修改密码才能使用后台。
-      </div>
-    </Drawer>
-  );
-}

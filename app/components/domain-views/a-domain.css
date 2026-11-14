@@ -117,3 +117,128 @@
 .adom .a4-pipe .ar { color: var(--ink-4); font-size: 11px; font-family: var(--mono); }
 .adom .a4-dom { display: inline-flex; padding: 3px 9px; border-radius: 5px; background: var(--surface-3); color: var(--ink-3); font-family: var(--mono); font-size: 11px; font-weight: 600; margin: 2px 3px 2px 0; }
 .adom .a4-dom.new { background: var(--warning-soft); color: var(--warning); }
+
+/* ============================ A1 运营账号与权限（改版，rd 令牌） ============================
+   .a1-page 是页面根；抽屉、弹窗渲染在 RdPage 的容器里，正文另包一层 .a1-page.a1-sheet，样式都从这里开头。 */
+.a1-page { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
+.a1-page.a1-sheet { gap: var(--rd-space-4); }
+.a1-page [data-mono] { font-family: var(--rd-font-mono); }
+.a1-page fieldset.a1-form { margin: 0; padding: 0; border: 0; min-width: 0; }
+.a1-page .a1-muted { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.a1-page .a1-help { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+
+/* 账号列表：分布条和筛选提示在表格上方一行 */
+.a1-page .a1-list-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-3) var(--rd-space-6); padding: var(--rd-space-3) var(--rd-panel-pad-x) var(--rd-space-4); }
+.a1-page .a1-list-tools > :first-child { flex: 1 1 360px; min-width: 0; }
+.a1-page .a1-filter-note { display: inline-flex; align-items: center; gap: var(--rd-space-2); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.a1-page .a1-inset { padding: 0 var(--rd-panel-pad-x) var(--rd-space-4); }
+.a1-page .a1-who { display: flex; align-items: center; gap: var(--rd-space-3); min-width: 0; }
+.a1-page .a1-self { display: inline-flex; align-items: center; margin-left: var(--rd-space-2); padding: 0 var(--rd-space-2); border-radius: var(--rd-radius-tag); background: var(--rd-brand-soft); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-medium); }
+.a1-page .a1-sessions-count { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.a1-page .a1-sessions-count[data-empty] { color: var(--rd-text-3); }
+
+/* 原操作提醒（结果未知、已过期）：一条一行，和 G 域提醒同一排法 */
+.a1-page .a1-recovery { display: grid; gap: var(--rd-space-2); margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }
+.a1-page .a1-recovery li { display: grid; grid-template-columns: minmax(96px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.a1-page .a1-recovery-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.a1-page .a1-recovery-change { min-width: 0; overflow-wrap: anywhere; color: var(--rd-text); }
+.a1-page .a1-recovery-time { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.a1-page .a1-recovery-state { display: inline-flex; align-items: center; gap: var(--rd-space-2); }
+.a1-page .a1-recovery-actions { display: inline-flex; gap: var(--rd-space-2); justify-content: flex-end; }
+.a1-page .a1-recovery-zone { margin: var(--rd-space-2) 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+@container adom (max-width: 900px) {
+  .a1-page .a1-recovery li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
+  .a1-page .a1-recovery-state { grid-column: 3; grid-row: 1; justify-content: flex-end; }
+  .a1-page .a1-recovery-time { grid-column: 1 / 3; grid-row: 2; }
+  .a1-page .a1-recovery-actions { grid-column: 3; grid-row: 2; }
+}
+
+/* 登记新权限 */
+.a1-page .a1-register { display: grid; gap: var(--rd-space-4); }
+.a1-page .a1-register-check { align-self: end; min-height: var(--rd-control-h); display: flex; align-items: center; }
+.a1-page input[data-mono] { font-family: var(--rd-font-mono); }
+
+/* 详情抽屉 */
+.a1-page .a1-drawer-sub, .a1-drawer-sub { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-3); }
+.a1-page .a1-detail-head { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: var(--rd-space-4); align-items: start; }
+.a1-page .a1-detail-block { display: grid; gap: var(--rd-space-3); min-width: 0; padding-top: var(--rd-space-4); border-top: 1px solid var(--rd-line); }
+.a1-page .a1-detail-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.a1-page .a1-detail-sub { margin-left: auto; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+
+/* 权限按模块分组：模块一行，页面在下面排成小格，问号里是权限码 */
+.a1-page .a1-perm-groups { display: grid; gap: var(--rd-space-3); margin: 0; padding: 0; list-style: none; }
+.a1-page .a1-perm-domain { display: flex; align-items: center; gap: var(--rd-space-2); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.a1-page .a1-perm-code { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 var(--rd-space-1); border-radius: var(--rd-radius-tag); background: var(--rd-role-3-bg); color: var(--rd-text-2); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-semibold); }
+.a1-page .a1-perm-groups[data-tone="gain"] .a1-perm-code { background: var(--rd-warn-bg); }
+.a1-page .a1-perm-groups[data-tone="loss"] .a1-perm-code { background: var(--rd-done-bg); }
+.a1-page .a1-perm-count { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.a1-page .a1-perm-pages { display: flex; flex-wrap: wrap; gap: var(--rd-space-2); margin: var(--rd-space-2) 0 0; padding: 0 0 0 30px; list-style: none; }
+.a1-page .a1-perm-pages li { display: inline-flex; align-items: center; gap: var(--rd-space-2); min-width: 0; padding: var(--rd-space-1) var(--rd-space-2); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+
+/* 区域大使独立核验权限 */
+.a1-page .a1-amb { display: grid; gap: var(--rd-space-2); margin: 0; padding: var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.a1-page .a1-amb dt { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.a1-page .a1-amb > div { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-3); }
+.a1-page .a1-amb dd { margin: 0; }
+.a1-page .a1-amb-name { color: var(--rd-text-2); }
+
+/* 登录设备 */
+.a1-page .a1-sessions { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
+.a1-page .a1-sessions li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: var(--rd-space-3); padding: var(--rd-space-2) var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
+.a1-page .a1-session-icon { color: var(--rd-text-3); }
+.a1-page .a1-session-main { display: grid; gap: 2px; min-width: 0; }
+.a1-page .a1-session-device { display: flex; flex-wrap: wrap; gap: var(--rd-space-1) var(--rd-space-3); color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+.a1-page .a1-session-device [data-mono] { font-weight: var(--rd-weight-regular); color: var(--rd-text-2); }
+.a1-page .a1-session-time { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; }
+
+/* 账号操作清单：动作、对这个人立刻的影响、生效方式、按钮各一列，五种容易混的动作并排可比 */
+.a1-page .a1-act-list { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
+.a1-page .a1-act-list li { display: grid; grid-template-columns: 28px minmax(0, 1fr) max-content minmax(120px, max-content); align-items: center; gap: var(--rd-space-3); padding: var(--rd-space-2) var(--rd-space-3); }
+.a1-page .a1-act-list li + li { border-top: 1px solid var(--rd-line); }
+.a1-page .a1-act-list li > :last-child { justify-self: end; }
+.a1-page .a1-act-icon { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: var(--rd-radius-tile-sm); background: var(--rd-role-other-bg); color: var(--rd-text-2); }
+.a1-page .a1-act-main { display: grid; gap: 2px; min-width: 0; }
+.a1-page .a1-act-name { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.a1-page .a1-act-impact { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.a1-page .a1-act-mode { padding: 0 var(--rd-space-2); border-radius: var(--rd-radius-tag); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: nowrap; }
+.a1-page .a1-act-mode[data-mode="approval"] { background: var(--rd-progress-bg); color: var(--rd-text-2); }
+.a1-page .a1-act-mode[data-mode="direct"] { background: var(--rd-role-other-bg); color: var(--rd-text-2); }
+
+/* 改角色：改前改后两个数并排，下面两列列出多出和少掉的权限 */
+.a1-page .a1-role-diff { display: grid; gap: var(--rd-space-4); }
+.a1-page .a1-role-compare { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--rd-space-4); padding: var(--rd-space-3) var(--rd-space-4); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.a1-page .a1-role-compare > div { display: grid; gap: 2px; min-width: 0; }
+.a1-page .a1-role-compare-k { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); overflow-wrap: anywhere; }
+.a1-page .a1-role-compare strong { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.a1-page .a1-role-compare-u { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.a1-page .a1-role-compare-arrow { color: var(--rd-text-3); }
+.a1-page .a1-role-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--rd-space-4); }
+.a1-page .a1-role-lists > section { display: grid; align-content: start; gap: var(--rd-space-2); min-width: 0; }
+.a1-page .a1-role-list-title { display: flex; align-items: center; gap: var(--rd-space-2); margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.a1-page .a1-role-list-title span { color: var(--rd-text-3); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); }
+.a1-page .a1-role-list-title[data-tone="gain"]::before, .a1-page .a1-role-list-title[data-tone="loss"]::before { content: ""; width: 8px; height: 8px; border-radius: 50%; }
+.a1-page .a1-role-list-title[data-tone="gain"]::before { background: var(--rd-warn); }
+.a1-page .a1-role-list-title[data-tone="loss"]::before { background: var(--rd-done); }
+.a1-page .a1-role-lists .a1-perm-pages { padding-left: 0; }
+
+/* 新建、编辑抽屉 */
+.a1-page .a1-step-title { display: flex; align-items: center; gap: var(--rd-space-2); margin: var(--rd-space-2) 0 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.a1-page .a1-step-n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: var(--rd-radius-tag); background: var(--rd-role-other-bg); color: var(--rd-text-2); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-semibold); }
+.a1-page .a1-role-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--rd-space-2); }
+.a1-page .a1-role-option { display: flex; align-items: flex-start; gap: var(--rd-space-2); min-width: 0; padding: var(--rd-space-2) var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); cursor: pointer; }
+.a1-page .a1-role-option[data-checked] { border-color: var(--rd-brand); background: var(--rd-selected); }
+.a1-page .a1-role-option[data-disabled] { cursor: not-allowed; color: var(--rd-text-disabled); }
+.a1-page .a1-role-option input { margin: 3px 0 0; accent-color: var(--rd-brand); flex: none; }
+.a1-page .a1-role-option:has(input:focus-visible) { outline: 2px solid var(--rd-focus); outline-offset: 1px; }
+.a1-page .a1-role-option-main { display: grid; gap: 2px; min-width: 0; }
+.a1-page .a1-role-option-name { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-weight: var(--rd-weight-medium); }
+.a1-page .a1-role-option-sub { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.a1-page .a1-first-login { display: grid; gap: var(--rd-space-1); margin: 0; padding: 0 0 0 var(--rd-space-5); color: var(--rd-text-2); }
+.a1-page .a1-avatar-slot { min-width: 0; }
+.a1-page .a1-avatar-slot .account-avatar-controls { margin: 0; }
+
+/* 临时密码 */
+.a1-page .a1-temp-password { display: grid; gap: var(--rd-space-2); padding: var(--rd-space-4); border: 1px solid var(--rd-line-strong); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.a1-page .a1-temp-password-k { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.a1-page .a1-temp-password-v { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); overflow-wrap: anywhere; user-select: all; }
+.a1-page .a1-temp-password-err { color: var(--rd-warn); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
