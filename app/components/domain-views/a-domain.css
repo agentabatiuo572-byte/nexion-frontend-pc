@@ -193,7 +193,6 @@
   .a4-schema-table th:nth-child(4) { width: 96px; }
   .a4-schema-table .a4-life-dots { display: none; }
 }
-.adom .a4-consumers { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .a4-lookup { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; border-top: 1px solid var(--rd-line); }
 .a4-lookup-hit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .a4-lookup-hit > .rd-button { margin-left: auto; }

@@ -47,12 +47,12 @@ import { runH3DeadOutboxRedriveCommand, type A4H3DeadOutboxRedriveCommand } from
 import { fetchA2ReasonPolicy, type A2OperationRow } from "@/lib/admin/a2-client";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { ALL_L2 } from "@/lib/nav/console-nav";
+import { ALL_L2, CONSOLE_NAV } from "@/lib/nav/console-nav";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { ACtx, ActionConfirmReq } from "./types";
 import {
   A4RecoveryNotice, H3_TYPE_TEXT, LIFECYCLE_AFTER, LIFECYCLE_NOW, LIFECYCLE_ORDER, LIFECYCLE_TEXT, LifeDots, NEXT_LIFECYCLE, PRODUCER_TEXT, PROPERTY_TYPE_TEXT, REDRIVE_STATUS,
-  consumerParts, eventDesc, minute, propertyList, waited, zoneNote, type A4Lifecycle, type A4RecoveryRow, type A4Schema,
+  consumerParts, eventDesc, moduleText, minute, propertyList, waited, zoneNote, type A4Lifecycle, type A4RecoveryRow, type A4Schema,
 } from "./a4-event-views";
 
 /* ────────────────── helpers ────────────────── */
@@ -96,7 +96,7 @@ const lifecycleText = (value: string) => LIFECYCLE_TEXT[value as A4Lifecycle] ??
 const breakable = (name: string) => name.split(/(?<=[._])/).map((part, index) => <span key={index}>{index > 0 && <wbr />}{part}</span>);
 /** 重新排队预览的失败摘要：后端只给受控原因码，常见的一个翻成人话，原码跟在后面。 */
 const redriveErrorText = (code: string | null | undefined) => !code ? "—" : code === "OUTBOX_DELIVERY_FAILED" ? <>投递失败 <span className="a4-dim" data-mono>{code}</span></> : <span data-mono>{code}</span>;
-const pageName = (code: string) => ALL_L2.find((item) => item.id === code)?.name;
+const pageName = (code: string) => ALL_L2.find((item) => item.id === code)?.name ?? (code.length === 1 ? CONSOLE_NAV.find((domain) => domain.code === code)?.name : undefined);
 /** 通用字段里服务端说明说得太满的两项，按后端事实补一句（BF27、BF35）。 */
 const COMMON_FIELD_NOTE: Record<string, string> = {
   ts: "可能取自经过校验的发生时间，不一定是系统收到的那一刻。",
@@ -351,7 +351,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       effect: effectNow,
       confirmLabel: "确认调整",
       statedBrief: {
-        impact: "关键指标 #1「Day0 接入」和用户转化分析每次查询都按新值重算，历史时段的结果也会跟着变；已记下的原始事件不改。",
+        impact: "关键指标 #1 和用户转化分析按新值重算，历史时段的结果也会变；原始事件不改。",
         check: "提交时后端核对 30–600 秒的整数；和现在一样的值会被拒绝。",
       },
       detail: (
@@ -385,7 +385,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       effect: effectNow,
       confirmLabel: "确认调整",
       statedBrief: {
-        impact: "不会马上删数据。下一次清理时按新的月数算：改短会让更多旧记录在下次清理时被删，以前记下的也一样；改长只会让以后少删，已经删掉的找不回来。",
+        impact: "不马上删数据；下次清理按新月数判断所有记录，改短会多删旧记录，已删的找不回。",
         check: "提交时后端核对 13–60 的整数月；和现在一样的值会被拒绝。",
       },
       detail: (
@@ -419,7 +419,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       effect: effectNow,
       confirmLabel: "确认调整",
       statedBrief: {
-        impact: "只影响之后新进来的浏览、会话类事件：调低后报表里这两类的数字会按比例变少，调高也补不回以前没记的；资金、风控、转化类始终全部记录。",
+        impact: "只影响之后的浏览、会话类事件：调低后报表这两类数字按比例变少，不回补；资金、风控、转化类始终全记。",
         check: "提交时后端核对 0–100 的整数；资金、风控、转化必须保持 100%。",
       },
       detail: (
@@ -461,7 +461,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     openRegistryConfirm({ briefKind: "config",
       action: "登记新事件或字段",
       title: "登记新事件",
-      completion: "批准前事件目录不变；批准后新事件从「新建」开始，还不记录也不投递，要再按顺序推进上线。",
+      completion: "批准前目录不变；批准后从「新建」开始，要再按步推进上线。",
       statedBrief: {
         impact: "",
         check: "提交和批准时都核对格式和版本。",
@@ -547,7 +547,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     openRegistryConfirm({ briefKind: "config",
       action: `给已有事件新增字段 · ${schemaSnapshot.eventName}`,
       title: "给事件新增字段",
-      completion: "批准前事件不变；批准后多一个必填字段，之后发这个事件要带上它，不带的会被拒绝。以前记下的事件不补这个字段，其他设置不变。",
+      completion: "批准后多一个必填字段，之后不带它的事件会被拒绝；旧事件不补。",
       statedBrief: {
         impact: "",
         check: "提交和批准时都核对字段和版本。",
@@ -653,7 +653,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       confirmTone: "danger",
       confirmLabel: "确认清理",
       statedBrief: {
-        impact: "直接执行，不走审批。删掉的记录不归档，不能恢复；已终止的任务事件删掉后也不能再重新排队。",
+        impact: "直接执行，删了不能恢复；已终止的任务事件删掉后不能再重新排队。",
         check: "执行时后端取当前的留存月数并加锁；已有清理在进行时，这次不删任何数据。",
       },
       facts: <Facts>
@@ -662,7 +662,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         <Fact k="删哪些">已发出、已结束和已终止（死信）的事件发送记录；用户行为记录只按时间删</Fact>
         <Fact k="不会删">还在等发送、发送失败等重试的事件；资金账目</Fact>
         <Fact k="一次最多">每张表 2000 条，剩下的下次再清</Fact>
-        <Fact k="删多少条">执行后才知道，结果写在「统计参数与清理」的上次清理里</Fact>
+        <Fact k="删多少条">执行后显示在「到期记录清理」</Fact>
       </Facts>,
       detail: <>只清理超过保留期的事件记录：已发出、已结束和已终止的事件发送记录，以及到期的用户行为记录。还在等待发送或发送失败的事件，以及资金账目都不受影响。</>,
       amplifies: false,
@@ -744,7 +744,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       effect: <StatusTag tone="progress" filled>立即执行</StatusTag>,
       confirmLabel: "确认重新排队",
       statedBrief: {
-        impact: "会再触发一次原来的处理：原事件放回发送队列，用户任务管理重新处理它。处理成功，用户的周任务按这条事件算完成，可能因此发奖；再失败会重新停下。只是排队，不保证奖励一定补发或马上到账。",
+        impact: "会再触发一次原来的处理：成功时用户的周任务按这条事件算完成，可能因此发奖；失败会重新停下。不保证奖励补发。",
         check: "执行时后端核对两层都还是已终止、失败次数没变；事件内容、编号和失败次数都不改。",
       },
       facts: <Facts>
@@ -843,7 +843,6 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   const readOnly = canWrite ? undefined : "当前账号只能查看这页，登记、调整、推进和清理都不可用";
   const header = (
     <PageHeader pageId="A4" title="用户行为事件" summary="看用户行为事件有没有卡住，调参数、登记新事件。"
-      meta="打开时读取，点「刷新」重读"
       readOnly={readOnly}
       actions={<Button icon={<RefreshCw size={14} aria-hidden />} loading={loading && !!overview} onClick={() => {
         void refreshOverview();
@@ -980,10 +979,17 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   const lifeCounts = Object.fromEntries(LIFECYCLE_ORDER.map((state) => [state, SCHEMA_REGISTRATIONS.filter((schema) => schema.lifecycleState === state).length])) as Record<A4Lifecycle, number>;
   const shownSchemas = lifeFilter === "all" ? SCHEMA_REGISTRATIONS : SCHEMA_REGISTRATIONS.filter((schema) => schema.lifecycleState === lifeFilter);
   const todayTotal = Number(A4_STATS.todayEvents);
-  const consumersOf = (consumers: string) => {
+  // 表里只写前三个加「等 N 个」，全部写在详情抽屉里；悬停也能看全。
+  const consumersOf = (consumers: string, all = false) => {
     const parts = consumerParts(consumers, pageName);
     if (!parts.length) return <span className="a4-dim">未指定</span>;
-    return <span className="a4-consumers" title={parts.map((part) => part.code ? `${part.text}（${part.code}）` : part.text).join("、")}>{parts.map((part) => part.text).join("、")}</span>;
+    const full = parts.map((part) => part.text).join("、");
+    if (all || parts.length <= 3) return <span title={all ? undefined : full}>{full}</span>;
+    return <span title={full}>{parts.slice(0, 3).map((part) => part.text).join("、")} <span className="a4-dim">等 {parts.length} 个</span></span>;
+  };
+  const moduleCell = (code: string) => {
+    const name = moduleText(code);
+    return name ? <span title={`模块代码 ${code}`}>{name}</span> : <span data-mono>{code}</span>;
   };
   const schemaActions = (schema: A4Schema) => {
     const next = NEXT_LIFECYCLE[schema.lifecycleState];
@@ -1009,7 +1015,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                   <span className="a4-family-auth" title={operatorCopyText(family.serverAuth)}><ServerCog size={14} aria-hidden />{all ? "全部由系统记录" : "部分由系统记录"}</span>
                 </span>
                 <span className="a4-family-sub">{operatorCopyText(family.sub)}</span>
-                <span className="a4-family-num" data-zero={count === 0 ? "" : undefined}><b>{family.todayCount}</b> 条今日</span>
+                <span className="a4-family-num" data-zero={count === 0 ? "" : undefined}>今日 <b>{family.todayCount}</b> 条</span>
                 <RatioBar quiet label={`${operatorCopyText(family.title)}占今日事件`} value={Number.isFinite(count) ? count : 0} total={Number.isFinite(todayTotal) ? todayTotal : 0}
                   valueText={`今日 ${family.todayCount} 条，共 ${A4_STATS.todayEvents} 条`} tone="role-2" state={todayTotal > 0 ? "ready" : "empty"} emptyText="今天还没有事件" />
                 <span className="a4-family-foot">{family.events.length} 类事件 · 查看清单</span>
@@ -1041,7 +1047,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 <Tr key={schema.eventName} selected={detailEvent?.from === "list" && detailEvent.name === schema.eventName}
                   onOpen={() => setDetailEvent({ name: schema.eventName, from: "list" })}>
                   <Td><span className="a4-ename">{desc && <span className="a4-ename-desc">{desc}</span>}<span data-mono>{breakable(schema.eventName)}</span></span></Td>
-                  <Td><Cell main={<span data-mono>{schema.ownerDomain}</span>} sub={PRODUCER_TEXT[schema.producer] ?? schema.producer} title={schema.producer} /></Td>
+                  <Td>{moduleCell(schema.ownerDomain)}</Td>
                   <Td align="right">{count ? <><span data-num>{count}</span> 个</> : <span className="a4-dim">—</span>}</Td>
                   <Td><LifeDots state={schema.lifecycleState} /></Td>
                   <Td>{consumersOf(schema.consumers)}</Td>
@@ -1066,13 +1072,13 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           {schemaLookupNotFound && (
             <Notice tone="warn" title="这个事件还没有登记"
               action={canWrite ? <Button size="sm" disabledReason={writeBlocked} onClick={() => registerSchema(schemaLookupEventName.trim())}>登记这个事件</Button> : undefined}>
-              <span data-mono>{schemaLookupEventName.trim()}</span> 不在事件目录里，发这个事件会被拒绝。要用它，先登记并等批准。
+              <span data-mono>{schemaLookupEventName.trim()}</span> 不在事件目录里，先登记并等批准才能用。
             </Notice>
           )}
           {schemaLookup && (
             <div className="a4-lookup-hit">
               <span className="a4-pair"><span data-mono>{schemaLookup.eventName}</span><LifeDots state={schemaLookup.lifecycleState} /></span>
-              <span className="a4-dim">{propertyList(schemaLookup.properties).length} 个字段 · {PRODUCER_TEXT[schemaLookup.producer] ?? schemaLookup.producer}发送</span>
+              <span className="a4-dim">{moduleText(schemaLookup.ownerDomain) ?? schemaLookup.ownerDomain} · {propertyList(schemaLookup.properties).length} 个字段</span>
               <Button size="sm" onClick={() => setDetailEvent({ name: schemaLookup.eventName, from: "lookup" })}>查看详情</Button>
             </div>
           )}
@@ -1125,8 +1131,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           </FilterField>
         </FilterBar>
         <div data-proof="a4-h3-dead-redrive" className="a4-redrive">
-          {!redrivePreview && !redriveResult && !redrivePreviewError && !redrivePreviewing && (
-            <p className="a4-note">{canRedriveH3Dead ? "输入编号后点「查询」，先看它卡在哪一步再决定。" : "当前账号不能查询或重新排队任务事件。"}</p>
+          {!canRedriveH3Dead && !redrivePreview && !redriveResult && !redrivePreviewError && !redrivePreviewing && (
+            <p className="a4-note">{canRedriveH3Dead ? "" : "当前账号不能查询或重新排队任务事件。"}</p>
           )}
           {redrivePreview && (
             <div className="a4-redrive-card">
@@ -1149,7 +1155,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 </li>
               </ol>
               <div className="rd-toolbar" data-end="">
-                <span className="rd-toolbar-note">内容、编号和失败次数都不改，只放回发送队列</span>
+                <span className="rd-toolbar-note">只放回发送队列，不改内容</span>
                 <Button variant="primary" icon={<RotateCcw size={14} aria-hidden />}
                   disabledReason={redriveBlocked ?? (redrivePreview.status !== "DEAD" || redrivePreview.deliveryStatus !== "DEAD" ? "两层都已终止才能重新排队" : undefined)}
                   onClick={redriveAuditedH3DeadEvent}>重新排队</Button>
@@ -1158,7 +1164,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           )}
           {redriveResult && (
             <Notice tone="ok" title="已重新排队">
-              <span data-mono>{redriveResult.eventId}</span> · {H3_TYPE_TEXT[redriveResult.eventType] ?? redriveResult.eventType}：原事件 {redriveStatusText(redriveResult.status)}，任务处理 {redriveStatusText(redriveResult.deliveryStatus)}。只代表已排队，等用户任务管理处理完才知道是否完成任务。
+              <span data-mono>{redriveResult.eventId}</span> · {H3_TYPE_TEXT[redriveResult.eventType] ?? redriveResult.eventType}：原事件 {redriveStatusText(redriveResult.status)}，任务处理 {redriveStatusText(redriveResult.deliveryStatus)}。只代表已排队，不代表任务已完成。
             </Notice>
           )}
         </div>
@@ -1234,8 +1240,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       <Panel title="模块" icon={Puzzle} tone="role-3" sub={`已接入 ${REGISTERED_DOMAINS.length} 个 · 待接入 ${PENDING_DOMAINS.length} 个`}
         explain="按内置清单和登记的接入工单算出来，不是检测 App 是否真的接上。待接入的模块还有没完成的接入工单。">
         <div className="a4-domains" aria-label="模块">
-          {PENDING_DOMAINS.map((domain) => <span key={`p-${domain}`} className="a4-chip" data-pending=""><span data-mono>{domain}</span><small>待接入</small></span>)}
-          {REGISTERED_DOMAINS.map((domain) => <span key={`r-${domain}`} className="a4-chip"><span data-mono>{domain}</span></span>)}
+          {PENDING_DOMAINS.map((domain) => <span key={`p-${domain}`} className="a4-chip" data-pending="" title={`模块代码 ${domain}`}>{moduleText(domain) ?? <span data-mono>{domain}</span>}<small>待接入</small></span>)}
+          {REGISTERED_DOMAINS.map((domain) => <span key={`r-${domain}`} className="a4-chip" title={`模块代码 ${domain}`}>{moduleText(domain) ?? <span data-mono>{domain}</span>}</span>)}
         </div>
       </Panel>
       <Panel title="接入批次" icon={Layers} tone="role-3" sub={`完成 ${batchDone} / ${batchTotal} 批`}
@@ -1257,7 +1263,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 <Tr key={batch.id} selected={batchIdx === index} onOpen={() => setBatchIdx(index)}>
                   <Td><span className="a4-ename" title={`工单 ${batch.id}`}><span className="a4-ename-desc">{operatorCopyText(batch.title)}</span><span data-mono>{batch.details.length > 0 ? breakable(batch.details[0].item) : `工单 ${batch.id}`}</span></span></Td>
                   <Td>{batch.newDomains.length > 0
-                    ? <span className="a4-domains" data-inline="">{batch.newDomains.map((domain) => <span key={domain.name} className="a4-chip" data-pending={domain.n ? "" : undefined}><span data-mono>{domain.name}</span></span>)}</span>
+                    ? <span className="a4-domains" data-inline="">{batch.newDomains.map((domain) => <span key={domain.name} className="a4-chip" data-pending={domain.n ? "" : undefined} title={moduleText(domain.name) ? `模块代码 ${domain.name}` : undefined}>{moduleText(domain.name) ?? <span data-mono>{domain.name}</span>}</span>)}</span>
                     : <span className="a4-dim">核对后台操作事件清单</span>}</Td>
                   <Td><Cell main={batch.proposer} title={batch.proposer} /></Td>
                   <Td><StatusTag tone={state.tone === "role-other" ? "neutral" : state.tone}>{state.label}</StatusTag></Td>
@@ -1304,7 +1310,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       {ticketNotice}
       {loadError && overview && (
         <Notice tone="warn" title="刷新失败" action={<Button size="sm" onClick={() => void refreshOverview()}>重试</Button>}>
-          {loadError}。下面是上次读到的数据，登记、调整和清理先停用。
+          {loadError}。下面是上次读到的数据，写入先停用。
         </Notice>
       )}
       {conclusion}
@@ -1376,9 +1382,9 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               </Facts>
             </div>
             <Facts>
-              <Fact k="产生模块"><span data-mono>{detailSchema.ownerDomain}</span></Fact>
+              <Fact k="产生模块">{moduleText(detailSchema.ownerDomain) ? <>{moduleText(detailSchema.ownerDomain)} <span className="a4-dim" data-mono>{detailSchema.ownerDomain}</span></> : <span data-mono>{detailSchema.ownerDomain}</span>}</Fact>
               <Fact k="发送方">{PRODUCER_TEXT[detailSchema.producer] ?? detailSchema.producer}{!PRODUCER_TEXT[detailSchema.producer] && <> <span className="a4-dim">（登记时写的说明）</span></>}</Fact>
-              <Fact k="谁在用">{consumersOf(detailSchema.consumers)}</Fact>
+              <Fact k="谁在用">{consumersOf(detailSchema.consumers, true)}</Fact>
               <Fact k="由服务器记录">{detailSchema.serverAuthoritative ? "是" : "否，由 App 上报"}</Fact>
               <Fact k="采集比例">{detailSchema.samplingPolicy}</Fact>
               <Fact k="版本">事件 {detailSchema.version} · 上线进度 v{detailSchema.lifecycleVersion}</Fact>
@@ -1399,7 +1405,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       <Drawer open={!!batch} onClose={() => setBatchIdx(null)} icon={Layers} tone="role-3"
         title={batch ? operatorCopyText(batch.title) : "接入批次"}
         sub={batch ? <>工单 <span data-mono>{batch.id}</span> · {BATCH_STATE[batch.state].label}</> : undefined}
-        explain="批次的状态在这里只能查看，不能修改。">
+        explain="批次状态只能查看。接入完成只改工单状态；以前没归类的事件不会回头改归类。">
         {batch && <>
           <Facts>
             <Fact k="状态" tone={BATCH_STATE[batch.state].tone === "warn" ? "warn" : undefined}>{BATCH_STATE[batch.state].label}</Fact>
@@ -1414,7 +1420,6 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               {!batch.details.length && <TableMessage columns={2}>这个批次没有列出明细</TableMessage>}
             </tbody>
           </Table>
-          <p className="a4-note">接入完成只改工单状态；以前没归类的事件不会回头改归类，以后的新事件按当时的登记入库。</p>
         </>}
       </Drawer>
 
@@ -1433,7 +1438,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               openRegistryConfirm({ briefKind: "record",
                 action: `登记新模块 · ${domain}`,
                 title: "登记新模块",
-                completion: "批准前模块列表不变；批准后只建一张接入工单，不会自动接上发送和使用的代码，也不会自动建事件。",
+                completion: "批准后只建接入工单，不会自动接上代码或建事件。",
                 statedBrief: {
                   impact: "",
                   check: "提交时后端核对模块名不是已有模块、事件名属于这个模块并用过去式、同样的组合没登记过。",

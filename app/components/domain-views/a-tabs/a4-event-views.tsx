@@ -138,10 +138,24 @@ export function propertyList(properties: string | null | undefined): { name: str
 export const PROPERTY_TYPE_TEXT: Record<string, string> = { string: "文字", number: "数字", boolean: "是／否", enum: "固定选项", timestamp: "时间", id: "编号", json: "结构数据" };
 export const PRODUCER_TEXT: Record<string, string> = { server: "服务器", client: "App", "server+client": "服务器和 App" };
 
-/** 谁在用：使用方原文按「/」分开；像「L1」这样的页面编号换成菜单名，其余照原文。 */
+/**
+ * 模块（事件名前缀）的中文叫法。后端只给代码，这里按侧边栏菜单的叫法翻；对不上的显示代码。
+ * 后端补上模块中文名后改读后端的。
+ */
+export const MODULE_TEXT: Record<string, string> = {
+  admin: "后台操作", app: "App 页面行为", auth: "注册登录", checkout: "下单支付", commission: "团队奖励", compute: "算力",
+  content: "内容", daily: "签到", device: "设备", disclosure: "风险披露", earnings: "收益", event: "用户行为事件",
+  exchange: "兑换", genesis: "创世节点", leadership_pool: "奖励池", learn: "课程", market: "市场", milestone: "里程碑",
+  nova: "Nova 消息推送", notification: "通知", onboarding: "新手引导", order: "订单", phase: "运营阶段", quest: "用户任务",
+  referral: "邀请", repurchase: "锁定计划", risk: "风控", staking: "质押", store: "商城", trial: "免费试用",
+  voucher: "代金券", wallet: "钱包", withdraw: "提现", nex: "UVT（旧名 nex）",
+};
+export const moduleText = (code: string) => MODULE_TEXT[code];
+
+/** 谁在用：使用方原文按「/」分开；页面编号（L1）和域字母（K）换成菜单名，翻不出的照原文。 */
 export function consumerParts(consumers: string, pageName: (code: string) => string | undefined): { key: string; text: string; code?: string }[] {
   return consumers.split(/[/,，、]/).map((part) => part.trim()).filter(Boolean).map((part, index) => {
-    const name = /^[A-Z][0-9]{1,2}$/.test(part) ? pageName(part) : undefined;
+    const name = /^[A-Z](?:[0-9]{1,2})?$/.test(part) ? pageName(part) : undefined;
     return name ? { key: `${part}-${index}`, text: name, code: part } : { key: `${part}-${index}`, text: part };
   });
 }
