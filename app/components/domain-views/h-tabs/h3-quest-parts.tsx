@@ -337,7 +337,7 @@ export function DayOneTimeline({ triReward, eligibilityHours }: { triReward: str
   const unset = triReward.trim() ? "读不懂" : "还没设置";
   return (
     <figure className="h3-timeline" aria-label={`首日奖励时间线：注册后 24 小时内全额${tri ? ` ${tri.full} UVT` : ""}，${grace ? `到注册后 ${hours} 小时宽限${tri ? ` ${tri.grace} UVT` : ""}，` : ""}之后过期`}>
-      <div className="h3-timeline-track" style={{ gridTemplateColumns: grace ? `minmax(140px, 24fr) minmax(140px, ${Math.max(hours! - 24, 24)}fr) 148px` : "minmax(140px, 1fr) 148px" }}>
+      <div className="h3-timeline-track" data-grace={grace ? String(Math.min(Math.max(Math.round((hours! - 24) / 24), 1), 6)) : "0"}>
         <div className="h3-tl-seg" data-kind="full">
           <span className="h3-tl-tick">注册</span>
           <i aria-hidden />

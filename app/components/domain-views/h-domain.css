@@ -247,7 +247,14 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h3-card[data-dim] .h3-card-title { color: var(--rd-text-2); }
 /* 首日时间线 */
 .h3-timeline { display: flex; flex-direction: column; gap: var(--rd-space-3); margin: 0; }
-.h3-timeline-track { display: grid; gap: 0; min-width: 0; }
+.h3-timeline-track { display: grid; gap: 0; min-width: 0; grid-template-columns: minmax(140px, 1fr) 148px; }
+/* 全额段固定 24 小时为 1 份，宽限段按 24 小时一份取整（最多画 6 份，更长的写在刻度上） */
+.h3-timeline-track[data-grace="1"] { grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) 148px; }
+.h3-timeline-track[data-grace="2"] { grid-template-columns: minmax(140px, 1fr) minmax(140px, 2fr) 148px; }
+.h3-timeline-track[data-grace="3"] { grid-template-columns: minmax(140px, 1fr) minmax(140px, 3fr) 148px; }
+.h3-timeline-track[data-grace="4"] { grid-template-columns: minmax(140px, 1fr) minmax(140px, 4fr) 148px; }
+.h3-timeline-track[data-grace="5"] { grid-template-columns: minmax(140px, 1fr) minmax(140px, 5fr) 148px; }
+.h3-timeline-track[data-grace="6"] { grid-template-columns: minmax(140px, 1fr) minmax(140px, 6fr) 148px; }
 .h3-tl-seg { display: flex; flex-direction: column; gap: var(--rd-space-1); min-width: 0; padding-right: var(--rd-space-3); }
 .h3-tl-seg > i { display: block; height: 10px; margin: var(--rd-space-1) 0 var(--rd-space-2); border-radius: 0; background: var(--rd-chart-4); }
 .h3-tl-seg[data-kind="full"] > i { border-radius: var(--rd-radius-bar) 0 0 var(--rd-radius-bar); }
