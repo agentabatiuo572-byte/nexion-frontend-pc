@@ -226,16 +226,17 @@
 .h8-records-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 16px var(--rd-panel-pad-x) var(--rd-panel-pad-y); }
 
 /* 原操作提醒 */
-.h8-rec { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
-.h8-rec li { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.h8-rec { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) max-content max-content auto; gap: 8px 16px; margin: 8px 0 0; padding: 0; list-style: none; }
+.h8-rec li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
 .h8-rec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
-.h8-rec-change { min-width: 0; font-variant-numeric: tabular-nums; color: var(--rd-text); }
+.h8-rec-change { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-variant-numeric: tabular-nums; color: var(--rd-text); }
+.h8-rec-kind { color: var(--rd-text-2); white-space: nowrap; }
 .h8-rec-time { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .h8-rec-state { display: inline-flex; align-items: center; gap: 8px; }
 .h8-rec-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .h8-rec-zone { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 @container hdom (max-width: 900px) {
-  .h8-rec li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
+  .h8-rec { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
   .h8-rec-time { grid-column: 1 / 3; grid-row: 2; }
 }
 

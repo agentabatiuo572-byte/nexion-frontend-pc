@@ -494,7 +494,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         key: record.commandKey, name: param ? paramTitle(param) : record.invitedUserId !== undefined ? "给指定新人结算" : "批量结算",
         submittedAt: record.createdAt, tag,
         change: param ? record.original
-            ? <span>{record.kind === "direct" ? "" : "申请 "}<Change from={valueText(param, String(record.original.overview.params[param.key]))} to={valueText(param, record.value)} /></span>
+            ? <>{record.kind !== "direct" && <span className="h8-rec-kind">申请</span>}<Change from={valueText(param, String(record.original.overview.params[param.key]))} to={valueText(param, record.value)} /></>
             : <span>{record.kind === "direct" ? "改成" : "申请改成"} {valueText(param, record.value)}</span>
           : <span>{record.invitedUserId !== undefined ? `新人 ${record.invitedUserId}` : `最多 ${record.limit ?? "—"} 位`}{record.original && `（提交时 ${countText(record.original.overview.pending)} 位待结算）`}</span>,
         actions: <>
@@ -525,7 +525,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   </>;
   const savedUnreadNotice = savedUnread && <H8SavedUnreadNotice name={paramTitle(savedUnread.param)}
     value={valueText(savedUnread.param, savedUnread.value)} reloading={loading} hasData={!!data} onReload={() => void load("", false, true)} />;
-  const staleNotice = stale && data && <Notice tone="warn" title={`没有提交：${stale.param ? paramTitle(stale.param) : "结算申请"}已被别人改过`}
+  const staleNotice = stale && data && <Notice tone="warn" title={`没有保存：${stale.param ? paramTitle(stale.param) : "结算申请"}已被别人改过`}
     action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>
     {stale.param
       ? <>现在是 {valueText(stale.param, String(data.params[stale.param.key]))}，你这次要改成 {valueText(stale.param, stale.value)}。核对后重新调整。</>
