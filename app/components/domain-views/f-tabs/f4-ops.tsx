@@ -6,7 +6,7 @@
  * 读取、提交和原请求恢复由 f-view 接线；保留已搭建的界面和确认内容。
  */
 import { useState, type KeyboardEvent } from "react";
-import { AlertTriangle, ArrowRight, ListChecks, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowRight, CircleHelp, Clock3, Hourglass, ListChecks, RefreshCw } from "lucide-react";
 import { BlockState, Button, Conclusion, PageHeader, RatioBar, Stat, StatBand, StatusTag, useTabIds } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -20,6 +20,7 @@ import { applicationStage } from "./f4-quota";
 import { F4Pool } from "./f4-pool";
 import { F4Quota } from "./f4-quota";
 import { F4Leaderboard, leaderboardState } from "./f4-leaderboard";
+import { FReleaseButton } from "./f-release";
 import { F4RecoveryNotice, count, decimalText, settleCadenceNote, unknownTag, usdt, stamp, type F4RecoveryRow } from "./f4-shared";
 import type { FViewCtx } from "./types";
 
@@ -58,13 +59,22 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       name: confirm?.name ?? spec?.action ?? "调整区域大使申请规则",
       change,
       submittedAt: original.createdAt,
-      tag: record.kind === "proposal" && record.original.ticket?.status === "pending" ? <StatusTag tone="progress">待审批</StatusTag>
-        : isRetryExpired(original) ? <StatusTag tone="warn">已过期</StatusTag> : unknownTag(record.kind === "proposal" ? "approval" : "direct"),
-      actions: <Button size="sm" onClick={() => {
-        if (confirm && original.f4Snapshot) {
-          ctx.openActionConfirm({ ...confirm, edit: confirm.edit ? { ...confirm.edit, initialValue: original.f4Snapshot.value } : undefined, f4Recovery: record });
-        } else void ctx.recoverF4(record, "query").catch(error => ctx.toast(displayAdminError(error)));
-      }}>查询原结果</Button>,
+      pending: record.kind === "proposal" && record.original.ticket?.status === "pending",
+      tag: record.kind === "proposal" && record.original.ticket?.status === "pending" ? <StatusTag tone="progress" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>
+        : record.kind === "proposal" && record.original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
+          : isRetryExpired(original) ? <StatusTag tone="neutral" icon={Hourglass} explain={record.kind === "proposal"
+            ? "原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除待确认。"
+            : "原请求超过 24 小时，不能再重试。查询只读回现在的规则，证明不了原操作有没有执行。"}>已过期</StatusTag>
+            : unknownTag(record.kind === "proposal" ? "approval" : "direct"),
+      actions: <>
+        <Button size="sm" onClick={() => {
+          if (confirm && original.f4Snapshot) {
+            ctx.openActionConfirm({ ...confirm, edit: confirm.edit ? { ...confirm.edit, initialValue: original.f4Snapshot.value } : undefined, f4Recovery: record });
+          } else void ctx.recoverF4(record, "query").catch(error => ctx.toast(displayAdminError(error)));
+        }}>查询原结果</Button>
+        {record.kind === "proposal" && isRetryExpired(record.original) && record.original.absent && !record.original.ticket
+          && <FReleaseButton label={confirm?.name ?? spec?.action ?? "原申请"} toast={ctx.toast} onRelease={() => ctx.recoverF4(record, "release")} />}
+      </>,
     };
   });
   if (actorId !== undefined) recoveryRows.push(...materialReviewAttempts(actorId).map((record) => {
@@ -74,7 +84,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       name: `${record.input.stage === "BUSINESS" ? "业务" : "财务"}核验 · 申请 #${record.applicationId}`,
       change: `材料第 ${record.input.expectedMaterialRevision} 版 · ${record.input.decision === "PASSED" ? "通过" : "需补材料"}`,
       submittedAt: record.createdAt,
-      tag: unknownTag("direct"),
+      tag: isRetryExpired(record) ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，只能查询，不能再重试。">已过期</StatusTag> : unknownTag("direct"),
       actions: application
         ? <Button size="sm" onClick={() => { setSection("quota"); setMaterialApplication(application); }}>打开申请</Button>
         : <span className="f4-muted">申请不在最近 30 份里</span>,
@@ -101,7 +111,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
         {recoveryNotice}
         <BlockState state="loading" title="正在读取团队激励池、名额、大使申请和排行榜…" />
       </> : ctx.f4Error ? <>
-        <Conclusion state="unknown" hint="点「重新读取」再试；读到之前不显示旧数字，也不能操作。">读不到这页的数据，暂时无法判断</Conclusion>
+        <Conclusion state="unknown" hint="点「重新读取」再试；读到之前不显示旧数字，也不能发起新修改。">读不到这页的数据，暂时无法判断</Conclusion>
         {recoveryNotice}
         <BlockState state="error" title="团队激励池、名额和排行榜读取失败" detail={ctx.f4Error} onRetry={() => void ctx.refreshF4()} retryLabel="重新读取" />
       </> : <>
@@ -163,7 +173,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
     <div className="f4-page">
       {header}
       {todos.length === 0
-        ? <Conclusion state="ok" hint={cadence ? `${cadence.short}。` : undefined}>三块都在正常运行，没有等你处理的事</Conclusion>
+        ? <Conclusion state="ok" hint={cadence ? `${cadence.short}。` : undefined}>这页没有发现要处理的事</Conclusion>
         : <Conclusion state={settlement.ready && !cadenceWarn ? "neutral" : "warn"} icon={settlement.ready && !cadenceWarn ? ListChecks : AlertTriangle}
             hint={todos.length > 2 ? `另外：${todos.slice(2).join("；")}。` : "点下面的卡片进入对应的一块处理。"}>
             {todos.slice(0, 2).join("，")}
@@ -188,13 +198,13 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
         <Stat {...tabProps("quota")} openLabel="名额与大使"
           head={<span className="f4-card-head">名额与大使</span>}
           label="待处理的大使申请" value={count(data.ambassadorPendingCount)} unit="份" tone="role-3"
-          sub={data.ambassadorPendingCount > 0 ? [waitBusiness && `业务核验 ${waitBusiness}`, waitFinance && `财务核验 ${waitFinance}`, waitApproval && `可发起批准 ${waitApproval}`].filter(Boolean).join(" · ") || undefined : undefined}>
+          sub={data.ambassadorPendingCount > 0 ? [waitBusiness && `业务核验 ${waitBusiness}`, waitFinance && `财务核验 ${waitFinance}`, waitApproval && `核验已通过 ${waitApproval}`].filter(Boolean).join(" · ") || undefined : undefined}>
           {quotaTotal > 0
             ? <span className="f4-card-meter">
               <RatioBar label="本月购机名额已用" value={Math.min(quotaUsed, quotaTotal)} total={quotaTotal} valueText={`已用 ${count(quotaUsed)} 台，共 ${count(quotaTotal)} 台`} tone="role-2" quiet />
               <span className="f4-card-line">名额剩余 {count(data.quotaMonthlyStockRemaining)} 台 · 共 {count(quotaTotal)} 台</span>
             </span>
-            : <span className="f4-card-line">本月还没有设置购机名额</span>}
+            : <span className="f4-card-line">本月购机名额总数为 0</span>}
         </Stat>
         <Stat {...tabProps("board")} openLabel="排行榜"
           head={<span className="f4-card-head">排行榜</span>}

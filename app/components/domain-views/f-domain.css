@@ -378,6 +378,23 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 /* ===== F1 团队等级晋升（改版）：只用 --rd-* 令牌，深浅两套跟着令牌走 ===== */
 .f1-page { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
 .f1-page .f1-view { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
+.f1-page .f1-how-diff { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--rd-space-1) var(--rd-space-4); margin: var(--rd-space-2) 0 0; }
+.f1-page .f1-how-diff > div { display: contents; }
+.f1-page .f1-how-diff dt { color: var(--rd-text-2); }
+.f1-page .f1-how-diff dd { margin: 0; color: var(--rd-text); overflow-wrap: anywhere; }
+/* 全页原操作恢复区：和 F4、F5 的逐条列表同一种排法。 */
+.f1-page .f1-recovery-wrap { container: f1-recovery / inline-size; }
+.f1-page .f1-recovery { display: grid; gap: var(--rd-space-2); margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }
+.f1-page .f1-recovery li { display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.f1-page .f1-recovery-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.f1-page .f1-recovery-change { min-width: 0; color: var(--rd-text); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.f1-page .f1-recovery-time, .f1-page .f1-recovery-zone { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.f1-page .f1-recovery-zone { margin: var(--rd-space-2) 0 0; }
+.f1-page .f1-recovery-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--rd-space-2); }
+@container f1-recovery (max-width: 860px) {
+  .f1-page .f1-recovery li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
+  .f1-page .f1-recovery-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
 .f1-page .f1-strong { font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; color: var(--rd-text); }
 .f1-page .f1-weak, .rd-modal .f1-weak { color: var(--rd-text-3); }
 .f1-page .f1-empty { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-body); }

@@ -29,7 +29,7 @@ export type F3Rule = {
   threshold: string | null;
   /** 比例，已写成「10%」；读不懂传 null。 */
   rate: string | null;
-  /** 每日上限，已写成「约 1 千 USDT」；没读到传 null。 */
+  /** 每日上限，已写成「1,000 USDT」；没读到传 null。 */
   cap: string | null;
   period: string;
   residual: string;
@@ -60,7 +60,7 @@ export function F3RuleFlow({ rule, next, changed, capAction, compact }: {
   };
   const period = next?.period ?? rule.period;
   const steps: Step[] = [
-    { key: "legs", title: "A 组、B 组订单额", value: "各算各的", sub: "按这一期已付款的订单额" },
+    { key: "legs", title: "A 组、B 组订单额", value: "各算各的", sub: "统计范围看「没匹配上的订单额」怎么设" },
     { key: "threshold", title: "两组都过门槛", value: shown("threshold", (value) => `每组 ≥ ${value}`, "门槛没读到"), sub: "一组没到就不发" },
     { key: "rate", title: "取较小一组 × 比例", value: shown("rate", (value) => `× ${value}`, "比例读不懂"), sub: "先扣掉已匹配的" },
     { key: "cap", title: "不超过每期上限", value: shown("cap", (value) => `每日 ${value}`, "上限没读到"), sub: <>{PERIOD_TEXT[period]?.cap ?? "按结算周期算天数"}{capAction && <span className="f3-flow-action">{capAction}</span>}</> },

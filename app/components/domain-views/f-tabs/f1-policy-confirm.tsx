@@ -7,14 +7,14 @@
  */
 import { useState } from "react";
 import { CircleHelp, LockOpen, ShieldCheck, Zap } from "lucide-react";
-import { Button, Change, DiffField, Fact, Facts, Field, Input, Notice, Select, StatusTag } from "@/app/components/rd";
+import { Change, DiffField, Fact, Facts, Field, Input, Notice, Select, StatusTag } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import {
   f1ConditionLabels, f1PolicyInitialForm, f1PolicyInputError, f1PolicyNeedsApproval,
-  formatF1ExactAmount, isF1FundReward, pendingF1Policy, pendingF1Removals, submitF1Policy, type F1PolicyEditor,
+  formatF1ExactAmount, isF1FundReward, pendingF1Policy, submitF1Policy, type F1PolicyEditor,
 } from "@/lib/admin/f1-policy-change";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { FViewCtx } from "./types";
@@ -30,26 +30,6 @@ export function f1RewardPolicyLabel(item: OpsVRankRewardItem, ctx: Pick<FViewCtx
   if (item.type === "voucher") return `券 · ${ctx.voucherLabels[item.voucherId ?? ""] ?? item.voucherId ?? "未设置"}`;
   if (item.type === "sku") return `商品 · ${ctx.skuLabels[item.skuId ?? ""] ?? item.skuId ?? "未设置"}`;
   return safeCustomLabel(item.custom);
-}
-
-/** Only the current actor's unresolved remove commands for this rank appear here. */
-export function F1RemovalRecovery({ rank, onRecover }: { rank: string; onRecover: (editor: F1PolicyEditor) => void }) {
-  const owner = useAdminAuth((state) => state.session?.adminId);
-  if (owner === undefined) return null;
-  let removals: ReturnType<typeof pendingF1Removals>;
-  try { removals = pendingF1Removals(owner, rank); }
-  catch { return <Notice tone="warn" title="原移除操作内容不完整">请到「操作记录与审批」核对。</Notice>; }
-  const label = (reward: OpsVRankRewardItem | undefined) => !reward ? "奖励"
-    : isF1FundReward(reward.type) ? `${formatF1ExactAmount(reward.amountText ?? "")} ${reward.type.toUpperCase()}`
-      : reward.type === "voucher" ? `券 ${reward.voucherId ?? ""}` : reward.type === "sku" ? `商品 ${reward.skuId ?? ""}` : safeCustomLabel(reward.custom);
-  return <>{removals.map(({ commandKey, createdAt, original }) => <Notice key={commandKey} tone="warn" title="移除奖励的结果未知"
-    action={<Button size="sm" aria-label={`${rank} · 核对原操作`} onClick={() => {
-      if (useAdminAuth.getState().session?.adminId !== owner) return;
-      const current = pendingF1Policy(owner, original.editor);
-      if (current?.commandKey === commandKey) onRecover({ ...original.editor, recoveryCommandKey: commandKey });
-    }}>核对原操作</Button>}>
-    移除「{label(original.editor.reward)}」，{businessStamp(createdAt)}（{businessZone().label}）提交。这项奖励可能已经不在列表里了。
-  </Notice>)}</>;
 }
 
 export function F1PolicyConfirm({ editor: requested, ctx, onClose, pendingApproval = false }: { editor: F1PolicyEditor; ctx: FViewCtx; onClose: () => void; pendingApproval?: boolean }) {
@@ -109,7 +89,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, pendingApprov
     if (!result) return false;
     requireSession(false);
     if (result.active) ctx.acceptF1PolicyOverview(result.active);
-    else ctx.invalidateF1("当前配置读取失败，请重新读取后再发起新修改。");
+    else ctx.invalidateF1(`${result.acknowledgement}；当前配置暂时读不到，重新读取后再发起新修改。`);
     ctx.toast(result.acknowledgement);
     if (!result.resolved) throw new A2OutcomeUncertainError(result.acknowledgement, previous!.commandKey);
     onClose();
@@ -158,7 +138,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, pendingApprov
     {!isCondition && <Fact k={remove ? "要移除的奖励" : editor.reward ? "现在的奖励" : "等级"}>{editor.reward ? currentLabel : `${editor.row.v} · 现在 ${(ctx.rewards[editor.row.v] ?? []).length} 项奖励`}</Fact>}
     {isCondition && (prev || next) && <Fact k="相邻等级">{[prev, next].filter(Boolean).join(" · ")}</Fact>}
     {opening.pending && <Fact k="原操作提交于">{businessStamp(opening.pending.createdAt)}（{businessZone().label}）</Fact>}
-    {pendingApproval && !opening.pending && <Fact k="待审批的申请" tone="warn">这一级有一张门槛或奖励的申请还没批；现在直接修改，那张申请批准时会因版本对不上失败</Fact>}
+    {pendingApproval && !opening.pending && <Fact k="待审批的申请" tone="warn">这一级有一张申请还没批；这次改动了值，那张申请批准时会因版本对不上失败</Fact>}
   </Facts>;
   const statedBrief = isCondition
     ? { impact: "保存后，之后每次评估用户时按新值算；不重算已有等级，不补发、不收回历史奖励。", check: "核对新值和相邻等级；理由写清依据或工单号。" }

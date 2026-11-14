@@ -13,7 +13,10 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { a2ActionText } from "@/lib/admin/operator-copy";
 import { Change, Fact, Facts, LAYERS, layerRate, num, type F2Confirm } from "./f2-shared";
 import { stamp } from "./f2-shared";
-import type { F2Recovery } from "@/lib/admin/f2-approval";
+import { F2_ACTIVATION_SLOT, F2_POLICY_SLOT, type F2Recovery } from "@/lib/admin/f2-approval";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { F2_HISTORICAL_PARAM_NAMES } from "./f2-rates";
+import { FReleaseButton } from "./f-release";
 import type { FViewCtx } from "./types";
 
 
@@ -38,11 +41,9 @@ const ACTION_COPY = {
   },
 } as const;
 
-export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: (spec: F2Confirm) => void }) {
+export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: FViewCtx; openConfirm: (spec: F2Confirm) => void; recovering: boolean }) {
   const policy = ctx.f2DirectPolicy;
   const submitted = !!ctx.f2ActivationPending;
-  const [recovering, setRecovering] = useState(false);
-  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const busy = ctx.f2DirectPolicyLoading || ctx.f2ActivationPendingLoading;
   const allowed = ctx.can("network_f2_policy_amplify") && ctx.can("platform_a2_proposal_create");
   const canAudit = ctx.can("platform_a2_read");
@@ -63,13 +64,6 @@ export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; op
   const state = !policy ? null : !policy.sevenLayerEnabled ? "off" : policy.sevenLayerPaused ? "paused" : "running";
   const stateName = { off: "未启用", paused: "已暂停", running: "运行中" } as const;
 
-  async function recover(attempt: F2Recovery, query = false) {
-    if (recovering || (query ? !attempt.canQuery : !attempt.canRetry)) return;
-    setRecovering(true); setRecoveryError(null);
-    try { if (query) await ctx.queryF2Proposal(attempt.fingerprint); else await ctx.retryF2Proposal(attempt.fingerprint); }
-    catch (error) { setRecoveryError(error instanceof Error && error.name.endsWith("OutcomeUncertainError") ? displayAdminError("F2_PROPOSAL_OUTCOME_UNKNOWN") : displayAdminError(error)); }
-    finally { setRecovering(false); }
-  }
   function submit() {
     if (!allowed || blocked || !policy || !state) return;
     const revision = policy.sevenLayerRevision, policyVersion = policy.policyVersion;
@@ -91,7 +85,6 @@ export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; op
     });
   }
 
-  const attempts = ctx.f2Proposals;
   const pending = ctx.f2ActivationPending;
 
   return (
@@ -114,7 +107,7 @@ export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; op
         </div>
         {state === "off" && <ActivationChecks ctx={ctx} />}
       </div>
-      {(pending || submitted || attempts.length > 0 || recoveryError || ctx.f2ActivationPendingError || (policy && !supported)) && <ul className="f2-alerts" aria-label="整体结算的申请">
+      {(pending || submitted || ctx.f2ActivationPendingError || (policy && !supported)) && <ul className="f2-alerts" aria-label="整体结算的申请">
         {pending && <li><Notice tone="warn" title={<>{a2ActionText(pending.action)}<StatusTag tone="warn" icon={Clock3} explain="等另一位管理员在「操作记录与审批」批准；批准前结算状态不变，也不能再提交新的申请。">待审批</StatusTag></>}
           action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
           <p>审批单 <span data-mono>{pending.id}</span>，等另一位管理员批准。</p>
@@ -123,25 +116,75 @@ export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; op
           action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
           <p>批准前结算状态不变。批准后点页头「刷新」看最新状态。</p>
         </Notice></li>}
-        {attempts.map(attempt => { const attemptExpired = attempt.expiresAt <= Date.now(); return <li key={attempt.commandKey}><Notice tone="warn" actionBelow title={<>{a2ActionText(attempt.spec.action)}{attempt.ticket?.status === "pending"
-          ? <StatusTag tone="warn" icon={Clock3}>待审批</StatusTag>
-          : attempt.received ? <StatusTag tone="warn" icon={CircleHelp}>原申请建过单，批没批准还没查到</StatusTag>
-          : attemptExpired
-          ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试。到「操作记录与审批」核对有没有这张审批单；查不到也不能据此认定没提交。">已过期</StatusTag>
-          : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。24 小时内可以按原请求重试，后端认得出是同一次提交，不会建第二张。">结果未知</StatusTag>}</>}
-          action={<span className="f2-actions">
-            {attempt.canRetry && !attemptExpired && <Button size="sm" loading={recovering} loadingText="正在重试…" onClick={() => void recover(attempt)}>按原请求重试</Button>}
-            {attempt.canQuery && <Button size="sm" loading={recovering} onClick={() => void recover(attempt, true)}>查询原结果</Button>}
-            {canAudit && <Link className="rd-link" href="/platform/audit">去操作记录与审批核对</Link>}
-          </span>}>
-          <p>{attempt.spec.before} → {attempt.spec.after} · {stamp(new Date(attempt.createdAt).toISOString())}</p>
-          <p>提交时填的理由：{attempt.spec.reason}</p>
-        </Notice></li>; })}
-        {recoveryError && <li><Notice tone="danger" title="按原请求重试没有成功">{recoveryError}</Notice></li>}
         {ctx.f2ActivationPendingError && <li><Notice tone="warn" title="审批进度没读到">{ctx.f2ActivationPendingError}</Notice></li>}
         {policy && !supported && <li><Notice tone="warn" title="暂时只能查看">后台版本和后端的结算接口对不上，刷新后再试；仍不行请联系值班人员。</Notice></li>}
       </ul>}
     </Panel>
+  );
+}
+
+/** 原申请写成运营看得懂的名字和改动；配置键不上屏。 */
+function attemptLabel(attempt: F2Recovery): { name: string; change: string } {
+  const slot = attempt.fingerprint, spec = attempt.spec;
+  const known = spec.before !== "—" || spec.after !== "—";
+  const plain = known ? `${spec.before} → ${spec.after}` : "原请求不完整，只能查询原结果";
+  if (slot === F2_ACTIVATION_SLOT) return { name: a2ActionText(spec.action), change: known ? plain : "原请求不完整，只能查询原结果" };
+  if (slot === F2_POLICY_SLOT) return { name: "好友奖励政策", change: known ? "按原申请的政策内容" : plain };
+  const layer = /^f-config:F\.unilevel\.(nex\.)?(L[1-7])$/.exec(slot);
+  if (layer) return { name: `${layer[2]} ${layer[1] ? "UVT 系数" : "USDT 比例"}`, change: plain };
+  if (slot.startsWith("f-config-batch:")) {
+    const pauses = spec.after.split(" / ").flatMap((item) => { const m = /^F\.unilevel\.(L[1-7])\.paused=(\w+)$/.exec(item.trim()); return m ? [`${m[1]} ${m[2] === "on" ? "暂停" : "发放"}`] : []; });
+    return { name: "七层逐层暂停", change: pauses.length ? `改为 ${pauses.join("、")}` : "原请求不完整，只能查询原结果" };
+  }
+  const key = slot.replace(/^f-config:/, "");
+  if (key === "F.partner.tiers") return { name: "合作伙伴权益门槛", change: known ? "按原申请的四档门槛" : plain };
+  if (key === "F.cooldown") return { name: "购买与其他奖励冷却", change: known ? `${spec.before} → ${spec.after} 天` : plain };
+  return { name: F2_HISTORICAL_PARAM_NAMES[key] ?? "团队奖励参数", change: plain };
+}
+
+/**
+ * 页面最上方的原申请逐条提醒（全站-结果未知叫法）：费率读取失败时也在。只列本人保存的原申请；按钮调用已有的恢复入口。
+ */
+export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FViewCtx; recovering: boolean; setRecovering: (value: boolean) => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const attempts = ctx.f2Proposals;
+  if (!attempts.length && !error) return null;
+  const canAudit = ctx.can("platform_a2_read");
+  async function recover(attempt: F2Recovery, query: boolean) {
+    if (recovering || (query ? !attempt.canQuery : !attempt.canRetry)) return;
+    setRecovering(true); setError(null);
+    try { if (query) await ctx.queryF2Proposal(attempt.fingerprint); else await ctx.retryF2Proposal(attempt.fingerprint); }
+    catch (cause) { setError(cause instanceof Error && cause.name.endsWith("OutcomeUncertainError") ? displayAdminError("F2_PROPOSAL_OUTCOME_UNKNOWN") : displayAdminError(cause)); }
+    finally { setRecovering(false); }
+  }
+  const open = attempts.filter((attempt) => attempt.ticket?.status !== "pending").length;
+  return (
+    <Notice tone={open ? "warn" : "progress"} title={<>{open ? `有 ${attempts.length} 项原申请还没有结论` : `${attempts.length} 项申请在等批准`}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}
+      action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批核对</Link> : undefined}>
+      <ul className="f2-recovery" aria-label="还没有结论的原申请">
+        {attempts.map((attempt) => {
+          const { name, change } = attemptLabel(attempt);
+          const expired = attempt.expiresAt <= Date.now();
+          return <li key={attempt.commandKey}>
+            <span className="f2-recovery-name">{name}</span>
+            <span className="f2-recovery-change">{change}{attempt.spec.reason !== "—" && <small title={attempt.spec.reason}>理由：{attempt.spec.reason}</small>}</span>
+            <span className="f2-recovery-time">{businessStamp(attempt.createdAt)} 提交</span>
+            <span>{attempt.ticket?.status === "pending"
+              ? <StatusTag tone="progress" icon={Clock3} explain="等另一位管理员在「操作记录与审批」批准；批准前不生效。">待审批</StatusTag>
+              : attempt.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
+                : expired ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除待确认。">已过期</StatusTag>
+                  : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>}</span>
+            <span className="f2-actions">
+              {attempt.canQuery && <Button size="sm" loading={recovering} onClick={() => void recover(attempt, true)}>查询原结果</Button>}
+              {attempt.canRetry && !expired && <Button size="sm" loading={recovering} loadingText="正在重试…" onClick={() => void recover(attempt, false)}>按原请求重试</Button>}
+              {attempt.canRelease && !attempt.ticket && <FReleaseButton label={name} toast={ctx.toast} onRelease={() => ctx.releaseF2Proposal(attempt.fingerprint)} />}
+            </span>
+          </li>;
+        })}
+      </ul>
+      <p className="f2-recovery-zone">提交时间为{businessZone().label}</p>
+      {error && <Notice tone="danger" title="查询或重试没有成功">{error}</Notice>}
+    </Notice>
   );
 }
 
@@ -165,7 +208,7 @@ function ActivationChecks({ ctx }: { ctx: FViewCtx }) {
     <div className="f2-checks">
       <p className="f2-checks-title">启用时后端会检查<Explain label="这三条怎么用" content={<>
         <p>提交申请和另一位管理员批准时，后端都会再查一遍，以那时的数据为准。这里只列现在读到的，不代表一定能启用。</p>
-        <p>后端把没填的系数也显示成 0，这里分不出「没填」和「填了 0」，以后端检查为准。</p>
+        <p>后端把没填的比例和系数也显示成 0，这里分不出「没填」和「填了 0」：三条都打勾也不代表一定能启用，以后端检查为准。</p>
         <p>缺的层目前没有后台入口补齐，要由后端初始化。</p>
       </>} /></p>
       <ul className="f2-checks-list">

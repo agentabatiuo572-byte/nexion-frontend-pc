@@ -107,6 +107,8 @@ export type F4RecoveryRow = {
   change: ReactNode;
   submittedAt?: number;
   tag: ReactNode;
+  /** 在等批准（不是结果未知、也没过期）。标题按这个分开说。 */
+  pending?: boolean;
   actions?: ReactNode;
 };
 
@@ -124,8 +126,8 @@ export function unknownTag(kind: "direct" | "approval") {
 export function F4RecoveryNotice({ rows }: { rows: F4RecoveryRow[] }) {
   if (!rows.length) return null;
   return (
-    <Notice tone="warn" title={<>有 {rows.length} 项操作结果未知<Explain label="结果未知怎么处理" content="原请求和理由都保留在这台电脑上。按原请求重试只会用原内容，不能改；明确被拒绝后这一项才会清掉。" /></>}>
-      <ul className="f4-recovery" aria-label="结果未知的操作">
+    <Notice tone={rows.every((row) => row.pending) ? "progress" : "warn"} title={<>{rows.every((row) => row.pending) ? `${rows.length} 项申请在等批准` : `有 ${rows.length} 项原操作还没有结论`}<Explain label="原操作怎么处理" content="原请求和理由都保留在这台电脑上。按原请求重试只会用原内容，不能改；有了确定结论（成功、被拒或审批结束）这一项才会清掉。" /></>}>
+      <ul className="f4-recovery" aria-label="还没有结论的原操作">
         {rows.map((row) => (
           <li key={row.key}>
             <span className="f4-recovery-name">{row.name}</span>

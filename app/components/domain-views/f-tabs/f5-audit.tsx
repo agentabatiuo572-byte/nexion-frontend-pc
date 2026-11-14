@@ -17,6 +17,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { F5CommissionEvent, F5CommissionQuery } from "@/lib/admin/f1-client";
 import { F5_KINDS as KINDS } from "@/lib/admin/f-overview-contract";
 import type { F5Recovery, FViewCtx } from "./types";
+import { FReleaseButton } from "./f-release";
 import { canRetryF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
 import { canRetryF5Anomaly } from "@/lib/admin/f5-anomaly-write";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -126,7 +127,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     <Fact k="用户">{row.user}</Fact>
   </>;
   const scopeFact = (row: F5CommissionEvent, verb: string) => isFriend(row)
-    ? <Fact k="处置范围" tone="warn">好友奖励整组两笔一起{verb}：{groupMoney(row)}</Fact>
+    ? <Fact k="处置范围" tone="warn">好友奖励整组一起{verb}：{groupMoney(row)}</Fact>
     : isGrouped(row) ? <Fact k="处置范围">只{verb}这一笔，同组另一种币不动</Fact>
       : <Fact k="处置范围">只{verb}这一笔</Fact>;
 
@@ -157,7 +158,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       setConfirm({
         recovery, snapshot: recovery?.original.f5Snapshot ?? { action, row, coverage: data?.coverage },
         action: `奖励提前解锁 ${row.id}`, title: "提前解锁奖励", briefKind: "funds", effect: approvalTag(), completionCopy: completion, amplify: true,
-        coverageLead: "提前解锁会让这笔钱提前流出",
+        coverageLead: "提前解锁后这笔钱可能提前流出",
         coverageCheck: "提交前按页面读到的兑付覆盖率检查一次；批准执行时后端不再检查。",
         blockedReason: knownRejection(row, "release"),
         statedBrief: grouped
@@ -169,7 +170,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         facts: <Facts>
           {recordFacts(row)}
           <Fact k="状态"><Change from="冷却中" to="已解锁" /></Fact>
-          <Fact k="剩余冷却">{row.coolingDaysLeft > 0 ? `${row.coolingDaysLeft} 天` : "按天数已到期"}</Fact>
+          <Fact k="剩余冷却">{row.coolingDaysLeft > 0 ? `${row.coolingDaysLeft} 天` : "当天到期或没有到期时间"}</Fact>
           {grouped
             ? <Fact k="用户余额" tone="warn">属于结算组：冷却没真正到期时批准会被拒，钱不会提前流出</Fact>
             : <Fact k="用户余额">批准后进用户钱包的可用余额；能不能提走仍受钱包其他限制</Fact>}
@@ -185,7 +186,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       setConfirm({
         recovery, snapshot: recovery?.original.f5Snapshot ?? { action, row, coverage: data?.coverage },
         action: `解冻奖励 ${row.id}`, title: "解冻奖励", briefKind: "funds", effect: approvalTag(), completionCopy: completion,
-        statedBrief: { impact: "批准后这笔回到冷却中，到期后自动解锁；用户余额不变", check: "核对冻结的原因是否已经解除，理由写清依据。" },
+        statedBrief: { impact: "批准后这笔回到冷却中；有到期时间的到期后自动解锁，解冻本身不动用户余额", check: "核对冻结的原因是否已经解除，理由写清依据。" },
         detail: `解冻 ${row.id}：批准后从已冻结回到冷却中，不是直接解锁。`,
         facts: <Facts>
           {recordFacts(row)}
@@ -194,8 +195,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           {friend
             ? <Fact k="到期时间" tone="warn">沿用原来的，不重新计算；用户还有其他冻结条件（暂停、风险）时批准会被拒</Fact>
             : grouped ? <Fact k="到期时间">沿用原来的，不重新计算</Fact>
-              : <Fact k="到期时间" tone="warn">沿用原来的<Explain label="暂停时冻结的旧记录" content="没有结算组的旧记录，如果是暂停用户奖励时被冻结的，到期时间已被清空，解冻后不会自动到期，要再提前解锁。已提后端修复（F5-BE-05）。" /></Fact>}
-          <Fact k="用户余额">不变：到期解锁后才进可用余额</Fact>
+              : <Fact k="到期时间" tone="warn">沿用原来的<Explain label="暂停时冻结的旧记录" content="没有结算组的旧记录，如果是暂停用户奖励时被冻结的，到期时间已被清空，解冻后不会自动到期，要再提前解锁。已提后端修复。" /></Fact>}
+          <Fact k="用户余额">解冻本身不动余额</Fact>
           <Fact k="能不能撤回">能，可以再冻结</Fact>
           <Fact k="谁来批准">{approverText("奖励冻结权限")}</Fact>
         </Facts>,
@@ -217,7 +218,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       blockedReason: knownRejection(row, "reverse"),
       reasonPlaceholder: "例如：订单已退款，工单号",
       statedBrief: { impact: grouped ? "批准后收回这笔奖励，余额不够的部分记为待追回" : "批准后收回这笔奖励，余额不够时整次失败", check: "核对凭证单号和这笔奖励有关，理由写清收回的原因。" },
-      detail: `冲正 ${row.id}：批准后把这笔奖励收回，状态改为已冲正，收不回来。`,
+      detail: `冲正 ${row.id}：批准后收回这笔奖励，状态改为已冲正；用户余额不够时，没收回的部分记为待追回。`,
       facts: <Facts>
         {recordFacts(row)}
         <Fact k="状态"><Change from={statusName(row.status)} to="已冲正" /></Fact>
@@ -225,13 +226,13 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         {grouped
           ? <Fact k="用户余额" tone="warn">已入账的部分按现在的余额扣回，扣不够的记为待追回，不会扣成负数</Fact>
           : <Fact k="用户余额" tone="warn">已转进钱包的才扣回；余额不够时这次冲正整个失败，什么都不改<Explain label="没有结算组的旧奖励怎么收回" content="还没转进钱包的，只关掉待发记录，不扣余额。余额不够不会记成待追回，冲正会失败，要等余额够了再提交。" /></Fact>}
-        <Fact k="之后">{friend ? "好友奖励冲正后不能补发" : "可以勾选这笔补发一笔新的"}</Fact>
+        <Fact k="之后">{friend ? "好友奖励冲正后不能补发" : "可以勾选申请补发，批准时再核补发条件"}</Fact>
         <Fact k="谁来批准">{approverText("冲正权限")}</Fact>
       </Facts>,
       businessForm: {
         kind: "multi-field",
         fields: [
-          { key: "refundRef", label: "凭证单号", inputKind: "text", required: true, wide: true, placeholder: "退款单号、订单号、发放单号或客服工单号",
+          { key: "refundRef", label: "凭证单号", inputKind: "text", required: true, wide: true, placeholder: "关联订单号、等级发放单号或客服工单号",
             explain: "后端核对这个编号存在：这笔奖励的订单号、等级奖励的发放单号，或任意一张没删除的客服工单号。不核对工单是不是这位用户的，请自己确认和这笔奖励有关。" },
         ],
       },
@@ -265,7 +266,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       recovery, snapshot: recovery?.original.f5Snapshot ?? { action: "reissue", rows, coolingPolicy: policy, coverage: data?.coverage },
       action: `批量补发 ${rows.length} 笔奖励`, title: "批量补发奖励", briefKind: "funds", amplify: true, completionCopy: `${APPROVER}在「操作记录与审批」批准后才执行；批准前不生成新记录。`,
       effect: approvalTag("批准前不生成新记录。"),
-      coverageLead: "补发会让平台再付一次这些钱",
+      coverageLead: "补发会给每笔生成一条新的应付奖励",
       coverageCheck: "提交前按页面读到的兑付覆盖率检查一次；批准执行时后端再查，低于红线整批不补发。",
       statedBrief: { impact: "批准后每笔生成一条新记录，原记录保持已冲正", check: "核对每一笔为什么能补发，理由写清依据。" },
       detail: `补发已冲正的记录：${rows.map((row) => row.id).join("、")}。每笔生成一条新记录，原记录不变。`,
@@ -306,13 +307,13 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       recovery, snapshot: recovery?.original.f5Snapshot ?? { action: "suspend", row },
       action: `暂停用户 ${row.userId} 的奖励`, title: "暂停用户奖励", briefKind: "funds", completionCopy: `${APPROVER}在「操作记录与审批」批准后才执行；批准前这位用户的奖励照常。`,
       effect: approvalTag("批准前这位用户的奖励照常。"),
-      statedBrief: { impact: "批准后这位用户所选类型里还没结束的奖励都改为已冻结", check: "核对用户和要暂停的类型，理由写清依据。" },
-      detail: "暂停这位用户所选类型的奖励：批准后，还没结束的记录改为已冻结；好友两类以后新产生的也先冻结。",
+      statedBrief: { impact: "批准后这位用户所选类型里未发完的记录改为已冻结（等价格、待追回的不动）", check: "核对用户和要暂停的类型，理由写清依据。" },
+      detail: "暂停这位用户所选类型的奖励：批准后，未发完的记录改为已冻结；好友两类以后算出金额的新记录也先冻结。",
       facts: <Facts>
         <Fact k="用户">{row.user}</Fact>
         <Fact k="从哪一笔打开"><span data-mono>{row.id}</span> · {kindName(row.kind)}</Fact>
-        <Fact k="批准后">所选类型里还没结束的记录都改为已冻结<Explain label="哪些记录会被冻结" content="好友两类：冷却中和已冻结的整组按住。其他类型：等发放、冷却中、已解锁的都改为已冻结，并清掉到期时间。已提现、已冲正这些结束的记录不动。" /></Fact>
-        <Fact k="以后" tone="warn">好友两类新产生的先冻结；其他类型以后会不会继续产生，后端还没统一，不是全部停发</Fact>
+        <Fact k="批准后">所选类型里未发完的记录改为已冻结<Explain label="哪些记录会被冻结" content="好友两类：冷却中和已冻结的整组按住，等价格的不动。其他类型：等发放、冷却中、已解锁的都改为已冻结，并清掉到期时间。已提现、已冲正、待追回的记录不动。" /></Fact>
+        <Fact k="以后" tone="warn">好友两类以后算出金额的先冻结；其他类型以后会不会继续产生，后端还没统一，不是全部停发</Fact>
         <Fact k="能不能撤回">能，在「暂停名单」恢复，也要审批</Fact>
         <Fact k="谁来批准">{approverText("暂停奖励权限")}</Fact>
       </Facts>,
@@ -350,7 +351,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       effect: approvalTag("批准前继续暂停。"),
       statedBrief: { impact: friend ? "批准后没有其他冻结条件的好友奖励回到冷却中" : "批准后只解除暂停，已冻结的记录不会自动解冻", check: "核对用户和奖励类型，理由写清为什么可以恢复。" },
       detail: friend
-        ? "需要审批。批准后这类奖励以后照常产生；没有其他冻结条件的好友奖励会回到冷却期，仍有其他冻结条件的继续冻结。"
+        ? "需要审批。批准后解除这类暂停；没有其他冻结条件的好友奖励回到冷却期，风控、政策或价格条件仍可能拦住发放。"
         : "需要审批。批准后解除暂停，已冻结的不会自动解冻。",
       facts: <Facts>
         <Fact k="用户">{userCode(item.userId)}</Fact>
@@ -358,7 +359,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         <Fact k="状态"><Change from="暂停中" to="恢复" /></Fact>
         {friend
           ? <Fact k="批准后">没有其他冻结条件的好友奖励回到冷却中，到期时间不重新计算；还有其他冻结条件的继续冻结</Fact>
-          : <Fact k="批准后" tone="warn">只解除暂停；之前冻结的这类记录不会自动解冻，要在「奖励流水」逐笔解冻<Explain label="解冻后会不会自动到期" content="暂停时被冻结的旧记录，到期时间已被清空，逐笔解冻后也不会自动到期，要再提前解锁。已提后端修复（F5-BE-05）。" /></Fact>}
+          : <Fact k="批准后" tone="warn">只解除暂停；之前冻结的这类记录不会自动解冻，要在「奖励流水」逐笔解冻<Explain label="解冻后会不会自动到期" content="暂停时被冻结的旧记录，到期时间已被清空，逐笔解冻后也不会自动到期，要再提前解锁。已提后端修复。" /></Fact>}
         <Fact k="谁来批准">{approverText("暂停奖励权限")}</Fact>
       </Facts>,
       submit: async (reason) => {
@@ -389,7 +390,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         kind: "multi-field",
         fields: [
           { key: "sigma", label: "金额偏离（倍标准差 σ）", current: sigma, inputKind: "number", min: 2, max: 5, step: 0.5, required: true, help: "2–5，步长 0.5；越小异常越多" },
-          { key: "ratio", label: "L1–L7 比例偏离（%）", current: ratio, inputKind: "number", min: 10, max: 50, step: 1, required: true, help: "10–50 的整数；越小异常越多" },
+          { key: "ratio", label: "L1–L7 比例偏离（%）", current: ratio, inputKind: "number", min: 10, max: 50, step: 1, required: true, help: "这里填 10–50 的整数；越小异常越多" },
         ],
       },
       submit: async (reason, value) => {
@@ -420,7 +421,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       facts: <Facts>
         <Fact k="筛选条件">{scope.length ? scope.join("、") : "没有填，导出全部记录"}</Fact>
         <Fact k="导出多少">符合条件的全部记录，不只是这一批 20 笔</Fact>
-        <Fact k="上限" tone="warn">5 万行、10 MB，超了不给文件，请缩小筛选</Fact>
+        <Fact k="上限" tone="warn">5 万行、10 MiB，超了不给文件，请缩小筛选</Fact>
         <Fact k="内容">12 列，用户编号只留后 4 位，单号保留</Fact>
         <Fact k="下载">核对完整后马上下载，不生成下载链接</Fact>
         <Fact k="留痕">每生成一次记一条审计</Fact>
@@ -462,9 +463,12 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       change: `${change}${!ticket && record.kind === "proposal" && record.original.received ? " · 原申请建过单，批没批准还没查到" : ""}`,
       submittedAt: original.createdAt,
       state: ticket?.status === "pending" ? "pending" : isRetryExpired(original) ? "expired" : "unknown",
+      direct: record.kind === "anomaly",
       actions: <>
         <Button size="sm" onClick={() => { void ctx.recoverF5(record, "query").catch(error => ctx.toast(displayAdminError(error))); }}>查询原结果</Button>
         {retryable && <Button size="sm" onClick={() => openOriginal(record)}>按原请求重试</Button>}
+        {record.kind === "proposal" && isRetryExpired(original) && record.original.absent && !ticket
+          && <FReleaseButton label={saved?.name ?? spec?.action ?? "奖励处置"} toast={ctx.toast} onRelease={() => ctx.recoverF5(record, "release")} />}
       </>,
     };
   });
@@ -533,10 +537,10 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       recovery ? <><b>{recovery}</b> 笔待追回</> : null,
       frozen ? <><b>{frozen}</b> 笔已冻结</> : null,
     ].filter(Boolean);
-    const hint = pendingCount ? `${pendingCount} 组好友奖励在等价格，不用处理。` : undefined;
+    const hint = pendingCount ? `${pendingCount} 组好友奖励在等价格；价格长期不恢复时找值班处理。` : undefined;
     const explain = <>
-      <p>异常样本从最近 200 条奖励里挑出来；待追回、已冻结和等价格算全部记录。都不跟下方筛选变。</p>
-      <p>提交的处置要{APPROVER}在「操作记录与审批」批准，这页看不到批准进度。</p>
+      <p>异常样本从最近 200 条奖励里挑出来；待追回、已冻结算全部记录，这三项不跟下方筛选变。等价格跟着类型、用户和批次筛选变，选了状态时不显示。</p>
+      <p>提交的处置要{APPROVER}在「操作记录与审批」批准；这页显示读到的本人待批申请。</p>
     </>;
     const approvals = canReadA2 ? <Link className="rd-link" href="/platform/audit?domain=F" prefetch={false}>看待批准的处置</Link> : undefined;
     if (!parts.length) return <Conclusion state="ok" hint={hint} explain={explain} action={approvals}>没有异常样本、待追回和冻结中的奖励</Conclusion>;

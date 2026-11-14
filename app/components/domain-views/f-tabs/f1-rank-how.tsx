@@ -22,6 +22,33 @@ function list(value: unknown): unknown[] { return Array.isArray(value) ? value :
 const LOCALE_NAMES: Record<string, string> = { zh: "中文", "zh-cn": "简体中文", en: "英语", vi: "越南语" };
 /** 和共用编辑器同一个测试钩子：data-testid="published-content-rankHow"。 */
 const KIND = "rankHow";
+const CONFLICT = "版本已变化，草稿已保留，请核对后再保存。";
+
+/** 版本冲突后：运营的草稿和刚读到的最新内容逐项比，只写哪里不同，不贴原文。 */
+function draftDiff(draft: PublishedContentDocument, latest: PublishedContentDocument) {
+  const rows: { key: string; label: string; text: string }[] = [];
+  if (draft.version.trim() !== latest.version.trim()) rows.push({ key: "version", label: "版本号", text: `草稿 ${draft.version || "—"}，最新 ${latest.version || "—"}` });
+  const statusName = (value: string) => value === "PUBLISHED" ? "发布" : "草稿";
+  if (draft.status !== latest.status) rows.push({ key: "status", label: "保存为", text: `草稿选的是${statusName(draft.status)}，最新是${statusName(latest.status)}` });
+  for (const code of [...new Set([...Object.keys(draft.locales), ...Object.keys(latest.locales)])]) {
+    const label = LOCALE_NAMES[code] ?? code;
+    const mine = draft.locales[code], theirs = latest.locales[code];
+    if (!theirs) { rows.push({ key: code, label, text: "最新内容没有这种语言，草稿有" }); continue; }
+    if (!mine) { rows.push({ key: code, label, text: "最新内容有这种语言，草稿删掉了" }); continue; }
+    const a = row(mine), b = row(theirs);
+    const parts: string[] = [];
+    if (text(a.hero) !== text(b.hero)) parts.push("主说明");
+    const sa = list(a.sections).map(row), sb = list(b.sections).map(row);
+    for (let i = 0; i < Math.min(sa.length, sb.length); i++) {
+      const what = [text(sa[i].title) !== text(sb[i].title) ? "标题" : "", text(sa[i].body) !== text(sb[i].body) ? "正文" : "",
+        Number(sa[i].order) !== Number(sb[i].order) || text(sa[i].id) !== text(sb[i].id) ? "顺序或 ID" : ""].filter(Boolean).join("、");
+      if (what) parts.push(`第 ${i + 1} 段${what}`);
+    }
+    if (sa.length !== sb.length) parts.push(`段落数 草稿 ${sa.length}、最新 ${sb.length}`);
+    if (parts.length) rows.push({ key: code, label, text: `${parts.join("；")}不同` });
+  }
+  return rows;
+}
 
 export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
   const session = useAdminAuth((state) => state.session);
@@ -54,7 +81,7 @@ export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
       if (preserveDraft.current) {
         setDocument(draft => draft ? { ...value, version: draft.version, status: draft.status, locales: draft.locales } : value);
         setBaseline(value); baselineStale.current = false;
-        setError("版本已变化，草稿已保留，请核对后再保存。");
+        setError(CONFLICT);
       } else {
         setDocument(value); setBaseline(value); setLocale(Object.keys(value.locales)[0] ?? "en"); setReason("");
       }
@@ -142,13 +169,20 @@ export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
   return (
     <Panel data-testid={`published-content-${KIND}`} title="App 等级说明" icon={BookOpenText} tone="role-4"
       sub={document ? (document.hasPublishedVersion ? "App 读的是最近一次发布的版本" : "还没发布过，App 读的是内置默认说明") : undefined}
-      explain="App「等级怎么升」页面的说明文字，按语言分开写。保存草稿不替换 App 正在读的版本；保存并发布后，App 下一次打开这页就读新内容。保存直接生效，不走审批。"
+      explain="App「等级怎么升」页面的说明文字，按语言分开写。保存草稿不替换 App 正在读的版本；保存并发布后，App 下一次读取成功就换成新内容，缺用户的语言或缺固定段落时可能显示不全。保存直接生效，不走审批。"
       actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void (unknown ? checkOriginal() : refresh())}>重新读取</Button>}>
       {unknown && <Notice tone="warn" title="保存结果未知" actionBelow
         action={<Button size="sm" loading={loading} onClick={() => void checkOriginal()}>重新读取核对</Button>}>
         <p>提交时没收到确定结果，可能已经保存。这项保存后端不认重复提交，不能按原内容再提交一次；先读回核对，你填的内容还在下面。</p>
       </Notice>}
-      {error && <Notice tone={document ? "warn" : "danger"}>{error}</Notice>}
+      {preserveDraft.current && document && baseline && (() => {
+        const diff = draftDiff(document, baseline);
+        return <Notice tone="warn" title="版本已变化，草稿已保留">
+          <p>{diff.length ? `有人先保存了修订号 ${baseline.revision}。下面是你的草稿和最新内容不同的地方；保存会用草稿替换最新内容。` : `有人先保存了修订号 ${baseline.revision}，内容和你的草稿相同。`}</p>
+          {diff.length > 0 && <dl className="f1-how-diff">{diff.map((item) => <div key={item.key}><dt>{item.label}</dt><dd>{item.text}</dd></div>)}</dl>}
+        </Notice>;
+      })()}
+      {error && !(preserveDraft.current && error === CONFLICT) && <Notice tone={document ? "warn" : "danger"}>{error}</Notice>}
       {loading && !document ? <BlockState state="loading" title="正在读取等级说明" />
         : !document ? <BlockState state="error" title="等级说明读取失败，现在的状态没确认" detail={error ?? undefined} onRetry={() => void refresh()} />
           : <>
@@ -193,7 +227,7 @@ export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
                 </Fold>
               </div>
               <aside className="f1-how-phone" aria-label="App 上的样子">
-                <div className="f1-how-phone-head"><Smartphone size={14} aria-hidden />App 上的样子 · {LOCALE_NAMES[locale] ?? locale}
+                <div className="f1-how-phone-head"><Smartphone size={14} aria-hidden />App 上的样子（示意） · {LOCALE_NAMES[locale] ?? locale}
                   <StatusTag tone={status === "PUBLISHED" ? "ok" : "neutral"}>{status === "PUBLISHED" ? "保存后发布" : "草稿，App 看不到"}</StatusTag></div>
                 <div className="f1-how-phone-body">
                   {text(current.hero) ? <p className="f1-how-hero">{text(current.hero)}</p> : <p className="f1-weak">主说明还没写</p>}
@@ -203,7 +237,7 @@ export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
                       <p>{text(item.body) || <span className="f1-weak">没有正文</span>}</p>
                     </section>
                   ))}
-                  <p className="f1-how-note">App 按「顺序」从小到大排；正文里的规则占位会换成实时的等级数据（共 {ladder.length} 级）。</p>
+                  <p className="f1-how-note">示意，实际排版以 App 为准：App 按「顺序」从小到大排，正文里的规则占位换成实时的等级数据（共 {ladder.length} 级）。</p>
                 </div>
               </aside>
             </div>
@@ -218,7 +252,7 @@ export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
                 </Field>
               </div>
               <div className="rd-toolbar" data-end="">
-                <span className="rd-toolbar-note">{status === "PUBLISHED" ? "保存后 App 下次读取就是新内容" : "草稿不替换 App 正在读的版本"}</span>
+                <span className="rd-toolbar-note">{status === "PUBLISHED" ? "发布后替换 App 正在读的版本" : "草稿不替换 App 正在读的版本"}</span>
                 <Button variant="primary" loading={saving} disabledReason={unknown ? "保存结果未知，请先重新读取核对" : loading ? "正在读取" : !hasChanges ? "内容没有变化" : undefined} onClick={() => void save()}>{status === "PUBLISHED" ? "保存并发布" : "保存草稿"}</Button>
               </div>
             </div>}

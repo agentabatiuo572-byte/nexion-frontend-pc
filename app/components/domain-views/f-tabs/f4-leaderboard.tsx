@@ -21,7 +21,6 @@ const PERIODS: { value: Period; label: string; limit: number }[] = [
   { value: "month", label: "本月", limit: 100 },
   { value: "all", label: "总榜", limit: 100 },
 ];
-const BOARD_ZONE = "越南时间（UTC+7）";
 
 /** 榜单现在能不能显示：实时，或暂停且快照可用。 */
 export function leaderboardState(data: F4LeadershipPoolOverview) {
@@ -75,7 +74,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
 
   return (
     <div className="f4-stack">
-      <Panel title="排行榜" icon={Trophy} tone="role-1" sub={`按${BOARD_ZONE}切日、周、月 · 时间为${zoneNote()} · 金额 USDT`}
+      <Panel title="排行榜" icon={Trophy} tone="role-1" sub={`按业务日历切日、周、月 · 时间为${zoneNote()} · 金额 USDT`}
         explain={<>
           <p>按本期已解锁的 USDT 奖励排名，不是成交额；这里只显示前三名。</p>
           <p>参赛人数是参与排名的人数，日榜最多统计 20 人、周榜 50 人、月榜和总榜 100 人，不是全部用户。</p>
@@ -111,7 +110,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
         <dl className="f4-board-facts">
           <div><dt>{board.paused ? "暂停时奖池" : "本期奖池"}</dt><dd>{available ? <>{usdt(current!.poolUsdText ?? current!.poolUsd)}<small>USDT</small></> : "—"}</dd></div>
           <div><dt>{board.paused ? "暂停时参赛人数" : "参赛人数"}<Explain label="参赛人数怎么算" content={`参与这个榜排名的人数，这个榜最多统计 ${limit} 人，不是全部用户。`} /></dt><dd>{available ? <>{count(current!.participantCount)}<small>人</small></> : "—"}</dd></div>
-          <div><dt>有奖励的名次</dt><dd>{available ? (current!.topN > 0 ? `前 ${current!.topN} 名` : "奖池为 0，没有奖励") : "—"}</dd></div>
+          <div><dt>有奖励的名次</dt><dd>{available ? (current!.topN > 0 ? `前 ${current!.topN} 名` : "没有奖励名次") : "—"}</dd></div>
           <div><dt>更新于</dt><dd>{available ? stamp(current!.snapshotAt) : "—"}</dd></div>
         </dl>
         <p className="f4-risk"><ShieldAlert size={14} aria-hidden />本周风控命中 {count(data.leaderboardFraudHitCount)} 个账户{data.leaderboardDisqualified ? "（含已处理）" : ""}
@@ -125,7 +124,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
             what: "日、周、月、总榜每期发多少，四个一起提交。",
             when: "批准后，日、周、月榜从下一次还没结算的周期起用新金额，总榜在人工派奖时读；已发的不改。",
             effect: "调高会多发钱，提交前看兑付覆盖率。周榜如果另设了大于 0 的覆盖额，以覆盖额为准。",
-            note: periodPrizes ? undefined : "还没有批准过的四榜奖池，这里显示的是榜单现在用的金额；读不到的写「—」。",
+            note: periodPrizes ? undefined : "四榜奖池的设置没读到或读不懂，这里显示的是榜单现在用的金额（周榜是生效后的金额）；读不到的写「—」。",
             open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.periodPrize", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
           {paramRow({ name: "周榜奖池覆盖额", value: !data.leaderboardPoolLabel || /^\$?0(?:\.0+)?$/.test(data.leaderboardPoolLabel.trim()) ? "未单独设置（按四榜奖池的周榜金额）" : `${prizeText(data.leaderboardPoolLabel)} USDT`, allowed: canFund,
             what: "只给周榜用的奖池金额，大于 0 时代替四榜奖池里的周榜金额。",

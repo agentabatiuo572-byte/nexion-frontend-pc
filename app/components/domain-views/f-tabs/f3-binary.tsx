@@ -7,7 +7,7 @@
  * 请求仍使用原配置与结算合同；完整原请求、确认快照和恢复由 F 域上下文提供。
  * 筛选/分页保留，配置确认框从保存的原快照恢复，成员分组见 f3-placements。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   AlertTriangle, ArrowLeftRight, Ban, CalendarClock, CheckCircle2, CircleCheck, CircleHelp, Clock3, Hourglass, Layers3,
@@ -33,6 +33,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { FViewCtx } from "./types";
 import { F3Placements, recoverPlacement } from "./f3-placements";
 import { F3PairBar, F3RuleFlow, PERIOD_TEXT, RESIDUAL_TEXT, residualLabel, type F3Rule } from "./f3-rule";
+import { FReleaseButton } from "./f-release";
 import { CONFIG_APPROVER, F3ConfirmHost, SETTLE_APPROVER, type F3Confirm } from "./f3-confirm";
 
 const text = (value?: string | null) => operatorCopyText(value && value.trim() ? value.trim() : "—");
@@ -44,7 +45,7 @@ const fmtDecimal = (raw: string) => {
 };
 /**
  * 后端把金额先取整、再压成「$1.2k」这样的短写（OpsTeamService.moneyCompact）。不反算精确值：
- * 整数原样写，压缩过的写「约 1.2 千」，都带币种。
+ * 整数原样写，压缩过的按缩写换成整数写「约 48,200」，都带币种。
  */
 function compactMoney(label: string): string | null {
   const value = label.trim();
@@ -52,7 +53,13 @@ function compactMoney(label: string): string | null {
   const plain = /^\$(-?\d+)$/.exec(value);
   if (plain) return `${fmtInt(Number(plain[1]))} USDT`;
   const short = /^\$(-?\d+(?:\.\d+)?)([kM])$/.exec(value);
-  if (short) return `约 ${short[1]} ${short[2] === "k" ? "千" : "百万"} USDT`;
+  if (short) {
+    // 按字面移小数点，不经过浮点乘法：48.2k → 48,200。
+    const [whole, fraction = ""] = short[1].replace(/^-/, "").split(".");
+    const places = short[2] === "k" ? 3 : 6;
+    const digits = `${whole}${fraction.padEnd(places, "0").slice(0, places)}`.replace(/^0+(?=\d)/, "");
+    return `约 ${short[1].startsWith("-") ? "-" : ""}${digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",")} USDT`;
+  }
   return value.replace(/^\$/, "") + " USDT";
 }
 
@@ -71,9 +78,9 @@ function matchRatePercent(raw: string): string | null {
 const STATE: Record<string, { label: string; tone: StateTone; icon: LucideIcon; explain: string }> = {
   pending: { label: "已记账", tone: "progress", icon: Clock3, explain: "这一期的奖励已写进结算记录，记成邀请人的冷却奖励，冷却期满才能提现。这里是结算记录的状态，不随冷却进度变；每笔冷却和解锁在「奖励记录核对」看。" },
   paid: { label: "已结算", tone: "done", icon: CircleCheck, explain: "结算记录的状态是已付、已结算或已解锁。" },
-  blocked: { label: "被拦下", tone: "warn", icon: Ban, explain: "结算记录的状态是被拦下、被拒、失败或冻结，这一期没有发钱。" },
+  blocked: { label: "被拦下", tone: "warn", icon: Ban, explain: "结算记录的状态是被拦下、被拒、失败或冻结；只说明这条记录的状态，不能单凭它认定没发过钱。" },
   processing: { label: "结算中", tone: "progress", icon: Loader2, explain: "结算还在处理。" },
-  failed: { label: "结算失败", tone: "danger", icon: AlertTriangle, explain: "结算失败，没有发钱。" },
+  failed: { label: "结算失败", tone: "danger", icon: AlertTriangle, explain: "这条结算记录失败；不能单凭它认定没发过钱。" },
 };
 const stateOf = (state: string) => STATE[state.toLowerCase()] ?? { label: operatorCopyText(state), tone: "neutral" as StateTone, icon: CircleHelp, explain: "后端给的状态，这页不认识。" };
 
@@ -301,39 +308,50 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       actions={<Button size="sm" onClick={() => ctx.nav("B")}>风险提醒</Button>} />
   );
 
-  const recovery = (settlePending || configProposals.length > 0 || showPlacementRecovery) && (
-    <Notice tone="warn" title={<>有一笔手动结算的原申请还没有结论<Explain label="原申请怎么处理" content={<>
-      <p>提交时没收到确定结果，可能已经建了审批单。点「查询原结果」读回这张审批单；查不到时可以按原请求重试，后端认得出是同一次提交，不会建第二张。</p>
-      <p>超过 24 小时只能查询，查不到也不能据此认定没提交。查到审批单也只说明申请登记了，不等于已经发钱。</p>
+  const proposalTag = (original: FDomainAttempt, approver: string) => original.ticket?.status === "pending"
+    ? <StatusTag tone="progress" icon={Clock3} explain={`等${approver}在「操作记录与审批」批准；批准前不生效。`}>待审批</StatusTag>
+    : original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
+      : original.expiresAt <= Date.now()
+        ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除待确认。">已过期</StatusTag>
+        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>;
+  const release = (original: FDomainAttempt, label: ReactNode) => original.expiresAt <= Date.now() && original.absent && !original.ticket
+    ? <FReleaseButton label={label} toast={ctx.toast} onRelease={() => ctx.recoverF3(original, "release")} /> : null;
+  const recoveryCount = (settlePending ? 1 : 0) + configProposals.length + (showPlacementRecovery ? 1 : 0);
+  const recoveryOpen = [...(settlePending ? [settlePending] : []), ...configProposals].some((row) => row.ticket?.status !== "pending") || showPlacementRecovery;
+  const configName = (original: FDomainAttempt) => original.f3Snapshot && original.spec
+    ? f3ConfigurationConfirm(ctx, original.f3Snapshot, original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : original.spec.obj).title : "团队平衡奖励设置";
+  const configChange = (original: FDomainAttempt) => {
+    if (!original.spec) return "原申请内容不完整，请到「操作记录与审批」核对";
+    if (original.fingerprint !== F3_BATCH_SLOT) return `${original.spec.before} → ${original.spec.after}`;
+    const value = (key: string) => /=(.*)$/.exec(original.spec!.after.split(" / ").find((item) => item.trim().startsWith(`${key}=`)) ?? "")?.[1]?.trim();
+    const period = value("F.binary.settlePeriod"), residual = value("F.binary.residualPolicy");
+    return period || residual ? `改为 ${[period, residual ? residualLabel(residual) : undefined].filter(Boolean).join(" · ")}` : "按原申请的结算周期和残额处理";
+  };
+  const recovery = recoveryCount > 0 && (
+    <Notice tone={recoveryOpen ? "warn" : "progress"} title={<>{recoveryOpen ? `有 ${recoveryCount} 项原申请还没有结论` : `${recoveryCount} 项申请在等批准`}<Explain label="原申请怎么处理" content={<>
+      <p>原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，后端认得出是同一次提交，不会建第二张审批单。</p>
+      <p>查到审批单只说明申请登记了，不等于已经发钱。成员分组是直接保存，查询只读回现在的分组。</p>
     </>} /></>}>
-      <ul className="f3-recovery" aria-label="原申请">
+      <ul className="f3-recovery" aria-label="还没有结论的原申请">
         {settlePending && <li>
           <span className="f3-recovery-name">手动结算</span>
           <span className="f3-recovery-change">{settleOriginal ? `邀请人 ${settleOriginal.ownerUserId} · 结算日 ${settleOriginal.settlementDate}` : "原申请内容不完整，请到「操作记录与审批」核对"}</span>
           <span className="f3-recovery-time">{businessStamp(settlePending.createdAt)} 提交</span>
-          <span className="f3-recovery-state">{settlePending.ticket?.status === "pending"
-            ? <StatusTag tone="progress" icon={Clock3}>待审批</StatusTag>
-            : settlePending.expiresAt <= Date.now()
-            ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。">已过期</StatusTag>
-            : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。">结果未知</StatusTag>}</span>
-          <span className="f3-recovery-actions"><Button size="sm" onClick={openSettlement}>查询原结果</Button></span>
+          <span className="f3-recovery-state">{proposalTag(settlePending, SETTLE_APPROVER)}</span>
+          <span className="f3-recovery-actions"><Button size="sm" onClick={openSettlement}>查询原结果</Button>{release(settlePending, "手动结算")}</span>
         </li>}
         {configProposals.map(original => <li key={original.commandKey}>
-          <span className="f3-recovery-name">{original.f3Snapshot && original.spec ? f3ConfigurationConfirm(ctx, original.f3Snapshot, original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : original.spec.obj).title : original.spec?.action ?? original.fingerprint.replace(/^f-config:/, "")}</span>
-          <span className="f3-recovery-change">{original.spec ? `${original.spec.before} → ${original.spec.after}` : "原申请内容不完整，请到「操作记录与审批」核对"}</span>
+          <span className="f3-recovery-name">{configName(original)}</span>
+          <span className="f3-recovery-change">{configChange(original)}</span>
           <span className="f3-recovery-time">{businessStamp(original.createdAt)} 提交</span>
-          <span className="f3-recovery-state">{original.ticket?.status === "pending"
-            ? <StatusTag tone="progress" icon={Clock3}>待审批</StatusTag>
-            : original.expiresAt <= Date.now()
-              ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。">已过期</StatusTag>
-              : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。">结果未知</StatusTag>}</span>
-          <span className="f3-recovery-actions"><Button size="sm" onClick={() => openConfig(original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : original.spec?.obj ?? original.fingerprint.replace(/^f-config:/, ""), original)}>查询原结果</Button></span>
+          <span className="f3-recovery-state">{proposalTag(original, CONFIG_APPROVER)}</span>
+          <span className="f3-recovery-actions"><Button size="sm" onClick={() => openConfig(original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : original.spec?.obj ?? original.fingerprint.replace(/^f-config:/, ""), original)}>查询原结果</Button>{release(original, configName(original))}</span>
         </li>)}
         {showPlacementRecovery && placementOriginal && <li>
           <span className="f3-recovery-name">成员分组</span>
           <span className="f3-recovery-change">邀请人 {placementOriginal.intent.ownerUserId} · 成员 {placementOriginal.intent.memberUserId} → {placementOriginal.intent.leg} 组</span>
           <span className="f3-recovery-time">{businessStamp(placementOriginal.createdAt)} 提交</span>
-          <span className="f3-recovery-state"><StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag></span>
+          <span className="f3-recovery-state"><StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经分好组。查询只读回现在的分组，有结论前不要换个组重分。">结果未知</StatusTag></span>
           <span className="f3-recovery-actions"><Button size="sm" disabled={placementChecking} onClick={() => void checkPlacement()}>查询原结果</Button></span>
         </li>}
       </ul>
@@ -359,7 +377,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       : latest
         ? <Conclusion state="neutral" icon={Scale}
             explain={<><p>最近一期是结算记录里最晚的结算日，按最近 100 条记录算；金额是后端取整后的整数，被拦下的不算。</p><p>这一期还没结算时，页面算不出会发多少：金额在结算时按当时的订单额、比例和上限算。</p></>}>
-            最近一期 {latest.date}：{latest.owners.size} 位邀请人记了 {fmtInt(latest.paid)} USDT 奖励</Conclusion>
+            最近一期 {latest.date}：{latest.owners.size} 位邀请人有结算记录，记账 {fmtInt(latest.paid)} USDT</Conclusion>
         : <Conclusion state="neutral" icon={Scale} explain="结算记录在后端结算后才有；这一期会发多少，要到结算时按当时的订单额、比例和上限算。">
             团队平衡奖励在发放，{PERIOD_TEXT[periodEff]?.when ?? "按周期结算"}；还没有结算记录</Conclusion>;
 
@@ -392,7 +410,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         <F3RuleFlow rule={rule} capAction={capAction} />
         <p className="f3-example">
           {example
-            ? <>最近一条：{example.user} 在 {example.settlementDate || "—"} 的结算，A 组 {fmtInt(example.a)}、B 组 {fmtInt(example.b)}，匹配 {fmtInt(example.match)}，记账 {example.today ? `${fmtInt(example.today)} USDT` : "—"}（{stateOf(example.state).label}，整数）</>
+            ? <>最近一条：{example.user} 在 {example.settlementDate || "—"} 的结算，A 组 {fmtInt(example.a)} USDT、B 组 {fmtInt(example.b)} USDT，匹配 {fmtInt(example.match)} USDT，记账 {fmtInt(example.today)} USDT（{stateOf(example.state).label}，整数）</>
             : "还没有结算记录，第一笔结算后这里写出一条真实的例子。"}
           <Explain label="这条例子怎么来的" content="取结算记录里最新的一条，金额是后端取整后的整数；这条记录用的是当时的门槛、比例和上限，不一定是现在的。" />
         </p>
@@ -401,7 +419,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       <Panel title="各团队 A、B 两组" icon={ArrowLeftRight} tone="role-2" sub={`最近 ${fmtInt(rows.length)} 条结算记录 · 新到旧 · 金额是整数`}
         explain={<>
           <p>一条结算记录是一位邀请人在一个结算日的结算。后端最多给最近 100 条，按结算日从新到旧，不是全部邀请人；同一位邀请人可能有几天的记录。</p>
-          <p>每一行 A 组往左、B 组往右，按这一行较大的一组定长度，看哪边小、差多少；实色是两组匹配上的部分，灰色是多出来没匹配上的；刻线是现在的门槛（当时的门槛可能不同）。行和行之间看数字比大小。</p>
+          <p>每一行 A 组往左、B 组往右，按这一行较大的一组定长度，看哪边小、差多少；实色是较小一组的订单额，灰色是较大一组多出来的；实际匹配额要扣掉已结算的部分、受每期上限限制，可能比实色少；刻线是现在的门槛（当时的门槛可能不同）。行和行之间看数字比大小。</p>
           <p>接口不返回每一期的残额和批准人；手动结算谁批的到「操作记录与审批」看。</p>
         </>}
         actions={<>
@@ -436,7 +454,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             <thead><tr>
               <Th>邀请人</Th>
               <Th className="f3-col-date">结算日</Th>
-              <Th><span className="f3-pair-head"><span>A 组</span><span>B 组<Explain label="两组对比怎么看" side="bottom" content="每一行按这一行较大的一组定长度。实色是匹配上的部分，灰色是多出来没匹配上的；刻线和「过没过门槛」按现在的门槛判断，当时的门槛可能不同。" /></span></span></Th>
+              <Th><span className="f3-pair-head"><span>A 组</span><span>B 组<Explain label="两组对比怎么看" side="bottom" content="每一行按这一行较大的一组定长度。实色是较小一组的订单额，灰色是较大一组多出来的；实际匹配额还要扣掉已结算的部分、受每期上限限制，可能更少；刻线和「过没过门槛」按现在的门槛判断，当时的门槛可能不同。" /></span></span></Th>
               <Th align="right">奖励 / 匹配</Th>
               <Th>状态</Th>
             </tr></thead>
@@ -461,9 +479,9 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
                 <Tr key={group.date}>
                   <Td><Cell main={group.date} num /></Td>
                   <Td align="right"><Cell main={`${fmtInt(group.owners.size)} 人`} num /></Td>
-                  <Td align="right"><Cell main={group.paid ? `${fmtInt(group.paid)} USDT` : "—"} num /></Td>
-                  <Td align="right"><Cell main={group.matched ? `${fmtInt(group.matched)} USDT` : "—"} num /></Td>
-                  <Td align="right"><Cell main={group.blocked ? `${fmtInt(group.blocked)} 条` : "—"} num /></Td>
+                  <Td align="right"><Cell main={`${fmtInt(group.paid)} USDT`} num /></Td>
+                  <Td align="right"><Cell main={`${fmtInt(group.matched)} USDT`} num /></Td>
+                  <Td align="right"><Cell main={`${fmtInt(group.blocked)} 条`} num /></Td>
                 </Tr>
               ))}
               {byDate.length === 0 && <TableMessage columns={5}>还没有结算记录</TableMessage>}
@@ -478,28 +496,30 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <ConfigRow name="每组订单额门槛"
             what="A、B 两组这一期的订单额都要到这个数，才参与结算。"
             when={whenText}
-            effect="调低：更多团队能过门槛，平台会多付钱，提交时后端查兑付覆盖率。调高：更少团队能拿到奖励。"
-            value={<span className="f3-cfg"><span className="f3-cfg-value">{thresholdText ?? "未配置"}</span><span className="f3-cfg-dir">调低会多付钱</span></span>}
+            effect="调低：更多团队能过门槛，平台可能多付钱；批准执行和实际结算时查兑付覆盖率。调高：更少团队能拿到奖励。"
+            value={<span className="f3-cfg"><span className="f3-cfg-value">{thresholdText ?? "未配置"}</span><span className="f3-cfg-dir">调低可能多付钱</span></span>}
             action={canConfigure ? <Button size="sm" disabledReason={configBlocked("F.binary.threshold")} onClick={openThreshold}>调整</Button> : undefined} />
           <ConfigRow name="匹配比例"
             what="奖励 = 较小一组的订单额 × 这个比例，再受每期上限限制。按百分比存，1 就是 1%。"
             when={whenText}
-            effect="调高：同样的订单额发更多奖励，平台会多付钱，提交时后端查兑付覆盖率。调低：发得更少。"
+            effect="调高：同样的订单额发更多奖励，平台可能多付钱；批准执行和实际结算时查兑付覆盖率。调低：发得更少。"
             note="App 目前读不了小于 0.00001% 的比例，已登记缺陷；后端允许更小的值。"
-            value={<span className="f3-cfg"><span className="f3-cfg-value" data-warn={ratePercent === null ? "" : undefined}>{rateEff}</span><span className="f3-cfg-dir">调高会多付钱</span></span>}
+            value={<span className="f3-cfg"><span className="f3-cfg-value" data-warn={ratePercent === null ? "" : undefined}>{rateEff}</span><span className="f3-cfg-dir">调高可能多付钱</span></span>}
             action={canConfigure ? <Button size="sm" disabledReason={configBlocked("F.binary.matchRate")} onClick={openRate}>调整</Button> : undefined} />
           <ConfigRow name="结算周期和残额处理"
             what={`多久结算一次，以及两组匹配后没匹配上的订单额怎么处理。日子按业务日历（${zone}）划分。`}
             when="两项同一张审批单，批准时一起写入；之后每一次结算按新设置判断到没到结算日、怎么扣已匹配的订单额，不是从下一期才开始。已经记账的不重算。"
             effect={`改成转结：${RESIDUAL_TEXT.转结.what}`}
             note="只靠委托发起审批的账号，这一项会被后端拒绝（整批修改还没配权限，已提后端）。"
-            value={<span className="f3-cfg"><span className="f3-cfg-value">{text(periodEff)} · {residualLabel(text(residualEff))}</span><span className="f3-cfg-dir">改成转结会多付钱</span></span>}
+            value={<span className="f3-cfg"><span className="f3-cfg-value">{text(periodEff)} · {residualLabel(text(residualEff))}</span><span className="f3-cfg-dir">改成转结可能多付钱</span></span>}
             action={canConfigure ? <Button size="sm" disabledReason={configBlocked(F3_BATCH_SLOT)} onClick={openPeriod}>调整</Button> : undefined} />
           <ConfigRow name="自动分组"
             what="开启时，结算时把没分组的直接好友补到人数少的一组（一样多先分 A），已分的不动；按人数，不按订单额。"
             when="提交审批，批准后写入；开启不会马上给所有人分组，到结算时才补。"
             effect="关闭：有直接好友没分组的邀请人，结算会被拦下，要在下面「成员分组」手动分；已经分好的不撤销。"
-            value={<span className="f3-cfg"><StatusTag tone={spillOn ? "ok" : "neutral"} icon={spillOn ? CheckCircle2 : Ban}>{spillOn ? "已启用" : "已关闭"}</StatusTag><span className="f3-cfg-dir">改了要批准</span></span>}
+            value={<span className="f3-cfg">{f3SpilloverState(cfg?.spillover) === null
+              ? <StatusTag tone="danger" icon={Ban} explain="存的值认不出是开启还是关闭，结算时整期被拦下；重新开启或关闭一次。">配置无效</StatusTag>
+              : <StatusTag tone={spillOn ? "ok" : "neutral"} icon={spillOn ? CheckCircle2 : Ban}>{spillOn ? "已启用" : "已关闭"}</StatusTag>}<span className="f3-cfg-dir">改了要批准</span></span>}
             sub={`近 7 天自动分了 ${fmtInt(ctx.f3AutoPlacement7dCount)} 人`}
             action={canConfigure ? <Button size="sm" disabledReason={configBlocked("F.binary.spillover")} onClick={openSpillover}>{spillOn ? "关闭" : "开启"}</Button> : undefined} />
           <ConfigRow name="归零说明"
@@ -511,17 +531,18 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <ConfigRow name="发放"
             what="暂停时，全平台之后的团队平衡奖励结算都被拦下，不发钱。"
             when="暂停和恢复都要提交审批，批准后写入，之后的结算立即按新状态判断。"
-            effect="暂停：已经记账的不收回。恢复：照常发钱，暂停期间的周期不自动补结。"
-            note={pausedRaw !== undefined && !["on", "off"].includes(pausedRaw) ? `存的值是「${pausedRaw}」。后端把 true、1、on 都当暂停；这页只把 on 当暂停。` : undefined}
-            value={<span className="f3-cfg">{binaryPaused
-              ? <StatusTag tone="warn" icon={PauseCircle}>已暂停</StatusTag>
+            effect="暂停：已经记账的不收回。恢复：之后照常结算，仍要满足门槛、分组、上限和兑付覆盖率；暂停期间的周期不自动补结。"
+            note={pausedRaw !== undefined && !["on", "off"].includes(pausedRaw) ? `存的值是「${pausedRaw}」，不是 on 或 off；这页和结算按同一套规则判断是不是暂停。` : undefined}
+            value={<span className="f3-cfg">{f3PauseState(pausedRaw) === null
+              ? <StatusTag tone="danger" icon={Ban} explain="存的值认不出是暂停还是发放，结算时整期被拦下；重新选一次暂停或恢复。">配置无效</StatusTag>
+              : binaryPaused ? <StatusTag tone="warn" icon={PauseCircle}>已暂停</StatusTag>
               : <StatusTag tone="ok" icon={PlayCircle}>发放中</StatusTag>}<span className="f3-cfg-dir">{binaryPaused ? "恢复会继续付钱" : "只在紧急情况下暂停"}</span></span>}
             action={canPause ? <Button size="sm" variant={binaryPaused ? "primary" : "danger-outline"} disabledReason={configBlocked("F.binary.paused")} onClick={openPause}>{binaryPaused ? "恢复发放" : "暂停发放"}</Button> : undefined} />
           <ConfigRow name="团队平衡奖励每日上限"
             what="每位邀请人每天最多记多少奖励；每期上限 = 每日上限 × 这一期的天数。"
             where="在「运营阶段设置」按运营月份设置，这里只读。"
             when="跟随运营阶段设置的当前月份；结算时读当时的值。"
-            effect="后端只给取整并缩写的金额，精确值在运营阶段设置看。"
+            effect="这里显示的是精确值；要改去运营阶段设置。"
             value={<span className="f3-cfg"><span className="f3-cfg-value" data-proof="f3-cap-h1">{capText ?? "—"}</span><span className="f3-cfg-dir">第 {dailyCap?.currentMonth || "—"} 个月 · {text(dailyCap?.currentPhase)} · 只读</span></span>}
             action={capAction} />
         </ConfigList>
@@ -566,7 +587,7 @@ function RecordRow({ row, threshold }: { row: F3Settlement; threshold: number | 
           <span className="f3-pair-note">{smaller ? `${smaller} 组少 ${fmtInt(diff)}` : "两组一样"} · {pass}</span>
         </span>
       </Td>
-      <Td align="right"><Cell num main={row.today ? `${fmtInt(row.today)} USDT` : "—"} sub={`匹配 ${row.match ? fmtInt(row.match) : "—"}`} /></Td>
+      <Td align="right"><Cell num main={`${fmtInt(row.today)} USDT`} sub={`匹配 ${fmtInt(row.match)} USDT`} /></Td>
       <Td><StatusTag tone={state.tone} icon={state.icon} explain={state.explain}>{state.label}</StatusTag></Td>
     </Tr>
   );
@@ -606,10 +627,10 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
       </Facts>
       <F3RuleFlow compact rule={rule} next={value === undefined ? undefined : { threshold: `${fmtDecimal(value)} USDT` }} changed={["threshold"]} />
     </>,
-    coverageLead: "调低门槛会让更多团队拿到奖励，平台会多付钱",
-    coverageCheck: "提交审批时后端按这个方向核对兑付覆盖率；每一笔结算时还会按实际要付的金额再查一次。",
+    coverageLead: "调低门槛会让更多团队拿到奖励，平台可能多付钱",
+    coverageCheck: "批准执行时后端查兑付覆盖率；每一笔结算时还会按实际要付的金额再查一次。",
     detail: `每组订单额门槛 · 现在 ${text(thresholdText)}。`,
-    statedBrief: { impact: "批准后，之后的结算按新门槛判断两组过没过；已经记账的奖励不变。", check: "核对新门槛和单位（USDT）；调低会多付钱，先看兑付覆盖率。" },
+    statedBrief: { impact: "批准后，之后的结算按新门槛判断两组过没过；已经记账的奖励不变。", check: "核对新门槛和单位（USDT）；调低可能多付钱，先看兑付覆盖率。" },
     submit: async (reason, _fields, newValue) => {
       const value = (newValue ?? "").trim();
       if (!/^(?:\d+(?:\.\d{1,6})?|\.\d{1,6})$/.test(value)) throw new Error("门槛须填写普通数字，最多 6 位小数，不会自动取整。");
@@ -633,10 +654,10 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
       </Facts>
       <F3RuleFlow compact rule={rule} next={value === undefined ? undefined : { rate: `${value}%` }} changed={["rate"]} />
     </>,
-    coverageLead: "调高比例会让同样的订单额发更多奖励，平台会多付钱",
-    coverageCheck: "提交审批时后端按这个方向核对兑付覆盖率；每一笔结算时还会按实际要付的金额再查一次。",
+    coverageLead: "调高比例会让同样的订单额发更多奖励，平台可能多付钱",
+    coverageCheck: "批准执行时后端查兑付覆盖率；每一笔结算时还会按实际要付的金额再查一次。",
     detail: `较小一组订单额 × 这个比例 = 奖励 · 现在 ${rateEff}。`,
-    statedBrief: { impact: "批准后，之后的结算按新比例算奖励，还要受每期上限限制；已经记账的奖励按当时的比例，不变。", check: "按百分比填，1 就是 1%；调高会多付钱，先看兑付覆盖率。" },
+    statedBrief: { impact: "批准后，之后的结算按新比例算奖励，还要受每期上限限制；已经记账的奖励按当时的比例，不变。", check: "按百分比填，1 就是 1%；调高可能多付钱，先看兑付覆盖率。" },
     submit: async (reason, _fields, newValue) => {
       const value = (newValue ?? "").trim();
       if (!/^(?:\d+(?:\.\d{1,10})?|\.\d{1,10})$/.test(value)) throw new Error("比例须填写普通数字，最多 10 位小数，不会自动四舍五入。");
@@ -727,7 +748,7 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
     effect: <StatusTag tone="progress" filled explain={`${CONFIG_APPROVER}（需有团队平衡奖励暂停权限和审批批准权限）在「操作记录与审批」批准后写入；批准前仍是暂停。`}>批准后生效</StatusTag>,
     facts: <Facts>
       <Fact k="发放"><Change from="已暂停" to="发放中" /></Fact>
-      <Fact k="之后的结算" tone="warn">照常结算、照常发钱，平台会继续付这项奖励；仍要满足门槛、分组、每期上限和兑付覆盖率</Fact>
+      <Fact k="之后的结算" tone="warn">恢复结算；仍要满足门槛、分组、每期上限和兑付覆盖率才发钱</Fact>
       <Fact k="暂停期间的周期">恢复后不自动补结</Fact>
       <Fact k="要补的话">按邀请人和结算日逐个手动结算</Fact>
     </Facts>,

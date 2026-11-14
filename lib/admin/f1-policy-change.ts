@@ -219,7 +219,7 @@ export async function submitF1Policy(
       }
       if (ticket.status === "pending") attempts.remember(fingerprint, key, { ...record(), ticket, received: true, absent: false });
       else attempts.forget(fingerprint, key);
-      const status = { pending: " · 等待另一位有审批权的超管批准，当前配置未变", approved: " · 已批准", rejected: " · 已驳回", withdrawn: " · 已撤回", expired: " · 已过期" };
+      const status = { pending: " · 等另一位超级管理员批准，当前配置未变", approved: " · 已批准", rejected: " · 已驳回", withdrawn: " · 已撤回", expired: " · 已过期" };
       acknowledgement = `审批单 ${ticket.id}${status[ticket.status]}`;
     } else {
       if (!previous?.received) {

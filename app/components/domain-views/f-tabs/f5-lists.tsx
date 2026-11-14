@@ -21,7 +21,7 @@ export function F5PendingList({ rows, count, statusFiltered }: { rows: readonly 
   return (
     <Panel flush icon={Clock3} tone="role-3" title="等价格的奖励" sub={statusFiltered ? "选了状态时不返回" : `${count} 组 · 最多 100 组 · 时间为${zoneNote()}`}
       explain={<>
-        <p>好友购买和好友设备收益两类，要等 UVT 价格可用才能算出金额。算出来以前没有到账，也不能在这里处置；算出来的记录会出现在「奖励流水」。</p>
+        <p>好友购买和好友设备收益两类，要等 UVT 价格可用才能算出金额。算出来以前没有到账，也不能在这里处置；算出来的记录出现在「奖励流水」，也可能被拒或直接冻结。</p>
         <p>跟着「奖励流水」里的类型、用户编号、注册月份筛选；不看币种；选了状态时后端不返回这一项。</p>
       </>}>
       <Table label="等价格的奖励" className="f5-table f5-pending-table">
@@ -38,7 +38,7 @@ export function F5PendingList({ rows, count, statusFiltered }: { rows: readonly 
                   <Td><Cell main={<span data-mono>{row.sourceRef}</span>} sub={operatorNicknameText(row.sourceUserName)} title={row.sourceRef} /></Td>
                   <Td align="right"><Cell num main={<Money value={row.basisUsdt} currency="USDT" />} /></Td>
                   <Td><Cell main={<StatusTag tone="neutral" icon={Clock3}>等价格</StatusTag>} sub="USDT、UVT 都还没算" /></Td>
-                  <Td><Cell num main={timeText(row.ts)} sub={row.unlockAt ? `到期 ${timeText(row.unlockAt)}` : "算出金额后才定到期时间"} /></Td>
+                  <Td><Cell num main={timeText(row.ts)} sub={row.unlockAt ? `到期 ${timeText(row.unlockAt)}` : "没有到期时间"} /></Td>
                 </Tr>
               ))}
         </tbody>
@@ -80,8 +80,8 @@ export function F5SuspensionList({ rows, canSuspend, onResume }: { rows: readonl
     <Panel flush icon={PauseCircle} tone="role-3" title="暂停名单" sub={`${rows.length} 条 · 最多 100 条 · 时间为${zoneNote()}`}
       explain={<>
         <p>暂停中的用户和奖励类型，一行一类，算全部用户，不跟筛选变。恢复也要提交审批。</p>
-        <p>暂停批准后，这位用户这类奖励里还没结束的记录都被冻结；好友两类以后新产生的也先冻结。其他类型以后会不会继续产生，后端还没有统一，不要当成全部停发。</p>
-        <p>恢复后，没有其他冻结条件的好友奖励回到冷却中；其他类型已冻结的记录不会自动解冻，要逐笔解冻。</p>
+        <p>暂停批准后，这位用户这类奖励里未发完的记录被冻结（等价格、待追回的不动）；好友两类以后算出金额的也先冻结。其他类型以后会不会继续产生，后端还没有统一，不要当成全部停发。</p>
+        <p>恢复后，没有其他冻结条件的好友奖励回到冷却中；其他类型已冻结的记录不会自动解冻，要逐笔解冻，暂停时清掉到期时间的旧记录解冻后也不会自动到期。</p>
       </>}>
       <Table label="暂停名单" className="f5-table f5-suspension-table">
         <thead><tr><Th>用户</Th><Th>暂停的奖励</Th><Th>原因</Th><Th>操作人</Th><Th>暂停时间</Th>{canSuspend && <Th sticky="end">操作</Th>}</tr></thead>

@@ -101,8 +101,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       check: "执行时按当时的设置和票数重新计算；不检查兑付覆盖率。",
     },
     completionCopy: approvalCopy("F4 资金权限"),
-    coverageLead: "这次结算会真实发钱",
-    coverageCheck: "后端执行这次结算时不检查兑付覆盖率，下面是现在读到的数，请自己判断。",
+    coverageLead: "这次结算按算出的金额真实发钱",
+    coverageCheck: "后端执行这次结算时不检查兑付覆盖率。下面是确认框打开时记下的覆盖率，后端没读到时也是 0，请自己判断。",
     facts: <Facts>
       <Fact k={settled ? "本周已结算（实发）" : "本周池（估算）"} lead tone="role-1" unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
       <Fact k="有资格分的人">{count(data.participantCount)} 人（{unlockLabel}且有票）</Fact>
@@ -124,7 +124,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       effect: approvalTag(), confirmLabel: "提交审批",
       statedBrief: {
         impact: "批准后，之后还没结算的团队激励池按新票数分；已经发出的不变。票数改成 0 后这个等级不再显示在这页，也不能在这页改回。",
-        check: "调高票数时提醒先看兑付覆盖率；后端只接受 0 到 1,000,000 的整数，小数会被向下取整。",
+        check: "调高票数时先看兑付覆盖率；填 0 到 1,000,000，带小数的后端只取整数部分。",
       },
       completionCopy: approvalCopy("F4 写权限"),
       detail: `${vote.v} 当前 ${vote.votes} 票。票数越多，这个等级每人分到的团队激励池越多；池的总额不会因此变大。`,
@@ -221,7 +221,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       check: "已经暂停时会被拒绝；保存四个榜的快照失败时整次不生效。",
     },
     completionCopy: approvalCopy("榜单处置权限"),
-    detail: board.paused ? "恢复后榜单重新更新，之后的周期照常发奖。" : "暂停后榜单停在当前名次，榜单奖励暂停发放，团队激励池不受影响。",
+    detail: board.paused ? "恢复后榜单重新更新，之后的周期按当时的规则发奖。" : "暂停后榜单停在当前名次，榜单奖励暂停发放，团队激励池不受影响。",
   };
       break;
     }
@@ -235,8 +235,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       check: "总榜成功派过一次后再执行不会再发；奖池为 0 或没有人上榜时不发钱。后端执行时不检查兑付覆盖率。",
     },
     completionCopy: approvalCopy("F4 资金权限"),
-    coverageLead: "这次派奖会真实发钱",
-    coverageCheck: "后端执行这次派奖时不检查兑付覆盖率，下面是现在读到的数，请自己判断。",
+    coverageLead: "这次派奖按算出的金额真实发钱",
+    coverageCheck: "后端执行这次派奖时不检查兑付覆盖率。下面是确认框打开时记下的覆盖率，后端没读到时也是 0，请自己判断。",
     facts: <Facts>
       <Fact k="总榜奖池" lead tone="role-1" unit={ppAllTime === "" ? undefined : "USDT"}>{prizeShown(ppAllTime)}</Fact>
       <Fact k="每个名次发多少">按名次分份数：第 1 名 N 份，往后每名少 1 份，最后一名 1 份；N 是上榜人数</Fact>
@@ -255,7 +255,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     title: `取消 ${member.userId} 的周榜资格`, effect: approvalTag(), confirmTone: "danger", confirmLabel: "提交取消资格",
     statedBrief: {
       impact: "批准后这个人移出周榜排名和周榜派奖；不冻结账号，不追回已发的奖励。不会在下周自动恢复：之后每一周的周榜都一直不算这个人。",
-      check: "后端在提交和执行时都要找到这个人本周的风险记录，找不到会被拒绝。",
+      check: "后端在提交和执行时都要找到这个人本周的风险记录或生效中的关联账户簇，找不到会被拒绝。",
     },
     completionCopy: approvalCopy("榜单处置权限"),
     facts: <KeyValues rows={[
@@ -346,7 +346,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       },
       completionCopy: "提交后由另一位管理员在「操作记录与审批」批准才生效。批准人需有大使最终批准权限和审批权限，不能核验过这一版材料，也不能是你自己。",
       coverageLead: "批准会开通一笔预算额度",
-      coverageCheck: "批准执行时检查兑付覆盖率。",
+      coverageCheck: "批准执行时检查兑付覆盖率；下面的覆盖率后端没读到时也是 0。",
       facts: <Facts>
         <Fact k="申请金额" lead tone="role-1" unit="USDT">{decimalText(packet!.budgetUsdt)}</Fact>
         <Fact k="认可金额">{packet!.financeReview.recognizedBudgetUsdt == null ? "尚未认可" : `${decimalText(packet!.financeReview.recognizedBudgetUsdt)} USDT`}</Fact>

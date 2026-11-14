@@ -89,8 +89,8 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
       explain={<>
         <p>数的是八类奖励的全部记录，不跟下方的筛选变。点一个状态，下方列表只看这个状态；再点一次取消。</p>
         <p>合计是八类、所有状态的金额相加，包括已冲正和已拒绝，不是实际发出去的钱；两种币分开算，不相加。</p>
-        <p>等价格的好友奖励在 UVT 价格可用后算出金额，进入冷却中；冷却到期自动解锁，也可以提交审批提前解锁；用户提走后是已提现。</p>
-        <p>冷却中、已解锁、已冻结三种都能冲正；补发会生成一笔新记录，原记录不变。</p>
+        <p>等价格的好友奖励在 UVT 价格可用后算出金额，进入冷却中（也可能被拒或直接冻结）；有到期时间的到期后系统解锁；非好友奖励也可以提交审批提前解锁。已提现是后端的结束状态，不代表这页核过出款。</p>
+        <p>冷却中、已解锁、已冻结一般都能冲正，没有结算组的旧已冻结记录除外；补发会生成一笔新记录，原记录不变。</p>
         <p>只有冷却中和已解锁有金额，其余状态后端只给笔数。金额是后端汇总时四舍五入到两位小数的数。</p>
       </>}>
       <div className="f5-flow" role="group" aria-label="奖励状态流程">
@@ -113,7 +113,7 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
         <div className="f5-flow-branch">
           <div className="f5-flow-branch-col" data-col="pending">
             <FlowLink dir="none" label="另有旧记录" />
-            {node("rejected", { note: "以前没发出去" })}
+            {node("rejected", { note: "当时被拒发" })}
           </div>
           <div className="f5-flow-branch-col" data-col="cooling">
             <FlowLink dir="both" label="冻结 / 解冻" tone="action" />
@@ -121,7 +121,7 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
           </div>
           <div className="f5-flow-branch-col" data-col="unlocked">
             <FlowLink dir="down" label="冲正" tone="action" />
-            {node("reversed", { note: "非好友奖励可补发" })}
+            {node("reversed", { note: "非好友奖励可申请补发" })}
           </div>
           <div className="f5-flow-branch-col" data-col="withdrawn">
             <FlowLink dir="down" label="余额不够收回" />
@@ -131,7 +131,7 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
       </div>
       <Fold inset title="各类奖励的冷却期" icon={Layers3}
         summary={policy.length ? `${policy.length} 类 · ${policy.filter((item) => item.days > 0).map((item) => `${KIND_LABELS[item.kind] ?? "未知类型"} ${item.days} 天`).join("、") || "都是即时"}` : "后端没有返回"}
-        explain="好友购买和好友设备收益两类的冷却期按「团队奖励设置」里的好友奖励政策，不在这张表里。">
+        explain="好友购买的冷却期跟七层的统一冷却，好友设备收益的冷却期在好友奖励政策里设，都不在这张表里。">
         {policy.length ? (
           <Table label="各类奖励的冷却期" className="f5-cool-table">
             <thead><tr><Th>奖励类型</Th><Th align="right">冷却期</Th><Th>说明</Th></tr></thead>

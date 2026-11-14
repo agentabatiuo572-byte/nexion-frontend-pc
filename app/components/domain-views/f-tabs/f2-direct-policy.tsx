@@ -106,7 +106,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
               {ctx.f2DirectPolicyError && <Notice tone="danger" title="好友奖励政策没读到">{ctx.f2DirectPolicyError} 已填的内容还在，可以刷新重试。</Notice>}
               {!allowed && <Notice tone="neutral" title="只能查看">改好友奖励政策需有「团队奖励比例」权限。</Notice>}
               {policy && !policy.sevenLayerEnabled && <Notice tone="neutral" title="整体结算启用后才能改">现在只能查看；启用后刷新页面即可修改。</Notice>}
-              {policy && !policy.configured && <Notice tone="neutral" title="还没设置">下面的数字是默认占位，不代表正在生效；好友购买奖励现在全额发 USDT。</Notice>}
+              {policy && !policy.configured && <Notice tone="neutral" title="还没设置">下面的数字是默认占位，不代表正在生效；好友购买奖励现在不拆分，按第 1 层的 UVT 系数仍可能另发 UVT。</Notice>}
               {policy?.nexUsdtPrice === null && <Notice tone="warn" title="UVT 价格读不到">开了拆分的奖励，USDT 和 UVT 会一起等价格恢复后再算，不会先发 USDT。</Notice>}
               {stale && <Notice tone="warn" title="政策刚被别人改过">你填的内容还在。点「放弃修改并刷新」读最新的政策后重新填写。</Notice>}
               {submitted && <Notice tone="progress" title={<>已提交，等另一位管理员批准<StatusTag tone="warn" icon={Clock3}>待审批</StatusTag></>}

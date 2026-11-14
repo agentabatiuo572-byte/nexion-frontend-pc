@@ -122,7 +122,7 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
     const rewardText = reward.unit ? `${reward.main} ${reward.unit}` : reward.main;
     const from = PAYOUT_STATUS[record.status]?.label ?? "状态未知";
     const impact = action === "reissue"
-      ? kind === "fund" ? `批准后重新记一笔 ${rewardText} 应付：有邀请人的付给邀请人并立即可用，没有的付给用户本人、先进冷却期。批准时检查兑付覆盖率。`
+      ? kind === "fund" ? `批准后重新记一笔 ${rewardText} 应付，收款人按原发放单：原单有邀请人的付给那位邀请人并立即可用，没有的付给用户本人、先进冷却期。批准时检查兑付覆盖率。`
         : kind === "sku" ? "批准后恢复原商品的履约和权益，并核对库存；库存不够或状态变了会被拒。"
           : kind === "voucher" ? "只更新这笔发放记录的状态，不会补发或收回用户手里的券。"
             : "只更新这笔发放记录的状态，不会补发或收回自定义奖品。"
@@ -147,10 +147,11 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
         {kind === "fund" ? <Fact k="奖励" lead tone="role-2" unit={reward.unit}>{reward.main}</Fact> : <Fact k="奖励">{rewardText}</Fact>}
         <Fact k="发放单">{record.payoutId}</Fact>
         <Fact k="用户">用户 {record.userId} · {dash(record.rankCode)}</Fact>
+        {action === "reissue" && kind === "fund" && <Fact k="收款人">{record.sponsorUserId ? `邀请人 ${record.sponsorUserId}（原单）` : "用户本人（原单没有邀请人）"}</Fact>}
         <Fact k="状态"><Change from={from} to={action === "reissue" ? "已重发" : "已冲正"} /></Fact>
       </Facts>,
       statedBrief: { impact: `${impact}不改奖励模板，也不改用户等级。`, check: "核对发放单、用户和奖励；理由写清依据或工单号。" },
-      detail: `${action === "reissue" ? "只有已冲正的奖励可以重新发放，平台会多付钱。" : "只有已发放、已重发或待发放的奖励可以冲正。"}提交后需确认才生效。`,
+      detail: `${action === "reissue" ? `只有已冲正的奖励可以重新发放${kind === "fund" ? "，平台会再付一次这笔钱" : ""}。` : "只有已发放、已重发或待发放的奖励可以冲正。"}提交后需批准才生效。`,
       submit: async (reason) => ctx.proposePayoutAction(record.payoutId, action, reason),
     });
   };

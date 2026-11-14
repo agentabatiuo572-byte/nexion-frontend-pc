@@ -20,11 +20,13 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { f1ConditionLabels, listF1PolicyOperations, pendingF1Policy, type F1ConditionField, type F1PolicyEditor } from "@/lib/admin/f1-policy-change";
 import { fetchUserProfilesPage } from "@/lib/admin/user360-client";
+import { pendingF1RankHow } from "@/lib/admin/f1-rank-how-save";
 import type { F1VRankRow } from "@/lib/admin/f1-client";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { BusinessFormValue } from "../design-kit";
 import type { FViewCtx } from "./types";
-import { F1PolicyConfirm, F1RemovalRecovery } from "./f1-policy-confirm";
+import { F1PolicyConfirm } from "./f1-policy-confirm";
+import { F1RecoveryNotice } from "./f1-recovery";
 import { F1VrankBootstrap } from "./f1-vrank-bootstrap";
 import { F1PromotionHistory, F1PayoutHistory } from "./f1-history";
 import { F1RankHow } from "./f1-rank-how";
@@ -69,6 +71,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const [picked, setPicked] = useState<string | null>(null);
   const [policyEditor, setPolicyEditor] = useState<F1PolicyEditor | null>(null);
   const [confirm, setConfirm] = useState<F1Confirm | null>(null);
+  const [howEpoch, setHowEpoch] = useState(0);
 
   const overrideRead = useRef(0);
   useEffect(() => { setConfirm(null); setPolicyEditor(null); }, [ctx.f1ReadEpoch]);
@@ -91,6 +94,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       editor={policyEditor} ctx={ctx} pendingApproval={pendingApprovalRanks.has(policyEditor.row.v)} onClose={() => setPolicyEditor(null)} />}
     {confirm && <F1ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}
   </Fragment>;
+  const recovery = <F1RecoveryNotice ctx={ctx} onOpenPolicy={setPolicyEditor} onRankHowChecked={() => setHowEpoch((value) => value + 1)} />;
 
   if (rows.length === 0) {
     const body = ctx.f1Loading
@@ -102,7 +106,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           ? <F1VrankBootstrap ctx={ctx} openConfirm={setConfirm} />
           : <><Conclusion state="neutral" icon={Layers3}>还没有建立会员等级</Conclusion>
             <Panel title="九级阶梯"><BlockState state="empty" title="还没有建立会员等级" detail="有修改权限的同事可以发起首次配置，另一位管理员批准后这里才会出现九级。" /></Panel></>;
-    return <div className="f1-page">{header}{body}{dialogs}</div>;
+    return <div className="f1-page">{header}{recovery}{body}{dialogs}</div>;
   }
 
   const rewardsOf = (v: string): OpsVRankRewardItem[] => ctx.rewards[v] ?? [];
@@ -140,9 +144,10 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const rowPending = (row: F1VRankRow) => policyOperations.filter(item => !item.ticket && item.original.values.rank === row.v).length;
   const pendingByRow = Object.fromEntries(rows.map((row) => [row.v, rowPending(row)]));
   const pendingTotal = Object.values(pendingByRow).reduce((sum, n) => sum + n, 0);
+  const openOriginals = pendingTotal + ctx.f1Proposals.filter((item) => item.ticket?.status !== "pending").length + (owner !== undefined && pendingF1RankHow(owner) ? 1 : 0);
 
-  const conclusion = pendingTotal > 0
-    ? <Conclusion state="warn" icon={CircleHelp} hint="点带「结果未知」的等级，在门槛或奖励旁点「查看原操作」核对。">有 {pendingTotal} 项门槛或奖励的修改结果未知，先核对原操作</Conclusion>
+  const conclusion = openOriginals > 0
+    ? <Conclusion state="warn" icon={CircleHelp} hint="在下面的列表里逐条核对；有结论前不要换个办法重做。">有 {openOriginals} 项原操作还没有结论，先逐条核对</Conclusion>
     : permanent === "unset"
       ? <Conclusion state="warn" icon={ShieldOff} hint="在下面「九级共用的设置」里明确开启或关闭。"
         explain="后端读不到这项设置时按关闭执行：用户下一次被评估时，没达标就降到实际达到的等级。">不降级保护没有设置，按关闭执行：没达标的用户会降级</Conclusion>
@@ -228,7 +233,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     panel={ladderIds.panel(selected.v)} canWrite={canWrite} pendingOf={pendingOf} hasPendingApproval={pendingApprovalRanks.has(selected.v)}
     onThreshold={openThreshold}
     onReward={(action, reward) => setPolicyEditor({ row: selected, action, reward, valuation: ctx.f1RewardValuation })}
-    onRecover={setPolicyEditor} />;
+    />;
 
   const leadership = ctx.leadership;
   const protectionValue = permanent === "on"
@@ -402,6 +407,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     <div className="f1-page">
       {header}
       {conclusion}
+      {recovery}
       {ctx.f1Error && <Notice tone="danger" title="刚才重新读取失败，下面是上一次读到的内容" action={<Button size="sm" onClick={() => void ctx.refreshF1()}>重试</Button>}>{ctx.f1Error}</Notice>}
       {stats}
       <PageTabs label="团队等级晋升" value={view} items={tabs} onChange={setView} ids={ids} />
@@ -409,7 +415,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         {view === "ladder" && <>{ladder}{detail}{shared}</>}
         {view === "promotions" && <F1PromotionHistory ctx={ctx} rows={rows} canPromote={canPromote} onOverride={openOverride} />}
         {view === "payouts" && <F1PayoutHistory ctx={ctx} rows={rows} canReissue={canReissue} canReverse={canReverse} openConfirm={setConfirm} />}
-        {view === "howto" && <F1RankHow ladder={rows} />}
+        {view === "howto" && <F1RankHow key={howEpoch} ladder={rows} />}
       </div>
       {dialogs}
     </div>
@@ -418,7 +424,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
 }
 
 /** 选中一级的详情：五项门槛、奖励模板、只读参数。 */
-function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf, hasPendingApproval, onThreshold, onReward, onRecover }: {
+function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf, hasPendingApproval, onThreshold, onReward }: {
   row: F1VRankRow;
   rows: F1VRankRow[];
   ctx: FViewCtx;
@@ -430,7 +436,6 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
   hasPendingApproval: boolean;
   onThreshold: (row: F1VRankRow, field: F1ConditionField) => void;
   onReward: (action: "reward_add" | "reward_update" | "reward_remove", reward?: OpsVRankRewardItem) => void;
-  onRecover: (editor: F1PolicyEditor) => void;
 }) {
   const index = rows.findIndex((item) => item.v === row.v);
   const prev = index > 0 ? rows[index - 1] : undefined;
@@ -467,7 +472,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
       sub={`${fmt(row.pop)} 人 · 占 ${share}`} icon={Layers3} tone="role-3"
       explain="五项门槛要同时满足才升到这一级；门槛为 0 表示不看这一项。用户每次被评估最多升一级，所以不能跳过这一级。">
       {hasPendingApproval && <Notice tone="warn" title={`${row.v} 有一张待审批的门槛或奖励申请`}>
-        批准前这一级仍按现在的设置。现在直接修改（收紧门槛、减少奖励）也能保存，但会让那张申请批准时版本对不上而失败。
+        批准前这一级仍按现在的设置。这期间直接改动这一级的门槛或奖励，那张申请批准时会因版本对不上失败。
       </Notice>}
       <div className="rd-split f1-detail-split">
         <Panel plain headingLevel={3} title="晋升条件" icon={Lock} tone="role-4" sub="五项同时满足"
@@ -484,7 +489,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
                 <ConfigRow key={field} name={f1ConditionLabels[field]}
                   what={FIELD_WHAT[field]}
                   when="保存后，之后每次评估用户时按新值算；不重算已有等级，不补发历史奖励。"
-                  effect={`调低（放宽）要提交审批，${SUPER_APPROVER}批准后生效；调高（收紧）或不变确认后立即生效。`}
+                  effect={`调低（放宽）要提交审批，${SUPER_APPROVER}批准后生效；调高（收紧）或不变确认后立即生效。${field === "legCount" || field === "legRank" ? "达标分支数为 0 时，这两项的改动都直接生效。" : ""}`}
                   note={[
                     ordered ? "不能低于上一级、不能高于下一级（相等可以；为 0 或分支没配成对的不比）。" : "这一项不和相邻等级比大小。",
                     field === "selfBuy" && row.v === "V1" ? "V1 的自购算力点也是数「直接邀请人数」时算不算一个人的标准，改它会影响所有等级的这一项。" : undefined,
@@ -494,7 +499,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
                     <span className={value === "不要求" || value === "不看分支" || value === "未设置" ? "f1-weak" : "f1-strong"}>{value}</span>
                     {steps(field)}
                     {pending ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。点「查看原操作」查询或按原内容重试。">结果未知</StatusTag> : null}
-                    {!canWrite || raw0(field, row) ? null : <span className="f1-dir">调低要批准</span>}
+                    {!canWrite || raw0(field, row) || (field === "legRank" && (row.legCount ?? "0") === "0") ? null : <span className="f1-dir">调低要批准</span>}
                   </span>}
                   sub={value === undefined ? "后端没给这一项" : [prevText !== undefined && prev ? `${prev.v} ${prevText}` : undefined, nextText !== undefined && next ? `${next.v} ${nextText}` : undefined].filter(Boolean).join(" · ") || undefined}
                   action={value !== undefined && (canWrite || pending) ? (describedBy) => (
@@ -510,7 +515,6 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
         <Panel plain headingLevel={3} title="升级奖励" icon={Gift} tone="role-2" sub={rewards.length ? `${rewards.length} 项` : "没有奖励"}
           explain="用户升到这一级时，按这里的每一项各发一次。改模板只影响以后的发放，已经发出的奖励和账本不变。增加资金奖励（加钱、换成资金、按 UVT 现价折算后变多）要提交审批；其余确认后立即生效。"
           actions={canWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => onReward("reward_add")}>添加奖励</Button> : undefined}>
-          <F1RemovalRecovery rank={row.v} onRecover={onRecover} />
           {rewards.length === 0
             ? <p className="f1-empty">升到 {row.v} 时不发奖励。</p>
             : <ul className="f1-rewards" aria-label={`${row.v} 升级奖励`}>

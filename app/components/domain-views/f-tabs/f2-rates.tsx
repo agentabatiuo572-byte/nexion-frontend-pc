@@ -21,7 +21,7 @@ const F2_VISIBLE_PARAM_KEYS = new Set([
   "F.cooldown", "F.unilevel.depthGate", "F.unilevel.depthGateRank",
   "F.influence.clampMin", "F.influence.clampMax", "F.promo.weekMultiplier", "F.unilevel.mergeExitMaxPct",
 ]);
-const F2_HISTORICAL_PARAM_NAMES: Record<string, string> = {
+export const F2_HISTORICAL_PARAM_NAMES: Record<string, string> = {
   "F.unilevel.depth": "最大计算范围（L1–Ln）",
   "F.unilevel.depthGate": "等级解锁起点（L1–L7）",
   "F.unilevel.depthGateRank": "解锁等级",
@@ -40,8 +40,8 @@ const SETTLEMENT_FALLBACK: Record<string, string> = {
   "F.influence.clampMin": "没配时，结算按下限 1 算",
   "F.influence.clampMax": "没配时，结算按上限 5 算",
   "F.promo.weekMultiplier": "没配时，结算按 1 倍算",
-  "F.unilevel.mergeExitMaxPct": "没配或配坏时，结算按 25% 算",
-  "F.cooldown": "没配或配坏时，结算按 30 天算",
+  "F.unilevel.mergeExitMaxPct": "没配或读不出数时，结算按 25% 算",
+  "F.cooldown": "没配或读不出数时，结算按 30 天算",
   "F.unilevel.depthGate": "没配或不是 L1–L7 时，结算会停",
   "F.unilevel.depthGateRank": "没配或不是 V0–V8 时，结算会停",
 };
@@ -116,14 +116,17 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
         preview: (next) => rates.length ? <LayerCompare rates={rates} level={level} next={Number(next || current || 0)} field="usdt" /> : null },
       facts: (next) => {
         const total = totalFacts(rates, level, next === undefined ? undefined : Number(next));
+        const anyPaused = LAYERS.some((item) => m.paused(item) === "on");
+        const move = next === undefined || !current ? null : Number(next) > Number(current) ? "调高，平台每笔订单多付" : Number(next) < Number(current) ? "调低，平台每笔订单少付" : "不变";
         return <Facts>
+          {move && <Fact k="这次" tone={move.startsWith("调高") ? "warn" : undefined}>{move}</Fact>}
           <Fact k="批准后实际执行">{next === undefined ? (current ? `现在是 ${rateMeaning(current)}` : "未配置") : rateMeaning(next) ?? "—"}</Fact>
           <Fact k="示例订单里这一层">{rate ? <Change from={`${num(sampleUsdt(rate.usdt))} USDT`} to={next === undefined ? `${num(sampleUsdt(rate.usdt))} USDT` : `${num(sampleUsdt(Number(next)))} USDT`} /> : "这一层还没有规则"}</Fact>
-          {rates.length > 0 && <Fact k="七层合计占订单"><Change from={`${num(total.before)}%`} to={`${num(total.after)}%`} /></Fact>}
+          {rates.length > 0 && <Fact k={anyPaused ? "七层合计（含暂停的层）" : "七层合计占订单"}><Change from={`${num(total.before)}%`} to={`${num(total.after)}%`} /></Fact>}
         </Facts>;
       },
       content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text="批准时后端只更新已有的规则，没有规则的层会执行失败。目前要由后端初始化七层规则。" /></Notice>,
-      statedBrief: { impact: "批准后，之后新算的订单这一层按新比例算；已经算好的订单不重算。调高会让平台多付钱。", check: COVERAGE_CHECK },
+      statedBrief: { impact: "批准后，之后新算的订单这一层按新比例算；已经算好的订单不重算。", check: COVERAGE_CHECK },
       detail: `${level} USDT 奖励比例 · 现在 ${current ? `${current}%` : "未配置"}。只影响之后的结算。`,
       completionCopy: approvalCopy("团队奖励比例"), coverageCheck: COVERAGE_CHECK, coverageLead: "调高这一层，平台每笔订单多付钱",
       submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config(`F.unilevel.${level}`, next, reason); },
@@ -141,10 +144,11 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
         hint: "这一层每发 1 USDT 奖励，另发多少 UVT",
         preview: (next) => rates.length ? <LayerCompare rates={rates} level={level} next={Number(next || current || 0)} field="nex" /> : null },
       facts: (next) => <Facts>
+        {next !== undefined && current && Number(next) !== Number(current) && <Fact k="这次" tone={Number(next) > Number(current) ? "warn" : undefined}>{Number(next) > Number(current) ? "调高，平台每笔订单多发 UVT" : "调低，平台每笔订单少发 UVT"}</Fact>}
         <Fact k="这一层另发 UVT">{rate ? <Change from={`${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} to={`${num(rate.usdt === null ? null : sampleUsdt(rate.usdt)! * Number(next ?? current))} UVT`} /> : "这一层还没有规则"}</Fact>
       </Facts>,
       content: rate ? undefined : <Notice tone="warn" title="这一层还没有规则"><KeepText text="批准时后端只更新已有的规则，没有规则的层会执行失败。目前要由后端初始化七层规则。" /></Notice>,
-      statedBrief: { impact: "批准后，之后新算的订单这一层按新系数另发 UVT；已经算好的不重算。调高会让平台多付钱。", check: COVERAGE_CHECK },
+      statedBrief: { impact: "批准后，之后新算的订单这一层按新系数另发 UVT；已经算好的不重算。", check: COVERAGE_CHECK },
       detail: `${level} 每发 1 USDT 奖励，另发多少 UVT · 现在 ${current || "未配置"}。只影响之后的结算。`,
       completionCopy: approvalCopy("团队奖励比例"), coverageCheck: COVERAGE_CHECK, coverageLead: "调高这一层，平台每笔订单多发 UVT",
       submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config(`F.unilevel.nex.${level}`, next, reason); },
@@ -164,19 +168,19 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
       }),
     },
     statedBrief: { impact: "七层一起提交，批准后一起生效。暂停的层，之后新算的订单这一层记 0、不补发；已经算好的不变。不影响好友设备收益奖励，也不是整体结算暂停。", check: "整组一次写入，有一项失败整组都不改。" },
-    detail: "L1–L7 一起提交，确认后只影响之后的购买奖励，不影响好友设备收益奖励。",
+    detail: "L1–L7 一起提交审批，批准后只影响之后的购买奖励，不影响好友设备收益奖励。",
     completionCopy: approvalCopy("团队奖励规则"), coverageCheck: COVERAGE_CHECK,
     submit: async (reason, _next, values) => {
       if (!values || LAYERS.some((level) => values[level] !== "on" && values[level] !== "off")) throw new Error("请选择 L1–L7 全部的暂停状态");
       await ctx.updateFConfigBatch("F2", LAYERS.map((level) => ({ key: `F.unilevel.${level}.paused`, value: values[level] })), reason);
-      ctx.toast("L1–L7 暂停设置已提交，确认后生效");
+      ctx.toast("L1–L7 暂停设置已提交审批，另一位管理员批准后生效");
     },
   });
 
   return (
     <Panel title="每层分多少" icon={Layers} tone="role-4" sub={`示例订单 ${num(SAMPLE_ORDER)} USDT`}
       explain="好友（第 1 层）和好友的好友（第 2 层）……一直到第 7 层买设备时，按层给上面的人发 USDT 奖励，另按系数加发 UVT。示例金额只按比例和系数算，没算影响分、活动倍率、等级门槛和奖励总额上限，不是真实订单。">
-      {!complete ? <Notice tone="warn" title="七层规则还没配置">这一层还没有规则，目前要由后端初始化。后台只能改已有的规则，第 1 层比例后台也不能改；没配齐前不能启用整体结算。</Notice> : (
+      {!complete ? <Notice tone="warn" title={rates.length ? "七层规则不完整" : "七层规则还没配置"}>缺的层或字段目前要由后端补齐。后台只能改已有的规则，第 1 层比例后台也不能改；配齐前不能启用整体结算。</Notice> : (
         <Figure width={420} stack="wide" graphic={
           <div className="f2-sum-graphic">
             <ScaleBar label="七层合计占订单" max={axisMax} value={activeSum} fill target={m.cap ?? undefined} tone="role-4"
@@ -220,7 +224,8 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
                 <Td align="right">{rate?.usdt != null ? <Cell num main={`${num(sampleUsdt(rate.usdt))} USDT`} sub={direct && ctx.f2DirectPolicy?.sevenLayerEnabled && ctx.f2DirectPolicy.purchaseSplit.enabled ? "按好友政策拆分" : undefined} /> : <span className="f2-muted">—</span>}</Td>
                 <Td align="right">{rate?.nex != null ? <Cell num main={nexLocked ? <span className="f2-muted">{num(rate.nex)}</span> : num(rate.nex)} sub={nexLocked ? (ctx.f2DirectPolicy && !ctx.f2DirectPolicyError && !ctx.f2DirectPolicyLoading ? "已停用，改用拆分" : "暂不能改") : `另发 ${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} /> : <span className="f2-muted">—</span>}</Td>
                 <Td><span className="f2-tags">
-                  {!rate || rate.usdt === null || rate.nex === null ? <StatusTag tone="neutral" explain="这一层还没有规则，目前要由后端初始化；没有规则时这一层不发。">没有规则</StatusTag>
+                  {!rate ? <StatusTag tone="neutral" explain="这一层还没有规则，目前要由后端初始化；没有规则时这一层不发。">没有规则</StatusTag>
+                    : rate.usdt === null || rate.nex === null ? <StatusTag tone="warn" explain={`这一层的${rate.usdt === null ? "USDT 比例" : "UVT 系数"}后端没给，这页无法判断这一层怎么发；目前要由后端补齐。`}>规则不完整</StatusTag>
                     : pausedRaw === "on" ? <StatusTag tone="warn" icon={PauseCircle} explain="之后新算的订单这一层记 0，不补发；已经算好的不变。">已暂停</StatusTag>
                     : pausedRaw === "off" ? <StatusTag tone="neutral" icon={ShieldCheck}>发放中</StatusTag>
                       : pausedRaw ? <StatusTag tone="danger" explain={`后端存的是「${pausedRaw}」，不是暂停或发放。按层暂停里重新选一次。`}>配置无效</StatusTag>
@@ -286,7 +291,7 @@ function ParamRow({ ctx, m, paramKey, openConfirm, shown }: { ctx: FViewCtx; m: 
       : { kind: "number", current: value, ...(promo ? { min: 1, max: 3, unit: "倍", amplifiesWhen: "increase" as const } : merge ? { min: 0, max: 100, unit: "%" } : {}), hint: help.hint },
     facts: parsed && !parsed.legal ? <Facts><Fact k="现在存的值" tone="danger">{value}（不是有效值）</Fact></Facts>
       : !value ? <Facts><Fact k="现在">未配置</Fact><Fact k="没配时">{SETTLEMENT_FALLBACK[paramKey].replace(/^没配[^，]*时，/, "")}</Fact></Facts> : undefined,
-    statedBrief: { impact: `${help.what}。${help.effect}。批准后对之后新算的订单生效，已经算好的不重算。`, check: promo ? COVERAGE_CHECK : "后端只检查取值范围。" },
+    statedBrief: { impact: `${help.what}。${help.effect}。批准后对之后新算的订单生效，已经算好的不重算。`, check: promo ? COVERAGE_CHECK : "核对新值；后端保存时不检查上下限的大小关系。" },
     detail: `${name} · 现在 ${value || "未配置"}。只影响之后的购买奖励结算。`,
     completionCopy: approvalCopy(help.perm), coverageCheck: COVERAGE_CHECK, coverageLead: "调高倍率，每层都多付钱",
     submit: async (reason, next) => { if (!next) throw new Error("请填写新值"); await ctx.updateF2Config(paramKey, next, reason); },
@@ -436,7 +441,7 @@ export function F2Partner({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Op
   });
   return (
     <Panel title="合作伙伴权益" icon={ShieldCheck} tone="role-3" sub="四档门槛 · USD"
-      explain="四档门槛只决定权益档位，不改任何奖励比例。目前只保存门槛，不会自动开通权益。"
+      explain="四档门槛不改任何奖励比例。目前只保存门槛，不会自动开通权益。"
       actions={m.canPolicyAmplify ? <Button size="sm" disabledReason={pending ? "等另一位管理员批准" : ctx.f2WriteBlocked("f-config:F.partner.tiers")} onClick={open}>{partnerConfigured ? "调整权益门槛" : "配置权益门槛"}</Button> : undefined}>
       <div className="f2-stack">
       <Notice tone="warn" title="目前只保存门槛，不会自动开通权益">后端还没有按门槛给伙伴开通权益的执行，已提后端；权益说明里的名称是规划，不代表已经提供。</Notice>

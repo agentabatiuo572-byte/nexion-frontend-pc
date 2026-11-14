@@ -34,13 +34,13 @@ export const STATUS_BY_LABEL: Record<string, string> = {
 
 /** 七个状态在页面上的名字、色调和一句话。自动过程用进行色，结束用灰，要人处理的才用警示和危险色。 */
 export const STATUS_META: Record<string, { name: string; tone: StateTone; icon: LucideIcon; text: string }> = {
-  cooling: { name: "冷却中", tone: "progress", icon: Hourglass, text: "奖励已经算出，还在冷却期，不能提现；到期后自动解锁。" },
-  unlocked: { name: "已解锁", tone: "ok", icon: CircleCheck, text: "冷却期已过，这笔可以提现；用户实际能提多少以钱包为准。" },
-  withdrawn: { name: "已提现", tone: "done", icon: Wallet, text: "用户已经提走，记录到此结束。" },
+  cooling: { name: "冷却中", tone: "progress", icon: Hourglass, text: "奖励已经算出，还在冷却期，不能提现；有到期时间的到期后系统解锁。" },
+  unlocked: { name: "已解锁", tone: "ok", icon: CircleCheck, text: "这笔不再冷却；用户实际能提多少以钱包为准。" },
+  withdrawn: { name: "已提现", tone: "done", icon: Wallet, text: "后端记为已提现或已结清，记录到此结束；这页不核出款。" },
   frozen: { name: "已冻结", tone: "warn", icon: Snowflake, text: "被按住了，到期也不会解锁；可以解冻回冷却中，或冲正收回。" },
-  reversed: { name: "已冲正", tone: "done", icon: Undo2, text: "奖励已收回，记录到此结束；不是好友奖励的可以补发一笔新的。" },
-  rejected: { name: "已拒绝", tone: "done", icon: CircleSlash, text: "以前被拒绝发放的记录，钱没有发给用户。" },
-  recovery_pending: { name: "待追回", tone: "danger", icon: TriangleAlert, text: "冲正时用户余额不够，没收回的部分记在这里，钱还在用户手里。" },
+  reversed: { name: "已冲正", tone: "done", icon: Undo2, text: "奖励已收回，记录到此结束；不是好友奖励的可以申请补发一笔新的。" },
+  rejected: { name: "已拒绝", tone: "done", icon: CircleSlash, text: "这条记录当时被拒绝发放。" },
+  recovery_pending: { name: "待追回", tone: "danger", icon: TriangleAlert, text: "冲正时用户余额不够，没收回的部分记在这里，是待追回的欠款。" },
 };
 
 export const statusName = (status: string) => STATUS_META[status]?.name ?? "状态未知";
@@ -134,7 +134,7 @@ export function approvalTag(note = "批准前这笔奖励不变。") {
  */
 export const REJECTION_TEXT = {
   reverseFrozenLegacy: "这笔是没有结算组的旧奖励，已冻结时冲正，批准时会被后端拒绝。先解冻回冷却中，再冲正。",
-  releaseGroupCooling: "这笔属于结算组，冷却还没真正到期，批准时会被后端拒绝。到期后系统会自动解锁。",
+  releaseGroupCooling: "这笔属于结算组，冷却还没真正到期，批准时会被后端拒绝。到期后由系统按条件解锁。",
 } as const;
 export function knownRejection(row: F5CommissionEvent, action: "release" | "reverse"): string | undefined {
   if (action === "reverse" && row.status === "frozen" && !isGrouped(row)) return REJECTION_TEXT.reverseFrozenLegacy;
@@ -254,6 +254,8 @@ export type F5RecoveryRow = {
   /** 本机保存原请求的时间（毫秒）。 */
   submittedAt?: number;
   state: "unknown" | "pending" | "expired";
+  /** 直接保存（异常预警标准）：没有审批单，提示不能说审批单。 */
+  direct?: boolean;
   actions?: ReactNode;
 };
 
@@ -261,20 +263,24 @@ export type F5RecoveryRow = {
 export function F5RecoveryNotice({ rows }: { rows: readonly F5RecoveryRow[] }) {
   if (!rows.length) return null;
   const timed = rows.some((row) => row.submittedAt !== undefined);
-  const tag = (state: F5RecoveryRow["state"]) => state === "unknown"
-    ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会建第二张。">结果未知</StatusTag>
+  const tag = (state: F5RecoveryRow["state"], direct: boolean) => state === "unknown"
+    ? <StatusTag tone="warn" icon={CircleHelp} explain={direct
+      ? "提交时没收到确定结果，可能已经保存。查询只读回现在的标准作对照；24 小时内也可以按原请求重试，后端认得出是同一次提交。"
+      : "提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会建第二张。"}>结果未知</StatusTag>
     : state === "pending"
-      ? <StatusTag tone="warn" icon={Clock3} explain={`等${APPROVER}在「操作记录与审批」批准。批准前这笔奖励不变，也不能再提交别的处置。`}>待审批</StatusTag>
-      : <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单；查不到也不能据此认定没提交。">已过期</StatusTag>;
+      ? <StatusTag tone="warn" icon={Clock3} explain={`等${APPROVER}在「操作记录与审批」批准。批准前这笔奖励不变，同一对象不能再提交别的处置。`}>待审批</StatusTag>
+      : <StatusTag tone="neutral" icon={Hourglass} explain={direct
+        ? "原请求超过 24 小时，不能再重试。查询只读回现在的标准，证明不了原操作有没有执行。"
+        : "原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除待确认。"}>已过期</StatusTag>;
   return (
-    <Notice tone="warn" title={<>有 {rows.length} 个处置还没有结论<Explain label="原操作怎么处理" content="这些处置提交时没收到确定结果，或还在等批准。有结论前不要换个办法重做同一件事。" /></>}>
+    <Notice tone={rows.every((row) => row.state === "pending") ? "progress" : "warn"} title={<>{rows.every((row) => row.state === "pending") ? `${rows.length} 个处置在等批准` : `有 ${rows.length} 个处置还没有结论`}<Explain label="原操作怎么处理" content="这些处置提交时没收到确定结果，或还在等批准。有结论前不要换个办法重做同一件事。" /></>}>
       <ul className="f5-recovery" aria-label="还没有结论的处置">
         {rows.map((row) => (
           <li key={row.key} data-recovery-state={row.state}>
             <span className="f5-recovery-name">{row.name}</span>
             <span className="f5-recovery-change">{row.change}</span>
             <span className="f5-recovery-time">{row.submittedAt === undefined ? "" : `${businessStamp(row.submittedAt)} 提交`}</span>
-            <span>{tag(row.state)}</span>
+            <span>{tag(row.state, !!row.direct)}</span>
             <span className="f5-recovery-actions">{row.actions}</span>
           </li>
         ))}

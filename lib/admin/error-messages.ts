@@ -1413,7 +1413,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   FUND_APPROVAL_CHECKER_FORBIDDEN: "需要另一位有审批权的超级管理员执行。",
   BINARY_OWNER_NOT_ACTIVE: "该用户不存在或已停用，本次未结算。",
   BINARY_SETTLEMENT_DATE_INVALID: "结算日无效，请按 YYYY-MM-DD 填写。",
-  F3_SETTLEMENT_DATE_NOT_CLOSED: "该结算日尚未结束，请选择已结束的越南时间结算日。",
+  F3_SETTLEMENT_DATE_NOT_CLOSED: "该结算日按业务日历还没结束，请选择已经结束的结算日。",
   BINARY_LEG_ASSIGNMENT_INCOMPLETE: "用户的团队分组尚未完成，本次未结算。",
   BINARY_BOTH_LEGS_REQUIRED: "两组都须有可计入的订单，本次未结算。",
   BINARY_THRESHOLD_NOT_MET: "两组订单额未达到结算门槛，本次未发放奖励。",

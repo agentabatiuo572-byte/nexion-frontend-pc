@@ -78,16 +78,16 @@ export function F5Drawer({ row, rows, history, ledgerAllowed, coverageAllowed, l
   );
 
   const nowText = row.status === "cooling"
-    ? row.coolingDaysLeft > 0 ? `还要冷却 ${row.coolingDaysLeft} 天，到期自动解锁` : "冷却期按天数已到，等系统解锁"
+    ? row.coolingDaysLeft > 0 ? `还要冷却 ${row.coolingDaysLeft} 天，到期后系统按条件解锁` : "到期日是今天或没有到期时间，以到期时间为准"
     : meta?.text ?? "后端给了页面不认识的状态";
   const points: JudgmentRow[] = [
     { label: "现在", value: <StatusBadge status={row.status} explain={false} />, reason: nowText, state: meta?.tone === "warn" || meta?.tone === "danger" ? meta.tone : undefined },
-    { label: "金额", icon: Coins, tone: "money", value: <Money value={row.amt} currency={row.cur} />, reason: friend && groupMoney ? `整组 ${groupMoney}` : grouped ? "结算组里的一笔，同组另一种币是另一条记录" : undefined },
+    { label: "金额", icon: Coins, tone: "money", value: <Money value={row.amt} currency={row.cur} />, reason: friend && groupMoney ? `整组 ${groupMoney}` : grouped ? "结算组里的一笔；同组另一种币（如有）是另一条记录" : undefined },
     { label: "用户", icon: User, tone: "users", value: row.user, reason: KIND_LABELS[row.kind] ?? "未知奖励类型" },
     {
       label: "处置范围",
       value: friend ? "好友奖励整组一起处理" : grouped ? "只动这一笔" : "单笔记录",
-      reason: friend ? "冻结、解冻、冲正都对 USDT 和 UVT 两笔一起做" : grouped ? "同组另一笔只供参考，处置不动它" : undefined,
+      reason: friend ? "冻结、解冻、冲正对整组的每一笔一起做" : grouped ? "同组另一笔只供参考，处置不动它" : undefined,
     },
   ];
   const ledger = row.ledgerBizNo
@@ -117,12 +117,14 @@ export function F5Drawer({ row, rows, history, ledgerAllowed, coverageAllowed, l
           </Step>
           <Step icon={Coins} title="算出来多少">
             {friend ? <>
-              <p>整组 {groupMoney ?? "—"}<Explain label="好友奖励怎么算" content="按下单时的好友奖励政策，用计价基数和当笔 UVT 价格算出 USDT 和 UVT 两笔，两笔一组。" /></p>
-              <p className="f5-weak">计价基数 {row.basisUsdt !== undefined ? `${amountText(row.basisUsdt)} USDT` : "—"} · 当笔 UVT 价格 {row.nexUsdtPrice !== undefined ? `${amountText(row.nexUsdtPrice)} USDT` : "—"} · 政策版本 {row.policyVersion ?? "—"}</p>
+              <p>整组 {groupMoney ?? "—"}<Explain label="好友奖励怎么算" content="按奖励来源当时的好友奖励政策，用计价基数和来源锁定的 UVT 价格算出两种币；金额为 0 的币种不建记录。" /></p>
+              <p className="f5-weak">计价基数 {row.basisUsdt !== undefined ? `${amountText(row.basisUsdt)} USDT` : "—"} · 锁定的 UVT 价格 {row.nexUsdtPrice !== undefined ? `${amountText(row.nexUsdtPrice)} USDT` : "—"} · 政策版本 {row.policyVersion ?? "—"}</p>
               {(Number(row.recoveryPendingUSDT) > 0 || Number(row.recoveryPendingNEX) > 0) ? <p className="f5-trace-warn">待追回 {amountText(row.recoveryPendingUSDT ?? 0)} USDT + {amountText(row.recoveryPendingNEX ?? 0)} UVT</p> : null}
             </> : <>
               <p>这一笔 {money}</p>
-              <p className="f5-weak">{grouped ? <>结算组 <span data-mono>{row.settlementNo}</span>，后端没有给计算过程</> : "后端没有给计算过程"}</p>
+              {grouped && (row.basisUsdt !== undefined || row.nexUsdtPrice !== undefined || row.policyVersion !== undefined)
+                ? <p className="f5-weak">结算组 <span data-mono>{row.settlementNo}</span> · 计价基数 {row.basisUsdt !== undefined ? `${amountText(row.basisUsdt)} USDT` : "—"} · 锁定的 UVT 价格 {row.nexUsdtPrice !== undefined ? `${amountText(row.nexUsdtPrice)} USDT` : "—"} · 政策版本 {row.policyVersion ?? "—"}</p>
+                : <p className="f5-weak">{grouped ? <>结算组 <span data-mono>{row.settlementNo}</span>，后端没有给计算过程</> : "后端没有给计算过程"}</p>}
             </>}
           </Step>
           <Step icon={History} title="现在到哪一步" tone={meta?.tone === "warn" || meta?.tone === "danger" ? meta.tone : undefined}>

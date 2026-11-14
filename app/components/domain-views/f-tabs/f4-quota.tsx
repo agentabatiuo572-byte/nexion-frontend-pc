@@ -26,14 +26,14 @@ export function applicationStage(application: F4AmbassadorApplication): { key: S
   if (application.materialState === "NEEDS_MORE") return { key: "materials", text: "等申请人补材料", done: 0, tone: "warn" };
   if (application.businessReview?.status !== "PASSED") return { key: "business", text: "等业务核验", done: 1, tone: "neutral" };
   if (application.financeReview?.status !== "PASSED") return { key: "finance", text: "等财务核验", done: 2, tone: "neutral" };
-  return { key: "approve", text: "可以发起最终批准", done: 3, tone: "progress" };
+  return { key: "approve", text: "两项核验已通过", done: 3, tone: "progress" };
 }
 
 const STAGE_FILTERS: { key: StageKey; label: string; tone: "warn" | "neutral" | "progress" | "role-other" | "done" }[] = [
   { key: "materials", label: "等申请人交材料", tone: "warn" },
   { key: "business", label: "等业务核验", tone: "role-other" },
   { key: "finance", label: "等财务核验", tone: "neutral" },
-  { key: "approve", label: "可发起批准", tone: "progress" },
+  { key: "approve", label: "核验已通过", tone: "progress" },
 ];
 
 function presentText(value: string, fallback = "未配置") {
@@ -86,7 +86,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
           </div>
           <div className="f4-quota-bar">
             <RatioBar label="本月购机名额已用" value={Math.min(used, total)} total={total} tone="role-2"
-              state={total > 0 ? "ready" : "empty"} emptyText="本月还没有设置名额"
+              state={total > 0 ? "ready" : "empty"} emptyText="本月名额总数为 0"
               valueText={`已用 ${count(used)} 台，共 ${count(total)} 台`} />
             <span className="f4-muted">已用 {count(used)} 台 · 共 {count(total)} 台</span>
           </div>
@@ -130,7 +130,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
 
       <Panel title="大使申请" icon={Users} tone="role-3" sub={`最近 ${data.ambassadorApplications.length} 份 · 待处理 ${count(data.ambassadorPendingCount)} 份`}
         explain={<>
-          <p>一份申请的流程：申请人提交材料 → 业务核验 → 财务核验 → 最终批准。批准只开通申请人所选那一类的额度，不是付款。</p>
+          <p>一份申请的流程：申请人提交材料 → 业务核验和财务核验（先后不限）→ 最终批准。批准只开通申请人所选那一类的额度，不是付款。</p>
           <p>业务和财务核验在材料详情里直接记录；批准和驳回在材料详情里发起，由另一位管理员批准，核验过这一版材料的人不能做最终批准。</p>
         </>}>
         <ol className="f4-flow" aria-label="大使申请流程">
