@@ -954,15 +954,15 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
               const kindKey = text(tier.kind, "").toLowerCase();
               const unit = wheelUnit(tier);
               return <Tr key={text(tier.tier)}>
-                <Td><span data-mono="">{text(tier.tier)}</span></Td>
+                <Td><span data-mono="" className="h4l-nowrap">{text(tier.tier)}</span></Td>
                 <Td><span className="h4l-reward">{name.text}{name.legacy && <LegacyNameTag where="奖项名称" />}</span></Td>
                 <Td>{wheelPointsTier(tier) ? <StatusTag tone="danger" explain="后端已不支持积分奖型，要退役">积分奖型</StatusTag>
                   : wheelLegacyNexTier(tier) ? <StatusTag tone="warn" explain="奖型存成了旧名 nex，后端只认 uvt，等后端修数据（BUG-426）">UVT · 旧奖型</StatusTag>
                   : <span className="h4l-kind">{WHEEL_KIND_LABEL[kindKey] ?? "其他奖励"}{boolValue(tier.real) && <StatusTag tone="warn" explain="这一档发真钱（USDT）：抽中前还要过真钱奖开关、覆盖率和每日预算，不过就改发 UVT 安慰奖。">发真钱</StatusTag>}</span>}</Td>
-                <Td align="right">{kindKey === "coupon" ? <span>1 张<small className="h4-dim"> · {text(tier.voucherId, "未配券")}</small></span> : <span className="h4-num">{amountText(text(tier.amount, ""))} {unit}</span>}</Td>
+                <Td align="right">{kindKey === "coupon" ? <span className="h4l-voucher"><span className="h4l-nowrap">1 张</span><small className="h4-dim" title={text(tier.voucherId, "未配券")}>{text(tier.voucherId, "未配券")}</small></span> : <span className="h4-num h4l-nowrap">{amountText(text(tier.amount, ""))} {unit}</span>}</Td>
                 <Td align="right"><b className="h4-num">{percentText(tier.prob)}%</b></Td>
-                <Td align="right"><span className="h4-num">{percentText(numericValue(tier.prob) * 10)}</span> 次</Td>
-                <Td align="right">{numericValue(tier.dailyStock) === 0 ? <span className="h4-dim">不限</span> : <span className="h4-num">{numericValue(tier.dailyStock)} 次</span>}</Td>
+                <Td align="right"><span className="h4l-nowrap"><span className="h4-num">{percentText(numericValue(tier.prob) * 10)}</span> 次</span></Td>
+                <Td align="right">{numericValue(tier.dailyStock) === 0 ? <span className="h4-dim">不限</span> : <span className="h4-num h4l-nowrap">{numericValue(tier.dailyStock)} 次</span>}</Td>
                 <Td sticky="end" data-fit=""><span className="h4-row h4l-ops">{wheelPointsTier(tier)
                   ? <Button size="sm" variant="danger-outline" aria-label={`退役 ${text(tier.tier)}（${name.text}）`} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={() => openRetirePointsTier(tier)}>退役</Button>
                   : <>

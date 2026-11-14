@@ -240,6 +240,9 @@
 .h4-page .h4l-funnel b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
 .h4-page .h4l-ready { display: inline-flex; align-items: center; gap: 6px; color: var(--rd-ok); font-size: var(--rd-text-body); }
 .h4-page .h4l-lack { display: inline-flex; align-items: center; gap: 6px; color: var(--rd-warn); font-size: var(--rd-text-body); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.h4-page .h4l-nowrap { white-space: nowrap; }
+.h4-page .h4l-voucher { display: inline-flex; flex-direction: column; align-items: flex-end; max-width: 140px; }
+.h4-page .h4l-voucher small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--rd-font-mono); }
 .h4-page .h4l-clip { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .h4-page .h4l-reward { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .h4-page .h4l-kind { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
