@@ -537,7 +537,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 const MANAGED_BY: Record<string, string> = {
   advisor: "增长 / 客服坐席",
   support: "客服坐席",
-  ai: "已下线，只剩历史会话",
+  ai: "已下线，用户看不到；只剩历史会话",
 };
 
 function idempotencyKey() {
@@ -1403,10 +1403,11 @@ function adaptCategory(row: SessionCategoryView): SessionCategory {
   const type = (["advisor", "support", "ai"].includes(str(row.type)) ? row.type : "support") as SessionType;
   return {
     type,
-    name: str(row.name, CATEGORY_LABEL[type] || type),
+    // ai 是已下线的 Nova 智能问答（决定表「全站-Nova」）：不管后端种子叫什么，显示统一名字；类别值不变。
+    name: type === "ai" ? CATEGORY_LABEL.ai : str(row.name, CATEGORY_LABEL[type] || type),
     roleKey: str(row.roleKey, type === "advisor" ? "conversations.roleAdvisor" : type === "ai" ? "conversations.roleAi" : "conversations.roleSupport"),
     enabled: bool(row.enabled, true),
-    managedBy: str(row.managedBy, MANAGED_BY[type] || "客服坐席"),
+    managedBy: type === "ai" ? MANAGED_BY.ai : str(row.managedBy, MANAGED_BY[type] || "客服坐席"),
   };
 }
 

@@ -717,7 +717,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
                         </Td>
                         <Td align="right"><span className="m5-cap" data-empty={agent.maxConcurrent === 0 ? "" : undefined}>{compactSupportBoardValue(agent.maxConcurrent, "count") === "-" ? "—" : `${agent.maxConcurrent} 位`}</span></Td>
                         <Td>{agent.tags?.length ? <span className="m5-tags">{agent.tags.map((tag) => <span key={tag} className="m5-chip">{tag}</span>)}</span> : <span className="rd-note">—</span>}</Td>
-                        {canManageSupportSeats && <Td sticky="end"><Button size="sm" icon={<SlidersHorizontal size={14} aria-hidden />} disabled={writePending || needsRead || blocked("I.support.agentProfile.__update", agent.adminId)} onClick={() => { activeConfirm.current = {}; setProfileRecovery(undefined); setProfileAgent(agent); }}>配置接待</Button></Td>}
+                        {canManageSupportSeats && <Td sticky="end"><Button size="sm" icon={<SlidersHorizontal size={14} aria-hidden />} disabled={writePending || needsRead || blocked("I.support.agentProfile.__update", agent.adminId)} onClick={() => { activeConfirm.current = {}; setProfileRecovery(undefined); setProfileAgent(agent); }}>接单设置</Button></Td>}
                       </Tr>;
                     })}
           </tbody>
@@ -827,7 +827,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
         {categories.length === 0 ? <BlockState state="empty" title="没有可管理的会话类别" /> : categories.map((c) => {
           const managed = c.type === "ai";
           const on = catEnabled(c);
-          return <ConfigRow key={c.type} name={managed ? "Nova 智能问答（已下线）" : c.name}
+          return <ConfigRow key={c.type} name={c.name}
             what={managed ? "App 里已没有入口，用户不能新建；只剩历史会话" : "用户能不能新建专属客服会话"}
             effect={managed ? undefined : "停用后用户不能再新建这类会话，进行中的会话保留"}
             value={managed ? <span className="m5-tags"><StatusTag tone="done" icon={CircleOff}>已下线</StatusTag><span className="m5-inline-note"><Lock size={12} aria-hidden />后台开关：{on ? "开" : "关"}</span></span>
@@ -878,7 +878,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       {profileAgent && (canManageSupportSeats || profileRecovery) && <AgentProfileModal agent={profileAgent} agents={supportAgents} pending={profileRecovery}
         canSubmitNew={agentPageAvailable && !needsRead && !ctx.contentLoading && !writePending && !blocked("I.support.agentProfile.__update", profileAgent.adminId) && Boolean(authorities?.includes("service_m1_write"))}
         ctx={{ ...ctx, setParam: async (key, value, meta) => {
-        try { return profileRecovery ? await commitOriginal(profileRecovery, true) : await commitM5Write(key, value, meta, `${profileAgent.name} 接派单配置已保存`); }
+        try { return profileRecovery ? await commitOriginal(profileRecovery, true) : await commitM5Write(key, value, meta, `${profileAgent.name} 客服接单设置已保存`); }
         catch (cause) { toast(displayAdminError(cause), "warn"); return false; }
       } }} onClose={() => { setProfileAgent(null); setProfileRecovery(undefined); }} />}
       {canManageSupportSeats && assignAgent && <AdvisorAssignModal agent={assignAgent} ctx={ctx} onClose={() => setAssignAgent(null)} />}
@@ -926,7 +926,7 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
         reason: reason.trim(),
       });
       if (succeeded) {
-        ctx.toast(`${agent.name} 接派单配置已保存`);
+        ctx.toast(`${agent.name} 客服接单设置已保存`);
         onClose();
       }
     } finally {
@@ -941,7 +941,7 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
   const capNote = capText !== "" && !capProblem && capNumber === 0 ? "填 0：自动分配不再选他；已有客户、邀请继承和主管指定不受影响。" : undefined;
 
   return (
-    <RdModal title="配置接待" icon={SlidersHorizontal} wide busy={saving} onClose={onClose}
+    <RdModal title="客服接单设置" icon={SlidersHorizontal} wide busy={saving} onClose={onClose}
       sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">{agent.name} · 账号 #{agent.adminId}</span></>}
       footer={<>
         <Button disabled={saving} onClick={onClose}>取消</Button>
