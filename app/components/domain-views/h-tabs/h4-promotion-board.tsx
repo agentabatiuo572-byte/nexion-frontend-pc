@@ -141,7 +141,7 @@ export function PromotionOverview({ page, pendingCount, catalog, onOpenRewards, 
     const troubled = page.items.filter(p => p.unresolved > 0).sort((a, b) => b.unresolved - a.unresolved);
     const short = page.items.filter(p => ['ACTIVE', 'SCHEDULED', 'PAUSED'].includes(p.state)).flatMap(p => p.impact.budgets.filter(nearlyOut).map(b => ({ item: p, budget: b })));
     const waiting = reviewing.length + troubled.length + short.length + pendingCount;
-    const sentence = waiting === 0 ? `${s.activeActivities} 个活动进行中，没有等你处理的事` : [s.unresolved > 0 && `${s.unresolved} 项奖励待处理`, reviewing.length > 0 && `${reviewing.length} 个候选版本等审核或发布`, short.length > 0 && `${short.length} 项预算快用完`, pendingCount > 0 && `${pendingCount} 个操作结果未知`].filter(Boolean).join('，');
+    const sentence = waiting === 0 ? `${s.activeActivities} 个活动进行中，没有等你处理的事` : [s.unresolved > 0 && `${s.unresolved} 项奖励待处理`, reviewing.length > 0 && `${reviewing.length} 个候选版本待审`, short.length > 0 && `${short.length} 项预算快用完`, pendingCount > 0 && `${pendingCount} 个结果未知`].filter(Boolean).join('，');
     return <>
         <Conclusion state={waiting === 0 ? 'ok' : s.unresolved > 0 || pendingCount > 0 ? 'warn' : 'neutral'} lead={waiting > 0} explain={<><p>奖励待处理数是全部匹配活动的合计（失败、结果未知、待追回、人工审阅）。</p><p>候选版本和预算按当前列表这一页的活动统计。剩余不到总额一成算快用完，这是这页的提醒线。</p></>}>
             {sentence}
