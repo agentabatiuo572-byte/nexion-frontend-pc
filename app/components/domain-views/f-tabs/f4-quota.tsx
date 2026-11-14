@@ -21,7 +21,7 @@ type StageKey = "materials" | "business" | "finance" | "approve" | "approved" | 
 export function applicationStage(application: F4AmbassadorApplication): { key: StageKey; text: string; done: number; tone: "warn" | "neutral" | "progress" | "done" | "ok" } {
   const status = application.status.toUpperCase();
   if (application.legacyApproved) return { key: "legacy", text: "历史已批准（无材料）", done: 4, tone: "done" };
-  if (status === "APPROVED") return { key: "approved", text: "已批准，已开通所选类别额度", done: 4, tone: "done" };
+  if (status === "APPROVED") return { key: "approved", text: "已批准，已开通额度", done: 4, tone: "done" };
   if (status === "REJECTED") return { key: "rejected", text: "已驳回", done: 0, tone: "done" };
   if (!application.materialRevision || application.materialState === "NOT_SUBMITTED") return { key: "materials", text: "等申请人提交材料", done: 0, tone: "neutral" };
   if (application.materialState === "NEEDS_MORE") return { key: "materials", text: "等申请人补材料", done: 0, tone: "warn" };
