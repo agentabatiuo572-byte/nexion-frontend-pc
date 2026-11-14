@@ -384,7 +384,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       effect: draft ? (pauses ? LIVE : OFFLINE("保存草稿，线上不变")) : LIVE,
       confirmLabel: draft ? "确认存草稿" : "确认发布",
       statedBrief: draft
-        ? { impact: pauses ? "这条文案改成草稿状态，按位置取文案时取不到它，直到发布或删除这个草稿。" : "只保存草稿，这条文案现在没有在投放。", check: "核对三种语言和位置；存草稿不更新多语言与课程的词条。" }
+        ? { impact: pauses ? `保存草稿 ${target}，这条文案的状态变成草稿。` : "只保存草稿，这条文案现在没有在投放。", check: "核对三种语言和位置；存草稿不更新多语言与课程的词条。" }
         : { impact: `${target} 替换现在发布的 ${c.version}，同时更新多语言与课程里的同名词条。`, check: "核对三种语言、位置和占位符。" },
       facts: <Facts>
         <Fact k="文案">{c.desc} · <span data-mono="">{c.key}</span></Fact>
@@ -826,7 +826,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       statedBrief: { impact: "后端按真实转化率选唯一最高的一组，把它的版本正式发布，替换现在的版本；同名词条一起更新。", check: "每组至少 100 人看到、转化率唯一最高才能采纳，不满足会被拒绝；没有显著性检验。" },
       facts: exp && <Facts>
         {experimentFacts(exp)}
-        <Fact k="按页面的数" tone={winner ? "ok" : "warn"}>{winner ? `${winner.name} 组 ${winner.version} 最高（${winner.cvr}%）` : "没有唯一最高的一组，后端会拒绝"}</Fact>
+        <Fact k="按页面的数" tone={winner ? "ok" : "warn"}>{winner ? `${winner.name} 组 ${winner.version} 最高（${winner.cvr.toFixed(2)}%）` : "没有唯一最高的一组，后端会拒绝"}</Fact>
         {copy && i18nFact(copy.i18nKey)}
       </Facts>,
       content: <>
@@ -1067,14 +1067,14 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
 
   const historyPane = (
     <div {...tabIds.panel("history")} className="rd-tab-pane i1-pane">
+      <FilterBar scope={<Segments label="版本状态" value={versionStatusFlt} onChange={(next) => { setVersionStatusFlt(next); setVersionPage(1); }} items={VERSION_STATUS_FLT.map(([value, label]) => ({ value, label }))} />}
+        onClear={() => { setVersionCopyFlt("all"); setVersionStatusFlt("all"); setVersionPage(1); }} canClear={versionCopyFlt !== "all" || versionStatusFlt !== "all"}>
+        <FilterField grow>
+          <Select aria-label="按文案筛选" value={versionCopyFlt} onChange={(next) => { setVersionCopyFlt(next); setVersionPage(1); }}
+            options={[{ value: "all", label: "全部文案" }, ...COPY_POOL.map((copy) => ({ value: copy.key, label: `${copy.desc} · ${copy.key}` }))]} />
+        </FilterField>
+      </FilterBar>
       <Panel title="内容历史" icon={History} tone="role-3" flush sub={`${filteredVersions.length} 条 · ${ZONE}`} explain="每条文案各个版本的内容、状态和最近一次操作。时间只到月日时分，后端没给年份。" data-proof="copy-version-list">
-        <FilterBar scope={<Segments label="版本状态" value={versionStatusFlt} onChange={(next) => { setVersionStatusFlt(next); setVersionPage(1); }} items={VERSION_STATUS_FLT.map(([value, label]) => ({ value, label }))} />}
-          onClear={() => { setVersionCopyFlt("all"); setVersionStatusFlt("all"); setVersionPage(1); }} canClear={versionCopyFlt !== "all" || versionStatusFlt !== "all"}>
-          <FilterField grow>
-            <Select aria-label="按文案筛选" value={versionCopyFlt} onChange={(next) => { setVersionCopyFlt(next); setVersionPage(1); }}
-              options={[{ value: "all", label: "全部文案" }, ...COPY_POOL.map((copy) => ({ value: copy.key, label: `${copy.desc} · ${copy.key}` }))]} />
-          </FilterField>
-        </FilterBar>
         <Table label="内容历史" className="i1-history">
           <thead><tr><Th>文案</Th><Th>版本</Th><Th>中文内容</Th><Th>位置</Th><Th>最近操作</Th><Th align="right">操作</Th></tr></thead>
           <tbody>
@@ -1089,7 +1089,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
                   <Td><Cell main={copy?.desc || row.copyKey} sub={<span data-mono="">{row.copyKey}</span>} title={`${copy?.desc || row.copyKey} · ${row.copyKey}`} /></Td>
                   <Td><Cell main={<span data-mono="">{row.v}</span>} sub={<StatusTag tone={st.tone}>{st.text}</StatusTag>} /></Td>
                   <Td grow><Cell main={row.zh ? nexGridBrandText(row.zh) : <StatusTag tone="warn">中文缺失</StatusTag>} title={row.zh ? nexGridBrandText(row.zh) : undefined}
-                    sub={lack.length ? <span className="i1-warn-text">缺{lack.join("、")}</span> : "越南语、英语齐全"} /></Td>
+                    sub={lack.length ? <span className="i1-warn-text">缺{lack.join("、")}</span> : undefined} /></Td>
                   <Td><Cell main={positionName(row.copyPosition)} sub={moduleLabel(row.surface)} /></Td>
                   <Td><Cell main={row.chain || "—"} sub={row.ts || "—"} title={row.chain || undefined} /></Td>
                   <Td align="right" data-fit="">{items.length > 0 ? <MoreMenu label={`${row.copyKey} ${row.v} 的操作`} items={items} /> : <span className="i1-weak">—</span>}</Td>
@@ -1118,7 +1118,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
               const active = option.status.toUpperCase() === "ACTIVE";
               return (
                 <tr key={option.versionKey}>
-                  <Td><Cell main={option.name} sub={<span data-mono="">{option.versionKey}</span>} title={option.name} /></Td>
+                  <Td><Cell main={<b data-mono="">{option.versionKey}</b>} sub={option.name} title={`${option.versionKey} · ${option.name}`} /></Td>
                   <Td grow><Cell main={option.description || <span className="i1-weak">—</span>} title={option.description || undefined} /></Td>
                   <Td><StatusTag tone={active ? "ok" : "done"}>{active ? "已启用" : "已停用"}</StatusTag></Td>
                   <Td align="right">{option.sortOrder}</Td>
@@ -1244,7 +1244,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     <>
       {header}
       {errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={reloading} onClick={() => void reload()}>重新加载</Button>}>{errorText} 下面是上次读到的内容。</Notice>}
-      <Notice tone="warn" title="App 还没接上位置文案">
+      <Notice tone="neutral" title="App 还没接上位置文案">
         App 目前只显示普通文案键能覆盖的内容，位置文案还没有接上。
         <Explain label="现在 App 能看到什么" content={<><p>发布、回滚、采纳会同步「多语言与课程」里的同名词条，App 用到这个词条的地方会跟着变。</p><p>按位置取文案和实验分组的接口已经有，App 还没有页面调用，所以实验分组现在不会真正发生在 App 上。</p></>} />
       </Notice>

@@ -210,6 +210,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
           action={mc.action}
           title={mc.title}
           detail={mc.detail}
+          content={mc.content}
           amplifies={mc.amplifies}
           edit={mc.edit}
           businessForm={mc.businessForm}

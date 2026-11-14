@@ -107,6 +107,14 @@
 .i1-page .i1-exp-facts dd[data-empty] { color: var(--rd-text-3); }
 .i1-page .i1-exp-actions { display: flex; gap: var(--rd-space-2); margin-left: auto; }
 
+/* 内容历史：中文内容拿剩下的宽度，其余列按内容定比例，1024 也留得下一句话。 */
+.i1-page .i1-history { table-layout: fixed; }
+.i1-page .i1-history th:nth-child(1) { width: 19%; }
+.i1-page .i1-history th:nth-child(2) { width: 92px; }
+.i1-page .i1-history th:nth-child(4) { width: 15%; }
+.i1-page .i1-history th:nth-child(5) { width: 21%; }
+.i1-page .i1-history th:nth-child(6) { width: 64px; }
+
 /* 文案详情里的版本列表。 */
 .rd-drawer .i1-vlist { display: grid; margin: 0; padding: 0; list-style: none; }
 .rd-drawer .i1-vlist li { display: flex; align-items: center; gap: var(--rd-space-3); min-height: var(--rd-control-h); padding: var(--rd-space-1) 0; border-bottom: 1px solid var(--rd-line); }
@@ -129,9 +137,11 @@
 .i1-page .i1-pending-what { display: flex; gap: var(--rd-space-2); }
 .i1-page .i1-pending-actions { display: flex; gap: var(--rd-space-2); margin-left: auto; }
 
-/* 确认框里的内容对比：语言一列只占字宽，现在和之后两列平分。 */
-.rd-modal .i1-compare th:first-child { width: 64px; }
-.rd-modal .i1-weak { color: var(--rd-text-3); }
+/* 确认框里的内容对比：语言一列只占字宽，现在和之后两列平分，长句省略、悬停看全文。 */
+.i1-compare .rd-table { table-layout: fixed; }
+.i1-compare .rd-table th:first-child { width: 64px; }
+.i1-compare .rd-table td { overflow: hidden; }
+.i1-compare .i1-weak { color: var(--rd-text-3); }
 
 /* ============================ I2 Nova 推送 ============================ */
 .idom .nv-sw { width: 36px; height: 20px; border-radius: 999px; background: var(--surface-3); position: relative; cursor: pointer; border: none; padding: 0; transition: background .15s; }

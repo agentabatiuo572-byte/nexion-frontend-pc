@@ -217,10 +217,10 @@ export function ExperimentCard({ id, title, sub, state, variants, impressions, c
                 <RatioBar quiet label="分流" value={variant.split} total={100} valueText={`${variant.split}%`} tone="role-3" />
                 <div>
                   <dt>转化率</dt>
-                  <dd className="i1-cvr" data-empty={hasData ? undefined : ""}>{hasData ? `${variant.cvr}%` : "—"}</dd>
+                  <dd className="i1-cvr" data-empty={hasData ? undefined : ""}>{hasData ? `${variant.cvr.toFixed(2)}%` : "—"}</dd>
                 </div>
                 {hasData
-                  ? <ScaleBar quiet label="转化率" valueText={`${variant.cvr}%，刻度 0 到 ${axis}%`} max={axis} value={variant.cvr} fill ticks={ticks} tone="role-3" />
+                  ? <ScaleBar quiet label="转化率" valueText={`${variant.cvr.toFixed(2)}%，刻度 0 到 ${axis}%`} max={axis} value={variant.cvr} fill ticks={ticks} tone="role-3" />
                   : <span className="i1-weak">{started ? "还没有人看到" : "还没开始"}</span>}
                 <div>
                   <dt>看到的人<Explain label="各组人数" content="后端只给这个实验的合计人数，没给每组各多少人。" /></dt>
