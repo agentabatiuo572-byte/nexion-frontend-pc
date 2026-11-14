@@ -95,7 +95,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
                 const name = typeName(row.eventType);
                 return (
                   <Tr key={`${row.eventId}-${index}`}>
-                    <Td><Cell main={name.main} sub={<span data-mono title={row.eventId}>{row.eventId}</span>} /></Td>
+                    <Td><Cell main={name.main} sub={<span data-mono className="a4-mid" title={row.eventId}><span>{row.eventId.slice(0, -8)}</span><span>{row.eventId.slice(-8)}</span></span>} /></Td>
                     <Td>
                       <span className="a4-pair">
                         <StatusTag tone={row.status === "FAILED" ? "warn" : "neutral"}>{statusText(row.status)}</StatusTag>
@@ -107,7 +107,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
                     <Td>{errorText(row.errorCode)}</Td>
                     <Td>{row.receipts.length
                       ? <span className="a4-receipts">{row.receipts.map((receipt) => <span key={receipt.status}>{RECEIPT_STATUS[receipt.status] ?? "其他"} {receipt.count}</span>)}</span>
-                      : <span className="a4-dim">未发现回执（不代表成功）</span>}</Td>
+                      : <span className="a4-dim a4-stack"><span>未发现回执</span><span>不代表成功</span></span>}</Td>
                   </Tr>
                 );
               })}

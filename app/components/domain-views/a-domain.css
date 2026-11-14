@@ -217,10 +217,14 @@
 .a4-backlog-table th:nth-child(2) { width: 20%; }
 .a4-backlog-table th:nth-child(3) { width: 168px; }
 @container adom (max-width: 860px) {
-  .a4-backlog-table th:nth-child(1) { width: 26%; }
-  .a4-backlog-table th:nth-child(2) { width: 112px; }
-  .a4-backlog-table th:nth-child(3) { width: 148px; }
+  .a4-backlog-table th:nth-child(1) { width: 24%; }
+  .a4-backlog-table th:nth-child(2) { width: 104px; }
+  .a4-backlog-table th:nth-child(3) { width: 184px; }
 }
+.adom .a4-stack { display: inline-flex; flex-direction: column; }
+.adom .a4-mid { display: flex; min-width: 0; max-width: 100%; }
+.adom .a4-mid > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adom .a4-mid > span:last-child { flex-shrink: 0; }
 .adom .a4-receipts { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; font-variant-numeric: tabular-nums; }
 .a4-next { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .a4-next > .a4-note { margin-right: auto; }
