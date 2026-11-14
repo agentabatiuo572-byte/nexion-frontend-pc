@@ -117,3 +117,30 @@
 .adom .a4-pipe .ar { color: var(--ink-4); font-size: 11px; font-family: var(--mono); }
 .adom .a4-dom { display: inline-flex; padding: 3px 9px; border-radius: 5px; background: var(--surface-3); color: var(--ink-3); font-family: var(--mono); font-size: 11px; font-weight: 600; margin: 2px 3px 2px 0; }
 .adom .a4-dom.new { background: var(--warning-soft); color: var(--warning); }
+
+/* ============================ A9 开发者访问审批（改版，只写 --rd-* 令牌） ============================ */
+.a9-page { display: contents; }
+/* 列宽：最小宽度加比例，多出来的给「用途」；1024 时用途先收。 */
+.a9-page .a9-table { table-layout: fixed; }
+.a9-page .a9-table th[data-col="who"] { width: 22%; }
+.a9-page .a9-table th[data-col="no"] { width: 200px; }
+.a9-page .a9-table th[data-col="env"] { width: 168px; }
+.a9-page .a9-table th[data-col="state"] { width: 148px; }
+.a9-page .a9-table th[data-col="op"] { width: 112px; }
+/* 内容区窄于 820（1024 屏）时收起「用途」列，用途在抽屉里看全文；不横向滚动。 */
+@container adom (max-width: 820px) { .a9-page .a9-table :is(th, td)[data-col="use"] { display: none; } .a9-page .a9-table th[data-col="who"] { width: auto; } .a9-page .a9-table th[data-col="no"] { width: 196px; } .a9-page .a9-table th[data-col="env"] { width: 108px; } .a9-page .a9-table th[data-col="state"] { width: 144px; } }
+.a9-page .a9-table td .rd-row-actions { justify-content: flex-end; }
+.a9-page .a9-env { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--rd-text); }
+.a9-page .a9-env svg { color: var(--rd-text-3); flex-shrink: 0; }
+.a9-page .a9-env[data-env="sandbox"] svg { color: var(--rd-progress); }
+/* 结果未知的逐条提醒：改的是什么、哪一条、什么时候提交、现在什么状态、按钮。 */
+.a9-page .a9-rec { display: grid; gap: var(--rd-space-2); margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }
+.a9-page .a9-rec li { display: grid; grid-template-columns: minmax(120px, max-content) max-content minmax(0, 1fr) max-content auto; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.a9-page .a9-rec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a9-page .a9-rec-no { color: var(--rd-text-2); white-space: nowrap; }
+.a9-page .a9-rec-time { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.a9-page .a9-rec-actions { justify-self: end; }
+.a9-page .a9-rec-zone { margin: var(--rd-space-2) 0 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+@container (max-width: 760px) { .a9-page .a9-rec li { grid-template-columns: minmax(0, 1fr) auto; } .a9-page .a9-rec-actions { grid-column: 2; grid-row: 1 / span 2; } }
+/* 抽屉和确认框开在页面外层（.adom），不在 .a9-page 里：申请用途、备注保留换行，长串断开。 */
+.adom .a9-usecase, .adom .a9-reason { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--rd-text); }
