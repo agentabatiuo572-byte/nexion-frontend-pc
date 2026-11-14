@@ -67,7 +67,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "H1" && <H1Phase ctx={ctx} onRhythmChange={setRhythm} />}
       {tab === "H2" && <H2Trial ctx={ctx} />}
       {tab === "H3" && <H3QuestEvents ctx={ctx} />}
-      {tab === "H4" && <H4Promotions ctx={ctx} legacy={<H4LegacyCenter ctx={ctx} />} />}
+      {tab === "H4" && <H4Promotions ctx={ctx} legacy={(section, go) => <H4LegacyCenter ctx={ctx} section={section} onSection={go} />} />}
       {tab === "H5" && <H5DailyMilestones ctx={ctx} />}
       {tab === "H7" && <H7VoucherConfig ctx={ctx} />}
       {tab === "H8" && <H8ReferralRewards ctx={ctx} />}

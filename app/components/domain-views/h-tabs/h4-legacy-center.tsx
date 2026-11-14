@@ -8,8 +8,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
 import {
-  BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, IrreversibleTag, Notice, PageTabs, Panel, Stat, StatBand, StatusTag,
-  Table, Td, Th, Tr, useTabIds, type MoreMenuItem, type PageTabItem,
+  BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, IrreversibleTag, Notice, Panel, Stat, StatBand, StatusTag,
+  Table, Td, Th, Tr, type MoreMenuItem,
 } from "@/app/components/rd";
 import { REVIEW_OPERATION_BY_ACTION, fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
@@ -57,7 +57,6 @@ type Model = {
   wheelGuards?: Array<{ key: string; label: string; value: string; note?: string }>;
   trackables?: Array<{ id: string; name: string; cond: string; join: string; done: string; claim: string; geo: string }>;
 };
-type Sub = "events" | "plays" | "raffle" | "wheel";
 
 const H4_APPROVAL_OPS = new Set(["h4_legacy_event_reward_update", "h4_wheel_tier_create", "h4_wheel_tier_update", "h4_wheel_probabilities_update", "h4_wheel_tier_delete"]);
 const GUARD_NAME: Record<string, string> = { budget: "每日真钱奖预算", cap: "各奖档每日库存", kill: "真钱奖发放开关" };
@@ -98,7 +97,9 @@ function increasesUvtFallback(tiers: Array<Record<string, any>>, changed: Record
   return false;
 }
 
-export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
+export type LegacySection = "events" | "plays" | "wheel";
+
+export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: HCtx; section: LegacySection; onSection: (section: LegacySection) => void }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const canModuleWrite = ctx.can("growth_h4_write");
   const canWheelWrite = ctx.can("growth_h4_wheel_pool_write");
@@ -110,11 +111,9 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
   // 已建成、等别人批的 H4 审批单只在审批中心里；这里读一次，好让运营在本页看到哪项在等批。
   const [h4Approvals, setH4Approvals] = useState<A2OperationRow[] | "error" | null>(null);
   const [lookupKey, setLookupKey] = useState("");
-  const [sub, setSub] = useState<Sub>("events");
   const [rules, setRules] = useState<EventRuleView[] | null>(null);
   const [raffles, setRaffles] = useState<AdminRaffle[] | null>(null);
   const [contentId, setContentId] = useState<string | null>(null);
-  const tabIds = useTabIds();
   const reloadH4Approvals = async () => {
     if (!canReadA2) return;
     try {
@@ -326,7 +325,7 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
       statedBrief: { impact: "建成预告，不对用户开放。", check: "核对编号、玩法和奖励，理由写清依据。" },
       effect: <StatusTag tone="neutral" filled>建成预告，不开放</StatusTag>,
       detail: <>新建一个活动。活动 ID 用英文且不能重复；主推活动必须在进行中，且同时只能有一个。</>,
-      facts: <Notice tone="warn" title="目前只有内置活动可以开放">自定义编号的活动建好后暂时不能开放（后端待办 H4-BE-01）；建成后一律是「预告」、不主推。</Notice>,
+      facts: <Notice tone="warn" title="目前只有内置活动可以开放">自定义编号的活动建好后暂时不能开放（后端待办 H4-BE-01）。</Notice>,
       amplifies: true,
       reasonPlaceholder: "例如：按运营排期登记新活动",
       confirmLabel: "新建活动",
@@ -853,15 +852,13 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
   const ruleOf = (id: string) => rules?.find((rule) => rule.eventCode === id);
   const wheelPending = h4Pending.some((row) => row.obj === "ACTIVE_POOL");
   const eventPending = (id: string) => h4Pending.some((row) => REVIEW_OPERATION_BY_ACTION[row.action] === "h4_legacy_event_reward_update" && row.obj === id);
-  const notReady = (rules ?? []).filter((rule) => !rule.enabled && !rule.readiness.ready && !(rule.rulesLocked && rule.endsAt && Date.parse(rule.endsAt) <= Date.now()));
-  const openRaffles = (raffles ?? []).filter((draw) => draw.status === "OPEN");
   const budget = guards.find((guard) => guard.key === "budget");
   const kill = guards.find((guard) => guard.key === "kill");
   const cap = guards.find((guard) => guard.key === "cap");
   const killState = kill ? killOn(text(kill.value, "")) : null;
 
-  const go = (next: Sub, anchor?: string) => {
-    setSub(next);
+  const go = (next: LegacySection, anchor?: string) => {
+    onSection(next);
     if (anchor) requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView({ block: "start" }));
   };
   const todos: Array<{ key: string; tag: ReactNode; title: string; sub: string; onOpen: () => void }> = [
@@ -896,12 +893,6 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
     return null;
   };
   const contentEvent = contentId ? events.find((event) => event.id === contentId) : undefined;
-  const tabItems: PageTabItem<Sub>[] = [
-    { value: "events", label: "既有活动", count: events.length },
-    { value: "plays", label: "七类玩法", count: rules ? notReady.length || undefined : "—" },
-    { value: "raffle", label: "创世抽奖", count: raffles ? openRaffles.length || undefined : "—" },
-    { value: "wheel", label: "转盘奖池" },
-  ];
   const conclusion = wheelBroken
     ? <Conclusion state="danger" lead icon={CircleAlert} hint="先处理「等你处理」第一行。">App 转盘现在抽不了{gapCount > 0 ? `，还有 ${gapsByEvent.length} 个活动缺翻译` : ""}</Conclusion>
     : todos.length > 0 ? <Conclusion state="warn" lead icon={ListChecks}>有 {todos.length} 件事等你处理</Conclusion>
@@ -919,9 +910,7 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
     {todos.length > 0 && <Panel title="等你处理" icon={ListChecks} tone="role-3" sub={`${todos.length} 件`}>
       <ul className="h4-todo">{todos.map((todo) => <li key={todo.key}><button type="button" onClick={todo.onOpen}>{todo.tag}<span className="h4-todo-title">{todo.title}</span><span className="h4-todo-sub">{todo.sub}</span></button></li>)}</ul>
     </Panel>}
-    <PageTabs level={2} label="既有活动与转盘分段" value={sub} items={tabItems} onChange={setSub} ids={tabIds} />
-
-    <div role="tabpanel" id={tabIds.panelId("events")} aria-labelledby={tabIds.tab("events")} hidden={sub !== "events"} className="h4-tabpanel">
+    <div hidden={sub !== "events"} className="h4-tabpanel">
       <Panel id="h4l-events" title="既有活动" icon={Gift} tone="role-3" sub={`共 ${events.length} 个`}
         explain={<><p>平台内置的运营活动，一张卡一个：中文名称和说明、奖励、参与条件、时间、参与情况。卡底部改三语内容，右下角开放、结束、主推和删除。</p><p>同时只能有一个进行中的主推活动。时间来自「七类玩法」里这个活动的开放时间。</p></>}
         actions={<Button icon={<Plus size={14} aria-hidden />} disabledReason={!canModuleWrite ? "没有新建既有活动的权限" : undefined} onClick={openCreateEvent}>新建既有活动</Button>}>
@@ -939,15 +928,12 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
       </Panel>
     </div>
 
-    <div role="tabpanel" id={tabIds.panelId("plays")} aria-labelledby={tabIds.tab("plays")} hidden={sub !== "plays"} className="h4-tabpanel">
+    <div hidden={sub !== "plays"} className="h4-tabpanel">
       <H4EventRules ctx={ctx} onRowsChange={setRules} />
-    </div>
-
-    <div role="tabpanel" id={tabIds.panelId("raffle")} aria-labelledby={tabIds.tab("raffle")} hidden={sub !== "raffle"} className="h4-tabpanel">
       <H4GenesisRaffle ctx={ctx} onRowsChange={setRaffles} />
     </div>
 
-    <div role="tabpanel" id={tabIds.panelId("wheel")} aria-labelledby={tabIds.tab("wheel")} hidden={sub !== "wheel"} className="h4-tabpanel">
+    <div hidden={sub !== "wheel"} className="h4-tabpanel">
       <Panel id="h4l-wheel" title="转盘奖池" icon={Disc3} tone="role-1" sub={`${tiers.length} 档 · 合计 ${percentText(probabilitySum)}%`}
         explain={<><p>每日免费抽奖和签到满 30 天的加抽共用这一个奖池。每次抽奖按各档概率依次落档。</p><p>App 每次抽奖前检查整个奖池：2–12 档，只认 UVT、USDT、代金券三种奖型，合计正好 100%，至少有一档不发真钱的 UVT 当安慰奖。有一项不合格，整个转盘报错。</p></>}
         actions={<>{wheelPending && pendingTag("转盘奖池")}<Button variant="primary" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={openWheelProbabilities}>调整概率</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={openCreateWheelTier}>新建奖项</Button></>}>
