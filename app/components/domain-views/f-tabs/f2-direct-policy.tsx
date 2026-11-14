@@ -117,7 +117,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
             {draft && <div className="f2-policy-cards">
               <fieldset className="f2-policy-card" disabled={lock}>
                 <legend><ShoppingCart size={16} aria-hidden />好友购买奖励</legend>
-                {policy && !policy.purchaseSplitConfigured && <p className="f2-policy-hint">还没设置拆分，现在全额发 USDT</p>}
+                {policy && !policy.purchaseSplitConfigured && <p className="f2-policy-hint">还没设置拆分，USDT 不拆，按旧系数仍可能另发 UVT</p>}
                 <dl className="f2-policy-ref">
                   <div><dt>第 1 层比例</dt><dd aria-label="好友购买奖励 L1 奖励比例（只读）">{ref?.baseRatePct == null ? "未配置" : `${num(ref.baseRatePct)}%`}</dd></div>
                   <div><dt>购买冷却</dt><dd aria-label="好友购买奖励购买冷却天数（只读）">{ref?.coolingDays == null ? "未配置" : `${ref.coolingDays} 天`}</dd></div>
