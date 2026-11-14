@@ -41,7 +41,7 @@ import H4EventRules from "./h4-event-rules";
 import H4GenesisRaffle from "./h4-genesis-raffle";
 import { amountText, formatTime } from "./h4-promotion-ui";
 import {
-  ApprovalFacts, EventCard, EventPreview, GuardCard, KIND_LABEL, KIND_OPTIONS, LOCALE_NAME, FIELD_NAME, LegacyNameTag, ProbabilityCompare,
+  ApprovalFact, EventCard, EventPreview, GuardCard, KIND_LABEL, KIND_OPTIONS, LOCALE_NAME, FIELD_NAME, LegacyNameTag, ProbabilityCompare,
   WHEEL_APP_KINDS, WHEEL_KIND_LABEL, WheelBar, WheelLegend, boolValue, casExpected, effectApproval, effectByDirection, effectDirect, expiredTag, formStore,
   legacyName, lifecycleOf, numericValue, pendingTag, percentText, text, unknownTag, wheelLegacyNexTier, wheelPointsTier, wheelUnit,
   type LegacyEvent, type LocaleCode, type WheelTier,
@@ -191,11 +191,10 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
     openActionConfirm({ briefKind: "config",
       action: `活动奖励 · ${event.name}`,
       title: "修改活动奖励",
-      effect: effectByDirection,
+      effect: effectByDirection(),
       detail: <>当前奖励 <b>{current}</b>。填写新奖励后确认。</>,
       facts: <>
-        <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="现在的奖励">{legacyName(current).text}{legacyName(current).legacy && <LegacyNameTag where="奖励文字" />}</Fact></Facts>
-        <ApprovalFacts amplify="活动开放且在发奖时间内，换成别的资产或提高数量" direct="其他修改（只改文字、降低数量）" object="活动奖励" />
+        <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="现在的奖励">{legacyName(current).text}{legacyName(current).legacy && <LegacyNameTag where="奖励文字" />}</Fact><ApprovalFact amplify="开放期间换资产或提高数量" object="奖励" /></Facts>
       </>,
       amplifies: true,
       confirmLabel: "提交修改",
@@ -235,16 +234,16 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
     openConfirm({ briefKind: "config",
       action: `活动状态 · ${event.name}`,
       title: opening ? "开放活动" : "结束活动",
-      effect: opening ? effectByDirection : <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>,
+      effect: opening ? effectByDirection() : <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>,
       detail: <>当前状态 <b>{lifecycleOf(event).label}</b>。</>,
       content: <>
         <Facts>
           <Fact k="活动">{eventName(event.id)}</Fact>
           <Fact k="状态"><Change from={lifecycleOf(event).label} to={opening ? "进行中" : "已结束"} /></Fact>
           {opening
-            ? <Fact k="开放后">App 上的用户可以参加这个活动，按活动的奖励发放</Fact>
+            ? <Fact k="开放后">用户可以在 App 上参加，按活动奖励发放</Fact>
             : <Fact k="结束后">用户不能再参加；同时停掉这个活动的玩法、取消主推。已有的参与和奖励记录保留，结束后不能再开放</Fact>}
-          {opening && <Fact k="要批准的">没有玩法规则、又有正奖励的旧活动开放时要另一位超级管理员批准，批准前活动不变；其他直接开放</Fact>}
+          {opening && <ApprovalFact amplify="没有玩法规则又有正奖励的活动" object="活动" />}
         </Facts>
         {opening && missing.length > 0 && <Notice tone="warn" title={`还缺 ${missing.length} 项翻译，后端会拒绝开放`}>{missing.join("、")}。先在卡片底部的「三语内容」里补齐。</Notice>}
       </>,
@@ -286,7 +285,7 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
       title: `编辑${LOCALE_NAME[locale]}${FIELD_NAME[field]}`,
       effect: effectDirect,
-      detail: <>这里填写 {locale.toUpperCase()} 文案；不填时 App 显示原文，不会自动翻译。</>,
+      detail: <>不填时 App 显示英文或原文，不自动翻译。</>,
       facts: <Facts><Fact k="活动">{eventName(code)}</Fact><Fact k="原文">{source || "—"}</Fact></Facts>,
       reasonPlaceholder: "例如：补齐上线前的翻译",
       edit: { kind: "text", current },
@@ -324,6 +323,7 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
     openActionConfirm({ briefKind: "config",
       action: "新建活动",
       title: "新建既有活动",
+      statedBrief: { impact: "建成预告，不对用户开放。", check: "核对编号、玩法和奖励，理由写清依据。" },
       effect: <StatusTag tone="neutral" filled>建成预告，不开放</StatusTag>,
       detail: <>新建一个活动。活动 ID 用英文且不能重复；主推活动必须在进行中，且同时只能有一个。</>,
       facts: <Notice tone="warn" title="目前只有内置活动可以开放">自定义编号的活动建好后暂时不能开放（后端待办 H4-BE-01）；建成后一律是「预告」、不主推。</Notice>,
@@ -374,10 +374,11 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
   };
 
   // ===== 转盘 =====
-  const tierFacts = (tier: WheelTier) => <Facts>
+  const tierFacts = (tier: WheelTier, extra?: ReactNode) => <Facts>
     <Fact k="奖项">{text(tier.tier)}</Fact>
     <Fact k="奖品">{legacyName(tier.reward).text}{legacyName(tier.reward).legacy && <LegacyNameTag where="奖项名称" />}</Fact>
     <Fact k="概率">{percentText(tier.prob)}%（这里不改概率）</Fact>
+    {extra}
   </Facts>;
 
   const openCreateWheelTier = () => {
@@ -385,9 +386,10 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
     openActionConfirm({ briefKind: "config",
       action: "新建转盘奖项",
       title: "新建转盘奖项",
-      effect: effectByDirection,
+      statedBrief: { impact: "这一档进奖池，按概率参与抽奖。", check: "核对奖型、发真钱和每日库存。" },
+      effect: effectByDirection("新建 UVT 奖项，或概率大于 0 的 USDT、代金券奖项"),
       detail: <>新建一个转盘奖项。概率填 0–100，所有奖项加起来要等于 100%。发真钱的奖项，覆盖率低于红线时无法保存。</>,
-      facts: <ApprovalFacts amplify="新建 UVT 奖项，或概率大于 0 的 USDT、代金券奖项" direct="概率为 0 的 USDT、代金券奖项" object="奖池" />,
+
       amplifies: true,
       coverageLead: "这一档会让转盘多发奖",
       reasonPlaceholder: "例如：按活动方案新增一档奖品",
@@ -401,7 +403,7 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
           { key: "rewardKind", label: "奖励类型", current: "uvt", inputKind: "select", options: ["uvt", "usdt", "coupon"], optionLabels: { uvt: "UVT", usdt: "USDT", coupon: "代金券" } },
           { key: "realOutflow", label: "是否发真钱", current: "0", inputKind: "select", options: ["0", "1"], optionLabels: { "0": "否", "1": "是" },
             warning: (value) => (value.rewardKind === "usdt") !== (value.realOutflow === "1") ? "USDT 奖项要选「是」，UVT 和代金券要选「否」，否则后端会拒绝" : undefined },
-          { key: "rewardAmount", label: "每次发放数量", current: "", placeholder: "如 100", inputKind: "number", min: 0.000001, max: 1000000, step: 0.000001, required: true, help: "代金券每次发 1 张，这里照样填一个正数" },
+          { key: "rewardAmount", label: "每次发放数量", current: "", placeholder: "如 100", inputKind: "number", min: 0.000001, max: 1000000, step: 0.000001, required: true, help: "代金券每次发 1 张，填任意正数" },
           { key: "probabilityPct", label: "中奖概率（%）", current: "", placeholder: "0–100", inputKind: "number", min: 0, max: 100, step: 0.0001, required: true, help: "加上原有各档不能超过 100%；保存前要合计正好 100% 才能抽" },
           { key: "dailyStock", label: "每日库存", current: "", placeholder: "0 为不限", inputKind: "number", min: 0, max: 1000000, step: 1, required: true, help: "这一档每天最多发出几次，0 为不限" },
           { key: "voucherId", label: "代金券编号", current: "", placeholder: "如 WHEEL-50", required: false, visibleWhen: { key: "rewardKind", equals: "coupon" } },
@@ -445,9 +447,9 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
     openActionConfirm({ briefKind: "config",
       action: "新建转盘安全限制",
       title: "新建转盘护栏",
-      effect: effectByDirection,
-      detail: <>新建一条转盘安全限制。标识只能用小写英文字母，不能重复。</>,
-      facts: <ApprovalFacts amplify="首次设正数预算，或首次开启真钱奖" direct="其他新建" object="转盘" />,
+      effect: effectByDirection(),
+      detail: <>每种护栏只能建一条。</>,
+      facts: <Facts><ApprovalFact amplify="首次设正数预算或首次开启真钱奖" object="转盘" /></Facts>,
       reasonPlaceholder: "例如：上线前补齐转盘护栏",
       businessForm: {
         kind: "multi-field",
@@ -478,11 +480,11 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
     openActionConfirm({ briefKind: "config",
       action: `转盘安全限制 · 每日实际奖励预算（美元）`,
       title: "调整每日真钱奖预算",
-      effect: effectByDirection,
+      statedBrief: { impact: "保存后按新预算拦当天的真钱奖。", check: "核对新预算的金额和单位。" },
+      effect: effectByDirection(),
       detail: <>当前值 <b>{current}</b>。如果别人刚改过，需要刷新后再改。</>,
       facts: <>
-        <Facts><Fact k="现在">{amountText(budgetNumber(current))} USDT / 天</Fact><Fact k="怎么用">每次抽中真钱奖前，今天已发的真钱加上这一次超过预算，就改发 UVT 安慰奖</Fact></Facts>
-        <ApprovalFacts amplify="调高预算" direct="调低预算" object="预算" />
+        <Facts><Fact k="现在">{amountText(budgetNumber(current))} USDT / 天</Fact><Fact k="超过后">当天再抽中真钱奖改发 UVT 安慰奖</Fact><ApprovalFact amplify="调高预算" object="预算" /></Facts>
       </>,
       amplifies: true,
       coverageLead: "调高预算会让转盘每天多发真钱",
@@ -508,9 +510,9 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
       facts: <>
         <Facts>
           <Fact k="真钱奖发放"><Change from={on ? "开" : "关"} to={on ? "关" : "开"} /></Fact>
-          <Fact k={on ? "关闭后" : "开启后"}>{on ? "抽中 USDT 奖项的用户改拿 UVT 安慰奖，转盘照常能抽；已经发出的奖不变" : "抽中 USDT 奖项的用户按预算和覆盖率拿真钱"}</Fact>
+          <Fact k={on ? "关闭后" : "开启后"}>{on ? "抽中 USDT 改发 UVT 安慰奖，已发的不变" : "抽中 USDT 按预算和覆盖率发真钱"}</Fact>
+          {!on && <ApprovalFact amplify="从关到开" object="开关" />}
         </Facts>
-        {!on && <ApprovalFacts amplify="从关到开" direct="从开到关" object="开关" />}
       </>,
       confirmLabel: on ? "关闭真钱奖" : "提交审批",
       confirmTone: on ? "danger" : undefined,
@@ -534,9 +536,10 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
     openActionConfirm({ briefKind: "config",
       action: "调整转盘奖项概率",
       title: "调整转盘概率",
-      effect: effectByDirection,
+      statedBrief: { impact: "保存后按新概率抽，已抽的不变。", check: "核对各档概率合计正好 100%。" },
+      effect: effectByDirection("调高任一 UVT、USDT 或代金券奖项的概率（降低别的奖项不能抵消）"),
       detail: <>一次设置所有奖项，加起来要等于 100%。调高发钱奖项的概率时，覆盖率低于红线无法保存。</>,
-      facts: <><ProbabilityCompare tiers={tiers} store={store} valueOf={probabilityText} /><ApprovalFacts amplify="调高了任一 UVT、USDT 或代金券奖项的概率（降低别的奖项不能抵消）" direct="不调高这三类奖项概率的修改" object="奖池" /></>,
+      facts: <ProbabilityCompare tiers={tiers} store={store} valueOf={probabilityText} />,
       amplifies: true,
       coverageLead: "调高中奖概率会让转盘多发奖",
       reasonPlaceholder: "例如：按活动方案调整各档概率",
@@ -604,9 +607,9 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
     openActionConfirm({ briefKind: "config",
       action: `编辑转盘奖项 · ${tierName}`,
       title: "编辑转盘奖项",
-      effect: effectByDirection,
+      effect: effectByDirection(),
       detail: <>编辑奖项名称、奖励类型、是否发真钱。概率请在「改奖池 / 概率」里统一调，保证加起来是 100%。</>,
-      facts: <>{tierFacts(tier)}<ApprovalFacts amplify="换奖型、提高发放数量、放宽每日库存，或收紧 UVT 库存使安慰奖变多" direct="改名称和其他收紧的修改" object="奖池" /></>,
+      facts: tierFacts(tier, <ApprovalFact amplify="换奖型、提高数量、放宽库存，或收紧 UVT 库存使安慰奖变多" object="奖池" />),
       amplifies: true,
       coverageLead: "这一档会让转盘多发奖",
       reasonPlaceholder: "例如：按活动方案调整这一档奖品",
@@ -674,7 +677,7 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
       detail: probability === 0
         ? <>删除后至少还要保留 2 个奖项。</>
         : <>请先在「改奖池 / 概率」把这个奖项的概率调成 0%，再删除。</>,
-      facts: <>{tierFacts(tier)}{probability === 0 && <ApprovalFacts amplify="删除后 UVT 安慰奖会变多" direct="其他删除" object="奖池" />}</>,
+      facts: tierFacts(tier, probability === 0 ? <ApprovalFact amplify="删除后 UVT 安慰奖会变多" object="奖池" /> : null),
       confirmLabel: "删除奖项",
       confirmTone: "danger",
       reasonPlaceholder: "例如：这一档已下线，按工单删除",

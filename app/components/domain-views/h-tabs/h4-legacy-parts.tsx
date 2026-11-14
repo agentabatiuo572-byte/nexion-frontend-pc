@@ -97,15 +97,13 @@ export function expiredTag() {
 }
 
 /** 走审批的修改在框里常显怎么生效：哪个方向要批、谁来批、批准前什么不变。 */
-export function ApprovalFacts({ amplify, direct, object }: { amplify: string; direct: string; object: string }) {
-  return <Facts>
-    <Fact k="要批准的">{amplify}：提交审批单，另一位超级管理员（需有审批批准权限）批准前{object}什么都不变</Fact>
-    <Fact k="立即生效的">{direct}</Fact>
-  </Facts>;
+/** 一行写清哪个方向要批准、谁来批；放进确认框的 Facts 里。 */
+export function ApprovalFact({ amplify, object }: { amplify: string; object: string }) {
+  return <Fact k="要批准的">{amplify}：另一位超级管理员批准前{object}不变</Fact>;
 }
 export const effectDirect = <StatusTag tone="progress" filled>立即生效</StatusTag>;
-export const effectByDirection = <><StatusTag tone="progress" filled>调低立即生效</StatusTag><StatusTag tone="neutral" explain="让平台多付钱的方向要另一位超级管理员批准，批准前什么都不变。提交时由系统判断方向。">调高要批准</StatusTag></>;
-export const effectApproval = (note: string) => <StatusTag tone="progress" filled explain={`另一位超级管理员（需有审批批准权限）批准后才执行，批准前${note}什么都不变。`}>批准后生效</StatusTag>;
+export const effectByDirection = (amplify = "让平台多付钱的修改") => <><StatusTag tone="progress" filled>调低立即生效</StatusTag><StatusTag tone="neutral" explain={`${amplify}要另一位超级管理员（需有审批批准权限）批准，批准前什么都不变；其余确认后立即生效。提交时由系统判断方向。`}>调高要批准</StatusTag></>;
+export const effectApproval = (note: string) => <StatusTag tone="progress" filled explain={`另一位超级管理员（需有审批批准权限）批准后才执行，批准前${note}不变。`}>批准后生效</StatusTag>;
 
 // ===== 既有活动卡 =====
 export type LocaleCode = "zh" | "en" | "vi";
@@ -142,13 +140,13 @@ export function EventCard({ event, zh, gaps, rule, pending, primary, menu, onCon
       <p className="h4l-desc" data-empty={zh.description ? undefined : ""}>{zh.description || "中文说明未配置"}</p>
       <dl className="h4l-facts">
         <div><dt><Gift size={14} aria-hidden />奖励</dt><dd>
-          {wheel ? <span className="h4-dim">按转盘奖池发</span> : <>{reward.text || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
+          {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{reward.text || <span className="h4-dim">—</span>}{reward.legacy && <LegacyNameTag where="奖励文字" />}</>}
           <small>{zh.rewardName ? (zh.rewardName !== text(event.reward, "") ? `App 显示：${zh.rewardName}` : "App 显示同上") : "中文奖项名未配置"}</small>
         </dd></div>
-        <div><dt><Flag size={14} aria-hidden />参与条件</dt><dd>{text(event.condition, "") || <span className="h4-dim">—</span>}{event.geo ? <small>地区 {event.geo}</small> : null}</dd></div>
-        <div><dt><CalendarRange size={14} aria-hidden />时间</dt><dd>{!rule ? <span className="h4-dim">—<small>没有玩法规则</small></span>
+        <div><dt><Flag size={14} aria-hidden />参与条件</dt><dd>{text(event.condition, "") ? <span className="h4l-clip" title={text(event.condition)} data-user-content="">{text(event.condition)}</span> : <span className="h4-dim">—</span>}{event.geo ? <small>地区 {event.geo}</small> : null}</dd></div>
+        <div><dt><CalendarRange size={14} aria-hidden />时间</dt><dd>{!rule ? <span className="h4-dim">—</span>
           : rule.startsAt || rule.endsAt ? <><span className="h4-num">{formatTime(rule.startsAt, "Asia/Shanghai")}</span> → <span className="h4-num">{formatTime(rule.endsAt, "Asia/Shanghai")}</span><small>北京时间 · 玩法{rule.enabled ? "已开启" : rule.ready ? "已关闭，配置已就绪" : "已关闭，配置没就绪"}</small></>
-          : <span className="h4-dim">未配置<small>在「七类玩法」里设开放时间</small></span>}</dd></div>
+          : <span className="h4-dim">未配置</span>}</dd></div>
         <div><dt><Users size={14} aria-hidden />参与</dt><dd>{event.trackable
           ? <span className="h4l-funnel"><span><b className="h4-num">{numericValue(event.joinCount)}</b> 参与</span><span aria-hidden>→</span><span><b className="h4-num">{numericValue(event.doneCount)}</b> 达标</span><span aria-hidden>→</span><span><b className="h4-num">{numericValue(event.claimCount)}</b> 已领</span></span>
           : <span className="h4-dim">不统计效果</span>}</dd></div>
@@ -263,8 +261,7 @@ export function ProbabilityCompare({ tiers, store, valueOf }: { tiers: WheelTier
   return <div className="h4l-compare">
     <div className="h4l-compare-row"><span className="h4l-compare-key">现在</span><WheelBar tiers={tiers} label="现在的概率" /></div>
     <div className="h4l-compare-row"><span className="h4l-compare-key">改后</span>{readable ? <WheelBar tiers={tiers} values={next} label="改后的概率" /> : <span className="h4-dim">填好全部概率后画出来</span>}</div>
-    <WheelLegend />
-    {readable && <p className="h4l-compare-total" data-tone={total === 100 ? undefined : "warn"}>改后合计 <b className="h4-num">{percentText(total)}%</b>{total === 100 ? "" : "，要正好 100% 才能保存"}</p>}
+    {readable && <p className="h4l-compare-total" data-tone={total === 100 ? undefined : "warn"}>改后合计 <b className="h4-num">{percentText(total)}%</b>{total === 100 ? "" : "，要正好 100%"}<Explain label="颜色表示什么" content="金色发真钱（USDT），青色代金券，紫色 UVT，灰色是后端不认的旧奖型；橙色是还差的概率。" /></p>}
     {changed.length > 0 && <ul className="h4l-delta" aria-label="每 1000 次抽奖大约的变化">
       {changed.map((tier) => {
         const delta = Math.round((next[text(tier.tier)] - numericValue(tier.prob)) * 10 * 10000) / 10000;
@@ -276,7 +273,7 @@ export function ProbabilityCompare({ tiers, store, valueOf }: { tiers: WheelTier
           <span className="h4-dim">{money === null ? (unit ? `每次 ${amountText(text(tier.amount, ""))} ${unit}` : "代金券每次 1 张") : `真钱约 ${delta > 0 ? "多" : "少"} ${amountText(String(Math.abs(money)))} USDT`}</span>
         </li>;
       })}
-      <li className="h4l-delta-note">每 1000 次抽奖、按概率的估算；不计每日库存用完和覆盖率不够时改发的 UVT 安慰奖</li>
+      <li className="h4l-delta-note">每 1000 次抽奖按概率估算，不计库存用完和改发安慰奖</li>
     </ul>}
   </div>;
 }

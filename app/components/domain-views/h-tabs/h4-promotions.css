@@ -240,6 +240,7 @@
 .h4-page .h4l-funnel b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
 .h4-page .h4l-ready { display: inline-flex; align-items: center; gap: 6px; color: var(--rd-ok); font-size: var(--rd-text-body); }
 .h4-page .h4l-lack { display: inline-flex; align-items: center; gap: 6px; color: var(--rd-warn); font-size: var(--rd-text-body); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.h4-page .h4l-clip { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .h4-page .h4l-reward { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .h4-page .h4l-kind { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .h4-page .h4l-ops { flex-wrap: nowrap; justify-content: flex-end; }
@@ -292,17 +293,18 @@
 .h4l-preview { display: flex; flex-direction: column; gap: 8px; }
 .h4l-preview-title { display: inline-flex; align-items: center; gap: 6px; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .h4l-phone { padding: 14px 12px 18px; border-radius: 20px; border: 1px solid var(--rd-line-strong); background: var(--rd-panel); }
-.h4l-phone-card { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: var(--rd-radius-tile-sm); background: var(--rd-panel-inner); }
+.h4l-phone-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: var(--rd-radius-tile-sm); background: var(--rd-panel-inner); }
 .h4l-phone-card b { font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); overflow-wrap: anywhere; }
 .h4l-phone-desc { color: var(--rd-text-2); font-size: var(--rd-text-aux); overflow-wrap: anywhere; }
 .h4l-phone-reward { display: inline-flex; align-items: center; gap: 4px; font-size: var(--rd-text-aux); color: var(--rd-text); }
 .h4l-phone-go { align-self: flex-end; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .h4l-preview-note { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 /* 确认框里的新旧概率对比 */
-.h4l-compare { display: flex; flex-direction: column; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--rd-line); }
+.h4l-compare { display: flex; flex-direction: column; gap: 8px; }
+.h4l-compare + .rd-notice, .h4l-compare + .rd-facts { margin-top: 12px; }
 .h4l-compare-row { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px; align-items: center; }
 .h4l-compare-key { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
-.h4l-compare-total { margin: 0; color: var(--rd-text-2); font-size: var(--rd-text-body); }
+.h4l-compare-total { margin: 0; display: flex; align-items: center; gap: 6px; color: var(--rd-text-2); font-size: var(--rd-text-body); }
 .h4l-compare-total[data-tone="warn"] { color: var(--rd-warn); }
 .h4l-delta { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--rd-text-body); }
 .h4l-delta li { display: grid; grid-template-columns: 120px 96px minmax(0, 1fr); gap: 12px; align-items: baseline; }

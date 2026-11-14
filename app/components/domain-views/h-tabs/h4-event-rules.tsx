@@ -8,7 +8,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { BlockState, Button, Check, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { formatTime } from "./h4-promotion-ui";
-import { ApprovalFacts, effectApproval, effectDirect } from "./h4-legacy-parts";
+import { ApprovalFact, effectApproval, effectDirect } from "./h4-legacy-parts";
 
 /** 每类玩法一句人话：用户做什么、拿到什么（字段见 H4EventRuleService 的规则闭集）。 */
 const PLAY_SENTENCE: Record<string, string> = {
@@ -90,9 +90,9 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
           {next.enabled ? <Fact k="开了以后">{PLAY_SENTENCE[playKey({ kind: base.kind, rules: next.rules })] ?? "符合条件的用户可以参与"}</Fact>
             : <Fact k="关了以后">不再发新奖励；已经领到的照旧。开过一次的玩法关闭后不能再开</Fact>}
           {next.enabled && keyParams({ kind: base.kind, rules: next.rules }).filter(([k]) => k === "平台最多付").map(([k, v]) => <Fact key={k} k={k} tone="role-1">{v}</Fact>)}
-          {firstOpen && <Fact k="开启后固定">玩法和时间不能再改，只能关闭；关闭后不能再开</Fact>}
+          {firstOpen && <Fact k="开启后固定">玩法和时间不能再改，只能关闭；关了不能再开</Fact>}
+          {firstOpen && <ApprovalFact amplify="第一次开启" object="玩法" />}
         </Facts>
-        {firstOpen && <ApprovalFacts amplify="第一次开启" direct="没开过的草稿保存、关闭" object="玩法" />}
       </>,
       confirmLabel: firstOpen ? "提交审批" : "保存配置",
       reasonPlaceholder: firstOpen ? "例如：活动素材和预算已确认，申请开启" : "例如：按活动方案调整参与条件",

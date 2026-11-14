@@ -7,7 +7,7 @@ import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { BlockState, Button, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Steps } from "@/app/components/rd";
 import { amountText, formatTime } from "./h4-promotion-ui";
-import { ApprovalFacts, effectApproval, effectDirect } from "./h4-legacy-parts";
+import { ApprovalFact, effectApproval, effectDirect } from "./h4-legacy-parts";
 
 const empty = (): RaffleDraft => ({ id: "", titleZh: "", titleEn: "", titleVi: "", startsAt: "", drawAt: "", prizes: [] });
 const dateInput = (value: string) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString().slice(0, 19) : "";
@@ -56,8 +56,8 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
           {nextEnabled && <Fact k="之后能不能改">还没人报名时可以关闭回草稿再改；有人报名后奖项和时间锁定，也不能再关闭</Fact>}
           {closing && <Fact k="关闭后">回到草稿，用户不能再报名；改好后可以再申请开放</Fact>}
           {!previous && <Fact k="保存后">新的一期先是草稿，不对用户开放；保存后再打开它申请开放</Fact>}
+          {opening && <ApprovalFact amplify="从草稿开放报名" object="这一期" />}
         </Facts>
-        {opening && <ApprovalFacts amplify="从草稿开放报名" direct="草稿保存、没人报名时关闭" object="这一期" />}
       </>,
       confirmLabel: opening ? "提交审批" : previous ? "保存配置" : "保存草稿",
       reasonPlaceholder: opening ? "例如：奖项和时间已确认，申请开放报名" : "例如：按活动方案配置这一期",
