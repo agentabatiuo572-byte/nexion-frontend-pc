@@ -979,13 +979,14 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   const lifeCounts = Object.fromEntries(LIFECYCLE_ORDER.map((state) => [state, SCHEMA_REGISTRATIONS.filter((schema) => schema.lifecycleState === state).length])) as Record<A4Lifecycle, number>;
   const shownSchemas = lifeFilter === "all" ? SCHEMA_REGISTRATIONS : SCHEMA_REGISTRATIONS.filter((schema) => schema.lifecycleState === lifeFilter);
   const todayTotal = Number(A4_STATS.todayEvents);
-  // 表里只写前三个加「等 N 个」，全部写在详情抽屉里；悬停也能看全。
+  // 表里只写前两个加「等 N 个」，全部写在详情抽屉里；悬停也能看全。
   const consumersOf = (consumers: string, all = false) => {
     const parts = consumerParts(consumers, pageName);
     if (!parts.length) return <span className="a4-dim">未指定</span>;
     const full = parts.map((part) => part.text).join("、");
-    if (all || parts.length <= 3) return <span title={all ? undefined : full}>{full}</span>;
-    return <span title={full}>{parts.slice(0, 3).map((part) => part.text).join("、")} <span className="a4-dim">等 {parts.length} 个</span></span>;
+    if (all) return <span>{full}</span>;
+    const shown = parts.slice(0, 2);
+    return <span className="a4-uses" title={full}>{shown.map((part, index) => <span key={part.key} className="a4-nowrap">{part.text}{index < shown.length - 1 ? "、" : ""}</span>)}{parts.length > 2 && <span className="a4-dim a4-nowrap">等 {parts.length} 个</span>}</span>;
   };
   const moduleCell = (code: string) => {
     const name = moduleText(code);

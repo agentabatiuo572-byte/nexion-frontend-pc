@@ -181,10 +181,12 @@
 /* 事件表：名称列最宽，进度和谁在用次之，操作只占菜单宽 */
 .a4-schema-table { table-layout: fixed; }
 .a4-schema-table th:nth-child(1) { width: 30%; }
-.a4-schema-table th:nth-child(2) { width: 15%; }
+.a4-schema-table th:nth-child(2) { width: 11%; }
 .a4-schema-table th:nth-child(3) { width: 72px; }
 .a4-schema-table th:nth-child(4) { width: 168px; }
 .a4-schema-table th:nth-child(6) { width: 64px; }
+.adom .a4-uses { display: inline-flex; flex-wrap: wrap; column-gap: 4px; }
+.adom .a4-nowrap { white-space: nowrap; }
 .adom .a4-ename { display: flex; flex-direction: column; min-width: 0; }
 .adom .a4-ename [data-mono] { overflow-wrap: anywhere; }
 .adom .a4-ename-desc + [data-mono] { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
