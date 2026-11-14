@@ -35,13 +35,13 @@ export function M5Flow({ rules, policy }: { rules: M5RulesSummary; policy: M5Pol
   const inherit = !ruleReady ? "—" : rules.inheritance === "UNLIMITED" ? "不限次数" : rules.inheritance === "LIMITED" ? `最多 ${rules.depth ?? "—"} 次` : "未配置";
   const steps: { key: string; icon: typeof UserPlus; when: string; value: ReactNode; what: ReactNode; muted?: boolean; explain: ReactNode }[] = [
     { key: "register", icon: UserPlus, when: "新用户注册", value: inherit, what: "继承邀请人的专属客服",
-      explain: "注册时先看邀请关系：人工分配过的客户邀请来的用户，按「自动继承方式」归给同一位专属客服。继承不到的用户进待分配，等他第一次发消息。注册时不会分配。" },
-    { key: "inquiry", icon: MessageSquareText, when: "第一次发消息", value: !ruleReady ? "—" : auto ? "马上自动分配" : "等主管分配", what: !ruleReady ? "分配方式没读到" : auto ? "按负载选一位专属客服" : "客服主管在客服工作台「待分配」里分",
-      explain: "按负载：当前绑定客户数加上 2 倍待回复会话数，最低的那位；一样低的随机选一位。欢迎语不算客户发消息。" },
+      explain: "用专属邀请码注册，或邀请人已有专属客服时，注册时就按「邀请来的用户归谁」归给那位客服。继承不到的进待分配，等第一次发消息再分。" },
+    { key: "inquiry", icon: MessageSquareText, when: "第一次发消息", value: !ruleReady ? "—" : auto ? "自动分配" : "等主管分配", what: !ruleReady ? "分配方式没读到" : auto ? "在可接单的客服里按负载选" : "客服主管在客服工作台「待分配」里分",
+      explain: "按负载：当前绑定客户数加上 2 倍待回复会话数，最低的那位；一样低的随机选。只选没暂停接新单、绑定客户数没到上限的客服。欢迎语不算客户发消息。" },
     { key: "alert", icon: BellRing, when: "等待提醒", value: policyReady ? minutes(policy.alert) : "—", what: "还没人接，标红提醒主管",
       explain: "只在专属会话的待分配和客服工作台里标红，不另发通知。" },
-    { key: "fallback", icon: Timer, when: "超时兜底", value: !ruleReady ? "—" : auto ? "不需要兜底" : policyReady ? minutes(policy.fallback) : "—", muted: auto,
-      what: auto ? "自动分配模式在首次咨询时就分了" : "按负载自动兜底分配，主管事后可以改派",
+    { key: "fallback", icon: Timer, when: "超时兜底", value: !ruleReady ? "—" : auto ? "定时重试" : policyReady ? minutes(policy.fallback) : "—", muted: auto,
+      what: auto ? "首次咨询没分成的，后台继续重试" : "按负载自动兜底分配，主管事后可以改派",
       explain: "兜底由后台定时任务执行，大约每分钟查一次，所以不是精确到秒。没有合格的客服时客户继续留在待分配，不会假装分配成功。" },
   ];
   return (
@@ -61,7 +61,7 @@ export function M5Flow({ rules, policy }: { rules: M5RulesSummary; policy: M5Pol
         <UsersRound size={14} aria-hidden />
         <span>没分过组的客户分配时先进</span>
         <strong>{!policyReady ? "—" : policy.groupId == null ? "不设默认接收组" : policy.groupName ?? `组编号 ${policy.groupId}`}</strong>
-        <Explain label="默认接收组怎么用" content="只对从来没被分过组的客户生效；主管手动调过组的客户不受影响。已经有专属客服的客户，客服离线或忙碌也不会重新分配。" side="top" align="start" />
+        <Explain label="默认接收组怎么用" content="只对没有分组、也从没分过组的客户生效，而且这个组要启用、有负责人。已有专属客服的客户不会重新分配。" side="top" align="start" />
       </div>
     </div>
   );
@@ -73,7 +73,7 @@ export type M5PendingRow = { key: string; name: ReactNode; change: ReactNode; su
 export function M5PendingWrites({ rows }: { rows: readonly M5PendingRow[] }) {
   if (rows.length === 0) return null;
   return (
-    <Notice tone="warn" title={<>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，后端认得出是同一次提交，不会重复执行；超过 24 小时只能查询。有结论前，同一项不要再改。" /></>}>
+    <Notice tone="warn" title={<>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内按原请求重试，后端认得出是同一次提交，不会重复执行。「读回核对」只看现状，证明不了原操作有没有执行。有结论前同一项不能再改。" /></>}>
       <ul className="m5-pending" aria-label="结果未知的操作">
         {rows.map((row) => (
           <li key={row.key}>
@@ -81,7 +81,7 @@ export function M5PendingWrites({ rows }: { rows: readonly M5PendingRow[] }) {
             <span className="m5-pending-change">{row.change}</span>
             <span className="m5-pending-time">{businessStamp(row.submittedAt)} 提交</span>
             <span>{row.expired
-              ? <StatusTag tone="neutral" icon={CircleHelp} explain="原请求超过 24 小时，不能再重试，只能查询。">已过期</StatusTag>
+              ? <StatusTag tone="neutral" icon={CircleHelp} explain="原请求超过 24 小时，不能再重试。">已过期</StatusTag>
               : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>}</span>
             <span className="m5-pending-actions">{row.actions}</span>
           </li>

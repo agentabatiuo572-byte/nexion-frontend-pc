@@ -40,7 +40,7 @@ export function M5Page({ ctx, permission, permissionUnknown, hasData, loading, l
   const welcomeDate = welcome.updatedAt ? formatBusinessTime(welcome.updatedAt, { year: "numeric", month: "2-digit", day: "2-digit" }) : null;
 
   const conclusion = permissionUnknown ? <Conclusion state="unknown">客服查看范围没读到，管理入口先不显示</Conclusion>
-    : manager && pendingCount > 0 ? <Conclusion state="warn" hint="先查询原结果；有结论前同一项不要再改。">有 {pendingCount} 次保存结果未知</Conclusion>
+    : manager && pendingCount > 0 ? <Conclusion state="warn" hint="先在下面逐条核对；有结论前同一项不能再改。">有 {pendingCount} 次保存结果未知</Conclusion>
       : manager && (rules.state === "loading" || policy.state === "loading") ? <Conclusion state="unknown">正在读取分配规则…</Conclusion>
         : manager && (rules.state === "failed" || policy.state === "failed") ? <Conclusion state="unknown" hint="到「分配规则」页签重新读取。">分配规则读不到，现在不知道新客户怎么分</Conclusion>
           : manager ? <Conclusion state="ok" hint={agentsReady && contentReady ? `${content.agentsOpen} 位客服开放接待，客服回复时能选 ${content.published} 条话术和模板。` : undefined}>
@@ -66,7 +66,7 @@ export function M5Page({ ctx, permission, permissionUnknown, hasData, loading, l
           explain="首次咨询的分配方式、提醒和兜底时长。点这一格看完整流程。" onOpen={() => setTab("rules")} openLabel="看分配规则" />}
         {manager && <Stat icon={Headset} tone="role-3" label="开放接待" value={agentsReady ? content.agentsOpen : "—"} unit={agentsReady ? "位" : undefined}
           sub={agentsReady ? `暂停接新单 ${content.agentsBusy} · 共 ${content.agentsTotal} 位` : undefined}
-          explain="你能管的客服里开着接待的人数。暂停接新单目前只对人工转接生效。点这一格看客服名册。" onOpen={() => setTab("roster")} openLabel="看客服接待名册" />}
+          explain="你能管的客服里开着接待的人数。暂停接新单的不会被自动分配或转接新客户。点这一格看客服名册。" onOpen={() => setTab("roster")} openLabel="看客服接待名册" />}
         {manager && <Stat icon={MessageCircleHeart} tone="role-3" label="欢迎语最近修改" value={welcome.state !== "ready" ? "—" : welcomeDate ?? "还没改过"}
           sub={welcome.state === "ready" ? "只影响之后注册的用户" : undefined}
           explain="新用户注册后收到的第一条消息，中文、英语、越南语各一份。点这一格看内容。" onOpen={() => setTab("welcome")} openLabel="看欢迎语" />}

@@ -10,7 +10,7 @@ import { createPendingMutationStore, PENDING_MUTATION_TTL_MS } from "../../../..
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { isM5ManagementPayload } from "@/lib/admin/m5-management-record";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { useM5ManagementCommand, type M5ManagementRecord } from "@/lib/admin/use-m5-management-command";
 import type { MSupportPermission } from "./m5-service-rules";
 
@@ -19,7 +19,7 @@ type WelcomePendingRecord = M5ManagementRecord<WelcomePayload, SupportWelcomeMes
 const welcomeCommands = createPendingMutationStore<WelcomePendingRecord>({ storageKey: "nexion-admin-m-support-welcome-v1", retainExpiredRecords: true, isValidRecord: (row) => Number.isSafeInteger(row.actorId) && isM5ManagementPayload("welcome", row.payload) && (row.before === undefined || isM5ManagementPayload("welcome", row.before, true)) });
 const LANGUAGES: Array<{ key: SupportWelcomeLanguage; label: string }> = [{ key: "zh", label: "中文" }, { key: "en", label: "英语" }, { key: "vi", label: "越南语" }];
 const MAX = 500;
-const EXPIRED = "原请求已超过 24 小时，不能再重试。请查询原结果，或加载最新内容核对后重新提交。";
+const EXPIRED = "原请求已超过 24 小时，不能再重试，只能查询原结果；原记录保留。";
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
 const fingerprintOf = (payload: WelcomePayload) => `support-welcome:${payload.expectedVersion}`;
 // Same count as the backend: Unicode code points after trim. UTF-16 length counts 𠮷 twice.
@@ -112,7 +112,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
 
   async function refreshLatest() {
     const actor = actorStamp();
-    try { const value = await supportWelcomeMessageClient.read(); if (actor === actorStamp()) setLatest(value); } catch (cause) { if (actor === actorStamp()) setError(errorText(cause)); }
+    try { const value = await supportWelcomeMessageClient.read(); if (actor === actorStamp()) setLatest(value); } catch (cause) { if (actor === actorStamp()) setError(displayAdminReadError(cause)); }
   }
 
   const checkPending = () => command.run("query");
@@ -148,14 +148,14 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
           {!retryExpired && <Button size="sm" variant="primary" disabled={saving || !canWrite} onClick={restore}>按原请求重试</Button>}
         </>,
       }]} />}
-      <Panel icon={MessageCircleHeart} tone="role-3" title="新用户欢迎语" sub={current ? `第 ${current.version} 版` : undefined}
+      <Panel icon={MessageCircleHeart} tone="role-3" title="新用户欢迎语" sub={current && !readUnavailable ? `第 ${current.version} 版` : undefined}
         explain="新用户注册后在客服对话里收到的第一条消息：已经有专属客服的以这位客服的名义发，还没有的显示「待分配」。用户语言是中文收中文、越南语收越南语，其他语言都收英语。">
         {permission !== "superadmin" && <Notice tone="neutral">只有超级管理员能改欢迎语，你现在只能查看。</Notice>}
         {loading && !current && <BlockState state="loading" title="正在读取欢迎语…" />}
+        {saved && <Notice tone="ok">已保存。之后注册的用户会收到新内容。</Notice>}
         {!loading && (!current || readUnavailable) && <BlockState state="error" title="新用户欢迎语读不到" detail="暂时不能查看和修改。" onRetry={() => setReload((n) => n + 1)} />}
         {(error || command.message) && !readUnavailable && !confirm && !conflict && <Notice tone={errorTone}>{command.message || error}</Notice>}
-        {saved && <Notice tone="ok">{!loading && readUnavailable ? "已保存。当前配置暂时读不到，读到后再改。" : "已保存。之后注册的用户会收到新内容。"}</Notice>}
-        {current && shownTexts && <div className="m5-welcome-body">
+        {current && shownTexts && !(readUnavailable && !retry) && <div className="m5-welcome-body">
           <div className="m5-welcome-edit">
             <LocaleTabs label="欢迎语语言" value={lang} onChange={setLang}
               items={LANGUAGES.map(({ key, label }) => ({ value: key, label: (draft && current.texts[key] !== draft[key].trim()) ? <>{label} · 已改</> : label, missing: !shownTexts[key].trim() }))} />
@@ -191,7 +191,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
           <p>{latest ? `现在是第 ${latest.version} 版，你改的是第 ${current.version} 版。` : "还没读到最新内容。"}你填的内容还在。</p>
           {latest && <ul className="m5-plain-list">{changedLanguages(current.texts, latest.texts).map((key) => <li key={key}>{LANGUAGES.find((item) => item.key === key)?.label}：已被改为「{latest.texts[key]}」</li>)}</ul>}
         </Notice>}
-        {draft && current && permission === "superadmin" && <div className="rd-toolbar" data-end="">
+        {draft && current && permission === "superadmin" && !(readUnavailable && !retry) && <div className="rd-toolbar" data-end="">
           <span className="rd-toolbar-note">{retry ? "上次保存结果未知，先处理它" : changed.length > 0 ? `改了${changed.map((key) => LANGUAGES.find((item) => item.key === key)?.label).join("、")}，还没保存` : "没有改动"}</span>
           <Button variant="primary" icon={<Save size={14} aria-hidden />} disabled={retry ? false : !editable || !valid || changed.length === 0}
             disabledReason={!retry && editable && changed.length === 0 ? "还没有改动" : !retry && editable && !valid ? "有一种语言是空的或超过 500 字" : undefined}
@@ -217,7 +217,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
           <Fact k="不变的">已经注册的用户不会再收到；已发出的欢迎语不改</Fact>
         </Facts>
         {retry && <Notice tone="warn" title="结果未知" action={<Button size="sm" disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => void checkPending()}>查询原结果</Button>}>
-          {retryExpired ? EXPIRED : `上次保存在 ${businessStamp(submittedAt)}（${businessZone().label}）提交，没收到确定结果，可能已经生效。先查询原结果；也可以按原请求重试，后端认得出是同一次提交。`}
+          {retryExpired ? EXPIRED : `上次保存在 ${businessStamp(submittedAt)}（${businessZone().label}）提交，可能已经生效。先查询原结果，或按原请求重试，不会重复执行。`}
         </Notice>}
         <Field label="操作理由" required hint="8–200 字">
           {(control) => <Textarea {...control} rows={3} value={reason} maxLength={200} disabled={saving || Boolean(retry)} count={`${reason.trim().length}/200`} placeholder="例如：活动期间欢迎语加上新手指引" onChange={(event) => setReason(event.target.value)} />}

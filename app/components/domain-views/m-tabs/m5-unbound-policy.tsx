@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { supportUnboundPolicyClient, type SupportUnboundPolicy, type SupportUnboundPolicyUpdate } from "@/lib/admin/m-support-client";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useM5ManagementCommand, type M5ManagementRecord } from "@/lib/admin/use-m5-management-command";
@@ -66,7 +66,7 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
       setPolicy(row); setGroupsFailed(list === null); setGroups((list ?? []).filter((group) => group.status === "ENABLED"));
       if (awaitingSavedRead.current) { setSavedVersion(row.version); awaitingSavedRead.current = false; }
       if (!preserveDraft.current) setDraft(draftOf(row));
-    }).catch((cause) => { if (!controller.signal.aborted) { setPolicy(null); setError(displayAdminError(cause)); } })
+    }).catch((cause) => { if (!controller.signal.aborted) { setPolicy(null); setError(displayAdminReadError(cause)); } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [reload]);
@@ -118,8 +118,8 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
         {!denied && <p className="m5-pending-reason">原理由：{pending.payload.reason}</p>}
       </Notice>}
       {editable && !pending && command.message && <Notice tone="warn">{command.message}</Notice>}
-      {saved && <Notice tone="ok">{!loading && !policy ? "已保存。当前配置暂时读不到，读到后再改。" : savedVersion !== undefined ? `已保存，现在是第 ${savedVersion} 版。` : "已保存。"}</Notice>}
-      {error && <BlockState state="error" title="待分配设置读不到" detail={error} onRetry={() => setReload((n) => n + 1)} retryLabel="重新加载" />}
+      {saved && <Notice tone="ok">{savedVersion !== undefined ? `已保存，现在是第 ${savedVersion} 版。` : "已保存。"}</Notice>}
+      {error && <BlockState state="error" title="待分配设置读不到，暂时不能查看和修改" detail={error} onRetry={() => setReload((n) => n + 1)} retryLabel="重新加载" />}
       {!policy ? !error && <BlockState state="loading" title="正在读取待分配设置…" /> : pending ? null : <div className="m5-form">
         <div className="m5-unbound-fields">
           <Field label="等待提醒" hint="1–120 分钟" error={alertProblem || undefined} explain="客户发消息后超过这么久还没分到客服，专属会话的待分配里标红提醒主管。">
@@ -128,7 +128,7 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
           <Field label="超时兜底" hint="2–1440 分钟" error={fallbackProblem || undefined} explain="只在「客服主管分配」模式下用：等待超过这么久按负载自动分配，主管事后可以改派。">
             {(control) => <NumberInput {...control} id="m-unbound-fallback" unit="分钟" min={2} max={1440} step={1} value={draft.fallback} disabled={!editable || saving} onChange={(event) => setDraft((old) => ({ ...old, fallback: event.target.value }))} />}
           </Field>
-          <Field label="默认接收组" explain="从来没被分过组的客户，自动分配或兜底时先进这个组；主管手动调过组的不受影响。保存时只检查这个组启用着，组里有没有能接的客服要到分配时才知道。">
+          <Field label="默认接收组" explain="没有分组、也从没分过组的客户，自动分配或兜底时先进这个组。保存时只检查组启用着；分配时组还要有负责人，组里有没有能接的客服也要到那时才知道。">
             {(control) => <Select {...control} id="m-unbound-group" aria-label="默认接收组" value={draft.group} disabled={!editable || saving || groupsFailed} onChange={(value) => setDraft((old) => ({ ...old, group: value }))}
               options={[{ value: "", label: "不设置" }, ...(groupsFailed ? [...new Set([savedGroup, draft.group])].filter(Boolean).map((id) => ({ value: id, label: groupLabel(id) })) : groups.map((group) => ({ value: String(group.id), label: group.name })))]} />}
           </Field>

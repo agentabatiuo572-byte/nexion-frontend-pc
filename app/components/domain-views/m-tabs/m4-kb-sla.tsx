@@ -10,6 +10,7 @@ import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
+import { businessZone } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
@@ -240,17 +241,17 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       title: "删除这条问答",
       effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag>本页不能恢复</IrreversibleTag></>,
       confirmTone: "danger",
-      confirmLabel: "确认删除",
+      confirmLabel: original ? "按原请求重试" : "确认删除",
       briefKind: "faq-delete",
       statedBrief: {
         impact: published ? "删除后所有位置都不再读到这条问答，本页也找不回来；账号和资金不受影响。" : "这是草稿，用户本来就看不到；删除后本页找不回来，账号和资金不受影响。",
         check: "核对问题和回答，确认不再需要。只想先不让用户看到，用「下架」，以后还能重新发布。",
       },
-      facts: <Facts>
+      facts: <>{original && <Notice tone="warn" title="结果未知">{isRetryExpired(original) ? "原请求超过 24 小时，不能再重试，只能读回核对。" : "可能已经删除。按原请求重试不会重复执行。"}</Notice>}<Facts>
         <Fact k="问题"><span className="m4-fact-text">{faq.question}</span></Fact>
         <Fact k="给谁看">{surfaceName(faq.surface)} · {languageName(faq.language)}</Fact>
-        <Fact k="状态">{published ? "已发布，删除后马上从线上消失" : "草稿"}</Fact>
-      </Facts>,
+        <Fact k="状态">{published ? "已发布，删除后几分钟内从 App 消失" : "草稿"}</Fact>
+      </Facts></>,
       detail: <>删除后这条问答从知识库里消失，所有位置都不再读到“{faq.question}”，且不可在本页恢复。</>,
       reasonPlaceholder: "例如：内容已过时，已由新问答替代",
       reasonMin: 8,
@@ -289,7 +290,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const pendingRows = pendingCommands.map((record) => ({ key: record.commandKey,
     question: record.faq?.row.question ?? "常见问答", change: record.faq ? ({ create: "新建", edit: "编辑", publish: "发布", unpublish: "下架", delete: "删除" }[record.faq.kind]) : "结果未知",
     submittedAt: record.createdAt, expired: isRetryExpired(record), actions: <>
-      <Button size="sm" disabled={writePending} onClick={() => void readCurrent()}>查询原结果</Button>
+      <Button size="sm" disabled={writePending} onClick={() => void readCurrent()}>读回核对</Button>
       {record.faq && canWriteM4 && !isRetryExpired(record) && <Button size="sm" disabled={writePending} onClick={() => restore(record)}>按原请求重试</Button>}
     </>,
   }));
@@ -297,13 +298,8 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   // 首屏数字：只算这页的问答，不随筛选变。读不到时写「—」，不当成 0。
   const published = visibleFaqs.filter((faq) => faq.status === "published");
   const drafts = visibleFaqs.length - published.length;
-  // RagNovaAiGateway.novaQuestion selects at most 20 per requested language,
-  // ordered by sortOrder then ID. Language compatibility alone is insufficient.
-  const novaContextIds = new Set(["zh-CN", "en-US", "vi-VN"].flatMap((language) => published
-    .filter((faq) => faq.surface === "Nova" && faq.language === language)
-    .sort((a, b) => a.sortOrder - b.sortOrder || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    .slice(0, 20).map((faq) => faq.id)));
-  const unreachable = published.filter((faq) => faq.surface === "Nova" ? !novaContextIds.has(faq.id) : !reachesUsers(faq));
+  // Nova 智能问答已在 App 下线（决定表「全站-Nova」），放在那里的问答算用户看不到。
+  const unreachable = published.filter((faq) => !reachesUsers(faq));
   const byLanguage = M4_LANGUAGES.map((language) => ({ name: language.name, count: published.filter((faq) => faq.language === language.code).length })).filter((row) => row.count > 0);
   const otherLanguage = published.filter((faq) => !M4_LANGUAGES.some((language) => language.code === faq.language)).length;
   const loading = !knowledgeAvailable && ctx.contentLoading;
@@ -340,18 +336,18 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       {loading ? <Conclusion state="unknown">正在读取问答…</Conclusion>
         : failed ? <div className="m4-health" data-module-health-state="error"><Conclusion state="unknown" action={<Button size="sm" onClick={() => void (needsRead ? readCurrent() : ctx.refreshContent())}>重新读取</Button>}
             hint={`暂时不能新建和修改。${loadError ? "客服中心的其他数据也没同步成功。" : ""}`}
-            explain="知识库和旧的工单处理时限数据一起读取、一起校验，任何一部分不完整，问答都会读不到。点「重新读取」会重读整个客服中心。">问答读不到，现在不知道线上有哪些</Conclusion></div>
+            explain={`知识库和旧的工单处理时限数据一起读取、一起校验，任何一部分不完整，问答都会读不到。点「重新读取」${needsRead ? "只重读知识库" : "会重读整个客服中心"}。`}>问答读不到，现在不知道线上有哪些</Conclusion></div>
           : visibleFaqs.length === 0 ? <Conclusion state="neutral" icon={BookOpenText} hint={canEdit ? "点右上角「新建问答」写第一条。" : undefined}>还没有问答</Conclusion>
             : unreachable.length > 0
               ? <Conclusion state="warn" hint="可以筛「显示位置」和「语言」找到它们。"
-                  explain="Nova 智能助手现在读不到普通问答（后端语言代码对不上，已提后端）；App 帮助中心只按中文、英语、越南语读取。这些问答状态是已发布，但用户看不到。">
+                  explain="状态是已发布，但用户看不到：Nova 智能问答已在 App 下线；App 帮助中心只按中文、英语、越南语读取。">
                   {published.length} 条在线上，其中 {unreachable.length} 条用户实际看不到
                 </Conclusion>
               : <Conclusion state="ok" hint={drafts > 0 ? `${drafts} 条草稿还没发布，用户看不到。` : undefined}>{published.length} 条问答在线上</Conclusion>}
 
       <StatBand label="问答数量" fit>
         <Stat icon={BookOpenText} tone="role-2" label="全部问答" value={knowledgeAvailable ? visibleFaqs.length : "—"} unit={knowledgeAvailable ? "条" : undefined}
-          sub={knowledgeAvailable && visibleFaqs.length > 0 ? `帮助中心 ${visibleFaqs.filter((faq) => faq.surface === "Help Center").length} · Nova ${visibleFaqs.filter((faq) => faq.surface === "Nova").length}` : undefined}
+          sub={knowledgeAvailable && visibleFaqs.length > 0 ? `帮助中心 ${visibleFaqs.filter((faq) => faq.surface === "Help Center").length} · Nova（已下线）${visibleFaqs.filter((faq) => faq.surface === "Nova").length}` : undefined}
           explain="知识库里全部问答，含草稿；不随下面的筛选变。" />
         <Stat icon={CheckCircle2} tone="role-2" label="已发布" value={knowledgeAvailable ? published.length : "—"} unit={knowledgeAvailable ? "条" : undefined}
           sub={knowledgeAvailable && published.length > 0 ? [...byLanguage.map((row) => `${row.name} ${row.count}`), ...(otherLanguage ? [`其他 ${otherLanguage}`] : [])].join(" · ") : undefined}
@@ -393,12 +389,12 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         </FilterField>
       </FilterBar>
 
-      <Panel flush icon={BookOpenText} tone="role-2" title="问答" explain="按排序值从小到大排，同值的后更新的在前；帮助中心也按排序值排。点一行看全文和谁读得到。">
+      <Panel flush icon={BookOpenText} tone="role-2" title="问答" sub={`时间为${businessZone().label}`} explain="按排序值从小到大排，同值的后更新的在前。帮助中心也按排序值排，同值时顺序可能不同。点一行看全文和谁读得到。">
         <Table label="问答列表" className="m4-table">
           <thead><tr>
             <Th>问题</Th>
             <Th className="m4-col-cat">分类</Th>
-            <Th className="m4-col-who"><Explain label="给谁看怎么算" content="显示位置加语言。帮助中心的问答给 App 里界面是这个语言的用户看；中文问答客服回复时也能查到。Nova 智能助手现在读不到普通问答。">给谁看</Explain></Th>
+            <Th className="m4-col-who"><Explain label="给谁看怎么算" content="显示位置加语言。帮助中心的问答给 App 里界面是这个语言的用户看；中文问答客服回复时也能查到。Nova 智能问答已下线，放在那里的用户看不到。">给谁看</Explain></Th>
             <Th className="m4-col-state">状态</Th>
             <Th className="m4-col-sort" align="right">排序</Th>
             <Th className="m4-col-upd">最近更新</Th>
@@ -416,7 +412,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
                         <Td><Cell main={surfaceName(f.surface)} sub={audienceSub(f)} /></Td>
                         <Td><FaqStatusTag status={f.status} /></Td>
                         <Td align="right"><Cell num main={f.sortOrder} /></Td>
-                        <Td><Cell num main={f.updatedAt} sub={`第 ${f.version} 版`} /></Td>
+                        <Td><Cell num main={f.updatedAt.slice(0, 16)} sub={`第 ${f.version} 版`} /></Td>
                         {canEdit && <Td sticky="end" data-fit="">
                           <span className="m4-row-actions">
                             <Button size="sm" variant="ghost" icon={<Pencil size={14} aria-hidden />} disabled={writePending || blocked(f.id)} onClick={() => openEdit(f)}>编辑</Button>
@@ -436,7 +432,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       <M4FaqDrawer faq={current} nav={drawerNav} busy={writePending} canWrite={canEdit && !blocked(current?.id)}
         onClose={() => setOpenId(null)} onEdit={() => current && openEdit(current)} onStatus={() => current && openStatus(current)} onDelete={() => current && requestDeleteFaq(current)} />
 
-      {statusTarget && <M4StatusConfirm faq={statusTarget} busy={writePending} disabled={!canWriteM4 || (recovery ? isRetryExpired(recovery) : !canEdit)} failure={statusFailure}
+      {statusTarget && <M4StatusConfirm faq={statusTarget} busy={writePending} disabled={!canWriteM4 || (recovery ? isRetryExpired(recovery) : !canEdit)} failure={statusFailure} retry={recovery ? { expired: isRetryExpired(recovery) } : undefined}
         onCancel={() => { setRecovery(null); setStatusTarget(null); }}
         onConfirm={async () => {
           setStatusFailure("");
@@ -486,6 +482,8 @@ function FaqModal({
   const show = (key: keyof typeof errors) => (tried ? errors[key] : "") || undefined;
   const live = row?.status === "published" || status === "published";
   const unknown = failure.startsWith("结果未确认");
+  // 英语问答改成别的语言保存，后端会清掉附带的翻译（OpsSupportKnowledgeService.updateFaq）。
+  const translationCount = row?.language === "en-US" && language !== "en-US" ? Object.keys(row.translations ?? {}).length : 0;
   const dirty = question !== (row?.question ?? "") || answer !== (row?.answer ?? "") || reason !== "" || category !== (row?.category ?? "general")
     || surface !== (row?.surface ?? "Help Center") || language !== (row?.language ?? "zh-CN") || sortOrder !== String(row?.sortOrder ?? 10) || status !== (row?.status ?? "published");
   const save = () => {
@@ -510,20 +508,19 @@ function FaqModal({
       footer={
         <>
           <Button disabled={pending} onClick={onClose}>取消</Button>
-          <Button variant="primary" data-proof="support-faq-save" loading={pending} disabled={disabled} onClick={save}>{row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>
+          <Button variant="primary" data-proof="support-faq-save" loading={pending} disabled={disabled} onClick={save}>{recovery ? "按原请求重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>
         </>
       }
     >
-      {row?.status === "published" && <Notice tone="warn">这条在线上，保存后用户马上看到新内容。</Notice>}
-      {failure && <Notice tone={unknown ? "warn" : "danger"} title={unknown ? "结果未知" : "没有保存成功"}>
-        {unknown
-          ? <><p>请求已经发出，可能已经保存。先关掉表单，在列表里核对这条问答；{row ? "内容已经变了就不要再保存" : "列表里已经有了就不要再保存，再存可能多出一条"}。</p></>
-          : <p>{failure}</p>}
+      {row?.status === "published" && !recovery && <Notice tone="warn">这条在线上，保存后几分钟内用户就会看到新内容。</Notice>}
+      {failure && !unknown && <Notice tone="danger" title="没有保存成功"><p>{failure}</p></Notice>}
+      {(unknown || recovery) && <Notice tone="warn" title="结果未知">
+        <p>{recovery && isRetryExpired(recovery) ? "原请求超过 24 小时，不能再重试，只能读回核对。" : "可能已经保存。内容已锁定为原请求，按原请求重试不会重复执行。"}</p>
       </Notice>}
       <div className="m4-form">
         <div className="m4-form-fields">
           <div className="rd-form-grid" data-cols="2" data-dense="">
-            <Field label="显示位置" explain="帮助中心：App 里「我的 › 帮助中心」。Nova 智能助手现在读不到普通问答，已提后端。">
+            <Field label="显示位置" explain="帮助中心：App 里「我的 › 帮助中心」。Nova 智能问答已在 App 下线，选它用户看不到。">
               <Segments label="显示位置" value={surface} onChange={setSurface} items={SURFACES.map((value) => ({ value, label: surfaceName(value), disabled: pending || Boolean(recovery) }))} />
             </Field>
             <Field label="语言">
@@ -531,6 +528,8 @@ function FaqModal({
                 options={[...M4_LANGUAGES.map((option) => ({ value: option.code, label: option.name })), ...(M4_LANGUAGES.some((option) => option.code === language) ? [] : [{ value: language, label: language }])]} />}
             </Field>
           </div>
+          {surface === "Nova" && <Notice tone="warn">Nova 智能问答已在 App 下线，放在这里的问答用户看不到。</Notice>}
+          {translationCount > 0 && <Notice tone="warn">改成{languageName(language)}保存后，这条附带的 {translationCount} 种翻译会被清掉。</Notice>}
           <section aria-label={status === "published" ? "保存后谁读得到" : "发布后谁读得到"}>
             <h3 className="m4-block-title">{status === "published" ? "保存后谁读得到" : "发布后谁读得到"}</h3>
             <ReachList faq={{ surface, language }} label={status === "published" ? "保存后谁读得到" : "发布后谁读得到"} />
@@ -545,7 +544,7 @@ function FaqModal({
             <Field label="分类">
               {(control) => <Select disabled={pending || Boolean(recovery)} {...control} aria-label="问答分类" value={category} onChange={(value) => setCategory(value as SupportFaq["category"])} options={FAQ_CATEGORY_OPTIONS.map((c) => ({ value: c, label: catCN(c) }))} />}
             </Field>
-            <Field label="排序" hint="小值靠前" explain="0–999999 的整数。列表和帮助中心都按排序值从小到大排，同值的后更新的在前。" error={show("sort")}>
+            <Field label="排序" hint="小值靠前" explain="0–999999 的整数，从小到大排。同值时本页后更新的在前，帮助中心的顺序可能不同。" error={show("sort")}>
               {(control) => <NumberInput disabled={pending || Boolean(recovery)} {...control} min={0} max={999999} step={1} value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />}
             </Field>
             <Field label="发布状态">

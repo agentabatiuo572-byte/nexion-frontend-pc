@@ -531,13 +531,13 @@ export type MLoadConfigWrite = Omit<MLoadConfig, "version"> & {
 const CATEGORY_LABEL: Record<string, string> = {
   advisor: "专属客服服务",
   support: "普通客服",
-  ai: "Nova AI 顾问",
+  ai: "Nova 智能问答（已下线）",
 };
 
 const MANAGED_BY: Record<string, string> = {
   advisor: "增长 / 客服坐席",
   support: "客服坐席",
-  ai: "Nova 自动（在「Nova 消息推送」设置）",
+  ai: "已下线，只剩历史会话",
 };
 
 function idempotencyKey() {

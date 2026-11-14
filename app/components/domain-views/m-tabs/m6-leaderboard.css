@@ -65,7 +65,7 @@
 .m6-page .m6-identity { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; }
 .m6-page .m6-identity-text { display: flex; flex-direction: column; min-width: 0; }
 .m6-page .m6-identity-text .sl-person-name { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; }
-.m6-page .m6-identity-text .rd-note { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m6-page .m6-identity-text .rd-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m6-page .m6-identity-text .m6-name { min-width: 0; max-width: 100%; justify-content: flex-start; padding-inline: 0; font-weight: var(--rd-weight-medium); }
 .m6-page .m6-identity-text .m6-name .rd-btn-face { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m6-page .m6-count-link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }

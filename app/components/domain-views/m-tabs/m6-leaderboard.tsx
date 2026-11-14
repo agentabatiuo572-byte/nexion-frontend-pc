@@ -1,6 +1,6 @@
 "use client";
 
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { SupportClientError } from "@/lib/admin/m-support-client";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
@@ -26,7 +26,7 @@ function versionChanged(error: unknown): boolean {
 function message(error: unknown): string {
   return status(error) === 403 || status(error) === 401 ? "当前账号不能查看此榜单，请重新确认登录和客服权限。"
     : versionChanged(error) ? "榜单版本或可见范围已变化，请从第一页重新加载。"
-      : error instanceof SupportClientError ? displayAdminError(error) : "榜单加载失败，请重试。";
+      : error instanceof SupportClientError ? displayAdminReadError(error) : "榜单加载失败，请重试。";
 }
 function scopeValue(scope: string, groupId?: string) { return groupId ? `${scope}:${groupId}` : scope; }
 function asOf(data: LeaderboardPage | LeaderboardDetail) { return `${businessStamp(Date.parse(data.asOf))}（${businessZone().label}）`; }
@@ -175,7 +175,7 @@ export function M6Leaderboard() {
     : selfConfirmed ? <Conclusion state="neutral" lead explain={rankRule} action={data.self.pageNum !== null ? <Button icon={<MapPin size={14} aria-hidden />} onClick={locate}>定位到我</Button> : undefined}>
         我排{selfRow.isTied ? "并列" : ""}第 <b>{selfRow.rank}</b> 名{data.self.reason === "LEADER" || selfRow.rank === 1 ? "，是这一榜的第 1 名" : gapText ? `，离前一名差 ${gapText} ${unit}` : ""}
       </Conclusion>
-    : <Conclusion state="neutral" explain={`你不在这一版榜单里：${data.self.reason || "当前账号未参榜"}。只有专属客服参榜；客服主管、超级管理员不参榜，看的是别的组或这个月没有客服资格时也不在榜上。`}
+    : <Conclusion state="neutral" explain={`你不在这一版榜单里：${data.self.reason || "当前账号未参榜"}。参榜要有客服资格，兼任客服的主管也算；看的是别的组、或这个月没有客服资格时不在榜上。`}
         hint={managedOption && query.scope === "all" ? "要看你负责的组，在「范围」里选负责组榜。" : undefined}
         action={managedOption && query.scope === "all" ? <Button onClick={() => changeQuery({ ...currentQuery, scope: "managedGroups" })}>看我负责的组</Button> : undefined}>
         {data.total === 0 ? `${scopeText}：暂无参榜客服` : `${scopeText}：${data.total} 人参榜`}；你不在这一版里（{data.self.reason || "当前账号未参榜"}）

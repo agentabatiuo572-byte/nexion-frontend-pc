@@ -28,7 +28,7 @@ export const APP_LANGUAGES = ["zh-CN", "en-US", "vi-VN"];
 /** 不认识的语言码原样写出来，不当成中文。 */
 export const languageName = (code: string) => M4_LANGUAGES.find((language) => language.code === code)?.name ?? code;
 
-export const SURFACE_NAME: Record<string, string> = { "Help Center": "帮助中心", Nova: "Nova 智能助手" };
+export const SURFACE_NAME: Record<string, string> = { "Help Center": "帮助中心", Nova: "Nova 智能问答（已下线）" };
 export const surfaceName = (surface: string) => SURFACE_NAME[surface] ?? surface;
 
 /** 页面读到的问答。语言按后端原值显示；附加翻译要等读取层接上（M4-B02）。 */
@@ -43,7 +43,7 @@ type Reach = { key: string; icon: typeof Smartphone; who: string; reaches: boole
 export function reachOf(faq: Pick<M4Faq, "surface" | "language">): Reach[] {
   const rows: Reach[] = [];
   if (faq.surface === "Nova") {
-    rows.push({ key: "nova", icon: Bot, who: "Nova 智能助手", reaches: APP_LANGUAGES.includes(faq.language), note: "目前读不到普通问答：后端语言代码对不上，已提后端修" });
+    rows.push({ key: "nova", icon: Bot, who: "Nova 智能问答", reaches: false, note: "已下线，用户看不到" });
   } else if (APP_LANGUAGES.includes(faq.language)) {
     const users = faq.language === "en-US" ? "界面是英语，或另外六种语言（App 按英语读取）的用户" : `界面是${languageName(faq.language)}的用户`;
     rows.push({ key: "app", icon: Smartphone, who: "App 帮助中心", reaches: true, note: users });
@@ -57,7 +57,7 @@ export function reachOf(faq: Pick<M4Faq, "surface" | "language">): Reach[] {
 }
 
 /** 发布后有没有用户能在 App 里看到。 */
-export const reachesUsers = (faq: Pick<M4Faq, "surface" | "language">) => (faq.surface === "Nova" || faq.surface === "Help Center") && APP_LANGUAGES.includes(faq.language);
+export const reachesUsers = (faq: Pick<M4Faq, "surface" | "language">) => faq.surface === "Help Center" && APP_LANGUAGES.includes(faq.language);
 
 export function ReachList({ faq, label }: { faq: Pick<M4Faq, "surface" | "language">; label: string }) {
   return (
@@ -81,7 +81,7 @@ export function FaqStatusTag({ status }: { status: SupportFaq["status"] }) {
 
 /** 列表里「给谁看」一格的第二行：语言，读不到时补一句。 */
 export function audienceSub(faq: Pick<M4Faq, "surface" | "language">) {
-  if (faq.surface === "Nova" && !APP_LANGUAGES.includes(faq.language)) return `${languageName(faq.language)} · 智能助手读不到`;
+  if (faq.surface === "Nova") return `${languageName(faq.language)} · 用户看不到`;
   if (!APP_LANGUAGES.includes(faq.language)) return `${languageName(faq.language)} · App 不读这个语言`;
   return languageName(faq.language);
 }
@@ -136,7 +136,7 @@ export function M4FaqDrawer({ faq, nav, busy, canWrite, onClose, onEdit, onStatu
         { label: "给谁看", value: `${surfaceName(faq.surface)} · ${languageName(faq.language)}` },
         { label: "分类", value: catCN(faq.category) },
         { label: "排序", value: <span data-num="">{faq.sortOrder}</span>, reason: "小值靠前" },
-        { label: "最近更新", value: <><span data-num="">{faq.updatedAt}</span> · 第 {faq.version} 版</> },
+        { label: "最近更新", value: <><span data-num="">{faq.updatedAt.slice(0, 16)}</span>（{businessZone().label}）· 第 {faq.version} 版</> },
       ]} />
       <section className="m4-drawer-block" aria-label={published ? "现在谁读得到" : "发布后谁读得到"}>
         <h3 className="m4-block-title">{published ? "现在谁读得到" : "发布后谁读得到"}</h3>
@@ -152,22 +152,25 @@ export function M4FaqDrawer({ faq, nav, busy, canWrite, onClose, onEdit, onStatu
 }
 
 /** 发布、下架的确认框。确认后发出的请求和改版前一样（理由固定，见下面的「操作记录」一行）。 */
-export function M4StatusConfirm({ faq, busy, disabled, failure, onCancel, onConfirm }: {
+export function M4StatusConfirm({ faq, busy, disabled, failure, retry, onCancel, onConfirm }: {
   faq: M4Faq;
   busy: boolean;
   failure: string;
   disabled?: boolean;
+  /** 从结果未知恢复：确认就是按原请求重试。expired 时只能读回核对。 */
+  retry?: { expired: boolean };
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   const publish = faq.status === "draft";
   const unknown = failure.startsWith("结果未确认");
+  const action = publish ? "发布" : "下架";
   return (
     <Modal title={publish ? "发布这条问答" : "下架这条问答"} icon={publish ? Upload : Archive}
       sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} busy={busy} onClose={onCancel}
       footer={<>
         <Button disabled={busy} onClick={onCancel}>取消</Button>
-        <Button variant="primary" loading={busy} disabled={disabled} onClick={onConfirm}>{publish ? "确认发布" : "确认下架"}</Button>
+        <Button variant="primary" loading={busy} disabled={disabled} onClick={onConfirm}>{retry || unknown ? "按原请求重试" : `确认${action}`}</Button>
       </>}>
       <Facts>
         <Fact k="问题"><span className="m4-fact-text">{faq.question}</span></Fact>
@@ -181,8 +184,9 @@ export function M4StatusConfirm({ faq, busy, disabled, failure, onCancel, onConf
       {publish && !reachesUsers(faq) && <Notice tone="warn">发布后状态会变成已发布，但 App 用户现在还看不到这条。</Notice>}
       {!publish && <p className="m4-confirm-note">问答留在列表里，随时可以重新发布。已经发给客户的回答不会撤回；App 里已打开的帮助页可能过几分钟才更新。</p>}
       <p className="m4-confirm-note">操作记录会记下这次{publish ? "发布" : "下架"}，理由固定写「{publish ? "常见问答 发布例行审核留档" : "常见问答 下架例行审核留档"}」。</p>
-      {failure && <Notice tone={unknown ? "warn" : "danger"} title={unknown ? "结果未知" : "没有成功"}>
-        {unknown ? <p>请求已经发出，可能已经{publish ? "发布" : "下架"}。先关掉这个框，看列表里这条的状态；状态没变再重新操作。</p> : <p>{failure}</p>}
+      {failure && !unknown && <Notice tone="danger" title="没有成功"><p>{failure}</p></Notice>}
+      {(unknown || retry) && <Notice tone="warn" title="结果未知">
+        <p>{retry?.expired ? `原请求超过 24 小时，不能再重试，只能读回核对。` : `可能已经${action}。按原请求重试不会重复执行。`}</p>
       </Notice>}
     </Modal>
   );
@@ -197,7 +201,7 @@ export type M4PendingRow = { key: string; question: string; change: ReactNode; s
 export function M4PendingWrites({ rows }: { rows: readonly M4PendingRow[] }) {
   if (rows.length === 0) return null;
   return (
-    <Notice tone="warn" title={<>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，后端认得出是同一次提交，不会重复执行；超过 24 小时只能查询。有结论前，这条问答不要再改。" /></>}>
+    <Notice tone="warn" title={<>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内按原请求重试，后端认得出是同一次提交，不会重复执行。「读回核对」只重读列表看现状，证明不了原操作有没有执行，记录也不会因此消失。有结论前这条问答不能再改。" /></>}>
       <ul className="m4-pending" aria-label="结果未知的操作">
         {rows.map((row) => (
           <li key={row.key}>
@@ -205,7 +209,7 @@ export function M4PendingWrites({ rows }: { rows: readonly M4PendingRow[] }) {
             <span className="m4-pending-change">{row.change}</span>
             <span className="m4-pending-time">{businessStamp(row.submittedAt)} 提交</span>
             <span className="m4-pending-state">{row.expired
-              ? <StatusTag tone="neutral" icon={CircleHelp} explain="原请求超过 24 小时，不能再重试，只能查询。">已过期</StatusTag>
+              ? <StatusTag tone="neutral" icon={CircleHelp} explain="原请求超过 24 小时，不能再重试，只能读回核对。">已过期</StatusTag>
               : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>}</span>
             <span className="m4-pending-actions">{row.actions}</span>
           </li>

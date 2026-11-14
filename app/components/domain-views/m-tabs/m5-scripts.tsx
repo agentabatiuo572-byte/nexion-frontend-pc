@@ -672,7 +672,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   const roster = !hasM1ReadAuthority
     ? <BlockState state="denied" title="当前账号没有客服名册权限" detail="话术与模板照常能维护。" />
     : <>
-      <Notice tone="warn">暂停接新单目前只对人工转接生效，同时接待上限目前不参与任何分配；自动分配仍按负载选人（已提后端）。</Notice>
+      <Notice tone="neutral">暂停接新单的客服，自动分配和人工转接都选不到；同时接待上限只管自动分配。</Notice>
       <Panel flush icon={Headset} tone="role-3" title="客服接待名册" sub={agentPageAvailable ? `${agentTotal} 位` : undefined}
         explain="列出你能管的客服，每页 5 位。分组、在不在线到客服工作台的「客服与分组」看；接待资格和主管资格在账号管理里改，这里不改。">
         <Table label="客服接待名册" className="m5-roster">
@@ -680,7 +680,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
             <Th>客服</Th>
             <Th className="m5-col-state">接待状态</Th>
             <Th className="m5-col-served"><Explain label="服务客户怎么算" content="现在绑定在这位客服名下的客户，最多列出 4 位，其余写「+n」。">服务客户</Explain></Th>
-            <Th className="m5-col-cap" align="right"><Explain label="同时接待上限是什么" content="这位客服最多同时接待几位客户，0 表示不接。目前只保存，自动分配和人工转接都还不看它（已提后端）。">同时接待上限</Explain></Th>
+            <Th className="m5-col-cap" align="right"><Explain label="同时接待上限是什么" content="自动分配时，这位客服名下的有效绑定客户数到这个数就不再选他，0 表示自动分配不选他。不是同时会话数；邀请继承和主管指定不受它限制。">同时接待上限</Explain></Th>
             <Th className="m5-col-tags">标签</Th>
             {canManageSupportSeats && <Th sticky="end">操作</Th>}
           </tr></thead>
@@ -739,7 +739,8 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   };
 
   const content = <>
-    {!sessionTemplatesAvailable && <BlockState state="error" title="话术与模板读不到，暂时不能修改" onRetry={() => void readCurrent()} retryLabel="重新读取" />}
+    {!sessionTemplatesAvailable && (ctx.contentLoading ? <BlockState state="loading" title="正在读取话术与模板…" />
+      : <BlockState state="error" title="话术与模板读不到，暂时不能修改" onRetry={() => void readCurrent()} retryLabel="重新读取" />)}
     {sessionTemplatesAvailable && !canManageM5Content && <Notice tone="neutral">你只能查看；新建、发布和归档要超级管理员、内容运营或客服主管。</Notice>}
     <PageTabs level={2} label="话术与模板分类" ids={contentIds} value={contentView} onChange={setContentView} items={[
       { value: "scripts", label: "专属客服话术" },
@@ -759,7 +760,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
           <Th sticky="end">操作</Th>
         </tr></thead>
         <tbody>
-          {!sessionTemplatesAvailable ? <TableMessage columns={5} role="alert">读到后再列出。</TableMessage>
+          {!sessionTemplatesAvailable ? ctx.contentLoading ? <TableLoading columns={5} rows={3} /> : <TableMessage columns={5} role="alert">读到后再列出。</TableMessage>
             : scriptTotal === 0 ? <TableMessage columns={5} role="status">{canManageM5Content ? "还没有话术。点「新建话术」写第一条，发布后客服才能选到。" : "还没有话术。"}</TableMessage>
               : visibleScripts.map((row) => {
                 const status = scriptStatus(row.id, row.status);
@@ -789,7 +790,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
           <Th sticky="end">操作</Th>
         </tr></thead>
         <tbody>
-          {!sessionTemplatesAvailable ? <TableMessage columns={5} role="alert">读到后再列出。</TableMessage>
+          {!sessionTemplatesAvailable ? ctx.contentLoading ? <TableLoading columns={5} rows={3} /> : <TableMessage columns={5} role="alert">读到后再列出。</TableMessage>
             : replyTemplateTotal === 0 ? <TableMessage columns={5} role="status">{canManageM5Content ? "还没有即时回复模板。点「新建模板」写第一条，发布后客服才能选到。" : "还没有即时回复模板。"}</TableMessage>
               : visibleReplyTemplates.map((row) => {
                 const status = tplStatus(row.id, row.status);
@@ -818,17 +819,19 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       } : undefined} />
   );
   const channels = <>
-    {!sessionTemplatesAvailable && <BlockState state="error" title="会话类别和推送设置读不到，暂时不能修改" onRetry={() => void readCurrent()} retryLabel="重新读取" />}
+    {!sessionTemplatesAvailable && (ctx.contentLoading ? <BlockState state="loading" title="正在读取会话类别和推送设置…" />
+      : <BlockState state="error" title="会话类别和推送设置读不到，暂时不能修改" onRetry={() => void readCurrent()} retryLabel="重新读取" />)}
     <Panel icon={MessagesSquare} tone="role-3" title="会话类别"
-      explain="用户在 App 客服入口能新建哪几类会话。这里只管专属客服会话；AI 会话由 AI 平台统一管理。停用全部客服能力到全局运营开关。">
+      explain="用户在 App 客服入口能新建哪几类会话。这里只管专属客服会话；Nova 智能问答已在 App 下线。停用全部客服能力到全局运营开关。">
       <ConfigList label="会话类别">
         {categories.length === 0 ? <BlockState state="empty" title="没有可管理的会话类别" /> : categories.map((c) => {
           const managed = c.type === "ai";
           const on = catEnabled(c);
-          return <ConfigRow key={c.type} name={c.name}
-            what={managed ? "AI 助手会话，由 AI 平台统一管理" : "用户能不能新建专属客服会话"}
+          return <ConfigRow key={c.type} name={managed ? "Nova 智能问答（已下线）" : c.name}
+            what={managed ? "App 里已没有入口，用户不能新建；只剩历史会话" : "用户能不能新建专属客服会话"}
             effect={managed ? undefined : "停用后用户不能再新建这类会话，进行中的会话保留"}
-            value={<span className="m5-tags">{on ? <StatusTag tone="ok" icon={CheckCircle2}>已启用</StatusTag> : <StatusTag tone="done" icon={CircleOff}>已停用</StatusTag>}{managed && <span className="m5-inline-note"><Lock size={12} aria-hidden />AI 平台管理</span>}</span>}
+            value={managed ? <span className="m5-tags"><StatusTag tone="done" icon={CircleOff}>已下线</StatusTag><span className="m5-inline-note"><Lock size={12} aria-hidden />后台开关：{on ? "开" : "关"}</span></span>
+              : on ? <StatusTag tone="ok" icon={CheckCircle2}>已启用</StatusTag> : <StatusTag tone="done" icon={CircleOff}>已停用</StatusTag>}
             action={!managed && canManageM5Operations ? (describedBy) => <Button size="sm" aria-describedby={describedBy} data-proof={`session-cat-toggle-${c.type}`} variant={on ? "danger-outline" : "secondary"} disabled={!sessionTemplatesAvailable || writePending || blocked(CAT_KEY(c.type))} onClick={() => toggleCat(c)}>{on ? "停用" : "启用"}</Button> : undefined} />;
         })}
       </ConfigList>
@@ -860,7 +863,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
           : command.key.startsWith("I.session.advisor.policy.") ? `${command.beforeValue} → ${body.value}`
             : `${statusName(body.expectedStatus)} → ${statusName(body.status)} · ${command.text}`;
     return { key: record.commandKey, name: command?.action.split(" · admin.")[0] ?? "结果未知", change, submittedAt: record.createdAt, expired: isRetryExpired(record), actions: <>
-      <Button size="sm" disabled={writePending} onClick={() => void readCurrent()}>查询原结果</Button>
+      <Button size="sm" disabled={writePending} onClick={() => void readCurrent()}>读回核对</Button>
       {command && !isRetryExpired(record) && <Button size="sm" variant="primary" disabled={writePending || !canRetry(command)} onClick={() => recover(record)}>按原请求重试</Button>}
     </> };
   });
@@ -934,33 +937,31 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
   // 只显示用（F03 的提交修正归代码 worker）：如实写出现在保存会提交的上限，不悄悄改。
   const capText = maxConcurrent.trim();
   const capNumber = Number(capText);
-  const capSubmitted = Math.max(0, Math.min(40, Math.round(capNumber || 0)));
-  const capProblem = capText === "" ? "要填 0–40 的整数" : !Number.isInteger(capNumber) || capNumber < 0 || capNumber > 40 ? `要填 0–40 的整数；现在保存会按 ${capSubmitted} 位提交` : "";
-  const capNote = agent.maxConcurrent === 0 && capText === "10"
-    ? "现在保存的上限是 0；这个框打开时预先填了 10，直接保存会改成 10。要保持 0 请改回 0（已登记，等修复）。"
-    : capText !== "" && !capProblem && capNumber === 0 ? "填 0：这位客服不接待。目前只保存，分配还不看它。" : undefined;
+  const capProblem = capText === "" || !Number.isInteger(capNumber) || capNumber < 0 || capNumber > 40 ? "要填 0–40 的整数" : "";
+  const capNote = capText !== "" && !capProblem && capNumber === 0 ? "填 0：自动分配不再选他；已有客户、邀请继承和主管指定不受影响。" : undefined;
 
   return (
     <RdModal title="配置接待" icon={SlidersHorizontal} wide busy={saving} onClose={onClose}
       sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">{agent.name} · 账号 #{agent.adminId}</span></>}
       footer={<>
         <Button disabled={saving} onClick={onClose}>取消</Button>
-        <Button variant="primary" loading={saving} disabled={!canSave} disabledReason={!saving && !reasonOk ? "操作理由要 8–200 字" : !saving && canSubmitNew && !canSave ? "同时接待上限要填 0–40 的整数" : undefined} onClick={() => void save()}>保存</Button>
+        <Button variant="primary" loading={saving} disabled={!canSave} disabledReason={!saving && !reasonOk ? "操作理由要 8–200 字" : !saving && canSubmitNew && !canSave ? "同时接待上限要填 0–40 的整数" : undefined} onClick={() => void save()}>{pending ? "按原请求重试" : "保存"}</Button>
       </>}>
       <Facts>
         <Fact k="客服">{agent.name || "名称未同步"} · {agent.email || "—"}</Fact>
         <Fact k="坐席类型"><span data-proof="m5-seat-position-field">{seatLabel(position)}</span></Fact>
         <Fact k="现在服务">{agent.assignedUserCount} 位客户</Fact>
       </Facts>
-      <Notice tone="warn">暂停接新单目前只对人工转接生效；同时接待上限目前不参与任何分配。自动分配仍按负载选人（已提后端）。接待资格和主管资格在账号管理里改。</Notice>
-      <DiffField label="同时接待上限" before={String(agent.maxConcurrent)} unit="位" hint="0–40 的整数，0 表示不接" error={capProblem || undefined} note={capNote}>
+      {pending && <Notice tone="warn" title="结果未知">{isRetryExpired(pending) ? "原请求超过 24 小时，不能再重试，只能读回核对。" : "上次保存可能已经生效。内容已锁定为原请求，按原请求重试不会重复执行。"}</Notice>}
+      <p className="rd-note">接待资格和主管资格在账号管理里改。</p>
+      <DiffField label="同时接待上限" before={String(agent.maxConcurrent)} unit="位" hint="0–40 的整数，0 表示不自动分配给他" error={capProblem || undefined} note={capNote}>
         {(control) => <NumberInput {...control} unit="位" min={0} max={40} step={1} value={maxConcurrent} disabled={saving || Boolean(pending)} onChange={(event) => setMaxConcurrent(event.target.value)} />}
       </DiffField>
       <div className="m5-profile-grid">
       <CheckGroup legend="接待开关">
         <Check label="开放接待" help="关闭后不参与自动分配和邀请继承" checked={enabled} disabled={saving || Boolean(pending)} onChange={() => setEnabled((v) => !v)} />
         <Check label="允许被转交" help="关闭后转交会话时选不到他" checked={transferable} disabled={saving || Boolean(pending)} onChange={() => setTransferable((v) => !v)} />
-        <Check label="暂停接新单" help="人工转接选不到他；自动分配仍会分给他" checked={busy} disabled={saving || Boolean(pending)} onChange={() => setBusy((v) => !v)} />
+        <Check label="暂停接新单" help="自动分配和人工转接都选不到他" checked={busy} disabled={saving || Boolean(pending)} onChange={() => setBusy((v) => !v)} />
       </CheckGroup>
       <div className="m5-tag-checks">
         <CheckGroup legend="标签" explain="只能从名册里已有的标签里选，最多 10 个。" help={tagOptions.length === 0 ? "名册里还没有任何标签。" : undefined}>
