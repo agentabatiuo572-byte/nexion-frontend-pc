@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import {
-  ArrowDown, ArrowUp, CalendarDays, ChartColumn, Check, CircleHelp, CircleSlash, Download, FileDown, Gauge, ListChecks,
+  ArrowDown, ArrowUp, CalendarDays, ChartColumn, Check, CircleHelp, CircleSlash, Download, FileDown, Gauge, Hourglass, ListChecks,
   RefreshCw, Route, ShieldAlert, ShieldCheck, SlidersHorizontal, TriangleAlert, UsersRound,
 } from "lucide-react";
 import {
@@ -246,7 +246,9 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
           <span className="j3-recovery-name">告警设置</span>
           <span className="j3-recovery-change">{savedChange(saved)}</span>
           <span className="j3-recovery-time">{businessStamp(saved.createdAt)} 提交（{businessZone().label}）</span>
-          <span className="j3-recovery-state">{isRetryExpired(saved) ? expiredTag("direct") : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>}</span>
+          <span className="j3-recovery-state">{!isRetryExpired(saved) ? <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag> : saved.legacy
+            ? <StatusTag tone="neutral" icon={Hourglass} explain="已超过 24 小时。旧记录没存原请求，不能重试；到「操作记录与审批」核对过，可以确认解除。">已过期</StatusTag>
+            : expiredTag("direct")}</span>
           <span className="j3-recovery-actions">
             <Button size="sm" loading={ctx.contentLoading} onClick={queryOriginal}>查询原结果</Button>
             {canConfigure && !isRetryExpired(saved) && <Button size="sm" disabledReason={!saved.command ? j3ErrorText(new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE")) : undefined}
@@ -257,8 +259,8 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       </ul>
     </Notice>
     )}
-    {releasing && <ReleaseModal label="告警设置"
-      explain="旧记录已超过 24 小时。解除只是不再提示这条旧记录，不代表原操作没执行；请先到「操作记录与审批」核对。"
+    {releasing && <ReleaseModal label="告警设置 · 旧记录"
+      explain={<><p>改版前的旧记录没存原请求，不能重试。</p><p>先到「操作记录与审批」核对原操作有没有生效。</p></>}
       onCancel={() => setReleasing(null)} onConfirm={() => {
         if (releasing.store === "emergency") releaseExpiredJLegacyCommand(releasing.record);
         // The old page and client saved the same operation in both stores.

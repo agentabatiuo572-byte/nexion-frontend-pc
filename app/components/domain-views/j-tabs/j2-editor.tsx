@@ -9,7 +9,7 @@
  *   行由页面用本机保存的原请求拼好传进来；现在旧逻辑不保存原请求内容，页面传空数组，等代码 worker 接。
  */
 import { useMemo, useState, type ReactNode } from "react";
-import { Check, Minus, Plus, Replace, RotateCcw, Search, X } from "lucide-react";
+import { Check, Hourglass, Minus, Plus, Replace, RotateCcw, Search, X } from "lucide-react";
 import { Button, Checkbox, Explain, Fold, Input, Modal, Notice, Segments, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { GeoCountryOption } from "@/lib/admin/j-client";
@@ -256,7 +256,7 @@ export function J2RecoveryNotice({ rows, unknownTag, expiredTag }: { rows: J2Rec
   return (
     <Notice tone="warn" title={<>{rows.length} 项修改结果未知<Explain label="结果未知怎么处理" content={<>
       <p>提交时没收到确定结果，可能已经生效。先点「查询原结果」读回现在的名单和规则核对；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行。</p>
-      <p>读回的是现在的状态，可能是别人改的，不能单凭它认定原操作成没成。按原请求重试成功或被明确拒绝后，记录才清除。</p>
+      <p>读回的是现在的状态，可能是别人改的，不能单凭它认定原操作成没成。按原请求重试成功或被明确拒绝后，记录才清除；改版前的旧记录过期后，核对过可以确认解除。</p>
     </>} /></>}>
       <ul className="j2-rec" aria-label="结果未知的修改">
         {rows.map((row) => (
@@ -264,7 +264,9 @@ export function J2RecoveryNotice({ rows, unknownTag, expiredTag }: { rows: J2Rec
             <span className="j2-rec-name">{row.name}</span>
             <span className="j2-rec-change">{row.change}</span>
             <span className="j2-rec-time">{businessStamp(row.submittedAt)} 提交</span>
-            <span className="j2-rec-state">{row.expired ? expiredTag : unknownTag}</span>
+            <span className="j2-rec-state">{!row.expired ? unknownTag : row.onRelease
+              ? <StatusTag tone="neutral" icon={Hourglass} explain="已超过 24 小时。旧记录没存原请求，不能重试；到「操作记录与审批」核对过，可以确认解除。">已过期</StatusTag>
+              : expiredTag}</span>
             <span className="j2-rec-actions">
               <Button size="sm" onClick={row.onQuery}>查询原结果</Button>
               {!row.expired && row.onRetry && <Button size="sm" onClick={row.onRetry}>按原请求重试</Button>}

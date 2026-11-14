@@ -16,7 +16,7 @@ import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/ad
 import { getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, releaseExpiredJLegacyCommand, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { expiredTag, unknownTag } from "../g-tabs/g-recovery";
@@ -240,7 +240,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   recoveryRows.push(...legacy.map((record) => ({
     key: record.commandKey,
     name: record.fingerprint.includes("country-lists/blocked") ? "封锁名单" : record.fingerprint.includes("country-lists/limited") ? "受限名单" : record.fingerprint.includes("endpoints/") ? "功能入口规则" : record.fingerprint.endsWith("edge-judge") ? "地区识别源" : "应急批量封锁",
-    change: formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"),
+    change: "改版前的旧记录，没存原请求，不能重试",
     submittedAt: record.createdAt, expired: isRetryExpired(record),
     onQuery: () => void queryOriginal(record), note: pendingNotes[record.commandKey],
     onRelease: isRetryExpired(record) ? () => setReleasing(record) : undefined,
@@ -251,8 +251,8 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       ? `endpoint:${decodeURIComponent(record.fingerprint.split("/").at(-1)!)}` : record.fingerprint.endsWith("edge-judge") ? "edge" : "emergency"));
   const recovery = <>
     <J2RecoveryNotice rows={recoveryRows} unknownTag={unknownTag("direct")} expiredTag={expiredTag("direct")} />
-    {releasing && <ReleaseModal label={recoveryRows.find((row) => row.key === releasing.commandKey)?.name}
-      explain="旧记录已超过 24 小时。解除只是不再提示这条旧记录，不代表原操作没执行；请先到「操作记录与审批」核对。"
+    {releasing && <ReleaseModal label={`${recoveryRows.find((row) => row.key === releasing.commandKey)?.name} · 旧记录`}
+      explain={<><p>改版前的旧记录没存原请求，不能重试。</p><p>先到「操作记录与审批」核对原操作有没有生效。</p></>}
       onCancel={() => setReleasing(null)} onConfirm={() => {
         releaseExpiredJLegacyCommand(releasing);
         setReleasing(null);
