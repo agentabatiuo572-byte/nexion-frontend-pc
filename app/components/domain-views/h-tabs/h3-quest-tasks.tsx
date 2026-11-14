@@ -170,7 +170,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     } catch (error) {
       if (isH3BindingOutcomeUncertainError(error) && error.readback) {
         apply(error.readback);
-        toast("结果未知：页面已重新读取，请核对；要重试请用相同的理由按原内容再提交", "warn");
+        toast("结果未知：页面已重新读取，请核对后用相同理由重试", "warn");
       }
       throw error;
     }
@@ -182,7 +182,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     } catch (error) {
       if (isH3MissionOutcomeUncertainError(error) && error.readback) {
         apply(error.readback);
-        toast("结果未知：页面已重新读取，请核对；要重试请用相同的理由按原内容再提交", "warn");
+        toast("结果未知：页面已重新读取，请核对后用相同理由重试", "warn");
       }
       throw error;
     }
@@ -545,7 +545,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const bindingTaskName = (code: string) => {
     const task = [...(model?.dayOneTasks ?? []), ...(model?.weeklyTier1 ?? []), ...(model?.weeklyTier2 ?? [])]
       .find((item) => text(item.taskCode ?? item.missionCode ?? item.id, "") === code);
-    return task ? taskTitleText(text(task.task ?? task.cond)) : null;
+    return task ? text(model?.contentLocales?.mission?.[code]?.zh?.name, "") || taskTitleText(text(task.task ?? task.cond)) : null;
   };
 
   const openBindingStatus = (binding: H3QuestEventBinding) => {
