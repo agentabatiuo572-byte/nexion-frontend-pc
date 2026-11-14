@@ -657,7 +657,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
                   <Td><Cell main={sectionName(version.sectionKey)} sub={<LegacyText text={trustDescriptionText(version.description)} />} /></Td>
                   <Td><Cell num main={version.version} sub={`${version.fields.length} 个字段`} /></Td>
                   <Td><StatusTag tone={state.tone}>{state.text}</StatusTag></Td>
-                  <Td><Cell main={changeText(version)} sub={version.structure} /></Td>
+                  <Td><Cell main={changeText(version)} /></Td>
                   <Td><Cell num main={version.updatedAt ? timeText(version.updatedAt) : "—"} sub={operatorText(version.operator)} title={version.operator} /></Td>
                   <Td sticky="end" align="right" data-fit="">{versionActions(version)}</Td>
                 </Tr>
