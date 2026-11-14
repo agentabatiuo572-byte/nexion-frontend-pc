@@ -410,7 +410,7 @@ E2、E5、E6 设备与任务原命令共用核查入口：超过 24 小时或后
 
 #### [E3a] 设备使用与产能规则
 
-本页 `/devices/trade-in` 维护设备产能与升级置换配置，读取 `GET /api/admin/devices/e3/overview` 和 `GET /api/admin/devices/e3/tradein/overview`。打开及手动刷新读取，不自动轮询。没有设备月龄分布数据，页面仅显示平均月龄刻度及后期设备台数；不造分布。统计按服务器业务日历：平均月龄与后期数排除 RECYCLED/DEACTIVATED/INACTIVE/RETIRED；时间依次取购买、激活、创建时间；空设备集平均月龄合法为 0。事务按最近 24 小时，恢复次数不计入成功率。SQL 定义的统计及计数非空，返回缺失、null 或非法数值报读取失败；`latestAt=null` 表示无最近记录，显示「—」。折抵金额为 USDT，全精度，不做金额舍入。
+本页 `/devices/trade-in` 维护设备产能与升级置换配置，读取 `GET /api/admin/devices/e3/overview` 和 `GET /api/admin/devices/e3/tradein/overview`。打开及手动刷新读取，不自动轮询。后端 `111e00cd` 提供三段月龄台数：前期 `earlyDeviceCount` 为月龄 ≤ stageEarlyEnd，中期 `midDeviceCount` 为 stageEarlyEnd < 月龄 ≤ stageMidEnd，后期直接使用 `cliffDeviceCount`（月龄 > stageMidEnd），不在前端相减。三段数已接入读模型；现有页面只备有后期台数位置，前期/中期的分布展示待视觉 worker 补位，不自行增加图表。统计排除 RECYCLED/DEACTIVATED/INACTIVE/RETIRED；月龄是依次取购买、激活、创建时间到现在的整月数。没有在用设备时 `averageAgeMonths=null`，页面沿用「—」且不画平均值点；真实 0 月仍显示 0。除平均月龄允许 null 外，必需统计及计数缺失、null 或非法数值仍报读取失败；三段台数必须为非负整数。事务按最近 24 小时，恢复次数不计入成功率；本月申请与金额按服务器业务日历。`latestAt=null` 表示无最近记录，显示「—」。折抵金额为 USDT，全精度，不做金额舍入。平均月龄问号中「没有在用设备时也是 0」的旧文字尚待视觉 worker 更正。
 
 产能按分段复利：从 100% 乘各月所在段的 `(1+delta/100)` 后取 floor，下限不重置后续内部连乘。前期为 1..stageEarlyEnd，中期为其后至 stageMidEnd，后期从 stageMidEnd+1 起持续；cycleMonths 只决定图表范围，不截断产能。后端投影六位小数；PC 图表为数学预览。正变化合法且后端不封顶 100%，App 目前拒绝超过 100% 的投影，保留提示，后端待办 E3-BE-04。8 类商品各有参与曲线/固定 100% 的开关。补贴窗口从 purchasedAt 优先、否则 activatedAt 起算，只影响补贴显示，不改变 applyCapacity。现有页面中无条件承诺「越久任务越少」「分界往后下降更晚」「免递减一定多付」的文字需要视觉 worker 按真实条件修订，逻辑 worker 未改写。
 

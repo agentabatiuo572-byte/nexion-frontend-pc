@@ -3,8 +3,10 @@ import { formatAdminApiError, displayAdminReadError, guardedFetch } from "@/lib/
 import { operatorDeviceStatus, operatorE3OperationLabel, operatorE3OperationState, operatorE3Reason, operatorTimestamp } from "@/lib/admin/e-operator-display";
 
 export interface E3Stats {
-  averageAgeMonths: number;
+  averageAgeMonths: number | null;
   cliffDeviceCount: number;
+  earlyDeviceCount: number;
+  midDeviceCount: number;
   tradeinMonthCount: number;
   tradeinDiscountUsdt: string;
   k2ArbitrageHits: number;
@@ -41,6 +43,8 @@ interface BackendE3Overview {
 interface BackendTradeinOverview {
   averageAgeMonths?: number | string | null;
   cliffDeviceCount?: number | string | null;
+  earlyDeviceCount?: number | string | null;
+  midDeviceCount?: number | string | null;
   tradeinMonthCount?: number | string | null;
   tradeinDiscountUsdt?: number | string | null;
   k2ArbitrageHits?: number | string | null;
@@ -120,7 +124,7 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
-/** SQL COALESCE/COUNT guarantees these statistics; missing data is a protocol failure, not an empty fleet. */
+/** Non-null SQL statistics must be numeric; missing data is a protocol failure, not an empty fleet. */
 function toNumber(value: unknown, integer = false) {
   if (typeof value !== "number" && (typeof value !== "string" || !value.trim())) throw new Error("E3_READ_MODEL_INVALID");
   const parsed = Number(value);
@@ -237,8 +241,10 @@ export async function fetchE3Snapshot(): Promise<E3Snapshot> {
   return {
     params: frontendParams(overview.config),
     stats: {
-      averageAgeMonths: toNumber(tradein.averageAgeMonths),
+      averageAgeMonths: tradein.averageAgeMonths === null ? null : toNumber(tradein.averageAgeMonths),
       cliffDeviceCount: toNumber(tradein.cliffDeviceCount, true),
+      earlyDeviceCount: toNumber(tradein.earlyDeviceCount, true),
+      midDeviceCount: toNumber(tradein.midDeviceCount, true),
       tradeinMonthCount: toNumber(tradein.tradeinMonthCount, true),
       tradeinDiscountUsdt: amount(tradein.tradeinDiscountUsdt),
       k2ArbitrageHits: toNumber(tradein.k2ArbitrageHits, true),

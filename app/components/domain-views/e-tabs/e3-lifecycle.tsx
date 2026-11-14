@@ -187,6 +187,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const credits = [1, 2, 3, 4, 5].map((i) => pE(`E.tradein.ladder.credit${i}`));
   const tradeinOn = pE("E.tradein.enabled") === "开";
   const stats = e3Stats;
+  const averageAgeMonths = stats?.averageAgeMonths ?? null;
   const lateFrom = s2 + 1;
   const pendingFor = (keys: readonly string[]) => {
     const proposals = E3_PROPOSALS.filter(p => p.state === "pending" && p.keys.some(k => keys.includes(k)));
@@ -271,7 +272,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const ops = e3Operations;
   const okSum = ops.reduce((sum, item) => sum + item.ok, 0), failSum = ops.reduce((sum, item) => sum + item.fail, 0);
   const rate = okSum + failSum > 0 ? `${Number(((okSum / (okSum + failSum)) * 100).toFixed(1))}%` : null;
-  const ageMax = Math.max(cyc, Math.ceil(stats?.averageAgeMonths ?? 0), s2 + 1);
+  const ageMax = Math.max(cyc, Math.ceil(averageAgeMonths ?? 0), s2 + 1);
   const curve = curveOf(policy, cyc);
   const pendingCurve = pendingFor(["E.device.capacity.band1DeltaPct", "E.device.capacity.band2DeltaPct", "E.device.capacity.band3DeltaPct", "E.device.capacity.floorPct", "E.device.stageEarlyEnd", "E.device.stageMidEnd"]);
   const ledgerHref = "/finance/ledger?keyword=tradein&status=FAILED";
@@ -282,13 +283,13 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     <Conclusion state={tradeinOn ? "neutral" : "warn"} icon={tradeinOn ? Gauge : undefined}
       explain={<><p>平均月龄和后期台数来自在用设备（已回收、已停用、未激活、已退役的不算），月龄按购买时间、没有时按激活时间算整月。</p><p>后期从第 {lateFrom} 月起，由「中期到第几月」决定。</p></>}
       hint={pendingCount ? `有 ${pendingCount} 张修改申请等批准，批准前按现在的规则执行。` : undefined}>
-      {tradeinOn ? "升级置换开启中" : "升级置换已关闭"}：平均月龄 {stats ? `${Number(stats.averageAgeMonths.toFixed(2))} 个月` : "—"}，{stats ? countText(stats.cliffDeviceCount) : "—"} 台已进入后期
+      {tradeinOn ? "升级置换开启中" : "升级置换已关闭"}：平均月龄 {averageAgeMonths !== null ? `${Number(averageAgeMonths.toFixed(2))} 个月` : "—"}，{stats ? countText(stats.cliffDeviceCount) : "—"} 台已进入后期
     </Conclusion>
 
     {recovery}
 
     <StatBand label="设备和升级置换">
-      <Stat label="在用设备平均月龄" icon={Hourglass} tone="role-3" value={stats ? String(Number(stats.averageAgeMonths.toFixed(2))) : "—"} unit="个月"
+      <Stat label="在用设备平均月龄" icon={Hourglass} tone="role-3" value={averageAgeMonths !== null ? String(Number(averageAgeMonths.toFixed(2))) : "—"} unit="个月"
         sub={`第 ${lateFrom} 月起进入后期`} explain="在用设备从购买（没有时从激活）到现在的整月数取平均。已回收、已停用、未激活、已退役的设备不算；没有在用设备时也是 0。" />
       <Stat label="已进入后期的设备" icon={Gauge} tone="role-3" value={stats ? countText(stats.cliffDeviceCount) : "—"} unit="台"
         sub={`月龄满 ${lateFrom} 个月`} explain="只按月龄数，不看设备的实际产能，也不看它的商品是否参与逐月下降，所以不一定都低于 100%。" />
@@ -310,9 +311,9 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             marks={[{ key: "floor", text: `下限 ${floor}%`, value: num(floor), tone: "neutral" }]}
             event={{ index: Math.min(s2, cyc), text: `第 ${lateFrom} 月起后期` }} />
           <div className="e3p-age">
-            <div className="e3p-age-head"><span>在用设备平均月龄</span><b>{stats ? `${Number(stats.averageAgeMonths.toFixed(2))} 个月` : "—"}</b><span className="e3p-sub">后期区间从第 {lateFrom} 月起</span></div>
-            {stats && <ScaleBar label="平均月龄" valueText={`平均 ${Number(stats.averageAgeMonths.toFixed(2))} 个月；前期到第 ${s1} 月，中期到第 ${s2} 月，后期从第 ${lateFrom} 月起`} max={ageMax}
-              value={stats.averageAgeMonths} range={{ low: s2, high: ageMax }} tone="role-3"
+            <div className="e3p-age-head"><span>在用设备平均月龄</span><b>{averageAgeMonths !== null ? `${Number(averageAgeMonths.toFixed(2))} 个月` : "—"}</b><span className="e3p-sub">后期区间从第 {lateFrom} 月起</span></div>
+            {stats && <ScaleBar label="平均月龄" valueText={averageAgeMonths !== null ? `平均 ${Number(averageAgeMonths.toFixed(2))} 个月；前期到第 ${s1} 月，中期到第 ${s2} 月，后期从第 ${lateFrom} 月起` : "—"} max={ageMax}
+              value={averageAgeMonths} range={{ low: s2, high: ageMax }} tone="role-3"
               ticks={[{ value: 0, text: "0" }, { value: s1, text: `${s1} 月` }, { value: s2, text: `${s2} 月` }, { value: ageMax, text: `${ageMax} 月` }]} />}
           </div>
         </div>
