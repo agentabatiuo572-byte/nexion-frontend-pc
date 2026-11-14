@@ -2,37 +2,38 @@
 
 /**
  * I4 的四份公司资料（App 信任中心和白皮书页展示的 PDF）。未上传时用随系统发布的默认文件。
- * 读取、预览、上传、恢复默认的逻辑和旧的 trust-documents-card 一样（请求、校验、命令号的换法都没改），这里只换画法。
+ * 沿用既有画面；上传原文件和完整表单在发送前持久化，未知只读回；恢复默认可以按原请求原号恢复。
  * 上传和恢复默认直接生效，不走审批；和版块的「提交审批」是两类。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, FileBadge2, FileText, RefreshCw, RotateCcw, Upload } from "lucide-react";
 import { BlockState, Button, Decision, Drawer, Fact, Facts, Field, IconTile, Input, Notice, Panel, StatusTag, Textarea } from "@/app/components/rd";
-import { createA2CommandKey, fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
+import { fetchA2ReasonPolicy, visibleReasonLength } from "@/lib/admin/a2-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { businessZone } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
-  fetchTrustDocumentFile, fetchTrustDocuments, restoreTrustDocument, uploadTrustDocument,
+  fetchTrustDocumentFile, fetchTrustDocuments,
   TRUST_DOCUMENT_MAX_BYTES, TRUST_DOCUMENT_NAMES, TRUST_DOCUMENT_SENSITIVE_AUTHORITY,
   type TrustDocument, type TrustDocumentSlot, type TrustDocumentUpload,
 } from "@/lib/admin/trust-documents-client";
 import { timeText } from "./i4-parts";
+import { pendingI4DocumentCommands, submitI4Document, retryI4DocumentRestore, queryI4DocumentCommand, i4DocumentPermission, type I4DocumentCommand } from "@/lib/admin/i4-document-commands";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 
-// key 跟着表单内容走：内容不变的重试沿用同一个幂等键，改了文件或字段就换新键（和旧卡片一样）。
+// 原请求由 i4-document-commands 保存；编辑器仅持有输入，未知时冻结。
 type Editor =
-  | { mode: "upload"; document: TrustDocument; file: File | null; fields: TrustDocumentUpload; key: string }
-  | { mode: "restore"; document: TrustDocument; reason: string; key: string };
+  | { mode: "upload"; document: TrustDocument; file: File | null; fields: TrustDocumentUpload }
+  | { mode: "restore"; document: TrustDocument; reason: string };
 
 const sizeText = (bytes: number) => bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 const UPLOAD_PUBLIC = "上传成功后立即对所有用户公开";
 
-export function I4Documents() {
+export function I4Documents({ onPendingChange, recovery }: { onPendingChange: () => void; recovery: I4DocumentCommand | null }) {
   const session = useAdminAuth((state) => state.session);
-  const isSuperadmin = session?.role === "superadmin";
-  const canRead = isSuperadmin || !!session?.authorities?.includes("content_i4_read");
+  const canRead = !!session?.authorities?.includes("content_i4_read");
   // 公司登记资料属合规内容，需信任中心管理权限；白皮书标准发布权限即可。
-  const canPublish = (slot: TrustDocumentSlot) => isSuperadmin || !!session?.authorities?.some((authority) =>
+  const canPublish = (slot: TrustDocumentSlot) => !!session?.authorities?.some((authority) =>
     authority === TRUST_DOCUMENT_SENSITIVE_AUTHORITY || slot === "whitepaper" && authority === "content_i4_publish_standard");
   const [documents, setDocuments] = useState<TrustDocument[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,33 +42,51 @@ export function I4Documents() {
   const [editorError, setEditorError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [reasonMin, setReasonMin] = useState(8);
+  const [reasonPolicyReady, setReasonPolicyReady] = useState(false);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [fresh, setFresh] = useState(false);
+  const submitting = useRef(false);
   /** 只管显示：第一次读完之前画加载块，不画「没读到」。 */
   const [read, setRead] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!canRead) return;
     setLoading(true); setError(null);
-    try { setDocuments(await fetchTrustDocuments()); }
-    catch (cause) { setError(displayAdminError(cause)); }
+    try { setDocuments(await fetchTrustDocuments()); setFresh(true); }
+    catch (cause) { setFresh(false); setError(displayAdminError(cause)); }
     finally { setLoading(false); setRead(true); }
   }, [canRead]);
   useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => { fetchA2ReasonPolicy().then((policy) => setReasonMin(policy.minChars), () => undefined); }, []);
+  useEffect(() => {
+    fetchA2ReasonPolicy().then(policy => { setReasonMin(policy.minChars); setReasonPolicyReady(true); }, cause => { setEditorError(displayAdminError(cause)); });
+  }, []);
+  useEffect(() => {
+    if (!recovery) return;
+    setPendingKey(recovery.commandKey);
+    setEditor(recovery.mode === "upload" ? { mode: "upload", document: recovery.document, file: null, fields: recovery.fields }
+      : { mode: "restore", document: recovery.document, reason: recovery.fields.reason });
+    const observed = recovery.observation;
+    setEditorError((recovery.mode === "upload" ? "上传结果未知，文件可能已经对外公开；请重新读取核对 SHA、大小和上传时间。" : "结果未知，请重新读取核对。")
+      + (observed ? ` SHA256 ${observed.sha256} · ${observed.sizeBytes} bytes · ${observed.updatedAt ? timeText(observed.updatedAt) : "—"} · ${observed.updatedBy ?? "—"}` : ""));
+    if (observed) void refresh();
+  }, [recovery]);
   if (!canRead) return null;
 
   const openUpload = (document: TrustDocument) => {
-    setEditorError(null);
+    if (!fresh || loading || i4DocumentPermission(document.slot) || pendingI4DocumentCommands().some(row => row.document.slot === document.slot)) return;
+    setPendingKey(null); setEditorError(null);
     setEditor({ mode: "upload", document, file: null, fields: {
       version: document.slot === "whitepaper" ? "" : document.version ?? "",
       language: document.language ?? "",
       referenceNo: document.referenceNo ?? "",
       verifyUrl: document.verifyUrl ?? "",
       reason: "",
-    }, key: createA2CommandKey("i4-trust-document") });
+    } });
   };
   const openRestore = (document: TrustDocument) => {
-    setEditorError(null);
-    setEditor({ mode: "restore", document, reason: "", key: createA2CommandKey("i4-trust-document") });
+    if (!fresh || loading || i4DocumentPermission(document.slot) || pendingI4DocumentCommands().some(row => row.document.slot === document.slot)) return;
+    setPendingKey(null); setEditorError(null);
+    setEditor({ mode: "restore", document, reason: "" });
   };
   const preview = async (document: TrustDocument) => {
     // 先同步开窗避免被拦截；读取失败时关掉空窗，在面板里显示原因。
@@ -81,34 +100,62 @@ export function I4Documents() {
       setError(displayAdminError(cause));
     }
   };
-  const close = () => { if (!saving) setEditor(null); };
+  const close = () => { if (!submitting.current) { setEditor(null); setPendingKey(null); } };
 
   const submit = async () => {
-    if (!editor) return;
+    if (!editor || submitting.current) return;
+    if (pendingKey) {
+      const original = pendingI4DocumentCommands().find(row => row.commandKey === pendingKey);
+      if (!original || original.mode !== "restore") return;
+      submitting.current = true; setSaving(true);
+      try { await retryI4DocumentRestore(original); setEditor(null); setPendingKey(null); setFresh(false); await refresh(); }
+      catch (cause) {
+        setEditorError(displayAdminError(cause));
+        if (!pendingI4DocumentCommands().some(row => row.commandKey === pendingKey)) { setEditor(null); setPendingKey(null); setFresh(false); await refresh(); }
+      } finally { submitting.current = false; setSaving(false); onPendingChange(); }
+      return;
+    }
+    if (!fresh || loading) { setEditorError("请先成功重新读取最新资料后再修改。"); return; }
+    if (!reasonPolicyReady) { setEditorError("理由规则加载失败，暂时无法提交。请关闭弹窗后重试。"); return; }
+    const fields = editor.mode === "upload" ? editor.fields : { version: "", language: "", referenceNo: "", verifyUrl: "", reason: editor.reason };
     if (editor.mode === "upload") {
-      const { file, fields, document } = editor;
+      const { file, document } = editor;
       if (!file) { setEditorError("请选择要上传的 PDF 文件。"); return; }
       if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") { setEditorError("只能上传 PDF 文件。"); return; }
       if (file.size > TRUST_DOCUMENT_MAX_BYTES) { setEditorError("文件不能超过 20 MB。"); return; }
       if (document.slot === "whitepaper" && !fields.version.trim()) { setEditorError("白皮书需要填写版本号，例如 v1.4。"); return; }
       if (document.slot !== "whitepaper" && !fields.referenceNo.trim()) { setEditorError("资质文件需要填写登记号。"); return; }
       if (fields.verifyUrl.trim() && !fields.verifyUrl.trim().startsWith("https://")) { setEditorError("官方查询链接需以 https:// 开头。"); return; }
-      if (fields.reason.trim().length < reasonMin) { setEditorError(`操作原因至少 ${reasonMin} 个字。`); return; }
-    } else if (editor.reason.trim().length < reasonMin) { setEditorError(`操作原因至少 ${reasonMin} 个字。`); return; }
-    setSaving(true); setEditorError(null);
+    }
+    if (visibleReasonLength(fields.reason) < reasonMin || visibleReasonLength(fields.reason) > 200) { setEditorError(`操作原因至少 ${reasonMin} 个字。`); return; }
+    submitting.current = true; setSaving(true); setEditorError(null);
     try {
-      const updated = editor.mode === "upload"
-        ? await uploadTrustDocument(editor.document, editor.file as File, editor.fields, editor.key)
-        : await restoreTrustDocument(editor.document, editor.reason, editor.key);
-      setDocuments((rows) => rows.map((row) => row.slot === updated.slot ? updated : row));
-      setEditor(null);
-    } catch (cause) { setEditorError(displayAdminError(cause)); }
-    finally { setSaving(false); }
+      await submitI4Document(editor.document, fields, editor.mode === "upload" ? editor.file! : undefined);
+      setEditor(null); setPendingKey(null); setFresh(false);
+      await refresh();
+    } catch (cause) {
+      setEditorError(displayAdminError(cause));
+      const pending = pendingI4DocumentCommands().find(row => row.document.slot === editor.document.slot);
+      if (pending) setPendingKey(pending.commandKey);
+    } finally { submitting.current = false; setSaving(false); onPendingChange(); }
+  };
+  const readBack = async () => {
+    if (pendingKey) {
+      const original = pendingI4DocumentCommands().find(row => row.commandKey === pendingKey);
+      if (original) {
+        try {
+          const current = await queryI4DocumentCommand(original);
+          setEditorError(`${original.mode === "upload" ? "上传结果未知，文件可能已经对外公开。" : "结果未知。"} SHA256 ${current.sha256} · ${current.sizeBytes} bytes · ${current.updatedAt ? timeText(current.updatedAt) : "—"} · ${current.updatedBy ?? "—"}`);
+        } catch (cause) { setEditorError(displayAdminError(cause)); }
+        onPendingChange();
+      }
+    }
+    await refresh();
   };
 
   const name = editor ? TRUST_DOCUMENT_NAMES[editor.document.slot] : "";
   const setField = (key: keyof TrustDocumentUpload, value: string) =>
-    editor?.mode === "upload" && setEditor({ ...editor, fields: { ...editor.fields, [key]: value }, key: createA2CommandKey("i4-trust-document") });
+    !saving && !pendingKey && editor?.mode === "upload" && setEditor({ ...editor, fields: { ...editor.fields, [key]: value } });
   const uploaded = documents.filter((document) => document.source === "UPLOADED").length;
 
   return (
@@ -125,6 +172,7 @@ export function I4Documents() {
             {documents.map((document) => {
               const isUploaded = document.source === "UPLOADED";
               const writable = canPublish(document.slot);
+              const blocked = !fresh || loading ? "请先成功重新读取最新资料后再修改。" : pendingI4DocumentCommands().some(row => row.document.slot === document.slot) ? "这份资料有结果未知的原操作，请先重新读取核对。" : undefined;
               return (
                 <article className="i4-doc" key={document.slot} aria-label={TRUST_DOCUMENT_NAMES[document.slot]}>
                   <header className="i4-doc-head">
@@ -147,8 +195,8 @@ export function I4Documents() {
                       {document.verifyUrl && <a className="rd-link i4-doc-verify" href={document.verifyUrl} target="_blank" rel="noreferrer">官方查询<ExternalLink size={12} aria-hidden /></a>}
                     </span>
                     {writable && <span className="i4-doc-writes">
-                      {isUploaded && <Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} onClick={() => openRestore(document)}>恢复默认</Button>}
-                      <Button size="sm" icon={<Upload size={14} aria-hidden />} onClick={() => openUpload(document)}>上传新版本</Button>
+                      {isUploaded && <Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} disabledReason={blocked} onClick={() => openRestore(document)}>恢复默认</Button>}
+                      <Button size="sm" icon={<Upload size={14} aria-hidden />} disabledReason={blocked} onClick={() => openUpload(document)}>上传新版本</Button>
                     </span>}
                   </footer>
                 </article>
@@ -162,13 +210,13 @@ export function I4Documents() {
         title={editor?.mode === "restore" ? "恢复默认文件" : "上传新版本"} sub={name} icon={editor?.mode === "restore" ? RotateCcw : Upload} tone="role-1"
         footer={editor && <Decision
           others={<Button onClick={close} disabled={saving}>取消</Button>}
-          primary={<Button variant="primary" loading={saving} loadingText="提交中…" onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : "恢复默认文件"}</Button>} />}>
+          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，请重新读取核对，不能重发原上传请求。" : isRetryExpired(pendingI4DocumentCommands().find(row => row.commandKey === pendingKey) ?? { expiresAt: 0 }) ? RETRY_EXPIRED_TEXT : i4DocumentPermission(editor.document.slot)) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : !fresh ? "请先成功重新读取最新资料后再修改。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : "恢复默认文件"}</Button>} />}>
         {editor && <div className="rd-stack i4-doc-editor">
           {editor.mode === "upload"
             ? <Notice tone="warn" title={UPLOAD_PUBLIC}>不走审批；之后可以恢复成默认文件。</Notice>
             : <Notice tone="warn" title="恢复后立即对所有用户生效">不走审批；App 改显示随系统发布的默认文件。</Notice>}
           {editorError && <Notice tone="danger" title={editor.mode === "upload" ? "没收到上传成功的结果" : "没收到恢复成功的结果"}
-            action={<Button size="sm" loading={loading} onClick={() => void refresh()}>重新读取核对</Button>} actionBelow>
+            action={<Button size="sm" loading={loading} onClick={() => void readBack()}>重新读取核对</Button>} actionBelow>
             <p>{editorError}</p>
             <p>{editor.mode === "upload" ? "刚才的上传可能已经成功：先重新读取，核对卡片上的文件名和上传时间，再决定要不要重传。" : "先重新读取，核对卡片上是不是已经变回默认文件。"}</p>
           </Notice>}
@@ -179,31 +227,31 @@ export function I4Documents() {
           </Facts>
           {editor.mode === "upload" ? <>
             <Field label="PDF 文件" required help="最大 20 MB、80 页">
-              <input aria-label="PDF 文件" className="rd-input rd-file-input" type="file" accept="application/pdf,.pdf"
-                onChange={(event) => setEditor({ ...editor, file: event.target.files?.[0] ?? null, key: createA2CommandKey("i4-trust-document") })} />
+              <input aria-label="PDF 文件" className="rd-input rd-file-input" type="file" disabled={saving || !!pendingKey} accept="application/pdf,.pdf"
+                onChange={(event) => { if (!saving && !pendingKey) setEditor({ ...editor, file: event.target.files?.[0] ?? null }); }} />
             </Field>
             <div className="rd-form-grid" data-cols="2" data-dense="">
               <Field label="版本号" required={editor.document.slot === "whitepaper"} hint={editor.document.slot === "whitepaper" ? undefined : "选填"}>
-                <Input aria-label="版本号" maxLength={32} placeholder="如 v1.4" value={editor.fields.version} onChange={(event) => setField("version", event.target.value)} />
+                <Input aria-label="版本号" disabled={saving || !!pendingKey} maxLength={32} placeholder="如 v1.4" value={editor.fields.version} onChange={(event) => setField("version", event.target.value)} />
               </Field>
               <Field label="文件语言" hint="选填">
-                <Input aria-label="文件语言" maxLength={32} placeholder="如 English" value={editor.fields.language} onChange={(event) => setField("language", event.target.value)} />
+                <Input aria-label="文件语言" disabled={saving || !!pendingKey} maxLength={32} placeholder="如 English" value={editor.fields.language} onChange={(event) => setField("language", event.target.value)} />
               </Field>
             </div>
             {editor.document.slot !== "whitepaper" && <div className="rd-form-grid" data-cols="2" data-dense="">
               <Field label="登记号" required>
-                <Input aria-label="登记号" maxLength={64} value={editor.fields.referenceNo} onChange={(event) => setField("referenceNo", event.target.value)} />
+                <Input aria-label="登记号" disabled={saving || !!pendingKey} maxLength={64} value={editor.fields.referenceNo} onChange={(event) => setField("referenceNo", event.target.value)} />
               </Field>
               <Field label="官方查询链接" hint="选填，https 开头">
-                <Input aria-label="官方查询链接" maxLength={512} placeholder="https://" value={editor.fields.verifyUrl} onChange={(event) => setField("verifyUrl", event.target.value)} />
+                <Input aria-label="官方查询链接" disabled={saving || !!pendingKey} maxLength={512} placeholder="https://" value={editor.fields.verifyUrl} onChange={(event) => setField("verifyUrl", event.target.value)} />
               </Field>
             </div>}
             <Field label="操作原因" required hint={`至少 ${reasonMin} 字`}>
-              <Textarea aria-label="操作原因" rows={3} maxLength={200} count={`${editor.fields.reason.trim().length}/200`} value={editor.fields.reason} onChange={(event) => setField("reason", event.target.value)} />
+              <Textarea aria-label="操作原因" disabled={saving || !!pendingKey} rows={3} maxLength={200} count={`${editor.fields.reason.trim().length}/200`} value={editor.fields.reason} onChange={(event) => setField("reason", event.target.value)} />
             </Field>
           </> : <>
             <Field label="操作原因" required hint={`至少 ${reasonMin} 字`}>
-              <Textarea aria-label="操作原因" rows={3} maxLength={200} count={`${editor.reason.trim().length}/200`} value={editor.reason} onChange={(event) => setEditor({ ...editor, reason: event.target.value, key: createA2CommandKey("i4-trust-document") })} />
+              <Textarea aria-label="操作原因" disabled={saving || !!pendingKey} rows={3} maxLength={200} count={`${editor.reason.trim().length}/200`} value={editor.reason} onChange={(event) => { if (!saving && !pendingKey) setEditor({ ...editor, reason: event.target.value }); }} />
             </Field>
           </>}
         </div>}

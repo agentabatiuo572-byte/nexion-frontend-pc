@@ -271,7 +271,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   if (tab === "I4") {
     return (
       <RdPage className="idom i4-page">
-        <I4Trust ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        <I4Trust key={scopeKey} ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
         {overlays}
       </RdPage>
     );

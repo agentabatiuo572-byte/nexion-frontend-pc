@@ -1,3 +1,5 @@
+import { parseI4SectionVersion } from "./i4-trust-contract";
+
 type IModuleId = "I1" | "I2" | "I3" | "I4" | "I5" | "I6";
 
 const ARRAY_KEYS: Record<IModuleId, readonly string[]> = {
@@ -179,6 +181,23 @@ export function parseNotificationCampaign(input: unknown): unknown {
 }
 
 function validateTrustDisclosure(moduleId: IModuleId, value: Record<string, unknown>) {
+  // I4's overview is shared with I5. Validate only I4 fields here; do not change I5's read contract.
+  if (moduleId === "I4") {
+    const stats = record(moduleId, value.stats);
+    if (!Number.isSafeInteger(stats.managedSections) || Number(stats.managedSections) < 0) fail(moduleId);
+    for (const section of records(moduleId, value.trustSections)) {
+      if (!["key", "desc", "struct", "version", "status", "lastChange", "roleGate"].every(key => typeof section[key] === "string")
+        || typeof section.highSensitivity !== "boolean") fail(moduleId);
+    }
+    records(moduleId, value.trustSectionVersions).forEach(parseI4SectionVersion);
+    if (!array(moduleId, value.pendingTrustSectionKeys).every(key => typeof key === "string")) fail(moduleId);
+    for (const field of records(moduleId, value.financialFields)) {
+      if (typeof field.key !== "string" || typeof field.value !== "string" || field.delta != null && typeof field.delta !== "string") fail(moduleId);
+    }
+    for (const field of records(moduleId, value.sectionFields)) {
+      if (!["sectionKey", "key", "value"].every(key => typeof field[key] === "string")) fail(moduleId);
+    }
+  }
   for (const key of [
     "trustSections", "financialFields", "sectionFields", "countryOptions",
     "chapters", "gatedActions",

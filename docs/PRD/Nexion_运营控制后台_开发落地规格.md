@@ -1493,6 +1493,19 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 9.9 I 内容与合规 CMS
 
+
+**I4 信任中心（2026-11-15 逻辑接入）**：保留六版块、完整版本列表和四个资料槽，八个写合同仍为草稿新建/编辑/删除、发布/回滚/下架提案、PDF上传/恢复默认。读概览和资料为`content_i4_read`；草稿为`content_i4_write`；发布按敏感性要求标准发布或信任中心管理，再要`platform_a2_write`。仅`platform_a2_proposal_create`的I4委托上下文仍被后端拒绝，入口给出禁用原因，不借其他域绕过。白皮书PDF标准发布或信任中心管理即可，其他三槽要求信任中心管理；PDF直写，成功改变服务端当前公开文件，不走审批；不承诺已打开App瞬间更新。
+
+草稿三直写在I域唯一`nexion-admin-i-content-uncertain-commands-v1`实例保存完整原JSON/方法/path/理由/认证归属/当前版本状态/修订号和命令号；三个提案替换原I4槽存储实例，沿用`nexion-admin-i4-trust-commands-v1`，保留完整原封套、快照和时间。写前无法持久化则不发送。首次明确拒绝按4xx或2xx非零业务码（5xx/幂等未收敛/未知头/坏回包仍未知）弃号保留输入；未知冻结、跨刷新保留、同对象禁止新写。恢复只发送保存的原请求原号，重试仅`isExplicitRejection`认可的拒绝解除。超过首次24小时保留证据只查，不能重发。概览失败仍可查询/恢复，写权限变化不遮只读入口。回放或明确结论后退出原恢复、关闭旧框；成功重读当前概览前不开放新修改，不能拿历史回执当当前版本。
+
+发布/回滚/下架封套为`sourceDomain=I4`、`obj=sectionKey`、`command=I/i4_trust_section_manage`、锁`I/trust_section/sectionKey`，原九项params包含不用时的null/空串/false。建单或原号回放后再按原号读取当前票；核mine/obj/action/before/after/operationCode/rawStatus，只有权威pending才标待审批。查询失败保留receiptKnown和查询入口，不能把历史POST的pending当当前状态。另一位有效管理员且具A2批准和对应业务权处理，不能自己批准。终态查询解除本地待批观察并强制重读，不因一次其他写成功擦掉观察。过期提案严格查到`A2_PROPOSAL_NOT_FOUND`才可确认解除，逻辑`releaseExpiredI4SectionCommand`已备，现有画面无解除确认位，交视觉。I4+A2write而无A2read/proposal_create的部分自定义账号可建单却被原号查询鉴权挡住，列后端问题，不擅自扩权。
+
+PDF发前保存完整表单、原SHA、理由/号/归属；上传File完整字节先存IndexedDB（避免20MiB合法文件超sessionStorage配额），元信息和SHA存原操作记录。上传未知只读回当前SHA、大小、时间、元信息，明确提示可能已经对外公开；禁止原上传重发，`TRUST_DOCUMENT_STALE`不能证明首次没执行。恢复默认的SHA校验在去重内，可按保存的原JSON/号恢复；24小时后同样只查。当前文件相同不证明原命令结论，不自动清未知锁。成功写回执不直接当当前资料，重新读取后才开放新写；PDF理由用服务端可见字数规则，策略不可读不能新提交。已决上传清掉本次IndexedDB文件，未知原文件作为恢复证据保留。
+
+App与后端字段合同尚未统一（I4-BE-04/05）：保存/发布前拦超过80字段、App不接受的连续/结尾分隔符键名/重复键，以及会省略当前六语译文的整份字段替换；不悄悄截字段、合并译文或改历史内容。三语检查包括额外语族的基础中越英。回滚保留后端允许的不完整目标并说明整页不可用，不擅自删入口。单语升三语和新增六语仍缺编辑入口，旧画面固定键规则不由逻辑worker改。
+
+“App不显示”规则集中于`i4-trust-contract.ts`，注明`OpsTrustDisclosureService.publishedSections`在`24972948`的正常运行投影：三种不支持声明整块、迁移团队/审计整块、缺安全document1Url的审计整块、homepageProof.*、activeAiClients、受禁subhero和明确六种additional后缀。安全链接按后端内部路径/HTTPS和编码规则推断，修掉原简单前缀正则；后台overview没有真实公开结果（I4-BE-06未交付），不把推断当公开回执。字段/版本和资料必填结构在读边界校验，合法空字段列表/空时间/可空delta/资料元信息保留，财务文字原样显示，不补0或舍入。后端单节下架令公开全六节503、上传前置SHA、label写delta等I4-BE-01–06仍按现状登记。当前“所有用户立即看到”“未上传过”“App里为空”等过强或条件性说法、待批列表标题和恢复按钮叫法均交视觉，不在本次改写。类型检查、目标构建及关卡3/6在本项执行；真实八写/异常/九项旧缺口检查按共用brief集中交域末项，清单见I4重构说明与hd-logic-i4报告。
+
 **I3 通知活动（2026-11-15 逻辑接入）**：读取 `/api/admin/content/campaigns/overview`；受众估算 POST 只读，不纳入写操作恢复。保留新建/编辑草稿、排期、已排期立即发送、取消排期、删除草稿或已取消活动、保留上限提案七个写合同（新建/编辑分别含估算共九项请求验收）。普通活动写要求 `content_i3_write`，紧急排期/立即发送/取消再要 `content_i3_critical_send`；CAP入口必须同时有 `content_i3_cap_adjust` 和 `platform_a2_write` 或 `platform_a2_proposal_create`，缺项由 `i3CapPermission()`返回原因，未获权不发请求。CAP不从PC直接PATCH，提案固定 `sourceDomain=I3`、`obj=tier`、`command={domain:I,op:i3_cap_adjust,params:{tier,cap,expectedCap}}` 和 `target=I/notification_cap/tier`；批准者为另一位有效管理员，另需A2批准权限及CAP/replay权，不能自己批准。
 
 七写发送前保存完整原JSON、对象/内容/理由/版本/认证归属及命令号；存不下不发。六个直写沿I域同一存储实例，CAP沿原专用键，不新建重复镜像。未知结果冻结原输入；原活动行、表单目录和估算时刻/人数一起保存，概览503时提示和原操作恢复仍可用。只按原请求原号重试；首次明确拒绝弃号留输入，原号重试仅共用 `isExplicitRejection` 认定的拒绝解除；网络、5xx、幂等未收敛、坏回包继续保留。24小时后证据保留、禁止重发，只读回核对。读回同值或相同状态不能解除直写未知记录。历史回执只解决原命令，结束恢复后关闭旧输入并成功重读才开放新修改；立即发送回执版本是原版本+2（claim和complete各增1）。

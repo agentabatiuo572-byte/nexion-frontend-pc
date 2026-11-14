@@ -5,6 +5,7 @@ import { parseIOverview, parseNotificationCampaign, parseNovaSocialEventPage, pa
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { parseI4SectionVersion } from "./i4-trust-contract";
 
 type ApiResult<T> = {
   code?: number;
@@ -28,7 +29,7 @@ export type I3FormSnapshot = {
   estimatedAudience: number | null;
   estimatedAt: number | null;
 };
-type IContentPending = PendingMutationRecord & { i1?: I1Original; i2?: I1Original; i3?: I1Original & { snapshot?: NotificationCampaignRow; formSnapshot?: I3FormSnapshot } };
+type IContentPending = PendingMutationRecord & { i4?: I1Original & { snapshot?: TrustSectionVersionView }; i1?: I1Original; i2?: I1Original; i3?: I1Original & { snapshot?: NotificationCampaignRow; formSnapshot?: I3FormSnapshot } };
 export type I1Command = PendingMutationRecord & {
   original?: I1Original;
   label: string;
@@ -41,8 +42,124 @@ export type I1Command = PendingMutationRecord & {
 // One instance for the domain. Retain expired evidence for query-only recovery.
 const uncertainCommandKeys = createPendingMutationStore<IContentPending>({
   storageKey: "nexion-admin-i-content-uncertain-commands-v1",
-  retainExpiredRecords: (row) => /^(POST|PUT|PATCH|DELETE):\/(copy-ab\/|nova\/|campaigns(?::|\/))/.test(row.fingerprint),
+  retainExpiredRecords: (row) => /^(POST|PUT|PATCH|DELETE):\/(copy-ab\/|nova\/|campaigns(?::|\/)|trust-disclosure\/trust-sections\/)/.test(row.fingerprint),
 });
+
+export type I4DraftCommand = PendingMutationRecord & {
+  original?: I1Original;
+  snapshot?: TrustSectionVersionView;
+  action: "create" | "edit" | "delete";
+  sectionKey: string;
+  version: string;
+  reason: string;
+  input?: { version: string; description: string; structure: string; fields: { key: string; label: string; value: string }[];
+    expectedRevision?: number; expectedSectionVersion: string; expectedSectionStatus: string };
+};
+
+function readI4DraftCommand(row: IContentPending): I4DraftCommand | undefined {
+  const owner = useAdminAuth.getState().session?.adminId;
+  if (owner === undefined || (row.i4 ? row.i4.owner !== owner : !hasPersistedPendingCommandOwner(String(owner)))) return undefined;
+  const match = /^(POST|PATCH|DELETE):(\/trust-disclosure\/trust-sections\/[^/:]+\/versions(?:\/[^:]+)?):([\s\S]*)$/.exec(row.fingerprint);
+  if (!match) return undefined;
+  const [, method, path, body] = match;
+  const parts = path.split("/").map(decodeURIComponent);
+  const action = method === "POST" ? "create" : method === "PATCH" ? "edit" : "delete";
+  const fallback: I4DraftCommand = { ...row, action, sectionKey: parts[3], version: parts[5] ?? "", reason: "" };
+  try {
+    const input = JSON.parse(body) as Record<string, unknown>;
+    if (!input || typeof input !== "object" || typeof input.reason !== "string" || typeof input.operator !== "string"
+      || (row.i4 && (row.i4.path !== path || row.i4.method !== method || row.i4.body !== body))) return fallback;
+    if (action !== "create" && (!Number.isSafeInteger(input.expectedRevision) || Number(input.expectedRevision) < 0)) return fallback;
+    if (action !== "delete") {
+      if (!["version", "description", "structure", "expectedSectionVersion", "expectedSectionStatus"].every(key => typeof input[key] === "string")
+        || !Array.isArray(input.fields) || !input.fields.every(field => field && typeof field === "object" && ["key", "label", "value"].every(key => typeof field[key] === "string"))
+        || (action === "edit" && input.version !== parts[5])) return fallback;
+    }
+    return { ...fallback, original: { owner, method, path, body }, reason: input.reason,
+      version: action === "create" ? String(input.version) : parts[5],
+      input: action === "delete" ? undefined : input as I4DraftCommand["input"],
+      snapshot: row.i4?.snapshot ? parseI4SectionVersion(row.i4.snapshot) : undefined };
+  } catch { return fallback; }
+}
+
+export function pendingI4DraftCommands(): I4DraftCommand[] {
+  return uncertainCommandKeys.list().flatMap(row => { const value = readI4DraftCommand(row); return value ? [value] : []; });
+}
+
+export function i4DraftPermission(): string | undefined {
+  const auth = useAdminAuth.getState();
+  return !auth.isAuthenticated || auth.logoutPending || !auth.session?.authorities.includes("content_i4_write")
+    ? "当前账号没有草稿维护权限，请查询原结果。" : undefined;
+}
+
+async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Promise<void> {
+  if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
+  if (useAdminAuth.getState().session?.adminId !== command.original.owner) throw new Error("登录身份已变更，请重新打开页面。");
+  if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
+  const permission = i4DraftPermission();
+  if (permission) throw new Error(permission);
+  if (!uncertainCommandKeys.isDurablyStored(command.fingerprint, command.commandKey)) throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
+  let response: Response, payload: ApiResult<unknown>;
+  try {
+    response = await guardedFetch(`/api/admin/content${command.original.path}`, { method: command.original.method,
+      body: command.original.body, headers: { "Content-Type": "application/json", "Idempotency-Key": command.commandKey }, cache: "no-store" });
+    payload = await response.json();
+  } catch { throw new OutcomeUnknownError("结果未知，请查询原结果或按原请求重试。"); }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Number.isInteger(payload.code)
+    || payload.message !== undefined && typeof payload.message !== "string") throw new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。");
+  if (!response.ok || payload.code !== 0 || response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
+    const status = response.ok && payload.code! >= 400 && payload.code! < 500 ? payload.code : response.status;
+    const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status, reasonCode: payload.message });
+    const rejected = retry ? isExplicitRejection(failure)
+      : isDeterministicRejection(response.status, payload.code) && payload.code! < 500 && !isIdempotencyOutcomeOpen(payload.message);
+    if (rejected && response.headers.get("X-Nexion-Upstream-Outcome") !== "unknown") {
+      uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+      throw failure;
+    }
+    throw new OutcomeUnknownError(failure.message);
+  }
+  let valid = command.action === "delete" && payload.data === null;
+  if (command.action !== "delete") {
+    try {
+      const row = parseI4SectionVersion(payload.data);
+      valid = row.sectionKey === command.sectionKey && row.version === command.version && row.status.toLowerCase() === "draft"
+        && row.revision === (command.action === "create" ? 1 : command.input!.expectedRevision! + 1)
+        && row.description === command.input!.description && row.structure === command.input!.structure
+        && JSON.stringify(row.fields) === JSON.stringify(command.input!.fields);
+    } catch { /* An unreadable success cannot resolve the original command. */ }
+  }
+  if (!valid) throw new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。");
+  uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+}
+
+export async function retryI4DraftCommand(saved: I4DraftCommand): Promise<void> {
+  const original = pendingI4DraftCommands().find(row => row.commandKey === saved.commandKey);
+  if (!original) throw new Error("原操作已处理，请重新读取后再操作。");
+  return sendI4DraftCommand(original, true);
+}
+
+async function prepareI4DraftCommand(path: string, init: RequestInit, snapshot?: TrustSectionVersionView): Promise<void> {
+  const owner = useAdminAuth.getState().session?.adminId;
+  if (!owner) throw new Error("请先登录后再提交。");
+  const fingerprint = `${init.method}:${path}:${init.body}`;
+  const commandKey = idempotencyKey();
+  const i4 = { owner, method: init.method!, path, body: String(init.body), snapshot };
+  const command = readI4DraftCommand({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i4 });
+  if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
+  if (pendingI4DraftCommands().some(row => row.sectionKey === command.sectionKey)) throw new Error("此对象有结果未知的原操作，请先到页面上方核对。");
+  const permission = i4DraftPermission();
+  if (permission) throw new Error(permission);
+  uncertainCommandKeys.remember(fingerprint, commandKey, { i4 });
+  if (!uncertainCommandKeys.isDurablyStored(fingerprint, commandKey)) {
+    uncertainCommandKeys.forget(fingerprint, commandKey);
+    throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
+  }
+  return sendI4DraftCommand(command, false);
+}
+
+export async function fetchI4TrustOverview(): Promise<TrustDisclosureOverview> {
+  return parseIOverview("I4", await apiRequest("/trust-disclosure/overview")) as TrustDisclosureOverview;
+}
 
 /** Preserve BigDecimal budget digits at each I3 JSON boundary, following the E6/G7 decimal boundary convention. */
 export function parseI3Json(text: string): unknown {
@@ -923,7 +1040,7 @@ export type TrustSectionView = {
   highSensitivity: boolean;
 };
 
-export type FinancialFieldView = { key: string; value: string; delta: string };
+export type FinancialFieldView = { key: string; value: string; delta: string | null };
 export type TrustSectionFieldView = { sectionKey: string; key: string; value: string };
 export type TrustSectionVersionView = {
   sectionKey: string;
@@ -1143,9 +1260,9 @@ export type IContentActions = {
   deleteI3Campaign: (campaignNo: string, expectedRevision: number, reason: string, snapshot?: NotificationCampaignRow) => Promise<void>;
   updateI3Cap: (tier: string, cap: string, expectedCap: string, reason: string) => Promise<void>;
   publishI4TrustSection: (sectionKey: string, body: { version: string; expectedRevision: number; expectedVersion: string; expectedStatus: string; dataSourceStatement: string; bilingualConfirmed: true }, reason: string) => Promise<void>;
-  createI4TrustSectionDraft: (sectionKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  updateI4TrustSectionDraft: (sectionKey: string, version: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  deleteI4TrustSectionDraft: (sectionKey: string, version: string, expectedRevision: number, reason: string) => Promise<void>;
+  createI4TrustSectionDraft: (sectionKey: string, body: Record<string, unknown>, reason: string, snapshot?: TrustSectionVersionView) => Promise<void>;
+  updateI4TrustSectionDraft: (sectionKey: string, version: string, body: Record<string, unknown>, reason: string, snapshot?: TrustSectionVersionView) => Promise<void>;
+  deleteI4TrustSectionDraft: (sectionKey: string, version: string, expectedRevision: number, reason: string, snapshot?: TrustSectionVersionView) => Promise<void>;
   rollbackI4TrustSection: (sectionKey: string, targetVersion: string, expectedVersion: string, expectedStatus: string, reason: string) => Promise<void>;
   archiveI4TrustSection: (sectionKey: string, expectedVersion: string, expectedStatus: string, reason: string) => Promise<void>;
   saveI5DisclosureDraft: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
@@ -1269,9 +1386,9 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   deleteI3Campaign: (campaignNo, expectedRevision, reason, snapshot) => prepareI3Command(`/campaigns/${encodeURIComponent(campaignNo)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision }, reason)) }, snapshot),
   updateI3Cap: (tier, cap, expectedCap, reason) => apiRequest(`/campaigns/caps/${encodeURIComponent(tier)}`, { method: "PATCH", body: JSON.stringify(withReason({ cap, expectedCap }, reason)) }).then(() => undefined),
   publishI4TrustSection: (sectionKey, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  createI4TrustSectionDraft: (sectionKey, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI4TrustSectionDraft: (sectionKey, version, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  deleteI4TrustSectionDraft: (sectionKey, version, expectedRevision, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
+  createI4TrustSectionDraft: (sectionKey, body, reason, snapshot) => prepareI4DraftCommand(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }, snapshot),
+  updateI4TrustSectionDraft: (sectionKey, version, body, reason, snapshot) => prepareI4DraftCommand(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }, snapshot),
+  deleteI4TrustSectionDraft: (sectionKey, version, expectedRevision, reason, snapshot) => prepareI4DraftCommand(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision }, reason)) }, snapshot),
   rollbackI4TrustSection: (sectionKey, targetVersion, expectedVersion, expectedStatus, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ targetVersion, expectedVersion, expectedStatus }, reason)) }).then(() => undefined),
   archiveI4TrustSection: (sectionKey, expectedVersion, expectedStatus, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/archive`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion, expectedStatus }, reason)) }).then(() => undefined),
   saveI5DisclosureDraft: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
