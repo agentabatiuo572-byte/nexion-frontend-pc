@@ -18,6 +18,7 @@ import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-ti
 import { downloadL4NetworkFile, fetchL4NetworkReport, isLOutcomeUnknownError, LOutcomeUnknownError, type L4OperationsQuery } from "@/lib/admin/l-client";
 import { displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { isL4NetworkDurable, l4NetworkCommands, networkReasonLength, type PendingL4NetworkExport } from "@/lib/admin/l4-network-export";
 import { fetchH1Phases } from "@/lib/admin/h-client";
@@ -387,6 +388,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
           throw new Error(formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED"));
         }
         let record = l4NetworkCommands.list().find(item => item.owner === owner);
+        const retrying = attemptedKey !== undefined;
         if (attemptedKey) {
           if (!record || record.commandKey !== attemptedKey) {
             ctx.closeActionConfirm?.();
@@ -424,7 +426,12 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
             try {
               result = await ctx.biActions.createNetworkTreeExport(record.request, record.request.reason, record.commandKey);
             } catch (error) {
-              if (isExplicitRejection(error)) {
+              const failure = error as { status?: number; reasonCode?: string };
+              const rejected = retrying ? isExplicitRejection(error)
+                : !failure.reasonCode?.startsWith("IDEMPOTENCY_")
+                  && ![401, 408, 425, 429].includes(failure.status ?? 0)
+                  && isDeterministicRejection(failure.status ?? 0);
+              if (rejected) {
                 l4NetworkCommands.forget(record.fingerprint, record.commandKey);
                 attemptedKey = undefined;
                 syncTree();
