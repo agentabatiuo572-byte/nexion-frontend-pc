@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Globe, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import {
-  BlockState, Button, Change, Explain, Fact, Facts, IconButton, Input, Notice, Panel, StatusTag, Table, TableMessage, Td, Th, Tr,
+  BlockState, Button, Cell, Change, Explain, Fact, Facts, IconButton, Input, Notice, Panel, StatusTag, Table, TableMessage, Td, Th, Tr,
 } from "@/app/components/rd";
 import {
   fetchH3WeeklyRegionPolicy,
@@ -163,7 +163,7 @@ const weekdayText = (at: number) => new Intl.DateTimeFormat("zh-CN", { timeZone:
 function windowText(zone: string, now: number) {
   const window = weekWindow(zone, now);
   if (!window) return "—";
-  return `${businessStamp(window.start)}（${weekdayText(window.start)}）至 ${businessStamp(window.end)}（${weekdayText(window.end)}）`;
+  return <Cell main={`${businessStamp(window.start)}（${weekdayText(window.start)}）起`} sub={`到 ${businessStamp(window.end)}（${weekdayText(window.end)}）`} />;
 }
 const zoneLabel = (zone: string) => ZONE_NAMES[zone] ?? "";
 
@@ -209,9 +209,9 @@ export function H3RegionPanel({ region, canAudit }: { region: H3RegionState; can
         <tbody>
           {rows.map((row, index) => draft ? (
             <Tr key={index}>
-              <Td><Input disabled={!!(loading || error || reviewError || pending)} aria-label={`电话区号 ${index + 1}`} value={row.callingCode} placeholder="+84" size={8}
+              <Td><Input disabled={!!(loading || error || reviewError || pending)} aria-label={`电话区号 ${index + 1}`} value={row.callingCode} placeholder="+84" size={6}
                 onChange={event => setDraft(draft.map((item, i) => i === index ? { ...item, callingCode: event.target.value.trim() } : item))} /></Td>
-              <Td><Input disabled={!!(loading || error || reviewError || pending)} aria-label={`任务时区 ${index + 1}`} value={row.zoneId} placeholder="Asia/Shanghai" size={22}
+              <Td><Input disabled={!!(loading || error || reviewError || pending)} aria-label={`任务时区 ${index + 1}`} value={row.zoneId} placeholder="Asia/Shanghai" size={18}
                 onChange={event => setDraft(draft.map((item, i) => i === index ? { ...item, zoneId: event.target.value.trim() } : item))} /></Td>
               <Td>{windowText(row.zoneId, now)}</Td>
               <Td sticky="end" data-fit=""><IconButton disabled={!!(loading || error || reviewError || pending)} aria-label={`删除 ${row.callingCode || index + 1}`} onClick={() => setDraft(draft.filter((_, i) => i !== index))}><Trash2 size={14} aria-hidden /></IconButton></Td>

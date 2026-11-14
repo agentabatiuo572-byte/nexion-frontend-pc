@@ -343,3 +343,4 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h3-monitor dt { font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .h3-monitor dd { margin: 0; color: var(--rd-text); }
 .h3-block-gap { margin-top: var(--rd-space-4); }
+.h3-phone-hero .h3-phone-cat { align-self: flex-start; }

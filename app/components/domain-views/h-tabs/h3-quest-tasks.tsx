@@ -477,6 +477,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Facts>,
       statedBrief: { impact: enabling ? "启用后之后的用户会拿到这个任务。" : "停用后之后的用户拿不到这个任务；已经拿到的照旧。", check: "核对任务和完成条件；理由写清依据。" },
       reason: true,
+      reasonPlaceholder: "例如：工单号、调整依据",
       okLabel: targetStatus === "active" ? "确认启用" : "确认停用",
       run: async (reason) => {
         await applyMissionMutation(transitionH3Mission(taskCode, taskKind, targetStatus, status, reason));
@@ -505,6 +506,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Facts>,
       statedBrief: { impact: "归档是终态，不能恢复成启用或停用。", check: "确认不再需要这个任务；理由写清依据。" },
       reason: true,
+      reasonPlaceholder: "例如：工单号、调整依据",
       okLabel: "确认归档",
       run: async (reason) => {
         await applyMissionMutation(archiveH3Mission(taskCode, taskKind, status, reason));
@@ -531,6 +533,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Facts>,
       statedBrief: { impact: "只删任务定义；已发出的任务、记录和审计都不删。", check: "确认是要永久从列表删掉；理由写清依据。" },
       reason: true,
+      reasonPlaceholder: "例如：工单号、调整依据",
       okLabel: "确认删除",
       run: async (reason) => {
         await applyMissionMutation(deleteH3Mission(taskCode, taskKind, reason));
@@ -564,6 +567,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Facts>,
       statedBrief: { impact: "只改以后的任务怎么算完成，不改已经发出的任务。", check: "核对条件和对应任务；理由写清依据。" },
       reason: true,
+      reasonPlaceholder: "例如：工单号、调整依据",
       okLabel: enabled ? "确认停用" : "确认启用",
       run: async (reason) => {
         await applyBindingMutation(updateH3QuestEventBinding(binding.bindingCode, {
@@ -747,6 +751,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Facts>,
       statedBrief: { impact: "只删现在的设置；历史和已发出任务里的条件不删。", check: "只想暂时不算用「停用」；理由写清依据。" },
       reason: true,
+      reasonPlaceholder: "例如：工单号、调整依据",
       okLabel: "确认删除",
       run: async (reason) => {
         await applyBindingMutation(deleteH3QuestEventBinding(binding.bindingCode, {
@@ -805,7 +810,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const lists: Record<ListKey, QuestTask[]> = { dayOne, t1, t2 };
   const all = [...dayOne, ...t1, ...t2];
   const codeOf = (task: QuestTask) => text(task.taskCode ?? task.missionCode ?? task.id, "");
-  const nameOf = (task: QuestTask) => taskTitleText(text(task.task ?? task.cond));
+  const nameOf = (task: QuestTask) => localizedValue(codeOf(task), "zh") || taskTitleText(text(task.task ?? task.cond));
   const bindingsOf = (task: QuestTask) => bindings.filter((binding) => binding.questCode === codeOf(task));
   const localeGaps = (task: QuestTask) => (["en", "zh", "vi"] as const).filter((locale) => !localizedValue(codeOf(task), locale)).map((locale) => LOCALE_LABEL[locale]);
   const active = all.filter((task) => taskStatusOf(task) === "active");
@@ -1091,9 +1096,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const weeklyTab = (
     <div {...tabIds.panel("weekly")} className="h3-tabpanel">
       <Panel title="每周奖励怎么算" icon={Sparkles} tone="role-4" sub={currentPhase ? `现在是 ${currentPhase}` : "当前阶段没读到"}
+        actions={canPhase ? <Link className="rd-link" href="/growth/phase" prefetch={false}>去运营阶段设置改任务加成</Link> : undefined}
         explain="每周任务发布时，把基础奖励、运营阶段设置的任务加成、这里的每周阶段倍率一起冻结；用户领取时按冻结的乘积到账，向下保留 6 位小数。之后改设置不影响已发布的。">
         <WeeklyFormula rows={formulaRows} h1={h1Value} h1Phase={currentPhase} weekly={weeklyValue} weeklyPhase={currentPhase}
-          h1Link={canPhase ? <> · <Link className="rd-link" href="/growth/phase" prefetch={false}>去运营阶段设置</Link></> : null} />
+          h1Link={null} />
         <div className="h3-sub-head">
           <h3>每周阶段倍率</h3>
           <Explain label="每周阶段倍率是什么" content={<>
