@@ -301,7 +301,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     facts: (value) => <Facts>
       <Fact k="自动分组">{value === undefined || value === (spillOn ? "已启用" : "已关闭") ? (spillOn ? "已启用" : "已关闭") : <Change from={spillOn ? "已启用" : "已关闭"} to={value} />}</Fact>
       {(value ?? (spillOn ? "已关闭" : "已启用")) === "已关闭"
-        ? <Fact k="关闭后" tone="warn">不再自动补齐；有直接好友没分组的邀请人，结算会被拦下，要在「成员分组」手动分。已经分好的不撤销</Fact>
+        ? <><Fact k="关闭后" tone="warn">不再自动补齐，有人没分组的邀请人结算会被拦下</Fact><Fact k="要做的">在「成员分组」手动分；已经分好的不撤销</Fact></>
         : <Fact k="开启后">结算时把没分组的直接好友补到人数少的一组，一样多先分 A；按人数，不按订单额。不会马上给所有人分组</Fact>}
       <Fact k="什么时候生效">批准后写入，之后的结算按新设置判断要不要补齐</Fact>
     </Facts>,
@@ -343,7 +343,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       kind: "multi-field",
       fields: [
         { key: "period", label: "结算周期", current: periodEff, inputKind: "select", options: ["每日", "每周", "每月"],
-          explain: "每日：每天结算，上限 = 每日上限 × 1；每周：每周日结算，× 7；每月：每月最后一天结算，× 当月天数。", help: `日子按${zone}划分` },
+          explain: "每日：每天结算，上限 = 每日上限 × 1；每周：每周日结算，× 7；每月：每月最后一天结算，× 当月天数。", help: `日子按${zone} 划分` },
         { key: "residual", label: "没匹配上的订单额", current: residualEff, inputKind: "select", options: ["每月清零", "每次对碰清零", "转结"], optionLabels: { "每次对碰清零": "每次匹配后清零" },
           explain: `每月清零：${RESIDUAL_TEXT.每月清零.what} 每次匹配后清零：${RESIDUAL_TEXT.每次对碰清零.what} 转结：${RESIDUAL_TEXT.转结.what}`,
           warning: (value) => value.residual === "转结" && residualEff !== "转结" ? "转结会让没匹配上的订单额一直参与之后的匹配，之后多付奖励。" : undefined },
@@ -351,7 +351,9 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     },
     facts: <Facts>
       <Fact k="现在">{text(periodEff)}结算 · 没匹配上的订单额{residualLabel(text(residualEff))}</Fact>
-      <Fact k="什么时候生效">两项放在同一张审批单里，批准时一起写入，失败就都不改；之后每一次结算按新设置判断到没到结算日、怎么扣已匹配的订单额。已经记账的不重算，不是从下一期才开始</Fact>
+      <Fact k="什么时候生效">两项同一张审批单，批准时一起写入，失败都不改</Fact>
+      <Fact k="之后的结算">下一次结算就按新设置，不是排到下一期</Fact>
+      <Fact k="已经记账的">不重算</Fact>
       <Fact k="谁会被拒">只靠委托发起审批的账号，这一项会被后端拒绝（整批修改还没配权限，已提后端）；不会拆成两张单</Fact>
     </Facts>,
     detail: "结算周期和没匹配上的订单额怎么处理，同一张审批单。",

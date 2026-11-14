@@ -158,7 +158,7 @@ export function F3Placements() {
         <Fact k="邀请人用户编号">{selected.ownerUserId}</Fact>
         <Fact k="这次要分的成员">成员 {selected.memberUserId} → <span className="f3-leg" data-leg={selected.leg}>{selected.leg} 组</span></Fact>
       </Facts>
-      <Notice tone="warn" title="归了就不能换">分组后不能改到另一组，页面和后端都没有换组的入口。直接写入，不走审批，也不会触发结算；之后这位成员的订单额算进 {selected.leg} 组。</Notice>
+      <Notice tone="warn" title="归了就不能换">分组后不能改到另一组，页面和后端都没有换组的入口。直接写入，不走审批，也不触发结算。</Notice>
     </Modal>}
   </Panel>;
 }
