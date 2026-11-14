@@ -167,7 +167,7 @@ export function I4Documents() {
           {editor.mode === "upload"
             ? <Notice tone="warn" title={UPLOAD_PUBLIC}>不走审批；之后可以恢复成默认文件。</Notice>
             : <Notice tone="warn" title="恢复后立即对所有用户生效">不走审批；App 改显示随系统发布的默认文件。</Notice>}
-          {editorError && <Notice tone="danger" title={editor.mode === "upload" ? "上传没完成" : "恢复没完成"}
+          {editorError && <Notice tone="danger" title={editor.mode === "upload" ? "没收到上传成功的结果" : "没收到恢复成功的结果"}
             action={<Button size="sm" loading={loading} onClick={() => void refresh()}>重新读取核对</Button>} actionBelow>
             <p>{editorError}</p>
             <p>{editor.mode === "upload" ? "刚才的上传可能已经成功：先重新读取，核对卡片上的文件名和上传时间，再决定要不要重传。" : "先重新读取，核对卡片上是不是已经变回默认文件。"}</p>

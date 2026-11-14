@@ -162,7 +162,6 @@
 .i4-field-note { color: var(--rd-warn); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .i4-detail-head h3 { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-semibold); }
 .i4-break { overflow-wrap: anywhere; }
-.i4-option-warn { color: var(--rd-warn); }
 
 /* 两版对照（确认框里） */
 .i4-compare-grid { display: flex; flex-direction: column; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); overflow: hidden; }

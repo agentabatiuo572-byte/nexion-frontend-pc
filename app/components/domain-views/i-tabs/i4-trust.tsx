@@ -366,7 +366,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     const optionLabels = Object.fromEntries(sectionVersionOptions(s).map((version) => {
       const row = versionOf(version);
       const problems = versionProblems(row);
-      return [version, <span key={version}>{version} · {timeText(row?.updatedAt)}{problems.length ? <span className="i4-option-warn"> · 不完整</span> : null}</span>];
+      return [version, <span key={version}>{version} · {timeText(row?.updatedAt)}{problems.length ? " · 不完整" : null}</span>];
     }));
     return openActionConfirm({ briefKind: "content",
       action: <>回滚信任版块 · {s.key}</>,
