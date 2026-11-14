@@ -84,7 +84,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
   const openPayout = () => ctx.openActionConfirm({ briefKind: "funds",
     name: "发放总榜奖励",
     amplify: true,
-    title: "发放总榜奖励", effect: approvalTag(),
+    title: "发放总榜奖励", effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: "批准后按执行那一刻的总榜，把总榜奖池按名次分给累计已解锁奖励最多的前 100 名（不足 100 名按实际人数），作为已解锁的 USDT 奖励真实入账。",
       check: "总榜成功派过一次后再执行不会再发；奖池为 0 或没有人上榜时不发钱。后端执行时不检查兑付覆盖率。",
@@ -94,9 +94,8 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
     coverageCheck: "后端执行这次派奖时不检查兑付覆盖率，下面是现在读到的数，请自己判断。",
     facts: <Facts>
       <Fact k="总榜奖池" lead tone="role-1" unit={ppAllTime === "" ? undefined : "USDT"}>{prizeShown(ppAllTime)}</Fact>
-      <Fact k="每个名次发多少">名次越靠前份数越多：第 1 名 N 份、第 2 名 N−1 份……最后一名 1 份（N 是上榜人数）</Fact>
+      <Fact k="每个名次发多少">按名次分份数：第 1 名 N 份，往后每名少 1 份，最后一名 1 份；N 是上榜人数</Fact>
       <Fact k="头部上限">第 1 名最多 {top1MaxPct}%，前 5 名合计最多 {top5MaxPct}%；超出的部分不再分给别人</Fact>
-      <Fact k="资金">{data.coverage ? `兑付覆盖率 ${data.coverage.coverageRatio}%，红线 ${data.coverage.redlinePct}%` : "这次没有读到兑付覆盖率"}</Fact>
     </Facts>,
     detail: `总榜不会自动清零。按累计奖励前 100 名发放当前奖池 ${prizeShown(ppAllTime)} USDT，需要审批，不会重复发放。`,
     run: (reason) => ctx.proposeF4LeaderboardPayout("allTime", reason),
@@ -178,18 +177,18 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
             note: periodPrizes ? undefined : "还没有批准过的四榜奖池，这里显示的是榜单现在用的金额；读不到的写「—」。",
             open: () => ctx.openActionConfirm({ briefKind: "config",
               name: "调整各榜奖池", amplify: true,
-              title: "调整各榜奖池", effect: approvalTag(),
+              title: "调整各榜奖池", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，日、周、月榜从下一次还没结算的周期起用新金额，总榜在人工派奖时读；已经派过的不改。", check: "四个都要填 0 或正数，一起提交，一张审批单。" },
-              completionCopy: "提交到「操作记录与审批」，由另一位管理员批准后生效。",
+              completionCopy: approvalCopy("F4 资金权限"),
               businessForm: {
                 kind: "multi-field",
                 title: "各榜奖池（USDT）",
                 hint: "填 0 或正数。调高会多发钱，先看兑付覆盖率。",
                 fields: [
-                  { key: "today", label: "日榜奖池(USDT)", current: ppToday, inputKind: "number", min: 0 },
-                  { key: "week", label: "周榜奖池(USDT)", current: ppWeek, inputKind: "number", min: 0 },
-                  { key: "month", label: "月榜奖池(USDT)", current: ppMonth, inputKind: "number", min: 0 },
-                  { key: "allTime", label: "总榜奖池(USDT)", current: ppAllTime, inputKind: "number", min: 0 },
+                  { key: "today", label: "日榜", current: ppToday, inputKind: "number", min: 0 },
+                  { key: "week", label: "周榜", current: ppWeek, inputKind: "number", min: 0 },
+                  { key: "month", label: "月榜", current: ppMonth, inputKind: "number", min: 0 },
+                  { key: "allTime", label: "总榜", current: ppAllTime, inputKind: "number", min: 0 },
                 ],
               },
               detail: `各榜奖池 · 当前 日 ${prizeShown(ppToday)} / 周 ${prizeShown(ppWeek)} / 月 ${prizeShown(ppMonth)} / 总 ${prizeShown(ppAllTime)} USDT。`,
@@ -213,7 +212,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
             note: "后端保存时不检查金额格式，格式不对时按四榜奖池的周榜金额发。",
             open: () => ctx.openActionConfirm({ briefKind: "config", name: "调整本周榜单奖池", amplify: true, op: "param", paramKey: "F.leaderboard.poolUsd",
               edit: { kind: "text", current: data.leaderboardPoolLabel },
-              title: "调整周榜奖池覆盖额", effect: approvalTag(),
+              title: "调整周榜奖池覆盖额", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，还没结算的周榜按新金额派奖；填 0 表示改回用四榜奖池里的周榜金额，不是关掉。", check: "后端保存时不检查金额格式，请填数字。" },
               completionCopy: approvalCopy("F4 资金权限"),
               detail: `本周榜单奖池总额 · 当前 ${lbPool}。` }) })}
@@ -223,7 +222,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
             effect: "调高上榜的人变少。",
             open: () => ctx.openActionConfirm({ briefKind: "config", name: "调整上榜最低奖励", op: "param", paramKey: "F.leaderboard.minUsd",
               edit: { kind: "number", current: lbMinUsd, unit: "USDT" },
-              title: "调整上榜门槛", effect: approvalTag(),
+              title: "调整上榜门槛", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，本期已解锁奖励低于新门槛的人不参与四个榜的排名和派奖；已发的不变。", check: "后端只接受 0 或正数。" },
               completionCopy: approvalCopy("F4 写权限"),
               detail: `上榜最低奖励 · 当前 ${lbMinUsd} USDT · 低于这个金额不参与排名。` }) })}
@@ -233,7 +232,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
             effect: "超出上限的部分不再分给别人。调高会多发钱给第 1 名。",
             open: () => ctx.openActionConfirm({ briefKind: "config", name: "调整第 1 名最高占比", amplify: true, op: "param", paramKey: "F.pool.top1MaxPct",
               edit: { kind: "number", current: top1MaxPct, unit: "%" },
-              title: "调整第 1 名最高占比", effect: approvalTag(),
+              title: "调整第 1 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，之后排行榜派奖时第 1 名最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "后端只接受 0–100。" },
               completionCopy: approvalCopy("F4 资金权限"),
               detail: `第 1 名最多能分到排行榜奖池的百分比 · 当前 ${top1MaxPct}%。` }) })}
@@ -243,7 +242,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
             effect: "超出上限的部分不再分给别人。和第 1 名上限各自独立，后端不检查两者的大小关系。",
             open: () => ctx.openActionConfirm({ briefKind: "config", name: "调整前 5 名最高占比", amplify: true, op: "param", paramKey: "F.pool.top5MaxPct",
               edit: { kind: "number", current: top5MaxPct, unit: "%" },
-              title: "调整前 5 名最高占比", effect: approvalTag(),
+              title: "调整前 5 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，之后排行榜派奖时前 5 名合计最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "后端只接受 0–100。" },
               completionCopy: approvalCopy("F4 资金权限"),
               detail: `前 5 名合计最多能分到排行榜奖池的百分比 · 当前 ${top5MaxPct}%。` }) })}

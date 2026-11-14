@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ExternalLink, FileCheck2 } from "lucide-react";
+import { AlertCircle, ExternalLink, FileCheck2 } from "lucide-react";
 import { BlockState, Button, Check, CheckGroup, Decision, Drawer, Fact, Facts, Field, Fold, KeyValues, Notice, NumberInput, Segments, StatusTag, Steps } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
@@ -77,15 +77,14 @@ const REVIEW_TAG: Record<F4AmbassadorReview["status"], { text: string; tone: "ok
 };
 
 /** 一次核验的结论卡：结论、谁、什么时候、理由、人数或认可金额。null 的认可金额是「尚未认可」，不是 0。 */
-function ReviewCard({ review, title, stage }: { review: F4AmbassadorReview; title: string; stage: "BUSINESS" | "FINANCE" }) {
+function ReviewCard({ review, title, stage, venue }: { review: F4AmbassadorReview; title: string; stage: "BUSINESS" | "FINANCE"; venue: boolean }) {
   const tag = REVIEW_TAG[review.status] ?? REVIEW_TAG.PENDING;
   return <div className="f4-review-card" data-status={review.status}>
-    <span className="f4-review-head"><b>{title}</b><StatusTag tone={tag.tone}>{tag.text}</StatusTag></span>
+    <span className="f4-review-head"><b>{title}</b><StatusTag tone={tag.tone} icon={review.status === "NEEDS_MORE" ? AlertCircle : undefined}>{tag.text}</StatusTag></span>
     <KeyValues rows={[
       { key: "who", label: "核验人", value: review.reviewerLabel ? maskAuditActor(review.reviewerLabel) : "—", sub: review.reviewedAt ? stamp(review.reviewedAt) : undefined },
-      stage === "BUSINESS"
-        ? { key: "people", label: "有效去重人数", value: review.verifiedAttendees == null ? "—" : `${count(review.verifiedAttendees)} 人` }
-        : { key: "amount", label: "认可金额", value: review.recognizedBudgetUsdt == null ? "尚未认可" : `${decimalText(review.recognizedBudgetUsdt)} USDT` },
+      ...(stage === "FINANCE" ? [{ key: "amount", label: "认可金额", value: review.recognizedBudgetUsdt == null ? "尚未认可" : `${decimalText(review.recognizedBudgetUsdt)} USDT` }]
+        : venue ? [{ key: "people", label: "有效去重人数", value: review.verifiedAttendees == null ? "—" : `${count(review.verifiedAttendees)} 人` }] : []),
       { key: "reason", label: "理由", value: review.reason || "—" },
     ]} />
   </div>;
@@ -127,12 +126,13 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
     ctx.openActionConfirm({ briefKind: "funds", name: `批准大使申请 #${application.id}`, amplify: true,
       op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "approved",
       expectedMaterialRevision: packet.materialRevision,
-      title: `批准大使申请 #${application.id}`, effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>,
+      title: `批准大使申请 #${application.id}`, effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>, confirmLabel: "提交审批",
       statedBrief: {
         impact: `批准后只开通申请人所选的「${ambassadorBucketLabel(packet.bucket)}」这一类额度（一笔），不是付款，也不改其他申请。`,
         check: "执行时重新检查材料版本、两次核验、线下活动人数、认可金额、活动日期、附件和兑付覆盖率，任一不符就不执行。",
       },
       completionCopy: "提交后由另一位管理员在「操作记录与审批」批准才生效。批准人需有大使最终批准权限和审批权限，不能核验过这一版材料，也不能是你自己。",
+      coverageLead: "批准会开通一笔预算额度",
       coverageCheck: "批准执行时检查兑付覆盖率。",
       facts: <Facts>
         <Fact k="申请金额" lead tone="role-1" unit="USDT">{decimalText(packet.budgetUsdt)}</Fact>
@@ -158,7 +158,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
     && (stageKey === "BUSINESS" ? packet.canReviewBusiness : packet.canReviewFinance) === true && ctx.can(F4_MATERIAL_PERMISSIONS[index].code);
 
   return <>
-    <Drawer open onClose={onClose} wide icon={FileCheck2} tone="role-3"
+    <Drawer open onClose={onClose} icon={FileCheck2} tone="role-3"
       title={`大使申请 #${application.id}`}
       sub={`${operatorNicknameText(application.applicantName)} · ${application.region}${application.city ? ` / ${application.city}` : ""} · ${application.currentRank}`}
       explain="核验结论直接记录到当前这一版材料，不批准预算。批准和驳回要另一位管理员批准；核验过这一版材料的人不能做最终批准。申请人补交材料会形成新的一版，旧结论要重新核验。"
@@ -202,7 +202,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
                         {file.name}<small>{(file.sizeBytes / 1024 / 1024).toFixed(2)} MB</small><ExternalLink size={12} aria-hidden />
                       </a>) : <span className="f4-muted">尚未提交{requirement.required ? "必要" : "此项"}材料</span>}
                     </span>
-                    {missing ? <StatusTag tone="warn">需补充</StatusTag> : <span className="f4-muted">{files.length} 份</span>}
+                    {missing ? <StatusTag tone="warn" icon={AlertCircle}>需补充</StatusTag> : <span className="f4-muted">{files.length} 份</span>}
                   </li>;
                 })}
               </ul> : <p className="f4-muted">{packet.bucket ? "暂无材料要求" : "等待申请人明确补齐申请类别"}</p>}
@@ -211,8 +211,8 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
             <section className="f4-mat-section" aria-labelledby={`f4-mat-reviews-${application.id}`}>
               <h3 id={`f4-mat-reviews-${application.id}`}>两次核验（第 {packet.materialRevision} 版材料）</h3>
               <div className="f4-review-pair">
-                <ReviewCard title="业务核验" stage="BUSINESS" review={packet.businessReview} />
-                <ReviewCard title="财务核验" stage="FINANCE" review={packet.financeReview} />
+                <ReviewCard title="业务核验" stage="BUSINESS" venue={packet.bucket === "venue"} review={packet.businessReview} />
+                <ReviewCard title="财务核验" stage="FINANCE" venue={packet.bucket === "venue"} review={packet.financeReview} />
               </div>
               {!final && (["BUSINESS", "FINANCE"] as const).map((stageKey, index) => <ReviewForm key={`${packet.materialRevision}:${stageKey}`} packet={packet} stage={stageKey}
                 writable={reviewWritable(stageKey, index)} onReview={setConfirmation} />)}

@@ -5,7 +5,7 @@
  * 写入口和请求沿用旧页面：额度、回收走 shell 的 param/dispose 提交（A2 审批），申请规则走 ctx.updateF4AmbassadorPolicy 或 ctx.submitTeamApproval。
  */
 import { useState } from "react";
-import { BadgeCheck, FileText, Package, Users } from "lucide-react";
+import { AlertCircle, BadgeCheck, FileText, Package, Users } from "lucide-react";
 import { BlockState, Button, Cell, Explain, Field, Fold, Input, KeyValues, Panel, RatioBar, StatusDistributionBar, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel, formatF4AmbassadorBucketRule, formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
@@ -119,16 +119,16 @@ function openAmbassadorPolicy(ctx: FViewCtx, policy: F4AmbassadorPolicy) {
           onChange={(event) => change({ ...values, [field.key]: event.target.value })} />;
         return <div className="f4-policy-form">
           <div className="f4-policy-main">
-            <Field id={`f4-policy-${mainFields[0].key}`} label="规则版本" hint="3–64 位字母、数字、点、横线">{input(mainFields[0])}</Field>
+            <Field id={`f4-policy-${mainFields[0].key}`} label="规则版本" hint="3–64 位，字母数字点横线">{input(mainFields[0])}</Field>
             <Field id={`f4-policy-${mainFields[1].key}`} label="默认预算" hint="100–10,000 USDT，要落在某一类的范围里">{input(mainFields[1])}</Field>
           </div>
           {bucketRows.map(({ bucket, name, fields }) => <fieldset key={bucket.id} className="f4-policy-bucket">
             <legend>{name}<span data-mono>{bucket.id}</span></legend>
-            <Field id={`f4-policy-${fields[0].key}`} label="名称" hint="最多 80 字">{input(fields[0])}</Field>
-            <Field id={`f4-policy-${fields[2].key}`} label="显示的金额范围" hint="最多 80 字">{input(fields[2])}</Field>
+            <Field id={`f4-policy-${fields[0].key}`} label="名称" hint="≤ 80 字">{input(fields[0])}</Field>
+            <Field id={`f4-policy-${fields[2].key}`} label="显示范围" hint="≤ 80 字">{input(fields[2])}</Field>
             <Field id={`f4-policy-${fields[3].key}`} label="最低预算" hint="USDT">{input(fields[3])}</Field>
             <Field id={`f4-policy-${fields[4].key}`} label="最高预算" hint="USDT">{input(fields[4])}</Field>
-            <div className="f4-policy-rule"><Field id={`f4-policy-${fields[1].key}`} label="申请条件" hint="最多 500 字">{input(fields[1])}</Field></div>
+            <div className="f4-policy-rule"><Field id={`f4-policy-${fields[1].key}`} label="申请条件" hint="≤ 500 字">{input(fields[1])}</Field></div>
           </fieldset>)}
         </div>;
       },
@@ -180,7 +180,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
     paramKey: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`,
     expectedVersion: quota.cap,
     edit: { kind: "number", current: String(quota.cap), unit: "台" },
-    title: `调整 ${quota.name} 的月额度`, effect: approvalTag(),
+    title: `调整 ${quota.name} 的月额度`, effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: "批准后限制这个商品之后的购买；已用的记录不删，也不退单。新额度不能低于本月已用。",
       check: "后端只接受 0–1,000,000 的整数；批准时额度已被别人改过，或新额度低于本月已用，会被拒绝并给出最新值。",
@@ -237,7 +237,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
                   <RatioBar compact label={`${quota.name} 本月已用`} value={Math.min(quota.current, quota.cap)} total={quota.cap} tone={quota.tight ? "warn" : "role-2"}
                     state={quota.cap > 0 ? "ready" : "empty"} emptyText="额度为 0" valueText={`已用 ${quota.current} 台，共 ${quota.cap} 台`} quiet />
                   <span className="f4-num">{count(quota.current)} / {count(quota.cap)} 台</span>
-                  {quota.tight && <StatusTag tone="warn">快用完</StatusTag>}
+                  {quota.tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}
                 </span>
               </Td>
               <Td data-fit="">{canWrite && <Button size="sm" onClick={() => openQuota(quota)}>调额度</Button>}</Td>

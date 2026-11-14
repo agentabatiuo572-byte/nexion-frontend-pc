@@ -16,7 +16,7 @@ const POOL_UNLOCK_OPTIONS = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8"];
 
 /** A2 普通提案：谁来批、批准前不变。需要的权限只在这里写一次。 */
 export function approvalCopy(permission: string) {
-  return `提交后由另一位管理员在「操作记录与审批」批准才生效，批准前保持现在的设置。批准人需有${permission}和审批权限，不能是你自己。`;
+  return `提交后由另一位管理员在「操作记录与审批」批准才生效，批准前保持现在的设置。批准人需有${/^[A-Za-z0-9]/.test(permission) ? " " : ""}${permission}和审批权限，不能是你自己。`;
 }
 
 export function approvalTag() {
@@ -50,8 +50,6 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
       : `团队激励池设置不完整：${settlement.issues.map((issue) => issue.label).join("、")} 未设置或格式有误。补齐后刷新。`;
   const settled = data.weeklyInjectedUsd > 0;
   const pool = data.currentWeekPoolUsd;
-  const coverage = data.coverage;
-  const coverageText = coverage ? `兑付覆盖率 ${coverage.coverageRatio}%，红线 ${coverage.redlinePct}%` : "这次没有读到兑付覆盖率";
   const nextSettle = settlement.ready ? stamp(data.nextSettlementAt) : "—";
   const topShare = data.topN > 0 && data.topSharePct > 0 ? `前 ${data.topN} 名约占 ${data.topSharePct}%` : "—";
 
@@ -60,7 +58,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
     name: "提前结算本周团队激励池",
     amplify: true,
     title: "提前结算本周团队激励池",
-    effect: approvalTag(),
+    effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: "批准后按执行那一刻的当前周重新计算池金额，并作为已解锁的 USDT 奖励真实入账到有资格的用户；本周已经结算过的会跳过，不补发差额。",
       check: "后端执行时重新读成交额、比例、月上限、参与等级和票数；不检查兑付覆盖率。",
@@ -72,7 +70,6 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
       <Fact k={settled ? "本周已结算（实发）" : "本周池（估算）"} lead tone="role-1" unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
       <Fact k="有资格分的人">{count(data.participantCount)} 人（{unlockLabel}且有票）</Fact>
       <Fact k="怎么分">按各等级票数分，最后一位领取尾差</Fact>
-      <Fact k="资金">{coverageText}</Fact>
     </Facts>,
     detail: "按本周已付款成交额（不含退款和拒付）× 奖池比例计算，不超过本月剩余额度；按当前等级和票数分给达到参与等级的人。估算是现在读到的数，批准执行时会重新计算，可能和这里不同；没有合格票时不发钱。",
     run: async (reason) => {
@@ -87,7 +84,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
       briefKind: "config", name: `调整 ${row.v} 票数`, amplify: true, op: "param", paramKey,
       edit: { kind: "number", current: String(row.votes), unit: "票", min: 0, step: 1, amplifiesWhen: "increase" },
       title: `调整 ${row.v} 的票数`,
-      effect: approvalTag(),
+      effect: approvalTag(), confirmLabel: "提交审批",
       statedBrief: {
         impact: "批准后，之后还没结算的团队激励池按新票数分；已经发出的不变。票数改成 0 后这个等级不再显示在这页，也不能在这页改回。",
         check: "调高票数时提醒先看兑付覆盖率；后端只接受 0 到 1,000,000 的整数，小数会被向下取整。",
@@ -151,7 +148,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
             effect: "调高会多发钱，提交前看兑付覆盖率。",
             open: () => ctx.openActionConfirm({ briefKind: "config", name: "调整团队激励池比例", amplify: true, op: "param", paramKey: "F.pool.ratio",
               edit: { kind: "text", current: data.poolRatio, unit: "%" },
-              title: "调整团队激励池比例", effect: approvalTag(),
+              title: "调整团队激励池比例", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，还没结算的这周估算和之后每次结算按新比例放钱；已经发的不重算。", check: "后端只接受 0–30 的百分数，比如 5 表示 5%，0.05 表示 0.05%。" },
               completionCopy: approvalCopy("F4 资金权限"),
               detail: `每周已付款成交额中放进团队激励池的比例 · 当前 ${ratioEff}。` }) })}
@@ -162,7 +159,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
             note: "后端会把格式不对的值也存下来，存下后池就不能结算，请按「1000」「50K」这类写法填。",
             open: () => ctx.openActionConfirm({ briefKind: "config", name: "调整团队激励池每月上限", op: "param", paramKey: "F.pool.monthlyCap",
               edit: { kind: "text", current: data.monthlyCapLabel },
-              title: "调整团队激励池每月上限", effect: approvalTag(),
+              title: "调整团队激励池每月上限", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后影响这个月还没结算的部分；已经发出的不追回。", check: "后端不在保存时检查格式，格式不对会让池变成不能结算，请写数字，可带 K、M。" },
               completionCopy: approvalCopy("F4 写权限"),
               detail: `团队激励池每月最多发多少 · 当前 ${capEff}。` }) })}
@@ -172,7 +169,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
             effect: "不影响已经结算的周。",
             open: () => ctx.openActionConfirm({ briefKind: "config", name: "调整团队激励池结算时间", op: "param", paramKey: "F.pool.settleCron",
               edit: { kind: "text", current: settleCron, unit: "定时表达式" },
-              title: "调整自动结算时间", effect: approvalTag(),
+              title: "调整自动结算时间", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后的下一次命中就按新时间自动结算最近一个已结束的周；已经结算的不变。", check: "后端只接受 5 段或 6 段的定时表达式，其余拒绝。" },
               completionCopy: approvalCopy("F4 写权限"),
               detail: `团队激励池自动结算时间 · 当前 ${settleCronEff}。` }) })}
@@ -182,7 +179,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
             effect: "调高参与人数变少，调低参与人数变多。",
             open: () => ctx.openActionConfirm({ briefKind: "config", name: "调整团队激励池参与等级", op: "param", paramKey: "F.pool.unlockVRank",
               edit: { kind: "select", current: unlockVRank, options: POOL_UNLOCK_OPTIONS },
-              title: "调整参与等级", effect: approvalTag(),
+              title: "调整参与等级", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，之后的结算只分给达到新等级的人；已经发出的不追溯。", check: "只能选 V1–V8。" },
               completionCopy: approvalCopy("F4 写权限"),
               detail: `达到这个等级才能分团队激励池 · 当前 ${unlockVRankEff}。调高参与人数变少，调低参与人数变多。` }) })}
