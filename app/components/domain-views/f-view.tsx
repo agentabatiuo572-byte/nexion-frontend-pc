@@ -58,8 +58,8 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { Mc, McSpec, FViewCtx } from "./f-tabs/types";
 import { F1Vrank } from "./f-tabs/f1-vrank";
 import { RdPage } from "@/app/components/rd";
-import { F2Rates } from "./f-tabs/f2-rates";
-import { F2SevenLayerActivation } from "./f-tabs/f2-seven-layer-activation";
+import { F2Page } from "./f-tabs/f2-page";
+
 import { F3Binary } from "./f-tabs/f3-binary";
 import { F4Ops } from "./f-tabs/f4-ops";
 import { F5Audit } from "./f-tabs/f5-audit";
@@ -823,10 +823,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab === "F1" ? null : tab === "F2" ? <div className="f2-page-header"><div><div className="f2-breadcrumb">网络 <span aria-hidden="true">›</span> 团队奖励设置</div><h1>团队奖励设置</h1></div><span className="f2-page-meta">{f2DirectPolicy?.effectiveAt ? `当前政策生效于 ${new Date(f2DirectPolicy.effectiveAt).toLocaleString()}` : "配置尚未生效"}</span></div> : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
+      {tab === "F1" || tab === "F2" ? null : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
+
 
       {tab === "F1" && <F1Vrank ctx={ctx} />}
-      {tab === "F2" && <><F2SevenLayerActivation ctx={ctx} /><F2Rates ctx={ctx} /></>}
+      {tab === "F2" && <F2Page ctx={ctx} coverage={f2Overview?.coverage} />}
       {tab === "F3" && <F3Binary ctx={ctx} />}
       {tab === "F4" && <F4Ops ctx={ctx} />}
       {tab === "F5" && <F5Audit ctx={ctx} />}
@@ -931,6 +932,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  // F1 已改版：页头在页面里，整页包 RdPage。
-  return tab === "F1" ? <RdPage className="fdom">{page}</RdPage> : <div className="dkpage fdom">{page}</div>;
+  // F1、F2 已改版：页头在页面里，整页包 RdPage。
+  return tab === "F1" || tab === "F2" ? <RdPage className="fdom">{page}</RdPage> : <div className="dkpage fdom">{page}</div>;
+
 }
