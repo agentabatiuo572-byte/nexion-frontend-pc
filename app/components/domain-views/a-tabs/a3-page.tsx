@@ -373,7 +373,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
             return <li key={gate.key} data-down={gate.up ? undefined : ""}>
               <span className="a3-gate-name">{gate.name}</span>
               <StatusTag tone={state.tone} icon={state.icon}>{state.text}</StatusTag>
-              <span className="a3-gate-meta">{gate.lastChange || "—"}</span>
+              <span className="a3-gate-meta">{gate.lastChange ? gate.lastChange.split(" · ").map((part, index) => <span key={index} className="rd-keep">{index > 0 && " · "}{part}</span>) : "—"}</span>
             </li>;
           })}
         </ul>}

@@ -204,7 +204,7 @@ function DeveloperDocs({ toast, onDirty }: { toast: Toast; onDirty: (value: bool
           {empties.length > 0 && <Notice tone="warn" title="这种语言还不完整">{empties.join("；")}。后端要求接口、事件至少各一项、示例不能空，不补齐会被拒绝保存。</Notice>}
         </div>
         <Preview title="开发者文档">
-          <div className="a3-doc-preview">
+          <div className="a3-doc-preview" data-user-content="">
             <b>接口</b>
             {endpoints.length ? <ul>{endpoints.map((item, index) => <li key={index}><span className="a3-method">{text(item.method) || "—"}</span><span className="a3-path">{text(item.path) || "—"}</span></li>)}</ul> : <span className="a3-preview-empty">没有接口</span>}
             <b>事件</b>
@@ -228,7 +228,7 @@ function DeveloperDocs({ toast, onDirty }: { toast: Toast; onDirty: (value: bool
         { key: "locales", label: "语言", before: Object.keys(baseline?.locales ?? {}).map(localeName).join("、") || "—", after: localeKeys.map(localeName).join("、") || "—" },
         { key: "content", label: "有改动的语言", before: "—", after: changedLocales.map(localeName).join("、") || "—" },
       ]} />}
-      extra={<p className="rd-note">这次保存后端不防重复：结果未知时先刷新核对，别直接再点。</p>} />}
+      extra={<Notice tone="neutral">后端不防重复：结果未知时先刷新核对，别直接再点。</Notice>} />}
   </div>;
 }
 
@@ -440,7 +440,7 @@ function HowContent({ toast, onDirty }: { toast: Toast; onDirty: (value: boolean
           {canWrite && <div><Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={locked ? "正在读取或保存" : !current ? "先新增语言" : currentBlocks.length >= 200 ? "最多 200 个内容块" : undefined} onClick={addBlock}>新增内容块</Button></div>}
         </div>
         <Preview title={PAGE_LABELS[key] ?? key}>
-          <div className="a3-how-preview">
+          <div className="a3-how-preview" data-user-content="">
             <b className="a3-how-page">{PAGE_LABELS[key] ?? key} · {localeName(locale)}</b>
             {currentBlocks.length === 0 && <span className="a3-preview-empty">这种语言还没有内容</span>}
             {currentBlocks.map((item, index) => <section key={index} data-kind={text(item.kind)}>
@@ -464,7 +464,7 @@ function HowContent({ toast, onDirty }: { toast: Toast; onDirty: (value: boolean
       ]} />}
       extra={<>
         {mode === "PUBLISHED" && refPages.length > 0 && <Notice tone="danger" title="发布后 App 会打不开这些说明">{refPages.map((item) => PAGE_LABELS[item]).join("、")}含规则引用块，App 收到没换成数值的 {"{value}"} 会整页拒收。</Notice>}
-        <p className="rd-note">六页一起保存，后端不防重复：结果未知时先刷新核对，别直接再点。<Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></p>
+        <Notice tone="neutral">六页一起保存，后端不防重复：结果未知时先刷新核对，别直接再点。<Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>
       </>} />}
   </div>;
 }

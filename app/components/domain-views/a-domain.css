@@ -161,9 +161,8 @@
 .a3-page .a3-cal-head { background: var(--rd-panel-inner); }
 .a3-page .a3-cal-lane { display: grid; align-content: center; gap: 2px; padding: var(--rd-space-3); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
 .a3-page .a3-cal-head .a3-cal-lane { font-weight: var(--rd-weight-regular); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
-.a3-page .a3-cal-lane small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
 .a3-page .a3-cal-date { display: grid; align-content: center; justify-items: center; gap: 2px; padding: var(--rd-space-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
-.a3-page .a3-cal-date small { color: var(--rd-progress); }
+.a3-page .a3-cal-date small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-progress); }
 .a3-page .a3-cal-date small.a3-cal-today { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
 .a3-page .a3-cal-date[data-now] { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
 .a3-page .a3-cal-cell { position: relative; display: grid; place-items: center; padding: var(--rd-space-3) var(--rd-space-2); min-height: 64px; }
@@ -258,5 +257,4 @@
   .a3-page .a3-preview { position: static; }
   .a3-page .a3-pages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .a3-page .a3-cal-row { grid-template-columns: minmax(120px, 140px) repeat(var(--a3-cols, 2), minmax(0, 1fr)); }
-  .a3-page .a3-cal-lane small { display: none; }
 }

@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { CircleOff, Download, EyeOff, Globe, Home, Languages, Link2, Share2, Smartphone, type LucideIcon } from "lucide-react";
-import { BlockState, Button, Cell, Check, Explain, Fact, Facts, Field, Input, Modal, Notice, Panel, Segments, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, Check, Explain, KeepText, Fact, Facts, Field, Input, Modal, Notice, Panel, Segments, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -133,11 +133,11 @@ export function A3Experience({ toast }: { toast: (text: string, kind?: "success"
       explain="用户在 App 里点「邀请」「分享」时用这里的设置。外部渠道能不能打开还要看用户手机上有没有装对应应用。" >
       <div className="a3-with-preview">
         <div className="rd-form-stack">
-          <Field label="分享基础链接" help="App 把用户的邀请码直接接在后面，不自动补斜杠">
-            {(control) => <Input {...control} id="a3-sharing" aria-label="分享基础链接" placeholder="https://… 结尾通常是 / 或 =" value={config.baseUrl} disabled={fieldsLocked} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} />}
-          </Field>
+          <div id="a3-sharing"><Field label="分享基础链接" help="App 把用户的邀请码直接接在后面，不自动补斜杠">
+            {(control) => <Input {...control} aria-label="分享基础链接" placeholder="https://… 结尾通常是 / 或 =" value={config.baseUrl} disabled={fieldsLocked} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} />}
+          </Field></div>
           {config.channels.length === 0 ? <Notice tone="warn" title="还没有设置分享渠道" action={canWrite && <Button size="sm" onClick={() => setConfig({ ...config, channels: recommendedExperienceChannels() })}>填入推荐的 9 个渠道</Button>}>
-            App 分享面板里只有自带的复制链接和海报，没有外部渠道。填入推荐渠道后要保存才生效。
+            App 分享面板里只有自带的复制链接和海报。<KeepText text="填入推荐渠道后要保存才生效。" />
           </Notice> : <Table label="分享渠道">
             <thead><tr><Th>渠道</Th><Th>启用</Th><Th>在 App 里</Th><Th>文案模板</Th><Th>链接模板</Th></tr></thead>
             <tbody>
@@ -159,7 +159,7 @@ export function A3Experience({ toast }: { toast: (text: string, kind?: "success"
         </div>
         {preview("分享", <>
           <dl className="a3-preview-rows">
-            <div><dt>分享出去的链接</dt><dd>{link ? <span className="a3-preview-link">{config.baseUrl}<mark>{SAMPLE_CODE}</mark></span> : <span className="a3-preview-empty">没有链接：分享基础链接是空的，App 里的分享按钮都用不了</span>}</dd></div>
+            <div><dt>分享出去的链接</dt><dd>{link ? <span className="a3-preview-link">{config.baseUrl}<mark>{SAMPLE_CODE}</mark></span> : <span className="a3-preview-empty">没有链接，App 里分享按钮不可用</span>}</dd></div>
             <div><dt>分享面板里的外部渠道</dt><dd>{visibleInApp.length ? visibleInApp.map((channel) => CHANNEL_NAME[channel.key] ?? channel.key).join("、") : "没有"}<span className="a3-preview-sub">另外固定有复制链接、分享海报</span></dd></div>
           </dl>
           {webChannels.length > 0 && <>
@@ -257,8 +257,9 @@ export function A3Experience({ toast }: { toast: (text: string, kind?: "success"
         <Fact k="改了什么">{changed.length ? changed.join("、") : "没有改动，保存后版本号加一"}</Fact>
         <Fact k="版本">v{config.version} → v{config.version + 1}</Fact>
         <Fact k="官方下载">{unavailable ? "暂不提供（保存后清空安装链接、版本和说明）" : "官方渠道"}</Fact>
+        <Fact k="一起保存">分享、下载、语言整组；首页开关不在这里</Fact>
+        <Fact k="已有订单和奖励">不重算</Fact>
       </Facts>
-      <p className="rd-note">分享、下载、语言整组一起保存；首页两个开关不在这里保存。用户已有的订单和奖励不重算。</p>
       <Field label="保存理由" required hint="8–200 字">
         {(control) => <Textarea {...control} aria-label="体验配置保存理由" value={reason} maxLength={200} rows={2} count={`${reason.trim().length}/200`} placeholder="例如：上线 Telegram 分享，工单号" onChange={(event) => setReason(event.target.value)} />}
       </Field>

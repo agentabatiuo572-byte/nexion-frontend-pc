@@ -58,8 +58,8 @@ function dayChange(hours: number) {
 }
 
 const TRACKS = [
-  { key: "LEGACY", name: "其他模块", hint: "增长与团队以外" },
-  { key: "GROWTH_TEAM", name: "增长与团队", hint: "增长、团队相关的统计和奖励" },
+  { key: "LEGACY", name: "其他模块" },
+  { key: "GROWTH_TEAM", name: "增长与团队" },
 ] as const;
 
 const TRACK_LABEL: Record<BusinessCalendarVersion["track"], string> = { LEGACY: "其他模块", GROWTH_TEAM: "增长与团队", GLOBAL: "全部模块" };
@@ -202,7 +202,7 @@ export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSumma
       {TRACKS.map((track) => {
         const current = currentOf(track.key);
         return <div key={track.key} className="a3-cal-row" role="row">
-          <span role="rowheader" className="a3-cal-lane">{track.name}<small>{track.hint}</small></span>
+          <span role="rowheader" className="a3-cal-lane">{track.name}</span>
           {columns.map((column) => {
             if (column.now) {
               return <span key={column.key} role="cell" className="a3-cal-cell" data-now="" aria-label={current ? `现在用${zoneLabel(current.zoneId)}` : "现在用的版本读不到"}>
@@ -284,7 +284,7 @@ export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSumma
       </>}>
       {error && <Notice tone="danger" title="安排没有成功">{error}</Notice>}
       <div className="rd-form-grid" data-cols="2" data-dense="">
-        <Field label="国家或地区" required help="选好后自动带出时区，货币和语言不跟着变">
+        <Field label="国家或地区" required explain="选好后自动带出时区，货币和语言不跟着变。">
           {(control) => <Select {...control} aria-label="国家或地区" placeholder="请选择" value={country} onChange={pickCountry} options={countries.map(([code, name]) => ({ value: code, label: name }))} />}
         </Field>
         <Field label="时区" required>
