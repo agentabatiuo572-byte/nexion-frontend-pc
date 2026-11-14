@@ -138,10 +138,10 @@
 .a5-page .a5-time > span { white-space: nowrap; }
 @media (max-width: 1279px) { .a5-page .a5-time > span { display: block; } }
 .a5-page .a5-table td .rd-cell { max-width: none; }
-.a5-page .a5-table td:nth-child(1) .rd-cell-sub { white-space: normal; overflow-wrap: anywhere; }  /* 参数键不截断：1024 下折行，保住区分用的后段 */
+.a5-page .a5-table td:nth-child(1) :is(.rd-cell-main, .rd-cell-sub) { white-space: normal; overflow-wrap: anywhere; }  /* 参数键不截断：1024 下折行，保住区分用的后段 */
 .a5-page .a5-table td:is(:nth-child(2), :nth-child(5)) .rd-cell-main { display: -webkit-box; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .a5-page .a5-th-zone { width: 100%; color: var(--rd-text-3); font-size: var(--rd-text-aux); }
-.a5-page .a5-name { display: inline-flex; align-items: center; gap: var(--rd-space-1); max-width: 100%; }
+.a5-page .a5-name > :last-child { margin-left: var(--rd-space-1); vertical-align: -2px; }
 .a5-page .a5-value { display: inline-flex; align-items: baseline; gap: var(--rd-space-1); max-width: 100%; color: var(--rd-text); }
 .a5-page .a5-value > svg { flex: none; align-self: center; color: var(--rd-text-3); }
 .a5-page .a5-value[data-tone="warn"] { color: var(--rd-warn); }

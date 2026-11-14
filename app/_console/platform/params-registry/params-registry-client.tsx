@@ -215,7 +215,7 @@ export function PlatformParamsRegistry() {
 
   const conclusion = stopped.length > 0 ? (
     <Conclusion state="warn" lead icon={Siren}
-      hint={<>去「紧急停用开关」看原因和恢复审批{partialSources.length > 0 ? "；另有部分参数没读到，见下方提示" : ""}</>}
+      hint="去「紧急停用开关」看原因和恢复审批"
       explain="「已关停」取自紧急停用开关的当前状态。这里只显示状态，不能在这页恢复。">
       有 {stopped.length} 个业务已紧急关停：{stopped.map((row) => operatorCopyText(row.displayName)).join("、")}
     </Conclusion>
