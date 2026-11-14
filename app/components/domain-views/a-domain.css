@@ -256,3 +256,4 @@
 .adom .a4-detail-life { display: flex; flex-direction: column; gap: 12px; }
 .adom .a4-family-table, .adom .a4-field-table, .adom .a4-common-table, .adom .a4-kpi-table { table-layout: auto; }
 .adom .a4-kpi-table th:first-child { width: 48px; }
+.adom .a4-kpi-table td:nth-child(2) { white-space: nowrap; }
