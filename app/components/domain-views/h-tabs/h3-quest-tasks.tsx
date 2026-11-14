@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
-  ArrowLeftRight, Archive, CalendarClock, CircleAlert, Gift, History, Link2, ListChecks, Megaphone, Pause, Pencil, Play, Plus, RefreshCw,
+  ArrowLeftRight, Archive, CalendarClock, CircleAlert, CircleCheck, CircleSlash, Gift, History, Link2, ListChecks, Megaphone, Pause, Pencil, Play, Plus, RefreshCw,
   Route, Sparkles, Trash2, Trophy,
 } from "lucide-react";
 import {
@@ -842,7 +842,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </>}
       action={canAudit ? <Link className="rd-link" href="/platform/audit?domain=H" prefetch={false}>看待批准的申请</Link> : undefined}>
       {active.length === 0
-        ? "现在没有启用的首日或每周任务：之后注册和新一周的用户拿不到任务"
+        ? "没有启用的首日或每周任务，新用户拿不到任务"
         : `首日 ${dayOne.filter((task) => taskStatusOf(task) === "active").length} 个、每周 ${[...t1, ...t2].filter((task) => taskStatusOf(task) === "active").length} 个任务在启用`}
       {recoveryRows.length > 0 && `；${recoveryRows.length} 个修改结果未知`}
       {attention.length > 0 ? `；${attention.length} 件要处理` : "，没有要处理的事"}
@@ -1172,7 +1172,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                     ? <Cell main={task} sub={<span data-mono="">{binding.questCode}</span>} />
                     : <Cell main={<span className="h3-card-alert"><CircleAlert size={14} aria-hidden />不在本页任务里</span>} sub={<span data-mono="">{binding.questCode}</span>} />}</Td>
                   <Td><Cell main={H3_BINDING_USER_FIELD_LABELS[binding.userIdField] ?? binding.userIdField} sub={<span data-mono="">{binding.userIdField}</span>} /></Td>
-                  <Td>{enabled ? <StatusTag tone="ok">已启用</StatusTag> : <StatusTag tone="neutral">已停用</StatusTag>}</Td>
+                  <Td>{enabled ? <StatusTag tone="ok" icon={CircleCheck}>已启用</StatusTag> : <StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>}</Td>
                   {canModuleWrite && <Td sticky="end" data-fit=""><span className="rd-row-actions">
                     <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`修改 ${binding.bindingCode}`} onClick={() => openBindingEdit(binding)}>修改</Button>
                     <MoreMenu label={`${binding.bindingCode} 的更多操作`} items={[
@@ -1184,9 +1184,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               })}
             </tbody>
           </Table>}
-        {orphans.length > 0 && <Notice tone="warn" title={`${orphans.length} 条启用的完成条件对应的任务不在这页`}>
+        {orphans.length > 0 && <div className="h3-block-gap"><Notice tone="warn" title={`${orphans.length} 条启用的完成条件对应的任务不在这页`}>
           <p>这页只列首日和每周任务。先到后台核查这个任务编号的真实目标，再决定修改或删除；不按它补任务。</p>
-        </Notice>}
+        </Notice></div>}
       </Panel>
     </div>
   );
@@ -1271,7 +1271,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const promoTab = (
     <div {...tabIds.panel("promo")} className="h3-tabpanel">
       <Panel title="首页备用促销卡" icon={Megaphone} tone="role-other"
-        sub={<StatusTag tone="neutral">App 目前不显示</StatusTag>}
+        sub={<StatusTag tone="neutral" icon={CircleSlash}>App 目前不显示</StatusTag>}
         explain="原设计是首页没有可领的每周任务时，显示一张跳商城的备用卡。现在 App 只读到这些参数，没有显示和领取，改了用户看不到；已提后端和 App 决定接上还是退役。">
         <ConfigList label="备用卡参数">
           <ConfigRow name="状态" value={promoStatus === "active" ? "已启用" : promoStatus === "paused" ? "已暂停" : "—"}

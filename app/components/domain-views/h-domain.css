@@ -342,3 +342,4 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h3-monitor > div { display: grid; gap: 2px; padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .h3-monitor dt { font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .h3-monitor dd { margin: 0; color: var(--rd-text); }
+.h3-block-gap { margin-top: var(--rd-space-4); }
