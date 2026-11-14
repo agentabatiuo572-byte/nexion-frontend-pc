@@ -277,23 +277,21 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
         </dl>
 
         {detail.roleCode === "SUPER_ADMIN" && (
-          <Notice tone="danger" title="超级管理员角色的权限和菜单不能修改">
-            <p>后端不允许改这个角色的授权，提交会被拒绝。</p>
-          </Notice>
+          <Notice tone="danger" title="超级管理员角色的权限和菜单不能修改，提交会被拒绝" />
         )}
         {detail.status === 0 && permDiff.added.length > 0 && (
           <Notice tone="warn" title="这个角色已停用">
-            <p>现在给停用的角色加它从没有过的权限，批准后可能存不上，审批却显示成功（已提后端修）。批准后回到这页看实际存下的权限。</p>
+            <p>新加的权限批准后可能存不上（已提后端修），批准后回这页核对。</p>
           </Notice>
         )}
         {auditorWrites > 0 && (
           <Notice tone="warn" title={`审计角色勾了 ${auditorWrites} 项修改或敏感权限`}>
-            <p>审计角色的默认职责是只读。给它写权限前先和负责人确认。</p>
+            <p>审计角色的默认职责是只读，加写权限前先和负责人确认。</p>
           </Notice>
         )}
         {stoppedMenus.length > 0 && (
           <Notice tone="warn" title={`勾了 ${stoppedMenus.length} 个已停用的菜单`}>
-            <p>后端只接受启用中的菜单，带着停用菜单提交会被整次拒绝。先取消勾选，或到「菜单管理」启用它。</p>
+            <p>提交会被整次拒绝：先取消勾选，或到「菜单管理」启用它。</p>
           </Notice>
         )}
         <MismatchNotice mismatch={mismatch} menuById={menuById} title="勾选后权限和菜单有对不上的地方" />

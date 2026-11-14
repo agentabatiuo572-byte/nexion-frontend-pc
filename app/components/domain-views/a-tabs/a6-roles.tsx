@@ -219,11 +219,11 @@ export default function A6Roles() {
       confirmLabel: `提交${actionLabel}审批`,
       statedBrief: nextStatus === 0
         ? { impact: bound === 0
-              ? "现在没有账号绑定它。批准后角色停用，之后分到它的账号也拿不到它的权限；授权保留，重新启用后恢复。"
-              : `批准后，这个角色带来的权限和菜单对绑定它的${bound === undefined ? "" : ` ${bound} 个`}账号不再生效；绑定和授权都保留，重新启用后恢复。账号从其他角色得到的权限不受影响，已登录的不会被退出。`,
-            check: "绑定账号数是现在读到的，批准时按当时实际绑定的账号执行。" }
-        : { impact: `批准后，绑定它的${bound === undefined ? "" : ` ${bound} 个`}账号重新得到这个角色的权限；左侧菜单要等账号重新读取登录信息后才更新。`,
-            check: "启用前核对这个角色现在存着的权限和菜单。" },
+              ? "批准后角色停用，授权保留，重新启用后恢复。"
+              : `批准后，绑定它的${bound === undefined ? "" : ` ${bound} 个`}账号失去这个角色的权限；授权保留，重新启用后恢复。`,
+            check: "其他角色给的权限不受影响，已登录的不会被退出。绑定账号数是现在读到的，批准时按当时实际绑定执行。" }
+        : { impact: `批准后，绑定它的${bound === undefined ? "" : ` ${bound} 个`}账号重新得到这个角色的权限。`,
+            check: "左侧菜单要等账号重新读取登录信息才更新。启用前核对它现在存着的权限和菜单。" },
       facts: <Facts>
         <Fact k="绑定账号" lead unit="个">{bound ?? "—"}</Fact>
         {roleFact(d.roleName, d.roleCode)}
@@ -256,9 +256,9 @@ export default function A6Roles() {
       confirmTone: "danger",
       statedBrief: {
         impact: bound > 0
-          ? `批准后，${bound} 个账号和这个角色解绑，失去它带来的权限和菜单；角色的授权清空，从列表里消失。账号本身、其他角色和历史记录不删。`
-          : "现在没有账号绑定它。批准后角色的授权清空，从列表里消失；历史记录不删。",
-        check: "绑定账号数是现在读到的，批准时按当时实际绑定执行。以后用同一个标识新建，得到的是一个没有任何权限的角色。",
+          ? `批准后，${bound} 个账号和它解绑、失去它的权限；授权清空，角色从列表消失。`
+          : "批准后授权清空，角色从列表消失。",
+        check: "账号本身、其他角色和历史记录不删。账号数是现在读到的，批准时按当时实际绑定执行。以后用同一个标识新建，得到的是没有任何权限的角色。",
       },
       facts: <Facts>
         <Fact k="会解绑的账号" lead unit="个" tone={bound > 0 ? "warn" : undefined}>{bound}</Fact>
@@ -331,7 +331,7 @@ export default function A6Roles() {
       )}
 
       <div className="a6-layout">
-        <div className="a6-main">
+        <div className="rd-split a6-main" data-detail="">
           <Panel title="角色目录" icon={Users} tone="role-3" sub={overview ? `${roles.length} 个` : undefined}
             explain="点一个角色，在右边看它能做什么、能看哪些菜单、有多少账号在用。">
             {loading ? <BlockState state="loading" title="正在加载角色…" />
@@ -352,7 +352,7 @@ export default function A6Roles() {
           <div id="a6-role-detail" className="a6-detail-col">
             {selectedId == null ? (
               <Panel title="角色详情" icon={KeyRound} tone="role-4">
-                <p className="a6-muted">点左边一个角色，看它能做的操作、能看的菜单和在用的账号。</p>
+                <p className="a6-muted">点左边一个角色，看它能做什么。</p>
                 {roles.length > 0 && (
                   <div className="a6-overview-bars">
                     <h3 className="a6-subhead">各角色绑定的账号<Explain label="绑定账号" content={ADMIN_COUNT_EXPLAIN} /></h3>
@@ -435,8 +435,8 @@ export default function A6Roles() {
               effect: approvalTag("批准前这个角色的权限和菜单都不变。"),
               confirmLabel: "提交授权审批",
               statedBrief: {
-                impact: `批准后整组替换：绑定这个角色的${bound === undefined ? "" : ` ${bound} 个`}账号按新的权限和菜单使用，左侧菜单要等账号重新读取登录信息后才更新。它们从其他角色得到的权限不受影响。`,
-                check: "核对加了和去掉的权限，特别是敏感操作和可能多付钱的。",
+                impact: `批准后整组替换，绑定它的${bound === undefined ? "" : ` ${bound} 个`}账号按新的权限和菜单使用。`,
+                check: "其他角色给的权限不受影响；左侧菜单要等账号重新读取登录信息才更新。核对加了和去掉的，特别是敏感操作。",
               },
               facts: <Facts>
                 <Fact k="会受影响的账号" lead unit="个">{bound ?? "—"}</Fact>
@@ -449,17 +449,15 @@ export default function A6Roles() {
               content: (
                 <div className="a6-diff">
                   {addedSensitive > 0 && (
-                    <Notice tone="warn" title={`加了 ${addedSensitive} 项敏感操作${addedAmplifies ? `，其中 ${addedAmplifies} 项可能多付钱` : ""}`}>
-                      <p>拿到这些权限的账号可以做风险更高的修改。<Explain label="敏感操作" content={<><p>{SENSITIVE_EXPLAIN}</p><p>{AMPLIFIES_EXPLAIN}</p></>} /></p>
-                    </Notice>
+                    <Notice tone="warn" title={<>加了 {addedSensitive} 项敏感操作{addedAmplifies ? `，其中 ${addedAmplifies} 项可能多付钱` : ""}<Explain label="敏感操作" content={<><p>{SENSITIVE_EXPLAIN}</p><p>{AMPLIFIES_EXPLAIN}</p></>} /></>} />
                   )}
                   {detail.status === 0 && permDiff.added.length > 0 && (
                     <Notice tone="warn" title="这个角色已停用">
-                      <p>给停用的角色加它从没有过的权限，批准后可能存不上，审批却显示成功（已提后端修）。批准后回到这页，详情里会对比实际存下的权限。</p>
+                      <p>新加的权限批准后可能存不上（已提后端修），批准后回这页核对。</p>
                     </Notice>
                   )}
                   {detail.roleCode === "SUPER_ADMIN" && (
-                    <Notice tone="danger" title="超级管理员角色的授权不能修改"><p>后端会拒绝这次提交。</p></Notice>
+                    <Notice tone="danger" title="超级管理员角色的授权不能修改，提交会被拒绝" />
                   )}
                   {nothing && <Notice tone="neutral" title="权限和菜单都没有改动"><p>照样会建一张审批单，批准后内容不变。</p></Notice>}
                   <MismatchNotice mismatch={mismatch} menuById={menuById} title="提交后权限和菜单有对不上的地方" />
@@ -528,12 +526,12 @@ function RoleGroup({ title, count, explain, roles, selectedId, onPick, empty }: 
                   <span className="a6-role-main">
                     <span className="a6-role-name">
                       <span className="a6-role-title">{r.roleName || r.roleCode}</span>
-                      <span className="a6-role-code" data-mono>{r.roleCode}</span>
+                      <span className="a6-role-code" data-mono title={r.roleCode}>{r.roleCode}</span>
                       {r.status !== 1 && <StatusTag tone="neutral" icon={Ban}>已停用</StatusTag>}
                       {/* 自动验收残留的临时角色必须与真实角色目录可区分(zentao #101)。 */}
                       {temp && <StatusTag tone="warn" icon={TriangleAlert}>测试用 · 建议删除</StatusTag>}
                     </span>
-                    {desc && <span className="a6-role-desc">{desc}</span>}
+                    {desc && <span className="a6-role-desc" title={desc}>{desc}</span>}
                   </span>
                   <span className="a6-role-count" data-empty={r.adminCount === 0 ? "" : undefined}>
                     <b>{r.adminCount}</b><small>个账号</small>
@@ -678,7 +676,7 @@ function RoleDetail({ detail, summary, canWrite, canGrant, catalogsReady, catalo
                 {canWrite && <Button variant="danger-outline" disabledReason={detail.builtin ? "内置角色不能删除" : undefined} onBlockedClick={detail.builtin ? onBuiltinDelete : undefined} onClick={onDelete}>删除</Button>}
               </div>
             </div>
-            {isSuperRole && <p className="a6-note"><TriangleAlert size={14} aria-hidden />超级管理员角色不能停用、不能删除，改权限和菜单会被后端拒绝。</p>}
+            {isSuperRole && <p className="a6-note"><TriangleAlert size={14} aria-hidden />超管角色的权限和菜单改了会被后端拒绝</p>}
           </div>
         )}
 
@@ -743,8 +741,8 @@ function RoleFormModal({ mode, detail, onClose, onSubmit }: {
           effect: directTag(),
           confirmLabel: "确认新建",
           statedBrief: {
-            impact: "确认后立即建好；新角色没有任何权限和菜单，也没有绑定账号。接着给它改权限和菜单，再到「运营账号与权限」把账号分给它。",
-            check: "标识建好后不能改。用过又删除的标识会恢复成原来那个角色，旧的授权和绑定全部清空。",
+            impact: "确认后立即建好，没有任何权限和菜单。",
+            check: "接着改权限和菜单，再到「运营账号与权限」分给账号。标识建好后不能改；用过又删除的标识会恢复原角色并清空旧授权和绑定。",
           },
           facts: <Facts>
             <Fact k="角色标识"><span data-mono>{roleCode.trim()}</span></Fact>
@@ -764,7 +762,7 @@ function RoleFormModal({ mode, detail, onClose, onSubmit }: {
           effect: <>{directTag()}<StatusTag tone="neutral" icon={Minus}>不改权限和菜单</StatusTag></>,
           confirmLabel: "确认保存",
           statedBrief: {
-            impact: "确认后立即保存，只改名称和备注；权限、菜单和绑定的账号都不变。",
+            impact: "确认后立即保存，只改名称和备注。",
             check: "核对新名称；角色标识不能改。",
           },
           facts: <Facts>
@@ -782,18 +780,17 @@ function RoleFormModal({ mode, detail, onClose, onSubmit }: {
     <Modal title={isCreate ? "新建角色" : "编辑名称和备注"} icon={isCreate ? Plus : ListTree} sub={isCreate ? directTag() : <>{directTag()}<StatusTag tone="neutral" icon={Minus}>不改权限和菜单</StatusTag></>}
       onClose={onClose} dirty={dirty}
       footer={<><Button variant="secondary" onClick={onClose}>取消</Button><Button variant="primary" onClick={submit}>下一步：确认</Button></>}>
-      <Field label="角色标识" required={isCreate} hint={isCreate ? "大写字母开头，只用大写字母、数字和下划线，3–64 位" : "不能修改"}
+      <Field label="角色标识" required={isCreate} help={isCreate ? "大写字母开头，只用大写字母、数字和下划线，3–64 位。" : "不能修改。"}
         error={tried && codeMissing ? "填写角色标识" : undefined}
         explain={isCreate ? "建好后不能改。不能用 8 个内置角色的标识，也不能和现有角色重复。用过又删除的标识会恢复成原来那个角色，旧的授权和绑定全部清空。" : undefined}>
         {(control) => <Input {...control} value={roleCode} onChange={(e) => setRoleCode(e.target.value)} disabled={!isCreate} placeholder="如 CONTENT_EDITOR" data-mono="" />}
       </Field>
-      <Field label="名称" required hint="最多 64 字" error={tried && nameMissing ? "填写名称" : undefined}>
+      <Field label="名称" required help="最多 64 字。" error={tried && nameMissing ? "填写名称" : undefined}>
         {(control) => <Input {...control} value={roleName} onChange={(e) => setRoleName(e.target.value)} placeholder="如 内容编辑员" />}
       </Field>
-      <Field label="备注" hint="最多 255 字" help={clearsRemark ? "清空备注现在保存不了：留空时会保留原备注（已登记待修）。" : undefined}>
+      <Field label="备注" help={clearsRemark ? "清空备注现在保存不了：留空时会保留原备注（已登记待修）。" : "最多 255 字。"}>
         {(control) => <Textarea {...control} rows={2} value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="这个角色负责什么" />}
       </Field>
-      {isCreate && <Notice tone="neutral" title="新角色没有任何权限"><p>建好后在详情里点「改权限和菜单」授权，再到「运营账号与权限」把账号分给它。</p></Notice>}
     </Modal>
   );
 }
