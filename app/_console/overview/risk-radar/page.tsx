@@ -36,6 +36,7 @@ import { b5Commands, executeB5Command, inspectB5Command, isB5Original, pendingB5
 import { pendingThresholdConfigApproval, releaseExpiredB5ThresholdApproval, submitB5ThresholdApproval } from "@/lib/admin/withdrawal-config-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { useReach } from "@/lib/nav/use-reach";
 import { fmtConfigPct } from "@/lib/format";
 import { buildDimensions, IssueCard, QuietRow, ratioPct, type BuiltDimension, type DimensionKey } from "./dimensions";
@@ -268,8 +269,10 @@ export default function RiskRadarPage() {
   }, [canThreshold, thresholdOriginal, approvalRecovery, previewKey, thresholdVersion, yellowPct, redPct, ratio24h, withdraw24hUsdt]);
 
   const subscriptionChanged = useMemo(
-    () => JSON.stringify(subscription) !== JSON.stringify(savedSubscription),
-    [subscription, savedSubscription],
+    // The authenticated username, not the display operator, is persisted by AdminActorResolver.
+    () => JSON.stringify(subscription) !== JSON.stringify(savedSubscription)
+      || !subscriber || subscriber === "unassigned" || subscriber !== maskAuditActor(session?.username ?? ""),
+    [subscription, savedSubscription, subscriber, session?.username],
   );
   const subscriptionValid = subscription.inApp || subscription.email || subscription.webhook;
   const subscriptionWebhookMode = subscriptionOriginal?.facts.webhookMode ?? webhookMode;
