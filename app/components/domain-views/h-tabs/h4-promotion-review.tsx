@@ -1,11 +1,14 @@
 "use client";
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { FileClock, GitCompare, History, ListChecks, Radio, Send, Settings2, ShieldCheck, Wallet } from 'lucide-react';
+import { BlockState, Button as RdButton, IrreversibleTag, Panel, StatusTag, Steps, Table as RdTable, Td, Th, Timeline, Tr } from '@/app/components/rd';
+import { BudgetBar, TimeWindow, VersionLine } from './h4-promotion-board';
 import { H4SampleAccountSelect } from './h4-sample-account-select';
 import { promotionRead, promotionVersions } from '@/lib/admin/promotion-client';
 import type { AdminSimulation, Catalog, CommandReceipt, Item, Promotion, Version, VersionPage } from '@/lib/admin/promotion-types';
 import { limitText } from '@/lib/admin/promotion-form';
 import { PromotionBannerPreview } from './h4-promotion-banner';
-import { Button, Card, ConfirmCommand, Dialog, Field, Notice, ReadError, Stats, Summary, Table, Tag, formatTime, labelState, rewardText, promotionAssetText, text } from './h4-promotion-ui';
+import { Button, Card, ConfirmCommand, Dialog, Field, Loading, Notice, ReadError, Stats, Summary, Table, Tag, formatTime, labelState, rewardText, promotionAssetText, text, zoneLabel } from './h4-promotion-ui';
 const ACTIONS: Record<string, {
     label: string;
     operation: string;
@@ -25,7 +28,7 @@ const ACTIONS: Record<string, {
     'draft-versions': { label: '创建改版草稿', operation: 'createDraftVersion', authority: 'edit', version: false, copy: '复制当前配置建立候选草稿；旧版本继续运行，历史参与上限不重置。' },
     copies: { label: '复制为新活动', operation: 'copyPromotion', authority: 'edit', version: false, copy: '只复制配置。新活动具有独立身份，不复制审批、使用量或历史订单。' },
 };
-export default function PromotionReview({ activity, catalog, can, onRefresh, onReload, onCandidateConflict, onCopyCreated, onEdit, onRewards, onMetrics, onBack, review = false }: {
+export default function PromotionReview({ activity, catalog, can, onRefresh, onReload, onCandidateConflict, onCopyCreated, onEdit, onRewards, onMetrics, onBack, review = false, detailActions }: {
     activity: Promotion;
     catalog: Catalog;
     can: (v: string) => boolean;
@@ -38,6 +41,8 @@ export default function PromotionReview({ activity, catalog, can, onRefresh, onR
     onMetrics: () => void;
     onBack: () => void;
     review?: boolean;
+    /** 详情页身份行右侧的入口（试算与审核、奖励台账、删除活动），由父组件给。 */
+    detailActions?: ReactNode;
 }) {
     const [history, setHistory] = useState<{data: VersionPage | null; error: unknown; loading: boolean}>({data: null, error: null, loading: true});
     const historyScope = `${activity.activityId}:${activity.revision}:${activity.current?.revision}`;
@@ -78,21 +83,120 @@ export default function PromotionReview({ activity, catalog, can, onRefresh, onR
         onReload(latest);
         return `已加载最新活动资料。${changes.length ? changes.join('；') : '以上活动信息与在途数量未变化'}。活动记录版本：${activity.revision} → ${latest.revision}。请核对后再次确认。`;
     };
-    const button = (key: string, disabled = false) => {
+    const button = (key: string, disabled: boolean | string = false) => {
         const a = ACTIONS[key];
         if (!can(`growth_promotion_${a.authority}`)) return null;
-        return <Button key={key} kind={['publish', 'approve', 'submit', 'resume'].includes(key) ? 'primary' : key === 'end' || key === 'reject' ? 'danger' : ''} disabled={disabled} onClick={() => setAction(key)}>{a.label}</Button>;
+        return <RdButton key={key} variant={['publish', 'approve', 'submit', 'resume'].includes(key) ? 'primary' : key === 'end' || key === 'reject' ? 'danger-outline' : 'secondary'} disabledReason={typeof disabled === 'string' ? disabled : disabled ? '当前状态不能做这一步' : undefined} onClick={() => setAction(key)}>{a.label}</RdButton>;
     };
-    const versionSummary = (v: Version | undefined | null) => v ? <><div className="version-heading"><Tag value={v.state}/><span>v{v.version}</span></div><Summary rows={[['活动名称', v.draft.name || '未命名'], ['奖励规则', `${v.draft.rules?.length || 0} 个购买设备`], ['购买者活动上限', limitText(v.draft.perPersonLimit?.buyer)], ['活动截止', formatTime(v.draft.endsAt, v.draft.displayTimezone || 'UTC')]]}/><PromotionBannerPreview assetId={v.draft.bannerAssetId}/><p className="help">{v.draft.rules?.map(r => rewardText(r.buyerReward)).join('；') || '奖励尚未配置'}</p></> : <Notice title="无此版本">尚未创建或发布。</Notice>;
-    return <>{!review && <><Stats items={[['活动状态', labelState(activity.state), activity.activeVersion ? `有效版本 v${activity.activeVersion}` : '尚无已发布版本'], ['改版草稿', activity.draftVersion ? `v${activity.draftVersion}` : '无', '不影响历史订单'], ['未支付预留', impact.unpaidOrders, '按各订单原截止处理'], ['未解决奖励', impact.unresolved, '暂停不能撤销原奖励']]}/><div className="grid2"><Card title={`当前已发布${active ? ` · v${active.version}` : ''}`} body>{versionSummary(active)}<p className="help">已锁订单保留原版本和付款截止；暂停与终止不改变原承诺。</p></Card><Card title={activity.draftVersion ? `改版候选 · v${activity.draftVersion}` : '历史与归档依据'} body>{activity.draftVersion ? versionSummary(candidate) : <Summary rows={[['活动状态', labelState(activity.state)], ['未完成义务', impact.unfulfilledRewards], ['未支付订单', impact.unpaidOrders], ['历史查询', '原版本、订单和奖励持续保留']]}/>}<div className="actions" style={{ marginTop: 14 }}>{activity.draftVersion ? <Button onClick={onEdit} disabled={!can('growth_promotion_edit') || candidate?.state !== 'DRAFT'}>编辑草稿</Button> : button('draft-versions', ['ENDED', 'ARCHIVED'].includes(activity.state))}</div></Card></div><Card title="在途承诺与处置影响"><Table headers={['义务范围', '数量', '暂停 / 结束后的处理', '操作']} rows={[['待支付订单', impact.unpaidOrders, '原截止前可按原版本支付', <Button kind="link" onClick={() => setReservations(true)}>查看预留</Button>], ['待发奖励', impact.pendingRewards, '继续按原承诺执行', <Button kind="link" onClick={onRewards}>查看奖励</Button>], ['发放失败 / 结果未知', `${impact.failedRewards} / ${impact.unknownRewards}`, '只恢复原奖励；先核查未知结果', <Button kind="link" onClick={onRewards}>查看异常项</Button>]]}/><div className="card-body"><small>更新时间：{formatTime(impact.asOf)}；包含活动所有版本。</small></div></Card><Card title="活动操作" body><Notice title="仅控制新的投放与预留">既有订单与奖励继续履行，不因暂停或终止批量取消。</Notice><div className="actions">{['ACTIVE', 'SCHEDULED'].includes(activity.state) && button('pause')}{activity.state === 'PAUSED' && button('resume')}{['ACTIVE', 'SCHEDULED', 'PAUSED'].includes(activity.state) && button('end')}{activity.state === 'ENDED' && button('archive', impact.unpaidOrders > 0 || impact.unfulfilledRewards > 0)}{button('copies')}<Button onClick={onMetrics} disabled={!can('growth_promotion_metrics_read')}>查看效果</Button></div>{activity.state === 'ENDED' && (impact.unpaidOrders > 0 || impact.unfulfilledRewards > 0) && <p className="help">还有待支付订单或未完成奖励，暂不可归档。</p>}</Card></>}
-    {review && <div className="cols"><div><Card title="待发布版本" body action={<Button onClick={onBack}>查看双版本</Button>}>{versionSummary(candidate)}<Summary rows={[['当前活动', labelState(activity.state)], ['有效版本', activity.activeVersion ? `v${activity.activeVersion}` : '无'], ['公开语言', candidate?.draft.title?.zh && candidate.draft.title.en && candidate.draft.title.vi ? '三种标题均已填写' : '仍有语言缺失']]}/></Card><Card title="试算结果" action={<Button disabled={!can('growth_promotion_simulate') || !candidate} onClick={() => setSimOpen(true)}>重新试算</Button>}>{simulation ? <><Table headers={['购买设备', '资格结果', '奖励承诺', '依据']} rows={simulation.ruleResults.flatMap(r => r.beneficiaries.map(b => [(text(catalog.skus.find(s => s.productNo === r.productNo)?.name)), labelState(b.status), b.rewardUnits ?? '-', b.reasons.map(d => text(d.message)).join('；') || '已核对']))}/><div className="card-body"><Summary rows={[['资格', labelState(simulation.eligibility)], ['试算时刻', formatTime(simulation.asOf)], ['赠品成本', simulation.giftCostUsdt == null ? '未提供' : `${simulation.giftCostUsdt} USDT`], ['占用资格 / 预算', '否']]}/>{simulation.rewardUnits.map((r, i) => <p className="help" key={i}>{(text(catalog.skus.find(s => s.productNo === r.productNo)?.name))} 第 {r.purchaseUnitFrom}–{r.purchaseUnitTo} 台 · {labelState(r.beneficiaryRole)} · {rewardText(r.reward)}</p>)}{simulation.blockers.map((b, i) => <Notice key={i} title="试算阻断" kind="warn">{text(b.message)}</Notice>)}</div><Table headers={['资源', '所需', '可用', '结果']} rows={simulation.resources.map(r => [`${r.kind === 'INVENTORY' ? '商品库存' : r.asset === 'DEVICE' ? '设备赠礼预算' : promotionAssetText(r.asset)}${r.productNo ? ` · ${(text(catalog.skus.find(s => s.productNo === r.productNo)?.name))}` : ''}`, r.required ?? '-', r.available ?? '-', labelState(r.status)])}/><Table headers={['上限范围', '已用及预留', '本次预计', '剩余', '状态']} rows={simulation.quotaImpact.map(q => [q.scope === 'ACTIVITY_ORDER' ? '全活动订单' : q.scope === 'PERSON_ORDER' ? '账户参与订单' : '账户规则组数', q.usedAndReserved ?? '-', q.required ?? '-', q.remaining ?? (q.limit === null && q.status !== 'UNKNOWN' ? '无限制' : '-'), labelState(q.status)])}/></> : <div className="card-body"><Notice title="尚未试算">选择购买设备、数量及可选授权样本后查看试算结果。</Notice></div>}</Card><Card title="审核与发布记录" body><div className="timeline">{versions.data?.items.map(v => <div key={v.version}><b>v{v.version} · {labelState(v.state)}</b><small>审核：{v.approvedAt ? formatTime(v.approvedAt) : '尚未批准'} · 发布：{v.publishedAt ? formatTime(v.publishedAt) : '尚未发布'}</small></div>)}</div>{versions.data?.hasMore && <Notice title="历史版本较多">当前显示首 100 个版本；最新候选使用活动详情返回。</Notice>}</Card></div><div><Card title="发布前检查" body>{missingRanks&&<Notice title="原指定等级当前不可用" kind="warn">等级目录无法确认原选择。请返回参与资格重新核对；不限等级活动不受空目录限制。</Notice>}<Notice title={blockers.length ? '仍有配置或政策阻断' : '提交时将重新核验'} kind={blockers.length ? 'warn' : ''}>权益、资金、叠加、追回和权限必须来自当前可执行的批准政策。</Notice><Summary rows={[['候选状态', candidate ? labelState(candidate.state) : '无候选'], ['政策检查', blockers.length ? `${blockers.length} 项待处理` : '以最新提交校验为准'], ['当前有效版本', activity.activeVersion ? `v${activity.activeVersion} 继续执行` : '尚未发布']]}/>{blockers.length > 0 && <p className="help">请返回配置，核对缺失或已撤销的政策引用。</p>}</Card><Card title="当前可用操作" body><p className="muted">审核与发布须分别操作。</p><div className="actions" style={{ marginTop: 16 }}>{candidate?.state === 'DRAFT' && button('submit', cannotPublish)}{candidate?.state === 'PENDING_APPROVAL' && <>{button('withdraw')}{button('reject')}{button('approve', cannotPublish)}</>}{candidate?.state === 'APPROVED' && <>{button('withdraw')}{button('publish', cannotPublish)}</>}</div><p className="help">版本冲突时请核对刷新后的候选并重新确认；结果未知时先核查原操作。</p></Card><Button onClick={onBack}>返回活动详情</Button></div></div>}
-    {simulation && review && <Card title="试算成交与公开预览" body>{simulation.pricing ? <Summary rows={[['商品小计（USDT）', simulation.pricing.subtotalUsdt], ['优惠合计（USDT）', simulation.pricing.discountUsdt], ['其中订单立减（USDT）', simulation.pricing.promotionDiscountUsdt ?? '未提供'], ['应付款（USDT）', simulation.pricing.amountUsdt]]}/> : <Notice title="原报价暂不可用">当前不能确认应付款，请按阻断项处理。</Notice>}{simulation.publicPreview ? <Summary rows={[['展示标题', text(simulation.publicPreview.title)], ['活动规则', text(simulation.publicPreview.terms)], ['时区', simulation.publicPreview.displayTimezone]]}/> : <Notice title="公开预览暂不可用" kind="warn">活动权益暂无法确认，请处理上方阻断项后重试。</Notice>}</Card>}
+    const zone = activity.displayTimezone || 'UTC';
+    const versionSummary = (v: Version | undefined | null) => v ? <><Summary rows={[['活动名称', v.draft.name || '未命名'], ['奖励规则', `${v.draft.rules?.length || 0} 个购买设备`], ['购买者活动上限', limitText(v.draft.perPersonLimit?.buyer)], ['活动截止', `${formatTime(v.draft.endsAt, v.draft.displayTimezone || 'UTC')}（${zoneLabel(v.draft.displayTimezone)}）`]]}/><PromotionBannerPreview assetId={v.draft.bannerAssetId}/><p className="h4-lede">{v.draft.rules?.map(r => rewardText(r.buyerReward)).join('；') || '奖励尚未配置'}</p></> : <BlockState state="empty" title="无此版本" detail="尚未创建或发布。"/>;
+    const compare = compareVersions(active, candidate && activity.draftVersion ? candidate : null, catalog);
+    const changed = compare.filter(r => r.changed).length;
+    const versionPanels = <div className="h4-versions-grid">
+        <Panel title={active ? `线上版本 v${active.version}` : '线上版本'} icon={Radio} tone="role-2" sub={active?.publishedAt ? `发布于 ${formatTime(active.publishedAt, zone)}` : undefined}>{versionSummary(active)}<p className="h4-lede">已锁订单保留原版本和付款截止；暂停与终止不改变原承诺。</p></Panel>
+        <Panel title={activity.draftVersion ? `候选版本 v${activity.draftVersion}` : '历史与归档依据'} icon={FileClock} tone="role-3" actions={activity.draftVersion && candidate ? <Tag value={candidate.state}/> : undefined}>{activity.draftVersion ? versionSummary(candidate) : <Summary rows={[['活动状态', labelState(activity.state)], ['未完成义务', impact.unfulfilledRewards], ['未支付订单', impact.unpaidOrders], ['历史查询', '原版本、订单和奖励持续保留']]}/>}<div className="h4-row">{activity.draftVersion ? <RdButton disabledReason={!can('growth_promotion_edit') ? '没有编辑权限' : candidate?.state !== 'DRAFT' ? '候选已提交，撤回后才能编辑' : undefined} onClick={onEdit}>编辑草稿</RdButton> : button('draft-versions', ['ENDED', 'ARCHIVED'].includes(activity.state) ? '已结束或已归档的活动不能再改版' : false)}</div></Panel>
+    </div>;
+    const compareTable = <Panel title="线上版本和候选版本逐项对比" icon={GitCompare} tone="role-other" sub={activity.draftVersion ? `改了 ${changed} 项` : '没有候选版本'} explain="左列是用户现在看到的线上版本，右列是等审核或发布的候选版本；改动的行标出来。没有线上版本时左列写「—」。">
+        {!activity.draftVersion ? <BlockState state="empty" title="没有候选版本" detail="在活动详情里「创建改版草稿」后，这里会逐项对比。"/> : versions.loading && !versions.data ? <Loading/> : <div className="h4-table"><RdTable label="线上版本和候选版本逐项对比"><thead><tr><Th scope="col">项目</Th><Th scope="col">{active ? `线上 v${active.version}` : '线上版本'}</Th><Th scope="col">{`候选 v${activity.draftVersion}`}</Th></tr></thead><tbody>{compare.map(r => <Tr key={r.label} mark={r.changed ? 'hit' : undefined}><Td>{r.label}{r.changed && <span className="h4-changed">已改</span>}</Td><Td>{r.before}</Td><Td>{r.after}</Td></Tr>)}</tbody></RdTable></div>}
+    </Panel>;
+    const lifecycleRows: Array<[string, string, ReactNode]> = [
+        ['pause', '暂停新预留', 'App 列表和首页不再出现；已预留的订单和已成立的奖励照常处理。'],
+        ['resume', '恢复新预留', '重新检查时间、政策、预算和库存，按原时间恢复，不延期。'],
+        ['end', '终止活动', '不能直接恢复；已成立的承诺继续履行。'],
+        ['archive', '归档活动', '已结束且没有在途预留和未完成奖励时，收进历史。'],
+        ['copies', '复制为新活动', '只复制配置，新活动没有审批和累计使用量。'],
+    ];
+    const lifecycleAllowed: Record<string, boolean> = { pause: ['ACTIVE', 'SCHEDULED'].includes(activity.state), resume: activity.state === 'PAUSED', end: ['ACTIVE', 'SCHEDULED', 'PAUSED'].includes(activity.state), archive: activity.state === 'ENDED', copies: true };
+    return <>{!review && <>
+        <section className="h4-identity" aria-label="活动状态">
+            <div className="h4-identity-main"><span className="h4-block-label">活动状态</span><Tag value={activity.state}/><VersionLine item={activity}/></div>
+            <div className="h4-identity-time"><span className="h4-block-label">活动时间 · {zoneLabel(zone)}</span><TimeWindow item={activity}/></div>
+            {detailActions && <div className="h4-identity-actions">{detailActions}</div>}
+        </section>
+        <Stats items={[['未支付预留', impact.unpaidOrders, '带这个活动预留、还没付款的订单；按各订单原付款截止处理。'], ['待发奖励', impact.pendingRewards, '等待原奖励处理的项数。'], ['失败 / 结果未知', `${impact.failedRewards} / ${impact.unknownRewards}`, '只恢复原奖励；结果未知先核查。'], ['未解决奖励', impact.unresolved, '暂停不能撤销原奖励。']]}/>
+        <Panel title="预算" icon={Wallet} tone="role-1" sub={`更新于 ${formatTime(impact.asOf, zone)}`} explain="每项预算单独一条，不同资产不相加。已发出扣除了已冲正退回的部分；已预留包含已付款待发放的部分。发布时预算不能低于已占用。">
+            {impact.budgets.length ? <div className="h4-budget-list">{impact.budgets.map(b => <BudgetBar key={`${b.asset}:${b.productNo ?? ''}`} budget={b} catalog={catalog}/>)}</div> : <BlockState state="empty" title="还没有配置预算"/>}
+        </Panel>
+        {versionPanels}
+        {activity.draftVersion && compareTable}
+        <Panel title="在途承诺与处置影响" icon={ListChecks} tone="role-other" sub={`包含所有版本 · 更新于 ${formatTime(impact.asOf, zone)}`}><Table headers={['义务范围', '数量', '暂停 / 结束后的处理', '操作']} rows={[['待支付订单', impact.unpaidOrders, '原截止前可按原版本支付', <Button kind="link" onClick={() => setReservations(true)}>查看预留</Button>], ['待发奖励', impact.pendingRewards, '继续按原承诺执行', <Button kind="link" onClick={onRewards}>查看奖励</Button>], ['发放失败 / 结果未知', `${impact.failedRewards} / ${impact.unknownRewards}`, '只恢复原奖励；先核查未知结果', <Button kind="link" onClick={onRewards}>查看异常项</Button>]]}/></Panel>
+        <Panel title="活动操作" icon={Settings2} tone="role-other" explain="这些操作只控制新的投放与预留。既有订单与奖励继续履行，不因暂停或终止批量取消。">
+            <ul className="h4-ops">{lifecycleRows.map(([key, label, effect]) => { const node = button(key, key === 'archive' && (impact.unpaidOrders > 0 || impact.unfulfilledRewards > 0) ? '还有待支付订单或未完成奖励，暂不可归档' : false); return lifecycleAllowed[key] && node ? <li key={key}><span className="h4-op-what"><b>{label}</b><span>{effect}</span></span>{node}</li> : null; })}
+                <li><span className="h4-op-what"><b>查看效果</b><span>支付、退款、分设备销量和奖励成本。</span></span><RdButton disabledReason={can('growth_promotion_metrics_read') ? undefined : '没有查看效果的权限'} onClick={onMetrics}>查看效果</RdButton></li></ul>
+        </Panel></>}
+    {review && <div className="h4-review">
+        <div className="h4-review-main">
+            {compareTable}
+            <Card title="试算结果" action={<Button disabled={!can('growth_promotion_simulate') || !candidate} onClick={() => setSimOpen(true)}>重新试算</Button>}>{simulation ? <><Summary rows={[['资格', labelState(simulation.eligibility)], ['试算时刻', formatTime(simulation.asOf, zone)], ['赠品成本', simulation.giftCostUsdt == null ? '未提供' : `${simulation.giftCostUsdt} USDT`], ['占用资格 / 预算', '否']]}/><Table label="逐设备、逐受益人的试算结果" headers={['购买设备', '资格结果', '奖励承诺', '依据']} rows={simulation.ruleResults.flatMap(r => r.beneficiaries.map(b => [(text(catalog.skus.find(s => s.productNo === r.productNo)?.name)), <Tag value={b.status}/>, b.rewardUnits ?? '—', b.reasons.map(d => text(d.message)).join('；') || '已核对']))}/>{simulation.rewardUnits.length > 0 && <ul className="h4-units">{simulation.rewardUnits.map((r, i) => <li key={i}>{(text(catalog.skus.find(s => s.productNo === r.productNo)?.name))} 第 {r.purchaseUnitFrom}–{r.purchaseUnitTo} 台 · {labelState(r.beneficiaryRole)} · <b>{rewardText(r.reward)}</b></li>)}</ul>}{simulation.blockers.map((b, i) => <Notice key={i} title="试算阻断" kind="warn">{text(b.message)}</Notice>)}<Table label="资源够不够" headers={['资源', '所需', '可用', '结果']} rows={simulation.resources.map(r => [`${r.kind === 'INVENTORY' ? '商品库存' : r.asset === 'DEVICE' ? '设备赠礼预算' : promotionAssetText(r.asset)}${r.productNo ? ` · ${(text(catalog.skus.find(s => s.productNo === r.productNo)?.name))}` : ''}`, r.required ?? '—', r.available ?? '—', <Tag value={r.status}/>])}/><Table label="参与上限" headers={['上限范围', '已用及预留', '本次预计', '剩余', '状态']} rows={simulation.quotaImpact.map(q => [q.scope === 'ACTIVITY_ORDER' ? '全活动订单' : q.scope === 'PERSON_ORDER' ? '账户参与订单' : '账户规则组数', q.usedAndReserved ?? '—', q.required ?? '—', q.remaining ?? (q.limit === null && q.status !== 'UNKNOWN' ? '无限制' : '—'), <Tag value={q.status}/>])}/></> : <BlockState state="empty" title="尚未试算" detail="选择购买设备、数量及可选授权样本后查看试算结果。试算不创建订单，不占资格或预算。"/>}</Card>
+            {simulation && <Card title="试算成交与公开预览">{simulation.pricing ? <Summary rows={[['商品小计（USDT）', simulation.pricing.subtotalUsdt], ['优惠合计（USDT）', simulation.pricing.discountUsdt], ['其中订单立减（USDT）', simulation.pricing.promotionDiscountUsdt ?? '未提供'], ['应付款（USDT）', simulation.pricing.amountUsdt]]}/> : <Notice title="原报价暂不可用">当前不能确认应付款，请按阻断项处理。</Notice>}{simulation.publicPreview ? <Summary rows={[['展示标题', text(simulation.publicPreview.title)], ['活动规则', text(simulation.publicPreview.terms)], ['时区', simulation.publicPreview.displayTimezone]]}/> : <Notice title="公开预览暂不可用" kind="warn">活动权益暂无法确认，请处理上方阻断项后重试。</Notice>}</Card>}
+            <Panel title="审核与发布记录" icon={History} tone="role-other">{versions.data ? <Timeline label="审核与发布记录" entries={versions.data.items.map(v => ({ id: String(v.version), at: v.publishedAt ? formatTime(v.publishedAt, zone) : v.approvedAt ? formatTime(v.approvedAt, zone) : '—', actor: v.publishedBy || v.approvedBy || '—', action: `v${v.version} · ${labelState(v.state)}`, detail: `审核：${v.approvedAt ? formatTime(v.approvedAt, zone) : '尚未批准'} · 发布：${v.publishedAt ? formatTime(v.publishedAt, zone) : '尚未发布'}`, tone: v.state === 'PENDING_APPROVAL' ? 'warn' as const : undefined }))}/> : <Loading/>}{versions.data?.hasMore && <Notice title="历史版本较多">当前显示首 100 个版本；最新候选使用活动详情返回。</Notice>}</Panel>
+        </div>
+        <aside className="h4-review-side">
+            <Panel title="发布前检查" icon={ShieldCheck} tone={blockers.length || missingRanks ? 'warn' : 'role-other'}>{missingRanks&&<Notice title="原指定等级当前不可用" kind="warn">等级目录无法确认原选择。请返回参与资格重新核对；不限等级活动不受空目录限制。</Notice>}<Notice title={blockers.length ? '仍有配置或政策阻断' : '提交时将重新核验'} kind={blockers.length ? 'warn' : ''}>权益、资金、叠加、追回和权限必须来自当前可执行的批准政策。</Notice><Summary rows={[['候选状态', candidate ? labelState(candidate.state) : '无候选'], ['政策检查', blockers.length ? `${blockers.length} 项待处理` : '以最新提交校验为准'], ['当前有效版本', activity.activeVersion ? `v${activity.activeVersion} 继续执行` : '尚未发布'], ['公开语言', candidate?.draft.title?.zh && candidate.draft.title.en && candidate.draft.title.vi ? '三种标题均已填写' : '仍有语言缺失']]}/>{blockers.length > 0 && <p className="h4-lede">请返回配置，核对缺失或已撤销的政策引用。</p>}</Panel>
+            <Panel title="当前可用操作" icon={Send} tone="role-other" explain="审核与发布须分别操作，由两个人做：审核人不能是做过这个活动的人，发布人不能是审核人。版本冲突时请核对刷新后的候选并重新确认；结果未知时先查询原结果。">
+                <Steps label="候选版本走到哪" items={[{ label: '草稿', state: candidate?.state === 'DRAFT' ? 'current' : candidate ? 'done' : 'todo' }, { label: '待审核', state: candidate?.state === 'PENDING_APPROVAL' ? 'current' : candidate?.state === 'APPROVED' ? 'done' : 'todo' }, { label: '已审核待发布', state: candidate?.state === 'APPROVED' ? 'current' : 'todo' }, { label: '发布', state: 'todo' }]}/>
+                <div className="h4-row h4-review-actions">{candidate?.state === 'DRAFT' && button('submit', cannotPublish ? '还有政策或等级阻断，先处理' : false)}{candidate?.state === 'PENDING_APPROVAL' && <>{button('withdraw')}{button('reject')}{button('approve', cannotPublish ? '还有政策或等级阻断，先处理' : false)}</>}{candidate?.state === 'APPROVED' && <>{button('withdraw')}{button('publish', cannotPublish ? '还有政策或等级阻断，先处理' : false)}</>}</div>
+                <RdButton variant="ghost" onClick={onBack}>查看双版本</RdButton>
+                <RdButton variant="ghost" onClick={onBack}>返回活动详情</RdButton>
+            </Panel>
+        </aside>
+    </div>}
     {!!versions.error && <ReadError target="活动历史版本" error={versions.error} retry={versions.reload}/>}
-    {action && <ConfirmCommand onReload={activityStateAction ? reloadForConfirmation : undefined} onVersionConflict={activityStateAction ? undefined : () => { setAction(null); onCandidateConflict(); }} writeAllowed={can('growth_promotion_'+ACTIONS[action].authority) && !versions.loading && !versions.error && (action !== 'pause' || ['ACTIVE', 'SCHEDULED'].includes(activity.state)) && (action !== 'resume' || activity.state === 'PAUSED') && (action !== 'end' || ['ACTIVE', 'SCHEDULED', 'PAUSED'].includes(activity.state))} title={ACTIONS[action].label} intent={{ operation: ACTIONS[action].operation, targetId: activity.activityId, path: `/promotions/${activity.activityId}/${action}`, method: 'POST' }} body={{ expectedRevision: ACTIONS[action].version ? candidate?.revision : activity.revision, evidenceRefs: [], ...(ACTIONS[action].version ? { version: candidate?.version } : {}) }} onClose={() => setAction(null)} onSuccess={async result => { if (action === 'copies') await onCopyCreated(result); else { await onRefresh(); versions.reload(); } setAction(null); }}><Notice title="确认影响范围">{ACTIONS[action].copy}</Notice><Summary rows={[['活动', activity.name || activity.activityId], ['活动状态', labelState(activity.state)], ['改版草稿', activity.draftVersion ? `v${activity.draftVersion}` : '无'], ['版本', ACTIONS[action].version ? `候选 v${candidate?.version}` : `有效 v${activity.activeVersion ?? '—'}`], ['未支付订单', impact.unpaidOrders], ['未完成奖励', impact.unfulfilledRewards]]}/></ConfirmCommand>}
+    {action && <ConfirmCommand onReload={activityStateAction ? reloadForConfirmation : undefined} onVersionConflict={activityStateAction ? undefined : () => { setAction(null); onCandidateConflict(); }} writeAllowed={can('growth_promotion_'+ACTIONS[action].authority) && !versions.loading && !versions.error && (action !== 'pause' || ['ACTIVE', 'SCHEDULED'].includes(activity.state)) && (action !== 'resume' || activity.state === 'PAUSED') && (action !== 'end' || ['ACTIVE', 'SCHEDULED', 'PAUSED'].includes(activity.state))} title={ACTIONS[action].label} confirmLabel={CONFIRM_LABELS[action]} danger={['end', 'reject'].includes(action)} sub={action === 'end' || action === 'archive' ? <IrreversibleTag/> : <StatusTag tone="progress" filled>立即生效</StatusTag>} intent={{ operation: ACTIONS[action].operation, targetId: activity.activityId, path: `/promotions/${activity.activityId}/${action}`, method: 'POST' }} body={{ expectedRevision: ACTIONS[action].version ? candidate?.revision : activity.revision, evidenceRefs: [], ...(ACTIONS[action].version ? { version: candidate?.version } : {}) }} onClose={() => setAction(null)} onSuccess={async result => { if (action === 'copies') await onCopyCreated(result); else { await onRefresh(); versions.reload(); } setAction(null); }}><Summary rows={[['活动', activity.name || activity.activityId], ['活动状态', labelState(activity.state)], ['改版草稿', activity.draftVersion ? `v${activity.draftVersion}` : '无'], ['版本', ACTIONS[action].version ? `候选 v${candidate?.version}` : `有效 v${activity.activeVersion ?? '—'}`], ['未支付订单', impact.unpaidOrders], ['未完成奖励', impact.unfulfilledRewards]]}/>{actionFacts(action, activity, candidate, catalog)}<Notice title="确认影响范围">{ACTIONS[action].copy}</Notice></ConfirmCommand>}
     {simOpen && candidate && <SimulationDialog activity={activity} version={candidate} catalog={catalog} can={can} onClose={() => setSimOpen(false)} onResult={s => { setSimulation(s); setSimOpen(false); }}/>}
-    {reservations && <Dialog title="原订单预留" wide onClose={() => setReservations(false)}><Table headers={['订单', '锁定版本', '原付款截止', '预留奖励']} rows={impact.reservedOrders.map(r => [r.orderNo, `v${r.version}`, formatTime(r.payBy), r.reservedRewards])}/></Dialog>}
+    {reservations && <Dialog title="原订单预留" wide onClose={() => setReservations(false)} sub={`${impact.reservedOrders.length} 单 · 关闭不释放订单`}><Table headers={['订单', '锁定版本', '原付款截止', '预留奖励']} rows={impact.reservedOrders.map(r => [<span className="h4-mono">{r.orderNo}</span>, `v${r.version}`, formatTime(r.payBy, zone), r.reservedRewards])}/>{!impact.reservedOrders.length && <BlockState state="empty" title="没有在途预留"/>}</Dialog>}
   </>;
 }
+const CONFIRM_LABELS: Record<string, string> = { submit: '提交审核', withdraw: '撤回审核', approve: '审核通过', reject: '驳回', publish: '发布', pause: '暂停新预留', resume: '恢复新预留', end: '终止活动', archive: '归档活动', 'draft-versions': '创建改版草稿', copies: '复制为新活动' };
+const REVIEWER = '另一位有「审核促销活动」权限的管理员';
+const PUBLISHER = '另一位有「发布促销活动」权限的管理员';
+/** 每个动作的后果写成事实行：从什么时候、对哪些人、钱从哪出、已预留的怎么办、用户还能不能看到（以后端事实为准）。 */
+function actionFacts(action: string, activity: Promotion, candidate: Version | null | undefined, catalog: Catalog): ReactNode {
+    const zone = activity.displayTimezone || 'UTC';
+    const draft = candidate?.draft;
+    const startsLater = draft?.startsAt && Date.parse(draft.startsAt) > Date.parse(activity.serverTime);
+    const budgets = (draft?.budgets || []).filter(b => b.total != null).map(b => `${b.asset === 'DEVICE' ? `赠品 ${text(catalog.skus.find(s => s.productNo === b.productNo)?.name)}` : b.asset === 'DISCOUNT_USDT' ? '订单立减' : b.asset} ${b.total}${b.asset === 'DEVICE' ? ' 台' : b.asset === 'DISCOUNT_USDT' ? ' USDT' : ` ${b.asset}`}`).join('；') || '候选版本没有填预算';
+    const audience = draft?.buyerAudience ? [draft.buyerAudience.purchaseHistory === 'NEVER_PAID' ? '从未付款购机' : draft.buyerAudience.purchaseHistory === 'HAS_VALID_PURCHASE' ? '有有效购机' : draft.buyerAudience.purchaseHistory === 'ANY' ? '不限购机历史' : '购机历史未配置', draft.buyerAudience.rankIds?.length ? `等级 ${draft.buyerAudience.rankIds.map(id => text(catalog.ranks.find(r => r.id === id)?.name)).join('、')}` : '不限等级', draft.buyerAudience.markets?.length ? `市场 ${draft.buyerAudience.markets.join('、')}` : '不限市场'].join('，') : '人群未配置';
+    const rows: Record<string, Array<[string, ReactNode]>> = {
+        submit: [['提交后', '候选不能再编辑，要改先撤回；线上版本照常运行'], ['谁来审核', `${REVIEWER}；创建、编辑、提交过这个活动的人不能审核`]],
+        withdraw: [['撤回后', '候选回到草稿，原批准清除；线上版本和原订单不变']],
+        approve: [['审核通过后', '候选变成「已审核待发布」，不发布、不替换线上版本'], ['谁来发布', `${PUBLISHER}；审核人不能发布`]],
+        reject: [['驳回后', '候选退回草稿，驳回理由留在审核记录；线上版本不受影响']],
+        publish: [['从什么时候生效', activity.state === 'PAUSED' ? '活动现在暂停中：发布后仍暂停，恢复后才投放新版本' : startsLater ? `到 ${formatTime(draft?.startsAt, zone)}（${zoneLabel(zone)}）开始，之前是待开始` : '确认后立即进行中'], ['对哪些人', `符合候选 v${candidate?.version ?? '—'} 人群条件的用户：${audience}`], ['预算从哪出', `这个活动自己的预算：${budgets}。预算不能低于已占用，否则发布被拒`], ['已有订单', '按下单时的版本和原付款截止履行，不改'], ['谁不能发布', '审核这个候选的人']],
+        pause: [['用户看到的', 'App 活动列表和首页不再出现；打开过活动页的用户还能看到，但不能新领'], ['已预留的', '订单在原付款截止前仍可付款，已成立的奖励照常发放']],
+        resume: [['恢复前检查', '原时间、政策、商品目录、预算、库存，以及和其他活动是否冲突'], ['通过后', '按原开始时间恢复为待开始或进行中；不延期，不清零累计'], ['不通过', '仍保持暂停，确认框写出原因']],
+        end: [['用户看到的', 'App 列表和首页不再出现；打开过活动页的用户看到已结束'], ['已预留的', '订单在原付款截止前仍可付款，已成立的奖励继续按原承诺发放'], ['之后', '不能直接恢复；要再办需要复制为新活动']],
+        archive: [['前提', '已结束，没有待付款预留，奖励都已发放、取消或冲正'], ['用户看到的', '用户打不开这个活动页'], ['保留', '历史订单、奖励台账和效果报表都还能查']],
+        'draft-versions': [['创建后', '复制线上配置成新的候选草稿；线上版本继续运行，累计使用量不重置']],
+        copies: [['复制后', '得到一个新的草稿活动，只带配置；审批、累计使用量和订单不带过去']],
+    };
+    return <Summary rows={rows[action] || []}/>;
+}
+type CompareRow = { label: string; before: ReactNode; after: ReactNode; changed: boolean };
+/** 两个版本逐项对比，只比运营关心的字段；没有线上版本时左列写「—」。 */
+function compareVersions(active: Version | undefined, candidate: Version | null | undefined, catalog: Catalog): CompareRow[] {
+    if (!candidate) return [];
+    const zoneOf = (v?: Version) => v?.draft.displayTimezone || 'UTC';
+    const budget = (v?: Version) => v ? (v.draft.budgets || []).map(b => `${b.asset === 'DEVICE' ? `赠品 ${text(catalog.skus.find(s => s.productNo === b.productNo)?.name)}` : b.asset === 'DISCOUNT_USDT' ? '订单立减' : b.asset} ${b.total ?? '未填'}`).join('；') || '未配置' : '—';
+    const rules = (v?: Version) => v ? (v.draft.rules || []).map(r => `${text(catalog.skus.find(s => s.productNo === r.productNo)?.name)}：${rewardText(r.buyerReward)}${r.inviterReward ? ` / 邀请人 ${rewardText(r.inviterReward)}` : ''}`).join('；') || '未配置' : '—';
+    const fields: Array<[string, (v?: Version) => string]> = [
+        ['活动名称', v => v ? v.draft.name || '未命名' : '—'],
+        ['开始时间', v => v ? `${formatTime(v.draft.startsAt, zoneOf(v))}` : '—'],
+        ['结束时间', v => v ? `${formatTime(v.draft.endsAt, zoneOf(v))}` : '—'],
+        ['显示时区', v => v ? zoneLabel(v.draft.displayTimezone) : '—'],
+        ['投放位置', v => v ? v.draft.placement ? '首页购机促销位' : '不投放' : '—'],
+        ['公开标题（中文）', v => v ? v.draft.title?.zh || '未填写' : '—'],
+        ['购买设备与奖励', rules],
+        ['购买者每人上限', v => v ? limitText(v.draft.perPersonLimit?.buyer) : '—'],
+        ['活动订单上限', v => v ? limitText(v.draft.activityLimit) : '—'],
+        ['预算', budget],
+        ['额度不足时', v => v ? v.draft.shortagePolicy === 'RULE_STOP' ? '停止对应规则' : v.draft.shortagePolicy === 'ACTIVITY_PAUSE' ? '暂停整个活动' : '未配置' : '—'],
+        ['引用的政策', v => v ? JSON.stringify(v.draft.policies ?? null) === 'null' ? '未配置' : Object.entries(v.draft.policies || {}).filter(([, ref]) => ref).map(([key, ref]) => `${POLICY_SLOT[key] || key} v${(ref as { version: number }).version}`).join('；') : '—'],
+    ];
+    return fields.map(([label, read]) => { const before = active ? read(active) : '—', after = read(candidate); return { label, before, after, changed: !!active && before !== after }; });
+}
+const POLICY_SLOT: Record<string, string> = { settlement: '结算', stacking: '叠加', refund: '售后追回', quote: '报价期限', authorization: '审核发布授权' };
+
 function SimulationDialog({ activity, version, catalog, can, onClose, onResult }: {
     activity: Promotion;
     version: Version;

@@ -66,7 +66,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "H1" && <H1Phase ctx={ctx} onRhythmChange={setRhythm} />}
       {tab === "H2" && <H2Trial ctx={ctx} />}
       {tab === "H3" && <H3QuestEvents ctx={ctx} />}
-      {tab === "H4" && <H4Promotions ctx={ctx} legacy={<><DomainHeader {...meta} right={right} /><H4ActivityCenter ctx={ctx} /></>} />}
+      {tab === "H4" && <H4Promotions ctx={ctx} legacy={<H4ActivityCenter ctx={ctx} />} />}
       {tab === "H5" && <H5DailyMilestones ctx={ctx} />}
       {tab === "H7" && <H7VoucherConfig ctx={ctx} />}
       {tab === "H8" && <H8ReferralRewards ctx={ctx} />}
@@ -111,6 +111,6 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  if (tab === "H2" || tab === "H1") return <RdPage className="hdom">{page}</RdPage>;
+  if (tab === "H2" || tab === "H1" || tab === "H4") return <RdPage className="hdom">{page}</RdPage>;
   return <div className={tab === "H4" ? "hdom" : "dkpage hdom"}>{page}</div>;
 }
