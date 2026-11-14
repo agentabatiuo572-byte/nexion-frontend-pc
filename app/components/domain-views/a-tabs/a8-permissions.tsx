@@ -20,7 +20,7 @@ const PERM_TYPES = ["ALL", "READ", "WRITE", "HIGH"];
 const LABEL_BY_TYPE: Record<string, string> = { HIGH: "敏感操作", WRITE: "修改", READ: "查看" };
 const ICON_BY_TYPE = { HIGH: ShieldAlert, WRITE: PenLine, READ: Eye } as const;
 const PAGE_SIZES = [10, 20, 50] as const;
-const ROLE_CHIPS = 3;
+const ROLE_CHIPS = 2;
 const ROLES_PATH = "/platform/roles";
 
 type RoleGrants = { role: A6RoleSummary; codes: Set<string>; readable: boolean };
@@ -163,7 +163,7 @@ export default function A8Permissions() {
         {has.length === 0 && unreadableRoles.length === 0 && <span className="a8-muted">没有角色</span>}
         {has.slice(0, ROLE_CHIPS).map(roleChip)}
         {rest.length > 0 && <Explain label={`另外 ${rest.length} 个角色`} content={rest.map(({ role }) => `${role.roleName}${role.status === 0 ? "（已停用）" : ""}`).join("、")}>等 {has.length} 个</Explain>}
-        {unreadableRoles.length > 0 && <span className="a8-role" data-tone="warn">? {unreadableRoles.length} 个没读到</span>}
+        {unreadableRoles.length > 0 && <span className="a8-role" data-tone="warn" title={`${unreadableRoles.length} 个角色的授权没读到，不代表没有这项权限`}>? {unreadableRoles.length} 个没读到</span>}
       </span>
     );
   };
@@ -202,7 +202,7 @@ export default function A8Permissions() {
 
       {view === "matrix" && matrixOpen ? (
         <Panel flush icon={Users} title="角色权限对照表"
-          sub={rolesReady && records.length > 0 ? `本页 ${records.length} 项权限 × ${grants.length} 个角色` : countText}
+          sub={rolesReady && records.length > 0 && grants.length > 0 ? `本页 ${records.length} 项权限 × ${grants.length} 个角色` : countText}
           explain={`横向是角色，纵向是列表当前页的 ${records.length} 项权限，打勾表示该角色有这项权限。包括已停用的角色。翻页只换行，角色的授权不重新读取；要最新的就收起再展开。`}>
           {loading ? <BlockState state="loading" title="加载中…" /> : loadError ? <BlockState state="error" title="权限列表加载失败，请重试。" detail={loadError} onRetry={() => setReloadKey((value) => value + 1)} /> : <>
           {matrixLoading ? (
@@ -256,7 +256,7 @@ export default function A8Permissions() {
               </>
             )}
           </>}
-        {!loadError && <Pager label="权限清单" total={total} page={pageNum} pageSize={pageSize} sizes={PAGE_SIZES} loading={loading}
+        {!loadError && result && <Pager label="权限清单" total={total} page={pageNum} pageSize={pageSize} sizes={PAGE_SIZES} loading={loading}
           onPage={setPageNum} onPageSize={(s) => { setPageSize(s); setPageNum(1); }} />}
         </Panel>
       ) : (
@@ -292,7 +292,7 @@ export default function A8Permissions() {
                   ))}
           </tbody>
         </Table>
-        {!loadError && <Pager label="权限清单" total={total} page={pageNum} pageSize={pageSize} sizes={PAGE_SIZES} loading={loading}
+        {!loadError && result && <Pager label="权限清单" total={total} page={pageNum} pageSize={pageSize} sizes={PAGE_SIZES} loading={loading}
           onPage={setPageNum} onPageSize={(s) => { setPageSize(s); setPageNum(1); }} />}
         </Panel>
       )}
