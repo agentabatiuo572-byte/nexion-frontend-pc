@@ -51,7 +51,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
         <Facts>
           <Fact k="这一期">{draft.titleZh || "—"} · {draft.id}</Fact>
           <Fact k="报名开始 → 开奖（北京时间）">{formatTime(draft.startsAt, "Asia/Shanghai")} → {formatTime(draft.drawAt, "Asia/Shanghai")}</Fact>
-          <Fact k="奖项" tone="role-1">{draft.prizes.length} 项 · 共 {seats(draft.prizes)} 个名额：{draft.prizes.map((prize) => `${prize.nameZh || "未命名"} ${prizeText(prize)} × ${prize.quantity}`).join("；")}</Fact>
+          <Fact k="奖项">{draft.prizes.length} 项 · 共 {seats(draft.prizes)} 个名额：{draft.prizes.map((prize) => `${prize.nameZh || "未命名"} ${prizeText(prize)} × ${prize.quantity}`).join("；")}</Fact>
           {opening && <Fact k="开放后">用户可以用创世抽奖券报名；到开奖时间系统自动开奖、按奖项发奖</Fact>}
           {nextEnabled && <Fact k="之后能不能改">还没人报名时可以关闭回草稿再改；有人报名后奖项和时间锁定，也不能再关闭</Fact>}
           {closing && <Fact k="关闭后">回到草稿，用户不能再报名；改好后可以再申请开放</Fact>}
