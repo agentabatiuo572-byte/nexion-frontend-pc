@@ -211,7 +211,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | J1 | Kill-Switch 矩阵 | 5 功能闸 kill 统一权威矩阵 + kill/恢复 + 联动 + 应急通道 | J 应急 | V4·Ch15 | §9.11d.1 / §9.11d.2 |
 | J2 | Geo-block | 国家码级地域屏蔽 + per-endpoint geo_block + 边缘 IP 判定 | J 应急 | V4·Ch15 | §9.11d.1 |
 | J3 | 篡改防御监控 | 服务端权威拦截事件看板、脱敏报表与告警配置；账户处置跳 C2/K1 | J 应急 | V4·Ch15 | §9.11d.2 / §9.11d.3 |
-| J4 | 监管点名应急 SOP | 应急组合处置剧本编排(串联 J1/J2/I5/C2/K1/D2/I3) | J 应急 | V4·Ch15 | §9.11d |
+| J4 | 监管点名应急 SOP | 预案维护、验证演练及审批后自动逐步处置（J1/J2/C2/K1/I3/I5） | J 应急 | V4·Ch15 | §9.11d |
 | K1 | 反多账户引擎 | IP/设备/支付三维多账户聚集识别 + 注册/sponsor-bind 阻断 | K 风控 | V1·Ch8 | §9.11e.1 / §16.2 / §9.11d.2 |
 | K2 | 套利与刷量检测 | trial 循环/trade-in 套利/gift 刷取/刷榜检测(基于 K1 信号) | K 风控 | V1·Ch8 | §9.11e.1 / §7.5 / §8.11 |
 | K3 | 提现风控规则引擎 | 金额/速度/新账户/地址信誉四维规则路由,喂 D2 | K 风控 | V1·Ch8 | §9.3 / §9.11f |
@@ -342,7 +342,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | **Kill-Switch 矩阵**(J1) | 5 功能闸{withdraw〔应急新增〕,staking,genesis,exchange,trial}:enabled:bool · operator · reason · coveragePrecheckRequired(恢复方向前置 B1 的闸标记) · autoTrigger{rule:R1\|R2,补录窗 30min};复用 admin.killswitch_toggled(原提案状态机已随 2026-06 操作确认决议废除) | SC | §17.1 / Ch15 J1 |
 | **Geo-block**(J2) | activeCountries(ISO alpha-2) · limitedCountries(受限资金/奖励变更档,ISO alpha-2) · enabled(=length>0) · perEndpoint[{endpoint,geoBlock,derivationStatus}] · edgeJudgeHealth · operator · reason;**服务端验证可信边缘代理并读取国家请求头，不按账户国家执法；名单、入口、来源、应急各按独立权限码；limited→blocked 为升级路径** | SC | §17.1 / Ch15 J2 |
 | **篡改监控**(J3) | 10 类登记接口 · 拦截计数 · 涉及账户；告警 state:enum{flagged\|escalated}；最近一次完整北京时间；K4/B5 实际接受回执；处置跳 C2/K1 | 派生视图 | §17.1 / Ch15 J3 |
-| **应急 SOP**(J4) | 剧本=kill+geo-block+披露+提现暂停+通知组合(串联 J1/J2/I5/C2/K1/D2/I3) · 演练态(lastDrill/演练就绪,沙箱不下发生产) | SC(编排) | Ch15 J4 |
+| **应急 SOP**(J4) | 预案定义 + 只校验的演练台账 + A2 批准后顺序执行 J1/J2/C2/K1/I3/I5；失败保留前步，取消/超时核对/恢复本次 J1 开关各独立确认 | SC(编排) | Ch15 J4 |
 
 ### 域 K — 风控
 
@@ -589,10 +589,12 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | `/api/admin/emergency/tamper/overview?window=&accountPage=&accountPageSize=` | GET | 滚动 24h/7d/30d 拦截总览、路径分布、达到阈值账户；非法窗口 422，页长最多 50 | — | J3 |
 | `/api/admin/emergency/tamper/alert-config` | PUT | 直接保存 threshold/feedK4，必带 expectedThreshold/expectedFeedK4、理由和 Key；先去重再在执行回调核对原值 | J3-MD1 | J3 |
 | `/api/admin/emergency/tamper/reports` | POST | 脱敏 CSV：完整窗口的接口汇总和达到阈值账户；理由、Key 必填；无下载链接 | 理由确认 | J3 |
-| `/api/admin/emergency/playbooks` · `/:name` | GET/PUT | 应急剧本库 / 编辑(携 Key) | J4-MD1(PUT) | J4 |
-| `/api/admin/emergency/playbooks/:name/drill` | POST | 剧本演练(沙箱走查动作序列,不下发生产;通过更新 lastDrill→演练就绪;携 Key) | J4-MD2 | J4 |
-| `/api/admin/emergency/playbooks/:name/execute` | POST | 执行剧本(逐步推进,各止血步由该步目标域授权角色经该域确认弹窗单人确认执行,J4 不绕过各域确认门;前向只进不回滚;携 Key+执行锁;编排 J1/J2/I5/C2/K1/I3) | J4-MD3(各步各域确认门) | J4 |
-| `/api/admin/emergency/executions?filter=` | GET | 历史执行追溯(合规取证;partial 终态不回写) | — | J4 |
+| `/api/admin/emergency/sop/playbooks` · `/{code}` | GET/POST/PUT | 概览含当前定义/最多20条执行；新增/编辑直接保存定义，编辑携原 version，保存后待演练，不执行生产 | J4-MD1 | J4 |
+| `/api/admin/emergency/sop/playbooks/{code}/drills` | POST | 验证目标/通知并写演练台账，NOT_REQUIRED/validationOnly；不调用生产步骤 | J4-MD2 | J4 |
+| `/api/admin/platform/audit/operations` | POST | 正式执行两个入口均提案：J/j4_playbook_execute，sourceDomain=J4，obj=code，target=J/playbook/code，含触发依据/说明和全部步骤确认；常规/应急仅 emergency 布尔不同 | J4-MD3 | J4 |
+| `/api/admin/emergency/sop/playbooks/{code}/executions` | POST（仅 A2 回放） | 批准后自动按顺序执行；直接调用拒 J4_A2_CONFIRMATION_REQUIRED，不是页面独立直写入口 | A2 批准 | J4 |
+| `/api/admin/emergency/sop/playbooks/{code}/executions/{id}/cancel` · `/resume` · `/rollback` | POST | 分别只登记取消、按后端最后更新时间超2分钟核持久事实、直接恢复本次 DONE+凭证的J1开关；均含理由和Key | 独立确认 | J4 |
+| `/api/admin/platform/audit/operations/proposals/by-idempotency-key` | GET | 本人原申请权威当前状态；读权限后端再核，J4 直写无按号回执接口 | 查询原结果 | J4 |
 
 **J2 地区访问限制当前合同（2026-11-14，后端 `111e00cd`）：**
 
@@ -625,6 +627,19 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 - 写操作先在浏览器存原操作再发。结果未知（含 `IDEMPOTENCY_REQUEST_IN_PROGRESS`、`IDEMPOTENCY_RESULT_UNKNOWN`）时关框，转成页面上方的待确认条，这项的入口锁住，只能原样重试。原样重试只有 `isExplicitRejection` 判定的带原因码4xx才可人工核实后解除；401／403／408／425／429、全部 `IDEMPOTENCY_*`、未知／不可读响应及本地错误不算，读回不授予资格。解除只清本地，不发请求、不记操作记录、不办后端结案。超过 24 小时不能再用原号重试，记录和入口锁保留，写明到操作记录与审批核对，到期和读不到记录都不算解除。读取失败时待确认条仍显示；重试按该命令当前的写权限判断。
 - 恢复结果未知时先查原恢复申请，明确未查到、未过期且当前服务端仍许可才按原内容重发；被拒仍保号，过期只查询。读取失败时也保留核查入口。结论解释使用「恢复业务怎么操作」标题。
 - 刷新中所有写入口禁用并写原因。首次读取失败写「业务开关读取失败」，只留「重试」；刷新失败保留上次读到的状态及时间，注明可能已过期，不给操作入口和勾选。页头不留读取时间和刷新。页面打开和点「刷新」时读取，不自动更新。
+
+
+**J4 监管要求应急处理当前合同（2026-11-14，后端 `111e00cd`）：**
+
+- 保留八个写入口：新增、编辑、演练、常规执行申请、应急执行申请、取消、恢复核对和恢复开关。新增/编辑及执行申请仍由页面第一步填写，再进原共用确认框核对写理由；请求字段与步骤顺序逐项延续。直接写由 `emergency_j4_write`（维护/演练）或 `emergency_j4_playbook_execute`（取消/核对）控制；恢复另需 `emergency_j1_gate_resume`。
+- 发起正式执行需 J4 执行权、A2 提案权及所有步骤对应域权。后端绑定当前 code/version/步骤权限/hash；另一位活跃管理员有 A2 批准权、J4 执行权和单据访问范围方可批准，无须重复具备每步域直接写权。本人不能批自己的；预案之后被编辑则原单因快照不符拒绝。常规与应急都须审批、近90天演练及对应台账、当前通知和目标可执行，不因 SLA 或应急标签加速。
+- 批准后自动顺序执行；失败停止后续并保留已完成步骤。取消只登记请求，在下个步骤边界跳过后续，不打断当前步骤；若已到最后一步可正常全部完成。恢复核对的2分钟由后端点击时按 updatedAt 判断，不由开始时间推算；pending跳过，running仅核持久证据，不重执行业务，J1/I3有完成核对分支，J2/C2/K1/I5记失败仍可能实际已生效。
+- 恢复开关直接执行，不走审批；仅本次 DONE 且带归属凭证的 J1 开关，在终态/审计齐全、原归属未变且资金覆盖率/估值合格时恢复。不会解封国家、解冻账户/组、撤披露或撤通知；回滚方案文本是保存说明，不是补偿脚本。
+- 六个直接写与两个提案共用 J 域唯一持久存储，发前保存完整原 body（含对象、原 version、理由、操作者）、方法、路径、Key、首次时间及确认事实；持久化失败不发。未知后理由和返回修改锁住，刷新/概览503仍能恢复；24小时内只按原 body+原 Key重试，过期仅查询。首次被拒按 `isDeterministicRejection` 丢号；未知原请求重试只有 `isExplicitRejection` 明确结论才能解除，401/403/408/425/429及 IDEMPOTENCY_* 不作为结案证据。首次明确被拒后再次新提交使用新Key。
+- J4 直写没有按号回执查询；“查询原结果”只读当前概览和最近20条，不能凭值相同或列表没找到结案。提案按原号读当前票据，核对 mine/obj/type/operationCode/原始 status（`111e00cd` 给出 `j4_playbook_execute`）；历史建单回执不能当仍待审批。原号回放成功但当前查询失败保留 accepted 记录，只能再查，不能再POST。精确 `A2_PROPOSAL_NOT_FOUND` + 已过24h 的人工确认解除逻辑已备，界面尚缺确认入口，待视觉接入；直接写不适用。
+- 恢复了结后关闭原确认框并重新读取；重放概览不设为当前数据，读成功前禁止新修改，新操作重新检查全部权限、契约、版本、就绪与未决状态。执行中步骤名称取 execution 保存快照，不随之后编辑的预案变动。统计空值/空串不当0，合法0保留；必填读模型保持校验，历史可空字段保留未知。
+- 本轮只接逻辑；原有绝对地区拦截、回滚按方案执行、取消一定部分完成、固定8字下限、过期申请查不到永不解除等说法交视觉修正。后端直接写回执查询/核对证据和恢复更新时间能力仍按 J4-BE-01/02 及 A3-BE-03 跟踪，不扩展接口。
+
 
 ### 域 K — 风控
 
@@ -1204,7 +1219,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 佣金事件撤销/补发/暂停 | ✅ | ✅(lead) | ✅(lead,联动 D 退回) | — | — | — | 是(理由必填;补发方向 B1 预检) | F5 |
 | 直属分成 / Partner Status / 其他奖励冷却 | ✅ | ✅(lead) | ✅(lead) | ✅(增长侧) | — | — | 是(A2、理由、24h幂等；资金放大 B1；具体权威权限沿用 v2 F2⑥；旧层级只读) | F2 |
 | 风险披露版本切换 + 旧确认失效（不阻断操作） | ✅ | ✅(lead,合规) | — | — | — | — | 是(I5-MD1,理由必填;合规关键,非熔断闸) | I5 |
-| 监管点名应急 SOP 编排执行 | ✅ | ✅(lead) | — | — | — | — | 是(J4-MD3,理由必填+触发事由;逐步经各域弹窗,串联 J1/J2/I5/C2/K1/D2/I3) | J4 |
+| 监管点名应急 SOP 编排执行 | ✅ | ✅(lead) | — | — | — | — | 是(J4-MD3；A2提案+理由/触发事由/逐步确认，批准后自动执行J1/J2/C2/K1/I3/I5；取消/核对/恢复独立确认) | J4 |
 | **数据导出/监管报告(含敏感)** | ✅(超限/解密仅超管) | ✅(lead,风控域) | ✅(lead,资金域) | — | — | ✅(全量脱敏) | 是(理由必填;数据出境=敏感,脱敏+审计) | L5 |
 
 ## 第 7 章 未决项清单(开发/上线阻塞点)
@@ -1544,9 +1559,9 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | J2-MD3 | per-endpoint geo_block 派生配置确认 | — | v4 J2④a |
 | J2-MD4 | 边缘 IP 判定源配置确认 | — | v4 J2④a |
 | J3-MD1 | 篡改告警配置确认 | — | v4 J3④a |
-| J4-MD1 | 应急剧本编辑确认 | — | v4 J4④a |
+| J4-MD1 | 应急预案新增/编辑核对及理由确认 | — | v4 J4④a |
 | J4-MD2 | 剧本演练确认 | — | v4 J4④a |
-| J4-MD3 | 应急剧本执行确认 | 是 | v4 J4④a |
+| J4-MD3 | 正式执行申请核对（依据、说明、逐步确认） | 是 | v4 J4④a |
 
 ### 9.11 K 风控与反作弊
 

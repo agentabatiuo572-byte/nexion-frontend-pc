@@ -6,8 +6,7 @@
  * 第二层：预案能用的动作和规则、通知活动候选（折叠）；追溯在抽屉里。
  * 写入口和改版前一样：新增、编辑、演练、取消、恢复核对、恢复开关直接写 /emergency/sop/*；正式执行（常规、应急）提交 A2 审批申请。
  * 新增、编辑和发起正式执行先在页面自己的框里填（PlaybookEditor、ExecutePrepare），再进共用确认框写理由提交；
- * 请求的方法、地址、正文、命令号和结果处理照旧（runBackend、j-client、createA2OperationProposal）。
- * 结果未知按 R1 由代码 worker 接：逐条提醒（J4RecoveryNotice）和等批准的申请（pendingProposals）现在传空。
+ * 请求方法和业务内容沿用原合同；原请求和确认事实先存入 J 域共享存储，未知后只恢复原操作。
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -15,9 +14,16 @@ import { BookOpen, Clock3, FlaskConical, History, ListChecks, Megaphone, MinusCi
 import { BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, KeyValues, Notice, PageHeader, Panel, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
-import { displayAdminError } from "@/lib/admin/error-messages";
-import { createJEmergencyCommandKey, type J4PlaybookCreateInput, type Playbook, type SopExecution } from "@/lib/admin/j-client";
-import { createA2OperationProposal } from "@/lib/admin/a2-client";
+import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
+import {
+  createJEmergencyCommandKey, getJ4PendingProposal, isEmergencyOutcomeUncertain,
+  j4ProposalSlot, listJ4LegacyCommands, listJ4PendingCommands, listJ4PendingProposals,
+  queryJ4Proposal, retryJ4Command, retryJ4Proposal, submitJ4Proposal,
+  type J4CommandContext, type J4PendingCommand, type J4PendingProposal, type J4PlaybookCreateInput, type Playbook, type SopExecution,
+} from "@/lib/admin/j-client";
+import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
@@ -25,7 +31,7 @@ import {
   count, draftChanges, executionModeLabel, initialDraft, isActiveExecution, j4Time, lineStep, reversibleGates, rollbackStatusText, roleText, stepInfo, undoSummary,
   type EditorSpec, type ExecuteDraft, type J4RecoveryRow, type PlaybookDraft,
 } from "./j4-parts";
-import type { JCtx } from "./types";
+import type { ActionConfirmReq, JCtx } from "./types";
 
 const READING = "正在读取最新状态，读完再操作";
 const NOT_READY = "应急执行服务尚未就绪，请联系技术人员检查";
@@ -112,27 +118,153 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     if (data) setReadAt(businessClock(Date.now()));
   }, [data]);
 
-  // 结果未知的原操作。旧逻辑直接写只在本标签页存命令号和去掉理由的指纹，提案只在闭包里留命令号，拼不出逐条提醒；
-  // 代码 worker 按 R1 保存原请求后在这里拼行（发起正式执行用 kind: "approval"，写「申请可能已经提交」）。
-  const recoveryRows: J4RecoveryRow[] = [];
-  const recovery = <J4RecoveryNotice rows={recoveryRows} />;
-  // 等批准的执行申请：这页现在不读 A2，提交成功后只有提示。代码 worker 接上读取后在这里放行（预案、提交人、提交时间、审批单号）。
-  const pendingProposals: { key: string; name: string; meta: ReactNode }[] = [];
+  const [pending, setPending] = useState<J4PendingCommand[]>([]);
+  const [proposals, setProposals] = useState<J4PendingProposal[]>([]);
+  const [legacy, setLegacy] = useState<ReturnType<typeof listJ4LegacyCommands>>([]);
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [verifiedProposals, setVerifiedProposals] = useState<Record<string, A2OperationRow>>({});
+  const [queue, setQueue] = useState<A2OperationRow[]>([]);
+  const current = useRef({ data, contentLoading, contentError, authorities });
+  current.current = { data, contentLoading, contentError, authorities };
+  const activeConfirmation = useRef<{ slot: string; restored: boolean } | null>(null);
+  const formSequence = useRef(0);
+  const syncPending = () => {
+    setPending(listJ4PendingCommands());
+    setProposals(listJ4PendingProposals());
+    setLegacy(listJ4LegacyCommands());
+  };
+  const noteError = (key: string, error: unknown) => setNotes((previous) => ({ ...previous, [key]: displayAdminError(error) }));
+  const forgetObservation = (key: string) => setVerifiedProposals((previous) => {
+    const next = { ...previous };
+    delete next[key];
+    return next;
+  });
+  const queryProposal = async (record: J4PendingProposal) => {
+    forgetObservation(record.commandKey);
+    try {
+      const row = await queryJ4Proposal(record);
+      if (row) {
+        setVerifiedProposals((previous) => ({ ...previous, [record.commandKey]: row }));
+        if (row.status !== "pending") {
+          openActionConfirm(null);
+          activeConfirmation.current = null;
+          await actions.reloadJEmergency();
+        }
+      } else {
+        noteError(record.commandKey, new Error("A2_PROPOSAL_NOT_FOUND"));
+      }
+      syncPending();
+      return row;
+    } catch (error) {
+      noteError(record.commandKey, error);
+      syncPending();
+      return null;
+    }
+  };
+  useEffect(() => {
+    syncPending();
+    // Exact maker queries also work without the A2 menu; the backend checks read eligibility.
+    for (const record of listJ4PendingProposals()) void queryProposal(record);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.adminId]);
+  useEffect(() => {
+    setQueue([]);
+    setVerifiedProposals({});
+    if (!data || contentLoading || contentError) return;
+    let active = true;
+    for (const record of listJ4PendingProposals()) void queryProposal(record);
+    if (authorities.includes("platform_a2_read")) {
+      void fetchA2Overview({ domain: "J" }).then((overview) => {
+        if (active) setQueue(overview.operationQueue.filter((row) => row.rawStatus === "pending" && row.operationCode === "j4_playbook_execute"));
+      }).catch(() => { if (active) setQueue([]); });
+    }
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, contentLoading, contentError, session?.authorities]);
+  useEffect(() => {
+    if (!contentLoading) return;
+    setEditor(null);
+    setPrepare(null);
+    const confirmation = activeConfirmation.current;
+    if (confirmation && !confirmation.restored && !listJ4PendingCommands().some((row) => row.fingerprint === confirmation.slot)
+      && !listJ4PendingProposals().some((row) => row.fingerprint === confirmation.slot)) {
+      openActionConfirm(null);
+      activeConfirmation.current = null;
+    }
+  }, [contentLoading, openActionConfirm]);
+  useEffect(() => {
+    const expiry = Math.min(...[...pending, ...proposals, ...legacy].filter((record) => !isRetryExpired(record)).map((record) => record.expiresAt));
+    if (!Number.isFinite(expiry)) return;
+    const timer = window.setTimeout(() => {
+      const confirmation = activeConfirmation.current;
+      const saved = [...listJ4PendingCommands(), ...listJ4PendingProposals(), ...listJ4LegacyCommands()].find((record) => record.fingerprint === confirmation?.slot);
+      if (saved && isRetryExpired(saved)) {
+        openActionConfirm(null);
+        activeConfirmation.current = null;
+      }
+      syncPending();
+    }, Math.max(0, expiry - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [pending, proposals, legacy, openActionConfirm]);
 
+  function canRetry(context: J4CommandContext) {
+    const grants = current.current.authorities;
+    if (context.kind === "create" || context.kind === "update" || context.kind === "drill") return grants.includes("emergency_j4_write");
+    if (!grants.includes("emergency_j4_playbook_execute")) return false;
+    if (context.kind === "rollback") return grants.includes("emergency_j1_gate_resume");
+    if (context.kind === "execute") return (grants.includes("platform_a2_write") || grants.includes("platform_a2_proposal_create"))
+      && context.playbook.seq.every((step) => !!TARGET_AUTHORITY[step.dom] && grants.includes(TARGET_AUTHORITY[step.dom]));
+    return true;
+  }
+  const queryOriginal = async (record: { commandKey: string }) => {
+    try {
+      await actions.reloadJEmergency();
+      noteError(record.commandKey, new Error("J4_CURRENT_STATE_ONLY"));
+    } catch (error) { noteError(record.commandKey, error); }
+    syncPending();
+  };
+  const contextName = (context: J4CommandContext) => context.kind === "create" ? context.fields.name
+    : "playbook" in context ? `${context.playbook.code} ${context.playbook.name}` : `${context.execution.code} ${context.execution.executionId}`;
+  const operationNames = { create: "新增预案", update: "保存预案修改", drill: "演练预案", execute: "提交执行申请", cancel: "登记取消", resume: "恢复核对", rollback: "恢复本次关停的开关" };
+  const recoveryRows: J4RecoveryRow[] = pending.map((record) => ({
+    key: record.commandKey, name: `${contextName(record.sop.context)} · ${operationNames[record.sop.context.kind]}`,
+    change: record.sop.context.kind === "create" || record.sop.context.kind === "update"
+      ? `${record.sop.context.fields.scene} · ${record.sop.context.fields.owner} · ${record.sop.context.fields.actionSeq.split("\n").filter(Boolean).length} 步`
+      : record.sop.context.kind === "drill" ? `${record.sop.context.playbook.seq.length} 步` : "execution" in record.sop.context ? record.sop.context.execution.executionId : "",
+    submittedAt: record.createdAt, kind: "direct", expired: isRetryExpired(record),
+    onQuery: () => void queryOriginal(record), onRetry: canRetry(record.sop.context) ? () => restoreOriginal(record) : undefined,
+    note: notes[record.commandKey],
+  }));
+  recoveryRows.push(...proposals.filter((record) => verifiedProposals[record.commandKey]?.status !== "pending").map((record): J4RecoveryRow => ({
+    key: record.commandKey, name: `${contextName(record.sopProposal.context)} · ${operationNames.execute}`,
+    change: `${record.sopProposal.context.emergency ? "应急通道" : "常规通道"} · ${record.sopProposal.context.fields.triggerBasis} · ${record.sopProposal.context.playbook.seq.length} 步`,
+    submittedAt: record.createdAt, kind: "approval", expired: isRetryExpired(record),
+    onQuery: () => void queryProposal(record),
+    onRetry: !record.sopProposal.accepted && canRetry(record.sopProposal.context) ? () => restoreProposal(record) : undefined,
+    note: notes[record.commandKey] || (record.sopProposal.accepted ? formatAdminApiError("J4_PROPOSAL_STATUS_UNAVAILABLE", "J4_PROPOSAL_STATUS_UNAVAILABLE") : undefined),
+  })));
+  recoveryRows.push(...legacy.map((record): J4RecoveryRow => ({
+    key: record.commandKey, name: operationNames[record.fingerprint.endsWith("/drills") ? "drill" : record.fingerprint.endsWith("/cancel") ? "cancel" : record.fingerprint.endsWith("/resume") ? "resume" : record.fingerprint.endsWith("/rollback") ? "rollback" : record.fingerprint.startsWith("PUT") ? "update" : "create"],
+    change: formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"),
+    submittedAt: record.createdAt, kind: "direct", expired: isRetryExpired(record), onQuery: () => void queryOriginal(record), note: notes[record.commandKey],
+  })));
+  const recovery = <J4RecoveryNotice rows={recoveryRows} />;
+  const proposalRows = new Map([...queue, ...Object.values(verifiedProposals).filter((row) => row.status === "pending")].map((row) => [row.id, row]));
+  const pendingProposals = [...proposalRows.values()].map((row) => ({ key: row.id, name: row.obj, meta: <>{row.operator} · {j4Time(row.rawTs)} · {row.id}</> }));
   const reload = () => void actions.reloadJEmergency().catch(() => undefined);
   const readOnly = !canWrite && !canRun;
   const contractReady = data?.contractVersion === "J4_REAL_EXECUTION_V5";
 
   const newPb = () => {
-    if (!data) return;
+    if (!data || newBlockedReason("POST /sop/playbooks", { kind: "create", fields: {} })) return;
     setEditor({
       mode: "create",
       scenes: (data.scenes ?? []).filter((item) => item !== "全部"),
       nameHint: "例如：监管点名快速止血",
       notifyTemplates: emergency.notifyTemplates ?? [],
       notifyTemplatesError: emergency.notifyTemplatesError,
-      actionOptions: data.actionOptions ?? [],
-      rollbackOptions: data.rollbackOptions ?? [],
+      actionOptions: data?.actionOptions ?? [],
+      rollbackOptions: data?.rollbackOptions ?? [],
       onNext: (draft) => { setEditor(null); confirmCreate(draft); },
     });
   };
@@ -149,29 +281,12 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       guideExtra={<p>这个账号：{canWrite ? "能新增、编辑预案和演练" : "不能维护预案和演练"}，{canRun && canPropose ? "能发起正式执行（还要有每一步对应页面的处置权限）" : "不能发起正式执行"}，{canRun ? "能取消和恢复核对" : "不能取消和恢复核对"}，{canRun && canRestore ? "能恢复执行关停的开关" : "不能恢复执行关停的开关"}。</p>} />
   );
   const createAction = canWrite
-    ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={contentLoading ? READING : !contractReady ? NOT_READY : undefined} onClick={newPb}>新增预案</Button>
+    ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={contentLoading ? READING : !contractReady ? NOT_READY : pending.some((row) => row.fingerprint === "POST /sop/playbooks") || legacy.some((row) => row.fingerprint === "POST /sop/playbooks") ? formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING") : undefined} onClick={newPb}>新增预案</Button>
     : undefined;
 
-  if (contentError) {
-    return <div className="j4-page">
-      {header()}
-      {recovery}
-      <BlockState state="error" title="当前无法确认最新状态" detail={`${contentError} 为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} retryLabel="刷新" />
-    </div>;
-  }
-  if (!data) {
-    return <div className="j4-page">
-      {header()}
-      {recovery}
-      {contentLoading
-        ? <BlockState state="loading" title="应急预案数据加载中" detail="正在读取预案、执行记录和通知活动" />
-        : <BlockState state="empty" title="暂无 应急预案数据" detail="点右上角「刷新」重新读取。" />}
-    </div>;
-  }
-
-  const PLAYBOOKS = data.playbooks;
-  const EXECS = data.executions;
-  const isSupportedStep = (step: Playbook["seq"][number]) => (data.actionOptions ?? []).some((option) => {
+  const PLAYBOOKS = data?.playbooks ?? [];
+  const EXECS = data?.executions ?? [];
+  const isSupportedStep = (step: Playbook["seq"][number]) => (data?.actionOptions ?? []).some((option) => {
     if (option.domain !== step.dom || !option.ref || !step.ref) return false;
     if (!option.ref.includes("{target}")) return option.ref === step.ref;
     const [prefix] = option.ref.split("{target}");
@@ -180,28 +295,117 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const unsupportedStepCount = (playbook: Playbook) => playbook.seq.filter((step) => !isSupportedStep(step)).length;
   const statNumber = (...keys: string[]) => {
     for (const key of keys) {
-      const parsed = Number(data.stats[key]);
-      if (Number.isFinite(parsed)) return parsed;
+      const value = data?.stats[key];
+      if (value == null || value === "" || typeof value === "string" && !value.trim()) continue;
+      const parsed = typeof value === "number" || typeof value === "string" && /^\d+$/.test(value) ? Number(value) : NaN;
+      if (Number.isSafeInteger(parsed) && parsed >= 0) return parsed;
     }
     return null;
   };
-  // 近 90 天统计只取后端汇总；读不到时写「—」和原因，不当 0（F03：null 被转成 0 由代码 worker 修读取）。
+  // 近 90 天统计只取后端汇总；读不到时写「—」和原因，不当 0。
   const liveExecs = statNumber("liveExec90d");
   const drillExecs = statNumber("drill90d");
   const drillExecRows = statNumber("drillExecutionRows90d");
 
-  const runBackend = async (task: Promise<void>, ok: string) => {
+  const hasUnknown = (slot: string) => [...listJ4PendingCommands(), ...listJ4PendingProposals(), ...listJ4LegacyCommands()].some((record) => record.fingerprint === slot);
+  const contextCode = (context: J4CommandContext) => "playbook" in context ? context.playbook.code : "execution" in context ? context.execution.code : undefined;
+  const newBlockedReason = (slot: string, context: J4CommandContext) => {
+    const state = current.current;
+    if (!state.data || state.contentLoading || state.contentError) return READING;
+    if (state.data.contractVersion !== "J4_REAL_EXECUTION_V5") return NOT_READY;
+    if (!canRetry(context)) return formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED");
+    if (hasUnknown(slot)) return formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING");
+    const code = contextCode(context);
+    if (code && listJ4PendingCommands().some((record) => {
+      const saved = record.sop.context;
+      if ("playbook" in saved) return saved.playbook.code === code;
+      return "execution" in saved && "execution" in context && saved.execution.executionId === context.execution.executionId;
+    })) return formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING");
+    if ("playbook" in context) {
+      const latest = state.data.playbooks.find((row) => row.code === context.playbook.code);
+      if (!latest || latest.version !== context.playbook.version) return READING;
+      if (context.kind === "update" && !latest.version) return READING;
+      if (context.kind === "execute" && (latest.executionReady !== true || latest.drillEvidence !== true || latest.state !== "active" || latest.draft)) return latest.readinessReason || "先完成演练";
+      if (context.kind === "drill" || context.kind === "execute") {
+        const supported = latest.seq.every((step) => state.data!.actionOptions.some((option) => option.domain === step.dom && !!step.ref && !!option.ref
+          && (option.ref.includes("{target}") ? step.ref.startsWith(option.ref.split("{target}")[0]) && step.ref.length > option.ref.split("{target}")[0].length : option.ref === step.ref)));
+        if (!supported) return "历史预案包含尚未接通的动作，请先编辑并替换后重新演练";
+      }
+    }
+    if ("execution" in context) {
+      const latest = state.data.executions.find((row) => row.executionId === context.execution.executionId && row.code === context.execution.code);
+      if (!latest || latest.mode === "drill") return READING;
+      const live = latest.steps.some((step) => step === "pending" || step === "running");
+      if (context.kind === "rollback" ? live || latest.steps.includes("recovering") || !latest.reversible || latest.rollbackStatus === "ROLLED_BACK" : !live) return READING;
+    }
+    if (code && listJ4PendingProposals().some((record) => record.sopProposal.context.playbook.code === code && (context.kind === "execute" || !record.sopProposal.accepted))) return formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING");
+    if (context.kind === "execute" && [...proposalRows.values()].some((row) => row.obj === context.playbook.code)) return formatAdminApiError("OBJECT_ALREADY_PENDING", "OBJECT_ALREADY_PENDING");
+    return undefined;
+  };
+  const commandOptions = (slot: string, context: J4CommandContext, retained?: J4PendingCommand | J4PendingProposal): Partial<ActionConfirmReq> => {
+    activeConfirmation.current = { slot, restored: !!retained };
+    return {
+      formKey: ++formSequence.current,
+      getPendingReason: () => {
+        const record = listJ4PendingCommands().find((row) => row.fingerprint === slot);
+        const proposal = listJ4PendingProposals().find((row) => row.fingerprint === slot);
+        return record ? JSON.parse(record.sop.body).reason : proposal ? JSON.parse(proposal.sopProposal.body).reason : undefined;
+      },
+      blockedReason: retained && (!canRetry(context) || isRetryExpired(retained)) ? isRetryExpired(retained) ? RETRY_EXPIRED_TEXT : formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED") : undefined,
+    };
+  };
+  const runBackend = async (task: () => Promise<unknown>, ok: string, slot: string, context: J4CommandContext, retained?: J4PendingCommand | J4PendingProposal) => {
+    const original = listJ4PendingCommands().find((row) => row.fingerprint === slot) ?? listJ4PendingProposals().find((row) => row.fingerprint === slot);
+    if (retained && (!original || original.commandKey !== retained.commandKey)) {
+      openActionConfirm(null);
+      return;
+    }
+    if (original && isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
+    if (original && !canRetry(context)) throw new Error("ACCESS_DENIED");
+    if (!original) {
+      const blocked = newBlockedReason(slot, context);
+      if (blocked) throw new Error(blocked);
+    }
     try {
-      await task;
+      if (original && "sop" in original) await retryJ4Command(original);
+      else if (original && "sopProposal" in original) {
+        const row = await retryJ4Proposal(original);
+        if (row) setVerifiedProposals((previous) => ({ ...previous, [original.commandKey]: row }));
+        else throw new Error("J4_PROPOSAL_STATUS_UNAVAILABLE");
+      } else {
+        const row = await task();
+        if (context.kind === "execute" && row) {
+          const saved = getJ4PendingProposal(context.playbook.code);
+          if (saved) setVerifiedProposals((previous) => ({ ...previous, [saved.commandKey]: row as A2OperationRow }));
+        }
+      }
     } catch (error) {
-      // 判定与展示同源:裸机器码(J4_EXECUTION_PARTIAL 等)只有过咽喉译成中文后才命中下面的关键词。
-      const message = displayAdminError(error);
-      if (/中途失败|未收到执行结果|结果暂未确认/.test(message)) {
+      syncPending();
+      const accepted = context.kind === "execute" && getJ4PendingProposal(context.playbook.code)?.sopProposal.accepted;
+      if (accepted) {
+        openActionConfirm(null);
+        activeConfirmation.current = null;
+        toast(formatAdminApiError("J4_PROPOSAL_STATUS_UNAVAILABLE", "J4_PROPOSAL_STATUS_UNAVAILABLE"), "warn");
+        return;
+      }
+      if (original && isExplicitRejection(error)) {
+        openActionConfirm(null);
+        activeConfirmation.current = null;
+        toast(displayAdminError(error), "error");
+        await actions.reloadJEmergency().catch(() => undefined);
+      } else if (isEmergencyOutcomeUncertain(error) || isA2OutcomeUncertainError(error)) {
+        // The original modal freezes through getPendingReason; no current data replaces its facts.
+        noteError(original?.commandKey ?? listJ4PendingCommands().find((row) => row.fingerprint === slot)?.commandKey ?? getJ4PendingProposal(contextCode(context) ?? "")?.commandKey ?? slot, error);
+      } else if (error instanceof Error && /J4_EXECUTION_PARTIAL/.test((error as { reasonCode?: string }).reasonCode ?? "")) {
         await actions.reloadJEmergency().catch(() => undefined);
       }
-      // 明确失败的原因写在确认框里（权限层的 403 由确认框提示并关框），不再弹同一句。
       throw error;
     }
+    syncPending();
+    activeConfirmation.current = null;
+    setEditor(null);
+    setPrepare(null);
+    if (original || retained) openActionConfirm(null);
     try {
       await actions.reloadJEmergency();
       toast(ok, "success");
@@ -225,20 +429,23 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       && authorities.includes(TARGET_AUTHORITY[step.dom]));
     const missingPages = Array.from(new Set(p.seq.filter((step) => !TARGET_AUTHORITY[step.dom] || !authorities.includes(TARGET_AUTHORITY[step.dom])).map((step) => DOMAIN_PAGE[step.dom] ?? step.dom)));
     const state = effDrillState(p);
-    const canExecute = contractReady && !contentLoading && canRun && canPropose && legacyStepCount === 0 && state === "active" && p.executionReady === true && hasTargetAuthorities;
-    const hint = !contractReady ? NOT_READY : contentLoading ? READING : legacyStepCount > 0 ? "历史预案包含尚未接通的动作，请先编辑并替换后重新演练" : p.executionReady !== true || state !== "active" ? (p.readinessReason || "先完成演练") : !canRun ? "缺少应急预案执行权限" : !canPropose ? "缺少提交审批申请的权限" : !hasTargetAuthorities ? `缺少这些页面的处置权限：${missingPages.join("、")}` : undefined;
+    const hasProposal = [...proposalRows.values()].some((row) => row.obj === p.code) || proposals.some((row) => row.sopProposal.context.playbook.code === p.code);
+    const originalBlocked = newBlockedReason(j4ProposalSlot(p.code), { kind: "execute", playbook: p, emergency: p.emer, fields: {} });
+    const canExecute = !originalBlocked && !hasProposal && contractReady && !contentLoading && canRun && canPropose && legacyStepCount === 0 && state === "active" && p.executionReady === true && hasTargetAuthorities;
+    const hint = hasProposal ? formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING") : !contractReady ? NOT_READY : contentLoading ? READING : legacyStepCount > 0 ? "历史预案包含尚未接通的动作，请先编辑并替换后重新演练" : p.executionReady !== true || state !== "active" ? (p.readinessReason || "先完成演练") : !canRun ? "缺少应急预案执行权限" : !canPropose ? "缺少提交审批申请的权限" : !hasTargetAuthorities ? `缺少这些页面的处置权限：${missingPages.join("、")}` : originalBlocked;
     return { canExecute, hint, legacyStepCount, state };
   };
 
   // ---------- 写操作：新增、编辑（第二步：共用确认框） ----------
-  const confirmCreate = (draft: PlaybookDraft) => {
-    const commandKey = createJEmergencyCommandKey();
+  const confirmCreate = (draft: PlaybookDraft, retained?: J4PendingCommand) => {
     const bv = draftValue(draft);
-    openActionConfirm({ briefKind: "config",
+    const context: J4CommandContext = { kind: "create", fields: bv };
+    const slot = "POST /sop/playbooks";
+    openActionConfirm({ ...commandOptions(slot, context, retained), briefKind: "config",
       action: "新增应急预案",
       title: "新增预案",
       effect: <StatusTag tone="neutral" icon={FlaskConical}>保存后待演练</StatusTag>,
-      facts: <div className="rd-stack">
+      facts: () => <div className="rd-stack">
         <Facts>
           <Fact k="预案">{draft.name.trim()}</Fact>
           <Fact k="场景和责任">{draft.scene} · {draft.owner} · 响应时限 {draft.sla}</Fact>
@@ -246,7 +453,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
           <Fact k="保存后" tone="warn">待演练：演练通过前不能正式执行，不动任何线上业务</Fact>
         </Facts>
         <StepTimeline steps={draft.lines.map(lineStep)} notify={{ campaignNo: draft.notifyCampaignNo, template: draft.notifyTemplate }} label="预案的步骤" />
-        <div className="j4-back"><Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} onClick={() => { closeConfirm(); setEditor({ ...editorBase(), mode: "create", draft, onNext: (next) => { setEditor(null); confirmCreate(next); } }); }}>返回修改</Button></div>
+        <div className="j4-back"><Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} disabledReason={retained || hasUnknown(slot) ? formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING") : undefined} onClick={() => { if (hasUnknown(slot)) return; closeConfirm(); setEditor({ ...editorBase(), mode: "create", draft, onNext: (next) => { setEditor(null); confirmCreate(next); } }); }}>返回修改</Button></div>
       </div>,
       detail: <><b>设置应急预案</b>：名称、触发场景、负责角色、响应时限、是否走应急通道、执行动作、通知、回滚方案和演练要求。保存后进入预案库。</>,
       statedBrief: { impact: "保存后进入预案库，状态是待演练；演练通过前不能正式执行。", check: "核对步骤顺序和对象，理由写清依据或工单号。" },
@@ -254,17 +461,17 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       reasonPlaceholder: REASON_HINT,
       run: (reason) => {
         const name = bv?.name || "未命名应急预案";
-        return runBackend(actions.createJ4Playbook(playbookFormBody(bv, name), reason, commandKey), `新预案「${name}」已创建${bv?.drillRequired === "true" ? "，请先完成演练" : "并可执行"}`);
+        return runBackend(() => actions.createJ4Playbook(playbookFormBody(bv, name), reason, createJEmergencyCommandKey(), context), `新预案「${name}」已创建${bv?.drillRequired === "true" ? "，请先完成演练" : "并可执行"}`, slot, context, retained);
       },
     });
   };
   const editorBase = (): Omit<EditorSpec, "mode" | "onNext"> => ({
-    scenes: data.scenes.filter((item) => item !== "全部"),
+    scenes: (data?.scenes ?? []).filter((item) => item !== "全部"),
     nameHint: "例如：监管点名快速止血",
     notifyTemplates: emergency.notifyTemplates ?? [],
     notifyTemplatesError: emergency.notifyTemplatesError,
-    actionOptions: data.actionOptions ?? [],
-    rollbackOptions: data.rollbackOptions ?? [],
+    actionOptions: data?.actionOptions ?? [],
+    rollbackOptions: data?.rollbackOptions ?? [],
   });
   const editSpec = (p: Playbook): EditorSpec => ({
     ...editorBase(),
@@ -276,20 +483,21 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     onNext: (draft) => { setEditor(null); confirmEdit(p, draft); },
   });
   const editPb = (p: Playbook) => {
-    if (!p.version) return;
+    if (!p.version || newBlockedReason(`PUT /sop/playbooks/${encodeURIComponent(p.code)}`, { kind: "update", playbook: p, fields: {} })) return;
     setEditor(editSpec(p));
   };
-  const confirmEdit = (p: Playbook, draft: PlaybookDraft) => {
-    const commandKey = createJEmergencyCommandKey();
+  const confirmEdit = (p: Playbook, draft: PlaybookDraft, retained?: J4PendingCommand) => {
     const bv = draftValue(draft);
+    const context: J4CommandContext = { kind: "update", playbook: p, fields: bv };
+    const slot = `PUT /sop/playbooks/${encodeURIComponent(p.code)}`;
     const before = initialDraft(editSpec(p));
     const changes = draftChanges(before, draft);
     const stepsChanged = before.lines.join("\n") !== draft.lines.join("\n");
-    openActionConfirm({ briefKind: "config",
+    openActionConfirm({ ...commandOptions(slot, context, retained), briefKind: "config",
       action: `编辑应急预案 · ${p.code} ${p.name}`,
       title: "保存预案修改",
       effect: <StatusTag tone="neutral" icon={FlaskConical}>保存后要重新演练</StatusTag>,
-      facts: <div className="rd-stack">
+      facts: () => <div className="rd-stack">
         <Facts>
           <Fact k="预案">{p.name}<span className="j4-muted"> · <span data-mono="">{p.code}</span></span></Fact>
           {changes.map((row) => <Fact key={row.k} k={row.k}><Change from={row.from} to={row.to} /></Fact>)}
@@ -298,7 +506,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
           <Fact k="保存后" tone="warn">回到待演练，要重新演练才能正式执行；已有的执行记录不变，等批准的申请批准时会因预案已改而被拒</Fact>
         </Facts>
         {stepsChanged && <StepTimeline steps={draft.lines.map(lineStep)} notify={{ campaignNo: draft.notifyCampaignNo, template: draft.notifyTemplate }} label="改后的步骤" />}
-        <div className="j4-back"><Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} onClick={() => { closeConfirm(); setEditor({ ...editSpec(p), draft }); }}>返回修改</Button></div>
+        <div className="j4-back"><Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} disabledReason={retained || hasUnknown(slot) ? formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING") : undefined} onClick={() => { if (hasUnknown(slot)) return; closeConfirm(); setEditor({ ...editSpec(p), draft }); }}>返回修改</Button></div>
       </div>,
       detail: <><b>编辑预案</b>：调整 {p.name} 的执行步骤（当前 {p.seq.length} 步）、触发场景、负责角色、响应时限、是否走应急通道、通知和回滚方案。保存后会保留修改记录。</>,
       statedBrief: { impact: "只改以后用的预案定义；保存后回到待演练。", check: "核对改动，理由写清依据或工单号。" },
@@ -307,18 +515,19 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       run: (reason) => {
         const steps = (bv?.actionSeq || "").split("\n").map((s) => s.trim()).filter(Boolean);
         const summary = steps.length ? steps.join(" | ") : `${bv?.name || p.name} · ${bv?.scene || p.scene} · ${bv?.owner || p.owner}`;
-        return runBackend(actions.updateJ4Playbook(p.code, { ...playbookFormBody(bv, p.name), summary, version: p.version! }, reason, commandKey), `${p.code} 预案变更已保存${bv?.drillRequired === "true" ? "，需重新演练" : ""}(${steps.length} 步)`);
+        return runBackend(() => actions.updateJ4Playbook(p.code, { ...playbookFormBody(bv, p.name), summary, version: p.version! }, reason, createJEmergencyCommandKey(), context), `${p.code} 预案变更已保存${bv?.drillRequired === "true" ? "，需重新演练" : ""}(${steps.length} 步)`, slot, context, retained);
       },
     });
   };
 
-  const drillPb = (p: Playbook) => {
-    if (unsupportedStepCount(p) > 0) {
+  const drillPb = (p: Playbook, retained?: J4PendingCommand) => {
+    if (!retained && unsupportedStepCount(p) > 0) {
       toast("历史预案包含尚未接通的动作，请先编辑并替换后再演练");
       return;
     }
-    const commandKey = createJEmergencyCommandKey();
-    openActionConfirm({ briefKind: "record",
+    const context: J4CommandContext = { kind: "drill", playbook: p };
+    const slot = `POST /sop/playbooks/${encodeURIComponent(p.code)}/drills`;
+    openActionConfirm({ ...commandOptions(slot, context, retained), briefKind: "record",
       action: `启动演练 · ${p.code} ${p.name}`,
       title: "演练预案",
       effect: NO_REAL,
@@ -333,7 +542,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       confirmLabel: "开始演练",
       reasonPlaceholder: "例如：季度演练、预案修改后重新演练",
       run: (reason) => {
-        return runBackend(actions.drillJ4Playbook(p.code, reason, commandKey), `${p.code} 演练通过，预案已就绪`);
+        return runBackend(() => actions.drillJ4Playbook(p.code, reason, createJEmergencyCommandKey(), context), `${p.code} 演练通过，预案已就绪`, slot, context, retained);
       },
     });
   };
@@ -342,6 +551,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   // 注:执行剧本不传 amplifies —— B1 前置只挂「恢复放大流出」方向;应急执行是止血方向(熔断/封锁/暂停),
   // 覆盖率低于红线时恰恰最需要执行(SOP-02 对账缺口/SOP-03 挤兑),不可被 B1 禁放行锁死(对齐 J1「熔断方向不前置 B1」)。
   const openExecute = (p: Playbook, isEmer: boolean, draft?: ExecuteDraft) => {
+    if (!executionGate(p).canExecute) return;
     setPrepare({
       playbook: p,
       emergency: isEmer,
@@ -352,21 +562,22 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       },
     });
   };
-  const execPb = (p: Playbook, isEmer: boolean, draft: ExecuteDraft) => {
-    const commandKey = createJEmergencyCommandKey();
+  const execPb = (p: Playbook, isEmer: boolean, draft: ExecuteDraft, retained?: J4PendingProposal) => {
     const businessValue: Record<string, string> = {
       triggerBasis: draft.triggerBasis,
       triggerContext: draft.triggerContext,
       ...Object.fromEntries(p.seq.map((_, index) => [`stepConfirm.${index}`, draft.confirmed[index] ? "true" : "false"])),
     };
-    openActionConfirm({ briefKind: "emergency",
+    const context: Extract<J4CommandContext, { kind: "execute" }> = { kind: "execute", playbook: p, emergency: isEmer, fields: businessValue };
+    const slot = j4ProposalSlot(p.code);
+    openActionConfirm({ ...commandOptions(slot, context, retained), briefKind: "emergency",
       action: `执行应急预案 · ${p.code}${isEmer ? "（应急通道）" : "（常规通道）"}`,
       title: "提交执行申请",
       effect: <>
         <StatusTag tone="warn" icon={Clock3}>批准后才执行</StatusTag>
         {isEmer ? <StatusTag tone="danger" icon={Siren}>应急通道</StatusTag> : <StatusTag tone="neutral" icon={Workflow}>常规通道</StatusTag>}
       </>,
-      facts: <div className="rd-stack">
+      facts: () => <div className="rd-stack">
         <Facts>
           <Fact k="预案">{p.name}<span className="j4-muted"> · <span data-mono="">{p.code}</span></span></Fact>
           <Fact k="谁来批">{APPROVER}</Fact>
@@ -376,7 +587,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
           <Fact k="触发依据">{draft.triggerBasis}</Fact>
           <Fact k="触发说明">{draft.triggerContext.trim()}</Fact>
         </Facts>
-        <div className="j4-back"><Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} onClick={() => { closeConfirm(); openExecute(p, isEmer, draft); }}>返回修改</Button></div>
+        <div className="j4-back"><Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} disabledReason={retained || hasUnknown(slot) ? formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING") : undefined} onClick={() => { if (hasUnknown(slot)) return; closeConfirm(); openExecute(p, isEmer, draft); }}>返回修改</Button></div>
       </div>,
       detail: (
         <>
@@ -406,7 +617,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         }));
         const triggerBasis = businessValue?.triggerBasis ?? "";
         const triggerContext = businessValue?.triggerContext ?? "";
-        return runBackend(createA2OperationProposal({
+        return runBackend(() => submitJ4Proposal({
           action: `执行应急预案 · ${p.code}`,
           obj: p.code,
           beforeValue: "演练就绪",
@@ -431,18 +642,19 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
             },
           },
           target: { domain: "J", type: "playbook", id: p.code },
-        }, commandKey).then(() => undefined), `${p.code} 已提交，批准后才会依次执行`);
+        }, createJEmergencyCommandKey(), context), `${p.code} 已提交，批准后才会依次执行`, slot, context, retained);
       },
     });
   };
 
   // ---------- 执行记录上的写操作 ----------
   // 回滚单次剧本执行:只恢复本次执行关停的 J1 开关 · 直接生效 · 不可应急加速。
-  const rollbackPb = (exec: SopExecution) => {
-    const commandKey = createJEmergencyCommandKey();
+  const rollbackPb = (exec: SopExecution, retained?: J4PendingCommand) => {
+    const context: J4CommandContext = { kind: "rollback", execution: exec };
+    const slot = `POST /sop/playbooks/${encodeURIComponent(exec.code)}/executions/${encodeURIComponent(exec.executionId!)}/rollback`;
     const gates = reversibleGates(exec);
     const others = exec.domainActions.filter((action) => String(action.domain ?? "").toUpperCase() !== "J1" && ["DONE", "RUNNING"].includes(String(action.status ?? "").toUpperCase())).map((action) => stepInfo({ dom: String(action.domain ?? ""), ax: String(action.action ?? ""), ref: action.ref ? String(action.ref) : String(action.domain) === "I3" ? "campaign-notify" : null }).title);
-    openActionConfirm({ briefKind: "emergency",
+    openActionConfirm({ ...commandOptions(slot, context, retained), briefKind: "emergency",
       action: `回滚预案执行 · ${exec.executionId}`,
       title: "恢复本次关停的开关",
       effect: IMMEDIATE,
@@ -459,15 +671,16 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       confirmLabel: "确认恢复，立即生效",
       reasonPlaceholder: "例如：风险已解除的复核结论、工单号",
       run: (reason) => {
-        return runBackend(actions.rollbackJ4Playbook(exec.code, exec.executionId!, reason, commandKey), `${exec.executionId} 已回滚`);
+        return runBackend(() => actions.rollbackJ4Playbook(exec.code, exec.executionId!, reason, createJEmergencyCommandKey(), context), `${exec.executionId} 已回滚`, slot, context, retained);
       },
     });
   };
 
-  const cancelExecution = (exec: SopExecution) => {
-    const commandKey = createJEmergencyCommandKey();
+  const cancelExecution = (exec: SopExecution, retained?: J4PendingCommand) => {
+    const context: J4CommandContext = { kind: "cancel", execution: exec };
+    const slot = `POST /sop/playbooks/${encodeURIComponent(exec.code)}/executions/${encodeURIComponent(exec.executionId!)}/cancel`;
     const runningAt = exec.steps.findIndex((step) => step === "running" || step === "recovering");
-    openActionConfirm({ briefKind: "record",
+    openActionConfirm({ ...commandOptions(slot, context, retained), briefKind: "record",
       action: `取消执行 · ${exec.executionId}`,
       title: "登记取消",
       effect: IMMEDIATE,
@@ -482,17 +695,18 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       confirmLabel: "登记取消",
       reasonPlaceholder: "例如：监管要求变化、误发起",
       run: (reason) => runBackend(
-        actions.cancelJ4Playbook(exec.code, exec.executionId!, reason, commandKey),
-        `${exec.executionId} 已登记取消请求，请刷新核对最终逐步状态`,
+        () => actions.cancelJ4Playbook(exec.code, exec.executionId!, reason, createJEmergencyCommandKey(), context),
+        `${exec.executionId} 已登记取消请求，请刷新核对最终逐步状态`, slot, context, retained,
       ),
     });
   };
 
-  const resumeExecution = (exec: SopExecution) => {
-    const commandKey = createJEmergencyCommandKey();
+  const resumeExecution = (exec: SopExecution, retained?: J4PendingCommand) => {
+    const context: J4CommandContext = { kind: "resume", execution: exec };
+    const slot = `POST /sop/playbooks/${encodeURIComponent(exec.code)}/executions/${encodeURIComponent(exec.executionId!)}/resume`;
     const stuck = exec.steps.map((status, index) => ({ status, index, action: exec.domainActions.find((row) => Number(row.step) === index + 1) }))
       .filter((row) => row.status === "pending" || row.status === "running");
-    openActionConfirm({ briefKind: "record",
+    openActionConfirm({ ...commandOptions(slot, context, retained), briefKind: "record",
       action: `恢复核对 · ${exec.executionId}`,
       title: "恢复核对",
       effect: <StatusTag tone="neutral" icon={ScanSearch}>不重新执行</StatusTag>,
@@ -514,22 +728,66 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       confirmLabel: "开始核对",
       reasonPlaceholder: "例如：执行超过 2 分钟没有进展",
       run: (reason) => runBackend(
-        actions.resumeJ4Playbook(exec.code, exec.executionId!, reason, commandKey),
-        `${exec.executionId} 已完成恢复核对`,
+        () => actions.resumeJ4Playbook(exec.code, exec.executionId!, reason, createJEmergencyCommandKey(), context),
+        `${exec.executionId} 已完成恢复核对`, slot, context, retained,
       ),
     });
   };
+
+  function restoreOriginal(record: J4PendingCommand) {
+    const context = record.sop.context;
+    if (isRetryExpired(record) || !canRetry(context)) return;
+    if (context.kind === "create" || context.kind === "update") {
+      const fields = context.fields;
+      const draft: PlaybookDraft = {
+        name: fields.name, scene: fields.scene, owner: fields.owner, sla: fields.sla, slaLegacyValue: fields.sla,
+        emergencyTrack: fields.emergencyTrack, lines: fields.actionSeq.split("\n"),
+        notifyCampaignNo: fields.notifyCampaignNo, notifyTemplate: fields.notifyTemplate, notifySearch: fields.notifyTemplate,
+        rollback: fields.rollback, rollbackTemplate: "", rollbackSearch: "", drillRequired: fields.drillRequired,
+      };
+      if (context.kind === "create") confirmCreate(draft, record);
+      else confirmEdit(context.playbook, draft, record);
+    } else if (context.kind === "drill") drillPb(context.playbook, record);
+    else if (context.kind === "cancel") cancelExecution(context.execution, record);
+    else if (context.kind === "resume") resumeExecution(context.execution, record);
+    else if (context.kind === "rollback") rollbackPb(context.execution, record);
+  }
+  function restoreProposal(record: J4PendingProposal) {
+    const context = record.sopProposal.context;
+    if (isRetryExpired(record) || record.sopProposal.accepted || !canRetry(context)) return;
+    execPb(context.playbook, context.emergency, {
+      triggerBasis: context.fields.triggerBasis, triggerContext: context.fields.triggerContext,
+      confirmed: context.playbook.seq.map((_, index) => context.fields[`stepConfirm.${index}`] === "true"),
+    }, record);
+  }
 
   const executionActions = (e: SopExecution, compact = false) => {
     const live = contractReady && canRun && Boolean(e.executionId) && e.mode !== "drill" && e.steps.some((step) => step === "pending" || step === "running");
     const restorable = contractReady && canRun && canRestore && Boolean(e.executionId) && e.reversible && !e.steps.some((step) => step === "pending" || step === "running" || step === "recovering") && e.mode !== "drill" && e.rollbackStatus !== "ROLLED_BACK";
     return <span className="j4-row-acts">
       {compact && <Button size="sm" icon={<ScanSearch size={14} aria-hidden />} onClick={() => setTraceExecution(e)}>追溯</Button>}
-      {live && <Button size="sm" icon={<Square size={14} aria-hidden />} disabledReason={contentLoading ? READING : undefined} onClick={() => cancelExecution(e)}>取消</Button>}
-      {live && <Button size="sm" disabledReason={contentLoading ? READING : undefined} onClick={() => resumeExecution(e)}>恢复核对</Button>}
-      {restorable && <Button size="sm" variant="danger-outline" icon={<RotateCcw size={14} aria-hidden />} disabledReason={contentLoading ? READING : undefined} onClick={() => rollbackPb(e)}>恢复开关</Button>}
+      {live && <Button size="sm" icon={<Square size={14} aria-hidden />} disabledReason={newBlockedReason(`POST /sop/playbooks/${encodeURIComponent(e.code)}/executions/${encodeURIComponent(e.executionId!)}/cancel`, { kind: "cancel", execution: e })} onClick={() => cancelExecution(e)}>取消</Button>}
+      {live && <Button size="sm" disabledReason={newBlockedReason(`POST /sop/playbooks/${encodeURIComponent(e.code)}/executions/${encodeURIComponent(e.executionId!)}/resume`, { kind: "resume", execution: e })} onClick={() => resumeExecution(e)}>恢复核对</Button>}
+      {restorable && <Button size="sm" variant="danger-outline" icon={<RotateCcw size={14} aria-hidden />} disabledReason={newBlockedReason(`POST /sop/playbooks/${encodeURIComponent(e.code)}/executions/${encodeURIComponent(e.executionId!)}/rollback`, { kind: "rollback", execution: e })} onClick={() => rollbackPb(e)}>恢复开关</Button>}
     </span>;
   };
+
+  if (contentError) {
+    return <div className="j4-page">
+      {header()}
+      {recovery}
+      <BlockState state="error" title="当前无法确认最新状态" detail={`${contentError} 为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} retryLabel="刷新" />
+    </div>;
+  }
+  if (!data) {
+    return <div className="j4-page">
+      {header()}
+      {recovery}
+      {contentLoading
+        ? <BlockState state="loading" title="应急预案数据加载中" detail="正在读取预案、执行记录和通知活动" />
+        : <BlockState state="empty" title="暂无 应急预案数据" detail="点右上角「刷新」重新读取。" />}
+    </div>;
+  }
 
   // ---------- 结论 ----------
   const conclusion = !contractReady ? (
@@ -556,7 +814,6 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       </>}>
       <ul className="j4-live" aria-label="正在执行">
         {active.map((e) => {
-          const p = PLAYBOOKS.find((row) => row.code === e.code);
           return (
             <li key={e.executionId || `${e.ts}-${e.code}`} className="j4-live-item" data-testid={e.executionId ? `j4-live-${e.executionId}` : undefined}>
               <div className="j4-live-head">
@@ -568,8 +825,10 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
               </div>
               <ol className="j4-live-steps" aria-label="逐步进度">
                 {e.steps.map((status, index) => {
-                  const step = p?.seq[index];
-                  const info = step ? stepInfo(step, { campaignNo: p?.notifyCampaignNo, template: p?.notifyTemplate }) : undefined;
+                  const action = e.domainActions.find((row) => row.step === index + 1);
+                  const step = action ? { dom: String(action.domain ?? ""), ax: String(action.action ?? ""),
+                    ref: action.ref ? String(action.ref) : action.domain === "J1" ? String(action.configKey ?? "").replace("killswitch.", "") : action.domain === "I3" ? "campaign-notify" : null } : undefined;
+                  const info = step ? stepInfo(step, { campaignNo: action?.campaignNo ? String(action.campaignNo) : undefined }) : undefined;
                   return <li key={index} data-state={status}>
                     <span className="j4-live-n">{index + 1}</span>
                     <span className="j4-live-label">{info ? info.title : `第 ${index + 1} 步`}{info?.target && <span className="j4-step-target" data-mono="">{info.target}</span>}</span>
@@ -650,8 +909,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         ]} />
         <div className="j4-detail-foot">
           {canWrite && <div className="j4-routine" role="group" aria-label="平时：维护和演练">
-            <Button icon={<FlaskConical size={14} aria-hidden />} disabledReason={!contractReady ? NOT_READY : contentLoading ? READING : gate.legacyStepCount > 0 ? "历史预案包含尚未接通的动作，请先编辑并替换" : undefined} onClick={() => drillPb(p)}>演练</Button>
-            <Button variant="ghost" icon={<Pencil size={14} aria-hidden />} disabledReason={!contractReady || !p.version ? "系统版本较旧，升级后才能编辑" : contentLoading ? READING : undefined} onClick={() => editPb(p)}>编辑</Button>
+            <Button icon={<FlaskConical size={14} aria-hidden />} disabledReason={!contractReady ? NOT_READY : contentLoading ? READING : gate.legacyStepCount > 0 ? "历史预案包含尚未接通的动作，请先编辑并替换" : newBlockedReason(`POST /sop/playbooks/${encodeURIComponent(p.code)}/drills`, { kind: "drill", playbook: p })} onClick={() => drillPb(p)}>演练</Button>
+            <Button variant="ghost" icon={<Pencil size={14} aria-hidden />} disabledReason={!contractReady || !p.version ? "系统版本较旧，升级后才能编辑" : contentLoading ? READING : newBlockedReason(`PUT /sop/playbooks/${encodeURIComponent(p.code)}`, { kind: "update", playbook: p, fields: {} })} onClick={() => editPb(p)}>编辑</Button>
             <span className="j4-routine-note"><FlaskConical size={14} aria-hidden />演练只检查，不动真实业务</span>
           </div>}
           <div className="j4-real" role="group" aria-label="出事时：正式执行">
@@ -709,14 +968,14 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   // ---------- 第二层：能用的动作和规则、通知活动候选 ----------
   const rulesFold = (
     <Fold title="预案能用的动作和规则" icon={ListChecks} tone="role-other"
-      summary={`${count((data.actionOptions ?? []).length)} 种动作 · 只能关停、暂停、冻结、封锁和发布，不能恢复`}
+      summary={`${count((data?.actionOptions ?? []).length)} 种动作 · 只能关停、暂停、冻结、封锁和发布，不能恢复`}
       explain="新增和编辑预案时只能从这些动作里选；后端保存和执行时还会再检查一次。">
-      {(data.actionOptions ?? []).length === 0
+      {(data?.actionOptions ?? []).length === 0
         ? <BlockState state="empty" compact title="没有可用的动作" detail="请刷新；仍然没有请联系值班人员。" />
         : <Table label="预案能用的动作" className="j4-action-table">
           <thead><tr><Th>动作</Th><Th>在哪个页面</Th><Th>对象</Th><Th align="right">收得回吗</Th></tr></thead>
           <tbody>
-            {(data.actionOptions ?? []).map((item) => {
+            {(data?.actionOptions ?? []).map((item) => {
               const info = stepInfo({ dom: item.domain, ax: item.action, ref: item.ref?.replace("{target}", "") ?? null });
               return <Tr key={item.value}>
                 <Td><Cell main={info.title} sub={info.impact} title={info.impact} /></Td>

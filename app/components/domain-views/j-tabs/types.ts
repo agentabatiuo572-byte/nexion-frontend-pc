@@ -24,7 +24,7 @@ export type ActionConfirmReq = {
   confirmLabel?: string;
   confirmTone?: "primary" | "danger";
   statedBrief?: { impact: string; check: string };
-  facts?: ReactNode;
+  facts?: ReactNode | ((value?: string) => ReactNode);
   reasonPlaceholder?: string;
   reasonPolicyOptional?: boolean;
   getPendingReason?: () => string | undefined;
