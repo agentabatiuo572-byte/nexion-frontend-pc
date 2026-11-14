@@ -6,6 +6,7 @@ import Link from "next/link";
 import { KeyRound, LogOut, PencilLine, RefreshCw, ShieldCheck, ShieldPlus, ShieldUser, UserCog, UserMinus, UserPlus, Users, MonitorSmartphone, ClipboardCheck, Headset, UsersRound, LockKeyhole } from "lucide-react";
 import { BlockState, Button, Cell, Check, ConfigList, ConfigRow, Conclusion, Explain, Fact, Facts, Change, Field, Fold, Input, MoreMenu, Notice, PageHeader, Pager, Panel, Select, Stat, StatBand, StatusDistributionBar, StatusTag, Table, TableMessage, Td, Th, Tr, type MoreMenuItem } from "@/app/components/rd";
 import { readAdminSessionBaseline } from "@/lib/admin/session-baseline";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { roleLabel, canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
@@ -71,6 +72,11 @@ const DIRECT_UNKNOWN_NOTE: Partial<Record<A1Intent["kind"], string>> = {
   password: "提交时没收到确定结果，密码可能已经重置。24 小时内可以按原请求重试，不会再生成一个新密码。",
   session: "提交时没收到确定结果，这台设备可能已经下线。24 小时内可以按原请求重试。",
   permission: "提交时没收到确定结果，权限可能已经登记。24 小时内可以按原请求重试，不会登记第二次。",
+};
+
+/** 走审批的原操作在提醒里按页面上的叫法写，不用请求里的动作文字。 */
+const PROPOSAL_NAME: Partial<Record<A1Intent["kind"], string>> = {
+  create: "提交新建账号审批", profile: "编辑资料", role: "改角色", "2fa": "重置两步验证", disable: "停用账号", enable: "启用账号", logout: "撤销全部登录",
 };
 
 const FILTER_TEXT: Record<Exclude<ListFilter, "all">, string> = { ok: "启用且已绑定两步验证", unbound: "启用但未绑定两步验证", disabled: "已停用", super: "超级管理员" };
@@ -719,7 +725,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     openOperation({ kind: "disable", account: op }, { briefKind: "security",
       action: `禁用账号 · ${displayName}`,
       title: isSelf ? "停用你自己的账号" : "停用账号",
-      detail: isSelf ? "这是你自己的账号，批准后你会被登出、不能再登录。" : "停用后该账号不能登录；它提交但还没确认的操作，请到「操作记录与审批」处理。",
+      detail: isSelf ? "停用后只能请别的超级管理员重新启用；你提交但还没确认的操作，请先到「操作记录与审批」处理。" : "停用后该账号不能登录；它提交但还没确认的操作，请到「操作记录与审批」处理。",
       amplifies: false,
       effect: approvalTag("批准前账号照常可以登录。"),
       confirmTone: "danger",
@@ -735,7 +741,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         </Facts>
       ),
       statedBrief: {
-        impact: `${isSelf ? "批准后你会被登出、不能再登录，只能请别的超级管理员重新启用。" : "批准后这个账号所有设备下线、不能再登录，角色保留。"}它发起的待审批单不会自动撤回；有主管资格时要先交接负责的组。`,
+        impact: isSelf ? "这是你自己的账号，批准后你会被登出、不能再登录。你发起的待审批单不会自动撤回；有主管资格时要先交接负责的组。"
+          : "批准后这个账号所有设备下线、不能再登录，角色保留。它发起的待审批单不会自动撤回；有主管资格时要先交接负责的组。",
         check: "批准执行时核对账号版本、有效的超级管理员不少于 2 人和客服交接。",
       },
     run: async (reason) => {
@@ -1121,6 +1128,14 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const releaseExpiredProposal = (record: A1Pending) => ctx.openConfirm({
     briefKind: "security", action: "解除原操作记录", title: "解除原操作记录", reason: false,
     detail: errorMessage(new Error("A1_EXPIRED_PROPOSAL_NOT_FOUND")),
+    statedBrief: {
+      impact: "确认后先按原请求再查一次审批单：明确没有这张单才解除这条记录，原操作不会执行；查到了就不解除。",
+      check: "只解除这个标签页里的记录，不发新的申请。",
+    },
+    content: <Facts>
+      <Fact k="原操作">{PROPOSAL_NAME[record.intent.kind] ?? "—"}{"account" in record.intent ? ` · ${operatorDisplayLabel(record.intent.account)}` : ""}</Fact>
+      <Fact k="提交时间">{`${businessStamp(record.createdAt)}（${businessZone().label}）`}</Fact>
+    </Facts>,
     run: async () => {
       if (Date.now() < record.expiresAt || record.request.kind !== "proposal" || await fetchA2ProposalByKey(record.commandKey, true, true)) throw new Error("A1_ORIGINAL_OPERATION_PENDING");
       recoveryStarted(); await refreshOverview(true);
@@ -1134,8 +1149,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     try { requireActor(intent, true, request.kind === "proposal"); } catch (error) { retryBlock = errorMessage(error); }
     return {
       key: record.commandKey,
-      name: request.kind === "proposal" ? request.input.action.replace(/ \(A1\)$/, "") : intent.kind === "create" ? "新建账号" : intent.kind === "password" ? "重置密码" : intent.kind === "session" ? "让这台设备下线" : "登记新权限",
-      change: request.kind === "proposal" ? <Change from={request.input.beforeValue} to={request.input.afterValue} />
+      name: request.kind === "proposal" ? PROPOSAL_NAME[intent.kind] ?? request.input.action.replace(/ \(A1\)$/, "") : (intent.kind === "create" ? "新建账号" : intent.kind === "password" ? "重置密码" : intent.kind === "session" ? "让这台设备下线" : "登记新权限"),
+      change: request.kind === "proposal"
+        ? intent.kind === "logout" ? <>{operatorDisplayLabel(intent.account)} · <Change from={`${intent.account.sessions} 台在线`} to="全部下线" /></>
+          : intent.kind === "disable" ? <>{operatorDisplayLabel(intent.account)} · <Change from="启用" to="已停用" /></>
+          : intent.kind === "enable" ? <>{operatorDisplayLabel(intent.account)} · <Change from="已停用" to="启用" /></>
+          : intent.kind === "create" ? <><span data-mono>{intent.form.username}</span> · <Change from={request.input.beforeValue} to={request.input.afterValue} /></>
+          : <>{"account" in intent ? `${operatorDisplayLabel(intent.account)} · ` : ""}<Change from={request.input.beforeValue} to={request.input.afterValue} /></>
         : intent.kind === "create" ? <>{intent.form.displayName} · <span data-mono>{intent.form.username}</span> · {roleName(record.snapshot.roles, intent.form.role)} · {intent.form.email || "未填邮箱"}</>
         : intent.kind === "permission" ? `${intent.draft.code} · ${intent.draft.name}` : operatorDisplayLabel(intent.account),
       submittedAt: record.createdAt,

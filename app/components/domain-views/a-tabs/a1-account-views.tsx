@@ -163,7 +163,7 @@ export function AvatarRecoveryModal({ target, onClose }: { target: string; onClo
     <Modal title="处理原头像" icon={UserRound} onClose={onClose}
       sub={target === "new" ? "新建账号的头像" : <>账号编号 <span data-mono>{target}</span></>}
       footer={<Button onClick={onClose}>关闭</Button>}>
-      <AccountAvatarPicker targetId={target} name="运营账号" onChange={() => undefined} onBlocking={() => undefined} />
+      <AccountAvatarPicker targetId={target} name="运营账号" currentPath={target === "new" ? undefined : `/api/admin/platform/accounts/${target}/avatar`} onChange={() => undefined} onBlocking={() => undefined} />
     </Modal>
   );
 }

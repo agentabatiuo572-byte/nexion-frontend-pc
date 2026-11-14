@@ -310,7 +310,16 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   /** 决定表「R1-提案过期」：过期并且按原请求明确查不到审批单，确认后只解除这条记录。 */
   const releaseExpiredRegistry = (commandKey: string) => ctx.openConfirm({
     briefKind: "record", action: "解除原操作记录", title: "解除原登记记录", reason: false,
-    detail: "原申请已超过 24 小时。确认后先按原请求再查一次：明确没有这张审批单才解除，不会执行原登记；查到了就不解除，请点「查询原结果」。",
+    detail: "原申请已超过 24 小时，不能再按原请求重试。",
+    statedBrief: {
+      impact: "确认后先按原请求再查一次审批单：明确没有这张单才解除这条记录，原登记不会执行；查到了就不解除，请点「查询原结果」。",
+      check: "只解除这个标签页里的记录，不发登记请求。",
+    },
+    content: pendingRegistry ? <Facts>
+      <Fact k="原申请">{REGISTRY_OP_TEXT[pendingRegistry.input.command.op] ?? "登记"}</Fact>
+      <Fact k="事件"><span data-mono>{pendingRegistry.input.obj}</span></Fact>
+      <Fact k="提交时间">{`${businessStamp(pendingRegistry.createdAt)}（${businessZone().label}）`}</Fact>
+    </Facts> : undefined,
     run: async () => {
       await releaseExpiredA4RegistryProposal(currentRegistryActor(false).adminId, commandKey);
       setRegistryRevision(value => value + 1);

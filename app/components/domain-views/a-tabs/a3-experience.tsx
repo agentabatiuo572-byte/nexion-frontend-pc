@@ -182,14 +182,15 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
         {changed.length ? `有未保存的修改：${changed.join("、")}` : `版本 v${config.version}${config.updatedAt ? ` · ${formatBusinessTimeCompact(config.updatedAt, "—")} 读取（${businessZone().label}）` : ""}`}
       </span>
       <Button disabled={loading || saving} loading={loading} onClick={() => void refresh()}>刷新</Button>
-      {canWrite && <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在提交" : undefined} onClick={() => { if (original || !readReady || !canWrite) return; if (!conflictDraft.current) setError(null); setConfirmOpen(true); }}>保存…</Button>}
+      {canWrite && <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在提交" : undefined} onClick={() => { if (original || !readReady || !canWrite) return; setError(null); setConfirmOpen(true); }}>保存…</Button>}
     </div>
     {success && <Notice tone="ok">{success}</Notice>}
     {conflictDraft.current && !confirmOpen ? <Notice tone="warn" title="别人刚保存过这组配置，你的修改没有保存"
       action={<Button size="sm" loading={loading} disabled={saving} onClick={() => void refresh()}>重新读取</Button>}>
       {readReady && baseline
-        ? <>已读到最新版本 v{baseline.version}，你填的都还在。{conflictRows.length ? `和最新值不同的有 ${conflictRows.length} 处（左边最新、右边你的），核对后点上方「保存…」重新提交：` : "你填的和最新值一样，不用再保存。"}{conflictRows.length > 0 && <DiffList rows={conflictRows} />}</>
-        : <>最新值没读到，你填的都还在；先重新读取再核对。{error ? <span className="rd-note"> {error}</span> : null}</>}
+        ? <>已读到最新版本 v{baseline.version}，你填的都还在。{conflictRows.length ? `和最新值不同的有 ${conflictRows.length} 处（左边最新、右边你的），核对后点上方「保存…」重新提交：` : "你填的和最新值一样，不用再保存。"}{conflictRows.length > 0 && <div className="a3-conflict-diff"><DiffList rows={conflictRows} /></div>}</>
+        : loading ? "正在读取最新值，你填的都还在。"
+          : <>最新值没读到，你填的都还在；先重新读取再核对。{error?.includes("；") ? <span className="rd-note"> {error.split("；").slice(1).join("；")}</span> : null}</>}
     </Notice>
       : error && !confirmOpen && <Notice tone="danger" title="没有保存">{error}</Notice>}
 

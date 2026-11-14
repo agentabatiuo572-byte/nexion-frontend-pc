@@ -294,7 +294,7 @@ export function A3Calendar({ commands, recovery, onRecovered, nonce, onSummary, 
           onBlockedClick={() => setTouched(true)}
           onClick={() => setConfirming({ key: `a3-business-zone-${crypto.randomUUID()}` })}>下一步：核对</Button>
       </>}>
-      {error && <Notice tone={commands.find("calendar") ? "warn" : "danger"} title={commands.find("calendar") ? "结果未知" : "安排没有成功"}>{error}</Notice>}
+      {error && <Notice tone={commands.find("calendar") ? "warn" : "danger"} title={commands.find("calendar") ? undefined : "安排没有成功"}>{error}</Notice>}
       <div className="rd-form-grid" data-cols="2" data-dense="">
         <Field label="国家或地区" required explain="选好后自动带出时区，货币和语言不跟着变。">
           {(control) => <Select {...control} aria-label="国家或地区" placeholder="请选择" disabled={Boolean(original) || saving} value={country} onChange={pickCountry} options={countries.map(([code, name]) => ({ value: code, label: name }))} />}
@@ -321,7 +321,7 @@ export function A3Calendar({ commands, recovery, onRecovered, nonce, onSummary, 
         <Button disabled={saving} onClick={() => { setConfirming(null); if (original) setFormOpen(false); }}>返回修改</Button>
         <Button variant="danger" loading={saving} disabledReason={original && isRetryExpired(original) ? "已过期" : !canWrite ? "你只能查看" : undefined} onClick={() => void submit()}>安排生效</Button>
       </>}>
-      {error && <Notice tone={commands.find("calendar") ? "warn" : "danger"} title={commands.find("calendar") ? "结果未知" : "安排没有成功"}>{error}</Notice>}
+      {error && <Notice tone={commands.find("calendar") ? "warn" : "danger"} title={commands.find("calendar") ? undefined : "安排没有成功"}>{error}</Notice>}
       <Facts>
         <Fact k="业务时区"><Change from={dialogView.unified ? `${dialogView.currentZoneLabel}（${dialogView.currentOffset}）` : `${dialogView.currentZoneLabel} / ${zoneLabel(dialogView.trackZones.GROWTH_TEAM)}`} to={`${selected.label}（${offsetOf(selected.zoneId)}）`} /></Fact>
         <Fact k="生效日">{dialogDate}</Fact>
@@ -338,7 +338,7 @@ export function A3Calendar({ commands, recovery, onRecovered, nonce, onSummary, 
         <Button disabled={saving} onClick={() => setCancelOpen(false)}>取消</Button>
         <Button variant="danger" loading={saving} disabledReason={original && isRetryExpired(original) ? "已过期" : !canWrite ? "你只能查看" : cancelReason.trim().length < 8 || cancelReason.trim().length > 200 ? "撤销理由要写 8–200 字" : undefined} onClick={() => void cancel(cancelTarget)}>确认撤销</Button>
       </>}>
-      {error && <Notice tone={commands.find("calendar") ? "warn" : "danger"} title={commands.find("calendar") ? "结果未知" : "撤销没有成功"}>{error}</Notice>}
+      {error && <Notice tone={commands.find("calendar") ? "warn" : "danger"} title={commands.find("calendar") ? undefined : "撤销没有成功"}>{error}</Notice>}
       <Facts>
         <Fact k="要撤销的安排">{cancelTarget.effectiveDate} 起改用{zoneLabel(cancelTarget.zoneId)}（{cancelTarget.offset}）</Fact>
         <Fact k="撤销后">现行时区不变，这条安排从版本记录里去掉</Fact>

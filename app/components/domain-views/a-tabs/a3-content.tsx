@@ -44,8 +44,9 @@ function ConflictNotice({ ready, latestRevision, rows, error, loading, onReread,
   return <Notice tone="warn" title="别人刚保存过，你的修改没有保存" action={<Button size="sm" loading={loading} onClick={onReread}>重新读取</Button>}>
     {ready
       ? <>已读到最新修订 {latestRevision}，你改的都还在。{rows.length ? `和最新版本不同的有 ${rows.length} 处，核对后${submitHint}：` : "你改的和最新版本一样，不用再提交。"}
-        {rows.length > 0 && <Facts>{rows.map((item) => <Fact key={item.key} k={item.label}>{item.text}</Fact>)}</Facts>}</>
-      : <>最新版本没读到，你改的都还在；先重新读取再核对。{error ? <span className="rd-note"> {error}</span> : null}</>}
+        {rows.length > 0 && <div className="a3-conflict-diff"><Facts>{rows.map((item) => <Fact key={item.key} k={item.label}>{item.text}</Fact>)}</Facts></div>}</>
+      : loading ? "正在读取最新版本，你改的都还在。"
+        : <>最新版本没读到，你改的都还在；先重新读取再核对。{error?.includes("；") ? <span className="rd-note"> {error.split("；").slice(1).join("；")}</span> : null}</>}
   </Notice>;
 }
 /** 种子版本号带内部前缀 default-，写给人看时去掉；输入框里还是原值。 */
@@ -206,8 +207,8 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty 
   return <div className="rd-tab-stack" data-testid="published-content-developerDocs">
     {canWrite && <div className="rd-toolbar a3-savebar" data-end="">
       <span className="rd-toolbar-note" data-tone={hasChanges ? "warn" : undefined}>{hasChanges ? `有未保存的修改：${changedLocales.map(localeName).join("、") || "版本"}` : "没有未保存的修改"}</span>
-      <Button disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; if (!conflictDraft.current) setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
-      <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在保存" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; if (!conflictDraft.current) setError(null); setMode("PUBLISHED"); }}>发布…</Button>
+      <Button disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
+      <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在保存" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
     </div>}
     {conflictDraft.current && !mode
       ? <ConflictNotice ready={readReady && Boolean(baseline)} latestRevision={baseline?.revision} error={error} loading={loading} onReread={() => void refresh()} submitHint="点上方「保存草稿…」或「发布…」重新提交"
@@ -455,8 +456,8 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty }: 
   return <div className="rd-tab-stack" data-testid="published-content-how">
     {canWrite && <div className="rd-toolbar a3-savebar" data-end="">
       <span className="rd-toolbar-note" data-tone={hasChanges ? "warn" : undefined}>{hasChanges ? `有未保存的修改：${changedPages.map((item) => PAGE_LABELS[item]).join("、") || "文档版本或状态"}` : "没有未保存的修改"}</span>
-      <Button disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; if (!conflictDraft.current) setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
-      <Button variant="primary" disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : publishBlockedReasons.length ? "这份内容现在不能发布" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; if (!conflictDraft.current) setError(null); setMode("PUBLISHED"); }}>发布…</Button>
+      <Button disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
+      <Button variant="primary" disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : publishBlockedReasons.length ? "这份内容现在不能发布" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
     </div>}
     {conflictDraft.current && !mode
       ? <ConflictNotice ready={readReady && Boolean(baseline)} latestRevision={baseline?.revision} error={error} loading={loading} onReread={() => void refresh(false)} submitHint="点上方「保存草稿…」或「发布…」重新提交"
