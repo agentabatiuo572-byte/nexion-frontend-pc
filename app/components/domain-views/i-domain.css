@@ -121,7 +121,7 @@
 .i3-page .i3-phone-row { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: var(--rd-space-3); padding: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
 .i3-page .i3-phone-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--rd-panel-inner); color: var(--rd-text-2); }
 .i3-page .i3-phone-row[data-tier="critical"] .i3-phone-icon { background: var(--rd-danger-pill); color: var(--rd-danger); }
-.i3-page .i3-phone-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.i3-page .i3-phone-text { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; }
 .i3-page .i3-phone-head { display: flex; align-items: center; gap: var(--rd-space-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .i3-page .i3-phone-flag { color: var(--rd-danger); font-weight: 500; }
 .i3-page .i3-phone-time { margin-left: auto; }
@@ -161,7 +161,7 @@
 .i3-page .i3-form-head, .i3-page .i3-detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--rd-space-2); }
 .i3-page .i3-form-preview { position: sticky; top: 0; align-self: flex-start; display: flex; flex-direction: column; gap: var(--rd-space-3); padding: var(--rd-space-4); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
 .i3-page .i3-form-preview .i3-weak { margin: 0; }
-.i3-page .i3-estimate { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-1) var(--rd-space-2); padding: var(--rd-space-3) var(--rd-space-4); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
+.i3-page .i3-estimate { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-2); padding: var(--rd-space-3) var(--rd-space-4); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
 .i3-page .i3-estimate-label { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 .i3-page .i3-estimate-num { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; color: var(--rd-text); font-variant-numeric: tabular-nums; }
 .i3-page .i3-estimate-num[data-words] { font-size: var(--rd-text-body); line-height: var(--rd-lh-title); font-weight: 500; color: var(--rd-text-2); }

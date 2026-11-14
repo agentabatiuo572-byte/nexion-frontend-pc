@@ -330,10 +330,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     title: `调整${I3_TIER_STATE[tier]?.[0] ?? "未知"}优先级保留上限`,
     detail: (
       <>
-        当前 <b>{cap}</b> · 批准执行时，按新上限立刻清理全体用户多出来的通知，未读的也删；调高不会恢复已删的。紧急通知永久保留，不能调。
-        {tier === "low" && (
-          <>{` `}低优先级除数量上限外,仍固定执行 48 小时自动过期清理。</>
-        )}
+        <span className="rd-keep">当前 <b>{cap}</b>。</span><span className="rd-keep">批准执行时按新上限立刻清理，未读的也删；</span><span className="rd-keep">调高不恢复已删的。</span>
+        {tier === "low" && <span className="rd-keep">低优先级另外满 48 小时就删。</span>}
       </>
     ),
     effect: <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后才执行；批准前上限不变。">批准后生效</StatusTag>,
@@ -579,7 +577,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
 
       <Panel title="通知活动" icon={Bell} tone="role-3" data-proof="i3-campaign-list" sub={`${filtered.length} 条 · 时间为${businessZone().label}`}
         explain="按状态分组：等着发的按发送时间排，最近要发的在前；其余按建立时间，新的在前。点卡片看内容和详情。">
-        <FilterBar scope={<Segments label="按状态筛选" value={stFlt} onChange={setStFlt} items={ST_FLT.map(([value, label]) => ({ value, label, count: countOf(value) }))} />} />
+        <FilterBar scope={<Segments label="按状态筛选" value={stFlt} onChange={setStFlt} items={ST_FLT.map(([value, label]) => ({ value, label, count: countOf(value) }))} />}
+          sort={<span className="rd-filter-result">等着发的按时间排，最近的在前</span>} />
         {listEmpty
           ? <BlockState state="empty" title={CAMPAIGNS.length === 0 ? "新建的通知会显示在这里" : "这个状态下没有通知"} detail={CAMPAIGNS.length === 0 ? (canWriteI3 ? undefined : "有修改权限的同事新建后会显示在这里。") : "换一个状态看看。"} />
           : <div className="i3-groups">
@@ -851,8 +850,8 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
   const enEmpty = !form.titleEn.trim() && !form.bodyEn.trim();
   const blocked = !audienceCatalog ? "受众目录没读到，不能保存；刷新页面后再试" : estimating ? "正在估算人数，估完再保存" : undefined;
   const lengthHelp = (len: number, sent: number, saveMax: number) => len > saveMax
-    ? `超过 ${saveMax} 字，保存会被拒绝`
-    : len > sent ? `超过 ${sent} 字：App 只收到前 ${sent} 字，后面的截掉（右边预览里划掉的部分）` : undefined;
+    ? `${len}/${sent} 字：超过 ${saveMax} 字，保存会被拒绝`
+    : len > sent ? `${len}/${sent} 字：App 只收到前 ${sent} 字，后面的截掉（预览里划掉的部分）` : undefined;
 
   return (
     <Drawer open wide data-i3-form="" busy={submitting} onClose={onClose} title={editing ? "编辑通知草稿" : "新建通知"} sub={editing ? editing.name : "保存为草稿，不会发给任何人"} icon={FilePen} tone="role-3"
@@ -864,14 +863,14 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
         <div className="i3-form">
           <section className="i3-form-section" aria-labelledby="i3-f-base">
             <h3 id="i3-f-base" className="i3-sub-title">基本信息</h3>
-            <Field label="名称" required hint="最多 160 字" help="只给后台看，用户看不到。">
+            <Field label="名称" required help="只给后台看，最多 160 字。">
               {(control) => <Input {...control} value={form.name} placeholder="如：11 月费率说明" onChange={(e) => set("name", e.target.value)} />}
             </Field>
             <Field label="优先级" required help={form.tier === "critical" ? "紧急：不看用户的通知设置，不按保留上限清理；排期和发送要有紧急通知发送权限。" : "决定按哪一档保留上限清理，见页面下方。"}>
               <Segments label="优先级" value={form.tier} onChange={(next) => set("tier", next)} items={tierOptions.map((t) => ({ value: t, label: TIER[t].label }))} />
             </Field>
             <div className="rd-form-grid" data-cols="2" data-dense="">
-              <Field label="通知类型" required help="用户可以按类型关掉通知（紧急除外）。">
+              <Field label="通知类型" required help="用户能按类型关掉，紧急除外。">
                 {(control) => <Select {...control} aria-label="通知类型" value={form.kind} disabled={!deliveryCatalog} onChange={(next) => set("kind", next)}
                   options={(deliveryCatalog?.kinds ?? []).map((option) => ({ value: option.value, label: option.label }))} />}
               </Field>
@@ -891,10 +890,10 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
                 { value: "en", label: enEmpty ? "英语（选填）" : "英语" },
               ]} />
             </div>
-            <Field label={`${LANG_NAME[lang]}标题`} required={required} hint={`${titleLen}/${TITLE_SENT} 字`} help={lengthHelp(titleLen, TITLE_SENT, SAVE_TITLE_MAX)}>
+            <Field label={`${LANG_NAME[lang]}标题`} required={required} help={lengthHelp(titleLen, TITLE_SENT, SAVE_TITLE_MAX) ?? `${titleLen}/${TITLE_SENT} 字，App 收到前 ${TITLE_SENT} 字`}>
               {(control) => <Input {...control} value={title} placeholder={lang === "vi" ? "Dòng đầu tiên" : lang === "en" ? "First line in the list" : "通知列表里的第一行"} onChange={(e) => set(TITLE_KEY[lang], e.target.value)} />}
             </Field>
-            <Field label={`${LANG_NAME[lang]}正文`} required={required} hint={`App 收到前 ${BODY_SENT} 字`} help={lengthHelp(bodyLen, BODY_SENT, SAVE_BODY_MAX) ?? (lang === "en" && enEmpty ? "不填时，英语和其他语言的用户收到后端默认的英文内容。" : "{name} 这类占位符三种语言要一致。")}>
+            <Field label={`${LANG_NAME[lang]}正文`} required={required} help={lengthHelp(bodyLen, BODY_SENT, SAVE_BODY_MAX) ?? (lang === "en" && enEmpty ? "不填时，英语和其他语言的用户收到后端默认的英文内容。" : "{name} 这类占位符三种语言要一致。")}>
               {(control) => <Textarea {...control} rows={6} value={body} count={`${bodyLen}/${BODY_SENT}`} placeholder={lang === "vi" ? "Nội dung thông báo" : lang === "en" ? "Notification body" : "点开后看到的正文"} onChange={(e) => set(BODY_KEY[lang], e.target.value)} />}
             </Field>
           </section>
@@ -918,7 +917,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
                 {(control) => <Select {...control} aria-label="语言" value={form.language} disabled={!audienceCatalog} onChange={(next) => set("language", next)}
                   options={(audienceCatalog?.languages ?? []).map((item) => ({ value: item.value, label: item.label }))} />}
               </Field>
-              <Field label="注册超过" required hint="0–36500 天">
+              <Field label="注册超过" required help="0–36500 的整数，严格大于">
                 {(control) => <NumberInput {...control} unit="天" min={0} step={1} value={form.registrationDaysMin} onChange={(e) => set("registrationDaysMin", e.target.value)} />}
               </Field>
             </div>
