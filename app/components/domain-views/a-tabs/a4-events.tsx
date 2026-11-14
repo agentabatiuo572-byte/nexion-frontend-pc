@@ -763,7 +763,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         <Fact k="会删掉" tone="danger">{reviewedCutoff ? `约 ${reviewedCutoff} 之前的记录` : "留存期以前的记录"}</Fact>
         <Fact k="怎么算">执行那一刻按当时的留存期往前推，现在是 {reviewedMonths || "—"}</Fact>
         <Fact k="删哪些">用户行为事件里已发出、已结束和已终止（死信）的发送记录；用户行为记录只按时间删</Fact>
-        <Fact k="不会删">还在等发送、发送失败等重试的事件；任务事件；资金账目</Fact>
+        <Fact k="不会删">等发送和等重试的事件，以及任务事件、资金账目</Fact>
         <Fact k="一次最多">每张表 2000 条，剩下的下次再清</Fact>
         <Fact k="删多少条">执行后显示在「到期记录清理」</Fact>
       </Facts>,
