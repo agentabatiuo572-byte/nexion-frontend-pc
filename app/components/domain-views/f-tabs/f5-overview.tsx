@@ -133,7 +133,7 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
         summary={policy.length ? `${policy.length} 类 · ${policy.filter((item) => item.days > 0).map((item) => `${KIND_LABELS[item.kind] ?? "未知类型"} ${item.days} 天`).join("、") || "都是即时"}` : "后端没有返回"}
         explain="好友购买和好友设备收益两类的冷却期按「团队奖励设置」里的好友奖励政策，不在这张表里。">
         {policy.length ? (
-          <Table label="各类奖励的冷却期">
+          <Table label="各类奖励的冷却期" className="f5-cool-table">
             <thead><tr><Th>奖励类型</Th><Th align="right">冷却期</Th><Th>说明</Th></tr></thead>
             <tbody>
               {policy.map((item) => (
