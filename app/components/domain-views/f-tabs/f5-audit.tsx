@@ -612,7 +612,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                           <Td><Cell mono main={row.user} sub={<span className="f5-sans">{source}</span>} /></Td>
                           <Td align="right"><Cell num main={<Money value={row.amt} currency={row.cur} />} /></Td>
                           <Td className="f5-col-time"><Cell num main={timeText(row.settledAt)} /></Td>
-                          <Td><Cell main={<StatusBadge status={row.status} />} sub={row.status === "cooling" ? row.coolingDaysLeft > 0 ? `剩 ${row.coolingDaysLeft} 天` : "按天数已到期" : undefined} /></Td>
+                          <Td><Cell main={<StatusBadge status={row.status} />} sub={row.status === "cooling" ? row.coolingDaysLeft > 0 ? `剩 ${row.coolingDaysLeft} 天` : "当天到期或没有到期时间" : undefined} /></Td>
                           {rowWrite && <Td sticky="end" data-fit="">{items.length ? <MoreMenu label={`处置 ${row.id}`} items={items.map((item) => ({ key: item.key, label: item.label, danger: item.danger, disabledReason: item.disabledReason, onSelect: item.onSelect }))} /> : <span className="f5-weak">—</span>}</Td>}
                         </Tr>
                       );

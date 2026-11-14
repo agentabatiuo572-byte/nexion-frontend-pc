@@ -528,7 +528,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <ConfigRow name="归零说明"
             what="存着的一段说明文字，写每月什么时候归零。"
             when="提交审批，批准后只换掉这段文字。"
-            effect={`不决定归零时点：实际按业务日历每月 1 日 00:00（${zone}）归零，历史不重算。`}
+            effect={`不决定归零时点：每月清零时按业务日历每月 1 日 00:00（${zone}）归零，转结不归零；历史不重算。`}
             value={<span className="f3-cfg"><span className="f3-cfg-value f3-cfg-text">{text(resetEff)}</span><span className="f3-cfg-dir">实际按业务日历 · {zone}</span></span>}
             action={canConfigure ? <Button size="sm" disabledReason={configBlocked(F3_GV_RESET_PARAM_KEY)} onClick={openReset}>更新说明</Button> : undefined} />
           <ConfigRow name="发放"
@@ -696,7 +696,7 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
     edit: { kind: "select", current: resetEff, options: resetOption ? [resetOption] : [], initialValue: resetOption, optionLabels: { [resetOption]: `每月 1 日 00:00 ${zone}` } },
     facts: <Facts>
       <Fact k="已存的说明">{text(resetEff)}</Fact>
-      <Fact k="实际归零">按业务日历：每月 1 日 00:00（{zone}）。这段说明不决定归零时点</Fact>
+      <Fact k="实际归零">每月清零时按业务日历每月 1 日 00:00（{zone}）；转结不归零。这段说明不决定归零时点</Fact>
       <Fact k="改了会怎样">只换存着的说明文字，不改日历、不重算历史</Fact>
     </Facts>,
     detail: `已存说明：${text(resetEff)}。只更新说明，实际归零按业务日历。`,

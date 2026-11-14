@@ -17,7 +17,7 @@
 .f2-page .f2-checks { display: grid; gap: 8px; min-width: 0; padding: 12px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .f2-page .f2-checks-title { display: flex; align-items: center; gap: 4px; margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
 .f2-page .f2-checks-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.f2-page .f2-checks-list li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
+.f2-page .f2-checks-list li { display: grid; grid-template-columns: 16px max-content minmax(0, 1fr); gap: 8px; align-items: center; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
 .f2-page .f2-checks-list li > svg { color: var(--rd-text-3); }
 .f2-page .f2-checks-list li[data-ok="true"] > svg { color: var(--rd-ok); }
 .f2-page .f2-checks-list li[data-ok="false"] > svg, .f2-page .f2-checks-list li[data-ok="false"] .f2-checks-seen { color: var(--rd-warn); }
