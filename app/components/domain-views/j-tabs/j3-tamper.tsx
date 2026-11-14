@@ -24,6 +24,7 @@ import type { J3PendingCommand, TamperAccount, TamperOverview, TamperReport } fr
 import { downloadJ3ReportFile } from "@/lib/admin/j3-report-download";
 import { createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { expiredTag } from "../g-tabs/g-recovery";
 import { businessClock, businessStamp, businessZone } from "@/lib/admin/business-time";
 
 /** Old page records lack expected values: retain them for read-only investigation, never resend them. */
@@ -78,6 +79,17 @@ function readSavedConfig(): SavedConfig | null {
 
 const feedText = (feedK4: boolean) => (feedK4 ? "计入" : "不计入");
 
+/** 恢复列表的一行：有原来的值写「从…改成…」，旧记录没存原来的值只写改成什么。 */
+function savedChange(saved: SavedConfig) {
+  const input = saved.command?.tamper.input;
+  if (!input) return `告警阈值改成 ${saved.threshold} 次 / 24 小时，风险评分${feedText(saved.feedK4)}（原来的值没存）`;
+  const parts = [
+    input.expectedThreshold !== input.threshold ? `告警阈值 ${input.expectedThreshold} → ${input.threshold} 次 / 24 小时` : `告警阈值仍是 ${input.threshold} 次 / 24 小时`,
+    input.expectedFeedK4 !== input.feedK4 ? `风险评分${feedText(input.expectedFeedK4)} → ${feedText(input.feedK4)}` : `风险评分仍${feedText(input.feedK4)}`,
+  ];
+  return parts.join("，");
+}
+
 /** 后端小时桶「2026-11-13 14:00」、日桶「2026-11-13」，横轴只写时分或月日。 */
 const tickOf = (label: string) => (/^\d{4}-\d{2}-\d{2} /.test(label) ? label.slice(11) : /^\d{4}-/.test(label) ? label.slice(5) : label);
 
@@ -124,7 +136,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       try {
         downloadJ3ReportFile(retryableReport);
         setPendingReport(null);
-        toast(`已重新下载${WINDOW_TEXT[retryableReport.window]}的脱敏报表`, "success");
+        toast(`已重新开始下载${WINDOW_TEXT[retryableReport.window]}的脱敏报表`, "success");
       } catch (error) {
         toast(`报表已生成，但浏览器还是没下载成功。可以再点「重新下载」，或放弃这份报表 · ${j3ErrorText(error)}`, "error");
       }
@@ -137,11 +149,11 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       effect: <StatusTag tone="neutral" icon={FileDown}>不改业务数据</StatusTag>,
       facts: (
         <Facts>
-          <Fact k="时间范围">{WINDOW_TEXT[window]}（按点确认的时刻往前算）</Fact>
+          <Fact k="时间范围">{WINDOW_TEXT[window]}（从生成报表的时刻往前算）</Fact>
           <Fact k="内容">各接口的拦截汇总，和这个范围内全部达到告警阈值的账户（不只是当前页）</Fact>
           <Fact k="脱敏">用户编号只留首字符和末 4 位，比如 U****1234；不含昵称、手机号</Fact>
           <Fact k="上限">达到告警阈值的账户超过 10,000 个时不能导出，请换短一点的时间范围</Fact>
-          <Fact k="文件">CSV 文件，确认后直接下载到本机，没有下载链接</Fact>
+          <Fact k="文件">CSV 文件，确认后由浏览器下载，没有下载链接</Fact>
         </Facts>
       ),
       statedBrief: {
@@ -173,7 +185,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
         try {
           downloadJ3ReportFile(report);
           setPendingReport(null);
-          toast(`已导出${WINDOW_TEXT[report.window]}的脱敏报表 · ${num(report.eventCount)} 次拦截`, "success");
+          toast(`报表已生成，开始下载${WINDOW_TEXT[report.window]}的脱敏报表 · ${num(report.eventCount)} 次拦截`, "success");
         } catch (error) {
           toast(`报表已生成，但浏览器没下载成功。可以点「重新下载」，或放弃这份报表 · ${j3ErrorText(error)}`, "error");
         }
@@ -228,9 +240,9 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       <ul className="j3-recovery" aria-label="结果未知的修改">
         <li>
           <span className="j3-recovery-name">告警设置</span>
-          <span className="j3-recovery-change">告警阈值改成 {saved.threshold} 次 / 24 小时，风险评分{feedText(saved.feedK4)}</span>
+          <span className="j3-recovery-change">{savedChange(saved)}</span>
           <span className="j3-recovery-time">{businessStamp(saved.createdAt)} 提交（{businessZone().label}）</span>
-          <span className="j3-recovery-state"><StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag></span>
+          <span className="j3-recovery-state">{isRetryExpired(saved) ? expiredTag("direct") : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>}</span>
           <span className="j3-recovery-actions">
             <Button size="sm" loading={ctx.contentLoading} onClick={queryOriginal}>查询原结果</Button>
             {canConfigure && <Button size="sm" disabledReason={!saved.command ? j3ErrorText(new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE")) : isRetryExpired(saved) ? RETRY_EXPIRED_TEXT : undefined}
@@ -347,7 +359,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
   const deltaText = deltaPrevPct === null ? `${PREVIOUS_SPAN[win]}为 0，无法比较`
     : `比${PREVIOUS_SPAN[win]} ${deltaPrevPct > 0 ? "+" : ""}${deltaPrevPct}%`;
   const conclusionExplain = <>
-    <p>拦截次数是{W}里系统已经处理完的拦截事件之和，只统计已登记的 {data.coverage.registeredCount} 类接口；刚发生、还没处理完的事件稍后才算进来。</p>
+    <p>拦截次数是{W}里系统已经处理完的拦截事件之和，只统计已登记的 {data.coverage.registeredCount} 类接口；还没处理完的事件不算在内。</p>
     <p>账户达到告警阈值：{W}内被拦次数 ≥ {num(alertThreshold)} 次（每 24 小时 {data.alertConfig.threshold} 次 × {win === "24h" ? 1 : win === "7d" ? 7 : 30}）。</p>
   </>;
 
@@ -401,7 +413,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
         {!data.hasData || d.pts.length === 0
           ? <BlockState state="empty" title={`${W}没有拦截记录`} detail={coverageComplete ? undefined : "没接入的接口不在统计里。"} />
           : <>
-            <ColumnChart label={`${W}每${win === "24h" ? "小时" : "天"}的拦截次数`} height={160} format={(value) => `${num(value)} 次`} axisFormat={num}
+            <ColumnChart label={`${W}每${win === "24h" ? "小时" : "天"}的拦截次数`} height={220} format={(value) => `${num(value)} 次`} axisFormat={num}
               series={[{ label: "拦截次数", slot: 2 }]}
               data={d.labels.map((label, index) => ({ key: label, tick: tickOf(label), values: [d.pts[index] ?? 0], detail: label }))} />
             <p className="j3-peak">最多的一段：{peakLabel ?? "—"} · {num(d.pts[peakIndex] ?? 0)} 次</p>
@@ -430,7 +442,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
         sub={`${W} · 门槛 ≥ ${num(alertThreshold)} 次 · 共 ${num(accountPager.total)} 个`}
         explain={<>
           <p>{W}内被拦次数达到门槛的账户，按次数从多到少排。本页不冻结账户，处理请去账户操作或多账户排查。</p>
-          <p>风险评分：这个范围里有没有拦截事件给账户加过风险分，写的是加了多少分，不是账户现在的总分。风险提醒：有没有送进「风险提醒」页的最近风险信号，在那里显示为「篡改风险」。</p>
+          <p>风险评分：这个范围里的拦截事件有没有计入风险评分，写的是这些事件加了多少分（分数到上限时可能是 0），不是账户现在的总分。风险提醒：有没有送进「风险提醒」页的最近风险信号，在那里显示为「篡改风险」。</p>
         </>}>
         {TAMPER_ACCTS.length > 0 && (
           <p className="j3-feed">
@@ -500,17 +512,17 @@ function J3AccountRow({ account: a, feedK4, zone, userRef, pathName, canViewK1, 
   const alerting = a.alertState === "flagged" || a.alertState === "escalated";
   const names = a.paths.map(pathName);
   const k4 = a.fedToK4
-    ? <StatusTag tone="ok" icon={Check}>风险评分已计入 {a.k4} 分</StatusTag>
-    : feedK4
-      ? <StatusTag tone="warn" icon={CircleHelp} explain="这个时间范围里这个账户的拦截都没有加风险分。开关关着时处理的事件不加分；开关一直开着还没计入，请到风险评分规则核对。">风险评分未计入</StatusTag>
-      : <StatusTag tone="neutral" icon={CircleSlash} explain="告警设置里风险评分现在是「不计入」，新的篡改事件不加风险分。">风险评分不计入</StatusTag>;
+    ? Number(a.k4) > 0
+      ? <StatusTag tone="ok" icon={Check}>风险评分 {a.k4} 分</StatusTag>
+      : <StatusTag tone="neutral" icon={Check} explain="风险评分已收到这些事件，但没有加分（比如账户分数已到上限）。">风险评分已计入 · 未加分</StatusTag>
+    : <StatusTag tone={feedK4 ? "warn" : "neutral"} icon={feedK4 ? CircleHelp : CircleSlash} explain={`这个时间范围里这个账户的拦截都没有计入风险评分。告警设置现在是「${feedText(feedK4)}」；事件当时计没计入，以风险评分记录为准。`}>风险评分未计入</StatusTag>;
   const b5 = a.b5Triggered
     ? <StatusTag tone="ok" icon={Check}>风险提醒已送到</StatusTag>
     : <StatusTag tone="warn" icon={CircleHelp} explain="这个时间范围里这个账户的拦截没有一条进入风险提醒的风险信号。">风险提醒没送到</StatusTag>;
   return (
     <Tr>
       <Td><Cell mono main={userRef(a.userCode)} sub={a.cluster ? <>关联组 <span data-mono>{a.cluster}</span></> : "没有关联账户组"} /></Td>
-      <Td align="right"><Cell num main={num(a.cnt)} sub={<span className="j3-last">最近 {a.lastOccurredAt}<span className="rd-sr-only">（{zone}）</span></span>} /></Td>
+      <Td align="right"><Cell num main={num(a.cnt)} sub={<span className="j3-last">最近 {a.lastOccurredAt.slice(0, 16)}<span className="rd-sr-only">（{zone}）</span></span>} /></Td>
       <Td grow><Cell main={names.length ? names.join("、") : "—"} title={a.paths.length ? a.paths.map((key) => `${pathName(key)}（${key}）`).join("、") : undefined} /></Td>
       <Td><span className="j3-feed-tags">{k4}{b5}</span></Td>
       <Td sticky="end">
@@ -587,9 +599,9 @@ function J3ConfigModal({ ctx, original, onClose, onPending }: { ctx: JCtx; origi
     onClose();
     try {
       await ctx.actions.reloadJEmergency();
-      ctx.toast("告警设置已生效", "success");
+      ctx.toast(pending ? "原修改已生效；页面显示的是现在的设置" : "告警设置已生效", "success");
     } catch {
-      ctx.toast("告警设置已生效，但页面刷新失败，请手动刷新核对。", "warn");
+      ctx.toast(pending ? "原修改已生效，但页面刷新失败，请手动刷新核对现在的设置。" : "告警设置已生效，但页面刷新失败，请手动刷新核对。", "warn");
     } finally {
       setSubmitting(false);
     }
@@ -635,8 +647,8 @@ function J3ConfigModal({ ctx, original, onClose, onPending }: { ctx: JCtx; origi
       <DiffField before={String(current.threshold)} unit="次 / 24 小时" beforeLabel="告警阈值" label="改成" hint="1–100 的整数" error={thresholdError}
         explain="一个账户 24 小时内被拦到这个次数就进告警名单；看 7 天、30 天时按 7 倍、30 倍算。保存后立即生效。"
         state={thresholdChanged ? threshold < current.threshold
-          ? <StatusTag tone="neutral" icon={ArrowDown}>调低：更多账户进告警</StatusTag>
-          : <StatusTag tone="neutral" icon={ArrowUp}>调高：更少账户进告警</StatusTag> : undefined}
+          ? <StatusTag tone="neutral" icon={ArrowDown}>调低：告警账户不会变少</StatusTag>
+          : <StatusTag tone="neutral" icon={ArrowUp}>调高：告警账户不会变多</StatusTag> : undefined}
         note={thresholdChanged ? previewAvailable
           ? <>按近 7 天的记录重算，达到告警的账户 {num(sevenDayAlertAccounts)} 个 → <b>{num(targetSevenDayAccounts)}</b> 个；24 小时、7 天、30 天的门槛变成 {num(threshold)}、{num(threshold * 7)}、{num(threshold * 30)} 次。</>
           : "暂时算不出这个阈值的影响，不能提交。" : undefined}>
@@ -659,7 +671,7 @@ function J3ConfigModal({ ctx, original, onClose, onPending }: { ctx: JCtx; origi
         <Facts>
           {thresholdChanged && <Fact k="已在名单里的账户">名单不单独保存，每次打开都按新阈值重新筛；已经加的风险分、已经送到风险提醒的不撤回</Fact>}
           {thresholdChanged && <Fact k="紧急停用开关">篡改告警激增规则读同一个阈值，打开那页就显示新值；它只告警，不自动关停业务</Fact>}
-          <Fact k="留痕">写一条操作记录，并给超级管理员发提醒</Fact>
+          <Fact k="留痕">写一条操作记录；超级管理员随后收到提醒</Fact>
         </Facts>
       )}
       <Field label="操作理由" required hint="至少 8 字" error={reasonError}>

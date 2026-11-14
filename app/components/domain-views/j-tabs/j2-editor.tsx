@@ -184,7 +184,7 @@ export function CountryEditor({ spec, onClose }: { spec: EditorSpec; onClose: ()
 }
 
 /** 确认框关键信息层：加的、去的分开写后果，没变的收起来。 */
-export function CountryDiff({ initial, codes, names, statusOf, addTitle, addEffect, removeTitle, removeEffect, keptTitle, impact, onBack }: {
+export function CountryDiff({ initial, codes, names, statusOf, addTitle, addEffect, removeTitle, removeEffect, keptTitle, impact, onBack, backDisabled, asOf = "现在" }: {
   initial: string[];
   codes: string[];
   names: Record<string, string>;
@@ -197,6 +197,10 @@ export function CountryDiff({ initial, codes, names, statusOf, addTitle, addEffe
   /** 加进来的这几个按账户国家统计的人数和余额。 */
   impact?: ReactNode;
   onBack?: () => void;
+  /** 结果未知期间原请求已锁定：返回修改不可用，写原因。 */
+  backDisabled?: string;
+  /** 国家旁标的状态是什么时候的：新操作写「现在」，恢复原操作写「提交时」。 */
+  asOf?: string;
 }) {
   const { added, removed, kept } = diffOf(initial, codes);
   const chip = (cc: string, mark?: ReactNode) => (
@@ -207,7 +211,7 @@ export function CountryDiff({ initial, codes, names, statusOf, addTitle, addEffe
       {added.length > 0 && (
         <section className="j2-diff-group" data-tone="add">
           <h3 className="j2-diff-head"><Plus size={14} aria-hidden />{addTitle} <b>{added.length}</b> 个</h3>
-          <ul className="j2-chips">{added.map((cc) => chip(cc, statusOf(cc) && <span className="j2-chip-mark">现在{STATUS_TEXT[statusOf(cc)!]}</span>))}</ul>
+          <ul className="j2-chips">{added.map((cc) => chip(cc, statusOf(cc) && <span className="j2-chip-mark">{asOf}{STATUS_TEXT[statusOf(cc)!]}</span>))}</ul>
           <p className="j2-diff-effect">{addEffect}</p>
           {impact && <p className="j2-diff-impact">{impact}</p>}
         </section>
@@ -222,7 +226,7 @@ export function CountryDiff({ initial, codes, names, statusOf, addTitle, addEffe
       {keptTitle && (kept.length > 0
         ? <Fold inset title={keptTitle} summary={`${kept.length} 个，不受这次修改影响`}><ul className="j2-chips">{kept.map((cc) => chip(cc))}</ul></Fold>
         : <p className="j2-diff-none">{keptTitle}：没有</p>)}
-      {onBack && <div className="j2-diff-back"><Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} onClick={onBack}>返回修改</Button></div>}
+      {onBack && <div className="j2-diff-back"><Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} disabledReason={backDisabled} onClick={onBack}>返回修改</Button></div>}
     </div>
   );
 }
@@ -251,7 +255,7 @@ export function J2RecoveryNotice({ rows, unknownTag, expiredTag }: { rows: J2Rec
   return (
     <Notice tone="warn" title={<>{rows.length} 项修改结果未知<Explain label="结果未知怎么处理" content={<>
       <p>提交时没收到确定结果，可能已经生效。先点「查询原结果」读回现在的名单和规则核对；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行。</p>
-      <p>读回的是现在的状态，可能是别人改的，不能单凭它认定原操作成没成；记录会一直留着，直到原请求重试成功。</p>
+      <p>读回的是现在的状态，可能是别人改的，不能单凭它认定原操作成没成。按原请求重试成功或被明确拒绝后，记录才清除。</p>
     </>} /></>}>
       <ul className="j2-rec" aria-label="结果未知的修改">
         {rows.map((row) => (

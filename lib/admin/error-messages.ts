@@ -985,7 +985,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   FORBIDDEN: "当前账号没有查看或操作此功能的权限，请联系管理员核对菜单、按钮和接口权限。",
   ACCESS_DENIED: "当前账号没有执行此操作的权限；请联系管理员核对所需权限后再试。",
   EMERGENCY_ROUTE_NOT_FOUND: "当前服务版本未提供该应急能力，请刷新页面；若仍出现，请联系值班人员检查系统版本。",
-  EMERGENCY_BACKEND_UNAVAILABLE: "应急控制系统当前不可用，控制项已隐藏；请稍后重新加载，持续失败时联系值班人员。",
+  EMERGENCY_BACKEND_UNAVAILABLE: "应急控制系统当前不可用，请稍后重新加载；持续失败时联系值班人员。",
   EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE: "当前浏览器无法安全保存应急命令号，本次操作未提交；请启用会话存储或更换受支持的浏览器后重试。",
   EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE: "原请求记录不完整，无法安全提交。请关闭确认框，查询原结果并核对操作记录。",
   J3_ORIGINAL_CONFIG_PENDING: "还有告警设置修改的结果未知，请先查询原结果或按原请求重试。",
@@ -999,8 +999,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   EMERGENCY_API_401: "登录已失效，请重新登录后再查看应急控制状态。",
   EMERGENCY_API_403: "当前账号没有查看该应急页面的权限，请联系管理员开通对应只读权限。",
   EMERGENCY_API_404: "应急控制服务尚未提供该页面能力，请联系技术人员检查服务版本。",
-  EMERGENCY_API_503: "应急控制系统当前不可用，控制项已隐藏；请稍后重新加载，持续失败时联系值班人员。",
-  EMERGENCY_API_500: "应急控制服务暂时异常，控制项已隐藏，请稍后重新加载或联系值班人员。",
+  EMERGENCY_API_503: "应急控制系统当前不可用，请稍后重新加载；持续失败时联系值班人员。",
+  EMERGENCY_API_500: "应急控制服务暂时异常，请稍后重新加载或联系值班人员。",
   RISK_BACKEND_UNAVAILABLE: "风险服务当前不可用，为避免误操作，已隐藏数据和操作按钮；请稍后重新加载，持续失败时联系值班人员。",
   // GROWTH_* 两条是本仓代理路由 app/api/admin/growth/[...path]/route.ts 自己铸的码(闭集)。
   // 🔴 后端不可达是本机常态、也是 H 域页面最可能的读失败:漏掉这两条时它们会落进

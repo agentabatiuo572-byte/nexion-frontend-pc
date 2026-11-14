@@ -440,7 +440,8 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
       throw error;
     }
-    throw new EmergencyOutcomeUncertainError(error.message);
+    // 5xx 的通用中文是给读取失败写的（请稍后重新加载）；写入没收到确定结果时换成结果未知的说法。
+    throw new EmergencyOutcomeUncertainError(res.status >= 500 ? "结果未知：没收到确定结果，原操作可能已经生效。请查询原结果，或按原请求重试。" : error.message);
   }
   if (isWrite && (res.headers.get("X-Nexion-Upstream-Outcome") === "unknown"
     || (requestFailed && (outcomeStaysUnknown(res.status, payload.code) || isIdempotencyOutcomeOpen(payload.message))))) {

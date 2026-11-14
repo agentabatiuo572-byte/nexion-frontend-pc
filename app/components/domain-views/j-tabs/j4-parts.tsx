@@ -44,6 +44,16 @@ export const GATE_NAME: Record<string, string> = { "killswitch.withdraw": "提�
 export type UndoKind = "here" | "elsewhere" | "never";
 export type StepInfo = { title: string; target?: string; impact: string; undo: UndoKind; undoText: string; page: string; legacy?: boolean };
 
+const TIER_TEXT: Record<string, string> = { critical: "紧急", high: "高", normal: "普通", low: "低" };
+/** 通知活动的优先级写成中文（和「通知活动」页一样）。 */
+export const tierText = (tier: string) => TIER_TEXT[tier] ?? tier;
+/** 通知活动的名字是「名称 · 优先级 · 受众」，里面的优先级代码写成中文；只改显示，存的值不动。 */
+export const notifyLabelText = (label: string) => label.split(" · ").map(tierText).join(" · ");
+/** 两位国家代码写成「中文名 代码」，其他写法原样。 */
+function regionText(code: string) {
+  return /^[A-Z]{2}$/.test(code) ? `${new Intl.DisplayNames(["zh-CN"], { type: "region" }).of(code)} ${code}` : code;
+}
+
 export function stepInfo(step: Pick<PlaybookStep, "dom" | "ax" | "ref">, notify?: { campaignNo?: string; template?: string }): StepInfo {
   const dom = (step.dom || "").toUpperCase();
   const ref = (step.ref || "").trim();
@@ -51,11 +61,11 @@ export function stepInfo(step: Pick<PlaybookStep, "dom" | "ax" | "ref">, notify?
   const page = DOMAIN_PAGE[dom] ?? "";
   if (dom === "J1" && ref === "withdraw") return { title: "关停提现", impact: "停止新提现申请、审核放行和未派发的链上打款；已交给打款方的不保证撤回", undo: "here", undoText: "执行完成后可以在这页恢复这个开关（直接生效，不走审批）", page };
   if (dom === "J1" && ref === "genesis") return { title: "关停创世节点", impact: "暂停创世节点交易和转让市场入口", undo: "here", undoText: "执行完成后可以在这页恢复这个开关（直接生效，不走审批）", page };
-  if (dom === "J2" && ref.startsWith("geo-block:")) return { title: "封锁国家或地区", target: arg.toUpperCase(), impact: "来自这个国家或地区的 App 请求全部被拒：注册、登录、浏览和资金操作都不行", undo: "elsewhere", undoText: "这页收不回；要放开，到「地区访问限制」从封锁名单去掉", page };
+  if (dom === "J2" && ref.startsWith("geo-block:")) return { title: "封锁国家或地区", target: regionText(arg.toUpperCase()), impact: "这个国家或地区用户的 App 请求都被拒：注册、登录、浏览、资金操作都不行；后台、支付回调不受影响", undo: "elsewhere", undoText: "这页收不回；要放开，到「地区访问限制」从封锁名单去掉", page };
   if (dom === "C2" && ref.startsWith("user-freeze:")) return { title: "冻结账户", target: `用户 ${arg}`, impact: "账户冻结、登录会话失效，这位用户待处理的提现一并冻结；只能冻结状态正常的用户", undo: "elsewhere", undoText: "这页收不回；要解冻，到「账户操作」处理", page };
   if (dom === "K1" && ref.startsWith("cluster-freeze:")) return { title: "冻结账户组", target: `账户组 ${arg}`, impact: "冻结这个账户组里符合条件的账户，待处理的提现一并冻结；只能冻结已标记的账户组", undo: "elsewhere", undoText: "这页收不回；要解冻，到「多账户风险排查」处理", page };
-  if (dom === "I3" && ref === "campaign-notify") return { title: "发送通知活动", target: notify?.template || notify?.campaignNo || undefined, impact: "按这个通知活动设定的受众发送；发送数是系统创建的通知条数，不是用户已读数", undo: "never", undoText: "发出后撤不回；要更正只能另发一条通知", page };
-  if (dom === "I5" && ref.startsWith("disclosure-publish:")) return { title: "发布风险披露", target: arg, impact: "把这个地区指定版本的草稿发布为现行风险披露；用的是执行那一刻的草稿内容", undo: "elsewhere", undoText: "这页收不回；要更正，到「法律条款与风险披露」再发一版", page };
+  if (dom === "I3" && ref === "campaign-notify") return { title: "发送通知活动", target: (notify?.template && notifyLabelText(notify.template)) || notify?.campaignNo || undefined, impact: "按这个通知活动设定的受众发送；发送数是系统创建的通知条数，不是用户已读数", undo: "never", undoText: "发出后撤不回；要更正只能另发一条通知", page };
+  if (dom === "I5" && ref.startsWith("disclosure-publish:")) return { title: "发布风险披露", target: arg.includes(":") ? `${regionText(arg.slice(0, arg.indexOf(":")).toUpperCase())} · ${arg.slice(arg.indexOf(":") + 1)}` : arg, impact: "把这个地区指定版本的草稿发布为现行风险披露；用的是执行那一刻的草稿内容", undo: "elsewhere", undoText: "这页收不回；要更正，到「法律条款与风险披露」再发一版", page };
   return { title: operatorCopyText((step.ax || "").replace(/\*\*/g, "")) || "未知动作", target: ref || undefined, impact: "这个动作已经不能执行，要先编辑预案换成能用的动作", undo: "never", undoText: "历史动作，不能执行", page, legacy: true };
 }
 
@@ -169,16 +179,18 @@ export type J4RecoveryRow = {
   expired: boolean;
   onQuery: () => void;
   onRetry?: () => void;
+  /** 执行申请过期且后端明确查不到：可以确认解除这条记录。 */
+  onRelease?: () => void;
   note?: ReactNode;
 };
 export function j4UnknownTag(kind: "approval" | "direct") {
   return kind === "approval"
-    ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，申请可能已经提交、正在等批准。先查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会建第二张申请。">申请可能已经提交</StatusTag>
+    ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，申请可能已经提交、正在等批准。先查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会建第二张申请。">结果未知</StatusTag>
     : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行。">结果未知</StatusTag>;
 }
 export function j4ExpiredTag(kind: "approval" | "direct") {
   return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "approval"
-    ? "原请求超过 24 小时，不能再重试，只能查询原申请。查不到也不能据此认定没提交。"
+    ? "原请求超过 24 小时，不能再重试，只能查询原申请。后端明确查不到这张申请时，说明没建成，可以确认解除。"
     : "原请求超过 24 小时，不能再重试，只能查询。读到的是现在的状态，不能据此认定原操作成没成，记录继续保留。"}>已过期</StatusTag>;
 }
 export function J4RecoveryNotice({ rows }: { rows: J4RecoveryRow[] }) {
@@ -186,7 +198,8 @@ export function J4RecoveryNotice({ rows }: { rows: J4RecoveryRow[] }) {
   return (
     <Notice tone="warn" title={<>{rows.length} 项操作结果未知<Explain label="结果未知怎么处理" content={<>
       <p>提交时没收到确定结果。发起正式执行的申请可能已经提交、在等批准；新增、编辑、演练、取消、核对和恢复开关可能已经生效。</p>
-      <p>先点「查询原结果」；24 小时内也可以按原请求重试，后端认得出是同一次提交。读回的是现在的状态，可能是别人改的，不能单凭它认定原操作成没成；记录会一直留着，直到原请求有确定结果。</p>
+      <p>先点「查询原结果」；24 小时内也可以按原请求重试，后端认得出是同一次提交。</p>
+      <p>执行申请按原请求查原申请，查到就以它为准；其他操作只能读回现在的状态，可能是别人改的，不能单凭它认定原操作成没成。记录留到原请求有确定结果；执行申请过期且后端查不到时可以确认解除。</p>
     </>} /></>}>
       <ul className="j4-rec" aria-label="结果未知的操作">
         {rows.map((row) => (
@@ -198,6 +211,7 @@ export function J4RecoveryNotice({ rows }: { rows: J4RecoveryRow[] }) {
             <span className="j4-rec-actions">
               <Button size="sm" onClick={row.onQuery}>查询原结果</Button>
               {!row.expired && row.onRetry && <Button size="sm" onClick={row.onRetry}>按原请求重试</Button>}
+              {row.expired && row.onRelease && <Button size="sm" onClick={row.onRelease}>确认解除</Button>}
             </span>
             {row.note && <span className="j4-rec-note">{row.note}</span>}
           </li>
@@ -419,13 +433,13 @@ export function PlaybookEditor({ spec, onClose }: { spec: EditorSpec; onClose: (
             : <div data-proof="sop-i3-notify-template-select">
               <SearchSelect {...control} aria-label="通知活动" placeholder="搜索通知名称、编号、优先级或受众" value={draft.notifySearch}
                 onChange={(value) => set({ notifySearch: value, notifyCampaignNo: "", notifyTemplate: "" })}
-                options={shownNotify.map((item) => ({ value: item.value, label: item.label, extra: item.campaignNo }))}
+                options={shownNotify.map((item) => ({ value: item.value, label: notifyLabelText(item.label), extra: item.campaignNo }))}
                 selected={draft.notifyCampaignNo || undefined} empty="没有匹配的通知活动"
-                onSelect={(value) => { const item = spec.notifyTemplates.find((row) => row.value === value); if (item) set({ notifyCampaignNo: item.value, notifyTemplate: item.label, notifySearch: item.label }); }} />
+                onSelect={(value) => { const item = spec.notifyTemplates.find((row) => row.value === value); if (item) set({ notifyCampaignNo: item.value, notifyTemplate: item.label, notifySearch: notifyLabelText(item.label) }); }} />
             </div>}
       </Field>
 
-      <Field label="回滚方案" required help={selectedRollback?.plan} explain="执行后恢复时按这个方案做。现在只能恢复这次关停的提现、创世节点这类开关，其他步骤收不回。">
+      <Field label="回滚方案" required help={selectedRollback?.plan} explain="只是写给人看的说明，恢复时系统不按它执行：这页只能恢复这次关停的提现、创世节点这类开关，其他步骤收不回。">
         {(control) => spec.rollbackOptions.length === 0
           ? <Notice tone="warn">没有可用的回滚方案，请刷新后重试。</Notice>
           : <div data-proof="sop-rollback-template-select">

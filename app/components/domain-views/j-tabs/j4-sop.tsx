@@ -11,14 +11,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { BookOpen, Clock3, FlaskConical, History, ListChecks, Megaphone, MinusCircle, Pencil, Plus, RefreshCw, RotateCcw, ScanSearch, ShieldCheck, Siren, Square, TriangleAlert, Undo2, Workflow } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, KeyValues, Notice, PageHeader, Panel, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, KeyValues, Notice, PageHeader, Panel, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import {
   createJEmergencyCommandKey, getJ4PendingProposal, isEmergencyOutcomeUncertain,
   j4ProposalSlot, listJ4LegacyCommands, listJ4PendingCommands, listJ4PendingProposals,
-  queryJ4Proposal, retryJ4Command, retryJ4Proposal, submitJ4Proposal,
+  queryJ4Proposal, releaseExpiredJ4Proposal, retryJ4Command, retryJ4Proposal, submitJ4Proposal,
   type J4CommandContext, type J4PendingCommand, type J4PendingProposal, type J4PlaybookCreateInput, type Playbook, type SopExecution,
 } from "@/lib/admin/j-client";
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -28,7 +28,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   DOMAIN_PAGE, ExecutePrepare, PlaybookEditor, StepDots, StepTimeline, TraceDrawer, J4RecoveryNotice, UndoTag,
-  count, draftChanges, executionModeLabel, initialDraft, isActiveExecution, j4Time, lineStep, reversibleGates, rollbackStatusText, roleText, stepInfo, undoSummary,
+  count, draftChanges, executionModeLabel, initialDraft, isActiveExecution, j4Time, lineStep, notifyLabelText, reversibleGates, rollbackStatusText, roleText, stepInfo, tierText, undoSummary,
   type EditorSpec, type ExecuteDraft, type J4RecoveryRow, type PlaybookDraft,
 } from "./j4-parts";
 import type { ActionConfirmReq, JCtx } from "./types";
@@ -124,6 +124,10 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [verifiedProposals, setVerifiedProposals] = useState<Record<string, A2OperationRow>>({});
   const [queue, setQueue] = useState<A2OperationRow[]>([]);
+  const [queueFailed, setQueueFailed] = useState(false);
+  /** 按原请求查过、后端明确没有这张申请的记录（过期后可以确认解除）。 */
+  const [absent, setAbsent] = useState<Record<string, true>>({});
+  const [releasing, setReleasing] = useState<J4PendingProposal | null>(null);
   const current = useRef({ data, contentLoading, contentError, authorities });
   current.current = { data, contentLoading, contentError, authorities };
   const activeConfirmation = useRef<{ slot: string; restored: boolean } | null>(null);
@@ -144,6 +148,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     try {
       const row = await queryJ4Proposal(record);
       if (row) {
+        setAbsent(({ [record.commandKey]: _found, ...rest }) => rest);
         setVerifiedProposals((previous) => ({ ...previous, [record.commandKey]: row }));
         if (row.status !== "pending") {
           openActionConfirm(null);
@@ -151,6 +156,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
           await actions.reloadJEmergency();
         }
       } else {
+        setAbsent((previous) => ({ ...previous, [record.commandKey]: true }));
         noteError(record.commandKey, new Error("A2_PROPOSAL_NOT_FOUND"));
       }
       syncPending();
@@ -169,6 +175,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   }, [session?.adminId]);
   useEffect(() => {
     setQueue([]);
+    setQueueFailed(false);
     if (!data || contentLoading || contentError) return;
     setVerifiedProposals({});
     let active = true;
@@ -176,7 +183,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     if (authorities.includes("platform_a2_read")) {
       void fetchA2Overview({ domain: "J" }).then((overview) => {
         if (active) setQueue(overview.operationQueue.filter((row) => row.rawStatus === "pending" && row.operationCode === "j4_playbook_execute"));
-      }).catch(() => { if (active) setQueue([]); });
+      }).catch(() => { if (active) { setQueue([]); setQueueFailed(true); } });
     }
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -241,18 +248,36 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     submittedAt: record.createdAt, kind: "approval", expired: isRetryExpired(record),
     onQuery: () => void queryProposal(record),
     onRetry: !record.sopProposal.accepted && canRetry(record.sopProposal.context) ? () => restoreProposal(record) : undefined,
-    note: notes[record.commandKey] || (record.sopProposal.accepted ? formatAdminApiError("J4_PROPOSAL_STATUS_UNAVAILABLE", "J4_PROPOSAL_STATUS_UNAVAILABLE") : undefined),
+    onRelease: absent[record.commandKey] ? () => setReleasing(record) : undefined,
+    note: absent[record.commandKey]
+      ? `后端按原请求查不到这张申请，说明没建成；${isRetryExpired(record) ? "可以确认解除。" : "24 小时内可以按原请求重试。"}`
+      : notes[record.commandKey] || (record.sopProposal.accepted ? formatAdminApiError("J4_PROPOSAL_STATUS_UNAVAILABLE", "J4_PROPOSAL_STATUS_UNAVAILABLE") : undefined),
   })));
   recoveryRows.push(...legacy.map((record): J4RecoveryRow => ({
     key: record.commandKey, name: operationNames[record.fingerprint.endsWith("/drills") ? "drill" : record.fingerprint.endsWith("/cancel") ? "cancel" : record.fingerprint.endsWith("/resume") ? "resume" : record.fingerprint.endsWith("/rollback") ? "rollback" : record.fingerprint.startsWith("PUT") ? "update" : "create"],
     change: formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"),
     submittedAt: record.createdAt, kind: "direct", expired: isRetryExpired(record), onQuery: () => void queryOriginal(record), note: notes[record.commandKey],
   })));
-  const recovery = <J4RecoveryNotice rows={recoveryRows} />;
+  const releaseOriginal = async (record: J4PendingProposal) => {
+    setReleasing(null);
+    try {
+      if (await releaseExpiredJ4Proposal(record)) toast("已解除这条记录；需要的话可以重新发起执行申请", "success");
+      else toast("后端现在查到了这张申请，记录保留，请按申请状态处理", "warn");
+    } catch (error) {
+      noteError(record.commandKey, error);
+    }
+    syncPending();
+  };
+  const recovery = <>
+    <J4RecoveryNotice rows={recoveryRows} />
+    {releasing && <ReleaseModal label={`${contextName(releasing.sopProposal.context)} · ${operationNames.execute}`}
+      explain="原申请超过 24 小时，后端按原请求查不到这张申请，说明它没建成。确认时会再查一次，仍查不到才解除。"
+      onCancel={() => setReleasing(null)} onConfirm={() => void releaseOriginal(releasing)} />}
+  </>;
   const proposalRows = new Map([...queue, ...Object.values(verifiedProposals).filter((row) => row.status === "pending")].map((row) => [row.id, row]));
   const pendingProposals = [...proposalRows.values()].map((row) => {
     const record = proposals.find((record) => verifiedProposals[record.commandKey]?.id === row.id);
-    return { key: row.id, name: row.obj, meta: <>{row.operator} · {j4Time(row.rawTs)} · {row.id}</>,
+    return { key: row.id, name: record ? contextName(record.sopProposal.context) : row.obj, meta: <>{row.operator} · {j4Time(row.rawTs)} · {row.id}</>,
       onQuery: record ? () => void queryProposal(record) : undefined };
   });
   const reload = () => void actions.reloadJEmergency().catch(() => undefined);
@@ -665,7 +690,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       facts: <Facts>
         <Fact k="执行">{exec.name}<span className="j4-muted"> · <span data-mono="">{exec.executionId}</span></span></Fact>
         <Fact k="会恢复">{gates.length ? `${gates.join("、")}开关，恢复后用户马上能用` : "这次执行关停的开关"}</Fact>
-        <Fact k="不会恢复" tone="warn">{others.length ? `${Array.from(new Set(others)).join("、")}：这页收不回，到对应页面处理；已发出的通知撤不回` : "这次没有其他已生效的步骤；已发出的通知撤不回，需要更正请另发通知"}</Fact>
+        <Fact k="不会恢复" tone="warn">{others.length ? `${Array.from(new Set(others)).join("、")}：这页收不回，到对应页面处理；已发出的通知撤不回` : "记录里没有其他做完的步骤；失败的步骤也可能已生效，到对应页面核对。已发出的通知撤不回"}</Fact>
         <Fact k="前提">开关后来被别人改过的不恢复；系统先查兑付覆盖率和估值，不达标整次不执行</Fact>
         <Fact k="和「紧急停用开关」">这里直接恢复、不走审批；在「紧急停用开关」页恢复要提交审批</Fact>
       </Facts>,
@@ -694,7 +719,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         <Fact k="会怎样">正在做的这一步做完才停；后面没开始的跳过；做完的保持生效，不撤回</Fact>
         <Fact k="之后">登记后刷新看最终逐步状态；如果已经做到最后一步，可能照常全部完成</Fact>
       </Facts>,
-      detail: <>当前这一步做完后才会停下：已完成的步骤保持生效，还没开始的步骤跳过，这次执行记为「部分完成」。正在执行的那一步不会被中断。</>,
+      detail: <>取消只是登记，正在执行的那一步不会被中断；最终结果以刷新后的逐步状态为准。</>,
       statedBrief: { impact: "只登记取消请求，下一步开始前生效。", check: "理由写清为什么要停。" },
       confirmLabel: "登记取消",
       reasonPlaceholder: "例如：监管要求变化、误发起",
@@ -779,8 +804,13 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   // ---------- 正在执行 ----------
   const overviewUnavailable = Boolean(contentError || contentLoading || !data);
   const visibleActive = overviewUnavailable ? [] : active;
+  // 审批来源读不到时，等批准的申请不能显示成 0 张。
+  const queueNotice = queueFailed && <Notice tone="warn" title="等批准的执行申请没读到">
+    「操作记录与审批」暂时读不到，这里先不显示等批准的申请，不代表没有。{reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J" prefetch={false}>去操作记录与审批查看</Link></>}
+  </Notice>;
   const activePanel = (visibleActive.length > 0 || pendingProposals.length > 0) && (
-    <Panel title="正在执行" icon={Workflow} tone="role-3" sub={`${count(visibleActive.length)} 次`}
+    <Panel title={overviewUnavailable ? "等批准的执行申请" : "正在执行"} icon={Workflow} tone="role-3"
+      sub={overviewUnavailable ? `${count(pendingProposals.length)} 张 · 执行进度暂时读不到` : `${count(visibleActive.length)} 次${pendingProposals.length ? ` · ${count(pendingProposals.length)} 张申请等批准` : ""}`}
       explain={<>
         <p>批准后系统按顺序自动执行；每一步的状态在这里看。</p>
         <p>取消：正在做的这一步做完才停，后面跳过，做完的不撤回。</p>
@@ -842,7 +872,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const conclusion = !contractReady ? (
     <Conclusion state="danger" hint="请联系技术人员检查后再进行操作。">应急执行服务尚未就绪，当前仅可查看</Conclusion>
   ) : active.length > 0 ? (
-    <Conclusion state="warn" lead hint={canRun ? "在下面「正在执行」看做到哪一步；超过 2 分钟没进展可以恢复核对。" : "在下面「正在执行」看做到哪一步；取消和恢复核对请找有执行权限的同事。"}>{count(active.length)} 次正式执行进行中</Conclusion>
+    <Conclusion state="warn" lead hint={canRun ? "在下面「正在执行」看做到哪一步；卡住时可以恢复核对，能不能核对由后端按最后一次更新判断。" : "在下面「正在执行」看做到哪一步；取消和恢复核对请找有执行权限的同事。"}>{count(active.length)} 次正式执行进行中</Conclusion>
   ) : recoveryRows.length > 0 ? (
     <Conclusion state="warn" hint="到上方逐条查询原结果。">{count(recoveryRows.length)} 项操作结果未知；{count(ready)} 个预案可执行</Conclusion>
   ) : PLAYBOOKS.length === 0 ? (
@@ -912,7 +942,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         <h3 className="j4-sub-title">按下去会依次发生 <span className="j4-muted">{count(p.seq.length)} 步 · {undoSummary(supported)}</span></h3>
         {p.seq.length === 0 ? <p className="j4-muted">这个预案没有步骤。</p> : <StepTimeline steps={p.seq} notify={{ campaignNo: p.notifyCampaignNo, template: p.notifyTemplate }} />}
         <KeyValues rows={[
-          { key: "notify", label: "通知活动", value: p.notifyTemplate || p.notifyCampaignNo || "未绑定" },
+          { key: "notify", label: "通知活动", value: (p.notifyTemplate && notifyLabelText(p.notifyTemplate)) || p.notifyCampaignNo || "未绑定" },
           { key: "rollback", label: "回滚方案", value: p.rollback || "—" },
         ]} />
         <div className="j4-detail-foot">
@@ -998,7 +1028,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         { key: "dir", label: "不能放的动作", value: "恢复、解封、放行、开启、启用这类动作，所有预案都不能放；风险解除后到对应页面操作" },
         { key: "pre", label: "正式执行前提", value: "预案已保存、90 天内演练通过且有演练记录；绑定了通知活动的，活动还要是已排期" },
         { key: "approve", label: "审批", value: "常规和应急通道都要另一位管理员批准；应急通道不会加急" },
-        { key: "reason", label: "操作理由", value: "8–200 字，必填" },
+        { key: "reason", label: "操作理由", value: "必填；字数要求以提交时理由框的提示为准" },
         { key: "record", label: "执行记录", value: "每一步都记录；失败如实显示，前面做完的保持生效" },
       ]} />
     </Fold>
@@ -1018,7 +1048,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
             <tbody>
               {notify.map((item) => <Tr key={item.value}>
                 <Td><Cell main={item.name} sub={<span data-mono="">{item.campaignNo}</span>} title={item.name} /></Td>
-                <Td>{item.tier || "—"}</Td>
+                <Td>{item.tier ? tierText(item.tier) : "—"}</Td>
                 <Td><Cell main={item.audience || "—"} title={item.audience || undefined} /></Td>
                 <Td>{item.meta.split(" · ").slice(2).join(" · ") || "—"}</Td>
               </Tr>)}
@@ -1044,6 +1074,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
           sub={liveExecs == null ? "未返回" : `演练记录 ${drillExecRows == null ? "未返回" : `${count(drillExecRows)} 条`} · 演练就绪 ${!contractReady ? "暂无法统计" : drillExecs == null ? "未返回" : `${count(drillExecs)} 个`}`}
           explain="正式执行按开始时间算，部分失败、已取消和还在执行的都算；演练记录是近 90 天演练的条数，同一个预案可以有多条；演练就绪是现在能执行的预案数。不受场景筛选影响。" />
       </StatBand>
+      {queueNotice}
       {activePanel}
       <div className="rd-split j4-lib" data-detail="">
         {libraryPanel}

@@ -28,6 +28,7 @@ const TRIGGER_LABELS = { "": "请选择触发依据" };
 const IMMEDIATE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 const REASON_HINT = "例如：监管通知编号、工单号、事件编号";
 const READING = "正在读取最新状态，读完再操作";
+const FROZEN = "结果未知期间原请求已锁定，不能改";
 /** 名单卡上直接摆出的国家数，其余到「名单国家明细」里看。 */
 const WALL = 18;
 const MODE_TEXT: Record<"derived" | "explicit", string> = { derived: "继承全局", explicit: "单独设定" };
@@ -38,7 +39,7 @@ const HEALTH: Record<string, { text: string; tone: "ok" | "warn" | "danger" }> =
   awaiting_samples: { text: "样本不足", tone: "warn" },
 };
 const healthOf = (status: string) => HEALTH[status] ?? { text: "状态不明", tone: "warn" as const };
-const HEALTH_RULE = "近 5 分钟全部样本不少于 20 个、有成功记录、失败率低于 5% 才算正常。每个经过可信代理的 App 请求都给两个识别源各记一个样本。";
+const HEALTH_RULE = "近 5 分钟全部样本不少于 20 个、有成功记录、失败率低于 5% 才算正常。地区过滤开着时，经过可信代理、要判断地区的 App 请求给每个识别源各记一个样本。";
 
 /** 问号里分行写：名称加一句话，一段一行。 */
 const explainRows = (rows: { k: string; v: string }[]) => <>{rows.map((row) => <p key={row.k}><b>{row.k}：</b>{row.v}</p>)}</>;
@@ -220,7 +221,13 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       ? `${sourceLabels[input.expectedSource!] ?? "未登记的识别源"} → ${sourceLabels[input.source!]}`
       : record.geo.path.includes("endpoints/")
         ? `${MODE_TEXT[input.expectedMode as keyof typeof MODE_TEXT]}：${label(input.expectedCountries!)} → ${MODE_TEXT[input.mode as keyof typeof MODE_TEXT]}：${label(input.countries!)}`
-        : record.geo.path.endsWith("emergency-blocks") ? `加 ${label(input.countries!)}` : `${label(input.expectedCountries!)} → ${label(input.countries!)}`;
+        : record.geo.path.endsWith("emergency-blocks") ? `加 ${label(input.countries!)}` : (() => {
+          // 整份名单太长：写加了哪些、去了哪些，全量放悬停。
+          const added = input.countries!.filter((cc) => !input.expectedCountries!.includes(cc));
+          const removed = input.expectedCountries!.filter((cc) => !input.countries!.includes(cc));
+          const text = [added.length ? `加 ${label(added)}` : "", removed.length ? `去 ${label(removed)}` : ""].filter(Boolean).join("；") || "名单没变";
+          return <span title={`${label(input.expectedCountries!)} → ${label(input.countries!)}`}>{text}</span>;
+        })();
     return {
       key: record.commandKey, name: record.geo.context.label, change,
       submittedAt: record.createdAt, expired: isRetryExpired(record),
@@ -253,7 +260,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
 
   const header = (actionsSlot?: ReactNode) => (
     <PageHeader pageId="J2" title="地区访问限制"
-      summary="按来访地区封锁整个 App，或只拦资金和奖励类操作。"
+      summary="按来访地区封锁 App，或只拦资金和奖励类操作。"
       actions={actionsSlot}
       meta={<span className="rd-toolbar">
         {readAt && <span>{readAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动更新；改完会自动重读一次。" /></span>}
@@ -309,7 +316,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       } else if (isEmergencyOutcomeUncertain(error)) {
         try {
           await actions.reloadJEmergency();
-          toast(`结果未知 · 页面已刷新，请核对现在的名单、规则和最近修改。${error instanceof Error ? ` ${error.message}` : ""}`, "warn");
+          toast("页面已刷新，请核对现在的名单、规则和最近修改。", "warn");
         } catch {
           toast("结果未知，页面也刷新不了。请不要重复提交，等网络恢复后刷新页面并核对最近修改。", "warn");
         }
@@ -364,18 +371,19 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         action: blockedList ? "编辑全局封禁名单" : "编辑受限名单",
         title: blockedList ? "替换封锁名单" : "替换受限名单",
         effect: <>{IMMEDIATE}<StatusTag tone="neutral" icon={Replace}>整份替换</StatusTag></>,
-        facts: <CountryDiff initial={currentCodes} codes={countries} names={countryNames} statusOf={statusOf}
+        facts: () => <CountryDiff initial={currentCodes} codes={countries} names={countryNames} statusOf={statusOf} asOf={retained ? "提交时" : undefined}
+          backDisabled={getJ2PendingCommand(slot) ? FROZEN : undefined}
           addTitle={blockedList ? "加进封锁名单" : "加进受限名单"}
-          addEffect={blockedList ? `这些地区的用户之后的请求全部被拒：注册、登录、浏览和资金操作都不行。${added.some((cc) => limitedCodes.has(cc)) ? "原来受限的改成封锁。" : ""}` : "这些地区的用户还能登录和浏览，资金和奖励类操作（提现、兑换、下单、领奖励等）马上被拒。"}
-          impact={impactOf(added, "加进来的按账户国家统计", snapshot)}
+          addEffect={blockedList ? `这些地区用户的 App 请求都被拒，注册、登录、浏览都不行。${added.some((cc) => limitedCodes.has(cc)) ? (retained ? "提交时受限的改成封锁。" : "原来受限的改成封锁。") : ""}` : "这些地区的用户还能登录和浏览，资金和奖励类操作（提现、兑换、下单、领奖励等）马上被拒。"}
+          impact={impactOf(added, retained ? "提交时按账户国家统计" : "加进来的按账户国家统计", snapshot)}
           removeTitle={blockedList ? "从封锁名单去掉" : "从受限名单去掉"}
-          removeEffect={blockedList ? "改回不限制（不会自动变成受限），这些地区的用户马上能正常使用；入口单独封锁的规则还在。" : "改回不限制，资金和奖励类操作马上放开；入口单独封锁的规则还在。"}
+          removeEffect={blockedList ? "只去掉封锁，不会自动变成受限；入口单独封锁、紧急停用开关照旧。" : "不再拦资金和奖励类操作；入口单独封锁、紧急停用开关照旧。"}
           keptTitle="名单里不变的"
           onBack={() => { if (getJ2PendingCommand(slot)) return; closeConfirm(); openListEditor(target, { codes: countries }); }} />,
         detail: blockedList
           ? "提交的是整份封锁名单，不是只加一个。如果别人刚改过名单，或加、去的国家正被审批锁住，整份不执行，刷新后重改。"
           : "提交的是整份受限名单，不是只加一个。已封锁的国家不能直接改成受限，要先从封锁名单去掉。如果别人刚改过名单，整份不执行，刷新后重改。",
-        statedBrief: { impact: `提交后名单变成 ${countries.length} 个。加进来的马上被拦，去掉的马上放开。`, check: "核对加和去的国家，理由写清依据或工单号。" },
+        statedBrief: { impact: `提交后名单变成 ${countries.length} 个。加进来的马上按这份名单拦，去掉的不再按它拦。`, check: "核对加和去的国家，理由写清依据或工单号。" },
         confirmTone: blockedList ? "danger" : "primary",
         confirmLabel: "确认替换，立即生效",
         reasonPlaceholder: REASON_HINT,
@@ -428,12 +436,13 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         action: `调整功能入口封锁范围 · ${entry.label}`,
         title: "修改入口规则",
         effect: IMMEDIATE,
-        facts: <div className="rd-stack">
+        facts: () => <div className="rd-stack">
           <Facts>
             <Fact k="功能入口">{entry.label}{entry.biz && <span className="j2-muted">（{entry.biz}）</span>}</Fact>
             <Fact k="设置方式">{mode === expectedMode ? MODE_TEXT[mode] : <Change from={MODE_TEXT[expectedMode]} to={MODE_TEXT[mode]} />}</Fact>
           </Facts>
-          <CountryDiff initial={expectedCountries} codes={countries} names={countryNames} statusOf={statusOf}
+          <CountryDiff initial={expectedCountries} codes={countries} names={countryNames} statusOf={statusOf} asOf={retained ? "提交时" : undefined}
+            backDisabled={getJ2PendingCommand(slot) ? FROZEN : undefined}
             addTitle="这个入口另外封锁" addEffect="这些地区的用户不能用这个入口，浏览也不行。封锁名单照样先判断。"
             removeTitle="不再单独封锁" removeEffect="这个入口改回只按全局名单处理：封锁的照样不能用，受限的照样不能做资金和奖励类操作。"
             keptTitle="继续单独封锁的"
@@ -485,7 +494,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         title: "切换地区识别源",
         effect: IMMEDIATE,
         facts: <Facts>
-          <Fact k="切换后 5 分钟" tone={edgeFallbackAvailable ? undefined : "warn"}>{edgeFallbackAvailable ? "新源给不出国家时，先用现在这个源兜底" : "现在这个源不健康，没有兜底：新源给不出国家的请求会被拒"}</Fact>
+          <Fact k="切换后 5 分钟" tone={edgeFallbackAvailable ? undefined : "warn"}>{edgeFallbackAvailable ? `新源给不出国家时，先用${retained ? "提交时" : "现在"}这个源兜底` : `${retained ? "提交时" : "现在"}这个源不健康，没有兜底：新源给不出国家的请求会被拒`}</Fact>
           <Fact k="正在用 App 的用户">不会被踢下线；之后的每个请求按新源给的国家判断</Fact>
         </Facts>,
         detail: "只能切到近 5 分钟样本不少于 20 个、失败率低于 5% 的识别源。兜底只在新源给不出国家时用，不会自动切回原来的源。",
@@ -507,14 +516,15 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         action: "应急即时封锁 · 批量加入全局封禁名单",
         title: "应急批量封锁",
         effect: <>{IMMEDIATE}<StatusTag tone="neutral" icon={Plus}>只加不减</StatusTag></>,
-        facts: <div className="rd-stack">
+        facts: () => <div className="rd-stack">
           <Facts>
-            <Fact k="现有封锁">{count(banned.length)} 个，不变</Fact>
+            <Fact k={retained ? "提交时已封锁" : "现有封锁"}>{count(banned.length)} 个，不变</Fact>
             <Fact k="怎么撤销">没有一键撤销。要放开，到「封锁名单」点「编辑封锁名单」把它们去掉</Fact>
           </Facts>
-          <CountryDiff initial={[]} codes={codes} names={countryNames} statusOf={statusOf}
-            addTitle="这次封锁" addEffect={`这些地区的用户之后的请求全部被拒：注册、登录、浏览和资金操作都不行。${codes.some((cc) => limitedCodes.has(cc)) ? "原来受限的改成封锁。" : ""}`}
-            impact={impactOf(codes, "按账户国家统计", snapshot)}
+          <CountryDiff initial={[]} codes={codes} names={countryNames} statusOf={statusOf} asOf={retained ? "提交时" : undefined}
+            backDisabled={getJ2PendingCommand(slot) ? FROZEN : undefined}
+            addTitle="这次封锁" addEffect={`这些地区用户的 App 请求都被拒，注册、登录、浏览都不行。${codes.some((cc) => limitedCodes.has(cc)) ? (retained ? "提交时受限的改成封锁。" : "原来受限的改成封锁。") : ""}`}
+            impact={impactOf(codes, retained ? "提交时按账户国家统计" : "按账户国家统计", snapshot)}
             onBack={() => { if (getJ2PendingCommand(slot)) return; closeConfirm(); openEmergencyEditor({ codes }); }} />
         </div>,
         detail: "所有国家先统一检查：有一个已经封锁或正被审批锁住，整批都不执行，不会只成功一部分。",
@@ -624,9 +634,9 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     ? edgeSwitchCandidates.length > 0 ? "到下面「地区识别」切到健康的识别源。" : "现在没有健康的备用识别源可切，请联系技术值班。"
     : "请有权限的超级管理员到「地区识别」处理。";
   const conclusion = !edgeSourceKnown ? (
-    <Conclusion state="danger" hint={switchHint} explainTitle="识别源没登记会怎样" explain="现在设置的识别源不在登记表里，App 请求拿不到地区，会被拒绝（提示无法确认地区）。">识别源没有登记，地区判断不可用；{counts}</Conclusion>
+    <Conclusion state="danger" hint={switchHint} explainTitle="识别源没登记会怎样" explain="现在设置的识别源不在登记表里，要判断地区的 App 请求都会被拒绝（提示无法确认地区）。">识别源没有登记，地区判断不可用；{counts}</Conclusion>
   ) : healthStatus === "degraded" ? (
-    <Conclusion state="danger" hint={switchHint} explainTitle="识别源异常会怎样" explain={`当前识别源给不出国家时，App 请求会被拒绝（提示无法确认地区），这类拒绝不算进拦截次数。${HEALTH_RULE}`}>识别源「{currentEdgeLabel}」异常，识别失败太多；{counts}</Conclusion>
+    <Conclusion state="danger" hint={switchHint} explainTitle="识别源异常会怎样" explain={`当前识别源给不出国家时，刚切换的 5 分钟内先试旧源，仍给不出才拒绝（提示无法确认地区）；这类拒绝不算进拦截次数。${HEALTH_RULE}`}>识别源「{currentEdgeLabel}」异常，识别失败太多；{counts}</Conclusion>
   ) : recoveryRows.length > 0 ? (
     <Conclusion state="warn" hint="到上方逐条查询原结果。">{recoveryRows.length} 项修改结果未知；{counts}</Conclusion>
   ) : healthStatus === "stale" ? (
@@ -651,7 +661,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       <Panel title={blockedList ? "封锁名单" : "受限名单"} icon={blockedList ? Ban : ShieldMinus} tone="role-4"
         sub={`${count(rows.length)} 个国家或地区`}
         explain={explainRows(blockedList ? [
-          { k: "管什么", v: "名单里的国家或地区，App 的请求全部被拒：注册、登录、浏览、资金操作都不行。" },
+          { k: "管什么", v: "名单里的国家或地区，用户的 App 请求都被拒：注册、登录、浏览、资金操作都不行。" },
           { k: "按什么判断", v: "来访请求的国家（可信边缘代理在请求头里给的），不是账户注册地。" },
           { k: "不管什么", v: "后台、代看、支付回调等不经过这条规则；已登录的会话不会被踢下线，但之后的请求会被拒。" },
           { k: "和入口规则", v: "去掉封锁不会清掉入口单独封锁的规则。" },
@@ -661,7 +671,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
           { k: "和入口规则", v: "去掉受限不会清掉入口单独封锁的规则。" },
         ])}
         actions={<>{unknownOn.has(`list:${status}`) && unknownTag("direct")}{action}</>}>
-        <p className="j2-scope">{blockedList ? <><Ban size={14} aria-hidden />整个 App 不能用</> : <><ShieldMinus size={14} aria-hidden />能登录浏览，资金和奖励类操作被拒</>}</p>
+        <p className="j2-scope">{blockedList ? <><Ban size={14} aria-hidden />用户的 App 请求都被拒</> : <><ShieldMinus size={14} aria-hidden />能登录浏览，资金和奖励类操作被拒</>}</p>
         {rows.length === 0
           ? <p className="j2-empty">{blockedList ? "没有封锁的国家或地区" : "没有受限的国家或地区"}</p>
           : <ul className="j2-wall" aria-label={blockedList ? "封锁的国家或地区" : "受限的国家或地区"}>
@@ -686,10 +696,10 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   // ---------- 入口规则 ----------
   const lookupStatus = lookup ? statusOf(lookup) : undefined;
   const verdict = (entry: GeoEndpoint) => {
-    if (lookupStatus === "blocked") return <StatusTag tone="danger" icon={Ban} explain="在封锁名单里：整个 App 不能用。">不能用</StatusTag>;
+    if (lookupStatus === "blocked") return <StatusTag tone="danger" icon={Ban} explain="在封锁名单里：用户的 App 请求都被拒。">不能用</StatusTag>;
     if (entry.source === "explicit" && entry.configurable && entry.countries.includes(lookup)) return <StatusTag tone="danger" icon={Ban} explain="这个入口单独封锁了它，浏览也不行。">这个入口不能用</StatusTag>;
     if (lookupStatus === "limited") return <StatusTag tone="warn" icon={ShieldMinus} explain="在受限名单里：能浏览，资金和奖励类操作被拒。这个入口是不是资金类，以后端登记的路由为准。">资金和奖励类被拒</StatusTag>;
-    return <StatusTag tone="ok">能用</StatusTag>;
+    return <StatusTag tone="ok" explain="不受地区限制；紧急停用开关等其他限制照旧。">不受地区限制</StatusTag>;
   };
   const endpointPanel = (
     <Panel id="j2-endpoints" title="功能入口规则" icon={Waypoints} tone="role-4" flush
@@ -704,10 +714,10 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       actions={unknownOn.size > 0 && [...unknownOn].some((key) => key.startsWith("endpoint:")) ? unknownTag("direct") : undefined}>
       <div className="j2-endpoints-top">
         <ol className="j2-order" aria-label="一个请求按什么顺序判断">
-          <li><span className="j2-order-n">1</span><span className="j2-order-if">在封锁名单</span><span className="j2-order-then" data-tone="danger"><Ban size={14} aria-hidden />整个 App 不能用</span></li>
+          <li><span className="j2-order-n">1</span><span className="j2-order-if">在封锁名单</span><span className="j2-order-then" data-tone="danger"><Ban size={14} aria-hidden />App 请求都被拒</span></li>
           <li><span className="j2-order-n">2</span><span className="j2-order-if">被这个入口单独封锁</span><span className="j2-order-then" data-tone="danger"><Ban size={14} aria-hidden />这个入口不能用</span></li>
           <li><span className="j2-order-n">3</span><span className="j2-order-if">在受限名单</span><span className="j2-order-then" data-tone="warn"><ShieldMinus size={14} aria-hidden />资金和奖励类操作被拒</span></li>
-          <li><span className="j2-order-n">4</span><span className="j2-order-if">都不是</span><span className="j2-order-then" data-tone="ok">能用</span></li>
+          <li><span className="j2-order-n">4</span><span className="j2-order-if">都不是</span><span className="j2-order-then" data-tone="ok">不受地区限制</span></li>
         </ol>
         {geoEndpoints.length > 0 && (
           <div className="j2-lookup">
@@ -763,12 +773,12 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     <Panel id="j2-edge" title="地区识别" icon={Radar} tone="role-other" sub={`现在用 ${currentEdgeLabel}`}
       explain={explainRows([
         { k: "怎么识别", v: "按可信边缘代理在请求头里给的国家判断，后台不自己查 IP，也不信用户自报的地区。" },
-        { k: "识别不出时", v: "当前识别源给不出国家或给的不对，App 请求被拒绝（提示无法确认地区），这类拒绝不算进拦截次数。" },
+        { k: "识别不出时", v: "当前识别源给不出国家时，刚切换的 5 分钟内先试旧源；仍给不出或给的不对就拒绝（提示无法确认地区），这类拒绝不算进拦截次数。" },
         { k: "健康怎么算", v: HEALTH_RULE },
         { k: "风险提示书", v: "风险提示书另有一套地区判断（登录用户按账户保存的国家，未登录按查询的国家），和这里互不影响。" },
       ])}
       actions={unknownOn.has("edge") ? unknownTag("direct") : undefined}>
-      {!edgeSourceKnown && <Notice tone="danger" title="现在设置的识别源没有登记">App 请求拿不到地区，会被拒绝。{canEdge ? "在下面切到一个健康的识别源。" : "请有权限的超级管理员处理。"}</Notice>}
+      {!edgeSourceKnown && <Notice tone="danger" title="现在设置的识别源没有登记">要判断地区的 App 请求都会被拒绝。{canEdge ? "在下面切到一个健康的识别源。" : "请有权限的超级管理员处理。"}</Notice>}
       <div className="j2-sources">
         {data.edge.sources.map((source) => {
           const current = edgeSourceKnown && source.value === edgeSource;
@@ -918,7 +928,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       {recovery}
       {conclusion}
       <StatBand label="地区限制摘要">
-        <Stat icon={Ban} tone="role-4" label="封锁的国家或地区" value={count(banned.length)} unit="个" explain="整个 App 不能用。" />
+        <Stat icon={Ban} tone="role-4" label="封锁的国家或地区" value={count(banned.length)} unit="个" explain="用户的 App 请求都被拒；后台、支付回调不受影响。" />
         <Stat icon={ShieldMinus} tone="role-4" label="受限的国家或地区" value={count(limited.length)} unit="个" explain="能登录浏览，资金和奖励类操作被拒。" />
         <Stat icon={ListOrdered} tone="role-other" label="近 24 小时拦截" value={count(totalHits)} unit="次" sub="前 20 个国家合计"
           explain="滚动 24 小时，不是自然日；只算识别出国家又被拒绝的请求，按国家最多算前 20 个，可能比真实总数少。" />
