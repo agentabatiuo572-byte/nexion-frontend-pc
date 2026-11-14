@@ -12,7 +12,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Archive, BadgeCheck, BookOpen, CodeXml, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import type { I18nMessagePairView, LearningCourseVersionView } from "@/lib/admin/i-client";
 import type { ICtx } from "./types";
 import { PaginationExemptionList } from "../design-kit";
@@ -374,7 +374,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const archiveKey = () => selectedMessage && openActionConfirm({ briefKind: "record",
     action: <>归档词条 · {selectedMessage.messageKey}</>,
     title: "归档文案",
-    detail: <>撤下这条远程文案；App 拉不到它后改用安装包里自带的文字（有的话）。历史版本和操作记录都保留，之后可以从历史版本回滚。</>,
+    detail: <>撤下这条远程文案，App 改用安装包里自带的文字（有的话）；历史版本保留，能回滚。</>,
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
     statedBrief: { impact: "App 不再拿到这条远程文案，屏幕上的字不一定消失。", check: "确认这条文字不再需要后台管理。" },
     confirmLabel: "归档",
@@ -585,7 +585,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       confirmTone: "danger",
       facts: <div className="rd-stack">
         <Facts><Fact k="课程">{nexGridBrandText(c.title)} · {c.v}</Fact><Fact k="状态"><Change from="在线" to="已下架" /></Fact></Facts>
-        {liveFeatured() === c.id && <Notice tone="warn">这门是首页推荐课，后端不允许下架；先在「首页推荐」换一门课。</Notice>}
+        {liveFeatured() === c.id && <Notice tone="warn">这门是首页推荐课，后端不允许下架，先换推荐课。</Notice>}
       </div>,
       amplifies: false,
       run: (reason) => {
@@ -685,7 +685,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const deleteCrs = (c: Course) => openActionConfirm({ briefKind: "record",
     action: <>删除课程草稿 · {nexGridBrandText(c.title)}</>,
     title: "删除课程草稿",
-    detail: <>只能删除还没发布的草稿；已发布或已归档的课程不能删除。</>,
+    detail: <>只能删还没发布的草稿，已发布或已下架的课不能删。</>,
     effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag>删了找不回</IrreversibleTag></>,
     statedBrief: { impact: "删掉这门课和它的草稿内容。", check: "确认这门课不再需要。" },
     confirmLabel: "删除草稿",
@@ -986,7 +986,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
     return <>
       <Conclusion state={conclusionParts.length ? "warn" : "ok"} icon={conclusionParts.length ? TriangleAlert : BadgeCheck}
-        hint={conclusionParts.length ? [missingLangText && whereText ? `${whereText}，缺${missingLangText}` : whereText, "点下面的条或模块看是哪几条"].filter(Boolean).join("；") : undefined}
+        hint={conclusionParts.length ? (missingLangText && whereText ? `${whereText}，缺${missingLangText}` : whereText || undefined) : undefined}
         explain="缺翻译按每条文案现在的内容算，草稿也算；完整性问题是上次检查存下的报告。">
         {conclusionParts.length ? conclusionParts.join("，") : `${count(total)} 条文案三种语言都齐了，没有待发布的草稿`}
       </Conclusion>
@@ -1017,7 +1017,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             {nsRows.map((n) => {
               const miss = n.missing.filter((item) => item.n > 0);
               return <button key={n.ns} type="button" role="listitem" className="i6-ns" onClick={() => showList({ ns: n.ns })} aria-label={`看「${nsLabel(n.ns)}」的 ${n.keys} 条文案`}>
-                <span className="i6-ns-name">{nsLabel(n.ns)}<small>{n.ns} · {count(n.keys)} 条</small></span>
+                <span className="i6-ns-name">{nsLabel(n.ns)}<small>{n.ns} · {count(n.keys)} 条{!["-", "—", ""].includes(n.variants) && ` · 进行中变体 ${n.variants}`}{!["-", "—", ""].includes(n.lastChange) && ` · 最近改动 ${n.lastChange}`}</small></span>
                 <span className="i6-ns-miss">{miss.length ? miss.map((item) => <StatusTag key={item.key} tone="warn" icon={TriangleAlert}>缺{item.short} {count(item.n)}</StatusTag>) : <StatusTag tone="ok">三语齐</StatusTag>}</span>
                 <span className="i6-ns-cov">
                   <RatioBar compact quiet label={`${nsLabel(n.ns)}可上线比例`} value={n.coverage} total={100} tone="role-2" valueText={`可上线 ${n.coverage}%`} />
@@ -1091,7 +1091,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 <IconTile icon={FilePen} tone="warn" />
                 <span className="i6-issue-name">{issueName(issue)}</span>
                 <span className="i6-issue-cnt">{count(issue.cnt)} 处</span>
-                {canWriteI6 && sm && <Button size="sm" className="i6-issue-fix" onClick={() => { setMessageDrawer(true); setCompareVersion(""); startEdit("fix", issue); }}>修复所选文案</Button>}
+                {canWriteI6 && sm && <span className="i6-issue-fix"><span className="i6-muted" title={sm.messageKey}>所选 <span className="i6-mono">{sm.messageKey.length > 22 ? `…${sm.messageKey.slice(-21)}` : sm.messageKey}</span></span><span data-pair=""><Button size="sm" onClick={() => { setMessageDrawer(true); setCompareVersion(""); startEdit("fix", issue); }}>修复所选文案</Button><Explain label="修的是哪一条" content="修的是列表里最后点过的那条文案（没点过时是第一条）。要修别的，先点「例如」里的键或列表里的文案。" /></span></span>}
               </div>
               {issue.samples.length > 0 && <div className="i6-issue-samples">
                 <span className="i6-muted">例如</span>
@@ -1101,9 +1101,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               </div>}
             </li>)}
           </ul>}
-          {INTEGRITY_ISSUES.some((issue) => issue.status === "fixed" || issue.cnt === 0) && <p className="i6-muted">没有问题：{INTEGRITY_ISSUES.filter((issue) => issue.status === "fixed" || issue.cnt === 0).map(issueName).join("、")}。</p>}
+          {INTEGRITY_ISSUES.some((issue) => issue.status === "fixed" || issue.cnt === 0) && <p className="i6-muted i6-clean">其余 {INTEGRITY_ISSUES.filter((issue) => issue.status === "fixed" || issue.cnt === 0).length} 类没有问题<Explain label="哪几类没有问题" content={INTEGRITY_ISSUES.filter((issue) => issue.status === "fixed" || issue.cnt === 0).map(issueName).join("、")} /></p>}
           </>}
-        {sm && openIssues.some((issue) => issue.cnt > 0) && canWriteI6 && <p className="i6-muted i6-fix-target">「修复所选文案」修的是 <span className="i6-mono">{sm.messageKey}</span>；要修别的，先点上面的例子或列表里的文案。</p>}
       </Fold>
 
       <Fold title="写死在 App 里的文字" icon={CodeXml} summary={HARDCODED_FINDINGS.length ? `${count(HARDCODED_FINDINGS.length)} 处 · 后台改不了，要发版` : "没有登记 · 后台改不了，要发版"}
@@ -1237,6 +1236,21 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       <span className="i6-card-act">{primary}{more.length > 0 && <MoreMenu label={`${title} 更多操作`} items={more} />}</span>
     </>;
   };
+  const courseDrawerFooter = (c: Course) => {
+    const st = liveStatus(c);
+    const archived = st === "archived";
+    const isDraft = st === "draft" || st === "ready";
+    const title = nexGridBrandText(c.title);
+    return <Decision
+      danger={canWriteI7 && isDraft ? <Button variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} onClick={() => deleteCrs(c)}>删除草稿</Button>
+        : canWriteI7 && !archived ? <Button variant="danger-outline" icon={<Archive size={14} aria-hidden />} onClick={() => archiveCrs(c)}>下架</Button> : undefined}
+      others={<>
+        <Button onClick={() => setVersionCourseId("")}>关闭</Button>
+        {isDraft && canWriteI7 && <Button icon={<Pencil size={14} aria-hidden />} aria-label={`编辑 ${title}`} onClick={() => editCrs(c)}>编辑</Button>}
+        {!isDraft && !archived && canAdjustI7Reward && <Button aria-label={`调整奖励 ${title}`} onClick={() => adjRwd(c)}>调奖励</Button>}
+      </>}
+      primary={isDraft && canPublishI7 ? <Button variant="primary" icon={<Send size={14} aria-hidden />} onClick={() => pubCrs(c)}>{c.reward > 0 ? "提交发布" : "发布"}</Button> : undefined} />;
+  };
   const langDone = (c: Course, lang: Lang) => {
     const F = lang === "zh" ? "Zh" : lang === "vi" ? "Vi" : "En";
     return !!(c[`title${F}` as "titleZh"]?.trim() && c[`body${F}` as "bodyZh"]?.trim());
@@ -1330,7 +1344,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
     <Drawer open={!!versionCourse} onClose={() => setVersionCourseId("")} wide icon={GraduationCap}
       title={versionCourse ? nexGridBrandText(versionCourse.title) : "课程"} sub={versionCourse ? `${versionCourse.id} · ${versionCourse.v}` : undefined}
-      footer={versionCourse ? <Decision others={<Button onClick={() => setVersionCourseId("")}>关闭</Button>} primary={<span className="i6-card-act">{courseActions(versionCourse, "drawer")}</span>} /> : undefined}>
+      footer={versionCourse ? courseDrawerFooter(versionCourse) : undefined}>
       {versionCourse && <section data-proof="i7-course-version-crud" className="i6-course-detail">
         <PageTabs level={2} label="课程详情" value={courseTab} onChange={setCourseTab} ids={courseTabIds}
           items={[{ value: "content", label: "内容" }, { value: "quiz", label: "测验与发奖" }, { value: "versions", label: "版本", count: versionsLoading ? undefined : versionsError ? "—" : courseVersions.length }]} />
@@ -1343,9 +1357,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 <Fact k="标题">{(versionCourse[`title${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "titleZh"] || "—")}</Fact>
                 <Fact k="状态">{(COURSE_STATUS[liveStatus(versionCourse)] ?? { text: "状态未知" }).text} · {versionCourse.v}</Fact>
                 <Fact k="学完发" unit="UVT/人">{uvtText(versionCourse.rewardRaw)}</Fact>
-                <Fact k="分类">{categoryLabel(versionCourse.cat)} · {FORMAT_LABEL[versionCourse.format] ?? versionCourse.format} · {LEVEL_LABEL[versionCourse.level] ?? versionCourse.level} · {durationText(versionCourse.duration)}</Fact>
+                <Fact k="分类">{categoryLabel(versionCourse.cat)}</Fact>
+                <Fact k="形式和难度">{FORMAT_LABEL[versionCourse.format] ?? versionCourse.format} · {LEVEL_LABEL[versionCourse.level] ?? versionCourse.level}</Fact>
+                <Fact k="预计时长">{durationText(versionCourse.duration)}</Fact>
               </Facts>
-              <p className="i6-course-body">{versionCourse[`body${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "bodyZh"] || "这种语言还没有正文。"}</p>
             </div>
             <AppCoursePreview lang={courseLang} title={versionCourse[`title${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "titleZh"]}
               body={versionCourse[`body${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "bodyZh"]} category={versionCourse.cat} format={versionCourse.format}

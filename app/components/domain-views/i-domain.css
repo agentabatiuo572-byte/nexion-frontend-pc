@@ -153,12 +153,10 @@
 .i6-page .i6-issue-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-3); }
 .i6-page .i6-issue-name { font-weight: var(--rd-weight-medium); }
 .i6-page .i6-issue-cnt { font-variant-numeric: tabular-nums; color: var(--rd-text-2); }
-.i6-page .i6-issue-fix { margin-left: auto; }
 .i6-page .i6-issue-samples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); padding-left: 40px; }
 .i6-sample { padding: 0 var(--rd-space-2); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tag); background: var(--rd-panel-inner); color: var(--rd-text-2); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); line-height: 22px; cursor: pointer; }
 .i6-sample[data-static] { cursor: default; }
 .i6-sample[data-selected] { border-color: var(--rd-brand); color: var(--rd-text); }
-.i6-page .i6-fix-target { margin-top: var(--rd-space-3); }
 
 /* 等批准和结果未知：一行一件，改的是什么、从多少到多少、什么时候提交 */
 .i6-page .i6-pending li { display: grid; grid-template-columns: max-content minmax(160px, 1fr) minmax(140px, auto) max-content max-content; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
@@ -199,7 +197,7 @@
 .i6-langs { display: grid; gap: var(--rd-space-3); }
 .i6-lang { padding: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
 .i6-lang[data-missing] { border-style: dashed; border-color: var(--rd-warn); background: transparent; }
-.i6-lang-head { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-2); margin-bottom: var(--rd-space-1); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i6-lang-head { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-2); margin-bottom: var(--rd-space-2); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .i6-lang-text { margin: 0; color: var(--rd-text); white-space: pre-wrap; overflow-wrap: anywhere; }
 .i6-lang[data-missing] .i6-lang-text { color: var(--rd-text-3); }
 .i6-row-actions { display: inline-flex; gap: var(--rd-space-2); justify-content: flex-end; white-space: nowrap; }
@@ -249,6 +247,12 @@
 .i6-phone-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--rd-space-2); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .i6-phone-reward { padding: 2px var(--rd-space-2); border-radius: 999px; background: var(--rd-role-1-bg); color: var(--rd-role-1); font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; }
 :root[data-theme="light"] .i6-phone-reward { color: var(--rd-text); }
-.i6-phone-body { margin: 0; font-size: var(--rd-text-aux); line-height: 20px; color: var(--rd-text-2); white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 10; }
-.i6-phone-quiz { display: flex; align-items: center; gap: var(--rd-space-2); margin-top: auto; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); font-size: var(--rd-text-aux); color: var(--rd-text-2); }
+.i6-phone-body { margin: 0; font-size: var(--rd-text-aux); line-height: 20px; color: var(--rd-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.i6-phone-quiz { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); margin-top: auto; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); font-size: var(--rd-text-aux); color: var(--rd-text-2); }
 .i6-phone-caption { font-size: var(--rd-text-aux); color: var(--rd-text-3); text-align: center; }
+.i6-phone-quiz > span { white-space: nowrap; }
+.i6-phone-quiz > span + span::before { content: "·"; margin-right: var(--rd-space-2); color: var(--rd-text-3); }
+.i6-course-detail { display: flex; flex-direction: column; gap: var(--rd-space-4); }
+.i6-page .i6-clean { display: flex; align-items: center; gap: var(--rd-space-1); margin-top: var(--rd-space-3); }
+.i6-page .i6-issue-fix { display: inline-flex; align-items: center; gap: var(--rd-space-3); margin-left: auto; min-width: 0; }
+.i6-page .i6-issue-fix [data-pair] { display: inline-flex; align-items: center; gap: var(--rd-space-1); }

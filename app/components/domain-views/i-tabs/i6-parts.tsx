@@ -171,10 +171,10 @@ export function AppCoursePreview({ lang, title, body, category, format, level, d
           <span className="i6-phone-icon" aria-hidden><Icon size={18} /></span>
           <span className="i6-phone-cat">{categoryLabel(category)} · {FORMAT_LABEL[format] ?? format} · {LEVEL_LABEL[level] ?? level}</span>
         </div>
-        <h3 className="i6-phone-title" data-empty={title.trim() ? undefined : ""}>{title.trim() ? nexGridBrandText(title) : `缺${langLabel}标题`}</h3>
+        <h3 className="i6-phone-title" data-user-content="" data-empty={title.trim() ? undefined : ""}>{title.trim() ? nexGridBrandText(title) : `缺${langLabel}标题`}</h3>
         <div className="i6-phone-meta"><span>{durationText(duration)}</span><span className="i6-phone-reward">学完得 {reward.trim() && Number.isFinite(Number(reward)) ? uvtText(reward) : "—"} UVT</span></div>
-        <p className="i6-phone-body" data-empty={body.trim() ? undefined : ""}>{body.trim() ? nexGridBrandText(body) : `缺${langLabel}正文`}</p>
-        <div className="i6-phone-quiz"><GraduationCap size={14} aria-hidden />测验 {quizCount} 题 · {passScore || "—"} 分及格 · 可重试 {retries || "—"} 次</div>
+        <p className="i6-phone-body" data-user-content="" data-empty={body.trim() ? undefined : ""}>{body.trim() ? nexGridBrandText(body) : `缺${langLabel}正文`}</p>
+        <div className="i6-phone-quiz"><GraduationCap size={14} aria-hidden /><span>测验 {quizCount} 题</span><span>{passScore || "—"} 分及格</span><span>可重试 {retries || "—"} 次</span></div>
       </div>
       {caption && <figcaption className="i6-phone-caption">{caption}</figcaption>}
     </figure>
@@ -273,10 +273,10 @@ export function CourseEditor({ open, spec, title, sub, busy, onClose, onSave }: 
                 items={LANGS.map((item) => ({ value: item.key, label: item.label, missing: langMissing(item.key) }))} />
             </div>}
             {tab === "body" && <>
-              <Field label={`${langLabel}标题`} required hint="最多 1024 字" error={err(`title${F}`)}>
+              <Field label={`${langLabel}标题`} required error={err(`title${F}`)}>
                 <Input value={form[`title${F}`] ?? ""} maxLength={1024} onChange={(event) => set(`title${F}`, event.target.value)} />
               </Field>
-              <Field label={`${langLabel}正文`} required hint="最多 1024 字" error={err(`body${F}`)}>
+              <Field label={`${langLabel}正文`} required error={err(`body${F}`)}>
                 <Textarea rows={8} value={form[`body${F}`] ?? ""} maxLength={1024} count={`${(form[`body${F}`] ?? "").length}/1024`} onChange={(event) => set(`body${F}`, event.target.value)} />
               </Field>
             </>}
