@@ -4,13 +4,12 @@
  * 新人礼与邀请奖励（H8）。首屏回答：奖励开着没有、新人和邀请人每位实际拿多少（基础额 × 运营阶段设置的当月加成）、
  * 有多少注册在等结算、改哪一项会让平台多付钱。
  * 调高金额、启用、改成「符合资格就直接发」提交审批，另一位超级管理员批准后生效；反方向确认后立即保存。
- * 两种结算都只提交审批，另一位管理员批准后才发。请求、校验、权限和结果未知的处理照旧，界面只换排法。
+ * 两种结算都只提交审批，另一位管理员批准后才发。结果未知保存完整原请求和确认事实，恢复不依赖概览。
  */
 import { useReach } from "@/lib/nav/use-reach";
 import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
-import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeftRight, Check, Gift, Hourglass, ListChecks, Power, Route, ShieldAlert, SlidersHorizontal, UserPlus, Users } from "lucide-react";
 import {
@@ -18,29 +17,22 @@ import {
   IrreversibleTag, Notice, NumberInput, PageHeader, Panel, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr,
 } from "@/app/components/rd";
 import {
-  createH8CommandKey,
   fetchH8ReferralRewards,
   h8EffectiveRewardReference,
   h8RewardParamAmplifies,
   h8RewardParamValid,
-  isH8OutcomeUncertainError,
-  updateH8ReferralRewardParam,
   type H8ReferralRewardOverview,
 } from "@/lib/admin/h-client";
 import type { ActionConfirmReq, HCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
-import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { roleLabel } from "@/lib/nav/console-nav";
+import { canRetryH8RewardCommand, createH8RewardCommand, pendingH8RewardCommands, queryH8RewardCommand, requireH8Actor, sendH8RewardCommand, type H8RewardCommand } from "@/lib/admin/h8-reward-mutation";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { configApprovalOriginalInput, pendingConfigApproval, submitConfigApproval, withdrawalApprovalDisabledReason, type H8ConfigApprovalInput } from "@/lib/admin/withdrawal-config-approval";
+import { withdrawalApprovalDisabledReason } from "@/lib/admin/withdrawal-config-approval";
 import { OperationConfirmModal, type BusinessFormValue } from "../design-kit";
-import { Amount, amountParts, amountText, countText, decimalsOf, expiredTag, H8RecoveryNotice, multiplierText, RewardFlow, unknownTag, type H8RecoveryRow } from "./h8-reward-parts";
-
-/** H8 发奖参数与结算的稳定命令号:槽位=动作|参数键,指纹带 expectedVersion(旧快照重提自动换号)。
- *  落 sessionStorage,结果未知后刷新页面原样重试仍复用同号被后端去重。 */
-const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-h8-commands-v1" });
+import { Amount, amountParts, amountText, countText, decimalsOf, expiredTag, H8RecoveryNotice, H8SavedUnreadNotice, multiplierText, pendingTag, RewardFlow, unknownTag, type H8RecoveryRow } from "./h8-reward-parts";
 
 const PARAMS = [
   { key: "newcomer.usdt", label: "新人 USDT", unit: "USDT", kind: "number", max: 50, step: 0.000001 },
@@ -89,25 +81,38 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const [invitedUserIdInput, setInvitedUserIdInput] = useState("");
   const [mc, setMc] = useState<ActionConfirmReq | null>(null);
   const loadGeneration = useRef(0);
-  const propose = usePropose();
+  const [, changed] = useReducer((value: number) => value + 1, 0);
+  const [readReady, setReadReady] = useState(false);
+  const [savedUnread, setSavedUnread] = useState<{ param: H8Param; value: string } | null>(null);
   const openConfirm = setMc;
+  const currentRead = useRef({ data, ready: readReady });
+  currentRead.current = { data, ready: readReady && !loading };
 
-  const load = useCallback(async (cursor = "", append = false) => {
+  const load = useCallback(async (cursor = "", append = false, keepSaved = false) => {
     const request = ++loadGeneration.current;
     if (append) setLoadingMore(true);
-    else setLoading(true);
+    else { currentRead.current.ready = false; setLoading(true); setReadReady(false); }
     try {
       const next = await fetchH8ReferralRewards(cursor);
-      if (request !== loadGeneration.current) return;
+      if (request !== loadGeneration.current) return false;
       setData((current) => append && current ? {
         ...next,
         recentSettlements: [...current.recentSettlements, ...next.recentSettlements],
       } : next);
       setError(null);
+      setReadReady(true);
+      setSavedUnread(null);
+      const adminId = useAdminAuth.getState().session?.adminId;
+      if (adminId) {
+        await Promise.allSettled(pendingH8RewardCommands(adminId).filter(r => r.kind !== "direct").map(queryH8RewardCommand));
+        if (request === loadGeneration.current) changed();
+      }
+      return true;
     } catch (cause) {
-      if (request !== loadGeneration.current) return;
-      if (!append) setData(null);
-      setError(displayAdminError(cause));
+      if (request !== loadGeneration.current) return false;
+      if (!append) { setReadReady(false); if (!keepSaved) setData(null); }
+      if (!keepSaved) setError(displayAdminError(cause));
+      return false;
     } finally {
       if (request === loadGeneration.current) {
         setLoading(false);
@@ -121,51 +126,94 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     return () => { loadGeneration.current += 1; };
   }, [load]);
 
-  const editParam = (param: H8Param, fixedValue?: string) => {
-    if (!data || !session) return;
+  const commands = session ? pendingH8RewardCommands(session.adminId) : [];
+  const commandForParam = (param: H8Param) => session
+    ? pendingH8RewardCommands(session.adminId).find(r => r.paramKey === param.key) : undefined;
+  const pendingPolicy = commands.some(r => r.kind === "param-approval" && r.ticket?.status === "pending");
+  const freshBlocked = !readReady || loading ? displayAdminError(new Error("H8_OVERVIEW_REQUIRED")) : undefined;
+
+  const finishCommand = async (record: H8RewardCommand, ticket: Awaited<ReturnType<typeof sendH8RewardCommand>>) => {
+    openConfirm(null);
+    currentRead.current.ready = false;
+    setReadReady(false);
+    changed();
+    const original = record.original;
+    if (original?.kind === "direct") {
+      const param = [ENABLED_PARAM, ...PARAMS].find(p => p.key === original.paramKey)!;
+      setSavedUnread({ param, value: original.value });
+      if (await load("", false, true)) ctx.toast(param.key === "enabled" ? "邀请奖励已停用" : `${param.label} 已更新为 ${valueText(param, original.value)}`);
+    } else {
+      await load();
+      if (ticket) ctx.toast(ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果`);
+    }
+  };
+  const sendCommand = async (record: H8RewardCommand, recovering: boolean) => {
+    try {
+      const ticket = await sendH8RewardCommand(record, recovering);
+      await finishCommand(record, ticket);
+    } catch (error) {
+      changed();
+      // A resolved recovery must not retain a closure that can dispatch the old request.
+      if (recovering && !pendingH8RewardCommands(record.adminId).some(r => r.commandKey === record.commandKey)) {
+        openConfirm(null);
+        setReadReady(false);
+        await load();
+      }
+      throw error;
+    }
+  };
+  const queryCommand = async (record: H8RewardCommand) => {
+    try {
+      if (record.kind === "direct") {
+        requireH8Actor(record.adminId);
+        await load();
+        throw new Error("H8_DIRECT_RESULT_REQUIRES_AUDIT");
+      }
+      const ticket = await queryH8RewardCommand(record);
+      if (!ticket) return false;
+      await finishCommand(record, ticket);
+      return true;
+    } finally { changed(); }
+  };
+  const editParam = (param: H8Param, fixedValue?: string, recovered?: H8RewardCommand, lookupOnly = false) => {
+    if (!session) return;
+    const pending = recovered ?? commandForParam(param);
+    if (pending && !pending.original) {
+      void queryCommand(pending).catch(cause => ctx.toast(displayAdminError(cause)));
+      return;
+    }
+    const snapshot = pending?.original?.overview ?? data;
+    if (!snapshot || !pending && (!readReady || !canWrite)) return;
+    const original = pending?.original;
     const isEnabled = param.key === "enabled";
     const numeric = param.kind === "number";
-    const rawCurrent = String(data.params[param.key]);
+    const rawCurrent = String(snapshot.params[param.key]);
     const current = isEnabled
       ? ENABLED_LABELS[rawCurrent] ?? ENABLED_LABELS.false
       : param.kind === "select" ? LOCK_MODE_LABELS[rawCurrent] ?? LOCK_MODE_LABELS.risk_bucket : rawCurrent;
-    const approvalScope = { objectId: "current", field: param.key };
-    const pending = pendingConfigApproval("H8", session.adminId, approvalScope);
-    let original: H8ConfigApprovalInput | undefined;
-    try {
-      original = pending ? configApprovalOriginalInput("H8", pending.input) : undefined;
-      if (original && original[0].key !== param.key) throw new Error("原审批命令不完整，请到操作记录核对。");
-    } catch (cause) {
-      ctx.toast(displayAdminError(cause));
-      return;
-    }
-    const expectedVersion = original?.[0].expectedVersion ?? data.version;
-    const enabling = isEnabled && (original?.[0].value ?? fixedValue ?? rawCurrent) === "true";
-    const multiplier = param.key === "inviter.nex" ? data.inviterMultiplier : data.newcomerMultiplier;
-    const storedValue = (value: BusinessFormValue) => (original?.[0].value ?? fixedValue ?? value.value ?? "").trim();
-    const showValue = (value: string) => isEnabled ? ENABLED_LABELS[value] ?? "—"
-      : numeric ? value || "—" : LOCK_MODE_LABELS[value] ?? "—";
-    const ensureSession = () => {
-      if (useAdminAuth.getState().session?.adminId !== session.adminId) {
-        throw new Error("登录账号已变化，请关闭弹窗后重新操作。");
-      }
+    const expectedVersion = snapshot.version;
+    const originalValue = original && original.kind !== "settlement" ? original.value : undefined;
+    const enabling = isEnabled && (originalValue ?? fixedValue ?? rawCurrent) === "true";
+    const multiplier = param.key === "inviter.nex" ? snapshot.inviterMultiplier : snapshot.newcomerMultiplier;
+    const storedValue = (value: BusinessFormValue) => (originalValue ?? fixedValue ?? value.value ?? "").trim();
+    const ensureSession = () => { requireH8Actor(session.adminId); };
+    const approvalCommand = (value: string, reason: string) => {
+      const actor = requireH8Actor(session.adminId, "param");
+      const request = {
+        action: "放宽新人礼与邀请奖励", obj: "current", beforeValue: "—", afterValue: "—",
+        operator: actor.operator || actor.username, operatorRole: roleLabel(actor.role),
+        type: "fund" as const, amplifies: true, sos: false, roleGate: "超管", reason, sourceDomain: "H8",
+        command: { domain: "H", op: "h8_reward_param_change", params: { values: { key: param.key, value, expectedVersion } } },
+        target: { domain: "H", type: "h8_reward_policy", id: "current" },
+      };
+      return createH8RewardCommand(session.adminId, { kind: "param-approval", paramKey: param.key, value,
+        overview: snapshot, request, body: JSON.stringify(request) });
     };
-    const submitApproval = async (reason: string, value?: string, mode: boolean | "retry-original" = false) => {
-      ensureSession();
-      const result = await submitConfigApproval("H8", session,
-        value === undefined ? null : { key: param.key, value, expectedVersion },
-        reason, fetchH8ReferralRewards, mode, approvalScope);
-      if (!result) return false;
-      setData(result.active);
-      setError(null);
-      ctx.toast(result.acknowledgement);
-      openConfirm(null);
-      return true;
-    };
+    const currentCommand = () => commandForParam(param);
     const unit = numeric ? param.unit : "";
     const multiplierName = param.key === "inviter.nex" ? "邀请加成" : "新用户加成";
-    const pendingCount = countText(data.pending);
-    const gateNow = gateText(data.effectiveAt);
+    const pendingCount = countText(snapshot.pending);
+    const gateNow = gateText(snapshot.effectiveAt);
     const resetFact = (when = "保存或批准") => `${when}后，现在等结算的 ${pendingCount} 位不再进入结算`;
     const approvalCopy = numeric
       ? "批准前仍按原金额发；批准时按那时的当月加成重算，并检查兑付覆盖率。"
@@ -211,7 +259,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         {isEnabled
           ? <Fact k="奖励开关"><Change from={current} to={enabling ? "已启用" : "已停用"} /></Fact>
           : <Fact k="改的是">{numeric ? `${WHO[param.key].per}的${param.label} 基础额` : "新人礼发放方式"}</Fact>}
-        {numeric && <Fact k="当月加成">第 {data.rhythmMonth} 月{multiplierName} {multiplierText(multiplier)}，在运营阶段设置改</Fact>}
+        {numeric && <Fact k="当月加成">第 {snapshot.rhythmMonth} 月{multiplierName} {multiplierText(multiplier)}，在运营阶段设置改</Fact>}
         {numeric && <Fact k="生效时间"><Change from={gateNow} to="保存或批准那一刻" /></Fact>}
         {numeric && <Fact k="等结算的注册">{resetFact()}</Fact>}
         {numeric && <Fact k="已结算和已冻结">金额不变</Fact>}
@@ -230,18 +278,21 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
-      getPendingReason: () => original?.[1],
+      getPendingReason: () => { const o = currentCommand()?.original; return o?.kind === "direct" ? o.reason : o?.request.reason; },
+      getPendingBusinessValue: () => { const o = currentCommand()?.original; return o && o.kind !== "settlement" ? { value: o.value } : undefined; },
       completionCopy: directCopy,
       businessForm: { kind: "multi-field", fields: fixedValue !== undefined ? [] : [{
         key: "value", label: numeric ? `${param.label}基础额` : "发放模式", required: true,
-        current: original?.[0].value ?? (numeric ? "" : rawCurrent), inputKind: numeric ? "text" : "select",
+        current: originalValue ?? (numeric ? "" : rawCurrent), inputKind: numeric ? "text" : "select",
         ...(numeric ? { pattern: "^(?:0|[1-9]\\d{0,11})(?:\\.\\d{1,6})?$", patternMessage: "请输入非负金额，最多六位小数。" }
           : { options: ["risk_bucket", "direct"], optionLabels: LOCK_MODE_LABELS }),
       }] },
       inlineApproval: {
         dialogClassName: "h8-param-confirm",
         pending: !!pending,
-        expired: !!pending && pending.expiresAt <= Date.now(),
+        initialRecovery: pending && lookupOnly ? "lookup" : "retry",
+        expired: !!pending && !canRetryH8RewardCommand(pending),
+        disabledReason: pending && canRetryH8RewardCommand(pending) && !canWrite ? displayAdminError(new Error("ACCESS_DENIED")) : undefined,
         resolve: (form) => {
           const value = storedValue(form);
           if (!value) return undefined;
@@ -249,11 +300,11 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
             heading: "请核对改后的值", disabledReason: numeric ? `基础额要在 0–${param.max.toLocaleString("zh-CN")} ${param.unit} 之间，最多 6 位小数。` : "请选择一种发放方式。",
             completionCopy: "还没有提交，改成允许范围内的值再继续。",
           };
-          if (!pending && !h8RewardParamAmplifies(param.key, rawCurrent, value)) return undefined;
+          if (pending?.kind === "direct" || !pending && !h8RewardParamAmplifies(param.key, rawCurrent, value)) return undefined;
           return {
             heading: `会让平台多付钱，要${APPROVER}批准`,
             completionCopy: approvalCopy,
-            disabledReason: numeric && h8EffectiveRewardReference(value, multiplier) === null
+            disabledReason: !pending && pendingPolicy ? displayAdminError(new Error("OBJECT_ALREADY_PENDING")) : numeric && h8EffectiveRewardReference(value, multiplier) === null
               ? "改后的实际发放超出允许范围，请核对基础额和当月加成。" : undefined,
           };
         },
@@ -295,48 +346,55 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
             </DiffField>
           );
         },
-        recover: (reason, form) => submitApproval(reason, storedValue(form), true),
-        retry: async () => { await submitApproval("", undefined, "retry-original"); },
+        recover: async () => { const record = currentCommand(); return record ? queryCommand(record) : false; },
+        retry: async () => { const record = currentCommand(); if (!record) throw new Error("H8_ORIGINAL_RESOLVED"); await sendCommand(record, true); },
       },
       run: async (reason, _, form) => {
         ensureSession();
+        const previous = currentCommand();
+        if (previous) { await sendCommand(previous, true); return; }
+        if (!currentRead.current.ready || currentRead.current.data !== snapshot) throw new Error("H8_OVERVIEW_REQUIRED");
         const value = storedValue(form ?? {});
         if (!h8RewardParamValid(param.key, value)) throw new Error("请填写允许范围内的基础额或选择有效模式。");
-        if (pending || h8RewardParamAmplifies(param.key, rawCurrent, value)) {
-          await submitApproval(reason, value);
+        if (h8RewardParamAmplifies(param.key, rawCurrent, value)) {
+          await sendCommand(approvalCommand(value, reason), false);
           return;
         }
-        const slot = `${session.adminId}|param|${param.key}`;
-        let mintedFresh = false;
-        const commandKey = commandAttempts.resolve(
-          slot,
-          JSON.stringify([value, data.version]),
-          () => { mintedFresh = true; return createH8CommandKey("h8-param"); },
-        );
-        try {
-          await updateH8ReferralRewardParam(param.key, value, reason, data.version, commandKey);
-          commandAttempts.forget(slot);
-        } catch (error) {
-          // 只有全新尝试才在确定性失败时弃号:复用来的号说明上次结果未知,这次的 4xx 证明不了那次没落地。
-          if (mintedFresh && !isH8OutcomeUncertainError(error)) commandAttempts.forget(slot);
-          throw error;
+        const actor = requireH8Actor(session.adminId, "param");
+        const operator = actor.operator || actor.username;
+        const record = createH8RewardCommand(session.adminId, { kind: "direct", paramKey: param.key, value, reason, operator,
+          overview: snapshot, body: JSON.stringify({ key: param.key, value, expectedVersion, reason, operator }) });
+        try { await sendCommand(record, false); }
+        catch (error) {
+          // The server's direction is authoritative if its live state requires A2.
+          if ((error as { reasonCode?: string }).reasonCode !== "A2_CONFIRMATION_REQUIRED") throw error;
+          await sendCommand(approvalCommand(value, reason), false);
         }
-        await load();
-        ctx.toast(isEnabled ? "邀请奖励已停用" : `${param.label} 已更新为 ${showValue(value)} ${nexGridBrandText(param.unit)}`);
       },
     });
   };
 
-  const settle = (invitedUserId?: number) => {
-    const targeted = invitedUserId != null;
-    const rewards = data?.effectiveRewards;
+  const settle = (invitedUserId?: number, recovered?: H8RewardCommand, lookupOnly = false) => {
+    if (!session) return;
+    const pending = recovered ?? pendingH8RewardCommands(session.adminId).find(r => r.kind === "settlement");
+    if (pending && !pending.original) {
+      void queryCommand(pending).catch(cause => ctx.toast(displayAdminError(cause)));
+      return;
+    }
+    const original = pending?.original?.kind === "settlement" ? pending.original : undefined;
+    const snapshot = original?.overview ?? data;
+    if (!snapshot || !pending && (!readReady || !canSettle || !snapshot.enabled || invitedUserId === undefined && snapshot.pending <= 0)) return;
+    invitedUserId = original?.invitedUserId ?? invitedUserId;
+    const targeted = original ? original.invitedUserId !== undefined : invitedUserId != null;
+    const currentCommand = () => pendingH8RewardCommands(session.adminId).find(r => r.kind === "settlement");
+    const rewards = snapshot?.effectiveRewards;
     const usdtDecimals = decimalsOf(rewards?.["newcomer.usdt"]);
     const uvtDecimals = decimalsOf(rewards?.["newcomer.nex"], rewards?.["inviter.nex"]);
-    const loaded = targeted ? data?.recentSettlements.find((row) => row.invitedUserId === invitedUserId) : undefined;
+    const loaded = targeted ? snapshot?.recentSettlements.find((row) => row.invitedUserId === invitedUserId) : undefined;
     const proposeBlock = withdrawalApprovalDisabledReason(session?.authorities ?? []);
     const settleFacts = (value?: string) => {
       const limit = targeted ? 1 : Math.max(1, Math.min(100, Number(value) || 20));
-      const pendingNow = Number(data?.pending ?? 0);
+      const pendingNow = Number(snapshot?.pending ?? 0);
       return <Facts>
         {targeted
           ? <Fact k="新人用户编号" lead>{invitedUserId}</Fact>
@@ -344,7 +402,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         {targeted
           ? <Fact k="这位新人">{loaded
             ? "已结算过，不会再发一份"
-            : `已读到的 ${countText(data?.recentSettlements.length)} 条结算记录里没有他`}</Fact>
+            : `已读到的 ${countText(snapshot?.recentSettlements.length)} 条结算记录里没有他`}</Fact>
           : null}
         {targeted && loaded && <Fact k="原结算号"><span data-mono>{loaded.settlementNo}</span></Fact>}
         {targeted && <Fact k="这次会怎样">{loaded
@@ -377,92 +435,76 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     coverageCheck: "提交审批时不检查兑付覆盖率；批准后、真正入账前后后端各检查一次，低于红线整批不发。",
     confirmLabel: "提交结算审批",
     confirmTone: "danger",
+    getPendingReason: () => { const o = currentCommand()?.original; return o && o.kind !== "direct" ? o.request.reason : undefined; },
+    inlineApproval: {
+      pending: !!pending, initialRecovery: pending && lookupOnly ? "lookup" : "retry", expired: !!pending && !canRetryH8RewardCommand(pending),
+      disabledReason: pending && canRetryH8RewardCommand(pending) && !canSettle ? displayAdminError(new Error("ACCESS_DENIED")) : undefined,
+      resolve: () => undefined,
+      recover: async () => { const record = currentCommand(); return record ? queryCommand(record) : false; },
+      retry: async () => { const record = currentCommand(); if (!record) throw new Error("H8_ORIGINAL_RESOLVED"); await sendCommand(record, true); },
+    },
     reasonPlaceholder: "例如：本周新人礼例行结算、工单号",
     amplifies: true,
-    edit: targeted ? undefined : { kind: "number", label: "这一批最多结算", current: "20", currentLabel: "默认", unit: "位", min: 1, max: 100, step: 1, hint: "1–100 位，填了才能提交；按注册先后从最早的开始" },
+    edit: targeted ? undefined : { kind: "number", label: "这一批最多结算", current: "20", currentLabel: "默认", ...(original ? { initialValue: String(original.limit) } : {}), unit: "位", min: 1, max: 100, step: 1, hint: "1–100 位，填了才能提交；按注册先后从最早的开始" },
     run: async (reason, value) => {
+      const previous = currentCommand();
+      if (previous) { await sendCommand(previous, true); return; }
+      if (!currentRead.current.ready || currentRead.current.data !== snapshot || !snapshot.enabled) throw new Error("H8_OVERVIEW_REQUIRED");
+      // The legacy empty field was never submittable. Keep its fallback and exact limit body.
       const limit = targeted ? 1 : Math.max(1, Math.min(100, Number(value) || 20));
       const def = targeted ? findHighOp("h8_referral_settlement_user")! : findHighOp("h8_referral_settlement")!;
-      const slot = targeted ? `settle|user|${invitedUserId}` : "settle|batch";
-      let mintedFresh = false;
-      // 指纹必须覆盖整个提案信封:pending 计数进了 body 的 before,刷新页面后它会随新邀请关系变化。
-      // 漏掉它则指纹相同而 body 变了 → 后端 payload-bound 防重复提交回 409,且因非全新尝试不弃号 = 24h 死锁。
-      const commandKey = commandAttempts.resolve(
-        slot,
-        targeted
-          ? JSON.stringify([invitedUserId, data?.version, data?.rhythmMonth, data?.rewardSnapshotHash, data?.pending])
-          : JSON.stringify([limit, data?.version, data?.rhythmMonth, data?.rewardSnapshotHash, data?.pending]),
-        () => { mintedFresh = true; return createH8CommandKey("h8-settle"); },
-      );
-      try {
-        await propose(ctx.toast, {
-          action: targeted ? "给指定新人结算邀请奖励" : "结算邀请奖励",
-          obj: targeted ? `新人 ${invitedUserId}` : "待结算邀请批次",
-          before: `待结算 ${Number(data?.pending ?? 0)} 条 · 设置版本 v${data?.version ?? "—"} · 第 ${data?.rhythmMonth ?? "—"} 个月`,
-          after: `${targeted ? `仅结算新人 ${invitedUserId} 的邀请奖励` : `最多结算 ${limit} 条`} · 新人 ${data?.effectiveRewards["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards["newcomer.nex"] ?? "—"} UVT · 邀请人 ${data?.effectiveRewards["inviter.nex"] ?? "—"} UVT · 快照 ${data?.rewardSnapshotHash.slice(0, 12) ?? "—"}…`,
-          type: "fund",
-          amplifies: true,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "H8",
-          commandKey,
-          command: def.buildCommand({
-            limit,
-            invitedUserId,
-            expectedH8Version: data?.version,
-            expectedRhythmMonth: data?.rhythmMonth,
-            rewardSnapshotHash: data?.rewardSnapshotHash,
-          }),
-          target: def.buildTarget({ limit, invitedUserId }),
-        });
-        commandAttempts.forget(slot);
-      } catch (error) {
-        if (mintedFresh && !isA2OutcomeUncertainError(error)) commandAttempts.forget(slot);
-        throw error;
-      }
+      const actor = requireH8Actor(session.adminId, "settlement");
+      const request = {
+        action: targeted ? "给指定新人结算邀请奖励" : "结算邀请奖励",
+        obj: targeted ? `新人 ${invitedUserId}` : "待结算邀请批次",
+        beforeValue: `待结算 ${Number(snapshot.pending ?? 0)} 条 · 设置版本 v${snapshot.version ?? "—"} · 第 ${snapshot.rhythmMonth ?? "—"} 个月`,
+        afterValue: `${targeted ? `仅结算新人 ${invitedUserId} 的邀请奖励` : `最多结算 ${limit} 条`} · 新人 ${snapshot.effectiveRewards["newcomer.usdt"] ?? "—"} USDT + ${snapshot.effectiveRewards["newcomer.nex"] ?? "—"} UVT · 邀请人 ${snapshot.effectiveRewards["inviter.nex"] ?? "—"} UVT · 快照 ${snapshot.rewardSnapshotHash.slice(0, 12) ?? "—"}…`,
+        operator: actor.operator || actor.username, operatorRole: roleLabel(actor.role),
+        type: "fund" as const, amplifies: true, sos: false, roleGate: def.gateLabel, reason, sourceDomain: "H8",
+        command: def.buildCommand({ limit, invitedUserId, expectedH8Version: snapshot.version,
+          expectedRhythmMonth: snapshot.rhythmMonth, rewardSnapshotHash: snapshot.rewardSnapshotHash }),
+        target: def.buildTarget({ limit, invitedUserId }),
+      };
+      await sendCommand(createH8RewardCommand(session.adminId, { kind: "settlement", overview: snapshot,
+        ...(targeted ? { invitedUserId } : {}), limit, request, body: JSON.stringify(request) }), false);
     },
     });
   };
 
-  // 原操作提醒：参数审批的原记录按字段取，直接保存和结算申请的原记录按槽位取。确认框开着时不列（提交中的记录还没有结论）。
+  // Recovery stays outside the overview-success branches and uses only persisted facts.
   const recoveryRows: H8RecoveryRow[] = [];
   const recoveryByKey: Record<string, ReactNode> = {};
   if (session && !mc) {
-    for (const param of [ENABLED_PARAM, ...PARAMS] as H8Param[]) {
-      const record = pendingConfigApproval("H8", session.adminId, { objectId: "current", field: param.key });
-      if (!record) continue;
-      let original: H8ConfigApprovalInput | undefined;
-      try { original = configApprovalOriginalInput("H8", record.input); } catch { original = undefined; }
-      const tag = record.expiresAt <= Date.now() ? expiredTag("approval") : unknownTag("approval");
-      recoveryByKey[param.key] = tag;
+    for (const record of commands) {
+      const param = [ENABLED_PARAM, ...PARAMS].find(p => p.key === record.paramKey);
+      const tag = record.ticket?.status === "pending"
+        ? record.kind === "param-approval" ? pendingTag() : <StatusTag tone="warn">待审批</StatusTag>
+        : isRetryExpired(record) ? expiredTag(record.kind === "direct" ? "direct" : "approval") : unknownTag(record.kind === "direct" ? "direct" : "approval");
+      if (param) recoveryByKey[param.key] = tag;
+      const recover = (lookupOnly = false) => param ? editParam(param, param.key === "enabled" ? record.value : undefined, record, lookupOnly) : settle(undefined, record, lookupOnly);
       recoveryRows.push({
-        key: record.commandKey, name: paramTitle(param), submittedAt: record.createdAt, tag,
-        change: <span>申请改成 {valueText(param, original?.[0].value)}</span>,
-        actions: data && <Button size="sm" aria-label={`查询${paramTitle(param)}的原结果`} onClick={() => editParam(param, param.key === "enabled" ? original?.[0].value : undefined)}>查询原结果</Button>,
+        key: record.commandKey, name: param ? paramTitle(param) : record.invitedUserId !== undefined ? "给指定新人结算" : "批量结算",
+        submittedAt: record.createdAt, tag,
+        change: param ? <span>{record.kind === "direct" ? "改成" : "申请改成"} {valueText(param, record.value)}</span>
+          : <span>{record.invitedUserId !== undefined ? `新人 ${record.invitedUserId}` : `最多 ${record.limit ?? "—"} 位`}</span>,
+        actions: <>
+          <Button size="sm" aria-label={`查询${param ? paramTitle(param) : "结算"}的原结果`}
+            onClick={() => { recover(true); }}>查询原结果</Button>
+          {canRetryH8RewardCommand(record) && (record.kind === "settlement" ? canSettle : canWrite)
+            && <Button size="sm" onClick={() => recover()}>按原请求重试</Button>}
+          {record.kind !== "param-approval" && reach("/platform/audit", "platform_a2_read")
+            && <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link>}
+        </>,
       });
-    }
-    for (const record of commandAttempts.list()) {
-      const [owner, kind, target] = record.fingerprint.split("|");
-      let input: unknown[] = [];
-      try { input = JSON.parse(record.inputFingerprint) as unknown[]; } catch { input = []; }
-      const audit = reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link> : undefined;
-      if (kind === "param" && owner === String(session.adminId)) {
-        const param = [ENABLED_PARAM, ...PARAMS].find((item) => item.key === target) as H8Param | undefined;
-        if (!param) continue;
-        recoveryByKey[param.key] ??= unknownTag("direct");
-        recoveryRows.push({ key: record.commandKey, name: paramTitle(param), submittedAt: record.createdAt, tag: unknownTag("direct"),
-          change: <span>改成 {valueText(param, typeof input[0] === "string" ? input[0] : undefined)}</span>, actions: audit });
-      } else if (owner === "settle") {
-        recoveryRows.push({ key: record.commandKey, name: kind === "user" ? "给指定新人结算" : "批量结算", submittedAt: record.createdAt, tag: unknownTag("approval"),
-          change: <span>{kind === "user" ? `新人 ${target}` : `最多 ${typeof input[0] === "number" ? input[0] : "—"} 位`}</span>, actions: audit });
-      }
     }
   }
   const recoveryNotice = <H8RecoveryNotice rows={recoveryRows} />;
+  const savedUnreadNotice = savedUnread && <H8SavedUnreadNotice name={paramTitle(savedUnread.param)}
+    value={valueText(savedUnread.param, savedUnread.value)} reloading={loading} onReload={() => void load("", false, true)} />;
 
   const confirmModal = mc && (
     <OperationConfirmModal briefKind={mc.briefKind}
+      key={mc.formKey}
       action={mc.action}
       title={mc.title}
       detail={mc.detail}
@@ -481,6 +523,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       reasonMin={mc.inlineApproval ? mc.reasonMin : undefined}
       reasonMax={mc.inlineApproval ? mc.reasonMax : undefined}
       getPendingReason={mc.inlineApproval ? mc.getPendingReason : undefined}
+      getPendingBusinessValue={mc.getPendingBusinessValue}
       completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
       onClose={() => setMc(null)}
       onConfirm={async (reason, newValue, businessValue) => {
@@ -503,6 +546,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     {header}
     <Conclusion state="unknown">正在读取奖励设置和结算情况…</Conclusion>
     {recoveryNotice}
+    {savedUnreadNotice}
     <BlockState state="loading" title="正在读取新人礼与邀请奖励…" />
     {confirmModal}
   </>;
@@ -510,6 +554,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     {header}
     <Conclusion state="unknown">读不到奖励设置，现在判断不了奖励开没开、有多少在等结算</Conclusion>
     {recoveryNotice}
+    {savedUnreadNotice}
     <BlockState state="error" title="新人礼与邀请奖励读取失败"
       detail={<>页面不显示任何旧数据。<Explain label="失败原因" content={error ?? "没有收到数据。"} /></>}
       retryLabel="重新加载" onRetry={() => void load()} />
@@ -571,7 +616,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         </div>
         <div className="h8-card-foot">
           <span className="h8-dir">{recoveryByKey[param.key] ?? "调高要批准 · 调低立即生效"}</span>
-          {canWrite && <Button size="sm" aria-label={`调整${param.label}基础额`} onClick={() => editParam(param)}>调整</Button>}
+          {canWrite && <Button size="sm" aria-label={`调整${param.label}基础额`} disabledReason={freshBlocked} onClick={() => editParam(param)}>调整</Button>}
         </div>
       </Stat>
     );
@@ -582,6 +627,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       {header}
       {conclusion}
       {recoveryNotice}
+      {savedUnreadNotice}
 
       <StatBand fit label="结算情况">
         <Stat lead icon={UserPlus} tone="role-3" label="等待结算" value={countText(pending)} unit="位"
@@ -610,14 +656,14 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
                 ? <StatusTag tone="ok" icon={Check}>已启用</StatusTag>
                 : <StatusTag tone="neutral" icon={Power}>已停用</StatusTag>}{recoveryByKey.enabled}</span>}
               action={canWrite ? (describedBy) => <Button size="sm" variant={data.enabled ? "danger-outline" : "secondary"} aria-describedby={describedBy}
-                onClick={() => editParam(ENABLED_PARAM, String(!data.enabled))}>{data.enabled ? "停用" : "启用"}</Button> : undefined} />
+                disabledReason={freshBlocked} onClick={() => editParam(ENABLED_PARAM, String(!data.enabled))}>{data.enabled ? "停用" : "启用"}</Button> : undefined} />
             <ConfigRow name="发放方式"
               what="结算时怎么过风控"
               when={`改成「符合资格就直接发」要${APPROVER}批准；改回确认后立即保存`}
               effect={MODE_HELP[String(data.params["newcomer.lockMode"])]}
               note="两种方式都保留首购冻结；已冻结的礼包按当初的方式解冻。"
               value={<span className="h8-row-value">{modeLabel}{recoveryByKey["newcomer.lockMode"]}</span>}
-              action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} onClick={() => editParam(MODE_PARAM)}>调整</Button> : undefined} />
+              action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={freshBlocked} onClick={() => editParam(MODE_PARAM)}>调整</Button> : undefined} />
             <ConfigRow name="生效时间"
               what="只有这个时间之后注册的新人进入结算"
               effect="改金额、改发放方式（含和现在一样的保存）和启用批准后，都改成那一刻；之前注册、还没结算的不再自动结算。停用不改它"
@@ -629,16 +675,16 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
       <Panel title="结算" icon={Route} tone="role-3" sub={`待结算 ${countText(pending)} 位`}
         explain="不会自动结算。批量和指定新人两种结算都只提交审批，另一位管理员批准后才发；同一时间只能有一张结算审批单。"
-        actions={canSettle ? <Button variant="primary" disabledReason={settleBlock} onClick={() => settle()}>批量结算</Button> : undefined}>
+        actions={canSettle ? <Button variant="primary" disabledReason={freshBlocked ?? settleBlock} onClick={() => settle()}>批量结算</Button> : undefined}>
         <RewardFlow gateUnset={gateUnset} pending={`${countText(pending)} 位`} blocked={`${countText(data.blockedByK2)} 位`} settled={`${countText(data.settled)} 位`} mode={modeLabel} />
         <div className="h8-settle-foot">
           {canSettle ? (
-            <form className="h8-target" onSubmit={(event) => { event.preventDefault(); if (data.enabled && targetUserValid) settle(targetUserId); }}>
+            <form className="h8-target" onSubmit={(event) => { event.preventDefault(); if (readReady && data.enabled && targetUserValid) settle(targetUserId); }}>
               <Field label="给指定新人结算" explain="只结算这一位：他不符合条件或已经结算过就不发，也不会改发给别人。他已结算、礼包还冻结、又已经有首笔实付订单的，这次只解冻原礼包。">
                 {(control) => <Input {...control} inputMode="numeric" placeholder="新人用户编号" aria-label="指定结算的新人用户编号"
                   value={invitedUserIdInput} onChange={(event) => setInvitedUserIdInput(event.target.value)} />}
               </Field>
-              <Button type="submit" disabledReason={!data.enabled ? "奖励已停用，不能结算" : !targetUserValid ? "先填一个正确的新人用户编号" : undefined}>给这位新人结算</Button>
+              <Button type="submit" disabledReason={freshBlocked ?? (!data.enabled ? "奖励已停用，不能结算" : !targetUserValid ? "先填一个正确的新人用户编号" : undefined)}>给这位新人结算</Button>
             </form>
           ) : <p className="h8-muted">结算要由有邀请奖励结算权限的同事发起。</p>}
           {latest && <p className="h8-latest">{<>最近一次结算：新人 {latest.invitedUserId}，{amountText(latest.newcomerUsdt, rowUsdtDecimals)} USDT + {amountText(latest.newcomerNex, rowUvtDecimals)} UVT{latest.inviterUserId === undefined ? "，没有邀请人" : `，邀请人 ${latest.inviterUserId} 得 ${amountText(latest.inviterNex, rowInviterDecimals)} UVT`}</>}</p>}

@@ -728,6 +728,7 @@ function h8Record(value: unknown, field: string): Record<string, unknown> {
 }
 
 function h8NonNegativeCount(value: unknown, field: string): number {
+  if (typeof value !== "number" && (typeof value !== "string" || !/^\d+$/.test(value))) h8Invalid(field);
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0) h8Invalid(field);
   return parsed;
