@@ -5,7 +5,8 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { assignPlacement, readPlacements, PlacementError, type PlacementIntent, type PlacementPage, type PlacementStatus } from "@/lib/admin/f3-placements-client";
-import { Modal } from "../design-kit";
+import { CircleDashed, Eye, Users } from "lucide-react";
+import { Button, Cell, Explain, Panel, Fact, Facts, FilterBar, FilterField, Input, IrreversibleTag, Modal, Notice, Select, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 
 const stamp = () => { const s = useAdminAuth.getState(); return adminShellSessionKey(s.session, s.authEpoch); };
 
@@ -93,29 +94,71 @@ export function F3Placements() {
   }
 
   if (!canRead) return null;
-  return <section className="pane ui-placements" aria-label="成员分组">
-    <div className="pane-h"><span className="ph-ttl">成员分组</span><span className="ph-sub">查看某个用户直接邀请的好友，把他们分到 A 组或 B 组。分组后不能更改。</span></div>
-    <div className="card-body">
-      <form className="actions" onSubmit={event => { event.preventDefault(); void load(); }}>
-        <label>邀请人用户编号 <input className="fld" inputMode="numeric" value={owner} disabled={busy || !!pending} onChange={event => { setOwner(event.target.value); setData(null); selectIntent(null); setNotice(""); setError(""); }} /></label>
-        <label>分组状态 <select className="fld" value={status} disabled={busy || !!pending} onChange={event => { setStatus(event.target.value as PlacementStatus); setData(null); selectIntent(null); }}><option value="ALL">全部成员</option><option value="ASSIGNED">已分组</option><option value="UNASSIGNED">未分组</option></select></label>
-        <button className="fbtn primary" type="submit" disabled={busy || !!pending}>查询成员</button>
-      </form>
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
-      {busy && <p role="status">正在处理…</p>}
-      {pending && <div><p>待确认：邀请人 {pending.ownerUserId} · 成员 {pending.memberUserId} · {pending.leg} 组</p><button className="fbtn" disabled={busy} onClick={() => void checkPending()}>查看分组结果</button></div>}
-      {data && <>
-        <p>邀请人 {data.ownerUserId} · 共 {data.total} 名直接邀请的好友</p>
-        <div className="ui-table-scroll"><table className="ctbl"><thead><tr><th>成员用户编号</th><th>所在组</th><th>分组方式</th><th>分组时间</th><th>操作人</th><th>操作</th></tr></thead><tbody>
-          {data.records.map(row => <tr key={row.memberUserId}><td>{row.memberUserId}</td><td>{row.leg ? `${row.leg} 组` : "未分组"}</td><td>{row.assignmentSource === "AUTO" ? "自动分组" : row.assignmentSource === "MANUAL" ? "人工分组" : "—"}</td><td>{row.assignedAt?.replace("T", " ") || "—"}</td><td>{row.assignedBy || "—"}</td><td>{row.leg ? "已分组" : canWrite ? <div className="actions">{(["A", "B"] as const).map(leg => <button key={leg} className="fbtn" disabled={busy || !!pending} onClick={() => selectIntent({ownerUserId: data.ownerUserId, memberUserId: row.memberUserId, leg})}>分到 {leg} 组</button>)}</div> : "只读"}</td></tr>)}
-        </tbody></table></div>
-        {data.records.length === 0 && <p>没有符合条件的成员。</p>}
-        <div className="actions"><button className="fbtn" disabled={busy || data.page <= 1} onClick={() => void load(data.page - 1)}>上一页</button><span>第 {data.page} 页</span><button className="fbtn" disabled={busy || data.page * data.pageSize >= data.total} onClick={() => void load(data.page + 1)}>下一页</button></div>
-      </>}
-      {selected && <Modal title="人工分组确认" busy={busy} onClose={() => { if (!working.current) selectIntent(null); }} footer={<><button className="fbtn" disabled={busy} onClick={() => selectIntent(null)}>取消</button><button className="fbtn primary" disabled={busy || !canWrite || !!pending} onClick={() => void submit()}>确认分组</button></>}>
-        <p>邀请人用户编号：{selected.ownerUserId}</p><p>成员用户编号：{selected.memberUserId}</p><p>分到：{selected.leg} 组</p><p>分组后不能改到另一组，也不会触发结算。</p>
-      </Modal>}
-    </div>
-  </section>;
+  const legTag = (leg: "A" | "B" | null) => leg
+    ? <span className="f3-leg" data-leg={leg}>{leg} 组</span>
+    : <StatusTag tone="neutral" icon={CircleDashed}>未分组</StatusTag>;
+  const counts = data && data.total <= data.records.length && data.status === "ALL"
+    ? { A: data.records.filter(r => r.leg === "A").length, B: data.records.filter(r => r.leg === "B").length, none: data.records.filter(r => !r.leg).length }
+    : null;
+  const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
+  return <Panel title="成员分组" icon={Users} tone="role-3" className="f3-members" aria-label="成员分组"
+    explain={<>
+      <p>查一位邀请人的直接好友，看谁在 A 组、谁在 B 组、谁还没分组；把没分组的分到一边。</p>
+      <p>分组直接写入，不走审批，也不会触发结算；分了就不能换到另一组。只列这位邀请人现在还有效的直接好友，一页 20 人。</p>
+    </>}
+    actions={!canWrite ? <StatusTag tone="neutral" icon={Eye}>只读</StatusTag> : undefined}>
+    <FilterBar onSubmit={() => void load()} querying={busy} sort={<span className="rd-filter-result">一页 20 人，按成员编号排</span>}
+      action={<Button type="submit" variant="primary" disabledReason={pending ? "有一条分组结果未知，先查询原结果" : undefined} loading={busy} disabled={busy || !!pending}>查询成员</Button>}>
+      <FilterField>
+        <Input inputMode="numeric" value={owner} disabled={busy || !!pending} placeholder="邀请人用户编号" aria-label="邀请人用户编号" size={16}
+          onChange={event => { setOwner(event.target.value); setData(null); selectIntent(null); setNotice(""); setError(""); }} />
+      </FilterField>
+      <FilterField>
+        <Select aria-label="分组状态" value={status} disabled={busy || !!pending} onChange={value => { setStatus(value as PlacementStatus); setData(null); selectIntent(null); }}
+          options={[{ value: "ALL", label: "全部成员" }, { value: "ASSIGNED", label: "已分组" }, { value: "UNASSIGNED", label: "未分组" }]} />
+      </FilterField>
+    </FilterBar>
+    {pending && <Notice tone="warn" title={<>分组结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经分好了。点「查询原结果」按原来的邀请人和成员读回；读到已在原来那一组就算完成，读到在另一组说明不能换。仍没分组时保留这条，不会自动再提交一次。" /></>}
+      action={<Button size="sm" disabled={busy} onClick={() => void checkPending()}>查询原结果</Button>}>
+      邀请人 {pending.ownerUserId} · 成员 {pending.memberUserId} → {pending.leg} 组
+    </Notice>}
+    {error && <div role="alert"><Notice tone="danger">{error}</Notice></div>}
+    {notice && <div role="status"><Notice tone="neutral">{notice}</Notice></div>}
+    {busy && !data && <p role="status" className="f3-members-busy">正在处理…</p>}
+    {!data && !busy && !error && <p className="f3-members-empty">输入邀请人用户编号，查他的直接好友和分组。</p>}
+    {data && <>
+      <p className="f3-members-sum">
+        <span>邀请人 <b>{data.ownerUserId}</b> · {data.status === "ALL" ? "直接好友" : data.status === "ASSIGNED" ? "已分组的直接好友" : "未分组的直接好友"} <b>{data.total.toLocaleString("en-US")}</b> 人</span>
+        {counts && <span className="f3-members-legs"><span className="f3-leg" data-leg="A">A 组 {counts.A}</span><span className="f3-leg" data-leg="B">B 组 {counts.B}</span><span>未分组 {counts.none}</span></span>}
+      </p>
+      <Table label="直接好友的分组" className="f3-member-table">
+        <thead><tr><Th>成员用户编号</Th><Th>所在组</Th><Th>分组方式</Th><Th>分组时间（北京时间）</Th><Th>操作人</Th><Th>操作</Th></tr></thead>
+        <tbody>
+          {data.records.map(row => <Tr key={row.memberUserId}>
+            <Td><Cell main={<span data-mono>{row.memberUserId}</span>} /></Td>
+            <Td>{legTag(row.leg)}</Td>
+            <Td>{row.assignmentSource === "AUTO" ? "自动分组" : row.assignmentSource === "MANUAL" ? "人工分组" : "—"}</Td>
+            <Td><Cell num main={row.assignedAt?.replace("T", " ").slice(0, 16) || "—"} /></Td>
+            <Td>{row.assignedBy || "—"}</Td>
+            <Td data-fit="">{row.leg ? <span className="f3-weak">已分组</span> : canWrite ? <span className="f3-row-actions">{(["A", "B"] as const).map(leg => <Button key={leg} size="sm" disabled={busy || !!pending} onClick={() => selectIntent({ownerUserId: data.ownerUserId, memberUserId: row.memberUserId, leg})}>分到 {leg} 组</Button>)}</span> : <span className="f3-weak">只读</span>}</Td>
+          </Tr>)}
+          {data.records.length === 0 && <TableMessage columns={6}>没有符合条件的成员。</TableMessage>}
+        </tbody>
+      </Table>
+      {data.total > data.pageSize && <div className="f3-members-pager">
+        <Button size="sm" disabled={busy || data.page <= 1} onClick={() => void load(data.page - 1)}>上一页</Button>
+        <span>第 {data.page} 页，共 {pages} 页</span>
+        <Button size="sm" disabled={busy || data.page * data.pageSize >= data.total} onClick={() => void load(data.page + 1)}>下一页</Button>
+      </div>}
+    </>}
+    {selected && <Modal title={`把成员分到 ${selected.leg} 组`} icon={Users} tone="danger" sub={<IrreversibleTag>归了就不能换</IrreversibleTag>} busy={busy}
+      onClose={() => { if (!working.current) selectIntent(null); }}
+      footer={<><Button disabled={busy} onClick={() => selectIntent(null)}>取消</Button><Button variant="danger" loading={busy} loadingText="提交中…" disabled={busy || !canWrite || !!pending} onClick={() => void submit()}>确认分组</Button></>}>
+      <Facts>
+        <Fact k="邀请人用户编号">{selected.ownerUserId}</Fact>
+        <Fact k="这次要分的成员">成员 {selected.memberUserId} → <span className="f3-leg" data-leg={selected.leg}>{selected.leg} 组</span></Fact>
+      </Facts>
+      <Notice tone="warn" title="归了就不能换">分组后不能改到另一组，页面和后端都没有换组的入口。直接写入，不走审批，也不触发结算。</Notice>
+    </Modal>}
+  </Panel>;
 }

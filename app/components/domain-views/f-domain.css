@@ -634,3 +634,106 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f1-page .f1-facts dd { margin: 2px 0 0; font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
 @container f1-detail (max-width: 640px) { .f1-page .f1-facts { grid-template-columns: repeat(2, minmax(0, max-content)); } }
 .f1-page .f1-detail { container: f1-detail / inline-size; }
+/* ===== F3 团队平衡奖励（改版）：只用 --rd-* 令牌，深浅两套跟着令牌走 ===== */
+.f3-page { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
+.f3-page .f3-weak, .rd-modal .f3-weak { color: var(--rd-text-3); }
+
+/* 规则流程图：五步横排，窄时竖排；改的那一步加描边（确认框里） */
+.f3-page .f3-flow, .rd-modal .f3-flow { container: f3-flow / inline-size; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.f3-page .f3-flow-steps, .rd-modal .f3-flow-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 24px; margin: 0; padding: 0; list-style: none; }
+.f3-page .f3-flow-step, .rd-modal .f3-flow-step { position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 12px; border-radius: var(--rd-radius-tile); background: var(--rd-panel-inner); }
+.f3-page .f3-flow-step[data-changed], .rd-modal .f3-flow-step[data-changed], .f3-page .f3-flow-residual[data-changed], .rd-modal .f3-flow-residual[data-changed] { box-shadow: inset 0 0 0 1px var(--rd-progress); }
+.f3-page .f3-flow-no, .rd-modal .f3-flow-no { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--rd-role-4-tile); color: var(--rd-role-4-tile-ink); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.f3-page .f3-flow-title, .rd-modal .f3-flow-title { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.f3-page .f3-flow-value, .rd-modal .f3-flow-value { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.f3-page .f3-flow-sub, .rd-modal .f3-flow-sub { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.f3-page .f3-flow-action { display: block; margin-top: 4px; }
+.f3-page .f3-flow-missing, .rd-modal .f3-flow-missing { color: var(--rd-warn); font-weight: var(--rd-weight-medium); }
+.f3-page .f3-flow-arrow, .rd-modal .f3-flow-arrow { position: absolute; top: 50%; right: -20px; margin-top: -8px; color: var(--rd-text-3); }
+.f3-page .f3-flow-residual, .rd-modal .f3-flow-residual { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: baseline; gap: 4px 12px; padding: 10px 12px; border-radius: var(--rd-radius-tile); background: var(--rd-panel-inner); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.f3-page .f3-flow-residual-k, .rd-modal .f3-flow-residual-k { color: var(--rd-text-2); }
+.f3-page .f3-flow-residual-v, .rd-modal .f3-flow-residual-v { font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.f3-page .f3-flow-residual-what, .rd-modal .f3-flow-residual-what { color: var(--rd-text-3); }
+@container f3-flow (max-width: 760px) {
+  .f3-page .f3-flow-steps, .rd-modal .f3-flow-steps { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .f3-page .f3-flow-step, .rd-modal .f3-flow-step { display: grid; grid-template-columns: 20px minmax(0, 9em) minmax(0, 1fr); align-items: baseline; gap: 2px 10px; padding: 8px 12px; }
+  .f3-page .f3-flow-value, .rd-modal .f3-flow-value { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
+  .f3-page .f3-flow-sub, .rd-modal .f3-flow-sub { grid-column: 2 / -1; }
+  .f3-page .f3-flow-arrow, .rd-modal .f3-flow-arrow { display: none; }
+  .f3-page .f3-flow-residual, .rd-modal .f3-flow-residual { grid-template-columns: minmax(0, 9em) minmax(0, 1fr); padding-left: 42px; }
+  .f3-page .f3-flow-residual-what, .rd-modal .f3-flow-residual-what { grid-column: 1 / -1; }
+}
+.f3-page .f3-example { margin: 12px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
+
+/* 原申请提醒：一条一行 */
+.f3-page .f3-recovery { display: grid; gap: 8px; margin: 4px 0 0; padding: 0; list-style: none; }
+.f3-page .f3-recovery li { display: grid; grid-template-columns: minmax(0, 7em) minmax(0, 1fr) auto auto auto; align-items: center; gap: 8px 16px; }
+.f3-page .f3-recovery-name { font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.f3-page .f3-recovery-time { color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* A、B 两组对比条：A 从中线往左、B 往右，同一刻度；实色是匹配上的，灰是多出来的 */
+.f3-page .f3-records-wrap { container: f3-records / inline-size; }
+.f3-page .f3-records { table-layout: fixed; }
+.f3-page .f3-records th:nth-child(1) { width: 17%; }
+.f3-page .f3-records th:nth-child(2) { width: 13%; }
+.f3-page .f3-records th:nth-child(3) { width: 42%; }
+.f3-page .f3-records th:nth-child(4) { width: 15%; }
+.f3-page .f3-records th:nth-child(5) { width: 13%; }
+.f3-page .f3-sub-narrow { display: none; }
+@container f3-records (max-width: 760px) {
+  .f3-page .f3-records .f3-col-date { display: none; }
+  .f3-page .f3-records th:nth-child(1) { width: 24%; }
+  .f3-page .f3-records th:nth-child(3) { width: 40%; }
+  .f3-page .f3-records th:nth-child(4) { width: 20%; }
+  .f3-page .f3-records th:nth-child(5) { width: 16%; }
+  .f3-page .f3-sub-wide { display: none; }
+  .f3-page .f3-sub-narrow { display: inline; }
+}
+.f3-page .f3-pair-head { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; width: 100%; }
+.f3-page .f3-pair-head span:first-child { text-align: right; }
+.f3-page .f3-pair-cell { display: grid; grid-template-columns: minmax(4.5em, auto) minmax(0, 1fr) minmax(4.5em, auto); align-items: center; gap: 2px 8px; }
+.f3-page .f3-pair-note { grid-column: 1 / -1; text-align: center; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.f3-page .f3-pair-num { font-variant-numeric: tabular-nums; color: var(--rd-text-2); white-space: nowrap; }
+.f3-page .f3-pair-num:first-child { text-align: right; }
+.f3-page .f3-pair-num[data-small] { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.f3-page .f3-pair { display: grid; grid-template-columns: minmax(0, 1fr) 2px minmax(0, 1fr); align-items: center; min-width: 0; height: 16px; }
+.f3-page .f3-pair-track { display: block; width: 100%; height: 16px; min-width: 0; overflow: visible; }
+.f3-page .f3-pair-fill { fill: var(--rd-line-strong); }
+.f3-page .f3-pair-match { fill: var(--rd-chart-2); }
+.f3-page .f3-pair-tick { fill: var(--rd-text-3); }
+.f3-page .f3-pair-axis { width: 2px; height: 16px; background: var(--rd-chart-axis); }
+.f3-page .f3-dates { table-layout: fixed; }
+
+/* 结算设置的值：值一行、方向一行 */
+.f3-page .f3-cfg { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.f3-page .f3-cfg-value { font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.f3-page .f3-cfg-value[data-warn] { color: var(--rd-warn); }
+.f3-page .f3-cfg-text { font-weight: var(--rd-weight-regular); }
+.f3-page .f3-cfg-dir { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+
+/* 成员分组 */
+.f3-page .f3-members > :not(:first-child) { margin-top: 12px; }
+.f3-page .f3-members-sum { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 0; color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
+.f3-page .f3-members-sum b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.f3-page .f3-members-legs { display: inline-flex; align-items: center; gap: 8px; font-size: var(--rd-text-aux); }
+.f3-page .f3-members-busy, .f3-page .f3-members-empty { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-body); }
+.f3-page .f3-member-table { table-layout: fixed; }
+.f3-page .f3-row-actions { display: inline-flex; gap: 8px; white-space: nowrap; }
+.f3-page .f3-members-pager { display: flex; align-items: center; justify-content: flex-end; gap: 12px; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.f3-page .f3-leg, .rd-modal .f3-leg { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--rd-radius-tag); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-medium); white-space: nowrap; }
+.f3-page .f3-leg[data-leg="A"], .rd-modal .f3-leg[data-leg="A"] { background: var(--rd-role-2-bg); color: var(--rd-role-2); }
+.f3-page .f3-leg[data-leg="B"], .rd-modal .f3-leg[data-leg="B"] { background: var(--rd-role-3-bg); color: var(--rd-role-3); }
+
+/* 手动结算确认框里的表单 */
+.rd-modal .f3-settle-form { display: flex; flex-direction: column; gap: 16px; }
+.f3-page .f3-nowrap { white-space: nowrap; }
+/* 确认框里的流程图：一步一行，名字和值，改的那一步浅蓝底 */
+.rd-modal .f3-flow[data-compact] { gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rd-line); }
+.rd-modal .f3-flow[data-compact] .f3-flow-steps { grid-template-columns: minmax(0, 1fr); gap: 0; }
+.rd-modal .f3-flow[data-compact] .f3-flow-step, .rd-modal .f3-flow[data-compact] .f3-flow-residual { display: grid; grid-template-columns: 20px 126px minmax(0, 1fr); align-items: center; gap: 0 10px; padding: 4px 8px; background: transparent; box-shadow: none; }
+.rd-modal .f3-flow[data-compact] .f3-flow-residual { grid-template-columns: 126px minmax(0, 1fr); padding-left: 38px; font-size: var(--rd-text-body); }
+.rd-modal .f3-flow[data-compact] .f3-flow-residual-k, .rd-modal .f3-flow[data-compact] .f3-flow-title { font-size: var(--rd-text-aux); }
+.rd-modal .f3-flow[data-compact] [data-changed] { background: var(--rd-progress-bg); box-shadow: none; }
+.rd-modal .f3-flow[data-compact] .f3-flow-value { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
+.rd-modal .f3-flow[data-compact] .f3-flow-arrow { display: none; }
+.f3-page .f3-recovery-zone { margin: 4px 0 0; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
