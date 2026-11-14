@@ -107,7 +107,7 @@ export function F3Placements() {
       <p>分组直接写入，不走审批，也不会触发结算；分了就不能换到另一组。只列这位邀请人现在还有效的直接好友，一页 20 人。</p>
     </>}
     actions={!canWrite ? <StatusTag tone="neutral" icon={Eye}>只读</StatusTag> : undefined}>
-    <FilterBar onSubmit={() => void load()} querying={busy}
+    <FilterBar onSubmit={() => void load()} querying={busy} sort={<span className="rd-filter-result">一页 20 人，按成员编号排</span>}
       action={<Button type="submit" variant="primary" disabledReason={pending ? "有一条分组结果未知，先查询原结果" : undefined} loading={busy} disabled={busy || !!pending}>查询成员</Button>}>
       <FilterField>
         <Input inputMode="numeric" value={owner} disabled={busy || !!pending} placeholder="邀请人用户编号" aria-label="邀请人用户编号" size={16}

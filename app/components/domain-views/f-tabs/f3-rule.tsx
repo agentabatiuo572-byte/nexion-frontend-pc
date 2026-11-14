@@ -16,10 +16,10 @@ export const PERIOD_TEXT: Record<string, { when: string; cap: string }> = {
 };
 
 /** 没匹配上的订单额怎么处理（BinaryCommissionSettlementService.volumeWindow）。显示名「每次匹配后清零」，存的值是「每次对碰清零」。 */
-export const RESIDUAL_TEXT: Record<string, { label: string; what: string; more?: boolean }> = {
-  每月清零: { label: "每月清零", what: "只算本月的订单额，本月已匹配的扣掉；上个月没匹配上的，到月初就不再算。" },
-  每次对碰清零: { label: "每次匹配后清零", what: "每次结算成功后，之前的订单额都不再算，下一次只算之后的新订单。" },
-  转结: { label: "转结", what: "没匹配上的订单额一直留着，之后继续参与匹配；不限月份，会让之后多付奖励。", more: true },
+export const RESIDUAL_TEXT: Record<string, { label: string; short: string; what: string; more?: boolean }> = {
+  每月清零: { label: "每月清零", short: "只算本月订单额，上月没匹配上的不再算", what: "只算本月的订单额，本月已匹配的扣掉；上个月没匹配上的，到月初就不再算。" },
+  每次对碰清零: { label: "每次匹配后清零", short: "每次结算成功后，只算之后的新订单", what: "每次结算成功后，之前的订单额都不再算，下一次只算之后的新订单。" },
+  转结: { label: "转结", short: "一直留着继续匹配，之后会多付奖励", what: "没匹配上的订单额一直留着，之后继续参与匹配；不限月份，会让之后多付奖励。", more: true },
 };
 
 export const residualLabel = (value: string) => RESIDUAL_TEXT[value]?.label ?? value;
@@ -60,11 +60,11 @@ export function F3RuleFlow({ rule, next, changed, capAction, compact }: {
   };
   const period = next?.period ?? rule.period;
   const steps: Step[] = [
-    { key: "legs", title: "A 组、B 组订单额", value: "各算各的", sub: "邀请人的直接好友分成两组，每组算这一期已付款的订单额" },
-    { key: "threshold", title: "两组都过门槛", value: shown("threshold", (value) => `每组 ≥ ${value}`, "门槛没读到"), sub: "有一组没到门槛，这一期就不发" },
-    { key: "rate", title: "取较小一组 × 比例", value: shown("rate", (value) => `× ${value}`, "比例读不懂"), sub: "已经匹配过的订单额先扣掉" },
-    { key: "cap", title: "不超过每期上限", value: shown("cap", (value) => `每日 ${value}`, "上限没读到"), sub: <>{PERIOD_TEXT[period]?.cap ?? "按结算周期算天数"}；同一天已记账的先扣掉{capAction && <span className="f3-flow-action">{capAction}</span>}</> },
-    { key: "pay", title: "记给邀请人", value: shown("period", (value) => PERIOD_TEXT[value]?.when ?? value, "周期没读到"), sub: "写进结算记录，冷却期满才能提现" },
+    { key: "legs", title: "A 组、B 组订单额", value: "各算各的", sub: "按这一期已付款的订单额" },
+    { key: "threshold", title: "两组都过门槛", value: shown("threshold", (value) => `每组 ≥ ${value}`, "门槛没读到"), sub: "一组没到就不发" },
+    { key: "rate", title: "取较小一组 × 比例", value: shown("rate", (value) => `× ${value}`, "比例读不懂"), sub: "先扣掉已匹配的" },
+    { key: "cap", title: "不超过每期上限", value: shown("cap", (value) => `每日 ${value}`, "上限没读到"), sub: <>{PERIOD_TEXT[period]?.cap ?? "按结算周期算天数"}{capAction && <span className="f3-flow-action">{capAction}</span>}</> },
+    { key: "pay", title: "记给邀请人", value: shown("period", (value) => PERIOD_TEXT[value]?.when ?? value, "周期没读到"), sub: "冷却期满才能提现" },
   ];
   return (
     <div className="f3-flow" data-compact={compact ? "" : undefined}>
@@ -82,7 +82,7 @@ export function F3RuleFlow({ rule, next, changed, capAction, compact }: {
       <div className="f3-flow-residual" data-changed={changed?.includes("residual") ? "" : undefined}>
         <span className="f3-flow-residual-k">没匹配上的订单额</span>
         <span className="f3-flow-residual-v">{shown("residual", residualLabel, "没读到")}</span>
-        {!compact && <span className="f3-flow-residual-what">{RESIDUAL_TEXT[next?.residual ?? rule.residual]?.what ?? "这个值后端结算时不认，结算会被拦下。"}</span>}
+        {!compact && <span className="f3-flow-residual-what">{RESIDUAL_TEXT[next?.residual ?? rule.residual]?.short ?? "后端不认这个值，结算会被拦下"}</span>}
       </div>
     </div>
   );

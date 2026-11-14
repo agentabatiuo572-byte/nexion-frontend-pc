@@ -206,14 +206,14 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             <Fact k="发多少">批准时按当时的两组订单额、门槛、比例和每期上限算；提交时算不出来</Fact>
             <Fact k="钱从哪出">记成这位邀请人的团队平衡奖励，冷却期满才能提现；计入平台应付款，批准时按这笔实际金额查兑付覆盖率，低于红线就拦下</Fact>
             <Fact k="每期上限">每日上限 {capText ?? "—"}，{PERIOD_TEXT[periodEff]?.cap ?? "按结算周期算天数"}；这一天已记账的先扣掉，用完就拦下不发</Fact>
-            <Fact k="已经结算过">这一天已经结算过的，查回原记录，不重复发、不按新设置重算</Fact>
+            <Fact k="已经结算过">查回原记录，不重复发，也不按新设置重算</Fact>
           </Facts>
-          <Field id="ownerUserId" label="邀请人用户编号" required hint="正整数">
+          <Field id="ownerUserId" label="邀请人用户编号" required>
             <Input id="ownerUserId" name="ownerUserId" inputMode="numeric" autoComplete="off" disabled={locked} required value={value.ownerUserId ?? ""}
               onChange={(event) => change({ ...value, ownerUserId: event.target.value })} />
           </Field>
-          <Field id="settlementDate" label="结算日" required hint={`YYYY-MM-DD，按业务日历（${zone}）已经结束的一天`}
-            help="不是周期结算日（每周日、每月最后一天）的日子，批准时会被拦下。">
+          <Field id="settlementDate" label="结算日" required
+            help={`按${zone}已经结束的一天；不是周期结算日的，批准时会被拦下`}>
             <Input id="settlementDate" name="settlementDate" placeholder="YYYY-MM-DD" autoComplete="off" disabled={locked} required value={value.settlementDate ?? ""}
               onChange={(event) => change({ ...value, settlementDate: event.target.value })} />
           </Field>
@@ -236,6 +236,10 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     <StatusTag tone="progress" filled explain={`${CONFIG_APPROVER}（需有团队平衡奖励的${more}权限和审批批准权限）在「操作记录与审批」批准后写入；批准前仍按现在的设置结算。`}>批准后生效</StatusTag>
   );
   const whenText = "提交审批，批准后立即写入当前设置；之后每一次结算都按新值算，包括补结之前没结的日期。已经记账的奖励不重算。";
+  const whenFacts = <>
+    <Fact k="什么时候生效">批准后立即写入，之后每次结算都按新值算</Fact>
+    <Fact k="已经记账的">不重算；补结之前没结的日期也按新值</Fact>
+  </>;
 
   const openThreshold = () => setConfirm({
     action: "调整每组订单额门槛", title: "调整每组订单额门槛", briefKind: "config",
@@ -247,7 +251,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         {value !== undefined && thresholdNumber !== null && Number(value) !== thresholdNumber && <Fact k="方向" tone={Number(value) < thresholdNumber ? "warn" : undefined}>
           {Number(value) < thresholdNumber ? "调低：更多团队能过门槛，平台会多付钱" : "调高：更少团队能过门槛，之后发的会变少"}
         </Fact>}
-        <Fact k="什么时候生效">{whenText}</Fact>
+        {whenFacts}
       </Facts>
       <F3RuleFlow compact rule={rule} next={value === undefined ? undefined : { threshold: `${fmtDecimal(value)} USDT` }} changed={["threshold"]} />
     </>,
@@ -274,7 +278,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           {Number(value) > Number(ratePercent) ? "调高：同样的订单额发更多奖励，平台会多付钱" : "调低：同样的订单额发更少奖励"}
         </Fact>}
         {value !== undefined && Number(value) > 0 && Number(value) < 0.00001 && <Fact k="App" tone="warn">App 目前读不了这么小的比例（小于 0.00001%），用户的团队页会读取失败；后端允许，已登记缺陷</Fact>}
-        <Fact k="什么时候生效">{whenText}</Fact>
+        {whenFacts}
       </Facts>
       <F3RuleFlow compact rule={rule} next={value === undefined ? undefined : { rate: `${value}%` }} changed={["rate"]} />
     </>,
@@ -318,7 +322,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     facts: <Facts>
       <Fact k="已存的说明">{text(resetEff)}</Fact>
       <Fact k="实际归零">按业务日历：每月 1 日 00:00（{zone}）。这段说明不决定归零时点</Fact>
-      <Fact k="改了会怎样">只更新存着的说明文字，不改业务日历，也不重算历史</Fact>
+      <Fact k="改了会怎样">只换存着的说明文字，不改日历、不重算历史</Fact>
     </Facts>,
     detail: `已存说明：${text(resetEff)}。只更新说明，实际归零按业务日历。`,
     statedBrief: { impact: "批准后只换掉存着的说明文字；归零时点、业务日历和历史结算都不变。", check: "核对要换成的说明文字。" },
@@ -371,7 +375,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     facts: <Facts>
       <Fact k="发放"><Change from="已暂停" to="发放中" /></Fact>
       <Fact k="之后的结算" tone="warn">照常结算、照常发钱，平台会继续付这项奖励；仍要满足门槛、分组、每期上限和兑付覆盖率</Fact>
-      <Fact k="暂停期间的周期">恢复后不会自动补结；要补的话，按邀请人和结算日逐个手动结算</Fact>
+      <Fact k="暂停期间的周期">恢复后不自动补结</Fact>
+      <Fact k="要补的话">按邀请人和结算日逐个手动结算</Fact>
     </Facts>,
     detail: "恢复团队平衡奖励发放。",
     statedBrief: { impact: "批准后，之后的结算不再被拦下；暂停期间没结的周期不自动补。", check: "确认暂停的原因已经处理完。" },
@@ -384,7 +389,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       <Fact k="发放"><Change from="发放中" to="已暂停" /></Fact>
       <Fact k="影响范围" tone="warn">全平台所有邀请人之后的团队平衡奖励结算都被拦下，不发钱；只管这项奖励</Fact>
       <Fact k="已经记账的">不收回、不冲正</Fact>
-      <Fact k="恢复以后">暂停期间到期的周期不会自动补结，要补得逐个手动结算</Fact>
+      <Fact k="恢复以后">暂停期间到期的周期不自动补结</Fact>
+      <Fact k="要补的话">按邀请人和结算日逐个手动结算</Fact>
     </Facts>,
     detail: "暂停后全平台的团队平衡奖励结算都会被拦下，只在紧急情况下使用。",
     statedBrief: { impact: "批准后，之后的结算全部被拦下；已经记账的奖励不受影响。提交本身不会马上停。", check: "只在紧急情况下用；理由写清原因和工单号。" },
@@ -394,7 +400,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
   const header = (
     <PageHeader pageId="F3" title="团队平衡奖励"
-      summary={`邀请人的直接好友分成 A、B 两组，两组订单额都过门槛后，按较小一组乘比例给邀请人发奖励。${!canSettle && !canConfigure && !canPause ? "你只能查看。" : ""}`}
+      summary="两组订单额都过门槛，按较小一组乘比例给邀请人发奖励。"
+      readOnly={!canSettle && !canConfigure && !canPause ? "当前账号只能查看这页" : undefined}
       meta="打开时读取，不自动刷新"
       actions={<Button size="sm" onClick={() => ctx.nav("B")}>风险提醒</Button>} />
   );

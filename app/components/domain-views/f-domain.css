@@ -610,7 +610,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .rd-modal .f3-settle-form { display: flex; flex-direction: column; gap: 16px; }
 .f3-page .f3-nowrap { white-space: nowrap; }
 /* 确认框里的流程图：一步一行，名字和值，改的那一步浅蓝底 */
-.rd-modal .f3-flow[data-compact] { gap: 0; padding-top: 8px; border-top: 1px solid var(--rd-line); }
+.rd-modal .f3-flow[data-compact] { gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rd-line); }
 .rd-modal .f3-flow[data-compact] .f3-flow-steps { grid-template-columns: minmax(0, 1fr); gap: 0; }
 .rd-modal .f3-flow[data-compact] .f3-flow-step, .rd-modal .f3-flow[data-compact] .f3-flow-residual { display: grid; grid-template-columns: 20px 126px minmax(0, 1fr); align-items: center; gap: 0 10px; padding: 4px 8px; background: transparent; box-shadow: none; }
 .rd-modal .f3-flow[data-compact] .f3-flow-residual { grid-template-columns: 126px minmax(0, 1fr); padding-left: 38px; font-size: var(--rd-text-body); }
