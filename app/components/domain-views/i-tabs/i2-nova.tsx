@@ -596,12 +596,12 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   );
 
   if (contentLoading && !data) {
-    return <div className="i2-page">{header}<BlockState state="loading" title="正在读取推送数据…" /></div>;
+    return <>{header}<BlockState state="loading" title="正在读取推送数据…" /></>;
   }
   if (!data) {
-    return <div className="i2-page">{header}{contentError
+    return <>{header}{contentError
       ? <BlockState state="error" title="推送数据读取失败" detail={contentError} onRetry={() => void actions.reloadIContent()} retryLabel="重新加载" />
-      : <BlockState state="empty" title="暂无推送数据" />}</div>;
+      : <BlockState state="empty" title="暂无推送数据" />}</>;
   }
 
   // ── 首屏结论：几个频道在推、有没有推不出去的、素材够不够 ──
