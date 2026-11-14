@@ -166,14 +166,17 @@ export type M5ScriptsSummary = { contentAvailable: boolean; published: number; d
 export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatProfiles = false, onSummary, hasData = true, fallback }: { ctx: MCtx; tab: M5Tab; ids: TabIds; showSeatOperations?: boolean; showSeatProfiles?: boolean; onSummary?: (summary: M5ScriptsSummary) => void; hasData?: boolean; fallback?: ReactNode }) {
   const reach = useReach();
   const { pget, toast } = ctx;
-  const [pendingCommands, setPendingCommands] = useState<MCommandRecord[]>([]);
+  const [pendingRevision, setPendingRevision] = useState(0);
   const [needsRead, setNeedsRead] = useState(false);
   const [profileRecovery, setProfileRecovery] = useState<MCommandRecord>();
   const restoring = useRef<MCommandRecord | undefined>(undefined);
   const activeConfirm = useRef<{ original?: MCommandRecord }>({});
   const inFlight = useRef(false);
-  const syncPending = () => setPendingCommands(mCommands.list().filter(row => row.m5?.actorId === useAdminAuth.getState().session?.adminId
-    || !row.m5 && !row.faq && /^cmd\|(?:m5:|I\.session\.(?:cat\.|advisor\.policy\.|script\.|tpl\.|replyTemplates)|I\.support\.agentProfile)/.test(row.fingerprint)));
+  const currentWrite = useRef<((key: string, value: string, meta: { action: string; reason: string; commandKey?: string }, successMessage: string) => Promise<boolean>) | null>(null);
+  const commitM5Write = (key: string, value: string, meta: { action: string; reason: string; commandKey?: string }, successMessage: string) => currentWrite.current!(key, value, meta, successMessage);
+  const pendingCommands = pendingRevision === 0 ? [] : mCommands.list().filter(row => row.m5?.actorId === useAdminAuth.getState().session?.adminId
+    || !row.m5 && !row.faq && /^cmd\|(?:m5:|I\.session\.(?:cat\.|advisor\.policy\.|script\.|tpl\.|replyTemplates)|I\.support\.agentProfile)/.test(row.fingerprint));
+  const syncPending = () => setPendingRevision(value => value + 1);
   useEffect(syncPending, []);
   useEffect(() => {
     const next = pendingCommands.map(row => row.expiresAt).filter(deadline => deadline > Date.now()).sort((a, b) => a - b)[0];
@@ -324,7 +327,8 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       if (rejected) {
         mCommands.forget(record.fingerprint, record.commandKey); syncPending();
         activeConfirm.current.original = undefined;
-        if (recovered) { ctx.closeActionConfirm?.(); setProfileAgent(null); setProfileRecovery(undefined); await readCurrent(); }
+        if (recovered) { ctx.closeActionConfirm?.(); setProfileAgent(null); setProfileRecovery(undefined); }
+        await readCurrent();
         toast(displayAdminError(error), "error");
         throw new Error(displayAdminError(error));
       }
@@ -334,15 +338,17 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       throw new OutcomeUnknownError(displayAdminError(error));
     } finally { inFlight.current = false; if (current()) setWritePending(false); }
   };
-  const commitM5Write = async (key: string, value: string, meta: { action: string; reason: string; commandKey?: string }, successMessage: string): Promise<boolean> => {
+  // An open confirmation retains its callback; new attempts must use the reread facts and permissions.
+  currentWrite.current = async (key, value, meta, successMessage) => {
     if (key === "I.support.advisorAssignment.__delete") return ctx.setParam(key, value, meta);
     if (activeConfirm.current.original?.m5) return commitOriginal(activeConfirm.current.original, true);
-    const profile = key === "I.support.agentProfile.__update" ? profileAgent ?? undefined : undefined;
+    const profile = key === "I.support.agentProfile.__update" ? supportAgents.find(agent => agent.adminId === profileAgent?.adminId) : undefined;
+    if (key === "I.support.agentProfile.__update" && !profile) return false;
     if (currentAdminId !== useAdminAuth.getState().session?.adminId
       || !useAdminAuth.getState().session?.authorities.includes(profile ? "service_m1_write" : "service_m5_write")) return false;
     const allowed = profile ? canManageSupportSeats && agentPageAvailable : key.startsWith("I.session.cat.") || key.startsWith("I.session.advisor.policy.") ? canManageM5Operations : canManageM5Content;
     if (!allowed || needsRead || ctx.contentLoading || (profile ? !agentPageAvailable : !sessionTemplatesAvailable) || inFlight.current || blocked(key, profile?.adminId)) return false;
-    const command = buildM5Command(key, value, ctx.params, meta, currentAdminId, successMessage, profile);
+    const command = buildM5Command(key, profile ? JSON.stringify({ ...JSON.parse(value), expectedVersion: profile.version }) : value, ctx.params, meta, currentAdminId, successMessage, profile);
     const fingerprint = `m5|${command.resource}`, commandKey = `m-${Date.now()}-${crypto.randomUUID()}`;
     mCommands.remember(fingerprint, commandKey, { m5: command });
     const record = mCommands.list().find(row => row.commandKey === commandKey)!;
@@ -875,8 +881,8 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       {pane("content", content)}
       {pane("channels", channels)}
       </> : fallback}
-      {profileAgent && (canManageSupportSeats || profileRecovery) && <AgentProfileModal agent={profileAgent} agents={supportAgents} pending={profileRecovery}
-        canSubmitNew={agentPageAvailable && !needsRead && !ctx.contentLoading && !writePending && !blocked("I.support.agentProfile.__update", profileAgent.adminId) && Boolean(authorities?.includes("service_m1_write"))}
+      {profileAgent && (canManageSupportSeats || profileRecovery) && <AgentProfileModal agent={profileRecovery ? profileAgent : supportAgents.find(agent => agent.adminId === profileAgent.adminId) ?? profileAgent} agents={supportAgents} pending={profileRecovery}
+        canSubmitNew={agentPageAvailable && supportAgents.some(agent => agent.adminId === profileAgent.adminId) && !needsRead && !ctx.contentLoading && !writePending && !blocked("I.support.agentProfile.__update", profileAgent.adminId) && Boolean(authorities?.includes("service_m1_write"))}
         ctx={{ ...ctx, setParam: async (key, value, meta) => {
         try { return profileRecovery ? await commitOriginal(profileRecovery, true) : await commitM5Write(key, value, meta, `${profileAgent.name} 客服接单设置已保存`); }
         catch (cause) { toast(displayAdminError(cause), "warn"); return false; }

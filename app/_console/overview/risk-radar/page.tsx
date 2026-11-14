@@ -268,12 +268,13 @@ export default function RiskRadarPage() {
     };
   }, [canThreshold, thresholdOriginal, approvalRecovery, previewKey, thresholdVersion, yellowPct, redPct, ratio24h, withdraw24hUsdt]);
 
-  const subscriptionChanged = useMemo(
-    // The authenticated username, not the display operator, is persisted by AdminActorResolver.
-    () => JSON.stringify(subscription) !== JSON.stringify(savedSubscription)
-      || !subscriber || subscriber === "unassigned" || subscriber !== maskAuditActor(session?.username ?? ""),
-    [subscription, savedSubscription, subscriber, session?.username],
+  const subscriptionChannelsChanged = useMemo(
+    () => JSON.stringify(subscription) !== JSON.stringify(savedSubscription),
+    [subscription, savedSubscription],
   );
+  // The authenticated username, not the display operator, is persisted by AdminActorResolver.
+  const subscriptionRecipientChanged = !subscriber || subscriber === "unassigned" || subscriber !== maskAuditActor(session?.username ?? "");
+  const subscriptionChanged = subscriptionChannelsChanged || subscriptionRecipientChanged;
   const subscriptionValid = subscription.inApp || subscription.email || subscription.webhook;
   const subscriptionWebhookMode = subscriptionOriginal?.facts.webhookMode ?? webhookMode;
 
@@ -752,7 +753,7 @@ export default function RiskRadarPage() {
                   ] as const).filter(([, latest, draft]) => latest !== draft);
                   return (
                     <Notice tone="warn" title="别人刚保存过订阅">
-                      <p>{diffs.length ? "已读到最新的订阅，你的改动还在。核对差别后再保存。" : "已读到最新的订阅，和你的改动一样，不用再保存。"}</p>
+                      <p>{subscriptionRecipientChanged ? `当前接收人：${subscriberText(subscriber)}；再保存后由你接收。` : subscriptionChanged ? "已读到最新的订阅，你的改动还在。核对差别后再保存。" : "已读到最新的订阅，和你的改动一样，不用再保存。"}</p>
                       {diffs.length > 0 && <Facts>
                         {diffs.map(([k, latest, draft]) => <Fact key={k} k={k}><Change from={`最新 ${latest}`} to={`你的 ${draft}`} /></Fact>)}
                       </Facts>}
