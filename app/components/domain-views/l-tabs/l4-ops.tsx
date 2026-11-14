@@ -303,6 +303,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       // The snapshot read does not prove the outcome of a lost grant response.
       // Keep that stage and its evidence; never issue a token from this query.
       await latestContext.current.reloadBi?.();
+      ctx.toast(`已重新读取报表 ${result.reportId}：已生成，${count(result.rowCount)} 行`, "success");
     } catch (error) {
       ctx.toast(displayAdminReadError(error), "error");
     } finally {
