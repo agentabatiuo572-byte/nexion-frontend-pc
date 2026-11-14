@@ -224,11 +224,27 @@ export function assertF2Overview(value: unknown): asserts value is JsonRecord {
 export function assertF3Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F3");
   domain(row, "F3");
-  array(row, "metrics", "F3");
-  object(row, "formula", "F3");
-  array(row, "settlements", "F3");
-  object(row, "dailyCap", "F3");
-  object(row, "config", "F3");
+  const strings = (value: JsonRecord, keys: string[], path: string) => {
+    for (const key of keys) if (typeof value[key] !== "string") invalid("F3", `${path}.${key}`);
+  };
+  array(row, "metrics", "F3").forEach((value, index) => {
+    strings(record(value, "F3", `metrics[${index}]`), ["id", "label", "value", "sub", "tone"], `metrics[${index}]`);
+  });
+  const formula = object(row, "formula", "F3");
+  strings(formula, ["user", "matchRate", "threshold", "settlePeriod"], "formula");
+  for (const key of ["trackA", "trackB", "matchAmount"]) finite(formula[key], "F3", `formula.${key}`);
+  array(row, "settlements", "F3").forEach((value, index) => {
+    const settlement = record(value, "F3", `settlements[${index}]`);
+    strings(settlement, ["user", "settlementDate", "cohort", "state", "tone"], `settlements[${index}]`);
+    for (const key of ["ownerUserId", "trackA", "trackB", "matchAmount", "todayPaid"]) finite(settlement[key], "F3", `settlements[${index}].${key}`);
+  });
+  const cap = object(row, "dailyCap", "F3");
+  strings(cap, ["currentLabel", "windowLabel", "nextTrigger", "nextLabel", "currentPhase"], "dailyCap");
+  nonNegativeInteger(cap.currentMonth, "F3", "dailyCap.currentMonth");
+  if (cap.h1BinaryDailyCap !== null) nonNegative(cap.h1BinaryDailyCap, "F3", "dailyCap.h1BinaryDailyCap");
+  const config = object(row, "config", "F3");
+  strings(config, ["threshold", "matchRate", "spillover", "gvResetCron", "settlePeriod", "residualPolicy", "residualPool", "residualSub"], "config");
+  if (typeof config.spilloverEnabled !== "boolean") invalid("F3", "config.spilloverEnabled");
   for (const field of [
     "maxTrackGmv",
     "participantCount",
@@ -240,6 +256,11 @@ export function assertF3Overview(value: unknown): asserts value is JsonRecord {
     finite(row[field], "F3", field);
   }
   common(row, "F3");
+  strings(row.configValues as JsonRecord, Object.keys(row.configValues as JsonRecord), "configValues");
+  if (row.coverage != null) {
+    const coverage = object(row, "coverage", "F3");
+    for (const key of ["coverageRatio", "redlinePct"]) if (coverage[key] !== null) finite(coverage[key], "F3", `coverage.${key}`);
+  }
 }
 
 export function assertF4Overview(value: unknown): asserts value is JsonRecord {

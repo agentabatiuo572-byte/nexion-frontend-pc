@@ -11,12 +11,14 @@ import { createPendingMutationStore, type PendingMutationRecord } from "./pendin
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import type { F4AmbassadorPolicyUpdate } from "./f1-client";
+import type { FDomainAttempt } from "./f2-approval";
 
-const attempts = createPendingMutationStore<PendingMutationRecord & { input: string; g4Ticket?: A2OperationRow; g4Request?: Parameters<typeof createA2OperationProposal>[0] }>({
+export const configApprovalAttempts = createPendingMutationStore<PendingMutationRecord & Partial<FDomainAttempt> & { input: string; g4Ticket?: A2OperationRow; g4Request?: Parameters<typeof createA2OperationProposal>[0] }>({
   storageKey: "nexion-admin-withdrawal-config-proposals",
   retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.input === "string",
 });
+const attempts = configApprovalAttempts;
 
 const commands = {
   D5: { domain: "D", op: "d5_withdrawal_limits", type: "withdrawal_limits", action: "放宽提现参数" },

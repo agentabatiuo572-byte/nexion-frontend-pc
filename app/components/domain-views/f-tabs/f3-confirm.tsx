@@ -11,6 +11,9 @@ import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import type { FViewCtx } from "./types";
+import { canRetryF3Proposal, listF3Proposals } from "@/lib/admin/f3-approval";
+import type { FDomainAttempt } from "@/lib/admin/f2-approval";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 /** 审批人叫法照「全站-审批人叫法」：F3 单项配置批准要另一位有这项业务权限和审批批准权限的管理员，不要求超级管理员。 */
 export const CONFIG_APPROVER = "另一位管理员";
@@ -18,6 +21,8 @@ export const CONFIG_APPROVER = "另一位管理员";
 export const SETTLE_APPROVER = "另一位超级管理员";
 
 export type F3Confirm = {
+  slot?: string;
+  original?: FDomainAttempt;
   /** 记进操作记录的名字，和旧页面一样。 */
   action: string;
   title: ReactNode;
@@ -38,6 +43,13 @@ export type F3Confirm = {
 };
 
 export function F3ConfirmHost({ confirm, ctx, onClose }: { confirm: F3Confirm; ctx: FViewCtx; onClose: () => void }) {
+  const owner = useAdminAuth(state => state.session?.adminId);
+  const saved = () => owner === undefined ? undefined : listF3Proposals(owner).find(row => row.fingerprint === confirm.slot);
+  const original = saved() ?? confirm.original;
+  const fields = original?.spec?.command.params.changes as Array<{ key: string; value: string }> | undefined;
+  const businessValue = fields ? { period: fields.find(row => row.key === "F.binary.settlePeriod")!.value,
+    residual: fields.find(row => row.key === "F.binary.residualPolicy")!.value } : undefined;
+  const edit = confirm.edit && original?.spec ? { ...confirm.edit, initialValue: String(original.spec.command.params.value ?? "") } : confirm.edit;
   return (
     <OperationConfirmModal
       briefKind={confirm.briefKind}
@@ -49,17 +61,42 @@ export function F3ConfirmHost({ confirm, ctx, onClose }: { confirm: F3Confirm; c
       content={confirm.content}
       statedBrief={confirm.statedBrief}
       amplifies={!!confirm.amplify}
-      coverage={ctx.f3Coverage}
+      coverage={original ? original.f3Snapshot?.coverage : ctx.f3Coverage}
       coverageLead={confirm.coverageLead}
       coverageCheck={confirm.coverageCheck}
       confirmTone={confirm.confirmTone}
       confirmLabel="提交审批"
-      edit={confirm.edit}
+      edit={edit}
       businessForm={confirm.businessForm}
+      initialReason={original?.spec?.reason}
+      getPendingReason={() => saved()?.spec?.reason}
+      getPendingBusinessValue={() => businessValue}
+      inlineApproval={{
+        resolve: () => undefined,
+        pending: !!original,
+        initialRecovery: "retry",
+        expired: !!original && !canRetryF3Proposal(original),
+        recover: async () => {
+          const record = saved();
+          if (!record) { onClose(); return true; }
+          const ticket = await ctx.recoverF3(record);
+          if (ticket) { onClose(); return true; }
+          return false;
+        },
+        retry: async () => {
+          const record = saved();
+          if (!record) { onClose(); return; }
+          try { await ctx.recoverF3(record, "retry"); onClose(); }
+          catch (error) { if (!saved()) onClose(); throw error; }
+        },
+      }}
       onClose={onClose}
       onConfirm={async (reason, newValue, businessValue) => {
         try {
-          await confirm.submit(reason, businessValue, newValue);
+          const record = saved();
+          if (record) await ctx.recoverF3(record, "retry");
+          else if (confirm.original) { onClose(); return; }
+          else await confirm.submit(reason, businessValue, newValue);
           if (confirm.done) ctx.toast(confirm.done);
           onClose();
         } catch (error) {

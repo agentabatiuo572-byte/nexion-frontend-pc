@@ -1,3 +1,4 @@
+import type { F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
 import type { FDomainAttempt, F2Recovery } from "@/lib/admin/f2-approval";
 import type { ReactNode } from "react";
 import type { OperatorBriefKind, EditSpec, BusinessFormSpec, BusinessFormValue, InlineOperationApproval } from "../design-kit";
@@ -55,6 +56,7 @@ export interface McSpec {
   expectedVersion?: number;
   expectedMaterialRevision?: number;
   teamApproval?: Pick<InlineOperationApproval, "resolve" | "renderForm"> & { source: keyof TeamFundApprovalValues };
+  f3Snapshot?: F3ConfirmationSnapshot;
   /** 以下只管确认框怎么显示，原样交给 OperationConfirmModal 的同名参数；不传时和原来一样。 */
   title?: ReactNode;
   facts?: ReactNode | ((value?: string) => ReactNode);
@@ -152,8 +154,12 @@ export interface FViewCtx {
   f2Error: string | null;
   refreshF2: () => Promise<DirectReferralPolicy | null>;
   updateF2Config: (key: string, value: string, reason: string) => Promise<void>;
-  updateFConfigBatch: (sourceDomain: "F2" | "F3" | "F4", changes: Array<{ key: string; value: string }>, reason: string) => Promise<void>;
+  updateFConfigBatch: (sourceDomain: "F2" | "F3" | "F4", changes: Array<{ key: string; value: string }>, reason: string, snapshot?: F3ConfirmationSnapshot) => Promise<void>;
   // -- 双轨结算引擎(F3)· 读 + 配置写入 --
+  f3Proposals: FDomainAttempt[];
+  f3ApprovalRows: A2OperationRow[];
+  f3ReadEpoch: number;
+  recoverF3: (original: FDomainAttempt, mode?: "query" | "retry" | "release") => Promise<A2OperationRow | null>;
   f3Metrics: F3Metric[];
   f3Formula: F3Formula | null;
   f3Settlements: F3Settlement[];
@@ -172,7 +178,7 @@ export interface FViewCtx {
   f3Loading: boolean;
   f3Error: string | null;
   refreshF3: () => Promise<void>;
-  updateF3Config: (key: string, value: string, reason: string, amplifies?: boolean) => Promise<void>;
+  updateF3Config: (key: string, value: string, reason: string, amplifies?: boolean, snapshot?: F3ConfirmationSnapshot) => Promise<void>;
   // -- 领导奖池/硬件配额/大使/榜单(F4)· 读 + 配置写入 --
   f4Overview: F4LeadershipPoolOverview | null;
   f4AmbassadorPolicy: F4AmbassadorPolicy | null;

@@ -4,16 +4,29 @@ import { useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { assignPlacement, readPlacements, PlacementError, type PlacementIntent, type PlacementPage, type PlacementStatus } from "@/lib/admin/f3-placements-client";
+import { assignPlacement, readPlacements, rememberPlacement, pendingPlacement, forgetPlacement, PlacementError, type PlacementIntent, type PlacementPage, type PlacementStatus } from "@/lib/admin/f3-placements-client";
 import { CircleDashed, Eye, Users } from "lucide-react";
 import { Button, Cell, Explain, Panel, Fact, Facts, FilterBar, FilterField, Input, IrreversibleTag, Modal, Notice, Select, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 
 const stamp = () => { const s = useAdminAuth.getState(); return adminShellSessionKey(s.session, s.authEpoch); };
 
+export async function recoverPlacement(intent: PlacementIntent) {
+    const result = await readPlacements(intent.ownerUserId, "ALL", 1, intent.memberUserId);
+    const row = result.records.find(r => r.memberUserId === intent.memberUserId);
+    if (row?.leg) return { resolved: true, message: row.leg === intent.leg
+      ? `已确认：成员 ${intent.memberUserId} 在用户 ${intent.ownerUserId} 的 ${row.leg} 组。`
+      : `成员 ${intent.memberUserId} 已在用户 ${intent.ownerUserId} 的 ${row.leg} 组，不能改到 ${intent.leg} 组。` };
+    return { resolved: false, message: row
+      ? "该成员目前还没分组，提交结果暂未确认，请稍后再查。"
+      : "暂时无法确认分组结果，请稍后再查。" };
+  }
+
+
 export function F3Placements() {
   const identity = useAdminAuth(s => adminShellSessionKey(s.session, s.authEpoch));
   const canRead = useAdminAuth(s => s.session?.authorities.includes("network_f3_read") ?? false);
   const canWrite = useAdminAuth(s => s.session?.authorities.includes("network_f3_write") ?? false);
+  const adminId = useAdminAuth(s => s.session?.adminId);
   const [owner, setOwner] = useState("");
   const [status, setStatus] = useState<PlacementStatus>("ALL");
   const [data, setData] = useState<PlacementPage | null>(null);
@@ -27,7 +40,7 @@ export function F3Placements() {
   const keepPending = (intent: PlacementIntent | null) => { pendingRef.current = intent; setPending(intent); };
   const active = useRef(true), working = useRef(false), generation = useRef(0);
   useEffect(() => { active.current = true; return () => { active.current = false; generation.current++; }; }, []);
-  useEffect(() => { generation.current++; setData(null); selectIntent(null); keepPending(null); setError(""); setNotice(""); setOwner(""); setBusy(false); working.current = false; }, [identity]);
+  useEffect(() => { generation.current++; setData(null); selectIntent(null); keepPending(adminId === undefined ? null : pendingPlacement(adminId)?.intent ?? null); setError(""); setNotice(""); setOwner(""); setBusy(false); working.current = false; }, [identity, adminId]);
   const current = (key: string, version: number) => active.current && key === stamp() && version === generation.current;
 
   async function load(page = 1) {
@@ -41,26 +54,15 @@ export function F3Placements() {
     finally { if (current(key, version)) { working.current = false; setBusy(false); } }
   }
 
-  async function recover(intent: PlacementIntent) {
-    const result = await readPlacements(intent.ownerUserId, "ALL", 1, intent.memberUserId);
-    const row = result.records.find(r => r.memberUserId === intent.memberUserId);
-    if (row?.leg) return { resolved: true, message: row.leg === intent.leg
-      ? `已确认：成员 ${intent.memberUserId} 在用户 ${intent.ownerUserId} 的 ${row.leg} 组。`
-      : `成员 ${intent.memberUserId} 已在用户 ${intent.ownerUserId} 的 ${row.leg} 组，不能改到 ${intent.leg} 组。` };
-    return { resolved: false, message: row
-      ? "该成员目前还没分组，提交结果暂未确认，请稍后再查。"
-      : "暂时无法确认分组结果，请稍后再查。" };
-  }
-
   async function checkPending() {
     if (!pending || !canRead || working.current || stamp() !== identity) return;
     const key = stamp(), version = ++generation.current, intent = pending;
     working.current = true; setBusy(true); setError("");
     try {
-      const result = await recover(intent);
+      const result = await recoverPlacement(intent);
       if (!current(key, version)) return;
       setNotice(result.message);
-      if (result.resolved) { keepPending(null); setData(null); }
+      if (result.resolved) { forgetPlacement(adminId!); keepPending(null); setData(null); }
     } catch (e) { if (current(key, version)) setError(displayAdminError(e)); }
     finally { if (current(key, version)) { working.current = false; setBusy(false); } }
   }
@@ -70,12 +72,14 @@ export function F3Placements() {
     // Never act on a member outside the currently displayed owner and unassigned row.
     if (!data || selected.ownerUserId !== data.ownerUserId || !data.records.some(r => r.memberUserId === selected.memberUserId && r.leg === null)) return;
     const intent = { ...selected }, key = stamp(), version = ++generation.current;
+    try { rememberPlacement(adminId!, intent); }
+    catch (error) { setError(displayAdminError(error)); return; }
     working.current = true; setBusy(true); setError(""); setNotice(""); keepPending(intent);
     try {
       const result = await assignPlacement(intent);
       if (!current(key, version)) return;
       setNotice(result.replayed ? "该成员已在这一组，不用重复分组。" : "成员分组成功。");
-      selectIntent(null); keepPending(null); setData(null);
+      selectIntent(null); forgetPlacement(adminId!); keepPending(null); setData(null);
       try {
         const page = await readPlacements(intent.ownerUserId, status, data.page);
         if (current(key, version)) setData(page);
@@ -83,12 +87,12 @@ export function F3Placements() {
     } catch (e) {
       if (!current(key, version)) return;
       selectIntent(null); setData(null); setError(displayAdminError(e));
-      if (e instanceof PlacementError && e.outcome === "rejected" && e.status !== 409) keepPending(null);
+      if (e instanceof PlacementError && e.outcome === "rejected" && e.status !== 409) { forgetPlacement(adminId!); keepPending(null); }
       else {
         try {
-          const result = await recover(intent);
-          if (current(key, version)) { setNotice(result.message); if (result.resolved) { keepPending(null); setError(""); } }
-        } catch { /* Keep the original owner/member and allow a read-only retry. */ }
+          const result = await recoverPlacement(intent);
+          if (current(key, version)) { setNotice(result.message); if (result.resolved) { forgetPlacement(adminId!); keepPending(null); setError(""); } }
+        } catch (readError) { if (current(key, version)) setError(displayAdminError(readError)); }
       }
     } finally { if (current(key, version)) { working.current = false; setBusy(false); } }
   }

@@ -49,7 +49,8 @@ import {
 } from "@/lib/admin/f1-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { createA2CommandKey, fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
-import { commandAttempts, F2_ACTIVATION_SLOT, F2_POLICY_SLOT, f2PendingFor, f2ProposalRecord, listF2Proposals, queryF2Proposal, releaseF2Proposal, sendF2Proposal, type F2Recovery } from "@/lib/admin/f2-approval";
+import { type FDomainAttempt, commandAttempts, F2_ACTIVATION_SLOT, F2_POLICY_SLOT, f2PendingFor, f2ProposalRecord, listF2Proposals, queryF2Proposal, releaseF2Proposal, sendF2Proposal, type F2Recovery } from "@/lib/admin/f2-approval";
+import { F3_SETTLEMENT_SLOT, listF3Proposals, queryF3Proposal, releaseF3Proposal, sendF3Proposal, settlementSpec, type F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
 import { listF1Proposals, queryF1Proposal, releaseF1Proposal, sendF1Proposal } from "@/lib/admin/f1-approval";
 import { listF1PolicyOperations, queryF1PolicyOperation } from "@/lib/admin/f1-policy-change";
 import { pendingConfigApproval, submitConfigApproval, teamFundApprovalAuthority, type TeamFundApprovalValues } from "@/lib/admin/withdrawal-config-approval";
@@ -153,6 +154,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const canReadA2 = can("platform_a2_read");
   const [f2Loading, setF2Loading] = useState(tab === "F2");
   const [f2Error, setF2Error] = useState<string | null>(null);
+  const [f3Proposals, setF3Proposals] = useState<FDomainAttempt[]>([]);
+  const [f3ApprovalRows, setF3ApprovalRows] = useState<A2OperationRow[]>([]);
+  const [f3ReadEpoch, setF3ReadEpoch] = useState(0);
   const [f3Overview, setF3Overview] = useState<F3BinaryOverview | null>(null);
   const [f3Loading, setF3Loading] = useState(tab === "F3");
   const [f3Error, setF3Error] = useState<string | null>(null);
@@ -333,24 +337,62 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const refreshF3 = useCallback(async () => {
     const request = ++f3Generation.current;
+    const owner = useAdminAuth.getState().session?.adminId;
     setF3Loading(true);
     setF3Error(null);
-    try {
-      const overview = await fetchF3BinaryOverview();
-      if (request !== f3Generation.current) return;
-      setF3Overview(overview);
-    } catch (error) {
-      if (request !== f3Generation.current) return;
-      setF3Overview(null);
-      setF3Error(errorMessage(error));
-    } finally {
-      if (request === f3Generation.current) setF3Loading(false);
-    }
-  }, []);
+    const originals = owner === undefined ? [] : listF3Proposals(owner);
+    setF3Proposals(originals);
+    const [overview, queue, ...lookups] = await Promise.allSettled([
+      fetchF3BinaryOverview(),
+      canReadA2 ? fetchA2Overview() : Promise.resolve(null),
+      ...originals.map(row => queryF3Proposal(owner!, row)),
+    ]);
+    if (request !== f3Generation.current || owner !== useAdminAuth.getState().session?.adminId) return;
+    if (overview.status === "fulfilled") setF3Overview(overview.value as F3BinaryOverview);
+    else { setF3Overview(null); setF3Error(errorMessage(overview.reason)); }
+    const audit = queue.status === "fulfilled" ? queue.value as Awaited<ReturnType<typeof fetchA2Overview>> | null : null;
+    setF3ApprovalRows([...(audit?.operationQueue ?? []), ...lookups.flatMap(row => row.status === "fulfilled" && row.value ? [row.value as A2OperationRow] : [])]);
+    if (owner !== undefined) setF3Proposals(listF3Proposals(owner));
+    setF3Loading(false);
+  }, [canReadA2, session?.adminId]);
 
   useEffect(() => {
     if (tab === "F3") void refreshF3();
   }, [refreshF3, tab]);
+
+  const recoverF3 = async (original: FDomainAttempt, mode: "query" | "retry" | "release" = "query") => {
+    const owner = useAdminAuth.getState().session?.adminId;
+    if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+    setF3Overview(null); setF3Loading(true); setF3ReadEpoch(value => value + 1);
+    setActionConfirm(current => current?.teamApproval?.source === "F3" ? null : current);
+    try {
+      const ticket = mode === "release" ? (await releaseF3Proposal(owner, original), null)
+        : mode === "retry" ? await sendF3Proposal(owner, original.fingerprint)
+        : await queryF3Proposal(owner, original);
+      if (ticket) {
+        setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : "原申请已处理，请刷新后核对。");
+        setActionConfirm(null);
+      }
+      return ticket;
+    } finally {
+      if (owner === useAdminAuth.getState().session?.adminId) {
+        setF3Proposals(listF3Proposals(owner));
+        await refreshF3();
+      }
+    }
+  };
+
+  const sendF3 = async (slot: string, spec: ProposeSpec, snapshot?: F3ConfirmationSnapshot) => {
+    const owner = useAdminAuth.getState().session?.adminId;
+    if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+    if (!f3Overview || f3Loading || f3Error) throw new Error("团队平衡奖励读取失败，请重新读取后再操作。");
+    try {
+      const ticket = await sendF3Proposal(owner, slot, spec, snapshot);
+      setF3ApprovalRows(rows => [...rows, ticket]);
+      setToast("已提交，等待审批后执行");
+      return ticket;
+    } finally { setF3Proposals(listF3Proposals(owner)); }
+  };
 
   const refreshF4 = useCallback(async () => {
     const request = ++f4Generation.current;
@@ -481,7 +523,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   // F 域既有命令在此按槽位保号；F2 启停另用同一共享存储保留完整原申请，供显式恢复。
-  const proposeStable = async (slot: string, inputFingerprint: string, spec: ProposeSpec) => {
+  const proposeStable = async (slot: string, inputFingerprint: string, spec: ProposeSpec, snapshot?: F3ConfirmationSnapshot) => {
+    if (spec.sourceDomain === "F3") { await sendF3(slot, spec, snapshot); return; }
     if (spec.sourceDomain === "F2") return sendF2(slot, spec);
     if (spec.sourceDomain === "F1") {
       const current = useAdminAuth.getState().session;
@@ -504,7 +547,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   // F 域 5 写函数统一改 A2 propose:按 key 分发到 4 polymorphic op(commit afe51f2)。
-  const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string, expectedVersion?: number, amplifies?: boolean, expectedMaterialRevision?: number) => {
+  const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string, expectedVersion?: number, amplifies?: boolean, expectedMaterialRevision?: number, snapshot?: F3ConfirmationSnapshot) => {
     if (key === "F.unilevel.nex.L1") {
       const current = await fetchF2DirectReferralPolicy();
       setF2DirectPolicy(current);
@@ -539,13 +582,14 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       commandKey: fProposalCommandKey(mc?.commandKey, sourceDomain, key),
       command: def.buildCommand({ key, value: commandValue, expectedVersion, expectedMaterialRevision }),
       target: def.buildTarget({ key, value: commandValue, expectedVersion }),
-    });
+    }, snapshot);
   };
 
   const updateFConfigBatch = async (
     sourceDomain: "F2" | "F3" | "F4",
     changes: Array<{ key: string; value: string }>,
     reason: string,
+    snapshot?: F3ConfirmationSnapshot,
   ) => {
     const normalized = changes.map((item) => ({ key: item.key.trim(), value: item.value.trim() }))
       .filter((item) => item.key && item.value);
@@ -563,7 +607,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain,
         command: def.buildCommand({ changes: normalized, sourceDomain }),
         targets: def.buildTargets?.({ changes: normalized, sourceDomain }),
-      });
+      }, snapshot);
     } catch (error) {
       // A2 submission/validation failure must re-read the authoritative server snapshot so
       // the operator never continues from optimistic partial values.
@@ -577,8 +621,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const teamApproval = mc?.teamApproval;
   const canSubmitTeamApproval = (source: keyof TeamFundApprovalValues) =>
     session?.authorities.includes(teamFundApprovalAuthority[source]) ?? false;
+  const f3FundPending = f3Proposals.find(row => row.spec?.command.op === "f3_binary_settle");
   const pendingTeamApproval = teamApproval && session && mc.teamApprovalOwner === session.adminId
-    ? pendingConfigApproval(teamApproval.source, session.adminId)
+    ? teamApproval.source === "F3" ? f3FundPending : pendingConfigApproval(teamApproval.source, session.adminId)
     : undefined;
   const requireTeamApprovalSession = (source: keyof TeamFundApprovalValues, owner = session?.adminId) => {
     const current = useAdminAuth.getState().session;
@@ -591,6 +636,17 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     source: S, values: TeamFundApprovalValues[S] | null, reason: string,
     mode: boolean | "retry-original" = false, owner = session?.adminId,
   ) => {
+    if (source === "F3") {
+      if (mode) {
+        if (!f3FundPending) return false;
+        return !!await recoverF3(f3FundPending, mode === "retry-original" ? "retry" : "query");
+      }
+      requireTeamApprovalSession(source, owner);
+      if (!values) throw new Error("请填写完整后提交。");
+      await sendF3(F3_SETTLEMENT_SLOT, settlementSpec(values as TeamFundApprovalValues["F3"], reason), mc?.f3Snapshot);
+      setActionConfirm(null);
+      return true;
+    }
     const current = requireTeamApprovalSession(source, owner);
     const result = await submitConfigApproval(source, current, values, reason, source === "F3" ? refreshF3 : refreshF4, mode);
     if (!result) return false;
@@ -806,6 +862,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       await proposeFConfig("F2", key, value, reason);
     },
     updateFConfigBatch,
+    f3Proposals, f3ApprovalRows, f3ReadEpoch, recoverF3,
     f3Metrics: f3Overview?.metrics ?? [],
     f3Formula: f3Overview?.formula ?? null,
     f3Settlements: f3Overview?.settlements ?? [],
@@ -822,8 +879,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f3Loading,
     f3Error,
     refreshF3,
-    updateF3Config: async (key, value, reason, amplifies) => {
-      await proposeFConfig("F3", key, value, reason, undefined, amplifies);
+    updateF3Config: async (key, value, reason, amplifies, snapshot) => {
+      await proposeFConfig("F3", key, value, reason, undefined, amplifies, undefined, snapshot);
     },
     f4Overview,
     f4AmbassadorPolicy,
@@ -984,17 +1041,23 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         // 现按 tab 路由到对应 overview 的 coverage,与后端 rates()/binary()/leadershipPool()/commissions() 注入的 B1 快照一致。
         coverage={(tab === "F1" ? f1Overview?.coverage
           : tab === "F2" ? f2Overview?.coverage
-          : tab === "F3" ? f3Overview?.coverage
+          : tab === "F3" ? mc.f3Snapshot?.coverage
           : tab === "F4" ? f4Overview?.coverage
           : tab === "F5" ? f5Page?.overview.coverage
           : undefined) as { coverageRatio: number; redlinePct: number } | undefined}
         edit={mc.edit}
         businessForm={mc.businessForm}
+        initialReason={teamApproval?.source === "F3" ? f3FundPending?.spec?.reason : undefined}
+        getPendingReason={teamApproval?.source === "F3" ? () => listF3Proposals(session!.adminId).find(row => row.spec?.command.op === "f3_binary_settle")?.spec?.reason : undefined}
+        getPendingBusinessValue={teamApproval?.source === "F3" && f3FundPending?.spec ? () => {
+          const values = f3FundPending.spec!.command.params.values as TeamFundApprovalValues["F3"];
+          return { ownerUserId: String(values.ownerUserId), settlementDate: values.settlementDate };
+        } : undefined}
         inlineApproval={teamApproval ? {
           ...teamApproval,
           dialogClassName: teamApproval.source === "F4" ? "team-fund-confirm f4-policy-confirm" : "team-fund-confirm",
           pending: !!pendingTeamApproval,
-          expired: !!pendingTeamApproval && pendingTeamApproval.expiresAt <= Date.now(),
+          expired: !!pendingTeamApproval && (pendingTeamApproval.expiresAt <= Date.now() || teamApproval.source === "F3" && (!f3FundPending?.request || !!f3FundPending?.received)),
           disabledReason: mc.teamApprovalOwner === session?.adminId && canSubmitTeamApproval(teamApproval.source)
             ? undefined : "当前账号没有这项操作的权限，请关闭弹窗后重新核对。",
           recover: () => submitTeamApproval(teamApproval.source, null, "", true, mc.teamApprovalOwner),

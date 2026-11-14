@@ -7,6 +7,7 @@ import { verifyF5CsvArtifact } from "@/lib/admin/f5-export-verifier";
 import { parseDirectReferralPolicy } from "@/lib/admin/direct-referral-policy";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 import type { F1PolicyValues } from "./f1-policy-change";
+import { f3SpilloverState } from "./f3-policy";
 import {
   assertF1Overview,
   assertF2Overview,
@@ -174,6 +175,7 @@ interface BackendF3Formula {
 }
 
 interface BackendF3DailyCap {
+  h1BinaryDailyCap?: string | number | null;
   currentLabel?: string | null;
   windowLabel?: string | null;
   nextTrigger?: string | null;
@@ -639,6 +641,7 @@ export interface F3Formula {
 }
 
 export interface F3DailyCap {
+  amountUsdt: string | null;
   currentLabel: string;
   windowLabel: string;
   nextTrigger: string;
@@ -1357,6 +1360,7 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
     autoPlacement7dCount: toNumber(data?.autoPlacement7dCount),
     dailyMatchUsd: toNumber(data?.dailyMatchUsd),
     dailyCap: {
+      amountUsdt: dailyCap.h1BinaryDailyCap == null ? null : asScalarText(dailyCap.h1BinaryDailyCap),
       currentLabel: asText(dailyCap.currentLabel),
       windowLabel: asText(dailyCap.windowLabel),
       nextTrigger: asText(dailyCap.nextTrigger),
@@ -1368,7 +1372,7 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
       threshold: asText(config.threshold),
       matchRate: asText(config.matchRate),
       spillover: asText(config.spillover),
-      spilloverEnabled: toBoolean(config.spilloverEnabled),
+      spilloverEnabled: f3SpilloverState(config.spillover ?? undefined) === true,
       gvResetCron: asText(config.gvResetCron),
       settlePeriod: asText(config.settlePeriod),
       residualPolicy: asText(config.residualPolicy),
@@ -1378,9 +1382,9 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
-    // coverage 可选:后端 binary() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验),范式同 normalizeOverview。
-    coverage: data?.coverage
-      ? { coverageRatio: toNumber(data.coverage.coverageRatio), redlinePct: toNumber(data.coverage.redlinePct) }
+    // binary() 的可空 B1 快照不补0；配置护栏在批准执行，实际结算仍按当时金额复核。
+    coverage: data?.coverage && finiteDashboardNumber(data.coverage.coverageRatio) !== null && finiteDashboardNumber(data.coverage.redlinePct) !== null
+      ? { coverageRatio: Number(data.coverage.coverageRatio), redlinePct: Number(data.coverage.redlinePct) }
       : undefined,
     sources: data?.sources ?? [],
   };
@@ -1724,6 +1728,9 @@ async function f1Request<T>(
       const raw = await response.text();
       // Preserve DECIMAL(18,6) before JSON.parse can round a JSON number.
       result = JSON.parse(raw.replace(/("amount"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
+    } else if (path === "/binary" && !isWrite) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("h1BinaryDailyCap"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
     } else result = (await response.json()) as ApiResult<T>;
   } catch {
     bodyUnreadable = true;
