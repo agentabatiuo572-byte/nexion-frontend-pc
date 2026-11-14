@@ -85,7 +85,7 @@ const FIELD_COPY: Record<ScalarKey, { name: string; what: string }> = {
 
 const RECOVERY_EXPLAIN = <>
   <p>提交时没收到确定结果：这次保存可能已经生效，也可能没有。</p>
-  <p>先点「刷新核对」看现在的值是不是你要的。原样重试（同样的值、同样的理由）后端认得出是同一次提交，不会重复保存；换了值或理由就是一次新的保存。</p>
+  <p>点「查询原结果」读现在的值；现在的值证明不了原保存的结果。24 小时内「按原请求重试」用同样的值和理由，后端认得出是同一次提交，不会重复保存。有结论前这一块不能发起新的保存。</p>
 </>;
 
 type SaveIssue = { kind: SaveIssueKind; message: string; module: H9Module; change: string; at: number };
@@ -460,6 +460,10 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     </>,
   }] : [];
   const recoveryNotice = <H9RecoveryNotice rows={recoveryRows} explain={RECOVERY_EXPLAIN} />;
+  /** 排名的结果未知提醒在排名那一块里；切到别的块时，在页面上方给一个入口。 */
+  const rankPending = pendingH9Command("rank");
+  const unresolved = (pending ? 1 : 0) + (rankPending ? 1 : 0);
+  const rankJump = rankPending && module !== "rank" ? <Button size="sm" onClick={() => setModule("rank")}>去设备预估排名处理</Button> : undefined;
 
   const header = (
     <PageHeader pageId="H9" title="首页与网络展示设置" summary="管 App 首页和网络页给用户看的展示数字。"
@@ -467,13 +471,14 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       readOnly={!canWrite ? "你只能查看；修改要有这页的修改权限。" : undefined} />
   );
 
-  const cards = <H9ModuleCards data={data} failed={!data && !loading} rank={rank} module={module} onSelect={setModule} ids={ids} readAt={readAt} />;
+  const cards = <H9ModuleCards data={data} failed={!data && !loading} rank={rank} rankUnknown={!!rankPending} module={module} onSelect={setModule} ids={ids} readAt={readAt} />;
   const rankPanel = <div key="rank" hidden={module !== "rank"} {...ids.panel("rank")}><H9DeviceRank ctx={ctx} onData={setRank} /></div>;
 
   if (!data || !drafts) {
     return <div className="h9-page">
       {header}
       {recoveryNotice}
+      {rankJump && <Notice tone="warn" title="设备预估排名有一次保存结果未知" action={rankJump}>{rankPending?.original?.display.change ?? "原保存的内容没有存全"} · {businessStamp(rankPending!.createdAt)} 提交（{businessZone().label}）</Notice>}
       {loading
         ? <Conclusion state="unknown">展示设置读取中…</Conclusion>
         /* 文案拼接走 h9PlaceholderCopy:字典整句自带句号,直接再拼「。」就是双句号(P2-15 回归)。 */
@@ -688,7 +693,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         <PaginationExemption label="算力分位表" reason="整表统一保存，需同时检查各行数值顺序" maxRows={bands.length} kind="fixed-matrix" />
         {canWrite && <Button size="sm" disabled={loading || !!error || saving || !!pending} onClick={addBand}>添加档</Button>}
       </>}>
-      {bandCountError && <Notice tone="warn">{bandCountError}。{canWrite ? "点「添加档」补齐，少于两档没法换算成百分比。" : ""}</Notice>}
+      {bandCountError && <Notice tone="warn">{bandCountError}。{canWrite ? "点「添加档」补齐，后端要求至少两档。" : ""}</Notice>}
       {bands.length > 0 && <Table label="算力分位表">
         <thead><tr><Th>档</Th><Th>算力档位</Th><Th>累计占比</Th><Th>含义</Th>{canWrite && <Th align="right">操作</Th>}</tr></thead>
         <tbody>
@@ -723,7 +728,9 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     </Notice>}
     {issue?.kind === "rejected" && <Notice tone="danger" title={`保存被拒：${moduleLabel(issue.module)}`}>{issue.message} 这次没有保存，按原因改好后再保存。</Notice>}
     {error && <Notice tone="danger" title="刷新没成功">{error} 页面上还是上次读到的值，已填写的内容保留，请重试。</Notice>}
-    {!issue && !error && (savedTick
+    {!issue && !error && (unresolved > 0
+      ? <Conclusion state="warn" action={rankJump}>{unresolved} 次保存结果未知，先查询原结果；有结论前那一块不能再保存</Conclusion>
+      : savedTick
       ? <Conclusion state="ok">首页数字{values.homeDisplayEnabled ? "增长中" : "已暂停"}，设备预估排名{rank.state === "ready" ? rank.config.enabled ? "已开启" : "已关闭" : rank.state === "failed" ? "读取失败" : "读取中"}；没有要处理的事</Conclusion>
       : <Conclusion state="warn" action={module !== "network" ? <Button size="sm" onClick={() => setModule("network")}>去看注册人数</Button> : undefined}>网络脉搏注册人数只配了月增长率，App 上有的位置显示「不可用」</Conclusion>)}
     {cards}

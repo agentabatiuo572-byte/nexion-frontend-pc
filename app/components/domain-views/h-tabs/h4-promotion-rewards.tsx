@@ -27,7 +27,7 @@ export default function PromotionRewards({ activity, can, onBack, onRefresh }: {
 
     const rows = list.data ? [...list.data.items].sort((x, y) => PRIORITY(x.state) - PRIORITY(y.state)) : [];
     return <><Stats items={[['活动已确认发放', impact.issued, '资金或设备发放凭证'], ['活动待发 / 处理中', impact.pendingRewards, '等待原奖励处理'], ['活动需恢复或核账', impact.failedRewards + impact.unknownRewards, '失败与结果未知'], ['活动冲正 / 人工审阅', impact.reversingRewards + impact.manualReviewRewards, '保留原承诺与证据']]}/>
-    <Panel title="奖励明细" icon={Gift} tone="role-2" sub={`${activity.name || activity.activityId}${list.data ? ` · 共 ${list.data.total} 项` : ''}`} explain="每一行是一笔奖励义务：从下单预留、付款后待发、发放到到账；失败、结果未知、追回和人工审阅排在本页最前。取消、冲正需要关联且已确认的退款或批准依据，活动结束本身不构成依据。" actions={<RdButton size="sm" variant="ghost" onClick={onBack}>返回活动</RdButton>}>
+    <Panel title="奖励明细" icon={Gift} tone="role-2" sub={`${activity.name || activity.activityId}${list.data ? ` · 共 ${list.data.total} 项` : ''}`} explain="每一行是一笔奖励义务：从下单预留、付款后待发、发放到到账；失败、结果未知、追回和人工审阅排在这一页最前（只排这一页，不跨页）。取消、冲正需要关联且已确认的退款或批准依据，活动结束本身不构成依据。" actions={<RdButton size="sm" variant="ghost" onClick={onBack}>返回活动</RdButton>}>
     <FilterBar onSubmit={() => queryRewards({ activityId: activity.activityId, limit: 20, ...filter })} querying={list.loading}>
         <FilterField grow><Input aria-label="订单" placeholder="订单号" value={filter.orderNo} onChange={e => setFilter({ ...filter, orderNo: e.target.value })}/></FilterField>
         <FilterField><Select aria-label="资产类型" value={filter.type} onChange={v => setFilter({ ...filter, type: v })} options={[{ value: '', label: '全部类型' }, { value: 'DEVICE', label: '设备赠礼' }, { value: 'USDT', label: 'USDT' }, { value: 'UVT', label: 'UVT' }]}/></FilterField>

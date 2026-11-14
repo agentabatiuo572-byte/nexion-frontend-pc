@@ -29,11 +29,13 @@ export const moduleLabel = (id: H9Module) => MODULES.find((item) => item.id === 
 /** 排名读到没有：独立的模型，失败不影响主配置。 */
 export type RankSnapshot = { state: "loading" } | { state: "failed" } | { state: "ready"; config: DeviceRankConfig };
 
-export function H9ModuleCards({ data, failed, rank, module, onSelect, ids, readAt }: {
+export function H9ModuleCards({ data, failed, rank, rankUnknown, module, onSelect, ids, readAt }: {
   data: H9PublicStatsOverview | null;
   /** 主配置读取失败：五块写「—」，排名照常。 */
   failed: boolean;
   rank: RankSnapshot;
+  /** 排名有一次保存结果未知：卡上换成「结果未知」。 */
+  rankUnknown?: boolean;
   module: H9Module;
   onSelect: (next: H9Module) => void;
   ids: TabIds;
@@ -81,7 +83,7 @@ export function H9ModuleCards({ data, failed, rank, module, onSelect, ids, readA
           surface={values && !tick ? "warn" : undefined}
           head={<>网络脉搏注册人数{values ? tick ? <StatusTag tone="progress">按跳动增长</StatusTag> : <StatusTag tone="warn">部分位置不显示</StatusTag> : unreadTag}</>}
           label="现在约" value={members == null ? "—" : count(members)} unit={members == null ? undefined : "人"}
-          explain={tick ? "按读取这页的时刻、用后端同一个公式推算；App 上的数会比这里多几人（每次跳动的固定随机偏移）。" : "只配了月增长率：网络脉搏卡片照常显示这个数，网络快照等位置会显示「不可用」。"}>
+          explain={tick ? "按读取这页的时刻和后端公式推算的参考数，不是 App 此刻的数；App 上还会加一个固定的随机偏移，两边可能差几人。" : "只配了月增长率：网络脉搏卡片照常显示这个数，网络快照等位置会显示「不可用」。"}>
           <dl className="rd-stat-rows">
             <div className="rd-stat-row"><dt>增长方式</dt><dd data-empty={values ? undefined : ""}>{!values ? "—" : tick ? `每 ${count(tick.intervalSec)} 秒 +${count(tick.stepMin)}–${count(tick.stepMax)} 人` : `每月 +${values.registeredUsersMonthlyGrowthPct}%`}</dd></div>
           </dl>
@@ -106,7 +108,7 @@ export function H9ModuleCards({ data, failed, rank, module, onSelect, ids, readA
         </Stat>
 
         <Stat {...tab("rank", "设备预估排名")} icon={Trophy} tone="role-4"
-          head={<>设备预估排名{rank.state === "ready" ? <StatusTag tone={rank.config.enabled ? "ok" : "neutral"}>{rank.config.enabled ? "已开启" : "已关闭"}</StatusTag> : <StatusTag tone={rank.state === "failed" ? "danger" : "neutral"}>{rank.state === "failed" ? "读取失败" : "读取中"}</StatusTag>}</>}
+          head={<>设备预估排名{rankUnknown ? <StatusTag tone="warn">结果未知</StatusTag> : rank.state === "ready" ? <StatusTag tone={rank.config.enabled ? "ok" : "neutral"}>{rank.config.enabled ? "已开启" : "已关闭"}</StatusTag> : <StatusTag tone={rank.state === "failed" ? "danger" : "neutral"}>{rank.state === "failed" ? "读取失败" : "读取中"}</StatusTag>}</>}
           label="档位" value={rank.state === "ready" ? String(rank.config.tiers.length) : "—"} unit={rank.state === "ready" ? "档" : undefined}
           explain="独立的一套设置：自己的版本、自己保存，和其余五块互不影响。">
           <dl className="rd-stat-rows">

@@ -59,11 +59,11 @@ export function RewardFlow({ pending, blocked, settled, mode, gateUnset }: { pen
         <div className="h8-flow-body">
           <span className="h8-flow-title">新人注册
             <Explain label="哪些注册会进入结算" content={<>
-              <p>{gateUnset ? "生效时间还没设过，所有注册的正式账号都会进入结算。改金额、改发放方式或启用奖励后，生效时间改成那一刻，之前注册的不再自动结算。" : "生效时间之后注册的正式账号才会进入结算，之前注册的不再自动结算。"}</p>
+              <p>{gateUnset ? "生效时间还没设过，不按注册时间筛；正式、没结算过、没被风控拦下的账号都会进入结算。改金额、改发放方式或启用奖励后，生效时间改成那一刻，之前注册的不再进入结算。" : "生效时间起（含这一刻）注册的正式账号才会进入结算，之前注册的不再进入结算。"}</p>
               <p>没有邀请人的新人也有新人礼；这时邀请人那一份不发。</p>
             </>} />
           </span>
-          <span className="h8-flow-sub">{gateUnset ? "所有注册都算" : "生效时间之后"}，有没有邀请人都算</span>
+          <span className="h8-flow-sub">{gateUnset ? "不按注册时间筛" : "生效时间起注册的"}，有没有邀请人都算</span>
         </div>
       </li>
       <li className="h8-flow-step">
@@ -99,7 +99,7 @@ export function RewardFlow({ pending, blocked, settled, mode, gateUnset }: { pen
           <span className="h8-flow-title">到用户手里
             <Explain label="已结算为什么还没拿到" content={<>
               <p>已结算不等于新人已经拿到可以提现的钱。</p>
-              <p>注册时被标了首购冻结的，新人礼先冻结，等这位新人完成第一笔金额大于 0 的实付订单才解冻；奖励关了以后也照样解冻。</p>
+              <p>注册时被标了首购冻结的，新人礼先冻结，等这位新人完成第一笔金额大于 0 的实付订单才解冻，仍受发放方式和覆盖率条件约束；奖励关了以后也会解冻。</p>
               <p>不冻结的和解冻后的，按收益规则分到可提现、待审核或锁定。邀请人那一份同时进邀请人钱包。两边都记进资金账本。</p>
             </>} />
           </span>
@@ -127,18 +127,18 @@ export type H8RecoveryRow = {
 
 export function unknownTag(kind: "direct" | "approval") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
-    ? "提交时没收到确定结果，可能已经生效。到「操作记录与审批」核对；24 小时内按同样的值和理由再提交一次，后端认得出是同一次，不会重复执行。"
+    ? "提交时没收到确定结果，可能已经生效。到「操作记录与审批」核对；24 小时内可以按原请求重试，后端认得出是同一次提交，不会重复执行。"
     : "提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会建第二张。"}>结果未知</StatusTag>;
 }
 
 export function expiredTag(kind: "direct" | "approval") {
   return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "direct"
     ? "原请求超过 24 小时，不能再重试，只能到「操作记录与审批」核对。"
-    : "原请求超过 24 小时，不能再重试，只能查询原审批单。查不到也不能据此认定没提交。"}>已过期</StatusTag>;
+    : "原请求超过 24 小时，不能再重试，只能查询原审批单；明确查不到这张单时，可以确认解除。"}>已过期</StatusTag>;
 }
 
 export function pendingTag() {
-  return <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员在「操作记录与审批」批准。批准前奖励配置不变；整份奖励配置被这张审批单锁住，别的放大修改也提交不了。">待审批</StatusTag>;
+  return <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员在「操作记录与审批」批准。批准前奖励配置不变；等批期间这页不能再发起别的放大修改，调低这类收紧照常保存。">待审批</StatusTag>;
 }
 
 /** 原操作提醒：逐条写改的是什么、从多少到多少、什么时候提交的、现在什么状态。概览读取中、读取失败也显示。 */
@@ -148,7 +148,7 @@ export function H8RecoveryNotice({ rows }: { rows: H8RecoveryRow[] }) {
   return (
     <Notice tone="warn" title={<>还没有结论的原操作 · {rows.length} 项<Explain label="原操作怎么处理" content={<>
       <p>这里列你在这个浏览器标签页里提交过、还没收到确定结果的修改和结算申请。</p>
-      <p>原操作有结论之前，这一项不能改成别的值；别的项照常可改。别人提交的审批单不在这里，到「操作记录与审批」看。</p>
+      <p>原操作有结论之前，这一项不能改成别的值。有参数审批在等批时，别的项也只能收紧、不能放大。别人提交的审批单不在这里，到「操作记录与审批」看。</p>
     </>} /></>}>
       <ul className="h8-rec" aria-label="原操作">
         {rows.map((row) => (
@@ -170,11 +170,11 @@ export function H8RecoveryNotice({ rows }: { rows: H8RecoveryRow[] }) {
  * 「已保存，但没读到最新值」（F02）：保存的回执收到了，但随后的读取失败。
  * 现在的保存流程还进不了这个状态（回读失败时整页换成读取失败），等代码 worker 区分后挂在结论下面。
  */
-export function H8SavedUnreadNotice({ name, value, onReload, reloading }: { name: string; value: ReactNode; onReload: () => void; reloading?: boolean }) {
+export function H8SavedUnreadNotice({ name, value, onReload, reloading, hasData }: { name: string; value: ReactNode; onReload: () => void; reloading?: boolean; hasData: boolean }) {
   return (
     <Notice tone="warn" title={`${name}已保存，但没读到最新值`}
       action={<button type="button" className="rd-inline-retry" disabled={reloading} onClick={onReload}>重新读取</button>}>
-      后端回执是 {value}。页面上的其他数字还是保存前读到的，重新读取后再核对。
+      后端回执是 {value}。{hasData ? "页面上的其他数字还是保存前读到的，重新读取后再核对。" : "页面现在没有读到的数字，重新读取后再核对。"}
     </Notice>
   );
 }

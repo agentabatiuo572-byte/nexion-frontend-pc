@@ -54,8 +54,10 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
   const canRead = ctx.can("growth_h4_read"), canWrite = ctx.can("growth_h4_write");
   const canReadVouchers = ctx.can("growth_h7_read");
   const operator = currentAdminOperator();
-  const choose = (row: EventRuleView) => { setSelected(row); setDraft({ enabled: row.enabled, startsAt: row.startsAt, endsAt: row.endsAt, rules: eventRuleDraftRules(row) }); setRegions(eventRegionText(row.rules.regions)); setError(""); };
+  const choose = (row: EventRuleView) => { setStale(""); setSelected(row); setDraft({ enabled: row.enabled, startsAt: row.startsAt, endsAt: row.endsAt, rules: eventRuleDraftRules(row) }); setRegions(eventRegionText(row.rules.regions)); setError(""); };
   const [, pendingChanged] = useState(0);
+  /** 保存被「别人先改过」拒绝、已重读后的提醒；只决定显示。 */
+  const [stale, setStale] = useState("");
   const load = async () => {
     const own = ++generation.current; setLoading(true); setError("");
     try { const values = await fetchEventRules(); if (own === generation.current) { setRows(values); setSelected(null); setDraft(null); } }
@@ -104,7 +106,7 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
           <Fact k="开放状态">{base.enabled === next.enabled ? (next.enabled ? "开着" : "关着") : <>{base.enabled ? "开着" : "关着"} → {next.enabled ? "开启" : "关闭"}</>}</Fact>
           <Fact k="时间（北京时间）">{formatTime(next.startsAt, "Asia/Shanghai")} → {formatTime(next.endsAt, "Asia/Shanghai")}</Fact>
           {next.enabled ? <Fact k="开了以后">{PLAY_SENTENCE[playKey({ kind: base.kind, rules: next.rules })] ?? "符合条件的用户可以参与"}</Fact>
-            : <Fact k="关了以后">不再发新奖励；已经领到的照旧。开过一次的玩法关闭后不能再开</Fact>}
+            : <Fact k="关了以后">不再发新奖励；已冻结的邀请和新手资格仍会兑现。开过一次的玩法关闭后不能再开</Fact>}
           {next.enabled && keyParams({ kind: base.kind, rules: next.rules }).filter(([k]) => k === "平台最多付").map(([k, v]) => <Fact key={k} k={k} tone="role-1">{v}</Fact>)}
           {firstOpen && <Fact k="开启后固定">玩法和时间不能再改，只能关闭；关了不能再开</Fact>}
           {firstOpen && <ApprovalFact amplify="第一次开启" object="玩法" />}
@@ -125,6 +127,7 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
           ctx.toast(isH4ApprovalReceipt(saved) ? saved.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "活动规则已保存");
         } catch (cause) {
           if (own === generation.current) setError(displayAdminError(cause));
+          if (isHGrowthReadConflict(cause)) setStale(`${EVENT_KIND_LABELS[base.kind] ?? "其他活动"} · ${base.eventCode}`);
           if (isHGrowthReadConflict(cause) || originalKey && !h4PendingFor(`H/h4_event_rule/${base.eventCode}`)) { ctx.openActionConfirm(null); await load(); }
           throw cause;
         }
@@ -137,7 +140,7 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
 
   const ended = (row: EventRuleView) => !!(row.rulesLocked && row.endsAt && Date.parse(row.endsAt) <= Date.now());
   const stateTag = (row: EventRuleView) => ended(row) ? <StatusTag tone="done" explain="开放时间已过：参与条件和时间保持原配置。">已结束</StatusTag>
-    : row.enabled ? <StatusTag tone="ok" icon={CircleCheck} explain="用户现在可以参加。玩法和时间已固定，只能关闭；关闭后不能再开。">已开启</StatusTag>
+    : row.enabled ? <StatusTag tone="ok" icon={CircleCheck} explain="开着：到了开始时间、符合条件的用户能参加。玩法和时间已固定，只能关闭；关闭后不能再开。">已开启</StatusTag>
     : <StatusTag tone="neutral" explain={row.rulesLocked ? "开过又关了：不能再开。" : "还没开过：配好并就绪后可以申请开启。"}>{row.rulesLocked ? "已关闭 · 不能再开" : "已关闭"}</StatusTag>;
   const missing = (row: EventRuleView) => [...new Set(row.readiness.missing.map(eventRuleMissingLabel))];
 
@@ -230,6 +233,7 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
         </article>;
       })}</div>}
     {rows.length > 0 && error && !selected && <Notice tone="danger" title="玩法规则没有读到最新的">{error}</Notice>}
+    {stale && !selected && <Notice tone="warn" title={`没有保存：${stale} 已被别人改过`} action={<Button size="sm" variant="ghost" onClick={() => setStale("")}>知道了</Button>}>页面已读到最新配置，你这次改的内容没有提交。核对后重新打开再改。</Notice>}
     {!loading && <p className="h4l-note">时间为北京时间</p>}
     <Drawer open={!!editor} onClose={close} busy={saving} title={selected ? `${EVENT_KIND_LABELS[selected.kind] ?? "其他活动"}的配置` : "玩法配置"} sub={selected?.eventCode}
       explain="先保存完整配置，再开启活动。关闭这个抽屉会丢掉没保存的改动。"

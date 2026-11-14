@@ -80,7 +80,8 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
     ];
     const changed = diff.filter((row) => row.before !== row.after);
     const changeText = changed.slice(0, 2).map(row => `${row.label} ${row.before} → ${row.after}`).join("；") + (changed.length > 2 ? `；等 ${changed.length} 项` : "");
-    const impactText = enabled ? "保存后 App 按新档位给用户估一个设备排名（参考，不是真实榜单），不影响真实算力、收益和奖励。" : "保存后 App 不再显示设备排名，改为占位说明；档位留着，下次开启照用。";
+    const impactText = enabled ? "保存后 App 按新档位给用户估一个设备排名（参考，不是真实榜单），不影响真实算力、收益和奖励。"
+      : tiers.length ? "保存后 App 不再显示设备排名，改为占位说明；档位保留，下次开启照用。" : "保存后 App 不再显示设备排名，改为占位说明；档位全部清空，下次开启要重新填。";
     let command: H9Command | undefined;
     ctx.openActionConfirm({ briefKind: "config",
       getPendingReason: () => command && pendingH9Command("rank")?.commandKey === command.commandKey ? command.original?.reason : undefined,
@@ -88,7 +89,7 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
       title: "保存设备预估排名",
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认保存",
-      statedBrief: { impact: enabled ? "保存后 App 按新档位给用户估一个设备排名（参考，不是真实榜单），不影响真实算力、收益和奖励。" : "保存后 App 不再显示设备排名，改为占位说明；档位留着，下次开启照用。", check: "核对档位占比合计 100% 和算力范围，理由写清调整依据。" },
+      statedBrief: { impact: impactText, check: "核对档位占比合计 100% 和算力范围，理由写清调整依据。" },
       reasonPlaceholder: "例如：运营活动安排、工单号",
       facts: <ConfirmFacts rows={diff} rest="没改的档" facts={<>
         <Fact k="排名设置版本"><Change from={`v${data.version}`} to={`v${data.version + 1}`} /></Fact>
@@ -165,7 +166,7 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
   };
   const issueNotice = pending ? <H9RecoveryNotice explain={<>
         <p>提交时没收到确定结果：这次保存可能已经生效，也可能没有。{error}</p>
-        <p>先点「刷新核对」看现在的设置是不是你要的。原样重试（同样的档位、同样的理由）后端认得出是同一次提交，不会重复保存。</p>
+        <p>点「查询原结果」读现在的设置；现在的值证明不了原保存的结果。24 小时内「按原请求重试」用同样的档位和理由，后端认得出是同一次提交，不会重复保存。</p>
       </>} rows={[{ key: pending.commandKey, name: "设备预估排名", change: pending.original?.display.change ?? formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE"), submittedAt: pending.createdAt,
         actions: <>
           <Button size="sm" disabled={loading || saving} onClick={() => void load()}>查询原结果</Button>

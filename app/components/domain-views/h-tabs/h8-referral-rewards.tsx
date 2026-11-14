@@ -15,7 +15,7 @@ import Link from "next/link";
 import { ArrowLeftRight, Check, Gift, Hourglass, ListChecks, Power, Route, ShieldAlert, SlidersHorizontal, UserPlus, Users } from "lucide-react";
 import {
   BlockState, Button, Change, Conclusion, ConfigList, ConfigRow, DiffField, Explain, Fact, Facts, Field, Input,
-  IrreversibleTag, Notice, NumberInput, PageHeader, Panel, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr,
+  IrreversibleTag, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr,
 } from "@/app/components/rd";
 import {
   fetchH8ReferralRewards,
@@ -29,7 +29,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { roleLabel } from "@/lib/nav/console-nav";
-import { canRetryH8RewardCommand, createH8RewardCommand, pendingH8RewardCommands, queryH8RewardCommand, requireH8Actor, sendH8RewardCommand, type H8RewardCommand } from "@/lib/admin/h8-reward-mutation";
+import { canRetryH8RewardCommand, createH8RewardCommand, pendingH8RewardCommands, queryH8RewardCommand, releaseExpiredH8RewardProposal, requireH8Actor, sendH8RewardCommand, type H8RewardCommand } from "@/lib/admin/h8-reward-mutation";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { withdrawalApprovalDisabledReason } from "@/lib/admin/withdrawal-config-approval";
 import { OperationConfirmModal, type BusinessFormValue } from "../design-kit";
@@ -85,6 +85,9 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const [, changed] = useReducer((value: number) => value + 1, 0);
   const [readReady, setReadReady] = useState(false);
   const [savedUnread, setSavedUnread] = useState<{ param: H8Param; value: string } | null>(null);
+  /** 被「别人先改过」拒绝后已重读：留一条提醒写清现在的值和这次要改的值。只决定显示。 */
+  const [stale, setStale] = useState<{ param?: H8Param; value?: string } | null>(null);
+  const [releasing, setReleasing] = useState<H8RewardCommand | null>(null);
   const openConfirm = setMc;
   const currentRead = useRef({ data, ready: readReady });
   currentRead.current = { data, ready: readReady && !loading };
@@ -155,6 +158,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     } catch (error) {
       changed();
       // A resolved recovery must not retain a closure that can dispatch the old request.
+      if (isHGrowthReadConflict(error)) setStale({ param: [ENABLED_PARAM, ...PARAMS].find(p => p.key === record.paramKey), value: record.value });
       if (isHGrowthReadConflict(error) || recovering && !pendingH8RewardCommands(record.adminId).some(r => r.commandKey === record.commandKey)) {
         openConfirm(null);
         currentRead.current.ready = false;
@@ -179,6 +183,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   };
   const editParam = (param: H8Param, fixedValue?: string, recovered?: H8RewardCommand, lookupOnly = false) => {
     if (!session) return;
+    setStale(null);
     const pending = recovered ?? commandForParam(param);
     if (pending && !pending.original) {
       void queryCommand(pending).catch(cause => ctx.toast(displayAdminError(cause)));
@@ -377,6 +382,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   };
 
   const settle = (invitedUserId?: number, recovered?: H8RewardCommand, lookupOnly = false) => {
+    setStale(null);
     if (!session) return;
     const pending = recovered ?? pendingH8RewardCommands(session.adminId).find(r => r.kind === "settlement");
     if (pending && !pending.original) {
@@ -425,8 +431,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     action: targeted ? "给指定新人结算邀请奖励" : "结算邀请奖励",
     title: targeted ? "给指定新人结算" : "批量结算邀请奖励",
     detail: targeted
-      ? `只结算新人 ${invitedUserId}；他不符合条件或已经结算过就不发，也不会改发给别人。`
-      : "按注册先后找出生效时间之后注册、还没结算、没被风控拦下的新人，有没有邀请人都算。",
+      ? `只结算新人 ${invitedUserId}；不符合条件就不发，也不会改发给别人。已结算、礼包还冻结又已有首笔实付订单的，这次只解冻原礼包。`
+      : "按注册先后找出生效时间起注册、还没结算、没被风控拦下的新人，有没有邀请人都算。",
     effect: <><StatusTag tone="progress" filled explain={`${SETTLE_APPROVER}在「操作记录与审批」批准后才发，批准前什么都不发。批准时按那时的名单发；奖励配置在这期间变了，要重新提交。`}>批准后执行</StatusTag><IrreversibleTag /></>,
     statedBrief: {
       impact: targeted ? "批准后给这位新人和他的邀请人发奖励，发出去不能撤回。" : "批准后按注册先后给这一批新人和他们的邀请人发奖励，发出去不能撤回。",
@@ -487,22 +493,44 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       recoveryRows.push({
         key: record.commandKey, name: param ? paramTitle(param) : record.invitedUserId !== undefined ? "给指定新人结算" : "批量结算",
         submittedAt: record.createdAt, tag,
-        change: param ? <span>{record.kind === "direct" ? "改成" : "申请改成"} {valueText(param, record.value)}</span>
-          : <span>{record.invitedUserId !== undefined ? `新人 ${record.invitedUserId}` : `最多 ${record.limit ?? "—"} 位`}</span>,
+        change: param ? record.original
+            ? <span>{record.kind === "direct" ? "" : "申请 "}<Change from={valueText(param, String(record.original.overview.params[param.key]))} to={valueText(param, record.value)} /></span>
+            : <span>{record.kind === "direct" ? "改成" : "申请改成"} {valueText(param, record.value)}</span>
+          : <span>{record.invitedUserId !== undefined ? `新人 ${record.invitedUserId}` : `最多 ${record.limit ?? "—"} 位`}{record.original && `（提交时 ${countText(record.original.overview.pending)} 位待结算）`}</span>,
         actions: <>
           <Button size="sm" aria-label={`查询${param ? paramTitle(param) : "结算"}的原结果`}
             onClick={() => { recover(true); }}>查询原结果</Button>
           {canRetryH8RewardCommand(record) && (record.kind === "settlement" ? canSettle : canWrite)
             && <Button size="sm" onClick={() => recover()}>按原请求重试</Button>}
+          {record.kind !== "direct" && isRetryExpired(record) && !record.acknowledged
+            && <Button size="sm" variant="ghost" onClick={() => setReleasing(record)}>查无此单时解除</Button>}
           {record.kind !== "param-approval" && reach("/platform/audit", "platform_a2_read")
             && <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link>}
         </>,
       });
     }
   }
-  const recoveryNotice = <H8RecoveryNotice rows={recoveryRows} />;
+  const releasingRow = releasing && recoveryRows.find(row => row.key === releasing.commandKey);
+  const recoveryNotice = <>
+    <H8RecoveryNotice rows={recoveryRows} />
+    {releasing && <ReleaseModal label={<>{releasingRow?.name ?? "原申请"}{releasingRow && <> · {releasingRow.change}</>}</>}
+      explain={<><p>原申请已超过 24 小时，不会再重发。</p><p>确认时先按原申请再查一次：明确查不到这张审批单才解除，说明申请没建成；查到了就按它现在的状态显示，不解除。</p></>}
+      onCancel={() => setReleasing(null)} onConfirm={() => {
+        const record = releasing;
+        setReleasing(null);
+        void releaseExpiredH8RewardProposal(record)
+          .then(() => { ctx.toast("已解除这条记录，可以重新提交。"); return load(); })
+          .catch(cause => { ctx.toast(displayAdminError(cause)); changed(); });
+      }} />}
+  </>;
   const savedUnreadNotice = savedUnread && <H8SavedUnreadNotice name={paramTitle(savedUnread.param)}
-    value={valueText(savedUnread.param, savedUnread.value)} reloading={loading} onReload={() => void load("", false, true)} />;
+    value={valueText(savedUnread.param, savedUnread.value)} reloading={loading} hasData={!!data} onReload={() => void load("", false, true)} />;
+  const staleNotice = stale && data && <Notice tone="warn" title={`没有提交：${stale.param ? paramTitle(stale.param) : "结算申请"}已被别人改过`}
+    action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>
+    {stale.param
+      ? <>现在是 {valueText(stale.param, String(data.params[stale.param.key]))}，你这次要改成 {valueText(stale.param, stale.value)}。核对后重新调整。</>
+      : "奖励配置或当月加成已变化，页面已读到最新值；核对后重新提交结算。"}
+  </Notice>;
 
   const confirmModal = mc && (
     <OperationConfirmModal briefKind={mc.briefKind}
@@ -630,14 +658,15 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       {conclusion}
       {recoveryNotice}
       {savedUnreadNotice}
+      {staleNotice}
 
       <StatBand fit label="结算情况">
         <Stat lead icon={UserPlus} tone="role-3" label="等待结算" value={countText(pending)} unit="位"
-          explain="生效时间之后注册、还没结算、也没被风控拦下的新人，有没有邀请人都算。待结算是按注册资格统计的，实际结算时还要核对钱包，可能少于这个数。奖励停用时照样统计，但不能结算。" />
+          explain="生效时间起注册、还没结算、也没被风控拦下的新人，有没有邀请人都算。待结算是按注册资格统计的，实际结算时还要核对钱包，可能少于这个数。奖励停用时照样统计，但不能结算。" />
         <Stat icon={ShieldAlert} tone="role-3" label="被风控拦下" value={countText(data.blockedByK2)} unit="位"
           explain={<>
-            <p>生效时间之后注册、还没结算的新人里，被风控拦下、不会给他们结算的：K2「拦截新人礼」、账户或账户组被标记、冻结的。</p>
-            <p>发放方式是「先过风险检查再发」时，命中待复核风险的也算在这里；改成「符合资格就直接发」后，这部分转到等待结算。</p>
+            <p>生效时间起注册、还没结算的新人里，被风控拦下、不会给他们结算的：K2「拦截新人礼」、账户或账户组被标记、冻结的。</p>
+            <p>发放方式是「先过风险检查再发」时，命中待复核风险的也算在这里。改发放方式会把生效时间改成那一刻，这些人注册在前，不会因此转到等待结算。</p>
           </>} />
         <Stat icon={Check} tone="role-3" label="已结算" value={countText(data.settled)} unit="位"
           explain="历史上全部已结算的新人，不分时间。已结算不等于新人已经拿到可以提现的钱：新人礼可能还冻结到首笔实付订单，进钱包后也按收益规则分到可提现、待审核或锁定。" />
@@ -667,7 +696,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
               value={<span className="h8-row-value">{modeLabel}{recoveryByKey["newcomer.lockMode"]}</span>}
               action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={freshBlocked} onClick={() => editParam(MODE_PARAM)}>调整</Button> : undefined} />
             <ConfigRow name="生效时间"
-              what="只有这个时间之后注册的新人进入结算"
+              what="这个时间起（含这一刻）注册的新人才进入结算"
               effect="改金额、改发放方式（含和现在一样的保存）和启用批准后，都改成那一刻；之前注册、还没结算的不再自动结算。停用不改它"
               value={gateUnset
                 ? <span className="h8-time" title={`后端原值 ${data.effectiveAt}`}>未设置<small>所有注册都算</small></span>
@@ -682,7 +711,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         <div className="h8-settle-foot">
           {canSettle ? (
             <form className="h8-target" onSubmit={(event) => { event.preventDefault(); if (readReady && data.enabled && targetUserValid) settle(targetUserId); }}>
-              <Field label="给指定新人结算" explain="只结算这一位：他不符合条件或已经结算过就不发，也不会改发给别人。他已结算、礼包还冻结、又已经有首笔实付订单的，这次只解冻原礼包。">
+              <Field label="给指定新人结算" explain="只结算这一位：不符合条件就不发，也不会改发给别人。已结算、礼包还冻结又已有首笔实付订单的，这次只解冻原礼包。">
                 {(control) => <Input {...control} inputMode="numeric" placeholder="新人用户编号" aria-label="指定结算的新人用户编号"
                   value={invitedUserIdInput} onChange={(event) => setInvitedUserIdInput(event.target.value)} />}
               </Field>

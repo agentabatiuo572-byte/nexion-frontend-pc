@@ -6,7 +6,8 @@ import type { HCtx } from './types';
 import type { Catalog, CommandReceipt, Promotion, PromotionListItem, PromotionPage, Template } from '@/lib/admin/promotion-types';
 import { pendingPromotionCommands, promotionRead, type PendingPromotion } from '@/lib/admin/promotion-client';
 import { isDeletablePromotion, promotionDeleteBody } from '@/lib/admin/activity-delete';
-import { pendingH4Commands, h4CommandHasPendingTicket } from '@/lib/admin/h4-mutations';
+import { pendingH4Commands, h4CommandHasPendingTicket, recoveredH4Uploads, acknowledgeH4Upload, type H4Command } from '@/lib/admin/h4-mutations';
+import { displayAdminError } from '@/lib/admin/error-messages';
 import { emptyDraft, dateInput, utcInput } from '@/lib/admin/promotion-form';
 import PromotionEditor from './h4-promotion-editor';
 import PromotionReview from './h4-promotion-review';
@@ -89,6 +90,9 @@ export default function H4Promotions({ ctx, legacy }: {
     const afterDelete = (result: CommandReceipt) => { setDeletedId(result.targetId); setDeleting(null); setActivity(null); setActivityError(null); setNotice('活动已删除，历史订单、奖励与操作记录保留。'); navigate('list', ''); reloadList(); };
     const pendingItems = pendingPromotionCommands();
     const legacyUnknown = pendingH4Commands().filter(r => !r.asset && !h4CommandHasPendingTicket(r.commandKey)).length;
+    const recoveredUploads = recoveredH4Uploads();
+    const uploadFile = (record: H4Command) => { try { const b = JSON.parse('body' in record.request ? record.request.body : '{}'); return { name: String(b.fileName ?? '—'), size: typeof b.size === 'number' ? `${(b.size / 1048576).toFixed(2)} MB` : '' }; } catch { return { name: '—', size: '' }; } };
+    const acknowledgeUpload = (record: H4Command) => { void acknowledgeH4Upload(record).catch(cause => setNotice(displayAdminError(cause))); };
     const heading = screen === 'list' ? ['活动中心', '管理促销与邀请推广活动，跟进配置、投放及未完成奖励。'] : screen === 'edit' ? [`配置活动 · ${['基本信息', '参与资格', '购机赠奖', '预算与叠加'][editStep]}`, '设置参与条件、逐设备奖励与预算政策。'] : screen === 'review' ? ['试算、审核与发布', '先试算确认没有问题，再分别审核和发布。'] : screen === 'detail' ? [activity?.name || '活动详情', '已发布规则与改版草稿分开呈现，旧订单继续按原版本履行。'] : screen === 'rewards' ? ['奖励台账', '逐项核对奖励承诺与发放凭证；结果未知时先核账。'] : ['活动效果', '查看同一统计快照的成交、退款与奖励成本。'];
     const listTab: ListTab = old ? `legacy-${legacySection}` : tab;
     const chooseTab = (next: ListTab) => { if (next.startsWith('legacy-')) { setLegacySection(next.slice(7) as LegacySection); setOld(true); return; } setTab(next as typeof tab); setOld(false); };
@@ -150,6 +154,12 @@ export default function H4Promotions({ ctx, legacy }: {
         actions={<>{screen !== 'list' && can('growth_promotion_policy_read') && catalog.data && <Button onClick={() => setPoliciesOpen(true)}>政策与原业务协议</Button>}{screen === 'list' && listTab === 'promotions' && <Button variant="primary" icon={<Plus size={14} aria-hidden/>} disabledReason={!can('growth_promotion_edit') ? '没有新建活动的权限' : !catalog.data ? '活动目录还没读到' : undefined} onClick={() => setCreating(true)}>新建活动</Button>}</>}/>
     {screen !== 'list' && activity?.deleted && <Notice tone="warn" title="活动已删除">活动配置仅供历史查阅，不能编辑、复制、试算或重新发布。历史订单和奖励继续履行，仍可查看奖励台账与活动效果。</Notice>}
     <PendingList items={pendingItems} onOpen={setPending}/>
+    {recoveredUploads.length > 0 && <Notice tone="neutral" title={`${recoveredUploads.length} 张图片已经上传成功，还没用上`} actionBelow action={<ul className="h4-pending">{recoveredUploads.map(record => { const file = uploadFile(record); return <li key={record.commandKey}>
+        <span className="h4-pending-what"><b>{record.action}</b><span className="h4-pending-change">{file.name}{file.size && ` · ${file.size}`}</span></span>
+        <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(record.createdAt).toISOString(), 'Asia/Shanghai')}</span>（北京时间）</span>
+        <StatusTag tone="ok">已上传</StatusTag>
+        <span className="h4-pending-actions"><Button size="sm" onClick={() => acknowledgeUpload(record)}>已重新选好，移除</Button></span>
+    </li>; })}</ul>}>当时的表单已经关了，这页不知道图属于哪个活动或哪笔奖励，不会自动填进去。回到原处重新选这个文件，选好后点「已重新选好，移除」。</Notice>}
     {screen === 'list' && !old && legacyUnknown > 0 && <Notice tone="warn" title={`既有活动和转盘有 ${legacyUnknown} 个操作结果未知`} action={<Button size="sm" onClick={() => chooseTab('legacy-events')}>去查询原结果</Button>}>原操作和查询入口在那个页签顶部。</Notice>}
     {notice && <Notice tone="neutral" title="操作反馈" action={deletedId ? <Button size="sm" onClick={() => navigate('detail', deletedId)}>查看历史记录</Button> : undefined}>{notice}</Notice>}
     {screen === 'list' ? listScreen : !pageReady && (pageLoading || readErrors.length > 0) ? <>{screen === 'edit' && <PromotionSteps step={editStep} onStep={changeStep} disabled/>}<PromotionReadPanel title={screen === 'edit' ? ['基本信息', '参与资格', '购机赠奖', '预算与叠加'][editStep] : heading[0]} loading={readErrors.length === 0} errors={readErrors}/></> : <>

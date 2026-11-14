@@ -29,6 +29,8 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
   const generation = useRef(0), operator = currentAdminOperator();
   const read = ctx.can("growth_h4_read"), write = ctx.can("growth_h4_write"), locked = !!base && base.status !== "DRAFT";
   const [, pendingChanged] = useState(0);
+  /** 保存被「别人先改过」拒绝、已重读后的提醒；只决定显示。 */
+  const [stale, setStale] = useState("");
   const load = async () => {
     const own = ++generation.current; setLoading(true); setError("");
     try { const values = await fetchAdminRaffles(); if (own === generation.current) setRows(values); }
@@ -48,7 +50,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
     window.addEventListener("admin-h4-readback", readback);
     return () => { window.removeEventListener("admin-h4-pending-changed", changed); window.removeEventListener("admin-h4-readback", readback); };
   }, []);
-  const choose = (row: AdminRaffle | null) => { setBase(row); setDraft(row ? { id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes.map(prize => ({ ...prize })) } : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
+  const choose = (row: AdminRaffle | null) => { setStale(""); setBase(row); setDraft(row ? { id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes.map(prize => ({ ...prize })) } : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
   const prizePatch = (id: string, values: Partial<RafflePrize>) => setDraft(current => current ? { ...current, prizes: current.prizes.map(prize => prize.id === id ? { ...prize, ...values } : prize) } : null);
   const saveBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0));
   const save = () => {
@@ -89,6 +91,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
           ctx.toast(isH4ApprovalReceipt(result) ? result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "创世抽奖设置已保存");
         } catch (cause) {
           if (own === generation.current) setError(displayAdminError(cause));
+          if (isHGrowthReadConflict(cause)) setStale(draft.titleZh || savedDraft.id);
           if (isHGrowthReadConflict(cause) || originalKey && !h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)) { ctx.openActionConfirm(null); setDraft(null); setBase(null); await load(); }
           throw cause;
         }
@@ -127,6 +130,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
         </li>;
       })}</ol>}
     {rows.length > 0 && error && !draft && <Notice tone="danger" title="创世抽奖没有读到最新的">{error}</Notice>}
+    {stale && !draft && <Notice tone="warn" title={`没有保存：「${stale}」已被别人改过`} action={<Button size="sm" variant="ghost" onClick={() => setStale("")}>知道了</Button>}>页面已读到最新配置，你这次改的内容没有提交。核对后重新打开再改。</Notice>}
     {!loading && rows.length > 0 && <p className="h4l-note">时间为北京时间</p>}
     <Drawer open={!!draft} onClose={close} busy={saving} wide title={base ? "这一期的配置" : "新建一期抽奖"} sub={base ? base.id : undefined}
       explain="保存前先在这里填完整：三语名称、时间和奖项。关闭这个抽屉会丢掉没保存的改动。"

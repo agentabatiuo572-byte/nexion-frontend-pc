@@ -45,7 +45,7 @@ export function legacyName(value: unknown): { text: string; legacy: boolean } {
   return { text: nexGridBrandText(raw.replace(/\bNEX\b/gi, "UVT").replace(/\$\s?(?=\d)/g, "")).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券"), legacy };
 }
 export function LegacyNameTag({ where }: { where: string }) {
-  return <StatusTag tone="warn" icon={CircleAlert} explain={`后端存的${where}还写着 NEX（产品已改名 UVT），这里按真实类型写成 UVT；App 显示的是后端存的原文。改${where}时写成 UVT。后端待办 BUG-426 已提。`}>旧名称</StatusTag>;
+  return <StatusTag tone="warn" icon={CircleAlert} explain={`后端存的${where}还写着 NEX（产品已改名 UVT），这里按真实类型写成 UVT；App 显示的也是后端存的名称（只做品牌替换）。改${where}时写成 UVT。后端待办 BUG-426 已提。`}>旧名称</StatusTag>;
 }
 
 // ===== 统一叫法 =====
@@ -82,18 +82,22 @@ export function lifecycleOf(event: LegacyEvent) {
   if (lifecycle === "draft") return { key: "draft", label: "草稿", tone: "neutral" as const, explain: "还没开放过的活动。开放前要补齐中文、越南语的名称、说明和奖项名。" };
   if (lifecycle === "upcoming") return { key: "upcoming", label: "预告", tone: "neutral" as const, explain: "已登记、还没开放：App 上用户还参加不了。" };
   if (lifecycle === "ongoing") return { key: "ongoing", label: "进行中", tone: "ok" as const, explain: "已对用户开放。结束后不能再开。" };
-  if (lifecycle === "ended") return { key: "ended", label: "已结束", tone: "done" as const, explain: "已结束：不能再开放，奖励不能再改；已有的参与、奖励和操作记录保留。" };
+  if (lifecycle === "ended") return { key: "ended", label: "已结束", tone: "done" as const, explain: "已结束：不能再开放，这页也不再提供改奖励；已有的参与、奖励和操作记录保留。" };
   return { key: "unknown", label: "状态未知", tone: "warn" as const, explain: "后端返回了这页不认识的状态，请联系后端核对。" };
 }
 
-export function unknownTag() {
-  return <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。先查询原结果；查不到才按原请求重试，后端认得出是同一次提交，不会重复执行。">结果未知</StatusTag>;
+export function unknownTag(kind: "approval" | "direct") {
+  return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "approval"
+    ? "没收到确定结果，审批单可能已经建成。先查询原结果，查不到再按原请求重试，不会建第二张单。"
+    : "没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行；现在读到的值证明不了原操作的结果。"}>结果未知</StatusTag>;
 }
 export function pendingTag(object: string) {
-  return <StatusTag tone="warn" icon={Clock3} explain={`等另一位超级管理员在「操作记录与审批」批准。批准前${object}什么都不变；这期间同一对象的其他修改会被拦下。`}>待审批</StatusTag>;
+  return <StatusTag tone="warn" icon={Clock3} explain={`等另一位超级管理员在「操作记录与审批」批准。批准前${object}不变，本页不能再改它；别处直接调低或关闭仍会生效，之后批准可能被拒。`}>待审批</StatusTag>;
 }
-export function expiredTag() {
-  return <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再按原请求重试，只能查询原审批单；记录继续保留。">已过期</StatusTag>;
+export function expiredTag(kind: "approval" | "direct") {
+  return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "approval"
+    ? "原请求超过 24 小时，不能再重发，只能查询原审批单；记录继续保留。"
+    : "原请求超过 24 小时，不能再重发。直接保存的修改没有审批单可查，到「操作记录与审批」核对；记录继续保留。"}>已过期</StatusTag>;
 }
 
 /** 走审批的修改在框里常显怎么生效：哪个方向要批、谁来批、批准前什么不变。 */
@@ -133,7 +137,7 @@ export function EventCard({ event, zh, gaps, rule, pending, primary, menu, onCon
           <span className="h4-card-meta"><span className="h4-card-kind">{KIND_LABEL(event.kind)}</span><span className="h4-mono" title={event.id}>{event.id}</span></span>
         </div>
         <span className="h4l-tags">
-          {event.featured && <StatusTag tone="progress" icon={Star} explain="App 首页优先展示这个活动。同时只能有一个进行中的主推活动。">主推</StatusTag>}
+          {event.featured && <StatusTag tone="progress" icon={Star} explain="App 活动页把它放在主推位。同时只能有一个进行中的主推活动。">主推</StatusTag>}
           <StatusTag tone={life.tone} explain={life.explain}>{life.label}</StatusTag>
         </span>
       </header>

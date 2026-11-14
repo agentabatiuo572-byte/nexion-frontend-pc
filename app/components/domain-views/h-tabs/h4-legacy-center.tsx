@@ -8,7 +8,7 @@ import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
 import {
-  BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, IrreversibleTag, Notice, Panel, Stat, StatBand, StatusTag,
+  BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, IrreversibleTag, Notice, Panel, ReleaseModal, Stat, StatBand, StatusTag,
   Table, Td, Th, Tr, type MoreMenuItem,
 } from "@/app/components/rd";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -36,7 +36,7 @@ import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import type { EventRuleView } from "@/lib/admin/event-rules-client";
 import type { AdminRaffle } from "@/lib/admin/genesis-raffle-client";
 import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
-import { H4_APPROVAL_OPS, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4TicketObservations, replaceH4TicketObservations, clearH4AuditProjection, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, h4CommandRequest, isH4ApprovalReceipt, type H4Command } from "@/lib/admin/h4-mutations";
+import { H4_APPROVAL_OPS, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4TicketObservations, replaceH4TicketObservations, clearH4AuditProjection, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, type H4Command } from "@/lib/admin/h4-mutations";
 import H4EventRules from "./h4-event-rules";
 import H4GenesisRaffle from "./h4-genesis-raffle";
 import { amountText, formatTime } from "./h4-promotion-ui";
@@ -64,9 +64,52 @@ const budgetNumber = (value: string) => value.replace(/[$,\s]/g, "");
 
 /** 原操作写成一句「做什么 · 对哪一项」，不露命令号和对象键。 */
 function hiCommandSubject(record: H4Command, eventName: (id: string) => string) {
-  if (!("proposal" in record.request)) return record.action;
+  if (!("proposal" in record.request)) {
+    const guard = /^\/quest-events\/wheel-guards\/([^/]+)$/.exec(record.request.path);
+    return guard ? `转盘护栏 · ${GUARD_NAME[decodeURIComponent(guard[1])] ?? decodeURIComponent(guard[1])}` : record.action;
+  }
   const input = record.request.proposal, values = input.command.params.values as Record<string, unknown>;
-  return `${input.action} · ${String(values.eventCode ? eventName(String(values.eventCode)) : values.tierName ?? values.guardKey ?? values.id ?? "转盘奖池")}`;
+  const guardKey = values.guardKey === undefined ? undefined : String(values.guardKey);
+  return `${input.action} · ${String(values.eventCode ? eventName(String(values.eventCode)) : values.tierName ?? (guardKey && (GUARD_NAME[guardKey] ?? guardKey)) ?? values.id ?? "转盘奖池")}`;
+}
+
+/** 原记录里存的改动，写成「从多少到多少」。只读保存的原请求，不拿现在读到的数据补。 */
+function hiCommandChange(record: H4Command): string | undefined {
+  const plain = (value: unknown) => value === undefined || value === null || value === "" ? "—" : legacyName(value).text;
+  const guard = (key: unknown, from: unknown, to: unknown) => key === "kill" ? `${killOn(String(from ?? "")) ? "开" : "关"} → ${killOn(String(to ?? "")) ? "开" : "关"}`
+    : key === "budget" ? `${from === undefined ? "—" : amountText(budgetNumber(String(from)))} → ${amountText(budgetNumber(String(to ?? "")))} USDT / 天` : `${plain(from)} → ${plain(to)}`;
+  const tier = (v: Record<string, unknown>) => `概率 ${plain(v.probabilityPct)}% · 每次 ${plain(v.rewardAmount)} ${WHEEL_KIND_LABEL[String(v.rewardKind ?? "").toLowerCase()] ?? ""}`.trim();
+  const probabilities = (map: unknown) => Object.entries((map ?? {}) as Record<string, unknown>).map(([name, pct]) => `${name} ${plain(pct)}%`).join(" · ");
+  if ("proposal" in record.request) {
+    const v = record.request.proposal.command.params.values as Record<string, unknown>;
+    switch (record.request.proposal.command.op) {
+      case "h4_legacy_event_reward_update": return `${plain(v.expectedValue)} → ${plain(v.value)}`;
+      case "h4_legacy_event_open": return "预告 → 开放";
+      case "h4_event_rule_enable": return "关闭 → 第一次开启";
+      case "h4_genesis_raffle_open": return "草稿 → 开放报名";
+      case "h4_wheel_guard_update": return guard(v.guardKey, v.expectedValue, v.value);
+      case "h4_wheel_guard_create": return guard(v.guardKey, undefined, v.guardValue).replace(/^.*→ /, "新建：");
+      case "h4_wheel_tier_create": return `新建：${tier(v)}`;
+      case "h4_wheel_tier_update": return `改成：${tier(v)}`;
+      case "h4_wheel_tier_delete": return "删除这一档";
+      case "h4_wheel_probabilities_update": return probabilities(v.probabilities);
+      default: return undefined;
+    }
+  }
+  const { path, method } = record.request;
+  if (path.startsWith("/media/uploads?")) {
+    try { return `文件 ${String(JSON.parse(record.request.body).fileName ?? "—")}`; } catch { return undefined; }
+  }
+  let b: Record<string, unknown>;
+  try { b = JSON.parse(record.request.body); } catch { return undefined; }
+  if (path.startsWith("/quest-events/wheel-guards/")) return guard(decodeURIComponent(path.split("/")[3]), b.expectedValue, b.value);
+  if (path === "/quest-events/wheel-guards") return guard(b.guardKey, undefined, b.guardValue).replace(/^.*→ /, "新建：");
+  if (path === "/quest-events/wheel-tiers/probabilities") return probabilities(b.probabilities);
+  if (path.startsWith("/quest-events/wheel-tiers")) return method === "DELETE" ? "删除这一档" : `${method === "POST" ? "新建" : "改成"}：${tier(b)}`;
+  if (/\/featured$/.test(path)) return String(b.value) === "true" ? "设为主推" : "取消主推";
+  if (/\/status$/.test(path)) return `→ ${b.value === "ongoing" ? "开放" : b.value === "ended" ? "结束" : plain(b.value)}`;
+  if (/\/reward$/.test(path) || path.includes("/content/")) return `${plain(b.expectedValue === "__MISSING__" ? "" : b.expectedValue)} → ${plain(b.value)}`;
+  return undefined;
 }
 
 // A2's decimal parser requires a leading digit and no plus sign; keep every entered digit.
@@ -112,9 +155,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         }
         assertH4Fresh("overview", version);
         const before = new Set(pendingH4Commands().map(r => r.commandKey));
+        setStale(null);
         try { await req.run(reason, value, businessValue); }
         catch (cause) {
-          if (isHGrowthReadConflict(cause)) { ctx.openActionConfirm(null); await reload(); }
+          if (isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.openActionConfirm(null); await reload(); }
           throw cause;
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
@@ -134,9 +178,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         }
         assertH4Fresh("overview", version);
         const before = new Set(pendingH4Commands().map(r => r.commandKey));
+        setStale(null);
         try { return await req.run(reason, value); }
         catch (cause) {
-          if (isHGrowthReadConflict(cause)) { ctx.closeConfirm?.(); await reload(); }
+          if (isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.closeConfirm?.(); await reload(); }
           throw cause;
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
@@ -154,6 +199,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   // 已建成、等别人批的 H4 审批单只在审批中心里；这里读一次，好让运营在本页看到哪项在等批。
   const [h4Approvals, setH4Approvals] = useState<A2OperationRow[] | "error" | null>(null);
   const [lookupKey, setLookupKey] = useState("");
+  /** 被「别人先改过」拒绝后，页面已重读；这条提醒留到运营关掉或下次提交。只决定显示。 */
+  const [stale, setStale] = useState<string | null>(null);
+  const [releasing, setReleasing] = useState<H4Command | null>(null);
   const [rules, setRules] = useState<EventRuleView[] | null>(null);
   const [raffles, setRaffles] = useState<AdminRaffle[] | null>(null);
   const [contentId, setContentId] = useState<string | null>(null);
@@ -290,7 +338,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       content: <Facts>
         <Fact k="活动">{eventName(event.id)}</Fact>
         <Fact k="主推"><Change from={event.featured ? "是" : "否"} to={event.featured ? "否" : "是"} /></Fact>
-        <Fact k="影响">只改 App 首页先展示哪个活动，不发奖、不改奖励{event.featured ? "" : "；已经有别的主推活动时后端会拒绝，先取消那一个"}</Fact>
+        <Fact k="影响">只改 App 活动页的主推位，不发奖、不改奖励{event.featured ? "" : "；已经有别的主推活动时后端会拒绝，先取消那一个"}</Fact>
       </Facts>,
       reason: true,
       okLabel: event.featured ? "取消主推" : "设为主推",
@@ -775,12 +823,15 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const openResumeHICommand = (record: H4Command, subject: string) => {
     activeRecovery.current = record.commandKey;
     const expired = isRetryExpired(record);
+    const approval = "proposal" in record.request;
+    const change = hiCommandChange(record);
     ctx.openActionConfirm({ briefKind: "record",
-      action: `核对原操作 · ${subject}`, title: "查询原结果",
-      detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</>
-        : <>先按原请求查询；查不到才按原请求原样重发，不会重复执行。理由沿用原操作。</>,
-      facts: <Facts><Fact k="原操作">{subject}</Fact><Fact k="提交时间">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}（北京时间）</Fact><Fact k="原请求">内容和理由锁住，按原样查询或重试</Fact></Facts>,
-      confirmLabel: expired ? "查询原审批单" : "查询原结果",
+      action: `核对原操作 · ${subject}`, title: "按原请求重试",
+      detail: approval
+        ? expired ? <>原申请已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原申请查审批单；查不到才原样重发，不会建第二张单。理由沿用原操作。</>
+        : <>按原请求原样重发，后端认得出同一次提交，不会重复执行。理由沿用原操作。</>,
+      facts: <Facts><Fact k="原操作">{subject}</Fact>{change && <Fact k="原改动">{change}</Fact>}<Fact k="提交时间">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}（北京时间）</Fact><Fact k="原请求">内容和理由锁住，原样重发</Fact></Facts>,
+      confirmLabel: "按原请求重试",
       getPendingReason: () => pendingH4Commands().some(r => r.commandKey === record.commandKey) ? record.reason : undefined,
       run: async () => {
         if (activeRecovery.current !== record.commandKey || !pendingH4Commands().some(r => r.commandKey === record.commandKey)) throw new Error("H4_ORIGINAL_RESOLVED");
@@ -803,15 +854,30 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         const allowed = canRetryH4Command(record);
         const pending = h4CommandHasPendingTicket(record.commandKey);
         return <li key={record.commandKey}>
-          <span className="h4-pending-what"><b>{subject}{pending && "proposal" in record.request ? ` · ${record.request.proposal.beforeValue} → ${record.request.proposal.afterValue}` : ""}</b></span>
+          <span className="h4-pending-what"><b>{subject}</b>{hiCommandChange(record) && <span className="h4-pending-change">{hiCommandChange(record)}</span>}</span>
           <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}</span>（北京时间）</span>
-          {pending ? pendingTag(subject) : expired ? expiredTag() : unknownTag()}
-          <Button size="sm" disabledReason={lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey} onClick={() => void lookupH4Command(record)}>查询原结果</Button>
-          {!expired && !record.acknowledged && <Button size="sm" disabledReason={!allowed ? "没有这项修改的权限" : undefined} onClick={() => openResumeHICommand(record, subject)}>按原请求重试</Button>}
+          {pending ? pendingTag(subject) : expired ? expiredTag("proposal" in record.request ? "approval" : "direct") : unknownTag("proposal" in record.request ? "approval" : "direct")}
+          <span className="h4-pending-actions">
+            <Button size="sm" disabledReason={lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey} onClick={() => void lookupH4Command(record)}>查询原结果</Button>
+            {!expired && !record.acknowledged && <Button size="sm" disabledReason={!allowed ? "没有这项修改的权限" : undefined} onClick={() => openResumeHICommand(record, subject)}>按原请求重试</Button>}
+            {expired && !record.acknowledged && "proposal" in record.request && <Button size="sm" variant="ghost" disabledReason={lookupKey ? "正在查询" : undefined} onClick={() => setReleasing(record)}>查无此单时解除</Button>}
+          </span>
         </li>;
       })}
 
     </ul>}>关闭或刷新页面不会重新提交。</Notice>}
+    {releasing && <ReleaseModal label={<>{hiCommandSubject(releasing, eventName)}{hiCommandChange(releasing) ? ` · ${hiCommandChange(releasing)}` : ""}</>}
+      explain={<><p>原申请已超过 24 小时，不会再重发。</p><p>确认时先按原申请再查一次：明确查不到这张审批单才解除，说明申请没建成；查到了就按它现在的状态显示，不解除。</p></>}
+      onCancel={() => setReleasing(null)} onConfirm={() => {
+        const record = releasing;
+        setReleasing(null);
+        setLookupKey(record.commandKey);
+        void releaseExpiredH4Proposal(record)
+          .then(() => { toast("已解除这条记录，可以重新提交修改。", "success"); return refreshAll(); })
+          .catch(cause => { toast(displayAdminError(cause), "warn"); return refreshAll(); })
+          .finally(() => setLookupKey(""));
+      }} />}
+    {stale && <Notice tone="warn" title={`没有保存：${stale}的对象已被别人改过`} action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>页面已读到最新值，你这次填的内容没有提交。核对现在的值后重新打开再改。</Notice>}
     {(h4Pending.length > 0 || h4Approvals === "error") && <Notice tone="warn" title={h4Approvals === "error" ? "审批进度没有读到" : `${h4Pending.length} 项修改在等审批`} actionBelow
       action={h4Approvals === "error" ? <Button size="sm" onClick={() => void reloadH4Approvals()}>重试</Button> : <ul className="h4-pending">
         {h4Pending.map((row) => {
@@ -826,7 +892,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           </li>;
         })}
       </ul>}>
-      {h4Approvals === "error" ? "看不到哪些修改在等批。" : "另一位超级管理员批准前，这些对象什么都不变，也不能再改。"}
+      {h4Approvals === "error" ? "看不到哪些修改在等批。" : "另一位超级管理员批准前，这些对象不变，本页不能再改；别处直接调低或关闭仍会生效，之后批准可能被拒。"}
     </Notice>}
   </>;
 
@@ -892,7 +958,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const conclusion = wheelBroken
     ? <Conclusion state="danger" lead icon={CircleAlert} hint="先处理「等你处理」第一行。">App 转盘现在抽不了{gapCount > 0 ? `，还有 ${gapsByEvent.length} 个活动缺翻译` : ""}</Conclusion>
     : todos.length > 0 ? <Conclusion state="warn" lead icon={ListChecks}>有 {todos.length} 件事等你处理</Conclusion>
-    : <Conclusion state="ok" icon={ListChecks} explain="按这页读到的既有活动、转盘奖池和护栏判断；玩法和抽奖的状态在各自分段里。">{numericValue(h4Stats.ongoing)} 个既有活动进行中，转盘可以抽，没有等你处理的事</Conclusion>;
+    : <Conclusion state="ok" icon={ListChecks} explain="只按这页读到的既有活动、转盘奖池和护栏判断；用户能不能抽还看开始时间、资格和当天库存。玩法和抽奖在「玩法与抽奖」页签。">{numericValue(h4Stats.ongoing)} 个既有活动进行中，转盘奖池没有查出问题，没有等你处理的事</Conclusion>;
 
   return <div className="h4l">
     {recovery}
@@ -977,7 +1043,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         {guards.length === 0 ? <BlockState state="empty" title="还没有护栏" detail="没有预算或开关时真钱奖一律改发 UVT 安慰奖。" /> : <div className="h4l-guards">
           {kill && <GuardCard title={GUARD_NAME.kill} icon={<Power size={14} aria-hidden />} value={killState ? "开" : "关"} valueTone={killState ? "ok" : "danger"}
             sub={killState ? "抽中 USDT 按预算和覆盖率发真钱" : "抽中 USDT 改发 UVT 安慰奖"}
-            explain="关掉后不再发真钱奖，转盘照常能抽。从关到开要另一位超级管理员批准。"
+            explain="关掉后不再发真钱奖，抽中 USDT 改发 UVT 安慰奖。从关到开要另一位超级管理员批准。"
             action={<Button size="sm" variant={killState ? "danger-outline" : undefined} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={() => openWheelKill(kill)}>{killState ? "关闭" : "开启"}</Button>} />}
           {budget && <GuardCard title={GUARD_NAME.budget} icon={<Wallet size={14} aria-hidden />} value={<><span className="h4-num">{amountText(budgetNumber(text(budget.value, "")))}</span><small>USDT / 天</small></>}
             sub={<>今天已发 <span className="h4-dim">—</span>（后端未提供）</>}
