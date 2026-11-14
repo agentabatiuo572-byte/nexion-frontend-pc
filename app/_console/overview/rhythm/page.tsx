@@ -13,7 +13,7 @@ import { Ban, Download, Filter, Flag, RefreshCw, Target } from "lucide-react";
 import {
   BlockState, Button, Conclusion, Explain, FilterBar, Fold, Notice, PageHeader, RdPage, Segments, Select, StatusTag,
 } from "@/app/components/rd";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useToast } from "@/app/components/domain-views/design-kit";
@@ -85,7 +85,7 @@ export default function RhythmPage() {
       URL.revokeObjectURL(url);
       setToast("已导出，文件不含用户个人信息。", "success");
     } catch (value) {
-      setFailure({ kind: "export", message: value instanceof Error ? displayAdminError(value) : "导出失败，请刷新后重试。" });
+      setFailure({ kind: "export", message: value instanceof Error ? displayAdminReadError(value) : "导出失败，请刷新后重试。" });
     } finally {
       setBusy("");
     }
@@ -101,7 +101,7 @@ export default function RhythmPage() {
       const target = await recordB4H1Jump(dial, phase);
       window.location.assign(target.href);
     } catch (value) {
-      setFailure({ kind: "jump", dial, message: value instanceof Error ? displayAdminError(value) : "跳转失败，请重试。" });
+      setFailure({ kind: "jump", dial, message: value instanceof Error ? displayAdminReadError(value) : "跳转失败，请重试。" });
       setBusy("");
       setJumping("");
     }
