@@ -4,7 +4,7 @@ import type { BLedger } from "./b-client";
 import { isAdminAuthFailure, resetAdminSession } from "./auth-session";
 import { DOutcomeUnknownError, DRequestError } from "./d-client";
 import { formatAdminApiError, guardedFetch } from "./error-messages";
-import { isExplicitRejection } from "./explicit-rejection";
+import { isBCommandRejection } from "./b-command-rejection";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
 
 export type B1CommandFacts = Pick<BLedger, "reserveUsd" | "valuationReliable" | "redlineBreached" | "coverageRatio" | "redlinePct" | "healthyPct" | "thresholdVersion"> & { generatedAt?: string };
@@ -39,7 +39,7 @@ export const b1Commands = createPendingMutationStore<B1PendingWrite>({
 });
 
 /** Sends the persisted bytes, never a new form draft or a replayed overview. */
-export async function executeB1Command(record: B1PendingWrite) {
+export async function executeB1Command(record: B1PendingWrite, retry = true) {
   if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
   if (!b1Commands.isDurablyStored(record.fingerprint, record.commandKey)) {
     throw new Error("浏览器无法保存这次操作的记录，没有提交。请允许浏览器存储后重试。");
@@ -81,7 +81,7 @@ export async function executeB1Command(record: B1PendingWrite) {
     }
     b1Commands.forget(record.fingerprint, record.commandKey);
   } catch (error) {
-    if (isExplicitRejection(error)) b1Commands.forget(record.fingerprint, record.commandKey);
+    if (isBCommandRejection(error, retry)) b1Commands.forget(record.fingerprint, record.commandKey);
     throw error;
   }
 }

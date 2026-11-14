@@ -1,7 +1,7 @@
 "use client";
 
-import { B5OutcomeUnknownError, fetchB5Inbox, fetchB5Radar, fetchB5Subscription, normalizeB5Radar, normalizeB5Subscription, sendB5StoredWrite, type B5InboxItem, type B5Radar, type B5Subscription } from "./b5-client";
-import { isExplicitRejection } from "./explicit-rejection";
+import { B5OutcomeUnknownError, B5RequestError, fetchB5Inbox, fetchB5Radar, fetchB5Subscription, normalizeB5Radar, normalizeB5Subscription, sendB5StoredWrite, type B5InboxItem, type B5Radar, type B5Subscription } from "./b5-client";
+import { isBCommandRejection } from "./b-command-rejection";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord, type SlotAttemptRecord } from "./pending-mutation-store";
 
 export type B5ThresholdFacts = Pick<B5Radar["bankrun"], "yellowPct" | "redPct" | "version" | "ratio24h" | "light">;
@@ -75,7 +75,7 @@ export function rememberB5Command(adminId: string, slot: string, prefix: string,
 }
 
 /** Only matching receipts resolve an original write. A replay is never current data. */
-export async function executeB5Command(record: B5PendingWrite) {
+export async function executeB5Command(record: B5PendingWrite, retry = true) {
   if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
   if (!b5Commands.isDurablyStored(record.fingerprint, record.commandKey)) {
     throw new Error("浏览器无法保存这次操作的记录，没有提交。请允许浏览器存储后重试。");
@@ -105,7 +105,8 @@ export async function executeB5Command(record: B5PendingWrite) {
     if (!matches) throw new B5OutcomeUnknownError(record.commandKey);
     b5Commands.forget(record.fingerprint, record.commandKey);
   } catch (error) {
-    if (isExplicitRejection(error)) b5Commands.forget(record.fingerprint, record.commandKey);
+    if (isBCommandRejection(error, retry)) b5Commands.forget(record.fingerprint, record.commandKey);
+    else if (error instanceof B5RequestError) throw new B5OutcomeUnknownError(record.commandKey, error.message);
     throw error;
   }
 }

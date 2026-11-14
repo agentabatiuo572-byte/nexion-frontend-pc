@@ -14,7 +14,7 @@ import {
   BlockState, Button, Change, Check, CheckGroup, Conclusion, DiffField, Explain, Fact, Facts, Field, Input, Modal, Notice, NumberInput,
   PageHeader, PageTabs, Panel, RdPage, StatusTag, Textarea, useTabIds,
 } from "@/app/components/rd";
-import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useToast } from "@/app/components/domain-views/design-kit";
 import {
   fetchB5Radar,
@@ -30,6 +30,7 @@ import {
 import { formatB5RiskLight } from "@/lib/admin/b5-display-labels";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isBCommandRejection } from "@/lib/admin/b-command-rejection";
 import { b5Commands, executeB5Command, inspectB5Command, isB5Original, pendingB5Commands, rememberB5Command, type B5PendingWrite, type B5ThresholdFacts } from "@/lib/admin/b5-commands";
 import { pendingThresholdConfigApproval, submitB5ThresholdApproval } from "@/lib/admin/withdrawal-config-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -285,12 +286,13 @@ export default function RiskRadarPage() {
         body: JSON.stringify({ targetStatus, expectedStatus: alert.handlingStatus, expectedVersion: alert.handlingVersion, reason, operator }), facts: alert,
       }) as Extract<B5PendingWrite, { kind: "signal" }>;
       setStatusOriginal(original);
-      await executeB5Command(original);
+      await executeB5Command(original, !!statusOriginal);
       await refreshAfterWrite();
       setStatusUnknown(false);
       setToast(`已标记为${STATUS_TEXT[targetStatus]}：${original.facts.message}`);
     } catch (cause) {
-      if (isExplicitRejection(cause)) { await refreshAfterWrite(); setStatusUnknown(false); }
+      if (!statusOriginal && isBCommandRejection(cause, false)) { setStatusOriginal(null); setStatusUnknown(false); }
+      else if (isExplicitRejection(cause)) { await refreshAfterWrite(); setStatusUnknown(false); }
       else setStatusUnknown(!!original);
       setStatusError(displayAdminError(cause));
       setToast(displayAdminError(cause));
@@ -308,7 +310,7 @@ export default function RiskRadarPage() {
         ?? rememberB5Command(String(session.adminId), `inbox-ack:${delivery.id}`, "b5-inbox-ack", {
           kind: "ack", method: "POST", path: `/api/admin/risk/radar/inbox/${delivery.id}/acknowledge`, body: "", facts: { id: delivery.id, signalNo: delivery.signalNo },
         });
-      await executeB5Command(original);
+      await executeB5Command(original, !!recovered || !!saved);
       setInboxNeedsRead(true);
       setInboxReload((value) => value + 1);
       setToast(`已确认：${delivery.signalNo}`);
@@ -344,7 +346,7 @@ export default function RiskRadarPage() {
       router.push(target);
     } catch (cause) {
       // 分诊只留一条审计，失败了如实说没成功、重新点一次即可（决定 B4-PD02）。
-      setToast(`没有跳转：分诊记录没有确认记上，请重新点一次。${cause instanceof Error ? displayAdminError(cause) : ""}`);
+      setToast(`没有跳转：分诊记录没有确认记上，请重新点一次。${cause instanceof B5OutcomeUnknownError ? "" : cause instanceof Error ? displayAdminReadError(cause) : ""}`);
     } finally {
       setTriaging(null);
     }
@@ -399,21 +401,23 @@ export default function RiskRadarPage() {
           body: JSON.stringify({ yellowPct, redPct, expectedVersion: threshold.version, reason: reason.trim(), operator }),
         }) as Extract<B5PendingWrite, { kind: "threshold" }>;
         setThresholdOriginal(original);
-        await executeB5Command(original);
+        await executeB5Command(original, !!thresholdOriginal);
         setToast("提现压力的黄线和红线已更新");
       }
       setApprovalRecovery(null); setThresholdUnknown(false);
       await refreshAfterWrite();
     } catch (cause) {
-      if (isExplicitRejection(cause)) {
+      const rejected = isBCommandRejection(cause, !!thresholdOriginal || !!pendingApproval);
+      if (rejected) {
         const approvalRequired = cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "B5_BANKRUN_THRESHOLDS_APPROVAL_REQUIRED";
-        await refreshAfterWrite();
+        if (thresholdOriginal || pendingApproval || approvalRequired) await refreshAfterWrite();
+        else { setThresholdOriginal(null); setApprovalRecovery(null); }
         if (approvalRequired) {
           const fresh = await fetchB5Radar();
           setThreshold(fresh.bankrun); setApprovalRecovery(null);
         }
       } else if (requiresApproval && pendingThresholdConfigApproval("B5", session.adminId)) setApprovalRecovery("lookup");
-      setThresholdUnknown(!!original && !isExplicitRejection(cause));
+      setThresholdUnknown(!!original && !rejected);
       setThresholdError(displayAdminError(cause)); setToast(displayAdminError(cause));
     } finally { setSavingThreshold(false); syncPending(value => value + 1); }
   };
@@ -429,16 +433,20 @@ export default function RiskRadarPage() {
         facts: { ...savedSubscription, version: subscriptionVersion, subscriber, emailMode: "disabled", webhookMode, sharedWith: "B1" },
       }) as Extract<B5PendingWrite, { kind: "subscription" }>;
       setSubscriptionOriginal(original);
-      await executeB5Command(original);
+      await executeB5Command(original, !!subscriptionOriginal);
       setSubscriptionOriginal(null); setSubscriptionUnknown(false); setSubscriptionOpen(false);
       setSubscriptionNeedsRead(true); setSubscriptionReload(value => value + 1);
       setToast("告警订阅已保存，之后的新告警发给你");
     } catch (cause) {
-      if (isExplicitRejection(cause)) {
-        setSubscriptionOriginal(null); setSubscriptionOpen(false);
-        setSubscriptionNeedsRead(true); setSubscriptionReload(value => value + 1);
+      const rejected = isBCommandRejection(cause, !!subscriptionOriginal);
+      if (rejected) {
+        setSubscriptionOriginal(null);
+        if (subscriptionOriginal) {
+          setSubscriptionOpen(false);
+          setSubscriptionNeedsRead(true); setSubscriptionReload(value => value + 1);
+        }
       }
-      setSubscriptionUnknown(!!original && !isExplicitRejection(cause));
+      setSubscriptionUnknown(!!original && !rejected);
       setSubscriptionSaveError(displayAdminError(cause)); setToast(displayAdminError(cause));
     } finally { setSavingSubscription(false); syncPending(value => value + 1); }
   };

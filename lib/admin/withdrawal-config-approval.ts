@@ -7,6 +7,7 @@ import {
   type A2OperationRow,
 } from "./a2-client";
 import { isExplicitRejection } from "./explicit-rejection";
+import { isBCommandRejection } from "./b-command-rejection";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
@@ -180,7 +181,7 @@ export async function submitB5ThresholdApproval<T>(
     try {
       await createA2OperationProposal(request!, key, true);
     } catch (error) {
-      if (isExplicitRejection(error)) attempts.forget(slot, key);
+      if (isBCommandRejection(error, !!previous)) attempts.forget(slot, key);
       throw error;
     }
     ticket = await queryOriginal();
@@ -255,7 +256,7 @@ export async function submitB1ThresholdApproval<T>(
     try {
       await createA2OperationProposal(request!, key, true);
     } catch (error) {
-      if (isExplicitRejection(error)) attempts.forget(slot, key);
+      if (isBCommandRejection(error, !!previous)) attempts.forget(slot, key);
       throw error;
     }
     ticket = await queryOriginal();

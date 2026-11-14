@@ -21,6 +21,7 @@ import { pendingThresholdConfigApproval, submitB1ThresholdApproval } from "@/lib
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { b1Commands, executeB1Command, type B1PendingWrite, type B1CommandFacts } from "@/lib/admin/b1-commands";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isBCommandRejection } from "@/lib/admin/b-command-rejection";
 import { DOutcomeUnknownError } from "@/lib/admin/d-client";
 import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 import { amountDigits, amountText } from "@/lib/admin/treasury-amount";
@@ -38,7 +39,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 type Mc = (
   | { kind: "threshold"; idempotencyKey: string; baseline: Pick<BLedger, "redlinePct" | "healthyPct" | "thresholdVersion"> }
   | { kind: "injection" | "ack" | "export"; idempotencyKey: string }
-) & { original?: B1PendingWrite; facts?: B1CommandFacts; approvalRecovery?: true; draft?: BusinessFormValue; draftReason?: string };
+) & { requestKey?: string; original?: B1PendingWrite; facts?: B1CommandFacts; approvalRecovery?: true; draft?: BusinessFormValue; draftReason?: string };
 
 function command(kind: Exclude<Mc["kind"], "threshold">): Mc {
   return { kind, idempotencyKey: `b1-${kind}-${crypto.randomUUID()}` };
@@ -292,7 +293,10 @@ export default function DualLedgerPage() {
       setActionConfirm(null);
       return true;
     } catch (error) {
-      if (isExplicitRejection(error) || !pendingThresholdConfigApproval("B1", session.adminId)) {
+      if (!original && isBCommandRejection(error, false)) {
+        if (mc?.kind === "threshold") setActionConfirm({ ...mc, approvalRecovery: undefined, draft: values, draftReason: reason });
+        await refreshB1();
+      } else if (original && (isExplicitRejection(error) || !pendingThresholdConfigApproval("B1", session.adminId))) {
         setActionConfirm(null);
         await refreshB1();
       }
@@ -347,20 +351,21 @@ export default function DualLedgerPage() {
           body = JSON.stringify({ amount: String(amount), voucherNo: `${form.voucherType}:${form.voucher.trim()}`, reason, operator });
         } else body = JSON.stringify({ reason, operator });
         const fingerprint = `${session.adminId}:${current.kind}`;
-        b1Commands.remember(fingerprint, current.idempotencyKey, { adminId: String(session.adminId), kind: current.kind, body, form, facts: dialogFacts });
-        if (!b1Commands.isDurablyStored(fingerprint, current.idempotencyKey)) {
-          b1Commands.forget(fingerprint, current.idempotencyKey);
+        const commandKey = current.requestKey ?? current.idempotencyKey;
+        b1Commands.remember(fingerprint, commandKey, { adminId: String(session.adminId), kind: current.kind, body, form, facts: dialogFacts });
+        if (!b1Commands.isDurablyStored(fingerprint, commandKey)) {
+          b1Commands.forget(fingerprint, commandKey);
           throw new Error("浏览器无法保存这次操作的记录，没有提交。请允许浏览器存储后重试。");
         }
-        original = b1Commands.list().find(record => record.commandKey === current.idempotencyKey)!;
+        original = b1Commands.list().find(record => record.commandKey === commandKey)!;
         setActionConfirm({ ...current, original });
       }
       setNeedsRead(true);
       try {
-        await executeB1Command(original);
+        await executeB1Command(original, !!current.original);
       } catch (error) {
-        if (isExplicitRejection(error)) {
-          setActionConfirm(null);
+        if (isBCommandRejection(error, !!current.original)) {
+          setActionConfirm(current.original ? null : { ...current, requestKey: `b1-${current.kind}-${crypto.randomUUID()}`, original: undefined, draft: original.form, draftReason: JSON.parse(original.body).reason });
           const fresh = await refreshB1();
           if (fresh && error instanceof Error && "reasonCode" in error && error.reasonCode === "B1_THRESHOLDS_APPROVAL_REQUIRED") {
             setActionConfirm({ kind: "threshold", idempotencyKey: `b1-threshold-${crypto.randomUUID()}`,
@@ -794,8 +799,8 @@ export default function DualLedgerPage() {
               }
             : undefined
       }
-      getPendingReason={() => { const saved = b1Commands.list().find(record => record.commandKey === mc.idempotencyKey); return saved ? (JSON.parse(saved.body) as { reason: string }).reason : mc.kind === "threshold" && session ? pendingThresholdConfigApproval("B1", session.adminId)?.reason : undefined; }}
-      getPendingBusinessValue={() => b1Commands.list().find(record => record.commandKey === mc.idempotencyKey)?.form ?? (mc.kind === "threshold" && pendingApproval ? { redlinePct: String(pendingApproval.values.redlinePct), healthyPct: String(pendingApproval.values.healthyPct) } : mc.draft)}
+      getPendingReason={() => { const saved = b1Commands.list().find(record => record.commandKey === (mc.original?.commandKey ?? mc.requestKey ?? mc.idempotencyKey)); return saved ? (JSON.parse(saved.body) as { reason: string }).reason : mc.kind === "threshold" && session ? pendingThresholdConfigApproval("B1", session.adminId)?.reason : undefined; }}
+      getPendingBusinessValue={() => b1Commands.list().find(record => record.commandKey === (mc.original?.commandKey ?? mc.requestKey ?? mc.idempotencyKey))?.form ?? (mc.kind === "threshold" && pendingApproval ? { redlinePct: String(pendingApproval.values.redlinePct), healthyPct: String(pendingApproval.values.healthyPct) } : mc.draft)}
       reasonMin={8}
       reasonMax={200}
       onClose={() => setActionConfirm(null)}

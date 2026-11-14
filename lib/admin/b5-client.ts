@@ -139,7 +139,7 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
-async function request<T>(endpoint: string, init?: RequestInit): Promise<T> {
+async function request<T>(endpoint: string, init?: RequestInit, preserveRejections = false): Promise<T> {
   // 传输层失败归「结果未知」(原来无 try/catch,裸 TypeError 到页面就被当确定失败弃号)。
   let response: Response;
   try {
@@ -158,7 +158,7 @@ async function request<T>(endpoint: string, init?: RequestInit): Promise<T> {
   if (!response.ok || !result || result.code !== 0 || result.data == null) {
     const error = new B5RequestError(formatAdminApiError(message, `B5_REQUEST_FAILED_${response.status}`),
       response.ok && typeof result?.code === "number" ? result.code : response.status, result?.code, message);
-    if (commandKey && !isExplicitRejection(error)) throw new B5OutcomeUnknownError(commandKey, error.message);
+    if (commandKey && !preserveRejections && !isExplicitRejection(error)) throw new B5OutcomeUnknownError(commandKey, error.message);
     throw error;
   }
   return result.data;
@@ -167,7 +167,7 @@ async function request<T>(endpoint: string, init?: RequestInit): Promise<T> {
 /** The caller persists these exact bytes before sending; malformed success is still unknown. */
 export async function sendB5StoredWrite(endpoint: string, method: string, body: string, commandKey: string): Promise<unknown> {
   return request(endpoint, { method, headers: { ...(body ? { "Content-Type": "application/json" } : {}), "Idempotency-Key": commandKey },
-    ...(body ? { body } : {}) });
+    ...(body ? { body } : {}) }, true);
 }
 
 export async function fetchB5Radar() {
@@ -244,7 +244,7 @@ export async function recordB5Triage(
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
     body: JSON.stringify({ dimension, target, operator }),
-  });
+  }, true);
   if (receipt.dimension !== dimension || receipt.target !== target) throw new B5OutcomeUnknownError(commandKey);
   return receipt;
 }
