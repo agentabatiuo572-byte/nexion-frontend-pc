@@ -11,28 +11,11 @@ import { Explain, MoreMenu, Segments, StatusTag, type MoreMenuItem } from "@/app
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { H3QuestEventBinding } from "@/lib/admin/h-client";
+import { h3Decimal } from "@/lib/admin/h3-contract";
 
 export type QuestTask = Record<string, any>;
 
-export type H3Model = {
-  h3Stats?: Record<string, any>;
-  dayOneWindow?: string;
-  dayOneEligibilityHours?: string;
-  dayOneTriReward?: string;
-  dayOneTasks: QuestTask[];
-  dayOneStates?: Array<{ st: string; label: string; tone: string }>;
-  weeklyTier1: QuestTask[];
-  weeklyTier2: QuestTask[];
-  weeklyChampionBonus?: string;
-  weeklyMultipliers?: Array<{ p: string; mult: string }>;
-  monthlyMissions: QuestTask[];
-  taskMonitor?: Array<{ label: string; note: string }>;
-  taskContracts?: Array<Record<string, any>>;
-  promoBanner?: Record<string, any>;
-  contentLocales?: Record<string, Record<string, Record<string, Record<string, string>>>>;
-  phaseMultiplierReadonly?: Record<string, any>;
-  eventBindings?: H3QuestEventBinding[];
-};
+export type { H3Model } from "@/lib/admin/h3-contract";
 
 // ===== 选项表：照旧页面原样 =====
 export const TASK_CATEGORY_OPTIONS = ["wallet", "explore", "recommend", "identity", "social"];
@@ -169,8 +152,8 @@ export function taskTitleText(value: string) {
 /** 从「50 UVT」「1.1×」里取出原样的十进制数；没有数字时返回 null。 */
 export function decimalOf(value: unknown): string | null {
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : null;
-  const match = /-?\d+(?:\.\d+)?/.exec(String(value ?? ""));
-  return match ? match[0] : null;
+  const match = /[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/.exec(String(value ?? "").replace(/,/g, ""));
+  return match ? h3Decimal(match[0]) : null;
 }
 
 /** 十进制精确相乘，不经过浮点，不舍入；去掉末尾补的 0。 */
@@ -187,7 +170,7 @@ export function mulDecimal(...values: Array<string | null>): string | null {
   const raw = (negative ? -digits : digits).toString().padStart(scale + 1, "0");
   const whole = raw.slice(0, raw.length - scale);
   const frac = raw.slice(raw.length - scale).replace(/0+$/, "");
-  return `${negative ? "-" : ""}${Number(whole).toLocaleString("en-US")}${frac ? `.${frac}` : ""}`;
+  return `${negative ? "-" : ""}${BigInt(whole).toLocaleString("en-US")}${frac ? `.${frac}` : ""}`;
 }
 
 /** 十进制精确相加（奖励合计），同样不舍入。 */
@@ -208,8 +191,10 @@ export function sumDecimal(values: string[]): string | null {
 export function amountText(value: string | null) {
   if (value == null) return null;
   if (value.includes(",")) return value;
-  const [whole, frac] = value.split(".");
-  return `${Number(whole).toLocaleString("en-US")}${frac ? `.${frac}` : ""}`;
+  const decimal = h3Decimal(value);
+  if (decimal === null) return value;
+  const [whole, frac] = decimal.split(".");
+  return `${BigInt(whole).toLocaleString("en-US")}${frac ? `.${frac}` : ""}`;
 }
 
 /** 首日三档奖励「全额 / 宽限 / 0 UVT」。读不懂时返回 null，页面照原文显示。 */
@@ -416,7 +401,7 @@ export function WeeklyFormula({ rows, h1, h1Phase, weekly, weeklyPhase, h1Link }
 
 // ===== 阶段倍率格 =====
 export function PhaseStrip({ items, currentPhase, action }: {
-  items: Array<{ p: string; mult: string }>;
+  items: Array<{ p: string; mult: string | null }>;
   currentPhase: string;
   action?: (phase: string, mult: string) => ReactNode;
 }) {

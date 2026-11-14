@@ -1,19 +1,8 @@
 "use client";
 
-/**
- * H3 用户任务管理（/growth/quest）改版页。
- * 运营在这里看 App 给用户的三种任务：首日任务、每周任务（两档）、历史月度挑战；维护三语名称、类别和跳转、
- * 启用停用归档删除、完成事件绑定、每周按区号切换的时区、首日和每周的奖励与阶段倍率，以及首页备用促销卡参数。
- *
- * 读取、提交处理函数照旧页面 h3-quest-events.tsx 的 H3 部分原样搬过来：请求地址、方法、请求体、命令号、校验和
- * 结果未知的保存都不变，只加了 title、facts、effect、statedBrief、confirmLabel 这些显示字段（action 原文不变）。
- * 旧文件里的 H3 部分和全部 H4 部分一行不动（H4 路由仍挂旧文件）。
- *
- * 放大方向的 8 类修改（首日奖励调高、新建带奖励的任务、周和月奖励调高、阶段倍率调高、备用卡基础值和倍率调高、
- * 备用卡启用）后端要求审批：界面按「提交审批」做好，按钮先接旧的直写函数（后端会以 H3_APPROVAL_REQUIRED 拒绝），
- * 等代码 worker 接成审批提案。待审批标记和结果未知列表的位置已留好，数据源见下面两个 PLACEHOLDER。
- */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+/** H3 requests, approval routing and recovery use the existing redesigned markup.
+ * The legacy H3/H4 component stays intact for its remaining callers. */
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   ArrowLeftRight, Archive, CalendarClock, CircleAlert, CircleCheck, CircleSlash, Gift, History, Link2, ListChecks, Megaphone, Pause, Pencil, Play, Plus, RefreshCw,
@@ -26,27 +15,17 @@ import {
 import { OperationConfirmModal, PaginationExemptionList } from "../design-kit";
 import {
   fetchH3QuestEvents,
-  updateH3QuestConfig,
-  updateH3LocalizedContent,
-  createH3Mission,
-  editH3Mission,
-  updateH3MissionPresentation,
-  transitionH3Mission,
-  archiveH3Mission,
-  deleteH3Mission,
-  isH3MissionOutcomeUncertainError,
   type H3MissionKind,
   type H3QuestEventBinding,
-  createH3QuestEventBinding,
-  isH3BindingOutcomeUncertainError,
-  updateH3QuestEventBinding,
-  deleteH3QuestEventBinding,
 } from "@/lib/admin/h-client";
+import { compareH3Decimal, h3Decimal, parseH3Model } from "@/lib/admin/h3-contract";
+import { useH3Mutations, type H3PendingCommand, type H3Write } from "@/lib/admin/use-h3-mutations";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
-import type { ActionConfirmReq, HCtx } from "./types";
+import type { ActionConfirmReq, ConfirmReq, HCtx } from "./types";
 import {
   AppPreview, DayOneTimeline, H3RecoveryList, PhaseStrip, TaskCard, TaskStatusTag, WeeklyFormula,
   H3_BINDING_EVENT_LABELS, H3_BINDING_EVENT_OPTIONS, H3_BINDING_EVENT_PRODUCERS, H3_BINDING_USER_FIELDS, H3_BINDING_USER_FIELD_LABELS,
@@ -58,7 +37,7 @@ import {
 import { H3RegionPanel, useH3RegionPolicy } from "./h3-region-policy";
 import { H3MissionFormDrawer, type H3MissionForm } from "./h3-mission-form";
 
-type H3ActionConfirmReq = ActionConfirmReq & { confirmLabelForValue?: (value?: string) => string };
+type H3ActionConfirmReq = ActionConfirmReq & { target?: string; confirmLabelForValue?: (value?: string) => string };
 type Tab = "dayOne" | "weekly" | "bindings" | "monthly" | "promo";
 type ListKey = "dayOne" | "t1" | "t2";
 type Locale = "en" | "zh" | "vi";
@@ -67,22 +46,12 @@ const LOCALE_LABEL: Record<Locale, string> = { en: "英文", zh: "中文", vi: "
 const FUND_APPROVER = "另一位超级管理员";
 const TYPE_LABEL: Record<string, string> = { DAY_ONE: "首日任务", WEEKLY_T1: "每周一档", WEEKLY_T2: "每周二档", DAILY: "每日任务（签到页管理）", MONTHLY: "月度挑战" };
 
-/**
- * PLACEHOLDER（代码 worker 接审批提案后填）：本人提交、仍在等批准的资金修改，按配置键或任务编号。
- * 现在旧接口直写、进不了这个状态，所以是空的；接上后对应的参数行、任务卡会显示「待审批」并锁住修改入口。
- */
-const PENDING_FUND_APPROVALS: Array<{ key: string; name: string; change: ReactNode; submittedAt: number }> = [];
-/**
- * PLACEHOLDER（代码 worker 按 R1 接结果未知后填）：普通写和任务、绑定命令结果未知的原请求。
- * h-client 的 H3 命令存储没有导出列表，这页现在拿不到；接上后在页首逐条列出，按钮「查询原结果」「按原请求重试」。
- */
-const UNKNOWN_ROWS: H3RecoveryRow[] = [];
-
 function directionOf(current: string | null, next: string | null): "up" | "down" | "same" | null {
   if (current == null || next == null) return null;
-  const a = Number(current), b = Number(next);
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
-  return b > a ? "up" : b < a ? "down" : "same";
+  const a = h3Decimal(current), b = h3Decimal(next);
+  if (a === null || b === null) return null;
+  const direction = compareH3Decimal(b, a);
+  return direction > 0 ? "up" : direction < 0 ? "down" : "same";
 }
 
 /** 调高要审批、调低立即生效的参数：生效标签、事实行和按钮字照 G2、G7。 */
@@ -108,9 +77,44 @@ const immediate = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 
 export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const [mc, setMc] = useState<H3ActionConfirmReq | null>(null);
-  const ctx: HCtx = { ...shellCtx, openActionConfirm: setMc };
-  const { toast, openActionConfirm, openConfirm } = ctx;
-  const canModuleWrite = ctx.can("growth_h3_write");
+  const toast = shellCtx.toast;
+  const canModuleWrite = shellCtx.can("growth_h3_write");
+  const fresh = useRef(false);
+  const confirmation = useRef<{ action: string; title: string; target?: string; editValue?: string; businessValue?: Record<string, string>; commandKey?: string } | null>(null);
+  const openActionConfirm = (req: H3ActionConfirmReq | null) => {
+    if (!req) { setMc(null); return; }
+    if (!fresh.current || req.target && mutations.blocked(req.target)) {
+      toast("请先查询原结果并成功刷新用户任务数据，再发起新的修改。");
+      return;
+    }
+    const attempt = { action: String(req.action), title: String(req.title ?? req.action), target: req.target } as NonNullable<typeof confirmation.current>;
+    confirmation.current = attempt;
+    setMc({ ...req, getPendingReason: () => attempt.target ? mutations.record(attempt.target)?.change.reason : undefined,
+      getPendingBusinessValue: () => attempt.target ? mutations.record(attempt.target)?.change.businessValue : undefined,
+      run: async (reason, value, businessValue) => {
+        attempt.editValue = value; attempt.businessValue = businessValue;
+        confirmation.current = attempt;
+        await req.run(reason, value, businessValue);
+      },
+    });
+  };
+  const openConfirm = (req: ConfirmReq & { target?: string }) => {
+    if (!fresh.current || req.target && mutations.blocked(req.target)) {
+      toast("请先查询原结果并成功刷新用户任务数据，再发起新的修改。");
+      return;
+    }
+    const attempt = { action: String(req.action), title: String(req.title ?? req.action), target: req.target } as NonNullable<typeof confirmation.current>;
+    confirmation.current = attempt;
+    shellCtx.openConfirm({ ...req, freezePendingInput: true,
+      getPendingReason: () => attempt.target ? mutations.record(attempt.target)?.change.reason : undefined,
+      getPendingBlockReason: () => {
+        const saved = attempt.target ? mutations.record(attempt.target) : undefined;
+        return saved && !mutations.canRetry(saved) ? isRetryExpired(saved) ? RETRY_EXPIRED_TEXT : "请查询原结果" : undefined;
+      },
+      run: async (reason) => { confirmation.current = attempt; await req.run(reason); },
+    });
+  };
+  const ctx: HCtx = { ...shellCtx, openActionConfirm, openConfirm };
   const reach = useReach();
   const canAudit = reach("/platform/audit");
   const canPhase = reach("/growth/phase");
@@ -122,12 +126,14 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const [detail, setDetail] = useState<{ list: ListKey; code: string } | null>(null);
   const [creating, setCreating] = useState<"DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2" | null>(null);
   const tabIds = useTabIds();
-  const region = useH3RegionPolicy(ctx);
+
 
   const reload = async () => {
+    fresh.current = false;
     setLoading(true);
     try {
-      setModel((await fetchH3QuestEvents("tasks")) as H3Model);
+      setModel(parseH3Model(await fetchH3QuestEvents("tasks")));
+      fresh.current = true;
       setError(null);
       setReadAt(Date.now());
     } catch (err) {
@@ -137,9 +143,45 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     }
   };
 
-  useEffect(() => {
-    void reload();
-  }, []);
+  const mutations = useH3Mutations(toast, async () => {
+    fresh.current = false;
+    setMc(null);
+    setCreating(null);
+    shellCtx.closeConfirm?.();
+    await reload();
+    await region.reload();
+  }, () => fresh.current);
+  const refresh = async () => {
+    setMc(null); shellCtx.closeConfirm?.();
+    await reload();
+    await region.reload();
+    const results = await mutations.refreshTickets();
+    for (const result of results) if (result.status === "rejected") toast(displayAdminError(result.reason));
+  };
+  useEffect(() => { void refresh().catch(cause => toast(displayAdminError(cause))); }, []);
+
+  const runWrite = async (write: Omit<H3Write, "change"> & { target: string; before: string; after: string; success: string }, reason: string) => {
+    const attempt = confirmation.current;
+    if (!attempt) throw new Error("请重新打开原操作。");
+    if (!attempt.commandKey && mutations.blocked(write.target)) throw new Error("这一项有未结束的原操作，请先查询原结果。");
+    attempt.target = write.target;
+    if (attempt.commandKey) {
+      const original = mutations.record(write.target);
+      if (!original || original.commandKey !== attempt.commandKey) throw new Error("原操作已处理，请刷新后重新操作。");
+      await mutations.retry(original);
+      return;
+    }
+    try {
+      await mutations.run({ ...write, change: { target: write.target, action: attempt.action, title: attempt.title,
+        before: write.before, after: write.after, success: write.success, editValue: attempt.editValue, businessValue: attempt.businessValue } }, reason);
+    } finally {
+      attempt.commandKey = mutations.record(write.target)?.commandKey;
+    }
+  };
+  const region = useH3RegionPolicy(ctx, async (params, reason, before, after) => {
+    await runWrite({ store: "region", path: "", method: "POST", body: {}, target: "growth.h3.weekly-region-policy",
+      before, after, regionParams: params, success: "已提交审批" }, reason);
+  }, () => ({ blocked: mutations.blocked("growth.h3.weekly-region-policy"), pending: mutations.pendingApprovals.some(t => t.obj === "growth.h3.weekly-region-policy" && t.status === "pending") }));
 
   const bindingMissionOptions = useMemo(() => {
     const tasks = [
@@ -162,49 +204,18 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     [bindingMissionOptions],
   );
 
-  const apply = (next: Record<string, any>) => setModel(next as H3Model);
-
-  const applyBindingMutation = async (mutation: Promise<Record<string, any>>) => {
-    try {
-      apply(await mutation);
-    } catch (error) {
-      if (isH3BindingOutcomeUncertainError(error) && error.readback) {
-        apply(error.readback);
-        toast("结果未知：页面已重新读取，请核对后用相同理由重试", "warn");
-      }
-      throw error;
-    }
+  const updateConfigWithExpected = async (key: string, value: string, expectedValue: string, reason: string, label: string) => {
+    await runWrite({ store: "config", path: `/quest-events/config/${encodeURIComponent(key)}`, method: "PATCH",
+      body: { key, value, expectedValue }, target: key, configKey: key,
+      before: expectedValue === "__MISSING__" ? "—" : expectedValue, after: value, success: `${label} 已更新` }, reason);
   };
 
-  const applyMissionMutation = async (mutation: Promise<Record<string, any>>) => {
-    try {
-      apply(await mutation);
-    } catch (error) {
-      if (isH3MissionOutcomeUncertainError(error) && error.readback) {
-        apply(error.readback);
-        toast("结果未知：页面已重新读取，请核对后用相同理由重试", "warn");
-      }
-      throw error;
-    }
-  };
-
-  const updateConfigWithExpected = async (
-    key: string,
-    value: string,
-    expectedValue: string,
-    reason: string,
-    label: string,
-  ) => {
-    apply(await updateH3QuestConfig(key, value, reason, expectedValue));
-    toast(`${label} 已更新`);
-  };
-
-  /** 只改显示的字段：标题、生效标签、事实、按钮字。请求内容不受影响。 */
+  /** Keep the established confirmation fields; transport owns the approval route. */
   type Look = Pick<H3ActionConfirmReq, "title" | "effect" | "facts" | "statedBrief" | "confirmLabel" | "confirmLabelForValue" | "coverageLead" | "coverageCheck"> & { hint?: ReactNode; preview?: (value: string) => ReactNode };
 
   const openSimpleConfig = (key: string, label: string, current: string, amplifies = false, look: Look = {}, detail?: ReactNode) => {
     const { hint, preview, ...shown } = look;
-    openActionConfirm({ briefKind: "config",
+    openActionConfirm({ target: key, briefKind: "config",
       action: label,
       detail: detail ?? <>当前值 <b>{current}</b>。</>,
       ...shown,
@@ -219,16 +230,16 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
 
   const openTaskReward = (key: string, label: string, current: string, look: Look = {}) => {
     const { hint, preview, ...shown } = look;
-    openActionConfirm({ briefKind: "config",
+    openActionConfirm({ target: key, briefKind: "config",
       action: `调整奖励 · ${label}`,
       detail: <>当前奖励 <b>{current}</b>。</>,
       ...shown,
       edit: {
         kind: "number",
-        current: String(numericValue(current)),
+        current: decimalOf(current) ?? "",
         min: 0,
         max: 100000,
-        step: 1,
+        step: key.startsWith("monthly.") ? 0.000001 : 1,
         disallowCurrent: true,
         amplifiesWhen: "increase",
         hint,
@@ -236,7 +247,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       },
       run: async (reason, value) => {
         if (!value) return;
-        await updateConfigWithExpected(key, value, String(numericValue(current)), reason, `奖励 ${label}`);
+        await updateConfigWithExpected(key, value, decimalOf(current) ?? "__MISSING__", reason, `奖励 ${label}`);
       },
     } as H3ActionConfirmReq);
   };
@@ -251,13 +262,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     amplifiesWhen?: "increase" | "decrease",
     look: Look = {},
   ) => {
-    const expected = String(numericValue(current));
+    const expected = decimalOf(current) ?? "__MISSING__";
     const { hint, preview, ...shown } = look;
-    openActionConfirm({ briefKind: "config",
+    openActionConfirm({ target: key, briefKind: "config",
       action: label,
       detail: <>当前值 <b>{current}</b>。如果别人刚改过，需要刷新后再改。</>,
       ...shown,
-      edit: { kind: "number", current: expected, min, max, step, disallowCurrent: true, amplifiesWhen, hint, preview },
+      edit: { kind: "number", current: expected === "__MISSING__" ? "" : expected, min, max, step, disallowCurrent: true, amplifiesWhen, hint, preview },
       run: async (reason, value) => {
         if (!value) return;
         await updateConfigWithExpected(key, value, expected, reason, label);
@@ -266,9 +277,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   };
 
   const openPromoStatus = () => {
-    const current = text(model?.promoBanner?.status, "paused").toLowerCase();
+    const current = text(model?.promoBanner?.status, "").toLowerCase();
+    if (!current) { toast(displayAdminError(new Error("PROMO_BANNER_NOT_CONFIGURED"))); return; }
     const next = current === "active" ? "paused" : "active";
-    openActionConfirm({ briefKind: "record",
+    openActionConfirm({ target: "promoBanner.status", briefKind: "record",
       action: next === "active" ? "启用首页备用促销卡" : "暂停首页备用促销卡",
       title: next === "active" ? "启用首页备用促销卡" : "暂停首页备用促销卡",
       detail: <>只改备用促销卡的状态，不影响每周任务卡。App 目前不显示备用卡。</>,
@@ -319,16 +331,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         const missionCode = String(bv.missionCode || "").trim();
         const missionName = String(bv.missionName || "").trim();
         if (!missionCode || !missionName) return;
-        await applyMissionMutation(createH3Mission({
-          missionCode,
-          missionName,
-          missionType,
-          rewardPoints: Number(bv.rewardPoints) || 0,
-          category: String(bv.category || "").trim(),
-          actionRoute: String(bv.actionRoute || "").trim(),
-        }, reason));
+        await runWrite({ store: "mission", path: "/quest-events/missions", method: "POST", target: missionCode,
+          body: { missionCode, missionName, missionType, rewardPoints: Number(bv.rewardPoints), category: bv.category.trim(), actionRoute: bv.actionRoute.trim() },
+          before: "任务不存在", after: `${missionName} · ${bv.rewardPoints} UVT · 已停用`,
+          success: `任务「${missionName}」已新建（停用中，绑定完成条件后再启用）` }, reason);
         setCreating(null);
-        toast(`任务「${missionName}」已新建（停用中，绑定完成条件后再启用）`);
       },
     } as H3ActionConfirmReq);
   };
@@ -337,7 +344,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
 
   const openLocalizedContent = (code: string, locale: Locale, source: string) => {
     const current = localizedValue(code, locale);
-    openActionConfirm({ briefKind: "config",
+    openActionConfirm({ target: `content.mission.${code}.name.${locale}`, briefKind: "config",
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
       title: `${current ? "改" : "填写"}${LOCALE_LABEL[locale]}名称`,
       detail: <>没填时 App 先显示英文，再显示原名。</>,
@@ -353,8 +360,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       edit: { kind: "text", current, hint: "最多 512 字" },
       run: async (reason, value) => {
         if (!value) return;
-        apply(await updateH3LocalizedContent("mission", code, "name", locale, value, casExpected(current), reason));
-        toast(`${source} ${locale.toUpperCase()} 文案已保存`);
+        await updateConfigWithExpected(`content.mission.${code}.name.${locale}`, value, casExpected(current), reason, `${source} ${locale.toUpperCase()} 文案`);
       },
     } as H3ActionConfirmReq);
   };
@@ -375,7 +381,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const openMissionEdit = (task: QuestTask, label: string, monthly = false) => {
     const { taskCode, taskKind, status } = taskIdentity(task, monthly);
     if (status === "archived") return;
-    openActionConfirm({ briefKind: "config",
+    openActionConfirm({ target: taskCode, briefKind: "config",
       action: `编辑任务 · ${label}`,
       title: monthly ? "改月度挑战名称" : "改任务原名",
       detail: <>只改名称；奖励单独改。</>,
@@ -389,8 +395,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       edit: { kind: "text", current: label, disallowCurrent: true, hint: "最多 128 字" },
       run: async (reason, value) => {
         if (!value) return;
-        await applyMissionMutation(editH3Mission(taskCode, taskKind, value, label, reason));
-        toast(`任务「${label}」已编辑`);
+        await runWrite({ store: "mission", path: `/quest-events/tasks/${encodeURIComponent(taskCode)}`, method: "PATCH", target: taskCode,
+          body: { taskKind, name: value, expectedName: label }, before: label, after: value, success: `任务「${label}」已编辑` }, reason);
       },
     } as H3ActionConfirmReq);
   };
@@ -400,7 +406,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     if (status === "archived") return;
     const currentCategory = text(task.category, "explore").toLowerCase();
     const currentActionRoute = text(task.href, "/pages/missions/missions");
-    openActionConfirm({ briefKind: "config",
+    openActionConfirm({ target: taskCode, briefKind: "config",
       action: `配置任务类别与去完成页面 · ${label}`,
       title: "改类别和跳转",
       detail: <>App 上显示的类别和「去完成」跳到哪页。</>,
@@ -440,15 +446,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       },
       run: async (reason, _value, businessValue) => {
         if (!businessValue) return;
-        await applyMissionMutation(updateH3MissionPresentation(
-          taskCode,
-          String(businessValue.category || "").trim(),
-          String(businessValue.actionRoute || "").trim(),
-          currentCategory,
-          currentActionRoute,
-          reason,
-        ));
-        toast(`任务「${label}」的类别与去完成页面已更新`);
+        await runWrite({ store: "mission", path: `/quest-events/tasks/${encodeURIComponent(taskCode)}/presentation`, method: "PATCH", target: taskCode,
+          body: { category: String(businessValue.category).trim(), actionRoute: String(businessValue.actionRoute).trim(), expectedCategory: currentCategory, expectedActionRoute: currentActionRoute },
+          before: `${currentCategory} · ${currentActionRoute}`, after: `${businessValue.category} · ${businessValue.actionRoute}`, success: `任务「${label}」的类别与去完成页面已更新` }, reason);
       },
     } as H3ActionConfirmReq);
   };
@@ -459,7 +459,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const targetStatus = status === "active" ? "paused" : "active";
     const enabling = targetStatus === "active";
     openConfirm({ briefKind: "config",
-      errorHandled: (error) => isH3MissionOutcomeUncertainError(error) && !!error.readback,
+      target: taskCode,
       action: `${targetStatus === "active" ? "启用" : "停用"}任务 · ${label}`,
       title: `${enabling ? "启用" : "停用"}${monthly ? "月度挑战" : "任务"}`,
       detail: <>只能在启用和停用之间切换；已归档的不能恢复。</>,
@@ -480,8 +480,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       reasonPlaceholder: "例如：工单号、调整依据",
       okLabel: targetStatus === "active" ? "确认启用" : "确认停用",
       run: async (reason) => {
-        await applyMissionMutation(transitionH3Mission(taskCode, taskKind, targetStatus, status, reason));
-        toast(`任务「${label}」已${targetStatus === "active" ? "启用" : "停用"}`);
+        await runWrite({ store: "mission", path: `/quest-events/tasks/${encodeURIComponent(taskCode)}/status`, method: "PATCH", target: taskCode,
+          body: { taskKind, targetStatus, expectedStatus: status }, before: status, after: targetStatus, success: `任务「${label}」已${targetStatus === "active" ? "启用" : "停用"}` }, reason);
       },
     });
   };
@@ -490,7 +490,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const { taskCode, taskKind, status } = taskIdentity(task, monthly);
     if (status === "archived") return;
     openConfirm({ briefKind: "record",
-      errorHandled: (error) => isH3MissionOutcomeUncertainError(error) && !!error.readback,
+      target: taskCode,
       action: `归档任务 · ${label}`,
       title: monthly ? "归档月度挑战" : "归档任务",
       detail: <>归档后不能再启用；名称、类别和文字不能改，奖励仍可维护。要删除，先归档。</>,
@@ -509,8 +509,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       reasonPlaceholder: "例如：工单号、调整依据",
       okLabel: "确认归档",
       run: async (reason) => {
-        await applyMissionMutation(archiveH3Mission(taskCode, taskKind, status, reason));
-        toast(`任务「${label}」已归档`);
+        await runWrite({ store: "mission", path: `/quest-events/tasks/${encodeURIComponent(taskCode)}/archive`, method: "POST", target: taskCode,
+          body: { taskKind, targetStatus: "archived", expectedStatus: status }, before: status, after: "archived", success: `任务「${label}」已归档` }, reason);
       },
     });
   };
@@ -519,7 +519,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const { taskCode, taskKind, status } = taskIdentity(task, monthly);
     if (status !== "archived") return;
     openConfirm({ briefKind: "record",
-      errorHandled: (error) => isH3MissionOutcomeUncertainError(error) && !!error.readback,
+      target: taskCode,
       action: `删除已归档任务 · ${label}`,
       title: monthly ? "删除月度挑战" : "删除任务",
       detail: <>只能删除已归档的。删除后从列表消失，操作记录保留。</>,
@@ -536,8 +536,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       reasonPlaceholder: "例如：工单号、调整依据",
       okLabel: "确认删除",
       run: async (reason) => {
-        await applyMissionMutation(deleteH3Mission(taskCode, taskKind, reason));
-        toast(`任务「${label}」已删除`);
+        await runWrite({ store: "mission", path: `/quest-events/tasks/${encodeURIComponent(taskCode)}`, method: "DELETE", target: taskCode,
+          body: { taskKind, targetStatus: "deleted", expectedStatus: "archived" }, before: "archived", after: "deleted", success: `任务「${label}」已删除` }, reason);
       },
     });
   };
@@ -551,7 +551,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const openBindingStatus = (binding: H3QuestEventBinding) => {
     const enabled = Number(binding.status) === 1;
     openConfirm({ briefKind: "record",
-      errorHandled: (error) => isH3BindingOutcomeUncertainError(error) && !!error.readback,
+      target: binding.bindingCode,
       action: `${enabled ? "停用" : "启用"}完成条件 · ${binding.bindingCode}`,
       title: `${enabled ? "停用" : "启用"}完成条件`,
       detail: <>对应的任务要处于已停用或已启用状态。</>,
@@ -570,7 +570,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       reasonPlaceholder: "例如：工单号、调整依据",
       okLabel: enabled ? "确认停用" : "确认启用",
       run: async (reason) => {
-        await applyBindingMutation(updateH3QuestEventBinding(binding.bindingCode, {
+        await runWrite({ store: "binding", path: `/quest-events/bindings/${encodeURIComponent(binding.bindingCode)}`, method: "PATCH", target: binding.bindingCode,
+          body: {
           producer: binding.producer,
           eventType: binding.eventType,
           questCode: binding.questCode,
@@ -581,9 +582,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           expectedQuestCode: binding.questCode,
           expectedUserIdField: binding.userIdField,
           expectedEnabled: enabled,
-          reason,
-        }));
-        toast(`完成条件「${binding.bindingCode}」已${enabled ? "停用" : "启用"}`);
+        }, before: `${bindingEventText(binding)} · ${bindingTaskName(binding.questCode) ?? binding.questCode} · ${H3_BINDING_USER_FIELD_LABELS[binding.userIdField]} · ${Number(binding.status) === 1 ? "已启用" : "已停用"}`, after: `${bindingEventText(binding)} · ${bindingTaskName(binding.questCode) ?? binding.questCode} · ${H3_BINDING_USER_FIELD_LABELS[binding.userIdField]} · ${!enabled ? "已启用" : "已停用"}`, success: `完成条件「${binding.bindingCode}」已${enabled ? "停用" : "启用"}` }, reason);
       },
     });
   };
@@ -679,21 +678,20 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         const userIdField = String(form?.userIdField ?? "").trim() as H3QuestEventBinding["userIdField"];
         const producer = H3_BINDING_EVENT_PRODUCERS[eventType];
         if (!bindingCode || !producer || !questCode || !userIdField) return;
-        await applyBindingMutation(createH3QuestEventBinding(bindingCode, {
+        await runWrite({ store: "binding", path: `/quest-events/bindings/${encodeURIComponent(bindingCode)}`, method: "POST", target: bindingCode,
+          body: {
           producer,
           eventType,
           questCode,
           userIdField,
           enabled: form?.enabled === "true",
-          reason,
-        }));
-        toast(`完成条件「${bindingCode}」已新增`);
+        }, before: "—", after: `${H3_BINDING_EVENT_LABELS[eventType]} · ${bindingTaskName(questCode) ?? questCode} · ${H3_BINDING_USER_FIELD_LABELS[userIdField]} · ${form?.enabled === "true" ? "已启用" : "已停用"}`, success: `完成条件「${bindingCode}」已新增` }, reason);
       },
     } as H3ActionConfirmReq);
   };
 
   const openBindingEdit = (binding: H3QuestEventBinding) => {
-    openActionConfirm({ briefKind: "config",
+    openActionConfirm({ target: binding.bindingCode, briefKind: "config",
       action: `修改完成条件 · ${binding.bindingCode}`,
       title: "修改完成条件",
       detail: <>可以改「用户做了什么」、对应任务或「算谁完成」。如果别人刚改过，需要刷新后重改。</>,
@@ -714,7 +712,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         const userIdField = String(form?.userIdField ?? "").trim() as H3QuestEventBinding["userIdField"];
         if (!producer || !questCode || !userIdField) return;
         const enabled = form?.enabled === "true";
-        await applyBindingMutation(updateH3QuestEventBinding(binding.bindingCode, {
+        await runWrite({ store: "binding", path: `/quest-events/bindings/${encodeURIComponent(binding.bindingCode)}`, method: "PATCH", target: binding.bindingCode,
+          body: {
           producer,
           eventType,
           questCode,
@@ -725,9 +724,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           expectedQuestCode: binding.questCode,
           expectedUserIdField: binding.userIdField,
           expectedEnabled: Number(binding.status) === 1,
-          reason,
-        }));
-        toast(`完成条件「${binding.bindingCode}」已修改`);
+        }, before: `${bindingEventText(binding)} · ${bindingTaskName(binding.questCode) ?? binding.questCode} · ${H3_BINDING_USER_FIELD_LABELS[binding.userIdField]} · ${Number(binding.status) === 1 ? "已启用" : "已停用"}`, after: `${H3_BINDING_EVENT_LABELS[eventType]} · ${bindingTaskName(questCode) ?? questCode} · ${H3_BINDING_USER_FIELD_LABELS[userIdField]} · ${enabled ? "已启用" : "已停用"}`, success: `完成条件「${binding.bindingCode}」已修改` }, reason);
       },
     } as H3ActionConfirmReq);
   };
@@ -735,7 +732,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const openBindingDelete = (binding: H3QuestEventBinding) => {
     const enabled = Number(binding.status) === 1;
     openConfirm({ briefKind: "record",
-      errorHandled: (error) => isH3BindingOutcomeUncertainError(error) && !!error.readback,
+      target: binding.bindingCode,
       action: `删除完成条件 · ${binding.bindingCode}`,
       title: "删除完成条件",
       detail: <>删除后，以后的任务里做这件事不再算完成。操作记录会保留。</>,
@@ -754,22 +751,22 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       reasonPlaceholder: "例如：工单号、调整依据",
       okLabel: "确认删除",
       run: async (reason) => {
-        await applyBindingMutation(deleteH3QuestEventBinding(binding.bindingCode, {
+        await runWrite({ store: "binding", path: `/quest-events/bindings/${encodeURIComponent(binding.bindingCode)}`, method: "DELETE", target: binding.bindingCode,
+          body: {
           expectedProducer: binding.producer,
           expectedEventType: binding.eventType,
           expectedQuestCode: binding.questCode,
           expectedUserIdField: binding.userIdField,
           expectedEnabled: enabled,
-          reason,
-        }));
-        toast(`完成条件「${binding.bindingCode}」已删除`);
+        }, before: `${bindingEventText(binding)} · ${bindingTaskName(binding.questCode) ?? binding.questCode} · ${H3_BINDING_USER_FIELD_LABELS[binding.userIdField]} · ${Number(binding.status) === 1 ? "已启用" : "已停用"}`, after: "deleted", success: `完成条件「${binding.bindingCode}」已删除` }, reason);
       },
     });
   };
 
-  // ===== 待审批（占位）和结果未知（占位） =====
-  const pendingOf = (key: string) => PENDING_FUND_APPROVALS.find((item) => item.key === key);
-  const lockReason = (key: string) => pendingOf(key) ? "这一项有一张等批准的申请，审批结束前不能再改" : undefined;
+  // ===== 权威待审批读取和保存的原请求 =====
+  const pendingApprovals = mutations.pendingApprovals.filter(t => ["h3_quest_config", "h3_mission_create"].includes(t.operationCode ?? ""));
+  const pendingOf = (key: string) => pendingApprovals.find((item) => item.obj === key);
+  const lockReason = (key: string) => pendingOf(key) ? "这一项有一张等批准的申请，审批结束前不能再改" : mutations.record(key) ? "这一项结果未知，请先查询原结果" : undefined;
   const lockTag = (key: string) => pendingOf(key) ? pendingTag() : null;
 
   // ===== 渲染 =====
@@ -778,11 +775,27 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     <PageHeader pageId="H3" title="用户任务管理" summary="管 App 的首日任务、每周任务和它们的奖励。"
       meta={readAt ? <span className="rd-toolbar">
         <span>{`${businessClock(readAt)} 读取（${zone}）· 打开时读取`}</span>
-        <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reload()}>刷新</Button>
+        <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void refresh().catch(cause => toast(displayAdminError(cause)))}>刷新</Button>
       </span> : undefined}
       readOnly={!canModuleWrite ? "你只能查看；新建、修改、启停任务要有用户任务的修改权限。" : undefined} />
   );
-  const recoveryRows = canModuleWrite ? UNKNOWN_ROWS : [];
+  const openRecovery = (original: H3PendingCommand) => {
+    const c = original.change;
+    setMc({ briefKind: "config", action: c.action, title: c.title, detail: <Change from={c.before} to={c.after} />,
+      facts: <Facts><Fact k="改的是">{c.action}</Fact><Fact k="原请求"><Change from={c.before} to={c.after} /></Fact></Facts>,
+      initialReason: c.reason, getPendingReason: () => mutations.record(c.target)?.change.reason,
+      inlineApproval: { pending: true, initialRecovery: "retry", expired: isRetryExpired(original), resolve: () => undefined,
+        disabledReason: mutations.canRetry(original) ? undefined : isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "请查询原结果",
+        recover: async () => { await mutations.query(original); return true; }, retry: () => mutations.retry(original) },
+      run: async () => { await mutations.retry(original); },
+    });
+  };
+  const recoveryRows: H3RecoveryRow[] = mutations.records.filter(r => !r.ticket).map(original => ({
+    key: original.commandKey, name: original.change.action, change: <Change from={original.change.before} to={original.change.after} />,
+    submittedAt: original.createdAt, tag: <StatusTag tone="warn">{isRetryExpired(original) ? "已过期" : "结果未知"}</StatusTag>,
+    actions: <><Button size="sm" onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>查询原结果</Button>
+      <Button size="sm" disabledReason={mutations.canRetry(original) ? undefined : isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "请查询原结果"} onClick={() => openRecovery(original)}>按原请求重试</Button></>,
+  }));
   const recovery = recoveryRows.length > 0 && (
     <Notice tone="warn" title={<>{`${recoveryRows.length} 个修改结果未知`}<Explain label="结果未知怎么处理" content={<>
       <p>提交时没收到确定结果，可能已经生效。先「查询原结果」；没过 24 小时可以「按原请求重试」，后端认得出是同一次提交，不会重复执行。</p>
@@ -792,12 +805,58 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     </Notice>
   );
 
-  if (loading && !model) return <div className="h3-page">{header}{recovery}<BlockState state="loading" title="用户任务读取中…" /></div>;
+  const savedForConfirm = confirmation.current?.target ? mutations.record(confirmation.current.target) : undefined;
+  const confirmModal = mc && (
+        <OperationConfirmModal briefKind={mc.briefKind}
+          action={mc.action}
+          title={mc.title}
+          detail={mc.detail}
+          amplifies={mc.amplifies}
+          edit={mc.edit}
+          businessForm={mc.businessForm}
+          facts={mc.facts}
+          effect={mc.effect}
+          confirmLabel={mc.confirmLabel}
+          confirmLabelForValue={mc.confirmLabelForValue}
+          confirmTone={mc.confirmTone}
+          statedBrief={mc.statedBrief}
+          coverageLead={mc.coverageLead}
+          coverageCheck={mc.coverageCheck}
+          reasonPlaceholder={mc.reasonPlaceholder}
+          reasonPolicyOptional={mc.reasonPolicyOptional}
+          inlineApproval={mc.inlineApproval ?? {
+            pending: !!savedForConfirm, initialRecovery: "retry", resolve: () => undefined,
+            expired: savedForConfirm ? isRetryExpired(savedForConfirm) : false,
+            disabledReason: savedForConfirm && !mutations.canRetry(savedForConfirm) ? isRetryExpired(savedForConfirm) ? RETRY_EXPIRED_TEXT : "请查询原结果" : undefined,
+            recover: async () => { const saved = confirmation.current?.target && mutations.record(confirmation.current.target); if (saved) await mutations.query(saved); return true; },
+            retry: async () => { const saved = confirmation.current?.target && mutations.record(confirmation.current.target); if (saved) await mutations.retry(saved); },
+          }}
+          reasonMin={mc.reasonMin}
+          reasonMax={mc.reasonMax}
+          initialReason={mc.initialReason}
+          getPendingReason={mc.getPendingReason}
+          getPendingBusinessValue={mc.getPendingBusinessValue}
+          completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
+          onClose={() => setMc(null)}
+          onConfirm={async (reason, newValue, businessValue) => {
+            try {
+              await mc.run(reason, newValue, businessValue);
+              setMc(null);
+            } catch (error) {
+              toast(error instanceof Error ? displayAdminError(error) : "操作失败");
+              throw error;
+            }
+          }}
+        />
+      );
+
+  if (loading && !model) return <div className="h3-page">{header}{recovery}{confirmModal}<BlockState state="loading" title="用户任务读取中…" /></div>;
   if (error || !model) return (
     <div className="h3-page">
       {header}
       {recovery}
-      <BlockState state="error" title="用户任务读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改；一直失败请联系值班同事。`} retryLabel="重试读取" onRetry={() => void reload()} />
+      {confirmModal}
+      <BlockState state="error" title="用户任务读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改；一直失败请联系值班同事。`} retryLabel="重试读取" onRetry={() => void refresh().catch(cause => toast(displayAdminError(cause)))} />
     </div>
   );
 
@@ -835,7 +894,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     ...(orphans.length ? [{ key: "orphan", tone: "warn" as const, title: `${orphans.length} 条启用的完成条件对应的任务不在这页，要核查`, go: "bindings" as Tab }] : []),
     ...(regionPending ? [{ key: "region", tone: "neutral" as const, title: "每周区号规则的修改在等批准", go: "weekly" as Tab }] : []),
     ...(region.reviewError ? [{ key: "region-read", tone: "warn" as const, title: "区号规则的审批进度读取失败，暂不能再次提交", go: "weekly" as Tab }] : []),
-    ...(PENDING_FUND_APPROVALS.length ? [{ key: "fund", tone: "neutral" as const, title: `${PENDING_FUND_APPROVALS.length} 个奖励或倍率的修改在等批准`, go: "dayOne" as Tab }] : []),
+    ...(pendingApprovals.length ? [{ key: "fund", tone: "neutral" as const, title: `${pendingApprovals.length} 个奖励或倍率的修改在等批准`, go: "dayOne" as Tab }] : []),
   ];
   const conclusionState = stuck.length || orphans.length || recoveryRows.length ? "warn" : active.length === 0 ? "neutral" : "ok";
   const conclusion = (
@@ -850,7 +909,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         ? "没有启用的首日或每周任务，新用户拿不到任务"
         : `首日 ${dayOne.filter((task) => taskStatusOf(task) === "active").length} 个、每周 ${[...t1, ...t2].filter((task) => taskStatusOf(task) === "active").length} 个任务在启用`}
       {recoveryRows.length > 0 && `；${recoveryRows.length} 个修改结果未知`}
-      {attention.length > 0 ? `；${attention.length} 件要处理` : "，没有要处理的事"}
+      {attention.length > 0 ? `；${attention.length} 件要处理` : mutations.auditKnown ? "，没有要处理的事" : ""}
     </Conclusion>
   );
 
@@ -1469,41 +1528,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         ]}
       />
 
-      {mc && (
-        <OperationConfirmModal briefKind={mc.briefKind}
-          action={mc.action}
-          title={mc.title}
-          detail={mc.detail}
-          amplifies={mc.amplifies}
-          edit={mc.edit}
-          businessForm={mc.businessForm}
-          facts={mc.facts}
-          effect={mc.effect}
-          confirmLabel={mc.confirmLabel}
-          confirmLabelForValue={mc.confirmLabelForValue}
-          confirmTone={mc.confirmTone}
-          statedBrief={mc.statedBrief}
-          coverageLead={mc.coverageLead}
-          coverageCheck={mc.coverageCheck}
-          reasonPlaceholder={mc.reasonPlaceholder}
-          reasonPolicyOptional={mc.reasonPolicyOptional}
-          inlineApproval={mc.inlineApproval}
-          reasonMin={mc.inlineApproval ? mc.reasonMin : undefined}
-          reasonMax={mc.inlineApproval ? mc.reasonMax : undefined}
-          getPendingReason={mc.inlineApproval ? mc.getPendingReason : undefined}
-          completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
-          onClose={() => setMc(null)}
-          onConfirm={async (reason, newValue, businessValue) => {
-            try {
-              await mc.run(reason, newValue, businessValue);
-              setMc(null);
-            } catch (error) {
-              toast(error instanceof Error ? displayAdminError(error) : "操作失败");
-              throw error;
-            }
-          }}
-        />
-      )}
+      {confirmModal}
     </div>
   );
 }

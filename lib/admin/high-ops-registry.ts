@@ -1462,6 +1462,23 @@ export const HIGH_OPS: HighOpDef[] = [
   },
   // —— H 域增长(批 7) ——
   {
+    op: "h3_quest_config", domain: "H", action: "放大用户任务奖励配置", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h3_quest_config",
+    buildCommand: (ctx) => ({ domain: "H", op: "h3_quest_config", params: { values: {
+      configKey: String(ctx.configKey), value: String(ctx.value), expectedValue: String(ctx.expectedValue),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h3_quest_config", id: String(ctx.configKey) }),
+  },
+  {
+    op: "h3_mission_create", domain: "H", action: "新建带奖励的任务", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h3_mission",
+    buildCommand: (ctx) => ({ domain: "H", op: "h3_mission_create", params: { values: {
+      missionCode: String(ctx.missionCode), missionName: String(ctx.missionName), missionType: String(ctx.missionType),
+      rewardPoints: Number(ctx.rewardPoints), category: String(ctx.category), actionRoute: String(ctx.actionRoute),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h3_mission", id: String(ctx.missionCode) }),
+  },
+  {
     op: "h3_weekly_region_policy",
     domain: "H",
     action: "调整每周任务地区映射",

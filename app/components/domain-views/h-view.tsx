@@ -53,6 +53,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,
+    closeConfirm: () => setCf(null),
     can,
   };
 

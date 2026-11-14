@@ -21,6 +21,7 @@ export type { ConfirmReq, ConfirmChip } from "../k-tabs/types";
 export type ActionConfirmReq = BaseActionConfirmReq & { inlineApproval?: InlineOperationApproval; reasonPolicyOptional?: boolean };
 
 export type HCtx = Omit<DCtx, "openActionConfirm" | "toast"> & {
+  closeConfirm?: () => void;
   toast: (message: string, kind?: ToastKind) => void;
   openActionConfirm: (req: ActionConfirmReq | null) => void;
   /** UI convenience only; the backend remains the final authority boundary. */

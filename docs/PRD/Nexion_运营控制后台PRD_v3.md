@@ -625,163 +625,60 @@
 
 ---
 
-#### [H3] Quest 任务引擎
+#### [H3] 用户任务管理
 
-- **2026-11-12 后端同步**：`weekly.champBonus` 仅保存冠军奖励展示文字，不发奖、不按数值判定放大；该项保持直接保存，取消前端放大标记。其他 H3 奖励入口不适用此例外。旧标题「周冠军加奖」待视觉 worker 按展示文字事实调整。
+2026-11-15 按后端 `111e00cd` 同步现行合同，入口 `/growth/quest`。只管理任务目录、完成事件绑定及配置；没有代用户领取奖励的入口。旧 mock 的固定任务数、9/8条优先级、三种完成判定、月度派发与备用卡展示不再作为当前功能合同。
 
-- **状态与完成条件拒绝（BUG-257 后续）**：任务当前状态不允许操作时，说明本次未生效，提示刷新「用户任务管理」核对最新状态后重试；完成条件已被其他操作更新时，说明更新冲突并提示同样的核对步骤。两种明确拒绝均保留确认框和理由，不显示成功。
+**页面与数据**：五个页签为首日任务、每周任务、完成条件、历史月度挑战、首页备用卡。GET `/api/admin/growth/quest-events/tasks` 独立于H4读权；任务目录包含启用、停用、归档，编号是身份，不按名称或数组下标提交。首屏经营统计缺领取率、本周完成/发放和月度人数，显示缺失，不填0。监控是定义COUNT；sample24h是过去24小时新建用户任务行数而非完成数，异常比例按同窗失败/异常/拒绝算到1位。
 
-**① 目的 & 对齐**: 配置平台三层任务体系(首日 Day-One Quest / 每周 Weekly Quests / 每月 Monthly Challenge)的任务清单、NEX 奖励、3-phase 时窗与 Phase 乘数消费面,作为新用户拉新期与持续活跃期的任务化转化引擎。对齐前端 **§5.15**(`/` Home 顶部 Day-One Quest:active 0-24h=500 NEX / grace 24-72h=200 NEX / expired 72h+=0;§5.15.3 6 任务清单)+ **§11.13**(`/missions` Mission Center 4 层架构 L1-L4:Weekly Tier1/Tier2 + Monthly Challenge,§11.13.1 总览)+ **§9.11c.1**(`GET /api/config/quest/day-one`「新人转化最核心钩子」)。服务业务目标:把新用户首日活跃→商城浏览→绑卡前段漏斗动作组织成任务化引导——首日 6 任务中,逛商城(`visit_store`)/ 看 ROI(`view_product_roi`)直接产 `store.viewed`(漏斗 #3,§2.4.7),绑卡(`connect_wallet`,href `topup?kyc=1`)命中绑卡级 `kyc.express_verified`,邀请(`invite_friend`)产 `referral.invite_sent`,设资料(`setup_profile`)/ 逛 Earn(`visit_earn`)为纯留存动作(不入漏斗)。通过签到/任务/里程碑回访激励**间接**提升 Day7 活跃(KPI #2 口径为 `app.dau ÷ register cohort`,§2.4.6;本机制经回访→`app.dau` 路径间接贡献,非 KPI 直接口径),并通过任务 CTA 引导用户产生 `store.viewed` / `checkout.completed` 这些 B3 漏斗级事件(行为驱动,非 quest 事件本身入漏斗)。
-> **§5.15 / §11.13 锚点脚注**:Monthly Challenge 规格簇散落多处——§11.13.1(,L3 概览「10,000 NEX + 月度勋章」,口径为该层「单次最大奖」)/ §12.14(,`useMonthlyChallenge` store)/ §9.11c.2(,列 `GET /api/quests/monthly` endpoint,锚 `lib/mock/monthly-challenge.ts`)/ 代码(`lib/mock/monthly-challenge.ts:42-103` 完整 5 主题 reward 表)。**前端 PRD 不存在 §11.14 标题**(章节序 §11.13.1…§11.13.10 后跳 §12.x);前端 PRD 三处 `§11.14` 引用为悬空引用,本章一律不引 §11.14,改引上述真实锚点。
+**首日**：注册时冻结任务、绑定、名称、类别、路由、译文、三档政策、H1任务加成及资格期限。全额边界固定24小时，资格期限24–720整数小时；`dayOne.windowMs`只是可维护的展示文字，不改倒计时。三档格式为“全额 / 宽限 / 0 UVT”，全额>0、0≤宽限≤全额，有效小数≤6；完成全组才可领取，金额档位由领取时刻的注册年龄确定，等于资格终点为过期。页面沿用“做完时间”的原文待视觉修正，不能作为后端规则。
 
-**② 后台界面**:
-- **Day-One Quest 配置面**(§5.15):3-phase 时窗(`QUEST_WINDOW_MS` active / `QUEST_GRACE_END_MS` grace 边界)+ 各 phase 完成奖励(500 / 200 / 0 NEX)+ Badge 映射(`day_one_hero` / `day_one_latecomer`)+ 任务清单(`id / 标题 i18n key / 跳转 href / 奖励 NEX`),每任务可配 **完成判定方式**(`completionType`:`visit` 访问路径 / `event` 业务事件 / `manual` 手动核验)+ **完成触发事件**(`completionEvent`,真实 seed 如绑卡 `kyc.card_bound` / 邀请 `referral.sent` / 设资料 `profile.completed`;`visit` 路径型任务 completionEvent 留空,由 `QuestRouteWatcher` 按 href 判完成)+ **上下架状态**(`status`:`active` 生效中 / `paused` 已停用 / `archived` 已归档),任务行支持**增 / 删 / 启停**(非仅改奖励)。
-- **Weekly Quests 配置面**(§11.13.3/.4):Tier 1 派发器 9 条优先级规则(条件 / quest id / base reward NEX / 入金类型 / Badge)+ Tier 2 池 8 条(quest id / base reward / 派发条件)+ Weekly Champion bonus 行(+500 NEX × phase mult);Tier1 / Tier2 每条可配 **上下架状态**(`status`)+ **完成判定方式**(`completionType` / `completionEvent`),逐档支持**增 / 删 / 启停**。
-- **Monthly Challenge 配置面**(§11.13.1 + §12.14 + `lib/mock/monthly-challenge.ts:42-103`):**5 主题 × {`monthsFrom`/`monthsTo` 月龄分段 · `rewardNex` · `badgeId` · 3 AND-gated `subGoals`}**——`foundation_builder`(月龄 0-2 · 1,500 NEX)/ `network_architect`(2-4 · 2,500)/ `premium_pathway`(4-6 · 4,000)/ `diamond_tier`(6-9 · 6,000)/ `founders_quest`(9+ · 10,000 NEX + 勋章);派发器(`dispatchMonthlyChallenge` 按 `joinedAt` 月数)+ 5 主题清单 + 每主题 3 子目标(各带 `key` / `href` / `target`);每主题可配 **上下架状态**(`status`),主题支持**增 / 删 / 启停**。L3 架构概览见 §11.13.1。
-- **本周转化卡配置面**(G1 补口 · 对齐前端 uniapp `components/home/conversion-banner.vue` 首页**设备 upsell 促销 banner**;该 banner 为 uniapp 后加促销组件,前端 PRD v3.7 未独立成节,锚 uniapp 组件 + 前端 §13.2a `derivePromoUpgrade` 派生逻辑):**单实例配置**(非任务清单)——可配 **基础奖励 `baseReward` × 促销倍率 `multiplier` = 最终奖励 `finalReward`**(派生展示;此处 `multiplier` 即 `conversion-banner.vue:65` 的 `promoMult` **NEX 奖励倍率**,**非** §13.2a `derivePromoUpgrade` 的 `round(potentialDaily/baseDaily)` 设备日产倍数,二者同名异义勿混)+ **倒计时窗口**(`countdownDays` 天 / `countdownHours` 时)+ **目标设备 `targetDevice` / 日产展示 `targetDaily`**($/d;默认由 `derivePromoUpgrade(devices)` 按用户最高激活设备派生升级目标,前端 §13.2a,运营可固定)+ **上下架 `status`**。文案(eyebrow / CTA)归 I 域 CMS,本面只配奖励 / 倍率 / 倒计时 / 目标设备 / 日产 / 上下架;真写键 `H3.promoBanner.config`。**接线状态**:本配置面为 QUEST-FE-BE-MAP **G1**——后台配置已落地,uniapp `conversion-banner.vue` 现状值仍硬编码,前端读 `GET /api/config/quest/promo-banner` 的接线待补(平行 `questBonusMultiplier` 的「规划已定 / 前端未实装」状态)。
-- **Phase 现值只读条**:展示当前各 Phase 的 Weekly Tier1 phase reward multiplier 端点摘要(P1 1.0 → P6 1.5,完整六档曲线见 ③)+ `questBonusMultiplier` 现值(由 H1 下发,H3 不可改;前端未实装时取 1×)。
-- **任务完成监控**(只读,server-canonical):按 quest 维度的完成 / claim 计数 + 单 phase 转化漏斗(active claim 率 / grace claim 率 / expired 流失)。
-- **任务事件契约与归因表**(只读,server-canonical):逐任务(Day-One / Weekly / Monthly 共享 `task_key` 命名空间)展示其事件契约,作为「任务配置 ↔ 事件上报 ↔ BI 归因」的**共同事实源**——`[task_key / 服务端完成事件(quest.task_completed)/ 下游业务事件(如 order.created→paid / wallet.deposited,无则「—」)/ 是否进 B3 漏斗(§2.4.7)/ 是否仅留存动作 / Day7 活跃贡献路径(KPI #2)/ L 域 BI 表.字段(如 fct_quest_events.task_key)/ 最近 24h 事件样本数 / 异常率 / 事件延迟]`。**当 Day7 活跃 / B3 转化 / 任务完成率异常时,运营据此比对样本数与异常率,分清问题来自任务配置 / 事件上报 / BI 归因 / 真实业务转化**。事件命名与 schema 归 A4(§2.4),新 task_key 的完成/下游事件须在 A4 registry 注册后方可上报。
-- **状态机**(Day-One Quest,§5.15.1,server-canonical):`active(0-24h·500 NEX)→ grace(24-72h·200 NEX)→ expired(72h+·0·Home 不渲染让位)`;claim 旁路:`active/grace 全 6 任务完成 → claimed(creditNex + unlock badge)`。Weekly 状态机按 `weekKey` 跨周 reset(§11.13.6);Monthly 按 `rollMonthIfStale` 跨月清空(§12.14 `useMonthlyChallenge`)。
+**每周**：只管理WEEKLY_T1/WEEKLY_T2目录，不提供按用户条件分档编辑器。发布时冻结基础奖励、H1任务加成、H3当前阶段倍率及任务/绑定/译文；领取按冻结乘积向下6位，之后改设置不回写已发布定义。阶段P1–P6倍率0.1–5、有效小数≤6，可空读值显示缺失；空曲线不造默认倍率。周冠军`weekly.champBonus`只存自由文字，不选冠军、不发奖、不走资金审批。PC金额示意保留精确十进制、不舍入，不等于App整数显示或账本到账精度。
 
-**③ 可控参数**:
+**目录维护**：新建只允许DAY_ONE/WEEKLY_T1/WEEKLY_T2，编号2–64位英文/数字/_/-，奖励为32位非负整数；建好先paused，不自动绑定、启用或发钱。任务原名≤128、类别五闭集、14条新路由白名单，历史退役路由只准保留原值。EN/ZH/VI名≤512，未填回退请求语言→英文→原名，已有基础三语不能清空。启用需可信规范完成事件与可用目标业务；归档终态，不可改名、类别、路由、译文或恢复。归档后周/月奖励仍能维护；只能删除已归档定义，软删除不清除冻结副本、历史与审计，不退款/追回。
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| Day-One active 奖励 | **现状值(§5.15.1)**:500 NEX | ≥ 0 | 仅新进 active 的用户(在窗用户按进窗锁定值) | §5.15.4 `Claim +500 NEX bonus` |
-| Day-One grace 奖励 | **现状值(§5.15.1)**:200 NEX(降 60%) | 0 ≤ x ≤ active 值 | 仅新进 grace | §5.15.4 `Claim Latecomer +200 NEX` |
-| `QUEST_WINDOW_MS`(active 窗)/ `QUEST_GRACE_END_MS`(grace 上界) | **现状值(`lib/mock/quest.ts:35-36` / §9.11c.1)**:86,400,000(24h)/ 259,200,000(72h) | active 1h–168h;grace ≥ active | 见下方 ⑦「改窗相位语义」二选一裁定 | §5.15.2 倒计时 chip 起算 |
-| Day-One 任务清单(id / href / 奖励 / completionType / completionEvent / status) | **现状值(§5.15.3 / `quest.ts:25-30`)**:connect_wallet 50 / visit_earn 30 / visit_store 50 / view_product_roi 100 / setup_profile 80 / invite_friend 200 NEX + $1 USDT;各任务 `completionType`(visit/event/manual)+ `completionEvent` + `status`(active 默认) | 任务可增删改 + 启停;单任务奖励 ≥ 0;completionType ∈ {visit, event, manual};status ∈ {active, paused, archived} | 仅新进 active(在窗按锁定清单) | §5.15.3 任务 row + `QuestRouteWatcher` 完成判定 |
-| Weekly Tier1(9 条:cond / base reward / completionType / completionEvent / status) | **现状值(§11.13.3)**:nex_v2_lock 3,000 / buy_genesis 2,500 / buy_additional_hw 2,000 / tradein_upgrade 1,800 / upgrade_s1_to_pro_v2 1,500 / subscribe_premium 800 / buy_first_box 1,000+$10 / topup_balance 100 / stake_fallback 250 NEX;各条带 completionType + completionEvent + status | 各 ≥ 0;completionType ∈ {visit,event,manual};status ∈ {active,paused,archived} | 仅新 weekKey 派发(同周锁定) | `<WeeklyQuestHero>` 大字 `+XXX NEX` |
-| Weekly Tier2(8 条:cond / base reward / completionType / completionEvent / status) | **现状值(§11.13.4)**:invite_friend 200+$2 / reinvest 120 / stake_small 150 / nex_swap 80 / top_up_small 100 / browse_store 50 / ai_jobs_50 80 / genesis_browse 60 NEX;各条带 completionType + completionEvent + status | 各 ≥ 0;completionType ∈ {visit,event,manual};status ∈ {active,paused,archived} | 仅新 weekKey 派发 | `<WeeklyQuestList>` 行奖励 |
-| Weekly Champion bonus | **现状值(§11.13.5)**:+500 NEX × phase mult(P1=500 / P6=750) | ≥ 0 | 仅新 weekKey | `<WeeklyQuestList>` 底部 Bonus 行 |
-| Weekly Tier1 phase reward multiplier 曲线 †† | **现状值(§11.13.3 `getPhaseRewardMultiplier`,`weekly-quests.ts:199-208`)**:P1 1.0 / P2 1.0 / P3 1.1 / P4 1.2 / P5 1.3 / P6 1.5 | 各档 ≥ 0,逐档可配 | 仅新 weekKey(按当前 Phase 锁定) | `<WeeklyQuestHero>` / `<WeeklyQuestList>` `×N boost` chip(reward × mult) |
-| Monthly Challenge 5 主题各档奖励 | **现状值(`monthly-challenge.ts:42-103`)**:foundation_builder 1,500 / network_architect 2,500 / premium_pathway 4,000 / diamond_tier 6,000 / founders_quest 10,000 NEX(+ 月度勋章) | 各 ≥ 0,逐主题可配 | 仅新月派发(已 claimable 按当前值) | `<MonthlyChallengeCard>` |
-| Monthly Challenge 月龄分段 + 子目标 target | **现状值(`monthly-challenge.ts:42-103`)**:各主题 `monthsFrom`/`monthsTo` + 每主题 3 子目标 `target`(如 lifetime_earned 200/1500/5000/15000/40000) | target ≥ 0,分段保序 | 仅新月派发 | `<MonthlyChallengeCard>` 子目标进度 |
-| 本周转化卡(基础奖励 / 倍率 / 倒计时 / 目标设备 / 日产 / 上下架) | **现状值(uniapp `conversion-banner.vue:65-82`)**:`baseReward` 800 × `multiplier` 1.5 → `finalReward` 1,200 NEX · 倒计时 4 天 12 时 · `targetDevice` 自动(用户最高设备)· `targetDaily` $7.00/d · `status` active | baseReward / multiplier ≥ 0(finalReward 派生 = base × mult);countdown ≥ 0;status ∈ {active, paused} | 即时(单实例,下次渲染生效) | uniapp 首页 `<ConversionBanner>` 促销卡(`finalReward` 大字 + 倒计时 + `targetDaily` $/d) |
-| `questBonusMultiplier`(H1 下发)† | **规划值(12 月 §6.4)**:月 1-2 = 4,其他 = 1;**前端未实装**(`product-phase.ts` PHASES 无此 dial) | 1–4(倍率,H1 dial,H3 不可改) | 由 H1 Phase 调度(月粒度);H1 未下发时取 1× | quest 结算 NEX 实发额(乘数生效) |
+**完成条件**：新增、编辑、启停、删除都维护真实producer/eventType/questCode/userIdField/enabled。编辑和删除携原五字段CAS；同一producer/eventType/userIdField不能有两条启用绑定，特定SYSTEM任务须精确匹配任务码/事件/归属，不能移除active首日任务最后一条有效绑定。当前异常绑定只核查真实目标，不补造任务，不将未知事件加入候选。
 
-> **默认值口径**:quest 奖励 / 时窗 / 任务清单 / Monthly 各档奖励 + 子目标取前端现状值(标注「现状值」);**`questBonusMultiplier` 以 12 月 §6.4「月 1-2 = 4×」为权威**(规划值,前端未实装,跨域事实 3/6)。**升 quest 奖励 = 放大 NEX 流出**,受跨域事实 2 的 B1 红线前置约束。
-> **字段级新增控制(2026-06 H3 增强)**:三层任务清单(Day-One / Weekly Tier1+Tier2 / Monthly)每条 / 每主题统一新增 **`status` 上下架**(active 生效中 / paused 已停用 / archived 已归档;停用即不派发不展示)+ **行内增 / 删**;Day-One / Weekly 任务另配 **`completionType`**(visit 访问路径 / event 业务事件 / manual 手动核验)+ **`completionEvent`**(完成触发事件名,对齐 ⑧ 任务事件契约)。status / completionType / 增删改动统一走 H3-MD1 / MD2 / MD3 弹窗(reason 必填)。**停用 / 删除任务不放大 NEX 流出**(不过 B1 红线);**新增任务 / 升奖励 / 启用方向**过 B1 红线预检。转化卡同理:**升奖励 / 倍率 / 上架**过 B1,**下架**不过。
-> † **questBonusMultiplier 不在本子模块写权范围**——它是 H1 Phase dial(§1.7),H3 仅读取 Phase 现值并在任务结算时套用 `实发 NEX = base reward × questBonusMultiplier`;改 dial 走 H1 调度器,前端落地前该 dial 不存在(跨域事实 3 脚注)。**拉新期 4× 业务意图**:`questBonusMultiplier` 拉新期 4×(高于 `inviteRewardMultiplier` / `newUserBonusMultiplier` 的 2×,均 12 月 §6.4)意在用任务奖励作为新用户首两月最强留存 + 转化抓手,与 newUserBonus 2× / inviteReward 2× 在 §4.3 杠杆组合叠加,形成拉新期增长合力。
-> †† **Weekly phase multiplier 与 questBonusMultiplier 是不同杠杆**:前端 §11.13.3 `getPhaseRewardMultiplier`(P1 1.0→P6 1.5)是 Weekly 任务**另一套**乘数(已实装于 `lib/mock/weekly-quests.ts`),H3 配置本曲线;`questBonusMultiplier`(月 1-2=4× 的 Day-One/全局任务加成)由 H1 下发且前端未实装。二者均在任务结算生效但来源不同,就地区分避免混淆。
+**历史月度**：不再新建或在App派发/领取；保留历史名称、奖励、启停、归档、删除。奖励0–100000、有效小数≤6，只改reward_amount，币种保留存量reward_type。归档不阻止独立奖励维护。界面“整数”旧提示及新金额币种由视觉修正，逻辑不加后端没有的限制。
 
-**④ 操作动作**:
-| 动作 | 执行权 | 确认弹窗 | 审计点 |
-|---|---|---|---|
-| 改 Day-One 时窗 / phase 奖励 / 任务清单(改奖励 + 增 / 删 / 启停 + 完成判定 completionType/completionEvent) | 增长(lead)/ 超管(2026-06 操作确认决议,原复核层级就高为执行门槛) | H3-MD1(理由必填+B1 红线预检(升奖励 / 新增 / 启用方向;停用 / 删除不预检)) | `admin.quest_dayone_config_changed`(字段 / 前后值 / coverageAtSubmit / 原因 / operator) |
-| 改 Weekly Tier1/Tier2 清单 / 奖励 / Champion bonus(改奖励 + 增 / 删 / 启停 + 完成判定) | 增长(lead)/ 超管 | H3-MD2(理由必填+B1 红线预检(升奖励 / 新增 / 启用方向)) | `admin.quest_weekly_config_changed`(tier / quest id / 前后值 / coverageAtSubmit / operator) |
-| 改 Monthly Challenge 主题 / 各档奖励 / 月龄分段 / 子目标 target(按 challenge id 维度;改 + 增 / 删 / 启停) | 增长(lead)/ 超管 | H3-MD3(理由必填+B1 红线预检(升奖励 / 新增 / 启用方向)) | `admin.quest_monthly_config_changed`(challenge id / field / 前后值 / operator) |
-| 改 Weekly phase reward multiplier 曲线 | 财务(lead)/ 超管(放大全周任务流出,原复核 = 财务主管就高) | H3-MD4(理由必填+B1 红线预检(调升方向)) | `admin.quest_weekly_phasemult_changed`(前后曲线 / coverageAtSubmit / operator) |
-| 编辑本周转化卡(基础奖励 / 倍率 / 倒计时 / 目标设备 / 日产 / 状态) | 增长(lead)/ 超管 | H3-MD5(理由必填+B1 红线预检(升奖励 / 倍率 / 上架方向)) | `admin.quest_promo_banner_config_changed`(字段 / 前后值 / coverageAtSubmit / 原因 / operator) |
-| 快捷上架 / 下架本周转化卡 | 增长(lead)/ 超管 | H3-MD5 轻量确认(下架方向不过 B1;理由必填) | `admin.quest_promo_banner_toggled`(status 前后值 / 原因 / operator) |
-| 查看任务配置 / 完成监控 | 全角色(按可见性裁剪) | 否(只读) | — |
+**备用卡**：基础奖励0–100000整数UVT，展示倍率0.1–5且有效小数≤6；倒计时天0–365/小时0–23（后端向下取整）、推荐设备≤128文字、targetDaily为0–1000000的显示数字但未给币种、状态active/paused。基础×倍率是配置示意，不是应付金额。当前App只解析promoBanner，没有组件/store消费或领取链，不影响周任务、设备收益或钱包。
 
-> **questBonusMultiplier dial 不在本表**:`questBonusMultiplier` 调整属 **H1 Phase 调度器**动作(§1.7),不在 H3 操作面;H3 仅消费下发值。
+**区号与周边界**：地区规则按注册countryCode标准化精确匹配，未配置区号默认Asia/Ho_Chi_Minh，和语言/IP无关。先复用用户未结束assignment；未启用地区政策时走BusinessCalendar.legacy的版本日历；首次启用或换区的后继周从旧until接续至新时区的下一个周一，之后才使用regular周一到周一。H3的按区号表目前只画regular示意，不能作为每位用户本周实际窗口。该事实及动态业务时区/硬写北京时间的差异交视觉决定准确表达，未新增逐用户读取接口。
 
-**④a 交互与弹窗规格**
+**授权**：读任务/地区需growth_h3_read，普通写需growth_h3_write；角色名只作界面便捷门禁，提交再次核真实authority。资金提案凭growth_h3_write可发，不额外授全局A2读权；另一位有效超级管理员且有platform_a2_operation_approve才能批准。地区提案另需platform_a2_proposal_create或platform_a2_write；批准者为不同的活跃管理员，有批准权、H域访问权、growth_h3_write即可。理由按现有A2规则读取，REST仍有后端trim长度8–200校验。
 
-**(1) 动作触发总表**
+**审批路线**：八类放大方向为首日三档任一提高/首次配置、正奖励新建任务、周奖励增加、月奖励增加、周阶段倍率提高/缺值修复、备用基础提高、备用倍率提高、备用启用。其余收紧/同值走原REST（同值仍可能NO_CHANGE拒绝），冠军文字始终直写。资金提案预览与批准分别检查可靠B1覆盖率、正红线与UVT汇率，低于红线拒绝，不虚构未来任务量负债。
 
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 改 Day-One 时窗 / 奖励 / 任务清单(改 / 增 / 删 / 启停) | ② Day-One Quest 配置面参数卡 / 任务清单行「编辑」+「新增任务」+ 行「删除 / 停用 / 启用」 | 行内按钮 | 仅增长(lead)/ 超管渲染 | 打开弹窗 H3-MD1(删除 / 启停为轻量确认) |
-| 改 Weekly 清单 / 奖励 / Champion bonus(改 / 增 / 删 / 启停) | ② Weekly Quests 配置面 Tier1/Tier2 行「编辑」+ 每档「新增任务」+ 行「删除 / 停用 / 启用」 | 行内按钮 | 仅增长(lead)/ 超管渲染 | 打开弹窗 H3-MD2(删除 / 启停为轻量确认) |
-| 改 Monthly 主题 / 奖励 / 分段 / 子目标(改 / 增 / 删 / 启停) | ② Monthly Challenge 配置面主题卡「编辑」+「新增主题」+ 卡「删除 / 停用 / 启用」 | 行内按钮 | 仅增长(lead)/ 超管渲染 | 打开弹窗 H3-MD3(删除 / 启停为轻量确认) |
-| 改 Weekly phase mult 曲线 | ② Phase 现值只读条旁「编辑曲线」 | 次按钮 | 仅财务(lead)/ 超管渲染 | 打开弹窗 H3-MD4 |
-| 编辑本周转化卡 | ② 本周转化卡配置面「调整」 | 行内按钮 | 仅增长(lead)/ 超管渲染 | 打开弹窗 H3-MD5 |
-| 上架 / 下架本周转化卡 | ② 本周转化卡配置面「上架 / 下架」 | 行内按钮 | 仅增长(lead)/ 超管渲染 | 打开 H3-MD5 轻量确认 |
-| 查看完成监控 / 漏斗 | ② 任务完成监控 tab | 链接 | 恒可用(按角色裁剪) | 跳转对应视图,无弹窗 |
+- 配置：`command={domain:H,op:h3_quest_config,params:{values:{configKey,value,expectedValue}}}`，三字段均trim后字符串；`sourceDomain=H3`、`obj=configKey`、`target={domain:H,type:h3_quest_config,id:configKey}`，type=fund、amplifies=true。
+- 新建：`command={domain:H,op:h3_mission_create,params:{values:{missionCode,missionName,missionType,rewardPoints,category,actionRoute}}}`，rewardPoints为整数JSON类型；`sourceDomain=H3`、`obj=missionCode`、`target={domain:H,type:h3_mission,id:missionCode}`，type=fund、amplifies=true。makerAdminId/expectedState由后端绑定。
+- 地区：`command={domain:H,op:h3_weekly_region_policy,params:{expectedRevision,mappings,...首次effectiveFrom/lastLegacyInstanceKey}}`，`sourceDomain=H`、`obj=growth.h3.weekly-region-policy`、target.type=config，type=acct。
+- 直写首次明确返回H3_APPROVAL_REQUIRED时，原直写号解除，再按原修改发资金提案；未知/鉴权/限流/幂等未收敛不擅自换路线。成功建单不等于生效，POST回放不等于当前待审批；按原号GET并核mine、obj、operationCode和合法状态后才标待批并锁参数。111e00cd的ticketMetadata已返回persisted command.op。
 
-**(2) 弹窗规格**
+**原请求恢复（W01–W26）**：发送前保存完整原body/envelope、对象、动作和事实、理由、操作者、原Idempotency-Key；存不下不发。任务/条件/地区沿用h-client现有存储实例，新增配置同类存储。结果未知后理由及业务输入冻结，刷新后在读取成功分支之外逐条显示。恢复只用原记录，不取当前状态重造标题或请求。24小时内可原样重试、任意期限可只读核对；24小时后证据保留不重发。旧任务/条件完整指纹可恢复，旧地区缺完整envelope只查原单。
 
-##### [H3-MD1] Day-One Quest 配置变更
-- **功能**:修改 Day-One 3-phase 时窗(`QUEST_WINDOW_MS` / `QUEST_GRACE_END_MS`)/ 各 phase 奖励 / 任务清单**多字段**(奖励 / 跳转 href / 完成判定 `completionType`+`completionEvent` / 上下架 `status`;支持**增 / 删 / 启停**),确认即生效(对在窗用户的相位语义按 ⑦ 所选方案 A/B 执行;删除 / 停用任务为轻量确认,仅理由,不放大流出不过 B1)。
-- **布局结构**:1. **信息区**:当前时窗 / active / grace 奖励 / 任务清单摘要 / 当前在窗用户数(server 派生)。2. **影响预览区**:before→after 并排;升奖励方向 server 预检「**拟生效后覆盖率**」,低于 B1 红线展示红线警示条(确认钮置灰,文案含「覆盖率低于红线,server 将拒绝(422)」);改窗时提示行「按 ⑦ 所选方案(A:仅新 mount 生效 / B:在窗用户重算相位)执行」。3. **输入区**:见下表。4. **按钮区**:取消 / 确认变更。
-- **输入与选择控件**:
+首次提交拒绝按isDeterministicRejection；恢复重试只按isExplicitRejection解除，401/403/408/425/429、IDEMPOTENCY_*及不完整回执继续保留。直接写重读同值不证明原操作成功。回放成功或明确恢复拒绝后关闭旧确认框、重读当前数据，读成功前不发新修改；读回失败不能用旧回包装成当前数据。审批查询读不到保留acknowledged原记录，不显示为待审批或没有申请；成功读取按权威状态撤销观察。过期且权威A2_PROPOSAL_NOT_FOUND的解除逻辑已备，二次确认入口未设计，交视觉；直接写不适用解除。
 
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 active / grace 奖励(NEX) | 数字输入组 | 改该项时必填 | active ≥ 0;grace ≤ active(③ 表) | 当前值(500/200) |
-| 目标时窗(`QUEST_WINDOW_MS` / `QUEST_GRACE_END_MS`) | 数字输入组(小时换算) | 改该项时必填 | active 1h–168h;grace ≥ active(③ 表) | 当前值(24h/72h) |
-| 任务清单编辑(id / href / 奖励 / completionType / completionEvent / status) | 多字段表单(businessForm)+ 行「新增 / 删除 / 启停」 | 改该项时必填 | 单任务奖励 ≥ 0;completionType ∈ {visit, event, manual};status ∈ {active, paused, archived}(③ 表) | 当前清单 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
+##### [H3-MD1] 首日配置确认
 
-- **按钮区**:`[取消]` · `[确认变更]`(升奖励预检低于红线时置灰;提交 loading 锁定)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(含 server 回传当前覆盖率,弹窗不关,内联阻断条)/ 422(超出 ③ 表范围)/ 400 `REASON_REQUIRED` / 409(配置已被他人变更,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;配置面就地更新;toast「Day-One 配置已生效 · 已记审计」;事件 `admin.quest_dayone_config_changed`;实时告警超管 + 增长 lead。
+分别确认展示说明、资格期限、三档奖励；事实引用注册冻结、真实24h以及三档领取时刻。只有放大三档发审批，其余合法写直接保存；错误留原输入，未知按原请求恢复。
 
-##### [H3-MD2] Weekly Quests 配置变更
-- **功能**:修改 Weekly Tier1(9 条)/ Tier2(8 条)清单、base reward、Champion bonus,确认即生效(仅新 weekKey 派发,同周锁定)。
-- **布局结构**:1. **信息区**:当前 tier 清单摘要 / 本周 weekKey / 本周已派发任务数。2. **影响预览区**:before→after 并排(逐 quest id diff);升奖励方向 server 预检「**拟生效后覆盖率**」+ 红线警示(低于红线确认钮置灰);提示「本周已派发任务按派发时锁定值结算,新值下个 weekKey 生效」。3. **输入区**:tier 选择(Tier1 / Tier2 / Champion bonus)+ 逐条**多字段**编辑(条件 `cond` / base reward 数字 ≥ 0 / 完成判定 `completionType`+`completionEvent` / 上下架 `status`,③ 表)+ 行「新增 / 删除 / 启停」+ reason(多行文本,必填,8–200 字)。4. **按钮区**:取消 / 确认变更。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(弹窗不关,内联阻断条)/ 422(超范围)/ 400 `REASON_REQUIRED` / 409 / 403。
-- **成功反馈**:弹窗关闭;配置面就地更新;toast「Weekly 配置已生效(下个 weekKey) · 已记审计」;事件 `admin.quest_weekly_config_changed`;实时告警超管 + 增长 lead。
+##### [H3-MD2] 每周任务确认
 
-##### [H3-MD3] Monthly Challenge 配置变更
-- **功能**:按 challenge id 修改主题各档奖励 / 月龄分段(`monthsFrom`/`monthsTo`)/ 子目标 target,确认即生效(仅新月派发,已 claimable 按当前值)。
-- **布局结构**:1. **信息区**:所选 challenge id / 当前奖励 / 分段 / 3 子目标 target / 本月在挑战用户数(server 派生)。2. **影响预览区**:before→after 并排;升奖励方向 server 预检「**拟生效后覆盖率**」+ 红线警示(低于红线确认钮置灰);分段保序冲突时内联指出冲突主题。3. **输入区**:目标**多字段**(主题 `theme` / 月龄 `monthsFrom`/`monthsTo` 保序 / `rewardNex` ≥ 0 / 3 子目标 `goals` / 上下架 `status`,③ 表)+ 主题「新增 / 删除 / 启停」+ reason(多行文本,必填,8–200 字)。4. **按钮区**:取消 / 确认变更。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(弹窗不关,内联阻断条)/ 422(分段保序违反,内联指出冲突主题)/ 400 `REASON_REQUIRED` / 409 / 403。
-- **成功反馈**:弹窗关闭;主题卡就地更新;toast「Monthly 配置已生效(仅新月) · 已记审计」;事件 `admin.quest_monthly_config_changed`;实时告警超管 + 增长 lead。
+目录生命周期、名称、类别/跳转、三语、完成条件维持现有独立入口和请求CAS。基础奖励整数0–100000，调高审批，降低直写。已发布任务和已注册首日任务不追溯。
 
-##### [H3-MD4] Weekly phase multiplier 曲线变更
-- **功能**:修改 Weekly Tier1 phase reward multiplier 六档曲线(P1–P6),确认即生效(仅新 weekKey,按当前 Phase 锁定)。
-- **布局结构**:1. **信息区**:当前六档曲线(P1 1.0 → P6 1.5)/ 当前 Phase 与本周适用档。2. **影响预览区**:before→after 曲线并排(逐档 diff);调升任一档 server 预检「**拟生效后覆盖率**」(放大全周任务流出),低于 B1 红线展示红线警示条(确认钮置灰,文案含「覆盖率低于红线,server 将拒绝(422)」)。3. **输入区**:P1–P6 逐档数字输入(各档 ≥ 0,③ 表)+ reason(多行文本,必填,8–200 字)。4. **按钮区**:取消 / 确认变更。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(弹窗不关,内联阻断条)/ 422(超范围)/ 400 `REASON_REQUIRED` / 409 / 403。
-- **成功反馈**:弹窗关闭;曲线条就地更新;toast「曲线已生效(下个 weekKey) · 已记审计」;事件 `admin.quest_weekly_phasemult_changed`;实时告警超管 + 财务 lead。
+##### [H3-MD3] 历史月度确认
 
-##### [H3-MD5] 本周转化卡配置变更
-- **功能**:修改首页本周转化卡(设备 upsell 促销 banner)的基础奖励 / 倍率 / 倒计时窗口 / 目标设备 / 日产展示 / 上下架,确认即生效(单实例,下次渲染生效)。快捷「上架 / 下架」为轻量确认(仅理由,不开完整表单)。
-- **布局结构**:1. **信息区**:当前 `baseReward` × `multiplier` = `finalReward`(派生)/ 倒计时 / 目标设备 / 日产 / 当前上下架态。2. **影响预览区**:before→after 并排;升 `baseReward` / `multiplier` 或由 paused→active(上架)= 放大 NEX 流出方向,server 预检「**拟生效后覆盖率**」,低于 B1 红线展示红线警示条(确认钮置灰,文案含「覆盖率低于红线,server 将拒绝(422)」);下架(active→paused)不放大流出不过红线。3. **输入区**:见下表。4. **按钮区**:取消 / 确认变更。
-- **输入与选择控件**:
+只维护已有历史记录；金额接受有效小数≤6并保留存量币种，调高审批。没有新建、三子目标编辑或月龄修改能力，不恢复退役入口。
 
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 基础奖励 `baseReward`(NEX)/ 促销倍率 `multiplier` | 数字输入组 | 是 | 各 ≥ 0;`finalReward` = base × mult 派生展示(③ 表) | 当前值(800 / 1.5) |
-| 倒计时 `countdownDays` / `countdownHours` | 数字输入组 | 是 | 各 ≥ 0(③ 表) | 当前值(4 / 12) |
-| 目标设备 `targetDevice` / 日产展示 `targetDaily` | 文本输入 | 是 | `targetDaily` 为 $/d 展示串;`targetDevice` 默认「自动取用户最高设备」可固定(③ 表) | 当前值(自动 / $7.00) |
-| 上下架 `status` | 单选(active 上架中 / paused 已下架) | 是 | ∈ {active, paused} | 当前值(active) |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
+##### [H3-MD4] 每周阶段倍率确认
 
-- **按钮区**:`[取消]` · `[确认变更]`(升奖励 / 倍率 / 上架方向预检低于红线时置灰;提交 loading 锁定)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(含 server 回传当前覆盖率,弹窗不关,内联阻断条)/ 422(超出 ③ 表范围)/ 400 `REASON_REQUIRED` / 409(配置已被他人变更,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;转化卡配置块就地更新;toast「本周转化卡已生效 · 最终奖励 N NEX · 已记审计」(快捷上下架 toast「已上架 / 已下架」);事件 `admin.quest_promo_banner_config_changed`(快捷上下架 `admin.quest_promo_banner_toggled`);实时告警超管 + 增长 lead。
+P1–P6逐档维护，有值按原文本CAS，缺值用__MISSING__而非0。提高或缺值修复走资金审批；仅新的周定义使用新倍率。
 
-**⑤ 接口**(`GET` 配置源收敛 §9.11c.1/.2):
-- `GET /api/config/quest/day-one` — Day-One 时窗 + phase 奖励 + 6 任务清单;**server-canonical 配置源**(§9.11c.1「新人转化最核心钩子」),前端 §5.15 读此。
-- `GET /api/quests/weekly?weekKey=` — Weekly Tier1/Tier2 派发清单 + 奖励(§9.11c.2;按 `weekKey` 确定性派发);**server-canonical**,前端 §11.13 读此。
-- `GET /api/quests/monthly` — Monthly Challenge 主题 + 各档奖励 + 月龄分段 + 子目标(§9.11c.2);前端 §12.14 + §11.13.1 读此。
-- `GET /api/config/quest/promo-banner` — 本周转化卡配置(`baseReward` / `multiplier` / `countdownDays` / `countdownHours` / `targetDevice` / `targetDaily` / `status`);**server-canonical**,前端 uniapp `conversion-banner.vue` 读此(现状值硬编码于组件 `promoMult`/`baseReward`/`finalReward` 常量,接真后台后改读;接线缺口 = G1)。
-- `GET /api/admin/quest/completions?quest=&phase=&cursor=` — 任务完成 / claim 监控(server 权威完成台账,游标分页)。
-- `PUT /api/admin/quest/day-one` / `PUT /api/admin/quest/weekly` / `PUT /api/admin/quest/monthly` — 改各层配置(经确认弹窗 H3-MD1/MD2/MD3/MD4,reason 必填(空值 400 `REASON_REQUIRED`);**升奖励 server 先核 B1,< 红线返 422**);payload 为**整清单覆盖**(含任务增 / 删 / `status` 上下架 / `completionType`-`completionEvent`),server diff 出增删启停项分别审计;停用 / 删除方向不过 B1。
-- `PUT /api/admin/quest/promo-banner` — 改本周转化卡配置(经 H3-MD5,reason 必填(空值 400 `REASON_REQUIRED`);**升 `baseReward` / `multiplier` 或上架(paused→active)server 先核 B1,< 红线返 422**;下架方向不核)。
-- **questBonusMultiplier 不在本组接口**:其值由 `GET /api/admin/platform/phase-config`(H1,§9.11c.1)下发,H3 server 在 quest 结算时读取并套用,H3 不重复定义 dial 写接口。
+##### [H3-MD5] 首页备用卡确认
 
-**⑥ 权限 & 审计**:
-| 角色 | 查看任务/完成 | 改 Day-One/Weekly/Monthly | 改 phase mult 曲线 |
-|---|---|---|---|
-| 增长 | ✅ | ✅(lead) | — |
-| 财务 | ✅ | — | ✅(lead) |
-| 超管 | ✅ | ✅ | ✅ |
-| 客服 / 只读审计 | ✅(只读) | — | — |
+八项原有配置入口保留，金额/倍率放大或启用审批；倒计时、设备文字、显示日收益、暂停直接写。明确没有App消费者、不发奖；targetDaily币种未知，不能猜美元。
 
-> 执行权 = 单人执行(2026-06 操作确认决议):三层任务配置原复核层级就高为增长(lead)/ 超管(升奖励方向带 B1 红线预检);phase mult 曲线原复核 = 财务主管,就高为财务(lead)/ 超管;**本周转化卡编辑 / 上下架执行权同三层任务(增长 lead / 超管,升奖励 / 倍率 / 上架带 B1 预检)**。审计字段(A2 统一 schema,§2.x ⑥):`action / quest_layer(或 promo_banner)/ quest_id / field / before / after / coverageAtSubmit(升奖励时) / reason / operator / ts`。
-
-**⑦ 风控 & 联动**:
-- **server-canonical(§9.11d.2)**:quest 完成态、claim 态、累计 NEX 全部 server 权威;前端 §5.15 `useQuest` persist + §11.13 `useWeeklyQuest` / `useMonthlyChallenge` 当前 localStorage 持久化,**真后台对接后完成态以 server 状态机为准,client 仅 UI cache**;路由型任务(visit_earn / visit_store / view_product_roi)的 `QuestRouteWatcher` markComplete 须经 server 二次确认(client 标记无效)。**防伪造完成**:client 不得本地 setState 标记任务完成或伪造 claim(§9.11d.2 同 Bills 伪造防御:server 唯一真相源)。
-- **改窗(`QUEST_WINDOW_MS` / `QUEST_GRACE_END_MS`)对在窗用户相位语义——二选一须落地**:前端 `getQuestState`(`quest.ts:43-49`)完全由 `elapsedMs`(=now−startedAt)与全局常量 `QUEST_WINDOW_MS` / `QUEST_GRACE_END_MS` 实时比较得相位,**per-user 仅 `startedAt`(起算点)锁定,窗长本身是全局常量**——故改窗长即时影响所有在窗用户相位(active 可能瞬跳 grace/expired)。后台落地须二选一并写入接口契约:
-> - **方案 A(真乐观锁,per-instance 配置快照)**:窗长变更仅对改后**新 mount** 用户生效——server 为每个 quest 实例在 `startedAt` 时刻快照 `windowMs` / `graceEndMs`,在窗用户继续按各自快照窗长判相位,不受后续改窗影响。需持久化 per-instance 窗快照。
-> - **方案 B(全局即时量)**:窗长为全局即时量,改后在窗用户按新窗**重算相位**(可能即时降级 active→grace),已 `claimed` 奖励不回收。无 per-instance 快照。
-> 两方案的差异(是否持久化 per-instance 窗快照)开发须明确知会,接口文档注明所选方案。
-- **questBonusMultiplier 联动 H1(§1.7)**:结算实发 NEX = `base reward × questBonusMultiplier`,乘数由 H1 按 `joinedAt` 月龄下发(规划月 1-2 = 4×);前端 Phase 引擎尚未实装该 dial(`product-phase.ts` PHASES 无 quest 字段),H1 落地前结算取 1×;H3 不持写权(分工同 D5/F3/E1)。
-- **NEX 流出联动 B1/B2(跨域事实 2)**:`quest.claimed` 的 NEX 派发增 NEX 计价代币流出;升 quest 奖励 / 倍率提交即被 `PUT` server 拦截核验 B1 覆盖率红线(NEX 计价负债折算口径见 Ch4 B1 §③)。
-- **幂等 & 并发裁决(§9.11e)**:quest claim 携 **`Idempotency-Key`**(§9.11e 通则:所有 mutation endpoint 必须支持 Idempotency-Key;quest NEX 派发属新增奖励入账动作,沿用该通则,作为 V3 新登记事务边界行——§9.11e 表当前未含 quest 行)去重——retry 不重复 creditNex;竞态 `active → claimed` 与 `active → expired`(时窗滚动)以 server 终态为准,**expired 锁定优先**——进 expired 后并发到达的 claim 返 **409**(窗口已关,不派发);配置变更对 in-flight quest 按进窗 / 派发周锁定值结算(乐观锁,不追溯改既有用户的任务清单 / 奖励)。
-- **kill 联动 J1(V4)**:quest 引擎无独立 kill-switch(§9.11d.1 未列),但 quest 内嵌的入金 CTA(如 §5.15.4 主 CTA 跳 `/store/stellarbox-s1`)受下游域 kill 影响;若监管点名「任务诱导」需全局停 quest,经 J1 矩阵编排(V4)。
-
-**⑧ 埋点(事件)**:
-- **产生(quest server)**:`quest.completed`(§2.4.5 ④ engagement,单任务完成,`is_server_authoritative=true`)· `quest.claimed`(phase / layer / reward NEX × multiplier;`is_server_authoritative=true`)—— `quest.claimed` 为本域内新增 object_action,注册同走 A4 schema 变更确认流程(§2.4.8,仅超管经 A2-MD1 确认弹窗执行)。
-- **产生(admin 审计)**:`admin.quest_dayone_config_changed` · `admin.quest_weekly_config_changed` · `admin.quest_monthly_config_changed` · `admin.quest_weekly_phasemult_changed` · `admin.quest_promo_banner_config_changed` · `admin.quest_promo_banner_toggled`(走 A2 操作确认审计(operator / reason),归 §2.4.5 ⑥ admin family,注册走 §2.4.8)。
-- **domain 状态**:`quest` **已在** §2.4.3 domain 枚举内(;§2.4.5 ④ 已列 `quest.completed`),**无需扩展**;新 object_action `quest.claimed` 走 §2.4.8 schema 变更确认流程注册 registry。
-- **喂给**:分两层——(a) quest/Day-One 任务 CTA 引导用户产生 `store.viewed` / `checkout.completed` 这些 B3 漏斗级事件(行为驱动,非 quest 事件本身入漏斗)→ B3 注册→首购漏斗(§2.4.7);(b) `quest.completed` / `quest.claimed` 事件本身喂活动效果 / 留存 BI(L 域:完成→claim CVR)+ `app.dau` 回访(经 §2.4.6 KPI #2 间接,非 KPI 直接口径),**不进 B3 漏斗主图**;phase 归因用通用属性 `phase`(§2.4.4);config 审计(含三层任务增删改启停 + 转化卡 promo_banner 配置 / 上下架)→ B1 覆盖率影响评估 + L 域。
+验证边界：本轮完成类型检查、目标构建和H3关卡3/6；按域分工不启动预览，不代签浏览器/隔离库真实写入。每个入口成功/明确拒绝/未知刷新及原样重试/过期只查的真实页面检查交域末项。H4仍用的旧h3-quest-events.tsx不在本项删改。
 
 ---
 

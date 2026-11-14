@@ -387,7 +387,7 @@ export function h3WeeklyRegionPolicyParams(policy: H3WeeklyRegionPolicy, mapping
   };
 }
 
-const h3WeeklyRegionProposals = createPendingMutationStore({ storageKey: "nexion-admin-h3-weekly-region-proposals-v1" });
+const h3WeeklyRegionProposals = createPendingMutationStore({ storageKey: "nexion-admin-h3-weekly-region-proposals-v1", retainExpiredRecords: true });
 export async function withH3WeeklyRegionProposalKey(
   params: ReturnType<typeof h3WeeklyRegionPolicyParams>, reason: string, submit: (commandKey: string) => Promise<unknown>,
 ) {
@@ -807,6 +807,7 @@ export async function updateH8ReferralRewardParam(
 
 const h3MissionCommands = createPendingMutationStore({
   storageKey: "nexion-admin-h3-mission-commands-v1",
+  retainExpiredRecords: true,
 });
 
 export class H3MissionOutcomeUncertainError extends Error {
@@ -901,7 +902,20 @@ export type H3QuestEventBindingCommand = {
  */
 const h3BindingCommands = createPendingMutationStore({
   storageKey: "nexion-admin-h3-binding-commands-v1",
+  retainExpiredRecords: true,
 });
+
+// H3's redesigned view shares the existing instances with the legacy client.
+// Metadata is validated at the recovery reader, before it can authorize a replay.
+const h3ConfigCommands = createPendingMutationStore({ storageKey: "nexion-admin-h3-config-commands-v1", retainExpiredRecords: true });
+const h3Stores = { config: h3ConfigCommands, mission: h3MissionCommands, binding: h3BindingCommands, region: h3WeeklyRegionProposals };
+export type H3CommandStore = keyof typeof h3Stores;
+export const h3CommandStorage = {
+  list: () => Object.entries(h3Stores).flatMap(([store, commands]) => commands.list().map(record => ({ store: store as H3CommandStore, record }))),
+  remember: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].remember(record.fingerprint, record.commandKey, record),
+  forget: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].forget(record.fingerprint, record.commandKey),
+  durable: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].isDurablyStored(record.fingerprint, record.commandKey),
+};
 
 export class H3BindingOutcomeUncertainError extends Error {
   constructor(message: string, readonly commandKey: string, readonly readback?: Record<string, any>) {
