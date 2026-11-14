@@ -175,7 +175,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
             open: () => ctx.openActionConfirm({ briefKind: "config", name: "调整团队激励池结算时间", op: "param", paramKey: "F.pool.settleCron",
               edit: { kind: "text", current: settleCron, unit: "定时表达式",
                 hint: "秒 分 时 日 月 星期，比如 0 0 2 * * MON",
-                preview: (value) => `这样写是：${describeSettleCron(value) ?? "自定义时间，页面读不出，后端按原文解析"}。${settleCadenceNote(value)?.text ?? "每周自动结算一次，结算刚结束的那一周。"}` },
+                preview: (value) => `这样写是：${describeSettleCron(value) ?? "自定义时间，页面读不出，后端按原文解析"}。${settleCadenceNote(value)?.text.replace("按现在的设置", "按这个设置") ?? "每周自动结算一次，结算刚结束的那一周。"}` },
               title: "调整自动结算时间", effect: approvalTag(), confirmLabel: "提交审批",
               facts: <Facts><Fact k="现在是">{settleCronText}</Fact>{cadence && <Fact k="会结算哪些周" tone={cadence.tone === "warn" ? "warn" : undefined}>{cadence.text}</Fact>}<Fact k="按哪个时区">{SETTLE_ZONE.label}（UTC+7）</Fact></Facts>,
               statedBrief: { impact: "批准后的下一次命中就按新时间自动结算最近一个已结束的周；已经结算的不变。", check: "后端只接受 5 段或 6 段的定时表达式，其余拒绝。" },
