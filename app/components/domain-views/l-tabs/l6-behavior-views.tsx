@@ -23,7 +23,7 @@ export const DEPTHS: { v: DepthFilter; lb: string }[] = [
   { v: "L3", lb: "三级" },
 ];
 export const DEPTH_HINT: Record<DepthFilter, string> = {
-  all: "逐页列出页面目录里的每个页面",
+  all: "逐页列出这段时间有事件的目录页面",
   L1: "按一级入口页汇总，一行是一个入口下面的一组页面",
   L2: "按二级板块页汇总，一行是一个板块下面的一组页面",
   L3: "只看三级页面（详情、指南这类最里层的页面），逐页列出",
@@ -281,7 +281,7 @@ export function ClickPanel({ gradId, row, heat, aggregate, loaded, failed, scope
     <div className="l6-drill">
       <figure className="l6-phone">
         <PhoneBoard gradId={gradId} points={small ? [] : heat.points} small={small} clicks={row.clicks} />
-        <figcaption>{small ? `只有 ${n(row.clicks)} 次点击，样本太少，不画分布` : "按点击时在手机屏幕上的位置画，颜色越亮点得越多；不是页面截图"}</figcaption>
+        <figcaption>{small ? `只有 ${n(row.clicks)} 次点击，样本太少，不画分布` : "只含移动网页的点击；颜色越亮点得越多，不是页面截图"}</figcaption>
       </figure>
       <div className="l6-zones">
         <div className="l6-zones-head">
@@ -309,6 +309,7 @@ export function ClickPanel({ gradId, row, heat, aggregate, loaded, failed, scope
       explain={<>
         <p>坐标是点击时手指在手机屏幕上的位置，按屏幕宽高换算成 0–1、取两位小数合并，不是页面滚动后的位置。</p>
         <p>不同尺寸的手机叠在一起，只能看大概的区域，对不到具体按钮。颜色按点击次数，不是人数。</p>
+        <p>少于 {SMALL_SAMPLE} 次点击不画分布，区域占比照列；{SMALL_SAMPLE} 次是这页定的显示门槛，不是后端的限制。</p>
         <p>{nativeNote}</p>
       </>}>
       {body}
@@ -366,7 +367,7 @@ export function TrendPanel({ daily, weekly, scope, zone }: { daily: TrendPoint[]
   return (
     <Panel title="访问趋势" icon={TrendingUp} tone="role-2" sub={`${scope} · 最近 8 个有事件的日、周`}
       explain={<>
-        <p>按日按业务日期（{zone}）切；按周按 ISO 周（周一开始）切，用的是存储时间，和按日不一定是同一个时区。</p>
+        <p>按日、按周都按业务日期（{zone}）切，周从周一开始。时间范围是滚动的，第一段和最后一段可能不满一天或一周。</p>
         <p>只列有事件的日、周，没有事件的不补 0。跟时间范围、设备、语言走，不跟页面层级，所以和热力表加起来不一定相等。</p>
       </>}>
       <div className="rd-split l6-trends" data-even="">
@@ -385,7 +386,7 @@ export function ScopeFold({ data }: { data: L6BehaviorHeatmapData }) {
         <Fact k="统计哪些页面">页面目录里的 {n(data.trackedCount)} 个页面都在统计<Explain label="页面目录" content="页面目录来自 App 的页面登记表，按迁移时的版本存在后台，不是每次实时读 App。已退役的页面不在目录里：热力表不列，但合计和导出的 CSV 还会算它们这段时间的历史事件。" /></Fact>
         <Fact k="事件从哪来">App 上报的页面浏览和元素点击，只算正式环境的事件</Fact>
         <Fact k="什么时候记浏览">离开这一页、换到下一页时记一次浏览和停留<Explain label="哪些不记" content="切到后台、退出 App 时正在看的那一页会丢掉，不补记；所以浏览次数不是「进入页面」的次数。" /></Fact>
-        <Fact k="采样">只统计采样后存下来的事件，不按采样比例放大<Explain label="采样是什么" content="App 事件按「用户行为事件」页的采样设置抽样上报，没抽中的不进统计。上报失败或被限流的也不在里面，所以不是全部真实操作。" /></Fact>
+        <Fact k="采样">只统计采样后存下来的事件，不按采样比例放大<Explain label="采样是什么" content="后端入库时按「用户行为事件」页的采样设置抽样，没抽中的不进统计。上报失败或被限流的也不在里面，所以不是全部真实操作。" /></Fact>
         <Fact k="设备和语言">只按 App 上报的标记筛；目前只有移动网页上报点击位置</Fact>
         <Fact k="时间">从读取那一刻往前滚动；时区 {data.businessTimeZone}</Fact>
         <Fact k="这页能做什么">只能查看和导出，不改页面目录、采集设置和任何业务规则；每次导出留一条操作记录</Fact>

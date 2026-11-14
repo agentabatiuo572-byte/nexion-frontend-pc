@@ -504,7 +504,7 @@ export async function downloadL6Behavior(input: L6BehaviorQuery & { reason: stri
     throw new Error(formatAdminApiError(payload?.message, `BI_L6_EXPORT_${res.status}`));
   }
   if (!contentType.toLowerCase().includes("text/csv")) {
-    throw new Error(formatAdminApiError(undefined, `BI_L6_EXPORT_${res.status}`));
+    throw new Error(formatAdminApiError("L6_EXPORT_FILE_INVALID", "L6_EXPORT_FILE_INVALID"));
   }
   return {
     blob: await res.blob(),

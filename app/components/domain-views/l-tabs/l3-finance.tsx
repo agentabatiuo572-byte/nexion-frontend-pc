@@ -74,7 +74,7 @@ const VALUATION_NOTE = "UVT 锁仓到期应付按最新有效价格折算。没�
 
 type ExportOutcome =
   | { kind: "summary-done" | "summary-unknown" }
-  | { kind: "detail-done" | "detail-unknown"; range: string; fields: number; recipient: string; ticket: string };
+  | { kind: "detail-done" | "detail-unknown"; range: string; fields: number; recipient: string; ticket: string; at?: string; reportId?: string };
 
 export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; summary: string }) {
   const reach = useReach();
@@ -124,8 +124,10 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     l3DetailCommands.forget(record.fingerprint, record.commandKey);
     syncDetail();
     await ctx.reloadBi?.();
-    ctx.toast("资金明细申请已提交，请在「数据导出与监管报告」审批后下载");
-    setOutcome(receipt.status === "PENDING_CONFIRM" || receipt.status === "PENDING_SPLIT_CONFIRM"
+    const pendingNow = receipt.status === "PENDING_CONFIRM" || receipt.status === "PENDING_SPLIT_CONFIRM";
+    ctx.toast(pendingNow ? `资金明细申请已提交，另一位管理员在「${exportPageName}」放行后才能下载`
+      : receipt.status === "READY" ? `资金明细已放行，到「${exportPageName}」下载` : `资金明细申请已核对，当前状态到「${exportPageName}」查看`);
+    setOutcome(pendingNow
       ? { kind: "detail-done", range: record.request.timeRange.replace("/", " 至 "), fields: record.request.fields.split(",").length, recipient: record.request.recipient, ticket: record.request.ticket }
       : null);
   };
@@ -157,7 +159,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       action: "导出财务汇总",
       detail: "导出此刻的资金汇总，不含用户明细。",
       effect: <StatusTag tone="progress" filled>立即生成</StatusTag>,
-      statedBrief: { impact: "生成一份此刻的资金汇总 CSV，不改任何数据，操作记录里留痕。", check: "它不跟页面上的周期和注册业务月走；要本期收入和提现，看这页上的数。" },
+      statedBrief: { impact: "生成一份此刻的资金汇总 CSV，不改业务数据，留操作记录。", check: "它不跟页面上的周期和注册业务月走；要本期收入和提现，看这页上的数。" },
       facts: (
         <Facts>
           <Fact k="文件内容">此刻的储备、应付款、到期和账单计数<Explain label="汇总里有什么" content={<><p>此刻的资金储备、九类应付款、未来 7 天到期和钱包账单分类计数。</p><p>生成那一刻读一次资金数据，存成文件；以后再下载还是那一刻的数。</p><p>不含本期四类收入、提现笔数、确认 ÷ 申请和 30 天到期。</p></>} /></Fact>
@@ -210,7 +212,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       detail: `导出范围锁定为当前报表周期 ${requestFrom} 至 ${requestTo}，最多 100,000 行。`,
       effect: <StatusTag tone="warn" icon={LockKeyhole}>另一位放行后才能下载</StatusTag>,
       statedBrief: {
-        impact: "提交后生成一份待放行的脱敏资金明细，不改余额、账本和提现。要另一位有审批权的同事在「数据导出与监管报告」放行，你不能批自己的申请。",
+        impact: "提交后生成一份待放行的脱敏资金明细，不改余额、账本和提现。要另一位管理员在「数据导出与监管报告」放行，你不能批自己的申请。",
         check: "核对日期范围和字段；文件在提交这一刻生成，放行时不会重新取数。",
       },
       facts: (
@@ -218,8 +220,8 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
           <Fact k="日期范围">{requestFrom} 至 {requestTo}（含首尾两天）</Fact>
           <Fact k="导出什么">这段时间的全部钱包账单，按时间从新到旧，最多 100,000 行<Explain label="导出范围的说明" content={<><p>不分用户、资产和状态，全部钱包账单都算；超过 100,000 行不能提交，请缩短周期。</p><p>不带注册业务月；日期是页面已经读到的这一期，输入框里没应用的日期不算。</p></>} /></Fact>
           <Fact k="脱敏" tone="warn">只隐藏用户编码（留前 2 位和后 2 位）<Explain label="脱敏到什么程度" content={<><p>用户编码 4 位以内整个写成 ***。业务编号、金额、余额、时间都是原值。</p><p>不导出手机号、昵称、备注。</p></>} /></Fact>
-          <Fact k="谁来放行">另一位有导出审批权的同事，不能是你</Fact>
-          <Fact k="去哪下载">放行后到「{exportPageName}」下载<Explain label="下载链接多久有效" content="下载链接从放行后签发起 24 小时内有效，只给签发时的那位同事用。创建、放行、下载都有操作记录。" /></Fact>
+          <Fact k="谁来放行">另一位管理员，需有导出任务审批权限；不能是你</Fact>
+          <Fact k="去哪下载">放行后到「{exportPageName}」下载<Explain label="下载链接多久有效" content="下载链接从放行后签发起 24 小时内有效，只给签发时的那位管理员用。创建、放行、下载都有操作记录。" /></Fact>
         </Facts>
       ),
       confirmLabel: "提交申请",
@@ -259,7 +261,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
             current: original?.request.ticket ?? "L3-FINANCE-DETAIL",
             inputKind: "text",
             required: true,
-            explain: "对应的工单号，会记进操作记录，放行的同事会看到。",
+            explain: "对应的工单号，会记进操作记录，放行的管理员会看到。",
           },
         ],
       },
@@ -368,7 +370,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       {ctx.canExportFinanceDetail ? (
         <span className="l3-pair" data-pair="">
           <Button icon={<LockKeyhole size={14} aria-hidden />} loading={detailExporting} loadingText="正在提交…" disabledReason={detailBlocked} onClick={() => openDetailExport()}>申请资金明细（需放行）</Button>
-          <Explain label="资金明细怎么申请" content={<><p>这一期的钱包账单逐笔明细，用户编码已隐藏部分字符，属于高敏数据。</p><p>提交后要另一位有审批权的同事在「{exportPageName}」放行才能下载，你不能批自己的申请。</p></>} />
+          <Explain label="资金明细怎么申请" content={<><p>这一期的钱包账单逐笔明细，用户编码已隐藏部分字符，属于高敏数据。</p><p>提交后要另一位管理员在「{exportPageName}」放行才能下载，你不能批自己的申请。</p></>} />
         </span>
       ) : (
         ctx.canExport && <span className="rd-toolbar-note">当前角色仅可导出汇总报表 · 明细需财务明细权限</span>
@@ -397,6 +399,8 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     fields: pendingDetail.request.fields.split(",").length,
     recipient: pendingDetail.request.recipient,
     ticket: pendingDetail.request.ticket,
+    at: formatBusinessTimeCompact(new Date(pendingDetail.createdAt).toISOString(), ""),
+    reportId: pendingDetail.reportId,
   } : outcome;
   const outcomeNotice = shownOutcome && (() => {
     const outcome = shownOutcome;
@@ -407,8 +411,10 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       </Notice>
     );
     if (outcome.kind === "summary-unknown") return (
-      <Notice tone="warn" title="汇总导出结果未确认" action={close}>
-        请求已发出，但没有收到明确结果，汇总可能已经生成。先{exportPageLink(`到「${exportPageName}」看有没有这条任务`)}，没有再重新导出；导出不改业务数据。
+      <Notice tone="warn" title="汇总导出结果未知" action={close}>
+        汇总可能已经生成。{canOpenExportPage
+          ? <>先{exportPageLink(`到「${exportPageName}」看有没有这条任务`)}，没有再重新导出。</>
+          : <>你没有「{exportPageName}」的权限，请找有权限的同事核对，没有再重新导出。</>}
       </Notice>
     );
     if (!("range" in outcome)) return null;
@@ -416,15 +422,17 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     if (outcome.kind === "detail-done") return (
       <Notice tone="warn" title="已申请资金明细，等另一位放行" action={close} actionBelow>
         <p>{request}</p>
-        <p>有导出审批权的另一位同事放行后才能下载，你不能批自己的申请。{exportPageLink(`到「${exportPageName}」看进度`)}</p>
+        <p>另一位管理员放行后才能下载，你不能批自己的申请。{exportPageLink(`到「${exportPageName}」看进度`)}</p>
       </Notice>
     );
     return (
-      <Notice tone="warn" title="资金明细申请结果未确认" action={close} actionBelow>
-        <p>{request}</p>
-        <p>请求已发出，但没有收到明确结果，申请可能已经提交。{canOpenExportPage
-          ? <>先{exportPageLink(`到「${exportPageName}」看有没有这条待放行的申请`)}，没有再按同样内容重新申请。</>
-          : <>你没有「{exportPageName}」的权限，请找有权限的同事核对；核对之前不要换内容重新申请。</>}</p>
+      <Notice tone="warn" title={outcome.reportId ? "资金明细申请已创建，审批状态未知" : "资金明细申请结果未知"} action={close} actionBelow>
+        <p>{request}{outcome.at ? ` · ${outcome.at} 提交（${businessZone().label}）` : ""}</p>
+        <p>{outcome.reportId
+          ? <>后端已创建这份申请（报表号 {outcome.reportId}），当前审批状态没有读到。点「查询原结果」重新读取，不会重新提交。</>
+          : pendingDetail && isRetryExpired(pendingDetail)
+            ? <>申请可能已经提交。已超过 24 小时，只能核对：{canOpenExportPage ? exportPageLink(`到「${exportPageName}」看有没有这条待放行的申请`) : <>请找有「{exportPageName}」权限的同事核对</>}。</>
+            : <>申请可能已经提交。先{canOpenExportPage ? <>点「查询原结果」到「{exportPageName}」看有没有</> : <>请有「{exportPageName}」权限的同事核对</>}；没有的话，24 小时内可以按原请求重试，不会重复申请。</>}</p>
         {pendingDetail && <span className="rd-toolbar">
           {pendingDetail.reportId
             ? <Button size="sm" loading={detailExporting} disabledReason={canQueryDetail ? undefined : formatAdminApiError("L3_DETAIL_QUERY_PERMISSION", "L3_DETAIL_QUERY_PERMISSION")} onClick={() => void queryDetail(pendingDetail)}>查询原结果</Button>
@@ -448,7 +456,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   const customChanged = activePeriod === "custom" && (customFrom !== (ctx.l3Query?.from ?? "") || customTo !== (ctx.l3Query?.to ?? ""));
   const scopeExplain = (
     <Explain label="三个切换各管哪几块" content={<>
-      <p>报表周期：管本期收入和本期提现，和上一个同样长的周期比。</p>
+      <p>报表周期：管本期收入和本期提现，和上一期比。</p>
       <p>注册业务月：只管本期提现，只算这个月注册的用户；清空就是全部用户。</p>
       <p>到期窗口（下面「接下来要付多少」里）：只换按类别的到期金额，不重新读取。</p>
       <p>储备、应付款、兑付覆盖率和到期都是读取那一刻的数，不随这三个切换变；导出的汇总也一样。</p>
@@ -497,12 +505,12 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   );
 
   if (!data) return page(<>
-    <Conclusion state="unknown" icon={ShieldQuestion}>{ctx.biLoading ? "财务状况：正在读取" : ctx.biError ? "财务状况：读取失败，暂时无法判断" : "财务状况：还没有数据"}</Conclusion>
+    <Conclusion state="unknown" icon={ShieldQuestion}>{ctx.biLoading ? "财务状况：正在读取" : ctx.biError ? "财务状况：读取失败，暂时无法判断" : "财务状况：没有读到数据"}</Conclusion>
     {ctx.biLoading
       ? <BlockState state="loading" title="正在读取本期收入、提现、储备和到期…" />
       : ctx.biError
         ? <BlockState state="error" title="财务数据读取失败，不显示旧数据" detail={`${ctx.biError} 可以改上面的周期再读；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
-        : <BlockState state="empty" title="还没有可显示的财务数据" detail="请先重新加载；仍然为空，说明还没有产生数据。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
+        : <BlockState state="empty" title="这次没有读到财务数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
   </>);
 
   /* ---------------- 读到的数：映射和完整性检查沿用改版前（L3-S04、L3-V06） ---------------- */
@@ -656,7 +664,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   const inPanels = (
     <div className="rd-split" data-even="">
       <Panel title="本期收入构成" icon={ArrowDownToLine} tone="role-2" sub={`${periodLabel} · 共 ${usdt(revenueTotal, amountDigits([revenueTotal]))}`}
-        explain={<><p>四类各自从订单、账本或兑换单汇总，不是同一本账；都不算测试用户。是成交额和费用，不是利润。</p><p>较上期：和上一个同样长的周期比；上期是 0 时写「—」，−100% 表示本期没有。</p></>}>
+        explain={<><p>四类各自从订单、账本或兑换单汇总，不是同一本账；都不算测试用户。是成交额和费用，不是利润。</p><p>较上期：日、周比前一日、前一周；月、季比上一个自然月、季，天数可能不同；自定义比紧挨着的同样天数。上期是 0 时写「—」，−100% 表示本期没有。</p></>}>
         <RevenueFigure streams={revenueStreams} total={revenueTotal} />
       </Panel>
       <Panel title="本期提现" icon={ArrowUpFromLine} tone="role-2" sub={`${periodLabel} · ${cohort ? `${cohort} 注册的用户` : "全部用户"} · 只有笔数`}

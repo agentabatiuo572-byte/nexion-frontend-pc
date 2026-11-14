@@ -41,7 +41,7 @@ import {
   type LRegulatoryOptions,
 } from "@/lib/admin/l-client";
 import { downloadD4BillsCsv } from "@/lib/admin/d-client";
-import { businessZone } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import type { LCtx } from "./types";
 import { clampL5Page, l5PageCount } from "./l5-pagination";
@@ -52,7 +52,21 @@ import {
   type L5RecoveryItem, type MaskRule,
 } from "./l5-export-views";
 
+const SCOPE_PERIOD: Record<string, string> = { day: "近 24 小时", week: "近 7 天", month: "近 30 天", custom: "自定义日期" };
+
 function reportScopeText(value: string): string {
+  // 运营汇总和团队树明细存的是「period=week;depth=3」这种写法，翻成人话。
+  if (/^[a-z]+=[^;]*(?:;[a-z]+=[^;]*)*$/i.test(value)) {
+    return value.split(";").map((part) => {
+      const [key, raw] = [part.slice(0, part.indexOf("=")), part.slice(part.indexOf("=") + 1)];
+      if (key === "period") return SCOPE_PERIOD[raw] ?? raw;
+      if (key === "depth") return `向下追溯 ${raw} 次`;
+      if (key === "phase") return raw === "ALL" ? "全部阶段" : raw;
+      if (key === "from") return `从 ${raw}`;
+      if (key === "to") return `到 ${raw}`;
+      return `${key}：${raw}`;
+    }).join(" · ");
+  }
   const scope = /^(L[1-4]) \{(.*)\}$/.exec(value) ?? /^(.*)；切片=\{(.*)\}$/.exec(value);
   if (!scope) return value.replace(/ \/ platform$/, " / 平台汇总").replace(/ \/ user$/, " / 用户明细");
   const labels: Record<string,string> = {stage:"转化步骤",window:"统计窗口",from:"开始日期",to:"结束日期",cohort:"注册用户组",phase:"运营阶段",locale:"语言",ref:"推荐渠道"};
@@ -70,7 +84,7 @@ function reportScopeText(value: string): string {
 type ExportParam = { k: string; v: string; fixed?: boolean; cur?: string; s: string };
 
 /** 导出任务状态筛选(索引 = filter 状态值;label 同时用于按钮文本与切换 toast)。 */
-const L5_TASK_FILTERS = ["全部", "待放行", "生成中", "已就绪（含旧任务）"] as const;
+const L5_TASK_FILTERS = ["全部", "待放行", "生成中", "已就绪"] as const;
 
 const LEDGER_PAGE = "/finance/ledger";
 const L3_PAGE = "/analytics/financial";
@@ -249,7 +263,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     );
     if (outcome.kind === "summary-unknown") return (
       <Notice tone="warn" title="汇总导出结果未知" action={close} actionBelow>
-        请求已发出，但没有收到明确结果，可能已经生成。先{listLink}看有没有这一份，没有再重新导出；导出不改业务数据。
+        可能已经生成。先{listLink}看有没有这一份，没有再重新导出。
       </Notice>
     );
     if (outcome.kind === "reg-done") return (
@@ -258,7 +272,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     return (
       <Notice tone="warn" title="当前披露快照生成结果未知" action={close} actionBelow>
         <p>{outcome.text}</p>
-        <p>请求已发出，但没有收到明确结果，快照可能已经生成。先{listLink}看有没有这一份，没有再重新生成；生成不改业务数据。</p>
+        <p>快照可能已经生成。先{listLink}看有没有这一份，没有再重新生成。</p>
       </Notice>
     );
   })();
@@ -324,8 +338,8 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       syncCommands();
       ctx.closeActionConfirm?.();
       await currentContext.current.reloadBi?.();
-      toast(record.action === "approve" ? `${record.task.id} 脱敏明细审批通过 · 可签发 24 小时下载令牌`
-        : `${record.task.id} 已重新发起${record.task.pii ? "（含隐私数据，需要重新确认）" : ""}`);
+      toast(record.action === "approve" ? `${record.task.id} 已放行 · 当前状态看任务列表`
+        : `${record.task.id} 已重新发起${record.task.pii ? "，含隐私数据要再放行" : ""} · 当前状态看任务列表`);
     } finally {
       actionBusy.current = false;
       setBusyTask(null);
@@ -372,12 +386,12 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       {header}
       {outcomeNotice}
       <L5RecoveryNotice rows={recoveryRows} />
-      <Conclusion state="unknown" icon={ShieldQuestion}>{ctx.biLoading ? "导出任务：正在读取" : ctx.biError ? "导出任务：读取失败，暂时无法判断有没有等你放行的" : "导出任务：还没有数据"}</Conclusion>
+      <Conclusion state="unknown" icon={ShieldQuestion}>{ctx.biLoading ? "导出任务：正在读取" : ctx.biError ? "导出任务：读取失败，暂时无法判断有没有等你放行的" : "导出任务：没有读到数据"}</Conclusion>
       {ctx.biLoading
         ? <BlockState state="loading" title="正在读取导出任务、统计和规则…" />
         : ctx.biError
           ? <BlockState state="error" title="导出数据读取失败，不显示旧数据，创建、放行和下载都先关着" detail={`${ctx.biError} 请先重新加载；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
-          : <BlockState state="empty" title="还没有可显示的导出数据" detail="请先重新加载；仍然为空，说明还没有产生数据。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
+          : <BlockState state="empty" title="这次没有读到导出数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
     </>
   );
 
@@ -425,8 +439,9 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         <Fact k="字段">{operatorCopyText(t.fields)}</Fact>
         <Fact k="脱敏到什么程度" tone="warn">只隐藏用户编码，留前 2 位和后 2 位<Explain label="脱敏到什么程度" content={<><p>用户编码 4 位以内整个写成 ***。</p><p>业务编号、金额、余额、交易时间都是原值；不导出手机号、昵称、备注。系统不允许解密导出。</p></>} /></Fact>
         <Fact k="申请人">{requester}</Fact>
+        <Fact k="申请时间">{formatBusinessTimeCompact(t.requestedAt, "—")}（{businessZone().label}）</Fact>
         <Fact k="放行后谁能下载">有资金明细导出权限的管理员，含申请人<Explain label="谁能下载" content="下载要「财务资金明细导出」权限（bi_l3_export_detail）。你放行不需要这项权限；没有它，你自己下载不了。" /></Fact>
-        <Fact k="能下多久">一直可下载；每次下载签发一个只给本人用、24 小时内有效的链接</Fact>
+        <Fact k="能下多久">任务不设到期；每次下载签发一个只给本人用、24 小时内有效的链接</Fact>
         <Fact k="留什么记录">放行写进「{pageName(AUDIT_PAGE, "操作记录与审批")}」，每次下载也会记录</Fact>
         <Fact k="谁能放行">另一位管理员，需有导出任务审批权限（bi_l5_task_approve）；申请人不能放行自己的申请</Fact>
       </Facts>
@@ -478,7 +493,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       <Facts>
         <Fact k="范围">全平台、所有时间、各种状态的 8 类账单<Explain label="8 类是哪些" content="兑换、充值、提现、收益、团队奖励、退款、奖励、购买。按创建时间从新到旧，不限已结算。" /></Fact>
         <Fact k="文件">d4-bills-masked.csv，11 列<Explain label="11 列是什么" content="账单号、用户编号（脱敏）、类型、子类型、资产、方向、金额、变动后余额、状态、业务编号、创建时间。金额是原币原值，不换算、不舍入。" /></Fact>
-        <Fact k="脱敏" tone="warn">用户编号只留首 1 位和末 2 位<Explain label="脱敏到什么程度" content="业务编号里和该用户编号相同的一段会被替换，其余原样；不导出昵称、备注。" /></Fact>
+        <Fact k="脱敏" tone="warn">用户编号只留首 1 位和末 2 位<Explain label="脱敏到什么程度" content="2 位以内的编号整个写成 **。业务编号里和该用户编号相同的一段会被替换，其余原样；不导出昵称、备注。" /></Fact>
         <Fact k="上限">最多 100,000 行，超过会被拒</Fact>
         <Fact k="怎么拿到">确认后浏览器直接下载，不进任务列表，没有 24 小时链接</Fact>
         <Fact k="留什么记录">每次导出写进导出记录</Fact>
@@ -554,7 +569,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     ctx.openActionConfirm({ briefKind: "export",
       action: "生成当前披露快照",
       title: "生成当前披露快照",
-      detail: <>会检查所选地区当前生效的披露版本是否 7 章齐全，再汇总财务、运营、账单、操作记录和应急处理数据生成报告。报告不含用户明细和隐私信息。</>,
+      detail: <>会检查所选地区当前生效的披露版本是否 7 章齐全，再按模板汇总对应的数据生成报告。报告不含单个用户明细。</>,
       effect: <StatusTag tone="progress" filled>立即生成</StatusTag>,
       statedBrief: {
         impact: "生成一份汇总报告放进任务列表，立即可下载；不改披露版本、不通知用户、不改业务数据。",
@@ -562,7 +577,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       },
       facts: (
         <Facts>
-          <Fact k="报告里有什么">所选地区当前版本的七章完整性、确认进度、拦截数，加模板对应的汇总<Explain label="报告里有什么" content={<><p>三个模板共有：披露章节、影响用户、确认进度、被拦截用户、此前导出记录数、应急预案执行数。</p><p>提现发放、反洗钱：再加储备、应付款、覆盖率、24 小时净流量、提现队列和账单行数。适用地区专项：再加设备、算力任务、团队关系、佣金和以旧换新，按本月、全部阶段。</p><p>财务和账单是全平台的数，不按地区和报告期间筛。缺的数在文件里写 UNAVAILABLE，不估算。</p></>} /></Fact>
+          <Fact k="报告里有什么">所选地区当前版本的七章完整性、确认进度、拦截数，加模板对应的汇总<Explain label="报告里有什么" content={<><p>三个模板共有：披露章节、影响用户、确认进度、被拦截用户、此前的报表导出次数（操作记录里的，不等于这页任务列表）、应急预案执行数。</p><p>提现发放、反洗钱：再加储备、应付款、覆盖率、24 小时净流量、提现队列和账单行数。适用地区专项：再加设备、算力任务、团队关系、佣金和以旧换新，按本月、全部阶段。</p><p>财务和账单是全平台的数，不按地区和报告期间筛。缺的数在文件里写 UNAVAILABLE，不估算。</p></>} /></Fact>
         <Fact k="个人信息">不含单个用户明细</Fact>
         <Fact k="地区和版本">「{i5Name}」当前生效的设置<Explain label="地区和版本" content="生成时后端再核对一次：所选版本已不是当前版本、或不再 7 章齐全，会被拒。" /></Fact>
         <Fact k="去哪下载">下面任务列表，生成后立即可下载，不用放行</Fact>
@@ -635,8 +650,8 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         explain="含隐私的脱敏明细，要另一位管理员放行后才能下载。点这格只看待放行的任务。"
         onOpen={() => toggleFilter(1)} openLabel={`等待放行 ${pending} 份，点击只看待放行`} selected={filter === 1} selectedText="已筛选" aria-pressed={filter === 1} />
       <Stat icon={Download} tone="role-2" label="可下载" value={String(L5_STATS.ready)} unit="份"
-        sub={L5_STATS.legacyReadyWithoutSnapshot > 0 ? `另有 ${L5_STATS.legacyReadyWithoutSnapshot} 份旧任务没有文件` : undefined}
-        explain="已生成、有文件的任务。下载时每次签发一个只给你用、24 小时内有效的链接。点这格只看已就绪的任务（含没有文件的旧任务）。"
+        sub={L5_STATS.legacyReadyWithoutSnapshot > 0 ? `另有 ${L5_STATS.legacyReadyWithoutSnapshot} 份没有文件` : undefined}
+        explain="已生成、有文件的任务。下载时每次签发一个只给你用、24 小时内有效的链接。点这格只看已就绪的任务（含没有文件的）。"
         onOpen={() => toggleFilter(3)} openLabel={`可下载 ${L5_STATS.ready} 份，点击只看已就绪`} selected={filter === 3} selectedText="已筛选" aria-pressed={filter === 3} />
       <Stat icon={LockKeyhole} tone="role-3" label="含隐私任务" value={String(L5_STATS.sensitive)} unit="份"
         explain="文件里有脱敏后的用户编码这类字段（资金明细、团队树）。只能导出脱敏后的数据，不能导出原文。" />
@@ -701,7 +716,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         {taskError && <BlockState state="error" title="导出任务读取失败，不显示旧列表" detail={`${taskError} 可以换个状态再读，或点页头「刷新」。`} />}
         {!taskError && pendingTasks.length > 0 && (
           <section className="l5-pending" aria-label="等待放行">
-            <h3 className="l5-sub-title">等待放行 <span className="l5-weak">这一页 {pendingTasks.length} 份{pending > pendingTasks.length ? `，共 ${pending} 份` : ""}</span></h3>
+            <h3 className="l5-sub-title">等待放行 <span className="l5-weak">这一页 {pendingTasks.length} 份{pending > pendingTasks.length ? `，共 ${pending} 份` : ""} · 时间为{businessZone().label}</span></h3>
             <ul className="l5-pending-grid">
               {pendingTasks.map((t) => (
                 <PendingCard key={t.id} task={t} title={taskTitle(t, exportTypeText)} source={taskSource(t)}
@@ -765,7 +780,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const createPanel = (
     <div ref={createRef} className="l5-anchor">
       <Panel title={<span tabIndex={-1} data-l5-focus="">新建导出</span>} explainLabel="新建导出" icon={FilePlus2} sub="三种出口，去向不同"
-        explain={<><p>汇总和当前披露快照生成后进上面的任务列表，直接可下载；8 类账单确认后浏览器直接下载，不进任务列表。三种都不含原文隐私，都要填理由并写进记录。</p><p>脱敏资金明细在 {linkTo(L3_PAGE, "财务报表")} 申请，团队树明细在 {linkTo(L4_PAGE, "设备、任务与团队报表")} 导出，都在上面任务列表里放行和下载。</p></>}>
+        explain={<><p>汇总和当前披露快照生成后进上面的任务列表，直接可下载；8 类账单确认后浏览器直接下载，不进任务列表。三种都要填理由并写进记录；8 类账单只替换用户身份，业务编号里的其他部分原样导出。</p><p>脱敏资金明细在 {linkTo(L3_PAGE, "财务报表")} 申请，团队树明细在 {linkTo(L4_PAGE, "设备、任务与团队报表")} 导出，都在上面任务列表里放行和下载。</p></>}>
         <div className="l5-create">
           <article className="l5-create-card" aria-labelledby="l5-create-agg">
             <div className="l5-create-head"><IconTile tone="role-2" icon={FileSpreadsheet} size={28} /><h3 id="l5-create-agg">汇总数据</h3><Explain label="汇总数据是什么" content="关键指标、转化与留存、财务、运营四类汇总，不含个人信息。创建那一刻取数，以后下载还是那一刻的数。" /></div>

@@ -192,7 +192,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
       detail: "按确认那一刻往前 7 天，导出全部设备、全部语言的逐页汇总，不跟下面的筛选。",
       effect: <StatusTag tone="progress" filled>直接下载</StatusTag>,
       statedBrief: {
-        impact: "确认后按那一刻重新统计，下载一个 CSV 到这台电脑；不改任何数据，导出留一条操作记录。",
+        impact: "确认后按那一刻重新统计，下载一个 CSV 到这台电脑；不改业务数据，导出留一条操作记录。",
         check: "范围固定是近 7 天、全部设备、全部语言、逐页，和页面上现在选的条件无关。",
       },
       facts: (
@@ -247,7 +247,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
       detail: <>按现在看的 <b>{scope}</b> 导出逐行汇总，不含点击位置和访问趋势。</>,
       effect: <StatusTag tone="progress" filled>直接下载</StatusTag>,
       statedBrief: {
-        impact: "确认后按那一刻重新统计，下载一个 CSV 到这台电脑；不改任何数据，导出留一条操作记录。",
+        impact: "确认后按那一刻重新统计，下载一个 CSV 到这台电脑；不改业务数据，导出留一条操作记录。",
         check: "核对时间范围、设备、语言和页面层级；时间范围从确认那一刻往前滚动，数可能和页面上差一点。",
       },
       facts: (
@@ -359,12 +359,12 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
     const loading = refreshing || ctx.biLoading;
     const error = liveError || ctx.biError;
     return page(<>
-      <Conclusion state="unknown">{loading ? "用户行为热力图：正在读取" : error ? "用户行为热力图：读取失败，暂时无法判断" : "用户行为热力图：还没有页面目录"}</Conclusion>
+      <Conclusion state="unknown">{loading ? "用户行为热力图：正在读取" : error ? "用户行为热力图：读取失败，暂时无法判断" : "用户行为热力图：没有读到要统计的页面"}</Conclusion>
       {loading
         ? <BlockState state="loading" title="正在读取页面目录和行为数据…" />
         : error
           ? <BlockState state="error" title="行为数据读取失败，不显示旧数据" detail={<>{error === ctx.biError ? `${error} ` : ""}筛选条件还留着，重新加载后按这组条件再读；还是失败的话，请把错误信息发给技术同事。{error !== ctx.biError && <ErrorText text={error} />}</>} onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
-          : <BlockState state="empty" title="页面目录是空的，没有可统计的页面" detail="请先重新加载；仍然为空，说明页面目录还没有登记页面。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
+          : <BlockState state="empty" title="没有读到要统计的页面" detail="页面目录里可能没有开启统计的页面，或这次没读到。请重新加载；仍然没有，请告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
     </>);
   }
 

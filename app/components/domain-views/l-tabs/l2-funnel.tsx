@@ -429,7 +429,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       detail: complete
         ? "导出这批用户的四步人数、转化率和按注册周的留存。只有汇总数，不含手机号、地址等个人信息；操作会留记录。"
         : "详细转化与留存数据暂不可用，只导出四项各自的累计人数，不算转化率或留存率；不含手机号、地址等个人信息，操作会留记录。",
-      statedBrief: { impact: "生成一个导出任务，不改任何数据，操作记录里留痕。", check: complete ? "看范围是不是你要的这批人。" : "这四个数各自统计，不能相除当转化率。" },
+      statedBrief: { impact: "生成一个导出任务，不改业务数据，留操作记录。", check: complete ? "看范围是不是你要的这批人。" : "这四个数各自统计，不能相除当转化率。" },
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       reasonPlaceholder: "写这份数据给谁、做什么用，例如：给增长组复盘 W45 越南语渠道",
       confirmLabel: "确认导出",
@@ -466,7 +466,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
           throw error;
         }
         await ctx.reloadBi?.();
-        ctx.toast(complete ? "用户转化与留存数据导出任务已提交" : "用户各阶段人数导出任务已提交", "success");
+        ctx.toast(complete ? "用户转化与留存数据已生成导出" : "用户各阶段人数已生成导出", "success");
         setExportOutcome(complete ? "full" : "stages");
       },
     });
@@ -485,7 +485,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       summary={summary}
       actions={ctx.canExport ? (
         <span className="l2-pair" data-pair="">
-          <Explain label="导出的说明" content={<><p>填理由后生成一个 CSV 导出任务，到「{exportPageName}」下载。</p><p>只有汇总数，不含个人信息，不改任何数据，每次导出都留操作记录。</p></>} />
+          <Explain label="导出的说明" content={<><p>填理由后生成一个 CSV 导出任务，到「{exportPageName}」下载。</p><p>只有汇总数，不含个人信息，不改业务数据，每次导出都留操作记录。</p></>} />
           <Button icon={<Download size={14} aria-hidden />} disabledReason={exportBlocked} onClick={exportFunnel}>{exportLabel}</Button>
         </span>
       ) : undefined}
@@ -495,12 +495,14 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   );
 
   const exportNotice = exportOutcome === "unknown" ? (
-    <Notice tone="warn" title="导出结果未确认" action={<Button size="sm" onClick={() => setExportOutcome(null)}>知道了</Button>}>
-      请求已发出，但没有收到明确结果，任务可能已经生成。先{exportPageLink(`到「${exportPageName}」看有没有这条任务`)}，没有再重新导出；导出不改业务数据。
+    <Notice tone="warn" title="导出结果未知" action={<Button size="sm" onClick={() => setExportOutcome(null)}>知道了</Button>}>
+      任务可能已经生成。{canOpenExportPage
+        ? <>先{exportPageLink(`到「${exportPageName}」看有没有这条任务`)}，没有再重新导出。</>
+        : <>你没有「{exportPageName}」的权限，请找有权限的同事核对，没有再重新导出。</>}
     </Notice>
   ) : exportOutcome ? (
-    <Notice tone="ok" title={exportOutcome === "full" ? "已提交导出：用户转化与留存数据" : "已提交导出：用户各阶段人数"} action={<Button size="sm" onClick={() => setExportOutcome(null)}>知道了</Button>}>
-      任务生成后才能下载。{exportPageLink(`到「${exportPageName}」下载`)}
+    <Notice tone="ok" title={exportOutcome === "full" ? "已生成导出：用户转化与留存数据" : "已生成导出：用户各阶段人数"} action={<Button size="sm" onClick={() => setExportOutcome(null)}>知道了</Button>}>
+      {exportPageLink(`到「${exportPageName}」下载`)}
     </Notice>
   ) : null;
 
@@ -568,12 +570,12 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     <BlockState state="error" title="收到的转化、留存或对比数据不完整，已停止显示" detail="页面不显示不可靠的数字，也不能导出。请把这页的情况告诉技术同事。" />
   </>);
   if (!FUNNEL.length || !FUNNEL_EXT.length || !COHORTS.length) return page(<>
-    <Conclusion state="unknown">{ctx.biLoading ? "用户转化：正在读取" : ctx.biError ? "用户转化：读取失败，暂时无法判断" : "用户转化：还没有数据"}</Conclusion>
+    <Conclusion state="unknown">{ctx.biLoading ? "用户转化：正在读取" : ctx.biError ? "用户转化：读取失败，暂时无法判断" : "用户转化：没有读到数据"}</Conclusion>
     {ctx.biLoading
       ? <BlockState state="loading" title="正在读取这批用户的转化…" />
       : ctx.biError
         ? <BlockState state="error" title="转化数据读取失败，不显示旧数据" detail={`${ctx.biError} 请先重新加载；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
-        : <BlockState state="empty" title="还没有可显示的转化数据" detail="请先重新加载；仍然为空，说明还没有产生数据。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
+        : <BlockState state="empty" title="这次没有读到转化数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
   </>);
 
   const safeStage = Math.min(selStage, FUNNEL.length - 1);
@@ -706,8 +708,8 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         sub={FUNNEL[0].suppressed || FUNNEL[FUNNEL.length - 1].suppressed ? "少于 5 人，不显示" : registrations && withdrawals != null ? `${people(withdrawals)} ÷ ${people(registrations)} 人` : "注册 0 人，算不出"} tone={fullCvr == null || FUNNEL[0].suppressed || FUNNEL[FUNNEL.length - 1].suppressed ? "role-other" : "role-3"} icon={Route}
         explain="同一批注册用户里最后提交了提现申请的比例，不是到账率。" />
       <Stat label="第 7 天仍活跃" value={day7Value} tone={RETENTION_SOURCE_READY ? "role-3" : "role-other"} icon={CalendarCheck}
-        sub={!RETENTION_SOURCE_READY ? `App 日活事件还没接上 · 目标 ${String(day7.target ?? 60)}%` : day7.value == null && day7.suppressed !== true ? "还没有注册满 7 天的周" : `最近满 7 天的注册周 · 目标 ${String(day7.target ?? 60)}%`}
-        explain={<><p>只看最近一个注册满 7 天的注册周（按月分组时也按周）：注册后第 7 天当天打开过 App 的人 ÷ 这批注册人数，不是 7 天里任意一天。目标只用来对照，不触发任何操作。</p>{!RETENTION_SOURCE_READY && <p>记录「打开过 App」的日活事件还没有接上，现在算出来的会是 0%，所以先不显示；后端接上后再显示。</p>}</>} />
+        sub={!RETENTION_SOURCE_READY ? `日活事件还没接上 · 目标 ${String(day7.target ?? 60)}%` : day7.value == null && day7.suppressed !== true ? "还没有注册满 7 天的周" : `最近满 7 天的注册周 · 目标 ${String(day7.target ?? 60)}%`}
+        explain={<><p>只看最近一个注册满 7 天的注册周（按月分组时也按周）：注册后第 7 天当天有日活记录的人 ÷ 这批注册人数，不是 7 天里任意一天。目标只用来对照，不触发任何操作。</p>{!RETENTION_SOURCE_READY && <p>日活事件还没接上，现在算出来会是 0%，所以先不显示；后端接上后再显示。</p>}</>} />
       <Stat label="试用后购买比例" value={trialValue} tone={TRIAL_SOURCE_READY ? "role-3" : "role-other"} icon={Gift}
         sub={!TRIAL_SOURCE_READY ? "试用第一步的事件还没接上" : TRIAL_STEPS[1]?.suppressed || TRIAL_STEPS[2]?.suppressed ? "少于 5 人，不显示" : trialStarted && trialPurchased != null ? `${people(trialPurchased)} ÷ ${people(trialStarted)} 人` : "开始试用 0 人，算不出"}
         explain={<><p>开始试用的人里，确认购买的比例。试用是另一条线，不算进首购转化率。</p>{!TRIAL_SOURCE_READY && <p>试用这条线从「看到领取弹窗」算起，这个事件还没有地方产生，三步都进不了统计，所以先不显示（不是 0 人）。</p>}</>} />
@@ -805,11 +807,11 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       )}
       <div className="rd-split" data-detail="">
         <Panel title={`按注册${cohortKind}的留存`} icon={CalendarRange} tone="role-3" sub={`最近 ${COHORTS.length} 个注册${cohortKind} · ${scope}`}
-          explain={<><p>每一行是同一{cohortKind}注册的人，每一格是这批人注册后第 N 天当天打开过 App 的比例，不是 N 天里任意一天。</p><p>这批人里还有人注册不满 N 天时不算，写「未到」。只列最近 6 个注册{cohortKind}。点一行在右边看它的曲线。</p><p>{PROTECT_NOTE}</p></>}>
+          explain={<><p>每一行是同一{cohortKind}注册的人，每一格是这批人注册后第 N 天当天有日活记录的比例，不是 N 天里任意一天。</p><p>这批人里还有人注册不满 N 天时不算，写「未到」。只列最近 6 个注册{cohortKind}。点一行在右边看它的曲线。</p><p>{PROTECT_NOTE}</p></>}>
           <RetentionHeatmap kind={cohortKind} cohorts={COHORTS} columns={retentionColumns} selected={safeCohort} curveFor={(index) => void loadCurve(index)} disabled={queryLoading} sourceReady={RETENTION_SOURCE_READY} />
         </Panel>
         <Panel title={`${selectedCohort.w} 的留存曲线`} icon={TrendingUp} tone="role-3"
-          explain={<><p>这批人注册后第 0、1、3、7、14、21、30、60 天当天还打开 App 的比例，只画已经满了天数的点。接口里第 0 天固定是 100%（注册当天），不是实测，所以不画。</p><p>灰线是用来对比的另一批，可以选最近两批。</p></>}>
+          explain={<><p>这批人注册后第 0、1、3、7、14、21、30、60 天当天有日活记录的比例，只画已经满了天数的点。接口里第 0 天固定是 100%（注册当天），不是实测，所以不画。</p><p>灰线是用来对比的另一批，可以选最近两批。</p></>}>
           {!RETENTION_SOURCE_READY
             ? <BlockState state="empty" title="数据来源还没接上，曲线先不画" detail="接上前画出来会是一条掉到 0 的线，不代表没人用。" />
             : selectedCohort.suppressed
@@ -818,7 +820,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
                 ? <BlockState state="empty" title="这批还有人注册不满 1 天，还没有曲线" />
                 : (
                   <div className="rd-stack">
-                    <TrendLines label={`${selectedCohort.w} 注册后每天还在用 App 的比例`} ticks={curveTicks.map((day) => `第 ${day} 天`)} format={pct}
+                    <TrendLines label={`${selectedCohort.w} 注册后每天有日活记录的比例`} ticks={curveTicks.map((day) => `第 ${day} 天`)} format={pct}
                       axisFormat={(value) => `${Number(value.toFixed(0))}%`} height={160} series={curveSeries}
                       marks={typeof day7.target === "number" ? [{ key: "target", text: `第 7 天目标 ${day7.target}%`, value: day7.target, tone: "ok" }] : []} />
                     {compareKeys.length > 0 && (
@@ -844,12 +846,12 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       </div>
       <Panel title={`各渠道、语言的${METRIC_NAME[metric]}`} icon={Languages} tone="role-3" sub={`按注册时的渠道、阶段和语言 · ${scope}`}
         explain={<>
-          <p>{metric === "cvr" ? "注册后完成首购的人 ÷ 注册人数。" : metric === "ret" ? "注册后第 7 天当天打开过 App 的人 ÷ 注册人数；还有人不满 7 天的组合不算。" : "开始试用的人里确认购买的比例，试用是另一条线。"}</p>
+          <p>{metric === "cvr" ? "注册后完成首购的人 ÷ 注册人数。" : metric === "ret" ? "注册后第 7 天当天有日活记录的人 ÷ 注册人数；还有人不满 7 天的组合不算。" : "开始试用的人里确认购买的比例，试用是另一条线。"}</p>
           <p>行是注册时带的渠道和当时的运营阶段，列是注册时的语言。颜色越深越高，最高、最低的格子标了字，方便找最好和最差的组合。维度是固定的，没有排序和分页。</p>
           <p>{PROTECT_NOTE}</p>
         </>}>
         {metricBlocked
-          ? <BlockState state="empty" title="数据来源还没接上" detail={metric === "ret" ? "记录打开 App 的日活事件还没有接上，算出来会是 0%，先不显示。" : "试用第一步「看到领取弹窗」的事件还没有地方产生，算不出来，先不显示（不是 0）。"} />
+          ? <BlockState state="empty" title="数据来源还没接上" detail={metric === "ret" ? "日活事件还没接上，算出来会是 0%，先不显示。" : "试用第一步「看到领取弹窗」的事件还没有地方产生，算不出来，先不显示（不是 0）。"} />
           : xd.rows.length && xd.columns.length
             ? <CrossTable metric={xd} name={METRIC_NAME[metric]} />
             : <BlockState state="empty" title="当前条件下没有可比较的渠道和语言" />}

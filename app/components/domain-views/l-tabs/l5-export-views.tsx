@@ -9,7 +9,7 @@ import { CircleHelp, Clock3, Hourglass, LockKeyhole, type LucideIcon } from "luc
 import { Cell, Explain, IconTile, Notice, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import type { StateTone } from "@/app/components/rd";
 import type { LExportAuditRow, LExportTask } from "@/lib/admin/l-client";
-import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
 
 /* ---------------- 名字和来源（只换显示，reportType 原样） ---------------- */
@@ -73,7 +73,7 @@ const STATUS: Record<string, { label: string; tone: StateTone; icon?: LucideIcon
   PENDING_CONFIRM: { label: "待放行", tone: "warn", icon: Clock3, explain: "含隐私的脱敏明细，要另一位有导出审批权的管理员放行后才能下载。" },
   PENDING_SPLIT_CONFIRM: { label: "待放行", tone: "warn", icon: Clock3, explain: "后端状态是「待拆分确认」，放行方式和普通待放行一样。" },
   PENDING: { label: "待处理", tone: "neutral", explain: "后端还没开始生成。" },
-  GENERATING: { label: "生成中", tone: "progress", explain: "正在生成文件，好了以后变成可下载。页面不自动刷新，点页头「刷新」看最新状态。" },
+  GENERATING: { label: "生成中", tone: "progress", explain: "现在的导出创建时就生成好，不会停在这里；停在生成中的任务不会自己变成可下载，请联系技术同事核对。" },
   READY: { label: "可下载", tone: "ok", explain: "文件已生成。每次点「下载」签发一个只给你用、24 小时内有效的链接。" },
   EXPIRED: { label: "已过期", tone: "done", explain: "可以「重新发起」：用原来那份文件改回可下载，不重新取数；含隐私的要再放行一次。" },
   FAILED: { label: "生成失败", tone: "danger", explain: "可以「重新发起」：用原来那份文件改回可下载，不重新取数；含隐私的要再放行一次。" },
@@ -81,7 +81,7 @@ const STATUS: Record<string, { label: string; tone: StateTone; icon?: LucideIcon
 
 export function taskStatus(task: LExportTask): { label: string; tone: StateTone; icon?: LucideIcon; explain: string } {
   if (!task.supported) return { label: "历史类型已关闭", tone: "neutral", explain: "这种导出类型现在已关闭，只保留记录，不能下载或重新发起。" };
-  if (task.st === "READY" && !task.snapshotAvailable) return { label: "旧任务无文件", tone: "neutral", explain: "这是早期的任务，没有保存文件，不能下载；需要的话重新创建一份。" };
+  if (task.st === "READY" && !task.snapshotAvailable) return { label: "没有文件", tone: "neutral", explain: "这份任务没有保存文件，不能下载；需要的话重新创建一份。" };
   return STATUS[task.st] ?? { label: "状态未知", tone: "warn", explain: `后端返回了页面不认识的状态 ${task.st}，请刷新；仍然这样请联系技术同事。` };
 }
 
@@ -125,6 +125,7 @@ export function PendingCard({ task, title, source, scope, fields, requester, act
         <div><dt>行数</dt><dd data-num="">{task.rows === "—" ? <span className="l5-weak">—</span> : <>{rowsText(task.rows)} 行</>}</dd></div>
         <div><dt>脱敏</dt><dd><MaskTag mask={task.mask} /></dd></div>
         {requester !== undefined && <div><dt>申请人</dt><dd>{requester}</dd></div>}
+        <div><dt>申请时间</dt><dd data-num="">{formatBusinessTimeCompact(task.requestedAt, "—")}</dd></div>
       </dl>
       <div className="l5-pending-foot">{action}</div>
     </li>
@@ -212,8 +213,9 @@ export function MaskRuleTable({ rules }: { rules: MaskRule[] }) {
 
 /* ---------------- 导出记录（只读，最近 50 条） ---------------- */
 
+/** 后端给的是存储时间（北京时间、不带时区），换成业务时区显示到分钟；读不懂的原样显示。 */
 function auditTime(ts: string) {
-  return /^\d{4}-\d{2}-\d{2}T/.test(ts) ? ts.replace("T", " ").slice(0, 19) : ts;
+  return formatBusinessTimeCompact(ts, ts);
 }
 
 export function AuditTable({ rows, loading, error }: { rows: LExportAuditRow[]; loading: boolean; error: string | null }) {

@@ -194,7 +194,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       action: "导出运营报表",
       detail: <>按 <b>{data.period.label} · {data.phaseFilter === "ALL" ? "全部阶段" : data.phaseFilter}</b> 导出运营汇总，不含用户明细。</>,
       effect: <StatusTag tone="progress" filled>立即生成</StatusTag>,
-      statedBrief: { impact: "生成一份运营汇总 CSV 快照，不改任何数据，操作记录里留痕。", check: "快照按生成那一刻的数据存好，以后下载还是那一份，不随页面刷新变。" },
+      statedBrief: { impact: "生成一份运营汇总 CSV 快照，不改业务数据，留操作记录。", check: "快照按生成那一刻的数据存好，以后下载还是那一份，不随页面刷新变。" },
       facts: (
         <Facts>
           <Fact k="时间段和阶段">{scope}</Fact>
@@ -279,13 +279,13 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     }
     if (!isL4NetworkDurable(record)) throw new Error(formatAdminApiError("L4_TREE_STORAGE_UNAVAILABLE", "L4_TREE_STORAGE_UNAVAILABLE"));
     const file = await downloadL4NetworkFile(result.reportId, record.downloadToken!);
-    if (!file.blob.type.toLowerCase().includes("text/csv")) throw new Error(formatAdminApiError("L5_DOWNLOAD_RESPONSE_INVALID", "L5_DOWNLOAD_RESPONSE_INVALID"));
+    if (!file.blob.type.toLowerCase().includes("text/csv")) throw new Error(formatAdminApiError("L4_TREE_FILE_INVALID", "L4_TREE_FILE_INVALID"));
     downloadBlob(file.blob, file.fileName);
     l4NetworkCommands.forget(record.fingerprint, record.commandKey);
     syncTree();
     treeLastSuccessAtRef.current = Date.now();
     ctx.closeActionConfirm?.();
-    ctx.toast(`团队明细已安全下载 · ${result.rowCount} 行 · 用户编码部分隐藏 · 24 小时令牌`);
+    ctx.toast(`团队关系明细已下载 · ${count(result.rowCount)} 行 · 用户编码部分隐藏`);
     setOutcome({ kind: "tree-done", rows: result.rowCount, scope: record.scope, depth: record.request.depth });
     await latestContext.current.reloadBi?.();
   };
@@ -323,11 +323,12 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     const periodLabel = original ? original.scope.replace(/加入的关系$/, "") : data!.period.label;
     const relationships = original?.relationships ?? data!.liveFacts.teamRelationships;
     const scope = original?.scope ?? `${periodLabel}加入的关系`;
+    const downloadOnly = Boolean(original?.result);
     setOutcome(null);
     let attemptedKey = original?.commandKey;
     ctx.openActionConfirm({ briefKind: "export",
-      title: "导出团队关系明细",
-      action: "导出团队明细",
+      title: downloadOnly ? "下载已生成的团队关系明细" : "导出团队关系明细",
+      action: downloadOnly ? "下载团队明细" : "导出团队明细",
       detail: (
         <div>
           <p>按 <b>{periodLabel}</b> 导出团队关系，预计 <b>{relationships}</b> 条，以实际为准。</p>
@@ -335,14 +336,18 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
           <p>下载链接 24 小时有效，导出留高风险操作记录。</p>
         </div>
       ),
-      effect: <StatusTag tone="warn" icon={LockKeyhole}>敏感导出 · 留高风险记录</StatusTag>,
-      statedBrief: {
-        impact: "生成一份团队关系快照并直接下载到这台电脑，不改团队关系和奖励；导出和下载都留操作记录，导出记为高风险。",
+      effect: <StatusTag tone="warn" icon={LockKeyhole}>敏感导出 · 不经放行</StatusTag>,
+      statedBrief: downloadOnly ? {
+        impact: `下载已经生成的这一份（报表号 ${original?.result?.reportId}），不重新生成；下载会留操作记录。`,
+        check: "原来的时间段、追溯次数和理由不能改。",
+      } : {
+        impact: "直接生成并下载，不经另一位管理员放行；会留一条高风险的操作记录。不改团队关系和奖励。",
         check: "核对时间段和追溯次数；快照在确认这一刻生成，以后下载还是这一份。",
       },
       facts: (
         <Facts>
-          <Fact k="导出什么">所有团队里的成员关系，每个成员一行，六列<Explain label="六列分别是什么" content={<>
+          <Fact k="导出什么">成员关系，每对「邀请链顶层 · 成员」一行，六列<Explain label="六列分别是什么" content={<>
+            <p>同一位成员可能在几条邀请链下各占一行，所以行数可以多于人数。</p>
             <p>成员用户编码（部分隐藏）。</p>
             <p>邀请人用户编码（部分隐藏）：其实是这条邀请链最上面那个人，不一定是这位成员的直接邀请人。</p>
             <p>关系深度：从最上面那个人往下第几层。V-Rank：关系记录上的等级，没有写 UNRANKED。</p>
@@ -354,6 +359,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
           <Fact k="多少行">现有团队关系 {count(relationships)} 条，实际行数以导出为准<Explain label="行数上限" content="这个数是现在全部团队关系的累计条数，不按时间段和追溯次数筛。一次最多 100,000 行，超过时不导出，也不截断。" /></Fact>
           <Fact k="记录">导出留一条高风险操作记录，下载也留记录</Fact>
           <Fact k="需要的权限">团队关系明细导出权限</Fact>
+          <Fact k="理由字数" tone="warn">一个汉字按 9 计，最多约 22 个汉字<Explain label="为什么汉字按 9 计" content="后端暂时按传输编码后的长度校验理由（已提后端修）：汉字记 9，字母和数字记 1。下面的计数就是这个长度，写的内容不会被截短。" /></Fact>
           <Fact k="下载">确认后直接下载到这台电脑<Explain label="下载链接" content="下载链接从签发起 24 小时内有效，只给你用。" /></Fact>
         </Facts>
       ),
@@ -472,7 +478,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       {ctx.canExportNetworkTree && (
         <span className="l4-pair" data-pair="">
           <Button icon={<LockKeyhole size={14} aria-hidden />} loading={treeExporting} loadingText="正在生成…" disabledReason={treeBlocked} onClick={() => requestNetworkTreeExport()}>导出团队关系明细</Button>
-          <Explain label="团队关系明细是什么" content={<><p>敏感导出：每个团队成员一行，用户编码部分隐藏，要写理由，留高风险操作记录，最多 100,000 行。</p><p>只按日、周、月的加入时间筛，不跟运营阶段；确认后直接下载到这台电脑。</p></>} />
+          <Explain label="团队关系明细是什么" content={<><p>敏感导出：每对「邀请链顶层 · 成员」一行，用户编码部分隐藏，要写理由，留高风险操作记录，最多 100,000 行。</p><p>只按日、周、月的加入时间筛，不跟运营阶段；确认后直接下载到这台电脑，不经另一位管理员放行。</p></>} />
         </span>
       )}
       {ctx.canExport && !ctx.canExportNetworkTree && <span className="rd-toolbar-note">团队关系明细需要专门的导出权限</span>}
@@ -509,7 +515,9 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     );
     if (outcome.kind === "agg-unknown") return (
       <Notice tone="warn" title="运营汇总导出结果未知" action={close}>
-        请求已发出，但没有收到明确结果，快照可能已经生成。{canOpenExportPage ? <>先{exportPageLink(`到「${exportPageName}」看有没有这一份`)}，没有就再导出一次；</> : <>{exportPageLink("")}没有就再导出一次；</>}导出不改业务数据。
+        快照可能已经生成。{canOpenExportPage
+          ? <>先{exportPageLink(`到「${exportPageName}」看有没有这一份`)}，没有再重新导出。</>
+          : <>你没有「{exportPageName}」的权限，请找有权限的同事核对，没有再重新导出。</>}
       </Notice>
     );
     if (outcome.kind === "tree-done") return (
@@ -517,15 +525,25 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
         {outcome.scope} · 向下追溯 {outcome.depth} 次 · {count(outcome.rows)} 行 · 用户编码部分隐藏。浏览器已开始下载，下载链接 24 小时内有效、只给你用。
       </Notice>
     );
+    const report = pendingTree?.result;
+    const grantUnknown = Boolean(pendingTree?.grantRequested && !pendingTree.downloadToken);
+    const expired = pendingTree ? isRetryExpired(pendingTree) : false;
+    const askExportPage = (what: string) => (canOpenExportPage ? exportPageLink(`到「${exportPageName}」${what}`) : <>请有「{exportPageName}」权限的同事{what}</>);
     return (
-      <Notice tone="warn" title="团队关系明细导出结果未知" action={close} actionBelow>
-        <p>{outcome.scope} · 向下追溯 {outcome.depth} 次 · {outcome.at} 提交</p>
-        <p>请求已发出，但没有收到明确结果，可能已经生成了一份快照。{canOpenExportPage
-          ? <>先{exportPageLink(`到「${exportPageName}」核对`)}；核对之前不要换追溯次数或理由重新导出。</>
-          : <>你没有「{exportPageName}」的权限，请找有权限的同事核对；核对之前不要换追溯次数或理由重新导出。</>}</p>
+      <Notice tone="warn" title={!report ? "团队关系明细导出结果未知" : grantUnknown ? "团队关系明细已生成，下载授权结果未知" : "团队关系明细已生成，还没下载成功"} action={close} actionBelow>
+        <p>{outcome.scope} · 向下追溯 {outcome.depth} 次{report ? ` · 报表号 ${report.reportId} · ${count(report.rowCount)} 行` : ""} · {outcome.at} 提交（{businessZone().label}）</p>
+        <p>{!report
+          ? expired
+            ? <>可能已经生成了一份快照。已超过 24 小时，只能核对：{askExportPage("看有没有这一份")}。</>
+            : <>可能已经生成了一份快照。先{canOpenExportPage ? <>点「查询原结果」到「{exportPageName}」看有没有</> : <>请有「{exportPageName}」权限的同事核对</>}；没有的话，24 小时内可以按原请求重试，不会重复生成。</>
+          : grantUnknown
+            ? <>签发下载授权时没有收到结果，为防止重复签发，这里不能再下载。{askExportPage("下载这份报表")}。</>
+            : expired
+              ? <>已超过 24 小时，这里不能再下载。{askExportPage("下载这份报表")}。</>
+              : <>快照已经生成。点「只下载」下载这一份，不会重新生成。</>}</p>
         {pendingTree && <span className="rd-toolbar">
           {pendingTree.result
-            ? <Button size="sm" loading={treeExporting} disabledReason={canQueryTree ? undefined : formatAdminApiError("L4_TREE_QUERY_PERMISSION", "L4_TREE_QUERY_PERMISSION")} onClick={() => void queryTree(pendingTree)}>查询原结果</Button>
+            ? <Button size="sm" loading={treeExporting} disabledReason={canQueryTree ? undefined : formatAdminApiError("L4_TREE_QUERY_PERMISSION", "L4_TREE_QUERY_PERMISSION")} onClick={() => void queryTree(pendingTree)}>查询报表</Button>
             : canOpenExportPage && <Link className="rd-link" href={EXPORT_PAGE}>查询原结果</Link>}
           <Button size="sm" loading={treeExporting} disabledReason={isRetryExpired(pendingTree) ? RETRY_EXPIRED_TEXT : !ctx.canExportNetworkTree ? formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED") : pendingTree.grantRequested && !pendingTree.downloadToken ? formatAdminApiError("L4_TREE_GRANT_UNKNOWN", "L4_TREE_GRANT_UNKNOWN") : undefined} onClick={() => requestNetworkTreeExport(pendingTree)}>{pendingTree.result ? "只下载" : "按原请求重试"}</Button>
         </span>}
@@ -594,14 +612,14 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
   if (!data) {
     const waitingCustom = !ctx.biLoading && !ctx.biError && query.period === "custom" && !(query.from && query.to);
     return page(<>
-      <Conclusion state="unknown">{ctx.biLoading ? "运营报表：正在读取" : ctx.biError ? "运营报表：读取失败，暂时无法判断" : waitingCustom ? "运营报表：等待所选周期数据" : "运营报表：还没有数据"}</Conclusion>
+      <Conclusion state="unknown">{ctx.biLoading ? "运营报表：正在读取" : ctx.biError ? "运营报表：读取失败，暂时无法判断" : waitingCustom ? "运营报表：等待所选周期数据" : "运营报表：没有读到数据"}</Conclusion>
       {ctx.biLoading
         ? <BlockState state="loading" title="正在读取设备、任务、团队和各阶段的数…" />
         : ctx.biError
           ? <BlockState state="error" title="运营数据读取失败，不显示旧数据" detail={`${ctx.biError} 可以换一个时间段再读；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
           : waitingCustom
             ? <BlockState state="empty" title="选好开始和结束日期，点「应用日期」后读取" detail="自定义日期按业务日算，含首尾两天。" />
-            : <BlockState state="empty" title="还没有可显示的运营数据" detail="请先重新加载；仍然为空，说明还没有产生数据。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
+            : <BlockState state="empty" title="这次没有读到运营数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
     </>);
   }
 

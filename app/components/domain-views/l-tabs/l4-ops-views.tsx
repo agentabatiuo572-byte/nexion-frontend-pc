@@ -32,6 +32,11 @@ export function bucketWord(data: L4OperationsData) {
   return data.period.key === "month" || data.period.key === "custom" ? "按周" : "按天";
 }
 
+/** 柱图标题旁的弱字：没有事件的天或周不画，柱子之间可能跳过日期。 */
+function GapNote({ by }: { by: string }) {
+  return <span className="l4-sub-note">只画有事件的{by === "按周" ? "周" : "天"}</span>;
+}
+
 /* ---------------- 小件 ---------------- */
 
 /** 一组名称和数字：名称在上、数字在下，单位跟在数字后。 */
@@ -135,12 +140,12 @@ export function DeviceReport({ data, scope, links, panel }: { data: L4Operations
         </div>
         <div className="rd-split" data-even="">
           <div className="l4-block">
-            <Sub explain={`${by}一段，只画有事件的时间段，没有事件的日子不补 0。`}>{by}购置和退役</Sub>
+            <Sub explain={`${by}一段，只画有事件的时间段，没有事件的日子不补 0。`}>{by}购置和退役<GapNote by={by} /></Sub>
             <BucketChart label={`${by}购置和退役的设备`} history={data.history} unit="台" format={count}
               series={[{ label: "购置", slot: 2 }, { label: "退役", slot: "other" }]} pick={(row) => [row.devicePurchases, row.deviceRetirements]} />
           </div>
           <div className="l4-block">
-            <Sub explain={`${by}一段的收益入账 USDT，只画有事件的时间段。`}>{by}产出</Sub>
+            <Sub explain={`${by}一段的收益入账 USDT，只画有事件的时间段。`}>{by}产出<GapNote by={by} /></Sub>
             <BucketChart label={`${by}产出 USDT`} history={data.history} unit="USDT" format={(value) => money(value)}
               series={[{ label: "产出", slot: 1 }]} pick={(row) => [row.yieldUsdt]} />
           </div>
@@ -220,7 +225,7 @@ export function TaskReport({ data, scope, links, panel }: { data: L4OperationsDa
         ]} />
         <div className="rd-split" data-even="">
           <div className="l4-block">
-            <Sub explain={`${by}一段的完成次数，只画有事件的时间段。各段加起来等于上面的完成数。派发没有按时间段的数。`}>{by}完成</Sub>
+            <Sub explain={`${by}一段的完成次数，只画有事件的时间段。各段加起来等于上面的完成数。派发没有按时间段的数。`}>{by}完成<GapNote by={by} /></Sub>
             <BucketChart label={`${by}完成的任务`} history={data.history} unit="次" format={count}
               series={[{ label: "完成", slot: 2 }]} pick={(row) => [row.tasksCompleted]} />
           </div>
@@ -266,12 +271,12 @@ export function TeamReport({ data, scope, links, panel }: { data: L4OperationsDa
         </div>
         <div className="rd-split" data-even="">
           <div className="l4-block">
-            <Sub explain={`${by}一段新绑定邀请的人数，只画有事件的时间段。`}>{by}新增直接邀请</Sub>
+            <Sub explain={`${by}一段新绑定邀请的人数，只画有事件的时间段。`}>{by}新增直接邀请<GapNote by={by} /></Sub>
             <BucketChart label={`${by}新增直接邀请`} history={data.history} unit="人" format={count}
               series={[{ label: "新增直接邀请", slot: 3 }]} pick={(row) => [row.directRefs]} />
           </div>
           <div className="l4-block">
-            <Sub explain={`${by}一段发放的奖励 USDT，只画有事件的时间段。`}>{by}团队奖励发放</Sub>
+            <Sub explain={`${by}一段发放的奖励 USDT，只画有事件的时间段。`}>{by}团队奖励发放<GapNote by={by} /></Sub>
             <BucketChart label={`${by}团队奖励发放 USDT`} history={data.history} unit="USDT" format={(value) => money(value)}
               series={[{ label: "团队奖励发放", slot: 1 }]} pick={(row) => [row.commissionPaidUsdt]} />
           </div>
@@ -299,7 +304,7 @@ export function bestConversion(rows: readonly L4PhaseRow[]) {
 }
 
 const PHASE_EXPLAIN = {
-  active: "这个阶段打开过 App 的人数，同一个人只算一次。",
+  active: "这个阶段有日活记录的人数，同一个人只算一次；日活事件的来源还没确认，不代表所有打开过 App 的人。",
   retention: "在这个阶段注册、之后又活跃过的人 ÷ 在这个阶段注册的人；不是第 7 天留存。算不出时写「—」。",
   conversion: "在这个阶段先逛过商店、之后下单的人 ÷ 逛过商店的人。算不出时写「—」。",
   yield: "这个阶段的收益入账 USDT 合计。",
@@ -319,7 +324,7 @@ export function PhaseReport({ data, scope, links, panel, phaseNames }: { data: L
   );
   return (
     <Panel {...panel} title="运营阶段效果" icon={Flag} tone="role-4" sub={scope} actions={links}
-      explain={<><p>每个阶段只算发生在这个阶段的事件。阶段只显示代号。</p><p>这页只能看，阶段在「运营阶段设置」里改。</p></>}>
+      explain={<><p>每个阶段只算发生在这个阶段的事件。能读到运营阶段设置时显示阶段名，读不到只显示代号。</p><p>这页只能看，阶段在「运营阶段设置」里改。</p></>}>
       {/* 阶段名只采用有权读取的 H1 目录；不可用时保留原代号。 */}
       <div className="l4-stack">
         {single ? (
@@ -373,7 +378,7 @@ export function HistoryFold({ data, scope }: { data: L4OperationsData; scope: st
   const by = bucketWord(data);
   return (
     <Fold icon={CalendarRange} tone="role-other" title="四类报表按同一组时间段对照"
-      summary={rows.length ? `${scope} · ${by}切成 ${rows.length} 段 · ${rows[0].bucket} 至 ${rows[rows.length - 1].bucket}` : `${scope} · 没有事件，没有时间段`}
+      summary={rows.length ? `${scope} · ${by}列出有事件的 ${rows.length} 段 · ${rows[0].bucket} 至 ${rows[rows.length - 1].bucket}` : `${scope} · 没有事件，没有时间段`}
       explain={<>
         <p>设备、任务、团队三块里的柱图都按这同一组时间段切，所以能一段一段对着看：比如哪一周买设备的多、那一周任务完成和新邀请是不是也多。</p>
         <p>日、周按业务日一天一段；月、自定义按周一段，写那一周周一的日期。只列有事件的时间段，没有事件的日子不补 0 行。</p>
