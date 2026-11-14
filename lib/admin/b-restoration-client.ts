@@ -23,7 +23,7 @@ export type B4GrowthFlowHistory = {
   healthyRatio: number;
   currentRatio: number | null;
   suggestion: string;
-  ratioSeries: Array<{ label: string; newInflowWan: number; outflowWan: number; ratio: number | null }>;
+  ratioSeries: Array<{ label: string; newInflowWan: number; outflowWan: number; newInflowUsdt: number; outflowUsdt: number; ratio: number | null }>;
   budget: {
     available: boolean;
     totalUsdt?: number;
@@ -123,6 +123,8 @@ export function normalizeB4GrowthFlowHistory(value: unknown): B4GrowthFlowHistor
       label: text(item.label, `B4.ratioSeries.${index}.label`),
       newInflowWan: nonNegative(item.newInflowWan, `B4.ratioSeries.${index}.newInflowWan`),
       outflowWan: nonNegative(item.outflowWan, `B4.ratioSeries.${index}.outflowWan`),
+      newInflowUsdt: nonNegative(item.newInflowUsdt, `B4.ratioSeries.${index}.newInflowUsdt`),
+      outflowUsdt: nonNegative(item.outflowUsdt, `B4.ratioSeries.${index}.outflowUsdt`),
       ratio: nullableNumber(item.ratio, `B4.ratioSeries.${index}.ratio`),
     };
   });

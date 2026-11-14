@@ -124,8 +124,7 @@ export function PhaseMoney() {
       </div>
     );
   }
-  // 读取已经过 b-restoration-contract 的严格校验，回包带 USDT 原金额；client 里的类型声明少写了这两个字段（报告里交代码 worker 补）。
-  const data = history.data as B4GrowthFlowHistory;
+  const data = history.data;
   return (
     <div className="rd-split" data-even="">
       <RatioPanel data={data} />

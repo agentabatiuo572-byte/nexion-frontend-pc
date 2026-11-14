@@ -15,12 +15,6 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 type Range = { from: number; to: number };
 
-/**
- * 阶段名称。B4 的接口只给 P1–P6，没有阶段名；运营阶段设置的名称来自它自己的接口（参考目录）。
- * TODO(code worker): 后端在 B4 回包里带上阶段名（或协调人定从哪读）后填进来，界面会写成「P4 拐点调节期」。
- */
-const PHASE_NAME_PLACEHOLDER: Record<string, string> = {};
-const named = (phase: string) => (PHASE_NAME_PLACEHOLDER[phase] ? `${phase} ${PHASE_NAME_PLACEHOLDER[phase]}` : phase);
 
 /** 每个阶段管哪几个月：按月的人数分布里每个月带着它属于哪个阶段。 */
 export function phaseRanges(months: readonly B4DistributionRow[]) {
@@ -41,7 +35,8 @@ const span = (range: Range) => (range.from === range.to ? `第 ${range.from} 月
 
 // ---------- 阶段线 ----------
 
-export function StagePanel({ data, ranges, nextPhase }: { data: B4PhaseOverview; ranges: Map<string, Range>; nextPhase: string | null }) {
+export function StagePanel({ data, ranges, nextPhase, phaseNames }: { data: B4PhaseOverview; ranges: Map<string, Range>; nextPhase: string | null; phaseNames: Record<string, string> }) {
+  const named = (phase: string) => phaseNames[phase] ? `${phase} ${phaseNames[phase]}` : phase;
   const { currentPhase, currentMonth, phaseProgressPct } = data.rhythm;
   const phases = data.filters.phaseOptions;
   const mapped = data.monthDistribution.find((row) => row.month === currentMonth)?.phase;
@@ -101,7 +96,8 @@ function BarRow({ row, label, total }: { row: B4DistributionRow; label: ReactNod
   );
 }
 
-export function Distribution({ data, ranges, phase }: { data: B4PhaseOverview; ranges: Map<string, Range>; phase: string }) {
+export function Distribution({ data, ranges, phase, phaseNames }: { data: B4PhaseOverview; ranges: Map<string, Range>; phase: string; phaseNames: Record<string, string> }) {
+  const named = (phase: string) => phaseNames[phase] ? `${phase} ${phaseNames[phase]}` : phase;
   const byMonth = data.filters.granularity === "MONTH";
   const total = data.phaseDistribution.reduce((sum, row) => sum + row.userCount, 0);
   const totalMonths = data.rhythm.totalMonths;
@@ -197,14 +193,16 @@ function changeFor(changes: readonly string[], label: string, unit: string) {
   return { from: dialText(strip(parts[0]), unit), to: dialText(strip(parts[1]), unit) };
 }
 
-export function DialsPanel({ data, canJump, busy, jumping, filteredPhase, onJump }: {
+export function DialsPanel({ data, canJump, busy, jumping, filteredPhase, onJump, phaseNames }: {
   data: B4PhaseOverview;
   canJump: boolean;
   busy: string;
   jumping: string;
   filteredPhase: string | null;
   onJump: (dial: string) => void;
+  phaseNames: Record<string, string>;
 }) {
+  const named = (phase: string) => phaseNames[phase] ? `${phase} ${phaseNames[phase]}` : phase;
   const { currentPhase } = data.rhythm;
   const pivot = data.nextPivot;
   const last = pivot.atMonth == null;

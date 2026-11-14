@@ -8,7 +8,7 @@
  */
 import "./rhythm.css";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Ban, Download, Filter, Flag, RefreshCw, Target } from "lucide-react";
 import {
   BlockState, Button, Conclusion, Explain, FilterBar, Fold, Notice, PageHeader, RdPage, Segments, Select, StatusTag,
@@ -25,6 +25,7 @@ import {
 } from "@/lib/admin/b4-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
+import { fetchH1Phases } from "@/lib/admin/h-client";
 import { DialsPanel, Distribution, StagePanel, nextMonthPhase, phaseRanges } from "./parts";
 import { PhaseMoney } from "./money";
 
@@ -59,8 +60,19 @@ export default function RhythmPage() {
   const canExport = superAdmin || authorities.includes("overview_b4_export");
   const canCross = useReach();
   const canJump = (superAdmin || authorities.includes("overview_b4_jump")) && canCross("/growth/phase");
+  const canReadNames = authorities.includes("growth_h1_read");
+  const [phaseNames, setPhaseNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    setPhaseNames({});
+    if (canReadNames) void fetchH1Phases().then((catalog) => {
+      if (alive) setPhaseNames(Object.fromEntries(catalog.attribution.map((item) => [item.phase, item.name])));
+    }).catch(() => { if (alive) setPhaseNames({}); }); // Optional catalog: B4 still works with phase codes.
+    return () => { alive = false; };
+  }, [canReadNames]);
 
   async function downloadDistribution() {
+    if (!canExport || busy || loading || !data?.available || !data.distribution.length) return;
     setBusy("export");
     setFailure(null);
     try {
@@ -80,11 +92,13 @@ export default function RhythmPage() {
   }
 
   async function openH1(dial: string) {
+    if (!canJump || busy || loading || !data) return;
     setBusy("jump");
     setFailure(null);
     setJumping(dial);
     try {
-      const target = await recordB4H1Jump(dial, filters.phase);
+      const phase = dial === "phaseAttribution" ? (filters.phase === ALL ? data.rhythm.currentPhase : filters.phase) : data.rhythm.currentPhase;
+      const target = await recordB4H1Jump(dial, phase);
       window.location.assign(target.href);
     } catch (value) {
       setFailure({ kind: "jump", dial, message: value instanceof Error ? displayAdminError(value) : "跳转失败，请重试。" });
@@ -95,7 +109,7 @@ export default function RhythmPage() {
 
   const filtered = filters.phase !== ALL;
   const current = data?.rhythm.currentPhase;
-  const exportBlocked = busy !== "" || !data?.available || !data.distribution.length;
+  const exportBlocked = busy !== "" || loading || !data?.available || !data.distribution.length;
   const exportReason = !data ? (loading ? "正在读取各阶段人数" : "这页没有读到数据，先重试") : busy === "export" ? undefined
     : busy ? "正在打开运营阶段设置" : !data.available ? "还没有注册用户，没有可导出的人数" : !data.distribution.length ? "没有可导出的人数" : undefined;
 
@@ -178,7 +192,7 @@ export default function RhythmPage() {
         运营阶段：<b>{current}</b>，第 {currentMonth} 个月（共 {totalMonths} 个月）
       </Conclusion>
 
-      <StagePanel data={data} ranges={ranges} nextPhase={nextPhase} />
+      <StagePanel data={data} ranges={ranges} nextPhase={nextPhase} phaseNames={phaseNames} />
 
       <FilterBar
         scope={<Segments label="查看方式" value={filters.granularity}
@@ -193,10 +207,10 @@ export default function RhythmPage() {
         </span>}
       />
 
-      <Distribution data={data} ranges={ranges} phase={filters.phase} />
+      <Distribution data={data} ranges={ranges} phase={filters.phase} phaseNames={phaseNames} />
 
       <DialsPanel data={data} canJump={canJump} busy={busy} jumping={jumping} filteredPhase={filtered ? filters.phase : null}
-        onJump={(dial) => { if (!busy) void openH1(dial); }} />
+        onJump={(dial) => { if (!busy) void openH1(dial); }} phaseNames={phaseNames} />
 
       <PhaseMoney />
 

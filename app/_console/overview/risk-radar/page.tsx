@@ -3,7 +3,7 @@
 /**
  * B5 风险提醒。先答「现在哪一项在报警、有多严重、去哪页处理」：一句结论，有事的项展开成卡片排在前面，
  * 正常的收成一行；再看出金压力走势、告警分布，最后是最近风险信号和我的站内告警。
- * 读取、权限判断、五类写入口（黄线红线、提高红线审批、告警订阅、五项分诊、确认已读、信号处理进度）的请求和判断沿用改版前的写法，只换界面。
+ * 业务写从本标签页保存的原请求恢复；分诊只有审计副作用，沿B4-PD02处理。
  */
 import "./risk-radar.css";
 import Link from "next/link";
@@ -14,27 +14,24 @@ import {
   BlockState, Button, Change, Check, CheckGroup, Conclusion, DiffField, Explain, Fact, Facts, Field, Input, Modal, Notice, NumberInput,
   PageHeader, PageTabs, Panel, RdPage, StatusTag, Textarea, useTabIds,
 } from "@/app/components/rd";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useToast } from "@/app/components/domain-views/design-kit";
 import {
   fetchB5Radar,
-  acknowledgeB5Inbox,
   fetchB5Inbox,
   fetchB5Subscription,
   previewB5Thresholds,
   recordB5Triage,
-  updateB5Subscription,
-  updateB5Thresholds,
-  updateB5SignalStatus,
   useB5Radar,
   B5OutcomeUnknownError,
   type B5Radar,
   type B5InboxItem,
 } from "@/lib/admin/b5-client";
 import { formatB5RiskLight } from "@/lib/admin/b5-display-labels";
-import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
-import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
-import { pendingConfigApproval, pendingThresholdConfigApproval, submitConfigApproval } from "@/lib/admin/withdrawal-config-approval";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { b5Commands, executeB5Command, inspectB5Command, isB5Original, pendingB5Commands, rememberB5Command, type B5PendingWrite, type B5ThresholdFacts } from "@/lib/admin/b5-commands";
+import { pendingThresholdConfigApproval, submitB5ThresholdApproval } from "@/lib/admin/withdrawal-config-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
@@ -42,12 +39,6 @@ import { fmtConfigPct } from "@/lib/format";
 import { buildDimensions, IssueCard, QuietRow, ratioPct, type BuiltDimension, type DimensionKey } from "./dimensions";
 import { AlertDistribution, HANDLING, InboxTable, PressureTrend, SEVERITY, SignalsTable, TabNote, stamp } from "./insights";
 
-/** B5 阈值 / 订阅 / 分类处理共用一张表,槽位分命名空间(分类处理槽位带维度 = 目标对象)。
- *  阈值与订阅额外把提交值 + 版本当输入指纹:改了值必须换新命令号,否则后端按旧号去重,
- *  新阈值会被静默吞掉。落 sessionStorage,刷新后「结果未知」的重试仍是同一命令号。 */
-const b5Commands = createSlotAttemptStore({
-  storageKey: "nexion-admin-b5-risk-radar-commands-v1",
-});
 const THRESHOLD_SLOT = "bankrun-threshold";
 const SUBSCRIPTION_SLOT = "alert-subscription";
 
@@ -74,8 +65,8 @@ const STATUS_TEXT = { handled: "已处理", resolved: "已解决" } as const;
 const timeText = (value: string) => `${formatBusinessTimeCompact(value, "—")}（${businessZone().label}）`;
 
 /**
- * 直接写入（黄线红线、告警订阅、确认已读、信号处理进度）结果未知时的待确认条。界面已备好，逻辑待代码 worker 接：
- * 现在这几条路径只在本标签页按槽位留命令号，不存原内容、关框后不能按原内容恢复（B5-F02）。按 R1 存好原对象、内容、理由、命令号和首次时间后填进这里。
+ * 直接写入（黄线红线、告警订阅、确认已读、信号处理进度）结果未知时的待确认条。
+ * 原对象、内容、理由、命令号和首次时间来自b5-commands；恢复入口不依赖主快照成功。
  * 写法照资金与应付款总览：页头下、结论句上，一条一个 Notice，24 小时后只核对不重试。
  */
 interface B5PendingCommand {
@@ -84,16 +75,8 @@ interface B5PendingCommand {
   body: ReactNode;
   expired: boolean;
   onRetry?: () => void;
+  onQuery?: () => void;
 }
-// TODO(code worker): 按 R1 从本标签页的待确认记录读出 W01、W03、W09～W11 的原命令。
-const PENDING_PLACEHOLDER: readonly B5PendingCommand[] = [];
-
-/**
- * 提高红线的审批单已登记、等另一位超管批准时，提现压力卡上的「待审批」标记。界面已备好：
- * 这页现在读不到审批单状态（提交成功后只提示一次），等代码 worker 接 A2 待批读取后填进来。
- */
-// TODO(code worker): 接 A2 读取 B/bankrun_thresholds/current 的待批单。
-const APPROVAL_PENDING_PLACEHOLDER: { redPct: number; ticketId: string } | null = null;
 
 function PendingCommands({ items, auditReachable }: { items: readonly B5PendingCommand[]; auditReachable: boolean }) {
   if (!items.length) return null;
@@ -125,7 +108,7 @@ export default function RiskRadarPage() {
   const canTriage = authorities.includes("overview_b5_triage");
   const canCross = useReach();
   const [toastNode, setToast] = useToast();
-  const [threshold, setThreshold] = useState<Pick<B5Radar["bankrun"], "yellowPct" | "redPct" | "version"> | null>(null);
+  const [threshold, setThreshold] = useState<B5ThresholdFacts | null>(null);
   const [yellowInput, setYellowInput] = useState("");
   const [redInput, setRedInput] = useState("");
   const [reason, setReason] = useState("");
@@ -160,13 +143,27 @@ export default function RiskRadarPage() {
   const [tab, setTab] = useState<"signals" | "inbox">("signals");
   const [triaging, setTriaging] = useState<DimensionKey | null>(null);
   const tabIds = useTabIds();
+  const [, syncPending] = useState(0);
+  const [thresholdOriginal, setThresholdOriginal] = useState<Extract<B5PendingWrite, { kind: "threshold" }> | null>(null);
+  const [subscriptionOriginal, setSubscriptionOriginal] = useState<Extract<B5PendingWrite, { kind: "subscription" }> | null>(null);
+  const [statusOriginal, setStatusOriginal] = useState<Extract<B5PendingWrite, { kind: "signal" }> | null>(null);
+  const [subscriber, setSubscriber] = useState("");
+  const [needsFreshRadar, setNeedsFreshRadar] = useState(false);
+  const [subscriptionNeedsRead, setSubscriptionNeedsRead] = useState(false);
+  const [inboxNeedsRead, setInboxNeedsRead] = useState(false);
+  const [approvalVerifiedKey, setApprovalVerifiedKey] = useState<string | null>(null);
+  const pendingWrites = session ? pendingB5Commands(String(session.adminId)) : [];
+  const newWriteBlocked = needsFreshRadar || !!radar.error || !radar.data;
+  useEffect(() => {
+    if (!radar.loading && !radar.error && radar.data) setNeedsFreshRadar(false);
+  }, [radar.loading, radar.error, radar.data]);
 
   useEffect(() => {
     let alive = true;
     setInboxLoading(true);
     setInboxError("");
     fetchB5Inbox()
-      .then((items) => { if (alive) setInbox(items); })
+      .then((items) => { if (alive) { setInbox(items); setInboxNeedsRead(false); } })
       .catch((cause) => { if (alive) setInboxError(displayAdminError(cause)); })
       .finally(() => { if (alive) setInboxLoading(false); });
     return () => { alive = false; };
@@ -181,10 +178,12 @@ export default function RiskRadarPage() {
       .then((next) => {
         if (!alive) return;
         const normalized = { inApp: next.inApp, email: false, webhook: next.webhook, webhookUrl: next.webhookUrl };
-        setSubscription(normalized);
+        if (!session || !pendingB5Commands(String(session.adminId)).some(record => record.fingerprint === SUBSCRIPTION_SLOT)) setSubscription(normalized);
         setSavedSubscription(normalized);
         setSubscriptionVersion(next.version);
         setWebhookMode(next.webhookMode);
+        setSubscriber(next.subscriber);
+        setSubscriptionNeedsRead(false);
       })
       .catch((cause) => {
         if (alive) setSubscriptionError(displayAdminError(cause));
@@ -201,8 +200,8 @@ export default function RiskRadarPage() {
     && Number.isFinite(redPct) && redPct >= 10 && redPct <= 80 && redPct > yellowPct;
   const reasonValid = reason.trim().length >= 8 && reason.trim().length <= 200;
   const pendingApproval = session && pendingThresholdConfigApproval("B5", session.adminId);
-  const requiresApproval = !!pendingApproval || !!threshold && redPct > threshold.redPct;
-  const staleThreshold = !!threshold && radar.data?.bankrun.version !== threshold.version;
+  const requiresApproval = !thresholdOriginal && (!!pendingApproval || !!threshold && redPct > threshold.redPct);
+  const staleThreshold = !thresholdOriginal && !approvalRecovery && !!threshold && radar.data?.bankrun.version !== threshold.version;
   const thresholdVersion = threshold?.version;
   const ratio24h = radar.data?.bankrun.ratio24h;
   const withdraw24hUsdt = radar.data?.bankrun.withdraw24hUsdt;
@@ -210,13 +209,31 @@ export default function RiskRadarPage() {
     ? JSON.stringify([yellowPct, redPct, thresholdVersion])
     : "";
   const previewReady = !!preview && preview.key === previewKey && !previewError;
-  const lookupOnly = approvalRecovery === "lookup" || !!(pendingApproval && pendingApproval.expiresAt <= Date.now());
-  const thresholdLocked = savingThreshold || !!approvalRecovery || lookupOnly;
-  const canSubmitThreshold = canThreshold && !!session && (approvalRecovery === "retry" || reasonValid && previewReady) && !savingThreshold && !lookupOnly
-    && (!approvalRecovery || requiresApproval);
+  const lookupOnly = approvalRecovery === "lookup" || !!(pendingApproval && pendingApproval.expiresAt <= Date.now()) || !!(thresholdOriginal && isRetryExpired(thresholdOriginal));
+  const thresholdLocked = savingThreshold || !!thresholdOriginal || !!approvalRecovery || lookupOnly;
+  const canSubmitThreshold = canThreshold && !!session && !savingThreshold && !lookupOnly && (thresholdOriginal
+    ? !isRetryExpired(thresholdOriginal)
+    : approvalRecovery === "retry" ? !!pendingApproval?.b5Request
+      : !newWriteBlocked && !pendingApproval && !pendingWrites.some(record => record.fingerprint === THRESHOLD_SLOT) && reasonValid && previewReady);
 
   useEffect(() => {
-    if (!previewKey || thresholdVersion === undefined) {
+    if (!session || !pendingApproval || savingThreshold) return;
+    let alive = true;
+    setApprovalVerifiedKey(null);
+    void submitB5ThresholdApproval(session, pendingApproval.values, pendingApproval.reason, fetchB5Radar, "query")
+      .then((result) => {
+        if (alive && result?.ticket.status === "pending") setApprovalVerifiedKey(pendingApproval.commandKey);
+        if (alive && result && result.ticket.status !== "pending") {
+          setThreshold(null); setApprovalRecovery(null); setNeedsFreshRadar(true); void radar.reload();
+        }
+      })
+      .catch((cause) => { if (alive) setThresholdError(displayAdminError(cause)); })
+      .finally(() => { if (alive) syncPending(value => value + 1); });
+    return () => { alive = false; };
+  }, [pendingApproval?.commandKey, radar.data?.generatedAt, savingThreshold]);
+
+  useEffect(() => {
+    if (!canThreshold || thresholdOriginal || approvalRecovery || !previewKey || thresholdVersion === undefined) {
       setPreview(null);
       setPreviewError("");
       return;
@@ -237,7 +254,7 @@ export default function RiskRadarPage() {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [previewKey, thresholdVersion, yellowPct, redPct, ratio24h, withdraw24hUsdt]);
+  }, [canThreshold, thresholdOriginal, approvalRecovery, previewKey, thresholdVersion, yellowPct, redPct, ratio24h, withdraw24hUsdt]);
 
   const subscriptionChanged = useMemo(
     () => JSON.stringify(subscription) !== JSON.stringify(savedSubscription),
@@ -245,44 +262,60 @@ export default function RiskRadarPage() {
   );
   const subscriptionValid = subscription.inApp || subscription.email || subscription.webhook;
 
-  // 旧页面用浏览器原生输入框收理由；现在在确认框里填，请求、命令号槽位和指纹不变。
-  const changeSignalStatus = async (alert: B5Radar["recentAlerts"][number], targetStatus: "handled" | "resolved", input: string) => {
-    const reason = input.trim();
-    if (reason.length < 8 || reason.length > 200) { setStatusError("理由要写 8–200 个字"); return; }
-    const slot = `signal-status:${alert.signalNo}`;
-    const fingerprint = JSON.stringify([alert.signalNo, alert.handlingStatus, alert.handlingVersion, targetStatus, reason]);
-    const commandKey = b5Commands.resolve(slot, fingerprint, () => `b5-signal-status-${crypto.randomUUID()}`);
-    setUpdatingSignal(alert.signalNo);
-    setStatusError("");
-    setStatusUnknown(false);
-    try {
-      await updateB5SignalStatus(alert.signalNo, targetStatus, alert.handlingStatus as "open" | "handled", alert.handlingVersion, reason, operator, commandKey);
-      b5Commands.forget(slot);
-      setStatusDialog(null);
-      await radar.reload();
-      setToast(`已标记为${STATUS_TEXT[targetStatus]}：${alert.message}`);
-    } catch (cause) {
-      if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(slot);
-      setStatusUnknown(cause instanceof B5OutcomeUnknownError);
-      setStatusError(displayAdminError(cause));
-    } finally { setUpdatingSignal(""); }
+  const refreshAfterWrite = async () => {
+    setThreshold(null);
+    setStatusDialog(null);
+    setThresholdOriginal(null);
+    setStatusOriginal(null);
+    setNeedsFreshRadar(true);
+    await radar.reload();
   };
 
-  const acknowledgeInbox = async (delivery: B5InboxItem) => {
-    const slot = `inbox-ack:${delivery.id}`;
-    const commandKey = b5Commands.resolve(slot, String(delivery.id), () => `b5-inbox-ack-${crypto.randomUUID()}`);
+  const changeSignalStatus = async (alert: B5Radar["recentAlerts"][number], targetStatus: "handled" | "resolved", input: string) => {
+    const reason = input.trim();
+    if (!session || !canTriage || updatingSignal || (!statusOriginal && newWriteBlocked)) return;
+    if (reason.length < 8 || reason.length > 200) { setStatusError("理由要写 8–200 个字"); return; }
+    let original = statusOriginal;
+    setUpdatingSignal(alert.signalNo);
+    setStatusError("");
+    try {
+      if (original && !b5Commands.get(original.fingerprint)) return;
+      original ??= rememberB5Command(String(session.adminId), `signal-status:${alert.signalNo}`, "b5-signal-status", {
+        kind: "signal", method: "PATCH", path: `/api/admin/risk/radar/signals/${encodeURIComponent(alert.signalNo)}/status`,
+        body: JSON.stringify({ targetStatus, expectedStatus: alert.handlingStatus, expectedVersion: alert.handlingVersion, reason, operator }), facts: alert,
+      }) as Extract<B5PendingWrite, { kind: "signal" }>;
+      setStatusOriginal(original);
+      await executeB5Command(original);
+      await refreshAfterWrite();
+      setStatusUnknown(false);
+      setToast(`已标记为${STATUS_TEXT[targetStatus]}：${original.facts.message}`);
+    } catch (cause) {
+      if (isExplicitRejection(cause)) { await refreshAfterWrite(); setStatusUnknown(false); }
+      else setStatusUnknown(!!original);
+      setStatusError(displayAdminError(cause));
+      setToast(displayAdminError(cause));
+    } finally { setUpdatingSignal(""); syncPending(value => value + 1); }
+  };
+
+  const acknowledgeInbox = async (delivery: Pick<B5InboxItem, "id" | "signalNo">, recovered?: Extract<B5PendingWrite, { kind: "ack" }>) => {
+    if (!session || !canTriage || acknowledgingDelivery !== null || (!recovered && (inboxLoading || inboxNeedsRead || !!inboxError))) return;
+    if (!recovered && !pendingWrites.some(record => record.fingerprint === `inbox-ack:${delivery.id}`)
+      && !inbox.some(item => item.id === delivery.id && item.deliveryStatus === "DELIVERED" && item.deliveredAt !== null && !item.acknowledgedAt)) return;
     setAcknowledgingDelivery(delivery.id);
     try {
-      await acknowledgeB5Inbox(delivery.id, commandKey);
-      b5Commands.forget(slot);
+      const saved = pendingWrites.find(record => record.fingerprint === `inbox-ack:${delivery.id}`);
+      const original = recovered ?? (saved && isB5Original(saved) && saved.kind === "ack" ? saved : undefined)
+        ?? rememberB5Command(String(session.adminId), `inbox-ack:${delivery.id}`, "b5-inbox-ack", {
+          kind: "ack", method: "POST", path: `/api/admin/risk/radar/inbox/${delivery.id}/acknowledge`, body: "", facts: { id: delivery.id, signalNo: delivery.signalNo },
+        });
+      await executeB5Command(original);
+      setInboxNeedsRead(true);
       setInboxReload((value) => value + 1);
       setToast(`已确认：${delivery.signalNo}`);
     } catch (cause) {
-      if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(slot);
+      if (isExplicitRejection(cause)) { setInboxNeedsRead(true); setInboxReload((value) => value + 1); }
       setToast(displayAdminError(cause));
-    } finally {
-      setAcknowledgingDelivery(null);
-    }
+    } finally { setAcknowledgingDelivery(null); syncPending(value => value + 1); }
   };
 
   const canJ1 = canCross("/emergency/kill-switch");
@@ -294,21 +327,7 @@ export default function RiskRadarPage() {
     ? <Link className="rd-btn" data-variant="secondary" data-size="md" href="/emergency/kill-switch" prefetch={false}><span className="rd-btn-face"><Power size={14} aria-hidden />紧急停用开关</span></Link>
     : null;
 
-  if (radar.loading && !radar.data || radar.error || !radar.data) {
-    const loading = radar.loading && !radar.error;
-    return (
-      <RdPage className="radarpage">
-          {header(undefined, killSwitchLink)}
-          <Conclusion state="unknown" icon={ShieldQuestion} hint={loading ? undefined : "数据读到之前不判断有没有风险。"}>
-            {loading ? "风险提醒：正在读取" : "风险提醒：读取失败，暂时无法判断"}
-          </Conclusion>
-          <BlockState state={loading ? "loading" : "error"} title={loading ? "正在读取五项风险…" : "风险数据读取失败"} detail={radar.error ?? undefined} onRetry={loading ? undefined : radar.reload} retrying={radar.loading} />
-        {toastNode}
-      </RdPage>
-    );
-  }
-
-  const data = radar.data;
+  const data = radar.data!;
   const canTriageDimension = (dimension: keyof typeof TRIAGE) => {
     if (!canTriage) return false;
     if (!canCross(TRIAGE[dimension])) return false;
@@ -316,16 +335,14 @@ export default function RiskRadarPage() {
     return dimension === "bankrun" || dimension === "withdraw-backlog" || dimension === "coverage";
   };
   const triage = async (dimension: keyof typeof TRIAGE) => {
-    const triageSlot = `triage|${dimension}`;
-    const commandKey = b5Commands.resolve(triageSlot, dimension, () => `b5-triage-${crypto.randomUUID()}`);
+    if (triaging || !canTriageDimension(dimension)) return;
+    const commandKey = `b5-triage-${crypto.randomUUID()}`;
     setTriaging(dimension);
     try {
       const target = TRIAGE[dimension];
       await recordB5Triage(dimension, target, operator, commandKey);
-      b5Commands.forget(triageSlot);
       router.push(target);
     } catch (cause) {
-      if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(triageSlot);
       // 分诊只留一条审计，失败了如实说没成功、重新点一次即可（决定 B4-PD02）。
       setToast(`没有跳转：分诊记录没有确认记上，请重新点一次。${cause instanceof Error ? displayAdminError(cause) : ""}`);
     } finally {
@@ -333,91 +350,138 @@ export default function RiskRadarPage() {
     }
   };
   const openThreshold = () => {
-    setYellowInput(String(pendingApproval ? pendingApproval.values.yellowPct : data.bankrun.yellowPct));
-    setRedInput(String(pendingApproval ? pendingApproval.values.redPct : data.bankrun.redPct));
-    setReason(pendingApproval ? pendingApproval.reason : "");
-    setPreview(null);
-    setPreviewError("");
-    setThresholdError("");
-    setApprovalRecovery(pendingApproval ? "lookup" : null);
-    setThreshold(data.bankrun);
+    if (pendingApproval) {
+      setYellowInput(String(pendingApproval.values.yellowPct));
+      setRedInput(String(pendingApproval.values.redPct));
+      setReason(pendingApproval.reason);
+      setThreshold(pendingApproval.b5Facts ?? null);
+      setApprovalRecovery("lookup");
+      if (!pendingApproval.b5Facts) void queryApproval();
+    } else {
+      const saved = pendingWrites.find(record => record.fingerprint === THRESHOLD_SLOT);
+      if (saved) { recoverWrite(saved); return; }
+      if (!canThreshold || newWriteBlocked || !data) return;
+      setYellowInput(String(data.bankrun.yellowPct));
+      setRedInput(String(data.bankrun.redPct));
+      setReason("");
+      setApprovalRecovery(null);
+      setThresholdOriginal(null);
+      setThresholdUnknown(false);
+      setThreshold(data.bankrun);
+    }
+    setPreview(null); setPreviewError(""); setThresholdError("");
+  };
+  const queryApproval = async () => {
+    if (!session || !pendingApproval) return;
+    try {
+      const result = await submitB5ThresholdApproval(session, pendingApproval.values, pendingApproval.reason, fetchB5Radar, "query");
+      setToast(result?.acknowledgement ?? "暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
+      if (result) { setThreshold(null); setNeedsFreshRadar(true); await radar.reload(); }
+      else setApprovalRecovery("retry");
+    } catch (cause) { setThresholdError(displayAdminError(cause)); setToast(displayAdminError(cause)); }
+    finally { syncPending(value => value + 1); }
   };
   const submitThreshold = async (recover = false) => {
-    if (!session || !threshold || !canThreshold || savingThreshold || (!recover && !canSubmitThreshold)) return;
-    setSavingThreshold(true);
-    setThresholdError("");
-    setThresholdUnknown(false);
-    const approving = requiresApproval || recover;
+    if (recover) { await queryApproval(); return; }
+    if (!session || !threshold || !canSubmitThreshold) return;
+    setSavingThreshold(true); setThresholdError("");
+    let original = thresholdOriginal;
+    const facts = !original && !pendingApproval && data ? { ...threshold, ratio24h: data.bankrun.ratio24h, light: data.bankrun.light } : threshold;
     try {
-      if (approving) {
-        const result = await submitConfigApproval("B5", session, pendingApproval ? pendingApproval.values : {
-          expectedVersion: threshold.version, yellowPct, redPct,
-        }, pendingApproval ? pendingApproval.reason : reason.trim(), fetchB5Radar, recover);
-        if (!result) {
-          setApprovalRecovery("retry");
-          setThresholdError("暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
-          return;
-        }
-        radar.setData(result.active);
+      if (requiresApproval) {
+        const result = await submitB5ThresholdApproval(session, pendingApproval?.values ?? { expectedVersion: threshold.version, yellowPct, redPct },
+          pendingApproval?.reason ?? reason.trim(), fetchB5Radar, pendingApproval ? "retry" : "new", facts);
+        if (!result) return;
         setToast(result.acknowledgement);
       } else {
-        const commandKey = b5Commands.resolve(
-          THRESHOLD_SLOT,
-          JSON.stringify([yellowPct, redPct, threshold.version, reason.trim()]),
-          () => `b5-threshold-${crypto.randomUUID()}`,
-        );
-        const next = await updateB5Thresholds(
-          yellowPct, redPct, threshold.version, reason.trim(), operator, commandKey,
-        );
-        b5Commands.forget(THRESHOLD_SLOT);
-        radar.setData(next);
+        original ??= rememberB5Command(String(session.adminId), THRESHOLD_SLOT, "b5-threshold", {
+          kind: "threshold", method: "PUT", path: "/api/admin/risk/bankrun-thresholds", facts,
+          body: JSON.stringify({ yellowPct, redPct, expectedVersion: threshold.version, reason: reason.trim(), operator }),
+        }) as Extract<B5PendingWrite, { kind: "threshold" }>;
+        setThresholdOriginal(original);
+        await executeB5Command(original);
         setToast("提现压力的黄线和红线已更新");
       }
-      setThreshold(null);
+      setApprovalRecovery(null); setThresholdUnknown(false);
+      await refreshAfterWrite();
     } catch (cause) {
-      if (isA2OutcomeUncertainError(cause)) {
-        setApprovalRecovery("lookup");
-        setThresholdError(`${cause.message} 命令号：${cause.commandKey}`);
-      } else {
-        if (!approving && !(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(THRESHOLD_SLOT);
-        if (approving && !pendingConfigApproval("B5", session.adminId)) setApprovalRecovery(null);
-        setThresholdUnknown(cause instanceof B5OutcomeUnknownError);
-        setThresholdError(displayAdminError(cause));
-      }
-    } finally {
-      setSavingThreshold(false);
-    }
+      if (isExplicitRejection(cause)) {
+        const approvalRequired = cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "B5_BANKRUN_THRESHOLDS_APPROVAL_REQUIRED";
+        await refreshAfterWrite();
+        if (approvalRequired) {
+          const fresh = await fetchB5Radar();
+          setThreshold(fresh.bankrun); setApprovalRecovery(null);
+        }
+      } else if (requiresApproval && pendingThresholdConfigApproval("B5", session.adminId)) setApprovalRecovery("lookup");
+      setThresholdUnknown(!!original && !isExplicitRejection(cause));
+      setThresholdError(displayAdminError(cause)); setToast(displayAdminError(cause));
+    } finally { setSavingThreshold(false); syncPending(value => value + 1); }
   };
   const saveSubscription = async () => {
-    if (!canSubscribe || subscriptionLoading || subscriptionError || savingSubscription || !subscriptionChanged || !subscriptionValid) return;
-    setSavingSubscription(true);
-    setSubscriptionSaveError("");
-    setSubscriptionUnknown(false);
-    const commandKey = b5Commands.resolve(
-      SUBSCRIPTION_SLOT,
-      JSON.stringify([subscription, subscriptionVersion]),
-      () => `b5-subscription-${crypto.randomUUID()}`,
-    );
+    if (!session || !canSubscribe || savingSubscription || (!subscriptionOriginal
+      && (subscriptionLoading || subscriptionNeedsRead || !!subscriptionError || !subscriptionChanged || !subscriptionValid))) return;
+    setSavingSubscription(true); setSubscriptionSaveError("");
+    let original = subscriptionOriginal;
     try {
-      const saved = await updateB5Subscription(subscription, subscriptionVersion, operator, commandKey);
-      b5Commands.forget(SUBSCRIPTION_SLOT);
-      const normalized = { inApp: saved.inApp, email: saved.email, webhook: saved.webhook, webhookUrl: saved.webhookUrl };
-      setSubscription(normalized);
-      setSavedSubscription(normalized);
-      setSubscriptionVersion(saved.version);
-      setSubscriptionOpen(false);
+      original ??= rememberB5Command(String(session.adminId), SUBSCRIPTION_SLOT, "b5-subscription", {
+        kind: "subscription", method: "PUT", path: "/api/admin/risk/alert-subscription",
+        body: JSON.stringify({ ...subscription, expectedVersion: subscriptionVersion, operator }),
+        facts: { ...savedSubscription, version: subscriptionVersion, subscriber, emailMode: "disabled", webhookMode, sharedWith: "B1" },
+      }) as Extract<B5PendingWrite, { kind: "subscription" }>;
+      setSubscriptionOriginal(original);
+      await executeB5Command(original);
+      setSubscriptionOriginal(null); setSubscriptionUnknown(false); setSubscriptionOpen(false);
+      setSubscriptionNeedsRead(true); setSubscriptionReload(value => value + 1);
       setToast("告警订阅已保存，之后的新告警发给你");
     } catch (cause) {
-      if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(SUBSCRIPTION_SLOT);
-      setSubscriptionUnknown(cause instanceof B5OutcomeUnknownError);
-      setSubscriptionSaveError(displayAdminError(cause));
-    } finally {
-      setSavingSubscription(false);
-    }
+      if (isExplicitRejection(cause)) {
+        setSubscriptionOriginal(null); setSubscriptionOpen(false);
+        setSubscriptionNeedsRead(true); setSubscriptionReload(value => value + 1);
+      }
+      setSubscriptionUnknown(!!original && !isExplicitRejection(cause));
+      setSubscriptionSaveError(displayAdminError(cause)); setToast(displayAdminError(cause));
+    } finally { setSavingSubscription(false); syncPending(value => value + 1); }
   };
+  const recoverWrite = (record: ReturnType<typeof pendingB5Commands>[number]) => {
+    if (!isB5Original(record)) { setToast("原审批内容不完整，请到操作记录核对。"); return; }
+    const input = record.body ? JSON.parse(record.body) : null;
+    if (record.kind === "threshold") {
+      setThresholdOriginal(record); setThreshold(record.facts); setYellowInput(String(input.yellowPct)); setRedInput(String(input.redPct));
+      setReason(input.reason); setThresholdUnknown(true); setApprovalRecovery(null); setThresholdError("");
+    } else if (record.kind === "subscription") {
+      setSubscriptionOriginal(record); setSubscription({ inApp: input.inApp, email: input.email, webhook: input.webhook, webhookUrl: input.webhookUrl });
+      setSubscriptionUnknown(true); setSubscriptionOpen(true); setSubscriptionSaveError("");
+    } else if (record.kind === "signal") {
+      setStatusOriginal(record); setStatusDialog({ alert: record.facts, target: input.targetStatus }); setStatusReason(input.reason); setStatusUnknown(true); setStatusError("");
+    } else void acknowledgeInbox(record.facts, record);
+  };
+  const queryWrite = async (record: ReturnType<typeof pendingB5Commands>[number]) => {
+    if (!isB5Original(record)) { setToast("原审批内容不完整，请到操作记录核对。"); return; }
+    try {
+      const current = await inspectB5Command(record);
+      if (current.kind === "radar") { radar.setData(current.data); setNeedsFreshRadar(false); }
+      else if (current.kind === "ack") { setInbox(current.data); setInboxError(""); setInboxLoading(false); setInboxNeedsRead(false); }
+      else {
+        setSavedSubscription({ inApp: current.data.inApp, email: current.data.email, webhook: current.data.webhook, webhookUrl: current.data.webhookUrl });
+        setSubscriber(current.data.subscriber); setSubscriptionVersion(current.data.version); setWebhookMode(current.data.webhookMode);
+        setSubscriptionError(""); setSubscriptionLoading(false); setSubscriptionNeedsRead(false);
+      }
+      setToast(displayAdminError(new B5OutcomeUnknownError(record.commandKey)));
+    }
+    catch (cause) { setToast(displayAdminError(cause)); }
+  };
+  const pendingItems: B5PendingCommand[] = pendingWrites.map(record => {
+    const original = isB5Original(record) ? record : null;
+    const input = original?.body ? JSON.parse(original.body) : null;
+    const body = original?.kind === "threshold" ? `黄线 ${fmtConfigPct(original.facts.yellowPct)} → ${fmtConfigPct(input.yellowPct)} · 红线 ${fmtConfigPct(original.facts.redPct)} → ${fmtConfigPct(input.redPct)}`
+      : original?.kind === "signal" ? `${original.facts.signalNo} · ${HANDLING[original.facts.handlingStatus].text} → ${STATUS_TEXT[input.targetStatus as "handled" | "resolved"]}`
+        : original?.kind === "ack" ? `${original.facts.signalNo} · 确认已读` : original?.kind === "subscription" ? "告警订阅" : record.fingerprint;
+    return { commandKey: record.commandKey, title: "结果还没确认，可能已经生效", body: `${body} · ${timeText(new Date(record.createdAt).toISOString())}`,
+      expired: isRetryExpired(record), onRetry: () => recoverWrite(record), onQuery: () => void queryWrite(record) };
+  });
 
   // ---------- 五项 ----------
-  const { issues, quiet } = buildDimensions(data);
+  const { issues, quiet } = data ? buildDimensions(data) : { issues: [], quiet: [] };
   const triageButton = (key: DimensionKey, variant: "primary" | "secondary" | "ghost", size: "md" | "sm") => canTriageDimension(key)
     ? <Button key="triage" variant={variant} size={size} loading={triaging === key} loadingText="正在记录…" icon={<ArrowUpRight size={14} aria-hidden />}
       onClick={() => void triage(key)}>{TRIAGE_LABEL[key]}</Button>
@@ -425,8 +489,9 @@ export default function RiskRadarPage() {
   const thresholdButton = (size: "md" | "sm") => canThreshold
     ? <Button key="threshold" variant="ghost" size={size} icon={<SlidersHorizontal size={14} aria-hidden />} onClick={openThreshold}>调整黄线 / 红线</Button>
     : null;
-  const approvalTag = APPROVAL_PENDING_PLACEHOLDER
-    ? <StatusTag tone="progress" explain={`审批号 ${APPROVAL_PENDING_PLACEHOLDER.ticketId}。另一位有批准权限的超级管理员批准前，红线不变。`}>红线提高到 {fmtConfigPct(APPROVAL_PENDING_PLACEHOLDER.redPct)} 待审批</StatusTag>
+  const approvalPending = pendingApproval?.commandKey === approvalVerifiedKey && pendingApproval?.b5Ticket?.status === "pending" ? { redPct: pendingApproval.values.redPct, ticketId: pendingApproval.b5Ticket.id } : null;
+  const approvalTag = approvalPending
+    ? <StatusTag tone="progress" explain={`审批号 ${approvalPending.ticketId}。另一位有批准权限的超级管理员批准前，红线不变。`}>红线提高到 {fmtConfigPct(approvalPending.redPct)} 待审批</StatusTag>
     : null;
   const actionsFor = (item: BuiltDimension, issue: boolean) => {
     const list = [triageButton(item.key, issue ? "primary" : "ghost", issue ? "md" : "sm"), item.key === "bankrun" ? thresholdButton(issue ? "md" : "sm") : null].filter(Boolean);
@@ -436,7 +501,7 @@ export default function RiskRadarPage() {
   // ---------- 结论 ----------
   const first = issues[0];
   const others = issues.slice(1);
-  const unacked = inboxError || inboxLoading ? null : inbox.filter((item) => !item.acknowledgedAt).length;
+  const unacked = inboxError || inboxLoading || inboxNeedsRead ? null : inbox.filter((item) => !item.acknowledgedAt).length;
   const inboxHint = unacked ? `你有 ${unacked} 条站内告警没确认。` : "";
   const unknownItems = quiet.filter((item) => item.level === "neutral");
   const conclusionExplain = "每一项的颜色都按系统现有的线判断：提现压力看黄线、红线，覆盖率看红线、健康线，积压看有没有超过 48 小时，业务开关看有没有关停，异常账户看有没有。";
@@ -458,7 +523,7 @@ export default function RiskRadarPage() {
     <Conclusion state="warn" hint={`先看${first.name}。${inboxHint}`}>风险提醒：<b>{issues.length}</b> 项要注意，{issues.map((item) => item.name).join("、")}</Conclusion>
   );
 
-  const meta = (
+  const meta = data && (
     <span className="b5-meta">
       数据时间 {timeText(data.generatedAt)}
       <Explain label="数据多久更新" content="打开页面时读一次，之后每 30 秒自动重读；站内告警和告警订阅不跟着自动重读。" />
@@ -467,23 +532,29 @@ export default function RiskRadarPage() {
   );
   const headerActions = (killSwitchLink || canSubscribe) ? (
     <>
-      {canSubscribe && <Button icon={<BellRing size={14} aria-hidden />} onClick={() => { setSubscriptionSaveError(""); setSubscriptionOpen(true); }}>告警订阅</Button>}
+      {canSubscribe && <Button icon={<BellRing size={14} aria-hidden />} onClick={() => { const saved = pendingWrites.find(record => record.fingerprint === SUBSCRIPTION_SLOT); if (saved) { recoverWrite(saved); return; } setSubscriptionOriginal(null); setSubscriptionSaveError(""); setSubscriptionOpen(true); }}>告警订阅</Button>}
       {killSwitchLink}
     </>
   ) : undefined;
   const readOnly = !canThreshold && !canSubscribe && !canTriage ? "你只能查看；分诊、调整黄线红线和告警订阅需要对应权限。" : undefined;
-  const openCount = data.recentAlerts.filter((alert) => alert.handlingStatus === "open").length;
+  const openCount = (data?.recentAlerts ?? []).filter((alert) => alert.handlingStatus === "open").length;
 
   return (
     <RdPage className="radarpage">
-        {header(meta, headerActions, readOnly)}
-        <PendingCommands items={PENDING_PLACEHOLDER} auditReachable={canCross("/platform/audit")} />
-        {canThreshold && pendingApproval && (
+        {header(meta, !data || radar.error ? killSwitchLink : headerActions, !data || radar.error ? undefined : readOnly)}
+        <PendingCommands items={pendingItems} auditReachable={canCross("/platform/audit")} />
+        {pendingApproval && (
           <Notice tone="warn" title="提高红线的审批：提交结果还没确认"
             action={<Button size="sm" onClick={openThreshold}>{pendingApproval.expiresAt <= Date.now() ? "查询原审批" : "核对原审批"}</Button>}>
             红线 {fmtConfigPct(pendingApproval.values.redPct)}、黄线 {fmtConfigPct(pendingApproval.values.yellowPct)}。先查原审批单，查到了就不要重复提交。
           </Notice>
         )}
+        {!data || radar.error ? <>
+          <Conclusion state="unknown" icon={ShieldQuestion} hint={radar.loading && !radar.error ? undefined : "数据读到之前不判断有没有风险。"}>
+            {radar.loading && !radar.error ? "风险提醒：正在读取" : "风险提醒：读取失败，暂时无法判断"}
+          </Conclusion>
+          <BlockState state={radar.loading && !radar.error ? "loading" : "error"} title={radar.loading && !radar.error ? "正在读取五项风险…" : "风险数据读取失败"} detail={radar.error ?? undefined} onRetry={radar.loading && !radar.error ? undefined : radar.reload} retrying={radar.loading} />
+        </> : <>
         {conclusion}
 
         {issues.length > 0 && (
@@ -507,7 +578,7 @@ export default function RiskRadarPage() {
         <section className="b5-lists" aria-label="风险信号和站内告警">
           <PageTabs label="风险信号和站内告警" ids={tabIds} value={tab} onChange={setTab} items={[
             { value: "signals", label: "最近风险信号", count: openCount },
-            { value: "inbox", label: "我的站内告警", count: inboxError || inboxLoading ? "—" : unacked ?? 0 },
+            { value: "inbox", label: "我的站内告警", count: inboxError || inboxLoading || inboxNeedsRead ? "—" : unacked ?? 0 },
           ]} />
           <div {...tabIds.panel(tab)} className="rd-tab-pane">
             {tab === "signals" ? (
@@ -516,14 +587,14 @@ export default function RiskRadarPage() {
                   近 7 个业务日最新 {data.recentAlerts.length} 条 · {openCount} 条待处理
                 </TabNote>
                 <SignalsTable alerts={data.recentAlerts} canTriage={canTriage} updating={updatingSignal} reach={canCross}
-                  onStatus={(alert, target) => { setStatusReason(""); setStatusError(""); setStatusUnknown(false); setStatusDialog({ alert, target }); }} />
+                  onStatus={(alert, target) => { const saved = pendingWrites.find(record => record.fingerprint === `signal-status:${alert.signalNo}`); if (saved) { recoverWrite(saved); return; } if (newWriteBlocked) return; setStatusOriginal(null); setStatusReason(""); setStatusError(""); setStatusUnknown(false); setStatusDialog({ alert, target }); }} />
               </Panel>
             ) : (
               <Panel flush data-capability="b5-subscriber-inbox">
                 <TabNote label="站内告警的范围" explain="只列发给你的站内告警，最多 100 条，不分页。确认已读只记录你看过，不改信号的处理进度。">
                   {inboxLoading ? "正在读取…" : inboxError ? "读取失败" : `发给你的 ${inbox.length} 条 · ${unacked ?? 0} 条没确认`}
                 </TabNote>
-                <InboxTable state={inboxError ? "error" : inboxLoading ? "loading" : "ready"} items={inbox} error={inboxError}
+                <InboxTable state={inboxError ? "error" : inboxLoading || inboxNeedsRead ? "loading" : "ready"} items={inbox} error={inboxError}
                   onRetry={() => setInboxReload((value) => value + 1)} canTriage={canTriage} acknowledging={acknowledgingDelivery}
                   onAcknowledge={(item) => void acknowledgeInbox(item)} />
               </Panel>
@@ -531,7 +602,10 @@ export default function RiskRadarPage() {
           </div>
         </section>
 
+        </>}
+
       {threshold && (() => {
+        const pressure = thresholdOriginal || approvalRecovery ? threshold : data?.bankrun ?? threshold;
         const raising = redPct > threshold.redPct;
         const redDirection = !Number.isFinite(redPct) || redPct === threshold.redPct ? null : raising
           ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="done" icon={Lock}>收紧</StatusTag>;
@@ -539,7 +613,7 @@ export default function RiskRadarPage() {
           ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="done" icon={Lock}>收紧</StatusTag>;
         const orderError = thresholdValid ? undefined : "黄线 5%–50%，红线 10%–80%，红线要高于黄线";
         const submitLabel = approvalRecovery ? "重试原操作" : requiresApproval ? "提交审批" : "确认调整";
-        const blocked = staleThreshold ? "阈值刚被改过，关掉重新打开再调整"
+        const blocked = !canThreshold ? formatAdminApiError("ADMIN_PERMISSION_DENIED", "ADMIN_PERMISSION_DENIED") : staleThreshold ? "阈值刚被改过，关掉重新打开再调整"
           : !thresholdValid ? "先把黄线、红线填在范围内"
             : !reasonValid && approvalRecovery !== "retry" ? "理由要写 8–200 个字"
               : !previewReady && approvalRecovery !== "retry" ? (previewError ? "预览失败，暂不能提交" : "正在按新的线计算，请稍等")
@@ -552,7 +626,7 @@ export default function RiskRadarPage() {
             onClose={() => setThreshold(null)}
             footer={<>
               <Button disabled={savingThreshold} onClick={() => setThreshold(null)}>取消</Button>
-              {approvalRecovery && <Button variant={lookupOnly ? "primary" : "secondary"} loading={savingThreshold && lookupOnly} loadingText="查询中…" disabledReason={canThreshold ? undefined : "没有调整黄线红线的权限"} onClick={() => void submitThreshold(true)}>查询原操作</Button>}
+              {approvalRecovery && <Button variant={lookupOnly ? "primary" : "secondary"} loading={savingThreshold && lookupOnly} loadingText="查询中…" disabledReason={undefined} onClick={() => void submitThreshold(true)}>查询原操作</Button>}
               {!lookupOnly && <Button variant="primary" loading={savingThreshold} loadingText="提交中…" disabledReason={canSubmitThreshold ? undefined : blocked ?? "暂不能提交"} onClick={() => void submitThreshold()}>{submitLabel}</Button>}
             </>}>
             <div className="b5-dialog">
@@ -569,7 +643,7 @@ export default function RiskRadarPage() {
                 {(control) => <NumberInput {...control} aria-label="红线（10%–80%）" unit="%" min={10} max={80} value={redInput} disabled={thresholdLocked} onChange={(event) => setRedInput(event.target.value)} />}
               </DiffField>
               <p className="b5-preview" role="status">
-                现在的提现压力 {data.bankrun.ratio24h === null ? "暂无法计算" : ratioPct(data.bankrun.ratio24h)}，标「{formatB5RiskLight(data.bankrun.light)}」；
+                现在的提现压力 {pressure.ratio24h === null ? "暂无法计算" : ratioPct(pressure.ratio24h)}，标「{formatB5RiskLight(pressure.light)}」；
                 {previewReady ? <>按新的线会标 <StatusTag tone={preview!.light === "red" ? "danger" : preview!.light === "yellow" ? "warn" : preview!.light === "green" ? "ok" : "neutral"}>{formatB5RiskLight(preview!.light)}</StatusTag></>
                   : previewKey && !previewError ? "正在按新的线计算…" : "填好两条线后显示按新的线会标什么。"}
               </p>
@@ -590,14 +664,14 @@ export default function RiskRadarPage() {
         );
       })()}
 
-      {subscriptionOpen && canSubscribe && (
+      {subscriptionOpen && (canSubscribe || subscriptionOriginal) && (
         <Modal title="告警订阅" icon={BellRing} busy={savingSubscription} dirty={subscriptionChanged}
           sub={<StatusTag tone="progress" filled>立即生效</StatusTag>}
           onClose={() => setSubscriptionOpen(false)}
           footer={<>
             <Button disabled={savingSubscription} onClick={() => setSubscriptionOpen(false)}>取消</Button>
             <Button variant="primary" loading={savingSubscription} loadingText="保存中…"
-              disabledReason={subscriptionLoading ? "正在读取现在的订阅" : subscriptionError ? "现在的订阅没读到，不能保存" : !subscriptionChanged ? "还没有改动" : !subscriptionValid ? "至少开一个渠道" : undefined}
+              disabledReason={!canSubscribe ? formatAdminApiError("ADMIN_PERMISSION_DENIED", "ADMIN_PERMISSION_DENIED") : subscriptionOriginal ? isRetryExpired(subscriptionOriginal) ? "已超过 24 小时，只能核对，不能重试。" : undefined : subscriptionNeedsRead || subscriptionLoading ? "正在读取现在的订阅" : subscriptionError ? "现在的订阅没读到，不能保存" : !subscriptionChanged ? "还没有改动" : !subscriptionValid ? "至少开一个渠道" : undefined}
               onClick={() => void saveSubscription()}>保存订阅</Button>
           </>}>
           <div className="b5-dialog">
@@ -607,24 +681,23 @@ export default function RiskRadarPage() {
             ) : (
               <>
                 <Facts>
-                  {/* TODO(code worker): 接口返回 subscriber，b5-client 的 normalizeSubscription 现在丢掉了它；接上后写现在的接收人。 */}
-                  <Fact k="现在的接收人">—</Fact>
+                  <Fact k="现在的接收人">{subscriptionOriginal?.facts.subscriber ?? (subscriber || "—")}</Fact>
                   <Fact k="保存后的接收人">你</Fact>
                 </Facts>
                 <Notice tone="warn">
                   这份订阅全平台只有一份，和「资金与应付款总览」共用。保存后你会成为唯一的接收人，之后的新告警只发给你；排队中的外部通知也会按新地址发。
                 </Notice>
                 <CheckGroup legend="发送渠道" summary={subscriptionValid ? undefined : "至少开一个"}>
-                  <Check name="inApp" label="站内告警" checked={subscription.inApp} disabled={!canSubscribe} onChange={(event) => setSubscription((value) => ({ ...value, inApp: event.target.checked }))} />
+                  <Check name="inApp" label="站内告警" checked={subscription.inApp} disabled={!canSubscribe || !!subscriptionOriginal || savingSubscription} onChange={(event) => setSubscription((value) => ({ ...value, inApp: event.target.checked }))} />
                   <Check name="email" label="邮件" checked={false} disabled help="邮件服务没接通，暂不可用。" />
                   <Check name="webhook" label="外部通知" checked={subscription.webhook}
-                    disabled={!canSubscribe || (webhookMode !== "controlled-proxy" && !subscription.webhook)}
+                    disabled={!canSubscribe || !!subscriptionOriginal || savingSubscription || (webhookMode !== "controlled-proxy" && !subscription.webhook)}
                     help={webhookMode === "controlled-proxy" ? "已配置受控代理，可以开启。" : subscription.webhook ? "没有配置受控代理，只能关闭。" : "没有配置受控代理，暂不能开启。"}
                     onChange={(event) => setSubscription((value) => ({ ...value, webhook: event.target.checked }))} />
                 </CheckGroup>
                 {subscription.webhook && (
                   <Field label="外部通知接收地址" hint="https 开头，最多 500 字" help="保存时系统检查地址是否在允许名单内、是不是公网地址；保存时不试发。">
-                    <Input aria-label="外部通知接收地址" value={subscription.webhookUrl} disabled={!canSubscribe} placeholder="https://..."
+                    <Input aria-label="外部通知接收地址" value={subscription.webhookUrl} disabled={!canSubscribe || !!subscriptionOriginal || savingSubscription} placeholder="https://..."
                       onChange={(event) => setSubscription((value) => ({ ...value, webhookUrl: event.target.value }))} />
                   </Field>
                 )}
@@ -645,7 +718,7 @@ export default function RiskRadarPage() {
             onClose={() => setStatusDialog(null)}
             footer={<>
               <Button disabled={busy} onClick={() => setStatusDialog(null)}>取消</Button>
-              <Button variant="primary" loading={busy} loadingText="提交中…" disabledReason={valid ? undefined : "理由要写 8–200 个字"}
+              <Button variant="primary" loading={busy} loadingText="提交中…" disabledReason={!canTriage ? "你只能查看；分诊、调整黄线红线和告警订阅需要对应权限。" : statusOriginal && isRetryExpired(statusOriginal) ? "已超过 24 小时，只能核对，不能重试。" : valid ? undefined : "理由要写 8–200 个字"}
                 onClick={() => void changeSignalStatus(alert, target, statusReason)}>{statusUnknown ? "按原内容重试" : target === "handled" ? "确认标记已处理" : "确认标记已解决"}</Button>
             </>}>
             <div className="b5-dialog">

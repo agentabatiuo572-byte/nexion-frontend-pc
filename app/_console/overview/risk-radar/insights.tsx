@@ -212,7 +212,7 @@ export function InboxTable({ state, items, error, onRetry, canTriage, acknowledg
             ? <TableMessage columns={canTriage ? 5 : 4}>没有发给你的站内告警</TableMessage>
             : items.map((item) => {
               // 只有送达时间为空的行（还没送达）才挡住；能读到的行照旧都给「确认已读」，后端按送达状态校验。
-              const delivered = item.deliveredAt !== null;
+              const delivered = item.deliveryStatus === "DELIVERED" && item.deliveredAt !== null;
               return (
                 <Tr key={item.id}>
                   <Td><Cell main={<SignalNo value={item.signalNo} />} /></Td>
@@ -226,7 +226,7 @@ export function InboxTable({ state, items, error, onRetry, canTriage, acknowledg
                       {!item.acknowledgedAt && (
                         <Button size="sm" loading={acknowledging === item.id}
                           disabledReason={delivered ? undefined : "这条还没送达，送达后才能确认"}
-                          onClick={() => onAcknowledge(item as B5InboxItem)}>确认已读</Button>
+                          onClick={() => onAcknowledge(item)}>确认已读</Button>
                       )}
                     </Td>
                   )}
