@@ -128,7 +128,7 @@ export default function H4Promotions({ ctx, legacy }: {
         {listTab !== 'legacy' && list.data && pageReady && <PromotionOverview page={list.data} pendingCount={pendingItems.length} catalog={catalog.data} rewardsAllowed={can('growth_promotion_reward_read')} onOpenRewards={id => navigate('rewards', id)} onOpenDetail={id => navigate('detail', id)}/>}
         <PageTabs label="活动中心分区" value={listTab} items={tabItems} onChange={chooseTab} ids={tabIds}/>
         <div role="tabpanel" id={tabIds.panelId(listTab)} aria-labelledby={tabIds.tab(listTab)} className="h4-tabpanel">
-            {listTab === 'legacy' ? <div className="dkpage h4-legacy">{legacy}</div>
+            {listTab === 'legacy' ? legacy
                 : listTab === 'policies' ? policiesPanel
                 : !pageReady && (pageLoading || readErrors.length > 0) ? <PromotionReadPanel title="活动中心" loading={readErrors.length === 0} errors={readErrors}/>
                 : listTab === 'rewards' ? rewardsPanel : promotionsPanel}
