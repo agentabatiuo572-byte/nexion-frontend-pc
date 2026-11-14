@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import "./j-domain.css";
 import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
-import { DomainHeader, type DomainViewMeta } from "./domain-header";
+import type { DomainViewMeta } from "./domain-header";
 import { fetchJEmergencyOverviews, jEmergencyActions, type JEmergencyData } from "@/lib/admin/j-client";
 import { J1KillSwitch } from "./j-tabs/j1-killswitch";
 import { J2GeoBlock } from "./j-tabs/j2-geoblock";
@@ -125,6 +125,8 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
       facts={mc.facts}
       reasonPlaceholder={mc.reasonPlaceholder}
       reasonPolicyOptional={mc.reasonPolicyOptional}
+      getPendingReason={mc.getPendingReason}
+      getPendingBusinessValue={mc.getPendingBusinessValue}
       blockedReason={mc.blockedReason}
       onClose={() => setActionConfirm(null)}
       onConfirm={async (reason, newValue, businessValue) => {
@@ -146,27 +148,4 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
   if (tab === "J3") return <RdPage className="jdom"><J3Tamper ctx={ctx} />{confirmModal}{toastNode}</RdPage>;
   // J4 也自己写页头和读取失败：结果未知的提醒在读取失败时也要留着。
   if (tab === "J4") return <RdPage className="jdom"><J4Sop ctx={ctx} />{confirmModal}{toastNode}</RdPage>;
-
-  return (
-    <div className="dkpage jdom">
-      <DomainHeader
-        {...meta}
-        right={undefined}
-      />
-
-      {contentError && (
-        <section className="matrix-card" role="alert">
-          <div className="matrix-h">
-            <span className="ttl">当前无法确认最新状态</span>
-            <span className="sub">· {contentError} 为避免误操作，控制项已隐藏。</span>
-            <div className="r"><button type="button" onClick={() => void reloadJEmergency().catch(() => undefined)}>刷新</button></div>
-          </div>
-        </section>
-      )}
-
-
-      {confirmModal}
-      {toastNode}
-    </div>
-  );
 }

@@ -987,6 +987,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   EMERGENCY_ROUTE_NOT_FOUND: "当前服务版本未提供该应急能力，请刷新页面；若仍出现，请联系值班人员检查系统版本。",
   EMERGENCY_BACKEND_UNAVAILABLE: "应急控制系统当前不可用，控制项已隐藏；请稍后重新加载，持续失败时联系值班人员。",
   EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE: "当前浏览器无法安全保存应急命令号，本次操作未提交；请启用会话存储或更换受支持的浏览器后重试。",
+  EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE: "原请求记录不完整，无法安全提交。请关闭确认框，查询原结果并核对操作记录。",
+  ADMIN_RBAC_RULE_MISSING: "后台缺少此接口的权限规则，本次请求被拒绝。请联系技术人员补齐规则后重试。",
   EMERGENCY_API_401: "登录已失效，请重新登录后再查看应急控制状态。",
   EMERGENCY_API_403: "当前账号没有查看该应急页面的权限，请联系管理员开通对应只读权限。",
   EMERGENCY_API_404: "应急控制服务尚未提供该页面能力，请联系技术人员检查服务版本。",

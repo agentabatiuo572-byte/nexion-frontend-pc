@@ -6,15 +6,17 @@
  * 第二层：名单国家明细、拦截记录、最近修改（折叠）。
  * 五个写入口直接生效、不走审批：改名单（整份替换）、改入口规则、切换识别源、应急批量封锁。
  * 改名单、改入口规则、应急批量封锁先在选择框里选国家，随时看到加了哪些、去了哪些，再进共用确认框写理由提交；
- * 请求、校验、提交锁和结果未知的处理都和改版前一样（runBackend、j-client 的命令号）。
- * 结果未知按 R1 由代码 worker 接：这里备好逐条提醒（J2RecoveryNotice）和对象上的「结果未知」标记，现在传空。
+ * 完整原请求由 j-client 共用存储保存，结果未知后冻结并按 R1 恢复。
  */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Ban, Globe2, Replace, Unplug, History, ListOrdered, Plus, Radar, RefreshCw, ShieldMinus, Siren, Waypoints } from "lucide-react";
 import { BarList, BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, Input, KeyValues, Notice, PageHeader, Panel, SearchSelect, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { isEmergencyOutcomeUncertain, type GeoCountry, type GeoEndpoint, type GeoRecentChange } from "@/lib/admin/j-client";
+import { getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { expiredTag, unknownTag } from "../g-tabs/g-recovery";
@@ -26,8 +28,6 @@ const TRIGGER_LABELS = { "": "请选择触发依据" };
 const IMMEDIATE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 const REASON_HINT = "例如：监管通知编号、工单号、事件编号";
 const READING = "正在读取最新状态，读完再操作";
-/** 拦截分布后端只给前 20 个国家，合计也只算这 20 个（J2-口径、J2-BE-01）。 */
-const HIT_LIMIT = 20;
 /** 名单卡上直接摆出的国家数，其余到「名单国家明细」里看。 */
 const WALL = 18;
 const MODE_TEXT: Record<"derived" | "explicit", string> = { derived: "继承全局", explicit: "单独设定" };
@@ -49,14 +49,18 @@ function createJ2CommandKey(scope: string) {
 
 const count = (value: number) => value.toLocaleString("en-US");
 
-/** USDT 合计：每个值按 6 位小数转成整数再加，浮点误差不进显示；去掉补的 0，至少 2 位，不舍入（TX-19）。 */
-function usdtSum(values: number[]) {
-  const total = values.reduce((sum, value) => sum + BigInt(value.toFixed(6).replace(".", "")), BigInt(0));
+/** Sum backend decimal strings with integer arithmetic, preserving all significant digits. */
+function usdtSum(values: string[]) {
+  const scale = Math.max(2, ...values.map((value) => value.split(".")[1]?.length ?? 0));
+  const total = values.reduce((sum, value) => {
+    const [whole, fraction = ""] = value.replace(/^-/, "").split(".");
+    const amount = BigInt(whole + fraction.padEnd(scale, "0"));
+    return sum + (value.startsWith("-") ? -amount : amount);
+  }, BigInt(0));
   const negative = total < BigInt(0);
-  const abs = negative ? -total : total;
-  const million = BigInt(1000000);
-  const whole = (abs / million).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  const fraction = (abs % million).toString().padStart(6, "0").replace(/0+$/, "").padEnd(2, "0");
+  const digits = (negative ? -total : total).toString().padStart(scale + 1, "0");
+  const whole = digits.slice(0, -scale).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const fraction = digits.slice(-scale).replace(/0+$/, "").padEnd(2, "0");
   return `${negative ? "-" : ""}${whole}.${fraction}`;
 }
 
@@ -161,12 +165,89 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       .map((option) => ({ value: option.value, label: `${option.label}（${option.value}）`, extra: status.has(option.value) ? `现在${STATUS_TEXT[status.get(option.value)!]}` : undefined }));
   }, [data, lookupText]);
 
-  // 结果未知的原操作。旧逻辑只在本标签页存命令号和输入指纹，不存原请求的名单和理由，拼不出逐条提醒；
-  // 代码 worker 按 R1 保存原请求后在这里拼行，并把对象键（list:blocked、list:limited、endpoint:{key}、edge）放进 unknownOn。
-  const recoveryRows: J2RecoveryRow[] = [];
-  const unknownOn = new Set<string>();
+  const [pending, setPending] = useState<J2PendingCommand[]>([]);
+  const [legacy, setLegacy] = useState<ReturnType<typeof listJ2LegacyCommands>>([]);
+  const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
+  const currentState = useRef({ data, contentLoading, contentError, authorities });
+  currentState.current = { data, contentLoading, contentError, authorities };
+  const activeConfirmation = useRef<{ slot: string; restored: boolean } | null>(null);
+  const syncPending = () => {
+    setPending(listJ2PendingCommands());
+    setLegacy(listJ2LegacyCommands());
+  };
+  useEffect(() => {
+    setPending(listJ2PendingCommands());
+    setLegacy(listJ2LegacyCommands());
+  }, [session?.adminId]);
+  useEffect(() => {
+    const expiry = Math.min(...[...pending, ...legacy].filter((record) => !isRetryExpired(record)).map((record) => record.expiresAt));
+    if (!Number.isFinite(expiry)) return;
+    const timer = window.setTimeout(() => {
+      const active = activeConfirmation.current;
+      const saved = active && getJ2PendingCommand(active.slot);
+      if (saved && isRetryExpired(saved)) openActionConfirm(null);
+      setPending(listJ2PendingCommands());
+      setLegacy(listJ2LegacyCommands());
+    }, Math.max(0, expiry - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [pending, legacy, openActionConfirm]);
+  useEffect(() => {
+    // Refreshing current data invalidates every unsent draft. Saved recovery is independent.
+    if (contentLoading) {
+      setEditor(null);
+      const active = activeConfirmation.current;
+      if (active && !active.restored && !getJ2PendingCommand(active.slot)) {
+        openActionConfirm(null);
+        activeConfirmation.current = null;
+      }
+    }
+  }, [contentLoading, openActionConfirm]);
+  const queryOriginal = async (record: { commandKey: string }) => {
+    try {
+      await actions.reloadJEmergency();
+      setPendingNotes((notes) => ({ ...notes, [record.commandKey]: "页面已刷新，请核对现在的名单、规则和最近修改。" }));
+    } catch (error) {
+      setPendingNotes((notes) => ({ ...notes, [record.commandKey]: displayAdminError(error) }));
+    }
+    syncPending();
+  };
+  const recoveryRows: J2RecoveryRow[] = pending.map((record) => {
+    const input = JSON.parse(record.geo.body) as J2CommandBody;
+    const names = Object.fromEntries(record.geo.context.overview.countryOptions.map((option) => [option.value, option.label]));
+    const sourceLabels = Object.fromEntries(record.geo.context.overview.edge.sources.map((source) => [source.value, source.label]));
+    const label = (codes: string[]) => codes.map((cc) => countryName(cc, names)).join("、") || "空名单";
+    const change = record.geo.path.endsWith("edge-judge")
+      ? `${sourceLabels[input.expectedSource!] ?? "未登记的识别源"} → ${sourceLabels[input.source!]}`
+      : record.geo.path.includes("endpoints/")
+        ? `${MODE_TEXT[input.expectedMode as keyof typeof MODE_TEXT]}：${label(input.expectedCountries!)} → ${MODE_TEXT[input.mode as keyof typeof MODE_TEXT]}：${label(input.countries!)}`
+        : record.geo.path.endsWith("emergency-blocks") ? `加 ${label(input.countries!)}` : `${label(input.expectedCountries!)} → ${label(input.countries!)}`;
+    return {
+      key: record.commandKey, name: record.geo.context.label, change,
+      submittedAt: record.createdAt, expired: isRetryExpired(record),
+      onQuery: () => void queryOriginal(record),
+      onRetry: canRetry(record) ? () => restoreOriginal(record) : undefined,
+      note: pendingNotes[record.commandKey],
+    };
+  });
+  recoveryRows.push(...legacy.map((record) => ({
+    key: record.commandKey,
+    name: record.fingerprint.includes("country-lists/blocked") ? "封锁名单" : record.fingerprint.includes("country-lists/limited") ? "受限名单" : record.fingerprint.includes("endpoints/") ? "功能入口规则" : record.fingerprint.endsWith("edge-judge") ? "地区识别源" : "应急批量封锁",
+    change: formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"),
+    submittedAt: record.createdAt, expired: isRetryExpired(record),
+    onQuery: () => void queryOriginal(record), note: pendingNotes[record.commandKey],
+  })));
+  const countryWriteUnknown = [...pending, ...legacy].some((record) => record.fingerprint.includes("country-lists/") || record.fingerprint.endsWith("emergency-blocks"));
+  const unknownOn = new Set([...pending, ...legacy].map((record) => record.fingerprint.includes("country-lists/")
+    ? `list:${record.fingerprint.split("/").at(-1)}` : record.fingerprint.includes("endpoints/")
+      ? `endpoint:${decodeURIComponent(record.fingerprint.split("/").at(-1)!)}` : record.fingerprint.endsWith("edge-judge") ? "edge" : "emergency"));
   const recovery = <J2RecoveryNotice rows={recoveryRows} unknownTag={unknownTag("direct")} expiredTag={expiredTag("direct")} />;
 
+  function canRetry(record: J2PendingCommand) {
+    const permission = record.geo.path.includes("country-lists/") ? "emergency_j2_country_manage"
+      : record.geo.path.includes("endpoints/") ? "emergency_j2_write"
+        : record.geo.path.endsWith("edge-judge") ? "emergency_j2_edge_source_manage" : "emergency_j2_emergency_block";
+    return currentState.current.authorities.has(permission);
+  }
   const reload = () => void actions.reloadJEmergency().catch(() => undefined);
   const readOnly = !canCountry && !canEndpoint && !canEdge && !canEmergency;
 
@@ -181,6 +262,312 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       readOnly={readOnly ? <>你只能查看 <Explain label="只读说明" content="改名单、改入口规则、切换识别源和应急批量封锁各要对应的权限，请联系超级管理员。" /></> : undefined}
       guideExtra={<p>这个账号：{canCountry ? "能改封锁名单和受限名单" : "不能改名单"}，{canEndpoint ? "能改入口规则" : "不能改入口规则"}，{canEdge ? "能切换识别源" : "不能切换识别源"}，{canEmergency ? "能应急批量封锁" : "不能应急批量封锁"}。</p>} />
   );
+
+  const closeConfirm = () => openActionConfirm(null);
+  const canStart = (slot: string) => {
+    const permission = slot.includes("country-lists/") ? "emergency_j2_country_manage" : slot.includes("endpoints/") ? "emergency_j2_write" : slot.endsWith("edge-judge") ? "emergency_j2_edge_source_manage" : "emergency_j2_emergency_block";
+    if (!currentState.current.data || currentState.current.contentLoading || currentState.current.contentError) return false;
+    if (!currentState.current.authorities.has(permission)) return false;
+    if (getJ2PendingCommand(slot) || listJ2LegacyCommands().some((record) => record.fingerprint === slot)) return false;
+    // Both list replacements and emergency additions touch the same country policy table.
+    if (!slot.includes("endpoints/") && !slot.endsWith("edge-judge") && [...listJ2PendingCommands(), ...listJ2LegacyCommands()].some((row) => row.fingerprint.includes("country-lists/") || row.fingerprint.endsWith("emergency-blocks"))) return false;
+    return true;
+  };
+  const commandOptions = (slot: string, retained?: J2PendingCommand) => {
+    activeConfirmation.current = { slot, restored: !!retained };
+    return {
+      formKey: Date.now(),
+      getPendingReason: () => {
+        const saved = getJ2PendingCommand(slot);
+        return saved ? (JSON.parse(saved.geo.body) as J2CommandBody).reason : undefined;
+      },
+      getPendingBusinessValue: () => {
+        const saved = getJ2PendingCommand(slot);
+        return saved ? { triggerBasis: (JSON.parse(saved.geo.body) as J2CommandBody).triggerBasis ?? "" } : undefined;
+      },
+    };
+  };
+  const runBackend = async (task: () => Promise<void>, ok: string, slot: string, retained?: J2PendingCommand) => {
+    const original = getJ2PendingCommand(slot);
+    if (retained && (!original || original.commandKey !== retained.commandKey)) {
+      openActionConfirm(null);
+      return;
+    }
+    if (original && isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
+    if (original && !canRetry(original)) throw new Error("当前账号没有这项操作的权限");
+    if (!original && !canStart(slot)) throw new Error(READING);
+    try {
+      if (original) await retryJ2Command(original);
+      else await task();
+    } catch (error) {
+      syncPending();
+      if (original && isExplicitRejection(error)) {
+        activeConfirmation.current = null;
+        openActionConfirm(null);
+        toast(displayAdminError(error), "error");
+        await actions.reloadJEmergency().catch(() => undefined);
+      } else if (isEmergencyOutcomeUncertain(error)) {
+        try {
+          await actions.reloadJEmergency();
+          toast(`结果未知 · 页面已刷新，请核对现在的名单、规则和最近修改。${error instanceof Error ? ` ${error.message}` : ""}`, "warn");
+        } catch {
+          toast("结果未知，页面也刷新不了。请不要重复提交，等网络恢复后刷新页面并核对最近修改。", "warn");
+        }
+      }
+      throw error;
+    }
+    syncPending();
+    activeConfirmation.current = null;
+    openActionConfirm(null);
+    setEditor(null);
+    try {
+      await actions.reloadJEmergency();
+      toast(ok, "success");
+    } catch {
+      toast(`${ok}，但最新状态暂时无法读取，请刷新确认`, "warn");
+    }
+  };
+
+  /** 加进来的这几个国家按账户国家统计的人数和余额：只是参考，不是实际会被拦的人。 */
+  const impactOf = (codes: string[], lead: string, snapshot: GeoBlockOverview) => {
+    if (codes.length === 0) return undefined;
+    const optionOf = new Map(snapshot.countryOptions.map((option) => [option.value, option]));
+    const rows = codes.map((cc) => optionOf.get(cc)).filter((row): row is NonNullable<typeof row> => !!row);
+    return <>{lead}：活跃用户 <b>{count(rows.reduce((sum, row) => sum + row.activeUsers, 0))}</b> 位，钱包余额 <b>{usdtSum(rows.map((row) => row.walletUsdt))}</b> USDT<Explain label="账户国家口径" content="按用户账户里保存的国家统计，不是来访地区，所以不等于实际会被拦的人。活跃用户只算状态正常的账户；钱包余额是这些国家全部账户的可用和提现中 USDT 之和，不含 UVT。" /></>;
+  };
+
+  const handlersFor = (snapshot: GeoBlockOverview, retained?: J2PendingCommand) => {
+    const banned = snapshot.blocked;
+    const limited = snapshot.limited;
+    const blockedCodes = new Set(banned.map((row) => row.cc));
+    const limitedCodes = new Set(limited.map((row) => row.cc));
+    const statusOf = (cc: string): GeoStatus | undefined => blockedCodes.has(cc) ? "blocked" : limitedCodes.has(cc) ? "limited" : undefined;
+    const countryNames = Object.fromEntries(snapshot.countryOptions.map((option) => [option.value, option.label]));
+    const limitedCandidates = snapshot.countryOptions.filter((option) => !blockedCodes.has(option.value));
+    const emergencyCandidates = limitedCandidates;
+    const edgeSource = snapshot.edge.source;
+    const edgeSwitchCandidates = snapshot.edge.sources.filter((source) => source.healthy && source.value !== edgeSource);
+    const edgeSourceLabels = Object.fromEntries(snapshot.edge.sources.map((source) => [source.value, source.label]));
+    const currentEdgeLabel = snapshot.edge.sourceKnown ? edgeSourceLabels[edgeSource] ?? "已设置的识别源" : "未登记的识别源";
+    const edgeFallbackAvailable = snapshot.edge.sourceKnown && snapshot.edge.healthy;
+
+    /** 第二步：共用确认框。提交的是整份名单，和改版前同一个请求（J2-A01、A02）。 */
+    const confirmCountryList = (target: GeoStatus, picked: string[]) => {
+      const slot = `PUT /geo-block/country-lists/${target}`;
+      const command = commandOptions(slot, retained);
+      const current = target === "blocked" ? banned : limited;
+      const currentCodes = current.map((country) => country.cc).sort();
+      const countries = [...picked].map((item) => item.trim()).filter(Boolean).sort();
+      const added = countries.filter((country) => !currentCodes.includes(country));
+      const blockedList = target === "blocked";
+      openActionConfirm({ ...command, briefKind: "config",
+        action: blockedList ? "编辑全局封禁名单" : "编辑受限名单",
+        title: blockedList ? "替换封锁名单" : "替换受限名单",
+        effect: <>{IMMEDIATE}<StatusTag tone="neutral" icon={Replace}>整份替换</StatusTag></>,
+        facts: <CountryDiff initial={currentCodes} codes={countries} names={countryNames} statusOf={statusOf}
+          addTitle={blockedList ? "加进封锁名单" : "加进受限名单"}
+          addEffect={blockedList ? `这些地区的用户之后的请求全部被拒：注册、登录、浏览和资金操作都不行。${added.some((cc) => limitedCodes.has(cc)) ? "原来受限的改成封锁。" : ""}` : "这些地区的用户还能登录和浏览，资金和奖励类操作（提现、兑换、下单、领奖励等）马上被拒。"}
+          impact={impactOf(added, "加进来的按账户国家统计", snapshot)}
+          removeTitle={blockedList ? "从封锁名单去掉" : "从受限名单去掉"}
+          removeEffect={blockedList ? "改回不限制（不会自动变成受限），这些地区的用户马上能正常使用；入口单独封锁的规则还在。" : "改回不限制，资金和奖励类操作马上放开；入口单独封锁的规则还在。"}
+          keptTitle="名单里不变的"
+          onBack={() => { if (getJ2PendingCommand(slot)) return; closeConfirm(); openListEditor(target, { codes: countries }); }} />,
+        detail: blockedList
+          ? "提交的是整份封锁名单，不是只加一个。如果别人刚改过名单，或加、去的国家正被审批锁住，整份不执行，刷新后重改。"
+          : "提交的是整份受限名单，不是只加一个。已封锁的国家不能直接改成受限，要先从封锁名单去掉。如果别人刚改过名单，整份不执行，刷新后重改。",
+        statedBrief: { impact: `提交后名单变成 ${countries.length} 个。加进来的马上被拦，去掉的马上放开。`, check: "核对加和去的国家，理由写清依据或工单号。" },
+        confirmTone: blockedList ? "danger" : "primary",
+        confirmLabel: "确认替换，立即生效",
+        reasonPlaceholder: REASON_HINT,
+        reasonMax: 200,
+        businessForm: blockedList && added.length > 0 ? {
+          kind: "multi-field",
+          reasonMax: 200,
+          fields: [{ key: "triggerBasis", label: "触发依据", current: "", inputKind: "select", options: TRIGGER_BASES, optionLabels: TRIGGER_LABELS, wide: true, explain: "加进封锁名单时必须选；只去掉国家时不用选。" }],
+        } : undefined,
+        run: (reason, _newValue, businessValue) => {
+          const triggerBasis = businessValue?.triggerBasis ?? "";
+          if (target === "blocked" && added.length > 0 && !triggerBasis) {
+            const error = new Error("新增封禁国家时，请选择触发依据");
+            toast(`操作未完成 · ${error.message}`);
+            throw error;
+          }
+          return runBackend(
+            () => actions.replaceJ2CountryList(target, countries, currentCodes, triggerBasis || undefined, reason, createJ2CommandKey("write"), { overview: snapshot, label: blockedList ? "封锁名单" : "受限名单" }),
+            blockedList ? "封锁名单已更新" : "受限名单已更新", slot, retained,
+          );
+        },
+      });
+    };
+
+    /** 第一步：选国家，随时看加了哪些、去了哪些。 */
+    const openListEditor = (target: GeoStatus, draft?: EditorResult) => {
+      const current = target === "blocked" ? banned : limited;
+      if (!canStart(`PUT /geo-block/country-lists/${target}`)) return;
+      setEditor({
+        kind: target,
+        title: target === "blocked" ? "编辑封锁名单" : "编辑受限名单",
+        options: target === "limited" ? limitedCandidates : snapshot.countryOptions,
+        initial: current.map((country) => country.cc).sort(),
+        draft,
+        statusOf,
+        names: countryNames,
+        excludedNote: target === "limited" && banned.length > 0 ? `封锁名单里的 ${banned.length} 个不在这里：已封锁的不能直接改成受限，要先从封锁名单去掉。` : undefined,
+        onNext: (result) => { if (!canStart(`PUT /geo-block/country-lists/${target}`)) return; setEditor(null); confirmCountryList(target, result.codes); },
+      });
+    };
+
+    const confirmEndpoint = (entry: GeoEndpoint, result: EditorResult) => {
+      const slot = `PUT /geo-block/endpoints/${encodeURIComponent(entry.key)}`;
+      const command = commandOptions(slot, retained);
+      const mode = result.mode === "explicit" ? "explicit" : "derived";
+      const countries = mode === "explicit" ? result.codes.map((item) => item.trim()).filter(Boolean).sort() : [];
+      const expectedMode = entry.source === "explicit" ? "explicit" : "derived";
+      const expectedCountries = [...entry.countries].sort();
+      openActionConfirm({ ...command, briefKind: "config",
+        action: `调整功能入口封锁范围 · ${entry.label}`,
+        title: "修改入口规则",
+        effect: IMMEDIATE,
+        facts: <div className="rd-stack">
+          <Facts>
+            <Fact k="功能入口">{entry.label}{entry.biz && <span className="j2-muted">（{entry.biz}）</span>}</Fact>
+            <Fact k="设置方式">{mode === expectedMode ? MODE_TEXT[mode] : <Change from={MODE_TEXT[expectedMode]} to={MODE_TEXT[mode]} />}</Fact>
+          </Facts>
+          <CountryDiff initial={expectedCountries} codes={countries} names={countryNames} statusOf={statusOf}
+            addTitle="这个入口另外封锁" addEffect="这些地区的用户不能用这个入口，浏览也不行。封锁名单照样先判断。"
+            removeTitle="不再单独封锁" removeEffect="这个入口改回只按全局名单处理：封锁的照样不能用，受限的照样不能做资金和奖励类操作。"
+            keptTitle="继续单独封锁的"
+            onBack={() => { if (getJ2PendingCommand(slot)) return; closeConfirm(); openEndpointEditor(entry, { codes: countries, mode }); }} />
+        </div>,
+        detail: "单独设定只是在全局名单之外再加限制，不能给封锁名单里的国家开口子。如果别人刚改过这个入口，本次不执行，刷新后重改。",
+        statedBrief: { impact: "之后这个入口的请求按新规则判断，已经拦下的记录不变。", check: "核对入口和加、去的国家，理由写清依据或工单号。" },
+        confirmLabel: "确认修改，立即生效",
+        reasonPlaceholder: REASON_HINT,
+        reasonMax: 200,
+        run: (reason) => {
+          if (mode === "explicit" && countries.length === 0) {
+            const error = new Error("单独设定时，请至少选择一个国家或地区");
+            toast(`操作未完成 · ${error.message}`);
+            throw error;
+          }
+          if (mode === expectedMode && countries.join(",") === expectedCountries.join(",")) {
+            const error = new Error("封锁范围没有发生变化，本次未提交");
+            toast(`操作未完成 · ${error.message}`);
+            throw error;
+          }
+          return runBackend(() => actions.updateJ2Endpoint(entry.key, mode, countries, expectedMode, expectedCountries, reason, createJ2CommandKey("write"), { overview: snapshot, label: `${entry.label}的入口规则` }), `${entry.label}的封锁范围已生效`, slot, retained);
+        },
+      });
+    };
+
+    const openEndpointEditor = (entry: GeoEndpoint, draft?: EditorResult) => {
+      if (!canStart(`PUT /geo-block/endpoints/${encodeURIComponent(entry.key)}`) || !entry.configurable) return;
+      setEditor({
+        kind: "endpoint",
+        title: "编辑入口规则",
+        subject: <Facts><Fact k="功能入口">{entry.label}{entry.biz && <span className="j2-muted">（{entry.biz}）</span>}</Fact></Facts>,
+        options: snapshot.countryOptions,
+        initial: [...entry.countries].sort(),
+        initialMode: entry.source === "explicit" ? "explicit" : "derived",
+        draft,
+        statusOf,
+        names: countryNames,
+        onNext: (result) => { if (!canStart(`PUT /geo-block/endpoints/${encodeURIComponent(entry.key)}`)) return; setEditor(null); confirmEndpoint(entry, result); },
+      });
+    };
+
+    const switchJudge = (target?: string) => {
+      if (!retained && !canStart("PUT /geo-block/edge-judge")) return;
+      const slot = "PUT /geo-block/edge-judge";
+      const command = commandOptions(slot, retained);
+      return openActionConfirm({ ...command, briefKind: "config",
+        action: "切换地区识别来源",
+        title: "切换地区识别源",
+        effect: IMMEDIATE,
+        facts: <Facts>
+          <Fact k="切换后 5 分钟" tone={edgeFallbackAvailable ? undefined : "warn"}>{edgeFallbackAvailable ? "新源给不出国家时，先用现在这个源兜底" : "现在这个源不健康，没有兜底：新源给不出国家的请求会被拒"}</Fact>
+          <Fact k="正在用 App 的用户">不会被踢下线；之后的每个请求按新源给的国家判断</Fact>
+        </Facts>,
+        detail: "只能切到近 5 分钟样本不少于 20 个、失败率低于 5% 的识别源。兜底只在新源给不出国家时用，不会自动切回原来的源。",
+        statedBrief: { impact: "之后的请求改按新识别源判断地区，已经记下的拦截不变。", check: "核对新识别源的健康状况，理由写清依据或工单号。" },
+        confirmLabel: "确认切换，立即生效",
+        reasonPlaceholder: REASON_HINT,
+        edit: { kind: "select", label: "切换到", current: edgeSource, initialValue: target ?? edgeSwitchCandidates[0]?.value ?? "", options: edgeSwitchCandidates.map((source) => source.value), optionLabels: { ...edgeSourceLabels, [edgeSource]: currentEdgeLabel } },
+        run: (reason, newValue) => runBackend(
+          () => actions.updateJ2EdgeJudge(newValue ?? "", edgeSource, reason, createJ2CommandKey("write"), { overview: snapshot, label: "地区识别源" }),
+          "地区识别源已切换", slot, retained,
+        ),
+      });
+    };
+
+    const confirmEmergency = (codes: string[]) => {
+      const slot = "POST /geo-block/emergency-blocks";
+      const command = commandOptions(slot, retained);
+      openActionConfirm({ ...command, briefKind: "config",
+        action: "应急即时封锁 · 批量加入全局封禁名单",
+        title: "应急批量封锁",
+        effect: <>{IMMEDIATE}<StatusTag tone="neutral" icon={Plus}>只加不减</StatusTag></>,
+        facts: <div className="rd-stack">
+          <Facts>
+            <Fact k="现有封锁">{count(banned.length)} 个，不变</Fact>
+            <Fact k="怎么撤销">没有一键撤销。要放开，到「封锁名单」点「编辑封锁名单」把它们去掉</Fact>
+          </Facts>
+          <CountryDiff initial={[]} codes={codes} names={countryNames} statusOf={statusOf}
+            addTitle="这次封锁" addEffect={`这些地区的用户之后的请求全部被拒：注册、登录、浏览和资金操作都不行。${codes.some((cc) => limitedCodes.has(cc)) ? "原来受限的改成封锁。" : ""}`}
+            impact={impactOf(codes, "按账户国家统计", snapshot)}
+            onBack={() => { if (getJ2PendingCommand(slot)) return; closeConfirm(); openEmergencyEditor({ codes }); }} />
+        </div>,
+        detail: "所有国家先统一检查：有一个已经封锁或正被审批锁住，整批都不执行，不会只成功一部分。",
+        statedBrief: { impact: `${codes.length} 个国家或地区马上加进封锁名单，原有的封锁不变。`, check: "核对国家和触发依据，理由写清监管通知、工单或事件编号。" },
+        confirmTone: "danger",
+        confirmLabel: `确认封锁 ${codes.length} 个，立即生效`,
+        reasonPlaceholder: REASON_HINT,
+        reasonMax: 200,
+        businessForm: {
+          kind: "multi-field",
+          reasonMax: 200,
+          fields: [{ key: "triggerBasis", label: "触发依据", current: "", inputKind: "select", options: TRIGGER_BASES, optionLabels: TRIGGER_LABELS, wide: true }],
+        },
+        run: (reason, _newValue, businessValue) => {
+          const countries = codes.map((item) => item.trim()).filter(Boolean);
+          const triggerBasis = businessValue?.triggerBasis ?? "";
+          return runBackend(() => actions.emergencyBlockJ2(countries, triggerBasis, reason, createJ2CommandKey("write"), { overview: snapshot, label: "应急批量封锁" }), "应急封锁已全部生效", slot, retained);
+        },
+      });
+    };
+
+    const openEmergencyEditor = (draft?: EditorResult) => {
+      if (!canStart("POST /geo-block/emergency-blocks")) return;
+      setEditor({
+        kind: "emergency",
+        title: "应急批量封锁",
+        options: emergencyCandidates,
+        initial: [],
+        existingCount: banned.length,
+        draft,
+        statusOf,
+        names: countryNames,
+        excludedNote: `${banned.length > 0 ? `已经封锁的 ${banned.length} 个不在这里。` : ""}只加不减；要撤销，到「封锁名单」去掉。`,
+        onNext: (result) => { if (!canStart("POST /geo-block/emergency-blocks")) return; setEditor(null); confirmEmergency(result.codes); },
+      });
+    };
+
+    return { openListEditor, confirmCountryList, openEndpointEditor, confirmEndpoint, switchJudge, openEmergencyEditor, confirmEmergency };
+  };
+  function restoreOriginal(record: J2PendingCommand) {
+    const saved = getJ2PendingCommand(record.fingerprint);
+    if (!saved || saved.commandKey !== record.commandKey || !canRetry(saved)) return;
+    if (isRetryExpired(saved)) { syncPending(); return; }
+    const handlers = handlersFor(saved.geo.context.overview, saved);
+    const input = JSON.parse(saved.geo.body) as J2CommandBody;
+    if (saved.geo.path.includes("country-lists/")) handlers.confirmCountryList(input.status!, input.countries!);
+    else if (saved.geo.path.includes("endpoints/")) {
+      const key = decodeURIComponent(saved.geo.path.split("/").at(-1)!);
+      const entry = saved.geo.context.overview.endpoints.find((row) => row.key === key)!;
+      handlers.confirmEndpoint(entry, { mode: input.mode!, codes: input.countries! });
+    } else if (saved.geo.path.endsWith("edge-judge")) handlers.switchJudge(input.source);
+    else handlers.confirmEmergency(input.countries!);
+  }
 
   if (contentError) {
     return <div className="j2-page">
@@ -201,8 +588,8 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const limited: GeoCountry[] = data.limited;
   const geoEndpoints = data.endpoints;
   const geoHits = data.hits;
-  const totalHits = Number(data.stats.totalHits ?? geoHits.reduce((sum, hit) => sum + hit.ct, 0));
-  const hitCapped = geoHits.length >= HIT_LIMIT;
+  const hitCapped = geoHits.length >= 20;
+  const totalHits = data.stats.totalHits;
   const hitMap = new Map(geoHits.map((hit) => [hit.cc, hit.ct]));
   const edgeSource = data.edge.source;
   const edgeSourceKnown = data.edge.sourceKnown;
@@ -215,238 +602,14 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const emergencyCandidates = data.countryOptions.filter((option) => !blockedCodes.has(option.value));
   const limitedCandidates = data.countryOptions.filter((option) => !blockedCodes.has(option.value));
   const limitedEditDisabled = limited.length === 0 && limitedCandidates.length === 0;
-  const optionOf = new Map(data.countryOptions.map((option) => [option.value, option]));
   const edgeSwitchCandidates = data.edge.sources.filter((source) => source.healthy && source.value !== edgeSource);
   const edgeSourceLabels: Record<string, string> = Object.fromEntries(data.edge.sources.map((source) => [source.value, source.label]));
   const currentEdgeLabel = edgeSourceKnown ? (edgeSourceLabels[edgeSource] ?? "已设置的识别源") : "未登记的识别源";
   const currentHealth = edgeSourceKnown ? healthOf(healthStatus) : { text: "未登记", tone: "danger" as const };
-  const edgeFallbackAvailable = edgeSourceKnown && data.edge.healthy;
   const perSourceHits = sourceHits(data.edge.metrics);
   const metricOf = (key: string) => data.edge.metrics.find((row) => row.key === key)?.value;
-  const closeConfirm = () => openActionConfirm(null);
 
-  /** 加进来的这几个国家按账户国家统计的人数和余额：只是参考，不是实际会被拦的人。 */
-  const impactOf = (codes: string[], lead: string) => {
-    if (codes.length === 0) return undefined;
-    const rows = codes.map((cc) => optionOf.get(cc)).filter((row): row is NonNullable<typeof row> => !!row);
-    return <>{lead}：活跃用户 <b>{count(rows.reduce((sum, row) => sum + row.activeUsers, 0))}</b> 位，钱包余额 <b>{usdtSum(rows.map((row) => row.walletUsdt))}</b> USDT<Explain label="账户国家口径" content="按用户账户里保存的国家统计，不是来访地区，所以不等于实际会被拦的人。活跃用户只算状态正常的账户；钱包余额是这些国家全部账户的可用和提现中 USDT 之和，不含 UVT。" /></>;
-  };
-
-  const runBackend = async (task: () => Promise<void>, ok: string) => {
-    try {
-      await task();
-    } catch (error) {
-      if (isEmergencyOutcomeUncertain(error)) {
-        try {
-          await actions.reloadJEmergency();
-          toast(`结果未知 · 页面已刷新，请核对现在的名单、规则和最近修改。${error instanceof Error ? ` ${error.message}` : ""}`, "warn");
-        } catch {
-          toast("结果未知，页面也刷新不了。请不要重复提交，等网络恢复后刷新页面并核对最近修改。", "warn");
-        }
-      }
-      // 明确失败的原因写在确认框里（权限层的 403 由确认框提示并关框），不再弹同一句。
-      throw error;
-    }
-    try {
-      await actions.reloadJEmergency();
-      toast(ok, "success");
-    } catch {
-      toast(`${ok}，但最新状态暂时无法读取，请刷新确认`, "warn");
-    }
-  };
-
-  /** 第二步：共用确认框。提交的是整份名单，和改版前同一个请求（J2-A01、A02）。 */
-  const confirmCountryList = (target: GeoStatus, picked: string[]) => {
-    const commandKey = createJ2CommandKey(`country-list-${target}`);
-    const current = target === "blocked" ? banned : limited;
-    const currentCodes = current.map((country) => country.cc).sort();
-    const countries = [...picked].map((item) => item.trim()).filter(Boolean).sort();
-    const added = countries.filter((country) => !currentCodes.includes(country));
-    const blockedList = target === "blocked";
-    openActionConfirm({ briefKind: "config",
-      action: blockedList ? "编辑全局封禁名单" : "编辑受限名单",
-      title: blockedList ? "替换封锁名单" : "替换受限名单",
-      effect: <>{IMMEDIATE}<StatusTag tone="neutral" icon={Replace}>整份替换</StatusTag></>,
-      facts: <CountryDiff initial={currentCodes} codes={countries} names={countryNames} statusOf={statusOf}
-        addTitle={blockedList ? "加进封锁名单" : "加进受限名单"}
-        addEffect={blockedList ? `这些地区的用户之后的请求全部被拒：注册、登录、浏览和资金操作都不行。${added.some((cc) => limitedCodes.has(cc)) ? "原来受限的改成封锁。" : ""}` : "这些地区的用户还能登录和浏览，资金和奖励类操作（提现、兑换、下单、领奖励等）马上被拒。"}
-        impact={impactOf(added, "加进来的按账户国家统计")}
-        removeTitle={blockedList ? "从封锁名单去掉" : "从受限名单去掉"}
-        removeEffect={blockedList ? "改回不限制（不会自动变成受限），这些地区的用户马上能正常使用；入口单独封锁的规则还在。" : "改回不限制，资金和奖励类操作马上放开；入口单独封锁的规则还在。"}
-        keptTitle="名单里不变的"
-        onBack={() => { closeConfirm(); openListEditor(target, { codes: countries }); }} />,
-      detail: blockedList
-        ? "提交的是整份封锁名单，不是只加一个。如果别人刚改过名单，或加、去的国家正被审批锁住，整份不执行，刷新后重改。"
-        : "提交的是整份受限名单，不是只加一个。已封锁的国家不能直接改成受限，要先从封锁名单去掉。如果别人刚改过名单，整份不执行，刷新后重改。",
-      statedBrief: { impact: `提交后名单变成 ${countries.length} 个。加进来的马上被拦，去掉的马上放开。`, check: "核对加和去的国家，理由写清依据或工单号。" },
-      confirmTone: blockedList ? "danger" : "primary",
-      confirmLabel: "确认替换，立即生效",
-      reasonPlaceholder: REASON_HINT,
-      reasonMax: 200,
-      businessForm: blockedList && added.length > 0 ? {
-        kind: "multi-field",
-        reasonMax: 200,
-        fields: [{ key: "triggerBasis", label: "触发依据", current: "", inputKind: "select", options: TRIGGER_BASES, optionLabels: TRIGGER_LABELS, wide: true, explain: "加进封锁名单时必须选；只去掉国家时不用选。" }],
-      } : undefined,
-      run: (reason, _newValue, businessValue) => {
-        const triggerBasis = businessValue?.triggerBasis ?? "";
-        if (target === "blocked" && added.length > 0 && !triggerBasis) {
-          const error = new Error("新增封禁国家时，请选择触发依据");
-          toast(`操作未完成 · ${error.message}`);
-          throw error;
-        }
-        return runBackend(
-          () => actions.replaceJ2CountryList(target, countries, currentCodes, triggerBasis || undefined, reason, commandKey),
-          blockedList ? "封锁名单已更新" : "受限名单已更新",
-        );
-      },
-    });
-  };
-
-  /** 第一步：选国家，随时看加了哪些、去了哪些。 */
-  const openListEditor = (target: GeoStatus, draft?: EditorResult) => {
-    const current = target === "blocked" ? banned : limited;
-    setEditor({
-      kind: target,
-      title: target === "blocked" ? "编辑封锁名单" : "编辑受限名单",
-      options: target === "limited" ? limitedCandidates : data.countryOptions,
-      initial: current.map((country) => country.cc).sort(),
-      draft,
-      statusOf,
-      names: countryNames,
-      excludedNote: target === "limited" && banned.length > 0 ? `封锁名单里的 ${banned.length} 个不在这里：已封锁的不能直接改成受限，要先从封锁名单去掉。` : undefined,
-      onNext: (result) => { setEditor(null); confirmCountryList(target, result.codes); },
-    });
-  };
-
-  const confirmEndpoint = (entry: GeoEndpoint, result: EditorResult) => {
-    const commandKey = createJ2CommandKey(`endpoint-${entry.key}`);
-    const mode = result.mode === "explicit" ? "explicit" : "derived";
-    const countries = mode === "explicit" ? result.codes.map((item) => item.trim()).filter(Boolean).sort() : [];
-    const expectedMode = entry.source === "explicit" ? "explicit" : "derived";
-    const expectedCountries = [...entry.countries].sort();
-    openActionConfirm({ briefKind: "config",
-      action: `调整功能入口封锁范围 · ${entry.label}`,
-      title: "修改入口规则",
-      effect: IMMEDIATE,
-      facts: <div className="rd-stack">
-        <Facts>
-          <Fact k="功能入口">{entry.label}{entry.biz && <span className="j2-muted">（{entry.biz}）</span>}</Fact>
-          <Fact k="设置方式">{mode === expectedMode ? MODE_TEXT[mode] : <Change from={MODE_TEXT[expectedMode]} to={MODE_TEXT[mode]} />}</Fact>
-        </Facts>
-        <CountryDiff initial={expectedCountries} codes={countries} names={countryNames} statusOf={statusOf}
-          addTitle="这个入口另外封锁" addEffect="这些地区的用户不能用这个入口，浏览也不行。封锁名单照样先判断。"
-          removeTitle="不再单独封锁" removeEffect="这个入口改回只按全局名单处理：封锁的照样不能用，受限的照样不能做资金和奖励类操作。"
-          keptTitle="继续单独封锁的"
-          onBack={() => { closeConfirm(); openEndpointEditor(entry, { codes: countries, mode }); }} />
-      </div>,
-      detail: "单独设定只是在全局名单之外再加限制，不能给封锁名单里的国家开口子。如果别人刚改过这个入口，本次不执行，刷新后重改。",
-      statedBrief: { impact: "之后这个入口的请求按新规则判断，已经拦下的记录不变。", check: "核对入口和加、去的国家，理由写清依据或工单号。" },
-      confirmLabel: "确认修改，立即生效",
-      reasonPlaceholder: REASON_HINT,
-      reasonMax: 200,
-      run: (reason) => {
-        if (mode === "explicit" && countries.length === 0) {
-          const error = new Error("单独设定时，请至少选择一个国家或地区");
-          toast(`操作未完成 · ${error.message}`);
-          throw error;
-        }
-        if (mode === expectedMode && countries.join(",") === expectedCountries.join(",")) {
-          const error = new Error("封锁范围没有发生变化，本次未提交");
-          toast(`操作未完成 · ${error.message}`);
-          throw error;
-        }
-        return runBackend(() => actions.updateJ2Endpoint(entry.key, mode, countries, expectedMode, expectedCountries, reason, commandKey), `${entry.label}的封锁范围已生效`);
-      },
-    });
-  };
-
-  const openEndpointEditor = (entry: GeoEndpoint, draft?: EditorResult) => {
-    setEditor({
-      kind: "endpoint",
-      title: "编辑入口规则",
-      subject: <Facts><Fact k="功能入口">{entry.label}{entry.biz && <span className="j2-muted">（{entry.biz}）</span>}</Fact></Facts>,
-      options: data.countryOptions,
-      initial: [...entry.countries].sort(),
-      initialMode: entry.source === "explicit" ? "explicit" : "derived",
-      draft,
-      statusOf,
-      names: countryNames,
-      onNext: (result) => { setEditor(null); confirmEndpoint(entry, result); },
-    });
-  };
-
-  const switchJudge = (target?: string) => {
-    const commandKey = createJ2CommandKey("edge-source");
-    return openActionConfirm({ briefKind: "config",
-      action: "切换地区识别来源",
-      title: "切换地区识别源",
-      effect: IMMEDIATE,
-      facts: <Facts>
-        <Fact k="切换后 5 分钟" tone={edgeFallbackAvailable ? undefined : "warn"}>{edgeFallbackAvailable ? "新源给不出国家时，先用现在这个源兜底" : "现在这个源不健康，没有兜底：新源给不出国家的请求会被拒"}</Fact>
-        <Fact k="正在用 App 的用户">不会被踢下线；之后的每个请求按新源给的国家判断</Fact>
-      </Facts>,
-      detail: "只能切到近 5 分钟样本不少于 20 个、失败率低于 5% 的识别源。兜底只在新源给不出国家时用，不会自动切回原来的源。",
-      statedBrief: { impact: "之后的请求改按新识别源判断地区，已经记下的拦截不变。", check: "核对新识别源的健康状况，理由写清依据或工单号。" },
-      confirmLabel: "确认切换，立即生效",
-      reasonPlaceholder: REASON_HINT,
-      edit: { kind: "select", label: "切换到", current: edgeSource, initialValue: target ?? edgeSwitchCandidates[0]?.value ?? "", options: edgeSwitchCandidates.map((source) => source.value), optionLabels: { ...edgeSourceLabels, [edgeSource]: currentEdgeLabel } },
-      run: (reason, newValue) => runBackend(
-        () => actions.updateJ2EdgeJudge(newValue ?? "", edgeSource, reason, commandKey),
-        "地区识别源已切换",
-      ),
-    });
-  };
-
-  const confirmEmergency = (codes: string[]) => {
-    const commandKey = createJ2CommandKey("emergency-block");
-    openActionConfirm({ briefKind: "config",
-      action: "应急即时封锁 · 批量加入全局封禁名单",
-      title: "应急批量封锁",
-      effect: <>{IMMEDIATE}<StatusTag tone="neutral" icon={Plus}>只加不减</StatusTag></>,
-      facts: <div className="rd-stack">
-        <Facts>
-          <Fact k="现有封锁">{count(banned.length)} 个，不变</Fact>
-          <Fact k="怎么撤销">没有一键撤销。要放开，到「封锁名单」点「编辑封锁名单」把它们去掉</Fact>
-        </Facts>
-        <CountryDiff initial={[]} codes={codes} names={countryNames} statusOf={statusOf}
-          addTitle="这次封锁" addEffect={`这些地区的用户之后的请求全部被拒：注册、登录、浏览和资金操作都不行。${codes.some((cc) => limitedCodes.has(cc)) ? "原来受限的改成封锁。" : ""}`}
-          impact={impactOf(codes, "按账户国家统计")}
-          onBack={() => { closeConfirm(); openEmergencyEditor({ codes }); }} />
-      </div>,
-      detail: "所有国家先统一检查：有一个已经封锁或正被审批锁住，整批都不执行，不会只成功一部分。",
-      statedBrief: { impact: `${codes.length} 个国家或地区马上加进封锁名单，原有的封锁不变。`, check: "核对国家和触发依据，理由写清监管通知、工单或事件编号。" },
-      confirmTone: "danger",
-      confirmLabel: `确认封锁 ${codes.length} 个，立即生效`,
-      reasonPlaceholder: REASON_HINT,
-      reasonMax: 200,
-      businessForm: {
-        kind: "multi-field",
-        reasonMax: 200,
-        fields: [{ key: "triggerBasis", label: "触发依据", current: "", inputKind: "select", options: TRIGGER_BASES, optionLabels: TRIGGER_LABELS, wide: true }],
-      },
-      run: (reason, _newValue, businessValue) => {
-        const countries = codes.map((item) => item.trim()).filter(Boolean);
-        const triggerBasis = businessValue?.triggerBasis ?? "";
-        return runBackend(() => actions.emergencyBlockJ2(countries, triggerBasis, reason, commandKey), "应急封锁已全部生效");
-      },
-    });
-  };
-
-  const openEmergencyEditor = (draft?: EditorResult) => {
-    setEditor({
-      kind: "emergency",
-      title: "应急批量封锁",
-      options: emergencyCandidates,
-      initial: [],
-      existingCount: banned.length,
-      draft,
-      statusOf,
-      names: countryNames,
-      excludedNote: `${banned.length > 0 ? `已经封锁的 ${banned.length} 个不在这里。` : ""}只加不减；要撤销，到「封锁名单」去掉。`,
-      onNext: (result) => { setEditor(null); confirmEmergency(result.codes); },
-    });
-  };
+  const { openListEditor, openEndpointEditor, switchJudge, openEmergencyEditor } = handlersFor(data);
 
   const openList = (status: GeoStatus) => {
     setCountryFilter(status);
@@ -482,8 +645,8 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     const sorted = [...rows].sort((a, b) => (hitMap.get(b.cc) ?? 0) - (hitMap.get(a.cc) ?? 0) || a.cc.localeCompare(b.cc));
     const blockedList = status === "blocked";
     const action = blockedList
-      ? canCountry && <Button disabledReason={contentLoading ? READING : undefined} onClick={() => openListEditor("blocked")}>编辑封锁名单</Button>
-      : canCountry && <Button disabledReason={contentLoading ? READING : limitedEditDisabled ? "没有可以加进受限名单的国家：其他国家都已封锁，先从封锁名单去掉" : undefined} onClick={() => openListEditor("limited")}>编辑受限名单</Button>;
+      ? canCountry && <Button disabledReason={contentLoading ? READING : countryWriteUnknown ? "结果未知" : undefined} onClick={() => openListEditor("blocked")}>编辑封锁名单</Button>
+      : canCountry && <Button disabledReason={contentLoading ? READING : countryWriteUnknown ? "结果未知" : limitedEditDisabled ? "没有可以加进受限名单的国家：其他国家都已封锁，先从封锁名单去掉" : undefined} onClick={() => openListEditor("limited")}>编辑受限名单</Button>;
     return (
       <Panel title={blockedList ? "封锁名单" : "受限名单"} icon={blockedList ? Ban : ShieldMinus} tone="role-4"
         sub={`${count(rows.length)} 个国家或地区`}
@@ -512,7 +675,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
           </ul>}
         {rows.length > 0 && (
           <div className="j2-impact">
-            <span>{impactOf(rows.map((row) => row.cc), "按账户国家")}</span>
+            <span>{impactOf(rows.map((row) => row.cc), "按账户国家", data)}</span>
             <button type="button" className="rd-link j2-linkbtn" onClick={() => openList(status)}>看明细</button>
           </div>
         )}
@@ -583,7 +746,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
                 {lookup && <Td>{verdict(entry)}</Td>}
                 <Td align="right">{!entry.configurable ? <span className="j2-muted">—</span> : <span className="j2-num" data-zero={entry.hits === 0 ? "" : undefined}>{count(entry.hits)}</span>}</Td>
                 <Td align="right" data-fit="">{canEndpoint && entry.configurable
-                  ? <Button size="sm" disabledReason={contentLoading ? READING : undefined} onClick={() => openEndpointEditor(entry)}>编辑规则</Button>
+                  ? <Button size="sm" disabledReason={contentLoading ? READING : unknownOn.has(`endpoint:${entry.key}`) ? "结果未知" : undefined} onClick={() => openEndpointEditor(entry)}>编辑规则</Button>
                   : entry.configurable ? <span className="j2-muted">无编辑权限</span> : <span className="j2-muted">—</span>}</Td>
               </Tr>
             ))}
@@ -626,11 +789,11 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
                   { key: "p95", label: "识别耗时 P95", value: p95 ?? "—" },
                   { key: "fail", label: "识别失败率", value: failRate ?? "—" },
                 ] : []),
-                { key: "hits", label: "近 24 小时拦截", value: hits === undefined ? "0 次" : `${count(hits)} 次` },
+                { key: "hits", label: "近 24 小时拦截", value: hits === undefined ? "—" : `${count(hits)} 次` },
               ]} />
               {!current && canEdge && (
                 <div className="j2-source-foot">
-                  <Button size="sm" disabledReason={contentLoading ? READING : !source.healthy ? `${health.text}：${HEALTH_RULE}` : undefined} onClick={() => switchJudge(source.value)}>切换到这个源</Button>
+                  <Button size="sm" disabledReason={contentLoading ? READING : unknownOn.has("edge") ? "结果未知" : !source.healthy ? `${health.text}：${HEALTH_RULE}` : undefined} onClick={() => switchJudge(source.value)}>切换到这个源</Button>
                 </div>
               )}
             </section>
@@ -647,7 +810,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       const q = countryQuery.trim().toLocaleLowerCase();
       return !q || `${row.cc} ${countryNames[row.cc] ?? row.name}`.toLocaleLowerCase().includes(q);
     });
-  const hitText = (cc: string) => hitMap.has(cc) ? count(hitMap.get(cc)!) : hitCapped ? "—" : "0";
+  const hitText = (cc: string) => hitMap.has(cc) ? count(hitMap.get(cc)!) : "—";
   const countriesFold = (
     <div id="j2-countries">
       <Fold title="名单国家明细" icon={Globe2} tone="role-other"
@@ -745,7 +908,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   // 说明写在选国家框的「只加不减」和「这页怎么用」里，按钮旁不再放问号（页头动作贴右边线）。
   const emergencyAction = canEmergency && (
       <Button variant="danger-outline" icon={<Siren size={14} aria-hidden />}
-        disabledReason={contentLoading ? READING : emergencyCandidates.length === 0 ? "所有国家和地区都已封锁，没有可以加封的" : undefined}
+        disabledReason={contentLoading ? READING : countryWriteUnknown ? "结果未知" : emergencyCandidates.length === 0 ? "所有国家和地区都已封锁，没有可以加封的" : undefined}
         onClick={() => openEmergencyEditor()}>应急批量封锁</Button>
   );
 

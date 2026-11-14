@@ -27,6 +27,8 @@ export type ActionConfirmReq = {
   facts?: ReactNode;
   reasonPlaceholder?: string;
   reasonPolicyOptional?: boolean;
+  getPendingReason?: () => string | undefined;
+  getPendingBusinessValue?: () => BusinessFormValue | undefined;
   /** 框里写这项为什么现在不能提交，确认按钮禁用。 */
   blockedReason?: ReactNode;
   /** 换了就重开这个框：理由和输入回到初值。别人改过后读取最新时用（OP-97）。 */

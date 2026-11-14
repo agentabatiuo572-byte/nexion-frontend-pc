@@ -340,7 +340,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
 | **Kill-Switch 矩阵**(J1) | 5 功能闸{withdraw〔应急新增〕,staking,genesis,exchange,trial}:enabled:bool · operator · reason · coveragePrecheckRequired(恢复方向前置 B1 的闸标记) · autoTrigger{rule:R1\|R2,补录窗 30min};复用 admin.killswitch_toggled(原提案状态机已随 2026-06 操作确认决议废除) | SC | §17.1 / Ch15 J1 |
-| **Geo-block**(J2) | activeCountries(ISO alpha-2) · limitedCountries(受限只读档,ISO alpha-2) · enabled(=length>0) · perEndpoint[{endpoint,geoBlock,derivationStatus}] · edgeJudgeHealth · operator · reason;**server 边缘判 IP,财务不参与执行;limited→blocked 为监管升级路径** | SC | §17.1 / Ch15 J2 |
+| **Geo-block**(J2) | activeCountries(ISO alpha-2) · limitedCountries(受限资金/奖励变更档,ISO alpha-2) · enabled(=length>0) · perEndpoint[{endpoint,geoBlock,derivationStatus}] · edgeJudgeHealth · operator · reason;**服务端验证可信边缘代理并读取国家请求头，不按账户国家执法；名单、入口、来源、应急各按独立权限码；limited→blocked 为升级路径** | SC | §17.1 / Ch15 J2 |
 | **篡改监控**(J3) | tamper_path:enum(§9.11d.2 10类+chargeFailRate) · 拦截计数 · 涉及账户;告警 state:enum{normal\|flagged\|escalated};**纯只读,处置跳 K** | 派生视图 | §17.1 / Ch15 J3 |
 | **应急 SOP**(J4) | 剧本=kill+geo-block+披露+提现暂停+通知组合(串联 J1/J2/I5/C2/K1/D2/I3) · 演练态(lastDrill/演练就绪,沙箱不下发生产) | SC(编排) | Ch15 J4 |
 
@@ -581,14 +581,25 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | `/api/admin/emergency/kill-switches/:key` | PUT | 单闸关停按 `emergency_j1_gate_kill` 确认后立即执行；恢复按 `emergency_j1_gate_resume` 及 A2 提案权限提交 `j1_gate_resume` 审批，另一位有权超管批准后回放；批准前保持关停，资金业务重查服务端覆盖率资格，试用免查；携原 Key | J1-MD1/MD2 | J1 |
 | `/api/admin/emergency/kill-switches/emergency-disable` | POST | 批量应急熔断(可多闸;触发事由空 422 / reason 空 400;风控/超管单人确认;全量预校验后同事务原子关停+持久广播事件;携 Key) | J1-MD3 | J1 |
 | 服务端定时任务（无外部 endpoint） | — | R1/R2 自动熔断评估命中后走 J1 原子写边界(`trigger=auto`,补录时限默认 30 分钟,J1 可调 10–120 分钟,值班补录 J1-MD5;补录不恢复业务) | 自动+J1-MD5 补录 | J1 |
-| `/api/admin/killswitch/geo` | GET / PUT | geo-block 配置(server-canonical)/ 黑名单+受限名单(limitedCountries)+per-endpoint(拒绝财务执行 403;携 Key) | J2-MD1~MD3(PUT) | J2 |
-| `/api/admin/killswitch/geo/emergency` | POST | geo 应急即时封锁(仅加封锁,移除 403;事由空 422;单人确认即时生效+广播;携 Key) | 是(④a) | J2 |
+| `/api/admin/emergency/geo-block` | GET | J2 两份名单、完整 ISO 目录及账户国家影响、入口策略、识别源、近 24 小时前 20 国合计、最近 8 条成功修改 | — | J2 |
+| `/api/admin/emergency/geo-block/country-lists/{blocked,limited}` | PUT | 整份替换；携 expectedCountries、理由和 Key；封锁新增必须带触发依据。新增、移除国家存在审批锁时整份拒绝 | J2-MD1/MD2 | J2 |
+| `/api/admin/emergency/geo-block/endpoints/{key}` | PUT | ACTIVE 目录入口的 derived/explicit 规则；携 mode、countries、expectedMode、expectedCountries、理由和 Key | J2-MD3 | J2 |
+| `/api/admin/emergency/geo-block/edge-judge` | PUT | 健康识别源切换，携 source、expectedSource、理由和 Key；旧源同样健康时仅为主源无有效国家的请求保留五分钟兜底 | J2-MD4 | J2 |
+| `/api/admin/emergency/geo-block/emergency-blocks` | POST | 只加封锁；携 countries、triggerBasis、理由和 Key，任一已封锁或审批锁冲突时整批拒绝；本页五写全部直写，无 A2 提案 | 两步选择与确认 | J2 |
 | `/api/admin/tamper/{overview,paths,accounts}?window=` | GET | 篡改拦截总览/路径分布/账户告警(window∈{24h,7d,30d} 非法 400) | — | J3 |
 | `/api/admin/tamper/alert-config` | PUT | 配置告警频次/喂 K4 开关(携 Key) | J3-MD1 | J3 |
 | `/api/admin/emergency/playbooks` · `/:name` | GET/PUT | 应急剧本库 / 编辑(携 Key) | J4-MD1(PUT) | J4 |
 | `/api/admin/emergency/playbooks/:name/drill` | POST | 剧本演练(沙箱走查动作序列,不下发生产;通过更新 lastDrill→演练就绪;携 Key) | J4-MD2 | J4 |
 | `/api/admin/emergency/playbooks/:name/execute` | POST | 执行剧本(逐步推进,各止血步由该步目标域授权角色经该域确认弹窗单人确认执行,J4 不绕过各域确认门;前向只进不回滚;携 Key+执行锁;编排 J1/J2/I5/C2/K1/I3) | J4-MD3(各步各域确认门) | J4 |
 | `/api/admin/emergency/executions?filter=` | GET | 历史执行追溯(合规取证;partial 终态不回写) | — | J4 |
+
+**J2 地区访问限制当前合同（2026-11-14，后端 `111e00cd`）：**
+
+- 名单替换、入口规则和应急封锁沿用国家选择器 → 共用确认框，确认发送的国家逐项等于所选；关闭、取消后不保留未发送的选择。封锁优先于入口独立规则，再判断受限资金/奖励路由；移出封锁名单改 allowed，不自动转 limited，也不删除入口规则。J2 不撤销已有会话或既有订单；地区过滤器有后台、代看、支付回调等豁免。
+- 五个写入口发前在 J 域唯一共用 sessionStorage 实例中保存原方法、地址、请求正文（含完整目标、原值、理由与操作者）、Key 和原确认事实。保存失败不发；结果未知后原字段冻结，刷新或概览失败仍可从提示恢复。仅按原正文与原 Key 重试；成功或 `isExplicitRejection` 明确拒绝才解除。401/403/408/425/429、IDEMPOTENCY_*、5xx 及无法识别回包保持未知。超过首次提交 24 小时只查询，证据保留。后端不提供 J2 原命令回执，查询只读当前总览，不能以当前值或最近 8 条记录给原命令结案。
+- 恢复标题、差异、影响、理由与成功提示都来自保存的原操作。重试成功回包不当当前数据；关闭原框后必须重读总览，读成功前不允许新修改。查询只要求读取资格，原样重试另检查该写入口权限。J1/J3/J4 原调用语义保持。
+- 钱包是后端原始十进制字符串，USDT 按字符串转整数求和、完整显示有效小数，不经 Number 或 toFixed 舍入；必填金额缺失不能当 0。国家拦截仅滚动 24 小时前 20 名；缺失国家或识别源计数显示未知，不能推算全量或逐条事件。后端无逐条拦截记录和 J2 原命令核查接口的缺口交后端处理。
+- 页面现有的绝对访问承诺、主源失败时未说明五分钟兜底、以及未知记录只会在重试成功后消失的说法存在事实边界；详见 J2 重构说明「需视觉修正的说法」，由视觉 worker 修文案，本轮仅接逻辑。
 
 **J1 紧急停用开关页面行为（2026-11-06 补修）：**
 
@@ -971,8 +982,8 @@ App 不展示试用邀请弹窗，也没有申请或接受延长的入口。PC �
 | R2 对账缺口自动熔断 | 缺口 > $50K(经确认弹窗 J1-MD4 调,仅超管) | — | 每对账周期 | J1(信号源 D1/D4) |
 | R3 篡改告警转人工 | 单账户 >10 次/24h 或全域突增 | — | 滑动 24h | J1/J3 |
 | geo-block `activeCountries` | 空(无封锁) | ISO 3166-1 alpha-2 | 实时(确认执行后 enforce) | **J2** |
-| geo-block `limitedCountries`(受限只读档) | 空(无受限) | ISO 3166-1 alpha-2 | 实时(确认执行后生效;禁新增资金操作,登录浏览保留) | **J2** |
-| 边缘 IP 判定源 | server 边缘 IP(纯 IP) | 判定源切换 | 实时 | J2 |
+| geo-block `limitedCountries`(受限资金/奖励变更档) | 空(无受限) | ISO 3166-1 alpha-2 | 后续请求按资金/奖励注册路由拒绝，登录浏览不因受限名单被拒 | **J2** |
+| 地区识别源 | 可信代理的登记国家请求头；账户国家仅用于影响统计 | 只能切到健康识别源，健康旧源五分钟兜底 | 后续纳入地区过滤的请求 | J2 |
 | 账户级篡改告警频次 | 10 次/24h(跨所有 path 合计) | 1–100 次/窗口 | 实时 | J3 |
 | 监控时间窗 | {24h, 7d, 30d} | 固定窗集 | 实时 | J3 |
 

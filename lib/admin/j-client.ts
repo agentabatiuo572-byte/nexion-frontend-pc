@@ -1,7 +1,8 @@
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 type ApiResult<T> = {
@@ -18,9 +19,70 @@ export function createJEmergencyCommandKey() {
   return idempotencyKey();
 }
 
+export type J2CommandContext = { overview: GeoBlockOverview; label: string };
+export type J2CommandBody = {
+  reason: string; operator: string; triggerBasis?: string;
+  status?: "blocked" | "limited"; countries?: string[]; expectedCountries?: string[];
+  mode?: "derived" | "explicit"; expectedMode?: "derived" | "explicit";
+  source?: string; expectedSource?: string;
+};
+export type J2PendingCommand = SlotAttemptRecord & {
+  geo: { path: string; method: string; body: string; context: J2CommandContext };
+};
+type EmergencyPendingCommand = SlotAttemptRecord & { geo?: J2PendingCommand["geo"] };
+const isJ2WriteSlot = (slot: string) => /^(?:PUT \/geo-block\/(?:country-lists\/(?:blocked|limited)|endpoints\/[^/]+|edge-judge)|POST \/geo-block\/emergency-blocks)$/.test(slot);
+// One instance owns both legacy J slots and J2's complete original requests.
+const emergencyCommands = createPendingMutationStore<EmergencyPendingCommand>({
+  storageKey: "nexion-admin-j-emergency-commands-v1",
+  retainExpiredRecords: (record) => isJ2WriteSlot(record.fingerprint),
+  isValidRecord: (record) => {
+    if (typeof record.inputFingerprint !== "string" || !record.inputFingerprint) return false;
+    if (!record.geo) return true;
+    try {
+      const { path, method, body, context } = record.geo;
+      if (`${method} ${path}` !== record.fingerprint || !isJ2WriteSlot(record.fingerprint)
+        || typeof body !== "string" || body !== record.inputFingerprint
+        || typeof context.label !== "string") return false;
+      const input = JSON.parse(body);
+      if (!input || typeof input !== "object" || Array.isArray(input)
+        || typeof input.reason !== "string" || typeof input.operator !== "string"
+        || input.triggerBasis !== undefined && typeof input.triggerBasis !== "string") return false;
+      const overview = normalizeGeo(context.overview);
+      if (path.endsWith("edge-judge")) {
+        if (typeof input.source !== "string" || typeof input.expectedSource !== "string"
+          || !overview.edge.sources.some((source) => source.value === input.source)) return false;
+      } else {
+        const codes = (value: unknown): value is string[] => Array.isArray(value)
+          && value.every((cc) => typeof cc === "string" && /^[A-Z]{2}$/.test(cc));
+        if (!codes(input.countries)) return false;
+        if (path.includes("country-lists/")) {
+          if (input.status !== path.split("/").at(-1) || !codes(input.expectedCountries)) return false;
+        } else if (path.includes("endpoints/")) {
+          if (!["derived", "explicit"].includes(input.mode) || !["derived", "explicit"].includes(input.expectedMode)
+            || !codes(input.expectedCountries)
+            || !overview.endpoints.some((entry) => entry.key === decodeURIComponent(path.split("/").at(-1)!))) return false;
+        } else if (!input.countries.length || typeof input.triggerBasis !== "string") return false;
+      }
+      context.overview = overview;
+      return true;
+    } catch { return false; }
+  },
+});
 const emergencyAttempts = createSlotAttemptStore({
   storageKey: "nexion-admin-j-emergency-commands-v1",
-});
+}, emergencyCommands);
+
+export const listJ2PendingCommands = () => emergencyCommands.list().filter((record): record is J2PendingCommand => !!record.geo);
+// Old J2 records lack the reason/body: preserve them for read-only investigation.
+export const listJ2LegacyCommands = () => emergencyCommands.list().filter((record) => isJ2WriteSlot(record.fingerprint) && !record.geo);
+export const getJ2PendingCommand = (slot: string) => listJ2PendingCommands().find((record) => record.fingerprint === slot);
+
+export async function retryJ2Command(record: J2PendingCommand) {
+  const saved = getJ2PendingCommand(record.fingerprint);
+  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  if (isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
+  await apiRequest(saved.geo.path, { method: saved.geo.method, headers: { "Idempotency-Key": saved.commandKey }, body: saved.geo.body }, saved.geo.context);
+}
 
 function emergencyInputFingerprint(body: BodyInit | null | undefined) {
   if (typeof body !== "string") return body == null ? "" : String(body);
@@ -28,8 +90,8 @@ function emergencyInputFingerprint(body: BodyInit | null | undefined) {
     const parsed = JSON.parse(body) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return body;
     const canonical = { ...(parsed as Record<string, unknown>) };
-    // reason/operator are audit envelope fields, not the emergency business intent. An operator
-    // may clarify the reason after an outcome-unknown response; that retry must keep the same key.
+    // Legacy non-J2 callers retain their existing fingerprint behavior.
+    // J2 uses the complete saved body, including reason and operator.
     delete canonical.reason;
     delete canonical.operator;
     return JSON.stringify(canonical);
@@ -50,29 +112,52 @@ export function isEmergencyOutcomeUncertain(error: unknown) {
     || (error instanceof Error && error.name === "EmergencyOutcomeUncertainError");
 }
 
-async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2CommandContext): Promise<T> {
   const headers = new Headers(init?.headers);
   const method = (init?.method ?? "GET").toUpperCase();
   const isWrite = method !== "GET" && method !== "HEAD";
   const writeSlot = `${method} ${path}`;
+  const isJ2Write = isWrite && isJ2WriteSlot(writeSlot);
   const inputFingerprint = emergencyInputFingerprint(init?.body);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (isWrite) {
     const providedCommandKey = headers.get("Idempotency-Key");
-    // J3 supplies a key bound to the window and reason. Other emergency commands keep their own retry identity.
-    const fingerprint = path === "/tamper/reports" && providedCommandKey
-      ? JSON.stringify([inputFingerprint, providedCommandKey])
-      : inputFingerprint;
-    const commandKey = emergencyAttempts.resolve(
-      writeSlot,
-      fingerprint,
-      () => providedCommandKey || idempotencyKey(),
-    );
-    if (!emergencyAttempts.isDurablyStored(writeSlot, fingerprint, commandKey)) {
-      emergencyAttempts.forget(writeSlot);
-      throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+    if (isJ2Write) {
+      if (listJ2LegacyCommands().some((record) => record.fingerprint === writeSlot)) {
+        throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
+      }
+      const saved = getJ2PendingCommand(writeSlot);
+      if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
+      if (saved && (saved.commandKey !== providedCommandKey || saved.geo.body !== init?.body)) {
+        throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
+      }
+      if (!saved) {
+        if (!geoContext || typeof init?.body !== "string") throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+        const commandKey = providedCommandKey || idempotencyKey();
+        emergencyCommands.remember(writeSlot, commandKey, { inputFingerprint: init.body, geo: { path, method, body: init.body, context: geoContext } });
+        headers.set("Idempotency-Key", commandKey);
+      }
+      const original = getJ2PendingCommand(writeSlot)!;
+      if (!emergencyCommands.isDurablyStored(writeSlot, original.commandKey)) {
+        if (!saved) emergencyCommands.forget(writeSlot, original.commandKey);
+        throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+      }
+    } else {
+      // J3 supplies a key bound to the window and reason. Other emergency commands keep their own retry identity.
+      const fingerprint = path === "/tamper/reports" && providedCommandKey
+        ? JSON.stringify([inputFingerprint, providedCommandKey])
+        : inputFingerprint;
+      const commandKey = emergencyAttempts.resolve(
+        writeSlot,
+        fingerprint,
+        () => providedCommandKey || idempotencyKey(),
+      );
+      if (!emergencyAttempts.isDurablyStored(writeSlot, fingerprint, commandKey)) {
+        emergencyAttempts.forget(writeSlot);
+        throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+      }
+      headers.set("Idempotency-Key", commandKey);
     }
-    headers.set("Idempotency-Key", commandKey);
   }
   let res: Response;
   try {
@@ -104,6 +189,18 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const requestFailed = !res.ok || (isWrite
     ? payload.code !== 0
     : payload.code !== undefined && payload.code >= 400);
+  if (isJ2Write && (requestFailed || res.headers.get("X-Nexion-Upstream-Outcome") === "unknown")) {
+    const error = Object.assign(new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`)), {
+      status: res.ok && typeof payload.code === "number" ? payload.code : res.status,
+      reasonCode: payload.message,
+      unknownOutcome: res.headers.get("X-Nexion-Upstream-Outcome") === "unknown",
+    });
+    if (isExplicitRejection(error)) {
+      emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
+      throw error;
+    }
+    throw new EmergencyOutcomeUncertainError(error.message);
+  }
   if (isWrite && (res.headers.get("X-Nexion-Upstream-Outcome") === "unknown"
     || (requestFailed && (outcomeStaysUnknown(res.status, payload.code) || isIdempotencyOutcomeOpen(payload.message))))) {
     // unknown 头只是增强信号,不再是唯一保险丝:5xx 同样归结果未知,让调用方看到「结果未确认」
@@ -120,7 +217,8 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw Object.assign(new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`)), { status: res.status, reasonCode: payload.message });
   }
-  if (isWrite) emergencyAttempts.forget(writeSlot);
+  if (isJ2Write) emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
+  else if (isWrite) emergencyAttempts.forget(writeSlot);
   return payload.data as T;
 }
 
@@ -343,8 +441,8 @@ export type KillSwitchOverview = {
   sources: string[];
 };
 
-export type GeoCountry = { cc: string; name: string; reason: string; status: string; operator: string; updatedAt: string; activeUsers: number; walletUsdt: number };
-export type GeoCountryOption = { value: string; label: string; source: string; activeUsers: number; walletUsdt: number };
+export type GeoCountry = { cc: string; name: string; reason: string; status: string; operator: string; updatedAt: string; activeUsers: number; walletUsdt: string };
+export type GeoCountryOption = { value: string; label: string; source: string; activeUsers: number; walletUsdt: string };
 export type GeoEdgeSourceOption = { value: string; label: string; description: string; healthy: boolean; healthStatus: string; sampleCount: number };
 export type GeoRecentChange = { action: string; resourceType: string; resourceId: string; operator: string; reason: string; beforeValue: string; afterValue: string; createdAt: string };
 export type GeoEndpoint = {
@@ -375,7 +473,7 @@ export type GeoBlockOverview = {
   hits: GeoHit[];
   edge: { source: string; sourceKnown: boolean; sources: GeoEdgeSourceOption[]; healthy: boolean; healthStatus: string; metrics: GeoEdgeMetric[] };
   recentChanges: GeoRecentChange[];
-  stats: Record<string, unknown>;
+  stats: Record<string, unknown> & { totalHits: number };
   sources: string[];
 };
 
@@ -583,10 +681,10 @@ export type JEmergencyActions = {
   updateJ1AutoRule: (ruleId: string, value: string, expectedValue: string, reason: string, commandKey?: string) => Promise<void>;
   confirmJ1AutoTrigger: (key: string, incidentId: string, decision: "keep_disabled" | "recommend_restore", reason: string, commandKey?: string) => Promise<void>;
   updateJ2Country: (countryCode: string, status: "blocked" | "limited" | "allowed", expectedStatus: "blocked" | "limited" | "allowed", triggerBasis: string | undefined, reason: string, commandKey?: string) => Promise<void>;
-  replaceJ2CountryList: (status: "blocked" | "limited", countries: string[], expectedCountries: string[], triggerBasis: string | undefined, reason: string, commandKey?: string) => Promise<void>;
-  updateJ2Endpoint: (endpointKey: string, mode: "explicit" | "derived", countries: string[], expectedMode: "explicit" | "derived", expectedCountries: string[], reason: string, commandKey?: string) => Promise<void>;
-  updateJ2EdgeJudge: (source: string, expectedSource: string, reason: string, commandKey?: string) => Promise<void>;
-  emergencyBlockJ2: (countries: string[], triggerBasis: string, reason: string, commandKey?: string) => Promise<void>;
+  replaceJ2CountryList: (status: "blocked" | "limited", countries: string[], expectedCountries: string[], triggerBasis: string | undefined, reason: string, commandKey?: string, context?: J2CommandContext) => Promise<void>;
+  updateJ2Endpoint: (endpointKey: string, mode: "explicit" | "derived", countries: string[], expectedMode: "explicit" | "derived", expectedCountries: string[], reason: string, commandKey?: string, context?: J2CommandContext) => Promise<void>;
+  updateJ2EdgeJudge: (source: string, expectedSource: string, reason: string, commandKey?: string, context?: J2CommandContext) => Promise<void>;
+  emergencyBlockJ2: (countries: string[], triggerBasis: string, reason: string, commandKey?: string, context?: J2CommandContext) => Promise<void>;
   loadJ3TamperPage: (window: "24h" | "7d" | "30d", page: number, pageSize: number) => Promise<TamperOverview>;
   updateJ3AlertConfig: (threshold: number, feedK4: boolean, expectedThreshold: number, expectedFeedK4: boolean, reason: string, commandKey?: string) => Promise<void>;
   createJ3Report: (window: "24h" | "7d" | "30d", reason: string, commandKey?: string) => Promise<TamperReport>;
@@ -799,10 +897,18 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
   };
 }
 
+/** The backend serializes BigDecimal amounts as decimal strings; keep every digit. */
+function requiredDecimalText(value: unknown, field: string): string {
+  if (typeof value !== "string" || !/^-?\d+(?:\.\d+)?$/.test(value)) {
+    throw new Error(`J_DOMAIN_FIELD_REQUIRED:${field}`);
+  }
+  return value;
+}
+
 function normalizeGeo(raw: unknown): GeoBlockOverview {
   const data = rec(raw);
   const edge = rec(data.edge);
-  const normalizeCountries = (value: unknown, field: string) => requiredRows<Record<string, unknown>>(value, field).map((row, index) => ({
+  const normalizeCountries = (value: unknown, field: string) => requiredRecordRows(value, field).map((row, index) => ({
     cc: requiredText(row.cc, `${field}.${index}.cc`),
     name: requiredText(row.name, `${field}.${index}.name`),
     reason: str(row.reason),
@@ -810,11 +916,11 @@ function normalizeGeo(raw: unknown): GeoBlockOverview {
     operator: str(row.operator),
     updatedAt: str(row.updatedAt),
     activeUsers: requiredNum(row.activeUsers, `${field}.${index}.activeUsers`),
-    walletUsdt: requiredNum(row.walletUsdt, `${field}.${index}.walletUsdt`),
+    walletUsdt: requiredDecimalText(row.walletUsdt, `${field}.${index}.walletUsdt`),
   }));
-  const countryOptionsRaw = requiredRows<Record<string, unknown>>(data.countryOptions, "geo.countryOptions");
+  const countryOptionsRaw = requiredRecordRows(data.countryOptions, "geo.countryOptions");
   if (countryOptionsRaw.length === 0) contractError("geo.countryOptions.empty");
-  const edgeSourcesRaw = requiredRows<Record<string, unknown>>(edge.sources, "geo.edge.sources");
+  const edgeSourcesRaw = requiredRecordRows(edge.sources, "geo.edge.sources");
   if (edgeSourcesRaw.length === 0) contractError("geo.edge.sources.empty");
   return {
     blocked: normalizeCountries(data.blocked, "geo.blocked"),
@@ -825,7 +931,7 @@ function normalizeGeo(raw: unknown): GeoBlockOverview {
       label: requiredText(row.label, `geo.countryOptions.${index}.label`),
       source: requiredText(row.source, `geo.countryOptions.${index}.source`),
       activeUsers: requiredNum(row.activeUsers, `geo.countryOptions.${index}.activeUsers`),
-      walletUsdt: requiredNum(row.walletUsdt, `geo.countryOptions.${index}.walletUsdt`),
+      walletUsdt: requiredDecimalText(row.walletUsdt, `geo.countryOptions.${index}.walletUsdt`),
     })),
     endpoints: requiredRows<Record<string, unknown>>(data.endpoints, "geo.endpoints").map((row, index) => {
       const endpoint = str(row.endpoint);
@@ -887,7 +993,7 @@ function normalizeGeo(raw: unknown): GeoBlockOverview {
       afterValue: str(row.afterValue),
       createdAt: str(row.createdAt),
     })),
-    stats: rec(data.stats),
+    stats: { ...rec(data.stats), totalHits: requiredNum(rec(data.stats).totalHits, "geo.stats.totalHits") },
     sources: strArray(data.sources),
   };
 }
@@ -1225,10 +1331,10 @@ export const jEmergencyActions: Omit<JEmergencyActions, "reloadJEmergency"> = {
   updateJ1AutoRule: (ruleId, value, expectedValue, reason, commandKey) => apiRequest(`/kill-switches/auto-rules/${encodeURIComponent(ruleId)}`, { method: "PATCH", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ value, expectedValue }, reason)) }).then(() => undefined),
   confirmJ1AutoTrigger: (key, incidentId, decision, reason, commandKey) => apiRequest(`/kill-switches/auto-confirmations/${encodeURIComponent(key)}`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ incidentId, decision }, reason)) }).then(() => undefined),
   updateJ2Country: (countryCode, status, expectedStatus, triggerBasis, reason, commandKey) => apiRequest(`/geo-block/countries/${encodeURIComponent(countryCode)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ status, expectedStatus, triggerBasis }, reason)) }).then(() => undefined),
-  replaceJ2CountryList: (status, countries, expectedCountries, triggerBasis, reason, commandKey) => apiRequest(`/geo-block/country-lists/${encodeURIComponent(status)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ status, countries, expectedCountries, triggerBasis }, reason)) }).then(() => undefined),
-  updateJ2Endpoint: (endpointKey, mode, countries, expectedMode, expectedCountries, reason, commandKey) => apiRequest(`/geo-block/endpoints/${encodeURIComponent(endpointKey)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ mode, countries, expectedMode, expectedCountries }, reason)) }).then(() => undefined),
-  updateJ2EdgeJudge: (source, expectedSource, reason, commandKey) => apiRequest("/geo-block/edge-judge", { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ source, expectedSource }, reason)) }).then(() => undefined),
-  emergencyBlockJ2: (countries, triggerBasis, reason, commandKey) => apiRequest("/geo-block/emergency-blocks", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ countries, triggerBasis }, reason)) }).then(() => undefined),
+  replaceJ2CountryList: (status, countries, expectedCountries, triggerBasis, reason, commandKey, context) => apiRequest(`/geo-block/country-lists/${encodeURIComponent(status)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ status, countries, expectedCountries, triggerBasis }, reason)) }, context).then(() => undefined),
+  updateJ2Endpoint: (endpointKey, mode, countries, expectedMode, expectedCountries, reason, commandKey, context) => apiRequest(`/geo-block/endpoints/${encodeURIComponent(endpointKey)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ mode, countries, expectedMode, expectedCountries }, reason)) }, context).then(() => undefined),
+  updateJ2EdgeJudge: (source, expectedSource, reason, commandKey, context) => apiRequest("/geo-block/edge-judge", { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ source, expectedSource }, reason)) }, context).then(() => undefined),
+  emergencyBlockJ2: (countries, triggerBasis, reason, commandKey, context) => apiRequest("/geo-block/emergency-blocks", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ countries, triggerBasis }, reason)) }, context).then(() => undefined),
   loadJ3TamperPage: fetchJTamperOverview,
   updateJ3AlertConfig: (threshold, feedK4, expectedThreshold, expectedFeedK4, reason, commandKey) => apiRequest("/tamper/alert-config", { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ threshold, feedK4, expectedThreshold, expectedFeedK4 }, reason)) }).then(() => undefined),
   createJ3Report: (window, reason, commandKey) => apiRequest("/tamper/reports", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ window }, reason)) }).then((raw) => normalizeTamperReport(raw, window)),
