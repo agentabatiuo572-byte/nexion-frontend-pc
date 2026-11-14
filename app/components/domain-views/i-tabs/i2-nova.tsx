@@ -1,47 +1,39 @@
 "use client";
-import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
- * I2 Nova 消息推送 — design_handoff_i_domain/I2 Nova推送运营.html port。
- * 统一来源:后端 /content/nova/overview;空库时保持后端空态,不补前端业务样例。
- * 操作确认 显式 edit 契约:调 cadence(tick/cd) / 调概率分布 = 调参传 edit;
- *   停推 单频道 / 启停 / 发布 / 归档模板 = 处置不传 edit。
- * amplifies = false(I2 不碰 B1 红线 —— 只动推送节奏与文案出口,不动费率/奖励/价格)。
+ * I2 Nova 消息推送（改版页）。Nova 把平台上真实发生的事做成动态消息推给 App 用户；运营在这里管频道、
+ * 中越英模板、五类事件概率和真实事件素材。16 个写动作都直接生效，不走审批（见重构说明「写操作合同」）。
+ * 统一来源：后端 /content/nova/overview 和 /social-events；空库时保持后端空态，不补前端业务样例。
+ * 请求、校验、命令号和结果处理照改版前的写法（runBackend、两类共用确认框），这里只换界面。
+ * amplifies = false：只动推送节奏与文案，不动费率、奖励、价格。
  */
 import { useEffect, useState } from "react";
-import { DataListPager, Drawer, PaginationExemptionList, useDataListPager } from "../design-kit";
+import { Ban, Database, Eye, FileText, History, Pencil, Percent, Plus, Power, PowerOff, Radio, RefreshCw, RotateCcw, Send, Shuffle, Timer, Trash2 } from "lucide-react";
+import {
+  BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IrreversibleTag, MoreMenu, Notice,
+  PageHeader, Pager, Panel, SegmentBar, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, DiffList,
+} from "@/app/components/rd";
+import { PaginationExemptionList, useDataListPager } from "../design-kit";
 import {
   formatNovaDuration,
-  NOVA_TIME_UNITS,
   parseNovaDuration,
   validateNovaCadence,
-  type NovaTimeUnit,
 } from "../../../../lib/admin/nova-cadence";
 import type { ICtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { operatorCopyText } from "@/lib/admin/operator-copy";
+import type { NovaSocialEventSampleView } from "@/lib/admin/i-client";
+import {
+  AppNotice, ChannelCard, DIST_SLOT, NO_SOURCE, PHASE_CHANNELS, PhaseNote, SOCIAL_CHANNEL, TEMPLATE_STATE_TEXT, TemplateTag,
+  catalogName, channelName, cooldownSentence, readable, orderDist, placeholdersOf, previewText, sourceText, tickSentence,
+} from "./i2-parts";
+import { ChannelDrawer, DistDrawer, TemplateDrawer, UNREACHABLE_CTA, UNREACHABLE_TEXT, ctaLabel, type ChannelFormValue, type TemplateFormValue } from "./i2-forms";
 
-type NovaForm = {
-  name: string;
-  runtimeSource: string;
-  tickValue: string;
-  tickUnit: NovaTimeUnit;
-  cooldownValue: string;
-  cooldownUnit: NovaTimeUnit;
-};
-type TemplateForm = {
-  channel: string;
-  name: string;
-  cta: string;
-  version: string;
-  titleZh: string;
-  bodyZh: string;
-  titleVi: string;
-  bodyVi: string;
-  titleEn: string;
-  bodyEn: string;
-};
+type NovaForm = ChannelFormValue;
+type TemplateForm = TemplateFormValue;
 const EMPTY_FORM: NovaForm = {
   name: "",
   runtimeSource: "",
@@ -66,8 +58,13 @@ const normalizeNovaKey = (s: string) =>
 
 const slug = (s: string) => normalizeNovaKey(s) || "untitled";
 
+const LIVE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
+/** 结果未知的写操作：界面已备好，等代码 worker 按 R1 保存原请求后接上（现在共用层不保存可恢复的原请求，这里一直是空的）。 */
+type UnknownRow = { key: string; action: string; object: string; change: string; submittedAt: string; expired: boolean };
+const UNKNOWN_ROWS: UnknownRow[] = [];
+
 export function I2Nova({ ctx }: { ctx: ICtx }) {
-  const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
+  const { toast, openActionConfirm, openConfirm, actions, content, contentLoading, contentError } = ctx;
   const session = useAdminAuth((state) => state.session);
   const canWriteI2 = session?.role === "superadmin" || !!session?.authorities.includes("content_i2_write");
   const data = content.nova;
@@ -96,6 +93,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const SOCIAL_EVENT_TYPE_OPTIONS = data?.socialEventTypes ?? [];
   const SOCIAL_EVENT_STATUS_OPTIONS = data?.socialEventStatuses ?? [];
 
+  // 这页读到数据的时间，只用来写页头「HH:mm 读取」。
+  const [readAt, setReadAt] = useState<number | null>(null);
+  useEffect(() => { if (data) setReadAt(Date.now()); }, [data]);
+
   const runBackend = (task: Promise<void>, ok: string, onSuccess?: () => void) => task
       .then(() => actions.reloadIContent())
       .then(() => { toast(ok); onSuccess?.(); })
@@ -104,7 +105,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         throw error;
       });
 
-  // ── Drawer 表单(新增 / 编辑通道复用同一抽屉)──
+  // ── 频道抽屉(新增 / 编辑复用同一抽屉)──
   const [novaDrawer, setNovaDrawer] = useState(false);
   const [editNovaKey, setEditNovaKey] = useState<string | null>(null);
   const [form, setForm] = useState<NovaForm>(EMPTY_FORM);
@@ -166,12 +167,35 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     }
   };
 
-  // ── 单通道 停推 / 恢复:走操作确认(操作确认 不传 edit) ──
+  const tplStatus = (ch: string): string => NOVA_TPLS.find((t) => t.ch === ch)?.status?.toLowerCase() ?? "missing";
+  const tplOf = (ch: string) => NOVA_TPLS.find((t) => t.ch === ch);
+  const displayOf = (key: string) => { const n = novas.find((x) => x.key === key); return n ? channelName(n.key, n.name) : key; };
+  const tplFact = (ch: string) => {
+    const t = tplOf(ch);
+    return t ? `${t.name} · ${t.v}（${TEMPLATE_STATE_TEXT[tplStatus(ch)] ?? tplStatus(ch)}）` : "没有模板";
+  };
+
+  // ── 单频道 停用 / 启用:走操作确认(不传 edit) ──
   const toggleNova = (n: OpsNova) => openActionConfirm({ briefKind: "config",
     action: <>{n.on ? "停推" : "恢复"} 消息频道 · {n.name}</>,
+    title: `${n.on ? "停用" : "启用"}频道 · ${channelName(n.key, n.name)}`,
     detail: n.on
-      ? <>停推该频道。<b>操作确认防误杀</b> · 监管点名要快速止血时也走这条路径(内容/风控都能发起)。</>
-      : <>恢复投递配置。只有对应业务事件满足触发条件时才会发出；检查间隔只决定扫描频率。</>,
+      ? <>停用后系统扫描时跳过这个频道，不再给它生成新消息；已经发出的消息不撤回。要再推时点「启用」。</>
+      : <>启用只打开开关：系统按扫描间隔检查业务事件，有满足条件的事、这个人又过了个人间隔，才会发出。</>,
+    effect: LIVE,
+    statedBrief: n.on
+      ? { impact: "这个频道不再生成新消息；已经发出的不撤回。", check: "确认停的是这个频道；要再推时点「启用」。" }
+      : { impact: "开关打开后按扫描间隔检查；有素材、过了个人间隔才会真正发出。", check: "确认模板内容已核对过。" },
+    facts: (
+      <Facts>
+        <Fact k="频道">{channelName(n.key, n.name)}</Fact>
+        <Fact k="状态"><Change from={n.on ? "已启用" : "已停用"} to={n.on ? "已停用" : "已启用"} /></Fact>
+        <Fact k="模板">{tplFact(n.key)}</Fact>
+        <Fact k="节奏">{`${tickSentence(n.tick)}，${cooldownSentence(n.cd)}`}</Fact>
+      </Facts>
+    ),
+    confirmLabel: n.on ? "确认停用" : "确认启用",
+    reasonPlaceholder: n.on ? "例如：文案有误，先停推核对" : "例如：模板已核对，恢复推送",
     amplifies: false,
     reasonMax: 200,
     run: (reason) => {
@@ -183,11 +207,23 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     },
   });
 
-  // ── 删除通道:走普通确认(原因必填 + 留痕) ──
+  // ── 删除频道:走普通确认(原因必填 + 留痕) ──
   const removeNova = (n: OpsNova) => openConfirm({ briefKind: "content",
     errorHandled: true,
     action: <>删除推送通道 · {n.name}</>,
-    detail: <>删除这个推送频道，并停止推送。</>,
+    title: `删除频道 · ${channelName(n.key, n.name)}`,
+    detail: <>删除这个频道，连它的模板一起删除（已发布的也删）；之后不再推送。已经发出的消息不撤回。</>,
+    effect: <>{LIVE}<IrreversibleTag /></>,
+    statedBrief: { impact: tplOf(n.key) ? "频道和它的模板一起删除，包括已发布的模板；已经发出的消息不撤回。" : "频道删除后不再推送；已经发出的消息不撤回。", check: "页面上没有恢复入口；只想暂停用「停用」。" },
+    content: (
+      <Facts>
+        <Fact k="频道">{channelName(n.key, n.name)}</Fact>
+        <Fact k="状态">{n.on ? "已启用" : "已停用"}</Fact>
+        <Fact k="一起删除的模板" tone={tplOf(n.key) ? "danger" : undefined}>{tplOf(n.key) ? tplFact(n.key) : "—"}</Fact>
+      </Facts>
+    ),
+    confirmTone: "danger",
+    reasonPlaceholder: "例如：频道已下线，工单号",
     reason: true,
     okLabel: "确认删除",
     run: (reason) => {
@@ -195,33 +231,59 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     },
   });
 
-  const tplStatus = (ch: string): string => NOVA_TPLS.find((t) => t.ch === ch)?.status?.toLowerCase() ?? "missing";
-  const renderTplBadge = (st: string) => {
-    if (st === "published") return <span className="bdg ok">已发布</span>;
-    if (st === "archived") return <span className="bdg dim">已归档</span>;
-    if (st === "draft") return <span className="bdg warn">草稿</span>;
-    if (st === "missing") return <span className="bdg danger">缺少模板</span>;
-    return <span className="bdg dim">{st}</span>;
+  const publishTpl = (ch: string, name: string) => {
+    const n = novas.find((x) => x.key === ch);
+    const t = tplOf(ch);
+    return openActionConfirm({ briefKind: "content",
+      action: <>发布模板 · {name}</>,
+      title: `发布模板 · ${name}`,
+      detail: <>频道 <b>{ch}</b>。发布后，这个频道之后生成的消息用这份内容；频道不会自动启用。中文和越南语必须完整、正文变量一致（英文可选），含已退役品牌词时会被拒。</>,
+      effect: LIVE,
+      statedBrief: { impact: "这个频道之后生成的消息用这份内容；频道不会自动启用，已经发出的不变。", check: "后端会查中文、越南语是否完整、正文变量是否一致、有没有已退役的品牌词，不通过会被拒。" },
+      facts: (
+        <Facts>
+          <Fact k="频道">{displayOf(ch)}</Fact>
+          <Fact k="模板状态"><Change from="草稿" to="已发布" /></Fact>
+          <Fact k="版本">{t?.v ?? "—"}</Fact>
+          <Fact k="语言">{t && t.titleEn.trim() && t.bodyEn.trim() ? "中文、越南语、英语" : "中文、越南语（英语没填）"}</Fact>
+          <Fact k="频道状态" tone={n && !n.on ? "warn" : undefined}>{n ? (n.on ? "已启用" : "已停用，发布后要另外点「启用」") : "—"}</Fact>
+        </Facts>
+      ),
+      confirmLabel: "确认发布",
+      reasonPlaceholder: "例如：文案已审核，工单号",
+      amplifies: false,
+      reasonMax: 200,
+      run: (reason) => {
+        return runBackend(actions.updateI2TemplateStatus(ch, "PUBLISHED", reason), `${name} 已发布`);
+      },
+    });
   };
-
-  const publishTpl = (ch: string, name: string) => openActionConfirm({ briefKind: "content",
-    action: <>发布模板 · {name}</>,
-    detail: <>频道 <b>{ch}</b>。发布后，这个频道的下一条推送就用新内容。中文和越南语必须填写完整、变量一致（英文可选），否则不能发布。</>,
-    amplifies: false,
-    reasonMax: 200,
-    run: (reason) => {
-      return runBackend(actions.updateI2TemplateStatus(ch, "PUBLISHED", reason), `${name} 已发布`);
-    },
-  });
-  const archiveTpl = (ch: string, name: string) => openActionConfirm({ briefKind: "content",
-    action: <>归档模板 · {name}</>,
-    detail: <>归档后该模板从频道可选池移除,已在投递队列里的不撤回。</>,
-    amplifies: false,
-    reasonMax: 200,
-    run: (reason) => {
-      return runBackend(actions.updateI2TemplateStatus(ch, "ARCHIVED", reason), `${name} 已归档`);
-    },
-  });
+  const archiveTpl = (ch: string, name: string) => {
+    const n = novas.find((x) => x.key === ch);
+    return openActionConfirm({ briefKind: "content",
+      action: <>归档模板 · {name}</>,
+      title: `归档模板 · ${name}`,
+      detail: <>归档后这个模板不再使用，对应频道如果开着会同时被停用；已经发出的消息不撤回。归档后不能改回草稿，要换内容就删掉归档的模板再新建。</>,
+      effect: LIVE,
+      statedBrief: n?.on
+        ? { impact: `模板不再使用，「${channelName(n.key, n.name)}」频道会同时被停用；已发出的不撤回。`, check: "归档后不能改回草稿；要换内容，先删掉归档的模板再新建。" }
+        : { impact: "模板不再使用；已发出的不撤回。", check: "归档后不能改回草稿；要换内容，先删掉归档的模板再新建。" },
+      facts: (
+        <Facts>
+          <Fact k="频道">{displayOf(ch)}</Fact>
+          <Fact k="模板状态"><Change from="已发布" to="已归档" /></Fact>
+          <Fact k="频道状态">{n?.on ? <Change from="已启用" to="已停用" tone="warn" /> : n ? "已停用，不变" : "—"}</Fact>
+        </Facts>
+      ),
+      confirmLabel: "确认归档",
+      reasonPlaceholder: "例如：活动结束，换新文案",
+      amplifies: false,
+      reasonMax: 200,
+      run: (reason) => {
+        return runBackend(actions.updateI2TemplateStatus(ch, "ARCHIVED", reason), `${name} 已归档`);
+      },
+    });
+  };
 
   const [tplDrawer, setTplDrawer] = useState(false);
   const [editTplChannel, setEditTplChannel] = useState<string | null>(null);
@@ -240,30 +302,59 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     setTplDrawer(true);
   };
   const closeTplDrawer = () => { setTplDrawer(false); setEditTplChannel(null); setTplForm(EMPTY_TEMPLATE); };
-  const submitTpl = () => openConfirm({ briefKind: "config",
-    errorHandled: true,
-    action: <>{editTplChannel ? "编辑" : "新增"}推送模板 · {tplForm.name}</>,
-    detail: <>保存后是草稿；发布前会再次检查中文、越南语是否完整、变量是否一致。</>,
-    reason: true,
-    okLabel: "保存草稿",
-    run: (reason) => {
-      const body = { ...tplForm };
-      return runBackend(editTplChannel
-        ? actions.updateI2Template(editTplChannel, body, reason)
-        : actions.createI2Template(body, reason),
-      `模板 ${tplForm.name} 已保存为草稿`, closeTplDrawer);
-    },
-  });
+  const submitTpl = () => {
+    const n = novas.find((x) => x.key === tplForm.channel);
+    return openConfirm({ briefKind: "config",
+      errorHandled: true,
+      action: <>{editTplChannel ? "编辑" : "新增"}推送模板 · {tplForm.name}</>,
+      title: `${editTplChannel ? "保存" : "新建"}模板草稿 · ${tplForm.name}`,
+      detail: <>保存后是草稿，用户还看不到；发布前会再检查中文、越南语是否完整、正文变量是否一致。对应频道如果开着，保存后会被停用。</>,
+      effect: n?.on ? <><StatusTag tone="done" filled>保存为草稿</StatusTag><StatusTag tone="warn">频道会被停用</StatusTag></> : <StatusTag tone="done" filled>保存为草稿</StatusTag>,
+      statedBrief: n?.on
+        ? { impact: `保存后是草稿；「${channelName(n.key, n.name)}」频道会被停用，发布模板后要再手动启用。`, check: "发布时会再查中文、越南语是否完整、正文变量是否一致。" }
+        : { impact: "保存后是草稿，用户还看不到；发布后频道才用新内容。", check: "发布时会再查中文、越南语是否完整、正文变量是否一致。" },
+      content: (
+        <Facts>
+          <Fact k="频道">{n ? channelName(n.key, n.name) : tplForm.channel}</Fact>
+          <Fact k="模板">{`${tplForm.name} · ${tplForm.version}`}</Fact>
+          <Fact k="语言">{tplForm.titleEn.trim() && tplForm.bodyEn.trim() ? "中文、越南语、英语" : "中文、越南语（英语没填）"}</Fact>
+          <Fact k="点击后去哪" tone={UNREACHABLE_CTA.has(tplForm.cta) ? "warn" : undefined}>{`${ctaLabel(CTA_OPTIONS, tplForm.cta)}${UNREACHABLE_CTA.has(tplForm.cta) ? `（${UNREACHABLE_TEXT}）` : ""}`}</Fact>
+          {n?.on && <Fact k="频道状态"><Change from="已启用" to="已停用" tone="warn" /></Fact>}
+        </Facts>
+      ),
+      reasonPlaceholder: "例如：新活动文案，工单号",
+      reason: true,
+      okLabel: "保存草稿",
+      run: (reason) => {
+        const body = { ...tplForm };
+        return runBackend(editTplChannel
+          ? actions.updateI2Template(editTplChannel, body, reason)
+          : actions.createI2Template(body, reason),
+        `模板 ${tplForm.name} 已保存为草稿`, closeTplDrawer);
+      },
+    });
+  };
   const removeTpl = (t: (typeof NOVA_TPLS)[number]) => openConfirm({ briefKind: "content",
     errorHandled: true,
     action: <>删除推送模板 · {t.name}</>,
-    detail: <>已发布模板不能直接删除，请先归档。删除后对应通道无法启用。</>,
+    title: `删除模板 · ${t.name}`,
+    detail: <>已发布模板不能直接删除，要先归档。删除后对应频道启用不了，要先新建并发布模板。</>,
+    effect: <>{LIVE}<IrreversibleTag /></>,
+    statedBrief: { impact: "删除后这个频道启用不了，要先新建并发布模板；已经发出的不撤回。", check: "只有草稿和已归档的模板能删；页面上没有恢复入口。" },
+    content: (
+      <Facts>
+        <Fact k="频道">{displayOf(t.ch)}</Fact>
+        <Fact k="模板">{`${t.name} · ${t.v}（${TEMPLATE_STATE_TEXT[tplStatus(t.ch)] ?? tplStatus(t.ch)}）`}</Fact>
+      </Facts>
+    ),
+    confirmTone: "danger",
+    reasonPlaceholder: "例如：草稿作废，重新写",
     reason: true,
     okLabel: "确认删除",
     run: (reason) => runBackend(actions.deleteI2Template(t.ch, reason), `模板 ${t.name} 已删除`),
   });
 
-  // ── social 概率分布:一次编辑全部类型，禁止静默篡改另一类别。──
+  // ── 真实事件的五类概率:一次编辑全部类型，不静默改动另一类。──
   const [distDrawer, setDistDrawer] = useState(false);
   const [distDraft, setDistDraft] = useState<Record<string, string>>({});
   const openDistDrawer = () => {
@@ -280,7 +371,17 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const submitDistribution = () => openConfirm({ briefKind: "config",
     errorHandled: true,
     action: <>保存 业务动态事件概率分布</>,
-    detail: <>本次会整体替换 5 类真实事件权重；合计必须为 100%，不会自动改动任何其他类别。</>,
+    title: "保存事件概率",
+    detail: <>本次整组替换五类真实事件的概率；合计必须为 100%，不会自动改动别的类。保存时如果别人刚改过，会被拒绝。</>,
+    effect: LIVE,
+    statedBrief: { impact: "之后真实动态按新概率选事件；已经发出的消息和事件本身不变。", check: "五类一起保存，不会自动调别的类；别人刚改过会被拒。" },
+    content: (
+      <DiffList rows={orderDist(SOCIAL_DIST)
+        .filter((item) => String(Number(distDraft[item.key] ?? 0)) !== String(Number(item.pct)))
+        .map((item) => ({ key: item.key, label: operatorCopyText(item.name), before: `${Number(item.pct)}%`, after: `${Number(distDraft[item.key] ?? 0)}%`, note: item.key === NO_SOURCE && Number(distDraft[item.key] ?? 0) > 0 ? "这类没有真实数据源，设了也抽不到。" : undefined }))}
+        emptyNote="五类都没改；仍会保存一次并记下理由。" />
+    ),
+    reasonPlaceholder: "例如：本周多推提现到账",
     reason: true,
     okLabel: "确认保存",
     run: (reason) => {
@@ -309,7 +410,6 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const eventError = eventReadMatches ? eventRead?.error : null;
   const eventReadable = eventReadMatches && !eventError;
   const visibleEventTotal = eventReadable ? eventTotal : 0;
-  const eventPageCount = Math.max(1, Math.ceil(visibleEventTotal / EVENT_PAGE_SIZE));
   const visibleSocialEvents = eventReadable ? SOCIAL_EVENTS : [];
   useEffect(() => {
     setEventRead(null);
@@ -345,16 +445,42 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const statusLabel = (value: string) => SOCIAL_EVENT_STATUS_OPTIONS.find((option) => option.value === value)?.label
     ?? ({ ACTIVE: "已验证", DISABLED: "已停用", EXPIRED: "已过期" } as Record<string, string>)[value]
     ?? "状态未知";
-  const formatEventTime = (value?: string) => {
-    if (!value) return "—";
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { hour12: false });
-  };
+  const formatEventTime = (value?: string) => formatBusinessTimeCompact(value, "—");
   const canRestoreEvent = (expiresAt: string) => new Date(expiresAt).getTime() > Date.now();
+  type SocialEvent = (typeof SOCIAL_EVENTS)[number];
+  // 来源备注是后端受信备注：提现的两个状态码写人话，其余（等级变化、系列号）原样。
+  const noteText = (note?: string) => !note ? "来源已核验" : note === "LEGACY_COMPLETED" ? "提现已完成（历史状态）" : note === "SUCCESS" ? "提现已完成" : note.replace(/^(V\d+)→(V\d+)$/, "$1 → $2");
+  // 表格一行：第一行是「类型 · 金额或变化」，第二行是谁、在哪、来源备注。
+  const eventHead = (event: SocialEvent) => [eventType(event), event.amountDisplay || (event.eventType === "vrank" ? noteText(event.sourceNote) : "")].filter(Boolean).join(" · ");
+  const eventWho = (event: SocialEvent) => [event.actorDisplay, event.cityDisplay, event.eventType === "vrank" || !event.sourceNote ? "" : noteText(event.sourceNote)].filter(Boolean).join(" · ") || "来源已核验";
+  const eventText = (event: SocialEvent) => [event.actorDisplay, event.cityDisplay, event.amountDisplay].filter(Boolean).join(" · ") || "聚合事件";
+  const eventType = (event: SocialEvent) => operatorCopyText(event.eventTypeLabel || optionLabel(SOCIAL_EVENT_TYPE_OPTIONS, event.eventType));
+  const eventTag = (status: string) => status === "ACTIVE" ? <StatusTag tone="ok">{statusLabel(status)}</StatusTag>
+    : <StatusTag tone="done">{statusLabel(status)}</StatusTag>;
+  const eventFacts = (event: SocialEvent, change?: { to: string; tone?: "warn" }) => (
+    <Facts>
+      <Fact k="事件">{eventText(event)}</Fact>
+      <Fact k="类型">{eventType(event)}</Fact>
+      <Fact k="状态">{change ? <Change from={statusLabel(event.status)} to={change.to} tone={change.tone} /> : statusLabel(event.status)}</Fact>
+      <Fact k="过期时间">{`${formatEventTime(event.expiresAt)}（${businessZone().label}）`}</Fact>
+    </Facts>
+  );
   const syncSocialEvents = () => openConfirm({ briefKind: "record",
     errorHandled: true,
     action: <>同步真实业务事件</>,
-    detail: <>仅从提现、V 等级、创世节点 成交和整点新增用户等受信业务表采集；重复来源会防重复提交跳过，AI 客户消费在真实计费源接入前保持不可用。</>,
+    title: "同步真实事件",
+    detail: <>从提现、V 等级、创世节点成交和整点新增注册这些业务表取最近 24 小时的新事件，每条从发生起 12 小时后过期。重复来源跳过，删过的不会再同步回来；AI 客户消费没有真实数据源，跳过。后台大约每 10 分钟也会自动同步一次。</>,
+    effect: LIVE,
+    statedBrief: { impact: "只把新发生的真实事件加进素材；不发消息，不改业务数据，重复的跳过。", check: "删过的事件不会再同步回来；后台大约每 10 分钟也会自动同步。" },
+    content: (
+      <Facts>
+        <Fact k="从哪取">提现、V 等级、创世节点成交、整点注册</Fact>
+        <Fact k="时间范围">最近 24 小时</Fact>
+        <Fact k="新事件有效期">发生后 12 小时</Fact>
+        <Fact k="AI 客户消费">没有数据源，跳过</Fact>
+      </Facts>
+    ),
+    reasonPlaceholder: "例如：活动开始前补一次素材",
     reason: true,
     okLabel: "开始同步",
     run: (reason) => {
@@ -372,19 +498,31 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         .finally(() => setEventBusy(null));
     },
   });
+  const [sample, setSample] = useState<{ value: NovaSocialEventSampleView | null; lang: "ZH" | "VI" | "EN"; at: number } | null>(null);
   const previewSocialEvent = () => {
     setEventBusy("preview");
     actions.previewI2SocialEvent(previewLanguage)
-      .then((sample) => toast(sample ? `抽样预览：${sample.body}` : "当前没有可投放的真实事件，本轮不会推送"))
+      .then((value) => setSample({ value, lang: previewLanguage, at: Date.now() }))
       .catch((error) => toast(`抽样失败:${displayAdminError(error)}`))
       .finally(() => setEventBusy(null));
   };
-  const changeSocialEventStatus = (event: (typeof SOCIAL_EVENTS)[number], status: "ACTIVE" | "DISABLED" | "EXPIRED") => openConfirm({ briefKind: "content",
+  const STATUS_COPY = {
+    DISABLED: { verb: "停用", impact: "这条事件暂时不会被抽到，过期前可以恢复；人物、金额、时间不能改，已经发出的不撤回。", check: "只想永久不用，选「立即过期」。", place: "例如：内容需要核对，先停用" },
+    ACTIVE: { verb: "恢复", impact: "这条事件重新可以被抽到，直到原过期时间；已经发过的不会重发。", check: "过期时间不变，到期后自动失效。", place: "例如：核对无误，恢复使用" },
+    EXPIRED: { verb: "立即过期", impact: "这条事件永久不再被抽到，不能恢复；原过期时间不变，已经发出的不撤回。", check: "只想暂时不用，选「停用」。", place: "例如：事件已过时" },
+  } as const;
+  const changeSocialEventStatus = (event: SocialEvent, status: "ACTIVE" | "DISABLED" | "EXPIRED") => openConfirm({ briefKind: "content",
     errorHandled: true,
     action: <>{status === "ACTIVE" ? "恢复" : status === "DISABLED" ? "停用" : "立即过期"}真实事件 · #{event.id}</>,
+    title: `${STATUS_COPY[status].verb}事件 · #${event.id}`,
     detail: <>只能控制这条事件是否推送，不能改来源、人物、金额和时间。</>,
+    effect: status === "EXPIRED" ? <>{LIVE}<IrreversibleTag /></> : LIVE,
+    statedBrief: { impact: STATUS_COPY[status].impact, check: STATUS_COPY[status].check },
+    content: eventFacts(event, { to: statusLabel(status), tone: status === "EXPIRED" ? "warn" : undefined }),
+    confirmTone: status === "EXPIRED" ? "danger" : undefined,
+    reasonPlaceholder: STATUS_COPY[status].place,
     reason: true,
-    okLabel: "确认操作",
+    okLabel: `确认${STATUS_COPY[status].verb}`,
     run: (reason) => {
       setEventBusy(`status-${event.id}`);
       return runBackend(actions.updateI2SocialEventStatus(event.id, status, reason), "事件状态已更新",
@@ -392,10 +530,16 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         .finally(() => setEventBusy(null));
     },
   });
-  const deleteSocialEvent = (event: (typeof SOCIAL_EVENTS)[number]) => openConfirm({ briefKind: "record",
+  const deleteSocialEvent = (event: SocialEvent) => openConfirm({ briefKind: "record",
     errorHandled: true,
     action: <>删除真实事件 · #{event.id}</>,
-    detail: <>删除后不再推送；已推送的记录仍保留。</>,
+    title: `删除事件 · #${event.id}`,
+    detail: <>删除后不再推送；已推送的记录仍保留。同一来源不会再同步回来，原业务记录不变。</>,
+    effect: <>{LIVE}<IrreversibleTag /></>,
+    statedBrief: { impact: "从列表里删掉，之后不会再被抽到；同一来源不会再同步回来。已经发出的消息和原业务记录都不变。", check: "只想暂时不用，选「停用」。" },
+    content: eventFacts(event),
+    confirmTone: "danger",
+    reasonPlaceholder: "例如：事件内容有误",
     reason: true,
     okLabel: "确认删除",
     run: (reason) => {
@@ -406,371 +550,301 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     },
   });
 
+  const [detailTpl, setDetailTpl] = useState<string | null>(null);
+  const [detailEvent, setDetailEvent] = useState<number | null>(null);
+
   const onlineCount = novas.filter((n) => n.on).length;
-  // 「不在节奏表里的推送」必须由真实目录派生,不能写死名单:
-  // team_event / staking_event / market_event 已由服务端 seedV3RuntimeChannels 落进 nx_nova_channel,
-  // 它们就在上面的可调节奏表里(有开关 + 服务器 cadence),不该再出现在本区(#146)。
+  // 「不在频道里的推送」由服务端目录减去已有频道得出，不写死名单(#146)。
   const cadenceKeys = new Set(novas.map((n) => n.key));
   const offTableChannels = NOVA_EVENT_DRIVEN.filter((r) => !cadenceKeys.has(r.name));
   const cadenceChannelCount = novas.length;
   const offTableTitle = offTableChannels.length
     ? `不在 ${cadenceChannelCount} 频道里的推送(统计规则闭合)`
     : `全部 ${cadenceChannelCount} 频道均已在节奏表内(统计规则闭合)`;
-  // 点击率达标判定必须按同一数值口径算:0% < 19% 不能显示达标勾。
-  // 服务端未返回可解析的点击率时(分母不存在)显示「暂不可计算」,不判达标也不判未达标。
+  // 点击率达标判定按同一数值口径算；服务端没给可解析的点击率时不判达标也不判未达标。
   const ctrValue = Number.parseFloat(String(I2_STATS.ctr).replace("%", "").trim());
   const ctrTargetValue = Number(I2_STATS.ctrTarget);
   const ctrComparable = Number.isFinite(ctrValue) && Number.isFinite(ctrTargetValue) && String(I2_STATS.ctr).trim() !== "—";
-  const ctrVerdict = !ctrComparable
-    ? "暂不可计算(送达量为 0 或未返回) · 点击 ÷ 送达"
-    : ctrValue > ctrTargetValue
-      ? `目标 >${ctrTargetValue}% ✓ 已达标 · 点击 ÷ 送达`
-      : `目标 >${ctrTargetValue}% ✗ 未达标 · 点击 ÷ 送达`;
+
+  const header = (
+    <PageHeader pageId="I2" title="Nova 消息推送" summary="管 Nova 推给用户的动态消息：频道、模板、事件概率和真实素材。"
+      readOnly={!canWriteI2 ? "你只能查看；改频道、模板、概率和事件要有这页的修改权限。" : undefined}
+      meta={readAt ? <span className="rd-toolbar">
+        <span>{`${businessClock(readAt)} 读取（${businessZone().label}）`}</span>
+        <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={contentLoading} onClick={() => void actions.reloadIContent()}>刷新</Button>
+      </span> : undefined}
+      actions={canWriteI2 ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={!data ? "读到数据后才能新增" : undefined} onClick={openNewNova}>新增频道</Button> : undefined} />
+  );
+  const unknownNotice = UNKNOWN_ROWS.length > 0 && (
+    <Notice tone="warn" title={`${UNKNOWN_ROWS.length} 个操作结果未知`} actionBelow>
+      <ul className="i2-unknown">
+        {UNKNOWN_ROWS.map((row) => (
+          <li key={row.key}>
+            <span><b>{row.action}</b>{` · ${row.object} · ${row.change} · ${formatBusinessTimeCompact(row.submittedAt, "—")} 提交`}</span>
+            {row.expired ? <StatusTag tone="done">已过 24 小时，只能查询</StatusTag> : <StatusTag tone="warn">结果未知</StatusTag>}
+            <span className="rd-row-actions"><Button size="sm">查询原结果</Button>{!row.expired && <Button size="sm">按原请求重试</Button>}</span>
+          </li>
+        ))}
+      </ul>
+    </Notice>
+  );
 
   if (contentLoading && !data) {
-    return <section className="l-card"><div className="l-b"><div className="itint">推送数据加载中…</div></div></section>;
+    return <div className="i2-page">{header}<BlockState state="loading" title="正在读取推送数据…" /></div>;
   }
   if (!data) {
-    return <section className="l-card"><div className="l-b"><div className="itint danger">暂无推送数据</div></div></section>;
+    return <div className="i2-page">{header}{contentError
+      ? <BlockState state="error" title="推送数据读取失败" detail={contentError} onRetry={() => void actions.reloadIContent()} retryLabel="重新加载" />
+      : <BlockState state="empty" title="暂无推送数据" />}</div>;
   }
 
+  // ── 首屏结论：几个频道在推、有没有推不出去的、素材够不够 ──
+  const noPublished = novas.filter((n) => tplStatus(n.key) !== "published");
+  const socialChannel = novas.find((n) => n.key === SOCIAL_CHANNEL);
+  const recentActive = INITIAL_SOCIAL_EVENTS.filter((event) => event.status === "ACTIVE").length;
+  const socialDry = !!socialChannel?.on && recentActive === 0;
+  const distTotal = SOCIAL_DIST.reduce((sum, item) => sum + Number(item.pct), 0);
+  const distBad = SOCIAL_DIST.length > 0 && distTotal !== 100;
+  const problems = noPublished.length > 0 || socialDry || distBad;
+  const conclusion = novas.length === 0
+    ? <Conclusion state="neutral" icon={Radio} hint={canWriteI2 ? "点右上角「新增频道」建第一个。" : undefined}>还没有频道，Nova 不会推送</Conclusion>
+    : <Conclusion state={problems ? "warn" : "ok"} icon={Radio}
+      hint={noPublished.length > 0 ? "到「消息模板」给它们写好模板并发布。" : socialDry ? "点「同步事件」从业务表取新素材。" : undefined}
+      explain={<>
+        <p>在推＝频道已启用。启用只说明开关开着；真正发出还要有已发布模板、有素材、到了扫描时间、过了个人间隔，用户也要允许系统通知。</p>
+        <p>素材按最近读到的 20 条真实事件看，只对「真实动态」频道有意义。</p>
+      </>}>
+      {`${onlineCount} 个频道在推，共 ${novas.length} 个`}
+      {noPublished.length > 0 && `；${noPublished.length} 个没有已发布的模板，启用不了`}
+      {socialDry && "；真实动态最近 20 条事件里没有有效的，发不出"}
+      {distBad && `；事件概率合计 ${distTotal}%，不是 100%`}
+    </Conclusion>;
+
+  const ctrNumber = String(I2_STATS.ctr).replace("%", "").trim() || "—";
+  const stats = (
+    <StatBand label="推送概况">
+      <Stat tone="role-2" icon={Radio} label="已启用频道" value={String(onlineCount)} unit="个" sub={`共 ${novas.length} 个 · 已停用 ${novas.length - onlineCount} 个`}
+        explain="频道开关开着的个数，不代表一定发得出。" />
+      <Stat tone="role-2" icon={Send} label="今日真实动态" value={String(I2_STATS.todayDelivered)} unit="条" sub="只数真实动态频道"
+        explain={`真实动态频道今天（业务日，${businessZone().label}）已发出的通知条数；不含其他频道，也不代表都到了用户手机的系统推送。`} />
+      <Stat tone="role-3" icon={History} label="近 7 天投递" value={String(I2_STATS.weeklySocial)} unit="次" sub="按批次算，不是人数"
+        explain="最近 7 天（滚动，不是自然周）有过投递的真实事件，累计被投递的批次数；一批可能发给很多人。" />
+      <Stat tone="role-4" icon={Timer} label="频道点击率均值" value={ctrNumber} unit={ctrNumber === "—" ? undefined : "%"}
+        sub={ctrComparable ? `目标均值 ${ctrTargetValue}% · ${ctrValue > ctrTargetValue ? "已高于目标" : "未到目标"}` : "暂不能和目标比较"}
+        explain="各频道存下来的点击率取平均，不是按点击÷送达实时算的；目前没有查到点击后会更新这个值。" />
+    </StatBand>
+  );
+
+  // ── 频道卡 ──
+  const channelCards = novas.map((n) => {
+    const st = tplStatus(n.key);
+    const t = tplOf(n.key);
+    const phase = PHASE_CHANNELS.has(n.key);
+    const social = n.key === SOCIAL_CHANNEL;
+    const sandboxKey = /sandbox|acceptance/i.test(n.key);
+    const warn = st !== "published"
+      ? <StatusTag tone="warn">{st === "missing" ? "没有模板，启用不了" : `模板是${TEMPLATE_STATE_TEXT[st] ?? st}，启用不了`}</StatusTag>
+      : social && n.on && recentActive === 0 ? <StatusTag tone="warn">最近 20 条事件里没有有效的，发不出</StatusTag>
+        : sandboxKey ? <StatusTag tone="warn" explain="频道编号里有 sandbox 或 acceptance，后台代理会拒绝按编号编辑、启停和删除。">编辑和启停会被拒</StatusTag>
+          : undefined;
+    const toggleBlocked = !n.on && st !== "published" ? "先给它发布模板才能启用" : undefined;
+    const cardActions = canWriteI2 ? <>
+      <Button size="sm" icon={n.on ? <PowerOff size={14} aria-hidden /> : <Power size={14} aria-hidden />} disabledReason={toggleBlocked} aria-label={`${n.on ? "停用" : "启用"} ${channelName(n.key, n.name)}`} onClick={() => toggleNova(n)}>{n.on ? "停用" : "启用"}</Button>
+      <Button size="sm" icon={<Pencil size={14} aria-hidden />} disabledReason={phase ? "跟随「运营阶段设置」，这里不能改" : undefined} aria-label={`编辑 ${channelName(n.key, n.name)}`} onClick={() => openEditNova(n)}>编辑</Button>
+      <MoreMenu label={`${channelName(n.key, n.name)} 的更多操作`} items={[{ key: "delete", label: "删除频道", danger: true, onSelect: () => removeNova(n) }]} />
+    </> : undefined;
+    return (
+      <ChannelCard key={n.key} name={channelName(n.key, n.name)} keyText={n.key} on={n.on}
+        source={social ? "提现到账等五类真实事件" : sourceText(n.trigger, n.name, RUNTIME_SOURCE_OPTIONS)}
+        tick={n.tick} cooldown={n.cd} phase={phase ? <PhaseNote text={n.phaseKeyed} /> : undefined}
+        template={t ? { name: t.name, version: t.v } : undefined} templateState={st} warn={warn}
+        stats={social ? <div><dt><Send size={14} aria-label="推送量" /></dt><dd>{`今日 ${I2_STATS.todayDelivered} 条 · 近 7 天 ${I2_STATS.weeklySocial} 次`}</dd></div> : undefined}
+        ctr={Number.isFinite(n.ctr) ? `${n.ctr}%` : "—"}
+        actions={cardActions} onTemplate={t ? () => setDetailTpl(t.ch) : undefined} />
+    );
+  });
+
+  // ── 事件概率 ──
+  const distSegments = orderDist(SOCIAL_DIST).map((item) => ({
+    key: item.key, label: operatorCopyText(item.name), value: Number(item.pct), slot: DIST_SLOT[item.key] ?? "other" as const,
+    text: `${operatorCopyText(item.name)} ${Number(item.pct)}%${item.key === NO_SOURCE ? "（没有数据源）" : ""}`,
+  }));
+
+  // ── 模板 ──
+  const sampleEvent = INITIAL_SOCIAL_EVENTS.find((event) => event.status === "ACTIVE") ?? INITIAL_SOCIAL_EVENTS[0] ?? null;
+  const langState = (title: string, body: string) => !!title.trim() && !!body.trim();
+  const tplRowActions = (t: (typeof NOVA_TPLS)[number], size: "sm" | "md" = "sm") => {
+    if (!canWriteI2) return null;
+    const st = tplStatus(t.ch);
+    if (size === "md") return <>
+      {st === "draft" && <Button variant="primary" icon={<Send size={14} aria-hidden />} onClick={() => publishTpl(t.ch, t.name)}>发布</Button>}
+      {st === "draft" && <Button icon={<Pencil size={14} aria-hidden />} onClick={() => editTpl(t)}>编辑</Button>}
+      {st === "published" && <Button icon={<Ban size={14} aria-hidden />} onClick={() => archiveTpl(t.ch, t.name)}>归档</Button>}
+      {st !== "published" && <Button variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} onClick={() => removeTpl(t)}>删除模板</Button>}
+    </>;
+    return <>
+      {st === "draft" && <Button size="sm" icon={<Send size={14} aria-hidden />} aria-label={`发布模板 ${t.name}`} onClick={() => publishTpl(t.ch, t.name)}>发布</Button>}
+      {st === "published" && <Button size="sm" icon={<Ban size={14} aria-hidden />} aria-label={`归档模板 ${t.name}`} onClick={() => archiveTpl(t.ch, t.name)}>归档</Button>}
+      {st !== "published" && <MoreMenu label={`模板 ${t.name} 的更多操作`} items={[
+        ...(st === "draft" ? [{ key: "edit", label: "编辑", onSelect: () => editTpl(t) }] : []),
+        { key: "delete", label: "删除模板", danger: true, onSelect: () => removeTpl(t) },
+      ]} />}
+    </>;
+  };
+  const templateChannelOptions = novas.filter((n) => editTplChannel === n.key || !NOVA_TPLS.some((t) => t.ch === n.key))
+    .map((n) => ({ value: n.key, label: `${channelName(n.key, n.name)}（${n.key}）` }));
+  const tplBlocked = !tplForm.channel ? "选择频道" : !tplForm.name.trim() ? "填写模板名称" : !tplForm.version.trim() ? "填写版本" : !tplForm.cta ? "选择点击后去哪"
+    : !tplForm.titleZh.trim() || !tplForm.bodyZh.trim() ? "填写中文标题和正文" : !tplForm.titleVi.trim() || !tplForm.bodyVi.trim() ? "填写越南语标题和正文"
+      : (!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim()) ? "英语标题和正文要么都填，要么都空" : undefined;
+  const currentTpl = detailTpl ? tplOf(detailTpl) ?? null : null;
+  const currentEvent = detailEvent !== null ? visibleSocialEvents.find((event) => event.id === detailEvent) ?? null : null;
+  const zone = businessZone().label;
+  const eventFiltered = !!eventTypeFilter || !!eventStatusFilter;
+
   return (
-    <>
-      <div className="f-stats">
-        <div className="f-stat">
-          <div className="k">今日推送量</div>
-          <div className="v">{I2_STATS.todayDelivered}</div>
-          <div className="sub">按实际送达统计</div>
-        </div>
-        <div className={`f-stat ${!ctrComparable ? "" : ctrValue > ctrTargetValue ? "ok" : "warn"}`}>
-          <div className="k">消息点击率</div>
-          <div className="v">{I2_STATS.ctr}</div>
-          <div className="sub">{ctrVerdict}</div>
-        </div>
-        <div className="f-stat cyan">
-          <div className="k">频道在线</div>
-          <div className="v">{onlineCount} / {novas.length}</div>
-          <div className="sub">停推 = 停止单个频道推送,操作确认</div>
-        </div>
-        <div className="f-stat">
-          <div className="k">本周推送的动态消息</div>
-          <div className="v">{I2_STATS.weeklySocial}</div>
-          <div className="sub">5 类按概率分布抽取</div>
-        </div>
-      </div>
+    <div className="i2-page">
+      {header}
+      {unknownNotice}
+      {contentError && <Notice tone="danger" title="最新数据没读到" action={<Button size="sm" onClick={() => void actions.reloadIContent()}>重新加载</Button>}>{`${contentError}下面仍是 ${readAt ? businessClock(readAt) : "上次"} 读到的数据。`}</Notice>}
+      {conclusion}
+      {stats}
 
-      {/* (a) 10 可调通道节奏表 */}
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">可调通道节奏表</span>
-          <span className="sub">· 启停 + 检查间隔 + 同一用户最短推送间隔 + P 阶段分档</span>
-          <div className="r">
-            {!canWriteI2 && <span className="bdg dim">只读</span>}
-            {canWriteI2 && <button className="l-btn sm primary" onClick={openNewNova}>+ 新增通道</button>}
-          </div>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 960 }}>
-            <thead>
-              <tr>
-                <th>开关</th>
-                <th>频道编号 / 名称</th>
-                <th>内容触发</th>
-                <th>检查间隔</th>
-                <th>同一用户最短推送间隔</th>
-                <th>随运营阶段变化</th>
-                <th>推送文案</th>
-                <th>真实 点击率</th>
-                <th style={{ textAlign: "right" }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {novas.map((n) => {
-                const phaseKeyed = n.phaseKeyed || "—";
-                const h1CadenceReadOnly = n.key === "tradein" || n.key === "taskLockMonthly";
-                const trigger = n.trigger || n.name;
-                const channelTemplate = NOVA_TPLS.find((t) => t.ch === n.key);
-                const phaseStyle = phaseKeyed === "—"
-                  ? { fontSize: 11.5, color: "var(--ink-4)" }
-                  : { fontSize: 11.5, color: "var(--warning)" };
-                return (
-                  <tr key={n.key}>
-                    <td>
-                      {canWriteI2 ? <button
-                        className={`nv-sw${n.on ? " on" : ""}`}
-                        onClick={() => toggleNova(n)}
-                        aria-label={`${n.on ? "kill" : "恢复"} ${n.name}`}
-                      /> : <span className={`bdg ${n.on ? "ok" : "dim"}`}>{n.on ? "开启" : "停推"}</span>}
-                    </td>
-                    <td>
-                      <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{({welcome:"欢迎消息",market:"市场动态",upgrade:"设备升级建议",dailySummary:"每日汇总",tradein:"升级置换",social:"真实动态",eventClaim:"活动领奖",taskLockMonthly:"月度任务提醒"} as Record<string,string>)[n.key] ?? n.name}</span>
-                      <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }}>{n.name}</div>
-                    </td>
-                    <td style={{ fontSize: 12, color: "var(--ink-3)", maxWidth: 240 }}>{trigger.startsWith("a4:") ? ({"a4:staking.opened":"质押订单创建时触发","a4:commission.paid":"团队奖励发放时触发","a4:referral.bound":"邀请关系绑定时触发","a4:market.curve_advanced":"行情曲线更新时触发"} as Record<string,string>)[trigger] ?? "收到已登记业务事件时触发" : operatorCopyText(trigger)}</td>
-                    <td className="mono" style={{ fontSize: 12 }}>{operatorCopyText(n.tick)}</td>
-                    <td className="mono" style={{ fontSize: 12 }}>{operatorCopyText(n.cd).replace(/\bskip\b/g,"跳过")}</td>
-                    <td style={phaseStyle}>{operatorCopyText(phaseKeyed).replace(/\bskip\b/g,"跳过")}</td>
-                    <td>{renderTplBadge(tplStatus(n.key))}<div style={{ fontSize: 11, marginTop: 3, color: "var(--ink-4)" }}>{channelTemplate?.name ?? "请先新增模板"}</div></td>
-                    <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{`点击率 ${n.ctr}%`}</td>
-                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {canWriteI2 && <>
-                        {h1CadenceReadOnly
-                          ? <button className="l-btn sm" disabled title="推送间隔跟随「运营阶段设置」">跟随运营阶段</button>
-                          : <button className="l-btn sm" onClick={() => openEditNova(n)}>编辑</button>}
-                        <button className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => removeNova(n)}>删除</button>
-                      </>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="l-b" style={{ paddingTop: 10 }}>
-          <div className="itint warn">
-            <b>这不是紧急开关</b> · 停某个 Nova 频道用这页的开关就行，和「紧急停用开关」「地区访问限制」无关。只有要整体停掉 Nova 推送时，才去「紧急停用开关」。
-          </div>
-          <div className="itint" style={{ marginTop: 8 }}>
-          <b>两个跟随阶段的频道</b> · 升级置换和月度任务给同一用户的最短推送间隔按运营阶段（P1–P6）分档，阶段切换时自动换档。<b>阶段在「运营阶段设置」里改，这里只能查看。</b>
-          </div>
-        </div>
-      </section>
-
-      {/* 不在节奏表里的推送(口径闭合)· 名单与频道总数实时由服务端目录派生 */}
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">{offTableTitle}</span>
-          <span className="sub">· 这些推送的文案在下方模板里管理</span>
-        </div>
-        {offTableChannels.length === 0 ? (
-          <div className="l-b" style={{ paddingTop: 4 }}>
-            <div className="itint ok">
-              所有推送频道都已列在上方的推送节奏表里。
-            </div>
-          </div>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table className="l-tbl" style={{ minWidth: 760 }}>
-              <thead>
-                <tr>
-                  <th>频道</th>
-                  <th>为什么不可调</th>
-                  <th>节奏归谁</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
+      <Panel title="频道" icon={Radio} tone="role-2" sub={`${novas.length} 个 · 已启用 ${onlineCount} 个`}
+        explain="每张卡是一个频道：从哪类事情取材、多久找一次、同一个人隔多久才再收到一条。停用后不再生成新消息，已经发出的不撤回。">
+        {novas.length === 0
+          ? <BlockState state="empty" title="新增的频道会显示在这里" detail={canWriteI2 ? "新增后先写好模板并发布，再启用。" : undefined} />
+          : <div className="i2-channels">{channelCards}</div>}
+        <Fold title="不在频道里的推送" inset summary={offTableChannels.length ? `${offTableChannels.length} 条 · 节奏由别处的设置决定` : "全部推送都在上面的频道里"}
+          explain="市场行情和市场事件通知是两个独立频道，可以分别启停、设间隔。">
+          {offTableChannels.length === 0
+            ? <p className="i2-muted">所有推送频道都已列在上面。</p>
+            : <Table label="不在频道里的推送">
+              <thead><tr><Th>推送</Th><Th>什么时候推</Th><Th>节奏归谁</Th><Th>状态</Th></tr></thead>
               <tbody>
                 {offTableChannels.map((r) => (
-                  <tr key={r.name}>
-                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{({team_event:"团队事件通知",staking_event:"质押事件通知",market_event:"市场事件通知","risk-alert":"风险告警","weekly-quest-refresh":"每周任务刷新"} as Record<string,string>)[r.name] ?? operatorCopyText(r.name)}</td>
-                    <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{operatorCopyText(r.why)}</td>
-                    <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{operatorCopyText(r.owner)}</td>
-                    <td><span className={`bdg ${r.tone}`}>{operatorCopyText(r.st)}</span></td>
-                  </tr>
+                  <Tr key={r.name}>
+                    <Td><Cell main={catalogName(r.name)} /></Td>
+                    <Td grow><Cell main={readable(r.why)} title={readable(r.why)} /></Td>
+                    <Td><Cell main={readable(r.owner)} /></Td>
+                    <Td><StatusTag tone={r.tone === "ok" ? "ok" : "done"}>{operatorCopyText(r.st)}</StatusTag></Td>
+                  </Tr>
                 ))}
               </tbody>
-            </table>
+            </Table>}
+        </Fold>
+      </Panel>
+
+      <Panel title="消息模板" icon={FileText} tone="role-4" sub={`${templatePager.total} 个 · 每个频道一个`}
+        explain="模板就是用户收到的标题和正文。中文、越南语必填，英语可选；草稿 → 发布 → 归档。点一行看三种语言并排和 App 里的样子。"
+        actions={canWriteI2 ? <Button icon={<Plus size={14} aria-hidden />} disabledReason={templateChannelOptions.length === 0 ? "每个频道都有模板了；要换内容，先删掉旧模板" : undefined} onClick={newTpl}>新建模板</Button> : undefined}>
+        <Table label="消息模板" className="i2-tpl-table">
+          <thead>
+            <tr><Th>模板</Th><Th>状态</Th><Th>语言</Th><Th>内容（中文）</Th><Th>点击后去哪</Th>{canWriteI2 && <Th sticky="end">操作</Th>}</tr>
+          </thead>
+          <tbody>
+            {templatePager.pageRows.map((t) => {
+              const st = tplStatus(t.ch);
+              return (
+                <Tr key={t.ch} selected={t.ch === detailTpl} onOpen={() => setDetailTpl(t.ch)}>
+                  <Td><Cell main={t.name} sub={`${displayOf(t.ch)} · ${t.v}`} title={t.name} /></Td>
+                  <Td><TemplateTag state={st} /></Td>
+                  <Td><span className="i2-lang-chips">
+                    {([["中", t.titleZh, t.bodyZh, true], ["越", t.titleVi, t.bodyVi, true], ["英", t.titleEn, t.bodyEn, false]] as const).map(([label, title, body, req]) => (
+                      <span key={label} data-state={langState(title, body) ? "ok" : req ? "missing" : "empty"} title={`${label === "中" ? "中文" : label === "越" ? "越南语" : "英语"}${langState(title, body) ? "已填" : req ? "缺" : "没填（可选）"}`}>{label}</span>
+                    ))}
+                  </span></Td>
+                  <Td grow><Cell main={nexGridBrandText(t.titleZh) || "—"} sub={nexGridBrandText(t.bodyZh)} title={`${t.titleZh} · ${t.bodyZh}`} /></Td>
+                  <Td><Cell main={ctaLabel(CTA_OPTIONS, t.cta)} sub={UNREACHABLE_CTA.has(t.cta) ? "App 打不开" : undefined} title={UNREACHABLE_CTA.has(t.cta) ? UNREACHABLE_TEXT : undefined} /></Td>
+                  {canWriteI2 && <Td sticky="end"><span className="rd-row-actions">{tplRowActions(t)}</span></Td>}
+                </Tr>
+              );
+            })}
+            {templatePager.total === 0 && <TableMessage columns={canWriteI2 ? 6 : 5}>还没有模板</TableMessage>}
+          </tbody>
+        </Table>
+        {templatePager.total > templatePager.pageSize && <Pager label="消息模板" total={templatePager.total} page={templatePager.page} pageSize={templatePager.pageSize} sizes={[7]} onPage={templatePager.setPage} onPageSize={templatePager.setPageSize} />}
+      </Panel>
+
+      <Panel title="事件概率" icon={Percent} tone="role-2" sub={`五类 · 合计 ${distTotal}%`}
+        explain="只管「真实动态」频道：每次先按这组概率选一类，再从这一类有效的最近 100 条里随机取一条。某一类没有有效事件，就按其余几类的比例重新分。"
+        actions={canWriteI2 ? <Button icon={<Percent size={14} aria-hidden />} disabledReason={SOCIAL_DIST.length === 0 ? "没有读到五类概率" : undefined} onClick={openDistDrawer}>调整概率</Button> : undefined}>
+        {SOCIAL_DIST.length === 0
+          ? <BlockState state="empty" title="没有读到事件概率" compact />
+          : <div className="i2-dist">
+            <SegmentBar label="五类事件概率" segments={distSegments} />
+            {distBad && <Notice tone="warn">{`五类合计 ${distTotal}%，不是 100%，点「调整概率」改好。`}</Notice>}
+          </div>}
+      </Panel>
+
+      <Panel title="真实事件" icon={Database} tone="role-3" sub={eventReadable ? `${visibleEventTotal} 条${eventFiltered ? "（已筛选）" : ""} · 时间为${zone}` : `时间为${zone}`}
+        explain="「真实动态」频道的素材，都从业务表同步来，不能手工添加人物、金额和时间。人物和地区只露第一个字，金额写成区间。"
+        actions={<span className="rd-row-actions">
+          <Select aria-label="预览语言" value={previewLanguage} onChange={(value) => setPreviewLanguage(value as "ZH" | "VI" | "EN")}
+            options={[{ value: "VI", label: "越南语" }, { value: "ZH", label: "中文" }, { value: "EN", label: "英语" }]} />
+          <Button icon={<Eye size={14} aria-hidden />} loading={eventBusy === "preview"} disabledReason={eventBusy !== null && eventBusy !== "preview" ? "等当前操作完成" : undefined} onClick={previewSocialEvent}>抽一条预览</Button>
+          {canWriteI2 && <Button icon={<Shuffle size={14} aria-hidden />} loading={eventBusy === "sync"} disabledReason={eventBusy !== null && eventBusy !== "sync" ? "等当前操作完成" : undefined} onClick={syncSocialEvents}>同步事件</Button>}
+          <Explain label="同步事件做什么" content={<>
+            <p>从提现、V 等级、创世节点成交、整点新增注册这些业务表取最近 24 小时的新事件，每条从发生起 12 小时后过期。</p>
+            <p>只加新素材：不发消息、不改业务数据；重复的跳过，删过的不会再同步回来。AI 客户消费没有数据源。</p>
+            <p>后台大约每 10 分钟也会自动同步一次。</p>
+          </>} />
+        </span>}>
+        {sample && (
+          <div className="i2-sample">
+            {sample.value
+              ? <>
+                <AppNotice lang={sample.lang} title={sample.value.title ?? ""} body={sample.value.body} />
+                <p className="i2-sentence">{`${businessClock(sample.at)} 抽到${sample.value.id !== undefined ? ` #${sample.value.id}` : ""}：只是预览，不会发出，也不计投递次数。`}</p>
+              </>
+              : <Notice tone="warn">现在没有能发的真实事件，这一轮不会推送。</Notice>}
           </div>
         )}
-        <div className="l-b" style={{ paddingTop: 8 }}>
-          <div className="itint">
-            <b>市场行情与市场业务通知</b> · 市场行情播报与市场业务通知是两个独立频道，可分别设置开关和推送间隔。
-          </div>
-        </div>
-      </section>
-
-      <div className="two-col">
-        {/* (b) 推送模板池 */}
-        <section className="l-card">
-          <div className="l-h">
-            <span className="ttl">推送模板</span>
-            <span className="sub">· 中文/越南语必填,英语可选 · 发布操作确认</span>
-            <div className="r">
-              {!canWriteI2 && <span className="bdg dim">只读</span>}
-              {canWriteI2 && <button className="l-btn sm mc" onClick={newTpl}>+ 新模板</button>}
-            </div>
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <table className="l-tbl" style={{ minWidth: 540 }}>
-              <thead>
-                <tr>
-                  <th>频道</th>
-                  <th>模板</th>
-                  <th>点击后跳转页面</th>
-                  <th>中/越文预览</th>
-                  <th>版本</th>
-                  <th>状态</th>
-                  <th style={{ textAlign: "right" }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {templatePager.pageRows.map((t) => {
-                  const st = tplStatus(t.ch);
-                  const canPublish = st === "draft";
-                  const canArchive = st === "published";
-                  return (
-                    <tr key={t.ch}>
-                      <td className="mono" style={{ fontSize: 11.5 }}>{t.ch}</td>
-                      <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{t.name}</td>
-                      <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{t.cta}</td>
-                      <td style={{ fontSize: 11.5, color: "var(--ink-3)", maxWidth: 260 }}>
-                        <div><b>中文：</b>{nexGridBrandText(t.titleZh)} · {nexGridBrandText(t.bodyZh)}</div>
-                        <div><b>越南语：</b>{nexGridBrandText(t.titleVi)} · {nexGridBrandText(t.bodyVi)}</div>
-                        {t.bodyEn && <div><b>英语：</b>{nexGridBrandText(t.titleEn)} · {nexGridBrandText(t.bodyEn)}</div>}
-                      </td>
-                      <td className="mono" style={{ fontWeight: 700 }}>{t.v}</td>
-                      <td>{renderTplBadge(st)}</td>
-                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        {canWriteI2 && <>
-                        {canPublish && (
-                          <button className="l-btn sm mc" onClick={() => publishTpl(t.ch, t.name)}>发布</button>
-                        )}
-                        {canArchive && (
-                          <button className="l-btn sm" style={{ marginLeft: canPublish ? 6 : 0 }} onClick={() => archiveTpl(t.ch, t.name)}>归档</button>
-                        )}
-                        {st === "draft" && <button className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => editTpl(t)}>编辑</button>}
-                        {st !== "published" && <button className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => removeTpl(t)}>删除</button>}
-                        </>}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {templatePager.total === 0 && (
-                  <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-3)" }}>暂无推送模板</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <DataListPager
-            label="推送模板"
-            page={templatePager.page}
-            pageSize={templatePager.pageSize}
-            total={templatePager.total}
-            onPageChange={templatePager.setPage}
-            onPageSizeChange={templatePager.setPageSize}
-            pageSizeOptions={[7]}
-          />
-          <div className="l-b" style={{ paddingTop: 8 }}>
-            <div className="itint">
-              <b>说明</b> · 共 {templatePager.total} 个模板，每页 {templatePager.pageSize} 个。模板里的中文、越南语（英语可选）就是实际推送的内容。流程：草稿 → 已发布 → 已归档。
-            </div>
-          </div>
-        </section>
-
-        {/* (c) 全网真实事件池 · social 频道 */}
-        <section className="l-card">
-          <div className="l-h">
-            <span className="ttl">全网真实事件池(c)· 业务动态频道</span>
-            <span className="sub">· 只消费已核验、未过期的真实业务事件 · 无事件就跳过投放</span>
-            <div className="r">
-              {canWriteI2 && <button className="l-btn sm" onClick={openDistDrawer}>编辑全部概率</button>}
-              {canWriteI2 && <button className="l-btn sm mc" disabled={eventBusy !== null} onClick={syncSocialEvents}>{eventBusy === "sync" ? "同步中…" : "同步最新事件"}</button>}
-              <select className="fld" style={{ width: 112 }} value={previewLanguage} onChange={(event) => setPreviewLanguage(event.target.value as "ZH" | "VI" | "EN")} aria-label="预览语言">
-                <option value="VI">越南语</option><option value="ZH">中文</option><option value="EN">英语</option>
-              </select>
-              <button className="l-btn sm" disabled={eventBusy !== null} onClick={previewSocialEvent}>{eventBusy === "preview" ? "抽样中…" : "预览抽样"}</button>
-            </div>
-          </div>
-          <div className="l-b" style={{ paddingTop: 6 }}>
-            <div className="nv-pb">
-              {SOCIAL_DIST.map((d) => (
-                <i key={d.name} style={{ width: `${Number(d.pct)}%`, background: d.color }} />
-              ))}
-            </div>
-            <div className="nv-leg" style={{ marginBottom: 10 }}>
-              {SOCIAL_DIST.map((d) => (
-                <span key={d.name}>
-                  <span className="d" style={{ background: d.color }} />
-                  {operatorCopyText(d.name)} {Number(d.pct)}%
-                </span>
-              ))}
-            </div>
-
-            <div className="p-row">
-              <div className="txt">
-                <div className="k">概率分布（整体结构化保存）</div>
-                <div className="s">当前合计 {SOCIAL_DIST.reduce((sum, item) => sum + Number(item.pct), 0)}%；不会为了凑满 100% 静默调整其他类别。</div>
-              </div>
-              <span className={`bdg ${SOCIAL_DIST.reduce((sum, item) => sum + Number(item.pct), 0) === 100 ? "ok" : "danger"}`}>
-                {SOCIAL_DIST.reduce((sum, item) => sum + Number(item.pct), 0) === 100 ? "合计正确" : "配置无效"}
-              </span>
-            </div>
-
-            <div className="itint" style={{ marginTop: 10 }}>
-              <b>真实性边界</b> · 提现、等级、创世节点 与新增用户只从业务表同步；完整用户编号、订单号、地址和交易哈希不会返回管理端。AI 客户消费在真实计费来源接入前不会进入线上抽样。
-            </div>
-
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0 8px" }}>
-              <select className="fld" style={{ width: 190 }} value={eventTypeFilter} onChange={(event) => { setEventTypeFilter(event.target.value); setEventPage(1); }} aria-label="事件类型筛选">
-                <option value="">全部事件类型</option>
-                {SOCIAL_EVENT_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{operatorCopyText(option.label)}</option>)}
-              </select>
-              <select className="fld" style={{ width: 160 }} value={eventStatusFilter} onChange={(event) => { setEventStatusFilter(event.target.value); setEventPage(1); }} aria-label="事件状态筛选">
-                <option value="">全部状态</option>
-                {SOCIAL_EVENT_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{operatorCopyText(option.label)}</option>)}
-              </select>
-              {(eventTypeFilter || eventStatusFilter) && <button className="l-btn sm" onClick={() => { setEventTypeFilter(""); setEventStatusFilter(""); setEventPage(1); }}>清除筛选</button>}
-            </div>
-
-            <div className="k" style={{ marginBottom: 8 }}>真实事件明细</div>
-            {eventError ? (
-              <div className="itint warn" role="alert">
-                {eventError} <button className="l-btn sm" onClick={() => setEventRefreshKey((key) => key + 1)}>重新加载事件</button>
-              </div>
-            ) : eventLoading || !eventReadable ? (
-              <div className="itint">正在加载事件…</div>
-            ) : visibleEventTotal === 0 && !eventTypeFilter && !eventStatusFilter ? (
-              <div className="itint warn"><b>当前没有可投放的真实事件</b> · 业务动态频道不会发送，系统不会生成虚假占位内容。等待真实业务数据产生后点击“同步真实事件”。</div>
-            ) : visibleEventTotal === 0 ? (
-              <div className="itint">当前筛选条件下没有事件，请清除筛选后重试。</div>
-            ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table className="l-tbl" style={{ minWidth: 1120 }}>
-                  <thead><tr><th>脱敏展示</th><th>事件类型</th><th>来源系统</th><th>来源事件编号</th><th>发生时间</th><th>到期时间</th><th>状态</th><th>投递</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
-                  <tbody>
-                    {visibleSocialEvents.map((event) => (
-                      <tr key={event.id}>
-                        <td><b>{[event.actorDisplay, event.cityDisplay, event.amountDisplay].filter(Boolean).join(" · ") || "聚合事件"}</b><div className="muted tiny">{event.sourceNote || "来源已核验"}</div></td>
-                        <td>{operatorCopyText(event.eventTypeLabel || optionLabel(SOCIAL_EVENT_TYPE_OPTIONS, event.eventType))}</td>
-                        <td><span className="bdg ok">已验证</span><div className="muted tiny">{({WITHDRAWAL:"提现记录",V_RANK:"会员等级记录",GENESIS:"创世节点记录",REGISTRATION:"注册记录"} as Record<string,string>)[event.sourceSystem ?? ""] ?? "业务系统"}</div></td>
-                        <td><span className="mono">{event.sourceEventId || "已脱敏"}</span></td>
-                        <td>{formatEventTime(event.occurredAt)}</td>
-                        <td>{formatEventTime(event.expiresAt)}</td>
-                        <td><span className={`bdg ${event.status === "ACTIVE" ? "ok" : event.status === "EXPIRED" ? "warn" : "dim"}`}>{statusLabel(event.status)}</span></td>
-                        <td>{event.dispatchCount ?? 0} 次</td>
-                        <td><div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                          {canWriteI2 && event.status === "ACTIVE" && <button className="l-btn sm" disabled={eventBusy !== null} onClick={() => changeSocialEventStatus(event, "DISABLED")}>停用</button>}
-                          {canWriteI2 && event.status === "DISABLED" && canRestoreEvent(event.expiresAt) && <button className="l-btn sm mc" disabled={eventBusy !== null} onClick={() => changeSocialEventStatus(event, "ACTIVE")}>恢复</button>}
-                          {canWriteI2 && event.status === "DISABLED" && !canRestoreEvent(event.expiresAt) && <span className="muted tiny">已到期不可恢复</span>}
-                          {canWriteI2 && event.status !== "EXPIRED" && <button className="l-btn sm" disabled={eventBusy !== null} onClick={() => changeSocialEventStatus(event, "EXPIRED")}>立即过期</button>}
-                          {canWriteI2 && <button className="l-btn sm danger" disabled={eventBusy !== null} onClick={() => deleteSocialEvent(event)}>删除</button>}
-                        </div></td>
-                      </tr>
+        <FilterBar onClear={() => { setEventTypeFilter(""); setEventStatusFilter(""); setEventPage(1); }} canClear={eventFiltered}>
+          <FilterField label="类型">
+            <Select aria-label="事件类型筛选" value={eventTypeFilter} onChange={(value) => { setEventTypeFilter(value); setEventPage(1); }} placeholder="全部类型"
+              options={SOCIAL_EVENT_TYPE_OPTIONS.map((option) => ({ value: option.value, label: operatorCopyText(option.label) }))} />
+          </FilterField>
+          <FilterField label="状态">
+            <Select aria-label="事件状态筛选" value={eventStatusFilter} onChange={(value) => { setEventStatusFilter(value); setEventPage(1); }} placeholder="全部状态"
+              options={SOCIAL_EVENT_STATUS_OPTIONS.map((option) => ({ value: option.value, label: operatorCopyText(option.label) }))} />
+          </FilterField>
+        </FilterBar>
+        {!eventError && !eventLoading && eventReadable && visibleEventTotal === 0 && !eventFiltered
+          ? <BlockState state="empty" title="还没有真实事件" detail={`「真实动态」频道没有素材，不会发送，也不会生成虚假内容。${canWriteI2 ? "点「同步事件」从业务表取新事件。" : ""}`} />
+          : <Table label="真实事件" className="i2-event-table">
+            <thead>
+              <tr><Th>事件</Th><Th>状态</Th><Th>发生时间</Th><Th>过期时间</Th><Th align="right">投递</Th>{canWriteI2 && <Th sticky="end">操作</Th>}</tr>
+            </thead>
+            <tbody>
+              {eventError ? <TableMessage columns={canWriteI2 ? 6 : 5} role="alert">
+                {eventError} <Button size="sm" onClick={() => setEventRefreshKey((key) => key + 1)}>重新加载事件</Button>
+              </TableMessage>
+                : eventLoading || !eventReadable ? <TableLoading columns={canWriteI2 ? 6 : 5} />
+                  : visibleEventTotal === 0 ? <TableMessage columns={canWriteI2 ? 6 : 5}>这个筛选下没有事件</TableMessage>
+                    : visibleSocialEvents.map((event) => (
+                      <Tr key={event.id} selected={event.id === detailEvent} onOpen={() => setDetailEvent(event.id)}>
+                        <Td grow><Cell main={eventHead(event)} sub={eventWho(event)} title={`${eventHead(event)} · ${eventWho(event)}`} /></Td>
+                        <Td>{eventTag(event.status)}</Td>
+                        <Td><Cell num main={formatEventTime(event.occurredAt)} /></Td>
+                        <Td><Cell num main={formatEventTime(event.expiresAt)} sub={event.status === "DISABLED" && !canRestoreEvent(event.expiresAt) ? "已到期，不能恢复" : undefined} /></Td>
+                        <Td align="right"><Cell num main={`${event.dispatchCount ?? 0} 次`} /></Td>
+                        {canWriteI2 && <Td sticky="end"><span className="rd-row-actions">
+                          {event.status === "ACTIVE" && <Button size="sm" disabledReason={eventBusy !== null ? "等当前操作完成" : undefined} onClick={() => changeSocialEventStatus(event, "DISABLED")}>停用</Button>}
+                          {event.status === "DISABLED" && canRestoreEvent(event.expiresAt) && <Button size="sm" disabledReason={eventBusy !== null ? "等当前操作完成" : undefined} onClick={() => changeSocialEventStatus(event, "ACTIVE")}>恢复</Button>}
+                          <MoreMenu label={`事件 #${event.id} 的更多操作`} disabled={eventBusy !== null} items={[
+                            ...(event.status !== "EXPIRED" ? [{ key: "expire", label: "立即过期", onSelect: () => changeSocialEventStatus(event, "EXPIRED") }] : []),
+                            { key: "delete", label: "删除事件", danger: true, onSelect: () => deleteSocialEvent(event) },
+                          ]} />
+                        </span></Td>}
+                      </Tr>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {eventReadable && !eventLoading && visibleEventTotal > EVENT_PAGE_SIZE && (
-              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginTop: 10 }}>
-                <button className="l-btn sm" disabled={eventPage <= 1} onClick={() => setEventPage((page) => Math.max(1, page - 1))}>上一页</button>
-                <span className="muted tiny">第 {eventPage} / {eventPageCount} 页 · 共 {visibleEventTotal} 条</span>
-                <button className="l-btn sm" disabled={eventPage >= eventPageCount} onClick={() => setEventPage((page) => Math.min(eventPageCount, page + 1))}>下一页</button>
-              </div>
-            )}
+            </tbody>
+          </Table>}
+        {eventReadable && !eventLoading && visibleEventTotal > EVENT_PAGE_SIZE && (
+          <Pager label="真实事件" total={visibleEventTotal} page={eventPage} pageSize={EVENT_PAGE_SIZE} sizes={[EVENT_PAGE_SIZE]} onPage={setEventPage} onPageSize={() => undefined} />
+        )}
+      </Panel>
 
-            <div className="itint" style={{ marginTop: 10 }}>
-              <b>运行时规则</b> · 只从“有效、已验证、未过期”的事件中按权重抽样；来源事件重复会被唯一键拦截；没有有效真实事件时不推送。
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <p className="f-foot">
-        <b>执行门槛</b>:节奏调整 = 内容或增长执行门槛:内容主管/超级管理员;<b>频道停推</b> = 内容或<b>风控</b>可提交,内容主管/超级管理员执行;模板与事件池发布 = 内容执行门槛:内容主管。
-        <b>数据</b>：点击率按实际送达计算；各频道的点击率和拉回用户情况会进入数据分析。
-        <b>直播代答模式</b>期间，AI 自动推送全部暂停。
-      </p>
       <PaginationExemptionList
         items={[
           {
@@ -789,202 +863,87 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         ]}
       />
 
-      {distDrawer && (
-        <Drawer
-          title="编辑真实事件概率分布"
-          sub="一次提交全部事件类型；系统不会隐式修改任何其他类别"
-          onClose={() => setDistDrawer(false)}
-          footer={
-            <>
-              <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setDistDrawer(false)}>取消</button>
-              <button className="l-btn primary" style={{ flex: 1, justifyContent: "center" }} disabled={!distDraftValid} onClick={submitDistribution}>保存概率</button>
-            </>
-          }
-        >
-          <div className="col" style={{ gap: 12 }}>
-            {SOCIAL_DIST.map((item) => (
-              <label key={item.key} className="col" style={{ gap: 5 }}>
-                <span className="muted tiny">{item.name}</span>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 64px", gap: 8, alignItems: "center" }}>
-                  <input
-                    className="fld"
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={distDraft[item.key] ?? ""}
-                    onChange={(event) => setDistDraft({ ...distDraft, [item.key]: event.target.value })}
-                  />
-                  <span className="muted">%</span>
-                </div>
-              </label>
-            ))}
-            <div className={`itint ${distDraftValid ? "" : "danger"}`}>
-              <b>当前合计：{distDraftTotal}%</b> · {distDraftValid ? "可以保存" : "每项必须是 0～100 的整数，且总和为 100%"}
+      <Drawer open={!!currentTpl} wide onClose={() => setDetailTpl(null)} title="模板详情" icon={FileText} tone="role-4" sub={currentTpl?.name}
+        footer={currentTpl && canWriteI2 ? <Decision others={tplRowActions(currentTpl, "md")} /> : undefined}>
+        {currentTpl && (() => {
+          const t = currentTpl;
+          const social = t.ch === SOCIAL_CHANNEL;
+          const used = [...new Set([t.titleZh, t.bodyZh, t.titleVi, t.bodyVi, t.titleEn, t.bodyEn].flatMap(placeholdersOf))];
+          const ctaNote = UNREACHABLE_CTA.has(t.cta) ? <StatusTag tone="warn">{UNREACHABLE_TEXT}</StatusTag> : undefined;
+          return <div className="rd-stack">
+            <Facts>
+              <Fact k="频道">{displayOf(t.ch)}</Fact>
+              <Fact k="状态">{TEMPLATE_STATE_TEXT[tplStatus(t.ch)] ?? tplStatus(t.ch)}</Fact>
+              <Fact k="版本">{t.v}</Fact>
+              <Fact k="点击后去哪" tone={UNREACHABLE_CTA.has(t.cta) ? "warn" : undefined}>{`${ctaLabel(CTA_OPTIONS, t.cta)}${UNREACHABLE_CTA.has(t.cta) ? `（${UNREACHABLE_TEXT}）` : ""}`}</Fact>
+            </Facts>
+            {!social && used.length > 0 && <Notice tone="warn">{`这个频道的变量目前不会被替换，用户会看到原样的 ${used.join("、")}。`}</Notice>}
+            <div className="i2-langs">
+              {([["ZH", "中文", t.titleZh, t.bodyZh, true], ["VI", "越南语", t.titleVi, t.bodyVi, true], ["EN", "英语", t.titleEn, t.bodyEn, false]] as const).map(([lang, label, title, body, req]) => {
+                const filled = langState(title, body);
+                const shown = social ? previewText(title, body, lang, sampleEvent) : { title, body };
+                return <section key={lang} className="i2-lang" data-rows="3" aria-label={label}>
+                  <h3 className="i2-lang-head">{label}{filled ? <StatusTag tone="ok">已填</StatusTag> : req ? <StatusTag tone="warn">缺</StatusTag> : <StatusTag tone="done">可选，未填</StatusTag>}</h3>
+                  <dl className="i2-lang-text">
+                    <div><dt>标题</dt><dd>{nexGridBrandText(title) || "—"}</dd></div>
+                    <div><dt>正文</dt><dd>{nexGridBrandText(body) || "—"}</dd></div>
+                  </dl>
+                  <AppNotice lang={lang} title={shown.title} body={shown.body} cta={t.cta} ctaNote={ctaNote} raw={!social}
+                    missing={filled ? undefined : req ? `${label}没填，发布会被拒` : social ? "没填英语：中文、越南语以外的用户收到通用英文提示" : "没填英语：中文、越南语以外的用户收到空白的标题和正文"} />
+                </section>;
+              })}
             </div>
-          </div>
-        </Drawer>
-      )}
+            <p className="i2-sentence">{social
+              ? sampleEvent ? `预览用最近一条真实事件 #${sampleEvent.id} 填进变量；用户收到时换成当时抽到的事件。` : "现在没有真实事件，预览里变量原样显示。"
+              : "这个频道发送时直接用模板原文。"}</p>
+          </div>;
+        })()}
+      </Drawer>
 
-      {/* 新增 / 编辑通道 Drawer(复用) */}
+      <Drawer open={!!currentEvent} onClose={() => setDetailEvent(null)} title="事件详情" icon={Database} tone="role-3" sub={currentEvent ? `#${currentEvent.id} · 时间为${zone}` : undefined}>
+        {currentEvent && (() => {
+          const event = currentEvent;
+          const busy = eventBusy !== null ? "等当前操作完成" : undefined;
+          const restorable = event.status === "DISABLED" && canRestoreEvent(event.expiresAt);
+          return <div className="rd-stack">
+            <Facts>
+              <Fact k="事件">{eventText(event)}</Fact>
+              <Fact k="来源备注">{noteText(event.sourceNote)}</Fact>
+              <Fact k="类型">{eventType(event)}</Fact>
+              <Fact k="状态">{statusLabel(event.status)}</Fact>
+              <Fact k="发生时间">{formatEventTime(event.occurredAt)}</Fact>
+              <Fact k="过期时间">{formatEventTime(event.expiresAt)}</Fact>
+              <Fact k="核验时间">{formatEventTime(event.verifiedAt)}</Fact>
+              <Fact k="最近投递">{formatEventTime(event.lastDispatchedAt)}</Fact>
+              <Fact k="投递次数">{`${event.dispatchCount ?? 0} 次（按批次）`}</Fact>
+              <Fact k="来源">{({ WITHDRAWAL: "提现记录", V_RANK: "会员等级记录", GENESIS: "创世节点记录", REGISTRATION: "注册记录" } as Record<string, string>)[event.sourceSystem ?? ""] ?? "业务系统"}</Fact>
+              <Fact k="来源编号"><span data-mono="">{event.sourceEventId || "已脱敏"}</span></Fact>
+            </Facts>
+            {canWriteI2 && <section className="i2-event-ops" aria-label="能做什么">
+              <h3 className="i2-lang-head">能做什么</h3>
+              {event.status === "ACTIVE" && <div className="i2-event-op"><div><b>停用</b><p>暂时不用，过期前可以恢复。</p></div><Button disabledReason={busy} onClick={() => changeSocialEventStatus(event, "DISABLED")}>停用</Button></div>}
+              {event.status === "DISABLED" && <div className="i2-event-op"><div><b>恢复</b><p>{restorable ? "重新可以被抽到，直到原过期时间。" : "已过过期时间，不能恢复。"}</p></div>{restorable && <Button icon={<RotateCcw size={14} aria-hidden />} disabledReason={busy} onClick={() => changeSocialEventStatus(event, "ACTIVE")}>恢复</Button>}</div>}
+              {event.status !== "EXPIRED" && <div className="i2-event-op"><div><b>立即过期</b><p>永久不再被抽到，不能恢复；原过期时间不变。</p></div><Button variant="danger-outline" disabledReason={busy} onClick={() => changeSocialEventStatus(event, "EXPIRED")}>立即过期</Button></div>}
+              <div className="i2-event-op"><div><b>删除</b><p>从列表删掉；同一来源不会再同步回来，原业务记录不变。</p></div><Button variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} disabledReason={busy} onClick={() => deleteSocialEvent(event)}>删除事件</Button></div>
+              <p className="i2-sentence">这几种都不撤回已经发出的消息。</p>
+            </section>}
+          </div>;
+        })()}
+      </Drawer>
+
+      {distDrawer && (
+        <DistDrawer items={orderDist(SOCIAL_DIST)} draft={distDraft} setDraft={setDistDraft} total={distDraftTotal} valid={distDraftValid}
+          onClose={() => setDistDrawer(false)} onSubmit={submitDistribution} />
+      )}
       {novaDrawer && (
-        <Drawer
-          title={editNovaKey ? "编辑 消息推送频道" : "新增 消息推送频道"}
-          sub="系统按检查间隔扫描；仅向满足业务触发条件且已过个人冷却时间的用户推送"
-          onClose={closeDrawer}
-          footer={
-            <>
-              <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={closeDrawer}>取消</button>
-              <button
-                className="l-btn primary"
-                style={{ flex: 1, justifyContent: "center" }}
-                disabled={!form.name.trim() || cadenceError !== null || (!editNovaKey && !form.runtimeSource)}
-                onClick={submitDrawer}
-              >
-                {editNovaKey ? "保存" : "提交"}
-              </button>
-            </>
-          }
-        >
-          <div className="col" style={{ gap: 12 }}>
-            <div className="itint">
-              <b>触发方式：周期扫描</b> · 检查间隔只决定多久扫描一次；具体给谁推送由该通道的业务规则判断。
-            </div>
-            <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">通道名称</span>
-              <input
-                className="fld"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="例如：每周回顾"
-              />
-            </label>
-            <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">系统实际发生的事件</span>
-              <select
-                className="fld"
-                value={form.runtimeSource}
-                disabled={!!editNovaKey && !form.runtimeSource}
-                onChange={(e) => setForm({ ...form, runtimeSource: e.target.value })}
-              >
-                <option value="">请选择受控事实源</option>
-                {RUNTIME_SOURCE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{operatorCopyText(option.label)}</option>)}
-              </select>
-              <span className="muted tiny">只能从系统事件里选，不能手动输入。</span>
-            </label>
-            <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">检查间隔（多久执行一次扫描）</span>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 112px", gap: 8 }}>
-                <input
-                  className="fld"
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  step={1}
-                  value={form.tickValue}
-                  onChange={(e) => setForm({ ...form, tickValue: e.target.value })}
-                  placeholder="输入正整数"
-                  aria-label="检查间隔数值"
-                />
-                <select
-                  className="fld"
-                  value={form.tickUnit}
-                  onChange={(e) => setForm({ ...form, tickUnit: e.target.value as NovaTimeUnit })}
-                  aria-label="检查间隔单位"
-                >
-                  {NOVA_TIME_UNITS.map((unit) => <option key={unit.value} value={unit.value}>{unit.label}</option>)}
-                </select>
-              </div>
-              <span className="muted tiny">只控制系统多久检查一次，不包含触发条件。</span>
-            </label>
-            <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">同一用户最短推送间隔</span>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 112px", gap: 8 }}>
-                <input
-                  className="fld"
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  step={1}
-                  value={form.cooldownValue}
-                  onChange={(e) => setForm({ ...form, cooldownValue: e.target.value })}
-                  placeholder="输入正整数"
-                  aria-label="同一用户最短推送间隔数值"
-                />
-                <select
-                  className="fld"
-                  value={form.cooldownUnit}
-                  onChange={(e) => setForm({ ...form, cooldownUnit: e.target.value as NovaTimeUnit })}
-                  aria-label="同一用户最短推送间隔单位"
-                >
-                  {NOVA_TIME_UNITS.map((unit) => <option key={unit.value} value={unit.value}>{unit.label}</option>)}
-                </select>
-              </div>
-              <span className="muted tiny">同一用户收到本通道消息后，在此时间内不会再次收到。</span>
-            </label>
-            {(form.tickValue || form.cooldownValue) && cadenceError && <div className="itint danger">{cadenceError}</div>}
-            <div className="itint"><b>点击率 无需填写</b> · 新通道从 0% 开始，产生真实投递与点击后由系统自动统计。</div>
-            {!editNovaKey && <div className="itint warn"><b>新增后默认停用</b> · 请先在模板池填写并发布中越文模板，再开启通道。</div>}
-          </div>
-        </Drawer>
+        <ChannelDrawer editing={!!editNovaKey} form={form} setForm={setForm} cadenceError={cadenceError} sources={RUNTIME_SOURCE_OPTIONS}
+          fixedSource={editNovaKey && !form.runtimeSource ? (() => { const prev = novas.find((x) => x.key === editNovaKey); return prev ? sourceText(prev.trigger, prev.name, RUNTIME_SOURCE_OPTIONS) : ""; })() : undefined}
+          onClose={closeDrawer} onSubmit={submitDrawer} />
       )}
       {tplDrawer && (
-        <Drawer
-          title={editTplChannel ? "编辑 消息推送模板" : "新增 消息推送模板"}
-          sub="模板正文由 Nova 直接用于实际推送；中文、越南语必填，英语可选"
-          onClose={closeTplDrawer}
-          footer={
-            <>
-              <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={closeTplDrawer}>取消</button>
-              <button
-                className="l-btn primary"
-                style={{ flex: 1, justifyContent: "center" }}
-                disabled={!tplForm.channel || !tplForm.name.trim() || !tplForm.cta || !tplForm.version.trim()
-                  || !tplForm.titleZh.trim() || !tplForm.bodyZh.trim() || !tplForm.titleVi.trim() || !tplForm.bodyVi.trim()
-                  || (!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim())}
-                onClick={submitTpl}
-              >保存草稿</button>
-            </>
-          }
-        >
-          <div className="col" style={{ gap: 12 }}>
-            <div className="itint"><b>生效条件</b> · 保存后仍是草稿；内容主管发布成功后，通道才允许开启。各语言的 <span className="mono">{"{变量}"}</span> 必须完全一致。</div>
-            <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">推送通道（来自通道列表）</span>
-              <select className="fld" value={tplForm.channel} disabled={!!editTplChannel}
-                onChange={(e) => setTplForm({ ...tplForm, channel: e.target.value })}>
-                <option value="">请选择通道</option>
-                {novas.filter((n) => editTplChannel === n.key || !NOVA_TPLS.some((t) => t.ch === n.key))
-                  .map((n) => <option key={n.key} value={n.key}>{n.name}（{n.key}）</option>)}
-              </select>
-            </label>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 8 }}>
-              <label className="col" style={{ gap: 5 }}><span className="muted tiny">模板名称</span>
-                <input className="fld" value={tplForm.name} onChange={(e) => setTplForm({ ...tplForm, name: e.target.value })} placeholder="例如：每周回顾提醒" /></label>
-              <label className="col" style={{ gap: 5 }}><span className="muted tiny">版本号</span>
-                <input className="fld" value={tplForm.version} onChange={(e) => setTplForm({ ...tplForm, version: e.target.value })} placeholder="v1" /></label>
-            </div>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">点击后跳转页面</span>
-              <select className="fld" value={tplForm.cta} onChange={(e) => setTplForm({ ...tplForm, cta: e.target.value })}>
-                <option value="">请选择投放去向</option>
-                {CTA_OPTIONS.map((option) => <option key={option.value} value={option.value}>{operatorCopyText(option.label)}（{option.value}）</option>)}
-              </select></label>
-            {(["Zh", "Vi", "En"] as const).map((locale) => {
-              const label = locale === "Zh" ? "中文" : locale === "Vi" ? "越南语" : "英语（可选）";
-              const titleKey = `title${locale}` as const;
-              const bodyKey = `body${locale}` as const;
-              return <div className="col" style={{ gap: 6 }} key={locale}>
-                <b style={{ fontSize: 12 }}>{label}</b>
-                <input className="fld" value={tplForm[titleKey]}
-                  onChange={(e) => setTplForm({ ...tplForm, [titleKey]: e.target.value })} placeholder={`${label}标题`} />
-                <textarea className="fld" rows={3} value={tplForm[bodyKey]}
-                  onChange={(e) => setTplForm({ ...tplForm, [bodyKey]: e.target.value })} placeholder={`${label}正文，例如：你有 {amount} UVT 待领取`} />
-              </div>;
-            })}
-            {!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim() && <div className="itint danger">英语标题和正文必须同时填写，或同时留空。</div>}
-          </div>
-        </Drawer>
+        <TemplateDrawer editing={!!editTplChannel} form={tplForm} setForm={setTplForm} channels={templateChannelOptions} ctaOptions={CTA_OPTIONS}
+          social={tplForm.channel === SOCIAL_CHANNEL} sample={sampleEvent} blocked={tplBlocked} onClose={closeTplDrawer} onSubmit={submitTpl} />
       )}
-    </>
+    </div>
   );
 }
