@@ -125,9 +125,9 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "L1" && <L1Kpi key={session ? `${session.adminId}:${session.username}` : "anonymous"} ctx={ctx} onExportSource={setL1ExportSource} source={l1ExportSource?.parentData === biData?.l1 ? l1ExportSource : undefined} title={meta.l2Name} summary={meta.summary} />}
       {tab === "L2" && <L2Funnel ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
       {tab === "L3" && <L3Finance ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
-      {tab === "L4" && <L4Ops ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
+      {tab === "L4" && <L4Ops key={owner} ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
       {tab === "L5" && <L5Export ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
-      {tab === "L6" && <L6BehaviorHeatmap ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
+      {tab === "L6" && <L6BehaviorHeatmap key={owner} ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
 
       {mc && (
         <OperationConfirmModal briefKind={mc.briefKind}
@@ -137,6 +137,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
           amplifies={mc.amplifies}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
+          measureReason={mc.measureReason}
           edit={mc.edit}
           businessForm={mc.businessForm}
           completionCopy={mc.completionCopy}

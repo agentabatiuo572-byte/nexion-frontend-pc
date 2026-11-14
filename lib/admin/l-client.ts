@@ -219,7 +219,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, businessErrorStat
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
     const error = new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`)) as Error & { code?: string; status: number; reasonCode?: string };
     error.code = payload.message;
-    // L3's retained detail command needs the business rejection even when the
+    // Retained L3/L4 commands need the business rejection even when the
     // controller returns ApiResult.fail in HTTP 200. Other L callers keep their contract.
     error.status = businessErrorStatus && res.ok && rejected ? payload.code! : res.status;
     error.reasonCode = payload.message;
@@ -476,9 +476,10 @@ export async function fetchL6ClickHeat(route: string, input: L6BehaviorQuery = {
   return apiRequest<unknown>(`/behavior/click-heat?${query.toString()}`).then(rec);
 }
 
-export async function downloadL6Behavior(input: L6BehaviorQuery & { sortDir?: "asc" | "desc" } = {}) {
+export async function downloadL6Behavior(input: L6BehaviorQuery & { reason: string; sortDir?: "asc" | "desc" }) {
   const query = l6Query(input);
   if (input.sortDir) query.set("sortDir", input.sortDir);
+  query.set("reason", input.reason.trim());
   const res = await guardedFetch(`/api/admin/bi/export/behavior?${query.toString()}`, { cache: "no-store" });
   const contentType = res.headers.get("Content-Type") || "";
   if (!res.ok || contentType.includes("application/json")) {
@@ -770,9 +771,9 @@ function filenameFromDisposition(disposition: string | null, fallback: string) {
   return ascii?.[1] ? ascii[1] : fallback;
 }
 
-async function downloadReportFile(reportId: string) {
-  const issued = await apiRequest<Record<string, unknown>>(`/exports/${encodeURIComponent(reportId)}/download-token`);
-  const token = typeof issued.downloadToken === "string" ? issued.downloadToken : "";
+async function downloadReportFile(reportId: string, savedToken?: string) {
+  const issued = savedToken ? undefined : await apiRequest<Record<string, unknown>>(`/exports/${encodeURIComponent(reportId)}/download-token`);
+  const token = savedToken ?? (typeof issued?.downloadToken === "string" ? issued.downloadToken : "");
   if (!token) throw new Error("下载链接签发失败 · 请重新尝试");
   const query = new URLSearchParams({ token });
   const res = await guardedFetch(`/api/admin/bi/exports/${encodeURIComponent(reportId)}/download?${query.toString()}`, { cache: "no-store" });
@@ -785,6 +786,20 @@ async function downloadReportFile(reportId: string) {
     blob: await res.blob(),
     fileName: filenameFromDisposition(res.headers.get("Content-Disposition"), `${reportId}.csv`),
   };
+}
+
+/** A recovered L4 file read reuses its received token; it never issues another grant. */
+export const downloadL4NetworkFile = (reportId: string, token: string) => downloadReportFile(reportId, token);
+
+export async function fetchL4NetworkReport(reportId: string, request: { period: string; depth: number }): Promise<LNetworkTreeExportResult> {
+  const report = rec(await apiRequest<unknown>(`/export/${encodeURIComponent(reportId)}`));
+  if (report.reportId !== reportId || report.type !== "NETWORK_TREE" || report.format !== "CSV"
+    || report.scope !== `period=${request.period};depth=${request.depth}` || report.status !== "READY"
+    || report.containsPii !== true || report.maskingPolicy !== "PARTIAL" || report.snapshotAvailable !== true
+    || typeof report.rowCount !== "number" || !Number.isSafeInteger(report.rowCount) || report.rowCount <= 0 || report.rowCount > 100_000) {
+    throw new Error(formatAdminApiError("L4_TREE_RECEIPT_INVALID", "L4_TREE_RECEIPT_INVALID"));
+  }
+  return { reportId, status: "READY", rowCount: report.rowCount, containsPii: true, maskingPolicy: "PARTIAL", downloadTtlHours: 24 };
 }
 
 function withReason<T extends Record<string, unknown>>(body: T, reason: string) {
@@ -808,12 +823,23 @@ export const lBiActions: LBiActions = {
       detail: "tree",
       depth: String(query.depth),
     });
-    return apiRequest<LNetworkTreeExportResult>(`/export/network?${params.toString()}`, {
+    return apiRequest<unknown>(`/export/network?${params.toString()}`, {
       method: "GET",
       headers: {
         "Idempotency-Key": stableIdempotencyKey,
         "X-Operation-Reason": encodeURIComponent(reason),
       },
+    }, true).then((value) => {
+      const result = rec(value);
+      // exportNetworkTreeOnce returns these fields, not an A2 proposal envelope.
+      if (typeof result.reportId !== "string" || !/^L4TREE-[A-Z0-9]{8}$/.test(result.reportId)
+        || result.status !== "READY" || result.scope !== `period=${query.period};depth=${query.depth}`
+        || typeof result.rowCount !== "number" || !Number.isSafeInteger(result.rowCount) || result.rowCount <= 0 || result.rowCount > 100_000
+        || result.maskingPolicy !== "PARTIAL" || result.containsPii !== true || result.downloadTtlHours !== 24) {
+        throw new LOutcomeUnknownError(formatAdminApiError("L4_TREE_RECEIPT_INVALID", "L4_TREE_RECEIPT_INVALID"));
+      }
+      return { reportId: result.reportId, status: result.status, rowCount: result.rowCount,
+        maskingPolicy: result.maskingPolicy, containsPii: result.containsPii, downloadTtlHours: result.downloadTtlHours };
     });
   },
   reportAction: (reportId, action, reason, includeSensitive = true) => apiRequest(`/reports/${encodeURIComponent(reportId)}/${encodeURIComponent(action)}`, {

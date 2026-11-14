@@ -3751,7 +3751,7 @@ export type InlineOperationApproval = {
   fieldLayout?: "compact";
 };
 
-export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", confirmLabelForValue, blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; confirmLabelForValue?: (value?: string) => string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, edit, businessForm, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, measureReason, getPendingReason, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", confirmLabelForValue, blockedReason, statedBrief, facts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional }: { /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode; confirmLabel?: string; confirmLabelForValue?: (value?: string) => string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; measureReason?: (reason: string) => number; getPendingReason?: () => string | undefined; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const surface = useRdSurface();
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const [draftReason, setReason] = useState(pendingReason ?? "");
@@ -3835,8 +3835,9 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   // Mirror the server's Unicode policy for immediate UX feedback. The backend remains
   // authoritative; whitespace, controls, zero-width formatting and standalone marks
   // cannot be used to pad an operation reason to the configured minimum.
-  const reasonLength = visibleReasonLength(reason);
-  const reasonOk = reasonLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax);
+  const visibleLength = visibleReasonLength(reason);
+  const reasonLength = measureReason ? measureReason(reason) : visibleLength;
+  const reasonOk = visibleLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax);
   const businessMissing = missingBusinessFields(activeBusinessForm, businessValue);
   // 表单自己写了校验提示的，理由下面的清单不再写一遍（VS-105）。
   const formFeedback = surface && activeBusinessForm?.kind === "multi-field" ? activeBusinessForm.feedback?.(businessValue) : undefined;
@@ -3855,7 +3856,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       && (!inlineApproval || !approvalRecovery || !!approval));
   const showReasonError = !reasonOk && !retryApproval && (!surface || attempted || reasonLeft);
   const showEditError = !surface || attempted || editLeft;
-  const reasonShort = reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `操作理由不能超过 ${reasonMax} 字。`;
+  const reasonShort = visibleLength < reasonMin ? `还差 ${reasonMin - visibleLength} 字` : `操作理由不能超过 ${reasonMax} 字。`;
   // 按钮灰着时缺什么写在按钮的提示里（OP-126）。
   const missing: ReactNode[] = canConfirm || submitting ? [] : blockedReason ? [blockedReason] : [
     !reasonPolicyReady && (reasonPolicyError ?? "正在加载"),
@@ -3866,7 +3867,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     uploadBlocked && "图片还没上传好",
     !editValueOk && (editIssue ? editIssue : sameAsCurrent ? "和当前值一样，没有改动" : kind === "number" && (newVal.trim() || numberBad) ? editNumberError(spec!) : `填写${spec?.label ?? "新值"}`),
     ...businessMissing.map((message) => message.replace(/。+$/, "")),
-    !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : reasonShort.replace(/。$/, "")),
+    !reasonOk && (visibleLength < reasonMin ? `操作理由${reasonShort}` : reasonShort.replace(/。$/, "")),
   ].filter(Boolean);
   useEffect(() => {
     let active = true;
@@ -4170,7 +4171,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           : <label htmlFor={reasonFieldId}>{approval && !compactFields ? "变更理由" : "操作理由"}{(compareEdit || approval?.heading) && <span aria-hidden="true" style={{ color: "var(--danger)" }}> *</span>}{compactFields ? <span className="muted"> 至少 {reasonMin} 字</span> : `（必填，${reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}）`}</label>}
         {/* 字数写在框内角落，够不够看按钮的提示，失焦或点过提交才用警告色（DP-06）。 */}
         <div className={surface ? "rd-reason-box" : compactFields ? "g3-reason-box" : undefined}>
-          <textarea id={reasonFieldId} className={surface ? "rd-input rd-textarea" : undefined} rows={3} maxLength={reasonMax} value={reason} aria-invalid={surface && showReasonError ? true : undefined} aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined} aria-describedby={surface ? `${reasonFieldId}-range ${reasonFieldId}-count${showReasonError ? ` ${reasonFieldId}-length` : ""}` : inlineApproval?.dialogClassName && (compactFields || showReasonError || (reasonOk && reasonMax)) ? `${reasonFieldId}-length` : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : submitting || (!!getPendingReason && pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} onBlur={() => setReasonLeft(true)} placeholder={compactFields ? "填写调整依据或工单号" : reasonPlaceholder} />
+          <textarea id={reasonFieldId} className={surface ? "rd-input rd-textarea" : undefined} rows={3} maxLength={measureReason ? undefined : reasonMax} value={reason} aria-invalid={surface && showReasonError ? true : undefined} aria-required={compareEdit || inlineApproval?.dialogClassName ? true : undefined} aria-describedby={surface ? `${reasonFieldId}-range ${reasonFieldId}-count${showReasonError ? ` ${reasonFieldId}-length` : ""}` : inlineApproval?.dialogClassName && (compactFields || showReasonError || (reasonOk && reasonMax)) ? `${reasonFieldId}-length` : undefined} disabled={inlineApproval ? formLocked : !!approval ? submitting || !!approvalRecovery : submitting || (!!getPendingReason && pendingReason !== undefined)} onChange={(e) => setReason(e.target.value)} onBlur={() => setReasonLeft(true)} placeholder={compactFields ? "填写调整依据或工单号" : reasonPlaceholder} />
           {surface && <span id={`${reasonFieldId}-count`} className="rd-reason-count">{reasonMax ? `${reasonLength}/${reasonMax}` : `${reasonLength} 字`}</span>}
         </div>
         {surface && <div id={`${reasonFieldId}-range`} className="rd-form-help">{reasonMax ? `${reasonMin}–${reasonMax} 字` : `至少 ${reasonMin} 字`}</div>}

@@ -4,17 +4,17 @@
  * L6 · 用户行为热力图（改版，rd）。
  * 页头（两个导出、刷新）→ 筛选栏（时间范围、页面层级、设备、语言，「现在看」）→ 一句结论 → 四个合计 →
  * 浏览最多、跳出率最高两张榜 → 页面热力表（左）和单页点击位置（右）→ 访问趋势 → 统计范围和口径（折叠）。
- * 读取、热区请求、两个导出的请求沿用改版前的写法（请求逐字节不变），这里只换界面。
- * 两个导出的理由框已经做好，理由还没传给后端（BUG-352），由代码 worker 接。
+ * 读取与导出范围保留；导出按后端合同携带实际理由（BUG-352）。
  */
-import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { FileSpreadsheet, MousePointerClick, RefreshCw, TriangleAlert } from "lucide-react";
 import {
   BlockState, Button, Conclusion, Explain, Fact, Facts, FilterBar, FilterField, Notice, PageHeader, Segments, Select, StatusTag,
 } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { downloadL6Behavior, fetchL6Behavior, fetchL6ClickHeat } from "@/lib/admin/l-client";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import { behaviorPageTitle } from "@/lib/admin/l6-page-labels";
 import {
   aggregateByDepth,
@@ -32,7 +32,16 @@ import {
 } from "./l6-behavior-views";
 import type { LCtx } from "./types";
 
+const exportReasonLength = (reason: string) => [...reason.trim()].length;
+
 export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; summary: string }) {
+  const session = useAdminAuth(state => state.session);
+  const owner = session ? `${session.adminId}:${session.username}` : "";
+  const hasCurrentExportPermission = () => {
+    const auth = useAdminAuth.getState().session;
+    return !!auth && `${auth.adminId}:${auth.username}` === owner
+      && (auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l6_export"));
+  };
   const [depth, setDepth] = useState<DepthFilter>("all");
   const [win, setWin] = useState<TimeWindow>("7d");
   const [sort, setSort] = useState<SortKey>("pv");
@@ -69,7 +78,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
       } catch (error) {
         setLiveRaw(null);
         setLiveHeat(null);
-        setLiveError(displayAdminError(error));
+        setLiveError(displayAdminReadError(error));
         setRefreshing(false);
         return () => { cancelled = true; };
       }
@@ -91,7 +100,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
         if (!cancelled) {
           setLiveRaw(null);
           setLiveHeat(null);
-          setLiveError(displayAdminError(error));
+          setLiveError(displayAdminReadError(error));
         }
       })
       .finally(() => { if (!cancelled) setRefreshing(false); });
@@ -103,7 +112,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
   const stats = useMemo(() => activityForWindow(heatmapData, win), [heatmapData, win]);
   const summaryNums = useMemo(() => summarize(stats), [stats]);
   const rows = useMemo<HeatRow[]>(() => {
-    const r = aggregateByDepth(heatmapData.pageTree, stats, "all");
+    const r = aggregateByDepth(heatmapData.pageTree, stats, depth);
     const dir = sortDir === "desc" ? 1 : -1;
     return [...r].sort((a, b) => (b[sort] - a[sort]) * dir);
   }, [heatmapData.pageTree, stats, depth, sort, sortDir]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -118,12 +127,12 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
     void fetchL6ClickHeat(activeKey, { window: win, device, locale, depth, sort })
       .then((data) => {
         normalizeL6BehaviorHeatmap({ ...liveRaw, clickHeatByRoute: { [activeKey]: data } });
-        if (!cancelled) setLiveHeat(data);
+        if (!cancelled) { setLiveHeat(data); setLiveError(""); }
       })
       .catch((error) => {
         if (!cancelled) {
           setLiveHeat(null);
-          setLiveError(displayAdminError(error));
+          setLiveError(displayAdminReadError(error));
         }
       });
     return () => { cancelled = true; };
@@ -154,13 +163,14 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
   const parentLoading = Boolean(ctx.biLoading);
   const parentFailed = Boolean(ctx.biError) || parent.invalid || (!parentLoading && !ctx.biData?.l6);
   const [allExporting, setAllExporting] = useState(false);
+  const exportAvailability = useRef({ all: false, current: false, query: "" });
 
   const runExportAll = async (reason: string) => {
-    void reason; // BUG-352：理由已在框里收好，代码 worker 把它接进导出请求（URLSearchParams 的 reason）。这里请求不变。
-    if (parentLoading || parentFailed || !parent.available || !ctx.canExport || allExporting) return;
+    if (allExporting) return;
+    if (!hasCurrentExportPermission() || !exportAvailability.current.all) throw new Error(formatAdminApiError("L6_EXPORT_VIEW_CHANGED", "L6_EXPORT_VIEW_CHANGED"));
     setAllExporting(true);
     try {
-      const file = await downloadL6Behavior({ window: "7d", device: "ALL", locale: "ALL" });
+      const file = await downloadL6Behavior({ window: "7d", device: "ALL", locale: "ALL", reason });
       saveFile(file.blob, file.fileName);
       ctx.toast("已下载近 7 天全端页面数据（CSV，不含用户身份）", "success");
     } finally {
@@ -198,6 +208,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
       reasonPlaceholder: "写这份数据给谁、做什么用，例如：周会复盘各页面跳出",
       reasonMin: 8,
       reasonMax: 200,
+      measureReason: exportReasonLength,
       run: runExportAll,
     });
   };
@@ -210,13 +221,18 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
   const depthLabel = DEPTHS.find((d) => d.v === depth)?.lb ?? "";
   const sortLabel = { pv: "浏览次数", clicks: "点击次数", dwellMs: "平均停留", bounceRate: "跳出率" }[sort];
   const scope = `${winLabel} · ${deviceLabel} · ${localeLabel} · ${depthLabel}`;
+  const exportQuery = JSON.stringify([win, device, locale, depth, sort, sortDir]);
+  exportAvailability.current = { all: !!ctx.canExport && !parentLoading && !parentFailed && parent.available,
+    current: !!canExportCurrent, query: exportQuery };
 
   const runExportCurrent = async (reason: string) => {
-    void reason; // BUG-352：同上，代码 worker 接理由；请求不变。
-    if (!canExportCurrent || exporting) return;
+    if (exporting) return;
+    if (!hasCurrentExportPermission() || !exportAvailability.current.current || exportAvailability.current.query !== exportQuery) {
+      throw new Error(formatAdminApiError("L6_EXPORT_VIEW_CHANGED", "L6_EXPORT_VIEW_CHANGED"));
+    }
     setExporting(true);
     try {
-      const file = await downloadL6Behavior({ window: win, device, locale, depth, sort, sortDir });
+      const file = await downloadL6Behavior({ window: win, device, locale, depth, sort, sortDir, reason });
       saveFile(file.blob, file.fileName);
       ctx.toast("已下载当前筛选的页面数据（CSV，不含用户身份）", "success");
     } finally {
@@ -248,6 +264,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
       reasonPlaceholder: "写这份数据给谁、做什么用，例如：核对新版首页的跳出",
       reasonMin: 8,
       reasonMax: 200,
+      measureReason: exportReasonLength,
       run: runExportCurrent,
     });
   };
@@ -379,7 +396,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
   );
 
   /* ---------------- 合计和矩阵范围不同时写明（L6-X02、P-L6-04） ---------------- */
-  const catalogRoutes = new Set(heatmapData.pageTree.map((node) => node.route));
+  const catalogRoutes = new Set(heatmapData.pageTree.map((node) => depth === "L1" ? node.parentL1 : depth === "L2" ? node.parentL2 : node.route));
   const outside = stats.filter((stat) => !catalogRoutes.has(stat.route));
   const outsideNotice = outside.length ? (
     <Notice tone="progress" title={`合计里含 ${n(outside.length)} 个已不在页面目录里的页面`}>
@@ -426,7 +443,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
   </>);
 }
 
-/** 局部读取的错误句现在还是写操作的口吻（事实 D03，代码 worker 改成读取口吻），先收进提示图标，不放正文。 */
+/** 沿用已备好的错误信息位置，读取失败使用只读口吻。 */
 function ErrorText({ text }: { text: string }) {
   return <Explain label="错误信息" content={text} />;
 }

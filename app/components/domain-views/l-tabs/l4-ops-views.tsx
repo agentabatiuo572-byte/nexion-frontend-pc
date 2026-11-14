@@ -305,7 +305,8 @@ const PHASE_EXPLAIN = {
   yield: "这个阶段的收益入账 USDT 合计。",
 };
 
-export function PhaseReport({ data, scope, links, panel }: { data: L4OperationsData; scope: string; links: ReactNode; panel: Record<string, string> }) {
+export function PhaseReport({ data, scope, links, panel, phaseNames }: { data: L4OperationsData; scope: string; links: ReactNode; panel: Record<string, string>; phaseNames: Record<string, string> }) {
+  const phaseLabel = (phase: string) => phaseNames[phase] ? `${phase} ${phaseNames[phase]}` : phase;
   const rows = data.phaseEffect;
   const digits = amountDigits(rows.map((row) => row.yieldUsdt));
   const single = rows.length === 1;
@@ -313,16 +314,16 @@ export function PhaseReport({ data, scope, links, panel }: { data: L4OperationsD
     <div className="l4-block">
       <Sub explain={explain} explainLabel={`${title}的口径`}>{title}</Sub>
       <BarList label={`各阶段的${title}`} slot={slot} max={max}
-        rows={[...rows].sort((a, b) => PHASE_ORDER.indexOf(a.phase) - PHASE_ORDER.indexOf(b.phase)).map((row) => ({ key: row.phase, label: row.phase, value: pick(row), text: text(pick(row)) }))} />
+        rows={[...rows].sort((a, b) => PHASE_ORDER.indexOf(a.phase) - PHASE_ORDER.indexOf(b.phase)).map((row) => ({ key: row.phase, label: phaseLabel(row.phase), value: pick(row), text: text(pick(row)) }))} />
     </div>
   );
   return (
     <Panel {...panel} title="运营阶段效果" icon={Flag} tone="role-4" sub={scope} actions={links}
       explain={<><p>每个阶段只算发生在这个阶段的事件。阶段只显示代号。</p><p>这页只能看，阶段在「运营阶段设置」里改。</p></>}>
-      {/* 阶段名：账号能读运营阶段设置的目录时显示「P3 某某期」，由代码 worker 接（同决定 B4-阶段名）；现在只显示代号。 */}
+      {/* 阶段名只采用有权读取的 H1 目录；不可用时保留原代号。 */}
       <div className="l4-stack">
         {single ? (
-          <Nums label={`${rows[0].phase} 的效果`} rows={[
+          <Nums label={`${phaseLabel(rows[0].phase)} 的效果`} rows={[
             { key: "active", name: "活跃人数", value: count(rows[0].activeUsers), unit: "人", explain: PHASE_EXPLAIN.active },
             { key: "retention", name: "留存率", value: pct(rows[0].retentionRate), explain: PHASE_EXPLAIN.retention },
             { key: "conversion", name: "转化率", value: pct(rows[0].conversionRate), explain: PHASE_EXPLAIN.conversion },
@@ -347,7 +348,7 @@ export function PhaseReport({ data, scope, links, panel }: { data: L4OperationsD
             </tr></thead>
             <tbody>{rows.map((row) => (
               <Tr key={row.phase}>
-                <Td>{row.phase}</Td>
+                <Td>{phaseLabel(row.phase)}</Td>
                 <Td align="right">{count(row.activeUsers)} 人</Td>
                 <Td align="right">{pct(row.retentionRate)}</Td>
                 <Td align="right">{pct(row.conversionRate)}</Td>

@@ -4,7 +4,7 @@
  * L4 · 设备、任务与团队报表（改版，rd）。
  * 页头（两个导出）→ 筛选栏（时间段、阶段、保存为视图，「现在看」）→ 一句结论 → 四张报表卡（设备、任务、团队、运营阶段效果，
  * 同时是选报表的页签）→ 选中那一类的报表 → 四类共用的时间段表（折叠）。
- * 读取、本机视图、两种导出的请求体和命令号沿用改版前的写法（请求逐字节不变），这里只换界面。
+ * 敏感团队导出持久保存原请求并分阶段恢复；读取、本机视图及导出业务合同保持原样。
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
@@ -15,7 +15,13 @@ import {
 } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { isLOutcomeUnknownError, type L4OperationsQuery } from "@/lib/admin/l-client";
+import { downloadL4NetworkFile, fetchL4NetworkReport, isLOutcomeUnknownError, LOutcomeUnknownError, type L4OperationsQuery } from "@/lib/admin/l-client";
+import { displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { isL4NetworkDurable, l4NetworkCommands, networkReasonLength, type PendingL4NetworkExport } from "@/lib/admin/l4-network-export";
+import { fetchH1Phases } from "@/lib/admin/h-client";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import { findByPath } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { readL4Operations, type L4OperationsData } from "./l4-live-data";
@@ -52,10 +58,36 @@ type ExportOutcome =
   | { kind: "tree-done"; rows: number; scope: string; depth: number }
   | { kind: "tree-unknown"; scope: string; depth: number; at: string };
 
-const phaseText = (phase: L4OperationsQuery["phase"]) => (phase === "ALL" ? "全部阶段" : phase);
+const phaseText = (phase: L4OperationsQuery["phase"], names: Record<string, string> = {}) => (phase === "ALL" ? "全部阶段" : names[phase] ? `${phase} ${names[phase]}` : phase);
 
 export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; summary: string }) {
   const reach = useReach();
+  const session = useAdminAuth(state => state.session);
+  const owner = session ? `${session.adminId}:${session.username}` : "";
+  const latestContext = useRef(ctx);
+  latestContext.current = ctx;
+  const [pendingTree, setPendingTree] = useState<PendingL4NetworkExport | null>(null);
+  const syncTree = () => setPendingTree(l4NetworkCommands.list().find(record => record.owner === owner) ?? null);
+  useEffect(() => { syncTree(); }, [owner]);
+  useEffect(() => {
+    if (!pendingTree || isRetryExpired(pendingTree)) return;
+    const timer = setTimeout(syncTree, pendingTree.expiresAt - Date.now());
+    return () => clearTimeout(timer);
+  }, [pendingTree]);
+  const [phaseNames, setPhaseNames] = useState<Record<string, string>>({});
+  const canReadPhaseNames = session?.role?.toLowerCase() === "superadmin" || session?.authorities.includes("growth_h1_read") === true;
+  useEffect(() => {
+    let cancelled = false;
+    setPhaseNames({});
+    if (canReadPhaseNames) void fetchH1Phases().then(result => {
+      if (!cancelled) setPhaseNames(Object.fromEntries(result.attribution.filter(row => /^P[1-6]$/.test(row.phase) && row.name).map(row => [row.phase, row.name])));
+    }).catch(() => {
+      // Catalog names are optional: the decided fallback is the original code,
+      // without a new H1 permission requirement or an invented name.
+      if (!cancelled) setPhaseNames({});
+    });
+    return () => { cancelled = true; };
+  }, [owner, canReadPhaseNames]);
   const data = readL4Operations(ctx.biData?.l4);
   const query = ctx.l4Query ?? { period: "week", phase: "ALL" };
   const [tab, setTab] = useState<ReportTab>("device");
@@ -134,7 +166,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       && data.period.from.slice(0, 10) === query.from && data.period.to.slice(0, 10) === query.to));
   const canExportCurrent = ctx.canExport && data?.available && queryMatchesData
     && !ctx.biLoading && !ctx.biError;
-  const dataScope = data ? `${data.period.label} · ${phaseText(data.phaseFilter)}` : "";
+  const dataScope = data ? `${data.period.label} · ${phaseText(data.phaseFilter, phaseNames)}` : "";
 
   const exportCurrent = () => {
     if (aggExportingRef.current || !canExportCurrent || !data) return;
@@ -154,7 +186,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       recipient: "运营管理员",
       ticket: "L4-OPERATIONS",
     };
-    const scope = `${data.period.label}（${data.period.from} 至 ${data.period.to}）· ${phaseText(data.phaseFilter)}`;
+    const scope = `${data.period.label}（${data.period.from} 至 ${data.period.to}）· ${phaseText(data.phaseFilter, phaseNames)}`;
     setOutcome(null);
     ctx.openActionConfirm({ briefKind: "export",
       title: "导出运营汇总",
@@ -178,6 +210,14 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       reasonPlaceholder: "写这份汇总给谁、做什么用，例如：周会运营复盘",
       reasonMax: 200,
       run: async (reason) => {
+        const latest = latestContext.current;
+        const auth = useAdminAuth.getState().session;
+        if (!auth || `${auth.adminId}:${auth.username}` !== owner
+          || !(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l4_write"))
+          || !latest.canExport || latest.biLoading || latest.biError || latest.biData?.l4 !== ctx.biData?.l4
+          || JSON.stringify(latest.l4Query) !== JSON.stringify(ctx.l4Query)) {
+          throw new Error(formatAdminApiError("L4_EXPORT_VIEW_CHANGED", "L4_EXPORT_VIEW_CHANGED"));
+        }
         const fingerprint = JSON.stringify([input, reason]);
         if (aggLastSuccessAtRef.current || aggIntentKeyRef.current.fingerprint !== fingerprint) {
           aggIntentKeyRef.current = { fingerprint, key: `l4-ops-${Date.now()}-${Math.random().toString(36).slice(2, 10)}` };
@@ -204,27 +244,92 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
 
   /* ---------------- 团队关系明细导出：请求、命令号、深度表单和改版前一致（L4-A05、L4-X01） ---------------- */
   const treeExportingRef = useRef(false);
-  const treeIntentKeyRef = useRef("");
   const treeLastSuccessAtRef = useRef(0);
   const [treeExporting, setTreeExporting] = useState(false);
 
-  const requestNetworkTreeExport = () => {
-    if (!data) return;
-    if (treeExportingRef.current || query.period === "custom" || data.liveFacts.teamRelationships <= 0) return;
+  const saveTree = (record: PendingL4NetworkExport) => {
+    l4NetworkCommands.remember(record.fingerprint, record.commandKey, record);
+    syncTree();
+    const saved = l4NetworkCommands.list().find(item => item.commandKey === record.commandKey);
+    if (!saved || !isL4NetworkDurable(saved)) throw new Error(formatAdminApiError("L4_TREE_STORAGE_UNAVAILABLE", "L4_TREE_STORAGE_UNAVAILABLE"));
+    return saved;
+  };
+
+  const downloadTree = async (original: PendingL4NetworkExport) => {
+    let record = original;
+    const result = record.result;
+    if (!result) return;
+    if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
+    if (record.grantRequested && !record.downloadToken) throw new Error(formatAdminApiError("L4_TREE_GRANT_UNKNOWN", "L4_TREE_GRANT_UNKNOWN"));
+    if (!record.downloadToken) {
+      // This endpoint has no idempotency contract. Save the attempt first; a
+      // lost reply must never be followed by another automatic grant issuance.
+      record = saveTree({ ...record, grantRequested: true });
+      let grant: Record<string, unknown>;
+      try {
+        grant = await ctx.biActions!.downloadToken(result.reportId);
+      } catch (error) {
+        if (isExplicitRejection(error)) saveTree({ ...record, grantRequested: false });
+        throw error;
+      }
+      if (grant.reportId !== result.reportId || typeof grant.downloadToken !== "string" || !grant.downloadToken) {
+        throw new LOutcomeUnknownError(formatAdminApiError("L4_TREE_GRANT_UNKNOWN", "L4_TREE_GRANT_UNKNOWN"));
+      }
+      record = saveTree({ ...record, downloadToken: grant.downloadToken });
+    }
+    if (!isL4NetworkDurable(record)) throw new Error(formatAdminApiError("L4_TREE_STORAGE_UNAVAILABLE", "L4_TREE_STORAGE_UNAVAILABLE"));
+    const file = await downloadL4NetworkFile(result.reportId, record.downloadToken!);
+    downloadBlob(file.blob, file.fileName);
+    l4NetworkCommands.forget(record.fingerprint, record.commandKey);
+    syncTree();
+    treeLastSuccessAtRef.current = Date.now();
+    ctx.closeActionConfirm?.();
+    ctx.toast(`团队明细已安全下载 · ${result.rowCount} 行 · 用户编码部分隐藏 · 24 小时令牌`);
+    setOutcome({ kind: "tree-done", rows: result.rowCount, scope: record.scope, depth: record.request.depth });
+    await latestContext.current.reloadBi?.();
+  };
+
+  const canQueryTree = session?.role?.toLowerCase() === "superadmin" || session?.authorities.includes("bi_l5_read") === true;
+  const queryTree = async (record: PendingL4NetworkExport) => {
+    const auth = useAdminAuth.getState().session;
+    if (!record.result || !auth || `${auth.adminId}:${auth.username}` !== record.owner
+      || !(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_read")) || treeExportingRef.current) return;
+    treeExportingRef.current = true;
+    setTreeExporting(true);
+    try {
+      const result = await fetchL4NetworkReport(record.result.reportId, record.request);
+      saveTree({ ...record, result });
+      // The snapshot read does not prove the outcome of a lost grant response.
+      // Keep that stage and its evidence; never issue a token from this query.
+      await latestContext.current.reloadBi?.();
+    } catch (error) {
+      ctx.toast(displayAdminReadError(error), "error");
+    } finally {
+      treeExportingRef.current = false;
+      setTreeExporting(false);
+    }
+  };
+
+  const requestNetworkTreeExport = (original?: PendingL4NetworkExport) => {
+    if (treeExportingRef.current || !ctx.canExportNetworkTree) return;
+    if (original ? isRetryExpired(original) || original.grantRequested && !original.downloadToken
+      : pendingTree || !data || ctx.biLoading || ctx.biError || !queryMatchesData || query.period === "custom" || data.liveFacts.teamRelationships <= 0) return;
     const now = Date.now();
     if (treeLastSuccessAtRef.current && now - treeLastSuccessAtRef.current < 2_000) return;
     if (treeLastSuccessAtRef.current) {
-      treeIntentKeyRef.current = "";
       treeLastSuccessAtRef.current = 0;
     }
-    const scope = `${data.period.label}加入的关系`;
+    const periodLabel = original ? original.scope.replace(/加入的关系$/, "") : data!.period.label;
+    const relationships = original?.relationships ?? data!.liveFacts.teamRelationships;
+    const scope = original?.scope ?? `${periodLabel}加入的关系`;
     setOutcome(null);
+    let attemptedKey = original?.commandKey;
     ctx.openActionConfirm({ briefKind: "export",
       title: "导出团队关系明细",
       action: "导出团队明细",
       detail: (
         <div>
-          <p>按 <b>{data.period.label}</b> 导出团队关系，预计 <b>{data.liveFacts.teamRelationships}</b> 条，以实际为准。</p>
+          <p>按 <b>{periodLabel}</b> 导出团队关系，预计 <b>{relationships}</b> 条，以实际为准。</p>
           <p>用户编码部分隐藏，不含手机号、昵称。</p>
           <p>下载链接 24 小时有效，导出留高风险操作记录。</p>
         </div>
@@ -243,25 +348,31 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
             <p>团队 GMV USDT：关系记录上的累计量，不是所选时间段的成交额，没有写 0。</p>
             <p>加入时间：这条关系建立的时间，按服务器时间原样写。</p>
           </>} /></Fact>
-          <Fact k="时间段">{data.period.label}加入的关系<Explain label="时间段怎么算" content="按关系建立的时间从现在往前算近 1、7 或 30 天，不跟运营阶段和自定义日期走；只能按日、周、月导出。" /></Fact>
+          <Fact k="时间段">{periodLabel}加入的关系<Explain label="时间段怎么算" content="按关系建立的时间从现在往前算近 1、7 或 30 天，不跟运营阶段和自定义日期走；只能按日、周、月导出。" /></Fact>
           <Fact k="用户编码" tone="warn">部分隐藏<Explain label="隐藏到什么程度" content="编号 4 位以内整个写成 ***，更长的留前 2 位和后 2 位，中间换成 *。不含手机号、昵称。" /></Fact>
-          <Fact k="多少行">现有团队关系 {count(data.liveFacts.teamRelationships)} 条，实际行数以导出为准<Explain label="行数上限" content="这个数是现在全部团队关系的累计条数，不按时间段和追溯次数筛。一次最多 100,000 行，超过时不导出，也不截断。" /></Fact>
+          <Fact k="多少行">现有团队关系 {count(relationships)} 条，实际行数以导出为准<Explain label="行数上限" content="这个数是现在全部团队关系的累计条数，不按时间段和追溯次数筛。一次最多 100,000 行，超过时不导出，也不截断。" /></Fact>
           <Fact k="记录">导出留一条高风险操作记录，下载也留记录</Fact>
           <Fact k="需要的权限">团队关系明细导出权限</Fact>
           <Fact k="下载">确认后直接下载到这台电脑<Explain label="下载链接" content="下载链接从签发起 24 小时内有效，只给你用。" /></Fact>
         </Facts>
       ),
-      confirmLabel: "确认导出并下载",
+      confirmLabel: original?.result ? "只下载" : "确认导出并下载",
       reasonPlaceholder: "写这份明细给谁、做什么用，例如：工单号、核对哪个团队",
       reasonMin: 8,
       reasonMax: 200,
+      measureReason: networkReasonLength,
+      getPendingReason: () => l4NetworkCommands.list().find(record => record.owner === owner)?.request.reason,
+      getPendingBusinessValue: () => {
+        const request = l4NetworkCommands.list().find(record => record.owner === owner)?.request;
+        return request ? { depth: String(request.depth) } : undefined;
+      },
       businessForm: {
         kind: "multi-field",
         hint: "次数越多，导出越多；1 次只含直接邀请的好友，最多 10 次。",
         fields: [{
           key: "depth",
           label: "向下追溯的邀请次数",
-          current: "3",
+          current: String(original?.request.depth ?? 3),
           inputKind: "select",
           options: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
           optionLabels: Object.fromEntries(Array.from({ length: 10 }, (_, index) => [String(index + 1), `${index + 1} 次`])),
@@ -270,31 +381,62 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       },
       run: async (reason, _newValue, businessValue) => {
         if (treeExportingRef.current || !ctx.biActions) return;
-        const depth = Number(businessValue?.depth ?? "3");
-        if (!Number.isInteger(depth) || depth < 1 || depth > 10) throw new Error("追溯次数必须为 1–10");
-        if (!treeIntentKeyRef.current) treeIntentKeyRef.current = `l4-network-tree-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-        const submittedAt = formatBusinessTimeCompact(new Date().toISOString(), "");
+        const auth = useAdminAuth.getState().session;
+        if (!auth || `${auth.adminId}:${auth.username}` !== owner
+          || !(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l4_export_tree"))) {
+          throw new Error(formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED"));
+        }
+        let record = l4NetworkCommands.list().find(item => item.owner === owner);
+        if (attemptedKey) {
+          if (!record || record.commandKey !== attemptedKey) {
+            ctx.closeActionConfirm?.();
+            throw new Error(formatAdminApiError("L4_TREE_ALREADY_SETTLED", "L4_TREE_ALREADY_SETTLED"));
+          }
+          if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
+        } else {
+          if (record) throw new Error(formatAdminApiError("L4_TREE_PENDING", "L4_TREE_PENDING"));
+          const latest = latestContext.current;
+          if (!latest.canExportNetworkTree || latest.biLoading || latest.biError
+            || latest.biData?.l4 !== ctx.biData?.l4 || JSON.stringify(latest.l4Query) !== JSON.stringify(ctx.l4Query)) {
+            throw new Error(formatAdminApiError("L4_EXPORT_VIEW_CHANGED", "L4_EXPORT_VIEW_CHANGED"));
+          }
+          const depth = Number(businessValue?.depth ?? "3");
+          if (!Number.isInteger(depth) || depth < 1 || depth > 10) throw new Error("追溯次数必须为 1–10");
+          if (networkReasonLength(reason) > 200) throw new Error(formatAdminApiError("L4_TREE_REASON_ENCODED_TOO_LONG", "L4_TREE_REASON_ENCODED_TOO_LONG"));
+          const request = { period: query.period as "day" | "week" | "month", depth, reason: reason.trim() };
+          const fingerprint = JSON.stringify(request);
+          const commandKey = `l4-network-tree-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+          l4NetworkCommands.remember(fingerprint, commandKey, { owner, request, scope, relationships });
+          record = l4NetworkCommands.list().find(item => item.commandKey === commandKey);
+          if (record && !isL4NetworkDurable(record)) {
+            l4NetworkCommands.forget(fingerprint, commandKey);
+            record = undefined;
+          }
+        }
+        syncTree();
+        if (!record || !isL4NetworkDurable(record)) throw new Error(formatAdminApiError("L4_TREE_STORAGE_UNAVAILABLE", "L4_TREE_STORAGE_UNAVAILABLE"));
+        attemptedKey = record.commandKey;
         treeExportingRef.current = true;
         setTreeExporting(true);
         try {
-          const result = await ctx.biActions.createNetworkTreeExport(
-            { period: query.period as "day" | "week" | "month", depth },
-            reason,
-            treeIntentKeyRef.current,
-          ).catch((cause) => {
-            if (!isLOutcomeUnknownError(cause)) treeIntentKeyRef.current = "";
-            throw cause;
-          });
-          const file = await ctx.biActions.downloadReport(result.reportId);
-          downloadBlob(file.blob, file.fileName);
-          treeLastSuccessAtRef.current = Date.now();
-          ctx.toast(`团队明细已安全下载 · ${result.rowCount} 行 · 用户编码部分隐藏 · 24 小时令牌`);
-          setOutcome({ kind: "tree-done", rows: result.rowCount, scope, depth });
-        } catch (error) {
-          // 结果未知仍交给外壳关框、重读、提示；页面上方留一条结果未知提醒。R1 的本机保存、「查询原结果」「按原请求重试」由代码 worker 接（决定 B4-PD02）。
-          if (isLOutcomeUnknownError(error)) setOutcome({ kind: "tree-unknown", scope, depth, at: submittedAt });
-          throw error;
+          if (!record.result) {
+            let result;
+            try {
+              result = await ctx.biActions.createNetworkTreeExport(record.request, record.request.reason, record.commandKey);
+            } catch (error) {
+              if (isExplicitRejection(error)) {
+                l4NetworkCommands.forget(record.fingerprint, record.commandKey);
+                attemptedKey = undefined;
+                syncTree();
+                if (original) { ctx.closeActionConfirm?.(); await latestContext.current.reloadBi?.(); }
+              }
+              throw error;
+            }
+            record = saveTree({ ...record, result });
+          }
+          await downloadTree(record);
         } finally {
+          syncTree();
           treeExportingRef.current = false;
           setTreeExporting(false);
         }
@@ -311,7 +453,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
 
   const readBlocked = ctx.biLoading ? "正在读取，读完再导出" : ctx.biError ? "运营数据读取失败，暂时不能导出" : !data ? "还没有读到所选时间段的数据" : undefined;
   const aggBlocked = readBlocked ?? (!queryMatchesData ? "请先应用有效周期，再导出对应报表" : !data?.available ? "这个周期没有可导出的数据" : undefined);
-  const treeBlocked = readBlocked ?? (query.period === "custom" ? "团队明细只能按日、周、月导出" : (data?.liveFacts.teamRelationships ?? 0) <= 0 ? "当前没有可导出的团队关系" : undefined);
+  const treeBlocked = pendingTree ? formatAdminApiError("L4_TREE_PENDING", "L4_TREE_PENDING") : readBlocked ?? (!queryMatchesData ? "请先应用有效周期，再导出对应报表" : query.period === "custom" ? "团队明细只能按日、周、月导出" : (data?.liveFacts.teamRelationships ?? 0) <= 0 ? "当前没有可导出的团队关系" : undefined);
   const actions = (ctx.canExport || ctx.canExportNetworkTree) ? (
     <span className="l4-actions">
       {ctx.canExport && (
@@ -322,7 +464,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       )}
       {ctx.canExportNetworkTree && (
         <span className="l4-pair" data-pair="">
-          <Button icon={<LockKeyhole size={14} aria-hidden />} loading={treeExporting} loadingText="正在生成…" disabledReason={treeBlocked} onClick={requestNetworkTreeExport}>导出团队关系明细</Button>
+          <Button icon={<LockKeyhole size={14} aria-hidden />} loading={treeExporting} loadingText="正在生成…" disabledReason={treeBlocked} onClick={() => requestNetworkTreeExport()}>导出团队关系明细</Button>
           <Explain label="团队关系明细是什么" content={<><p>敏感导出：每个团队成员一行，用户编码部分隐藏，要写理由，留高风险操作记录，最多 100,000 行。</p><p>只按日、周、月的加入时间筛，不跟运营阶段；确认后直接下载到这台电脑。</p></>} />
         </span>
       )}
@@ -346,7 +488,12 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
   );
 
   /* ---------------- 导出结果条（只管显示） ---------------- */
-  const outcomeNotice = outcome && (() => {
+  const shownOutcome: ExportOutcome | null = pendingTree ? {
+    kind: "tree-unknown", scope: pendingTree.scope, depth: pendingTree.request.depth,
+    at: formatBusinessTimeCompact(new Date(pendingTree.createdAt).toISOString(), ""),
+  } : outcome;
+  const outcomeNotice = shownOutcome && (() => {
+    const outcome = shownOutcome;
     const close = <Button size="sm" onClick={() => setOutcome(null)}>知道了</Button>;
     if (outcome.kind === "agg-done") return (
       <Notice tone="ok" title="已生成运营汇总快照" action={close}>
@@ -369,7 +516,12 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
         <p>请求已发出，但没有收到明确结果，可能已经生成了一份快照。{canOpenExportPage
           ? <>先{exportPageLink(`到「${exportPageName}」核对`)}；核对之前不要换追溯次数或理由重新导出。</>
           : <>你没有「{exportPageName}」的权限，请找有权限的同事核对；核对之前不要换追溯次数或理由重新导出。</>}</p>
-        {/* R1：代码 worker 在这里接本机保存原请求、「查询原结果」「按原请求重试」（决定 B4-PD02、全站-结果未知叫法、e-page-common R1）。 */}
+        {pendingTree && <span className="rd-toolbar">
+          {pendingTree.result
+            ? <Button size="sm" loading={treeExporting} disabledReason={canQueryTree ? undefined : formatAdminApiError("L4_TREE_QUERY_PERMISSION", "L4_TREE_QUERY_PERMISSION")} onClick={() => void queryTree(pendingTree)}>查询原结果</Button>
+            : canOpenExportPage && <Link className="rd-link" href={EXPORT_PAGE}>查询原结果</Link>}
+          <Button size="sm" loading={treeExporting} disabledReason={isRetryExpired(pendingTree) ? RETRY_EXPIRED_TEXT : !ctx.canExportNetworkTree ? formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED") : pendingTree.grantRequested && !pendingTree.downloadToken ? formatAdminApiError("L4_TREE_GRANT_UNKNOWN", "L4_TREE_GRANT_UNKNOWN") : undefined} onClick={() => requestNetworkTreeExport(pendingTree)}>{pendingTree.result ? "只下载" : "按原请求重试"}</Button>
+        </span>}
       </Notice>
     );
   })();
@@ -378,10 +530,10 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
   const customInvalid = Boolean(from && to && from > to);
   const customChanged = query.period === "custom" && (from !== (query.from ?? "") || to !== (query.to ?? ""));
   const shown = data && !ctx.biLoading && queryMatchesData
-    ? `${data.period.label}（${data.period.from} 至 ${data.period.to}）· ${phaseText(data.phaseFilter)}`
+    ? `${data.period.label}（${data.period.from} 至 ${data.period.to}）· ${phaseText(data.phaseFilter, phaseNames)}`
     : query.period === "custom" && !(query.from && query.to)
-      ? `自定义日期还没应用 · ${phaseText(query.phase)}`
-      : `${PERIODS.find(([value]) => value === query.period)?.[1] ?? ""}${query.period === "custom" ? `（${query.from} 至 ${query.to}）` : ""} · ${phaseText(query.phase)} · 正在读取`;
+      ? `自定义日期还没应用 · ${phaseText(query.phase, phaseNames)}`
+      : `${PERIODS.find(([value]) => value === query.period)?.[1] ?? ""}${query.period === "custom" ? `（${query.from} 至 ${query.to}）` : ""} · ${phaseText(query.phase, phaseNames)} · 正在读取`;
   const scopeExplain = (
     <Explain label="时间段和阶段管哪几块" content={<>
       <p>日、周、月是从现在往前滚动的近 24 小时、7 天、30 天，不是自然日、周、月。自定义按业务日（{businessZone().label}）算，含首尾两天，结束日不能晚于今天，最长 400 天。</p>
@@ -407,7 +559,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       <FilterField label="运营阶段">
         <Select aria-label="运营阶段 筛选" value={query.phase}
           onChange={(value) => updateQuery({ phase: value as L4OperationsQuery["phase"] })}
-          options={[{ value: "ALL", label: "全部阶段（P1–P6）" }, ...[1, 2, 3, 4, 5, 6].map((phase) => ({ value: `P${phase}`, label: `P${phase}` }))]} />
+          options={[{ value: "ALL", label: "全部阶段（P1–P6）" }, ...[1, 2, 3, 4, 5, 6].map((phase) => ({ value: `P${phase}`, label: phaseText(`P${phase}` as L4OperationsQuery["phase"], phaseNames) }))]} />
       </FilterField>
       {query.period === "custom" && (
         <div className="rd-filter-line">
@@ -447,17 +599,18 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
   }
 
   /* ---------------- 一句结论 ---------------- */
-  return page(<L4Body data={data} tab={tab} setTab={setTab} tabIds={tabIds} reach={reach} />);
+  return page(<L4Body data={data} tab={tab} setTab={setTab} tabIds={tabIds} reach={reach} phaseNames={phaseNames} />);
 }
 
-function L4Body({ data, tab, setTab, tabIds, reach }: {
+function L4Body({ data, tab, setTab, tabIds, reach, phaseNames }: {
   data: L4OperationsData;
   tab: ReportTab;
   setTab: (tab: ReportTab) => void;
   tabIds: ReturnType<typeof useTabIds>;
   reach: ReturnType<typeof useReach>;
+  phaseNames: Record<string, string>;
 }) {
-  const scope = `${data.period.label} · ${phaseText(data.phaseFilter)}`;
+  const scope = `${data.period.label} · ${phaseText(data.phaseFilter, phaseNames)}`;
   const t = data.tasks.summary;
   const rate = t.acceptanceRate;
   const low = rate !== null && rate < ACCEPTANCE_WARN;
@@ -538,12 +691,12 @@ function L4Body({ data, tab, setTab, tabIds, reach }: {
           </dl>
         </Stat>
         <Stat head="运营阶段效果" icon={Flag} tone="role-4"
-          label={singlePhase ? `${singlePhase.phase} 转化率` : best ? `转化率最高：${best.phase}` : "转化率最高的阶段"}
+          label={singlePhase ? `${phaseText(singlePhase.phase as L4OperationsQuery["phase"], phaseNames)} 转化率` : best ? `转化率最高：${phaseText(best.phase as L4OperationsQuery["phase"], phaseNames)}` : "转化率最高的阶段"}
           value={pct(singlePhase ? singlePhase.conversionRate : best?.conversionRate)}
-          openLabel={`运营阶段效果报表：${singlePhase ? `${singlePhase.phase} 转化率 ${pct(singlePhase.conversionRate)}` : best ? `转化率最高的是 ${best.phase}，${pct(best.conversionRate)}` : "各阶段转化率都算不出"}`} {...tabProps("phase")}>
+          openLabel={`运营阶段效果报表：${singlePhase ? `${phaseText(singlePhase.phase as L4OperationsQuery["phase"], phaseNames)} 转化率 ${pct(singlePhase.conversionRate)}` : best ? `转化率最高的是 ${phaseText(best.phase as L4OperationsQuery["phase"], phaseNames)}，${pct(best.conversionRate)}` : "各阶段转化率都算不出"}`} {...tabProps("phase")}>
           {!singlePhase && !best && <span className="rd-note">各阶段转化率都算不出</span>}
           <dl className="rd-stat-rows">
-            <div className="rd-stat-row"><dt>对照的阶段</dt><dd>{singlePhase ? singlePhase.phase : `${data.phaseEffect.length} 个（P1–P6）`}</dd></div>
+            <div className="rd-stat-row"><dt>对照的阶段</dt><dd>{singlePhase ? phaseText(singlePhase.phase as L4OperationsQuery["phase"], phaseNames) : `${data.phaseEffect.length} 个（P1–P6）`}</dd></div>
             <div className="rd-stat-row"><dt>阶段切换</dt><dd>{count(data.phaseEffect.reduce((sum, row) => sum + row.transitionCount, 0))} 次</dd></div>
             <div className="rd-stat-row"><dt>阶段参数调整</dt><dd>{count(data.phaseEffect.reduce((sum, row) => sum + row.dialChangeCount, 0))} 次</dd></div>
           </dl>
@@ -565,7 +718,7 @@ function L4Body({ data, tab, setTab, tabIds, reach }: {
   const body = tab === "device" ? <DeviceReport data={data} scope={scope} links={links("device")} panel={panel} />
     : tab === "tasks" ? <TaskReport data={data} scope={scope} links={links("tasks")} panel={panel} />
       : tab === "network" ? <TeamReport data={data} scope={scope} links={links("network")} panel={panel} />
-        : <PhaseReport data={data} scope={scope} links={links("phase")} panel={panel} />;
+        : <PhaseReport phaseNames={phaseNames} data={data} scope={scope} links={links("phase")} panel={panel} />;
 
   return (
     <>
