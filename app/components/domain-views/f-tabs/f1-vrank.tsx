@@ -333,7 +333,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       let rank: string | undefined;
       if (/^[1-9]\d*$/.test(userId) && Number.isSafeInteger(Number(userId)) && ctx.can("user_c1_read")) {
         try {
-          const page = await fetchUserProfilesPage({ userId, pageNum: 1, pageSize: 1 });
+          const page = await fetchUserProfilesPage({ userId, pageNum: 1, pageSize: 20 });
           // C1 filters by the internal ID but deliberately returns only the public userNo.
           const profile = page.total === 1 ? page.records[0] : undefined;
           if (profile?.vRank && /^V[0-8]$/.test(profile.vRank)) rank = profile.vRank;
