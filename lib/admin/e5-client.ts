@@ -81,6 +81,15 @@ export interface E5Device {
   slot: string;
 }
 
+/** userDeviceSlotNo proves effective ownership; system pause reasons are never cleared by batch resume. */
+export function canResumeE5UserDevicesFrom(device: E5Device) {
+  const reason = device.pausedReason.trim().toUpperCase();
+  return device.slotNo !== null && reason !== "" && ![
+    "ORDER_REFUND", "USER_DEACTIVATED", "PHONE_REPLACED", "PHONE_OFFLINE",
+    "PHONE_LOW_BATTERY", "UNBIND", "DEACTIVATE", "REPLACE", "RECYCLE",
+  ].includes(reason);
+}
+
 export interface E5Overview { total: number; running: number; waitingActivation: number; stopped: number; errorRetry: number; legacyPending: number; waitingConfig: number }
 export interface E5DeviceQuery {
   keyword?: string;

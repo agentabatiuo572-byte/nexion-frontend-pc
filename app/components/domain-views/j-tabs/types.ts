@@ -24,9 +24,11 @@ export type ActionConfirmReq = {
   confirmLabel?: string;
   confirmTone?: "primary" | "danger";
   statedBrief?: { impact: string; check: string };
-  facts?: ReactNode;
+  facts?: ReactNode | ((value?: string) => ReactNode);
   reasonPlaceholder?: string;
   reasonPolicyOptional?: boolean;
+  getPendingReason?: () => string | undefined;
+  getPendingBusinessValue?: () => BusinessFormValue | undefined;
   /** 框里写这项为什么现在不能提交，确认按钮禁用。 */
   blockedReason?: ReactNode;
   /** 换了就重开这个框：理由和输入回到初值。别人改过后读取最新时用（OP-97）。 */
@@ -41,7 +43,8 @@ export type JCtx = {
   params: Record<string, unknown>;
   setParam: (k: string, v: string, meta: { action: string; reason: string }) => void;
   toast: (s: string, kind?: ToastKind) => void;
-  openActionConfirm: (req: ActionConfirmReq) => void;
+  /** 传 null 关掉确认框（J2 从确认框「返回修改」回到选国家）。 */
+  openActionConfirm: (req: ActionConfirmReq | null) => void;
   emergency: JEmergencyData;
   actions: JEmergencyActions;
   contentLoading: boolean;

@@ -458,6 +458,7 @@ export type ScoringOverview = {
 
 export type K4WithdrawalAlert = {
   id: string;
+  userNo: string | null;
   domain: "K4";
   level: "critical";
   title: string;
@@ -1621,6 +1622,7 @@ export async function fetchK4WithdrawalAlerts(): Promise<K4WithdrawalAlertOvervi
     return {
       id: requiredK4String(row.id, `${path}.id`), domain: "K4", level: "critical",
       title: requiredK4String(row.title, `${path}.title`), hint: requiredK4String(row.hint, `${path}.hint`),
+      userNo: nullableK4String(row.userNo, `${path}.userNo`),
       withdrawalNo: requiredK4String(row.withdrawalNo, `${path}.withdrawalNo`),
       riskScore: row.riskScore === null ? null : requiredK4Integer(row.riskScore, `${path}.riskScore`, 0, 100),
       priority: nullableK4String(row.priority, `${path}.priority`),

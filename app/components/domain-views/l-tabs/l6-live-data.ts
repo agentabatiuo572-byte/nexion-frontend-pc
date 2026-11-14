@@ -100,7 +100,7 @@ export type L6BehaviorHeatmapData = {
   clickHeatByRoute: Record<string, PageClickHeat>;
   dailyTrend: { bucket: string; pv: number; clicks: number }[];
   weeklyTrend: { bucket: string; pv: number; clicks: number }[];
-  /** R-1: the business offset the daily buckets were cut in, e.g. "UTC+07:00". */
+  /** R-1: the business offset the daily and ISO-week buckets were cut in, e.g. "UTC+07:00". */
   businessTimeZone: string;
   lateArrivalPolicy: "rejected_retry_in_order";
   deduplication: "clientEventId";
@@ -187,34 +187,23 @@ export function clickHeatForRoute(data: L6BehaviorHeatmapData, route: string): P
 
 export function aggregateByDepth(pageTree: UxPageNode[], stats: PageActivityStat[], depth: DepthFilter): HeatRow[] {
   const nodeByRoute = new Map(pageTree.map((node) => [node.route, node]));
-  type Acc = { pv: number; uv: number; clicks: number; dwellNum: number; bounceNum: number; pages: number };
-  const buckets = new Map<string, Acc>();
-  for (const stat of stats) {
+  const currentGroups = new Set(pageTree.filter(node => node.tracked).map(node =>
+    depth === "L1" ? node.parentL1 : depth === "L2" ? node.parentL2 : node.route));
+  // The server already groups by depth and deduplicates UV within each group.
+  // A parent path need not have its own catalog row; its tracked children prove
+  // membership. Keep historical-only groups outside the current catalog excluded.
+  return stats.filter(stat => currentGroups.has(stat.route)).map(stat => {
     const node = nodeByRoute.get(stat.route);
-    if (!node?.tracked) continue;
-    if (depth === "L3" && node.level !== 3) continue;
-    const key = depth === "L1" ? node.parentL1 : depth === "L2" ? node.parentL2 : node.route;
-    const acc = buckets.get(key) ?? { pv: 0, uv: 0, clicks: 0, dwellNum: 0, bounceNum: 0, pages: 0 };
-    acc.pv += stat.pv;
-    acc.uv += stat.uv;
-    acc.clicks += stat.clicks;
-    acc.dwellNum += stat.dwellMs * stat.pv;
-    acc.bounceNum += stat.bounceRate * stat.pv;
-    acc.pages += Math.max(1, stat.pageCount);
-    buckets.set(key, acc);
-  }
-  return [...buckets.entries()].map(([key, acc]) => {
-    const rep = nodeByRoute.get(key);
     return {
-      key,
-      titleZh: rep?.titleZh ?? key,
-      level: rep?.level ?? 3,
-      pv: acc.pv,
-      uv: acc.uv,
-      clicks: acc.clicks,
-      dwellMs: acc.pv ? Math.round(acc.dwellNum / acc.pv) : 0,
-      bounceRate: acc.pv ? Number((acc.bounceNum / acc.pv).toFixed(3)) : 0,
-      pageCount: acc.pages,
+      key: stat.route,
+      titleZh: node?.titleZh ?? stat.route,
+      level: (depth === "L1" ? 1 : depth === "L2" ? 2 : node!.level) as PageLevel,
+      pv: stat.pv,
+      uv: stat.uv,
+      clicks: stat.clicks,
+      dwellMs: stat.dwellMs,
+      bounceRate: stat.bounceRate,
+      pageCount: stat.pageCount,
     };
   });
 }

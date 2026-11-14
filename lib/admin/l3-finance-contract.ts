@@ -188,6 +188,13 @@ export function assertL3FinanceContract(input: L3FinanceRawContract): L3FinanceR
     fail("liabilities.hardLiabilityCategoryCount");
   }
   if (input.liabilities.trialShadowIncluded !== false) fail("liabilities.trialShadowIncluded");
+  const reliable = input.liabilities.valuationReliable;
+  if (typeof reliable !== "boolean"
+    || input.liabilities.valuationStatus !== (reliable ? "AVAILABLE" : "VALUATION_UNAVAILABLE")) {
+    fail("liabilities.valuationReliable");
+  }
+  const valuedTotal = nullableNumber(input.liabilities.valuedTotalUsdt, "liabilities.valuedTotalUsdt");
+  if (reliable ? valuedTotal === null : valuedTotal !== null) fail("liabilities.valuedTotalUsdt");
   const liabilityRows = list(input.liabilities.breakdown, "liabilities.breakdown");
   if (liabilityRows.length !== LIABILITY_CATEGORIES.size) fail("liabilities.breakdown.length");
   const seenLiabilities = new Set<string>();
@@ -200,10 +207,23 @@ export function assertL3FinanceContract(input: L3FinanceRawContract): L3FinanceR
     text(item.source, `liabilities.breakdown[${index}].source`);
     const share = number(item.share, `liabilities.breakdown[${index}].share`);
     if (share > 1) fail(`liabilities.breakdown[${index}].share`);
-    return sum + number(item.amountUsdt, `liabilities.breakdown[${index}].amountUsdt`);
+    const amount = number(item.amountUsdt, `liabilities.breakdown[${index}].amountUsdt`);
+    const valuedAmount = nullableNumber(item.valuedAmountUsdt, `liabilities.breakdown[${index}].valuedAmountUsdt`);
+    const valuedShare = nullableNumber(item.valuedShare, `liabilities.breakdown[${index}].valuedShare`);
+    if (!reliable && category === "nex_v2_future") {
+      if (valuedAmount !== null) fail(`liabilities.breakdown[${index}].valuedAmountUsdt`);
+    } else {
+      if (valuedAmount === null) fail(`liabilities.breakdown[${index}].valuedAmountUsdt`);
+      close(valuedAmount, amount, `liabilities.breakdown[${index}].valuedAmountUsdt`);
+    }
+    if (reliable ? valuedShare === null || valuedShare > 1 : valuedShare !== null) {
+      fail(`liabilities.breakdown[${index}].valuedShare`);
+    }
+    return sum + amount;
   }, 0);
   close(number(input.liabilities.totalUsdt, "liabilities.totalUsdt"), liabilitySum, "liabilities.totalUsdt");
   close(liability, liabilitySum, "coverage.liabilityCrossSource");
+  if (valuedTotal !== null) close(valuedTotal, liabilitySum, "liabilities.valuedTotalUsdt");
 
   if (text(input.maturity7.window, "maturity7.window") !== "7d") fail("maturity7.window");
   if (text(input.maturity30.window, "maturity30.window") !== "30d") fail("maturity30.window");
@@ -211,6 +231,10 @@ export function assertL3FinanceContract(input: L3FinanceRawContract): L3FinanceR
   assertConsecutiveDaily(input.maturity30.daily, 30, "maturity30.daily");
   number(input.maturity7.reserveCoverDays, "maturity7.reserveCoverDays");
   number(input.maturity30.reserveCoverDays, "maturity30.reserveCoverDays");
+  for (const [field, maturity] of [["maturity7", input.maturity7], ["maturity30", input.maturity30]] as const) {
+    if (typeof maturity.trialStressIncluded !== "boolean") fail(`${field}.trialStressIncluded`);
+    number(maturity.cumulativeUsdt, `${field}.cumulativeUsdt`);
+  }
 
   record(input.overview, "overview");
   return input;

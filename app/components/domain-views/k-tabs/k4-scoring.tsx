@@ -983,14 +983,14 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
             : withdrawalAlerts.length === 0 ? <BlockState state="empty" title="暂无提现升级告警" detail="有新提现的风险分达到自动升级线时，会在这里提醒你。" />
               : (
                 <Table label="我的提现升级告警" className="k4-alerts">
-                  <thead><tr><Th>提现单号</Th><Th align="right">风险分</Th><Th>规则版本 · 评分时间</Th><Th>收到时间</Th><Th>状态</Th><Th align="right">操作</Th></tr></thead>
+                  <thead><tr><Th>提现单号 · 用户</Th><Th align="right">风险分</Th><Th>规则版本 · 评分时间</Th><Th>收到时间</Th><Th>状态</Th><Th align="right">操作</Th></tr></thead>
                   <tbody>
                     {withdrawalAlerts.map((alert) => {
                       const unknown = alertUnknown.includes(alert.id);
                       return (
                         <Tr key={alert.id}>
-                          <Td><Cell mono full main={<MidId value={alert.withdrawalNo} />} title={alert.withdrawalNo} sub={alert.priority === null ? undefined : PRIORITY_TEXT[alert.priority] ?? alert.priority} /></Td>
-                          <Td align="right"><Cell num main={alert.riskScore == null ? "—" : `${alert.riskScore} 分`} /></Td>
+                          <Td><Cell mono full main={<MidId value={alert.withdrawalNo} />} title={alert.withdrawalNo} sub={alert.userNo === null ? <span title="这条告警没有记录用户编号">无归属用户</span> : userRef(alert.userNo)} /></Td>
+                          <Td align="right"><Cell num main={alert.riskScore == null ? "—" : `${alert.riskScore} 分`} sub={alert.priority === null ? undefined : PRIORITY_TEXT[alert.priority] ?? alert.priority} /></Td>
                           <Td><Cell main={versionText(alert.modelVersion)} sub={alert.scoreAsOf ? stamp(alert.scoreAsOf) : "—"} /></Td>
                           <Td><Cell num main={stamp(alert.createdAt).slice(0, 10)} sub={stamp(alert.createdAt).slice(11)} /></Td>
                           <Td>{alert.read ? <StatusTag tone="done">已读</StatusTag> : unknown ? <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag> : <StatusTag tone="warn" icon={BellDot}>未读</StatusTag>}</Td>

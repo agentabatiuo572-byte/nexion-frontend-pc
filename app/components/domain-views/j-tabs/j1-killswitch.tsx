@@ -33,6 +33,8 @@ const restoreAttempts = createPendingMutationStore<RestoreAttempt>({
   isValidRecord: (record) => record.input?.command?.op === "j1_gate_resume" && typeof record.input.reason === "string",
 });
 const IMPACT_LABEL: Record<string, string> = { immediate: "即时资金流出", delayed: "未来负债增加", none: "不直接影响兑付" };
+// 1024 下这列窄：后半个词整块换行，不留「流出」「响兑付」这种孤字。
+const IMPACT_KEEP = ["资金流出", "负债增加", "影响兑付"];
 const GATE_ICON: Record<string, LucideIcon> = { withdraw: Landmark, staking: Layers, genesis: Gem, exchange: ArrowLeftRight, trial: Ticket };
 /** 只覆盖本页显示，等待后端同步开关说明。 */
 const GATE_COPY: Record<string, { cap: string; desc: string }> = {
@@ -811,7 +813,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
               <Tr key={gate.key}>
                 <Td><Cell full main={operatorCopyText(gate.name)} sub={UNAVAILABLE_GATES[gate.key]?.detail ?? <>{gateCopy(gate).cap} <Explain label={`${operatorCopyText(gate.name)}控制范围`} content={<AutoGloss>{gateCopy(gate).desc}</AutoGloss>} /></>} /></Td>
                 <Td><Cell main={UNAVAILABLE_GATES[gate.key] ? <StatusTag tone="neutral" icon={Ban}>暂不可用</StatusTag> : gate.enabled ? <StatusTag tone="ok">在线</StatusTag> : <StatusTag tone="warn" icon={Power}>已关停</StatusTag>} sub={gate.emergency ? "应急" : undefined} /></Td>
-                <Td>{UNAVAILABLE_GATES[gate.key] ? "—" : IMPACT_LABEL[gate.coverageImpactCategory]}</Td>
+                <Td>{UNAVAILABLE_GATES[gate.key] ? "—" : <KeepText text={IMPACT_LABEL[gate.coverageImpactCategory] ?? ""} phrases={IMPACT_KEEP} />}</Td>
                 <Td>{UNAVAILABLE_GATES[gate.key] ? "—" : gate.coveragePrecheckRequired ? <AutoGloss>需核备付金</AutoGloss> : "不需"}</Td>
                 <Td><Cell num main={gate.lastChange.split(" · ")[0] || "—"} sub={gate.lastChange.split(" · ").slice(1).join(" · ") || undefined} /></Td>
               </Tr>
