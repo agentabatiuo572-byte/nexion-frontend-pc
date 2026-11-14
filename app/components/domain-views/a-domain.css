@@ -110,13 +110,6 @@
 .adom [data-testid="published-content-how"] .l-b .l-card .r label { flex: 1; }
 
 /* ============================ A4 事件中台 ============================ */
-.adom .a4-pipe { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 0 2px; }
-.adom .a4-pipe .st { font-family: var(--mono); font-size: 11.5px; font-weight: 600; padding: 5px 11px; border-radius: 7px; background: var(--surface-3); color: var(--ink-2); white-space: nowrap; line-height: 1.4; }
-.adom .a4-pipe .st small { font-size: 11.5px; font-weight: 400; color: var(--ink-4); display: block; }
-.adom .a4-pipe .st.hot { background: var(--a-ac-soft); color: var(--a-ac); }
-.adom .a4-pipe .ar { color: var(--ink-4); font-size: 11px; font-family: var(--mono); }
-.adom .a4-dom { display: inline-flex; padding: 3px 9px; border-radius: 5px; background: var(--surface-3); color: var(--ink-3); font-family: var(--mono); font-size: 11px; font-weight: 600; margin: 2px 3px 2px 0; }
-.adom .a4-dom.new { background: var(--warning-soft); color: var(--warning); }
 
 /* ============================ A1 运营账号与权限（改版，rd 令牌） ============================
    .a1-page 是页面根；抽屉、弹窗渲染在 RdPage 的容器里，正文另包一层 .a1-page.a1-sheet，样式都从这里开头。 */
