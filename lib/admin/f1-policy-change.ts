@@ -1,10 +1,12 @@
-import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "./a2-client";
+import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import { fetchF1VRankOverview, writeF1VRankPolicy, type F1VRankRow } from "./f1-client";
 import { isF1OutcomeUncertainError } from "./f1-stable-write";
+import { isExplicitRejection } from "./explicit-rejection";
+import { isDeterministicRejection } from "./outcome-classification";
 import { findHighOp } from "./high-ops-registry";
 import { roleLabel } from "@/lib/nav/console-nav";
-import type { AdminSession } from "@/lib/store/admin-auth";
+import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import type { OpsVRankRewardItem, VRankRewardType } from "./platform-types";
 
 export type F1ConditionField = "selfBuy" | "teamGv" | "directRefs" | "legCount" | "legRank";
@@ -19,13 +21,15 @@ export type F1PolicyEditor = {
   row: F1VRankRow; action: F1PolicyAction; field?: F1ConditionField;
   reward?: OpsVRankRewardItem; valuation: string | null;
   recoveryCommandKey?: string;
+  approvalRequired?: boolean;
 };
 type OriginalCommand = {
   editor: F1PolicyEditor; form: F1PolicyForm; values: F1PolicyValues; reason: string; operator: string;
   approval: boolean; proposal?: Parameters<typeof createA2OperationProposal>[0];
 };
 
-const attempts = createPendingMutationStore<PendingMutationRecord & { input: string }>({
+export type F1PolicyRecord = PendingMutationRecord & { input: string; ticket?: A2OperationRow; received?: boolean; absent?: boolean };
+const attempts = createPendingMutationStore<F1PolicyRecord>({
   storageKey: "nexion-admin-f1-policy-commands-v1", retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.input === "string",
 });
@@ -81,6 +85,7 @@ export function f1PolicyInputError(editor: F1PolicyEditor, form: F1PolicyForm, v
 /** Mirrors the server's direction only; proposal and checker both re-evaluate authoritative B1 facts. */
 export function f1PolicyNeedsApproval(editor: F1PolicyEditor, form: F1PolicyForm): boolean {
   if (editor.action === "reward_remove") return false;
+  if (editor.approvalRequired) return true;
   if (editor.action === "threshold") {
     const field = editor.field!, oldValue = editor.row[field] ?? "", proposed = form.value?.trim() ?? "";
     if (field !== "legCount" && field !== "legRank") {
@@ -112,7 +117,7 @@ export function f1PolicyNeedsApproval(editor: F1PolicyEditor, form: F1PolicyForm
 function slot(owner: number, editor: F1PolicyEditor) {
   return `${owner}:F1:${editor.row.v}:${editor.action}:${editor.field ?? editor.reward?.id ?? "new"}`;
 }
-function originalF1Policy(owner: number, record: PendingMutationRecord & { input: string }) {
+function originalF1Policy(owner: number, record: F1PolicyRecord) {
   const original = JSON.parse(record.input) as OriginalCommand;
   if (!original.editor || slot(owner, original.editor) !== record.fingerprint || typeof original.reason !== "string"
     || !original.form || !original.values || typeof original.approval !== "boolean" || typeof original.operator !== "string"
@@ -121,8 +126,11 @@ function originalF1Policy(owner: number, record: PendingMutationRecord & { input
     || original.approval && !original.proposal) throw new Error("原操作内容不完整，请到操作记录核对后处理。");
   return { ...record, original };
 }
+export function listF1PolicyOperations(owner: number) {
+  return attempts.list().filter(record => record.fingerprint.startsWith(`${owner}:F1:`)).map(record => originalF1Policy(owner, record));
+}
 export function pendingF1Policy(owner: number, editor: F1PolicyEditor) {
-  const record = attempts.list().find((item) => item.fingerprint === slot(owner, editor));
+  const record = attempts.list().find((item) => !item.ticket && item.fingerprint === slot(owner, editor));
   return record ? originalF1Policy(owner, record) : undefined;
 }
 export function pendingF1Removals(owner: number, rank: string) {
@@ -137,9 +145,18 @@ export async function submitF1Policy(
   session: AdminSession, editor: F1PolicyEditor, form: F1PolicyForm, reason: string,
   mode: "submit" | "lookup" | "retry-original" = "submit",
 ) {
-  const fingerprint = slot(session.adminId, editor), previous = pendingF1Policy(session.adminId, editor);
+  const fingerprint = slot(session.adminId, editor);
+  const auth = useAdminAuth.getState();
+  if (!auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== session.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+  if (mode !== "lookup" && !auth.session.authorities.includes("network_f1_write")) throw new Error("ADMIN_PERMISSION_DENIED");
+  const records = listF1PolicyOperations(session.adminId).filter(item => item.fingerprint === fingerprint);
+  let previous = editor.recoveryCommandKey ? records.find(item => item.commandKey === editor.recoveryCommandKey) : records.find(item => !item.ticket) ?? records[0];
   if (mode !== "submit" && !previous) throw new Error("原操作已处理，请关闭弹窗并刷新后再操作。");
-  if (previous && mode === "submit") throw new A2OutcomeUncertainError("原操作尚未确认，请按原内容核对。", previous.commandKey);
+  const unresolved = listF1PolicyOperations(session.adminId).find(item => !item.ticket && item.original.values.rank === editor.row.v);
+  if (mode === "submit" && unresolved) throw new A2OutcomeUncertainError("这一级有结果未知的原操作，请先查询原结果。", unresolved.commandKey);
+  if (previous?.ticket && mode === "submit" && f1PolicyNeedsApproval(editor, form)) throw new A2OutcomeUncertainError("这一级已有待审批申请，请先核对原申请。", previous.commandKey);
+  if (previous && !previous.ticket && mode === "submit") throw new A2OutcomeUncertainError("原操作尚未确认，请按原内容核对。", previous.commandKey);
+  if (mode === "submit" && previous?.ticket) previous = undefined;
   let original = previous?.original;
   const key = previous?.commandKey ?? createA2CommandKey("f1-rank-policy");
   if (!original) {
@@ -173,36 +190,74 @@ export async function submitF1Policy(
       throw new Error("浏览器无法保存原操作，请允许会话存储后重试。");
     }
   }
-  let definitiveAbsence = !previous;
+  const record = () => attempts.list().find(item => item.commandKey === key)!;
+  let posting = false;
   try {
     if (original.approval) {
       let ticket;
-      if (previous) {
-        try { ticket = await fetchA2ProposalByKey(key); }
-        catch { throw new A2OutcomeUncertainError("暂时无法查询原审批单，请稍后重查。", key); }
-        definitiveAbsence = ticket === null;
+      if (previous || mode === "lookup") {
+        // Clear stale observations before a fresh authoritative query.
+        attempts.remember(fingerprint, key, { ...record(), ticket: undefined, absent: false });
+        ticket = await fetchA2ProposalByKey(key, true, true);
+        if (!ticket) attempts.remember(fingerprint, key, { ...record(), ticket: undefined, absent: true });
       }
       if (mode === "lookup" && !ticket) return null;
-      if (!ticket && previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原命令已过期且暂未查到结果，请到操作记录核对，勿重复提交。", key);
-      ticket ??= await createA2OperationProposal(original.proposal!, key, true);
-      if (ticket.obj !== original.values.rank) throw new A2OutcomeUncertainError("原审批单对象不符，请到操作记录核对。", key);
-      let active;
-      try { active = await fetchF1VRankOverview(); }
-      catch { throw new A2OutcomeUncertainError(`审批单 ${ticket.id} 已登记，当前配置回读失败，请查询原操作。`, key); }
-      attempts.forget(fingerprint, key);
-      return { active, acknowledgement: `审批单 ${ticket.id}${ticket.status === "pending" ? " · 等待另一位有审批权的超管批准，当前配置未变" : " · 已找到原操作，请核对处理结果与当前配置"}` };
+      if (!ticket && previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原操作已过期且暂未查到结果，请到操作记录核对，勿重复提交。", key);
+      if (!ticket) {
+        posting = true;
+        ticket = await createA2OperationProposal(original.proposal!, key, "proposal");
+        posting = false;
+        attempts.remember(fingerprint, key, { ...record(), received: true });
+        // The receipt is historical on replay; always query its current status.
+        ticket = await fetchA2ProposalByKey(key, true, true);
+        if (!ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", key);
+      }
+      if (!ticket.mine || ticket.obj !== original.values.rank || ticket.operationCode !== "f1_rank_policy_change") {
+        throw new A2OutcomeUncertainError("原审批单对象或操作不符，请到操作记录核对。", key);
+      }
+      const active = await fetchF1VRankOverview();
+      if (ticket.status === "pending") attempts.remember(fingerprint, key, { ...record(), ticket, received: true, absent: false });
+      else attempts.forget(fingerprint, key);
+      return { active, resolved: true, acknowledgement: `审批单 ${ticket.id}${ticket.status === "pending" ? " · 等待另一位有审批权的超管批准，当前配置未变" : " · 已找到原操作，请核对处理结果与当前配置"}` };
     }
+    // Read-only reconciliation must never call a write endpoint, including after expiry.
+    if (mode === "lookup") return { active: await fetchF1VRankOverview(), resolved: false, acknowledgement: "已读取当前配置；这不是原请求的执行回执，请保留原操作继续核对。" };
     if (previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原操作已过期，请到操作记录核对，勿重复提交。", key);
+    if (!attempts.isDurablyStored(fingerprint, key)) throw new A2OutcomeUncertainError("原操作未能持久保存，当前不能重发。", key);
+    posting = true;
     await writeF1VRankPolicy(original.values, original.reason, original.operator, key);
-    let active;
-    try { active = await fetchF1VRankOverview(); }
-    catch { throw new A2OutcomeUncertainError("已收到原操作回执，当前配置回读失败，请按原操作重试核对。", key); }
+    posting = false;
+    attempts.remember(fingerprint, key, { ...record(), received: true });
+    const active = await fetchF1VRankOverview();
     attempts.forget(fingerprint, key);
-    return { active, acknowledgement: editor.action === "threshold" ? "晋升条件已更新，下一轮评估使用新值" : editor.action === "reward_remove" ? "奖励已移除，历史发放记录保留" : "奖励模板已更新，后续发放使用新值" };
+    return { active, resolved: true, acknowledgement: original.editor.action === "threshold" ? "晋升条件已更新，下一轮评估使用新值" : original.editor.action === "reward_remove" ? "奖励已移除，历史发放记录保留" : "奖励模板已更新，后续发放使用新值" };
   } catch (error) {
-    if (isF1OutcomeUncertainError(error)) throw new A2OutcomeUncertainError(error.message, key);
-    if (error instanceof Error && "backendMessage" in error && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) throw new A2OutcomeUncertainError("原操作仍待确认，请查询原操作。", key);
-    if (definitiveAbsence && !isA2OutcomeUncertainError(error)) attempts.forget(fingerprint, key);
+    const saved = record();
+    const failure = error as { status?: number; httpStatus?: number; apiCode?: number; backendMessage?: string };
+    const rejected = posting && (previous ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error) && !isF1OutcomeUncertainError(error)
+      && !failure.backendMessage?.startsWith("IDEMPOTENCY_")
+      && isDeterministicRejection(failure.httpStatus ?? failure.status ?? 0, failure.apiCode));
+    if (rejected) attempts.forget(fingerprint, key);
+    else if (saved && !isA2OutcomeUncertainError(error)) throw new A2OutcomeUncertainError(error instanceof Error ? error.message : "原操作结果未知，请查询原结果。", key);
     throw error;
   }
+}
+
+/** Refresh saved pending approvals without treating a failed read as a pending verdict. */
+export async function queryF1PolicyOperation(owner: number, commandKey: string) {
+  const saved = listF1PolicyOperations(owner).find(item => item.commandKey === commandKey);
+  if (!saved) return null;
+  const current = useAdminAuth.getState().session;
+  if (current?.adminId !== owner) throw new Error("ADMIN_PERMISSION_DENIED");
+  return submitF1Policy(current, { ...saved.original.editor, recoveryCommandKey: commandKey }, {}, "", "lookup");
+}
+
+/** Exposed for the visual worker's explicit expired-proposal confirmation. */
+export async function releaseF1PolicyProposal(owner: number, commandKey: string) {
+  const saved = listF1PolicyOperations(owner).find(item => item.commandKey === commandKey);
+  if (!saved || !saved.original.approval || saved.expiresAt > Date.now()) throw new Error("这条原操作不能解除，请先查询原结果。");
+  if (useAdminAuth.getState().session?.adminId !== owner) throw new Error("ADMIN_PERMISSION_DENIED");
+  const ticket = await fetchA2ProposalByKey(commandKey, true, true);
+  if (ticket) throw new Error("已找到原审批单，请核对它现在的处理结果。");
+  attempts.forget(saved.fingerprint, commandKey);
 }

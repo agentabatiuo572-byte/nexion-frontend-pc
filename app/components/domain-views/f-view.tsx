@@ -50,6 +50,8 @@ import {
 import { usePropose } from "@/lib/admin/use-propose";
 import { createA2CommandKey, fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { commandAttempts, F2_ACTIVATION_SLOT, F2_POLICY_SLOT, f2PendingFor, f2ProposalRecord, listF2Proposals, queryF2Proposal, releaseF2Proposal, sendF2Proposal, type F2Recovery } from "@/lib/admin/f2-approval";
+import { listF1Proposals, queryF1Proposal, releaseF1Proposal, sendF1Proposal } from "@/lib/admin/f1-approval";
+import { listF1PolicyOperations, queryF1PolicyOperation } from "@/lib/admin/f1-policy-change";
 import { pendingConfigApproval, submitConfigApproval, teamFundApprovalAuthority, type TeamFundApprovalValues } from "@/lib/admin/withdrawal-config-approval";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { findHighOp, isFFundAmplifyingKey } from "@/lib/admin/high-ops-registry";
@@ -127,6 +129,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       commandKey: spec.commandKey ?? createA2CommandKey("f-domain-action"),
       teamApprovalOwner: spec.teamApproval ? session?.adminId : undefined,
     });
+  const [f1ReadEpoch, setF1ReadEpoch] = useState(0);
+  const [f1ApprovalRanks, setF1ApprovalRanks] = useState<string[]>([]);
+  const [f1ProposalEpoch, setF1ProposalEpoch] = useState(0);
   const [f1Overview, setF1Overview] = useState<F1VRankOverview | null>(null);
   const [f1Loading, setF1Loading] = useState(tab === "F1");
   const [f1Error, setF1Error] = useState<string | null>(null);
@@ -433,9 +438,61 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     } finally { setF2Proposals(listF2Proposals(session.adminId)); }
   };
 
+  const refreshF1Approvals = useCallback(async () => {
+    const current = useAdminAuth.getState().session;
+    if (!current) return;
+    const policy = listF1PolicyOperations(current.adminId).filter(row => row.original.approval);
+    const results = await Promise.allSettled([
+      ...(current.authorities.includes("platform_a2_read") ? [fetchA2Overview({}, true)] : []),
+      ...policy.map(row => queryF1PolicyOperation(current.adminId, row.commandKey)),
+      ...listF1Proposals(current.adminId).filter(row => row.spec).map(row => queryF1Proposal(current.adminId, row)),
+    ]);
+    if (useAdminAuth.getState().session?.adminId !== current.adminId) return;
+    const queue = results.flatMap(result => result.status === "fulfilled" && result.value && "operationQueue" in result.value ? result.value.operationQueue : []);
+    const owned = listF1PolicyOperations(current.adminId).flatMap(row => row.ticket ? [row.ticket] : []);
+    setF1ApprovalRanks([...new Set([...queue, ...owned].filter(row => row.status === "pending" && row.operationCode === "f1_rank_policy_change" && /^V[0-8]$/.test(row.obj)).map(row => row.obj))]);
+    setF1ProposalEpoch(value => value + 1);
+  }, []);
+  useEffect(() => { if (tab === "F1") void refreshF1Approvals(); }, [tab, session?.adminId, refreshF1Approvals]);
+
+  const recoverF1 = async (slot: string, mode: "query" | "retry" | "release") => {
+    const current = useAdminAuth.getState().session;
+    const original = current && listF1Proposals(current.adminId).find(row => row.fingerprint === slot);
+    if (!current || !original) throw new Error("原操作已处理，请重新读取后再操作。");
+    f1Generation.current += 1;
+    setF1Overview(null);
+    setF1Loading(true);
+    let resolved = false;
+    try {
+      if (mode === "release") {
+        await releaseF1Proposal(current.adminId, original);
+        resolved = true;
+      } else {
+        const ticket = mode === "query" ? await queryF1Proposal(current.adminId, original) : await sendF1Proposal(current.adminId, slot);
+        resolved = !!ticket;
+        if (ticket) setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : "原申请已处理，请刷新后核对。");
+      }
+      return resolved;
+    } finally {
+      if (resolved || !listF1Proposals(current.adminId).some(row => row.commandKey === original.commandKey)) setF1ReadEpoch(value => value + 1);
+      await refreshF1();
+      await refreshF1Approvals();
+    }
+  };
+
   // F 域既有命令在此按槽位保号；F2 启停另用同一共享存储保留完整原申请，供显式恢复。
   const proposeStable = async (slot: string, inputFingerprint: string, spec: ProposeSpec) => {
     if (spec.sourceDomain === "F2") return sendF2(slot, spec);
+    if (spec.sourceDomain === "F1") {
+      const current = useAdminAuth.getState().session;
+      if (!current || current.adminId !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+      if (!f1Overview || f1Loading || f1Error || slot === "f-vrank-bootstrap:current" && f1Overview.rows.length !== 0) throw new Error("会员等级读取失败，请重新读取后再操作。");
+      try {
+        await sendF1Proposal(current.adminId, slot, spec);
+        setToast("已提交，等待审批后执行");
+      } finally { setF1ProposalEpoch(value => value + 1); }
+      return;
+    }
     const commandKey = commandAttempts.resolve(slot, inputFingerprint, () => createA2CommandKey(slot.split(":")[0]));
     try {
       await propose((s: string) => setToast(s), { ...spec, commandKey });
@@ -553,7 +610,19 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     leadership: f1Overview?.leadership ?? null,
     f1Loading,
     f1Error,
-    refreshF1,
+    f1ReadEpoch,
+    f1ApprovalRanks,
+    f1Proposals: session ? listF1Proposals(session.adminId) : [],
+    f1ProposalEpoch,
+    recoverF1,
+    refreshF1Approvals,
+    invalidateF1: () => {
+      f1Generation.current += 1;
+      setF1Overview(null);
+      setF1Loading(false);
+      setF1Error("原操作正在核对，请重新读取后再发起新修改。");
+    },
+    refreshF1: async () => { await Promise.all([refreshF1(), refreshF1Approvals()]); },
     f1RewardValuation: f1Overview?.rewardValuationUsdtPerUvt ?? null,
     f1Coverage: f1Overview?.coverage,
     acceptF1PolicyOverview: (overview) => {
@@ -561,6 +630,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setF1Overview(overview);
       setF1Loading(false);
       setF1Error(null);
+      void refreshF1Approvals();
     },
     updateVRankThreshold: async (rank, field, value, reason) => {
       setF1Overview(await updateF1VRankThreshold(rank, field, value, reason, ADMIN_OPERATOR()));

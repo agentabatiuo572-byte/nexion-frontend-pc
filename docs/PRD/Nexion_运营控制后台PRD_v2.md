@@ -1122,152 +1122,41 @@ F4 总览的 `voteWeights` 只列出有效等级的正整数票数。没有配�
 
 ---
 
-#### [F1] V-Rank 晋升管理
+#### [F1] 团队等级晋升
 
-**2026-11-05 条件与奖励审批（BUG-286）**：五项有效晋升条件放宽统一提交 A2，包括没有本级资金奖励的等级；资金奖励新增或价值增加须另一位有审批权的超管批准后生效。确认框展示真实前后值，待审时维持现行配置。收紧、等值、非资金编辑及移除沿用即时维护，历史已发奖励保留。USDT↔UVT 使用 B1 当时价格精确估值；原命令按账号、等级、动作持久恢复，原值和理由锁定。完整合同见 [F1 条件与奖励审批](F1-条件与奖励审批-20261105.md)。
+2026-11-15 按后端 `111e00cd`、App `44b55db8` 核对当前合同。路由 `/network/v-rank`，`network_f1_read` 控制读取；本节覆盖现有能力，不恢复旧稿从未实现的 V9–V12、奖励调序、批量派奖、领取或完整权益预览。
 
-本轮另确认局部移除恢复入口：仅原等级奖励区域存在本人未确认移除命令时显示“移除奖励结果待核对 · 核对原操作”。刷新后即使原奖励已被移除也可重开原框，奖励、理由和原请求编号锁定，只按原命令重试；不恢复已删除奖励，不新增审批或权限，不显示全页通用恢复栏。
+**页面与读取**：V0–V8 九级阶梯及所选一级详情；晋升记录、奖励发放记录、App 等级说明独立页签。总览、两套历史独立读取/报错，不轮询；说明页签打开时另读。总会员含 V0；本月晋升按增长与团队业务自然月计算升档日志人次，含人工升级，同人多次升档分别计数。历史每批 100 条，按 ID 倒序追加；晋升筛选用户/等级/批次/日期，发放筛选用户/等级/类型/状态。抽屉保留全部字段、快照、关联事件/审计/账单。筛选不写 URL。
 
-各级头衔提交只创建审批申请；确认框及成功提示统一写「批准后生效」，由另一位管理员批准前仍按原设置显示，申请进度到「操作记录与审批」核对（BUG-194、T02）。
+**五项晋升条件**：自购算力点、团队算力点、合格直接邀请人数、达标分支数及最低等级。正门槛才参与 AND；0 不要求；分支数正而最低等级未设置时不满足。直邀人数只计直接邀请的好友中自购达到 V1 门槛者，改 V1 会影响各级该人数。四项有效相邻门槛保序允许相等、跳过 0/未成对分支；直接邀请人数不做相邻保序。首次九级配置不做整组相邻保序。
 
-**当前权益边界**：V 级本人权益、晋升判定、等级奖励清单、培育奖和领导池票权保持原规则。平级奖能力位尚未开放，当前没有发奖程序，本轮不启用；保留参数不代表实际派奖。七层资格、层级覆盖与扩展网络可见性沿原规则；手动调级不自动补发历史未计奖励，不改变直属设备收益只给直接邀请人的范围。
+**17 个写入口与生效**：
 
-**① 目的 & 对齐**: 管理 13 阶 V 级头衔体系(V0–V12)的阶梯门槛、server 晋升判定、以及每个 V 级的**运营可配等级奖励清单**派发,是团队分润体系的「身份与解锁」中枢——V 级决定平级奖 / 领导池票数解锁、以及用户端网络深度可见性的渐进暴露。直属两类分成不按 V 级扩展层级。对齐前端 §8.2(V 级头衔体系 `/team/rank`)+ §13.2(V 级升级判定 server canonical)+ 12 月节奏表 §6.3(`ROYALTY_VISIBILITY_BY_VRANK` 可见性 gating)。服务的业务目标:用阶梯门槛与永久保留机制驱动持续团队业绩投入、用**可由运营自由编排的等级奖励清单**(USDT / NEX / 代金券 / 系统 SKU / 自定义项,每阶可多项,增删改走操作确认)强化晋升获得感、用可见性 gating 实现网络深度的渐进解锁(前期不暴露完整网络结构);为 B5 头部集中度监控供 V 级分布维度。**实物奖品 / 发货队列 / Claim 履约机制已下线**——奖励统一由结构化奖励清单表达,不再含需物流履约的实物条目。
+| 入口 | 权限/通道 | 生效与限制 |
+|---|---|---|
+| 五项门槛逐项维护（5） | `network_f1_write`；PATCH 或 A2 `f1_rank_policy_change` | 按引擎方向判断，放宽才审批；收紧/等值直存。分支数 0 时改最低级不算放宽；正分支但 NONE 时降数量仍不算放宽，设有效最低级才放宽。保存仅影响后续评估，无全量重算或历史补发。 |
+| 新增/编辑奖励（2） | 同权；POST/PUT 或同一专用审批 | usdt/uvt 金额为精确正小数字符串（12 位整数、6 位小数）；资金增加/改成资金/跨币按当时 B1 价格估值增加才审批。券、SKU 选当前可发/可履约候选，自定义非空。只改未来模板，历史快照不改。 |
+| 移除奖励（1） | 同权；DELETE 直存 | 不要求重选旧失效标的，不回收已发奖励，不删历史。 |
+| 开启/关闭保护（2） | `network_f1_permanent_protection`；A2 `f_ui_config` | `F.vrank.permanent`；on 保后续评估时的当前等级，off/缺值允许降到实际达到级。只改变后续评估，不扫描全体，不恢复历史最高级，人工 rollback 不受保护限制。 |
+| 奖品名/各级头衔（2） | `network_f1_write`；A2 `f_ui_config` | 只改显示/接口值，不晋升、不发奖。批准头衔覆盖 PC 等级名；App 当前只显示 Vn，无头衔与奖品名界面消费者。 |
+| 人工调级（1） | `network_f1_promote_user`；A2 `f_vrank_override` | 用户编号须正安全整数，目标/方向自己选；有 C1 读权时读取用户资料等级镜像，无结果保留未知，不能假定 V0。批准时重新核对真实等级及严格升/降方向；promote 只发目标级奖励，中间各级不补；rollback 不追回历史。 |
+| 重发/冲正（2） | `network_f1_reward_reissue` / `network_f1_reward_reverse`；A2 `f_reward_payout_action` | 重发只允许 REVERSED；冲正只允许 GRANTED/REISSUED/PENDING_GRANT。资金重发按原 sponsorUserId 决定收款人，资金冲正仅有关联事件时反向记账；SKU 恢复或取消履约/权益；券/custom 仅改发放单状态，不实际补发/收回。FAILED 无本页重试。 |
+| 首次九级配置（1） | `network_f1_write`；A2 `f_vrank_bootstrap` | 等级/奖励两表全空、mutex、一次 V0–V8、rewards=[]。标题/数字必填，V1–V8 至少一项正门槛，分支成对；不包含资金奖励。批准前仍显示空。 |
+| 保存/发布等级说明（1） | `network_f1_write`；PUT rank-policy 直接 CAS | 无额外发布权限/审批；1–10 个语言含 fil，每语言 1–100 段；理由 8–500，保存整体含保留公开版最大 1 MiB。DRAFT 保留公开快照，PUBLISHED 替换；version 可不变，revision 必须匹配。 |
 
-> **V3 / V4 头衔跨文档口径**:V3 / V4 头衔以前端 §8.2.1 为准——V3 = 「Captain 舰长」、V4 = 「Commander 指挥官」。12 月节奏表 §2.2「V 级阶梯渐进式深度解锁」表在 V3 行括号内使用 **Engineer**、V4-V5 行括号内使用 **Architect / Wing Leader** 作为辅助标记(非正式头衔),与 §8.2.1 的 Captain / Commander 不一致;后台配置面以前端 §8.2.1 为准,列入 V4 跨文档收口澄清。可见性 key 值逻辑不受头衔命名影响。
+8 个始终审批、7 个按方向审批、2 个直接入口；五门槛/奖励增改删 REST 和 A2 外层按命令去重，说明保存不去重。专用放宽/增资审批由另一位超级管理员且有 A2 批准权执行；普通八项按另一位管理员、A2 批准权、对应业务权和 maker/checker 分离处理。精确命令、目标、字段见 [F1 条件与奖励审批](F1-条件与奖励审批-20261105.md)。
 
-**② 后台界面**: V 级阶梯配置 + 晋升记录 + 等级奖励清单配置 + 奖励派发流水,四区。
+**待审批与直接保存**：来自可读 A2 队列与本人原票权威查询的 `f1_rank_policy_change` 在对应等级显示待审批。后端直存门槛/奖励不带版本、也不受该审批锁限制，PC 保持此行为；实际变更会让旧审批版本失配。等值保存未改变摘要时不一定失配。未获 A2 队列读权只能核到本人已保存的原申请，不能宣称覆盖其他人。
 
-- 「本月晋升」按 R-1 生效的增长与团队业务时区统计本自然月实际升档的记录人次，从月初（含）至下月月初（不含）。同一用户的多次升档分别计数，手动升档也计入。晋升记录流仍显示自身筛选后的总数。
-- 阶梯与「设置各级头衔」读取同一份已批准头衔。待审申请保留原值。尚未配置头衔时，阶梯沿用等级定义中的名称，配置框留空供首次填写。
+**结果未知**：发送前持久保存完整原请求、操作者、对象、理由、创建时间与原号，存不下不发送。R-F1 沿用专用存储，普通八项和 F2 使用同一 F 域底层实例；旧记录只有输入指纹时仅核查，不伪造 POST。结果未知冻结确认输入与理由；24h 内原请求原号重试，超时只读核对。第一次明确拒绝按 deterministic 分类弃号；保留下来的原命令重试只以 explicit-rejection 判定，认证/限流和幂等未决不当结论。查询不写；成功重放后重读当前配置及审批状态，历史回执不作当前有效值。审批只有权威查询 pending 才标待批，查失败撤销该观察、保留原记录。
 
-1. **13 阶阶梯表**:每阶一行 `[V 级 / 头衔 / 晋升条件(达标分支数 directRefs / 分支最低等级 vDownlines / selfBuyUSD / teamVolumeUSD 组合)/ 扩展版税覆盖度(unilevelDepth)/ 平级奖 % / 领导池票数 / 等级奖励清单(摘要:N 项)/ 可见性解锁档]`,支持编辑各阶门槛 / 奖励清单(经确认弹窗 + 理由必填,见 ④)。
-2. **晋升记录流**:`[userId / 晋升前 V → 晋升后 V / 触发时点 / 判定快照(各 check 完成度)/ 是否手动 / operator]`;支持按 V 级 / cohort / 时间筛选。手动晋升 / 回滚条目高亮并附审计号。
-3. **等级奖励清单配置**:每个 V 级一个**有序奖励清单**,清单内每项为一条结构化奖励 `[奖励类型(USDT / NEX / 代金券 / 系统 SKU / 自定义)/ 数量或标的 / 备注]`——`USDT` / `NEX` 填数额;`代金券`从现存 H7 代金券定义下拉选(`voucherId`);`系统 SKU`从现存上架 SKU 目录下拉选(`skuId`);`自定义`填运营自定义文案 + 可选金额(仅展示与记账标注,非物流履约)。支持一阶**多项**奖励、**增 / 删 / 改**单项与调序(均经确认弹窗 + 理由必填,见 ④)。清单为 V 级达成后的发放配方,server 在晋升判定通过时按配方逐项发放(可发放项即时入账,见 ⑦)。
-4. **奖励派发流水**:`[受奖 userId / 达成 V 级 / 奖励项(类型 + 标的 + 数量)/ 受奖上线 userId(培育类 NEX 发被培育者直接上线 L1 sponsor)/ 结算态 / 关联 D4 billId(资金类)]`;对齐 §8.2.5(培育类 NEX 即时入账无冷却,发被培育者直接上线、L2+ 不分);支持按 V 级 / 奖励类型 / cohort / 时间筛选,手动补发 / 撤销条目高亮并附审计号。
+**说明未知**：保存前完整保留原文档/revision/理由；刷新或重进编辑器恢复原内容并冻结。唯一恢复动作是 GET，按原版本/状态/全部语言内容和 revision+1 比对；不一致或读失败继续保留，绝不重发 PUT。读回匹配是当前内容确认，不是独立的命令回执。发布后 App 在下次成功读取时使用；缺回退语言或固定所需段落时可能不可用，不能将简化预览视作最终 App 排版保证。
 
-**③ 可控参数**:
+等级行的 `unilevelDepth` 是配置/公开展示值；当前团队购买奖励结算读 F2 全局比例、暂停和 depthGate，未读取本级该字段，不能将其单独宣称为实际可拿奖励层数。现成首次配置确认框仍标资金放大，会受共享前端覆盖率阻断；后端首次配置不带奖励且没有这项覆盖率检查，交协调人和视觉 worker 统一现成提示与阻断。
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| V_RANKS 各阶门槛(`selfBuyUSD` / **达标分支数** `directRefs` / `teamVolumeUSD` / **分支最低等级** `vDownlines`) | **现状**(§8.2.1):V1 `selfBuyUSD≥$299` AND **达标分支数 ≥3**(`directRefs`)· V2 `teamVolumeUSD≥$5K`(仅团队业绩)· V3 `teamVolumeUSD≥$20K` AND **2 条分支 · 每条 ≥V1**(`vDownlines {1:2}`)· V4 `teamVolumeUSD≥$50K` AND **3 条分支 · 每条 ≥V2**(`vDownlines {2:3}`)… V12 `$500M`(各阶为 **AND 复合**条件) | 各阶门槛 ≥ 0;须保序(Vn 门槛 ≥ Vn-1) | 仅新判定(改后对下一次 server re-check 生效,不回溯已晋升者——§8.2.4 不降级) | `/team/rank` 晋升判定 + 进度条 + Missing 清单(§13.2 server canonical) |
-| 等级奖励清单(`rewards[V]` — 有序数组,每项 `{ type, amount?, voucherId?, skuId?, label? }`) | **现状**(§8.2.5 培育奖迁入此清单):各阶清单默认含一条 `type:"NEX"`(培育奖 NEX)——V1 500 / V2 2,000 / V3 10,000 / V4 50,000 / V5 200,000 / V6 800,000 / V7 3,200,000 / V8 10,000,000 / V9+ 空清单(高阶默认不发);运营可向任一阶清单增删 `USDT` / `NEX` / `代金券`(`voucherId`)/ `系统 SKU`(`skuId`)/ `自定义`(`label`)项 | `type ∈ {USDT, NEX, voucher, sku, custom}`;`USDT`/`NEX` amount ≥ 0;`voucher` 须为现存 H7 代金券 id;`sku` 须为现存上架 SKU id;清单可为空 | 实时(改后下一次达成该 V 级按新清单发放,不回溯已晋升者) | `/team/rank` 等级权益展示 + `/team/commissions`(NEX 培育类即时入 `nexBalance`)+ 代金券 / SKU 入用户对应账户(见 ⑦) |
-| 平级奖 `peerBonus[V]` | **现状**(§8.2.1):V0–V2 = 0 / V3+ = 5% | 0–100% | 仅新结算周期(peer 每月结,§8.6) | `/team/commissions`(peer 类,V3+ 解锁,同 V 级团员业绩 5%) |
-| V 级可见性 gating(`ROYALTY_VISIBILITY_BY_VRANK`) | **12 月 §6.3 权威**(全量数组):V0-1=`[direct]` / V2=`[direct,indirect]` / V3=`[direct,indirect,network_pool]` / V4=`[direct,indirect,network_pool,cultivation]` / V5=`[direct,indirect,network_pool,cultivation]` / V6+=`[direct,indirect,network_pool,cultivation,founders_tier]`(**V4 与 V5 为独立键,值相同但不可合并**) | 枚举映射(direct / indirect / network_pool / cultivation / founders_tier) | 实时(用户 V 级变更即解锁对应可见性) | `/team` 主页 + `/team/unilevel` 详情:按 V 级渐进暴露网络深度卡片(§8.3.2 / 12 月 §2.2) |
-| 不降级永久保留(`vRankPermanent`) | **现状**(§8.2.4):true(V 级一旦达成永久保留,唯一例外账户注销清零) | true / false | 实时 | `/team/rank` 维持期规则(无月度维护 / 无激活窗口) |
+**显示与交付边界**：金额写币种，保留完整小数；历史 amount 在 JSON 数字解析前保留原十进制文本，不用 JS number 作为核对金额。缺保护按关闭执行；缺覆盖率不当 0。保护不保证永不降级；票权不保证随等级递增；人口不保证高等级更少。重发/冲正以类型分支为准。App 同级奖能力未开放，比例只是配置。
 
-> **默认值口径**:V 级门槛 / 等级奖励清单(含培育奖 NEX)/ 平级奖为 12 月节奏表未覆盖的业务常量,以前端 §8.2.1 / §8.2.5 现状为参考;**V 级可见性 gating 以 12 月 §6.3 `ROYALTY_VISIBILITY_BY_VRANK` 为权威**(渐进解锁是 12 月节奏「前期不暴露完整网络结构」的直接落地,§2.2)。可见性参数表已按全量数组列出每一 V 级(含 V4 / V5 两条独立键),开发不得用「+cultivation」差量写法合并 V4 / V5。逐阶晋升不可越级(§8.2.2:即使一次满足 V5 条件也只先升下一阶),奖励清单按每次跨阶达成分别按该阶配方触发发放。
->
-> **晋升门槛术语对运营的易懂表达(运营面文案约定)**:`directRefs` 在运营界面称「**达标分支数**」(需要多少条达标的直推团队分支)、`vDownlines` 枚举称「**分支最低等级**」(每条分支至少达到的 V 级,展示如「2 条分支 · 每条 ≥V1」)。技术字段名(`directRefs` / `vDownlines`)在接口与数据模型层保留不变(见 ⑤),仅运营界面的列标题 / 弹窗 label / 进度提示采用易懂表达;开发不据此改字段名。
->
-> **V_RANKS 条件为 AND 复合,各阶字段组合不一**:每阶晋升条件为「AND 复合」(全部子条件同时满足才晋升),**且各阶要求的字段组合不同**——V1 同时要求 `selfBuyUSD` AND `directRefs`;V2 仅要求 `teamVolumeUSD`(无 `selfBuyUSD` 字段);V3+ 要求 `teamVolumeUSD` AND `vDownlines`(同样无 `selfBuyUSD`)。开发不得假设所有阶都有 `selfBuyUSD` 字段,须按阶读取实际存在的子条件做 server 判定。
->
-> **`vDownlines` 字段语义为枚举结构,不得字面比较 V 级编号**:`vDownlines` 字段语义为枚举结构 `{ targetV: count }`(参 §8.2.2),V3 表达式为 `{1: 2}`,即「≥2 个直推中 V≥1(含更高 V 级也算)」,而非字面比较 V 级编号或要求恰好 V1。同理 V4 `{2: 3}` = ≥3 个 V≥2 直推。开发须按枚举语义实现,不得实现为 `directV == n` 之类的字面数值比较。
-
-**④ 操作动作**:
-
-| 动作 | 执行权 | 确认弹窗 | 审计点(A2) |
-|---|---|---|---|
-| 手动晋升 / 回滚用户 V 级 | 增长运营(lead)/ 超管 | F1-MD1(理由必填)(直接改 V 级 = 影响版税覆盖 / 平级奖 / 票数 / 可见性,高敏) | `admin.vrank_overridden`(userId / before-V / after-V / direction(promote\|rollback) / operator / reason) |
-| 编辑 V 级门槛 / 等级奖励清单(增删改奖励项)/ 可见性映射 | 增长运营(lead)/ 超管 | F1-MD2(理由必填;**奖励清单新增 / 调升资金类(USDT / NEX)项方向 + B1 红线预检**)(改门槛影响全站晋升节奏;增 / 调升资金奖励放大资金流出) | `admin.vrank_config_changed`(field / before / after / operator / reason) |
-| 手动补发 / 撤销单条奖励派发 | 财务(lead)/ 超管 | F1-MD4(理由必填;**资金类(USDT / NEX)补发方向 + B1 红线预检**)(资金类奖励变更,联动 D4 bill 与 C3 资产调整;代金券 / SKU 项补发为发账户权益,无 B1) | `admin.commission_reversed` / `admin.commission_reissued`(资金类,kind=cultivation 等,见 F5⑧)/ `admin.vrank_reward_granted`(代金券 / SKU 项) |
-
-> **手动调 V 级为高敏确认动作的依据(2026-06 操作确认决议)**:V 级直接决定平级奖 / 领导池票数解锁与网络深度可见性,手动 promote 可绕过 server 判定放大下游分润、rollback 可剥夺已得权益,风险等级与 C3 余额调整对称,故执行权就高(增长运营 lead / 超管,原超管复核层级转为执行门槛)+ 业务专属确认弹窗 + 理由必填(server 强制非空 400 `REASON_REQUIRED`)+ 即时生效 + 实时告警超管 / 增长 lead。**server 判定为常态**(§13.2:所有晋升由 server 二次判定,client preview 仅 UI 提示,client 显 100% 仍可能被 server reject),手动覆盖仅用于纠错 / 申诉处置,不替代 server 判定。等级奖励清单编辑与单条奖励补发 / 撤销执行权以 F1⑥ 权限矩阵为准。**新增 / 调升资金类(USDT / NEX)奖励项与补发资金类奖励为放大资金流出方向,确认弹窗前置 B1 覆盖率红线核验(低于红线 422 `COVERAGE_BELOW_REDLINE`);代金券 / SKU / 自定义项及调降 / 删除 / 撤销 / 收紧方向不前置**。
-
-**④a 交互与弹窗规格**
-
-**(1) 动作触发总表**
-
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 手动晋升 / 回滚 V 级 | ②第 2 区晋升记录流用户行「手动调级」 | 菜单项(警示色) | 仅增长运营 lead / 超管渲染 | 打开弹窗 F1-MD1 |
-| 编辑阶梯配置(含奖励清单增删改) | ②第 1 区 13 阶阶梯表行尾「编辑该阶」/ ②第 3 区奖励清单「添加奖励项 / 编辑 / 删除 / 调序」 | 行内按钮 + 清单内逐项控件 | 仅增长运营 lead / 超管渲染 | 打开弹窗 F1-MD2 |
-| 补发 / 撤销单条奖励派发 | ②第 4 区奖励派发流水行「补发 / 撤销」 | 菜单项(警示色) | 仅财务 lead / 超管渲染;已撤销条目「撤销」置灰 | 打开弹窗 F1-MD4 |
-| 晋升记录筛选(V 级 / cohort / 时间) | ②第 2 区筛选器 | 就地筛选 | 恒可用 | 就地筛选,无弹窗 |
-
-**(2) 弹窗规格(逐弹窗)**
-
-##### [F1-MD1] 手动晋升 / 回滚 V 级确认
-- **功能**:对单用户手动 promote / rollback V 级(纠错 / 申诉处置),确认即生效,server 原子置 V 级并联动版税覆盖 / 票数 / 可见性。
-- **布局结构**:1. **信息区**:userId / 当前 V 级 + 头衔 / server 判定快照(各 check 完成度)/ K1 簇命中标记(如有,标红)。2. **影响预览区(必有)**:before→after V 级并排展示 + **联动变化清单**(unilevelDepth 覆盖度 / 平级奖 % / 领导池票数 / 可见性解锁档 before→after,server 预检下发);promote 方向警示条「绕过 server 判定放大下游分润」、rollback 方向警示条「剥夺已得权益,§8.2.4 不降级原则的人工例外,须申诉依据」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 V 级 | 下拉单选(V0–V12) | 是 | 不得与当前 V 级相同;逐阶语义提示(跨多阶时警示) | 当前 V 级 |
-| direction | 自动派生(promote / rollback,按目标与当前比较) | — | server 复核一致性 | — |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调整 V 级]`(警示色主按钮;未变更 / reason 未达标时置灰;loading 防双击;请求携 `Idempotency-Key`)。
-- **错误态**:400 `REASON_REQUIRED` / 409(V 级已被他人变更或 server re-check 已自动晋升,提示刷新判定快照)/ 403。
-- **成功反馈**:弹窗关闭;晋升记录流新增高亮条目(手动标记 + 审计号);toast「V 级已调整 · 联动权益已原子生效 · 已记审计」;事件 `admin.vrank_overridden` 落 A2;实时告警超管 / 增长运营 lead。
-
-##### [F1-MD2] 编辑 V 级阶梯配置确认
-- **功能**:更新单阶(或多阶)门槛 / **等级奖励清单(增 / 删 / 改 / 调序奖励项)** / 平级奖 / 可见性映射,确认即生效;门槛与奖励清单改动仅作用于下一次 server re-check / 达成,不回溯已晋升者。
-- **布局结构**:1. **信息区**:目标阶 V 级 + 头衔 / 各字段当前值(conditions / 当前奖励清单 N 项逐项 / peerBonus / visibility)。2. **影响预览区(必有)**:before→after 逐字段 diff + **奖励清单 diff**(新增 / 删除 / 修改的奖励项逐条列出);**奖励清单新增或调升资金类(USDT / NEX)项、或调升平级奖方向时 B1 红线核验结果回显**(server 预检执行后覆盖率,**低于红线时红线警示条渲染 + 确认钮置灰**,文案含「server 将拒绝(422 `COVERAGE_BELOW_REDLINE`)」);门槛保序校验回显(Vn ≥ Vn-1,违反阻断);`代金券` / `SKU` 项的标的有效性回显(选中的 voucherId / skuId 须为现存可用项,失效时内联警示);提示行「改门槛 / 奖励清单不回溯已晋升者(§8.2.4 不降级)」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 各阶门槛(selfBuyUSD / **达标分支数** directRefs / teamVolumeUSD / **分支最低等级** vDownlines) | 数字输入 / 分支结构编辑器(`{分支最低等级: 数量}`,即 `{targetV: count}`) | 否(至少改一项) | ≥ 0;保序 Vn ≥ Vn-1(③,server 400);字段缺失语义按 ⑤(absent key ≠ 0) | 当前值 |
-| 等级奖励清单(逐项) | **清单编辑器**:每项 = 奖励类型下拉(USDT / NEX / 代金券 / 系统 SKU / 自定义)+ 类型相关副控件(USDT/NEX→数额输入;代金券→现存 H7 代金券下拉;系统 SKU→现存上架 SKU 下拉;自定义→文案输入 + 可选金额);支持「添加奖励项 / 删除项 / 调序」 | 否(至少改一项) | type 枚举内;USDT/NEX amount ≥ 0;voucher/sku 须为现存可用 id(③,server 复核);新增 / 调升资金类项触发 B1 预检 | 当前清单 |
-| peerBonus(%) | 数字输入 | 否(至少改一项) | 0–100%(③);调升触发 B1 预检 | 当前值 |
-| visibility 映射 | 多选枚举(direct / indirect / network_pool / cultivation / founders_tier) | 否(至少改一项) | 枚举内;V4 / V5 独立键不可合并(③ 注) | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认更新阶梯]`(主按钮;均未变更 / 保序违反 / 标的失效 / B1 阻断 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(保序违反 / voucherId / skuId 失效 / 枚举非法,server 回传违规字段,弹窗不关内联警示)/ 422 `COVERAGE_BELOW_REDLINE`(新增 / 调升资金类项方向 B1 阻断,回传当前覆盖率)/ 400 `REASON_REQUIRED` / 409(提示刷新当前值)/ 403。
-- **成功反馈**:弹窗关闭;阶梯表行与奖励清单就地更新;toast「阶梯配置已更新 · 仅新达成生效 · 已记审计」;事件 `admin.vrank_config_changed` 落 A2;实时告警超管 / 增长运营 lead。
-
-##### [F1-MD4] 补发 / 撤销单条奖励派发确认
-- **功能**:对单条奖励派发流水手动补发或撤销(纠错处置),确认即生效;资金类(USDT / NEX)联动 D4 bill 与 C3 资产调整(复用 F5 撤销 / 补发原语),代金券 / SKU 类联动用户对应账户权益的发放 / 收回。
-- **布局结构**:1. **信息区**:受奖 userId / 达成 V 级 / 奖励项(类型 + 标的 + 数量)/ 受奖上线 userId(培育类)/ 结算态 / 关联 D4 billId(资金类)。2. **影响预览区(必有)**:补发方向——**补发标的与联动预览**(资金类→D4 bill / C3 资产联动 + **B1 红线核验结果回显**,低于红线时红线警示条 + 确认钮置灰,422 文案;代金券 / SKU 类→发账户权益预览,无 B1);撤销方向——「撤销已发放奖励,资金类联动 C3 核减 + D4 冲正 / 权益类收回对应账户权益」警示条(无 B1 预检)。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 操作方向 | 单选(补发 / 撤销) | 是 | 撤销仅对已结算条目;补发仅对漏发 / 已撤销待纠错条目(server 复核) | 按入口预选 |
-| 目标数额 / 标的 | 数字输入(资金类)/ 标的只读回显(代金券 / SKU 类) | 补发时必填 | 资金类 > 0 且 ≤ 该阶清单对应奖励项配置值(③,server 复核);权益类按原标的 | 原值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认补发]` / `[确认撤销]`(警示色主按钮,按方向取文案;B1 阻断(资金类补发)/ reason 未达标时置灰;loading 防双击;请求携 `Idempotency-Key`)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(资金类补发方向 B1 阻断)/ 400(额度越界 / 标的失效)/ 400 `REASON_REQUIRED` / 409(条目已被处理,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;流水行结算态就地更新;toast「奖励已补发 / 已撤销 · 账户已原子联动 · 已记审计」;事件 `admin.commission_reissued` / `admin.commission_reversed`(资金类)或 `admin.vrank_reward_granted`(权益类)落 A2;实时告警超管 / 财务 lead。
-
-**⑤ 接口**:
-- `GET /api/admin/config/v-ranks` — 返回 13 阶完整配置 `{ ranks: [{ v, title, conditions:{selfBuyUSD?, directRefs?, teamVolumeUSD?, vDownlines?}, unilevelDepth, peerBonus, leadershipVotes, rewards:[{ type, amount?, voucherId?, skuId?, label? }], visibility:[...] }], permanent }`,**server-canonical**。`conditions` 字段语义:**字段缺失(absent key)= 该维度不作为此阶晋升条件;字段存在且 value>0 = AND 子条件**。V2+ 条件对象**不含 `selfBuyUSD` key**(而非 `value=0`);`vDownlines` 为枚举结构 `{ targetV: count }`(运营面称「分支最低等级: 数量」,见 ③ 注)。`rewards` 为有序数组,每项 `type ∈ {USDT, NEX, voucher, sku, custom}`(培育奖 NEX = `type:"NEX"` 项)。client preview 与 server re-check 须按此语义解读,不得把「key 缺失」当作「value=0 满足」。
-- `PUT /api/admin/config/v-ranks` — 更新阶梯配置(门槛 / **奖励清单 rewards** / 平级奖 / 可见性);经确认弹窗提交(F1-MD2,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效;**新增 / 调升资金类(USDT / NEX)奖励项或调升平级奖方向前置 B1 红线预检(低于红线返回 422 `COVERAGE_BELOW_REDLINE`)**;`voucher` / `sku` 项的 `voucherId` / `skuId` 须为现存可用项(失效返回 `400`)。门槛须保序(接口侧校验 Vn ≥ Vn-1,违反返回 `400`)。
-- `POST /api/admin/users/:userId/vrank/override` — 手动晋升 / 回滚单用户 V 级;payload `{ targetV, direction, reason }`(经确认弹窗 F1-MD1,reason server 校验非空 400 `REASON_REQUIRED`);**`Idempotency-Key` 必带**(V 级写入为状态变更,防重复触发);确认即时生效,server 原子置 V 级并联动版税覆盖 / 票数 / 可见性。
-- `GET /api/admin/team/reward-payouts` — 奖励派发流水;query `?type=&v=&cursor=`;返回 `[{ id, userId, v, reward:{ type, amount?, voucherId?, skuId?, label? }, sponsorUserId?, status, billId?, grantedAt }]`(`sponsorUserId` 仅培育类 NEX 有值)。
-- `POST /api/admin/team/reward-payouts/:id/{reissue|reverse}` — 手动补发 / 撤销单条奖励派发;经确认弹窗 F1-MD4(body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效;**资金类(USDT / NEX)补发前置 B1 红线预检(低于红线 422 `COVERAGE_BELOW_REDLINE`)**;**`Idempotency-Key` 必带**;资金类联动 D4 bill + C3 资产调整,代金券 / SKU 类联动用户账户权益发放 / 收回。
-- **server-side 判定与发放(非 admin)**:V 级晋升由 server 在 §8.2.3 被动评估触发点(自买 / 团队订单 paid / 直推注册 + KYC / 下家晋升)re-check;晋升通过时 server 按该阶 `rewards` 清单逐项发放(资金类入账户余额 / 落 D4 bill,代金券 / SKU 入对应账户)。F1 后台为判定提供门槛配置、奖励清单配置与派发记录观测,**不在 client 做判定**(§13.2)。
-
-**⑥ 权限 & 审计**:
-
-| 动作 \ 角色 | 超管 | 财务 | 增长 | 客服 | 只读审计 |
-|---|---|---|---|---|---|
-| 查看阶梯 / 晋升记录 / 奖励清单 / 派发流水 | ✅ | ✅(只读) | ✅ | ✅(只读) | ✅(只读) |
-| 编辑门槛 / 奖励清单 / 可见性 | ✅ | — | ✅(lead) | — | — |
-| 手动晋升 / 回滚 V 级 | ✅ | — | ✅(lead) | — | — |
-| 补发 / 撤销单条奖励派发 | ✅ | ✅(lead) | — | — | — |
-
-> 注:「✅(lead)」指对应角色的 lead 层级(增长 lead = 增长角色中经超管授权的高级别人员,见 F4b⑥ 角色对齐说明),member 不可执行(2026-06 操作确认决议:原复核层级转为执行门槛);F1④ 操作表与本矩阵以此矩阵为准,不引入 V1 §1.1 RBAC 未定义的独立「增长主管」角色行(增长 lead 为增长角色的授权粒度,非独立角色)。审计字段引用 A2 统一 schema:`userId / action(vrank_override\|config_change\|reward_reissue\|reward_reverse) / field / before / after / operator / reason / ts`。
-
-**⑦ 风控 & 联动**:
-- **V 级 server 判定(防伪造)**:V 级晋升 100% server-canonical(§13.2),client `nextRankProgress` / `nextRankGap`(`lib/v3/v-rank.ts`)仅 UI preview;**client 显 100% 时 server 仍可能 reject(anti-abuse / race / fraud check)是产品契约而非 bug**。F1 配置面改门槛不回溯已晋升者(§8.2.4 不降级),仅作用于下一次 server re-check。
-- **奖励异常高频检测(联动 K)**:奖励清单中的资金类项(尤其培育类 NEX)按下属跨阶晋升触发即时入账,**异常高频晋升簇(同实体多账户互相培育套取奖励)须联动 K**——晋升记录中关联 K1 簇命中(`risk.multi_account_flagged`)的 userId 标红,疑似「养号互升刷奖励」喂 K4 评分(套利维度)+ B5 风险雷达;F1 不重算评分,引用 K4(§3.14)。
-- **资金类奖励发放 = 应付负债流出,落 D4 bill**:奖励清单中 USDT / NEX 项发放即在 D4 落 commission bill(培育类 kind=cultivation,§3.14:D4 唯一记账源),手动补发 / 撤销联动 C3 资产调整 + D4 记账;**新增 / 调升资金类奖励项**前须核验 B1 覆盖率约束(§1.8 原则一)。代金券 / SKU / 自定义项为账户权益 / 标注类发放,不入 D4 应付负债账本(代金券为促销折扣不计负债,见 H7;SKU 为标的发放)。
-- **代金券 / SKU 奖励项标的有效性**:奖励清单引用的 `voucherId` 须为现存 H7 代金券定义、`skuId` 须为现存上架 SKU(E 域 SKU 目录),F1 配置面下拉只列现存可用项、不另建;标的下线 / 失效时配置面内联警示并阻断保存(⑤ 400)。
-
-**⑧ 埋点(事件)**:
-对齐 A4(§2.4.5③ money / ⑥ admin family):
-- **产生(资金记账,§2.4.5③)**:`commission.paid` — 触发点:奖励清单中资金类项派发(培育类 NEX 按下属跨阶晋升,USDT / NEX 项按 V 级达成);属性 `userId(受奖人 / 培育类为受奖上线)/ kind(cultivation 等)/ currency: "USDT" | "NEX" / amount / sourceUserId?(培育类被培育者)/ targetV / is_server_authoritative: true / ts`;落 D4 commission bill + 喂 B1/B2 应付负债(NEX 锁仓 / 可提负债科目)。**`commission.paid` 已在 V1 §2.4.5③ 登记,本章依赖其 `kind` 维度扩展(`kind` 枚举须 A4 注册,见 F5⑧)。**
-- **产生(admin 审计,须 A4 schema registry 注册)**:
-  - `admin.vrank_overridden` — 触发点:手动晋升 / 回滚 V 级确认执行(F1-MD1);属性 `userId / before_v / after_v / direction / operator / reason / ts`;喂 A2 + C1 用户画像(V 级变更)+ B5。
-  - `admin.vrank_reward_granted` — 触发点:代金券 / SKU 类奖励项发放(V 级达成自动发 或 F1-MD4 手动补发);属性 `userId / v / reward_type(voucher\|sku\|custom)/ voucher_id? / sku_id? / label? / operator?(手动补发时)/ ts`;喂 A2 + C1 用户画像(权益发放)。
-  - `admin.vrank_config_changed` — 触发点:阶梯门槛 / 奖励清单 / 可见性映射确认执行(F1-MD2);属性 `field / before / after / operator / reason / ts`;喂 A2 + B4(影响晋升节奏)。
-- **消费(晋升相关)**:`commission.paid`(kind=network/binary 等,判定 `teamVolumeUSD` 的订单事实由 §8.2.3 触发 re-check)、`checkout.completed`(自买 / 下游订单 → 重算 `selfBuyUSD` / `teamVolumeUSD`)、`auth.register_completed`(直推注册 → 重算 `directRefs`);F1 消费这些事实做 server 晋升 re-check 的输入,不作为其权威产生方。
-- **喂给**:C1 用户画像(V 级 + 风险分档不重算)、B5 风险雷达(V 级分布 / 头部集中度)、KPI 体系(V 级 cohort 维度)。
+逻辑接入未改既定排版或重写界面文字。R-A2 原操作列表、总览失败时的全局恢复入口、过期提案确认解除等未提供视觉位置；恢复数据和 query/retry/release 接口已提供，交视觉 worker 补现有设计。无通用直接写人工解除能力；跨账号恢复 BUG-308 本轮不扩展。浏览器拦截验证按域末项统一执行，本节不声称已验真实写入。
 
 ---
 

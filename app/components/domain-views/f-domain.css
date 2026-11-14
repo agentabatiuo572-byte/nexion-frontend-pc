@@ -9,10 +9,6 @@
 .fdom .pane-h .ph-ttl { font-size: 14.5px; font-weight: 600; white-space: nowrap; }
 .fdom .pane-h .ph-sub { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 .fdom .pane-h .ph-r { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-.fdom .rail { display: flex; flex-direction: column; gap: 14px; }
-.fdom .rail-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 16px 18px; }
-.fdom .rail-card .rc-h { font-size: 13.5px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-.fdom .rail-card .rc-h .tag { font-family: var(--mono); font-size: 10px; color: var(--ink-4); border: 1px solid var(--border); padding: 1px 6px; border-radius: 5px; margin-left: auto; }
 
 /* ===== F-stats(per-tab 着色 stat strip)===== */
 .fdom .f-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
@@ -21,99 +17,6 @@
 .fdom .f-stat .k { font-size: 11.5px; color: var(--ink-3); }
 .fdom .f-stat .v { font-size: 22px; font-weight: 600; color: var(--ink); margin-top: 4px; font-variant-numeric: tabular-nums; }
 .fdom .f-stat .sub { font-size: 11px; color: var(--ink-4); margin-top: 3px; }
-
-/* ===== F1 · V-Rank 阶梯 ===== */
-.fdom .f1-layout-shell { container: f1-layout / inline-size; }
-.fdom .f1-main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
-@media (max-width: 1100px) { .fdom .f1-main { grid-template-columns: 1fr; } }
-@container f1-layout (max-width: 1180px) {
-  .fdom .f1-main { grid-template-columns: minmax(0, 1fr); }
-}
-.fdom .ladder { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); overflow: hidden; }
-.fdom .ladder-h { padding: 16px 20px 12px; display: flex; align-items: center; gap: 10px; }
-.fdom .ladder-h .ph-ttl { font-size: 14.5px; font-weight: 600; white-space: nowrap; }
-.fdom .ladder-h .ph-sub { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
-.fdom .ladder-h .ph-r { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-/* lact 固定 248px(容纳 3 个门槛按钮),避免每行独立 grid 的 auto 列因按钮数(0-3)不同而挤动前面各列 → 跨行列对齐 */
-.fdom .lrow { display: grid; grid-template-columns: 64px 1.3fr 1.7fr 200px 248px; align-items: center; gap: 16px; padding: 13px 20px; border-top: 1px solid var(--border); }
-/* 防 grid item 默认 min-width:auto 让宽奖励 chip 撑爆 1.7fr 轨道、挤动后面各列;chip 超宽时 .rwd-list flex-wrap 换行 */
-.fdom .lrow > * { min-width: 0; }
-@media (hover: hover) and (pointer: fine) { .fdom .lrow:hover { background: var(--surface-2); } }
-.fdom .lrow.empty { opacity: .58; }
-.fdom .lrow.last { border-bottom: 1px solid var(--border); }
-.fdom .vbadge { width: 48px; height: 48px; border-radius: 12px; display: grid; place-items: center; font-family: var(--mono); font-size: 18px; font-weight: 600; letter-spacing: -.02em; }
-.fdom .v-0  { background: var(--surface-3); color: var(--ink-4); }
-.fdom .v-1  { background: rgba(155,137,224,.10); color: #B6A4FF; }
-.fdom .v-2  { background: rgba(155,137,224,.16); color: #B6A4FF; }
-.fdom .v-3  { background: rgba(158,220,29,.10); color: var(--brand); }
-.fdom .v-4  { background: rgba(158,220,29,.18); color: var(--brand); }
-.fdom .v-5  { background: rgba(158,220,29,.26); color: #C8F048; }
-.fdom .v-6  { background: rgba(255,190,61,.14); color: var(--warning); }
-.fdom .v-7  { background: rgba(255,190,61,.22); color: var(--warning); }
-.fdom .v-8  { background: rgba(255,107,53,.16); color: var(--brand-2); }
-.fdom .v-9  { background: rgba(255,107,53,.24); color: var(--brand-2); }
-.fdom .v-10 { background: linear-gradient(135deg,var(--brand-2),#E0501E); color: #fff; }
-.fdom .v-11 { background: linear-gradient(135deg,var(--brand-2),#FF8855); color: #fff; box-shadow: 0 0 18px rgba(255,107,53,.32); }
-.fdom .v-12 { background: linear-gradient(135deg,#FFD060,var(--brand-2)); color: #2A1505; box-shadow: 0 0 24px rgba(255,190,61,.4); }
-.fdom .lcell .l1 { font-size: 13px; color: var(--ink-2); line-height: 1.45; }
-.fdom .lcell .l2 { font-family: var(--mono); font-size: 11px; color: var(--ink-4); margin-top: 2px; }
-/* ── F1 等级奖励清单(运营可配:USDT / NEX / 代金券 / SKU / 自定义)── */
-.fdom .rwd-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-/* min-height 抬高命中区(admin 密集态下尽量贴近 tap 目标);chip 整体 soft tint = rest 态可点 affordance */
-.fdom .rwd-chip { display: inline-flex; align-items: stretch; min-height: 34px; border-radius: 7px; overflow: hidden; background: var(--surface-3); }
-.fdom .rwd-chip .rwd-edit { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; padding: 0 11px; color: var(--ink-2); background: transparent; border: 0; cursor: pointer; font-family: var(--mono); }
-@media (hover: hover) and (pointer: fine) { .fdom .rwd-chip .rwd-edit:hover { color: var(--ink); } }
-.fdom .rwd-chip .rwd-del { display: inline-flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1; min-width: 30px; padding: 0 8px; color: var(--ink-3); background: transparent; border: 0; border-left: 1px solid var(--border); cursor: pointer; }
-@media (hover: hover) and (pointer: fine) { .fdom .rwd-chip .rwd-del:hover { color: var(--danger); background: var(--danger-soft); } }
-/* 类型语义 tint(soft bg,无描边;文字用内容色)*/
-.fdom .rwd-chip.rw-usdt { background: var(--success-soft); } .fdom .rwd-chip.rw-usdt .rwd-edit { color: var(--success); }
-.fdom .rwd-chip.rw-nex { background: var(--brand-soft); } .fdom .rwd-chip.rw-nex .rwd-edit { color: var(--brand); }
-.fdom .rwd-chip.rw-voucher { background: var(--cyan-soft); } .fdom .rwd-chip.rw-voucher .rwd-edit { color: var(--cyan); }
-.fdom .rwd-chip.rw-sku { background: var(--warning-soft); } .fdom .rwd-chip.rw-sku .rwd-edit { color: var(--warning); }
-.fdom .rwd-chip.rw-custom { background: var(--surface-3); } .fdom .rwd-chip.rw-custom .rwd-edit { color: var(--ink-2); font-family: var(--font-v5); }
-.fdom .rwd-add { font-size: 12px; font-weight: 500; padding: 5px 12px; min-height: 34px; border-radius: 7px; color: var(--ink-3); background: transparent; border: 1px dashed var(--border); cursor: pointer; }
-@media (hover: hover) and (pointer: fine) { .fdom .rwd-add:hover { color: var(--brand); border-color: var(--brand-border); background: var(--brand-soft); } }
-.fdom .pop { display: flex; align-items: center; gap: 10px; }
-.fdom .pop .bar { flex: 1; height: 8px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
-.fdom .pop .bar .f { height: 100%; border-radius: 999px; }
-.fdom .pop .ct { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink-2); min-width: 60px; text-align: right; font-variant-numeric: tabular-nums; }
-.fdom .lact { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
-
-/* 窄内容区把每阶改成三行信息卡，避免固定动作列把名称、奖励挤成逐字竖排。 */
-@container f1-layout (max-width: 860px) {
-  .fdom .lrow {
-    grid-template-columns: 56px minmax(0, 1fr) 160px;
-    gap: 10px 14px;
-    align-items: start;
-  }
-  .fdom .lrow .vbadge { grid-column: 1; grid-row: 1; }
-  .fdom .lrow .lcell { grid-column: 2 / -1; grid-row: 1; align-self: center; }
-  .fdom .lrow .rwd-list { grid-column: 2 / -1; grid-row: 2; }
-  .fdom .lrow .pop { grid-column: 2; grid-row: 3; align-self: center; }
-  .fdom .lrow .lact { grid-column: 3; grid-row: 3; }
-}
-
-@container f1-layout (max-width: 620px) {
-  .fdom .lrow { grid-template-columns: 48px minmax(0, 1fr); }
-  .fdom .lrow .vbadge { grid-column: 1; grid-row: 1; }
-  .fdom .lrow .lcell { grid-column: 2; grid-row: 1; }
-  .fdom .lrow .rwd-list { grid-column: 2; grid-row: 2; }
-  .fdom .lrow .pop { grid-column: 2; grid-row: 3; }
-  .fdom .lrow .lact { grid-column: 2; grid-row: 4; justify-content: flex-start; }
-}
-.fdom .pyr { display: flex; flex-direction: column; gap: 4px; padding: 4px 0 6px; }
-.fdom .pyr-row { display: grid; grid-template-columns: 32px 1fr 56px; align-items: center; gap: 8px; font-size: 11.5px; }
-.fdom .pyr-row .lbl { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); }
-.fdom .pyr-row .b { height: 13px; background: linear-gradient(90deg,var(--cyan) 0%,var(--brand) 100%); border-radius: 3px; box-shadow: 0 0 8px rgba(155,137,224,.18); min-width: 2px; }
-.fdom .pyr-row .b.top { background: linear-gradient(90deg,var(--warning),var(--brand-2)); box-shadow: 0 0 8px rgba(255,107,53,.30); }
-.fdom .pyr-row .ct { font-family: var(--mono); font-size: 11px; color: var(--ink-2); text-align: right; }
-.fdom .gov-groups { display: flex; flex-direction: column; gap: 12px; }
-.fdom .gov-grp-h { font-size: 11px; font-weight: 600; color: var(--ink-2); text-transform: none; letter-spacing: .01em; margin-bottom: 5px; }
-.fdom .gov-list { display: flex; flex-direction: column; gap: 6px; font-size: 11.5px; color: var(--ink-3); line-height: 1.55; }
-.fdom .gov-list b { color: var(--ink-2); font-weight: 600; }
-/* 用 block + 绝对定位项目符号,让行内 <b> 与文字正常流动换行(不被 flex 拆成独立项) */
-.fdom .gov-list .it { position: relative; padding-left: 14px; }
-.fdom .gov-list .it::before { content: '·'; position: absolute; left: 1px; top: 0; color: var(--cyan); font-weight: 700; font-size: 15px; line-height: 1.55; }
 
 /* ===== F2 · 网络版税 cascade + tier + 参数卡 ===== */
 .fdom .f-section-stack { display: grid; gap: 24px; min-width: 0; font-size: 14px; line-height: 1.6; }
@@ -410,8 +313,6 @@
 .fdom .feed-it .when { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); flex-shrink: 0; width: 48px; }
 .fdom .feed-it .ft { font-size: 12px; color: var(--ink-2); line-height: 1.5; }
 .fdom .feed-it .ft b { font-family: var(--mono); color: var(--ink); font-weight: 600; }
-.fdom .rail-card.cyan-card { background: var(--cyan-soft); border-color: var(--cyan-border); }
-.fdom .rail-card.cyan-card .rc-h { color: var(--cyan); }
 .fdom .dispo { font-size: 11.5px; color: var(--ink-2); line-height: 1.6; }
 .fdom .dispo b { color: var(--ink); font-weight: 600; }
 
@@ -424,41 +325,6 @@
 .fdom .f-titlerow .f-desc b { color: var(--ink-2); font-weight: 600; }
 .fdom .f-cta { display: inline-flex; align-items: center; gap: 5px; padding: 7px 13px; border-radius: 9px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; }
 @media (hover: hover) and (pointer: fine) { .fdom .f-cta:hover { background: var(--surface-3); color: var(--ink); border-color: var(--ink-4); } }
-
-/* ===== F1 · 晋升 / 派发闭环 ===== */
-.fdom .f1-flow-grid { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; }
-.fdom .f1-flow { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); overflow: hidden; }
-.fdom .f1-flow-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 18px 10px; }
-.fdom .f1-flow-h .ph-ttl { font-size: 14.5px; font-weight: 600; }
-.fdom .f1-flow-h .ph-sub { margin-top: 2px; font-size: 11.5px; color: var(--ink-3); }
-.fdom .f1-filter { display: flex; gap: 7px; flex-wrap: wrap; padding: 0 18px 12px; }
-.fdom .f1-filter input,
-.fdom .f1-filter select { min-width: 118px; height: 34px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink); font-size: 12px; }
-.fdom .f1-filter input:focus,
-.fdom .f1-filter select:focus { outline: 1px solid var(--brand); border-color: var(--brand); }
-.fdom .f1-bootstrap { padding: 0 18px 18px; }
-.fdom .f1-bootstrap-levels, .fdom .f1-bootstrap-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
-.fdom .f1-bootstrap-levels [aria-pressed="true"] { color: var(--brand); border-color: var(--brand); }
-.fdom .f1-bootstrap-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin: 0; padding: 16px; border: 1px solid var(--border-strong); border-radius: 12px; }
-.fdom .f1-bootstrap-fields legend { padding: 0 6px; color: var(--ink); font-size: 13px; }
-.fdom .f1-bootstrap-fields label { display: flex; flex-direction: column; gap: 7px; color: var(--ink-3); font-size: 12px; }
-.fdom .f1-bootstrap-fields input, .fdom .f1-bootstrap-fields select { width: 100%; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2); color: var(--ink); font: inherit; }
-.fdom .f1-bootstrap-fields :is(input, select):focus-visible { outline: 1px solid var(--brand); border-color: var(--brand); }
-.fdom .f1-bootstrap-error { color: var(--danger); font-size: 12px; }
-.fdom .f1-bootstrap-actions button:disabled { opacity: .5; cursor: default; }
-.fdom .f1-table-wrap { width: 100%; overflow-x: auto; }
-.fdom .f1-table-wrap .ctbl { min-width: 900px; }
-.fdom .f1-table-wrap details { max-width: 260px; }
-.fdom .f1-table-wrap summary { color: var(--brand); cursor: pointer; font-size: 11.5px; }
-.fdom .f1-snapshot { display: block; max-width: 260px; max-height: 90px; margin-top: 5px; padding: 6px; overflow: auto; border-radius: 6px; background: var(--surface-2); color: var(--ink-3); font-size: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.fdom .f1-flow-foot { padding: 9px 18px 12px; border-top: 1px solid var(--border); color: var(--ink-3); font-size: 11.5px; line-height: 1.5; }
-.fdom .f1-state { display: inline-flex; padding: 3px 7px; border: 1px solid var(--border); border-radius: 6px; font: 600 10px/1.2 var(--mono); color: var(--ink-2); }
-.fdom .f1-state.st-granted,
-.fdom .f1-state.st-reissued { border-color: var(--success-border); background: var(--success-soft); color: var(--success); }
-.fdom .f1-state.st-reversed { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger); }
-.fdom .f1-state.st-pending_grant { border-color: var(--warning-border); background: var(--warning-soft); color: var(--warning); }
-.fdom .f1-chain-note { margin-top: 16px; padding: 12px 14px; border: 1px solid var(--cyan-border); border-radius: 10px; background: var(--cyan-soft); color: var(--ink-2); font-size: 11.5px; line-height: 1.65; }
-.fdom .f1-chain-note b { color: var(--cyan); }
 
 .fdom .team-fund-confirm {
   --brand: var(--admin-confirm-focus);
@@ -508,10 +374,6 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .fdom .f1-policy-confirm .field label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; }
 .fdom .f1-policy-confirm .field .fld { width: 100%; }
 .fdom .f1-policy-note { margin: 0 0 16px; color: var(--ink-2); line-height: 1.6; font-size: 14px; }
-.fdom .f1-removal-recovery { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; padding: 10px; font-size: 12px; }
-.fdom .f1-removal-recovery > span { flex: 1; }
-.fdom .f1-removal-recovery > svg, .fdom .f1-removal-confirm-note > svg { flex-shrink: 0; color: var(--warning); }
-.fdom .f1-removal-confirm-note { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
 
 /* ===== F1 团队等级晋升（改版）：只用 --rd-* 令牌，深浅两套跟着令牌走 ===== */
 .f1-page { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }

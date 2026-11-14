@@ -4,10 +4,12 @@
  * F1 团队等级晋升几个文件共用的文字和确认框外壳。
  * 只管怎么写给运营看：奖励怎么写、发放状态叫什么、审批人怎么称呼；不发请求、不判断权限。
  */
-import type { ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { BadgeDollarSign, CircleCheck, Clock3, Coins, Gift, Package, RotateCcw, Ticket, TriangleAlert, Undo2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
+import { listF1Proposals, f1ProposalAuthority } from "@/lib/admin/f1-approval";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
@@ -108,6 +110,7 @@ export const ADMIN_APPROVER = "另一位管理员";
 export type F1Confirm = {
   /** 记进操作记录的名字，和旧页面一样。 */
   action: string;
+  proposalSlot?: string | ((value?: BusinessFormValue) => string);
   title: ReactNode;
   briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind);
   detail: ReactNode;
@@ -130,6 +133,16 @@ export type F1Confirm = {
 };
 
 export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; ctx: FViewCtx; onClose: () => void }) {
+  const [owner] = useState(() => useAdminAuth.getState().session?.adminId);
+  const slot = useRef(typeof confirm.proposalSlot === "string" ? confirm.proposalSlot : "");
+  const submitted = useRef(false);
+  const originalValues = useRef<BusinessFormValue | undefined>(undefined);
+  const original = () => owner === undefined ? undefined : listF1Proposals(owner).find(row => row.fingerprint === slot.current);
+  const existing = original();
+  const session = useAdminAuth(state => state.session);
+  const canRetry = !existing || !!existing.spec && !!session && session.adminId === owner
+    && session.authorities.includes(f1ProposalAuthority(existing.spec))
+    && session.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create");
   return (
     <OperationConfirmModal
       briefKind={confirm.briefKind}
@@ -149,11 +162,31 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
       reasonPlaceholder={confirm.reasonPlaceholder}
       edit={confirm.edit}
       businessForm={confirm.businessForm}
+      getPendingReason={() => submitted.current ? original()?.request?.reason : undefined}
+      getPendingBusinessValue={() => submitted.current && original() ? originalValues.current : undefined}
+      blockedReason={!submitted.current && existing ? "这项操作有保存的原申请，请先查询原结果。" : undefined}
+      inlineApproval={{
+        resolve: () => undefined,
+        initialRecovery: "retry",
+        expired: !!existing && existing.expiresAt <= Date.now(),
+        disabledReason: submitted.current && !canRetry ? "当前账号没有重发这项原申请的权限，仍可查询原结果。" : undefined,
+        recover: async () => { const resolved = await ctx.recoverF1(slot.current, "query"); if (resolved) onClose(); return resolved; },
+        retry: async () => { await ctx.recoverF1(slot.current, "retry"); onClose(); },
+      }}
       onClose={onClose}
       onConfirm={async (reason, newValue, businessValue) => {
+        const recovering = submitted.current && !!original();
         try {
-          await confirm.submit(reason, businessValue, newValue);
-          if (confirm.done) ctx.toast(confirm.done);
+          if (recovering) {
+            await ctx.recoverF1(slot.current, "retry");
+          } else {
+            slot.current = typeof confirm.proposalSlot === "function" ? confirm.proposalSlot(businessValue) : confirm.proposalSlot ?? "";
+            if (original()) throw new Error("这项操作有保存的原申请，请先查询原结果。");
+            originalValues.current = businessValue;
+            submitted.current = true;
+            await confirm.submit(reason, businessValue, newValue);
+          }
+          if (!recovering && confirm.done) ctx.toast(confirm.done);
           onClose();
         } catch (error) {
           // 和 F 域外壳的写法一致：结果未知不算失败，原申请可能已经建了，冠以失败会让人换个办法重做。

@@ -1,4 +1,4 @@
-import type { F2Recovery } from "@/lib/admin/f2-approval";
+import type { FDomainAttempt, F2Recovery } from "@/lib/admin/f2-approval";
 import type { ReactNode } from "react";
 import type { OperatorBriefKind, EditSpec, BusinessFormSpec, BusinessFormValue, InlineOperationApproval } from "../design-kit";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
@@ -81,6 +81,13 @@ export interface FViewCtx {
   leadership: F1Leadership | null;
   f1Loading: boolean;
   f1Error: string | null;
+  f1ReadEpoch: number;
+  f1ProposalEpoch: number;
+  f1ApprovalRanks: string[];
+  f1Proposals: FDomainAttempt[];
+  recoverF1: (slot: string, mode: "query" | "retry" | "release") => Promise<boolean>;
+  refreshF1Approvals: () => Promise<void>;
+  invalidateF1: () => void;
   refreshF1: () => Promise<void>;
   f1RewardValuation: string | null;
   f1Coverage: F1VRankOverview["coverage"];

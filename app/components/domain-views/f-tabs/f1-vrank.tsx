@@ -7,7 +7,7 @@
  * 「等级与奖励」是九级阶梯（选择器，柱高按所选口径）+ 选中一级的详情（五项门槛、奖励模板、只读参数）+ 九级共用的设置。
  * 请求、校验、权限全部沿用旧页面：门槛和奖励走 F1PolicyConfirm（lib/admin/f1-policy-change），其余走 ctx 上现成的提交函数。
  */
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import {
   ArrowUpCircle, CircleHelp, Gift, Layers3, Lock, Pencil, Plus, RefreshCw, Settings2, ShieldCheck, ShieldOff, Trash2, TriangleAlert, Users,
@@ -18,9 +18,11 @@ import {
 } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { f1ConditionLabels, pendingF1Policy, type F1ConditionField, type F1PolicyEditor } from "@/lib/admin/f1-policy-change";
+import { f1ConditionLabels, listF1PolicyOperations, pendingF1Policy, type F1ConditionField, type F1PolicyEditor } from "@/lib/admin/f1-policy-change";
+import { fetchUserProfilesPage } from "@/lib/admin/user360-client";
 import type { F1VRankRow } from "@/lib/admin/f1-client";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
+import type { BusinessFormValue } from "../design-kit";
 import type { FViewCtx } from "./types";
 import { F1PolicyConfirm, F1RemovalRecovery } from "./f1-policy-confirm";
 import { F1VrankBootstrap } from "./f1-vrank-bootstrap";
@@ -68,9 +70,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const [policyEditor, setPolicyEditor] = useState<F1PolicyEditor | null>(null);
   const [confirm, setConfirm] = useState<F1Confirm | null>(null);
 
-  // PLACEHOLDER（代码 worker）：这一级在「操作记录与审批」里有没有待审批的门槛、奖励申请（target F/vrank_policy/<等级>）。
-  // 现在页面没有这份数据，先恒为空；接上后等级卡和直接修改的确认框会显示提醒（F1-直存）。
-  const pendingApprovalRanks: ReadonlySet<string> = new Set<string>();
+  const overrideRead = useRef(0);
+  useEffect(() => { setConfirm(null); setPolicyEditor(null); }, [ctx.f1ReadEpoch]);
+  const pendingApprovalRanks: ReadonlySet<string> = new Set(ctx.f1ApprovalRanks);
   const readOnly = !(canWrite || canProtect || canPromote || canReissue || canReverse)
     ? "你只能查看；这个账号没有修改等级、发起审批或处理奖励的权限。" : undefined;
   const header = (
@@ -113,7 +115,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const busiest = rows.reduce((top, row) => row.pop > top.pop ? row : top, rows[0]);
 
   // 不降级保护：后端只认 on / off，缺值按关闭执行（F1-B01），不显示成开启。
-  const permanentRaw = (ctx.f1ConfigValues["F.vrank.permanent"] ?? "").trim();
+  const permanentRaw = (ctx.f1ConfigValues["F.vrank.permanent"] ?? "").trim().toLowerCase();
   const permanent: "on" | "off" | "unset" = permanentRaw === "on" ? "on" : permanentRaw === "off" ? "off" : "unset";
   const prizeName = nexGridBrandText(ctx.f1ConfigValues["F.prize.name"] ?? "");
   const titlesByLevel: Record<string, string> = {};
@@ -134,11 +136,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     try { return pendingF1Policy(owner, { ...editor, valuation: ctx.f1RewardValuation }) ?? undefined; }
     catch { return undefined; }
   };
-  const rowPending = (row: F1VRankRow) => [
-    ...FIELDS.map((field) => pendingOf({ row, action: "threshold", field })),
-    ...rewardsOf(row.v).flatMap((reward) => [pendingOf({ row, action: "reward_update", reward }), pendingOf({ row, action: "reward_remove", reward })]),
-    pendingOf({ row, action: "reward_add" }),
-  ].filter(Boolean).length;
+  const policyOperations = owner === undefined ? [] : listF1PolicyOperations(owner);
+  const rowPending = (row: F1VRankRow) => policyOperations.filter(item => !item.ticket && item.original.values.rank === row.v).length;
   const pendingByRow = Object.fromEntries(rows.map((row) => [row.v, rowPending(row)]));
   const pendingTotal = Object.values(pendingByRow).reduce((sum, n) => sum + n, 0);
 
@@ -240,6 +239,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     const action = next === "off" ? "关闭不降级保护" : "开启不降级保护";
     const now = permanent === "on" ? "已开启" : permanent === "off" ? "已关闭" : "未设置（按关闭执行）";
     setConfirm({
+      proposalSlot: "f-config:F.vrank.permanent",
       action, briefKind: "record", title: next === "off" ? "关闭不降级保护" : "开启不降级保护",
       confirmTone: next === "off" ? "danger" : "primary", confirmLabel: "提交审批",
       effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有不降级保护权限和审批批准权限）在「操作记录与审批」批准后才生效；批准前仍按现在的设置评估。`}>批准后生效</StatusTag>,
@@ -255,6 +255,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const openPrize = () => {
     const action = prizeName ? "修改全局奖品名" : "配置全局奖品名";
     setConfirm({
+      proposalSlot: "f-config:F.prize.name",
       action, briefKind: "config", title: prizeName ? "修改奖品名称" : "配置奖品名称", confirmLabel: "提交审批",
       effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有团队等级修改权限和审批批准权限）在「操作记录与审批」批准后才生效；批准前仍显示原来的名字。`}>批准后生效</StatusTag>,
       edit: { kind: "text", current: prizeName, unit: "奖品名称" },
@@ -268,6 +269,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     });
   };
   const openTitles = () => setConfirm({
+    proposalSlot: "f-config:F.vrank.titles",
     action: "设置各级头衔", briefKind: "config", title: "设置各级头衔", confirmLabel: "提交审批",
     effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有团队等级修改权限和审批批准权限）在「操作记录与审批」批准后才生效；批准前仍按原来的头衔显示。`}>批准后生效</StatusTag>,
     statedBrief: { impact: "只改这页和接口下发的头衔文字，不影响晋升条件和奖励；App 现在只显示 V0–V8，不显示头衔。", check: "每一级都要填。" },
@@ -321,48 +323,72 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     </Panel>
   );
 
-  const openOverride = () => setConfirm({
-    action: "手动调整会员等级",
-    title: "人工调整等级",
-    briefKind: (value) => value.direction !== "rollback" && (ctx.rewards[value.targetV] ?? []).some((reward) => reward.type === "usdt" || reward.type === "uvt") ? "funds" : "config",
-    amplify: true,
-    confirmLabel: "提交审批",
-    effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有人工调级权限和审批批准权限）在「操作记录与审批」批准后才执行；批准前这位用户的等级不变。`}>批准后生效</StatusTag>,
-    coverageLead: "升级会按目标等级的奖励模板发奖，可能让平台多付钱",
-    coverageCheck: "批准执行时按目标等级发奖励，发资金奖励前检查兑付覆盖率。",
-    facts: <Facts><Fact k="现在的等级">这页读不到；批准时后端按当时的等级核对方向</Fact></Facts>,
-    statedBrief: (value) => {
-      const user = value.userId?.trim() ? `用户 ${value.userId.trim()}` : "这位用户";
-      const target = value.targetV || "目标等级";
-      if (value.direction === "rollback") return {
-        impact: `批准后 ${user} 降到 ${target}：不收回已发的奖励，不受不降级保护限制。目标等级必须低于当时的等级，否则批准时被拒。`,
-        check: "先在「晋升记录」按用户编号查这位用户最近一次等级变化，确认现在的等级再选。",
-      };
-      const rewards = value.targetV ? (ctx.rewards[value.targetV] ?? []).map((item) => rewardLine(item, ctx)) : [];
-      return {
-        impact: `批准后 ${user} 升到 ${target}：只发 ${target} 这一级的奖励模板${value.targetV ? `（${rewards.length ? rewards.join("、") : "现在没有奖励"}）` : ""}，中间跳过的等级不补发。目标等级必须高于当时的等级，否则批准时被拒。`,
-        check: "先在「晋升记录」按用户编号查这位用户最近一次等级变化，确认现在的等级再选。",
-      };
-    },
-    businessForm: {
-      kind: "multi-field",
-      requireAnyChange: false,
-      fields: [
-        { key: "userId", label: "用户编号", inputKind: "text", required: true, placeholder: "请输入用户编号", pattern: "^[1-9]\\d*$", patternMessage: "用户编号须为正整数" },
-        { key: "targetV", label: "目标等级", inputKind: "select", options: rows.map((row) => row.v), required: true, mustChoose: true },
-        { key: "direction", label: "调整方向", inputKind: "select", options: ["promote", "rollback"], optionLabels: { promote: "升级", rollback: "降级" }, required: true, mustChoose: true },
-      ],
-    },
-    detail: "会改变用户的权益和之后的奖励资格。提交后需在「操作记录与审批」确认才生效。",
-    submit: async (reason, values) => {
-      const userId = values?.userId?.trim() ?? "";
-      const targetV = values?.targetV?.trim() ?? "";
-      const direction = values?.direction === "rollback" ? "rollback" : "promote";
-      if (!/^[1-9]\d*$/.test(userId)) throw new Error("用户编号须为正整数");
-      if (!rows.some((row) => row.v === targetV)) throw new Error("目标等级无效");
-      await ctx.proposeVRankOverride(userId, targetV, direction, reason);
-    },
-  });
+  const openOverride = () => {
+    overrideRead.current += 1;
+    const proposalSlot = (values?: BusinessFormValue) => `f-vrank-override:${values?.userId?.trim() ?? ""}`;
+    const readUserRank = async (values: BusinessFormValue) => {
+      const request = ++overrideRead.current;
+      const userId = values.userId?.trim() ?? "";
+      setConfirm(current => current?.proposalSlot === proposalSlot ? { ...current, facts: <Facts><Fact k="现在的等级">这页读不到；批准时后端按当时的等级核对方向</Fact></Facts> } : current);
+      let rank: string | undefined;
+      if (/^[1-9]\d*$/.test(userId) && Number.isSafeInteger(Number(userId)) && ctx.can("user_c1_read")) {
+        try {
+          const page = await fetchUserProfilesPage({ userId, pageNum: 1, pageSize: 1 });
+          const profile = page.records.find(row => String(row.userId ?? row.id) === userId);
+          if (profile?.vRank && /^V[0-8]$/.test(profile.vRank)) rank = profile.vRank;
+        } catch { /* Read failure keeps the prepared unknown state; never infer V0. */ }
+      }
+      if (overrideRead.current === request) setConfirm(current => current?.proposalSlot === proposalSlot ? { ...current,
+        facts: <Facts><Fact k="现在的等级">{rank ?? "这页读不到；批准时后端按当时的等级核对方向"}</Fact></Facts>,
+      } : current);
+    };
+    setConfirm({
+      proposalSlot,
+      action: "手动调整会员等级",
+      title: "人工调整等级",
+      briefKind: (value) => value.direction !== "rollback" && (ctx.rewards[value.targetV] ?? []).some((reward) => reward.type === "usdt" || reward.type === "uvt") ? "funds" : "config",
+      amplify: true,
+      confirmLabel: "提交审批",
+      effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有人工调级权限和审批批准权限）在「操作记录与审批」批准后才执行；批准前这位用户的等级不变。`}>批准后生效</StatusTag>,
+      coverageLead: "升级会按目标等级的奖励模板发奖，可能让平台多付钱",
+      coverageCheck: "批准执行时按目标等级发奖励，发资金奖励前检查兑付覆盖率。",
+      facts: <Facts><Fact k="现在的等级">这页读不到；批准时后端按当时的等级核对方向</Fact></Facts>,
+      statedBrief: (value) => {
+        const user = value.userId?.trim() ? `用户 ${value.userId.trim()}` : "这位用户";
+        const target = value.targetV || "目标等级";
+        if (value.direction === "rollback") return {
+          impact: `批准后 ${user} 降到 ${target}：不收回已发的奖励，不受不降级保护限制。目标等级必须低于当时的等级，否则批准时被拒。`,
+          check: "先在「晋升记录」按用户编号查这位用户最近一次等级变化，确认现在的等级再选。",
+        };
+        const rewards = value.targetV ? (ctx.rewards[value.targetV] ?? []).map((item) => rewardLine(item, ctx)) : [];
+        return {
+          impact: `批准后 ${user} 升到 ${target}：只发 ${target} 这一级的奖励模板${value.targetV ? `（${rewards.length ? rewards.join("、") : "现在没有奖励"}）` : ""}，中间跳过的等级不补发。目标等级必须高于当时的等级，否则批准时被拒。`,
+          check: "先在「晋升记录」按用户编号查这位用户最近一次等级变化，确认现在的等级再选。",
+        };
+      },
+      businessForm: {
+        kind: "multi-field",
+        requireAnyChange: false,
+        onFieldChange: (field, next) => { if (field === "userId") void readUserRank(next); return next; },
+        fields: [
+          { key: "userId", label: "用户编号", inputKind: "text", required: true, placeholder: "请输入用户编号", pattern: "^[1-9]\\d*$", patternMessage: "用户编号须为正整数" },
+          { key: "targetV", label: "目标等级", inputKind: "select", options: rows.map((row) => row.v), required: true, mustChoose: true },
+          { key: "direction", label: "调整方向", inputKind: "select", options: ["promote", "rollback"], optionLabels: { promote: "升级", rollback: "降级" }, required: true, mustChoose: true },
+        ],
+      },
+      detail: "会改变用户的权益和之后的奖励资格。提交后需在「操作记录与审批」确认才生效。",
+      submit: async (reason, values) => {
+        const userId = values?.userId?.trim() ?? "";
+        const targetV = values?.targetV?.trim() ?? "";
+        const direction = values?.direction;
+        if (direction !== "rollback" && direction !== "promote") throw new Error("请选择调整方向");
+        if (!/^[1-9]\d*$/.test(userId) || !Number.isSafeInteger(Number(userId))) throw new Error("用户编号须为正整数");
+        if (!rows.some((row) => row.v === targetV)) throw new Error("目标等级无效");
+        overrideRead.current += 1;
+        await ctx.proposeVRankOverride(userId, targetV, direction, reason);
+      },
+    });
+  };
 
   const tabs = [
     { value: "ladder" as const, label: "等级与奖励" },

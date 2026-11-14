@@ -135,7 +135,14 @@ export function assertF1Overview(value: unknown): asserts value is JsonRecord {
   ranks.forEach((value, index) => {
     const rank = record(value, "F1", `vrankRows[${index}]`);
     text(rank.label, "F1", `vrankRows[${index}].label`);
-    finite(rank.pop, "F1", `vrankRows[${index}].pop`);
+    nonNegativeInteger(rank.pop, "F1", `vrankRows[${index}].pop`);
+    for (const field of ["selfBuy", "teamGv", "directRefs", "legCount", "votes"]) {
+      nonNegativeInteger(rank[field], "F1", `vrankRows[${index}].${field}`);
+    }
+    text(rank.legRank, "F1", `vrankRows[${index}].legRank`);
+    nonNegative(rank.peerBonusRate, "F1", `vrankRows[${index}].peerBonusRate`);
+    if (typeof rank.visible !== "boolean" || typeof rank.unilevelDepth !== "string"
+        || typeof rank.policyRevision !== "string" || !/^[0-9a-f]{64}$/.test(rank.policyRevision)) invalid("F1", `vrankRows[${index}]`);
     if (!Array.isArray(rank.rewards)) invalid("F1", `vrankRows[${index}].rewards`);
   });
   object(row, "rewards", "F1");
@@ -146,7 +153,9 @@ export function assertF1Overview(value: unknown): asserts value is JsonRecord {
   object(row, "skuLabels", "F1");
   const leadership = object(row, "leadership", "F1");
   array(leadership, "ranks", "F1");
-  object(row, "configValues", "F1");
+  for (const field of ["unlockRank", "topN", "topConcentrationPct", "totalMembers", "qualifiers"]) nonNegativeInteger(leadership[field], "F1", `leadership.${field}`);
+  const config = object(row, "configValues", "F1");
+  Object.entries(config).forEach(([key, value]) => { if (typeof value !== "string") invalid("F1", `configValues.${key}`); });
   sources(row, "F1");
 }
 

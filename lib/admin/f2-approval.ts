@@ -17,7 +17,7 @@ export const F2_PARAM_KEYS = new Set([
 const isF2Slot = (slot: string) => slot === F2_POLICY_SLOT || slot === F2_BATCH_SLOT
   || slot.startsWith("f-config:") && (F2_PARAM_KEYS.has(slot.slice(9)) || /^F\.unilevel\.(?:nex\.)?L[1-7]$/.test(slot.slice(9)));
 
-interface FDomainAttempt extends SlotAttemptRecord {
+export interface FDomainAttempt extends SlotAttemptRecord {
   spec?: ProposeSpec;
   request?: Parameters<typeof createA2OperationProposal>[0];
   adminId?: number;
@@ -26,9 +26,11 @@ interface FDomainAttempt extends SlotAttemptRecord {
   absent?: boolean;
 }
 // The legacy F1/F3/F4/F5 slot adapter and F2 share exactly one backing store.
-const fCommands = createPendingMutationStore<FDomainAttempt>({
+export const fCommands = createPendingMutationStore<FDomainAttempt>({
   storageKey: "nexion-admin-f-commands-v1",
-  retainExpiredRecords: row => isF2Slot(row.fingerprint),
+  retainExpiredRecords: row => isF2Slot(row.fingerprint) || row.spec?.sourceDomain === "F1"
+    || /^f-(?:vrank-(?:bootstrap|override)|payout-action):/.test(row.fingerprint)
+    || ["f-config:F.vrank.permanent", "f-config:F.vrank.titles", "f-config:F.prize.name"].includes(row.fingerprint),
   isValidRecord: row => typeof row.inputFingerprint === "string" && row.inputFingerprint.length > 0,
 });
 export const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-f-commands-v1" }, fCommands);

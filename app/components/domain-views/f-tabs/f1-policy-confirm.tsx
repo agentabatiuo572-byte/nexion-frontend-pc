@@ -9,6 +9,7 @@ import { useState } from "react";
 import { CircleHelp, LockOpen, ShieldCheck, Zap } from "lucide-react";
 import { Button, Change, DiffField, Fact, Facts, Field, Input, Notice, Select, StatusTag } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import {
@@ -54,14 +55,15 @@ export function F1RemovalRecovery({ rank, onRecover }: { rank: string; onRecover
 export function F1PolicyConfirm({ editor: requested, ctx, onClose, pendingApproval = false }: { editor: F1PolicyEditor; ctx: FViewCtx; onClose: () => void; pendingApproval?: boolean }) {
   const session = useAdminAuth((state) => state.session);
   const [owner] = useState(session?.adminId);
-  const [opening] = useState(() => {
+  const [opening, setOpening] = useState(() => {
     try {
       const pending = owner === undefined ? undefined : pendingF1Policy(owner, requested);
       return { pending, error: requested.recoveryCommandKey && pending?.commandKey !== requested.recoveryCommandKey ? "原移除操作已处理，请关闭弹窗后核对当前奖励。" : undefined };
     }
     catch { return { pending: undefined, error: "原操作内容不完整，请到操作记录核对后处理。" }; }
   });
-  const editor = opening.pending?.original.editor ?? requested;
+  const [approvalRequired, setApprovalRequired] = useState(false);
+  const editor = opening.pending?.original.editor ?? { ...requested, approvalRequired: approvalRequired || requested.approvalRequired };
   const form = opening.pending?.original.form ?? f1PolicyInitialForm(editor);
   const isCondition = editor.action === "threshold", remove = editor.action === "reward_remove";
   const fieldLabel = isCondition ? f1ConditionLabels[editor.field!] : "奖励";
@@ -72,28 +74,43 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, pendingApprov
     : `${editor.row.v} · ${remove ? "移除奖励" : editor.action === "reward_add" ? "新增奖励" : "编辑奖励"}`;
   const title = opening.pending ? `${editor.row.v} 的原操作` : isCondition ? `调整 ${editor.row.v} 的${fieldLabel}`
     : remove ? `移除 ${editor.row.v} 的奖励` : editor.action === "reward_add" ? `给 ${editor.row.v} 添加奖励` : `编辑 ${editor.row.v} 的奖励`;
-  const disabledReason = opening.error ?? (session?.adminId !== owner || !session?.authorities.includes("network_f1_write")
+  const disabledReason = opening.error ?? (!opening.pending && (ctx.f1Loading || ctx.f1Error || ctx.vrankRows.length === 0) ? "请先成功重新读取会员等级。" : undefined) ?? (session?.adminId !== owner || !session?.authorities.includes("network_f1_write")
     ? "当前账号没有这项操作的权限，请关闭弹窗后重新核对。"
     : opening.pending && !opening.pending.original.approval && opening.pending.expiresAt <= Date.now()
       ? "原操作已过期，请到操作记录核对，勿重复提交。" : undefined);
   const pending = () => opening.error || owner === undefined ? undefined : pendingF1Policy(owner, editor);
-  const requireSession = () => {
+  const requireSession = (write = true) => {
     const current = useAdminAuth.getState().session;
-    if (!current || current.adminId !== owner || !current.authorities.includes("network_f1_write")) throw new Error("当前账号没有这项操作的权限，请关闭弹窗后重新核对。");
+    if (!current || current.adminId !== owner || write && !current.authorities.includes("network_f1_write")) throw new Error("当前账号没有这项操作的权限，请关闭弹窗后重新核对。");
     return current;
   };
   const submit = async (reason: string, values: BusinessFormValue, mode: "submit" | "lookup" | "retry-original") => {
-    const current = requireSession();
+    const current = requireSession(mode !== "lookup");
     if (requested.recoveryCommandKey && pending()?.commandKey !== requested.recoveryCommandKey) throw new Error("原移除操作已处理，请关闭弹窗后核对当前奖励。");
     if (mode === "submit") {
       const error = f1PolicyInputError(editor, values, ctx.voucherOptions, ctx.skuOptions);
       if (error) throw new Error(error);
     }
-    const result = await submitF1Policy(current, editor, values, reason, mode);
+    const previous = pending();
+    if (mode !== "submit") ctx.invalidateF1();
+    let result;
+    try { result = await submitF1Policy(current, editor, values, reason, mode); }
+    catch (error) {
+      if (previous && !pending()) {
+        onClose();
+        await ctx.refreshF1();
+      } else if (pending()) {
+        setOpening({ pending: pending(), error: undefined });
+      } else if (!previous && (error as { backendMessage?: string }).backendMessage === "A2_CONFIRMATION_REQUIRED") {
+        setApprovalRequired(true);
+      }
+      throw error;
+    }
     if (!result) return false;
-    requireSession();
+    requireSession(false);
     ctx.acceptF1PolicyOverview(result.active);
     ctx.toast(result.acknowledgement);
+    if (!result.resolved) throw new A2OutcomeUncertainError(result.acknowledgement, previous!.commandKey);
     onClose();
     return true;
   };
@@ -165,7 +182,8 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, pendingApprov
     getPendingBusinessValue={() => pending()?.original.form}
     inlineApproval={{
       dialogClassName: "f1-policy-confirm",
-      pending: opening.pending?.original.approval,
+      pending: !!opening.pending,
+      initialRecovery: "retry",
       expired: !!opening.pending && opening.pending.expiresAt <= Date.now(),
       disabledReason,
       resolve: (values) => f1PolicyNeedsApproval(editor, values) ? {
@@ -227,6 +245,6 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, pendingApprov
       },
     }}
     onClose={onClose}
-    onConfirm={async (reason, _edit, values) => { await submit(reason, values ?? {}, requested.recoveryCommandKey || pending() ? "retry-original" : "submit"); }}
+    onConfirm={async (reason, _edit, values) => { await submit(reason, values ?? {}, requested.recoveryCommandKey || opening.pending || pending() ? "retry-original" : "submit"); }}
   />;
 }

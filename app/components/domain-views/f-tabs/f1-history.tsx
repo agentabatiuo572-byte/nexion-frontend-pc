@@ -133,6 +133,7 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
           : kind === "voucher" ? "只更新这笔发放记录的状态，不会补发或收回用户手里的券。"
             : "只更新这笔发放记录的状态，不会补发或收回自定义奖品。";
     openConfirm({
+      proposalSlot: `f-payout-action:${record.payoutId}`,
       action: `${action === "reissue" ? "重新发放" : "冲正"}奖励`,
       title: action === "reissue" ? "重发奖励" : "冲正奖励",
       briefKind: "funds",

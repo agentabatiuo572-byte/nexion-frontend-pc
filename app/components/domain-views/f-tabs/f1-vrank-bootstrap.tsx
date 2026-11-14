@@ -37,6 +37,7 @@ export function F1VrankBootstrap({ ctx, openConfirm }: { ctx: FViewCtx; openConf
     try {
       const ranks = buildVRankBootstrap(drafts);
       openConfirm({
+        proposalSlot: "f-vrank-bootstrap:current",
         action: "首次配置会员等级", title: "首次配置会员等级", briefKind: "config", amplify: true, confirmLabel: "提交审批",
         effect: <StatusTag tone="progress" filled explain={`${ADMIN_APPROVER}（需有团队等级修改权限和审批批准权限）在「操作记录与审批」批准后，九级一次建好；批准前这页仍是空的。`}>批准后生效</StatusTag>,
         coverageLead: "首次配置会让以后的晋升按这些条件发生",

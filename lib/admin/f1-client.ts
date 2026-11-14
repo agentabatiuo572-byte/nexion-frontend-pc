@@ -1163,11 +1163,9 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
   const skuOptions = data?.skuOptions ?? [];
   // coverage 可选:后端 ranks() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验)。
   const rawCoverage = data?.coverage;
-  const coverage = rawCoverage
-    ? {
-        coverageRatio: toNumber(rawCoverage.coverageRatio),
-        redlinePct: toNumber(rawCoverage.redlinePct),
-      }
+  const coverage = rawCoverage?.coverageRatio != null && rawCoverage.redlinePct != null
+    && Number.isFinite(Number(rawCoverage.coverageRatio)) && Number.isFinite(Number(rawCoverage.redlinePct))
+    ? { coverageRatio: Number(rawCoverage.coverageRatio), redlinePct: Number(rawCoverage.redlinePct) }
     : undefined;
   return {
     rows,
@@ -1722,7 +1720,11 @@ async function f1Request<T>(
   let result: ApiResult<T> | null = null;
   let bodyUnreadable = false;
   try {
-    result = (await response.json()) as ApiResult<T>;
+    if (path.startsWith("/reward-payouts") && !isWrite) {
+      const raw = await response.text();
+      // Preserve DECIMAL(18,6) before JSON.parse can round a JSON number.
+      result = JSON.parse(raw.replace(/("amount"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
+    } else result = (await response.json()) as ApiResult<T>;
   } catch {
     bodyUnreadable = true;
   }
@@ -1777,7 +1779,12 @@ async function f1Request<T>(
       && (reviewConflict === "MATERIAL_REVISION_STALE" || reviewConflict === "APPLICATION_NOT_PENDING")) {
       throw new F4MaterialReviewNotAppliedError(formatAdminApiError(reviewConflict, "F1_REQUEST_FAILED_409"), reviewConflict);
     }
-    throw new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
+    const error = new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
+    if (path.startsWith("/ranks/")) throw Object.assign(error, {
+      status: response.status, httpStatus: response.status, apiCode: result?.code,
+      backendMessage: result?.message, reasonCode: result?.message,
+    });
+    throw error;
   }
 
   return result.data as T;
