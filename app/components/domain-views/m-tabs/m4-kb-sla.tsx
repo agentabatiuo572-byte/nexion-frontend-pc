@@ -8,6 +8,7 @@ import { mCommands, type MCommandRecord } from "@/lib/admin/m-pending-commands";
 import type { M4FaqCommand } from "@/lib/admin/m4-faq-command";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -154,7 +155,9 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
     } catch (error) {
       const verdict = error instanceof MContentReadError && error.status === 200 && error.apiCode
         ? { status: error.apiCode, backendMessage: error.backendMessage } : error;
-      const rejected = isExplicitRejection(verdict);
+      const rejected = original ? isExplicitRejection(verdict)
+        : error instanceof MContentReadError && !error.backendMessage?.startsWith("IDEMPOTENCY_")
+          && isDeterministicRejection(error.status, error.apiCode);
       if (rejected) {
         mCommands.forget(fingerprint, commandKey);
         syncPending();
