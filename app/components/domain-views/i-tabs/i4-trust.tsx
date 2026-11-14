@@ -293,7 +293,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     const problems = versionProblems(draft);
     return openActionConfirm({ briefKind: "content",
       action: <>发布信任版块 · {s.key} {draft.version}</>,
-      title: `提交发布 · ${sectionName(s.key)}`,
+      title: `发布${sectionName(s.key)}`,
       detail: (
         <>
           <b>版本差异</b>：当前线上 <span className="mono">{s.v}</span> → 待发布 <span className="mono">{draft.version}</span>；
@@ -370,7 +370,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     }));
     return openActionConfirm({ briefKind: "content",
       action: <>回滚信任版块 · {s.key}</>,
-      title: `${archived ? "提交恢复上线" : "提交回滚"} · ${sectionName(s.key)}`,
+      title: `${archived ? "恢复上线" : "回滚"}${sectionName(s.key)}`,
       detail: (
         <>
           当前 <b>{s.v}</b>。请选择要恢复的历史版本。提交后等待审批；审批通过并执行后，对外内容恢复为所选版本，权限要求和发布一样。回滚不重新检查三语，旧版本不完整时 App 信任中心整页不可用。
@@ -381,7 +381,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       confirmTone: "danger",
       confirmLabel: "提交审批",
       statedBrief: { impact: `批准后用户看到的${sectionName(s.key)}换成所选版本；所选版本不完整时 App 信任中心整页不可用。`, check: "先看所选版本完不完整，理由写清为什么回到这一版。" },
-      edit: { kind: "select", label: archived ? "恢复成" : "回滚到", current: s.v, currentLabel: archived ? "已下架的版本" : "现在公开", options: sectionVersionOptions(s), optionLabels, hint: "只能选这一块发布过的版本" },
+      edit: { kind: "select", label: archived ? "恢复成" : "回滚到", current: s.v, currentLabel: archived ? "已下架的版本" : "现在公开", options: sectionVersionOptions(s), optionLabels, hint: `只能选这一块发布过的版本，时间为${businessZone().label}` },
       facts: (value?: string) => {
         const target = value ? versionOf(value) : undefined;
         const problems = target ? versionProblems(target) : [];
@@ -429,10 +429,10 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const archiveSection = (s: TrustSection) =>
     openActionConfirm({ briefKind: "content",
       action: <>下架信任版块 · {s.key}</>,
-      title: `提交下架 · ${sectionName(s.key)}`,
+      title: `下架${sectionName(s.key)}`,
       detail: (
         <>
-          当前 <b>{s.v}</b> 生效中。{ARCHIVE_CONSEQUENCE}，不只是隐藏这一块；版本正文保留，可以再恢复上线。执行门槛与发布一致({operatorCopyText(s.roleGate)})。
+          当前 <b>{s.v}</b> 生效中。{ARCHIVE_CONSEQUENCE}；版本正文保留，可以再恢复上线。
         </>
       ),
       amplifies: false,
@@ -646,7 +646,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       <Fold title="全部版本" icon={History} tone="role-3" summary={`${TRUST_SECTION_VERSIONS.length} 个版本${drafts.length ? ` · ${drafts.length} 个草稿` : ""}`}
         explain="每块的历史版本和草稿。谁批准的在「操作记录与审批」里看。">
         <Table label="全部版本" className="i4-version-table">
-          <thead><tr><Th>版块</Th><Th>版本</Th><Th>状态</Th><Th>改了什么</Th><Th>最近保存（{businessZone().label}）</Th><Th sticky="end" align="right">操作</Th></tr></thead>
+          <thead><tr><Th>版块</Th><Th>版本</Th><Th>状态</Th><Th>改了什么</Th><Th>最近保存</Th><Th sticky="end" align="right">操作</Th></tr></thead>
           <tbody>
             {TRUST_SECTION_VERSIONS.map((version) => {
               const section = TRUST_SECTIONS.find((row) => row.key === version.sectionKey);
@@ -659,13 +659,14 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
                   <Td><StatusTag tone={state.tone}>{state.text}</StatusTag></Td>
                   <Td><Cell main={changeText(version)} sub={version.structure} /></Td>
                   <Td><Cell num main={version.updatedAt ? timeText(version.updatedAt) : "—"} sub={operatorText(version.operator)} title={version.operator} /></Td>
-                  <Td sticky="end" align="right">{versionActions(version)}</Td>
+                  <Td sticky="end" align="right" data-fit="">{versionActions(version)}</Td>
                 </Tr>
               );
             })}
             {TRUST_SECTION_VERSIONS.length === 0 && <TableMessage columns={6}>暂无版本，请先在版块卡上点「新建草稿」。</TableMessage>}
           </tbody>
         </Table>
+        <p className="rd-note i4-docs-zone">时间为{businessZone().label}</p>
       </Fold>
 
       <PaginationExemptionList
@@ -734,7 +735,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
               <Fact k="版块标识"><span data-mono="">{sec.key}</span></Fact>
               <Fact k="后台说明"><LegacyText text={trustDescriptionText(sec.desc)} /></Fact>
               <Fact k="内容结构">{sec.struct}</Fact>
-              <Fact k="确认级">{operatorCopyText(sec.roleGate)}（只是说明，权限以账号为准）</Fact>
+              <Fact k="确认级">{operatorCopyText(sec.roleGate).replace(/超管/g, "超级管理员")}（只是说明，权限以账号为准）</Fact>
               <Fact k="最近改动"><span data-user-content="">{sec.lastChange || "—"}</span></Fact>
               {secCurrent && <Fact k="修订号">{secCurrent.revision}</Fact>}
             </Facts>

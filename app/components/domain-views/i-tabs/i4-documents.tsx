@@ -131,7 +131,7 @@ export function I4Documents() {
                     <IconTile tone="role-1" icon={FileText} size={28} />
                     <h3>{TRUST_DOCUMENT_NAMES[document.slot]}</h3>
                   </header>
-                  <p className="i4-doc-file" title={document.fileName}>{document.fileName}</p>
+                  <p className="i4-doc-file" title={document.fileName} data-user-content="">{document.fileName}</p>
                   <p className="i4-doc-size">PDF · {sizeText(document.sizeBytes)} · {document.pageCount} 页{document.language ? ` · ${document.language}` : ""}</p>
                   <dl className="i4-doc-facts">
                     <div><dt>现在用的</dt><dd><StatusTag tone={isUploaded ? "progress" : "neutral"} explain={isUploaded ? "用的是后台上传的文件，可以恢复成默认文件。" : "没上传过，用随系统发布的默认文件。"}>{isUploaded ? "上传的文件" : "默认文件"}</StatusTag></dd></div>
@@ -174,11 +174,11 @@ export function I4Documents() {
           </Notice>}
           <Facts>
             <Fact k="现在用的">{editor.document.source === "UPLOADED" ? "已上传的文件" : "默认文件"}</Fact>
-            <Fact k="文件"><span title={editor.document.fileName}>{editor.document.fileName}</span></Fact>
+            <Fact k="文件"><span title={editor.document.fileName} data-user-content="">{editor.document.fileName}</span></Fact>
             {editor.mode === "restore" && <Fact k="恢复成">随系统发布的默认文件</Fact>}
           </Facts>
           {editor.mode === "upload" ? <>
-            <Field label="PDF 文件" required hint="最大 20 MB、80 页">
+            <Field label="PDF 文件" required help="最大 20 MB、80 页">
               <input aria-label="PDF 文件" className="rd-input rd-file-input" type="file" accept="application/pdf,.pdf"
                 onChange={(event) => setEditor({ ...editor, file: event.target.files?.[0] ?? null, key: createA2CommandKey("i4-trust-document") })} />
             </Field>

@@ -26,12 +26,12 @@ export const APP_SECTION_ORDER = ["financials", "leadership", "nexNarrative", "c
 export const APP_FIELD_LIMIT = 80;
 
 export const SECTION_INFO: Record<string, { name: string; where: string; icon: LucideIcon }> = {
-  financials: { name: "财务数字", where: "App 不展示这块；信任中心的平台数据另有来源", icon: Coins },
+  financials: { name: "财务数字", where: "App 页面不读这块，平台数据另有来源", icon: Coins },
   leadership: { name: "核心团队", where: "信任中心「核心团队」，只列带有效链接的人", icon: Users },
   nexNarrative: { name: "UVT 介绍", where: "UVT 介绍页，和信任中心的托管、保修、账户安全说明", icon: Landmark },
-  complianceBadges: { name: "合规徽章", where: "App 公开时清空这块的文字", icon: BadgeCheck },
+  complianceBadges: { name: "合规徽章", where: "App 页面不读这块，只参加整页检查", icon: BadgeCheck },
   auditsReserves: { name: "审计与储备", where: "信任中心「审计」和商品详情，有报告才出现", icon: FileSearch },
-  listings: { name: "上市信息", where: "App 公开时清空这块的文字", icon: Store },
+  listings: { name: "上市信息", where: "App 页面不读这块，只参加整页检查", icon: Store },
 };
 /** 卡片上预览哪几个字段：挑信任中心真正显示的那几项，挑不到就取前两项。 */
 export const PREVIEW_KEYS: Record<string, readonly string[]> = {
@@ -100,8 +100,8 @@ const safeLink = (value: string) => /^https:\/\/[^\s/@]+/.test(value.trim()) || 
 /** App 公开时后端清空哪些字（publishedSections 里的过滤），只用来提示运营。 */
 export function appBlanking(sectionKey: string, operator: string, fields: readonly TrustField[]): { all?: string; keys: Set<string> } {
   const keys = new Set<string>();
-  if (["financials", "complianceBadges", "listings"].includes(sectionKey)) return { all: "正式环境不公开运营编辑的财务、徽章和上市文字，用户看到的是空的。", keys };
-  if (operator.trim().startsWith("migration") && ["leadership", "auditsReserves"].includes(sectionKey)) return { all: "这一版是系统迁移写入的，正式环境不公开，用户看到的是空的。", keys };
+  if (["financials", "complianceBadges", "listings"].includes(sectionKey)) return { all: "正式环境不公开运营写的财务、徽章和上市文字。", keys };
+  if (operator.trim().startsWith("migration") && ["leadership", "auditsReserves"].includes(sectionKey)) return { all: "这一版是系统迁移写入的，正式环境不公开。", keys };
   if (sectionKey === "auditsReserves") {
     if (!fields.some((field) => field.key === "document1Url" && safeLink(field.value))) return { all: "报告地址没填或不是有效链接，整块文字不公开。", keys };
     fields.filter((field) => field.key.startsWith("homepageProof.")).forEach((field) => keys.add(field.key));
@@ -166,7 +166,7 @@ export function SectionCard({ card }: { card: SectionCardModel }) {
           <Explain label={`${card.name}在 App 里的位置`} content={<><p>{info?.where ?? "App 里的位置待核实。"}</p>{card.blankedAll && <p>{card.blankedAll}</p>}</>} />
         </span>
         {card.preview.length
-          ? <dl className="i4-app-lines" data-user-content="" data-blank={card.blankedAll ? "" : undefined}>{card.preview.map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{field.value || "—"}</dd></div>)}</dl>
+          ? <dl className="i4-app-lines" data-user-content="" data-blank={card.blankedAll ? "" : undefined}>{card.preview.map((field) => <div key={field.key}><dt>{field.label}</dt><dd title={field.value}>{field.value || "—"}</dd></div>)}</dl>
           : <p className="i4-app-blank">没有可显示的字段</p>}
         {card.appNote && <p className="i4-app-warn">{card.appNote}</p>}
       </div>
@@ -276,7 +276,7 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
     <div className="i4-editor">
       <div className="i4-editor-form rd-stack">
         <div className="rd-form-grid" data-cols="2" data-dense="">
-          <Field label="版本号" required hint={editor.mode === "edit" ? "不能改" : "v 加数字，比如 v12"}>
+          <Field label="版本号" required hint={editor.mode === "edit" ? "不能改" : undefined} help={editor.mode === "edit" ? undefined : "v 加数字，比如 v12"}>
             <Input aria-label="版本号" disabled={editor.mode === "edit"} value={editor.version} placeholder="如 v12" onChange={(event) => onChange({ ...editor, version: event.target.value })} />
           </Field>
           <Field label="保存说明" required>
