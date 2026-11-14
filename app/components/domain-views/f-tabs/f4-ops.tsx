@@ -17,7 +17,7 @@ import { applicationStage } from "./f4-quota";
 import { F4Pool } from "./f4-pool";
 import { F4Quota } from "./f4-quota";
 import { F4Leaderboard, leaderboardState } from "./f4-leaderboard";
-import { F4RecoveryNotice, count, unknownTag, usdt, stamp, type F4RecoveryRow } from "./f4-shared";
+import { F4RecoveryNotice, count, settleCadenceNote, unknownTag, usdt, stamp, type F4RecoveryRow } from "./f4-shared";
 import type { FViewCtx } from "./types";
 
 type Section = "pool" | "quota" | "board";
@@ -81,8 +81,11 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
   const week = data.leaderboardPeriods?.week;
   const tightQuota = data.quotaRows.filter((row) => row.tight).length;
 
+  const cadence = settlement.ready ? settleCadenceNote(data.configValues["F.pool.settleCron"] ?? "") : null;
+  const cadenceWarn = cadence?.tone === "warn" ? cadence : null;
   const todos = [
     !settlement.ready && "团队激励池设置不完整，提前结算已暂停",
+    cadenceWarn?.short,
     data.ambassadorPendingCount > 0 && `${count(data.ambassadorPendingCount)} 份大使申请待处理`,
     board.paused && "排行榜已暂停",
     tightQuota > 0 && `${tightQuota} 个商品本月名额已用到 85% 以上`,
@@ -123,8 +126,8 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
     <div className="f4-page">
       {header}
       {todos.length === 0
-        ? <Conclusion state="ok">三块都在正常运行，没有等你处理的事</Conclusion>
-        : <Conclusion state={settlement.ready ? "neutral" : "warn"} icon={settlement.ready ? ListChecks : AlertTriangle}
+        ? <Conclusion state="ok" hint={cadence ? `${cadence.short}。` : undefined}>三块都在正常运行，没有等你处理的事</Conclusion>
+        : <Conclusion state={settlement.ready && !cadenceWarn ? "neutral" : "warn"} icon={settlement.ready && !cadenceWarn ? ListChecks : AlertTriangle}
             hint={todos.length > 2 ? `另外：${todos.slice(2).join("；")}。` : "点下面的卡片进入对应的一块处理。"}>
             {todos.slice(0, 2).join("，")}
           </Conclusion>}

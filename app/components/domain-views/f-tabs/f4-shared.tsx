@@ -51,6 +51,32 @@ const WEEKDAYS: Record<string, string> = { "0": "日", "7": "日", SUN: "日", "
  * 只做显示，后端按原文解析。
  */
 export function describeSettleCron(raw: string): string | null {
+  return parseSettleCron(raw)?.text ?? null;
+}
+
+export type SettleCadence = "daily" | "weekly" | "monthly";
+
+/**
+ * 自动结算多久触发一次，和对运营的提醒。后端每次触发只调一次 injectAndSettleLastClosedWeek：
+ * 只结算最近结束的那一周（越南时间周一到周日），这一周已经有发放记录就跳过，不重复发、不补差额。
+ * 所以不是「每周某天」时，要写清楚哪些周会自动结算。weekly 不提醒；读不出的写「自定义」。
+ */
+export function settleCadenceNote(raw: string): { cadence: SettleCadence | "custom"; tone: "warn" | "neutral"; text: string; short: string; tag: string } | null {
+  if (!raw.trim()) return null;
+  const cadence = parseSettleCron(raw)?.cadence ?? "custom";
+  if (cadence === "weekly") return null;
+  if (cadence === "monthly") return { cadence, tone: "warn",
+    text: "按现在的设置每月只自动结算一次，每次只结算最近结束的那一周；其余各周不会自动结算，要靠「提前结算本周池」。",
+    short: "自动结算每月只结算一次，其余各周要靠提前结算", tag: "每月只自动结算一次" };
+  if (cadence === "daily") return { cadence, tone: "neutral",
+    text: "按现在的设置每天都触发，每次只结算最近结束的那一周；这一周已经结算过就跳过，不会重复发，也不补后来的差额。",
+    short: "自动结算每天触发，每周只结算一次", tag: "每天触发，每周只结一次" };
+  return { cadence, tone: "warn",
+    text: "页面读不出这个时间多久触发一次；每次触发只结算最近结束的那一周。",
+    short: "自动结算时间读不出多久触发一次，每次只结算最近结束的一周", tag: "读不出多久触发一次" };
+}
+
+function parseSettleCron(raw: string): { text: string; cadence: SettleCadence } | null {
   const parts = raw.trim().split(/\s+/);
   const fields = parts.length === 5 ? ["0", ...parts] : parts;
   if (fields.length !== 6) return null;
@@ -59,17 +85,17 @@ export function describeSettleCron(raw: string): string | null {
   const m = Number(min), h = Number(hour);
   if (m > 59 || h > 23) return null;
   const any = (f: string) => f === "*" || f === "?";
-  let day: string;
-  if (any(dom) && any(dow)) day = "每天";
-  else if (/^\d{1,2}$/.test(dom) && Number(dom) >= 1 && Number(dom) <= 31 && any(dow)) day = `每月 ${Number(dom)} 日`;
-  else if (any(dom) && WEEKDAYS[dow]) day = `每周${WEEKDAYS[dow]}`;
+  let day: string, cadence: SettleCadence;
+  if (any(dom) && any(dow)) { day = "每天"; cadence = "daily"; }
+  else if (/^\d{1,2}$/.test(dom) && Number(dom) >= 1 && Number(dom) <= 31 && any(dow)) { day = `每月 ${Number(dom)} 日`; cadence = "monthly"; }
+  else if (any(dom) && WEEKDAYS[dow]) { day = `每周${WEEKDAYS[dow]}`; cadence = "weekly"; }
   else return null;
   const clock = (total: number) => `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
   const local = h * 60 + m;
   const zone = businessZone();
   const shifted = local - SETTLE_ZONE.offsetMinutes + businessOffsetMinutes(zone);
   const page = shifted === local ? "" : `，${zone.label} ${shifted >= 1440 ? "次日 " : shifted < 0 ? "前一天 " : ""}${clock(((shifted % 1440) + 1440) % 1440)}`;
-  return `${day} ${clock(local)}（${SETTLE_ZONE.label}${page}）`;
+  return { text: `${day} ${clock(local)}（${SETTLE_ZONE.label}${page}）`, cadence };
 }
 
 export type F4RecoveryRow = {

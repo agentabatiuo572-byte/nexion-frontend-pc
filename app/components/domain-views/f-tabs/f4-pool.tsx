@@ -4,11 +4,12 @@
  * F4 · 团队激励池（改版）。这周池里有多少钱、怎么分（各等级票数）、什么时候结算、池的设置。
  * 写入口和请求沿用旧页面：提前结算走 ctx.proposeF4Settlement，参数和票数走 shell 的 param 提交（A2 审批）。
  */
+import type { ReactNode } from "react";
 import { Calculator, Coins, Settings2, Vote } from "lucide-react";
 import { Button, ConfigList, ConfigRow, Explain, Fact, Facts, KeyValues, Notice, Panel, StatusTag, StepBar } from "@/app/components/rd";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import type { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
-import { count, describeSettleCron, SETTLE_ZONE, stamp, usdt, zoneNote } from "./f4-shared";
+import { count, describeSettleCron, settleCadenceNote, SETTLE_ZONE, stamp, usdt, zoneNote } from "./f4-shared";
 import type { FViewCtx } from "./types";
 
 // 领导奖池参与门槛枚举(V0 为新人,无奖池资格 → 从 V1 起)。
@@ -41,6 +42,8 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
   const unlockLabel = invalid.has("unlockVRank") ? invalidLabel : data.unlockRank > 0 ? `V${data.unlockRank} 及以上` : "未配置";
   const settleCronEff = invalid.has("settleCron") ? invalidLabel : settleCron || "未配置";
   const settleCronText = invalid.has("settleCron") || !settleCron ? settleCronEff : describeSettleCron(settleCron) ?? `自定义时间：${settleCron}`;
+  // 不是「每周某天」时提醒哪些周会自动结算（只做显示）。
+  const cadence = settlement.ready && !invalid.has("settleCron") ? settleCadenceNote(settleCron) : null;
   const unlockVRankEff = invalid.has("unlockVRank") ? invalidLabel : unlockVRank || "未配置";
   const configVersionEff = invalid.has("configVersion") ? invalidLabel : presentText(data.configVersion);
   const operable = settlement.ready && !ctx.f4Loading && !ctx.f4Error;
@@ -95,8 +98,8 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
     })}>改票数</Button>;
   };
 
-  const paramRow = (spec: { name: string; value: string; mono?: boolean; what: string; when: string; effect: string; note?: string; allowed: boolean; open: () => void }) => (
-    <ConfigRow key={spec.name} name={spec.name} what={spec.what} when={spec.when} effect={spec.effect} note={spec.note}
+  const paramRow = (spec: { name: string; value: string; sub?: ReactNode; mono?: boolean; what: string; when: string; effect: string; note?: string; allowed: boolean; open: () => void }) => (
+    <ConfigRow key={spec.name} name={spec.name} what={spec.what} when={spec.when} effect={spec.effect} note={spec.note} sub={spec.sub}
       value={spec.mono ? <span data-mono>{spec.value}</span> : spec.value}
       action={spec.allowed ? <Button size="sm" onClick={spec.open}>调整</Button> : undefined} />
   );
@@ -125,7 +128,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
           <KeyValues rows={[
             { key: "people", label: "有资格分的人", value: `${count(data.participantCount)} 人`, explain: `达到参与等级（${unlockLabel}）且所在等级票数大于 0 的人数合计。` },
             { key: "top", label: "头部集中度（估算）", value: topShare, explain: "按各等级人数和票数估算票数最多的几个人合计占全部票数的比例，不是已经收到的钱。" },
-            { key: "next", label: "下次自动结算", value: nextSettle, explain: "自动结算的是最近一个已结束的周；提前结算的是执行那一刻的当前周。" },
+            { key: "next", label: "下次自动结算", value: nextSettle, sub: cadence ? <span className="f4-cadence" data-tone={cadence.tone}>{cadence.tag}</span> : undefined, explain: "自动结算的是最近一个已结束的周；提前结算的是执行那一刻的当前周。" },
           ]} />
         </div>
       </Panel>
@@ -164,7 +167,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
               statedBrief: { impact: "批准后影响这个月还没结算的部分；已经发出的不追回。", check: "后端不在保存时检查格式，格式不对会让池变成不能结算，请写数字，可带 K、M。" },
               completionCopy: approvalCopy("F4 写权限"),
               detail: `团队激励池每月最多发多少 · 当前 ${capEff}。` }) })}
-          {paramRow({ name: "自动结算时间", value: settleCronText, allowed: canWrite,
+          {paramRow({ name: "自动结算时间", value: settleCronText, sub: cadence ? <span className="f4-cadence" data-tone={cadence.tone}>{cadence.text}</span> : undefined, allowed: canWrite,
             what: "到这个时间自动结算最近一个已结束的周。",
             when: `批准后的下一次命中就按新时间。按${SETTLE_ZONE.label}解析；「下次自动结算」换算成了${zoneNote()}。`,
             note: settleCron ? `后端保存的写法：${settleCron}` : undefined,
@@ -172,9 +175,9 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
             open: () => ctx.openActionConfirm({ briefKind: "config", name: "调整团队激励池结算时间", op: "param", paramKey: "F.pool.settleCron",
               edit: { kind: "text", current: settleCron, unit: "定时表达式",
                 hint: "秒 分 时 日 月 星期，比如 0 0 2 * * MON",
-                preview: (value) => `这样写是：${describeSettleCron(value) ?? "自定义时间，页面读不出，后端按原文解析"}` },
+                preview: (value) => `这样写是：${describeSettleCron(value) ?? "自定义时间，页面读不出，后端按原文解析"}。${settleCadenceNote(value)?.text ?? "每周自动结算一次，结算刚结束的那一周。"}` },
               title: "调整自动结算时间", effect: approvalTag(), confirmLabel: "提交审批",
-              facts: <Facts><Fact k="现在是">{settleCronText}</Fact><Fact k="按哪个时区">{SETTLE_ZONE.label}（UTC+7）</Fact></Facts>,
+              facts: <Facts><Fact k="现在是">{settleCronText}</Fact>{cadence && <Fact k="会结算哪些周" tone={cadence.tone === "warn" ? "warn" : undefined}>{cadence.text}</Fact>}<Fact k="按哪个时区">{SETTLE_ZONE.label}（UTC+7）</Fact></Facts>,
               statedBrief: { impact: "批准后的下一次命中就按新时间自动结算最近一个已结束的周；已经结算的不变。", check: "后端只接受 5 段或 6 段的定时表达式，其余拒绝。" },
               completionCopy: approvalCopy("F4 写权限"),
               detail: `团队激励池自动结算时间 · 当前 ${settleCronText}。` }) })}

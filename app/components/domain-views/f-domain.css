@@ -546,6 +546,9 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f4-page .f4-pool-value[data-zero] { color: var(--rd-text-3); font-size: var(--rd-text-title); line-height: var(--rd-lh-title); }
 .f4-page .f4-pool-note { color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; }
 .f4-page .rd-panel .rd-notice + .f4-pool-hero { margin-top: var(--rd-space-4); }
+/* 自动结算不是每周一次时的提醒：要注意的是橙黄，每天触发只是说明用弱字。 */
+.f4-page .f4-cadence { display: block; color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: normal; }
+.f4-page .f4-cadence[data-tone="warn"] { color: var(--rd-warn); }
 
 /* 购机名额：剩余是主数，条在右边对着看已用和总量。 */
 .f4-page .f4-quota-sum { display: grid; grid-template-columns: minmax(160px, max-content) minmax(0, 1fr); gap: var(--rd-space-6); align-items: end; margin-bottom: var(--rd-space-4); }
