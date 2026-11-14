@@ -3,18 +3,19 @@ import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 /**
- * I6 多语言文案 / I7 教程中心共享数据与动作实现，按路由只渲染各自业务区。
- * 统一来源:后端 /content/i18n-learning/overview;空库时后端写入 MySQL 种子后再查出。
- * 操作确认 显式 edit 契约:奖励调整 / 换推荐课 = 调参传 edit;
- *   课程发布 / 词条发布 / 课程下架 = 处置不传 edit。
- * 有奖励的课程首次发布、版本发布和回滚走专用 A2 审批，零奖励仍走原直接入口。
- * 课程奖励调整保留原专用审批，不复用课程启用命令。
- * 完整性扫描 / 新建课程 / 编辑草稿 = 运营设定(仍需操作确认 + 留痕)→ openConfirm。
+ * 多语言与课程（版本发布页，PG-47）。两个页签按读权限给：「App 文案」管已登记文案键的三语草稿、发布、归档、回滚、
+ * 完整性检查和写死在 App 里的文字登记；「学习课程」管课程的三语正文、测验、草稿、版本、发布、下架、奖励和首页推荐。
+ * 两个页签同时挂着（切走不丢未保存内容），各自的读取和旧页面一样：概览一份，所选文案的历史，所选课程的版本。
+ * 写入口和请求照旧：文案六类直接生效；课程草稿、下架、换推荐直接生效；有奖励的课程发布、版本发布、回滚和调奖提交审批。
+ * 文案和课程的编辑表单画在这页的抽屉里（字段、默认值、校验照共用表单），确认框只填理由，请求体由原来的拼法生成。
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { Archive, BadgeCheck, BookOpen, CodeXml, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
+import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import type { I18nMessagePairView, LearningCourseVersionView } from "@/lib/admin/i-client";
 import type { ICtx } from "./types";
-import { Drawer, PaginationExemptionList } from "../design-kit";
+import { PaginationExemptionList } from "../design-kit";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -22,61 +23,120 @@ import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { hiCourseScope, hiRewardProposal, pendingHIRewardCommand, pendingHIRewardCommands, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import { REVIEW_OPERATION_BY_ACTION, fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { useReach } from "@/lib/nav/use-reach";
+import { AppCoursePreview, CATEGORY_LABEL, COMPLETION_LABEL, CompareRows, CourseEditor, FORMAT_LABEL, LANGS, LEVEL_LABEL, REWARD_EVENT_LABEL, blockedText, categoryIcon, categoryLabel, copyFormMissing, durationText, nsLabel, uvtText, type CourseForm, type CourseSpec, type Lang } from "./i6-parts";
 
 const COURSE_APPROVAL_OPS = new Set(["i7_course_first_publish", "i7_course_version_publish", "i7_course_version_rollback"]);
+/** 有奖励的课程激活和调奖：后端要另一位超级管理员，并有审批批准权限（A:124、G:717）。 */
+const APPROVER = "另一位超级管理员";
+const BJ = "北京时间";
 
-/** 有奖励的发布和回滚在框里常显怎么生效（LearningCourseActivation：目标版本奖励 > 0 一律审批）。 */
-function CourseApprovalFact() {
-  return <div style={{ fontSize: 12.5, lineHeight: 1.7 }}>
-    <b>怎么生效</b> · 目标版本奖励大于 0 时要提交审批单（等额、降额也一样），另一位有审批批准权限的超级管理员批准后才执行，批准前课程不变；奖励为 0 的确认后直接执行。
-  </div>;
-}
-
-type NsFlt = "all" | "issues";
+type TabKey = "copy" | "courses";
+type MsgScope = "all" | "missing" | "draft" | "published" | "archived";
 type CatFlt = string;
-
-const NS_FLT: [NsFlt, string][] = [
-  ["all", "全部"],
-  ["issues", "有问题"],
-];
-
-type NsDrawer = { ns: string; keys: number; cov: number; variants: string };
 type Namespace = { ns: string; keys: number; coverage: number; variants: string; lastChange: string };
 type IntegrityIssue = { code: string; kind: string; cnt: number; samples: string[]; status: string };
 type HardcodedFinding = { location: string; rawCopy: string; suggestedKey: string; status: string };
 type Course = {
-  id: string; title: string; cat: string; icon: string;
+  id: string; title: string; cat: string;
   format: "Article" | "Video" | "Hands-on";
   level: "Beginner" | "Intermediate" | "Advanced";
   reward: number; featured: boolean; duration: string; v: string; status: string; body: string;
   titleZh: string; titleEn: string; titleVi: string; bodyZh: string; bodyEn: string; bodyVi: string;
   quizQuestions: { questionId: string; questionZh: string; questionEn: string; questionVi?: string; optionsZh: string[]; optionsEn: string[]; optionsVi?: string[]; correctOptionIndex: number }[];
   passScore?: number; retryLimit?: number; completionCondition?: string; rewardEvent?: string; revision: number;
+  /** 后端原值，显示时不经 Number 丢精度。 */
+  rewardRaw: string;
 };
-const COURSE_ICON_BY_CAT: Record<string, string> = {
-  Basics: "🚀",
-  Earn: "⚡",
-  Team: "🧬",
-  Wealth: "💎",
-  Security: "🛡",
-};
+type CopyEditor = { mode: "edit" | "fix"; issue?: IntegrityIssue; zh: string; vi: string; en: string; tried: boolean };
+type CourseEditorState = { spec: CourseSpec; title: string; sub?: ReactNode; save: (form: CourseForm) => void };
 
-export function I6I18n({ ctx }: { ctx: ICtx }) {
+const MSG_STATUS: Record<string, { text: string; tone: StateTone }> = {
+  draft: { text: "草稿", tone: "neutral" }, published: { text: "已发布", tone: "ok" }, archived: { text: "已归档", tone: "done" },
+};
+const COURSE_STATUS: Record<string, { text: string; tone: StateTone }> = {
+  draft: { text: "草稿", tone: "neutral" }, ready: { text: "草稿", tone: "neutral" }, published: { text: "在线", tone: "ok" }, archived: { text: "已下架", tone: "done" },
+};
+const VERSION_STATUS: Record<string, { text: string; tone: StateTone }> = {
+  DRAFT: { text: "草稿", tone: "neutral" }, PUBLISHED: { text: "线上版本", tone: "ok" }, SUPERSEDED: { text: "历史版本", tone: "done" },
+};
+/** 后端问题类别的原名（「缺少英文镜像」）写成人话，原名进问号。 */
+const ISSUE_NAME: Record<string, string> = { "missing-zh": "缺中文", "missing-en": "缺英语", "missing-vi": "缺越南语", placeholder: "三语变量不一致", "placeholder-text": "占位文字没换掉", "retired-brand": "用了退役品牌名" };
+const issueName = (issue: { code: string; kind: string }) => ISSUE_NAME[issue.code] ?? issue.kind;
+/** 审批单前后值原文「v1 · published · 25 UVT」写成「v1 在线 · 25 UVT」。 */
+const approvalValue = (value: string) => (value.replace(/\bNEX\b/g, "UVT").replace(/ · published · /g, " 在线 · ").replace(/ · draft · /g, " 草稿 · ").replace(/ · ready · /g, " 草稿 · ").replace(/ · archived · /g, " 已下架 · "));
+const msgStatus = (status?: string) => MSG_STATUS[status ?? ""] ?? { text: "状态未知", tone: "warn" as StateTone };
+const langValue = (message: Pick<I18nMessagePairView, "zh" | "vi" | "en">, lang: Lang) => message[lang] ?? "";
+const missingLangs = (message: Pick<I18nMessagePairView, "zh" | "vi" | "en">) => LANGS.filter((item) => !langValue(message, item.key).trim());
+const count = (value: number) => value.toLocaleString("en-US");
+
+function readTab(allowed: readonly TabKey[]): TabKey {
+  const wanted = new URLSearchParams(window.location.search).get("tab");
+  return allowed.find((item) => item === wanted) ?? allowed[0];
+}
+
+/** 页面入口：页头、页签、两个页签的读权限。 */
+export function I6I18n({ ctx, errorText }: { ctx: ICtx; errorText: string | null }) {
   const session = useAdminAuth((state) => state.session);
   const isSuperadmin = session?.role === "superadmin";
   const authorities = session?.authorities ?? [];
   const canReadI6 = isSuperadmin || authorities.includes("content_i6_read");
   const canReadI7 = isSuperadmin || authorities.includes("content_i7_read");
-  if (!canReadI6 && !canReadI7) {
-    return <section className="l-card"><div className="l-b">你没有查看多语言词条或教程的权限。</div></section>;
+  const tabs = useMemo(() => [...(canReadI6 ? ["copy" as const] : []), ...(canReadI7 ? ["courses" as const] : [])], [canReadI6, canReadI7]);
+  const tabIds = useTabIds();
+  const [tab, setTab] = useState<TabKey | null>(null);
+  const [readAt, setReadAt] = useState("");
+  const [reloading, setReloading] = useState(false);
+  const data = ctx.content.i18nLearning;
+  useEffect(() => { if (data) setReadAt(businessStamp(Date.now())); }, [data]);
+  useEffect(() => { if (tabs.length) setTab(readTab(tabs)); }, [tabs]);
+  const choose = useCallback((next: TabKey) => {
+    setTab(next);
+    const url = new URL(window.location.href);
+    if (next === tabs[0]) url.searchParams.delete("tab");
+    else url.searchParams.set("tab", next);
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [tabs]);
+  const reload = () => {
+    setReloading(true);
+    void ctx.actions.reloadIContent().finally(() => setReloading(false));
+  };
+  const issues = Math.max(0, data?.stats.integrityIssues ?? 0);
+  const header = (
+    <PageHeader pageId="I6" title="多语言与课程" summary="管 App 文字的三语版本和学习课程。"
+      meta={readAt ? `${readAt.slice(11)} 读取（${BJ}）` : undefined}
+      actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={reloading || (ctx.contentLoading && !!data)} onClick={reload}>刷新</Button>} />
+  );
+  if (!tabs.length) {
+    return <>{header}<BlockState state="denied" title="没有查看权限" detail="查看文案要有多语言文案的查看权限，查看课程要有学习课程的查看权限。" /></>;
   }
-  return <>{canReadI6 && <I18nLearningPage ctx={ctx} view="i18n" />}{canReadI7 && <I18nLearningPage ctx={ctx} view="learn" />}</>;
+  return (
+    <>
+      {header}
+      {errorText && <Notice tone="danger" title="数据没有读到最新" action={<Button size="sm" loading={reloading} onClick={reload}>重新加载</Button>}>
+        {errorText}{data ? " 下面是上一次读到的内容。" : ""}
+      </Notice>}
+      {tabs.length > 1 && tab && <PageTabs label="多语言与课程" value={tab} onChange={choose} ids={tabIds}
+        items={[
+          { value: "copy", label: "App 文案", count: data ? issues : undefined },
+          { value: "courses", label: "学习课程" },
+        ]} />}
+      {canReadI6 && <div {...(tabs.length > 1 ? tabIds.panel("copy") : {})} hidden={tab !== "copy"} className="i6-tabpane">
+        <I18nLearningPage ctx={ctx} view="i18n" />
+      </div>}
+      {canReadI7 && <div {...(tabs.length > 1 ? tabIds.panel("courses") : {})} hidden={tab !== "courses"} className="i6-tabpane">
+        <I18nLearningPage ctx={ctx} view="learn" />
+      </div>}
+    </>
+  );
 }
 
 function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
   const session = useAdminAuth((state) => state.session);
+  const reach = useReach();
   const isSuperadmin = session?.role === "superadmin";
   const canWriteI6 = isSuperadmin || !!session?.authorities.includes("content_i6_write");
   const canWriteI7 = isSuperadmin || !!session?.authorities.includes("content_i7_write");
@@ -101,19 +161,29 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     }
   };
   useEffect(() => { void reloadCourseApprovals(); }, [view, canReadA2]);
-  const [nsFlt, setNsFlt] = useState<NsFlt>("all");
   const [catFlt, setCatFlt] = useState<CatFlt>("all");
-  const [nsDrawer, setNsDrawer] = useState<NsDrawer | null>(null);
-  const [hcDrawer, setHcDrawer] = useState(false);
   const [messageSearch, setMessageSearch] = useState("");
+  const [msgScope, setMsgScope] = useState<MsgScope>("all");
+  const [msgLang, setMsgLang] = useState<Lang | "">("");
+  const [msgNs, setMsgNs] = useState("");
+  const [msgPage, setMsgPage] = useState(1);
+  const [msgPageSize, setMsgPageSize] = useState(20);
   const [selectedMessageKey, setSelectedMessageKey] = useState("");
+  const [messageDrawer, setMessageDrawer] = useState(false);
+  const [compareVersion, setCompareVersion] = useState("");
+  const [copyEditor, setCopyEditor] = useState<CopyEditor | null>(null);
   const [messageVersions, setMessageVersions] = useState<I18nMessagePairView[]>([]);
   const [messageVersionsLoading, setMessageVersionsLoading] = useState(false);
   const [versionCourseId, setVersionCourseId] = useState("");
+  const [courseTab, setCourseTab] = useState<"content" | "quiz" | "versions">("content");
+  const [courseLang, setCourseLang] = useState<Lang>("zh");
+  const [courseEditor, setCourseEditor] = useState<CourseEditorState | null>(null);
   const [courseVersions, setCourseVersions] = useState<LearningCourseVersionView[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [versionsError, setVersionsError] = useState<string | null>(null);
   const [versionsRetry, setVersionsRetry] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  const courseTabIds = useTabIds();
   const data = content.i18nLearning;
   useEffect(() => {
     setCourseVersions([]);
@@ -140,10 +210,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     id: c.id,
     title: c.titleZh || c.title,
     cat: c.category,
-    icon: COURSE_ICON_BY_CAT[c.category] ?? "📘",
     format: c.format,
     level: c.level,
     reward: Number(c.rewardNex),
+    rewardRaw: String(c.rewardNex),
     featured: c.featured,
     duration: c.duration,
     v: c.version,
@@ -183,13 +253,6 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const courseCategories = configuredCategories.length > 0
     ? configuredCategories
     : [...new Set(allCourses.map((course) => course.cat).filter(Boolean))];
-  const categoryFilters: [CatFlt, string][] = [
-    ["all", "全部"],
-    ...courseCategories.map((category) => [category, `${COURSE_ICON_BY_CAT[category] ?? "📘"} ${{ Basics: "基础", Earn: "赚取", Team: "团队", Wealth: "财富", Security: "安全" }[category] ?? category}`] as [CatFlt, string]),
-  ];
-  const liveReward = (c: Course): string => {
-    return `${c.reward} UVT`;
-  };
   const liveStatus = (c: Course): string =>
     c.status || "published";
   const liveFeatured = (): string =>
@@ -228,60 +291,42 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       .finally(() => { if (active) setMessageVersionsLoading(false); });
     return () => { active = false; };
   }, [actions, toast, selectedMessage?.messageKey, content.i18nLearning, view]);
-  const filteredMessages = MESSAGES.filter((message) => {
-    const query = messageSearch.trim().toLowerCase();
-    return !query || message.messageKey.toLowerCase().includes(query) || message.namespace.toLowerCase().includes(query);
-  });
   const statusLabel = (status?: string) => ({ draft: "草稿", published: "已发布", archived: "已归档" }[status ?? ""] ?? "状态未知");
-  const categoryLabel = (value: string) => ({ Basics: "基础", Earn: "赚取", Team: "团队", Wealth: "财富", Security: "安全" }[value] ?? "其他分类");
-  const formatLabel = (value: string) => ({ Article: "图文", Video: "视频", "Hands-on": "实操" }[value] ?? value);
-  const levelLabel = (value: string) => ({ Beginner: "入门", Intermediate: "进阶", Advanced: "高级" }[value] ?? value);
-
-  const filteredNs = NAMESPACES.filter((n) => {
-    if (nsFlt === "all") return true;
-    if (nsFlt === "issues") return n.coverage < 100;
-    return false;
-  });
-  const filteredCrs = allCourses.filter((c) => catFlt === "all" || c.cat === catFlt);
-  const versionCourse = allCourses.find((course) => course.id === versionCourseId);
-  const courseCategoryCount = courseCategories.length;
 
   /* ============ I6 actions ============ */
   const liveIntegrity = Math.max(0, I6_STATS.integrityIssues);
-  const liveIntegritySub = (() => {
-    const remain = INTEGRITY_ISSUES.filter((iss) => iss.status !== "fixed");
-    if (remain.length === 0) return "已全部修复 · 待重扫确认清零";
-    return remain.map((r) => `${r.kind.split(" ")[0]} ${r.cnt}`).join(" · ");
-  })();
   const rescan = () =>
     openConfirm({ briefKind: "record",
       errorHandled: true,
       action: <>全量重扫 {I6_STATS.managedKeys} 词条</>,
-      detail: <>检查缺少翻译、变量不一致、占位文字、旧品牌名、写死的文字和禁用词。只检查不修改，结果会刷新到下表。</>,
-      chips: [["只读扫描 · 普通确认", "done"]],
-      okLabel: "开始扫描",
+      title: "重新检查全部文案",
+      detail: <>按 6 类重新检查全部已登记文案：缺中文、缺英语、缺越南语、变量不一致、占位文字、旧品牌名。不改文案，结果覆盖下面的问题报告。</>,
+      effect: <StatusTag tone="neutral" filled>不改文案</StatusTag>,
+      statedBrief: { impact: "重新算一遍问题报告，文案和 App 都不变。", check: "检查完看问题报告，有问题的逐条修。" },
+      remarkHint: "选填，不会保存",
+      okLabel: "开始检查",
       run: () => runBackend(actions.rescanI6("全量重扫词条完整性"), "检查完成，请看下表的问题"),
     });
 
-  const editKeyDraft = () => selectedMessage &&
+  const editKeyDraft = (form: Pick<CopyEditor, "zh" | "en" | "vi">) => selectedMessage &&
     openActionConfirm({ briefKind: "config",
       action: <>编辑词条草稿 · {selectedMessage.messageKey}</>,
+      title: "保存三语草稿",
       detail: (
         <>
-          中文、英文、越南语三份一起维护；三种语言的占位符集合必须一致。保存只新增或更新版本草稿，不覆盖当前发布版。
+          中文、越南语、英语三份一起保存为草稿；不覆盖现在发布的版本，发布后用户才看到。
         </>
       ),
+      effect: <StatusTag tone="neutral" filled>只存草稿</StatusTag>,
+      statedBrief: { impact: "存成草稿，App 里还是现在发布的文字。", check: "三种语言意思一致，变量原样保留。" },
+      confirmLabel: "保存草稿",
+      facts: <div className="rd-stack">
+        <Facts><Fact k="文案键">{selectedMessage.messageKey}</Fact><Fact k="基于">{selectedMessage.version} · {statusLabel(selectedMessage.status)}</Fact></Facts>
+        <CompareRows beforeLabel={`现在 ${selectedMessage.version}`} afterLabel="保存后的草稿"
+          rows={LANGS.map((item) => ({ key: item.key, label: item.label, before: langValue(selectedMessage, item.key), after: form[item.key] }))} />
+      </div>,
       amplifies: false,
-      businessForm: {
-        kind: "localized-copy",
-        mode: "edit",
-        keyName: selectedMessage.messageKey,
-        zh: selectedMessage.zh,
-        en: selectedMessage.en,
-        vi: selectedMessage.vi,
-        placeholders: selectedMessage.placeholders,
-      },
-      run: (reason, _v, form) => {
+      run: (reason) => {
         const messageKey = selectedMessage.messageKey;
         setSelectedMessageKey(messageKey);
         return runBackend(actions.saveI6LocalizedDraft(messageKey, {
@@ -289,21 +334,31 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           en: form?.en || "",
           vi: form?.vi || "",
           expectedVersion: selectedMessage.version,
-        }, reason), `${messageKey} 草稿已保存 · 当前发布版未被覆盖`);
+        }, reason), `${messageKey} 草稿已保存 · 当前发布版未被覆盖`).then(() => setCopyEditor(null));
       },
     });
 
   const pubKey = () =>
     openActionConfirm({ briefKind: "content",
       action: <>发布词条 · {selectedMessage?.messageKey ?? "未选择"} {selectedMessage?.version ?? ""}</>,
+      title: "发布文案",
       detail: (
         <>
-          发布前检查：<b>中英越三语{missingLocales.length === 0 ? "完整 ✓" : `待补齐（${missingLocales.join("、")}）`}</b>；
-          <b>变量{missingLocales.length > 0 ? "尚未检查（请先补齐三语）" : variablesMatch ? `一致 ✓（${messageVariables[0] || "无变量"}）` : "不一致"}</b>；
-          <b>占位文字与旧品牌{qualityIssues.length === 0 ? "检查通过 ✓" : `检查未通过：${qualityIssues.join("、")}`}</b>。
-          发布后用户下次加载该词条时使用新版本。系统提交时仍会核对发布条件。
+          发布前检查：<b>中越英三语{missingLocales.length === 0 ? "完整" : `待补齐（${missingLocales.join("、")}）`}</b>；
+          <b>变量{missingLocales.length > 0 ? "尚未检查（请先补齐三语）" : variablesMatch ? `一致（${messageVariables[0] || "无变量"}）` : "不一致"}</b>；
+          <b>占位文字与旧品牌{qualityIssues.length === 0 ? "检查通过" : `检查未通过：${qualityIssues.join("、")}`}</b>。
+          系统提交时仍会核对发布条件。
         </>
       ),
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      statedBrief: { impact: "App 下次拉取文案时换成这一版；用户把 App 切回前台会重新拉取，已打开的页面不会马上变。", check: "三种语言都读一遍，变量和占位一致。" },
+      confirmLabel: "发布",
+      facts: selectedMessage && <Facts>
+        <Fact k="文案键">{selectedMessage.messageKey}</Fact>
+        <Fact k="发布版本">{selectedMessage.version}</Fact>
+        <Fact k="三种语言">{missingLocales.length === 0 ? "齐了" : `缺${missingLocales.join("、")}`}</Fact>
+        <Fact k="变量">{messageVariables[0] || "无"}</Fact>
+      </Facts>,
       amplifies: false,
       run: (reason) => {
         if (!selectedMessage || selectedMessage.status !== "draft" || publicationIssues.length > 0) return false;
@@ -318,7 +373,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const archiveKey = () => selectedMessage && openActionConfirm({ briefKind: "record",
     action: <>归档词条 · {selectedMessage.messageKey}</>,
-    detail: <>归档后不再显示，历史版本和操作记录仍保留。</>,
+    title: "归档文案",
+    detail: <>撤下这条远程文案；App 拉不到它后改用安装包里自带的文字（有的话）。历史版本和操作记录都保留，之后可以从历史版本回滚。</>,
+    effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+    statedBrief: { impact: "App 不再拿到这条远程文案，屏幕上的字不一定消失。", check: "确认这条文字不再需要后台管理。" },
+    confirmLabel: "归档",
+    confirmTone: "danger",
+    facts: <Facts><Fact k="文案键">{selectedMessage.messageKey}</Fact><Fact k="现在">{selectedMessage.version} · 已发布</Fact></Facts>,
     amplifies: false,
     run: (reason) => runBackend(actions.archiveI6LocalizedMessage(
       selectedMessage.messageKey,
@@ -330,10 +391,19 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const rollbackMessageVersion = (target: I18nMessagePairView) =>
     selectedMessage && openActionConfirm({ briefKind: "content",
       action: <>回滚词条 · {selectedMessage.messageKey} → {target.version}</>,
+      title: `回滚到 ${target.version}`,
       detail: <>
         把这个旧版本的三语内容复制成一个新版本发布，旧记录不会被改动。
         当前版本 <b>{selectedMessage.version}</b>，回滚到 <b>{target.version}</b>。
       </>,
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      statedBrief: { impact: `复制 ${target.version} 的三语发布成新版本，App 下次拉取文案时换成它；原来的版本和历史都保留。`, check: "逐语言看新旧对比。" },
+      confirmLabel: "回滚",
+      facts: <div className="rd-stack">
+        <Facts><Fact k="文案键">{selectedMessage.messageKey}</Fact><Fact k="版本"><Change from={`${selectedMessage.version}（现在）`} to={`新版本（复制 ${target.version}）`} /></Fact></Facts>
+        <CompareRows beforeLabel={`现在 ${selectedMessage.version}`} afterLabel={`回滚后（${target.version} 的内容）`}
+          rows={LANGS.map((item) => ({ key: item.key, label: item.label, before: langValue(selectedMessage, item.key), after: langValue(target, item.key) }))} />
+      </div>,
       amplifies: false,
       run: (reason) => runBackend(actions.rollbackI6LocalizedMessage(
         selectedMessage.messageKey,
@@ -343,25 +413,25 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       ), `${selectedMessage.messageKey} 已从 ${target.version} 恢复为新发布版本`),
     });
 
-  const fixIntegrity = (issue: IntegrityIssue) =>
+  const fixIntegrity = (issue: IntegrityIssue, form: Pick<CopyEditor, "zh" | "en" | "vi">) =>
     openActionConfirm({ briefKind: "config",
       action: <>修复完整性问题 · {issue.kind}</>,
+      title: "修复并存成草稿",
       detail: (
         <>
-          {issue.kind} 共 <b>{issue.cnt}</b> 处。请补齐缺少的翻译、修正变量、把写死的文字换成词条。保存后重新检查，问题清零后才能发布。
+          把这条文案的三语存成新草稿，并重新计算「{issueName(issue)}」的问题数。不会自动发布，发布还要在文案上单独点。
         </>
       ),
+      effect: <StatusTag tone="neutral" filled>只存草稿</StatusTag>,
+      statedBrief: { impact: "存成草稿并重算这类问题，App 里的文字不变。", check: "核对修的是哪一条文案。" },
+      confirmLabel: "保存修复",
+      facts: selectedMessage && <div className="rd-stack">
+        <Facts><Fact k="问题">{issueName(issue)} · {count(issue.cnt)} 处</Fact><Fact k="修哪一条">{selectedMessage.messageKey}</Fact></Facts>
+        <CompareRows beforeLabel={`现在 ${selectedMessage.version}`} afterLabel="修复后的草稿"
+          rows={LANGS.map((item) => ({ key: item.key, label: item.label, before: langValue(selectedMessage, item.key), after: form[item.key] }))} />
+      </div>,
       amplifies: false,
-      businessForm: {
-        kind: "localized-copy",
-        mode: "edit",
-        keyName: selectedMessage?.messageKey ?? "",
-        zh: selectedMessage?.zh ?? "",
-        en: selectedMessage?.en ?? "",
-        vi: selectedMessage?.vi ?? "",
-        placeholders: selectedMessage?.placeholders,
-      },
-      run: (reason, _v, form) => {
+      run: (reason) => {
         if (!selectedMessage) return false;
         const messageKey = selectedMessage.messageKey;
         return runBackend(actions.fixI6Integrity(issue.code, {
@@ -372,8 +442,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         }, reason), (result) => {
           const repairedCount = result.repairedCount
             ?? Number(issue.samples.includes(messageKey) && !result.samples.includes(messageKey));
-          return `${issue.kind} ${repairedCount} 处已修复 · 待重扫确认`;
-        });
+          return `${issueName(issue)} ${repairedCount} 处已修复 · 重新检查后确认`;
+        }).then(() => setCopyEditor(null));
       },
     });
 
@@ -416,20 +486,39 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     if (original.kind === "proposal" && original.input.command.op === op
       && (!version || original.input.command.params.version === version)) return false;
     const label = original.kind === "proposal" ? `${original.input.action} · ${String(original.input.command.params.version)}` : original.tierName;
-    toast(`原操作「${label}」结果待确认，请先恢复原操作。命令号：${pending.commandKey}`);
+    toast(`原操作「${label}」结果未知，先在上方核对原操作再提交新的。`, "warn");
     return true;
   };
+
+  /** 有奖励（> 0）走审批，没有奖励直接执行：标签和谁来批按目标版本的奖励写。 */
+  const activationEffect = (reward: number) => reward > 0
+    ? <StatusTag tone="progress" filled explain={`${APPROVER}在「操作记录与审批」批准后才执行；批准前课程、进度和发奖都不变。`}>批准后生效</StatusTag>
+    : <StatusTag tone="progress" filled>立即生效</StatusTag>;
+  const approverFact = (reward: number) => reward > 0
+    ? <Fact k="谁来批">{APPROVER}（需有审批批准权限）</Fact> : null;
+  const courseChange = (c: Course, target: { version: string; reward: unknown; title?: string; quiz?: number; pass?: unknown }) => <Facts>
+    <Fact k="课程">{nexGridBrandText(c.title)}</Fact>
+    <Fact k="版本"><Change from={liveStatus(c) === "published" ? `${c.v}（线上）` : `${c.v}（${COURSE_STATUS[liveStatus(c)]?.text ?? "草稿"}）`} to={`${target.version}（线上）`} /></Fact>
+    <Fact k="学完发">{liveStatus(c) === "published" && uvtText(c.rewardRaw) !== uvtText(target.reward)
+      ? <Change from={`${uvtText(c.rewardRaw)} UVT/人`} to={`${uvtText(target.reward)} UVT/人`} /> : `${uvtText(target.reward)} UVT/人`}</Fact>
+    {target.quiz !== undefined && <Fact k="测验">{target.quiz} 题 · {String(target.pass ?? "—")} 分及格</Fact>}
+    {approverFact(Number(target.reward))}
+  </Facts>;
 
   const pubCrs = (c: Course) => {
     if (courseCommandBlocks(c, "i7_course_first_publish")) return;
     openActionConfirm({ briefKind: "content",
       action: <>发布课程新版 · {nexGridBrandText(c.title)}</>,
+      title: c.reward > 0 ? "提交审批：发布课程" : "发布课程",
       detail: (
         <>
-          分类「{categoryLabel(c.cat)}」 · 奖励 {c.reward} UVT/课。发布到 /learn。
+          分类「{categoryLabel(c.cat)}」 · 奖励 {uvtText(c.rewardRaw)} UVT/人。发布后 App 学习课程里能看到并学这门课。
         </>
       ),
-      facts: <CourseApprovalFact />,
+      effect: activationEffect(c.reward),
+      confirmLabel: c.reward > 0 ? "提交审批" : "发布",
+      statedBrief: { impact: c.reward > 0 ? `批准后课程上线，学完并通过测验的用户每人领 ${uvtText(c.rewardRaw)} UVT；批准前用户看不到。` : "发布后用户能看到并学这门课。", check: "三种语言的标题、正文、测验都齐，奖励数核对过。" },
+      facts: courseChange(c, { version: c.v, reward: c.rewardRaw, quiz: c.quizQuestions.length, pass: c.passScore }),
       amplifies: false,
       getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
       run: (reason) => activateCourse(c, "first_publish", reason),
@@ -440,14 +529,27 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const adjRwd = (c: Course) =>
     openActionConfirm({ briefKind: "config",
       action: <>课程奖励调整 · {nexGridBrandText(c.title)}</>,
+      title: "提交审批：调整课程奖励",
       detail: (
         <>
-          分类「{categoryLabel(c.cat)}」完成 UVT 奖励调整 ·{" "}
-          <b>调高奖励会多发 UVT</b>，覆盖率低于红线时无法保存。
+          分类「{categoryLabel(c.cat)}」完成 UVT 奖励调整。调高会多发 UVT，批准时覆盖率低于红线会被拒。
         </>
       ),
+      effect: <StatusTag tone="progress" filled explain={`${APPROVER}在「操作记录与审批」批准后才改；批准前用户仍按现在的数领。`}>批准后生效</StatusTag>,
+      confirmLabel: "提交审批",
+      statedBrief: { impact: "批准后，之后学完领奖的用户按新数领；已经发出的不补也不扣。", check: "核对新数在范围内，理由写清为什么调。" },
+      edit: { kind: "number", current: String(c.reward), unit: "UVT/课", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max, step: 1,
+        hint: `${TUTORIAL_REWARD_RANGE.min}–${TUTORIAL_REWARD_RANGE.max} UVT`,
+        preview: (value: string) => value && Number.isFinite(Number(value)) && Number(value) !== c.reward
+          ? `批准后每位学完的用户领 ${uvtText(value)} UVT，${Number(value) > c.reward ? "比现在多" : "比现在少"} ${uvtText(Math.abs(Number(value) - c.reward))} UVT。` : undefined },
+      facts: <Facts>
+        <Fact k="课程">{nexGridBrandText(c.title)} · {c.v}</Fact>
+        <Fact k="从什么时候">批准后学完领奖的用户</Fact>
+        <Fact k="已经学完的">已发出的奖励不补差、不扣回</Fact>
+        <Fact k="谁来批">{APPROVER}（需有审批批准和课程调奖权限）</Fact>
+      </Facts>,
       amplifies: true,
-      edit: { kind: "number", current: String(c.reward), unit: "UVT/课", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max, step: 1 },
+      coverageLead: "调高后每位学完的用户多领 UVT",
       run: (reason, v) => {
         if (!v) return false;
         const def = findHighOp("i7_course_reward_adjust")!;
@@ -471,11 +573,20 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const archiveCrs = (c: Course) =>
     openActionConfirm({ briefKind: "content",
       action: <>下架课程 · {nexGridBrandText(c.title)}</>,
+      title: "下架课程",
       detail: (
         <>
-          下架后 /learn 不再展示该课;已开课用户保留进度,但完成奖励不再发放。常规换版直接发新版,只有正文/合规问题才下架。
+          下架后 App 学习课程里不再显示这门课；用户已有的学习进度和已发的奖励保留，之后不能再学完领奖。
         </>
       ),
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      statedBrief: { impact: "App 里不再显示这门课，已打开课程的用户提交时会提示找不到课。", check: "只有内容或合规问题才下架；常规改版发新版本。" },
+      confirmLabel: "下架",
+      confirmTone: "danger",
+      facts: <div className="rd-stack">
+        <Facts><Fact k="课程">{nexGridBrandText(c.title)} · {c.v}</Fact><Fact k="状态"><Change from="在线" to="已下架" /></Fact></Facts>
+        {liveFeatured() === c.id && <Notice tone="warn">这门是首页推荐课，后端不允许下架；先在「首页推荐」换一门课。</Notice>}
+      </div>,
       amplifies: false,
       run: (reason) => {
         return runBackend(actions.archiveI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已下架`);
@@ -520,55 +631,66 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     };
   };
 
-  const newCrs = () =>
-    openActionConfirm({ briefKind: "config",
+  /** 课程草稿的确认框：编辑在抽屉里填完，这里只填理由。 */
+  const courseDraftFacts = (form: CourseForm, extra?: ReactNode) => <Facts>
+    <Fact k="课程">{nexGridBrandText(form.titleZh || "—")}</Fact>
+    {extra}
+    <Fact k="学完发" lead unit="UVT/人">{uvtText(form.reward)}</Fact>
+    <Fact k="测验">{form.quizCount} 题 · {form.passScore} 分及格 · 可重试 {form.retries} 次</Fact>
+  </Facts>;
+  const draftEffect = <StatusTag tone="neutral" filled>只存草稿</StatusTag>;
+  const courseSpec = (mode: CourseSpec["mode"], current?: CourseSpec["current"]): CourseSpec => ({
+    mode, rewardMin: TUTORIAL_REWARD_RANGE.min, rewardMax: TUTORIAL_REWARD_RANGE.max, categories: courseCategories, formats: data?.formats, levels: data?.levels, current,
+  });
+
+  const newCrs = () => setCourseEditor({ spec: courseSpec("create"), title: "新建课程", sub: "存成草稿，用户看不到",
+    save: (form) => openActionConfirm({ briefKind: "config",
       action: <>新建课程(存为草稿)</>,
+      title: "保存新课程草稿",
       detail: (
         <>
-          填 课程标识 / 分类 / 形式 / 难度 / 奖励（{TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT）；标题和正文在「多语言与课程」里另建中英越三语。草稿用户看不到，发布时需要确认。
+          课程标识、分类、形式、难度、奖励（{TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT）和三语标题、正文、测验一起存成草稿；草稿用户看不到，发布另外操作。
         </>
       ),
+      effect: draftEffect,
+      confirmLabel: "保存草稿",
+      statedBrief: { impact: "存成 v1 草稿，用户看不到；发布另外操作。", check: "课程标识建好后不能改。" },
+      facts: courseDraftFacts(form, <Fact k="课程标识">{form.slug}</Fact>),
       amplifies: false,
-      businessForm: {
-        kind: "course-authoring",
-        mode: "create",
-        rewardMin: TUTORIAL_REWARD_RANGE.min,
-        rewardMax: TUTORIAL_REWARD_RANGE.max,
-        categories: courseCategories,
-        formats: data?.formats,
-        levels: data?.levels,
+      run: (reason) => {
+        const id = form.slug?.trim() || "new";
+        return runBackend(actions.createI6Course(id, coursePayload(form), reason), "课程草稿已创建").then(() => setCourseEditor(null));
       },
-      run: (reason, slug, form) => {
-        const id = slug?.trim() || "new";
-        return runBackend(actions.createI6Course(id, coursePayload(form), reason), "课程草稿已创建");
-      },
-    });
-
-  const editCrs = (c: Course) => openActionConfirm({ briefKind: "config",
-    action: <>编辑课程草稿 · {nexGridBrandText(c.title)}</>,
-    detail: <>只有草稿可以编辑；测验按题目和选项填写。</>,
-    amplifies: false,
-    businessForm: {
-      kind: "course-authoring",
-      mode: "edit",
-      rewardMin: TUTORIAL_REWARD_RANGE.min,
-      rewardMax: TUTORIAL_REWARD_RANGE.max,
-      categories: courseCategories,
-      formats: data?.formats,
-      levels: data?.levels,
-      current: {
-        slug: c.id, category: c.cat, format: c.format, difficulty: c.level, duration: c.duration, reward: c.reward,
-        titleZh: c.titleZh, titleEn: c.titleEn, titleVi: c.titleVi, bodyZh: c.bodyZh, bodyEn: c.bodyEn, bodyVi: c.bodyVi,
-        quizQuestions: c.quizQuestions, passScore: c.passScore, retryLimit: c.retryLimit,
-        completionCondition: c.completionCondition, rewardEvent: c.rewardEvent,
-      },
-    },
-    run: (reason, _slug, form) => runBackend(actions.updateI7CourseDraft(c.id, coursePayload(form, c.revision), reason), `${nexGridBrandText(c.title)} 草稿已更新`),
+    }),
   });
+
+  const editCrs = (c: Course) => setCourseEditor({ spec: courseSpec("edit", {
+    slug: c.id, category: c.cat, format: c.format, difficulty: c.level, duration: c.duration, reward: c.reward,
+    titleZh: c.titleZh, titleEn: c.titleEn, titleVi: c.titleVi, bodyZh: c.bodyZh, bodyEn: c.bodyEn, bodyVi: c.bodyVi,
+    quizQuestions: c.quizQuestions, passScore: c.passScore, retryLimit: c.retryLimit,
+    completionCondition: c.completionCondition, rewardEvent: c.rewardEvent,
+  }), title: "编辑课程草稿", sub: `${c.id} · ${c.v}`,
+  save: (form) => openActionConfirm({ briefKind: "config",
+    action: <>编辑课程草稿 · {nexGridBrandText(c.title)}</>,
+    title: "保存课程草稿",
+    detail: <>只有草稿可以编辑；别人刚改过时保存会被拒，刷新后重改。</>,
+    effect: draftEffect,
+    confirmLabel: "保存草稿",
+    statedBrief: { impact: "更新这门课的草稿，用户看不到。", check: "三种语言和测验核对过。" },
+    facts: courseDraftFacts(form, <Fact k="版本">{c.v}</Fact>),
+    amplifies: false,
+    run: (reason) => runBackend(actions.updateI7CourseDraft(c.id, coursePayload(form, c.revision), reason), `${nexGridBrandText(c.title)} 草稿已更新`).then(() => setCourseEditor(null)),
+  }) });
 
   const deleteCrs = (c: Course) => openActionConfirm({ briefKind: "record",
     action: <>删除课程草稿 · {nexGridBrandText(c.title)}</>,
+    title: "删除课程草稿",
     detail: <>只能删除还没发布的草稿；已发布或已归档的课程不能删除。</>,
+    effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag>删了找不回</IrreversibleTag></>,
+    statedBrief: { impact: "删掉这门课和它的草稿内容。", check: "确认这门课不再需要。" },
+    confirmLabel: "删除草稿",
+    confirmTone: "danger",
+    facts: <Facts><Fact k="课程">{nexGridBrandText(c.title)}</Fact><Fact k="课程标识">{c.id}</Fact></Facts>,
     amplifies: false,
     run: (reason) => runBackend(actions.deleteI7CourseDraft(c.id, reason), `${nexGridBrandText(c.title)} 草稿已删除`),
   });
@@ -592,47 +714,68 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const newCourseVersion = (c: Course) => {
     const maxVersion = Math.max(Number(c.v.replace(/^v/i, "")) || 0,
       ...courseVersions.map((row) => Number(row.version.replace(/^v/i, "")) || 0));
-    openActionConfirm({ briefKind: "config",
-      action: <>新建课程版本草稿 · {nexGridBrandText(c.title)}</>,
-      detail: <>当前发布版继续服务用户；新版本在独立草稿中编辑，发布后才原子替换当前版。</>,
-      amplifies: false,
-      businessForm: {
-        kind: "course-authoring", mode: "version-create", rewardMin: TUTORIAL_REWARD_RANGE.min, rewardMax: TUTORIAL_REWARD_RANGE.max,
-        categories: courseCategories, formats: data?.formats, levels: data?.levels,
-        current: courseCurrent(c, `v${maxVersion + 1}`),
-      },
-      run: (reason, _value, form) => runBackend(
-        actions.createI7CourseVersion(c.id, coursePayload(form), reason), `${nexGridBrandText(c.title)} ${form?.version} 草稿已创建`),
+    setCourseEditor({ spec: courseSpec("version-create", courseCurrent(c, `v${maxVersion + 1}`)), title: "新版本草稿", sub: `${nexGridBrandText(c.title)} · 线上 ${c.v} 照常服务`,
+      save: (form) => openActionConfirm({ briefKind: "config",
+        action: <>新建课程版本草稿 · {nexGridBrandText(c.title)}</>,
+        title: "保存新版本草稿",
+        detail: <>当前发布版继续服务用户；新版本在独立草稿中编辑，发布后才整体替换当前版。</>,
+        effect: draftEffect,
+        confirmLabel: "保存草稿",
+        statedBrief: { impact: `存成 ${form.version} 草稿；线上 ${c.v} 和用户进度都不变。`, check: "一门课同时只能有一个版本草稿。" },
+        facts: courseDraftFacts(form, <Fact k="版本"><Change from={`${c.v}（线上）`} to={`${form.version}（草稿）`} /></Fact>),
+        amplifies: false,
+        run: (reason) => runBackend(
+          actions.createI7CourseVersion(c.id, coursePayload(form), reason), `${nexGridBrandText(c.title)} ${form?.version} 草稿已创建`).then(() => setCourseEditor(null)),
+      }),
     });
   };
 
-  const editCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "config",
-    action: <>编辑课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
-    detail: <>三语正文和三语测验都要填完整。如果别人刚改过，需要刷新后重改。</>,
-    amplifies: false,
-    businessForm: {
-      kind: "course-authoring", mode: "version-edit", rewardMin: TUTORIAL_REWARD_RANGE.min, rewardMax: TUTORIAL_REWARD_RANGE.max,
-      categories: courseCategories, formats: data?.formats, levels: data?.levels,
-      current: courseCurrent(c, row.version, row.payload),
-    },
-    run: (reason, _value, form) => runBackend(
-      actions.updateI7CourseVersion(c.id, row.version, coursePayload(form, row.revision), reason), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`),
+  const editCourseVersion = (c: Course, row: LearningCourseVersionView) => setCourseEditor({
+    spec: courseSpec("version-edit", courseCurrent(c, row.version, row.payload)), title: "编辑版本草稿", sub: `${nexGridBrandText(c.title)} · ${row.version}`,
+    save: (form) => openActionConfirm({ briefKind: "config",
+      action: <>编辑课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
+      title: "保存版本草稿",
+      detail: <>三语正文和三语测验都要填完整。如果别人刚改过，需要刷新后重改。</>,
+      effect: draftEffect,
+      confirmLabel: "保存草稿",
+      statedBrief: { impact: `更新 ${row.version} 草稿；线上版本不变。`, check: "三种语言和测验核对过。" },
+      facts: courseDraftFacts(form, <Fact k="版本">{row.version}（草稿）</Fact>),
+      amplifies: false,
+      run: (reason) => runBackend(
+        actions.updateI7CourseVersion(c.id, row.version, coursePayload(form, row.revision), reason), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`).then(() => setCourseEditor(null)),
+    }),
   });
 
   const deleteCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "record",
     action: <>删除课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
+    title: `删除 ${row.version} 草稿`,
     detail: <>只能删除草稿；已发布和历史版本不能删除，以免影响用户进度和奖励。</>,
+    effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag>删了找不回</IrreversibleTag></>,
+    statedBrief: { impact: "只删这份版本草稿，线上版本和用户进度不变。", check: "核对版本号。" },
+    confirmLabel: "删除草稿",
+    confirmTone: "danger",
+    facts: <Facts><Fact k="课程">{nexGridBrandText(c.title)}</Fact><Fact k="版本">{row.version}（草稿）</Fact></Facts>,
     amplifies: false,
     run: (reason) => runBackend(actions.deleteI7CourseVersion(c.id, row.version, reason), `${row.version} 草稿已删除`),
   });
 
+  const versionTarget = (row: LearningCourseVersionView) => ({
+    version: row.version, reward: row.payload.rewardNex,
+    quiz: Array.isArray(row.payload.quizQuestions) ? row.payload.quizQuestions.length : undefined, pass: row.payload.passScore,
+  });
   const publishCourseVersion = (c: Course, row: LearningCourseVersionView) => {
     if (courseCommandBlocks(c, "i7_course_version_publish", row.version)) return;
+    const reward = Number(row.payload.rewardNex);
     openActionConfirm({ briefKind: "content",
     action: <>发布课程版本 · {nexGridBrandText(c.title)} {row.version}</>,
+    title: reward > 0 ? `提交审批：发布 ${row.version}` : `发布 ${row.version}`,
     detail: <>发布前会检查三语测验、兑付覆盖率和权限；发布后旧版本变为历史版本。</>,
-    facts: <CourseApprovalFact />,
+    effect: activationEffect(reward),
+    confirmLabel: reward > 0 ? "提交审批" : "发布",
+    statedBrief: { impact: `${reward > 0 ? "批准后" : "发布后"}课程整体换成 ${row.version}：正文、测验、奖励一起换；在新版本学完的用户可以再领一次。`, check: "核对新版本的奖励和测验。" },
+    facts: courseChange(c, versionTarget(row)),
     amplifies: true,
+    coverageLead: "这个版本学完会发 UVT，提交和批准时都检查兑付覆盖率",
     getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
     run: (reason) => activateCourse(c, "version_publish", reason, row),
   });
@@ -640,11 +783,17 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const rollbackCourseVersion = (c: Course, row: LearningCourseVersionView) => {
     if (courseCommandBlocks(c, "i7_course_version_rollback", row.version)) return;
+    const reward = Number(row.payload.rewardNex);
     openActionConfirm({ briefKind: "content",
     action: <>回滚课程版本 · {nexGridBrandText(c.title)} → {row.version}</>,
-    detail: <>回滚后课程内容、测验和奖励设置一起恢复成这个版本；已领过奖励的用户不会重复领取。</>,
-    facts: <CourseApprovalFact />,
+    title: reward > 0 ? `提交审批：回滚到 ${row.version}` : `回滚到 ${row.version}`,
+    detail: <>回滚后课程内容、测验和奖励设置一起恢复成这个版本；在这个版本领过奖励的用户不会重复领取。</>,
+    effect: activationEffect(reward),
+    confirmLabel: reward > 0 ? "提交审批" : "回滚",
+    statedBrief: { impact: `${reward > 0 ? "批准后" : "回滚后"}正文、测验、奖励一起回到 ${row.version}；奖励不变或降低也要审批。`, check: "核对回滚后的奖励和测验。" },
+    facts: courseChange(c, versionTarget(row)),
     amplifies: true,
+    coverageLead: "这个版本学完会发 UVT，提交和批准时都检查兑付覆盖率",
     getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
     run: (reason) => activateCourse(c, "version_rollback", reason, row),
   });
@@ -656,13 +805,17 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const publishedCourseLabels = Object.fromEntries(COURSES.filter((course) => liveStatus(course) === "published").map((course) => [course.id, `${nexGridBrandText(course.title)}（${course.id}）`]));
     openActionConfirm({ briefKind: "content",
       action: <>更换推荐位课程</>,
+      title: "更换首页推荐课",
       detail: (
         <>
-          推荐位是首页大卡的单一展示位 · 换课等于改变所有用户的首页主推教程；只能从已发布课程中选择。
+          推荐位只有一个，只能选已发布的课；不能取消推荐。
         </>
       ),
-      amplifies: false,
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      statedBrief: { impact: "App 首页先推用户没学完、正在学的课，其次才推这门；不是每个人首页都一样。", check: "选的是已发布的课。" },
+      confirmLabel: "更换",
       edit: { kind: "select", current: cur, options: publishedCourseOptions, optionLabels: publishedCourseLabels, unit: "课程" },
+      amplifies: false,
       run: (reason, v) => {
         if (!v) return false;
         // audit P1 修:换课必须是「已发布课程 id」(SPEC §4 + 设计稿文案承诺);
@@ -675,28 +828,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
   };
 
-  /* ============ render helpers ============ */
-  const renderCoverage = (n: Namespace) => {
-    if (n.coverage === 100) return <span className="in-full">100% ✓</span>;
-    return (
-      <>
-        <span className="in-cov">
-          <i style={{ width: n.coverage + "%" }} />
-        </span>
-        <span
-          className="mono"
-          style={{ fontSize: 11.5, marginLeft: 7, color: "var(--warning)" }}
-        >
-          {n.coverage}%
-        </span>
-      </>
-    );
-  };
-
+  /* ============ 等批准和结果未知的课程操作 ============ */
+  const courseRecords = view === "learn" ? pendingHIRewardCommands().filter((record) => record.scope.startsWith("I/")) : [];
+  const courseApprovalRows = Array.isArray(courseApprovals) ? courseApprovals : [];
   const courseRecovery = (() => {
         if (view !== "learn") return null;
-        const records = pendingHIRewardCommands().filter((record) => record.scope.startsWith("I/"));
-        const approvals = Array.isArray(courseApprovals) ? courseApprovals : [];
+        const records = courseRecords;
+        const approvals = courseApprovalRows;
         if (!records.length && !approvals.length && courseApprovals !== "error") return null;
         const courseTitle = (id: string) => nexGridBrandText(allCourses.find((course) => course.id === id)?.title ?? id);
         // 超过 24 小时的原操作只查原审批单、不重发：查询直接做，不经确认框（共用确认框带锁定理由时按钮固定写「重试原操作」）。
@@ -716,24 +854,29 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         const subject = (record: HIRewardCommand) => record.payload.kind === "proposal"
           ? `${record.payload.input.action} · ${courseTitle(record.payload.input.obj)} ${String(record.payload.input.command.params.version ?? "")}`.trim()
           : "原操作";
-        return <section className="l-card" aria-label="审批中和待核对的课程操作">
-          <div className="l-h">
-            <span className="ttl">审批中和待核对的课程操作</span>
-            <span className="sub">· 有奖励的课程发布和回滚</span>
-            {canReadA2 && <div className="r"><button className="l-btn sm" onClick={() => void reloadCourseApprovals()}>刷新审批进度</button></div>}
-          </div>
-          <div className="l-b" style={{ display: "grid", gap: 8 }}>
+        const change = (record: HIRewardCommand) => record.payload.kind === "proposal"
+          ? <Change from={approvalValue(record.payload.input.beforeValue)} to={approvalValue(record.payload.input.afterValue)} /> : null;
+        const auditHref = "/platform/audit?domain=I";
+        return <Panel title="等批准和结果未知的课程操作" icon={TriangleAlert} tone="warn" sub={`${records.length + approvals.length} 项`}
+          explain="有奖励的课程发布、发布新版本、回滚到旧版本，都要另一位超级管理员批准；批准前课程保持现在的版本，这门课的其他发布或回滚会被拦下。"
+          actions={canReadA2 && <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reloadCourseApprovals()}>刷新审批进度</Button>}>
+          <ul className="i6-pending" aria-label="课程审批和结果未知列表">
             {records.map((record) => {
               const expired = isRetryExpired(record);
               const label = subject(record);
-              return <div className={`itint${expired ? "" : " warn"}`} key={record.commandKey} role="status" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
-                <span style={{ flex: "1 1 320px", minWidth: 0 }}>
-                  <b>{label}</b> <span className={`bdg ${expired ? "dim" : "warn"}`}>{expired ? "已超过 24 小时" : "结果未确认"}</span><br />
-                  {expired ? "不能再按原请求重发，只能查询原审批单。" : "没收到系统回复，不知道审批单建没建成。核对时先按原命令查询，查不到才按原请求原样重发，不会重复建单。"}
-                </span>
-                <button className="l-btn sm mc" disabled={!canPublishI7 || !!lookupKey} onClick={() => expired ? void lookupExpired(record) : openActionConfirm({ briefKind: "record",
+              return <li key={record.commandKey} role="status">
+                <StatusTag tone={expired ? "done" : "warn"}>{expired ? "已超过 24 小时" : "结果未知"}</StatusTag>
+                <span className="i6-pending-what">{label}</span>
+                <span className="i6-pending-change">{change(record)}</span>
+                <span className="i6-pending-at">{businessStamp(record.createdAt)} 提交</span>
+                <Button size="sm" variant="primary" disabled={!canPublishI7 || !!lookupKey} loading={lookupKey === record.commandKey}
+                  onClick={() => expired ? void lookupExpired(record) : openActionConfirm({ briefKind: "record",
                   action: `核对原操作 · ${label}`,
-                  detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原命令查询；查不到才按原请求原样重发，不会重复执行。理由沿用原操作。</>,
+                  title: "按原请求重试",
+                  detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原请求查审批单；查不到才按原请求原样重发，不会重复建单。理由沿用原操作。</>,
+                  effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>,
+                  statedBrief: { impact: "先查原审批单，查不到才原样重发；不会建第二张单。", check: "核对是哪门课、哪个版本。" },
+                  facts: <Facts><Fact k="原操作">{label}</Fact><Fact k="改动">{change(record) ?? "—"}</Fact><Fact k="提交时间">{businessStamp(record.createdAt)}（{BJ}）</Fact></Facts>,
                   confirmLabel: expired ? "查询原审批单" : "核对原操作",
                   getPendingReason: () => pendingHIRewardCommands().find((row) => row.commandKey === record.commandKey)?.payload.input.reason,
                   run: async () => {
@@ -742,714 +885,530 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
                     void reloadCourseApprovals();
                   },
-                })}>{expired ? lookupKey === record.commandKey ? "查询中…" : "查询原审批单" : "核对原操作"}</button>
-              </div>;
+                })}>{expired ? "查询原结果" : "按原请求重试"}</Button>
+              </li>;
             })}
-            {approvals.map((row) => <div className="itint" key={row.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
-              <span style={{ flex: "1 1 320px", minWidth: 0 }}>
-                <b>{row.action} · {courseTitle(row.obj)}</b> <span className="bdg warn">待审批</span><br />
-                另一位有审批批准权限的超级管理员批准前，课程保持现在的版本；这期间这门课的其他发布或回滚会被拦下。{row.mine ? "这张审批单是你发起的。" : ""}
-              </span>
-              <a className="l-btn sm" href="/platform/audit">去操作记录与审批查看</a>
-            </div>)}
-            {courseApprovals === "error" && <div className="itint warn" role="alert" style={{ fontSize: 12 }}>审批进度读取失败，请点「刷新审批进度」重试。</div>}
-          </div>
-        </section>;
+            {approvals.map((row) => <li key={row.id}>
+              <StatusTag tone="progress">待审批</StatusTag>
+              <span className="i6-pending-what">{row.action} · {courseTitle(row.obj)}{row.mine ? <small>你发起的</small> : null}</span>
+              <span className="i6-pending-change"><Change from={approvalValue(row.before)} to={approvalValue(row.after)} /></span>
+              <span className="i6-pending-at">{row.rawTs ? `${formatBusinessTimeCompact(row.rawTs, row.ts)} 提交` : row.ts}</span>
+              {reach(auditHref, "platform_a2_read") ? <Link className="rd-link" href={auditHref} prefetch={false}>去审批中心看</Link> : <span />}
+            </li>)}
+            {courseApprovals === "error" && <li><Notice tone="danger">审批进度读取失败，请点「刷新审批进度」重试。</Notice></li>}
+          </ul>
+        </Panel>;
       })();
 
+  /* ============ 读取中、读不到 ============ */
   if (contentLoading && !data) {
-    return <>{courseRecovery}<section className="l-card"><div className="l-b"><div className="itint">{view === "i18n" ? "多语言词条" : "教程"}数据加载中…</div></div></section></>;
+    return <>{courseRecovery}<BlockState state="loading" title={view === "i18n" ? "正在加载文案…" : "正在加载课程…"} /></>;
   }
   if (!data) {
-    return <>{courseRecovery}<section className="l-card"><div className="l-b"><div className="itint danger">{view === "i18n" ? "多语言词条" : "教程"}数据没有读到，请点页面上方的「重新加载」重试</div></div></section></>;
+    return <>{courseRecovery}<BlockState state="error" title={view === "i18n" ? "文案没有读到" : "课程没有读到"} detail="点上方「重新加载」重试。" /></>;
   }
 
-  /* ============ render ============ */
-  return (
-    <>
-      {view === "i18n" && <>
-      <div className="f-stats">
-        <div className="f-stat">
-          <div className="k">受管词条</div>
-          <div className="v">
-            {I6_STATS.managedKeys} / {I6_STATS.totalKeys}
+  /* ============ App 文案 ============ */
+  if (view === "i18n") {
+    const total = MESSAGES.length;
+    const filledOf = (lang: Lang) => MESSAGES.filter((message) => langValue(message, lang).trim()).length;
+    const missingAny = MESSAGES.filter((message) => missingLangs(message).length > 0);
+    const drafts = MESSAGES.filter((message) => message.status === "draft");
+    const archived = MESSAGES.filter((message) => message.status === "archived");
+    const published = MESSAGES.filter((message) => message.status === "published");
+    const openIssues = INTEGRITY_ISSUES.filter((issue) => issue.status !== "fixed");
+    const i1Copies = new Map((content.copyAb?.copies ?? []).filter((copy) => copy.i18nKey).map((copy) => [copy.i18nKey, copy]));
+    const i1Reachable = reach("/content/copy-ab");
+    const query = messageSearch.trim().toLowerCase();
+    const filteredMessages = MESSAGES.filter((message) => {
+      if (query && ![message.messageKey, message.namespace, message.zh, message.vi, message.en].some((value) => (value ?? "").toLowerCase().includes(query))) return false;
+      if (msgScope === "missing" && missingLangs(message).length === 0) return false;
+      if (msgScope !== "all" && msgScope !== "missing" && message.status !== msgScope) return false;
+      if (msgLang && langValue(message, msgLang).trim()) return false;
+      if (msgNs && message.namespace !== msgNs) return false;
+      return true;
+    });
+    const pageCount = Math.max(1, Math.ceil(filteredMessages.length / msgPageSize));
+    const page = Math.min(msgPage, pageCount);
+    const pageRows = filteredMessages.slice((page - 1) * msgPageSize, page * msgPageSize);
+    const filtered = !!query || msgScope !== "all" || !!msgLang || !!msgNs;
+    const clearFilters = () => { setMessageSearch(""); setMsgScope("all"); setMsgLang(""); setMsgNs(""); setMsgPage(1); };
+    const showList = (next: { lang?: Lang | ""; ns?: string; scope?: MsgScope }) => {
+      setMessageSearch("");
+      setMsgScope(next.scope ?? "all");
+      setMsgLang(next.lang ?? "");
+      setMsgNs(next.ns ?? "");
+      setMsgPage(1);
+      listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    const openMessage = (key: string) => { setSelectedMessageKey(key); setCompareVersion(""); setCopyEditor(null); setMessageDrawer(true); };
+    const nsRows = NAMESPACES.map((n) => {
+      const rows = MESSAGES.filter((message) => message.namespace === n.ns);
+      return { ...n, rows: rows.length, missing: LANGS.map((item) => ({ ...item, n: rows.filter((message) => !langValue(message, item.key).trim()).length })) };
+    });
+    const missingByLang = LANGS.map((item) => ({ ...item, n: total - filledOf(item.key) }));
+    const worstNs = [...nsRows].map((n) => ({ ns: n.ns, n: n.missing.reduce((sum, item) => sum + item.n, 0) })).filter((n) => n.n > 0).sort((a, b) => b.n - a.n);
+    const conclusionParts = [
+      missingAny.length > 0 && `${count(missingAny.length)} 条文案缺翻译`,
+      drafts.length > 0 && `${count(drafts.length)} 条草稿没发布`,
+      liveIntegrity > 0 && `完整性检查有 ${count(liveIntegrity)} 处问题`,
+    ].filter(Boolean) as string[];
+    const missingLangText = missingByLang.filter((item) => item.n > 0).map((item) => item.label).join("、");
+    const whereText = worstNs.length === 0 ? "" : worstNs.length === 1 ? `缺的都在「${nsLabel(worstNs[0].ns)}」` : `缺得最多的是「${nsLabel(worstNs[0].ns)}」`;
+
+    /* ---- 文案详情抽屉 ---- */
+    const sm = selectedMessage;
+    const i1 = sm ? i1Copies.get(sm.messageKey) : undefined;
+    const keyPath = sm ? sm.messageKey.split(".").slice(1).join(" › ") : "";
+    const smIssues = sm ? openIssues.filter((issue) => issue.cnt > 0 && issue.samples.includes(sm.messageKey)) : [];
+    const compareTarget = messageVersions.find((row) => row.version === compareVersion);
+    const editorMissing = copyEditor && sm ? copyFormMissing(sm.placeholders ?? [], copyEditor) : [];
+    const editorBlocked = blockedText(editorMissing);
+    const startEdit = (mode: CopyEditor["mode"], issue?: IntegrityIssue) => sm && setCopyEditor({ mode, issue, zh: sm.zh, vi: sm.vi, en: sm.en, tried: false });
+    const whenSeen = !sm ? "—" : sm.status === "published" ? "已在远程文案里；App 下次拉取时用它"
+      : sm.status === "draft" ? "草稿，用户看不到；发布后 App 下次拉取时换上" : sm.status === "archived" ? "已撤下远程文案，App 改用自带文字" : "—";
+    const judgment: JudgmentRow[] = sm ? [
+      { label: "状态", value: <><StatusTag tone={msgStatus(sm.status).tone}>{msgStatus(sm.status).text}</StatusTag> {sm.version}</> },
+      { label: "在 App 哪里", value: <>{nsLabel(sm.namespace)} · <span className="i6-mono">{keyPath || sm.messageKey}</span></> },
+      { label: "用户何时看到", value: whenSeen },
+      { label: "变量", value: sm.placeholders.length ? <span className="i6-mono">{sm.placeholders.join("、")}</span> : "无" },
+      ...(i1 ? [{ label: "来源", value: <>页面文案对比测试发布同步{i1Reachable ? <> · <Link className="rd-link" href="/content/copy-ab" prefetch={false}>去页面文案对比测试</Link></> : null}</> }] : []),
+    ] : [];
+    const drawerFooter = !sm || !canWriteI6 ? undefined : copyEditor
+      ? <Decision note={copyEditor.tried && editorBlocked ? editorBlocked : undefined}
+          others={<Button onClick={() => setCopyEditor(null)}>取消</Button>}
+          primary={<Button variant="primary" disabledReason={editorBlocked} onBlockedClick={() => setCopyEditor({ ...copyEditor, tried: true })}
+            onClick={() => copyEditor.mode === "fix" && copyEditor.issue ? fixIntegrity(copyEditor.issue, copyEditor) : editKeyDraft(copyEditor)}>{copyEditor.mode === "fix" ? "保存修复" : "保存草稿"}</Button>} />
+      : <Decision
+          danger={sm.status === "published" ? <Button variant="danger-outline" icon={<Archive size={14} aria-hidden />} onClick={archiveKey}>归档</Button> : undefined}
+          others={<Button icon={<Pencil size={14} aria-hidden />} onClick={() => startEdit("edit")}>编辑三语草稿</Button>}
+          primary={sm.status === "draft" ? <Button variant="primary" icon={<Send size={14} aria-hidden />} disabledReason={publicationIssues.length > 0 ? `暂不能发布：${publicationIssues.join("；")}` : undefined} onClick={pubKey}>发布</Button> : undefined} />;
+
+    return <>
+      <Conclusion state={conclusionParts.length ? "warn" : "ok"} icon={conclusionParts.length ? TriangleAlert : BadgeCheck}
+        hint={conclusionParts.length ? [missingLangText && whereText ? `${whereText}，缺${missingLangText}` : whereText, "点下面的条或模块看是哪几条"].filter(Boolean).join("；") : undefined}
+        explain="缺翻译按每条文案现在的内容算，草稿也算；完整性问题是上次检查存下的报告。">
+        {conclusionParts.length ? conclusionParts.join("，") : `${count(total)} 条文案三种语言都齐了，没有待发布的草稿`}
+      </Conclusion>
+
+      <Panel title="三种语言齐不齐" icon={Languages} tone="role-2" sub={`共 ${count(total)} 条 · ${count(NAMESPACES.length)} 个模块`}
+        explain="按每条文案现在的内容算（草稿也算）。「可上线」是后端算的：已发布、三语齐、变量一致且通过质量检查的才算。">
+        <div className="i6-cov">
+          <div className="i6-cov-langs">
+            {missingByLang.map((item) => <div key={item.key} className="i6-cov-lang">
+              <span className="i6-cov-name">{item.label}</span>
+              <RatioBar quiet label={`${item.label}填了多少`} value={total - item.n} total={total} tone={item.n > 0 ? "warn" : "ok"}
+                state={total === 0 ? "empty" : undefined} emptyText="没有文案" valueText={`${item.label}填了 ${total - item.n} 条，共 ${total} 条`} />
+              <span className="i6-cov-num">{total ? `${Math.floor((total - item.n) * 100 / total)}%` : "—"}</span>
+              {item.n > 0
+                ? <button type="button" className="i6-cov-miss" onClick={() => showList({ lang: item.key })} aria-label={`看缺${item.label}的 ${item.n} 条`}>缺 {count(item.n)} 条</button>
+                : <span className="i6-cov-ok">齐了</span>}
+            </div>)}
+            <div className="i6-cov-lang" data-total="">
+              <span className="i6-cov-name">可上线<span className="rd-sr-only">的文案</span></span>
+              <RatioBar quiet label="可上线的文案" value={Math.min(I6_STATS.managedKeys, I6_STATS.totalKeys)} total={I6_STATS.totalKeys} tone="role-2"
+                state={I6_STATS.totalKeys === 0 ? "empty" : undefined} emptyText="没有文案" valueText={`可上线 ${I6_STATS.managedKeys} 条，共 ${I6_STATS.totalKeys} 条`} />
+              <span className="i6-cov-num">{count(I6_STATS.managedKeys)} / {count(I6_STATS.totalKeys)}</span>
+              <span />
+            </div>
           </div>
-          <div className="sub">真实词条目录 × zh/en/vi</div>
+          <div className="i6-cov-ns" role="list" aria-label="按模块看缺多少">
+            {nsRows.length === 0 && <p className="i6-muted">没有模块</p>}
+            {nsRows.map((n) => {
+              const miss = n.missing.filter((item) => item.n > 0);
+              return <button key={n.ns} type="button" role="listitem" className="i6-ns" onClick={() => showList({ ns: n.ns })} aria-label={`看「${nsLabel(n.ns)}」的 ${n.keys} 条文案`}>
+                <span className="i6-ns-name">{nsLabel(n.ns)}<small>{n.ns} · {count(n.keys)} 条</small></span>
+                <span className="i6-ns-miss">{miss.length ? miss.map((item) => <StatusTag key={item.key} tone="warn" icon={TriangleAlert}>缺{item.short} {count(item.n)}</StatusTag>) : <StatusTag tone="ok">三语齐</StatusTag>}</span>
+                <span className="i6-ns-cov">
+                  <RatioBar compact quiet label={`${nsLabel(n.ns)}可上线比例`} value={n.coverage} total={100} tone="role-2" valueText={`可上线 ${n.coverage}%`} />
+                  <span className="i6-ns-pct">可上线 {n.coverage}%</span>
+                </span>
+              </button>;
+            })}
+          </div>
         </div>
-        <div className={`f-stat ${liveIntegrity === 0 ? "ok" : "warn"}`}>
-          <div className="k">完整性问题</div>
-          <div className="v">{liveIntegrity} 处</div>
-          <div className="sub">{liveIntegritySub}</div>
-        </div>
+      </Panel>
+
+      <div ref={listRef} className="i6-list-anchor">
+        <Panel title="找一句文案" icon={Search} tone="role-other" sub={filtered ? `${count(filteredMessages.length)} / ${count(total)} 条` : `${count(total)} 条`}
+          explain="按键名或中文、越南语、英语的内容搜。只能维护 App 已登记的文案键，新键随 App 版本登记。">
+          <FilterBar
+            scope={<div className="rd-filter-scope-row"><Segments label="按状态看" value={msgScope} onChange={(value) => { setMsgScope(value); setMsgPage(1); }}
+              items={[
+                { value: "all", label: "全部", count: total },
+                { value: "missing", label: "缺翻译", count: missingAny.length, tone: missingAny.length ? "warn" : undefined },
+                { value: "draft", label: "草稿", count: drafts.length },
+                { value: "published", label: "已发布", count: published.length },
+                { value: "archived", label: "已归档", count: archived.length },
+              ]} /></div>}
+            sort={<Select aria-label="按模块看" value={msgNs} onChange={(value) => { setMsgNs(value); setMsgPage(1); }}
+              options={[{ value: "", label: "全部模块" }, ...NAMESPACES.map((n) => ({ value: n.ns, label: nsLabel(n.ns) }))]} />}
+            canClear={filtered} onClear={clearFilters}
+            applied={msgLang ? [{ key: "lang", label: `缺${LANGS.find((item) => item.key === msgLang)?.label}`, onRemove: () => { setMsgLang(""); setMsgPage(1); } }] : undefined}
+            onSubmit={() => setMsgPage(1)} action={<span />}>
+            <FilterField grow>
+              <Input type="search" aria-label="搜索词条" data-search="" placeholder="搜键名，或中文、越南语、英语里的字" value={messageSearch}
+                onChange={(event) => { setMessageSearch(event.target.value); setMsgPage(1); }} />
+            </FilterField>
+          </FilterBar>
+          <Table label="文案列表" className="i6-msg-table">
+            <thead><tr><Th>文案键</Th>{LANGS.map((item) => <Th key={item.key}>{item.label}</Th>)}<Th>状态</Th></tr></thead>
+            <tbody>
+              {pageRows.map((message) => {
+                const selected = messageDrawer && sm?.messageKey === message.messageKey;
+                return <Tr key={message.messageKey} selected={selected} onOpen={() => openMessage(message.messageKey)}>
+                  <Td><span className="i6-key-cell">
+                    <button type="button" className="i6-key" aria-label={`选择 ${message.messageKey}`} title={message.messageKey} onClick={() => openMessage(message.messageKey)}>
+                      <span className="i6-key-head">{message.messageKey.slice(0, -16)}</span><span className="i6-key-tail">{message.messageKey.slice(-16)}</span>
+                    </button>
+                    <small>{nsLabel(message.namespace)}{i1Copies.has(message.messageKey) ? " · 来自文案测试" : ""}</small>
+                  </span></Td>
+                  {LANGS.map((item) => {
+                    const text = langValue(message, item.key);
+                    return <Td key={item.key}>{text.trim() ? <Cell main={text} title={text} /> : <StatusTag tone="warn" icon={TriangleAlert}>缺{item.label}</StatusTag>}</Td>;
+                  })}
+                  <Td><Cell main={<StatusTag tone={msgStatus(message.status).tone} icon={message.status === "draft" ? FilePen : undefined}>{msgStatus(message.status).text}</StatusTag>} sub={message.version} /></Td>
+                </Tr>;
+              })}
+              {total === 0 && <TableMessage columns={5}>还没有登记的文案。新文案键随 App 版本登记后出现在这里。</TableMessage>}
+              {total > 0 && filteredMessages.length === 0 && <TableMessage columns={5}>没有符合条件的文案。<button type="button" className="rd-link" onClick={clearFilters}>清除筛选</button></TableMessage>}
+            </tbody>
+          </Table>
+          {filteredMessages.length > 0 && <Pager label="文案分页" total={filteredMessages.length} page={page} pageSize={msgPageSize} sizes={[20, 50, 100]}
+            onPage={setMsgPage} onPageSize={(size) => { setMsgPageSize(size); setMsgPage(1); }} />}
+        </Panel>
       </div>
 
-      {/* (I6 · a) 命名空间矩阵 */}
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">词条分组</span>
-          <span className="sub">· 按真实词条实时汇总三语覆盖率</span>
-          <div className="r chips">
-            {NS_FLT.map(([k, l]) => (
-              <button
-                key={k}
-                className={`chip${nsFlt === k ? " sel" : ""}`}
-                onClick={() => setNsFlt(k)}
-              >
-                {l}
-              </button>
-            ))}
-            {canWriteI6 && <button className="l-btn sm" onClick={rescan}>
-              重扫
-            </button>}
-          </div>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 720 }}>
-            <thead>
-              <tr>
-                <th>命名空间</th>
-                <th className="num">词条数</th>
-                <th>覆盖</th>
-                <th className="num">缺少词条</th>
-                <th>进行中变体</th>
-                <th>最近改动</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredNs.map((n) => {
-                const missing = Math.round((n.keys * (100 - n.coverage)) / 100);
-                return (
-                  <tr
-                    key={n.ns}
-                    className="click"
-                    onClick={() =>
-                      setNsDrawer({
-                        ns: n.ns,
-                        keys: n.keys,
-                        cov: n.coverage,
-                        variants: n.variants,
-                      })
-                    }
-                  >
-                    <td>
-                      <span className="ns-name">{({conversation:"客服会话",home:"首页",learn:"学习课程",test:"测试词条"} as Record<string,string>)[n.ns] ?? n.ns}</span>
-                    </td>
-                    <td className="num mono">{n.keys}</td>
-                    <td>{renderCoverage(n)}</td>
-                    <td
-                      className="num mono"
-                      style={{ color: missing > 0 ? "var(--warning)" : "var(--ink-4)" }}
-                    >
-                      {missing > 0 ? missing : "—"}
-                    </td>
-                    <td
-                      style={{
-                        fontSize: 12,
-                        color:
-                          n.variants === "—" ? "var(--ink-4)" : "var(--i-ac)",
-                      }}
-                    >
-                      {n.variants}
-                    </td>
-                    <td className="mono" style={{ fontSize: 11.5 }}>
-                      {n.lastChange}
-                    </td>
-                  </tr>
-                );
-              })}
-              <tr>
-                <td
-                  colSpan={6}
-                  style={{
-                    fontSize: 11.5,
-                    color: "var(--ink-4)",
-                    textAlign: "center",
-                  }}
-                >
-                  共 {NAMESPACES.length} 命名空间 · {MESSAGES.length} 词条
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">词条列表</span>
-          <span className="sub">· 选择任意词条后编辑、发布或归档</span>
-          <div className="r">
-            <input
-              className="fld"
-              aria-label="搜索词条"
-              placeholder="搜索词条标识 / 分类"
-              value={messageSearch}
-              onChange={(event) => setMessageSearch(event.target.value)}
-              style={{ width: 210 }}
-            />
-            <span className="sub">只能维护当前已注册词条</span>
-          </div>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 760 }}>
-            <thead><tr><th>词条标识</th><th>命名空间</th><th>版本</th><th>状态</th><th>语言完整度</th><th></th></tr></thead>
-            <tbody>
-              {filteredMessages.map((message) => {
-                const languageCount = [message.zh, message.en, message.vi].filter(Boolean).length;
-                const selected = selectedMessage?.messageKey === message.messageKey;
-                return <tr key={message.messageKey} className="click" onClick={() => setSelectedMessageKey(message.messageKey)}>
-                  <td className="mono" style={{ fontWeight: selected ? 700 : 500 }}>{message.messageKey}</td>
-                  <td>{({conversation:"客服会话",home:"首页",learn:"学习课程",test:"测试词条"} as Record<string,string>)[message.namespace] ?? message.namespace}</td>
-                  <td className="mono">{message.version}</td>
-                  <td><span className={`bdg ${message.status === "published" ? "ok" : message.status === "draft" ? "warn" : "dim"}`}>{statusLabel(message.status)}</span></td>
-                  <td>{languageCount}/3 · {languageCount === 3 ? "中英越完整" : "待补齐"}</td>
-                  <td style={{ textAlign: "right" }}><button className="l-btn sm" aria-label={`选择 ${message.messageKey}`} onClick={(event) => { event.stopPropagation(); setSelectedMessageKey(message.messageKey); }}>选择</button></td>
-                </tr>;
-              })}
-              {filteredMessages.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--ink-4)" }}>暂无符合条件的真实词条</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <div className="two-col">
-        {/* (I6 · b) 真实词条详情 */}
-        <section className="l-card">
-          <div className="l-h">
-            <span className="ttl">
-              词条详情 · <span className="icode electric">{selectedMessage?.messageKey ?? "未选择"}</span>
-            </span>
-            <div className="r">
-              {!canWriteI6 && <span className="bdg dim">只读</span>}
-              {canWriteI6 && selectedMessage && <>
-              <button className="l-btn sm" onClick={editKeyDraft}>
-                编辑三语草稿
-              </button>
-              {selectedMessage.status === "draft" && <button className="l-btn sm mc" disabled={publicationIssues.length > 0} onClick={pubKey}>
-                发布
-              </button>}
-              {selectedMessage.status === "published" && <button className="l-btn sm" onClick={archiveKey}>归档</button>}
-              </>}
-            </div>
-          </div>
-          <div className="l-b" style={{ paddingTop: 6 }}>
-            {selectedMessage ? <>
-              {selectedMessage.status === "draft" && publicationIssues.length > 0 && <div className="itint warn" role="status">暂不能发布：{publicationIssues.join("；")}。请编辑三语草稿后再发布。</div>}
-              <div className="ab-grid">
-                <div className="ab-prev"><div className="lc">中文 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.zh || "待补齐"}</div></div>
-                <div className="ab-prev"><div className="lc">英文 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.en || "待补齐"}</div></div>
-                <div className="ab-prev"><div className="lc">越南语 · {statusLabel(selectedMessage.status)}</div><div className="tx">{selectedMessage.vi || "待补齐"}</div></div>
+      <Fold title="完整性检查" icon={ListChecks} tone={openIssues.length ? "warn" : "role-other"} alert={liveIntegrity > 0}
+        summary={liveIntegrity > 0 ? `${count(liveIntegrity)} 处问题 · ${openIssues.filter((issue) => issue.cnt > 0).map((issue) => `${issueName(issue)} ${count(issue.cnt)}`).join(" · ")}` : INTEGRITY_ISSUES.length ? "问题报告里没有待修的" : "还没有问题报告"}
+        explain="检查 6 类：缺中文、缺英语、缺越南语、变量不一致、占位文字、旧品牌名。报告存在后台，点「重新检查」才更新；报告是空的不代表文案都没问题。一条文案可能同时算进几类。"
+        actions={canWriteI6 ? <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={rescan}>重新检查</Button> : undefined}>
+        {INTEGRITY_ISSUES.length === 0
+          ? <BlockState state="empty" title="还没有问题报告" detail={canWriteI6 ? "点「重新检查」生成一份。" : undefined} />
+          : <>{openIssues.filter((issue) => issue.cnt > 0).length > 0 && <ul className="i6-issues" aria-label="问题报告">
+            {openIssues.filter((issue) => issue.cnt > 0).map((issue) => <li key={issue.code} className="i6-issue">
+              <div className="i6-issue-head">
+                <IconTile icon={FilePen} tone="warn" />
+                <span className="i6-issue-name">{issueName(issue)}</span>
+                <span className="i6-issue-cnt">{count(issue.cnt)} 处</span>
+                {canWriteI6 && sm && <Button size="sm" className="i6-issue-fix" onClick={() => { setMessageDrawer(true); setCompareVersion(""); startEdit("fix", issue); }}>修复所选文案</Button>}
               </div>
-              <div className={`itint ${selectedMessage.zh && selectedMessage.en && selectedMessage.vi ? "ok" : "warn"}`} style={{ marginTop: 8 }}>
-                <b>三语内容</b> · 版本 {selectedMessage.version} · 变量 {selectedMessage.placeholders.length ? selectedMessage.placeholders.join("、") : "无"}。草稿保存不会覆盖当前发布版。
-              </div>
-              <div style={{ overflowX: "auto", marginTop: 12 }}>
-                <table className="l-tbl" style={{ minWidth: 520 }}>
-                  <thead><tr><th>历史版本</th><th>状态</th><th>三语完整度</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
-                  <tbody>
-                    {messageVersions.map((row) => {
-                      const complete = [row.zh, row.en, row.vi].filter(Boolean).length;
-                      return <tr key={`${row.messageKey}-${row.version}`}>
-                        <td className="mono">{row.version}</td>
-                        <td>{statusLabel(row.status)}</td>
-                        <td>{complete}/3</td>
-                        <td style={{ textAlign: "right" }}>
-                          {canWriteI6 && row.status === "archived" && selectedMessage.status !== "draft"
-                            ? <button className="l-btn sm mc" onClick={() => rollbackMessageVersion(row)}>回滚到此版本</button>
-                            : row.version === selectedMessage.version
-                              ? <span className="muted">当前版本</span>
-                              : <span className="muted">仅保留</span>}
-                        </td>
-                      </tr>;
-                    })}
-                    {!messageVersionsLoading && messageVersions.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--ink-4)" }}>暂无历史版本</td></tr>}
-                    {messageVersionsLoading && <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--ink-4)" }}>版本加载中…</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-            </> : <div className="itint">暂无真实词条，请先选择已注册词条；新词条标识需随应用版本登记后再维护。</div>}
-          </div>
-        </section>
+              {issue.samples.length > 0 && <div className="i6-issue-samples">
+                <span className="i6-muted">例如</span>
+                {issue.samples.map((sample) => MESSAGES.some((message) => message.messageKey === sample)
+                  ? <button key={sample} type="button" className="i6-sample" data-selected={sm?.messageKey === sample ? "" : undefined} onClick={() => openMessage(sample)}>{sample}</button>
+                  : <span key={sample} className="i6-sample" data-static="">{sample}</span>)}
+              </div>}
+            </li>)}
+          </ul>}
+          {INTEGRITY_ISSUES.some((issue) => issue.status === "fixed" || issue.cnt === 0) && <p className="i6-muted">没有问题：{INTEGRITY_ISSUES.filter((issue) => issue.status === "fixed" || issue.cnt === 0).map(issueName).join("、")}。</p>}
+          </>}
+        {sm && openIssues.some((issue) => issue.cnt > 0) && canWriteI6 && <p className="i6-muted i6-fix-target">「修复所选文案」修的是 <span className="i6-mono">{sm.messageKey}</span>；要修别的，先点上面的例子或列表里的文案。</p>}
+      </Fold>
 
-        {/* 完整性扫描卡 */}
-        <section className="l-card">
-          <div className="l-h">
-            <span className="ttl">
-              完整性扫描 · {liveIntegrity} 处问题
-            </span>
-            <span className="sub">· 缺翻译 / 变量不一致 / 占位文字 / 旧品牌名 / 写死的文字 / 禁用词</span>
-          </div>
-          <div className="l-b" style={{ paddingTop: 6 }}>
-            {INTEGRITY_ISSUES.map((iss) => (
-              <div key={iss.kind} style={{ marginBottom: 12 }}>
-                <div
-                  className="row"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    marginBottom: 6,
-                  }}
-                >
-                  <b style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{iss.kind}</b>
-                  <span className="bdg warn">{iss.cnt}</span>
-                </div>
-                {iss.samples.map((s, j) => (
-                  <div
-                    key={j}
-                    style={{
-                      fontSize: 11.5,
-                      color: "var(--ink-3)",
-                      paddingLeft: 4,
-                      lineHeight: 1.6,
-                    }}
-                  >
-                    · {s}
-                  </div>
-                ))}
-                {iss.cnt > 0 && canWriteI6 && <button
-                  className="l-btn sm mc"
-                  style={{ marginTop: 6 }}
-                  onClick={() => fixIntegrity(iss)}
-                >
-                  修复
-                </button>}
-                {iss.cnt === 0 && <span className="tiny">无需修复</span>}
-              </div>
-            ))}
-            <button
-              className="l-btn sm"
-              style={{ marginTop: 4 }}
-              onClick={() => setHcDrawer(true)}
-            >
-              疑似硬编码清单(App 扫描)
-            </button>
-          </div>
-        </section>
-      </div>
+      <Fold title="写死在 App 里的文字" icon={CodeXml} summary={HARDCODED_FINDINGS.length ? `${count(HARDCODED_FINDINGS.length)} 处 · 后台改不了，要发版` : "没有登记 · 后台改不了，要发版"}
+        explain="这些字写在 App 代码里，不走文案系统，这页改不了；要由 App 开发换成文案键，随新版本发布。登记表是人工维护的，重新检查不会更新它；没有登记不代表 App 里没有写死的字。">
+        <Table label="写死在 App 里的文字">
+          <thead><tr><Th>位置</Th><Th>原文</Th><Th>建议换成的文案键</Th></tr></thead>
+          <tbody>
+            {HARDCODED_FINDINGS.map((row) => <Tr key={row.location}>
+              <Td><Cell main={row.location} title={row.location} /></Td>
+              <Td grow><Cell main={row.rawCopy} title={row.rawCopy} /></Td>
+              <Td><Cell main={row.suggestedKey} mono title={row.suggestedKey} /></Td>
+            </Tr>)}
+            {HARDCODED_FINDINGS.length === 0 && <TableMessage columns={3}>没有登记。</TableMessage>}
+          </tbody>
+        </Table>
+      </Fold>
 
-      </>}
-
-      {view === "learn" && <>
-      <div className="f-stats">
-        <div className="f-stat cyan">
-          <div className="k">课程在线</div>
-          <div className="v">{I6_STATS.coursesOnline} 门</div>
-          <div className="sub">{courseCategoryCount} 分类 · 推荐位 {TUTORIAL_FEATURED_DEFAULT ? 1 : 0} 个</div>
-        </div>
-        <div className="f-stat">
-          <div className="k">本周课程发放 UVT</div>
-          <div className="v">{operatorCopyText(I6_STATS.weeklyNexPayout)}</div>
-          <div className="sub">学完课程发放，计入兑付统计</div>
-        </div>
-      </div>
-
-      {courseRecovery}
-
-      {/* I7 教程列表 */}
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">教程中心 · /learn · {allCourses.length} 门课</span>
-          <span className="sub">
-            · {courseCategoryCount} 个分类 · 学完发 UVT · 调高奖励要求覆盖率不低于红线
-          </span>
-          <div className="r chips">
-            {categoryFilters.map(([k, l]) => (
-              <button
-                key={k}
-                className={`chip${catFlt === k ? " sel" : ""}`}
-                onClick={() => setCatFlt(k)}
-              >
-                {l}
-              </button>
-            ))}
-            {!canWriteI7 && <span className="bdg dim">只读</span>}
-            {canWriteI7 && <button className="l-btn sm primary" onClick={newCrs}>
-              + 新建课程
-            </button>}
-          </div>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 980 }}>
-            <thead>
-              <tr>
-                <th>课程</th>
-                <th>分类</th>
-                <th>形式</th>
-                <th>难度</th>
-                <th className="num">奖励</th>
-                <th>推荐位</th>
-                <th>时长</th>
-                <th>状态</th>
-                <th style={{ textAlign: "right" }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredCrs.map((c) => {
-                const st = liveStatus(c);
-                const archived = st === "archived";
-                const isDraft = st === "draft" || st === "ready";
-                const featuredId = liveFeatured();
-                const isFeatured = featuredId === c.id;
-                return (
-                  <tr key={c.id} style={archived ? { opacity: 0.55 } : undefined}>
-                    <td>
-                      <div style={{ fontWeight: 600, color: "var(--ink)" }}>
-                        {nexGridBrandText(c.title)}
-                      </div>
-                      <span
-                        className="mono"
-                        style={{
-                          fontSize: 11,
-                          color: "var(--ink-4)",
-                        }}
-                      >
-                        {c.id}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="bdg dim">
-                        {c.icon} {categoryLabel(c.cat)}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="bdg dim">{formatLabel(c.format)}</span>
-                    </td>
-                    <td className="mono" style={{ fontSize: 12 }}>
-                      {levelLabel(c.level)}
-                    </td>
-                    <td
-                      className="num mono"
-                      style={{ color: "var(--i-ac)", fontWeight: 700 }}
-                    >
-                      {liveReward(c)}
-                    </td>
-                    <td>
-                      {isFeatured ? (
-                        <span className="bdg cyan">推荐</span>
-                      ) : (
-                        <span style={{ color: "var(--ink-4)" }}>—</span>
-                      )}
-                    </td>
-                    <td className="mono" style={{ fontSize: 11.5 }}>
-                      {operatorCopyText(c.duration)}
-                    </td>
-                    <td>
-                      {archived ? (
-                        <span className="bdg dim">已下架</span>
-                      ) : isDraft ? (
-                        <span className="bdg warn">{statusLabel(st)}</span>
-                      ) : (
-                        <span className="bdg ok">{statusLabel(st)}</span>
-                      )}
-                    </td>
-                    <td style={{ textAlign: "right" }}>
-                      <button className="l-btn sm" aria-label={`版本管理 ${nexGridBrandText(c.title)}`} onClick={() => setVersionCourseId(c.id)} style={{ marginRight: 6 }}>版本管理</button>
-                      {canWriteI7 && <>
-                      {isDraft && <>
-                      <button className="l-btn sm" aria-label={`编辑 ${nexGridBrandText(c.title)}`} onClick={() => editCrs(c)} style={{ marginRight: 6 }}>编辑</button>
-                      {canPublishI7 && <button className="l-btn sm mc" aria-label={`发布 ${nexGridBrandText(c.title)}`} onClick={() => pubCrs(c)} style={{ marginRight: 6 }}>发布</button>}
-                      <button className="l-btn sm" aria-label={`删除草稿 ${nexGridBrandText(c.title)}`} onClick={() => deleteCrs(c)} style={{ marginRight: 6 }}>删除草稿</button>
-                      </>}
-                      {!archived && !isDraft && (
-                        <button
-                          className="l-btn sm"
-                          aria-label={`下架 ${nexGridBrandText(c.title)}`}
-                          onClick={() => archiveCrs(c)}
-                        >
-                          下架
-                        </button>
-                      )}
-                      </>}
-                      {canAdjustI7Reward && !archived && !isDraft && (
-                        <button
-                          className="l-btn sm mc"
-                          aria-label={`调整奖励 ${nexGridBrandText(c.title)}`}
-                          onClick={() => adjRwd(c)}
-                          style={{ marginRight: 6 }}
-                        >
-                          调奖励
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {!contentLoading && filteredCrs.length === 0 && (
-                <tr>
-                  <td colSpan={9} style={{ padding: 28, textAlign: "center", color: "var(--ink-4)" }}>
-                    暂无课程数据
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {versionCourse && <section className="l-card" data-proof="i7-course-version-crud">
-        <div className="l-h">
-          <span className="ttl">课程版本列表 · {nexGridBrandText(versionCourse.title)}</span>
-          <span className="sub">· 当前 {versionCourse.v}</span>
-          <div className="r chips">
-            {canWriteI7 && <button className="l-btn sm primary" disabled={versionsLoading || !!versionsError} onClick={() => newCourseVersion(versionCourse)}>+ 新版本草稿</button>}
-            <button className="l-btn sm" onClick={() => setVersionCourseId("")}>关闭</button>
-          </div>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 840 }}>
-            <thead><tr><th>版本</th><th>状态</th><th>说明</th><th>修订号</th><th>更新时间</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
-            <tbody>
-              {!versionsLoading && !versionsError && courseVersions.map((row) => {
-                const statusText = { DRAFT: "草稿", PUBLISHED: "已发布", SUPERSEDED: "历史版本" }[row.status] ?? "状态未知";
-                return <tr key={`${row.courseId}-${row.version}`}>
-                  <td className="mono">{row.version}</td>
-                  <td><span className={`bdg ${row.status === "DRAFT" ? "warn" : row.status === "PUBLISHED" ? "ok" : "dim"}`}>{statusText}</span></td>
-                  <td>{nexGridBrandText(String(row.payload.titleZh ?? row.payload.titleEn ?? "—"))}</td>
-                  <td className="mono">{row.revision}</td>
-                  <td className="mono">{row.updatedAt ? new Date(row.updatedAt).toLocaleString("zh-CN") : "—"}</td>
-                  <td style={{ textAlign: "right" }}>
-                    {row.status === "DRAFT" && canWriteI7 && <>
-                      <button className="l-btn sm" onClick={() => editCourseVersion(versionCourse, row)} style={{ marginRight: 6 }}>编辑草稿</button>
-                      <button className="l-btn sm" onClick={() => deleteCourseVersion(versionCourse, row)} style={{ marginRight: 6 }}>删除草稿</button>
-                    </>}
-                    {row.status === "DRAFT" && canPublishI7 && <button className="l-btn sm mc" onClick={() => publishCourseVersion(versionCourse, row)}>发布</button>}
-                    {row.status === "SUPERSEDED" && canPublishI7 && <button className="l-btn sm mc" onClick={() => rollbackCourseVersion(versionCourse, row)}>回滚到此版本</button>}
-                    {row.status === "PUBLISHED" && <span className="muted">当前线上版本</span>}
-                  </td>
-                </tr>;
-              })}
-              {versionsError && <tr><td colSpan={6}><div className="itint warn" role="alert">版本列表加载失败：{versionsError}<button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => setVersionsRetry((value) => value + 1)}>重试</button></div></td></tr>}
-              {!versionsLoading && !versionsError && courseVersions.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>暂无历史版本</td></tr>}
-              {versionsLoading && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>版本加载中…</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>}
-
-      <div className="two-col">
-        {/* I6 推荐位 + 奖励区间 */}
-        <section className="l-card">
-          <div className="l-h">
-            <span className="ttl">推荐位 + 单课奖励区间</span>
-            <span className="sub">· 单一位置,换课走操作确认</span>
-          </div>
-          <div className="l-b" style={{ paddingTop: 4 }}>
-            <div className="in-vrow">
-              <span className="nm">
-                推荐位课程(首页大卡)
-                <small>
-                  当前：{featuredCourse ? nexGridBrandText(featuredCourse.title) : "未设置推荐课程"} · 单一位置，换课走操作确认
-                </small>
-              </span>
-              <span className="v">{featuredCourse ? nexGridBrandText(featuredCourse.title) : "未设置"}</span>
-              {canWriteI7 && <button className="l-btn sm mc" onClick={setFeat}>
-                换推荐课
-              </button>}
-            </div>
-            <div className="in-vrow">
-              <span className="nm">
-                单课奖励区间
-                <small>当前奖励范围 10–50 UVT;单课精确值在课程行上调</small>
-              </span>
-              <span className="v">
-                {TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT
-              </span>
-            </div>
-          </div>
-        </section>
-
-        {/* I7 课程效果监控 */}
-        <section className="l-card">
-          <div className="l-h">
-            <span className="ttl">课程效果监控</span>
-            <span className="sub">
-              · 只读 · 数据会进入数据分析和资金对账
-            </span>
-          </div>
-          <div className="l-b" style={{ paddingTop: 4 }}>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(3, 1fr)",
-                gap: 10,
-              }}
-            >
-              {TUTORIAL_METRICS.map((m) => (
-                <div key={operatorCopyText(String(m.k))}>
-                  <div
-                    style={{
-                      fontSize: 11.5,
-                      color: "var(--ink-4)",
-                      marginBottom: 4,
-                    }}
-                  >
-                    {operatorCopyText(String(m.k))}
-                  </div>
-                  <div
-                    className="mono"
-                    style={{
-                      fontSize: 22,
-                      fontWeight: 700,
-                      color: "var(--ink)",
-                      letterSpacing: "-.01em",
-                    }}
-                  >
-                    {operatorCopyText(String(m.v))}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="itint" style={{ marginTop: 10 }}>
-              <b>数据</b> · 开始学习、学完、测验通过都会记录；奖励直接到用户钱包并记账。数据分析可以据此算完课率等指标，财务可以核对课程奖励支出。
-            </div>
-          </div>
-        </section>
-      </div>
-
-      </>}
-
-      <p className="f-foot">
-        {view === "i18n" ? <><b>权限</b>：保存词条草稿时会检查中英越三语和变量；发布、归档需要内容主管或超级管理员确认。<b>说明</b>：文案测试、推送、信任中心和教程的文字都来自这里的词条。</> : <><b>权限</b>：课程草稿可以直接保存；发布、下架、换推荐课需要内容主管或超级管理员确认。<b>有奖励的课程</b>首次发布、发布新版本和回滚都要提交审批单，另一位有审批批准权限的超级管理员批准后才执行，批准前课程不变；奖励为 0 的直接执行。<b>调高课程奖励</b>需要审批，且覆盖率不能低于红线。</>}
-      </p>
       <PaginationExemptionList
-        items={view === "i18n" ? [
+        items={[
           {
             label: "词条分组",
             kind: "reference-catalog",
             maxRows: Math.max(1, NAMESPACES.length),
             reason: `命名空间来自真实词条目录,当前 ${NAMESPACES.length} 组,需要同屏核对三语覆盖率和缺少词条`,
           },
-        ] : [
-          {
-            label: `教程中心 · /learn · ${allCourses.length} 门课`,
-            kind: "reference-catalog",
-            maxRows: Math.max(1, allCourses.length),
-            reason: `课程目录来自真实接口,当前 ${allCourses.length} 门;创建新课走草稿流`,
-          },
         ]}
       />
 
-      {view === "i18n" && nsDrawer && (
-        <Drawer
-          title={`命名空间 · ${nsDrawer.ns}`}
-          onClose={() => setNsDrawer(null)}
-        >
-          <div
-            className="tint brand"
-            style={{ marginBottom: 14, padding: "11px 14px", borderRadius: 9 }}
-          >
-            <div
-              style={{ fontWeight: 600, color: "var(--ink)", fontSize: 13 }}
-            >
-              {nsDrawer.keys} 个词条 · 三语覆盖 {nsDrawer.cov}%
-              {nsDrawer.variants !== "—"
-                ? ` · ${nsDrawer.variants} 进行中`
-                : ""}
-            </div>
-            <div
-              className="muted tiny"
-              style={{ marginTop: 4, fontSize: 11.5, color: "var(--ink-4)" }}
-            >
-              词条按标识组织，应用端按「空间 × 语言」整包拉取当前发布版。
-            </div>
-          </div>
-          <div style={{ overflowX: "auto", marginBottom: 12 }}>
-            <table className="l-tbl" style={{ minWidth: 420 }}>
-              <thead>
-                <tr>
-                  <th>词条标识</th>
-                  <th>状态</th>
-                  <th>语言完整度</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
+      <Drawer open={messageDrawer && !!sm} onClose={() => { setMessageDrawer(false); setCopyEditor(null); }} icon={Languages}
+        title={copyEditor ? (copyEditor.mode === "fix" ? "修复文案" : "编辑三语草稿") : "文案详情"} sub={sm?.messageKey}
+        footer={drawerFooter}>
+        {sm && !copyEditor && <>
+          <JudgmentPoints rows={judgment} />
+          {sm.status === "draft" && publicationIssues.length > 0 && <Notice tone="warn" title="暂不能发布">{publicationIssues.join("；")}。编辑三语草稿补齐后再发布。</Notice>}
+          {smIssues.length > 0 && <Notice tone="warn" title="完整性检查点到这条" action={canWriteI6 ? <Button size="sm" onClick={() => startEdit("fix", smIssues[0])}>修复</Button> : undefined}>
+            {smIssues.map(issueName).join("、")}
+          </Notice>}
+          <section className="i6-langs" aria-label="三种语言">
+            {LANGS.map((item) => {
+              const text = langValue(sm, item.key);
+              return <div key={item.key} className="i6-lang" data-missing={text.trim() ? undefined : ""}>
+                <div className="i6-lang-head"><span>{item.label}</span>{!text.trim() && <StatusTag tone="warn" icon={TriangleAlert}>缺{item.label}</StatusTag>}</div>
+                <p className="i6-lang-text">{text.trim() ? text : `还没有${item.label}`}</p>
+              </div>;
+            })}
+          </section>
+          <Fold inset title="历史版本" icon={History} summary={messageVersionsLoading ? "读取中" : `${count(messageVersions.length)} 个版本`}
+            explain="回滚是把旧版本的三语复制成新版本发布，旧记录不改；当前还有草稿时不能回滚。历史版本不带时间。">
+            <Table label="历史版本">
+              <thead><tr><Th>版本</Th><Th>状态</Th><Th>三语</Th><Th align="right">操作</Th></tr></thead>
               <tbody>
-                {MESSAGES.filter((message) => message.namespace === nsDrawer.ns).map((message) => (
-                  <tr key={message.messageKey}>
-                    <td className="mono" style={{ fontSize: 12 }}>
-                      {message.messageKey}
-                    </td>
-                    <td style={{ fontSize: 12 }}>{statusLabel(message.status)}</td>
-                    <td style={{ fontSize: 12 }}>
-                      {message.zh ? "中" : "缺中"} / {message.en ? "英" : "缺英"} / {message.vi ? "越" : "缺越"}
-                    </td>
-                    <td>
-                      <button
-                        className="btn xs"
-                        onClick={() => {
-                          setSelectedMessageKey(message.messageKey);
-                          setNsDrawer(null);
-                        }}
-                      >
-                        查看词条
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {MESSAGES.filter((message) => message.namespace === nsDrawer.ns).length === 0 && (
-                  <tr>
-                    <td colSpan={4} style={{ color: "var(--ink-4)", fontSize: 12, textAlign: "center" }}>
-                      该命名空间暂无真实词条
-                    </td>
-                  </tr>
-                )}
+                {messageVersionsLoading && <TableLoading columns={4} rows={2} />}
+                {!messageVersionsLoading && messageVersions.map((row) => {
+                  const complete = [row.zh, row.en, row.vi].filter(Boolean).length;
+                  const current = row.version === sm.version;
+                  return <Tr key={`${row.messageKey}-${row.version}`} selected={compareVersion === row.version}>
+                    <Td><Cell main={row.version} sub={current ? "当前版本" : undefined} /></Td>
+                    <Td><StatusTag tone={msgStatus(row.status).tone}>{statusLabel(row.status)}</StatusTag></Td>
+                    <Td>{complete}/3</Td>
+                    <Td align="right" data-fit=""><span className="i6-row-actions">
+                      {!current && <Button size="sm" variant="ghost" onClick={() => setCompareVersion(compareVersion === row.version ? "" : row.version)}>{compareVersion === row.version ? "收起对比" : "对比"}</Button>}
+                      {canWriteI6 && row.status === "archived" && sm.status !== "draft"
+                        && <Button size="sm" icon={<RotateCcw size={14} aria-hidden />} onClick={() => rollbackMessageVersion(row)}>回滚到此版本</Button>}
+                    </span></Td>
+                  </Tr>;
+                })}
+                {!messageVersionsLoading && messageVersions.length === 0 && <TableMessage columns={4}>暂无历史版本</TableMessage>}
               </tbody>
-            </table>
-          </div>
-          <div
-            className="itint"
-            style={{ fontSize: 12, lineHeight: 1.6 }}
-          >
-            点「查看词条」可回到词条详情编辑中、英、越三语；缺少任一语言或占位符不一致时均不能发布。
-          </div>
-        </Drawer>
-      )}
+            </Table>
+            {compareTarget && <CompareRows beforeLabel={`${compareTarget.version}（旧）`} afterLabel={`${sm.version}（现在）`}
+              rows={LANGS.map((item) => ({ key: item.key, label: item.label, before: langValue(compareTarget, item.key), after: langValue(sm, item.key) }))} />}
+          </Fold>
+        </>}
+        {sm && copyEditor && <>
+          {copyEditor.mode === "fix" && copyEditor.issue && <Facts><Fact k="问题">{issueName(copyEditor.issue)} · {count(copyEditor.issue.cnt)} 处</Fact><Fact k="修哪一条">{sm.messageKey}</Fact></Facts>}
+          <p className="i6-muted">存成草稿，不覆盖现在发布的 {sm.version}；发布后用户才看到。</p>
+          {LANGS.map((item) => {
+            const value = copyEditor[item.key];
+            const missingVars = (sm.placeholders ?? []).filter((ph) => !value.includes(ph));
+            const error = copyEditor.tried ? (!value.trim() ? `请填${item.label}` : missingVars.length ? `缺变量 ${missingVars.join("、")}` : undefined) : undefined;
+            return <Field key={item.key} label={item.label} required hint={sm.placeholders.length ? `要带上 ${sm.placeholders.join("、")}` : undefined} error={error}
+              help={langValue(sm, item.key).trim() && langValue(sm, item.key) !== value ? <>现在：{langValue(sm, item.key)}</> : undefined}>
+              <Textarea rows={3} value={value} onChange={(event) => setCopyEditor({ ...copyEditor, [item.key]: event.target.value })} />
+            </Field>;
+          })}
+        </>}
+      </Drawer>
+    </>;
+  }
 
-      {view === "i18n" && hcDrawer && (
-        <Drawer
-          title="疑似硬编码清单(App 扫描)"
-          onClose={() => setHcDrawer(false)}
-        >
-          <div style={{ overflowX: "auto", marginBottom: 12 }}>
-            <table className="l-tbl" style={{ minWidth: 480 }}>
-              <thead>
-                <tr>
-                  <th>位置</th>
-                  <th>裸文案</th>
-                  <th>建议词条</th>
-                </tr>
-              </thead>
-              <tbody>
-                {HARDCODED_FINDINGS.map((row) => (
-                  <tr key={row.location}>
-                    <td style={{ fontSize: 12 }}>{row.location}</td>
-                    <td className="mono" style={{ fontSize: 11.5 }}>
-                      {row.rawCopy}
-                    </td>
-                    <td
-                      className="mono"
-                      style={{ fontSize: 11.5, color: "var(--i-ac)" }}
-                    >
-                      {row.suggestedKey}
-                    </td>
-                  </tr>
-                ))}
-                {HARDCODED_FINDINGS.length === 0 && (
-                  <tr>
-                    <td colSpan={3} style={{ color: "var(--ink-4)", fontSize: 12, textAlign: "center" }}>
-                      暂无疑似硬编码
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="itint" style={{ fontSize: 12, lineHeight: 1.6 }}>
-            <b>硬编码</b> = 没走词条系统的裸文案,只有一种语言。处置:建词条(中、英、越三语)→ 替换引用 → 重扫清零。
-          </div>
-        </Drawer>
-      )}
-    </>
-  );
+  /* ============ 学习课程 ============ */
+  const counts = {
+    online: allCourses.filter((c) => liveStatus(c) === "published").length,
+    draft: allCourses.filter((c) => ["draft", "ready"].includes(liveStatus(c))).length,
+    archived: allCourses.filter((c) => liveStatus(c) === "archived").length,
+  };
+  const filteredCrs = allCourses.filter((c) => catFlt === "all" || c.cat === catFlt);
+  const versionCourse = allCourses.find((course) => course.id === versionCourseId);
+  const approvalOf = (id: string) => courseApprovalRows.find((row) => row.obj === id);
+  const unknownOf = (id: string) => courseRecords.find((record) => record.scope === hiCourseScope(id));
+  const weekly = operatorCopyText(I6_STATS.weeklyNexPayout);
+  const weeklyValue = weekly.replace(/\s*UVT$/, "");
+  const unknownCount = courseRecords.filter((record) => !isRetryExpired(record)).length;
+  const conclusion = unknownCount > 0
+    ? { state: "warn" as const, text: `${count(unknownCount)} 个课程操作结果未知，先核对`, hint: "在下面「等批准和结果未知」里按原请求重试" }
+    : courseApprovalRows.length > 0
+      ? { state: "neutral" as const, text: `${count(courseApprovalRows.length)} 门课在等${APPROVER}批准`, hint: counts.draft ? `另有 ${count(counts.draft)} 门草稿没发布` : undefined }
+      : counts.draft > 0
+        ? { state: "warn" as const, text: `${count(counts.online)} 门课在线，${count(counts.draft)} 门草稿还没发布`, hint: "草稿用户看不到，在课程卡上发布" }
+        : allCourses.length === 0
+          ? { state: "neutral" as const, text: "还没有课程", hint: canWriteI7 ? "点「新建课程」写第一门" : undefined }
+          : { state: "ok" as const, text: `${count(counts.online)} 门课在线，没有待处理的`, hint: undefined };
+  const courseActions = (c: Course, where: "card" | "drawer") => {
+    const st = liveStatus(c);
+    const archived = st === "archived";
+    const isDraft = st === "draft" || st === "ready";
+    const title = nexGridBrandText(c.title);
+    const more: MoreMenuItem[] = [];
+    if (canWriteI7 && isDraft) more.push({ key: "delete", label: "删除草稿", danger: true, onSelect: () => deleteCrs(c) });
+    if (canWriteI7 && !archived && !isDraft) more.push({ key: "archive", label: "下架", danger: true, onSelect: () => archiveCrs(c) });
+    const primary = isDraft
+      ? <>
+        {canWriteI7 && <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`编辑 ${title}`} onClick={() => editCrs(c)}>编辑</Button>}
+        {canPublishI7 && <Button size="sm" variant="primary" icon={<Send size={14} aria-hidden />} aria-label={`发布 ${title}`} onClick={() => pubCrs(c)}>{c.reward > 0 ? "提交发布" : "发布"}</Button>}
+      </>
+      : !archived && canAdjustI7Reward
+        ? <Button size="sm" aria-label={`调整奖励 ${title}`} onClick={() => adjRwd(c)}>调奖励</Button>
+        : null;
+    return <>
+      {where === "card" && <Button size="sm" variant="ghost" aria-label={`版本管理 ${title}`} onClick={() => { setVersionCourseId(c.id); setCourseTab("content"); setCourseLang("zh"); }}>详情与版本</Button>}
+      <span className="i6-card-act">{primary}{more.length > 0 && <MoreMenu label={`${title} 更多操作`} items={more} />}</span>
+    </>;
+  };
+  const langDone = (c: Course, lang: Lang) => {
+    const F = lang === "zh" ? "Zh" : lang === "vi" ? "Vi" : "En";
+    return !!(c[`title${F}` as "titleZh"]?.trim() && c[`body${F}` as "bodyZh"]?.trim());
+  };
+
+  return <>
+    <Conclusion state={conclusion.state} icon={conclusion.state === "ok" ? BadgeCheck : conclusion.state === "warn" ? TriangleAlert : GraduationCap} hint={conclusion.hint}>{conclusion.text}</Conclusion>
+    {courseRecovery}
+    <StatBand label="课程概况">
+      <Stat tone="role-2" icon={GraduationCap} label="在线课程" value={count(I6_STATS.coursesOnline)} unit="门" sub={`共 ${count(allCourses.length)} 门 · 草稿 ${count(counts.draft)} · 已下架 ${count(counts.archived)}`} />
+      <Stat tone="role-1" icon={BookOpen} label="近 7 天学完发出" value={weeklyValue} unit="UVT"
+        explain="过去 7 天（滚动，不是自然周）已发到用户的课程奖励合计，只算正式用户；后端已按两位小数四舍五入。" />
+      <Stat tone="role-4" icon={Star} label="首页推荐" value={featuredCourse ? nexGridBrandText(featuredCourse.title) : "未设置"}
+        explain="推荐位只有一个。App 首页先推用户没学完、正在学的课，其次才推这门。" />
+      <Stat tone="role-4" icon={ListChecks} label="单课奖励范围" value={`${TUTORIAL_REWARD_RANGE.min}–${TUTORIAL_REWARD_RANGE.max}`} unit="UVT"
+        explain="后端固定的范围，这页改不了；每门课的具体数在课程上调。" />
+    </StatBand>
+
+    <Panel title="课程" icon={GraduationCap} tone="role-2" sub={`${count(filteredCrs.length)} 门`}
+      actions={canWriteI7 ? <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} onClick={newCrs}>新建课程</Button> : <StatusTag tone="neutral">只读</StatusTag>}>
+      <div className="i6-course-filter">
+        <Segments label="按分类看" value={catFlt} onChange={setCatFlt}
+          items={[{ value: "all", label: "全部", count: allCourses.length }, ...courseCategories.map((category) => ({ value: category, label: categoryLabel(category), count: allCourses.filter((c) => c.cat === category).length }))]} />
+      </div>
+      {allCourses.length === 0
+        ? <BlockState state="empty" title="还没有课程" detail={canWriteI7 ? "点「新建课程」写第一门，先存成草稿。" : undefined} />
+        : filteredCrs.length === 0
+          ? <BlockState state="empty" title="这个分类没有课程" />
+          : <div className="i6-course-cards">
+            {filteredCrs.map((c) => {
+              const st = liveStatus(c);
+              const status = COURSE_STATUS[st] ?? { text: "状态未知", tone: "warn" as StateTone };
+              const Icon = categoryIcon(c.cat);
+              const approval = approvalOf(c.id);
+              const unknown = unknownOf(c.id);
+              return <article key={c.id} className="i6-course" data-dim={st === "archived" ? "" : undefined} data-selected={versionCourseId === c.id ? "" : undefined} aria-label={nexGridBrandText(c.title)}>
+                <header className="i6-course-head">
+                  <IconTile icon={Icon} tone="role-2" />
+                  <div className="i6-course-title">
+                    <h3>{nexGridBrandText(c.title)}</h3>
+                    <span className="i6-course-tags">
+                      <StatusTag tone={status.tone} icon={status.text === "草稿" ? FilePen : undefined}>{status.text}</StatusTag>
+                      {liveFeatured() === c.id && <StatusTag tone="progress" icon={Star}>首页推荐</StatusTag>}
+                      {approval && <StatusTag tone="progress">待审批</StatusTag>}
+                      {unknown && <StatusTag tone="warn">结果未知</StatusTag>}
+                    </span>
+                  </div>
+                </header>
+                <div className="i6-course-reward">
+                  <span className="i6-course-reward-k">学完发</span>
+                  <span className="i6-course-reward-v" data-empty={c.reward > 0 ? undefined : ""}>{uvtText(c.rewardRaw)}<small>UVT/人</small></span>
+                </div>
+                <dl className="i6-course-meta">
+                  <div><dt>版本</dt><dd>{c.v}</dd></div>
+                  <div><dt>测验</dt><dd>{c.quizQuestions.length ? `${c.quizQuestions.length} 题 · ${c.passScore ?? "—"} 分及格` : "没有题"}</dd></div>
+                  <div><dt>形式</dt><dd>{categoryLabel(c.cat)} · {FORMAT_LABEL[c.format] ?? c.format} · {LEVEL_LABEL[c.level] ?? c.level} · {durationText(c.duration)}</dd></div>
+                  <div><dt>三语</dt><dd className="i6-course-langs">{LANGS.map((item) => <span key={item.key} data-missing={langDone(c, item.key) ? undefined : ""}>{langDone(c, item.key) ? item.short : `缺${item.short}`}</span>)}</dd></div>
+                </dl>
+                <footer className="i6-course-actions">{courseActions(c, "card")}</footer>
+              </article>;
+            })}
+          </div>}
+    </Panel>
+
+    <Fold title="首页推荐" icon={Star} summary={featuredCourse ? `现在推荐「${nexGridBrandText(featuredCourse.title)}」` : "未设置推荐课程"}
+      explain="推荐位只有一个，只能选已发布的课，不能取消推荐。App 首页先推用户没学完、正在学的课，其次才推这门。"
+      actions={canWriteI7 ? <Button size="sm" onClick={setFeat}>换推荐课</Button> : undefined}>
+      <Facts>
+        <Fact k="推荐课程">{featuredCourse ? `${nexGridBrandText(featuredCourse.title)}（${featuredCourse.id}）` : "未设置推荐课程"}</Fact>
+        <Fact k="单课奖励范围">{TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT，具体数在课程上调</Fact>
+      </Facts>
+    </Fold>
+
+    <Fold title="课程效果" icon={ListChecks} summary={TUTORIAL_METRICS.length ? `${count(TUTORIAL_METRICS.length)} 项指标` : "后端还没提供指标"}
+      explain="开始学习、学完、测验通过都会记录，奖励记进用户的 UVT 账。完课率等指标后端还没算出来给这页。">
+      {TUTORIAL_METRICS.length === 0
+        ? <BlockState state="empty" title="还没有指标" detail="后端暂未提供完课率、通过率、学完人数。" />
+        : <Facts>{TUTORIAL_METRICS.map((m) => <Fact key={operatorCopyText(String(m.k))} k={operatorCopyText(String(m.k))}>{operatorCopyText(String(m.v))}</Fact>)}</Facts>}
+    </Fold>
+
+    <PaginationExemptionList
+      items={[
+        {
+          label: `教程中心 · /learn · ${allCourses.length} 门课`,
+          kind: "reference-catalog",
+          maxRows: Math.max(1, allCourses.length),
+          reason: `课程目录来自真实接口,当前 ${allCourses.length} 门;创建新课走草稿流`,
+        },
+      ]}
+    />
+
+    <Drawer open={!!versionCourse} onClose={() => setVersionCourseId("")} wide icon={GraduationCap}
+      title={versionCourse ? nexGridBrandText(versionCourse.title) : "课程"} sub={versionCourse ? `${versionCourse.id} · ${versionCourse.v}` : undefined}
+      footer={versionCourse ? <Decision others={<Button onClick={() => setVersionCourseId("")}>关闭</Button>} primary={<span className="i6-card-act">{courseActions(versionCourse, "drawer")}</span>} /> : undefined}>
+      {versionCourse && <section data-proof="i7-course-version-crud" className="i6-course-detail">
+        <PageTabs level={2} label="课程详情" value={courseTab} onChange={setCourseTab} ids={courseTabIds}
+          items={[{ value: "content", label: "内容" }, { value: "quiz", label: "测验与发奖" }, { value: "versions", label: "版本", count: versionsLoading ? undefined : versionsError ? "—" : courseVersions.length }]} />
+        <div {...courseTabIds.panel(courseTab)}>
+          {courseTab === "content" && <div className="i6-editor">
+            <div className="i6-editor-form">
+              <div className="i6-editor-lang"><LocaleTabs label="看哪种语言" value={courseLang} onChange={setCourseLang}
+                items={LANGS.map((item) => ({ value: item.key, label: item.label, missing: !langDone(versionCourse, item.key) }))} /></div>
+              <Facts>
+                <Fact k="标题">{(versionCourse[`title${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "titleZh"] || "—")}</Fact>
+                <Fact k="状态">{(COURSE_STATUS[liveStatus(versionCourse)] ?? { text: "状态未知" }).text} · {versionCourse.v}</Fact>
+                <Fact k="学完发" unit="UVT/人">{uvtText(versionCourse.rewardRaw)}</Fact>
+                <Fact k="分类">{categoryLabel(versionCourse.cat)} · {FORMAT_LABEL[versionCourse.format] ?? versionCourse.format} · {LEVEL_LABEL[versionCourse.level] ?? versionCourse.level} · {durationText(versionCourse.duration)}</Fact>
+              </Facts>
+              <p className="i6-course-body">{versionCourse[`body${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "bodyZh"] || "这种语言还没有正文。"}</p>
+            </div>
+            <AppCoursePreview lang={courseLang} title={versionCourse[`title${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "titleZh"]}
+              body={versionCourse[`body${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "bodyZh"]} category={versionCourse.cat} format={versionCourse.format}
+              level={versionCourse.level} duration={versionCourse.duration} reward={versionCourse.rewardRaw} quizCount={versionCourse.quizQuestions.length}
+              passScore={String(versionCourse.passScore ?? "")} retries={String(versionCourse.retryLimit ?? "")} caption="App 里大致的样子；线上课程显示已发布的内容" />
+          </div>}
+          {courseTab === "quiz" && <div className="rd-stack">
+            <Facts>
+              <Fact k="及格分">{versionCourse.passScore ?? "—"} 分（答对题数 ÷ 总题数 × 100，四舍五入）</Fact>
+              <Fact k="最多重试">{versionCourse.retryLimit ?? "—"} 次</Fact>
+              <Fact k="完成条件">{COMPLETION_LABEL[versionCourse.completionCondition ?? ""] ?? "—"}</Fact>
+              <Fact k="何时发奖">{REWARD_EVENT_LABEL[versionCourse.rewardEvent ?? ""] ?? "—"}</Fact>
+              <Fact k="每人领几次">同一用户在同一版本只领一次</Fact>
+            </Facts>
+            <Notice tone="warn">目前只按及格分判定和发奖，「完成条件」「何时发奖」这两项不起作用。</Notice>
+            {versionCourse.quizQuestions.length === 0 ? <BlockState state="empty" title="还没有测验题" detail="没有题的课不能发布。" />
+              : <ol className="i6-quiz-view">
+                {versionCourse.quizQuestions.map((q, index) => <li key={q.questionId || index}>
+                  <p className="i6-quiz-view-q">{q.questionZh || "—"}<small>{q.questionId}</small></p>
+                  <ul>{q.optionsZh.map((option, o) => <li key={o} data-correct={q.correctOptionIndex === o ? "" : undefined}>{option || "—"}{q.correctOptionIndex === o && <StatusTag tone="ok">正确答案</StatusTag>}</li>)}</ul>
+                </li>)}
+              </ol>}
+          </div>}
+          {courseTab === "versions" && <div className="rd-stack">
+            <div className="i6-version-bar">
+              <span className="i6-muted">线上 {versionCourse.v}；新版本先存草稿，发布后整体替换。时间为{BJ}。</span>
+              {canWriteI7 && <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={versionsLoading ? "版本列表还在读取" : versionsError ? "版本列表没有读到" : undefined} onClick={() => newCourseVersion(versionCourse)}>新版本草稿</Button>}
+            </div>
+            {versionsError ? <BlockState state="error" title="版本列表没有读到" detail={versionsError} onRetry={() => setVersionsRetry((value) => value + 1)} />
+              : <Table label="课程版本">
+                <thead><tr><Th>版本</Th><Th>状态</Th><Th>中文标题</Th><Th align="right">学完发</Th><Th align="right">修订号</Th><Th>更新时间</Th><Th align="right">操作</Th></tr></thead>
+                <tbody>
+                  {versionsLoading && <TableLoading columns={7} rows={3} />}
+                  {!versionsLoading && courseVersions.map((row) => {
+                    const status = VERSION_STATUS[row.status] ?? { text: "状态未知", tone: "warn" as StateTone };
+                    const title = nexGridBrandText(String(row.payload.titleZh ?? row.payload.titleEn ?? "—"));
+                    return <Tr key={`${row.courseId}-${row.version}`}>
+                      <Td><Cell main={row.version} /></Td>
+                      <Td><StatusTag tone={status.tone}>{status.text}</StatusTag></Td>
+                      <Td grow><Cell main={title} title={title} /></Td>
+                      <Td align="right"><Cell num main={`${uvtText(row.payload.rewardNex)} UVT`} /></Td>
+                      <Td align="right"><Cell num main={String(row.revision)} /></Td>
+                      <Td><Cell main={row.updatedAt ? formatBusinessTimeCompact(row.updatedAt, "—") : "—"} /></Td>
+                      <Td align="right" data-fit=""><span className="i6-row-actions">
+                        {row.status === "DRAFT" && canWriteI7 && <>
+                          <Button size="sm" variant="ghost" onClick={() => editCourseVersion(versionCourse, row)}>编辑草稿</Button>
+                          <Button size="sm" variant="ghost" icon={<Trash2 size={14} aria-hidden />} onClick={() => deleteCourseVersion(versionCourse, row)}>删除草稿</Button>
+                        </>}
+                        {row.status === "DRAFT" && canPublishI7 && <Button size="sm" variant="primary" onClick={() => publishCourseVersion(versionCourse, row)}>{Number(row.payload.rewardNex) > 0 ? "提交发布" : "发布"}</Button>}
+                        {row.status === "SUPERSEDED" && canPublishI7 && <Button size="sm" icon={<RotateCcw size={14} aria-hidden />} onClick={() => rollbackCourseVersion(versionCourse, row)}>回滚到此版本</Button>}
+                        {row.status === "PUBLISHED" && <span className="i6-muted">当前线上版本</span>}
+                      </span></Td>
+                    </Tr>;
+                  })}
+                  {!versionsLoading && courseVersions.length === 0 && <TableMessage columns={7}>暂无历史版本</TableMessage>}
+                </tbody>
+              </Table>}
+          </div>}
+        </div>
+      </section>}
+    </Drawer>
+
+    <CourseEditor open={!!courseEditor} spec={courseEditor?.spec ?? null} title={courseEditor?.title ?? ""} sub={courseEditor?.sub}
+      onClose={() => setCourseEditor(null)} onSave={(form) => courseEditor?.save(form)} />
+  </>;
 }
