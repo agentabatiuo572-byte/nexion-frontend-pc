@@ -30,7 +30,7 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
     if(activatable&&ctx.canWriteE5&&d.state==="inventory")add("activate",full?"已达 6 台上限，请先停用其他设备":undefined);
     if(activatable&&ctx.canForceActivateE5&&m.canPropose)add("force",full?"已达 6 台上限，强制激活也不能绕过":undefined);
     if(deactivatable&&ctx.canWriteE5)add("deactivate");
-    if(deactivatable&&ctx.canWriteE5&&(!d.pausedReason||canResumeE5UserDevicesFrom(d)))add(d.pausedReason?"resume":"pause",m.locked(`user:${d.userId}`)?"这个用户有原操作待确认":undefined,!d.pausedReason);
+    if(ctx.canWriteE5&&(d.pausedReason?canResumeE5UserDevicesFrom(d):deactivatable))add(d.pausedReason?"resume":"pause",m.locked(`user:${d.userId}`)?"这个用户有原操作待确认":undefined,!d.pausedReason);
     if(deactivatable&&ctx.canUnbindE5&&m.canPropose)add("unbind",undefined,true);
     return result;
   };

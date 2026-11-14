@@ -2408,7 +2408,7 @@ ID server mint;配对地址脱敏;时间戳 ms epoch 服务端权威。
 
 #### [C5] 安全 & 会话
 
-**2026-11-14 后端 111e00cd 同步**：全部退出共用 c2_session_revoke_all，另一位具A2批准权及C2/C5任一全退专权的超级管理员批准后执行；驳回保持原门。机型锁去重/回执缺口未交付，未知仍只读核对。出处 AuditReplayBusinessPermissionGuard.validateDecisionPermission。
+**2026-11-14 后端 111e00cd 同步**：全部退出共用 c2_session_revoke_all，另一位具A2批准权及C2/C5任一全退专权的超级管理员批准后执行；驳回保持原门。机型锁新格式命令已有去重和回执，结果未知可查原解除结果、24 小时内按原请求重试；只有缺少 receiptSupported 的旧记录只读回核对。出处 AuditReplayBusinessPermissionGuard.validateDecisionPermission、PhoneModelLockOperationsService.releaseReceipt/release。
 
 > 2026-11-12 机型锁恢复补充：原样重试经 isExplicitRejection 判定明确拒绝后，原请求、理由、修订号和命令号继续保留，并开放既有「解除待确认」确认；只清选定的本地待确认，不撤销后端操作，随后读回当前机型锁。回执 404、403、IDEMPOTENCY_* 不产生解除资格。首次提交、读取和恢复遇到 401/403 时都收起原理由及详情，通知外层重查权限，原命令保留。
 

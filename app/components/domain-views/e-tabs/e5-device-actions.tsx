@@ -214,7 +214,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
     if (activatable && ctx.canForceActivateE5) add("force-activate", "强制激活", !platform ? "还需审批发起权限，请联系管理员" : full ? "已达 6 台激活上限（含手机）" : undefined);
     if (deactivatable && ctx.canWriteE5) add("deactivate", "取消激活");
     if (deactivatable && ctx.canUnbindE5) add("unbind", "解绑", !platform ? "还需审批发起权限，请联系管理员" : undefined);
-    if (deactivatable && ctx.canWriteE5 && (!d.pausedReason || canResumeE5UserDevicesFrom(d))) add(d.pausedReason ? "resume" : "pause", d.pausedReason ? "恢复该用户" : "暂停该用户");
+    if (ctx.canWriteE5 && (d.pausedReason ? canResumeE5UserDevicesFrom(d) : deactivatable)) add(d.pausedReason ? "resume" : "pause", d.pausedReason ? "恢复该用户" : "暂停该用户");
     if (!phones && d.simState === "LEGACY_PENDING" && ctx.canWriteE5 && session.authorities.includes("platform_a2_proposal_create")) options.push({ key: "legacy-check", label: "终结资格", disabledReason: locked("legacy"), onSelect: () => { setCandidateOpen(true); void readCandidate(); } });
   }
   async function readCandidate() {
