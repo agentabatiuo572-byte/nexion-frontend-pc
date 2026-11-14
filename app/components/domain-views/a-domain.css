@@ -178,6 +178,7 @@
 .a6-page .a6-recovery-time { color: var(--rd-text-3); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; }
 .a6-page .a6-recovery-actions { display: inline-flex; gap: var(--rd-space-2); margin-left: auto; }
 .a6-page .a6-saved { flex-basis: 100%; display: flex; align-items: flex-start; gap: var(--rd-space-3); color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.a6-page .a6-saved > .rd-btn { flex: none; }
 .a6-page .a6-saved > :first-child { flex: 1; min-width: 0; }
 /* 改动清单：确认框、结果核对共用 */
 .adom .a6-diff { display: flex; flex-direction: column; gap: var(--rd-space-4); }

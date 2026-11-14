@@ -22,7 +22,7 @@ import {
   PageHeader, Panel, RdPage, StatusTag, Textarea,
 } from "@/app/components/rd";
 import {
-  AMPLIFIES_EXPLAIN, GrantsEditorDrawer, MenuChangeList, MismatchNotice, PermChangeList, SENSITIVE_EXPLAIN, flattenMenus, grantMismatch, permLabel, setDiff,
+  AMPLIFIES_EXPLAIN, GrantsEditorDrawer, MenuChangeList, MismatchNotice, PermChangeList, SENSITIVE_EXPLAIN, flattenMenus, grantMismatch, setDiff,
 } from "./a6-grants";
 
 type ConfirmReq = {
@@ -698,11 +698,10 @@ function SavedCheck({ desired, detail, permByCode, onRetry }: { desired: { permi
   const same = missing.length === 0 && extra.length === 0 && menuSame.added.length === 0 && menuSame.removed.length === 0;
   return (
     <div className="a6-saved">
-      {same ? <span>现在存着的权限和菜单和提交的一致</span> : (
-        <Fold inset title="现在存着的和提交的不一样" alert summary={`提交的权限里有 ${missing.length} 项现在没有${extra.length ? `，多出 ${extra.length} 项` : ""}；审批还没批准时也会这样`}>
-          {missing.length > 0 && <><p className="a6-muted">提交了、现在没有的权限{detail.status === 0 ? "（角色已停用时，新加的权限可能没存上）" : ""}：</p><PermChangeList codes={missing} permByCode={permByCode} kind="remove" limit={20} /></>}
-          {missing.length === 0 && <p className="a6-muted">提交的权限都在；菜单或多出的权限有差别。</p>}
-          <p className="a6-muted">提交的权限：{desired.permissionCodes.slice(0, 3).map((code) => permLabel(code, permByCode.get(code))).join("、")}{desired.permissionCodes.length > 3 ? ` 等 ${desired.permissionCodes.length} 项` : ""}</p>
+      {same ? <span>现在存着的和提交的一致</span> : (
+        <Fold inset title="和提交的不一样" alert summary={`${missing.length} 项提交了、现在没有${extra.length ? `；多出 ${extra.length} 项` : ""}`}
+          explain={`审批还没批准时也会这样。批准后仍不一样，就是没存上${detail.status === 0 ? "（停用角色新加的权限可能存不上，已提后端修）" : ""}。`}>
+          {missing.length > 0 ? <PermChangeList codes={missing} permByCode={permByCode} kind="missing" limit={20} /> : <p className="a6-muted">提交的权限都在，菜单或多出的权限有差别。</p>}
         </Fold>
       )}
       <Button variant="ghost" onClick={onRetry}>重新读取</Button>

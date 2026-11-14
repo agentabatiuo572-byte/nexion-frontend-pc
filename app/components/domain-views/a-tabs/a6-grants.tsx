@@ -108,7 +108,7 @@ export function MismatchNotice({ mismatch, menuById, title = "权限和菜单有
 }
 
 /** 确认框和结果里列出加了、去掉的权限：按模块分组，每项写人话名和类型；多于 limit 项时其余收进折叠。 */
-export function PermChangeList({ codes, permByCode, kind, limit = 8 }: { codes: readonly string[]; permByCode: ReadonlyMap<string, A8Permission>; kind: "add" | "remove"; limit?: number }) {
+export function PermChangeList({ codes, permByCode, kind, limit = 8 }: { codes: readonly string[]; permByCode: ReadonlyMap<string, A8Permission>; kind: "add" | "remove" | "missing"; limit?: number }) {
   if (!codes.length) return null;
   const sorted = [...codes].sort((a, b) => {
     const pa = permByCode.get(a), pb = permByCode.get(b);
@@ -124,7 +124,7 @@ export function PermChangeList({ codes, permByCode, kind, limit = 8 }: { codes: 
         const domain = domainOfPermission(code);
         return (
           <li key={code} title={code}>
-            <span className="a6-change-mark" aria-hidden>{kind === "add" ? "+" : "−"}</span>
+            <span className="a6-change-mark" aria-hidden>{kind === "add" ? "+" : kind === "remove" ? "−" : "·"}</span>
             <span className="a6-change-name">{permLabel(code, perm)}</span>
             <span className="a6-change-mod">{domain.code === "?" ? "其他" : `${domain.code} ${domain.name}`}</span>
             <span className="a6-change-tags">
@@ -139,7 +139,7 @@ export function PermChangeList({ codes, permByCode, kind, limit = 8 }: { codes: 
   return (
     <>
       {list(shown)}
-      {rest.length > 0 && <Fold inset title={`还有 ${rest.length} 项`} summary={kind === "add" ? "加上的其余权限" : "去掉的其余权限"}>{list(rest)}</Fold>}
+      {rest.length > 0 && <Fold inset title={`还有 ${rest.length} 项`} summary={kind === "add" ? "加上的其余权限" : kind === "remove" ? "去掉的其余权限" : "其余没有的权限"}>{list(rest)}</Fold>}
     </>
   );
 }
