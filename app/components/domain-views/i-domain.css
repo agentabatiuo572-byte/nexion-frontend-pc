@@ -149,7 +149,8 @@
 /* 点了和左滑去哪 */
 .i3-page .i3-route { display: flex; flex-direction: column; gap: var(--rd-space-5); }
 .i3-page .i3-route > section { display: flex; flex-direction: column; gap: var(--rd-space-3); }
-.i3-page .i3-route-table th:nth-child(-n+2) { width: 28%; }
+.i3-page .i3-route-table th:first-child { width: 28%; }
+.i3-page .i3-route-lead { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 .i3-page .i3-sub-title { display: flex; align-items: center; gap: var(--rd-space-1); margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; color: var(--rd-text); }
 .i3-page .i3-weak { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .i3-page .i3-change b { font-weight: 500; color: var(--rd-progress); }

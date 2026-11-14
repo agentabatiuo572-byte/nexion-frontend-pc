@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, CalendarClock, FilePen, Layers, Plus, RefreshCw, Route, Send, Trash2, Users } from "lucide-react";
 import { BlockState, Button, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
+import { PaginationExemptionList } from "../design-kit";
 import type { ICtx } from "./types";
 import type { NotificationAudienceTarget } from "@/lib/admin/i-client";
 import { usePropose } from "@/lib/admin/use-propose";
@@ -336,7 +337,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       </>
     ),
     effect: <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后才执行；批准前上限不变。">批准后生效</StatusTag>,
-    completionCopy: "另一位管理员在「操作记录与审批」批准后执行；执行时立刻按新上限清理。",
+    completionCopy: "另一位管理员在「操作记录与审批」批准后执行；批准前上限不变。",
     statedBrief: {
       impact: "调低：批准执行时立刻删掉每位用户这一档超出上限的旧通知，未读的也删。调高：以后多留，已删的不恢复。",
       check: "会删多少条这页读不到；等批准的修改也在「操作记录与审批」看。",
@@ -533,9 +534,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       </>}
       action={auditReachable ? <Link className="rd-link" href={AUDIT_HREF} prefetch={false}>看等批准的上限修改</Link> : undefined}>
       {scheduledN + sendingN > 0
-        ? <><b>{scheduledN + sendingN}</b>{` 条等着发${nextScheduled ? `，最近一条 ${whenText(nextScheduled)}` : ""}`}{sendingN > 0 ? `，${sendingN} 条正在发送` : ""}</>
+        ? <><b>{scheduledN + sendingN}</b>{" 条等着发"}{nextScheduled && <>，<span className="rd-keep">{`最近一条 ${whenText(nextScheduled)}`}</span></>}{sendingN > 0 && <>，<span className="rd-keep">{`${sendingN} 条正在发送`}</span></>}</>
         : "没有等着发的通知"}
-      {failedN > 0 && <>{`；${failedN} 条发送失败`}</>}
+      {failedN > 0 && <>；<span className="rd-keep">{`${failedN} 条发送失败`}</span></>}
     </Conclusion>;
 
   const group = (key: Exclude<StFlt, "all" | "scheduled">, title: string, rows: CampaignRow[], icon: typeof Bell) => {
@@ -623,13 +624,16 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         <div className="i3-route">
           <section aria-labelledby="i3-route-real">
             <h4 className="i3-sub-title" id="i3-route-real">App 实际怎么跳</h4>
-            <Facts>
-              <Fact k="设了「点了去哪」">点按钮和左滑都去那里</Fact>
-              {Object.entries(KIND_DEFAULT_ROUTE).map(([kind, href]) => (
-                <Fact key={kind} k={`没设 · ${kindLabel(kind)}`}>{`左滑去「${ctaLabelOf(href)}」，点了只标已读`}</Fact>
-              ))}
-              <Fact k="系统通知">左滑不跳转；没设时点了只标已读</Fact>
-            </Facts>
+            <p className="i3-route-lead">设了「点了去哪」：点按钮和左滑都去那里。没设：点了只标已读，左滑按下表。</p>
+            <Table label="没设跳转时左滑去哪" className="i3-route-table">
+              <thead><tr><Th>通知类型</Th><Th>没设「点了去哪」时左滑去</Th></tr></thead>
+              <tbody>
+                {Object.entries(KIND_DEFAULT_ROUTE).map(([kind, href]) => (
+                  <Tr key={kind}><Td>{kindLabel(kind)}</Td><Td grow>{ctaLabelOf(href)}</Td></Tr>
+                ))}
+                <Tr><Td>{kindLabel("system")}</Td><Td grow><span className="i3-weak">不跳转（系统通知左滑不跳）</span></Td></Tr>
+              </tbody>
+            </Table>
           </section>
           <section aria-labelledby="i3-route-catalog">
             <h4 className="i3-sub-title" id="i3-route-catalog">后端目录<Explain label="后端目录是什么" content="后端返回的固定说明，和 App 实际跳转不全一致（比如退款没有对应的通知类型），以上面的实际规则为准。已提后端统一。" /></h4>
@@ -640,7 +644,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
                   <Tr key={r.kind}>
                     <Td>{DELIVERY_CATALOG?.kinds.find((option) => option.value === r.kind)?.label ?? `类型未知（${r.kind}）`}</Td>
                     <Td>{r.to.trim() === "-" || r.to.startsWith("—") ? <span className="i3-weak">不跳转</span> : <span data-mono="">{r.to}</span>}</Td>
-                    <Td grow>{operatorCopyText(r.note)}</Td>
+                    <Td grow>{operatorCopyText(r.note).replace(/\s*-\s*system kind\s*/i, "：系统通知").replace(/\s*->\s*/g, " → ")}</Td>
                   </Tr>
                 ))}
               </tbody>
@@ -648,6 +652,22 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           </section>
         </div>
       </Fold>
+
+      <PaginationExemptionList
+        items={[
+          {
+            label: "通知活动",
+            kind: "reference-catalog",
+            maxRows: GROUP_PREVIEW,
+            reason: "后端一次返回全部活动、不分页；全部视图每个状态组先显示 6 条，其余点「显示全部」按状态筛出",
+          },
+          {
+            label: "后端左滑目录",
+            maxRows: 3,
+            reason: "后端固定的三行说明",
+          },
+        ]}
+      />
 
       {/* ===== 新建 / 编辑：左边填，右边是 App 里的样子 ===== */}
       {newOpen && canWriteI3 && (
