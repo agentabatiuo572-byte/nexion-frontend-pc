@@ -1194,7 +1194,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               <ConfigRow key={param.key} name={name} what={meta.what} when={meta.when} effect={meta.effect}
                 note={param.key === "day0" ? `系统里叫「${operatorCopyText(param.name)}」：${operatorCopyText(param.sub)}` : operatorCopyText(param.sub)}
                 value={live || "—"}
-                action={(describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={writeBlocked} onClick={meta.open}>调整</Button>} />
+                action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={writeBlocked} onClick={meta.open}>调整</Button> : undefined} />
             );
           })}
           <ConfigRow name="到期记录清理" what="删除超过留存期的事件记录" when="点「立即清理」时执行，不走审批"
@@ -1202,7 +1202,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             note="上次清理只读得到最近一次手动清理。读不到不代表从没清理过。"
             value={lastCleanup}
             sub={retentionRun?.lockAcquired ? `发送记录 ${retentionRun.outboxRows} 条 · 行为记录 ${retentionRun.behaviorFactRows} 条 · 按 ${retentionRun.retentionMonths} 个月` : undefined}
-            action={(describedBy) => <Button size="sm" variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} aria-describedby={describedBy}
+            action={!canRunRetention ? undefined : (describedBy) => <Button size="sm" variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} aria-describedby={describedBy}
               disabledReason={!canRunRetention ? "你没有清理事件的权限（要有事件修改和操作审批的写权限）" : !overview ? "事件数据还没读到" : loadError ? "数据刷新失败，先重新读取" : mutating ? "正在提交另一项修改，完成后再操作" : undefined}
               onClick={runRetention}>立即清理</Button>} />
         </ConfigList>
