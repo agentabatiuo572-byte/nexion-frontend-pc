@@ -1342,7 +1342,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <div className="h3-sub-head"><h3>任务定义数量</h3><Explain label="任务定义数量怎么算" content="按任务类型数后台里的任务定义（含已停用、已归档），不是完成或领取人数。读取异常时后端会返回空，空不代表 0 个。" /></div>
         {monitor.length === 0
           ? <p className="h3-empty-line">后端没有返回，不能据此判断有 0 个。</p>
-          : <dl className="h3-monitor">{monitor.map((item) => <div key={item.label}><dt>{TYPE_LABEL[item.label] ?? operatorCopyText(item.label)}</dt><dd>{operatorCopyText(item.note)}</dd></div>)}</dl>}
+          : <dl className="h3-monitor">{monitor.map((item) => <div key={item.label}><dt>{TYPE_LABEL[item.label] ?? operatorCopyText(item.label)}</dt><dd>{operatorCopyText(item.note).replace(/\s*来自\s*nx_\w+/, "")}</dd></div>)}</dl>}
         <div className="h3-sub-head"><h3>首日任务的完成记录口径</h3><Explain label="口径怎么算" content={<>
           <p>「过去一天新建的任务记录」是过去 24 小时新建的用户任务记录数，不管做没做完，不是完成数。</p>
           <p>「异常占比」是同一段时间里失败、异常、被拒的记录占比，后端算到 1 位小数；没有记录时是「—」。</p>
