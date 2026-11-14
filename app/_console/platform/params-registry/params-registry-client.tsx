@@ -306,7 +306,7 @@ export function PlatformParamsRegistry() {
 
       {partialSources.length > 0 && (
         <Notice tone="warn" title="部分来源没读到">
-          {partialSources.map((source) => <p key={source.key}>{source.label}：{operatorCopyText(source.detail)}</p>)}
+          {partialSources.map((source) => <p key={source.key}>{source.label}：{source.key === "emergency" && emergencyShown ? "具体是哪一类没读到，见下方「紧急开关」" : operatorCopyText(source.detail)}</p>)}
         </Notice>
       )}
 
@@ -345,7 +345,7 @@ export function PlatformParamsRegistry() {
             <div className="a5-groups">
               {emergencyShown && (
                 <Panel icon={Siren} tone="role-3" title="紧急开关"
-                  sub={`${gates.length} 个业务开关${geo ? " · 地区访问限制" : ""}`}
+                  sub={`${gatesMissing ? "业务开关没读到" : `${gates.length} 个业务开关`}${geo ? " · 地区访问限制" : ""}`}
                   explain="紧急停用开关和地区访问限制的当前状态。这里只读，关停和恢复在各自的页面操作。">
                   {(gatesMissing || geoMissing) && (
                     <Notice tone="warn" title={gatesMissing && geoMissing ? "紧急开关和地区访问限制都没读到" : gatesMissing ? "紧急停用开关没读到" : "地区访问限制没读到"}>
