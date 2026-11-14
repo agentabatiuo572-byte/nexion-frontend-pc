@@ -42,8 +42,8 @@ export interface BLedger {
   prev: {
     reserveUsd: number;
     netFlow24hUsd: number;
-    queueBacklogCount: number;
-    avgRiskScore: number;
+    queueBacklogCount: number | null;
+    avgRiskScore: number | null;
   };
 }
 
@@ -152,8 +152,8 @@ const EMPTY_LEDGER: BLedger = {
   prev: {
     reserveUsd: 0,
     netFlow24hUsd: 0,
-    queueBacklogCount: 0,
-    avgRiskScore: 0,
+    queueBacklogCount: null,
+    avgRiskScore: null,
   },
 };
 
@@ -333,8 +333,8 @@ function normalizeLedger(raw: Record<string, unknown>): BLedger {
     prev: {
       reserveUsd: requiredNum(prev.reserveUsd, "dualLedger.prev.reserveUsd"),
       netFlow24hUsd: requiredNum(prev.netFlow24hUsd, "dualLedger.prev.netFlow24hUsd"),
-      queueBacklogCount: requiredNum(prev.queueBacklogCount, "dualLedger.prev.queueBacklogCount"),
-      avgRiskScore: requiredNum(prev.avgRiskScore, "dualLedger.prev.avgRiskScore"),
+      queueBacklogCount: prev.queueBacklogCount == null ? null : requiredNum(prev.queueBacklogCount, "dualLedger.prev.queueBacklogCount"),
+      avgRiskScore: prev.avgRiskScore == null ? null : requiredNum(prev.avgRiskScore, "dualLedger.prev.avgRiskScore"),
     },
   };
 }
