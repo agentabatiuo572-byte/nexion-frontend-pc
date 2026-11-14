@@ -121,7 +121,7 @@ export type PositionCopy = {
   experiment?: { id: string; text: string; tone: StateTone };
 };
 
-export function PositionCard({ title, sub, statusTag, surface, copies, problem, empty, menu, onOpenCopy, onOpenExperiment }: {
+export function PositionCard({ title, sub, statusTag, surface, copies, problem, empty, menu, openLabel = "查看和编辑", onOpenCopy, onOpenExperiment }: {
   title: ReactNode;
   sub: ReactNode;
   statusTag?: ReactNode;
@@ -130,6 +130,8 @@ export function PositionCard({ title, sub, statusTag, surface, copies, problem, 
   problem?: ReactNode;
   empty?: ReactNode;
   menu?: readonly MoreMenuItem[];
+  /** 打开文案详情的按钮名：没有写权限时只写「查看」。 */
+  openLabel?: string;
   onOpenCopy: (key: string) => void;
   onOpenExperiment: (id: string) => void;
 }) {
@@ -160,7 +162,7 @@ export function PositionCard({ title, sub, statusTag, surface, copies, problem, 
                       <StatusTag tone={copy.experiment.tone} icon={FlaskConical}>{copy.experiment.text}</StatusTag>
                     </button>
                   : <span className="i1-weak">没有实验</span>}
-                <Button size="sm" onClick={() => onOpenCopy(copy.key)}>查看和编辑</Button>
+                <Button size="sm" onClick={() => onOpenCopy(copy.key)}>{openLabel}</Button>
               </div>
             </div>
             {copy.texts && <UserPreview surface={surface} texts={copy.texts} />}

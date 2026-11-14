@@ -970,13 +970,14 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
                 {canCreateCopy && !inactive && <Button size="sm" disabledReason={createBlocked} onClick={() => createCopy({ surface, copyPosition: position.positionKey })}>在这里新增文案</Button>}
               </>}
               menu={menu}
+              openLabel={canWrite ? "查看和编辑" : "查看"}
               onOpenCopy={setCopyDetail}
               onOpenExperiment={openExperiment} />
           );
         })}
         {orphanCopies.length > 0 && (
           <PositionCard title="没放到现有位置的文案" sub={`${orphanCopies.length} 条 · 位置已删除或没填`}
-            copies={orphanCopies.map(toCard)} onOpenCopy={setCopyDetail} onOpenExperiment={openExperiment} />
+            copies={orphanCopies.map(toCard)} openLabel={canWrite ? "查看和编辑" : "查看"} onOpenCopy={setCopyDetail} onOpenExperiment={openExperiment} />
         )}
       </div>
     </div>
