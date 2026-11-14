@@ -1,3 +1,4 @@
+import { h4CommandRequest, markH4Read } from "./h4-mutations";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -324,7 +325,11 @@ export async function chargeH2TrialSession(sessionId: string, reason: string) {
 }
 
 export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
-  return growthRequest<Record<string, any>>(section === "events" ? "/quest-events/events-overview" : "/quest-events/tasks");
+  if (section === "tasks") return growthRequest<Record<string, any>>("/quest-events/tasks");
+  markH4Read("overview", false);
+  const result = await growthRequest<Record<string, any>>("/quest-events/events-overview");
+  markH4Read("overview", true);
+  return result;
 }
 
 export type H3WeeklyRegionMapping = { callingCode: string; zoneId: string };
@@ -436,10 +441,10 @@ async function h4EventMutation(
   expectedValue: string | boolean,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/events/${encodeURIComponent(eventId)}/${field}`,
     { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue) },
-    `h4-${field}`,
+    `活动${field === "reward" ? "奖励" : field === "status" ? "状态" : "主推"} · ${eventId}`,
   );
 }
 
@@ -711,10 +716,10 @@ export async function updateH4LocalizedContent(
   expectedValue: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/events/${encodeURIComponent(eventCode)}/content/${field}/${locale}`,
     { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue) },
-    `h4-content-${field}`,
+    `编辑 ${locale.toUpperCase()} 内容 · ${eventCode}`,
   );
 }
 
@@ -1118,54 +1123,26 @@ export function deleteH3Mission(taskCode: string, taskKind: H3MissionKind, reaso
     { taskKind, targetStatus: "deleted", expectedStatus: "archived", reason });
 }
 
-interface PendingH4EventDelete extends PendingMutationRecord { eventId: string; expectedVersion: string; reason: string }
-const h4EventDeletes = createPendingMutationStore<PendingH4EventDelete>({
-  storageKey: "nexion-admin-h4-event-deletes-v1",
-  isValidRecord: record => typeof record.eventId === "string" && typeof record.expectedVersion === "string" && typeof record.reason === "string",
-});
-export const pendingH4EventDeletes = () => h4EventDeletes.list();
-
+export { pendingH4EventDeletes } from "./h4-mutations";
 export async function deleteH4QuestEvent(eventId: string, expectedVersion: string, reason: string) {
-  const previous = h4EventDeletes.list().find(record => record.fingerprint === eventId);
-  if (previous && (previous.expectedVersion !== expectedVersion || previous.reason !== reason)) {
-    throw new Error("有一个删除操作结果还没确认，请先在活动列表上方查看结果。");
-  }
-  const commandKey = previous?.commandKey ?? nextIdempotencyKey("h4-event-delete");
-  h4EventDeletes.remember(eventId, commandKey, { eventId, expectedVersion, reason });
-  if (!h4EventDeletes.isDurablyStored(eventId, commandKey)) {
-    if (!previous) h4EventDeletes.forget(eventId);
-    throw new Error("当前页面无法保存操作记录，尚未提交，请检查浏览器设置。");
-  }
-  let acknowledged = false;
-  try {
-    const receipt = await growthRequest<{ eventId: string; deleted: boolean }>(`/quest-events/events/${encodeURIComponent(eventId)}`, {
-      method: "DELETE", headers: { "Idempotency-Key": commandKey }, body: JSON.stringify({ expectedVersion, reason }),
-    });
-    if (receipt?.eventId !== eventId || receipt.deleted !== true) throw new Error("删除结果尚未确认，请恢复原操作核实。");
-    acknowledged = true;
-    const overview = await fetchH3QuestEvents("events");
-    h4EventDeletes.forget(eventId);
-    return overview;
-  } catch (error) {
-    const { status, apiCode, bodyUnreadable } = error as Error & { status?: number; apiCode?: number; bodyUnreadable?: boolean };
-    if (!previous && !acknowledged && typeof status === "number" && !bodyUnreadable && !outcomeStaysUnknown(status, apiCode)) h4EventDeletes.forget(eventId);
-    throw error;
-  }
+  return h4CommandRequest(`/quest-events/events/${encodeURIComponent(eventId)}`, {
+    method: "DELETE", body: JSON.stringify({ expectedVersion, reason }),
+  }, `删除既有活动 · ${eventId}`);
 }
 
 export async function createH4QuestEvent(event: Record<string, any>, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     "/quest-events/events",
     { method: "POST", body: JSON.stringify({ ...event, reason, operator: currentAdminOperator() }) },
-    "h4-event-create",
+    `新建既有活动 · ${event.id}`,
   );
 }
 
 export async function createH4WheelTier(tier: Record<string, any>, expectedSignature: string, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     "/quest-events/wheel-tiers",
     { method: "POST", body: JSON.stringify({ ...tier, expectedSignature, reason, operator: currentAdminOperator() }) },
-    "h4-tier-create",
+    `新建转盘奖项 · ${tier.tierName}`,
   );
 }
 
@@ -1174,10 +1151,10 @@ export async function updateH4WheelProbabilities(
   expectedSignature: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     "/quest-events/wheel-tiers/probabilities",
     { method: "PATCH", body: JSON.stringify({ probabilities, expectedSignature, reason, operator: currentAdminOperator() }) },
-    "h4-tier-probabilities",
+    "调整转盘奖项概率",
   );
 }
 
@@ -1187,29 +1164,29 @@ export async function updateH4WheelTier(
   expectedSignature: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/wheel-tiers/${encodeURIComponent(tierName)}`,
     { method: "PATCH", body: JSON.stringify({ ...tier, expectedSignature, reason, operator: currentAdminOperator() }) },
-    "h4-tier-update",
+    `编辑转盘奖项 · ${tierName}`,
   );
 }
 
 export async function deleteH4WheelTier(tierName: string, expectedSignature: string, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/wheel-tiers/${encodeURIComponent(tierName)}`,
     {
       method: "DELETE",
       body: commandBody("delete", "delete", reason, currentAdminOperator(), expectedSignature),
     },
-    "h4-tier-delete",
+    `删除转盘奖项 · ${tierName}`,
   );
 }
 
 export async function createH4WheelGuard(guard: Record<string, any>, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     "/quest-events/wheel-guards",
     { method: "POST", body: JSON.stringify({ ...guard, reason, operator: currentAdminOperator() }) },
-    "h4-guard-create",
+    `新建转盘护栏 · ${guard.guardLabel}`,
   );
 }
 
@@ -1219,12 +1196,12 @@ export async function updateH4WheelGuard(
   expectedValue: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/wheel-guards/${encodeURIComponent(guardKey)}`,
     {
       method: "PATCH",
       body: commandBody(guardKey, value, reason, currentAdminOperator(), expectedValue),
     },
-    "h4-guard-update",
+    `转盘安全限制 · ${guardKey}`,
   );
 }

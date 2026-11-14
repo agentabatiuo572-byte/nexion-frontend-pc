@@ -1818,6 +1818,31 @@ export const HIGH_OPS: HighOpDef[] = [
     buildTarget: (ctx) => ({ domain: "I", type: "learning_course_activation", id: String(ctx.courseId) }),
   },
   {
+    op: "h4_event_rule_enable", domain: "H", action: "启用活动或放宽转盘资金护栏", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_event_rule",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_event_rule_enable", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_event_rule", id: String(ctx.eventCode) }),
+  },
+  {
+    op: "h4_genesis_raffle_open", domain: "H", action: "启用活动或放宽转盘资金护栏", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_genesis_raffle",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_genesis_raffle_open", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_genesis_raffle", id: String(ctx.id) }),
+  },
+  {
+    op: "h4_wheel_guard_create", domain: "H", action: "启用活动或放宽转盘资金护栏", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_wheel_guard",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_wheel_guard_create", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_wheel_guard", id: String(ctx.guardKey) }),
+  },
+  {
+    op: "h4_wheel_guard_update", domain: "H", action: "启用活动或放宽转盘资金护栏", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_wheel_guard",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_wheel_guard_update", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_wheel_guard", id: String(ctx.guardKey) }),
+  },
+  {
+    op: "h4_legacy_event_open", domain: "H", action: "开放旧活动资金奖励", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_legacy_event",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_legacy_event_open", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_legacy_event", id: String(ctx.eventCode) }),
+  },
+  {
     op: "h4_legacy_event_reward_update", domain: "H", action: "提高旧活动奖励", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_legacy_event",
     buildCommand: (ctx) => ({ domain: "H", op: "h4_legacy_event_reward_update", params: { values: ctx } }),
     buildTarget: (ctx) => ({ domain: "H", type: "h4_legacy_event", id: String(ctx.eventCode) }),

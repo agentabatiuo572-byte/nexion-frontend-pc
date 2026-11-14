@@ -6,8 +6,7 @@ import type { HCtx } from './types';
 import type { Catalog, CommandReceipt, Promotion, PromotionListItem, PromotionPage, Template } from '@/lib/admin/promotion-types';
 import { pendingPromotionCommands, promotionRead, type PendingPromotion } from '@/lib/admin/promotion-client';
 import { isDeletablePromotion, promotionDeleteBody } from '@/lib/admin/activity-delete';
-import { pendingH4EventDeletes } from '@/lib/admin/h-client';
-import { pendingHIRewardCommands } from '@/lib/admin/hi-reward-commands';
+import { pendingH4Commands, h4CommandHasPendingTicket } from '@/lib/admin/h4-mutations';
 import { emptyDraft, dateInput, utcInput } from '@/lib/admin/promotion-form';
 import PromotionEditor from './h4-promotion-editor';
 import PromotionReview from './h4-promotion-review';
@@ -29,7 +28,7 @@ export default function H4Promotions({ ctx, legacy }: {
 }) {
     const routeSearch = useSearchParams().toString();
     const [,pendingChanged]=useState(0);
-    useEffect(()=>{const refreshPending=()=>pendingChanged(v=>v+1);window.addEventListener('admin-promotion-pending-changed',refreshPending);return()=>window.removeEventListener('admin-promotion-pending-changed',refreshPending);},[]);
+    useEffect(()=>{const refreshPending=()=>pendingChanged(v=>v+1);window.addEventListener('admin-promotion-pending-changed',refreshPending);window.addEventListener('admin-h4-pending-changed',refreshPending);return()=>{window.removeEventListener('admin-promotion-pending-changed',refreshPending);window.removeEventListener('admin-h4-pending-changed',refreshPending);};},[]);
     const [editStep, setEditStep] = useState(0), [old, setOld] = useState(false), [screen, setScreen] = useState<Screen>('list'), [id, setId] = useState(''), [activity, setActivity] = useState<Promotion | null>(null), [activityError, setActivityError] = useState<unknown>(null), [activityBusy, setActivityBusy] = useState(false), [creating, setCreating] = useState(false), [template, setTemplate] = useState<Template | null>(null), [copy, setCopy] = useState<PromotionListItem | null>(null), [pending, setPending] = useState<PendingPromotion | null>(null), [notice, setNotice] = useState(''), [policiesOpen, setPoliciesOpen] = useState(false);
     const [filters, setFilters] = useState({ query: '', category: '', template: '', state: '', from: '', to: '', timezone: 'Asia/Tokyo', sort: 'UPDATED_DESC' }), [query, setQuery] = useState<Record<string, string | number>>({ limit: 20 }), [previous, setPrevious] = useState<Array<Record<string, string | number>>>([]);
     const [routeReady, setRouteReady] = useState(false);
@@ -43,6 +42,11 @@ export default function H4Promotions({ ctx, legacy }: {
         setQuery(current => { const next = { ...current }; delete next.querySnapshot; delete next.cursor; return next; });
         list.reload();
     };
+    useEffect(() => {
+        const settled = () => { setCreating(false); setTemplate(null); setCopy(null); setDeleting(null); setPoliciesOpen(false); catalog.reload(); reloadList(); if (id) retryActivity(); };
+        window.addEventListener('admin-promotion-original-settled', settled);
+        return () => window.removeEventListener('admin-promotion-original-settled', settled);
+    }, [id]);
     const pageReady = screen === 'list' ? !!list.data && !!catalog.data : !!catalog.data && activity?.activityId === id;
     const pageLoading = !routeReady || (!pageReady && (catalog.loading || (screen === 'list' ? list.loading : activityBusy)));
     const retryActivity = () => { setActivityBusy(true); setActivityError(null); void refresh().catch(setActivityError).finally(() => setActivityBusy(false)); };
@@ -83,7 +87,7 @@ export default function H4Promotions({ ctx, legacy }: {
     };
     const afterDelete = (result: CommandReceipt) => { setDeletedId(result.targetId); setDeleting(null); setActivity(null); setActivityError(null); setNotice('活动已删除，历史订单、奖励与操作记录保留。'); navigate('list', ''); reloadList(); };
     const pendingItems = pendingPromotionCommands();
-    const legacyUnknown = pendingHIRewardCommands().filter(r => r.scope.startsWith('H/')).length + pendingH4EventDeletes().length;
+    const legacyUnknown = pendingH4Commands().filter(r => !r.asset && !h4CommandHasPendingTicket(r.commandKey)).length;
     const heading = screen === 'list' ? ['活动中心', '管理促销与邀请推广活动，跟进配置、投放及未完成奖励。'] : screen === 'edit' ? [`配置活动 · ${['基本信息', '参与资格', '购机赠奖', '预算与叠加'][editStep]}`, '设置参与条件、逐设备奖励与预算政策。'] : screen === 'review' ? ['试算、审核与发布', '先试算确认没有问题，再分别审核和发布。'] : screen === 'detail' ? [activity?.name || '活动详情', '已发布规则与改版草稿分开呈现，旧订单继续按原版本履行。'] : screen === 'rewards' ? ['奖励台账', '逐项核对奖励承诺与发放凭证；结果未知时先核账。'] : ['活动效果', '查看同一统计快照的成交、退款与奖励成本。'];
     const listTab: ListTab = old ? `legacy-${legacySection}` : tab;
     const chooseTab = (next: ListTab) => { if (next.startsWith('legacy-')) { setLegacySection(next.slice(7) as LegacySection); setOld(true); return; } setTab(next as typeof tab); setOld(false); };

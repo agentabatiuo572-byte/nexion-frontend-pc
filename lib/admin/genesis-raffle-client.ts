@@ -1,6 +1,5 @@
 import { growthRequest } from "./h-client";
-import { createSlotAttemptStore } from "./pending-mutation-store";
-import { currentAdminOperator } from "./current-operator";
+import { h4CommandRequest, markH4Read, type H4ApprovalReceipt } from "./h4-mutations";
 
 export interface RafflePrize { id: string; nameZh: string; nameEn: string; nameVi: string; rewardType: "UVT" | "USDT" | "DEVICE"; amount: number | string; quantity: number; productNo?: string; }
 export interface RaffleDraft { id: string; titleZh: string; titleEn: string; titleVi: string; startsAt: string; drawAt: string; prizes: RafflePrize[]; }
@@ -26,17 +25,16 @@ export function parseAdminRaffle(value: unknown): AdminRaffle {
   return row;
 }
 export async function fetchAdminRaffles(): Promise<AdminRaffle[]> {
+  markH4Read("raffles", false);
   const result = await growthRequest<{ draws: unknown[] }>("/genesis-raffle");
   if (!Array.isArray(result?.draws)) throw new Error("创世抽奖配置读取失败，请刷新后重试。");
-  return result.draws.map(parseAdminRaffle);
+  const rows = result.draws.map(parseAdminRaffle);
+  markH4Read("raffles", true);
+  return rows;
 }
-const commands = createSlotAttemptStore({ storageKey: "uvel-admin-genesis-raffle-attempts-v1" });
-export async function saveAdminRaffle(draft: RaffleDraft, revision: number | null, enabled: boolean, reason: string): Promise<AdminRaffle> {
-  const body = JSON.stringify({ ...draft, ...(revision === null ? {} : { expectedRevision: revision, enabled }), reason });
-  const slot = `${currentAdminOperator()}:${draft.id}`;
-  const key = commands.resolve(slot, body, () => `genesis-raffle-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
-  await growthRequest(`/genesis-raffle${revision === null ? "" : `/${encodeURIComponent(draft.id)}`}`, { method: revision === null ? "POST" : "PATCH", body, headers: { "Idempotency-Key": key } });
-  const saved = (await fetchAdminRaffles()).find(draw => draw.id === draft.id);
-  if (!saved || (revision !== null && saved.revision <= revision)) throw new Error("配置已提交，尚未读到最新结果，请刷新核对后重试。");
-  commands.forget(slot); return saved;
+export async function saveAdminRaffle(draft: RaffleDraft, revision: number | null, enabled: boolean, reason: string, opening = revision !== null && enabled): Promise<AdminRaffle | H4ApprovalReceipt> {
+  return h4CommandRequest(`/genesis-raffle${revision === null ? "" : `/${encodeURIComponent(draft.id)}`}`, {
+    method: revision === null ? "POST" : "PATCH",
+    body: JSON.stringify({ ...draft, ...(revision === null ? {} : { expectedRevision: revision, enabled }), reason }),
+  }, `保存抽奖配置 · ${draft.titleZh}`, opening) as Promise<AdminRaffle | H4ApprovalReceipt>;
 }

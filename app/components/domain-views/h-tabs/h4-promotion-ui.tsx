@@ -1,4 +1,5 @@
 "use client";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { cloneElement, isValidElement, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type DependencyList, type ReactNode, type ReactElement } from 'react';
 import { displayAdminError } from '@/lib/admin/error-messages';
@@ -132,6 +133,7 @@ export function useRead<T>(loader: () => Promise<T>, deps: DependencyList, enabl
     const ref = useRef(loader);
     ref.current = loader;
     const [data, setData] = useState<T | null>(null), [error, setError] = useState<unknown>(null), [loading, setLoading] = useState(true), [tick, setTick] = useState(0);
+    useEffect(() => { const refresh = () => setTick(v => v + 1); window.addEventListener('admin-promotion-original-settled', refresh); return () => window.removeEventListener('admin-promotion-original-settled', refresh); }, []);
     useEffect(() => { if (!enabled) { setLoading(false); return; } let current = true; setLoading(true); setError(null); ref.current().then(v => { if (current)
         setData(v); }).catch(e => { if (current)
         setError(e); }).finally(() => { if (current)
@@ -176,18 +178,27 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     sub?: ReactNode;
     evidenceNote?: ReactNode;
 }) {
+    useEffect(() => {
+        const settled = () => onClose();
+        window.addEventListener('admin-promotion-original-settled', settled);
+        return () => window.removeEventListener('admin-promotion-original-settled', settled);
+    }, [onClose]);
     const initial = pendingPromotionCommands().find(p => p.operation === intent.operation && p.targetId === intent.targetId)?.body as Record<string, unknown> | undefined;
     const policy = useRead(fetchA2ReasonPolicy, []), [reason, setReason] = useState(String(initial?.reason || '')), [evidence, setEvidence] = useState<string[]>(Array.isArray(initial?.evidenceRefs) ? initial.evidenceRefs : []), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [note, setNote] = useState(''), [version, setVersion] = useState(0), [upload, setUpload] = useState<Record<string, string>>({}), [uploadState, setUploadState] = useState<string>();
     const record = pendingPromotionCommands().find(p => p.operation === intent.operation && p.targetId === intent.targetId);
     const [reloadNeeded, setReloadNeeded] = useState(false);
     const payload = { ...body, reason, ...('evidenceRefs' in body ? { evidenceRefs: evidence } : {}) };
-    const submit = async (retry = false) => { if (!writeAllowed || reloadNeeded) return; setBusy(true); setError(null); try {
+    const submit = async (retry = false) => { if (!writeAllowed || reloadNeeded || record && isRetryExpired(record)) return; setBusy(true); setError(null); try {
         const result = record?.receipt || await promotionCommand(record && retry ? record : { ...intent, body: payload }, retry);
+        if (record) window.dispatchEvent(new Event('admin-promotion-original-settled'));
         await onSuccess(result);
         acknowledgePromotionCommand(result);
     }
     catch (e) {
         setError(e);
+        if (record && !pendingPromotionCommands().some(r => r.commandKey === record.commandKey)) {
+            window.dispatchEvent(new Event('admin-promotion-original-settled'));
+        }
         if (e instanceof PromotionApiError && /REVISION|VERSION_CONFLICT|CONCURRENT_CHANGE|VERSION_NOT_CURRENT|VERSION_STATE_INVALID/.test(e.reasonCode || '')) {
             if (onVersionConflict) onVersionConflict();
             else if (onReload) setReloadNeeded(true);
@@ -214,9 +225,11 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
         return; setBusy(true); setError(null); try {
         const result = record.receipt || await recoverPromotionCommand(record);
         if (result.status === 'SUCCEEDED') {
+            window.dispatchEvent(new Event('admin-promotion-original-settled'));
             await onSuccess(result);
             acknowledgePromotionCommand(result);
         }
+        else if (result.status === 'FAILED') window.dispatchEvent(new Event('admin-promotion-original-settled'));
         else
             setNote(result.status === 'NOT_FOUND' ? '未查到原操作，可按原参数和原操作编号重试。' : `原操作：${labelState(result.status)}。保留输入，继续核查。`);
     }
@@ -229,7 +242,7 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     } };
     const invalid = !policy.data || policy.loading || !!policy.error || reason.trim().length < policy.data.minChars || reason.trim().length > policy.data.maxChars || (requireEvidence && !evidence.length) || !!uploadState;
     const reasonLength = reason.trim().length;
-    return <Dialog title={title} sub={sub} danger={danger} onClose={onClose} wide={requireEvidence} footer={<><Button onClick={onClose} disabled={busy}>取消</Button>{reloadNeeded && onReload && <Button onClick={reload} disabled={busy || !!record}>{busy ? "正在加载…" : "重新加载并核对"}</Button>}{record ? <><Button onClick={recover} disabled={busy}>{record.receipt ? '读取已成功的结果' : '查询原结果'}</Button>{record.recoveryState === 'NOT_FOUND' && <Button kind="primary" onClick={() => submit(true)} disabled={busy || !writeAllowed || policy.loading || !!policy.error}>按原请求重试</Button>}</> : <RdButton variant={danger ? 'danger' : 'primary'} onClick={() => submit()} disabled={busy || reloadNeeded || invalid || !writeAllowed}>{busy ? '正在提交…' : confirmLabel}</RdButton>}</>}>
+    return <Dialog title={title} sub={sub} danger={danger} onClose={onClose} wide={requireEvidence} footer={<><Button onClick={onClose} disabled={busy}>取消</Button>{reloadNeeded && onReload && <Button onClick={reload} disabled={busy || !!record}>{busy ? "正在加载…" : "重新加载并核对"}</Button>}{record ? <><Button onClick={recover} disabled={busy}>{record.receipt ? '读取已成功的结果' : '查询原结果'}</Button>{record.recoveryState === 'NOT_FOUND' && !isRetryExpired(record) && <Button kind="primary" onClick={() => submit(true)} disabled={busy || !writeAllowed || policy.loading || !!policy.error}>按原请求重试</Button>}</> : <RdButton variant={danger ? 'danger' : 'primary'} onClick={() => submit()} disabled={busy || reloadNeeded || invalid || !writeAllowed}>{busy ? '正在提交…' : confirmLabel}</RdButton>}</>}>
     {record && <RdNotice tone="warn" title="结果未知">{record.receipt ? '原操作已经成功，当前只重读结果；不会再次提交。' : '原参数已锁定；查询前不会创建第二次操作。关闭后仍可在活动中心继续处理。'}</RdNotice>}
     <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}>{children}</fieldset>
     <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}><RdField label="操作理由" required hint={policy.data ? `${policy.data.minChars}–${policy.data.maxChars} 字，和操作一起留痕` : '正在读取理由要求'}>{control => <Textarea {...control} value={reason} onChange={e => setReason(e.target.value)} maxLength={policy.data?.maxChars} count={policy.data ? `${reasonLength}/${policy.data.maxChars}` : undefined}/>}</RdField>{evidenceOptions.length > 0 && <fieldset className="h4-fieldset h4-evidence"><legend className="rd-form-label">关联证据{requireEvidence ? <span className="rd-form-required" aria-hidden>*</span> : null}</legend>{evidenceOptions.map(option => <RdCheck key={option.value} label={option.label} checked={evidence.includes(option.value)} onChange={e => setEvidence(e.target.checked ? [...evidence, option.value] : evidence.filter(x => x !== option.value))}/>)}</fieldset>}</fieldset>

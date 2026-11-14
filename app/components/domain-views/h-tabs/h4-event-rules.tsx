@@ -5,6 +5,7 @@ import type { HCtx } from "./types";
 import { fetchEventRules, fetchEventVouchers, updateEventRule, type EventRuleView, type EventRuleChange, type EventVoucherOption } from "@/lib/admin/event-rules-client";
 import { EVENT_KIND_LABELS, eventRuleDraftRules, eventRuleFields, eventRuleMissingLabel, eventRegionText, parseEventRegions } from "@/lib/admin/event-rule-form";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { assertH4Fresh, h4ReadVersion, h4Blocked, h4PendingFor, pendingH4Commands, retryH4Command, isH4ApprovalReceipt } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { BlockState, Button, Check, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { formatTime } from "./h4-promotion-ui";
@@ -53,6 +54,7 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
   const canReadVouchers = ctx.can("growth_h7_read");
   const operator = currentAdminOperator();
   const choose = (row: EventRuleView) => { setSelected(row); setDraft({ enabled: row.enabled, startsAt: row.startsAt, endsAt: row.endsAt, rules: eventRuleDraftRules(row) }); setRegions(eventRegionText(row.rules.regions)); setError(""); };
+  const [, pendingChanged] = useState(0);
   const load = async () => {
     const own = ++generation.current; setLoading(true); setError("");
     try { const values = await fetchEventRules(); if (own === generation.current) { setRows(values); setSelected(null); setDraft(null); } }
@@ -70,6 +72,17 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
       .finally(() => { if (alive) setVoucherLoading(false); });
     return () => { alive = false; };
   }, [selected?.eventCode, selected?.kind, canRead, canReadVouchers, operator, voucherRetry]);
+  useEffect(() => {
+    const changed = () => pendingChanged(v => v + 1);
+    const readback = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail.rules) setRows(detail.rules);
+      setSelected(null); setDraft(null); setError(detail.ruleError);
+    };
+    window.addEventListener("admin-h4-pending-changed", changed);
+    window.addEventListener("admin-h4-readback", readback);
+    return () => { window.removeEventListener("admin-h4-pending-changed", changed); window.removeEventListener("admin-h4-readback", readback); };
+  }, []);
   const patchRule = (key: string, value: unknown) => setDraft(current => current ? { ...current, rules: { ...current.rules, [key]: value } } : current);
   const save = () => {
     if (!selected || !draft || saving || !canWrite) return;
@@ -78,7 +91,9 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
     catch (cause) { setError(displayAdminError(cause)); return; }
     const base = selected;
     const firstOpen = next.enabled && !base.enabled && !base.rulesLocked;
-    ctx.openActionConfirm({ briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
+    const readVersion = h4ReadVersion("rules");
+    let originalKey: string | undefined;
+    ctx.openActionConfirm({ getPendingReason: () => h4PendingFor(`H/h4_event_rule/${base.eventCode}`)?.reason, briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
       title: firstOpen ? "开启玩法" : next.enabled ? "保存玩法配置" : "保存关闭状态",
       effect: firstOpen ? effectApproval("玩法") : effectDirect,
       detail: <>更新本活动的参与条件、奖励及有效期。{next.enabled ? "启用后符合条件的用户可参与；保存时会检查配置与奖励预算。" : "保存后活动保持关闭，不发放新奖励。"}</>,
@@ -101,11 +116,18 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
         if (operator !== currentAdminOperator() || !ctx.can("growth_h4_write")) throw new Error("登录身份或权限已变化，请重新打开活动配置。");
         const own = generation.current; setSaving(true); setError("");
         try {
-          const saved = await updateEventRule(base.eventCode, next, base.revision, reason);
+          const original = originalKey ? pendingH4Commands().find(r => r.commandKey === originalKey) : undefined;
+          if (!original) assertH4Fresh("rules", readVersion);
+          const saved = original ? await retryH4Command(original) : await updateEventRule(base.eventCode, next, base.revision, reason, firstOpen);
           if (own !== generation.current) return;
-          setRows(current => current.map(row => row.eventCode === saved.eventCode ? saved : row)); choose(saved); ctx.toast("活动规则已保存");
-        } catch (cause) { if (own === generation.current) setError(displayAdminError(cause)); throw cause; }
-        finally { if (own === generation.current) setSaving(false); }
+          await load();
+          ctx.toast(isH4ApprovalReceipt(saved) ? saved.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "活动规则已保存");
+        } catch (cause) {
+          if (own === generation.current) setError(displayAdminError(cause));
+          if (originalKey && !h4PendingFor(`H/h4_event_rule/${base.eventCode}`)) { ctx.openActionConfirm(null); await load(); }
+          throw cause;
+        }
+        finally { originalKey = h4PendingFor(`H/h4_event_rule/${base.eventCode}`)?.commandKey; setSaving(false); }
       },
     });
   };
@@ -119,7 +141,7 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
   const missing = (row: EventRuleView) => [...new Set(row.readiness.missing.map(eventRuleMissingLabel))];
 
   const editor = selected && draft && (() => {
-    const lockedForm = !canWrite || saving;
+    const lockedForm = !canWrite || saving || h4Blocked(`H/h4_event_rule/${selected.eventCode}`);
     const enableBlocked = !selected.readiness.ready ? `还没就绪：${missing(selected).join("、") || "参与条件与奖励配置"}` : selected.rulesLocked && !selected.enabled ? "开过又关了的玩法不能再开" : undefined;
     return <div className="h4-dialog-body"><fieldset disabled={lockedForm} className="h4-fieldset">
       <Facts>

@@ -1,18 +1,27 @@
 import { guardedFetch, formatAdminApiError } from './error-messages.ts';
-import { outcomeStaysUnknown } from "./outcome-classification.ts";
-import { createPendingMutationStore, type PendingMutationRecord } from './pending-mutation-store.ts';
+import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "./outcome-classification.ts";
+import { isExplicitRejection } from "./explicit-rejection";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from './pending-mutation-store.ts';
 import type { CommandReceipt, VersionPage } from './promotion-types.ts';
 
 export interface PromotionCommandIntent { operation: string; targetId: string; path: string; method: 'POST' | 'PUT'; body: unknown }
-export interface PendingPromotion extends PendingMutationRecord, PromotionCommandIntent { recoveryState?: string; receipt?: CommandReceipt }
-const pending = createPendingMutationStore<PendingPromotion>({ storageKey: 'admin-promotion-pending-v1', isValidRecord: r => typeof r.operation === 'string' && typeof r.targetId === 'string' && typeof r.path === 'string' && ['POST','PUT'].includes(r.method) && r.body != null });
-export const pendingPromotionCommands = () => pending.list();
+export interface PendingPromotion extends PendingMutationRecord, PromotionCommandIntent { owner?: number; recoveryState?: string; receipt?: CommandReceipt }
+const pending = createPendingMutationStore<PendingPromotion>({ storageKey: 'admin-promotion-pending-v1', retainExpiredRecords: true, isValidRecord: r => typeof r.operation === 'string' && typeof r.targetId === 'string' && typeof r.path === 'string' && ['POST','PUT'].includes(r.method) && r.body != null });
+const notifyPending = () => { if (typeof window !== 'undefined') window.dispatchEvent(new Event('admin-promotion-pending-changed')); };
+function remember(...args: Parameters<typeof pending.remember>) { pending.remember(...args); notifyPending(); }
+function forget(...args: Parameters<typeof pending.forget>) { pending.forget(...args); notifyPending(); }
+export const pendingPromotionCommands = () => {
+  const owner = useAdminAuth.getState().session?.adminId;
+  return owner === undefined ? [] : pending.list().filter(r => r.owner === owner || r.owner === undefined && hasPersistedPendingCommandOwner(String(owner)));
+};
 export const acknowledgePromotionCommand = (receipt: CommandReceipt) => {
   const record=pending.list().find(r=>r.commandKey===receipt.idempotencyKey);
-  if(record)pending.forget(record.fingerprint);
-  if(typeof window!=='undefined'&&typeof window.dispatchEvent==='function')window.dispatchEvent(new Event('admin-promotion-pending-changed'));
+  if(record)forget(record.fingerprint);
 };
 export class PromotionApiError extends Error {
+  unknownOutcome = false;
+  bodyUnreadable = false;
   status: number;
   apiCode: number | undefined;
   fieldErrors: Array<{field: string; reason: string}>;
@@ -52,9 +61,12 @@ export async function promotionRead<T>(path: string, query?: Record<string,strin
   Object.entries(query || {}).forEach(([key,value]) => { if (value !== undefined && value !== null && value !== '') params.set(key,String(value)); });
   const response = await guardedFetch(`/api/admin/growth${path}${params.size ? `?${params}` : ''}`, { ...init, cache: 'no-store', headers: { 'Content-Type': 'application/json', ...init?.headers } });
   const body = await response.json().catch(() => null) as {code?:number;message?:string;data?:T & {fieldErrors?:Array<{field:string;reason:string}>}} | null;
-  if (!response.ok || body?.code !== 0 || body.data == null) {
+  const unknown = response.headers.get('X-Nexion-Upstream-Outcome')?.toLowerCase() === 'unknown';
+  if (!response.ok || body?.code !== 0 || body.data == null || unknown) {
     // Unreadable responses cannot prove whether a write committed.
-    throw new PromotionApiError(promotionErrorMessage(body?.message,response.status), body ? response.status : 0, body?.code, body?.data?.fieldErrors, body?.message);
+    const error = new PromotionApiError(promotionErrorMessage(body?.message,response.status), body ? response.status : 0, body?.code, body?.data?.fieldErrors, body?.message);
+    error.unknownOutcome = unknown; error.bodyUnreadable = body === null;
+    throw error;
   }
   return body.data;
 }
@@ -72,32 +84,38 @@ export async function promotionVersions(activityId:string):Promise<VersionPage> 
 function uncertain(): never { throw new PromotionApiError('结果尚未确认，原操作记录和输入已保留，请先核查原结果。'); }
 export async function promotionCommand(intent: PromotionCommandIntent, retry = false): Promise<CommandReceipt> {
   const slot = fingerprint(intent);
-  const previous = pending.list().find(r => r.fingerprint === slot);
-  if (previous && (!retry || previous.recoveryState !== 'NOT_FOUND' || JSON.stringify(previous.body) !== JSON.stringify(intent.body) || previous.path !== intent.path)) {
+  const actor = useAdminAuth.getState().session;
+  if (!actor) throw new PromotionApiError('登录已失效，请重新登录后查询原结果。');
+  const previous = pendingPromotionCommands().find(r => r.fingerprint === slot);
+  if (previous && (!retry || previous.recoveryState !== 'NOT_FOUND' || JSON.stringify(previous.body) !== JSON.stringify(intent.body) || previous.path !== intent.path || previous.method !== intent.method)) {
     throw new PromotionApiError('存在尚未确认的原操作，请先核查结果；不能修改参数后再次提交。');
   }
+  if (previous && isRetryExpired(previous)) throw new PromotionApiError(RETRY_EXPIRED_TEXT);
   const key = previous?.commandKey ?? `promotion-${crypto.randomUUID()}`;
-  pending.remember(slot,key,{...intent});
+  remember(slot,key,{...intent,owner:actor.adminId});
   if (typeof window !== 'undefined') {
     let durable=false;
     try { const stored=JSON.parse(window.sessionStorage.getItem('admin-promotion-pending-v1')||'{}'); durable=stored[key]?.commandKey===key; } catch { /* Refuse the write when refresh recovery cannot be retained. */ }
-    if(!durable){pending.forget(slot);throw new PromotionApiError('当前页面无法保留本次操作记录，尚未提交。请检查浏览器设置后重试。',422);}
+    if(!durable){if(!previous)forget(slot);throw new PromotionApiError('当前页面无法保留本次操作记录，尚未提交。请检查浏览器设置后重试。',422);}
   }
   try {
     const result = await promotionRead<CommandReceipt>(intent.path,undefined,{method:intent.method,headers:{'Idempotency-Key':key},body:JSON.stringify(intent.body)});
     if (result.operation !== intent.operation || result.targetId !== intent.targetId || result.idempotencyKey !== key) uncertain();
-    if (result.status === 'SUCCEEDED') { pending.remember(slot,key,{...intent,recoveryState:'SUCCEEDED',receipt:result}); return result; }
-    if (result.status === 'FAILED') { pending.forget(slot); throw new PromotionApiError('原操作已明确失败，请核对当前状态后重试。',409); }
+    if (result.status === 'SUCCEEDED') { remember(slot,key,{...intent,owner:actor.adminId,recoveryState:'SUCCEEDED',receipt:result}); return result; }
+    if (result.status === 'FAILED') { forget(slot); throw new PromotionApiError('原操作已明确失败，请核对当前状态后重试。',409,409,[],'PROMOTION_COMMAND_FAILED'); }
     uncertain();
   } catch (error) {
-    if (error instanceof PromotionApiError && !outcomeStaysUnknown(error.status,error.apiCode)) { pending.forget(slot); throw error; }
+    if (error instanceof PromotionApiError && !error.unknownOutcome && !error.bodyUnreadable && !isIdempotencyOutcomeOpen(error.reasonCode)
+      && !(error.reasonCode ?? '').startsWith('IDEMPOTENCY_') && !(error.apiCode !== undefined && error.apiCode >= 500)
+      && (previous ? isExplicitRejection(error.status >= 200 && error.status < 300 && error.apiCode ? Object.assign(error, {status:error.apiCode}) : error) : isDeterministicRejection(error.status,error.apiCode))) { forget(slot); throw error; }
     uncertain();
   }
 }
 export async function recoverPromotionCommand(record: PendingPromotion): Promise<CommandReceipt> {
+  if (!pendingPromotionCommands().some(r => r.commandKey === record.commandKey)) throw new PromotionApiError('原操作已处理，请关闭后重新读取。');
   const result = await promotionRead<CommandReceipt>(`/promotion-commands/${encodeURIComponent(record.commandKey)}`,{operation:record.operation,targetId:record.targetId});
   if (result.operation !== record.operation || result.targetId !== record.targetId || result.idempotencyKey !== record.commandKey) uncertain();
-  if (result.status === 'FAILED') pending.forget(record.fingerprint);
-  else pending.remember(record.fingerprint,record.commandKey,{...record,recoveryState:result.status,...(result.status==='SUCCEEDED'?{receipt:result}:{})});
+  if (result.status === 'FAILED') forget(record.fingerprint);
+  else remember(record.fingerprint,record.commandKey,{...record,recoveryState:result.status,...(result.status==='SUCCEEDED'?{receipt:result}:{})});
   return result;
 }

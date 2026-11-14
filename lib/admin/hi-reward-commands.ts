@@ -1,5 +1,6 @@
+import { h4CommandStores } from "./h4-command-store";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, A2OutcomeUncertainError } from "./a2-client";
-import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
+import { isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord, type PendingMutationStore } from "./pending-mutation-store";
 import { isExplicitRejection } from "./explicit-rejection";
 import { growthRequest } from "./h-client";
 import { findHighOp } from "./high-ops-registry";
@@ -9,12 +10,7 @@ import { roleLabel } from "@/lib/nav/console-nav";
 export type HIProposal = Parameters<typeof createA2OperationProposal>[0];
 type Payload = { kind: "proposal"; input: HIProposal } | { kind: "retire"; tierName: string; input: { reason: string; operator: string; confirmed: true; expectedSignature: string } };
 export type HIRewardCommand = PendingMutationRecord & { owner: number; scope: string; body: string; payload: Payload; form?: Record<string, string>; editValue?: string };
-const commands = createPendingMutationStore<HIRewardCommand>({
-  storageKey: "nexion-admin-hi-reward-commands-v1", retainExpiredRecords: true,
-  isValidRecord: r => Number.isSafeInteger(r.owner) && typeof r.scope === "string" && typeof r.body === "string"
-    && !!r.payload && ["proposal", "retire"].includes(r.payload.kind) && !!r.payload.input
-    && typeof r.payload.input.reason === "string" && r.body === JSON.stringify(r.payload.input),
-});
+const commands = h4CommandStores.hi as PendingMutationStore<HIRewardCommand>;
 
 export const HI_WHEEL_SCOPE = "H/h4_wheel_pool/ACTIVE_POOL";
 export const hiEventScope = (id: string) => `H/h4_legacy_event/${id}`;

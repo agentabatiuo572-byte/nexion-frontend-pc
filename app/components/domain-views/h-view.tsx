@@ -84,6 +84,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           edit={mc.edit}
           businessForm={mc.businessForm}
           facts={mc.facts}
+          content={mc.content}
           effect={mc.effect}
           confirmLabel={mc.confirmLabel}
           confirmTone={mc.confirmTone}

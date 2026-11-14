@@ -2,16 +2,15 @@
 
 /**
  * H4 活动中心「既有活动与转盘」页签（第二部分）：既有活动、七类玩法、创世抽奖、转盘奖池与护栏。
- * 读取、提交、恢复和审批提案的逻辑从 h3-quest-events.tsx 的 H4 分支原样搬过来（旧文件不动，H3 仍用它）：
- * 请求地址、请求体、命令号、校验和恢复都和旧页面一样，这里只改界面。
+ * 既有表单保留；H4 写入由共享命令层保存原请求、分流审批并恢复。
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
 import {
   BlockState, Button, Change, Drawer, Conclusion, Explain, Fact, Facts, IrreversibleTag, Notice, Panel, Stat, StatBand, StatusTag,
   Table, Td, Th, Tr, type MoreMenuItem,
 } from "@/app/components/rd";
-import { REVIEW_OPERATION_BY_ACTION, fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
+import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   fetchH3QuestEvents,
@@ -22,7 +21,6 @@ import {
   updateH4EventStatus,
   createH4QuestEvent,
   deleteH4QuestEvent,
-  pendingH4EventDeletes,
   createH4WheelTier,
   updateH4WheelProbabilities,
   updateH4WheelTier,
@@ -31,12 +29,13 @@ import {
   updateH4WheelGuard,
 } from "@/lib/admin/h-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { HI_WHEEL_SCOPE, hiEventScope, hiRewardProposal, pendingHIRewardCommand, pendingHIRewardCommands, retireH4PointsTier, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
+import { HI_WHEEL_SCOPE, hiEventScope, hiRewardProposal, pendingHIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import type { EventRuleView } from "@/lib/admin/event-rules-client";
 import type { AdminRaffle } from "@/lib/admin/genesis-raffle-client";
-import type { HCtx } from "./types";
+import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
+import { H4_APPROVAL_OPS, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4TicketObservations, replaceH4TicketObservations, clearH4AuditProjection, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, h4CommandRequest, isH4ApprovalReceipt, type H4Command } from "@/lib/admin/h4-mutations";
 import H4EventRules from "./h4-event-rules";
 import H4GenesisRaffle from "./h4-genesis-raffle";
 import { amountText, formatTime } from "./h4-promotion-ui";
@@ -58,19 +57,15 @@ type Model = {
   trackables?: Array<{ id: string; name: string; cond: string; join: string; done: string; claim: string; geo: string }>;
 };
 
-const H4_APPROVAL_OPS = new Set(["h4_legacy_event_reward_update", "h4_wheel_tier_create", "h4_wheel_tier_update", "h4_wheel_probabilities_update", "h4_wheel_tier_delete"]);
 const GUARD_NAME: Record<string, string> = { budget: "每日真钱奖预算", cap: "各奖档每日库存", kill: "真钱奖发放开关" };
 const killOn = (value: string) => ["1", "true", "on", "enabled", "open", "开"].includes(value.trim().toLowerCase());
 const budgetNumber = (value: string) => value.replace(/[$,\s]/g, "");
 
 /** 原操作写成一句「做什么 · 对哪一项」，不露命令号和对象键。 */
-function hiCommandSubject(record: HIRewardCommand, eventName: (id: string) => string) {
-  const payload = record.payload;
-  if (payload.kind === "retire") return `退役积分奖项 · ${payload.tierName}`;
-  const values = payload.input.command.params.values as Record<string, unknown>;
-  if (payload.input.command.op === "h4_legacy_event_reward_update") return `${payload.input.action} · ${eventName(String(values.eventCode))} · 改成 ${String(values.value)}`;
-  if (payload.input.command.op === "h4_wheel_probabilities_update") return `${payload.input.action} · 转盘全部奖项`;
-  return `${payload.input.action} · ${String(values.tierName ?? "转盘奖池")}`;
+function hiCommandSubject(record: H4Command, eventName: (id: string) => string) {
+  if (!("proposal" in record.request)) return record.action;
+  const input = record.request.proposal, values = input.command.params.values as Record<string, unknown>;
+  return `${input.action} · ${String(values.eventCode ? eventName(String(values.eventCode)) : values.tierName ?? values.guardKey ?? values.id ?? "转盘奖池")}`;
 }
 
 // A2's decimal parser requires a leading digit and no plus sign; keep every entered digit.
@@ -100,10 +95,49 @@ function increasesUvtFallback(tiers: Array<Record<string, any>>, changed: Record
 export type LegacySection = "events" | "plays" | "wheel";
 
 export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: HCtx; section: LegacySection; onSection: (section: LegacySection) => void }) {
-  const { toast, openActionConfirm, openConfirm } = ctx;
+  const { toast } = ctx;
+  const adminId = useAdminAuth(state => state.session?.adminId);
+  const activeRecovery = useRef<string | null>(null);
+  const openActionConfirm = (req: ActionConfirmReq) => {
+    const version = h4ReadVersion("overview");
+    let retained: H4Command | undefined;
+    ctx.openActionConfirm({ ...req,
+      getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
+      run: async (reason, value, businessValue) => {
+        if (retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) {
+          try { if (!retained.acknowledged) await retryH4Command(retained); }
+          finally { if (!pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) ctx.openActionConfirm(null); await reloadH4Approvals(); await reload(); }
+          return;
+        }
+        assertH4Fresh("overview", version);
+        const before = new Set(pendingH4Commands().map(r => r.commandKey));
+        try { await req.run(reason, value, businessValue); }
+        finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
+      },
+    });
+  };
+  const openConfirm = (req: ConfirmReq) => {
+    const version = h4ReadVersion("overview");
+    let retained: H4Command | undefined;
+    ctx.openConfirm({ ...req, freezePendingInput: true,
+      getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
+      run: async (reason, value) => {
+        if (retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) {
+          try { if (!retained.acknowledged) await retryH4Command(retained); }
+          finally { if (!pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) ctx.closeConfirm?.(); await reloadH4Approvals(); await reload(); }
+          return;
+        }
+        assertH4Fresh("overview", version);
+        const before = new Set(pendingH4Commands().map(r => r.commandKey));
+        try { return await req.run(reason, value); }
+        finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
+      },
+    });
+  };
   const canModuleWrite = ctx.can("growth_h4_write");
   const canWheelWrite = ctx.can("growth_h4_wheel_pool_write");
   const [, pendingDeleteChanged] = useState(0);
+  useEffect(() => { const changed = () => pendingDeleteChanged(v => v + 1); window.addEventListener("admin-h4-pending-changed", changed); return () => window.removeEventListener("admin-h4-pending-changed", changed); }, []);
   const [model, setModel] = useState<Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,65 +149,53 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const [raffles, setRaffles] = useState<AdminRaffle[] | null>(null);
   const [contentId, setContentId] = useState<string | null>(null);
   const reloadH4Approvals = async () => {
-    if (!canReadA2) return;
+    const owner = useAdminAuth.getState().session?.adminId;
+    setH4Approvals(null);
+    clearH4AuditProjection();
+    const originals = pendingH4Commands().filter(r => "proposal" in r.request);
+    await Promise.allSettled(originals.map(r => queryH4Command(r)));
+    if (!canReadA2) { setH4Approvals("error"); return; }
     try {
-      const overview = await fetchA2Overview();
-      setH4Approvals(overview.operationQueue.filter(row => {
-        const op = REVIEW_OPERATION_BY_ACTION[row.action];
-        return row.status === "pending" && H4_APPROVAL_OPS.has(op)
-          && (!row.operationCode || row.operationCode === op)
-          && (op === "h4_legacy_event_reward_update" ? !!row.obj : row.obj === "ACTIVE_POOL");
-      }));
-    } catch {
-      setH4Approvals("error");
-    }
+      const overview = await fetchA2Overview({ domain: "H" });
+      if (owner !== useAdminAuth.getState().session?.adminId) return;
+      const rows = overview.operationQueue.filter(row => row.status === "pending" && H4_APPROVAL_OPS.has(row.operationCode ?? ""));
+      replaceH4TicketObservations(rows);
+      setH4Approvals(rows);
+    } catch { setH4Approvals("error"); }
   };
-  useEffect(() => { void reloadH4Approvals(); }, [canReadA2]);
+  useEffect(() => { void reloadH4Approvals().then(reload); }, [canReadA2, adminId]);
 
   const reload = async () => {
     setLoading(true);
     try {
-      setModel((await fetchH3QuestEvents("events")) as Model);
-      setError(null);
+      const owner = useAdminAuth.getState().session?.adminId;
+      const result = await fetchH3QuestEvents("events");
+      if (owner !== useAdminAuth.getState().session?.adminId) return;
+      setModel(result as Model); setError(null);
     } catch (err) {
       setError(displayAdminError(err));
     } finally {
       setLoading(false);
     }
   };
-  useEffect(() => { void reload(); }, []);
 
-  const apply = (next: Record<string, any>) => setModel(next as Model);
+  const apply = async (next: Record<string, any>) => {
+    if (isH4ApprovalReceipt(next)) { await reloadH4Approvals(); await reload(); toast(next.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态"); return false; }
+    await reload();
+    return true;
+  };
 
   const proposeH4 = async (scope: string, op: string, values: Record<string, unknown>, before: string, after: string,
     reason: string, form?: Record<string, string>, editValue?: string) => {
     const session = useAdminAuth.getState().session;
     if (!session) throw new Error("登录已失效，请重新登录后核对原操作。");
-    const result = await submitHIRewardCommand(scope, { kind: "proposal", input: hiRewardProposal(session, op, values, before, after, reason) }, form, editValue);
-    if (result.kind !== "proposal") throw new Error("原退役操作已取得回执，请刷新奖池核对后再修改。");
-    await reloadH4Approvals();
-    toast("已提交，等待审批后执行");
+    const result = await submitH4Proposal(scope, hiRewardProposal(session, op, values, before, after, reason), form, editValue);
+    await apply(result);
   };
 
-  const wheelCommandBlocks = (op: string, tierName?: string) => {
-    const pending = pendingHIRewardCommand(HI_WHEEL_SCOPE);
-    if (!pending) return false;
-    const original = pending.payload;
-    if (original.kind === "proposal" && original.input.command.op === op
-      && (!tierName || (original.input.command.params.values as Record<string, unknown>).tierName === tierName)) return false;
-    const label = original.kind === "proposal" ? `${original.input.action} · ${String((original.input.command.params.values as Record<string, unknown>).tierName ?? original.input.obj)}`
-      : `积分退役 · ${original.tierName}`;
-    toast(`原操作「${label}」结果未知，请先在本页顶部查询原结果。`, "warn");
-    return true;
-  };
-
-  const resumeH4Wheel = async () => {
-    const pending = pendingHIRewardCommand(HI_WHEEL_SCOPE);
-    if (!pending) return false;
-    const result = await submitHIRewardCommand(HI_WHEEL_SCOPE, pending.payload);
-    await reloadH4Approvals();
-    if (result.kind === "retire") { apply(result.overview); toast("原退役操作已完成，积分奖项已退役。请用合法奖型把概率补足到 100%"); }
-    else toast(result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+  const wheelCommandBlocks = (_op: string, _tierName?: string) => {
+    if (!h4Blocked(HI_WHEEL_SCOPE)) return false;
+    toast("原操作结果未知，请先在本页顶部查询原结果。", "warn");
     return true;
   };
 
@@ -186,6 +208,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
   // ===== 既有活动 =====
   const openEventReward = (event: LegacyEvent) => {
+    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     const current = text(event.reward);
     openActionConfirm({ briefKind: "config",
       action: `活动奖励 · ${event.name}`,
@@ -202,14 +225,6 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       edit: { kind: "text", current, initialValue: pendingHIRewardCommand(hiEventScope(event.id))?.editValue },
       run: async (reason, value) => {
         const scope = hiEventScope(event.id);
-        const pending = pendingHIRewardCommand(scope);
-        if (pending?.payload.kind === "proposal") {
-          const result = await submitHIRewardCommand(scope, pending.payload);
-          await reloadH4Approvals();
-          toast(result.kind === "proposal" && result.ticket.status === "pending"
-            ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
-          return;
-        }
         if (!value) return;
         const preview = await previewH4EventReward(event.id, value, current, reason);
         if (preview.approvalRequired) {
@@ -217,8 +232,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             preview.current, preview.proposed, reason, undefined, value);
           return;
         }
-        apply(await updateH4EventReward(event.id, value, current, reason));
-        toast(`${event.name} 奖励已更新`);
+        if (await apply(await updateH4EventReward(event.id, value, current, reason))) toast(`${event.name} 奖励已更新`);
       },
     });
   };
@@ -228,6 +242,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
   /** 旧页面一个「上架 / 下架」框里选新状态；这里拆成「开放」「结束」两个入口，提交的状态值和旧框选中的一样。 */
   const openEventStatus = (event: LegacyEvent, value: "ongoing" | "ended") => {
+    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     const missing = missingFor(event);
     const opening = value === "ongoing";
     openConfirm({ briefKind: "config",
@@ -251,13 +266,13 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       confirmTone: opening ? undefined : "danger",
       reasonPlaceholder: opening ? "例如：活动素材已就绪，按排期开放" : "例如：活动到期，按排期结束",
       run: async (reason) => {
-        apply(await updateH4EventStatus(event.id, value, event.state, reason));
-        toast(`${event.name} 状态已更新`);
+        if (await apply(await updateH4EventStatus(event.id, value, event.state, reason))) toast(`${event.name} 状态已更新`);
       },
     });
   };
 
   const openEventFeatured = (event: LegacyEvent) => {
+    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     openConfirm({ briefKind: "record",
       action: `${event.featured ? "取消主推" : "设为主推"} · ${event.name}`,
       title: event.featured ? "取消主推" : "设为主推",
@@ -272,13 +287,13 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       okLabel: event.featured ? "取消主推" : "设为主推",
       reasonPlaceholder: "例如：按运营排期调整首页主推",
       run: async (reason) => {
-        apply(await updateH4EventFeatured(event.id, !Boolean(event.featured), Boolean(event.featured), reason));
-        toast(`${event.name} 主推状态已更新`);
+        if (await apply(await updateH4EventFeatured(event.id, !Boolean(event.featured), Boolean(event.featured), reason))) toast(`${event.name} 主推状态已更新`);
       },
     });
   };
 
   const openLocalizedContent = (code: string, field: "name" | "description" | "rewardName", locale: LocaleCode, source: string) => {
+    if (h4Blocked(hiEventScope(code))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     const current = localizedValue(code, field, locale);
     openActionConfirm({ briefKind: "config",
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
@@ -290,8 +305,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       edit: { kind: "text", current },
       run: async (reason, value) => {
         if (!value) return;
-        apply(await updateH4LocalizedContent(code, field, locale, value, casExpected(current), reason));
-        toast(`${source} ${locale.toUpperCase()} 文案已保存`);
+        if (await apply(await updateH4LocalizedContent(code, field, locale, value, casExpected(current), reason))) toast(`${source} ${locale.toUpperCase()} 文案已保存`);
       },
     });
   };
@@ -299,8 +313,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const runEventDelete = async (eventId: string, expectedVersion: string, reason: string) => {
     if (!ctx.can("growth_h4_write")) throw new Error("你没有删除活动的权限。");
     try {
-      apply(await deleteH4QuestEvent(eventId, expectedVersion, reason));
-      toast("活动已删除，历史参与、奖励与操作记录保留");
+      if (await apply(await deleteH4QuestEvent(eventId, expectedVersion, reason))) toast("活动已删除，历史参与、奖励与操作记录保留");
     } finally { pendingDeleteChanged(value => value + 1); }
   };
   const openEventDelete = (event: LegacyEvent) => {
@@ -366,8 +379,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           trackable: bv.trackable === "true",
         };
         if (!payload.id || !payload.name) return;
-        apply(await createH4QuestEvent(payload, reason));
-        toast(`活动「${payload.name}」已新建`);
+        if (await apply(await createH4QuestEvent(payload, reason))) toast(`活动「${payload.name}」已新建`);
       },
     });
   };
@@ -393,7 +405,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       coverageLead: "这一档会让转盘多发奖",
       reasonPlaceholder: "例如：按活动方案新增一档奖品",
       getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
-      getPendingBusinessValue: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.form,
+      getPendingBusinessValue: () => h4PendingFor(HI_WHEEL_SCOPE)?.form,
       businessForm: {
         kind: "multi-field",
         fields: [
@@ -409,7 +421,6 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         ],
       },
       run: async (reason, _v, bv) => {
-        if (await resumeH4Wheel()) return;
         if (!bv) return;
         const probabilityPct = h4ProposalDecimal(bv.probabilityPct, "中奖概率（%）");
         const rewardAmount = h4ProposalDecimal(bv.rewardAmount, "实际发放数量");
@@ -436,8 +447,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             JSON.stringify(model?.wheelTiers ?? []), JSON.stringify(payload), reason, bv);
           return;
         }
-        apply(await createH4WheelTier(payload, expectedSignature, reason));
-        toast(`奖项「${payload.tierName}」已新建`);
+        if (await apply(await createH4WheelTier(payload, expectedSignature, reason))) toast(`奖项「${payload.tierName}」已新建`);
       },
     });
   };
@@ -468,13 +478,13 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           note: String(bv.note || "").trim(),
         };
         if (!payload.guardKey || !payload.guardLabel) return;
-        apply(await createH4WheelGuard(payload, reason));
-        toast(`安全限制「${payload.guardLabel}」已新建`);
+        if (await apply(await createH4WheelGuard(payload, reason))) toast(`安全限制「${payload.guardLabel}」已新建`);
       },
     });
   };
 
   const openWheelBudget = (guard: { key: string; label: string; value: string }) => {
+    if (h4Blocked(`H/h4_wheel_guard/${guard.key}`)) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     const current = text(guard.value);
     openActionConfirm({ briefKind: "config",
       action: `转盘安全限制 · 每日实际奖励预算（美元）`,
@@ -491,13 +501,13 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       edit: { kind: "number", current: budgetNumber(current), min: 0.01, max: 1_000_000_000, step: 0.01, hint: "大于 0，最多两位小数，单位 USDT" },
       run: async (reason, value) => {
         if (!value) return;
-        apply(await updateH4WheelGuard(guard.key, value, current, reason));
-        toast("转盘安全限制「每日实际奖励预算（美元）」已更新");
+        if (await apply(await updateH4WheelGuard(guard.key, value, current, reason))) toast("转盘安全限制「每日实际奖励预算（美元）」已更新");
       },
     });
   };
 
   const openWheelKill = (guard: { key: string; label: string; value: string }) => {
+    if (h4Blocked(`H/h4_wheel_guard/${guard.key}`)) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     const current = text(guard.value);
     const on = killOn(current);
     const next = on ? "关" : "开";
@@ -517,8 +527,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       confirmTone: on ? "danger" : undefined,
       reasonPlaceholder: on ? "例如：覆盖率告警，先停发真钱奖" : "例如：覆盖率恢复，重新开启真钱奖",
       run: async (reason) => {
-        apply(await updateH4WheelGuard(guard.key, next, current, reason));
-        toast("转盘安全限制「实际奖品发放开关」已更新");
+        if (await apply(await updateH4WheelGuard(guard.key, next, current, reason))) toast("转盘安全限制「实际奖品发放开关」已更新");
       },
     });
   };
@@ -543,7 +552,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       coverageLead: "调高中奖概率会让转盘多发奖",
       reasonPlaceholder: "例如：按活动方案调整各档概率",
       getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
-      getPendingBusinessValue: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.form,
+      getPendingBusinessValue: () => h4PendingFor(HI_WHEEL_SCOPE)?.form,
       businessForm: {
         kind: "multi-field",
         onFieldChange: (_key, next) => { store.set(next); return next; },
@@ -570,7 +579,6 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         })),
       },
       run: async (reason, _value, businessValue) => {
-        if (await resumeH4Wheel()) return;
         if (!businessValue) return;
         const decimalProbabilities = Object.fromEntries(tiers.map((tier) => [
           text(tier.tier),
@@ -590,12 +598,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           }, JSON.stringify(tiers), JSON.stringify(probabilities), reason, businessValue);
           return;
         }
-        apply(await updateH4WheelProbabilities(
+        if (await apply(await updateH4WheelProbabilities(
           probabilities,
           text(model?.wheelSignature, "__EMPTY__"),
           reason,
-        ));
-        toast("转盘概率已更新");
+        ))) toast("转盘概率已更新");
       },
     });
   };
@@ -613,7 +620,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       coverageLead: "这一档会让转盘多发奖",
       reasonPlaceholder: "例如：按活动方案调整这一档奖品",
       getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
-      getPendingBusinessValue: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.form,
+      getPendingBusinessValue: () => h4PendingFor(HI_WHEEL_SCOPE)?.form,
       businessForm: {
         kind: "multi-field",
         requireAnyChange: true,
@@ -628,7 +635,6 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         ],
       },
       run: async (reason, _value, bv) => {
-        if (await resumeH4Wheel()) return;
         if (!bv) return;
         const rewardAmount = h4ProposalDecimal(bv.rewardAmount, "每次发放数量");
         const dailyStock = Number(h4ProposalDecimal(bv.dailyStock, "每日库存（0 为不限）"));
@@ -659,8 +665,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             JSON.stringify(tier), JSON.stringify(payload), reason, bv);
           return;
         }
-        apply(await updateH4WheelTier(tierName, payload, expectedSignature, reason));
-        toast(`奖项「${tierName}」已更新`);
+        if (await apply(await updateH4WheelTier(tierName, payload, expectedSignature, reason))) toast(`奖项「${tierName}」已更新`);
       },
     });
   };
@@ -682,7 +687,6 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       reasonPlaceholder: "例如：这一档已下线，按工单删除",
       getPendingReason: () => pendingHIRewardCommand(HI_WHEEL_SCOPE)?.payload.input.reason,
       run: async (reason) => {
-        if (await resumeH4Wheel()) return;
         if (probability !== 0) throw new Error("删除前请先把概率调成 0%");
         const amplifies = !boolValue(tier.real) && text(tier.kind).toLowerCase() === "uvt"
           && increasesUvtFallback(model?.wheelTiers ?? [], tier, false);
@@ -691,12 +695,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             JSON.stringify(tier), "删除档位", reason);
           return;
         }
-        apply(await deleteH4WheelTier(
+        if (await apply(await deleteH4WheelTier(
           tierName,
           text(model?.wheelSignature, "__EMPTY__"),
           reason,
-        ));
-        toast(`奖项「${tierName}」已删除`);
+        ))) toast(`奖项「${tierName}」已删除`);
       },
     });
   };
@@ -732,100 +735,83 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         return original?.payload.kind === "retire" ? original.payload.input.reason : undefined;
       },
       run: async (reason) => {
-        if (await resumeH4Wheel()) return;
-        const result = await retireH4PointsTier(tierName, text(model?.wheelSignature, "__EMPTY__"), reason);
-        if (result.kind === "retire") apply(result.overview);
+        const result = await h4CommandRequest(`/quest-events/wheel-tiers/${encodeURIComponent(tierName)}/retire`, {
+          method: "POST", body: JSON.stringify({ reason, operator: useAdminAuth.getState().session?.operator || useAdminAuth.getState().session?.username, confirmed: true, expectedSignature: text(model?.wheelSignature, "__EMPTY__") }),
+        }, `退役积分奖项 · ${tierName}`);
+        await apply(result);
         toast(`积分奖项「${tierName}」已退役。请用合法奖型把概率补足到 100%`);
       },
     });
   };
 
   // ===== 结果未知、待审批 =====
-  // 超过 24 小时的原操作只查原审批单、不重发：查询直接做，不经确认框。
-  const lookupExpiredHICommand = async (record: HIRewardCommand) => {
+  const refreshAll = async () => {
+    await reloadH4Approvals();
+    await reload();
+    const [rules, raffles] = await Promise.allSettled([import("@/lib/admin/event-rules-client").then(m => m.fetchEventRules()), import("@/lib/admin/genesis-raffle-client").then(m => m.fetchAdminRaffles())]);
+    window.dispatchEvent(new CustomEvent("admin-h4-readback", { detail: {
+      rules: rules.status === "fulfilled" ? rules.value : undefined, ruleError: rules.status === "rejected" ? displayAdminError(rules.reason) : "",
+      raffles: raffles.status === "fulfilled" ? raffles.value : undefined, raffleError: raffles.status === "rejected" ? displayAdminError(raffles.reason) : "",
+    } }));
+  };
+  const lookupH4Command = async (record: H4Command) => {
     setLookupKey(record.commandKey);
     try {
-      if (record.scope === HI_WHEEL_SCOPE) {
-        await resumeH4Wheel();
-        return;
-      }
-      const result = await submitHIRewardCommand(record.scope, record.payload);
-      toast(result.kind === "proposal" && result.ticket.status === "pending"
-        ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
-      void reloadH4Approvals();
-    } catch (error) {
-      toast(displayAdminError(error), "warn");
-    } finally {
-      setLookupKey("");
-    }
+      const ticket = await queryH4Command(record);
+      if (ticket === null) toast("暂未查到原审批单，原请求继续保留。", "warn");
+      await refreshAll();
+    } catch (cause) { toast(displayAdminError(cause), "warn"); }
+    finally { setLookupKey(""); }
   };
-
-  const openResumeHICommand = (record: HIRewardCommand, subject: string) => {
+  const openResumeHICommand = (record: H4Command, subject: string) => {
+    activeRecovery.current = record.commandKey;
     const expired = isRetryExpired(record);
-    openActionConfirm({ briefKind: "record",
-      action: `核对原操作 · ${subject}`,
-      title: "查询原结果",
-      detail: expired
-        ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</>
+    ctx.openActionConfirm({ briefKind: "record",
+      action: `核对原操作 · ${subject}`, title: "查询原结果",
+      detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</>
         : <>先按原请求查询；查不到才按原请求原样重发，不会重复执行。理由沿用原操作。</>,
       facts: <Facts><Fact k="原操作">{subject}</Fact><Fact k="提交时间">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}（北京时间）</Fact><Fact k="原请求">内容和理由锁住，按原样查询或重试</Fact></Facts>,
       confirmLabel: expired ? "查询原审批单" : "查询原结果",
-      getPendingReason: () => pendingHIRewardCommands().find((row) => row.commandKey === record.commandKey)?.payload.input.reason,
+      getPendingReason: () => pendingH4Commands().some(r => r.commandKey === record.commandKey) ? record.reason : undefined,
       run: async () => {
-        if (record.scope === HI_WHEEL_SCOPE) {
-          await resumeH4Wheel();
-          return;
+        if (activeRecovery.current !== record.commandKey || !pendingH4Commands().some(r => r.commandKey === record.commandKey)) throw new Error("H4_ORIGINAL_RESOLVED");
+        try { await retryH4Command(record); }
+        finally {
+          if (!pendingH4Commands().some(r => r.commandKey === record.commandKey) || h4CommandHasPendingTicket(record.commandKey)) { activeRecovery.current = null; ctx.openActionConfirm(null); }
+          await refreshAll();
         }
-        const result = await submitHIRewardCommand(record.scope, record.payload);
-        toast(result.kind === "proposal" && result.ticket.status === "pending"
-          ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
-        void reloadH4Approvals();
       },
     });
   };
-
-  const hiRecords = pendingHIRewardCommands().filter((record) => record.scope.startsWith("H/"));
-  const deleteRecords = pendingH4EventDeletes();
-  const h4Pending = Array.isArray(h4Approvals) ? h4Approvals : [];
-  const unknownCount = hiRecords.length + deleteRecords.length;
+  const hiRecords = pendingH4Commands().filter(r => !h4CommandHasPendingTicket(r.commandKey) && !r.asset);
+  const h4Pending = [...new Map(h4TicketObservations().map(row => [row.id, row])).values()];
+  const unknownCount = hiRecords.length;
   const recovery = <>
     {unknownCount > 0 && <Notice tone="warn" title={`有 ${unknownCount} 个操作结果未知`} actionBelow action={<ul className="h4-pending">
       {hiRecords.map((record) => {
         const subject = hiCommandSubject(record, eventName);
         const expired = isRetryExpired(record);
-        const retire = record.payload.kind === "retire";
-        const allowed = record.scope === HI_WHEEL_SCOPE ? canWheelWrite : canModuleWrite;
+        const allowed = canRetryH4Command(record);
         return <li key={record.commandKey}>
           <span className="h4-pending-what"><b>{subject}</b></span>
           <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}</span>（北京时间）</span>
           {expired ? expiredTag() : unknownTag()}
-          {expired && retire ? <Button size="sm" onClick={() => void reload()}>刷新奖池</Button>
-            : <Button size="sm" disabledReason={!allowed ? "没有这项修改的权限" : lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey}
-              onClick={() => expired ? void lookupExpiredHICommand(record) : openResumeHICommand(record, subject)}>{expired ? "查询原审批单" : "查询原结果"}</Button>}
+          <Button size="sm" disabledReason={lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey} onClick={() => void lookupH4Command(record)}>查询原结果</Button>
+          {!expired && !record.acknowledged && <Button size="sm" disabledReason={!allowed ? "没有这项修改的权限" : undefined} onClick={() => openResumeHICommand(record, subject)}>按原请求重试</Button>}
         </li>;
       })}
-      {deleteRecords.map((record) => <li key={record.commandKey}>
-        <span className="h4-pending-what"><b>删除既有活动 · {eventName(record.eventId)}</b></span>
-        <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}</span>（北京时间）</span>
-        {unknownTag()}
-        <Button size="sm" disabledReason={!canModuleWrite ? "没有删除活动的权限" : undefined} onClick={() => openActionConfirm({ briefKind: "record",
-          action: `查看删除结果 · ${record.eventId}`,
-          title: "查询原结果",
-          detail: <>查看上次删除是否成功，不会重复删除。</>,
-          facts: <Facts><Fact k="原操作">删除既有活动 · {eventName(record.eventId)}</Fact><Fact k="原理由">{record.reason}</Fact><Fact k="怎么查">按原请求再发一次，后端认得出是同一次提交，不会重复删除；查完重新读取列表</Fact></Facts>,
-          confirmLabel: "查询原结果",
-          run: () => runEventDelete(record.eventId, record.expectedVersion, record.reason),
-        })}>查询原结果</Button>
-      </li>)}
+
     </ul>}>关闭或刷新页面不会重新提交。</Notice>}
     {(h4Pending.length > 0 || h4Approvals === "error") && <Notice tone="warn" title={h4Approvals === "error" ? "审批进度没有读到" : `${h4Pending.length} 项修改在等审批`} actionBelow
       action={h4Approvals === "error" ? <Button size="sm" onClick={() => void reloadH4Approvals()}>重试</Button> : <ul className="h4-pending">
         {h4Pending.map((row) => {
-          const eventOp = REVIEW_OPERATION_BY_ACTION[row.action] === "h4_legacy_event_reward_update";
+          const eventOp = ["h4_legacy_event_reward_update", "h4_legacy_event_open", "h4_event_rule_enable"].includes(row.operationCode ?? "");
+          const subject = eventOp ? eventName(row.obj) : row.operationCode === "h4_genesis_raffle_open" ? raffles?.find(draw => draw.id === row.obj)?.titleZh || row.obj
+            : row.operationCode?.startsWith("h4_wheel_guard_") ? GUARD_NAME[row.obj] || row.obj : "转盘奖池";
           return <li key={row.id}>
-            <span className="h4-pending-what"><b>{row.action} · {eventOp ? eventName(row.obj) : "转盘奖池"}</b></span>
+            <span className="h4-pending-what"><b>{row.action} · {subject}</b></span>
             <span className="h4-pending-when">{row.mine ? "你发起的" : "别人发起的"}</span>
-            {pendingTag(eventOp ? "活动奖励" : "转盘奖池")}
+            {pendingTag(subject)}
             <a className="rd-link" href="/platform/audit">去操作记录与审批</a>
           </li>;
         })}
@@ -851,7 +837,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const gapCount = gapsByEvent.reduce((sum, row) => sum + row.missing.length, 0);
   const ruleOf = (id: string) => rules?.find((rule) => rule.eventCode === id);
   const wheelPending = h4Pending.some((row) => row.obj === "ACTIVE_POOL");
-  const eventPending = (id: string) => h4Pending.some((row) => REVIEW_OPERATION_BY_ACTION[row.action] === "h4_legacy_event_reward_update" && row.obj === id);
+  const eventPending = (id: string) => h4ApprovalPending(hiEventScope(id)) || h4ApprovalPending(`H/h4_event_rule/${id}`);
   const budget = guards.find((guard) => guard.key === "budget");
   const kill = guards.find((guard) => guard.key === "kill");
   const cap = guards.find((guard) => guard.key === "cap");
@@ -922,7 +908,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             zh={{ name: localizedValue(event.id, "name", "zh"), description: localizedValue(event.id, "description", "zh"), rewardName: localizedValue(event.id, "rewardName", "zh") }}
             gaps={missingFor(event).length}
             rule={rules ? (() => { const rule = ruleOf(event.id); return rule ? { enabled: rule.enabled, ready: rule.readiness.ready, startsAt: rule.startsAt, endsAt: rule.endsAt } : null; })() : null}
-            pending={eventPending(event.id) ? pendingTag("活动奖励") : undefined}
+            pending={eventPending(event.id) ? pendingTag(eventName(event.id)) : undefined}
             primary={eventPrimary(event)} menu={eventMenu(event)} onContent={() => setContentId(event.id)} />)}</div>}
         <p className="h4l-note">时间为北京时间</p>
       </Panel>
