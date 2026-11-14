@@ -63,14 +63,24 @@ const killOn = (value: string) => ["1", "true", "on", "enabled", "open", "开"].
 const budgetNumber = (value: string) => value.replace(/[$,\s]/g, "");
 
 /** 原操作写成一句「做什么 · 对哪一项」，不露命令号和对象键。 */
+/** 审批申请按操作写动词；后端登记的 action 是一类操作的统称，不够具体。 */
+const H4_OP_VERB: Record<string, string> = {
+  h4_legacy_event_reward_update: "修改活动奖励", h4_legacy_event_open: "开放活动", h4_event_rule_enable: "开启玩法", h4_genesis_raffle_open: "开放抽奖报名",
+  h4_wheel_guard_create: "新建转盘护栏", h4_wheel_guard_update: "调整转盘护栏", h4_wheel_tier_create: "新建转盘奖项", h4_wheel_tier_update: "编辑转盘奖项",
+  h4_wheel_tier_delete: "删除转盘奖项", h4_wheel_probabilities_update: "调整转盘概率",
+};
+const H4_EVENT_FIELD: Record<string, string> = { reward: "活动奖励", status: "活动状态", featured: "活动主推", content: "三语内容" };
+
 function hiCommandSubject(record: H4Command, eventName: (id: string) => string) {
   if (!("proposal" in record.request)) {
     const guard = /^\/quest-events\/wheel-guards\/([^/]+)$/.exec(record.request.path);
-    return guard ? `转盘护栏 · ${GUARD_NAME[decodeURIComponent(guard[1])] ?? decodeURIComponent(guard[1])}` : record.action;
+    if (guard) return `转盘护栏 · ${GUARD_NAME[decodeURIComponent(guard[1])] ?? decodeURIComponent(guard[1])}`;
+    const event = /^\/quest-events\/events\/([^/]+)\/(reward|status|featured|content)(?:\/|$)/.exec(record.request.path);
+    return event ? `${H4_EVENT_FIELD[event[2]]} · ${eventName(decodeURIComponent(event[1]))}` : record.action;
   }
   const input = record.request.proposal, values = input.command.params.values as Record<string, unknown>;
   const guardKey = values.guardKey === undefined ? undefined : String(values.guardKey);
-  return `${input.action} · ${String(values.eventCode ? eventName(String(values.eventCode)) : values.tierName ?? (guardKey && (GUARD_NAME[guardKey] ?? guardKey)) ?? values.id ?? "转盘奖池")}`;
+  return `${H4_OP_VERB[input.command.op] ?? input.action} · ${String(values.eventCode ? eventName(String(values.eventCode)) : values.tierName ?? (guardKey && (GUARD_NAME[guardKey] ?? guardKey)) ?? values.id ?? "转盘奖池")}`;
 }
 
 /** 原记录里存的改动，写成「从多少到多少」。只读保存的原请求，不拿现在读到的数据补。 */
@@ -877,7 +887,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           .catch(cause => { toast(displayAdminError(cause), "warn"); return refreshAll(); })
           .finally(() => setLookupKey(""));
       }} />}
-    {stale && <Notice tone="warn" title={`没有保存：${stale}的对象已被别人改过`} action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>页面已读到最新值，你这次填的内容没有提交。核对现在的值后重新打开再改。</Notice>}
+    {stale && <Notice tone="warn" title={`没有保存：别人先改过（${stale}）`} action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>页面已读到最新值，你这次填的内容没有提交。核对现在的值后重新打开再改。</Notice>}
     {(h4Pending.length > 0 || h4Approvals === "error") && <Notice tone="warn" title={h4Approvals === "error" ? "审批进度没有读到" : `${h4Pending.length} 项修改在等审批`} actionBelow
       action={h4Approvals === "error" ? <Button size="sm" onClick={() => void reloadH4Approvals()}>重试</Button> : <ul className="h4-pending">
         {h4Pending.map((row) => {
@@ -930,7 +940,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     ...(gapCount > 0 ? [{ key: "locale", tag: <StatusTag tone="warn">翻译没填</StatusTag>, title: `${gapsByEvent.length} 个既有活动`,
       sub: `${gapCount} 项中文、越南语内容没填，这些活动不能开放`, onOpen: () => go("events", "h4l-events") }] : []),
     ...(legacyTierNames.length > 0 ? [{ key: "nex", tag: <StatusTag tone="warn">旧名称</StatusTag>, title: "转盘奖项名称",
-      sub: `${legacyTierNames.map((tier) => text(tier.tier)).join("、")} 的名称还写着 NEX，App 抽中时显示原文`, onOpen: () => go("wheel", "h4l-tiers") }] : []),
+      sub: `${legacyTierNames.map((tier) => text(tier.tier)).join("、")} 的名称还写着 NEX，要改成 UVT`, onOpen: () => go("wheel", "h4l-tiers") }] : []),
     ...(killState === false ? [{ key: "kill", tag: <StatusTag tone="warn">真钱奖已关</StatusTag>, title: "真钱奖发放开关",
       sub: "抽中 USDT 奖项的用户现在都改拿 UVT 安慰奖", onOpen: () => go("wheel", "h4l-guards") }] : []),
   ];

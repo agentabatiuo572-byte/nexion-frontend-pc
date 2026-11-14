@@ -159,7 +159,7 @@ export default function H4Promotions({ ctx, legacy }: {
         <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(record.createdAt).toISOString(), 'Asia/Shanghai')}</span>（北京时间）</span>
         <StatusTag tone="ok">已上传</StatusTag>
         <span className="h4-pending-actions"><Button size="sm" onClick={() => acknowledgeUpload(record)}>已重新选好，移除</Button></span>
-    </li>; })}</ul>}>当时的表单已经关了，这页不知道图属于哪个活动或哪笔奖励，不会自动填进去。回到原处重新选这个文件，选好后点「已重新选好，移除」。</Notice>}
+    </li>; })}</ul>}>当时的表单已关，这页不知道图属于哪个活动或哪笔奖励，不会自动填入。回原处重新选这个文件，再点「已重新选好，移除」。</Notice>}
     {screen === 'list' && !old && legacyUnknown > 0 && <Notice tone="warn" title={`既有活动和转盘有 ${legacyUnknown} 个操作结果未知`} action={<Button size="sm" onClick={() => chooseTab('legacy-events')}>去查询原结果</Button>}>原操作和查询入口在那个页签顶部。</Notice>}
     {notice && <Notice tone="neutral" title="操作反馈" action={deletedId ? <Button size="sm" onClick={() => navigate('detail', deletedId)}>查看历史记录</Button> : undefined}>{notice}</Notice>}
     {screen === 'list' ? listScreen : !pageReady && (pageLoading || readErrors.length > 0) ? <>{screen === 'edit' && <PromotionSteps step={editStep} onStep={changeStep} disabled/>}<PromotionReadPanel title={screen === 'edit' ? ['基本信息', '参与资格', '购机赠奖', '预算与叠加'][editStep] : heading[0]} loading={readErrors.length === 0} errors={readErrors}/></> : <>
