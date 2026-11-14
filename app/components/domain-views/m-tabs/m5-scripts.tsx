@@ -872,7 +872,9 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       {pane("content", content)}
       {pane("channels", channels)}
       </> : fallback}
-      {profileAgent && (canManageSupportSeats || profileRecovery) && <AgentProfileModal agent={profileAgent} agents={supportAgents} pending={profileRecovery} ctx={{ ...ctx, setParam: async (key, value, meta) => {
+      {profileAgent && (canManageSupportSeats || profileRecovery) && <AgentProfileModal agent={profileAgent} agents={supportAgents} pending={profileRecovery}
+        canSubmitNew={agentPageAvailable && !needsRead && !ctx.contentLoading && !writePending && !blocked("I.support.agentProfile.__update", profileAgent.adminId) && Boolean(authorities?.includes("service_m1_write"))}
+        ctx={{ ...ctx, setParam: async (key, value, meta) => {
         try { return profileRecovery ? await commitOriginal(profileRecovery, true) : await commitM5Write(key, value, meta, `${profileAgent.name} 接派单配置已保存`); }
         catch (cause) { toast(displayAdminError(cause), "warn"); return false; }
       } }} onClose={() => { setProfileAgent(null); setProfileRecovery(undefined); }} />}
@@ -885,7 +887,7 @@ function toggleList<T extends string>(rows: T[], item: T): T[] {
   return rows.includes(item) ? rows.filter((row) => row !== item) : [...rows, item];
 }
 
-function AgentProfileModal({ agent, agents, ctx, pending, onClose }: { agent: MSupportAgent; agents: MSupportAgent[]; ctx: MCtx; pending?: MCommandRecord; onClose: () => void }) {
+function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose }: { agent: MSupportAgent; agents: MSupportAgent[]; ctx: MCtx; pending?: MCommandRecord; canSubmitNew: boolean; onClose: () => void }) {
   const originalInput = pending?.m5 ? JSON.parse(pending.m5.request.body) : null;
   const tagOptions = useMemo(
     () => Array.from(new Set([...agents.flatMap(item => item.tags ?? []), ...agent.tags, ...(originalInput?.tags ?? [])].filter(Boolean))) as string[],
@@ -900,7 +902,7 @@ function AgentProfileModal({ agent, agents, ctx, pending, onClose }: { agent: MS
   const [reason, setReason] = useState(pending?.m5?.reason ?? "");
   const [saving, setSaving] = useState(false);
   const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
-  const canSave = !saving && (pending ? !isRetryExpired(pending) && Boolean(useAdminAuth.getState().session?.authorities.includes("service_m1_write")) : reasonOk && maxConcurrent.trim() !== "" && Number.isInteger(Number(maxConcurrent)) && Number(maxConcurrent) >= 0 && Number(maxConcurrent) <= 40);
+  const canSave = !saving && (pending ? !isRetryExpired(pending) && Boolean(useAdminAuth.getState().session?.authorities.includes("service_m1_write")) : canSubmitNew && reasonOk && maxConcurrent.trim() !== "" && Number.isInteger(Number(maxConcurrent)) && Number(maxConcurrent) >= 0 && Number(maxConcurrent) <= 40);
 
   const save = async () => {
     if (!canSave) return;
@@ -943,7 +945,7 @@ function AgentProfileModal({ agent, agents, ctx, pending, onClose }: { agent: MS
       sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">{agent.name} · 账号 #{agent.adminId}</span></>}
       footer={<>
         <Button disabled={saving} onClick={onClose}>取消</Button>
-        <Button variant="primary" loading={saving} disabled={!canSave} disabledReason={!saving && !reasonOk ? "操作理由要 8–200 字" : !saving && !canSave ? "同时接待上限要填 0–40 的整数" : undefined} onClick={() => void save()}>保存</Button>
+        <Button variant="primary" loading={saving} disabled={!canSave} disabledReason={!saving && !reasonOk ? "操作理由要 8–200 字" : !saving && canSubmitNew && !canSave ? "同时接待上限要填 0–40 的整数" : undefined} onClick={() => void save()}>保存</Button>
       </>}>
       <Facts>
         <Fact k="客服">{agent.name || "名称未同步"} · {agent.email || "—"}</Fact>
