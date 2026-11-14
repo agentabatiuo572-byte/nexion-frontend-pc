@@ -30,7 +30,17 @@ export type I3FormSnapshot = {
   estimatedAudience: number | null;
   estimatedAt: number | null;
 };
-type IContentPending = PendingMutationRecord & { i6?: I1Original; i4?: I1Original & { snapshot?: TrustSectionVersionView }; i1?: I1Original; i2?: I1Original; i3?: I1Original & { snapshot?: NotificationCampaignRow; formSnapshot?: I3FormSnapshot } };
+export type I6CommandSnapshot = {
+  message?: I18nMessagePairView;
+  messageVersion?: I18nMessagePairView;
+  course?: LearningCourseView;
+  courseVersion?: LearningCourseVersionView;
+  integrityIssue?: I18nIntegrityIssueView;
+  featuredCourseId?: string;
+  featuredCourse?: LearningCourseView;
+  stats?: I18nLearningStats;
+};
+type IContentPending = PendingMutationRecord & { i6?: I1Original & { snapshot?: I6CommandSnapshot }; i4?: I1Original & { snapshot?: TrustSectionVersionView }; i1?: I1Original; i2?: I1Original; i3?: I1Original & { snapshot?: NotificationCampaignRow; formSnapshot?: I3FormSnapshot } };
 export type I1Command = PendingMutationRecord & {
   original?: I1Original;
   label: string;
@@ -55,6 +65,7 @@ export type I6Command = PendingMutationRecord & {
   version: string;
   reason: string;
   input: Record<string, unknown>;
+  snapshot?: I6CommandSnapshot;
 };
 
 /** Decode persisted originals once; replay always sends their saved bytes. Legacy fingerprints remain recoverable. */
@@ -107,7 +118,24 @@ function readI6Command(row: IContentPending): I6Command | undefined {
       parseI6CourseVersion({ courseId: target, version: version || "v1", status: "DRAFT", payload: input, revision: 0, createdAt: null, updatedAt: null });
       if (operation.endsWith("draft") && (!Number.isSafeInteger(input.expectedRevision) || Number(input.expectedRevision) < 0)) return { ...fallback, scope, target };
     }
-    return { ...row, original: { owner, method, path, body }, scope, operation, label: labels[operation], target, version, reason: input.reason, input };
+    let snapshot: I6CommandSnapshot | undefined;
+    if (row.i6?.snapshot) {
+      const saved = row.i6.snapshot;
+      snapshot = { message: saved.message ? parseI6Message(saved.message) : undefined,
+        messageVersion: saved.messageVersion ? parseI6Message(saved.messageVersion) : undefined,
+        course: saved.course ? parseI6Course(saved.course) : undefined,
+        courseVersion: saved.courseVersion ? parseI6CourseVersion(saved.courseVersion) : undefined,
+        integrityIssue: saved.integrityIssue ? parseI6Issue(saved.integrityIssue) : undefined,
+        featuredCourse: saved.featuredCourse ? parseI6Course(saved.featuredCourse) : undefined,
+        featuredCourseId: saved.featuredCourseId, stats: saved.stats };
+      if (snapshot.message && snapshot.message.messageKey !== target || snapshot.course && snapshot.course.id !== target
+        || snapshot.messageVersion && (snapshot.messageVersion.messageKey !== target || snapshot.messageVersion.version !== version)
+        || snapshot.courseVersion && snapshot.courseVersion.courseId !== target
+        || snapshot.featuredCourseId !== undefined && typeof snapshot.featuredCourseId !== "string") return { ...fallback, scope, target, version };
+      if (snapshot.stats && (![snapshot.stats.managedKeys, snapshot.stats.totalKeys, snapshot.stats.integrityIssues, snapshot.stats.coursesOnline]
+        .every(value => Number.isSafeInteger(value) && value >= 0) || typeof snapshot.stats.weeklyNexPayout !== "string")) return { ...fallback, scope, target, version };
+    }
+    return { ...row, original: { owner, method, path, body }, scope, operation, label: labels[operation], target, version, reason: input.reason, input, snapshot };
   } catch { return fallback; }
 }
 
@@ -182,10 +210,10 @@ export async function retryI6Command(saved: I6Command): Promise<unknown> {
   return sendI6Command(command, true);
 }
 
-async function prepareI6Command(path: string, init: RequestInit): Promise<unknown> {
+async function prepareI6Command(path: string, init: RequestInit, snapshot?: I6CommandSnapshot): Promise<unknown> {
   const owner = useAdminAuth.getState().session?.adminId;
   if (!owner) throw new Error("请先登录后再提交。");
-  const i6 = { owner, path, method: init.method!, body: String(init.body) };
+  const i6 = { owner, path, method: init.method!, body: String(init.body), snapshot };
   const fingerprint = `${i6.method}:${path}:${i6.body}`, commandKey = idempotencyKey();
   const command = readI6Command({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i6 });
   if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
@@ -1449,26 +1477,26 @@ export type IContentActions = {
   disableI5Jurisdiction: (code: string, expectedRevision: number, reason: string) => Promise<void>;
   archiveI5Jurisdiction: (code: string, expectedRevision: number, reason: string) => Promise<void>;
   deleteI5Jurisdiction: (code: string, expectedRevision: number, reason: string) => Promise<void>;
-  rescanI6: (reason: string) => Promise<void>;
-  saveI6LocalizedDraft: (messageKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  publishI6LocalizedMessage: (messageKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  archiveI6LocalizedMessage: (messageKey: string, expectedVersion: string, reason: string) => Promise<void>;
+  rescanI6: (reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
+  saveI6LocalizedDraft: (messageKey: string, body: Record<string, unknown>, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
+  publishI6LocalizedMessage: (messageKey: string, body: Record<string, unknown>, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
+  archiveI6LocalizedMessage: (messageKey: string, expectedVersion: string, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
   fetchI6MessageVersions: (messageKey: string) => Promise<I18nMessagePairView[]>;
-  rollbackI6LocalizedMessage: (messageKey: string, targetVersion: string, expectedVersion: string, reason: string) => Promise<void>;
-  fixI6Integrity: (issueCode: string, body: Record<string, unknown>, reason: string) => Promise<I18nIntegrityIssueView>;
-  createI6Course: (courseId: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  updateI7CourseDraft: (courseId: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  rollbackI6LocalizedMessage: (messageKey: string, targetVersion: string, expectedVersion: string, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
+  fixI6Integrity: (issueCode: string, body: Record<string, unknown>, reason: string, snapshot?: I6CommandSnapshot) => Promise<I18nIntegrityIssueView>;
+  createI6Course: (courseId: string, body: Record<string, unknown>, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
+  updateI7CourseDraft: (courseId: string, body: Record<string, unknown>, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
   fetchI7CourseVersions: (courseId: string) => Promise<LearningCourseVersionView[]>;
-  createI7CourseVersion: (courseId: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  updateI7CourseVersion: (courseId: string, version: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  deleteI7CourseVersion: (courseId: string, version: string, reason: string) => Promise<void>;
-  publishI7CourseVersion: (courseId: string, version: string, reason: string) => Promise<void>;
-  rollbackI7CourseVersion: (courseId: string, version: string, reason: string) => Promise<void>;
-  deleteI7CourseDraft: (courseId: string, reason: string) => Promise<void>;
-  publishI6Course: (courseId: string, reason: string) => Promise<void>;
-  archiveI6Course: (courseId: string, reason: string) => Promise<void>;
+  createI7CourseVersion: (courseId: string, body: Record<string, unknown>, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
+  updateI7CourseVersion: (courseId: string, version: string, body: Record<string, unknown>, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
+  deleteI7CourseVersion: (courseId: string, version: string, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
+  publishI7CourseVersion: (courseId: string, version: string, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
+  rollbackI7CourseVersion: (courseId: string, version: string, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
+  deleteI7CourseDraft: (courseId: string, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
+  publishI6Course: (courseId: string, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
+  archiveI6Course: (courseId: string, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
   updateI6CourseReward: (courseId: string, rewardNex: number, reason: string) => Promise<void>;
-  updateI6FeaturedCourse: (courseId: string, reason: string) => Promise<void>;
+  updateI6FeaturedCourse: (courseId: string, reason: string, snapshot?: I6CommandSnapshot) => Promise<void>;
 };
 
 export async function fetchIContentOverviews(): Promise<IContentData> {
@@ -1575,30 +1603,30 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   disableI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}/disable`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
   archiveI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}/archive`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
   deleteI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
-  rescanI6: (reason) => prepareI6Command("/i18n-learning/rescan", { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  saveI6LocalizedDraft: (messageKey, body, reason) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  publishI6LocalizedMessage: (messageKey, body, reason) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  archiveI6LocalizedMessage: (messageKey, expectedVersion, reason) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
+  rescanI6: (reason, snapshot) => prepareI6Command("/i18n-learning/rescan", { method: "POST", body: JSON.stringify(withReason({}, reason)) }, snapshot).then(() => undefined),
+  saveI6LocalizedDraft: (messageKey, body, reason, snapshot) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }, snapshot).then(() => undefined),
+  publishI6LocalizedMessage: (messageKey, body, reason, snapshot) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }, snapshot).then(() => undefined),
+  archiveI6LocalizedMessage: (messageKey, expectedVersion, reason, snapshot) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedVersion }, reason)) }, snapshot).then(() => undefined),
   fetchI6MessageVersions: (messageKey) => apiRequest<unknown>(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/versions`).then(value => {
     if (!Array.isArray(value)) throw new Error("词条历史返回数据格式异常，请刷新重试");
     return value.map(parseI6Message);
   }),
-  rollbackI6LocalizedMessage: (messageKey, targetVersion, expectedVersion, reason) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/versions/${encodeURIComponent(targetVersion)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
-  fixI6Integrity: (issueCode, body, reason) => prepareI6Command(`/i18n-learning/integrity/${encodeURIComponent(issueCode)}/fix`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(parseI6Issue),
-  createI6Course: (courseId, body, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI7CourseDraft: (courseId, body, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  rollbackI6LocalizedMessage: (messageKey, targetVersion, expectedVersion, reason, snapshot) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/versions/${encodeURIComponent(targetVersion)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion }, reason)) }, snapshot).then(() => undefined),
+  fixI6Integrity: (issueCode, body, reason, snapshot) => prepareI6Command(`/i18n-learning/integrity/${encodeURIComponent(issueCode)}/fix`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }, snapshot).then(parseI6Issue),
+  createI6Course: (courseId, body, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }, snapshot).then(() => undefined),
+  updateI7CourseDraft: (courseId, body, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }, snapshot).then(() => undefined),
   fetchI7CourseVersions: (courseId) => apiRequest<unknown>(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions`).then(value => {
     if (!Array.isArray(value)) throw new Error("课程版本返回数据格式异常，请刷新重试");
     return value.map(parseI6CourseVersion);
   }),
-  createI7CourseVersion: (courseId, body, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI7CourseVersion: (courseId, version, body, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  deleteI7CourseVersion: (courseId, version, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  publishI7CourseVersion: (courseId, version, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}/publish`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  rollbackI7CourseVersion: (courseId, version, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}/rollback`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  deleteI7CourseDraft: (courseId, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  publishI6Course: (courseId, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/publish`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  archiveI6Course: (courseId, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/archive`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  createI7CourseVersion: (courseId, body, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }, snapshot).then(() => undefined),
+  updateI7CourseVersion: (courseId, version, body, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }, snapshot).then(() => undefined),
+  deleteI7CourseVersion: (courseId, version, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }, snapshot).then(() => undefined),
+  publishI7CourseVersion: (courseId, version, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}/publish`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }, snapshot).then(() => undefined),
+  rollbackI7CourseVersion: (courseId, version, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}/rollback`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }, snapshot).then(() => undefined),
+  deleteI7CourseDraft: (courseId, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }, snapshot).then(() => undefined),
+  publishI6Course: (courseId, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/publish`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }, snapshot).then(() => undefined),
+  archiveI6Course: (courseId, reason, snapshot) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/archive`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }, snapshot).then(() => undefined),
   updateI6CourseReward: (courseId, rewardNex, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/reward`, { method: "PATCH", body: JSON.stringify(withReason({ rewardNex }, reason)) }).then(() => undefined),
-  updateI6FeaturedCourse: (courseId, reason) => prepareI6Command("/i18n-learning/courses/featured", { method: "PATCH", body: JSON.stringify(withReason({ courseId }, reason)) }).then(() => undefined),
+  updateI6FeaturedCourse: (courseId, reason, snapshot) => prepareI6Command("/i18n-learning/courses/featured", { method: "PATCH", body: JSON.stringify(withReason({ courseId }, reason)) }, snapshot).then(() => undefined),
 };

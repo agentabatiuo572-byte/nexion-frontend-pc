@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Link from "next/link";
 import { Archive, BadgeCheck, BookOpen, CodeXml, Eye, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
-import { pendingI6Commands, retryI6Command, type I6Command, type I18nMessagePairView, type LearningCourseVersionView } from "@/lib/admin/i-client";
+import { pendingI6Commands, retryI6Command, type I6Command, type I6CommandSnapshot, type I18nMessagePairView, type LearningCourseVersionView } from "@/lib/admin/i-client";
 import type { ActionConfirmReq, ICtx } from "./types";
 import { PaginationExemptionList } from "../design-kit";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -134,9 +134,44 @@ export function I6I18n({ ctx, errorText }: { ctx: ICtx; errorText: string | null
 }
 
 function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) {
-  const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
+  const { toast, openActionConfirm, openConfirm, actions: backendActions, content, contentLoading } = ctx;
   const latest = useRef(ctx);
   latest.current = ctx;
+  const versionsRead = useRef<LearningCourseVersionView[]>([]);
+  const messagesRead = useRef<I18nMessagePairView[]>([]);
+  const actions = useMemo<ICtx["actions"]>(() => {
+    const snapshot = (selection: { messageKey?: string; courseId?: string; version?: string; issueCode?: string; featured?: boolean }): I6CommandSnapshot => {
+      const original = latest.current.content.i18nLearning;
+      return {
+        message: selection.messageKey ? original?.messages.find(row => row.messageKey === selection.messageKey) : undefined,
+        messageVersion: selection.messageKey ? messagesRead.current.find(row => row.messageKey === selection.messageKey && row.version === selection.version) : undefined,
+        course: selection.courseId ? original?.courses.find(row => row.id === selection.courseId) : undefined,
+        courseVersion: selection.courseId ? versionsRead.current.find(row => row.courseId === selection.courseId && row.version === selection.version) : undefined,
+        integrityIssue: selection.issueCode ? original?.integrityIssues.find(row => row.code === selection.issueCode) : undefined,
+        featuredCourseId: selection.featured ? original?.featuredCourseId : undefined,
+        featuredCourse: selection.featured ? original?.courses.find(row => row.id === original.featuredCourseId) : undefined,
+      };
+    };
+    return { ...backendActions,
+      rescanI6: (reason) => backendActions.rescanI6(reason, { stats: latest.current.content.i18nLearning?.stats }),
+      saveI6LocalizedDraft: (key, body, reason) => backendActions.saveI6LocalizedDraft(key, body, reason, snapshot({ messageKey: key })),
+      publishI6LocalizedMessage: (key, body, reason) => backendActions.publishI6LocalizedMessage(key, body, reason, snapshot({ messageKey: key })),
+      archiveI6LocalizedMessage: (key, version, reason) => backendActions.archiveI6LocalizedMessage(key, version, reason, snapshot({ messageKey: key })),
+      rollbackI6LocalizedMessage: (key, target, version, reason) => backendActions.rollbackI6LocalizedMessage(key, target, version, reason, snapshot({ messageKey: key, version: target })),
+      fixI6Integrity: (code, body, reason) => backendActions.fixI6Integrity(code, body, reason, snapshot({ messageKey: String(body.messageKey), issueCode: code })),
+      createI6Course: (id, body, reason) => backendActions.createI6Course(id, body, reason, snapshot({ courseId: id })),
+      updateI7CourseDraft: (id, body, reason) => backendActions.updateI7CourseDraft(id, body, reason, snapshot({ courseId: id })),
+      deleteI7CourseDraft: (id, reason) => backendActions.deleteI7CourseDraft(id, reason, snapshot({ courseId: id })),
+      publishI6Course: (id, reason) => backendActions.publishI6Course(id, reason, snapshot({ courseId: id })),
+      archiveI6Course: (id, reason) => backendActions.archiveI6Course(id, reason, snapshot({ courseId: id })),
+      createI7CourseVersion: (id, body, reason) => backendActions.createI7CourseVersion(id, body, reason, snapshot({ courseId: id })),
+      updateI7CourseVersion: (id, version, body, reason) => backendActions.updateI7CourseVersion(id, version, body, reason, snapshot({ courseId: id, version })),
+      deleteI7CourseVersion: (id, version, reason) => backendActions.deleteI7CourseVersion(id, version, reason, snapshot({ courseId: id, version })),
+      publishI7CourseVersion: (id, version, reason) => backendActions.publishI7CourseVersion(id, version, reason, snapshot({ courseId: id, version })),
+      rollbackI7CourseVersion: (id, version, reason) => backendActions.rollbackI7CourseVersion(id, version, reason, snapshot({ courseId: id, version })),
+      updateI6FeaturedCourse: (id, reason) => backendActions.updateI6FeaturedCourse(id, reason, snapshot({ courseId: id, featured: true })),
+    };
+  }, [backendActions]);
   const readReady = useRef(false);
   const [, updateRecovery] = useState(0);
   const session = useAdminAuth((state) => state.session);
@@ -186,12 +221,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const [compareVersion, setCompareVersion] = useState("");
   const [copyEditor, setCopyEditor] = useState<CopyEditor | null>(null);
   const [messageVersions, setMessageVersions] = useState<I18nMessagePairView[]>([]);
+  messagesRead.current = messageVersions;
   const [messageVersionsLoading, setMessageVersionsLoading] = useState(false);
   const [versionCourseId, setVersionCourseId] = useState("");
   const [courseTab, setCourseTab] = useState<"content" | "quiz" | "versions">("content");
   const [courseLang, setCourseLang] = useState<Lang>("zh");
   const [courseEditor, setCourseEditor] = useState<CourseEditorState | null>(null);
   const [courseVersions, setCourseVersions] = useState<LearningCourseVersionView[]>([]);
+  versionsRead.current = courseVersions;
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [versionsError, setVersionsError] = useState<string | null>(null);
   const [versionsRetry, setVersionsRetry] = useState(0);

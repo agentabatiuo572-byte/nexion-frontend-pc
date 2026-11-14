@@ -1530,7 +1530,7 @@ CAP原号回放后必须再按号读当前票，不把历史pending当当前待�
 
 **I6 多语言与课程（2026-11-15 逻辑接入，后端24972948／App44b55db8）**：I6改版已合入I域，18个业务写入口保留。词条重扫/草稿/发布/归档/回滚/完整性修复直接写；课程新建/主稿编辑/删除/新版本/版本编辑/版本删除/下架/换推荐八类直接写；三种正奖励激活及调奖四类审批。三激活在881ae4c1已走专用审批，旧“PC尚未接”说明更正。激活六params及I/learning_course_activation/id目标保持；调奖params恰courseId/rewardNex、sourceDomain=I7、I/learning_course/id目标，后端绑定原版本/revision/旧金额。两个锁类型独立，不假定一个调奖票会锁住另一种激活。调奖另要A2 write/proposal_create；激活保留双业务权委托。另一位有A2批准权的有效超级管理员批准，调奖批准者另有调奖权。推荐课下架在现有入口和提交前说明须先换推荐课。
 
-普通写在I域唯一uncertain store保存原method/path/body、理由、操作者/归属、命令号，四审批沿原HI store；持久化失败不发。首次拒绝按isDeterministicRejection弃号留框；原号恢复只以isExplicitRejection解除，认证/限流/幂等未收敛等保留；24h后保留只查。当前确认冻结；恢复结论后退出旧闭包、关旧确认和编辑抽屉，并成功重读前禁止新修改。POST或回放审批回执必须再按原号查询当前票，核mine/obj/operationCode/rawStatus；权威pending才标待批，查询失败保持“批没批准未查到”的数据，不拿历史pending当现状。查询与写权限独立，后端拒绝查询时保留原记录。审批队列按真实operationCode和课程obj，包括reward_adjust，接现成卡片待审批位置。
+普通写在I域唯一uncertain store保存原method/path/body、理由、操作者/归属、命令号及原确认事实快照（词条/目标历史、课程/目标版本、问题、推荐、统计），四审批沿原HI store；持久化失败不发。首次拒绝按isDeterministicRejection弃号留框；原号恢复只以isExplicitRejection解除，认证/限流/幂等未收敛等保留；24h后保留只查。当前确认冻结；恢复结论后退出旧闭包、关旧确认和编辑抽屉，并成功重读前禁止新修改。POST或回放审批回执必须再按原号查询当前票，核mine/obj/operationCode/rawStatus；权威pending才标待批，查询失败保持“批没批准未查到”的数据，不拿历史pending当现状。查询与写权限独立，后端拒绝查询时保留原记录。审批队列按真实operationCode和课程obj，包括reward_adjust，接现成卡片待审批位置。
 
 普通直写的独立恢复列表/查询核对位、有效期内审批未知记录的独立只读查询、过期提案明确NOT_FOUND后的解除确认尚缺视觉位置。本次准备pendingI6Commands/retryI6Command/queryI6Command及queryI6CourseProposal/releaseExpiredI6CourseProposal，不自行加面板或新对话框。直接读回当前值不能解除未知记录；过期提案仅可在运营确认后再次权威查无解除。课程已有恢复行在概览失败时仍可用，保存的原封套决定恢复事实。
 
