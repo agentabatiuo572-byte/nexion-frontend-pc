@@ -343,7 +343,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   };
   const checkTicket = (record: A1Pending, ticket: A2OperationRow) => {
     if (record.request.kind !== "proposal" || !ticket.mine || ticket.obj !== record.request.input.obj || ticket.action !== record.request.input.action
-      || ticket.operationCode && ticket.operationCode !== record.request.input.command.op) throw new Error("A1_PROPOSAL_RECEIPT_MISMATCH");
+      || ticket.operationCode !== record.request.input.command.op) throw new Error("A1_PROPOSAL_RECEIPT_MISMATCH");
   };
   const queryOriginal = async (record: A1Pending) => {
     requireActor(record.intent, false);
