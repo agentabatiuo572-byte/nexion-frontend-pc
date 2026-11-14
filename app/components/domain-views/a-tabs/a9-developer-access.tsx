@@ -284,7 +284,7 @@ export function A9DeveloperAccess() {
   const columnCount = 6;
   const judgment: JudgmentRow[] = shown ? [
     { label: "申请人", icon: Building2, tone: "users", value: shown.company, reason: shown.email },
-    { label: "平台用户", icon: User, tone: "users", value: <>用户编号 {shown.userId}{reach("/users/search") && <> · <Link className="rd-link" href={`/users/search?q=${encodeURIComponent(String(shown.userId))}`}>在查找用户里打开</Link></>}</> },
+    { label: "平台用户", icon: User, tone: "users", value: <>用户编号 {shown.userId}{reach("/users/search") && <> · 到<Link className="rd-link" href={`/users/search?q=${encodeURIComponent(String(shown.userId))}`}>查找用户与查看资料</Link>里打开</>}</> },
     { label: "申请的环境", icon: Server, value: scopeText(shown), reason: shown.sourceEnvironment === "SANDBOX" ? "批准只对这个测试批次有效" : undefined },
     { label: "提交时间", icon: Clock3, value: shown.status === "PENDING" ? `${timeText(shown.createdAt)} · 已等 ${waitedText(shown.createdAt, now)}` : timeText(shown.createdAt) },
     { label: "现在", value: <StatusBadge status={shown.status} />, state: shown.status === "PENDING" ? "warn" : undefined,
