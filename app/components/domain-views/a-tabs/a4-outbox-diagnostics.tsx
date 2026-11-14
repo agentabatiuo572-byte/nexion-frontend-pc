@@ -88,7 +88,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
           <Table label="积压事件明细" className="a4-backlog-table">
             <thead><tr>
               <Th>事件</Th><Th>卡在哪 · 已重试</Th><Th>产生 · 下次重试</Th><Th>失败原因</Th>
-              <Th>使用方处理结果<Explain label="使用方处理结果是什么" content="每个使用这条事件的模块处理到了哪一步。没有发现回执不代表已经成功。" /></Th>
+              <Th>处理结果<Explain label="处理结果是什么" content="每个使用这条事件的模块（使用方）处理到了哪一步。没有发现回执不代表已经成功。" /></Th>
             </tr></thead>
             <tbody>
               {data.rows.map((row, index) => {

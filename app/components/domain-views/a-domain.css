@@ -216,6 +216,11 @@
 .a4-backlog-table th:nth-child(1) { width: 28%; }
 .a4-backlog-table th:nth-child(2) { width: 20%; }
 .a4-backlog-table th:nth-child(3) { width: 168px; }
+@container adom (max-width: 860px) {
+  .a4-backlog-table th:nth-child(1) { width: 26%; }
+  .a4-backlog-table th:nth-child(2) { width: 112px; }
+  .a4-backlog-table th:nth-child(3) { width: 148px; }
+}
 .adom .a4-receipts { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; font-variant-numeric: tabular-nums; }
 .a4-next { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 .a4-next > .a4-note { margin-right: auto; }
