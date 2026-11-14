@@ -95,15 +95,19 @@ export function F3RuleFlow({ rule, next, changed, capAction, compact }: {
 export function F3PairBar({ a, b, max, threshold, label }: { a: number; b: number; max: number; threshold: number | null; label: string }) {
   const scale = Math.max(max, a, b, threshold ?? 0, 1);
   const matched = Math.min(a, b);
-  const pct = (value: number) => `${Math.min(100, (value / scale) * 100)}%`;
-  const side = (value: number, leg: "a" | "b") => (
-    <span className="f3-pair-track" data-leg={leg}>
-      {value > 0 && <span className="f3-pair-fill" style={{ width: pct(value) }}>
-        <span className="f3-pair-match" style={{ width: value > 0 ? `${(matched / value) * 100}%` : 0 }} />
-      </span>}
-      {threshold !== null && threshold > 0 && <span className="f3-pair-tick" style={{ insetInlineStart: leg === "b" ? pct(threshold) : undefined, insetInlineEnd: leg === "a" ? pct(threshold) : undefined }} />}
-    </span>
-  );
+  const pct = (value: number) => Math.min(100, (value / scale) * 100);
+  // A 从右边（中线）往左画，B 从左边（中线）往右画；用 SVG 的百分比坐标，不写内联样式。
+  const side = (value: number, leg: "a" | "b") => {
+    const at = (width: number) => `${leg === "a" ? 100 - width : 0}%`;
+    const tick = threshold !== null && threshold > 0 ? pct(threshold) : null;
+    return (
+      <svg className="f3-pair-track" data-leg={leg} aria-hidden focusable="false">
+        {value > 0 && <rect className="f3-pair-fill" x={at(pct(value))} y="4" width={`${pct(value)}%`} height="8" rx="2" />}
+        {matched > 0 && <rect className="f3-pair-match" x={at(pct(matched))} y="4" width={`${pct(matched)}%`} height="8" rx="2" />}
+        {tick !== null && <rect className="f3-pair-tick" x={`${leg === "a" ? 100 - tick : tick}%`} y="1" width="2" height="14" />}
+      </svg>
+    );
+  };
   return (
     <span className="f3-pair" role="img" aria-label={label} title={label}>
       {side(a, "a")}
