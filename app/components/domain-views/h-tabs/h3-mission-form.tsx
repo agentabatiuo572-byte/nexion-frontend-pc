@@ -60,7 +60,7 @@ export function H3MissionFormDrawer({ missionType, onClose, onReview }: {
           others={<Button onClick={close}>取消</Button>} />}>
         <div className="rd-split h3-form-split" data-detail="" data-preview="">
           <div className="h3-form">
-            <Field label="任务编号" required hint="英文和数字，不能重复，建好后不能改" error={shown.missionCode}>
+            <Field label="任务编号" required hint="英文和数字" error={shown.missionCode}>
               {(control) => <Input {...control} value={value.missionCode ?? ""} placeholder="如 dayOne-visit-earn" onChange={(event) => set("missionCode", event.target.value)} />}
             </Field>
             <Field label="任务名称" required error={shown.missionName}>
@@ -92,6 +92,7 @@ export function H3MissionFormDrawer({ missionType, onClose, onReview }: {
               </div>
             </div>
             <dl className="h3-form-facts">
+              <div><dt>任务编号</dt><dd>不能和已有的重复，建好后不能改</dd></div>
               <div><dt>状态</dt><dd><StatusTag tone="neutral">已停用</StatusTag></dd></div>
               <div><dt>用户什么时候看到</dt><dd>绑定条件并启用后才发给用户</dd></div>
               {missionType === "DAY_ONE" && <div><dt>奖励</dt><dd>做完全部首日任务才按「首日奖励」统一发</dd></div>}

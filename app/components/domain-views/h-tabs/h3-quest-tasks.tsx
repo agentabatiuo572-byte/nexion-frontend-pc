@@ -472,7 +472,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           : <>
             <Fact k="已领到的用户">不受影响，照旧能完成和领取</Fact>
             <Fact k="以后的用户">{enabling ? "之后的用户会拿到它" : "之后的用户拿不到它"}</Fact>
-            {enabling && <Fact k="前提" tone={taskUnbound(task) ? "warn" : undefined}>{taskUnbound(task) ? "没有启用的完成条件，会被拒绝；先去「完成条件」绑定" : "要有启用的完成条件；目标业务不可用时也会被拒绝"}</Fact>}
+            {enabling && <Fact k="前提" tone={taskUnbound(task) ? "warn" : undefined}>{taskUnbound(task) ? "没有启用的完成条件，会被拒绝，先去绑定" : "要有启用的完成条件；目标业务不可用时也会被拒绝"}</Fact>}
           </>}
       </Facts>,
       statedBrief: { impact: enabling ? "启用后之后的用户会拿到这个任务。" : "停用后之后的用户拿不到这个任务；已经拿到的照旧。", check: "核对任务和完成条件；理由写清依据。" },
