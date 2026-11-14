@@ -34,7 +34,7 @@ import { avatarDrafts, avatarDraftFingerprint } from "@/lib/admin/account-avatar
 import { SupportAvatar } from "../m-tabs/support-avatar";
 import { SupportQualificationEditor, canManageSupportQualifications } from "../m-tabs/m1-group-management";
 import {
-  A1RecoveryNotice, AccountDetailDrawer, EditAccountDrawer, NewAccountDrawer, PasswordResetDrawer, RoleChangeModal,
+  A1RecoveryNotice, AccountDetailDrawer, AvatarRecoveryModal, EditAccountDrawer, NewAccountDrawer, PasswordResetDrawer, RoleChangeModal,
   approvalTag, approverFact, credentialStatusText, directTag, expiredTag, minuteText, operatorDisplayLabel, operatorDisplayName,
   permSummary, roleName, unknownTag, zoneNote, isHighRiskCode, HIGH_RISK_EXPLAIN, PermGroups, type A1AccountAction,
 } from "./a1-account-views";
@@ -65,6 +65,14 @@ const SECURITY_BASELINE_META: Record<string, SecurityBaselineMeta> = {
 
 /** 账号列表的筛选：只在已读到的全部账号里筛，不发请求。 */
 type ListFilter = "all" | "ok" | "unbound" | "disabled" | "super";
+/** 直接执行的原操作结果未知时，各自「可能已经怎样」。 */
+const DIRECT_UNKNOWN_NOTE: Partial<Record<A1Intent["kind"], string>> = {
+  create: "提交时没收到确定结果，账号可能已经建好。24 小时内可以按原请求重试，不会建第二个。",
+  password: "提交时没收到确定结果，密码可能已经重置。24 小时内可以按原请求重试，不会再生成一个新密码。",
+  session: "提交时没收到确定结果，这台设备可能已经下线。24 小时内可以按原请求重试。",
+  permission: "提交时没收到确定结果，权限可能已经登记。24 小时内可以按原请求重试，不会登记第二次。",
+};
+
 const FILTER_TEXT: Record<Exclude<ListFilter, "all">, string> = { ok: "启用且已绑定两步验证", unbound: "启用但未绑定两步验证", disabled: "已停用", super: "超级管理员" };
 
 function errorMessage(error: unknown) {
@@ -136,6 +144,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const [overviewReady, setOverviewReady] = useState(false);
   const [detailAccount, setDetailAccount] = useState<A1Operator | null>(null);
   const canManageQualifications = useAdminAuth(s => canManageSupportQualifications(s.session));
+  const [avatarRecovery, setAvatarRecovery] = useState<string | null>(null);
   const [qualificationTarget, setQualificationTarget] = useState<{ id: string; kind: "SERVICE" | "SUPERVISOR" } | null>(null);
   const [editAccountTarget, setEditAccountTarget] = useState<A1Operator | null>(null);
   const [passwordReset, setPasswordReset] = useState<A1PasswordResetResult | null>(null);
@@ -522,10 +531,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         </div>
       ),
       statedBrief: {
-        impact: picked === "unassigned"
+        impact: `${picked === "unassigned"
           ? "批准后这个账号没有任何权限和菜单；已登录的设备不会被踢下线。"
-          : "批准后按新角色的权限生效，已登录的设备不会被踢下线。转出客服角色会移除客服资格，名下还有客户或组成员时会被拒绝。",
-        check: "提交时检查改角色权限和账号版本；批准时再检查有效的超级管理员不少于 2 人。",
+          : "批准后按新角色的权限生效，已登录的设备不会被踢下线。"}${picked !== "support" && picked !== "super" ? "新角色不是客服或超级管理员，批准时会移除客服资格；名下还有客户或组成员时会被拒绝。" : ""}`,
+        check: "提交时带上你看到的账号版本；批准执行时核对版本，并检查有效的超级管理员不少于 2 人。",
       },
       run: async (reason) => {
         const roleStr = (picked || "").trim();
@@ -578,7 +587,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     ),
     statedBrief: {
       impact: "骗子常用这一步盗号，先用另一种方式核实是本人。批准后旧验证器失效、所有设备下线，下次登录重新绑定。",
-      check: "提交时检查重置两步验证权限、账号版本和是否已绑定；核验方式、时间和工单号写进理由，后端不另外核对。",
+      check: "批准执行时核对账号版本和是否已绑定；核验方式、时间和工单号写进理由，后端不另外核对。",
     },
     businessForm: {
       kind: "identity-verify",
@@ -663,7 +672,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         impact: usernameChanged
           ? "批准后改资料；登录名改了，这个账号所有设备下线，要用新登录名重新登录。"
           : "批准后改资料，已登录的设备不下线；新头像批准后才换上。",
-        check: "提交时检查资料修改权限和账号版本；批准时再检查登录名、邮箱不重复。",
+        check: "批准执行时核对账号版本，并检查登录名、邮箱不重复。",
       },
       run: async (reason) => {
         const finalReason = `${form.reason}；${reason}`;
@@ -705,17 +714,19 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     const displayName = operatorDisplayName(op);
     const countsAsEffective = op.role === "super" && op.status === "enabled" && op.tfa;
     const savedEffectiveSupers = restoring.current?.snapshot.effectiveSupers ?? effectiveSupers;
+    // 决定表「A1-自停」：允许停用自己，确认框必须写明后果。
+    const isSelf = currentAdminId !== null && operatorAccountId(op.id) === currentAdminId;
     openOperation({ kind: "disable", account: op }, { briefKind: "security",
       action: `禁用账号 · ${displayName}`,
-      title: "停用账号",
-      detail: "停用后该账号不能登录；它提交但还没确认的操作，请到「操作记录与审批」处理。",
+      title: isSelf ? "停用你自己的账号" : "停用账号",
+      detail: isSelf ? "这是你自己的账号，批准后你会被登出、不能再登录。" : "停用后该账号不能登录；它提交但还没确认的操作，请到「操作记录与审批」处理。",
       amplifies: false,
       effect: approvalTag("批准前账号照常可以登录。"),
       confirmTone: "danger",
       confirmLabel: "提交审批",
       facts: (
         <Facts>
-          <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
+          <Fact k="账号" tone={isSelf ? "danger" : undefined}>{operatorDisplayLabel(op)}{isSelf ? "（你自己）" : ""}</Fact>
           <Fact k="角色">{roleName(restoring.current?.snapshot.roles ?? roles, op.role)}，停用后保留</Fact>
           <Fact k="状态"><Change from="启用" to="已停用" /></Fact>
           <Fact k="在线设备">{op.sessions} 台，批准后全部下线</Fact>
@@ -724,8 +735,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         </Facts>
       ),
       statedBrief: {
-        impact: "批准后这个账号所有设备下线、不能再登录，角色保留；它发起的待审批单不会自动撤回。有主管资格时要先交接负责的组。",
-        check: "提交时检查启停权限和账号版本；批准时再检查有效的超级管理员不少于 2 人、客服交接。",
+        impact: `${isSelf ? "批准后你会被登出、不能再登录，只能请别的超级管理员重新启用。" : "批准后这个账号所有设备下线、不能再登录，角色保留。"}它发起的待审批单不会自动撤回；有主管资格时要先交接负责的组。`,
+        check: "批准执行时核对账号版本、有效的超级管理员不少于 2 人和客服交接。",
       },
     run: async (reason) => {
       const def = findHighOp("a1_account_status_update")!;
@@ -759,7 +770,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     openOperation({ kind: "enable", account: op }, { briefKind: "security",
     action: `启用账号 · ${operatorDisplayName(op)}`,
     title: "启用账号",
-    detail: "批准后可以重新登录，角色不变，登录时需通过两步验证。",
+    detail: "批准后可以重新登录，角色不变。",
     amplifies: false,
     effect: approvalTag("批准前账号仍是停用的。"),
     confirmLabel: "提交审批",
@@ -774,7 +785,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     ),
     statedBrief: {
       impact: "批准后可以重新登录，角色和两步验证保持原样；之前撤掉的客服资格不会自动恢复。",
-      check: "提交时检查启停权限和账号版本；恢复期间只能启用已绑定两步验证的超级管理员。",
+      check: "批准执行时核对账号版本；恢复期间只能启用已绑定两步验证的超级管理员。",
     },
     run: async (reason) => {
       const def = findHighOp("a1_account_status_update")!;
@@ -820,7 +831,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       ),
       statedBrief: {
         impact: "另一位超级管理员批准后，批准时在线的设备全部下线；不改密码和两步验证，对方可以马上重新登录。要让对方登录不了，用「停用账号」。",
-        check: "提交时检查当前身份和账号版本；批准时再检查目标不是超级管理员、不是批准人自己。",
+        check: "批准执行时核对账号版本，并检查目标不是超级管理员、不是批准人自己。",
       },
       run: async (reason) => {
         const def = findHighOp("a1_account_force_logout")!;
@@ -994,7 +1005,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       detail: "把新操作加入权限清单，不会自动分给任何角色。需要时到「角色管理」授权。",
       amplifies: draft.amplifies,
       coverageLead: "这项权限标记为「会让平台多付钱」",
-      coverageCheck: "登记本身不付款、不检查覆盖率；按现在的规则，标记后类型要选高危，页面暂时选不了，提交会被拒绝。",
+      coverageCheck: "登记本身不付款、不检查覆盖率；勾了这项，按「高危」类型登记。",
       effect: <>{directTag()}<StatusTag tone="neutral">不改任何人的权限</StatusTag></>,
       confirmLabel: "确认登记",
       facts: (
@@ -1002,7 +1013,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           <Fact k="权限编码"><span data-mono>{draft.code.trim()}</span></Fact>
           <Fact k="权限名称">{draft.name.trim()}</Fact>
           <Fact k="资源路径"><span data-mono>{draft.path.trim()}</span></Fact>
-          <Fact k="权限类型">{draft.type === "READ" ? "查询" : "修改"}</Fact>
+          <Fact k="权限类型">{draft.amplifies ? "高危" : draft.type === "READ" ? "查询" : "修改"}</Fact>
         </Facts>
       ),
       statedBrief: {
@@ -1128,7 +1139,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         : intent.kind === "create" ? <>{intent.form.displayName} · <span data-mono>{intent.form.username}</span> · {roleName(record.snapshot.roles, intent.form.role)} · {intent.form.email || "未填邮箱"}</>
         : intent.kind === "permission" ? `${intent.draft.code} · ${intent.draft.name}` : operatorDisplayLabel(intent.account),
       submittedAt: record.createdAt,
-      tag: record.ticket?.status === "pending" ? <StatusTag tone="progress">待审批</StatusTag> : expired ? expiredTag() : unknownTag(request.kind === "proposal" ? "approval" : "direct"),
+      tag: record.ticket?.status === "pending" ? <StatusTag tone="progress">待审批</StatusTag>
+        : expired ? expiredTag(intent.kind === "create" && request.kind !== "proposal" ? "原请求超过 24 小时，不能再重试。先在账号列表核对是否已建好，不要重复创建。" : undefined)
+        : unknownTag(request.kind === "proposal" ? "approval" : "direct", request.kind === "proposal" ? undefined : DIRECT_UNKNOWN_NOTE[intent.kind]),
       actions: <>
         <Button size="sm" disabledReason={mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => void queryOriginal(record).catch(error => toast(errorMessage(error)))}>查询原结果</Button>
         {!record.ticket && !expired && <Button size="sm" variant="primary" disabledReason={mutatingAction ? "正在提交，请稍候" : retryBlock} onClick={() => restoreOperation(record)}>按原请求重试</Button>}
@@ -1140,19 +1153,29 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   for (const record of qualificationPending) {
     if (record.intent.kind !== "QUALIFICATION") continue;
     const intent = record.intent;
-    recoveryRows.push({ key: record.commandKey, name: record.label, change: intent.payload.state, submittedAt: record.createdAt, tag: Date.now() >= record.createdAt + 86400000 ? expiredTag() : unknownTag("direct"), actions: <Button size="sm" onClick={() => setQualificationTarget({ id: intent.targetId, kind: intent.payload.qualificationKind })}>查询原结果</Button> });
+    recoveryRows.push({ key: record.commandKey, name: record.label, change: intent.payload.state, submittedAt: record.createdAt, tag: Date.now() >= record.createdAt + 86400000 ? expiredTag() : unknownTag("direct", "提交时没收到确定结果，资格可能已经改了。这里只能查询：点「查询原结果」核对当前资格。"), actions: <Button size="sm" onClick={() => setQualificationTarget({ id: intent.targetId, kind: intent.payload.qualificationKind })}>查询原结果</Button> });
   }
   for (const draft of avatarDrafts.list().filter(row => row.actorId === currentAdminId && row.scope === "admin" && (!row.asset || row.cancelKey))) {
-    recoveryRows.push({ key: draft.cancelKey ?? draft.commandKey, name: "账号头像", change: draft.kind === "UPLOAD" ? draft.fileName ?? "账号头像" : "随机默认头像", submittedAt: draft.createdAt,
-      tag: Date.now() >= draft.expiresAt ? expiredTag() : unknownTag("direct"),
-      actions: <Button size="sm" onClick={() => void (async () => {
-        requireActor(null, false);
-        if (!await refreshOverview(true)) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
-        toast(errorMessage(new Error("A1_AVATAR_READBACK_ONLY")));
-      })().catch(error => toast(errorMessage(error)))}>查询原结果</Button>,
+    const target = draft.fingerprint.split(":")[2] ?? "new";
+    recoveryRows.push({ key: draft.cancelKey ?? draft.commandKey, name: draft.cancelKey ? "取消账号头像" : "准备账号头像", change: <>{draft.kind === "UPLOAD" ? draft.fileName ?? "上传的图片" : "随机默认头像"} · {target === "new" ? "新建账号" : <>账号编号 <span data-mono>{target}</span></>}</>, submittedAt: draft.createdAt,
+      tag: Date.now() >= draft.expiresAt ? expiredTag("原请求超过 24 小时，不能再重试；头像没有按原请求查询的接口，请联系值班人员核对。")
+        : unknownTag("direct", draft.cancelKey
+          ? "提交时没收到确定结果，取消可能已经生效。取消不能重试，后端也没有原请求回执，只能联系值班人员核对。"
+          : "提交时没收到确定结果，头像可能已经准备好。24 小时内可以点「处理原头像」按原请求重试，上传的要选同一张图片。"),
+      actions: <>
+        <Button size="sm" onClick={() => void (async () => {
+          requireActor(null, false);
+          if (!await refreshOverview(true)) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
+          toast(errorMessage(new Error("A1_AVATAR_READBACK_ONLY")));
+        })().catch(error => toast(errorMessage(error)))}>查询原结果</Button>
+        {!draft.cancelKey && Date.now() < draft.expiresAt && <Button size="sm" variant="primary" onClick={() => setAvatarRecovery(target)}>处理原头像</Button>}
+      </>,
     });
   }
-  const recovery = <><A1RecoveryNotice title={`${recoveryRows.length} 个账号操作结果未知`} rows={recoveryRows} />{qualificationTarget && <SupportQualificationEditor adminId={qualificationTarget.id} kind={qualificationTarget.kind} writeBlockedReason={!overviewReady ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能改资格" : undefined} onClose={() => setQualificationTarget(null)} onChanged={() => void refreshOverview(true)} />}</>;
+  const pendingCount = recoveryRows.filter(row => pendingOperations.some(record => record.commandKey === row.key && record.ticket?.status === "pending")).length;
+  const recoveryTitle = [recoveryRows.length - pendingCount && `${recoveryRows.length - pendingCount} 个结果未知`, pendingCount && `${pendingCount} 个待审批`].filter(Boolean).join("、");
+  const recovery = <><A1RecoveryNotice title={`账号原操作：${recoveryTitle}`} rows={recoveryRows} />
+    {avatarRecovery !== null && <AvatarRecoveryModal target={avatarRecovery} onClose={() => setAvatarRecovery(null)} />}{qualificationTarget && <SupportQualificationEditor adminId={qualificationTarget.id} kind={qualificationTarget.kind} writeBlockedReason={!overviewReady ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能改资格" : undefined} onClose={() => setQualificationTarget(null)} onChanged={() => void refreshOverview(true)} />}</>;
 
   if (loading && !overview) {
     return <div className="a1-page">{header}{recovery}<BlockState state="loading" title="正在加载运营账号与权限" /></div>;
@@ -1207,7 +1230,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           onOpen={() => pickFilter("super")} openLabel="只看超级管理员" selected={filter === "super"} selectedText="已筛选" aria-pressed={filter === "super"} />
         <Stat icon={ShieldCheck} tone={unboundOps.length ? "warn" : "role-3"} label="未绑定两步验证" value={String(unboundOps.length)} unit="个"
           sub={`启用账号 ${enabledOps.length} 个`}
-          explain="启用中的账号里还没绑定的。没绑定的账号登录时要先绑定，绑定前不能正常使用后台。点这格只看这些账号。"
+          explain="启用中的账号里还没绑定的。没绑定的账号登录时要先绑定，绑定前不能正常使用后台；例外是 superadmin 在临时绕过开关打开时可免验证登录，发布前必须关闭。点这格只看这些账号。"
           onOpen={() => pickFilter("unbound")} openLabel="只看未绑定两步验证的账号" selected={filter === "unbound"} selectedText="已筛选" aria-pressed={filter === "unbound"} />
         <Stat icon={ClipboardCheck} tone="role-3" label="待审批的账号变更" value={pending === undefined || pending === null ? "—" : String(pending)} unit={pending === undefined || pending === null ? undefined : "件"}
           explain="按操作名统计，资料、角色、两步验证、启停、撤销全部登录的申请目前可能没算进来，数字会偏少。以「操作记录与审批」里的待审批为准。"
@@ -1291,7 +1314,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
             </Field>
             <div className="a1-register-check">
               <Check label="会让平台多付钱" checked={permissionDraft.amplifies} onChange={(e) => setPermissionDraft((v) => ({ ...v, amplifies: e.target.checked }))}
-                help={permissionDraft.amplifies ? "勾选后后端要求类型为「高危」，页面暂时选不了，提交会被拒绝。" : undefined} />
+                help={permissionDraft.amplifies ? "勾选后按「高危」类型登记，左边选的类型不用。" : undefined} />
             </div>
           </div>
           <div className="rd-toolbar" data-end="">

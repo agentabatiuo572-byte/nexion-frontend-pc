@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Archive, BookOpenText, Code2, FileText, Plus, RefreshCw, Smartphone, Trash2, TriangleAlert } from "lucide-react";
-import { BlockState, Button, DiffList, Explain, Field, Fold, IconButton, Input, KeepText, Modal, MoreMenu, Notice, PageTabs, Panel, Segments, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
+import { BlockState, Button, Change, DiffList, Explain, Fact, Facts, Field, Fold, IconButton, Input, KeepText, Modal, MoreMenu, Notice, PageTabs, Panel, Segments, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
 import { type A3RecoveryProps } from "@/lib/admin/a3-mutations";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -28,6 +28,26 @@ function blocks(value: unknown): Row[] { return Array.isArray(value) ? value.map
 const LANGUAGE_LABELS: Record<string, string> = { zh: "中文", "zh-cn": "简体中文", en: "英语", vi: "越南语", id: "印尼语", ms: "马来语", fil: "菲律宾语", ru: "俄语", kk: "哈萨克语", uz: "乌兹别克语" };
 const localeName = (key: string) => LANGUAGE_LABELS[key] ?? key;
 const STATUS_NAME: Record<string, string> = { DRAFT: "草稿", PUBLISHED: "已发布", UNPUBLISHED: "已撤下公开版本" };
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+/** 一种语言里哪几部分和最新版本不同；只在一边有就直说。 */
+function localeParts(mine: unknown, latest: unknown, parts: Array<[string, (value: Row) => unknown]>) {
+  if (mine === undefined) return "最新版本有，你这边删掉了";
+  if (latest === undefined) return "你新加的，最新版本没有";
+  return parts.filter(([, pick]) => !same(pick(row(mine)), pick(row(latest)))).map(([name]) => name).join("、") + "不同";
+}
+const DOC_PARTS: Array<[string, (value: Row) => unknown]> = [["请求示例", (v) => row(v.example).request], ["响应示例", (v) => row(v.example).response], ["接口列表", (v) => v.endpoints], ["事件列表", (v) => v.events]];
+
+/** 版本冲突后的提示：你留着的修改和刚读到的最新版本差在哪，重读和重新提交在哪。 */
+function ConflictNotice({ ready, latestRevision, rows, error, loading, onReread, submitHint }: {
+  ready: boolean; latestRevision?: number; rows: Array<{ key: string; label: string; text: ReactNode }>; error: string | null; loading: boolean; onReread: () => void; submitHint: string;
+}) {
+  return <Notice tone="warn" title="别人刚保存过，你的修改没有保存" action={<Button size="sm" loading={loading} onClick={onReread}>重新读取</Button>}>
+    {ready
+      ? <>已读到最新修订 {latestRevision}，你改的都还在。{rows.length ? `和最新版本不同的有 ${rows.length} 处，核对后${submitHint}：` : "你改的和最新版本一样，不用再提交。"}
+        {rows.length > 0 && <Facts>{rows.map((item) => <Fact key={item.key} k={item.label}>{item.text}</Fact>)}</Facts>}</>
+      : <>最新版本没读到，你改的都还在；先重新读取再核对。{error ? <span className="rd-note"> {error}</span> : null}</>}
+  </Notice>;
+}
 /** 种子版本号带内部前缀 default-，写给人看时去掉；输入框里还是原值。 */
 const versionName = (version: string) => version.replace(/^default-/, "") || "—";
 const statusOf = (status: string): Mode => status === "UNPUBLISHED" ? "DRAFT" : status as Mode;
@@ -189,7 +209,14 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty 
       <Button disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; if (!conflictDraft.current) setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
       <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在保存" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; if (!conflictDraft.current) setError(null); setMode("PUBLISHED"); }}>发布…</Button>
     </div>}
-    {error && !mode && <Notice tone="danger">{error}</Notice>}
+    {conflictDraft.current && !mode
+      ? <ConflictNotice ready={readReady && Boolean(baseline)} latestRevision={baseline?.revision} error={error} loading={loading} onReread={() => void refresh()} submitHint="点上方「保存草稿…」或「发布…」重新提交"
+        rows={baseline ? [
+          ...(document.version !== baseline.version ? [{ key: "version", label: "正文版本", text: <Change from={baseline.version || "空"} to={document.version || "空"} /> }] : []),
+          ...[...new Set([...Object.keys(baseline.locales), ...localeKeys])].filter((key) => !same(document.locales[key], baseline.locales[key]))
+            .map((key) => ({ key, label: localeName(key), text: localeParts(document.locales[key], baseline.locales[key], DOC_PARTS) })),
+        ] : []} />
+      : error && !mode && <Notice tone="danger">{error}</Notice>}
     <Panel title="开发者接口文档" icon={Code2} tone="role-2" sub={`${publicLine(document)} · 正文版本 ${versionName(document.version)}`}
       explain={<>
         <p>App 开发者页读取的接口示例、接口列表和事件。保存草稿不改 App 读到的内容，发布后才替换。</p>
@@ -206,7 +233,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty 
           <Field label="正文版本" hint="最多 64 字">{(control) => <Input {...control} className="a3-version" maxLength={64} value={document.version} disabled={disabled} onChange={(event) => setDocument({ ...document, version: event.target.value })} />}</Field>
         </div>
       </div>
-      {addingLocale && canWrite && <Field label="新增语言" help="两个字母的语言代码，可带地区，例如 vi、zh-cn">
+      {addingLocale && canWrite && <Field label="新增语言" help="两个字母的语言代码或 fil，可带地区，例如 vi、fil、zh-cn">
         {(control) => <span className="a3-inline"><Input {...control} aria-label="新增语言" placeholder="例如 vi、zh-cn" value={newLocale} maxLength={11} disabled={disabled} onChange={(event) => setNewLocale(event.target.value)} /><Button size="sm" disabled={disabled} onClick={addLocale}>添加</Button></span>}
       </Field>}
       <div className="a3-with-preview">
@@ -431,11 +458,22 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty }: 
       <Button disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; if (!conflictDraft.current) setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
       <Button variant="primary" disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : publishBlockedReasons.length ? "这份内容现在不能发布" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; if (!conflictDraft.current) setError(null); setMode("PUBLISHED"); }}>发布…</Button>
     </div>}
-    {error && !mode && <Notice tone="danger">{error}</Notice>}
+    {conflictDraft.current && !mode
+      ? <ConflictNotice ready={readReady && Boolean(baseline)} latestRevision={baseline?.revision} error={error} loading={loading} onReread={() => void refresh(false)} submitHint="点上方「保存草稿…」或「发布…」重新提交"
+        rows={baseline ? [
+          ...(document.version !== baseline.version ? [{ key: "version", label: "文档版本", text: <Change from={baseline.version || "空"} to={document.version || "空"} /> }] : []),
+          ...changedPages.map((item) => {
+            const mineLocales = row(row(document.contents[item]).locales), latestLocales = row(row(baseline.contents[item]).locales);
+            const locales = [...new Set([...Object.keys(latestLocales), ...Object.keys(mineLocales)])].filter((key) => !same(mineLocales[key], latestLocales[key]));
+            const versionDiffers = !same(row(document.contents[item]).version, row(baseline.contents[item]).version);
+            return { key: item, label: PAGE_LABELS[item] ?? item, text: [versionDiffers && "本页版本不同", ...locales.map((key) => `${localeName(key)}：${localeParts(mineLocales[key], latestLocales[key], [["内容块", (v) => v.blocks]])}`)].filter(Boolean).join("；") || "页面设置不同" };
+          }),
+        ] : []} />
+      : error && !mode && <Notice tone="danger">{error}</Notice>}
     {publishBlockedReasons.length > 0 && <Notice tone="danger" title="这份内容现在不能发布">{publishBlockedReasons.join("；")}。可以先保存草稿。</Notice>}
     <Panel title="业务说明内容" icon={BookOpenText} tone="role-4" sub={`6 页 · ${publicLine(document)} · 文档版本 ${versionName(document.version)}`}
       explain={<>
-        <p>App 里六个「怎么玩」「规则说明」页面读的内容。六页一起保存、一起发布，不能只发一页。发布时六页都要有内容。</p>
+        <p>App 的「怎么玩」「规则说明」读这六页内容；锁定计划说明的入口已退役，内容仍一起维护。六页一起保存、一起发布，发布时六页都要有内容。</p>
         <p>还没发布过自己的版本时，App 读的是系统自带的默认说明。修订号 {document.revision} 用来防止两人同时改互相覆盖，六页共用一个。</p>
       </>}
       actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabledReason={saving ? "正在保存" : undefined} onClick={() => void refresh()}>刷新</Button>}>
@@ -467,7 +505,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty }: 
         <Field label="文档版本" hint="最多 64 字">{(control) => <Input {...control} className="a3-version" value={document.version} maxLength={64} disabled={locked} onChange={e => setDocument({ ...document, version: e.target.value })} />}</Field>
         </div>
       </div>
-      {addingLocale && canWrite && <Field label="新增内容语言" help="两个字母的语言代码，可带地区，例如 vi、zh-cn；加了不能在这里删">
+      {addingLocale && canWrite && <Field label="新增内容语言" help="两个字母的语言代码或 fil，可带地区，例如 vi、fil、zh-cn；加了不能在这里删">
         {(control) => <span className="a3-inline"><Input {...control} aria-label="新增内容语言" placeholder="vi" value={newLocale} maxLength={11} disabled={locked} onChange={(event) => setNewLocale(event.target.value)} /><Button size="sm" disabled={locked} onClick={addLocale}>添加</Button></span>}
       </Field>}
       {key === RETIRED && <Notice tone="neutral">App 的锁定计划入口已退役，用户从旧入口会被带到个人中心、看不到这页；内容照常维护和保存。</Notice>}

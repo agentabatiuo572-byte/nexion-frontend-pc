@@ -85,10 +85,10 @@ function gateLabel(gate: A3KillSwitch): { text: string; tone: StateTone; icon?: 
 }
 
 const HEALTH_HELP: Record<string, string> = {
-  "事件待投递": "待投递和投递失败的事件条数，以及最早一条等了多久。超过 100 条或 5 分钟是警告，超过 1000 条或 1 小时是严重异常。",
+  "事件待投递": "待投递和投递失败的事件条数，以及最早一条等了多久。超过 100 条或 5 分钟是警告，超过 1000 条或 1 小时是严重异常；有画像事件缺少审计关联时，直接算严重异常。",
   "资金账本可读性": "最近 24 小时账本记录能不能读、查一次用了多久。超过 200 毫秒是警告，超过 1 秒是严重异常。只说明能读，不代表对账一致。",
   "数据库时钟偏差": "数据库时间和后台服务时间差多少。超过 1 秒是警告，超过 5 秒是严重异常。",
-  "后台服务 JVM": "当前这台后台服务已运行多久、内存用了多少。用到 85% 是警告，95% 是严重异常。只代表这一台，不是整个集群。",
+  "后台服务 JVM": "当前这台后台服务已运行多久、内存用了多少。超过 85% 是警告，超过 95% 是严重异常。只代表这一台，不是整个集群。",
 };
 
 export function A3Page({ ctx }: { ctx: ACtx }) {
@@ -232,12 +232,12 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       confirmTone: "danger",
       confirmLabel: "确认修改",
       statedBrief: param.key === RATE_KEY
-        ? { impact: "全平台所有 App 和后台请求都按新上限计数，调得太低会让正常用户被拒绝。", check: "核对新值和单位（次/分钟），理由写清依据或工单号。" }
+        ? { impact: "App 和后台的普通接口按新上限计数，调得太低会让正常用户被拒绝；后台登录、支付回调、健康检查的额度跟着按比例变。", check: "核对新值和单位（次/分钟），理由写清依据或工单号。" }
         : param.key === THRESHOLD_KEY
           ? { impact: "之后提交的提现按新门槛判断要不要强审，批量放行时也按当前门槛检查；已提交的提现金额不变。", check: "核对新值和单位（USDT），理由写清依据或工单号。" }
           : { impact: `影响 ${consumerLabel(param.consumer)}。`, check: "核对新值和单位，理由写清依据。" },
       facts: <Facts>
-        <Fact k="影响范围">{param.key === RATE_KEY ? "全平台 App 和后台接口" : param.key === THRESHOLD_KEY ? "之后提交的 USDT 提现" : consumerLabel(param.consumer)}</Fact>
+        <Fact k="影响范围">{param.key === RATE_KEY ? "App 和后台接口（登录、回调、健康检查单独计）" : param.key === THRESHOLD_KEY ? "之后提交的 USDT 提现" : consumerLabel(param.consumer)}</Fact>
         <Fact k="最近变更">{timeText(param.lastChange)}</Fact>
       </Facts>,
       initialReason: original?.reason,
@@ -385,7 +385,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
           return (
             <Panel key={param.key} className="a3-param" title={name} icon={isRate ? Gauge : ShieldCheck} tone={isRate ? "role-2" : "role-1"}
               explain={<>
-                <p>{isRate ? "全平台每分钟能处理多少个请求。按接口分组计数，每分钟重新计。" : "单笔提现达到这个金额就进人工强审。和「提现参数」里的小额免审线是两回事。"}</p>
+                <p>{isRate ? "App 和后台的普通接口每分钟合计能处理多少个请求。按接口分组计数，每分钟重新计；后台登录、支付回调、健康检查各有单独的额度。" : "单笔提现达到这个金额就进人工强审。和「提现参数」里的小额免审线是两回事。"}</p>
                 <p>后端登记名「{param.name}」，参数键 {param.key}。只有超级管理员能改，不走审批。</p>
               </>}
               actions={param.writable ? <Button size="sm" loading={mutating === param.key} disabledReason={commands.find(`param:${param.key}`) ? "结果未知" : !overviewReady.current ? "正在读取" : mutating && mutating !== param.key ? "另一项正在提交" : undefined} onClick={() => paramChg(param)}>调整</Button> : <span className="rd-note">只读</span>}>
@@ -474,7 +474,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         actions={<Button icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => { void refreshOverview(); setCalendarNonce((value) => value + 1); }}>刷新</Button>} />
 
       <GRecoveryNotice title="有原操作结果未知" rows={recoveryRows}
-        explain="提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内可以按原请求重试，后端认得出是同一次提交。" />
+        explain={<><p>提交时没收到确定结果，可能已经生效。先点「查询原结果」读当前值核对。</p><p>开关、参数、业务日历、App 分享与下载：24 小时内可以按原请求重试，后端认得出是同一次提交。说明内容和开发者文档后端不防重复，只能读回核对，不能重试。</p></>} />
 
       {loadError && overview && <Notice tone="warn" title="刚才刷新没成功" action={<Button size="sm" onClick={() => void refreshOverview()}>重试</Button>}>{loadError} 下面是上次读到的值。</Notice>}
 

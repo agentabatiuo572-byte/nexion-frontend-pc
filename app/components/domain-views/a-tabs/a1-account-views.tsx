@@ -123,14 +123,15 @@ export function PermGroups({ codes, label, tone, empty = "没有权限", markRis
 
 export type A1RecoveryRow = { key: string; name: ReactNode; change: ReactNode; submittedAt?: number; tag: ReactNode; actions: ReactNode };
 
-export function unknownTag(kind: "direct" | "approval") {
-  return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
-    ? "提交时没收到确定结果，账号可能已经建好。24 小时内可以按原请求重试，后端认得出是同一次提交，不会建第二个。"
-    : "提交时没收到确定结果，可能已经建了审批单。到「操作记录与审批」核对。"}>结果未知</StatusTag>;
+/** 结果未知的说明按操作写：note 写「可能已经怎样、能不能按原请求重试」。 */
+export function unknownTag(kind: "direct" | "approval", note?: string) {
+  return <StatusTag tone="warn" icon={CircleHelp} explain={note ?? (kind === "direct"
+    ? "提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，后端认得出是同一次提交。"
+    : "提交时没收到确定结果，可能已经建了审批单。点「查询原结果」按原请求查这张单。")}>结果未知</StatusTag>;
 }
 
-export function expiredTag() {
-  return <StatusTag tone="neutral" icon={Clock3} explain="原请求超过 24 小时，不能再重试。先在账号列表核对是否已创建，不要重复创建。">已过期</StatusTag>;
+export function expiredTag(note = "原请求超过 24 小时，不能再重试，只能查询核对。") {
+  return <StatusTag tone="neutral" icon={Clock3} explain={note}>已过期</StatusTag>;
 }
 
 export function A1RecoveryNotice({ title, rows }: { title: ReactNode; rows: A1RecoveryRow[] }) {
@@ -150,6 +151,20 @@ export function A1RecoveryNotice({ title, rows }: { title: ReactNode; rows: A1Re
       </ul>
       <p className="a1-recovery-zone">提交时间为{zoneNote()}</p>
     </Notice>
+  );
+}
+
+/**
+ * 原头像的独立处理位置：账号列表读不到、编辑框打不开时也能按原请求重试准备头像。
+ * 用的是同一个头像选择件和同一条原记录（按账号编号对上），这里不另发请求。
+ */
+export function AvatarRecoveryModal({ target, onClose }: { target: string; onClose: () => void }) {
+  return (
+    <Modal title="处理原头像" icon={UserRound} onClose={onClose}
+      sub={target === "new" ? "新建账号的头像" : <>账号编号 <span data-mono>{target}</span></>}
+      footer={<Button onClick={onClose}>关闭</Button>}>
+      <AccountAvatarPicker targetId={target} name="运营账号" onChange={() => undefined} onBlocking={() => undefined} />
+    </Modal>
   );
 }
 
@@ -240,7 +255,7 @@ export function AccountDetailDrawer({ account, roles, roleCodes, materialPermiss
         <SupportAvatar name={operatorDisplayName(account)} path={account.avatarAssetId ? `/api/admin/platform/accounts/${account.id}/avatar` : undefined} version={account.avatarVersion ?? undefined} size={56} />
         <JudgmentPoints title="账号要点" rows={[
           { label: "角色", value: roleName(roles, account.role) },
-          { label: "两步验证", value: account.tfa ? "已绑定" : "未绑定", state: account.tfa ? undefined : "warn", reason: account.tfa ? undefined : "下次登录先绑定，绑定前不能正常使用后台" },
+          { label: "两步验证", value: account.tfa ? "已绑定" : "未绑定", state: account.tfa ? undefined : "warn", reason: account.tfa ? undefined : account.username === "superadmin" ? "临时绕过开关打开时这个账号可免验证登录，发布前必须关闭" : "下次登录先绑定，绑定前不能正常使用后台" },
           { label: "状态", value: enabled ? "启用" : "已停用", state: enabled ? undefined : "neutral" },
           { label: "密码", value: credentialStatusText(account.credentialDeliveryStatus) },
           { label: "最近登录", value: `${minuteText(account.lastLogin)}${minuteText(account.lastLogin) === "—" ? "" : `（${businessZone().label}）`}` },

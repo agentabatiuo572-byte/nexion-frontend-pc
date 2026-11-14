@@ -8,8 +8,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { CircleOff, Download, EyeOff, Globe, Home, Languages, Link2, Share2, Smartphone, type LucideIcon } from "lucide-react";
-import { BlockState, Button, Cell, Check, Explain, KeepText, Fact, Facts, Field, Input, Modal, Notice, Panel, Segments, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr } from "@/app/components/rd";
+import { CircleOff, Download, Globe, Home, Languages, Link2, Share2, Smartphone, type LucideIcon } from "lucide-react";
+import { BlockState, Button, Cell, Check, DiffList, Explain, Fold, KeepText, Fact, Facts, Field, Input, Modal, Notice, Panel, Segments, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, type DiffRow } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { type A3RecoveryProps } from "@/lib/admin/a3-mutations";
@@ -26,15 +26,44 @@ import {
 
 const CHANNEL_NAME: Record<string, string> = { zalo: "Zalo", telegram: "Telegram", whatsapp: "WhatsApp", messenger: "Messenger", sms: "短信", x: "X", copy: "复制链接", poster: "分享海报", system: "系统分享" };
 const INTENT_NAME: Record<string, string> = { scheme: "打开应用", web: "打开链接", copy: "复制链接", poster: "生成海报", system: "系统分享" };
-/** App visibleChannels：scheme 类不显示；system 只有 H5 支持系统分享时显示；复制和海报是面板自带的。 */
+/** App visibleChannels：启用的 scheme 类照常显示，点了复制文案并引导去该 App 粘贴；system 只有 H5 支持系统分享时显示；复制和海报是面板自带的。 */
 const IN_APP: Record<string, { text: string; tone: "ok" | "neutral" | "warn"; icon?: LucideIcon; explain: string }> = {
   web: { text: "显示", tone: "ok", explain: "启用后出现在 App 分享面板里，点了用链接模板打开对应网页或短信。" },
-  scheme: { text: "App 不显示", tone: "warn", icon: EyeOff, explain: "打开应用类渠道 App 目前不显示，启用了也看不到。" },
+  scheme: { text: "显示", tone: "ok", explain: "启用后出现在 App 分享面板里。点了复制邀请文案，提示用户去这个 App 粘贴；不计入分享次数。" },
   system: { text: "仅 H5", tone: "neutral", icon: Globe, explain: "只在 H5 并且浏览器支持系统分享时显示，原生 App 里不显示。" },
   copy: { text: "面板自带", tone: "neutral", icon: Smartphone, explain: "App 分享面板固定有复制链接，这里关掉也还在。" },
   poster: { text: "面板自带", tone: "neutral", icon: Smartphone, explain: "App 分享面板固定有分享海报，这里关掉也还在。" },
 };
 const SAMPLE_CODE = "AB12CD";
+
+/** 版本冲突后：你留着的修改和刚读到的最新值逐项对照（现在 = 最新值，改后 = 你填的）。 */
+function draftVsLatest(draft: PlatformExperienceConfig, latest: PlatformExperienceConfig): DiffRow[] {
+  const rows: DiffRow[] = [];
+  const add = (key: string, label: string, before: string | null | undefined, after: string | null | undefined) => {
+    if ((before ?? "") !== (after ?? "")) rows.push({ key, label, before: before || "空", after: after || "空" });
+  };
+  const on = (value: boolean) => value ? "启用" : "不启用";
+  add("baseUrl", "分享基础链接", latest.baseUrl, draft.baseUrl);
+  for (const key of [...new Set([...latest.channels, ...draft.channels].map((channel) => channel.key))]) {
+    const was = latest.channels.find((channel) => channel.key === key), mine = draft.channels.find((channel) => channel.key === key);
+    const name = CHANNEL_NAME[key] ?? key;
+    if (!was || !mine) { add(`channel-${key}`, name, was ? "有这个渠道" : "没有", mine ? "有这个渠道" : "没有"); continue; }
+    add(`channel-${key}-on`, `${name} · 启用`, on(was.enabled), on(mine.enabled));
+    add(`channel-${key}-text`, `${name} · 文案模板`, was.textTemplate, mine.textTemplate);
+    add(`channel-${key}-url`, `${name} · 链接模板`, was.urlTemplate, mine.urlTemplate);
+  }
+  const source = (value: string) => value === "unavailable" ? "暂不提供" : "官方渠道";
+  add("source", "官方下载 · 来源", source(latest.appDownload.source), source(draft.appDownload.source));
+  add("officialUrl", "官方安装页", latest.appDownload.officialUrl, draft.appDownload.officialUrl);
+  add("version", "安装包版本", latest.appDownload.version, draft.appDownload.version);
+  add("iosUrl", "iOS 下载链接", latest.appDownload.iosUrl, draft.appDownload.iosUrl);
+  add("androidUrl", "Android 下载链接", latest.appDownload.androidUrl, draft.appDownload.androidUrl);
+  add("notesZh", "更新说明（中文）", latest.appDownload.releaseNotes.zh, draft.appDownload.releaseNotes.zh);
+  add("notesEn", "更新说明（英文）", latest.appDownload.releaseNotes.en, draft.appDownload.releaseNotes.en);
+  const langs = (value: PlatformExperienceConfig["interfaceLanguages"]) => value ? INTERFACE_LANGUAGES.filter((language) => language.base || value.includes(language.code)).map((language) => language.zhName).join("、") : "只能查看";
+  add("languages", "界面语言", langs(latest.interfaceLanguages), langs(draft.interfaceLanguages));
+  return rows;
+}
 
 /** App channelIntentUrl 的拼法：String.replace 只换第一个。 */
 function assemble(textTemplate: string | null | undefined, urlTemplate: string | null | undefined, link: string) {
@@ -133,13 +162,14 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
   const unavailable = config.appDownload.source === "unavailable";
   const fieldsLocked = !canWrite || loading || saving || Boolean(original) || !readReady;
   const link = config.baseUrl ? `${config.baseUrl}${SAMPLE_CODE}` : "";
-  const webChannels = config.channels.filter((channel) => channel.intentType === "web");
+  const webChannels = config.channels.filter((channel) => channel.intentType === "web" || channel.intentType === "scheme");
   const previewChannel = webChannels.find((channel) => channel.key === previewKey) ?? webChannels.find((channel) => channel.enabled) ?? webChannels[0];
   const assembled = previewChannel && link ? assemble(previewChannel.textTemplate, previewChannel.urlTemplate, link) : null;
-  const visibleInApp = config.channels.filter((channel) => channel.enabled && channel.intentType === "web");
+  const visibleInApp = config.channels.filter((channel) => channel.enabled && (channel.intentType === "web" || channel.intentType === "scheme"));
   const languages = config.interfaceLanguages;
   const onLanguages = INTERFACE_LANGUAGES.filter((language) => language.base || !languages || languages.includes(language.code));
   const h3 = reach("/growth/quest", "growth_h3_read");
+  const conflictRows = conflictDraft.current && baseline ? draftVsLatest(config, baseline) : [];
 
   const preview = (title: string, children: ReactNode) => <aside className="a3-preview" aria-label={`App 上的样子：${title}`}>
     <span className="a3-preview-label"><Smartphone size={14} aria-hidden />App 上的样子</span>
@@ -155,7 +185,13 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
       {canWrite && <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在提交" : undefined} onClick={() => { if (original || !readReady || !canWrite) return; if (!conflictDraft.current) setError(null); setConfirmOpen(true); }}>保存…</Button>}
     </div>
     {success && <Notice tone="ok">{success}</Notice>}
-    {error && !confirmOpen && <Notice tone="danger" title="没有保存">{error}</Notice>}
+    {conflictDraft.current && !confirmOpen ? <Notice tone="warn" title="别人刚保存过这组配置，你的修改没有保存"
+      action={<Button size="sm" loading={loading} disabled={saving} onClick={() => void refresh()}>重新读取</Button>}>
+      {readReady && baseline
+        ? <>已读到最新版本 v{baseline.version}，你填的都还在。{conflictRows.length ? `和最新值不同的有 ${conflictRows.length} 处（左边最新、右边你的），核对后点上方「保存…」重新提交：` : "你填的和最新值一样，不用再保存。"}{conflictRows.length > 0 && <DiffList rows={conflictRows} />}</>
+        : <>最新值没读到，你填的都还在；先重新读取再核对。{error ? <span className="rd-note"> {error}</span> : null}</>}
+    </Notice>
+      : error && !confirmOpen && <Notice tone="danger" title="没有保存">{error}</Notice>}
 
     <Panel title="分享链接和渠道" icon={Share2} tone="role-2" sub={`${config.channels.length} 个渠道 · 启用 ${config.channels.filter((channel) => channel.enabled).length} 个`}
       explain="用户在 App 里点「邀请」「分享」时用这里的设置。外部渠道能不能打开还要看用户手机上有没有装对应应用。" >
@@ -170,13 +206,13 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
             <thead><tr><Th>渠道</Th><Th>启用</Th><Th>在 App 里</Th><Th>文案模板</Th><Th>链接模板</Th></tr></thead>
             <tbody>
               {config.channels.map((channel, index) => {
-                const inApp = !channel.enabled && (channel.intentType === "web" || channel.intentType === "system") ? { text: "没启用", tone: "neutral" as const, icon: CircleOff, explain: "没启用的渠道不出现在 App 分享面板里。" } : IN_APP[channel.intentType];
+                const inApp = !channel.enabled && (channel.intentType === "web" || channel.intentType === "scheme" || channel.intentType === "system") ? { text: "没启用", tone: "neutral" as const, icon: CircleOff, explain: "没启用的渠道不出现在 App 分享面板里。" } : IN_APP[channel.intentType];
                 const name = CHANNEL_NAME[channel.key] ?? channel.key;
                 return <Tr key={channel.key} selected={previewChannel?.key === channel.key}>
                   <Td><Cell main={name} sub={INTENT_NAME[channel.intentType] ?? "未知方式"} /></Td>
                   <Td><Check label={<span className="rd-sr-only">{name} 启用</span>} aria-label={`${channel.key} 启用`} checked={channel.enabled} disabled={fieldsLocked} onChange={(event) => patchChannel(index, { enabled: event.target.checked })} /></Td>
                   <Td>{inApp ? <StatusTag tone={inApp.tone} icon={inApp.icon} explain={inApp.explain}>{inApp.text}</StatusTag> : "—"}</Td>
-                  <Td><Input aria-label={`${channel.key} 文案模板`} placeholder="可以用 {link}" value={channel.textTemplate ?? ""} disabled={fieldsLocked} onChange={(event) => patchChannel(index, { textTemplate: event.target.value })} onFocus={() => channel.intentType === "web" && setPreviewKey(channel.key)} /></Td>
+                  <Td><Input aria-label={`${channel.key} 文案模板`} placeholder="可以用 {link}" value={channel.textTemplate ?? ""} disabled={fieldsLocked} onChange={(event) => patchChannel(index, { textTemplate: event.target.value })} onFocus={() => (channel.intentType === "web" || channel.intentType === "scheme") && setPreviewKey(channel.key)} /></Td>
                   <Td>{channel.intentType === "web" || channel.urlTemplate
                     ? <Input aria-label={`${channel.key} 链接模板`} placeholder="https://…{link} 或 {text}" value={channel.urlTemplate ?? ""} disabled={fieldsLocked} onChange={(event) => patchChannel(index, { urlTemplate: event.target.value })} onFocus={() => channel.intentType === "web" && setPreviewKey(channel.key)} />
                     : <span className="rd-note">不用填<Explain label="为什么不用填" content="只有打开链接类渠道用链接模板；其他类型填了后端会拒绝保存。" /></span>}</Td>
@@ -194,7 +230,9 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
             <Segments label="看哪个渠道" value={previewChannel?.key ?? ""} onChange={(value) => setPreviewKey(String(value))} items={webChannels.map((channel) => ({ value: channel.key, label: CHANNEL_NAME[channel.key] ?? channel.key }))} />
             {assembled ? <dl className="a3-preview-rows">
               <div><dt>发出去的文案</dt><dd className="a3-preview-text">{assembled.text}</dd></div>
-              <div><dt>打开的网址</dt><dd className="a3-preview-link">{assembled.url || "—"}</dd></div>
+              {previewChannel?.intentType === "scheme"
+                ? <div><dt>点了之后</dt><dd>复制上面的文案，提示去 {CHANNEL_NAME[previewChannel.key] ?? previewChannel.key} 粘贴</dd></div>
+                : <div><dt>打开的网址</dt><dd className="a3-preview-link">{assembled.url || "—"}</dd></div>}
             </dl> : <p className="rd-note">填了分享基础链接才拼得出来</p>}
           </>}
           <p className="a3-preview-note">{SAMPLE_CODE} 是示例邀请码，每个用户换成自己的。<Explain label="文案模板什么时候不用" content="推荐奖励关着时，App 不用这里的文案模板，改用 App 自带的一句话。" /></p>
@@ -288,6 +326,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
         <Fact k="一起保存">分享、下载、语言整组；首页开关不在这里</Fact>
         <Fact k="已有订单和奖励">不重算</Fact>
       </Facts>
+      {conflictDraft.current && conflictRows.length > 0 && <Fold inset title="和最新版本不同的地方" summary={`${conflictRows.length} 处 · 保存后按你填的覆盖`}><DiffList rows={conflictRows} /></Fold>}
       <Field label="保存理由" required help="8–200 字">
         {(control) => <Textarea {...control} aria-label="体验配置保存理由" value={original?.reason ?? reason} disabled={Boolean(original) || saving} maxLength={200} rows={2} count={`${reason.trim().length}/200`} placeholder="例如：上线 Telegram 分享，工单号" onChange={(event) => setReason(event.target.value)} />}
       </Field>

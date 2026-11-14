@@ -28,6 +28,7 @@ import {
   fetchH3DeadOutboxRedrivePreview,
   pendingA4RegistryProposal,
   recoverA4RegistryProposal,
+  releaseExpiredA4RegistryProposal,
   registerA4DomainExtension,
   registerA4Schema,
   type A4DomainExtensionBatch,
@@ -90,8 +91,9 @@ const redriveStatusText = (value: string) => REDRIVE_STATUS[value] ?? "状态未
 const lifecycleText = (value: string) => LIFECYCLE_TEXT[value as A4Lifecycle] ?? "未知状态";
 /** 长事件名只在「.」「_」后面折行，不断在单词中间。 */
 const breakable = (name: string) => name.split(/(?<=[._])/).map((part, index) => <span key={index}>{index > 0 && <wbr />}{part}</span>);
-/** 重新排队预览的失败摘要：后端只给受控原因码，常见的一个翻成人话，原码跟在后面。 */
-const redriveErrorText = (code: string | null | undefined) => !code ? "—" : code === "OUTBOX_DELIVERY_FAILED" ? <>投递失败 <span className="a4-dim" data-mono>{code}</span></> : <span data-mono>{code}</span>;
+/** 重新排队预览的失败摘要：后端只给受控原因码，翻成人话，原码收进问号（决定表「全站-标识外露」）。 */
+const redriveErrorText = (code: string | null | undefined) => !code ? "—"
+  : <>{code === "OUTBOX_DELIVERY_FAILED" ? "投递失败" : "处理失败"}<Explain label="失败原因码" content={<span data-mono>{code}</span>} /></>;
 const pageName = (code: string) => ALL_L2.find((item) => item.id === code)?.name ?? (code.length === 1 ? CONSOLE_NAV.find((domain) => domain.code === code)?.name : undefined);
 /** 通用字段里服务端说明说得太满的两项，按后端事实补一句（BF27、BF35）。 */
 const COMMON_FIELD_NOTE: Record<string, string> = {
@@ -305,6 +307,17 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
     return true;
   };
 
+  /** 决定表「R1-提案过期」：过期并且按原请求明确查不到审批单，确认后只解除这条记录。 */
+  const releaseExpiredRegistry = (commandKey: string) => ctx.openConfirm({
+    briefKind: "record", action: "解除原操作记录", title: "解除原登记记录", reason: false,
+    detail: "原申请已超过 24 小时。确认后先按原请求再查一次：明确没有这张审批单才解除，不会执行原登记；查到了就不解除，请点「查询原结果」。",
+    run: async () => {
+      await releaseExpiredA4RegistryProposal(currentRegistryActor(false).adminId, commandKey);
+      setRegistryRevision(value => value + 1);
+      await refreshOverview(true);
+    },
+  });
+
   /* 后端实时态 */
   const A4_STATS = overview?.stats ?? { todayEvents: "0", todayAuditEvents: 0, registeredDomains: 0, pendingDomains: 0, batchDone: 0, batchTotal: 0, schemaVersion: "—" };
   const EVENT_FAMILIES = overview?.eventFamilies ?? [];
@@ -490,7 +503,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       effect: effectNow,
       confirmLabel: "确认调整",
       statedBrief: {
-        impact: "只影响之后的浏览、会话类事件：调低后报表这两类数字按比例变少，不回补；资金、风控、转化类始终全记。",
+        impact: "只影响之后的浏览、会话类事件：调低后这两类记下的条数大约按比例变少，不回补；资金、风控、转化类始终全记。",
         check: "提交时后端核对 0–100 的整数；资金、风控、转化必须保持 100%。",
       },
       detail: (
@@ -734,18 +747,18 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       confirmTone: "danger",
       confirmLabel: "确认清理",
       statedBrief: {
-        impact: "直接执行，删了不能恢复；已终止的任务事件删掉后不能再重新排队。",
+        impact: "直接执行，删了不能恢复。",
         check: "执行时后端取当前的留存月数并加锁；已有清理在进行时，这次不删任何数据。",
       },
       facts: <Facts>
         <Fact k="会删掉" tone="danger">{reviewedCutoff ? `约 ${reviewedCutoff} 之前的记录` : "留存期以前的记录"}</Fact>
-        <Fact k="怎么算">执行那一刻往前推 {reviewedMonths || "—"}</Fact>
-        <Fact k="删哪些">已发出、已结束和已终止（死信）的事件发送记录；用户行为记录只按时间删</Fact>
-        <Fact k="不会删">还在等发送、发送失败等重试的事件；资金账目</Fact>
+        <Fact k="怎么算">执行那一刻按当时的留存期往前推，现在是 {reviewedMonths || "—"}</Fact>
+        <Fact k="删哪些">用户行为事件里已发出、已结束和已终止（死信）的发送记录；用户行为记录只按时间删</Fact>
+        <Fact k="不会删">还在等发送、发送失败等重试的事件；任务事件；资金账目</Fact>
         <Fact k="一次最多">每张表 2000 条，剩下的下次再清</Fact>
         <Fact k="删多少条">执行后显示在「到期记录清理」</Fact>
       </Facts>,
-      detail: <>只清理超过保留期的事件记录：已发出、已结束和已终止的事件发送记录，以及到期的用户行为记录。还在等待发送或发送失败的事件，以及资金账目都不受影响。</>,
+      detail: <>只删超过留存期的用户行为事件记录。</>,
       amplifies: false,
       reasonMin: a2ReasonMin,
       reasonMax: 200,
@@ -966,11 +979,13 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       change: <span data-mono>{pendingRegistry.input.obj}</span>,
       submittedAt: pendingRegistry.createdAt,
       tag: expired
-        ? <StatusTag tone="neutral" icon={Hourglass} explain="原申请超过 24 小时，不能再重试，只能查询原审批单。查不到也不能据此认定没提交。">已过期</StatusTag>
+        ? <StatusTag tone="neutral" icon={Hourglass} explain="原申请超过 24 小时，不能再重试，只能查询原审批单。按原请求明确查不到这张单时，可以解除这条记录。">已过期</StatusTag>
         : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会建第二张。">结果未知</StatusTag>,
       actions: <>
         <Button size="sm" onClick={() => openRegistryRecovery()}>查询原结果</Button>
-        <Button size="sm" disabledReason={expired ? "原申请超过 24 小时，不能再重试，只能查询" : !canWrite ? "你只有查看权限" : undefined} onClick={() => openRegistryRecovery(true)}>按原请求重试</Button>
+        {expired
+          ? <Button size="sm" onClick={() => releaseExpiredRegistry(pendingRegistry.commandKey)}>解除原操作记录</Button>
+          : <Button size="sm" disabledReason={!canWrite ? "你只有查看权限" : undefined} onClick={() => openRegistryRecovery(true)}>按原请求重试</Button>}
       </>,
     });
   }
@@ -1016,19 +1031,19 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       ? <><span data-mono>{record.original.snapshot.eventId}</span> · 理由「{record.reason}」</> : record.change,
     submittedAt: record.createdAt,
     tag: isRetryExpired(record)
-      ? <StatusTag tone="neutral" icon={Hourglass}>已过期</StatusTag>
+      ? <StatusTag tone="neutral" icon={Hourglass} explain="原操作超过 24 小时，不能再重试，只能查询当前数据核对。">已过期</StatusTag>
       : <StatusTag tone="warn" icon={CircleHelp} explain={record.original.kind === "redrive"
-        ? "提交时没收到成功结果，可能已经重新排队。先查询原结果：重新读这条事件的两层状态。按原请求重试时理由要和原来一样，后端才认得出是同一次，不会再排一次。这条提醒只保存在这个页面里，刷新后就没有了。" : undefined}>结果未知</StatusTag>,
+        ? "提交时没收到成功结果，可能已经重新排队。先查询原结果：重新读这条事件的两层状态；按原请求重试会带原来的理由，后端认得出是同一次，不会再排一次。" : undefined}>结果未知</StatusTag>,
     actions: <>
       <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
-      <Button size="sm" disabledReason={isRetryExpired(record) ? "原申请超过 24 小时，不能再重试，只能查询"
+      <Button size="sm" disabledReason={isRetryExpired(record) ? "原操作超过 24 小时，不能再重试，只能查询"
         : !(record.original.kind === "retention" ? canRunRetention : record.original.kind === "redrive" ? canRedriveH3Dead : canWrite) ? "你只有查看权限" : undefined}
         onClick={() => recoverOriginal(record)}>按原请求重试</Button>
     </>,
   })));
   const recoveryNotice = (
     <A4RecoveryNotice title={`有 ${recoveryRows.length} 项原操作要处理`} rows={recoveryRows}
-      explain={<><p>提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内可以按原请求重试，内容和理由都不变，后端认得出是同一次提交，不会重复执行。</p><p>登记的原申请保存在这个浏览器标签页里，拿到审批单后这条会清掉。参数、上线进度和清理不保存原请求，没收到结果时请到「操作记录与审批」核对。</p></>} />
+      explain={<><p>提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内可以按原请求重试，内容和理由都不变，后端认得出是同一次提交，不会重复执行。</p><p>原请求保存在这个浏览器标签页里，刷新后还在，关掉标签页就没有了。登记按原请求查到审批单后清掉；参数、上线进度、清理和重新排队只读当前数据核对，按原请求重试拿到结果后才清掉。</p></>} />
   );
 
   const ticketNotice = currentRegistryTicket && (() => {
@@ -1036,7 +1051,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     const tone = t.status === "approved" ? "ok" : t.status === "rejected" ? "danger" : t.status === "pending" ? "warn" : "done";
     const text = {
       pending: "已提交，等另一位超级管理员批准；批准前事件目录不变。",
-      approved: "已批准，事件目录已重新读取。",
+      approved: loading ? "已批准，正在重新读取事件目录。" : loadError ? "已批准，但事件目录没有重新读到，点「刷新」重读。" : "已批准。没看到新登记的内容时点「刷新」。",
       rejected: "被驳回，事件目录没有变化。",
       withdrawn: "已撤回，事件目录没有变化。",
       expired: "已过期，事件目录没有变化。",
@@ -1330,7 +1345,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   const paramMeta: Record<string, { what: string; when: string; effect: string; open: () => void }> = {
     day0: { what: "注册后多少秒内拿到首笔收益，算作 Day0 接入", when: "确认后立即生效", effect: "关键指标 #1 和用户转化分析每次查询都按现在的值重算，改了以后历史时段的结果也会变；原始事件不改。30–600 秒。", open: () => adjDay0() },
     event_retention: { what: "事件记录保留多少个月", when: "确认后立即生效，不会马上删数据", effect: "下一次清理时按新的月数算：改短会让更多旧记录被删，以前记下的也一样；改长只会让以后少删，已经删掉的找不回来。13–60 个月。", open: () => adjEventRetention() },
-    sampling: { what: "浏览和会话类事件抽多少比例记下来", when: "确认后立即生效，只管之后新进来的事件", effect: "调低后报表里浏览、会话类的数字按比例变少，调高也补不回以前没记的；资金、风控、转化类始终 100%。0–100%。", open: () => adjSampling() },
+    sampling: { what: "浏览和会话类事件抽多少比例记下来", when: "确认后立即生效，只管之后新进来的事件", effect: "调低后浏览、会话类记下的条数大约按比例变少，调高也补不回以前没记的；资金、风控、转化类始终 100%。0–100%。", open: () => adjSampling() },
   };
   const paramsTab = (
     <>
@@ -1534,7 +1549,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               <Fact k="产生模块">{moduleText(detailSchema.ownerDomain) ? <>{moduleText(detailSchema.ownerDomain)} <span className="a4-dim" data-mono>{detailSchema.ownerDomain}</span></> : <span data-mono>{detailSchema.ownerDomain}</span>}</Fact>
               <Fact k="发送方">{PRODUCER_TEXT[detailSchema.producer] ?? detailSchema.producer}{!PRODUCER_TEXT[detailSchema.producer] && <> <span className="a4-dim">（登记时写的说明）</span></>}</Fact>
               <Fact k="谁在用">{consumersOf(detailSchema.consumers, true)}</Fact>
-              <Fact k="由服务器记录">{detailSchema.serverAuthoritative ? "是" : "否，由 App 上报"}</Fact>
+              <Fact k="由服务器记录">{detailSchema.serverAuthoritative ? "是" : "否"}</Fact>
               <Fact k="采集比例">{detailSchema.samplingPolicy}</Fact>
               <Fact k="版本">事件 {detailSchema.version} · 上线进度 v{detailSchema.lifecycleVersion}</Fact>
             </Facts>

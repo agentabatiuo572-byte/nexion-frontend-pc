@@ -19,14 +19,14 @@ export const LIFECYCLE_TEXT: Record<A4Lifecycle, string> = { new: "新建", pend
 export const LIFECYCLE_NOW: Record<A4Lifecycle, string> = {
   new: "还不记录、也不投递。",
   pending_publish: "仍然不记录、也不投递，只是标成准备发布。",
-  gray: "服务器按用户范围抽 10% 记录和投递；App 发来的行为事件这一步仍不放行。",
+  gray: "服务器发的事件按归属对象（如订单、用户）抽约 10% 放行；App 发来的行为事件这一步仍不放行。",
   full: "所有来源都按事件规则记录和投递。",
   disabled: "不再记录、也不再投递；已经记下的旧事件不删。",
 };
 /** 推进到这一步之后会怎样，确认框和详情抽屉共用。 */
 export const LIFECYCLE_AFTER: Record<Exclude<A4Lifecycle, "new">, string> = {
   pending_publish: "仍然不记录、也不投递，只是标成准备发布；下一步才开始分批开放。",
-  gray: "服务器按用户范围抽 10% 记录和投递；App 发来的行为事件这一步仍不放行。",
+  gray: "服务器发的事件按归属对象（如订单、用户）抽约 10% 放行；App 发来的行为事件这一步仍不放行。",
   full: "所有来源都按事件规则记录和投递，字段、来源和采样的检查照常。",
   disabled: "之后不再记录也不再投递，已排队的也可能被拦下；旧事件不删，不能再开放。",
 };
@@ -144,7 +144,7 @@ export const PRODUCER_TEXT: Record<string, string> = { server: "服务器", clie
  */
 export const MODULE_TEXT: Record<string, string> = {
   admin: "后台操作", app: "App 页面行为", auth: "注册登录", checkout: "下单支付", commission: "团队奖励", compute: "算力",
-  content: "内容", daily: "签到", device: "设备", disclosure: "风险披露", earnings: "收益", event: "用户行为事件",
+  content: "内容", daily: "签到", device: "设备", disclosure: "风险披露", earnings: "收益", event: "活动中心",
   exchange: "兑换", genesis: "创世节点", leadership_pool: "奖励池", learn: "课程", market: "市场", milestone: "里程碑",
   nova: "Nova 消息推送", notification: "通知", onboarding: "新手引导", order: "订单", phase: "运营阶段", quest: "用户任务",
   referral: "邀请", repurchase: "锁定计划", risk: "风控", staking: "质押", store: "商城", trial: "免费试用",
