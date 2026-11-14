@@ -270,7 +270,7 @@
 .a7-page .a7-side { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; position: sticky; top: 16px; }
 .a7-page .a7-detail-col { min-width: 0; scroll-margin-top: 16px; }
 .a7-page .a7-muted { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
-.a7-page .a7-code { color: var(--rd-text-3); font-family: var(--rd-font-mono); font-size: 12px; }
+.a7-page .a7-code { color: var(--rd-text-3); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); }
 .a7-page .a7-tree { display: flex; flex-direction: column; }
 .a7-page .a7-node[data-depth="0"] + .a7-node[data-depth="0"] { border-top: 1px solid var(--rd-line); }
 .a7-page .a7-row { display: flex; align-items: center; gap: 4px; min-height: 40px; border-radius: var(--rd-radius-control); }
@@ -287,10 +287,10 @@
 .a7-page .a7-name[data-root] { font-weight: var(--rd-weight-semibold); }
 .a7-page .a7-row[data-stopped] .a7-name { color: var(--rd-text-3); }
 .a7-page .a7-pick > .a7-code { flex: none; }
-.a7-page .a7-route { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text-2); font-family: var(--rd-font-mono); font-size: 12px; }
+.a7-page .a7-route { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text-2); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); }
 .a7-page .a7-row-tags { display: inline-flex; align-items: center; gap: var(--rd-space-2); margin-left: auto; flex: none; }
-.a7-page .a7-count { color: var(--rd-text-3); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.a7-page .a7-sort { min-width: 44px; color: var(--rd-text-3); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+.a7-page .a7-count { color: var(--rd-text-3); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.a7-page .a7-sort { min-width: 44px; color: var(--rd-text-3); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; text-align: right; }
 .a7-page .a7-tags { display: inline-flex; flex-wrap: wrap; gap: var(--rd-space-2); }
 .a7-page .a7-detail { display: flex; flex-direction: column; gap: var(--rd-space-4); }
 .a7-page .a7-navline { display: flex; align-items: center; gap: var(--rd-space-2); padding: 10px var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-warn-bg); color: var(--rd-text); }
@@ -318,4 +318,4 @@
 .a7-page .a7-preview-hidden { display: flex; align-items: center; gap: 6px; margin-top: var(--rd-space-3); }
 .adom .a7-form { display: flex; flex-direction: column; gap: var(--rd-space-4); }
 .adom .a7-notes { display: flex; flex-direction: column; gap: var(--rd-space-3); }
-.adom .a7-code { color: var(--rd-text-3); font-family: var(--rd-font-mono); font-size: 12px; }
+.adom .a7-code { color: var(--rd-text-3); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); }
