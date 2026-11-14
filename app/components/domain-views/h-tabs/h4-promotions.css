@@ -82,12 +82,12 @@
 .h4-page .h4-reward-entry-sub { color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 
 /* 政策页签 */
-.h4-page .h4-policy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-.h4-page .h4-policy { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 14px 16px; text-align: left; border-radius: var(--rd-radius-tile-sm); border: 1px solid var(--rd-line); background: var(--rd-panel-inner); color: var(--rd-text); font: inherit; cursor: pointer; min-width: 0; }
-.h4-page .h4-policy:hover { border-color: var(--rd-line-strong); }
-.h4-page .h4-policy-kind { font-weight: var(--rd-weight-medium); }
-.h4-page .h4-policy-version { color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
-.h4-page .h4-policy-sub, .h4-page .h4-policy-id { grid-column: 1 / -1; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.h4-policy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.h4-policy { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 14px 16px; text-align: left; border-radius: var(--rd-radius-tile-sm); border: 1px solid var(--rd-line); background: var(--rd-panel-inner); color: var(--rd-text); font: inherit; cursor: pointer; min-width: 0; }
+.h4-policy:hover { border-color: var(--rd-line-strong); }
+.h4-policy-kind { font-weight: var(--rd-weight-medium); }
+.h4-policy-version { color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
+.h4-policy-sub, .h4-policy-id { grid-column: 1 / -1; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 
 /* 活动详情 */
 .h4-page .h4-identity { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 16px 24px; align-items: start; padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x); background: var(--rd-panel); border-radius: var(--rd-radius-panel); }
@@ -202,3 +202,10 @@
 :is(.h4-page, .h4-dialog-body) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(.rd-input):not(.h4-datetime-validation), select:not(.rd-input), textarea:not(.rd-input)):not(.h4-legacy *):not(.h4-datetime-dialog *) { width: 100%; height: var(--rd-control-h); padding: 0 12px; border: 0; border-radius: var(--rd-radius-control); background: var(--rd-control); color: var(--rd-text); font: inherit; font-size: 14px; }
 :is(.h4-page, .h4-dialog-body) textarea:not(.rd-input):not(.h4-legacy *) { height: auto; min-height: 72px; padding: 8px 12px; }
 .h4-page .rd-panel .rd-segbar-wrap + .rd-facts { margin-top: 12px; }
+.h4-dialog-foot .h4-row { justify-content: flex-end; flex: 1 1 auto; }
+.h4-prose { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.h4-prose dt { color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.h4-prose dd { margin: 2px 0 0; }
+.h4-attempts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.h4-attempts li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-items: center; }
+.h4-attempt-id { grid-column: 1 / -1; display: flex; gap: 6px; min-width: 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
