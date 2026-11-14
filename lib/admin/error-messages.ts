@@ -82,8 +82,6 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   E3_CONFIG_KEY_RETIRED: "这项设备规则已退役，不能修改；请重新读取当前规则。",
   E3_CONFIG_VALUES_REQUIRED: "成组修改缺少参数，本次没有执行；请重新打开整组修改。",
   E3_VALUE_UNCHANGED: "这些规则和当前值相同，没有执行修改；请重新读取后核对。",
-  A2_PROPOSAL_KEY_INVALID: "原申请的命令号无效，请保留原记录并联系值班人员核对。",
-  A2_PROPOSAL_RESULT_AMBIGUOUS: "原命令号关联的审批单无法唯一确认，请保留原记录并联系值班人员核对。",
   "Unsupported E3 config key": "这项设备规则不受支持，请重新读取当前规则。",
   "eligibility config is invalid": "置换资格不在允许的六个选项中，请重新选择。",
   "boolean config is invalid": "开关值无效，请重新选择开或关。",
