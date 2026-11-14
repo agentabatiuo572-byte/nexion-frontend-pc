@@ -1,7 +1,7 @@
 "use client";
 import { H4DateTimeField } from './h4-date-time-field';
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Catalog, ExportJob, Metrics, Promotion } from '@/lib/admin/promotion-types';
 import { promotionRead, promotionVersions } from '@/lib/admin/promotion-client';
 import { dateInput, utcInput } from '@/lib/admin/promotion-form';
@@ -10,11 +10,13 @@ import { Boxes, Filter, Gift, Receipt, Scale } from 'lucide-react';
 import { BarList, BlockState, Panel, SegmentBar, StatusTag } from '@/app/components/rd';
 import { Amount, amountText } from './h4-promotion-board';
 const num = (v: string | number | null | undefined) => { const n = Number(v); return v === null || v === undefined || !Number.isFinite(n) || n < 0 ? 0 : n; };
-export default function PromotionMetrics({ activity, catalog, can, onBack }: {
+export default function PromotionMetrics({ activity, catalog, can, onBack, recoveredExportId, onRecoveredExportRead }: {
     activity: Promotion;
     catalog: Catalog;
     can: (v: string) => boolean;
     onBack: () => void;
+    recoveredExportId?: string;
+    onRecoveredExportRead?: () => void;
 }) {
     const [optionsOpen,setOptionsOpen]=useState(false),[rewardsOpen,setRewardsOpen]=useState(false);
     const failedRead = useRef<{target: string; retry: () => void} | null>(null);
@@ -60,6 +62,11 @@ export default function PromotionMetrics({ activity, catalog, can, onBack }: {
     finally {
         setJobBusy(false);
     } };
+    useEffect(() => {
+        if (!recoveredExportId) return;
+        void exportRead(recoveredExportId).catch(() => undefined);
+        onRecoveredExportRead?.();
+    }, [recoveredExportId]);
     const readError=error??failedQuery.current?.error;
     const recovery=error?failedRead.current:failedQuery.current?{target:'活动效果查询',retry:failedQuery.current.retry}:null;
     const failure = !!readError&&<ReadError target={recovery?.target || "统计时段"} error={readError} retryLabel={recovery?.target === '原导出任务' ? "重查原任务" : recovery ? "重试" : "继续修改"} retry={()=>{if(recovery)recovery.retry();else setError(null);}}/>;
