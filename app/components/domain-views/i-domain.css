@@ -68,12 +68,125 @@
 .idom .nv-leg { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-3); }
 .idom .nv-leg .d { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
 
-/* ============================ I3 通知 Campaign ============================ */
-.idom .nc-pr { font-family: var(--mono); font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 5px; letter-spacing: .02em; white-space: nowrap; }
-.idom .nc-pr.critical { background: var(--danger-soft); color: var(--danger); }
-.idom .nc-pr.high { background: var(--warning-soft); color: var(--warning); }
-.idom .nc-pr.normal { background: var(--surface-3); color: var(--ink-3); }
-.idom .nc-pr.low { background: var(--surface-3); color: var(--ink-4); }
+/* ============================ I3 通知活动（.i3-page 一段：活动卡、排期时间线、App 通知预览、保留上限卡、填写抽屉、详情） ============================ */
+.i3-page .i3-page-body { display: contents; }
+.i3-page .i3-groups { display: flex; flex-direction: column; gap: var(--rd-space-6); }
+.i3-page .i3-group { display: flex; flex-direction: column; gap: var(--rd-space-3); align-items: flex-start; }
+.i3-page .i3-group > .i3-cards, .i3-page .i3-group > .i3-rail { align-self: stretch; }
+.i3-page .i3-group-title { display: flex; align-items: center; gap: var(--rd-space-2); margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; color: var(--rd-text); }
+.i3-page .i3-group-icon { color: var(--rd-text-3); }
+.i3-page .i3-group-count { font-weight: 400; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i3-page .i3-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--rd-space-4); }
+
+/* 一条活动的卡：标签、名称和通知第一行、三项事实、动作 */
+.i3-page .i3-card { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; padding: var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
+.i3-page .i3-card[data-selected] { border-color: var(--rd-brand); }
+.i3-page .i3-card-tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.i3-page .i3-card-kind { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.i3-page .i3-card-open { display: flex; flex-direction: column; gap: var(--rd-space-1); min-width: 0; margin: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: var(--rd-radius-tag); }
+.i3-page .i3-card-open:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+.i3-page .i3-card-name { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); overflow-wrap: anywhere; }
+@media (hover: hover) and (pointer: fine) { .i3-page .i3-card-open:hover .i3-card-name { text-decoration: underline; text-underline-offset: 3px; } }
+.i3-page .i3-card-line { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); overflow-wrap: anywhere; }
+.i3-page .i3-card-facts { display: grid; gap: var(--rd-space-1); margin: 0; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
+.i3-page .i3-card-facts > div { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: var(--rd-space-2); }
+.i3-page .i3-card-facts dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
+.i3-page .i3-card-facts dd { margin: 0; min-width: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text); overflow-wrap: anywhere; }
+.i3-page .i3-card-facts dd[data-num] { font-variant-numeric: tabular-nums; font-weight: 500; }
+.i3-page .i3-card-facts dd[data-empty] { color: var(--rd-text-3); font-weight: 400; }
+.i3-page .i3-card-actions { display: flex; flex-wrap: wrap; gap: var(--rd-space-2); margin-top: auto; }
+
+/* 排期时间线：左边发送时间，中间节点和竖线，右边卡；最近一条标出来 */
+.i3-page .i3-rail { display: flex; flex-direction: column; gap: var(--rd-space-3); margin: 0; padding: 0; list-style: none; }
+.i3-page .i3-rail-item { position: relative; display: grid; grid-template-columns: 104px 16px minmax(0, 1fr); gap: var(--rd-space-3); align-items: start; }
+.i3-page .i3-rail-item:not(:last-child)::after { content: ""; position: absolute; left: calc(104px + var(--rd-space-3) + 7px); top: 22px; bottom: calc(-1 * var(--rd-space-3)); width: 2px; background: var(--rd-line); }
+.i3-page .i3-rail-time { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding-top: var(--rd-space-4); text-align: right; }
+.i3-page .i3-rail-clock { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.i3-page .i3-rail-day { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+.i3-page .i3-rail-next { margin-top: var(--rd-space-1); padding: 0 var(--rd-space-2); border-radius: var(--rd-radius-tag); background: var(--rd-progress-pill); color: var(--rd-progress); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 500; }
+.i3-page .i3-rail-dot { position: relative; z-index: 1; width: 16px; height: 16px; margin-top: calc(var(--rd-space-4) + 4px); border: 2px solid var(--rd-line-strong); border-radius: 50%; background: var(--rd-panel); }
+.i3-page .i3-rail-item[data-first] .i3-rail-dot { border-color: var(--rd-progress); background: var(--rd-progress); }
+.i3-page .i3-rail-card { min-width: 0; }
+/* 时间线里的卡横排：左边标签和名称，中间三项事实，右边动作 */
+.i3-page .i3-rail-card > .i3-card { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) max-content; grid-template-areas: "tags facts actions" "open facts actions"; align-items: start; column-gap: var(--rd-space-6); row-gap: var(--rd-space-2); }
+.i3-page .i3-rail-card > .i3-card > .i3-card-tags { grid-area: tags; }
+.i3-page .i3-rail-card > .i3-card > .i3-card-open { grid-area: open; }
+.i3-page .i3-rail-card > .i3-card > .i3-card-facts { grid-area: facts; padding-top: 0; padding-left: var(--rd-space-6); border-top: 0; border-left: 1px solid var(--rd-line); }
+.i3-page .i3-rail-card > .i3-card > .i3-card-actions { grid-area: actions; margin-top: 0; }
+
+/* App 通知预览（示意）：列表里一行、点开后 */
+.i3-page .i3-preview { display: flex; flex-direction: column; gap: var(--rd-space-4); min-width: 0; }
+.i3-page .i3-preview-block { display: flex; flex-direction: column; gap: var(--rd-space-2); }
+.i3-page .i3-preview-title { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 500; color: var(--rd-text-3); }
+.i3-page .i3-phone-row { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: var(--rd-space-3); padding: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
+.i3-page .i3-phone-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--rd-panel-inner); color: var(--rd-text-2); }
+.i3-page .i3-phone-row[data-tier="critical"] .i3-phone-icon { background: var(--rd-danger-pill); color: var(--rd-danger); }
+.i3-page .i3-phone-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.i3-page .i3-phone-head { display: flex; align-items: center; gap: var(--rd-space-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.i3-page .i3-phone-flag { color: var(--rd-danger); font-weight: 500; }
+.i3-page .i3-phone-time { margin-left: auto; }
+.i3-page .i3-phone-name { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; color: var(--rd-text); overflow-wrap: anywhere; }
+.i3-page .i3-phone-snippet { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); overflow-wrap: anywhere; white-space: pre-line; }
+.i3-page .i3-phone-open { display: flex; flex-direction: column; gap: var(--rd-space-2); padding: var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
+.i3-page .i3-phone-body { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); overflow-wrap: anywhere; white-space: pre-line; }
+.i3-page [data-empty].i3-phone-name, .i3-page [data-empty].i3-phone-snippet, .i3-page [data-empty].i3-phone-body { color: var(--rd-text-3); font-weight: 400; }
+.i3-page .i3-phone-cta { align-self: flex-start; padding: var(--rd-space-1) var(--rd-space-3); border-radius: var(--rd-radius-control); border: 1px solid var(--rd-line-strong); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 500; color: var(--rd-text); }
+.i3-page .i3-phone-nocta { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.i3-page .i3-cut { color: var(--rd-warn); text-decoration-color: var(--rd-warn); }
+.i3-page .i3-cut-note { display: inline-block; margin-left: var(--rd-space-1); padding: 0 var(--rd-space-1); border-radius: var(--rd-radius-tag); background: var(--rd-warn-pill); color: var(--rd-warn); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 500; white-space: nowrap; }
+
+/* 每位用户最多保留几条：四档一排，1024 两两一行 */
+.i3-page .i3-caps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--rd-space-4); }
+.i3-page .i3-cap { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; padding: var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
+.i3-page .i3-cap-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.i3-page .i3-cap-value { display: flex; align-items: baseline; gap: var(--rd-space-1); }
+.i3-page .i3-cap-num { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.i3-page .i3-cap-num[data-words] { font-size: var(--rd-text-section); line-height: var(--rd-lh-title); }
+.i3-page .i3-cap-unit { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.i3-page .i3-cap-note { display: flex; align-items: center; gap: var(--rd-space-1); margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.i3-page .i3-cap-action { margin-top: auto; padding-top: var(--rd-space-1); }
+
+/* 点了和左滑去哪 */
+.i3-page .i3-route { display: flex; flex-direction: column; gap: var(--rd-space-5); }
+.i3-page .i3-route > section { display: flex; flex-direction: column; gap: var(--rd-space-3); }
+.i3-page .i3-route-table th:nth-child(-n+2) { width: 28%; }
+.i3-page .i3-sub-title { display: flex; align-items: center; gap: var(--rd-space-1); margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; color: var(--rd-text); }
+.i3-page .i3-weak { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.i3-page .i3-change b { font-weight: 500; color: var(--rd-progress); }
+
+/* 填写抽屉：左边填、右边预览；预估人数块 */
+.i3-page .i3-form { display: flex; flex-direction: column; gap: var(--rd-space-6); min-width: 0; }
+.i3-page .i3-form-section { display: flex; flex-direction: column; gap: var(--rd-space-4); }
+.i3-page .i3-form-head, .i3-page .i3-detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--rd-space-2); }
+.i3-page .i3-form-preview { position: sticky; top: 0; align-self: flex-start; display: flex; flex-direction: column; gap: var(--rd-space-3); padding: var(--rd-space-4); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
+.i3-page .i3-form-preview .i3-weak { margin: 0; }
+.i3-page .i3-estimate { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-1) var(--rd-space-2); padding: var(--rd-space-3) var(--rd-space-4); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
+.i3-page .i3-estimate-label { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.i3-page .i3-estimate-num { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.i3-page .i3-estimate-num[data-words] { font-size: var(--rd-text-body); line-height: var(--rd-lh-title); font-weight: 500; color: var(--rd-text-2); }
+.i3-page .i3-estimate-unit { font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i3-page .i3-estimate-note { display: inline-flex; align-items: center; gap: var(--rd-space-1); flex-basis: 100%; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+
+/* 详情抽屉 */
+.i3-page .i3-detail-read { justify-content: space-between; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i3-page .i3-detail-block { display: flex; flex-direction: column; gap: var(--rd-space-3); }
+
+/* 结果未知逐条提醒（界面已备好，等接 R1） */
+.i3-page .i3-recovery { display: flex; flex-direction: column; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
+.i3-page .i3-recovery li { display: grid; grid-template-columns: minmax(96px, max-content) minmax(0, 1fr) max-content max-content max-content; align-items: center; gap: var(--rd-space-3); }
+.i3-page .i3-recovery-name { font-weight: 500; color: var(--rd-text); }
+.i3-page .i3-recovery-object { min-width: 0; color: var(--rd-text-2); overflow-wrap: anywhere; }
+.i3-page .i3-recovery-time, .i3-page .i3-recovery-zone { font-size: var(--rd-text-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+.i3-page .i3-recovery-actions { display: inline-flex; gap: var(--rd-space-2); }
+@container idom (max-width: 1100px) {
+  .i3-page .i3-caps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .i3-page .i3-rail-card > .i3-card { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); grid-template-areas: "tags tags" "open facts" "actions actions"; }
+}
+@container idom (max-width: 900px) {
+  .i3-page .i3-rail-item { grid-template-columns: 84px 16px minmax(0, 1fr); }
+  .i3-page .i3-rail-item:not(:last-child)::after { left: calc(84px + var(--rd-space-3) + 7px); }
+  .i3-page .i3-recovery li { grid-template-columns: minmax(0, 1fr) max-content; }
+}
 
 /* ============================ I4-I5 信任 / 披露 ============================ */
 .idom .tr-prog { display: inline-block; width: 90px; height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; vertical-align: middle; }
