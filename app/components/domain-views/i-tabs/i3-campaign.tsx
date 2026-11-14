@@ -1,17 +1,20 @@
 "use client";
 
 /**
- * I3 通知活动 — design_handoff_i_domain/I3 通知Campaign.html port。
+ * 通知活动（列表页 + 宽抽屉编辑）。给一批 App 用户写一条站内通知：三语内容、优先级、类型、点了去哪、发给谁、预算记录；
+ * 估算人数，排期，已排期的立即发送或取消，草稿和已取消的删除；每位用户各优先级最多保留几条提交审批。
+ * 发送是真的写进用户的通知列表；预算只记录，不扣款、不发奖。
+ * 读取、提交、权限判断都沿用旧页面的写法（请求逐字节不变）；这里只换界面。
  * 统一来源:后端 /content/campaigns/overview;空库时以后端初始化结果为准。
- * 操作确认 显式 edit 契约:CAP 调整(传 edit text)= 调参;调度下发 / 取消 = 纯处置(不传 edit)。
- * critical 档锁定 = 不渲染调整按钮(渲染 icode lock)。
- * amplifies = false(I3 通知体系不动钱,不碰 B1 红线)。
- * 新建 Campaign / 行点击详情 = 本地 Drawer 原语(design-kit 共享 Drawer);提交新建走后端 /content/campaigns。
+ * critical 档锁定 = 不渲染调整按钮。amplifies = false(I3 通知体系不动钱,不碰 B1 红线)。
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Drawer, PaginationExemptionList } from "../design-kit";
+import Link from "next/link";
+import { Bell, CalendarClock, FilePen, Layers, Plus, RefreshCw, Route, Send, Trash2, Users } from "lucide-react";
+import { BlockState, Button, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
+import { PaginationExemptionList } from "../design-kit";
 import type { ICtx } from "./types";
-import type { NotificationAudienceTarget, NotificationCampaignRow } from "@/lib/admin/i-client";
+import type { NotificationAudienceTarget } from "@/lib/admin/i-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { A2OutcomeUncertainError, createA2CommandKey } from "@/lib/admin/a2-client";
@@ -19,6 +22,9 @@ import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { businessClock, businessZone } from "@/lib/admin/business-time";
+import { useReach } from "@/lib/nav/use-reach";
+import { BODY_SENT, CampaignCard, CampaignStatusTag, CapCard, chars, I3RecoveryNotice, LANG_NAME, NotificationPreview, quantityText, reachLabel, ScheduleItem, splitBody, TIER, TierTag, TITLE_SENT, whenText, type CampaignRow, type I3RecoveryRow, type Lang, type TierK } from "./i3-parts";
 
 /** 每个 CAP 档位一个槽位:同档位改了值就铸新命令号并丢弃旧号(旧号可能已被后端消费,
  *  留着会让「改回原值」的新操作被当成重复提交吞掉)。落 sessionStorage,刷新后重试仍去重。 */
@@ -29,19 +35,13 @@ const capCommandAttempts = createSlotAttemptStore({
 type StFlt = "all" | "scheduled" | "sent" | "draft" | "failed" | "cancelled";
 const ST_FLT: [StFlt, string][] = [
   ["all", "全部"],
-  ["scheduled", "排期中"],
+  ["scheduled", "已排期"],
   ["sent", "已发送"],
   ["draft", "草稿"],
   ["failed", "发送失败"],
   ["cancelled", "已取消"],
 ];
 
-type CampaignRow = Omit<NotificationCampaignRow, "status" | "kind"> & {
-  kind: string;
-  st: NotificationCampaignRow["status"];
-  budget?: number;
-};
-type TierK = CampaignRow["tier"];
 const TIER_OPTS: TierK[] = ["critical", "high", "normal", "low"];
 const I3_TIER_STATE: Record<TierK, [label: string, tone: string]> = {
   critical: ["紧急", "danger"],
@@ -109,9 +109,24 @@ function targetFromForm(form: NewForm): NotificationAudienceTarget {
   };
 }
 
-export function I3Campaign({ ctx }: { ctx: ICtx }) {
+/** 没设「点了去哪」时 App 按类型去的默认位置（后端 AppNotificationService.canonicalRoute）。 */
+const KIND_DEFAULT_ROUTE: Record<string, string> = {
+  commission: "/pages/me/wallet-repurchase",
+  team: "/pages/team/team",
+  staking: "/pages/staking/staking",
+  market: "/pages/market/market",
+  genesis: "/pages/genesis/marketplace",
+};
+/** 一组里默认显示几张卡，多的点「显示全部」切到这个状态。 */
+const GROUP_PREVIEW = 6;
+const AUDIT_HREF = "/platform/audit?domain=I";
+/** 结果未知逐条提醒：界面已备好，现在的逻辑不保存可恢复的原请求（B05），等代码 worker 接 R1。 */
+const RECOVERY_PLACEHOLDER: I3RecoveryRow[] = [];
+
+export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | null }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
   const propose = usePropose();
+  const reach = useReach();
   const session = useAdminAuth((state) => state.session);
   const isSuperadmin = session?.role === "superadmin";
   const authorities = session?.authorities ?? [];
@@ -125,14 +140,20 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
   const [submitting, setSubmitting] = useState(false);
   const [editing, setEditing] = useState<CampaignRow | null>(null);
   const [form, setForm] = useState<NewForm>(FORM_INIT);
+  const [formBase, setFormBase] = useState<NewForm>(FORM_INIT);
+  const [leaving, setLeaving] = useState(false);
+  const [formLang, setFormLang] = useState<Lang>("zh");
   const [estimatedAudience, setEstimatedAudience] = useState<number | null>(null);
   const [estimating, setEstimating] = useState(false);
+  const [estimatedAt, setEstimatedAt] = useState<number | null>(null);
   const [scheduleRow, setScheduleRow] = useState<CampaignRow | null>(null);
   const [scheduledAt, setScheduledAt] = useState("");
   const [scheduleReason, setScheduleReason] = useState("");
   const [scheduleVerified, setScheduleVerified] = useState(false);
   const [detail, setDetail] = useState<CampaignRow | null>(null);
+  const [detailLang, setDetailLang] = useState<Lang>("zh");
   const [newRows, setNewRows] = useState<CampaignRow[]>([]);
+  const [readAt, setReadAt] = useState<number | null>(null);
   const data = content.campaigns;
   const I3_STATS = data?.stats ?? { monthCampaigns: 0, monthSent: 0, monthScheduled: 0, monthDraft: 0, criticalInflight: 0, avgReadRate: "—", weeklySwipe: "—" };
   const CAMPAIGNS: CampaignRow[] = (data?.campaigns ?? []).map((row) => ({
@@ -165,6 +186,10 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     return () => window.clearTimeout(timer);
   }, [newOpen, form.phaseMin, form.phaseMax, form.language, form.registrationDaysMin, actions]);
 
+  // 只为显示：数据和估算是什么时候读到的（详情是列表那一行的快照）。
+  useEffect(() => { if (data) setReadAt(Date.now()); }, [data]);
+  useEffect(() => { if (!estimating) setEstimatedAt(Date.now()); }, [estimating, estimatedAudience]);
+
   const liveSt = (c: CampaignRow): CampaignRow["st"] => {
     return c.st;
   };
@@ -192,12 +217,13 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     setScheduleVerified(false);
   };
 
+  const openNew = () => { setEditing(null); setForm(FORM_INIT); setFormBase(FORM_INIT); setFormLang("zh"); setNewOpen(true); };
+
   const editDraft = (c: CampaignRow) => {
     const zh = splitNotificationBody(c.bodyZh);
     const vi = splitNotificationBody(c.bodyVi);
     const en = splitNotificationBody(c.bodyEn);
-    setEditing(c);
-    setForm({
+    const next: NewForm = {
       name: c.name,
       titleZh: zh.title,
       titleVi: vi.title,
@@ -213,13 +239,29 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       language: c.audienceTarget?.language ?? "all",
       registrationDaysMin: String(c.audienceTarget?.registrationDaysMin ?? 0),
       budget: c.budget === undefined ? "" : String(c.budget),
-    });
+    };
+    setEditing(c);
+    setForm(next);
+    setFormBase(next);
+    setFormLang("zh");
     setNewOpen(true);
   };
 
   const deleteDraft = (c: CampaignRow) => openConfirm({ briefKind: "record",
     action: <>删除通知草稿 · {c.id}</>,
-    detail: <>只有草稿或已取消的可以删除；已发送的不能删除。</>,
+    title: c.st === "cancelled" ? "删除已取消的通知" : "删除通知草稿",
+    detail: <>只有草稿和已取消的能删。删除后这页上找不回来；用户手里的通知不变。</>,
+    effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag>页面上不能恢复</IrreversibleTag></>,
+    content: (
+      <Facts>
+        <Fact k="通知">{c.name}</Fact>
+        <Fact k="状态">{STATUS_TEXT[c.st]}</Fact>
+        <Fact k="编号"><span data-mono="">{c.id}</span></Fact>
+      </Facts>
+    ),
+    statedBrief: { impact: "从列表里删掉这条活动；它没有发出过，用户手里的通知不受影响。", check: "后端保留记录用于操作记录，页面上没有恢复入口；要再发就新建一条。" },
+    confirmTone: "danger",
+    reasonPlaceholder: "例如：重复建了一条、内容作废",
     reason: true,
     okLabel: "确认删除",
     run: (reason) => runBackend(actions.deleteI3Campaign(c.id, c.revision, reason), `${c.id} 已删除`),
@@ -227,25 +269,55 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
 
   const sendNow = (c: CampaignRow) => openActionConfirm({ briefKind: "content",
     action: <>立即发送 · {c.name}</>,
+    title: "立即发送通知",
     detail: (
       <>
-        不等排期，<b>马上发送</b>给每个用户，重复提交不会发两遍。<b>优先级 {I3_TIER_STATE[c.tier]?.[0] ?? "未知"}</b>，受众 <b>{c.audience}</b>（约 {c.reach} 人）。
-        {c.tier === "critical" ? <> <b>紧急级执行门槛升至合规/超级管理员。</b></> : <> 执行门槛 = 内容主管。</>}
+        不等排期，马上发给现在符合条件的用户；发出后撤不回。
       </>
     ),
+    effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag>发出后撤不回</IrreversibleTag></>,
+    facts: (
+      <Facts>
+        <Fact k="预计" lead unit="人">{quantityText(c.reach)}</Fact>
+        <Fact k="通知">{c.name}</Fact>
+        <Fact k="发给谁">{c.audience}</Fact>
+        <Fact k="优先级" tone={c.tier === "critical" ? "danger" : undefined}>{`${I3_TIER_STATE[c.tier]?.[0] ?? "未知"}${c.tier === "critical" ? "（不看用户的通知设置）" : ""}`}</Fact>
+        <Fact k="原定时间">{`${whenText(c)}（${businessZone().label}）`}</Fact>
+      </Facts>
+    ),
+    statedBrief: {
+      impact: c.tier === "critical"
+        ? "马上写进现在符合条件的全部用户的通知列表；发出后撤不回。"
+        : "马上写进现在符合条件、没关掉这类通知的用户的通知列表；发出后撤不回。",
+      check: "预计人数是保存草稿时的估算；实际人数以发出后的送达为准，可能更少。",
+    },
+    confirmTone: "danger",
+    confirmLabel: "确认立即发送",
+    reasonPlaceholder: "例如：活动提前开始，需要马上通知",
     amplifies: false,
     run: (reason) => {
-      return runBackend(actions.sendI3CampaignNow(c.id, c.revision, reason), `${c.id} 已开始发送`);
+      return runBackend(actions.sendI3CampaignNow(c.id, c.revision, reason), `已发送 · ${c.name}`);
     },
   });
 
   const cancelScheduled = (c: CampaignRow) => openConfirm({ briefKind: "record",
     action: <>取消排期 · {c.id}</>,
+    title: "取消排期",
     detail: (
       <>
-        排期未发可取消。取消后不可恢复,需要重新调度。
+        还没发出才能取消。取消后不能再编辑或排期，只能删除或新建一条。
       </>
     ),
+    effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag>取消后不能恢复</IrreversibleTag></>,
+    content: (
+      <Facts>
+        <Fact k="通知">{c.name}</Fact>
+        <Fact k="原定时间">{`${whenText(c)}（${businessZone().label}）`}</Fact>
+        <Fact k="状态"><StatusChange from="已排期" to="已取消" /></Fact>
+      </Facts>
+    ),
+    statedBrief: { impact: "这条不会再发出。已经开始发送的取消不了，用户已收到的也撤不回。", check: "取消后不能改回草稿，要再发就新建一条。" },
+    reasonPlaceholder: "例如：活动改期，不再按原时间发送",
     reason: true,
     okLabel: "确认取消",
     run: (reason) => {
@@ -255,15 +327,27 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
 
   const adjustCap = (tier: TierK, cap: string) => openActionConfirm({ briefKind: "config",
     action: <>调整通知保留数量 · {I3_TIER_STATE[tier]?.[0] ?? "未知"}</>,
+    title: `调整${I3_TIER_STATE[tier]?.[0] ?? "未知"}优先级保留上限`,
     detail: (
       <>
-        当前 <b>{cap}</b> · 审批通过后，按新上限清理多出来的通知。调小可能让用户看不到还没读的重要通知（包括合规类），请谨慎。<b>紧急级通知永久保留，不能调。</b>
-        {tier === "low" && (
-          <>{` `}低优先级除数量上限外,仍固定执行 48 小时自动过期清理。</>
-        )}
+        <span className="rd-keep">当前 <b>{cap}</b>。</span><span className="rd-keep">批准执行时按新上限立刻清理，未读的也删；</span><span className="rd-keep">调高不恢复已删的。</span>
+        {tier === "low" && <span className="rd-keep">低优先级另外满 48 小时就删。</span>}
       </>
     ),
-    completionCopy: "提交后需在「操作记录与审批」批准，批准后按新上限清理多出来的通知。",
+    effect: <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后才执行；批准前上限不变。">批准后生效</StatusTag>,
+    completionCopy: "另一位管理员在「操作记录与审批」批准后执行；批准前上限不变。",
+    statedBrief: {
+      impact: "调低：批准执行时立刻删掉每位用户这一档超出上限的旧通知，未读的也删。调高：以后多留，已删的不恢复。",
+      check: "会删多少条这页读不到；等批准的修改也在「操作记录与审批」看。",
+    },
+    facts: (
+      <Facts>
+        <Fact k="谁来批">另一位管理员，不能是提交人</Fact>
+        <Fact k="需有权限">提交审批权限和通知保留上限调整权限</Fact>
+      </Facts>
+    ),
+    confirmLabel: "提交审批",
+    reasonPlaceholder: "例如：用户反馈普通通知太多，调低保留数量",
     amplifies: false,
     edit: {
       kind: "number",
@@ -272,6 +356,8 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       min: 1,
       max: 10000,
       step: 1,
+      hint: "1–10000 的整数",
+      preview: (value) => capPreview(tier, cap.match(/\d+/)?.[0] ?? "", value),
     },
     run: async (reason, v) => {
       if (!v) return false;
@@ -345,7 +431,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       : actions.createI3Campaign(payload, `新建通知草稿 ${id}`);
     setSubmitting(true);
     try {
-      if (await runBackend(task, editing ? `${editing.id} 草稿已保存` : `通知草稿已创建 · ${id}`)) {
+      if (await runBackend(task, editing ? `${editing.id} 草稿已保存` : `通知草稿已创建 · ${trimmedName}`)) {
         setNewOpen(false);
         setEditing(null);
         setForm(FORM_INIT);
@@ -355,637 +441,521 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     }
   };
 
-  /* ---------- render helpers ---------- */
-  const renderStBadge = (st: CampaignRow["st"]): ReactNode => {
-    if (st === "draft") return <span className="bdg dim">草稿</span>;
-    if (st === "scheduled") return <span className="bdg warn">排期中</span>;
-    if (st === "sending") return <span className="bdg cyan">发送中</span>;
-    if (st === "sent") return <span className="bdg ok">已发送</span>;
-    if (st === "failed") return <span className="bdg danger">发送失败</span>;
-    return <span className="bdg dim">已取消</span>;
+  const submitSchedule = async () => {
+    if (!scheduleRow) return;
+    setSubmitting(true);
+    try {
+      const saved = await runBackend(
+        actions.scheduleI3Campaign(scheduleRow.id, scheduledAt, scheduleRow.revision, scheduleReason.trim()),
+        `${scheduleRow.id} 已进入排期`,
+      );
+      if (saved) setScheduleRow(null);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const renderActions = (c: CampaignRow): ReactNode => {
+  /* ---------- render helpers ---------- */
+  const kindLabel = (kind: string) => DELIVERY_CATALOG?.kinds.find((option) => option.value === kind)?.label ?? "类型未知";
+  const ctaLabelOf = (href: string) => DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? href;
+  const NO_CRITICAL = "排期、发送和取消紧急通知要有紧急通知发送权限";
+
+  const renderActions = (c: CampaignRow, size: "sm" | "md" = "sm"): ReactNode => {
     const st = liveSt(c);
-    if (!canWriteI3) return <span className="tiny">只读</span>;
+    if (!canWriteI3) return null;
     if (st === "draft") {
       return (
         <>
-          {canSendCampaign(c)
-            ? <><button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); sendCmp(c); }}>定时发送</button>{" "}</>
-            : <><span className="tiny">没有发送紧急通知的权限</span>{" "}</>}
-          <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); editDraft(c); }}>编辑</button>
-          {" "}
-          <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); deleteDraft(c); }}>删除</button>
+          <Button size={size} variant={size === "md" ? "primary" : undefined} icon={<CalendarClock size={14} aria-hidden />} aria-label={`排期 ${c.name}`} disabledReason={canSendCampaign(c) ? undefined : NO_CRITICAL} onClick={() => sendCmp(c)}>排期</Button>
+          <Button size={size} icon={<FilePen size={14} aria-hidden />} aria-label={`编辑 ${c.name}`} onClick={() => { setDetail(null); editDraft(c); }}>编辑</Button>
+          <Button size={size} icon={<Trash2 size={14} aria-hidden />} aria-label={`删除 ${c.name}`} onClick={() => deleteDraft(c)}>删除</Button>
         </>
       );
     }
     if (st === "scheduled") {
       return (
         <>
-          {canSendCampaign(c)
-            ? <><button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); sendNow(c); }}>立即发送</button>{" "}<button className="l-btn sm" onClick={(e) => { e.stopPropagation(); cancelScheduled(c); }}>取消</button></>
-            : <span className="tiny">没有发送或取消紧急通知的权限</span>}
+          <Button size={size} variant="danger-outline" icon={<Send size={14} aria-hidden />} aria-label={`立即发送 ${c.name}`} disabledReason={canSendCampaign(c) ? undefined : NO_CRITICAL} onClick={() => sendNow(c)}>立即发送</Button>
+          <Button size={size} aria-label={`取消排期 ${c.name}`} disabledReason={canSendCampaign(c) ? undefined : NO_CRITICAL} onClick={() => cancelScheduled(c)}>取消排期</Button>
         </>
       );
     }
-    if (st === "sent") {
-      return <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); setDetail(c); }}>查看</button>;
+    if (st === "sent" && size === "sm") {
+      return <Button size={size} aria-label={`查看 ${c.name}`} onClick={() => setDetail(c)}>查看</Button>;
     }
     if (st === "cancelled") {
-      return <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); deleteDraft(c); }}>删除</button>;
+      return <Button size={size} icon={<Trash2 size={14} aria-hidden />} aria-label={`删除 ${c.name}`} onClick={() => deleteDraft(c)}>删除</Button>;
     }
     return null;
   };
 
+  const readStamp = readAt ? `${businessClock(readAt)} 读取（${businessZone().label}）` : "";
+  const header = (
+    <PageHeader
+      pageId="I3"
+      title="通知活动"
+      summary="给一批 App 用户发站内通知，排期或立即发送。"
+      meta={readAt ? <span className="rd-toolbar">
+        <span>{readStamp}</span>
+        <Button variant="ghost" size="sm" loading={contentLoading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void actions.reloadIContent()}>刷新</Button>
+      </span> : undefined}
+      actions={canWriteI3 && data ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} onClick={openNew}>新建通知</Button> : undefined}
+      readOnly={!canWriteI3 ? "你只能查看；新建、排期和发送要有这页的修改权限。" : undefined}
+    />
+  );
+
   if (contentLoading && !data) {
-    return <section className="l-card"><div className="l-b"><div className="itint">通知数据加载中…</div></div></section>;
+    return <div className="i3-page-body">{header}<I3RecoveryNotice rows={RECOVERY_PLACEHOLDER} /><BlockState state="loading" title="通知活动加载中…" /></div>;
   }
   if (!data) {
-    return <section className="l-card"><div className="l-b"><div className="itint danger">暂无通知数据</div></div></section>;
+    return <div className="i3-page-body">{header}<I3RecoveryNotice rows={RECOVERY_PLACEHOLDER} /><BlockState state="error" title="通知活动读取失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void actions.reloadIContent()} /></div>;
   }
 
+  const upcoming = filtered.filter((c) => c.st === "scheduled" || c.st === "sending")
+    .sort((a, b) => (a.st === "sending" ? 0 : 1) - (b.st === "sending" ? 0 : 1) || a.schedule.localeCompare(b.schedule));
+  const nextScheduled = CAMPAIGNS.filter((c) => c.st === "scheduled").sort((a, b) => a.schedule.localeCompare(b.schedule))[0];
+  const sendingN = CAMPAIGNS.filter((c) => c.st === "sending").length;
+  const failedN = CAMPAIGNS.filter((c) => c.st === "failed").length;
+  const scheduledN = CAMPAIGNS.filter((c) => c.st === "scheduled").length;
+  const countOf = (key: StFlt) => key === "all" ? CAMPAIGNS.length : CAMPAIGNS.filter((c) => c.st === key).length;
+  const auditReachable = reach(AUDIT_HREF, "platform_a2_read");
+  const shownDetail = detail ? CAMPAIGNS.find((c) => c.id === detail.id) ?? null : null;
+  const detailRow = shownDetail ?? (detail ? liveCampaign(detail) : null);
+
+  const conclusion = CAMPAIGNS.length === 0
+    ? <Conclusion state="neutral" icon={Bell} hint={canWriteI3 ? "点右上角「新建通知」写第一条。" : undefined}>还没有通知活动</Conclusion>
+    : <Conclusion state={failedN > 0 ? "warn" : scheduledN + sendingN > 0 ? "neutral" : "ok"} icon={failedN > 0 ? undefined : CalendarClock}
+      hint={failedN > 0 ? "发送失败的不能重发，要发请新建一条。" : undefined}
+      explain={<>
+        <p>等着发是已排期和发送中的活动；时间是北京时间，到点后约 30 秒内发出。</p>
+        <p>保留上限的修改要批准后才生效，等批准的修改这页读不到，到「操作记录与审批」看。</p>
+      </>}
+      action={auditReachable ? <Link className="rd-link" href={AUDIT_HREF} prefetch={false}>看等批准的上限修改</Link> : undefined}>
+      {scheduledN + sendingN > 0
+        ? <><b>{scheduledN + sendingN}</b>{" 条等着发"}{nextScheduled && <>，<span className="rd-keep">{`最近一条 ${whenText(nextScheduled)}`}</span></>}{sendingN > 0 && <>，<span className="rd-keep">{`${sendingN} 条正在发送`}</span></>}</>
+        : "没有等着发的通知"}
+      {failedN > 0 && <>；<span className="rd-keep">{`${failedN} 条发送失败`}</span></>}
+    </Conclusion>;
+
+  const group = (key: Exclude<StFlt, "all" | "scheduled">, title: string, rows: CampaignRow[], icon: typeof Bell) => {
+    if (rows.length === 0) return null;
+    const limited = stFlt === "all" && rows.length > GROUP_PREVIEW;
+    return (
+      <section className="i3-group" aria-labelledby={`i3-group-${key}`} key={key}>
+        <h3 className="i3-group-title" id={`i3-group-${key}`}>{iconOf(icon)}{title}<span className="i3-group-count">{`${rows.length} 条`}</span></h3>
+        <div className="i3-cards">
+          {(limited ? rows.slice(0, GROUP_PREVIEW) : rows).map((row) => (
+            <CampaignCard key={row.id} row={row} kindLabel={kindLabel(row.kind)} selected={row.id === detail?.id} onOpen={() => setDetail(row)} actions={renderActions(row)} />
+          ))}
+        </div>
+        {limited && <Button variant="ghost" size="sm" onClick={() => setStFlt(key)}>{`显示全部 ${rows.length} 条`}</Button>}
+      </section>
+    );
+  };
+
+  const listEmpty = filtered.length === 0;
+
   return (
-    <>
-      {/* ===== 4 f-stat ===== */}
-      <div className="f-stats">
-        <div className="f-stat">
-          <div className="k">本月 通知活动</div>
-          <div className="v">{I3_STATS.monthCampaigns} 个</div>
-          <div className="sub">已发 {I3_STATS.monthSent} · 排期 {I3_STATS.monthScheduled} · 草稿 {I3_STATS.monthDraft}</div>
-        </div>
-        <div className="f-stat danger">
-          <div className="k">紧急级在途</div>
-          <div className="v">{I3_STATS.criticalInflight} 条</div>
-          <div className="sub">披露重确认 + 风控异动 · 不淘汰</div>
-        </div>
-        <div className="f-stat ok">
-          <div className="k">平均已读率</div>
-          <div className="v">{I3_STATS.avgReadRate}</div>
-          <div className="sub">已读 ÷ 送达</div>
-        </div>
-        <div className="f-stat cyan">
-          <div className="k">滑动直达转化(本周)</div>
-          <div className="v">{I3_STATS.weeklySwipe}</div>
-          <div className="sub">团队奖励到账 → 左滑直跳锁定计划</div>
-        </div>
-      </div>
+    <div className="i3-page-body">
+      {header}
+      {errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={contentLoading} onClick={() => void actions.reloadIContent()}>重新加载</Button>}>{`${errorText} 下面是上次读到的内容。`}</Notice>}
+      <I3RecoveryNotice rows={RECOVERY_PLACEHOLDER} />
+      {conclusion}
 
-      {/* ===== (a) campaign 列表 ===== */}
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">本月 通知活动(a)</span>
-          <span className="sub">· 新建、预览、定时发送</span>
-          <div className="r chips">
-            <span className="lb">状态</span>
-            {ST_FLT.map(([k, l]) => (
-              <button key={k} className={`chip${stFlt === k ? " sel" : ""}`} onClick={() => setStFlt(k)}>{l}</button>
-            ))}
-            {!canWriteI3 && <span className="bdg dim">只读</span>}
-            {canWriteI3 && <button className="l-btn sm primary" onClick={() => { setEditing(null); setForm(FORM_INIT); setNewOpen(true); }}>+ 新建通知</button>}
-          </div>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 980 }}>
-            <thead>
-              <tr>
-                <th>编号 / 名称</th>
-                <th>受众</th>
-                <th>优先级</th>
-                <th className="num">接收人数（未发送为预计）</th>
-                <th>调度</th>
-                <th>状态</th>
-                <th style={{ textAlign: "right" }}>动作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((c) => {
-                const row = liveCampaign(c);
-                const tierLabel = I3_TIER_STATE[row.tier][0];
-                const st = liveSt(row);
-                return (
-                  <tr key={row.id} className="click" onClick={() => setDetail(row)}>
-                    <td>
-                      <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{row.id}</span>
-                      <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 2 }}>{row.name}</div>
-                    </td>
-                    <td style={{ fontSize: 12 }}>{row.audience}</td>
-                    <td>
-                      <span className={`nc-pr ${row.tier}`}>{tierLabel}</span>
-                    </td>
-                    <td className="num mono">{row.reach}</td>
-                    <td className="mono" style={{ fontSize: 11.5 }}>{row.schedule}</td>
-                    <td>{renderStBadge(st)}</td>
-                    <td style={{ textAlign: "right" }}>{renderActions(row)}</td>
-                  </tr>
-                );
-              })}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={7} style={{ textAlign: "center", padding: "20px 12px", color: "var(--ink-4)", fontSize: 12 }}>
-                    当前筛选下没有 通知活动
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <StatBand label="通知活动概况">
+        <Stat tone="role-3" icon={CalendarClock} label="等着发" value={String(I3_STATS.monthScheduled)} unit="条" sub={`其中紧急 ${I3_STATS.criticalInflight} 条`}
+          explain="已排期和发送中的活动。紧急指紧急优先级的活动条数。" />
+        <Stat tone="role-2" icon={FilePen} label="草稿" value={String(I3_STATS.monthDraft)} unit="条" explain="还没排期，不会发给任何人。" />
+        <Stat tone="role-2" icon={Send} label="已发送" value={String(I3_STATS.monthSent)} unit="条" sub={`活动共 ${I3_STATS.monthCampaigns} 条`}
+          explain="全部没删除的活动，不分月份。" />
+        <Stat tone="role-3" icon={Users} label="已读率（活动记录）" value={I3_STATS.avgReadRate} sub={`左滑推算 ${I3_STATS.weeklySwipe}`}
+          explain={<>
+            <p>已读率：已发送活动记录里的已读数 ÷ 送达数。用户在 App 读通知后，这个已读数目前不更新（已提后端），不是实时已读率。</p>
+            <p>左滑推算：已读数 × 3.1%，不是实际左滑次数，也不分本周。</p>
+          </>} />
+      </StatBand>
 
-      {/* ===== (c) CAP 配置 ===== */}
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">各优先级通知保留上限</span>
-          <span className="sub">· 4 档保留策略 · 紧急通知不设保留数量上限</span>
-          <div className="r">
-            <span className="icode danger">发送上限按当前设置</span>
-          </div>
-        </div>
-        <div className="l-b" style={{ paddingTop: 4 }}>
-          {CAP_TIERS.map((row) => {
-            const tier = row.tier as TierK;
-            const cap = liveCap(tier, row.cap);
-            return (
-              <div className="p-row" key={tier}>
-                <div className="txt">
-                  <div className="k">
-                    <span className={`nc-pr ${tier}`}>{I3_TIER_STATE[tier][0]}</span>
-                  </div>
-                  <div className="s" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{operatorCopyText(row.policy)}</div>
-                </div>
-                <span
-                  className="v"
-                  style={tier === "critical" ? { color: "var(--danger)" } : undefined}
-                >
-                  {cap}
-                </span>
-                {row.locked ? (
-                  <span className="icode lock" title="合规硬约束 · 紧急通知始终保留">🔒 锁定</span>
-                ) : canAdjustI3Cap ? (
-                  <button className="l-btn sm mc" onClick={() => adjustCap(tier, cap)}>调整</button>
-                ) : (
-                  <span className="tiny">只读</span>
-                )}
-              </div>
-            );
-          })}
-          <div className="itint warn" style={{ marginTop: 10 }}>
-            <b>为什么动通知保留上限要操作确认</b> · 调小高档容量可能把还没读的合规通知挤掉——这影响紧急级和高级通知的可见性,所以内容和风控都能提交,但必须主管执行并填写理由。紧急通知始终保留，不可调整。
-          </div>
-          <div className="itint cyan" style={{ marginTop: 8 }}>
-            <b>合规类通知</b> · 风险披露更新后的重新确认提醒、监管应急公告，由对应页面发起，借这里按<b>紧急级</b>发送，需要合规或超级管理员操作；普通运营通知由内容主管操作。
-          </div>
-        </div>
-      </section>
+      <Panel title="通知活动" icon={Bell} tone="role-3" data-proof="i3-campaign-list" sub={`${filtered.length} 条 · 时间为${businessZone().label}`}
+        explain="按状态分组：等着发的按发送时间排，最近要发的在前；其余按建立时间，新的在前。点卡片看内容和详情。">
+        <FilterBar scope={<Segments label="按状态筛选" value={stFlt} onChange={setStFlt} items={ST_FLT.map(([value, label]) => ({ value, label, count: countOf(value) }))} />}
+          sort={<span className="rd-filter-result">等着发的按时间排，最近的在前</span>} />
+        {listEmpty
+          ? <BlockState state="empty" title={CAMPAIGNS.length === 0 ? "新建的通知会显示在这里" : "这个状态下没有通知"} detail={CAMPAIGNS.length === 0 ? (canWriteI3 ? undefined : "有修改权限的同事新建后会显示在这里。") : "换一个状态看看。"} />
+          : <div className="i3-groups">
+            {upcoming.length > 0 && (
+              <section className="i3-group" aria-labelledby="i3-group-upcoming">
+                <h3 className="i3-group-title" id="i3-group-upcoming">{iconOf(CalendarClock)}等着发<span className="i3-group-count">{`${upcoming.length} 条`}</span></h3>
+                <ol className="i3-rail" aria-label="排期时间线">
+                  {upcoming.map((row, index) => (
+                    <ScheduleItem key={row.id} row={row} first={index === 0 || (index === 1 && upcoming[0].st === "sending" && row.st === "scheduled")}>
+                      <CampaignCard row={row} kindLabel={kindLabel(row.kind)} selected={row.id === detail?.id} onOpen={() => setDetail(row)} actions={renderActions(row)} />
+                    </ScheduleItem>
+                  ))}
+                </ol>
+              </section>
+            )}
+            {group("draft", "草稿", filtered.filter((c) => c.st === "draft"), FilePen)}
+            {group("failed", "发送失败", filtered.filter((c) => c.st === "failed"), Send)}
+            {group("sent", "已发送", filtered.filter((c) => c.st === "sent"), Send)}
+            {group("cancelled", "已取消", filtered.filter((c) => c.st === "cancelled"), Trash2)}
+          </div>}
+      </Panel>
 
-      {/* ===== swipe 直达表(只读) ===== */}
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">左滑直达表</span>
-          <span className="sub">· 通知类型决定左滑跳转位置;系统通知无转化跳转</span>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 540 }}>
-            <thead>
-              <tr>
-                <th>跳转位置</th>
-                <th>通知类型</th>
-                <th>案例</th>
-              </tr>
-            </thead>
-            <tbody>
-              {SWIPE_ROWS.map((r) => {
-                const empty = r.to.startsWith("—");
-                return (
-                  <tr key={r.kind}>
-                    <td className="mono" style={empty ? { color: "var(--ink-4)" } : undefined}>{r.to}</td>
-                    <td><span className="bdg dim">{DELIVERY_CATALOG?.kinds.find((option) => option.value === r.kind)?.label ?? "类型未知"}</span></td>
-                    <td style={{ fontSize: 12 }}>{operatorCopyText(r.note)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="l-b" style={{ paddingTop: 10 }}>
-          <div className="itint">
-            发送、取消、送达、已读和左滑都会记录，用于送达和转化统计。
-          </div>
-        </div>
-      </section>
+      <Panel title="每位用户最多保留几条" icon={Layers} tone="role-4" data-proof="i3-cap-rules"
+        sub={`${CAP_TIERS.length} 档`}
+        explain="按优先级分别算：每位用户每种优先级只留最新的几条，超出的删掉，未读的也删。调整要提交审批，批准执行时立刻对全体用户清理一次；调高不会恢复已删的。这是保留条数，不是发送数量。">
+        {CAP_TIERS.length === 0
+          ? <BlockState state="empty" title="没有读到保留规则" />
+          : <div className="i3-caps">
+            {CAP_TIERS.map((row) => {
+              const tier = row.tier as TierK;
+              const cap = liveCap(tier, row.cap);
+              return (
+                <CapCard key={tier} tier={tier} cap={row.cap} policy={operatorCopyText(row.policy)} locked={row.locked}
+                  action={!row.locked && canAdjustI3Cap ? <Button size="sm" aria-label={`调整${TIER[tier].label}优先级保留上限`} onClick={() => adjustCap(tier, cap)}>调整</Button> : undefined} />
+              );
+            })}
+          </div>}
+      </Panel>
 
-      {/* ===== f-foot ===== */}
-      <p className="f-foot">
-        <b>权限</b>：内容同事（合规类可由风控同事）提交定时发送和取消，内容主管或超级管理员确认；调整通知保留数量需要主管。<b>数据</b>：送达、已读、左滑会进入送达统计和数据分析；带转化的左滑（比如团队奖励 → 锁定计划）计入实时转化分析。重复点击不会发两遍。
-      </p>
+      <Fold title="点了和左滑去哪" icon={Route} tone="role-other" summary={`App 实际规则 · 后端目录 ${SWIPE_ROWS.length} 行`}
+        explain="App 里点通知的按钮或左滑通知会跳到哪里。这页不跳转、不改用户的通知。">
+        <div className="i3-route">
+          <section aria-labelledby="i3-route-real">
+            <h4 className="i3-sub-title" id="i3-route-real">App 实际怎么跳</h4>
+            <p className="i3-route-lead">设了「点了去哪」：点按钮和左滑都去那里。没设：点了只标已读，左滑按下表。</p>
+            <Table label="没设跳转时左滑去哪" className="i3-route-table">
+              <thead><tr><Th>通知类型</Th><Th>没设「点了去哪」时左滑去</Th></tr></thead>
+              <tbody>
+                {Object.entries(KIND_DEFAULT_ROUTE).map(([kind, href]) => (
+                  <Tr key={kind}><Td>{kindLabel(kind)}</Td><Td grow>{ctaLabelOf(href)}</Td></Tr>
+                ))}
+                <Tr><Td>{kindLabel("system")}</Td><Td grow><span className="i3-weak">不跳转（系统通知左滑不跳）</span></Td></Tr>
+              </tbody>
+            </Table>
+          </section>
+          <section aria-labelledby="i3-route-catalog">
+            <h4 className="i3-sub-title" id="i3-route-catalog">后端目录<Explain label="后端目录是什么" content="后端返回的固定说明，和 App 实际跳转不全一致（比如退款没有对应的通知类型），以上面的实际规则为准。已提后端统一。" /></h4>
+            <Table label="后端左滑目录" className="i3-route-table">
+              <thead><tr><Th>通知类型</Th><Th>写的跳转</Th><Th>说明</Th></tr></thead>
+              <tbody>
+                {SWIPE_ROWS.map((r) => (
+                  <Tr key={r.kind}>
+                    <Td>{DELIVERY_CATALOG?.kinds.find((option) => option.value === r.kind)?.label ?? `类型未知（${r.kind}）`}</Td>
+                    <Td>{r.to.trim() === "-" || r.to.startsWith("—") ? <span className="i3-weak">不跳转</span> : <span data-mono="">{r.to}</span>}</Td>
+                    <Td grow>{operatorCopyText(r.note).replace(/\s*-\s*system kind\s*/i, "：系统通知").replace(/\s*->\s*/g, " → ")}</Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          </section>
+        </div>
+      </Fold>
+
       <PaginationExemptionList
         items={[
           {
-            label: "本月 通知活动(a)",
+            label: "通知活动",
             kind: "reference-catalog",
-            maxRows: 7,
-            reason: "可按优先级和发送状态筛选",
+            maxRows: GROUP_PREVIEW,
+            reason: "后端一次返回全部活动、不分页；全部视图每个状态组先显示 6 条，其余点「显示全部」按状态筛出",
           },
           {
-            label: "左滑直达表",
+            label: "后端左滑目录",
             maxRows: 3,
-            reason: "左滑直达仅固定三类手势映射说明",
+            reason: "后端固定的三行说明",
           },
         ]}
       />
 
-      {/* ===== Drawer · 新建 / 编辑 Campaign ===== */}
+      {/* ===== 新建 / 编辑：左边填，右边是 App 里的样子 ===== */}
       {newOpen && canWriteI3 && (
-        <Drawer
-          title={editing ? `编辑 通知活动 草稿 · ${editing.id}` : "新建 通知活动（存为草稿）"}
-          sub="中文、越南语必填，英文可选 · 受众条件要同时满足 · 发送时另行确认"
-          onClose={() => { if (!submitting) { setNewOpen(false); setEditing(null); } }}
-          footer={
-            <>
-              <button className="l-btn sm" disabled={submitting} onClick={() => { setNewOpen(false); setEditing(null); }}>取消</button>
-              {" "}
-              <button
-                className="l-btn sm primary"
-                disabled={!AUDIENCE_CATALOG || estimating || submitting}
-                onClick={submitNew}
-              >
-                {submitting ? "提交中…" : editing ? "保存修改" : "保存草稿"}
-              </button>
-            </>
-          }
-        >
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <FormField label="通知活动名称" required>
-              <input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="如:7 月费率说明公告"
-                style={INPUT_STYLE}
-              />
-              {form.name.trim() && (
-                <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 4 }}>
-                  通知活动标识 → <span className="mono" style={{ color: "var(--ink-3)" }}>{slug(form.name)}</span>
-                </div>
-              )}
-            </FormField>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
-              <FormField label="中文标题" required>
-                <input
-                  value={form.titleZh}
-                  onChange={(e) => setForm({ ...form, titleZh: e.target.value })}
-                  placeholder="通知流第一行（中文）"
-                  style={INPUT_STYLE}
-                />
-              </FormField>
-              <FormField label="越南语标题" required>
-                <input
-                  value={form.titleVi}
-                  onChange={(e) => setForm({ ...form, titleVi: e.target.value })}
-                  placeholder="Dòng đầu tiên (VI)"
-                  style={INPUT_STYLE}
-                />
-              </FormField>
-              <FormField label="英文标题（可选）">
-                <input
-                  value={form.titleEn}
-                  onChange={(e) => setForm({ ...form, titleEn: e.target.value })}
-                  placeholder="通知流第一行（英文）"
-                  style={INPUT_STYLE}
-                />
-              </FormField>
-              <FormField label="中文正文" required>
-                <textarea
-                  rows={4}
-                  value={form.bodyZh}
-                  onChange={(e) => setForm({ ...form, bodyZh: e.target.value })}
-                  placeholder="填写中文正文"
-                  style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
-                />
-              </FormField>
-              <FormField label="越南语正文" required>
-                <textarea
-                  rows={4}
-                  value={form.bodyVi}
-                  onChange={(e) => setForm({ ...form, bodyVi: e.target.value })}
-                  placeholder="请输入越南语内容"
-                  style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
-                />
-              </FormField>
-              <FormField label="英文正文（可选）">
-                <textarea
-                  rows={4}
-                  value={form.bodyEn}
-                  onChange={(e) => setForm({ ...form, bodyEn: e.target.value })}
-                  placeholder="填写英文正文"
-                  style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
-                />
-              </FormField>
-            </div>
-            <FormField label="优先级">
-              <select
-                value={form.tier}
-                onChange={(e) => setForm({ ...form, tier: e.target.value as TierK })}
-                style={INPUT_STYLE}
-              >
-                {TIER_OPTS.map((t) => (
-                  <option key={t} value={t}>{I3_TIER_STATE[t][0]}</option>
-                ))}
-              </select>
-            </FormField>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <FormField label="通知类型" required>
-                <select
-                  value={form.kind}
-                  onChange={(e) => setForm({ ...form, kind: e.target.value })}
-                  disabled={!DELIVERY_CATALOG}
-                  style={INPUT_STYLE}
-                >
-                  {(DELIVERY_CATALOG?.kinds ?? []).map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </FormField>
-              <FormField label="点击后跳转位置">
-                <select
-                  value={form.ctaHref}
-                  onChange={(e) => setForm({ ...form, ctaHref: e.target.value })}
-                  disabled={!DELIVERY_CATALOG}
-                  style={INPUT_STYLE}
-                >
-                  {(DELIVERY_CATALOG?.ctaRoutes ?? []).map((option) => (
-                    <option key={option.value || "none"} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </FormField>
-            </div>
-
-            <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 12 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 4 }}>受众条件</div>
-              <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 10 }}>
-                同时满足下面所有条件的用户才会收到。
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 24px 1fr", gap: 8, alignItems: "end" }}>
-                <FormField label="P 阶段起点" required>
-                  <select
-                    value={form.phaseMin}
-                    onChange={(e) => setForm({ ...form, phaseMin: e.target.value })}
-                    disabled={!AUDIENCE_CATALOG}
-                    style={INPUT_STYLE}
-                  >
-                    {(AUDIENCE_CATALOG?.phases ?? []).map((item) => (
-                      <option key={item.value} value={item.value}>{item.label}</option>
-                    ))}
-                  </select>
-                </FormField>
-                <div style={{ textAlign: "center", paddingBottom: 9, color: "var(--ink-4)" }}>至</div>
-                <FormField label="P 阶段终点" required>
-                  <select
-                    value={form.phaseMax}
-                    onChange={(e) => setForm({ ...form, phaseMax: e.target.value })}
-                    disabled={!AUDIENCE_CATALOG}
-                    style={INPUT_STYLE}
-                  >
-                    {(AUDIENCE_CATALOG?.phases ?? []).map((item) => (
-                      <option key={item.value} value={item.value}>{item.label}</option>
-                    ))}
-                  </select>
-                </FormField>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 10 }}>
-                <FormField label="语言" required>
-                  <select
-                    value={form.language}
-                    onChange={(e) => setForm({ ...form, language: e.target.value as NotificationAudienceTarget["language"] })}
-                    disabled={!AUDIENCE_CATALOG}
-                    style={INPUT_STYLE}
-                  >
-                    {(AUDIENCE_CATALOG?.languages ?? []).map((item) => (
-                      <option key={item.value} value={item.value}>{item.label}</option>
-                    ))}
-                  </select>
-                </FormField>
-                <FormField label="注册时长（大于 N 天）" required>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={form.registrationDaysMin}
-                    onChange={(e) => setForm({ ...form, registrationDaysMin: e.target.value })}
-                    style={INPUT_STYLE}
-                  />
-                </FormField>
-              </div>
-              <div className="itint cyan" style={{ marginTop: 10 }}>
-                <b>预计覆盖</b> · {estimating ? "计算中…" : estimatedAudience === null ? "暂不可用" : `${estimatedAudience.toLocaleString("zh-CN")} 人`}
-              </div>
-            </div>
-
-            <FormField label="预算 USD · 可选">
-              <input
-                type="number"
-                value={form.budget}
-                onChange={(e) => setForm({ ...form, budget: e.target.value })}
-                placeholder="留空 = 不计预算"
-                style={INPUT_STYLE}
-              />
-            </FormField>
-            <div className="itint">
-              <b>提交后</b> · 先保存为草稿，之后在列表里点「定时发送」确认后才会发出。
-            </div>
-          </div>
-        </Drawer>
+        <CampaignFormDrawer
+          editing={editing}
+          form={form}
+          setForm={setForm}
+          lang={formLang}
+          setLang={setFormLang}
+          submitting={submitting}
+          estimating={estimating}
+          estimatedAudience={estimatedAudience}
+          estimatedAt={estimatedAt}
+          audienceCatalog={AUDIENCE_CATALOG}
+          deliveryCatalog={DELIVERY_CATALOG}
+          tierOptions={TIER_OPTS}
+          kindLabel={kindLabel}
+          onSubmit={submitNew}
+          onClose={() => {
+            if (submitting) return;
+            if (JSON.stringify(form) !== JSON.stringify(formBase)) { setLeaving(true); return; }
+            setNewOpen(false); setEditing(null);
+          }}
+        />
       )}
+      {leaving && <Modal title="放弃这次填写？" onClose={() => setLeaving(false)} footer={<>
+        <Button onClick={() => setLeaving(false)}>继续填写</Button>
+        <Button variant="danger-outline" onClick={() => { setLeaving(false); setNewOpen(false); setEditing(null); }}>放弃并关闭</Button>
+      </>}><p>填的内容还没保存，关闭后不保留。</p></Modal>}
 
-      {/* ===== Drawer · 调度下发 ===== */}
+      {/* ===== 排期 ===== */}
       {scheduleRow && canSendCampaign(scheduleRow) && (
-        <Drawer
-          title={`定时发送 · ${scheduleRow.id}`}
-          sub="选择发送时间，必须晚于现在"
+        <Modal title="排期发送" icon={CalendarClock}
+          sub={<><StatusTag tone="progress" filled>到点自动发送</StatusTag><StatusTag tone="neutral">发出前可以取消</StatusTag></>}
+          busy={submitting} dirty={!!(scheduledAt || scheduleReason || scheduleVerified)}
           onClose={() => { if (!submitting) setScheduleRow(null); }}
-          footer={
-            <>
-              <button className="l-btn sm" disabled={submitting} onClick={() => setScheduleRow(null)}>取消</button>
-              {" "}
-              <button
-                className="l-btn sm primary"
-                disabled={submitting || !scheduledAt || !scheduleVerified || scheduleReason.trim().length < 8 || scheduleReason.trim().length > 200}
-                onClick={async () => {
-                  setSubmitting(true);
-                  try {
-                    const saved = await runBackend(
-                      actions.scheduleI3Campaign(scheduleRow.id, scheduledAt, scheduleRow.revision, scheduleReason.trim()),
-                      `${scheduleRow.id} 已进入排期`,
-                    );
-                    if (saved) setScheduleRow(null);
-                  } finally {
-                    setSubmitting(false);
-                  }
-                }}
-              >
-                {submitting ? "提交中…" : "确认排期"}
-              </button>
-            </>
-          }
-        >
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div className="itint">
-              <b>{scheduleRow.name}</b> · 优先级 {I3_TIER_STATE[scheduleRow.tier][0]} · {scheduleRow.audience} · 预计覆盖 {scheduleRow.reach} 人
-            </div>
-            <FormField label="计划发送时间" required>
-              <input
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={(e) => setScheduledAt(e.target.value)}
-                style={INPUT_STYLE}
-              />
-            </FormField>
-            <FormField label="操作理由（8～200 个字）" required>
-              <textarea
-                rows={3}
-                maxLength={200}
-                value={scheduleReason}
-                onChange={(e) => setScheduleReason(e.target.value)}
-                placeholder="说明本次调度的业务目的"
-                style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit" }}
-              />
-            </FormField>
-            <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: "var(--ink-2)" }}>
-              <input
-                type="checkbox"
-                checked={scheduleVerified}
-                onChange={(e) => setScheduleVerified(e.target.checked)}
-                style={{ marginTop: 2 }}
-              />
-              <span>我已核对中文、越南语、英文标题、正文和受众条件；排期后如需修改，应先取消排期再编辑草稿。</span>
-            </label>
-          </div>
-        </Drawer>
+          footer={<>
+            <Button disabled={submitting} onClick={() => setScheduleRow(null)}>取消</Button>
+            <Button variant="primary" loading={submitting}
+              disabledReason={!scheduledAt ? "还没选发送时间" : !scheduleVerified ? "还没勾选已核对" : scheduleReason.trim().length < 8 ? "操作理由至少 8 字" : scheduleReason.trim().length > 200 ? "操作理由最多 200 字" : undefined}
+              onClick={() => void submitSchedule()}>确认排期</Button>
+          </>}>
+          <Facts>
+            <Fact k="预计" lead unit="人">{quantityText(scheduleRow.reach)}</Fact>
+            <Fact k="通知">{scheduleRow.name}</Fact>
+            <Fact k="发给谁">{scheduleRow.audience}</Fact>
+            <Fact k="优先级" tone={scheduleRow.tier === "critical" ? "danger" : undefined}>{`${I3_TIER_STATE[scheduleRow.tier][0]}${scheduleRow.tier === "critical" ? "（不看用户的通知设置）" : ""}`}</Fact>
+            <Fact k="能不能撤">发出前可以取消，取消后不能再排期；发出后撤不回</Fact>
+          </Facts>
+          {scheduleRow.reach.trim() === "0" && <Notice tone="warn">保存时估算是 0 人。排期时后端会重新估算，还是 0 人会被拒绝。</Notice>}
+          <Field label={`发送时间（${businessZone().label}）`} required help="要晚于现在。到点后约 30 秒内发出，按那时符合条件的用户发送；预计人数是保存草稿时的估算。">
+            {(control) => <Input {...control} type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />}
+          </Field>
+          <Check label="我已核对中文、越南语、英语的标题和正文，以及发给谁" checked={scheduleVerified} onChange={(e) => setScheduleVerified(e.target.checked)} />
+          <Field label="操作理由" required hint="至少 8 字">
+            {(control) => <Textarea {...control} rows={3} maxLength={200} value={scheduleReason} count={`${scheduleReason.trim().length}/200`} placeholder="例如：11 月活动开始当天上午提醒" onChange={(e) => setScheduleReason(e.target.value)} />}
+          </Field>
+        </Modal>
       )}
 
-      {/* ===== Drawer · campaign 详情 ===== */}
-      {detail && (
-        <Drawer
-          title={
-            <>
-              <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{detail.id}</span>
-              <span style={{ color: "var(--ink-3)", marginLeft: 10, fontWeight: 500 }}>· {detail.name}</span>
-            </>
-          }
-          sub={null}
-          onClose={() => setDetail(null)}
-        >
-          <DetailBody c={liveCampaign(detail)} liveStRender={renderStBadge(liveSt(detail))} budget={liveBudget(detail.id)} />
-        </Drawer>
-      )}
-    </>
+      {/* ===== 详情：列表那一行的快照 ===== */}
+      <Drawer open={!!detailRow} onClose={() => setDetail(null)} title="通知活动详情" sub={detailRow?.name} icon={Bell} tone="role-3"
+        explain="内容来自打开页面或刷新时读到的列表，不是另读一次。"
+        footer={detailRow && canWriteI3 ? <Decision others={renderActions(detailRow, "md")} /> : undefined}>
+        {detailRow && (() => {
+          const c = detailRow;
+          const lang = splitBody(detailLang === "zh" ? c.bodyZh : detailLang === "vi" ? c.bodyVi : c.bodyEn);
+          const enMissing = !splitBody(c.bodyEn).title.trim() && !splitBody(c.bodyEn).body.trim();
+          const budget = liveBudget(c.id);
+          const fallbackRoute = KIND_DEFAULT_ROUTE[c.kind];
+          return <>
+            <div className="rd-toolbar i3-detail-read">
+              <span>{`${readStamp || "—"} · 详情是这一刻的列表内容`}</span>
+              <Button variant="ghost" size="sm" loading={contentLoading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void actions.reloadIContent()}>刷新</Button>
+            </div>
+            {!shownDetail && <Notice tone="warn">刷新后的列表里没有这条了，可能已被删除。下面是之前读到的内容。</Notice>}
+            <Facts>
+              <Fact k={reachLabel(c)} lead unit={quantityText(c.reach) === "—" ? undefined : "人"}>{quantityText(c.reach)}</Fact>
+              <Fact k="状态"><CampaignStatusTag st={liveSt(c)} /></Fact>
+              <Fact k="发送">{c.st === "scheduled" ? `${whenText(c)}（${businessZone().label}）` : whenText(c)}</Fact>
+              <Fact k="发给谁">{c.audience}</Fact>
+              <Fact k="优先级"><TierTag tier={c.tier} /></Fact>
+              <Fact k="类型">{kindLabel(c.kind)}</Fact>
+            </Facts>
+            <section className="i3-detail-block" aria-label="通知内容">
+              <div className="i3-detail-head">
+                <h3 className="i3-sub-title">App 里的样子</h3>
+                <LocaleTabs label="查看语言" value={detailLang} onChange={setDetailLang} items={[
+                  { value: "zh", label: "中文" },
+                  { value: "vi", label: "越南语" },
+                  { value: "en", label: "英语", missing: enMissing },
+                ]} />
+              </div>
+              <NotificationPreview lang={detailLang} title={lang.title} body={lang.body} ctaLabel={c.ctaHref ? (c.ctaLabel || ctaLabelOf(c.ctaHref)) : ""} tier={c.tier} kindLabel={kindLabel(c.kind)}
+                missing={detailLang === "en" && enMissing} fallback="英语没填：英语和其他语言的用户收到后端默认的英文标题和正文。" />
+            </section>
+            <Facts>
+              <Fact k="送达 / 已读">{c.st === "sent" ? `${quantityText(c.sent)} / ${quantityText(c.read)}` : "—"}</Fact>
+              <Fact k="点了去哪">{c.ctaHref ? ctaLabelOf(c.ctaHref) : "无跳转（点了只标已读）"}</Fact>
+              <Fact k="左滑">{c.ctaHref ? `去「${ctaLabelOf(c.ctaHref)}」` : c.kind === "system" ? "不跳转" : fallbackRoute ? `去「${ctaLabelOf(fallbackRoute)}」（按类型默认）` : "不跳转"}</Fact>
+              <Fact k="预算">{budget === undefined || budget === "null" ? "—" : `${budget} USD（只记录，不扣款、不发奖）`}</Fact>
+            </Facts>
+            {c.tier === "critical" && <Notice tone="neutral">紧急通知不看用户的通知设置，也不按保留上限清理。</Notice>}
+            <Fold title="技术信息" tone="role-other" inset summary={`版本 ${c.revision}`}>
+              <Facts>
+                <Fact k="编号"><span data-mono="">{c.id}</span></Fact>
+                <Fact k="版本">{String(c.revision)}</Fact>
+                <Fact k="后端的发送文字">{c.schedule || "—"}</Fact>
+                <Fact k="旧跳转字段">{c.swipeTo && c.swipeTo !== "-" ? c.swipeTo : "—（不代表实际跳转）"}</Fact>
+              </Facts>
+            </Fold>
+          </>;
+        })()}
+      </Drawer>
+    </div>
   );
 }
 
-/* ============ 内部小组件 ============ */
+const STATUS_TEXT: Record<CampaignRow["st"], string> = { draft: "草稿", scheduled: "已排期", sending: "发送中", sent: "已发送", failed: "发送失败", cancelled: "已取消" };
 
-const INPUT_STYLE: React.CSSProperties = {
-  width: "100%",
-  background: "var(--surface-2)",
-  border: "1px solid var(--border-strong)",
-  borderRadius: 8,
-  padding: "8px 12px",
-  color: "var(--ink)",
-  fontSize: 13,
-  outline: "none",
-  fontFamily: "inherit",
+function iconOf(Icon: typeof Bell) {
+  return <Icon size={16} aria-hidden className="i3-group-icon" />;
+}
+
+function StatusChange({ from, to }: { from: string; to: string }) {
+  return <span className="i3-change">{from}<span aria-hidden> → </span><b>{to}</b></span>;
+}
+
+/** 调整保留上限：改了会怎样，随输入变。 */
+function capPreview(tier: TierK, now: string, value: string): ReactNode {
+  const next = Number(value);
+  const current = Number(now);
+  if (!value || !Number.isInteger(next) || !Number.isFinite(current)) return undefined;
+  const name = `${TIER[tier].label}优先级`;
+  if (next < current) return `调低到 ${next} 条：批准执行时，每位用户的${name}通知只留最新 ${next} 条，多出的立刻删除，未读的也删。会删多少条这页读不到。`;
+  if (next > current) return `调高到 ${next} 条：以后每位用户多留一些；已经删掉的不会恢复。`;
+  return "和现在一样，后端会拒绝。";
+}
+
+type FormProps = {
+  editing: CampaignRow | null;
+  form: NewForm;
+  setForm: (next: NewForm) => void;
+  lang: Lang;
+  setLang: (next: Lang) => void;
+  submitting: boolean;
+  estimating: boolean;
+  estimatedAudience: number | null;
+  estimatedAt: number | null;
+  audienceCatalog: NonNullable<ICtx["content"]["campaigns"]>["audienceCatalog"] | undefined;
+  deliveryCatalog: NonNullable<ICtx["content"]["campaigns"]>["deliveryCatalog"] | undefined;
+  tierOptions: TierK[];
+  kindLabel: (kind: string) => string;
+  onSubmit: () => void;
+  onClose: () => void;
 };
 
-function FormField({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
+const TITLE_KEY: Record<Lang, "titleZh" | "titleVi" | "titleEn"> = { zh: "titleZh", vi: "titleVi", en: "titleEn" };
+const BODY_KEY: Record<Lang, "bodyZh" | "bodyVi" | "bodyEn"> = { zh: "bodyZh", vi: "bodyVi", en: "bodyEn" };
+const SAVE_TITLE_MAX = 160;
+const SAVE_BODY_MAX = 4000;
+
+/** 新建、编辑的宽抽屉：左边填，右边是通知列表里和点开后的样子。提交沿用页面的 submitNew。 */
+function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting, estimating, estimatedAudience, estimatedAt, audienceCatalog, deliveryCatalog, tierOptions, kindLabel, onSubmit, onClose }: FormProps) {
+  const set = (key: keyof NewForm, value: string) => setForm({ ...form, [key]: value });
+  const title = form[TITLE_KEY[lang]];
+  const body = form[BODY_KEY[lang]];
+  const titleLen = chars(title.trim()).length;
+  const bodyLen = chars(body.trim()).length;
+  const required = lang !== "en";
+  const missing = [
+    !form.name.trim() && "名称",
+    !form.titleZh.trim() && "中文标题",
+    !form.bodyZh.trim() && "中文正文",
+    !form.titleVi.trim() && "越南语标题",
+    !form.bodyVi.trim() && "越南语正文",
+  ].filter(Boolean) as string[];
+  const langMissing = (l: Lang) => l !== "en" && (!form[TITLE_KEY[l]].trim() || !form[BODY_KEY[l]].trim());
+  const over = (["zh", "vi", "en"] as Lang[]).filter((l) => chars(form[TITLE_KEY[l]].trim()).length > TITLE_SENT || chars(form[BODY_KEY[l]].trim()).length > BODY_SENT);
+  const selectedCta = deliveryCatalog?.ctaRoutes.find((option) => option.value === form.ctaHref);
+  const enEmpty = !form.titleEn.trim() && !form.bodyEn.trim();
+  const blocked = !audienceCatalog ? "受众目录没读到，不能保存；刷新页面后再试" : estimating ? "正在估算人数，估完再保存" : undefined;
+  const lengthHelp = (len: number, sent: number, saveMax: number) => len > saveMax
+    ? `${len}/${sent} 字：超过 ${saveMax} 字，保存会被拒绝`
+    : len > sent ? `${len}/${sent} 字：App 只收到前 ${sent} 字，后面的截掉（预览里划掉的部分）` : undefined;
+
   return (
-    <div>
-      <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>
-        {label}
-        {required && <span style={{ color: "var(--danger)", marginLeft: 4 }}>*</span>}
-      </div>
-      {children}
-    </div>
-  );
-}
+    <Drawer open wide data-i3-form="" busy={submitting} onClose={onClose} title={editing ? "编辑通知草稿" : "新建通知"} sub={editing ? editing.name : "保存为草稿，不会发给任何人"} icon={FilePen} tone="role-3"
+      explain="左边填，右边看 App 里的样子。保存后是草稿；之后在卡片上点「排期」或「立即发送」才会发出。"
+      footer={<Decision note={missing.length ? `还缺：${missing.join("、")}` : over.length ? `${over.map((l) => LANG_NAME[l]).join("、")}有超长的内容，App 只收到前面一段` : undefined}
+        primary={<Button variant="primary" loading={submitting} disabledReason={blocked} onClick={onSubmit}>{editing ? "保存修改" : "保存草稿"}</Button>}
+        others={<Button disabled={submitting} onClick={onClose}>取消</Button>} />}>
+      <div className="rd-split i3-form-split" data-detail="" data-preview="">
+        <div className="i3-form">
+          <section className="i3-form-section" aria-labelledby="i3-f-base">
+            <h3 id="i3-f-base" className="i3-sub-title">基本信息</h3>
+            <Field label="名称" required help="只给后台看，最多 160 字。">
+              {(control) => <Input {...control} value={form.name} placeholder="如：11 月费率说明" onChange={(e) => set("name", e.target.value)} />}
+            </Field>
+            <Field label="优先级" required help={form.tier === "critical" ? "紧急：不看用户的通知设置，不按保留上限清理；排期和发送要有紧急通知发送权限。" : "决定按哪一档保留上限清理，见页面下方。"}>
+              <Segments label="优先级" value={form.tier} onChange={(next) => set("tier", next)} items={tierOptions.map((t) => ({ value: t, label: TIER[t].label }))} />
+            </Field>
+            <div className="rd-form-grid" data-cols="2" data-dense="">
+              <Field label="通知类型" required help="用户能按类型关掉，紧急除外。">
+                {(control) => <Select {...control} aria-label="通知类型" value={form.kind} disabled={!deliveryCatalog} onChange={(next) => set("kind", next)}
+                  options={(deliveryCatalog?.kinds ?? []).map((option) => ({ value: option.value, label: option.label }))} />}
+              </Field>
+              <Field label="点了去哪" help={form.ctaHref ? "通知里出现按钮，点按钮和左滑都去这里。" : form.kind === "system" ? "没有按钮，点了只标已读；系统通知左滑不跳。" : `没有按钮，点了只标已读；左滑仍按类型去默认页。`}>
+                {(control) => <Select {...control} aria-label="点了去哪" value={form.ctaHref} disabled={!deliveryCatalog} onChange={(next) => set("ctaHref", next)}
+                  options={(deliveryCatalog?.ctaRoutes ?? []).map((option) => ({ value: option.value, label: option.label }))} />}
+              </Field>
+            </div>
+          </section>
 
-function DetailBody({ c, liveStRender, budget }: { c: CampaignRow; liveStRender: ReactNode; budget?: string }) {
-  const tierLabel = I3_TIER_STATE[c.tier][0];
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.6 }}>
-        <b style={{ color: "var(--ink-2)" }}>App 显示的就是这里的内容</b>
-        <div style={{ marginTop: 4, color: "var(--ink-4)" }}>
-          发送后用户 App 里会收到；已读、删除、左滑都会记录下来。
-        </div>
-      </div>
+          <section className="i3-form-section" aria-labelledby="i3-f-text">
+            <div className="i3-form-head">
+              <h3 id="i3-f-text" className="i3-sub-title">通知内容</h3>
+              <LocaleTabs label="内容语言" value={lang} onChange={setLang} items={[
+                { value: "zh", label: "中文", missing: langMissing("zh") },
+                { value: "vi", label: "越南语", missing: langMissing("vi") },
+                { value: "en", label: enEmpty ? "英语（选填）" : "英语" },
+              ]} />
+            </div>
+            <Field label={`${LANG_NAME[lang]}标题`} required={required} help={lengthHelp(titleLen, TITLE_SENT, SAVE_TITLE_MAX) ?? `${titleLen}/${TITLE_SENT} 字，App 收到前 ${TITLE_SENT} 字`}>
+              {(control) => <Input {...control} value={title} placeholder={lang === "vi" ? "Dòng đầu tiên" : lang === "en" ? "First line in the list" : "通知列表里的第一行"} onChange={(e) => set(TITLE_KEY[lang], e.target.value)} />}
+            </Field>
+            <Field label={`${LANG_NAME[lang]}正文`} required={required} help={lengthHelp(bodyLen, BODY_SENT, SAVE_BODY_MAX) ?? (lang === "en" && enEmpty ? "不填时，英语和其他语言的用户收到后端默认的英文内容。" : "{name} 这类占位符三种语言要一致。")}>
+              {(control) => <Textarea {...control} rows={6} value={body} count={`${bodyLen}/${BODY_SENT}`} placeholder={lang === "vi" ? "Nội dung thông báo" : lang === "en" ? "Notification body" : "点开后看到的正文"} onChange={(e) => set(BODY_KEY[lang], e.target.value)} />}
+            </Field>
+          </section>
 
-      <div>
-        <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6 }}>英文通知内容</div>
-        <div className="ab-prev">
-          <div className="lc">EN · {tierLabel} · {c.audience}</div>
-          <div className="tx">{c.bodyEn}</div>
-        </div>
-      </div>
+          <section className="i3-form-section" aria-labelledby="i3-f-who">
+            <h3 id="i3-f-who" className="i3-sub-title">发给谁<Explain label="受众怎么算" content={<>
+              <p>条件要同时满足。P 阶段比的是全平台现在所处的阶段，不是每个用户自己的；现在的阶段不在范围内时估算为 0。</p>
+              <p>注册天数是严格大于 N 天。</p>
+              <p>到点发送时按那时的用户重新算，以后注册的用户不补发。</p>
+            </>} /></h3>
+            <div className="rd-form-grid" data-cols="2" data-dense="">
+              <Field label="P 阶段从" required>
+                {(control) => <Select {...control} aria-label="P 阶段从" value={form.phaseMin} disabled={!audienceCatalog} onChange={(next) => set("phaseMin", next)}
+                  options={(audienceCatalog?.phases ?? []).map((item) => ({ value: item.value, label: item.label }))} />}
+              </Field>
+              <Field label="到" required>
+                {(control) => <Select {...control} aria-label="P 阶段到" value={form.phaseMax} disabled={!audienceCatalog} onChange={(next) => set("phaseMax", next)}
+                  options={(audienceCatalog?.phases ?? []).map((item) => ({ value: item.value, label: item.label }))} />}
+              </Field>
+              <Field label="语言" required>
+                {(control) => <Select {...control} aria-label="语言" value={form.language} disabled={!audienceCatalog} onChange={(next) => set("language", next)}
+                  options={(audienceCatalog?.languages ?? []).map((item) => ({ value: item.value, label: item.label }))} />}
+              </Field>
+              <Field label="注册超过" required help="0–36500 的整数，严格大于">
+                {(control) => <NumberInput {...control} unit="天" min={0} step={1} value={form.registrationDaysMin} onChange={(e) => set("registrationDaysMin", e.target.value)} />}
+              </Field>
+            </div>
+            <div className="i3-estimate" role="status" aria-live="polite">
+              <span className="i3-estimate-label">预计</span>
+              {estimating
+                ? <span className="i3-estimate-num" data-words="">估算中…</span>
+                : estimatedAudience === null
+                  ? <span className="i3-estimate-num" data-words="">暂时估不出</span>
+                  : <><span className="i3-estimate-num">{estimatedAudience.toLocaleString("en-US")}</span><span className="i3-estimate-unit">人</span></>}
+              <span className="i3-estimate-note">
+                {estimatedAudience === null && !estimating ? "估算请求失败，改一下条件会重新估" : `${estimatedAt ? `${businessClock(estimatedAt)} 估算（${businessZone().label}）` : ""}，发出时可能更少`}
+                <Explain label="估算和实际差多少" content={<>
+                  <p>按估算那一刻的平台阶段和活跃用户数算，不看用户的通知设置。</p>
+                  <p>发出时去掉关了这类通知的用户（紧急通知不去），所以实际送达可能更少，甚至是 0。</p>
+                </>} />
+              </span>
+            </div>
+          </section>
 
-      <div>
-        <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6 }}>越南语通知内容</div>
-        <div className="ab-prev">
-          <div className="lc">VI</div>
-          <div className="tx">{c.bodyVi}</div>
+          <section className="i3-form-section" aria-labelledby="i3-f-budget">
+            <h3 id="i3-f-budget" className="i3-sub-title">预算记录</h3>
+            <Field label="预算" hint="选填" help="只记录，不扣款、不发奖。不填按 0 保存。">
+              {(control) => <NumberInput {...control} unit="USD" value={form.budget} onChange={(e) => set("budget", e.target.value)} />}
+            </Field>
+          </section>
         </div>
-      </div>
 
-      <div>
-        <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6 }}>中文通知内容</div>
-        <div className="ab-prev">
-          <div className="lc">ZH</div>
-          <div className="tx">{c.bodyZh}</div>
-        </div>
-      </div>
-
-      <div>
-        <div className="kv">
-          <span className="k">优先级 / 接收人数（未发送为预计）</span>
-          <span className="v">
-            <span className={`nc-pr ${c.tier}`}>{tierLabel}</span>
-            <span className="mono" style={{ marginLeft: 8 }}>{c.reach}</span>
-          </span>
-        </div>
-        <div className="kv">
-          <span className="k">调度</span>
-          <span className="v mono">{c.schedule}</span>
-        </div>
-        {budget !== undefined && (
-          <div className="kv">
-            <span className="k">预算</span>
-            <span className="v mono">${budget}</span>
+        <aside className="i3-form-preview" aria-label="App 里的样子">
+          <div className="i3-detail-head">
+            <h3 className="i3-sub-title">App 里的样子</h3>
+            <span className="i3-weak">{LANG_NAME[lang]}</span>
           </div>
-        )}
-        <div className="kv">
-          <span className="k">状态</span>
-          <span className="v">{liveStRender}</span>
-        </div>
-        <div className="kv">
-          <span className="k">送达 / 已读</span>
-          <span className="v mono">{c.st === "sent" ? `${c.sent} / ${c.read}` : "—"}</span>
-        </div>
-        <div className="kv">
-          <span className="k">滑动后跳转</span>
-          <span className="v mono" style={c.swipeTo === "—" ? { color: "var(--ink-4)" } : undefined}>{c.swipeTo}</span>
-        </div>
-        <div className="kv">
-          <span className="k">事件</span>
-          <span className="v mono" style={{ fontSize: 11.5 }}>
-            已发送、已送达、已读、左滑
-          </span>
-        </div>
+          <NotificationPreview lang={lang} title={title.trim()} body={body.trim()} ctaLabel={selectedCta?.value ? selectedCta.label : ""} tier={form.tier} kindLabel={kindLabel(form.kind)}
+            missing={lang === "en" && enEmpty} fallback="英语没填：英语和其他语言的用户收到后端默认的英文标题和正文。" />
+          <p className="i3-weak">示意图，实际样式以 App 为准。</p>
+        </aside>
       </div>
-
-      {c.tier === "critical" && (
-        <div className="itint warn">
-          <b>合规类通知</b> · 风险披露重新确认提醒和监管应急公告借这里按紧急级发送，需要合规或超级管理员操作。
-        </div>
-      )}
-    </div>
+    </Drawer>
   );
 }
