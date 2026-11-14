@@ -4,7 +4,7 @@
  * J3 · 篡改防御监控（看板页）。安全和风控同事在这页看系统拦下了多少次篡改请求、集中在哪些接口、
  * 哪些账户达到告警阈值、告警有没有送到风险评分（K4）和风险提醒（B5）。处置不在本页：账户行只跳
  * C2 账户操作和 K1 多账户风险排查。本页的写入口是导出脱敏报表（带审计的只读导出）和修改告警设置（直接生效）。
- * 读取、导出、修改的请求和判断沿用旧页面，这里只排界面。
+ * 配置恢复使用提交前保存的完整原请求；报表按只读导出的既定例外处理。
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
@@ -19,20 +19,19 @@ import {
 import type { JCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
-import { isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
-import type { TamperAccount, TamperOverview, TamperReport } from "@/lib/admin/j-client";
+import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmergencyOutcomeUncertain, retryJ3Command } from "@/lib/admin/j-client";
+import type { J3PendingCommand, TamperAccount, TamperOverview, TamperReport } from "@/lib/admin/j-client";
 import { downloadJ3ReportFile } from "@/lib/admin/j3-report-download";
-import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { businessClock, businessStamp, businessZone } from "@/lib/admin/business-time";
 
-/** 阈值配置与报表导出各占一个槽位:输入(阈值 / 窗口和理由)没变就复用命令号,变了才铸新号。
- *  落 sessionStorage,刷新后「结果未确认」的重试仍是同一命令号,后端才能去重。 */
+/** Old page records lack expected values: retain them for read-only investigation, never resend them. */
 const commandAttempt = createSlotAttemptStore({
   storageKey: "nexion-admin-j3-tamper-commands-v1",
+  retainExpiredRecords: true,
 });
 const ALERT_CONFIG_SLOT = "alert-config";
-const REPORT_EXPORT_SLOT = "report-export";
 
 type J3Window = "24h" | "7d" | "30d";
 const WINDOWS: readonly J3Window[] = ["24h", "7d", "30d"];
@@ -61,16 +60,17 @@ function j3ErrorText(error: unknown) {
   return error instanceof Error ? displayAdminError(error) : "操作失败，请刷新页面后重试。";
 }
 
-/** 本机保存的修改告警设置原请求（槽里的输入指纹就是目标值和理由）。前置值没存，等代码 worker 按 R1 补全。 */
-type SavedConfig = { threshold: number; feedK4: boolean; reason: string; createdAt: number; expiresAt: number };
+type SavedConfig = { threshold: number; feedK4: boolean; reason: string; createdAt: number; expiresAt: number; command?: J3PendingCommand };
 
 function readSavedConfig(): SavedConfig | null {
-  const record = commandAttempt.list().find((row) => row.fingerprint === ALERT_CONFIG_SLOT);
+  const command = getJ3PendingCommand();
+  if (command) return { ...command.tamper.input, createdAt: command.createdAt, expiresAt: command.expiresAt, command };
+  const record = getJ3LegacyCommand() ?? commandAttempt.list().find((row) => row.fingerprint === ALERT_CONFIG_SLOT);
   if (!record) return null;
   try {
     const input = JSON.parse(record.inputFingerprint) as { threshold?: unknown; feedK4?: unknown; reason?: unknown };
-    if (typeof input.threshold !== "number" || typeof input.feedK4 !== "boolean" || typeof input.reason !== "string") return null;
-    return { threshold: input.threshold, feedK4: input.feedK4, reason: input.reason, createdAt: record.createdAt, expiresAt: record.expiresAt };
+    if (typeof input.threshold !== "number" || typeof input.feedK4 !== "boolean") return null;
+    return { threshold: input.threshold, feedK4: input.feedK4, reason: typeof input.reason === "string" ? input.reason : "", createdAt: record.createdAt, expiresAt: record.expiresAt };
   } catch {
     return null;
   }
@@ -87,8 +87,8 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const reach = useReach();
   const canExport = authorities.includes("emergency_j3_export");
   const canConfigure = authorities.includes("emergency_j3_alert_config");
-  const canViewK1 = authorities.includes("risk_k1_read");
-  const canFreezeC2 = authorities.includes("user_c2_read") && authorities.includes("user_c2_account_freeze");
+  const canViewK1 = reach("/risk/multi-account", "risk_k1_read");
+  const canFreezeC2 = reach("/users/actions", "user_c2_read") && authorities.includes("user_c2_account_freeze");
   const data = emergency.tamper;
   const alert = data?.alertConfig;
   const window = data?.window ?? "24h";
@@ -105,6 +105,14 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const syncSaved = useCallback(() => setSaved(readSavedConfig()), []);
   useEffect(() => { syncSaved(); }, [syncSaved]);
   useEffect(() => { if (data) setReadAt(Date.now()); }, [data]);
+  useEffect(() => {
+    if (!saved || isRetryExpired(saved)) return;
+    const timer = setTimeout(syncSaved, saved.expiresAt - Date.now());
+    return () => clearTimeout(timer);
+  }, [saved?.expiresAt, syncSaved]);
+  useEffect(() => {
+    if (configOpen && !configOpen.original && (ctx.contentLoading || ctx.contentError || !alert || accountLoading)) setConfigOpen(null);
+  }, [configOpen, ctx.contentLoading, ctx.contentError, alert, accountLoading]);
 
   const abandonPendingReport = () => {
     setPendingReport(null);
@@ -144,10 +152,8 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       reasonPlaceholder: "例如：工单号、报表用途",
       reasonMax: 200,
       run: async (reason) => {
-        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(reason));
-        const reasonHash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-        const fingerprint = `${window}:${reasonHash}`;
-        const exportKey = commandAttempt.resolve(REPORT_EXPORT_SLOT, fingerprint, () => `j3-report-${crypto.randomUUID()}`);
+        if (!useAdminAuth.getState().session?.authorities.includes("emergency_j3_export")) throw new Error("ACCESS_DENIED");
+        const exportKey = `j3-report-${crypto.randomUUID()}`;
         setExporting(true);
         let report: TamperReport;
         try {
@@ -157,13 +163,12 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
             toast("没有收到报表文件，导出没有完成，请重新导出。", "warn");
             return;
           }
-          commandAttempt.forget(REPORT_EXPORT_SLOT);
           throw error;
         } finally {
+          finishJ3ReportAttempt(exportKey);
           setExporting(false);
         }
         // 服务端已生成报表，后续只重试下载该文件。
-        commandAttempt.forget(REPORT_EXPORT_SLOT);
         setPendingReport(report);
         try {
           downloadJ3ReportFile(report);
@@ -184,6 +189,8 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     }).catch(() => undefined);
   };
   const closeConfig = () => { setConfigOpen(null); syncSaved(); };
+  const configBlocked = saved ? j3ErrorText(new Error("J3_ORIGINAL_CONFIG_PENDING"))
+    : ctx.contentLoading || ctx.contentError || accountLoading ? j3ErrorText(new Error("J3_LATEST_OVERVIEW_REQUIRED")) : undefined;
 
   const exportDisabledReason = exporting ? undefined
     : retryableReport ? undefined
@@ -201,7 +208,8 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
           </Button>
         )}
         {canConfigure && alert && (
-          <Button icon={<SlidersHorizontal size={14} aria-hidden />} onClick={() => setConfigOpen({ original: null })}>修改告警设置</Button>
+          <Button icon={<SlidersHorizontal size={14} aria-hidden />} disabledReason={configBlocked}
+            onClick={() => { if (readSavedConfig()) syncSaved(); else setConfigOpen({ original: null }); }}>修改告警设置</Button>
         )}
       </>}
       meta={<span className="rd-toolbar">
@@ -225,7 +233,8 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
           <span className="j3-recovery-state"><StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag></span>
           <span className="j3-recovery-actions">
             <Button size="sm" loading={ctx.contentLoading} onClick={queryOriginal}>查询原结果</Button>
-            {canConfigure && alert && <Button size="sm" onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
+            {canConfigure && <Button size="sm" disabledReason={!saved.command ? j3ErrorText(new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE")) : isRetryExpired(saved) ? RETRY_EXPIRED_TEXT : undefined}
+              onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
           </span>
         </li>
       </ul>
@@ -242,8 +251,9 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     </Notice>
   );
 
-  const modal = configOpen && alert && (
-    <J3ConfigModal ctx={ctx} original={configOpen.original} onClose={closeConfig} />
+  const modal = configOpen && (configOpen.original?.command || alert) && (
+    <J3ConfigModal ctx={ctx} original={configOpen.original} onClose={closeConfig}
+      onPending={() => { const next = readSavedConfig(); setSaved(next); if (next?.command) setConfigOpen({ original: next }); }} />
   );
 
   if (ctx.contentError) {
@@ -500,7 +510,7 @@ function J3AccountRow({ account: a, feedK4, zone, userRef, pathName, canViewK1, 
   return (
     <Tr>
       <Td><Cell mono main={userRef(a.userCode)} sub={a.cluster ? <>关联组 <span data-mono>{a.cluster}</span></> : "没有关联账户组"} /></Td>
-      <Td align="right"><Cell num main={num(a.cnt)} sub={<span className="j3-last">最近 {a.last || "—"}<span className="rd-sr-only">（{zone}）</span></span>} /></Td>
+      <Td align="right"><Cell num main={num(a.cnt)} sub={<span className="j3-last">最近 {a.lastOccurredAt}<span className="rd-sr-only">（{zone}）</span></span>} /></Td>
       <Td grow><Cell main={names.length ? names.join("、") : "—"} title={a.paths.length ? a.paths.map((key) => `${pathName(key)}（${key}）`).join("、") : undefined} /></Td>
       <Td><span className="j3-feed-tags">{k4}{b5}</span></Td>
       <Td sticky="end">
@@ -517,10 +527,9 @@ function J3AccountRow({ account: a, feedK4, zone, userRef, pathName, canViewK1, 
   );
 }
 
-/** 修改告警设置：阈值和「新事件计入风险评分」两项，直接生效。提交、校验、命令号沿用旧页面。 */
-function J3ConfigModal({ ctx, original, onClose }: { ctx: JCtx; original: SavedConfig | null; onClose: () => void }) {
-  // 打开时的设置就是这次提交的前置值；框开着时「查询原结果」读回最新值，不改这次提交的内容。
-  const [current] = useState(() => ctx.emergency.tamper!.alertConfig);
+/** Recovery facts and requests come only from the submission-time record, including after a failed overview read. */
+function J3ConfigModal({ ctx, original, onClose, onPending }: { ctx: JCtx; original: SavedConfig | null; onClose: () => void; onPending: () => void }) {
+  const [current] = useState(() => original?.command?.tamper.context ?? ctx.emergency.tamper!.alertConfig);
   const sevenDayAlertAccounts = current.sevenDayAlertAccounts;
   const [thresholdText, setThresholdText] = useState(String(original?.threshold ?? current.threshold));
   const threshold = Number(thresholdText);
@@ -528,8 +537,8 @@ function J3ConfigModal({ ctx, original, onClose }: { ctx: JCtx; original: SavedC
   const [reason, setReason] = useState(original?.reason ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [touched, setTouched] = useState(false);
-  /** 结果未知：只改界面，请求照旧（同样的输入复用同一命令号）。 */
-  const [unknownAt, setUnknownAt] = useState<number | null>(original ? original.createdAt : null);
+  const [pending, setPending] = useState(original?.command ?? null);
+  const unknownAt = pending?.createdAt ?? null;
   const [readBack, setReadBack] = useState<ReactNode>(null);
   const changed = threshold !== current.threshold || feedK4 !== current.feedK4;
   const reasonLength = reason.trim().length;
@@ -541,26 +550,41 @@ function J3ConfigModal({ ctx, original, onClose }: { ctx: JCtx; original: SavedC
   const feedChanged = feedK4 !== current.feedK4;
   const locked = unknownAt !== null || submitting;
   const submit = async () => {
-    if (!valid || submitting) return;
-    const fingerprint = JSON.stringify({ threshold, feedK4, reason: reason.trim() });
-    const commandKey = commandAttempt.resolve(ALERT_CONFIG_SLOT, fingerprint, () => `j3-config-${crypto.randomUUID()}`);
-    setSubmitting(true);
-    try {
-      await ctx.actions.updateJ3AlertConfig(
-        threshold, feedK4, current.threshold, current.feedK4, reason.trim(), commandKey,
-      );
-    } catch (error) {
-      if (isEmergencyOutcomeUncertain(error)) {
-        // 框里的「结果未知」提醒就是这次的结论，不再另弹提示。
-        setUnknownAt((at) => at ?? Date.now());
-      } else {
-        commandAttempt.forget(ALERT_CONFIG_SLOT);
-        ctx.toast(`修改没有成功 · ${j3ErrorText(error)}`, "error");
-      }
-      setSubmitting(false);
+    if (submitting || !pending && !valid) return;
+    if (!useAdminAuth.getState().session?.authorities.includes("emergency_j3_alert_config")) {
+      ctx.toast(j3ErrorText(new Error("ACCESS_DENIED")), "error");
       return;
     }
-    commandAttempt.forget(ALERT_CONFIG_SLOT);
+    if (pending && isRetryExpired(pending)) {
+      ctx.toast(RETRY_EXPIRED_TEXT, "warn");
+      return;
+    }
+    if (!pending && (readSavedConfig() || ctx.contentLoading || ctx.contentError || !ctx.emergency.tamper)) {
+      ctx.toast(j3ErrorText(new Error("J3_LATEST_OVERVIEW_REQUIRED")), "warn");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      if (pending) await retryJ3Command(pending);
+      else await ctx.actions.updateJ3AlertConfig(
+        threshold, feedK4, current.threshold, current.feedK4, reason.trim(), `j3-config-${crypto.randomUUID()}`, current,
+      );
+    } catch (error) {
+      const retained = getJ3PendingCommand();
+      if (retained) {
+        setPending(retained);
+        onPending();
+      }
+      setSubmitting(false);
+      if (!isEmergencyOutcomeUncertain(error)) ctx.toast(`修改没有成功 · ${j3ErrorText(error)}`, "error");
+      // An original retry has ended only after the client removed it on a definite backend verdict.
+      if (pending && !retained) {
+        onClose();
+        await ctx.actions.reloadJEmergency().catch(() => undefined);
+      }
+      return;
+    }
+    onClose();
     try {
       await ctx.actions.reloadJEmergency();
       ctx.toast("告警设置已生效", "success");
@@ -568,7 +592,6 @@ function J3ConfigModal({ ctx, original, onClose }: { ctx: JCtx; original: SavedC
       ctx.toast("告警设置已生效，但页面刷新失败，请手动刷新核对。", "warn");
     } finally {
       setSubmitting(false);
-      onClose();
     }
   };
   const queryOriginal = () => {
@@ -579,7 +602,9 @@ function J3ConfigModal({ ctx, original, onClose }: { ctx: JCtx; original: SavedC
     }).catch((error) => setReadBack(`读取失败 · ${j3ErrorText(error)}`));
   };
 
-  const blocked = !changed ? "告警阈值和风险评分都没改"
+  const canRetry = useAdminAuth((state) => state.session?.authorities.includes("emergency_j3_alert_config") ?? false);
+  const blocked = pending ? !canRetry ? j3ErrorText(new Error("ACCESS_DENIED")) : isRetryExpired(pending) ? RETRY_EXPIRED_TEXT : undefined
+    : !changed ? "告警阈值和风险评分都没改"
     : !thresholdValid ? "告警阈值要填 1–100 的整数"
       : !previewAvailable ? "暂时算不出这个阈值的影响，不能提交。"
         : reasonLength < 8 ? "操作理由至少 8 字"

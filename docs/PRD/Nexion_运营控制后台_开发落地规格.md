@@ -210,7 +210,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | I7 | 教程中心 | /learn 课程内容/featured/完成 NEX 奖励(Learn-to-Earn) | I 内容 | V4·Ch14 | §11.11 |
 | J1 | Kill-Switch 矩阵 | 5 功能闸 kill 统一权威矩阵 + kill/恢复 + 联动 + 应急通道 | J 应急 | V4·Ch15 | §9.11d.1 / §9.11d.2 |
 | J2 | Geo-block | 国家码级地域屏蔽 + per-endpoint geo_block + 边缘 IP 判定 | J 应急 | V4·Ch15 | §9.11d.1 |
-| J3 | 篡改防御监控 | 只读监控看板:client 篡改尝试被 server 拦截的计数与告警 | J 应急 | V4·Ch15 | §9.11d.2 / §9.11d.3 |
+| J3 | 篡改防御监控 | 服务端权威拦截事件看板、脱敏报表与告警配置；账户处置跳 C2/K1 | J 应急 | V4·Ch15 | §9.11d.2 / §9.11d.3 |
 | J4 | 监管点名应急 SOP | 应急组合处置剧本编排(串联 J1/J2/I5/C2/K1/D2/I3) | J 应急 | V4·Ch15 | §9.11d |
 | K1 | 反多账户引擎 | IP/设备/支付三维多账户聚集识别 + 注册/sponsor-bind 阻断 | K 风控 | V1·Ch8 | §9.11e.1 / §16.2 / §9.11d.2 |
 | K2 | 套利与刷量检测 | trial 循环/trade-in 套利/gift 刷取/刷榜检测(基于 K1 信号) | K 风控 | V1·Ch8 | §9.11e.1 / §7.5 / §8.11 |
@@ -341,7 +341,7 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 |---|---|---|---|
 | **Kill-Switch 矩阵**(J1) | 5 功能闸{withdraw〔应急新增〕,staking,genesis,exchange,trial}:enabled:bool · operator · reason · coveragePrecheckRequired(恢复方向前置 B1 的闸标记) · autoTrigger{rule:R1\|R2,补录窗 30min};复用 admin.killswitch_toggled(原提案状态机已随 2026-06 操作确认决议废除) | SC | §17.1 / Ch15 J1 |
 | **Geo-block**(J2) | activeCountries(ISO alpha-2) · limitedCountries(受限资金/奖励变更档,ISO alpha-2) · enabled(=length>0) · perEndpoint[{endpoint,geoBlock,derivationStatus}] · edgeJudgeHealth · operator · reason;**服务端验证可信边缘代理并读取国家请求头，不按账户国家执法；名单、入口、来源、应急各按独立权限码；limited→blocked 为升级路径** | SC | §17.1 / Ch15 J2 |
-| **篡改监控**(J3) | tamper_path:enum(§9.11d.2 10类+chargeFailRate) · 拦截计数 · 涉及账户;告警 state:enum{normal\|flagged\|escalated};**纯只读,处置跳 K** | 派生视图 | §17.1 / Ch15 J3 |
+| **篡改监控**(J3) | 10 类登记接口 · 拦截计数 · 涉及账户；告警 state:enum{flagged\|escalated}；最近一次完整北京时间；K4/B5 实际接受回执；处置跳 C2/K1 | 派生视图 | §17.1 / Ch15 J3 |
 | **应急 SOP**(J4) | 剧本=kill+geo-block+披露+提现暂停+通知组合(串联 J1/J2/I5/C2/K1/D2/I3) · 演练态(lastDrill/演练就绪,沙箱不下发生产) | SC(编排) | Ch15 J4 |
 
 ### 域 K — 风控
@@ -586,8 +586,9 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 | `/api/admin/emergency/geo-block/endpoints/{key}` | PUT | ACTIVE 目录入口的 derived/explicit 规则；携 mode、countries、expectedMode、expectedCountries、理由和 Key | J2-MD3 | J2 |
 | `/api/admin/emergency/geo-block/edge-judge` | PUT | 健康识别源切换，携 source、expectedSource、理由和 Key；旧源同样健康时仅为主源无有效国家的请求保留五分钟兜底 | J2-MD4 | J2 |
 | `/api/admin/emergency/geo-block/emergency-blocks` | POST | 只加封锁；携 countries、triggerBasis、理由和 Key，任一已封锁或审批锁冲突时整批拒绝；本页五写全部直写，无 A2 提案 | 两步选择与确认 | J2 |
-| `/api/admin/tamper/{overview,paths,accounts}?window=` | GET | 篡改拦截总览/路径分布/账户告警(window∈{24h,7d,30d} 非法 400) | — | J3 |
-| `/api/admin/tamper/alert-config` | PUT | 配置告警频次/喂 K4 开关(携 Key) | J3-MD1 | J3 |
+| `/api/admin/emergency/tamper/overview?window=&accountPage=&accountPageSize=` | GET | 滚动 24h/7d/30d 拦截总览、路径分布、达到阈值账户；非法窗口 422，页长最多 50 | — | J3 |
+| `/api/admin/emergency/tamper/alert-config` | PUT | 直接保存 threshold/feedK4，必带 expectedThreshold/expectedFeedK4、理由和 Key；先去重再在执行回调核对原值 | J3-MD1 | J3 |
+| `/api/admin/emergency/tamper/reports` | POST | 脱敏 CSV：完整窗口的接口汇总和达到阈值账户；理由、Key 必填；无下载链接 | 理由确认 | J3 |
 | `/api/admin/emergency/playbooks` · `/:name` | GET/PUT | 应急剧本库 / 编辑(携 Key) | J4-MD1(PUT) | J4 |
 | `/api/admin/emergency/playbooks/:name/drill` | POST | 剧本演练(沙箱走查动作序列,不下发生产;通过更新 lastDrill→演练就绪;携 Key) | J4-MD2 | J4 |
 | `/api/admin/emergency/playbooks/:name/execute` | POST | 执行剧本(逐步推进,各止血步由该步目标域授权角色经该域确认弹窗单人确认执行,J4 不绕过各域确认门;前向只进不回滚;携 Key+执行锁;编排 J1/J2/I5/C2/K1/I3) | J4-MD3(各步各域确认门) | J4 |
@@ -600,6 +601,16 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 - 恢复标题、差异、影响、理由与成功提示都来自保存的原操作。重试成功回包不当当前数据；关闭原框后必须重读总览，读成功前不允许新修改。查询只要求读取资格，原样重试另检查该写入口权限。J1/J3/J4 原调用语义保持。
 - 钱包是后端原始十进制字符串，USDT 按字符串转整数求和、完整显示有效小数，不经 Number 或 toFixed 舍入；必填金额缺失不能当 0。国家拦截仅滚动 24 小时前 20 名；缺失国家或识别源计数显示未知，不能推算全量或逐条事件。后端无逐条拦截记录和 J2 原命令核查接口的缺口交后端处理。
 - 页面现有的绝对访问承诺、主源失败时未说明五分钟兜底、以及未知记录只会在重试成功后消失的说法存在事实边界；详见 J2 重构说明「需视觉修正的说法」，由视觉 worker 修文案，本轮仅接逻辑。
+
+**J3 篡改防御监控当前合同（2026-11-14，后端 `111e00cd`）：**
+
+- 页面范围、URL 窗口/页码、稀疏小时/日期桶、路径排行、账户分页、告警配置两项和报表入口保持。只统计已经投影的权威拒绝事件；静态登记 10/10 不证明实时投递健康。账户门槛是 24h 基准 threshold 的 1/7/30 倍；每次读取重新筛，不保存名单。J3 不冻结账户或建立关联组；去 C2/K1 必须同时有目标菜单和原有业务权限，用户详情继续按菜单和读权判定。
+- 告警配置直接 PUT，不走 A2，也没有审批锁或环境禁用分支；不能从旧 high-ops 登记推造审批。新修改要求最新概览可用、没有原修改结果未知、阈值 1–100、近七天预览可用、理由 trim 后 8–200 字且至少一项变化。expected 值取开框时的权威配置。
+- 发前在 J 域现有唯一存储实例保存方法、地址、原始 JSON 正文（含 expectedThreshold/expectedFeedK4、operator、reason）、Key 和当时的告警配置/预览事实；存不下不发。结果未知后输入冻结，刷新及概览失败仍保留提醒和恢复入口。恢复只用保存的正文、Key 和确认事实，不用后来读到的配置重新组装。首次提交按 isDeterministicRejection 判断拒绝；原请求重试仅成功或 isExplicitRejection 明确拒绝才结案，401/403/408/425/429、所有 IDEMPOTENCY_*、5xx、断网和不可读响应保留记录。超过首次提交 24 小时、缺原请求的旧记录仅只读核对。
+- 恢复成功或明确拒绝即关闭原框；成功回放的旧 overview 不设为当前数据，必须重新读取，读取成功前不能新改。查询与重试分别判断读权/配置权；没有配置权仍可读回。后端无 J3 按 Key 查询回执，当前值相同或不同都不能证明原命令结果，读回不自动解锁。
+- `lastOccurredAt` 已由 f71b72ff 交付：与 last 相同事件 MAX 的完整 `YYYY-MM-DD HH:mm:ss`，在现有「最近」位置原样显示，北京时间，不经浏览器时区转换。K4/B5 两布尔是当前窗口至少一条事件实际接受的聚合，均必填且不可空；K4 分数是窗口实际增分之和（允许 +0），不是当前总分。B5 接受指 nx_risk_signal 插入，不是 App 推送或已读。缺回执时整份读取失败并显示具体原因，不当作 false/0。B5=false 和 partial 覆盖为兼容分支，当前正常投影无法产生，不用作真实业务验收夹具。
+- 报表依 B4-PD02 保持带审计只读导出：完整原 body/Key 发前持久化，未拿到文件允许重新发起新导出，不锁业务配置或套长期 R1。已收到的文件只在内存保留，本地重下不再 POST；放弃不删服务端记录。范围以生成时服务端 now 和当前阈值为准，不是冻结页面快照；空事件或超过 10,000 个达到阈值账户拒绝。CSV 返回 base64，无下载 URL。
+- 现有「更多/更少账户」的严格增减、风险评分 0 分上限边界、旧指南「只有时分秒」等说法待视觉 worker 校正，详见 J3 重构说明「需视觉修正的说法」；本轮未改布局、样式或现有页面文案。
 
 **J1 紧急停用开关页面行为（2026-11-06 补修）：**
 
@@ -1137,7 +1148,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 - **I3 通知 campaign**:`draft → scheduled → sending → sent`;仅 `scheduled → cancelled`;紧急取消另核紧急执行权;`cancelled` 不能编辑或重新排期,只能删除,要改就新建;`draft` 和 `cancelled` 可删,`sent` 不可删;调度下发=MC;优先级 in-place 升级 server emit canonical。
 - **I4 信任 / I6 i18n / I7 课程**:内容与课程 `draft → published → archived`；I7 课程版本 `DRAFT → PUBLISHED → SUPERSEDED`，回滚重新选定历史版本为当前版。I4 财务/NEX 叙事须合规审查，I6 发布前镜像+占位符 gate；I7 初次发布、版本发布和回滚均须课程写与奖励调整双权限，featured set⇄unset 单位互斥。
 - **J1 功能闸**：关停确认后立即执行，恢复提交 A2 应急审批、另一位有权超管批准后执行。资金恢复须服务端估值可靠且允许恢复，批准时重查覆盖率；试用免查。批量关停同一事务，有一项不符合则整批不执行；补录不恢复。结果未知保原申请、先查原键，重试被拒仍保留，过期只查询。提现关停的通道边界见域 J 页面行为。
-- **J3 篡改告警**:`normal → flagged`(超频次)→ `escalated`(喂 K4+B5);纯只读监控,处置跳 K 域。
+- **J3 篡改告警**：只列窗口内达到阈值的账户；K4/B5 两路都至少接受一次为 `escalated`，否则 `flagged`，不是人工处置状态；处置跳 C2/K1。
 
 ### 5.13 状态机 — PRD 未完整定义 / 已声明偏差(开发须知)
 - **D2 `review-pending`**:§1.9 仅列正常 5 态,review-pending 为后台扩展;`withdraw.approved`↔`review-passed` 命名映射须 A4 registry 确认。

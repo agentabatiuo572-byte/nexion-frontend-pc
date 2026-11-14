@@ -29,14 +29,38 @@ export type J2CommandBody = {
 export type J2PendingCommand = SlotAttemptRecord & {
   geo: { path: string; method: string; body: string; context: J2CommandContext };
 };
-type EmergencyPendingCommand = SlotAttemptRecord & { geo?: J2PendingCommand["geo"] };
+export type J3ConfigBody = {
+  threshold: number; feedK4: boolean; expectedThreshold: number; expectedFeedK4: boolean;
+  operator: string; reason: string;
+};
+export type J3PendingCommand = SlotAttemptRecord & {
+  tamper: { path: "/tamper/alert-config"; method: "PUT"; body: string; input: J3ConfigBody; context: TamperOverview["alertConfig"] };
+};
+type EmergencyPendingCommand = SlotAttemptRecord & { geo?: J2PendingCommand["geo"]; tamper?: J3PendingCommand["tamper"] };
+const J3_CONFIG_SLOT = "PUT /tamper/alert-config";
 const isJ2WriteSlot = (slot: string) => /^(?:PUT \/geo-block\/(?:country-lists\/(?:blocked|limited)|endpoints\/[^/]+|edge-judge)|POST \/geo-block\/emergency-blocks)$/.test(slot);
-// One instance owns both legacy J slots and J2's complete original requests.
+// One instance owns legacy J slots and the complete J2/J3 original requests.
 const emergencyCommands = createPendingMutationStore<EmergencyPendingCommand>({
   storageKey: "nexion-admin-j-emergency-commands-v1",
-  retainExpiredRecords: (record) => isJ2WriteSlot(record.fingerprint),
+  retainExpiredRecords: (record) => isJ2WriteSlot(record.fingerprint) || record.fingerprint === J3_CONFIG_SLOT,
   isValidRecord: (record) => {
     if (typeof record.inputFingerprint !== "string" || !record.inputFingerprint) return false;
+    if (record.tamper) {
+      try {
+        const { path, method, body, input, context } = record.tamper;
+        if (record.fingerprint !== J3_CONFIG_SLOT || path !== "/tamper/alert-config" || method !== "PUT"
+          || body !== record.inputFingerprint || JSON.stringify(input) !== body
+          || !Number.isInteger(input.threshold) || input.threshold < 1 || input.threshold > 100
+          || !Number.isInteger(input.expectedThreshold) || input.expectedThreshold < 1 || input.expectedThreshold > 100
+          || typeof input.feedK4 !== "boolean" || typeof input.expectedFeedK4 !== "boolean"
+          || typeof input.reason !== "string" || input.reason.trim().length < 8 || input.reason.length > 200
+          || typeof input.operator !== "string") return false;
+        const alertConfig = normalizeTamperAlertConfig(context);
+        if (alertConfig.threshold !== input.expectedThreshold || alertConfig.feedK4 !== input.expectedFeedK4) return false;
+        record.tamper.context = alertConfig;
+        return true;
+      } catch { return false; }
+    }
     if (!record.geo) return true;
     try {
       const { path, method, body, context } = record.geo;
@@ -76,6 +100,18 @@ export const listJ2PendingCommands = () => emergencyCommands.list().filter((reco
 // Old J2 records lack the reason/body: preserve them for read-only investigation.
 export const listJ2LegacyCommands = () => emergencyCommands.list().filter((record) => isJ2WriteSlot(record.fingerprint) && !record.geo);
 export const getJ2PendingCommand = (slot: string) => listJ2PendingCommands().find((record) => record.fingerprint === slot);
+export const getJ3PendingCommand = () => emergencyCommands.list().find((record): record is J3PendingCommand => !!record.tamper);
+export const getJ3LegacyCommand = () => emergencyCommands.list().find((record) => record.fingerprint === J3_CONFIG_SLOT && !record.tamper);
+
+export async function retryJ3Command(record: J3PendingCommand) {
+  const saved = getJ3PendingCommand();
+  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  if (isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
+  await apiRequest(saved.tamper.path, { method: saved.tamper.method, headers: { "Idempotency-Key": saved.commandKey }, body: saved.tamper.body }, undefined, saved.tamper.context);
+}
+
+// Report generation is a read-only export (B4-PD02), so an unavailable file never locks future exports.
+export const finishJ3ReportAttempt = (commandKey: string) => emergencyCommands.forget("POST /tamper/reports", commandKey);
 
 export async function retryJ2Command(record: J2PendingCommand) {
   const saved = getJ2PendingCommand(record.fingerprint);
@@ -112,13 +148,14 @@ export function isEmergencyOutcomeUncertain(error: unknown) {
     || (error instanceof Error && error.name === "EmergencyOutcomeUncertainError");
 }
 
-async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2CommandContext): Promise<T> {
+async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2CommandContext, tamperContext?: TamperOverview["alertConfig"]): Promise<T> {
   const headers = new Headers(init?.headers);
   const method = (init?.method ?? "GET").toUpperCase();
   const isWrite = method !== "GET" && method !== "HEAD";
   const writeSlot = `${method} ${path}`;
   const isJ2Write = isWrite && isJ2WriteSlot(writeSlot);
-  let isJ2Retry = false;
+  const isJ3Config = isWrite && writeSlot === J3_CONFIG_SLOT;
+  let isOriginalRetry = false;
   const inputFingerprint = emergencyInputFingerprint(init?.body);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (isWrite) {
@@ -128,7 +165,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
         throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
       }
       const saved = getJ2PendingCommand(writeSlot);
-      isJ2Retry = !!saved;
+      isOriginalRetry = !!saved;
       if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
       if (saved && (saved.commandKey !== providedCommandKey || saved.geo.body !== init?.body)) {
         throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
@@ -144,11 +181,38 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
         if (!saved) emergencyCommands.forget(writeSlot, original.commandKey);
         throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
       }
+    } else if (isJ3Config) {
+      if (getJ3LegacyCommand()) throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
+      const saved = getJ3PendingCommand();
+      isOriginalRetry = !!saved;
+      if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
+      if (saved && (saved.commandKey !== providedCommandKey || saved.tamper.body !== init?.body)) {
+        throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
+      }
+      if (!saved) {
+        if (!tamperContext || typeof init?.body !== "string") throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+        const commandKey = providedCommandKey || idempotencyKey();
+        emergencyCommands.remember(writeSlot, commandKey, {
+          inputFingerprint: init.body,
+          tamper: { path: "/tamper/alert-config", method: "PUT", body: init.body, input: JSON.parse(init.body), context: tamperContext },
+        });
+        headers.set("Idempotency-Key", commandKey);
+      }
+      const original = getJ3PendingCommand();
+      if (!original || !emergencyCommands.isDurablyStored(writeSlot, original.commandKey)) {
+        if (!saved) emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
+        throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+      }
+    } else if (path === "/tamper/reports") {
+      const commandKey = providedCommandKey || idempotencyKey();
+      emergencyCommands.remember(writeSlot, commandKey, { inputFingerprint: String(init?.body ?? "") });
+      if (!emergencyCommands.isDurablyStored(writeSlot, commandKey)) {
+        emergencyCommands.forget(writeSlot, commandKey);
+        throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+      }
+      headers.set("Idempotency-Key", commandKey);
     } else {
-      // J3 supplies a key bound to the window and reason. Other emergency commands keep their own retry identity.
-      const fingerprint = path === "/tamper/reports" && providedCommandKey
-        ? JSON.stringify([inputFingerprint, providedCommandKey])
-        : inputFingerprint;
+      const fingerprint = inputFingerprint;
       const commandKey = emergencyAttempts.resolve(
         writeSlot,
         fingerprint,
@@ -188,16 +252,20 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
     const message = `应急控制服务返回了无法确认的内容（HTTP ${res.status}）`;
     throw isWrite ? new EmergencyOutcomeUncertainError(message) : new Error(`${message}，请稍后重试。`);
   }
+  if (path.startsWith("/tamper/") && (!payload || typeof payload !== "object" || Array.isArray(payload)
+    || typeof payload.code !== "number" || payload.message !== undefined && typeof payload.message !== "string")) {
+    throw isWrite ? new EmergencyOutcomeUncertainError("应急控制服务返回了无法确认的内容") : new Error("J3_RESPONSE_INVALID");
+  }
   const requestFailed = !res.ok || (isWrite
     ? payload.code !== 0
     : payload.code !== undefined && payload.code >= 400);
-  if (isJ2Write && (requestFailed || res.headers.get("X-Nexion-Upstream-Outcome") === "unknown")) {
+  if ((isJ2Write || isJ3Config) && (requestFailed || res.headers.get("X-Nexion-Upstream-Outcome") === "unknown")) {
     const error = Object.assign(new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`)), {
       status: res.ok && typeof payload.code === "number" ? payload.code : res.status,
       reasonCode: payload.message,
       unknownOutcome: res.headers.get("X-Nexion-Upstream-Outcome") === "unknown",
     });
-    const rejected = isJ2Retry ? isExplicitRejection(error)
+    const rejected = isOriginalRetry ? isExplicitRejection(error)
       : !error.unknownOutcome && !isIdempotencyOutcomeOpen(payload.message)
         && isDeterministicRejection(res.status, payload.code);
     if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
@@ -225,7 +293,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
     }
     throw Object.assign(new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`)), { status: res.status, reasonCode: payload.message });
   }
-  if (isJ2Write) emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
+  if (isJ2Write || isJ3Config) emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
   else if (isWrite) emergencyAttempts.forget(writeSlot);
   return payload.data as T;
 }
@@ -506,6 +574,7 @@ export type TamperAccount = {
   cnt: number;
   k4: string;
   last: string;
+  lastOccurredAt: string;
   paths: string[];
   cluster: string;
   fedToK4: boolean;
@@ -694,7 +763,7 @@ export type JEmergencyActions = {
   updateJ2EdgeJudge: (source: string, expectedSource: string, reason: string, commandKey?: string, context?: J2CommandContext) => Promise<void>;
   emergencyBlockJ2: (countries: string[], triggerBasis: string, reason: string, commandKey?: string, context?: J2CommandContext) => Promise<void>;
   loadJ3TamperPage: (window: "24h" | "7d" | "30d", page: number, pageSize: number) => Promise<TamperOverview>;
-  updateJ3AlertConfig: (threshold: number, feedK4: boolean, expectedThreshold: number, expectedFeedK4: boolean, reason: string, commandKey?: string) => Promise<void>;
+  updateJ3AlertConfig: (threshold: number, feedK4: boolean, expectedThreshold: number, expectedFeedK4: boolean, reason: string, commandKey?: string, context?: TamperOverview["alertConfig"]) => Promise<void>;
   createJ3Report: (window: "24h" | "7d" | "30d", reason: string, commandKey?: string) => Promise<TamperReport>;
   createJ4Playbook: (body: J4PlaybookCreateInput, reason: string, commandKey?: string) => Promise<void>;
   updateJ4Playbook: (code: string, body: J4PlaybookUpdateInput, reason: string, commandKey?: string) => Promise<void>;
@@ -1044,6 +1113,8 @@ function normalizeTamper(raw: unknown): TamperOverview {
     })),
     accounts: requiredRows<Record<string, unknown>>(data.accounts, "tamper.accounts").map((row, index) => {
       const userCode = str(row.userCode, str(row.userNo));
+      if (row.fedToK4 == null) throw new Error("J3_RISK_SCORE_RECEIPT_UNAVAILABLE");
+      if (row.b5Triggered == null) throw new Error("J3_RISK_ALERT_RECEIPT_UNAVAILABLE");
       return {
         userCode,
         userNo: userCode,
@@ -1051,6 +1122,11 @@ function normalizeTamper(raw: unknown): TamperOverview {
         cnt: requiredNum(row.count, `tamper.accounts.${index}.count`),
         k4: str(row.k4),
         last: str(row.last),
+        lastOccurredAt: (() => {
+          const value = requiredText(row.lastOccurredAt, `tamper.accounts.${index}.lastOccurredAt`);
+          if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) contractError(`tamper.accounts.${index}.lastOccurredAt`);
+          return value;
+        })(),
         paths: strArray(row.paths),
         cluster: str(row.cluster),
         fedToK4: requiredBool(row.fedToK4, `tamper.accounts.${index}.fedToK4`),
@@ -1086,39 +1162,42 @@ function normalizeTamper(raw: unknown): TamperOverview {
       }
       return { status, registeredCount, activeCount, registeredPaths, activePaths, missingPaths };
     })(),
-    alertConfig: (() => {
-      const threshold = requiredNum(alertConfig.threshold, "alertConfig.threshold");
-      const effectiveThreshold = requiredNum(alertConfig.effectiveThreshold, "alertConfig.effectiveThreshold");
-      const sevenDayAlertAccounts = requiredNum(alertConfig.sevenDayAlertAccounts, "alertConfig.sevenDayAlertAccounts");
-      const rawPreview = rec(alertConfig.sevenDayPreviewByThreshold);
-      const previewEntries = Object.entries(rawPreview);
-      const expectedKeys = Array.from({ length: 100 }, (_, index) => String(index + 1));
-      if (previewEntries.length !== expectedKeys.length
-        || expectedKeys.some((key) => !Object.prototype.hasOwnProperty.call(rawPreview, key))) {
-        contractError("alertConfig.sevenDayPreviewByThreshold.keys");
-      }
-      const sevenDayPreviewByThreshold = Object.fromEntries(previewEntries.map(([key, value]) => {
-        const count = requiredNum(value, `alertConfig.sevenDayPreviewByThreshold.${key}`);
-        if (!Number.isInteger(count) || count < 0) contractError(`alertConfig.sevenDayPreviewByThreshold.${key}`);
-        return [key, count];
-      }));
-      if (!Number.isInteger(threshold) || threshold < 1 || threshold > 100
-        || !Number.isInteger(effectiveThreshold) || effectiveThreshold < threshold
-        || !Number.isInteger(sevenDayAlertAccounts) || sevenDayAlertAccounts < 0
-        || sevenDayPreviewByThreshold[String(threshold)] !== sevenDayAlertAccounts) {
-        contractError("alertConfig.consistency");
-      }
-      return {
-        threshold,
-        label: requiredText(alertConfig.label, "alertConfig.label"),
-        feedK4: requiredBool(alertConfig.feedK4, "alertConfig.feedK4"),
-        effectiveThreshold,
-        effectiveLabel: requiredText(alertConfig.effectiveLabel, "alertConfig.effectiveLabel"),
-        sevenDayAlertAccounts,
-        sevenDayPreviewByThreshold,
-      };
-    })(),
+    alertConfig: normalizeTamperAlertConfig(alertConfig),
     sources: strArray(data.sources),
+  };
+}
+
+function normalizeTamperAlertConfig(raw: unknown): TamperOverview["alertConfig"] {
+  const alertConfig = rec(raw);
+  const threshold = requiredNum(alertConfig.threshold, "alertConfig.threshold");
+  const effectiveThreshold = requiredNum(alertConfig.effectiveThreshold, "alertConfig.effectiveThreshold");
+  const sevenDayAlertAccounts = requiredNum(alertConfig.sevenDayAlertAccounts, "alertConfig.sevenDayAlertAccounts");
+  const rawPreview = rec(alertConfig.sevenDayPreviewByThreshold);
+  const previewEntries = Object.entries(rawPreview);
+  const expectedKeys = Array.from({ length: 100 }, (_, index) => String(index + 1));
+  if (previewEntries.length !== expectedKeys.length
+    || expectedKeys.some((key) => !Object.prototype.hasOwnProperty.call(rawPreview, key))) {
+    contractError("alertConfig.sevenDayPreviewByThreshold.keys");
+  }
+  const sevenDayPreviewByThreshold = Object.fromEntries(previewEntries.map(([key, value]) => {
+    const count = requiredNum(value, `alertConfig.sevenDayPreviewByThreshold.${key}`);
+    if (!Number.isInteger(count) || count < 0) contractError(`alertConfig.sevenDayPreviewByThreshold.${key}`);
+    return [key, count];
+  }));
+  if (!Number.isInteger(threshold) || threshold < 1 || threshold > 100
+    || !Number.isInteger(effectiveThreshold) || effectiveThreshold < threshold
+    || !Number.isInteger(sevenDayAlertAccounts) || sevenDayAlertAccounts < 0
+    || sevenDayPreviewByThreshold[String(threshold)] !== sevenDayAlertAccounts) {
+    contractError("alertConfig.consistency");
+  }
+  return {
+    threshold,
+    label: requiredText(alertConfig.label, "alertConfig.label"),
+    feedK4: requiredBool(alertConfig.feedK4, "alertConfig.feedK4"),
+    effectiveThreshold,
+    effectiveLabel: requiredText(alertConfig.effectiveLabel, "alertConfig.effectiveLabel"),
+    sevenDayAlertAccounts,
+    sevenDayPreviewByThreshold,
   };
 }
 
@@ -1344,7 +1423,7 @@ export const jEmergencyActions: Omit<JEmergencyActions, "reloadJEmergency"> = {
   updateJ2EdgeJudge: (source, expectedSource, reason, commandKey, context) => apiRequest("/geo-block/edge-judge", { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ source, expectedSource }, reason)) }, context).then(() => undefined),
   emergencyBlockJ2: (countries, triggerBasis, reason, commandKey, context) => apiRequest("/geo-block/emergency-blocks", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ countries, triggerBasis }, reason)) }, context).then(() => undefined),
   loadJ3TamperPage: fetchJTamperOverview,
-  updateJ3AlertConfig: (threshold, feedK4, expectedThreshold, expectedFeedK4, reason, commandKey) => apiRequest("/tamper/alert-config", { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ threshold, feedK4, expectedThreshold, expectedFeedK4 }, reason)) }).then(() => undefined),
+  updateJ3AlertConfig: (threshold, feedK4, expectedThreshold, expectedFeedK4, reason, commandKey, context) => apiRequest("/tamper/alert-config", { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ threshold, feedK4, expectedThreshold, expectedFeedK4 }, reason)) }, undefined, context).then(() => undefined),
   createJ3Report: (window, reason, commandKey) => apiRequest("/tamper/reports", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ window }, reason)) }).then((raw) => normalizeTamperReport(raw, window)),
   createJ4Playbook: (body, reason, commandKey) => apiRequest("/sop/playbooks", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateJ4Playbook: (code, body, reason, commandKey) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
