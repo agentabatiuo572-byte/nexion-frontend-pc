@@ -47,7 +47,11 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
-  if (path.some((part) => part.toLowerCase().includes("acceptance") || part.toLowerCase().includes("sandbox"))) {
+  // These are real I2 resource keys, not retired sandbox endpoints. Keep every other path guard.
+  const novaResourceKey = path[0] === "nova" && ["channels", "templates"].includes(path[1])
+    && (path.length === 3 || path.length === 4 && path[3] === "status") && /^[A-Za-z0-9_-]{2,64}$/.test(path[2]);
+  if (path.some((part, index) => !(novaResourceKey && index === 2)
+    && (part.toLowerCase().includes("acceptance") || part.toLowerCase().includes("sandbox")))) {
     return jsonError(410, "SANDBOX_RETIRED");
   }
   const targetPath = backendPath(path);

@@ -192,11 +192,13 @@ A6 当前执行路径（2026-11-04，T02、BUG-134）：新建角色、修改名
 | 模块 | R 权限 | 可读角色 | W/H/X 角色 | 数据范围与关键限制 |
 |---|---|---|---|---|
 | I1 转化文案 A/B | `content_i1_read` | CONTENT、GROWTH、AUDITOR | W：CONTENT；采纳/发布 H：CONTENT lead | ALL；实验结论与发布分离 |
-| I2 Nova 推送运营 | `content_i2_read` | CONTENT、SUPPORT、AUDITOR | W：CONTENT；通道 kill H | ALL；禁用不抹历史送达 |
+| I2 消息推送 | `content_i2_read` | 以实际授权为准；种子 CONTENT 可写、AUDITOR 只读 | 全部16写要求 `content_i2_write`，直接执行，无独立 kill/审批门槛 | 全部频道；停用不删除已有通知 |
 | I3 通知 Campaign | `content_i3_read` | CONTENT、GROWTH、SUPPORT、AUDITOR | W：CONTENT；立即全量发送 H | REGION/ALL；已发送不可撤回 |
 | I4 信任中心 | `content_i4_read` | CONTENT、RISK、FINANCE、AUDITOR | 发布/回滚/下架 H：CONTENT lead+合规权限 | REGION；公开证明版本不可覆盖 |
 | I5 风险披露 | `content_i5_read` | CONTENT、RISK、FINANCE、AUDITOR | CONTENT 等独立有权者按原规则写／发布；RISK 仅只读 | JURISDICTION；风控不保留旧 draft 写、发布或开关权；版本确认和资金门禁联动 |
 | I6 i18n 文案 | `content_i6_read` | CONTENT、GROWTH、SUPPORT、AUDITOR | W：CONTENT；namespace 发布 H | locale/namespace；占位符等集、禁词门禁 |
+
+I2 名称同步（2026-11-15）：本页现名「消息推送」，管发到 App「消息通知」的业务推送；Nova 智能问答已下线。路由 `/content/nova`、页面编号 I2、`/api/admin/content/nova/*` 接口、`content_i2_read` / `content_i2_write` 权限码和全部通道 key 均不变。
 
 ### 3.10 J 紧急与合规控制（4）
 

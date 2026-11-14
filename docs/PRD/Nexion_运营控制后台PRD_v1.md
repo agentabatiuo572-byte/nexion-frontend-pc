@@ -961,12 +961,14 @@ Nexion 运营控制后台
 | 子模块 | 名称 | 对应前端 | §锚点 | 批次 |
 |---|---|---|---|---|
 | I1 | 转化文案 A/B | MissedIncome / ConversionBanner 文案池 | §9.11c.2 | V4 |
-| I2 | Nova 推送运营 | Nova/Stella 10 channel cadence + 模板池 + per-channel kill | §11.0A / §9.11c.1 | V4 |
+| I2 | 消息推送 | App 业务推送频道节奏 + 中越英模板 + 单频道启停 | §11.0A / §9.11c.1 | V4 |
 | I3 | 通知 Campaign | /me/notifications(优先级 CAP / 批量系统通知) | §11.2 | V4 |
 | I4 | 信任中心 CMS | /trust(财报数字 / leadership / NEX 叙事 / 徽章) | §11.3 | V4 |
 | I5 | 风险披露版本管理 | /me/risk-disclosure(version × jurisdiction 双维 re-ack) | §11.4a / §9.11d.1 | V4 |
 | I6 | i18n 文案管理 | en/zh 镜像 + marketing namespace 多版 | §14 / §9.11c.2 | V4 |
 | I7 | 教程中心 | /learn(15 课 / featured / 奖励) | §11.11 | V4 |
+
+I2 名称同步（2026-11-15）：本页现名「消息推送」，管发到 App「消息通知」的业务推送；Nova 智能问答已下线。路由 `/content/nova`、页面编号 I2、`/api/admin/content/nova/*` 接口、`content_i2_read` / `content_i2_write` 权限码和全部通道 key 均不变。
 
 **I5 法律条款与风险披露（2026-11-07 现行页面）**：三个页签各自的读取时间和刷新统一放页头；失败写清读取失败，只留「重试」。三个页签共用未保存保护，换稿、新建、查看别的版本、行内发布与撤回先询问；冲突按段落标识三方合并，自己改过的保留，写清别人改了哪，两边改同一处时提示核对。读取最新失败不丢稿，读到前不能保存；读回核对切到原操作的语言、适用范围和版本，待确认条写查证对象与状态，时间按业务时区。
 

@@ -7,7 +7,7 @@
  * 请求、校验、命令号和结果处理照改版前的写法（runBackend、两类共用确认框），这里只换界面。
  * amplifies = false：只动推送节奏与文案，不动费率、奖励、价格。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Ban, Database, Eye, FileText, History, Pencil, Percent, Plus, Power, PowerOff, Radio, RefreshCw, RotateCcw, Send, Shuffle, Timer, Trash2 } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IrreversibleTag, MoreMenu, Notice,
@@ -19,13 +19,16 @@ import {
   parseNovaDuration,
   validateNovaCadence,
 } from "../../../../lib/admin/nova-cadence";
-import type { ICtx } from "./types";
+import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import type { NovaSocialEventSampleView } from "@/lib/admin/i-client";
+import { useReach } from "@/lib/nav/use-reach";
+import { pendingI2Commands, retryI2Command, type I2Command, type NovaSocialEventSampleView } from "@/lib/admin/i-client";
+import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import {
   AppNotice, ChannelCard, DIST_SLOT, NO_SOURCE, PHASE_CHANNELS, PhaseNote, SOCIAL_CHANNEL, TEMPLATE_STATE_TEXT, TemplateTag,
   catalogName, channelName, cooldownSentence, noticeCategory, readable, orderDist, placeholdersOf, previewText, sourceText, tickSentence,
@@ -59,15 +62,130 @@ const normalizeNovaKey = (s: string) =>
 const slug = (s: string) => normalizeNovaKey(s) || "untitled";
 
 const LIVE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
-/** 结果未知的写操作：界面已备好，等代码 worker 按 R1 保存原请求后接上（现在共用层不保存可恢复的原请求，这里一直是空的）。 */
-type UnknownRow = { key: string; action: string; object: string; change: string; submittedAt: string; expired: boolean };
-const UNKNOWN_ROWS: UnknownRow[] = [];
-
 export function I2Nova({ ctx }: { ctx: ICtx }) {
-  const { toast, openActionConfirm, openConfirm, actions, content, contentLoading, contentError } = ctx;
+  const { toast, actions, content, contentLoading, contentError } = ctx;
+  const reach = useReach();
   const session = useAdminAuth((state) => state.session);
   const canWriteI2 = session?.role === "superadmin" || !!session?.authorities.includes("content_i2_write");
+  const canReadI2 = session?.role === "superadmin" || !!session?.authorities.includes("content_i2_read");
   const data = content.nova;
+  const [pending, setPending] = useState<I2Command[]>([]);
+  const [recovering, setRecovering] = useState<string | null>(null);
+  const recoveryInFlight = useRef(false);
+  const [requiresReload, setRequiresReload] = useState(false);
+  const readBarrier = useRef(data);
+  const latestRead = useRef(data);
+  latestRead.current = data;
+  const newMutationReason = !data ? "读到数据后才能新增" : contentError || contentLoading || requiresReload ? "最新数据没读到" : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined;
+  const newMutationBlocked = useRef(newMutationReason);
+  newMutationBlocked.current = newMutationReason;
+  const syncPending = () => setPending(pendingI2Commands());
+  useEffect(() => { setPending(pendingI2Commands()); }, [session?.adminId]);
+  useEffect(() => {
+    const nextExpiry = pending.filter((row) => !isRetryExpired(row)).reduce((next, row) => Math.min(next, row.expiresAt), Infinity);
+    if (!Number.isFinite(nextExpiry)) return;
+    const timer = setTimeout(() => setPending(pendingI2Commands()), Math.max(1, nextExpiry - Date.now()));
+    return () => clearTimeout(timer);
+  }, [pending]);
+  useEffect(() => {
+    if (requiresReload && data && data !== readBarrier.current && !contentLoading && !contentError) setRequiresReload(false);
+  }, [requiresReload, data, contentLoading, contentError]);
+
+  const lockReason = (target: string) => newMutationReason || (pending.some((row) => !row.original || row.target === target
+    || target.startsWith("channel-name:") && row.original.method === "POST" && row.original.path === "/nova/channels"
+      && row.object.trim() === target.slice("channel-name:".length)) ? "此对象有结果未知的原操作，请先到页面上方核对。" : undefined);
+  const refreshAfterMutation = async () => {
+    // Idempotent replay returns an old receipt. Close stale forms and wait for a successful fresh overview.
+    readBarrier.current = latestRead.current;
+    newMutationBlocked.current = "最新数据没读到";
+    setRequiresReload(true);
+    ctx.closeActionConfirm();
+    ctx.closeConfirm();
+    setNovaDrawer(false);
+    setDrawerPendingKey(null);
+    setTplDrawer(false);
+    setDistDrawer(false);
+    syncPending();
+    await actions.reloadIContent();
+  };
+  const replay = async (record: I2Command) => {
+    try {
+      await retryI2Command(record);
+    } catch (error) {
+      syncPending();
+      if (!pendingI2Commands().some((row) => row.commandKey === record.commandKey)) {
+        await refreshAfterMutation();
+        toast(`操作失败:${displayAdminError(error)}`);
+        return false;
+      }
+      throw new Error(`操作失败:${displayAdminError(error)}`);
+    }
+    await refreshAfterMutation();
+    toast(`${record.action} · ${record.object}`);
+  };
+  const openActionConfirm = (req: ActionConfirmReq) => {
+    if (newMutationBlocked.current) { toast(newMutationBlocked.current); return; }
+    const openedData = data;
+    let pendingKey: string | undefined;
+    const original = () => pendingI2Commands().find((row) => row.commandKey === pendingKey);
+    ctx.openActionConfirm({ ...req, getPendingReason: () => original()?.reason,
+      run: async (reason, value, businessForm) => {
+        if (pendingKey) {
+          const record = original();
+          if (!record) { ctx.closeActionConfirm(); return false; }
+          return replay(record);
+        }
+        if (newMutationBlocked.current || latestRead.current !== openedData) {
+          ctx.closeActionConfirm();
+          throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
+        }
+        try { return await req.run(reason, value, businessForm); }
+        catch (error) {
+          if (isOutcomeUnknownError(error)) pendingKey = (error as { commandKey?: string }).commandKey;
+          syncPending();
+          // First-attempt refusals stay in the original confirmation, including business 403s.
+          throw new Error(`操作失败:${displayAdminError(error)}`);
+        }
+      },
+    });
+  };
+  const openConfirm = (req: ConfirmReq) => {
+    if (newMutationBlocked.current) { toast(newMutationBlocked.current); return; }
+    const openedData = data;
+    let pendingKey: string | undefined;
+    const original = () => pendingI2Commands().find((row) => row.commandKey === pendingKey);
+    ctx.openConfirm({ ...req, errorHandled: false, freezePendingInputs: true, getPendingReason: () => original()?.reason,
+      run: async (reason, value) => {
+        if (pendingKey) {
+          const record = original();
+          if (!record) { ctx.closeConfirm(); return false; }
+          return replay(record);
+        }
+        if (newMutationBlocked.current || latestRead.current !== openedData) {
+          ctx.closeConfirm();
+          throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
+        }
+        try { return await req.run(reason, value); }
+        catch (error) {
+          if (isOutcomeUnknownError(error)) {
+            pendingKey = (error as { commandKey?: string }).commandKey;
+            setTplDrawer(false);
+            setDistDrawer(false);
+          }
+          syncPending();
+          throw new Error(`操作失败:${displayAdminError(error)}`);
+        }
+      },
+    });
+  };
+  const restore = async (record: I2Command) => {
+    if (recoveryInFlight.current) return;
+    recoveryInFlight.current = true;
+    setRecovering(record.commandKey);
+    try { await replay(record); }
+    catch (error) { toast(displayAdminError(error)); }
+    finally { recoveryInFlight.current = false; setRecovering(null); }
+  };
   const I2_STATS = data?.stats ?? { todayDelivered: "—", ctr: "—", ctrTarget: 0, onlineChannels: 0, totalChannels: 0, weeklySocial: "—" };
   const novas: OpsNova[] = (data?.channels ?? []).map((n) => ({
     key: n.key,
@@ -98,7 +216,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   useEffect(() => { if (data) setReadAt(Date.now()); }, [data]);
 
   const runBackend = (task: Promise<void>, ok: string, onSuccess?: () => void) => task
-      .then(() => actions.reloadIContent())
+      .then(() => refreshAfterMutation())
       .then(() => { toast(ok); onSuccess?.(); })
       .catch((error) => {
         toast(`操作失败:${displayAdminError(error)}`);
@@ -109,9 +227,22 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [novaDrawer, setNovaDrawer] = useState(false);
   const [editNovaKey, setEditNovaKey] = useState<string | null>(null);
   const [form, setForm] = useState<NovaForm>(EMPTY_FORM);
+  const [drawerPendingKey, setDrawerPendingKey] = useState<string | null>(null);
+  const [drawerSubmitting, setDrawerSubmitting] = useState(false);
+  const drawerInFlight = useRef(false);
+  const drawerSource = useRef(data);
 
-  const openNewNova = () => { setEditNovaKey(null); setForm(EMPTY_FORM); setNovaDrawer(true); };
+  const openNewNova = () => {
+    const blocked = lockReason("channel-create");
+    if (blocked) { toast(blocked); return; }
+    drawerSource.current = data;
+    setDrawerPendingKey(null); setEditNovaKey(null); setForm(EMPTY_FORM); setNovaDrawer(true);
+  };
   const openEditNova = (n: OpsNova) => {
+    const blocked = lockReason(`channel:${n.key}`);
+    if (blocked) { toast(blocked); return; }
+    drawerSource.current = data;
+    setDrawerPendingKey(null);
     const tick = parseNovaDuration(n.tick, "minutes");
     const cooldown = parseNovaDuration(n.cd, "hours");
     setEditNovaKey(n.key);
@@ -125,7 +256,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     });
     setNovaDrawer(true);
   };
-  const closeDrawer = () => { setNovaDrawer(false); setEditNovaKey(null); setForm(EMPTY_FORM); };
+  const closeDrawer = () => { if (drawerInFlight.current) return; setNovaDrawer(false); setEditNovaKey(null); setForm(EMPTY_FORM); setDrawerPendingKey(null); };
 
   const cadenceError = validateNovaCadence(
     form.tickValue,
@@ -134,36 +265,61 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     form.cooldownUnit,
   );
 
-  const submitDrawer = () => {
+  const submitDrawer = async () => {
+    if (drawerInFlight.current) return;
+    if (drawerPendingKey) {
+      const original = pendingI2Commands().find((row) => row.commandKey === drawerPendingKey);
+      if (original) await restore(original);
+      else closeDrawer();
+      return;
+    }
+    if (newMutationBlocked.current || latestRead.current !== drawerSource.current) {
+      closeDrawer();
+      toast(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
+      return;
+    }
     const name = form.name.trim();
     if (!name) return;
+    const blocked = lockReason(editNovaKey ? `channel:${editNovaKey}` : `channel-name:${name}`);
+    if (blocked) { toast(blocked); return; }
     if (cadenceError) {
       toast(cadenceError);
       return;
     }
     const tick = formatNovaDuration(form.tickValue, form.tickUnit);
     const cd = formatNovaDuration(form.cooldownValue, form.cooldownUnit);
-    if (editNovaKey) {
-      const prev = novas.find((x) => x.key === editNovaKey);
-      runBackend(actions.updateI2NovaChannel(editNovaKey, {
-        name,
-        trigger: form.runtimeSource || prev?.trigger || "",
-        tick,
-        cooldown: cd,
-        ctr: prev?.ctr ?? 0,
-        enabled: prev?.on ?? true,
-      }, "后台编辑 消息频道"), `消息频道已更新:${prev?.name ?? editNovaKey} → ${name}`, closeDrawer).catch(() => undefined);
-    } else {
-      const key = `${slug(name).slice(0, 50)}-${Date.now().toString(36).slice(-6)}`;
-      runBackend(actions.createI2NovaChannel({
-        key,
-        name,
-        trigger: form.runtimeSource,
-        tick,
-        cooldown: cd,
-        ctr: 0,
-        enabled: false,
-      }, "后台新增 消息频道"), `消息频道已新增:${name}`, closeDrawer).catch(() => undefined);
+    drawerInFlight.current = true;
+    setDrawerSubmitting(true);
+    try {
+      if (editNovaKey) {
+        const prev = novas.find((x) => x.key === editNovaKey);
+        await runBackend(actions.updateI2NovaChannel(editNovaKey, {
+          name,
+          trigger: form.runtimeSource || prev?.trigger || "",
+          tick,
+          cooldown: cd,
+          ctr: prev?.ctr ?? 0,
+          enabled: prev?.on ?? true,
+        }, "后台编辑 消息频道"), `消息频道已更新:${prev?.name ?? editNovaKey} → ${name}`);
+      } else {
+        const key = `${slug(name).slice(0, 50)}-${Date.now().toString(36).slice(-6)}`;
+        await runBackend(actions.createI2NovaChannel({
+          key,
+          name,
+          trigger: form.runtimeSource,
+          tick,
+          cooldown: cd,
+          ctr: 0,
+          enabled: false,
+        }, "后台新增 消息频道"), `消息频道已新增:${name}`);
+      }
+    } catch (error) {
+      if (isOutcomeUnknownError(error)) setDrawerPendingKey((error as { commandKey?: string }).commandKey ?? null);
+      syncPending();
+      // runBackend displays the refusal. Keep the drawer and its inputs; unknown requests freeze below.
+    } finally {
+      drawerInFlight.current = false;
+      setDrawerSubmitting(false);
     }
   };
 
@@ -448,7 +604,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const statusLabel = (value: string) => SOCIAL_EVENT_STATUS_OPTIONS.find((option) => option.value === value)?.label
     ?? ({ ACTIVE: "已验证", DISABLED: "已停用", EXPIRED: "已过期" } as Record<string, string>)[value]
     ?? "状态未知";
-  const formatEventTime = (value?: string) => formatBusinessTimeCompact(value, "—");
+  const formatEventTime = (value?: string | null) => formatBusinessTimeCompact(value, "—");
   const canRestoreEvent = (expiresAt: string) => new Date(expiresAt).getTime() > Date.now();
   type SocialEvent = (typeof SOCIAL_EVENTS)[number];
   // 来源备注是后端受信备注：提现的两个状态码写人话，其余（等级变化、系列号）原样。
@@ -489,7 +645,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     run: (reason) => {
       setEventBusy("sync");
       return actions.syncI2SocialEvents(reason)
-        .then((result) => actions.reloadIContent().then(() => result))
+        .then((result) => refreshAfterMutation().then(() => result))
         .then((result) => {
           setEventRefreshKey((key) => key + 1);
           toast(`同步完成：发现 ${result.discovered} 条，新增 ${result.inserted} 条，重复 ${result.duplicates} 条`);
@@ -579,16 +735,18 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         <span>{`${businessClock(readAt)} 读取（${businessZone().label}）`}</span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={contentLoading} onClick={() => void actions.reloadIContent()}>刷新</Button>
       </span> : undefined}
-      actions={canWriteI2 ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={!data ? "读到数据后才能新增" : undefined} onClick={openNewNova}>新增频道</Button> : undefined} />
+      actions={canWriteI2 ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={lockReason("channel-create")} onClick={openNewNova}>新增频道</Button> : undefined} />
   );
-  const unknownNotice = UNKNOWN_ROWS.length > 0 && (
-    <Notice tone="warn" title={`${UNKNOWN_ROWS.length} 个操作结果未知`} actionBelow>
+  const unknownNotice = pending.length > 0 && (
+    <Notice tone="warn" title={`${pending.length} 个操作结果未知`} actionBelow>
       <ul className="i2-unknown">
-        {UNKNOWN_ROWS.map((row) => (
-          <li key={row.key}>
-            <span><b>{row.action}</b>{` · ${row.object} · ${row.change} · ${formatBusinessTimeCompact(row.submittedAt, "—")} 提交`}</span>
-            {row.expired ? <StatusTag tone="done">已过 24 小时，只能查询</StatusTag> : <StatusTag tone="warn">结果未知</StatusTag>}
-            <span className="rd-row-actions"><Button size="sm">查询原结果</Button>{!row.expired && <Button size="sm">按原请求重试</Button>}</span>
+        {pending.map((row) => (
+          <li key={row.commandKey}>
+            <span><b>{row.action}</b>{` · ${row.object} · ${row.change} · ${formatBusinessTimeCompact(row.createdAt, "—")} 提交`}</span>
+            {isRetryExpired(row) ? <StatusTag tone="done">已过 24 小时，只能查询</StatusTag> : <StatusTag tone="warn">结果未知</StatusTag>}
+            <span className="rd-row-actions"><Button size="sm" disabledReason={!canReadI2 ? "当前账号没有读取权限" : recovering ? "等当前操作完成" : undefined} onClick={() => {
+              void actions.reloadIContent().then(() => toast(reach("/platform/audit") ? "结果未知，请到操作记录与审批核对。" : "结果未知"));
+            }}>查询原结果</Button>{!isRetryExpired(row) && <Button size="sm" disabledReason={recovering ? "等当前操作完成" : !row.original ? "原操作记录不完整，只能查询核对，不能重试。" : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined} onClick={() => void restore(row)}>按原请求重试</Button>}</span>
           </li>
         ))}
       </ul>
@@ -596,10 +754,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   );
 
   if (contentLoading && !data) {
-    return <>{header}<BlockState state="loading" title="正在读取推送数据…" /></>;
+    return <>{header}{unknownNotice}<BlockState state="loading" title="正在读取推送数据…" /></>;
   }
   if (!data) {
-    return <>{header}{contentError
+    return <>{header}{unknownNotice}{contentError
       ? <BlockState state="error" title="推送数据读取失败" detail={contentError} onRetry={() => void actions.reloadIContent()} retryLabel="重新加载" />
       : <BlockState state="empty" title="暂无推送数据" />}</>;
   }
@@ -653,11 +811,11 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       : social && n.on && recentActive === 0 ? <StatusTag tone="warn">最近 20 条事件里没有有效的，发不出</StatusTag>
         : sandboxKey ? <StatusTag tone="warn" explain="频道编号里有 sandbox 或 acceptance，后台代理会拒绝按编号编辑、启停和删除。">编辑和启停会被拒</StatusTag>
           : undefined;
-    const toggleBlocked = !n.on && st !== "published" ? "先给它发布模板才能启用" : undefined;
+    const toggleBlocked = lockReason(`channel:${n.key}`) || (!n.on && st !== "published" ? "先给它发布模板才能启用" : undefined);
     const cardActions = canWriteI2 ? <>
       <Button size="sm" icon={n.on ? <PowerOff size={14} aria-hidden /> : <Power size={14} aria-hidden />} disabledReason={toggleBlocked} aria-label={`${n.on ? "停用" : "启用"} ${channelName(n.key, n.name)}`} onClick={() => toggleNova(n)}>{n.on ? "停用" : "启用"}</Button>
-      <Button size="sm" icon={<Pencil size={14} aria-hidden />} disabledReason={phase ? "跟随「运营阶段设置」，这里不能改" : undefined} aria-label={`编辑 ${channelName(n.key, n.name)}`} onClick={() => openEditNova(n)}>编辑</Button>
-      <MoreMenu label={`${channelName(n.key, n.name)} 的更多操作`} items={[{ key: "delete", label: "删除频道", danger: true, onSelect: () => removeNova(n) }]} />
+      <Button size="sm" icon={<Pencil size={14} aria-hidden />} disabledReason={lockReason(`channel:${n.key}`) || (phase ? "跟随「运营阶段设置」，这里不能改" : undefined)} aria-label={`编辑 ${channelName(n.key, n.name)}`} onClick={() => openEditNova(n)}>编辑</Button>
+      <MoreMenu label={`${channelName(n.key, n.name)} 的更多操作`} disabled={!!lockReason(`channel:${n.key}`)} items={[{ key: "delete", label: "删除频道", danger: true, onSelect: () => removeNova(n) }]} />
     </> : undefined;
     return (
       <ChannelCard key={n.key} name={channelName(n.key, n.name)} keyText={n.key} on={n.on}
@@ -682,16 +840,17 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const tplRowActions = (t: (typeof NOVA_TPLS)[number], size: "sm" | "md" = "sm") => {
     if (!canWriteI2) return null;
     const st = tplStatus(t.ch);
+    const blocked = lockReason(`channel:${t.ch}`);
     if (size === "md") return <>
-      {st === "draft" && <Button variant="primary" icon={<Send size={14} aria-hidden />} onClick={() => publishTpl(t.ch, t.name)}>发布</Button>}
-      {st === "draft" && <Button icon={<Pencil size={14} aria-hidden />} onClick={() => editTpl(t)}>编辑</Button>}
-      {st === "published" && <Button icon={<Ban size={14} aria-hidden />} onClick={() => archiveTpl(t.ch, t.name)}>归档</Button>}
-      {st !== "published" && <Button variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} onClick={() => removeTpl(t)}>删除模板</Button>}
+      {st === "draft" && <Button variant="primary" disabledReason={blocked} icon={<Send size={14} aria-hidden />} onClick={() => publishTpl(t.ch, t.name)}>发布</Button>}
+      {st === "draft" && <Button disabledReason={blocked} icon={<Pencil size={14} aria-hidden />} onClick={() => editTpl(t)}>编辑</Button>}
+      {st === "published" && <Button disabledReason={blocked} icon={<Ban size={14} aria-hidden />} onClick={() => archiveTpl(t.ch, t.name)}>归档</Button>}
+      {st !== "published" && <Button variant="danger-outline" disabledReason={blocked} icon={<Trash2 size={14} aria-hidden />} onClick={() => removeTpl(t)}>删除模板</Button>}
     </>;
     return <>
-      {st === "draft" && <Button size="sm" icon={<Send size={14} aria-hidden />} aria-label={`发布模板 ${t.name}`} onClick={() => publishTpl(t.ch, t.name)}>发布</Button>}
-      {st === "published" && <Button size="sm" icon={<Ban size={14} aria-hidden />} aria-label={`归档模板 ${t.name}`} onClick={() => archiveTpl(t.ch, t.name)}>归档</Button>}
-      {st !== "published" && <MoreMenu label={`模板 ${t.name} 的更多操作`} items={[
+      {st === "draft" && <Button size="sm" disabledReason={blocked} icon={<Send size={14} aria-hidden />} aria-label={`发布模板 ${t.name}`} onClick={() => publishTpl(t.ch, t.name)}>发布</Button>}
+      {st === "published" && <Button size="sm" disabledReason={blocked} icon={<Ban size={14} aria-hidden />} aria-label={`归档模板 ${t.name}`} onClick={() => archiveTpl(t.ch, t.name)}>归档</Button>}
+      {st !== "published" && <MoreMenu label={`模板 ${t.name} 的更多操作`} disabled={!!blocked} items={[
         ...(st === "draft" ? [{ key: "edit", label: "编辑", onSelect: () => editTpl(t) }] : []),
         { key: "delete", label: "删除模板", danger: true, onSelect: () => removeTpl(t) },
       ]} />}
@@ -699,9 +858,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   };
   const templateChannelOptions = novas.filter((n) => editTplChannel === n.key || !NOVA_TPLS.some((t) => t.ch === n.key))
     .map((n) => ({ value: n.key, label: `${channelName(n.key, n.name)}（${n.key}）` }));
-  const tplBlocked = !tplForm.channel ? "选择频道" : !tplForm.name.trim() ? "填写模板名称" : !tplForm.version.trim() ? "填写版本" : !tplForm.cta ? "选择点击后去哪"
+  const tplBlocked = lockReason(`channel:${tplForm.channel}`) || (!tplForm.channel ? "选择频道" : !tplForm.name.trim() ? "填写模板名称" : !tplForm.version.trim() ? "填写版本" : !tplForm.cta ? "选择点击后去哪"
     : !tplForm.titleZh.trim() || !tplForm.bodyZh.trim() ? "填写中文标题和正文" : !tplForm.titleVi.trim() || !tplForm.bodyVi.trim() ? "填写越南语标题和正文"
-      : (!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim()) ? "英语标题和正文要么都填，要么都空" : undefined;
+      : (!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim()) ? "英语标题和正文要么都填，要么都空" : undefined);
   const currentTpl = detailTpl ? tplOf(detailTpl) ?? null : null;
   const currentEvent = detailEvent !== null ? visibleSocialEvents.find((event) => event.id === detailEvent) ?? null : null;
   const zone = businessZone().label;
@@ -745,7 +904,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       <div {...lowerIds.panel("templates")} hidden={lower !== "templates"} className="rd-tab-pane">
       <Panel title="消息模板" icon={FileText} tone="role-4" sub={`${templatePager.total} 个 · 每个频道一个`}
         explain="模板就是用户收到的标题和正文。中文、越南语必填，英语可选；草稿 → 发布 → 归档。点一行看三种语言并排和 App 里的样子。"
-        actions={canWriteI2 ? <Button icon={<Plus size={14} aria-hidden />} disabledReason={templateChannelOptions.length === 0 ? "每个频道都有模板了；要换内容，先删掉旧模板" : undefined} onClick={newTpl}>新建模板</Button> : undefined}>
+        actions={canWriteI2 ? <Button icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason || (templateChannelOptions.length === 0 ? "每个频道都有模板了；要换内容，先删掉旧模板" : undefined)} onClick={newTpl}>新建模板</Button> : undefined}>
         <Table label="消息模板" className="i2-tpl-table">
           <thead>
             <tr><Th>模板</Th><Th>状态</Th><Th>语言</Th><Th>内容（中文）</Th><Th>点击后去哪</Th>{canWriteI2 && <Th sticky="end">操作</Th>}</tr>
@@ -778,7 +937,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       <div {...lowerIds.panel("material")} hidden={lower !== "material"} className="rd-tab-pane">
       <Panel title="事件概率" icon={Percent} tone="role-2" sub={`五类 · 合计 ${distTotal}%`}
         explain="只管「真实动态」频道：每次先按这组概率选一类，再从这一类有效的最近 100 条里随机取一条。某一类没有有效事件，就按其余几类的比例重新分。"
-        actions={canWriteI2 ? <Button icon={<Percent size={14} aria-hidden />} disabledReason={SOCIAL_DIST.length === 0 ? "没有读到五类概率" : undefined} onClick={openDistDrawer}>调整概率</Button> : undefined}>
+        actions={canWriteI2 ? <Button icon={<Percent size={14} aria-hidden />} disabledReason={lockReason("distribution") || (SOCIAL_DIST.length === 0 ? "没有读到五类概率" : undefined)} onClick={openDistDrawer}>调整概率</Button> : undefined}>
         {SOCIAL_DIST.length === 0
           ? <BlockState state="empty" title="没有读到事件概率" compact />
           : <div className="i2-dist">
@@ -792,7 +951,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           <p>「真实动态」频道的素材，都从业务表同步来，不能手工添加人物、金额和时间；人物和地区只露第一个字，金额写成区间。</p>
           <p>同步事件：取提现、V 等级、创世节点成交、整点新增注册最近 24 小时的新事件，每条从发生起 12 小时后过期；不发消息、不改业务数据，重复的跳过，删过的不会再同步回来。后台大约每 10 分钟也会自动同步。</p>
         </>}
-        actions={canWriteI2 ? <Button icon={<Shuffle size={14} aria-hidden />} loading={eventBusy === "sync"} disabledReason={eventBusy !== null && eventBusy !== "sync" ? "等当前操作完成" : undefined} onClick={syncSocialEvents}>同步事件</Button> : undefined}>
+        actions={canWriteI2 ? <Button icon={<Shuffle size={14} aria-hidden />} loading={eventBusy === "sync"} disabledReason={lockReason("sync") || (eventBusy !== null && eventBusy !== "sync" ? "等当前操作完成" : undefined)} onClick={syncSocialEvents}>同步事件</Button> : undefined}>
         {sample && (
           <div className="i2-sample">
             {sample.value
@@ -838,9 +997,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                         <Td><Cell num main={formatEventTime(event.expiresAt)} sub={event.status === "DISABLED" && !canRestoreEvent(event.expiresAt) ? "已到期，不能恢复" : undefined} /></Td>
                         <Td align="right"><Cell num main={`${event.dispatchCount ?? 0} 次`} /></Td>
                         {canWriteI2 && <Td sticky="end"><span className="rd-row-actions">
-                          {event.status === "ACTIVE" && <Button size="sm" disabledReason={eventBusy !== null ? "等当前操作完成" : undefined} onClick={() => changeSocialEventStatus(event, "DISABLED")}>停用</Button>}
-                          {event.status === "DISABLED" && canRestoreEvent(event.expiresAt) && <Button size="sm" disabledReason={eventBusy !== null ? "等当前操作完成" : undefined} onClick={() => changeSocialEventStatus(event, "ACTIVE")}>恢复</Button>}
-                          <MoreMenu label={`事件 #${event.id} 的更多操作`} disabled={eventBusy !== null} items={[
+                          {event.status === "ACTIVE" && <Button size="sm" disabledReason={lockReason(`event:${event.id}`) || (eventBusy !== null ? "等当前操作完成" : undefined)} onClick={() => changeSocialEventStatus(event, "DISABLED")}>停用</Button>}
+                          {event.status === "DISABLED" && canRestoreEvent(event.expiresAt) && <Button size="sm" disabledReason={lockReason(`event:${event.id}`) || (eventBusy !== null ? "等当前操作完成" : undefined)} onClick={() => changeSocialEventStatus(event, "ACTIVE")}>恢复</Button>}
+                          <MoreMenu label={`事件 #${event.id} 的更多操作`} disabled={eventBusy !== null || !!lockReason(`event:${event.id}`)} items={[
                             ...(event.status !== "EXPIRED" ? [{ key: "expire", label: "立即过期", onSelect: () => changeSocialEventStatus(event, "EXPIRED") }] : []),
                             { key: "delete", label: "删除事件", danger: true, onSelect: () => deleteSocialEvent(event) },
                           ]} />
@@ -914,7 +1073,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       <Drawer open={!!currentEvent} onClose={() => setDetailEvent(null)} title="事件详情" icon={Database} tone="role-3" sub={currentEvent ? `#${currentEvent.id} · 时间为${zone}` : undefined}>
         {currentEvent && (() => {
           const event = currentEvent;
-          const busy = eventBusy !== null ? "等当前操作完成" : undefined;
+          const busy = lockReason(`event:${event.id}`) || (eventBusy !== null ? "等当前操作完成" : undefined);
           const restorable = event.status === "DISABLED" && canRestoreEvent(event.expiresAt);
           return <div className="rd-stack">
             <Facts>
@@ -948,8 +1107,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       )}
       {novaDrawer && (
         <ChannelDrawer editing={!!editNovaKey} form={form} setForm={setForm} cadenceError={cadenceError} sources={RUNTIME_SOURCE_OPTIONS}
-          fixedSource={editNovaKey && !form.runtimeSource ? (() => { const prev = novas.find((x) => x.key === editNovaKey); return prev ? sourceText(prev.trigger, prev.name, RUNTIME_SOURCE_OPTIONS) : ""; })() : undefined}
-          onClose={closeDrawer} onSubmit={submitDrawer} />
+          locked={drawerSubmitting || !!drawerPendingKey} saving={drawerSubmitting}
+          blocked={drawerPendingKey ? (() => { const row = pending.find((item) => item.commandKey === drawerPendingKey); return row && isRetryExpired(row) ? RETRY_EXPIRED_TEXT : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined; })() : lockReason(editNovaKey ? `channel:${editNovaKey}` : `channel-name:${form.name.trim()}`)}
+          fixedSource={editNovaKey && !form.runtimeSource ? (() => { const prev = drawerSource.current?.channels.find((x) => x.key === editNovaKey); return prev ? sourceText(prev.trigger, prev.name, drawerSource.current?.runtimeSourceOptions ?? []) : ""; })() : undefined}
+          onClose={closeDrawer} onSubmit={() => void submitDrawer()} />
       )}
       {tplDrawer && (
         <TemplateDrawer editing={!!editTplChannel} form={tplForm} setForm={setTplForm} channels={templateChannelOptions} ctaOptions={CTA_OPTIONS}

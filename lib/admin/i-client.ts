@@ -1,7 +1,7 @@
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { parseIOverview } from "@/lib/admin/i-overview-contract";
+import { parseIOverview, parseNovaSocialEventPage, parseNovaSocialSample } from "@/lib/admin/i-overview-contract";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -22,7 +22,7 @@ function idempotencyKey() {
 // 落 sessionStorage 而非内存:刷新页面后重试必须仍是同一命令号,否则后端无法去重。
 // fingerprint = `${method}:${path}:${body}` —— path 带目标对象 id,method + path 区分动作类型。
 type I1Original = { owner: number; method: string; path: string; body: string };
-type IContentPending = PendingMutationRecord & { i1?: I1Original };
+type IContentPending = PendingMutationRecord & { i1?: I1Original; i2?: I1Original };
 export type I1Command = PendingMutationRecord & {
   original?: I1Original;
   label: string;
@@ -32,11 +32,175 @@ export type I1Command = PendingMutationRecord & {
   change: string;
 };
 
-// One instance for the domain. Only I1 evidence changes retention; other I pages keep their contract.
+// One instance for the domain. I1/I2 keep expired evidence for read-only recovery.
 const uncertainCommandKeys = createPendingMutationStore<IContentPending>({
   storageKey: "nexion-admin-i-content-uncertain-commands-v1",
-  retainExpiredRecords: (row) => /^(POST|PUT|PATCH|DELETE):\/copy-ab\//.test(row.fingerprint),
+  retainExpiredRecords: (row) => /^(POST|PUT|PATCH|DELETE):\/(copy-ab|nova)\//.test(row.fingerprint),
 });
+
+export type I2Command = PendingMutationRecord & {
+  original?: I1Original;
+  action: string;
+  object: string;
+  target: string;
+  reason: string;
+  change: string;
+};
+
+/** The fingerprint contains the original JSON bytes, including legacy records. Parse only at this storage boundary. */
+function readI2Command(row: IContentPending): I2Command | undefined {
+  const owner = useAdminAuth.getState().session?.adminId;
+  if (owner === undefined || (row.i2 ? row.i2.owner !== owner : !hasPersistedPendingCommandOwner(String(owner)))) return undefined;
+  const match = row.fingerprint.match(/^(POST|PATCH|DELETE):(\/nova\/[^:]+):([\s\S]*)$/);
+  if (!match) return undefined;
+  const fallback: I2Command = { ...row, action: "结果未知", object: "", target: "", reason: "", change: "" };
+  try {
+    const [, method, path, body] = match;
+    if (row.i2 && (row.i2.method !== method || row.i2.path !== path || row.i2.body !== body)) return fallback;
+    const payload: unknown = JSON.parse(body);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return fallback;
+    const input = payload as Record<string, unknown>;
+    if (typeof input.reason !== "string" || typeof input.operator !== "string") return fallback;
+    const parts = path.split("/").slice(2).map(decodeURIComponent);
+    const [family, key, operation] = parts;
+    let action: string, object: string, target: string, change = "";
+    if (family === "channels") {
+      const creating = method === "POST" && parts.length === 1;
+      if (creating || method === "PATCH" && parts.length === 2) {
+        if (!["name", "trigger", "tick", "cooldown"].every((field) => typeof input[field] === "string")
+          || typeof input.ctr !== "number" || typeof input.enabled !== "boolean" || creating && typeof input.key !== "string") return fallback;
+        action = creating ? "新增频道" : "编辑频道";
+        object = String(input.name); target = `channel:${key ?? input.key}`;
+        change = `${input.tick} · ${input.cooldown}`;
+      } else if (method === "PATCH" && operation === "status" && parts.length === 3 && typeof input.enabled === "boolean") {
+        action = input.enabled ? "启用频道" : "停用频道"; object = key; target = `channel:${key}`;
+        change = input.enabled ? "已停用 → 已启用" : "已启用 → 已停用";
+      } else if (method === "DELETE" && parts.length === 2) {
+        action = "删除频道"; object = key; target = `channel:${key}`;
+      } else return fallback;
+    } else if (family === "templates") {
+      if (method === "POST" && parts.length === 1 || method === "PATCH" && parts.length === 2) {
+        if (!["channel", "name", "cta", "version", "titleZh", "bodyZh", "titleVi", "bodyVi", "titleEn", "bodyEn"].every((field) => typeof input[field] === "string")) return fallback;
+        action = method === "POST" ? "新建模板草稿" : "保存模板草稿";
+        object = String(input.name); target = `channel:${key ?? input.channel}`; change = `${input.version} · 草稿`;
+      } else if (method === "PATCH" && operation === "status" && parts.length === 3 && typeof input.status === "string" && ["PUBLISHED", "ARCHIVED"].includes(input.status)) {
+        action = input.status === "PUBLISHED" ? "发布模板" : "归档模板"; object = key; target = `channel:${key}`;
+        change = input.status === "PUBLISHED" ? "草稿 → 已发布" : "已发布 → 已归档";
+      } else if (method === "DELETE" && parts.length === 2) {
+        action = "删除模板"; object = key; target = `channel:${key}`;
+      } else return fallback;
+    } else if (family === "social-distribution" && method === "PATCH" && parts.length === 1) {
+      const items = input.items, expected = input.expectedItems;
+      const valid = (rows: unknown): rows is { key: string; pct: number }[] => Array.isArray(rows) && rows.length === 5 && rows.every((item) => item && typeof item === "object"
+        && typeof item.key === "string" && typeof item.pct === "number" && Number.isInteger(item.pct) && item.pct >= 0 && item.pct <= 100);
+      if (!valid(items) || !valid(expected)) return fallback;
+      action = "保存事件概率"; object = "真实动态"; target = "distribution";
+      change = items.map((item) => `${item.key} ${expected.find((old) => old.key === item.key)?.pct ?? "—"}% → ${item.pct}%`).join(" · ");
+    } else if (family === "social-events" && key === "sync" && method === "POST" && parts.length === 2) {
+      action = "同步真实事件"; object = "真实动态"; target = "sync";
+    } else if (family === "social-events" && /^[1-9]\d*$/.test(key) && Number.isSafeInteger(Number(key))) {
+      object = `#${key}`; target = `event:${key}`;
+      if (method === "PATCH" && operation === "status" && parts.length === 3 && typeof input.status === "string" && ["ACTIVE", "DISABLED", "EXPIRED"].includes(input.status)) {
+        action = input.status === "ACTIVE" ? "恢复事件" : input.status === "DISABLED" ? "停用事件" : "立即过期事件";
+        change = input.status === "ACTIVE" ? "已停用 → 有效" : input.status === "DISABLED" ? "有效 → 已停用" : "已过期";
+      } else if (method === "DELETE" && parts.length === 2) action = "删除事件";
+      else return fallback;
+    } else return fallback;
+    return { ...row, original: { owner, method, path, body }, action, object, target, reason: input.reason, change };
+  } catch { return fallback; }
+}
+
+export function pendingI2Commands(): I2Command[] {
+  return uncertainCommandKeys.list().flatMap((row) => {
+    const command = readI2Command(row);
+    return command ? [command] : [];
+  });
+}
+
+/** Receipts are historical results, never a replacement for the current overview. */
+function i2ReceiptMatches(command: I2Command, data: unknown): boolean {
+  const { path, method, body } = command.original!;
+  if (method === "DELETE") return data == null;
+  const input = JSON.parse(body) as Record<string, unknown>;
+  const [family, key, operation] = path.split("/").slice(2).map(decodeURIComponent);
+  if (family === "social-distribution") {
+    const expected = input.items as { key: string; pct: number }[];
+    return Array.isArray(data) && data.length === expected.length && expected.every((item) =>
+      data.some((row) => row && typeof row === "object" && row.key === item.key && row.pct === item.pct));
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+  const result = data as Record<string, unknown>;
+  if (family === "channels") return result.key === (key ?? input.key) && typeof result.enabled === "boolean"
+    && result.enabled === (method === "POST" ? false : input.enabled)
+    && (operation === "status" || ["name", "trigger", "tick", "cooldown"].every((field) => result[field] === String(input[field]).trim()));
+  if (family === "templates") return result.channel === (key ?? input.channel)
+    && result.status === (operation === "status" ? input.status : "DRAFT")
+    && (operation === "status" || ["name", "cta", "version", "titleZh", "bodyZh", "titleVi", "bodyVi", "titleEn", "bodyEn"].every((field) => result[field] === String(input[field]).trim()));
+  if (key === "sync") return ["discovered", "inserted", "duplicates"].every((field) => typeof result[field] === "number" && Number.isInteger(result[field]) && Number(result[field]) >= 0)
+    && Array.isArray(result.sources) && result.sources.every((source) => source && typeof source === "object"
+      && ["AVAILABLE", "UNAVAILABLE"].includes(source.status)
+      && ["sourceType", "sourceTable", "message"].every((field) => typeof source[field] === "string")
+      && ["discovered", "inserted", "duplicates"].every((field) => Number.isInteger(source[field]) && source[field] >= 0));
+  return result.id === Number(key) && result.status === input.status;
+}
+
+async function sendI2Command(command: I2Command, retry: boolean): Promise<unknown> {
+  if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
+  if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
+  if (!i1CanWrite("content_i2_write")) throw new Error("当前账号没有这项操作权限，请查询原结果。");
+  if (!uncertainCommandKeys.isDurablyStored(command.fingerprint, command.commandKey)) throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
+  let response: Response, payload: ApiResult<unknown>;
+  try {
+    response = await guardedFetch(`/api/admin/content${command.original.path}`, { method: command.original.method,
+      body: command.original.body, headers: { "Content-Type": "application/json", "Idempotency-Key": command.commandKey }, cache: "no-store" });
+    payload = await response.json() as ApiResult<unknown>;
+  } catch {
+    throw Object.assign(new OutcomeUnknownError("结果未知，请查询原结果或按原请求重试。"), { commandKey: command.commandKey });
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || typeof payload.code !== "number"
+    || payload.message !== undefined && typeof payload.message !== "string") {
+    throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  }
+  if (!response.ok || payload.code !== 0) {
+    // I2 services return ApiResult.fail(4xx, reason) inside HTTP 200. Preserve that business status for the shared retry verdict.
+    const status = response.ok && payload.code >= 400 && payload.code < 500 ? payload.code : response.status;
+    const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status, reasonCode: payload.message });
+    if (retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && !isIdempotencyOutcomeOpen(payload.message)) {
+      uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+      throw failure;
+    }
+    throw Object.assign(new OutcomeUnknownError(failure.message), { commandKey: command.commandKey, status: response.status, reasonCode: payload.message });
+  }
+  if (!i2ReceiptMatches(command, payload.data)) throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+  return payload.data;
+}
+
+export async function retryI2Command(saved: I2Command): Promise<void> {
+  const command = pendingI2Commands().find((row) => row.commandKey === saved.commandKey);
+  if (!command?.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
+  await sendI2Command(command, true);
+}
+
+async function prepareI2Command(path: string, init: RequestInit) {
+  const owner = useAdminAuth.getState().session?.adminId;
+  if (owner === undefined) throw new Error("无法确认当前登录账号，请重新登录后再操作。");
+  const fingerprint = `${init.method}:${path}:${init.body}`;
+  const commandKey = idempotencyKey();
+  const original = { owner, method: init.method!, path, body: String(init.body) };
+  const command = readI2Command({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i2: original });
+  if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
+  if (!i1CanWrite("content_i2_write")) throw new Error("当前账号没有这项操作权限，请查询原结果。");
+  if (pendingI2Commands().some((row) => !row.original || row.target === command.target
+    || path === "/nova/channels" && row.original.method === "POST" && row.original.path === path
+      && row.object.trim() === command.object.trim())) throw new Error("此对象有结果未知的原操作，请先到页面上方核对。");
+  uncertainCommandKeys.remember(fingerprint, commandKey, { i2: original });
+  if (!uncertainCommandKeys.isDurablyStored(fingerprint, commandKey)) {
+    uncertainCommandKeys.forget(fingerprint, commandKey);
+    throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
+  }
+  return sendI2Command(command, false);
+}
 
 /** Parse durable/legacy requests at their untrusted storage boundary, without rebuilding their JSON. */
 function readI1Command(row: IContentPending): I1Command | undefined {
@@ -190,6 +354,7 @@ async function prepareI1Command(path: string, init: RequestInit) {
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (path.startsWith("/copy-ab/") && init?.method && init.method !== "GET") return prepareI1Command(path, init) as Promise<T>;
+  if (path.startsWith("/nova/") && init?.method && init.method !== "GET") return prepareI2Command(path, init) as Promise<T>;
   const headers = new Headers(init?.headers);
   const isWrite = !!init?.method && init.method !== "GET";
   const commandFingerprint = isWrite
@@ -435,9 +600,9 @@ export type NovaSocialEventView = {
   eligible?: boolean;
   occurredAt: string;
   expiresAt: string;
-  verifiedAt?: string;
-  lastDispatchedAt?: string;
-  dispatchCount?: number;
+  verifiedAt?: string | null;
+  lastDispatchedAt?: string | null;
+  dispatchCount: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -915,9 +1080,9 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
     const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (eventType) query.set("eventType", eventType);
     if (status) query.set("status", status);
-    return apiRequest<NovaSocialEventPage>(`/nova/social-events?${query.toString()}`);
+    return apiRequest<unknown>(`/nova/social-events?${query.toString()}`).then((value) => parseNovaSocialEventPage(value) as NovaSocialEventPage);
   },
-  previewI2SocialEvent: (language) => apiRequest<NovaSocialEventSampleView | null>(`/nova/social-events/sample?language=${encodeURIComponent(language)}`),
+  previewI2SocialEvent: (language) => apiRequest<unknown>(`/nova/social-events/sample?language=${encodeURIComponent(language)}`).then((value) => parseNovaSocialSample(value) as NovaSocialEventSampleView | null),
   updateI2SocialEventStatus: (id, status, reason) => apiRequest(`/nova/social-events/${id}/status`, { method: "PATCH", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined),
   deleteI2SocialEvent: (id, reason) => apiRequest(`/nova/social-events/${id}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   createI3Campaign: (body, reason) => apiRequest("/campaigns", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),

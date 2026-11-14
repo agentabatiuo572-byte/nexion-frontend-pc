@@ -161,11 +161,13 @@ A2 分类说明验收（2026-11-04，BUG-143）：操作确认清单标题和记
 | Case ID | 模块 | 主场景 | 增量包 |
 |---|---|---|---|
 | AC-I1-01 | 转化文案 A/B | 创建草稿、发布、运行实验并采纳 → 旧版本保留，采纳不静默覆盖发布版本 | PK-STATE、PK-CROSS |
-| AC-I2-01 | Nova 推送运营 | 新建模板并启用通道、发送样例、禁用 → 禁用后无新发送，历史送达不消失 | PK-STATE、PK-CROSS |
+| AC-I2-01 | 消息推送 | 新建模板、发布并启用频道；抽样只读预览；停用 → 后续扫描不生成新通知，已有通知保留 | PK-STATE、PK-CROSS |
 | AC-I3-01 | 通知 Campaign | draft→scheduled→sending→sent，另建一条 scheduled→cancelled 再删除 → 取消后不能编辑或重新排期，发送事实可追踪 | PK-STATE、PK-IDEM |
 | AC-I4-01 | 信任中心 | 发布信任版块、App 查看、回滚/下架 → 版本可追溯，App 不回退硬编码内容 | PK-CROSS、PK-PRIV |
 | AC-I5-01 | 风险披露 | 发布新披露 → 已确认用户变 stale，重新确认后资金动作恢复 → 确认绑定具体版本和辖区 | PK-STATE、PK-CROSS、PK-PRIV |
 | AC-I6-01 | i18n 文案 | 同时编辑 zh/en/vi → 缺占位符、禁词、超长分别拒绝，合法发布三端同步 → placeholder 等集 | PK-PROTO、PK-CROSS |
+
+I2 名称同步（2026-11-15）：本页现名「消息推送」，管发到 App「消息通知」的业务推送；Nova 智能问答已下线。路由 `/content/nova`、页面编号 I2、`/api/admin/content/nova/*` 接口、`content_i2_read` / `content_i2_write` 权限码和全部通道 key 均不变。
 
 ### 4.10 J 紧急与合规控制
 

@@ -90,12 +90,48 @@ function validateI1(moduleId: IModuleId, value: Record<string, unknown>) {
 }
 
 function validateI2(moduleId: IModuleId, value: Record<string, unknown>) {
-  for (const key of [
-    "channels", "eventDriven", "templates", "socialDistribution",
-    "socialEvents", "socialEventTypes", "socialEventStatuses", "templateCtaOptions", "runtimeSourceOptions",
-  ]) {
-    records(moduleId, value[key]);
+  const stats = record(moduleId, value.stats);
+  for (const key of ["todayDelivered", "weeklySocial", "ctr"]) if (typeof stats[key] !== "string") fail(moduleId);
+  for (const key of ["ctrTarget", "onlineChannels", "totalChannels"]) if (typeof stats[key] !== "number" || !Number.isInteger(stats[key])) fail(moduleId);
+  for (const channel of records(moduleId, value.channels)) {
+    if (!["key", "name", "trigger", "tick", "cooldown", "phaseKeyed"].every((key) => typeof channel[key] === "string")
+      || typeof channel.ctr !== "number" || !Number.isFinite(channel.ctr) || typeof channel.enabled !== "boolean") fail(moduleId);
   }
+  for (const event of records(moduleId, value.eventDriven)) if (!["name", "reason", "owner", "tone", "status"].every((key) => typeof event[key] === "string")) fail(moduleId);
+  for (const template of records(moduleId, value.templates)) if (!["channel", "name", "cta", "version", "status", "titleZh", "bodyZh", "titleVi", "bodyVi", "titleEn", "bodyEn"].every((key) => typeof template[key] === "string")) fail(moduleId);
+  for (const item of records(moduleId, value.socialDistribution)) if (!["key", "name", "color"].every((key) => typeof item[key] === "string")
+    || typeof item.pct !== "number" || !Number.isInteger(item.pct) || item.pct < 0 || item.pct > 100) fail(moduleId);
+  for (const event of records(moduleId, value.socialEvents)) validateNovaEvent(event);
+  for (const key of ["socialEventTypes", "socialEventStatuses", "templateCtaOptions", "runtimeSourceOptions"]) {
+    for (const option of records(moduleId, value[key])) if (typeof option.value !== "string" || typeof option.label !== "string") fail(moduleId);
+  }
+  for (const key of ["templateStatuses", "sources"]) if (!array(moduleId, value[key]).every((item) => typeof item === "string")) fail(moduleId);
+}
+
+function validateNovaEvent(event: Record<string, unknown>) {
+  if (typeof event.id !== "number" || !Number.isSafeInteger(event.id) || event.id <= 0
+    || !["eventType", "sourceSystem", "sourceEventId", "actorDisplay", "cityDisplay", "amountDisplay", "sourceNote", "occurredAt", "expiresAt", "createdAt", "updatedAt"].every((key) => typeof event[key] === "string")
+    || typeof event.status !== "string" || !["ACTIVE", "DISABLED", "EXPIRED"].includes(event.status)
+    || typeof event.dispatchCount !== "number" || !Number.isInteger(event.dispatchCount) || event.dispatchCount < 0) fail("I2");
+  // Optional timestamps are actually nullable; preserve null instead of manufacturing a date or zero.
+  for (const key of ["verifiedAt", "lastDispatchedAt"]) if (event[key] != null && typeof event[key] !== "string") fail("I2");
+}
+
+export function parseNovaSocialEventPage(input: unknown): unknown {
+  const page = record("I2", input);
+  for (const event of records("I2", page.items)) validateNovaEvent(event);
+  if (typeof page.page !== "number" || !Number.isInteger(page.page) || page.page < 1
+    || typeof page.pageSize !== "number" || !Number.isInteger(page.pageSize) || page.pageSize < 1 || page.pageSize > 100
+    || typeof page.total !== "number" || !Number.isInteger(page.total) || page.total < 0) fail("I2");
+  return input;
+}
+
+export function parseNovaSocialSample(input: unknown): unknown {
+  if (input === null) return null;
+  const sample = record("I2", input);
+  if (typeof sample.id !== "number" || !Number.isSafeInteger(sample.id) || sample.id <= 0
+    || !["eventType", "sourceEventId", "language", "title", "body", "expiresAt"].every((key) => typeof sample[key] === "string")) fail("I2");
+  return input;
 }
 
 function validateI3(moduleId: IModuleId, value: Record<string, unknown>) {

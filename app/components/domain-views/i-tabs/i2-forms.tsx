@@ -20,7 +20,7 @@ export const ctaLabel = (options: readonly NovaOptionView[], value: string) => {
 
 export type ChannelFormValue = { name: string; runtimeSource: string; tickValue: string; tickUnit: NovaTimeUnit; cooldownValue: string; cooldownUnit: NovaTimeUnit };
 
-export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, fixedSource, onClose, onSubmit }: {
+export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, fixedSource, locked, saving, blocked: requestBlocked, onClose, onSubmit }: {
   editing: boolean;
   form: ChannelFormValue;
   setForm: (next: ChannelFormValue) => void;
@@ -28,11 +28,14 @@ export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, f
   sources: readonly NovaOptionView[];
   /** 编辑固定频道：取材不能改，这里写它现在的取材。 */
   fixedSource?: string;
+  locked?: boolean;
+  saving?: boolean;
+  blocked?: string;
   onClose: () => void;
   onSubmit: () => void;
 }) {
   const name = form.name.trim();
-  const blocked = !name ? "填写频道名称" : !editing && !form.runtimeSource ? "选择从哪类事情取材" : cadenceError ? "多久找一次、同一个人至少隔多久没填好" : undefined;
+  const blocked = requestBlocked || (!name ? "填写频道名称" : !editing && !form.runtimeSource ? "选择从哪类事情取材" : cadenceError ? "多久找一次、同一个人至少隔多久没填好" : undefined);
   const sandbox = /sandbox|acceptance/i.test(name);
   // 校验规则仍是 validateNovaCadence，这里只把它的话换成这个抽屉里的字段名。
   const CADENCE_TEXT: Record<string, [field: "tick" | "cooldown", text: string]> = {
@@ -45,33 +48,33 @@ export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, f
   const shown = (form.tickValue || form.cooldownValue) && cadenceError ? CADENCE_TEXT[cadenceError] ?? ["cooldown", cadenceError] : null;
   const unitOptions = NOVA_TIME_UNITS.map((unit) => ({ value: unit.value, label: unit.label }));
   return (
-    <Drawer open onClose={onClose} title={editing ? "编辑频道" : "新增频道"} icon={Radio} tone="role-2"
+    <Drawer open busy={saving} onClose={onClose} title={editing ? "编辑频道" : "新增频道"} icon={Radio} tone="role-2"
       explain={<>
         <p>系统按「多久找一次」扫描；有满足条件的业务事情、这个人又过了个人间隔，才给他发一条。</p>
         <p>点击率不用填，新频道从 0% 开始。</p>
       </>}
-      footer={<Decision primary={<Button variant="primary" disabledReason={blocked} onClick={onSubmit}>{editing ? "保存" : "新增频道"}</Button>} />}>
+      footer={<Decision primary={<Button variant="primary" loading={saving} disabledReason={blocked} onClick={onSubmit}>{editing ? "保存" : "新增频道"}</Button>} />}>
       <div className="rd-stack i2-form">
         {!editing && <Notice tone="progress">新增后是停用的：先给它写好模板并发布，再启用。</Notice>}
         <Field label="频道名称" required error={sandbox ? "名称里有 sandbox 或 acceptance 时，建好后编辑、启停和删除会被拒，换个名称。" : undefined}>
-          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如：每周回顾" />
+          <Input disabled={locked} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如：每周回顾" />
         </Field>
         <Field label="从哪类事情取材" required={!editing} explain="只能从系统里登记过的业务事件里选，不能手填。">
           {fixedSource !== undefined
             ? <Input value={fixedSource} readOnly aria-readonly />
-            : <Select aria-label="从哪类事情取材" value={form.runtimeSource} onChange={(value) => setForm({ ...form, runtimeSource: value })} placeholder="请选择"
+            : <Select disabled={locked} aria-label="从哪类事情取材" value={form.runtimeSource} onChange={(value) => setForm({ ...form, runtimeSource: value })} placeholder="请选择"
               options={sources.map((option) => ({ value: option.value, label: operatorCopyText(option.label) }))} />}
         </Field>
         <Field label="多久找一次" required hint="正整数" explain="只决定系统多久检查一次，不是多久发一条。" error={shown?.[0] === "tick" ? shown[1] : undefined}>
           {(control) => <span className="i2-duration">
-            <NumberInput {...control} min={1} step={1} value={form.tickValue} onChange={(e) => setForm({ ...form, tickValue: e.target.value })} placeholder="10" />
-            <Select aria-label="多久找一次的单位" value={form.tickUnit} onChange={(value) => setForm({ ...form, tickUnit: value as NovaTimeUnit })} options={unitOptions} />
+            <NumberInput {...control} disabled={locked} min={1} step={1} value={form.tickValue} onChange={(e) => setForm({ ...form, tickValue: e.target.value })} placeholder="10" />
+            <Select disabled={locked} aria-label="多久找一次的单位" value={form.tickUnit} onChange={(value) => setForm({ ...form, tickUnit: value as NovaTimeUnit })} options={unitOptions} />
           </span>}
         </Field>
         <Field label="同一个人至少隔多久" required hint="正整数" explain="同一个人收到这个频道一条后，这段时间内不再收到；不能比「多久找一次」短。" error={shown?.[0] === "cooldown" ? shown[1] : undefined}>
           {(control) => <span className="i2-duration">
-            <NumberInput {...control} min={1} step={1} value={form.cooldownValue} onChange={(e) => setForm({ ...form, cooldownValue: e.target.value })} placeholder="6" />
-            <Select aria-label="同一个人至少隔多久的单位" value={form.cooldownUnit} onChange={(value) => setForm({ ...form, cooldownUnit: value as NovaTimeUnit })} options={unitOptions} />
+            <NumberInput {...control} disabled={locked} min={1} step={1} value={form.cooldownValue} onChange={(e) => setForm({ ...form, cooldownValue: e.target.value })} placeholder="6" />
+            <Select disabled={locked} aria-label="同一个人至少隔多久的单位" value={form.cooldownUnit} onChange={(value) => setForm({ ...form, cooldownUnit: value as NovaTimeUnit })} options={unitOptions} />
           </span>}
         </Field>
         {!cadenceError && <p className="i2-sentence">{`${tickSentence(formatNovaDuration(form.tickValue, form.tickUnit))}，${cooldownSentence(formatNovaDuration(form.cooldownValue, form.cooldownUnit))}。`}</p>}
