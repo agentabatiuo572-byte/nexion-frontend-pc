@@ -101,7 +101,7 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, onClo
         <Fact k="首次提交">{formatBusinessTimeCompact(new Date(createdAt).toISOString(), "—")}</Fact>
         <Fact k="命令号"><span data-mono>{commandKey}</span></Fact>
       </Facts>
-      <Notice tone="warn">后端按证据核对：证据够才确认「已执行」或「未执行」并解除锁定；不够时记为「仍未知」，原操作继续锁定。</Notice>
+      <Notice tone="warn">后端按证据核对：证据够才确认「已执行」或「未执行」并解除锁定；不够时记为「仍未知」，原操作继续锁定。确认后不能撤销或改结论。</Notice>
       <Field label="核查结论" required help={conclusion ? CONCLUSION_HELP[conclusion] : undefined} error={touched && !conclusion ? "请选择核查结论" : undefined}>
         <Select aria-label="核查结论" required value={conclusion} placeholder="请选择核查结论" disabled={busy} onChange={value => setConclusion(value as Conclusion)}
           options={(["SUCCEEDED", "NOT_EXECUTED", "STILL_UNKNOWN"] as const).map(value => ({ value, label: CONCLUSION_TEXT[value] }))} />
