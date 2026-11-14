@@ -239,6 +239,15 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
     </>
   );
 
+  if (tab === "I4") {
+    return (
+      <RdPage className="idom i4-page">
+        <I4Trust ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
   if (tab === "I5") {
     return (
       <RdPage className="idom">
@@ -270,7 +279,6 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
       {(!contentError || contentReadable) && tab === "I1" && <I1CopyAb ctx={ctx} />}
       {(!contentError || contentReadable) && tab === "I2" && <I2Nova ctx={ctx} />}
       {(!contentError || contentReadable) && tab === "I3" && <I3Campaign ctx={ctx} />}
-      {(!contentError || contentReadable) && tab === "I4" && <I4Trust ctx={ctx} />}
       {(!contentError || contentReadable) && tab === "I6" && <I6I18n ctx={ctx} />}
 
       {overlays}
