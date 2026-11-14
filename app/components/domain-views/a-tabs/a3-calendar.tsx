@@ -244,8 +244,8 @@ export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSumma
           <Fact k="新时区">{zoneLabel(pending.zoneId)}（{pending.offset}）</Fact>
           <Fact k="生效日">{pending.effectiveDate}</Fact>
           <Fact k="切换时刻">{formatBusinessTimeCompact(pending.effectiveStorageAt, "—")}（{zoneText}）</Fact>
-          {pendingDays.map(({ track, hours }) => <Fact key={track.key} k={`${track.name}的 ${previousDay(pending.effectiveDate)}`} tone={hours !== null && hours !== 24 ? "warn" : undefined}>
-            {hours === null ? "—" : `${hoursText(hours)}，${dayChange(hours)}`}
+          {pendingDays.map(({ track, hours }) => <Fact key={track.key} k={`${track.name}那一天`} tone={hours !== null && hours !== 24 ? "warn" : undefined}>
+            {hours === null ? "—" : `${previousDay(pending.effectiveDate)} 共 ${hoursText(hours)}，${dayChange(hours)}`}
           </Fact>)}
           <Fact k="安排人">{operatorText(pending.operator)} · {formatBusinessTimeCompact(pending.createdAt, "—")}</Fact>
           <Fact k="理由">{pending.reason || "—"}</Fact>
@@ -296,7 +296,7 @@ export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSumma
       </Field>
       {previewReady && selected && previewSwitch !== null && <Facts>
         <Fact k="切换时刻">{stampOf(previewSwitch)}（{zoneText}）</Fact>
-        {previewDays.map(({ track, hours }) => <Fact key={track.key} k={`${track.name}的 ${previousDay(effectiveDate)}`} tone={hours !== 24 ? "warn" : undefined}>{hoursText(hours)}，{dayChange(hours)}</Fact>)}
+        {previewDays.map(({ track, hours }) => <Fact key={track.key} k={`${track.name}那一天`} tone={hours !== 24 ? "warn" : undefined}>{previousDay(effectiveDate)} 共 {hoursText(hours)}，{dayChange(hours)}</Fact>)}
       </Facts>}
       <Field label="理由" required hint="8–200 字" error={touched && !reasonValid ? "理由要写 8–200 字" : undefined}>
         {(control) => <Textarea {...control} aria-label="业务时区修改理由" value={reason} maxLength={200} rows={2} count={`${reason.trim().length}/200`} placeholder="例如：主要市场改到越南，工单号" onBlur={() => setTouched(true)} onChange={(event) => setReason(event.target.value)} />}
@@ -313,7 +313,7 @@ export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSumma
         <Fact k="业务时区"><Change from={view.unified ? `${view.currentZoneLabel}（${view.currentOffset}）` : `${view.currentZoneLabel} / ${zoneLabel(growthZone ?? "")}`} to={`${selected.label}（${offsetOf(selected.zoneId)}）`} /></Fact>
         <Fact k="生效日">{effectiveDate}</Fact>
         {previewSwitch !== null && <Fact k="切换时刻">{stampOf(previewSwitch)}（{zoneText}）</Fact>}
-        {previewDays.map(({ track, hours }) => <Fact key={track.key} k={`${track.name}的 ${previousDay(effectiveDate)}`} tone={hours !== 24 ? "warn" : undefined}>{hoursText(hours)}，{dayChange(hours)}</Fact>)}
+        {previewDays.map(({ track, hours }) => <Fact key={track.key} k={`${track.name}那一天`} tone={hours !== 24 ? "warn" : undefined}>{previousDay(effectiveDate)} 共 {hoursText(hours)}，{dayChange(hours)}</Fact>)}
         <Fact k="理由">{reason.trim()}</Fact>
       </Facts>
       <Notice tone="warn" title="影响全平台">从切换时刻起，所有用业务日历的模块（统计、每日结算、每周奖励池、月度榜单）按新时区切日；{previousDay(effectiveDate)} 及以前已结算的周期不变。生效前可以撤销。</Notice>
