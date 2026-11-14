@@ -52,6 +52,8 @@ export function normalizeA6Overview(raw: unknown) {
       status,
       builtin: flag(row.builtin, message),
       adminCount: integer(row.adminCount, message),
+      permissionCount: row.permissionCount === undefined ? undefined : integer(row.permissionCount, message),
+      menuGrantCount: row.menuGrantCount === undefined ? undefined : integer(row.menuGrantCount, message),
     };
   });
   const total = integer(data.total, message);

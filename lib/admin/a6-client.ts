@@ -19,6 +19,9 @@ export type A6RoleSummary = {
   status: number;
   builtin: boolean;
   adminCount: number;
+  /** Stored bindings, matching the role detail; absent on older backends. */
+  permissionCount?: number;
+  menuGrantCount?: number;
 };
 
 export type A6RoleOverview = { roles: A6RoleSummary[]; total: number };
