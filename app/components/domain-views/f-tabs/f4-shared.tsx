@@ -7,7 +7,7 @@
 import type { ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
 import { Explain, Notice, StatusTag } from "@/app/components/rd";
-import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessOffsetMinutes, businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
 /** 接口给的 USDT 金额：千分位，最多 6 位小数（后端精度），至少两位，不舍入、不缩写。 */
 export function usdt(value: number | null | undefined) {
@@ -38,6 +38,38 @@ export function stamp(value: string | null | undefined) {
 export function zoneNote() {
   const zone = businessZone();
   return `${zone.label}（${zone.offset}）`;
+}
+
+/** 自动结算按增长团队的业务时区解析定时表达式（后端 LeadershipPoolSettleScheduler，现在是越南时间）。 */
+export const SETTLE_ZONE = { label: "越南时间", offsetMinutes: 7 * 60 };
+
+const WEEKDAYS: Record<string, string> = { "0": "日", "7": "日", SUN: "日", "1": "一", MON: "一", "2": "二", TUE: "二", "3": "三", WED: "三", "4": "四", THU: "四", "5": "五", FRI: "五", "6": "六", SAT: "六" };
+
+/**
+ * 把自动结算的定时表达式写成人话：「每月 1 日 02:00（越南时间，北京时间 03:00）」。
+ * 只认 5 段或 6 段、秒为 0、分和时是单个数字、日 / 月 / 星期是「每天」「每月某日」「每周某天」三种写法；别的写法返回 null，页面写「自定义时间」加原文，不猜。
+ * 只做显示，后端按原文解析。
+ */
+export function describeSettleCron(raw: string): string | null {
+  const parts = raw.trim().split(/\s+/);
+  const fields = parts.length === 5 ? ["0", ...parts] : parts;
+  if (fields.length !== 6) return null;
+  const [sec, min, hour, dom, month, dow] = fields.map((f) => f.toUpperCase());
+  if (sec !== "0" || !/^\d{1,2}$/.test(min) || !/^\d{1,2}$/.test(hour) || month !== "*") return null;
+  const m = Number(min), h = Number(hour);
+  if (m > 59 || h > 23) return null;
+  const any = (f: string) => f === "*" || f === "?";
+  let day: string;
+  if (any(dom) && any(dow)) day = "每天";
+  else if (/^\d{1,2}$/.test(dom) && Number(dom) >= 1 && Number(dom) <= 31 && any(dow)) day = `每月 ${Number(dom)} 日`;
+  else if (any(dom) && WEEKDAYS[dow]) day = `每周${WEEKDAYS[dow]}`;
+  else return null;
+  const clock = (total: number) => `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  const local = h * 60 + m;
+  const zone = businessZone();
+  const shifted = local - SETTLE_ZONE.offsetMinutes + businessOffsetMinutes(zone);
+  const page = shifted === local ? "" : `，${zone.label} ${shifted >= 1440 ? "次日 " : shifted < 0 ? "前一天 " : ""}${clock(((shifted % 1440) + 1440) % 1440)}`;
+  return `${day} ${clock(local)}（${SETTLE_ZONE.label}${page}）`;
 }
 
 export type F4RecoveryRow = {

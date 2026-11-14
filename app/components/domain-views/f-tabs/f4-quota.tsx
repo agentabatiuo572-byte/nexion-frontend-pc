@@ -166,6 +166,12 @@ function openAmbassadorPolicy(ctx: FViewCtx, policy: F4AmbassadorPolicy) {
   });
 }
 
+/** 后端的「月配额 1000」「1100」这类额度文字统一写成「1,000 台」；认不出的原样显示。 */
+function monthQuota(label: string) {
+  const n = /^(?:月配额\s*)?(\d+)$/.exec(label.trim())?.[1];
+  return n ? `${count(Number(n))} 台` : presentText(label, "—");
+}
+
 export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F4LeadershipPoolOverview; onOpenMaterials: (application: F4AmbassadorApplication) => void }) {
   const [stageFilter, setStageFilter] = useState<StageKey | null>(null);
   const canWrite = ctx.can("network_f4_write");
@@ -174,6 +180,9 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
   const used = data.quotaMonthlyStockUsed;
   const remaining = data.quotaMonthlyStockRemaining;
   const stages = data.ambassadorApplications.map((application) => ({ application, stage: applicationStage(application) }));
+  // 已用记录只给代码，商品名从名额卡里按同一个额度编号找；找不到的只写代码。
+  const quotaName = (usage: F4LeadershipPoolOverview["quotaUsages"][number]) => data.quotaRows.find((row) => (usage.quotaCode && row.quotaCode === usage.quotaCode) || (usage.productNo && row.productNo === usage.productNo))?.name;
+  const productName = (usage: F4LeadershipPoolOverview["quotaUsages"][number]) => quotaName(usage) ?? (usage.productNo || usage.quotaCode);
   const shown = stageFilter ? stages.filter(({ stage }) => stage.key === stageFilter) : stages;
 
   const openQuota = (quota: F4LeadershipPoolOverview["quotaRows"][number]) => ctx.openActionConfirm({ briefKind: "config",
@@ -205,7 +214,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
     completionCopy: approvalCopy("F4 写权限"),
     facts: <KeyValues rows={[
       { key: "user", label: "谁的", value: `用户 ${usage.userId}` },
-      { key: "item", label: "哪一类", value: `${usage.productNo || usage.quotaCode} · ${count(usage.quantity)} 台` },
+      { key: "item", label: "哪一类", value: `${productName(usage)} · ${count(usage.quantity)} 台` },
       { key: "order", label: "订单号", value: usage.orderNo ? <span data-mono>{usage.orderNo}</span> : "无订单号" },
     ]} />,
     detail: "只能回收已使用的配额，回收后这个月的名额马上释放。",
@@ -240,9 +249,9 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
           </li>)}
         </ul> : <BlockState state="empty" title="还没有设置购机名额" />}
         <KeyValues rows={[
-          { key: "pro", label: "专业设备购买门槛", value: presentText(data.proUnlock) },
-          { key: "rack", label: "机柜设备购买门槛", value: presentText(data.rackUnlock) },
-          { key: "stock", label: "月库存上限", value: /^\d+$/.test(data.quotaMonthlyStockLabel.trim()) ? `${count(Number(data.quotaMonthlyStockLabel))} 台` : presentText(data.quotaMonthlyStockLabel) },
+          { key: "pro", label: "Pro 商品月额度", value: monthQuota(data.proUnlock), explain: "名字里带 Pro 的第一个商品这个月最多卖几台，和它的名额卡同一个数；不是购买门槛，购买条件写在每张商品卡上。" },
+          { key: "rack", label: "Rack 商品月额度", value: monthQuota(data.rackUnlock), explain: "名字里带 Rack 的第一个商品这个月最多卖几台，和它的名额卡同一个数；不是购买门槛。" },
+          { key: "stock", label: "全部商品月额度合计", value: monthQuota(data.quotaMonthlyStockLabel), explain: "所有商品这个月的额度相加，和上面的「共 N 台」是同一个数。" },
         ]} />
         <Fold title="已用记录" summary={data.quotaUsages.length ? `最近 ${data.quotaUsages.length} 条 · 可回收` : "还没有已用记录"}
           explain={`按发生时间从新到旧，最多 30 条；时间为${zoneNote()}。回收要另一位管理员批准。`}>
@@ -252,12 +261,13 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
               {data.quotaUsages.length ? data.quotaUsages.map((usage) => <Tr key={usage.id}>
                 <Td><span data-mono>#{usage.id}</span></Td>
                 <Td><span data-mono>{usage.userId}</span></Td>
-                <Td><Cell main={<span data-mono>{usage.productNo || usage.quotaCode}</span>} /></Td>
+                <Td>{quotaName(usage) ? <Cell main={quotaName(usage)} sub={<span data-mono>{usage.productNo || usage.quotaCode}</span>} /> : <Cell main={<span data-mono>{usage.productNo || usage.quotaCode}</span>} />}</Td>
                 <Td align="right"><Cell num main={`${count(usage.quantity)} 台`} /></Td>
                 <Td>{usage.orderNo ? <Cell mono main={usage.orderNo} /> : <span className="f4-muted">无订单号</span>}</Td>
                 <Td><Cell num main={stamp(usage.occurredAt)} /></Td>
                 <Td>{usage.status.toUpperCase() === "ACTIVE" ? <StatusTag tone="ok">占用中</StatusTag> : usage.status.toUpperCase() === "RECYCLED" ? <StatusTag tone="done">已回收</StatusTag> : <StatusTag tone="neutral">{usage.status || "状态未知"}</StatusTag>}</Td>
-                <Td data-fit="">{canWrite && <Button size="sm" variant="danger-outline" onClick={() => openRecycle(usage)}>回收</Button>}</Td>
+                {/* 旧逻辑不按状态拦回收（后端对已回收的拒绝）；这里只把已回收行的按钮画成次要样式，判断交代码 worker。 */}
+                <Td data-fit="">{canWrite && <Button size="sm" variant={usage.status.toUpperCase() === "ACTIVE" ? "danger-outline" : "ghost"} onClick={() => openRecycle(usage)}>回收</Button>}</Td>
               </Tr>) : <TableMessage columns={8}>还没有已用记录</TableMessage>}
             </tbody>
           </Table>
