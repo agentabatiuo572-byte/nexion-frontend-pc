@@ -162,7 +162,7 @@ export default function H4Promotions({ ctx, legacy }: {
     {copy && <ConfirmCommand writeAllowed={can('growth_promotion_edit')} title="复制为新活动" confirmLabel="复制为新活动" sub={<StatusTag tone="progress" filled>立即创建草稿</StatusTag>} intent={{ operation: 'copyPromotion', targetId: copy.activityId, path: `/promotions/${copy.activityId}/copies`, method: 'POST' }} body={{ expectedRevision: copy.revision, evidenceRefs: [] }} onClose={() => setCopy(null)} onSuccess={afterCreate}><Summary rows={[['原活动', copy.name || copy.activityId], ['复制内容', '当前配置'], ['不复制', '审批、累计使用量、订单']]}/><OldNotice title="仅复制配置">原活动 {copy.name || copy.activityId} 的审批、累计使用量与订单不会转到新活动。</OldNotice></ConfirmCommand>}
     {pending && <ConfirmCommand writeAllowed={!!PROMOTION_COMMAND_PERMISSIONS[pending.operation] && can('growth_promotion_'+PROMOTION_COMMAND_PERMISSIONS[pending.operation])} title="查询原结果" intent={pending} body={pending.body as Record<string, unknown>} onClose={() => setPending(null)} onSuccess={async (result) => { setPending(null); setNotice('原操作已确认成功，正在更新活动资料。'); if (pending.operation === 'deletePromotion')
         afterDelete(result);
-    else if (result.resource?.type === 'PROMOTION')
+    else if (pending.operation === 'createPromotion' || pending.operation === 'copyPromotion')
         await afterCreate(result);
     else {
         if (id)
