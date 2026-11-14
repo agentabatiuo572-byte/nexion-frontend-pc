@@ -460,8 +460,10 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
   const supportScopeUnknown = snapshot.role === "support" && !snapshot.supportReadModes?.length;
   // M-48: an advisor who can only read the knowledge base (M4) or service rules (M5) uses that content inside
   // the conversation; the read-only configuration pages only add menu noise. This narrows, never widens, access.
+  // M5 also hosts managed agent profiles, whose writes use M1 authority rather than M5 authority.
   // While the support qualification is unknown those pages are all the advisor has, so they stay.
-  const supportWrites = (code: string) => (snapshot.authorities ?? []).some((authority) => {
+  const supportWrites = (code: string) => (code === "M5" && snapshot.supportReadModes?.includes("MANAGED")
+    && snapshot.authorities?.includes("service_m1_write")) || (snapshot.authorities ?? []).some((authority) => {
     const upper = authority.toUpperCase();
     return upper.includes(`_${code}_`) && /_(WRITE|MANAGE|PUBLISH|EDIT)(_|$)/.test(upper);
   });
@@ -556,6 +558,9 @@ export const REDESIGNED_PATHS: readonly string[] = ["/", "/network/commissions",
   "/devices/pricing",
   "/users/security",
   "/service/overview",
+  "/service/kb-sla",
+  "/service/scripts",
+  "/service/leaderboard",
   "/finance-products/exchange",
   "/finance-products/market",
   "/finance-products/staking",
@@ -568,6 +573,10 @@ export const REDESIGNED_PATHS: readonly string[] = ["/", "/network/commissions",
   "/emergency/geo-block",
   "/emergency/sop",
   "/devices/trade-in",
+  "/overview/dual-ledger",
+  "/overview/funnel",
+  "/overview/risk-radar",
+  "/overview/rhythm",
 ];
 /** 不在菜单里的详情页，路径带对象编号，按前缀认。 */
 export const REDESIGNED_DETAIL_PREFIXES: readonly string[] = ["/users/search/", "/service/customers/"];
