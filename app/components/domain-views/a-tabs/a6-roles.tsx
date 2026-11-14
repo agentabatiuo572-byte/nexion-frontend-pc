@@ -623,7 +623,7 @@ function RoleDetail({ detail, summary, canWrite, canGrant, catalogsReady, catalo
           <Notice tone="progress" title="本次打开页面后提交的审批">
             <ul className="a6-recovery" aria-label="已提交的审批">
               {submitted.map((row) => (
-                <li key={row.ticket}>
+                <li key={`${row.ticket}-${row.at}`}>
                   <span className="a6-recovery-name">{row.label}</span>
                   <span className="a6-recovery-change">{row.change}</span>
                   <span className="a6-recovery-time">{businessStamp(row.at)} 提交</span>
