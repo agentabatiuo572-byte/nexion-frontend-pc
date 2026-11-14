@@ -208,7 +208,7 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
       })}</div>}
     {rows.length > 0 && error && !selected && <Notice tone="danger" title="玩法规则没有读到最新的">{error}</Notice>}
     {!loading && <p className="h4l-note">时间为北京时间</p>}
-    <Drawer open={!!editor} onClose={close} busy={saving} wide title={selected ? `${EVENT_KIND_LABELS[selected.kind] ?? "其他活动"}的配置` : "玩法配置"} sub={selected?.eventCode}
+    <Drawer open={!!editor} onClose={close} busy={saving} title={selected ? `${EVENT_KIND_LABELS[selected.kind] ?? "其他活动"}的配置` : "玩法配置"} sub={selected?.eventCode}
       explain="先保存完整配置，再开启活动。关闭这个抽屉会丢掉没保存的改动。"
       footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={close}>关闭配置</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!canWrite ? "没有修改玩法的权限" : undefined} onClick={save}>保存配置</Button>} />}>
       {editor}

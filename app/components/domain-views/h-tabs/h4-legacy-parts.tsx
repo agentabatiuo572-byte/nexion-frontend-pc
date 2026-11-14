@@ -99,9 +99,8 @@ export function expiredTag() {
 /** 走审批的修改在框里常显怎么生效：哪个方向要批、谁来批、批准前什么不变。 */
 export function ApprovalFacts({ amplify, direct, object }: { amplify: string; direct: string; object: string }) {
   return <Facts>
-    <Fact k="要批准的">{amplify}：提交审批单，批准前{object}什么都不变</Fact>
-    <Fact k="立即生效的">{direct}：确认后马上保存</Fact>
-    <Fact k="谁来批">另一位超级管理员（需有审批批准权限）；提交时由系统核对方向</Fact>
+    <Fact k="要批准的">{amplify}：提交审批单，另一位超级管理员（需有审批批准权限）批准前{object}什么都不变</Fact>
+    <Fact k="立即生效的">{direct}</Fact>
   </Facts>;
 }
 export const effectDirect = <StatusTag tone="progress" filled>立即生效</StatusTag>;

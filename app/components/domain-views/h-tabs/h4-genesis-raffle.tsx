@@ -91,17 +91,16 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
           <div className="h4l-draw-body">
             <header className="h4-card-head">
               <div className="h4-card-title"><h3>{row.titleZh || "中文名称未配置"}</h3><span className="h4-card-meta"><span className="h4-mono" title={row.id}>{row.id}</span></span></div>
-              <span className="h4l-tags"><StatusTag tone={status.tone} explain={status.explain}>{status.label}</StatusTag></span>
+              <span className="h4l-tags"><StatusTag tone={status.tone} explain={status.explain}>{status.label}</StatusTag><Button size="sm" disabledReason={saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={() => choose(row)}>{row.status === "DRAFT" || (row.status === "OPEN" && row.totalEntries === 0) ? "查看和修改" : "查看"}</Button></span>
             </header>
             <Steps label={`${row.titleZh || row.id} 走到哪`} items={["草稿", "开放报名", "开奖处理中", "已开奖"].map((label, index) => ({ label, state: index < status.step ? "done" as const : index === status.step ? "current" as const : "todo" as const }))} />
             <dl className="h4l-facts">
               <div><dt>报名开始</dt><dd className="h4-num">{formatTime(row.startsAt, "Asia/Shanghai")}</dd></div>
               <div><dt>开奖</dt><dd className="h4-num">{formatTime(row.drawAt, "Asia/Shanghai")}</dd></div>
-              <div><dt><Ticket size={14} aria-hidden />已报名</dt><dd><b className="h4-num">{row.totalEntries}</b> 票<small>按报名用掉的抽奖券数，不是人数</small></dd></div>
-              <div><dt><Trophy size={14} aria-hidden />奖项</dt><dd>{row.prizes.length ? <><b className="h4-num">{seats(row.prizes)}</b> 个名额<small>{row.prizes.map((prize) => `${prize.nameZh || "未命名"} ${prizeText(prize)} × ${prize.quantity}`).join("；")}</small></> : <span className="h4-dim">还没配奖项</span>}</dd></div>
+              <div><dt><Ticket size={14} aria-hidden />已报名</dt><dd><span><b className="h4-num">{row.totalEntries}</b> 票</span><small>按报名用掉的抽奖券数，不是人数</small></dd></div>
+              <div><dt><Trophy size={14} aria-hidden />奖项</dt><dd>{row.prizes.length ? <><span><b className="h4-num">{seats(row.prizes)}</b> 个名额</span><small>{row.prizes.map((prize) => `${prize.nameZh || "未命名"} ${prizeText(prize)} × ${prize.quantity}`).join("；")}</small></> : <span className="h4-dim">还没配奖项</span>}</dd></div>
             </dl>
           </div>
-          <Button size="sm" disabledReason={saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={() => choose(row)}>{row.status === "DRAFT" || (row.status === "OPEN" && row.totalEntries === 0) ? "查看和修改" : "查看"}</Button>
         </li>;
       })}</ol>}
     {rows.length > 0 && error && !draft && <Notice tone="danger" title="创世抽奖没有读到最新的">{error}</Notice>}

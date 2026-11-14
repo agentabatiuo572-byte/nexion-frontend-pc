@@ -225,7 +225,7 @@
 /* ===== 既有活动与转盘（第二部分）。页面里的用 .h4-page 限定；抽屉和确认框渲染在页面外，用 .h4-dialog-body、.h4l-compare 限定 ===== */
 .h4-page .h4l { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
 .h4-page .h4l-note { margin: 12px 0 0; display: flex; align-items: center; gap: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); }
-.h4-page .h4l-tags { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; flex: none; }
+.h4-page .h4l-tags { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; flex: none; }
 .h4-page .h4-card h3[data-empty] { color: var(--rd-text-3); font-weight: var(--rd-weight-medium); }
 .h4-page .h4-card[data-dim] h3 { color: var(--rd-text-2); }
 .h4-page .h4l-desc { margin: 0; color: var(--rd-text-2); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
@@ -264,7 +264,7 @@
 .h4-page .h4l-guard-sub { color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 /* 创世抽奖时间线 */
 .h4-page .h4l-draws { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.h4-page .h4l-draw { position: relative; display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 0 0 20px; }
+.h4-page .h4l-draw { position: relative; display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; align-items: start; padding: 0 0 20px; }
 .h4-page .h4l-draw::before { content: ""; position: absolute; left: 5px; top: 18px; bottom: 0; width: 2px; background: var(--rd-line); }
 .h4-page .h4l-draw:last-child::before { display: none; }
 .h4-page .h4l-draw-dot { width: 12px; height: 12px; margin-top: 6px; border-radius: 50%; border: 2px solid var(--rd-line-strong); background: var(--rd-panel); }
@@ -280,8 +280,9 @@
 .h4-dialog-body .h4l-prize { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border-radius: var(--rd-radius-tile-sm); border: 1px solid var(--rd-line); background: var(--rd-panel-inner); }
 .h4-dialog-body .h4l-prize header { display: flex; align-items: center; gap: 12px; }
 .h4-dialog-body .h4l-prize header .h4-dim { flex: 1 1 auto; font-size: var(--rd-text-aux); }
-.h4-dialog-body.h4l-content { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px 20px; align-items: start; }
-.h4-dialog-body.h4l-content > .rd-segs { grid-column: 1 / -1; justify-self: start; }
+.h4-dialog-body.h4l-content { display: flex; flex-direction: column; gap: 16px; }
+.h4-dialog-body.h4l-content > .h4l-preview { max-width: 320px; }
+.h4-dialog-body.h4l-content > .rd-segs { align-self: flex-start; }
 .h4l-locale-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .h4l-locale-rows li { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 0; border-top: 1px solid var(--rd-line); }
 .h4l-locale-rows li:first-child { border-top: 0; padding-top: 0; }
@@ -298,17 +299,16 @@
 .h4l-phone-go { align-self: flex-end; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .h4l-preview-note { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 /* 确认框里的新旧概率对比 */
-.h4l-compare { display: flex; flex-direction: column; gap: 10px; }
+.h4l-compare { display: flex; flex-direction: column; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--rd-line); }
 .h4l-compare-row { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px; align-items: center; }
 .h4l-compare-key { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 .h4l-compare-total { margin: 0; color: var(--rd-text-2); font-size: var(--rd-text-body); }
 .h4l-compare-total[data-tone="warn"] { color: var(--rd-warn); }
 .h4l-delta { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--rd-text-body); }
-.h4l-delta li { display: grid; grid-template-columns: minmax(80px, auto) auto minmax(0, 1fr); gap: 12px; align-items: baseline; }
+.h4l-delta li { display: grid; grid-template-columns: 120px 96px minmax(0, 1fr); gap: 12px; align-items: baseline; }
 .h4l-delta [data-tone="up"] { color: var(--rd-progress); }
 .h4l-delta-name { font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); color: var(--rd-text-2); }
 .h4l-delta .h4l-delta-note { display: block; color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 @media (max-width: 1279px) {
   .h4-page .h4l-draw-body .h4l-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .h4-dialog-body.h4l-content { grid-template-columns: minmax(0, 1fr); }
 }

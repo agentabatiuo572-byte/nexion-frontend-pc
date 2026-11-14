@@ -326,25 +326,27 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
       title: "新建既有活动",
       effect: <StatusTag tone="neutral" filled>建成预告，不开放</StatusTag>,
       detail: <>新建一个活动。活动 ID 用英文且不能重复；主推活动必须在进行中，且同时只能有一个。</>,
-      content: <Notice tone="warn" title="目前只有内置活动可以开放">自定义编号的活动建好后暂时不能开放（后端只认九个内置活动编号，待办 H4-BE-01 已提）。建成后一律是「预告」、不主推，要开放还得在「七类玩法」里配好。</Notice>,
+      facts: <Notice tone="warn" title="目前只有内置活动可以开放">自定义编号的活动建好后暂时不能开放（后端待办 H4-BE-01）；建成后一律是「预告」、不主推。</Notice>,
       amplifies: true,
       reasonPlaceholder: "例如：按运营排期登记新活动",
+      confirmLabel: "新建活动",
       businessForm: {
         kind: "multi-field",
         fields: [
           { key: "id", label: "活动编号", current: "", placeholder: "如 evt-summer", required: true, help: "英文字母、数字、_ 或 -，2–63 位，不能重复，建好后不能改" },
           { key: "name", label: "活动名", current: "", placeholder: "如 夏日狂欢", required: true },
           { key: "kind", label: "玩法", current: "discount", inputKind: "select", options: KIND_OPTIONS, optionLabels: Object.fromEntries(KIND_OPTIONS.map((kind) => [kind, KIND_LABEL(kind)])) },
-          { key: "state", label: "状态", current: "ongoing", inputKind: "select", options: ["ongoing", "upcoming", "ended"], optionLabels: { ongoing: "进行中", upcoming: "预告", ended: "已结束" }, explain: "这一项照原样提交，但后端建成后一律是「预告」，不会因为选了「进行中」就开放。" },
-          { key: "reward", label: "奖励", current: "", placeholder: "如 100 UVT", required: false, help: "没有玩法规则的活动只认正数的 UVT 或 USDT" },
+          { key: "reward", label: "奖励", current: "", placeholder: "如 100 UVT", required: false, explain: "没有玩法规则的活动只认正数的 UVT 或 USDT。" },
           { key: "condition", label: "完成条件", current: "", placeholder: "如 order.paid", required: false },
-          { key: "targetValue", label: "目标值", current: "", placeholder: "留空按 1", inputKind: "number", min: 1, max: 1_000_000_000, step: 1, required: false },
-          { key: "geo", label: "地区", current: "", placeholder: "如 VN / GLOBAL", required: false },
-          { key: "href", label: "App 跳转", current: "", placeholder: "如 /pages/store/store", required: false, help: "只能填 /pages/ 开头的页面" },
-          { key: "trackable", label: "统计效果", current: "false", inputKind: "select", options: ["false", "true"], optionLabels: { false: "不统计", true: "统计参与、达标、领取" } },
-          { key: "startsAt", label: "开始时间（UTC）", current: "", inputKind: "datetime-local", required: false },
-          { key: "endsAt", label: "结束时间（UTC）", current: "", inputKind: "datetime-local", required: false, help: "要晚于开始时间" },
-          { key: "featured", label: "设为主推", current: "false", inputKind: "select", options: ["false", "true"], optionLabels: { false: "否", true: "是" }, explain: "这一项照原样提交，但后端建成后一律不主推；开放以后再在卡片上设主推。" },
+          { key: "__more", label: "其余设置", current: "hide", inputKind: "select", options: ["hide", "show"], optionLabels: { hide: "收起，没填的用默认值", show: "展开逐项填写" }, wide: true, explain: "只控制状态、目标值、地区、App 跳转、时间、主推、统计效果这几项显示不显示，这一项本身不提交。已填的值收起后照样提交；没填的按默认值：进行中、目标值 1、不限地区、不跳转、不设时间、不主推、不统计。" },
+          { key: "state", label: "状态", current: "ongoing", inputKind: "select", options: ["ongoing", "upcoming", "ended"], optionLabels: { ongoing: "进行中", upcoming: "预告", ended: "已结束" }, explain: "这一项照原样提交，但后端建成后一律是「预告」，不会因为选了「进行中」就开放。", visibleWhen: { key: "__more", equals: "show" } },
+          { key: "targetValue", label: "目标值", current: "", placeholder: "留空按 1", inputKind: "number", min: 1, max: 1_000_000_000, step: 1, required: false, visibleWhen: { key: "__more", equals: "show" } },
+          { key: "geo", label: "地区", current: "", placeholder: "如 VN / GLOBAL", required: false, visibleWhen: { key: "__more", equals: "show" } },
+          { key: "href", label: "App 跳转", current: "", placeholder: "如 /pages/store/store", required: false, help: "只能填 /pages/ 开头的页面", visibleWhen: { key: "__more", equals: "show" } },
+          { key: "trackable", label: "统计效果", current: "false", inputKind: "select", options: ["false", "true"], optionLabels: { false: "不统计", true: "统计参与、达标、领取" }, visibleWhen: { key: "__more", equals: "show" } },
+          { key: "startsAt", label: "开始时间（UTC）", current: "", inputKind: "datetime-local", required: false, visibleWhen: { key: "__more", equals: "show" } },
+          { key: "endsAt", label: "结束时间（UTC）", current: "", inputKind: "datetime-local", required: false, help: "要晚于开始时间", visibleWhen: { key: "__more", equals: "show" } },
+          { key: "featured", label: "设为主推", current: "false", inputKind: "select", options: ["false", "true"], optionLabels: { false: "否", true: "是" }, explain: "这一项照原样提交，但后端建成后一律不主推；开放以后再在卡片上设主推。", visibleWhen: { key: "__more", equals: "show" } },
         ],
       },
       run: async (reason, _v, bv) => {
@@ -534,8 +536,7 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
       title: "调整转盘概率",
       effect: effectByDirection,
       detail: <>一次设置所有奖项，加起来要等于 100%。调高发钱奖项的概率时，覆盖率低于红线无法保存。</>,
-      facts: <ApprovalFacts amplify="调高了任一 UVT、USDT 或代金券奖项的概率（降低别的奖项不能抵消）" direct="不调高这三类奖项概率的修改" object="奖池" />,
-      content: <ProbabilityCompare tiers={tiers} store={store} valueOf={probabilityText} />,
+      facts: <><ProbabilityCompare tiers={tiers} store={store} valueOf={probabilityText} /><ApprovalFacts amplify="调高了任一 UVT、USDT 或代金券奖项的概率（降低别的奖项不能抵消）" direct="不调高这三类奖项概率的修改" object="奖池" /></>,
       amplifies: true,
       coverageLead: "调高中奖概率会让转盘多发奖",
       reasonPlaceholder: "例如：按活动方案调整各档概率",
@@ -1005,7 +1006,7 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
       </Panel>
     </div>
 
-    <Drawer open={!!contentEvent} onClose={() => setContentId(null)} title="三语内容与 App 上的样子" sub={contentEvent?.id} wide
+    <Drawer open={!!contentEvent} onClose={() => setContentId(null)} title="三语内容与 App 上的样子" sub={contentEvent?.id}
       explain="改一格保存一格，下次读取 App 就用新内容，不用发布。中文和越南语的名称、说明、奖项名都填齐，活动才能开放；英文没填时 App 用原文。">
       {contentEvent && <EventPreview canEdit={canModuleWrite}
         names={Object.fromEntries((["zh", "en", "vi"] as const).map((locale) => [locale, { name: localizedValue(contentEvent.id, "name", locale), description: localizedValue(contentEvent.id, "description", locale), rewardName: localizedValue(contentEvent.id, "rewardName", locale) }])) as Record<LocaleCode, Record<"name" | "description" | "rewardName", string>>}
