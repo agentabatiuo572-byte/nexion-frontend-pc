@@ -514,19 +514,25 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const blankedCount = orderedSections.filter((s) => blankingOf(s.key, currentVersionOf(s)).all).length;
   const hint = [
     pendingTrustSectionKeys.size > 0 && `${pendingTrustSectionKeys.size} 个版块等另一位批准`,
-    draftSections.size > 0 && `${draftSections.size} 个版块有没公开的草稿`,
+    draftSections.size > 0 && `${draftSections.size} 个版块有待发布的草稿`,
   ].filter(Boolean).join(" · ") || undefined;
   const conclusionExplain = <><p>App 只在六个版块都公开、每块当前版都有说明和结构、中越英字段齐全、不超过 {APP_FIELD_LIMIT} 个字段时，才显示信任中心；有一块不满足，整页打不开。</p><p>这里按后台读到的版本判断，安全文本和链接的细则以后端为准。</p></>;
+  const blankExplain = <><p>后端在正式环境公开时会清掉这几类内容：运营写的财务、徽章、上市文字；系统迁移写入的核心团队和审计版本；审计没填有效报告地址时的整块。后台照常保存和查看。</p>{conclusionExplain}</>;
+  const pendingText = pendingTrustSectionKeys.size > 0 ? `${pendingTrustSectionKeys.size} 个版块等另一位批准` : "";
+  const draftText = draftSections.size > 0 ? `${draftSections.size} 个版块有待发布的草稿` : "";
   const conclusion = issues.length
     ? <Conclusion state="danger" icon={ShieldAlert} lead explain={conclusionExplain} explainTitle="怎么判断"
       hint={[hint, "恢复上线或发布完整的版本后才能打开"].filter(Boolean).join(" · ")}>App 信任中心现在整页打不开：{issues.join("、")}</Conclusion>
-    : pendingTrustSectionKeys.size > 0
-      ? <Conclusion state="warn" explain={conclusionExplain} explainTitle="怎么判断" action={pendingLink} hint={draftSections.size ? `${draftSections.size} 个版块有没公开的草稿` : "批准前用户看到的不变"}>
-          <b>{pendingTrustSectionKeys.size}</b> 个版块的申请等另一位批准</Conclusion>
-      : draftSections.size > 0
-        ? <Conclusion state="neutral" icon={FilePen} explain={conclusionExplain} explainTitle="怎么判断" hint="草稿只在后台，提交发布并批准后才公开">
-            六个版块都在公开；<b>{draftSections.size}</b> 个版块有没公开的草稿</Conclusion>
-        : <Conclusion state="ok" icon={ShieldCheck} explain={conclusionExplain} explainTitle="怎么判断" hint={blankedCount ? `${blankedCount} 块的文字 App 公开时清空，用户看到的是空的` : undefined}>六个版块都在公开，没有没公开的改动</Conclusion>;
+    : blankedCount > 0
+      ? <Conclusion state="warn" explain={blankExplain} explainTitle="为什么是空的" action={pendingTrustSectionKeys.size > 0 ? pendingLink : undefined}>
+          六个版块都在公开，其中 <b>{blankedCount}</b> 个在 App 里是空的；{[pendingText, draftText].filter(Boolean).join("，") || "没有待发布的改动"}</Conclusion>
+      : pendingTrustSectionKeys.size > 0
+        ? <Conclusion state="warn" explain={conclusionExplain} explainTitle="怎么判断" action={pendingLink} hint={draftText || "批准前用户看到的不变"}>
+            <b>{pendingTrustSectionKeys.size}</b> 个版块的申请等另一位批准</Conclusion>
+        : draftSections.size > 0
+          ? <Conclusion state="neutral" icon={FilePen} explain={conclusionExplain} explainTitle="怎么判断" hint="草稿只在后台，提交发布并批准后才公开">
+              六个版块都在公开；<b>{draftSections.size}</b> 个版块有待发布的草稿</Conclusion>
+          : <Conclusion state="ok" icon={ShieldCheck} explain={conclusionExplain} explainTitle="怎么判断">六个版块都在公开，没有待发布的改动</Conclusion>;
 
   // ---------- 版块卡 ----------
   const sectionMenu = (s: TrustSection): MoreMenuItem[] => {
@@ -551,9 +557,11 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       status: isArchived ? { text: "已下架", tone: "danger" } : isPublished(s.status) ? { text: "公开中", tone: "ok" } : { text: statusZh(s.status), tone: "warn" },
       version: s.v,
       updatedAt: current?.updatedAt ? timeText(current.updatedAt) : undefined,
+      operator: current ? operatorText(current.operator) : undefined,
       preview,
       blankedAll: blanking.all,
-      appNote: isArchived ? "已下架：下架前的内容，用户看不到" : blanking.all ? "App 公开时清空，用户看到的是空的" : undefined,
+      appLabel: isArchived ? "下架前的内容" : blanking.all ? "后台存的内容" : "App 里",
+      appHidden: isArchived ? "已下架，App 信任中心整页打不开。" : blanking.all,
       draft: draftsOf(s.key).map((draft) => draft.version).join("、") || undefined,
       pending: isPending,
       problems: isArchived ? [] : sectionProblems(s),

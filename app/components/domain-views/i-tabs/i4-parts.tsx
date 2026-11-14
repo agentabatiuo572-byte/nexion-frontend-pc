@@ -134,10 +134,14 @@ export type SectionCardModel = {
   status: { text: string; tone: StateTone };
   version: string;
   updatedAt?: string;
+  /** 当前版本最后保存的人（系统迁移写「系统迁移」）。 */
+  operator?: string;
   preview: TrustField[];
   blankedAll?: string;
-  /** 卡片「App 里」下面那一句提醒：已下架优先，其次公开时清空。 */
-  appNote?: string;
+  /** 内容块的标题：App 里 / 后台存的内容（公开时清空）/ 下架前的内容。 */
+  appLabel: string;
+  /** 用户看不到这块内容的原因；有值时标题旁标「App 不显示」。 */
+  appHidden?: string;
   draft?: string;
   pending: boolean;
   problems: string[];
@@ -157,26 +161,29 @@ export function SectionCard({ card }: { card: SectionCardModel }) {
         <IconTile tone="role-2" icon={info?.icon ?? ShieldCheck} size={28} />
         <div className="i4-card-title">
           <h3><button type="button" className="i4-card-open" onClick={card.onOpen}>{card.name}</button></h3>
-          <span className="i4-card-meta">{card.version || "—"} · {card.updatedAt ? `${card.updatedAt} 更新` : "更新时间 —"}</span>
+          <span className="i4-card-meta">当前版本 {card.version || "—"}</span>
         </div>
         <StatusTag tone={card.status.tone}>{card.status.text}</StatusTag>
       </header>
       <div className="i4-app" data-blank={card.blankedAll ? "" : undefined}>
-        <span className="i4-app-label">App 里
-          <Explain label={`${card.name}在 App 里的位置`} content={<><p>{info?.where ?? "App 里的位置待核实。"}</p>{card.blankedAll && <p>{card.blankedAll}</p>}</>} />
+        <span className="i4-app-label">{card.appLabel}
+          <Explain label={`${card.name}在 App 里的位置`} content={<><p>{info?.where ?? "App 里的位置待核实。"}</p>{card.appHidden && <p>{card.appHidden}</p>}</>} />
+          {card.appHidden && <StatusTag tone="warn" explain={card.appHidden}>App 不显示</StatusTag>}
         </span>
         {card.preview.length
-          ? <dl className="i4-app-lines" data-user-content="" data-blank={card.blankedAll ? "" : undefined}>{card.preview.map((field) => <div key={field.key}><dt>{field.label}</dt><dd title={field.value}>{field.value || "—"}</dd></div>)}</dl>
+          ? <dl className="i4-app-lines" data-user-content="" data-blank={card.appHidden ? "" : undefined}>{card.preview.map((field) => <div key={field.key}><dt>{field.label}</dt><dd title={field.value}>{field.value || "—"}</dd></div>)}</dl>
           : <p className="i4-app-blank">没有可显示的字段</p>}
-        {card.appNote && <p className="i4-app-warn">{card.appNote}</p>}
       </div>
       {(card.draft || card.pending || card.problems.length > 0) && <div className="i4-card-tags">
         {card.problems.length > 0 && <StatusTag tone="danger" explain={`${card.problems.join("；")}。App 信任中心整页打不开。`}>{card.problems[0]}</StatusTag>}
         {card.pending && <StatusTag tone="warn" explain="有申请等另一位管理员批准，批准或驳回前这一块不能改。批准前用户看到的不变。">等另一位批准</StatusTag>}
-        {card.draft && <StatusTag tone="neutral" explain="草稿只在后台，用户看不到；提交发布并批准后才公开。">草稿 {card.draft} 没公开</StatusTag>}
+        {card.draft && <StatusTag tone="neutral" explain="草稿只在后台，用户看不到；提交发布并批准后才公开。">草稿 {card.draft} 待发布</StatusTag>}
       </div>}
       <footer className="i4-card-foot">
-        <span className="i4-card-change" title={card.lastChange}>{card.lastChange ? <>最近改动：<span data-user-content="">{card.lastChange}</span></> : "最近改动 —"}</span>
+        <div className="i4-card-change">
+          <span className="i4-card-who">{card.updatedAt ?? "—"} · {card.operator ?? "—"}</span>
+          <span>最近改动：{card.lastChange ? <span data-user-content="">{card.lastChange}</span> : "—"}</span>
+        </div>
         <span className="rd-row-actions">{card.actions}</span>
       </footer>
     </article>
