@@ -399,8 +399,7 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i2-event-op { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-3); padding: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
 .i2-event-op p { margin: 2px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 
-/* ============================ I4 信任中心（改版，.i4-page） ============================
-   首屏六张版块卡（1440 三列、1024 两列），四份资料卡（宽时四列、窄时两列），草稿编辑左填右看。只用 --rd-* 令牌。 */
+/* ============================ I4 信任中心（改版，.i4-page） =====================   首屏六张版块卡（1440 三列、1024 两列），四份资料卡（宽时四列、窄时两列），草稿编辑左填右看。只用 --rd-* 令牌。 */
 .i4-page .i4-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--rd-space-3); }
 .i4-page .i4-card { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; padding: var(--rd-space-4); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); color: var(--rd-text); }
 .i4-page .i4-card[data-selected] { border-color: var(--rd-progress); }
@@ -493,3 +492,153 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i4-vlist-actions { grid-area: actions; }
 .i4-editor-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--rd-space-3); }
 .i4-editor-pair .rd-textarea, .i4-editor-pair textarea { min-height: var(--rd-control-h); }
+=======
+/* ============================ I6 多语言与课程（.i6-page 一段：三语齐全图、文案列表、详情抽屉、课程卡、课程编辑、App 里的样子） ============================ */
+.i6-page .i6-tabpane { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
+.i6-page .i6-tabpane[hidden] { display: none; }
+.i6-page .i6-muted { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.i6-mono, .i6-page .i6-mono { font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); overflow-wrap: anywhere; }
+
+/* 三语齐不齐：左边三种语言各一条比例条，右边按模块列缺几条 */
+.i6-page .i6-cov { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(320px, 1.1fr); gap: var(--rd-space-4) var(--rd-space-7); align-items: start; }
+@container idom (max-width: 900px) { .i6-page .i6-cov { grid-template-columns: 1fr; } }
+.i6-page .i6-cov-langs { --rd-track-w: 100%; display: grid; gap: var(--rd-space-3); }
+.i6-page .i6-cov-lang { display: grid; grid-template-columns: 56px minmax(80px, 1fr) 72px 72px; align-items: center; gap: var(--rd-space-3); min-height: 28px; }
+.i6-page .i6-cov-lang[data-total] { padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
+.i6-page .i6-cov-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.i6-page .i6-cov-num { text-align: right; font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.i6-page .i6-cov-ok { font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i6-page .i6-cov-miss { justify-self: start; padding: 0; border: 0; background: none; font: inherit; font-size: var(--rd-text-aux); color: var(--rd-warn); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; white-space: nowrap; }
+.i6-page .i6-cov-ns { display: grid; gap: var(--rd-space-2); min-width: 0; }
+.i6-page .i6-ns { display: grid; grid-template-columns: minmax(120px, 1fr) auto minmax(150px, auto); align-items: center; gap: var(--rd-space-3); width: 100%; padding: var(--rd-space-2) var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); font: inherit; text-align: left; cursor: pointer; }
+@media (hover: hover) and (pointer: fine) { .i6-page .i6-ns:hover { border-color: var(--rd-line-strong); } }
+.i6-page .i6-ns-name { display: flex; flex-direction: column; min-width: 0; font-weight: var(--rd-weight-medium); }
+.i6-page .i6-ns-name small { font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.i6-page .i6-ns-miss { display: flex; flex-wrap: wrap; gap: var(--rd-space-1); justify-content: flex-end; }
+.i6-page .i6-ns-cov { display: flex; align-items: center; justify-content: flex-end; gap: var(--rd-space-2); }
+.i6-page .i6-ns-pct { font-size: var(--rd-text-aux); color: var(--rd-text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+@container idom (max-width: 900px) { .i6-page .i6-ns { grid-template-columns: minmax(100px, 1fr) auto; } .i6-page .i6-ns-cov { grid-column: 1 / -1; justify-content: flex-start; } }
+
+/* 文案列表：文案键一列，三种语言各一列，状态一列 */
+.i6-page .i6-list-anchor { scroll-margin-top: var(--rd-space-4); }
+.i6-page .i6-msg-table { table-layout: fixed; }
+.i6-page .i6-msg-table th:nth-child(1) { width: 28%; }
+.i6-page .i6-msg-table th:nth-child(5) { width: 88px; }
+.i6-page .i6-msg-table .rd-cell { max-width: none; }
+.i6-page .i6-key-cell { display: flex; flex-direction: column; min-width: 0; }
+.i6-page .i6-key-cell small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.i6-page .i6-key { display: flex; min-width: 0; padding: 0; border: 0; background: none; color: var(--rd-text); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); text-align: left; cursor: pointer; }
+.i6-page .i6-key-head { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.i6-page .i6-key-tail { flex: none; white-space: nowrap; }
+@media (hover: hover) and (pointer: fine) { .i6-page .i6-key:hover { text-decoration: underline; text-underline-offset: 3px; } }
+
+/* 完整性检查 */
+.i6-page .i6-issues, .i6-page .i6-pending { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
+.i6-page .i6-issue { display: grid; gap: var(--rd-space-2); padding: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
+.i6-page .i6-issue[data-fixed] { color: var(--rd-text-3); }
+.i6-page .i6-issue-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-3); }
+.i6-page .i6-issue-name { font-weight: var(--rd-weight-medium); }
+.i6-page .i6-issue-cnt { font-variant-numeric: tabular-nums; color: var(--rd-text-2); }
+.i6-page .i6-issue-samples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); padding-left: 40px; }
+.i6-sample { padding: 0 var(--rd-space-2); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tag); background: var(--rd-panel-inner); color: var(--rd-text-2); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); line-height: 22px; cursor: pointer; }
+.i6-sample[data-static] { cursor: default; }
+.i6-sample[data-selected] { border-color: var(--rd-brand); color: var(--rd-text); }
+
+/* 等批准和结果未知：一行一件，改的是什么、从多少到多少、什么时候提交 */
+.i6-page .i6-pending li { display: grid; grid-template-columns: max-content minmax(160px, 1fr) minmax(140px, auto) max-content max-content; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.i6-page .i6-pending li:has(> .rd-notice) { display: block; padding: 0; background: none; }
+.i6-page .i6-pending-what { min-width: 0; font-weight: var(--rd-weight-medium); overflow-wrap: anywhere; }
+.i6-page .i6-pending-what small { margin-left: var(--rd-space-2); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.i6-page .i6-pending-change { min-width: 0; font-size: var(--rd-text-aux); color: var(--rd-text-2); }
+.i6-page .i6-pending-at { font-size: var(--rd-text-aux); color: var(--rd-text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+@container idom (max-width: 900px) { .i6-page .i6-pending li { grid-template-columns: max-content minmax(0, 1fr) max-content; } .i6-page .i6-pending-change, .i6-page .i6-pending-at { grid-column: 2 / 3; } }
+
+/* 课程卡 */
+.i6-page .i6-course-filter { margin-bottom: var(--rd-space-4); }
+.i6-page .i6-course-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--rd-space-4); }
+.i6-page .i6-course { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; padding: var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
+.i6-page .i6-course[data-selected] { border-color: var(--rd-brand); }
+.i6-page .i6-course[data-dim] .i6-course-reward-v, .i6-page .i6-course[data-dim] h3 { color: var(--rd-text-3); }
+.i6-page .i6-course-head { display: flex; gap: var(--rd-space-3); align-items: flex-start; min-width: 0; }
+.i6-page .i6-course-title { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; }
+.i6-page .i6-course-title h3 { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-semibold); display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+.i6-page .i6-course-tags { display: flex; flex-wrap: wrap; gap: var(--rd-space-1) var(--rd-space-2); }
+.i6-page .i6-course-reward { display: flex; align-items: baseline; gap: var(--rd-space-2); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.i6-page .i6-course-reward-k { font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i6-page .i6-course-reward-v { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; color: var(--rd-role-1); }
+:root[data-theme="light"] .i6-page .i6-course-reward-v { color: var(--rd-text); }
+.i6-page .i6-course-reward-v[data-empty] { color: var(--rd-text-3); }
+.i6-page .i6-course-reward-v small { margin-left: var(--rd-space-1); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-medium); color: var(--rd-text-3); }
+.i6-page .i6-course-meta { display: grid; gap: var(--rd-space-1); margin: 0; }
+.i6-page .i6-course-meta > div { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: var(--rd-space-2); }
+.i6-page .i6-course-meta dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.i6-page .i6-course-meta dd { margin: 0; min-width: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.i6-course-langs { display: flex; gap: var(--rd-space-2); }
+.i6-course-langs span { padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-ok-bg); color: var(--rd-ok); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.i6-course-langs span[data-missing] { background: var(--rd-warn-bg); color: var(--rd-warn); }
+.i6-page .i6-course-actions { display: flex; align-items: center; gap: var(--rd-space-2); margin-top: auto; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
+.i6-card-act { display: inline-flex; align-items: center; gap: var(--rd-space-2); margin-left: auto; }
+
+/* 抽屉里：三种语言、历史对比、课程详情 */
+.i6-langs { display: grid; gap: var(--rd-space-3); }
+.i6-lang { padding: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.i6-lang[data-missing] { border-style: dashed; border-color: var(--rd-warn); background: transparent; }
+.i6-lang-head { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-2); margin-bottom: var(--rd-space-2); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i6-lang-text { margin: 0; color: var(--rd-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.i6-lang[data-missing] .i6-lang-text { color: var(--rd-text-3); }
+.i6-row-actions { display: inline-flex; gap: var(--rd-space-2); justify-content: flex-end; white-space: nowrap; }
+.i6-compare { display: grid; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); overflow: hidden; }
+.i6-compare-head, .i6-compare-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) minmax(0, 1fr); gap: var(--rd-space-3); padding: var(--rd-space-2) var(--rd-space-3); }
+.i6-compare-head { background: var(--rd-panel-inner); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i6-compare-row + .i6-compare-row { border-top: 1px solid var(--rd-line); }
+.i6-compare-lang { display: flex; flex-direction: column; align-items: flex-start; gap: var(--rd-space-1); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.i6-compare-lang small { font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.i6-compare-text { min-width: 0; color: var(--rd-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.i6-compare-row:not([data-same]) .i6-compare-text[data-after] { color: var(--rd-text); }
+.i6-compare-text[data-empty] { color: var(--rd-warn); }
+.i6-course-body { margin: 0; padding: var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.i6-quiz-view { display: grid; gap: var(--rd-space-3); margin: 0; padding-left: var(--rd-space-5); }
+.i6-quiz-view-q { margin: 0 0 var(--rd-space-1); font-weight: var(--rd-weight-medium); }
+.i6-quiz-view-q small { margin-left: var(--rd-space-2); font-family: var(--rd-font-mono); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
+.i6-quiz-view ul { display: grid; gap: var(--rd-space-1); margin: 0; padding-left: var(--rd-space-4); color: var(--rd-text-2); }
+.i6-quiz-view ul li { display: flex; align-items: center; gap: var(--rd-space-2); }
+.i6-quiz-view ul li[data-correct] { color: var(--rd-text); }
+.i6-version-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--rd-space-3); }
+
+/* 课程编辑：左边表单，右边 App 里的样子 */
+.i6-editor { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--rd-space-6); align-items: start; }
+@media (max-width: 1180px) { .i6-editor { grid-template-columns: minmax(0, 1fr) 280px; } }
+.i6-editor-form, .i6-editor-pane { display: flex; flex-direction: column; gap: var(--rd-space-4); min-width: 0; }
+.i6-editor-lang { display: flex; }
+.i6-editor-note { display: flex; align-items: center; gap: var(--rd-space-2); margin: 0; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i6-quiz-q { display: grid; gap: var(--rd-space-3); margin: 0; padding: var(--rd-space-3) var(--rd-space-4) var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
+.i6-quiz-q > legend { padding: 0 var(--rd-space-1); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.i6-quiz-q > .rd-btn { justify-self: start; }
+.i6-quiz-options { display: grid; gap: var(--rd-space-2); }
+.i6-quiz-option { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: var(--rd-space-1) var(--rd-space-3); }
+.i6-quiz-radio { display: inline-flex; align-items: center; gap: var(--rd-space-2); font-size: var(--rd-text-aux); color: var(--rd-text-3); cursor: pointer; white-space: nowrap; }
+.i6-quiz-option[data-correct] .i6-quiz-radio { color: var(--rd-ok); font-weight: var(--rd-weight-medium); }
+.i6-quiz-radio input { accent-color: var(--rd-ok); }
+.i6-quiz-error { grid-column: 2; }
+.i6-editor-pane > .rd-btn { align-self: flex-start; }
+.i6-phone { position: sticky; top: 0; display: flex; flex-direction: column; gap: var(--rd-space-2); margin: 0; }
+.i6-phone-screen { display: flex; flex-direction: column; gap: var(--rd-space-3); min-height: 420px; padding: var(--rd-space-4); border: 6px solid var(--rd-line-strong); border-radius: 24px; background: var(--rd-panel-inner); }
+.i6-phone-bar { display: flex; justify-content: space-between; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i6-phone-lang { padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-panel); }
+.i6-phone-hero { display: flex; align-items: center; gap: var(--rd-space-2); }
+.i6-phone-icon { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: var(--rd-radius-tile); background: var(--rd-role-2-tile); color: var(--rd-role-2-tile-ink); }
+.i6-phone-cat { font-size: var(--rd-text-aux); color: var(--rd-text-2); }
+.i6-phone-title { margin: 0; font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); overflow-wrap: anywhere; }
+.i6-phone-title[data-empty], .i6-phone-body[data-empty] { color: var(--rd-warn); font-weight: var(--rd-weight-regular); }
+.i6-phone-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--rd-space-2); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i6-phone-reward { padding: 2px var(--rd-space-2); border-radius: 999px; background: var(--rd-role-1-bg); color: var(--rd-role-1); font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; }
+:root[data-theme="light"] .i6-phone-reward { color: var(--rd-text); }
+.i6-phone-body { margin: 0; font-size: var(--rd-text-aux); line-height: 20px; color: var(--rd-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.i6-phone-quiz { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); margin-top: auto; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); font-size: var(--rd-text-aux); color: var(--rd-text-2); }
+.i6-phone-caption { font-size: var(--rd-text-aux); color: var(--rd-text-3); text-align: center; }
+.i6-phone-quiz > span { white-space: nowrap; }
+.i6-phone-quiz > span + span::before { content: "·"; margin-right: var(--rd-space-2); color: var(--rd-text-3); }
+.i6-course-detail { display: flex; flex-direction: column; gap: var(--rd-space-4); }
+.i6-page .i6-clean { display: flex; align-items: center; gap: var(--rd-space-1); margin-top: var(--rd-space-3); }
+.i6-page .i6-issue-fix { display: inline-flex; align-items: center; gap: var(--rd-space-3); margin-left: auto; min-width: 0; }
+.i6-page .i6-issue-fix [data-pair] { display: inline-flex; align-items: center; gap: var(--rd-space-1); }

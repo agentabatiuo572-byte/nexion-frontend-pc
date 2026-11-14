@@ -277,6 +277,15 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
     );
   }
 
+  if (tab === "I6") {
+    return (
+      <RdPage className="idom i6-page">
+        <I6I18n ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
   if (tab === "I5") {
     return (
       <RdPage className="idom">
@@ -305,7 +314,6 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
         </section>
       )}
 
-      {(!contentError || contentReadable) && tab === "I6" && <I6I18n ctx={ctx} />}
 
       {overlays}
     </div>
