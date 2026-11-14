@@ -169,8 +169,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   }, [session?.adminId]);
   useEffect(() => {
     setQueue([]);
-    setVerifiedProposals({});
     if (!data || contentLoading || contentError) return;
+    setVerifiedProposals({});
     let active = true;
     for (const record of listJ4PendingProposals()) void queryProposal(record);
     if (authorities.includes("platform_a2_read")) {
@@ -250,7 +250,11 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   })));
   const recovery = <J4RecoveryNotice rows={recoveryRows} />;
   const proposalRows = new Map([...queue, ...Object.values(verifiedProposals).filter((row) => row.status === "pending")].map((row) => [row.id, row]));
-  const pendingProposals = [...proposalRows.values()].map((row) => ({ key: row.id, name: row.obj, meta: <>{row.operator} · {j4Time(row.rawTs)} · {row.id}</> }));
+  const pendingProposals = [...proposalRows.values()].map((row) => {
+    const record = proposals.find((record) => verifiedProposals[record.commandKey]?.id === row.id);
+    return { key: row.id, name: row.obj, meta: <>{row.operator} · {j4Time(row.rawTs)} · {row.id}</>,
+      onQuery: record ? () => void queryProposal(record) : undefined };
+  });
   const reload = () => void actions.reloadJEmergency().catch(() => undefined);
   const readOnly = !canWrite && !canRun;
   const contractReady = data?.contractVersion === "J4_REAL_EXECUTION_V5";
@@ -772,48 +776,18 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     </span>;
   };
 
-  if (contentError) {
-    return <div className="j4-page">
-      {header()}
-      {recovery}
-      <BlockState state="error" title="当前无法确认最新状态" detail={`${contentError} 为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} retryLabel="刷新" />
-    </div>;
-  }
-  if (!data) {
-    return <div className="j4-page">
-      {header()}
-      {recovery}
-      {contentLoading
-        ? <BlockState state="loading" title="应急预案数据加载中" detail="正在读取预案、执行记录和通知活动" />
-        : <BlockState state="empty" title="暂无 应急预案数据" detail="点右上角「刷新」重新读取。" />}
-    </div>;
-  }
-
-  // ---------- 结论 ----------
-  const conclusion = !contractReady ? (
-    <Conclusion state="danger" hint="请联系技术人员检查后再进行操作。">应急执行服务尚未就绪，当前仅可查看</Conclusion>
-  ) : active.length > 0 ? (
-    <Conclusion state="warn" lead hint={canRun ? "在下面「正在执行」看做到哪一步；超过 2 分钟没进展可以恢复核对。" : "在下面「正在执行」看做到哪一步；取消和恢复核对请找有执行权限的同事。"}>{count(active.length)} 次正式执行进行中</Conclusion>
-  ) : recoveryRows.length > 0 ? (
-    <Conclusion state="warn" hint="到上方逐条查询原结果。">{count(recoveryRows.length)} 项操作结果未知；{count(ready)} 个预案可执行</Conclusion>
-  ) : PLAYBOOKS.length === 0 ? (
-    <Conclusion state="warn" hint={canWrite ? "点右上角「新增预案」，保存后演练通过才能用。" : "请有预案维护权限的同事新增。"}>还没有应急预案，出事时没有可用的预案</Conclusion>
-  ) : ready === 0 ? (
-    <Conclusion state="warn" hint={canWrite ? "在「预案库」选预案点「演练」，演练通过才能正式执行。" : "请有预案维护权限的同事演练。"}>{count(PLAYBOOKS.length)} 个预案都还不能正式执行</Conclusion>
-  ) : (
-    <Conclusion state="ok" hint="出事时在「预案库」按场景选预案，看清步骤后点「发起正式执行」。">{count(ready)} 个预案可执行，没有进行中的执行</Conclusion>
-  );
-
   // ---------- 正在执行 ----------
-  const activePanel = (active.length > 0 || pendingProposals.length > 0) && (
-    <Panel title="正在执行" icon={Workflow} tone="role-3" sub={`${count(active.length)} 次`}
+  const overviewUnavailable = Boolean(contentError || contentLoading || !data);
+  const visibleActive = overviewUnavailable ? [] : active;
+  const activePanel = (visibleActive.length > 0 || pendingProposals.length > 0) && (
+    <Panel title="正在执行" icon={Workflow} tone="role-3" sub={`${count(visibleActive.length)} 次`}
       explain={<>
         <p>批准后系统按顺序自动执行；每一步的状态在这里看。</p>
         <p>取消：正在做的这一步做完才停，后面跳过，做完的不撤回。</p>
         <p>恢复核对：最后一次更新超过 2 分钟还卡着时用，系统只核对、不重新执行；证明不了做成的记为失败。</p>
       </>}>
       <ul className="j4-live" aria-label="正在执行">
-        {active.map((e) => {
+        {visibleActive.map((e) => {
           return (
             <li key={e.executionId || `${e.ts}-${e.code}`} className="j4-live-item" data-testid={e.executionId ? `j4-live-${e.executionId}` : undefined}>
               <div className="j4-live-head">
@@ -839,10 +813,44 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
             </li>
           );
         })}
-        {pendingProposals.map((row) => <li key={row.key} className="j4-live-item"><div className="j4-live-head"><span className="j4-live-name">{row.name}</span><StatusTag tone="warn" icon={Clock3}>等批准</StatusTag><span className="j4-muted">{row.meta}</span></div></li>)}
+        {pendingProposals.map((row) => <li key={row.key} className="j4-live-item"><div className="j4-live-head"><span className="j4-live-name">{row.name}</span><StatusTag tone="warn" icon={Clock3}>等批准</StatusTag><span className="j4-muted">{row.meta}</span>{overviewUnavailable && row.onQuery && <Button size="sm" onClick={row.onQuery}>查询原结果</Button>}</div></li>)}
       </ul>
       <p className="j4-note">时间为{businessZone().label}</p>
     </Panel>
+  );
+
+  if (contentError) {
+    return <div className="j4-page">
+      {header()}
+      {recovery}
+      {activePanel}
+      <BlockState state="error" title="当前无法确认最新状态" detail={`${contentError} 为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} retryLabel="刷新" />
+    </div>;
+  }
+  if (!data) {
+    return <div className="j4-page">
+      {header()}
+      {recovery}
+      {activePanel}
+      {contentLoading
+        ? <BlockState state="loading" title="应急预案数据加载中" detail="正在读取预案、执行记录和通知活动" />
+        : <BlockState state="empty" title="暂无 应急预案数据" detail="点右上角「刷新」重新读取。" />}
+    </div>;
+  }
+
+  // ---------- 结论 ----------
+  const conclusion = !contractReady ? (
+    <Conclusion state="danger" hint="请联系技术人员检查后再进行操作。">应急执行服务尚未就绪，当前仅可查看</Conclusion>
+  ) : active.length > 0 ? (
+    <Conclusion state="warn" lead hint={canRun ? "在下面「正在执行」看做到哪一步；超过 2 分钟没进展可以恢复核对。" : "在下面「正在执行」看做到哪一步；取消和恢复核对请找有执行权限的同事。"}>{count(active.length)} 次正式执行进行中</Conclusion>
+  ) : recoveryRows.length > 0 ? (
+    <Conclusion state="warn" hint="到上方逐条查询原结果。">{count(recoveryRows.length)} 项操作结果未知；{count(ready)} 个预案可执行</Conclusion>
+  ) : PLAYBOOKS.length === 0 ? (
+    <Conclusion state="warn" hint={canWrite ? "点右上角「新增预案」，保存后演练通过才能用。" : "请有预案维护权限的同事新增。"}>还没有应急预案，出事时没有可用的预案</Conclusion>
+  ) : ready === 0 ? (
+    <Conclusion state="warn" hint={canWrite ? "在「预案库」选预案点「演练」，演练通过才能正式执行。" : "请有预案维护权限的同事演练。"}>{count(PLAYBOOKS.length)} 个预案都还不能正式执行</Conclusion>
+  ) : (
+    <Conclusion state="ok" hint="出事时在「预案库」按场景选预案，看清步骤后点「发起正式执行」。">{count(ready)} 个预案可执行，没有进行中的执行</Conclusion>
   );
 
   // ---------- 预案库 ----------
