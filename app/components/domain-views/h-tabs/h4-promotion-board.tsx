@@ -6,22 +6,13 @@
 import type { ReactNode } from 'react';
 import { AlarmClock, CalendarRange, CircleAlert, FileClock, Gift, ListChecks, Megaphone, Users, Wallet } from 'lucide-react';
 import { Button, ChartLegend, Conclusion, Explain, MoreMenu, Notice, Panel, RatioBar, SegmentBar, Stat, StatBand, StatusTag, type MoreMenuItem } from '@/app/components/rd';
-import type { Budget, Catalog, PromotionListItem, PromotionPage } from '@/lib/admin/promotion-types';
+import type { AudiencePreview, Budget, Catalog, Draft, PromotionListItem, PromotionPage } from '@/lib/admin/promotion-types';
 import type { PendingPromotion } from '@/lib/admin/promotion-client';
-import { TEMPLATE_LABELS, formatTime, labelState, stateTone, text, zoneLabel } from './h4-promotion-ui';
+import { TEMPLATE_LABELS, amountText, formatTime, labelState, stateTone, text, zoneLabel } from './h4-promotion-ui';
 
 export const OPERATION_LABELS: Record<string, string> = { createPromotion: '新建活动', saveDraft: '保存活动草稿', copyPromotion: '复制为新活动', createDraftVersion: '创建改版草稿', submitPromotion: '提交审核', withdrawPromotion: '撤回审核', approvePromotion: '审核确认', rejectPromotion: '驳回候选版本', publishPromotion: '发布', pausePromotion: '暂停新预留', resumePromotion: '恢复新预留', endPromotion: '终止活动', archivePromotion: '归档活动', deletePromotion: '删除活动', retryReward: '重试原奖励项', reconcileReward: '核查原结果', cancelReward: '取消原奖励项', reverseReward: '发起冲正', resolveReward: '异常审阅', createExport: '导出当前报表', createPolicy: '新建政策草稿', approvePolicy: '批准政策', revokePolicy: '撤销政策' };
 
-/** 后端金额固定补到 6 位小数：显示时去掉补的 0，至少留 2 位；悬停看原值。 */
-export function amountText(value: string | number | null | undefined, whole = false): string {
-    if (value === null || value === undefined || value === '') return '—';
-    const raw = String(value);
-    if (!/^-?\d+(\.\d+)?$/.test(raw)) return raw;
-    const [integer, fraction = ''] = raw.split('.');
-    const trimmed = fraction.replace(/0+$/, '');
-    if (whole && !trimmed) return integer;
-    return `${integer}.${trimmed.padEnd(2, '0')}`;
-}
+export { amountText };
 export const Amount = ({ value, unit }: { value: string | number | null | undefined; unit?: string }) => value === null || value === undefined || value === '' ? <span className="h4-dim">未提供</span> : <span className="h4-num" title={String(value)}>{amountText(value, unit === '台')}{unit ? ` ${unit}` : ''}</span>;
 
 /** 预算的资产名：设备按商品名，立减写清是订单立减。 */
@@ -57,8 +48,8 @@ function windowInfo(item: Pick<PromotionListItem, 'startsAt' | 'endsAt' | 'serve
     return { elapsed: now - start, total: end - start, text: `已过 ${days(now - start)}，还剩 ${days(end - now)}` };
 }
 
-export function TimeWindow({ item }: { item: Pick<PromotionListItem, 'startsAt' | 'endsAt' | 'serverTime' | 'displayTimezone'> }) {
-    const zone = item.displayTimezone || 'UTC', info = windowInfo(item);
+export function TimeWindow({ item, zone: shown }: { item: Pick<PromotionListItem, 'startsAt' | 'endsAt' | 'serverTime' | 'displayTimezone'>; zone?: string }) {
+    const zone = shown || item.displayTimezone || 'UTC', info = windowInfo(item);
     return <div className="h4-window">
         <div className="h4-window-dates"><span className="h4-num">{formatTime(item.startsAt, zone)}</span><span aria-hidden>→</span><span className="h4-num">{formatTime(item.endsAt, zone)}</span></div>
         {info ? <RatioBar label="活动时间走到哪" value={info.elapsed} total={info.total} valueText={info.text} tone="role-3" quiet/> : <span className="h4-dim">时间未配置</span>}
@@ -74,7 +65,9 @@ export function VersionLine({ item }: { item: Pick<PromotionListItem, 'activeVer
     </div>;
 }
 
-export function PromotionCard({ item, catalog, onDetail, onEdit, onRewards, more, editDisabled, rewardsDisabled }: {
+export function PromotionCard({ item, catalog, onDetail, onEdit, onRewards, more, editDisabled, rewardsDisabled, zone }: {
+    /** 页面上选了「按北京时间看」时传 Asia/Shanghai，只改显示。 */
+    zone?: string;
     item: PromotionListItem;
     catalog: Catalog | null;
     onDetail: () => void;
@@ -95,8 +88,8 @@ export function PromotionCard({ item, catalog, onDetail, onEdit, onRewards, more
         </header>
         <VersionLine item={item}/>
         <section className="h4-card-block" aria-label="活动时间">
-            <span className="h4-block-label"><CalendarRange size={14} aria-hidden/>活动时间 · {zoneLabel(item.displayTimezone)}</span>
-            <TimeWindow item={item}/>
+            <span className="h4-block-label"><CalendarRange size={14} aria-hidden/>活动时间 · {zoneLabel(zone || item.displayTimezone)}</span>
+            <TimeWindow item={item} zone={zone}/>
         </section>
         <section className="h4-card-block" aria-label="预算">
             <span className="h4-block-label"><Wallet size={14} aria-hidden/>预算{budgets.length > 2 ? <span className="h4-dim"> · 另有 {budgets.length - 2} 项在详情里</span> : null}</span>
@@ -174,4 +167,34 @@ export function RewardEntries({ items, allowed, onOpen }: { items: PromotionList
             <span className="h4-reward-entry-sub">已发放 <span className="h4-num">{p.impact.issued}</span> · 已预留 <span className="h4-num">{p.impact.reserved}</span> · 待发 <span className="h4-num">{p.impact.pendingRewards}</span></span>
         </button>)}
     </div>;
+}
+
+/** 时间按哪个时区看：默认是每个活动自己的显示时区（编辑第一步选的，UTC／日本／越南），不是北京时间时给一个切换。只改显示，不改筛选和请求。 */
+export function ZoneSwitch({ beijing, onChange, zones }: { beijing: boolean; onChange: (beijing: boolean) => void; zones: string[] }) {
+    const own = [...new Set(zones)].map(zoneLabel).join('、') || '活动自己的时区';
+    return <span className="h4-zone" data-off={beijing ? undefined : ''}>
+        {beijing ? <>时间按 <b>北京时间 UTC+8</b> 显示</> : <>时间按活动时区显示（{own}），<b>不是北京时间</b></>}
+        <RdButtonLink onClick={() => onChange(!beijing)}>{beijing ? '切回活动时区' : '切到北京时间'}</RdButtonLink>
+    </span>;
+}
+function RdButtonLink({ onClick, children }: { onClick: () => void; children: ReactNode }) { return <button type="button" className="rd-link h4-zone-switch" onClick={onClick}>{children}</button>; }
+
+/** 四步编辑顶上的只读汇总：只放页面已读到或已填的东西，跟着草稿变。 */
+export function EditorSummary({ draft, preview, catalog, onPreview }: { draft: Draft; preview: AudiencePreview | null; catalog: Catalog; onPreview: () => void }) {
+    const zone = draft.displayTimezone || undefined;
+    const rules = draft.rules || [];
+    const assets = [...new Set(rules.flatMap(r => [r.buyerReward?.type, r.inviterReward?.type]).filter(Boolean) as string[])].map(t => t === 'DEVICE' ? '赠品设备' : t === 'DISCOUNT_USDT' ? '订单立减' : t);
+    const budgets = (draft.budgets || []).filter(b => b.total != null).map(b => `${b.asset === 'DEVICE' ? `赠品 ${text(catalog.skus.find(s => s.productNo === b.productNo)?.name)}` : b.asset === 'DISCOUNT_USDT' ? '订单立减' : b.asset} ${amountText(b.total, b.asset === 'DEVICE')}${b.asset === 'DEVICE' ? ' 台' : b.asset === 'DISCOUNT_USDT' ? ' USDT' : ''}`);
+    const SLOTS = ['settlement', 'stacking', 'refund', 'quote', 'authorization'] as const;
+    const refs = SLOTS.map(k => draft.policies?.[k] ?? null);
+    const approved = refs.filter(ref => ref && catalog.policies.some(p => p.policyId === ref.policyId && p.version === ref.version && p.state === 'APPROVED')).length;
+    const missing = refs.filter(ref => !ref).length;
+    const people = preview ? (preview.estimatedAccounts ?? preview.matched) : null;
+    return <dl className="h4-summary" aria-label="这个草稿现在是什么样">
+        <div><dt>类别和时间</dt><dd>{draft.category === 'REFERRAL' ? '邀请推广' : '促销'} · {TEMPLATE_LABELS[draft.template]}<span>{draft.startsAt && draft.endsAt ? `${formatTime(draft.startsAt, zone)} → ${formatTime(draft.endsAt, zone)}（${zoneLabel(zone)}）` : '时间还没填'}</span></dd></div>
+        <div><dt>人群</dt><dd>{preview ? <>{people == null ? '人数未提供' : `约 ${people} 人`}<span>预览于 {formatTime(preview.asOf, zone)}{preview.unknown ? `，${preview.unknown} 人无法判断` : ''}</span></> : <>还没预览<span><button type="button" className="rd-link" onClick={onPreview}>去第二步预览</button></span></>}</dd></div>
+        <div><dt>每台设备的奖励</dt><dd>{rules.length ? `${rules.length} 条规则` : '还没加规则'}<span>{assets.length ? assets.join('、') : '奖励还没配'}</span></dd></div>
+        <div><dt>预算</dt><dd>{budgets.length ? `${budgets.length} 项` : '还没填'}<span>{budgets.join('；') || '各资产分开填，不相加'}</span></dd></div>
+        <div><dt>用到的政策</dt><dd>{`已批准 ${approved} 条`}<span>{missing ? `还缺 ${missing} 条` : refs.length - approved > 0 ? `${refs.length - approved} 条当前不可用` : '五条都已选'}</span></dd></div>
+    </dl>;
 }

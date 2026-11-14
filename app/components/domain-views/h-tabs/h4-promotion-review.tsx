@@ -8,7 +8,7 @@ import { promotionRead, promotionVersions } from '@/lib/admin/promotion-client';
 import type { AdminSimulation, Catalog, CommandReceipt, Item, Promotion, Version, VersionPage } from '@/lib/admin/promotion-types';
 import { limitText } from '@/lib/admin/promotion-form';
 import { PromotionBannerPreview } from './h4-promotion-banner';
-import { Button, Card, ConfirmCommand, Dialog, Field, Loading, Notice, ReadError, Stats, Summary, Table, Tag, formatTime, labelState, rewardText, promotionAssetText, text, zoneLabel } from './h4-promotion-ui';
+import { Button, Card, ConfirmCommand, Dialog, Field, Loading, Notice, ReadError, Stats, Summary, Table, Tag, amountText, formatTime, labelState, rewardText, promotionAssetText, text, zoneLabel } from './h4-promotion-ui';
 const ACTIONS: Record<string, {
     label: string;
     operation: string;
@@ -28,7 +28,7 @@ const ACTIONS: Record<string, {
     'draft-versions': { label: '创建改版草稿', operation: 'createDraftVersion', authority: 'edit', version: false, copy: '复制当前配置建立候选草稿；旧版本继续运行，历史参与上限不重置。' },
     copies: { label: '复制为新活动', operation: 'copyPromotion', authority: 'edit', version: false, copy: '只复制配置。新活动具有独立身份，不复制审批、使用量或历史订单。' },
 };
-export default function PromotionReview({ activity, catalog, can, onRefresh, onReload, onCandidateConflict, onCopyCreated, onEdit, onRewards, onMetrics, onBack, review = false, detailActions }: {
+export default function PromotionReview({ activity, catalog, can, onRefresh, onReload, onCandidateConflict, onCopyCreated, onEdit, onRewards, onMetrics, onBack, review = false, detailActions, zoneSwitch, displayZone }: {
     activity: Promotion;
     catalog: Catalog;
     can: (v: string) => boolean;
@@ -43,6 +43,9 @@ export default function PromotionReview({ activity, catalog, can, onRefresh, onR
     review?: boolean;
     /** 详情页身份行右侧的入口（试算与审核、奖励台账、删除活动），由父组件给。 */
     detailActions?: ReactNode;
+    /** 时间按哪个时区看的切换和选中的时区，只改显示。 */
+    zoneSwitch?: ReactNode;
+    displayZone?: string;
 }) {
     const [history, setHistory] = useState<{data: VersionPage | null; error: unknown; loading: boolean}>({data: null, error: null, loading: true});
     const historyScope = `${activity.activityId}:${activity.revision}:${activity.current?.revision}`;
@@ -88,7 +91,7 @@ export default function PromotionReview({ activity, catalog, can, onRefresh, onR
         if (!can(`growth_promotion_${a.authority}`)) return null;
         return <RdButton key={key} variant={['publish', 'approve', 'submit', 'resume'].includes(key) ? 'primary' : key === 'end' || key === 'reject' ? 'danger-outline' : 'secondary'} disabledReason={typeof disabled === 'string' ? disabled : disabled ? '当前状态不能做这一步' : undefined} onClick={() => setAction(key)}>{a.label}</RdButton>;
     };
-    const zone = activity.displayTimezone || 'UTC';
+    const zone = displayZone || activity.displayTimezone || 'UTC';
     const versionSummary = (v: Version | undefined | null) => v ? <><Summary rows={[['活动名称', v.draft.name || '未命名'], ['奖励规则', `${v.draft.rules?.length || 0} 个购买设备`], ['购买者活动上限', limitText(v.draft.perPersonLimit?.buyer)], ['活动截止', `${formatTime(v.draft.endsAt, v.draft.displayTimezone || 'UTC')}（${zoneLabel(v.draft.displayTimezone)}）`]]}/><PromotionBannerPreview assetId={v.draft.bannerAssetId}/><p className="h4-lede">{v.draft.rules?.map(r => rewardText(r.buyerReward)).join('；') || '奖励尚未配置'}</p></> : <BlockState state="empty" title="无此版本" detail="尚未创建或发布。"/>;
     const compare = compareVersions(active, candidate && activity.draftVersion ? candidate : null, catalog);
     const changed = compare.filter(r => r.changed).length;
@@ -110,7 +113,7 @@ export default function PromotionReview({ activity, catalog, can, onRefresh, onR
     return <>{!review && <>
         <section className="h4-identity" aria-label="活动状态">
             <div className="h4-identity-main"><span className="h4-block-label">活动状态</span><Tag value={activity.state}/><VersionLine item={activity}/></div>
-            <div className="h4-identity-time"><span className="h4-block-label">活动时间 · {zoneLabel(zone)}</span><TimeWindow item={activity}/></div>
+            <div className="h4-identity-time"><span className="h4-block-label">活动时间 · {zoneLabel(zone)}</span><TimeWindow item={activity} zone={zone}/>{zoneSwitch}</div>
             {detailActions && <div className="h4-identity-actions">{detailActions}</div>}
         </section>
         <Stats items={[['未支付预留', impact.unpaidOrders, '带这个活动预留、还没付款的订单；按各订单原付款截止处理。'], ['待发奖励', impact.pendingRewards, '等待原奖励处理的项数。'], ['失败 / 结果未知', `${impact.failedRewards} / ${impact.unknownRewards}`, '只恢复原奖励；结果未知先核查。'], ['未解决奖励', impact.unresolved, '暂停不能撤销原奖励。']]}/>
@@ -127,8 +130,8 @@ export default function PromotionReview({ activity, catalog, can, onRefresh, onR
     {review && <div className="h4-review">
         <div className="h4-review-main">
             {compareTable}
-            <Card title="试算结果" action={<Button disabled={!can('growth_promotion_simulate') || !candidate} onClick={() => setSimOpen(true)}>重新试算</Button>}>{simulation ? <><Summary rows={[['资格', labelState(simulation.eligibility)], ['试算时刻', formatTime(simulation.asOf, zone)], ['赠品成本', simulation.giftCostUsdt == null ? '未提供' : `${simulation.giftCostUsdt} USDT`], ['占用资格 / 预算', '否']]}/><Table label="逐设备、逐受益人的试算结果" headers={['购买设备', '资格结果', '奖励承诺', '依据']} rows={simulation.ruleResults.flatMap(r => r.beneficiaries.map(b => [(text(catalog.skus.find(s => s.productNo === r.productNo)?.name)), <Tag value={b.status}/>, b.rewardUnits ?? '—', b.reasons.map(d => text(d.message)).join('；') || '已核对']))}/>{simulation.rewardUnits.length > 0 && <ul className="h4-units">{simulation.rewardUnits.map((r, i) => <li key={i}>{(text(catalog.skus.find(s => s.productNo === r.productNo)?.name))} 第 {r.purchaseUnitFrom}–{r.purchaseUnitTo} 台 · {labelState(r.beneficiaryRole)} · <b>{rewardText(r.reward)}</b></li>)}</ul>}{simulation.blockers.map((b, i) => <Notice key={i} title="试算阻断" kind="warn">{text(b.message)}</Notice>)}<Table label="资源够不够" headers={['资源', '所需', '可用', '结果']} rows={simulation.resources.map(r => [`${r.kind === 'INVENTORY' ? '商品库存' : r.asset === 'DEVICE' ? '设备赠礼预算' : promotionAssetText(r.asset)}${r.productNo ? ` · ${(text(catalog.skus.find(s => s.productNo === r.productNo)?.name))}` : ''}`, r.required ?? '—', r.available ?? '—', <Tag value={r.status}/>])}/><Table label="参与上限" headers={['上限范围', '已用及预留', '本次预计', '剩余', '状态']} rows={simulation.quotaImpact.map(q => [q.scope === 'ACTIVITY_ORDER' ? '全活动订单' : q.scope === 'PERSON_ORDER' ? '账户参与订单' : '账户规则组数', q.usedAndReserved ?? '—', q.required ?? '—', q.remaining ?? (q.limit === null && q.status !== 'UNKNOWN' ? '无限制' : '—'), <Tag value={q.status}/>])}/></> : <BlockState state="empty" title="尚未试算" detail="选择购买设备、数量及可选授权样本后查看试算结果。试算不创建订单，不占资格或预算。"/>}</Card>
-            {simulation && <Card title="试算成交与公开预览">{simulation.pricing ? <Summary rows={[['商品小计（USDT）', simulation.pricing.subtotalUsdt], ['优惠合计（USDT）', simulation.pricing.discountUsdt], ['其中订单立减（USDT）', simulation.pricing.promotionDiscountUsdt ?? '未提供'], ['应付款（USDT）', simulation.pricing.amountUsdt]]}/> : <Notice title="原报价暂不可用">当前不能确认应付款，请按阻断项处理。</Notice>}{simulation.publicPreview ? <Summary rows={[['展示标题', text(simulation.publicPreview.title)], ['活动规则', text(simulation.publicPreview.terms)], ['时区', simulation.publicPreview.displayTimezone]]}/> : <Notice title="公开预览暂不可用" kind="warn">活动权益暂无法确认，请处理上方阻断项后重试。</Notice>}</Card>}
+            <Card title="试算结果" action={<Button disabled={!can('growth_promotion_simulate') || !candidate} onClick={() => setSimOpen(true)}>重新试算</Button>}>{simulation ? <><Summary rows={[['资格', labelState(simulation.eligibility)], ['试算时刻', formatTime(simulation.asOf, zone)], ['赠品成本', simulation.giftCostUsdt == null ? '未提供' : `${amountText(simulation.giftCostUsdt)} USDT`], ['占用资格 / 预算', '否']]}/><Table label="逐设备、逐受益人的试算结果" headers={['购买设备', '资格结果', '奖励承诺', '依据']} rows={simulation.ruleResults.flatMap(r => r.beneficiaries.map(b => [(text(catalog.skus.find(s => s.productNo === r.productNo)?.name)), <Tag value={b.status}/>, b.rewardUnits ?? '—', b.reasons.map(d => text(d.message)).join('；') || '已核对']))}/>{simulation.rewardUnits.length > 0 && <ul className="h4-units">{simulation.rewardUnits.map((r, i) => <li key={i}>{(text(catalog.skus.find(s => s.productNo === r.productNo)?.name))} 第 {r.purchaseUnitFrom}–{r.purchaseUnitTo} 台 · {labelState(r.beneficiaryRole)} · <b>{rewardText(r.reward)}</b></li>)}</ul>}{simulation.blockers.map((b, i) => <Notice key={i} title="试算阻断" kind="warn">{text(b.message)}</Notice>)}<Table label="资源够不够" headers={['资源', '所需', '可用', '结果']} rows={simulation.resources.map(r => [`${r.kind === 'INVENTORY' ? '商品库存' : r.asset === 'DEVICE' ? '设备赠礼预算' : promotionAssetText(r.asset)}${r.productNo ? ` · ${(text(catalog.skus.find(s => s.productNo === r.productNo)?.name))}` : ''}`, r.required == null ? '—' : amountText(r.required, r.asset === 'DEVICE' || r.kind === 'INVENTORY'), r.available == null ? '—' : amountText(r.available, r.asset === 'DEVICE' || r.kind === 'INVENTORY'), <Tag value={r.status}/>])}/><Table label="参与上限" headers={['上限范围', '已用及预留', '本次预计', '剩余', '状态']} rows={simulation.quotaImpact.map(q => [q.scope === 'ACTIVITY_ORDER' ? '全活动订单' : q.scope === 'PERSON_ORDER' ? '账户参与订单' : '账户规则组数', q.usedAndReserved ?? '—', q.required ?? '—', q.remaining ?? (q.limit === null && q.status !== 'UNKNOWN' ? '无限制' : '—'), <Tag value={q.status}/>])}/></> : <BlockState state="empty" title="尚未试算" detail="选择购买设备、数量及可选授权样本后查看试算结果。试算不创建订单，不占资格或预算。"/>}</Card>
+            {simulation && <Card title="试算成交与公开预览">{simulation.pricing ? <Summary rows={[['商品小计（USDT）', amountText(simulation.pricing.subtotalUsdt)], ['优惠合计（USDT）', amountText(simulation.pricing.discountUsdt)], ['其中订单立减（USDT）', simulation.pricing.promotionDiscountUsdt == null ? '未提供' : amountText(simulation.pricing.promotionDiscountUsdt)], ['应付款（USDT）', amountText(simulation.pricing.amountUsdt)]]}/> : <Notice title="原报价暂不可用">当前不能确认应付款，请按阻断项处理。</Notice>}{simulation.publicPreview ? <Summary rows={[['展示标题', text(simulation.publicPreview.title)], ['活动规则', text(simulation.publicPreview.terms)], ['时区', simulation.publicPreview.displayTimezone]]}/> : <Notice title="公开预览暂不可用" kind="warn">活动权益暂无法确认，请处理上方阻断项后重试。</Notice>}</Card>}
             <Panel title="审核与发布记录" icon={History} tone="role-other">{versions.data ? <Timeline label="审核与发布记录" entries={versions.data.items.map(v => ({ id: String(v.version), at: v.publishedAt ? formatTime(v.publishedAt, zone) : v.approvedAt ? formatTime(v.approvedAt, zone) : '—', actor: v.publishedBy || v.approvedBy || '—', action: `v${v.version} · ${labelState(v.state)}`, detail: `审核：${v.approvedAt ? formatTime(v.approvedAt, zone) : '尚未批准'} · 发布：${v.publishedAt ? formatTime(v.publishedAt, zone) : '尚未发布'}`, tone: v.state === 'PENDING_APPROVAL' ? 'warn' as const : undefined }))}/> : <Loading/>}{versions.data?.hasMore && <Notice title="历史版本较多">当前显示首 100 个版本；最新候选使用活动详情返回。</Notice>}</Panel>
         </div>
         <aside className="h4-review-side">
@@ -155,7 +158,7 @@ function actionFacts(action: string, activity: Promotion, candidate: Version | n
     const zone = activity.displayTimezone || 'UTC';
     const draft = candidate?.draft;
     const startsLater = draft?.startsAt && Date.parse(draft.startsAt) > Date.parse(activity.serverTime);
-    const budgets = (draft?.budgets || []).filter(b => b.total != null).map(b => `${b.asset === 'DEVICE' ? `赠品 ${text(catalog.skus.find(s => s.productNo === b.productNo)?.name)}` : b.asset === 'DISCOUNT_USDT' ? '订单立减' : b.asset} ${b.total}${b.asset === 'DEVICE' ? ' 台' : b.asset === 'DISCOUNT_USDT' ? ' USDT' : ` ${b.asset}`}`).join('；') || '候选版本没有填预算';
+    const budgets = (draft?.budgets || []).filter(b => b.total != null).map(b => `${b.asset === 'DEVICE' ? `赠品 ${text(catalog.skus.find(s => s.productNo === b.productNo)?.name)}` : b.asset === 'DISCOUNT_USDT' ? '订单立减' : b.asset} ${amountText(b.total, b.asset === 'DEVICE')}${b.asset === 'DEVICE' ? ' 台' : b.asset === 'DISCOUNT_USDT' ? ' USDT' : ` ${b.asset}`}`).join('；') || '候选版本没有填预算';
     const audience = draft?.buyerAudience ? [draft.buyerAudience.purchaseHistory === 'NEVER_PAID' ? '从未付款购机' : draft.buyerAudience.purchaseHistory === 'HAS_VALID_PURCHASE' ? '有有效购机' : draft.buyerAudience.purchaseHistory === 'ANY' ? '不限购机历史' : '购机历史未配置', draft.buyerAudience.rankIds?.length ? `等级 ${draft.buyerAudience.rankIds.map(id => text(catalog.ranks.find(r => r.id === id)?.name)).join('、')}` : '不限等级', draft.buyerAudience.markets?.length ? `市场 ${draft.buyerAudience.markets.join('、')}` : '不限市场'].join('，') : '人群未配置';
     const rows: Record<string, Array<[string, ReactNode]>> = {
         submit: [['提交后', '候选不能再编辑，要改先撤回；线上版本照常运行'], ['谁来审核', `${REVIEWER}；创建、编辑、提交过这个活动的人不能审核`]],
@@ -177,7 +180,7 @@ type CompareRow = { label: string; before: ReactNode; after: ReactNode; changed:
 function compareVersions(active: Version | undefined, candidate: Version | null | undefined, catalog: Catalog): CompareRow[] {
     if (!candidate) return [];
     const zoneOf = (v?: Version) => v?.draft.displayTimezone || 'UTC';
-    const budget = (v?: Version) => v ? (v.draft.budgets || []).map(b => `${b.asset === 'DEVICE' ? `赠品 ${text(catalog.skus.find(s => s.productNo === b.productNo)?.name)}` : b.asset === 'DISCOUNT_USDT' ? '订单立减' : b.asset} ${b.total ?? '未填'}`).join('；') || '未配置' : '—';
+    const budget = (v?: Version) => v ? (v.draft.budgets || []).map(b => `${b.asset === 'DEVICE' ? `赠品 ${text(catalog.skus.find(s => s.productNo === b.productNo)?.name)}` : b.asset === 'DISCOUNT_USDT' ? '订单立减' : b.asset} ${b.total == null ? '未填' : amountText(b.total, b.asset === 'DEVICE')}`).join('；') || '未配置' : '—';
     const rules = (v?: Version) => v ? (v.draft.rules || []).map(r => `${text(catalog.skus.find(s => s.productNo === r.productNo)?.name)}：${rewardText(r.buyerReward)}${r.inviterReward ? ` / 邀请人 ${rewardText(r.inviterReward)}` : ''}`).join('；') || '未配置' : '—';
     const fields: Array<[string, (v?: Version) => string]> = [
         ['活动名称', v => v ? v.draft.name || '未命名' : '—'],

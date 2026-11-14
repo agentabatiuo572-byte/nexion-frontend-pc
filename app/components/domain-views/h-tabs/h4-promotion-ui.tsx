@@ -19,12 +19,22 @@ catch {
     return '时间不可用';
 } };
 /** 页面上标「现在按哪个时区」的写法，和时区下拉的选项一致。 */
-export const zoneLabel = (zone: string | null | undefined) => ({ 'Asia/Tokyo': '日本时间 UTC+9', UTC: '协调世界时 UTC', 'Asia/Ho_Chi_Minh': '越南时间 UTC+7' } as Record<string, string>)[zone || 'UTC'] || zone || '协调世界时 UTC';
+export const zoneLabel = (zone: string | null | undefined) => ({ 'Asia/Tokyo': '日本时间 UTC+9', UTC: '协调世界时 UTC', 'Asia/Ho_Chi_Minh': '越南时间 UTC+7', 'Asia/Shanghai': '北京时间 UTC+8' } as Record<string, string>)[zone || 'UTC'] || zone || '协调世界时 UTC';
+/** 后端金额固定补到 6 位小数：显示时去掉补的 0，至少留 2 位，不舍入；whole 给整台设备这类整数。 */
+export function amountText(value: string | number | null | undefined, whole = false): string {
+    if (value === null || value === undefined || value === '') return '—';
+    const raw = String(value);
+    if (!/^-?\d+(\.\d+)?$/.test(raw)) return raw;
+    const [integer, fraction = ''] = raw.split('.');
+    const trimmed = fraction.replace(/0+$/, '');
+    if (whole && !trimmed) return integer;
+    return `${integer}.${trimmed.padEnd(2, '0')}`;
+}
 export const TEMPLATE_LABELS = { SKU_GIFT: '单设备赠礼', FIRST_PURCHASE: '首购礼', DIRECT_REFERRAL: '直邀首购双向礼', MULTI_PRODUCT: '多型号组合', REPURCHASE: '复购召回' } as const;
 const STATES: Record<string, string> = { DRAFT: '草稿', SCHEDULED: '待开始', ACTIVE: '进行中', PAUSED: '暂停新预留', ENDED: '已结束', ARCHIVED: '已归档', PENDING_APPROVAL: '待审核', APPROVED: '已审核待发布', PUBLISHED: '已发布', PENDING: '待发放', READY: '待执行', PROCESSING: '处理中', ISSUED: '已发放', RETRYABLE_FAILED: '可重试失败', OUTCOME_UNKNOWN: '结果未知', REVERSAL_PENDING: '追回待处理', REVERSED: '已冲正', CANCELED: '已取消', CANCELLED: '已取消', MANUAL_REVIEW: '人工审阅', MATCHED: '符合条件', REJECTED: '不符合', UNKNOWN: '未知', COMPLETE: '完整', UNAVAILABLE: '不可用', DELAYED: '延迟', ELIGIBLE: '符合条件', INELIGIBLE: '不符合', AVAILABLE: '可用', SHORTAGE: '不足', BUYER: '购买者', DIRECT_INVITER: '直接邀请人', SUCCEEDED: '成功', FAILED: '失败', NOT_FOUND: '未查到原操作', REVOKED: '已撤销' };
 export const labelState = (value: string) => STATES[value] || '状态未知';
 export const promotionAssetText = (asset: string) => asset === 'DISCOUNT_USDT' ? '订单立减（USDT）' : nexGridBrandText(asset);
-export const rewardText = (r: DraftRewardSpec | RewardSpec | null | undefined, deviceName?: string | null) => !r ? '未配置' : r.type === 'DEVICE' ? `${(deviceName || '设备赠礼')} × ${r.quantity ?? '未配置'}` : r.type === 'DISCOUNT_USDT' ? `订单立减 ${r.amount ?? '未配置'} USDT` : `${r.amount ?? '未配置'} ${nexGridBrandText(r.type)}`;
+export const rewardText = (r: DraftRewardSpec | RewardSpec | null | undefined, deviceName?: string | null) => !r ? '未配置' : r.type === 'DEVICE' ? `${(deviceName || '设备赠礼')} × ${r.quantity ?? '未配置'}` : r.type === 'DISCOUNT_USDT' ? `订单立减 ${r.amount == null ? '未配置' : amountText(r.amount)} USDT` : `${r.amount == null ? '未配置' : amountText(r.amount)} ${nexGridBrandText(r.type)}`;
 const VARIANT: Record<string, ButtonVariant> = { primary: 'primary', danger: 'danger-outline', link: 'ghost', '': 'secondary' };
 /** 旧调用方的 kind 映射到 rd 按钮：link 是行内的轻按钮，danger 是和主按钮并排的危险入口（实心危险只给最终确认）。 */
 export function Button({ kind = '', className = '', type = 'button', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & {
