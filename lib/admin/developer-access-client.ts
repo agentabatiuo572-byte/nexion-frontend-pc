@@ -27,6 +27,8 @@ export type DeveloperAccessPage = {
   pageNum: number;
   pageSize: number;
   records: DeveloperAccessRequest[];
+  /** All five stored statuses, filtered by keyword/environment but not status or pagination. */
+  statusCounts?: Record<DeveloperAccessStatus, number>;
 };
 
 export type DeveloperAccessQuery = {
@@ -35,6 +37,7 @@ export type DeveloperAccessQuery = {
   status?: DeveloperAccessStatus;
   keyword?: string;
   sourceEnvironment?: "PRODUCTION" | "SANDBOX";
+  sortDirection?: "ASC" | "DESC";
 };
 
 function object(value: unknown): Record<string, unknown> {
@@ -134,10 +137,16 @@ export function fetchDeveloperAccessRequests(query: DeveloperAccessQuery = {}) {
   if (query.status) params.set("status", query.status);
   if (query.keyword?.trim()) params.set("keyword", query.keyword.trim());
   if (query.sourceEnvironment) params.set("sourceEnvironment", query.sourceEnvironment);
+  if (query.sortDirection) params.set("sortDirection", query.sortDirection);
   return request<DeveloperAccessPage>(`?${params.toString()}`, value => {
     const result = object(value), pageSize = count(result.pageSize, 1);
     if (pageSize > 200 || !Array.isArray(result.records)) throw new Error("DEVELOPER_ACCESS_RESPONSE_INVALID");
-    return { total: count(result.total), pageNum: count(result.pageNum, 1), pageSize, records: result.records.map(parseDeveloperAccessRequest) };
+    const counts = result.statusCounts === undefined ? undefined : object(result.statusCounts);
+    return { total: count(result.total), pageNum: count(result.pageNum, 1), pageSize, records: result.records.map(parseDeveloperAccessRequest),
+      statusCounts: counts === undefined ? undefined : {
+        PENDING: count(counts.PENDING), APPROVED: count(counts.APPROVED), REJECTED: count(counts.REJECTED),
+        REVOKED: count(counts.REVOKED), EXPIRED: count(counts.EXPIRED),
+      } };
   });
 }
 

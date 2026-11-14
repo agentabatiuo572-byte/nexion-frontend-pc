@@ -69,6 +69,7 @@ function menu(value: unknown): value is A7MenuTreeNode {
   return object(value) && id(value.id) && text(value.menuCode) && !!value.menuCode && text(value.menuName) && !!value.menuName
     && text(value.menuNameZh) && (value.parentId === null || id(value.parentId)) && text(value.routePath) && text(value.icon)
     && Number.isSafeInteger(value.sortOrder) && Number(value.sortOrder) >= 0 && status(value.status) && text(value.version) && !!value.version
+    && [value.roleBindingCount, value.activePermissionCount].every(count => count === undefined || Number.isSafeInteger(count) && Number(count) >= 0)
     && Array.isArray(value.children) && value.children.every(menu);
 }
 function validOriginal(value: unknown): value is Original {

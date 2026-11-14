@@ -1697,6 +1697,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A4_EVENT_LIFECYCLE_TRANSITION_INVALID: "当前上线进度已变化，不能再推进到原来选择的状态，请核对后重新选择。",
   RBAC_CONFLICT_RECHECK_REQUIRED: "当前菜单已重新读取，请核对后再次确认。",
   A6_ROLE_READBACK_FAILED: "审批结论已确认，但角色读回失败，请重新读取角色。",
+  DEVELOPER_ACCESS_SORT_INVALID: "提交时间的排序方向无效，请重新读取列表。",
   A3_ORIGINAL_CURRENT_ONLY: "已读取当前设置；当前值不能证明原操作的结果，原记录继续保留。",
   A3_MUTATION_OUTCOME_UNCERTAIN: "结果未知：可能已经生效。请查询原结果，原请求已保留。",
   A3_MUTATION_RESPONSE_UNREADABLE: "结果未知：保存回包不完整，可能已经生效。请查询原结果，原请求已保留。",

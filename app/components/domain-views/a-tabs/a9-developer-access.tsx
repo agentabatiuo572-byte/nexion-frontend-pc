@@ -151,7 +151,7 @@ export function A9DeveloperAccess() {
     setLoading(true);
     setData(null);
     setError(null);
-    fetchDeveloperAccessRequests({ pageNum: page, pageSize, status: status || undefined, keyword })
+    fetchDeveloperAccessRequests({ pageNum: page, pageSize, status: status || undefined, keyword, sortDirection: status === "PENDING" ? "ASC" : "DESC" })
       .then((result) => { if (!cancelled) { setData(result); setLoadedQuery(queryKey); setReadAt(Date.now()); } })
       .catch((cause) => { if (!cancelled) setError(displayAdminReadError(cause)); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -339,7 +339,7 @@ export function A9DeveloperAccess() {
     const total = data.total;
     if (status === "PENDING" && !keyword) {
       if (total === 0) return <Conclusion state="ok" icon={CheckCircle2}>没有等待审批的申请</Conclusion>;
-      const oldest = records.length > 0 && total <= records.length ? records[records.length - 1] : undefined;
+      const oldest = page === 1 ? records[0] : undefined;
       return <Conclusion state="warn" lead icon={Inbox}
         explain="数的是「待审批」的申请条数，不是人数。列表按提交时间从新到旧排，最早的在最后一页。"
         hint={oldest ? `最早的 ${timeText(oldest.createdAt)}（${zone}）提交，已等 ${waitedText(oldest.createdAt, now)}` : "最早提交的在最后一页"}>

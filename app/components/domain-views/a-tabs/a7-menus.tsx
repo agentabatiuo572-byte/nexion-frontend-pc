@@ -45,6 +45,11 @@ const directTag = () => <StatusTag tone="progress" filled explain="填写理由�
 const ROUTE_HELP = "后台页面的地址，要和已上线页面的地址一模一样，比如 /platform/roles。对不上时这个菜单不会出现在左侧导航里；这里不会生成新页面。";
 const ICON_HELP = "只存在菜单表里。左侧导航的图标是页面代码里固定的，改这里不会换导航图标。";
 
+function menuReferenceProblem(node: A7MenuTreeNode) {
+  if (node.activePermissionCount !== undefined && node.activePermissionCount > 0) return "MENU_NODE_HAS_PERMISSIONS";
+  if (node.roleBindingCount !== undefined && node.roleBindingCount > 0) return "MENU_NODE_HAS_ROLE_BINDINGS";
+}
+
 /**
  * 菜单在不在左侧导航里显示。用侧栏同一个函数 resolveVisibleDomains 算：拿全部启用的节点当作一个拥有全部菜单的账号，
  * 只有登记在导航里的页面、地址和所属一级菜单都对上才显示。只改显示，不发请求。
@@ -183,6 +188,10 @@ export default function A7Menus() {
       if (node.children.length > 0) throw new Error("MENU_NODE_HAS_CHILDREN");
     } else if (original.input.status === 0 && node.children.some(child => child.status === 1)) throw new Error("MENU_NODE_HAS_ACTIVE_CHILDREN");
     else if (original.input.status === 1 && node.parentId !== null && !current.tree.some(root => root.id === node.parentId && root.status === 1)) throw new Error("PARENT_MENU_NOT_ACTIVE");
+    if (original.kind === "a7-delete" || original.input.status === 0) {
+      const problem = menuReferenceProblem(node);
+      if (problem) throw new Error(problem);
+    }
   };
   const queryOriginal = async () => {
     requireActor();
@@ -476,6 +485,7 @@ function NodeDetail({ node, parent, canWrite, writeReason, nav, reach, onCreate,
   const isDomain = node.parentId == null;
   const Icon = isDomain ? DOMAIN_ICON.get(node.menuCode) : undefined;
   const targetName = node.menuNameZh || node.menuName;
+  const referenceProblem = menuReferenceProblem(node);
   return (
     <Panel title={menuNameText(node)} icon={isDomain ? FolderTree : LayoutList} tone="role-other" sub={<span data-mono>{node.menuCode}</span>}
       actions={<span className="a7-tags">
@@ -501,7 +511,7 @@ function NodeDetail({ node, parent, canWrite, writeReason, nav, reach, onCreate,
           <div className="a7-actions">
             <Button variant="primary" disabledReason={writeReason} aria-label={`编辑 ${targetName}`} onClick={onEdit}><Pencil size={14} aria-hidden />编辑</Button>
             {isDomain && <Button variant="secondary" disabledReason={writeReason ?? (node.status !== 1 ? displayAdminError(new Error("PARENT_MENU_NOT_FOUND")) : undefined)} aria-label={`为 ${targetName} 新建下级菜单`} onClick={onCreate}><Plus size={14} aria-hidden />新建下级菜单</Button>}
-            <Button variant="danger-outline" disabledReason={writeReason ?? (node.children.length ? displayAdminError(new Error("MENU_NODE_HAS_CHILDREN")) : undefined)} aria-label={`删除 ${targetName}`} onClick={onDelete}><Trash2 size={14} aria-hidden />删除</Button>
+            <Button variant="danger-outline" disabledReason={writeReason ?? (node.children.length ? displayAdminError(new Error("MENU_NODE_HAS_CHILDREN")) : referenceProblem ? displayAdminError(referenceProblem) : undefined)} aria-label={`删除 ${targetName}`} onClick={onDelete}><Trash2 size={14} aria-hidden />删除</Button>
             {node.children.length > 0 && <span className="a7-note"><TriangleAlert size={14} aria-hidden />还有 {node.children.length} 个下级菜单，删除会被拒绝</span>}
           </div>
         )}
@@ -649,8 +659,10 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
   const fail = (field: FieldKey, message: string) => { setErrorField(field); setValidationError(message); };
 
   const existingParent = existing ? tree.find((root) => root.children.some((child) => child.id === existing.id)) : undefined;
+  const referenceProblem = existing && status === 0 ? menuReferenceProblem(existing) : undefined;
 
   const submit = () => {
+    if (referenceProblem) return;
     const normalizedCode = menuCode.trim().toUpperCase();
     const normalizedName = menuName.trim();
     const normalizedRoute = routePath.trim();
@@ -690,7 +702,7 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
       explain="填好后点「下一步：确认」，在确认框里核对并填理由。保存后直接生效，不走审批。"
       onClose={onClose}
       footer={<Decision others={<Button variant="secondary" onClick={onClose}>取消</Button>}
-        primary={<Button variant="primary" onClick={submit}>下一步：确认</Button>} />}
+        primary={<Button variant="primary" disabledReason={referenceProblem ? displayAdminError(referenceProblem) : undefined} onClick={submit}>下一步：确认</Button>} />}
     >
       <div className="a7-form">
         <Field label="菜单标识" required={isCreate} hint={isCreate ? "最长 64 位" : "不能修改"} help={isCreate ? "大写字母开头，只用大写字母、数字和下划线。" : undefined} error={err("code")}
