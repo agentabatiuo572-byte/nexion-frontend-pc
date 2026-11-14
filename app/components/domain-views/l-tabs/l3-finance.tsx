@@ -19,6 +19,7 @@ import { L3_FINANCE_DETAIL_FIELDS as FINANCE_DETAIL_FIELDS, l3DetailCommands, ty
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { LIABILITY_EXPLANATIONS, liabilityDisplayName } from "@/lib/admin/liability-labels";
@@ -318,7 +319,10 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
           try {
             receipt = await submitL3FinanceDetail(record.request, record.commandKey);
           } catch (error) {
-            if (isExplicitRejection(error)) {
+            const failure = error as { status?: number; reasonCode?: string };
+            const rejected = original ? isExplicitRejection(error)
+              : !failure.reasonCode?.startsWith("IDEMPOTENCY_") && isDeterministicRejection(failure.status ?? 0);
+            if (rejected) {
               l3DetailCommands.forget(record.fingerprint, record.commandKey);
               syncDetail();
               if (original) ctx.closeActionConfirm?.();
