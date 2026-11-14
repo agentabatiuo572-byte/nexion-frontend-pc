@@ -936,7 +936,9 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         ? <Conclusion state="warn" icon={TriangleAlert} hint="发布或删除草稿后恢复投放。" explain="存草稿会把文案改成草稿状态，按位置取文案时取不到它。后端已按缺陷登记。"><b>{paused.length}</b> 条文案存了草稿，暂停投放</Conclusion>
         : awaiting.length + scheduled.length > 0
           ? <Conclusion state="neutral" icon={ListChecks} hint={[awaiting.length ? `${awaiting.length} 个已结束，去采纳或弃用` : "", scheduled.length ? `${scheduled.length} 个待启动` : ""].filter(Boolean).join("，")}>有 {awaiting.length + scheduled.length} 个实验等你处理</Conclusion>
-          : <Conclusion state="ok" icon={CheckCircle2}>{publishedCount} 条文案已发布，{I1_STATS.runningExps} 个实验进行中</Conclusion>;
+          : COPY_POOL.length === 0
+            ? <Conclusion state="neutral" icon={ListChecks} hint={canCreateCopy ? "在一个位置上点「在这里新增文案」。" : undefined}>还没有文案，{COPY_POSITION_ROWS.length} 个位置都空着</Conclusion>
+            : <Conclusion state="ok" icon={CheckCircle2}>{publishedCount} 条文案已发布，{I1_STATS.runningExps} 个实验进行中</Conclusion>;
 
   const positionsPane = (
     <div {...tabIds.panel("positions")} className="rd-tab-pane i1-pane">
