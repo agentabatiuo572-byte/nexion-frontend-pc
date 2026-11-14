@@ -56,7 +56,8 @@ export function canRetryF3Proposal(original: FDomainAttempt) {
   return !!original.request && !original.ticket && !original.received && !isRetryExpired(original) && !!session
     && (original.adminId === undefined || session.adminId === original.adminId)
     && session.authorities.includes(f3ProposalAuthority(original))
-    && session.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create");
+    && (original.spec?.command.op === "f3_binary_settle"
+      || session.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create"));
 }
 
 function remember(original: FDomainAttempt) {
@@ -112,7 +113,8 @@ export async function sendF3Proposal(adminId: number, slot: string, spec?: Propo
   const intent = spec ?? original?.spec;
   if (!intent) throw new Error("F3_PROPOSAL_ORIGINAL_INCOMPLETE");
   if (!current.authorities.includes(f3ProposalAuthority(intent))
-      || !current.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create")) throw new Error("ADMIN_PERMISSION_DENIED");
+      || intent.command.op !== "f3_binary_settle"
+        && !current.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create")) throw new Error("ADMIN_PERMISSION_DENIED");
   if (!original) {
     const request = {
       action: intent.action, obj: intent.obj, beforeValue: intent.before, afterValue: intent.after,

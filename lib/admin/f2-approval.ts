@@ -88,7 +88,7 @@ export function listF2Proposals(adminId: number): F2Recovery[] {
         before: "—", after: "—", reason: "—", sourceDomain: "F2", type: "param", gate: { roles: [] }, gateLabel: "",
         command: { domain: "F", op: row.fingerprint === F2_POLICY_SLOT ? "f_direct_referral_policy" : row.fingerprint === F2_BATCH_SLOT ? "f_config_batch" : /^f-config:F\.unilevel\.(?:nex\.)?L[1-7]$/.test(row.fingerprint) ? "f_unilevel_rule" : "f_ui_config", params: {} } },
       canQuery: !!session && session.adminId === adminId && session.authorities.some(a => a === "platform_a2_read" || a === "platform_a2_proposal_create"),
-      canRetry: !isRetryExpired(row) && !!row.request && !row.ticket && !!session && session.adminId === adminId
+      canRetry: !isRetryExpired(row) && !!row.request && !row.ticket && !row.received && !!session && session.adminId === adminId
         && session.authorities.includes(f2ProposalAuthority(row.fingerprint))
         && session.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create"),
       canRelease: isRetryExpired(row) && row.absent === true,
@@ -145,9 +145,13 @@ export async function sendF2Proposal(adminId: number, slot: string, spec?: Propo
       throw new Error("F2_PROPOSAL_STORAGE_UNAVAILABLE");
     }
   }
+  if (original.received || original.ticket) {
+    const latest = await queryF2Proposal(adminId, original);
+    if (!latest) throw new Error("F2_PROPOSAL_STATUS_UNAVAILABLE");
+    return latest;
+  }
   if (isRetryExpired(original)) throw new Error("F2_PROPOSAL_RETRY_EXPIRED");
   if (!original.request) throw new Error("F2_PROPOSAL_ORIGINAL_INCOMPLETE");
-  if (original.ticket) return original.ticket;
   if (!storeFor(slot).isDurablyStored(slot, original.commandKey)) throw new Error("F2_PROPOSAL_STORAGE_UNAVAILABLE");
   let ticket: A2OperationRow;
   try {

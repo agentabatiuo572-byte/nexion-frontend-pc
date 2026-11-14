@@ -94,7 +94,7 @@ export interface FViewCtx {
   f1Proposals: FDomainAttempt[];
   recoverF1: (slot: string, mode: "query" | "retry" | "release") => Promise<boolean>;
   refreshF1Approvals: () => Promise<void>;
-  invalidateF1: () => void;
+  invalidateF1: (message?: string) => void;
   refreshF1: () => Promise<void>;
   f1RewardValuation: string | null;
   f1Coverage: F1VRankOverview["coverage"];
@@ -187,6 +187,7 @@ export interface FViewCtx {
   // -- 领导奖池/硬件配额/大使/榜单(F4)· 读 + 配置写入 --
   f4Overview: F4LeadershipPoolOverview | null;
   f4AmbassadorPolicy: F4AmbassadorPolicy | null;
+  refreshF4PolicyBaseline: () => Promise<F4AmbassadorPolicy>;
   f4Loading: boolean;
   f4Error: string | null;
   f4Proposals: FDomainAttempt[];

@@ -91,7 +91,7 @@ export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; op
     });
   }
 
-  const attempts = ctx.f2Proposals.filter(row => !row.ticket);
+  const attempts = ctx.f2Proposals;
   const pending = ctx.f2ActivationPending;
 
   return (
@@ -123,7 +123,10 @@ export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; op
           action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
           <p>批准前结算状态不变。批准后点页头「刷新」看最新状态。</p>
         </Notice></li>}
-        {attempts.map(attempt => { const attemptExpired = attempt.expiresAt <= Date.now(); return <li key={attempt.commandKey}><Notice tone="warn" actionBelow title={<>{a2ActionText(attempt.spec.action)}{attemptExpired
+        {attempts.map(attempt => { const attemptExpired = attempt.expiresAt <= Date.now(); return <li key={attempt.commandKey}><Notice tone="warn" actionBelow title={<>{a2ActionText(attempt.spec.action)}{attempt.ticket?.status === "pending"
+          ? <StatusTag tone="warn" icon={Clock3}>待审批</StatusTag>
+          : attempt.received ? <StatusTag tone="warn" icon={CircleHelp}>原申请建过单，批没批准还没查到</StatusTag>
+          : attemptExpired
           ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试。到「操作记录与审批」核对有没有这张审批单；查不到也不能据此认定没提交。">已过期</StatusTag>
           : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。24 小时内可以按原请求重试，后端认得出是同一次提交，不会建第二张。">结果未知</StatusTag>}</>}
           action={<span className="f2-actions">

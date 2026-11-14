@@ -835,11 +835,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f1ProposalEpoch,
     recoverF1,
     refreshF1Approvals,
-    invalidateF1: () => {
+    invalidateF1: (message) => {
       f1Generation.current += 1;
       setF1Overview(null);
       setF1Loading(false);
-      setF1Error("原操作正在核对，请重新读取后再发起新修改。");
+      setF1Error(message ?? "原操作正在核对，请重新读取后再发起新修改。");
     },
     refreshF1: async () => { await Promise.all([refreshF1(), refreshF1Approvals()]); },
     f1RewardValuation: f1Overview?.rewardValuationUsdtPerUvt ?? null,
@@ -1047,6 +1047,14 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     },
     f4Overview,
     f4AmbassadorPolicy,
+    refreshF4PolicyBaseline: async () => {
+      setF4AmbassadorPolicy(null);
+      const policy = await fetchF4AmbassadorPolicy();
+      setF4AmbassadorPolicy(policy);
+      setActionConfirm(modal => modal?.f4Snapshot?.action === "policy"
+        ? { ...modal, f4Snapshot: { ...modal.f4Snapshot, policy } } : modal);
+      return policy;
+    },
     f4Loading,
     f4Error,
     f4Proposals,

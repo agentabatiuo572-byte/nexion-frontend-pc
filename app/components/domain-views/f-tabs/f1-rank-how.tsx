@@ -5,7 +5,7 @@
  * 读、写、校验和共用的 PublishedContentEditor（kind="rankHow"）一样：GET/PUT /api/admin/teams/rank-policy，
  * 正文、状态、语言、理由的规则和提交内容逐字不变。共用编辑器别的页面还在用，这里只换 F1 的样子。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenText, CircleHelp, Plus, RefreshCw, Smartphone, Trash2 } from "lucide-react";
 import { BlockState, Button, Field, Fold, Input, Notice, Panel, Segments, StatusTag, Textarea } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -36,6 +36,8 @@ export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
   const [unknown, setUnknown] = useState(() => session ? !!pendingF1RankHow(session.adminId) : false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const baselineStale = useRef(false);
+  const preserveDraft = useRef(false);
   const refresh = useCallback(async () => {
     if (!canRead) return;
     setLoading(true); setError(null);
@@ -49,8 +51,17 @@ export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
     setUnknown(false);
     try {
       const value = await fetchRankHowPolicyAdmin();
-      setDocument(value); setBaseline(value); setLocale(Object.keys(value.locales)[0] ?? "en"); setReason("");
-    } catch (cause) { setDocument(null); setBaseline(null); setError(displayAdminError(cause)); }
+      if (preserveDraft.current) {
+        setDocument(draft => draft ? { ...value, version: draft.version, status: draft.status, locales: draft.locales } : value);
+        setBaseline(value); baselineStale.current = false;
+        setError("版本已变化，草稿已保留，请核对后再保存。");
+      } else {
+        setDocument(value); setBaseline(value); setLocale(Object.keys(value.locales)[0] ?? "en"); setReason("");
+      }
+    } catch (cause) {
+      if (!preserveDraft.current) { setDocument(null); setBaseline(null); }
+      setError(displayAdminError(cause));
+    }
     finally { setLoading(false); }
   }, [canRead, session?.adminId]);
   useEffect(() => { void refresh(); }, [refresh]);
@@ -63,12 +74,13 @@ export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
     try {
       const result = await queryF1RankHow(session.adminId);
       if (result.matched) {
+        preserveDraft.current = false; baselineStale.current = false;
         setDocument(result.current); setBaseline(result.current); setReason(""); setUnknown(false);
       } else setError("当前读取与原提交内容或修订号不一致，保存结果仍未知，请保留原内容并到操作记录核对。");
     } catch (cause) { setError(displayAdminError(cause)); }
     finally { setLoading(false); }
   };
-  const locked = saving || unknown;
+  const locked = saving || unknown || loading;
   const updateLocale = (value: Row) => document && setDocument({ ...document, locales: { ...document.locales, [locale]: value } });
   const addLocale = () => {
     if (!document) return;
@@ -86,14 +98,23 @@ export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
   };
   const save = async () => {
     if (!document || !canWrite || !session || locked) return;
+    if (baselineStale.current) { await refresh(); return; }
     if (reason.trim().length < 8 || reason.trim().length > 500) { setError("变更理由需为 8–500 个字符。"); return; }
     if (!hasChanges) { setError("内容没有变化，无需提交。"); return; }
     setSaving(true); setError(null); setUnknown(false);
     try {
       const payload = { ...document, status: document.status === "UNPUBLISHED" ? "DRAFT" as const : document.status };
       const value = await saveF1RankHow(session.adminId, payload, reason.trim());
+      preserveDraft.current = false;
       setDocument(value); setBaseline(value); setReason("");
-    } catch (cause) { setError(displayAdminError(cause)); setUnknown(cause instanceof OutcomeUnknownError); }
+    } catch (cause) {
+      setError(displayAdminError(cause)); setUnknown(cause instanceof OutcomeUnknownError);
+      if (!(cause instanceof OutcomeUnknownError) && (cause as { reasonCode?: string }).reasonCode === "RANK_HOW_POLICY_VERSION_CONFLICT") {
+        baselineStale.current = true;
+        preserveDraft.current = true;
+        await refresh();
+      }
+    }
     finally { setSaving(false); }
   };
 

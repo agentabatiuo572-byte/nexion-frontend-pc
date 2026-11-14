@@ -75,6 +75,11 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
       throw new Error("浏览器无法保存原操作，请允许会话存储后重试。");
     }
   }
+  if (original.received || original.ticket) {
+    const latest = await queryF1Proposal(adminId, original);
+    if (!latest) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
+    return latest;
+  }
   if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
   if (!original.request || !fCommands.isDurablyStored(slot, original.commandKey)) throw new Error("原操作没有完整的持久记录，请到操作记录核对。");
   let ticket: A2OperationRow;
@@ -85,11 +90,11 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
         && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) fCommands.forget(slot, original.commandKey);
     throw error;
   }
-  checkTicket(original, ticket);
   fCommands.remember(slot, original.commandKey, { ...original, received: true, ticket: undefined, absent: false });
+  checkTicket(original, ticket);
   // A POST replay returns the old receipt, never the current approval status.
   if (recovering) {
-    const latest = await queryF1Proposal(adminId, original);
+    const latest = await queryF1Proposal(adminId, { ...original, received: true });
     if (!latest) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
     return latest;
   }

@@ -3,11 +3,15 @@
 import { Field, Fold, Input, Table, Th, Tr, Td, Cell } from "@/app/components/rd";
 import { formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
 import type { F4AmbassadorPolicy, F4AmbassadorPolicyUpdate } from "@/lib/admin/f1-client";
+import { isF1OutcomeUncertainError } from "@/lib/admin/f1-stable-write";
+import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import { decimalText } from "./f4-shared";
 import type { FViewCtx, McSpec } from "./types";
 
 export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy): McSpec {
+  let baseline = policy;
+  let baselineReady = true;
   type Field = Extract<BusinessFormSpec, { kind: "multi-field" }>["fields"][number];
   const budget = { inputKind: "number", min: 100, max: 10_000, pattern: "^[0-9]+(?:\\.[0-9]+)?$", patternMessage: "预算须填写十进制金额" } as const;
   const mainFields: Field[] = [
@@ -25,11 +29,11 @@ export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy):
     ];
     return { bucket, name, fields };
   });
-  const limits = [
-    { key: "defaultBudgetUsdt", label: "默认预算", before: policy.defaultBudgetUsdt },
-    ...bucketRows.map(({ bucket, name }) => ({ key: `${bucket.id}.max`, label: `${name} · 最高预算`, before: bucket.maxBudgetUsdt })),
+  const limits = () => [
+    { key: "defaultBudgetUsdt", label: "默认预算", before: baseline.defaultBudgetUsdt },
+    ...baseline.buckets.map(bucket => ({ key: `${bucket.id}.max`, label: `${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)} · 最高预算`, before: bucket.maxBudgetUsdt })),
   ];
-  const changedLimits = (values: BusinessFormValue) => limits.flatMap((limit) => {
+  const changedLimits = (values: BusinessFormValue) => limits().flatMap((limit) => {
     const after = values[limit.key]?.trim();
     return after && Number.isFinite(Number(after)) && Number(after) !== limit.before ? [{ ...limit, after }] : [];
   });
@@ -90,11 +94,16 @@ export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy):
     },
     run: async (reason, values) => {
       if (!values) throw new Error("请填写完整");
+      if (!baselineReady) {
+        baseline = await ctx.refreshF4PolicyBaseline();
+        baselineReady = true;
+        throw new Error("版本已变化，草稿已保留，请核对后再保存。");
+      }
       const payload: F4AmbassadorPolicyUpdate = {
         policyVersion: values.policyVersion.trim(),
-        expectedRevision: policy.revision,
+        expectedRevision: baseline.revision,
         defaultBudgetUsdt: values.defaultBudgetUsdt.trim(),
-        buckets: policy.buckets.map(({ id }) => ({
+        buckets: baseline.buckets.map(({ id }) => ({
           id,
           title: values[`${id}.title`].trim(),
           rule: values[`${id}.rule`].trim(),
@@ -110,10 +119,20 @@ export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy):
       if (!payload.buckets.some(({ minBudgetUsdt, maxBudgetUsdt }) => requestedDefault >= Number(minBudgetUsdt) && requestedDefault <= Number(maxBudgetUsdt))) {
         throw new Error("默认预算须落在至少一个分类的预算范围内");
       }
-      if (requiresApproval(changedLimits(values))) {
-        await ctx.submitTeamApproval("F4", payload, reason);
-      } else {
-        if (await ctx.updateF4AmbassadorPolicy(payload, reason)) ctx.toast("区域大使申请规则已更新");
+      try {
+        if (requiresApproval(changedLimits(values))) {
+          await ctx.submitTeamApproval("F4", payload, reason);
+        } else {
+          if (await ctx.updateF4AmbassadorPolicy(payload, reason)) ctx.toast("区域大使申请规则已更新");
+        }
+      } catch (error) {
+        if (!isF1OutcomeUncertainError(error) && !isA2OutcomeUncertainError(error)
+          && (error as { backendMessage?: string }).backendMessage === "AMBASSADOR_POLICY_VERSION_CONFLICT") {
+          baselineReady = false;
+          baseline = await ctx.refreshF4PolicyBaseline();
+          baselineReady = true;
+        }
+        throw error;
       }
     },
   };

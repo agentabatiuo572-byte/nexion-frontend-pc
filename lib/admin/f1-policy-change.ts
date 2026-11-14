@@ -192,6 +192,7 @@ export async function submitF1Policy(
   }
   const record = () => attempts.list().find(item => item.commandKey === key)!;
   let posting = false;
+  let acknowledgement: string;
   try {
     if (original.approval) {
       let ticket;
@@ -202,6 +203,7 @@ export async function submitF1Policy(
         if (!ticket) attempts.remember(fingerprint, key, { ...record(), ticket: undefined, absent: true });
       }
       if (mode === "lookup" && !ticket) return null;
+      if (!ticket && previous?.received) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", key);
       if (!ticket && previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原操作已过期且暂未查到结果，请到操作记录核对，勿重复提交。", key);
       if (!ticket) {
         posting = true;
@@ -215,22 +217,25 @@ export async function submitF1Policy(
       if (!ticket.mine || ticket.obj !== original.values.rank || ticket.operationCode !== "f1_rank_policy_change") {
         throw new A2OutcomeUncertainError("原审批单对象或操作不符，请到操作记录核对。", key);
       }
-      const active = await fetchF1VRankOverview();
       if (ticket.status === "pending") attempts.remember(fingerprint, key, { ...record(), ticket, received: true, absent: false });
       else attempts.forget(fingerprint, key);
-      return { active, resolved: true, acknowledgement: `审批单 ${ticket.id}${ticket.status === "pending" ? " · 等待另一位有审批权的超管批准，当前配置未变" : " · 已找到原操作，请核对处理结果与当前配置"}` };
+      const status = { pending: " · 等待另一位有审批权的超管批准，当前配置未变", approved: " · 已批准", rejected: " · 已驳回", withdrawn: " · 已撤回", expired: " · 已过期" };
+      acknowledgement = `审批单 ${ticket.id}${status[ticket.status]}`;
+    } else {
+      if (!previous?.received) {
+        // Reading current configuration cannot establish an unknown command's outcome.
+        if (mode === "lookup") return { active: await fetchF1VRankOverview(), resolved: false, acknowledgement: "已读取当前配置；这不是原请求的执行回执，请保留原操作继续核对。" };
+        if (previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原操作已过期，请到操作记录核对，勿重复提交。", key);
+        if (!attempts.isDurablyStored(fingerprint, key)) throw new A2OutcomeUncertainError("原操作未能持久保存，当前不能重发。", key);
+        posting = true;
+        await writeF1VRankPolicy(original.values, original.reason, original.operator, key);
+        posting = false;
+        attempts.remember(fingerprint, key, { ...record(), received: true });
+      }
+      // A saved successful receipt settles the command even after its retry window.
+      attempts.forget(fingerprint, key);
+      acknowledgement = original.editor.action === "threshold" ? "晋升条件已更新，下一轮评估使用新值" : original.editor.action === "reward_remove" ? "奖励已移除，历史发放记录保留" : "奖励模板已更新，后续发放使用新值";
     }
-    // Read-only reconciliation must never call a write endpoint, including after expiry.
-    if (mode === "lookup") return { active: await fetchF1VRankOverview(), resolved: false, acknowledgement: "已读取当前配置；这不是原请求的执行回执，请保留原操作继续核对。" };
-    if (previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原操作已过期，请到操作记录核对，勿重复提交。", key);
-    if (!attempts.isDurablyStored(fingerprint, key)) throw new A2OutcomeUncertainError("原操作未能持久保存，当前不能重发。", key);
-    posting = true;
-    await writeF1VRankPolicy(original.values, original.reason, original.operator, key);
-    posting = false;
-    attempts.remember(fingerprint, key, { ...record(), received: true });
-    const active = await fetchF1VRankOverview();
-    attempts.forget(fingerprint, key);
-    return { active, resolved: true, acknowledgement: original.editor.action === "threshold" ? "晋升条件已更新，下一轮评估使用新值" : original.editor.action === "reward_remove" ? "奖励已移除，历史发放记录保留" : "奖励模板已更新，后续发放使用新值" };
   } catch (error) {
     const saved = record();
     const failure = error as { status?: number; httpStatus?: number; apiCode?: number; backendMessage?: string };
@@ -241,6 +246,9 @@ export async function submitF1Policy(
     else if (saved && !isA2OutcomeUncertainError(error)) throw new A2OutcomeUncertainError(error instanceof Error ? error.message : "原操作结果未知，请查询原结果。", key);
     throw error;
   }
+  // The command's known result is independent of this subsequent read.
+  const active = await fetchF1VRankOverview().catch(() => null);
+  return { active, resolved: true, acknowledgement };
 }
 
 /** Refresh saved pending approvals without treating a failed read as a pending verdict. */

@@ -108,7 +108,8 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, pendingApprov
     }
     if (!result) return false;
     requireSession(false);
-    ctx.acceptF1PolicyOverview(result.active);
+    if (result.active) ctx.acceptF1PolicyOverview(result.active);
+    else ctx.invalidateF1("当前配置读取失败，请重新读取后再发起新修改。");
     ctx.toast(result.acknowledgement);
     if (!result.resolved) throw new A2OutcomeUncertainError(result.acknowledgement, previous!.commandKey);
     onClose();
