@@ -78,6 +78,10 @@ export function AccountAvatarPicker({ account, name, disabled, scope = "admin", 
     } catch (e) {
       if (active(token)) {
         setError(displayAdminError(e));
+        if (command && !sent && !wasPending) {
+          avatarDrafts.forget(command.fingerprint, command.commandKey);
+          updateDraft(draft);
+        }
         if (command && (scope === "admin" && !wasPending ? !isA1OutcomeUncertainError(e) && isDeterministicRejection((e as { status?: number }).status ?? 0) : isExplicitRejection(e)) && (sent || !wasPending)) { avatarDrafts.forget(command.fingerprint, command.commandKey); updateDraft(null); resetFile(); }
       }
     } finally { if (active(token)) setBusy(false); }
