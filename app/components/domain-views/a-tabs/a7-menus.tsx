@@ -378,6 +378,7 @@ function NodeDetail({ node, parent, canWrite, nav, reach, onCreate, onEdit, onDe
 }) {
   const isDomain = node.parentId == null;
   const Icon = isDomain ? DOMAIN_ICON.get(node.menuCode) : undefined;
+  const targetName = node.menuNameZh || node.menuName;
   return (
     <Panel title={menuNameText(node)} icon={isDomain ? FolderTree : LayoutList} tone="role-other" sub={<span data-mono>{node.menuCode}</span>}
       actions={<span className="a7-tags">
@@ -401,9 +402,9 @@ function NodeDetail({ node, parent, canWrite, nav, reach, onCreate, onEdit, onDe
         </dl>
         {canWrite && (
           <div className="a7-actions">
-            <Button variant="primary" onClick={onEdit}><Pencil size={14} aria-hidden />编辑</Button>
-            {isDomain && <Button variant="secondary" onClick={onCreate}><Plus size={14} aria-hidden />新建下级菜单</Button>}
-            <Button variant="danger-outline" onClick={onDelete}><Trash2 size={14} aria-hidden />删除</Button>
+            <Button variant="primary" aria-label={`编辑 ${targetName}`} onClick={onEdit}><Pencil size={14} aria-hidden />编辑</Button>
+            {isDomain && <Button variant="secondary" aria-label={`为 ${targetName} 新建下级菜单`} onClick={onCreate}><Plus size={14} aria-hidden />新建下级菜单</Button>}
+            <Button variant="danger-outline" aria-label={`删除 ${targetName}`} onClick={onDelete}><Trash2 size={14} aria-hidden />删除</Button>
             {node.children.length > 0 && <span className="a7-note"><TriangleAlert size={14} aria-hidden />还有 {node.children.length} 个下级菜单，删除会被拒绝</span>}
           </div>
         )}
