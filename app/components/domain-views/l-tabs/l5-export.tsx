@@ -18,13 +18,23 @@ import {
   Segments, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTabIds,
 } from "@/app/components/rd";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { l5TaskCommands, type PendingL5Task } from "@/lib/admin/l5-task-commands";
 import { num, rec, rows, str } from "./live-data";
 import {
   fetchL5ExportAudits,
+  fetchL5ExportTask,
   fetchL5ExportTasks,
   fetchL5RegulatoryOptions,
   isLOutcomeUnknownError,
+  createL5SummaryReport,
+  lBiActions,
+  submitL5TaskAction,
   type AdminPage,
   type LExportAuditRow,
   type LExportTask,
@@ -36,8 +46,9 @@ import { useReach } from "@/lib/nav/use-reach";
 import type { LCtx } from "./types";
 import { clampL5Page, l5PageCount } from "./l5-pagination";
 import { isL5KpiExport, l5KpiRange } from "./l5-kpi-range";
+import { allowedAggregateExportOptions, canAccessBiReportType } from "./l1-l2-live-data";
 import {
-  AuditTable, L5RecoveryNotice, MASK_LABEL, MaskRuleTable, PendingCard, RouteFacts, TaskStatusTag, pageName, rowsText, taskSource, taskTitle,
+  AuditTable, L5RecoveryNotice, MASK_LABEL, MaskRuleTable, PendingCard, RouteFacts, TaskStatusTag, pageName, rowsText, taskSource, taskTitle, taskStatus,
   type L5RecoveryItem, type MaskRule,
 } from "./l5-export-views";
 
@@ -116,8 +127,37 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const refIds = useTabIds();
   const createRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const session = useAdminAuth((state) => state.session);
+  const owner = session ? String(session.adminId) : "";
+  const currentContext = useRef(ctx);
+  currentContext.current = ctx;
+  const actionBusy = useRef(false);
+  const refreshRequired = useRef(false);
+  const [pendingCommands, setPendingCommands] = useState<PendingL5Task[]>([]);
+  const syncCommands = () => setPendingCommands(l5TaskCommands.list().filter(record => record.owner === owner));
+  useEffect(() => { syncCommands(); }, [owner]);
+  useEffect(() => {
+    const next = pendingCommands.filter(record => !isRetryExpired(record)).sort((a, b) => a.expiresAt - b.expiresAt)[0];
+    if (!next) return;
+    const timer = setTimeout(syncCommands, Math.max(0, next.expiresAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [pendingCommands]);
 
   const data = ctx.biData?.l5;
+  useEffect(() => { if (data) refreshRequired.current = false; }, [data]);
+  function requireNewExport(kind: "summary" | "regulatory" | "ledger", exportType?: string) {
+    const auth = useAdminAuth.getState().session;
+    const superAdmin = auth?.role?.toLowerCase() === "superadmin";
+    const allowed = auth && (kind === "summary"
+      ? allowedAggregateExportOptions(auth.role, auth.authorities).some(option => option.label === exportType)
+      : kind === "regulatory" ? superAdmin || auth.authorities.includes("bi_l5_regulatory_generate")
+        : superAdmin || auth.authorities.includes("finance_d4_export") && auth.authorities.some(code => ["finance_d4_read", "finance_d4_user_read"].includes(code)));
+    if (!auth || String(auth.adminId) !== owner || !allowed) throw new Error(formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED"));
+    const latest = currentContext.current;
+    if (refreshRequired.current || !data || latest.biData?.l5 !== data || latest.biLoading || latest.biError) {
+      throw new Error(formatAdminApiError("L5_TASK_STATE_CHANGED", "L5_TASK_STATE_CHANGED"));
+    }
+  }
   const filterStatus =
     filter === 1 ? "PENDING_CONFIRM,PENDING_SPLIT_CONFIRM"
     : filter === 2 ? "GENERATING"
@@ -222,9 +262,109 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       </Notice>
     );
   })();
-  // R1：放行、重新发起会改任务状态。结果未知时的本机保存、查询原结果、按原请求重试由代码 worker 接（说明 B01），
-  // 接好后把保存的原记录拼成这里的行（哪一份、谁申请的、什么时候放行的），按钮调用原有的查询和原号重试。
-  const recoveryRows: L5RecoveryItem[] = [];
+  const sendTaskAction = async (task: LExportTask, action: "approve" | "rerun", requester: string, reason: string, original?: PendingL5Task) => {
+    if (actionBusy.current) throw new Error(formatAdminApiError("L5_TASK_BUSY", "L5_TASK_BUSY"));
+    const auth = useAdminAuth.getState().session;
+    const allowed = auth && (action === "approve"
+      ? auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_task_approve")
+      : canAccessBiReportType(auth.role, auth.authorities, task.reportType, task.pii));
+    if (!auth || String(auth.adminId) !== owner || !allowed) throw new Error(formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED"));
+    let record = l5TaskCommands.list().find(item => item.owner === owner && item.task.id === task.id);
+    if (original) {
+      if (record?.commandKey !== original.commandKey) {
+        ctx.closeActionConfirm?.();
+        throw new Error(formatAdminApiError("L5_TASK_ALREADY_SETTLED", "L5_TASK_ALREADY_SETTLED"));
+      }
+      if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
+    } else {
+      if (record) throw new Error(formatAdminApiError("L5_TASK_PENDING", "L5_TASK_PENDING"));
+      const latest = currentContext.current;
+      if (refreshRequired.current || !data || latest.biData?.l5 !== data || latest.biLoading || latest.biError
+        || !task.supported || !task.snapshotAvailable
+        || (action === "approve" ? task.approvalEligibility !== "ELIGIBLE" || !task.acts.includes("approve") : !task.acts.includes("retry"))) {
+        throw new Error(formatAdminApiError("L5_TASK_STATE_CHANGED", "L5_TASK_STATE_CHANGED"));
+      }
+      const request = { includeSensitive: action === "approve" || task.pii, includeDecrypted: false as const, reason: reason.trim(), operator: currentAdminOperator() };
+      const fingerprint = JSON.stringify({ reportId: task.id, action, request });
+      const commandKey = `l5-task-${crypto.randomUUID()}`;
+      l5TaskCommands.remember(fingerprint, commandKey, { owner, action, request, task, requester });
+      record = l5TaskCommands.list().find(item => item.commandKey === commandKey);
+    }
+    if (!record || !l5TaskCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
+      if (record && !original) l5TaskCommands.forget(record.fingerprint, record.commandKey);
+      syncCommands();
+      throw new Error(formatAdminApiError("L5_TASK_STORAGE_UNAVAILABLE", "L5_TASK_STORAGE_UNAVAILABLE"));
+    }
+    syncCommands();
+    actionBusy.current = true;
+    setBusyTask(task.id);
+    try {
+      try {
+        await submitL5TaskAction(record.task.id, record.action, record.request, record.commandKey);
+      } catch (error) {
+        const failure = error as { httpStatus?: number; apiCode?: number; reasonCode?: string };
+        const rejected = original ? isExplicitRejection(error)
+          : !failure.reasonCode?.startsWith("IDEMPOTENCY_") && isDeterministicRejection(failure.httpStatus ?? 0, failure.apiCode);
+        if (rejected) {
+          l5TaskCommands.forget(record.fingerprint, record.commandKey);
+          syncCommands();
+          if (original) {
+            refreshRequired.current = true;
+            ctx.closeActionConfirm?.();
+            await currentContext.current.reloadBi?.();
+          }
+          throw error;
+        }
+        // Keep the structured rejection's Chinese reason (including a replay
+        // 403); retaining the original command does not turn it into success.
+        throw new OutcomeUnknownError(`${displayAdminError(error)} ${formatAdminApiError("L5_TASK_OUTCOME_UNKNOWN", "L5_TASK_OUTCOME_UNKNOWN")}`);
+      }
+      refreshRequired.current = true;
+      l5TaskCommands.forget(record.fingerprint, record.commandKey);
+      syncCommands();
+      ctx.closeActionConfirm?.();
+      await currentContext.current.reloadBi?.();
+      toast(record.action === "approve" ? `${record.task.id} 脱敏明细审批通过 · 可签发 24 小时下载令牌`
+        : `${record.task.id} 已重新发起${record.task.pii ? "（含隐私数据，需要重新确认）" : ""}`);
+    } finally {
+      actionBusy.current = false;
+      setBusyTask(null);
+    }
+  };
+  const queryTask = async (record: PendingL5Task) => {
+    const auth = useAdminAuth.getState().session;
+    if (actionBusy.current || !auth || String(auth.adminId) !== record.owner
+      || !(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_read"))) return;
+    actionBusy.current = true;
+    setBusyTask(record.task.id);
+    try {
+      const current = await fetchL5ExportTask(record.task.id);
+      toast(`${record.task.id} · ${taskStatus(current).label} · ${formatAdminApiError("L5_TASK_QUERY_UNSETTLED", "L5_TASK_QUERY_UNSETTLED")}`);
+      await currentContext.current.reloadBi?.();
+    } catch (error) {
+      toast(displayAdminReadError(error), "error");
+    } finally {
+      actionBusy.current = false;
+      setBusyTask(null);
+    }
+  };
+  const recoveryRows: L5RecoveryItem[] = pendingCommands.map(record => {
+    const expired = isRetryExpired(record);
+    const canRead = session?.role?.toLowerCase() === "superadmin" || session?.authorities.includes("bi_l5_read");
+    const canWrite = record.action === "approve" ? ctx.canApproveExportTasks : ctx.canAccessReportType?.(record.task.reportType, record.task.pii);
+    return {
+      key: record.commandKey, reportId: record.task.id, title: taskTitle(record.task, exportTypeText),
+      action: record.action === "approve" ? "放行" : "重新发起", requester: record.requester,
+      submittedAt: record.createdAt, expired,
+      actions: <>
+        <Button size="sm" loading={busyTask === record.task.id} disabledReason={!canRead ? formatAdminApiError("L5_TASK_QUERY_PERMISSION", "L5_TASK_QUERY_PERMISSION") : undefined}
+          onClick={() => void queryTask(record)}>查询原结果</Button>
+        {!expired && <Button size="sm" disabledReason={!canWrite ? formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED") : undefined}
+          onClick={() => record.action === "approve" ? requestApproveTask(record.task, record.requester, record)
+            : void sendTaskAction(record.task, record.action, record.requester, record.request.reason, record).catch(error => toast(displayAdminError(error), "error"))}>按原请求重试</Button>}
+      </>,
+    };
+  });
   const recoveryIds = new Set(recoveryRows.map((row) => row.reportId));
 
   if (!data) return (
@@ -261,12 +401,12 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const taskTotal = taskPage?.total ?? visibleTasks.length;
   const taskPages = l5PageCount(taskTotal, taskPageSize);
   const retryTask = async (t: LExportTask) => {
-    await ctx.biActions?.reportAction(t.id, "rerun", "重新生成当前报表任务", t.pii);
-    await ctx.reloadBi?.();
-    toast(`${t.id} 已重新发起${t.pii ? "（含隐私数据，需要重新确认）" : ""}`);
+    await sendTaskAction(t, "rerun", requesterText(t), "重新生成当前报表任务");
   };
   const l3Name = pageName(L3_PAGE, "财务报表");
-  const requestApproveTask = (t: LExportTask, requester: string) => ctx.openActionConfirm({ briefKind: "record",
+  function requestApproveTask(t: LExportTask, requester: string, original?: PendingL5Task) {
+    let retained = original;
+    ctx.openActionConfirm({ briefKind: "record",
     action: "审批脱敏资金明细",
     title: "放行脱敏资金明细",
     detail: <>任务 <span className="mono">{t.id}</span> 的数据会保持隐藏隐私，审批不会解密任何字段。批准后就能下载，下载链接 24 小时有效。</>,
@@ -294,18 +434,28 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     reasonPlaceholder: "写放行依据，例如：已核对申请人的工单号和用途",
     reasonMin: 8,
     reasonMax: 200,
+    getPendingReason: () => retained && l5TaskCommands.list().find(record => record.commandKey === retained?.commandKey)?.request.reason,
     run: async (reason) => {
-      await ctx.biActions?.reportAction(t.id, "approve", reason, true);
-      await ctx.reloadBi?.();
-      toast(`${t.id} 脱敏明细审批通过 · 可签发 24 小时下载令牌`);
+      try {
+        await sendTaskAction(t, "approve", requester, reason, retained);
+      } finally {
+        retained = l5TaskCommands.list().find(record => record.owner === owner && record.task.id === t.id);
+      }
     },
-  });
+    });
+  }
   const downloadTask = async (t: LExportTask) => {
+    const auth = useAdminAuth.getState().session;
+    if (!auth || String(auth.adminId) !== owner || !canAccessBiReportType(auth.role, auth.authorities, t.reportType, t.pii)) {
+      throw new Error(formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED"));
+    }
     const file = await ctx.biActions?.downloadReport(t.id);
-    if (file) downloadBlob(file.blob, file.fileName);
+    if (!file || !file.blob.type.toLowerCase().includes("text/csv")) throw new Error(formatAdminApiError("L5_DOWNLOAD_RESPONSE_INVALID", "L5_DOWNLOAD_RESPONSE_INVALID"));
+    downloadBlob(file.blob, file.fileName);
     toast(`${t.id} 开始下载`);
   };
   const downloadLedger = async (reason: string) => {
+    requireNewExport("ledger");
     setLedgerExporting(true);
     try {
       await downloadD4BillsCsv({}, reason);
@@ -368,11 +518,12 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       maskPolicies: ["无需脱敏（仅聚合）"],
     },
     run: async (reason, _v, bv) => {
+      requireNewExport("summary", String(bv?.exportType ?? ""));
       const range = isL5KpiExport(String(bv?.exportType ?? ""))
         ? l5KpiRange(bv ?? {}) : { timeRange: String(bv?.timeRange ?? "ON_DEMAND") };
       const summary = `${bv?.exportType} · ${range.timeRange} · 聚合字段[${bv?.fields || "默认汇总项"}] · 用途 ${bv?.recipient}`;
       try {
-        await ctx.biActions?.createReport({
+        await createL5SummaryReport({
           exportType: String(bv?.exportType ?? "后台导出报表"),
           ...range,
           fields: String(bv?.fields || "聚合指标"),
@@ -432,10 +583,11 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         ],
       },
       run: async (reason, _value, business) => {
+        requireNewExport("regulatory");
         const [jurisdictionCode, disclosureVersion] = String(business?.jurisdictionVersion ?? "").split("|", 2);
         const shown = `${templates.find((item) => item.code === String(business?.templateCode ?? ""))?.label ?? String(business?.templateCode ?? "")} · ${jurisdictionCode} ${disclosureVersion} · 期间 ${String(business?.period ?? "")}`;
         try {
-          await ctx.biActions?.createRegulatoryReport({
+          await lBiActions.createRegulatoryReport({
             templateCode: String(business?.templateCode ?? ""),
             period: String(business?.period ?? ""),
             jurisdictionCode,
@@ -450,7 +602,6 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         }
         await ctx.reloadBi?.();
         toast("当前披露快照已生成，可在下方任务列表下载");
-        // B02：回复没有读到创建回执也会走到这里。代码 worker 修好后，只在读到 created 回执时显示「已生成」。
         setOutcome({ kind: "reg-done", text: shown });
       },
     });
@@ -496,9 +647,9 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
 
   /* ---------------- 导出任务：待放行卡在前，其余一张表 ---------------- */
   const requesterText = (t: LExportTask) => !ctx.canApproveExportTasks ? "—"
-    : t.approvalEligibility === "SELF" ? "你本人"
+    : t.requesterDisplayName ?? (t.approvalEligibility === "SELF" ? "你本人"
     : t.approvalEligibility === "ELIGIBLE" ? "另一位管理员"
-    : "发起记录核对不上";
+    : "发起记录核对不上");
   const isPendingCard = (t: LExportTask) => t.supported && effActs(t).includes("approve");
   const pendingTasks = visibleTasks.filter(isPendingCard);
   const otherTasks = visibleTasks.filter((t) => !isPendingCard(t));
@@ -555,6 +706,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
               {pendingTasks.map((t) => (
                 <PendingCard key={t.id} task={t} title={taskTitle(t, exportTypeText)} source={taskSource(t)}
                   scope={reportScopeText(t.scope)} fields={operatorCopyText(t.fields)}
+                  unknown={recoveryIds.has(t.id)}
                   requester={ctx.canApproveExportTasks ? requesterText(t) : undefined} action={approveAction(t)} />
               ))}
             </ul>

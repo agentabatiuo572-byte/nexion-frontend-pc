@@ -126,7 +126,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "L2" && <L2Funnel ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
       {tab === "L3" && <L3Finance ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
       {tab === "L4" && <L4Ops key={owner} ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
-      {tab === "L5" && <L5Export ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
+      {tab === "L5" && <L5Export key={owner} ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
       {tab === "L6" && <L6BehaviorHeatmap key={owner} ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
 
       {mc && (

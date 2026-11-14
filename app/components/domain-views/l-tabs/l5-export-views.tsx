@@ -97,7 +97,7 @@ export function TaskStatusTag({ task, unknown }: { task: LExportTask; unknown?: 
 
 /* ---------------- 待放行卡 ---------------- */
 
-export function PendingCard({ task, title, source, scope, fields, requester, action }: {
+export function PendingCard({ task, title, source, scope, fields, requester, action, unknown }: {
   task: LExportTask;
   title: string;
   source: string;
@@ -106,6 +106,7 @@ export function PendingCard({ task, title, source, scope, fields, requester, act
   /** 没有放行权限时接口不给是不是本人，不显示这一行。 */
   requester?: ReactNode;
   action: ReactNode;
+  unknown?: boolean;
 }) {
   return (
     <li className="l5-pending-card">
@@ -115,7 +116,7 @@ export function PendingCard({ task, title, source, scope, fields, requester, act
           <span className="l5-pending-name">{title}</span>
           <span className="l5-pending-id" data-mono="">{task.id}</span>
         </span>
-        <TaskStatusTag task={task} />
+        <TaskStatusTag task={task} unknown={unknown} />
       </div>
       <dl className="l5-pending-facts">
         <div><dt>来源</dt><dd>{source}</dd></div>
