@@ -318,7 +318,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     }
     syncPending();
     activeConfirmation.current = null;
-    openActionConfirm(null);
+    if (original) openActionConfirm(null);
     setEditor(null);
     try {
       await actions.reloadJEmergency();
