@@ -197,7 +197,9 @@ export function readL4Operations(value: unknown): L4OperationsData | null {
   const taskSummary = exactNumberSummary(tasks.summary, [
     ["dispatched", { integer: true }],
     ["completed", { integer: true }],
-    ["acceptanceRate", { percent: true, nullable: true }],
+    // Completed instances are counted per bucket; dispatches are deduplicated
+    // across the whole window. Their ratio can legitimately exceed 100%.
+    ["acceptanceRate", { nullable: true }],
     ["queueSaturation", { percent: true, nullable: true }],
     ["checkinActive", { integer: true }],
   ]);
