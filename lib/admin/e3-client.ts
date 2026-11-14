@@ -1,5 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatBusinessTime } from "@/lib/admin/business-time";
+import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { formatAdminApiError, displayAdminReadError, guardedFetch } from "@/lib/admin/error-messages";
 import { operatorDeviceStatus, operatorE3OperationLabel, operatorE3OperationState, operatorE3Reason } from "@/lib/admin/e-operator-display";
 
@@ -180,7 +180,8 @@ function frontendParams(config: Record<string, string | number | null> | null | 
 
 function timeText(value: string | null | undefined) {
   if (!value) return "—";
-  return formatBusinessTime(value, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }, "时间待核验");
+  // 24 小时内的记录只写「月-日 时:分」；时区写在列头。
+  return formatBusinessTimeCompact(value, "时间待核验").replace(/^\d{4}-/, "");
 }
 
 function fromTx(row: BackendTradeinTx): E3OperationMetric {

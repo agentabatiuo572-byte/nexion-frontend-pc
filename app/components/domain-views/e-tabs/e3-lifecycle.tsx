@@ -244,6 +244,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   };
   const proposalOnly = authorities.includes("platform_a2_proposal_create") && !authorities.includes("platform_a2_write");
   const BATCH_BLOCKED = "你的账号只有提案权，后端目前不接受这类账号提交成组修改（已提后端）。单项修改不受影响；这组请有完整审批写权限的同事提交。";
+  const LEGACY_LOCKED = "这一项有一次早期版本的提交结果未知，先在页面上方查询原结果";
 
   const effect = (batch: boolean) => <StatusTag tone="progress" filled explain={batch ? E3_APPROVER_BATCH : E3_APPROVER_SINGLE}>批准后生效</StatusTag>;
   const open = (spec: McSpec) => { if (!e3Loading && !e3Error) ctx.openActionConfirm(spec); };
@@ -286,11 +287,12 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     const pendingDetail = E3_PROPOSALS.filter(p => p.state === "pending" && p.keys.some(k => keys.includes(k))).map(p =>
       `${changeText(p)}。等另一位管理员批准，批准前按现在的值执行。`).join("\n");
     if (u) return <StatusTag tone="warn" explain={u.state === "submitted" ? "审批单已建成，现在批没批还没查到，先在页面上方查询原结果。" : "这一项有一次提交结果未知，先在页面上方查询原结果。"}>结果未知</StatusTag>;
-    return p && <StatusTag tone="progress" icon={Clock3} explain={pendingDetail}>待批准</StatusTag>;
+    if (p) return <StatusTag tone="progress" icon={Clock3} explain={pendingDetail}>待批准</StatusTag>;
+    return e3Proposals.locked(keys) && <StatusTag tone="warn" explain={`${LEGACY_LOCKED}。`}>结果未知</StatusTag>;
   };
   const adjust = (keys: readonly string[], onClick: () => void, batch = false, label = "调整") => ctx.canWriteE3
     ? (describedBy: string | undefined) => <Button size="sm" aria-describedby={describedBy} onClick={onClick}
-        disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : e3Proposals.locked(keys) ? unsettledFor(keys) ? "这一项有一次提交结果未知，先在页面上方查询原结果" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : "这一项有一条升级前的旧记录还没核对，先在页面上方查询原结果" : batch && proposalOnly ? BATCH_BLOCKED : undefined}>{label}</Button>
+        disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : e3Proposals.locked(keys) ? unsettledFor(keys) ? "这一项有一次提交结果未知，先在页面上方查询原结果" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : LEGACY_LOCKED : batch && proposalOnly ? BATCH_BLOCKED : undefined}>{label}</Button>
     : undefined;
 
   // ── 产能的预览：改后第几个月是多少，超过 100% 时写 App 现状 ──
@@ -379,7 +381,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           explain={<><p>按服务器时间往前 24 小时统计。成功率 = 成功 ÷（成功 + 失败），恢复不算进去；三类来源不同，同一台设备可能被算进多类。</p><p>恢复：回收、停用是之后被恢复的次数；置换是 24 小时内回退的申请数。</p><p>这页不代用户换机，也不处理单台设备；单台设备在「设备管理」里看。</p></>}
           actions={reach(ledgerHref, "finance_d4_read") && <Link className="rd-link" href="/finance/ledger?keyword=tradein&status=FAILED">查看失败的置换账单</Link>}>
           <Table label="最近 24 小时的回收、置换、停用">
-            <thead><tr><Th>类别</Th><Th align="right">成功</Th><Th align="right">失败</Th><Th align="right">恢复</Th><Th>最近记录</Th></tr></thead>
+            <thead><tr><Th>类别</Th><Th align="right">成功</Th><Th align="right">失败</Th><Th align="right">恢复</Th><Th>最近记录（{zone}）</Th></tr></thead>
             <tbody>
               {ops.length === 0 ? <TableMessage columns={5}>24 小时内没有记录</TableMessage> : ops.map((t) => (
                 <Tr key={t.nm}>

@@ -1023,6 +1023,7 @@
 .e3p .e3p-side { display: grid; grid-template-rows: auto 1fr; gap: var(--rd-section-gap); min-width: 0; }
 .e3p .e3p-pending { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--rd-space-2); }
 .e3p .e3p-pending li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--rd-space-2) var(--rd-space-3); }
+.e3p .rd-config-value small > .e3p-sub:not(:first-child) { margin-left: var(--rd-space-2); }
 .e3p .e3p-sub { display: inline-flex; align-items: center; gap: var(--rd-space-1); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .e3p .e3p-num { font-variant-numeric: tabular-nums; }
 .e3p .e3p-num[data-zero] { color: var(--rd-text-3); }
