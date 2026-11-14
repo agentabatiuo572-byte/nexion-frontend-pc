@@ -350,7 +350,7 @@ function MenuRow({ node, depth, expanded, onToggle, selectedId, onPick, preview,
           {isDomain && (Icon ? <Icon size={16} aria-hidden className="a7-icon" /> : <span className="a7-icon" aria-hidden />)}
           <span className="a7-name" data-root={isDomain ? "" : undefined}>{menuNameText(node)}</span>
           <span className="a7-code">{node.menuCode}</span>
-          {!isDomain && node.routePath && <span className="a7-route">{node.routePath}</span>}
+          {!isDomain && node.routePath && <span className="a7-route" title={node.routePath}>{node.routePath}</span>}
           <span className="a7-row-tags">
             {node.status !== 1 && <StatusTag tone="neutral" icon={Ban}>已停用</StatusTag>}
             {node.status === 1 && !nav.shown && (!parent || parent.status === 1) && <StatusTag tone="warn" icon={EyeOff}>导航不显示</StatusTag>}
