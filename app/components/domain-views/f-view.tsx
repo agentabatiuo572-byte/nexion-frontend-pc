@@ -61,6 +61,7 @@ import { F2Rates } from "./f-tabs/f2-rates";
 import { F2SevenLayerActivation } from "./f-tabs/f2-seven-layer-activation";
 import { F3Binary } from "./f-tabs/f3-binary";
 import { F4Ops } from "./f-tabs/f4-ops";
+import { RdPage } from "@/app/components/rd";
 import { F5Audit } from "./f-tabs/f5-audit";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { directReferralAmplifies, directReferralSummary, validateDirectReferralUpdate, type DirectReferralPolicy } from "@/lib/admin/direct-referral-policy";
@@ -820,18 +821,26 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   };
   const cta = CTA[tab];
 
-  return (
-    <div className="dkpage fdom">
-      {tab === "F2" ? <div className="f2-page-header"><div><div className="f2-breadcrumb">网络 <span aria-hidden="true">›</span> 团队奖励设置</div><h1>团队奖励设置</h1></div><span className="f2-page-meta">{f2DirectPolicy?.effectiveAt ? `当前政策生效于 ${new Date(f2DirectPolicy.effectiveAt).toLocaleString()}` : "配置尚未生效"}</span></div> : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
+  const page = (
+    <>
+      {tab === "F4" ? null : tab === "F2" ? <div className="f2-page-header"><div><div className="f2-breadcrumb">网络 <span aria-hidden="true">›</span> 团队奖励设置</div><h1>团队奖励设置</h1></div><span className="f2-page-meta">{f2DirectPolicy?.effectiveAt ? `当前政策生效于 ${new Date(f2DirectPolicy.effectiveAt).toLocaleString()}` : "配置尚未生效"}</span></div> : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
 
       {tab === "F1" && <F1Vrank ctx={ctx} />}
       {tab === "F2" && <><F2SevenLayerActivation ctx={ctx} /><F2Rates ctx={ctx} /></>}
       {tab === "F3" && <F3Binary ctx={ctx} />}
-      {tab === "F4" && <F4Ops ctx={ctx} />}
+      {tab === "F4" && <F4Ops ctx={ctx} onOpenCommissions={CTA.F4.onClick} />}
       {tab === "F5" && <F5Audit ctx={ctx} />}
 
       {mc && <OperationConfirmModal briefKind={mc.briefKind}
         action={mc.name}
+        title={mc.title}
+        facts={mc.facts}
+        statedBrief={mc.statedBrief}
+        effect={mc.effect}
+        confirmLabel={mc.confirmLabel}
+        confirmTone={mc.confirmTone}
+        coverageLead={mc.coverageLead}
+        coverageCheck={mc.coverageCheck}
         detail={mc.detail ?? "从下一笔结算开始生效，已经算好的不变。"}
         amplifies={!!mc.amplify}
         // coverage 按当前 tab 选源(A1 批1b 修复):原硬编码 f1Overview?.coverage → 切到 F2-F5 时仍显示 F1 覆盖率(跨域误用)。
@@ -928,6 +937,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           }
         }} />}
       {toastNode}
-    </div>
+    </>
   );
+  // F4 已改版：页头在页面里，整页包 RdPage。
+  return tab === "F4" ? <RdPage className="fdom">{page}</RdPage> : <div className="dkpage fdom">{page}</div>;
 }

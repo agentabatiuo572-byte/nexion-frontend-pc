@@ -512,3 +512,168 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .fdom .f1-removal-recovery > span { flex: 1; }
 .fdom .f1-removal-recovery > svg, .fdom .f1-removal-confirm-note > svg { flex-shrink: 0; color: var(--warning); }
 .fdom .f1-removal-confirm-note { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+
+/* ===== F4 奖励池、名额与排行榜（改版，rd）。只用 --rd-* 令牌；版式随内容区宽度（容器查询）收。抽屉和弹窗挂在 RdPage 根上，用 .fdom 限定。 ===== */
+.f4-page { container: f4-page / inline-size; display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
+.f4-page .f4-section, .f4-page .f4-stack { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
+.fdom .f4-muted { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.f4-page .f4-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.f4-page .f4-foot { display: flex; align-items: center; gap: var(--rd-space-2); margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+
+/* 首屏三张卡：也是三块内容的页签。窄时仍三张一排，内容少，不折成 2+1。 */
+.f4-page .rd-stats[data-cards] > .rd-stat { flex: 1 1 calc(33.333% - 8px); }
+.f4-page .f4-card-head { font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.f4-page .f4-card-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); min-width: 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; }
+.f4-page .f4-card-meter { display: flex; flex-direction: column; gap: var(--rd-space-2); --rd-track-w: 100%; }
+
+/* 结果未知逐条提醒：改的是什么、改成什么、什么时候、状态、按钮。 */
+.f4-page .f4-recovery { display: grid; gap: var(--rd-space-2); margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }
+.f4-page .f4-recovery li { display: grid; grid-template-columns: minmax(140px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.f4-page .f4-recovery-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.f4-page .f4-recovery-change { min-width: 0; color: var(--rd-text); overflow-wrap: anywhere; }
+.f4-page .f4-recovery-time, .f4-page .f4-recovery-zone { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.f4-page .f4-recovery-zone { margin: var(--rd-space-2) 0 0; }
+.f4-page .f4-recovery-actions { display: inline-flex; justify-content: flex-end; gap: var(--rd-space-2); }
+
+/* 团队激励池：一块里只有一个最强的数。 */
+.f4-page .f4-pool-hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr); gap: var(--rd-space-6); align-items: start; }
+.f4-page .f4-pool-amount, .f4-page .f4-quota-figure { display: flex; flex-direction: column; gap: var(--rd-space-1); min-width: 0; }
+.f4-page .f4-pool-label { display: inline-flex; align-items: center; gap: var(--rd-space-2); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.f4-page .f4-pool-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-2); color: var(--rd-text); font-size: 40px; line-height: 48px; font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+:root:not([data-theme="light"]) .f4-page .f4-pool-amount .f4-pool-value { color: var(--rd-role-1); }
+.f4-page .f4-pool-value small { color: var(--rd-text-3); font-size: var(--rd-text-body); font-weight: var(--rd-weight-regular); }
+.f4-page .f4-pool-value[data-zero] { color: var(--rd-text-3); font-size: var(--rd-text-title); line-height: var(--rd-lh-title); }
+.f4-page .f4-pool-note { color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; }
+.f4-page .rd-panel .rd-notice + .f4-pool-hero { margin-top: var(--rd-space-4); }
+
+/* 购机名额：剩余是主数，条在右边对着看已用和总量。 */
+.f4-page .f4-quota-sum { display: grid; grid-template-columns: minmax(160px, max-content) minmax(0, 1fr); gap: var(--rd-space-6); align-items: end; margin-bottom: var(--rd-space-4); }
+.f4-page .f4-quota-figure .f4-pool-value { color: var(--rd-text); }
+.f4-page .f4-quota-bar { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; padding-bottom: var(--rd-space-2); --rd-track-w: 100%; }
+.f4-page .f4-quota-table { table-layout: fixed; }
+.f4-page .f4-quota-table th:nth-child(1) { width: 26%; }
+.f4-page .f4-quota-table th:nth-child(2) { width: auto; }
+.f4-page .f4-quota-table th:nth-child(3) { width: 30%; }
+.f4-page .f4-quota-table th:last-child { width: 88px; }
+.f4-page .f4-usage-table th:last-child { width: 72px; }
+.f4-page .f4-amb-table th:last-child { width: 96px; }
+.f4-page .f4-quota-use { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; }
+.f4-page .rd-table-scroll + .rd-kv { margin-top: var(--rd-space-4); }
+.f4-page .rd-panel .rd-fold { margin-top: var(--rd-space-4); }
+.f4-page .f4-usage-table { table-layout: fixed; }
+.f4-page .f4-usage-table th:nth-child(1) { width: 72px; }
+.f4-page .f4-usage-table th:nth-child(2) { width: 96px; }
+.f4-page .f4-usage-table th:nth-child(4) { width: 72px; }
+.f4-page .f4-usage-table th:nth-child(6) { width: 140px; }
+.f4-page .f4-usage-table th:nth-child(7) { width: 88px; }
+
+/* 大使申请：四步流程一行，下面是卡在哪一步的分布和表格。 */
+.f4-page .f4-flow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2) var(--rd-space-3); margin: 0 0 var(--rd-space-4); padding: 0; list-style: none; color: var(--rd-text); font-size: var(--rd-text-body); }
+.f4-page .f4-flow li { display: inline-flex; align-items: center; gap: var(--rd-space-2); }
+.f4-page .f4-flow li + li::before { content: ""; width: 24px; height: 1px; margin-right: var(--rd-space-1); background: var(--rd-line-strong); }
+.f4-page .f4-flow small { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+.f4-page .f4-flow-no { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--rd-role-3-bg); color: var(--rd-text); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.f4-page .f4-filter-note { margin: var(--rd-space-3) 0 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.f4-page .f4-filter-note .rd-link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+.f4-page .rd-dist + .rd-table-scroll, .f4-page .f4-filter-note + .rd-table-scroll, .f4-page .rd-gfx-note + .rd-table-scroll { margin-top: var(--rd-space-4); }
+.f4-page .f4-amb-table { table-layout: fixed; }
+.f4-page .f4-amb-table th:nth-child(1) { width: 24%; }
+.f4-page .f4-amb-table th:nth-child(2) { width: 20%; }
+.f4-page .f4-amb-table th:nth-child(3) { width: 20%; }
+.f4-page .f4-amb-table th:nth-child(4) { width: auto; }
+.f4-page .f4-stage { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; }
+.f4-page .f4-stage-text { color: var(--rd-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.f4-page .f4-stage-text[data-tone="warn"] { color: var(--rd-warn); }
+.f4-page .f4-stage-text[data-tone="progress"] { color: var(--rd-progress); }
+.f4-page .f4-stage-text[data-tone="done"] { color: var(--rd-text-2); }
+.f4-page .f4-stage-sub { display: block; margin-top: 2px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 申请规则：四类各一张小卡，预算范围是这张卡的数。 */
+.f4-page .f4-buckets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--rd-space-3); margin: var(--rd-space-4) 0 0; padding: 0; list-style: none; }
+.f4-page .f4-buckets li { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; padding: var(--rd-space-3) var(--rd-space-4); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+:root[data-theme="light"] .f4-page .f4-buckets li { outline: 1px solid var(--rd-line); outline-offset: -1px; }
+.f4-page .f4-bucket-head { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.f4-page .f4-bucket-head svg { flex: none; color: var(--rd-text-3); }
+.f4-page .f4-bucket-head [data-mono] { margin-left: auto; color: var(--rd-text-3); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); }
+.f4-page .f4-bucket-range { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-1); color: var(--rd-text); font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.f4-page .f4-bucket-range small { color: var(--rd-text-3); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); }
+.f4-page .f4-bucket-rule { display: inline-flex; align-items: center; gap: var(--rd-space-1); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+
+/* 排行榜：周期分段和状态一行；前三名三张卡，第 1 名金边。 */
+.f4-page .f4-board-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--rd-space-3); margin-bottom: var(--rd-space-4); }
+.f4-page .f4-board-bar + .rd-notice { margin-bottom: var(--rd-space-4); }
+.f4-page .f4-podium { list-style: none; margin: 0 0 var(--rd-space-4); padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--rd-space-4); align-items: stretch; }
+.f4-page .f4-podium[data-count="1"] { grid-template-columns: minmax(0, 360px); }
+.f4-page .f4-podium[data-count="2"] { grid-template-columns: repeat(2, minmax(0, 360px)); }
+.f4-page .f4-podium > li { display: flex; min-width: 0; }
+.f4-page .f4-podium-card { display: flex; flex-direction: column; gap: var(--rd-space-1); width: 100%; padding: var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
+.f4-page .f4-podium > li[data-rank="1"] .f4-podium-card { border-color: var(--rd-role-1); }
+.f4-page .f4-podium-rank { color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.f4-page .f4-podium-rank b { color: var(--rd-text); font-size: var(--rd-text-section); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+:root:not([data-theme="light"]) .f4-page .f4-podium > li[data-rank="1"] .f4-podium-rank b { color: var(--rd-role-1); }
+.f4-page .f4-podium-user { color: var(--rd-text); font-size: var(--rd-text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.f4-page .f4-podium-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-1); margin-top: var(--rd-space-1); }
+.f4-page .f4-podium-value b { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.f4-page .f4-podium-value small { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+.f4-page .f4-podium-tip { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.f4-page .f4-podium-card .rd-btn { align-self: flex-start; margin-top: var(--rd-space-2); }
+.f4-page .f4-board-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--rd-space-4); margin: 0; padding: var(--rd-space-3) var(--rd-space-4); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.f4-page .rd-block-state + .f4-board-facts { margin-top: var(--rd-space-4); }
+.f4-page .f4-board-facts > div { display: flex; flex-direction: column; gap: var(--rd-space-1); min-width: 0; }
+.f4-page .f4-board-facts dt { display: inline-flex; align-items: center; gap: var(--rd-space-1); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.f4-page .f4-board-facts dd { display: flex; align-items: baseline; gap: var(--rd-space-1); margin: 0; color: var(--rd-text); font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; }
+.f4-page .f4-board-facts dd small { color: var(--rd-text-3); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); }
+.f4-page .f4-risk { display: flex; align-items: center; gap: var(--rd-space-2); margin: var(--rd-space-4) 0 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.f4-page .f4-risk > svg { flex: none; color: var(--rd-text-3); }
+
+/* 材料详情抽屉。 */
+.fdom .f4-materials { display: flex; flex-direction: column; gap: var(--rd-space-4); min-width: 0; }
+.fdom .f4-mat-section { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; }
+.fdom .f4-mat-section h3 { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-3); margin: 0; color: var(--rd-text); font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); }
+.fdom .f4-files { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
+.fdom .f4-files li { display: grid; grid-template-columns: minmax(96px, 0.8fr) minmax(0, 2fr) max-content; align-items: start; gap: var(--rd-space-3); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.fdom .f4-files li[data-missing] { box-shadow: inset 2px 0 0 var(--rd-warn); }
+.fdom .f4-file-kind { display: inline-flex; align-items: baseline; gap: var(--rd-space-2); color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+.fdom .f4-file-kind small { color: var(--rd-text-3); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); }
+.fdom .f4-file-list { display: flex; flex-direction: column; gap: var(--rd-space-1); min-width: 0; }
+.fdom .f4-file-list a { display: inline-flex; align-items: center; gap: var(--rd-space-2); min-width: 0; overflow-wrap: anywhere; }
+.fdom .f4-file-list small { color: var(--rd-text-3); font-size: var(--rd-text-aux); white-space: nowrap; }
+.fdom .f4-review-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--rd-space-3); }
+.fdom .f4-review-card { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; padding: var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.fdom .f4-review-head { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-2); color: var(--rd-text); }
+.fdom .f4-review-form { display: flex; flex-direction: column; gap: var(--rd-space-3); padding: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
+.fdom .f4-review-form h4 { margin: 0; color: var(--rd-text); font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); }
+.fdom .f4-review-fields { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--rd-space-3) var(--rd-space-6); }
+.fdom .f4-review-submit { display: flex; justify-content: flex-end; }
+.fdom .f4-list { margin: 0; padding-left: 1.2em; }
+.fdom .f4-history { display: grid; gap: var(--rd-space-3); margin: 0; padding: 0; list-style: none; }
+.fdom .f4-history li { display: flex; flex-direction: column; gap: var(--rd-space-1); padding-bottom: var(--rd-space-3); border-bottom: 1px solid var(--rd-line); }
+.fdom .f4-history li:last-child { padding-bottom: 0; border-bottom: 0; }
+.fdom .f4-history-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); color: var(--rd-text); }
+.fdom .f4-history-reason { color: var(--rd-text); overflow-wrap: anywhere; }
+
+/* 大使申请规则修改框：基本两项一行，四类各一组。 */
+.rd-modal.f4-policy-confirm { width: min(760px, calc(100vw - 48px)); }
+.fdom .f4-policy-form { display: flex; flex-direction: column; gap: var(--rd-space-4); }
+.fdom .f4-policy-main { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--rd-space-3); }
+.fdom .f4-policy-bucket { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--rd-space-3); min-width: 0; margin: 0; padding: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
+.fdom .f4-policy-bucket legend { display: inline-flex; align-items: center; gap: var(--rd-space-2); padding: 0 var(--rd-space-1); color: var(--rd-text); font-weight: var(--rd-weight-medium); }
+.fdom .f4-policy-bucket legend [data-mono] { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+.fdom .f4-policy-rule { grid-column: 1 / -1; }
+.fdom .f4-policy-form .rd-input { width: 100%; min-width: 0; }
+.fdom .f4-policy-diff { margin-bottom: var(--rd-space-3); }
+
+@container f4-page (max-width: 900px) {
+  .f4-page .f4-pool-hero, .f4-page .f4-quota-sum { grid-template-columns: minmax(0, 1fr); gap: var(--rd-space-4); }
+  .f4-page .f4-buckets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .f4-page .f4-recovery li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
+  .f4-page .f4-amb-table th:nth-child(2) { width: 0; }
+  .f4-page .f4-amb-table th:nth-child(2), .f4-page .f4-amb-table td:nth-child(2) { display: none; }
+  .f4-page .f4-usage-table th:nth-child(6), .f4-page .f4-usage-table td:nth-child(6) { display: none; }
+  .f4-page .f4-pool-value { font-size: 32px; line-height: 40px; }
+  .f4-page .f4-board-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .fdom .f4-review-pair, .fdom .f4-policy-main { grid-template-columns: minmax(0, 1fr); }
+  .fdom .f4-policy-bucket { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
