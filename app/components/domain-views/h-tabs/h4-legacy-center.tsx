@@ -926,7 +926,7 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
         explain={<><p>平台内置的运营活动，一张卡一个：中文名称和说明、奖励、参与条件、时间、参与情况。卡底部改三语内容，右下角开放、结束、主推和删除。</p><p>同时只能有一个进行中的主推活动。时间来自「七类玩法」里这个活动的开放时间。</p></>}
         actions={<Button icon={<Plus size={14} aria-hidden />} disabledReason={!canModuleWrite ? "没有新建既有活动的权限" : undefined} onClick={openCreateEvent}>新建既有活动</Button>}>
         {gapCount > 0 && <Notice tone="warn" title={`有 ${gapCount} 项翻译没填，相关活动不能设为「进行中」`}>
-          {gapsByEvent.slice(0, 6).map((row) => `${eventName(row.event.id)} 缺 ${row.missing.length} 项`).join("、")}{gapsByEvent.length > 6 ? ` 等 ${gapsByEvent.length} 个活动` : ""}。点卡片底部的「项翻译没填」逐格补齐。
+          {gapsByEvent.slice(0, 6).map((row) => eventName(row.event.id)).join("、")}{gapsByEvent.length > 6 ? ` 等 ${gapsByEvent.length} 个活动` : ""}，在卡片底部逐格补。
         </Notice>}
         {events.length === 0 ? <BlockState state="empty" title="还没有既有活动" detail="点右上角「新建既有活动」登记一个。" />
           : <div className="h4-cards">{events.map((event) => <EventCard key={event.id} event={event}
@@ -952,9 +952,9 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
         explain={<><p>每日免费抽奖和签到满 30 天的加抽共用这一个奖池。每次抽奖按各档概率依次落档。</p><p>App 每次抽奖前检查整个奖池：2–12 档，只认 UVT、USDT、代金券三种奖型，合计正好 100%，至少有一档不发真钱的 UVT 当安慰奖。有一项不合格，整个转盘报错。</p></>}
         actions={<>{wheelPending && pendingTag("转盘奖池")}<Button variant="primary" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={openWheelProbabilities}>调整概率</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={openCreateWheelTier}>新建奖项</Button></>}>
         {wheelBroken && <Notice tone="danger" title="App 转盘现在抽不了">
-          {[pointsTiers.length ? `积分奖项 ${pointsTiers.map((tier) => text(tier.tier)).join("、")}：后端已不支持积分奖型，在下表点「退役」停用（不能撤销），再用合法奖型补足概率。` : "",
-            nexTiers.length ? `${nexTiers.map((tier) => text(tier.tier)).join("、")}：奖型存成了旧名 nex，后端只认 uvt，已提后端修（BUG-426）。修好前这几档的「编辑」先关着：编辑保存会把奖型改成 UVT。` : "",
-            probabilityOk ? "" : `现在概率合计 ${percentText(probabilitySum)}%，要在「调整概率」里补足到 100%；调高概率要提交审批单。`].filter(Boolean).map((line) => <p key={line}>{line}</p>)}
+          {[pointsTiers.length ? `${pointsTiers.map((tier) => text(tier.tier)).join("、")} 是积分奖型，后端已不支持：点「退役」后补足概率。` : "",
+            nexTiers.length ? `${nexTiers.map((tier) => text(tier.tier)).join("、")} 的奖型存成旧名 nex，等后端修（BUG-426）。` : "",
+            probabilityOk ? "" : `概率合计 ${percentText(probabilitySum)}%，要在「调整概率」里补到 100%。`].filter(Boolean).map((line) => <p key={line}>{line}</p>)}
         </Notice>}
         <div className="h4l-wheel-figure">
           <WheelBar tiers={tiers} />
@@ -994,11 +994,11 @@ export default function H4LegacyCenter({ ctx }: { ctx: HCtx }) {
         actions={<Button icon={<Plus size={14} aria-hidden />} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={openCreateWheelGuard}>新建护栏</Button>}>
         {guards.length === 0 ? <BlockState state="empty" title="还没有护栏" detail="没有预算或开关时真钱奖一律改发 UVT 安慰奖。" /> : <div className="h4l-guards">
           {kill && <GuardCard title={GUARD_NAME.kill} icon={<Power size={14} aria-hidden />} value={killState ? "开" : "关"} valueTone={killState ? "ok" : "danger"}
-            sub={killState ? "抽中 USDT 奖项按预算和覆盖率发真钱" : "抽中 USDT 奖项的用户改拿 UVT 安慰奖"}
+            sub={killState ? "抽中 USDT 按预算和覆盖率发真钱" : "抽中 USDT 改发 UVT 安慰奖"}
             explain="关掉后不再发真钱奖，转盘照常能抽。从关到开要另一位超级管理员批准。"
             action={<Button size="sm" variant={killState ? "danger-outline" : undefined} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={() => openWheelKill(kill)}>{killState ? "关闭" : "开启"}</Button>} />}
           {budget && <GuardCard title={GUARD_NAME.budget} icon={<Wallet size={14} aria-hidden />} value={<><span className="h4-num">{amountText(budgetNumber(text(budget.value, "")))}</span><small>USDT / 天</small></>}
-            sub={<>今天已发 <span className="h4-dim">—</span>，后端没有提供，画不出用了多少</>}
+            sub={<>今天已发 <span className="h4-dim">—</span>（后端未提供）</>}
             explain="每次抽中真钱奖前，今天已发的真钱加上这一次超过预算，就改发 UVT 安慰奖。后端按美元记，真钱奖只有 USDT。"
             action={<Button size="sm" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={() => openWheelBudget(budget)}>调整</Button>} />}
           {cap && <GuardCard title={GUARD_NAME.cap} icon={<Ticket size={14} aria-hidden />} value={<small>按各档的每日库存</small>}
