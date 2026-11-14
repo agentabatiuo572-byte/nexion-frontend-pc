@@ -111,7 +111,7 @@ function StageTable({ stages }: { stages: readonly B3Stage[] }) {
     <Table label="各步骤转化数据" className="b3-stage-table">
       <thead>
         <tr>
-          <Th>步骤</Th><Th>用户阶段<Explain label="用户阶段的说明" content="内部的用户阶段编号（L1–L5），App 用户看不到；和运营阶段 P1–P6 不是一回事。" /></Th><Th align="right">用户数</Th><Th align="right">上一步人数</Th><Th align="right">转化率</Th>
+          <Th>步骤</Th><Th>用户阶段<Explain label="用户阶段的说明" content="内部的用户阶段编号（L1–L5），和运营阶段 P1–P6 不是一回事。" /></Th><Th align="right">用户数</Th><Th align="right">上一步人数</Th><Th align="right">转化率</Th>
           <Th align="right">与上月比较<Explain label="与上月比较的说明" content="系统目前不计算月比较，这一列都是「—」。看变化请用下面「按注册周看转化走势」。" /></Th>
           <Th>对应事件</Th>
         </tr>
