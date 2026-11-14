@@ -250,9 +250,8 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
   const saveTree = (record: PendingL4NetworkExport) => {
     l4NetworkCommands.remember(record.fingerprint, record.commandKey, record);
     syncTree();
-    const saved = l4NetworkCommands.list().find(item => item.commandKey === record.commandKey);
-    if (!saved || !isL4NetworkDurable(saved)) throw new Error(formatAdminApiError("L4_TREE_STORAGE_UNAVAILABLE", "L4_TREE_STORAGE_UNAVAILABLE"));
-    return saved;
+    if (!isL4NetworkDurable(record)) throw new Error(formatAdminApiError("L4_TREE_STORAGE_UNAVAILABLE", "L4_TREE_STORAGE_UNAVAILABLE"));
+    return record;
   };
 
   const downloadTree = async (original: PendingL4NetworkExport) => {
