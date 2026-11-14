@@ -937,7 +937,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       <Panel id="h4l-wheel" title="转盘奖池" icon={Disc3} tone="role-1" sub={`${tiers.length} 档 · 合计 ${percentText(probabilitySum)}%`}
         explain={<><p>每日免费抽奖和签到满 30 天的加抽共用这一个奖池。每次抽奖按各档概率依次落档。</p><p>App 每次抽奖前检查整个奖池：2–12 档，只认 UVT、USDT、代金券三种奖型，合计正好 100%，至少有一档不发真钱的 UVT 当安慰奖。有一项不合格，整个转盘报错。</p></>}
         actions={<>{wheelPending && pendingTag("转盘奖池")}<Button variant="primary" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={openWheelProbabilities}>调整概率</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={openCreateWheelTier}>新建奖项</Button></>}>
-        {wheelBroken && <Notice tone="danger" title="App 转盘现在抽不了">
+        {wheelBroken && <Notice tone="danger" title="抽不了的原因">
           {[pointsTiers.length ? `${pointsTiers.map((tier) => text(tier.tier)).join("、")} 是积分奖型，后端已不支持：点「退役」后补足概率。` : "",
             nexTiers.length ? `${nexTiers.map((tier) => text(tier.tier)).join("、")} 的奖型存成旧名 nex，等后端修（BUG-426）。` : "",
             probabilityOk ? "" : `概率合计 ${percentText(probabilitySum)}%，要在「调整概率」里补到 100%。`].filter(Boolean).map((line) => <p key={line}>{line}</p>)}
