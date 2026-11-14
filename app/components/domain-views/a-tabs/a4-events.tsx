@@ -94,6 +94,8 @@ const redriveStatusText = (value: string) => REDRIVE_STATUS[value] ?? "状态未
 const lifecycleText = (value: string) => LIFECYCLE_TEXT[value as A4Lifecycle] ?? "未知状态";
 /** 长事件名只在「.」「_」后面折行，不断在单词中间。 */
 const breakable = (name: string) => name.split(/(?<=[._])/).map((part, index) => <span key={index}>{index > 0 && <wbr />}{part}</span>);
+/** 重新排队预览的失败摘要：后端只给受控原因码，常见的一个翻成人话，原码跟在后面。 */
+const redriveErrorText = (code: string | null | undefined) => !code ? "—" : code === "OUTBOX_DELIVERY_FAILED" ? <>投递失败 <span className="a4-dim" data-mono>{code}</span></> : <span data-mono>{code}</span>;
 const pageName = (code: string) => ALL_L2.find((item) => item.id === code)?.name;
 /** 通用字段里服务端说明说得太满的两项，按后端事实补一句（BF27、BF35）。 */
 const COMMON_FIELD_NOTE: Record<string, string> = {
@@ -462,7 +464,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       completion: "批准前事件目录不变；批准后新事件从「新建」开始，还不记录也不投递，要再按顺序推进上线。",
       statedBrief: {
         impact: "",
-        check: "提交和批准时，后端都核对事件名、归属模块、隐私规则和目录版本。",
+        check: "提交和批准时都核对格式和版本。",
       },
       detail: "新事件或字段要先登记才能用；事件名写成 模块.对象_动作，动作用过去式，不能含隐私信息。",
       // 改版页用 rd 画的多字段表单；字段键、初值和旧的事件登记表单一样，提交时 submit 读到的值不变。
@@ -472,7 +474,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           ? { invalid: true, message: "不得登记包含个人隐私明文的字段", field: "isPII" }
           : { invalid: false, message: "" },
         fields: [
-          { key: "eventName", label: "事件名", inputKind: "text", current: prefillEventName, required: true, wide: true, placeholder: "例如 device.order_paid",
+          { key: "eventName", label: "事件名", inputKind: "text", current: prefillEventName, required: true, placeholder: "例如 device.order_paid",
             pattern: "^[a-z][a-z0-9_]*\\.[a-z0-9]+(?:_[a-z0-9]+)*$",
             patternMessage: "事件名称须使用小写字母，以点号分隔模块与动作、以下划线连接单词，例如 user.account_created",
             explain: "写成 模块.对象_动作，动作用过去式（以 ed、sent、paid、held、bound、dau 结尾）。" },
@@ -548,7 +550,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       completion: "批准前事件不变；批准后多一个必填字段，之后发这个事件要带上它，不带的会被拒绝。以前记下的事件不补这个字段，其他设置不变。",
       statedBrief: {
         impact: "",
-        check: "提交和批准时，后端核对字段名格式、隐私规则、是否重复和目录版本。",
+        check: "提交和批准时都核对字段和版本。",
       },
       facts: <Facts>
         <Fact k="事件"><span data-mono>{schemaSnapshot.eventName}</span></Fact>
@@ -750,7 +752,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         <Fact k="类型">{H3_TYPE_TEXT[snapshot.eventType] ?? snapshot.eventType}</Fact>
         <Fact k="原事件">{redriveStatusText(snapshot.status)} · 已失败 {snapshot.retryCount} 次</Fact>
         <Fact k="任务处理">{redriveStatusText(snapshot.deliveryStatus)} · 已试 {snapshot.deliveryAttemptCount} 次</Fact>
-        <Fact k="最后的失败原因">{snapshot.deliveryLastError ?? snapshot.lastError ?? "—"}</Fact>
+        <Fact k="最后的失败原因">{redriveErrorText(snapshot.deliveryLastError ?? snapshot.lastError)}</Fact>
       </Facts>,
       detail: (
         <>
@@ -808,7 +810,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       confirmTone: next === "disabled" ? "danger" : "primary",
       confirmLabel: next === "disabled" ? "确认停用" : `确认改为${lifecycleText(next)}`,
       statedBrief: {
-        impact: LIFECYCLE_AFTER[next],
+        impact: `推进后${next === "disabled" ? "停用" : `改为${lifecycleText(next)}`}：${LIFECYCLE_AFTER[next]}`,
         check: "后端核对现在的上线进度和版本，只能推进到下一步；别人先改过会被拒绝，刷新后重来。",
       },
       facts: <Facts>
@@ -1137,13 +1139,13 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                   <span className="a4-layer-name">原事件</span>
                   <StatusTag tone={redrivePreview.status === "DEAD" ? "danger" : "neutral"}>{redriveStatusText(redrivePreview.status)}</StatusTag>
                   <span className="a4-dim">已失败 {redrivePreview.retryCount} 次</span>
-                  <span className="a4-layer-err">{redrivePreview.lastError ?? "—"}</span>
+                  <span className="a4-layer-err">{redriveErrorText(redrivePreview.lastError)}</span>
                 </li>
                 <li data-dead={redrivePreview.deliveryStatus === "DEAD" ? "" : undefined}>
                   <span className="a4-layer-name">任务处理</span>
                   <StatusTag tone={redrivePreview.deliveryStatus === "DEAD" ? "danger" : "neutral"}>{redriveStatusText(redrivePreview.deliveryStatus)}</StatusTag>
                   <span className="a4-dim">已试 {redrivePreview.deliveryAttemptCount} 次</span>
-                  <span className="a4-layer-err">{redrivePreview.deliveryLastError ?? "—"}</span>
+                  <span className="a4-layer-err">{redriveErrorText(redrivePreview.deliveryLastError)}</span>
                 </li>
               </ol>
               <div className="rd-toolbar" data-end="">
@@ -1369,7 +1371,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               <Steps label="上线进度" items={LIFECYCLE_ORDER.map((state, index) => ({ label: LIFECYCLE_TEXT[state], state: index < at ? "done" as const : index === at ? "current" as const : "todo" as const }))} />
               <Facts>
                 <Fact k="现在">{LIFECYCLE_TEXT[detailSchema.lifecycleState]}：{LIFECYCLE_NOW[detailSchema.lifecycleState]}</Fact>
-                <Fact k="下一步">{next ? <>改为{LIFECYCLE_TEXT[next]}。{LIFECYCLE_AFTER[next]}</> : "没有下一步：已停用是终点。"}</Fact>
+                <Fact k="下一步">{next ? `改为${LIFECYCLE_TEXT[next]}` : "没有下一步：已停用是终点。"}</Fact>
+                {next && <Fact k="推进后">{LIFECYCLE_AFTER[next]}</Fact>}
               </Facts>
             </div>
             <Facts>
@@ -1452,16 +1455,16 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               });
             }}>下一步</Button>} />}>
         <div className="rd-stack a4-batch-form">
-          <Field label="模块名" required error={batchIssue("domain")} help="2–32 位，小写字母开头，只用小写字母、数字和下划线；不能是已接入的模块">
+          <Field label="模块名" required error={batchIssue("domain")} help={batchIssue("domain") ? undefined : "2–32 位，小写字母开头，只用小写字母、数字和下划线；不能是已接入的模块"}>
             {(control) => <Input {...control} value={batchForm.domain} placeholder="例如 referral" onBlur={() => setBatchTouched((t) => ({ ...t, domain: true }))} onChange={(e) => setBatchForm({ ...batchForm, domain: e.target.value })} />}
           </Field>
-          <Field label="事件名" required error={batchIssue("event")} help={batchForm.domain.trim() ? `完整事件名会是 ${batchForm.domain.trim()}.${batchForm.event.trim() || "…"}；动作用过去式` : "只填模块后面的部分，动作用过去式，例如 referral_bound"}>
+          <Field label="事件名" required error={batchIssue("event")} help={batchIssue("event") ? undefined : batchForm.domain.trim() ? `完整事件名会是 ${batchForm.domain.trim()}.${batchForm.event.trim() || "…"}；动作用过去式` : "只填模块后面的部分，动作用过去式，例如 referral_bound"}>
             {(control) => <Input {...control} value={batchForm.event} placeholder="例如 referral_bound" onBlur={() => setBatchTouched((t) => ({ ...t, event: true }))} onChange={(e) => setBatchForm({ ...batchForm, event: e.target.value })} />}
           </Field>
-          <Field label="发送方" required error={batchIssue("producer")} help="谁发这个事件，写说明即可">
+          <Field label="发送方" required error={batchIssue("producer")} help={batchIssue("producer") ? undefined : "谁发这个事件，写说明即可"}>
             {(control) => <Input {...control} value={batchForm.producer} placeholder="例如 团队结算" onBlur={() => setBatchTouched((t) => ({ ...t, producer: true }))} onChange={(e) => setBatchForm({ ...batchForm, producer: e.target.value })} />}
           </Field>
-          <Field label="使用方" required error={batchIssue("consumer")} help="哪些报表或功能用它">
+          <Field label="使用方" required error={batchIssue("consumer")} help={batchIssue("consumer") ? undefined : "哪些报表或功能用它"}>
             {(control) => <Input {...control} value={batchForm.consumer} placeholder="例如 转化分析、留存报表" onBlur={() => setBatchTouched((t) => ({ ...t, consumer: true }))} onChange={(e) => setBatchForm({ ...batchForm, consumer: e.target.value })} />}
           </Field>
         </div>

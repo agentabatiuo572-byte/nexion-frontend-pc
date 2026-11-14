@@ -25,10 +25,10 @@ export const LIFECYCLE_NOW: Record<A4Lifecycle, string> = {
 };
 /** 推进到这一步之后会怎样，确认框和详情抽屉共用。 */
 export const LIFECYCLE_AFTER: Record<Exclude<A4Lifecycle, "new">, string> = {
-  pending_publish: "推进后仍然不记录、也不投递，只是标成准备发布；下一步才开始分批开放。",
-  gray: "推进后开始分批开放：服务器按用户范围抽 10% 记录和投递；App 发来的行为事件这一步仍不放行，不能保证每个用户都能上报。",
-  full: "推进后全面开放：所有来源都按事件规则记录和投递，字段、来源和采样的检查照常。",
-  disabled: "推进后停用，之后不再记录也不再投递，停用后不能再开放；已排队没送出的也可能被拦下，旧事件不删。",
+  pending_publish: "仍然不记录、也不投递，只是标成准备发布；下一步才开始分批开放。",
+  gray: "服务器按用户范围抽 10% 记录和投递；App 发来的行为事件这一步仍不放行。",
+  full: "所有来源都按事件规则记录和投递，字段、来源和采样的检查照常。",
+  disabled: "之后不再记录也不再投递，已排队的也可能被拦下；旧事件不删，不能再开放。",
 };
 export const NEXT_LIFECYCLE: Partial<Record<A4Lifecycle, Exclude<A4Lifecycle, "new">>> = { new: "pending_publish", pending_publish: "gray", gray: "full", full: "disabled" };
 
