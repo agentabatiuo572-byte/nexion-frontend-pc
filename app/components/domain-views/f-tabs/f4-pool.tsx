@@ -174,7 +174,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
                 hint: "秒 分 时 日 月 星期，比如 0 0 2 * * MON",
                 preview: (value) => `这样写是：${describeSettleCron(value) ?? "自定义时间，页面读不出，后端按原文解析"}` },
               title: "调整自动结算时间", effect: approvalTag(), confirmLabel: "提交审批",
-              facts: <Facts><Fact k="现在是">{settleCronText}</Fact><Fact k="按哪个时区">{SETTLE_ZONE.label}（UTC+7），下次自动结算换算成{zoneNote()}</Fact></Facts>,
+              facts: <Facts><Fact k="现在是">{settleCronText}</Fact><Fact k="按哪个时区">{SETTLE_ZONE.label}（UTC+7）</Fact></Facts>,
               statedBrief: { impact: "批准后的下一次命中就按新时间自动结算最近一个已结束的周；已经结算的不变。", check: "后端只接受 5 段或 6 段的定时表达式，其余拒绝。" },
               completionCopy: approvalCopy("F4 写权限"),
               detail: `团队激励池自动结算时间 · 当前 ${settleCronText}。` }) })}
