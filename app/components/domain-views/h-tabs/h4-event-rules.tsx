@@ -1,4 +1,5 @@
 "use client";
+import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CalendarRange, CircleAlert, CircleCheck, Lock, Settings2, Sparkles } from "lucide-react";
 import type { HCtx } from "./types";
@@ -124,7 +125,7 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
           ctx.toast(isH4ApprovalReceipt(saved) ? saved.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "活动规则已保存");
         } catch (cause) {
           if (own === generation.current) setError(displayAdminError(cause));
-          if (originalKey && !h4PendingFor(`H/h4_event_rule/${base.eventCode}`)) { ctx.openActionConfirm(null); await load(); }
+          if (isHGrowthReadConflict(cause) || originalKey && !h4PendingFor(`H/h4_event_rule/${base.eventCode}`)) { ctx.openActionConfirm(null); await load(); }
           throw cause;
         }
         finally { originalKey = h4PendingFor(`H/h4_event_rule/${base.eventCode}`)?.commandKey; setSaving(false); }

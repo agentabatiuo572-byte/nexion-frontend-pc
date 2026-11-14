@@ -492,20 +492,22 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     } catch (err) { toast(displayAdminError(err)); }
   };
 
-  const recoveryRows: H5RecoveryRow[] = mutations.records.filter(record => !record.ticket).map((record) => ({
+  const recoveryRows: H5RecoveryRow[] = mutations.records.map((record) => ({
     key: record.commandKey,
     name: record.change.name,
-    change: `${record.change.before} → ${record.change.after}${record.acknowledged ? "；申请已建单，批没批准还没查到" : ""}`,
+    change: `${record.change.before} → ${record.change.after}${record.acknowledged && !record.ticket ? "；申请已建单，批没批准还没查到" : ""}`,
     submittedAt: record.createdAt,
-    tag: isRetryExpired(record) ? expiredTag(record.request.kind) : unknownTag(record.request.kind),
+    tag: record.ticket ? pendingTag(record.change.target.startsWith("rule:") ? RULE_APPROVER : FUND_APPROVER) : isRetryExpired(record) ? expiredTag(record.request.kind) : unknownTag(record.request.kind),
     ticket: record.ticket?.id,
     actions: <>
       <Button size="sm" onClick={() => void queryOriginal(record)}>查询原结果</Button>
       {!isRetryExpired(record) && !record.acknowledged && <Button size="sm" disabledReason={mutations.canRetry(record) ? undefined : "当前账号没有原操作的修改权限"} onClick={() => restore(record)}>按原请求重试</Button>}
     </>,
   }));
+  const unknownCount = mutations.records.filter(r => !r.ticket).length;
+  const pendingCount = mutations.records.length - unknownCount;
   const recovery = (
-    <H5RecoveryNotice title={`${recoveryRows.length} 个修改结果未知`} rows={recoveryRows}
+    <H5RecoveryNotice title={`${unknownCount ? `${unknownCount} 个修改结果未知` : ""}${unknownCount && pendingCount ? "；" : ""}${pendingCount ? `${pendingCount} 个修改在等批准` : ""}`} rows={recoveryRows}
       explain={<>
         <p>提交时没收到确定结果，原修改（改的是哪一项、从多少到多少、理由）保存在这个浏览器标签页里。</p>
         <p>先「查询原结果」；查不到、又没过 24 小时，可以「按原请求重试」，后端认得出是同一次提交，不会重复执行或建第二张审批单。过了 24 小时只能查询。</p>
@@ -622,7 +624,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           ? `兑付覆盖率 ${coverageRatio}% 低于红线 ${text(coverage.redlinePct, "—")}%，加奖励、提前解锁这类修改会被拒`
           : `兑付覆盖率 ${coverageRatio}%，高于红线`;
     return (
-      <Conclusion state={recoveryRows.length || coverageBad ? "warn" : "neutral"} icon={CalendarCheck}
+      <Conclusion state={unknownCount || coverageBad ? "warn" : "neutral"} icon={CalendarCheck}
         explain={<>
           <p>签到人数按业务日期算，同一个人一天只算一次；签到率的分母是有连签记录的人，不是注册总人数。</p>
           <p>兑付覆盖率低于红线或不可靠时，会让平台多付的修改（加奖励、调高概率、提前解锁、降门槛）提交和批准时都会被后端拒绝。</p>
@@ -630,7 +632,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         </>}
         action={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>看待批准的申请</Link> : undefined}>
         {`${signText}；${coverageText}`}
-        {recoveryRows.length > 0 && `；${recoveryRows.length} 个修改结果未知，先查询原结果`}
+        {unknownCount > 0 && `；${unknownCount} 个修改结果未知，先查询原结果`}
       </Conclusion>
     );
   })();

@@ -1,5 +1,7 @@
 "use client";
 
+import { isHGrowthReadConflict } from "./h-write-conflict";
+
 import { useEffect, useReducer } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
@@ -166,7 +168,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: () => 
       } catch (error) {
         if (recovering ? isExplicitRejection(error) : firstRejection(error)) {
           forget(original);
-          if (recovering) await settled();
+          if (recovering || isHGrowthReadConflict(error)) await settled();
         }
         throw error;
       }
@@ -189,7 +191,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: () => 
       if (e.status !== undefined && e.status >= 200 && e.status < 300 && e.apiCode !== undefined && e.apiCode >= 400 && e.apiCode < 500) e.status = e.apiCode;
       if (recovering ? isExplicitRejection(error) : firstRejection(error)) {
         forget(original);
-        if (recovering) await settled();
+        if (recovering || isHGrowthReadConflict(error)) await settled();
       }
       throw error;
     }

@@ -1,3 +1,4 @@
+import { isHGrowthReadConflict } from "./h-write-conflict";
 import { guardedFetch, formatAdminApiError } from "./error-messages";
 import { saveH4UploadFile, readH4UploadFile, deleteH4UploadFile } from "./h4-upload-file";
 import type { UploadedAsset } from "./media-client";
@@ -194,7 +195,7 @@ async function send(r: H4Command, recovery: boolean): Promise<Record<string, any
     if (rejected(error, recovery)) {
       forget(r);
       if (r.scope.includes("/h4_media/")) await deleteH4UploadFile(r.commandKey);
-      if (recovery) markH4Read(resourceOf(r.scope), false);
+      if (recovery || isHGrowthReadConflict(error)) markH4Read(resourceOf(r.scope), false);
       throw error;
     }
     throw new OutcomeUnknownError("H4_RESULT_UNKNOWN");

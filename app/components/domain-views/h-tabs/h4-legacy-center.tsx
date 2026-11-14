@@ -4,6 +4,7 @@
  * H4 活动中心「既有活动与转盘」页签（第二部分）：既有活动、七类玩法、创世抽奖、转盘奖池与护栏。
  * 既有表单保留；H4 写入由共享命令层保存原请求、分流审批并恢复。
  */
+import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, CircleDot, Coins, Disc3, Gift, ListChecks, Plus, Power, Ticket, Trash2, Wallet } from "lucide-react";
 import {
@@ -112,6 +113,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         assertH4Fresh("overview", version);
         const before = new Set(pendingH4Commands().map(r => r.commandKey));
         try { await req.run(reason, value, businessValue); }
+        catch (cause) {
+          if (isHGrowthReadConflict(cause)) { ctx.openActionConfirm(null); await reload(); }
+          throw cause;
+        }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
       },
     });
@@ -130,6 +135,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         assertH4Fresh("overview", version);
         const before = new Set(pendingH4Commands().map(r => r.commandKey));
         try { return await req.run(reason, value); }
+        catch (cause) {
+          if (isHGrowthReadConflict(cause)) { ctx.closeConfirm?.(); await reload(); }
+          throw cause;
+        }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
       },
     });
@@ -783,19 +792,20 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       },
     });
   };
-  const hiRecords = pendingH4Commands().filter(r => !h4CommandHasPendingTicket(r.commandKey) && !r.asset);
+  const hiRecords = pendingH4Commands().filter(r => !r.asset);
   const h4Pending = [...new Map(h4TicketObservations().map(row => [row.id, row])).values()];
-  const unknownCount = hiRecords.length;
+  const unknownCount = hiRecords.filter(r => !h4CommandHasPendingTicket(r.commandKey)).length;
   const recovery = <>
-    {unknownCount > 0 && <Notice tone="warn" title={`有 ${unknownCount} 个操作结果未知`} actionBelow action={<ul className="h4-pending">
+    {hiRecords.length > 0 && <Notice tone="warn" title={`${unknownCount ? `有 ${unknownCount} 个操作结果未知` : ""}${unknownCount && hiRecords.length > unknownCount ? "；" : ""}${hiRecords.length > unknownCount ? `${hiRecords.length - unknownCount} 个操作在等审批` : ""}`} actionBelow action={<ul className="h4-pending">
       {hiRecords.map((record) => {
         const subject = hiCommandSubject(record, eventName);
         const expired = isRetryExpired(record);
         const allowed = canRetryH4Command(record);
+        const pending = h4CommandHasPendingTicket(record.commandKey);
         return <li key={record.commandKey}>
-          <span className="h4-pending-what"><b>{subject}</b></span>
+          <span className="h4-pending-what"><b>{subject}{pending && "proposal" in record.request ? ` · ${record.request.proposal.beforeValue} → ${record.request.proposal.afterValue}` : ""}</b></span>
           <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}</span>（北京时间）</span>
-          {expired ? expiredTag() : unknownTag()}
+          {pending ? pendingTag(subject) : expired ? expiredTag() : unknownTag()}
           <Button size="sm" disabledReason={lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey} onClick={() => void lookupH4Command(record)}>查询原结果</Button>
           {!expired && !record.acknowledged && <Button size="sm" disabledReason={!allowed ? "没有这项修改的权限" : undefined} onClick={() => openResumeHICommand(record, subject)}>按原请求重试</Button>}
         </li>;

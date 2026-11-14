@@ -6,6 +6,7 @@
  * 调高金额、启用、改成「符合资格就直接发」提交审批，另一位超级管理员批准后生效；反方向确认后立即保存。
  * 两种结算都只提交审批，另一位管理员批准后才发。结果未知保存完整原请求和确认事实，恢复不依赖概览。
  */
+import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { useReach } from "@/lib/nav/use-reach";
 import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 
@@ -154,8 +155,9 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     } catch (error) {
       changed();
       // A resolved recovery must not retain a closure that can dispatch the old request.
-      if (recovering && !pendingH8RewardCommands(record.adminId).some(r => r.commandKey === record.commandKey)) {
+      if (isHGrowthReadConflict(error) || recovering && !pendingH8RewardCommands(record.adminId).some(r => r.commandKey === record.commandKey)) {
         openConfirm(null);
+        currentRead.current.ready = false;
         setReadReady(false);
         await load();
       }

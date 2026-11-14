@@ -1,5 +1,7 @@
 "use client";
 
+import { isHGrowthReadConflict } from "./h-write-conflict";
+
 import { useEffect, useReducer, useRef } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
@@ -158,7 +160,7 @@ export function useH3Mutations(toast: (message: string) => void, settled: () => 
       if (e.status !== undefined && e.status >= 200 && e.status < 300 && e.apiCode !== undefined && e.apiCode >= 400 && e.apiCode < 500) e.status = e.apiCode;
       if (recovering ? isExplicitRejection(error) : firstRejection(error)) {
         forget(r);
-        if (recovering) await settled();
+        if (recovering || isHGrowthReadConflict(error)) await settled();
         throw error;
       }
       // Keep the key in storage, not in the shared A2 error renderer's operator copy.

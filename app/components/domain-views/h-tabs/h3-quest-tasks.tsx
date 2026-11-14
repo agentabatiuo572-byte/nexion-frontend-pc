@@ -793,14 +793,16 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       run: async () => { await mutations.retry(original); },
     });
   };
-  const recoveryRows: H3RecoveryRow[] = mutations.records.filter(r => !r.ticket).map(original => ({
+  const recoveryRows: H3RecoveryRow[] = mutations.records.map(original => ({
     key: original.commandKey, name: original.change.action, change: <Change from={original.change.before} to={original.change.after} />,
-    submittedAt: original.createdAt, tag: <StatusTag tone="warn">{isRetryExpired(original) ? "已过期" : "结果未知"}</StatusTag>,
+    submittedAt: original.createdAt, tag: original.ticket ? pendingTag() : <StatusTag tone="warn">{isRetryExpired(original) ? "已过期" : "结果未知"}</StatusTag>,
     actions: <><Button size="sm" onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>查询原结果</Button>
       <Button size="sm" disabledReason={mutations.canRetry(original) ? undefined : isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "请查询原结果"} onClick={() => openRecovery(original)}>按原请求重试</Button></>,
   }));
+  const unknownCount = mutations.records.filter(r => !r.ticket).length;
+  const pendingCount = mutations.records.length - unknownCount;
   const recovery = recoveryRows.length > 0 && (
-    <Notice tone="warn" title={<>{`${recoveryRows.length} 个修改结果未知`}<Explain label="结果未知怎么处理" content={<>
+    <Notice tone="warn" title={<>{`${unknownCount ? `${unknownCount} 个修改结果未知` : ""}${unknownCount && pendingCount ? "；" : ""}${pendingCount ? `${pendingCount} 个修改在等批准` : ""}`}<Explain label="结果未知怎么处理" content={<>
       <p>提交时没收到确定结果，可能已经生效。先「查询原结果」；没过 24 小时可以「按原请求重试」，后端认得出是同一次提交，不会重复执行。</p>
       <p>过了 24 小时只能查询。结果确认之前，同一项不能再提交新的修改。</p>
     </>} /></>}>
@@ -899,7 +901,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     ...(region.reviewError ? [{ key: "region-read", tone: "warn" as const, title: "区号规则的审批进度读取失败，暂不能再次提交", go: "weekly" as Tab }] : []),
     ...(pendingApprovals.length ? [{ key: "fund", tone: "neutral" as const, title: `${pendingApprovals.length} 个奖励或倍率的修改在等批准`, go: "dayOne" as Tab }] : []),
   ];
-  const conclusionState = stuck.length || orphans.length || recoveryRows.length ? "warn" : active.length === 0 ? "neutral" : "ok";
+  const conclusionState = stuck.length || orphans.length || unknownCount ? "warn" : active.length === 0 ? "neutral" : "ok";
   const conclusion = (
     <Conclusion state={conclusionState} icon={conclusionState === "warn" ? CircleAlert : undefined}
       explain={<>
@@ -911,7 +913,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       {active.length === 0
         ? "没有启用的首日或每周任务，新用户拿不到任务"
         : `首日 ${dayOne.filter((task) => taskStatusOf(task) === "active").length} 个、每周 ${[...t1, ...t2].filter((task) => taskStatusOf(task) === "active").length} 个任务在启用`}
-      {recoveryRows.length > 0 && `；${recoveryRows.length} 个修改结果未知`}
+      {unknownCount > 0 && `；${unknownCount} 个修改结果未知`}
       {attention.length > 0 ? `；${attention.length} 件要处理` : mutations.auditKnown ? "，没有要处理的事" : ""}
     </Conclusion>
   );
