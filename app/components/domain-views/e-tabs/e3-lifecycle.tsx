@@ -7,15 +7,16 @@
  */
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeftRight, BookOpen, Clock3, Gauge, Hourglass, Info, PackageOpen, RefreshCw, Wallet } from "lucide-react";
+import { ArrowLeftRight, BookOpen, Clock3, Gauge, Hourglass, Info, PackageOpen, RefreshCw, ShieldCheck, Wallet } from "lucide-react";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { e3ConfigAmplifies } from "@/lib/admin/e3-outflow";
-import { BlockState, Button, Cell, Conclusion, ConfigList, ConfigRow, Explain, Fact, Facts, Fold, Notice, PageHeader, Panel,
-  ScaleBar, Stat, StatBand, StatusTag, StepBar, Table, TableMessage, Td, Th, Tr, TrendLines } from "@/app/components/rd";
+import { BlockState, Button, Conclusion, ConfigList, ConfigRow, Explain, Fact, Facts, Fold, Notice, PageHeader, Panel,
+  Modal, ReleaseBody, ScaleBar, SegmentBar, Stat, StatBand, StatusTag, StepBar, Table, TableMessage, Td, Th, Tr, TrendLines } from "@/app/components/rd";
 import type { EViewCtx, McSpec } from "./types";
 import { E3Manual } from "./e3-manual";
 
@@ -94,6 +95,15 @@ const keyName = (key: string) => NAMES[key]
   : key.startsWith("E.device.capacity.applyTo.") ? `${APPLY_TO_SKUS.find((s) => key.endsWith(`.${s.kind}`))?.label ?? key}是否逐月下降`
   : key.startsWith("E.device.taskLock.") ? "提示升级的月损失金额"
   : key);
+/** 一项的值带单位，开关写开启、关闭。待批准、结果未知的说明共用。 */
+const unitOf = (key: string) => /Pct$|ladder\./.test(key) ? "%" : key.startsWith("E.device.taskLock.") ? " USDT" : key.endsWith("subsidyDays") ? " 天"
+  : /stageEarlyEnd|stageMidEnd|cycleMonths/.test(key) ? " 月" : key.endsWith("maxDevicesPerOrder") ? " 台" : "";
+const shown = (key: string, value: string | undefined) => value === undefined ? "—" : value === "开" ? "开启" : value === "关" ? "关闭" : `${value}${unitOf(key)}`;
+/** 一次提交改了什么：只列改动的项，「名字 现在 → 改后」。 */
+const changeText = (p: { keys: string[]; before: Record<string, string>; after: Record<string, string> }) => {
+  const changed = p.keys.filter((key) => p.before[key] !== p.after[key]);
+  return (changed.length ? changed : p.keys).map((key) => `${keyName(key)} ${shown(key, p.before[key])} → ${shown(key, p.after[key])}`).join("；");
+};
 const ELIGIBILITY = ["全部用户", "L2+ 持有者", "L3+ 持有者", "L4+ 持有者", "L5+ 持有者", "L6+ 持有者"];
 
 const num = (value: string) => Number(value);
@@ -130,29 +140,69 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const { pE, e3Loading, e3Error, e3Ready, e3Stats, e3Operations, e3Proposals } = ctx;
   const E3_PROPOSALS = e3Proposals.records.map(p => ({ ...p, original: p, id: p.commandKey, reason: p.input.reason,
     state: p.state === "unknown" && isRetryExpired(p) ? "expired" as const : p.state,
-    at: new Date(p.createdAt).toLocaleString("zh-CN") }));
+    at: businessStamp(p.createdAt) }));
+  type Shown = typeof E3_PROPOSALS[number];
+  const [releasing, setReleasing] = useState<Shown | null>(null);
   const E3_RECOVERY = {
-    lookup: e3Proposals.canQuery ? async (p: typeof E3_PROPOSALS[number]) => {
+    lookup: e3Proposals.canQuery ? async (p: Shown) => {
       try {
-        if (!await e3Proposals.lookup(p.original)) { ctx.toast("暂未查到原提案，结果仍待核实。原操作继续保留，不会重新提交。"); return; }
+        if (!await e3Proposals.lookup(p.original)) { ctx.toast("没有查到原审批单，记录继续保留，不会重新提交。"); return; }
         await ctx.refreshE3();
       } catch (error) { ctx.toast(displayAdminError(error)); }
     } : undefined,
-    retry: async (p: typeof E3_PROPOSALS[number]) => {
+    retry: async (p: Shown) => {
       try { await e3Proposals.send(p.original); await ctx.refreshE3(); }
       catch (error) { if (isExplicitRejection(error)) await ctx.refreshE3(); ctx.toast(displayAdminError(error)); }
     },
+    legacy: e3Proposals.canQuery ? async (r: typeof e3Proposals.legacy[number]) => {
+      try {
+        if (!await e3Proposals.lookupLegacy(r)) { ctx.toast("没有查到原审批单，记录继续保留。"); return; }
+        ctx.toast("已查到原审批单，审批结束后这条自动收起。");
+        await ctx.refreshE3();
+      } catch (error) { ctx.toast(displayAdminError(error)); }
+    } : undefined,
+    release: async (p: Shown) => {
+      setReleasing(null);
+      try { ctx.toast(await e3Proposals.releaseMissing(p.original) ? "已解除，这几项可以重新提交。" : "这次没有确认查无此单，记录继续保留。"); }
+      catch (error) { ctx.toast(displayAdminError(error)); }
+    },
   };
-  const lead = E3_PROPOSALS.filter(p => p.state !== "pending");
-  const recovery = <>{lead.map((p) => p.state === "unknown" || p.state === "submitted"
-      ? <Notice key={p.id} tone="warn" title={`${p.label} · ${p.state === "submitted" ? "当前审批状态待核对" : "提交结果未确认"}`} actionBelow
-          action={<>{E3_RECOVERY.lookup && <Button size="sm" disabled={!!e3Proposals.busy} onClick={() => void E3_RECOVERY.lookup!(p)}>查询原操作</Button>}{p.state === "unknown" && e3Proposals.allowed(p.input.command.op === "e3_config_batch") && <Button size="sm" disabled={!!e3Proposals.busy} onClick={() => void E3_RECOVERY.retry(p)}>按原操作重试</Button>}</>}>
-          {p.state === "submitted" ? <>申请已提交过，现在批没批准还没查到。原内容、理由和命令号继续保留，请查询原操作。原理由：{p.reason}</>
-            : <>原内容、理由和命令号已保存，可能已经生成审批单。先查原操作；查不到再按原内容重试，不会另建一张。原理由：{p.reason}</>}</Notice>
+  const zone = businessZone().label;
+  const what = (p: Shown) => `修改「${p.label.replace(/ 调整$/, "")}」`;
+  const busy = !!e3Proposals.busy;
+  const query = (p: Shown, label = "查询原结果") => E3_RECOVERY.lookup && <Button size="sm" disabled={busy} onClick={() => void E3_RECOVERY.lookup!(p)}>{label}</Button>;
+  const changed = (p: Shown) => <p>{changeText(p)} · {p.at} 提交（{zone}）<br /><span className="e3p-sub">理由：{p.reason}</span></p>;
+  const pendingList = E3_PROPOSALS.filter(p => p.state === "pending");
+  const recovery = <>
+    {E3_PROPOSALS.filter(p => p.state !== "pending").map((p) => p.state === "unknown"
+      ? <Notice key={p.id} tone="warn" title={`${what(p)}结果未知`} actionBelow
+          action={<>{query(p)}{e3Proposals.allowed(p.input.command.op === "e3_config_batch") && <Button size="sm" disabled={busy} onClick={() => void E3_RECOVERY.retry(p)}>按原请求重试</Button>}</>}>
+          {changed(p)}<p>可能已经建了审批单。先查询原结果，查不到再按原请求重试，不会重复建单。</p></Notice>
+      : p.state === "submitted"
+        ? <Notice key={p.id} tone="warn" title={`${what(p)}已提交，审批结果未查到`} actionBelow action={query(p)}>
+            {changed(p)}<p>审批单已建成，现在批没批还没查到，请查询原结果。</p></Notice>
       : p.state === "expired"
-        ? <Notice key={p.id} tone="warn" title={`${p.label} · 已超过 24 小时，只能查询`} actionBelow action={E3_RECOVERY.lookup && <Button size="sm" disabled={!!e3Proposals.busy} onClick={() => void E3_RECOVERY.lookup!(p)}>查询原操作</Button>}>
-            {p.at} 提交的这次修改结果一直没确认。超过 24 小时不再重新发送，只能按原命令号查询有没有生成审批单。</Notice>
-        : <Notice key={p.id} tone="done" title={`${p.label} · 已驳回`}>审批人没有同意，规则没有变化。要改请重新提交。</Notice>)}</>;
+        ? <Notice key={p.id} tone="warn" title={`${what(p)}结果未知，已超过 24 小时`} actionBelow
+            action={<>{query(p)}{e3Proposals.missing.includes(p.commandKey) && <Button size="sm" disabled={busy} onClick={() => setReleasing(p)}>解除待确认</Button>}</>}>
+            {changed(p)}<p>{e3Proposals.missing.includes(p.commandKey) ? "按原请求查询，后端明确没有这张审批单：这次申请没有建成。解除后可以重新提交。" : "不能再重试，只能查询原结果。"}</p></Notice>
+        : <Notice key={p.id} tone="done" title={`${what(p)}已驳回`}>{changed(p)}<p>规则没有变化。要改请重新提交。</p></Notice>)}
+    {pendingList.length > 0 && <Notice tone="progress" title={`${pendingList.length} 项修改等批准`}>
+      <ul className="e3p-pending">{pendingList.map((p) => <li key={p.id}><span>{changeText(p)} · {p.at} 提交</span>{query(p, "查询审批结果")}</li>)}</ul>
+      <p>批准前按现在的规则执行；时间为{zone}。</p></Notice>}
+    {e3Proposals.legacy.map((r) => {
+      const names = [...new Set(r.fingerprint.split("|")[1].split(",").map(keyName))];
+      return <Notice key={r.commandKey} tone="warn" title="早期版本的一次提交结果未知" actionBelow
+        action={E3_RECOVERY.legacy && <Button size="sm" disabled={e3Loading} onClick={() => void E3_RECOVERY.legacy!(r)}>查询原结果</Button>}>
+        <p>{names.slice(0, 3).join("、")}{names.length > 3 ? ` 等 ${names.length} 项` : ""} · {businessStamp(r.createdAt)} 提交（{zone}）</p>
+        <p>这条记录没有保存改成什么和理由，只能查询原结果，不能重试。</p></Notice>;
+    })}
+    {releasing && <Modal title="解除待确认" icon={ShieldCheck} onClose={() => setReleasing(null)} footer={<>
+      <Button onClick={() => setReleasing(null)}>取消</Button>
+      <Button variant="primary" onClick={() => void E3_RECOVERY.release(releasing)}>确认解除</Button></>}>
+      <ReleaseBody label={changeText(releasing)} />
+      <Facts><Fact k="提交时间">{releasing.at}（{zone}）</Fact><Fact k="查询结果">后端没有这张审批单，申请没建成，也不会再建成</Fact><Fact k="解除后">这几项可以重新提交</Fact></Facts>
+    </Modal>}
+  </>;
   const missing = REQUIRED_E3_KEYS.filter((key) => pE(key) === "—");
   const ready = e3Ready && missing.length === 0;
 
@@ -160,8 +210,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     <PageHeader pageId="E3" title="设备使用与升级置换"
       summary="看设备老化和升级置换，维护产能和抵扣规则。"
       actions={<Button icon={<BookOpen size={15} aria-hidden />} onClick={() => setManualOpen(true)}>操作说明手册</Button>}
-      meta={<span className="rd-toolbar"><span>打开时读取，不自动刷新</span>
-        <Button variant="ghost" size="sm" loading={e3Loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.refreshE3()}>刷新</Button></span>}
+      meta={<Button variant="ghost" size="sm" loading={e3Loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.refreshE3()}>刷新</Button>}
       readOnly={ready && !ctx.canWriteE3 ? "你只能查看；修改规则要有这页的修改权限。" : undefined} />
   );
   const manual = manualOpen && <E3Manual ctx={ctx} onClose={() => setManualOpen(false)} />;
@@ -171,7 +220,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       {header}
       {recovery}
       {e3Loading && !e3Ready ? <BlockState state="loading" title="正在读取规则和统计…" />
-        : e3Error ? <BlockState state="error" title="规则和统计没有读到" detail={`${e3Error.replace(/[。.]+$/, "")}。这页的数字和规则都不显示，避免把旧值当成现在的。`} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
+        : e3Error ? <BlockState state="error" title="规则和统计没有读到" detail={e3Error} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
         : e3Ready ? <BlockState state="error" title={`规则没有读全：缺 ${missing.length} 项`} detail={`缺 ${[...new Set(missing.map(keyName))].slice(0, 6).join("、")}${missing.length > 6 ? " 等" : ""}。读全之前不显示规则，也不能修改，请稍后重新读取或联系后端核对配置。`} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
         : <BlockState state="loading" title="正在读取规则和统计…" />}
       {manual}
@@ -235,17 +284,13 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const pendingTag = (keys: readonly string[]) => {
     const p = pendingFor(keys), u = unsettledFor(keys);
     const pendingDetail = E3_PROPOSALS.filter(p => p.state === "pending" && p.keys.some(k => keys.includes(k))).map(p =>
-      `${p.label}：已提交申请，等另一位管理员批准，批准前仍按现在的值执行。提交于 ${p.at}。${p.keys.map(k => {
-        const unit = /Pct$|ladder\./.test(k) ? "%" : k.startsWith("E.device.taskLock.") ? " USDT" : k.endsWith("subsidyDays") ? " 天"
-          : /stageEarlyEnd|stageMidEnd|cycleMonths/.test(k) ? " 月" : k.endsWith("maxDevicesPerOrder") ? " 台" : "";
-        return `${keyName(k)}：${p.after[k]}${unit}`;
-      }).join("；")}。`).join("\n");
-    if (u) return <StatusTag tone="warn" explain={u.state === "submitted" ? `${u.label}：申请已提交过，现在批没批准还没查到，先在页面上方查询原操作。` : `${u.label}：${u.at} 提交的结果还没确认，先在页面上方查询原操作。`}>结果未确认</StatusTag>;
+      `${changeText(p)}。等另一位管理员批准，批准前按现在的值执行。`).join("\n");
+    if (u) return <StatusTag tone="warn" explain={u.state === "submitted" ? "审批单已建成，现在批没批还没查到，先在页面上方查询原结果。" : "这一项有一次提交结果未知，先在页面上方查询原结果。"}>结果未知</StatusTag>;
     return p && <StatusTag tone="progress" icon={Clock3} explain={pendingDetail}>待批准</StatusTag>;
   };
   const adjust = (keys: readonly string[], onClick: () => void, batch = false, label = "调整") => ctx.canWriteE3
     ? (describedBy: string | undefined) => <Button size="sm" aria-describedby={describedBy} onClick={onClick}
-        disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : unsettledFor(keys) ? "这一项有一次提交结果未确认，先在页面上方查询原操作" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : batch && proposalOnly ? BATCH_BLOCKED : undefined}>{label}</Button>
+        disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : unsettledFor(keys) ? "这一项有一次提交结果未知，先在页面上方查询原结果" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : batch && proposalOnly ? BATCH_BLOCKED : undefined}>{label}</Button>
     : undefined;
 
   // ── 产能的预览：改后第几个月是多少，超过 100% 时写 App 现状 ──
@@ -272,25 +317,34 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const ops = e3Operations;
   const okSum = ops.reduce((sum, item) => sum + item.ok, 0), failSum = ops.reduce((sum, item) => sum + item.fail, 0);
   const rate = okSum + failSum > 0 ? `${Number(((okSum / (okSum + failSum)) * 100).toFixed(1))}%` : null;
-  const ageMax = Math.max(cyc, Math.ceil(averageAgeMonths ?? 0), s2 + 1);
   const curve = curveOf(policy, cyc);
   const pendingCurve = pendingFor(["E.device.capacity.band1DeltaPct", "E.device.capacity.band2DeltaPct", "E.device.capacity.band3DeltaPct", "E.device.capacity.floorPct", "E.device.stageEarlyEnd", "E.device.stageMidEnd"]);
+  const afterCurve = pendingCurve && curveOf({ ...policy, ...pendingCurve.after }, cyc);
+  // 纵轴：TrendLines 把「最大值 + 四分之一跨度」取到 0.5 档，100% 的曲线会画到 150%，上半张图空着。
+  // 这里按「最大值 + 四分之一跨度」取整到 5% 当显示上限，把值缩到上限 = 100 再交给它画，刻度和悬停都换算回百分比。只改比例，不改数。
+  const plotted = [...curve, ...(afterCurve ?? []), num(floor)];
+  const hi = Math.max(...plotted), lo = Math.min(...plotted);
+  const scale = 100 / (Math.ceil((hi + ((hi - lo) * 0.25 || hi * 0.1)) / 5) * 5);
+  const stages = stats && [
+    { key: "early", slot: 1 as const, name: `前期（到第 ${s1} 月）`, value: stats.earlyDeviceCount },
+    { key: "mid", slot: 2 as const, name: `中期（第 ${s1 + 1}–${s2} 月）`, value: stats.midDeviceCount },
+    { key: "late", slot: 3 as const, name: `后期（第 ${lateFrom} 月起）`, value: stats.cliffDeviceCount },
+  ];
+  const inUse = stages ? stages.reduce((sum, stage) => sum + stage.value, 0) : null;
   const ledgerHref = "/finance/ledger?keyword=tradein&status=FAILED";
-  const pendingCount = E3_PROPOSALS.filter((p) => p.state === "pending").length;
 
   return <div className="e3p">
     {header}
     <Conclusion state={tradeinOn ? "neutral" : "warn"} icon={tradeinOn ? Gauge : undefined}
-      explain={<><p>平均月龄和后期台数来自在用设备（已回收、已停用、未激活、已退役的不算），月龄按购买时间、没有时按激活时间算整月。</p><p>后期从第 {lateFrom} 月起，由「中期到第几月」决定。</p></>}
-      hint={pendingCount ? `有 ${pendingCount} 张修改申请等批准，批准前按现在的规则执行。` : undefined}>
+      explain={<><p>平均月龄和三段台数只算在用设备，已回收、已停用、未激活、已退役的不算。月龄按购买时间算整月，没有时依次用激活时间、创建时间。</p><p>后期从第 {lateFrom} 月起，由「中期到第几月」决定。</p></>}>
       {tradeinOn ? "升级置换开启中" : "升级置换已关闭"}：平均月龄 {averageAgeMonths !== null ? `${Number(averageAgeMonths.toFixed(2))} 个月` : "—"}，{stats ? countText(stats.cliffDeviceCount) : "—"} 台已进入后期
     </Conclusion>
 
     {recovery}
 
     <StatBand label="设备和升级置换">
-      <Stat label="在用设备平均月龄" icon={Hourglass} tone="role-3" value={averageAgeMonths !== null ? String(Number(averageAgeMonths.toFixed(2))) : "—"} unit="个月"
-        sub={`第 ${lateFrom} 月起进入后期`} explain="在用设备从购买（没有时从激活）到现在的整月数取平均。已回收、已停用、未激活、已退役的设备不算；没有在用设备时也是 0。" />
+      <Stat label="在用设备平均月龄" icon={Hourglass} tone="role-3" value={averageAgeMonths !== null ? String(Number(averageAgeMonths.toFixed(2))) : "—"} unit={averageAgeMonths !== null ? "个月" : undefined}
+        sub={`第 ${lateFrom} 月起进入后期`} explain="在用设备从购买时间（没有时依次用激活、创建时间）到现在的整月数取平均，已回收、已停用、未激活、已退役的不算。没有在用设备时显示「—」。" />
       <Stat label="已进入后期的设备" icon={Gauge} tone="role-3" value={stats ? countText(stats.cliffDeviceCount) : "—"} unit="台"
         sub={`月龄满 ${lateFrom} 个月`} explain="只按月龄数，不看设备的实际产能，也不看它的商品是否参与逐月下降，所以不一定都低于 100%。" />
       <Stat label="本月升级置换申请" icon={ArrowLeftRight} tone="role-2" value={stats ? countText(stats.tradeinMonthCount) : "—"} unit="笔"
@@ -305,44 +359,47 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         actions={pendingCurve && <StatusTag tone="progress" icon={Clock3}>有待批准的修改</StatusTag>}>
         <div className="e3p-curve">
           <TrendLines label={`产能随月龄变化：第 0 月 100%，第 ${s1} 月 ${capText(curve[s1] ?? 0)}，第 ${s2} 月 ${capText(curve[s2] ?? 0)}，第 ${cyc} 月 ${capText(curve[cyc] ?? 0)}，下限 ${floor}%`}
-            ticks={curve.map((_, m) => `${m} 月`)} format={capText} axisFormat={(v) => `${Number(v.toFixed(1))}%`} height={200}
-            series={[{ key: "now", label: "现在", slot: 4, values: curve },
-              ...(pendingCurve ? [{ key: "pending", label: "批准后", slot: "other" as const, values: curveOf({ ...policy, ...pendingCurve.after }, cyc) }] : [])]}
-            marks={[{ key: "floor", text: `下限 ${floor}%`, value: num(floor), tone: "neutral" }]}
+            ticks={curve.map((_, m) => `${m} 月`)} format={(v) => capText(v / scale)} axisFormat={(v) => `${Number((v / scale).toFixed(1))}%`} height={280}
+            series={[{ key: "now", label: "现在", slot: 4, values: curve.map((v) => v * scale) },
+              ...(afterCurve ? [{ key: "pending", label: "批准后", slot: "other" as const, values: afterCurve.map((v) => v * scale) }] : [])]}
+            marks={[{ key: "floor", text: `下限 ${floor}%`, value: num(floor) * scale, tone: "neutral" }]}
             event={{ index: Math.min(s2, cyc), text: `第 ${lateFrom} 月起后期` }} />
-          <div className="e3p-age">
-            <div className="e3p-age-head"><span>在用设备平均月龄</span><b>{averageAgeMonths !== null ? `${Number(averageAgeMonths.toFixed(2))} 个月` : "—"}</b><span className="e3p-sub">后期区间从第 {lateFrom} 月起</span></div>
-            {stats && <ScaleBar label="平均月龄" valueText={averageAgeMonths !== null ? `平均 ${Number(averageAgeMonths.toFixed(2))} 个月；前期到第 ${s1} 月，中期到第 ${s2} 月，后期从第 ${lateFrom} 月起` : "—"} max={ageMax}
-              value={averageAgeMonths} range={{ low: s2, high: ageMax }} tone="role-3"
-              ticks={[{ value: 0, text: "0" }, { value: s1, text: `${s1} 月` }, { value: s2, text: `${s2} 月` }, { value: ageMax, text: `${ageMax} 月` }]} />}
-          </div>
         </div>
       </Panel>
 
-      <Panel title="最近 24 小时" icon={Clock3} tone="role-2" sub={rate ? `成功率 ${rate}` : "24 小时内没有处理"}
-        explain={<><p>按服务器时间往前 24 小时统计。成功率 = 成功 ÷（成功 + 失败），恢复不算进去；三类来源不同，同一台设备可能被算进多类。</p><p>恢复：回收、停用是之后被恢复的次数；置换是 24 小时内回退的申请数。</p><p>这页不代用户换机，也不处理单台设备；单台设备在「设备管理」里看。</p></>}
-        actions={reach(ledgerHref, "finance_d4_read") && <Link className="rd-link" href="/finance/ledger?keyword=tradein&status=FAILED">查看失败的置换账单</Link>}>
-        <Table label="最近 24 小时的回收、置换、停用">
-          <thead><tr><Th>类别</Th><Th align="right">成功</Th><Th align="right">失败</Th><Th align="right">恢复</Th><Th>最近记录</Th></tr></thead>
-          <tbody>
-            {ops.length === 0 ? <TableMessage columns={5}>24 小时内没有记录</TableMessage> : ops.map((t) => (
-              <Tr key={t.nm}>
-                <Td>{t.nm}</Td>
-                <Td align="right"><span className="e3p-num" data-zero={t.ok === 0 ? "" : undefined}>{countText(t.ok)}</span></Td>
-                <Td align="right"><span className="e3p-num" data-zero={t.fail === 0 ? "" : undefined} data-tone={t.fail > 0 ? "danger" : undefined}>{countText(t.fail)}</span></Td>
-                <Td align="right"><span className="e3p-num" data-zero={t.roll === 0 ? "" : undefined}>{countText(t.roll)}</span></Td>
-                <Td><span className="e3p-latest">{t.ts}<Explain label={`${t.nm}最近记录的说明`} content={<><p>{t.k}：{t.reason}</p><p>失败数大于 0 时标为最近失败，否则标为最新成功，不是逐条最后一次的结果。具体原因到操作记录里查。</p></>} /></span></Td>
-              </Tr>))}
-          </tbody>
-        </Table>
-      </Panel>
+      <div className="e3p-side">
+        <Panel title="在用设备在哪一段" icon={Hourglass} tone="role-3" sub={inUse ? `共 ${countText(inUse)} 台` : undefined} data-proof="e3-age-stages"
+          explain={`按月龄分段：前期到第 ${s1} 月（含刚买的第 0 月），中期到第 ${s2} 月，后期从第 ${lateFrom} 月起。只算在用设备，口径同平均月龄。`}>
+          {stages && inUse ? <SegmentBar label="在用设备按月龄分段" segments={stages.map((stage) => ({ key: stage.key, slot: stage.slot, value: stage.value,
+              label: stage.name, text: `${stage.name} ${countText(stage.value)} 台` }))} />
+            : <p className="e3p-sub">{stages ? "没有在用设备" : "—"}</p>}
+        </Panel>
+
+        <Panel title="最近 24 小时" icon={Clock3} tone="role-2" sub={rate ? `成功率 ${rate}` : "24 小时内没有处理"}
+          explain={<><p>按服务器时间往前 24 小时统计。成功率 = 成功 ÷（成功 + 失败），恢复不算进去；三类来源不同，同一台设备可能被算进多类。</p><p>恢复：回收、停用是之后被恢复的次数；置换是 24 小时内回退的申请数。</p><p>这页不代用户换机，也不处理单台设备；单台设备在「设备管理」里看。</p></>}
+          actions={reach(ledgerHref, "finance_d4_read") && <Link className="rd-link" href="/finance/ledger?keyword=tradein&status=FAILED">查看失败的置换账单</Link>}>
+          <Table label="最近 24 小时的回收、置换、停用">
+            <thead><tr><Th>类别</Th><Th align="right">成功</Th><Th align="right">失败</Th><Th align="right">恢复</Th><Th>最近记录</Th></tr></thead>
+            <tbody>
+              {ops.length === 0 ? <TableMessage columns={5}>24 小时内没有记录</TableMessage> : ops.map((t) => (
+                <Tr key={t.nm}>
+                  <Td>{t.nm}</Td>
+                  <Td align="right"><span className="e3p-num" data-zero={t.ok === 0 ? "" : undefined}>{countText(t.ok)}</span></Td>
+                  <Td align="right"><span className="e3p-num" data-zero={t.fail === 0 ? "" : undefined} data-tone={t.fail > 0 ? "danger" : undefined}>{countText(t.fail)}</span></Td>
+                  <Td align="right"><span className="e3p-num" data-zero={t.roll === 0 ? "" : undefined}>{countText(t.roll)}</span></Td>
+                  <Td><span className="e3p-latest">{t.ts}<Explain label={`${t.nm}最近记录的说明`} content="24 小时内这一类最后一条记录的时间，不分成功失败；没有记录时写「—」。每条的结果到「操作记录与审批」查。" /></span></Td>
+                </Tr>))}
+            </tbody>
+          </Table>
+        </Panel>
+      </div>
     </div>
 
     {proposalOnly && ctx.canWriteE3 && <Notice tone="warn" title="成组修改暂时不能提交">{BATCH_BLOCKED}</Notice>}
 
     {/* 任务产能节奏：产能随月龄下降（参与任务递减的商品） */}
     <Panel title="产能规则" icon={Gauge} tone="role-4" sub="7 项" data-proof="e3-capacity-rules"
-      explain="设备用得越久，能接的任务越少。修改都先提交审批，另一位管理员批准后才生效。">
+      explain="产能按月龄分三段，每段每月按设定的比例变化。修改都先提交审批，另一位管理员批准后才生效。">
       <ConfigList label="产能规则">
         {([1, 2, 3] as const).map((band) => {
           const key = `E.device.capacity.band${band}DeltaPct`;
@@ -353,10 +410,10 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             action={adjust([key], () => bandSingle(band))} />;
         })}
         <ConfigRow name="三段的分界月份" value={`前期到第 ${s1} 月 · 中期到第 ${s2} 月`} sub={<>{pendingTag(["E.device.stageEarlyEnd", "E.device.stageMidEnd", "E.device.cycleMonths"])}<span className="e3p-sub">图上画 {cyc} 个月</span></>}
-          what="三段各从第几个月到第几个月，和曲线画几个月" when="三个数一起提交，批准后一起生效" effect="分界往后，下降来得晚；往前，下降来得早。分界改动让某个月产能变高时算多付钱。「曲线画几个月」只影响图。"
+          what="三段各从第几个月到第几个月，和曲线画几个月" when="三个数一起提交，批准后一起生效" effect="跨过分界的月份改按另一段的比例算，有月份产能因此变高就算多付钱。「曲线画几个月」只影响图。"
           action={adjust(["E.device.stageEarlyEnd", "E.device.stageMidEnd", "E.device.cycleMonths"], () => multi({
             name: "产能分段周期", title: "调整三段的分界月份", ascending: true,
-            hint: "要满足：前期到第几月 < 中期到第几月 < 曲线画几个月。",
+            hint: "要满足：前期截止月 < 中期截止月 < 曲线显示月数。",
             detail: "三个数一起提交、一起批准。前两项决定产能分段；曲线画几个月只影响这页图的长度，不截断用户的产能。",
             impact: "改产能三段的分界月份。分界改动让某个月的产能变高时，平台多付任务收益。",
             coverageLead: "这次改动会让某些月份的产能变高，平台多付任务收益",
@@ -376,21 +433,21 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             preview: capPreview("E.device.capacity.floorPct"), coverageLead: "调高下限会让老设备产能更高，平台多付任务收益",
             facts: capFacts("E.device.capacity.floorPct", "产能下限") }))} />
         <ConfigRow name="新机任务补贴天数" value={`${pE("E.device.capacity.subsidyDays")} 天`} sub={pendingTag(["E.device.capacity.subsidyDays"])}
-          what="新设备开头这些天，App 显示「补贴中」，不显示产能百分比" where="App 设备卡片" when="批准后，已有设备下次显示也按新天数算"
+          what="参与逐月下降的新设备在这些天里，App 显示「补贴中」，不显示产能百分比" where="App 设备卡片" when="批准后，已有设备下次显示也按新天数算"
           effect="只改 App 上的显示，不改产能和收益的计算。从购买时间算起，没有购买时间才从激活时间算。"
           action={adjust(["E.device.capacity.subsidyDays"], () => single({ label: NAMES["E.device.capacity.subsidyDays"], key: "E.device.capacity.subsidyDays", unit: "天", title: "调整新机任务补贴天数",
-            detail: "新设备从购买时间（没有时从激活时间）算起这些天，App 显示「补贴中」。只改显示，不改产能和收益。已有设备下次显示也按新天数算。",
+            detail: "参与逐月下降的新设备从购买时间（没有时从激活时间）算起这些天，App 显示「补贴中」。只改显示，不改产能和收益。已有设备下次显示也按新天数算。",
             impact: "改 App 显示「补贴中」的天数，不改产能和收益的计算。", hint: "0 到 1,000,000 的整数，0 表示不显示补贴",
             facts: <Facts><Fact k="改的是">新机任务补贴天数</Fact><Fact k="影响谁">参与逐月下降的设备在 App 上的显示</Fact></Facts> }))} />
         <ConfigRow name="哪些商品逐月下降" value={`${declining.length} 类下降 · ${exempt.length} 类始终 100%`}
           sub={<>{pendingTag(APPLY_TO_SKUS.map((s) => `E.device.capacity.applyTo.${s.kind}`))}<span className="e3p-sub">始终 100%：{exempt.map((s) => s.label).join("、") || "无"}<Explain label="逐月下降的商品" content={`按曲线下降：${declining.map((s) => s.label).join("、") || "无"}。`} /></span></>}
           what="每类商品是按上面的曲线下降，还是始终 100%（参与任务递减）" when="八项一起提交，批准后对这类商品的所有设备生效"
-          effect="从下降改成始终 100%，这类设备产能更高，平台多付任务收益（上面设成正数增长时相反）。"
+          effect="改成始终 100% 后，曲线低于 100% 的月份产能变高，平台多付任务收益；曲线高于 100% 时相反。"
           action={adjust(APPLY_TO_SKUS.map((s) => `E.device.capacity.applyTo.${s.kind}`), () => multi({
             name: "产能是否逐月下降（按商品）", title: "调整哪些商品逐月下降",
             hint: "参与递减：按产能曲线逐月下降；免递减：始终 100%。",
             detail: "八类一起提交、一起批准，批准后对这类商品的所有设备生效，不改已结算的收益。",
-            impact: "改每类商品的产能是否逐月下降。改成免递减时，这类设备产能更高，平台多付任务收益。",
+            impact: "改每类商品的产能是否逐月下降。改成免递减时，曲线低于 100% 的月份产能变高，平台多付任务收益。",
             coverageLead: "这次改动会让某类设备产能更高，平台多付任务收益",
             facts: <Facts><Fact k="现在下降">{declining.map((s) => s.label).join("、") || "—"}</Fact><Fact k="现在始终 100%">{exempt.map((s) => s.label).join("、") || "—"}</Fact></Facts>,
             fields: APPLY_TO_SKUS.map((s) => ({ key: s.kind, paramKey: `E.device.capacity.applyTo.${s.kind}`, label: s.label, inputKind: "select" as const, options: ["参与递减", "免递减"] })),
@@ -445,7 +502,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
                 { key: "credit2", paramKey: "E.tradein.ladder.credit2", label: "第 2 档（%）", inputKind: "number", placeholder: "60", warnAbove: 75, warnText: "超过 75% 让利很大，提交前请看一下兑付覆盖率" },
                 { key: "credit3", paramKey: "E.tradein.ladder.credit3", label: "第 3 档（%）", inputKind: "number", placeholder: "45", warnAbove: 75, warnText: "超过 75% 让利很大，提交前请看一下兑付覆盖率" },
                 { key: "credit4", paramKey: "E.tradein.ladder.credit4", label: "第 4 档（%）", inputKind: "number", placeholder: "30", warnAbove: 75, warnText: "超过 75% 让利很大，提交前请看一下兑付覆盖率" },
-                { key: "credit5", paramKey: "E.tradein.ladder.credit5", label: "第 5 档（超过界线 4，%）", inputKind: "number", placeholder: "15", warnAbove: 75, warnText: "超过 75% 让利很大，提交前请看一下兑付覆盖率" },
+                { key: "credit5", paramKey: "E.tradein.ladder.credit5", label: "第 5 档（不低于界线 4，%）", inputKind: "number", placeholder: "15", warnAbove: 75, warnText: "超过 75% 让利很大，提交前请看一下兑付覆盖率" },
               ],
             }), true, "调整抵扣比例")?.(undefined)}
           </span>}
@@ -457,7 +514,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         <div className="e3p-cuts">
           <span className="e3p-sub">分档界线（已赚回 ÷ 实付价）</span>
           <ScaleBar label="分档界线" valueText={`第 1 档低于 ${cuts[0]}%；第 2 档 ${cuts[0]}% 到 ${cuts[1]}%；第 3 档 ${cuts[1]}% 到 ${cuts[2]}%；第 4 档 ${cuts[2]}% 到 ${cuts[3]}%；第 5 档 ${cuts[3]}% 及以上`}
-            max={Math.max(100, num(cuts[3]))} bands={{ labels: ["第 1 档", "第 2 档", "第 3 档", "第 4 档", "第 5 档"], openEnd: true, marks: cuts.map((c) => ({ value: num(c), text: `${c}%` })) }} />
+            max={Math.max(100, num(cuts[3])) * 1.25} bands={{ labels: ["第 1 档", "第 2 档", "第 3 档", "第 4 档", "第 5 档"], openEnd: true, marks: cuts.map((c) => ({ value: num(c), text: `${c}%` })) }} />
         </div>
       </div>
 

@@ -1016,9 +1016,12 @@
 .e3p { display: grid; gap: var(--rd-section-gap); min-width: 0; }
 .e3p .e3p-curve { display: grid; gap: var(--rd-space-4); min-width: 0; }
 .e3p .e3p-curve .rd-chart { max-width: none; }
-.e3p .e3p-age { display: grid; gap: var(--rd-space-2); padding-top: var(--rd-space-4); border-top: 1px solid var(--rd-line); --rd-track-w: 100%; }
-.e3p .e3p-age-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-2) var(--rd-space-3); color: var(--rd-text-2); }
-.e3p .e3p-age-head b { color: var(--rd-text); font-size: var(--rd-text-section); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+/* 下限的字写在参考线左头：曲线在左边是 100%，末端常常落在下限上。 */
+.e3p .e3p-curve .rd-chart-ref span { right: auto; left: 0; padding-left: 0; }
+/* 右栏两块叠起来和左边的图一样高：分段条按内容高，最近 24 小时占满剩下的。 */
+.e3p .e3p-side { display: grid; grid-template-rows: auto 1fr; gap: var(--rd-section-gap); min-width: 0; }
+.e3p .e3p-pending { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--rd-space-2); }
+.e3p .e3p-pending li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--rd-space-2) var(--rd-space-3); }
 .e3p .e3p-sub { display: inline-flex; align-items: center; gap: var(--rd-space-1); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .e3p .e3p-num { font-variant-numeric: tabular-nums; }
 .e3p .e3p-num[data-zero] { color: var(--rd-text-3); }
@@ -1028,7 +1031,7 @@
 .e3p .e3p-ladder-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2) var(--rd-space-3); }
 .e3p .e3p-ladder-head h3 { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); }
 .e3p .e3p-ladder-actions { display: inline-flex; flex-wrap: wrap; gap: var(--rd-space-2); margin-inline-start: auto; }
-.e3p .e3p-cuts { display: grid; gap: var(--rd-space-2); --rd-track-w: 100%; max-width: 640px; }
+.e3p .e3p-cuts { display: grid; gap: var(--rd-space-2); --rd-track-w: 100%; }
 .e3p-warn { display: block; margin-top: var(--rd-space-1); color: var(--rd-warn); }
 .e3p-manual { display: grid; gap: var(--rd-space-5); }
 .e3p-manual p { margin: 0; }
