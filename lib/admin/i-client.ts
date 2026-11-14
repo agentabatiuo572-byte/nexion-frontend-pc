@@ -1,7 +1,7 @@
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { parseIOverview, parseNovaSocialEventPage, parseNovaSocialSample } from "@/lib/admin/i-overview-contract";
+import { parseIOverview, parseNotificationCampaign, parseNovaSocialEventPage, parseNovaSocialSample } from "@/lib/admin/i-overview-contract";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -22,7 +22,13 @@ function idempotencyKey() {
 // 落 sessionStorage 而非内存:刷新页面后重试必须仍是同一命令号,否则后端无法去重。
 // fingerprint = `${method}:${path}:${body}` —— path 带目标对象 id,method + path 区分动作类型。
 type I1Original = { owner: number; method: string; path: string; body: string };
-type IContentPending = PendingMutationRecord & { i1?: I1Original; i2?: I1Original };
+export type I3FormSnapshot = {
+  audienceCatalog: NotificationAudienceCatalog;
+  deliveryCatalog: NotificationCampaignOverview["deliveryCatalog"];
+  estimatedAudience: number | null;
+  estimatedAt: number | null;
+};
+type IContentPending = PendingMutationRecord & { i1?: I1Original; i2?: I1Original; i3?: I1Original & { snapshot?: NotificationCampaignRow; formSnapshot?: I3FormSnapshot } };
 export type I1Command = PendingMutationRecord & {
   original?: I1Original;
   label: string;
@@ -32,11 +38,175 @@ export type I1Command = PendingMutationRecord & {
   change: string;
 };
 
-// One instance for the domain. I1/I2 keep expired evidence for read-only recovery.
+// One instance for the domain. Retain expired evidence for query-only recovery.
 const uncertainCommandKeys = createPendingMutationStore<IContentPending>({
   storageKey: "nexion-admin-i-content-uncertain-commands-v1",
-  retainExpiredRecords: (row) => /^(POST|PUT|PATCH|DELETE):\/(copy-ab|nova)\//.test(row.fingerprint),
+  retainExpiredRecords: (row) => /^(POST|PUT|PATCH|DELETE):\/(copy-ab\/|nova\/|campaigns(?::|\/))/.test(row.fingerprint),
 });
+
+/** Preserve BigDecimal budget digits at each I3 JSON boundary, following the E6/G7 decimal boundary convention. */
+export function parseI3Json(text: string): unknown {
+  return JSON.parse(text.replace(/("budget"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"'));
+}
+
+function i3CampaignBody(body: Record<string, unknown>, reason: string): string {
+  const budget = body.budget;
+  let decimal: string | undefined;
+  if (typeof budget === "string") {
+    if (!/^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(budget)) throw new Error("预算记录格式不正确，请核对 USD 金额。");
+    decimal = budget.replace(/^(-?)0+(?=\d)/, "$1").replace(/^(-?)\./, (_, sign: string) => `${sign}0.`).replace(/\.(?=$|[eE])/, "");
+  }
+  return "{" + Object.entries(withReason(body, reason)).filter(([, value]) => value !== undefined)
+    .map(([key, value]) => JSON.stringify(key) + ":" + (key === "budget" && decimal !== undefined ? decimal : JSON.stringify(value))).join(",") + "}";
+}
+
+export type I3Command = PendingMutationRecord & {
+  original?: I1Original;
+  snapshot?: NotificationCampaignRow;
+  formSnapshot?: I3FormSnapshot;
+  action: "create" | "draft" | "schedule" | "send-now" | "cancel" | "delete";
+  name: string;
+  target: string;
+  reason: string;
+  change: string;
+};
+
+/** Decode persisted/legacy JSON once. Original request bytes are never rebuilt for replay. */
+function readI3Command(row: IContentPending): I3Command | undefined {
+  const owner = useAdminAuth.getState().session?.adminId;
+  if (owner === undefined || (row.i3 ? row.i3.owner !== owner : !hasPersistedPendingCommandOwner(String(owner)))) return undefined;
+  const match = row.fingerprint.match(/^(POST|PATCH|DELETE):(\/campaigns(?:\/[^:]+)?):([\s\S]*)$/);
+  if (!match || match[2] === "/campaigns/audience-estimate" || match[2].startsWith("/campaigns/caps/")) return undefined;
+  const fallback: I3Command = { ...row, action: "create", name: "结果未知", target: "", reason: "", change: "" };
+  try {
+    const [, method, path, body] = match;
+    if (row.i3 && (row.i3.method !== method || row.i3.path !== path || row.i3.body !== body)) return fallback;
+    const payload: unknown = parseI3Json(body);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return fallback;
+    const input = payload as Record<string, unknown>;
+    if (typeof input.reason !== "string" || typeof input.operator !== "string") return fallback;
+    const [, , id, operation] = path.split("/").map(decodeURIComponent);
+    const action = path === "/campaigns" && method === "POST" ? "create"
+      : id && method === "PATCH" && operation === "draft" ? "draft"
+        : id && method === "DELETE" && !operation ? "delete"
+          : id && method === "POST" && ["schedule", "send-now", "cancel"].includes(operation) ? operation as "schedule" | "send-now" | "cancel" : undefined;
+    if (!action || action !== "create" && (!Number.isInteger(input.expectedRevision) || Number(input.expectedRevision) < 0)) return fallback;
+    if (["create", "draft"].includes(action)) {
+      if (!["name", "titleZh", "titleVi", "titleEn", "bodyZh", "bodyVi", "bodyEn", "kind", "ctaHref", "ctaLabel", "tier"].every((key) => typeof input[key] === "string")) return fallback;
+      const target = input.audienceTarget as Record<string, unknown> | null;
+      if (!target || typeof target !== "object" || !["phaseMin", "phaseMax", "language"].every((key) => typeof target[key] === "string")
+        || !Number.isInteger(target.registrationDaysMin) || input.budget != null && !(typeof input.budget === "string" && /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(input.budget))) return fallback;
+    }
+    if (["schedule", "send-now"].includes(action) && typeof input.schedule !== "string") return fallback;
+    const snapshot = row.i3?.snapshot ? parseNotificationCampaign(row.i3.snapshot) as NotificationCampaignRow : undefined;
+    const formSnapshot = row.i3?.formSnapshot;
+    if (formSnapshot && (!formSnapshot.audienceCatalog || !formSnapshot.deliveryCatalog || formSnapshot.audienceCatalog.conditionLogic !== "AND"
+      || ![formSnapshot.audienceCatalog.phases, formSnapshot.audienceCatalog.languages, formSnapshot.deliveryCatalog.kinds, formSnapshot.deliveryCatalog.ctaRoutes]
+        .every((options) => Array.isArray(options) && options.every((option) => option && typeof option.value === "string" && typeof option.label === "string"))
+      || formSnapshot.estimatedAudience !== null && (!Number.isSafeInteger(formSnapshot.estimatedAudience) || formSnapshot.estimatedAudience < 0)
+      || formSnapshot.estimatedAt !== null && !Number.isFinite(formSnapshot.estimatedAt))) return fallback;
+    if (snapshot && (snapshot.id !== id || snapshot.revision !== input.expectedRevision)) return fallback;
+    const change = action === "schedule" ? String(input.schedule) : action === "send-now" ? "已排期 → 已发送"
+      : action === "cancel" ? "已排期 → 已取消" : action === "delete" ? "从列表移除"
+        : `${input.tier} · ${JSON.stringify(input.audienceTarget)}`;
+    return { ...row, original: { owner, method, path, body }, snapshot, formSnapshot, action,
+      name: snapshot?.name ?? String(input.name ?? id), target: id ?? "create", reason: input.reason, change };
+  } catch { return fallback; }
+}
+
+export function pendingI3Commands(): I3Command[] {
+  return uncertainCommandKeys.list().flatMap((row) => {
+    const command = readI3Command(row);
+    return command ? [command] : [];
+  });
+}
+
+export function i3RetryPermission(command: I3Command): string | undefined {
+  if (!i1CanWrite("content_i3_write")) return "当前账号没有这项操作权限，请查询原结果。";
+  // The execution permission is checked again server-side. Legacy action records without an original tier cannot prove this prerequisite.
+  if (["schedule", "send-now", "cancel"].includes(command.action)) {
+    if (!command.snapshot) return "原操作记录不完整，只能查询核对，不能重试。";
+    if (command.snapshot.tier === "critical" && !i1CanWrite("content_i3_critical_send")) return "排期、发送和取消紧急通知要有紧急通知发送权限";
+  }
+  return undefined;
+}
+
+async function sendI3Command(command: I3Command, retry: boolean): Promise<void> {
+  if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
+  if (useAdminAuth.getState().session?.adminId !== command.original.owner) throw new Error("登录身份已变更，请重新打开页面。");
+  if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
+  const permission = i3RetryPermission(command);
+  if (permission) throw new Error(permission);
+  if (!uncertainCommandKeys.isDurablyStored(command.fingerprint, command.commandKey)) throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
+  let response: Response, payload: ApiResult<unknown>;
+  try {
+    response = await guardedFetch(`/api/admin/content${command.original.path}`, { method: command.original.method,
+      body: command.original.body, headers: { "Content-Type": "application/json", "Idempotency-Key": command.commandKey }, cache: "no-store" });
+    payload = parseI3Json(await response.text()) as ApiResult<unknown>;
+  } catch {
+    throw Object.assign(new OutcomeUnknownError("结果未知，请查询原结果或按原请求重试。"), { commandKey: command.commandKey });
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Number.isInteger(payload.code)
+    || payload.message !== undefined && typeof payload.message !== "string") {
+    throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  }
+  if (!response.ok || payload.code !== 0 || response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
+    const status = response.ok && payload.code! >= 400 && payload.code! < 500 ? payload.code : response.status;
+    const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status, reasonCode: payload.message });
+    const rejected = retry ? isExplicitRejection(failure)
+      : isDeterministicRejection(response.status, payload.code) && payload.code! < 500 && !isIdempotencyOutcomeOpen(payload.message);
+    if (rejected && response.headers.get("X-Nexion-Upstream-Outcome") !== "unknown") {
+      uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+      throw failure;
+    }
+    throw Object.assign(new OutcomeUnknownError(failure.message), { commandKey: command.commandKey });
+  }
+  // A historical receipt resolves this command only; the page must read current state separately.
+  let valid = false;
+  if (command.action === "delete") valid = payload.data === null;
+  else {
+    try {
+      const row = parseNotificationCampaign(payload.data) as NotificationCampaignRow;
+      const input = JSON.parse(command.original.body) as Record<string, unknown>;
+      const expectedStatus = { create: "draft", draft: "draft", schedule: "scheduled", "send-now": "sent", cancel: "cancelled" }[command.action];
+      valid = !!row.id && row.status === expectedStatus
+        && (command.action === "create" ? row.revision === 0 && row.name === String(input.name).trim()
+          : row.id === command.target && row.revision === Number(input.expectedRevision) + (command.action === "send-now" ? 2 : 1));
+    } catch { /* Unreadable success is still unknown; retain the original request. */ }
+  }
+  if (!valid) throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+}
+
+/** Read-only reconciliation does not claim that a current row is the original command's receipt. */
+export async function fetchI3CampaignOverview(): Promise<NotificationCampaignOverview> {
+  return parseIOverview("I3", await apiRequest<unknown>("/campaigns/overview")) as NotificationCampaignOverview;
+}
+
+export async function retryI3Command(saved: I3Command): Promise<void> {
+  const command = pendingI3Commands().find((row) => row.commandKey === saved.commandKey);
+  if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
+  return sendI3Command(command, true);
+}
+
+async function prepareI3Command(path: string, init: RequestInit, snapshot?: NotificationCampaignRow, formSnapshot?: I3FormSnapshot): Promise<void> {
+  const owner = useAdminAuth.getState().session?.adminId;
+  if (owner === undefined) throw new Error("无法确认当前登录账号，请重新登录后再操作。");
+  const fingerprint = `${init.method}:${path}:${init.body}`;
+  const commandKey = idempotencyKey();
+  const i3 = { owner, method: init.method!, path, body: String(init.body), snapshot, formSnapshot };
+  const command = readI3Command({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i3 });
+  if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
+  if (pendingI3Commands().some((row) => !row.original || row.target === command.target)) throw new Error("此对象有结果未知的原操作，请先到页面上方核对。");
+  const permission = i3RetryPermission(command);
+  if (permission) throw new Error(permission);
+  uncertainCommandKeys.remember(fingerprint, commandKey, { i3 });
+  if (!uncertainCommandKeys.isDurablyStored(fingerprint, commandKey)) {
+    uncertainCommandKeys.forget(fingerprint, commandKey);
+    throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
+  }
+  return sendI3Command(command, false);
+}
 
 export type I2Command = PendingMutationRecord & {
   original?: I1Original;
@@ -316,7 +486,7 @@ async function sendI1Command(command: I1Command, retry: boolean): Promise<unknow
   }
   if (!response.ok || payload.code !== 0) {
     const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status: response.status, reasonCode: payload.message });
-    const rejected = retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && !isIdempotencyOutcomeOpen(payload.message);
+    const rejected = retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && payload.code! < 500 && !isIdempotencyOutcomeOpen(payload.message);
     if (rejected) {
       uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
       throw failure;
@@ -356,7 +526,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (path.startsWith("/copy-ab/") && init?.method && init.method !== "GET") return prepareI1Command(path, init) as Promise<T>;
   if (path.startsWith("/nova/") && init?.method && init.method !== "GET") return prepareI2Command(path, init) as Promise<T>;
   const headers = new Headers(init?.headers);
-  const isWrite = !!init?.method && init.method !== "GET";
+  const isWrite = !!init?.method && init.method !== "GET" && path !== "/campaigns/audience-estimate";
   const commandFingerprint = isWrite
     ? `${init?.method}:${path}:${typeof init?.body === "string" ? init.body : ""}`
     : "";
@@ -382,7 +552,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   let payload: ApiResult<T>;
   try {
     const text = await res.text();
-    payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
+    payload = text ? ((path === "/campaigns/overview" ? parseI3Json(text) : JSON.parse(text)) as ApiResult<T>) : {};
   } catch (error) {
     if (isWrite) throw new OutcomeUnknownError(formatAdminApiError(undefined, `CONTENT_API_${res.status}`));
     throw error;
@@ -680,7 +850,7 @@ export type NotificationCampaignRow = {
   ctaLabel: string;
   ctaHref: string;
   swipeTo: string;
-  budget?: number;
+  budget?: string | number | null;
   audienceTarget: NotificationAudienceTarget;
   revision: number;
 };
@@ -688,7 +858,7 @@ export type NotificationCampaignRow = {
 export type NotificationAudienceTarget = {
   phaseMin: string;
   phaseMax: string;
-  language: "all" | "zh" | "vi" | "en";
+  language: "all" | "zh" | "vi" | "en" | "id" | "ms" | "fil" | "ru" | "kk" | "uz";
   registrationDaysMin: number;
 };
 
@@ -964,13 +1134,13 @@ export type IContentActions = {
   previewI2SocialEvent: (language: "ZH" | "VI" | "EN") => Promise<NovaSocialEventSampleView | null>;
   updateI2SocialEventStatus: (id: number, status: NovaSocialEventStatus, reason: string) => Promise<void>;
   deleteI2SocialEvent: (id: number, reason: string) => Promise<void>;
-  createI3Campaign: (body: Record<string, unknown>, reason: string) => Promise<void>;
-  updateI3CampaignDraft: (campaignNo: string, body: Record<string, unknown>, expectedRevision: number, reason: string) => Promise<void>;
+  createI3Campaign: (body: Record<string, unknown>, reason: string, formSnapshot?: I3FormSnapshot) => Promise<void>;
+  updateI3CampaignDraft: (campaignNo: string, body: Record<string, unknown>, expectedRevision: number, reason: string, snapshot?: NotificationCampaignRow, formSnapshot?: I3FormSnapshot) => Promise<void>;
   estimateI3Audience: (target: NotificationAudienceTarget) => Promise<NotificationAudienceEstimateView>;
-  scheduleI3Campaign: (campaignNo: string, scheduledAt: string, expectedRevision: number, reason: string) => Promise<void>;
-  sendI3CampaignNow: (campaignNo: string, expectedRevision: number, reason: string) => Promise<void>;
-  cancelI3Campaign: (campaignNo: string, expectedRevision: number, reason: string) => Promise<void>;
-  deleteI3Campaign: (campaignNo: string, expectedRevision: number, reason: string) => Promise<void>;
+  scheduleI3Campaign: (campaignNo: string, scheduledAt: string, expectedRevision: number, reason: string, snapshot?: NotificationCampaignRow) => Promise<void>;
+  sendI3CampaignNow: (campaignNo: string, expectedRevision: number, reason: string, snapshot?: NotificationCampaignRow) => Promise<void>;
+  cancelI3Campaign: (campaignNo: string, expectedRevision: number, reason: string, snapshot?: NotificationCampaignRow) => Promise<void>;
+  deleteI3Campaign: (campaignNo: string, expectedRevision: number, reason: string, snapshot?: NotificationCampaignRow) => Promise<void>;
   updateI3Cap: (tier: string, cap: string, expectedCap: string, reason: string) => Promise<void>;
   publishI4TrustSection: (sectionKey: string, body: { version: string; expectedRevision: number; expectedVersion: string; expectedStatus: string; dataSourceStatement: string; bilingualConfirmed: true }, reason: string) => Promise<void>;
   createI4TrustSectionDraft: (sectionKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
@@ -1019,7 +1189,7 @@ export async function fetchIContentOverviews(): Promise<IContentData> {
   const [copyAb, nova, campaigns, trustDisclosure, i18nLearning] = await Promise.allSettled([
     apiRequest<unknown>("/copy-ab/overview").then((value) => parseIOverview("I1", value) as CopyAbOverview),
     apiRequest<unknown>("/nova/overview").then((value) => parseIOverview("I2", value) as NovaOverview),
-    apiRequest<unknown>("/campaigns/overview").then((value) => parseIOverview("I3", value) as NotificationCampaignOverview),
+    fetchI3CampaignOverview(),
     apiRequest<unknown>("/trust-disclosure/overview").then((value) => parseIOverview("I4", value) as TrustDisclosureOverview),
     apiRequest<unknown>("/i18n-learning/overview").then((value) => parseIOverview("I6", value) as I18nLearningOverview),
   ]);
@@ -1085,13 +1255,18 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   previewI2SocialEvent: (language) => apiRequest<unknown>(`/nova/social-events/sample?language=${encodeURIComponent(language)}`).then((value) => parseNovaSocialSample(value) as NovaSocialEventSampleView | null),
   updateI2SocialEventStatus: (id, status, reason) => apiRequest(`/nova/social-events/${id}/status`, { method: "PATCH", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined),
   deleteI2SocialEvent: (id, reason) => apiRequest(`/nova/social-events/${id}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  createI3Campaign: (body, reason) => apiRequest("/campaigns", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI3CampaignDraft: (campaignNo, body, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/draft`, { method: "PATCH", body: JSON.stringify(withReason({ ...body, expectedRevision }, reason)) }).then(() => undefined),
-  estimateI3Audience: (target) => apiRequest<NotificationAudienceEstimateView>("/campaigns/audience-estimate", { method: "POST", body: JSON.stringify({ target }) }),
-  scheduleI3Campaign: (campaignNo, scheduledAt, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/schedule`, { method: "POST", body: JSON.stringify(withReason({ schedule: scheduledAt, expectedRevision }, reason)) }).then(() => undefined),
-  sendI3CampaignNow: (campaignNo, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/send-now`, { method: "POST", body: JSON.stringify(withReason({ schedule: "now", expectedRevision }, reason)) }).then(() => undefined),
-  cancelI3Campaign: (campaignNo, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/cancel`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
-  deleteI3Campaign: (campaignNo, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
+  createI3Campaign: async (body, reason, formSnapshot) => prepareI3Command("/campaigns", { method: "POST", body: i3CampaignBody(body, reason) }, undefined, formSnapshot),
+  updateI3CampaignDraft: async (campaignNo, body, expectedRevision, reason, snapshot, formSnapshot) => prepareI3Command(`/campaigns/${encodeURIComponent(campaignNo)}/draft`, { method: "PATCH", body: i3CampaignBody({ ...body, expectedRevision }, reason) }, snapshot, formSnapshot),
+  estimateI3Audience: async (target) => {
+    const value = await apiRequest<NotificationAudienceEstimateView>("/campaigns/audience-estimate", { method: "POST", body: JSON.stringify({ target }) });
+    if (!value || !Number.isSafeInteger(value.estimatedUsers) || value.estimatedUsers < 0 || !value.target
+      || Object.entries(target).some(([key, expected]) => value.target[key as keyof NotificationAudienceTarget] !== expected)) throw new Error("I3 受众估算返回数据格式异常，请重新估算");
+    return value;
+  },
+  scheduleI3Campaign: (campaignNo, scheduledAt, expectedRevision, reason, snapshot) => prepareI3Command(`/campaigns/${encodeURIComponent(campaignNo)}/schedule`, { method: "POST", body: JSON.stringify(withReason({ schedule: scheduledAt, expectedRevision }, reason)) }, snapshot),
+  sendI3CampaignNow: (campaignNo, expectedRevision, reason, snapshot) => prepareI3Command(`/campaigns/${encodeURIComponent(campaignNo)}/send-now`, { method: "POST", body: JSON.stringify(withReason({ schedule: "now", expectedRevision }, reason)) }, snapshot),
+  cancelI3Campaign: (campaignNo, expectedRevision, reason, snapshot) => prepareI3Command(`/campaigns/${encodeURIComponent(campaignNo)}/cancel`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }, snapshot),
+  deleteI3Campaign: (campaignNo, expectedRevision, reason, snapshot) => prepareI3Command(`/campaigns/${encodeURIComponent(campaignNo)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision }, reason)) }, snapshot),
   updateI3Cap: (tier, cap, expectedCap, reason) => apiRequest(`/campaigns/caps/${encodeURIComponent(tier)}`, { method: "PATCH", body: JSON.stringify(withReason({ cap, expectedCap }, reason)) }).then(() => undefined),
   publishI4TrustSection: (sectionKey, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   createI4TrustSectionDraft: (sectionKey, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),

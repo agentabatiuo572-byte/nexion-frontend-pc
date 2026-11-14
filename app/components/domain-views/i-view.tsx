@@ -262,7 +262,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   if (tab === "I3") {
     return (
       <RdPage className="idom i3-page">
-        <I3Campaign ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        <I3Campaign key={scopeKey} ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
         {overlays}
       </RdPage>
     );

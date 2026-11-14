@@ -135,15 +135,47 @@ export function parseNovaSocialSample(input: unknown): unknown {
 }
 
 function validateI3(moduleId: IModuleId, value: Record<string, unknown>) {
-  records(moduleId, value.campaigns);
-  records(moduleId, value.capRules);
-  records(moduleId, value.swipeRoutes);
+  const stats = record(moduleId, value.stats);
+  for (const key of ["monthCampaigns", "monthSent", "monthScheduled", "monthDraft", "criticalInflight"]) {
+    if (typeof stats[key] !== "number" || !Number.isInteger(stats[key]) || Number(stats[key]) < 0) fail(moduleId);
+  }
+  for (const key of ["avgReadRate", "weeklySwipe"]) if (typeof stats[key] !== "string") fail(moduleId);
+  for (const campaign of records(moduleId, value.campaigns)) parseNotificationCampaign(campaign);
+  for (const cap of records(moduleId, value.capRules)) {
+    if (!["critical", "high", "normal", "low"].includes(String(cap.tier))
+      || typeof cap.cap !== "string" || typeof cap.policy !== "string" || typeof cap.locked !== "boolean") fail(moduleId);
+  }
+  for (const route of records(moduleId, value.swipeRoutes)) {
+    if (!["kind", "to", "note"].every((key) => typeof route[key] === "string")) fail(moduleId);
+  }
   const audienceCatalog = record(moduleId, value.audienceCatalog);
-  records(moduleId, audienceCatalog.phases);
-  records(moduleId, audienceCatalog.languages);
   const deliveryCatalog = record(moduleId, value.deliveryCatalog);
-  records(moduleId, deliveryCatalog.kinds);
-  records(moduleId, deliveryCatalog.ctaRoutes);
+  for (const options of [audienceCatalog.phases, audienceCatalog.languages, deliveryCatalog.kinds, deliveryCatalog.ctaRoutes]) {
+    for (const option of records(moduleId, options)) {
+      if (typeof option.value !== "string" || typeof option.label !== "string") fail(moduleId);
+    }
+  }
+  if (audienceCatalog.conditionLogic !== "AND") fail(moduleId);
+  for (const key of ["tiers", "audiences", "statuses", "sources"]) {
+    if (!array(moduleId, value[key]).every((item) => typeof item === "string")) fail(moduleId);
+  }
+}
+
+/** Shared by the overview, durable original-row snapshots and write receipts at their input boundaries. */
+export function parseNotificationCampaign(input: unknown): unknown {
+  const row = record("I3", input);
+  if (!["id", "name", "kind", "audience", "reach", "schedule", "sent", "read", "bodyZh", "bodyVi", "bodyEn", "ctaHref", "ctaLabel", "swipeTo"].every((key) => typeof row[key] === "string")
+    || !["critical", "high", "normal", "low"].includes(String(row.tier))
+    || !["draft", "scheduled", "sending", "sent", "failed", "cancelled"].includes(String(row.status))
+    || typeof row.revision !== "number" || !Number.isInteger(row.revision) || row.revision < 0) fail("I3");
+  // BigDecimal budget is nullable. No decimal rounding or default zero at the read boundary.
+  if (row.budget != null && !(typeof row.budget === "string" && /^(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(row.budget))
+    && !(typeof row.budget === "number" && Number.isFinite(row.budget) && row.budget >= 0)) fail("I3");
+  const target = record("I3", row.audienceTarget);
+  if (!["phaseMin", "phaseMax", "language"].every((key) => typeof target[key] === "string")
+    || typeof target.registrationDaysMin !== "number" || !Number.isInteger(target.registrationDaysMin)
+    || target.registrationDaysMin < 0 || target.registrationDaysMin > 36500) fail("I3");
+  return input;
 }
 
 function validateTrustDisclosure(moduleId: IModuleId, value: Record<string, unknown>) {

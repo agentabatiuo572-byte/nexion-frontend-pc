@@ -4,33 +4,26 @@
  * 通知活动（列表页 + 宽抽屉编辑）。给一批 App 用户写一条站内通知：三语内容、优先级、类型、点了去哪、发给谁、预算记录；
  * 估算人数，排期，已排期的立即发送或取消，草稿和已取消的删除；每位用户各优先级最多保留几条提交审批。
  * 发送是真的写进用户的通知列表；预算只记录，不扣款、不发奖。
- * 读取、提交、权限判断都沿用旧页面的写法（请求逐字节不变）；这里只换界面。
+ * 写入先保存原请求；未知结果冻结并按原号恢复，当前列表独立重读。
  * 统一来源:后端 /content/campaigns/overview;空库时以后端初始化结果为准。
  * critical 档锁定 = 不渲染调整按钮。amplifies = false(I3 通知体系不动钱,不碰 B1 红线)。
  */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, CalendarClock, FilePen, Layers, Plus, RefreshCw, Route, Send, Trash2, Users } from "lucide-react";
 import { BlockState, Button, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { PaginationExemptionList } from "../design-kit";
-import type { ICtx } from "./types";
-import type { NotificationAudienceTarget } from "@/lib/admin/i-client";
-import { usePropose } from "@/lib/admin/use-propose";
-import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { A2OutcomeUncertainError, createA2CommandKey } from "@/lib/admin/a2-client";
-import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
+import { pendingI3Commands, retryI3Command, i3RetryPermission, parseI3Json, fetchI3CampaignOverview, type I3Command, type NotificationAudienceTarget } from "@/lib/admin/i-client";
+import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
+import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import { BODY_SENT, CampaignCard, CampaignStatusTag, CapCard, chars, I3RecoveryNotice, LANG_NAME, NotificationPreview, quantityText, reachLabel, ScheduleItem, splitBody, TIER, TierTag, TITLE_SENT, whenText, type CampaignRow, type I3RecoveryRow, type Lang, type TierK } from "./i3-parts";
-
-/** 每个 CAP 档位一个槽位:同档位改了值就铸新命令号并丢弃旧号(旧号可能已被后端消费,
- *  留着会让「改回原值」的新操作被当成重复提交吞掉)。落 sessionStorage,刷新后重试仍去重。 */
-const capCommandAttempts = createSlotAttemptStore({
-  storageKey: "nexion-admin-i3-campaign-commands-v1",
-});
 
 type StFlt = "all" | "scheduled" | "sent" | "draft" | "failed" | "cancelled";
 const ST_FLT: [StFlt, string][] = [
@@ -120,18 +113,16 @@ const KIND_DEFAULT_ROUTE: Record<string, string> = {
 /** 一组里默认显示几张卡，多的点「显示全部」切到这个状态。 */
 const GROUP_PREVIEW = 6;
 const AUDIT_HREF = "/platform/audit?domain=I";
-/** 结果未知逐条提醒：界面已备好，现在的逻辑不保存可恢复的原请求（B05），等代码 worker 接 R1。 */
-const RECOVERY_PLACEHOLDER: I3RecoveryRow[] = [];
-
 export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | null }) {
-  const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
-  const propose = usePropose();
+  const { toast, actions, content, contentLoading } = ctx;
   const reach = useReach();
   const session = useAdminAuth((state) => state.session);
   const isSuperadmin = session?.role === "superadmin";
   const authorities = session?.authorities ?? [];
   const canWriteI3 = isSuperadmin || authorities.includes("content_i3_write");
-  const canAdjustI3Cap = isSuperadmin || authorities.includes("content_i3_cap_adjust");
+  const capPermission = i3CapPermission();
+  const canAdjustI3Cap = !capPermission;
+  const canReadI3 = isSuperadmin || authorities.includes("content_i3_read");
   const canSendCriticalI3 = isSuperadmin || authorities.includes("content_i3_critical_send");
   const canSendCampaign = (campaign: CampaignRow) =>
     canWriteI3 && (campaign.tier !== "critical" || canSendCriticalI3);
@@ -152,7 +143,15 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const [scheduleVerified, setScheduleVerified] = useState(false);
   const [detail, setDetail] = useState<CampaignRow | null>(null);
   const [detailLang, setDetailLang] = useState<Lang>("zh");
-  const [newRows, setNewRows] = useState<CampaignRow[]>([]);
+  const [pending, setPending] = useState<I3Command[]>([]);
+  const [pendingCaps, setPendingCaps] = useState<I3CapCommand[]>([]);
+  const [drawerPendingKey, setDrawerPendingKey] = useState<string | null>(null);
+  const [schedulePendingKey, setSchedulePendingKey] = useState<string | null>(null);
+  const [recovering, setRecovering] = useState<string | null>(null);
+  const [requiresReload, setRequiresReload] = useState(false);
+  const recoveryInFlight = useRef(false);
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const [readAt, setReadAt] = useState<number | null>(null);
   const data = content.campaigns;
   const I3_STATS = data?.stats ?? { monthCampaigns: 0, monthSent: 0, monthScheduled: 0, monthDraft: 0, criticalInflight: 0, avgReadRate: "—", weeklySwipe: "—" };
@@ -164,31 +163,123 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const AUDIENCE_CATALOG = data?.audienceCatalog;
   const DELIVERY_CATALOG = data?.deliveryCatalog;
   const SWIPE_ROWS = data?.swipeRoutes ?? [];
-  const runBackend = (task: Promise<void>, ok: string) => {
-    return task
-      .then(() => actions.reloadIContent())
-      .then(() => { toast(ok); return true; })
-      .catch((error) => {
-        toast(`操作失败:${displayAdminError(error)}`);
-        return false;
-      });
+  const readBarrier = useRef(data);
+  const latestRead = useRef(data);
+  latestRead.current = data;
+  const newMutationReason = !data || errorText || contentLoading || requiresReload ? "最新数据没读到" : undefined;
+  const newMutationBlocked = useRef(newMutationReason);
+  newMutationBlocked.current = newMutationReason;
+  const syncPending = () => { setPending(pendingI3Commands()); setPendingCaps(pendingI3CapCommands()); };
+  useEffect(syncPending, [session?.adminId]);
+  useEffect(() => {
+    const next = [...pending, ...pendingCaps].filter((row) => !isRetryExpired(row)).reduce((at, row) => Math.min(at, row.expiresAt), Infinity);
+    if (!Number.isFinite(next)) return;
+    const timer = setTimeout(syncPending, Math.max(1, next - Date.now()));
+    return () => clearTimeout(timer);
+  }, [pending, pendingCaps]);
+  useEffect(() => {
+    if (data && !contentLoading && !errorText) {
+      setReadAt(Date.now());
+      if (data !== readBarrier.current) setRequiresReload(false);
+      // Current ticket reads can both establish and revoke this page's local pending observation.
+      if (canQueryI3Cap()) void Promise.allSettled(pendingI3CapCommands().map(queryI3CapCommand)).then(syncPending);
+    }
+  }, [data, contentLoading, errorText]);
+  const lockReason = (id: string) => newMutationReason || (!canWriteI3 ? "当前账号没有这项操作权限，请查询原结果。" : undefined)
+    || (pending.some((row) => !row.original || row.target === id) ? "此对象有结果未知的原操作，请先到页面上方核对。" : undefined);
+  const requireNewMutation = (openedData = data) => {
+    if (newMutationBlocked.current || latestRead.current !== openedData) throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
+  };
+  const refreshAfterMutation = async () => {
+    if (!active.current) return;
+    readBarrier.current = latestRead.current;
+    newMutationBlocked.current = "最新数据没读到";
+    setRequiresReload(true);
+    ctx.closeActionConfirm(); ctx.closeConfirm();
+    setNewOpen(false); setEditing(null); setDrawerPendingKey(null);
+    setScheduleRow(null); setSchedulePendingKey(null);
+    syncPending();
+    await actions.reloadIContent();
+  };
+  const runBackend = async (task: Promise<void>, ok: string) => {
+    await task;
+    await refreshAfterMutation();
+    if (active.current) toast(ok);
+    return true;
+  };
+  const replay = async (record: I3Command | I3CapCommand) => {
+    try {
+      if ("tier" in record) {
+        const ticket = await retryI3CapCommand(record);
+        toast(ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${I3_TICKET[ticket.status]}`);
+      } else {
+        await retryI3Command(record);
+        toast(`${I3_ACTION[record.action]} · ${record.name}`);
+      }
+    } catch (error) {
+      syncPending();
+      const retained = [...pendingI3Commands(), ...pendingI3CapCommands()].some((row) => row.commandKey === record.commandKey);
+      if (!retained) await refreshAfterMutation();
+      throw new Error(displayAdminError(error));
+    }
+    await refreshAfterMutation();
+    return true;
+  };
+  const openActionConfirm = (req: ActionConfirmReq, restored?: I3Command | I3CapCommand, cap = false) => {
+    if (!restored) { try { requireNewMutation(); } catch (error) { toast(displayAdminError(error)); return; } }
+    const openedData = data;
+    let key = restored?.commandKey;
+    const original = () => (cap ? pendingI3CapCommands() : pendingI3Commands()).find((row) => row.commandKey === key);
+    ctx.openActionConfirm({ ...req, getPendingReason: () => original()?.reason,
+      edit: req.edit && restored && "after" in restored ? { ...req.edit, initialValue: restored.after } : req.edit,
+      run: async (reason, value, business) => {
+        if (key) {
+          const record = original();
+          if (!record) { ctx.closeActionConfirm(); return false; }
+          return replay(record);
+        }
+        try {
+          requireNewMutation(openedData);
+          return await req.run(reason, value, business);
+        } catch (error) {
+          const candidate = (error as { commandKey?: string }).commandKey;
+          key = (cap ? pendingI3CapCommands() : pendingI3Commands()).find((row) => row.commandKey === candidate)?.commandKey;
+          syncPending();
+          throw new Error(displayAdminError(error));
+        }
+      },
+    });
+  };
+  const openConfirm = (req: ConfirmReq, restored?: I3Command) => {
+    if (!restored) { try { requireNewMutation(); } catch (error) { toast(displayAdminError(error)); return; } }
+    const openedData = data;
+    let key = restored?.commandKey;
+    const original = () => pendingI3Commands().find((row) => row.commandKey === key);
+    ctx.openConfirm({ ...req, errorHandled: false, freezePendingInputs: true, getPendingReason: () => original()?.reason,
+      run: async (reason, value) => {
+        if (key) {
+          const record = original();
+          if (!record) { ctx.closeConfirm(); return false; }
+          return replay(record);
+        }
+        try { requireNewMutation(openedData); return await req.run(reason, value); }
+        catch (error) { const candidate = (error as { commandKey?: string }).commandKey; key = pendingI3Commands().find((row) => row.commandKey === candidate)?.commandKey; syncPending(); throw new Error(displayAdminError(error)); }
+      },
+    });
   };
 
   useEffect(() => {
-    if (!newOpen) return;
+    if (!newOpen || drawerPendingKey) return;
+    let active = true;
+    setEstimating(true); setEstimatedAudience(null); setEstimatedAt(null);
     const timer = window.setTimeout(() => {
-      setEstimating(true);
       actions.estimateI3Audience(targetFromForm(form))
-        .then((result) => setEstimatedAudience(result.estimatedUsers))
-        .catch(() => setEstimatedAudience(null))
-        .finally(() => setEstimating(false));
+        .then((result) => { if (active) { setEstimatedAudience(result.estimatedUsers); setEstimatedAt(Date.now()); } })
+        .catch(() => { if (active) setEstimatedAudience(null); })
+        .finally(() => { if (active) setEstimating(false); });
     }, 250);
-    return () => window.clearTimeout(timer);
-  }, [newOpen, form.phaseMin, form.phaseMax, form.language, form.registrationDaysMin, actions]);
-
-  // 只为显示：数据和估算是什么时候读到的（详情是列表那一行的快照）。
-  useEffect(() => { if (data) setReadAt(Date.now()); }, [data]);
-  useEffect(() => { if (!estimating) setEstimatedAt(Date.now()); }, [estimating, estimatedAudience]);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [newOpen, drawerPendingKey, form.phaseMin, form.phaseMax, form.language, form.registrationDaysMin, actions]);
 
   const liveSt = (c: CampaignRow): CampaignRow["st"] => {
     return c.st;
@@ -201,25 +292,29 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   };
 
   const filtered = useMemo(() => {
-    return [...newRows, ...CAMPAIGNS].filter((c) => {
+    return CAMPAIGNS.filter((c) => {
       if (stFlt === "all") return true;
       const st = liveSt(c);
       return st === stFlt;
     });
-  }, [stFlt, newRows, CAMPAIGNS]);
+  }, [stFlt, CAMPAIGNS]);
 
   /* ---------- actions ---------- */
 
   const sendCmp = (c: CampaignRow) => {
+    if (lockReason(c.id) || !canSendCampaign(c)) return;
+    setSchedulePendingKey(null);
     setScheduleRow(c);
     setScheduledAt("");
     setScheduleReason("");
     setScheduleVerified(false);
   };
 
-  const openNew = () => { setEditing(null); setForm(FORM_INIT); setFormBase(FORM_INIT); setFormLang("zh"); setNewOpen(true); };
+  const openNew = () => { if (lockReason("create")) return; setDrawerPendingKey(null); setEditing(null); setForm(FORM_INIT); setFormBase(FORM_INIT); setFormLang("zh"); setNewOpen(true); };
 
   const editDraft = (c: CampaignRow) => {
+    if (lockReason(c.id)) return;
+    setDrawerPendingKey(null);
     const zh = splitNotificationBody(c.bodyZh);
     const vi = splitNotificationBody(c.bodyVi);
     const en = splitNotificationBody(c.bodyEn);
@@ -238,7 +333,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       phaseMax: c.audienceTarget?.phaseMax ?? "P6",
       language: c.audienceTarget?.language ?? "all",
       registrationDaysMin: String(c.audienceTarget?.registrationDaysMin ?? 0),
-      budget: c.budget === undefined ? "" : String(c.budget),
+      budget: c.budget == null ? "" : String(c.budget),
     };
     setEditing(c);
     setForm(next);
@@ -247,7 +342,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     setNewOpen(true);
   };
 
-  const deleteDraft = (c: CampaignRow) => openConfirm({ briefKind: "record",
+  const deleteDraft = (c: CampaignRow, restored?: I3Command) => openConfirm({ briefKind: "record",
     action: <>删除通知草稿 · {c.id}</>,
     title: c.st === "cancelled" ? "删除已取消的通知" : "删除通知草稿",
     detail: <>只有草稿和已取消的能删。删除后这页上找不回来；用户手里的通知不变。</>,
@@ -264,10 +359,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     reasonPlaceholder: "例如：重复建了一条、内容作废",
     reason: true,
     okLabel: "确认删除",
-    run: (reason) => runBackend(actions.deleteI3Campaign(c.id, c.revision, reason), `${c.id} 已删除`),
-  });
+    run: (reason) => runBackend(actions.deleteI3Campaign(c.id, c.revision, reason, { ...c, status: c.st }), `${c.id} 已删除`),
+  }, restored);
 
-  const sendNow = (c: CampaignRow) => openActionConfirm({ briefKind: "content",
+  const sendNow = (c: CampaignRow, restored?: I3Command) => openActionConfirm({ briefKind: "content",
     action: <>立即发送 · {c.name}</>,
     title: "立即发送通知",
     detail: (
@@ -296,11 +391,11 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     reasonPlaceholder: "例如：活动提前开始，需要马上通知",
     amplifies: false,
     run: (reason) => {
-      return runBackend(actions.sendI3CampaignNow(c.id, c.revision, reason), `已发送 · ${c.name}`);
+      return runBackend(actions.sendI3CampaignNow(c.id, c.revision, reason, { ...c, status: c.st }), `已发送 · ${c.name}`);
     },
-  });
+  }, restored);
 
-  const cancelScheduled = (c: CampaignRow) => openConfirm({ briefKind: "record",
+  const cancelScheduled = (c: CampaignRow, restored?: I3Command) => openConfirm({ briefKind: "record",
     action: <>取消排期 · {c.id}</>,
     title: "取消排期",
     detail: (
@@ -321,11 +416,11 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     reason: true,
     okLabel: "确认取消",
     run: (reason) => {
-      return runBackend(actions.cancelI3Campaign(c.id, c.revision, reason), `${c.id} 已取消`);
+      return runBackend(actions.cancelI3Campaign(c.id, c.revision, reason, { ...c, status: c.st }), `${c.id} 已取消`);
     },
-  });
+  }, restored);
 
-  const adjustCap = (tier: TierK, cap: string) => openActionConfirm({ briefKind: "config",
+  const adjustCap = (tier: TierK, cap: string, restored?: I3CapCommand) => openActionConfirm({ briefKind: "config",
     action: <>调整通知保留数量 · {I3_TIER_STATE[tier]?.[0] ?? "未知"}</>,
     title: `调整${I3_TIER_STATE[tier]?.[0] ?? "未知"}优先级保留上限`,
     detail: (
@@ -361,39 +456,24 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     },
     run: async (reason, v) => {
       if (!v) return false;
-      const def = findHighOp("i3_cap_adjust")!;
-      const fingerprint = JSON.stringify([tier, cap, v, reason]);
-      const commandKey = capCommandAttempts.resolve(`cap|${tier}`, fingerprint, () => createA2CommandKey("i3-cap-adjust"));
-      try {
-        const result = await propose(toast, {
-          action: `调整通知保留数量 · ${tier}`,
-          obj: tier,
-          before: cap,
-          after: v,
-          type: "param",
-          amplifies: false,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "I3",
-          commandKey,
-          command: def.buildCommand({ tier, cap: v, expectedCap: cap }),
-          target: def.buildTarget({ tier }),
-        });
-        capCommandAttempts.forget(`cap|${tier}`);
-        return result;
-      } catch (error) {
-        if (!(error instanceof A2OutcomeUncertainError)) {
-          capCommandAttempts.forget(`cap|${tier}`);
-        }
-        throw error;
-      }
+      const ticket = await proposeI3Cap(tier, cap, v, reason);
+      syncPending();
+      toast(ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${I3_TICKET[ticket.status]}`);
+      return true;
     },
-  });
+  }, restored, true);
 
   /* ---------- new campaign drawer 提交 ---------- */
   const submitNew = async () => {
     if (submitting) return;
+    if (drawerPendingKey) {
+      const original = pendingI3Commands().find((row) => row.commandKey === drawerPendingKey);
+      if (!original) { setNewOpen(false); setDrawerPendingKey(null); return; }
+      setSubmitting(true);
+      try { await replay(original); } catch (error) { toast(displayAdminError(error)); } finally { setSubmitting(false); }
+      return;
+    }
+    try { requireNewMutation(); } catch (error) { toast(displayAdminError(error)); return; }
     const trimmedName = form.name.trim();
     if (!trimmedName) {
       toast("请填写 通知活动名称");
@@ -423,12 +503,13 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       ctaLabel: selectedCta?.label ?? "",
       tier: form.tier,
       audienceTarget: targetFromForm(form),
-      budget: Number(form.budget || 0),
+      budget: form.budget.trim() || null,
     };
     const id = editing?.id ?? `CMP-N-${slug(trimmedName)}`;
+    const originalForm = AUDIENCE_CATALOG && DELIVERY_CATALOG ? { audienceCatalog: AUDIENCE_CATALOG, deliveryCatalog: DELIVERY_CATALOG, estimatedAudience, estimatedAt } : undefined;
     const task = editing
-      ? actions.updateI3CampaignDraft(editing.id, payload, editing.revision, `编辑通知草稿 ${editing.id}`)
-      : actions.createI3Campaign(payload, `新建通知草稿 ${id}`);
+      ? actions.updateI3CampaignDraft(editing.id, payload, editing.revision, `编辑通知草稿 ${editing.id}`, { ...editing, status: editing.st }, originalForm)
+      : actions.createI3Campaign(payload, `新建通知草稿 ${id}`, originalForm);
     setSubmitting(true);
     try {
       if (await runBackend(task, editing ? `${editing.id} 草稿已保存` : `通知草稿已创建 · ${trimmedName}`)) {
@@ -436,20 +517,36 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         setEditing(null);
         setForm(FORM_INIT);
       }
+    } catch (error) {
+      if (isOutcomeUnknownError(error)) setDrawerPendingKey((error as { commandKey?: string }).commandKey ?? null);
+      syncPending();
+      toast(displayAdminError(error));
     } finally {
       setSubmitting(false);
     }
   };
 
   const submitSchedule = async () => {
-    if (!scheduleRow) return;
+    if (!scheduleRow || submitting) return;
     setSubmitting(true);
     try {
+      if (schedulePendingKey) {
+        const original = pendingI3Commands().find((row) => row.commandKey === schedulePendingKey);
+        if (original) await replay(original);
+        else { setScheduleRow(null); setSchedulePendingKey(null); }
+        return;
+      }
+      requireNewMutation();
+      if (!canSendCampaign(scheduleRow)) throw new Error("排期、发送和取消紧急通知要有紧急通知发送权限");
       const saved = await runBackend(
-        actions.scheduleI3Campaign(scheduleRow.id, scheduledAt, scheduleRow.revision, scheduleReason.trim()),
+        actions.scheduleI3Campaign(scheduleRow.id, scheduledAt, scheduleRow.revision, scheduleReason.trim(), { ...scheduleRow, status: scheduleRow.st }),
         `${scheduleRow.id} 已进入排期`,
       );
       if (saved) setScheduleRow(null);
+    } catch (error) {
+      if (isOutcomeUnknownError(error)) setSchedulePendingKey((error as { commandKey?: string }).commandKey ?? null);
+      syncPending();
+      toast(displayAdminError(error));
     } finally {
       setSubmitting(false);
     }
@@ -466,17 +563,17 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     if (st === "draft") {
       return (
         <>
-          <Button size={size} variant={size === "md" ? "primary" : undefined} icon={<CalendarClock size={14} aria-hidden />} aria-label={`排期 ${c.name}`} disabledReason={canSendCampaign(c) ? undefined : NO_CRITICAL} onClick={() => sendCmp(c)}>排期</Button>
-          <Button size={size} icon={<FilePen size={14} aria-hidden />} aria-label={`编辑 ${c.name}`} onClick={() => { setDetail(null); editDraft(c); }}>编辑</Button>
-          <Button size={size} icon={<Trash2 size={14} aria-hidden />} aria-label={`删除 ${c.name}`} onClick={() => deleteDraft(c)}>删除</Button>
+          <Button size={size} variant={size === "md" ? "primary" : undefined} icon={<CalendarClock size={14} aria-hidden />} aria-label={`排期 ${c.name}`} disabledReason={lockReason(c.id) || (canSendCampaign(c) ? undefined : NO_CRITICAL)} onClick={() => sendCmp(c)}>排期</Button>
+          <Button size={size} icon={<FilePen size={14} aria-hidden />} aria-label={`编辑 ${c.name}`} disabledReason={lockReason(c.id)} onClick={() => { setDetail(null); editDraft(c); }}>编辑</Button>
+          <Button size={size} icon={<Trash2 size={14} aria-hidden />} aria-label={`删除 ${c.name}`} disabledReason={lockReason(c.id)} onClick={() => deleteDraft(c)}>删除</Button>
         </>
       );
     }
     if (st === "scheduled") {
       return (
         <>
-          <Button size={size} variant="danger-outline" icon={<Send size={14} aria-hidden />} aria-label={`立即发送 ${c.name}`} disabledReason={canSendCampaign(c) ? undefined : NO_CRITICAL} onClick={() => sendNow(c)}>立即发送</Button>
-          <Button size={size} aria-label={`取消排期 ${c.name}`} disabledReason={canSendCampaign(c) ? undefined : NO_CRITICAL} onClick={() => cancelScheduled(c)}>取消排期</Button>
+          <Button size={size} variant="danger-outline" icon={<Send size={14} aria-hidden />} aria-label={`立即发送 ${c.name}`} disabledReason={lockReason(c.id) || (canSendCampaign(c) ? undefined : NO_CRITICAL)} onClick={() => sendNow(c)}>立即发送</Button>
+          <Button size={size} aria-label={`取消排期 ${c.name}`} disabledReason={lockReason(c.id) || (canSendCampaign(c) ? undefined : NO_CRITICAL)} onClick={() => cancelScheduled(c)}>取消排期</Button>
         </>
       );
     }
@@ -484,10 +581,69 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       return <Button size={size} aria-label={`查看 ${c.name}`} onClick={() => setDetail(c)}>查看</Button>;
     }
     if (st === "cancelled") {
-      return <Button size={size} icon={<Trash2 size={14} aria-hidden />} aria-label={`删除 ${c.name}`} onClick={() => deleteDraft(c)}>删除</Button>;
+      return <Button size={size} icon={<Trash2 size={14} aria-hidden />} aria-label={`删除 ${c.name}`} disabledReason={lockReason(c.id)} onClick={() => deleteDraft(c)}>删除</Button>;
     }
     return null;
   };
+
+  const restore = (record: I3Command) => {
+    if (!record.original) return;
+    const input = parseI3Json(record.original.body) as NewForm & { audienceTarget: NotificationAudienceTarget; schedule: string };
+    if (record.action === "create" || record.action === "draft") {
+      const next: NewForm = { name: input.name, titleZh: input.titleZh, titleVi: input.titleVi, titleEn: input.titleEn,
+        bodyZh: input.bodyZh, bodyVi: input.bodyVi, bodyEn: input.bodyEn, kind: input.kind, ctaHref: input.ctaHref, tier: input.tier,
+        phaseMin: input.audienceTarget.phaseMin, phaseMax: input.audienceTarget.phaseMax, language: input.audienceTarget.language,
+        registrationDaysMin: String(input.audienceTarget.registrationDaysMin), budget: input.budget == null ? "" : String(input.budget) };
+      setEditing(record.snapshot ? { ...record.snapshot, st: record.snapshot.status } : null);
+      setForm(next); setFormBase(next); setFormLang("zh"); setDrawerPendingKey(record.commandKey);
+      setEstimating(false); setEstimatedAudience(record.formSnapshot?.estimatedAudience ?? null); setEstimatedAt(record.formSnapshot?.estimatedAt ?? null);
+      setNewOpen(true);
+      return;
+    }
+    if (!record.snapshot) return;
+    const originalRow = { ...record.snapshot, st: record.snapshot.status };
+    if (record.action === "schedule") {
+      setScheduleRow(originalRow); setScheduledAt(input.schedule); setScheduleReason(record.reason); setScheduleVerified(true);
+      setSchedulePendingKey(record.commandKey);
+    } else if (record.action === "send-now") sendNow(originalRow, record);
+    else if (record.action === "cancel") cancelScheduled(originalRow, record);
+    else if (record.action === "delete") deleteDraft(originalRow, record);
+  };
+  const query = async (record: I3Command | I3CapCommand) => {
+    if (recoveryInFlight.current) return;
+    recoveryInFlight.current = true; setRecovering(record.commandKey);
+    try {
+      if ("tier" in record) {
+        const ticket = await queryI3CapCommand(record);
+        if (ticket) {
+          toast(ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${I3_TICKET[ticket.status]}`);
+          if (ticket.status !== "pending") await refreshAfterMutation();
+        } else toast("没有查到原审批单，原操作记录继续保留。");
+      } else {
+        await fetchI3CampaignOverview();
+        await actions.reloadIContent();
+        toast("已重新读取活动列表；当前状态不能证明原操作结果，原记录继续保留。");
+      }
+      syncPending();
+    } catch (error) { toast(displayAdminError(error)); }
+    finally { recoveryInFlight.current = false; setRecovering(null); }
+  };
+  const recoveryRows: I3RecoveryRow[] = [
+    ...pending.map((row) => ({ key: row.commandKey, name: I3_ACTION[row.action], object: row.name, change: row.change,
+      submittedAt: row.createdAt, expired: isRetryExpired(row), actions: <>
+        <Button size="sm" loading={recovering === row.commandKey} disabledReason={canReadI3 ? undefined : "缺少通知活动读取权限"} onClick={() => void query(row)}>查询原结果</Button>
+        {!isRetryExpired(row) && <Button size="sm" disabledReason={!row.original || row.action !== "create" && !row.snapshot ? "原操作记录不完整，只能查询核对，不能重试。" : i3RetryPermission(row)} onClick={() => restore(row)}>按原请求重试</Button>}
+      </> })),
+    ...pendingCaps.filter((row) => row.ticketStatus !== "pending").map((row) => ({ key: row.commandKey, name: "调整通知保留数量", object: TIER[row.tier as TierK].label,
+      change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt, expired: isRetryExpired(row), actions: <>
+        <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button>
+        {!isRetryExpired(row) && !row.receiptKnown && <Button size="sm" disabledReason={!row.request ? "原操作记录不完整，只能查询核对，不能重试。" : capPermission} onClick={() => adjustCap(row.tier as TierK, row.before, row)}>按原请求重试</Button>}
+      </> })),
+  ];
+  const drawerOriginal = pending.find((row) => row.commandKey === drawerPendingKey);
+  const drawerRetryReason = drawerOriginal && isRetryExpired(drawerOriginal) ? RETRY_EXPIRED_TEXT : drawerOriginal ? i3RetryPermission(drawerOriginal) : undefined;
+  const scheduleOriginal = pending.find((row) => row.commandKey === schedulePendingKey);
+  const scheduleRetryReason = scheduleOriginal && isRetryExpired(scheduleOriginal) ? RETRY_EXPIRED_TEXT : scheduleOriginal ? i3RetryPermission(scheduleOriginal) : undefined;
 
   const readStamp = readAt ? `${businessClock(readAt)} 读取（${businessZone().label}）` : "";
   const header = (
@@ -499,17 +655,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         <span>{readStamp}</span>
         <Button variant="ghost" size="sm" loading={contentLoading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void actions.reloadIContent()}>刷新</Button>
       </span> : undefined}
-      actions={canWriteI3 && data ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} onClick={openNew}>新建通知</Button> : undefined}
+      actions={canWriteI3 && data ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={lockReason("create")} onClick={openNew}>新建通知</Button> : undefined}
       readOnly={!canWriteI3 ? "你只能查看；新建、排期和发送要有这页的修改权限。" : undefined}
     />
   );
-
-  if (contentLoading && !data) {
-    return <div className="i3-page-body">{header}<I3RecoveryNotice rows={RECOVERY_PLACEHOLDER} /><BlockState state="loading" title="通知活动加载中…" /></div>;
-  }
-  if (!data) {
-    return <div className="i3-page-body">{header}<I3RecoveryNotice rows={RECOVERY_PLACEHOLDER} /><BlockState state="error" title="通知活动读取失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void actions.reloadIContent()} /></div>;
-  }
 
   const upcoming = filtered.filter((c) => c.st === "scheduled" || c.st === "sending")
     .sort((a, b) => (a.st === "sending" ? 0 : 1) - (b.st === "sending" ? 0 : 1) || a.schedule.localeCompare(b.schedule));
@@ -558,8 +707,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   return (
     <div className="i3-page-body">
       {header}
-      {errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={contentLoading} onClick={() => void actions.reloadIContent()}>重新加载</Button>}>{`${errorText} 下面是上次读到的内容。`}</Notice>}
-      <I3RecoveryNotice rows={RECOVERY_PLACEHOLDER} />
+      {data && errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={contentLoading} onClick={() => void actions.reloadIContent()}>重新加载</Button>}>{`${errorText} 下面是上次读到的内容。`}</Notice>}
+      <I3RecoveryNotice rows={recoveryRows} />
+      {!data ? contentLoading ? <BlockState state="loading" title="通知活动加载中…" /> : <BlockState state="error" title="通知活动读取失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void actions.reloadIContent()} /> : <>
       {conclusion}
 
       <StatBand label="通知活动概况">
@@ -612,7 +762,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
               const cap = liveCap(tier, row.cap);
               return (
                 <CapCard key={tier} tier={tier} cap={row.cap} policy={operatorCopyText(row.policy)} locked={row.locked}
-                  action={!row.locked && canAdjustI3Cap ? <Button size="sm" aria-label={`调整${TIER[tier].label}优先级保留上限`} onClick={() => adjustCap(tier, cap)}>调整</Button> : undefined} />
+                  action={!row.locked && canAdjustI3Cap ? <Button size="sm" aria-label={`调整${TIER[tier].label}优先级保留上限`} disabledReason={newMutationReason || (pendingCaps.some((item) => item.tier === tier) ? "此对象有原审批尚未处理，请查询原结果。" : undefined)} onClick={() => adjustCap(tier, cap)}>调整</Button> : undefined} />
               );
             })}
           </div>}
@@ -668,8 +818,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         ]}
       />
 
+      </>}
+
       {/* ===== 新建 / 编辑：左边填，右边是 App 里的样子 ===== */}
-      {newOpen && canWriteI3 && (
+      {newOpen && (canWriteI3 || !!drawerPendingKey) && (
         <CampaignFormDrawer
           editing={editing}
           form={form}
@@ -677,13 +829,15 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           lang={formLang}
           setLang={setFormLang}
           submitting={submitting}
+          frozen={!!drawerPendingKey}
+          blocked={drawerPendingKey ? drawerRetryReason : lockReason(editing?.id ?? "create")}
           estimating={estimating}
           estimatedAudience={estimatedAudience}
           estimatedAt={estimatedAt}
-          audienceCatalog={AUDIENCE_CATALOG}
-          deliveryCatalog={DELIVERY_CATALOG}
+          audienceCatalog={drawerOriginal?.formSnapshot?.audienceCatalog ?? AUDIENCE_CATALOG}
+          deliveryCatalog={drawerOriginal?.formSnapshot?.deliveryCatalog ?? DELIVERY_CATALOG}
           tierOptions={TIER_OPTS}
-          kindLabel={kindLabel}
+          kindLabel={drawerOriginal?.formSnapshot ? (kind) => drawerOriginal.formSnapshot!.deliveryCatalog.kinds.find((option) => option.value === kind)?.label ?? kind : kindLabel}
           onSubmit={submitNew}
           onClose={() => {
             if (submitting) return;
@@ -698,7 +852,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       </>}><p>填的内容还没保存，关闭后不保留。</p></Modal>}
 
       {/* ===== 排期 ===== */}
-      {scheduleRow && canSendCampaign(scheduleRow) && (
+      {scheduleRow && (canSendCampaign(scheduleRow) || !!schedulePendingKey) && (
         <Modal title="排期发送" icon={CalendarClock}
           sub={<><StatusTag tone="progress" filled>到点自动发送</StatusTag><StatusTag tone="neutral">发出前可以取消</StatusTag></>}
           busy={submitting} dirty={!!(scheduledAt || scheduleReason || scheduleVerified)}
@@ -706,7 +860,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           footer={<>
             <Button disabled={submitting} onClick={() => setScheduleRow(null)}>取消</Button>
             <Button variant="primary" loading={submitting}
-              disabledReason={!scheduledAt ? "还没选发送时间" : !scheduleVerified ? "还没勾选已核对" : scheduleReason.trim().length < 8 ? "操作理由至少 8 字" : scheduleReason.trim().length > 200 ? "操作理由最多 200 字" : undefined}
+              disabledReason={schedulePendingKey ? scheduleRetryReason : lockReason(scheduleRow.id) || (!scheduledAt ? "还没选发送时间" : !scheduleVerified ? "还没勾选已核对" : scheduleReason.trim().length < 8 ? "操作理由至少 8 字" : scheduleReason.trim().length > 200 ? "操作理由最多 200 字" : undefined)}
               onClick={() => void submitSchedule()}>确认排期</Button>
           </>}>
           <Facts>
@@ -718,11 +872,11 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           </Facts>
           {scheduleRow.reach.trim() === "0" && <Notice tone="warn">保存时估算是 0 人。排期时后端会重新估算，还是 0 人会被拒绝。</Notice>}
           <Field label={`发送时间（${businessZone().label}）`} required help="要晚于现在。到点后约 30 秒内发出，按那时符合条件的用户发送；预计人数是保存草稿时的估算。">
-            {(control) => <Input {...control} type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />}
+            {(control) => <Input {...control} disabled={!!schedulePendingKey} type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />}
           </Field>
-          <Check label="我已核对中文、越南语、英语的标题和正文，以及发给谁" checked={scheduleVerified} onChange={(e) => setScheduleVerified(e.target.checked)} />
+          <Check label="我已核对中文、越南语、英语的标题和正文，以及发给谁" checked={scheduleVerified} disabled={!!schedulePendingKey} onChange={(e) => setScheduleVerified(e.target.checked)} />
           <Field label="操作理由" required hint="至少 8 字">
-            {(control) => <Textarea {...control} rows={3} maxLength={200} value={scheduleReason} count={`${scheduleReason.trim().length}/200`} placeholder="例如：11 月活动开始当天上午提醒" onChange={(e) => setScheduleReason(e.target.value)} />}
+            {(control) => <Textarea {...control} disabled={!!schedulePendingKey} rows={3} maxLength={200} value={scheduleReason} count={`${scheduleReason.trim().length}/200`} placeholder="例如：11 月活动开始当天上午提醒" onChange={(e) => setScheduleReason(e.target.value)} />}
           </Field>
         </Modal>
       )}
@@ -730,7 +884,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       {/* ===== 详情：列表那一行的快照 ===== */}
       <Drawer open={!!detailRow} onClose={() => setDetail(null)} title="通知活动详情" sub={detailRow?.name} icon={Bell} tone="role-3"
         explain="内容来自打开页面或刷新时读到的列表，不是另读一次。"
-        footer={detailRow && canWriteI3 ? <Decision others={renderActions(detailRow, "md")} /> : undefined}>
+        footer={shownDetail && !errorText && canWriteI3 ? <Decision others={renderActions(shownDetail, "md")} /> : undefined}>
         {detailRow && (() => {
           const c = detailRow;
           const lang = splitBody(detailLang === "zh" ? c.bodyZh : detailLang === "vi" ? c.bodyVi : c.bodyEn);
@@ -813,6 +967,8 @@ type FormProps = {
   lang: Lang;
   setLang: (next: Lang) => void;
   submitting: boolean;
+  frozen: boolean;
+  blocked?: string;
   estimating: boolean;
   estimatedAudience: number | null;
   estimatedAt: number | null;
@@ -826,12 +982,14 @@ type FormProps = {
 
 const TITLE_KEY: Record<Lang, "titleZh" | "titleVi" | "titleEn"> = { zh: "titleZh", vi: "titleVi", en: "titleEn" };
 const BODY_KEY: Record<Lang, "bodyZh" | "bodyVi" | "bodyEn"> = { zh: "bodyZh", vi: "bodyVi", en: "bodyEn" };
+const I3_TICKET = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
+const I3_ACTION: Record<I3Command["action"], string> = { create: "新建通知", draft: "编辑通知草稿", schedule: "排期发送", "send-now": "立即发送通知", cancel: "取消排期", delete: "删除通知草稿" };
 const SAVE_TITLE_MAX = 160;
 const SAVE_BODY_MAX = 4000;
 
 /** 新建、编辑的宽抽屉：左边填，右边是通知列表里和点开后的样子。提交沿用页面的 submitNew。 */
-function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting, estimating, estimatedAudience, estimatedAt, audienceCatalog, deliveryCatalog, tierOptions, kindLabel, onSubmit, onClose }: FormProps) {
-  const set = (key: keyof NewForm, value: string) => setForm({ ...form, [key]: value });
+function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting, frozen, blocked: mutationBlocked, estimating, estimatedAudience, estimatedAt, audienceCatalog, deliveryCatalog, tierOptions, kindLabel, onSubmit, onClose }: FormProps) {
+  const set = (key: keyof NewForm, value: string) => { if (!frozen) setForm({ ...form, [key]: value }); };
   const title = form[TITLE_KEY[lang]];
   const body = form[BODY_KEY[lang]];
   const titleLen = chars(title.trim()).length;
@@ -848,7 +1006,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
   const over = (["zh", "vi", "en"] as Lang[]).filter((l) => chars(form[TITLE_KEY[l]].trim()).length > TITLE_SENT || chars(form[BODY_KEY[l]].trim()).length > BODY_SENT);
   const selectedCta = deliveryCatalog?.ctaRoutes.find((option) => option.value === form.ctaHref);
   const enEmpty = !form.titleEn.trim() && !form.bodyEn.trim();
-  const blocked = !audienceCatalog ? "受众目录没读到，不能保存；刷新页面后再试" : estimating ? "正在估算人数，估完再保存" : undefined;
+  const blocked = mutationBlocked || (!audienceCatalog && !frozen ? "受众目录没读到，不能保存；刷新页面后再试" : estimating && !frozen ? "正在估算人数，估完再保存" : undefined);
   const lengthHelp = (len: number, sent: number, saveMax: number) => len > saveMax
     ? `${len}/${sent} 字：超过 ${saveMax} 字，保存会被拒绝`
     : len > sent ? `${len}/${sent} 字：App 只收到前 ${sent} 字，后面的截掉（预览里划掉的部分）` : undefined;
@@ -864,18 +1022,18 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
           <section className="i3-form-section" aria-labelledby="i3-f-base">
             <h3 id="i3-f-base" className="i3-sub-title">基本信息</h3>
             <Field label="名称" required help="只给后台看，最多 160 字。">
-              {(control) => <Input {...control} value={form.name} placeholder="如：11 月费率说明" onChange={(e) => set("name", e.target.value)} />}
+              {(control) => <Input {...control} disabled={frozen} value={form.name} placeholder="如：11 月费率说明" onChange={(e) => set("name", e.target.value)} />}
             </Field>
             <Field label="优先级" required help={form.tier === "critical" ? "紧急：不看用户的通知设置，不按保留上限清理；排期和发送要有紧急通知发送权限。" : "决定按哪一档保留上限清理，见页面下方。"}>
-              <Segments label="优先级" value={form.tier} onChange={(next) => set("tier", next)} items={tierOptions.map((t) => ({ value: t, label: TIER[t].label }))} />
+              <Segments label="优先级" value={form.tier} onChange={(next) => set("tier", next)} items={tierOptions.map((t) => ({ value: t, label: TIER[t].label, disabled: frozen }))} />
             </Field>
             <div className="rd-form-grid" data-cols="2" data-dense="">
               <Field label="通知类型" required help="用户能按类型关掉，紧急除外。">
-                {(control) => <Select {...control} aria-label="通知类型" value={form.kind} disabled={!deliveryCatalog} onChange={(next) => set("kind", next)}
+                {(control) => <Select {...control} aria-label="通知类型" value={form.kind} disabled={frozen || !deliveryCatalog} onChange={(next) => set("kind", next)}
                   options={(deliveryCatalog?.kinds ?? []).map((option) => ({ value: option.value, label: option.label }))} />}
               </Field>
               <Field label="点了去哪" help={form.ctaHref ? "通知里出现按钮，点按钮和左滑都去这里。" : form.kind === "system" ? "没有按钮，点了只标已读；系统通知左滑不跳。" : `没有按钮，点了只标已读；左滑仍按类型去默认页。`}>
-                {(control) => <Select {...control} aria-label="点了去哪" value={form.ctaHref} disabled={!deliveryCatalog} onChange={(next) => set("ctaHref", next)}
+                {(control) => <Select {...control} aria-label="点了去哪" value={form.ctaHref} disabled={frozen || !deliveryCatalog} onChange={(next) => set("ctaHref", next)}
                   options={(deliveryCatalog?.ctaRoutes ?? []).map((option) => ({ value: option.value, label: option.label }))} />}
               </Field>
             </div>
@@ -891,10 +1049,10 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
               ]} />
             </div>
             <Field label={`${LANG_NAME[lang]}标题`} required={required} help={lengthHelp(titleLen, TITLE_SENT, SAVE_TITLE_MAX) ?? `${titleLen}/${TITLE_SENT} 字，App 收到前 ${TITLE_SENT} 字`}>
-              {(control) => <Input {...control} value={title} placeholder={lang === "vi" ? "Dòng đầu tiên" : lang === "en" ? "First line in the list" : "通知列表里的第一行"} onChange={(e) => set(TITLE_KEY[lang], e.target.value)} />}
+              {(control) => <Input {...control} disabled={frozen} value={title} placeholder={lang === "vi" ? "Dòng đầu tiên" : lang === "en" ? "First line in the list" : "通知列表里的第一行"} onChange={(e) => set(TITLE_KEY[lang], e.target.value)} />}
             </Field>
             <Field label={`${LANG_NAME[lang]}正文`} required={required} help={lengthHelp(bodyLen, BODY_SENT, SAVE_BODY_MAX) ?? (lang === "en" && enEmpty ? "不填时，英语和其他语言的用户收到后端默认的英文内容。" : "{name} 这类占位符三种语言要一致。")}>
-              {(control) => <Textarea {...control} rows={6} value={body} count={`${bodyLen}/${BODY_SENT}`} placeholder={lang === "vi" ? "Nội dung thông báo" : lang === "en" ? "Notification body" : "点开后看到的正文"} onChange={(e) => set(BODY_KEY[lang], e.target.value)} />}
+              {(control) => <Textarea {...control} disabled={frozen} rows={6} value={body} count={`${bodyLen}/${BODY_SENT}`} placeholder={lang === "vi" ? "Nội dung thông báo" : lang === "en" ? "Notification body" : "点开后看到的正文"} onChange={(e) => set(BODY_KEY[lang], e.target.value)} />}
             </Field>
           </section>
 
@@ -906,19 +1064,19 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
             </>} /></h3>
             <div className="rd-form-grid" data-cols="2" data-dense="">
               <Field label="P 阶段从" required>
-                {(control) => <Select {...control} aria-label="P 阶段从" value={form.phaseMin} disabled={!audienceCatalog} onChange={(next) => set("phaseMin", next)}
+                {(control) => <Select {...control} aria-label="P 阶段从" value={form.phaseMin} disabled={frozen || !audienceCatalog} onChange={(next) => set("phaseMin", next)}
                   options={(audienceCatalog?.phases ?? []).map((item) => ({ value: item.value, label: item.label }))} />}
               </Field>
               <Field label="到" required>
-                {(control) => <Select {...control} aria-label="P 阶段到" value={form.phaseMax} disabled={!audienceCatalog} onChange={(next) => set("phaseMax", next)}
+                {(control) => <Select {...control} aria-label="P 阶段到" value={form.phaseMax} disabled={frozen || !audienceCatalog} onChange={(next) => set("phaseMax", next)}
                   options={(audienceCatalog?.phases ?? []).map((item) => ({ value: item.value, label: item.label }))} />}
               </Field>
               <Field label="语言" required>
-                {(control) => <Select {...control} aria-label="语言" value={form.language} disabled={!audienceCatalog} onChange={(next) => set("language", next)}
+                {(control) => <Select {...control} aria-label="语言" value={form.language} disabled={frozen || !audienceCatalog} onChange={(next) => set("language", next)}
                   options={(audienceCatalog?.languages ?? []).map((item) => ({ value: item.value, label: item.label }))} />}
               </Field>
               <Field label="注册超过" required help="0–36500 的整数，严格大于">
-                {(control) => <NumberInput {...control} unit="天" min={0} step={1} value={form.registrationDaysMin} onChange={(e) => set("registrationDaysMin", e.target.value)} />}
+                {(control) => <NumberInput {...control} disabled={frozen} unit="天" min={0} step={1} value={form.registrationDaysMin} onChange={(e) => set("registrationDaysMin", e.target.value)} />}
               </Field>
             </div>
             <div className="i3-estimate" role="status" aria-live="polite">
@@ -941,7 +1099,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
           <section className="i3-form-section" aria-labelledby="i3-f-budget">
             <h3 id="i3-f-budget" className="i3-sub-title">预算记录</h3>
             <Field label="预算" hint="选填" help="只记录，不扣款、不发奖。不填按 0 保存。">
-              {(control) => <NumberInput {...control} unit="USD" value={form.budget} onChange={(e) => set("budget", e.target.value)} />}
+              {(control) => <NumberInput {...control} disabled={frozen} unit="USD" value={form.budget} onChange={(e) => set("budget", e.target.value)} />}
             </Field>
           </section>
         </div>

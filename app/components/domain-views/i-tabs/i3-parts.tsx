@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 通知活动的展示件：活动卡、排期时间线的一行、App 通知预览、保留上限卡、结果未知逐条提醒（占位）。
+ * 通知活动的展示件：活动卡、排期时间线的一行、App 通知预览、保留上限卡、结果未知逐条提醒。
  * 只排版，不发请求、不判权限；数据和按钮由 i3-campaign.tsx 传进来。
  */
 import type { ReactNode } from "react";
@@ -13,7 +13,6 @@ import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/ad
 export type CampaignRow = Omit<NotificationCampaignRow, "status" | "kind"> & {
   kind: string;
   st: NotificationCampaignRow["status"];
-  budget?: number;
 };
 export type TierK = CampaignRow["tier"];
 export type Lang = "zh" | "vi" | "en";
@@ -212,7 +211,7 @@ export function CapCard({ tier, cap, policy, locked, action }: { tier: TierK; ca
 export type I3RecoveryRow = { key: string; name: string; object: string; change?: string; submittedAt: number; expired: boolean; actions: ReactNode };
 
 /**
- * 结果未知逐条提醒（界面已备好，等代码 worker 接 R1）：现在的逻辑不保存可恢复的原请求，rows 总是空，这块不显示。
+ * 结果未知逐条提醒：由页面传入持久化的原操作；未读取到概览时同样显示。
  * 每条写改的是什么、对哪条、从多少到多少、什么时候提交，按钮「查询原结果」「按原请求重试」。
  */
 export function I3RecoveryNotice({ rows }: { rows: I3RecoveryRow[] }) {
