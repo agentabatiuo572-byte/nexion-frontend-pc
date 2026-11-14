@@ -245,7 +245,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
               onClick={() => { if (retry) restore(); else setConfirm(true); }}>{retry ? "查看结果未知的保存" : "预览并保存"}</Button>
           </div>}
         </div>}
-        {reach("/service/overview", "service_m1_read") && <p className="m5-link-line">等分配的客户按新规则继续处理，也可以手动：<a className="rd-link" href="/service/overview?view=pool">核对历史池并明确分配</a></p>}
+        {reach("/service/overview", "service_m1_read") && <p className="m5-link-line">手动处理等分配的客户：<a className="rd-link" href="/service/overview?view=pool">核对历史池并明确分配</a></p>}
       </Panel>
       {confirm && original && confirmed && permission === "superadmin" && <Modal title={confirmedChanges.length === 1 ? `修改${LABELS[confirmedChanges[0]]}` : "保存服务规则"} icon={Route} busy={saving} wide onClose={() => { if (!saving) setConfirm(false); }}
         sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">第 {original.version} 版</span></>}
