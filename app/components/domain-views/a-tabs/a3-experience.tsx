@@ -260,7 +260,7 @@ export function A3Experience({ toast }: { toast: (text: string, kind?: "success"
         <Fact k="一起保存">分享、下载、语言整组；首页开关不在这里</Fact>
         <Fact k="已有订单和奖励">不重算</Fact>
       </Facts>
-      <Field label="保存理由" required hint="8–200 字">
+      <Field label="保存理由" required help="8–200 字">
         {(control) => <Textarea {...control} aria-label="体验配置保存理由" value={reason} maxLength={200} rows={2} count={`${reason.trim().length}/200`} placeholder="例如：上线 Telegram 分享，工单号" onChange={(event) => setReason(event.target.value)} />}
       </Field>
     </Modal>}

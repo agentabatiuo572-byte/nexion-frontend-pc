@@ -69,7 +69,7 @@ function SaveModal({ mode, title, busy, error, facts, extra, reason, onReason, r
     {error && <Notice tone="danger" title="没有保存">{error}</Notice>}
     {facts}
     {extra}
-    <Field label="变更理由" required hint={`${reasonMin}–500 字`}>
+    <Field label="变更理由" required help={`${reasonMin}–500 字`}>
       {(control) => <Textarea {...control} aria-label="变更理由" value={reason} maxLength={500} rows={2} count={`${reason.trim().length}/500`} placeholder="例如：更新提现说明，工单号" onChange={(event) => onReason(event.target.value)} />}
     </Field>
   </Modal>;

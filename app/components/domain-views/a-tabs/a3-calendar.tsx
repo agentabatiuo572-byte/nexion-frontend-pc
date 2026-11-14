@@ -291,14 +291,14 @@ export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSumma
           {(control) => <Select {...control} aria-label="时区" disabled={!country} placeholder="先选国家" value={zoneId} onChange={setZoneId} options={zones.map((option) => ({ value: option.zoneId, label: zoneOptionLabel(option, offsetOf(option.zoneId)) }))} />}
         </Field>
       </div>
-      <Field label="生效日期" required hint={`最早 ${view.earliestEffectiveDate}`} error={effectiveDate && effectiveDate < view.earliestEffectiveDate ? `最早只能安排 ${view.earliestEffectiveDate}` : undefined}>
+      <Field label="生效日期" required help={`最早 ${view.earliestEffectiveDate}`} error={effectiveDate && effectiveDate < view.earliestEffectiveDate ? `最早只能安排 ${view.earliestEffectiveDate}` : undefined}>
         {(control) => <Input {...control} aria-label="生效日期" type="date" min={view.earliestEffectiveDate} value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} />}
       </Field>
       {previewReady && selected && previewSwitch !== null && <Facts>
         <Fact k="切换时刻">{stampOf(previewSwitch)}（{zoneText}）</Fact>
         {previewDays.map(({ track, hours }) => <Fact key={track.key} k={`${track.name}那一天`} tone={hours !== 24 ? "warn" : undefined}>{previousDay(effectiveDate)} 共 {hoursText(hours)}，{dayChange(hours)}</Fact>)}
       </Facts>}
-      <Field label="理由" required hint="8–200 字" error={touched && !reasonValid ? "理由要写 8–200 字" : undefined}>
+      <Field label="理由" required help="8–200 字" error={touched && !reasonValid ? "理由要写 8–200 字" : undefined}>
         {(control) => <Textarea {...control} aria-label="业务时区修改理由" value={reason} maxLength={200} rows={2} count={`${reason.trim().length}/200`} placeholder="例如：主要市场改到越南，工单号" onBlur={() => setTouched(true)} onChange={(event) => setReason(event.target.value)} />}
       </Field>
     </Modal>}
@@ -330,7 +330,7 @@ export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSumma
         <Fact k="要撤销的安排">{pending.effectiveDate} 起改用{zoneLabel(pending.zoneId)}（{pending.offset}）</Fact>
         <Fact k="撤销后">现行时区不变，这条安排从版本记录里去掉</Fact>
       </Facts>
-      <Field label="撤销理由" required hint="8–200 字">
+      <Field label="撤销理由" required help="8–200 字">
         {(control) => <Textarea {...control} aria-label="撤销理由" value={cancelReason} maxLength={200} rows={2} count={`${cancelReason.trim().length}/200`} onChange={(event) => setCancelReason(event.target.value)} />}
       </Field>
     </Modal>}
