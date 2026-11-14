@@ -965,7 +965,7 @@ E2、E5、E6 设备与任务原命令共用核查入口：超过 24 小时或后
 
 #### [E5] 设备管理
 
-**2026-11-14 后端 111e00cd 同步**：用户级恢复只清有效归属设备上的运营暂停，保留退款、账户停用、手机离线/低电量、换机、解绑/停用/回收等系统暂停。一次最多200候选ID，仅更新该集合；实际恢复数取changedCount，无候选404 PAUSED_USER_DEVICES_NOT_FOUND，成功和无候选后刷新核对。入口用userDeviceSlotNo的有效归属投影及暂停原因判断；确认框“全部设备”范围文字交视觉worker。出处 DeviceOpsMapper.RESUMABLE_OPERATIONAL_PAUSE/lockE5BatchCandidateIds/resumeDevicesByUser，OpsDeviceService.batchE5Devices。
+**2026-11-14 后端 111e00cd 同步**：用户级恢复只清有效归属设备上的运营暂停，保留退款、账户停用、手机离线/低电量、换机、解绑/停用/回收等系统暂停。一次最多200候选ID，仅更新该集合；实际恢复数取changedCount，无候选404 PAUSED_USER_DEVICES_NOT_FOUND，成功和无候选后刷新核对。入口用userDeviceSlotNo的有效归属投影及暂停原因判断；确认框写“只恢复运营手动暂停的设备；退款、注销、换机、离线、电量低等系统暂停保持不变”，范围写“这位用户被运营暂停的设备（含手机）”，执行摘要注明实际台数以回执为准、单次最多200台；成功提示“已恢复 n 台运营暂停的设备”；无候选404关框、页首提示“这位用户已没有运营暂停的设备，没有恢复任何设备”并刷新。出处 DeviceOpsMapper.RESUMABLE_OPERATIONAL_PAUSE/lockE5BatchCandidateIds/resumeDevicesByUser，OpsDeviceService.batchE5Devices。
 
 **2026-11-12 后端同步（代码侧）**：同一 overview 已增加 `errorRetry/legacyPending/waitingConfig`，客户端按非负整数读取，不另发列表计数。这三数按列表有效状态解析，与原四数的旧状态口径不同，不相加成分布；三数的可见展示由视觉 worker 接入。名额标记绑定后端 `userId` 精确筛选，清空旧搜索词但保留状态、来源、商品；普通搜索与 userId 取交集，分页、单项清除、全部清除及网址恢复携同一 userId。现有读回入口同时按号查询，只有权威成功或 `CONFIRMED_NOT_EXECUTED && newOperationAllowed && !locked` 才收敛；当前列表、查不到及403不解除。受控结案逻辑通过 `useE5Commands().check(record, evidence)` 暴露，只允许持调查权限及 E5 读权的超管提交，由服务端再次核实在职、绑定和证据。三数、证据框、入口、名额旧提示及新错误码中文留给视觉 worker，不改变现有屏幕组成。
 
@@ -997,7 +997,7 @@ E2、E5、E6 设备与任务原命令共用核查入口：超过 24 小时或后
 
 #### [E6a] 手机任务、收益、用户手机与校准规则
 
-**2026-11-14 后端 111e00cd 同步**：手机恢复沿E5运营暂停及有效归属范围，最多200候选，按changedCount和404核对刷新。风险结案不再传receiptOnly，接已有成功审计编号并传真实evidenceAuditId；63a4f669已将 E6_PHONE_RISK_SETTINGS / CONFIG / E.compute.phoneRisk.settings / ADMIN.PHONE_RISK_SETTINGS_UPDATED 纳入成功证据白名单，严格绑定原actor/method/path/recordId/scope/key/hash，接受SUCCESS及SUCCEEDED，证据不足仍UNKNOWN。旧无receiptVersion记录不升级；“全部设备”及旧“不接受操作记录编号”文字交视觉worker。出处 AdminCommandInvestigationService.supportedSuccessFact、AdminCommandInvestigationMapper.successEvidence。
+**2026-11-14 后端 111e00cd 同步**：手机恢复沿E5运营暂停及有效归属范围，最多200候选，按changedCount和404核对刷新。风险结案不再传receiptOnly，接已有成功审计编号并传真实evidenceAuditId；63a4f669已将 E6_PHONE_RISK_SETTINGS / CONFIG / E.compute.phoneRisk.settings / ADMIN.PHONE_RISK_SETTINGS_UPDATED 纳入成功证据白名单，严格绑定原actor/method/path/recordId/scope/key/hash，接受SUCCESS及SUCCEEDED，证据不足仍UNKNOWN。旧无receiptVersion记录不升级。手机页恢复确认框与E5同一说法（范围“该用户被运营暂停的设备，包含手机”），成功提示同E5；无候选404时确认框内报原因并刷新列表。旧“不接受操作记录编号”分支已删除；结案框选“已执行”时显示“成功审计编号”输入，说明不再重复“证据不够记为仍未知”。出处 AdminCommandInvestigationService.supportedSuccessFact、AdminCommandInvestigationMapper.successEvidence。
 
 **2026-11-12 风控与直接命令同步（代码侧）**：新风控保存的原信封带 `receiptVersion=1`，PUT 按原修订、全部模式、两阈值、理由和 Idempotency-Key 去重；24 小时内恢复逻辑允许原样重试。升级前没有该标记的旧未知记录保持只读当前设置。GET `/api/admin/config/phone-calibration/risk/receipts/by-key?commandKey=` 精确代理保留查询串；`checkDirect` 验证 scope、key、原操作者、method/path/target/hash/status，只有原绑定一致且状态成功或确认未执行才收敛，当前设置独立读取。查不到不证明未执行，403不解除，旧无来源及仍在处理中继续保留；成功回执的 originalResponse=null 保持为空，不补造原 settings/stats。用户手机直接动作沿原 E5 命令的服务器绑定查询与证据核查，原页面、原快照和 E5/E6 对象锁保留。刷新后风控重试及明确的查原保存结果入口、手机核查／结案入口、确认框与使用说明的旧「不去重」说法，以及新错误码中文由视觉 worker 完成；本轮不改变屏幕组成和文案。
 

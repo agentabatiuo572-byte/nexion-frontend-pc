@@ -417,7 +417,7 @@ A1 是后台的**运营账号、登录安全与会话治理地基**。A1 负责�
 
 #### [A2] 操作记录与审批
 
-**2026-11-14 后端 111e00cd 同步**：队列、详情和历史接真实可空 operationCode，按稳定码识别 H1 dial、C2/C5 全退及 H5 连签里程碑；无 command 的旧记录与 E4 缺订单号退款仍允许 null。canApprove/canReject 权威优先。H1 dial 与全退仅批准要求另一位超级管理员及原业务权限，驳回不加身份门；H5 仍按专项超管规则。补两个批准拒绝码中文。出处：OpsAuditCenterService.ticketMetadata/history，AuditReplayBusinessPermissionGuard.validateDecisionPermission，H1GrowthApproval.validateChecker，H5GrowthApproval.validateChecker。
+**2026-11-14 后端 111e00cd 同步**：队列、详情和历史接真实可空 operationCode，按稳定码识别 H1 dial、C2/C5 全退及 H5 连签里程碑；无 command 的旧记录与 E4 缺订单号退款仍允许 null。canApprove/canReject 权威优先。H1 dial 与全退仅批准要求另一位超级管理员及原业务权限，驳回不加身份门；H5 仍按专项超管规则。补两个批准拒绝码中文。出处：OpsAuditCenterService.ticketMetadata/history，AuditReplayBusinessPermissionGuard.validateDecisionPermission，H1GrowthApproval.validateChecker，H5GrowthApproval.validateChecker。 详情和批准框的“谁能批准”按稳定码写：h1_phase_dial 为“另一位有审批批准权限和运营阶段修改权限的超级管理员”，c2_session_revoke_all（含旧“强制登出 · ”单）为“另一位有审批批准权限和退出全部设备权限的超级管理员”，h5_streak_milestone 为“另一位有审批批准权限的超级管理员”。
 
 **2026-11-12 后端 66ecdb47 同步**：手机任务审批的 `ruleTaskAction` 从总览、单号详情到历史和原操作恢复原样保留；CREATE／UPDATE／ENABLE／DISABLE 分别显示「新增／编辑／启用／停用手机任务」，字段为空才沿原动作名，不看前后值推断。是否放大及资金类型仍以后端为准。G2 兑换参数、G7 回购参数的批准人是另一位有审批批准权的在职超级管理员；G4 创世参数还须该参数业务权。后端批准前重查旧值（G4 同时重查系列）和候选增量覆盖率，过期提案不应用到现值。课程回滚动作写「回滚至有奖励的课程版本」。能批／能驳仍取后端逐单资格，详情显示其批准／驳回拒因。
 
@@ -4370,7 +4370,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 #### [K4] 风险评分模型
 
-**2026-11-14 后端 111e00cd 同步**：告警新增 nullable userNo，取原 payload.user_no；lib/admin/k-client.ts 类型与映射保留真实值/null，不从单号或其他接口猜。用户编号显示和授权定位交视觉worker；证据金额/币种精度缺口保持。出处 K4WithdrawalAlertService.alerts、K4WithdrawalAlertMapper.listAlerts。
+**2026-11-14 后端 111e00cd 同步**：告警新增 nullable userNo，取原 payload.user_no；lib/admin/k-client.ts 类型与映射保留真实值/null，不从单号或其他接口猜。告警表第一列“提现单号 · 用户”：单号下写用户编号（不加千分位），有用户详情读权限时可点到用户详情；无编号写“无归属用户”，不显示成 0 或空白；优先级移到风险分下。证据金额/币种精度缺口保持。出处 K4WithdrawalAlertService.alerts、K4WithdrawalAlertMapper.listAlerts。
 
 **2026-11-13 恢复提示修正**：原记录仍在时显示重试；未过期但写权限被收回时显示权限原因，保留只读查询；只有超过 24 小时才提示已过期。恢复入口和提交权限不变。
 

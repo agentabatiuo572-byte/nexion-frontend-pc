@@ -35,7 +35,7 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
     return result;
   };
   const scope=confirm?(confirm.action==="pause"||confirm.action==="resume"?`user:${confirm.device.userId}`:phoneScope(confirm.device)):"";
-  const consequence=confirm?.action==="activate"||confirm?.action==="force"?"每人最多 6 台设备，包含手机。激活后占用一个设备名额，强制激活也不能绕过上限。":confirm?.action==="deactivate"?"有任务则在本单完成结算后停用，不再派单。":confirm?.action==="unbind"?"设备将不再属于该用户。不退款，购入时间不变；批准后解绑，不能撤销。":confirm?.action==="pause"?"将暂停该用户全部设备（含手机）。停跑期间不计收益、不补发。":"将恢复该用户全部设备派单；停跑期间收益不补发。";
+  const consequence=confirm?.action==="activate"||confirm?.action==="force"?"每人最多 6 台设备，包含手机。激活后占用一个设备名额，强制激活也不能绕过上限。":confirm?.action==="deactivate"?"有任务则在本单完成结算后停用，不再派单。":confirm?.action==="unbind"?"设备将不再属于该用户。不退款，购入时间不变；批准后解绑，不能撤销。":confirm?.action==="pause"?"将暂停该用户全部设备（含手机）。停跑期间不计收益、不补发。":"只恢复运营手动暂停的设备；退款、注销、换机、离线、电量低等系统暂停保持不变。停跑期间收益不补发。";
   return <><E6PendingNotice section="phones" onRead={result=>{void ctx.refreshE5();if(result?.readbackFailed)ctx.toast("已取得操作回执，读回失败，请刷新核对。","warn");}}/>
     <Conclusion state="neutral" icon={Smartphone}>{ctx.e5Loading?"正在查询用户手机":ctx.e5DeviceError?"等手机列表读取成功后可用":`当前查询共 ${ctx.e5Total} 台手机`}{ctx.e5Keyword&& !ctx.e5DeviceError?` · ${ctx.e5Keyword}`:""}</Conclusion>
     <Panel title="用户手机" className="e6-phone-panel" icon={Smartphone} tone="role-2" flush data-proof="e6-phone-devices" explain="每人最多 6 台设备，包含手机。这里显示手机心跳状态，没有商城 SIM 任务进度。" actions={<ColumnPicker columns={columns}/> }>
@@ -55,7 +55,7 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
     {confirm&&<E6ConfirmModal scope={scope} briefKind="record" statedBrief={{impact:consequence,check:"核对设备、用户、六台名额与处置后果，理由写明依据。"}} action={`${LABELS[confirm.action]} · ${confirm.device.serial}`} title={`${LABELS[confirm.action]} ${confirm.action==="pause"||confirm.action==="resume"?confirm.device.nickname:confirm.device.deviceName}`} reasonMin={8} reasonMax={200} confirmLabel={confirm.action==="force"||confirm.action==="unbind"?"确认提交":"确认执行"} confirmTone={confirm.action==="pause"||confirm.action==="unbind"?"danger":"primary"}
       detail={consequence}
       completionCopy={confirm.action==="force"||confirm.action==="unbind"?"由另一位具备批准权和设备处置权限的管理员复核。":"执行后读取手机列表核对真实状态。"}
-      facts={<Facts><Fact k={confirm.action==="pause"||confirm.action==="resume"?"操作范围":"手机"}>{confirm.action==="pause"||confirm.action==="resume"?"该用户全部设备，包含手机":confirm.device.deviceName}</Fact><Fact k="实例号"><span data-mono className="e6-serial">{confirm.device.serial}</span></Fact><Fact k="用户">{`${confirm.device.nickname} · ${confirm.device.userNo}`}</Fact><Fact k="原状态">{confirm.device.pausedReason?"已暂停":STATES[confirm.device.state]}</Fact>{(confirm.action==="activate"||confirm.action==="force")&&<Fact k="已占名额"><span className="e6-device-slots"><span>{confirm.device.activeDevicesForUser}/6 台</span><RatioBar label="设备名额" value={confirm.device.activeDevicesForUser} total={6} valueText={`${confirm.device.activeDevicesForUser}/6 台，含手机`} steps compact/></span></Fact>}</Facts>}
+      facts={<Facts><Fact k={confirm.action==="pause"||confirm.action==="resume"?"操作范围":"手机"}>{confirm.action==="pause"?"该用户全部设备，包含手机":confirm.action==="resume"?"该用户被运营暂停的设备，包含手机":confirm.device.deviceName}</Fact><Fact k="实例号"><span data-mono className="e6-serial">{confirm.device.serial}</span></Fact><Fact k="用户">{`${confirm.device.nickname} · ${confirm.device.userNo}`}</Fact><Fact k="原状态">{confirm.device.pausedReason?"已暂停":STATES[confirm.device.state]}</Fact>{(confirm.action==="activate"||confirm.action==="force")&&<Fact k="已占名额"><span className="e6-device-slots"><span>{confirm.device.activeDevicesForUser}/6 台</span><RatioBar label="设备名额" value={confirm.device.activeDevicesForUser} total={6} valueText={`${confirm.device.activeDevicesForUser}/6 台，含手机`} steps compact/></span></Fact>}</Facts>}
       getPendingReason={()=>m.pendingReason(scope)} onClose={()=>setConfirm(null)} onConfirm={async reason=>{
         let result: E6WriteReceipt | undefined;
         const d=confirm.device,action=confirm.action,original=m.pending.find(r=>r.scope===scope);
@@ -65,7 +65,7 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
           if(failure instanceof Error&&"backendMessage" in failure&&failure.backendMessage==="PAUSED_USER_DEVICES_NOT_FOUND")await ctx.refreshE5();
           throw failure;
         });
-        await ctx.refreshE5();setConfirm(null);ctx.toast(result?.readbackFailed?"已取得操作回执，读回失败，请刷新核对。":action==="force"||action==="unbind"?"已提交，等待审批后执行":action==="pause"||action==="resume"?result?.changedCount===undefined?"已取得用户设备操作回执，请核对列表":`${action==="pause"?"暂停":"恢复"}成功 · ${result.changedCount} 台设备`:action==="deactivate"&&result?.pendingDeactivate?"已申请停用，等待当前任务结算后自动停用":"已取得操作回执并读取手机列表，请核对当前状态",result?.readbackFailed?"warn":undefined);
+        await ctx.refreshE5();setConfirm(null);ctx.toast(result?.readbackFailed?"已取得操作回执，读回失败，请刷新核对。":action==="force"||action==="unbind"?"已提交，等待审批后执行":action==="pause"||action==="resume"?result?.changedCount===undefined?"已取得用户设备操作回执，请核对列表":action==="pause"?`暂停成功 · ${result.changedCount} 台设备`:`已恢复 ${result.changedCount} 台运营暂停的设备`:action==="deactivate"&&result?.pendingDeactivate?"已申请停用，等待当前任务结算后自动停用":"已取得操作回执并读取手机列表，请核对当前状态",result?.readbackFailed?"warn":undefined);
       }}/>}
   </>;
 }

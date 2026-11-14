@@ -360,7 +360,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   MAX_DEVICES_PER_USER_EXCEEDED: "用户已达 6 台激活上限（含手机），请先停用其他设备并核对名额。",
   METHOD_NOT_ALLOWED: "此入口不支持这项请求方式，请保留原内容并核对发起页面；仍有问题请联系值班人员。",
   OPERATION_TYPE_REQUIRED: "缺少审批操作类型，本次无法提交；请保留输入并核对发起入口。",
-  PAUSED_USER_DEVICES_NOT_FOUND: "这个用户没有可恢复的运营暂停设备。系统暂停会继续保留，请刷新核对设备归属和暂停原因。",
+  PAUSED_USER_DEVICES_NOT_FOUND: "这位用户已没有运营暂停的设备，没有恢复任何设备；系统暂停的保持不变。列表已刷新，请核对暂停原因。",
   REQUEST_BODY_INVALID: "请求内容格式不完整或无法读取，请保留原操作及输入并核对；仍有问题请联系值班人员。",
   REQUEST_HEADER_REQUIRED: "请求缺少必要凭据，请保留原记录和命令号，联系值班人员核对。",
   REQUEST_PARAMETER_INVALID: "查询条件或请求参数格式不符，请保留原操作内容并核对具体字段，重新选择查询条件后读取。",
