@@ -54,20 +54,20 @@ export function H3MissionFormDrawer({ missionType, onClose, onReview }: {
   return (
     <>
       <Drawer open wide onClose={close} title={`新建${subject}`} sub="建好后是已停用" icon={ListChecks} tone="role-4"
-        explain="左边填，右边看它在 App 上的样子。点「下一步」后核对、写理由再提交。建好的任务先是已停用，要先在「完成条件」里绑定用户做了什么算完成，再启用。"
+        explain="左边填，右边看它在 App 上的样子。名称建好后可以在任务详情里分别填英文、中文、越南语。点「下一步」后核对、写理由再提交。建好的任务先是已停用，要先在「完成条件」里绑定用户做了什么算完成，再启用。"
         footer={<Decision note={attempted && missing.length ? `还有 ${missing.length} 项要改：${missing.join("；")}` : undefined}
           primary={<Button variant="primary" onClick={review}>下一步：核对并提交</Button>}
           others={<Button onClick={close}>取消</Button>} />}>
         <div className="rd-split h3-form-split" data-detail="" data-preview="">
           <div className="h3-form">
-            <Field label="任务编号" required hint="英文和数字，不能重复" error={shown.missionCode} help="系统用它认这个任务，建好后不能改。">
+            <Field label="任务编号" required hint="英文和数字，不能重复，建好后不能改" error={shown.missionCode}>
               {(control) => <Input {...control} value={value.missionCode ?? ""} placeholder="如 dayOne-visit-earn" onChange={(event) => set("missionCode", event.target.value)} />}
             </Field>
-            <Field label="任务名称" required error={shown.missionName} help="建好后可以在任务详情里分别填英文、中文、越南语名称；没填的语言 App 先显示英文，再显示这个名称。">
+            <Field label="任务名称" required error={shown.missionName}>
               {(control) => <Input {...control} value={value.missionName ?? ""} placeholder="如 逛收益页" onChange={(event) => set("missionName", event.target.value)} />}
             </Field>
             <Field label="奖励" required hint="非负整数" error={shown.rewardPoints}
-              help={missionType === "DAY_ONE" ? "首日任务做完全部才按「首日奖励」统一发，这里的数不单独发。" : "大于 0 要提交审批，另一位超级管理员批准后才建；填 0 直接建好。"}>
+>
               {(control) => <NumberInput {...control} unit="UVT" min={0} step={1} value={value.rewardPoints ?? ""} onChange={(event) => set("rewardPoints", event.target.value)} />}
             </Field>
             <div className="rd-form-grid" data-cols="2" data-dense="">
@@ -93,7 +93,8 @@ export function H3MissionFormDrawer({ missionType, onClose, onReview }: {
             </div>
             <dl className="h3-form-facts">
               <div><dt>状态</dt><dd><StatusTag tone="neutral">已停用</StatusTag></dd></div>
-              <div><dt>用户什么时候看到</dt><dd>绑定完成条件、启用以后，{missionType === "DAY_ONE" ? "之后注册的用户" : "之后发布的每周任务"}里才有它</dd></div>
+              <div><dt>用户什么时候看到</dt><dd>绑定条件并启用后才发给用户</dd></div>
+              {missionType === "DAY_ONE" && <div><dt>奖励</dt><dd>做完全部首日任务才按「首日奖励」统一发</dd></div>}
               {missionType !== "DAY_ONE" && <div><dt>怎么生效</dt><dd>{reward == null ? "—" : needsApproval ? "奖励大于 0：提交审批，批准前不建" : "奖励是 0：确认后直接建好"}</dd></div>}
             </dl>
             {missionType === "DAY_ONE" && needsApproval && <Notice tone="neutral">奖励大于 0 要提交审批，另一位超级管理员批准后才建。</Notice>}

@@ -153,9 +153,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       const status = text(task.status, "");
       if (!missionCode || !["active", "paused"].includes(status) || seen.has(missionCode)) return [];
       seen.add(missionCode);
-      return [{ missionCode, label: `${text(task.task ?? task.cond, missionCode)} · ${missionCode}${status === "paused" ? " · 待启用" : ""}` }];
+      return [{ missionCode, label: `${text(model?.contentLocales?.mission?.[missionCode]?.zh?.name, "") || taskTitleText(text(task.task ?? task.cond, missionCode))}${status === "paused" ? " · 已停用" : ""}` }];
     });
-  }, [model?.dayOneTasks, model?.weeklyTier1, model?.weeklyTier2]);
+  }, [model?.dayOneTasks, model?.weeklyTier1, model?.weeklyTier2, model?.contentLocales]);
 
   const bindingMissionLabels = useMemo(
     () => Object.fromEntries(bindingMissionOptions.map((item) => [item.missionCode, item.label])),
@@ -277,7 +277,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         : immediate,
       facts: <Facts>
         <Fact k="状态"><Change from={current === "active" ? "已启用" : "已暂停"} to={next === "active" ? "已启用" : "已暂停"} /></Fact>
-        <Fact k="App 上">目前不显示备用卡：App 只读到参数，没有显示和领取</Fact>
+        <Fact k="App 上">目前不显示，也没有领取</Fact>
         <Fact k="每周任务卡">不受影响</Fact>
         {approverFacts(next === "active")}
       </Facts>,
@@ -340,12 +340,12 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     openActionConfirm({ briefKind: "config",
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
       title: `${current ? "改" : "填写"}${LOCALE_LABEL[locale]}名称`,
-      detail: <>不填时 App 先显示英文名称，再显示原名，不会自动翻译。</>,
+      detail: <>没填时 App 先显示英文，再显示原名。</>,
       effect: immediate,
       facts: <Facts>
         <Fact k="任务">{taskTitleText(source)}</Fact>
         <Fact k="语言">{LOCALE_LABEL[locale]}</Fact>
-        <Fact k="已经发给用户的">不变：首日任务在注册时、每周任务在发布时定下了名称</Fact>
+        <Fact k="已经发给用户的">不变，按拿到时定下的那一份</Fact>
         <Fact k="之后的用户">之后注册的用户、之后发布的每周任务用新名称</Fact>
       </Facts>,
       statedBrief: { impact: "只改这个任务这一种语言的名称，其他语言不动；已填的不能清空。", check: "核对语言和拼写；理由写清依据。" },
@@ -368,7 +368,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const whoFacts = (monthly: boolean, change: string) => monthly
     ? <Fact k="用户">App 现在没有月度入口，改了不会发给任何人</Fact>
     : <>
-      <Fact k="已经发给用户的">不变：首日任务在注册时、每周任务在发布时定下</Fact>
+      <Fact k="已经发给用户的">不变，按拿到时定下的那一份</Fact>
       <Fact k="之后的用户">{change}</Fact>
     </>;
 
@@ -403,7 +403,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     openActionConfirm({ briefKind: "config",
       action: `配置任务类别与去完成页面 · ${label}`,
       title: "改类别和跳转",
-      detail: <>用户在 App 上看到的类别，和点「去完成」跳到哪一页。</>,
+      detail: <>App 上显示的类别和「去完成」跳到哪页。</>,
       effect: immediate,
       facts: <Facts>
         <Fact k="任务">{taskTitleText(label)}</Fact>
@@ -470,9 +470,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         {monthly
           ? <Fact k="用户">只维护历史状态：App 没有月度入口</Fact>
           : <>
-            <Fact k="已经领到这个任务的用户">不受影响：首日任务在注册时、每周任务在发布时定下，照旧能完成和领取</Fact>
-            <Fact k="以后的用户">{enabling ? "之后注册的用户（首日）、之后发布的每周任务里有它" : "之后注册的用户（首日）、之后发布的每周任务里没有它"}</Fact>
-            {enabling && <Fact k="前提" tone={taskUnbound(task) ? "warn" : undefined}>{taskUnbound(task) ? "这个任务还没有启用的完成条件，启用会被拒绝；先到「完成条件」绑定" : "要有启用的完成条件；目标业务不可用时也会被拒绝"}</Fact>}
+            <Fact k="已领到的用户">不受影响，照旧能完成和领取</Fact>
+            <Fact k="以后的用户">{enabling ? "之后的用户会拿到它" : "之后的用户拿不到它"}</Fact>
+            {enabling && <Fact k="前提" tone={taskUnbound(task) ? "warn" : undefined}>{taskUnbound(task) ? "没有启用的完成条件，会被拒绝；先去「完成条件」绑定" : "要有启用的完成条件；目标业务不可用时也会被拒绝"}</Fact>}
           </>}
       </Facts>,
       statedBrief: { impact: enabling ? "启用后之后的用户会拿到这个任务。" : "停用后之后的用户拿不到这个任务；已经拿到的照旧。", check: "核对任务和完成条件；理由写清依据。" },
@@ -499,7 +499,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       content: <Facts>
         <Fact k={monthly ? "月度挑战" : "任务"}>{taskTitleText(label)}</Fact>
         <Fact k="状态"><Change from={status === "active" ? "已启用" : "已停用"} to="已归档" tone="danger" /></Fact>
-        {!monthly && <Fact k="已经领到这个任务的用户">照旧能完成和领取：发到手的那一份不变</Fact>}
+        {!monthly && <Fact k="已领到的用户">照旧能完成和领取</Fact>}
         <Fact k="以后的用户">{monthly ? "App 没有月度入口，不涉及" : "不会再拿到这个任务"}</Fact>
         <Fact k="归档后还能改">只有奖励；名称、类别、跳转、三语名称都不能改</Fact>
         <Fact k="和删除的区别">归档后才能删除；只想暂时不发用「停用」</Fact>
@@ -528,7 +528,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       content: <Facts>
         <Fact k={monthly ? "月度挑战" : "任务"}>{taskTitleText(label)}</Fact>
         <Fact k="列表里">消失，页面上没有恢复入口</Fact>
-        {!monthly && <Fact k="已经领到这个任务的用户">发到手的那一份和领取记录保留；不退款、不追回</Fact>}
+        {!monthly && <Fact k="已领到的用户">那一份和领取记录保留，不退不追</Fact>}
         <Fact k="操作记录">保留</Fact>
       </Facts>,
       statedBrief: { impact: "只删任务定义；已发出的任务、记录和审计都不删。", check: "确认是要永久从列表删掉；理由写清依据。" },
@@ -561,7 +561,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <Fact k="用户做了什么">{bindingEventText(binding)}</Fact>
         <Fact k="对应任务">{bindingTaskName(binding.questCode) ?? `不在本页任务里（${binding.questCode}）`}</Fact>
         <Fact k="状态"><Change from={enabled ? "已启用" : "已停用"} to={enabled ? "已停用" : "已启用"} /></Fact>
-        <Fact k="已经领到任务的用户">不变：按发到手时定下的条件算完成</Fact>
+        <Fact k="已领到的用户">不变，按拿到时的条件算</Fact>
         <Fact k="以后的用户">{enabled ? "之后注册、之后发布的任务里，做这件事不再算完成" : "之后注册、之后发布的任务里，做这件事算完成"}</Fact>
         {enabled && <Fact k="会被拒绝的情况">它是已启用首日任务的最后一条启用条件</Fact>}
       </Facts>,
@@ -650,7 +650,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   };
 
   const bindingWhoFacts = <>
-    <Fact k="已经领到任务的用户">不变：按发到手时定下的条件算完成</Fact>
+    <Fact k="已领到的用户">不变，按拿到时的条件算</Fact>
     <Fact k="以后的用户">之后注册、之后发布的任务按这里算完成</Fact>
   </>;
 
@@ -745,7 +745,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <Fact k="条件"><span data-mono="">{binding.bindingCode}</span></Fact>
         <Fact k="用户做了什么">{bindingEventText(binding)}</Fact>
         <Fact k="对应任务">{bindingTaskName(binding.questCode) ?? `不在本页任务里（${binding.questCode}）`}</Fact>
-        <Fact k="已经领到任务的用户">不变：仍按发到手时定下的条件算完成</Fact>
+        <Fact k="已领到的用户">不变，按拿到时的条件算</Fact>
         <Fact k="以后的用户">之后注册、之后发布的任务里，做这件事不再算完成</Fact>
         {enabled && <Fact k="会被拒绝的情况">它是已启用首日任务的最后一条启用条件</Fact>}
       </Facts>,
@@ -938,7 +938,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       },
       statedBrief: { impact: "只改之后发布的每周任务的基础奖励，不即时发钱。", check: "核对新奖励；调高写清预算依据。" },
       confirmLabelForValue: (value) => directionOf(current, value ?? null) === "up" ? "提交审批" : "确认修改",
-      coverageLead: "调高每周任务奖励会让平台多付 UVT，要另一位超级管理员批准",
+      coverageLead: "调高会多付 UVT，要另一位超级管理员批准",
       coverageCheck: "提交审批时和批准时，后端各检查一次兑付覆盖率；低于红线拒绝。",
       hint: "0–100,000 的整数",
     });
@@ -1007,7 +1007,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                 const next = parseTriReward(value);
                 return !tri || (next && (Number(next.full) > Number(tri.full) || Number(next.grace) > Number(tri.grace))) ? "提交审批" : "确认修改";
               },
-              coverageLead: "调高首日奖励会让平台多付 UVT，要另一位超级管理员批准",
+              coverageLead: "调高会多付 UVT，要另一位超级管理员批准",
               coverageCheck: "提交审批时和批准时，后端各检查一次兑付覆盖率；低于红线拒绝。",
               hint: "格式：全额 / 宽限 / 0 UVT，例如 100 / 50 / 0 UVT",
             }, <>全额、宽限、过期三档一起改。</>)}>调整</Button> : undefined} />
@@ -1044,17 +1044,17 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             }, <>只是一段展示文字。</>)}>调整</Button> : undefined} />
         </ConfigList>
       </Panel>
-      <div className="h3-tasks-layout">
-        <Panel title="首日任务" icon={ListChecks} tone="role-2" sub={`${dayOne.length} 个 · 已启用 ${dayOneActive.length} 个`}
+      <Panel title="首日任务" icon={ListChecks} tone="role-2" sub={`${dayOne.length} 个 · 已启用 ${dayOneActive.length} 个`}
           explain="用户注册时拿到的是那一刻已启用、绑定了完成条件的首日任务；做完全部才能领奖。之后改任务不影响已经注册的用户。"
           actions={canModuleWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating("DAY_ONE")}>新建首日任务</Button> : undefined}>
+          <div className="h3-tasks-layout">
           {cards("dayOne", dayOne)}
-        </Panel>
         <AppPreview kind="dayOne" tasks={dayOneActive.map((task) => previewTask(task, false))}
           header={<><b>新手任务</b><span>{tri ? `24 小时内做完全部得 ${amountText(tri.full)} UVT` : "首日奖励还没设置"}</span></>}
           footer={tri && eligibility ? `超过 24 小时做完得 ${amountText(tri.grace)} UVT · 注册 ${eligibility} 小时后过期` : undefined}
-          empty="没有启用的首日任务：之后注册的用户看不到首日任务卡" />
-      </div>
+          empty="新用户看不到首日任务卡" />
+          </div>
+        </Panel>
     </div>
   );
 
@@ -1087,7 +1087,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       },
       statedBrief: { impact: "只改之后发布的每周任务的阶段倍率；和运营阶段设置的任务加成相乘。", check: "填 0.1–5，最多 6 位小数。" },
       confirmLabelForValue: (value) => current == null || directionOf(current, decimalOf(value ?? null)) === "up" ? "提交审批" : "确认修改",
-      coverageLead: "调高每周阶段倍率会让平台多付 UVT，要另一位超级管理员批准",
+      coverageLead: "调高会多付 UVT，要另一位超级管理员批准",
       coverageCheck: "提交审批时和批准时，后端各检查一次兑付覆盖率；低于红线拒绝。",
       hint: "0.1–5，例如 1.2",
     })}>调整</Button>;
@@ -1127,10 +1127,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             }, <>只是一段展示文字。</>)}>调整</Button> : undefined} />
         </ConfigList>
       </Panel>
-      <div className="h3-tasks-layout">
-        <Panel title="每周任务" icon={ListChecks} tone="role-2" sub={`一档 ${t1.length} 个 · 二档 ${t2.length} 个 · 已启用 ${t1Active.length + t2Active.length} 个`}
+      <Panel title="每周任务" icon={ListChecks} tone="role-2" sub={`一档 ${t1.length} 个 · 二档 ${t2.length} 个 · 已启用 ${t1Active.length + t2Active.length} 个`}
           explain="每周发布时，把那一刻已启用、绑定了完成条件的任务冻结成这一周的任务。之后改任务只影响之后发布的。"
           actions={canModuleWrite ? <><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating("WEEKLY_T1")}>新建一档</Button><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating("WEEKLY_T2")}>新建二档</Button></> : undefined}>
+          <div className="h3-tasks-layout"><div className="h3-tier-groups">
           <div className="h3-sub-head">
             <h3>{`一档 · ${t1.length} 个`}</h3>
             <Explain label="一档怎么给用户" content="App 首页显示排在最前面的一个已启用一档任务（按建立顺序）。后台没有按用户条件挑选的规则。" />
@@ -1141,11 +1141,12 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             <Explain label="二档怎么给用户" content="每个都能做、各自领奖；目标业务不可用或过了周期时仍可能领不了。" />
           </div>
           {cards("t2", t2)}
-        </Panel>
+          </div>
         <AppPreview kind="weekly" hero={t1Hero ? previewTask(t1Hero, true) : null} tasks={t2Active.map((task) => previewTask(task, true))}
           header={<><b>本周任务</b><span>{currentPhase ? `${currentPhase} · 乘倍率后` : "乘倍率后"}</span></>}
-          empty="没有启用的每周任务：下一次发布时用户看不到每周任务" />
-      </div>
+          empty="下一次发布时没有每周任务" />
+          </div>
+        </Panel>
       <H3RegionPanel region={region} canAudit={canAudit} />
     </div>
   );
@@ -1173,7 +1174,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                 const enabled = Number(binding.status) === 1;
                 const task = bindingTaskName(binding.questCode);
                 return <Tr key={binding.bindingCode} mark={enabled && !task ? "danger" : undefined}>
-                  <Td grow><Cell main={bindingEventText(binding)} sub={<><span data-mono="">{binding.bindingCode}</span>{` · ${producerText(binding.producer)} · `}<span data-mono="">{binding.eventType}</span></>} /></Td>
+                  <Td grow><Cell main={bindingEventText(binding)} title={`${binding.bindingCode} · ${producerText(binding.producer)} · ${binding.eventType}`} sub={<><span data-mono="">{binding.bindingCode}</span>{` · ${producerText(binding.producer)} · `}<span data-mono="">{binding.eventType}</span></>} /></Td>
                   <Td>{task
                     ? <Cell main={task} sub={<span data-mono="">{binding.questCode}</span>} />
                     : <Cell main={<span className="h3-card-alert"><CircleAlert size={14} aria-hidden />不在本页任务里</span>} sub={<span data-mono="">{binding.questCode}</span>} />}</Td>
@@ -1356,11 +1357,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                 const contract = contractForTask(task, model.taskContracts);
                 const sample = contract.sample24h;
                 return <Tr key={`${text(task.id, String(index))}-${text(contract.taskKey, String(index))}`}>
-                  <Td grow><Cell main={nameOf(task)} sub={<span data-mono="">{text(contract.taskKey, "—")}</span>} /></Td>
+                  <Td><Cell main={nameOf(task)} title={`${nameOf(task)} · ${text(contract.taskKey, "—")}`} sub={<span data-mono="">{text(contract.taskKey, "—")}</span>} /></Td>
                   <Td><Cell main={<span data-mono="">{text(contract.serverEvent, "—")}</span>} /></Td>
                   <Td align="right"><Cell num main={sample == null || sample === "" ? "—" : numericValue(sample).toLocaleString("en-US")} /></Td>
                   <Td align="right"><Cell num main={text(contract.anomalyPct, "—")} /></Td>
-                  <Td><Cell main={`${boolValue(contract.b3) ? "计入转化" : "不计入转化"} · ${boolValue(contract.retentionOnly) ? "仅留存" : "不只算留存"}`}
+                  <Td grow><Cell title={`后续业务 ${text(contract.downstream, "—")} · 七天 ${text(contract.day7, "—")} · 报表字段 ${text(contract.bi, "—")}`} main={`${boolValue(contract.b3) ? "计入转化" : "不计入转化"} · ${boolValue(contract.retentionOnly) ? "仅留存" : "不只算留存"}`}
                     sub={`后续业务 ${text(contract.downstream, "—")} · 七天 ${text(contract.day7, "—")} · 报表字段 ${text(contract.bi, "—")}`} /></Td>
                 </Tr>;
               })}
@@ -1442,7 +1443,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           <section className="h3-detail-block" aria-label="改了以后谁受影响">
             <div className="h3-sub-head"><h3>改了以后谁受影响</h3></div>
             <Facts>
-              <Fact k="已经拿到这个任务的用户">不受影响：{detail.list === "dayOne" ? "注册时" : "每周发布时"}已定下名称、类别、跳转、完成条件和奖励</Fact>
+              <Fact k="已拿到的用户">{`不受影响，按${detail.list === "dayOne" ? "注册" : "发布"}时定下的那一份`}</Fact>
               <Fact k="以后的用户">{detail.list === "dayOne" ? "之后注册的用户" : "之后发布的每周任务"}按新设置</Fact>
             </Facts>
           </section>

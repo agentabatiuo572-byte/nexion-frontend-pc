@@ -301,7 +301,7 @@ export function TaskCard({ task, name, bindings, reward, rewardNote, localeGaps,
             ? enabled.map(bindingEventText).join("、")
             : warn
               ? <span className="h3-card-alert"><CircleAlert size={14} aria-hidden />没绑定完成事件，用户做不完</span>
-              : <span className="h3-card-muted">{`还没有启用的完成条件${bindings.length > 0 ? `（${bindings.length} 条已停用）` : ""}，启用前要先绑定`}</span>}</dd>
+              : <span className="h3-card-muted">{bindings.length > 0 ? `没有启用的条件（${bindings.length} 条已停用）` : "还没有完成条件"}</span>}</dd>
         </div>
         <div>
           <dt>点了跳到</dt>
@@ -392,7 +392,7 @@ export function WeeklyFormula({ rows, h1, h1Phase, weekly, weeklyPhase, h1Link }
         <span role="columnheader" />
         <span role="columnheader">基础奖励</span>
         <span role="columnheader" aria-hidden />
-        <span role="columnheader">任务加成（运营阶段设置）</span>
+        <span role="columnheader">任务加成</span>
         <span role="columnheader" aria-hidden />
         <span role="columnheader">每周阶段倍率</span>
         <span role="columnheader" aria-hidden />
