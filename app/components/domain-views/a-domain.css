@@ -261,3 +261,60 @@
   .adom .a6-mods { position: static; flex-direction: row; flex-wrap: wrap; max-height: none; }
   .adom .a6-mod { width: auto; }
 }
+
+/* ============================ A7 菜单管理（改版） ============================ */
+.a7-page .a7-layout { container-type: inline-size; min-width: 0; }
+.a7-page .a7-main { display: grid; grid-template-columns: minmax(0, 7fr) minmax(300px, 5fr); gap: var(--rd-section-gap); align-items: start; }
+@container (max-width: 720px) { .a7-page .a7-main { grid-template-columns: minmax(0, 1fr); } }
+.a7-page .a7-side { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; position: sticky; top: 16px; }
+.a7-page .a7-detail-col { min-width: 0; scroll-margin-top: 16px; }
+.a7-page .a7-muted { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.a7-page .a7-code { color: var(--rd-text-3); font-family: var(--rd-font-mono); font-size: 12px; }
+.a7-page .a7-tree { display: flex; flex-direction: column; }
+.a7-page .a7-node[data-depth="0"] + .a7-node[data-depth="0"] { border-top: 1px solid var(--rd-line); }
+.a7-page .a7-row { display: flex; align-items: center; gap: 4px; min-height: 40px; border-radius: var(--rd-radius-control); }
+.a7-page .a7-node[data-depth="1"] > .a7-row { padding-left: 28px; min-height: 36px; }
+.a7-page .a7-row[data-selected] { background: var(--rd-selected); box-shadow: inset 3px 0 0 var(--rd-brand-ink); }
+.a7-page .a7-toggle { display: inline-grid; place-items: center; width: 24px; height: 24px; flex: none; padding: 0; border: none; border-radius: var(--rd-radius-tag); background: none; color: var(--rd-text-3); cursor: pointer; }
+.a7-page span.a7-toggle { cursor: default; }
+.a7-page button.a7-toggle:focus-visible { outline: 2px solid var(--rd-focus); }
+.a7-page .a7-pick { display: flex; align-items: center; gap: var(--rd-space-2); flex: 1; min-width: 0; padding: 6px var(--rd-space-2); border: none; border-radius: var(--rd-radius-control); background: none; color: var(--rd-text); font: inherit; text-align: left; cursor: pointer; }
+@media (hover: hover) and (pointer: fine) { .a7-page .a7-row:not([data-selected]) .a7-pick:hover { background: var(--rd-hover); } }
+.a7-page .a7-pick:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: -2px; }
+.a7-page .a7-icon { width: 16px; flex: none; color: var(--rd-text-2); }
+.a7-page .a7-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.a7-page .a7-name[data-root] { font-weight: var(--rd-weight-semibold); }
+.a7-page .a7-row[data-stopped] .a7-name { color: var(--rd-text-3); }
+.a7-page .a7-pick > .a7-code { flex: none; }
+.a7-page .a7-route { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text-2); font-family: var(--rd-font-mono); font-size: 12px; }
+.a7-page .a7-row-tags { display: inline-flex; align-items: center; gap: var(--rd-space-2); margin-left: auto; flex: none; }
+.a7-page .a7-count { color: var(--rd-text-3); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.a7-page .a7-sort { min-width: 44px; color: var(--rd-text-3); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+.a7-page .a7-tags { display: inline-flex; flex-wrap: wrap; gap: var(--rd-space-2); }
+.a7-page .a7-detail { display: flex; flex-direction: column; gap: var(--rd-space-4); }
+.a7-page .a7-navline { display: flex; align-items: center; gap: var(--rd-space-2); padding: 10px var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-warn-bg); color: var(--rd-text); }
+.a7-page .a7-navline > svg { flex: none; color: var(--rd-warn); }
+.a7-page .a7-navline[data-shown] { background: var(--rd-panel-inner); }
+.a7-page .a7-navline[data-shown] > svg { color: var(--rd-ok); }
+.a7-page .a7-kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--rd-space-2) var(--rd-space-4); margin: 0; }
+.a7-page .a7-kv > div { display: contents; }
+.a7-page .a7-kv dt { display: flex; align-items: center; gap: 4px; color: var(--rd-text-2); }
+.a7-page .a7-kv dd { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; min-width: 0; font-variant-numeric: tabular-nums; }
+.a7-page .a7-kv dd[data-empty] { color: var(--rd-text-3); }
+.a7-page .a7-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); padding-top: var(--rd-space-4); border-top: 1px solid var(--rd-line); }
+.a7-page .a7-note { display: inline-flex; align-items: center; gap: 6px; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.a7-page .a7-note svg { color: var(--rd-warn); flex: none; }
+.a7-page .a7-preview { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.a7-page .a7-preview > li { border-radius: var(--rd-radius-control); }
+.a7-page .a7-preview-domain { display: flex; align-items: center; gap: var(--rd-space-2); padding: 5px var(--rd-space-2); color: var(--rd-text-2); }
+.a7-page .a7-preview-domain svg { flex: none; color: var(--rd-text-3); }
+.a7-page .a7-preview-domain .a7-count { margin-left: auto; }
+.a7-page .a7-preview > li[data-open] { background: var(--rd-panel-inner); }
+.a7-page .a7-preview > li[data-open] .a7-preview-domain { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.a7-page .a7-preview ul { list-style: none; margin: 0; padding: 0 var(--rd-space-2) 6px 30px; display: flex; flex-direction: column; gap: 2px; }
+.a7-page .a7-preview ul li { padding: 3px var(--rd-space-2); border-radius: var(--rd-radius-tag); color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.a7-page .a7-preview ul li[data-current] { background: var(--rd-selected); color: var(--rd-text); box-shadow: inset 2px 0 0 var(--rd-brand-ink); }
+.a7-page .a7-preview-hidden { display: flex; align-items: center; gap: 6px; margin-top: var(--rd-space-3); }
+.adom .a7-form { display: flex; flex-direction: column; gap: var(--rd-space-4); }
+.adom .a7-notes { display: flex; flex-direction: column; gap: var(--rd-space-3); }
+.adom .a7-code { color: var(--rd-text-3); font-family: var(--rd-font-mono); font-size: 12px; }
