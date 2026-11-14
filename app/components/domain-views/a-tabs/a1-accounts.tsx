@@ -964,7 +964,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const recovery = <A1RecoveryNotice title={`${recoveryRows.length} 个账号操作结果未知`} rows={recoveryRows} />;
 
   if (loading && !overview) {
-    return <div className="a1-page">{header}{recovery}<BlockState state="loading" title="正在读取运营账号与权限" /></div>;
+    return <div className="a1-page">{header}{recovery}<BlockState state="loading" title="正在加载运营账号与权限" /></div>;
   }
 
   if (!overview) {

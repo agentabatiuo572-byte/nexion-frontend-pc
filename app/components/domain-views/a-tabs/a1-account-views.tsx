@@ -434,13 +434,13 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
             const off = recoveryMode && item.key !== "super";
             const codes = item.key === "" ? [] : codesByRole?.[item.key] ?? null;
             return (
-              <label key={item.key || "none"} className="a1-role-option" data-checked={role === item.key ? "" : undefined} data-disabled={off ? "" : undefined}>
-                <input type="radio" name="operator-role" value={item.key} checked={role === item.key} disabled={off} onChange={() => setRole(item.key)} />
-                <span className="a1-role-option-main">
-                  <span className="a1-role-option-name">{item.name}{item.key && item.scope && <Explain label={`${item.name}的角色说明`} content={`角色说明：${item.scope}。实际能做什么以权限数为准，在「角色管理」核对。`} />}</span>
+              <div key={item.key || "none"} className="a1-role-option" data-checked={role === item.key ? "" : undefined} data-disabled={off ? "" : undefined} onClick={(event) => { if (!off && !(event.target as HTMLElement).closest("button")) setRole(item.key); }}>
+                <input type="radio" id={`a1-role-${item.key || "none"}`} name="operator-role" value={item.key} checked={role === item.key} disabled={off} onChange={() => setRole(item.key)} />
+                <p className="a1-role-option-main">
+                  <span className="a1-role-option-name"><label htmlFor={`a1-role-${item.key || "none"}`}>{item.name}</label>{item.key && item.scope && <Explain label={`${item.name}的角色说明`} content={`角色说明：${item.scope}。实际能做什么以权限数为准，在「角色管理」核对。`} />}</span>
                   <span className="a1-role-option-sub">{item.key === "" ? "没有任何权限和菜单" : permSummary(codes)}</span>
-                </span>
-              </label>
+                </p>
+              </div>
             );
           })}
         </div>

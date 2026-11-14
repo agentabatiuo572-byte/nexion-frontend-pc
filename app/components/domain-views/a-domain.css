@@ -230,7 +230,7 @@
 .a1-page .a1-role-option[data-disabled] { cursor: not-allowed; color: var(--rd-text-disabled); }
 .a1-page .a1-role-option input { margin: 3px 0 0; accent-color: var(--rd-brand); flex: none; }
 .a1-page .a1-role-option:has(input:focus-visible) { outline: 2px solid var(--rd-focus); outline-offset: 1px; }
-.a1-page .a1-role-option-main { display: grid; gap: 2px; min-width: 0; }
+.a1-page .a1-role-option-main { display: grid; gap: 2px; min-width: 0; margin: 0; }
 .a1-page .a1-role-option-name { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-weight: var(--rd-weight-medium); }
 .a1-page .a1-role-option-sub { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .a1-page .a1-first-login { display: grid; gap: var(--rd-space-1); margin: 0; padding: 0 0 0 var(--rd-space-5); color: var(--rd-text-2); }
@@ -242,3 +242,4 @@
 .a1-page .a1-temp-password-k { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .a1-page .a1-temp-password-v { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); overflow-wrap: anywhere; user-select: all; }
 .a1-page .a1-temp-password-err { color: var(--rd-warn); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.a1-page .a1-role-option-name label { cursor: inherit; }
