@@ -267,7 +267,22 @@ export function assertF4Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F4");
   domain(row, "F4");
   array(row, "metrics", "F4");
-  array(row, "quotaRows", "F4");
+  array(row, "quotaRows", "F4").forEach((value, index) => {
+    const item = record(value, "F4", `quotaRows[${index}]`);
+    positiveInteger(item.id, "F4", `quotaRows[${index}].id`);
+    for (const key of ["current", "cap"]) nonNegativeInteger(item[key], "F4", `quotaRows[${index}].${key}`);
+  });
+  array(row, "quotaUsages", "F4").forEach((value, index) => {
+    const item = record(value, "F4", `quotaUsages[${index}]`);
+    for (const key of ["id", "userId", "quantity"]) positiveInteger(item[key], "F4", `quotaUsages[${index}].${key}`);
+    text(item.status, "F4", `quotaUsages[${index}].status`);
+  });
+  array(row, "ambassadorApplications", "F4").forEach((value, index) => {
+    const item = record(value, "F4", `ambassadorApplications[${index}]`);
+    positiveInteger(item.id, "F4", `ambassadorApplications[${index}].id`);
+    nonNegative(item.requestedBudgetUsd, "F4", `ambassadorApplications[${index}].requestedBudgetUsd`);
+    text(item.status, "F4", `ambassadorApplications[${index}].status`);
+  });
   array(row, "ambassadorBands", "F4");
   array(row, "podium", "F4");
   const votes = array(row, "voteWeights", "F4");
@@ -278,6 +293,51 @@ export function assertF4Overview(value: unknown): asserts value is JsonRecord {
   });
   object(row, "config", "F4");
   common(row, "F4");
+  for (const field of ["configVersion", "settlementConfigUnavailableKey", "settlementConfigUnavailableReason", "monthlyCapLabel", "nextSettlementAt"]) {
+    if (typeof row[field] !== "string") invalid("F4", field);
+  }
+  if (!["READY", "HOLD"].includes(String(row.settlementConfigStatus))) invalid("F4", "settlementConfigStatus");
+  if (row.currentWeekPoolUsd !== null) nonNegative(row.currentWeekPoolUsd, "F4", "currentWeekPoolUsd");
+  for (const field of ["weeklyInjectedUsd", "weeklyGmvUsd", "monthlyCapUsd", "participantCount", "topN", "topSharePct", "unlockRank", "quotaMonthlyStockTotal", "quotaMonthlyStockUsed", "quotaMonthlyStockRemaining", "ambassadorPendingCount", "leaderboardFraudHitCount"]) nonNegative(row[field], "F4", field);
+  for (const [key, value] of Object.entries(row.configValues as JsonRecord)) {
+    if (typeof value !== "string") invalid("F4", `configValues.${key}`);
+  }
+  if (row.coverage != null) {
+    const coverage = object(row, "coverage", "F4");
+    for (const key of ["coverageRatio", "redlinePct"]) if (coverage[key] != null) finite(coverage[key], "F4", `coverage.${key}`);
+  }
+}
+
+export function assertF4MaterialPacket(value: unknown): asserts value is JsonRecord {
+  const row = record(value, "F4", "materials");
+  positiveInteger(row.applicationId, "F4", "materials.applicationId");
+  nonNegativeInteger(row.materialRevision, "F4", "materials.materialRevision");
+  nonNegative(row.budgetUsdt, "F4", "materials.budgetUsdt");
+  if (row.bucket !== null && !["venue", "kol", "print", "dev"].includes(String(row.bucket))) invalid("F4", "materials.bucket");
+  if (!["NOT_SUBMITTED", "PENDING", "NEEDS_MORE", "PASSED"].includes(String(row.materialState))) invalid("F4", "materials.materialState");
+  if (typeof row.statement !== "string" || row.eventDate !== null && typeof row.eventDate !== "string") invalid("F4", "materials.text");
+  for (const key of ["canSubmit", "canReviewBusiness", "canReviewFinance", "canProposeApproval", "canApprove", "legacyApproved"]) {
+    if (typeof row[key] !== "boolean") invalid("F4", `materials.${key}`);
+  }
+  for (const key of ["missingKinds", "approvalBlockers", "proposalBlockers"]) array(row, key, "F4").forEach(item => text(item, "F4", `materials.${key}`));
+  array(row, "requirements", "F4").forEach(value => {
+    const item = record(value, "F4", "materials.requirement");
+    text(item.kind, "F4", "materials.requirement.kind");
+    text(item.label, "F4", "materials.requirement.label");
+    if (typeof item.required !== "boolean") invalid("F4", "materials.requirement.required");
+  });
+  array(row, "attachments", "F4").forEach(value => {
+    const item = record(value, "F4", "materials.attachment");
+    for (const key of ["fileId", "kind", "name", "contentType"]) text(item[key], "F4", `materials.attachment.${key}`);
+    nonNegativeInteger(item.sizeBytes, "F4", "materials.attachment.sizeBytes");
+  });
+  for (const value of [row.businessReview, row.financeReview, ...array(row, "reviewHistory", "F4")]) {
+    const review = record(value, "F4", "materials.review");
+    if (!["PENDING", "PASSED", "NEEDS_MORE"].includes(String(review.status))) invalid("F4", "materials.review.status");
+    for (const key of ["reviewerLabel", "reviewedAt", "reason"]) if (review[key] !== null && typeof review[key] !== "string") invalid("F4", `materials.review.${key}`);
+    if (review.verifiedAttendees != null) nonNegativeInteger(review.verifiedAttendees, "F4", "materials.review.verifiedAttendees");
+    if (review.recognizedBudgetUsdt != null) nonNegative(review.recognizedBudgetUsdt, "F4", "materials.review.recognizedBudgetUsdt");
+  }
 }
 
 export function assertF5Overview(value: unknown): asserts value is JsonRecord {

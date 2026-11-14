@@ -6,14 +6,13 @@
  */
 import { useState } from "react";
 import { AlertCircle, FileText, Package, Users } from "lucide-react";
-import { BlockState, Button, Cell, Explain, Field, Fold, Input, KeyValues, Panel, RatioBar, StatusDistributionBar, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, Explain, Fold, KeyValues, Panel, RatioBar, StatusDistributionBar, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel, formatF4AmbassadorBucketRule, formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
-import type { F4AmbassadorApplication, F4AmbassadorPolicy, F4AmbassadorPolicyUpdate, F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
-import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
-import { approvalCopy, approvalTag } from "./f4-pool";
+import type { F4AmbassadorApplication, F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, decimalText, stamp, zoneNote } from "./f4-shared";
 import type { FViewCtx } from "./types";
+import { f4Confirmation } from "./f4-confirmations";
 
 type StageKey = "materials" | "business" | "finance" | "approve" | "approved" | "rejected" | "legacy";
 
@@ -53,119 +52,6 @@ function quotaPrerequisites(row: { directRefs: number; monthComputePointsText: s
   return parts.join(row.unlockMode === "EITHER" ? " 或 " : " 且 ");
 }
 
-function openAmbassadorPolicy(ctx: FViewCtx, policy: F4AmbassadorPolicy) {
-  type Field = Extract<BusinessFormSpec, { kind: "multi-field" }>["fields"][number];
-  const budget = { inputKind: "number", min: 100, max: 10_000, pattern: "^[0-9]+(?:\\.[0-9]+)?$", patternMessage: "预算须填写十进制金额" } as const;
-  const mainFields: Field[] = [
-    { key: "policyVersion", label: "规则版本", current: policy.policyVersion, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$" },
-    { key: "defaultBudgetUsdt", label: "默认预算(USDT)", current: String(policy.defaultBudgetUsdt), ...budget },
-  ];
-  const bucketRows = policy.buckets.map((bucket) => {
-    const name = formatF4AmbassadorBucketTitle(bucket.id, bucket.title);
-    const fields: Field[] = [
-      { key: `${bucket.id}.title`, label: `${name} 名称`, current: bucket.title, maxLength: 80 },
-      { key: `${bucket.id}.rule`, label: `${name} 申请条件`, current: bucket.rule, maxLength: 500 },
-      { key: `${bucket.id}.range`, label: `${name} 显示的金额范围`, current: bucket.range, maxLength: 80 },
-      { key: `${bucket.id}.min`, label: `${name} 最低预算`, current: String(bucket.minBudgetUsdt), ...budget },
-      { key: `${bucket.id}.max`, label: `${name} 最高预算`, current: String(bucket.maxBudgetUsdt), ...budget },
-    ];
-    return { bucket, name, fields };
-  });
-  const limits = [
-    { key: "defaultBudgetUsdt", label: "默认预算", before: policy.defaultBudgetUsdt },
-    ...bucketRows.map(({ bucket, name }) => ({ key: `${bucket.id}.max`, label: `${name} · 最高预算`, before: bucket.maxBudgetUsdt })),
-  ];
-  const changedLimits = (values: BusinessFormValue) => limits.flatMap((limit) => {
-    const after = values[limit.key]?.trim();
-    return after && Number.isFinite(Number(after)) && Number(after) !== limit.before ? [{ ...limit, after }] : [];
-  });
-  const requiresApproval = (changes: ReturnType<typeof changedLimits>) => changes.some(({ before, after }) => Number(after) > before);
-  const formatAmount = (value: string | number) => `${decimalText(value)} USDT`;
-
-  ctx.openActionConfirm({ briefKind: "config",
-    name: "调整区域大使申请规则",
-    title: "调整大使申请规则",
-    businessForm: { kind: "multi-field", fields: [...mainFields, ...bucketRows.flatMap(({ fields }) => fields)] },
-    statedBrief: {
-      impact: "保存后 App 的大使申请页下次打开或刷新就用新规则；已经提交的申请不按新规则改金额。",
-      check: "只改文字、调低预算或调高最低预算时直接保存；调高默认预算或任一类的最高预算要另一位超级管理员批准。",
-    },
-    detail: "四类的编号固定不能改。已知的四类在 PC 和 App 上显示内置的中文名称和条件，自定义的名称和条件文字不一定显示给用户。",
-    completionCopy: "填写理由后即时保存，不经审批。",
-    teamApproval: {
-      source: "F4",
-      resolve: (values) => {
-        const changes = changedLimits(values);
-        if (!requiresApproval(changes)) return undefined;
-        return {
-          heading: "提高预算 · 另一位超级管理员批准后生效",
-          completionCopy: "批准前 App 继续用现在的规则。提交和批准时都会检查兑付覆盖率，批准人需有大使规则资金权限和审批权限，不能是你自己。",
-          comparison: <div className="f4-policy-diff">
-            <Table label="预算变更对比">
-              <thead><tr><Th>预算</Th><Th align="right">现在</Th><Th align="right">改后</Th></tr></thead>
-              <tbody>{changes.map(({ key, label, before, after }) => <Tr key={key}>
-                <Td>{label}</Td><Td align="right"><Cell num main={formatAmount(before)} /></Td><Td align="right"><Cell num main={formatAmount(after)} /></Td>
-              </Tr>)}</tbody>
-            </Table>
-          </div>,
-        };
-      },
-      renderForm: (values, change, locked) => {
-        const input = (field: Field) => <Input id={`f4-policy-${field.key}`} name={field.key}
-          aria-label={field.label} type={field.inputKind ?? "text"} min={field.min} max={field.max}
-          step={field.inputKind === "number" ? "any" : undefined} maxLength={field.maxLength}
-          title={field.inputKind !== "number" ? values[field.key] : undefined}
-          value={values[field.key] ?? ""} disabled={locked} required
-          onChange={(event) => change({ ...values, [field.key]: event.target.value })} />;
-        return <div className="f4-policy-form">
-          <div className="f4-policy-main">
-            <Field id={`f4-policy-${mainFields[0].key}`} label="规则版本" explain="3–64 位，可用字母、数字、点、横线和下划线。">{input(mainFields[0])}</Field>
-            <Field id={`f4-policy-${mainFields[1].key}`} label="默认预算（USDT）" explain="100–10,000 USDT，要落在某一类的预算范围里。">{input(mainFields[1])}</Field>
-          </div>
-          {bucketRows.map(({ bucket, name, fields }) => <Fold key={bucket.id} inset title={name} summary={`${decimalText(values[`${bucket.id}.min`] ?? "")}–${decimalText(values[`${bucket.id}.max`] ?? "")} USDT`}>
-            <fieldset className="f4-policy-bucket" aria-label={`${name}（${bucket.id}）`}>
-            <Field id={`f4-policy-${fields[0].key}`} label="名称" hint="≤ 80 字">{input(fields[0])}</Field>
-            <Field id={`f4-policy-${fields[2].key}`} label="显示范围" hint="≤ 80 字">{input(fields[2])}</Field>
-            <Field id={`f4-policy-${fields[3].key}`} label="最低预算（USDT）">{input(fields[3])}</Field>
-            <Field id={`f4-policy-${fields[4].key}`} label="最高预算（USDT）">{input(fields[4])}</Field>
-            <div className="f4-policy-rule"><Field id={`f4-policy-${fields[1].key}`} label="申请条件" hint="≤ 500 字">{input(fields[1])}</Field></div>
-            </fieldset>
-          </Fold>)}
-        </div>;
-      },
-    },
-    run: async (reason, values) => {
-      if (!values) throw new Error("请填写完整");
-      const payload: F4AmbassadorPolicyUpdate = {
-        policyVersion: values.policyVersion.trim(),
-        expectedRevision: policy.revision,
-        defaultBudgetUsdt: values.defaultBudgetUsdt.trim(),
-        buckets: policy.buckets.map(({ id }) => ({
-          id,
-          title: values[`${id}.title`].trim(),
-          rule: values[`${id}.rule`].trim(),
-          range: values[`${id}.range`].trim(),
-          minBudgetUsdt: values[`${id}.min`].trim(),
-          maxBudgetUsdt: values[`${id}.max`].trim(),
-        })),
-      };
-      const requestedDefault = Number(payload.defaultBudgetUsdt);
-      if (payload.buckets.some(({ minBudgetUsdt, maxBudgetUsdt }) => Number(minBudgetUsdt) > Number(maxBudgetUsdt))) {
-        throw new Error("最低预算不能高于最高预算");
-      }
-      if (!payload.buckets.some(({ minBudgetUsdt, maxBudgetUsdt }) => requestedDefault >= Number(minBudgetUsdt) && requestedDefault <= Number(maxBudgetUsdt))) {
-        throw new Error("默认预算须落在至少一个分类的预算范围内");
-      }
-      if (requiresApproval(changedLimits(values))) {
-        await ctx.submitTeamApproval("F4", payload, reason);
-      } else {
-        await ctx.updateF4AmbassadorPolicy(payload, reason);
-        ctx.toast("区域大使申请规则已更新");
-      }
-    },
-  });
-}
-
 /** 后端的「月配额 1000」「1100」这类额度文字统一写成「1,000 台」；认不出的原样显示。 */
 function monthQuota(label: string) {
   const n = /^(?:月配额\s*)?(\d+)$/.exec(label.trim())?.[1];
@@ -185,40 +71,9 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
   const productName = (usage: F4LeadershipPoolOverview["quotaUsages"][number]) => quotaName(usage) ?? (usage.productNo || usage.quotaCode);
   const shown = stageFilter ? stages.filter(({ stage }) => stage.key === stageFilter) : stages;
 
-  const openQuota = (quota: F4LeadershipPoolOverview["quotaRows"][number]) => ctx.openActionConfirm({ briefKind: "config",
-    name: `${quota.name} 月额度调整`, op: "param",
-    paramKey: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`,
-    expectedVersion: quota.cap,
-    edit: { kind: "number", current: String(quota.cap), unit: "台" },
-    title: `调整 ${quota.name} 的月额度`, effect: approvalTag(), confirmLabel: "提交审批",
-    statedBrief: {
-      impact: "批准后限制这个商品之后的购买；已用的记录不删，也不退单。新额度不能低于本月已用。",
-      check: "后端只接受 0–1,000,000 的整数；批准时额度已被别人改过，或新额度低于本月已用，会被拒绝并给出最新值。",
-    },
-    completionCopy: approvalCopy("F4 写权限"),
-    facts: <KeyValues rows={[
-      { key: "used", label: "本月已用", value: `${count(quota.current)} 台` },
-      { key: "code", label: "额度编号", value: <span data-mono>{quota.quotaCode || quota.id}</span> },
-    ]} />,
-    detail: `${quota.quotaCode || quota.id} · 已用 ${quota.current} / ${quota.cap}。如果别人刚改过，会提示你刷新后再改。`,
-  });
+  const openQuota = (quota: F4LeadershipPoolOverview["quotaRows"][number]) => ctx.openActionConfirm(f4Confirmation(ctx, { action: `F.quota.tier.${quota.quotaCode || quota.id}.monthlyQuota`, overview: data, policy: ctx.f4AmbassadorPolicy }));
 
-  const openRecycle = (usage: F4LeadershipPoolOverview["quotaUsages"][number]) => ctx.openActionConfirm({ briefKind: "record",
-    name: `回收配额 #${usage.id}`, op: "dispose",
-    paramKey: `F.quota.usage.${usage.id}.status`, fixedVal: "recycled",
-    title: `回收名额 #${usage.id}`, effect: approvalTag(), confirmTone: "danger", confirmLabel: "提交回收",
-    statedBrief: {
-      impact: "批准后这条记录改为已回收，这几台的名额回到本月剩余里；不退款、不删订单，用户已买的设备不受影响。",
-      check: "只有还在占用的记录能回收；已回收或不存在的会被拒绝。",
-    },
-    completionCopy: approvalCopy("F4 写权限"),
-    facts: <KeyValues rows={[
-      { key: "user", label: "谁的", value: `用户 ${usage.userId}` },
-      { key: "item", label: "哪一类", value: `${productName(usage)} · ${count(usage.quantity)} 台` },
-      { key: "order", label: "订单号", value: usage.orderNo ? <span data-mono>{usage.orderNo}</span> : "无订单号" },
-    ]} />,
-    detail: "只能回收已使用的配额，回收后这个月的名额马上释放。",
-  });
+  const openRecycle = (usage: F4LeadershipPoolOverview["quotaUsages"][number]) => ctx.openActionConfirm(f4Confirmation(ctx, { action: `F.quota.usage.${usage.id}.status`, overview: data, policy: ctx.f4AmbassadorPolicy }));
 
   return (
     <div className="f4-stack">
@@ -266,8 +121,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
                 <Td>{usage.orderNo ? <Cell mono main={usage.orderNo} /> : <span className="f4-muted">无订单号</span>}</Td>
                 <Td><Cell num main={stamp(usage.occurredAt)} /></Td>
                 <Td>{usage.status.toUpperCase() === "ACTIVE" ? <StatusTag tone="ok">占用中</StatusTag> : usage.status.toUpperCase() === "RECYCLED" ? <StatusTag tone="done">已回收</StatusTag> : <StatusTag tone="neutral">{usage.status || "状态未知"}</StatusTag>}</Td>
-                {/* 旧逻辑不按状态拦回收（后端对已回收的拒绝）；这里只把已回收行的按钮画成次要样式，判断交代码 worker。 */}
-                <Td data-fit="">{canWrite && <Button size="sm" variant={usage.status.toUpperCase() === "ACTIVE" ? "danger-outline" : "ghost"} onClick={() => openRecycle(usage)}>回收</Button>}</Td>
+                <Td data-fit="">{canWrite && <Button size="sm" disabled={usage.status.toUpperCase() !== "ACTIVE"} variant={usage.status.toUpperCase() === "ACTIVE" ? "danger-outline" : "ghost"} onClick={() => openRecycle(usage)}>回收</Button>}</Td>
               </Tr>) : <TableMessage columns={8}>还没有已用记录</TableMessage>}
             </tbody>
           </Table>
@@ -325,7 +179,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
           <p>这就是 App 上申请时用的规则：默认预算和四类各自的预算范围。保存后 App 下次打开或刷新就用新规则，已提交的申请不变。</p>
           <p>已知的四类在 PC 和 App 上显示内置的中文名称和条件，自定义的名称和条件文字不一定显示给用户。</p>
         </>}
-        actions={policy && ctx.canSubmitTeamApproval("F4") ? <Button onClick={() => openAmbassadorPolicy(ctx, policy)}>调整申请规则</Button> : undefined}>
+        actions={policy && ctx.canSubmitTeamApproval("F4") ? <Button onClick={() => ctx.openActionConfirm(f4Confirmation(ctx, { action: "policy", overview: data, policy }))}>调整申请规则</Button> : undefined}>
         {!policy ? <BlockState state="error" title="申请规则读取失败" detail="这不是没有规则：规则暂时读不到，调整入口也先收起。" onRetry={() => void ctx.refreshF4()} retryLabel="重新读取" />
           : <>
             <KeyValues rows={[{ key: "default", label: "默认申请预算", value: `${decimalText(policy.defaultBudgetUsdt)} USDT`, explain: "申请人没改金额时用的预算，要落在某一类的范围里。" }]} />

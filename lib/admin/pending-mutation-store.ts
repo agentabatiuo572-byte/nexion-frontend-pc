@@ -171,7 +171,7 @@ export function claimPendingCommandOwner(ownerId: string): number {
   // 存储里没有就看内存兜底:标记写不进去(配额满)不等于换了人。
   const previous = persisted ?? memoryOwner;
   if (previous === ownerId) return 0;
-  const cleared = clearPendingCommandRecords();
+  const cleared = clearPendingCommandRecords(undefined, previous);
   memoryOwner = ownerId;
   try {
     window.sessionStorage.setItem(COMMAND_OWNER_KEY, ownerId);
@@ -190,7 +190,7 @@ export function claimPendingCommandOwner(ownerId: string): number {
  */
 let clearGeneration = 0;
 
-export function clearPendingCommandRecords(storage?: Storage): number {
+export function clearPendingCommandRecords(storage?: Storage, previousOwner?: string | null): number {
   // 代次先推进:哪怕下面读存储失败(隐私模式),各实例的内存镜像也必须作废 ——
   // 降级态下内存就是唯一真源,不作废等于换人后照样复用前一个人的号。
   clearGeneration += 1;
@@ -203,7 +203,25 @@ export function clearPendingCommandRecords(storage?: Storage): number {
       const key = target.key(index);
       if (key && isPendingCommandTable(target.getItem(key))) doomed.push(key);
     }
-    doomed.forEach((key) => target.removeItem(key));
+    doomed.forEach((key) => {
+      // F4 originals belong to their maker and must survive account switching.
+      // Keep only this page's evidence; other domains retain their existing cleanup.
+      const records = JSON.parse(target.getItem(key)!) as Record<string, Record<string, unknown>>;
+      const retained = Object.fromEntries(Object.entries(records).filter(([, row]) => {
+        const slot = String(row.fingerprint ?? "");
+        return key === "uvel-f4-ambassador-material-reviews"
+          || key === "nexion-admin-withdrawal-config-proposals" && /^\d+:F4$/.test(slot)
+          || key === "nexion-admin-f-commands-v1" && (/^f-config:F\.(?:pool|quota|ambassador|leaderboard)\./.test(slot)
+            || /^f4-(?:settle|leaderboard):/.test(slot) || slot === "f-config-batch:F4")
+          || key === "nexion-admin-f-direct-commands-v1" && /^(?:\d+:)?f4-ambassador-policy$/.test(slot);
+      }).map(([commandKey, row]) => [commandKey, {
+        ...row,
+        ...(row.adminId === undefined && row.actorId === undefined && previousOwner && Number.isSafeInteger(Number(previousOwner))
+          ? { adminId: /^\d+:F4$/.test(String(row.fingerprint)) ? Number(String(row.fingerprint).split(":")[0]) : Number(previousOwner) } : {}),
+      }]));
+      if (Object.keys(retained).length) target.setItem(key, JSON.stringify(retained));
+      else target.removeItem(key);
+    });
     return doomed.length;
   } catch {
     // 存储不可读 = 本来就没持久化任何命令号,没有残留可清。

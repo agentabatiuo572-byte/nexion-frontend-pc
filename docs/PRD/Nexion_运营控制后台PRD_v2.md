@@ -1300,146 +1300,36 @@ flowchart LR
 
 #### [F4] 团队激励池
 
-各等级票数入口使用原生按钮：有调整权限时可通过 Tab 聚焦、Enter 或空格打开同一确认框；无权限时禁用（BUG-201）。
+本节和 F4b/F4c/F4d 共同描述 `/network/leadership-pool`，按后端 `111e00cd` 核对（2026-11-15）。页面保留团队池、购机名额、大使材料及申请规则、日周月总榜的全部现行入口；没有额外注资、历史周池维护、榜单纠错/补发或单用户购机资格覆盖入口。角色名不代替精确权限。
 
-各榜奖池提交只创建审批申请；确认框及成功提示统一写「批准后生效」，显示所申请的日、周、月、总榜金额。由另一位管理员批准前仍按原设置执行，不提示已生效（BUG-194、T02）。
+**读取与金额**：进入及手动刷新读取 `/api/admin/teams/leadership-pool` 和 `/ambassador-policy`，没有页面自动轮询。总览失败时不使用旧数发起新修改；规则独立失败不影响申请查看，规则修改不可用。有效的空票数数组可读，未配置金额或覆盖率不补 0。池和四榜金额在 JSON 数字转换前保留十进制原文；月上限从原配置按后端 `$`/逗号/K/M 语法解释，避免使用后端整数投影。后端本来已取整的成交/实发指标、已舍入的汇总标签不反算精度，相关文案与字段缺口登记后交视觉/后端。
 
-> 后台显示名「团队激励池」（原「领导奖池」），位于「奖励池、名额与排行榜」页。
+**团队池规则**：本周未结算估值 = 已付款订单小计（排除退款/拒付）×比例，且不超过本月剩余额度；已发周取实发，最多6位小数。结算按执行时参与等级和正票权分配，最后一位接尾差。同周已有成功 leadership 事件则跳过，不补本周后来的订单差额。配置必须 READY；缺版本、比例、月上限、参与等级或合法定时表达式时不能结算。历史已发不因改配置重算。
 
-**① 目的 & 对齐**: 配置全球领导奖池的周注入比例、V_VOTES 票数权重与周结算,是 V3+ 头部用户的周度利润分享池。对齐前端 §8.5(全球领导奖池 `/team/leadership-pool`)。服务的业务目标:用周池 + V 级票数翻倍权重激励头部用户冲高 V 级、用周结算节奏强化头部活跃;奖池是平台利润分享的应付负债,须受兑付安全约束 + 头部集中度监控。
+| 写入口 | 参数/对象 | 权限与生效 |
+|---|---|---|
+| 提前结算本周池 | `F/f4_pool_settle`，空params；obj本周团队激励池；target `F/leadership_pool_settlement/current-week` | `network_f4_pool_fund` + A2发起；批准后按执行时当前周真实入账UNLOCKED USDT；0金额/无合格票不保证付款 |
+| 奖池比例 | `F.pool.ratio`，0–30百分数；1=1%，0.05=0.05% | 资金权限；A2批准后写入当前值，后续未结算部分使用；调高时执行端核B1 |
+| 每月上限 | `F.pool.monthlyCap`，非负数字，可带K/M、货币符号/逗号 | 写权限；A2批准；后端保存时未独立拒绝非法格式，非法后池HOLD，不能声称一定拒存 |
+| 自动结算时间 | `F.pool.settleCron`，5字段补秒0或合法6字段Spring cron | 写权限；A2批准，之后下一次调度命中即用新值；按业务日历GROWTH_TEAM当前时区解释 |
+| 参与等级 | `F.pool.unlockVRank`，V1–V8 | 写权限；A2批准；历史V9–V12可读不代表可以新写 |
+| 各等级票数 | `F.pool.votes.{V1…V8}`，0–1,000,000 | 页面入口和提交均须资金+写权限，后端A2实际验写权限；不放宽。小数后端向下取整；设0后本页正票投影不再返回该等级，不能在本页改回 |
 
-**② 后台界面**: 周池面 + V_VOTES 权重面 + 周结算面,三区。
-1. **周池面**:`[本周池总额(= 平台每周总交易额 × 注入比例)/ 距结算倒计时 / 全网 V3+ 票数总和 / 历史周池列表 / 头部集中度(topConcentration)]`;手动额外注入入口(活动补贴)。
-2. **V_VOTES 权重面**:`[V 级 / 票数权重 / 当前该级用户数 / 该级总票占比]`(V3=1 / V4=2 / … 每升一级翻倍 / V12=512)。
-3. **周结算面**:周结算时点(周日 23:59 UTC 快照)+ 中周达 V3 按比例计入规则(§8.5.3)+ 头部集中度监控(单用户 / Top-N 占池比,见 ⑤ `topConcentration` 结构)。
+自动调度每次只调用一次 `injectAndSettleLastClosedWeek`，只结最近结束的那一周，不回补遗漏的所有周。页面说明只解析能确定的每天、每周某天、每月1–28日单次写法，其他写法交后端解释，不猜频率。每月一次意味着其他各周不会自动结算；每天触发对已成功结算的周跳过。页面不得自行改运营的cron。GROWTH_TEAM时区从业务日历读取，日历未读到时不假定越南时间；实际周边界仍按后端VietnamBusinessPeriod的业务日历实现。
 
-**业务流程(server 周结算循环;F4 配置注入比例/票权/阈值,派发 server-canonical)**:
+**头部占比**：top1/top5两个入口保留在排行榜规则内，0–100%，缺配置消费者默认25/60。它们限制排行榜派奖，不限制团队池票权分配；不能改成只告警。已决定的F4-P01/P02/P03/P04及覆盖率、结算时间均按此现状交付。
 
-```mermaid
-flowchart TD
-  A["周一 00:00 开新池 · 上周池已派发"] --> B["整周 · 注入 5% GMV · 池额 = 周GMV×注入比例"]
-  B --> C["周日 23:59 票权快照 · 票权定格"]
-  C --> D["周一 00:00 自动派发 · 落 D4 commission bill + 入用户余额"]
-  D -. 每周循环 .-> A
-  C --> E{"V3 解锁判定"}
-  E -- 未达 V3 --> F["候选 · 不参与分配"]
-  E -- V3 及以上 --> G["按 V_VOTES 指数票权分配 · 份额 = 票数 ÷ 全网总票"]
-  G --> H["头部集中度监控(派生) · Top-N 占池比 → 超 top1≤25% / top5≤60% 告警联动 B5"]
-```
+**审批与R1（全页23条提交路径）**：普通参数/处置、提前结算、总榜派奖及提高预算都创建A2申请，不直接执行业务。普通批准需另一位有效管理员，有A2批准权及该项业务权限，不能是maker；只有提高大使预算要求另一位有效超级管理员。普通`command:F/f_ui_config`，sourceDomain F4、obj参数键、target `F/ui_config/<key>`；大使状态例外锁原申请，obj申请号；额度带expectedMonthlyQuota，批准大使带expectedMaterialRevision。
 
-**③ 可控参数**:
+每次发送前持久保存完整原body、理由、目标、操作者、原号、首次时间和原确认事实；存不下不发。普通审批共用原`nexion-admin-f-commands-v1`实例，预算审批共用原`nexion-admin-withdrawal-config-proposals`实例，规则直存共用原F域直写实例。F4记录按原管理员保留，换账号不丢且新账号不能重用；过24小时保留只能查。未决表单冻结，原记录从既有逐条提醒恢复，提醒不依赖总览成功；新修改与原记录恢复分开。
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| 池注入比例(`leadershipPoolInjectRate`) | **现状**(§8.5.1):**5%** 平台每周总交易额 | **3%–10%**(编辑自设安全护栏,见下注) | 仅新结算周(改后下一周池生效) | `/team/leadership-pool` 本周池子总额 hero |
-| V_VOTES 票数权重 | **现状**(§8.5.1):`{V3:1, V4:2, V5:4, V6:8, V7:16, V8:32, V9:64, V10:128, V11:256, V12:512}`(每升一级翻倍) | 各级 ≥ 0(建议保持翻倍序) | 仅新结算周(赛季制调整) | `/team/leadership-pool` 你的票数 / 全网票数 / 占比 + V 级票数权重完整表(后台与用户侧 §8.5.3 均展示 V3-V12 完整表) |
-| 周结算时点(`poolSettleCron`) | **现状**(§8.5.3):周日 23:59 UTC 快照 + 周一 00:00 UTC 开新池 | 固定(周) | — | `/team/leadership-pool` 距结算倒计时 + 结算时间表 |
-| 头部集中度告警阈值(`top1MaxPct` / `top5MaxPct`) | **编辑自设**:top1 单用户占池 ≤ **25%** / top5 合计占池 ≤ **60%**(超阈告警,非硬阻断;见下注) | top1 0–100% / top5 0–100% | 实时(下一周结算快照评估) | 无用户侧(运营内部头部集中度告警 + 联动 B5) |
-| 解锁门(`poolUnlockVRank`) | **现状**(§8.5):V3+ 解锁(V<3 显「V3+ to unlock」) | V0–V12 | 实时 | `/team/leadership-pool` V<3 升级路径 CTA |
+首次拒绝按`isDeterministicRejection`清本次号、保留原因；保留原号的重试只按`isExplicitRejection`收敛，401/403/408/425/429及幂等未收敛继续保留。审批重试回放的pending是历史回执，必须GET原号核当前mine/obj/operationCode/status后才标当前待批；查询失败保留未知。恢复了结即关旧确认、作废旧读取并重读，不能把历史回执设为当前配置。查询独立于现有写权限，由后端裁决读取资格。
 
-> **默认值口径**:注入比例 5% / V_VOTES / 周结算 / V3+ 解锁均为前端 §8.5 现状值,12 月节奏表未单列领导奖池参数,以 §8.5 为参考。手动额外注入与提前结算为运营活动 / 应急动作,非默认常量。注入基数为「平台每周总交易额」(前端 §8.5.1 现状口径),与 F4③/⑤/⑦ 统一。
->
-> **注入比例 3%–10% 范围与头部集中度阈值的来源标注(V2 gate 阻断,引言阻断项 10)**:**注入比例上下界(3%–10%)与头部集中度告警阈值(top1 ≤ 25% / top5 ≤ 60%)均为编辑自设安全护栏,非 12 月节奏表或前端 PRD 覆盖值**;PM 在 V2 gate 前须确认该上下界 / 阈值是否与实际业务需求一致,若需调整则修订本条并记入 §3.14 待补条目。**确认前 F4⑤ 接口对注入比例的越界校验从硬 400 改为可配告警(不硬阻断)或加超管覆盖确认门控**,避免上线即基于未授权参数锁死业务可用性。
->
-> **V_VOTES 展示口径**:后台配置面与用户侧 how-it-works(§8.5.3 §2 票数对照表)均展示 V3-V12 完整表(含 V11=256 / V12=512),与 `/team/leadership-pool` 主页票权表同一数据源(派生自全网分布 × 票权),指数翻倍序完整呈现以强化高阶头部集中的权重展示。各档周分红占比(单人份额 = 票数 ÷ 全网总票)运行时派生,非写死。
+审批过期且原号GET精确返回A2_PROPOSAL_NOT_FOUND后，可由明确确认解除；查询和解除逻辑已接，现有确认容器没有解除入口，交视觉worker补，不能自动清。规则直存及材料核验没有原号只读回执，查询当前业务状态不能证明原写不存在，记录保留；有效期内有去重的原POST/PUT可原样重试。旧版本只存指纹/理由而没存完整body的记录仅查，不补造请求。
 
-**④ 操作动作**:
+**覆盖率**：总览coverage取B1 treasury facade读数，部分缺失时不补0；后端未返回可靠性字段，页面读数不能证明资金预检已过。提前结算和总榜派奖的执行链没有B1检查，确认框只显示当前读取供运营判断；原有前端低于红线拦截仍是页面快照判断。不能写成后端执行时必查。大使预算提案创建与批准均查B1；大使最终批准在执行时重核材料及B1。新错误码提供原因及后续动作的中文。
 
-| 动作 | 执行权 | 确认弹窗 | 审计点(A2) |
-|---|---|---|---|
-| 手动注入额外 USDT(活动补贴) | 财务(lead)/ 增长运营(lead)/ 超管(任一可独立执行) | F4-MD1(理由必填 + B1 红线预检)(放大奖池 = 放大流出) | `admin.leadership_pool_injected`(amount / operator / reason / ts) |
-| 提前结算周池 | 增长运营(lead)/ 超管 | F4-MD2(理由必填)(改变结算节奏,影响周内业绩归属) | `admin.leadership_pool_settled_early`(week / operator / reason) |
-| 调注入比例 / 票数权重 / 头部集中度阈值(赛季) | 增长运营(lead)/ 超管 | F4-MD3(理由必填;**调升注入比例 / 权重方向 + B1 红线预检**)(影响全站奖池规模与头部分配) | `admin.leadership_pool_config_changed`(field=injectRate\|votes\|topConcentration / before / after / operator / reason) |
-
-> **手动注入 / 调权重为高敏确认动作的依据(2026-06 操作确认决议)**:额外注入直接放大奖池 USDT 流出(应付负债),调注入比例 / 票数权重影响全站奖池规模与头部集中分配,风险等级与 C3 余额调整对称;**放大流出方向(注入 / 调升比例·权重)确认弹窗前置 B1 覆盖率红线核验(低于红线 422 `COVERAGE_BELOW_REDLINE`),调降 / 收紧方向不前置**(§1.8 原则一)。原复核层级转为执行门槛:提前结算 / 调比例·权重原复核为超管层级,执行权就高 = 增长运营(lead)/ 超管;注入原复核为超管 / 财务层级,执行权 = 财务(lead)/ 增长运营(lead)/ 超管(任一可独立执行)。所有确认弹窗动作经理由必填(server 强制非空 400 `REASON_REQUIRED`)即时生效,资金写携 `Idempotency-Key`,落 A2 审计并实时告警超管 / 财务 lead / 增长 lead。
-
-**④a 交互与弹窗规格**
-
-**(1) 动作触发总表**
-
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 手动注入额外 USDT | ②第 1 区周池面「手动额外注入」 | 主按钮(警示色) | 仅财务 lead / 增长运营 lead / 超管渲染 | 打开弹窗 F4-MD1 |
-| 提前结算周池 | ②第 3 区周结算面「提前结算本周池」 | 行内按钮(警示色) | 仅增长运营 lead / 超管渲染;本周池已结算时置灰 | 打开弹窗 F4-MD2 |
-| 调注入比例 / 票数权重 / 阈值 | ②第 1 区「编辑注入比例」/ ②第 2 区权重表「编辑权重」/ ②第 3 区「编辑集中度阈值」 | 行内按钮 | 仅增长运营 lead / 超管渲染 | 打开弹窗 F4-MD3 |
-| 查看历史周池 / 集中度监控 | ②第 1 / 3 区 | 只读视图 | 恒可用 | 就地查看,无弹窗 |
-
-**(2) 弹窗规格(逐弹窗)**
-
-##### [F4-MD1] 手动注入奖池确认
-- **功能**:向当前周池手动注入额外 USDT(活动补贴),确认即生效,server 原子增池 + 记账。
-- **布局结构**:1. **信息区**:本周池当前总额 / 距结算倒计时 / 全网 V3+ 票数总和。2. **影响预览区(必有)**:注入后池总额预览 + 按当前票数分布的头部派发预估(top1 / top5 占比变化,server 预检下发);**B1 红线核验结果回显**(server 预检执行后覆盖率,**低于红线时红线警示条渲染 + 确认钮置灰**,文案含「server 将拒绝(422 `COVERAGE_BELOW_REDLINE`)」);提示行「注入计入 B1/B2 应付负债,周日结算随池派发」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| amountUsdt | 数字输入 | 是 | > 0;server 复核 B1 约束 | 空 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认注入]`(警示色主按钮;金额未填 / B1 阻断 / reason 未达标时置灰;loading 防双击;请求携 `Idempotency-Key`)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(B1 阻断,弹窗不关,回传当前覆盖率与红线值)/ 400(金额非法)/ 400 `REASON_REQUIRED` / 409(本周池已结算,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;周池面总额就地更新;toast「奖池已注入 · 已记账 · 已记审计」;事件 `admin.leadership_pool_injected`(携 `coverage_checked`)落 A2;实时告警超管 / 财务 lead / 增长运营 lead。
-
-##### [F4-MD2] 提前结算周池确认
-- **功能**:提前结算当前周池(server 按 V_VOTES 权重原子派发到 V3+ 用户 + 落 D4 bill),确认即生效。
-- **布局结构**:1. **信息区**:本周池总额 / 全网票数 / 原定结算时点(周日 23:59 UTC)/ 距原定结算剩余。2. **影响预览区(必有)**:**「改变结算节奏,周内后续业绩不再计入本池(中周达 V3 按比例规则同步截断)」红色警示条恒显**;按当前票数的派发预估(top1 / top5 份额);提示行「派发即落 D4 bill,不可撤回,纠错走 F5」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认提前结算]`(警示色主按钮;reason 未达标时置灰;loading 防双击;请求携 `Idempotency-Key`)。
-- **错误态**:400 `REASON_REQUIRED` / 409(本周池已结算 / 正在结算,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;周结算面就地更新(历史周池入列 + 新池开启);toast「周池已提前结算并派发 · 已记审计」;事件 `admin.leadership_pool_settled_early` + 派发 `commission.paid`(kind=leadership)落 A2 / A4;实时告警超管 / 增长运营 lead。
-
-##### [F4-MD3] 调奖池配置确认
-- **功能**:更新注入比例 / V_VOTES 票数权重 / 头部集中度告警阈值 / 解锁门,确认即生效,仅新结算周生效。
-- **布局结构**:1. **信息区**:目标字段当前值(injectRate 现状 5% / 权重表 / top1≤25%·top5≤60% 阈值)。2. **影响预览区(必有)**:before→after diff + 按近 4 周交易额基数的周池规模重算预览(server 预检下发);**调升注入比例 / 权重方向 B1 红线核验结果回显**(低于红线阻断 + 置灰,422 文案);注入比例越界(3%–10% 编辑自设护栏)时**告警条提示但不硬阻断**(护栏待 PM 确认,③ 注 + 引言阻断项 10);破坏票数翻倍序时提示条。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| injectRate(%) | 数字输入(步进 0.5) | 否(至少改一项) | 3%–10% 越界仅告警不阻断(③ 注,待 PM 确认后转硬校验) | 当前值 |
-| V_VOTES 权重(V3–V12 逐级) | 数字输入组 | 否(至少改一项) | 各级 ≥ 0;破坏翻倍序时告警提示 | 当前值 |
-| top1MaxPct / top5MaxPct(%) | 数字输入 | 否(至少改一项) | 0–100%(③) | 当前值 |
-| poolUnlockVRank | 下拉单选(V0–V12) | 否(至少改一项) | 枚举内 | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调奖池配置]`(主按钮;均未变更 / B1 阻断(调升)/ reason 未达标时置灰;loading 防双击)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(调升方向 B1 阻断)/ 400(数值非法)/ 400 `REASON_REQUIRED` / 409(提示刷新当前值)/ 403。
-- **成功反馈**:弹窗关闭;配置面就地更新;toast「奖池配置已更新 · 下一结算周生效 · 已记审计」;事件 `admin.leadership_pool_config_changed` 落 A2;实时告警超管 / 增长运营 lead。
-
-**⑤ 接口**:
-- `GET /api/admin/config/leadership-pool` — 返回 `{ injectRate, votes:{V3..V12}, settleCron, unlockVRank, topConcentrationThreshold:{ top1MaxPct, top5MaxPct }, currentWeek:{ poolUsdt, totalVotes, countdownTo, topConcentration:{ top1Pct, top5Pct, alertThreshold } } }`,**server-canonical**;`topConcentration` 结构含 `top1Pct`(当前单用户最高占池比)/ `top5Pct`(Top5 合计占池比)/ `alertThreshold`(触发告警的阈值快照);周池总额由 A4 周交易额事件流聚合(非临时 SQL)。
-- `PUT /api/admin/config/leadership-pool` — 更新注入比例 / 票数权重 / 头部集中度阈值 / 解锁门;经确认弹窗提交(F4-MD3,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效;**调升比例 / 权重方向前置 B1 覆盖率红线校验(低于红线返回 422 `COVERAGE_BELOW_REDLINE`)**。**注入比例越界校验:V2 gate 确认 3%–10% 来源前,以可配告警形式提示(不硬返回 400 锁死);确认后再按授权范围补硬校验**(见 ③ 注 + 引言阻断项 10)。
-- `POST /api/admin/team/leadership-pool/inject` — 手动注入额外 USDT;payload `{ amountUsdt, reason }`(经确认弹窗 F4-MD1,reason server 校验非空 400 `REASON_REQUIRED`;**前置 B1 红线预检,低于红线 422 `COVERAGE_BELOW_REDLINE`**);**`Idempotency-Key` 必带**;确认即时生效,server 原子增池 + 记账。
-- `POST /api/admin/team/leadership-pool/settle` — 提前结算当前周池;经确认弹窗 F4-MD2(body 携 reason)即时生效;server 按 V_VOTES 权重原子派发到 V3+ 用户 USDT 余额 + 落 D4 bill。
-- **server-side 周结算(非 admin)**:周池按 §8.5.1 规则(平台每周总交易额 × 注入比例 → 按 V_VOTES 票数权重分配)在周日 23:59 UTC server 自动结算并派发;F4 后台提供配置,**周池 server-canonical**。
-
-**⑥ 权限 & 审计**:
-
-| 动作 \ 角色 | 超管 | 财务 | 增长 | 只读审计 |
-|---|---|---|---|---|
-| 查看周池 / 票数 / 结算 / 集中度 | ✅ | ✅(只读) | ✅ | ✅(只读) |
-| 手动注入额外 USDT | ✅ | ✅(lead,任一可独立执行) | ✅(lead,任一可独立执行) | — |
-| 提前结算 / 调比例 / 调权重 / 调阈值 | ✅ | — | ✅(lead) | — |
-
-> 「✅(lead)」指对应角色的 lead 层级,member 不可执行(2026-06 操作确认决议:原复核层级转为执行门槛)。审计字段引用 A2 统一 schema:`action(inject\|settle_early\|config_change) / field / before / after / amountUsdt(注入时)/ operator / reason / ts`。
-
-**⑦ 风控 & 联动**:
-- **周池 server 结算**:周池注入与按票数权重分配 100% server-canonical(§9.11d.2),client 仅展示预估分红 / 票数 / 占比;周池总额由 A4 周交易额事件流聚合,非临时查询(§1.8 原则三)。
-- **头部集中度监控**:单用户 / Top-N 占池比超 `top1MaxPct` / `top5MaxPct` 时后台告警(头部过度集中是兑付压力与合规风险信号),联动 B5 风险雷达头部集中度维度;F4 不持处置权,异常处置走 K / C。**阈值为编辑自设护栏,V2 gate 前须 PM 确认(见 ③ 注 + 引言阻断项 10)**。
-- **受 B1 覆盖率约束**:手动注入 / 调注入比例(放大奖池流出)前 server 强制核验 B1 覆盖率(§1.8 原则一);奖池发放计入 B1/B2 应付负债。
-
-**⑧ 埋点(事件)**:
-对齐 A4(§2.4.5③ money / ⑥ admin family):
-- **产生(资金记账,§2.4.5③)**:`commission.paid` — 触发点:领导奖池周结算派发到 V3+ 用户;属性 `userId / kind: "leadership" / currency: "USDT" / amount / week / votes / poolShare / is_server_authoritative: true / ts`;落 D4 commission bill + 喂 B1/B2 应付负债 + F4d 排行榜排序键(leadership 计入本期累计,§8.11.3)。
-- **产生(admin 审计,须 A4 schema registry 注册)**:
-  - `admin.leadership_pool_injected` — 触发点:手动注入确认执行(F4-MD1,B1 红线预检通过);属性 `amount_usdt / week / operator / reason / coverage_checked / ts`;喂 A2 + B1/B2(注入增储备分配池)+ L3。
-  - `admin.leadership_pool_config_changed` / `admin.leadership_pool_settled_early` — 触发点:配置变更 / 提前结算;属性见 ④;喂 A2 + B4。
-- **消费**:周交易额资金事件流(`checkout.completed` / `device.replaced` 等订单 → 聚合周池注入基数)、`admin.vrank_overridden`(V 级变更 → 票数重算)。
-- **喂给**:D4 commission bill、B1/B2 应付负债、B5 头部集中度、F4d 排行榜排序键。
+本轮为逻辑接入，未改版式/样式或重写既有文案。旧文字中的过度承诺、材料可批准状态、审批恢复统一叫法和缺少的解除确认容器逐句登记在F4重构说明及工作报告，由视觉worker处理。类型检查、目标构建和关卡3/6由本worker执行；真实页面写入拦截检查按共用安排由F域末项统一完成，不把静态检查当真实资金验收。
 
 ---
 
@@ -1520,250 +1410,50 @@ flowchart TD
 
 #### [F4b] 硬件配额
 
-**① 目的 & 对齐**: 配置 NexionBox Pro / NexionRack 的配额解锁门(直推 / 月业绩)与月库存上限,是「团队业绩 → 高阶硬件购买资格」的销售前置门。对齐前端 §8.9(硬件配额解锁 `/team/quota`)。服务的业务目标:用「直推 / 月业绩解锁高阶设备」把团队拉新与硬件 GMV 绑定、用月库存上限制造稀缺与节奏;配额是销售前置门,与 E1 商城库存联动。
+购机名额沿F4总览返回有效商品、月cap/current、剩余、资格条件及最近已用记录。`current`是本月ACTIVE占用数量，剩余max(0,total−used)，85%及以上且cap>0标紧张。资格按directRefs、精确monthComputePointsText、ALL/EITHER解释；缺条件写未知，不补0。Pro/Rack字段是名称含PRO/RACK的首个商品月额度，不是资格门槛。
 
-**② 后台界面**: Pro / Rack 配额解锁进度 + 月库存,两区。
-1. **配额解锁进度面**:`[设备 tier(Pro / Rack P1)/ 解锁条件(直推数 / 月业绩)/ 达标用户数 / 本月已解锁数]`;支持查单用户解锁态。
-2. **月库存面**:`[设备 / 月库存上限 / 本月已售 / 剩余]`(Pro 1,000 / Rack 100);旺季扩容 / 断货暂停入口。
+- 调额度：`F.quota.tier.{quotaCode或id}.monthlyQuota`，0–1,000,000整数，发送原cap为`expectedMonthlyQuota`。写权限+A2发起；另一位管理员批准后CAS生效，新值低于本月已用或原值变化均409并给最新总览，不修改已用历史，不退单。
+- 回收：`F.quota.usage.{id}.status=recycled`，写权限+A2发起。批准将非删ACTIVE记录改RECYCLED，只释放名额，不退款、不删订单、不改变用户设备。页面对非ACTIVE记录禁用回收；服务端仍拒绝重复或缺失记录。
+- 现行 `TeamCommissionMapper.quotaUsages` 只返回本月ACTIVE、最新30条；回收后该记录消失，不能称为已回收历史列表。已回收行的前端禁用只能作为防御检查，不能用后端正常返回的RECYCLED夹具验收。历史回收不代表当月增加额度；列表/说明的对应原话交视觉收窄。
 
-**③ 可控参数**:
-
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| Pro 解锁条件(`proUnlockDirects`) | **现状**(§8.9):**≥ 5 已激活直推**(单条件) | ≥ 0 | 实时(改后下一次解锁判定) | `/team/quota` Pro tier 解锁进度条 + Buy/Invite CTA |
-| Rack P1 解锁条件(`rackP1UnlockDirects` / `rackP1UnlockVolumeUsd`) | **现状**(§8.9):**≥ 15 直推 或 月业绩 ≥ $20,000**(OR 关系) | directs ≥ 0 / volume ≥ 0 | 实时 | `/team/quota` Rack P1 tier 解锁进度(直推 / 月业绩双路径) |
-| Pro 月库存上限(`proMonthlyStock`) | **现状**(§8.9):**1,000 台** | ≥ 0 | 仅新月度周期(改后下月库存) | `/team/quota` Pro 月度库存进度 |
-| Rack P1 月库存上限(`rackP1MonthlyStock`) | **现状**(§8.9):**100 台** | ≥ 0 | 仅新月度周期 | `/team/quota` Rack 月度库存进度 |
-
-> **默认值口径**:Pro ≥5 直推 / Rack ≥15 直推或 $20K 月业绩 / Pro 1,000 / Rack 100 均为前端 §8.9 现状值,12 月节奏表未单列硬件配额参数,以 §8.9 为参考。配额是销售前置门(满足条件直跳 store 完成销售,不满足跳 team 邀请),与 E1 商城库存联动(见 ⑦)。**Pro 与 Rack P1 解锁条件参数 key 不混用**:Pro 用 `proUnlockDirects`(单条件),Rack P1 用 `rackP1UnlockDirects` + `rackP1UnlockVolumeUsd`(OR 关系),两者表结构独立分行,与 F4b⑤ `GET /api/admin/config/quota` 返回结构字段级对应。
->
-> **参数 key 代际命名(预留 Rack P2)**:Rack 配额参数 key 带 **P1 世代后缀**(`rackP1UnlockDirects` / `rackP1UnlockVolumeUsd` / `rackP1MonthlyStock`),预留 `rackP2*` 命名空间;**Rack P2 代际上线后须补 F4b Rack P2 配额门条目,届时以世代后缀区分参数 key**。
-
-**④ 操作动作**:
-
-| 动作 | 角色 | 确认弹窗 | 审计点(A2) |
-|---|---|---|---|
-| 覆盖单用户解锁资格(纠错 / 特批) | 增长(lead)/ 超管 | F4b-MD1(理由必填) | `admin.quota_unlocked`(userId / tier / mode(override)/ operator / reason) |
-| 调月库存上限(旺季扩容) | 增长(lead,含商城运营子角色发起)/ 超管 | F4b-MD2(理由必填) | `admin.quota_config_changed`(field=monthlyStock / before / after / operator / reason) |
-| 调解锁条件(直推 / 月业绩门槛) | 仅超管 | F4b-MD3(理由必填) | `admin.quota_config_changed`(field=unlockCondition) |
-| 暂停 Rack 解锁(断货) | 增长(lead)/ 超管 | F4b-MD4(理由必填;断货应急,确认即生效) | `admin.quota_paused`(tier=rack / paused / reason / operator) |
-
-> **覆盖解锁资格为高敏动作的依据**:配额解锁是高阶硬件(Pro / Rack)的销售前置门,override 绕过门可放大销售(更多应付收益负债);调月库存扩容联动 E1 商城库存供给,风险等级与 E1 定价 / 上下架对称,故经确认弹窗 + 理由必填执行(2026-06 操作确认决议:原复核层级转执行门槛——覆盖解锁/调库存/暂停执行权 = 增长 lead/超管,调解锁条件原复核为超管、执行权就高为仅超管),落 A2 审计并实时告警。**库存 / 断货类动作的发起角色为商城运营(归入增长角色的子角色,由超管在 A1 中以增长角色授权),不引入 V1 §1.1 RBAC 未定义的「商品运营 / 商品主管」独立角色**(见 ⑥ 注 + 子角色机制确认项)。
-
-**④a 交互与弹窗规格**
-
-**(1) 动作触发总表**
-
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 覆盖单用户解锁资格 | ②(1)配额解锁进度面单用户查询结果行「覆盖解锁」 | 行内按钮 | 仅未解锁用户行显示;增长(lead)/超管渲染 | 打开弹窗 F4b-MD1 |
-| 调月库存上限 | ②(2)月库存面行内「调库存」 | 行内按钮 | 增长(lead)/超管渲染 | 打开弹窗 F4b-MD2 |
-| 调解锁条件 | ②(1)进度面顶部「解锁条件配置」 | 次按钮 | 仅超管渲染 | 打开弹窗 F4b-MD3 |
-| 暂停 Rack 解锁 | ②(2)月库存面 Rack 行「暂停解锁」 | 行内警示按钮 | 仅未暂停态显示;增长(lead)/超管渲染 | 打开弹窗 F4b-MD4 |
-| 查单用户解锁态 | ②(1)进度面搜索框 | 筛选控件 | 恒可用 | 就地展示,无弹窗 |
-
-**(2) 弹窗规格**
-
-##### [F4b-MD1] 覆盖单用户解锁资格
-- **功能**:对单用户人工授予 Pro/Rack 购买资格(绕过解锁门,纠错/特批),确认即生效。
-- **布局结构**:1. **信息区**:userId(链 C1)/ 当前直推数与月业绩(server 实时值)/ 目标 tier 解锁条件与差距 / 该用户历史 override 记录(引自审计)。2. **影响预览区**:提示行「override 将放大该用户高阶硬件购买资格;本月该 tier 剩余库存 N 台」。3. **输入区**:见下表。4. **按钮区**:取消 / 确认覆盖。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 tier | 单选(Pro / Rack P1) | 是 | 已解锁 tier 置灰 | 当前查询 tier |
-| reason | 多行文本 | 是 | 8–200 字;400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认覆盖]`(置灰条件同必填;loading;携 `Idempotency-Key`)。
-- **错误态**:409(该用户已解锁,提示刷新)/ 400 `REASON_REQUIRED` / 403。
-- **成功反馈**:弹窗关闭;该用户解锁态就地更新;toast「已覆盖解锁 · 已记审计」;事件 `admin.quota_unlocked`;实时告警;联动 E1 销售资格。
-
-##### [F4b-MD2] 调月库存上限
-- **功能**:调整 Pro/Rack 月库存上限(旺季扩容/收紧),确认后对下一月度周期生效。
-- **布局结构**:1. **信息区**:tier / 当前月库存上限 / 本月已售 / 剩余。2. **影响预览区**:before→after 并排;扩容方向提示行「扩容须与 E1 商城库存口径核对,防超卖」+ server 回传 E1 当前可售库存对照。3. **输入区**:目标上限(数字输入,≥0,引③表)+ reason(必填 8–200 字)。4. **按钮区**:取消 / 确认调整。
-- **错误态**:422 `E1_STOCK_MISMATCH`(与 E1 库存口径冲突,弹窗不关,展示两侧数值)/ 400 / 403 / 409。
-- **成功反馈**:弹窗关闭;库存面就地更新(标注「下月生效」);toast;事件 `admin.quota_config_changed`;实时告警;E1 联动核对记录。
-
-##### [F4b-MD3] 调解锁条件
-- **功能**:调整 Pro/Rack 解锁门槛(直推数/月业绩),确认即对下一次解锁判定生效;影响全站解锁节奏,执行权仅超管。
-- **布局结构**:1. **信息区**:当前各 tier 解锁条件 / 当前达标用户数。2. **影响预览区**:server 预检「新门槛下达标用户数变化(N→M)」;放宽方向提示行「放宽门槛将放大高阶硬件销售资格面」。3. **输入区**:proUnlockDirects / rackP1UnlockDirects / rackP1UnlockVolumeUsd(数字输入,≥0,引③表)+ reason(必填)。4. **按钮区**:取消 / 确认变更。
-- **错误态**:422(超范围)/ 400 / 403(非超管)/ 409。
-- **成功反馈**:弹窗关闭;条件就地更新;toast;事件 `admin.quota_config_changed`;实时告警全体超管。
-
-##### [F4b-MD4] 暂停 Rack 解锁
-- **功能**:断货应急暂停 Rack tier 解锁(新解锁判定一律拒绝),确认即生效;恢复经同弹窗反向操作。
-- **布局结构**:1. **信息区**:tier / 当前剩余库存 / 本月已解锁数。2. **输入区**:reason(必填 8–200 字)。3. **按钮区**:取消 / 确认暂停(警示色)。
-- **错误态**:409(已暂停)/ 400 / 403。
-- **成功反馈**:弹窗关闭;Rack 行标「已暂停」;toast;事件 `admin.quota_paused`;实时告警;前端 `/team/quota` 同步显示暂停态。
-
-**⑤ 接口**:
-- `GET /api/admin/config/quota` — 返回 `{ pro:{ unlockDirects, monthlyStock, soldThisMonth }, rackP1:{ unlockDirects, unlockVolumeUsd, monthlyStock, soldThisMonth } }`,**server-canonical**(`pro.unlockDirects` 对应 `proUnlockDirects` 单条件;`rackP1.unlockDirects` + `rackP1.unlockVolumeUsd` 对应 OR 双路径)。
-- `PUT /api/admin/config/quota` — 更新解锁条件 / 月库存;确认弹窗 F4b-MD2/MD3(body 携 reason,空值 400 `REASON_REQUIRED`;解锁条件变更仅超管);调库存扩容须联动 E1 商城库存口径核对(见 ⑦)。
-- `POST /api/admin/users/:userId/quota/override` — 覆盖单用户解锁资格;payload `{ tier, reason }`;**`Idempotency-Key` 必带**;确认弹窗 F4b-MD1。
-- `POST /api/admin/config/quota/:tier/pause` — 暂停某 tier 解锁(断货);确认弹窗 F4b-MD4(body 携 reason)。
-- **server-side 判定(非 admin)**:配额解锁由 server 按 §8.9 条件判定(Pro ≥5 激活直推 / Rack ≥15 直推 OR ≥$20K 月业绩),满足则放行 store 购买;F4b 后台提供门槛 / 库存配置,**解锁判定 server-canonical**。
-
-**⑥ 权限 & 审计**:
-
-| 动作 \ 角色 | 超管 | 增长(含商城运营子角色) | 财务 | 只读审计 |
-|---|---|---|---|---|
-| 查看配额进度 / 库存 | ✅ | ✅ | ✅(只读) | ✅(只读) |
-| 覆盖单用户解锁 | ✅ | ✅(lead) | — | — |
-| 调月库存 / 暂停 tier | ✅ | ✅(lead;商城运营子角色可发起,执行须 lead) | — | — |
-| 调解锁条件 | ✅ | — | — | — |
-
-> **角色对齐说明 + 子角色机制确认项**:F4b 不引入 V1 §1.1 RBAC 未定义的新角色——**「商城运营」= 增长角色的子角色**,由超管在 A1 中以增长角色授权;库存 / 断货 / 扩容类动作由该子角色发起,执行门槛为增长 lead 层级(= 增长角色经授权的高级别人员)或超管。**但 V1 §1.1 RBAC 未定义增长角色的子角色机制、V1 A1 RBAC 子模块亦无 sub-role 授权描述**,故本子角色粒度为 **V2 gate 前须确认项**:向 A1 RBAC 申请支持增长角色的「商城运营子角色」粒度授权;若 A1 V1 不支持子角色细化,则 F4b 退化为「增长 lead 统一持有库存 / 配额写权」并删除子角色分列。F4b 权限矩阵角色列与 V1 A1 RBAC 定义对齐,实现假设以 A1 确认结论为准。审计字段引用 A2 统一 schema:`operator / role / action(unlock_override\|config_change\|pause) / userId / tier / field / before / after / reason / ts`。
-
-**⑦ 风控 & 联动**:
-- **解锁 server 判定**:配额解锁 100% server-canonical(§9.11d.2),client `/team/quota` 仅展示解锁进度;override 绕过门仅用于纠错 / 特批,经确认弹窗 F4b-MD1(理由必填 + 实时告警)。
-- **与 E1 商城库存联动**:配额是 Pro / Rack 销售前置门——满足配额 → 跳 E1 store 完成销售;月库存上限须与 E1 商城库存口径一致(配额月库存是「分销侧解锁名额」,E1 是「商城实际可售库存」,两者口径须对齐,调库存扩容时联动核对避免超卖);F4b 不持商城库存权威(归 E1)。
-- **解锁基于团队业绩 = 防伪造**:解锁条件依赖 `directRefs`(去重计数,§8.2.2)/ 月业绩(server 累加),server 权威防伪造直推刷解锁。
-
-**⑧ 埋点(事件)**:
-对齐 A4(§2.4.5⑥ admin family):
-- **产生(admin 审计,须 A4 schema registry 注册)**:
-  - `admin.quota_unlocked` — 触发点:覆盖单用户解锁资格确认执行;属性 `user_id / tier(pro\|rack_p1)/ mode(override)/ operator / reason / ts`;喂 A2 + E1(销售资格联动)。
-  - `admin.quota_config_changed` / `admin.quota_paused` — 触发点:库存 / 解锁条件变更 / tier 暂停;属性见 ④;喂 A2 + E1(库存口径联动)+ B4。
-- **消费**:`auth.register_completed`(直推注册 → 重算解锁条件 directs)、`checkout.completed`(团队订单 → 重算月业绩 + 库存核减)、`admin.device_activated`(设备激活 → Pro 解锁「已激活直推」口径)。
-- **喂给**:E1 商城(销售资格 + 库存口径)、B4 节奏态势(配额解锁与硬件 GMV)。本子模块无独立用户侧 KPI 事件(配额解锁态由 server 判定,前端只读展示)。
+改版不新增覆盖单用户资格、修改购机条件、暂停Rack、区域库存或退款入口。所有原号恢复遵循F4统一R1。
 
 ---
 
 #### [F4c] 区域大使审批
 
-**原BE-27材料核验（2026-11-07）**：当前完整合同见[区域大使材料核验](BE-27-大使材料核验-20261107.md)。本节与该合同取代此前F4c中一次开四类额度、旧`/agent`接口示意和仅KOL发票核验的描述。
+材料合同另见[区域大使材料核验](BE-27-大使材料核验-20261107.md)。一份申请只选venue/kol/print/dev中的一类，批准仅开一笔所选类别额度，不付款，不是四类一起发。总览返回最新30份申请，PENDING优先；全历史汇总包括已批准总预算、所有申请总预算、kol_budget_pct最大值和待审最早活动日期，不是本月/预算上限/季度计划。后端金额标签已舍到2位，接口无完整汇总金额，PC不反算精度。
 
-**F4-A12 调整申请规则（2026-11-05，BUG-286）**。有 `network_f4_pool_fund` 的管理员提高默认预算或任一分类最高预算时，确认框显示当前和拟调整金额，提交 `F/f4_ambassador_policy_change` 审批。提交与批准都核对当前兑付覆盖率，批准需另一位有 A2 审批权的超管。若当前版本已变动，旧提案不能写入。待审时 PC 与 App 使用现行规则，批准后新申请按新版本校验。降低预算或修改说明等非放大动作按现有版本即时保存。历史申请保留提交时的金额。
+**材料读与核验**：查看材料GET原申请 `/ambassador-applications/{id}/materials`；附件GET私有files路径，没有PC上传/删除。本版核验分BUSINESS和FINANCE，两类均可直接POST`/materials/review`，不经A2、不批准预算、不付款。各需要对应专权、原材料版本、结论PASSED/NEEDS_MORE及理由；业务场地通过要求有效去重人数≥100且为整数，不能带财务认可金额；财务通过必填非负认可额，小数≤6位、整数≤12位，不能带人数。需补项须属于该类材料。两阶段无硬性先后顺序，页面流程图的顺序不能代替后端许可。缺认可额是尚未认可，0是合法已记录的0；材料申请额/认可额在JSON解析前保留十进制，12位整数+6位小数不经Number丢失。
 
-**① 申请与材料**：保留当前V5+申请资格及现行预算政策。每份原申请只选线下活动、KOL推广、物料或开发支持中的一类，保留编号、日期、城市及申请额。本人提交／补交私有材料形成新版本，旧核验不沿用；历史缺类别由本人明确补齐，已批准额度不重分。必要材料分别为签到／活动／费用，推广／流量／费用，清单／配额／费用，以及需求／工时／验收／费用。
+请求以admin+申请+原号+完整body保留成功回执。发前保存完整原理由和申请快照，持久失败不发；未知冻结原版/原结论/原理由，换账号、刷新和过期均保留。重试按共享明确拒绝收敛；MATERIAL_REVISION_STALE/APPLICATION_NOT_PENDING发生在保留成功回放之后，可以确认原核验未提交。过24小时不POST，仍可GET当前材料/历史，不能把当前相似结论当原号回执。重试成功后重新读材料及总览，历史packet不冒充现在。
 
-**② 页面与核验**：F4原列表显示单类别、申请额、材料版本和进度，“查看材料”打开原申请详情，按类别列附件、来源说明和缺项；业务和费用核验分别显示结论、核验人显示名、时间、理由、有效去重人数或认可额，保留历史核验可查。核验需明确选择通过／需补材料并填写理由；补材料沿原申请记录，不创建额外外部消息。线下业务通过需核实至少100人的有效去重人数，费用通过需认可金额；预计人数和日常签到不充当活动实际人数。材料未齐／未核／需补／过期或金额不足时禁批并显示原因。
+**批准/驳回**：两者在原材料详情创建`F/f_ui_config`申请、sourceDomain F4、obj申请号、target`F/ambassador_application/{id}`、paramKey`F.ambassador.{id}.status`，值approved/rejected。批准必须带expectedMaterialRevision并以后端canProposeApproval裁决；批准执行人不能是maker，也不能参与本版任何一次业务或财务核验。执行再次核版本/未处理、必要材料/私有文件、两阶段通过、场地人数、认可额≥申请额、活动日期已到、覆盖率。驳回不要求材料通过，不开额度，历史保留。列表只凭两阶段PASSED就显示“可以发起最终批准”的旧文案不构成后端保证，详情已有真实阻断原因，列表状态交视觉修正。
 
-**③ 批准**：同版必要材料、业务与费用核验均通过，认可金额不低于申请额，活动／服务日期不晚于业务今天后，F4按服务端`canProposeApproval`及现有权限发起A2。核验人可以作为提案maker；由另一位具原最终批准权且未参与该版核验的管理员最终执行，超管同样遵守，不增第三管理员门槛。确认框显示单类别、申请额／认可额和材料版本；批准仅登记所选类别的一份合法申请额度，不做钱包实际付款。认可金额不足时不自动降额，本人在退回补交时可下调原申请金额并重新核验。
+**申请规则两条提交路径**：精确`network_f4_pool_fund`，四类id固定。policyVersion 3–64位，原expectedRevision>0，默认预算落某类100–10000范围；各类min≤max、title/range≤80字、rule≤500字，金额完整十进制≤6位。
 
-**④ A2与恢复**：原`F/f_ui_config`批准命令携独立`expectedMaterialRevision`并持久保存；对象及锁为原申请。A2原票显示当前材料与提案版本、两金额和两核验摘要，按`canApprove`禁用职责不符、旧版或缺版执行；旧提案不能自动绑定新材料。最终执行时重核材料、版本、金额、申请状态、当前权限与原兑付覆盖率门。驳回保留原A2流程，不要求材料先核验通过。核验携幂等键，按账号和原申请保存原载荷／理由／版本；结果未知可在刷新或重开后继续原命令。保留的成功回执超过24小时仍可同键恢复并收敛，未知状态继续隔离，不换号重做，终态详情也保留原结果核对入口。A2批准／驳回意图按原命令生成的applicationDecision读取，不以可被说明文案替换的“变更后”判断；F4提案原因使用proposalBlockers，明确显示缺少A2提案权限的原因，最终执行仍使用approvalBlockers。
+- 未提高默认预算或任一最高预算：PUT`/ambassador-policy`直接保存，含policy/revision、原reason/operator，原号hash也含理由。只提高最低预算仍属直存。成功后revision+1，后续App新申请读新规则，已有申请不重算。
+- 提高默认或任一最高预算：POST A2 `F/f4_ambassador_policy_change`、params.values完整policy、obj default、target`F/ambassador_policy/default`。发起只需该专用资金权限（TeamFundApproval.canPropose），不额外要求普通A2发起权限；创建和批准均验B1和原版本，另一位有效超级管理员且有A2批准权方可执行。若页面误判直存，后端A2_CONFIRMATION_REQUIRED明确拒绝后转原内容提案；不误报已经保存。
 
-**⑤ 权限**：读取沿`network_f4_read`；业务核验为`network_f4_ambassador_material_review`，费用核验为`network_f4_ambassador_finance_review`。超管两项、财务主管仅费用与必需F4读／菜单、审计只读；普通增长不经`network_%`自动获新核验写权，指定业务主管通过现有A1／A6显式授权，不新造主管角色。最终批准仍认既有`network_f4_ambassador_approve`及A2执行权。A1账号与A6角色按实际授权分别展示两项能力，不预选授权，不显示核验管理员ID。
-
-**⑥ 接口**：列表仍为`GET /api/admin/teams/leadership-pool`；材料为`GET /api/admin/teams/ambassador-applications/{id}/materials`；私有文件为同路径`/files/{fileId}`（不透明字符串）；核验为`POST .../materials/review`，携`Idempotency-Key`及`expectedMaterialRevision,stage,decision,reason`，按职责携人数／认可金额，可携缺项。批准／驳回仍走原A2；跨端具体材料包、阻断码、预算映射、历史与恢复合同见本节所链规格。
-
-**⑦ 验收**：PC真实操作列表→材料→业务／财务核验→补交新版本→原申请发起A2→另一有权管理员最终执行→单类别额度与审计回读。覆盖未授权、核验人与批准人相同、旧版票、认可额不足、未来日期、终态、历史已批不重分与原键恢复。类型与构建只证明候选可编译；TEST页面与完整业务结果独立记录，不由本文代签。
+后台可维护四类文字，但PC/App已知id优先本地字典，自定义title/rule不保证直显。App刷新已有未提交草稿时保留用户已填预算并重新校验，不能承诺后台保存后立即替用户改值。原号提案、直存及材料的状态提示复用既有F4RecoveryNotice。
 
 ---
 
 #### [F4d] 排行榜 & 反欺诈
 
-运营后台「各榜奖池」优先回填已批准的各周期配置，真实的 0 照常回填。首次配置时从可用的实时榜单取当前金额，周榜沿用已有的独立金额口径。没有可确认金额时对应字段留空，由运营填写。暂停快照保留暂停时的展示金额，首次配置不引用快照。提交须填写四个非负金额，沿用现有审批流程。
+本页日/周/月/总榜只显示前三。服务端按有效正式用户本期已解锁USDT净奖励排序（不是订单额或算力），日/周/月总榜候选集最多20/50/100/100人；人数是截断后的候选数，不是全平台注册人数。周期按GROWTH_TEAM业务日历，当前为越南时间；前端显示时间按A3页面时区。榜单池精确十进制保留，后端已压精度的其他标签不能当完整原金额。
 
-**① 目的 & 对齐**: 邀请排行榜 4 周期奖池的派奖执行、Podium 实物履约与反欺诈处置(取消刷榜资格),是「邀请社会证明 + 奖池争夺」的运营执行面。对齐前端 §8.11(邀请排行榜 `/team/leaderboard`)+ §16.2 反欺诈。服务的业务目标:用 4 周期奖池 + TopN 分奖 + Podium 实物驱动用户冲榜增加邀请频次、用反欺诈保证排行榜社会证明真实性;**F4d owns 排行榜取消资格执行,复用 K1 反多账户引擎 + 消费 K2 刷榜信号,不重复 K1 去重 / K2 检测**(承 V1 §Ch8 K2④/⑤ + §3.14 待补条目)。
+| 写入口 | 合同与真实效果 |
+|---|---|
+| 四榜奖池 | `F.pool.periodPrize`单个JSON数字对象含today/week/month/allTime四项≥0，仍一张A2单，不拆请求；金额不经Number重写丢精度。日周月下个未结算周期读新值，总榜人工批准时读，已派周期不重发 |
+| 周榜覆盖额 | `F.leaderboard.poolUsd`，资金权+A2；消费者仅合法且>0时优先，否则用periodPrize.week。0不是关周池，保存端没有独立金额格式校验 |
+| 统一上榜门槛 | `F.leaderboard.minUsd`，非负USDT，写权限+A2。缺配置按服务端0回填，不再默认1；全周期共用，暂停快照仍为原值 |
+| 第1/前5最高占比 | `F.pool.top1MaxPct/top5MaxPct`，0–100%，资金权+A2；只限榜单派奖，不限团队池，没有两值大小关系校验。前5按合计剩余额度封顶，超出不重分 |
+| 暂停 | `F.leaderboard.paused=on`，榜单处置权+A2；批准时事务捕获四周期不可变快照，失败不改成功。重复暂停409。有效FROZEN才显示暂停名单，无快照明确不可用，不补实时榜 |
+| 恢复 | 同key=off，处置权+A2；批准恢复实时，快照历史保留。暂停时自动周期派奖返回0仍推进checkpoint，恢复不会补跳过周期；团队池不随榜单暂停 |
+| 本周前三取消资格 | `F.leaderboard.week.user.{memberUserId}.status=disqualified`，处置权+A2；发起与执行均核有效本周K2本人信号或匹配K1有效簇证据；无证据NO_RISK_EVIDENCE，不绕。移出week排名及派奖，不冻结/追回，后端处置无具体周到期过滤，下周不会自动恢复 |
+| 总榜派奖 | `F/f4_leaderboard_period_payout`，params.period=allTime，obj排行榜 allTime、target`F/leaderboard_settlement/allTime`；资金权+A2，暂停不可新提。批准后按执行时累计候选前100、名次N…1权重、top1/top5封顶、向下6位写UNLOCKED USDT；有成功lifetime事件则不重复，0池/无候选不发也不表示永久已完成 |
 
-**② 后台界面**: 4 周期奖池 + Podium 实物 + 反欺诈,三区。
-1. **4 周期奖池面**:`[period(today / week / month / all-time)/ 奖池 USD / TopN / 距重置倒计时 / 当前榜单 Top-N 快照]`;切 period 看不同奖池与榜单(§8.11.2 Period Tabs)。**正常派奖 server 自动执行(§8.11.3),本面展示结算结果 + 提供纠错入口,不内联手动派发常规奖**;all-time 奖池无自动 reset(§8.11.4 Resets In = —),其结算触发须按 V2 gate 确认结论(milestone 触发或纯手动)展示。
-2. **Podium 实物面**:`[period / #1-#3 / handle / 实物奖品(#1 Genesis Node + Rack ×1 / #2 NexionBox Pro ×3 / #3 NexionBox Pro ×1)/ KYC 地址确认态 / 履约状态]`。
-3. **反欺诈面**:`[userId / 本期累计 USDT 佣金(排序键)/ 刷榜增速倍数(对基线)/ 关联 K1 簇 / K2 刷榜信号态 / 是否已取消资格]`;取消资格 / 暂停榜单 / 追加奖池入口。
+本页没有分周期人工补发、纠错、追加奖池、App总榜触发开关。反欺诈检测在K1/K2，本页不维护K2增速阈值；风控命中数是本周信号用户和已处置用户合并去重，不能当作当前榜待处理的精确人数。风险证据不提前返回，提交拒绝按真实原因显示。暂停和总榜派发同其他F4申请统一保存原body、原理由、原号、原事实；去重不能由浏览器UTC日换号替代，已删除跨日造新号路径。
 
-**③ 可控参数**:
-
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| 4 周期奖池(`PERIOD_PRIZE`) | **现状**(§8.11.4):today `$5,000`/TopN 20 · week `$50,000`/TopN 50 · month `$250,000`/TopN 100 · all-time `$1,000,000`/TopN 100 | 奖池 ≥ 0 / TopN ≥ 1 | 仅新周期(改后下一周期生效) | `/team/leaderboard` Prize Pool Hero + Pays to top {topN} |
-| Podium 实物(`PODIUM_PRIZE`) | **现状**(§8.11.5):#1 Genesis Node + Rack ×1 / #2 NexionBox Pro ×3 / #3 NexionBox Pro ×1 | 文本 | 仅新周期 | `/team/leaderboard` Podium 卡下方 3 行实物奖列表 |
-| 排序键口径(`leaderboardSortKey`) | **现状**(§8.11.3):本期累计 USDT 佣金(`unilevel` + binary + leadership + 邀请奖 + 平级奖之和) | 只读口径 | — | `/team/leaderboard` 排名 + Earned 列 |
-| 入榜门槛(`leaderboardMinUsd`) | **现状**(§8.11.3):本期累计 ≥ $1 | ≥ 0 | 实时 | `/team/leaderboard` 入榜资格 |
-| 更新频率(`snapshotIntervalMin`) | **现状**(§8.11.3):服务端每 **5 分钟** snapshot | 1–60 分钟 | 实时 | `/team/leaderboard` Footer「Rankings update every 5 minutes」 |
-
-> **默认值口径**:4 周期奖池 / TopN / Podium / 排序键 / 入榜门槛 / 5 分钟 snapshot 均为前端 §8.11.4 / §8.11.5 / §8.11.3 现状值,12 月节奏表未单列排行榜参数,以 §8.11 为参考。**`leaderboardSortKey` 的佣金组成项使用 `unilevel`(对齐前端 §8.11.3 排序键文案 + §12.5 CommissionEvent kind 枚举),不写 `network`**;kind 名称待 F5⑧ blocking 工单与 A4 确认后统一更新,本条跟随工单结论(若工单最终选 `network` 则同步)。**反欺诈刷榜增速阈值不在本参数表**——该阈值(> 5× 基线)由 K2 配置(K2③ `leaderboardVelocityMultiplier`)并产信号,F4d 只读消费,不持配置权(见 ⑦)。
-
-**④ 操作动作**:
-
-| 动作 | 角色 | 确认弹窗 | 审计点(A2) |
-|---|---|---|---|
-| 补发 / 纠错当期奖励(正常派奖为 server 自动) | 财务(lead)/ 超管 | F4d-MD1(理由必填+B1 红线预检) | `admin.leaderboard_prize_paid`(period / userId[] / amount[] / mode(reissue\|correct)/ operator / reason) |
-| 取消刷榜资格(F4d owns 执行) | 风控(lead)/ 超管 | F4d-MD2(理由必填;须附 K2 信号 / K1 簇证据) | `admin.leaderboard_disqualified`(userId / period / velocityMultiplier / k1ClusterId / reason / operator) |
-| 暂停榜单(异常应急) | 风控(lead)/ 增长(lead)/ 超管 | F4d-MD3(理由必填;应急止血,确认即生效) | `admin.leaderboard_paused`(period / paused / reason / operator) |
-| 追加奖池(活动) | 财务(lead)/ 超管 | F4d-MD4(理由必填+B1 红线预检) | `admin.leaderboard_pool_topped_up`(period / amount / reason / operator) |
-
-**④a 交互与弹窗规格**
-
-**(1) 动作触发总表**
-
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 补发 / 纠错奖励 | ②(1)奖池面结算结果区「纠错入口」 | 次按钮 | 仅已结算周期可用;财务(lead)/超管渲染 | 打开弹窗 F4d-MD1 |
-| 取消刷榜资格 | ②(3)反欺诈面行内「取消资格」 | 行内警示按钮 | 仅未取消资格行显示;须该行有 K2 信号或 K1 簇命中,否则置灰并提示「无信号证据」;风控(lead)/超管渲染 | 打开弹窗 F4d-MD2 |
-| 暂停榜单 | ②(1)奖池面顶部「暂停榜单」 | 警示按钮 | 仅运行中榜单 | 打开弹窗 F4d-MD3 |
-| 追加奖池 | ②(1)奖池面「追加奖池」 | 次按钮 | 财务(lead)/超管渲染 | 打开弹窗 F4d-MD4 |
-| 切换 period / 查看榜单 | ②(1)Period Tabs / 榜单行 | tab / 链接 | 恒可用 | 就地切换 / 下钻,无弹窗 |
-
-**(2) 弹窗规格**
-
-##### [F4d-MD1] 补发 / 纠错当期奖励
-- **功能**:对 server 漏发 / 误发的排行榜奖励人工补发或纠错(USDT 流出),确认即派发并落 D4 bill;非常规派奖通道(常规派奖 server 自动)。
-- **布局结构**:1. **信息区**:period / 该期奖池与 TopN / 拟补发条目清单(rank/userId/金额)/ 纠错依据摘要。2. **影响预览区**:server 预检「派发后兑付覆盖率」,低于黄线警示、低于红线阻断(确认钮置灰,文案含 422);本批合计金额。3. **输入区**:见下表。4. **按钮区**:取消 / 确认派发。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| mode | 单选(reissue 补发 / correct 纠错 / early 提前派发) | 是 | all-time 周期 early 选项隐藏(触发规则待 V2 gate 确认) | reissue |
-| reason | 多行文本 | 是 | 8–200 字;400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认派发]`(置灰条件同上;loading;携 `Idempotency-Key`)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(弹窗不关,内联回传当前覆盖率)/ 409(该期已被处理,提示刷新)/ 400 / 403。
-- **成功反馈**:弹窗关闭;结算结果区就地更新;toast「已派发 · 已记审计」;事件 `admin.leaderboard_prize_paid`;实时告警;D4 落 bill + B1/B2 计提。
-
-##### [F4d-MD2] 取消刷榜资格
-- **功能**:剔除用户出该周期奖池派发名单并标记 disqualified,确认即生效;须基于 K2 刷榜信号 + K1 簇证据,防误剔正常用户。
-- **布局结构**:1. **信息区**:userId(链 C1)/ period / 本期累计 USDT 佣金与当前排名 / **证据区**:刷榜增速倍数(对基线)、K2 信号详情、K1 簇 ID 与簇内账户数(链 K1 图谱)。2. **影响预览区**:提示行「取消后该用户出该期派发名单,名次顺延」。3. **输入区**:reason(多行文本,必填,8–200 字;须说明证据结论)。4. **按钮区**:取消 / 确认取消资格(警示色)。
-- **错误态**:422 `NO_RISK_EVIDENCE`(server 校验无 K2 信号且无 K1 簇时拒绝,弹窗不关)/ 409(已取消)/ 400 / 403。
-- **成功反馈**:弹窗关闭;反欺诈面行标「已取消资格」;toast;事件 `admin.leaderboard_disqualified`;实时告警;喂 K4 套利维度 + B5。
-
-##### [F4d-MD3] 暂停榜单
-- **功能**:应急暂停某 period 榜单(快照冻结、派奖挂起),确认即生效。
-- **布局结构**:1. **信息区**:period / 当前榜单状态 / 距重置倒计时。2. **输入区**:reason(必填 8–200 字)。3. **按钮区**:取消 / 确认暂停(警示色)。
-- **错误态**:409(已暂停)/ 400 / 403。
-- **成功反馈**:弹窗关闭;榜单标「已暂停」;toast;事件 `admin.leaderboard_paused`;实时告警;前端榜单页同步显示维护态。
-
-##### [F4d-MD4] 追加奖池
-- **功能**:为某 period 追加奖池金额(放大 USDT 流出),确认即生效。
-- **布局结构**:1. **信息区**:period / 当前奖池 / TopN。2. **影响预览区**:server 预检「追加后兑付覆盖率」,低于红线阻断(置灰+422 文案);追加后奖池 before→after。3. **输入区**:追加金额(数字输入,>0)+ reason(必填)。4. **按钮区**:取消 / 确认追加。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE` / 400 / 403 / 409。
-- **成功反馈**:弹窗关闭;奖池 Hero 就地更新;toast;事件 `admin.leaderboard_pool_topped_up`;实时告警;B1/B2 计提。
-
-> **派奖分工(自动 vs 人工纠错)+ 取消资格为高敏的依据**:**排行榜正常派奖为 server 自动执行**(§8.11.3:周期结束按比例自动派发到对应 USDT 余额,触发 `commission` 事件),F4d 后台展示结算结果;**F4d④ 的确认弹窗派奖动作(F4d-MD1)仅用于「补发 / 纠错」**(server 漏发 / 误发的人工纠正),非常规派奖通道——常规派奖不经手动操作。取消资格 = 剔除用户奖池资格(须基于 K2 刷榜信号 + K1 簇证据,防误剔正常用户);Podium 实物履约须核验 KYC 地址。**取消资格执行归 F4d**(承 V1 §Ch8 K2④/⑤:`POST /api/admin/risk/leaderboard/:userId/disqualify` 写端点与确认执行由 F4d 接管),F4d 不重复 K1 去重引擎 / K2 信号检测,仅 owns 排行榜取消资格 / 奖池剔除执行。**all-time 奖池无自动 reset**(§8.11.4 Resets In = —),其结算触发规则(milestone 触发或纯手动)须列为 V2 gate 确认项(引言阻断项 4),裁定前 all-time 派奖不固化触发机制。放大 / 追加奖池前须核 B1 覆盖率(§1.8 原则一)。
-
-**⑤ 接口**:
-- `GET /api/admin/leaderboard?period=&cursor=` — 4 周期奖池 + 榜单快照;返回 `{ period, poolUsd, topN, resetIn, snapshot:[{ rank, userId, handle, cumulativeUsdt, directs, velocityMultiplier, k1ClusterId?, k2Flagged(bool), disqualified(bool) }], podium:[...] }`,**server-canonical**(排序键 server 每 5 分钟 snapshot,§8.11.3);`resetIn` 在 all-time period 返回 `null`(无自动 reset,§8.11.4)。
-- `POST /api/admin/leaderboard/:period/payout` — **补发 / 纠错 / 提前派发**当期奖励到 TopN 用户 USDT 余额(**正常派奖 server 自动,本接口用于纠错 / 提前派发**);payload `{ mode(reissue|correct|early), reason }`(reason 空值 400 `REASON_REQUIRED`);**`Idempotency-Key` 必带**(派奖防重复);确认弹窗 F4d-MD1(server 前置 B1 覆盖率红线核验,低于红线 422 `COVERAGE_BELOW_REDLINE`);server 原子派发 + 落 D4 commission bill。**period 触发差异**:today / week / month 奖池在周期 reset 时 server 自动派发(本接口仅纠错 / 提前);**all-time 奖池无自动 reset(§8.11.4),其派发触发规则(milestone 触发或纯手动)待 V2 gate 确认(引言阻断项 4),确认前 all-time 派发走纯手动确认弹窗(F4d-MD1)**。派奖事件归属(`commission.paid(kind=leaderboard_prize)` 复用 vs 独立 `leaderboard.prize_paid`)待 F5⑧ blocking 工单二选一确认,与 F4d⑧ 保持一致。
-- `POST /api/admin/risk/leaderboard/:userId/disqualify` — **F4d owns 取消刷榜资格**;payload `{ period, reason, k1ClusterId? }`;**`Idempotency-Key` 必带**;确认弹窗 F4d-MD2(server 校验 K2 信号 / K1 簇证据存在,无证据 422 `NO_RISK_EVIDENCE`);server 原子剔除该用户出该周期奖池派发名单 + 标记 disqualified。**承 V1 §Ch8 K2② 末权责声明(取消资格执行归 F4d);端点路径挂 `/api/admin/risk/` namespace 为本章设计决策,V2 gate 须确认 K2 不在同路径双写**(K2 仅产刷榜信号、不在同路径双写写端点;引言阻断项 4)。
-- `POST /api/admin/leaderboard/:period/pause` — 暂停榜单;确认弹窗 F4d-MD3(body 携 reason)。
-- `POST /api/admin/leaderboard/:period/topup` — 追加奖池;确认弹窗 F4d-MD4(body 携 reason)+ B1 覆盖率前置(低于红线 422)。
-
-**⑥ 权限 & 审计**:
-
-| 动作 \ 角色 | 超管 | 财务 | 风控 | 增长 | 只读审计 |
-|---|---|---|---|---|---|
-| 查看奖池 / 榜单 / 反欺诈 | ✅ | ✅ | ✅ | ✅(只读) | ✅(只读) |
-| 补发 / 纠错当期奖励 | ✅ | ✅(lead) | — | — | — |
-| 取消刷榜资格 | ✅ | — | ✅(lead) | — | — |
-| 暂停榜单 | ✅ | — | ✅(lead) | ✅(lead) | — |
-| 追加奖池 | ✅ | ✅(lead) | — | — | — |
-
-审计字段引用 A2 统一 schema:`operator / role / action(payout\|disqualify\|pause\|topup) / period / userId(s) / amount / velocityMultiplier / k1ClusterId / reason / ts`。
-
-**⑦ 风控 & 联动**:
-- **复用 K1 反多账户 + 消费 K2 刷榜信号,F4d owns 取消资格执行**:F4d **复用 K1 反多账户引擎**(IP / 设备指纹 / 支付工具三层去重,§Ch8 K1)识别冲榜账户簇关联,**消费 K2 刷榜信号**(增速 > 5× 基线,§Ch8 K2④/⑤);**F4d 不重复 K1 去重引擎、不重复 K2 信号检测,仅 owns 排行榜取消资格 / 奖池剔除的确认执行**(承 V1 §Ch8 K2④/⑤:「取消资格执行接口归 F4d 接管,K2 仅产信号 + 标记」)。**增速阈值(> 5× 基线)由 K2 配置(K2③ `leaderboardVelocityMultiplier`),F4d 只读消费,不持该阈值配置权**。
-- **奖池发放受 B1 覆盖率约束**:补发 / 纠错 / 追加奖池(放大 USDT 流出)前 server 强制核验 B1 覆盖率(§1.8 原则一);奖池发放计入 B1/B2 应付负债。
-- **Podium KYC 地址确认**:Podium 实物履约前强制核验 C4 KYC 态与确认地址(§3.14:KYC 权威归 C4),F4d 引用不重算。
-- **排序键 server-canonical**:本期累计 USDT 佣金排序键由 server 每 5 分钟 snapshot(§8.11.3),client 仅按 period 切换读取;handle 完整显示不 mask(§8.11.3:真实平台强化攀比),取消资格基于 server 端 K2 信号 + K1 簇证据,不信 client。
-
-**⑧ 埋点(事件)**:
-对齐 A4(§2.4.5③ money / ⑤ risk / ⑥ admin family):
-- **消费(刷榜信号,§2.4.5⑤)**:K2 产出的刷榜信号——**V1 §2.4.5⑤ 同时登记 `risk.arbitrage_suspected`(含 `type=leaderboard`)与 `risk.leaderboard_velocity_flagged` 两个事件名;K2⑧ 正文实际产出 `risk.arbitrage_suspected(type=leaderboard)`(已登记),`risk.leaderboard_velocity_flagged` 为待注册清单条目(§9.3④ / 运行期注册 V4 收口)**。F4d 是该刷榜信号的**取消资格执行消费方**(承 §Ch8 K2「刷榜信号喂 F4d」);**消费锚点须明确**:若两者为独立细粒度事件,须在 F5⑧ blocking 工单中一并向 A4 申请注册并说明关系;若等价,统一改用已登记的 **`risk.arbitrage_suspected(type=leaderboard)`**,**不得在未注册状态下以 `risk.leaderboard_velocity_flagged` 作为消费锚点**。F4d 据此执行取消资格,**不重复 K2 的检测产出、不持增速阈值配置**。
-- **消费(邀请,§2.4.5①/②)**:`referral.invite_sent` / `referral.bound`(邀请关系 → 排行榜社会证明)+ `commission.paid`(network / binary / leadership / 邀请奖 / 平级奖 → 排序键本期累计,§8.11.3)。
-- **产生(派奖资金记账 + admin 审计)**:
-  - **排行榜派奖事件**(`commission.paid(kind=leaderboard_prize)` 复用 **或** 独立 `leaderboard.prize_paid`,**二选一须在 F5⑧ blocking 工单确认后与 F5⑧ 保持一致**)— 触发点:排行榜周期结束奖池按比例**自动**派发到 TopN 用户 USDT 余额(§8.11.3,today / week / month 自动;all-time 触发规则待确认);属性 `userId / kind: "leaderboard_prize"(若复用 commission.paid)/ currency: "USDT" / amount / period / rank / is_server_authoritative: true / ts`;落 D4 commission bill + 喂 B1/B2 应付负债。**`leaderboard_prize` 须列入 F5⑧ `commission.paid.kind` 七元素枚举注册工单**(若最终改走独立 `leaderboard.prize_paid` 事件,则从 commission.paid 枚举移除并在 A4 单独注册 money family 新事件)。
-  - `admin.leaderboard_prize_paid` — 触发点:补发 / 纠错派奖确认执行(常规派奖为 server 自动,不产此 admin 事件);属性 `period / user_ids[] / amounts[] / mode(reissue\|correct\|early)/ operator / reason / coverage_checked / ts`;喂 A2 + D4 + L3。
-  - `admin.leaderboard_disqualified` — 触发点:取消刷榜资格确认执行(**F4d 产**);属性 `user_id / period / velocity_multiplier / k1_cluster_id / k2_flagged / operator / reason / ts`;喂 A2 + K4(套利维度)+ B5。
-  - `admin.leaderboard_paused` / `admin.leaderboard_pool_topped_up` — 见 ④;喂 A2 + B4。
-- **承接关系**:本子模块取消资格执行承 **V1 §Ch8 K2④/⑤**(取消资格归 F4d / K2 仅产信号);消费段引用与引言、F4d⑦ 一致使用 K2④/⑤,不写 K2③/⑧。
-- **喂给**:D4 commission bill、B1/B2 应付负债、K4 风险评分(取消资格 → 套利维度)、B5 风险雷达。
+已决定的后端跟进包括：票数鉴权不一致、月上限/周池格式与0含义、零票恢复入口、取消资格到期、暂停不补发、统计精度/口径、跨端榜单指标和资金B1预检。PC不新增财务/风控规则作为绕过。真实页面的成功、拒绝、未知、刷新恢复、24小时到期、原号逐字节及权限/锁检查由F域最后的页面验收项集中执行。

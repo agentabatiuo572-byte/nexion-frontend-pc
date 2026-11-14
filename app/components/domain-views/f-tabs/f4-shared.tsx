@@ -7,18 +7,18 @@
 import type { ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
 import { Explain, Notice, StatusTag } from "@/app/components/rd";
-import { businessOffsetMinutes, businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessOffsetMinutes, businessStamp, businessZone, formatBusinessTimeCompact, type BusinessZone } from "@/lib/admin/business-time";
+import { f4Decimal } from "@/lib/admin/f4-money";
 
-/** 接口给的 USDT 金额：千分位，最多 6 位小数（后端精度），至少两位，不舍入、不缩写。 */
-export function usdt(value: number | null | undefined) {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
-  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+/** 接口给的 USDT 金额：保留接口十进制，千分位、至少两位，不舍入、不缩写。 */
+export function usdt(value: number | string | null | undefined) {
+  return value == null ? "—" : decimalText(f4Decimal(value));
 }
 
 /** 后端存的十进制文本（预算、认可金额）：整数部分加千分位，小数原样保留，至少两位。 */
 export function decimalText(value: number | string | null | undefined) {
   if (value === null || value === undefined || String(value).trim() === "") return "—";
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(String(value).trim());
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(f4Decimal(value) ?? "");
   if (!match) return String(value);
   const fraction = (match[3] ?? "").replace(/0+$/, "").padEnd(2, "0");
   return `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction}`;
@@ -40,9 +40,6 @@ export function zoneNote() {
   return `${zone.label}（${zone.offset}）`;
 }
 
-/** 自动结算按增长团队的业务时区解析定时表达式（后端 LeadershipPoolSettleScheduler，现在是越南时间）。 */
-export const SETTLE_ZONE = { label: "越南时间", offsetMinutes: 7 * 60 };
-
 const WEEKDAYS: Record<string, string> = { "0": "日", "7": "日", SUN: "日", "1": "一", MON: "一", "2": "二", TUE: "二", "3": "三", WED: "三", "4": "四", THU: "四", "5": "五", FRI: "五", "6": "六", SAT: "六" };
 
 /**
@@ -50,8 +47,8 @@ const WEEKDAYS: Record<string, string> = { "0": "日", "7": "日", SUN: "日", "
  * 只认 5 段或 6 段、秒为 0、分和时是单个数字、日 / 月 / 星期是「每天」「每月某日」「每周某天」三种写法；别的写法返回 null，页面写「自定义时间」加原文，不猜。
  * 只做显示，后端按原文解析。
  */
-export function describeSettleCron(raw: string): string | null {
-  return parseSettleCron(raw)?.text ?? null;
+export function describeSettleCron(raw: string, settlementZone?: BusinessZone | null): string | null {
+  return parseSettleCron(raw, settlementZone)?.text ?? null;
 }
 
 export type SettleCadence = "daily" | "weekly" | "monthly";
@@ -76,7 +73,7 @@ export function settleCadenceNote(raw: string): { cadence: SettleCadence | "cust
     short: "自动结算时间读不出多久触发一次，每次只结算最近结束的一周", tag: "读不出多久触发一次" };
 }
 
-function parseSettleCron(raw: string): { text: string; cadence: SettleCadence } | null {
+function parseSettleCron(raw: string, settlementZone?: BusinessZone | null): { text: string | null; cadence: SettleCadence } | null {
   const parts = raw.trim().split(/\s+/);
   const fields = parts.length === 5 ? ["0", ...parts] : parts;
   if (fields.length !== 6) return null;
@@ -90,12 +87,16 @@ function parseSettleCron(raw: string): { text: string; cadence: SettleCadence } 
   else if (/^\d{1,2}$/.test(dom) && Number(dom) >= 1 && Number(dom) <= 31 && any(dow)) { day = `每月 ${Number(dom)} 日`; cadence = "monthly"; }
   else if (any(dom) && WEEKDAYS[dow]) { day = `每周${WEEKDAYS[dow]}`; cadence = "weekly"; }
   else return null;
+  // Spring accepts days 29–31 but skips months where that date does not exist.
+  // The existing "每月只自动结算一次" copy cannot describe that schedule exactly.
+  if (cadence === "monthly" && Number(dom) > 28) return null;
+  if (!settlementZone) return { text: null, cadence };
   const clock = (total: number) => `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
   const local = h * 60 + m;
   const zone = businessZone();
-  const shifted = local - SETTLE_ZONE.offsetMinutes + businessOffsetMinutes(zone);
+  const shifted = local - businessOffsetMinutes(settlementZone) + businessOffsetMinutes(zone);
   const page = shifted === local ? "" : `，${zone.label} ${shifted >= 1440 ? "次日 " : shifted < 0 ? "前一天 " : ""}${clock(((shifted % 1440) + 1440) % 1440)}`;
-  return { text: `${day} ${clock(local)}（${SETTLE_ZONE.label}${page}）`, cadence };
+  return { text: `${day} ${clock(local)}（${settlementZone.label}${page}）`, cadence };
 }
 
 export type F4RecoveryRow = {

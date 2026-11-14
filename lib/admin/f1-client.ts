@@ -1,18 +1,21 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { finiteDashboardNumber } from "@/lib/admin/dashboard-number";
 import { formatAdminApiError, guardedFetch, rawFetch } from "@/lib/admin/error-messages";
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { F1OutcomeUncertainError, f1StableWrite } from "@/lib/admin/f1-stable-write";
 import { verifyF5CsvArtifact } from "@/lib/admin/f5-export-verifier";
 import { parseDirectReferralPolicy } from "@/lib/admin/direct-referral-policy";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 import type { F1PolicyValues } from "./f1-policy-change";
 import { f3SpilloverState } from "./f3-policy";
+import { f4Decimal, f4MonthlyCap } from "./f4-money";
+import type { BusinessZone } from "./business-time";
 import {
   assertF1Overview,
   assertF2Overview,
   assertF3Overview,
   assertF4Overview,
+  assertF4MaterialPacket,
   assertF5Overview,
 } from "@/lib/admin/f-overview-contract";
 
@@ -730,6 +733,7 @@ export interface F4Podium {
 
 export interface F4LeaderboardPeriod {
   poolUsd: number;
+  poolUsdText?: string;
   participantCount: number;
   topN: number;
   timezone: "Asia/Shanghai";
@@ -791,6 +795,10 @@ export interface F4AmbassadorReviewInput {
   missingKinds?: string[];
 }
 export class F4MaterialReviewNotAppliedError extends Error {
+  readonly status = 409;
+  readonly httpStatus = 409;
+  readonly apiCode = 409;
+  get backendMessage() { return this.code; }
   constructor(message: string, public readonly code: "MATERIAL_REVISION_STALE" | "APPLICATION_NOT_PENDING") {
     super(message); this.name = "F4MaterialReviewNotAppliedError";
   }
@@ -842,6 +850,7 @@ export interface F4Config {
 }
 
 export interface F4LeadershipPoolOverview {
+  settlementZone?: BusinessZone | null;
   configVersion: string;
   settlementConfigStatus: "READY" | "HOLD";
   settlementConfigUnavailableKey: string;
@@ -849,11 +858,13 @@ export interface F4LeadershipPoolOverview {
   metrics: F4Metric[];
   weeklyInjectedUsd: number;
   currentWeekPoolUsd: number | null;
+  currentWeekPoolAmount?: string | null;
   weeklyGmvUsd: number;
   poolRatio: string;
   poolRatioValue: number;
   monthlyCapLabel: string;
   monthlyCapUsd: number;
+  monthlyCapAmount?: string | null;
   participantCount: number;
   topN: number;
   topSharePct: number;
@@ -1424,7 +1435,8 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
       if (!raw || typeof raw !== "object") continue;
       const row = raw as Record<string, unknown>;
       const max = period === "today" ? 20 : period === "week" ? 50 : 100;
-      if (typeof row.poolUsd !== "number" || !Number.isFinite(row.poolUsd) || row.poolUsd < 0
+      const poolUsd = finiteDashboardNumber(row.poolUsd);
+      if (poolUsd === null || poolUsd < 0
         || !integer(row.participantCount) || row.participantCount > max
         || !integer(row.topN) || row.topN > row.participantCount
         || row.timezone !== "Asia/Shanghai" || typeof row.snapshotAt !== "string" || !Number.isFinite(Date.parse(row.snapshotAt))
@@ -1433,7 +1445,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
         || !row.podium.every((item, index) => item && item.rank === index + 1
           && integer(item.memberUserId, 1) && typeof item.userId === "string" && !!item.userId.trim()
           && label(item.gmvLabel) && typeof item.tip === "string" && typeof item.className === "string")) continue;
-      leaderboardPeriods[period] = { poolUsd: row.poolUsd, participantCount: row.participantCount,
+      leaderboardPeriods[period] = { poolUsd, poolUsdText: f4Decimal(String(row.poolUsd)) ?? undefined, participantCount: row.participantCount,
         topN: row.topN, timezone: row.timezone, snapshotAt: row.snapshotAt, podium: row.podium as F4Podium[] };
     }
   }
@@ -1503,11 +1515,13 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     metrics,
     weeklyInjectedUsd: toNumber(data?.weeklyInjectedUsd),
     currentWeekPoolUsd: finiteDashboardNumber(data?.currentWeekPoolUsd),
+    currentWeekPoolAmount: data?.currentWeekPoolUsd == null ? null : f4Decimal(data.currentWeekPoolUsd),
     weeklyGmvUsd: toNumber(data?.weeklyGmvUsd),
     poolRatio: asText(data?.poolRatio, asText(config.poolRatio)),
     poolRatioValue: toNumber(data?.poolRatioValue),
     monthlyCapLabel: asText(data?.monthlyCapLabel, asText(config.monthlyCap)),
     monthlyCapUsd: toNumber(data?.monthlyCapUsd),
+    monthlyCapAmount: f4MonthlyCap(data?.configValues?.["F.pool.monthlyCap"] ?? ""),
     participantCount: toNumber(data?.participantCount),
     topN: toNumber(data?.topN),
     topSharePct: toNumber(data?.topSharePct),
@@ -1547,9 +1561,9 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
-    // coverage 可选:后端 leadershipPool() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验),范式同 normalizeOverview。
-    coverage: data?.coverage
-      ? { coverageRatio: toNumber(data.coverage.coverageRatio), redlinePct: toNumber(data.coverage.redlinePct) }
+    // A01/A18 have no execution-time B1 check. Missing values never become zero.
+    coverage: finiteDashboardNumber(data?.coverage?.coverageRatio) !== null && finiteDashboardNumber(data?.coverage?.redlinePct) !== null
+      ? { coverageRatio: Number(data!.coverage!.coverageRatio), redlinePct: Number(data!.coverage!.redlinePct) }
       : undefined,
     sources: data?.sources ?? [],
   };
@@ -1728,6 +1742,14 @@ async function f1Request<T>(
       const raw = await response.text();
       // Preserve DECIMAL(18,6) before JSON.parse can round a JSON number.
       result = JSON.parse(raw.replace(/("amount"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
+    } else if (/^\/ambassador-applications\/\d+\/materials(?:\/review)?$/.test(path)) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("(?:budgetUsdt|recognizedBudgetUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+        (_match, key: string, amount: string) => `${key}${JSON.stringify(f4Decimal(amount) ?? amount)}`)) as ApiResult<T>;
+    } else if (path === "/leadership-pool" && !isWrite) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("(?:currentWeekPoolUsd|poolUsd)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+        (_match, key: string, amount: string) => `${key}${JSON.stringify(f4Decimal(amount) ?? amount)}`)) as ApiResult<T>;
     } else if (path === "/binary" && !isWrite) {
       const raw = await response.text();
       result = JSON.parse(raw.replace(/("h1BinaryDailyCap"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
@@ -1752,6 +1774,7 @@ async function f1Request<T>(
     // 头 + message 两路都认(与 a2-client 同款):teams proxy 目前不透传该头,靠下面的 5xx 兜底,
     // 但后端若改用「200 + 业务码非 0 + UPSTREAM_OUTCOME_UNKNOWN」表达未知,这一路能接住。
     if (response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown"
+      || (path === "/ambassador-policy" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) && isIdempotencyOutcomeOpen(result?.message)
       || result?.message?.trim().toUpperCase().includes("UPSTREAM_OUTCOME_UNKNOWN") === true) {
       throw new F1OutcomeUncertainError(
         formatAdminApiError(result?.message, "F1_REQUEST_OUTCOME_UNKNOWN"),
@@ -1787,7 +1810,7 @@ async function f1Request<T>(
       throw new F4MaterialReviewNotAppliedError(formatAdminApiError(reviewConflict, "F1_REQUEST_FAILED_409"), reviewConflict);
     }
     const error = new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
-    if (path.startsWith("/ranks/")) throw Object.assign(error, {
+    if (path.startsWith("/ranks/") || path === "/ambassador-policy" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
       status: response.status, httpStatus: response.status, apiCode: result?.code,
       backendMessage: result?.message, reasonCode: result?.message,
     });
@@ -1889,28 +1912,35 @@ export async function fetchF4AmbassadorPolicy() {
 }
 
 export async function fetchF4AmbassadorMaterials(applicationId: number) {
-  return f1Request<F4AmbassadorMaterialPacket>(`/ambassador-applications/${applicationId}/materials`);
+  const packet = await f1Request<unknown>(`/ambassador-applications/${applicationId}/materials`);
+  assertF4MaterialPacket(packet);
+  return packet as unknown as F4AmbassadorMaterialPacket;
 }
 
 export async function reviewF4AmbassadorMaterials(applicationId: number, input: F4AmbassadorReviewInput, commandKey: string) {
-  return f1Request<F4AmbassadorMaterialPacket>(`/ambassador-applications/${applicationId}/materials/review`, {
+  const packet = await f1Request<unknown>(`/ambassador-applications/${applicationId}/materials/review`, {
     method: "POST", stableIdempotencyKey: commandKey, expectsData: true, body: JSON.stringify(input),
   });
+  try { assertF4MaterialPacket(packet); }
+  catch { throw new F1OutcomeUncertainError(formatAdminApiError(undefined, "F1_RESPONSE_UNREADABLE"), commandKey); }
+  return packet as unknown as F4AmbassadorMaterialPacket;
 }
 
 export async function updateF4AmbassadorPolicy(
   policy: F4AmbassadorPolicyUpdate,
   reason: string,
   operator: string,
+  originalCommandKey?: string,
 ) {
-  const fingerprint = JSON.stringify([policy, operator]);
-  return f1StableWrite("f4-ambassador-policy", fingerprint, async (commandKey) =>
+  const fingerprint = JSON.stringify([policy, reason, operator]);
+  const write = async (commandKey: string) =>
     normalizeF4AmbassadorPolicy(await f1Request<unknown>("/ambassador-policy", {
       method: "PUT",
       stableIdempotencyKey: commandKey,
       expectsData: true,
       body: JSON.stringify({ ...policy, reason, operator }),
-    })));
+    }));
+  return originalCommandKey ? write(originalCommandKey) : f1StableWrite("f4-ambassador-policy", fingerprint, write);
 }
 
 export interface F5ExportReceipt {

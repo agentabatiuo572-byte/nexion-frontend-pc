@@ -1,4 +1,6 @@
 import type { F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
+import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
+import type { FDirectAttempt } from "@/lib/admin/f1-stable-write";
 import type { FDomainAttempt, F2Recovery } from "@/lib/admin/f2-approval";
 import type { ReactNode } from "react";
 import type { OperatorBriefKind, EditSpec, BusinessFormSpec, BusinessFormValue, InlineOperationApproval } from "../design-kit";
@@ -57,6 +59,8 @@ export interface McSpec {
   expectedMaterialRevision?: number;
   teamApproval?: Pick<InlineOperationApproval, "resolve" | "renderForm"> & { source: keyof TeamFundApprovalValues };
   f3Snapshot?: F3ConfirmationSnapshot;
+  f4Snapshot?: F4ConfirmationSnapshot;
+  f4Recovery?: { kind: "proposal"; original: FDomainAttempt } | { kind: "policy"; original: FDirectAttempt };
   /** 以下只管确认框怎么显示，原样交给 OperationConfirmModal 的同名参数；不传时和原来一样。 */
   title?: ReactNode;
   facts?: ReactNode | ((value?: string) => ReactNode);
@@ -67,7 +71,7 @@ export interface McSpec {
   coverageLead?: ReactNode;
   coverageCheck?: string;
 }
-export type Mc = (McSpec & { teamApprovalOwner?: AdminSession["adminId"] }) | null;
+export type Mc = (McSpec & { teamApprovalOwner?: AdminSession["adminId"]; f4Owner?: AdminSession["adminId"] }) | null;
 
 /** 子视图上下文:打开 操作确认 / 跨域跳转 / toast。全部由 shell 注入,子视图无自有 store。 */
 export interface FViewCtx {
@@ -184,9 +188,13 @@ export interface FViewCtx {
   f4AmbassadorPolicy: F4AmbassadorPolicy | null;
   f4Loading: boolean;
   f4Error: string | null;
+  f4Proposals: FDomainAttempt[];
+  f4PolicyWrites: FDirectAttempt[];
+  f4ApprovalRows: A2OperationRow[];
+  recoverF4: (record: NonNullable<McSpec["f4Recovery"]>, mode: "query" | "retry" | "release") => Promise<boolean>;
   refreshF4: () => Promise<void>;
   updateF4Config: (key: string, value: string, reason: string, expectedVersion?: number, expectedMaterialRevision?: number) => Promise<void>;
-  updateF4AmbassadorPolicy: (policy: F4AmbassadorPolicyUpdate, reason: string) => Promise<void>;
+  updateF4AmbassadorPolicy: (policy: F4AmbassadorPolicyUpdate, reason: string) => Promise<boolean>;
   proposeF4Settlement: (reason: string) => Promise<void>;
   proposeF4LeaderboardPayout: (period: "today" | "week" | "month" | "allTime", reason: string) => Promise<void>;
   // -- 佣金事件审计(F5)· 读 + 处置状态写入 --

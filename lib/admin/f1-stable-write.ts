@@ -1,6 +1,8 @@
 // 相对路径 + 显式 .ts 后缀,而非 `@/` 别名:本模块被 tests/f1-direct-pending-store-contract.test.mjs
 // 用 node --test 直接 import(同 stable-mutation.ts 惯例),node 不认 tsconfig 路径别名。
-import { createSlotAttemptStore } from "./pending-mutation-store.ts";
+import { createPendingMutationStore, createSlotAttemptStore, type SlotAttemptRecord } from "./pending-mutation-store.ts";
+import type { F4AmbassadorPolicyUpdate } from "./f1-client";
+import type { F4ConfirmationSnapshot } from "./f4-approval";
 
 /** F 直写通道「提交结果未知」:命令号已随请求出手,必须保留原号供原样重试,后端按号去重。
  *  不用构造器参数属性:node 的 strip-only 类型剥离不支持该语法,本文件要被 node --test 直接 import。 */
@@ -22,7 +24,17 @@ export function isF1OutcomeUncertainError(error: unknown): error is F1OutcomeUnc
     && typeof (error as Error & { commandKey?: unknown }).commandKey === "string";
 }
 
-const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-f-direct-commands-v1" });
+export interface FDirectAttempt extends SlotAttemptRecord {
+  adminId?: number;
+  f4Request?: F4AmbassadorPolicyUpdate & { reason: string; operator: string };
+  f4Snapshot?: F4ConfirmationSnapshot;
+}
+export const fDirectCommands = createPendingMutationStore<FDirectAttempt>({
+  storageKey: "nexion-admin-f-direct-commands-v1",
+  retainExpiredRecords: row => /^(?:\d+:)?f4-ambassador-policy$/.test(row.fingerprint),
+  isValidRecord: row => typeof row.inputFingerprint === "string" && row.inputFingerprint.length > 0,
+});
+const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-f-direct-commands-v1" }, fDirectCommands);
 
 function mintCommandKey(slot: string) {
   // 前缀只为审计排查可读,截断防批量槽位(F5 重发含整批事件 id)撑爆 HTTP 头长度;

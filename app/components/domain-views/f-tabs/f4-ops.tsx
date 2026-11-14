@@ -3,7 +3,7 @@
 /**
  * F4 奖励池、名额与排行榜（改版）。数据源为后端 /api/admin/teams/leadership-pool 和 ambassador-policy，由 f-view 读取。
  * 这页管三件事：团队激励池、购机名额与大使申请、排行榜。首屏三张卡回答「现在有什么在等我」，也是三块内容的页签。
- * 只排版：读取、提交、权限判断、结果未知的保存和恢复都沿用 f-view 和原组件的写法。
+ * 读取、提交和原请求恢复由 f-view 接线；保留已搭建的界面和确认内容。
  */
 import { useState, type KeyboardEvent } from "react";
 import { AlertTriangle, ArrowRight, ListChecks, RefreshCw } from "lucide-react";
@@ -12,12 +12,15 @@ import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { F4AmbassadorApplication } from "@/lib/admin/f1-client";
 import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { displayAdminError } from "@/lib/admin/error-messages";
+import { f4Confirmation } from "./f4-confirmations";
 import { F4AmbassadorMaterials, materialReviewAttempts } from "./f4-ambassador-materials";
 import { applicationStage } from "./f4-quota";
 import { F4Pool } from "./f4-pool";
 import { F4Quota } from "./f4-quota";
 import { F4Leaderboard, leaderboardState } from "./f4-leaderboard";
-import { F4RecoveryNotice, count, settleCadenceNote, unknownTag, usdt, stamp, type F4RecoveryRow } from "./f4-shared";
+import { F4RecoveryNotice, count, decimalText, settleCadenceNote, unknownTag, usdt, stamp, type F4RecoveryRow } from "./f4-shared";
 import type { FViewCtx } from "./types";
 
 type Section = "pool" | "quota" | "board";
@@ -35,6 +38,50 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
   const canApprove = ctx.can("network_f4_ambassador_approve");
   const canReview = ctx.can("network_f4_ambassador_material_review") || ctx.can("network_f4_ambassador_finance_review");
   const readOnly = !canWrite && !canFund && !canControl && !canApprove && !canReview && !ctx.canSubmitTeamApproval("F4");
+  const recoveries: NonNullable<Parameters<typeof ctx.openActionConfirm>[0]["f4Recovery"]>[] = [
+    ...ctx.f4Proposals.map(original => ({ kind: "proposal" as const, original })),
+    ...ctx.f4PolicyWrites.map(original => ({ kind: "policy" as const, original })),
+  ];
+  const recoveryRows: F4RecoveryRow[] = recoveries.map(record => {
+    const original = record.original;
+    const spec = record.kind === "proposal" ? record.original.spec : undefined;
+    const confirm = original.f4Snapshot ? f4Confirmation(ctx, original.f4Snapshot) : undefined;
+    const snapshot = original.f4Snapshot;
+    const form = confirm?.businessForm;
+    const amount = (key: string, value: string) => snapshot?.action === "F.pool.periodPrize" || key === "defaultBudgetUsdt" || /\.(min|max)$/.test(key) ? `${decimalText(value)} USDT` : value;
+    const change = form?.kind === "multi-field" && snapshot?.businessValue
+      ? form.fields.filter(field => snapshot.businessValue![field.key] !== field.current).map(field => `${field.label} ${amount(field.key, field.current ?? "")} → ${amount(field.key, snapshot.businessValue![field.key])}`).join("；")
+      : confirm?.edit ? `${confirm.edit.current ?? "—"} → ${snapshot?.value ?? spec?.after ?? "—"}`
+        : confirm?.statedBrief?.impact ?? (spec ? `${spec.before} → ${spec.after}` : "—");
+    return {
+      key: original.commandKey,
+      name: confirm?.name ?? spec?.action ?? "调整区域大使申请规则",
+      change,
+      submittedAt: original.createdAt,
+      tag: record.kind === "proposal" && record.original.ticket?.status === "pending" ? <StatusTag tone="progress">待审批</StatusTag>
+        : isRetryExpired(original) ? <StatusTag tone="warn">已过期</StatusTag> : unknownTag(record.kind === "proposal" ? "approval" : "direct"),
+      actions: <Button size="sm" onClick={() => {
+        if (confirm && original.f4Snapshot) {
+          ctx.openActionConfirm({ ...confirm, edit: confirm.edit ? { ...confirm.edit, initialValue: original.f4Snapshot.value } : undefined, f4Recovery: record });
+        } else void ctx.recoverF4(record, "query").catch(error => ctx.toast(displayAdminError(error)));
+      }}>查询原结果</Button>,
+    };
+  });
+  if (actorId !== undefined) recoveryRows.push(...materialReviewAttempts(actorId).map((record) => {
+    const application = record.application ?? data?.ambassadorApplications.find((item) => item.id === record.applicationId);
+    return {
+      key: record.commandKey,
+      name: `${record.input.stage === "BUSINESS" ? "业务" : "财务"}核验 · 申请 #${record.applicationId}`,
+      change: `材料第 ${record.input.expectedMaterialRevision} 版 · ${record.input.decision === "PASSED" ? "通过" : "需补材料"}`,
+      submittedAt: record.createdAt,
+      tag: unknownTag("direct"),
+      actions: application
+        ? <Button size="sm" onClick={() => { setSection("quota"); setMaterialApplication(application); }}>打开申请</Button>
+        : <span className="f4-muted">申请不在最近 30 份里</span>,
+    };
+  }));
+  const recoveryNotice = <F4RecoveryNotice rows={recoveryRows} />;
+  const materialDrawer = materialApplication && <F4AmbassadorMaterials application={materialApplication} ctx={ctx} onClose={() => setMaterialApplication(null)} />;
 
   const header = (
     <PageHeader pageId="F4" title="奖励池、名额与排行榜" summary="看团队激励池怎么分、购机名额和大使申请、排行榜。"
@@ -51,14 +98,18 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       {header}
       {ctx.f4Loading ? <>
         <Conclusion state="unknown">正在读取奖励池、名额和排行榜…</Conclusion>
+        {recoveryNotice}
         <BlockState state="loading" title="正在读取团队激励池、名额、大使申请和排行榜…" />
       </> : ctx.f4Error ? <>
         <Conclusion state="unknown" hint="点「重新读取」再试；读到之前不显示旧数字，也不能操作。">读不到这页的数据，暂时无法判断</Conclusion>
+        {recoveryNotice}
         <BlockState state="error" title="团队激励池、名额和排行榜读取失败" detail={ctx.f4Error} onRetry={() => void ctx.refreshF4()} retryLabel="重新读取" />
       </> : <>
         <Conclusion state="unknown">还没有读到数据</Conclusion>
+        {recoveryNotice}
         <BlockState state="empty" title="暂无团队激励池数据" />
       </>}
+      {materialDrawer}
     </div>;
   }
 
@@ -91,20 +142,6 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
     tightQuota > 0 && `${tightQuota} 个商品本月名额已用到 85% 以上`,
   ].filter((item): item is string => typeof item === "string");
 
-  const recoveryRows: F4RecoveryRow[] = actorId === undefined ? [] : materialReviewAttempts(actorId).map((record) => {
-    const application = data.ambassadorApplications.find((item) => item.id === record.applicationId);
-    return {
-      key: record.commandKey,
-      name: `${record.input.stage === "BUSINESS" ? "业务" : "财务"}核验 · 申请 #${record.applicationId}`,
-      change: `材料第 ${record.input.expectedMaterialRevision} 版 · ${record.input.decision === "PASSED" ? "通过" : "需补材料"}`,
-      submittedAt: record.createdAt,
-      tag: unknownTag("direct"),
-      actions: application
-        ? <Button size="sm" onClick={() => { setSection("quota"); setMaterialApplication(application); }}>打开申请</Button>
-        : <span className="f4-muted">申请不在最近 30 份里</span>,
-    };
-  });
-
   const select = (next: Section) => setSection(next);
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     const next = nextTabValue(SECTIONS, section, event.key);
@@ -131,7 +168,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
             hint={todos.length > 2 ? `另外：${todos.slice(2).join("；")}。` : "点下面的卡片进入对应的一块处理。"}>
             {todos.slice(0, 2).join("，")}
           </Conclusion>}
-      <F4RecoveryNotice rows={recoveryRows} />
+      {recoveryNotice}
 
       {/* 外面包 .rd-tabs：三张卡就是页签，版面量尺按 .rd-tabs 里的页签逐个切换去量。 */}
       <div className="rd-tabs f4-section-cards">
@@ -140,7 +177,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
           head={<span className="f4-card-head">团队激励池</span>}
           surface={settlement.ready ? undefined : "warn"}
           label={settled ? "本周已结算（实发）" : "本周池（估算）"}
-          value={data.currentWeekPoolUsd === null ? "—" : usdt(data.currentWeekPoolUsd)} unit={data.currentWeekPoolUsd === null ? undefined : "USDT"}
+          value={data.currentWeekPoolUsd === null ? "—" : usdt(data.currentWeekPoolAmount ?? data.currentWeekPoolUsd)} unit={data.currentWeekPoolUsd === null ? undefined : "USDT"}
           tone="role-1">
           <span className="f4-card-line">
             {settlement.ready
@@ -163,7 +200,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
           head={<span className="f4-card-head">排行榜</span>}
           surface={board.paused ? "warn" : undefined}
           label={board.paused ? "本周奖池（暂停时）" : "本周奖池"}
-          value={board.available && week ? usdt(week.poolUsd) : "—"} unit={board.available && week ? "USDT" : undefined} tone="role-1">
+          value={board.available && week ? usdt(week.poolUsdText ?? week.poolUsd) : "—"} unit={board.available && week ? "USDT" : undefined} tone="role-1">
           <span className="f4-card-line">
             {board.paused ? <StatusTag tone="warn">已暂停</StatusTag> : <StatusTag tone="ok">实时更新</StatusTag>}
             {board.available && week?.podium[0] ? <span>第 1 名 {week.podium[0].userId}</span> : <span className="f4-muted">{board.available ? "本周还没有上榜的人" : "名次暂不显示"}</span>}
@@ -177,7 +214,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
         {section === "quota" && <F4Quota ctx={ctx} data={data} onOpenMaterials={setMaterialApplication} />}
         {section === "board" && <F4Leaderboard ctx={ctx} data={data} />}
       </div>
-      {materialApplication && <F4AmbassadorMaterials application={materialApplication} ctx={ctx} onClose={() => setMaterialApplication(null)} />}
+      {materialDrawer}
     </div>
   );
 }

@@ -7,7 +7,9 @@ import { OperationConfirmModal } from "../design-kit";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { F1OutcomeUncertainError, isF1OutcomeUncertainError } from "@/lib/admin/f1-stable-write";
-import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { ambassadorApprovalBlocker, ambassadorBucketLabel, ambassadorMaterialStateLabel, F4_MATERIAL_PERMISSIONS } from "@/lib/admin/f4-ambassador-display";
 import { fetchF4AmbassadorMaterials, F4MaterialReviewNotAppliedError, reviewF4AmbassadorMaterials, type F4AmbassadorApplication, type F4AmbassadorMaterialPacket, type F4AmbassadorMaterialProposal, type F4AmbassadorReview, type F4AmbassadorReviewInput } from "@/lib/admin/f1-client";
@@ -17,8 +19,9 @@ import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { applicationStage } from "./f4-quota";
 import { count, decimalText, stamp, unknownTag, zoneNote } from "./f4-shared";
 import type { FViewCtx } from "./types";
+import { f4Confirmation } from "./f4-confirmations";
 
-type PendingReview = PendingMutationRecord & { actorId: number; applicationId: number; input: F4AmbassadorReviewInput };
+type PendingReview = PendingMutationRecord & { actorId: number; applicationId: number; input: F4AmbassadorReviewInput; application?: F4AmbassadorApplication };
 const reviewAttempts = createPendingMutationStore<PendingReview>({
   storageKey: "uvel-f4-ambassador-material-reviews", retainExpiredRecords: true,
   isValidRecord: (record) => Number.isSafeInteger(record.actorId) && Number.isSafeInteger(record.applicationId)
@@ -102,12 +105,10 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
   const pendingRef = useRef(pending);
   const [confirmation, setConfirmation] = useState<Omit<F4AmbassadorReviewInput, "reason"> | null>(null);
   const refresh = useCallback(async () => {
-    setLoading(true); setError(null);
+    setLoading(true); setError(null); setPacket(null);
     try {
       const next = await fetchF4AmbassadorMaterials(application.id);
-      if (next.applicationId !== application.id || !Number.isSafeInteger(next.materialRevision)
-        || !Array.isArray(next.requirements) || !Array.isArray(next.attachments) || !Array.isArray(next.approvalBlockers) || !Array.isArray(next.proposalBlockers) || !Array.isArray(next.missingKinds)
-        || !next.businessReview || !next.financeReview) throw new Error("材料详情不完整，请重新加载。");
+      if (next.applicationId !== application.id) throw new Error("材料详情不完整，请重新加载。");
       setPacket(next);
     } catch (cause) { setPacket(null); setError(displayAdminError(cause)); }
     finally { setLoading(false); }
@@ -123,36 +124,9 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
 
   const approve = () => {
     if (!packet || !canProposeApproval) return;
-    ctx.openActionConfirm({ briefKind: "funds", name: `批准大使申请 #${application.id}`, amplify: true,
-      op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "approved",
-      expectedMaterialRevision: packet.materialRevision,
-      title: `批准大使申请 #${application.id}`, effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>, confirmLabel: "提交审批",
-      statedBrief: {
-        impact: `批准后只开通申请人所选的「${ambassadorBucketLabel(packet.bucket)}」这一类额度（一笔），不是付款，也不改其他申请。`,
-        check: "执行时重新检查材料版本、两次核验、线下活动人数、认可金额、活动日期、附件和兑付覆盖率，任一不符就不执行。",
-      },
-      completionCopy: "提交后由另一位管理员在「操作记录与审批」批准才生效。批准人需有大使最终批准权限和审批权限，不能核验过这一版材料，也不能是你自己。",
-      coverageLead: "批准会开通一笔预算额度",
-      coverageCheck: "批准执行时检查兑付覆盖率。",
-      facts: <Facts>
-        <Fact k="申请金额" lead tone="role-1" unit="USDT">{decimalText(packet.budgetUsdt)}</Fact>
-        <Fact k="认可金额">{packet.financeReview.recognizedBudgetUsdt == null ? "尚未认可" : `${decimalText(packet.financeReview.recognizedBudgetUsdt)} USDT`}</Fact>
-        <Fact k="类别">{ambassadorBucketLabel(packet.bucket)}</Fact>
-        <Fact k="材料">第 {packet.materialRevision} 版 · 业务核验和财务核验都已通过</Fact>
-      </Facts>,
-      detail: `${ambassadorBucketLabel(packet.bucket)} · 申请金额 ${money(packet.budgetUsdt)} · 认可金额 ${money(packet.financeReview.recognizedBudgetUsdt)} · 材料 V${packet.materialRevision}。业务核验与财务核验均已通过。本次仅开通所选类别的申请额度。`,
-    });
+    ctx.openActionConfirm(f4Confirmation(ctx, { action: "approve", overview: ctx.f4Overview!, policy: ctx.f4AmbassadorPolicy, application, material: packet ?? undefined }));
   };
-  const reject = () => ctx.openActionConfirm({ briefKind: "record", name: `驳回大使申请 #${application.id}`,
-    op: "dispose", paramKey: `F.ambassador.${application.id}.status`, fixedVal: "rejected",
-    title: `驳回大使申请 #${application.id}`, effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>, confirmTone: "danger", confirmLabel: "提交驳回",
-    statedBrief: {
-      impact: "批准后这份申请变成已驳回，不开通额度；材料和核验历史保留。驳回不要求材料核验通过。",
-      check: "申请已经处理过时会被拒绝。",
-    },
-    completionCopy: "提交后由另一位管理员在「操作记录与审批」批准才生效。批准人需有大使最终批准权限和审批权限，不能是你自己。",
-    detail: "驳回这一份申请，提交审批后由另一位有权限的管理员执行。",
-  });
+  const reject = () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "reject", overview: ctx.f4Overview!, policy: ctx.f4AmbassadorPolicy, application, material: packet ?? undefined }));
 
   const reviewWritable = (stageKey: "BUSINESS" | "FINANCE", index: number) => !!packet && operable
     && (stageKey === "BUSINESS" ? packet.canReviewBusiness : packet.canReviewFinance) === true && ctx.can(F4_MATERIAL_PERMISSIONS[index].code);
@@ -253,26 +227,46 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
       confirmLabel="记录核验结论"
       completionCopy={pending ? "按原请求重试：原版本、原结论和原理由不变，已经记录过的不会记两次。" : "核验结论和理由立即记录到这一版材料，不经审批。"}
       getPendingReason={() => pendingRef.current?.input.reason}
+      inlineApproval={{
+        resolve: () => undefined,
+        pending: !!pending,
+        initialRecovery: "retry",
+        expired: !!pending && (isRetryExpired(pending) || !ctx.can(pending.input.stage === "BUSINESS" ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review")),
+        recover: async () => { await refresh(); return true; },
+      }}
       onClose={() => setConfirmation(null)}
       onConfirm={async (reason) => {
         if (!actorId || useAdminAuth.getState().session?.adminId !== actorId) throw new Error("登录账号已变化，请重新打开申请。");
         const original = pendingRef.current;
+        const authority = (original?.input ?? confirmation).stage === "BUSINESS" ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review";
+        if (!useAdminAuth.getState().session?.authorities.includes(authority)) throw new Error("ADMIN_PERMISSION_DENIED");
+        if (original && isRetryExpired(original)) { setPending({ ...original }); throw new F1OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey); }
+        if (!original && (!packet || loading || error || final)) throw new Error("材料没读到，刷新后再试");
         const attempt = original ?? { actorId, applicationId: application.id, input: { ...confirmation, reason }, fingerprint,
           commandKey: createA2CommandKey("f4-material-review"), createdAt: Date.now(), expiresAt: Date.now() + 24 * 60 * 60 * 1000 };
-        reviewAttempts.remember(fingerprint, attempt.commandKey, { actorId, applicationId: application.id, input: attempt.input });
+        reviewAttempts.remember(fingerprint, attempt.commandKey, { actorId, applicationId: application.id, input: attempt.input, application });
+        if (!reviewAttempts.isDurablyStored(fingerprint, attempt.commandKey)) {
+          if (!original) reviewAttempts.forget(fingerprint, attempt.commandKey);
+          throw new Error("F4_OPERATION_STORAGE_UNAVAILABLE");
+        }
         pendingRef.current = attempt; setPending(attempt);
         try {
           const next = await reviewF4AmbassadorMaterials(application.id, attempt.input, attempt.commandKey);
           if (!next || next.applicationId !== application.id || next.materialRevision !== attempt.input.expectedMaterialRevision) throw new F1OutcomeUncertainError("核验回执需重新核对，请刷新材料后继续原核验。", attempt.commandKey);
           reviewAttempts.forget(fingerprint, attempt.commandKey); pendingRef.current = undefined; setPending(undefined);
-          setPacket(next); setConfirmation(null); ctx.toast("材料核验已记录"); await refresh(); await ctx.refreshF4();
+          setPacket(null); setConfirmation(null); ctx.toast("材料核验已记录"); await refresh(); await ctx.refreshF4();
         } catch (cause) {
           if (cause instanceof F4MaterialReviewNotAppliedError) {
             reviewAttempts.forget(fingerprint, attempt.commandKey); pendingRef.current = undefined; setPending(undefined);
             setRecoveryNotice(`原材料 V${attempt.input.expectedMaterialRevision} 的核验未执行，${cause.code === "MATERIAL_REVISION_STALE" ? "材料版本已变化，请核对当前材料后重新核验。" : "申请已处理，已刷新原申请。"}`);
             setConfirmation(null); await refresh(); await ctx.refreshF4(); return;
           }
-          if (!original && !isF1OutcomeUncertainError(cause)) { reviewAttempts.forget(fingerprint, attempt.commandKey); pendingRef.current = undefined; setPending(undefined); }
+          const failure = cause as { httpStatus?: number; apiCode?: number };
+          if (original ? isExplicitRejection(cause) : !isF1OutcomeUncertainError(cause)
+            && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) {
+            reviewAttempts.forget(fingerprint, attempt.commandKey); pendingRef.current = undefined; setPending(undefined);
+            if (original) { setConfirmation(null); await refresh(); await ctx.refreshF4(); }
+          }
           throw cause;
         }
       }} />}
