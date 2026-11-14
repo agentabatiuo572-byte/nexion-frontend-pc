@@ -43,20 +43,105 @@
 .idom .p-row .s { font-size: 11.5px; color: var(--ink-4); margin-top: 2px; line-height: 1.5; }
 .idom .p-row .v { font-family: var(--mono); font-size: 14px; font-weight: 700; white-space: nowrap; color: var(--ink); }
 
-/* ============================ I1 转化文案 A/B ============================ */
-.idom .ab-prev { background: var(--surface-2); border-radius: 10px; padding: 12px 14px; }
-.idom .ab-prev .lc { font-family: var(--mono); font-size: 11px; color: var(--ink-4); margin-bottom: 5px; letter-spacing: .05em; }
-.idom .ab-prev .tx { font-size: 13px; line-height: 1.6; color: var(--ink-2); }
-.idom .ab-prev .tx em { font-style: normal; font-family: var(--mono); font-size: 12px; color: var(--i-ac); background: var(--i-ac-soft); border-radius: 4px; padding: 0 4px; }
-.idom .ab-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-@container idom (max-width: 880px) { .idom .ab-grid { grid-template-columns: 1fr; } }
-.idom .ab-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--surface-3); min-width: 90px; }
-.idom .ab-bar i { display: block; height: 100%; }
-.idom .ab-sm { display: flex; align-items: center; flex-wrap: wrap; row-gap: 6px; padding-top: 4px; }
-.idom .ab-sm .st { font-family: var(--mono); font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 6px; background: var(--surface-3); color: var(--ink-3); white-space: nowrap; }
-.idom .ab-sm .st.ok { background: var(--success-soft); color: var(--success); }
-.idom .ab-sm .st.warn { background: var(--warning-soft); color: var(--warning); }
-.idom .ab-sm .ar { padding: 0 7px; color: var(--ink-4); font-size: 11px; font-family: var(--mono); }
+/* ============================ I1 页面文案对比测试（改版） ============================ */
+.i1-page .i1-pane { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
+.i1-page .i1-cards { display: grid; gap: var(--rd-space-4); min-width: 0; }
+.i1-page .i1-weak { color: var(--rd-text-3); }
+.i1-page .i1-warn-text { color: var(--rd-warn); }
+.i1-page .i1-key { font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i1-page .i1-exp-link { display: inline-flex; padding: 0; border: 0; background: none; cursor: pointer; text-decoration: none; }
+.i1-page .i1-row-actions { display: inline-flex; gap: var(--rd-space-1); }
+
+/* 位置卡：左边这条文案三种语言和版本、实验，右边用户看到的样子；窄时上下排。 */
+.i1-page .i1-pos-copy { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: var(--rd-space-6); align-items: start; }
+.i1-page .i1-pos-copy + .i1-pos-copy { margin-top: var(--rd-space-4); padding-top: var(--rd-space-4); border-top: 1px solid var(--rd-line); }
+@container idom (max-width: 860px) { .i1-page .i1-pos-copy { grid-template-columns: minmax(0, 1fr); } }
+.i1-page .i1-pos-main { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; }
+.i1-page .i1-pos-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2) var(--rd-space-3); }
+.i1-page .i1-pos-name { font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.i1-page .i1-pos-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2) var(--rd-space-5); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.i1-page .i1-pos-meta > .rd-btn:last-child { margin-left: auto; }
+.i1-page .i1-pos-meta b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.i1-page .i1-pos-empty { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-3); }
+
+/* 三种语言一行一种：名字一列对齐，正文一行，全文在悬停里。 */
+.i1-page .i1-langs { display: grid; gap: var(--rd-space-1); margin: 0; }
+.i1-page .i1-lang { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: var(--rd-space-3); align-items: baseline; }
+.i1-page .i1-lang dt { font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i1-page .i1-lang dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text); }
+.i1-page .i1-langs[data-dim] dd { color: var(--rd-text-2); }
+:is(.i1-page, .rd-modal, .rd-drawer) .i1-lang-blocks { display: grid; gap: var(--rd-space-3); margin: 0; }
+:is(.i1-page, .rd-modal, .rd-drawer) .i1-lang-blocks > div { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: var(--rd-space-3); }
+:is(.i1-page, .rd-modal, .rd-drawer) .i1-lang-blocks dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
+:is(.i1-page, .rd-modal, .rd-drawer) .i1-lang-blocks dd { margin: 0; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text); }
+
+/* 用户看到的样子：一块按模块排的示意，正文用 App 的大字，一次看一种语言。 */
+.i1-page .i1-preview { display: flex; flex-direction: column; gap: var(--rd-space-2); margin: 0; min-width: 0; }
+.i1-page .i1-preview-head { display: flex; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.i1-page .i1-phone { display: flex; flex-direction: column; gap: var(--rd-space-2); min-height: 104px; padding: var(--rd-space-3) var(--rd-space-4) var(--rd-space-4); border: 1px solid var(--rd-line-strong); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
+.i1-page .i1-phone-bar { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.i1-page .i1-phone-text { margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+
+/* 实验卡：各组并排，每组一张小卡；转化率是这张小卡里最大的数。 */
+.i1-page .i1-exp[data-selected] { box-shadow: inset 3px 0 0 var(--rd-brand); }
+.i1-page .i1-variants { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--rd-space-3); }
+.i1-page .i1-variant { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; padding: var(--rd-space-3) var(--rd-space-4) var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); }
+.i1-page .i1-variant[data-lead] { border-color: var(--rd-ok); }
+.i1-page .i1-variant-head { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; }
+:is(.i1-page, .rd-drawer) .i1-variant-badge { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; border-radius: var(--rd-radius-tag); background: var(--rd-role-3-tile); color: var(--rd-role-3-tile-ink); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-semibold); }
+.i1-page .i1-variant-ver { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--rd-text-aux); color: var(--rd-text-2); }
+.i1-page .i1-variant-ver b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.i1-page .i1-variant-text { margin: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: calc(var(--rd-lh-body) * 2); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text); }
+.i1-page .i1-variant-nums { --rd-track-w: 100%; display: flex; flex-direction: column; gap: var(--rd-space-2); margin: 0; }
+.i1-page .i1-variant-nums > div { display: flex; align-items: baseline; justify-content: space-between; gap: var(--rd-space-2); }
+.i1-page .i1-variant-nums dt { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i1-page .i1-variant-nums dd { margin: 0; font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; color: var(--rd-text); }
+.i1-page .i1-variant-nums dd.i1-cvr { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); }
+.i1-page .i1-variant-nums dd[data-empty] { color: var(--rd-text-3); }
+.i1-page .i1-variant-nums > .i1-weak { font-size: var(--rd-text-aux); }
+.i1-page .i1-exp-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-3) var(--rd-space-6); margin-top: var(--rd-space-4); padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
+.i1-page .i1-exp-facts { display: flex; flex: 1; flex-wrap: wrap; gap: var(--rd-space-2) var(--rd-space-6); min-width: 0; margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
+.i1-page .i1-exp-facts > div { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; }
+.i1-page .i1-exp-facts dt { display: inline-flex; align-items: center; gap: var(--rd-space-1); color: var(--rd-text-3); white-space: nowrap; }
+.i1-page .i1-exp-facts dd { margin: 0; min-width: 0; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.i1-page .i1-exp-facts dd[data-empty] { color: var(--rd-text-3); }
+.i1-page .i1-exp-actions { display: flex; gap: var(--rd-space-2); margin-left: auto; }
+
+/* 内容历史：中文内容拿剩下的宽度，其余列按内容定比例，1024 也留得下一句话。 */
+.i1-page .i1-history { table-layout: fixed; }
+.i1-page .i1-history th:nth-child(1) { width: 19%; }
+.i1-page .i1-history th:nth-child(2) { width: 92px; }
+.i1-page .i1-history th:nth-child(4) { width: 15%; }
+.i1-page .i1-history th:nth-child(5) { width: 21%; }
+.i1-page .i1-history th:nth-child(6) { width: 64px; }
+
+/* 文案详情里的版本列表。 */
+.rd-drawer .i1-vlist { display: grid; margin: 0; padding: 0; list-style: none; }
+.rd-drawer .i1-vlist li { display: flex; align-items: center; gap: var(--rd-space-3); min-height: var(--rd-control-h); padding: var(--rd-space-1) 0; border-bottom: 1px solid var(--rd-line); }
+.rd-drawer .i1-vlist li:last-child { border-bottom: 0; }
+.rd-drawer .i1-vlist-main { display: flex; flex: none; align-items: center; gap: var(--rd-space-2); min-width: 128px; }
+.rd-drawer .i1-vlist li > .i1-weak { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+
+/* 创建实验：一组一行，版本、分流、移除对齐在一条线上，这组看到的中文写在下面。 */
+.rd-drawer .i1-variant-edit { display: grid; gap: var(--rd-space-3); }
+.rd-drawer .i1-variant-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) 160px var(--rd-control-h); align-items: end; gap: var(--rd-space-2) var(--rd-space-3); padding: var(--rd-space-3) var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); }
+.rd-drawer .i1-variant-row > .i1-variant-badge { margin-bottom: 4px; }
+.rd-drawer .i1-variant-preview { grid-column: 2 / -1; margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.rd-drawer .i1-split-total { margin-left: var(--rd-space-2); color: var(--rd-warn); }
+.rd-drawer .i1-split-total[data-ok] { color: var(--rd-ok); }
+.rd-drawer .i1-weak { color: var(--rd-text-3); }
+
+/* 结果未知的逐条提醒：改的是什么、提交时间、两个按钮一行。 */
+.i1-page .i1-pending { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
+.i1-page .i1-pending li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); }
+.i1-page .i1-pending-what { display: flex; gap: var(--rd-space-2); }
+.i1-page .i1-pending-actions { display: flex; gap: var(--rd-space-2); margin-left: auto; }
+
+/* 确认框里的内容对比：语言一列只占字宽，现在和之后两列平分，长句省略、悬停看全文。 */
+.i1-compare .rd-table { table-layout: fixed; }
+.i1-compare .rd-table th:first-child { width: 64px; }
+.i1-compare .rd-table td { overflow: hidden; }
+.i1-compare .i1-weak { color: var(--rd-text-3); }
 
 /* ============================ I2 Nova 推送 ============================ */
 .idom .nv-sw { width: 36px; height: 20px; border-radius: 999px; background: var(--surface-3); position: relative; cursor: pointer; border: none; padding: 0; transition: background .15s; }
