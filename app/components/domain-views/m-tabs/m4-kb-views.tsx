@@ -24,7 +24,7 @@ export const M4_LANGUAGES: readonly { code: string; name: string }[] = [
   { code: "uz", name: "乌兹别克语" },
 ];
 /** App 帮助中心只按这三种语言读取（App serverLanguage 只发 zh / vi / en）。 */
-const APP_LANGUAGES = ["zh-CN", "en-US", "vi-VN"];
+export const APP_LANGUAGES = ["zh-CN", "en-US", "vi-VN"];
 /** 不认识的语言码原样写出来，不当成中文。 */
 export const languageName = (code: string) => M4_LANGUAGES.find((language) => language.code === code)?.name ?? code;
 
@@ -43,7 +43,7 @@ type Reach = { key: string; icon: typeof Smartphone; who: string; reaches: boole
 export function reachOf(faq: Pick<M4Faq, "surface" | "language">): Reach[] {
   const rows: Reach[] = [];
   if (faq.surface === "Nova") {
-    rows.push({ key: "nova", icon: Bot, who: "Nova 智能助手", reaches: false, note: "目前读不到普通问答：后端语言代码对不上，已提后端修" });
+    rows.push({ key: "nova", icon: Bot, who: "Nova 智能助手", reaches: APP_LANGUAGES.includes(faq.language), note: "目前读不到普通问答：后端语言代码对不上，已提后端修" });
   } else if (APP_LANGUAGES.includes(faq.language)) {
     const users = faq.language === "en-US" ? "界面是英语，或另外六种语言（App 按英语读取）的用户" : `界面是${languageName(faq.language)}的用户`;
     rows.push({ key: "app", icon: Smartphone, who: "App 帮助中心", reaches: true, note: users });
@@ -57,7 +57,7 @@ export function reachOf(faq: Pick<M4Faq, "surface" | "language">): Reach[] {
 }
 
 /** 发布后有没有用户能在 App 里看到。 */
-export const reachesUsers = (faq: Pick<M4Faq, "surface" | "language">) => faq.surface !== "Nova" && APP_LANGUAGES.includes(faq.language);
+export const reachesUsers = (faq: Pick<M4Faq, "surface" | "language">) => (faq.surface === "Nova" || faq.surface === "Help Center") && APP_LANGUAGES.includes(faq.language);
 
 export function ReachList({ faq, label }: { faq: Pick<M4Faq, "surface" | "language">; label: string }) {
   return (
@@ -81,7 +81,7 @@ export function FaqStatusTag({ status }: { status: SupportFaq["status"] }) {
 
 /** 列表里「给谁看」一格的第二行：语言，读不到时补一句。 */
 export function audienceSub(faq: Pick<M4Faq, "surface" | "language">) {
-  if (faq.surface === "Nova") return `${languageName(faq.language)} · 智能助手读不到`;
+  if (faq.surface === "Nova" && !APP_LANGUAGES.includes(faq.language)) return `${languageName(faq.language)} · 智能助手读不到`;
   if (!APP_LANGUAGES.includes(faq.language)) return `${languageName(faq.language)} · App 不读这个语言`;
   return languageName(faq.language);
 }
@@ -152,10 +152,11 @@ export function M4FaqDrawer({ faq, nav, busy, canWrite, onClose, onEdit, onStatu
 }
 
 /** 发布、下架的确认框。确认后发出的请求和改版前一样（理由固定，见下面的「操作记录」一行）。 */
-export function M4StatusConfirm({ faq, busy, failure, onCancel, onConfirm }: {
+export function M4StatusConfirm({ faq, busy, disabled, failure, onCancel, onConfirm }: {
   faq: M4Faq;
   busy: boolean;
   failure: string;
+  disabled?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -166,7 +167,7 @@ export function M4StatusConfirm({ faq, busy, failure, onCancel, onConfirm }: {
       sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} busy={busy} onClose={onCancel}
       footer={<>
         <Button disabled={busy} onClick={onCancel}>取消</Button>
-        <Button variant="primary" loading={busy} onClick={onConfirm}>{publish ? "确认发布" : "确认下架"}</Button>
+        <Button variant="primary" loading={busy} disabled={disabled} onClick={onConfirm}>{publish ? "确认发布" : "确认下架"}</Button>
       </>}>
       <Facts>
         <Fact k="问题"><span className="m4-fact-text">{faq.question}</span></Fact>

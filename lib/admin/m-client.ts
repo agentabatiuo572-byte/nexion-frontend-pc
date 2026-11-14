@@ -1,5 +1,6 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { parseBusinessTime } from "@/lib/admin/business-time";
+import type { M4FaqCommand } from "./m4-faq-command";
+import { formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
 import { compareM3Messages } from "./m3-message-order";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
@@ -231,6 +232,7 @@ type SupportFaqView = {
   sortOrder?: number;
   version?: number;
   updatedAt?: string;
+  translations?: Record<string, { question: string; answer: string }>;
 };
 
 type SupportSlaView = {
@@ -256,6 +258,27 @@ type SupportKnowledgeOverview = {
 
 const SLA_CATEGORIES = ["account", "withdrawal", "deposit", "hardware", "earnings", "genesis", "technical", "other"] as const;
 
+function assertSupportFaq(value: unknown): asserts value is SupportFaqView {
+  const faq = value as SupportFaqView | null;
+  if (!faq || typeof faq !== "object" || Array.isArray(faq)
+    || typeof faq.id !== "string" || !faq.id.trim()
+    || typeof faq.question !== "string" || !faq.question.trim()
+    || typeof faq.answer !== "string" || !faq.answer.trim()
+    || typeof faq.category !== "string" || typeof faq.surface !== "string"
+    || !["zh-CN", "en-US", "vi-VN", "id", "ms", "fil", "ru", "kk", "uz"].includes(faq.language ?? "")
+    || !["PUBLISHED", "DRAFT"].includes(faq.status?.toUpperCase() ?? "")
+    || !Number.isSafeInteger(faq.sortOrder) || Number(faq.sortOrder) < 0 || Number(faq.sortOrder) > 999999
+    || !Number.isSafeInteger(faq.version) || Number(faq.version) < 1
+    || typeof faq.updatedAt !== "string" || !Number.isFinite(parseBusinessTime(faq.updatedAt))) {
+    throw new Error("M4_KNOWLEDGE_OVERVIEW_MALFORMED");
+  }
+  if (faq.translations !== undefined && (!faq.translations || typeof faq.translations !== "object" || Array.isArray(faq.translations)
+    || Object.entries(faq.translations).some(([code, text]) => !["id", "ms", "fil", "ru", "kk", "uz"].includes(code)
+      || !text || typeof text.question !== "string" || !text.question.trim() || typeof text.answer !== "string" || !text.answer.trim()))) {
+    throw new Error("M4_KNOWLEDGE_OVERVIEW_MALFORMED");
+  }
+}
+
 function assertSupportKnowledgeOverview(value: unknown): SupportKnowledgeOverview {
   const malformed = () => {
     throw new Error("M4_KNOWLEDGE_OVERVIEW_MALFORMED");
@@ -275,18 +298,7 @@ function assertSupportKnowledgeOverview(value: unknown): SupportKnowledgeOvervie
   if (!arrays.every(Array.isArray)) malformed();
   const faqs = overview.faqs as SupportFaqView[];
   const sla = overview.sla as SupportSlaView[];
-  if (!faqs.every((faq) =>
-    typeof faq.id === "string" && faq.id.trim().length > 0
-    && typeof faq.question === "string" && faq.question.trim().length > 0
-    && typeof faq.answer === "string" && faq.answer.trim().length > 0
-    && typeof faq.category === "string"
-    && typeof faq.surface === "string"
-    && typeof faq.language === "string"
-    && typeof faq.status === "string"
-    && Number.isSafeInteger(faq.sortOrder)
-    && Number.isSafeInteger(faq.version) && Number(faq.version) >= 1
-    && typeof faq.updatedAt === "string" && !Number.isNaN(Date.parse(faq.updatedAt))
-  )) malformed();
+  faqs.forEach(assertSupportFaq);
   if (new Set(faqs.map((faq) => faq.id)).size !== faqs.length) {
     throw new Error("M4_KNOWLEDGE_FAQ_ID_COLLISION");
   }
@@ -1367,10 +1379,11 @@ function adaptFaq(row: SupportFaqView): SupportFaq {
     answer: str(row.answer, ""),
     status: status(row.status),
     surface: surface(row.surface),
-    language: (["zh-CN", "en-US", "vi-VN"].includes(str(row.language)) ? row.language : "zh-CN") as SupportFaq["language"],
+    language: row.language as SupportFaq["language"],
+    ...(row.translations ? { translations: row.translations } : {}),
     sortOrder: num(row.sortOrder, 0),
     version: num(row.version, 1),
-    updatedAt: asDate(row.updatedAt),
+    updatedAt: formatBusinessTimeFull(row.updatedAt),
   };
 }
 
@@ -1610,6 +1623,28 @@ function isMContentSessionCurrent(sessionKey: string): boolean {
 }
 
 /** One read of the knowledge base, shared by the full M load and the FAQ picker's retry. */
+/** Materialize once, before persistence; replay never re-derives operator, reason or CAS values. */
+export function buildM4FaqCommand(kind: M4FaqCommand["kind"], row: SupportFaq, before: SupportFaq | null, reason: string, actorId: number): M4FaqCommand {
+  const path = `/knowledge/faqs${before ? `/${encodeURIComponent(before.id)}` : ""}`;
+  const payload = { category: row.category, question: row.question, answer: row.answer, status: row.status, surface: row.surface, language: row.language, sortOrder: row.sortOrder };
+  const statusOnly = !!before && row.status !== before.status && row.category === before.category && row.question === before.question
+    && row.answer === before.answer && row.surface === before.surface && row.language === before.language && row.sortOrder === before.sortOrder;
+  const expectation = before ? { expectedStatus: before.status, expectedVersion: before.version } : {};
+  const body = kind === "delete" ? expectation : statusOnly ? { status: row.status, ...expectation } : { ...payload, ...expectation };
+  return { actorId, kind, row, before, request: { method: kind === "create" ? "POST" : kind === "delete" ? "DELETE" : "PATCH", path: statusOnly && kind !== "delete" ? `${path}/status` : path, body: JSON.stringify(withReason(body, reason)) } };
+}
+
+export async function sendM4FaqCommand(command: M4FaqCommand, commandKey: string): Promise<void> {
+  const result = await apiRequest<unknown>(command.request.path, { method: command.request.method, body: command.request.body, headers: { "Idempotency-Key": commandKey } });
+  if (command.kind === "delete") {
+    if (result !== null) throw new Error("CONTENT_API_MALFORMED_RESPONSE");
+    return;
+  }
+  assertSupportFaq(result);
+  if (command.kind !== "create" && result.id !== command.row.id || result.version !== (command.before ? command.before.version + 1 : 1)
+    || result.status?.toLowerCase() !== command.row.status) throw new Error("CONTENT_API_MALFORMED_RESPONSE");
+}
+
 export async function readSupportKnowledge() {
   const knowledge = assertSupportKnowledgeOverview(await apiRequest<unknown>("/knowledge/overview"));
   return { faqs: knowledge.faqs!.map(adaptFaq), sla: knowledge.sla!.map(adaptSla), knowledgeAvailable: true };

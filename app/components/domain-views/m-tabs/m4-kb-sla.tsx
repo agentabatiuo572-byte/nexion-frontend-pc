@@ -1,8 +1,15 @@
 "use client";
 
 /** M4 help center content. Retired ticket configuration remains stored on the server. */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenText, CheckCircle2, FilePen, Pencil, Plus, Trash2, Upload, Archive } from "lucide-react";
+import { buildM4FaqCommand, sendM4FaqCommand } from "@/lib/admin/m-client";
+import { mCommands, type MCommandRecord } from "@/lib/admin/m-pending-commands";
+import type { M4FaqCommand } from "@/lib/admin/m4-faq-command";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { MContentReadError } from "@/lib/admin/m-support-read-contract";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   Button, Cell, Conclusion, Explain, Fact, Facts, Field, FilterBar, FilterField, Input, IrreversibleTag, Modal, MoreMenu, Notice, NumberInput,
@@ -44,16 +51,20 @@ const minReason = (r: string) => r.trim().length >= 8 && r.trim().length <= 200;
 type FaqForm = { category: SupportFaq["category"]; surface: SupportFaq["surface"]; language: string; sortOrder: string; question: string; answer: string; status: SupportFaq["status"]; reason: string };
 
 export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: string; summary: string; loadError: string | null }) {
-  const { pget, setParam, toast, openActionConfirm } = ctx;
+  const { pget, toast, openActionConfirm } = ctx;
+  const actorId = useAdminAuth((state) => state.session?.adminId);
+  const [needsRead, setNeedsRead] = useState(false);
+  const [pendingCommands, setPendingCommands] = useState<MCommandRecord[]>([]);
+  const [recovery, setRecovery] = useState<MCommandRecord | null>(null);
   const authorities = useAdminAuth((state) => state.session?.authorities);
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
   const canWriteM4 = isSuperAdmin || Boolean(authorities?.includes("service_m4_write"));
   // Undefined is the initial loading state. Writes stay fail-closed until the
   // strict M4 response validator explicitly publishes a successful "1".
-  const knowledgeAvailable = pget("I.support.knowledgeAvailable") === "1";
+  const knowledgeAvailable = pget("I.support.knowledgeAvailable") === "1" && !needsRead;
   const faqs = useMemo(() => parseParamArray<SupportFaq>(pget(FAQ_KEY), []), [ctx.params, pget]);
-  const canEdit = canWriteM4 && knowledgeAvailable;
+  const canEdit = canWriteM4 && knowledgeAvailable && !ctx.contentLoading;
 
   const [showAddFaq, setShowAddFaq] = useState(false);
   const [editFaq, setEditFaq] = useState<SupportFaq | null>(null);
@@ -63,6 +74,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const [surfaceFilter, setSurfaceFilter] = useState<"all" | SupportFaq["surface"]>("all");
   const [languageFilter, setLanguageFilter] = useState("all");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(FAQ_PAGE_SIZE);
   const [openId, setOpenId] = useState<string | null>(null);
   const [statusTarget, setStatusTarget] = useState<SupportFaq | null>(null);
   const [statusFailure, setStatusFailure] = useState("");
@@ -84,33 +96,94 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const filteredFaqs = useMemo(() => visibleFaqs
     .filter((faq) => conditions.every((condition) => condition.test(faq)))
     .sort((a, b) => a.sortOrder - b.sortOrder || b.updatedAt.localeCompare(a.updatedAt)), [conditions, visibleFaqs]);
-  const pageCount = Math.max(1, Math.ceil(filteredFaqs.length / FAQ_PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(filteredFaqs.length / pageSize));
   const currentPage = Math.min(page, pageCount);
-  const pagedFaqs = filteredFaqs.slice((currentPage - 1) * FAQ_PAGE_SIZE, currentPage * FAQ_PAGE_SIZE);
+  const pagedFaqs = filteredFaqs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   useEffect(() => setPage(1), [query, categoryFilter, statusFilter, surfaceFilter, languageFilter]);
   const clearFilters = () => conditions.forEach((condition) => condition.clear());
 
-  const commitM4Write = async (write: () => Promise<boolean>, successMessage: string): Promise<boolean> => {
-    if (writeInFlight.current) {
-      toast("操作正在提交,请稍候");
+  const syncPending = useCallback(() => setPendingCommands(mCommands.list().filter((record) => record.faq?.actorId === actorId
+    || record.fingerprint.startsWith("cmd|I.support.faq"))), [actorId]);
+  useEffect(syncPending, [syncPending]);
+  const blocked = (id?: string) => pendingCommands.some((record) => !record.faq || (id ? record.faq.row.id === id : record.faq.kind === "create"));
+  const closeWriteDialogs = () => { setRecovery(null); setEditFaq(null); setShowAddFaq(false); setStatusTarget(null); };
+  useEffect(() => { closeWriteDialogs(); }, [actorId]);
+  const readCurrent = async () => {
+    try {
+      await ctx.refreshKnowledge();
+      setNeedsRead(false);
+      return true;
+    } catch (error) {
+      setNeedsRead(true);
+      toast(displayAdminError(error), "warn");
       return false;
     }
-    if (!canWriteM4 || !knowledgeAvailable) return false;
+  };
+  const commitM4Write = async (command: M4FaqCommand, successMessage: string, onFailure?: (message: string) => void, original?: MCommandRecord): Promise<boolean> => {
+    const currentSession = useAdminAuth.getState().session;
+    if (writeInFlight.current || !currentSession || command.actorId !== currentSession.adminId
+      || !(currentSession.role === "super" || currentSession.role === "superadmin" || currentSession.authorities.includes("service_m4_write"))) return false;
+    if (!original && (!canEdit || blocked(command.before?.id))) return false;
+    if (original && isRetryExpired(original)) { onFailure?.(RETRY_EXPIRED_TEXT); toast(RETRY_EXPIRED_TEXT, "warn"); return false; }
+    const commandKey = original?.commandKey ?? `m4-${crypto.randomUUID()}`;
+    const fingerprint = original?.fingerprint ?? `m4|${command.kind === "create" ? "create" : command.row.id}`;
+    mCommands.remember(fingerprint, commandKey, { faq: command });
+    syncPending();
+    if (!mCommands.isDurablyStored(fingerprint, commandKey)) {
+      const failure = "原操作未能保存，暂未提交。请恢复浏览器存储后按原请求重试。";
+      if (!original) {
+        // No request was sent. Keep the draft editable rather than inventing an unknown outcome.
+        mCommands.forget(fingerprint, commandKey);
+        syncPending();
+      }
+      onFailure?.(failure); toast(failure, "warn"); return false;
+    }
     writeInFlight.current = true;
     setWritePending(true);
     try {
-      const succeeded = await write();
-      if (succeeded) toast(successMessage);
-      return succeeded;
+      await sendM4FaqCommand(command, commandKey);
+      mCommands.forget(fingerprint, commandKey);
+      syncPending();
+      closeWriteDialogs();
+      if (command.kind === "delete") ctx.closeActionConfirm?.();
+      setNeedsRead(true);
+      // An idempotency replay is an old receipt. Only the next overview can enable new edits.
+      await readCurrent();
+      toast(successMessage);
+      return true;
+    } catch (error) {
+      const verdict = error instanceof MContentReadError && error.status === 200 && error.apiCode
+        ? { status: error.apiCode, backendMessage: error.backendMessage } : error;
+      const rejected = isExplicitRejection(verdict);
+      if (rejected) {
+        mCommands.forget(fingerprint, commandKey);
+        syncPending();
+        if (original) {
+          closeWriteDialogs();
+          if (command.kind === "delete") ctx.closeActionConfirm?.();
+        }
+        setNeedsRead(true);
+        await readCurrent();
+      }
+      if (!rejected) setRecovery(mCommands.list().find((record) => record.commandKey === commandKey) ?? null);
+      const failure = `${rejected ? "后台拒绝了这次操作" : "结果未确认"} · ${displayAdminError(error)}`;
+      if (onFailure && (!rejected || !original)) onFailure(failure); else toast(failure, rejected ? "error" : "warn");
+      return false;
     } finally {
       writeInFlight.current = false;
       setWritePending(false);
     }
   };
+  const retryOriginal = (record: MCommandRecord, onFailure?: (message: string) => void) => {
+    if (!record.faq) return Promise.resolve(false);
+    const labels = { create: "已保存", edit: "已保存", publish: "已发布", unpublish: "已下架为草稿", delete: "已删除" };
+    return commitM4Write(record.faq, `${record.faq.row.id} ${labels[record.faq.kind]}`, onFailure, record);
+  };
 
   const saveFaq = async (form: FaqForm, onFailure: (message: string) => void) => {
+    if (recovery) return retryOriginal(recovery, onFailure);
     const sortOrder = Number(form.sortOrder);
-    if (!form.question.trim() || !form.answer.trim() || !minReason(form.reason)) {
+    if (!form.question.trim() || !form.answer.trim() || form.question.trim().length > 160 || form.answer.trim().length > 4000 || !minReason(form.reason)) {
       toast("请填写问题、回答，以及 8 字以上的修改理由");
       return false;
     }
@@ -132,21 +205,14 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       answer: form.answer.trim(),
       status: form.status,
       surface: form.surface,
-      // 表单列出后端合法的九种语言；读取层还只认三种（M4-B02，代码 worker 改类型和读取）。
       language: form.language as SupportFaq["language"],
       sortOrder,
       version: editFaq ? editFaq.version + 1 : 1,
       updatedAt: new Date().toISOString().slice(0, 10),
     };
-    const next = editFaq ? faqs.map((faq) => (faq.id === row.id ? row : faq)) : [row, ...faqs];
-    const succeeded = await commitM4Write(
-      () => setParam(FAQ_KEY, JSON.stringify(next), {
-        action: `${editFaq ? "编辑" : "新建"}支持 常见问答 ${row.id} · admin.support_faq_${editFaq ? "updated" : "created"}`,
-        reason: form.reason.trim(),
-        onFailure,
-      }),
-      `${row.id} 已保存 · ${catCN(row.category)}常见问答`,
-    );
+    if (!actorId) return false;
+    const command = buildM4FaqCommand(editFaq ? "edit" : "create", row, editFaq, form.reason.trim(), actorId);
+    const succeeded = await commitM4Write(command, `${row.id} 已保存 · ${catCN(row.category)}常见问答`, onFailure);
     if (succeeded) {
       createFaqTempId.current = null;
       setShowAddFaq(false);
@@ -156,16 +222,15 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   };
 
   const changeFaqStatus = async (id: string, status: SupportFaq["status"], onFailure: (message: string) => void) => {
-    return commitM4Write(
-      () => setParam(FAQ_KEY, JSON.stringify(faqs.map((faq) => (faq.id === id ? { ...faq, status, version: faq.version + 1, updatedAt: new Date().toISOString().slice(0, 10) } : faq))), {
-        action: `${status === "published" ? "发布" : "下架"}支持 常见问答 ${id} · admin.support_faq_${status === "published" ? "published" : "unpublished"}`,
-        reason: status === "published" ? "常见问答 发布例行审核留档" : "常见问答 下架例行审核留档",
-        onFailure,
-      }),
-      status === "published" ? `${id} 已发布` : `${id} 已下架为草稿`,
-    );
+    if (recovery) return retryOriginal(recovery, onFailure);
+    const before = faqs.find((faq) => faq.id === id);
+    if (!before || !actorId || !statusTarget || before.version !== statusTarget.version || before.status !== statusTarget.status) return false;
+    const row = { ...before, status };
+    return commitM4Write(buildM4FaqCommand(status === "published" ? "publish" : "unpublish", row, before,
+      status === "published" ? "常见问答 发布例行审核留档" : "常见问答 下架例行审核留档", actorId),
+      status === "published" ? `${id} 已发布` : `${id} 已下架为草稿`, onFailure);
   };
-  const requestDeleteFaq = (faq: SupportFaq) => {
+  const requestDeleteFaq = (faq: SupportFaq, original?: MCommandRecord) => {
     const published = faq.status === "published";
     openActionConfirm({
       action: <>删除常见问答 <span className="mono">{faq.id}</span></>,
@@ -186,21 +251,56 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       detail: <>删除后这条问答从知识库里消失，所有位置都不再读到“{faq.question}”，且不可在本页恢复。</>,
       reasonPlaceholder: "例如：内容已过时，已由新问答替代",
       reasonMin: 8,
-      run: (reason) => commitM4Write(
-        () => setParam("I.support.faq.__delete", JSON.stringify({ faqId: faq.id, expectedStatus: faq.status, expectedVersion: faq.version }), { action: `删除支持 常见问答 ${faq.id} · admin.support_faq_deleted`, reason }),
-        `${faq.id} 已删除`,
-      ),
+      getPendingReason: () => {
+        const saved = mCommands.list().find((record) => record.faq?.actorId === actorId && record.faq?.row.id === faq.id);
+        return saved?.faq ? JSON.parse(saved.faq.request.body).reason : undefined;
+      },
+      initialReason: original?.faq ? JSON.parse(original.faq.request.body).reason : undefined,
+      blockedReason: !canWriteM4 ? "当前账号没有知识库编辑权限" : original && isRetryExpired(original) ? RETRY_EXPIRED_TEXT : undefined,
+      run: async (reason) => {
+        const saved = mCommands.list().find((record) => record.faq?.actorId === actorId && record.faq?.row.id === faq.id);
+        const current = faqs.find((row) => row.id === faq.id);
+        if (saved) return retryOriginal(saved);
+        if (!actorId || !current || current.version !== faq.version || current.status !== faq.status) return false;
+        return commitM4Write(buildM4FaqCommand("delete", faq, faq, reason, actorId), `${faq.id} 已删除`);
+      },
     });
   };
 
-  const openCreate = () => { createFaqTempId.current = nextFaqId(); setEditFaq(null); setShowAddFaq(true); };
-  const openEdit = (faq: SupportFaq) => { createFaqTempId.current = null; setShowAddFaq(false); setEditFaq(faq); };
-  const openStatus = (faq: SupportFaq) => { setStatusFailure(""); setStatusTarget(faq); };
+  const openCreate = () => { setRecovery(null); createFaqTempId.current = nextFaqId(); setEditFaq(null); setShowAddFaq(true); };
+  const openEdit = (faq: SupportFaq) => { setRecovery(null); createFaqTempId.current = null; setShowAddFaq(false); setEditFaq(faq); };
+  const openStatus = (faq: SupportFaq) => { setRecovery(null); setStatusFailure(""); setStatusTarget(faq); };
+
+  const restore = (record: MCommandRecord) => {
+    if (!record.faq) return;
+    closeWriteDialogs();
+    setRecovery(record);
+    if (record.faq.kind === "delete") requestDeleteFaq(record.faq.row, record);
+    else if (record.faq.kind === "publish" || record.faq.kind === "unpublish") {
+      setStatusFailure(""); setStatusTarget(record.faq.before);
+    } else {
+      createFaqTempId.current = record.faq.row.id;
+      setEditFaq(record.faq.before); setShowAddFaq(record.faq.kind === "create");
+    }
+  };
+  const pendingRows = pendingCommands.map((record) => ({ key: record.commandKey,
+    question: record.faq?.row.question ?? "常见问答", change: record.faq ? ({ create: "新建", edit: "编辑", publish: "发布", unpublish: "下架", delete: "删除" }[record.faq.kind]) : "结果未知",
+    submittedAt: record.createdAt, expired: isRetryExpired(record), actions: <>
+      <Button size="sm" disabled={writePending} onClick={() => void readCurrent()}>查询原结果</Button>
+      {record.faq && canWriteM4 && !isRetryExpired(record) && <Button size="sm" disabled={writePending} onClick={() => restore(record)}>按原请求重试</Button>}
+    </>,
+  }));
 
   // 首屏数字：只算这页的问答，不随筛选变。读不到时写「—」，不当成 0。
   const published = visibleFaqs.filter((faq) => faq.status === "published");
   const drafts = visibleFaqs.length - published.length;
-  const unreachable = published.filter((faq) => !reachesUsers(faq));
+  // RagNovaAiGateway.novaQuestion selects at most 20 per requested language,
+  // ordered by sortOrder then ID. Language compatibility alone is insufficient.
+  const novaContextIds = new Set(["zh-CN", "en-US", "vi-VN"].flatMap((language) => published
+    .filter((faq) => faq.surface === "Nova" && faq.language === language)
+    .sort((a, b) => a.sortOrder - b.sortOrder || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .slice(0, 20).map((faq) => faq.id)));
+  const unreachable = published.filter((faq) => faq.surface === "Nova" ? !novaContextIds.has(faq.id) : !reachesUsers(faq));
   const byLanguage = M4_LANGUAGES.map((language) => ({ name: language.name, count: published.filter((faq) => faq.language === language.code).length })).filter((row) => row.count > 0);
   const otherLanguage = published.filter((faq) => !M4_LANGUAGES.some((language) => language.code === faq.language)).length;
   const loading = !knowledgeAvailable && ctx.contentLoading;
@@ -215,7 +315,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
     return conditions.length > 1 ? "每个条件单独都有问答，合在一起没有：少选一个条件试试。" : "没有符合当前筛选条件的问答。";
   };
 
-  const current = openId ? visibleFaqs.find((faq) => faq.id === openId) ?? null : null;
+  const current = knowledgeAvailable && openId ? visibleFaqs.find((faq) => faq.id === openId) ?? null : null;
   const currentIndex = current ? pagedFaqs.findIndex((faq) => faq.id === current.id) : -1;
   const drawerNav = currentIndex >= 0 ? {
     onPrev: () => setOpenId(pagedFaqs[currentIndex - 1]?.id ?? null),
@@ -228,15 +328,14 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   return (
     <>
       <PageHeader pageId="M4" title={title} summary={summary}
-        actions={canEdit && <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabled={writePending} onClick={openCreate}>新建问答</Button>}
+        actions={canEdit && <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabled={writePending || blocked()} onClick={openCreate}>新建问答</Button>}
         readOnly={knowledgeAvailable && !canWriteM4 ? "你只能查看；新建、编辑、发布、下架和删除问答需要知识库编辑权限" : undefined} />
 
-      {/* 结果未知的写操作：界面已备好，等代码 worker 按 R1 从本标签页保存的原请求拼行（M4-B01）。 */}
-      <M4PendingWrites rows={[]} />
+      <M4PendingWrites rows={pendingRows} />
 
 
       {loading ? <Conclusion state="unknown">正在读取问答…</Conclusion>
-        : failed ? <div className="m4-health" data-module-health-state="error"><Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshContent()}>重新读取</Button>}
+        : failed ? <div className="m4-health" data-module-health-state="error"><Conclusion state="unknown" action={<Button size="sm" onClick={() => void (needsRead ? readCurrent() : ctx.refreshContent())}>重新读取</Button>}
             hint={`暂时不能新建和修改。${loadError ? "客服中心的其他数据也没同步成功。" : ""}`}
             explain="知识库和旧的工单处理时限数据一起读取、一起校验，任何一部分不完整，问答都会读不到。点「重新读取」会重读整个客服中心。">问答读不到，现在不知道线上有哪些</Conclusion></div>
           : visibleFaqs.length === 0 ? <Conclusion state="neutral" icon={BookOpenText} hint={canEdit ? "点右上角「新建问答」写第一条。" : undefined}>还没有问答</Conclusion>
@@ -317,31 +416,31 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
                         <Td><Cell num main={f.updatedAt} sub={`第 ${f.version} 版`} /></Td>
                         {canEdit && <Td sticky="end" data-fit="">
                           <span className="m4-row-actions">
-                            <Button size="sm" variant="ghost" icon={<Pencil size={14} aria-hidden />} disabled={writePending} onClick={() => openEdit(f)}>编辑</Button>
+                            <Button size="sm" variant="ghost" icon={<Pencil size={14} aria-hidden />} disabled={writePending || blocked(f.id)} onClick={() => openEdit(f)}>编辑</Button>
                             {f.status === "draft"
-                              ? <Button size="sm" data-proof="support-faq-publish" icon={<Upload size={14} aria-hidden />} disabled={writePending} onClick={() => openStatus(f)}>发布</Button>
-                              : <Button size="sm" data-proof="support-faq-unpublish" icon={<Archive size={14} aria-hidden />} disabled={writePending} onClick={() => openStatus(f)}>下架</Button>}
-                            <MoreMenu label={`更多操作：${f.question}`} disabled={writePending} items={[{ key: "delete", label: <><Trash2 size={14} aria-hidden /> 删除</>, danger: true, onSelect: () => requestDeleteFaq(f) }]} />
+                              ? <Button size="sm" data-proof="support-faq-publish" icon={<Upload size={14} aria-hidden />} disabled={writePending || blocked(f.id)} onClick={() => openStatus(f)}>发布</Button>
+                              : <Button size="sm" data-proof="support-faq-unpublish" icon={<Archive size={14} aria-hidden />} disabled={writePending || blocked(f.id)} onClick={() => openStatus(f)}>下架</Button>}
+                            <MoreMenu label={`更多操作：${f.question}`} disabled={writePending || blocked(f.id)} items={[{ key: "delete", label: <><Trash2 size={14} aria-hidden /> 删除</>, danger: true, onSelect: () => requestDeleteFaq(f) }]} />
                           </span>
                         </Td>}
                       </Tr>
                     ))}
           </tbody>
         </Table>
-        {knowledgeAvailable && filteredFaqs.length > 0 && <Pager label="问答列表" total={filteredFaqs.length} page={currentPage} pageSize={FAQ_PAGE_SIZE} sizes={[FAQ_PAGE_SIZE]} onPage={setPage} onPageSize={() => setPage(1)} />}
+        {knowledgeAvailable && filteredFaqs.length > 0 && <Pager label="问答列表" total={filteredFaqs.length} page={currentPage} pageSize={pageSize} sizes={[5, 10, 20, 50]} onPage={setPage} onPageSize={(size) => { setPageSize(size); setPage(1); }} />}
       </Panel>
 
-      <M4FaqDrawer faq={current} nav={drawerNav} busy={writePending} canWrite={canEdit}
+      <M4FaqDrawer faq={current} nav={drawerNav} busy={writePending} canWrite={canEdit && !blocked(current?.id)}
         onClose={() => setOpenId(null)} onEdit={() => current && openEdit(current)} onStatus={() => current && openStatus(current)} onDelete={() => current && requestDeleteFaq(current)} />
 
-      {statusTarget && <M4StatusConfirm faq={statusTarget} busy={writePending} failure={statusFailure}
-        onCancel={() => setStatusTarget(null)}
+      {statusTarget && <M4StatusConfirm faq={statusTarget} busy={writePending} disabled={!canWriteM4 || (recovery ? isRetryExpired(recovery) : !canEdit)} failure={statusFailure}
+        onCancel={() => { setRecovery(null); setStatusTarget(null); }}
         onConfirm={async () => {
           setStatusFailure("");
           if (await changeFaqStatus(statusTarget.id, statusTarget.status === "draft" ? "published" : "draft", setStatusFailure)) setStatusTarget(null);
         }} />}
 
-      {(showAddFaq || editFaq) && <FaqModal key={editFaq?.id ?? "new"} row={editFaq} pending={writePending} onClose={() => { createFaqTempId.current = null; setShowAddFaq(false); setEditFaq(null); }} onSave={saveFaq} />}
+      {(showAddFaq || editFaq) && <FaqModal key={recovery?.commandKey ?? editFaq?.id ?? "new"} row={editFaq} recovery={recovery} pending={writePending} disabled={!canWriteM4 || (recovery ? isRetryExpired(recovery) : !canEdit)} onClose={() => { createFaqTempId.current = null; setRecovery(null); setShowAddFaq(false); setEditFaq(null); }} onSave={saveFaq} />}
     </>
   );
 }
@@ -349,22 +448,27 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
 function FaqModal({
   row,
   pending,
+  recovery,
+  disabled,
   onClose,
   onSave,
 }: {
   row: SupportFaq | null;
   pending: boolean;
+  recovery: MCommandRecord | null;
+  disabled: boolean;
   onClose: () => void;
   onSave: (form: FaqForm, onFailure: (message: string) => void) => Promise<boolean>;
 }) {
-  const [category, setCategory] = useState<SupportFaq["category"]>(row?.category ?? "general");
-  const [surface, setSurface] = useState<SupportFaq["surface"]>(row?.surface ?? "Help Center");
-  const [language, setLanguage] = useState<string>(row?.language ?? "zh-CN");
-  const [sortOrder, setSortOrder] = useState(String(row?.sortOrder ?? 10));
-  const [question, setQuestion] = useState(row?.question ?? "");
-  const [answer, setAnswer] = useState(row?.answer ?? "");
-  const [status, setStatus] = useState<SupportFaq["status"]>(row?.status ?? "published");
-  const [reason, setReason] = useState("");
+  const initial = recovery?.faq?.row ?? row;
+  const [category, setCategory] = useState<SupportFaq["category"]>(initial?.category ?? "general");
+  const [surface, setSurface] = useState<SupportFaq["surface"]>(initial?.surface ?? "Help Center");
+  const [language, setLanguage] = useState<string>(initial?.language ?? "zh-CN");
+  const [sortOrder, setSortOrder] = useState(String(initial?.sortOrder ?? 10));
+  const [question, setQuestion] = useState(initial?.question ?? "");
+  const [answer, setAnswer] = useState(initial?.answer ?? "");
+  const [status, setStatus] = useState<SupportFaq["status"]>(initial?.status ?? "published");
+  const [reason, setReason] = useState(recovery?.faq ? JSON.parse(recovery.faq.request.body).reason as string : "");
   const [tried, setTried] = useState(false);
   const [failure, setFailure] = useState("");
   // 和 saveFaq 同一套规则，只用来把错写在对应的框下面；真正挡写入的仍是 saveFaq。
@@ -375,7 +479,7 @@ function FaqModal({
     sort: !Number.isInteger(sortValue) || sortValue < 0 || sortValue > 999999 ? "填 0–999999 的整数" : "",
     reason: !minReason(reason) ? (reason.trim().length < 8 ? `还差 ${8 - reason.trim().length} 字` : "最多 200 字") : "",
   };
-  const blocking = Boolean(errors.question && !question.trim() || errors.answer && !answer.trim() || errors.sort || errors.reason);
+  const blocking = Boolean(errors.question || errors.answer || errors.sort || errors.reason);
   const show = (key: keyof typeof errors) => (tried ? errors[key] : "") || undefined;
   const live = row?.status === "published" || status === "published";
   const unknown = failure.startsWith("结果未确认");
@@ -403,7 +507,7 @@ function FaqModal({
       footer={
         <>
           <Button disabled={pending} onClick={onClose}>取消</Button>
-          <Button variant="primary" data-proof="support-faq-save" loading={pending} onClick={save}>{row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>
+          <Button variant="primary" data-proof="support-faq-save" loading={pending} disabled={disabled} onClick={save}>{row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>
         </>
       }
     >
@@ -417,10 +521,10 @@ function FaqModal({
         <div className="m4-form-fields">
           <div className="rd-form-grid" data-cols="2" data-dense="">
             <Field label="显示位置" explain="帮助中心：App 里「我的 › 帮助中心」。Nova 智能助手现在读不到普通问答，已提后端。">
-              <Segments label="显示位置" value={surface} onChange={setSurface} items={SURFACES.map((value) => ({ value, label: surfaceName(value) }))} />
+              <Segments label="显示位置" value={surface} onChange={setSurface} items={SURFACES.map((value) => ({ value, label: surfaceName(value), disabled: pending || Boolean(recovery) }))} />
             </Field>
             <Field label="语言">
-              {(control) => <Select {...control} aria-label="问答语言" value={language} onChange={setLanguage}
+              {(control) => <Select disabled={pending || Boolean(recovery)} {...control} aria-label="问答语言" value={language} onChange={setLanguage}
                 options={[...M4_LANGUAGES.map((option) => ({ value: option.code, label: option.name })), ...(M4_LANGUAGES.some((option) => option.code === language) ? [] : [{ value: language, label: language }])]} />}
             </Field>
           </div>
@@ -429,24 +533,24 @@ function FaqModal({
             <ReachList faq={{ surface, language }} label={status === "published" ? "保存后谁读得到" : "发布后谁读得到"} />
           </section>
           <Field label="问题" required error={show("question")}>
-            {(control) => <Textarea {...control} data-proof="support-faq-question" rows={1} value={question} count={`${question.trim().length}/160`} onChange={(e) => setQuestion(e.target.value)} placeholder="用户会怎么问，就怎么写。例如：提现审核要多久？" />}
+            {(control) => <Textarea disabled={pending || Boolean(recovery)} {...control} data-proof="support-faq-question" rows={1} value={question} count={`${question.trim().length}/160`} onChange={(e) => setQuestion(e.target.value)} placeholder="用户会怎么问，就怎么写。例如：提现审核要多久？" />}
           </Field>
           <Field label="回答" required error={show("answer")}>
-            {(control) => <Textarea {...control} className="m4-answer" data-proof="support-faq-answer" rows={5} value={answer} count={`${answer.trim().length}/4000`} onChange={(e) => setAnswer(e.target.value)} placeholder={"写清用户自己能做的步骤；换行会原样显示。\n例如：提现提交后一般 24 小时内审核完成。"} />}
+            {(control) => <Textarea disabled={pending || Boolean(recovery)} {...control} className="m4-answer" data-proof="support-faq-answer" rows={5} value={answer} count={`${answer.trim().length}/4000`} onChange={(e) => setAnswer(e.target.value)} placeholder={"写清用户自己能做的步骤；换行会原样显示。\n例如：提现提交后一般 24 小时内审核完成。"} />}
           </Field>
           <div className="rd-form-grid" data-cols="3" data-dense="">
             <Field label="分类">
-              {(control) => <Select {...control} aria-label="问答分类" value={category} onChange={(value) => setCategory(value as SupportFaq["category"])} options={FAQ_CATEGORY_OPTIONS.map((c) => ({ value: c, label: catCN(c) }))} />}
+              {(control) => <Select disabled={pending || Boolean(recovery)} {...control} aria-label="问答分类" value={category} onChange={(value) => setCategory(value as SupportFaq["category"])} options={FAQ_CATEGORY_OPTIONS.map((c) => ({ value: c, label: catCN(c) }))} />}
             </Field>
             <Field label="排序" hint="小值靠前" explain="0–999999 的整数。列表和帮助中心都按排序值从小到大排，同值的后更新的在前。" error={show("sort")}>
-              {(control) => <NumberInput {...control} min={0} max={999999} step={1} value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />}
+              {(control) => <NumberInput disabled={pending || Boolean(recovery)} {...control} min={0} max={999999} step={1} value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />}
             </Field>
             <Field label="发布状态">
-              <Segments label="发布状态" value={status} onChange={setStatus} items={[{ value: "published", label: "已发布" }, { value: "draft", label: "草稿" }]} />
+              <Segments label="发布状态" value={status} onChange={setStatus} items={[{ value: "published", label: "已发布", disabled: pending || Boolean(recovery) }, { value: "draft", label: "草稿", disabled: pending || Boolean(recovery) }]} />
             </Field>
           </div>
           <Field label="修改理由" required hint="至少 8 字" error={show("reason")}>
-            {(control) => <Textarea {...control} data-proof="support-faq-reason" rows={2} value={reason} count={`${reason.trim().length}/200`} onChange={(e) => setReason(e.target.value)} placeholder="例如：帮助中心提现板块补齐" />}
+            {(control) => <Textarea disabled={pending || Boolean(recovery)} {...control} data-proof="support-faq-reason" rows={2} value={reason} count={`${reason.trim().length}/200`} onChange={(e) => setReason(e.target.value)} placeholder="例如：帮助中心提现板块补齐" />}
           </Field>
         </div>
         <aside className="m4-form-preview" aria-label="帮助中心里大概这样">

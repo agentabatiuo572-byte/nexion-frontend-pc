@@ -26,6 +26,7 @@ import {
   type MLoadConfigWrite,
 } from "@/lib/admin/m-client";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { mCommands } from "@/lib/admin/m-pending-commands";
 import { MDomainLoadCoordinator } from "@/lib/admin/m-content-load-coordinator";
 import { shouldStartM3ConversationRecovery } from "@/lib/admin/m-conversation-recovery-gate";
 import { failClosedSupportAgentsAfterReload, preserveVerifiedSupportAgentsDuringReload } from "@/lib/admin/m-progressive-support-state";
@@ -35,7 +36,7 @@ import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { M1AnalyticsWorkbench } from "./m-tabs/m1-analytics-workbench";
 import { useSupportInboxAlerts } from "@/lib/admin/support-alerts";
 import { supportUnboundPolicyClient } from "@/lib/admin/m-support-client";
-import { STANDBY_POOL_LABEL, type AdvisorScript, type SessionConvo, type SessionMsg, type SessionReplyTpl, type SessionType, type SupportFaq, type SupportSla, type SupportTicket, type SupportTicketCategory, type SupportTicketPriority } from "./m-tabs/data";
+import { STANDBY_POOL_LABEL, type AdvisorScript, type SessionConvo, type SessionMsg, type SessionReplyTpl, type SessionType, type SupportTicket, type SupportTicketCategory, type SupportTicketPriority } from "./m-tabs/data";
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
@@ -56,23 +57,6 @@ const M5Page = dynamic(() => import("./m-tabs/m5-page").then(m => m.M5Page), { l
  *   m3direct| M3 标签 / 备注直写(`m3:add-tag:会话号:标签`)
  * 落 sessionStorage:刷新后「写入失败或结果未知」的重试必须仍是同一命令号,后端才能去重。
  */
-interface MCommandRecord extends PendingMutationRecord {
-  /** 本次提交的值:带 commandKey 的调用点靠它保证重试提交的仍是同一个值。 */
-  value?: string;
-  /** 参数指纹(`参数键\0值\0理由`)。同一参数换了逻辑命令 id 时,靠它回收上一次的命令号。 */
-  paramFingerprint?: string;
-  clientMessageId?: string;
-  /** The exact normalized reason of a pending M3 end command survives refresh. */
-  closeReason?: string;
-}
-const mCommands = createPendingMutationStore<MCommandRecord>({
-  storageKey: "nexion-admin-m-content-commands-v1",
-  retainExpiredRecords: true,
-  isValidRecord: (record) => (record.value === undefined || typeof record.value === "string")
-    && (record.paramFingerprint === undefined || typeof record.paramFingerprint === "string")
-    && (record.clientMessageId === undefined || typeof record.clientMessageId === "string")
-    && (record.closeReason === undefined || typeof record.closeReason === "string"),
-});
 interface DockCommandRecord extends PendingMutationRecord { payload: string; conversationNo: string; customerId?: string; readOnlyRecovery?: boolean }
 const dockCommands = createPendingMutationStore<DockCommandRecord>({
   storageKey: "nexion-admin-m-dock-pending-v1",
@@ -636,6 +620,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     removeCustomerNote,
     toast: setToast,
     openActionConfirm: setActionConfirm,
+    closeActionConfirm: () => setActionConfirm(null),
     openConfirm: setCf,
   };
 
@@ -716,6 +701,8 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       {mc && (
         <OperationConfirmModal
           action={mc.action}
+          getPendingReason={tab === "M4" ? mc.getPendingReason : undefined}
+          initialReason={tab === "M4" ? mc.initialReason : undefined}
           title={mc.title}
           detail={mc.detail}
           amplifies={mc.amplifies}
@@ -996,47 +983,6 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
   // 不经会话写链,不污染会话消息流。此处无需处理 profile 字段变化。
 }
 
-async function writeFaqRows(prev: SupportFaq[], next: SupportFaq[], reason: string, idempotencyKey?: string) {
-  const added = addedRow(prev, next);
-  if (added) {
-    await mContentActions.createFaq(
-      {
-        category: added.category,
-        question: added.question,
-        answer: added.answer,
-        status: added.status,
-        surface: added.surface,
-        language: added.language,
-        sortOrder: added.sortOrder,
-      },
-      reason,
-      idempotencyKey,
-    );
-    return;
-  }
-  const row = changedRow(prev, next);
-  if (!row) return;
-  const before = prev.find((item) => item.id === row.id);
-  if (!before) return;
-  const contentChanged = row.category !== before.category
-    || row.question !== before.question
-    || row.answer !== before.answer
-    || row.surface !== before.surface
-    || row.language !== before.language
-    || row.sortOrder !== before.sortOrder;
-  if (row.status !== before.status && !contentChanged) await mContentActions.updateFaqStatus(row.id, row.status, before.status, before.version, reason, idempotencyKey);
-  else await mContentActions.updateFaq(row, before, reason, idempotencyKey);
-}
-
-async function writeSlaRows(prev: SupportSla[], next: SupportSla[], reason: string, idempotencyKey?: string) {
-  const row = next.find((item) => {
-    const before = prev.find((old) => old.category === item.category);
-    return before && JSON.stringify(before) !== JSON.stringify(item);
-  }) ?? next.find((item) => !prev.some((old) => old.category === item.category));
-  const before = row ? prev.find((old) => old.category === row.category) : undefined;
-  if (row && before) await mContentActions.updateSla(row, before.version, reason, idempotencyKey);
-}
-
 function currentLoadPayload(data: MContentData | null): MLoadConfigWrite {
   if (!data) {
     throw new Error("M_LOAD_CONFIG_BACKEND_SNAPSHOT_MISSING");
@@ -1084,12 +1030,6 @@ async function applyMBackendWrite(
     const payload = parseRecord<{ conversationNos?: string[]; expectedVersions?: Record<string, number> }>(value);
     if (!payload?.conversationNos?.length || !payload.expectedVersions || payload.conversationNos.some((id) => !Number.isSafeInteger(payload.expectedVersions?.[id]))) throw new Error("M3_ARCHIVE_BATCH_PAYLOAD_INVALID");
     await mContentActions.archiveConversations(payload.conversationNos, payload.expectedVersions, reason, idempotencyKey);
-    return;
-  }
-  if (key === "I.support.faq.__delete") {
-    const payload = parseRecord<{ faqId?: string; expectedStatus?: SupportFaq["status"]; expectedVersion?: number }>(value);
-    if (!payload?.faqId || !payload.expectedStatus || !Number.isSafeInteger(payload.expectedVersion)) throw new Error("M4_FAQ_DELETE_PAYLOAD_INVALID");
-    await mContentActions.deleteFaq(payload.faqId, payload.expectedStatus, payload.expectedVersion!, reason, idempotencyKey);
     return;
   }
   if (key === "I.support.load.__bulk") {
@@ -1236,14 +1176,6 @@ async function applyMBackendWrite(
   }
   if (key === "I.session.convos") {
     return writeConversationRows(parseRows<SessionConvo>(legacyParams[key]), parseRows<SessionConvo>(value), reason, meta?.action, data, idempotencyKey);
-  }
-  if (key === "I.support.faqs") {
-    await writeFaqRows(parseRows<SupportFaq>(legacyParams[key]), parseRows<SupportFaq>(value), reason, idempotencyKey);
-    return;
-  }
-  if (key === "I.support.sla") {
-    await writeSlaRows(parseRows<SupportSla>(legacyParams[key]), parseRows<SupportSla>(value), reason, idempotencyKey);
-    return;
   }
   const catMatch = key.match(/^I\.session\.cat\.(.+)\.enabled$/);
   if (catMatch) {

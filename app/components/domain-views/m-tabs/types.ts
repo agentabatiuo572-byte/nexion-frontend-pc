@@ -32,5 +32,6 @@ export type MCtx = {
   /** M5 未绑定策略的「等待分配提醒」分钟数；未读到时按 5 分钟。 */
   unboundAlertMinutes?: number;
   openActionConfirm: (req: import("../k-tabs/types").ActionConfirmReq & { briefKind: import("../design-kit").OperatorBriefKind }) => void;
+  closeActionConfirm?: () => void;
   openConfirm: (req: import("../k-tabs/types").ConfirmReq) => void;
 };

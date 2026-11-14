@@ -1,5 +1,7 @@
 "use client";
 
+import { displayAdminError } from "@/lib/admin/error-messages";
+import { SupportClientError } from "@/lib/admin/m-support-client";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
@@ -15,11 +17,16 @@ import type { SupportBoardKey, SupportBoardQuery, SupportBoardRow } from "./supp
 import { BOARD_DEFINITION, BOARD_LABEL, BoardPager, PerformanceBody, Podium, RankingPanel, RankingTable, amountPlaces, amountText, countText } from "./m6-leaderboard-views";
 import "./m6-leaderboard.css";
 
-function status(error: unknown): number | undefined { return error && typeof error === "object" && "status" in error ? Number(error.status) : undefined; }
+function status(error: unknown): number | undefined {
+  return error instanceof SupportClientError ? (error.status === 200 ? error.apiCode : error.status) : undefined;
+}
+function versionChanged(error: unknown): boolean {
+  return error instanceof SupportClientError && status(error) === 409 && ["SUPPORT_LEADERBOARD_VERSION_CHANGED", "SUPPORT_LEADERBOARD_SCOPE_CHANGED", "AVATAR_STATE_CONFLICT"].includes(error.backendMessage ?? "");
+}
 function message(error: unknown): string {
   return status(error) === 403 || status(error) === 401 ? "当前账号不能查看此榜单，请重新确认登录和客服权限。"
-    : status(error) === 409 ? "榜单版本或可见范围已变化，请从第一页重新加载。"
-    : "榜单加载失败，请重试。";
+    : versionChanged(error) ? "榜单版本或可见范围已变化，请从第一页重新加载。"
+      : error instanceof SupportClientError ? displayAdminError(error) : "榜单加载失败，请重试。";
 }
 function scopeValue(scope: string, groupId?: string) { return groupId ? `${scope}:${groupId}` : scope; }
 function asOf(data: LeaderboardPage | LeaderboardDetail) { return `${businessStamp(Date.parse(data.asOf))}（${businessZone().label}）`; }
@@ -82,7 +89,7 @@ export function M6Leaderboard() {
     }).catch(cause => {
       if (!active || controller.signal.aborted || liveKey.current !== requestKey) return;
       if (status(cause) === 403 || status(cause) === 401) deny();
-      else { setResult(undefined); setError(message(cause)); if (status(cause) === 409) setNotice("榜单已更新，请刷新后重试。"); }
+      else { setResult(undefined); setError(message(cause)); if (versionChanged(cause)) setNotice("榜单已更新，请刷新后重试。"); }
     });
     return () => { active = false; controller.abort(); };
   }, [enabled, requestKey]);
@@ -99,7 +106,7 @@ export function M6Leaderboard() {
       }).catch(cause => {
         if (!active || controller.signal.aborted || liveKey.current !== requestKey) return;
         if (status(cause) === 403 || status(cause) === 401) { controller.abort(); deny(); }
-        else if (status(cause) === 409) { controller.abort(); setResult(undefined); setPhotos(undefined); closeDetail(); setError(message(cause)); setNotice("榜单已更新，请刷新后重试。"); }
+        else if (versionChanged(cause)) { controller.abort(); setResult(undefined); setPhotos(undefined); closeDetail(); setError(message(cause)); setNotice("榜单已更新，请刷新后重试。"); }
       });
     }
     return () => { active = false; controller.abort(); for (const url of Object.values(urls)) URL.revokeObjectURL(url); };
@@ -109,7 +116,7 @@ export function M6Leaderboard() {
     if (!data) return;
     const [scope, groupId] = next.scope.split(":");
     if (!data.scopeOptions.some(option => option.scope === scope && (!groupId || option.groups.some(group => group.id === groupId)))
-      || !data.currencies.includes(next.currency as "USDT" | "UVT") || next.board !== "customers" && next.month && !data.selectableMonths.includes(next.month)) return;
+      || !data.currencies.includes(next.currency as "USDT" | "UVT") || query.board !== "customers" && next.board !== "customers" && next.month && !data.selectableMonths.includes(next.month)) return;
     closeDetail(); setNotice(undefined);
     if (next.month) selectedMonth.current = next.month;
     setQuery({ board: next.board, currency: next.currency as "USDT" | "UVT", scope: scope as LeaderboardQuery["scope"], groupId, month: next.board === "customers" ? undefined : next.month || undefined, keyword: query.keyword, pageNum: 1, pageSize: query.pageSize });
@@ -124,8 +131,8 @@ export function M6Leaderboard() {
     }).catch(cause => {
       if (controller.signal.aborted || sequence !== detailSequence.current || liveKey.current !== requestKey) return;
       if (status(cause) === 403 || status(cause) === 401) deny();
-      else if (status(cause) === 409) { closeDetail(); setResult(undefined); setPhotos(undefined); setError(message(cause)); setNotice("榜单已更新，请刷新后重试。"); }
-      else setDetail({ key: requestKey, agentId, error: "成绩加载失败，请重试。" });
+      else if (versionChanged(cause)) { closeDetail(); setResult(undefined); setPhotos(undefined); setError(message(cause)); setNotice("榜单已更新，请刷新后重试。"); }
+      else setDetail({ key: requestKey, agentId, error: message(cause) });
     });
   };
   const customers = (row: SupportBoardRow) => { if (enabled && privateRead && row.canViewCustomers) router.push(`/service/overview?agentId=${encodeURIComponent(row.id)}`); };
