@@ -255,8 +255,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       : notes[record.commandKey] || (record.sopProposal.accepted ? formatAdminApiError("J4_PROPOSAL_STATUS_UNAVAILABLE", "J4_PROPOSAL_STATUS_UNAVAILABLE") : undefined),
   })));
   recoveryRows.push(...legacy.map((record): J4RecoveryRow => ({
-    key: record.commandKey, name: operationNames[record.fingerprint.endsWith("/drills") ? "drill" : record.fingerprint.endsWith("/cancel") ? "cancel" : record.fingerprint.endsWith("/resume") ? "resume" : record.fingerprint.endsWith("/rollback") ? "rollback" : record.fingerprint.startsWith("PUT") ? "update" : "create"],
-    change: formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"),
+    key: record.commandKey, name: (record.fingerprint.split("/")[3] ? `${decodeURIComponent(record.fingerprint.split("/")[3])} · ` : "") + operationNames[record.fingerprint.endsWith("/drills") ? "drill" : record.fingerprint.endsWith("/cancel") ? "cancel" : record.fingerprint.endsWith("/resume") ? "resume" : record.fingerprint.endsWith("/rollback") ? "rollback" : record.fingerprint.startsWith("PUT") ? "update" : "create"],
+    change: "改版前的旧记录，没存原请求，不能重试",
     submittedAt: record.createdAt, kind: "direct", expired: isRetryExpired(record), onQuery: () => void queryOriginal(record), note: notes[record.commandKey],
     onRelease: isRetryExpired(record) ? () => setReleasingLegacy(record) : undefined,
   })));
@@ -275,8 +275,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     {releasing && <ReleaseModal label={`${contextName(releasing.sopProposal.context)} · ${operationNames.execute}`}
       explain="原申请超过 24 小时，后端按原请求查不到这张申请，说明它没建成。确认时会再查一次，仍查不到才解除。"
       onCancel={() => setReleasing(null)} onConfirm={() => void releaseOriginal(releasing)} />}
-    {releasingLegacy && <ReleaseModal label={recoveryRows.find((row) => row.key === releasingLegacy.commandKey)?.name}
-      explain="旧记录已超过 24 小时。解除只是不再提示这条旧记录，不代表原操作没执行；请先到「操作记录与审批」核对。"
+    {releasingLegacy && <ReleaseModal label={`${recoveryRows.find((row) => row.key === releasingLegacy.commandKey)?.name} · 旧记录`}
+      explain={<><p>改版前的旧记录没存原请求，不能重试。</p><p>先到「操作记录与审批」核对原操作有没有生效。</p></>}
       onCancel={() => setReleasingLegacy(null)} onConfirm={() => {
         releaseExpiredJLegacyCommand(releasingLegacy);
         setReleasingLegacy(null);

@@ -179,7 +179,7 @@ export type J4RecoveryRow = {
   expired: boolean;
   onQuery: () => void;
   onRetry?: () => void;
-  /** 执行申请过期且后端明确查不到：可以确认解除这条记录。 */
+  /** 执行申请过期且后端明确查不到，或改版前的旧记录过期：可以确认解除这条记录。 */
   onRelease?: () => void;
   note?: ReactNode;
 };
@@ -188,10 +188,11 @@ export function j4UnknownTag(kind: "approval" | "direct") {
     ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，申请可能已经提交、正在等批准。先查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会建第二张申请。">结果未知</StatusTag>
     : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行。">结果未知</StatusTag>;
 }
-export function j4ExpiredTag(kind: "approval" | "direct") {
+export function j4ExpiredTag(kind: "approval" | "direct", legacy = false) {
   return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "approval"
     ? "原请求超过 24 小时，不能再重试，只能查询原申请。后端明确查不到这张申请时，说明没建成，可以确认解除。"
-    : "原请求超过 24 小时，不能再重试，只能查询。读到的是现在的状态，不能据此认定原操作成没成，记录继续保留。"}>已过期</StatusTag>;
+    : legacy ? "已超过 24 小时。旧记录没存原请求，不能重试；到「操作记录与审批」核对过，可以确认解除。"
+      : "原请求超过 24 小时，不能再重试，只能查询。读到的是现在的状态，不能据此认定原操作成没成，记录继续保留。"}>已过期</StatusTag>;
 }
 export function J4RecoveryNotice({ rows }: { rows: J4RecoveryRow[] }) {
   if (rows.length === 0) return null;
@@ -199,7 +200,7 @@ export function J4RecoveryNotice({ rows }: { rows: J4RecoveryRow[] }) {
     <Notice tone="warn" title={<>{rows.length} 项操作结果未知<Explain label="结果未知怎么处理" content={<>
       <p>提交时没收到确定结果。发起正式执行的申请可能已经提交、在等批准；新增、编辑、演练、取消、核对和恢复开关可能已经生效。</p>
       <p>先点「查询原结果」；24 小时内也可以按原请求重试，后端认得出是同一次提交。</p>
-      <p>执行申请按原请求查原申请，查到就以它为准；其他操作只能读回现在的状态，可能是别人改的，不能单凭它认定原操作成没成。记录留到原请求有确定结果；执行申请过期且后端查不到时可以确认解除。</p>
+      <p>执行申请按原请求查原申请，查到就以它为准；其他操作只能读回现在的状态，可能是别人改的，不能单凭它认定原操作成没成。记录留到原请求有确定结果；执行申请过期且后端查不到、或改版前的旧记录过期，可以确认解除。</p>
     </>} /></>}>
       <ul className="j4-rec" aria-label="结果未知的操作">
         {rows.map((row) => (
@@ -207,7 +208,7 @@ export function J4RecoveryNotice({ rows }: { rows: J4RecoveryRow[] }) {
             <span className="j4-rec-name">{row.name}</span>
             <span className="j4-rec-change">{row.change}</span>
             <span className="j4-rec-time">{businessStamp(row.submittedAt)} 提交</span>
-            <span className="j4-rec-state">{row.expired ? j4ExpiredTag(row.kind) : j4UnknownTag(row.kind)}</span>
+            <span className="j4-rec-state">{row.expired ? j4ExpiredTag(row.kind, row.kind === "direct" && !!row.onRelease) : j4UnknownTag(row.kind)}</span>
             <span className="j4-rec-actions">
               <Button size="sm" onClick={row.onQuery}>查询原结果</Button>
               {!row.expired && row.onRetry && <Button size="sm" onClick={row.onRetry}>按原请求重试</Button>}

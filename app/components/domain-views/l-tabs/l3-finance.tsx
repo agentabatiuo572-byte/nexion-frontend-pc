@@ -342,7 +342,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
             if (!(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_read"))) {
               l3DetailCommands.forget(record.fingerprint, record.commandKey);
               syncDetail();
-              ctx.toast(`报表 ${receipt.reportId} 已创建，等另一位管理员放行；当前状态请有导出中心权限的同事核对`, "warn");
+              ctx.toast(`报表 ${receipt.reportId} 已创建。你看不到放行进度，请找有「${exportPageName}」权限的同事核对`, "warn");
               await ctx.reloadBi?.();
               return;
             }
