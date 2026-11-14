@@ -117,3 +117,142 @@
 .adom .a4-pipe .ar { color: var(--ink-4); font-size: 11px; font-family: var(--mono); }
 .adom .a4-dom { display: inline-flex; padding: 3px 9px; border-radius: 5px; background: var(--surface-3); color: var(--ink-3); font-family: var(--mono); font-size: 11px; font-weight: 600; margin: 2px 3px 2px 0; }
 .adom .a4-dom.new { background: var(--warning-soft); color: var(--warning); }
+
+/* ============================ A4 用户行为事件（改版） ============================
+   页面根 .a4-page；抽屉和确认框挂在 RdPage（.adom）下，不在 .a4-page 里，用 .adom 限定。只用 --rd-* 令牌。 */
+.a4-page { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
+.a4-page .rd-panel > :not(.rd-panel-head) + * { margin-top: 12px; }
+.a4-loading { display: flex; flex-direction: column; gap: var(--rd-section-gap); }
+.a4-loading .rd-skeleton { border-radius: var(--rd-radius-panel); }
+.a4-skel-line { height: 64px; }
+.a4-skel-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.a4-skel-stats > .rd-skeleton { height: 96px; }
+.a4-skel-tabs { height: 40px; width: 420px; max-width: 100%; }
+.a4-skel-block { height: 320px; }
+
+.adom .a4-pair { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.adom .a4-dim { color: var(--rd-text-3); }
+.adom .a4-warn { color: var(--rd-warn); }
+.adom .a4-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+
+/* 原操作提醒：一条一行，改的是什么、对象、提交时间、状态、按钮 */
+.a4-rec { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.a4-rec li { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.a4-rec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.a4-rec-change { min-width: 0; overflow-wrap: anywhere; color: var(--rd-text); }
+.a4-rec-time, .a4-rec-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.a4-rec-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.a4-rec-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.a4-rec-zone { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+@container adom (max-width: 1100px) {
+  .a4-rec li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
+  .a4-rec-state { grid-column: 3; grid-row: 1; justify-content: flex-end; }
+  .a4-rec-time { grid-column: 1 / 3; grid-row: 2; }
+  .a4-rec-actions { grid-column: 3; grid-row: 2; }
+}
+
+/* 上线进度点：五个点一条线，当前的上色，旁边写字 */
+.adom .a4-life { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.adom .a4-life-dots { display: inline-flex; align-items: center; }
+.adom .a4-life-dots i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--rd-line-strong); box-sizing: border-box; }
+.adom .a4-life-dots i + i { margin-left: 10px; position: relative; }
+.adom .a4-life-dots i + i::before { content: ""; position: absolute; right: 100%; top: 50%; width: 10px; height: 1px; margin-top: -0.5px; background: var(--rd-line-strong); }
+.adom .a4-life-dots i[data-at="done"] { background: var(--rd-text-3); border-color: var(--rd-text-3); }
+.adom .a4-life-dots i[data-at="now"] { width: 10px; height: 10px; background: var(--rd-progress); border-color: var(--rd-progress); }
+.adom .a4-life[data-state="full"] .a4-life-dots i[data-at="now"] { background: var(--rd-ok); border-color: var(--rd-ok); }
+.adom .a4-life[data-state="disabled"] .a4-life-dots i[data-at="now"] { background: var(--rd-done); border-color: var(--rd-done); }
+.adom .a4-life-text { color: var(--rd-text); }
+.adom .a4-life[data-state="disabled"] .a4-life-text { color: var(--rd-text-3); }
+
+/* 事件类别卡：一类一张，名称、一句用途、今日条数和占比、清单入口 */
+.a4-family-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.a4-family { display: grid; grid-template-rows: auto auto 1fr auto auto; gap: 8px; min-width: 0; padding: 16px; text-align: left; font: inherit; color: var(--rd-text); background: var(--rd-panel-inner); border: 1px solid transparent; border-radius: var(--rd-radius-panel); cursor: pointer; --rd-track-w: 100%; }
+.a4-family:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) { .a4-family:hover { border-color: var(--rd-line-strong); } }
+.a4-family-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.a4-family-title { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); }
+.a4-family-auth { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.a4-family-sub { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.a4-family-num { align-self: end; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.a4-family-num b { margin-right: 4px; font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.a4-family-num[data-zero] b { color: var(--rd-text-3); }
+.a4-family-foot { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); text-decoration: underline; text-underline-offset: 3px; }
+
+/* 事件表：名称列最宽，进度和谁在用次之，操作只占菜单宽 */
+.a4-schema-table { table-layout: fixed; }
+.a4-schema-table th:nth-child(1) { width: 30%; }
+.a4-schema-table th:nth-child(2) { width: 15%; }
+.a4-schema-table th:nth-child(3) { width: 72px; }
+.a4-schema-table th:nth-child(4) { width: 168px; }
+.a4-schema-table th:nth-child(6) { width: 64px; }
+.adom .a4-ename { display: flex; flex-direction: column; min-width: 0; }
+.adom .a4-ename [data-mono] { overflow-wrap: anywhere; }
+.adom .a4-ename-desc + [data-mono] { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+@container adom (max-width: 1100px) {
+  .a4-schema-table th:nth-child(1) { width: 32%; }
+  .a4-schema-table th:nth-child(4) { width: 96px; }
+  .a4-schema-table .a4-life-dots { display: none; }
+}
+.adom .a4-consumers { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.a4-lookup { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; border-top: 1px solid var(--rd-line); }
+.a4-lookup-hit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.a4-lookup-hit > .rd-button { margin-left: auto; }
+.a4-flow { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; counter-reset: a4flow; }
+.a4-flow li { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 12px; align-items: baseline; }
+.a4-flow b { font-weight: var(--rd-weight-medium); }
+.a4-flow span { color: var(--rd-text-2); }
+.adom .a4-flow + .a4-note { margin-top: 12px; }
+
+/* 投递积压：三个数在左，按类型的排序条在右 */
+.a4-backlog-sum { display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.a4-backlog-facts { display: grid; gap: 12px; margin: 0; }
+.a4-backlog-facts > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.a4-backlog-facts dt { display: inline-flex; align-items: center; gap: 4px; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.a4-backlog-facts dd { margin: 0; color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.a4-backlog-facts b { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.a4-backlog-bars { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+@container adom (max-width: 860px) { .a4-backlog-sum { grid-template-columns: minmax(0, 1fr); } }
+.a4-backlog-table { table-layout: fixed; }
+.a4-backlog-table th:nth-child(1) { width: 26%; }
+.a4-backlog-table th:nth-child(2) { width: 15%; }
+.a4-backlog-table th:nth-child(3) { width: 80px; }
+.a4-backlog-table th:nth-child(4) { width: 168px; }
+.adom .a4-receipts { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; font-variant-numeric: tabular-nums; }
+.a4-next { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* 重新排队：一张卡写两层状态，按钮在卡底 */
+.a4-redrive { display: flex; flex-direction: column; gap: 12px; }
+.a4-redrive-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
+.a4-redrive-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.a4-redrive-type { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); }
+.a4-redrive-head [data-mono] { color: var(--rd-text-3); font-size: var(--rd-text-aux); overflow-wrap: anywhere; }
+.a4-layers { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.a4-layers li { display: grid; grid-template-columns: 72px max-content max-content minmax(0, 1fr); align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.a4-layer-name { font-weight: var(--rd-weight-medium); }
+.a4-layer-err { min-width: 0; overflow-wrap: anywhere; color: var(--rd-text-2); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); }
+@container adom (max-width: 760px) { .a4-layers li { grid-template-columns: 72px minmax(0, 1fr); } .a4-layer-err { grid-column: 1 / -1; } }
+
+/* 模块：已接入的灰底小块，待接入的带「待接入」 */
+.adom .a4-domains { display: flex; flex-wrap: wrap; gap: 8px; }
+.adom .a4-domains[data-inline] { gap: 4px; }
+.adom .a4-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: var(--rd-radius-tag); background: var(--rd-panel-inner); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.adom .a4-chip[data-pending] { background: var(--rd-warn-bg); color: var(--rd-text); }
+.adom .a4-chip small { font-size: var(--rd-text-aux); color: var(--rd-warn); }
+.a4-batch-table { table-layout: fixed; }
+.a4-batch-table th:nth-child(1) { width: 26%; }
+.a4-batch-table th:nth-child(2) { width: 18%; }
+.a4-batch-table th:nth-child(3) { width: 16%; }
+.a4-batch-table th:nth-child(4) { width: 96px; }
+.a4-batch-table th:nth-child(6) { width: 88px; }
+@container adom (max-width: 1100px) {
+  .a4-batch-table :is(th, td):nth-child(3) { display: none; }
+  .a4-batch-table th:nth-child(1) { width: 30%; }
+  .a4-batch-table th:nth-child(2) { width: 24%; }
+}
+.adom .a4-chip [data-mono] { overflow-wrap: anywhere; min-width: 0; }
+.adom .a4-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* 抽屉里的表和进度 */
+.adom .a4-detail-life { display: flex; flex-direction: column; gap: 12px; }
+.adom .a4-family-table, .adom .a4-field-table, .adom .a4-common-table, .adom .a4-kpi-table { table-layout: auto; }
+.adom .a4-kpi-table th:first-child { width: 48px; }
