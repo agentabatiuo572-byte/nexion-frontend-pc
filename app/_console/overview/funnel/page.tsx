@@ -20,6 +20,7 @@ import {
 } from "@/lib/admin/b3-client";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { normalizeB3RefOptions } from "@/lib/admin/b3-ref-display";
+import { lowestConversionIndex } from "@/lib/admin/funnel-conversion";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { B3RestoredInsights } from "@/app/components/dashboard/restored-b-insights";
 import { useReach } from "@/lib/nav/use-reach";
@@ -63,10 +64,8 @@ export default function FunnelPage() {
   const selectedStage = data?.stages.find((item) => item.key === stage);
   const biggestDrop = useMemo(() => {
     if (!data) return null;
-    return data.stages.slice(1).reduce<(typeof data.stages)[number] | null>((worst, item) => {
-      if (item.cvrFromPrev == null) return worst;
-      return !worst || (worst.cvrFromPrev ?? 101) > item.cvrFromPrev ? item : worst;
-    }, null);
+    const index = lowestConversionIndex(data.stages.map((item) => item.cvrFromPrev));
+    return index === null ? null : data.stages[index];
   }, [data]);
 
   async function saveView() {
@@ -262,7 +261,7 @@ export default function FunnelPage() {
             </TabGroup>
             {biggestDrop && (
               <p className="b3-bottleneck">
-                当前流失最多的环节：<b>{biggestDrop.stage}</b>（从上一步转化 {pct(biggestDrop.cvrFromPrev)}）。
+                转化率最低的一步：<b>{biggestDrop.stage}</b>（从上一步转化 {pct(biggestDrop.cvrFromPrev)}）。
                 可以结合「运营阶段设置」和「用户转化与留存」找原因。
               </p>
             )}

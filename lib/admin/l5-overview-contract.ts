@@ -92,6 +92,27 @@ function validateReport(value: unknown, index: number) {
     invalid(`${path}.status`);
   }
   bool(report.snapshotAvailable, `${path}.snapshotAvailable`);
+  // Optional metadata is nullable on the DTO's compatibility constructors.
+  for (const key of ["note", "lastAction", "reason", "lastActionAt", "requestedAt"]) {
+    if (report[key] != null && typeof report[key] !== "string") invalid(`${path}.${key}`);
+  }
+}
+
+export function assertL5ReportContract(value: unknown): Record<string, unknown> {
+  validateReport(value, 0);
+  return value as Record<string, unknown>;
+}
+
+export function assertL5TaskPageContract(value: unknown): Record<string, unknown> {
+  validateReports(value);
+  const page = value as Record<string, unknown>;
+  const eligibility = object(page.approvalEligibility, "approvalEligibility");
+  for (const item of Object.values(eligibility)) {
+    if (!["ELIGIBLE", "SELF", "MAKER_UNVERIFIED"].includes(item as string)) invalid("approvalEligibility");
+  }
+  const names = object(page.requesterDisplayNames, "requesterDisplayNames");
+  if (Object.values(names).some(name => name !== null && typeof name !== "string")) invalid("requesterDisplayNames");
+  return page;
 }
 
 function validateReports(value: unknown) {
