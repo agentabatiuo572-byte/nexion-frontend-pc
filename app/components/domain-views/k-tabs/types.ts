@@ -60,6 +60,8 @@ export type ActionConfirmReq = {
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type ConfirmReq = {
+  /** I1 retains the exact direct request after an unknown outcome; other callers keep their existing form behavior. */
+  freezePendingInputs?: boolean;
   getPendingReason?: () => string | undefined;
   /** 原覆盖分，恢复时只展示保存的输入。 */
   getPendingValue?: () => string | undefined;

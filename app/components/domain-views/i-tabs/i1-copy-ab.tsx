@@ -15,8 +15,11 @@ import { BlockState, Button, Cell, ConfigList, ConfigRow, Conclusion, Decision, 
 import { PaginationExemptionList, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
-import type { ICtx } from "./types";
+import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { pendingI1Commands, retryI1Command, type I1Command } from "@/lib/admin/i-client";
+import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import {
   CompareTexts, CopyEditorDrawer, ExperimentCard, ExperimentDrawer, LangBlocks, PositionCard,
   audienceText, copyStatus, experimentState, missingLangs, moduleLabel, versionStatus,
@@ -42,11 +45,11 @@ type VersionRow = {
   audience: string; audienceTarget?: AudienceTarget | null; estimatedAudience?: number; trafficSplit: string; versionNote: string;
 };
 type VersionOptionRow = {
-  versionKey: string; name: string; description: string; status: string;
+  versionKey: string; name: string; description: string | null; status: string;
   sortOrder: number; revision: number; usageCount: number;
 };
 type ExpRow = {
-  id: string; copyKey: string; variants: { name: string; split: number; cvr: number; version: string }[];
+  id: string; copyKey: string; variants: { name: string; split: number; cvr: number; version: string; impressions?: number; conversions?: number }[];
   audience: string; estimatedAudience?: number; impressions: string; conversions: string; state: string; note: string;
 };
 type Editor =
@@ -129,15 +132,9 @@ const textsOfForm = (form: BusinessFormValue): Texts => ({ zh: form.zh ?? "", vi
 /** 后端给的是累计数的字符串；读不成整数就当没有。 */
 const countOf = (value: string) => (/^\d+$/.test(value.trim()) ? Number(value.trim()) : null);
 
-/**
- * 结果未知的写操作（R1）。现在的提交把结果未知当普通失败（重构说明 B02），这里先把位置做好：
- * 代码 worker 接上 R1 记录后，把记录传进来；同一对象的写入口用 lockReason 锁住。
- */
-type I1Pending = { id: string; label: string; change: string; at: string; expired: boolean };
-const PENDING_PLACEHOLDER: readonly I1Pending[] = [];
-const lockReason = (_target: string): string | undefined => undefined;
+type I1Pending = { id: string; label: string; change: string; at: string; retryBlocked?: string; record: I1Command };
 
-function PendingNotice({ items }: { items: readonly I1Pending[] }) {
+function PendingNotice({ items, onQuery, onRetry }: { items: readonly I1Pending[]; onQuery: (record: I1Command) => void; onRetry: (record: I1Command) => void }) {
   if (items.length === 0) return null;
   return (
     <Notice tone="warn" title={`${items.length} 项操作结果未知`} actionBelow>
@@ -147,8 +144,8 @@ function PendingNotice({ items }: { items: readonly I1Pending[] }) {
             <span className="i1-pending-what"><b>{item.label}</b>{item.change}</span>
             <span className="i1-weak">提交于 {item.at}（{ZONE}）</span>
             <span className="i1-pending-actions">
-              <Button size="sm">查询原结果</Button>
-              <Button size="sm" disabledReason={item.expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对" : undefined}>按原请求重试</Button>
+              <Button size="sm" onClick={() => onQuery(item.record)}>查询原结果</Button>
+              <Button size="sm" disabledReason={item.retryBlocked} onClick={() => onRetry(item.record)}>按原请求重试</Button>
             </span>
           </li>
         ))}
@@ -158,7 +155,7 @@ function PendingNotice({ items }: { items: readonly I1Pending[] }) {
 }
 
 export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | null }) {
-  const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
+  const { toast, actions, content, contentLoading } = ctx;
   const session = useAdminAuth((state) => state.session);
   const reach = useReach();
   const isSuperadmin = session?.role === "superadmin";
@@ -181,6 +178,132 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const [focusExp, setFocusExp] = useState<string | null>(null);
   const [reloading, setReloading] = useState(false);
   const data = content.copyAb;
+  const [pending, setPending] = useState<I1Command[]>([]);
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const retryInFlight = useRef(false);
+  const [requiresReload, setRequiresReload] = useState(false);
+  const readBarrier = useRef(data);
+  const latestRead = useRef(data);
+  latestRead.current = data;
+  const newMutationReason = !data ? "数据还没读到" : errorText || requiresReload || contentLoading ? "数据没有读到最新，请重新加载" : undefined;
+  const newMutationBlocked = useRef(newMutationReason);
+  newMutationBlocked.current = newMutationReason;
+  const syncPending = () => setPending(pendingI1Commands());
+  useEffect(() => { setPending(pendingI1Commands()); }, [session?.adminId]);
+  useEffect(() => {
+    if (requiresReload && data && data !== readBarrier.current && !contentLoading && !errorText) setRequiresReload(false);
+  }, [requiresReload, data, contentLoading, errorText]);
+
+  const refreshAfterMutation = async () => {
+    // A replay returns the old receipt. Close every confirmation based on the old overview before rereading.
+    readBarrier.current = latestRead.current;
+    newMutationBlocked.current = "数据没有读到最新，请重新加载";
+    setRequiresReload(true);
+    ctx.closeActionConfirm();
+    ctx.closeConfirm?.();
+    setEditor(null);
+    setCreatingExperiment(false);
+    syncPending();
+    await actions.reloadIContent();
+  };
+  const replay = async (record: I1Command) => {
+    try {
+      await retryI1Command(record);
+    } catch (error) {
+      syncPending();
+      if (!pendingI1Commands().some((row) => row.commandKey === record.commandKey)) {
+        await refreshAfterMutation();
+        toast(`操作失败:${displayAdminError(error)}`);
+        return false;
+      }
+      throw new Error(`操作失败:${displayAdminError(error)}`);
+    }
+    await refreshAfterMutation();
+    toast(`${record.label} · ${record.target.slice(record.target.indexOf(":") + 1)}`);
+  };
+  const openActionConfirm = (req: ActionConfirmReq) => {
+    if (newMutationBlocked.current) { toast(newMutationBlocked.current); return; }
+    const openedData = data;
+    let pendingKey: string | undefined;
+    let savedBusiness: BusinessFormValue | undefined;
+    const original = () => pendingI1Commands().find((row) => row.commandKey === pendingKey);
+    ctx.openActionConfirm({ ...req,
+      getPendingReason: () => original()?.reason,
+      getPendingBusinessValue: () => original() ? savedBusiness : undefined,
+      run: async (reason, value, form) => {
+        if (pendingKey) {
+          const record = original();
+          if (!record) { ctx.closeActionConfirm(); return false; }
+          return replay(record);
+        }
+        if (newMutationBlocked.current || latestRead.current !== openedData) {
+          ctx.closeActionConfirm();
+          throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
+        }
+        try { return await req.run(reason, value, form); }
+        catch (error) {
+          if (isOutcomeUnknownError(error)) {
+            pendingKey = (error as { commandKey?: string }).commandKey;
+            savedBusiness = form;
+            setEditor(null);
+            setCreatingExperiment(false);
+          }
+          syncPending();
+          // The domain owns first-attempt rejection: keep the confirmation and its input even for business 403.
+          throw new Error(`操作失败:${displayAdminError(error)}`);
+        }
+      },
+    });
+  };
+  const openConfirm = (req: ConfirmReq) => {
+    if (newMutationBlocked.current) { toast(newMutationBlocked.current); return; }
+    const openedData = data;
+    let pendingKey: string | undefined;
+    let savedValue: string | undefined;
+    const original = () => pendingI1Commands().find((row) => row.commandKey === pendingKey);
+    ctx.openConfirm({ ...req, freezePendingInputs: true, getPendingReason: () => original()?.reason, getPendingValue: () => original() ? savedValue : undefined,
+      run: async (reason, value) => {
+        if (pendingKey) {
+          const record = original();
+          if (!record) { ctx.closeConfirm?.(); return false; }
+          return replay(record);
+        }
+        if (newMutationBlocked.current || latestRead.current !== openedData) {
+          ctx.closeConfirm?.();
+          throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
+        }
+        try { return await req.run(reason, value); }
+        catch (error) {
+          if (isOutcomeUnknownError(error)) { pendingKey = (error as { commandKey?: string }).commandKey; savedValue = value; }
+          syncPending();
+          throw new Error(`操作失败:${displayAdminError(error)}`);
+        }
+      },
+    });
+  };
+  const restore = async (record: I1Command) => {
+    if (retryInFlight.current) return;
+    retryInFlight.current = true;
+    setRetrying(record.commandKey);
+    try { await replay(record); }
+    catch (error) { toast(displayAdminError(error)); }
+    finally { retryInFlight.current = false; setRetrying(null); }
+  };
+  const pendingNotice = <PendingNotice items={pending.map((record) => ({
+    id: record.commandKey, label: `${record.label} · ${record.target.slice(record.target.indexOf(":") + 1)}`, change: record.change,
+    at: new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(record.createdAt),
+    retryBlocked: retrying ? "提交中…" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : !record.original ? "原操作记录不完整，只能查询核对，不能重试。"
+      : !(isSuperadmin || session?.authorities.includes(record.permission)) ? "当前账号没有这项操作权限，请查询原结果。" : undefined,
+    record,
+  }))} onRetry={restore} onQuery={() => { void actions.reloadIContent().then(() => toast(reach("/platform/audit") ? "结果未知，请到操作记录与审批核对。" : "结果未知")); }} />;
+  const lockReason = (target: string): string | undefined => {
+    if (newMutationReason) return newMutationReason;
+    const related = target.startsWith("copy:")
+      ? (data?.experiments ?? []).filter((row) => row.copyKey === target.slice(5)).map((row) => `exp:${row.id}`)
+      : target.startsWith("exp:") ? [`copy:${data?.experiments.find((row) => row.id === target.slice(4))?.copyKey}`] : [];
+    return pending.some((row) => !row.original || row.target === target || related.includes(row.target))
+      ? "此对象有结果未知的原操作，请先到页面上方核对。" : undefined;
+  };
   const I1_STATS = data?.stats ?? { managedCopies: 0, runningExps: 0, weeklyExposures: "—", topLift: "—" };
   const COPY_POOL: CopyRow[] = (data?.copies ?? []).map((row) => ({
     key: row.key,
@@ -250,10 +373,11 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       })),
   })).filter((copy) => copy.versions.length >= 2);
   const EXPERIMENT_COPY_OPTIONS: ExperimentCopyOption[] = EXPERIMENT_COPY_CANDIDATES
-    .filter((copy) => !ACTIVE_EXPERIMENT_COPY_KEYS.has(copy.value));
+    .filter((copy) => !ACTIVE_EXPERIMENT_COPY_KEYS.has(copy.value) && !lockReason(`copy:${copy.value}`));
   const experimentUnavailableReason = EXPERIMENT_COPY_CANDIDATES.length === 0
     ? "至少需要同一文案下存在 2 个非草稿内容版本"
-    : "符合条件的文案已有待启动或进行中的实验，请先完成或停止现有实验";
+    : EXPERIMENT_COPY_CANDIDATES.map((copy) => lockReason(`copy:${copy.value}`)).find(Boolean)
+      ?? "符合条件的文案已有待启动或进行中的实验，请先完成或停止现有实验";
   const usedVersionsForCopy = (copy: CopyRow) => new Set(
     copy.usedVersionKeys ?? COPY_VERSIONS.filter((row) => row.copyKey === copy.key).map((row) => row.v),
   );
@@ -266,7 +390,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const EXPS: ExpRow[] = (data?.experiments ?? []).map((row) => ({
     id: row.id,
     copyKey: row.copyKey,
-    variants: row.variants.map((v) => ({ name: v.name, split: v.split, cvr: Number(v.cvr), version: v.version ?? "" })),
+    variants: row.variants.map((v) => ({ name: v.name, split: v.split, cvr: Number(v.cvr), version: v.version ?? "", impressions: v.impressions, conversions: v.conversions })),
     audience: row.audience,
     estimatedAudience: row.estimatedAudience,
     impressions: row.impressions,
@@ -309,12 +433,8 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
 
   const runBackend = (task: Promise<void>, ok: string) => {
     return task
-      .then(() => actions.reloadIContent())
-      .then(() => toast(ok))
-      .catch((error) => {
-        toast(`操作失败:${displayAdminError(error)}`);
-        return false;
-      });
+      .then(() => refreshAfterMutation())
+      .then(() => { toast(ok); return true; });
   };
 
   const liveCopyStatus = (c: CopyRow): string => c.status;
@@ -664,10 +784,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         if (deleteInFlightRef.current) return false;
         deleteInFlightRef.current = true;
         setDeletingDraftKey(mutationKey);
-        return actions.deleteI1CopyDraft(copyKey, version, revision, reason)
-          .then(() => actions.reloadIContent())
-          .then(() => toast(`${copyKey} ${version} 草稿已删除`))
-          .catch((error) => { toast(`操作失败:${displayAdminError(error)}`); return false; })
+        return runBackend(actions.deleteI1CopyDraft(copyKey, version, revision, reason), `${copyKey} ${version} 草稿已删除`)
           .finally(() => {
             deleteInFlightRef.current = false;
             setDeletingDraftKey(null);
@@ -839,10 +956,21 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     });
   };
 
-  /** 页面上的数里转化率唯一最高的那组；没有人看到或并列时没有。不是后端的判定，后端按整数精确比较。 */
+  /** New group counters allow the same integer ratio comparison as the backend; older responses retain their rounded-rate hint. */
   function leaderOf(exp: ExpRow): string | undefined {
     const seen = countOf(exp.impressions);
     if (!seen || exp.state === "scheduled" || exp.variants.length < 2) return undefined;
+    if (exp.variants.every((variant) => variant.impressions !== undefined && variant.impressions > 0 && variant.conversions !== undefined)) {
+      let best = exp.variants[0];
+      let tied = false;
+      for (const candidate of exp.variants.slice(1)) {
+        const comparison = BigInt(candidate.conversions!) * BigInt(best.impressions!)
+          - BigInt(best.conversions!) * BigInt(candidate.impressions!);
+        if (comparison > BigInt(0)) { best = candidate; tied = false; }
+        else if (comparison === BigInt(0)) tied = true;
+      }
+      return tied ? undefined : best.name;
+    }
     const max = Math.max(...exp.variants.map((variant) => variant.cvr));
     const top = exp.variants.filter((variant) => variant.cvr === max);
     return top.length === 1 ? top[0].name : undefined;
@@ -850,11 +978,12 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
 
   const sampleOf = (exp: ExpRow): { text: ReactNode; tone: "warn" | null } => {
     if (exp.state === "scheduled") return { text: "还没开始", tone: null };
-    const seen = countOf(exp.impressions);
     const need = exp.variants.length * 100;
-    if (seen === null) return { text: "—", tone: null };
-    if (seen === 0) return { text: "还没有人看到", tone: null };
-    if (seen < need) return { text: `不够，至少要 ${need} 人`, tone: exp.state === "adopted" || exp.state === "discarded" ? null : "warn" };
+    if (exp.variants.some((variant) => variant.impressions !== undefined && variant.impressions < 100)) {
+      if (exp.variants.every((variant) => variant.impressions === 0)) return { text: "还没有人看到", tone: null };
+      return { text: `不够，至少要 ${need} 人`, tone: exp.state === "adopted" || exp.state === "discarded" ? null : "warn" };
+    }
+    if (exp.variants.length < 2 || exp.variants.some((variant) => variant.impressions === undefined)) return { text: "—", tone: null };
     return { text: `合计已满 ${need} 人`, tone: null };
   };
 
@@ -878,13 +1007,14 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const header = (
     <PageHeader pageId="I1" title="页面文案对比测试" summary="管 App 各位置的文案版本和对比实验。"
       readOnly={!canWrite && !canCreateCopy && !canManageExperiments ? "这个账号只能查看这页" : undefined}
-      actions={canCreateCopy ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={data && ACTIVE_VERSION_OPTIONS.length === 0 ? "先在「版本目录」新增或启用一个版本" : !data ? "数据还没读到" : undefined} onClick={() => createCopy()}>新增文案</Button> : undefined} />
+      actions={canCreateCopy ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason ?? (data && ACTIVE_VERSION_OPTIONS.length === 0 ? "先在「版本目录」新增或启用一个版本" : undefined)} onClick={() => createCopy()}>新增文案</Button> : undefined} />
   );
 
   if (!data) {
     return (
       <>
         {header}
+        {pendingNotice}
         {contentLoading && !errorText
           ? <BlockState state="loading" title="文案数据加载中…" />
           : errorText
@@ -926,7 +1056,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const scheduled = EXPS.filter((exp) => exp.state === "scheduled");
   const publishedCount = COPY_POOL.filter(isPublished).length;
   const activePositions = COPY_POSITION_ROWS.filter((position) => position.status.toUpperCase() === "ACTIVE").length;
-  const createBlocked = ACTIVE_VERSION_OPTIONS.length === 0 ? "先在「版本目录」新增或启用一个版本" : undefined;
+  const createBlocked = newMutationReason ?? (ACTIVE_VERSION_OPTIONS.length === 0 ? "先在「版本目录」新增或启用一个版本" : undefined);
 
   const conclusion = errorText
     ? <Conclusion state="unknown" icon={ShieldAlert}>文案数据没有读到最新，下面是上次读到的内容</Conclusion>
@@ -943,7 +1073,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const positionsPane = (
     <div {...tabIds.panel("positions")} className="rd-tab-pane i1-pane">
       <FilterBar scope={<Segments label="投放模块" value={surf} onChange={setSurf} items={SURF_FLT.map(([value, label]) => ({ value, label, count: surfCount(value) }))} />}
-        sort={canWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={createCopyPosition}>新增位置</Button> : undefined} />
+        sort={canWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason} onClick={createCopyPosition}>新增位置</Button> : undefined} />
       {visiblePositions.length === 0 && orphanCopies.length === 0 && (
         <BlockState state="empty" title={COPY_POSITION_ROWS.length === 0 ? "还没有文案位置" : "这个模块没有文案位置"} detail={COPY_POSITION_ROWS.length === 0 && canWrite ? "先点「新增位置」。" : undefined} />
       )}
@@ -989,7 +1119,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       <FilterBar scope={<Segments label="实验状态" value={expFlt} onChange={setExpFlt} items={EXP_FLT.map(([value, label]) => ({ value, label, count: expCount(value) }))} />}
         sort={<>
           <span className="rd-filter-result">最高转化率 {String(I1_STATS.topLift).replace(/^\+/, "")}<Explain label="最高转化率怎么算" content="所有实验里单独一组的最高转化率，不是相对原版的提升。" /></span>
-          {canManageExperiments && <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={EXPERIMENT_COPY_OPTIONS.length === 0 ? experimentUnavailableReason : undefined} onClick={createExperiment}>创建实验</Button>}
+          {canManageExperiments && <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason ?? (EXPERIMENT_COPY_OPTIONS.length === 0 ? experimentUnavailableReason : undefined)} onClick={createExperiment}>创建实验</Button>}
         </>} />
       {filteredExps.length === 0 && <BlockState state="empty" title={EXPS.length === 0 ? "还没有实验" : "这个状态下没有实验"} />}
       <div className="i1-cards">
@@ -1036,7 +1166,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
               {EXP_FRAMEWORK.map((p) => {
                 const cur = liveFw(p.key, p.cur);
                 return <ConfigRow key={p.key} name={p.name} what={p.sub || "—"} when="保存后只记下新值" effect="目前不影响实验运行。" value={cur}
-                  action={canManageExperiments ? <Button size="sm" onClick={() => adjustFramework(p.key, p.name, cur)}>调整</Button> : undefined} />;
+                  action={canManageExperiments ? <Button size="sm" disabledReason={lockReason(`framework:${p.key}`)} onClick={() => adjustFramework(p.key, p.name, cur)}>调整</Button> : undefined} />;
               })}
             </ConfigList>}
       </Fold>
@@ -1112,7 +1242,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     <div {...tabIds.panel("catalog")} className="rd-tab-pane i1-pane">
       <Panel title="版本目录" icon={Layers} tone="role-4" flush sub={`${VERSION_OPTIONS.length} 个 · 启用 ${ACTIVE_VERSION_OPTIONS.length} 个`}
         explain="新增文案和新增版本时从启用的版本里选；一条文案每个版本只能用一次。用过的版本不能删除，可以停用。"
-        actions={canWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={createCopyVersionOption}>新增版本</Button> : undefined} data-proof="copy-version-catalog">
+        actions={canWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason} onClick={createCopyVersionOption}>新增版本</Button> : undefined} data-proof="copy-version-catalog">
         <Table label="版本目录" className="i1-catalog">
           <thead><tr><Th>版本</Th><Th>说明</Th><Th>状态</Th><Th align="right">排序</Th><Th align="right">被用过</Th>{canWrite && <Th align="right">操作</Th>}</tr></thead>
           <tbody>
@@ -1128,8 +1258,8 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
                   <Td align="right">{option.usageCount} 次</Td>
                   {canWrite && <Td align="right" data-fit="">
                     <span className="i1-row-actions">
-                      <Button size="sm" variant="ghost" onClick={() => editCopyVersionOption(option)}>编辑</Button>
-                      <Button size="sm" variant="ghost" disabledReason={referenced ? "已有内容用过这个版本，不能删除；可以停用" : undefined} onClick={() => deleteCopyVersionOption(option)}>删除</Button>
+                      <Button size="sm" variant="ghost" disabledReason={lockReason(`version:${option.versionKey}`)} onClick={() => editCopyVersionOption(option)}>编辑</Button>
+                      <Button size="sm" variant="ghost" disabledReason={lockReason(`version:${option.versionKey}`) ?? (referenced ? "已有内容用过这个版本，不能删除；可以停用" : undefined)} onClick={() => deleteCopyVersionOption(option)}>删除</Button>
                     </span>
                   </Td>}
                 </tr>
@@ -1251,7 +1381,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         App 目前只显示普通文案键能覆盖的内容，位置文案还没有接上。
         <Explain label="现在 App 能看到什么" content={<><p>发布、回滚、采纳会同步「多语言与课程」里的同名词条，App 用到这个词条的地方会跟着变。</p><p>按位置取文案和实验分组的接口已经有，App 还没有页面调用，所以实验分组现在不会真正发生在 App 上。</p></>} />
       </Notice>
-      <PendingNotice items={PENDING_PLACEHOLDER} />
+      {pendingNotice}
       {conclusion}
       <StatBand label="文案对比测试关键数字">
         <Stat icon={MapPin} tone="role-2" label="文案位置" value={String(COPY_POSITION_ROWS.length)} unit="个" sub={`启用 ${activePositions}`} />

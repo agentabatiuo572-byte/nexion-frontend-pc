@@ -58,6 +58,11 @@ function optionalArray(moduleId: IModuleId, owner: Record<string, unknown>, key:
 }
 
 function validateI1(moduleId: IModuleId, value: Record<string, unknown>) {
+  for (const option of records(moduleId, value.versionOptions)) {
+    if (typeof option.status !== "string" || !["ACTIVE", "INACTIVE"].includes(option.status.toUpperCase())) fail(moduleId);
+    // The repository emits lowercase statuses; the editor and write DTO use uppercase.
+    option.status = option.status.toUpperCase();
+  }
   for (const copy of records(moduleId, value.copies)) {
     optionalArray(moduleId, copy, "usedVersionKeys");
     if (copy.draftAudienceTarget != null) {
@@ -74,7 +79,13 @@ function validateI1(moduleId: IModuleId, value: Record<string, unknown>) {
     }
   }
   for (const experiment of records(moduleId, value.experiments)) {
-    records(moduleId, experiment.variants);
+    for (const variant of records(moduleId, experiment.variants)) {
+      for (const key of ["impressions", "conversions"]) {
+        const count = variant[key];
+        // Older backends omit these fields. Missing is unknown, never zero.
+        if (count !== undefined && (typeof count !== "number" || !Number.isInteger(count) || count < 0)) fail(moduleId);
+      }
+    }
   }
 }
 

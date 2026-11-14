@@ -174,7 +174,7 @@ export function PositionCard({ title, sub, statusTag, surface, copies, problem, 
 }
 
 /** 实验卡里的一组：这组用户看到的版本、分流、转化率。 */
-export type VariantView = { name: string; version: string; versionName?: string; split: number; cvr: number; text?: string };
+export type VariantView = { name: string; version: string; versionName?: string; split: number; cvr: number; text?: string; impressions?: number; conversions?: number };
 
 export function ExperimentCard({ id, title, sub, state, variants, impressions, conversions, leader, sample, audience, note, actions, selected }: {
   id: string;
@@ -226,7 +226,7 @@ export function ExperimentCard({ id, title, sub, state, variants, impressions, c
                   : <span className="i1-weak">{started ? "还没有人看到" : "还没开始"}</span>}
                 <div>
                   <dt>看到的人<Explain label="各组人数" content="后端只给这个实验的合计人数，没给每组各多少人。" /></dt>
-                  <dd data-empty="">—</dd>
+                  <dd data-empty={variant.impressions == null ? "" : undefined}>{variant.impressions == null ? "—" : `${variant.impressions.toLocaleString()} 人`}</dd>
                 </div>
               </dl>
             </section>

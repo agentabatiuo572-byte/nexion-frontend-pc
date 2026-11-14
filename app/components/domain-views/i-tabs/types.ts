@@ -20,4 +20,5 @@ export type ICtx = Omit<DCtx, "toast"> & {
   contentLoading: boolean;
   contentError: string | null;
   closeActionConfirm: () => void;
+  closeConfirm: () => void;
 };

@@ -1,8 +1,10 @@
-import { isIdempotencyOutcomeOpen, OutcomeUnknownError, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { parseIOverview } from "@/lib/admin/i-overview-contract";
-import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 type ApiResult<T> = {
   code?: number;
@@ -19,11 +21,175 @@ function idempotencyKey() {
 // replays the same command instead of creating a second write.
 // 落 sessionStorage 而非内存:刷新页面后重试必须仍是同一命令号,否则后端无法去重。
 // fingerprint = `${method}:${path}:${body}` —— path 带目标对象 id,method + path 区分动作类型。
-const uncertainCommandKeys = createPendingMutationStore({
+type I1Original = { owner: number; method: string; path: string; body: string };
+type IContentPending = PendingMutationRecord & { i1?: I1Original };
+export type I1Command = PendingMutationRecord & {
+  original?: I1Original;
+  label: string;
+  target: string;
+  permission: string;
+  reason: string;
+  change: string;
+};
+
+// One instance for the domain. Only I1 evidence changes retention; other I pages keep their contract.
+const uncertainCommandKeys = createPendingMutationStore<IContentPending>({
   storageKey: "nexion-admin-i-content-uncertain-commands-v1",
+  retainExpiredRecords: (row) => /^(POST|PUT|PATCH|DELETE):\/copy-ab\//.test(row.fingerprint),
 });
 
+/** Parse durable/legacy requests at their untrusted storage boundary, without rebuilding their JSON. */
+function readI1Command(row: IContentPending): I1Command | undefined {
+  const owner = useAdminAuth.getState().session?.adminId;
+  if (owner === undefined || (row.i1 ? row.i1.owner !== owner : !hasPersistedPendingCommandOwner(String(owner)))) return undefined;
+  const match = row.fingerprint.match(/^(POST|PUT|PATCH|DELETE):(\/copy-ab\/[^:]+):([\s\S]*)$/);
+  if (!match) return undefined;
+  const fallback: I1Command = { ...row, label: "结果未知", target: "", permission: "", reason: "", change: "" };
+  try {
+    const [, method, path, body] = match;
+    if (row.i1 && (row.i1.method !== method || row.i1.path !== path || row.i1.body !== body)) return fallback;
+    const payload: unknown = JSON.parse(body);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return fallback;
+    const input = payload as Record<string, unknown>;
+    if (typeof input.reason !== "string" || typeof input.operator !== "string") return fallback;
+    const parts = path.split("/").slice(2).map(decodeURIComponent);
+    const [family, key, action, version, tail] = parts;
+    let label: string, target: string, permission = "content_i1_write";
+    if (family === "positions" && (method === "POST" && parts.length === 1 || method === "DELETE" && parts.length === 2)) {
+      if (method === "POST" && typeof input.positionKey !== "string") return fallback;
+      label = method === "POST" ? "新增文案位置" : "删除文案位置";
+      target = `position:${key ?? input.positionKey}`;
+    } else if (family === "version-options" && (method === "POST" && parts.length === 1 || ["PUT", "DELETE"].includes(method) && parts.length === 2)) {
+      if (method === "POST" && typeof input.versionKey !== "string") return fallback;
+      label = method === "POST" ? "新增文案版本" : method === "PUT" ? "编辑文案版本" : "删除文案版本";
+      target = `version:${key ?? input.versionKey}`;
+    } else if (family === "copies" && method === "POST" && parts.length === 1) {
+      if (typeof input.copyKey !== "string") return fallback;
+      label = "新增文案"; target = `copy:${input.copyKey}`; permission = "content_i1_copy_create";
+    } else if (family === "copies" && key) {
+      label = method === "PATCH" && action === "draft" && parts.length === 3 ? "存草稿"
+        : method === "POST" && action === "versions" && parts.length === 3 ? "发布内容版本"
+          : method === "POST" && action === "archive" && parts.length === 3 ? "下架当前发布版"
+            : method === "POST" && action === "versions" && version && tail === "rollback" && parts.length === 5 ? "回滚"
+              : method === "DELETE" && action === "versions" && version && parts.length === 4 ? "删除草稿" : "";
+      if (!label) return fallback;
+      target = `copy:${key}`;
+    } else if (family === "framework" && key && parts.length === 2 && method === "PATCH") {
+      label = "实验框架参数"; target = `framework:${key}`; permission = "content_i1_experiment_manage";
+    } else if (family === "experiments" && method === "POST") {
+      permission = "content_i1_experiment_manage";
+      if (parts.length === 1 && typeof input.copyKey === "string") {
+        label = "创建 A/B 实验"; target = `copy:${input.copyKey}`;
+      } else if (key && parts.length === 3 && ["start", "stop", "discard", "adopt"].includes(action)) {
+        label = ({ start: "启动实验", stop: "停止实验", discard: "弃用实验", adopt: "采纳获胜变体" })[action as "start" | "stop" | "discard" | "adopt"];
+        target = `exp:${key}`;
+      } else return fallback;
+    } else return fallback;
+    const from = input.expectedValue ?? input.expectedVersion;
+    const to = input.value ?? input.version ?? (tail === "rollback" ? version : undefined);
+    return { ...row, original: { owner, method, path, body }, label, target, permission, reason: input.reason,
+      change: from !== undefined || to !== undefined ? `${from ?? "—"} → ${to ?? "—"}` : "" };
+  } catch { return fallback; }
+}
+
+export function pendingI1Commands(): I1Command[] {
+  return uncertainCommandKeys.list().flatMap((row) => {
+    const command = readI1Command(row);
+    return command ? [command] : [];
+  });
+}
+
+function i1CanWrite(permission: string) {
+  const session = useAdminAuth.getState().session;
+  return !!session && (session.role === "superadmin" || session.authorities.includes(permission));
+}
+
+/** Validate the actual write receipt before forgetting its durable evidence. Never use it as current overview. */
+function i1ReceiptMatches(command: I1Command, data: unknown) {
+  if (!command.original) return false;
+  const { path, method, body } = command.original;
+  const input = JSON.parse(body) as Record<string, unknown>;
+  const parts = path.split("/").slice(2).map(decodeURIComponent);
+  const [family, key, action, version, tail] = parts;
+  if (method === "DELETE" && ["positions", "version-options"].includes(family)) return data === null;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+  const result = data as Record<string, unknown>;
+  if (family === "positions") return result.positionKey === input.positionKey && result.status === "active";
+  if (family === "version-options") return result.versionKey === (key ?? input.versionKey)
+    && typeof result.status === "string" && result.status.toUpperCase() === String(input.status).toUpperCase()
+    && result.revision === (method === "POST" ? 1 : Number(input.expectedRevision) + 1);
+  if (family === "framework") return result.key === key && result.current === input.value;
+  if (family === "experiments") return typeof result.id === "string" && (key ? result.id === key : result.copyKey === input.copyKey)
+    && result.state === (key ? ({ start: "running", stop: "concluded", discard: "discarded", adopt: "adopted" })[action as "start"] : "scheduled")
+    && Array.isArray(result.variants) && result.variants.length >= 2;
+  if (family === "copies") return result.key === (key ?? input.copyKey)
+    && result.revision === (key ? Number(input.expectedRevision) + 1 : 1)
+    && (action === "draft" ? result.draftVersion === input.version && result.status === "draft-saved"
+      : method === "DELETE" ? result.draftVersion == null
+        : result.version === (tail === "rollback" ? version : action === "archive" ? input.expectedVersion : input.version)
+          && result.status === (action === "archive" ? "archived" : "published"));
+  return false;
+}
+
+async function sendI1Command(command: I1Command, retry: boolean): Promise<unknown> {
+  if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
+  if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
+  if (!i1CanWrite(command.permission)) throw new Error("当前账号没有这项操作权限，请查询原结果。");
+  if (!uncertainCommandKeys.isDurablyStored(command.fingerprint, command.commandKey)) throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
+  let response: Response, payload: ApiResult<unknown>;
+  try {
+    response = await guardedFetch(`/api/admin/content${command.original.path}`, { method: command.original.method,
+      body: command.original.body, headers: { "Content-Type": "application/json", "Idempotency-Key": command.commandKey }, cache: "no-store" });
+    payload = await response.json() as ApiResult<unknown>;
+  } catch {
+    throw Object.assign(new OutcomeUnknownError("结果未知，请查询原结果或按原请求重试。"), { commandKey: command.commandKey });
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  }
+  if ((payload.code !== undefined && typeof payload.code !== "number") || (payload.message !== undefined && typeof payload.message !== "string")) {
+    throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  }
+  if (!response.ok || payload.code !== 0) {
+    const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status: response.status, reasonCode: payload.message });
+    const rejected = retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && !isIdempotencyOutcomeOpen(payload.message);
+    if (rejected) {
+      uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+      throw failure;
+    }
+    throw Object.assign(new OutcomeUnknownError(failure.message), { commandKey: command.commandKey, status: response.status, reasonCode: payload.message });
+  }
+  if (!i1ReceiptMatches(command, payload.data)) throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
+  uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+  return payload.data;
+}
+
+export async function retryI1Command(saved: I1Command): Promise<void> {
+  const command = pendingI1Commands().find((row) => row.commandKey === saved.commandKey);
+  if (!command?.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
+  await sendI1Command(command, true);
+}
+
+async function prepareI1Command(path: string, init: RequestInit) {
+  const owner = useAdminAuth.getState().session?.adminId;
+  if (owner === undefined) throw new Error("无法确认当前登录账号，请重新登录后再操作。");
+  const fingerprint = `${init.method}:${path}:${init.body}`;
+  const key = idempotencyKey();
+  const original = { owner, method: init.method!, path, body: String(init.body) };
+  const command = readI1Command({ fingerprint, commandKey: key, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i1: original });
+  if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
+  if (!i1CanWrite(command.permission)) throw new Error("当前账号没有这项操作权限，请查询原结果。");
+  if (pendingI1Commands().some((row) => !row.original || row.target === command.target)) throw new Error("此对象有结果未知的原操作，请先到页面上方核对。");
+  uncertainCommandKeys.remember(fingerprint, key, { i1: original });
+  if (!uncertainCommandKeys.isDurablyStored(fingerprint, key)) {
+    uncertainCommandKeys.forget(fingerprint, key);
+    throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
+  }
+  return sendI1Command(command, false);
+}
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  if (path.startsWith("/copy-ab/") && init?.method && init.method !== "GET") return prepareI1Command(path, init) as Promise<T>;
   const headers = new Headers(init?.headers);
   const isWrite = !!init?.method && init.method !== "GET";
   const commandFingerprint = isWrite
@@ -110,8 +276,8 @@ export type CopyPositionView = {
 export type CopyVersionOptionView = {
   versionKey: string;
   name: string;
-  description: string;
-  status: string;
+  description: string | null;
+  status: "ACTIVE" | "INACTIVE";
   sortOrder: number;
   revision: number;
   usageCount?: number;
@@ -162,7 +328,7 @@ export type CopyVersionRow = {
 export type CopyExperimentRow = {
   id: string;
   copyKey: string;
-  variants: { name: string; split: number; cvr: number; version?: string }[];
+  variants: { name: string; split: number; cvr: number; version?: string | null; impressions?: number; conversions?: number }[];
   audience: string;
   estimatedAudience?: number;
   impressions: string;

@@ -194,6 +194,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
     openActionConfirm: setActionConfirm,
     closeActionConfirm: () => setActionConfirm(null),
     openConfirm: setCf,
+    closeConfirm: () => setCf(null),
     content,
     actions,
     contentLoading,

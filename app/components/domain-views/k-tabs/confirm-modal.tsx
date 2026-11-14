@@ -17,8 +17,10 @@ import { Modal, Btn, Chip, OperatorBriefBlock } from "../design-kit";
 import type { ConfirmReq } from "./types";
 
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
-  const [reason, setReason] = useState("");
-  const [value, setValue] = useState("");
+  const [pendingReason, setPendingReason] = useState(() => req.freezePendingInputs ? req.getPendingReason?.() : undefined);
+  const [draftReason, setReason] = useState(pendingReason ?? "");
+  const reason = pendingReason ?? draftReason;
+  const [value, setValue] = useState(() => req.freezePendingInputs ? req.getPendingValue?.() ?? "" : "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 刚打开不报错：字数不够等失焦或点过提交才用警告色（DP-06）。
@@ -45,7 +47,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   // chips 模式:所选项即非空,用精确判空(防空串 option 误配后按钮静默禁用);文本模式:仍要求 trim 后非空(拒纯空白)。
   const inputOk = !req.input || req.input.required === false || (req.input.options ? value !== "" : value.trim().length >= 1);
   const valueProblem = req.input?.validate?.(value);
-  const can = reasonOk && inputOk && !valueProblem && policySettled;
+  const can = !(req.freezePendingInputs && req.blockedReason) && (pendingReason !== undefined || reasonOk && inputOk && !valueProblem && policySettled);
   const reasonShort = reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `已填写 ${reasonLength}/${reasonMax} 字`;
   const submit = async () => {
     if (!can || submitting) return;
@@ -64,6 +66,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       const handled = typeof req.errorHandled === "function" ? req.errorHandled(cause) : req.errorHandled;
       if (!handled) setError(displayAdminError(cause));
     } finally {
+      setPendingReason(req.freezePendingInputs ? req.getPendingReason?.() : undefined);
       setSubmitting(false);
     }
   };
@@ -105,7 +108,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       }
     >
       {/* 提交中锁住框里全部输入和选项，失败后恢复（OP-33）。display: contents 不影响排版。 */}
-      <fieldset disabled={submitting} className="rd-contents">
+      <fieldset disabled={submitting || pendingReason !== undefined} className="rd-contents">
       {error && (surface
         ? <div className="rd-confirm-alert"><Notice tone="danger">{error}</Notice></div>
         : <div role="alert" className="tint danger">{error}</div>)}
