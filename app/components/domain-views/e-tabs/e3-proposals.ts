@@ -70,7 +70,7 @@ export function useE3Proposals() {
     setLegacy(eDomainLegacyCommands.list().filter(r => /^e3_config(?:_batch)?\|/.test(r.fingerprint)));
   }, [owner]);
   useEffect(sync, [sync]);
-  const locked = (keys: string[]) => commands.list().some(r => r.owner === owner && r.state !== "rejected" && r.keys.some(k => keys.includes(k)))
+  const locked = (keys: readonly string[]) => commands.list().some(r => r.owner === owner && r.state !== "rejected" && r.keys.some(k => keys.includes(k)))
     || eDomainLegacyCommands.list().some(r => /^e3_config(?:_batch)?\|/.test(r.fingerprint) && r.fingerprint.split("|")[1].split(",").some(k => keys.includes(k)));
 
   async function lookup(record: E3Proposal) {

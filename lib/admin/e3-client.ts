@@ -1,6 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
+import { formatBusinessTime } from "@/lib/admin/business-time";
 import { formatAdminApiError, displayAdminReadError, guardedFetch } from "@/lib/admin/error-messages";
-import { operatorDeviceStatus, operatorE3OperationLabel, operatorE3OperationState, operatorE3Reason, operatorTimestamp } from "@/lib/admin/e-operator-display";
+import { operatorDeviceStatus, operatorE3OperationLabel, operatorE3OperationState, operatorE3Reason } from "@/lib/admin/e-operator-display";
 
 export interface E3Stats {
   averageAgeMonths: number | null;
@@ -179,11 +180,7 @@ function frontendParams(config: Record<string, string | number | null> | null | 
 
 function timeText(value: string | null | undefined) {
   if (!value) return "—";
-  const date = new Date(value);
-  if (!Number.isNaN(date.getTime())) {
-    return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
-  }
-  return operatorTimestamp(value) === "未采集" ? "时间待核验" : operatorTimestamp(value);
+  return formatBusinessTime(value, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }, "时间待核验");
 }
 
 function fromTx(row: BackendTradeinTx): E3OperationMetric {
