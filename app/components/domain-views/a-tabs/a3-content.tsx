@@ -100,6 +100,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty 
   const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<Mode | null>(null);
   const [readReady, setReadReady] = useState(false);
+  const conflictDraft = useRef(false);
   const original = commands.find("docs");
   const savedForm = original?.original.kind === "docs" ? original.original : null;
   const document = mode && savedForm ? savedForm.document : loadedDocument;
@@ -110,11 +111,18 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty 
   }, [recovery, onRecovered]);
   const refresh = useCallback(async () => {
     if (!canRead) return;
-    setReadReady(false); setLoading(true); setError(null);
+    setReadReady(false); setLoading(true);
+    if (!conflictDraft.current) setError(null);
     try {
       const value = await fetchDeveloperDocsAdmin();
-      setDocument(value); setBaseline(value); setLocale(Object.keys(value.locales)[0] ?? "en"); setReason(""); setReadReady(true);
-    } catch (cause) { setDocument(null); setBaseline(null); setError(displayAdminError(cause)); }
+      setDocument(draft => conflictDraft.current && draft ? { ...draft, revision: value.revision } : value);
+      setBaseline(value);
+      if (!conflictDraft.current) { setLocale(Object.keys(value.locales)[0] ?? "en"); setReason(""); }
+      setReadReady(true);
+    } catch (cause) {
+      if (!conflictDraft.current) { setDocument(null); setBaseline(null); }
+      setError(previous => conflictDraft.current && previous ? `${previous}；${displayAdminError(cause)}` : displayAdminError(cause));
+    }
     finally { setLoading(false); }
   }, [canRead]);
   useEffect(() => { void refresh(); }, [refresh, nonce]);
@@ -153,10 +161,17 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty 
         path: "/api/admin/developer/docs", method: "PUT", body: JSON.stringify({ ...payload, expectedRevision: payload.revision, revision: undefined, reason: reason.trim() }),
         reason: reason.trim(), name: "开发者接口文档", change: `${STATUS_NAME[baseline!.status]} → ${STATUS_NAME[target]} · ${document.version}` });
       await commands.send(record);
+      conflictDraft.current = false;
       setReadReady(false); setReason(""); setMode(null);
       toast(target === "PUBLISHED" ? "开发者接口文档已发布" : "草稿已保存，App 读到的不变", "success");
       await refresh();
-    } catch (cause) { setError(displayAdminError(cause)); }
+    } catch (cause) {
+      setError(displayAdminError(cause));
+      if ((cause as { reasonCode?: string }).reasonCode === "DEVELOPER_DOCS_VERSION_CONFLICT" && !commands.find("docs")) {
+        conflictDraft.current = true; setReadReady(false); setMode(null);
+        await refresh();
+      }
+    }
     finally { setSaving(false); }
   };
 
@@ -171,8 +186,8 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty 
   return <div className="rd-tab-stack" data-testid="published-content-developerDocs">
     {canWrite && <div className="rd-toolbar a3-savebar" data-end="">
       <span className="rd-toolbar-note" data-tone={hasChanges ? "warn" : undefined}>{hasChanges ? `有未保存的修改：${changedLocales.map(localeName).join("、") || "版本"}` : "没有未保存的修改"}</span>
-      <Button disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
-      <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在保存" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
+      <Button disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; if (!conflictDraft.current) setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
+      <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在保存" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; if (!conflictDraft.current) setError(null); setMode("PUBLISHED"); }}>发布…</Button>
     </div>}
     {error && !mode && <Notice tone="danger">{error}</Notice>}
     <Panel title="开发者接口文档" icon={Code2} tone="role-2" sub={`${publicLine(document)} · 正文版本 ${versionName(document.version)}`}
@@ -277,6 +292,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty }: 
   const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<Mode | null>(null);
   const [readReady, setReadReady] = useState(false);
+  const conflictDraft = useRef(false);
   const original = commands.find("how");
   const savedForm = original?.original.kind === "how" ? original.original : null;
   const document = mode && savedForm ? savedForm.document : loadedDocument;
@@ -294,18 +310,23 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty }: 
   const refresh = useCallback(async (confirmDiscard = true) => {
     if (!canRead || busyRef.current) return;
     const previous = stateRef.current;
-    if (confirmDiscard && JSON.stringify(previous.document) !== JSON.stringify(previous.baseline)
+    if (!conflictDraft.current && confirmDiscard && JSON.stringify(previous.document) !== JSON.stringify(previous.baseline)
       && !window.confirm("刷新会丢弃尚未保存的说明内容，是否继续？")) return;
-    setReadReady(false); busyRef.current = true; setLoading(true); setError(null);
+    setReadReady(false); busyRef.current = true; setLoading(true);
+    if (!conflictDraft.current) setError(null);
     try {
       const value = await fetchHowContentAdmin();
       const next = Object.keys(value.contents).length ? value : { ...initialDocument(), ...value, contents: initialDocument().contents };
       const nextKey = next.contents[previous.key] ? previous.key : KEYS.find(item => next.contents[item]) ?? KEYS[0];
       const locales = row(row(next.contents[nextKey]).locales);
-      setDocument(next); setBaseline(next); setKey(nextKey); setReadReady(true);
-      setLocale(locales[previous.locale] ? previous.locale : Object.keys(locales)[0] ?? "en");
+      setDocument(draft => conflictDraft.current && draft ? { ...draft, revision: next.revision } : next);
+      setBaseline(next); setReadReady(true);
+      if (!conflictDraft.current) {
+        setKey(nextKey);
+        setLocale(locales[previous.locale] ? previous.locale : Object.keys(locales)[0] ?? "en");
+      }
     }
-    catch (cause) { setError(displayAdminError(cause)); }
+    catch (cause) { setError(previous => conflictDraft.current && previous ? `${previous}；${displayAdminError(cause)}` : displayAdminError(cause)); }
     finally { busyRef.current = false; setLoading(false); }
   }, [canRead]);
   useEffect(() => { void refresh(false); }, [refresh, nonce]);
@@ -377,12 +398,19 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty }: 
         path: "/api/admin/content/how-it-works", method: "PUT", body: JSON.stringify({ ...payload, expectedRevision: payload.revision, revision: undefined, reason: reason.trim() }),
         reason: reason.trim(), name: "业务说明", change: `${STATUS_NAME[baseline!.status]} → ${STATUS_NAME[target]} · ${document.version}` });
       await commands.send(record);
+      conflictDraft.current = false;
       setReadReady(false); setReason(""); setMode(null);
       toast(target === "PUBLISHED" ? "业务说明已发布" : "草稿已保存，App 读到的不变", "success");
       busyRef.current = false;
       await refresh(false);
     }
-    catch (cause) { setError(`${displayAdminError(cause)}；当前未保存内容已保留。刷新会丢弃本地修改，请先核对并保留需要的内容。`); }
+    catch (cause) {
+      if ((cause as { reasonCode?: string }).reasonCode === "HOW_CONTENT_VERSION_CONFLICT" && !commands.find("how")) {
+        setError(displayAdminError(cause));
+        conflictDraft.current = true; setReadReady(false); setMode(null); busyRef.current = false;
+        await refresh(false);
+      } else setError(`${displayAdminError(cause)}；当前未保存内容已保留。刷新会丢弃本地修改，请先核对并保留需要的内容。`);
+    }
     finally { busyRef.current = false; setSaving(false); }
   };
 
@@ -400,8 +428,8 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty }: 
   return <div className="rd-tab-stack" data-testid="published-content-how">
     {canWrite && <div className="rd-toolbar a3-savebar" data-end="">
       <span className="rd-toolbar-note" data-tone={hasChanges ? "warn" : undefined}>{hasChanges ? `有未保存的修改：${changedPages.map((item) => PAGE_LABELS[item]).join("、") || "文档版本或状态"}` : "没有未保存的修改"}</span>
-      <Button disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
-      <Button variant="primary" disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : publishBlockedReasons.length ? "这份内容现在不能发布" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
+      <Button disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; if (!conflictDraft.current) setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
+      <Button variant="primary" disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : publishBlockedReasons.length ? "这份内容现在不能发布" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; if (!conflictDraft.current) setError(null); setMode("PUBLISHED"); }}>发布…</Button>
     </div>}
     {error && !mode && <Notice tone="danger">{error}</Notice>}
     {publishBlockedReasons.length > 0 && <Notice tone="danger" title="这份内容现在不能发布">{publishBlockedReasons.join("；")}。可以先保存草稿。</Notice>}

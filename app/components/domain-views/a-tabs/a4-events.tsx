@@ -384,7 +384,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     } catch (error) {
       if (!commands.find(record.fingerprint)) {
         if (retained) { ctx.closeActionConfirm?.(); await refreshOverview(true); }
-        else overviewReady.current = true;
+        else overviewReady.current = (error as { reasonCode?: string }).reasonCode !== "A4_EVENT_LIFECYCLE_STALE";
       }
       toast(displayAdminError(error));
       throw error;
@@ -842,14 +842,25 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     });
   };
 
-  const transitionLifecycle = (currentSchema: A4Overview["schemaRegistrations"][number], original?: A4Command) => {
+  const transitionLifecycle = (currentSchema: A4Overview["schemaRegistrations"][number], original?: A4Command, desired?: Exclude<A4Lifecycle, "new">) => {
     const pending = commands.find(`lifecycle:${currentSchema.eventName}`);
     if (!original && pending) { transitionLifecycle(currentSchema, pending); return; }
     if (!original) checkNewWrite();
     const saved = original?.original.kind === "lifecycle" ? original.original : undefined;
     const schema = saved?.schema ?? currentSchema;
-    const next = saved?.target ?? ({ new: "pending_publish", pending_publish: "gray", gray: "full", full: "disabled" } as const)[schema.lifecycleState as "new" | "pending_publish" | "gray" | "full"];
+    const next = saved?.target ?? desired ?? NEXT_LIFECYCLE[schema.lifecycleState];
     if (!next || !canWrite) return;
+    let stale = false;
+    const rereadBaseline = async () => {
+      overviewReady.current = false;
+      if (!await refreshOverview(true)) throw new Error("A4_ORIGINAL_READ_REQUIRED");
+      try {
+        const latest = await fetchA4SchemaRegistration(schema.eventName);
+        setSchemaLookup(current => current?.eventName === latest.eventName ? latest : current);
+        // Keep the requested destination; a conflict must never become a different lifecycle action.
+        transitionLifecycle(latest, undefined, next);
+      } catch (error) { overviewReady.current = false; throw error; }
+    };
     openActionConfirm({ briefKind: "record",
       action: `更新事件状态 · ${schema.eventName}`,
       title: next === "disabled" ? "停用这个事件" : `把事件改为${lifecycleText(next)}`,
@@ -871,9 +882,22 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       reasonMax: 200,
       initialReason: original?.reason,
       getPendingReason: () => commands.find(`lifecycle:${schema.eventName}`)?.reason,
-      run: (reason) => runDirect(saved ?? { kind: "lifecycle", schema, target: next }, reason,
-        "更新事件状态", `${schema.eventName} · ${lifecycleText(schema.lifecycleState)} → ${lifecycleText(next)}`,
-        `${schema.eventName} 已改为 ${lifecycleText(next)}`),
+      blockedReason: !original && NEXT_LIFECYCLE[schema.lifecycleState] !== next ? displayAdminError(new Error("A4_EVENT_LIFECYCLE_TRANSITION_INVALID")) : undefined,
+      run: async (reason) => {
+        if (!original && NEXT_LIFECYCLE[schema.lifecycleState] !== next) throw new Error("A4_EVENT_LIFECYCLE_TRANSITION_INVALID");
+        if (stale) { await rereadBaseline(); throw new Error("A4_CONFLICT_RECHECK_REQUIRED"); }
+        try {
+          return await runDirect(saved ?? { kind: "lifecycle", schema, target: next }, reason,
+            "更新事件状态", `${schema.eventName} · ${lifecycleText(schema.lifecycleState)} → ${lifecycleText(next)}`,
+            `${schema.eventName} 已改为 ${lifecycleText(next)}`);
+        } catch (error) {
+          if (!original && !commands.find(`lifecycle:${schema.eventName}`) && (error as { reasonCode?: string }).reasonCode === "A4_EVENT_LIFECYCLE_STALE") {
+            stale = true;
+            await rereadBaseline().catch(cause => toast(displayAdminError(cause)));
+          }
+          throw error;
+        }
+      },
     });
   };
 
@@ -1007,12 +1031,31 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       explain={<><p>提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内可以按原请求重试，内容和理由都不变，后端认得出是同一次提交，不会重复执行。</p><p>登记的原申请保存在这个浏览器标签页里，拿到审批单后这条会清掉。参数、上线进度和清理不保存原请求，没收到结果时请到「操作记录与审批」核对。</p></>} />
   );
 
+  const ticketNotice = currentRegistryTicket && (() => {
+    const t = currentRegistryTicket;
+    const tone = t.status === "approved" ? "ok" : t.status === "rejected" ? "danger" : t.status === "pending" ? "warn" : "done";
+    const text = {
+      pending: "已提交，等另一位超级管理员批准；批准前事件目录不变。",
+      approved: "已批准，事件目录已重新读取。",
+      rejected: "被驳回，事件目录没有变化。",
+      withdrawn: "已撤回，事件目录没有变化。",
+      expired: "已过期，事件目录没有变化。",
+    }[t.status];
+    return (
+      <Notice tone={tone} title={`登记审批单 ${t.id}`}
+        action={<><Button size="sm" onClick={() => void refreshRegistryTicket()}>查询原结果</Button>{registryActor?.authorities.includes("platform_a2_read") && <Link className="rd-link" href="/platform/audit">查看操作记录与审批</Link>}</>}>
+        {text}
+      </Notice>
+    );
+  })();
+
   if (loadError && !overview) {
     return (
       <div className="a4-page">
         {header}
         <Conclusion state="unknown" icon={Activity}>事件数据读取失败，这页没有判断</Conclusion>
         {recoveryNotice}
+        {ticketNotice}
         {registryModal}
         <Panel title="用户行为事件">
           <BlockState state="error" title="事件数据读取失败" detail={<><p>{loadError}</p><p>为避免误判，页面已停止展示和写入。</p></>}
@@ -1026,6 +1069,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       <div className="a4-page">
         {header}
         {recoveryNotice}
+        {ticketNotice}
         {registryModal}
         <div className="a4-loading" aria-label="正在读取用户行为事件">
           <div className="rd-skeleton a4-skel-line" />
@@ -1078,24 +1122,6 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         onOpen={() => setTab("modules")} openLabel="查看接入批次" />
     </StatBand>
   );
-
-  const ticketNotice = currentRegistryTicket && (() => {
-    const t = currentRegistryTicket;
-    const tone = t.status === "approved" ? "ok" : t.status === "rejected" ? "danger" : t.status === "pending" ? "warn" : "done";
-    const text = {
-      pending: "已提交，等另一位超级管理员批准；批准前事件目录不变。",
-      approved: "已批准，事件目录已重新读取。",
-      rejected: "被驳回，事件目录没有变化。",
-      withdrawn: "已撤回，事件目录没有变化。",
-      expired: "已过期，事件目录没有变化。",
-    }[t.status];
-    return (
-      <Notice tone={tone} title={`登记审批单 ${t.id}`}
-        action={registryActor?.authorities.includes("platform_a2_read") ? <Link className="rd-link" href="/platform/audit">查看操作记录与审批</Link> : undefined}>
-        {text}
-      </Notice>
-    );
-  })();
 
   /* ── 事件目录 ── */
   const lifeCounts = Object.fromEntries(LIFECYCLE_ORDER.map((state) => [state, SCHEMA_REGISTRATIONS.filter((schema) => schema.lifecycleState === state).length])) as Record<A4Lifecycle, number>;

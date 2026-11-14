@@ -6,7 +6,7 @@
  * 新加的只有界面：分区、每块旁边的「App 上的样子」、保存前的确认框；推荐渠道只填进表单，保存了才生效。
  * App 的拼法照 App share.ts：链接 = 分享基础链接 + 邀请码；外链模板里 {link}、{text} 各换第一个，编码后代入。
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { CircleOff, Download, EyeOff, Globe, Home, Languages, Link2, Share2, Smartphone, type LucideIcon } from "lucide-react";
 import { BlockState, Button, Cell, Check, Explain, KeepText, Fact, Facts, Field, Input, Modal, Notice, Panel, Segments, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr } from "@/app/components/rd";
@@ -58,20 +58,30 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [previewKey, setPreviewKey] = useState("");
   const [readReady, setReadReady] = useState(false);
+  const conflictDraft = useRef(false);
   const original = commands.find("experience");
   const savedForm = original?.original.kind === "experience" ? original.original : null;
   const config = confirmOpen && savedForm ? savedForm.config : loadedConfig;
   const baseline = confirmOpen && savedForm ? savedForm.baseline : loadedBaseline;
   useEffect(() => {
     if (recovery?.original.kind !== "experience") return;
-    setReason(recovery.reason); setError(null); setConfirmOpen(true); onRecovered();
+    setReason(recovery.reason); if (!conflictDraft.current) setError(null); setConfirmOpen(true); onRecovered();
   }, [recovery, onRecovered]);
 
   const refresh = useCallback(async () => {
     if (!canRead) return;
-    setReadReady(false); setLoading(true); setError(null); setSuccess(null);
-    try { const next = await fetchPlatformExperienceConfig(); setConfig(next); setBaseline(next); setReadReady(true); return next; }
-    catch (cause) { setConfig(null); setBaseline(null); setError(displayAdminError(cause)); return null; }
+    setReadReady(false); setLoading(true); setSuccess(null);
+    if (!conflictDraft.current) setError(null);
+    try {
+      const next = await fetchPlatformExperienceConfig();
+      setConfig(draft => conflictDraft.current && draft ? { ...draft, version: next.version } : next);
+      setBaseline(next); setReadReady(true); return next;
+    }
+    catch (cause) {
+      if (!conflictDraft.current) { setConfig(null); setBaseline(null); }
+      setError(previous => conflictDraft.current && previous ? `${previous}；${displayAdminError(cause)}` : displayAdminError(cause));
+      return null;
+    }
     finally { setLoading(false); }
   }, [canRead]);
   useEffect(() => { void refresh(); }, [refresh, nonce]);
@@ -105,13 +115,18 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
         path: "/api/admin/platform/config/experience", method: "PUT", body: JSON.stringify(platformExperienceBody(config, reason, session?.operator ?? session?.username ?? "")),
         reason: reason.trim(), name: "App 分享与下载", change: `v${config.version} → v${config.version + 1} · ${changed.join("、")}` });
       await commands.send(record, Boolean(original));
+      conflictDraft.current = false;
       setReadReady(false); setConfirmOpen(false); setReason("");
       const saved = await refresh();
       if (saved) { setSuccess(`已保存，当前版本 v${saved.version}。`); toast(`App 分享与下载已保存，当前版本 v${saved.version}`, "success"); }
       else toast(`已保存，但页面刷新失败，正在重新加载。请不要重复提交。`, "warn");
     } catch (cause) {
       setError(displayAdminError(cause));
-      if (original && !commands.find("experience")) { toast(displayAdminError(cause), "error"); setConfirmOpen(false); await refresh(); }
+      if (!original && (cause as { reasonCode?: string }).reasonCode === "PLATFORM_EXPERIENCE_VERSION_CONFLICT" && !commands.find("experience")) {
+        // Keep the intended values and reason; only a successful GET supplies a new CAS baseline.
+        conflictDraft.current = true; setReadReady(false); setConfirmOpen(false);
+        await refresh();
+      } else if (original && !commands.find("experience")) { toast(displayAdminError(cause), "error"); setConfirmOpen(false); await refresh(); }
     } finally { setSaving(false); }
   };
 
@@ -137,7 +152,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
         {changed.length ? `有未保存的修改：${changed.join("、")}` : `版本 v${config.version}${config.updatedAt ? ` · ${formatBusinessTimeCompact(config.updatedAt, "—")} 读取（${businessZone().label}）` : ""}`}
       </span>
       <Button disabled={loading || saving} loading={loading} onClick={() => void refresh()}>刷新</Button>
-      {canWrite && <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在提交" : undefined} onClick={() => { if (original || !readReady || !canWrite) return; setError(null); setConfirmOpen(true); }}>保存…</Button>}
+      {canWrite && <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在提交" : undefined} onClick={() => { if (original || !readReady || !canWrite) return; if (!conflictDraft.current) setError(null); setConfirmOpen(true); }}>保存…</Button>}
     </div>
     {success && <Notice tone="ok">{success}</Notice>}
     {error && !confirmOpen && <Notice tone="danger" title="没有保存">{error}</Notice>}

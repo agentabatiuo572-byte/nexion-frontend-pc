@@ -27,7 +27,8 @@ type Original = A6Original | A7Original;
 export type RbacTicket = Pick<A2OperationRow, "id" | "action" | "obj" | "mine" | "operationCode" | "status">;
 export type RbacCommand = PendingMutationRecord & {
   actorId: number; original: Original; body: string; reason: string; operator: string; name: string; change: string;
-  ticket?: RbacTicket; proposalNotFound?: boolean;
+  /** A POST receipt proves creation; only ticket is the last authoritative current-state lookup. */
+  receipt?: RbacTicket; ticket?: RbacTicket; proposalNotFound?: boolean;
 };
 
 export const rbacProposal = (original: Original) => ["a6-status", "a6-delete", "a6-grants"].includes(original.kind);
@@ -106,6 +107,7 @@ function validRecord(record: RbacCommand) {
     return id(record.actorId) && validOriginal(record.original) && text(record.reason) && text(record.operator) && text(record.name) && text(record.change)
       && record.fingerprint === `${record.actorId}:${rbacObject(record.original)}` && record.body === wire(record.original, record.reason, record.operator).body
       && (record.ticket === undefined || (checkTicket(record.original, record.ticket), true))
+      && (record.receipt === undefined || (checkTicket(record.original, record.receipt), true))
       && (record.proposalNotFound === undefined || typeof record.proposalNotFound === "boolean");
   } catch { return false; }
 }
@@ -169,13 +171,10 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
     return ticket;
   };
   const observe = (record: RbacCommand, ticket: RbacTicket | null) => {
-    if (!saved(record.commandKey)) throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
-    commands.remember(record.fingerprint, record.commandKey, { ...record, ticket: ticket ?? undefined, proposalNotFound: !ticket });
-    sync();
-  };
-  const clearPendingObservation = (record: RbacCommand) => {
-    if (record.ticket?.status !== "pending") return;
-    commands.remember(record.fingerprint, record.commandKey, { ...record, ticket: undefined, proposalNotFound: false });
+    const current = saved(record.commandKey);
+    if (!current) throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
+    commands.remember(record.fingerprint, record.commandKey, { ...current, ticket: ticket ?? current.ticket,
+      proposalNotFound: !ticket && !current.ticket && !current.receipt });
     sync();
   };
   const releaseExpiredProposal = async (record: RbacCommand, confirmed: boolean) => {
@@ -188,7 +187,7 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
   };
   const send = async (record: RbacCommand, retry: boolean) => {
     requireOriginalActor(record, true);
-    if (isRetryExpired(record) || record.ticket) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
+    if (isRetryExpired(record) || record.ticket || record.receipt) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
     if (!saved(record.commandKey) || !commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("RBAC_ORIGINAL_STORAGE_FAILED");
     const request = wire(record.original, record.reason, record.operator);
     try {
@@ -208,6 +207,8 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
       const original = record.original;
       if (rbacProposal(original) && object(result.data) && typeof result.data.id === "string") {
         checkTicket(original, result.data);
+        commands.remember(record.fingerprint, record.commandKey, { ...record, receipt: result.data, ticket: retry ? record.ticket : result.data });
+        sync();
         return { kind: "proposal" as const, ticket: result.data };
       }
       let roleId: number | undefined;
@@ -238,5 +239,5 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
       throw error instanceof OutcomeUnknownError ? error : new OutcomeUnknownError("RBAC_MUTATION_OUTCOME_UNKNOWN", { cause: error });
     }
   };
-  return { records, sync, saved, blocked, capture, send, queryProposal, observe, clearPendingObservation, releaseExpiredProposal };
+  return { records, sync, saved, blocked, capture, send, queryProposal, observe, releaseExpiredProposal };
 }

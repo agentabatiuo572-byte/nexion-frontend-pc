@@ -36,6 +36,7 @@ type ConfirmReq = {
   statedBrief: { impact: string; check: string };
   facts: ReactNode;
   content?: ReactNode;
+  blockedReason?: string;
   run: (reason: string) => Promise<void>;
   getRecord: () => RbacCommand | undefined;
 };
@@ -190,15 +191,38 @@ export default function A7Menus() {
     // A7 has no receipt lookup. Reading today's tree never releases an unresolved original command.
     setToast(displayAdminReadError(new Error("RBAC_READBACK_ONLY")));
   };
-  const openOperation = (original: A7Original, view: Omit<ConfirmReq, "run" | "getRecord">, recovery?: RbacCommand) => {
+  const openOperation = (original: A7Original, view: Omit<ConfirmReq, "run" | "getRecord">, recovery?: RbacCommand, rechecked = false) => {
+    let blockedReason: string | undefined;
     if (!recovery) {
       try { requireNew(original); }
-      catch (error) { setToast(displayAdminError(error)); return; }
+      catch (error) { if (!rechecked) { setToast(displayAdminError(error)); return; } blockedReason = displayAdminError(error); }
     }
     let saved = recovery;
+    let stale = false;
     const getRecord = () => saved ? commands.saved(saved.commandKey) : undefined;
-    setConfirmReq({ ...view, getRecord, run: async (reason) => {
+    const rereadBaseline = async () => {
+      const latest = await refresh(true);
+      if (!latest || original.kind === "a7-create") throw new Error("RBAC_FRESH_READ_REQUIRED");
+      const node = latest.tree.flatMap(root => [root, ...root.children]).find(node => node.id === original.node.id);
+      if (!node) {
+        setConfirmReq(current => current && { ...current, blockedReason: displayAdminError(new Error("MENU_NODE_NOT_FOUND")) });
+        return;
+      }
+      const parent = latest.tree.find(root => root.id === node.parentId);
+      busy.current = false;
+      if (original.kind === "a7-delete") openDelete(node, parent, undefined, true);
+      else {
+        setMode(current => current?.kind === "update" ? { kind: "update", node } : current);
+        const [, action, detail, view] = menuFormConfirmation({ kind: "update", node }, latest.tree, {
+          menuCode: node.menuCode, menuName: original.input.menuNameZh ?? original.input.menuName ?? "", parentCode: parent?.menuCode ?? "",
+          routePath: original.input.routePath ?? "", icon: original.input.icon ?? "", sortOrder: original.input.sortOrder ?? node.sortOrder, status: original.input.status ?? node.status,
+        });
+        openOperation({ ...original, node, parent, input: { ...original.input, expectedVersion: node.version } }, { briefKind: "config", action, detail, ...view }, undefined, true);
+      }
+    };
+    setConfirmReq({ ...view, blockedReason, getRecord, run: async (reason) => {
       try {
+        if (stale) { await rereadBaseline(); throw new Error("RBAC_CONFLICT_RECHECK_REQUIRED"); }
         if (saved && !getRecord()) throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
         const retry = !!saved;
         if (!saved) {
@@ -212,7 +236,10 @@ export default function A7Menus() {
         try {
           try { await commands.send(saved, retry); }
           catch (error) {
-            if (retry && !commands.saved(saved.commandKey)) { setConfirmReq(null); setMode(null); await refresh(); }
+            if (!retry && !commands.saved(saved.commandKey) && (error as { reasonCode?: string }).reasonCode === "MENU_VERSION_STALE") {
+              stale = true; freshOverview.current = null;
+              await rereadBaseline().catch(cause => setToast(displayAdminReadError(cause)));
+            } else if (retry && !commands.saved(saved.commandKey)) { setConfirmReq(null); setMode(null); await refresh(); }
             throw error;
           }
           requireActor();
@@ -226,7 +253,7 @@ export default function A7Menus() {
     } });
   };
 
-  const openDelete = (n: A7MenuTreeNode, parent: A7MenuTreeNode | undefined, recovery?: RbacCommand) => {
+  const openDelete = (n: A7MenuTreeNode, parent: A7MenuTreeNode | undefined, recovery?: RbacCommand, rechecked = false) => {
     const name = n.menuNameZh || n.menuName;
     openOperation({ kind: "a7-delete", node: n, parent }, { briefKind: "config",
       action: `删除菜单 · ${name}`,
@@ -255,7 +282,7 @@ export default function A7Menus() {
           <p>有启用的权限挂在它下面，或有角色勾了它，后端会拒绝；角色的勾选到「角色管理」取消。</p>
         </Notice>
       ),
-    }, recovery);
+    }, recovery, rechecked);
   };
 
   // The visual worker must connect the saved-command entry to this handler; A7 has no recovery-list markup yet.
@@ -360,7 +387,7 @@ export default function A7Menus() {
       {confirmReq && (
         <OperationConfirmModal briefKind={confirmReq.briefKind}
           initialReason={recoveryRecord?.reason} getPendingReason={() => confirmReq.getRecord()?.reason}
-          blockedReason={!recoveryRecord ? readReason : undefined}
+          blockedReason={!recoveryRecord ? confirmReq.blockedReason ?? readReason : undefined}
           inlineApproval={{ resolve: () => undefined, pending: !!recoveryRecord, initialRecovery: "retry",
             expired: !!recoveryRecord && isRetryExpired(recoveryRecord), disabledReason: recoveryRecord && !authorities.includes("platform_a7_write") ? displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN")) : undefined,
             recover: async () => { await queryOriginal(); return true; } }}

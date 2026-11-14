@@ -121,7 +121,9 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     if (!quiet) setLoading(true);
     setLoadError(null);
     try {
-      setOverview(await fetchA3Overview());
+      const next = await fetchA3Overview();
+      current.current = { ...current.current, overview: next };
+      setOverview(next);
       overviewReady.current = true;
       setReadAt(businessClock(Date.now()));
       return true;
@@ -179,8 +181,10 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
           throw new Error(copy);
         }
         const retained = commands.find(`flag:${f.key}`);
+        const latest = current.current.overview?.featureFlags.find(row => row.key === f.key);
         if (!retained && (!overviewReady.current || !current.current.overview?.featureFlags.find(row => row.key === f.key)?.writable
           || !(current.current.session?.role === "superadmin" || current.current.session?.authorities?.includes("platform_a3_write")))) throw new Error("A3_ORIGINAL_READ_REQUIRED");
+        if (!retained && latest && latest.status !== cur) { flagChg(latest); throw new Error("A3_CONFLICT_RECHECK_REQUIRED"); }
         const record = retained ?? commands.capture({ original: { kind: "flag", row: f, value: val },
           path: "/api/admin/platform/config", method: "PUT", body: JSON.stringify({ kind: "flag", flagKey: f.key, value: val, expectedValue: cur, reason, operator }),
           reason, name, change: `${STATE_NAME[cur] ?? cur} → ${STATE_NAME[val] ?? val}` });
@@ -193,7 +197,13 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
           toast(`「${name}」已切换为${STATE_NAME[record.original.kind === "flag" ? record.original.value : val] ?? val}`, "success");
           if (!await refreshOverview(true)) toast(`已保存，但页面刷新失败，正在重新加载。请不要重复提交。`, "warn");
         } catch (error) {
-          if (retained && !commands.find(record.fingerprint)) { toast(displayAdminError(error), "error"); ctx.closeActionConfirm?.(); await refreshOverview(true); }
+          if (!retained && !commands.find(record.fingerprint) && (error as { reasonCode?: string }).reasonCode === "A3_FLAG_STALE") {
+            overviewReady.current = false;
+            if (await refreshOverview(true)) {
+              const latest = current.current.overview?.featureFlags.find(row => row.key === f.key);
+              if (latest) flagChg(latest);
+            }
+          } else if (retained && !commands.find(record.fingerprint)) { toast(displayAdminError(error), "error"); ctx.closeActionConfirm?.(); await refreshOverview(true); }
           throw error;
         } finally { setMutating(null); }
       },
@@ -239,8 +249,10 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         if (!/^[+-]?\d+$/.test(normalizedValue)) throw new Error("A3_PARAM_INTEGER_REQUIRED");
         const slot = `param:${param.key}`;
         const retained = commands.find(slot);
+        const latest = current.current.overview?.platformParams.find(row => row.key === param.key);
         if (!retained && (!overviewReady.current || !current.current.overview?.platformParams.find(row => row.key === param.key)?.writable
           || !(current.current.session?.role === "superadmin" || current.current.session?.authorities?.includes("platform_a3_write")))) throw new Error("A3_ORIGINAL_READ_REQUIRED");
+        if (!retained && latest && latest.value !== param.value) { paramChg(latest); throw new Error("A3_CONFLICT_RECHECK_REQUIRED"); }
         const record = retained ?? commands.capture({ original: { kind: "param", row: param, value: normalizedValue },
           path: "/api/admin/platform/config", method: "PUT", body: JSON.stringify({ kind: "param", flagKey: param.key, value: normalizedValue, expectedValue: param.value, reason, operator }),
           reason, name, change: `${param.value} → ${normalizedValue} ${param.unit}` });
@@ -252,7 +264,13 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
           toast(`${name}已更新`, "success");
           if (!await refreshOverview(true)) toast(`已保存，但页面刷新失败，正在重新加载。请不要重复提交。`, "warn");
         } catch (error) {
-          if (retained && !commands.find(slot)) { toast(displayAdminError(error), "error"); ctx.closeActionConfirm?.(); await refreshOverview(true); }
+          if (!retained && !commands.find(slot) && (error as { reasonCode?: string }).reasonCode === "A3_PARAM_STALE") {
+            overviewReady.current = false;
+            if (await refreshOverview(true)) {
+              const latest = current.current.overview?.platformParams.find(row => row.key === param.key);
+              if (latest) paramChg(latest);
+            }
+          } else if (retained && !commands.find(slot)) { toast(displayAdminError(error), "error"); ctx.closeActionConfirm?.(); await refreshOverview(true); }
           throw error;
         } finally { setMutating(null); }
       },

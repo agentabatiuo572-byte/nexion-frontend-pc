@@ -53,7 +53,7 @@ type Submitted = {
   label: string;
   change: string;
   at: number;
-  status: "pending" | "approved" | "rejected" | "withdrawn" | "expired";
+  status?: "pending" | "approved" | "rejected" | "withdrawn" | "expired";
   /** 改授权时提交的完整两组，用来和之后读到的详情比，看实际存下了什么（A6-PD01）。 */
   desired?: { permissionCodes: string[]; menuIds: number[] };
 };
@@ -277,17 +277,20 @@ export default function A6Roles() {
       setToast(displayAdminError(new Error("RBAC_READBACK_ONLY")));
       return false;
     }
-    // Pending is an observation, not a permanent local lock. A failed new lookup must remain visible outside the overview branch.
-    commands.clearPendingObservation(record);
+    // A lookup failure cannot erase a previously confirmed creation or decision.
     const ticket = await commands.queryProposal(record);
     requireActor();
     commands.observe(record, ticket);
     if (!ticket) { setToast(displayAdminReadError(new Error("A6_ORIGINAL_PROPOSAL_NOT_FOUND"))); return false; }
     setConfirmReq(null);
     // A terminal ticket is authoritative about the decision; the current grants still require a real GET.
-    if (ticket.status !== "pending") await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
-    if (announce) setToast(displayAdminReadError(new Error(`A6_PROPOSAL_${ticket.status.toUpperCase()}`)));
-    return ticket;
+    let readbackFailed = false;
+    if (ticket.status !== "pending") {
+      try { await reloadCurrent("role" in record.original ? record.original.role.id : selectedId); }
+      catch { readbackFailed = true; setToast(displayAdminReadError(new Error("A6_ROLE_READBACK_FAILED"))); }
+    }
+    if (announce && !readbackFailed) setToast(displayAdminReadError(new Error(`A6_PROPOSAL_${ticket.status.toUpperCase()}`)));
+    return { ticket, readbackFailed };
   };
   const executeOriginal = async (record: RbacCommand, retry: boolean) => {
     if (!record.original.kind.startsWith("a6-")) throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
@@ -307,8 +310,10 @@ export default function A6Roles() {
       if (result.kind === "proposal") {
         // The retained POST receipt may predate approval. Only GET by the original key determines today's status.
         try {
-          const ticket = await queryOriginal(record, false);
-          if (!ticket) throw new Error("A6_PROPOSAL_STATUS_UNKNOWN");
+          const current = await queryOriginal(record, false);
+          if (!current) throw new Error("A6_PROPOSAL_STATUS_UNKNOWN");
+          const { ticket, readbackFailed } = current;
+          if (readbackFailed) return;
           if (ticket.status === "pending") {
             if (original.kind === "a6-status") setToast(`已提交${original.status === 1 ? "启用" : "停用"}审批，等另一位管理员批准 · 审批单 ${ticket.id}`, "success");
             else if (original.kind === "a6-delete") setToast(`已提交删除审批，等另一位管理员批准 · 审批单 ${ticket.id}`, "success");
@@ -471,7 +476,7 @@ export default function A6Roles() {
   };
   useEffect(() => {
     for (const record of commands.records) {
-      if (record.ticket && !queried.current.has(record.commandKey)) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)));
+      if ((record.ticket || record.receipt) && !queried.current.has(record.commandKey)) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)));
     }
     // Query persisted observations once on this mount; explicit reads can query them again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -481,7 +486,7 @@ export default function A6Roles() {
   const roleRecords = commands.records.filter(record => "role" in record.original && record.original.role.id === selectedId);
   const writeReason = readReason ?? (roleRecords.some(record => !record.ticket) ? displayAdminError(new Error("RBAC_ORIGINAL_UNRESOLVED")) : undefined);
   const approvalReason = writeReason ?? (roleRecords.some(record => record.ticket?.status === "pending") ? displayAdminError(new Error("OBJECT_ALREADY_PENDING")) : undefined);
-  const unknownRows: UnknownRow[] = commands.records.filter(record => !record.ticket).map(record => ({
+  const unknownRows: UnknownRow[] = commands.records.filter(record => !record.ticket && !record.receipt).map(record => ({
     key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
     actions: <>
       <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
@@ -490,8 +495,9 @@ export default function A6Roles() {
   }));
   const submitted: Submitted[] = commands.records.flatMap(record => {
     const original = record.original;
-    if (!record.ticket || !("role" in original)) return [];
-    return [{ ticket: record.ticket.id, status: record.ticket.status, roleId: original.role.id, roleCode: original.role.roleCode, roleName: original.role.roleName,
+    const evidence = record.ticket ?? record.receipt;
+    if (!evidence || !("role" in original)) return [];
+    return [{ ticket: evidence.id, status: record.ticket?.status, roleId: original.role.id, roleCode: original.role.roleCode, roleName: original.role.roleName,
       label: original.kind === "a6-status" ? `${original.status === 1 ? "启用" : "停用"}角色` : original.kind === "a6-delete" ? "删除角色" : "改权限和菜单",
       change: record.change, at: record.createdAt, desired: original.kind === "a6-grants" ? original.input : undefined }];
   });
@@ -528,8 +534,6 @@ export default function A6Roles() {
     </Conclusion>
   );
 
-  const mySubmitted = submitted.filter((row) => row.roleId === selectedId);
-
   return (
     <RdPage className="adom a6-page">
       {header}
@@ -545,6 +549,27 @@ export default function A6Roles() {
                 <span className="a6-recovery-time">{businessStamp(row.submittedAt)} 提交</span>
                 <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已经建了审批单。24 小时内可以按原请求重试，后端认得出是同一次提交，不会重复执行。">结果未知</StatusTag>
                 <span className="a6-recovery-actions">{row.actions}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="a6-zone">提交时间为{businessZone().label}</p>
+        </Notice>
+      )}
+
+      {submitted.length > 0 && (
+        <Notice tone="progress" title="本次打开页面后提交的审批">
+          <ul className="a6-recovery" aria-label="已提交的审批">
+            {submitted.map((row) => (
+              <li key={`${row.ticket}-${row.at}`}>
+                <span className="a6-recovery-name">{row.label}</span>
+                <span className="a6-recovery-change">{row.change}</span>
+                <span className="a6-recovery-time">{businessStamp(row.at)} 提交</span>
+                <StatusTag tone="warn" icon={Clock3} explain="这是提交时的回执，批准或驳回后这里不会自己更新。最新状态在「操作记录与审批」。">已提交审批</StatusTag>
+                <span className="a6-recovery-actions">
+                  <Button variant="ghost" onClick={() => { const record = commands.records.find(record => (record.ticket ?? record.receipt)?.id === row.ticket); if (record) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error))); }}>查询原结果</Button>
+                  {reach("/platform/audit") && <Link className="rd-link" href={`/platform/audit?domain=A&object=${encodeURIComponent(row.roleCode)}`}>看审批单 <span data-mono>{row.ticket}</span></Link>}
+                </span>
+                {row.desired && detail?.id === row.roleId && <SavedCheck desired={row.desired} detail={detail} approved={row.status === "approved"} permByCode={permByCode} onRetry={() => { const record = commands.records.find(record => (record.ticket ?? record.receipt)?.id === row.ticket); if (record) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error))); }} />}
               </li>
             ))}
           </ul>
@@ -596,8 +621,7 @@ export default function A6Roles() {
               <RoleDetail detail={detail} summary={summary} canWrite={canWrite} canGrant={canGrant}
                 writeReason={writeReason} approvalReason={approvalReason}
                 catalogsReady={catalogsReady} catalogFailed={catalogFailed} permByCode={permByCode} menuById={menuById}
-                submitted={mySubmitted} reach={reach}
-                onQuery={(ticket) => { const record = commands.records.find(row => row.ticket?.id === ticket); if (record) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error))); }}
+                reach={reach}
                 onEdit={() => setFormMode({ kind: "update" })}
                 onGrants={() => setGrantsOpen(true)}
                 onStatus={() => openStatus({ kind: "a6-status", role: detail, status: detail.status === 1 ? 0 : 1, bound: summary?.adminCount })}
@@ -680,7 +704,7 @@ function RoleGroup({ title, count, explain, roles, selectedId, onPick, empty }: 
   );
 }
 
-function RoleDetail({ detail, summary, canWrite, canGrant, writeReason, approvalReason, catalogsReady, catalogFailed, permByCode, menuById, submitted, reach, onQuery, onEdit, onGrants, onStatus, onDelete, onBuiltinDelete }: {
+function RoleDetail({ detail, summary, canWrite, canGrant, writeReason, approvalReason, catalogsReady, catalogFailed, permByCode, menuById, reach, onEdit, onGrants, onStatus, onDelete, onBuiltinDelete }: {
   detail: A6RoleDetail;
   summary: A6RoleSummary | null;
   canWrite: boolean;
@@ -691,9 +715,7 @@ function RoleDetail({ detail, summary, canWrite, canGrant, writeReason, approval
   catalogFailed: string | null;
   permByCode: ReadonlyMap<string, A8Permission>;
   menuById: ReadonlyMap<number, A7MenuTreeNode>;
-  submitted: Submitted[];
   reach: (href: string) => boolean;
-  onQuery: (ticket: string) => void;
   onEdit: () => void;
   onGrants: () => void;
   onStatus: () => void;
@@ -754,25 +776,6 @@ function RoleDetail({ detail, summary, canWrite, canGrant, writeReason, approval
           <div><dt>备注</dt><dd data-empty={detail.remark ? undefined : ""}>{detail.remark || "—"}</dd></div>
         </dl>
 
-        {submitted.length > 0 && (
-          <Notice tone="progress" title="本次打开页面后提交的审批">
-            <ul className="a6-recovery" aria-label="已提交的审批">
-              {submitted.map((row) => (
-                <li key={`${row.ticket}-${row.at}`}>
-                  <span className="a6-recovery-name">{row.label}</span>
-                  <span className="a6-recovery-change">{row.change}</span>
-                  <span className="a6-recovery-time">{businessStamp(row.at)} 提交</span>
-                  <StatusTag tone="warn" icon={Clock3} explain="这是提交时的回执，批准或驳回后这里不会自己更新。最新状态在「操作记录与审批」。">已提交审批</StatusTag>
-                  <span className="a6-recovery-actions">
-                    {reach("/platform/audit") && <Link className="rd-link" href={`/platform/audit?domain=A&object=${encodeURIComponent(row.roleCode)}`}>看审批单 <span data-mono>{row.ticket}</span></Link>}
-                  </span>
-                  {row.desired && <SavedCheck desired={row.desired} detail={detail} approved={row.status === "approved"} permByCode={permByCode} onRetry={() => onQuery(row.ticket)} />}
-                </li>
-              ))}
-            </ul>
-            <p className="a6-zone">提交时间为{businessZone().label}</p>
-          </Notice>
-        )}
 
         {mismatch && <MismatchNotice mismatch={mismatch} menuById={menuById} />}
 
