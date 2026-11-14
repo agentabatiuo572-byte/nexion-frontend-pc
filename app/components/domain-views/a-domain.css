@@ -243,3 +243,5 @@
 .a1-page .a1-temp-password-v { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); color: var(--rd-text); overflow-wrap: anywhere; user-select: all; }
 .a1-page .a1-temp-password-err { color: var(--rd-warn); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .a1-page .a1-role-option-name label { cursor: inherit; }
+.a1-page .a1-perm-pages li[data-risk] { border-color: var(--rd-warn); }
+.a1-page .a1-perm-risk { padding: 0 var(--rd-space-1); border-radius: var(--rd-radius-tag); background: var(--rd-warn-bg); color: var(--rd-text); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: nowrap; }

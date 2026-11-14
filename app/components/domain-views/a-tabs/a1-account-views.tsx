@@ -80,8 +80,19 @@ export function permSummary(codes: readonly string[] | null | undefined) {
   return `${groupPermissionCodes(codes).length} 个模块 · ${new Set(codes).size} 项权限`;
 }
 
-/** 按模块分组的权限：模块名和项数在第一层，每页的权限码收进问号（第三层）。 */
-export function PermGroups({ codes, label, tone, empty = "没有权限" }: { codes: readonly string[]; label: string; tone?: "gain" | "loss"; empty?: string }) {
+/**
+ * 高风险：能改账号、审批、角色、菜单或权限清单的权限（平台基础 A1、A2、A6、A7、A8 里不是只读的码）。
+ * 只按页面已读到的权限码判断；其他页面的敏感操作类型在「权限清单」，这里不另读。
+ */
+const RISKY_PAGES = new Set(["a1", "a2", "a6", "a7", "a8"]);
+export function isHighRiskCode(code: string) {
+  const parts = code.split("_");
+  return parts[0] === "platform" && RISKY_PAGES.has(parts[1] ?? "") && parts[parts.length - 1] !== "read";
+}
+export const HIGH_RISK_EXPLAIN = "标「高风险」的是能改账号、角色、菜单、权限清单或批准审批单的权限（平台基础里不是只读的那些），拿到后就能改变谁能进后台做什么。只按权限码判断；其他页面的敏感操作在「权限清单」里看类型。";
+
+/** 按模块分组的权限：模块名和项数在第一层，每页的权限码收进问号（第三层）。markRisk 时高风险的格标出来。 */
+export function PermGroups({ codes, label, tone, empty = "没有权限", markRisk = false }: { codes: readonly string[]; label: string; tone?: "gain" | "loss"; empty?: string; markRisk?: boolean }) {
   const groups = groupPermissionCodes(codes);
   if (!groups.length) return <p className="a1-muted">{empty}</p>;
   return (
@@ -90,13 +101,17 @@ export function PermGroups({ codes, label, tone, empty = "没有权限" }: { cod
         <li key={group.code}>
           <div className="a1-perm-domain"><span className="a1-perm-code">{group.code}</span><span>{group.name}</span><span className="a1-perm-count">{group.count} 项</span></div>
           <ul className="a1-perm-pages">
-            {group.pages.map((page) => (
-              <li key={page.id}>
-                <span>{page.name}</span>
-                <span className="a1-perm-count">{page.codes.length} 项</span>
-                <Explain label={`${page.name}的权限码`} rows={page.codes.map((code) => ({ k: permLabel(code) === code ? "权限码" : permLabel(code), v: code }))} />
-              </li>
-            ))}
+            {group.pages.map((page) => {
+              const risky = markRisk ? page.codes.filter(isHighRiskCode).length : 0;
+              return (
+                <li key={page.id} data-risk={risky ? "" : undefined}>
+                  <span>{page.name}</span>
+                  <span className="a1-perm-count">{page.codes.length} 项</span>
+                  {risky > 0 && <span className="a1-perm-risk">高风险 {risky}</span>}
+                  <Explain label={`${page.name}的权限码`} rows={page.codes.map((code) => ({ k: markRisk && isHighRiskCode(code) ? "高风险" : permLabel(code) === code ? "权限码" : permLabel(code), v: code }))} />
+                </li>
+              );
+            })}
           </ul>
         </li>
       ))}
@@ -324,10 +339,10 @@ export function RoleChangeModal({ account, roles, options, codesByRole, effectiv
             <ArrowRight size={18} aria-hidden className="a1-role-compare-arrow" />
             <div><span className="a1-role-compare-k">改之后 · {roleName(roles, picked)}</span><strong>{after.size}</strong><span className="a1-role-compare-u">项权限</span></div>
           </div>
-          {gained.length > 0 && <Notice tone="warn" title={`权限变多：批准后多出 ${gained.length} 项`}>多出的权限批准后马上能用，请确认这个人确实需要。</Notice>}
+          {gained.length > 0 && <Notice tone="warn" title={`权限变多：批准后多出 ${gained.length} 项${gained.filter(isHighRiskCode).length ? `，其中 ${gained.filter(isHighRiskCode).length} 项高风险` : ""}`}>多出的权限批准后马上能用，请确认这个人确实需要。<Explain label="高风险的说明" content={HIGH_RISK_EXPLAIN} /></Notice>}
           <div className="a1-role-lists">
-            <section aria-label="多出的权限"><h4 className="a1-role-list-title" data-tone="gain">多出的权限<span>{gained.length} 项</span></h4><PermGroups codes={gained} label="多出的权限" tone="gain" empty="没有多出的权限" /></section>
-            <section aria-label="少掉的权限"><h4 className="a1-role-list-title" data-tone="loss">少掉的权限<span>{lost.length} 项</span></h4><PermGroups codes={lost} label="少掉的权限" tone="loss" empty="没有少掉的权限" /></section>
+            <section aria-label="多出的权限"><h4 className="a1-role-list-title" data-tone="gain">多出的权限<span>{gained.length} 项</span></h4><PermGroups codes={gained} label="多出的权限" tone="gain" markRisk empty="没有多出的权限" /></section>
+            <section aria-label="少掉的权限"><h4 className="a1-role-list-title" data-tone="loss">少掉的权限<span>{lost.length} 项</span></h4><PermGroups codes={lost} label="少掉的权限" tone="loss" markRisk empty="没有少掉的权限" /></section>
           </div>
         </div>
       )}

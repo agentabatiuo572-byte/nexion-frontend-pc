@@ -33,7 +33,7 @@ import {createPendingMutationStore,type PendingMutationRecord} from "@/lib/admin
 import {
   A1RecoveryNotice, AccountDetailDrawer, EditAccountDrawer, NewAccountDrawer, PasswordResetDrawer, RoleChangeModal,
   approvalTag, approverFact, credentialStatusText, directTag, expiredTag, minuteText, operatorDisplayLabel, operatorDisplayName,
-  permSummary, roleName, unknownTag, zoneNote, type A1AccountAction,
+  permSummary, roleName, unknownTag, zoneNote, isHighRiskCode, HIGH_RISK_EXPLAIN, PermGroups, type A1AccountAction,
 } from "./a1-account-views";
 type CreationPending=PendingMutationRecord&{actorId:number;form:A1CreateAccountInput&{reason:string};reason:string;operator:string};
 const creationCommands=createPendingMutationStore<CreationPending>({storageKey:"nexion-a1-support-avatar-account-create",retainExpiredRecords:true,isValidRecord:r=>Number.isSafeInteger(r.actorId)&&Boolean(r.form?.username&&r.reason)});
@@ -338,20 +338,33 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     const displayLabel = operatorDisplayLabel(op);
     const allowedRoles = governanceFrozen ? roleOptions.filter((role) => role.key === op.role || role.key === "super") : roleOptions;
     const diff = gainLoss(op.role, picked);
+    const beforeCodes = new Set(codesOf(op.role)), afterCodes = new Set(codesOf(picked));
+    const gainedCodes = [...afterCodes].filter((code) => !beforeCodes.has(code)), lostCodes = [...beforeCodes].filter((code) => !afterCodes.has(code));
+    const riskyGained = gainedCodes.filter(isHighRiskCode).length;
     openActionConfirm({ briefKind: "security",
       action: `变更角色 · ${displayName}`,
       title: "改角色",
       detail: `${displayLabel}：${roleName(roles, op.role)} 改成 ${roleName(roles, picked)}。`,
       amplifies: false,
       effect: approvalTag("批准前角色和权限不变。"),
-      confirmLabel: "提交改角色审批",
+      confirmLabel: "提交审批",
       facts: (
         <Facts>
           <Fact k="账号">{displayLabel}</Fact>
           <Fact k="角色"><Change from={roleName(roles, op.role)} to={roleName(roles, picked)} /></Fact>
-          <Fact k="权限变化" tone={diff.gained > 0 ? "warn" : undefined}>多出 {diff.gained} 项 · 少掉 {diff.lost} 项</Fact>
+          <Fact k="权限变化" tone={diff.gained > 0 ? "warn" : undefined}>多出 {diff.gained} 项 · 少掉 {diff.lost} 项{riskyGained > 0 ? `，其中 ${riskyGained} 项高风险` : ""}</Fact>
           {approverFact()}
         </Facts>
+      ),
+      content: (
+        <div className="a1-page a1-sheet">
+          <Fold inset title="多出和少掉的权限" summary={`多出 ${diff.gained} 项 · 少掉 ${diff.lost} 项${riskyGained > 0 ? ` · ${riskyGained} 项高风险` : ""}`} explain={HIGH_RISK_EXPLAIN}>
+            <div className="a1-role-lists" data-proof="role-perm-diff-confirm">
+              <section aria-label="多出的权限"><h4 className="a1-role-list-title" data-tone="gain">多出的权限<span>{gainedCodes.length} 项</span></h4><PermGroups codes={gainedCodes} label="多出的权限" tone="gain" markRisk empty="没有多出的权限" /></section>
+              <section aria-label="少掉的权限"><h4 className="a1-role-list-title" data-tone="loss">少掉的权限<span>{lostCodes.length} 项</span></h4><PermGroups codes={lostCodes} label="少掉的权限" tone="loss" markRisk empty="没有少掉的权限" /></section>
+            </div>
+          </Fold>
+        </div>
       ),
       statedBrief: {
         impact: picked === "unassigned"
@@ -399,7 +412,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     amplifies: false,
     effect: approvalTag("批准前两步验证不变，账号照常可以登录。"),
     confirmTone: "danger",
-    confirmLabel: "提交重置两步验证审批",
+    confirmLabel: "提交审批",
     facts: (
       <Facts>
         <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
@@ -490,7 +503,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       detail: "登录名和邮箱不能与其他账号重复；改登录名后该账号会被强制下线。",
       amplifies: false,
       effect: approvalTag("批准前资料和头像都不变。"),
-      confirmLabel: "提交修改审批",
+      confirmLabel: "提交审批",
       facts: (
         <Facts>
           <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
@@ -553,7 +566,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       amplifies: false,
       effect: approvalTag("批准前账号照常可以登录。"),
       confirmTone: "danger",
-      confirmLabel: "提交停用审批",
+      confirmLabel: "提交审批",
       facts: (
         <Facts>
           <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
@@ -603,7 +616,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     detail: "批准后可以重新登录，角色不变，登录时需通过两步验证。",
     amplifies: false,
     effect: approvalTag("批准前账号仍是停用的。"),
-    confirmLabel: "提交启用审批",
+    confirmLabel: "提交审批",
     facts: (
       <Facts>
         <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
@@ -650,7 +663,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       detail: "只有超级管理员能操作；不能撤销自己的登录，也不能撤销其他超级管理员的登录。",
       amplifies: false,
       effect: approvalTag("批准前设备仍在线。"),
-      confirmLabel: "提交撤销全部登录审批",
+      confirmLabel: "提交审批",
       facts: (
         <Facts>
           <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
@@ -780,7 +793,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         detail: "这里只提交提案，须另一位超级管理员批准后才创建账号。",
         amplifies: false,
         effect: approvalTag("批准前账号不会建好。"),
-        confirmLabel: "提交创建审批",
+        confirmLabel: "提交审批",
         facts: <>{createFacts(form)}<Facts>{approverFact()}</Facts></>,
         statedBrief: {
           impact: "另一位超级管理员批准后才创建账号；本页拿不到临时密码，批准后到账号列表点「重置密码」，把临时密码交给本人。",

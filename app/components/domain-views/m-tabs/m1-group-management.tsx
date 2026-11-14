@@ -8,7 +8,6 @@ import { accountVersion, canReplayGroupCommand, commandRejected, groupPendingCom
 import { Btn, Modal } from "../design-kit";
 import { BlockState, Button, Change, Explain, Fact, Facts, Field, Fold, Input, MoreMenu, Notice, PageTabs, Panel, ReleaseModal, Select, StatusTag, Table, Th, Tr, Td, Textarea } from "@/app/components/rd";
 import { ChevronLeft, Network, UsersRound } from "lucide-react";
-import { HDSelect } from "./hd-ui";
 import { SupportClientError } from "@/lib/admin/m-support-client";
 import "./m-support-admin.css";
 import "./m1-group-management.css";
@@ -320,10 +319,17 @@ export function SupportQualificationEditor({ adminId, kind, onClose, onChanged }
     catch (cause) { if (controller.signal.aborted || authStamp() !== identity || liveKey.current !== key) return; if (!written && errorStatus(cause) === 409) setStale(true); if ([401,403,404].includes(errorStatus(cause))) setProjection(undefined); setError(errorText(cause)); } finally { if (authStamp() === identity) setBusy(false); }
   };
   const canSubmit = !!data && !!fact && fact.observationState !== "UNKNOWN" && !stale && reasonValid(reason) && state !== fact.state && (state !== "ENABLED" || data.accountStatus === 1);
-  return <Modal title={pending ? "查询原操作" : `${KIND_TEXT[kind]}资格`} busy={busy} onClose={() => { if (!busy) onClose(); }} footer={<><Btn disabled={busy} onClick={onClose}>关闭</Btn>{allowed && pending ? <Btn disabled={busy} onClick={() => void check()}>查询原操作</Btn> : <><Btn disabled={!allowed || busy} onClick={() => setRefresh(n => n + 1)}>重读当前资格</Btn><Btn variant="primary" disabled={!allowed || busy || !canSubmit} onClick={() => void submit()}>{busy ? "正在提交…" : "确认并提交"}</Btn></>}</>}>
-    {!allowed ? <p role="alert">只有总管理员（并有账号查看和修改权限）能管理资格。</p> : pending ? <p role="status">上次操作结果还没确认，请先查询结果。</p> : !data ? <p role="status">{error || "正在加载…"}</p> : <><p>{data.name} · {data.accountStatus === 1 ? "账号启用" : "账号停用"}</p><p>当前{KIND_TEXT[kind]}资格：{fact?.observationState === "UNKNOWN" ? "信息不完整，不能保存" : fact?.observationState === "ABSENT" ? "确证未授予" : fact?.state ? STATUS_TEXT[fact.state] : "未知"}</p>
-      <p className="m-admin-muted">专属客服是唯一人工客服身份；主管是独立管理资格，同一账号可兼任。授予资格不自动绑定客户，也不改普通账号角色。</p>{kind === "SUPERVISOR" && state !== "ENABLED" && <p>停用或移除前，须先将全部负责组（含归档组）移交给有效主管。</p>}{kind === "SERVICE" && state !== "ENABLED" && <p>停用或移除前，须先处理已有绑定客户并退出组；不会自动改派客户。</p>}
-      <label className="field"><span>资格状态</span>{busy ? <p>{STATUS_TEXT[state]}</p> : <HDSelect value={state} onChange={value => setState(value as QualificationStatus)} options={QUAL_OPTIONS} />}</label><label className="field"><span>操作理由（8–200 字）</span><textarea value={reason} disabled={busy} onChange={e => setReason(e.target.value)} /></label></>}
-    {allowed && pending && <p role="alert">{QUERY_PENDING_TEXT}{!canReplayGroupCommand(pending) && expiredText()}</p>}{allowed && !pending && stale && <p role="alert">版本已变化，请重读当前资格并再次确认。理由已保留。</p>}{error && data && <p role="alert">{error}</p>}
+  const blockedReason = !allowed ? "只有超级管理员（并有账号查看和修改权限）能管理资格" : !data ? "当前资格还没读到" : !fact || fact.observationState === "UNKNOWN" ? "当前资格信息不完整，不能保存" : stale ? "版本已变化，先点「重读当前资格」" : state === fact.state ? "选一个和现在不同的资格状态" : state === "ENABLED" && data.accountStatus !== 1 ? "账号已停用，不能启用资格" : !reasonValid(reason) ? "请填写 8–200 字的操作理由" : undefined;
+  const resultTone = /^(资格已更新|原操作已成功)/.test(error) ? "ok" : /失败|无权|不能/.test(error) ? "danger" : "warn";
+  return <Modal title={pending ? "查询原操作" : `${KIND_TEXT[kind]}资格`} busy={busy} onClose={() => { if (!busy) onClose(); }} footer={<><Btn disabled={busy} onClick={onClose}>关闭</Btn>{allowed && pending ? <Btn disabled={busy} onClick={() => void check()}>查询原操作</Btn> : <><Btn disabled={!allowed || busy} onClick={() => setRefresh(n => n + 1)}>重读当前资格</Btn><Btn variant="primary" disabled={busy} disabledReason={busy ? undefined : blockedReason} onClick={() => void submit()}>{busy ? "正在提交…" : "确认并提交"}</Btn></>}</>}>
+    <div className="m1-group-form">
+    {!allowed ? <Notice tone="warn">只有总管理员（并有账号查看和修改权限）能管理资格。</Notice> : pending ? <Notice tone="warn">上次操作结果还没确认，请先查询结果。</Notice> : !data ? <BlockState state={error ? "error" : "loading"} title={error || "正在加载…"} /> : <>
+      <Facts><Fact k="账号">{data.name}</Fact><Fact k="账号状态">{data.accountStatus === 1 ? "启用" : "停用"}</Fact><Fact k={`当前${KIND_TEXT[kind]}资格`}>{fact?.observationState === "UNKNOWN" ? "信息不完整，不能保存" : fact?.observationState === "ABSENT" ? "确证未授予" : fact?.state ? STATUS_TEXT[fact.state] : "未知"}</Fact>{state !== (fact?.state ?? "") && fact?.observationState !== "UNKNOWN" && <Fact k="改成">{STATUS_TEXT[state]}</Fact>}</Facts>
+      <p className="m1-field-value">资格不是角色，单独管理；同一账号可以同时有专属客服和主管资格。授予资格不会自动绑定客户，也不改账号角色。<Explain label="资格的说明" content="专属客服资格让这个账号以客服身份接待本人绑定的客户；有全部或管理范围的管理员仍可在权限范围内介入会话。主管资格用于管理客服组，不带账号管理权限。" /></p>
+      {kind === "SUPERVISOR" && state !== "ENABLED" && <Notice tone="warn">停用或移除前，须先将全部负责组（含归档组）移交给有效主管。</Notice>}{kind === "SERVICE" && state !== "ENABLED" && <Notice tone="warn">停用或移除前，须先处理已有绑定客户并退出组；不会自动改派客户。</Notice>}
+      <Field label="资格状态">{busy ? <p className="m1-field-value">{STATUS_TEXT[state]}</p> : <Select aria-label="资格状态" value={state} options={QUAL_OPTIONS} onChange={value => setState(value as QualificationStatus)} />}</Field>
+      <Field label="操作理由" required hint="8–200 字">{control => <Textarea {...control} value={reason} disabled={busy} count={`${Array.from(reason.trim()).length}/200`} onChange={e => setReason(e.target.value)} />}</Field></>}
+    {allowed && pending && <Notice tone="warn">{QUERY_PENDING_TEXT}{!canReplayGroupCommand(pending) && expiredText()}</Notice>}{allowed && !pending && stale && <Notice tone="warn">版本已变化，请重读当前资格并再次确认。理由已保留。</Notice>}{error && data && <Notice tone={resultTone}>{error}</Notice>}
+    </div>
   </Modal>;
 }
