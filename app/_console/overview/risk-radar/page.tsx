@@ -24,6 +24,7 @@ import {
   recordB5Triage,
   useB5Radar,
   B5OutcomeUnknownError,
+  B5RequestError,
   type B5Radar,
   type B5InboxItem,
 } from "@/lib/admin/b5-client";
@@ -124,6 +125,7 @@ export default function RiskRadarPage() {
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [subscriptionError, setSubscriptionError] = useState("");
   const [subscriptionReload, setSubscriptionReload] = useState(0);
+  const [subscriptionDraftPreserved, setSubscriptionDraftPreserved] = useState(false);
   const [subscriptionVersion, setSubscriptionVersion] = useState(0);
   const [webhookMode, setWebhookMode] = useState("disabled");
   const [updatingSignal, setUpdatingSignal] = useState("");
@@ -179,7 +181,7 @@ export default function RiskRadarPage() {
       .then((next) => {
         if (!alive) return;
         const normalized = { inApp: next.inApp, email: false, webhook: next.webhook, webhookUrl: next.webhookUrl };
-        if (!session || !pendingB5Commands(String(session.adminId)).some(record => record.fingerprint === SUBSCRIPTION_SLOT)) setSubscription(normalized);
+        if (!subscriptionDraftPreserved && (!session || !pendingB5Commands(String(session.adminId)).some(record => record.fingerprint === SUBSCRIPTION_SLOT))) setSubscription(normalized);
         setSavedSubscription(normalized);
         setSubscriptionVersion(next.version);
         setWebhookMode(next.webhookMode);
@@ -193,7 +195,7 @@ export default function RiskRadarPage() {
     return () => {
       alive = false;
     };
-  }, [canSubscribe, subscriptionReload]);
+  }, [canSubscribe, subscriptionReload, subscriptionDraftPreserved]);
 
   const yellowPct = Number(yellowInput);
   const redPct = Number(redInput);
@@ -262,6 +264,7 @@ export default function RiskRadarPage() {
     [subscription, savedSubscription],
   );
   const subscriptionValid = subscription.inApp || subscription.email || subscription.webhook;
+  const subscriptionWebhookMode = subscriptionOriginal?.facts.webhookMode ?? webhookMode;
 
   const refreshAfterWrite = async () => {
     setThreshold(null);
@@ -434,7 +437,7 @@ export default function RiskRadarPage() {
       }) as Extract<B5PendingWrite, { kind: "subscription" }>;
       setSubscriptionOriginal(original);
       await executeB5Command(original, !!subscriptionOriginal);
-      setSubscriptionOriginal(null); setSubscriptionUnknown(false); setSubscriptionOpen(false);
+      setSubscriptionOriginal(null); setSubscriptionUnknown(false); setSubscriptionOpen(false); setSubscriptionDraftPreserved(false);
       setSubscriptionNeedsRead(true); setSubscriptionReload(value => value + 1);
       setToast("告警订阅已保存，之后的新告警发给你");
     } catch (cause) {
@@ -443,6 +446,10 @@ export default function RiskRadarPage() {
         setSubscriptionOriginal(null);
         if (subscriptionOriginal) {
           setSubscriptionOpen(false);
+          setSubscriptionDraftPreserved(false);
+          setSubscriptionNeedsRead(true); setSubscriptionReload(value => value + 1);
+        } else if (cause instanceof B5RequestError && cause.backendMessage === "B5_SUBSCRIPTION_VERSION_CONFLICT") {
+          setSubscriptionDraftPreserved(true);
           setSubscriptionNeedsRead(true); setSubscriptionReload(value => value + 1);
         }
       }
@@ -683,10 +690,11 @@ export default function RiskRadarPage() {
               onClick={() => void saveSubscription()}>保存订阅</Button>
           </>}>
           <div className="b5-dialog">
-            {subscriptionLoading || subscriptionError ? (
+            {(subscriptionLoading || subscriptionError) && (
               <BlockState state={subscriptionLoading ? "loading" : "error"} title={subscriptionLoading ? "正在读取现在的订阅…" : "现在的订阅没读到"} detail={subscriptionError || undefined}
                 onRetry={subscriptionLoading ? undefined : () => setSubscriptionReload((value) => value + 1)} />
-            ) : (
+            )}
+            {(subscriptionOriginal || (!subscriptionLoading && !subscriptionError)) && (
               <>
                 <Facts>
                   <Fact k="现在的接收人">{subscriptionOriginal?.facts.subscriber ?? (subscriber || "—")}</Fact>
@@ -699,8 +707,8 @@ export default function RiskRadarPage() {
                   <Check name="inApp" label="站内告警" checked={subscription.inApp} disabled={!canSubscribe || !!subscriptionOriginal || savingSubscription} onChange={(event) => setSubscription((value) => ({ ...value, inApp: event.target.checked }))} />
                   <Check name="email" label="邮件" checked={false} disabled help="邮件服务没接通，暂不可用。" />
                   <Check name="webhook" label="外部通知" checked={subscription.webhook}
-                    disabled={!canSubscribe || !!subscriptionOriginal || savingSubscription || (webhookMode !== "controlled-proxy" && !subscription.webhook)}
-                    help={webhookMode === "controlled-proxy" ? "已配置受控代理，可以开启。" : subscription.webhook ? "没有配置受控代理，只能关闭。" : "没有配置受控代理，暂不能开启。"}
+                    disabled={!canSubscribe || !!subscriptionOriginal || savingSubscription || (subscriptionWebhookMode !== "controlled-proxy" && !subscription.webhook)}
+                    help={subscriptionWebhookMode === "controlled-proxy" ? "已配置受控代理，可以开启。" : subscription.webhook ? "没有配置受控代理，只能关闭。" : "没有配置受控代理，暂不能开启。"}
                     onChange={(event) => setSubscription((value) => ({ ...value, webhook: event.target.checked }))} />
                 </CheckGroup>
                 {subscription.webhook && (
