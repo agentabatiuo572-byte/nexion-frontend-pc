@@ -237,7 +237,8 @@
 .h8-rec-zone { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 @container hdom (max-width: 900px) {
   .h8-rec { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
-  .h8-rec-time { grid-column: 1 / 3; grid-row: 2; }
+  .h8-rec-time { grid-column: 1; grid-row: 2; }
+  .h8-rec-actions { grid-column: 2 / -1; grid-row: 2; }
 }
 
 /* 修改框 */
