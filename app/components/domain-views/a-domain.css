@@ -258,3 +258,20 @@
   .a3-page .a3-pages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .a3-page .a3-cal-row { grid-template-columns: minmax(120px, 140px) repeat(var(--a3-cols, 2), minmax(0, 1fr)); }
 }
+
+/* 结果未知逐条提醒（g-recovery 的 GRecoveryNotice）：它的样式在 G 域样式表里，A 页面不加载，这里按同样的列给 A3 一份 */
+.a3-page .grec { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.a3-page .grec li { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: 8px 16px; padding: 8px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.a3-page .grec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.a3-page .grec-change { min-width: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; color: var(--rd-text); }
+.a3-page .grec-time { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.a3-page .grec-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.a3-page .grec-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.a3-page .grec-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.a3-page .grec-zone { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+@container adom (max-width: 1100px) {
+  .a3-page .grec li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
+  .a3-page .grec-state { grid-column: 3; grid-row: 1; justify-content: flex-end; }
+  .a3-page .grec-time { grid-column: 1 / 3; grid-row: 2; }
+  .a3-page .grec-actions { grid-column: 3; grid-row: 2; }
+}
