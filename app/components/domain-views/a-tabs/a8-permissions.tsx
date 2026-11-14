@@ -13,7 +13,7 @@ import {
 import { useToast } from "@/app/components/domain-views/design-kit";
 import { CONSOLE_NAV } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 
 const DOMAINS = [{ code: "ALL", label: "全部" }, ...CONSOLE_NAV.map((d) => ({ code: d.code, label: `${d.code} ${d.name}` })), { code: "UNMAPPED", label: "未归类" }];
 const PERM_TYPES = ["ALL", "READ", "WRITE", "HIGH"];
@@ -42,7 +42,7 @@ export default function A8Permissions() {
   const [domain, setDomain] = useState("ALL");
   const [permType, setPermType] = useState("ALL");
   const [result, setResult] = useState<A8PermissionPage | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [detail, setDetail] = useState<A8Permission | null>(null);
@@ -69,7 +69,7 @@ export default function A8Permissions() {
       .then((data) => { if (!cancelled) setResult(data); })
       .catch((err) => {
         if (!cancelled) {
-          setLoadError(displayAdminError(err));
+          setLoadError(displayAdminReadError(err));
           setToast("权限列表加载失败，请重试");
         }
       })
@@ -83,8 +83,10 @@ export default function A8Permissions() {
     let cancelled = false;
     setMatrixLoading(true);
     setMatrixError(null);
+    setGrants(null);
     fetchA6RolesOverview()
       .then(async (overview) => {
+        if (cancelled) return [];
         // 某个角色读不到时只让那一列变「读不到」,不能让它显示成「没这个权限」。
         const details = await Promise.allSettled(overview.roles.map((role) => fetchA6RoleDetail(role.id)));
         return overview.roles.map((role, index) => {
@@ -95,7 +97,7 @@ export default function A8Permissions() {
         });
       })
       .then((rows) => { if (!cancelled) setGrants(rows); })
-      .catch((err) => { if (!cancelled) setMatrixError(displayAdminError(err)); })
+      .catch((err) => { if (!cancelled) setMatrixError(displayAdminReadError(err)); })
       .finally(() => { if (!cancelled) setMatrixLoading(false); });
     return () => { cancelled = true; };
   }, [matrixOpen, matrixReloadKey]);
@@ -116,7 +118,7 @@ export default function A8Permissions() {
       .then((d) => { if (requestId === detailRequestSeq.current) setDetail(d); })
       .catch((err) => {
         if (requestId === detailRequestSeq.current) {
-          setToast(err instanceof Error ? err.message : "权限详情加载失败，请重试");
+          setToast(displayAdminReadError(err));
         }
       })
       .finally(() => {
@@ -140,13 +142,13 @@ export default function A8Permissions() {
   const current = drawerOpen ? detailCode : null;
   const currentIndex = current ? records.findIndex((p) => p.permissionCode === current) : -1;
   const domainLabel = DOMAINS.find((d) => d.code === domain)?.label ?? domain;
-  const rolesHref = reach(ROLES_PATH) ? ROLES_PATH : null;
+  const rolesHref = reach(ROLES_PATH, "platform_a6_read") ? ROLES_PATH : null;
 
   const rolesWith = (code: string) => (grants ?? []).filter(({ readable, codes }) => readable && codes.has(code));
   const roleChip = ({ role }: RoleGrants) => {
     const label = <>{role.roleName}{role.status === 0 && <span className="a8-role-off">已停用</span>}</>;
     return rolesHref
-      ? <Link key={role.id} className="a8-role" href={rolesHref} prefetch={false} aria-label={`去角色管理看「${role.roleName}」`}>{label}</Link>
+      ? <Link key={role.id} className="a8-role" href={`${rolesHref}?roleId=${role.id}`} prefetch={false} aria-label={`去角色管理看「${role.roleName}」`}>{label}</Link>
       : <span key={role.id} className="a8-role">{label}</span>;
   };
 
@@ -315,7 +317,7 @@ export default function A8Permissions() {
             <JudgmentPoints rows={[
               { label: "允许做什么", value: <span className="a8-allow"><TypeTag type={detail.permType} />{operatorCopyText(detail.menuCodePath)}</span> },
               { label: "资金风险", value: detail.amplifies ? <StatusTag tone="warn" icon={Coins} explain={AMPLIFIES_EXPLAIN}>可能多付钱</StatusTag> : "没有标记", state: detail.amplifies ? "warn" : undefined },
-              { label: "已绑定角色", value: rolesReady
+              { label: "已绑定角色", value: rolesReady && unreadableRoles.length === 0
                 ? <span className="a8-roles">{rolesWith(detail.permissionCode).length === 0 ? <span className="a8-muted">没有角色</span> : rolesWith(detail.permissionCode).map(roleChip)}</span>
                 : <span className="a8-allow">{detail.boundRoleCount} 个（启用中的角色）{!matrixOpen && <Button size="sm" onClick={() => setMatrixOpen(true)}>看是哪几个</Button>}</span> },
             ]} />

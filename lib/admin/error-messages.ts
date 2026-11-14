@@ -2233,6 +2233,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   ACCOUNT_LEGACY_COMMAND_REVIEW_REQUIRED: "原回执缺少可核实的操作者绑定，不能重放；请联系值班人员人工核对，勿换号重复执行。",
   REQUEST_BODY_REQUIRED: "请求缺少操作内容，本次没有执行，请重新打开确认框。",
   A1_PERMISSION_ALREADY_EXISTS: "这个权限编码已经登记，请到权限清单核对，不能重复登记。",
+  A6_OVERVIEW_CONTRACT_INVALID: "角色目录返回的数据不完整或格式异常，请重新读取；持续失败请联系值班人员。",
+  A6_DETAIL_CONTRACT_INVALID: "角色授权返回的数据不完整或格式异常，请重新读取；持续失败请联系值班人员。",
   A1_PERMISSION_EXPECTED_ABSENT_REQUIRED: "权限登记缺少未登记校验，本次没有执行，请重新打开确认框。",
   A1_PERMISSION_CODE_REQUIRED: "请填写权限编码。",
   A1_PERMISSION_CODE_INVALID: "权限编码须为6–96位，以小写字母开头，只能包含小写字母、数字和下划线。",
@@ -2505,6 +2507,9 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   "reason min chars is required": "理由最短长度必须是 8–200 的整数。",
   "audit retention months must be 13-36": "日志保留期必须是 13–36 的整数月。",
   "audit retention months is required": "日志保留期必须是 13–36 的整数月。",
+  // A8 read errors follow the more specific A1 permission-registration codes.
+  PERMISSION_CODE_REQUIRED: "未指定要查看的权限编码，请从权限清单重新打开详情。",
+  PERMISSION_NOT_FOUND: "这项权限不存在或已停用，请重新读取权限清单后核对。",
 };
 
 /**

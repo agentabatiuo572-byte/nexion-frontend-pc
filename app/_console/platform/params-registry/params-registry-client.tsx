@@ -83,7 +83,7 @@ const DOMAIN_FILTER_ID = "a5-domain-filter";
  * 含该卡片自己的参数键才唯一。
  */
 function ownerLinkAccessibleName(row: A5RegistryRow) {
-  return `前往 ${operatorCopyText(row.ownerLabel)}：${operatorCopyText(row.displayName)}（参数 ${row.canonicalKey}）`;
+  return `前往 ${ownerName(row)}：${operatorCopyText(row.displayName)}（参数 ${row.canonicalKey}）`;
 }
 
 const ERROR_COPY: Record<A5LoadErrorKind, { title: string; detail: string }> = {
@@ -149,7 +149,7 @@ export function PlatformParamsRegistry() {
     return (overview?.rows ?? []).filter((row) => {
       if (domain !== "ALL" && row.domain !== domain) return false;
       if (!keyword) return true;
-      return [row.displayName, row.canonicalKey, row.description, row.ownerLabel, row.currentValue]
+      return [row.displayName, row.canonicalKey, row.description, row.ownerLabel, ownerName(row), row.currentValue]
         .some((value) => value.toLowerCase().includes(keyword));
     });
   }, [domain, overview, query]);

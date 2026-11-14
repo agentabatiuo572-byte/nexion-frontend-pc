@@ -1,7 +1,8 @@
 "use client";
 import "../a-domain.css";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Ban, CheckCircle2, CircleHelp, Clock3, KeyRound, ListTree, Minus, Plus, ShieldCheck, TriangleAlert, UserCog, Users } from "lucide-react";
 import {
   fetchA6RolesOverview, fetchA6RoleDetail, createA6Role, updateA6Role, deleteA6Role, proposeA6RoleGrants, proposeA6RoleStatus, newA6IdempotencyKey,
@@ -96,6 +97,11 @@ const roleFact = (name: string, code: string) => <Fact k="角色">{name} <span c
 
 export default function A6Roles() {
   const [, setToast] = useToast();
+  const searchParams = useSearchParams();
+  const roleIds = searchParams.getAll("roleId");
+  const requestedId = roleIds.length === 1 && /^[1-9]\d*$/.test(roleIds[0]) ? Number(roleIds[0]) : NaN;
+  const locatedId = Number.isSafeInteger(requestedId) ? requestedId : null;
+  const appliedLocation = useRef<number | null | undefined>(undefined);
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const role = useAdminAuth((s) => s.session?.role ?? s.role);
   const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
@@ -176,6 +182,13 @@ export default function A6Roles() {
       }
     })();
   }, [canGrant, refreshOverview, setToast]);
+
+  useEffect(() => {
+    // 只在首次读到角色目录或网址定位改变时选中；普通刷新不覆盖运营手动选择。
+    if (!overview || appliedLocation.current === locatedId) return;
+    appliedLocation.current = locatedId;
+    setSelectedId(overview.roles.some((role) => role.id === locatedId) ? locatedId : null);
+  }, [overview, locatedId]);
 
   useEffect(() => {
     let active = true;
