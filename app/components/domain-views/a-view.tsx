@@ -31,7 +31,7 @@ import { fetchA4Overview } from "@/lib/admin/a4-client";
 
 const FOLD: Record<string, string> = { A1: "A1", A2: "A2", A3: "A3", A4: "A4", A9: "A9" };
 /** 已改版的页：包 RdPage，页头和统计由页面自己写，这里不再另读一次（A2-H06）。 */
-const REDESIGNED = ["A1", "A2", "A3", "A4"];
+const REDESIGNED = ["A1", "A2", "A3", "A4", "A9"];
 
 
 export function ADomainView({ meta }: { meta: DomainViewMeta }) {
