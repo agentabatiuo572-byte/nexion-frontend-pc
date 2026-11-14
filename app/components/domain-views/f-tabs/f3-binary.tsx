@@ -318,10 +318,13 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     ? <FReleaseButton label={label} toast={ctx.toast} onRelease={() => ctx.recoverF3(original, "release")} /> : null;
   const recoveryCount = (settlePending ? 1 : 0) + configProposals.length + (showPlacementRecovery ? 1 : 0);
   const recoveryOpen = [...(settlePending ? [settlePending] : []), ...configProposals].some((row) => row.ticket?.status !== "pending") || showPlacementRecovery;
+  const CONFIG_NAMES: Record<string, string> = { "F.binary.threshold": "每组订单额门槛", "F.binary.matchRate": "匹配比例", "F.binary.spillover": "自动分组", "F.binary.paused": "发放", [F3_GV_RESET_PARAM_KEY]: "归零说明", [F3_BATCH_SLOT]: "结算周期和残额处理" };
   const configName = (original: FDomainAttempt) => original.f3Snapshot && original.spec
-    ? f3ConfigurationConfirm(ctx, original.f3Snapshot, original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : original.spec.obj).title : "团队平衡奖励设置";
+    ? f3ConfigurationConfirm(ctx, original.f3Snapshot, original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : original.spec.obj).title
+    : CONFIG_NAMES[original.fingerprint === F3_BATCH_SLOT ? F3_BATCH_SLOT : original.fingerprint.replace(/^f-config:/, "")] ?? "平衡奖励设置";
   const configChange = (original: FDomainAttempt) => {
     if (!original.spec) return "原申请内容不完整，请到「操作记录与审批」核对";
+    if (original.fingerprint === "f-config:F.binary.threshold") return `${fmtDecimal(original.spec.before)} → ${fmtDecimal(original.spec.after)} USDT`;
     if (original.fingerprint !== F3_BATCH_SLOT) return `${original.spec.before} → ${original.spec.after}`;
     const value = (key: string) => /=(.*)$/.exec(original.spec!.after.split(" / ").find((item) => item.trim().startsWith(`${key}=`)) ?? "")?.[1]?.trim();
     const period = value("F.binary.settlePeriod"), residual = value("F.binary.residualPolicy");
@@ -335,7 +338,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       <ul className="f3-recovery" aria-label="还没有结论的原申请">
         {settlePending && <li>
           <span className="f3-recovery-name">手动结算</span>
-          <span className="f3-recovery-change">{settleOriginal ? `邀请人 ${settleOriginal.ownerUserId} · 结算日 ${settleOriginal.settlementDate}` : "原申请内容不完整，请到「操作记录与审批」核对"}</span>
+          <span className="f3-recovery-change">{settleOriginal ? <>邀请人 {settleOriginal.ownerUserId} · <span className="rd-keep">结算日 {settleOriginal.settlementDate}</span></> : "原申请内容不完整，请到「操作记录与审批」核对"}</span>
           <span className="f3-recovery-time">{businessStamp(settlePending.createdAt)} 提交</span>
           <span className="f3-recovery-state">{proposalTag(settlePending, SETTLE_APPROVER)}</span>
           <span className="f3-recovery-actions"><Button size="sm" onClick={openSettlement}>查询原结果</Button>{release(settlePending, "手动结算")}</span>
@@ -386,9 +389,9 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   return (
     <div className="f3-page">
       {header}
+      {conclusion}
       {recovery}
       {ctx.f3Error && <Notice tone="warn" title="团队平衡奖励数据刷新失败">{ctx.f3Error}</Notice>}
-      {conclusion}
 
       <StatBand label="团队平衡奖励摘要">
         <Stat label="本月匹配订单额" icon={ArrowLeftRight} tone="role-2" value={fmtInt(ctx.f3MonthlyMatchedUsd)} unit="USDT"
@@ -621,7 +624,7 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
       <Facts>
         <Fact k="每组订单额门槛">{value === undefined ? text(thresholdText) : <Change from={text(thresholdText)} to={`${fmtDecimal(value)} USDT`} />}</Fact>
         {value !== undefined && thresholdNumber !== null && Number(value) !== thresholdNumber && <Fact k="方向" tone={Number(value) < thresholdNumber ? "warn" : undefined}>
-          {Number(value) < thresholdNumber ? "调低：更多团队能过门槛，平台会多付钱" : "调高：更少团队能过门槛，之后发的会变少"}
+          {Number(value) < thresholdNumber ? "调低：更多团队能过门槛，平台可能多付钱" : "调高：更少团队能过门槛，之后发的会变少"}
         </Fact>}
         {whenFacts}
       </Facts>
@@ -647,7 +650,7 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
       <Facts>
         <Fact k="匹配比例">{value === undefined ? rateEff : <Change from={rateEff} to={`${value}%`} />}</Fact>
         {value !== undefined && ratePercent !== null && Number(value) !== Number(ratePercent) && <Fact k="方向" tone={Number(value) > Number(ratePercent) ? "warn" : undefined}>
-          {Number(value) > Number(ratePercent) ? "调高：同样的订单额发更多奖励，平台会多付钱" : "调低：同样的订单额发更少奖励"}
+          {Number(value) > Number(ratePercent) ? "调高：同样的订单额发更多奖励，平台可能多付钱" : "调低：同样的订单额发更少奖励"}
         </Fact>}
         {value !== undefined && Number(value) > 0 && Number(value) < 0.00001 && <Fact k="App" tone="warn">App 目前读不了这么小的比例（小于 0.00001%），用户的团队页会读取失败；后端允许，已登记缺陷</Fact>}
         {whenFacts}

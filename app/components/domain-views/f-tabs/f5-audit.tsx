@@ -643,8 +643,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       <PageHeader pageId="F5" title="奖励记录核对" summary="核对八类团队奖励的每一笔，处置有问题的记录。"
         meta="打开时读取，不自动刷新"
         readOnly={anyWrite ? undefined : "你只能查看；处置奖励需要对应的处置权限"} />
-      <F5RecoveryNotice rows={recoveryRows} />
       {conclusion()}
+      <F5RecoveryNotice rows={recoveryRows} />
       <fieldset className="f5-fieldset" disabled={loading} aria-busy={loading}>
         <div className="f5-stack">
         {data && <>

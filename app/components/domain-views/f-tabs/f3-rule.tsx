@@ -19,7 +19,7 @@ export const PERIOD_TEXT: Record<string, { when: string; cap: string }> = {
 export const RESIDUAL_TEXT: Record<string, { label: string; short: string; what: string; more?: boolean }> = {
   每月清零: { label: "每月清零", short: "只算本月订单额，上月没匹配上的不再算", what: "只算本月的订单额，本月已匹配的扣掉；上个月没匹配上的，到月初就不再算。" },
   每次对碰清零: { label: "每次匹配后清零", short: "每次结算成功后，只算之后的新订单", what: "每次结算成功后，之前的订单额都不再算，下一次只算之后的新订单。" },
-  转结: { label: "转结", short: "一直留着继续匹配，之后会多付奖励", what: "没匹配上的订单额一直留着，之后继续参与匹配；不限月份，会让之后多付奖励。", more: true },
+  转结: { label: "转结", short: "一直留着继续匹配，之后可能多付奖励", what: "没匹配上的订单额一直留着，之后继续参与匹配；不限月份，之后可能多付奖励。", more: true },
 };
 
 export const residualLabel = (value: string) => RESIDUAL_TEXT[value]?.label ?? value;
@@ -60,7 +60,7 @@ export function F3RuleFlow({ rule, next, changed, capAction, compact }: {
   };
   const period = next?.period ?? rule.period;
   const steps: Step[] = [
-    { key: "legs", title: "A 组、B 组订单额", value: "各算各的", sub: "统计范围看「没匹配上的订单额」怎么设" },
+    { key: "legs", title: "A 组、B 组订单额", value: "各算各的", sub: "范围看残额怎么处理" },
     { key: "threshold", title: "两组都过门槛", value: shown("threshold", (value) => `每组 ≥ ${value}`, "门槛没读到"), sub: "一组没到就不发" },
     { key: "rate", title: "取较小一组 × 比例", value: shown("rate", (value) => `× ${value}`, "比例读不懂"), sub: "先扣掉已匹配的" },
     { key: "cap", title: "不超过每期上限", value: shown("cap", (value) => `每日 ${value}`, "上限没读到"), sub: <>{PERIOD_TEXT[period]?.cap ?? "按结算周期算天数"}{capAction && <span className="f3-flow-action">{capAction}</span>}</> },
