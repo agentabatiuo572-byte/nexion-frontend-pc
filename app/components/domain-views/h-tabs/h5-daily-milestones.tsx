@@ -542,7 +542,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       initialReason={mc.original?.change.reason}
       getPendingReason={() => mutations.record(mc.target)?.change.reason}
       getPendingBusinessValue={() => mc.original?.change.businessValue ?? mutations.record(mc.target)?.change.businessValue}
-      blockedReason={activeCommand && !mutations.canRetry(activeCommand) ? isRetryExpired(activeCommand) ? "已超过 24 小时，只能查询原结果" : "当前账号不能重试原操作，请查询原结果" : !mc.original && !mutations.record(mc.target) && !fresh.current ? "请先成功刷新签到数据" : undefined}
+      blockedReason={activeCommand && !mutations.canRetry(activeCommand) ? isRetryExpired(activeCommand) ? "已超过 24 小时，只能查询原结果" : activeCommand.acknowledged ? "申请已建单，请查询原结果。" : "当前账号不能重试原操作，请查询原结果" : !mc.original && !mutations.record(mc.target) && !fresh.current ? "请先成功刷新签到数据" : undefined}
       confirmLabelForValue={mc.confirmLabelForValue}
       confirmLabel={mc.target.startsWith("power:") || mc.target.startsWith("earn:") ? approvalLabel ? "提交审批" : mc.confirmLabel : mc.confirmLabel}
       confirmTone={mc.confirmTone}

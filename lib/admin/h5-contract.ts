@@ -76,8 +76,8 @@ export function h5Amount(value: string): bigint | undefined {
 }
 
 export function h5WholeReward(value: string) {
-  // Matches positiveWholeReward: 2.0 is integral, 0 and 2.1 are not. No digit extraction.
-  const amount = h5Amount(value);
+  // Matches positiveWholeReward: +2 and 2.0 are integral, 0 and 2.1 are not. No digit extraction.
+  const amount = h5Amount(value.trim().replace(/^\+/, ""));
   return amount !== undefined && amount > BigInt(0) && amount <= BigInt(100000000000) && amount % BigInt(1000000) === BigInt(0);
 }
 
