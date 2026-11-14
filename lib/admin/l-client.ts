@@ -181,7 +181,7 @@ function networkFailure(isReportCreation: boolean) {
     : new Error("网络连接已中断，本次操作结果尚未确认。请先核对原操作，再决定是否重试。");
 }
 
-async function apiRequest<T>(path: string, init?: RequestInit, businessErrorStatus = false): Promise<T> {
+async function apiRequest<T>(path: string, init?: RequestInit, businessErrorStatus = false, attempt = { hadUncertainAttempt: false }): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
@@ -195,6 +195,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, businessErrorStat
     // A lost response after report creation is safe to retry only because this
     // request reuses the same Idempotency-Key and the backend durably replays it.
     if (!isReportCreation) throw networkFailure(false);
+    attempt.hadUncertainAttempt = true;
     try {
       res = await execute();
     } catch {
@@ -206,7 +207,10 @@ async function apiRequest<T>(path: string, init?: RequestInit, businessErrorStat
   // 回复已经写明结果未知时重发也问不出结论，直接交给调用方留待确认。
   if (isReportCreation && res.status === 503) {
     const answered = await res.clone().json().then((body: ApiResult<T>) => isIdempotencyOutcomeOpen(body.message), () => false);
-    if (!answered) res = await execute().catch(() => { throw networkFailure(true); });
+    if (!answered) {
+      attempt.hadUncertainAttempt = true;
+      res = await execute().catch(() => { throw networkFailure(true); });
+    }
   }
   if (isReportCreation && res.status >= 500) throw networkFailure(true);
   let payload: ApiResult<T> = {};
@@ -224,12 +228,14 @@ async function apiRequest<T>(path: string, init?: RequestInit, businessErrorStat
     throw new LOutcomeUnknownError();
   }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    const error = new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`)) as Error & { code?: string; status: number; reasonCode?: string };
+    const error = new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`)) as Error & { code?: string; status: number; reasonCode?: string; hadUncertainAttempt: boolean };
     error.code = payload.message;
     // Retained L3/L4 commands need the business rejection even when the
     // controller returns ApiResult.fail in HTTP 200. Other L callers keep their contract.
     error.status = businessErrorStatus && res.ok && rejected ? payload.code! : res.status;
     error.reasonCode = payload.message;
+    // A later rejection cannot by itself settle an earlier uncertain attempt.
+    error.hadUncertainAttempt = attempt.hadUncertainAttempt;
     throw error;
   }
   return payload.data as T;
@@ -768,7 +774,7 @@ export async function fetchL5ExportAudits(limit = 50): Promise<LExportAuditRow[]
   return apiRequest<LExportAuditRow[]>(`/export/audit?limit=${Math.max(1, Math.min(limit, 100))}`);
 }
 
-export type L3DetailReceipt = { reportId: string; status: string };
+export type L3DetailReceipt = { reportId: string; status: string; replayed?: boolean };
 
 function l3DetailReceipt(value: unknown, request: L3DetailRequest): L3DetailReceipt {
   const report = rec(value);
@@ -784,13 +790,14 @@ function l3DetailReceipt(value: unknown, request: L3DetailRequest): L3DetailRece
 
 /** L3 alone retains the complete request, including its original operator and reason. */
 export async function submitL3FinanceDetail(request: L3DetailRequest, commandKey: string): Promise<L3DetailReceipt> {
+  const attempt = { hadUncertainAttempt: false };
   const data = await apiRequest<Record<string, unknown>>("/reports", {
     method: "POST",
     headers: { "Idempotency-Key": commandKey },
     body: JSON.stringify(request),
-  }, true);
+  }, true, attempt);
   try {
-    return l3DetailReceipt(data?.created, request);
+    return { ...l3DetailReceipt(data?.created, request), replayed: attempt.hadUncertainAttempt };
   } catch {
     // A malformed success receipt cannot settle a command which may have committed.
     throw new LOutcomeUnknownError(formatAdminApiError("L3_DETAIL_RECEIPT_INVALID", "L3_DETAIL_RECEIPT_INVALID"));

@@ -426,8 +426,8 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
             try {
               result = await ctx.biActions.createNetworkTreeExport(record.request, record.request.reason, record.commandKey);
             } catch (error) {
-              const failure = error as { status?: number; reasonCode?: string };
-              const rejected = retrying ? isExplicitRejection(error)
+              const failure = error as { status?: number; reasonCode?: string; hadUncertainAttempt?: boolean };
+              const rejected = retrying || failure.hadUncertainAttempt ? isExplicitRejection(error)
                 : !failure.reasonCode?.startsWith("IDEMPOTENCY_")
                   && ![401, 408, 425, 429].includes(failure.status ?? 0)
                   && isDeterministicRejection(failure.status ?? 0);

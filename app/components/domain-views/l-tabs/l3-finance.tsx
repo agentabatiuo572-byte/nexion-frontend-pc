@@ -319,8 +319,8 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
           try {
             receipt = await submitL3FinanceDetail(record.request, record.commandKey);
           } catch (error) {
-            const failure = error as { status?: number; reasonCode?: string };
-            const rejected = original ? isExplicitRejection(error)
+            const failure = error as { status?: number; reasonCode?: string; hadUncertainAttempt?: boolean };
+            const rejected = original || failure.hadUncertainAttempt ? isExplicitRejection(error)
               : !failure.reasonCode?.startsWith("IDEMPOTENCY_") && isDeterministicRejection(failure.status ?? 0);
             if (rejected) {
               l3DetailCommands.forget(record.fingerprint, record.commandKey);
@@ -332,7 +332,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
             }
             throw error;
           }
-          if (original) {
+          if (original || receipt.replayed) {
             // The replay proves creation, not the current approval state. Never
             // turn its historical PENDING_CONFIRM receipt into a live status.
             l3DetailCommands.remember(record.fingerprint, record.commandKey, { owner: record.owner, request: record.request, reportId: receipt.reportId });
