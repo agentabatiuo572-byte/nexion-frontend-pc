@@ -443,136 +443,73 @@ A4定义事件命名与字段，A2承载操作记录和审批追溯；业务事�
 
 #### [A3] 系统配置
 
-**① 目的 & 对齐**
-A3 托管**平台级横切配置**——feature flag 平台、**kill-switch config store**、系统健康(运营可视/可配范围);并承载两条**固定后端不变量**——server time 单源、Idempotency-Key 去重——作为全平台时间判定与幂等去重的服务端地基(平台强制、运营不可调,**不设配置卡**,约束见 ⑦)。这些底座被多域依赖。对齐前端 **§9.11a.4 中「当前时间权威值」职责**(server time 权威——Trial / Phase 等一切时间判定以服务端时钟为准,防 client clock skew;§9.11a.4 其余 8 条 server-side responsibilities 由 H2 Trial 承接)+ §9.11e(`Idempotency-Key`——资金写入幂等去重键,server 24h dedup)+ §9.11d.3(feature flag / A-B 实验值 server-driven)+ §9.11d.1(kill-switch 闸清单)。服务的业务目标:为 §1.8 原则二.1(server-canonical)与原则二.3(幂等)提供平台级技术底座;**kill-switch config store 是 B5 风险雷达(Ch4)所引用「服务端 kill-switch config store」的实际托管处**(§9.11d.1 定义闸清单,B5 只读其状态灯)。
+> 2026-11-15 按后端 `111e00cd` 和当前改版接线复核。此节描述现行入口；旧的 A3 应急写面已迁至 J1/J2，不再作为可执行合同。App 消费按 `44b55db8`（test）、`68df587c`（h5-lite）核对。页面浏览器验收按域集中执行，本节不表示已完成真实写入验收。
 
-> **§9.11d.3 内容归属边界(A3 覆盖范围示例)**:§9.11d.3 中 PHASES 全表由 H1 Phase 调度器承接(§3.3 H1),chargeFailRate 归 H2,multiplier/做市价格曲线由对应业务域接管;**A3 feature flag 平台仅承接无明确业务域归属的横切平台 flag**,不覆盖 §9.11d.3 全部内容。归属判定示例——**归 A3 的横切 flag**:A-B 实验开关、灰度发布百分比开关、跨域通用能力开关;**不归 A3 的反例**:PHASES 全表归 H1、chargeFailRate 归 H2、业务域 multiplier 归对应业务域。
+**① 范围与读取**
 
-> **kill-switch 托管的 V1→V4 边界**:**V1 阶段由 A3 config store 托管 6 闸(5 个二元功能闸〔4 源自前端 §9.11d.1 + 后台应急新增 withdraw 提现闸〕 + 1 个 geo-block 闸)的闸状态与切换入口**(临时承载);**V4 由 J1(Kill-Switch 矩阵,5 功能闸)/ J2(Geo-block)接管管理操作面**——J1/J2 是 kill-switch 的管理操作面,A3 config store 是 V1 阶段的状态存储与临时切换面。**本章是 kill-switch config store 的存储端定义**:B5⑦ 为消费方声明,二者协作而非竞争——A3 为存储端权威、B5 为消费引用方。B5⑦ 中「或专属 config endpoint 待开发确认」的不确定性由本章终结:A3 config store 已终结 B5⑦「落点待开发确认」的不确定性,**B5⑦ 正文须同批次更新为「V1 由 A3 `/api/admin/killswitch` 承载;切换面 V4 归 J1/J2」**,B5⑦「以本子模块此处声明为准」限定改为「仅指消费端读取视图,存储端权威见后台 PRD §2.3 A3」。B5② / B5④ / B5⑦ 已声明「状态在 V1 阶段来自服务端 kill-switch config store(§9.11d.1),V4 归 J1/J2」,本子模块即该 config store 的托管定义,与 B5 引用逐一吻合。(§3.14 跨域归属表目前无「kill-switch 状态」权威归属行。)
+入口 `/platform/config`，五个页签各读各存，没有一次保存全页：
 
-**② 后台界面**
-四视图:(a) feature flag 平台 + (b) kill-switch config store + (c) 系统健康 + (d) 应用体验配置。**server time 单源与 Idempotency-Key 去重不在本配置面**——为固定后端不变量(平台强制、运营不可调,无卡;约束见 ⑦)。
+| 页签 | 读取与用途 | 写入边界 |
+|---|---|---|
+| 开关与门槛 | `GET /api/admin/platform/config/overview`；维护公告、全局限流、提现强审门槛 | W01/W02；服务登记且 `writable` 的行才可修改 |
+| 业务日历 | `GET /api/admin/platform/business-calendar`；两条轨道当前时区、未来安排和有效版本历史 | W03/W04；有效超级管理员 |
+| App 分享与下载 | `GET /api/admin/platform/config/experience`；分享基础链接、渠道、官方下载、九语目录；H3 首页开关只读 | W05，整组版本保护；H3 开关去「用户任务管理」修改 |
+| 说明内容 | `GET /api/admin/developer/docs` 与 `GET /api/admin/content/how-it-works`；两份独立草稿及公开状态 | W06/W07，各自整份快照保存；六类业务说明一起保存/发布 |
+| 应急与运行 | 共用 overview 的 J1/J2 投影及四个探针 | 只读；按目标菜单和权限跳 J1/J2 |
 
-1. **(a) feature flag 平台**:feature flag 清单 `[flag key / 当前态(on/off/灰度%)/ 适用范围(全量/cohort/Phase)/ 最近变更]`;A-B 实验值 server-driven(§9.11d.3),客户端读取派发结果。flag 切换经 ④ 确认弹窗(A3-MD1,理由必填)。**A3 feature flag 覆盖范围示例**:归 A3 的横切 flag(A-B 实验开关 / 灰度发布百分比 / 跨域通用能力开关);不归 A3 的反例(PHASES→H1 / chargeFailRate→H2 / 业务域 multiplier→对应业务域)。
-2. **(b) kill-switch config store**:6 闸(5 个二元功能闸 + 1 个 geo-block 闸)的服务端闸状态托管表 `[闸 key / 状态(enabled/disabled,geo-block 为 activeCountries 非空判定)/ 最近变更(operator / reason)]`——`withdraw 提现(后台应急新增,enforce 于 D 域提现 endpoint)/ staking 单档 / genesis / exchange / trial`(5 个二元功能闸,其中 4 个源自前端 §9.11d.1)+ `geo-block`(国家级屏蔽,结构 `{ key:'geo-block', enabled: countryList.length>0, activeCountries:[] }`);闸切换经 ④ 确认弹窗(熔断 A3-MD2 / 恢复 A3-MD3,V1 临时入口,V4 转 J1/J2)。**默认态**:5 个二元功能闸 `enabled=true`(未熔断);geo-block 默认 `activeCountries` 为空列表(无封锁),`enabled = activeCountries.length > 0`(非 boolean ON/OFF)。
-3. **(c) 系统健康**:服务端关键依赖健康面(事件管道 / 账本写入 / endpoint 可用性 / NTP 同步)的运营内部监控总览。
-4. **(d) 应用体验配置 · 界面语言(2026-11-04)**:「应用体验配置」卡片(分享渠道、官方应用安装、首页新手任务与周促销开关回显)新增「界面语言」一节,按固定顺序列出 9 种界面语言:中文 `zh`、English `en`、Tiếng Việt `vi`、Bahasa Indonesia `id`、Bahasa Melayu `ms`、Filipino `fil`、Русский `ru`、Қазақ тілі `kk`、Oʻzbekcha `uz`;每行显示语言本身的写法、中文名和代码。zh/en/vi 为基础语言,始终开启、不能取消;其余 6 种可勾选开关。随卡片原有「保存」一起提交,沿用同一保存理由(8–200 字)、版本号和操作记录。关闭后 App 与 H5 Lite 用户在语言列表里看不到该语言,正在使用它的用户改用英文;重新开启后需要用户再选一次。从未配置时为全部 9 种开启。权限同卡片其他部分(`platform_a3_read` 查看 / `platform_a3_write` 修改)。
-   - 后端 B26 上线前(读取结果不含 `interfaceLanguages`):该节只读,全部显示为开启,并提示「系统支持后，可以在这里开关界面语言，现在只能查看。」保存时不提交该字段,卡片其余保存行为不变。
-   - 读取到的列表含未知代码、重复或缺少 zh/en/vi 时,整张卡片按数据异常处理(与其他字段相同):首次加载和点「刷新」都隐藏表单,只显示报错,之后刷新成功即恢复编辑;保存后返回的列表与提交的不一致时,提示「其他设置已保存，但界面语言没有按你的选择保存」,需刷新核对后重新保存。
+首次挂载分别读取，切页签保留内存修改。各区加载/错误互不替代；读取失败不当作零、空列表或未发布。概览失败时，已保存的结果未知原记录及恢复入口仍在页头。参数 min/max 和统计字段必须是合法非负整数，缺失不补零；体验版本必须是后端非负安全整数，不能把 null 当 v0。日历按后端真实可空边界允许 `countryCode=null`、`pending=null`，LocalDateTime 接受存储时间的空格格式及 ISO 格式。
 
-**③ 可控参数**
+**② 七个写合同**
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响 / 依据 |
-|---|---|---|---|---|
-| feature flag 清单 | 平台 flag 集(灰度发布开关) | 配置级(增删 flag 须发布) | 实时(切换即派发) | §9.11d.3:A-B 实验 / 灰度 server-driven;client 读派发结果 |
-| kill-switch 闸清单与默认态(6 闸) | 5 个二元功能闸 `enabled=true`(含后台应急新增 withdraw) + geo-block `activeCountries` 空(无封锁) | 各闸 enabled/disabled(geo-block 为国家列表) | 实时(熔断即服务端 enforce) | §9.11d.1(4 闸)+ 后台应急 withdraw:监管点名/紧急下架时全局停用闸;V1 由 A3 托管、V4 归 J1/J2 |
-| geo-block 国家列表 | 空(无封锁) | 国家码列表 | 实时(enforce 即生效) | §9.11d.1 Region geo-block;`enabled = countryList.length > 0`(非纯 boolean);通过同一 `PUT /api/admin/killswitch?key=geo-block` + activeCountries 字段实现,不设独立 endpoint |
+七个合同均直接执行或安排生效，不建 A2 审批单，不声称存在本页审批锁或资金覆盖率预检。
 
-> **kill-switch 闸数量口径(6 闸:5 个二元功能闸 + 1 个 geo-block 国家列表闸)**:前端 §9.11d.1 Kill Switch 表原列 Staking pool 单档 / Genesis 一二级 pause / NEX↔USDT swap(exchange)/ Free-trial entry / NEX v2 Lock / Premium 订阅 / Region geo-block 等二元闸 + 「Risk-disclosure 版本号 + 司法辖区双维 re-ack」条款 re-ack 机制(非二元熔断闸,运营面归 I5 / J 域,V4)。**NEX v2 Lock / Premium 订阅两产品已下线,其 kill 闸随产品移除**;故后台 A3 托管的二元功能闸源自前端 §9.11d.1 的 4 个(Staking 单档 / Genesis pause / exchange swap pause / Free-trial entry)。**后台另在前端 §9.11d.1 之外应急新增 `withdraw` 提现闸**(enforce 于 D 域提现 endpoint,用于监管点名/挤兑场景一键冻结全平台提现流出)。故 A3 config store 托管 **6 个 kill-switch 闸(5 个二元功能闸〔4 源自前端 §9.11d.1 + 后台应急新增 withdraw〕 + 1 个 geo-block 国家列表闸)**——其中 5 个功能闸为二元 enabled/disabled、geo-block 为国家列表语义(`enabled = activeCountries.length > 0`)。geo-block 默认态 = `activeCountries` 为空列表(无封锁);其余 5 个功能闸默认 `enabled=true`,与 B5② geo-block 灯语义声明完全对齐(A3 全章与 B5②④⑦ 统一使用「6 闸」整体计数口径)。
-
-> **默认值口径**:kill-switch 5 个功能闸默认 `enabled=true` 为未熔断常态（4 源自前端 §9.11d.1 + 后台应急新增 withdraw;熔断为监管/应急例外动作），geo-block 默认空列表(无封锁)。12 月节奏表 §6 未覆盖系统配置类参数（flag / 闸），本表按前端 §9.11d.1 / §9.11d.3 现状规则设默认并注明依据（§1.3 默认值口径）。**server time 单源与 Idempotency-Key（24h dedup）为固定后端不变量,非本表可调参数**（平台强制,依据 §9.11a.4 / §9.11e）。
-
-**④ 操作动作**
-
-| 动作 | 角色 | 确认弹窗 | 审计点 |
+| 编号 | 方法与路径 | 完整请求/保护 | 生效与权限 |
 |---|---|---|---|
-| feature flag 切换(on/off/灰度%) | 增长(限增长类 flag)/ 超管 | A3-MD1(理由必填) | `admin.feature_flag_changed`(flag / before / after / operator / reason) |
-| kill-switch 功能闸熔断(enable→disable,V1 临时入口) | 风控 / 财务 / 超管 | A3-MD2(理由必填;止血方向,确认即生效) | `admin.killswitch_toggled`(闸 key / disable / operator / reason) |
-| kill-switch 功能闸恢复(disable→enable,V1 临时入口) | 仅超管 | A3-MD3(理由必填+B1 红线预检) | `admin.killswitch_toggled`(闸 key / enable / operator / reason) |
-| geo-block 国家列表配置(V1 临时入口) | 风控 / 超管 | A3-MD4(理由必填;V4 转 J2;排除财务,见下注) | `admin.killswitch_toggled`(key=geo-block / 国家列表变更 / operator / reason) |
-| 查看系统健康 / flag 清单 / 闸状态 | 全角色(各按可见性裁剪)/ 只读审计可全量 | 否(只读) | admin 审计事件(查看范围 / operator) |
+| W01 | `PUT /api/admin/platform/config` | `{kind:"flag",flagKey,value,expectedValue,reason,operator}`；命令号去重 | 仅登记维护公告，on/off；`platform_a3_write` 加服务端 SUPER_ADMIN；理由 8–200 |
+| W02 | 同上 | `{kind:"param",flagKey,value,expectedValue,reason,operator}`；命令号去重 | 仅两项平台注册参数，Long 整数；同写权及角色要求；理由 8–200 |
+| W03 | `PUT /api/admin/platform/business-calendar` | `{countryCode,zoneId,effectiveDate,reason}`；命令号去重 | 19 个允许时区，日期至少后端最早日，同一时刻仅一个未来 GLOBAL；有效超级管理员；理由 8–200 |
+| W04 | `POST /api/admin/platform/business-calendar/cancel` | `{versionId,reason}`；命令号去重 | 仅撤未生效 GLOBAL 安排；有效超级管理员；理由 8–200 |
+| W05 | `PUT /api/admin/platform/config/experience` | `{expectedVersion,baseUrl,channels,appDownload,reason,operator,interfaceLanguages?}`；CAS 与命令号去重 | `platform_a3_write`；理由 8–200；版本加一；不写只读 H3 开关 |
+| W06 | `PUT /api/admin/developer/docs` | 整份 `{version,status,locales,expectedRevision,reason}`，保留既有展开只读属性；不发 `revision`；**无命令号去重** | `platform_a3_write` 加 developer 域写权/超级管理员豁免；理由 8–500；revision CAS |
+| W07 | `PUT /api/admin/content/how-it-works` | 整份 `{version,status,contents,expectedRevision,reason}`，保留既有展开只读属性；不发 `revision`；**无命令号去重** | `platform_a3_write` 加 content 域写权；理由 8–500；revision CAS；SANDBOX 缺 runId 明确拒绝 |
 
-> kill-switch 两个方向区别对待(2026-06 操作确认决议):**熔断(enable→disable)是止血方向**——监管点名 / 紧急下架场景需分钟级响应,风控/财务/超管单人经确认弹窗即时执行,执行后实时告警全体超管 + 全运营账号广播;**恢复(disable→enable)是放大流出方向**——执行权仅超管,且前置 B1 兑付覆盖率红线核验(低于红线 server 拒绝 422,弹窗内展示预检结果)。V1 由 A3 config store 临时承载切换入口,V4 由 J1(5 功能闸,含后台应急新增 withdraw)/ J2(geo-block)接管管理操作面。**执行角色分层依据**:① **feature flag** — 增长仅可执行与增长活动/A-B 实验相关的 flag(如 quest 倍率实验);涉及资金/Phase dial/风控行为的 flag 执行权为超管,服务端按 flag 分类校验执行角色资质。② **kill-switch 功能闸熔断** — 资金安全止血场景,财务可参与执行。③ **geo-block** — 为合规/监管驱动(非资金止血),财务不参与、风控主导;与功能闸熔断执行角色不一致是设计意图(分层依据不同),非笔误。
+前五个去重 scope 分别为 `A3_FEATURE_FLAG:<key>`、`A3_PLATFORM_PARAM:<key>`、`R1_BUSINESS_CALENDAR`、`R1_BUSINESS_CALENDAR_CANCEL`、`A3_PLATFORM_EXPERIENCE`，24 小时从首次提交计算，不因重试续期。W06/W07 的 revision 防覆盖不等于按命令防重。
 
-**④a 交互与弹窗规格**
+**③ 原请求与结果未知（R1）**
 
-**(1) 动作触发总表**
+发送前用同一个页面级 `nexion-admin-a3-pending-commands-v1` store 保存原对象、原表单快照、精确方法/路径/JSON 字符串、理由、命令号、首次提交和过期时间；存储不成功不发送。每个对象保留原记录，不能改输入或理由覆盖它。结果未知后原输入冻结，页头逐条显示原操作及查询/恢复入口；刷新后从保存的原记录恢复。
 
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| feature flag 切换 | ②(a)flag 清单行内开关 / 灰度% 编辑 | 开关 / 行内按钮 | 按 flag 分类裁剪(增长仅见增长类);无权限角色只读 | 打开弹窗 A3-MD1 |
-| 功能闸熔断 | ②(b)闸状态表行内「熔断」 | 行内警示按钮 | 仅 `enabled` 态闸显示;风控/财务/超管渲染 | 打开弹窗 A3-MD2 |
-| 功能闸恢复 | ②(b)闸状态表行内「恢复」 | 行内按钮 | 仅 `disabled` 态闸显示;仅超管渲染 | 打开弹窗 A3-MD3 |
-| geo-block 配置 | ②(b)geo-block 行「编辑国家列表」 | 行内按钮 | 风控/超管渲染 | 打开弹窗 A3-MD4 |
-| 查看健康/清单/状态 | ②(a)-(c) 导航 tab | 链接 | 恒可用(按角色裁剪) | 跳转对应视图,无弹窗 |
+- 首次失败按 `isDeterministicRejection`：4xx 或 2xx 非零业务码为本次明确拒绝；幂等未收敛码、5xx、网络失败、读不懂的包继续保留。第一次明确拒绝丢本次号，确认框保留输入。
+- W01–W05 恢复只能发送原方法、原路径、原 body 字符串和原 `Idempotency-Key`。重试被拒仅 `isExplicitRejection` 认定的明确拒绝才解除；401/403/408/425/429 及 IDEMPOTENCY_* 均保留。W03 的 `EFFECTIVE_DATE_TOO_EARLY` 在幂等查询前检查，时间前进后的拒绝也保留原记录。
+- 超过 24 小时保留证据且禁止发送写请求，只能查询。W06/W07 任何时候都不提供原请求重发，只读回核对。当前值/版本/内容相同不能证明原操作成功，读取成功不自动清记录。
+- 当前后端没有 A3 原命令回执或可用受控核查 origin，查询按钮只能读取当前配置；两份内容、过期直写等记录没有可验证的结案来源，继续保留。不能借 A2 人工核查伪造本页已结案。
+- 得到写入成功或恢复明确拒绝后结束恢复模式，关闭旧确认框，再独立读取当前配置；重读成功前新修改不可用。幂等回放只证明当时的写入，不能当现在数据。PUT 成功后 GET 失败属于读回失败，不报提交失败，也不重发新命令。
 
-**(2) 弹窗规格**
+**④ 参数与业务日历口径**
 
-##### [A3-MD1] feature flag 切换确认
-- **功能**:切换单个 feature flag 的状态(on/off)或灰度百分比,确认即派发(server-driven,client 读结果)。
-- **布局结构**:1. **信息区**:flag key / 分类(增长类|平台类)/ 当前态 / 适用范围(全量|cohort|Phase)/ 最近变更记录(引自审计)。2. **影响预览区**:目标态(before→after 并排);灰度% 变更时展示受影响用户占比估算。3. **输入区**:见下表。4. **按钮区**:取消 / 确认切换。
-- **输入与选择控件**:
+- 全局限流 `platform.global_rate_limit_per_minute`：100–1,000,000 次/分钟。后端按 epoch minute 和路由 family 分预算：管理员登录 `max(100,L/10)`、回调 `max(500,L/2)`、健康 `max(120,L/20)`、普通请求 L；IP 桶为相应预算的 `max(20,total/10)`，认证主体还有独立 `max(20,L/10)` 桶。OPTIONS/非相关路径排除，不承诺所有流量都用一个桶。配置/Redis 故障失败关闭，不清空已有分钟计数。
+- 提现强审门槛 `withdrawal.strong_review_threshold_usdt`：20–10,000,000 USDT，整数字符串；`amount>=threshold` 进入强审并阻止 fastTrack。与 D5 小额免审线独立；已提交金额不重写，但已有单批量放行仍按当前门槛检查。金额写 USDT，不舍入、不用空值零。
+- 当前时区以 `CalendarView.trackZones.LEGACY/GROWTH_TEAM` 为权威，未来 `pending` 不提前当现行。`pending` 是 `GLOBAL && effectiveStorageAt>now`，包含在 history；撤销是软删，已撤安排不出现在 active history。
+- 切换 instant 为新时区及两条旧轨道 D 日零点的最早值，转换成北京时间存储值；不是总在新时区 D 日 00:00。最早日期是两轨道今日中较晚者加一天。
+- 切换前一天长度按 `BusinessCalendar.Track.startOf(D)-startOf(D-1)`：`24+(旧offset-新offset)/60` 小时。+8/+7 改 +7：其他模块 25h、增长与团队 24h；改 +9：23h/22h；改 +6:30：25.5h/24.5h。切换 instant 与日区间边界是不同口径，不用切换 instant 反推日长。版本历史保留，已结算周期不重算；存储时钟、UTC 转盘、越南银行日和单日提现限额等固定规则不跟随。
 
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标态 | 单选(on / off / 灰度) | 是 | 不得与当前态相同 | 当前态 |
-| 灰度百分比 | 数字输入(0–100,步长 5) | 选灰度时必填 | 0–100 整数 | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
+**⑤ App 与内容合同**
 
-- **错误态**:403(flag 分类与角色资质不符,server 校验)/ 400 `REASON_REQUIRED` / 409(已被他人变更,提示刷新)。
-- **成功反馈**:弹窗关闭;清单行就地更新;toast「flag 已切换 · 已记审计」;事件 `admin.feature_flag_changed`。
+分享链接按 App `baseUrl+referralCode` 拼接，不补斜杠；PC 示例邀请码只用于预览。空远端渠道只留下 App 固定复制/海报，PC 推荐九渠道先填本地、保存后才生效。BUG-432 后 Zalo/Messenger 的 enabled scheme 已显示，点击复制文案并引导粘贴；页面旧“不显示”文案和只统计 web 的预览交视觉 worker修正，不据旧句修改合同。system 仅 H5 且支持系统分享时显示。关闭推荐奖励时，App 不采用这里的文案模板。
 
-##### [A3-MD2] kill-switch 功能闸熔断确认
-- **功能**:全局停用单个能力闸(staking 单档/genesis/exchange/trial/withdraw),止血动作,确认即 server enforce。
-- **布局结构**:1. **信息区**:闸 key / 当前态 enabled / 该能力的当前活跃量(如在锁 position 数、24h 提现单量,server 派生)/ 最近一次该闸变更记录。2. **影响预览区**:警示条「熔断后该能力 endpoint 全局拒绝,影响全体用户;熔断即时生效并广播全运营账号」;withdraw 闸额外提示「全平台提现流出将冻结」。3. **输入区**:reason(多行文本,必填,8–200 字)+ 触发依据单选(监管点名 / 挤兑风险 / 安全事件 / 其他)。4. **按钮区**:取消 / 确认熔断(警示色)。
-- **错误态**:400 `REASON_REQUIRED` / 409(闸已为 disabled,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;闸状态灯变 disabled;toast「已熔断 · 已广播 · 已记审计」;事件 `admin.killswitch_toggled`;实时告警全体超管 + 全运营账号广播;B5 风险雷达状态灯同步。
+官网下载来源仅 official/unavailable：官网必须 HTTPS、允许锚点，包地址可空、非空不允许锚点。未编辑的 APK URL、androidPackage/iosScheme 随完整快照保留；选 unavailable 时原请求仍带旧输入，由后端保存时清 URL、版本和说明。zh/en/vi 必保留，另外六语可开关；设备显示回退英文不是强制写远端资料。六种新语言的文档/说明请求在当前 App 仍投影英文；PC 编辑允许 `fil` 及合法地区后缀。
 
-##### [A3-MD3] kill-switch 功能闸恢复确认
-- **功能**:恢复已熔断的能力闸(disable→enable),放大流出方向,仅超管,前置 B1 红线核验,确认即生效。
-- **布局结构**:1. **信息区**:闸 key / 熔断时间 / 熔断理由(引自审计)/ 熔断时长。2. **影响预览区**:server 预检「恢复后兑付覆盖率」(尤其 withdraw 闸:展示待处理提现单总额与覆盖率冲击);低于红线时阻断提示(确认钮置灰,文案含「覆盖率低于红线,server 将拒绝(422)」)。3. **输入区**:reason(多行文本,必填,8–200 字)。4. **按钮区**:取消 / 确认恢复。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(含 server 回传当前覆盖率,弹窗不关)/ 400 / 409 / 403(非超管)。
-- **成功反馈**:弹窗关闭;闸状态灯变 enabled;toast「已恢复 · 已记审计」;事件 `admin.killswitch_toggled`;实时告警全体超管;B5 同步。
+开发者文档示例、接口和事件只是发布文案。DRAFT 保留以前公开快照；首次草稿仍保留随包默认公开内容；PUBLISHED 替换之后公共读取的内容，不推送设备立即刷新。业务说明六键保持维护，发布必须六键齐；锁定计划旧 App 入口已经退个人中心，不恢复退役入口。总正文 version 与每页 version 分开：缺属性回退总版本，显式空字符串仍被后端拒绝。
 
-##### [A3-MD4] geo-block 国家列表配置
-- **功能**:编辑国家级屏蔽列表(增删国家码),确认即 server enforce(`enabled = activeCountries.length > 0`)。
-- **布局结构**:1. **信息区**:当前 activeCountries 列表(国家码 chip 集)/ 最近变更记录。2. **影响预览区**:本次 diff(新增屏蔽 / 解除屏蔽两组 chip 并排);新增屏蔽国家展示该国当前活跃用户数(server 派生);解除屏蔽视为放大方向,提示行「解除屏蔽将恢复该国用户访问」。3. **输入区**:见下表。4. **按钮区**:取消 / 确认变更。
-- **输入与选择控件**:
+业务说明 ruleRef 的 canonical、key、version、`{value}` 保存语法保留。后端 `111e00cd` 尚不解析引用，App 拒绝未替换占位符；按 A3-PD01，PC 阻断所有页/所有语言中含规则引用或未解析占位符的发布，草稿仍按后端结构校验维护；不删除占位符、不把未知规则值写死。两份内容包含保留公开快照合计上限为 1,048,576 UTF-8 字节，不是 65535。
 
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 国家列表 | 多选搜索框(ISO 国家码) | 是 | 合法 ISO 码;与当前列表相同则确认钮置灰 | 当前列表 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
+**⑥ 应急、健康与已知限制**
 
-- **错误态**:400 `REASON_REQUIRED` / 403(财务角色调用返回 403,见 ⑤)/ 409(列表已被他人变更,提示刷新)。
-- **成功反馈**:弹窗关闭;geo-block 行就地更新;toast「屏蔽列表已更新 · 已记审计」;事件 `admin.killswitch_toggled`(key=geo-block);实时告警全体超管。
+A3 只显示 J1/J2 当前投影，不恢复旧 A3-MD2/MD3/MD4 应急写入口。blocked/limited 两列表均空才没有限制，读取失败为不可确认。四个探针是事件待投递、资金账本可读性、数据库时钟偏差、当前服务 JVM；probe 异常标 stale，不猜正常，不自动建通知或工单。
 
-**⑤ 接口**
-- `GET /api/admin/system/config` — 返回系统健康 `{ health:{ pipeline, ledger, ntp, endpoints } }`(server time 单源 / Idempotency-Key 为固定后端不变量,**不在本 endpoint 配置面**;feature flag / kill-switch 走各自 endpoint)。
-- `GET /api/admin/platform/config/experience` / `PUT /api/admin/platform/config/experience` — 应用体验配置(②(d))。PUT 携 `expectedVersion / baseUrl / channels / appDownload / reason / operator` 与 `Idempotency-Key`;GET 返回 `interfaceLanguages` 时 PUT 一并提交 `interfaceLanguages: string[]`(已开启的代码,含 zh/en/vi,按固定顺序),与其他字段同一版本号、同一条操作记录;校验不通过返回 422 `PLATFORM_EXPERIENCE_LANGUAGES_INVALID`。该字段由后端 B26(uvel-docs 交接 20)提供,App 公共接口 `GET /api/config/platform` 顶层下发同名字段。
-- `GET /api/admin/feature-flags` / `PUT /api/admin/feature-flags` — feature flag 清单查询 / 切换(body 携 reason;服务端按 flag 分类校验执行角色资质;切换产 `admin.feature_flag_changed`)。
-- `GET /api/admin/killswitch` / `PUT /api/admin/killswitch`(**V1 临时**)— kill-switch 闸状态查询 / 切换 `{ key, enabled, activeCountries?, reason }`,geo-block 闸 `enabled = activeCountries.length > 0`(非纯 boolean,对齐 B5⑤)。**单一 endpoint 按 key 路由**:每次调用切换单一闸,**服务端按 key 与方向校验执行角色资质——功能闸熔断(→disabled)可为风控/财务/超管;功能闸恢复(→enabled)仅超管,且 server 前置 B1 覆盖率红线核验(低于红线返回 422 `COVERAGE_BELOW_REDLINE`);geo-block 拒绝财务(返回 403),仅风控/超管可执行**;geo-block 不设独立 endpoint(经同一 `PUT /api/admin/killswitch?key=geo-block` + activeCountries 字段实现)。**请求体须携 `Idempotency-Key`(server 24h dedup,防网络抖动重复熔断/恢复,§1.8 原则二.3)与 reason(缺失 400 `REASON_REQUIRED`);操作者经确认弹窗(A3-MD2~MD4)直接调用,写入与审计同事务,熔断动作另触发全运营账号广播**;切换产 `admin.killswitch_toggled`。**V4 落地后切换面迁移至 J1/J2 endpoint**,A3 `/killswitch` 标注「V1 临时,V4 转 J 域」。
+后端待处理仍包括 ruleRef 公开解析、内容写命令回执、A3 原命令查询/受控核查、内容读取故障返回默认/UNPUBLISHED 成功、health observedAt 无显式时区的系统时钟来源，以及地区投影旧“禁止访问/限流”叫法。健康时间超前的旧运行现象本次未起页面重验，不能声称已修。
 
-server-canonical;**server time 为单源时间权威**(防 client clock skew,§9.11a.4 当前时间权威值)、`Idempotency-Key` 由服务端 dedup（§9.11e）、kill-switch 由服务端 enforce（client 不可绕，§9.11d.2 篡改防御）。
-
-**⑥ 权限 & 审计**
-
-| 动作 | 超管 | 财务 | 风控 | 增长 | 内容 | 客服 | 只读审计 |
-|---|---|---|---|---|---|---|---|
-| 查看系统配置 / 健康 / flag / 闸状态 | ✅ | ✅(只读) | ✅(只读) | ✅(只读) | — | — | ✅(只读) |
-| feature flag 切换 | ✅(全部) | — | — | ✅(限增长类 flag) | — | — | — |
-| kill-switch 功能闸熔断 | ✅ | ✅ | ✅ | — | — | — | — |
-| kill-switch 功能闸恢复 | ✅ | — | — | — | — | — | — |
-| geo-block 配置 | ✅ | — | ✅ | — | — | — | — |
-
-> **kill-switch 按方向分两行**:熔断(止血)财务/风控可执行,恢复(放大流出)仅超管 + B1 前置——服务端按 key 与方向区分执行资质(geo-block 拒绝财务返回 403,见 ⑤)。恢复方向执行权就高为超管独占,与 K4 模型发布、A1 账号治理同属 2026-06 操作确认决议的执行门槛就高类。
-
-审计记录字段:`操作者 / 角色 / 动作(feature_flag_change|killswitch_toggle|geo_block_config) / 对象(flag key|闸 key) / 前值 / 后值 / reason / 时间(ms)`。只读审计可全量追溯 feature flag 切换史、kill-switch 熔断/恢复史——这是平台级配置变更的取证地基。
-
-**⑦ 风控 & 联动**
-- **server time 单源(核心约束)**:服务端时钟是全平台一切时间判定的唯一权威(Trial 倒计时 / Phase 月龄 / 提现冷却 / 锁仓到期),client 时钟仅 UI 显示、不参与判定(§9.11a.4 当前时间权威值);防用户改本地时钟套利（如伪造 Trial 到期、提前解锁）。H2 Trial / H1 Phase 的时间判定均依赖此单源。
-- **幂等键防重复（§9.11e）**:资金 / 资产写入 endpoint 强制携 `Idempotency-Key`，server 在 TTL（默认 24h）内 dedup；A2 审批放行的资金写入亦经此键去重，网络 retry 不致重复扣款 / 重复入账 / 重复放行。
-- **kill-switch server enforce（client 不可绕，核心约束）**:闸状态服务端权威，熔断后对应能力 endpoint 在服务端直接拒绝（§9.11d.2 篡改防御：client localStorage 改 flag 无效，真值在 server）；client 仅读 enabled 灯渲染。B5 风险雷达只读其状态、不持开关（避免双写分叉）。
-- **feature flag / A-B server-driven（§9.11d.3）**:灰度 / 实验值由服务端派发，client 读结果；flag 切换经确认弹窗 + 理由必填 + 审计告警，误改可快速追溯回滚。
-- **kill-switch 托管的 V1→V4 单一源**:V1 由 A3 config store 托管闸状态（存储端权威,B5 为消费引用方）,V4 J1/J2 接管管理操作面后,闸状态权威随之迁移;迁移前后 B5 始终只读单一源、不持开关。
-
-**⑧ 埋点(事件)**
-对齐 A4(§2.4.5 ⑥ admin family):
-- **产生(admin 审计,§2.4.5 ⑥ admin family)**:
-  - `admin.feature_flag_changed` — 触发点:feature flag 切换确认执行;属性:`flag_key / before / after / scope(all|cohort|phase) / operator / reason / ts`;喂 A2 审计。
-  - `admin.killswitch_toggled` — 触发点:kill-switch 闸熔断/恢复确认执行（含 geo-block 国家列表变更）;属性:`switch_key / action(enable|disable) / active_countries(geo-block 时)/ operator / reason / ts`;喂 A2 审计 + B5 风险雷达（状态灯变更,V1 阶段由 A3 产生此事件）。
-- **消费**:无用户侧事件;A3 为平台配置域,仅产 admin 审计事件。
-- **注**:`admin.feature_flag_changed` / `admin.killswitch_toggled` 须经 A4 schema registry 注册（归入 §2.4.5 ⑥ admin family）、经 A2 落 append-only 审计库;**B5② / B5⑦ 须补充反向引用「V1 阶段 kill-switch 状态来自后台 A3 系统配置（§2.3 A3）托管的 config store」**,与 A3① 形成双向引用;**B5⑧ 消费端事件名应对齐为 `admin.killswitch_toggled`(V1 阶段由 A3 产生;V4 J1/J2 落地后由 J 域产生)**。
+共用确认框 select 的旧画法和未知提示叫法留设计组件负责人；页面不改布局、样式或重写原句。`a3-config.tsx` 仍被 verify 的幂等哨兵引用，连同其旧组件依赖及仍引用的 CSS 暂保留，不删坏检查源。
 
 ### 2.4 埋点事件体系(A4)
 

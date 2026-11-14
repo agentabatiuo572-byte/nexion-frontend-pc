@@ -15,11 +15,29 @@ export type BusinessCalendarView = {
 type ApiResult<T> = { code: number; message?: string; data?: T };
 const BASE = "/api/admin/platform/business-calendar";
 
+export function parseBusinessCalendar(raw: unknown): BusinessCalendarView {
+  const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+  const date = (value: unknown) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const stamp = (value: unknown) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(value);
+  const strings = (value: Record<string, unknown>, keys: string[]) => keys.every(key => typeof value[key] === "string");
+  const version = (value: unknown): boolean => object(value) && Number.isSafeInteger(value.id)
+    && ["LEGACY", "GROWTH_TEAM", "GLOBAL"].includes(String(value.track))
+    && strings(value, ["zoneId", "offset", "operator", "reason"]) && (value.countryCode === null || typeof value.countryCode === "string")
+    && date(value.effectiveDate) && stamp(value.effectiveStorageAt) && stamp(value.createdAt) && typeof value.pending === "boolean";
+  if (!object(raw) || !strings(raw, ["currentZoneId", "currentZoneLabel", "currentOffset"])
+    || typeof raw.unified !== "boolean" || !object(raw.trackZones) || !strings(raw.trackZones, ["LEGACY", "GROWTH_TEAM"])
+    || !date(raw.earliestEffectiveDate) || !Array.isArray(raw.history) || !raw.history.every(version)
+    || !(raw.pending === null || version(raw.pending)) || !Array.isArray(raw.options)
+    || !raw.options.every(option => object(option) && strings(option, ["countryName", "zoneId", "label"])
+      && (option.countryCode === null || typeof option.countryCode === "string"))) throw new Error("BUSINESS_CALENDAR_RESPONSE_INVALID");
+  return raw as BusinessCalendarView;
+}
+
 async function request(path: string, init?: RequestInit): Promise<BusinessCalendarView> {
   const response = await guardedFetch(`${BASE}${path}`, { ...init, cache: "no-store" });
   const body = await response.json().catch(() => null) as ApiResult<BusinessCalendarView> | null;
   if (!response.ok || !body || body.code !== 0 || !body.data) throw new Error(formatAdminApiError(body?.message, `BUSINESS_CALENDAR_REQUEST_FAILED_${response.status}`));
-  return body.data;
+  return parseBusinessCalendar(body.data);
 }
 
 /** Reads the calendar and publishes the current zone to every time label in the console. */

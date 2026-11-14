@@ -5,37 +5,35 @@
  * 开关与门槛（W01 维护公告、W02 两项平台参数）、业务日历（W03/W04）、App 分享与下载（W05）、
  * 说明内容（W06 开发者文档、W07 六类业务说明）、应急与运行（只读，处置去 J1/J2）。
  * 页签藏起来的块照样挂着：首次进页五块都读，切页签不丢没保存的修改。
- * 请求、校验、命令号存储都沿用旧页面（a3-config.tsx 等）的写法，这里只换界面。
+ * 七个写入口共用完整原请求存储；未知记录独立于读取状态，恢复只使用原请求。
  * 全部写操作不走审批：确认按钮写动作本身，影响全平台的几项用危险样式。
  */
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { Activity, Ban, CalendarClock, CircleHelp, CircleOff, Gauge, Megaphone, RefreshCw, ShieldAlert, ShieldCheck, Siren, SlidersHorizontal, ToggleLeft, TriangleAlert, type LucideIcon } from "lucide-react";
 import { BlockState, Button, ConfigList, ConfigRow, Conclusion, Explain, Fact, Facts, Notice, PageHeader, PageTabs, Panel, Stat, StatBand, StatusTag, TodoItem, TodoList, useTabIds, type StateTone } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { a3Deduplicates, useA3Commands, type A3Command } from "@/lib/admin/a3-mutations";
+import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
+import { fetchPlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
+import { fetchDeveloperDocsAdmin, fetchHowContentAdmin } from "@/lib/admin/published-content-client";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import {
   fetchA3Overview,
-  isA3OutcomeUncertainError,
-  isA3ReadbackFailedError,
-  updateA3FeatureFlag,
-  updateA3Parameter,
   type A3FeatureFlag,
   type A3KillSwitch,
   type A3Overview,
   type A3PlatformParam,
   type A3SystemHealth,
 } from "@/lib/admin/a3-client";
-import { GRecoveryNotice, type GRecoveryRow } from "../g-tabs/g-recovery";
+import { GRecoveryNotice, expiredTag, unknownTag, type GRecoveryRow } from "../g-tabs/g-recovery";
 import type { ACtx } from "./types";
 import { A3Calendar, type A3CalendarSummary } from "./a3-calendar";
 import { A3Experience } from "./a3-experience";
 import { A3Content, type A3ContentSummary } from "./a3-content";
-
-const a3ParamCommands = createSlotAttemptStore({ storageKey: "nexion-admin-a3-param-commands-v1" });
 
 type TabKey = "switches" | "calendar" | "experience" | "content" | "status";
 
@@ -57,7 +55,8 @@ function rateBudget(limit: number) {
 }
 
 function wholeNumber(value: string) {
-  return /^\d+$/.test(value.trim()) ? Number(value.trim()) : null;
+  const parsed = /^\d+$/.test(value.trim()) ? Number(value.trim()) : NaN;
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 /** 整数按千分位写（数量、金额），编号不走这里。 */
@@ -107,18 +106,29 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   const [calendarNonce, setCalendarNonce] = useState(0);
   const [tab, setTab] = useState<TabKey>("switches");
   const ids = useTabIds();
-  /** 结果未知、待确认的原操作逐条列在这里。旧逻辑还没保存原请求，代码 worker 接上后传真实行。 */
-  const recoveryRows: GRecoveryRow[] = [];
+  const commands = useA3Commands();
+  const [recovery, setRecovery] = useState<A3Command | null>(null);
+  const [readNonce, setReadNonce] = useState({ experience: 0, docs: 0, how: 0 });
+  const [querying, setQuerying] = useState<string | null>(null);
+  const onRecovered = useCallback(() => setRecovery(null), []);
+  const overviewReady = useRef(false);
+  const current = useRef({ overview, session });
+  current.current = { overview, session };
+
 
   const refreshOverview = useCallback(async (quiet = false) => {
+    overviewReady.current = false;
     if (!quiet) setLoading(true);
     setLoadError(null);
     try {
       setOverview(await fetchA3Overview());
+      overviewReady.current = true;
       setReadAt(businessClock(Date.now()));
+      return true;
     } catch (error) {
       if (!quiet) setOverview(null);
       setLoadError(displayAdminError(error));
+      return false;
     } finally {
       if (!quiet) setLoading(false);
     }
@@ -141,7 +151,8 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     "ops-console-shell": "后台全局维护公告", "PlatformGlobalRateLimitFilter": "全平台请求频率限制",
     "D2 AppWithdrawalService + B1/B5 withdrawal projection": "提现加强审核及资金风险统计", "SupportLeaderboardService": "客服业绩榜刷新",
   } as Record<string, string>)[value] ?? value;
-  const flagChg = (f: A3FeatureFlag) => {
+  const flagChg = (f: A3FeatureFlag, original?: A3Command) => {
+    if (!original && (!overviewReady.current || commands.find(`flag:${f.key}`))) return;
     const cur = f.status;
     const name = FLAG_LABEL[f.key] ?? f.name;
     openActionConfirm({ briefKind: "config",
@@ -157,36 +168,34 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         <Fact k="影响谁">{f.key === "ops.maintenanceBanner" ? "有「系统配置」查看权限的后台账号" : f.scope}</Fact>
         <Fact k="最近变更">{timeText(f.lastChange)}</Fact>
       </Facts>,
-      edit: { kind: "select", current: cur, options: f.allowedValues, optionLabels: STATE_NAME, disallowCurrent: true },
-      run: (reason, v) => {
+      initialReason: original?.reason,
+      getPendingReason: () => commands.find(`flag:${f.key}`)?.reason,
+      edit: { kind: "select", current: cur, initialValue: original?.original.kind === "flag" ? original.original.value : undefined, options: f.allowedValues, optionLabels: STATE_NAME, disallowCurrent: true },
+      run: async (reason, v) => {
         const val = (v || "").trim();
         if (!f.allowedValues.includes(val)) {
           const copy = "所选状态不可用，请刷新页面后重试。";
           toast(copy);
           throw new Error(copy);
         }
+        const retained = commands.find(`flag:${f.key}`);
+        if (!retained && (!overviewReady.current || !current.current.overview?.featureFlags.find(row => row.key === f.key)?.writable
+          || !(current.current.session?.role === "superadmin" || current.current.session?.authorities?.includes("platform_a3_write")))) throw new Error("A3_ORIGINAL_READ_REQUIRED");
+        const record = retained ?? commands.capture({ original: { kind: "flag", row: f, value: val },
+          path: "/api/admin/platform/config", method: "PUT", body: JSON.stringify({ kind: "flag", flagKey: f.key, value: val, expectedValue: cur, reason, operator }),
+          reason, name, change: `${STATE_NAME[cur] ?? cur} → ${STATE_NAME[val] ?? val}` });
+        if (current.current.session?.role !== "superadmin") throw new Error("A3_FLAG_ROLE_FORBIDDEN");
         setMutating(f.key);
-        return updateA3FeatureFlag(f.key, val, cur, reason, operator)
-          .then((next) => {
-            setOverview(next);
-            setReadAt(businessClock(Date.now()));
-            window.dispatchEvent(new CustomEvent("a3:runtime-flags-changed"));
-            toast(`「${name}」已切换为${STATE_NAME[val] ?? val}`, "success");
-          })
-          .catch((error: unknown) => {
-            if (isA3ReadbackFailedError(error)) {
-              toast(`已保存，但页面刷新失败，正在重新加载。请不要重复提交。`, "warn");
-              void refreshOverview(true);
-              return;
-            }
-            if (isA3OutcomeUncertainError(error)) {
-              toast("结果未知：可能已经生效。请先刷新，到操作记录里核对，不要重复提交。", "warn");
-              throw error;
-            }
-            toast(`提交失败：${displayAdminError(error)}`, "error");
-            throw error;
-          })
-          .finally(() => setMutating(null));
+        try {
+          await commands.send(record, Boolean(retained));
+          ctx.closeActionConfirm?.();
+          window.dispatchEvent(new CustomEvent("a3:runtime-flags-changed"));
+          toast(`「${name}」已切换为${STATE_NAME[record.original.kind === "flag" ? record.original.value : val] ?? val}`, "success");
+          if (!await refreshOverview(true)) toast(`已保存，但页面刷新失败，正在重新加载。请不要重复提交。`, "warn");
+        } catch (error) {
+          if (retained && !commands.find(record.fingerprint)) { toast(displayAdminError(error), "error"); ctx.closeActionConfirm?.(); await refreshOverview(true); }
+          throw error;
+        } finally { setMutating(null); }
       },
     });
   };
@@ -201,7 +210,8 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     return `改成 ${raw}`;
   };
 
-  const paramChg = (param: A3PlatformParam) => {
+  const paramChg = (param: A3PlatformParam, original?: A3Command) => {
+    if (!original && (!overviewReady.current || commands.find(`param:${param.key}`))) return;
     const name = PARAM_LABEL[param.key] ?? param.name;
     openActionConfirm({ briefKind: "config",
       action: `调整平台参数 · ${param.name}`,
@@ -220,32 +230,65 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         <Fact k="影响范围">{param.key === RATE_KEY ? "全平台 App 和后台接口" : param.key === THRESHOLD_KEY ? "之后提交的 USDT 提现" : consumerLabel(param.consumer)}</Fact>
         <Fact k="最近变更">{timeText(param.lastChange)}</Fact>
       </Facts>,
-      edit: { kind: "number", current: param.value, min: param.min, max: param.max, unit: param.unit,
+      initialReason: original?.reason,
+      getPendingReason: () => commands.find(`param:${param.key}`)?.reason,
+      edit: { kind: "number", current: param.value, initialValue: original?.original.kind === "param" ? original.original.value : undefined, min: param.min, max: param.max, unit: param.unit,
         hint: `${grouped(param.min)}–${grouped(param.max)} 的整数`, preview: (value) => paramMeaning(param, value) },
       run: async (reason, value) => {
         const normalizedValue = (value || "").trim();
+        if (!/^[+-]?\d+$/.test(normalizedValue)) throw new Error("A3_PARAM_INTEGER_REQUIRED");
         const slot = `param:${param.key}`;
-        const fingerprint = JSON.stringify([param.key, normalizedValue, param.value, reason, operator]);
-        const commandKey = a3ParamCommands.resolve(slot, fingerprint, () => `a3-param-${crypto.randomUUID()}`);
+        const retained = commands.find(slot);
+        if (!retained && (!overviewReady.current || !current.current.overview?.platformParams.find(row => row.key === param.key)?.writable
+          || !(current.current.session?.role === "superadmin" || current.current.session?.authorities?.includes("platform_a3_write")))) throw new Error("A3_ORIGINAL_READ_REQUIRED");
+        const record = retained ?? commands.capture({ original: { kind: "param", row: param, value: normalizedValue },
+          path: "/api/admin/platform/config", method: "PUT", body: JSON.stringify({ kind: "param", flagKey: param.key, value: normalizedValue, expectedValue: param.value, reason, operator }),
+          reason, name, change: `${param.value} → ${normalizedValue} ${param.unit}` });
+        if (current.current.session?.role !== "superadmin") throw new Error("A3_PARAM_ROLE_FORBIDDEN");
         setMutating(param.key);
         try {
-          setOverview(await updateA3Parameter(param.key, normalizedValue, param.value, reason, operator, commandKey));
-          setReadAt(businessClock(Date.now()));
-          a3ParamCommands.forget(slot);
+          await commands.send(record, Boolean(retained));
+          ctx.closeActionConfirm?.();
           toast(`${name}已更新`, "success");
+          if (!await refreshOverview(true)) toast(`已保存，但页面刷新失败，正在重新加载。请不要重复提交。`, "warn");
         } catch (error) {
-          if (isA3OutcomeUncertainError(error)) {
-            toast("结果未知：可能已经生效。先刷新核对当前值；要重试，新值和理由保持完全不变再确认，不会重复执行。", "warn");
-          } else {
-            a3ParamCommands.forget(slot);
-            toast(`提交失败：${displayAdminError(error)}`, "error");
-          }
+          if (retained && !commands.find(slot)) { toast(displayAdminError(error), "error"); ctx.closeActionConfirm?.(); await refreshOverview(true); }
           throw error;
-        }
-        finally { setMutating(null); }
+        } finally { setMutating(null); }
       },
     });
   };
+
+  const queryOriginal = async (record: A3Command) => {
+    setQuerying(record.commandKey);
+    if (record.original.kind === "docs" || record.original.kind === "how") setRecovery(record);
+    try {
+      switch (record.original.kind) {
+        case "flag": case "param": if (!await refreshOverview()) return; break;
+        case "schedule": case "cancel": await fetchBusinessCalendar(); setCalendarNonce(value => value + 1); break;
+        case "experience": await fetchPlatformExperienceConfig(); setReadNonce(value => ({ ...value, experience: value.experience + 1 })); break;
+        case "docs": await fetchDeveloperDocsAdmin(); setReadNonce(value => ({ ...value, docs: value.docs + 1 })); break;
+        case "how": await fetchHowContentAdmin(); setReadNonce(value => ({ ...value, how: value.how + 1 })); break;
+      }
+      toast(displayAdminError(new Error("A3_ORIGINAL_CURRENT_ONLY")), "warn");
+    } catch (error) { toast(displayAdminError(error), "error"); }
+    finally { setQuerying(null); }
+  };
+  const recoverOriginal = (record: A3Command) => {
+    if (record.original.kind === "flag") flagChg(record.original.row, record);
+    else if (record.original.kind === "param") paramChg(record.original.row, record);
+    else setRecovery(record);
+  };
+  const recoveryRows: GRecoveryRow[] = commands.pending.map(record => ({
+    key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
+    tag: isRetryExpired(record) ? expiredTag("direct") : a3Deduplicates(record) ? unknownTag("direct")
+      : <StatusTag tone="warn" icon={CircleHelp} explain="后端不防重复：结果未知时先刷新核对">结果未知</StatusTag>,
+    actions: <>
+      <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
+      {a3Deduplicates(record) && !isRetryExpired(record) && <Button size="sm" disabledReason={(record.original.kind === "experience" ? canWriteExperience : session?.role === "superadmin") ? undefined : "你只能查看"}
+        onClick={() => recoverOriginal(record)}>按原请求重试</Button>}
+    </>,
+  }));
 
   /* ────────────────── 首屏：有没有不正常的 ────────────────── */
 
@@ -308,7 +351,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
               value={<StatusTag tone={on ? "warn" : flag.status === "off" ? "neutral" : "progress"} icon={on ? Megaphone : flag.status === "off" ? CircleOff : undefined}>{on ? "已开启" : flag.status === "off" ? "已关闭" : "部分开放"}</StatusTag>}
               sub={`最近变更 ${timeText(flag.lastChange)}`}
               action={flag.writable
-                ? <Button size="sm" loading={mutating === flag.key} disabledReason={mutating && mutating !== flag.key ? "另一项正在提交" : undefined} onClick={() => flagChg(flag)}>{on ? "关闭" : "开启"}</Button>
+                ? <Button size="sm" loading={mutating === flag.key} disabledReason={commands.find(`flag:${flag.key}`) ? "结果未知" : !overviewReady.current ? "正在读取" : mutating && mutating !== flag.key ? "另一项正在提交" : undefined} onClick={() => flagChg(flag)}>{on ? "关闭" : "开启"}</Button>
                 : <span className="rd-note">只读</span>} />;
           })}
         </ConfigList>}
@@ -327,7 +370,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
                 <p>{isRate ? "全平台每分钟能处理多少个请求。按接口分组计数，每分钟重新计。" : "单笔提现达到这个金额就进人工强审。和「提现参数」里的小额免审线是两回事。"}</p>
                 <p>后端登记名「{param.name}」，参数键 {param.key}。只有超级管理员能改，不走审批。</p>
               </>}
-              actions={param.writable ? <Button size="sm" loading={mutating === param.key} disabledReason={mutating && mutating !== param.key ? "另一项正在提交" : undefined} onClick={() => paramChg(param)}>调整</Button> : <span className="rd-note">只读</span>}>
+              actions={param.writable ? <Button size="sm" loading={mutating === param.key} disabledReason={commands.find(`param:${param.key}`) ? "结果未知" : !overviewReady.current ? "正在读取" : mutating && mutating !== param.key ? "另一项正在提交" : undefined} onClick={() => paramChg(param)}>调整</Button> : <span className="rd-note">只读</span>}>
               <div className="a3-param-value" data-empty={value === null ? "" : undefined}>
                 <strong>{value === null ? (param.value || "—") : grouped(value)}</strong>
                 <span>{param.unit}</span>
@@ -449,9 +492,9 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       ]} />
 
       <div {...ids.panel("switches")} hidden={tab !== "switches"}>{switchesPanel}</div>
-      <div {...ids.panel("calendar")} hidden={tab !== "calendar"}><A3Calendar nonce={calendarNonce} onSummary={setCalendar} toast={toast} /></div>
-      <div {...ids.panel("experience")} hidden={tab !== "experience"}><A3Experience toast={toast} /></div>
-      <div {...ids.panel("content")} hidden={tab !== "content"}><A3Content toast={toast} onSummary={setContent} /></div>
+      <div {...ids.panel("calendar")} hidden={tab !== "calendar"}><A3Calendar commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={calendarNonce} onSummary={setCalendar} toast={toast} /></div>
+      <div {...ids.panel("experience")} hidden={tab !== "experience"}><A3Experience commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={readNonce.experience} toast={toast} /></div>
+      <div {...ids.panel("content")} hidden={tab !== "content"}><A3Content commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={readNonce.how} docsNonce={readNonce.docs} toast={toast} onSummary={setContent} /></div>
       <div {...ids.panel("status")} hidden={tab !== "status"}>{statusPanel}</div>
     </div>
   );

@@ -1,18 +1,20 @@
 "use client";
 
 /**
- * A3 业务日历（W03 安排、W04 撤销）。请求、命令号、校验沿用旧 business-calendar-config.tsx：
- * 安排在打开确认时铸一次命令号（a3-business-zone-*），撤销每点一次新号（a3-business-zone-cancel-*），理由 trim 后 8–200。
+ * A3 业务日历（W03 安排、W04 撤销）：写前保存完整原请求，恢复不依赖当前安排是否仍在。
+ * 理由 trim 后 8–200；成功回包只作原命令结论，当前日历另读。
  * 主图是两条轨道的版本时间线：现在用的、已安排的、切换那一天变长还是变短。
  * 切换时刻以后端 effectiveStorageAt 为准；表单里的预览按同一规则（新旧时区当天零点里最早的那个）现算。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarClock, CalendarPlus, CalendarX2, History } from "lucide-react";
 import { BlockState, Button, Cell, Change, Fact, Facts, Field, Fold, Modal, Notice, Panel, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, Input } from "@/app/components/rd";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { type A3RecoveryProps } from "@/lib/admin/a3-mutations";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessDay, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { cancelBusinessZone, fetchBusinessCalendar, scheduleBusinessZone, zoneOptionLabel, type BusinessCalendarVersion, type BusinessCalendarView } from "@/lib/admin/business-calendar-client";
+import { fetchBusinessCalendar, zoneOptionLabel, type BusinessCalendarVersion, type BusinessCalendarView } from "@/lib/admin/business-calendar-client";
 
 export type A3CalendarSummary = { zone?: string; sub?: string; pending?: string; failed?: boolean };
 
@@ -67,7 +69,7 @@ const dateText = (date: string) => date === "1970-01-01" ? "初始" : date;
 const operatorText = (value: string) => value === "migration:r1" ? "系统迁移" : value || "—";
 const appliesTo = (row: BusinessCalendarVersion, track: string) => row.track === track || row.track === "GLOBAL";
 
-export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSummary: (summary: A3CalendarSummary | null) => void; toast: (text: string, kind?: "success" | "error" | "warn" | "info") => void }) {
+export function A3Calendar({ commands, recovery, onRecovered, nonce, onSummary, toast }: A3RecoveryProps & { onSummary: (summary: A3CalendarSummary | null) => void; toast: (text: string, kind?: "success" | "error" | "warn" | "info") => void }) {
   const session = useAdminAuth((state) => state.session);
   const canWrite = session?.role === "superadmin";
   const [view, setView] = useState<BusinessCalendarView | null>(null);
@@ -84,26 +86,40 @@ export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSumma
   const [formOpen, setFormOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [touched, setTouched] = useState(false);
+  const [readReady, setReadReady] = useState(false);
+  const original = commands.find("calendar");
+  const scheduleOriginal = original?.original.kind === "schedule" ? original : undefined;
+  const cancelOriginal = original?.original.kind === "cancel" ? original : undefined;
+  useEffect(() => {
+    if (recovery?.original.kind === "schedule") {
+      setReason(recovery.reason); setFormOpen(true); setConfirming({ key: recovery.commandKey }); setError(null); setSuccess(null); onRecovered();
+    } else if (recovery?.original.kind === "cancel") {
+      setCancelReason(recovery.reason); setCancelOpen(true); setError(null); setSuccess(null); onRecovered();
+    }
+  }, [recovery, onRecovered]);
 
   const refresh = useCallback(async () => {
-    setLoading(true); setError(null);
+    setReadReady(false); setLoading(true); setError(null);
     try {
       const next = await fetchBusinessCalendar();
-      setView(next);
+      setView(next); setReadReady(true);
       setEffectiveDate((value) => value && value >= next.earliestEffectiveDate ? value : next.earliestEffectiveDate);
     } catch (cause) { setError(displayAdminError(cause)); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void refresh(); }, [refresh, nonce]);
 
-  const zoneLabel = useCallback((id: string) => id === "Asia/Shanghai" ? "北京时间" : view?.options.find((option) => option.zoneId === id)?.label ?? id, [view]);
+  const zoneLabel = useCallback((id: string) => id === "Asia/Shanghai" ? "北京时间" : (view?.options ?? (original?.original.kind === "schedule" || original?.original.kind === "cancel" ? original.original.view.options : [])).find((option) => option.zoneId === id)?.label ?? id, [view, original?.commandKey]);
   const countries = useMemo(() => {
     const seen = new Map<string, string>();
     view?.options.forEach((option) => { const key = option.countryCode ?? "UTC"; if (!seen.has(key)) seen.set(key, option.countryName); });
     return [...seen.entries()];
   }, [view]);
   const zones = view?.options.filter((option) => (option.countryCode ?? "UTC") === country) ?? [];
-  const selected = zones.find((option) => option.zoneId === zoneId);
+  const selected = scheduleOriginal?.original.kind === "schedule" ? scheduleOriginal.original.option : zones.find((option) => option.zoneId === zoneId);
+  const dialogView = scheduleOriginal?.original.kind === "schedule" ? scheduleOriginal.original.view : view;
+  const dialogDate = scheduleOriginal?.original.kind === "schedule" ? scheduleOriginal.original.effectiveDate : effectiveDate;
+  const cancelTarget = cancelOriginal?.original.kind === "cancel" ? cancelOriginal.original.target : view?.pending;
   const reasonValid = reason.trim().length >= 8 && reason.trim().length <= 200;
   const formReady = Boolean(selected && view && effectiveDate >= view.earliestEffectiveDate && reasonValid);
   const growthZone = view?.trackZones.GROWTH_TEAM;
@@ -112,83 +128,74 @@ export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSumma
   useEffect(() => {
     if (!view) { onSummary(error ? { failed: true } : null); return; }
     const growthDiffers = !view.unified && growthZone;
-    onSummary({
-      zone: view.currentZoneLabel,
-      sub: pending
-        ? `${pending.effectiveDate} 起改${zoneLabel(pending.zoneId)}`
+    onSummary({ zone: view.currentZoneLabel,
+      sub: pending ? `${pending.effectiveDate} 起改${zoneLabel(pending.zoneId)}`
         : growthDiffers ? `增长与团队按${zoneLabel(growthZone)}` : `${view.currentOffset} · 没有安排`,
-      pending: pending ? `${pending.effectiveDate} 起改用${zoneLabel(pending.zoneId)}（${pending.offset}）` : undefined,
-    });
+      pending: pending ? `${pending.effectiveDate} 起改用${zoneLabel(pending.zoneId)}（${pending.offset}）` : undefined });
   }, [view, error, pending, growthZone, zoneLabel, onSummary]);
 
   const pickCountry = (code: string) => {
-    setCountry(code);
-    setZoneId(view?.options.find((option) => (option.countryCode ?? "UTC") === code)?.zoneId ?? "");
+    setCountry(code); setZoneId(view?.options.find(option => (option.countryCode ?? "UTC") === code)?.zoneId ?? "");
   };
-
   const submit = async () => {
-    if (!confirming || !selected || saving) return;
+    if (!confirming || !selected || saving || !canWrite) return;
+    if (!original && (!view || !readReady || view.pending || !formReady)) return;
     setSaving(true); setError(null);
     try {
-      setView(await scheduleBusinessZone({ countryCode: selected.countryCode, zoneId: selected.zoneId, effectiveDate, reason }, confirming.key));
-      setConfirming(null); setReason(""); setFormOpen(false); setTouched(false);
-      setSuccess(`已安排：${effectiveDate} 起改用${selected.label}。生效前可以撤销。`);
-      toast(`已安排业务时区：${effectiveDate} 起改用${selected.label}`, "success");
-    } catch (cause) { setError(displayAdminError(cause)); setConfirming(null); }
-    finally { setSaving(false); }
+      const record = original ?? commands.capture({ original: { kind: "schedule", view: view!, option: selected, effectiveDate },
+        path: "/api/admin/platform/business-calendar", method: "PUT", body: JSON.stringify({ countryCode: selected.countryCode, zoneId: selected.zoneId, effectiveDate, reason: reason.trim() }),
+        reason: reason.trim(), name: "安排新的业务时区", change: `${view!.currentZoneLabel} → ${selected.label} · ${effectiveDate}` });
+      await commands.send(record, Boolean(original));
+      setReadReady(false); setConfirming(null); setReason(""); setFormOpen(false); setTouched(false);
+      if (!original) setSuccess(`已安排：${dialogDate} 起改用${selected.label}。生效前可以撤销。`);
+      toast(`已安排业务时区：${dialogDate} 起改用${selected.label}`, "success");
+      await refresh();
+    } catch (cause) {
+      setError(displayAdminError(cause)); toast(displayAdminError(cause), commands.find("calendar") ? "warn" : "error");
+      if (original && !commands.find("calendar")) { setConfirming(null); setFormOpen(false); await refresh(); }
+    } finally { setSaving(false); }
   };
-
   const cancel = async (target: BusinessCalendarVersion) => {
-    if (saving) return;
+    if (saving || !canWrite) return;
+    if (!original && (!view || !readReady || view.pending?.id !== target.id)) return;
     if (cancelReason.trim().length < 8 || cancelReason.trim().length > 200) { setError("撤销理由必须填写 8-200 个字符。"); return; }
     setSaving(true); setError(null);
     try {
-      setView(await cancelBusinessZone(target.id, cancelReason, `a3-business-zone-cancel-${crypto.randomUUID()}`));
-      setCancelReason(""); setCancelOpen(false); setSuccess("已撤销待生效的时区安排，现行时区不变。");
-      toast("已撤销待生效的时区安排", "success");
-    } catch (cause) { setError(displayAdminError(cause)); }
-    finally { setSaving(false); }
+      const record = original ?? commands.capture({ original: { kind: "cancel", view: view!, target },
+        path: "/api/admin/platform/business-calendar/cancel", method: "POST", body: JSON.stringify({ versionId: target.id, reason: cancelReason.trim() }),
+        reason: cancelReason.trim(), name: "撤销这次时区安排", change: `${target.effectiveDate} · ${zoneLabel(target.zoneId)} → 撤销` });
+      await commands.send(record, Boolean(original));
+      setReadReady(false); setCancelReason(""); setCancelOpen(false); if (!original) setSuccess("已撤销待生效的时区安排，现行时区不变。");
+      toast("已撤销待生效的时区安排", "success"); await refresh();
+    } catch (cause) {
+      setError(displayAdminError(cause));
+      if (original && !commands.find("calendar")) { toast(displayAdminError(cause), "error"); setCancelOpen(false); await refresh(); }
+    } finally { setSaving(false); }
   };
 
-  /* 现在每条轨道用的版本：已生效里生效时刻最晚的一条。 */
   const history = view?.history ?? [];
-  const currentOf = (track: string) => [...history].filter((row) => appliesTo(row, track) && !row.pending)
+  const currentOf = (track: string) => [...history].filter(row => appliesTo(row, track) && !row.pending && row.zoneId === view?.trackZones[track])
     .sort((a, b) => a.effectiveStorageAt.localeCompare(b.effectiveStorageAt)).at(-1);
   const trackOffset = (track: string) => {
-    const row = currentOf(track);
-    return row ? offsetMinutes(row.offset) : null;
+    const zone = view?.trackZones[track]; return zone ? offsetMinutes(offsetOf(zone)) : null;
   };
-
-  /* 时间线的列：每个生效日一列，「现在」插在已生效和安排中之间；太早的版本收进版本记录。 */
-  const dates = [...new Set(history.map((row) => row.effectiveDate))].sort();
-  const pastDates = dates.filter((date) => history.some((row) => row.effectiveDate === date && !row.pending));
-  const futureDates = dates.filter((date) => !pastDates.includes(date));
+  const dates = [...new Set(history.map(row => row.effectiveDate))].sort();
+  const pastDates = dates.filter(date => history.some(row => row.effectiveDate === date && !row.pending));
+  const futureDates = dates.filter(date => !pastDates.includes(date));
   const shownPast = pastDates.slice(-3);
   const hiddenPast = pastDates.length - shownPast.length;
-  const columns: Array<{ key: string; date?: string; now?: boolean }> = [...shownPast.map((date) => ({ key: date, date })), { key: "now", now: true }, ...futureDates.map((date) => ({ key: date, date }))];
-
-  /* 已安排的那一次：切换时刻读后端，切换前一天的长度按两条轨道各算。 */
-  const pendingDays = pending ? TRACKS.map((track) => {
-    const before = trackOffset(track.key);
-    const after = offsetMinutes(pending.offset);
+  const columns: Array<{ key: string; date?: string; now?: boolean }> = [...shownPast.map(date => ({ key: date, date })), { key: "now", now: true }, ...futureDates.map(date => ({ key: date, date }))];
+  const pendingDays = pending ? TRACKS.map(track => {
+    const before = trackOffset(track.key), after = offsetMinutes(pending.offset);
     return { track, hours: before === null || after === null ? null : lastDayHours(before, after) };
   }) : [];
-
-  /* 表单预览：切换时刻按同一规则现算；两条轨道现在的时区就是那天的旧时区（有安排时不能再安排）。 */
-  const previewOffsets = selected ? [offsetMinutes(offsetOf(selected.zoneId)), ...TRACKS.map((track) => trackOffset(track.key))] : [];
-  const previewReady = Boolean(selected && effectiveDate && view && effectiveDate >= view.earliestEffectiveDate && previewOffsets.every((value) => value !== null));
-  const previewSwitch = previewReady ? switchInstant(effectiveDate, previewOffsets as number[]) : null;
-  const previewDays = previewReady ? TRACKS.map((track) => ({ track, hours: lastDayHours(trackOffset(track.key) as number, previewOffsets[0] as number) })) : [];
+  const previewOffsets = selected ? [offsetMinutes(offsetOf(selected.zoneId)), ...TRACKS.map(track => dialogView?.trackZones[track.key] ? offsetMinutes(offsetOf(dialogView.trackZones[track.key])) : null)] : [];
+  const previewReady = Boolean(selected && dialogDate && dialogView && (scheduleOriginal || dialogDate >= dialogView.earliestEffectiveDate) && previewOffsets.every(value => value !== null));
+  const previewSwitch = previewReady ? switchInstant(dialogDate, previewOffsets as number[]) : null;
+  const previewDays = previewReady ? TRACKS.map((track, index) => ({ track, hours: lastDayHours(previewOffsets[index + 1] as number, previewOffsets[0] as number) })) : [];
   const stampOf = (ms: number) => formatBusinessTimeCompact(new Date(ms).toISOString(), "—");
-
-  const openForm = () => { setError(null); setSuccess(null); setTouched(false); setFormOpen(true); };
+  const openForm = () => { if (original || !readReady || !canWrite) return; setError(null); setSuccess(null); setTouched(false); setFormOpen(true); };
   const zoneText = businessZone().label;
-
-  if (!view) {
-    return loading || (!error && !view)
-      ? <BlockState state="loading" title="正在读取业务日历…" />
-      : <BlockState state="error" title="业务日历读取失败" detail={<>{error} 读到之前，后台时间按北京时间显示。</>} onRetry={() => void refresh()} />;
-  }
 
   const timeline = (
     <div className="a3-cal" data-cols={columns.length} role="table" aria-label="业务时区版本时间线">
@@ -222,6 +229,9 @@ export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSumma
   );
 
   return <div className="rd-tab-stack" data-testid="business-calendar-config">
+    {!view && (loading || !error ? <BlockState state="loading" title="正在读取业务日历…" />
+      : <BlockState state="error" title="业务日历读取失败" detail={<>{error} 读到之前，后台时间按北京时间显示。</>} onRetry={() => void refresh()} />)}
+    {view && <>
     {error && !formOpen && !cancelOpen && <Notice tone="danger">{error}</Notice>}
     {success && <Notice tone="ok">{success}</Notice>}
 
@@ -232,8 +242,8 @@ export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSumma
         <p>不跟着变的：数据库存储时间（仍是北京时间）、会话过期、转盘按 UTC 零点重置、越南银行日和 D5 单日提现限额按越南时间。</p>
       </>}
       actions={canWrite ? (pending
-        ? <Button size="sm" variant="danger-outline" icon={<CalendarX2 size={14} aria-hidden />} disabledReason={saving ? "正在提交" : undefined} onClick={() => { setError(null); setSuccess(null); setCancelOpen(true); }}>撤销这次安排</Button>
-        : <Button size="sm" variant="primary" icon={<CalendarPlus size={14} aria-hidden />} onClick={openForm}>安排新的业务时区</Button>)
+        ? <Button size="sm" variant="danger-outline" icon={<CalendarX2 size={14} aria-hidden />} disabledReason={original ? "结果未知" : !readReady ? "正在读取" : saving ? "正在提交" : undefined} onClick={() => { setError(null); setSuccess(null); setCancelOpen(true); }}>撤销这次安排</Button>
+        : <Button size="sm" variant="primary" icon={<CalendarPlus size={14} aria-hidden />} disabledReason={original ? "结果未知" : !readReady ? "正在读取" : undefined} onClick={openForm}>安排新的业务时区</Button>)
         : <span className="rd-note">只有超级管理员能安排和撤销</span>}>
       {!view.unified && growthZone && <Notice tone="neutral">现在增长与团队按{zoneLabel(growthZone)}（{offsetOf(growthZone)}），其他模块按{view.currentZoneLabel}（{view.currentOffset}）。下一次安排对两条轨道同时生效，生效后统一。</Notice>}
       {timeline}
@@ -274,7 +284,9 @@ export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSumma
       </Table>
     </Fold>
 
-    {formOpen && !confirming && <Modal title="安排新的业务时区" icon={CalendarPlus} busy={saving} dirty={Boolean(country || reason)} onClose={() => setFormOpen(false)}
+    </>}
+
+    {formOpen && !confirming && view && <Modal title="安排新的业务时区" icon={CalendarPlus} busy={saving} dirty={Boolean(country || reason)} onClose={() => setFormOpen(false)}
       sub={<StatusTag tone="progress" filled>到生效日才生效</StatusTag>}
       footer={<>
         <Button onClick={() => setFormOpen(false)}>取消</Button>
@@ -285,53 +297,53 @@ export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSumma
       {error && <Notice tone="danger" title="安排没有成功">{error}</Notice>}
       <div className="rd-form-grid" data-cols="2" data-dense="">
         <Field label="国家或地区" required explain="选好后自动带出时区，货币和语言不跟着变。">
-          {(control) => <Select {...control} aria-label="国家或地区" placeholder="请选择" value={country} onChange={pickCountry} options={countries.map(([code, name]) => ({ value: code, label: name }))} />}
+          {(control) => <Select {...control} aria-label="国家或地区" placeholder="请选择" disabled={Boolean(original) || saving} value={country} onChange={pickCountry} options={countries.map(([code, name]) => ({ value: code, label: name }))} />}
         </Field>
         <Field label="时区" required>
-          {(control) => <Select {...control} aria-label="时区" disabled={!country} placeholder="先选国家" value={zoneId} onChange={setZoneId} options={zones.map((option) => ({ value: option.zoneId, label: zoneOptionLabel(option, offsetOf(option.zoneId)) }))} />}
+          {(control) => <Select {...control} aria-label="时区" disabled={!country || Boolean(original) || saving} placeholder="先选国家" value={zoneId} onChange={setZoneId} options={zones.map((option) => ({ value: option.zoneId, label: zoneOptionLabel(option, offsetOf(option.zoneId)) }))} />}
         </Field>
       </div>
       <Field label="生效日期" required help={`最早 ${view.earliestEffectiveDate}`} error={effectiveDate && effectiveDate < view.earliestEffectiveDate ? `最早只能安排 ${view.earliestEffectiveDate}` : undefined}>
-        {(control) => <Input {...control} aria-label="生效日期" type="date" min={view.earliestEffectiveDate} value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} />}
+        {(control) => <Input {...control} aria-label="生效日期" type="date" disabled={Boolean(original) || saving} min={view.earliestEffectiveDate} value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} />}
       </Field>
       {previewReady && selected && previewSwitch !== null && <Facts>
         <Fact k="切换时刻">{stampOf(previewSwitch)}（{zoneText}）</Fact>
         {previewDays.map(({ track, hours }) => <Fact key={track.key} k={`${track.name}那一天`} tone={hours !== 24 ? "warn" : undefined}>{previousDay(effectiveDate)} 共 {hoursText(hours)}，{dayChange(hours)}</Fact>)}
       </Facts>}
       <Field label="理由" required help="8–200 字" error={touched && !reasonValid ? "理由要写 8–200 字" : undefined}>
-        {(control) => <Textarea {...control} aria-label="业务时区修改理由" value={reason} maxLength={200} rows={2} count={`${reason.trim().length}/200`} placeholder="例如：主要市场改到越南，工单号" onBlur={() => setTouched(true)} onChange={(event) => setReason(event.target.value)} />}
+        {(control) => <Textarea {...control} aria-label="业务时区修改理由" disabled={Boolean(original) || saving} value={original?.reason ?? reason} maxLength={200} rows={2} count={`${reason.trim().length}/200`} placeholder="例如：主要市场改到越南，工单号" onBlur={() => setTouched(true)} onChange={(event) => setReason(event.target.value)} />}
       </Field>
     </Modal>}
 
-    {confirming && selected && <Modal title="确认安排业务时区" tone="danger" busy={saving} onClose={() => setConfirming(null)}
-      sub={<StatusTag tone="progress" filled>{effectiveDate} 起生效</StatusTag>}
+    {confirming && selected && dialogView && <Modal title="确认安排业务时区" tone="danger" busy={saving} onClose={() => { setConfirming(null); if (original) setFormOpen(false); }}
+      sub={<StatusTag tone="progress" filled>{dialogDate} 起生效</StatusTag>}
       footer={<>
-        <Button disabled={saving} onClick={() => setConfirming(null)}>返回修改</Button>
-        <Button variant="danger" loading={saving} onClick={() => void submit()}>安排生效</Button>
+        <Button disabled={saving} onClick={() => { setConfirming(null); if (original) setFormOpen(false); }}>返回修改</Button>
+        <Button variant="danger" loading={saving} disabledReason={original && isRetryExpired(original) ? "已过期" : !canWrite ? "你只能查看" : undefined} onClick={() => void submit()}>安排生效</Button>
       </>}>
       <Facts>
-        <Fact k="业务时区"><Change from={view.unified ? `${view.currentZoneLabel}（${view.currentOffset}）` : `${view.currentZoneLabel} / ${zoneLabel(growthZone ?? "")}`} to={`${selected.label}（${offsetOf(selected.zoneId)}）`} /></Fact>
-        <Fact k="生效日">{effectiveDate}</Fact>
+        <Fact k="业务时区"><Change from={dialogView.unified ? `${dialogView.currentZoneLabel}（${dialogView.currentOffset}）` : `${dialogView.currentZoneLabel} / ${zoneLabel(dialogView.trackZones.GROWTH_TEAM)}`} to={`${selected.label}（${offsetOf(selected.zoneId)}）`} /></Fact>
+        <Fact k="生效日">{dialogDate}</Fact>
         {previewSwitch !== null && <Fact k="切换时刻">{stampOf(previewSwitch)}（{zoneText}）</Fact>}
-        {previewDays.map(({ track, hours }) => <Fact key={track.key} k={`${track.name}那一天`} tone={hours !== 24 ? "warn" : undefined}>{previousDay(effectiveDate)} 共 {hoursText(hours)}，{dayChange(hours)}</Fact>)}
+        {previewDays.map(({ track, hours }) => <Fact key={track.key} k={`${track.name}那一天`} tone={hours !== 24 ? "warn" : undefined}>{previousDay(dialogDate)} 共 {hoursText(hours)}，{dayChange(hours)}</Fact>)}
         <Fact k="理由">{reason.trim()}</Fact>
       </Facts>
-      <Notice tone="warn" title="影响全平台">从切换时刻起，所有用业务日历的模块（统计、每日结算、每周奖励池、月度榜单）按新时区切日；{previousDay(effectiveDate)} 及以前已结算的周期不变。生效前可以撤销。</Notice>
+      <Notice tone="warn" title="影响全平台">从切换时刻起，所有用业务日历的模块（统计、每日结算、每周奖励池、月度榜单）按新时区切日；{previousDay(dialogDate)} 及以前已结算的周期不变。生效前可以撤销。</Notice>
     </Modal>}
 
-    {cancelOpen && pending && <Modal title="撤销这次时区安排" tone="danger" icon={CalendarX2} busy={saving} dirty={Boolean(cancelReason)} onClose={() => setCancelOpen(false)}
+    {cancelOpen && cancelTarget && <Modal title="撤销这次时区安排" tone="danger" icon={CalendarX2} busy={saving} dirty={Boolean(cancelReason)} onClose={() => setCancelOpen(false)}
       sub={<StatusTag tone="progress" filled>立即生效</StatusTag>}
       footer={<>
         <Button disabled={saving} onClick={() => setCancelOpen(false)}>取消</Button>
-        <Button variant="danger" loading={saving} disabledReason={cancelReason.trim().length < 8 || cancelReason.trim().length > 200 ? "撤销理由要写 8–200 字" : undefined} onClick={() => void cancel(pending)}>确认撤销</Button>
+        <Button variant="danger" loading={saving} disabledReason={original && isRetryExpired(original) ? "已过期" : !canWrite ? "你只能查看" : cancelReason.trim().length < 8 || cancelReason.trim().length > 200 ? "撤销理由要写 8–200 字" : undefined} onClick={() => void cancel(cancelTarget)}>确认撤销</Button>
       </>}>
       {error && <Notice tone="danger" title="撤销没有成功">{error}</Notice>}
       <Facts>
-        <Fact k="要撤销的安排">{pending.effectiveDate} 起改用{zoneLabel(pending.zoneId)}（{pending.offset}）</Fact>
+        <Fact k="要撤销的安排">{cancelTarget.effectiveDate} 起改用{zoneLabel(cancelTarget.zoneId)}（{cancelTarget.offset}）</Fact>
         <Fact k="撤销后">现行时区不变，这条安排从版本记录里去掉</Fact>
       </Facts>
       <Field label="撤销理由" required help="8–200 字">
-        {(control) => <Textarea {...control} aria-label="撤销理由" value={cancelReason} maxLength={200} rows={2} count={`${cancelReason.trim().length}/200`} onChange={(event) => setCancelReason(event.target.value)} />}
+        {(control) => <Textarea {...control} aria-label="撤销理由" value={cancelOriginal?.reason ?? cancelReason} disabled={Boolean(original) || saving} maxLength={200} rows={2} count={`${cancelReason.trim().length}/200`} onChange={(event) => setCancelReason(event.target.value)} />}
       </Field>
     </Modal>}
   </div>;

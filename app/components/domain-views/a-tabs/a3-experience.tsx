@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * A3 App 分享与下载（W05 整组保存）。读取、刷新、保存都沿用旧 platform-experience-config.tsx：
- * 刷新失败清掉表单（BUG-093），理由在点保存时才校验 8–200（不控制按钮灰不灰），请求体和命令号由 client 组装。
+ * A3 App 分享与下载（W05 整组保存），保留原请求字段及验证：
+ * 刷新失败清掉表单（BUG-093），理由在点保存时校验8–200；原body由共用store保存，未知后只原样恢复。
  * 新加的只有界面：分区、每块旁边的「App 上的样子」、保存前的确认框；推荐渠道只填进表单，保存了才生效。
  * App 的拼法照 App share.ts：链接 = 分享基础链接 + 邀请码；外链模板里 {link}、{text} 各换第一个，编码后代入。
  */
@@ -11,6 +11,8 @@ import Link from "next/link";
 import { CircleOff, Download, EyeOff, Globe, Home, Languages, Link2, Share2, Smartphone, type LucideIcon } from "lucide-react";
 import { BlockState, Button, Cell, Check, Explain, KeepText, Fact, Facts, Field, Input, Modal, Notice, Panel, Segments, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { type A3RecoveryProps } from "@/lib/admin/a3-mutations";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -18,7 +20,7 @@ import {
   fetchPlatformExperienceConfig,
   INTERFACE_LANGUAGES,
   recommendedExperienceChannels,
-  updatePlatformExperienceConfig,
+  platformExperienceBody,
   type PlatformExperienceConfig,
 } from "@/lib/admin/platform-experience-client";
 
@@ -41,13 +43,13 @@ function assemble(textTemplate: string | null | undefined, urlTemplate: string |
   return { text, url };
 }
 
-export function A3Experience({ toast }: { toast: (text: string, kind?: "success" | "error" | "warn" | "info") => void }) {
+export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: A3RecoveryProps & { toast: (text: string, kind?: "success" | "error" | "warn" | "info") => void }) {
   const session = useAdminAuth((state) => state.session);
   const reach = useReach();
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
-  const [config, setConfig] = useState<PlatformExperienceConfig | null>(null);
-  const [baseline, setBaseline] = useState<PlatformExperienceConfig | null>(null);
+  const [loadedConfig, setConfig] = useState<PlatformExperienceConfig | null>(null);
+  const [loadedBaseline, setBaseline] = useState<PlatformExperienceConfig | null>(null);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -55,15 +57,24 @@ export function A3Experience({ toast }: { toast: (text: string, kind?: "success"
   const [success, setSuccess] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [previewKey, setPreviewKey] = useState("");
+  const [readReady, setReadReady] = useState(false);
+  const original = commands.find("experience");
+  const savedForm = original?.original.kind === "experience" ? original.original : null;
+  const config = confirmOpen && savedForm ? savedForm.config : loadedConfig;
+  const baseline = confirmOpen && savedForm ? savedForm.baseline : loadedBaseline;
+  useEffect(() => {
+    if (recovery?.original.kind !== "experience") return;
+    setReason(recovery.reason); setError(null); setConfirmOpen(true); onRecovered();
+  }, [recovery, onRecovered]);
 
   const refresh = useCallback(async () => {
     if (!canRead) return;
-    setLoading(true); setError(null); setSuccess(null);
-    try { const next = await fetchPlatformExperienceConfig(); setConfig(next); setBaseline(next); }
-    catch (cause) { setConfig(null); setBaseline(null); setError(displayAdminError(cause)); }
+    setReadReady(false); setLoading(true); setError(null); setSuccess(null);
+    try { const next = await fetchPlatformExperienceConfig(); setConfig(next); setBaseline(next); setReadReady(true); return next; }
+    catch (cause) { setConfig(null); setBaseline(null); setError(displayAdminError(cause)); return null; }
     finally { setLoading(false); }
   }, [canRead]);
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { void refresh(); }, [refresh, nonce]);
 
   const changed = useMemo(() => {
     if (!config || !baseline) return [] as string[];
@@ -85,25 +96,27 @@ export function A3Experience({ toast }: { toast: (text: string, kind?: "success"
   const patchDownload = (patch: Partial<PlatformExperienceConfig["appDownload"]>) => setConfig({ ...config, appDownload: { ...config.appDownload, ...patch } });
 
   const save = async () => {
-    if (!config || !canWrite || saving || loading) return;
+    if (!config || !canWrite || saving || loading || (!original && !readReady)) return;
     setSuccess(null);
     if (reason.trim().length < 8 || reason.trim().length > 200) { setError("保存理由必须为 8–200 字，请补充后再保存。"); return; }
     setSaving(true); setError(null);
     try {
-      const saved = await updatePlatformExperienceConfig(config, reason, session?.operator ?? session?.username ?? "");
-      setConfig(saved);
-      setBaseline(saved);
-      setReason("");
-      setConfirmOpen(false);
-      setSuccess(`已保存，当前版本 v${saved.version}。`);
-      toast(`App 分享与下载已保存，当前版本 v${saved.version}`, "success");
+      const record = original ?? commands.capture({ original: { kind: "experience", config, baseline: baseline! },
+        path: "/api/admin/platform/config/experience", method: "PUT", body: JSON.stringify(platformExperienceBody(config, reason, session?.operator ?? session?.username ?? "")),
+        reason: reason.trim(), name: "App 分享与下载", change: `v${config.version} → v${config.version + 1} · ${changed.join("、")}` });
+      await commands.send(record, Boolean(original));
+      setReadReady(false); setConfirmOpen(false); setReason("");
+      const saved = await refresh();
+      if (saved) { setSuccess(`已保存，当前版本 v${saved.version}。`); toast(`App 分享与下载已保存，当前版本 v${saved.version}`, "success"); }
+      else toast(`已保存，但页面刷新失败，正在重新加载。请不要重复提交。`, "warn");
     } catch (cause) {
       setError(displayAdminError(cause));
+      if (original && !commands.find("experience")) { toast(displayAdminError(cause), "error"); setConfirmOpen(false); await refresh(); }
     } finally { setSaving(false); }
   };
 
   const unavailable = config.appDownload.source === "unavailable";
-  const fieldsLocked = !canWrite;
+  const fieldsLocked = !canWrite || loading || saving || Boolean(original) || !readReady;
   const link = config.baseUrl ? `${config.baseUrl}${SAMPLE_CODE}` : "";
   const webChannels = config.channels.filter((channel) => channel.intentType === "web");
   const previewChannel = webChannels.find((channel) => channel.key === previewKey) ?? webChannels.find((channel) => channel.enabled) ?? webChannels[0];
@@ -124,7 +137,7 @@ export function A3Experience({ toast }: { toast: (text: string, kind?: "success"
         {changed.length ? `有未保存的修改：${changed.join("、")}` : `版本 v${config.version}${config.updatedAt ? ` · ${formatBusinessTimeCompact(config.updatedAt, "—")} 读取（${businessZone().label}）` : ""}`}
       </span>
       <Button disabled={loading || saving} loading={loading} onClick={() => void refresh()}>刷新</Button>
-      {canWrite && <Button variant="primary" disabledReason={loading ? "正在读取" : undefined} onClick={() => { setError(null); setConfirmOpen(true); }}>保存…</Button>}
+      {canWrite && <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在提交" : undefined} onClick={() => { if (original || !readReady || !canWrite) return; setError(null); setConfirmOpen(true); }}>保存…</Button>}
     </div>
     {success && <Notice tone="ok">{success}</Notice>}
     {error && !confirmOpen && <Notice tone="danger" title="没有保存">{error}</Notice>}
@@ -136,7 +149,7 @@ export function A3Experience({ toast }: { toast: (text: string, kind?: "success"
           <div id="a3-sharing"><Field label="分享基础链接" help="App 把用户的邀请码直接接在后面，不自动补斜杠">
             {(control) => <Input {...control} aria-label="分享基础链接" placeholder="https://… 结尾通常是 / 或 =" value={config.baseUrl} disabled={fieldsLocked} onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })} />}
           </Field></div>
-          {config.channels.length === 0 ? <Notice tone="warn" title="还没有设置分享渠道" action={canWrite && <Button size="sm" onClick={() => setConfig({ ...config, channels: recommendedExperienceChannels() })}>填入推荐的 9 个渠道</Button>}>
+          {config.channels.length === 0 ? <Notice tone="warn" title="还没有设置分享渠道" action={canWrite && <Button size="sm" disabled={fieldsLocked} onClick={() => setConfig({ ...config, channels: recommendedExperienceChannels() })}>填入推荐的 9 个渠道</Button>}>
             App 分享面板里只有自带的复制链接和海报。<KeepText text="填入推荐渠道后要保存才生效。" />
           </Notice> : <Table label="分享渠道">
             <thead><tr><Th>渠道</Th><Th>启用</Th><Th>在 App 里</Th><Th>文案模板</Th><Th>链接模板</Th></tr></thead>
@@ -250,7 +263,7 @@ export function A3Experience({ toast }: { toast: (text: string, kind?: "success"
       sub={<StatusTag tone="progress" filled>保存后 App 下次读取配置时生效</StatusTag>}
       footer={<>
         <Button disabled={saving} onClick={() => setConfirmOpen(false)}>取消</Button>
-        <Button variant="primary" loading={saving} onClick={() => void save()}>确认修改</Button>
+        <Button variant="primary" loading={saving} disabledReason={original && isRetryExpired(original) ? "已过期" : !canWrite ? "你只能查看" : undefined} onClick={() => void save()}>确认修改</Button>
       </>}>
       {error && <Notice tone="danger" title="没有保存">{error}</Notice>}
       <Facts>
@@ -261,7 +274,7 @@ export function A3Experience({ toast }: { toast: (text: string, kind?: "success"
         <Fact k="已有订单和奖励">不重算</Fact>
       </Facts>
       <Field label="保存理由" required help="8–200 字">
-        {(control) => <Textarea {...control} aria-label="体验配置保存理由" value={reason} maxLength={200} rows={2} count={`${reason.trim().length}/200`} placeholder="例如：上线 Telegram 分享，工单号" onChange={(event) => setReason(event.target.value)} />}
+        {(control) => <Textarea {...control} aria-label="体验配置保存理由" value={original?.reason ?? reason} disabled={Boolean(original) || saving} maxLength={200} rows={2} count={`${reason.trim().length}/200`} placeholder="例如：上线 Telegram 分享，工单号" onChange={(event) => setReason(event.target.value)} />}
       </Field>
     </Modal>}
   </div>;

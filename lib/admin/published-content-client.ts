@@ -41,3 +41,5 @@ export async function fetchHowContentAdmin() { return normalizeHow(await request
 export async function fetchPrivacyPolicyAdmin() { return normalize(await request<unknown>("/api/admin/content/privacy-policy")); }
 export async function updatePrivacyPolicyAdmin(document: Pick<PublishedContentDocument, "version" | "status" | "locales" | "revision">, reason: string) { return normalize(await request<unknown>("/api/admin/content/privacy-policy", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...document, expectedRevision: document.revision, revision: undefined, reason }) })); }
 export async function updateHowContentAdmin(document: Pick<PublishedHowContentDocument, "version" | "status" | "contents" | "revision">, reason: string) { return normalizeHow(await request<unknown>("/api/admin/content/how-it-works", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...document, expectedRevision: document.revision, revision: undefined, reason }) })); }
+
+export { normalize as parseDeveloperDocs, normalizeHow as parseHowContent };
