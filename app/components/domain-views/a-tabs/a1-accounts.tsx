@@ -1,21 +1,22 @@
 "use client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { KeyRound, LogOut, PencilLine, RefreshCw, ShieldCheck, ShieldPlus, ShieldUser, UserCog, UserMinus, UserPlus, Users, MonitorSmartphone, ClipboardCheck, Headset, UsersRound, LockKeyhole } from "lucide-react";
 import { BlockState, Button, Cell, Check, ConfigList, ConfigRow, Conclusion, Explain, Fact, Facts, Change, Field, Fold, Input, MoreMenu, Notice, PageHeader, Pager, Panel, Select, Stat, StatBand, StatusDistributionBar, StatusTag, Table, TableMessage, Td, Th, Tr, type MoreMenuItem } from "@/app/components/rd";
 import { readAdminSessionBaseline } from "@/lib/admin/session-baseline";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { usePropose } from "@/lib/admin/use-propose";
+import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
+import { roleLabel, canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
+import { a1PendingCommands, a1IntentSlot, a1IntentAuthority, sendA1Pending, type A1Intent, type A1Pending, type A1Request, type A1Snapshot } from "@/lib/admin/a1-pending";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import {
-  createA1Account,
   fetchA1Overview,
   isA1OutcomeUncertainError,
-  resetA1AccountPassword,
-  registerA1Permission,
-  revokeA1AccountSession,
   type A1CreateAccountInput,
   type A1Operator,
   type A1Overview,
@@ -24,19 +25,19 @@ import {
   type A1UpdateAccountInput,
 } from "@/lib/admin/a1-client";
 import { fetchA6RoleDetail, fetchA6RolesOverview } from "@/lib/admin/a6-client";
+import { fetchA8PermissionDetail } from "@/lib/admin/a8-client";
+import { groupPendingCommands, isInvitePending, type GroupPendingRecord } from "@/lib/admin/support-group-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import type { ACtx } from "./types";
+import type { ACtx, ActionConfirmReq } from "./types";
+import type { BusinessFormValue } from "../design-kit";
 import { avatarDrafts, avatarDraftFingerprint } from "@/lib/admin/account-avatar-pending";
 import { SupportAvatar } from "../m-tabs/support-avatar";
 import { SupportQualificationEditor, canManageSupportQualifications } from "../m-tabs/m1-group-management";
-import {createPendingMutationStore,type PendingMutationRecord} from "@/lib/admin/pending-mutation-store";
 import {
   A1RecoveryNotice, AccountDetailDrawer, EditAccountDrawer, NewAccountDrawer, PasswordResetDrawer, RoleChangeModal,
   approvalTag, approverFact, credentialStatusText, directTag, expiredTag, minuteText, operatorDisplayLabel, operatorDisplayName,
   permSummary, roleName, unknownTag, zoneNote, isHighRiskCode, HIGH_RISK_EXPLAIN, PermGroups, type A1AccountAction,
 } from "./a1-account-views";
-type CreationPending=PendingMutationRecord&{actorId:number;form:A1CreateAccountInput&{reason:string};reason:string;operator:string};
-const creationCommands=createPendingMutationStore<CreationPending>({storageKey:"nexion-a1-support-avatar-account-create",retainExpiredRecords:true,isValidRecord:r=>Number.isSafeInteger(r.actorId)&&Boolean(r.form?.username&&r.reason)});
 
 type SecurityBaselineMeta = {
   key: string;
@@ -71,7 +72,7 @@ function errorMessage(error: unknown) {
 }
 
 function roleKeyFromCode(roleCode: string) {
-  const normalized = roleCode.trim().toUpperCase();
+  const normalized = roleCode.trim().toUpperCase().replaceAll("-", "_");
   const builtins: Record<string, string> = {
     SUPER_ADMIN: "super", CONFIG_ADMIN: "config", FINANCE: "finance", RISK: "risk",
     CONTENT: "content", GROWTH: "growth", SUPPORT: "support", AUDITOR: "audit",
@@ -102,7 +103,6 @@ function forceLogoutRole(role: string | undefined | null) {
 
 export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const { toast, openActionConfirm } = ctx;
-  const propose = usePropose();
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const currentAdminId = useAdminAuth((s) => s.session?.adminId ?? null);
   const currentSessionRole = useAdminAuth((s) => s.session?.role ?? s.role);
@@ -126,8 +126,14 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const [page, setPage] = useState(0);
   const [perPage, setPerPage] = useState(10);
   const [naOpen, setNaOpen] = useState(false);
-  const [creationPending,setCreationPending]=useState<CreationPending|null>(null);
-  useEffect(()=>{setCreationPending(creationCommands.list().find(r=>r.actorId===currentAdminId)??null);},[currentAdminId]);
+  const [pendingOperations, setPendingOperations] = useState<A1Pending[]>([]);
+  const reloadPending = () => setPendingOperations(a1PendingCommands.list().filter(r => r.actorId === useAdminAuth.getState().session?.adminId));
+  useEffect(() => { setPendingOperations(a1PendingCommands.list().filter(r => r.actorId === currentAdminId)); }, [currentAdminId]);
+  const creationPending = pendingOperations.find(r => r.intent.kind === "create");
+  const restoring = useRef<A1Pending | null>(null);
+  const submitting = useRef<{ intent: A1Intent; snapshot: A1Snapshot; reason: string; businessValue?: BusinessFormValue } | null>(null);
+  const freshOverview = useRef<A1Overview | null>(null);
+  const [overviewReady, setOverviewReady] = useState(false);
   const [detailAccount, setDetailAccount] = useState<A1Operator | null>(null);
   const canManageQualifications = useAdminAuth(s => canManageSupportQualifications(s.session));
   const [qualificationTarget, setQualificationTarget] = useState<{ id: string; kind: "SERVICE" | "SUPERVISOR" } | null>(null);
@@ -140,6 +146,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const [passwordFromCreate, setPasswordFromCreate] = useState(false);
 
   const refreshOverview = useCallback(async (quiet = false) => {
+    const actorId = useAdminAuth.getState().session?.adminId;
+    freshOverview.current = null;
+    setOverviewReady(false);
     if (!quiet) {
       setLoading(true);
     }
@@ -148,12 +157,18 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     setPermissionDiffError(null);
     try {
       const data = await fetchA1Overview();
+      if (useAdminAuth.getState().session?.adminId !== actorId) return null;
       setOverview(data);
+      freshOverview.current = data;
+      setOverviewReady(true);
+      setDetailAccount(current => current ? data.operators.find(op => op.id === current.id) ?? null : null);
       try {
         const a6 = await fetchA6RolesOverview();
         const details = await Promise.all(a6.roles.filter((role) => role.status === 1).map((role) => fetchA6RoleDetail(role.id)));
+        if (useAdminAuth.getState().session?.adminId !== actorId) return null;
         const codesByRole = Object.fromEntries(details.map((role) => [roleKeyFromCode(role.roleCode), role.permissionCodes]));
-        if (!data.roles.every((role) => Array.isArray(codesByRole[role.key]))) {
+        if (!data.roles.every((role) => Array.isArray(codesByRole[role.key]))
+          || !data.operators.every(op => !op.role || op.role === "unassigned" || Array.isArray(codesByRole[op.role]))) {
           throw new Error("A6_ROLE_PERMISSION_DIFF_INCOMPLETE");
         }
         setPermissionCodesByRole(codesByRole);
@@ -162,8 +177,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         setPermissionCodesByRole({});
         setPermissionDiffError(`角色权限没有读到：${errorMessage(error)}`);
       }
+      return data;
     } catch (error) {
       setLoadError(errorMessage(error));
+      return null;
     } finally {
       if (!quiet) {
         setLoading(false);
@@ -174,32 +191,6 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   useEffect(() => {
     void refreshOverview();
   }, [refreshOverview]);
-
-  const runMutation = useCallback(
-    async (
-      action: string,
-      work: () => Promise<unknown>,
-      success: string,
-    ) => {
-      setMutatingAction(action);
-      try {
-        await work();
-        await refreshOverview(true);
-        toast(success);
-        return true;
-      } catch (error) {
-        if (isA1OutcomeUncertainError(error)) {
-          toast("提交结果未知。请先刷新，在「操作记录与审批」里核对，不要重复提交。");
-        } else {
-          toast(`提交失败:${errorMessage(error)}`);
-        }
-        return false;
-      } finally {
-        setMutatingAction(null);
-      }
-    },
-    [refreshOverview, toast],
-  );
 
   const roles = overview?.roles ?? [];
   const roleOptions = useMemo(() => [
@@ -216,7 +207,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const stats = overview?.stats;
   const effectiveSupers = stats?.effectiveSupers ?? 0;
   const governanceFrozen = effectiveSupers < 2;
-  const profileEditBlockReason = !canEditAccount ? "你没有编辑账号资料的权限"
+  const profileEditBlockReason = !overviewReady ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : !canEditAccount ? "你没有编辑账号资料的权限"
     : governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能编辑账号资料"
     : mutatingAction ? "正在提交，请稍候" : null;
   const backendSessionBaseline = securityBaselines.find((b) => b.key === "session")?.value;
@@ -272,6 +263,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const pageEnd = Math.min(pageStart + perPage, listed.length);
   const pageRows = listed.slice(pageStart, pageEnd);
   const forceLogoutBlockReason = (op: A1Operator) => {
+    if (!authorities.includes("platform_a1_account_sessions_revoke")) return errorMessage(new Error("A1_OPERATION_FORBIDDEN"));
     const targetId = operatorAccountId(op.id);
     if (currentAdminId !== null && targetId !== null && targetId === currentAdminId) {
       return "不能撤销自己的登录";
@@ -310,13 +302,175 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     return null;
   };
 
+  const pendingFor = (intent: A1Intent) => a1PendingCommands.list().find(r => r.actorId === currentAdminId && a1IntentSlot(r.intent) === a1IntentSlot(intent));
+  const recoveryStarted = () => {
+    freshOverview.current = null;
+    setOverviewReady(false);
+    setNaOpen(false); setEditAccountTarget(null); setRoleTarget(null); setDetailAccount(null);
+  };
+  const requireActor = (intent: A1Intent | null, writing: boolean, approval = false) => {
+    const auth = useAdminAuth.getState(), session = auth.session;
+    if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || !session || session.adminId !== currentAdminId || session.passwordChangeRequired
+      || !session.authorities.includes("platform_a1_read") || !canAccessResolvedPath(resolveVisibleDomains(session), "/platform/rbac")) throw new Error("A1_SESSION_CHANGED");
+    if (writing && (!intent || !session.authorities.includes(a1IntentAuthority(intent)) || approval && !session.authorities.includes("platform_a2_write")
+      || ["create", "password", "session", "logout"].includes(intent.kind) && !["super", "superadmin"].includes(session.role))) throw new Error("A1_OPERATION_FORBIDDEN");
+    return session;
+  };
+  const requireNewIntent = (intent: A1Intent) => {
+    const data = freshOverview.current;
+    if (!data || mutatingAction) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
+    if (pendingFor(intent)) throw new Error("A1_ORIGINAL_OPERATION_PENDING");
+    const recovery = data.stats.effectiveSupers < 2;
+    requireActor(intent, true, intent.kind === "create" ? intent.approval : !["password", "permission", "session"].includes(intent.kind));
+    if (intent.kind === "create") {
+      if (intent.approval !== recovery || recovery && intent.form.role !== "super") throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
+      return;
+    }
+    if (intent.kind === "permission") { if (recovery) throw new Error("ADMIN_GOVERNANCE_FROZEN"); return; }
+    const current = data.operators.find(op => op.id === intent.account.id);
+    if (!current || current.version !== intent.account.version) throw new Error("ACCOUNT_VERSION_STALE");
+    if (recovery && !["role", "enable", "logout", "session"].includes(intent.kind)) throw new Error("ADMIN_GOVERNANCE_FROZEN");
+    if (intent.kind === "role" && (!permissionDiffReady || !roleOptions.some(role => role.key === intent.picked)
+      || intent.picked === current.role || recovery && (current.role === "super" || intent.picked !== "super"))) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
+    if (intent.kind === "enable" && recovery && (current.role !== "super" || !current.tfa)) throw new Error("ADMIN_GOVERNANCE_FROZEN");
+    if (intent.kind === "2fa" && !current.tfa) throw new Error("ADMIN_MFA_NOT_BOUND");
+    if ((intent.kind === "disable" || intent.kind === "2fa" || intent.kind === "role" && intent.picked !== "super") && current.role === "super" && current.status === "enabled" && data.stats.effectiveSupers <= 2) throw new Error("MIN_EFFECTIVE_SUPER_REQUIRED");
+    if ((intent.kind === "disable" && current.status !== "enabled") || (intent.kind === "enable" && current.status !== "disabled")) throw new Error("ACCOUNT_VERSION_STALE");
+    if (intent.kind === "logout" || intent.kind === "session") {
+      if (current.id === String(currentAdminId) || current.role === "super" || current.sessions === 0) throw new Error("FORCE_LOGOUT_FORBIDDEN");
+      if (intent.kind === "session" && !current.sessionDetails?.some(s => s.sessionId === intent.sessionId)) throw new Error("ADMIN_SESSION_NOT_FOUND");
+    }
+  };
+  const checkTicket = (record: A1Pending, ticket: A2OperationRow) => {
+    if (record.request.kind !== "proposal" || !ticket.mine || ticket.obj !== record.request.input.obj || ticket.action !== record.request.input.action
+      || ticket.operationCode && ticket.operationCode !== record.request.input.command.op) throw new Error("A1_PROPOSAL_RECEIPT_MISMATCH");
+  };
+  const queryOriginal = async (record: A1Pending) => {
+    requireActor(record.intent, false);
+    if (record.request.kind !== "proposal") {
+      if (record.request.kind === "permission") await fetchA8PermissionDetail(record.request.input.permissionCode);
+      if (!await refreshOverview(true)) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
+      toast(displayAdminError(new Error("A1_READBACK_ONLY")));
+      return false;
+    }
+    const ticket = await fetchA2ProposalByKey(record.commandKey, true, true);
+    if (useAdminAuth.getState().session?.adminId !== record.actorId) throw new Error("A1_SESSION_CHANGED");
+    if (!ticket) {
+      a1PendingCommands.remember(record.fingerprint, record.commandKey, { ...record, ticket: undefined, proposalNotFound: true }); reloadPending();
+      return false;
+    }
+    checkTicket(record, ticket);
+    a1PendingCommands.remember(record.fingerprint, record.commandKey, { ...record, ticket, proposalNotFound: false }); reloadPending();
+    if (ticket.status === "pending") { toast("已提交，等待审批后执行"); return true; }
+    recoveryStarted();
+    await refreshOverview(true);
+    a1PendingCommands.forget(record.fingerprint, record.commandKey); reloadPending();
+    ctx.closeActionConfirm?.();
+    toast(`原审批单：${({ approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" })[ticket.status]}`);
+    return true;
+  };
+  const executeOriginal = async (record: A1Pending, retry: boolean) => {
+    if (Date.now() >= record.expiresAt) throw new Error("A1_RETRY_EXPIRED");
+    requireActor(record.intent, true, record.request.kind === "proposal");
+    if (!a1PendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("A1_COMMAND_STORAGE_UNAVAILABLE");
+    if (retry) recoveryStarted();
+    setMutatingAction(record.request.kind === "proposal" ? record.request.input.action.replace(/ \(A1\)$/, "")
+      : record.intent.kind === "create" ? "新建账号" : record.intent.kind === "password" ? "重置密码" : record.intent.kind === "session" ? "让这台设备下线" : "登记新权限");
+    let result: Awaited<ReturnType<typeof sendA1Pending>>;
+    try { result = await sendA1Pending(record); }
+    catch (error) {
+      const uncertain = isA1OutcomeUncertainError(error) || isA2OutcomeUncertainError(error);
+      const status = (error as { status?: number } | null)?.status;
+      if (retry ? isExplicitRejection(error) : !uncertain && typeof status === "number" && isDeterministicRejection(status)) {
+        a1PendingCommands.forget(record.fingerprint, record.commandKey); reloadPending();
+        if (retry) { await refreshOverview(true); ctx.closeActionConfirm?.(); }
+      }
+      throw error;
+    } finally { setMutatingAction(null); }
+    if (useAdminAuth.getState().session?.adminId !== record.actorId) throw new Error("A1_SESSION_CHANGED");
+    if (result.kind === "proposal") {
+      checkTicket(record, result.ticket);
+      // A replayed POST is the old creation receipt, never today's ticket state.
+      if (retry) {
+        if (!await queryOriginal(record)) throw new Error("A1_PROPOSAL_STATUS_UNKNOWN");
+      } else {
+        a1PendingCommands.remember(record.fingerprint, record.commandKey, { ...record, ticket: result.ticket }); reloadPending();
+        toast("已提交，等待审批后执行");
+      }
+      return result;
+    }
+    if (result.kind === "create" && record.request.kind === "create") {
+      if (result.account.username !== record.request.input.username || result.account.role !== (record.request.input.role || "unassigned")) throw new Error("A1_MUTATION_RESPONSE_UNREADABLE");
+      setPasswordFromCreate(true); setPasswordReset({ account: result.account, temporaryPassword: result.account.temporaryPassword! });
+      avatarDrafts.forget(avatarDraftFingerprint(record.actorId, "admin", "new"));
+    } else if (result.kind === "password") {
+      if (record.request.kind !== "password" || result.result.account.id !== record.request.accountId) throw new Error("A1_MUTATION_RESPONSE_UNREADABLE");
+      setPasswordFromCreate(false); setPasswordReset(result.result);
+    } else if (result.kind === "session" && record.request.kind === "session" && result.account.id !== record.request.accountId
+      || result.kind === "permission" && record.request.kind === "permission" && result.permission.permissionCode !== record.request.input.permissionCode.toLowerCase()) throw new Error("A1_MUTATION_RESPONSE_UNREADABLE");
+    recoveryStarted();
+    await refreshOverview(true);
+    a1PendingCommands.forget(record.fingerprint, record.commandKey); reloadPending();
+    if (retry) toast(displayAdminError(new Error("A1_ORIGINAL_OPERATION_CONFIRMED")));
+    return result;
+  };
+  const submitRequest = async (request: A1Request) => {
+    const draft = submitting.current;
+    if (!draft || !currentAdminId) throw new Error("A1_SESSION_CHANGED");
+    requireNewIntent(draft.intent);
+    const now = Date.now(), fingerprint = `${currentAdminId}:${a1IntentSlot(draft.intent)}`, commandKey = crypto.randomUUID();
+    const record: A1Pending = JSON.parse(JSON.stringify({ fingerprint, commandKey, createdAt: now, expiresAt: now + 86400000, actorId: currentAdminId, intent: draft.intent, snapshot: draft.snapshot, request, confirmationReason: draft.reason, businessValue: draft.businessValue }));
+    a1PendingCommands.remember(fingerprint, commandKey, record);
+    if (!a1PendingCommands.isDurablyStored(fingerprint, commandKey)) {
+      a1PendingCommands.forget(fingerprint, commandKey); reloadPending();
+      throw new Error("A1_COMMAND_STORAGE_UNAVAILABLE");
+    }
+    reloadPending();
+    return executeOriginal(record, false);
+  };
+  const propose = async (_toast: typeof toast, spec: ProposeSpec) => {
+    const session = requireActor(submitting.current!.intent, true, true);
+    await submitRequest({ kind: "proposal", input: {
+      action: `${spec.action} (A1)`, obj: spec.obj, beforeValue: spec.before, afterValue: spec.after,
+      operator: session.operator || session.username || operator, operatorRole: roleLabel(session.role), type: spec.type,
+      amplifies: !!spec.amplifies, sos: !!spec.sos, roleGate: spec.gateLabel, reason: spec.reason, sourceDomain: spec.sourceDomain,
+      command: spec.command, target: spec.target, targets: spec.targets,
+    } });
+    return "proposed" as const;
+  };
+  const openOperation = (intent: A1Intent, spec: ActionConfirmReq) => {
+    const original = restoring.current;
+    const snapshot = original?.snapshot ?? { roles, codes: permissionCodesByRole, permissionReady: permissionDiffReady, effectiveSupers };
+    let saved = original;
+    openActionConfirm({ ...spec,
+      initialReason: original?.confirmationReason,
+      getPendingReason: () => saved && a1PendingCommands.list().some(r => r.commandKey === saved!.commandKey) ? saved.confirmationReason : undefined,
+      getPendingBusinessValue: () => saved?.businessValue,
+      inlineApproval: { resolve: () => undefined, pending: !!original, initialRecovery: "retry", expired: !!original && Date.now() >= original.expiresAt,
+        disabledReason: original ? (() => { try { requireActor(intent, true, original.request.kind === "proposal"); return undefined; } catch (error) { return errorMessage(error); } })() : undefined,
+        recover: async () => { if (!saved) return false; await queryOriginal(saved); return true; },
+      },
+      run: async (reason, value, businessValue) => {
+        if (saved) {
+          if (!a1PendingCommands.list().some(r => r.commandKey === saved!.commandKey)) throw new Error("A1_OPERATION_REOPEN_REQUIRED");
+          await executeOriginal(saved, true);
+          return true;
+        }
+        requireNewIntent(intent);
+        submitting.current = { intent, snapshot, reason, businessValue };
+        try { return await spec.run(reason, value, businessValue); }
+        finally { saved = pendingFor(intent) ?? null; submitting.current = null; }
+      },
+    });
+  };
+
   useEffect(() => {
     if (page > totalPages - 1) {
       setPage(totalPages - 1);
     }
   }, [page, totalPages]);
 
-  const codesOf = (role: string) => role === "unassigned" || !role ? [] : permissionCodesByRole[role] ?? [];
+  const codesOf = (role: string) => role === "unassigned" || !role ? [] : (restoring.current?.snapshot.codes ?? permissionCodesByRole)[role] ?? [];
   const gainLoss = (from: string, to: string) => {
     const before = new Set(codesOf(from)), after = new Set(codesOf(to));
     return { gained: [...after].filter((code) => !before.has(code)).length, lost: [...before].filter((code) => !after.has(code)).length };
@@ -334,6 +488,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
   const confirmRoleChange = (op: A1Operator, picked: string) => {
     setRoleTarget(null);
+    const viewRoles = restoring.current?.snapshot.roles ?? roles;
     const displayName = operatorDisplayName(op);
     const displayLabel = operatorDisplayLabel(op);
     const allowedRoles = governanceFrozen ? roleOptions.filter((role) => role.key === op.role || role.key === "super") : roleOptions;
@@ -341,17 +496,17 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     const beforeCodes = new Set(codesOf(op.role)), afterCodes = new Set(codesOf(picked));
     const gainedCodes = [...afterCodes].filter((code) => !beforeCodes.has(code)), lostCodes = [...beforeCodes].filter((code) => !afterCodes.has(code));
     const riskyGained = gainedCodes.filter(isHighRiskCode).length;
-    openActionConfirm({ briefKind: "security",
+    openOperation({ kind: "role", account: op, picked }, { briefKind: "security",
       action: `变更角色 · ${displayName}`,
       title: "改角色",
-      detail: `${displayLabel}：${roleName(roles, op.role)} 改成 ${roleName(roles, picked)}。`,
+      detail: `${displayLabel}：${roleName(viewRoles, op.role)} 改成 ${roleName(viewRoles, picked)}。`,
       amplifies: false,
       effect: approvalTag("批准前角色和权限不变。"),
       confirmLabel: "提交审批",
       facts: (
         <Facts>
           <Fact k="账号">{displayLabel}</Fact>
-          <Fact k="角色"><Change from={roleName(roles, op.role)} to={roleName(roles, picked)} /></Fact>
+          <Fact k="角色"><Change from={roleName(viewRoles, op.role)} to={roleName(viewRoles, picked)} /></Fact>
           <Fact k="权限变化" tone={diff.gained > 0 ? "warn" : undefined}>多出 {diff.gained} 项 · 少掉 {diff.lost} 项{riskyGained > 0 ? `，其中 ${riskyGained} 项高风险` : ""}</Fact>
           {approverFact()}
         </Facts>
@@ -388,10 +543,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         }
         const def = findHighOp("a1_account_change_role")!;
         await propose(toast, {
-          action: `变更角色 · ${displayName} → ${roleName(roles, roleStr)}`,
+          action: `变更角色 · ${displayName} → ${roleName(viewRoles, roleStr)}`,
           obj: String(op.id),
-          before: roleName(roles, op.role),
-          after: roleName(roles, roleStr),
+          before: roleName(viewRoles, op.role),
+          after: roleName(viewRoles, roleStr),
           type: "acct",
           amplifies: false,
           gate: { roles: [] },
@@ -405,7 +560,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     });
   };
 
-  const reset2fa = (op: A1Operator) => openActionConfirm({ briefKind: "security",
+  const reset2fa = (op: A1Operator) => openOperation({ kind: "2fa", account: op }, { briefKind: "security",
     action: `重置两步验证 · ${operatorDisplayName(op)}`,
     title: "重置两步验证",
     detail: "核实是本人后提交；批准后旧验证器失效，下次登录重新绑定。",
@@ -431,10 +586,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       channels: ["视频核实", "当面核实", "回拨预留工作号"],
       ticketHint: "如 SEC-20260618-001",
     },
-    run: (reason, _value, businessValue) => {
+    run: async (reason, _value, businessValue) => {
       const verify = `核验 ${businessValue?.channel ?? "—"} · ${businessValue?.verifiedAt || "—"} · 工单 ${businessValue?.ticket || "—"}`;
       const def = findHighOp("a1_account_reset_2fa")!;
-      void propose(toast, {
+      await propose(toast, {
         action: `重置两步验证 · ${operatorDisplayName(op)}`,
         obj: String(op.id),
         before: "已绑定",
@@ -451,7 +606,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     },
   });
 
-  const resetPassword = (op: A1Operator) => openActionConfirm({ briefKind: "security",
+  const resetPassword = (op: A1Operator) => openOperation({ kind: "password", account: op }, { briefKind: "security",
     action: `重置密码 · ${operatorDisplayName(op)}`,
     title: "重置密码",
     detail: "系统生成临时密码并让该账号所有设备下线，对方下次登录须先改密码。",
@@ -477,27 +632,17 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       channels: ["视频核实", "当面核实", "回拨预留工作号"],
       ticketHint: "如 SEC-20260618-001",
     },
-    run: (reason, _value, businessValue) => {
+    run: async (reason, _value, businessValue) => {
       const verify = `核验 ${businessValue?.channel ?? "—"} · ${businessValue?.verifiedAt || "—"} · 工单 ${businessValue?.ticket || "—"}`;
-      const action = `重置密码 ${operatorDisplayName(op)}`;
-      setMutatingAction(action);
-      resetA1AccountPassword(op.id, `${reason}；${verify}`, operator, op.version)
-        .then(async (result) => {
-          setPasswordFromCreate(false);
-          setPasswordReset(result);
-          await refreshOverview(true);
-          toast(`${operatorDisplayName(op)} 密码已重置 · 临时密码只展示在当前弹窗`);
-        })
-        .catch((error) => {
-          toast(`提交失败:${errorMessage(error)}`);
-        })
-        .finally(() => setMutatingAction(null));
+      await submitRequest({ kind: "password", accountId: op.id, expectedVersion: op.version, reason: `${reason}；${verify}`, operator });
+      toast(`${operatorDisplayName(op)} 密码已重置 · 临时密码只展示在当前弹窗`);
+      return true;
     },
   });
 
   const editAccount = (op: A1Operator, form: A1UpdateAccountInput & { reason: string }) => {
     const usernameChanged = form.username !== (op.username || "").trim().toLowerCase();
-    openActionConfirm({ briefKind: "security",
+    openOperation({ kind: "profile", account: op, form }, { briefKind: "security",
       action: `编辑账号 · ${operatorDisplayName(op)}`,
       title: "提交资料修改",
       detail: "登录名和邮箱不能与其他账号重复；改登录名后该账号会被强制下线。",
@@ -553,13 +698,14 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   };
 
   const disableAcct = (op: A1Operator) => {
-    if (op.role === "super" && op.status === "enabled" && effectiveSupers - 1 < 2) {
+    if (!restoring.current && op.role === "super" && op.status === "enabled" && effectiveSupers - 1 < 2) {
       toast("不能执行：有效的超级管理员会少于 2 人");
       return;
     }
     const displayName = operatorDisplayName(op);
     const countsAsEffective = op.role === "super" && op.status === "enabled" && op.tfa;
-    openActionConfirm({ briefKind: "security",
+    const savedEffectiveSupers = restoring.current?.snapshot.effectiveSupers ?? effectiveSupers;
+    openOperation({ kind: "disable", account: op }, { briefKind: "security",
       action: `禁用账号 · ${displayName}`,
       title: "停用账号",
       detail: "停用后该账号不能登录；它提交但还没确认的操作，请到「操作记录与审批」处理。",
@@ -570,10 +716,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       facts: (
         <Facts>
           <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
-          <Fact k="角色">{roleName(roles, op.role)}，停用后保留</Fact>
+          <Fact k="角色">{roleName(restoring.current?.snapshot.roles ?? roles, op.role)}，停用后保留</Fact>
           <Fact k="状态"><Change from="启用" to="已停用" /></Fact>
           <Fact k="在线设备">{op.sessions} 台，批准后全部下线</Fact>
-          {countsAsEffective && <Fact k="有效的超级管理员"><Change from={`${effectiveSupers} 人`} to={`${effectiveSupers - 1} 人`} /></Fact>}
+          {countsAsEffective && <Fact k="有效的超级管理员"><Change from={`${savedEffectiveSupers} 人`} to={`${savedEffectiveSupers - 1} 人`} /></Fact>}
           {approverFact()}
         </Facts>
       ),
@@ -581,9 +727,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         impact: "批准后这个账号所有设备下线、不能再登录，角色保留；它发起的待审批单不会自动撤回。有主管资格时要先交接负责的组。",
         check: "提交时检查启停权限和账号版本；批准时再检查有效的超级管理员不少于 2 人、客服交接。",
       },
-    run: (reason) => {
+    run: async (reason) => {
       const def = findHighOp("a1_account_status_update")!;
-      void propose(toast, {
+      await propose(toast, {
         action: `禁用账号 · ${displayName}`,
         obj: String(op.id),
         before: "启用",
@@ -609,8 +755,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
   const enableAcct = (op: A1Operator) => {
     const blocked = enableAccountBlockReason(op);
-    if (blocked) { toast(blocked); return; }
-    openActionConfirm({ briefKind: "security",
+    if (!restoring.current && blocked) { toast(blocked); return; }
+    openOperation({ kind: "enable", account: op }, { briefKind: "security",
     action: `启用账号 · ${operatorDisplayName(op)}`,
     title: "启用账号",
     detail: "批准后可以重新登录，角色不变，登录时需通过两步验证。",
@@ -621,7 +767,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       <Facts>
         <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
         <Fact k="状态"><Change from="已停用" to="启用" /></Fact>
-        <Fact k="角色">{roleName(roles, op.role)}，不变</Fact>
+        <Fact k="角色">{roleName(restoring.current?.snapshot.roles ?? roles, op.role)}，不变</Fact>
         <Fact k="两步验证">{op.tfa ? "已绑定，不变" : "未绑定，登录时先绑定"}</Fact>
         {approverFact()}
       </Facts>
@@ -653,11 +799,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const kickAllSessions = (op: A1Operator) => {
     const displayName = operatorDisplayName(op);
     const blocked = forceLogoutBlockReason(op);
-    if (blocked) {
+    if (!restoring.current && blocked) {
       toast(`${displayName}: ${blocked}`);
       return;
     }
-    openActionConfirm({ briefKind: "security",
+    openOperation({ kind: "logout", account: op }, { briefKind: "security",
       action: `强制登出 · ${displayName}`,
       title: "撤销全部登录",
       detail: "只有超级管理员能操作；不能撤销自己的登录，也不能撤销其他超级管理员的登录。",
@@ -676,9 +822,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         impact: "另一位超级管理员批准后，批准时在线的设备全部下线；不改密码和两步验证，对方可以马上重新登录。要让对方登录不了，用「停用账号」。",
         check: "提交时检查当前身份和账号版本；批准时再检查目标不是超级管理员、不是批准人自己。",
       },
-      run: (reason) => {
+      run: async (reason) => {
         const def = findHighOp("a1_account_force_logout")!;
-        void propose(toast, {
+        await propose(toast, {
           action: `强制登出 · ${displayName}`,
           obj: String(op.id),
           before: `${op.sessions} active sessions`,
@@ -778,16 +924,15 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       <Fact k="显示名">{form.displayName}</Fact>
       <Fact k="登录名"><span data-mono>{form.username}</span></Fact>
       <Fact k="工作邮箱">{form.email || "未填写"}</Fact>
-      <Fact k="角色">{roleName(roles, form.role)} · {permSummary(form.role ? permissionDiffReady ? codesOf(form.role) : null : [])}</Fact>
+      <Fact k="角色">{roleName(restoring.current?.snapshot.roles ?? roles, form.role)} · {permSummary(form.role ? (restoring.current?.snapshot.permissionReady ?? permissionDiffReady) ? codesOf(form.role) : null : [])}</Fact>
       {form.role === "support" && <Fact k="头像">{form.useDefaultAvatar ? "随机默认头像" : form.avatarAssetId ? "已上传的新头像" : "暂不设置"}</Fact>}
     </Facts>
   );
 
   const createAccount = (form: A1CreateAccountInput & { reason: string }) => {
-    if (governanceFrozen && !creationPending) {
+    if (restoring.current ? restoring.current.intent.kind === "create" && restoring.current.intent.approval : governanceFrozen) {
       const definition = findHighOp("a1_account_create")!;
-      const commandKey = crypto.randomUUID();
-      openActionConfirm({ briefKind: "security",
+      openOperation({ kind: "create", form, approval: true }, { briefKind: "security",
         action: `提交新建账号审批 · ${form.displayName}`,
         title: "提交新建超级管理员审批",
         detail: "这里只提交提案，须另一位超级管理员批准后才创建账号。",
@@ -802,9 +947,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         run: async (reason) => {
           await propose(toast, {
             action: definition.action, obj: form.username, before: "账号尚未创建",
-            after: `${form.displayName} · ${roleName(roles, form.role)}`, type: definition.type,
+            after: `${form.displayName} · ${roleName(restoring.current?.snapshot.roles ?? roles, form.role)}`, type: definition.type,
             amplifies: false, gate: { roles: [] }, gateLabel: definition.gateLabel,
-            reason: `${form.reason}；${reason}`, sourceDomain: "A1", commandKey,
+            reason: `${form.reason}；${reason}`, sourceDomain: "A1",
             command: definition.buildCommand({ ...form }), target: definition.buildTarget({ ...form }),
           });
           setNaOpen(false);
@@ -812,7 +957,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       });
       return;
     }
-    openActionConfirm({ briefKind: "security",
+    openOperation({ kind: "create", form, approval: false }, { briefKind: "security",
       action: `新建运营账号 · ${form.displayName}`,
       title: "新建运营账号",
       detail: form.role === "support" ? "按所选角色开通权限；首次登录须修改密码。专属客服仅服务本人绑定客户，主管资格需另行授予。" : "按所选角色开通权限；首次登录须修改密码。",
@@ -828,55 +973,36 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       },
       run: async (reason) => {
         const finalReason = `${form.reason}；${reason}`;
-        if(!currentAdminId)return false;
-        const command=creationPending??{fingerprint:`${currentAdminId}:create`,commandKey:crypto.randomUUID(),createdAt:Date.now(),expiresAt:Date.now()+86400000,actorId:currentAdminId,form,reason:finalReason,operator};
-        if (Date.now() >= command.expiresAt) { toast("距上次提交已超过可重试时间。请先在账号列表核对是否已创建，不要重复创建。"); return false; }
-        creationCommands.remember(command.fingerprint,command.commandKey,{actorId:command.actorId,form:command.form,reason:command.reason,operator:command.operator});setCreationPending(command);
-        if(!creationCommands.isDurablyStored(command.fingerprint,command.commandKey)){toast("浏览器无法保存本次提交记录，尚未提交。请检查浏览器存储设置后重试。");return false;}
-        let defaultAvatarMissing = false;
-        const ok = await runMutation(
-          `新建账号 ${form.username}`,
-          async () => {
-            let created:A1Operator;
-            try{created=await createA1Account({
-              username: command.form.username,displayName: command.form.displayName,email: command.form.email,avatarAssetId: command.form.avatarAssetId,avatarGender: command.form.avatarGender,useDefaultAvatar: command.form.useDefaultAvatar,role: command.form.role,
-            },command.reason,command.operator,command.commandKey);}catch(e){if(!isA1OutcomeUncertainError(e)){creationCommands.forget(command.fingerprint);setCreationPending(null);}throw e;}
-            if(useAdminAuth.getState().session?.adminId!==command.actorId)return created;
-            if (!created.temporaryPassword) {
-              throw new Error("A1_CREATE_TEMPORARY_PASSWORD_MISSING");
-            }
-            creationCommands.forget(command.fingerprint);setCreationPending(null);
-            avatarDrafts.forget(avatarDraftFingerprint(command.actorId, "admin", "new"));
-            setPasswordFromCreate(true);
-            setPasswordReset({ account: created, temporaryPassword: created.temporaryPassword });
-            defaultAvatarMissing = Boolean(command.form.useDefaultAvatar && !created.avatarAssetId);
-            return created;
-          },
-          `${form.displayName} 已创建，首次登录需绑定两步验证并修改密码`,
-        );
-        if (ok) { setNaOpen(false); if (defaultAvatarMissing) toast("账号已创建，但默认头像暂缺，请在账号资料里上传头像。不要重复创建账号。"); }
-        return ok;
+        const result = await submitRequest({ kind: "create", input: {
+          username: form.username, displayName: form.displayName, email: form.email, avatarAssetId: form.avatarAssetId,
+          avatarGender: form.avatarGender, useDefaultAvatar: form.useDefaultAvatar, role: form.role,
+        }, reason: finalReason, operator });
+        setNaOpen(false);
+        toast(`${form.displayName} 已创建，首次登录需绑定两步验证并修改密码`);
+        if (result.kind === "create" && form.useDefaultAvatar && !result.account.avatarAssetId) toast("账号已创建，但默认头像暂缺，请在账号资料里上传头像。不要重复创建账号。");
+        return true;
       },
     });
   };
 
-  const submitPermissionRegistration = () => {
-    if (governanceFrozen || !canRegisterPermission || !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim()) return;
-    openActionConfirm({ briefKind: "config",
-      action: `登记动作权限 · ${permissionDraft.code.trim()}`,
+  const submitPermissionRegistration = (originalDraft?: typeof permissionDraft) => {
+    const draft = originalDraft ?? permissionDraft;
+    if (!restoring.current && (governanceFrozen || !canRegisterPermission || !draft.code.trim() || !draft.name.trim() || !draft.path.trim())) return;
+    openOperation({ kind: "permission", draft }, { briefKind: "config",
+      action: `登记动作权限 · ${draft.code.trim()}`,
       title: "登记新权限",
       detail: "把新操作加入权限清单，不会自动分给任何角色。需要时到「角色管理」授权。",
-      amplifies: permissionDraft.amplifies,
+      amplifies: draft.amplifies,
       coverageLead: "这项权限标记为「会让平台多付钱」",
       coverageCheck: "登记本身不付款、不检查覆盖率；按现在的规则，标记后类型要选高危，页面暂时选不了，提交会被拒绝。",
       effect: <>{directTag()}<StatusTag tone="neutral">不改任何人的权限</StatusTag></>,
       confirmLabel: "确认登记",
       facts: (
         <Facts>
-          <Fact k="权限编码"><span data-mono>{permissionDraft.code.trim()}</span></Fact>
-          <Fact k="权限名称">{permissionDraft.name.trim()}</Fact>
-          <Fact k="资源路径"><span data-mono>{permissionDraft.path.trim()}</span></Fact>
-          <Fact k="权限类型">{permissionDraft.type === "READ" ? "查询" : "修改"}</Fact>
+          <Fact k="权限编码"><span data-mono>{draft.code.trim()}</span></Fact>
+          <Fact k="权限名称">{draft.name.trim()}</Fact>
+          <Fact k="资源路径"><span data-mono>{draft.path.trim()}</span></Fact>
+          <Fact k="权限类型">{draft.type === "READ" ? "查询" : "修改"}</Fact>
         </Facts>
       ),
       statedBrief: {
@@ -886,19 +1012,20 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       reasonMin: 8,
       reasonMax: 200,
       run: async (reason) => {
-        const ok = await runMutation(`登记权限 ${permissionDraft.code}`, async () => registerA1Permission({
-          permissionCode: permissionDraft.code.trim(), permissionName: permissionDraft.name.trim(),
-          resourcePath: permissionDraft.path.trim(), permType: permissionDraft.type,
-          amplifies: permissionDraft.amplifies, reason, operator,
-        }), `${permissionDraft.code.trim()} 已登记，尚未分给任何角色`);
-        if (ok) setPermissionDraft({ code: "", name: "", path: "", type: "WRITE", amplifies: false });
+        await submitRequest({ kind: "permission", input: {
+          permissionCode: draft.code.trim(), permissionName: draft.name.trim(), resourcePath: draft.path.trim(),
+          permType: draft.amplifies ? "HIGH" : draft.type, amplifies: draft.amplifies, reason, operator,
+        } });
+        toast(`${draft.code.trim()} 已登记，尚未分给任何角色`);
+        setPermissionDraft({ code: "", name: "", path: "", type: "WRITE", amplifies: false });
+        return true;
       },
     });
   };
 
   const revokeOneSession = (target: A1Operator, sessionId: string) => {
     const session = (target.sessionDetails ?? []).find((row) => row.sessionId === sessionId);
-    openActionConfirm({ briefKind: "security",
+    openOperation({ kind: "session", account: target, sessionId }, { briefKind: "security",
       action: `让单台设备下线 · ${operatorDisplayName(target)}`,
       title: "让这台设备下线",
       detail: `只让这台设备（${sessionId}）下线，不影响该账号的其他设备。`,
@@ -917,22 +1044,17 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         impact: "确认后只让这台设备马上下线，这个账号的其他设备不受影响；对方可以重新登录。",
         check: "提交时检查撤销登录权限、账号版本和这台设备还在线。",
       },
-      run: (reason) => {
-        setMutatingAction(`吊销会话 ${target.username}`);
-        revokeA1AccountSession(target.id, sessionId, reason, operator, target.version)
-          .then(async () => {
-            await refreshOverview(true);
-            setDetailAccount(null);
-            toast("该设备已下线");
-          })
-          .catch((error) => toast(`提交失败:${errorMessage(error)}`))
-          .finally(() => setMutatingAction(null));
+      run: async (reason) => {
+        await submitRequest({ kind: "session", accountId: target.id, sessionId, expectedVersion: target.version, reason, operator });
+        setDetailAccount(null);
+        toast("该设备已下线");
+        return true;
       },
     });
   };
 
   // 每个账号能做的事：行尾菜单和详情抽屉用同一份，按钮上写明为什么不能做。
-  const busyReason = mutatingAction ? "正在提交，请稍候" : null;
+  const busyReason = mutatingAction ? "正在提交，请稍候" : !overviewReady ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : null;
   const accountActions = (op: A1Operator): A1AccountAction[] => {
     const enabled = op.status === "enabled";
     const list: A1AccountAction[] = [
@@ -940,7 +1062,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       { key: "role", label: "改角色", verb: "改角色", icon: UserCog, mode: "approval", impact: "权限随新角色变，已登录的不下线", disabledReason: busyReason ?? (!roles.length ? "角色目录没有读到" : changeRoleBlockReason(op)), onSelect: () => changeRole(op) },
       { key: "password", label: "重置密码", verb: "重置", icon: KeyRound, mode: "direct", impact: "全部设备马上下线，下次先改密码", disabledReason: !canResetPassword ? "需要超级管理员和重置密码权限" : busyReason ?? (governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能重置密码" : null), onSelect: () => resetPassword(op) },
       { key: "2fa", label: "重置两步验证", verb: "重置", icon: ShieldUser, mode: "approval", impact: "全部设备下线，下次登录重新绑定", disabledReason: busyReason ?? reset2faBlockReason(op), onSelect: () => reset2fa(op) },
-      { key: "logout", label: "撤销全部登录", verb: "撤销", icon: LogOut, mode: "approval", impact: "全部设备下线，可以马上重新登录", disabledReason: busyReason ?? forceLogoutBlockReason(op), onSelect: () => kickAllSessions(op) },
+      { key: "logout", label: "撤销全部登录", verb: "撤销", icon: LogOut, mode: "approval", impact: "全部设备下线，可以马上重新登录", disabledReason: busyReason ?? (!canPropose ? errorMessage(new Error("A1_OPERATION_FORBIDDEN")) : forceLogoutBlockReason(op)), onSelect: () => kickAllSessions(op) },
       enabled
         ? { key: "status", label: "停用账号", verb: "停用", icon: UserMinus, mode: "approval", impact: "全部设备下线，之后不能再登录", danger: true, disabledReason: busyReason ?? disableAccountBlockReason(op), onSelect: () => disableAcct(op) }
         : { key: "status", label: "启用账号", verb: "启用", icon: UserPlus, mode: "approval", impact: "可以重新登录，角色不变", disabledReason: busyReason ?? enableAccountBlockReason(op), onSelect: () => enableAcct(op) },
@@ -952,7 +1074,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         { key: "supervisor", label: "主管资格", verb: "管理", icon: UsersRound, mode: "direct", impact: "不改角色，管客服组", explain: "和专属客服资格互相独立，可以兼任；主管资格不带账号管理权限。停用、移除前要把负责的组（含已归档的）交接给别的主管。", disabledReason: blocked, onSelect: () => setQualificationTarget({ id: op.id, kind: "SUPERVISOR" }) },
       );
     }
-    return list;
+    const pending = pendingFor({ kind: "password", account: op });
+    return list.map(action => ({ ...action, disabledReason: action.disabledReason ?? (pending ? pending.ticket?.status === "pending" ? "已提交，等待审批后执行" : errorMessage(new Error("A1_ORIGINAL_OPERATION_PENDING")) : null) }));
   };
   const menuItems = (op: A1Operator): MoreMenuItem[] => accountActions(op).map((action) => ({ key: action.key, label: action.label, danger: action.danger, disabledReason: action.disabledReason ?? undefined, onSelect: action.onSelect }));
 
@@ -962,19 +1085,74 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       readOnly={overview && !canWriteSomething ? "当前账号只能查看，账号操作都不可用" : undefined}
       actions={<>
         <Button icon={<RefreshCw size={14} />} loading={loading && Boolean(overview)} disabledReason={mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => void refreshOverview(true)}>刷新</Button>
-        <Button variant="primary" icon={<UserPlus size={14} />} disabledReason={!canCreateAccount ? "需要超级管理员和账号管理权限" : !roles.length ? "角色目录没有读到" : mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => setNaOpen(true)}>{governanceFrozen && overview ? "新建超级管理员" : "新建账号"}</Button>
+        <Button variant="primary" icon={<UserPlus size={14} />} disabledReason={!overviewReady ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : !canCreateAccount ? "需要超级管理员和账号管理权限" : governanceFrozen && !canPropose ? errorMessage(new Error("A1_OPERATION_FORBIDDEN")) : creationPending ? errorMessage(new Error("A1_ORIGINAL_OPERATION_PENDING")) : !roles.length ? "角色目录没有读到" : mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => setNaOpen(true)}>{governanceFrozen && overview ? "新建超级管理员" : "新建账号"}</Button>
       </>} />
   );
 
-  const recoveryRows = creationPending ? [{
-    key: creationPending.commandKey,
-    name: "新建账号",
-    change: <>{creationPending.form.displayName} · <span data-mono>{creationPending.form.username}</span> · {roleName(roles, creationPending.form.role)} · {creationPending.form.email || "未填邮箱"}</>,
-    submittedAt: creationPending.createdAt,
-    tag: Date.now() >= creationPending.expiresAt ? expiredTag() : unknownTag("direct"),
-    actions: <Button size="sm" variant="primary" disabledReason={mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => createAccount(creationPending.form)}>按原请求重试</Button>,
-  }] : [];
-  const recovery = <A1RecoveryNotice title={`${recoveryRows.length} 个账号操作结果未知`} rows={recoveryRows} />;
+  const restoreOperation = (record: A1Pending) => {
+    restoring.current = record;
+    try {
+      const intent = record.intent;
+      switch (intent.kind) {
+        case "create": createAccount(intent.form); break;
+        case "profile": editAccount(intent.account, intent.form); break;
+        case "role": confirmRoleChange(intent.account, intent.picked); break;
+        case "2fa": reset2fa(intent.account); break;
+        case "password": resetPassword(intent.account); break;
+        case "disable": disableAcct(intent.account); break;
+        case "enable": enableAcct(intent.account); break;
+        case "logout": kickAllSessions(intent.account); break;
+        case "session": revokeOneSession(intent.account, intent.sessionId); break;
+        case "permission": submitPermissionRegistration(intent.draft); break;
+      }
+    } finally { restoring.current = null; }
+  };
+  const releaseExpiredProposal = (record: A1Pending) => ctx.openConfirm({
+    briefKind: "security", action: "解除原操作记录", title: "解除原操作记录", reason: false,
+    detail: errorMessage(new Error("A1_EXPIRED_PROPOSAL_NOT_FOUND")),
+    run: async () => {
+      if (Date.now() < record.expiresAt || record.request.kind !== "proposal" || await fetchA2ProposalByKey(record.commandKey, true, true)) throw new Error("A1_ORIGINAL_OPERATION_PENDING");
+      recoveryStarted(); await refreshOverview(true);
+      a1PendingCommands.forget(record.fingerprint, record.commandKey); reloadPending();
+    },
+  });
+  const recoveryRows = pendingOperations.map(record => {
+    const intent = record.intent, request = record.request;
+    const expired = Date.now() >= record.expiresAt;
+    let retryBlock: string | undefined;
+    try { requireActor(intent, true, request.kind === "proposal"); } catch (error) { retryBlock = errorMessage(error); }
+    return {
+      key: record.commandKey,
+      name: request.kind === "proposal" ? request.input.action.replace(/ \(A1\)$/, "") : intent.kind === "create" ? "新建账号" : intent.kind === "password" ? "重置密码" : intent.kind === "session" ? "让这台设备下线" : "登记新权限",
+      change: request.kind === "proposal" ? <Change from={request.input.beforeValue} to={request.input.afterValue} />
+        : intent.kind === "create" ? <>{intent.form.displayName} · <span data-mono>{intent.form.username}</span> · {roleName(record.snapshot.roles, intent.form.role)} · {intent.form.email || "未填邮箱"}</>
+        : intent.kind === "permission" ? `${intent.draft.code} · ${intent.draft.name}` : operatorDisplayLabel(intent.account),
+      submittedAt: record.createdAt,
+      tag: record.ticket?.status === "pending" ? <StatusTag tone="progress">待审批</StatusTag> : expired ? expiredTag() : unknownTag(request.kind === "proposal" ? "approval" : "direct"),
+      actions: <>
+        <Button size="sm" disabledReason={mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => void queryOriginal(record).catch(error => toast(errorMessage(error)))}>查询原结果</Button>
+        {!record.ticket && !expired && <Button size="sm" variant="primary" disabledReason={mutatingAction ? "正在提交，请稍候" : retryBlock} onClick={() => restoreOperation(record)}>按原请求重试</Button>}
+        {request.kind === "proposal" && expired && record.proposalNotFound && <Button size="sm" onClick={() => releaseExpiredProposal(record)}>解除原操作记录</Button>}
+      </>,
+    };
+  });
+  const qualificationPending = groupPendingCommands.list().filter((r): r is GroupPendingRecord => !isInvitePending(r) && r.actorId === currentAdminId && r.intent.kind === "QUALIFICATION");
+  for (const record of qualificationPending) {
+    if (record.intent.kind !== "QUALIFICATION") continue;
+    const intent = record.intent;
+    recoveryRows.push({ key: record.commandKey, name: record.label, change: intent.payload.state, submittedAt: record.createdAt, tag: Date.now() >= record.createdAt + 86400000 ? expiredTag() : unknownTag("direct"), actions: <Button size="sm" onClick={() => setQualificationTarget({ id: intent.targetId, kind: intent.payload.qualificationKind })}>查询原结果</Button> });
+  }
+  for (const draft of avatarDrafts.list().filter(row => row.actorId === currentAdminId && row.scope === "admin" && (!row.asset || row.cancelKey))) {
+    recoveryRows.push({ key: draft.cancelKey ?? draft.commandKey, name: "账号头像", change: draft.kind === "UPLOAD" ? draft.fileName ?? "账号头像" : "随机默认头像", submittedAt: draft.createdAt,
+      tag: Date.now() >= draft.expiresAt ? expiredTag() : unknownTag("direct"),
+      actions: <Button size="sm" onClick={() => void (async () => {
+        requireActor(null, false);
+        if (!await refreshOverview(true)) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
+        toast(errorMessage(new Error("A1_AVATAR_READBACK_ONLY")));
+      })().catch(error => toast(errorMessage(error)))}>查询原结果</Button>,
+    });
+  }
+  const recovery = <><A1RecoveryNotice title={`${recoveryRows.length} 个账号操作结果未知`} rows={recoveryRows} />{qualificationTarget && <SupportQualificationEditor adminId={qualificationTarget.id} kind={qualificationTarget.kind} writeBlockedReason={!overviewReady ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能改资格" : undefined} onClose={() => setQualificationTarget(null)} onChanged={() => void refreshOverview(true)} />}</>;
 
   if (loading && !overview) {
     return <div className="a1-page">{header}{recovery}<BlockState state="loading" title="正在加载运营账号与权限" /></div>;
@@ -1067,7 +1245,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                       <Cell main={<>{operatorDisplayName(op)}{self && <span className="a1-self">你</span>}</>} sub={<span data-mono>{op.username || "登录名未返回"}</span>} title={operatorDisplayLabel(op)} />
                     </span>
                   </Td>
-                  <Td><Cell main={roleName(roles, op.role)} sub={permissionDiffReady ? permSummary(codesOf(op.role)) : undefined} /></Td>
+                  <Td><Cell main={roleName(restoring.current?.snapshot.roles ?? roles, op.role)} sub={permissionDiffReady ? permSummary(codesOf(op.role)) : undefined} /></Td>
                   <Td>{op.tfa ? <StatusTag tone="ok" icon={ShieldCheck}>已绑定</StatusTag> : <StatusTag tone="warn" icon={LockKeyhole}>未绑定</StatusTag>}</Td>
                   <Td><Cell main={op.status === "enabled" ? "启用" : <StatusTag tone="done">已停用</StatusTag>} sub={op.credentialDeliveryStatus === "PASSWORD_CHANGE_REQUIRED" ? credentialStatusText(op.credentialDeliveryStatus) : undefined} /></Td>
                   <Td align="right"><Cell num main={minuteText(op.lastLogin)} /></Td>
@@ -1117,7 +1295,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
             </div>
           </div>
           <div className="rd-toolbar" data-end="">
-            <Button variant="primary" disabledReason={governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能登记" : !canRegisterPermission ? "你没有登记权限的权限" : mutatingAction ? "正在提交，请稍候" : !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim() ? "先填权限编码、名称和资源路径" : undefined} onClick={submitPermissionRegistration}>登记权限</Button>
+            <Button variant="primary" disabledReason={!overviewReady ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : pendingOperations.some(r => r.intent.kind === "permission") ? errorMessage(new Error("A1_ORIGINAL_OPERATION_PENDING")) : governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能登记" : !canRegisterPermission ? "你没有登记权限的权限" : mutatingAction ? "正在提交，请稍候" : !permissionDraft.code.trim() || !permissionDraft.name.trim() || !permissionDraft.path.trim() ? "先填权限编码、名称和资源路径" : undefined} onClick={() => submitPermissionRegistration()}>登记权限</Button>
           </div>
         </div>
       </Fold>
@@ -1128,12 +1306,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           codesByRole={permissionDiffReady ? permissionCodesByRole : null}
           recoveryMode={governanceFrozen}
           disabled={!!mutatingAction||Boolean(creationPending)}
-          initialForm={creationPending?.form}
+          initialForm={creationPending?.intent.kind === "create" ? creationPending.intent.form : undefined}
           onClose={() => setNaOpen(false)}
           onSubmit={createAccount}
         />
       )}
-      {qualificationTarget && canManageQualifications && <SupportQualificationEditor adminId={qualificationTarget.id} kind={qualificationTarget.kind} onClose={() => setQualificationTarget(null)} onChanged={() => void refreshOverview(true)} />}
       {detailAccount && (
         <AccountDetailDrawer
           account={detailAccount}
@@ -1141,7 +1318,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           roleCodes={roleCodesOf(detailAccount)}
           materialPermissionCodes={permissionDiffReady ? permissionCodesByRole[detailAccount.role] ?? [] : null}
           isSelf={currentAdminId !== null && operatorAccountId(detailAccount.id) === currentAdminId}
-          sessionRevokeBlockReason={forceLogoutBlockReason(detailAccount)}
+          sessionRevokeBlockReason={busyReason ?? forceLogoutBlockReason(detailAccount)}
           editBlockReason={profileEditBlockReason}
           actions={accountActions(detailAccount)}
           busy={Boolean(mutatingAction)}

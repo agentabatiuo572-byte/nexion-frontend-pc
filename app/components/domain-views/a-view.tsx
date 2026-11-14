@@ -44,6 +44,7 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
   const ctx: ACtx = {
     toast: setToast,
     openActionConfirm: setActionConfirm,
+    closeActionConfirm: () => setActionConfirm(null),
     openConfirm: setCf,
   };
 
@@ -118,10 +119,15 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
           statedBrief={actionConfirmReq.statedBrief}
           facts={actionConfirmReq.facts}
           blockedReason={actionConfirmReq.blockedReason}
+          initialReason={actionConfirmReq.initialReason}
+          getPendingReason={actionConfirmReq.getPendingReason}
+          getPendingBusinessValue={actionConfirmReq.getPendingBusinessValue}
+          approval={actionConfirmReq.approval}
+          inlineApproval={actionConfirmReq.inlineApproval}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
-            await actionConfirmReq.run(reason, newValue, businessValue);
-            setActionConfirm(null);
+            const result = await actionConfirmReq.run(reason, newValue, businessValue);
+            if (result !== false) setActionConfirm(null);
           }}
         />
       )}

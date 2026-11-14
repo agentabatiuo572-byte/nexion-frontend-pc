@@ -376,10 +376,13 @@ function keyHeader(key: string): HeadersInit {
   if (key.length < 8 || key.length > 128) throw new Error("SUPPORT_IDEMPOTENCY_KEY_INVALID");
   return { "Idempotency-Key": key };
 }
-async function request<T>(path: string, parse: (value: unknown) => T, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, parse: (value: unknown) => T, init: RequestInit & { preserveUnknownOutcome?: boolean } = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   const response = await guardedFetch(`${BASE}${path}`, { ...init, headers, cache: "no-store", credentials: "same-origin" });
+  if (init.preserveUnknownOutcome && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown") {
+    throw new SupportClientError(503, undefined, "UPSTREAM_OUTCOME_UNKNOWN");
+  }
   const text = await response.text();
   try { return parse(parseMContentApiEnvelope<unknown>(response.status, text, true)); }
   catch (error) {

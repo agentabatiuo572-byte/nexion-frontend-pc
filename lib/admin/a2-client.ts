@@ -635,10 +635,17 @@ export async function fetchA2ReasonPolicy(): Promise<A2ReasonPolicy> {
 }
 
 /** Exact original-maker lookup includes archived audit evidence; never resubmit a lost proposal. */
-export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false): Promise<A2OperationRow | null> {
+function hasProposalTicketFacts(row: BackendTicket) {
+  return row && typeof row.id === "string" && !!row.id && typeof row.mine === "boolean"
+    && typeof row.action === "string" && typeof row.obj === "string"
+    && ["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "");
+}
+
+export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket = false): Promise<A2OperationRow | null> {
   try {
     const row = await a2Request<BackendTicket>(`/operations/proposals/by-idempotency-key?${new URLSearchParams({ idempotencyKey: commandKey })}`);
     if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new Error("提交结果不完整，请稍后再查。");
+    if (strictTicket && !hasProposalTicketFacts(row)) throw new Error("提交结果不完整，请稍后再查。");
     return fromTicket(row);
   } catch (failure) {
     if (failure && typeof failure === "object" && "status" in failure && failure.status === 404
@@ -672,7 +679,7 @@ export async function createA2OperationProposal(input: {
   command: { domain: string; op: string; params: Record<string, unknown> };
   target?: { domain: string; type: string; id: string };
   targets?: { domain: string; type: string; id: string }[];
-}, commandKey?: string, strictOutcome = false) {
+}, commandKey?: string, strictOutcome = false, strictTicket = false) {
   const row = await a2Request<BackendTicket>("/operations", {
     method: "POST",
     strictOutcome,
@@ -682,6 +689,7 @@ export async function createA2OperationProposal(input: {
   if (strictOutcome && (!row || typeof row.id !== "string" || !row.id)) {
     throw new A2OutcomeUncertainError("提交结果不完整，请到操作记录里核对。", commandKey!);
   }
+  if (strictTicket && !hasProposalTicketFacts(row)) throw new A2OutcomeUncertainError("提交结果不完整，请到操作记录里核对。", commandKey!);
   return fromTicket(row);
 }
 

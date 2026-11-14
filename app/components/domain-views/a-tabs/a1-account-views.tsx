@@ -19,7 +19,7 @@ import { SupportAvatar } from "../m-tabs/support-avatar";
 
 /* ---------- 文字 ---------- */
 
-export function roleName(roles: A1RoleDefinition[], role: string) {
+export function roleName(roles: A1RoleDefinition[], role: string | null | undefined) {
   if (!role || role === "unassigned") return "暂未分配";
   return roles.find((r) => r.key === role)?.name ?? role;
 }
