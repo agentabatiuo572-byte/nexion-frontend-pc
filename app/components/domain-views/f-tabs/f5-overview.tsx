@@ -89,6 +89,7 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
       explain={<>
         <p>数的是八类奖励的全部记录，不跟下方的筛选变。点一个状态，下方列表只看这个状态；再点一次取消。</p>
         <p>合计是八类、所有状态的金额相加，包括已冲正和已拒绝，不是实际发出去的钱；两种币分开算，不相加。</p>
+        <p>等价格的好友奖励在 UVT 价格可用后算出金额，进入冷却中；冷却到期自动解锁，也可以提交审批提前解锁；用户提走后是已提现。</p>
         <p>冷却中、已解锁、已冻结三种都能冲正；补发会生成一笔新记录，原记录不变。</p>
         <p>只有冷却中和已解锁有金额，其余状态后端只给笔数。金额是后端汇总时四舍五入到两位小数的数。</p>
       </>}>
@@ -102,11 +103,11 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
             <span className="f5-node-count" data-zero={pendingCount ? undefined : ""}>{pendingCount === undefined ? "—" : pendingCount.toLocaleString("en-US")}<small>组</small></span>
             <span className="f5-node-note">{pendingCount === undefined ? "选了状态时不返回" : "金额还没算出"}</span>
           </button>
-          <FlowLink label="价格可用后算出金额" />
+          <FlowLink label="算出金额" />
           {node("cooling", { money: splitMoneyLabel(data.summary.coolingBalanceLabel) })}
-          <FlowLink label={<>到期自动解锁<br />或提前解锁</>} tone="action" />
+          <FlowLink label="到期解锁" tone="action" />
           {node("unlocked", { money: splitMoneyLabel(data.summary.withdrawableThisMonthLabel), note: "能提多少以钱包为准" })}
-          <FlowLink label="用户提现" />
+          <FlowLink label="提现" />
           {node("withdrawn")}
         </div>
         <div className="f5-flow-branch">

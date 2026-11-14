@@ -369,8 +369,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       businessForm: {
         kind: "multi-field",
         fields: [
-          { key: "sigma", label: "金额偏离（倍标准差 σ）", current: sigma, inputKind: "number", min: 2, max: 5, step: 0.5, required: true, help: "2–5，每次加减 0.5；越小挑出的异常越多" },
-          { key: "ratio", label: "L1–L7 比例偏离（%）", current: ratio, inputKind: "number", min: 10, max: 50, step: 1, required: true, help: "10–50 的整数；越小挑出的异常越多" },
+          { key: "sigma", label: "金额偏离（倍标准差 σ）", current: sigma, inputKind: "number", min: 2, max: 5, step: 0.5, required: true, help: "2–5，步长 0.5；越小异常越多" },
+          { key: "ratio", label: "L1–L7 比例偏离（%）", current: ratio, inputKind: "number", min: 10, max: 50, step: 1, required: true, help: "10–50 的整数；越小异常越多" },
         ],
       },
       submit: async (reason, value) => {
@@ -402,7 +402,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         <Fact k="筛选条件">{scope.length ? scope.join("、") : "没有填，导出全部记录"}</Fact>
         <Fact k="导出多少">符合条件的全部记录，不只是这一批 20 笔</Fact>
         <Fact k="上限" tone="warn">5 万行、10 MB，超了不给文件，请缩小筛选</Fact>
-        <Fact k="内容">12 列；用户编号只留后 4 位，来源单号和结算号保留</Fact>
+        <Fact k="内容">12 列，用户编号只留后 4 位，单号保留</Fact>
         <Fact k="下载">核对完整后马上下载，不生成下载链接</Fact>
         <Fact k="留痕">每生成一次记一条审计</Fact>
       </Facts>,
@@ -464,14 +464,15 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       recovery ? <><b>{recovery}</b> 笔待追回</> : null,
       frozen ? <><b>{frozen}</b> 笔已冻结</> : null,
     ].filter(Boolean);
-    const approvalsLink = canReadA2 ? <Link className="rd-link" href="/platform/audit?domain=F" prefetch={false}>操作记录与审批</Link> : "「操作记录与审批」";
-    const hint = <>
-      {pendingCount ? `${pendingCount} 组好友奖励在等价格，不用处理。` : ""}提交的处置在{approvalsLink}等{APPROVER}批准，这页看不到批准进度。
+    const hint = pendingCount ? `${pendingCount} 组好友奖励在等价格，不用处理。` : undefined;
+    const explain = <>
+      <p>异常样本从最近 200 条奖励里挑出来；待追回、已冻结和等价格算全部记录。都不跟下方筛选变。</p>
+      <p>提交的处置要{APPROVER}在「操作记录与审批」批准，这页看不到批准进度。</p>
     </>;
-    const explain = "异常样本从最近 200 条奖励里挑出来；待追回、已冻结和等价格算全部记录。都不跟下方筛选变。";
-    if (!parts.length) return <Conclusion state="ok" hint={hint} explain={explain}>没有异常样本、待追回和冻结中的奖励</Conclusion>;
+    const approvals = canReadA2 ? <Link className="rd-link" href="/platform/audit?domain=F" prefetch={false}>看待批准的处置</Link> : undefined;
+    if (!parts.length) return <Conclusion state="ok" hint={hint} explain={explain} action={approvals}>没有异常样本、待追回和冻结中的奖励</Conclusion>;
     return <Conclusion state="warn" hint={hint} explain={explain}
-      action={anomalies ? <Button size="sm" onClick={() => setTab("anomalies")}>看异常样本</Button> : undefined}>
+      action={<>{anomalies ? <Button size="sm" onClick={() => setTab("anomalies")}>看异常样本</Button> : null}{approvals}</>}>
       要核对：{parts.map((part, index) => <span key={index}>{index ? "、" : ""}{part}</span>)}
     </Conclusion>;
   };

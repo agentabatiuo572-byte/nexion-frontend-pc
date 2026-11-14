@@ -531,7 +531,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f5-page .f5-flow-branch-col[data-col="withdrawn"] { grid-column: 7; }
 .f5-page .f5-link { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0 6px; text-align: center; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .f5-page .f5-link[data-dir="down"], .f5-page .f5-link[data-dir="both"], .f5-page .f5-link[data-dir="none"] { flex-direction: row; justify-content: flex-start; gap: 4px; padding: 0 0 0 12px; }
-.f5-page .f5-link:not([data-dir="right"]) span { white-space: nowrap; }
+.f5-page .f5-link span { white-space: nowrap; }
 .f5-page .f5-link[data-tone="action"] { color: var(--rd-text-2); font-weight: var(--rd-weight-medium); }
 .f5-page .f5-link svg { flex-shrink: 0; color: var(--rd-text-3); }
 .f5-page .f5-node, .f5-page .f5-kind { display: flex; flex-direction: column; gap: 4px; min-width: 0; margin: 0; padding: 12px; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tile); background: var(--rd-panel-inner); color: var(--rd-text); font: inherit; text-align: left; }
