@@ -406,7 +406,8 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const EXPORT_TASKS = taskPage?.records ?? [];
   const MASK_RULES = rows<MaskRule>(data.maskRules);
   const EXPORT_PARAMS = rows<ExportParam>(data.exportParams);
-  const AUDIT_ROWS = auditLoading || auditError ? [] : auditRows;
+  // 只换显示：「名称 / 范围」里的范围按任务表同一种写法翻成人话。
+  const AUDIT_ROWS = auditLoading || auditError ? [] : auditRows.map((row) => ({ ...row, what: row.what.replace(/ \/ ([^/]+)$/, (_, scope: string) => ` / ${reportScopeText(scope)}`) }));
   const CROSS_MODULE_BLOCKERS = rows<{ code: string; label: string; status: string; reason: string }>(data.crossModuleBlockers);
   const effSt = (t: LExportTask): string => t.st.toUpperCase();
   const effActs = (t: LExportTask): LExportTask["acts"] => t.acts;

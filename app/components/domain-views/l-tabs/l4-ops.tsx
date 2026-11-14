@@ -346,7 +346,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       },
       facts: (
         <Facts>
-          <Fact k="导出什么">成员关系，每对「邀请链顶层 · 成员」一行，六列<Explain label="六列分别是什么" content={<>
+          <Fact k="导出什么">每对「邀请链顶层 · 成员」一行，六列<Explain label="六列分别是什么" content={<>
             <p>同一位成员可能在几条邀请链下各占一行，所以行数可以多于人数。</p>
             <p>成员用户编码（部分隐藏）。</p>
             <p>邀请人用户编码（部分隐藏）：其实是这条邀请链最上面那个人，不一定是这位成员的直接邀请人。</p>
@@ -356,10 +356,10 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
           </>} /></Fact>
           <Fact k="时间段">{periodLabel}加入的关系<Explain label="时间段怎么算" content="按关系建立的时间从现在往前算近 1、7 或 30 天，不跟运营阶段和自定义日期走；只能按日、周、月导出。" /></Fact>
           <Fact k="用户编码" tone="warn">部分隐藏<Explain label="隐藏到什么程度" content="编号 4 位以内整个写成 ***，更长的留前 2 位和后 2 位，中间换成 *。不含手机号、昵称。" /></Fact>
-          <Fact k="多少行">现有团队关系 {count(relationships)} 条，实际行数以导出为准<Explain label="行数上限" content="这个数是现在全部团队关系的累计条数，不按时间段和追溯次数筛。一次最多 100,000 行，超过时不导出，也不截断。" /></Fact>
+          <Fact k="多少行">{downloadOnly ? `${count(original!.result!.rowCount)} 行（已生成）` : <>现有团队关系 {count(relationships)} 条，实际行数以导出为准<Explain label="行数上限" content="这个数是现在全部团队关系的累计条数，不按时间段和追溯次数筛。一次最多 100,000 行，超过时不导出，也不截断。" /></>}</Fact>
           <Fact k="记录">导出留一条高风险操作记录，下载也留记录</Fact>
           <Fact k="需要的权限">团队关系明细导出权限</Fact>
-          <Fact k="理由字数" tone="warn">一个汉字按 9 计，最多约 22 个汉字<Explain label="为什么汉字按 9 计" content="后端暂时按传输编码后的长度校验理由（已提后端修）：汉字记 9，字母和数字记 1。下面的计数就是这个长度，写的内容不会被截短。" /></Fact>
+          {!downloadOnly && <Fact k="理由字数" tone="warn">一个汉字按 9 计，最多约 22 个汉字<Explain label="为什么汉字按 9 计" content="后端暂时按传输编码后的长度校验理由（已提后端修）：汉字记 9，字母和数字记 1。下面的计数就是这个长度，写的内容不会被截短。" /></Fact>}
           <Fact k="下载">确认后直接下载到这台电脑<Explain label="下载链接" content="下载链接从签发起 24 小时内有效，只给你用。" /></Fact>
         </Facts>
       ),
@@ -531,7 +531,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     const askExportPage = (what: string) => (canOpenExportPage ? exportPageLink(`到「${exportPageName}」${what}`) : <>请有「{exportPageName}」权限的同事{what}</>);
     return (
       <Notice tone="warn" title={!report ? "团队关系明细导出结果未知" : grantUnknown ? "团队关系明细已生成，下载授权结果未知" : "团队关系明细已生成，还没下载成功"} actionBelow>
-        <p>{outcome.scope} · 向下追溯 {outcome.depth} 次{report ? ` · 报表号 ${report.reportId} · ${count(report.rowCount)} 行` : ""} · {outcome.at} 提交（{businessZone().label}）</p>
+        <p>{outcome.scope} · 向下追溯 {outcome.depth} 次{report ? ` · 报表号 ${report.reportId} · ${count(report.rowCount)} 行` : ""} · <span className="rd-keep">{outcome.at} 提交（{businessZone().label}）</span></p>
         <p>{!report
           ? expired
             ? <>可能已经生成了一份快照。已超过 24 小时，只能核对：{askExportPage("看有没有这一份")}。</>

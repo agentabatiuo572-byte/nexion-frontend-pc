@@ -427,7 +427,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     );
     return (
       <Notice tone="warn" title={outcome.reportId ? "资金明细申请已创建，审批状态未知" : "资金明细申请结果未知"} actionBelow>
-        <p>{request}{outcome.at ? ` · ${outcome.at} 提交（${businessZone().label}）` : ""}</p>
+        <p>{request}{outcome.at && <> · <span className="rd-keep">{outcome.at} 提交（{businessZone().label}）</span></>}</p>
         <p>{outcome.reportId
           ? <>后端已创建这份申请（报表号 {outcome.reportId}），当前审批状态没有读到。点「查询原结果」重新读取，不会重新提交。</>
           : pendingDetail && isRetryExpired(pendingDetail)
