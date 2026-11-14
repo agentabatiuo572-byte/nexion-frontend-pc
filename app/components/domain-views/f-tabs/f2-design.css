@@ -102,8 +102,8 @@
 
 /* 页面最上方的原申请逐条提醒：和 F4、F5 同一种排法。 */
 .f2-page { container: f2-page / inline-size; }
-.f2-page .f2-recovery { display: grid; gap: var(--rd-space-2); margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }
-.f2-page .f2-recovery li { display: grid; grid-template-columns: minmax(120px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.f2-page .f2-recovery { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content max-content max-content; gap: var(--rd-space-2) 0; margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }
+.f2-page .f2-recovery li { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
 .f2-page .f2-recovery-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
 .f2-page .f2-recovery-change { display: flex; flex-direction: column; gap: 2px; min-width: 0; color: var(--rd-text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .f2-page .f2-recovery-change small { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -111,6 +111,8 @@
 .f2-page .f2-recovery-zone { margin: var(--rd-space-2) 0 0; }
 .f2-page .f2-recovery .f2-actions { justify-content: flex-end; }
 @container f2-page (max-width: 860px) {
-  .f2-page .f2-recovery li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
-  .f2-page .f2-recovery .f2-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .f2-page .f2-recovery { display: flex; flex-direction: column; }
+  .f2-page .f2-recovery li { display: flex; flex-wrap: wrap; align-items: center; }
+  .f2-page .f2-recovery-change { flex: 1 1 12em; }
+  .f2-page .f2-recovery .f2-actions { margin-inline-start: auto; }
 }

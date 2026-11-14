@@ -122,7 +122,7 @@ export function F1PayoutHistory({ ctx, rows, canReissue, canReverse, openConfirm
     const rewardText = reward.unit ? `${reward.main} ${reward.unit}` : reward.main;
     const from = PAYOUT_STATUS[record.status]?.label ?? "状态未知";
     const impact = action === "reissue"
-      ? kind === "fund" ? `批准后重新记一笔 ${rewardText} 应付，收款人按原发放单：原单有邀请人的付给那位邀请人并立即可用，没有的付给用户本人、先进冷却期。批准时检查兑付覆盖率。`
+      ? kind === "fund" ? `批准后按原发放单重新记一笔 ${rewardText} 应付：付给邀请人的立即可用，付给本人的先进冷却期。批准时检查兑付覆盖率。`
         : kind === "sku" ? "批准后恢复原商品的履约和权益，并核对库存；库存不够或状态变了会被拒。"
           : kind === "voucher" ? "只更新这笔发放记录的状态，不会补发或收回用户手里的券。"
             : "只更新这笔发放记录的状态，不会补发或收回自定义奖品。"

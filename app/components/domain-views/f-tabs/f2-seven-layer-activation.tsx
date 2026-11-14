@@ -159,8 +159,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
   }
   const open = attempts.filter((attempt) => attempt.ticket?.status !== "pending").length;
   return (
-    <Notice tone={open ? "warn" : "progress"} title={<>{open ? `有 ${attempts.length} 项原申请还没有结论` : `${attempts.length} 项申请在等批准`}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}
-      action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批核对</Link> : undefined}>
+    <Notice tone={open ? "warn" : "progress"} title={<>{open ? `有 ${attempts.length} 项原申请还没有结论` : `${attempts.length} 项申请在等批准`}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}>
       <ul className="f2-recovery" aria-label="还没有结论的原申请">
         {attempts.map((attempt) => {
           const { name, change } = attemptLabel(attempt);
@@ -182,7 +181,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
           </li>;
         })}
       </ul>
-      <p className="f2-recovery-zone">提交时间为{businessZone().label}</p>
+      <p className="f2-recovery-zone">提交时间为{businessZone().label}{canAudit && <> · <Link className="rd-link" href="/platform/audit">去操作记录与审批核对</Link></>}</p>
       {error && <Notice tone="danger" title="查询或重试没有成功">{error}</Notice>}
     </Notice>
   );

@@ -98,15 +98,17 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
 
   if (rows.length === 0) {
     const body = ctx.f1Loading
-      ? <><Conclusion state="unknown">正在读取会员等级…</Conclusion><Panel title="九级阶梯"><BlockState state="loading" title="正在读取会员等级" /></Panel></>
+      ? <><Conclusion state="unknown">正在读取会员等级…</Conclusion>{recovery}<Panel title="九级阶梯"><BlockState state="loading" title="正在读取会员等级" /></Panel></>
       : ctx.f1Error
         ? <><Conclusion state="danger">会员等级读取失败，这部分没有判断</Conclusion>
+          {recovery}
           <Panel title="九级阶梯"><BlockState state="error" title="会员等级读取失败" detail={ctx.f1Error} onRetry={() => void ctx.refreshF1()} /></Panel></>
         : canWrite
-          ? <F1VrankBootstrap ctx={ctx} openConfirm={setConfirm} />
+          ? <>{recovery}<F1VrankBootstrap ctx={ctx} openConfirm={setConfirm} /></>
           : <><Conclusion state="neutral" icon={Layers3}>还没有建立会员等级</Conclusion>
+            {recovery}
             <Panel title="九级阶梯"><BlockState state="empty" title="还没有建立会员等级" detail="有修改权限的同事可以发起首次配置，另一位管理员批准后这里才会出现九级。" /></Panel></>;
-    return <div className="f1-page">{header}{recovery}{body}{dialogs}</div>;
+    return <div className="f1-page">{header}{body}{dialogs}</div>;
   }
 
   const rewardsOf = (v: string): OpsVRankRewardItem[] => ctx.rewards[v] ?? [];
@@ -254,7 +256,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         : { impact: "批准后，用户下一次被评估时没达标也保留现在的等级；已经降过级的用户不会恢复原来的等级，人工降级不受影响。", check: "核对开启范围是全部九级；理由写清依据或工单号。" },
       detail: "不降级保护",
       submit: async (reason) => { await ctx.updateF1Config("F.vrank.permanent", next, reason); },
-      done: `${action} 已提交，等待确认`,
+      done: `${action} 已提交审批，等另一位管理员批准`,
     });
   };
   const openPrize = () => {
@@ -270,7 +272,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         if (!newValue) throw new Error("请填写新值");
         await ctx.updateF1Config("F.prize.name", newValue, reason);
       },
-      done: `${action} 已提交，等待确认`,
+      done: `${action} 已提交审批，等另一位管理员批准`,
     });
   };
   const openTitles = () => setConfirm({
