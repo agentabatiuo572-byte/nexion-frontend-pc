@@ -347,7 +347,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     } finally {
       if (request === f2Generation.current) { setF2Loading(false); setF2DirectPolicyLoading(false); setF2ActivationPendingLoading(false); }
     }
-  }, [canReadA2, session]);
+  }, [canReadA2, session?.adminId]);
 
   useEffect(() => {
     if (tab === "F2") void refreshF2();
@@ -382,7 +382,6 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const owner = useAdminAuth.getState().session?.adminId;
     if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
     setF3Overview(null); setF3Loading(true); setF3ReadEpoch(value => value + 1);
-    setActionConfirm(current => current?.teamApproval?.source === "F3" ? null : current);
     try {
       const ticket = mode === "release" ? (await releaseF3Proposal(owner, original), null)
         : mode === "retry" ? await sendF3Proposal(owner, original.fingerprint)
@@ -394,7 +393,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       return ticket;
     } finally {
       if (owner === useAdminAuth.getState().session?.adminId) {
-        setF3Proposals(listF3Proposals(owner));
+        const retained = listF3Proposals(owner);
+        setF3Proposals(retained);
+        if (!retained.some(row => row.commandKey === original.commandKey)) {
+          setActionConfirm(current => current?.teamApproval?.source === "F3" ? null : current);
+        }
         await refreshF3();
       }
     }
@@ -726,26 +729,17 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!normalized.length) throw new Error("F_CONFIG_BATCH_EMPTY");
     const def = findHighOp("f_config_batch");
     if (!def) throw new Error("F_OP_NOT_FOUND:f_config_batch");
-    try {
-      await proposeStable(`f-config-batch:${sourceDomain}`, JSON.stringify([normalized, reason]), {
-        action: `${def.action} · ${normalized.length} 项`,
-        obj: normalized.map((item) => item.key).join(","),
-        before: sourceDomain === "F2" ? normalized.map(item => `${item.key}=${f2Overview?.configValues[item.key] ?? "—"}`).join(" / ") : "当前设置",
-        after: normalized.map((item) => `${item.key}=${item.value}`).join(" / "),
-        type: "fund",
-        amplifies: normalized.some((item) => isFFundAmplifyingKey(item.key)),
-        gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain,
-        command: def.buildCommand({ changes: normalized, sourceDomain }),
-        targets: def.buildTargets?.({ changes: normalized, sourceDomain }),
-      }, snapshot);
-    } catch (error) {
-      // A2 submission/validation failure must re-read the authoritative server snapshot so
-      // the operator never continues from optimistic partial values.
-      if (sourceDomain === "F2") await refreshF2();
-      else if (sourceDomain === "F3") await refreshF3();
-      else await refreshF4();
-      throw error;
-    }
+    await proposeStable(`f-config-batch:${sourceDomain}`, JSON.stringify([normalized, reason]), {
+      action: `${def.action} · ${normalized.length} 项`,
+      obj: normalized.map((item) => item.key).join(","),
+      before: sourceDomain === "F2" ? normalized.map(item => `${item.key}=${f2Overview?.configValues[item.key] ?? "—"}`).join(" / ") : "当前设置",
+      after: normalized.map((item) => `${item.key}=${item.value}`).join(" / "),
+      type: "fund",
+      amplifies: normalized.some((item) => isFFundAmplifyingKey(item.key)),
+      gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain,
+      command: def.buildCommand({ changes: normalized, sourceDomain }),
+      targets: def.buildTargets?.({ changes: normalized, sourceDomain }),
+    }, snapshot);
   };
 
   const teamApproval = mc?.teamApproval;

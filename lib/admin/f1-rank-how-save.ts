@@ -1,7 +1,7 @@
 import { createA2CommandKey } from "./a2-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import { fetchRankHowPolicyAdmin, updateRankHowPolicyAdmin, type PublishedContentDocument } from "./published-content-client";
-import { OutcomeUnknownError } from "./outcome-classification";
+import { isDeterministicRejection, OutcomeUnknownError } from "./outcome-classification";
 import { useAdminAuth } from "../store/admin-auth";
 
 type Original = PendingMutationRecord & { adminId: number; document: PublishedContentDocument; reason: string };
@@ -55,8 +55,8 @@ export async function saveF1RankHow(adminId: number, document: PublishedContentD
     return value;
   } catch (error) {
     if (!(error instanceof OutcomeUnknownError)) {
-      const failure = error as { status?: number; reasonCode?: string };
-      if (failure.status && failure.status >= 400 && failure.status < 500) saves.forget(fingerprint, key);
+      const failure = error as { status?: number; apiCode?: number };
+      if (failure.status !== undefined && isDeterministicRejection(failure.status, failure.apiCode)) saves.forget(fingerprint, key);
       else throw new OutcomeUnknownError(error instanceof Error ? error.message : "保存结果未知，请重新读取核对。");
     }
     throw error;

@@ -7,7 +7,7 @@
  * 「等级与奖励」是九级阶梯（选择器，柱高按所选口径）+ 选中一级的详情（五项门槛、奖励模板、只读参数）+ 九级共用的设置。
  * 请求、校验、权限全部沿用旧页面：门槛和奖励走 F1PolicyConfirm（lib/admin/f1-policy-change），其余走 ctx 上现成的提交函数。
  */
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import {
   ArrowUpCircle, CircleHelp, Gift, Layers3, Lock, Pencil, Plus, RefreshCw, Settings2, ShieldCheck, ShieldOff, Trash2, TriangleAlert, Users,
@@ -85,12 +85,12 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       meta="打开时读取，不自动刷新"
       readOnly={readOnly} />
   );
-  const dialogs = <>
+  const dialogs = <Fragment key="f1-dialogs">
     {policyEditor && <F1PolicyConfirm
       key={`${policyEditor.row.v}:${policyEditor.action}:${policyEditor.field ?? policyEditor.reward?.id ?? "new"}:${policyEditor.recoveryCommandKey ?? "edit"}`}
       editor={policyEditor} ctx={ctx} pendingApproval={pendingApprovalRanks.has(policyEditor.row.v)} onClose={() => setPolicyEditor(null)} />}
     {confirm && <F1ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}
-  </>;
+  </Fragment>;
 
   if (rows.length === 0) {
     const body = ctx.f1Loading
@@ -334,7 +334,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       if (/^[1-9]\d*$/.test(userId) && Number.isSafeInteger(Number(userId)) && ctx.can("user_c1_read")) {
         try {
           const page = await fetchUserProfilesPage({ userId, pageNum: 1, pageSize: 1 });
-          const profile = page.records.find(row => String(row.userId ?? row.id) === userId);
+          // C1 filters by the internal ID but deliberately returns only the public userNo.
+          const profile = page.total === 1 ? page.records[0] : undefined;
           if (profile?.vRank && /^V[0-8]$/.test(profile.vRank)) rank = profile.vRank;
         } catch { /* Read failure keeps the prepared unknown state; never infer V0. */ }
       }
