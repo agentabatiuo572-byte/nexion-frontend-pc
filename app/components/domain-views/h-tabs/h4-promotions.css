@@ -5,10 +5,10 @@
 .h4-page .h4-legacy { min-width: 0; }
 
 /* 通用小件 */
-.h4-page .h4-num { font-variant-numeric: tabular-nums; }
-.h4-page .h4-mono { font-family: var(--rd-font-mono); font-size: 12px; color: var(--rd-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.h4-page .h4-dim { color: var(--rd-text-3); }
-.h4-page .h4-row { display: flex; flex-wrap: wrap; gap: var(--rd-space-2); align-items: center; }
+.h4-num { font-variant-numeric: tabular-nums; }
+.h4-mono { font-family: var(--rd-font-mono); font-size: 12px; color: var(--rd-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.h4-dim { color: var(--rd-text-3); }
+.h4-row { display: flex; flex-wrap: wrap; gap: var(--rd-space-2); align-items: center; }
 .h4-page .h4-lede { margin: 0; color: var(--rd-text-2); font-size: var(--rd-text-body); }
 .h4-page .h4-asof { margin: calc(var(--rd-section-gap) * -0.5) 0 0; display: flex; align-items: center; gap: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 .h4-page .h4-back { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; padding: 0; cursor: pointer; font: inherit; }
@@ -209,3 +209,4 @@
 .h4-attempts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .h4-attempts li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-items: center; }
 .h4-attempt-id { grid-column: 1 / -1; display: flex; gap: 6px; min-width: 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.h4-dialog-body .rd-fact { grid-template-columns: 136px minmax(0, 1fr); }
