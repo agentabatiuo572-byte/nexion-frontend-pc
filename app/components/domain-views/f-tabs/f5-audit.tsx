@@ -362,8 +362,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       statedBrief: { impact: "保存后马上按新标准重新挑异常样本，以前的样本也按新标准重算", check: "核对两个数，理由写清为什么调整。" },
       detail: "金额偏离可设 2–5 倍标准差（σ），每次加减 0.5；L1–L7 比例偏离可设 10%–50%。数字越小，挑出的异常越多。保存后马上生效。",
       facts: <Facts>
-        <Fact k="现在的金额偏离标准">{sigma} 倍标准差</Fact>
-        <Fact k="现在的层比例偏离标准">{ratio}%</Fact>
+        <Fact k="金额偏离">{sigma} 倍标准差</Fact>
+        <Fact k="层比例偏离">{ratio}%</Fact>
         <Fact k="保存后">马上按新标准重新挑异常样本，不改奖励金额和状态</Fact>
       </Facts>,
       businessForm: {
@@ -520,7 +520,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             </tr></thead>
             <tbody>
               {!data && loading ? <TableLoading columns={columns} rows={8} />
-                : !data && error ? <TableMessage columns={columns} role="alert">奖励记录读取失败：{error}。数据不完整，批量补发已暂停。 <Button size="sm" onClick={() => void ctx.refreshF5(query())}>重试</Button></TableMessage>
+                : !data && error ? <TableMessage columns={columns} role="alert">奖励记录读取失败：{error.replace(/[。.\s]+$/, "")}。数据不完整，批量补发已暂停。 <Button size="sm" onClick={() => void ctx.refreshF5(query())}>重试</Button></TableMessage>
                   : events.length === 0 ? <TableMessage columns={columns} role="status">
                     {appliedChips.length ? <>没有符合条件的奖励记录 <Button size="sm" onClick={clearFilters}>清除筛选</Button></> : "还没有奖励记录"}
                   </TableMessage>
