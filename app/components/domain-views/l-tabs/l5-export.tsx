@@ -443,7 +443,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         <Fact k="放行后谁能下载">有资金明细导出权限的管理员，含申请人<Explain label="谁能下载" content="下载要「财务资金明细导出」权限（bi_l3_export_detail）。你放行不需要这项权限；没有它，你自己下载不了。" /></Fact>
         <Fact k="能下多久">任务不设到期；每次下载签发一个只给本人用、24 小时内有效的链接</Fact>
         <Fact k="留什么记录">放行写进「{pageName(AUDIT_PAGE, "操作记录与审批")}」，每次下载也会记录</Fact>
-        <Fact k="谁能放行">另一位管理员，需有导出任务审批权限（bi_l5_task_approve）；申请人不能放行自己的申请</Fact>
+        <Fact k="谁能放行">另一位管理员，需有导出任务审批权限；申请人不能放行自己的申请</Fact>
       </Facts>
     ),
     reasonPlaceholder: "写放行依据，例如：已核对申请人的工单号和用途",

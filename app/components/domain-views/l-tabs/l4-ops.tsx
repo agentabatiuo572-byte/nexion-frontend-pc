@@ -530,7 +530,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     const expired = pendingTree ? isRetryExpired(pendingTree) : false;
     const askExportPage = (what: string) => (canOpenExportPage ? exportPageLink(`到「${exportPageName}」${what}`) : <>请有「{exportPageName}」权限的同事{what}</>);
     return (
-      <Notice tone="warn" title={!report ? "团队关系明细导出结果未知" : grantUnknown ? "团队关系明细已生成，下载授权结果未知" : "团队关系明细已生成，还没下载成功"} action={close} actionBelow>
+      <Notice tone="warn" title={!report ? "团队关系明细导出结果未知" : grantUnknown ? "团队关系明细已生成，下载授权结果未知" : "团队关系明细已生成，还没下载成功"} actionBelow>
         <p>{outcome.scope} · 向下追溯 {outcome.depth} 次{report ? ` · 报表号 ${report.reportId} · ${count(report.rowCount)} 行` : ""} · {outcome.at} 提交（{businessZone().label}）</p>
         <p>{!report
           ? expired
