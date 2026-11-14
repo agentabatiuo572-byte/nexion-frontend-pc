@@ -955,7 +955,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
               const unit = wheelUnit(tier);
               return <Tr key={text(tier.tier)}>
                 <Td><span data-mono="" className="h4l-nowrap">{text(tier.tier)}</span></Td>
-                <Td><span className="h4l-reward">{name.text}{name.legacy && <LegacyNameTag where="奖项名称" />}</span></Td>
+                <Td><span className="h4l-reward"><span className="h4l-nowrap">{name.text}</span>{name.legacy && <LegacyNameTag where="奖项名称" />}</span></Td>
                 <Td>{wheelPointsTier(tier) ? <StatusTag tone="danger" explain="后端已不支持积分奖型，要退役">积分奖型</StatusTag>
                   : wheelLegacyNexTier(tier) ? <StatusTag tone="warn" explain="奖型存成了旧名 nex，后端只认 uvt，等后端修数据（BUG-426）">UVT · 旧奖型</StatusTag>
                   : <span className="h4l-kind">{WHEEL_KIND_LABEL[kindKey] ?? "其他奖励"}{boolValue(tier.real) && <StatusTag tone="warn" explain="这一档发真钱（USDT）：抽中前还要过真钱奖开关、覆盖率和每日预算，不过就改发 UVT 安慰奖。">发真钱</StatusTag>}</span>}</Td>
