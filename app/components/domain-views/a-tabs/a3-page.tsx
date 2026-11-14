@@ -266,6 +266,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     if (banner?.status === "on") issues.push({ key: "banner", tone: "warn", title: "维护公告横幅开着", sub: "后台顶部正在显示维护提示", open: "switches" });
     if (downGates.length) issues.push({ key: "gates", tone: "warn", title: `${downGates.length} 项被紧急停用或限制：${downGates.map((gate) => gate.name).join("、")}`, sub: "在紧急停用开关、地区访问限制处理", href: reach("/emergency/kill-switch") ? "/emergency/kill-switch" : undefined });
   }
+  if (recoveryRows.length) issues.push({ key: "recovery", tone: "warn", title: `${recoveryRows.length} 条原操作结果未知`, sub: "在页面上方逐条查询原结果" });
   if (calendar?.pending) issues.push({ key: "calendar", tone: "progress", title: `业务时区已安排：${calendar.pending}`, sub: "生效前可以撤销，看「业务日历」", open: "calendar" });
 
   const worst: "ok" | "warn" | "danger" | "unknown" | "neutral" = !overview ? "unknown"
