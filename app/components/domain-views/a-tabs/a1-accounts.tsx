@@ -985,7 +985,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const conclusion = !stats
     ? { state: "warn" as const, text: "账号统计没有读到，有效的超级管理员人数这部分没有判断", hint: "点「刷新」重读。" }
     : governanceFrozen
-      ? { state: "danger" as const, text: `有效的超级管理员只有 ${effectiveSupers} 人，低于 2 人，账号管理处于恢复期`, hint: "先新建或恢复一位超级管理员。" }
+      ? { state: "danger" as const, text: `有效的超级管理员只有 ${effectiveSupers} 人，账号管理进入恢复期`, hint: "先新建或提升一位超级管理员，要另一位超级管理员批准。" }
       : creationPending
         ? { state: "warn" as const, text: "有 1 个新建账号结果未知，先核对再继续", hint: "在上方点「按原请求重试」，不会建第二个。" }
         : unboundOps.length
@@ -1002,15 +1002,12 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       {header}
       {loadError && <Notice tone="danger" title="刷新失败，下面是上次读到的数据" action={<Button size="sm" onClick={() => void refreshOverview()}>重试</Button>}>{loadError}</Notice>}
       {mutatingAction && <Notice tone="progress">正在提交：{mutatingAction}</Notice>}
-      {governanceFrozen && stats && (
-        <Notice tone="danger" title="有效的超级管理员不足 2 人：账号管理进入恢复期">
-          <p>现在只能新建或提升超级管理员、启用已绑定两步验证的超级管理员，都要另一位超级管理员批准。</p>
-          <p>资料、密码、两步验证、停用、资格和权限登记暂停；撤销登录不受影响。没有第二位能批准的超级管理员时，请运维执行服务器恢复。</p>
-        </Notice>
-      )}
       {recovery}
       <Conclusion state={conclusion.state} icon={ShieldCheck} hint={conclusion.hint}
-        explain="有效的超级管理员要同时满足：启用、超级管理员角色、已绑定两步验证，只按真实绑定计算。两步验证按账号列表里启用中的账号统计。">{conclusion.text}</Conclusion>
+        explainTitle={governanceFrozen && stats ? "恢复期能做什么" : undefined}
+        explain={governanceFrozen && stats
+          ? <><p>只能新建或提升超级管理员、启用已绑定两步验证的超级管理员，都要另一位超级管理员批准。</p><p>资料、密码、两步验证、停用、资格和权限登记暂停；撤销登录不受影响。</p><p>没有第二位能批准的超级管理员时，请运维执行服务器恢复。</p></>
+          : "有效的超级管理员要同时满足：启用、超级管理员角色、已绑定两步验证，只按真实绑定计算。两步验证按账号列表里启用中的账号统计。"}>{conclusion.text}</Conclusion>
 
       <StatBand label="账号安全">
         <Stat lead icon={ShieldUser} tone={!stats ? undefined : effectiveSupers < 2 ? "danger" : "role-3"} label="有效的超级管理员" value={stats ? String(effectiveSupers) : "—"} unit={stats ? "人" : undefined}
@@ -1042,7 +1039,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           {filter !== "all" && <span className="a1-filter-note">只看{FILTER_TEXT[filter]} · {listed.length} 个<Button size="sm" variant="ghost" onClick={() => { setFilter("all"); setPage(0); }}>显示全部</Button></span>}
         </div>
         {permissionDiffError && (
-          <div className="a1-inset"><Notice tone="warn" title="角色权限没有读到，暂时不能改角色" action={<Button size="sm" onClick={() => void refreshOverview(true)}>重新读取</Button>}>{permissionDiffError}。其他账号操作不受影响。</Notice></div>
+          <div className="a1-inset"><Notice tone="warn" title="角色权限没有读到，暂时不能改角色" action={<Button size="sm" onClick={() => void refreshOverview(true)}>重新读取</Button>}>{permissionDiffError.replace(/。$/, "")}。其他账号操作不受影响。</Notice></div>
         )}
         <Table label="运营账号" className="a1-accounts">
           <thead><tr><Th>账号</Th><Th>角色</Th><Th>两步验证</Th><Th>状态</Th><Th align="right">最近登录</Th><Th align="right">在线设备</Th><Th sticky="end">操作</Th></tr></thead>
