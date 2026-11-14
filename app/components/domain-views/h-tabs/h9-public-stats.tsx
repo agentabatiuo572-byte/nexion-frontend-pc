@@ -299,7 +299,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     // 完整原请求在确认提交时创建一次；未知后只恢复该记录，不按草稿或理由变化换号。
     const rows: DiffRow[] = H9_FIELDS
       .filter((field) => submitted[field.key] !== data.values[field.key])
-      .map((field) => ({ key: field.key, label: FIELD_COPY[field.key].name, before: valueText(field.key, data.values[field.key]), after: valueText(field.key, submitted[field.key]) }));
+      .map((field) => ({ key: field.key, label: field.key === "homeOnlineCurrent" ? "在线设备" : field.key === "homePaidCurrent" ? "累计已发放" : FIELD_COPY[field.key].name, before: valueText(field.key, data.values[field.key]), after: valueText(field.key, submitted[field.key]) }));
     if (!sameBands(submitted.hashratePercentileTable, data.values.hashratePercentileTable)) {
       const before = data.values.hashratePercentileTable, after = submitted.hashratePercentileTable;
       const band = (row?: H9PercentileBand) => row ? `${count(row.tops)} TOPS · ${row.cumPct}%` : "没有";
@@ -462,7 +462,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   const recoveryNotice = <H9RecoveryNotice rows={recoveryRows} explain={RECOVERY_EXPLAIN} />;
   /** 排名的结果未知提醒在排名那一块里；切到别的块时，在页面上方给一个入口。 */
   const rankPending = pendingH9Command("rank");
-  const unresolved = (pending ? 1 : 0) + (rankPending ? 1 : 0);
+  const unresolved = [pending && (pending.original ? moduleLabel(pending.original.display.module) : "主配置"), rankPending && "设备预估排名"].filter(Boolean).join("、");
   const rankJump = rankPending && module !== "rank" ? <Button size="sm" onClick={() => setModule("rank")}>去设备预估排名处理</Button> : undefined;
 
   const header = (
@@ -693,7 +693,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
         <PaginationExemption label="算力分位表" reason="整表统一保存，需同时检查各行数值顺序" maxRows={bands.length} kind="fixed-matrix" />
         {canWrite && <Button size="sm" disabled={loading || !!error || saving || !!pending} onClick={addBand}>添加档</Button>}
       </>}>
-      {bandCountError && <Notice tone="warn">{bandCountError}。{canWrite ? "点「添加档」补齐，后端要求至少两档。" : ""}</Notice>}
+      {bandCountError && <Notice tone="warn">{bandCountError}。{canWrite ? "点「添加档」补齐。" : ""}</Notice>}
       {bands.length > 0 && <Table label="算力分位表">
         <thead><tr><Th>档</Th><Th>算力档位</Th><Th>累计占比</Th><Th>含义</Th>{canWrite && <Th align="right">操作</Th>}</tr></thead>
         <tbody>
@@ -728,8 +728,8 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     </Notice>}
     {issue?.kind === "rejected" && <Notice tone="danger" title={`保存被拒：${moduleLabel(issue.module)}`}>{issue.message} 这次没有保存，按原因改好后再保存。</Notice>}
     {error && <Notice tone="danger" title="刷新没成功">{error} 页面上还是上次读到的值，已填写的内容保留，请重试。</Notice>}
-    {!issue && !error && (unresolved > 0
-      ? <Conclusion state="warn" action={rankJump}>{unresolved} 次保存结果未知，先查询原结果；有结论前那一块不能再保存</Conclusion>
+    {!issue && !error && (unresolved
+      ? <Conclusion state="warn" action={rankJump}>{unresolved}的保存结果未知：先查询原结果，有结论前不能再保存</Conclusion>
       : savedTick
       ? <Conclusion state="ok">首页数字{values.homeDisplayEnabled ? "增长中" : "已暂停"}，设备预估排名{rank.state === "ready" ? rank.config.enabled ? "已开启" : "已关闭" : rank.state === "failed" ? "读取失败" : "读取中"}；没有要处理的事</Conclusion>
       : <Conclusion state="warn" action={module !== "network" ? <Button size="sm" onClick={() => setModule("network")}>去看注册人数</Button> : undefined}>网络脉搏注册人数只配了月增长率，App 上有的位置显示「不可用」</Conclusion>)}
