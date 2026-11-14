@@ -16,7 +16,7 @@ import {
   Segments, Select, Stat, StatBand, StatusTag, Table, Td, Th, Tr, TrendLines,
 } from "@/app/components/rd";
 import { useToast } from "@/app/components/domain-views/design-kit";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { exportB3Cohort, SMALL_SAMPLE_LABEL, useB3Funnel, type B3Dashboard, type B3Filters, type B3Stage } from "@/lib/admin/b3-client";
 import { formatB3RefOption, normalizeB3RefOptions } from "@/lib/admin/b3-ref-display";
 import { businessZone } from "@/lib/admin/business-time";
@@ -291,23 +291,38 @@ function TrendPanel({ data, stage, onStage }: { data: B3Dashboard; stage: string
 export default function FunnelPage() {
   const [filters, setFilters] = useState<B3Filters>({ cohort: ALL, phase: ALL, ref: ALL });
   const [stage, setStage] = useState("purchase");
+  const [urlReady, setUrlReady] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
   const [, setToast] = useToast();
   const auth = useAdminAuth((state) => state.session);
-  const { data, loading, error, reload } = useB3Funnel(filters, stage);
+  const { data, loading, error, reload } = useB3Funnel(filters, stage, urlReady);
   const authorities = auth?.authorities ?? [];
   const superAdmin = auth?.role === "superadmin";
   const canExport = superAdmin || authorities.includes("overview_b3_export");
   const canCross = useReach();
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const phase = params.get("phase")?.toUpperCase() ?? ALL;
-    if (/^P[1-6]$/.test(phase)) {
-      setFilters((current) => ({ ...current, phase }));
-    }
+    const readUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      setFilters({ cohort: params.get("cohort") || ALL, phase: params.get("phase")?.toUpperCase() || ALL, ref: params.get("ref") || ALL });
+      setStage(params.get("stage")?.toLowerCase() || "purchase");
+      setUrlReady(true);
+    };
+    readUrl();
+    window.addEventListener("popstate", readUrl);
+    return () => window.removeEventListener("popstate", readUrl);
   }, []);
+
+  useEffect(() => {
+    if (!urlReady) return;
+    const url = new URL(window.location.href);
+    for (const [key, value] of Object.entries({ ...filters, stage })) {
+      if (isAll(value) || key === "stage" && value === "purchase") url.searchParams.delete(key);
+      else url.searchParams.set(key, value);
+    }
+    if (url.href !== window.location.href) window.history.replaceState(window.history.state, "", url);
+  }, [filters, stage, urlReady]);
 
   const options = data?.filterOptions ?? { cohorts: [], phases: [], refs: [] };
   const lowest = useMemo(() => (data ? lowestStep(data.stages) : null), [data]);
@@ -316,8 +331,6 @@ export default function FunnelPage() {
     setExporting(true);
     setExportError("");
     try {
-      // TODO(code worker, 决定 B3-导出): 后端出错时可能用 HTTP 200 回 JSON 错误，exportB3Cohort 要先确认拿到的是 CSV，
-      // 不是就抛出带原因的错误；这里的失败提示已经备好，不生成文件、不提示成功。
       const file = await exportB3Cohort(filters);
       const url = URL.createObjectURL(file.blob);
       const anchor = document.createElement("a");
@@ -327,7 +340,7 @@ export default function FunnelPage() {
       URL.revokeObjectURL(url);
       setToast("已开始下载 CSV：四个步骤的汇总数，不含用户个人信息", "success");
     } catch (value) {
-      setExportError(value instanceof Error ? displayAdminError(value) : "导出失败，请重试。");
+      setExportError(value instanceof Error ? displayAdminReadError(value) : "导出失败，请重试。");
     } finally {
       setExporting(false);
     }
@@ -391,7 +404,7 @@ export default function FunnelPage() {
         {filterBar}
         <Conclusion state="unknown">{error ? "用户转化：读取失败，暂时无法判断" : "用户转化：正在读取"}</Conclusion>
         {error
-          ? <BlockState state="error" title="转化数据读取失败，不显示旧数据" detail={error} onRetry={() => void reload()} retryLabel="重新读取" />
+          ? <BlockState state="error" title="转化数据读取失败，不显示旧数据" detail={displayAdminReadError(error)} onRetry={() => void reload()} retryLabel="重新读取" />
           : <BlockState state="loading" title="正在读取这批用户的转化…" />}
       </RdPage>
     );

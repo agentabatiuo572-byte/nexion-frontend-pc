@@ -25,6 +25,7 @@ export interface BLedger {
   reserveUsd: number;
   liabilitiesUsd: number;
   valuationReliable: boolean;
+  redlineBreached: boolean;
   coverageRatio: number;
   redlinePct: number;
   healthyPct: number;
@@ -134,6 +135,7 @@ const EMPTY_LEDGER: BLedger = {
   reserveUsd: 0,
   liabilitiesUsd: 0,
   valuationReliable: false,
+  redlineBreached: false,
   coverageRatio: 0,
   redlinePct: 0,
   thresholdVersion: null,
@@ -312,7 +314,8 @@ function normalizeLedger(raw: Record<string, unknown>): BLedger {
   return {
     reserveUsd,
     liabilitiesUsd,
-    valuationReliable: snapshot.valuationReliable === undefined || requiredBool(snapshot.valuationReliable, "dualLedger.snapshot.valuationReliable"),
+    valuationReliable: requiredBool(snapshot.valuationReliable, "dualLedger.snapshot.valuationReliable"),
+    redlineBreached: requiredBool(snapshot.redlineBreached, "dualLedger.snapshot.redlineBreached"),
     coverageRatio: requiredNum(snapshot.coverageRatio, "dualLedger.snapshot.coverageRatio"),
     redlinePct: requiredNum(snapshot.redlinePct, "dualLedger.snapshot.redlinePct"),
     healthyPct: requiredNum(snapshot.healthyPct, "dualLedger.snapshot.healthyPct"),
@@ -650,6 +653,7 @@ export function useBDomainDashboard(enabled = true) {
       inflightDashboards.set(sessionKey, task);
       const next = await task;
       setSnapshot({ sessionKey, data: next });
+      return next;
     } catch (err) {
       setError(displayAdminError(err));
     } finally {

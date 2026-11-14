@@ -1,6 +1,25 @@
 import { SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
 
 export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  B1_WRITE_FAILED: "资金操作没有取得有效回执，请保留原操作并查询原结果。",
+  B1_EXPORT_FAILED: "对账导出没有成功，请重新导出；持续失败请联系值班同事。",
+  B1_THRESHOLDS_PROPOSAL_INVALID: "覆盖率阈值审批的内容不完整或版本无效，请保留原申请并重新核对阈值。",
+  B1_LEDGER_ACCOUNTS_EMPTY: "没有读到应付款明细，请重新读取；仍为空请联系值班同事核对账本。",
+  B3_COHORT_INVALID: "注册批次格式不对，请核对分享链接或重新选择注册周。",
+  B3_PHASE_INVALID: "运营阶段无效，请重新选择阶段或清除阶段筛选。",
+  B3_REF_INVALID: "推荐码或渠道格式不对，请核对分享链接或重新选择渠道。",
+  B3_STAGE_NOT_FOUND: "这个转化步骤不存在，请重新选择走势的步骤或核对分享链接。",
+  B3_ROUTE_NOT_FOUND: "这个转化报表入口不存在，请从「用户转化概览」重新进入。",
+  B3_BACKEND_UNAVAILABLE: "转化报表服务暂时不可用，请稍后重新读取；持续失败请联系值班同事。",
+  B3_FUNNEL_LOAD_FAILED: "转化数据没有读到，请重新读取；持续失败请联系值班同事。",
+  B3_RESPONSE_INVALID: "转化数据不完整或相互矛盾，已暂停显示。请重新读取；持续失败请联系值班同事核对事件。",
+  A4_DAY0_POLICY_UNAVAILABLE: "首笔收益的统计时限还没有读到，请到「用户行为事件」核对时限配置后再读取。",
+  B3_EXPORT_FAILED: "转化报表导出没有成功，请重新导出；持续失败请联系值班同事。",
+  REDLINE_MUST_BE_BELOW_HEALTHY: "健康线必须高于红线。请核对两个阈值后再提交。",
+  B1_THRESHOLDS_APPROVAL_REQUIRED: "降低兑付覆盖率红线需要审批。本次没有直接保存，请核对最新阈值后提交审批。",
+  B1_THRESHOLDS_AMPLIFICATION_REQUIRED: "这组阈值不属于降低红线的审批方向。请核对最新阈值后重新调整。",
+  THRESHOLD_REQUIRED: "没有提供要修改的阈值，请填写红线或健康线后再提交。",
+  DIRECT_REFERRAL_POLICY_REQUEST_INVALID: "直推奖励审批的内容不完整或对象不匹配，请核对原申请和当前配置后再处理。",
   // G2/G4/G7 parameter approvals (backend 66ecdb47).
   // G4 创世节点销售与收益（后端 66ecdb47）：参数、市场、档位、分红、认购设置和模拟的拒绝原因。
   GENESIS_MARKET_PAUSED: "创世节点买卖已紧急暂停。请在「紧急停用开关」核对状态；恢复需由有权同事处理。",
