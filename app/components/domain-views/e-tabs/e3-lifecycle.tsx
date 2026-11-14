@@ -353,13 +353,13 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         explain="本月申请里的折抵金额合计，包括还没完成的申请。折抵只抵新设备货款，不进用户余额。" />
     </StatBand>
 
-    <div className="rd-split">
+    <div className="rd-split" data-detail="">
       <Panel title="产能随月龄变化" icon={Gauge} tone="role-4" sub={`画到第 ${cyc} 个月`} data-proof="e3-capacity-curve"
         explain={<><p>参与逐月下降的商品，设备第 m 个月的产能 = 100% × 各段（1 + 每月变化 ÷ 100）的连乘，不低于下限 {floor}%。图上按两位小数显示，后端按六位小数算。</p><p>「曲线画几个月」只决定图画多长，不截断用户的产能。</p></>}
         actions={pendingCurve && <StatusTag tone="progress" icon={Clock3}>有待批准的修改</StatusTag>}>
         <div className="e3p-curve">
           <TrendLines label={`产能随月龄变化：第 0 月 100%，第 ${s1} 月 ${capText(curve[s1] ?? 0)}，第 ${s2} 月 ${capText(curve[s2] ?? 0)}，第 ${cyc} 月 ${capText(curve[cyc] ?? 0)}，下限 ${floor}%`}
-            ticks={curve.map((_, m) => `${m} 月`)} format={(v) => capText(v / scale)} axisFormat={(v) => `${Number((v / scale).toFixed(1))}%`} height={280}
+            ticks={curve.map((_, m) => `${m} 月`)} format={(v) => capText(v / scale)} axisFormat={(v) => `${Number((v / scale).toFixed(1))}%`} height={300}
             series={[{ key: "now", label: "现在", slot: 4, values: curve.map((v) => v * scale) },
               ...(afterCurve ? [{ key: "pending", label: "批准后", slot: "other" as const, values: afterCurve.map((v) => v * scale) }] : [])]}
             marks={[{ key: "floor", text: `下限 ${floor}%`, value: num(floor) * scale, tone: "neutral" }]}
