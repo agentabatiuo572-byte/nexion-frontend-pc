@@ -19,7 +19,8 @@ import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import H1Phase from "./h-tabs/h1-phase";
 import H2Trial from "./h-tabs/h2-trial";
-import H3QuestEvents, { H4ActivityCenter } from "./h-tabs/h3-quest-events";
+import { H4ActivityCenter } from "./h-tabs/h3-quest-events";
+import H3QuestTasks from "./h-tabs/h3-quest-tasks";
 import H5DailyMilestones from "./h-tabs/h5-daily-milestones";
 import H7VoucherConfig from "./h-tabs/h7-voucher-config";
 import H8ReferralRewards from "./h-tabs/h8-referral-rewards";
@@ -61,11 +62,11 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "H4" && tab !== "H2" && tab !== "H1" && <DomainHeader {...meta} right={right} />}
+      {tab !== "H4" && tab !== "H2" && tab !== "H1" && tab !== "H3" && <DomainHeader {...meta} right={right} />}
 
       {tab === "H1" && <H1Phase ctx={ctx} onRhythmChange={setRhythm} />}
       {tab === "H2" && <H2Trial ctx={ctx} />}
-      {tab === "H3" && <H3QuestEvents ctx={ctx} />}
+      {tab === "H3" && <H3QuestTasks ctx={ctx} />}
       {tab === "H4" && <H4Promotions ctx={ctx} legacy={<><DomainHeader {...meta} right={right} /><H4ActivityCenter ctx={ctx} /></>} />}
       {tab === "H5" && <H5DailyMilestones ctx={ctx} />}
       {tab === "H7" && <H7VoucherConfig ctx={ctx} />}
@@ -111,6 +112,6 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  if (tab === "H2" || tab === "H1") return <RdPage className="hdom">{page}</RdPage>;
+  if (tab === "H2" || tab === "H1" || tab === "H3") return <RdPage className="hdom">{page}</RdPage>;
   return <div className={tab === "H4" ? "hdom" : "dkpage hdom"}>{page}</div>;
 }
