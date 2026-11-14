@@ -561,6 +561,8 @@ export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals",
   "/finance-products/staking",
   "/platform/config",
   "/platform/events",
+  "/platform/params-registry",
+  "/platform/permissions",
 ];
 /** 不在菜单里的详情页，路径带对象编号，按前缀认。 */
 export const REDESIGNED_DETAIL_PREFIXES: readonly string[] = ["/users/search/", "/service/customers/"];
