@@ -278,6 +278,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     }
     if (!isL4NetworkDurable(record)) throw new Error(formatAdminApiError("L4_TREE_STORAGE_UNAVAILABLE", "L4_TREE_STORAGE_UNAVAILABLE"));
     const file = await downloadL4NetworkFile(result.reportId, record.downloadToken!);
+    if (!file.blob.type.toLowerCase().includes("text/csv")) throw new Error(formatAdminApiError("L5_DOWNLOAD_RESPONSE_INVALID", "L5_DOWNLOAD_RESPONSE_INVALID"));
     downloadBlob(file.blob, file.fileName);
     l4NetworkCommands.forget(record.fingerprint, record.commandKey);
     syncTree();

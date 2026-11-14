@@ -497,6 +497,9 @@ export async function downloadL6Behavior(input: L6BehaviorQuery & { reason: stri
     const payload = (await res.json().catch(() => null)) as ApiResult<unknown> | null;
     throw new Error(formatAdminApiError(payload?.message, `BI_L6_EXPORT_${res.status}`));
   }
+  if (!contentType.toLowerCase().includes("text/csv")) {
+    throw new Error(formatAdminApiError(undefined, `BI_L6_EXPORT_${res.status}`));
+  }
   return {
     blob: await res.blob(),
     fileName: filenameFromDisposition(res.headers.get("Content-Disposition"), "l6-behavior.csv"),
