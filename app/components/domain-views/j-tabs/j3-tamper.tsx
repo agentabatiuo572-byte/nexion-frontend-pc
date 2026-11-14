@@ -245,7 +245,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
           <span className="j3-recovery-state">{isRetryExpired(saved) ? expiredTag("direct") : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>}</span>
           <span className="j3-recovery-actions">
             <Button size="sm" loading={ctx.contentLoading} onClick={queryOriginal}>查询原结果</Button>
-            {canConfigure && <Button size="sm" disabledReason={!saved.command ? j3ErrorText(new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE")) : isRetryExpired(saved) ? RETRY_EXPIRED_TEXT : undefined}
+            {canConfigure && !isRetryExpired(saved) && <Button size="sm" disabledReason={!saved.command ? j3ErrorText(new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE")) : undefined}
               onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
           </span>
         </li>
