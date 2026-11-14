@@ -21,6 +21,7 @@ import {
   type L2FunnelQuery,
 } from "@/lib/admin/l-client";
 import { formatB3RefOption } from "@/lib/admin/b3-ref-display";
+import { lowestConversionIndex } from "@/lib/admin/funnel-conversion";
 import { businessZone } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
 import { INTERFACE_LANGUAGES } from "@/lib/admin/platform-experience-client";
@@ -683,9 +684,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   };
 
   /* ---- 结论：后三步里「从上一步转化」最低的一步，和「用户转化概览」同一个算法，不是掉人最多的一步。 ---- */
-  const lowest = FUNNEL.reduce<number | null>((worst, row, index) => (
-    index === 0 || row.suppressed || row.cvr == null ? worst
-      : worst === null || (FUNNEL[worst].cvr ?? 101) > row.cvr ? index : worst), null);
+  const lowest = lowestConversionIndex(FUNNEL.map((row) => row.suppressed ? null : row.cvr));
   const conclusionExplain = <><p>「转化率最低的一步」是首购、锁定计划、提现三步里「从上一步转化」最低的一步，不一定是掉人最多的一步，和「用户转化概览」同一个算法。</p>{caliberNote()}</>;
   const conclusion = registrations == null
     ? <Conclusion state="neutral" icon={Users} explain={PROTECT_NOTE} hint="换一个更大的范围再看，比如去掉语言或渠道。">用户转化：这批注册用户少于 5 人，人数不显示</Conclusion>

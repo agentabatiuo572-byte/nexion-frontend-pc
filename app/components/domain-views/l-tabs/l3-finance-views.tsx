@@ -7,10 +7,11 @@
 import type { ReactNode } from "react";
 import { BarList, Cell, Donut, Explain, Figure, Fold, Table, Td, Th, Tr, type ChartSlot } from "@/app/components/rd";
 import { amountDigits, amountText } from "@/lib/admin/treasury-amount";
+import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 
 /** 后端金额是两位小数；页面把几项加起来时去掉浮点误差（0.1 + 0.2），不改精度。 */
 export const cents = (value: number) => Math.round(value * 100) / 100;
-export const usdt = (value: number | null, digits?: number) => (value === null ? "暂时无法估值" : `${amountText(value, digits)} USDT`);
+export const usdt = (value: number | null, digits?: number) => (value === null ? TREASURY_VALUATION_UNAVAILABLE : `${amountText(value, digits)} USDT`);
 export const count = (value: number) => value.toLocaleString("en-US");
 /** 接口给两位小数，原样写，不补也不舍。 */
 export const pctText = (value: number) => `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;

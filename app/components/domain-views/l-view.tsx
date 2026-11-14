@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./l-domain.css";
 import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
-import { DomainHeader, type DomainViewMeta } from "./domain-header";
+import type { DomainViewMeta } from "./domain-header";
 import { L1Kpi } from "./l-tabs/l1-kpi";
 import type { L1ExportSource } from "./l-tabs/l1-export-contract";
 import { L2Funnel } from "./l-tabs/l2-funnel";
@@ -90,6 +90,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
   const ctx: LCtx = {
     toast: setToast,
     openActionConfirm: setActionConfirm,
+    closeActionConfirm: () => setActionConfirm(null),
     biData,
     biLoading: biLoading || biOwner !== owner,
     biError: biOwner === owner ? biError : null,
@@ -119,14 +120,8 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
     setL4Query,
   };
 
-  const right =
-    tab === "L1" ? null
-    : null;
-
   const page = (
     <>
-      {tab !== "L1" && tab !== "L2" && tab !== "L3" && tab !== "L4" && tab !== "L5" && tab !== "L6" && <DomainHeader {...meta} right={right} />}
-
       {tab === "L1" && <L1Kpi key={session ? `${session.adminId}:${session.username}` : "anonymous"} ctx={ctx} onExportSource={setL1ExportSource} source={l1ExportSource?.parentData === biData?.l1 ? l1ExportSource : undefined} title={meta.l2Name} summary={meta.summary} />}
       {tab === "L2" && <L2Funnel ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
       {tab === "L3" && <L3Finance ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
@@ -152,6 +147,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
           statedBrief={mc.statedBrief}
           facts={mc.facts}
           getPendingReason={mc.getPendingReason}
+          getPendingBusinessValue={mc.getPendingBusinessValue}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
             try {
@@ -170,5 +166,5 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  return tab === "L1" || tab === "L2" || tab === "L3" || tab === "L4" || tab === "L5" || tab === "L6" ? <RdPage className={tab === "L2" ? "l2-page" : tab === "L3" ? "l3-page" : tab === "L4" ? "l4-page" : tab === "L5" ? "l5-page" : tab === "L6" ? "l6-page" : undefined}>{page}</RdPage> : <div className="dkpage ldom">{page}</div>;
+  return <RdPage className={tab === "L2" ? "l2-page" : tab === "L3" ? "l3-page" : tab === "L4" ? "l4-page" : tab === "L5" ? "l5-page" : tab === "L6" ? "l6-page" : undefined}>{page}</RdPage>;
 }

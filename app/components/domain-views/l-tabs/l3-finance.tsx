@@ -4,17 +4,23 @@
  * L3 · 财务报表（改版，rd）。
  * 一句结论 → 四个数按「进了多少、出了多少、付不付得起、接下来要付多少」排 → 本期收入构成 | 本期提现
  * → 兑付覆盖率 | 九类应付款 → 接下来要付多少（未来 7/30 天按类别、30 天分四段）。
- * 读取、校验、两种导出的请求体和命令号沿用改版前的写法（请求逐字节不变），这里只换界面。
+ * 导出内容合同不变；高敏明细保留原请求，按原号恢复，回放后查询当前任务状态。
  * 周期只管收入和提现，注册业务月只管提现；储备、应付款、覆盖率和到期是读取那一刻的数，不随周期变。
  */
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowDownToLine, ArrowUpFromLine, CalendarClock, FileSpreadsheet, Gauge, LockKeyhole, ReceiptText, RefreshCw, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
 import {
   BlockState, Button, Conclusion, Explain, Fact, Facts, FilterBar, FilterField, Input, KeyValues, Notice, PageHeader, Panel,
   Segments, Stat, StatBand, StatusTag, ThresholdMeter, TrendLines, type ChartSlot,
 } from "@/app/components/rd";
-import { isLOutcomeUnknownError } from "@/lib/admin/l-client";
+import { fetchL3FinanceDetail, isLOutcomeUnknownError, LOutcomeUnknownError, submitL3FinanceDetail, type L3DetailReceipt } from "@/lib/admin/l-client";
+import { L3_FINANCE_DETAIL_FIELDS as FINANCE_DETAIL_FIELDS, l3DetailCommands, type L3DetailRequest, type PendingL3Detail } from "@/lib/admin/l3-detail-export";
+import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import { LIABILITY_EXPLANATIONS, liabilityDisplayName } from "@/lib/admin/liability-labels";
 import { amountDigits, amountText } from "@/lib/admin/treasury-amount";
 import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
@@ -26,18 +32,6 @@ import { num, rec, rows, str, strings } from "./live-data";
 import { readL3FinanceSnapshot, readL3LiveFacts } from "./l3-live-data";
 import { cents, count, DueBars, LiabilityBars, MaturityGroups, pctText, RedemptionFigures, RevenueFigure, usdt, type LiabilityRow, type MaturityPart, type Redemption, type RevenueStream } from "./l3-finance-views";
 import type { LCtx } from "./types";
-
-const FINANCE_DETAIL_FIELDS = [
-  "交易时间",
-  "用户编码（脱敏）",
-  "业务编号",
-  "账单类型",
-  "资产",
-  "方向",
-  "金额",
-  "余额",
-  "状态",
-] as const;
 
 const EXPORT_PAGE = "/analytics/export";
 const WITHDRAW_PAGE = "/finance/withdrawals";
@@ -54,19 +48,6 @@ function currentMonthRange() {
     to: `${year}-${pad(month + 1)}-${pad(new Date(year, month + 1, 0).getDate())}`,
   };
 }
-
-/** 后端给的九类名称是内部写法；按类别换成资金储备与应付款、资金与应付款总览用的名字，三页同名。 */
-const LIABILITY_CATEGORY: Record<string, string> = {
-  "可提余额": "withdrawable_balance",
-  "USDT staking 本金": "usdt_staking_principal",
-  "staking 应付利息": "staking_interest",
-  "Genesis 排放承诺": "genesis_daily_emission",
-  "UVT v2 未来兑付": "nex_v2_future",
-  "待提现 queue": "withdrawal_queue",
-  "佣金冷却未解锁": "commission_cooling",
-  "锁仓本息其他": "lock_other",
-  "待核实入金": "unverified_deposit",
-};
 
 /** 四类收入各是什么（后端事实），名字照后端，只把「设备销售 GMV」写成中文。 */
 const REVENUE_TEXT: Record<string, { name?: string; explain: string }> = {
@@ -96,22 +77,34 @@ type ExportOutcome =
 
 export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; summary: string }) {
   const reach = useReach();
+  const session = useAdminAuth(state => state.session);
+  const owner = session ? String(session.adminId) : "";
+  const currentContext = useRef(ctx);
+  currentContext.current = ctx;
   const [matWin, setMatWin] = useState<"7d" | "30d">("7d");
   const defaultCustomRange = currentMonthRange();
   const [customFrom, setCustomFrom] = useState(ctx.l3Query?.from ?? defaultCustomRange.from);
   const [customTo, setCustomTo] = useState(ctx.l3Query?.to ?? defaultCustomRange.to);
   const exportingRef = useRef(false);
   const detailExportingRef = useRef(false);
-  const detailIntentRef = useRef<{ fingerprint: string; key: string } | null>(null);
+  const [pendingDetail, setPendingDetail] = useState<PendingL3Detail | null>(null);
   const [exporting, setExporting] = useState(false);
   const [detailExporting, setDetailExporting] = useState(false);
   // 只管显示：导出后页面上方的结果条。不参与请求。
   const [outcome, setOutcome] = useState<ExportOutcome | null>(null);
+  const syncDetail = () => setPendingDetail(l3DetailCommands.list().find(record => record.owner === owner) ?? null);
+  useEffect(() => { syncDetail(); }, [owner]);
+  useEffect(() => {
+    if (!pendingDetail || isRetryExpired(pendingDetail)) return;
+    const timer = setTimeout(syncDetail, pendingDetail.expiresAt - Date.now());
+    return () => clearTimeout(timer);
+  }, [pendingDetail]);
 
   const data = ctx.biData?.l3;
   const readAt = useMemo(() => (data ? formatBusinessTimeCompact(new Date().toISOString(), "") : ""), [data]);
   const exportPageName = findByPath(EXPORT_PAGE)?.l2.name ?? "数据导出与监管报告";
   const canOpenExportPage = reach(EXPORT_PAGE, "bi_l5_read");
+  const canQueryDetail = session?.role?.toLowerCase() === "superadmin" || session?.authorities.includes("bi_l5_read") === true;
   const exportPageLink = (text: string) => (canOpenExportPage
     ? <Link className="rd-link" href={EXPORT_PAGE}>{text}</Link>
     : <>你没有「{exportPageName}」的权限，请找有权限的同事核对。</>);
@@ -125,6 +118,34 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   const periodTo = typeof period.to === "string" && /^\d{4}-\d{2}-\d{2}$/.test(period.to) ? period.to : "";
   const detailExportable = Boolean(periodFrom && periodTo && periodFrom <= periodTo);
   const periodLabel = String(data?.periodLabel ?? "当前周期");
+
+  const settleDetail = async (record: PendingL3Detail, receipt: L3DetailReceipt) => {
+    l3DetailCommands.forget(record.fingerprint, record.commandKey);
+    syncDetail();
+    await ctx.reloadBi?.();
+    ctx.toast("资金明细申请已提交，请在「数据导出与监管报告」审批后下载");
+    setOutcome(receipt.status === "PENDING_CONFIRM" || receipt.status === "PENDING_SPLIT_CONFIRM"
+      ? { kind: "detail-done", range: record.request.timeRange.replace("/", " 至 "), fields: record.request.fields.split(",").length, recipient: record.request.recipient, ticket: record.request.ticket }
+      : null);
+  };
+
+  const queryDetail = async (record: PendingL3Detail) => {
+    const auth = useAdminAuth.getState().session;
+    if (!record.reportId || !auth || String(auth.adminId) !== record.owner
+      || !(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_read")) || detailExportingRef.current) return;
+    detailExportingRef.current = true;
+    setDetailExporting(true);
+    try {
+      const receipt = await fetchL3FinanceDetail(record.reportId, record.request);
+      await settleDetail(record, receipt);
+    } catch (error) {
+      // A failed read (including not found) is not a verdict on the original create.
+      ctx.toast(displayAdminReadError(error), "error");
+    } finally {
+      detailExportingRef.current = false;
+      setDetailExporting(false);
+    }
+  };
 
   const exportAgg = () => {
     if (exportingRef.current) return;
@@ -176,14 +197,16 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     });
   };
 
-  const openDetailExport = () => {
-    if (!ctx.canExportFinanceDetail || !detailExportable || detailExportingRef.current) return;
-    const allFields = FINANCE_DETAIL_FIELDS.join(",");
+  const openDetailExport = (original?: PendingL3Detail) => {
+    if (detailExportingRef.current || !ctx.canExportFinanceDetail) return;
+    if (original ? isRetryExpired(original) || original.reportId !== undefined : !detailExportable || pendingDetail !== null) return;
+    const [requestFrom, requestTo] = original ? original.request.timeRange.split("/") : [periodFrom, periodTo];
+    const allFields = original?.request.fields ?? FINANCE_DETAIL_FIELDS.join(",");
     setOutcome(null);
     ctx.openActionConfirm({ briefKind: "export",
       title: "申请脱敏资金明细",
       action: "申请导出脱敏资金明细",
-      detail: `导出范围锁定为当前报表周期 ${periodFrom} 至 ${periodTo}，最多 100,000 行。`,
+      detail: `导出范围锁定为当前报表周期 ${requestFrom} 至 ${requestTo}，最多 100,000 行。`,
       effect: <StatusTag tone="warn" icon={LockKeyhole}>另一位放行后才能下载</StatusTag>,
       statedBrief: {
         impact: "提交后生成一份待放行的脱敏资金明细，不改余额、账本和提现。要另一位有审批权的同事在「数据导出与监管报告」放行，你不能批自己的申请。",
@@ -191,7 +214,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       },
       facts: (
         <Facts>
-          <Fact k="日期范围">{periodFrom} 至 {periodTo}（含首尾两天）</Fact>
+          <Fact k="日期范围">{requestFrom} 至 {requestTo}（含首尾两天）</Fact>
           <Fact k="导出什么">这段时间的全部钱包账单，按时间从新到旧，最多 100,000 行<Explain label="导出范围的说明" content={<><p>不分用户、资产和状态，全部钱包账单都算；超过 100,000 行不能提交，请缩短周期。</p><p>不带注册业务月；日期是页面已经读到的这一期，输入框里没应用的日期不算。</p></>} /></Fact>
           <Fact k="脱敏" tone="warn">只隐藏用户编码（留前 2 位和后 2 位）<Explain label="脱敏到什么程度" content={<><p>用户编码 4 位以内整个写成 ***。业务编号、金额、余额、时间都是原值。</p><p>不导出手机号、昵称、备注。</p></>} /></Fact>
           <Fact k="谁来放行">另一位有导出审批权的同事，不能是你</Fact>
@@ -202,6 +225,11 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       reasonPlaceholder: "写这份明细给谁、做什么用，例如：对账工单号、核对哪笔差异",
       reasonMin: 8,
       reasonMax: 200,
+      getPendingReason: () => l3DetailCommands.list().find(record => record.owner === owner)?.request.reason,
+      getPendingBusinessValue: () => {
+        const request = l3DetailCommands.list().find(record => record.owner === owner)?.request;
+        return request ? { fields: request.fields, recipient: request.recipient, ticket: request.ticket } : undefined;
+      },
       businessForm: {
         kind: "multi-field",
         hint: "至少选一个字段；最多 100,000 行。",
@@ -219,7 +247,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
           {
             key: "recipient",
             label: "使用人",
-            current: "财务管理员",
+            current: original?.request.recipient ?? "财务管理员",
             inputKind: "text",
             required: true,
             explain: "这份明细给谁用，会记进操作记录。",
@@ -227,7 +255,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
           {
             key: "ticket",
             label: "审批工单",
-            current: "L3-FINANCE-DETAIL",
+            current: original?.request.ticket ?? "L3-FINANCE-DETAIL",
             inputKind: "text",
             required: true,
             explain: "对应的工单号，会记进操作记录，放行的同事会看到。",
@@ -235,38 +263,85 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
         ],
       },
       run: async (reason, _newValue, businessValue) => {
-        if (detailExportingRef.current || !ctx.biActions) return;
-        const fields = String(businessValue?.fields ?? "").split(",").map((item) => item.trim()).filter(Boolean);
-        if (fields.length === 0 || fields.some((field) => !FINANCE_DETAIL_FIELDS.includes(field as (typeof FINANCE_DETAIL_FIELDS)[number]))) {
-          throw new Error("至少选择一个允许导出的脱敏资金字段");
+        if (detailExportingRef.current) return;
+        const auth = useAdminAuth.getState().session;
+        if (!auth || String(auth.adminId) !== owner
+          || !(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l3_export_detail"))) {
+          throw new Error(formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED"));
         }
-        const input = {
-          exportType: "财务资金明细",
-          timeRange: `${periodFrom}/${periodTo}`,
-          fields: fields.join(","),
-          piiLevel: "HIGH_PII",
-          maskPolicy: "MASKED",
-          recipient: String(businessValue?.recipient ?? "").trim(),
-          ticket: String(businessValue?.ticket ?? "").trim(),
-        };
-        const fingerprint = JSON.stringify({ ...input, reason: reason.trim() });
-        if (!detailIntentRef.current || detailIntentRef.current.fingerprint !== fingerprint) {
+        let record = l3DetailCommands.list().find(item => item.owner === owner);
+        if (original) {
+          if (!record || record.commandKey !== original.commandKey) {
+            ctx.closeActionConfirm?.();
+            throw new Error(formatAdminApiError("L3_DETAIL_ALREADY_SETTLED", "L3_DETAIL_ALREADY_SETTLED"));
+          }
+          if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
+          if (record.reportId) throw new Error(formatAdminApiError("L3_DETAIL_QUERY_REQUIRED", "L3_DETAIL_QUERY_REQUIRED"));
+        } else {
+          if (record) throw new Error(formatAdminApiError("L3_DETAIL_PENDING", "L3_DETAIL_PENDING"));
+          const latest = currentContext.current;
+          const latestPeriod = rec(latest.biData?.l3?.period);
+          if (latest.biLoading || latest.biError || latestPeriod.from !== requestFrom || latestPeriod.to !== requestTo) {
+            throw new Error(formatAdminApiError("L3_DETAIL_PERIOD_CHANGED", "L3_DETAIL_PERIOD_CHANGED"));
+          }
+          const fields = String(businessValue?.fields ?? "").split(",").map(item => item.trim()).filter(Boolean);
+          if (fields.length === 0 || fields.some(field => !FINANCE_DETAIL_FIELDS.includes(field as typeof FINANCE_DETAIL_FIELDS[number]))) {
+            throw new Error("至少选择一个允许导出的脱敏资金字段");
+          }
+          const request: L3DetailRequest = {
+            exportType: "财务资金明细",
+            timeRange: `${requestFrom}/${requestTo}`,
+            fields: fields.join(","),
+            piiLevel: "HIGH_PII",
+            maskPolicy: "MASKED",
+            recipient: String(businessValue?.recipient ?? "").trim(),
+            ticket: String(businessValue?.ticket ?? "").trim(),
+            reason: reason.trim(),
+            operator: currentAdminOperator(),
+          };
+          const fingerprint = JSON.stringify(request);
           const entropy = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
-          detailIntentRef.current = { fingerprint, key: `l3-finance-detail-${entropy}` };
+          const commandKey = `l3-finance-detail-${entropy}`;
+          l3DetailCommands.remember(fingerprint, commandKey, { owner, request });
+          record = l3DetailCommands.list().find(item => item.commandKey === commandKey);
         }
-        const shown = { range: `${periodFrom} 至 ${periodTo}`, fields: fields.length, recipient: input.recipient, ticket: input.ticket };
+        if (!record || !l3DetailCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
+          if (record && !original) l3DetailCommands.forget(record.fingerprint, record.commandKey);
+          syncDetail();
+          throw new Error(formatAdminApiError("L3_DETAIL_STORAGE_UNAVAILABLE", "L3_DETAIL_STORAGE_UNAVAILABLE"));
+        }
+        syncDetail();
         detailExportingRef.current = true;
         setDetailExporting(true);
         try {
-          await ctx.biActions.createReport(input, reason, detailIntentRef.current.key);
-          detailIntentRef.current = null;
-          await ctx.reloadBi?.();
-          ctx.toast("资金明细申请已提交，请在「数据导出与监管报告」审批后下载");
-          setOutcome({ kind: "detail-done", ...shown });
-        } catch (error) {
-          // 结果未知仍交给外壳关框、重读、提示；页面上方留一条核对提示。R1 的本机保存和按原内容重试由代码 worker 接（决定 L3-PD02）。
-          if (isLOutcomeUnknownError(error)) setOutcome({ kind: "detail-unknown", ...shown });
-          throw error;
+          let receipt: L3DetailReceipt;
+          try {
+            receipt = await submitL3FinanceDetail(record.request, record.commandKey);
+          } catch (error) {
+            if (isExplicitRejection(error)) {
+              l3DetailCommands.forget(record.fingerprint, record.commandKey);
+              syncDetail();
+              if (original) ctx.closeActionConfirm?.();
+            }
+            if (isLOutcomeUnknownError(error)) {
+              throw new LOutcomeUnknownError(formatAdminApiError("L3_DETAIL_OUTCOME_UNKNOWN", "L3_DETAIL_OUTCOME_UNKNOWN"));
+            }
+            throw error;
+          }
+          if (original) {
+            // The replay proves creation, not the current approval state. Never
+            // turn its historical PENDING_CONFIRM receipt into a live status.
+            l3DetailCommands.remember(record.fingerprint, record.commandKey, { owner: record.owner, request: record.request, reportId: receipt.reportId });
+            syncDetail();
+            if (!(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_read"))) return;
+            try {
+              receipt = await fetchL3FinanceDetail(receipt.reportId, record.request);
+            } catch (error) {
+              ctx.toast(displayAdminReadError(error), "error");
+              return;
+            }
+          }
+          await settleDetail(record, receipt);
         } finally {
           detailExportingRef.current = false;
           setDetailExporting(false);
@@ -277,7 +352,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
 
   const readBlocked = ctx.biLoading ? "正在读取，读完再导出" : ctx.biError ? "财务数据读取失败，暂时不能导出" : undefined;
   const summaryBlocked = readBlocked ?? (!exportable ? "暂无可导出的财务数据" : undefined);
-  const detailBlocked = readBlocked ?? (!detailExportable ? "当前周期没有起止日期，不能导出明细" : undefined);
+  const detailBlocked = pendingDetail ? formatAdminApiError("L3_DETAIL_PENDING", "L3_DETAIL_PENDING") : readBlocked ?? (!detailExportable ? "当前周期没有起止日期，不能导出明细" : undefined);
   const actions = (ctx.canExport || ctx.canExportFinanceDetail) ? (
     <span className="l3-actions">
       {ctx.canExport && (
@@ -288,7 +363,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       )}
       {ctx.canExportFinanceDetail ? (
         <span className="l3-pair" data-pair="">
-          <Button icon={<LockKeyhole size={14} aria-hidden />} loading={detailExporting} loadingText="正在提交…" disabledReason={detailBlocked} onClick={openDetailExport}>申请资金明细（需放行）</Button>
+          <Button icon={<LockKeyhole size={14} aria-hidden />} loading={detailExporting} loadingText="正在提交…" disabledReason={detailBlocked} onClick={() => openDetailExport()}>申请资金明细（需放行）</Button>
           <Explain label="资金明细怎么申请" content={<><p>这一期的钱包账单逐笔明细，用户编码已隐藏部分字符，属于高敏数据。</p><p>提交后要另一位有审批权的同事在「{exportPageName}」放行才能下载，你不能批自己的申请。</p></>} />
         </span>
       ) : (
@@ -312,7 +387,15 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     />
   );
 
-  const outcomeNotice = outcome && (() => {
+  const shownOutcome: ExportOutcome | null = pendingDetail ? {
+    kind: "detail-unknown",
+    range: pendingDetail.request.timeRange.replace("/", " 至 "),
+    fields: pendingDetail.request.fields.split(",").length,
+    recipient: pendingDetail.request.recipient,
+    ticket: pendingDetail.request.ticket,
+  } : outcome;
+  const outcomeNotice = shownOutcome && (() => {
+    const outcome = shownOutcome;
     const close = <Button size="sm" onClick={() => setOutcome(null)}>知道了</Button>;
     if (outcome.kind === "summary-done") return (
       <Notice tone="ok" title="已生成财务当前汇总" action={close}>
@@ -338,7 +421,12 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
         <p>请求已发出，但没有收到明确结果，申请可能已经提交。{canOpenExportPage
           ? <>先{exportPageLink(`到「${exportPageName}」看有没有这条待放行的申请`)}，没有再按同样内容重新申请。</>
           : <>你没有「{exportPageName}」的权限，请找有权限的同事核对；核对之前不要换内容重新申请。</>}</p>
-        {/* R1：代码 worker 在这里接本机保存和「按原内容重试」（决定 L3-PD02、e-page-common R1）。 */}
+        {pendingDetail && <span className="rd-toolbar">
+          {pendingDetail.reportId
+            ? <Button size="sm" loading={detailExporting} disabledReason={canQueryDetail ? undefined : formatAdminApiError("L3_DETAIL_QUERY_PERMISSION", "L3_DETAIL_QUERY_PERMISSION")} onClick={() => void queryDetail(pendingDetail)}>查询原结果</Button>
+            : canOpenExportPage && <Link className="rd-link" href={EXPORT_PAGE}>查询原结果</Link>}
+          <Button size="sm" loading={detailExporting} disabledReason={pendingDetail.reportId ? formatAdminApiError("L3_DETAIL_QUERY_REQUIRED", "L3_DETAIL_QUERY_REQUIRED") : isRetryExpired(pendingDetail) ? RETRY_EXPIRED_TEXT : !ctx.canExportFinanceDetail ? formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED") : undefined} onClick={() => openDetailExport(pendingDetail)}>按原请求重试</Button>
+        </span>}
       </Notice>
     );
   })();
@@ -422,7 +510,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   const maturity30Raw = rec(maturityRaw["30d"]);
   const scheduleRaw = rec(data.maturitySchedule);
   const revenueStreamsRaw = rows<Record<string, unknown>>(rec(data.revenue).streams);
-  const liabilitiesRaw = rows<{ id: number; name: string; amount: number }>(data.liabilities);
+  const liabilitiesRaw = rows<{ id: number; category: string; name: string; amount: number | null }>(data.liabilities);
   const coverageSeries = rows<number>(data.coverage12w);
   const coverageTicks = strings(data.coverageWeeks);
   const breaches = rows<{ i: number; type: string; label: string }>(data.coverageBreaches)
@@ -434,7 +522,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   const fullContractReady = revenueStreamsRaw.length > 0
     && revenueStreamsRaw.every((row) => Number.isFinite(num(row.amountUsdt)) && num(row.amountUsdt) >= 0)
     && liabilitiesRaw.length > 0
-    && liabilitiesRaw.every((row) => Number.isFinite(row.amount) && row.amount >= 0)
+    && liabilitiesRaw.every((row) => row.amount === null ? data.valuationReliable === false && row.category === "nex_v2_future" : Number.isFinite(row.amount) && row.amount >= 0)
     && coverageSeries.length >= 2
     && coverageTicks.length === coverageSeries.length
     && coverageSeries.every(Number.isFinite)
@@ -453,12 +541,11 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     <BlockState state="error" title="收到的财务数据不完整，已停止显示" detail="页面不显示不可靠的数字，也不能导出。请先重新加载；仍然这样，请把这页的情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
   </>);
 
-  /* 估值：有 UVT 应付款却没有有效价格时，应付款合计、覆盖率、差额和占比都不可靠（F03）。
-     代码 worker 接：改读 treasury-snapshot 的 liabilities.valuationReliable（L3-BE-01）；现在先用同一次读取里财务概览带的同名标记。 */
-  const valuationUnavailable = financeSnapshot?.valuationReliable === false;
+  /* The authoritative treasury snapshot owns valuation, not the separately read legacy overview. */
+  const valuationUnavailable = data.valuationReliable === false;
 
   const reserve = num(ledgerRaw.reserveUsd);
-  const liabilityTotal = valuationUnavailable ? null : num(ledgerRaw.liabilitiesUsd);
+  const liabilityTotal = valuationUnavailable ? null : data.valuedLiabilitiesUsd as number;
   const coverage = num(treasuryRaw.coverageRatio);
   const redLine = num(treasuryRaw.redLine);
   const healthyLine = num(treasuryRaw.yellowLine);
@@ -496,12 +583,12 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   };
 
   const liabilities: LiabilityRow[] = liabilitiesRaw.map((row) => {
-    const category = LIABILITY_CATEGORY[row.name] ?? "";
+    const category = row.category;
     return {
       key: category || String(row.id),
       name: liabilityDisplayName(category, row.name),
       explain: LIABILITY_EXPLANATIONS[category] ?? row.name,
-      amount: valuationUnavailable && category === "nex_v2_future" ? null : row.amount,
+      amount: row.amount,
     };
   });
 
@@ -513,10 +600,9 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   const shownDue = matWin === "7d" ? due7 : due30;
   const shownDueTotal = matWin === "7d" ? due7Total : due30Total;
   const dueDigits = amountDigits([due7Total, due30Total, ...due7, ...due30]);
-  /* 能付多久：照后端返回的天数写（含资金储备与应付款开着的试用业务压力测试）。后端没有到期时返回 999（有储备）或 0（没储备），
-     只有三类合计也是 0 时才当作「没有到期」，避免把含试用压力算出的天数写成不计算（F04）。代码 worker 接：改读 maturity30.trialStressIncluded 和 cumulativeUsdt。 */
+  // Only the backend cumulative total includes the configured trial stress.
   const coverDays = Number(data.reserveCoverDays);
-  const noDue30 = due30Total === 0 && (coverDays === 999 || coverDays === 0);
+  const noDue30 = maturity30Raw.cumulativeUsdt === 0;
   const coverDaysValue = noDue30 ? "30 天内没有到期" : coverDaysText(coverDays);
 
   const groupDays = [7, 7, 7, 9];
@@ -638,7 +724,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
           {shownDueTotal === 0
             ? <p className="rd-note">{matWin === "7d" ? "未来 7 天" : "未来 30 天"}这三类都没有到期。</p>
             : <DueBars parts={MATURITY_PARTS} values={shownDue} digits={dueDigits} explain={MATURITY_EXPLAIN} />}
-          {!noDue30 && due30Total === 0 && <p className="rd-note">三类都没有到期，下面的天数来自「{treasuryName}」开着的试用业务压力测试。</p>}
+          {maturity30Raw.trialStressIncluded === true && !noDue30 && due30Total === 0 && <p className="rd-note">三类都没有到期，下面的天数来自「{treasuryName}」开着的试用业务压力测试。</p>}
           <KeyValues rows={[{
             key: "days",
             label: "能付多久（按 30 天到期）",

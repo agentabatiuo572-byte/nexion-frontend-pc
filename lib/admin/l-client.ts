@@ -7,6 +7,7 @@ import {
 } from "@/lib/admin/l6-runtime-state";
 import { assertL3FinanceContract, assertL3TreasurySnapshot } from "@/lib/admin/l3-finance-contract";
 import { assertL5OverviewContract, CURRENT_L5_REPORT_TYPES } from "@/lib/admin/l5-overview-contract";
+import type { L3DetailRequest } from "./l3-detail-export";
 
 type ApiResult<T> = {
   code?: number;
@@ -156,8 +157,8 @@ function idempotencyKey() {
 }
 
 export class LOutcomeUnknownError extends Error {
-  constructor() {
-    super("提交结果尚未确认，任务可能已创建。请先到「数据导出与监管报告」核对原操作，再决定是否重新提交。");
+  constructor(message = "提交结果尚未确认，任务可能已创建。请先到「数据导出与监管报告」核对原操作，再决定是否重新提交。") {
+    super(message);
     this.name = "LOutcomeUnknownError";
   }
 }
@@ -173,7 +174,7 @@ function networkFailure(isReportCreation: boolean) {
     : new Error("网络连接已中断，本次操作结果尚未确认。请先核对原操作，再决定是否重试。");
 }
 
-async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function apiRequest<T>(path: string, init?: RequestInit, businessErrorStatus = false): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
@@ -218,7 +219,9 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
     const error = new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`)) as Error & { code?: string; status: number; reasonCode?: string };
     error.code = payload.message;
-    error.status = res.status;
+    // L3's retained detail command needs the business rejection even when the
+    // controller returns ApiResult.fail in HTTP 200. Other L callers keep their contract.
+    error.status = businessErrorStatus && res.ok && rejected ? payload.code! : res.status;
     error.reasonCode = payload.message;
     throw error;
   }
@@ -604,6 +607,8 @@ async function fetchL3FinanceOverview(query?: L3FinanceQuery): Promise<LBiData> 
       reserveUsd: num(coverage.reserveTotalUsdt),
       liabilitiesUsd: num(coverage.liabilityTotalUsdt),
     },
+    valuationReliable: liabilities.valuationReliable,
+    valuedLiabilitiesUsd: liabilities.valuedTotalUsdt,
     treasury: {
       coverageRatio: num(coverage.coverageRatio),
       redLine: num(coverage.redLine),
@@ -645,13 +650,14 @@ async function fetchL3FinanceOverview(query?: L3FinanceQuery): Promise<LBiData> 
     }),
     liabilities: liabilityRows.map((row, index) => ({
       id: index + 1,
+      category: str(row.category),
       name: str(row.label),
-      amount: num(row.amountUsdt),
+      amount: row.valuedAmountUsdt as number | null,
       color: liabilityColors[index] ?? "var(--ink-4)",
     })),
     maturityWindow: {
-      "7d": maturityTotals(maturity7Days),
-      "30d": maturityTotals(maturity30Days),
+      "7d": { ...maturityTotals(maturity7Days), trialStressIncluded: maturity7.trialStressIncluded, cumulativeUsdt: maturity7.cumulativeUsdt, daily: maturity7Days },
+      "30d": { ...maturityTotals(maturity30Days), trialStressIncluded: maturity30.trialStressIncluded, cumulativeUsdt: maturity30.cumulativeUsdt, daily: maturity30Days },
     },
     maturitySchedule: {
       weeks: maturityGroups.map(labelGroup),
@@ -693,6 +699,41 @@ export async function fetchL5ExportTasks(status = "", pageNum = 1, pageSize = 8)
 
 export async function fetchL5ExportAudits(limit = 50): Promise<LExportAuditRow[]> {
   return apiRequest<LExportAuditRow[]>(`/export/audit?limit=${Math.max(1, Math.min(limit, 100))}`);
+}
+
+export type L3DetailReceipt = { reportId: string; status: string };
+
+function l3DetailReceipt(value: unknown, request: L3DetailRequest): L3DetailReceipt {
+  const report = rec(value);
+  if (typeof report.reportId !== "string" || !/^EXP-[A-Z0-9]{8}$/.test(report.reportId)
+    || report.type !== "FINANCE_AGG" || report.containsPii !== true || report.maskingPolicy !== "MASKED"
+    || report.cycle !== request.timeRange || report.fields !== request.fields
+    || typeof report.status !== "string"
+    || !["PENDING_CONFIRM", "PENDING_SPLIT_CONFIRM", "PENDING", "GENERATING", "READY", "EXPIRED", "FAILED"].includes(report.status)) {
+    throw new Error(formatAdminApiError("L3_DETAIL_RECEIPT_INVALID", "L3_DETAIL_RECEIPT_INVALID"));
+  }
+  return { reportId: report.reportId, status: report.status };
+}
+
+/** L3 alone retains the complete request, including its original operator and reason. */
+export async function submitL3FinanceDetail(request: L3DetailRequest, commandKey: string): Promise<L3DetailReceipt> {
+  const data = await apiRequest<Record<string, unknown>>("/reports", {
+    method: "POST",
+    headers: { "Idempotency-Key": commandKey },
+    body: JSON.stringify(request),
+  }, true);
+  try {
+    return l3DetailReceipt(data?.created, request);
+  } catch {
+    // A malformed success receipt cannot settle a command which may have committed.
+    throw new LOutcomeUnknownError(formatAdminApiError("L3_DETAIL_RECEIPT_INVALID", "L3_DETAIL_RECEIPT_INVALID"));
+  }
+}
+
+export async function fetchL3FinanceDetail(reportId: string, request: L3DetailRequest): Promise<L3DetailReceipt> {
+  const report = l3DetailReceipt(await apiRequest<unknown>(`/exports/${encodeURIComponent(reportId)}`), request);
+  if (report.reportId !== reportId) throw new Error(formatAdminApiError("L3_DETAIL_RECEIPT_INVALID", "L3_DETAIL_RECEIPT_INVALID"));
+  return report;
 }
 
 async function regulatoryRequest<T>(path: string, init?: RequestInit): Promise<T> {
