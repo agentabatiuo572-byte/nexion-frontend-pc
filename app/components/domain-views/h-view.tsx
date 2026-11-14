@@ -61,7 +61,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "H4" && tab !== "H2" && tab !== "H1" && tab !== "H7" && tab !== "H9" && <DomainHeader {...meta} right={right} />}
+      {tab !== "H4" && tab !== "H2" && tab !== "H1" && tab !== "H7" && tab !== "H8" && tab !== "H9" && <DomainHeader {...meta} right={right} />}
 
 
       {tab === "H1" && <H1Phase ctx={ctx} onRhythmChange={setRhythm} />}
@@ -112,7 +112,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  if (tab === "H2" || tab === "H1" || tab === "H7" || tab === "H9") return <RdPage className="hdom">{page}</RdPage>;
+  if (tab === "H2" || tab === "H1" || tab === "H7" || tab === "H8" || tab === "H9") return <RdPage className="hdom">{page}</RdPage>;
 
   return <div className={tab === "H4" ? "hdom" : "dkpage hdom"}>{page}</div>;
 }
