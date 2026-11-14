@@ -473,7 +473,7 @@ export function CopyEditorDrawer({ spec, title, sub, basedOn, pausesDelivery, on
             <Field label="注册超过" required error={shown.fields.registrationDaysGt} explain="阶段是全平台当前的运营阶段，不是用户等级。">
               {(control) => <NumberInput {...control} unit="天" min={0} step={1} value={form.registrationDaysGt ?? ""} onChange={(event) => set("registrationDaysGt", event.target.value)} />}
             </Field>
-            <Field label="分流比例" required error={shown.fields.trafficSplit} hint="1–100">
+            <Field label="分流比例" required error={shown.fields.trafficSplit} help={shown.fields.trafficSplit ? undefined : "1–100"}>
               {(control) => <NumberInput {...control} unit="%" min={0} max={100} value={form.trafficSplit ?? ""} onChange={(event) => set("trafficSplit", event.target.value)} />}
             </Field>
           </div>
@@ -637,7 +637,7 @@ export function ExperimentDrawer({ copies, versionText, onClose, onSubmit }: {
                     <Select aria-label={`${letter} 组内容版本`} value={current} onChange={(next) => setForm((value) => ({ ...value, [`variantVersion.${index}`]: next }))}
                       options={(copy?.versions ?? []).map((item) => ({ value: item.value, label: item.label, disabled: item.value !== current && taken.has(item.value) }))} />
                   </Field>
-                  <Field label="分流" hint="1–99">
+                  <Field label="分流" help="1–99 的整数">
                     {(control) => <NumberInput {...control} aria-label={`${letter} 组分流比例`} unit="%" min={1} max={99} step={1} value={form[`variantSplit.${index}`] ?? ""} onChange={(event) => setForm((value) => ({ ...value, [`variantSplit.${index}`]: event.target.value }))} />}
                   </Field>
                   <IconButton aria-label={`移除 ${letter} 组`} disabled={count <= 2} onClick={() => removeVariant(index)}><Trash2 size={14} aria-hidden /></IconButton>
@@ -652,7 +652,7 @@ export function ExperimentDrawer({ copies, versionText, onClose, onSubmit }: {
             <Fact k="估算人数">{first?.estimatedAudience == null ? "—" : `约 ${first.estimatedAudience.toLocaleString()} 人（按现在的条件）`}</Fact>
           </Facts>
           {!audienceConsistent && <Notice tone="warn">所选版本的受众不一致，换成受众相同的版本。</Notice>}
-          <Field label="实验备注" hint="选填，最多 255 字">
+          <Field label="实验备注" help="选填，最多 255 字">
             {(control) => <Input {...control} value={form.note ?? ""} maxLength={255} placeholder="想验证什么、看哪个指标" onChange={(event) => setForm((value) => ({ ...value, note: event.target.value }))} />}
           </Field>
         </div>
