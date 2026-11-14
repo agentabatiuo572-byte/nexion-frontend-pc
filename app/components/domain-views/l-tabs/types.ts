@@ -17,10 +17,13 @@ export type ActionConfirmReq = {
   amplifies?: boolean;
   reasonMin?: number;
   reasonMax?: number;
+  measureReason?: (reason: string) => number;
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
   completionCopy?: string;
   confirmLabel?: string;
+  /** 不能撤回、放出高敏数据的确认传 danger：确认按钮危险色、标题前红底图标。 */
+  confirmTone?: "primary" | "danger";
   /** 生效标签，只在 RdPage 里显示。 */
   effect?: ReactNode;
   /** 理由框的占位，按场景写（TX-11）。 */
@@ -30,12 +33,14 @@ export type ActionConfirmReq = {
   facts?: ReactNode;
   /** 传了以后提交中锁住理由，保证显示的就是提交的。 */
   getPendingReason?: () => string | undefined;
+  getPendingBusinessValue?: () => BusinessFormValue | undefined;
   run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;
 };
 
 export type LCtx = {
   toast: (s: string, kind?: ToastKind) => void;
   openActionConfirm: (req: ActionConfirmReq) => void;
+  closeActionConfirm?: () => void;
   biData?: LBiData | null;
   biLoading?: boolean;
   biError?: string | null;

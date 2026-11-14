@@ -11,12 +11,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import "./j-domain.css";
 import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
-import { DomainHeader, type DomainViewMeta } from "./domain-header";
+import type { DomainViewMeta } from "./domain-header";
 import { fetchJEmergencyOverviews, jEmergencyActions, type JEmergencyData } from "@/lib/admin/j-client";
 import { J1KillSwitch } from "./j-tabs/j1-killswitch";
 import { J2GeoBlock } from "./j-tabs/j2-geoblock";
-import { J3HeaderActions, J3Tamper } from "./j-tabs/j3-tamper";
-import { J4HeaderActions, J4Sop } from "./j-tabs/j4-sop";
+import { J3Tamper } from "./j-tabs/j3-tamper";
+import { J4Sop } from "./j-tabs/j4-sop";
 import type { JCtx, ActionConfirmReq } from "./j-tabs/types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 
@@ -125,6 +125,8 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
       facts={mc.facts}
       reasonPlaceholder={mc.reasonPlaceholder}
       reasonPolicyOptional={mc.reasonPolicyOptional}
+      getPendingReason={mc.getPendingReason}
+      getPendingBusinessValue={mc.getPendingBusinessValue}
       blockedReason={mc.blockedReason}
       onClose={() => setActionConfirm(null)}
       onConfirm={async (reason, newValue, businessValue) => {
@@ -140,30 +142,10 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
 
   // J1 自己写页头和读取失败：待确认条在读取失败时也要留着（OP-93）。
   if (tab === "J1") return <RdPage className="jdom"><J1KillSwitch ctx={ctx} />{confirmModal}{toastNode}</RdPage>;
-
-  return (
-    <div className="dkpage jdom">
-      <DomainHeader
-        {...meta}
-        right={tab === "J3" ? <J3HeaderActions ctx={ctx} /> : tab === "J4" && !contentLoading && !contentError ? <J4HeaderActions ctx={ctx} /> : undefined}
-      />
-
-      {contentError && (
-        <section className="matrix-card" role="alert">
-          <div className="matrix-h">
-            <span className="ttl">当前无法确认最新状态</span>
-            <span className="sub">· {contentError} 为避免误操作，控制项已隐藏。</span>
-            <div className="r"><button type="button" onClick={() => void reloadJEmergency().catch(() => undefined)}>刷新</button></div>
-          </div>
-        </section>
-      )}
-
-      {!contentError && tab === "J2" && <J2GeoBlock ctx={ctx} />}
-      {!contentError && tab === "J3" && <J3Tamper ctx={ctx} />}
-      {!contentError && tab === "J4" && <J4Sop ctx={ctx} />}
-
-      {confirmModal}
-      {toastNode}
-    </div>
-  );
+  // J2 也自己写页头和读取失败：结果未知的提醒在读取失败时也要留着。
+  if (tab === "J2") return <RdPage className="jdom"><J2GeoBlock ctx={ctx} />{confirmModal}{toastNode}</RdPage>;
+  // J3 改版页自己写页头、读取失败和空态（和 J1 一样）。
+  if (tab === "J3") return <RdPage className="jdom"><J3Tamper ctx={ctx} />{confirmModal}{toastNode}</RdPage>;
+  // J4 也自己写页头和读取失败：结果未知的提醒在读取失败时也要留着。
+  if (tab === "J4") return <RdPage className="jdom"><J4Sop ctx={ctx} />{confirmModal}{toastNode}</RdPage>;
 }

@@ -11,15 +11,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./l-domain.css";
 import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
-import { DomainHeader, type DomainViewMeta } from "./domain-header";
+import type { DomainViewMeta } from "./domain-header";
 import { L1Kpi } from "./l-tabs/l1-kpi";
 import type { L1ExportSource } from "./l-tabs/l1-export-contract";
-import { L2HeaderActions, L2Funnel } from "./l-tabs/l2-funnel";
-import { L3HeaderActions, L3Finance } from "./l-tabs/l3-finance";
-import { L4HeaderActions, L4Ops } from "./l-tabs/l4-ops";
+import { L2Funnel } from "./l-tabs/l2-funnel";
+import { L3Finance } from "./l-tabs/l3-finance";
+import { L4Ops } from "./l-tabs/l4-ops";
 import { readL4Operations } from "./l-tabs/l4-live-data";
-import { L5HeaderActions, L5Export } from "./l-tabs/l5-export";
-import { L6HeaderActions, L6BehaviorHeatmap } from "./l-tabs/l6-behavior-heatmap";
+import { L5Export } from "./l-tabs/l5-export";
+import { L6BehaviorHeatmap } from "./l-tabs/l6-behavior-heatmap";
 import type { LCtx, ActionConfirmReq } from "./l-tabs/types";
 import { allowedAggregateExportOptions, canAccessBiReportType, canExportBiReports } from "./l-tabs/l1-l2-live-data";
 import { fetchLBiOverview, isLOutcomeUnknownError, lBiActions, type L2FunnelQuery, type L3FinanceQuery, type L4OperationsQuery, type LBiData, type LModuleCode } from "@/lib/admin/l-client";
@@ -90,6 +90,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
   const ctx: LCtx = {
     toast: setToast,
     openActionConfirm: setActionConfirm,
+    closeActionConfirm: () => setActionConfirm(null),
     biData,
     biLoading: biLoading || biOwner !== owner,
     biError: biOwner === owner ? biError : null,
@@ -119,24 +120,14 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
     setL4Query,
   };
 
-  const right =
-    tab === "L1" ? null
-    : tab === "L2" ? <L2HeaderActions ctx={ctx} />
-    : tab === "L3" ? <L3HeaderActions ctx={ctx} />
-    : tab === "L4" ? <L4HeaderActions ctx={ctx} />
-    : tab === "L5" ? <L5HeaderActions ctx={ctx} />
-    : <L6HeaderActions ctx={ctx} />;
-
   const page = (
     <>
-      {tab !== "L1" && <DomainHeader {...meta} right={right} />}
-
       {tab === "L1" && <L1Kpi key={session ? `${session.adminId}:${session.username}` : "anonymous"} ctx={ctx} onExportSource={setL1ExportSource} source={l1ExportSource?.parentData === biData?.l1 ? l1ExportSource : undefined} title={meta.l2Name} summary={meta.summary} />}
-      {tab === "L2" && <L2Funnel ctx={ctx} />}
-      {tab === "L3" && <L3Finance ctx={ctx} />}
-      {tab === "L4" && <L4Ops ctx={ctx} />}
-      {tab === "L5" && <L5Export ctx={ctx} />}
-      {tab === "L6" && <L6BehaviorHeatmap ctx={ctx} />}
+      {tab === "L2" && <L2Funnel ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
+      {tab === "L3" && <L3Finance ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
+      {tab === "L4" && <L4Ops key={owner} ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
+      {tab === "L5" && <L5Export key={owner} ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
+      {tab === "L6" && <L6BehaviorHeatmap key={owner} ctx={ctx} title={meta.l2Name} summary={meta.summary} />}
 
       {mc && (
         <OperationConfirmModal briefKind={mc.briefKind}
@@ -146,15 +137,18 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
           amplifies={mc.amplifies}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
+          measureReason={mc.measureReason}
           edit={mc.edit}
           businessForm={mc.businessForm}
           completionCopy={mc.completionCopy}
           confirmLabel={mc.confirmLabel}
+          confirmTone={mc.confirmTone}
           effect={mc.effect}
           reasonPlaceholder={mc.reasonPlaceholder}
           statedBrief={mc.statedBrief}
           facts={mc.facts}
           getPendingReason={mc.getPendingReason}
+          getPendingBusinessValue={mc.getPendingBusinessValue}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {
             try {
@@ -173,5 +167,5 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  return tab === "L1" ? <RdPage>{page}</RdPage> : <div className="dkpage ldom">{page}</div>;
+  return <RdPage className={tab === "L2" ? "l2-page" : tab === "L3" ? "l3-page" : tab === "L4" ? "l4-page" : tab === "L5" ? "l5-page" : tab === "L6" ? "l6-page" : undefined}>{page}</RdPage>;
 }
