@@ -73,7 +73,6 @@ export async function executeG7DirectCommand<T>(paramKey: string, input: G7Direc
   const epoch = auth.authEpoch;
   if (!auth.isAuthenticated || auth.logoutPending || !adminId) throw new Error("请重新登录后核对原操作。");
   let original = listG7DirectCommands(adminId).find(record => record.paramKey === paramKey);
-  const recovering = original !== undefined;
   if (saved && original?.commandKey !== saved.commandKey) throw new Error("原操作已结束，请重新读取当前状态。");
   const body = JSON.stringify(input);
   if (original && !saved && original.body !== body) {
@@ -104,23 +103,12 @@ export async function executeG7DirectCommand<T>(paramKey: string, input: G7Direc
     return result;
   } catch (error) {
     const backendMessage = (error as { backendMessage?: string } | null)?.backendMessage;
-    // The object lock is checked before idempotency replay. On recovery it says
-    // nothing about whether the original command already succeeded.
-    const recoveryLocked = recovering && (backendMessage === "OBJECT_LOCKED_BY_A2" || backendMessage === "OBJECT_ALREADY_PENDING");
-    if (!recoveryLocked && isExplicitRejection(error)) {
+    if (isExplicitRejection(error)) {
       commands.forget(original.fingerprint, original.commandKey);
       changed();
       throw error;
     }
     changed();
-    if (recoveryLocked) {
-      // The shared A2 formatter replaces its detail with generic retry copy.
-      // Keep this G7 non-verdict and its current-lock explanation together.
-      throw Object.assign(new Error("提交结果未知，可能已经执行。这一项现在有一张审批单还没处理完，原记录继续保留，请查询原结果。"), {
-        name: "G7DirectRecoveryLockedError", unknownOutcome: true,
-        commandKey: original.commandKey, reasonCode: backendMessage, cause: error,
-      });
-    }
     throw Object.assign(new A2OutcomeUncertainError("", original.commandKey),
       { backendMessage });
   }

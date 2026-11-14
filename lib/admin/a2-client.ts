@@ -15,8 +15,8 @@ import {
 export type { A2AuditDomain, A2AuditFilter } from "@/lib/admin/a2-policy";
 
 /**
- * 后端 66ecdb47 只给少数审批单回 operationCode（OpsAuditCenterService.ticketMetadata），G 参数、H4、课程单是空的。
- * 选展示方式时按后端写死的动作名认（H4GrowthApproval.proposalAction、LearningCourseActivationApproval.action、G2G7ParamApproval.proposalAction）。
+ * Backend 111e00cd returns the persisted command op for tickets and history.
+ * Retain action-name fallbacks for old records without a command (and E4 refunds without an order number).
  */
 export const REVIEW_OPERATION_BY_ACTION: Record<string, string> = {
   提高旧活动奖励: "h4_legacy_event_reward_update", 新增转盘奖项: "h4_wheel_tier_create", 放宽转盘奖项配置: "h4_wheel_tier_update",
@@ -103,6 +103,7 @@ interface BackendTicket {
 
 interface BackendHistory {
   ruleTaskAction?: A2RuleTaskAction | null;
+  operationCode?: string | null;
   id: string;
   action: string;
   st: string;
@@ -211,6 +212,7 @@ export interface A2OperationRow {
 
 export interface A2OperationHistory {
   ruleTaskAction?: A2RuleTaskAction | null;
+  operationCode?: string | null;
   id: string;
   action: string;
   st: string;

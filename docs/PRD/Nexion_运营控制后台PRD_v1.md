@@ -417,6 +417,8 @@ A1 是后台的**运营账号、登录安全与会话治理地基**。A1 负责�
 
 #### [A2] 操作记录与审批
 
+**2026-11-14 后端 111e00cd 同步**：队列、详情和历史接真实可空 operationCode，按稳定码识别 H1 dial、C2/C5 全退及 H5 连签里程碑；无 command 的旧记录与 E4 缺订单号退款仍允许 null。canApprove/canReject 权威优先。H1 dial 与全退仅批准要求另一位超级管理员及原业务权限，驳回不加身份门；H5 仍按专项超管规则。补两个批准拒绝码中文。出处：OpsAuditCenterService.ticketMetadata/history，AuditReplayBusinessPermissionGuard.validateDecisionPermission，H1GrowthApproval.validateChecker，H5GrowthApproval.validateChecker。
+
 **2026-11-12 后端 66ecdb47 同步**：手机任务审批的 `ruleTaskAction` 从总览、单号详情到历史和原操作恢复原样保留；CREATE／UPDATE／ENABLE／DISABLE 分别显示「新增／编辑／启用／停用手机任务」，字段为空才沿原动作名，不看前后值推断。是否放大及资金类型仍以后端为准。G2 兑换参数、G7 回购参数的批准人是另一位有审批批准权的在职超级管理员；G4 创世参数还须该参数业务权。后端批准前重查旧值（G4 同时重查系列）和候选增量覆盖率，过期提案不应用到现值。课程回滚动作写「回滚至有奖励的课程版本」。能批／能驳仍取后端逐单资格，详情显示其批准／驳回拒因。
 
 **① 定位与边界**
@@ -2099,6 +2101,8 @@ C1 用户画像页「奖励 & 代金券卡」(`app/components/hub/rewards-sectio
 
 #### [C2] 账户操作
 
+**2026-11-14 后端 111e00cd 同步**：c2_session_revoke_all 的超管批准门已由149125b1实现，仍需A2批准权及C2/C5全退专权二选一；驳回不增加超管要求。原提案请求和批准时在线设备范围保持。出处 AuditReplayBusinessPermissionGuard.validateDecisionPermission:624、650–655、702。
+
 **2026-11-11 概况失败说明修正：** 概况刷新失败只暂停列表内的冻结、恢复、结束只读视图及名单入口；抽屉按独立读取的账户上下文和原规则决定是否可操作。
 
 **① 目的 & 对齐**
@@ -2403,6 +2407,8 @@ ID server mint;配对地址脱敏;时间戳 ms epoch 服务端权威。
 ---
 
 #### [C5] 安全 & 会话
+
+**2026-11-14 后端 111e00cd 同步**：全部退出共用 c2_session_revoke_all，另一位具A2批准权及C2/C5任一全退专权的超级管理员批准后执行；驳回保持原门。机型锁去重/回执缺口未交付，未知仍只读核对。出处 AuditReplayBusinessPermissionGuard.validateDecisionPermission。
 
 > 2026-11-12 机型锁恢复补充：原样重试经 isExplicitRejection 判定明确拒绝后，原请求、理由、修订号和命令号继续保留，并开放既有「解除待确认」确认；只清选定的本地待确认，不撤销后端操作，随后读回当前机型锁。回执 404、403、IDEMPOTENCY_* 不产生解除资格。首次提交、读取和恢复遇到 401/403 时都收起原理由及详情，通知外层重查权限，原命令保留。
 
@@ -2715,6 +2721,8 @@ C6 是**注册登录侧风控参数配置面**——OTP 配置、登录锁定配
 ---
 
 #### [D1] 充值与收款对账
+
+**2026-11-14 后端 111e00cd 同步**：原完整对账入口支持已配置BEP20的首次空库存取证。最近对账四个新失败原因补中文：资产建址能力不足、链证据变动、本地历史/风险/确认数/开关不符、供应商窗口非空。COMPLETE仅证明窗口及空本地追踪集，不证明外部全余额或全历史对平，不自动开资金开关。500 CREGIS_COMMAND_FAILED 仍保留原操作，不能假定未执行换号重发。出处 CregisDepositReconciliation.runOnce/requireBep20Bootstrap/snapshot，CregisDepositAdminController.retainedIndependent。
 
 **2026-11-11 显示与提示修正**：BEP20 人工资金准备的只读余额与条件检查不要求业务参考号，创建准备单仍须填写。原签名挑战取回而来源不在当前异常快照时，常显来源类型／编号、挑战编号及刷新查找／联系值班人员核查的下一步；不凭空创建来源。自动资金流程的暂停入口及确认明确只暂停本网络，已发送原单继续只读核对。
 
@@ -3596,6 +3604,8 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 #### [H1] 运营阶段设置
 
+**2026-11-14 后端 111e00cd 同步**：h1_phase_dial 的另一位超级管理员+A2批准权+H1业务权已由149125b1成为后端硬门，只适用于批准；驳回不加超管条件，control/override 不套新增身份限制。页面及提案合同保持，H1_APPROVAL_FORBIDDEN 已补中文。出处 H1GrowthApproval.validateChecker、AuditReplayBusinessPermissionGuard.validateDecisionPermission/requiredAuthority。
+
 > **现行实现口径（2026-11-11，后端 `fdc9f469`）**：本节后续的 8/10-dial、沙盒、自动推进和 cohort 创建属于历史目标；本轮按现行七参数与三个控制入口保留功能，不将旧目标宣称已交付。
 >
 > 页面以「总体安排」StageLine 阶段线、本阶段进度 ScaleBar、四格统计和完整月度七参数矩阵为主。阶段线只表示先后；当前阶段取后端持久值，不由前端按月份推算。E1 商品开放阶段与 H1 统一来源由后端待交付，交付前明确显示此边界。0 或缺失配置不得补成默认阶段或第 1 月。
@@ -4359,6 +4369,8 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 ---
 
 #### [K4] 风险评分模型
+
+**2026-11-14 后端 111e00cd 同步**：告警新增 nullable userNo，取原 payload.user_no；lib/admin/k-client.ts 类型与映射保留真实值/null，不从单号或其他接口猜。用户编号显示和授权定位交视觉worker；证据金额/币种精度缺口保持。出处 K4WithdrawalAlertService.alerts、K4WithdrawalAlertMapper.listAlerts。
 
 **2026-11-13 恢复提示修正**：原记录仍在时显示重试；未过期但写权限被收回时显示权限原因，保留只读查询；只有超过 24 小时才提示已过期。恢复入口和提交权限不变。
 

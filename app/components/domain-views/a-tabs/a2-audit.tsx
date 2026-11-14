@@ -186,7 +186,7 @@ function g3PolicyExecutionTiming(w: A2OperationRow) {
  */
 /** 一项要的权限；数组是有其中一个就行。 */
 type Need = string | readonly string[];
-type DecisionRule = { superadmin?: boolean; approve?: readonly Need[]; reject?: readonly Need[]; backendChecks?: boolean };
+type DecisionRule = { superadmin?: boolean; approveSuperadmin?: boolean; approve?: readonly Need[]; reject?: readonly Need[]; backendChecks?: boolean };
 /**
  * 后端 scopedMakerMayPropose 的增长委托例外：角色是增长、有发起审批权、没有 A2 写权限时，
  * E5 强制激活、解绑不要那两项设备权限（批准时 validateApproval 回到 validateProposal 用同一条，U03）。
@@ -205,7 +205,7 @@ const SUPER_ACTIONS = new Set([
   "放宽用户任务配置", // H3GrowthApproval
   "提高旧活动奖励", "开放旧活动资金奖励", "新增转盘奖项", "放宽转盘奖项配置", "删除转盘奖项并提高安慰奖", "提高转盘奖项概率",
   "启用活动或放宽转盘资金护栏", "发布历史活动只读记录", // H4GrowthApproval
-  "放宽连签权益", "放宽收益里程碑", // H5GrowthApproval
+  "放宽连签权益", "放宽收益里程碑", "放宽连签里程碑奖励", // H5GrowthApproval
   "提高新人 USDT 基础额", "提高新人 UVT 基础额", "提高邀请人 UVT 基础额", "改为符合资格就直接发", "启用新人礼与邀请奖励", // H8RewardParamApproval
   "手动结算团队平衡奖励", "提高区域大使申请预算", // TeamFundApproval
 ]);
@@ -331,6 +331,10 @@ function g4ChangesSupply(w: Pick<A2OperationRow, "before" | "after">) {
 
 function decisionRule(w: TicketIdentity): DecisionRule {
   const code = w.operationCode ?? "";
+  if (code === "h1_phase_dial") return { approveSuperadmin: true, approve: ["growth_h1_write"] };
+  if (code === "c2_session_revoke_all" || !code && w.action.startsWith("强制登出 · "))
+    return { approveSuperadmin: true, approve: [["user_c2_session_revoke_all", "user_c5_session_revoke_all"]] };
+  if (["h5_power_up_config", "h5_earn_milestone", "h5_streak_milestone"].includes(code)) return SUPER_ONLY;
   if (code === "g2_exchange_param" || code === "g7_repurchase_param"
       || w.action === `兑换参数调整 · ${w.obj}` || w.action === `回购参数调整 · ${w.obj}`) return SUPER_ONLY;
   if (code === "g4_genesis_param" || w.action === `调整创世参数 · ${w.obj}`) {
@@ -452,11 +456,11 @@ function middle(text: string, max: number) {
   return text.length > max ? `${text.slice(0, max - 9)}…${text.slice(-8)}` : text;
 }
 
-function actionName(ticket: string | { action: string; ruleTaskAction?: A2OperationRow["ruleTaskAction"] | null }) {
+function actionName(ticket: string | { action: string; operationCode?: string | null; ruleTaskAction?: A2OperationRow["ruleTaskAction"] | null }) {
   if (typeof ticket !== "string" && ticket.ruleTaskAction) {
     return ({ CREATE: "新增手机任务", UPDATE: "编辑手机任务", ENABLE: "启用手机任务", DISABLE: "停用手机任务" })[ticket.ruleTaskAction];
   }
-  const action = typeof ticket === "string" ? ticket : ticket.action;
+  const action = typeof ticket === "string" ? ticket : ticket.operationCode === "h5_streak_milestone" ? "放宽连签里程碑奖励" : ticket.action;
   const gParam = G_PARAM_ACTION.exec(action);
   if (gParam) return `${gParam[1] === "回购参数调整" ? "锁定计划参数调整" : gParam[1]} · ${G_PARAM_NAMES[gParam[2]] ?? gParam[2]}`;
   return a2ActionText(nexGridBrandText(action));
@@ -678,7 +682,8 @@ const COURSE_REVIEW_OPERATIONS = ["i7_course_first_publish", "i7_course_version_
 const hiReviewLabels = (operationCode?: string) => ["h4_legacy_event_reward_update", ...COURSE_REVIEW_OPERATIONS, ...WHEEL_REVIEW_OPERATIONS].includes(operationCode ?? "") ? HI_CHANGE_LABELS : CHANGE_LABELS;
 const G_PARAM_ACTION = /^(兑换参数调整|回购参数调整|调整创世参数) · ([A-Za-z]+)$/;
 const reviewOperation = (w: { operationCode?: string; action: string }) =>
-  G_PARAM_ACTION.test(w.action) ? "g_param" : w.operationCode ?? REVIEW_OPERATION_BY_ACTION[w.action];
+  ["g2_exchange_param", "g7_repurchase_param", "g4_genesis_param"].includes(w.operationCode ?? "") || !w.operationCode && G_PARAM_ACTION.test(w.action)
+    ? "g_param" : w.operationCode ?? REVIEW_OPERATION_BY_ACTION[w.action];
 /** G2、G4、G7 参数的页面名字，和三页参数行一致（G4 取后端 GenesisParamDef 的名字）。 */
 const G_PARAM_NAMES: Record<string, string> = {
   userDailyCap: "单用户日额度", platformDailyCap: "平台日额度", fee: "兑换手续费率", feeMin: "最低手续费", queueMode: "超额度处置策略",
@@ -968,7 +973,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /** backendChecks 的单只看规则里能确认的部分（多数只剩 A2 批准权），其余由后端在批准时检查（第五轮）。 */
   const allowed = (rule: DecisionRule, kind: "approve" | "reject") => {
     if (!canApprove) return false;
-    if (rule.superadmin && principal.role !== "superadmin") return false;
+    if ((rule.superadmin || kind === "approve" && rule.approveSuperadmin) && principal.role !== "superadmin") return false;
     return (kind === "approve" ? rule.approve : rule.reject)?.every(has) ?? true;
   };
   const canDecide = (ticket: TicketIdentity, kind: "approve" | "reject") => {
@@ -1193,6 +1198,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const recordRule = (record: A2PendingCommand): DecisionRule => {
     const queued = recordTicket(record);
     if (queued) return decisionRule(queued);
+    if (["h1_phase_dial", "c2_session_revoke_all", "h5_streak_milestone"].includes(record.operationCode ?? "")
+        || !record.operationCode && record.action?.startsWith("强制登出 · "))
+      return decisionRule({ action: record.action ?? "", obj: record.obj ?? "", operationCode: record.operationCode, before: "", after: "" });
     if (record.rule) return { ...record.rule, backendChecks: record.rule.backendChecks || record.rule.unmapped };
     return decisionRule({ action: record.action ?? "", obj: record.obj ?? "", operationCode: record.operationCode, fundEffect: record.fundEffect, before: "", after: "" });
   };
@@ -1360,10 +1368,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     setPendingNotes((current) => ({ ...current, [record.fingerprint]: `${businessClock(Date.now())} ${text}` }));
 
   /** 重试也是写操作，按这个账号现在的权限判断，和原入口一样（OP-124）。读回核对不受影响。 */
-  const canRetry = (record: A2PendingCommand) => record.kind === "withdraw" ? canWithdraw
-    : record.kind === "param" || record.kind === "retention" ? canWrite
-      : record.kind === "export" ? canExport
-        : allowed(recordRule(record), record.kind);
+  const canRetry = (record: A2PendingCommand) => {
+    if (record.kind === "withdraw") return canWithdraw;
+    if (record.kind === "param" || record.kind === "retention") return canWrite;
+    if (record.kind === "export") return canExport;
+    const queued = recordTicket(record);
+    return queued ? canDecide(queued, record.kind) : allowed(recordRule(record), record.kind);
+  };
 
   /** 重试前退款单要先读到退款金额，和新开的批准框同一个前提（F01）；读不到只能读回核对，原命令照旧保留。 */
   const retryAmount = (record: A2PendingCommand): RefundAmount | undefined => {

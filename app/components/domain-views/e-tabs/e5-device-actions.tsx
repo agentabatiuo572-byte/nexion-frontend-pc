@@ -11,7 +11,7 @@ import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { roleLabel } from "@/lib/nav/console-nav";
-import { fetchLegacyUnknownCandidate, type E5Device } from "@/lib/admin/e5-client";
+import { canResumeE5UserDevicesFrom, fetchLegacyUnknownCandidate, type E5Device } from "@/lib/admin/e5-client";
 import { sameLegacyUnknownProof, type LegacyUnknownCandidate } from "@/lib/admin/legacy-unknown-resolution";
 import { e5Commands, e5LegacyCommands, e5CommandBlocks, checkE5Command, sendE5Command, type E5Command, type E5Intent } from "@/lib/admin/e5-command";
 import { canInvestigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
@@ -109,6 +109,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
       sync();
       if (retry && isExplicitRejection(cause)) setRejected(rows => ({ ...rows, [record.commandKey]: displayAdminError(cause) }));
       setError(isExplicitRejection(cause) ? displayAdminError(cause) : cause instanceof Error && cause.message === "提案缺少有效票号" ? "申请回执未包含审批单号，请到操作记录与审批核对。原请求已保留。" : "没有收到可确认的操作回执，原对象、内容、理由和命令号已保留。");
+      if (cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "PAUSED_USER_DEVICES_NOT_FOUND") await refresh();
       throw cause;
     } finally { setBusy(""); }
   };
@@ -213,7 +214,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
     if (activatable && ctx.canForceActivateE5) add("force-activate", "强制激活", !platform ? "还需审批发起权限，请联系管理员" : full ? "已达 6 台激活上限（含手机）" : undefined);
     if (deactivatable && ctx.canWriteE5) add("deactivate", "取消激活");
     if (deactivatable && ctx.canUnbindE5) add("unbind", "解绑", !platform ? "还需审批发起权限，请联系管理员" : undefined);
-    if (deactivatable && ctx.canWriteE5) add(d.pausedReason ? "resume" : "pause", d.pausedReason ? "恢复该用户" : "暂停该用户");
+    if (deactivatable && ctx.canWriteE5 && (!d.pausedReason || canResumeE5UserDevicesFrom(d))) add(d.pausedReason ? "resume" : "pause", d.pausedReason ? "恢复该用户" : "暂停该用户");
     if (!phones && d.simState === "LEGACY_PENDING" && ctx.canWriteE5 && session.authorities.includes("platform_a2_proposal_create")) options.push({ key: "legacy-check", label: "终结资格", disabledReason: locked("legacy"), onSelect: () => { setCandidateOpen(true); void readCandidate(); } });
   }
   async function readCandidate() {

@@ -4,7 +4,7 @@ import { Activity, AlertTriangle, Battery, Info, CircleMinus, MoreHorizontal, Pa
 import { E6ConfirmModal } from "./e6-confirm-modal";
 import { Button, Cell, ColumnPicker, Conclusion, Explain, Fact, Facts, FilterBar, IconButton, Input, MoreMenu, Pager, Panel, RatioBar, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type MoreMenuItem } from "@/app/components/rd";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { type E5Device } from "@/lib/admin/e5-client";
+import { canResumeE5UserDevicesFrom, type E5Device } from "@/lib/admin/e5-client";
 import type { EViewCtx } from "./types";
 import { E6PendingNotice, useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
 import { e6AmountPrecision } from "@/lib/admin/e6-decimal";
@@ -30,7 +30,7 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
     if(activatable&&ctx.canWriteE5&&d.state==="inventory")add("activate",full?"已达 6 台上限，请先停用其他设备":undefined);
     if(activatable&&ctx.canForceActivateE5&&m.canPropose)add("force",full?"已达 6 台上限，强制激活也不能绕过":undefined);
     if(deactivatable&&ctx.canWriteE5)add("deactivate");
-    if(deactivatable&&ctx.canWriteE5)add(d.pausedReason?"resume":"pause",m.locked(`user:${d.userId}`)?"这个用户有原操作待确认":undefined,!d.pausedReason);
+    if(deactivatable&&ctx.canWriteE5&&(!d.pausedReason||canResumeE5UserDevicesFrom(d)))add(d.pausedReason?"resume":"pause",m.locked(`user:${d.userId}`)?"这个用户有原操作待确认":undefined,!d.pausedReason);
     if(deactivatable&&ctx.canUnbindE5&&m.canPropose)add("unbind",undefined,true);
     return result;
   };
@@ -61,7 +61,10 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
         const d=confirm.device,action=confirm.action,original=m.pending.find(r=>r.scope===scope);
         if(original)result=await m.send(original,true);
         else if(action==="force"||action==="unbind") {const def=findHighOp(action==="force"?"e5_device_force_activate":"e5_device_unbind")!,params={deviceId:d.deviceId};await m.proposal(scope,"phones",{action:`${LABELS[action]} · ${d.serial}`,obj:String(d.deviceId),beforeValue:STATES[d.state],afterValue:action==="force"?"激活":"解绑",type:def.type,amplifies:false,reason,sourceDomain:"E5",command:def.buildCommand(params),target:def.buildTarget(params)});}
-        else result=await m.device(scope,`${LABELS[action]} · ${d.serial}`,{before:`${STATES[d.state]}；已占 ${d.activeDevicesForUser}/6 台；暂停原因 ${d.pausedReason||"—"}`,serial:d.serial,deviceId:d.deviceId,userId:Number(d.userId),action,reason});
+        else result=await m.device(scope,`${LABELS[action]} · ${d.serial}`,{before:`${STATES[d.state]}；已占 ${d.activeDevicesForUser}/6 台；暂停原因 ${d.pausedReason||"—"}`,serial:d.serial,deviceId:d.deviceId,userId:Number(d.userId),action,reason}).catch(async failure=>{
+          if(failure instanceof Error&&"backendMessage" in failure&&failure.backendMessage==="PAUSED_USER_DEVICES_NOT_FOUND")await ctx.refreshE5();
+          throw failure;
+        });
         await ctx.refreshE5();setConfirm(null);ctx.toast(result?.readbackFailed?"已取得操作回执，读回失败，请刷新核对。":action==="force"||action==="unbind"?"已提交，等待审批后执行":action==="pause"||action==="resume"?result?.changedCount===undefined?"已取得用户设备操作回执，请核对列表":`${action==="pause"?"暂停":"恢复"}成功 · ${result.changedCount} 台设备`:action==="deactivate"&&result?.pendingDeactivate?"已申请停用，等待当前任务结算后自动停用":"已取得操作回执并读取手机列表，请核对当前状态",result?.readbackFailed?"warn":undefined);
       }}/>}
   </>;

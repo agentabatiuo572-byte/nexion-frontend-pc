@@ -71,7 +71,7 @@ export function CommandClosureModal({ label, commandKey, createdAt, facts, recei
   commandKey: string;
   createdAt: number;
   facts?: ReactNode;
-  /** The backend accepts no success-audit proof for this kind of command (E6 phone-risk saves): only its completed receipt confirms 「已执行」. */
+  /** Scopes without success-audit evidence can opt in; new E6 risk envelopes accept an audit ID. */
   receiptOnly?: boolean;
   onClose: () => void;
   onSubmit: (evidence: ECommandEvidence) => Promise<void>;
