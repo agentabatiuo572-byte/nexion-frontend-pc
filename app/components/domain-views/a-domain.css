@@ -151,3 +151,36 @@
 .a5-page .a5-card-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-3); }
 .a5-page .a5-card-time { color: var(--rd-text-3); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; }
 
+/* ============================ A8 权限清单 ============================ */
+.a8-page .a8-table { table-layout: fixed; width: 100%; }
+.a8-page .a8-table th:nth-child(1) { width: 33%; }
+.a8-page .a8-table th:nth-child(2) { width: 26%; }
+.a8-page .a8-table th:nth-child(3) { width: 19%; }
+.a8-page .a8-table th:nth-child(4) { width: 22%; }
+.a8-page .a8-table td .rd-cell { max-width: none; }
+.a8-page .a8-table td:nth-child(1) .rd-cell-link { display: -webkit-box; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.a8-page .a8-muted { color: var(--rd-text-3); }
+.a8-page .a8-roles { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1); }
+.a8-page .a8-role { display: inline-flex; align-items: center; gap: var(--rd-space-1); height: var(--rd-control-h-sm); padding: 0 var(--rd-space-2); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tag); background: var(--rd-panel-inner); color: var(--rd-text-2); font-size: var(--rd-text-aux); white-space: nowrap; text-decoration: none; }
+.a8-page a.a8-role:hover { border-color: var(--rd-line-strong); color: var(--rd-text); }
+.a8-page a.a8-role:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+.a8-page .a8-role[data-tone="warn"] { border-color: var(--rd-warn); color: var(--rd-warn); }
+.a8-page .a8-role-off { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+.a8-page .a8-role-skel { display: block; width: 120px; height: var(--rd-control-h-sm); border-radius: var(--rd-radius-tag); }
+.a8-page .a8-allow { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.a8-page .a8-matrix th[data-sticky="start"], .a8-page .a8-matrix td[data-sticky="start"] { min-width: 220px; max-width: 280px; }
+.a8-page .a8-matrix-role, .a8-page .a8-matrix-cell { min-width: 96px; text-align: center; }
+.a8-page .a8-matrix-head { display: grid; justify-items: center; gap: 2px; }
+.a8-page .a8-matrix-code { color: var(--rd-text-3); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); }
+.a8-page .a8-matrix-fail { color: var(--rd-warn); font-size: var(--rd-text-aux); }
+.a8-page .a8-mark { display: inline-grid; place-items: center; min-width: 20px; font-weight: var(--rd-weight-semibold); }
+.a8-page .a8-mark[data-mark="yes"] { color: var(--rd-ok); }
+.a8-page .a8-mark[data-mark="no"] { color: var(--rd-text-3); font-weight: var(--rd-weight-regular); }
+.a8-page .a8-mark[data-mark="unknown"] { color: var(--rd-warn); }
+.a8-page .a8-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); margin: 0; padding: var(--rd-space-3) 0 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+.a8-page .a8-legend .a8-mark { margin-left: var(--rd-space-2); }
+.a8-page .a8-legend .a8-mark:first-child { margin-left: 0; }
+.a8-page .a8-scope { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--rd-space-3); }
+.a8-page .rd-panel[data-flush] > :is(.rd-notice, .rd-block-state, .a8-legend) { margin: 0 var(--rd-panel-pad-x) var(--rd-space-3); }
+.a8-page .rd-panel[data-flush] > .a8-legend { padding: var(--rd-space-3) 0 0; }
+.a8-page .rd-drawer .rd-links, .a8-page [role="dialog"] .rd-links { margin-top: var(--rd-space-4); }
