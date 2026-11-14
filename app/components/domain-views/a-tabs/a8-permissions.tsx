@@ -286,7 +286,7 @@ export default function A8Permissions() {
                           onClick={(event) => { event.stopPropagation(); openDetail(p.permissionCode); }}>{operatorCopyText(p.permissionName || "—")}</button>}
                         sub={<span data-mono>{p.permissionCode}</span>} /></Td>
                       <Td><Cell main={<TypeTag type={p.permType} />} sub={operatorCopyText(p.menuCodePath)} title={operatorCopyText(p.menuCodePath)} /></Td>
-                      <Td><Cell main={p.amplifies ? <StatusTag tone="warn" icon={Coins}>可能让平台多付钱</StatusTag> : <span className="a8-muted">—</span>} /></Td>
+                      <Td><Cell main={p.amplifies ? <StatusTag tone="warn" icon={Coins}>可能多付钱</StatusTag> : <span className="a8-muted">—</span>} /></Td>
                       <Td>{rolesCell(p)}</Td>
                     </Tr>
                   ))}
@@ -314,7 +314,7 @@ export default function A8Permissions() {
           <>
             <JudgmentPoints rows={[
               { label: "允许做什么", value: <span className="a8-allow"><TypeTag type={detail.permType} />{operatorCopyText(detail.menuCodePath)}</span> },
-              { label: "资金风险", value: detail.amplifies ? <StatusTag tone="warn" icon={Coins} explain={AMPLIFIES_EXPLAIN}>可能让平台多付钱</StatusTag> : "没有标记", state: detail.amplifies ? "warn" : undefined },
+              { label: "资金风险", value: detail.amplifies ? <StatusTag tone="warn" icon={Coins} explain={AMPLIFIES_EXPLAIN}>可能多付钱</StatusTag> : "没有标记", state: detail.amplifies ? "warn" : undefined },
               { label: "已绑定角色", value: rolesReady
                 ? <span className="a8-roles">{rolesWith(detail.permissionCode).length === 0 ? <span className="a8-muted">没有角色</span> : rolesWith(detail.permissionCode).map(roleChip)}</span>
                 : <span className="a8-allow">{detail.boundRoleCount} 个（启用中的角色）{!matrixOpen && <Button size="sm" onClick={() => setMatrixOpen(true)}>看是哪几个</Button>}</span> },
