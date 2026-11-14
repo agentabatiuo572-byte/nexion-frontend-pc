@@ -32,7 +32,7 @@ export function f1RewardPolicyLabel(item: OpsVRankRewardItem, ctx: Pick<FViewCtx
   return safeCustomLabel(item.custom);
 }
 
-export function F1PolicyConfirm({ editor: requested, ctx, onClose, pendingApproval = false }: { editor: F1PolicyEditor; ctx: FViewCtx; onClose: () => void; pendingApproval?: boolean }) {
+export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChange, pendingApproval = false }: { editor: F1PolicyEditor; ctx: FViewCtx; onClose: () => void; onPendingChange: () => void; pendingApproval?: boolean }) {
   const session = useAdminAuth((state) => state.session);
   const [owner] = useState(session?.adminId);
   const [opening, setOpening] = useState(() => {
@@ -85,7 +85,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, pendingApprov
         setApprovalRequired(true);
       }
       throw error;
-    }
+    } finally { onPendingChange(); }
     if (!result) return false;
     requireSession(false);
     if (result.active) ctx.acceptF1PolicyOverview(result.active);

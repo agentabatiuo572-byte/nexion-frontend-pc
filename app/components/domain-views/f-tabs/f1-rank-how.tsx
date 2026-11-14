@@ -50,7 +50,7 @@ function draftDiff(draft: PublishedContentDocument, latest: PublishedContentDocu
   return rows;
 }
 
-export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
+export function F1RankHow({ ladder, onPendingChange }: { ladder: F1VRankRow[]; onPendingChange: () => void }) {
   const session = useAdminAuth((state) => state.session);
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("network_f1_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("network_f1_write") === true;
@@ -105,7 +105,7 @@ export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
         setDocument(result.current); setBaseline(result.current); setReason(""); setUnknown(false);
       } else setError("当前读取与原提交内容或修订号不一致，保存结果仍未知，请保留原内容并到操作记录核对。");
     } catch (cause) { setError(displayAdminError(cause)); }
-    finally { setLoading(false); }
+    finally { setLoading(false); onPendingChange(); }
   };
   const locked = saving || unknown || loading;
   const updateLocale = (value: Row) => document && setDocument({ ...document, locales: { ...document.locales, [locale]: value } });
@@ -142,7 +142,7 @@ export function F1RankHow({ ladder }: { ladder: F1VRankRow[] }) {
         await refresh();
       }
     }
-    finally { setSaving(false); }
+    finally { setSaving(false); onPendingChange(); }
   };
 
   const status = document?.status === "UNPUBLISHED" ? "DRAFT" : document?.status;

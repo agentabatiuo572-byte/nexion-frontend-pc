@@ -72,6 +72,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const [policyEditor, setPolicyEditor] = useState<F1PolicyEditor | null>(null);
   const [confirm, setConfirm] = useState<F1Confirm | null>(null);
   const [howEpoch, setHowEpoch] = useState(0);
+  const [, setRecoveryEpoch] = useState(0);
 
   const overrideRead = useRef(0);
   useEffect(() => { setConfirm(null); setPolicyEditor(null); }, [ctx.f1ReadEpoch]);
@@ -91,7 +92,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const dialogs = <Fragment key="f1-dialogs">
     {policyEditor && <F1PolicyConfirm
       key={`${policyEditor.row.v}:${policyEditor.action}:${policyEditor.field ?? policyEditor.reward?.id ?? "new"}:${policyEditor.recoveryCommandKey ?? "edit"}`}
-      editor={policyEditor} ctx={ctx} pendingApproval={pendingApprovalRanks.has(policyEditor.row.v)} onClose={() => setPolicyEditor(null)} />}
+      editor={policyEditor} ctx={ctx} pendingApproval={pendingApprovalRanks.has(policyEditor.row.v)} onClose={() => setPolicyEditor(null)}
+      onPendingChange={() => setRecoveryEpoch(value => value + 1)} />}
     {confirm && <F1ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}
   </Fragment>;
   const recovery = <F1RecoveryNotice ctx={ctx} onOpenPolicy={setPolicyEditor} onRankHowChecked={() => setHowEpoch((value) => value + 1)} />;
@@ -417,7 +419,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         {view === "ladder" && <>{ladder}{detail}{shared}</>}
         {view === "promotions" && <F1PromotionHistory ctx={ctx} rows={rows} canPromote={canPromote} onOverride={openOverride} />}
         {view === "payouts" && <F1PayoutHistory ctx={ctx} rows={rows} canReissue={canReissue} canReverse={canReverse} openConfirm={setConfirm} />}
-        {view === "howto" && <F1RankHow key={howEpoch} ladder={rows} />}
+        {view === "howto" && <F1RankHow key={howEpoch} ladder={rows} onPendingChange={() => setRecoveryEpoch(value => value + 1)} />}
       </div>
       {dialogs}
     </div>
