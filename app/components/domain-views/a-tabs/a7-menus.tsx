@@ -164,8 +164,8 @@ export default function A7Menus() {
       confirmLabel: "确认删除",
       confirmTone: "danger",
       statedBrief: {
-        impact: "确认后立即删除这一个菜单：左侧导航里不再有这个入口。不会删下级菜单、不会删页面，也不会改任何角色的授权。",
-        check: "还有下级菜单、启用的权限挂在它下面，或任何角色（包括已停用的角色）勾了它，后端会拒绝删除，什么都不改。",
+        impact: "确认后立即删除，左侧导航不再有这个入口。",
+        check: "不删下级、页面和角色授权。有下级菜单、启用的权限挂在它下面，或任何角色（含已停用的）勾了它，后端会拒绝，什么都不改。",
       },
       facts: <Facts>
         <Fact k="菜单">{menuNameText(n)} <span className="a7-code" data-mono>{n.menuCode}</span></Fact>
@@ -176,11 +176,11 @@ export default function A7Menus() {
       </Facts>,
       content: n.children.length ? (
         <Notice tone="danger" title={`还有 ${n.children.length} 个下级菜单`}>
-          <p>后端不会连带删除下级，这次提交会被拒绝。先逐个删除下级菜单，或改用「停用」。</p>
+          <p>后端不会连带删除，这次会被拒绝；先删除下级菜单。</p>
         </Notice>
       ) : (
         <Notice tone="warn" title="有权限或角色引用时删不掉">
-          <p>后端会拒绝并写明原因：启用的权限挂在它下面的，先在「权限清单」移走；有角色勾了它的，到「角色管理」取消勾选。</p>
+          <p>有启用的权限挂在它下面，或有角色勾了它，后端会拒绝；角色的勾选到「角色管理」取消。</p>
         </Notice>
       ),
       run: async (reason) => {
@@ -224,7 +224,7 @@ export default function A7Menus() {
       {conclusion}
 
       <div className="a7-layout">
-        <div className="a7-main">
+        <div className="rd-split a7-main" data-detail="">
           <Panel title="菜单树" icon={FolderTree} tone="role-other" sub={overview ? `${overview.domainCount + overview.pageCount} 个` : undefined}
             explain="一级菜单下面是页面，最多两级。点一行在右边看详情和动作；排序数字小的排前面。"
             actions={parents.length > 0 ? <Button variant="ghost" onClick={() => setExpanded(allOpen ? new Set() : new Set(parents))}>{allOpen ? "全部收起" : "全部展开"}</Button> : undefined}>
@@ -250,7 +250,7 @@ export default function A7Menus() {
                   onDelete={() => openDelete(selected.node, selected.parent)} />
               ) : (
                 <Panel title="菜单详情" icon={LayoutList} tone="role-other">
-                  <p className="a7-muted">{overview && tree.length ? "点左边一个菜单，看它的地址、排序、启停和在导航里显示不显示。" : "菜单读到后在这里看详情。"}</p>
+                  <p className="a7-muted">{overview && tree.length ? "点左边一个菜单看详情。" : "菜单读到后在这里看详情。"}</p>
                 </Panel>
               )}
             </div>
@@ -407,7 +407,7 @@ function NodeDetail({ node, parent, canWrite, nav, reach, onCreate, onEdit, onDe
             {node.children.length > 0 && <span className="a7-note"><TriangleAlert size={14} aria-hidden />还有 {node.children.length} 个下级菜单，删除会被拒绝</span>}
           </div>
         )}
-        <p className="a7-muted">启停、改名称、地址、图标和排序都在「编辑」里；保存后直接生效，不走审批。{reach("/platform/roles") ? <> 给角色勾菜单到 <Link className="rd-link" href="/platform/roles">角色管理</Link>。</> : null}</p>
+        {reach("/platform/roles") && <p className="a7-muted">给角色勾菜单：<Link className="rd-link" href="/platform/roles">角色管理</Link></p>}
       </div>
     </Panel>
   );
@@ -506,8 +506,8 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
         effect: directTag(),
         confirmLabel: "确认新建",
         statedBrief: {
-          impact: "确认后立即建好，默认启用。只有导航里登记过的页面、而且地址和上一级都对上，才会出现在左侧导航；新建菜单不会生成页面，也不会给任何角色授权。",
-          check: "要让其他账号看到，还要到「角色管理」给角色勾上它。用过又删除的菜单标识会恢复成原来那个菜单。",
+          impact: "确认后立即建好并启用；不生成页面，不给角色授权。",
+          check: "只有导航里登记过、地址和上一级都对上的才会显示；其他账号要到「角色管理」给角色勾上。用过又删除的标识会恢复原菜单。",
         },
         facts: <Facts>
           <Fact k="菜单标识"><span data-mono>{normalizedCode}</span></Fact>
@@ -532,26 +532,23 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
       const notes: ReactNode[] = [];
       if (stopping) notes.push(
         <Notice key="stop" tone="warn" title="停用后左侧导航不再显示它">
-          <p>拥有全部菜单的账号（比如超级管理员）会看不到这个入口{existing.parentId == null ? "，下面的页面也一起看不到" : ""}。</p>
-          <p>还有启用的下级菜单、启用的权限挂在它下面，或任何角色（包括已停用的角色）勾了它时，后端会拒绝停用；角色的勾选到「角色管理」取消。</p>
+          <p>有启用的下级、启用的权限或任何角色勾了它时，后端会拒绝停用{existing.parentId == null ? "；停用后下面的页面也不显示" : ""}。</p>
         </Notice>);
       if (starting && existingParent && existingParent.status !== 1) notes.push(
         <Notice key="start" tone="danger" title="上一级菜单已停用"><p>后端要求先启用上一级「{menuNameText(existingParent)}」，这次提交会被拒绝。</p></Notice>);
       if (routeChanged) notes.push(
         <Notice key="route" tone="warn" title="改了页面地址">
-          <p>勾了这个菜单的账号点它会去新地址。新地址和已上线的页面对不上时，这个菜单从左侧导航消失，不会生成页面。</p>
+          <p>新地址和已上线页面对不上时，菜单从导航消失，不会生成页面。</p>
         </Notice>);
-      if (!stopping && existing.status === 1 && status === 1) notes.push(
-        <p key="check" className="a7-muted">每次保存都会带上启停状态，后端会再检查一遍上一级是否启用。</p>);
       onSubmit(payload, `编辑菜单 · ${menuName}`, <>修改菜单 <b>{menuName}</b>（<span data-mono>{existing.menuCode}</span>）。</>, {
         title: `修改菜单「${menuNameText(existing)}」`,
         effect: <>{directTag()}<StatusTag tone="neutral" icon={Minus}>不改任何角色的授权</StatusTag></>,
         confirmLabel: stopping ? "确认停用" : "确认保存",
         statedBrief: {
           impact: stopping
-            ? "确认后立即停用，左侧导航不再显示它；菜单、页面和授权都保留，重新启用后恢复。"
-            : "确认后立即保存菜单的名称、地址、图标、排序和启停；不改任何角色的授权，也不生成页面。左侧导航要等账号重新读取登录信息后才更新。",
-          check: "核对改动；留空的地址和图标不会清掉原来的值。",
+            ? "确认后立即停用，左侧导航不再显示它；授权保留，重新启用后恢复。"
+            : "确认后立即保存；左侧导航要等账号重新读取登录信息才更新。",
+          check: "留空的地址和图标不会清掉原值。每次保存都带启停状态，后端会再检查上一级是否启用。",
         },
         facts: <Facts>
           <Fact k="菜单">{menuNameText(existing)} <span className="a7-code" data-mono>{existing.menuCode}</span></Fact>
@@ -587,7 +584,7 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
         primary={<Button variant="primary" onClick={submit}>下一步：确认</Button>} />}
     >
       <div className="a7-form">
-        <Field label="菜单标识" required={isCreate} hint={isCreate ? "大写字母开头，只用大写字母、数字和下划线，最长 64 位" : "不能修改"} error={err("code")}
+        <Field label="菜单标识" required={isCreate} hint={isCreate ? "最长 64 位" : "不能修改"} help={isCreate ? "大写字母开头，只用大写字母、数字和下划线。" : undefined} error={err("code")}
           explain={isCreate ? "要出现在导航里，一级菜单用模块字母（如 A），页面用页面编号（如 A6），和导航里登记的一致。" : undefined}>
           {(control) => <Input {...control} value={menuCode} onChange={(e) => setMenuCode(e.target.value)} disabled={!isCreate} placeholder="如 A9 或 CUSTOM_X" data-mono="" />}
         </Field>
@@ -595,20 +592,20 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
           {(control) => <Input {...control} value={menuName} onChange={(e) => setMenuName(e.target.value)} placeholder="如 角色管理" />}
         </Field>
         {isCreate && (
-          <Field label="上一级" hint="不选就是一级菜单；最多两级" error={pickedParent?.stopped ? "这个一级菜单已停用，选它会被后端拒绝" : undefined}>
+          <Field label="上一级" help="不选就是一级菜单；最多两级。" error={pickedParent?.stopped ? "这个一级菜单已停用，选它会被后端拒绝" : undefined}>
             {(control) => <Select {...control} aria-label="上一级" value={parentCode} onChange={setParentCode}
               options={[{ value: "", label: "（一级菜单）" }, ...parentOptions.map((o) => ({ value: o.code, label: o.stopped ? `${o.label} · 已停用` : o.label }))]} />}
           </Field>
         )}
-        <Field label="页面地址" hint="以 / 开头，只用字母、数字、/、_ 或 -" error={err("route")} explain={ROUTE_HELP}
-          help={!isCreate && existing?.routePath ? "留空不会清掉原地址；要改就填新地址。" : "填错时菜单不会出现在导航里，不会自动生成页面。"}>
+        <Field label="页面地址" hint="以 / 开头" error={err("route")} explain={ROUTE_HELP}
+          help={!isCreate && existing?.routePath ? "只用字母、数字、/、_ 或 -。留空不会清掉原地址。" : "只用字母、数字、/、_ 或 -。填错时菜单不会出现在导航里，不会自动生成页面。"}>
           {(control) => <Input {...control} value={routePath} onChange={(e) => setRoutePath(e.target.value)} placeholder="/platform/xxx" data-mono="" />}
         </Field>
         <div className="rd-form-grid" data-cols="2" data-dense="">
           <Field label="图标名称" hint="最多 64 字" explain={ICON_HELP} help={!isCreate && existing?.icon ? "留空不会清掉原图标名。" : undefined}>
             {(control) => <Input {...control} value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="shield-check" data-mono="" />}
           </Field>
-          <Field label="排序" hint="0–100000 的整数，小的在前" error={err("sort")}>
+          <Field label="排序" help="0–100000 的整数，小的在前。" error={err("sort")}>
             {(control) => <NumberInput {...control} min={0} max={100000} step={1} value={sortOrder} onChange={(e) => setSortOrder(Number(e.target.value))} />}
           </Field>
         </div>
@@ -617,7 +614,6 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
             <Segments label="状态" value={status} onChange={setStatus} items={[{ value: 1, label: "启用" }, { value: 0, label: "停用" }]} />
           </Field>
         )}
-        {isCreate && <Notice tone="neutral" title="新建菜单不会生成页面"><p>也不会给任何角色授权；建好后到「角色管理」给角色勾上它。</p></Notice>}
       </div>
     </Drawer>
   );
