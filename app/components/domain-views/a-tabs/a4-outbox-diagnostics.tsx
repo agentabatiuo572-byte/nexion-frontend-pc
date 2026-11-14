@@ -78,8 +78,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
           )}
         </>}
         <FilterBar onSubmit={() => void load(filters)} querying={busy}
-          onClear={() => { setFilters(emptyFilters); void load(emptyFilters); }} canClear={filtered}
-          result={data ? `第 ${page} 页 · 本页 ${data.rows.length} 条，每页最多 25 条` : undefined}>
+          onClear={() => { setFilters(emptyFilters); void load(emptyFilters); }} canClear={filtered}>
           <FilterField grow><Input aria-label="积压事件类型" placeholder="事件类型，例如 trial.redeemed" maxLength={96} value={filters.eventType} onChange={(event) => setFilters({ ...filters, eventType: event.target.value })} /></FilterField>
           <FilterField><Select aria-label="积压事件状态" value={filters.status} onChange={(status) => setFilters({ ...filters, status })} placeholder="全部状态"
             options={[{ value: "PENDING", label: "待发送" }, { value: "FAILED", label: "发送失败" }, { value: "OTHER", label: "其他" }]} /></FilterField>
@@ -116,6 +115,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
             </tbody>
           </Table>
           <div className="a4-next">
+            <span className="a4-note">第 {page} 页 · 本页 {data.rows.length} 条，每页最多 25 条</span>
             {page > 1 && <Button size="sm" onClick={() => void load(applied)}>回到第一页</Button>}
             <Button size="sm" disabledReason={busy ? "正在查询" : !data.hasMore ? "已经是最后一页" : undefined} onClick={() => data.nextCursor && void load(applied, data.nextCursor)}>下一页</Button>
           </div>

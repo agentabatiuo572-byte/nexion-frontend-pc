@@ -218,7 +218,8 @@
 .a4-backlog-table th:nth-child(3) { width: 80px; }
 .a4-backlog-table th:nth-child(4) { width: 168px; }
 .adom .a4-receipts { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; font-variant-numeric: tabular-nums; }
-.a4-next { display: flex; justify-content: flex-end; gap: 8px; }
+.a4-next { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.a4-next > .a4-note { margin-right: auto; }
 
 /* 重新排队：一张卡写两层状态，按钮在卡底 */
 .a4-redrive { display: flex; flex-direction: column; gap: 12px; }

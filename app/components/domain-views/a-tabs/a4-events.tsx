@@ -75,6 +75,8 @@ const REGISTRY_FIELD_LABELS: Record<string, string> = {
 };
 const REGISTRY_OP_TEXT: Record<string, string> = { a4_schema_register: "登记新事件", a4_schema_property_add: "给事件新增字段", a4_domain_extension_register: "登记新模块" };
 type RegistryConfirm = Pick<ActionConfirmReq, "action" | "detail" | "businessForm" | "briefKind" | "title" | "facts" | "statedBrief"> & {
+  /** 审批提示下面的一句：批准前什么不变、批准后会怎样。 */
+  completion?: string;
   submit?: (actor: AdminSession, reason: string, value?: BusinessFormValue) => Promise<A2OperationRow>;
 };
 
@@ -110,7 +112,6 @@ const firstInt = (value: string) => {
 };
 const effectNow = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 const effectApproval = <StatusTag tone="progress" filled explain="提交后建一张审批单，另一位超级管理员在「操作记录与审批」批准后才写入；批准前事件目录、字段和模块都不变。">批准后生效</StatusTag>;
-const approverFact = <Fact k="谁来批">另一位超级管理员（需有审批批准权限）；你自己不能批</Fact>;
 
 /* ────────────────── 组件 ────────────────── */
 
@@ -458,20 +459,12 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     openRegistryConfirm({ briefKind: "config",
       action: "登记新事件或字段",
       title: "登记新事件",
+      completion: "批准前事件目录不变；批准后新事件从「新建」开始，还不记录也不投递，要再按顺序推进上线。",
       statedBrief: {
-        impact: "批准后才写入事件目录：新事件从「新建」开始，还不记录也不投递，要再按顺序推进上线；批准前事件目录不变。",
-        check: "提交时后端核对事件名格式和过去式、归属模块、字段是否含隐私明文和事件目录版本；批准时再核对一次版本。",
+        impact: "",
+        check: "提交和批准时，后端都核对事件名、归属模块、隐私规则和目录版本。",
       },
-      facts: <Facts>
-        <Fact k="事件目录版本">{liveSchemaVer}</Fact>
-        {approverFact}
-      </Facts>,
-      detail: (
-        <>
-          当前事件目录版本 <b>{liveSchemaVer}</b>。新事件或字段要先登记才能使用。
-          事件名格式为 <span data-mono>模块.对象_动作</span>（动作用过去式），不能与已有事件重复，不能包含手机号、地址等隐私信息。
-        </>
-      ),
+      detail: "新事件或字段要先登记才能用；事件名写成 模块.对象_动作，动作用过去式，不能含隐私信息。",
       // 改版页用 rd 画的多字段表单；字段键、初值和旧的事件登记表单一样，提交时 submit 读到的值不变。
       businessForm: {
         kind: "multi-field",
@@ -482,7 +475,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           { key: "eventName", label: "事件名", inputKind: "text", current: prefillEventName, required: true, wide: true, placeholder: "例如 device.order_paid",
             pattern: "^[a-z][a-z0-9_]*\\.[a-z0-9]+(?:_[a-z0-9]+)*$",
             patternMessage: "事件名称须使用小写字母，以点号分隔模块与动作、以下划线连接单词，例如 user.account_created",
-            help: "模块.对象_动作，动作用过去式（以 ed、sent、paid、held、bound、dau 结尾）" },
+            explain: "写成 模块.对象_动作，动作用过去式（以 ed、sent、paid、held、bound、dau 结尾）。" },
           { key: "ownerDomain", label: "归属模块", inputKind: "select", options: ownerDomains, current: ownerDomains[0], required: true,
             explain: "事件名的模块前缀要和这里一致；只能选已接入的模块和正在接入的新模块。" },
           { key: "producer", label: "发送方", inputKind: "select", options: ["server", "client", "server+client"], current: "server", required: true,
@@ -552,15 +545,15 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     openRegistryConfirm({ briefKind: "config",
       action: `给已有事件新增字段 · ${schemaSnapshot.eventName}`,
       title: "给事件新增字段",
+      completion: "批准前事件不变；批准后多一个必填字段，之后发这个事件要带上它，不带的会被拒绝。以前记下的事件不补这个字段，其他设置不变。",
       statedBrief: {
-        impact: "批准后这个事件多一个必填字段，之后发这个事件的地方要带上它，不带的会被拒绝；以前记下的事件不补这个字段。事件的其他设置不变。",
-        check: "提交时后端核对字段名格式、是否含隐私明文、是否和现有字段重复，以及事件目录版本；批准时再核对一次版本。",
+        impact: "",
+        check: "提交和批准时，后端核对字段名格式、隐私规则、是否重复和目录版本。",
       },
       facts: <Facts>
         <Fact k="事件"><span data-mono>{schemaSnapshot.eventName}</span></Fact>
         <Fact k="现有字段">{fields.length ? `${fields.length} 个：${fields.map((field) => field.name).join("、")}` : "暂无自定义字段"}</Fact>
         <Fact k="事件目录版本">{registryVersion}</Fact>
-        {approverFact}
       </Facts>,
       detail: <>
         事件版本 <b>{schemaSnapshot.version}</b> · 目录版本 <b>{registryVersion}</b> · 发送方 <span data-mono>{schemaSnapshot.producer}</span> ·
@@ -662,7 +655,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         check: "执行时后端取当前的留存月数并加锁；已有清理在进行时，这次不删任何数据。",
       },
       facts: <Facts>
-        <Fact k="会删掉" tone="danger">{retentionCutoff ? `约 ${retentionCutoff} 之前的记录` : "留存期以前的记录"}（执行那一刻往前推 {liveEventRetention || "—"}）</Fact>
+        <Fact k="会删掉" tone="danger">{retentionCutoff ? `约 ${retentionCutoff} 之前的记录` : "留存期以前的记录"}</Fact>
+        <Fact k="怎么算">执行那一刻往前推 {liveEventRetention || "—"}</Fact>
         <Fact k="删哪些">已发出、已结束和已终止（死信）的事件发送记录；用户行为记录只按时间删</Fact>
         <Fact k="不会删">还在等发送、发送失败等重试的事件；资金账目</Fact>
         <Fact k="一次最多">每张表 2000 条，剩下的下次再清</Fact>
@@ -846,7 +840,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
 
   const readOnly = canWrite ? undefined : "当前账号只能查看这页，登记、调整、推进和清理都不可用";
   const header = (
-    <PageHeader pageId="A4" title="用户行为事件" summary="查 App 里记下的用户行为、投递是否卡住，调统计参数、登记新事件。"
+    <PageHeader pageId="A4" title="用户行为事件" summary="看用户行为事件有没有卡住，调参数、登记新事件。"
       meta="打开时读取，点「刷新」重读"
       readOnly={readOnly}
       actions={<Button icon={<RefreshCw size={14} aria-hidden />} loading={loading && !!overview} onClick={() => {
@@ -935,7 +929,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         ? <Conclusion state="neutral" icon={Clock3}>正在查询投递积压…</Conclusion>
         : diag.total > 0
           ? <Conclusion state="warn" icon={Inbox}
-              hint={<>到「投递与死信」看卡在哪一步、失败原因；{pendingCount > 0 ? `另有 ${pendingCount} 个模块待接入。` : "模块都已接入。"}</>}
+              hint={<>到「投递与死信」看卡在哪一步；{pendingCount > 0 ? `另有 ${pendingCount} 个模块待接入。` : "模块都已接入。"}</>}
               explain="积压是还在等发送或发送失败、等下次重试的事件，不含已终止（死信）的；死信没有汇总数，要按事件编号逐条查。">
               有 {diag.total} 条事件没投递出去，最久的已等 {waited(diag.oldestSeconds)}
             </Conclusion>
@@ -1108,7 +1102,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           <li><b>保留</b><span>留存期 {liveEventRetention || "—"}，到期的记录按「统计参数与清理」里的规则删除。</span></li>
           <li><b>使用</b><span>用户转化分析、数据报表、风控和对账；关键指标大多只统计服务器记录的事件，商城浏览和推送点击例外，也统计 App 上报的。</span></li>
         </ol>
-        <p className="a4-note">资金账不靠这些行为事件记账；新事件和新字段要先登记、经另一位超级管理员批准才能用，字段名不能是手机号、地址等隐私明文。</p>
+        <p className="a4-note">资金账不靠这些行为事件记账；新事件和新字段要先登记、经另一位超级管理员批准才能用。</p>
       </Fold>
     </>
   );
@@ -1329,8 +1323,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
 
       {/* ───── 事件类别的事件清单 ───── */}
       <Drawer open={!!family} onClose={() => setFamIdx(null)} icon={ListTree} tone="role-2"
-        title={family ? `${operatorCopyText(family.title)} · 事件清单` : "事件清单"}
-        sub={family ? `${family.events.length} 类事件 · 今日 ${family.todayCount} 条` : undefined}
+        title={family ? operatorCopyText(family.title) : "事件清单"}
+        sub={family ? `事件清单 · ${family.events.length} 类事件 · 今日 ${family.todayCount} 条` : undefined}
         explain="命名格式是「模块.对象_动作」，动作用过去式；不能包含隐私信息。新事件要先登记、经另一位超级管理员批准后才能用。">
         {family && <>
           <Facts>
@@ -1351,8 +1345,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
 
       {/* ───── 单个事件的详情：上线进度、字段、谁在用 ───── */}
       <Drawer open={!!detailSchema} onClose={() => setDetailEvent(null)} icon={BookOpen} tone="role-2"
-        title={detailSchema ? eventDesc(overview, detailSchema.eventName) ?? detailSchema.eventName : "事件详情"}
-        sub={detailSchema && eventDesc(overview, detailSchema.eventName) ? <span data-mono>{detailSchema.eventName}</span> : detailSchema ? `${LIFECYCLE_TEXT[detailSchema.lifecycleState]} · ${propertyList(detailSchema.properties).length} 个字段` : undefined}
+        title={detailSchema ? eventDesc(overview, detailSchema.eventName) ?? "事件详情" : "事件详情"}
+        sub={detailSchema ? <span data-mono>{detailSchema.eventName}</span> : undefined}
         nav={detailIndex >= 0 ? {
           hasPrev: detailIndex > 0, hasNext: detailIndex < shownSchemas.length - 1,
           onPrev: () => setDetailEvent({ name: shownSchemas[detailIndex - 1].eventName, from: "list" }),
@@ -1436,8 +1430,9 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               openRegistryConfirm({ briefKind: "record",
                 action: `登记新模块 · ${domain}`,
                 title: "登记新模块",
+                completion: "批准前模块列表不变；批准后只建一张接入工单，不会自动接上发送和使用的代码，也不会自动建事件。",
                 statedBrief: {
-                  impact: "批准后只建一张接入工单：不会自动接上发送和使用的代码，也不会自动建事件；批准前模块列表不变。",
+                  impact: "",
                   check: "提交时后端核对模块名不是已有模块、事件名属于这个模块并用过去式、同样的组合没登记过。",
                 },
                 facts: <Facts>
@@ -1445,7 +1440,6 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                   <Fact k="事件"><span data-mono>{`${domain}.${event}`}</span></Fact>
                   <Fact k="发送方">{producer}</Fact>
                   <Fact k="使用方">{consumer}</Fact>
-                  {approverFact}
                 </Facts>,
                 detail: (<><b>{domain}</b> · 事件 <span data-mono>{event}</span> · 发送方 {producer || "—"} → 使用方 {consumer || "—"}。</>),
                 submit: (actor, reason) => registerA4DomainExtension(actor, {
@@ -1458,7 +1452,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               });
             }}>下一步</Button>} />}>
         <div className="rd-stack a4-batch-form">
-          <Field label="模块名" required hint="2–32 位" error={batchIssue("domain")} help="小写字母开头，只用小写字母、数字和下划线，不能是已接入的模块">
+          <Field label="模块名" required error={batchIssue("domain")} help="2–32 位，小写字母开头，只用小写字母、数字和下划线；不能是已接入的模块">
             {(control) => <Input {...control} value={batchForm.domain} placeholder="例如 referral" onBlur={() => setBatchTouched((t) => ({ ...t, domain: true }))} onChange={(e) => setBatchForm({ ...batchForm, domain: e.target.value })} />}
           </Field>
           <Field label="事件名" required error={batchIssue("event")} help={batchForm.domain.trim() ? `完整事件名会是 ${batchForm.domain.trim()}.${batchForm.event.trim() || "…"}；动作用过去式` : "只填模块后面的部分，动作用过去式，例如 referral_bound"}>
@@ -1492,8 +1486,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             expired: !!pendingRegistry && Date.now() >= pendingRegistry.expiresAt,
             initialRecovery: registryConfirm.retry ? "retry" : undefined,
             resolve: () => ({
-              heading: "登记需另一位超级管理员审批",
-              completionCopy: "批准前，事件目录、字段和扩展批次均保持原状。",
+              heading: "要另一位超级管理员批准（需有审批批准权限），你自己不能批",
+              completionCopy: registryConfirm.completion ?? "批准前，事件目录、字段和扩展批次均保持原状。",
             }),
             recover: () => recoverRegistry(),
             retry: async () => { await recoverRegistry(true); },
