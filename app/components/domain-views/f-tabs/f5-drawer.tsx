@@ -11,7 +11,7 @@ import { Button, Decision, Drawer, Explain, JudgmentPoints, type JudgmentRow } f
 import type { F5CommissionEvent, F5OperationHistory } from "@/lib/admin/f1-client";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import {
-  KIND_LABELS, STATUS_META, StatusBadge, amountText, decimals, isFriend, isGrouped, kindNames, operationLabel, timeText, userCode, zoneNote,
+  KIND_LABELS, Money, STATUS_META, StatusBadge, amountText, isFriend, isGrouped, kindNames, operationLabel, timeText, userCode, zoneNote,
 } from "./f5-shared";
 
 export type F5RowAction = { key: string; label: string; danger?: boolean; disabledReason?: string; onSelect: () => void };
@@ -66,8 +66,7 @@ export function F5Drawer({ row, rows, history, ledgerAllowed, coverageAllowed, l
   const next = index >= 0 ? rows[index + 1] : undefined;
   const friend = isFriend(row);
   const grouped = isGrouped(row);
-  const digits = Math.max(2, decimals(row.amt));
-  const money = `${amountText(row.amt, digits)} ${row.cur}`;
+  const money = `${amountText(row.amt)} ${row.cur}`;
   const groupMoney = row.amountUSDT !== undefined && row.amountNEX !== undefined ? `${amountText(row.amountUSDT)} USDT + ${amountText(row.amountNEX)} UVT` : undefined;
   const source = sourceText(row);
   const related = history.filter((item) => item.sourceCommissionId === row.id || item.resultCommissionId === row.id);
@@ -83,7 +82,7 @@ export function F5Drawer({ row, rows, history, ledgerAllowed, coverageAllowed, l
     : meta?.text ?? "后端给了页面不认识的状态";
   const points: JudgmentRow[] = [
     { label: "现在", value: <StatusBadge status={row.status} explain={false} />, reason: nowText, state: meta?.tone === "warn" || meta?.tone === "danger" ? meta.tone : undefined },
-    { label: "金额", icon: Coins, tone: "money", value: money, reason: friend && groupMoney ? `整组 ${groupMoney}` : grouped ? "结算组里的一笔，同组另一种币是另一条记录" : undefined },
+    { label: "金额", icon: Coins, tone: "money", value: <Money value={row.amt} currency={row.cur} />, reason: friend && groupMoney ? `整组 ${groupMoney}` : grouped ? "结算组里的一笔，同组另一种币是另一条记录" : undefined },
     { label: "用户", icon: User, tone: "users", value: row.user, reason: KIND_LABELS[row.kind] ?? "未知奖励类型" },
     {
       label: "处置范围",

@@ -18,8 +18,8 @@ import type { F5CommissionEvent, F5CommissionQuery } from "@/lib/admin/f1-client
 import { F5_KINDS as KINDS } from "@/lib/admin/f-overview-contract";
 import type { FViewCtx } from "./types";
 import {
-  APPROVER, KIND_LABELS, STATUS_BY_LABEL, STATUS_META, StatusBadge, amountText, approvalTag, approverText, decimals, isFriend, isGrouped, knownRejection,
-  statusName, timeText, userCode, zoneNote, F5ConfirmHost, F5RecoveryNotice, type F5Confirm, type F5RecoveryRow,
+  APPROVER, KIND_LABELS, STATUS_BY_LABEL, STATUS_META, StatusBadge, amountText, approvalTag, approverText, isFriend, isGrouped, knownRejection,
+  statusName, timeText, userCode, zoneNote, F5ConfirmHost, Money, F5RecoveryNotice, type F5Confirm, type F5RecoveryRow,
 } from "./f5-shared";
 import { F5KindTiles, F5StatusFlow } from "./f5-overview";
 import { F5Drawer, type F5RowAction } from "./f5-drawer";
@@ -103,13 +103,12 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   };
   const hasDraft = !!(kind || currency || userId.trim() || cohort.trim() || status);
 
-  const money = (row: F5CommissionEvent) => `${amountText(row.amt, Math.max(2, decimals(row.amt)))} ${row.cur}`;
   const groupMoney = (row: F5CommissionEvent) => row.amountUSDT !== undefined && row.amountNEX !== undefined
     ? `${amountText(row.amountUSDT)} USDT + ${amountText(row.amountNEX)} UVT` : "—";
   const kindName = (value: string) => KIND_LABELS[value] ?? "未知奖励类型";
   const completion = `${APPROVER}在「操作记录与审批」批准后才执行；批准前这笔奖励不变。`;
   const recordFacts = (row: F5CommissionEvent) => <>
-    <Fact k="金额" lead tone="role-1" unit={row.cur}>{amountText(row.amt, Math.max(2, decimals(row.amt)))}</Fact>
+    <Fact k="金额" lead tone="role-1" unit={row.cur}>{amountText(row.amt)}</Fact>
     <Fact k="奖励"><span data-mono>{row.id}</span> · {kindName(row.kind)}</Fact>
     <Fact k="用户">{row.user}</Fact>
   </>;
@@ -245,7 +244,6 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       }
       return "批准后马上解锁";
     };
-    const digits = Math.max(2, ...selectedRows.map((row) => decimals(row.amt)));
     setConfirm({
       action: `批量补发 ${selectedRows.length} 笔奖励`, title: "批量补发奖励", briefKind: "funds", amplify: true, completionCopy: `${APPROVER}在「操作记录与审批」批准后才执行；批准前不生成新记录。`,
       effect: approvalTag("批准前不生成新记录。"),
@@ -270,7 +268,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
               <Tr key={row.id}>
                 <Td><Cell main={<span data-mono>{row.id}</span>} sub={kindName(row.kind)} /></Td>
                 <Td><Cell mono main={row.user} /></Td>
-                <Td align="right"><Cell num main={`${amountText(row.amt, digits)} ${row.cur}`} /></Td>
+                <Td align="right"><Cell num main={<Money value={row.amt} currency={row.cur} />} /></Td>
                 <Td><Cell main={after(row)} /></Td>
               </Tr>
             ))}
@@ -431,7 +429,6 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     const next = events[index + 1]?.settlementNo === no;
     return prev && next ? "mid" : prev ? "last" : next ? "first" : "single";
   };
-  const amountDigits = Math.max(2, ...events.map((row) => decimals(row.amt)));
   const columns = 5 + (canReissue ? 1 : 0) + (rowWrite ? 1 : 0);
   const openRow = openId ? events.find((row) => row.id === openId) ?? null : null;
 
@@ -537,7 +534,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                           <Td><Cell main={<button type="button" className="rd-cell-link" data-mono="" aria-haspopup="dialog" aria-label={`查看奖励 ${row.id}`} onClick={() => setOpenId(row.id)}>{row.id}</button>}
                             sub={<>{kindName(row.kind)}{row.settlementNo ? <span className="f5-group-tag">双币组</span> : null}</>} /></Td>
                           <Td><Cell mono main={row.user} sub={<span className="f5-sans">{source}</span>} /></Td>
-                          <Td align="right"><Cell num main={`${amountText(row.amt, amountDigits)} ${row.cur}`} /></Td>
+                          <Td align="right"><Cell num main={<Money value={row.amt} currency={row.cur} />} /></Td>
                           <Td className="f5-col-time"><Cell num main={timeText(row.settledAt)} /></Td>
                           <Td><Cell main={<StatusBadge status={row.status} />} sub={row.status === "cooling" ? row.coolingDaysLeft > 0 ? `剩 ${row.coolingDaysLeft} 天` : "按天数已到期" : undefined} /></Td>
                           {rowWrite && <Td sticky="end" data-fit="">{items.length ? <MoreMenu label={`处置 ${row.id}`} items={items.map((item) => ({ key: item.key, label: item.label, danger: item.danger, disabledReason: item.disabledReason, onSelect: item.onSelect }))} /> : <span className="f5-weak">—</span>}</Td>}

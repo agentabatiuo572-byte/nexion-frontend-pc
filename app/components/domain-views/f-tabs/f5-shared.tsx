@@ -78,6 +78,16 @@ export const amountText = (value: number, digits = 2) => {
   return groupDigits(width ? `${int}.${frac.padEnd(width, "0")}` : int);
 };
 
+/** 逐笔金额：每格写自己的位数（最少 2 位、不舍入），数字等宽右对齐，币种单独占固定宽度；悬停看后端原值。 */
+export function Money({ value, currency }: { value: number; currency: string }) {
+  return (
+    <span className="f5-money" title={`后端原值 ${plain(value)} ${currency}`}>
+      <span className="f5-money-num">{amountText(value)}</span>
+      <span className="f5-money-cur">{currency}</span>
+    </span>
+  );
+}
+
 /** 后端汇总标签「USDT 1234.50 · UVT 0.00」拆成两种币；后端已经四舍五入到两位小数，这里不再改。 */
 export function splitMoneyLabel(label: string | undefined): { usdt: string; uvt: string } | null {
   const match = /^USDT (\d+(?:\.\d+)?) · UVT (\d+(?:\.\d+)?)$/.exec((label ?? "").trim());

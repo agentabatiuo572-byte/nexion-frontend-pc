@@ -593,6 +593,8 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f5-page .f5-record-table tbody tr[data-group] > td:first-child { box-shadow: inset 3px 0 0 var(--rd-chart-1); }
 .f5-page .f5-record-table tbody tr[data-group="single"] > td:first-child { box-shadow: inset 3px 0 0 var(--rd-line-strong); }
 .f5-page .f5-group-tag { display: inline-flex; align-items: center; height: 18px; margin-left: 6px; padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-role-1-bg); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: 18px; white-space: nowrap; }
+.f5-page .f5-money, .rd-drawer .f5-money, .rd-modal .f5-money { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.f5-page .f5-money-cur, .rd-drawer .f5-money-cur, .rd-modal .f5-money-cur { display: inline-block; min-width: 2.9em; text-align: left; color: var(--rd-text-2); }
 .f5-page .f5-batch-nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; padding: 12px var(--rd-panel-pad-x); border-top: 1px solid var(--rd-line); font-size: var(--rd-text-aux); color: var(--rd-text-2); }
 .f5-page .f5-batch-nav > span { margin-right: auto; }
 .f5-page .f5-links { flex-wrap: wrap; }
