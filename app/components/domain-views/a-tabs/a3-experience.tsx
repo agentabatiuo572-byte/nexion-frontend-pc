@@ -108,7 +108,7 @@ export function A3Experience({ toast }: { toast: (text: string, kind?: "success"
   const webChannels = config.channels.filter((channel) => channel.intentType === "web");
   const previewChannel = webChannels.find((channel) => channel.key === previewKey) ?? webChannels.find((channel) => channel.enabled) ?? webChannels[0];
   const assembled = previewChannel && link ? assemble(previewChannel.textTemplate, previewChannel.urlTemplate, link) : null;
-  const visibleInApp = config.channels.filter((channel) => channel.enabled && channel.intentType !== "scheme" && channel.intentType !== "system");
+  const visibleInApp = config.channels.filter((channel) => channel.enabled && channel.intentType === "web");
   const languages = config.interfaceLanguages;
   const onLanguages = INTERFACE_LANGUAGES.filter((language) => language.base || !languages || languages.includes(language.code));
   const h3 = reach("/growth/quest", "growth_h3_read");
@@ -142,7 +142,7 @@ export function A3Experience({ toast }: { toast: (text: string, kind?: "success"
             <thead><tr><Th>渠道</Th><Th>启用</Th><Th>在 App 里</Th><Th>文案模板</Th><Th>链接模板</Th></tr></thead>
             <tbody>
               {config.channels.map((channel, index) => {
-                const inApp = IN_APP[channel.intentType];
+                const inApp = !channel.enabled && (channel.intentType === "web" || channel.intentType === "system") ? { text: "没启用", tone: "neutral" as const, icon: CircleOff, explain: "没启用的渠道不出现在 App 分享面板里。" } : IN_APP[channel.intentType];
                 const name = CHANNEL_NAME[channel.key] ?? channel.key;
                 return <Tr key={channel.key} selected={previewChannel?.key === channel.key}>
                   <Td><Cell main={name} sub={INTENT_NAME[channel.intentType] ?? "未知方式"} /></Td>

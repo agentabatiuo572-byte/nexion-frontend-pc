@@ -78,6 +78,10 @@ function healthLabel(row: A3SystemHealth): { text: string; tone: StateTone; icon
 function gateLabel(gate: A3KillSwitch): { text: string; tone: StateTone; icon?: LucideIcon } {
   if (gate.status === "enabled") return { text: "开放", tone: "ok" };
   if (gate.status === "disabled") return { text: "已关停", tone: "warn", icon: Ban };
+  if (gate.status === "加载失败") return { text: "读取失败", tone: "danger" };
+  /* 地区限制行后端写「N 个地区禁止访问 · M 个地区限流」，和 J2 页的叫法统一成封锁、受限。 */
+  const geo = /^(\d+) 个地区禁止访问 · (\d+) 个地区限流$/.exec(gate.status);
+  if (geo) return { text: `封锁 ${geo[1]} 个 · 受限 ${geo[2]} 个`, tone: "warn", icon: Ban };
   return { text: gate.status || "—", tone: gate.up ? "ok" : "warn", icon: gate.up ? undefined : Ban };
 }
 
@@ -342,7 +346,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
                 </>}
                 {!isRate && !isThreshold && <div><dt>说明</dt><dd>{param.desc || "—"}</dd></div>}
               </dl>
-              <p className="a3-param-foot">可设 {grouped(param.min)}–{grouped(param.max)} {param.unit} · 最近变更 {timeText(param.lastChange)}</p>
+              <p className="a3-param-foot"><span className="rd-keep">可设 {grouped(param.min)}–{grouped(param.max)} {param.unit}</span> · <span className="rd-keep">最近变更 {timeText(param.lastChange)}</span></p>
             </Panel>
           );
         })}
@@ -373,7 +377,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
             return <li key={gate.key} data-down={gate.up ? undefined : ""}>
               <span className="a3-gate-name">{gate.name}</span>
               <StatusTag tone={state.tone} icon={state.icon}>{state.text}</StatusTag>
-              <span className="a3-gate-meta">{gate.lastChange ? gate.lastChange.split(" · ").map((part, index) => <span key={index} className="rd-keep">{index > 0 && " · "}{part}</span>) : "—"}</span>
+              <span className="a3-gate-meta">{/^\d{4}-\d{2}-\d{2}T/.test(gate.lastChange) ? timeText(gate.lastChange) : gate.lastChange ? gate.lastChange.split(" · ").map((part, index) => <span key={index} className="rd-keep">{index > 0 && " · "}{part}</span>) : "—"}</span>
             </li>;
           })}
         </ul>}

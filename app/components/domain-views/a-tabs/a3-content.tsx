@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Archive, BookOpenText, Code2, FileText, Plus, RefreshCw, Smartphone, Trash2, TriangleAlert } from "lucide-react";
-import { BlockState, Button, DiffList, Explain, Field, Fold, IconButton, Input, Modal, MoreMenu, Notice, PageTabs, Panel, Segments, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
+import { BlockState, Button, DiffList, Explain, Field, Fold, IconButton, Input, KeepText, Modal, MoreMenu, Notice, PageTabs, Panel, Segments, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, updateDeveloperDocsAdmin, updateHowContentAdmin, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
@@ -228,7 +228,7 @@ function DeveloperDocs({ toast, onDirty }: { toast: Toast; onDirty: (value: bool
         { key: "locales", label: "语言", before: Object.keys(baseline?.locales ?? {}).map(localeName).join("、") || "—", after: localeKeys.map(localeName).join("、") || "—" },
         { key: "content", label: "有改动的语言", before: "—", after: changedLocales.map(localeName).join("、") || "—" },
       ]} />}
-      extra={<Notice tone="neutral">后端不防重复：结果未知时先刷新核对，别直接再点。</Notice>} />}
+      extra={<Notice tone="neutral">后端不防重复：结果未知时先刷新核对，<KeepText text="不要直接再点一次。" /></Notice>} />}
   </div>;
 }
 
@@ -464,7 +464,7 @@ function HowContent({ toast, onDirty }: { toast: Toast; onDirty: (value: boolean
       ]} />}
       extra={<>
         {mode === "PUBLISHED" && refPages.length > 0 && <Notice tone="danger" title="发布后 App 会打不开这些说明">{refPages.map((item) => PAGE_LABELS[item]).join("、")}含规则引用块，App 收到没换成数值的 {"{value}"} 会整页拒收。</Notice>}
-        <Notice tone="neutral">六页一起保存，后端不防重复：结果未知时先刷新核对，别直接再点。<Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>
+        <Notice tone="neutral">六页一起保存，后端不防重复：结果未知时先刷新核对，<KeepText text="不要直接再点一次。" /><Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>
       </>} />}
   </div>;
 }
