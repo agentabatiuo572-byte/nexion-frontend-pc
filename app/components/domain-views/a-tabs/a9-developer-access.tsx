@@ -3,8 +3,7 @@
 /**
  * A9 开发者访问审批（改版）。外部开发者在 App 提交申请，运营在这里看队列、点开看申请人和用途，
  * 对待审批的批准或驳回，对已批准的撤销访问。三个动作都直接执行，不走 A2 审批单。
- * 读取、提交、命令号保存和恢复的逻辑沿用旧页面（load、submitReview、review、developerAccessAttempts），
- * 这次只换界面：确认框、抽屉、结果未知的逐条提醒。请求内容和旧页面逐字节相同。
+ * 写入前保存完整原请求；恢复不依赖当前列表状态，成功回放后仍重新读取当前列表。
  */
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -27,20 +26,40 @@ import {
   rejectDeveloperAccess,
   revokeDeveloperAccess,
   isDeveloperAccessOutcomeUnknownError,
+  DeveloperAccessRequestError,
+  normalizeDeveloperAccessReason,
+  parseDeveloperAccessRequest,
   type DeveloperAccessPage,
   type DeveloperAccessRequest,
 } from "@/lib/admin/developer-access-client";
 import { canReviewDeveloperAccess, developerAccessResourceGuard } from "@/lib/admin/developer-access-policy";
-import { createPendingMutationStore, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, hasPersistedPendingCommandOwner, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 
 type ReviewAction = "approve" | "reject" | "revoke";
-type DeveloperAccessAttempt = SlotAttemptRecord & { adminId?: number; reason?: string };
+type DeveloperAccessAttempt = SlotAttemptRecord & { adminId?: number; reason?: string; row?: DeveloperAccessRequest; body?: string };
 const reviewActionLabel: Record<ReviewAction, string> = { approve: "批准", reject: "驳回", revoke: "撤销" };
 
 const developerAccessAttempts = createPendingMutationStore<DeveloperAccessAttempt>({
   storageKey: "nexion-admin-a9-developer-access-attempts-v1",
-  isValidRecord: (record) => typeof record.inputFingerprint === "string"
-    && (record.reason === undefined || (typeof record.reason === "string" && Number.isSafeInteger(record.adminId))),
+  retainExpiredRecords: true,
+  isValidRecord: (record) => {
+    const identity = /^(approve|reject|revoke):(DEV-[A-Z0-9]{16})$/.exec(record.fingerprint);
+    if (!identity || record.inputFingerprint !== `${record.fingerprint}:${identity[1] === "revoke" ? "APPROVED" : "PENDING"}`
+      || (record.adminId !== undefined && (!Number.isSafeInteger(record.adminId) || record.adminId <= 0))
+      || (record.reason !== undefined && typeof record.reason !== "string")) return false;
+    if (record.row === undefined) return record.body === undefined || typeof record.body === "string"
+      && record.reason !== undefined && record.body === JSON.stringify({ expectedStatus: identity[1] === "revoke" ? "APPROVED" : "PENDING", reason: record.reason });
+    // sessionStorage is an untrusted boundary; old records have no original display snapshot.
+    try {
+      const row = parseDeveloperAccessRequest(record.row);
+      return row.requestNo === identity[2] && canReviewDeveloperAccess(row.status, identity[1] as ReviewAction)
+        && record.adminId !== undefined && record.reason !== undefined
+        && record.body === JSON.stringify({ expectedStatus: row.status, reason: record.reason });
+    } catch { return false; }
+  },
 });
 
 /** Real server-backed developer access governance. Navigation ownership remains with the A-domain integrator. */
@@ -76,8 +95,8 @@ const scopeText = (row: DeveloperAccessRequest) => row.runId ? `${environmentTex
 const timeText = (value?: string | null) => formatBusinessTimeCompact(value ?? "", "—");
 
 /** 已等多久：从提交时间到现在。算不出（时间缺失或在将来）写「—」。 */
-function waitedText(createdAt: string, now: number) {
-  const at = Date.parse(createdAt);
+function waitedText(createdAt: string | null, now: number) {
+  const at = createdAt === null ? NaN : Date.parse(createdAt);
   if (!Number.isFinite(at) || at > now) return "—";
   const minutes = Math.floor((now - at) / 60_000);
   if (minutes < 60) return "不到 1 小时";
@@ -85,7 +104,7 @@ function waitedText(createdAt: string, now: number) {
   return hours < 24 ? `${hours} 小时` : `${Math.floor(hours / 24)} 天`;
 }
 
-type Outcome = { kind: "ok" } | { kind: "unknown" | "failed"; message: string } | { kind: "skipped" };
+type Outcome = { kind: "ok" } | { kind: "unknown" | "failed"; message: string; resolved?: boolean } | { kind: "skipped" };
 type ReviewDialogState = { row: DeveloperAccessRequest; action: ReviewAction; previous?: DeveloperAccessAttempt; mode: "new" | "legacy" | "recovery" };
 
 export function A9DeveloperAccess() {
@@ -109,6 +128,7 @@ export function A9DeveloperAccess() {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [readAt, setReadAt] = useState<number | null>(null);
+  const [loadedQuery, setLoadedQuery] = useState("");
   const [dialog, setDialog] = useState<ReviewDialogState | null>(null);
   const [dialogBusy, setDialogBusy] = useState(false);
   const [dialogFailure, setDialogFailure] = useState<string | null>(null);
@@ -116,6 +136,10 @@ export function A9DeveloperAccess() {
   const [reasonTouched, setReasonTouched] = useState(false);
   const [currentNo, setCurrentNo] = useState<string | null>(null);
   const [, setAttemptsTick] = useState(0);
+  const queryKey = JSON.stringify([page, pageSize, status, keyword]);
+  const ready = data !== null && !loading && !error && loadedQuery === queryKey;
+  const isOwnAttempt = (record: DeveloperAccessAttempt) => Boolean(adminId) && (record.adminId === adminId
+    || record.adminId === undefined && hasPersistedPendingCommandOwner(String(adminId)));
 
   useEffect(() => {
     const timer = window.setTimeout(() => { setKeyword(keywordInput.trim()); setPage(1); }, 300);
@@ -125,55 +149,101 @@ export function A9DeveloperAccess() {
   const load = useCallback(() => {
     let cancelled = false;
     setLoading(true);
+    setData(null);
     setError(null);
     fetchDeveloperAccessRequests({ pageNum: page, pageSize, status: status || undefined, keyword })
-      .then((result) => { if (!cancelled) { setData(result); setReadAt(Date.now()); } })
-      .catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "开发者访问申请加载失败"); })
+      .then((result) => { if (!cancelled) { setData(result); setLoadedQuery(queryKey); setReadAt(Date.now()); } })
+      .catch((cause) => { if (!cancelled) setError(displayAdminReadError(cause)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [page, pageSize, status, keyword, reloadKey]);
+  }, [page, pageSize, status, keyword, reloadKey, queryKey]);
 
   useEffect(() => load(), [load]);
+  useEffect(() => {
+    if (!ready && dialog?.mode === "new") setDialog(null);
+  }, [ready, dialog]);
 
   const submitReview = async (row: DeveloperAccessRequest, action: ReviewAction, reason: string,
     previous?: DeveloperAccessAttempt): Promise<Outcome> => {
-    if (!adminId || useAdminAuth.getState().session?.adminId !== adminId
-      || !reviewPermissions[action] || !canReviewDeveloperAccess(row.status, action)) return { kind: "skipped" };
+    const session = useAdminAuth.getState().session;
+    if (!adminId || session?.adminId !== adminId
+      || !(session.authorities.includes("ROLE_SUPER_ADMIN") || session.authorities.includes(`developer_access_${action}`))) return { kind: "skipped" };
     const identity = `${action}:${row.requestNo}`;
-    const key = previous?.commandKey ?? globalThis.crypto?.randomUUID?.() ?? `developer-access-${action}-${row.requestNo}`;
-    if (!previous) developerAccessAttempts.forget(identity);
-    if (!previous) {
-      developerAccessAttempts.remember(identity, key, { inputFingerprint: `${identity}:${row.status}`, adminId, reason });
+    const saved = previous && developerAccessAttempts.list().find(record => record.commandKey === previous.commandKey && record.fingerprint === identity);
+    if (previous && (!saved || !isOwnAttempt(saved))) return { kind: "failed", message: displayAdminError("DEVELOPER_ACCESS_ORIGINAL_REQUEST_REQUIRED") };
+    if (saved && saved.expiresAt <= Date.now()) return { kind: "failed", message: displayAdminError("DEVELOPER_ACCESS_RETRY_EXPIRED") };
+    if (!previous && (!ready || !data?.records.some(item => item.requestNo === row.requestNo && item.status === row.status)
+      || developerAccessAttempts.list().some(record => record.fingerprint.endsWith(`:${row.requestNo}`)))) return { kind: "skipped" };
+    const originalRow = saved?.row ?? row;
+    reason = saved?.reason ?? normalizeDeveloperAccessReason(reason);
+    if (!canReviewDeveloperAccess(originalRow.status, action) || reason.length < 8 || reason.length > 500) {
+      return { kind: "failed", message: displayAdminError("DEVELOPER_ACCESS_REVIEW_REASON_INVALID") };
+    }
+    const key = saved?.commandKey ?? globalThis.crypto.randomUUID();
+    const body = saved?.body ?? JSON.stringify({ expectedStatus: originalRow.status, reason });
+    if (!saved || saved.reason === undefined || saved.body === undefined) developerAccessAttempts.remember(identity, key, {
+      inputFingerprint: `${identity}:${originalRow.status}`, adminId, reason, body, row: saved ? saved.row : originalRow,
+    });
+    if (!developerAccessAttempts.isDurablyStored(identity, key)) {
+      if (!saved) developerAccessAttempts.forget(identity, key);
+      setAttemptsTick(value => value + 1);
+      return { kind: "failed", message: displayAdminError("DEVELOPER_ACCESS_ORIGINAL_STORAGE_FAILED") };
     }
     try {
-      if (action === "approve") await approveDeveloperAccess(row, reason, key);
-      if (action === "reject") await rejectDeveloperAccess(row, reason, key);
-      if (action === "revoke") await revokeDeveloperAccess(row, reason, key);
+      if (action === "approve") await approveDeveloperAccess(originalRow, reason, key, body);
+      if (action === "reject") await rejectDeveloperAccess(originalRow, reason, key, body);
+      if (action === "revoke") await revokeDeveloperAccess(originalRow, reason, key, body);
       developerAccessAttempts.forget(identity, key);
+      setData(null);
+      setLoading(true);
       setError(null);
       setReloadKey((value) => value + 1);
       return { kind: "ok" };
     } catch (cause) {
-      const unknown = isDeveloperAccessOutcomeUnknownError(cause);
-      if (!unknown && (!previous || previous.reason !== undefined)) {
+      const rejected = saved ? isExplicitRejection(cause) : !isDeveloperAccessOutcomeUnknownError(cause)
+        && cause instanceof DeveloperAccessRequestError && isDeterministicRejection(cause.status, cause.apiCode);
+      if (rejected) {
         developerAccessAttempts.forget(identity, key);
+        if (saved) {
+          setData(null);
+          setLoading(true);
+          setReloadKey(value => value + 1);
+        }
       }
-      return { kind: unknown ? "unknown" : "failed", message: cause instanceof Error ? cause.message : "操作失败，结果未确认，请刷新后查看" };
+      return { kind: rejected ? "failed" : "unknown", message: displayAdminError(cause), resolved: rejected && Boolean(saved) };
     } finally {
       setAttemptsTick((value) => value + 1);
     }
   };
 
-  const review = (row: DeveloperAccessRequest, action: ReviewAction) => {
-    if (!adminId || !reviewPermissions[action] || !canReviewDeveloperAccess(row.status, action)) return;
-    const identity = `${action}:${row.requestNo}`;
-    const previous = developerAccessAttempts.list().find((record) => record.fingerprint === identity
-      && record.inputFingerprint === `${identity}:${row.status}` && (record.adminId === undefined || record.adminId === adminId));
+  const restoreReview = (previous: DeveloperAccessAttempt, current?: DeveloperAccessRequest) => {
+    const action = previous.fingerprint.split(":")[0] as ReviewAction;
+    if (!isOwnAttempt(previous) || !reviewPermissions[action] || previous.expiresAt <= Date.now()) return;
+    const row = previous.row ?? (current && { ...current, status: previous.inputFingerprint.split(":")[2] as DeveloperAccessRequest["status"] });
+    if (!row) return;
     setDialogFailure(null);
     setReasonDraft("");
     setReasonTouched(false);
-    // 有原备注的原操作只能原样重试；旧版本存的记录没有原备注，要运营填上次的原备注。
-    setDialog({ row, action, previous, mode: previous?.reason !== undefined ? "recovery" : previous ? "legacy" : "new" });
+    setDialog({ row, action, previous, mode: previous.reason !== undefined ? "recovery" : "legacy" });
+  };
+
+  const review = (row: DeveloperAccessRequest, action: ReviewAction) => {
+    const previous = developerAccessAttempts.list().find(record => record.fingerprint.endsWith(`:${row.requestNo}`) && isOwnAttempt(record));
+    if (previous) { restoreReview(previous, row); return; }
+    if (!adminId || !ready || !reviewPermissions[action] || !canReviewDeveloperAccess(row.status, action)) return;
+    setDialogFailure(null);
+    setReasonDraft("");
+    setReasonTouched(false);
+    setDialog({ row, action, mode: "new" });
+  };
+
+  // This reads the current application only; A9 has no receipt lookup by command key.
+  const findOriginal = (record: DeveloperAccessAttempt) => {
+    setStatus("");
+    setKeywordInput(record.fingerprint.split(":")[1]);
+    setKeyword(record.fingerprint.split(":")[1]);
+    setPage(1);
+    setReloadKey(value => value + 1);
   };
 
   const records = data?.records ?? [];
@@ -188,7 +258,7 @@ export function A9DeveloperAccess() {
     if (currentNo && !loading && !records.some((row) => row.requestNo === currentNo)) setCurrentNo(null);
   }, [currentNo, loading, records]);
 
-  const attempts = developerAccessAttempts.list().filter((record) => record.adminId === undefined || record.adminId === adminId);
+  const attempts = developerAccessAttempts.list().filter(isOwnAttempt);
   const attemptFor = (row: DeveloperAccessRequest) => attempts.find((record) => record.fingerprint.endsWith(`:${row.requestNo}`));
 
   const rowActions = (row: DeveloperAccessRequest) => {
@@ -199,12 +269,12 @@ export function A9DeveloperAccess() {
       revoke: guard.canRevoke && reviewPermissions.revoke,
     };
   };
-  const staleReason = error ? "列表没读到，重新读到后才能处理" : undefined;
+  const staleReason = !ready ? "列表没读到，重新读到后才能处理" : undefined;
 
   const confirmDialog = async () => {
-    if (!dialog) return;
-    const reason = dialog.mode === "recovery" ? dialog.previous?.reason ?? "" : reasonDraft.trim();
-    if (dialog.mode !== "recovery" && reason.length < 8) { setReasonTouched(true); return; }
+    if (!dialog || dialogBusy) return;
+    const reason = dialog.mode === "recovery" ? dialog.previous?.reason ?? "" : normalizeDeveloperAccessReason(reasonDraft);
+    if (dialog.mode !== "recovery" && (reason.length < 8 || reason.length > 500)) { setReasonTouched(true); return; }
     setDialogBusy(true);
     setDialogFailure(null);
     const { row, action } = dialog;
@@ -229,7 +299,10 @@ export function A9DeveloperAccess() {
       toast(`${reviewActionLabel[action]}结果未知，到页面上方按原请求重试`, "warn");
       return;
     }
-    if (outcome.kind === "failed") setDialogFailure(outcome.message);
+    if (outcome.kind === "failed" && outcome.resolved) {
+      setDialog(null);
+      toast(outcome.message, "error");
+    } else if (outcome.kind === "failed") setDialogFailure(outcome.message);
     else setDialogFailure("这个账号现在不能做这项操作，或申请状态已经变了。刷新列表后再看。");
   };
 
@@ -254,14 +327,12 @@ export function A9DeveloperAccess() {
 
   const recoveryRows = attempts.map((record) => {
     const [action, requestNo] = record.fingerprint.split(":") as [ReviewAction, string];
-    const fromStatus = record.inputFingerprint.split(":").pop() ?? "";
-    const row = records.find((item) => item.requestNo === requestNo);
+    const current = records.find((item) => item.requestNo === requestNo);
+    const row = record.row ?? current;
     const expired = record.expiresAt <= now;
     const reason = !reviewPermissions[action] ? `这个账号现在没有${reviewActionLabel[action]}的权限`
       : expired ? "已超过 24 小时，不能再重试"
-        : !row ? undefined
-          : row.status !== fromStatus ? `这条申请现在是「${developerStatusText(row.status)}」，这里不能再按原请求重试`
-            : staleReason;
+        : undefined;
     return (
       <li key={record.fingerprint}>
         <span className="a9-rec-name">{reviewActionLabel[action]}{row ? ` · ${row.company}` : ""}</span>
@@ -274,8 +345,8 @@ export function A9DeveloperAccess() {
         </span>
         <span className="a9-rec-actions">
           {row || expired || !reviewPermissions[action]
-            ? <Button size="sm" disabled={!row} disabledReason={reason} onClick={() => row && review(row, action)}>按原请求重试</Button>
-            : <Button size="sm" onClick={() => { setStatus(fromStatus as StatusFilter); setKeywordInput(requestNo); setPage(1); }}>在列表里找到它</Button>}
+            ? <Button size="sm" disabled={!row} disabledReason={reason} onClick={() => restoreReview(record, current)}>按原请求重试</Button>
+            : <Button size="sm" onClick={() => findOriginal(record)}>在列表里找到它</Button>}
         </span>
       </li>
     );
@@ -291,7 +362,7 @@ export function A9DeveloperAccess() {
       reason: (STATUS_LOOK[shown.status] ?? UNKNOWN_LOOK).explain },
   ] : [];
   const history: TimelineEntry[] = shown ? [
-    { id: "submit", action: "提交申请", actor: shown.email, at: shown.createdAt },
+    { id: "submit", action: "提交申请", actor: shown.email, at: shown.createdAt ?? "" },
     ...(shown.reviewedAt || shown.reviewer ? [{
       id: "review",
       action: ({ APPROVED: "批准访问", REJECTED: "驳回申请", REVOKED: "撤销访问" } as Record<string, string>)[shown.status] ?? "处理",
@@ -408,10 +479,10 @@ export function A9DeveloperAccess() {
       </>}
     </Drawer>
 
-    {dialog && (dialog.mode !== "recovery" || (dialog.previous?.adminId === adminId && reviewPermissions[dialog.action])) && (
+    {dialog && (!dialog.previous || isOwnAttempt(dialog.previous) && reviewPermissions[dialog.action]) && (
       <ReviewDialog state={dialog} busy={dialogBusy} failure={dialogFailure} reason={reasonDraft} touched={reasonTouched}
         onReason={setReasonDraft} onTouch={() => setReasonTouched(true)}
-        onClose={() => setDialog(null)} onConfirm={() => void confirmDialog()} onReload={() => { setDialog(null); setReloadKey((value) => value + 1); }} />
+        onClose={() => setDialog(null)} onConfirm={() => void confirmDialog()} onReload={() => { setDialog(null); if (dialog.previous) findOriginal(dialog.previous); else setReloadKey((value) => value + 1); }} />
     )}
   </div>;
 }
@@ -435,7 +506,7 @@ function ReviewDialog({ state, busy, failure, reason, touched, onReason, onTouch
   const { row, action, previous, mode } = state;
   const look = DIALOG[action];
   const retrying = mode !== "new";
-  const length = reason.trim().length;
+  const length = normalizeDeveloperAccessReason(reason).length;
   const short = mode !== "recovery" && length < 8;
   const reasonError = touched && short ? (length === 0 ? "请填写备注" : `还差 ${8 - length} 字`) : length > 500 ? "超过 500 字，后端会拒绝，请删短" : undefined;
   const zone = businessZone().label;
@@ -447,7 +518,7 @@ function ReviewDialog({ state, busy, failure, reason, touched, onReason, onTouch
       onClose={onClose}
       footer={<Decision others={<Button variant="secondary" disabled={busy} onClick={onClose}>取消</Button>}
         primary={<Button variant={look.danger && !retrying ? "danger" : "primary"} loading={busy} loadingText="正在提交…"
-          disabledReason={short ? (length === 0 ? "先填写备注" : `备注还差 ${8 - length} 字`) : undefined} onBlockedClick={onTouch} onClick={onConfirm}>
+          disabledReason={previous && previous.expiresAt <= Date.now() ? "已超过 24 小时，不能再重试" : length > 500 ? reasonError : short ? (length === 0 ? "先填写备注" : `备注还差 ${8 - length} 字`) : undefined} onBlockedClick={onTouch} onClick={onConfirm}>
           {retrying ? "按原请求重试" : look.confirm}
         </Button>} />}>
       {retrying && <Notice tone="warn">{mode === "recovery"
