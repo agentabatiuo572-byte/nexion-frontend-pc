@@ -1,18 +1,25 @@
 "use client";
 
+/**
+ * 全球网络：8 个中心的占比、延迟和吞吐。一张八行的对照表，每行带占比条，合计是不是 100% 写在表尾。
+ * 和主配置同一个版本：单独保存只是把这一块的草稿合进已保存的全量值提交，不带别的块的草稿。
+ */
 import { useEffect, useState } from "react";
+import { Globe2, RefreshCw } from "lucide-react";
+import { Button, Change, Fact, Field, Notice, NumberInput, Panel, RatioBar, StatusTag, Table, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
 import { parseGlobeDisplay, type GlobeDisplayConfig } from "@/lib/admin/globe-display-config";
 import { updateH9PublicStats, type H9PublicStatsOverview } from "@/lib/admin/h9-client";
 import { h9DraftNumber } from "@/lib/admin/h9-validation";
 import type { HCtx } from "./types";
+import { ConfirmFacts, ModuleToolbar, count } from "./h9-parts";
 
 type ScalarKey = "intervalMs" | "throughputMin" | "throughputMax" | "latencyJitterMs";
 type Draft = Record<ScalarKey, string> & { centers: { id: string; sharePct: string; latencyMs: string }[] };
-const FIELDS: { key: ScalarKey; label: string; unit: string; scale?: number }[] = [
-  { key: "intervalMs", label: "数据变化间隔", unit: "秒", scale: 1000 },
-  { key: "throughputMin", label: "每任务小时处理量下限", unit: "个" },
-  { key: "throughputMax", label: "每任务小时处理量上限", unit: "个" },
-  { key: "latencyJitterMs", label: "延迟浮动上限", unit: "毫秒" },
+const FIELDS: { key: ScalarKey; label: string; unit: string; scale?: number; hint: string; what: string }[] = [
+  { key: "intervalMs", label: "数据变化间隔", unit: "秒", scale: 1000, hint: "1–86,400 秒，最多三位小数", what: "App 全球网络页的模拟数字每隔这么久变一次。" },
+  { key: "throughputMin", label: "每任务小时处理量下限", unit: "个", hint: "0–10,000，最多六位小数", what: "每小时任务量 = 进行中作业数 × 下限到上限之间的一个波动值。" },
+  { key: "throughputMax", label: "每任务小时处理量上限", unit: "个", hint: "0–10,000，最多六位小数，不小于下限", what: "每小时任务量 = 进行中作业数 × 下限到上限之间的一个波动值。" },
+  { key: "latencyJitterMs", label: "延迟浮动上限", unit: "毫秒", hint: "0–60,000 的整数", what: "App 上的延迟 = 基础延迟 + 0 到这个数之间的波动，只往上浮。" },
 ];
 const CENTER_NAMES: Record<string, string> = { sg: "新加坡", jp: "东京", vn: "胡志明市", uk: "伦敦", fr: "巴黎", de: "法兰克福", "us-ny": "纽约", "us-sj": "圣何塞" };
 const hasShares = (config: GlobeDisplayConfig) => config.centers.every(center => center.sharePct !== undefined);
@@ -27,9 +34,11 @@ function draftsFrom(config: GlobeDisplayConfig): Draft {
     centers: config.centers.map(center => ({ id: center.id, sharePct: shareText(config, center), latencyMs: String(center.latencyMs) })) } as Draft;
 }
 
-export function H9GlobeDisplay({ ctx, data, refreshing, onSaved, onRefresh }: {
+export function H9GlobeDisplay({ ctx, data, refreshing, onSaved, onRefresh, onIssue }: {
   ctx: HCtx; data: H9PublicStatsOverview; refreshing: boolean; onSaved: (next: H9PublicStatsOverview) => void;
   onRefresh: () => Promise<H9PublicStatsOverview | undefined>;
+  /** 保存没得到明确结果时交给页面，写进页面上方的提醒。 */
+  onIssue: (cause: unknown, change: string) => void;
 }) {
   const saved = data.values.globeDisplay;
   const savedKey = JSON.stringify(saved);
@@ -55,58 +64,115 @@ export function H9GlobeDisplay({ ctx, data, refreshing, onSaved, onRefresh }: {
   const shareTotal = draft ? draft.centers.reduce((sum, center) => sum + Math.round(h9DraftNumber(center.sharePct) * 100), 0) / 100 : Number.NaN;
   const shareError = sharesSupported && shareTotal !== 100
     ? `8 个中心的分布比例合计要等于 100%，现在是 ${Number.isFinite(shareTotal) ? shareTotal.toFixed(2) : "—"}%` : "";
+
+  const diffRows = (target: GlobeDisplayConfig): DiffRow[] => {
+    const before = saved!;
+    const rows: DiffRow[] = FIELDS.map(field => ({ key: field.key, label: field.label,
+      before: `${count(before[field.key] / (field.scale ?? 1))} ${field.unit}`, after: `${count(target[field.key] / (field.scale ?? 1))} ${field.unit}` }));
+    for (const center of target.centers) {
+      const old = before.centers.find(row => row.id === center.id)!;
+      if (sharesSupported) rows.push({ key: `${center.id}-share`, label: `${CENTER_NAMES[center.id]} · 占比`, before: `${old.sharePct}%`, after: `${center.sharePct}%` });
+      rows.push({ key: `${center.id}-latency`, label: `${CENTER_NAMES[center.id]} · 基础延迟`, before: `${count(old.latencyMs)} 毫秒`, after: `${count(center.latencyMs)} 毫秒` });
+    }
+    return rows;
+  };
+
   const save = () => {
     if (locked || conflict || !next || !dirty) return;
     const { registeredUsersAnchorAt: _anchor, ...current } = data.values;
+    const rows = diffRows(next);
+    const changed = rows.filter(row => row.before !== row.after);
     ctx.openActionConfirm({ briefKind: "config",
       action: "保存全球网络展示", reasonMin: 8, reasonMax: 200,
-      completionCopy: "保存后生效，并记入操作记录。",
-      detail: <>
-        <div>只修改全球网络的{sharesSupported ? "分布比例、" : ""}每小时任务量与延迟展示参数；首页数字、注册用户和设备排名保持当前配置。</div>
-        {FIELDS.map(field => <div key={field.key}>{field.label}：{saved![field.key] / (field.scale ?? 1)} → {next[field.key] / (field.scale ?? 1)} {field.unit}</div>)}
-        {next.centers.map(center => { const before = saved!.centers.find(row => row.id === center.id)!;
-          return <div key={center.id}>{CENTER_NAMES[center.id]}：{sharesSupported ? `分布比例 ${before.sharePct}% → ${center.sharePct}%，` : ""}基础延迟 {before.latencyMs} → {center.latencyMs} 毫秒</div>; })}
-        <div>只用于模拟展示，不改变真实设备、任务、收益或资金。</div>
-      </>,
+      title: "保存全球网络",
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      confirmLabel: "确认保存",
+      statedBrief: { impact: "保存后 App 全球网络页按新的占比、延迟和吞吐模拟展示；首页数字、注册人数和设备排名不变。", check: "核对改动和 8 个中心的占比合计，理由写清调整依据。" },
+      reasonPlaceholder: "例如：运营活动安排、工单号",
+      facts: <ConfirmFacts rows={rows} rest="没改的项" facts={<>
+        <Fact k="改的是">全球网络{sharesSupported ? "（占比、" : "（"}每小时任务量与延迟）</Fact>
+        <Fact k="主配置版本"><Change from={`v${data.version}`} to={`v${data.version + 1}`} /></Fact>
+        <Fact k="操作记录">记一条高风险操作记录（不走审批）</Fact>
+      </>} />,
+      detail: "只用于模拟展示，不改变真实设备、任务、收益或资金。别的块没保存的草稿不会带上。",
       run: async reason => {
         setSaving(true);
         try {
           const result = await updateH9PublicStats({ ...current, globeDisplay: next }, data.version, reason);
           onSaved(result);
           if (result.values.globeDisplay) accept(result.values.globeDisplay);
-          ctx.toast("全球网络展示已保存");
+          ctx.toast("全球网络展示已保存", "success");
+        } catch (cause) {
+          onIssue(cause, changed.slice(0, 2).map(row => `${row.label} ${row.before} → ${row.after}`).join("；") + (changed.length > 2 ? `；等 ${changed.length} 项` : ""));
+          throw cause;
         } finally { setSaving(false); }
       },
     });
   };
-  return <section className="l-card h9-editor" aria-label="全球网络展示">
-    <div className="l-h"><span className="ttl">全球网络展示</span><span className="sub">分布比例、任务与中心详情 · v{data.version}</span></div>
-    <div className="l-b">
-      <div className="htint">用于 App「全球网络」的模拟展示。在线节点总数就是「首页数字增长」里的在线设备（与介绍页、网络脉搏显示同一个数）；进行中任务总数就是赚取页任务中心「N 个全球作业进行中」的数（真实进行中作业数 + 全球作业基座）。下面的分布比例只决定这两个总数怎么分到 8 个中心；每小时任务量和延迟由以下参数计算。</div>
-      {conflict && <div className="htint warn" role="alert">全球网络设置已被其他操作员修改，草稿已保留。请刷新本模块后重新修改。</div>}
-      {!draft ? <div className="htint warn">全球网络配置暂不可用，请刷新配置后重试。</div> : <>
-        <div className="h9-form-grid">{FIELDS.map(field => <label key={field.key}>
-          <span>{field.label}（{field.unit}）</span><input className="l-inp" type="text" inputMode="decimal" aria-label={`全球网络${field.label}`} value={draft[field.key]} disabled={locked}
-            onChange={event => setDraft({ ...draft, [field.key]: event.target.value })} />
-        </label>)}</div>
-        {!sharesSupported && <div className="htint warn">分布比例后端待支持，暂时不能修改；下表的比例按现有设置换算，仅供参考。其他参数照常保存。</div>}
-        <div className="h9-table-wrap"><table className="l-tbl"><thead><tr><th>中心</th><th>分布比例 %{sharesSupported ? "" : "（后端待支持）"}</th><th>基础延迟（毫秒）</th></tr></thead><tbody>
-          {draft.centers.map((center, index) => <tr key={center.id}><td>{CENTER_NAMES[center.id]}</td>
-            {(["sharePct", "latencyMs"] as const).map(key => <td key={key}><input className="l-inp" type="text" inputMode={key === "sharePct" ? "decimal" : "numeric"} aria-label={`${CENTER_NAMES[center.id]}${key === "sharePct" ? "分布比例" : "基础延迟"}`} value={center[key]}
-              disabled={locked || key === "sharePct" && !sharesSupported}
-              onChange={event => setDraft({ ...draft, centers: draft.centers.map((row, i) => i === index ? { ...row, [key]: event.target.value } : row) })} /></td>)}
-          </tr>)}
-          {sharesSupported && <tr><td>合计</td><td>{Number.isFinite(shareTotal) ? shareTotal.toFixed(2) : "—"}%</td><td /></tr>}
-        </tbody></table></div>
-        <div className="h9-help">间隔 1–86400 秒、最多三位小数；每任务小时处理量 0–10000、最多六位小数；基础延迟及浮动为 0–60000 的整数毫秒；分布比例 0–100%、最多两位小数，8 个中心合计 100%。下限不能大于上限。</div>
-        {shareError && <div className="ferr" role="alert">{shareError}</div>}
-        {!next && !shareError && <div className="ferr" role="alert">请检查填写范围、整数要求以及上下限顺序。</div>}
+
+  const saveBlock = refreshing ? "正在读取最新数据，读完再保存" : saving ? "正在保存" : conflict ? "这块已被别人改过，先刷新这一块" : !dirty ? "没有改动" : shareError ? "8 个中心的占比合计要等于 100%" : !next ? "有填错的项，按提示改" : undefined;
+  const note = refreshing ? "正在读取…" : !canWrite ? "只能查看" : !dirty ? "没有改动" : shareError || !next ? "有要改的地方" : "有改动，还没保存";
+  const jitter = draft ? h9DraftNumber(draft.latencyJitterMs) : Number.NaN;
+  const shareGap = Number((100 - shareTotal).toFixed(2));
+
+  return <section aria-label="全球网络展示">
+    <Panel title="全球网络 · 8 个中心" icon={Globe2} tone="role-2" sub={`主配置 v${data.version}`}
+      explain={<>
+        <p>App「全球网络」页的模拟展示。在线节点总数就是首页数字增长里的在线设备，进行中任务总数就是赚取页任务中心显示的数（真实进行中作业数 + 全球作业基座）。</p>
+        <p>占比只决定这两个总数怎么分到 8 个中心，各中心加起来正好等于总数；每小时任务量和延迟按下面的参数模拟。这些都不是实测遥测。</p>
+      </>}>
+      {conflict && <Notice tone="warn" title="这块已被别人改过" action={<Button size="sm" disabled={saving || refreshing} onClick={async () => { const result = await onRefresh(); if (result?.values.globeDisplay) accept(result.values.globeDisplay); }}>刷新这一块</Button>}>
+        你填的内容还在。刷新会读最新值并放弃这一块没保存的改动，再按最新值重新改。
+      </Notice>}
+      {!draft ? <Notice tone="warn" title="全球网络还没有配置">后端没返回这一块，刷新后再看；一直没有请找后端同事核对。</Notice> : <>
+        {!sharesSupported && <Notice tone="warn" title="占比暂时只读">旧格式的配置没有占比，下表的比例按各中心节点数换算，只供参考，不能改；其他参数照常保存。</Notice>}
+        <div className="h9-globe-fields">{FIELDS.map(field => <Field key={field.key} label={field.label} hint={field.hint} explain={field.what}>
+          {(control) => <NumberInput {...control} aria-label={`全球网络${field.label}`} unit={field.unit} min={0} inputMode="decimal" value={draft[field.key]} disabled={locked}
+            onChange={event => setDraft({ ...draft, [field.key]: event.target.value })} />}
+        </Field>)}</div>
+        <Table label="8 个中心的占比和延迟" className="h9-centers">
+          <thead><tr><Th>中心</Th><Th>占比</Th><Th>基础延迟</Th><Th align="right">App 上的延迟</Th></tr></thead>
+          <tbody>
+            {draft.centers.map((center, index) => {
+              const share = h9DraftNumber(center.sharePct);
+              const base = h9DraftNumber(center.latencyMs);
+              return <Tr key={center.id}>
+                <Td>{CENTER_NAMES[center.id]}</Td>
+                <Td><span className="h9-share">
+                  {Number.isFinite(share) && share >= 0 && share <= 100 && <RatioBar compact quiet label="占比" value={share} total={100} valueText={`占 ${share}%`} tone="role-2" />}
+                  <NumberInput aria-label={`${CENTER_NAMES[center.id]}${"分布比例"}`} unit="%" min={0} max={100} inputMode="decimal" value={center.sharePct}
+                    disabled={locked || !sharesSupported}
+                    onChange={event => setDraft({ ...draft, centers: draft.centers.map((row, i) => i === index ? { ...row, sharePct: event.target.value } : row) })} />
+                </span></Td>
+                <Td><NumberInput aria-label={`${CENTER_NAMES[center.id]}${"基础延迟"}`} unit="毫秒" min={0} max={60000} inputMode="numeric" value={center.latencyMs} disabled={locked}
+                  onChange={event => setDraft({ ...draft, centers: draft.centers.map((row, i) => i === index ? { ...row, latencyMs: event.target.value } : row) })} /></Td>
+                <Td align="right">{Number.isFinite(base) && Number.isFinite(jitter) ? `${count(base)}–${count(base + jitter)} 毫秒` : "—"}</Td>
+              </Tr>;
+            })}
+            <Tr>
+              <Td><b>合计</b></Td>
+              <Td><span className="h9-share-total">
+                <b>{Number.isFinite(shareTotal) ? `${shareTotal.toFixed(2)}%` : "—"}</b>
+                {!sharesSupported ? <StatusTag tone="neutral">按节点数换算</StatusTag>
+                  : shareTotal === 100 ? <StatusTag tone="ok">等于 100%</StatusTag>
+                    : Number.isFinite(shareTotal) ? <StatusTag tone="warn">{shareGap > 0 ? `还差 ${shareGap}%` : `多了 ${-shareGap}%`}</StatusTag> : null}
+              </span></Td>
+              <Td />
+              <Td />
+            </Tr>
+          </tbody>
+        </Table>
+        <p className="h9-band-rule">占比 0–100%、最多两位小数，8 个中心合计 100%；基础延迟 0–60,000 的整数毫秒。</p>
+        {!next && !shareError && <Notice tone="warn">请检查填写范围、整数要求以及上下限顺序。</Notice>}
       </>}
-    </div>
-    <div className="l-h h9-footer"><span className="sub">单独保存，不提交其他模块的草稿。</span><div className="r">
-      <button className="l-btn sm" disabled={saving || refreshing} onClick={async () => { const result = await onRefresh(); if (result?.values.globeDisplay) accept(result.values.globeDisplay); }}>刷新</button>
-      {canWrite && <><button className="l-btn sm" disabled={!dirty || saving || refreshing} onClick={() => saved && accept(saved)}>放弃改动</button>
-        <button className="l-btn mc" disabled={locked || conflict || !dirty || !next} onClick={save}>{saving ? "保存中…" : "保存全球网络展示"}</button></>}
-    </div></div>
+      <ModuleToolbar note={note} tone={dirty && (!!shareError || !next) ? "warn" : undefined}>
+        <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} disabled={saving || refreshing} onClick={async () => { const result = await onRefresh(); if (result?.values.globeDisplay) accept(result.values.globeDisplay); }}>刷新这一块</Button>
+        {canWrite && <>
+          <Button size="sm" disabled={!dirty || saving || refreshing} onClick={() => saved && accept(saved)}>放弃改动</Button>
+          <Button variant="primary" size="sm" loading={saving} loadingText="保存中…" disabledReason={saving ? undefined : saveBlock} onClick={save}>保存全球网络展示</Button>
+        </>}
+      </ModuleToolbar>
+    </Panel>
   </section>;
 }
+
