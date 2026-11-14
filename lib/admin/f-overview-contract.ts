@@ -176,13 +176,17 @@ export function assertF2Overview(value: unknown): asserts value is JsonRecord {
     stringFields(metric, ["sub", "tone", "configKey"], path);
   });
   const rates = array(row, "unilevelRates", "F2");
-  // 未配置可显式为空；已有七层必须完整，不能把缺失费率归零。
-  if (rates.length) uniqueCodes(rates, "F2", "unilevelRates", Array.from({ length: 7 }, (_, index) => `L${index + 1}`), "level");
+  // The backend can return a subset of existing rows; preserve the missing rows.
+  const levels = new Set<string>();
   rates.forEach((value, index) => {
     const path = `unilevelRates[${index}]`;
     const rate = record(value, "F2", path);
-    nonNegative(rate.usdtPct, "F2", `${path}.usdtPct`);
-    nonNegative(rate.nexReward, "F2", `${path}.nexReward`);
+    const level = text(rate.level, "F2", `${path}.level`);
+    if (!/^L[1-7]$/.test(level) || levels.has(level)) invalid("F2", `${path}.level`);
+    levels.add(level);
+    // Explicit null is missing, while an absent field is still a bad contract.
+    if (rate.usdtPct !== null) nonNegative(rate.usdtPct, "F2", `${path}.usdtPct`);
+    if (rate.nexReward !== null) nonNegative(rate.nexReward, "F2", `${path}.nexReward`);
     stringFields(rate, ["label", "configKey", "nexConfigKey"], path);
     booleanFields(rate, ["direct"], path);
   });

@@ -5,6 +5,10 @@
  * 只排界面：读的数和提交函数都来自外壳 ctx，请求内容和判断照旧。
  */
 import type { ReactNode } from "react";
+import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { displayAdminError } from "@/lib/admin/error-messages";
+import type { FViewCtx } from "./types";
 import { ColumnChart, Fact, Facts, Change } from "@/app/components/rd";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
 import { F2_DEPTH_GATE_LAYERS } from "@/lib/admin/f2-depth-gate";
@@ -41,8 +45,9 @@ export function configuredValue(raw: string | undefined) {
 }
 
 /** 去掉末尾补的 0，不舍入真实小数位；千分位只加在整数部分。 */
-export function num(value: number | string, minDecimals = 0) {
-  const text = typeof value === "number" ? (Number.isInteger(value) ? String(value) : value.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")) : value.trim();
+export function num(value: number | string | null, minDecimals = 0) {
+  if (value === null) return "—";
+  const text = typeof value === "number" ? String(value) : value.trim();
   const [int, dec = ""] = text.split(".");
   const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const decimals = dec.padEnd(minDecimals, "0");
@@ -50,7 +55,7 @@ export function num(value: number | string, minDecimals = 0) {
 }
 
 /** 示例订单里这一层按比例分到多少 USDT。 */
-export const sampleUsdt = (pct: number) => SAMPLE_ORDER * pct / 100;
+export const sampleUsdt = (pct: number | null) => pct === null ? null : SAMPLE_ORDER * pct / 100;
 
 export function layerRate(rates: F2UnilevelRate[], level: Layer) {
   return rates.find((row) => row.l === level) ?? null;
@@ -58,11 +63,11 @@ export function layerRate(rates: F2UnilevelRate[], level: Layer) {
 
 /** 七层按比例的对比柱图：确认框里看「现在」和「改后」每层各占订单多少。 */
 export function LayerCompare({ rates, level, next, field }: { rates: F2UnilevelRate[]; level: Layer; next: number; field: "usdt" | "nex" }) {
-  const data = LAYERS.map((layer) => {
+  const data = LAYERS.flatMap((layer) => {
     const row = layerRate(rates, layer);
-    const before = row ? (field === "usdt" ? row.usdt : sampleUsdt(row.usdt) * row.nex) : 0;
-    const after = layer === level && row ? (field === "usdt" ? next : sampleUsdt(row.usdt) * next) : before;
-    return { key: layer, tick: layer, values: [before, after] };
+    const before = row ? (field === "usdt" ? row.usdt : row.usdt === null || row.nex === null ? null : sampleUsdt(row.usdt)! * row.nex) : null;
+    const after = layer === level && row ? (field === "usdt" ? next : row.usdt === null ? null : sampleUsdt(row.usdt)! * next) : before;
+    return before === null || after === null ? [] : [{ key: layer, tick: layer, values: [before, after] }];
   });
   const unit = field === "usdt" ? "%" : " UVT";
   return (
@@ -83,12 +88,14 @@ export function rateMeaning(value: string) {
 }
 
 export function totalFacts(rates: F2UnilevelRate[], level: Layer, next?: number) {
-  const before = rates.reduce((sum, row) => sum + row.usdt, 0);
-  const after = next === undefined ? before : rates.reduce((sum, row) => sum + (row.l === level ? next : row.usdt), 0);
+  const complete = LAYERS.every(layer => rates.some(row => row.l === layer && row.usdt !== null));
+  const before = complete ? rates.reduce((sum, row) => sum + row.usdt!, 0) : null;
+  const after = complete && next !== undefined ? rates.reduce((sum, row) => sum + (row.l === level ? next : row.usdt!), 0) : before;
   return { before, after };
 }
 
 export type F2Confirm = {
+  slot: string;
   /** 记进操作记录的动作名，和旧页面一致。 */
   action: string;
   title: ReactNode;
@@ -113,17 +120,34 @@ export type F2Confirm = {
 };
 
 /** 本页确认框。提交走 submit，失败交还给框（框里留着输入、显示原因或结果未知）。 */
-export function F2ConfirmModal({ spec, coverage, onClose, toast }: { spec: F2Confirm; coverage?: { coverageRatio: number; redlinePct: number }; onClose: () => void; toast: (message: string) => void }) {
+export function F2ConfirmModal({ spec, ctx, coverage, onClose, toast }: { spec: F2Confirm; ctx: FViewCtx; coverage?: { coverageRatio: number; redlinePct: number }; onClose: () => void; toast: (message: string) => void }) {
   return (
     <OperationConfirmModal briefKind={spec.briefKind} action={spec.action} title={spec.title} detail={spec.detail}
       amplifies={spec.amplify} coverage={coverage} edit={spec.edit} businessForm={spec.businessForm}
       facts={spec.facts} content={spec.content} statedBrief={spec.statedBrief} effect={spec.effect}
       completionCopy={spec.completionCopy} coverageCheck={spec.coverageCheck} coverageLead={spec.coverageLead}
       confirmTone={spec.confirmTone} confirmLabel={spec.confirmLabel ?? "提交审批"} reasonPlaceholder="例如：工单号、调整依据"
+      getPendingReason={() => {
+        const original = ctx.f2ProposalRecord(spec.slot);
+        return original && !original.ticket ? original.spec.reason : undefined;
+      }}
+      blockedReason={(() => {
+        const original = ctx.f2ProposalRecord(spec.slot);
+        return original && !original.ticket ? original.canRetry ? undefined : "上一次申请结果未知，先按原请求重试或去核对" : ctx.f2WriteBlocked(spec.slot);
+      })()}
       onClose={onClose}
       onConfirm={async (reason, newValue, businessValue) => {
-        await spec.submit(reason, newValue, businessValue);
-        if (spec.done) toast(spec.done);
+        const original = ctx.f2ProposalRecord(spec.slot);
+        try {
+          if (original && !original.ticket) await ctx.retryF2Proposal(spec.slot);
+          else await spec.submit(reason, newValue, businessValue);
+        } catch (error) {
+          if (isA2OutcomeUncertainError(error)) throw new Error(displayAdminError("F2_PROPOSAL_OUTCOME_UNKNOWN"));
+          // Keep the reviewed input and the actual rejection on this F2 surface.
+          if (isPermissionDenied(error)) throw new Error(`提交失败：${displayAdminError(error)}`);
+          throw error;
+        }
+        if (!original && spec.done) toast(spec.done);
         onClose();
       }} />
   );

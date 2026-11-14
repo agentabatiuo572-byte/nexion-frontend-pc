@@ -1,3 +1,4 @@
+import type { F2Recovery } from "@/lib/admin/f2-approval";
 import type { ReactNode } from "react";
 import type { OperatorBriefKind, EditSpec, BusinessFormSpec, BusinessFormValue, InlineOperationApproval } from "../design-kit";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
@@ -122,7 +123,15 @@ export interface FViewCtx {
   f2ActivationPending: A2OperationRow | null;
   f2ActivationPendingLoading: boolean;
   f2ActivationPendingError: string | null;
-  f2ActivationAttempt: { spec: { action: string; reason: string }; expiresAt: number } | null;
+  f2ActivationAttempt: F2Recovery | null;
+  f2Proposals: F2Recovery[];
+  f2ReadEpoch: number;
+  f2PendingFor: (key: string) => string | null;
+  f2WriteBlocked: (slot: string) => string | undefined;
+  f2ProposalRecord: (slot: string) => F2Recovery | undefined;
+  retryF2Proposal: (slot: string) => Promise<void>;
+  queryF2Proposal: (slot: string) => Promise<A2OperationRow | null>;
+  releaseF2Proposal: (slot: string) => Promise<void>;
   recoverF2SevenLayerActivation: () => Promise<void>;
   changeF2SevenLayerActivation: (action: "ACTIVATE" | "PAUSE" | "RESUME", expectedSevenLayerRevision: number, expectedPolicyVersion: number, reason: string) => Promise<void>;
   f2Unilevel: F2UnilevelRate[];

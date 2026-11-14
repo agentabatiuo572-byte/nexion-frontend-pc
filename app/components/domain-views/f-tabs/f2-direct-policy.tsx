@@ -25,17 +25,17 @@ const onOff = (on: boolean, off = "停用") => on ? "启用" : off;
 export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: (spec: F2Confirm) => void }) {
   const policy = ctx.f2DirectPolicy;
   const [draft, setDraft] = useState<DirectReferralUpdate | null>(() => policy ? draftOf(policy) : null);
-  const [submitted, setSubmitted] = useState(false);
+  const submitted = !!ctx.f2PendingFor("f-direct-referral-policy");
   useEffect(() => { if (!draft && policy) setDraft(draftOf(policy)); }, [draft, policy]);
   const allowed = ctx.can("network_f2_royalty_rate");
   const busy = ctx.f2DirectPolicyLoading;
   const stale = !!draft && !!policy && (draft.expectedVersion !== policy.policyVersion || draft.expectedSevenLayerRevision !== policy.sevenLayerRevision || (ctx.f2SevenLayerRevision !== null && ctx.f2SevenLayerRevision !== policy.sevenLayerRevision));
   const invalid = draft ? validateDirectReferralUpdate(draft) || (draft.purchaseSplit.enabled && (!policy || policy.sevenLayerReference.baseRatePct === null || policy.sevenLayerReference.coolingDays === null) ? "第 1 层比例或购买冷却还没设置，先在上面「每层分多少」「总量和冷却」里配好。" : null) : null;
   const changed = !!draft && !!policy && (JSON.stringify(draft.purchaseSplit) !== JSON.stringify(policy.purchaseSplit) || JSON.stringify(draft.deviceEarning) !== JSON.stringify(policy.deviceEarning));
-  const disabled = !allowed || busy || !!ctx.f2DirectPolicyError || !policy || !draft || stale || !policy.sevenLayerEnabled;
+  const disabled = !!ctx.f2WriteBlocked("f-direct-referral-policy") || !allowed || busy || !!ctx.f2DirectPolicyError || !policy || !draft || stale || !policy.sevenLayerEnabled;
   const reset = async () => {
     const latest = await ctx.refreshF2();
-    if (latest) { setDraft(draftOf(latest)); setSubmitted(false); }
+    if (latest) { setDraft(draftOf(latest)); }
   };
   const ref = policy?.sevenLayerReference;
   const rows = (before: DirectReferralUpdate | DirectReferralPolicy, after: DirectReferralUpdate): DiffRow[] => [
@@ -51,6 +51,7 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
     if (disabled || !draft || !policy || invalid || !changed) return;
     const value = structuredClone(draft), reference = policy.sevenLayerReference;
     openConfirm({
+      slot: "f-direct-referral-policy",
       action: "好友奖励设置整组调整", title: "提交好友奖励政策", briefKind: "config", amplify: directReferralAmplifies(policy, value),
       effect: <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后，两项一起立即生效；批准前按原政策执行。">批准后两项一起生效</StatusTag>,
       facts: <Facts>
@@ -63,16 +64,16 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
       detail: `修改前：${directReferralSummary(policy)}。修改后：${directReferralSummary(value)}。（政策版本 ${policy.policyVersion}）`,
       completionCopy: "批准人要是另一位管理员，需有审批批准权限和「团队奖励比例」权限；批准前按原政策执行。",
       coverageCheck: "批准时后端检查兑付覆盖率，低于红线不会执行。", coverageLead: "这次修改会让平台多付好友奖励",
-      submit: async (reason) => { await ctx.updateF2DirectPolicy(value, reason); setSubmitted(true); },
+      submit: async (reason) => { await ctx.updateF2DirectPolicy(value, reason); },
       done: "好友奖励政策已提交审批，等另一位管理员批准",
     });
   };
   const setRule = <K extends "purchaseSplit" | "deviceEarning">(key: K, patch: Partial<DirectReferralUpdate[K]>) => draft && setDraft({ ...draft, [key]: { ...draft[key], ...patch } });
   const numberOf = (raw: string) => raw === "" ? NaN : Number(raw);
   const lock = disabled || submitted;
-  const lockReason = !allowed ? "只能查看：改好友奖励政策需有「团队奖励比例」权限"
+  const lockReason = ctx.f2WriteBlocked("f-direct-referral-policy") ?? (!allowed ? "只能查看：改好友奖励政策需有「团队奖励比例」权限"
     : busy ? "正在读取" : ctx.f2DirectPolicyError ? "政策没读到，先刷新" : !policy?.sevenLayerEnabled ? "整体结算启用后才能改"
-      : stale ? "政策刚被别人改过，先放弃修改并刷新" : submitted ? "已提交，等另一位管理员批准" : invalid ?? (!changed ? "还没有改动" : undefined);
+      : stale ? "政策刚被别人改过，先放弃修改并刷新" : submitted ? "已提交，等另一位管理员批准" : invalid ?? (!changed ? "还没有改动" : undefined));
 
   const split = (key: "purchaseSplit" | "deviceEarning", label: string) => draft && <>
     <Field label="币种拆分" explain={key === "purchaseSplit" ? "开启后好友购买奖励按比例发 USDT 和 UVT，不再另加旧 UVT；关闭后恢复原来的发法。" : undefined}>

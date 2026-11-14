@@ -49,8 +49,7 @@ import {
 } from "@/lib/admin/f1-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { createA2CommandKey, fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
-import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
-import { pendingF2Activation, submitF2Activation } from "@/lib/admin/f2-activation-attempt";
+import { commandAttempts, F2_ACTIVATION_SLOT, F2_POLICY_SLOT, f2PendingFor, f2ProposalRecord, listF2Proposals, queryF2Proposal, releaseF2Proposal, sendF2Proposal, type F2Recovery } from "@/lib/admin/f2-approval";
 import { pendingConfigApproval, submitConfigApproval, teamFundApprovalAuthority, type TeamFundApprovalValues } from "@/lib/admin/withdrawal-config-approval";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { findHighOp, isFFundAmplifyingKey } from "@/lib/admin/high-ops-registry";
@@ -69,11 +68,6 @@ import "./f-tabs/f2-design.css";
 
 const FOLD: Record<string, string> = { F1: "F1", F2: "F2", F3: "F3", F4: "F4", F5: "F5" };
 const ADMIN_OPERATOR = currentAdminOperator;
-
-/** F 域全部 A2 提交共用的在途命令号(sessionStorage + 24h TTL):同槽位同输入才复用,让
- *  outcome-uncertain(网络断 / 503)后的重试带同一 Idempotency-Key 被后端去重;输入变了
- *  (如同一佣金事件先冻结后解冻)铸新号并弃旧号,防真实新操作被当成重复提交静默吞掉。 */
-const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-f-commands-v1" });
 
 // 原七层购买奖励与其他参数继续走既有 A2 命令；直属政策使用独立整组命令。
 const F_ACTIVE_KEYS = new Set([
@@ -146,10 +140,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f2DirectPolicy, setF2DirectPolicy] = useState<DirectReferralPolicy | null>(null);
   const [f2DirectPolicyLoading, setF2DirectPolicyLoading] = useState(tab === "F2");
   const [f2DirectPolicyError, setF2DirectPolicyError] = useState<string | null>(null);
-  const [f2ActivationPending, setF2ActivationPending] = useState<A2OperationRow | null>(null);
+  const [f2ApprovalRows, setF2ApprovalRows] = useState<A2OperationRow[]>([]);
+  const [f2Proposals, setF2Proposals] = useState<F2Recovery[]>([]);
+  const [f2ReadEpoch, setF2ReadEpoch] = useState(0);
   const [f2ActivationPendingLoading, setF2ActivationPendingLoading] = useState(tab === "F2");
   const [f2ActivationPendingError, setF2ActivationPendingError] = useState<string | null>(null);
-  const [f2ActivationAttempt, setF2ActivationAttempt] = useState<ReturnType<typeof pendingF2Activation>>(null);
   const canReadA2 = can("platform_a2_read");
   const [f2Loading, setF2Loading] = useState(tab === "F2");
   const [f2Error, setF2Error] = useState<string | null>(null);
@@ -287,7 +282,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [refreshF1, tab]);
 
   const refreshF2 = useCallback(async () => {
-    setF2ActivationAttempt(pendingF2Activation());
+    setF2Proposals(session ? listF2Proposals(session.adminId) : []);
+    setF2ReadEpoch(value => value + 1);
     const request = ++f2Generation.current;
     setF2Loading(true);
     setF2Error(null);
@@ -298,15 +294,23 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       const [overview, policy, audit] = await Promise.allSettled([
         fetchF2RatesOverview(), fetchF2DirectReferralPolicy(),
-        canReadA2 ? fetchA2Overview({ domain: "F", object: "current" }) : Promise.resolve(null),
+        canReadA2 ? fetchA2Overview({ domain: "F" }, true) : Promise.resolve(null),
       ]);
       if (request !== f2Generation.current) return null;
       if (policy.status === "fulfilled") setF2DirectPolicy(policy.value);
       else { setF2DirectPolicy(null); setF2DirectPolicyError(errorMessage(policy.reason)); }
       if (overview.status === "fulfilled") setF2Overview(overview.value);
       else { setF2Overview(null); setF2Error(errorMessage(overview.reason)); }
-      if (audit.status === "fulfilled") setF2ActivationPending(audit.value?.operationQueue.find(row => row.status === "pending" && row.obj === "current" && ["七层结算启用", "七层结算暂停", "七层结算恢复"].includes(row.action)) ?? null);
-      else { setF2ActivationPending(null); setF2ActivationPendingError("审批进度加载失败，请刷新后继续。"); }
+      const observed = session ? listF2Proposals(session.adminId).filter(row => row.ticket) : [];
+      const observedIds = new Set(observed.map(row => row.ticket!.id));
+      if (audit.status === "fulfilled" && audit.value) setF2ApprovalRows(audit.value.operationQueue.filter(row => !observedIds.has(row.id)));
+      else { setF2ApprovalRows([]); setF2ActivationPendingError(audit.status === "rejected" ? errorMessage(audit.reason) : "审批进度没读到"); }
+      if (session) {
+        const receipts = await Promise.allSettled(observed.map(row => queryF2Proposal(session.adminId, row)));
+        if (request !== f2Generation.current) return null;
+        if (receipts.some(row => row.status === "rejected")) setF2ActivationPendingError("审批进度没读到");
+        setF2Proposals(listF2Proposals(session.adminId));
+      }
       return policy.status === "fulfilled" ? policy.value : null;
     } catch (error) {
       if (request !== f2Generation.current) return null;
@@ -316,7 +320,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     } finally {
       if (request === f2Generation.current) { setF2Loading(false); setF2DirectPolicyLoading(false); setF2ActivationPendingLoading(false); }
     }
-  }, [canReadA2]);
+  }, [canReadA2, session]);
 
   useEffect(() => {
     if (tab === "F2") void refreshF2();
@@ -394,8 +398,44 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (tab === "F5") void refreshF5();
   }, [refreshF5, tab]);
 
+  const f2Tickets = [...f2ApprovalRows, ...f2Proposals.flatMap(row => row.ticket ? [row.ticket] : [])];
+  const f2Pending = (key: string) => f2PendingFor(f2Tickets, key);
+  const f2Record = (slot: string) => session ? f2ProposalRecord(session.adminId, slot) : undefined;
+  const f2WriteBlocked = (slot: string): string | undefined => {
+    if (slot !== F2_ACTIVATION_SLOT && (f2Loading || f2Error || !f2Overview)) return "七层比例没读到，这部分没有判断";
+    if ([F2_ACTIVATION_SLOT, F2_POLICY_SLOT, "f-config:F.unilevel.nex.L1"].includes(slot)
+        && (f2DirectPolicyLoading || f2DirectPolicyError || !f2DirectPolicy)) return "好友奖励政策没读到，暂不能改";
+    const key = slot.startsWith("f-config:") ? slot.slice(9) : slot;
+    if (f2Pending(key)) return "等另一位管理员批准";
+    const layer = key.match(/^F\.unilevel\.(?:nex\.)?(L[1-7])$/)?.[1];
+    if (f2Proposals.some(row => !row.ticket && (row.fingerprint === slot || layer && row.spec.target?.type === "unilevel_rule" && row.spec.target.id === layer))) return "上一次申请结果未知，先按原请求重试或去核对";
+    return undefined;
+  };
+  const sendF2 = async (slot: string, spec?: ProposeSpec) => {
+    if (!session) throw new Error("ADMIN_PERMISSION_DENIED");
+    if (spec) {
+      const blocked = f2WriteBlocked(slot);
+      if (blocked) throw new Error(blocked);
+    } else {
+      // Recovery invalidates all open new-edit snapshots, even when the lookup fails.
+      setF2ReadEpoch(value => value + 1);
+      setF2Overview(null);
+      setF2DirectPolicy(null);
+      setF2ApprovalRows([]);
+    }
+    try {
+      const ticket = await sendF2Proposal(session.adminId, slot, spec);
+      if (!spec) await refreshF2();
+      setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : "原申请已处理，请刷新后核对。");
+    } catch (error) {
+      if (!spec && !f2ProposalRecord(session.adminId, slot)) await refreshF2();
+      throw error;
+    } finally { setF2Proposals(listF2Proposals(session.adminId)); }
+  };
+
   // F 域既有命令在此按槽位保号；F2 启停另用同一共享存储保留完整原申请，供显式恢复。
   const proposeStable = async (slot: string, inputFingerprint: string, spec: ProposeSpec) => {
+    if (spec.sourceDomain === "F2") return sendF2(slot, spec);
     const commandKey = commandAttempts.resolve(slot, inputFingerprint, () => createA2CommandKey(slot.split(":")[0]));
     try {
       await propose((s: string) => setToast(s), { ...spec, commandKey });
@@ -423,11 +463,14 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     // F2 edits percentage points; percentRatio otherwise treats bare values <= 1 as ratios.
     // Keep the entered decimal text intact, including in the approval summary.
     const commandValue = usdtLevel ? `${value}%` : value;
-    const rateAmplifies = usdtLevel && currentUsdt !== undefined ? Number(value) > currentUsdt : undefined;
+    const nexLevel = key.match(/^F\.unilevel\.nex\.(L[1-7])$/)?.[1];
+    const beforeF2 = nexLevel ? f2Overview?.unilevel.find(row => row.l === nexLevel)?.nex
+      : f2Overview?.configValues[key];
+    const rateAmplifies = usdtLevel && currentUsdt != null ? Number(value) > currentUsdt : undefined;
     await proposeStable(`f-config:${key}`, JSON.stringify(expectedMaterialRevision === undefined ? [commandValue, reason] : [commandValue, reason, expectedMaterialRevision]), {
       action: ambassadorId ? `${value === "approved" ? "批准" : "驳回"}大使申请 #${ambassadorId}` : `${def.action} · ${key}`,
       obj: ambassadorId ?? key,
-      before: usdtLevel && currentUsdt !== undefined ? `${currentUsdt}%` : "—",
+      before: usdtLevel && currentUsdt != null ? `${currentUsdt}%` : sourceDomain === "F2" && beforeF2 != null && beforeF2 !== "__UNCONFIGURED__" ? String(beforeF2) : "—",
       after: commandValue,
       type: ambassadorId && value === "approved" ? "fund" : def.type === "fund" ? "fund" : "param",
       // F2 USDT and F3 edits compare current and proposed values in percentage points.
@@ -456,7 +499,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       await proposeStable(`f-config-batch:${sourceDomain}`, JSON.stringify([normalized, reason]), {
         action: `${def.action} · ${normalized.length} 项`,
         obj: normalized.map((item) => item.key).join(","),
-        before: "当前设置",
+        before: sourceDomain === "F2" ? normalized.map(item => `${item.key}=${f2Overview?.configValues[item.key] ?? "—"}`).join(" / ") : "当前设置",
         after: normalized.map((item) => `${item.key}=${item.value}`).join(" / "),
         type: "fund",
         amplifies: normalized.some((item) => isFFundAmplifyingKey(item.key)),
@@ -615,30 +658,52 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f2SevenLayerRevision: f2Overview?.sevenLayerRevision ?? null,
     f2DirectPolicyLoading,
     f2DirectPolicyError,
-    f2ActivationPending,
+    f2ActivationPending: f2Pending(F2_ACTIVATION_SLOT) ?? null,
     f2ActivationPendingLoading,
     f2ActivationPendingError,
-    f2ActivationAttempt,
-    recoverF2SevenLayerActivation: async () => {
-      if (!can("network_f2_policy_amplify") || !can("platform_a2_proposal_create")) throw new Error("你没有申请团队购买奖励结算的权限。");
-      try { await submitF2Activation(null, spec => propose(setToast, spec), () => createA2CommandKey("f-seven-layer-activation")); }
-      finally { setF2ActivationAttempt(pendingF2Activation()); }
-      await refreshF2();
+    f2ActivationAttempt: f2Proposals.find(row => row.fingerprint === F2_ACTIVATION_SLOT && !row.ticket) ?? null,
+    f2Proposals,
+    f2ReadEpoch,
+    f2PendingFor: key => f2Pending(key)?.id ?? null,
+    f2WriteBlocked,
+    f2ProposalRecord: f2Record,
+    retryF2Proposal: slot => sendF2(slot),
+    queryF2Proposal: async slot => {
+      if (!session) throw new Error("ADMIN_PERMISSION_DENIED");
+      const original = f2Record(slot);
+      if (!original) throw new Error("F2_PROPOSAL_ORIGINAL_MISSING");
+      setF2ReadEpoch(value => value + 1);
+      setF2Overview(null); setF2DirectPolicy(null); setF2ApprovalRows([]);
+      try {
+        const ticket = await queryF2Proposal(session.adminId, original);
+        if (ticket) await refreshF2();
+        else setToast(displayAdminError(original.expiresAt <= Date.now() ? "F2_PROPOSAL_RETRY_EXPIRED" : "A2_PROPOSAL_NOT_FOUND"));
+        return ticket;
+      } finally { setF2Proposals(listF2Proposals(session.adminId)); }
     },
+    releaseF2Proposal: async slot => {
+      if (!session) throw new Error("ADMIN_PERMISSION_DENIED");
+      const original = f2Record(slot);
+      if (!original) return;
+      setF2ReadEpoch(value => value + 1);
+      setF2Overview(null); setF2DirectPolicy(null); setF2ApprovalRows([]);
+      try { await releaseF2Proposal(session.adminId, original); await refreshF2(); }
+      finally { setF2Proposals(listF2Proposals(session.adminId)); }
+    },
+    recoverF2SevenLayerActivation: () => sendF2(F2_ACTIVATION_SLOT),
     changeF2SevenLayerActivation: async (action, expectedSevenLayerRevision, expectedPolicyVersion, reason) => {
       if (!can("network_f2_policy_amplify") || !can("platform_a2_proposal_create")) throw new Error("你没有申请团队购买奖励结算的权限。");
       if (f2DirectPolicy?.sevenLayerActivationContractVersion !== 1) throw new Error("团队购买奖励结算暂时不能启用，请刷新后重试。");
       const def = findHighOp("f_seven_layer_activation");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_seven_layer_activation");
       const label = { ACTIVATE: "七层结算启用", PAUSE: "七层结算暂停", RESUME: "七层结算恢复" }[action];
-      try { await submitF2Activation({
+      await sendF2(F2_ACTIVATION_SLOT, {
         action: label, obj: "current", before: f2DirectPolicy.sevenLayerEnabled ? f2DirectPolicy.sevenLayerPaused ? "已启用，已暂停" : "已启用，正常处理" : "未启用",
         after: action === "ACTIVATE" ? "批准后启用，以前的奖励不变" : action === "PAUSE" ? "暂停计算新订单的奖励" : "恢复计算，并补算暂停期间积压的订单",
         type: action === "PAUSE" ? "param" : "fund", amplifies: action !== "PAUSE",
         gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "F2",
         command: def.buildCommand({ action, expectedSevenLayerRevision, expectedPolicyVersion }), target: def.buildTarget({}),
-      }, spec => propose(setToast, spec), () => createA2CommandKey("f-seven-layer-activation")); }
-      finally { setF2ActivationAttempt(pendingF2Activation()); }
+      });
       await refreshF2();
     },
     updateF2DirectPolicy: async (policy, reason) => {

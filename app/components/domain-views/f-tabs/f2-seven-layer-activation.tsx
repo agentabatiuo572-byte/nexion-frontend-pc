@@ -5,14 +5,15 @@
  * 启用前后端要检查的三条，以及这件事的待审批和结果未知。
  * 申请、恢复原申请的逻辑照旧：submitted、recovering 只在本页内存，原申请由外壳的专用存储保留。
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { CircleCheck, CircleHelp, Clock3, Hourglass, PauseCircle, Power, PowerOff, TriangleAlert } from "lucide-react";
 import { Button, Explain, Notice, Panel, StatusTag } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { a2ActionText } from "@/lib/admin/operator-copy";
-import { Change, Fact, Facts, layerRate, num, type F2Confirm } from "./f2-shared";
+import { Change, Fact, Facts, LAYERS, layerRate, num, type F2Confirm } from "./f2-shared";
 import { stamp } from "./f2-shared";
+import type { F2Recovery } from "@/lib/admin/f2-approval";
 import type { FViewCtx } from "./types";
 
 
@@ -39,10 +40,9 @@ const ACTION_COPY = {
 
 export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: (spec: F2Confirm) => void }) {
   const policy = ctx.f2DirectPolicy;
-  const [submitted, setSubmitted] = useState(false);
+  const submitted = !!ctx.f2ActivationPending;
   const [recovering, setRecovering] = useState(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
-  useEffect(() => { setSubmitted(false); }, [policy?.sevenLayerRevision, ctx.f2ActivationPending?.id]);
   const busy = ctx.f2DirectPolicyLoading || ctx.f2ActivationPendingLoading;
   const allowed = ctx.can("network_f2_policy_amplify") && ctx.can("platform_a2_proposal_create");
   const canAudit = ctx.can("platform_a2_read");
@@ -50,29 +50,31 @@ export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; op
   const action = !policy?.sevenLayerEnabled ? "ACTIVATE" : policy.sevenLayerPaused ? "RESUME" : "PAUSE";
   const copy = ACTION_COPY[action];
   const label = copy.label;
-  const blocked = busy || !policy || !!ctx.f2DirectPolicyError || !!ctx.f2ActivationPendingError || !supported || !!ctx.f2ActivationPending || !!ctx.f2ActivationAttempt || submitted || recovering;
-  const blockedReason = busy ? "正在读取结算状态"
+  const writeBlocked = ctx.f2WriteBlocked("f-seven-layer-activation");
+  const blocked = !!writeBlocked || busy || !policy || !!ctx.f2DirectPolicyError || !!ctx.f2ActivationPendingError && canAudit || !supported || !!ctx.f2ActivationPending || !!ctx.f2ActivationAttempt || submitted || recovering;
+  const blockedReason = writeBlocked ?? (busy ? "正在读取结算状态"
     : ctx.f2DirectPolicyError || !policy ? "结算状态没读到，刷新后再试"
-      : ctx.f2ActivationPendingError ? "审批进度没读到，刷新后再试"
+      : ctx.f2ActivationPendingError && canAudit ? "审批进度没读到，刷新后再试"
         : !supported ? "后台版本和后端对不上，暂时只能查看；请刷新后再试"
           : ctx.f2ActivationPending ? "已有申请在等另一位管理员批准"
             : ctx.f2ActivationAttempt ? "上一次申请结果未知，先按原请求重试或去核对"
               : submitted ? "刚提交的申请在等另一位管理员批准"
-                : recovering ? "正在按原请求重试" : undefined;
+                : recovering ? "正在按原请求重试" : undefined);
   const state = !policy ? null : !policy.sevenLayerEnabled ? "off" : policy.sevenLayerPaused ? "paused" : "running";
   const stateName = { off: "未启用", paused: "已暂停", running: "运行中" } as const;
 
-  async function recover() {
-    if (!allowed || recovering) return;
+  async function recover(attempt: F2Recovery, query = false) {
+    if (recovering || (query ? !attempt.canQuery : !attempt.canRetry)) return;
     setRecovering(true); setRecoveryError(null);
-    try { await ctx.recoverF2SevenLayerActivation(); setSubmitted(true); }
-    catch (error) { setRecoveryError(displayAdminError(error)); }
+    try { if (query) await ctx.queryF2Proposal(attempt.fingerprint); else await ctx.retryF2Proposal(attempt.fingerprint); }
+    catch (error) { setRecoveryError(error instanceof Error && error.name.endsWith("OutcomeUncertainError") ? displayAdminError("F2_PROPOSAL_OUTCOME_UNKNOWN") : displayAdminError(error)); }
     finally { setRecovering(false); }
   }
   function submit() {
     if (!allowed || blocked || !policy || !state) return;
     const revision = policy.sevenLayerRevision, policyVersion = policy.policyVersion;
     openConfirm({
+      slot: "f-seven-layer-activation",
       action: label, title: label, briefKind: action === "RESUME" ? "funds" : "config", amplify: action !== "PAUSE",
       effect: <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后才生效；批准前结算状态不变。">批准后生效</StatusTag>,
       facts: <Facts>
@@ -84,13 +86,12 @@ export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; op
       completionCopy: "批准人要是另一位管理员，需有审批批准权限和「团队奖励规则」权限；批准前结算状态不变。",
       coverageCheck: "批准时后端检查兑付覆盖率，低于红线不会执行。",
       coverageLead: action === "ACTIVATE" ? "启用后平台开始按七层比例付团队奖励" : "恢复后平台继续按七层比例付团队奖励",
-      submit: async (reason) => { await ctx.changeF2SevenLayerActivation(action, revision, policyVersion, reason); setSubmitted(true); },
+      submit: async (reason) => { await ctx.changeF2SevenLayerActivation(action, revision, policyVersion, reason); },
       done: "已提交审批，等另一位管理员批准",
     });
   }
 
-  const attempt = ctx.f2ActivationAttempt;
-  const attemptExpired = !!attempt && attempt.expiresAt <= Date.now();
+  const attempts = ctx.f2Proposals.filter(row => !row.ticket);
   const pending = ctx.f2ActivationPending;
 
   return (
@@ -113,7 +114,7 @@ export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; op
         </div>
         {state === "off" && <ActivationChecks ctx={ctx} />}
       </div>
-      {(pending || submitted || attempt || recoveryError || ctx.f2ActivationPendingError || (policy && !supported)) && <ul className="f2-alerts" aria-label="整体结算的申请">
+      {(pending || submitted || attempts.length > 0 || recoveryError || ctx.f2ActivationPendingError || (policy && !supported)) && <ul className="f2-alerts" aria-label="整体结算的申请">
         {pending && <li><Notice tone="warn" title={<>{a2ActionText(pending.action)}<StatusTag tone="warn" icon={Clock3} explain="等另一位管理员在「操作记录与审批」批准；批准前结算状态不变，也不能再提交新的申请。">待审批</StatusTag></>}
           action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
           <p>审批单 <span data-mono>{pending.id}</span>，等另一位管理员批准。</p>
@@ -122,15 +123,17 @@ export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; op
           action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
           <p>批准前结算状态不变。批准后点页头「刷新」看最新状态。</p>
         </Notice></li>}
-        {attempt && <li><Notice tone="warn" actionBelow title={<>{a2ActionText(attempt.spec.action)}{attemptExpired
+        {attempts.map(attempt => { const attemptExpired = attempt.expiresAt <= Date.now(); return <li key={attempt.commandKey}><Notice tone="warn" actionBelow title={<>{a2ActionText(attempt.spec.action)}{attemptExpired
           ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试。到「操作记录与审批」核对有没有这张审批单；查不到也不能据此认定没提交。">已过期</StatusTag>
           : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。24 小时内可以按原请求重试，后端认得出是同一次提交，不会建第二张。">结果未知</StatusTag>}</>}
           action={<span className="f2-actions">
-            {allowed && !attemptExpired && <Button size="sm" loading={recovering} loadingText="正在重试…" disabledReason={busy ? "正在读取结算状态" : undefined} onClick={() => void recover()}>按原请求重试</Button>}
+            {attempt.canRetry && !attemptExpired && <Button size="sm" loading={recovering} loadingText="正在重试…" onClick={() => void recover(attempt)}>按原请求重试</Button>}
+            {attempt.canQuery && <Button size="sm" loading={recovering} onClick={() => void recover(attempt, true)}>查询原结果</Button>}
             {canAudit && <Link className="rd-link" href="/platform/audit">去操作记录与审批核对</Link>}
           </span>}>
+          <p>{attempt.spec.before} → {attempt.spec.after} · {stamp(new Date(attempt.createdAt).toISOString())}</p>
           <p>提交时填的理由：{attempt.spec.reason}</p>
-        </Notice></li>}
+        </Notice></li>; })}
         {recoveryError && <li><Notice tone="danger" title="按原请求重试没有成功">{recoveryError}</Notice></li>}
         {ctx.f2ActivationPendingError && <li><Notice tone="warn" title="审批进度没读到">{ctx.f2ActivationPendingError}</Notice></li>}
         {policy && !supported && <li><Notice tone="warn" title="暂时只能查看">后台版本和后端的结算接口对不上，刷新后再试；仍不行请联系值班人员。</Notice></li>}
@@ -143,14 +146,16 @@ export function F2SevenLayerActivation({ ctx, openConfirm }: { ctx: FViewCtx; op
 function ActivationChecks({ ctx }: { ctx: FViewCtx }) {
   const rates = ctx.f2Unilevel;
   const l1 = layerRate(rates, "L1");
+  const allUsdt = LAYERS.every(level => rates.some(row => row.l === level && row.usdt !== null && row.usdt >= 0 && row.usdt <= 100));
+  const allNex = LAYERS.every(level => rates.some(row => row.l === level && row.nex !== null && row.nex >= 0));
   const unread = ctx.f2Loading ? "七层规则读取中" : ctx.f2Error ? "七层规则没读到" : null;
   const rows = unread ? [
     { key: "usdt", ok: null, label: "七层 USDT 比例都已配置", seen: unread },
     { key: "nex", ok: null, label: "七层 UVT 系数都已配置", seen: unread },
     { key: "l1", ok: null, label: "第 1 层比例是 10%", seen: unread },
   ] : [
-    { key: "usdt", ok: rates.length > 0, label: "七层 USDT 比例都已配置", seen: rates.length ? "L1–L7 都有" : "L1–L7 都没有规则" },
-    { key: "nex", ok: rates.length > 0, label: "七层 UVT 系数都已配置", seen: rates.length ? "L1–L7 都有" : "L1–L7 都没有规则" },
+    { key: "usdt", ok: allUsdt, label: "七层 USDT 比例都已配置", seen: allUsdt ? "L1–L7 都有" : LAYERS.filter(level => !rates.some(row => row.l === level && row.usdt !== null && row.usdt >= 0 && row.usdt <= 100)).join("、") },
+    { key: "nex", ok: allNex, label: "七层 UVT 系数都已配置", seen: allNex ? "L1–L7 都有" : LAYERS.filter(level => !rates.some(row => row.l === level && row.nex !== null && row.nex >= 0)).join("、") },
     { key: "l1", ok: !!l1 && l1.usdt === 10, label: "第 1 层比例是 10%", seen: l1 ? `第 1 层是 ${num(l1.usdt)}%` : "没有第 1 层规则" },
   ];
   return (

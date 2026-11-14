@@ -563,8 +563,8 @@ export interface F2Metric {
 
 export interface F2UnilevelRate {
   l: string;
-  usdt: number;
-  nex: number;
+  usdt: number | null;
+  nex: number | null;
   ui: string;
   direct: boolean;
   configKey: string;
@@ -1266,8 +1266,8 @@ function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2Rate
   }));
   const unilevel = (data?.unilevelRates ?? []).map((item) => ({
     l: asText(item.level, "L?"),
-    usdt: toNumber(item.usdtPct),
-    nex: toNumber(item.nexReward),
+    usdt: item.usdtPct === null ? null : toNumber(item.usdtPct),
+    nex: item.nexReward === null ? null : toNumber(item.nexReward),
     ui: asText(item.label, ""),
     direct: toBoolean(item.direct),
     configKey: asText(item.configKey, ""),

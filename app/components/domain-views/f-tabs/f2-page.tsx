@@ -6,7 +6,7 @@
  * 好友奖励政策、合作伙伴权益，旧档位和旧参数收起。所有修改都是提交审批，另一位管理员批准后才生效。
  * 读取、提交、结果未知的保存和恢复都走外壳 f-view 原来的函数，这里只排界面。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Archive, CircleHelp, Coins, PauseCircle, Power, PowerOff, Users } from "lucide-react";
 import { Button, Conclusion, Fold, PageHeader, SectionNav, Stat, StatBand, useSectionNav, type SectionNavItem } from "@/app/components/rd";
 import { parseF2DepthGateLayer, parseF2DepthGateRank } from "@/lib/admin/f2-depth-gate";
@@ -20,6 +20,9 @@ import type { FViewCtx } from "./types";
 
 export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverageRatio: number; redlinePct: number } }) {
   const [confirm, setConfirm] = useState<F2Confirm | null>(null);
+  useEffect(() => {
+    setConfirm(current => current && ctx.f2ProposalRecord(current.slot) && !ctx.f2ProposalRecord(current.slot)?.ticket ? current : null);
+  }, [ctx.f2ReadEpoch]);
   const [legacyOpen, setLegacyOpen] = useState(false);
   const policy = ctx.f2DirectPolicy;
   const rates = ctx.f2Unilevel;
@@ -41,7 +44,8 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
   const nav = useSectionNav(sections, { ready: !ctx.f2Loading, onReveal: (id) => { if (id === "legacy") setLegacyOpen(true); } });
   const canWrite = ctx.can("network_f2_royalty_rate") || ctx.can("network_f2_policy_amplify");
 
-  const activeSum = rates.filter((row) => cv(`F.unilevel.${row.l}.paused`) !== "on").reduce((sum, row) => sum + row.usdt, 0);
+  const complete = LAYERS.every(level => rates.some(row => row.l === level && row.usdt !== null && row.usdt <= 100 && row.nex !== null));
+  const activeSum = rates.filter((row) => cv(`F.unilevel.${row.l}.paused`) !== "on").reduce((sum, row) => sum + (row.usdt ?? 0), 0);
   const pending = ctx.f2ActivationPending;
   const attempt = ctx.f2ActivationAttempt;
   const followUp = attempt ? "上一次整体结算申请结果未知，先在下面「整体结算」里处理。"
@@ -52,7 +56,7 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
         hint: followUp ?? (ratesReady && rates.length === 0 ? "七层规则要先由后端初始化，才能申请启用。" : "启用前先看「整体结算」里后端要检查的三条。") }
         : policy.sevenLayerPaused ? { state: "warn" as const, icon: PauseCircle, text: "团队奖励：已暂停，新订单的奖励先不算", hint: followUp }
           : !ratesReady ? { state: (ctx.f2Error ? "warn" : "unknown") as "warn" | "unknown", icon: Power, text: ctx.f2Error ? "团队奖励：正常计算，但七层比例没读到" : "团队奖励：正常计算，七层比例读取中", hint: followUp ?? (ctx.f2Error ? "点页头「刷新」重试。" : undefined) }
-            : { state: "ok" as const, icon: Power, text: rates.length ? `团队奖励：正常计算，七层合计占订单 ${num(activeSum)}%` : "团队奖励：正常计算，但七层规则还没配置", hint: followUp };
+            : { state: (complete ? "ok" : "warn") as "ok" | "warn", icon: Power, text: complete ? `团队奖励：正常计算，七层合计占订单 ${num(activeSum)}%` : "团队奖励：正常计算，但七层规则还没配置", hint: followUp };
 
   const metric = (id: string) => ctx.f2Metrics.find((row) => row.id === id);
   const usdt = metric("weeklyUsdtRoyalty"), uvt = metric("weeklyNexPayout"), l1 = metric("l1TriggerRate");
@@ -94,7 +98,7 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
           </div>
         </div>
       </div></div>
-      {confirm && <F2ConfirmModal spec={confirm} coverage={coverage} toast={ctx.toast} onClose={() => setConfirm(null)} />}
+      {confirm && <F2ConfirmModal spec={confirm} ctx={ctx} coverage={coverage} toast={ctx.toast} onClose={() => setConfirm(null)} />}
     </div>
   );
 }
