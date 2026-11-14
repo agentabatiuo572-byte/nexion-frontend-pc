@@ -528,7 +528,7 @@ function RoleGroup({ title, count, explain, roles, selectedId, onPick, empty }: 
                       <span className="a6-role-title">{r.roleName || r.roleCode}</span>
                       <span className="a6-role-code" data-mono title={r.roleCode}>{r.roleCode}</span>
                       {r.status !== 1 && <StatusTag tone="neutral" icon={Ban}>已停用</StatusTag>}
-                      {/* 自动验收残留的临时角色必须与真实角色目录可区分(zentao #101)。 */}
+                      {/* 自动验收残留的临时角色必须与真实角色目录可区分（zentao 101）。 */}
                       {temp && <StatusTag tone="warn" icon={TriangleAlert}>测试用 · 建议删除</StatusTag>}
                     </span>
                     {desc && <span className="a6-role-desc" title={desc}>{desc}</span>}

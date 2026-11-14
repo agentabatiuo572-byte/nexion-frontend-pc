@@ -137,11 +137,11 @@
 .a6-page .a6-role-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px var(--rd-space-2); min-width: 0; }
 .a6-page .a6-role-title { font-weight: var(--rd-weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .a6-page .a6-role[data-stopped] .a6-role-title { color: var(--rd-text-2); }
-.a6-page .a6-role-code { color: var(--rd-text-3); font-size: 12px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a6-page .a6-role-code { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .a6-page .a6-role-desc { color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .a6-page .a6-role-count { display: flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; }
 .a6-page .a6-role-count b { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); }
-.a6-page .a6-role-count small { color: var(--rd-text-3); font-size: 12px; line-height: 16px; white-space: nowrap; }
+.a6-page .a6-role-count small { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: nowrap; }
 .a6-page .a6-role-count[data-empty] b { color: var(--rd-text-3); }
 .a6-page .a6-tags { display: inline-flex; flex-wrap: wrap; gap: var(--rd-space-2); }
 .a6-page .a6-detail { display: flex; flex-direction: column; gap: var(--rd-space-5); }
@@ -170,7 +170,7 @@
 /* 一列里各行的名称、条、数字对齐成三列 */
 .a6-page .rd-barlist { grid-template-columns: minmax(0, max-content) minmax(120px, 1fr) max-content; column-gap: 12px; }
 .a6-page .rd-barlist li { grid-column: 1 / -1; grid-template-columns: subgrid; }
-.a6-page .a6-zone { color: var(--rd-text-3); font-size: 12px; }
+.a6-page .a6-zone { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 .a6-page .a6-recovery { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--rd-space-3); }
 .a6-page .a6-recovery > li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--rd-space-3); }
 .a6-page .a6-recovery-name { font-weight: var(--rd-weight-semibold); }
@@ -192,9 +192,9 @@
 .adom .a6-change-list[data-kind="remove"] .a6-change-mark { color: var(--rd-text-3); }
 .adom .a6-change-list[data-kind="remove"] .a6-change-name { color: var(--rd-text-2); text-decoration: line-through; text-decoration-color: var(--rd-text-3); }
 .adom .a6-change-name { grid-area: name; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.adom .a6-change-mod { grid-area: mod; color: var(--rd-text-3); font-size: 12px; line-height: 16px; }
+.adom .a6-change-mod { grid-area: mod; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .adom .a6-change-tags { grid-area: tags; display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
-.adom .a6-delta { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: var(--rd-radius-tag); font-size: 12px; white-space: nowrap; }
+.adom .a6-delta { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: var(--rd-radius-tag); font-size: var(--rd-text-aux); white-space: nowrap; }
 .adom .a6-delta[data-kind="add"] { background: var(--rd-progress-pill); color: var(--rd-progress); }
 .adom .a6-delta[data-kind="remove"] { background: var(--rd-panel-inner); color: var(--rd-text-2); }
 /* 改权限和菜单的抽屉 */
@@ -202,7 +202,7 @@
 .adom .a6-grants-sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--rd-space-4); margin: 0; padding: var(--rd-space-3) var(--rd-space-4); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
 .adom .a6-grants-sum dt { display: flex; align-items: center; gap: 4px; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .adom .a6-grants-sum dd { margin: 2px 0 0; display: flex; align-items: baseline; gap: 6px; color: var(--rd-text-3); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; }
-.adom .a6-grants-sum dd b { color: var(--rd-text); font-size: 20px; line-height: 28px; font-weight: var(--rd-weight-semibold); }
+.adom .a6-grants-sum dd b { color: var(--rd-text); font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); }
 .adom .a6-grants-sum dd b[data-changed] { color: var(--rd-progress); }
 .adom .a6-grants-sum dd b[data-warn] { color: var(--rd-warn); }
 .adom .a6-grants-sum dd.a6-grants-delta { margin-top: 0; }
@@ -218,7 +218,7 @@
 .adom .a6-mod-code { color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
 .adom .a6-mod-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .adom .a6-mod-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--rd-progress); }
-.adom .a6-mod-count { color: var(--rd-text-2); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.adom .a6-mod-count { color: var(--rd-text-2); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .adom .a6-mod-count[data-empty] { color: var(--rd-text-3); }
 .adom .a6-perm-pages { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; }
 .adom .a6-mod-head { display: flex; align-items: center; gap: var(--rd-space-3); padding-bottom: var(--rd-space-2); border-bottom: 1px solid var(--rd-line); }
@@ -230,7 +230,7 @@
 .adom .a6-page-toggle:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; border-radius: var(--rd-radius-tag); }
 .adom .a6-page-toggle svg { color: var(--rd-text-3); flex: none; }
 .adom .a6-page-name { font-weight: var(--rd-weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.adom .a6-page-id { color: var(--rd-text-3); font-size: 12px; }
+.adom .a6-page-id { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 .adom .a6-page-head .rd-btn { margin-left: auto; }
 .adom .a6-perm-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 4px var(--rd-space-2); padding-left: 20px; }
 .adom .a6-perm { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--rd-space-2); padding: 6px var(--rd-space-2); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); cursor: pointer; }
@@ -239,7 +239,7 @@
 .adom .a6-perm[data-delta="add"] { border-color: var(--rd-progress); }
 .adom .a6-perm-text { display: flex; flex-direction: column; min-width: 0; }
 .adom .a6-perm-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text); }
-.adom .a6-perm-code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text-3); font-family: var(--rd-font-mono); font-size: 11px; line-height: 16px; }
+.adom .a6-perm-code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text-3); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .adom .a6-perm-tags { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 .adom .a6-menu-tools { display: flex; align-items: center; gap: var(--rd-space-3); }
 .adom .a6-menu-tools .rd-btn { margin-left: auto; }
@@ -254,7 +254,7 @@
 .adom .a6-micon { width: 14px; flex: none; color: var(--rd-text-2); }
 .adom .a6-mname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .adom .a6-mname[data-root] { font-weight: var(--rd-weight-semibold); }
-.adom .a6-mcode { color: var(--rd-text-3); font-family: var(--rd-font-mono); font-size: 11px; }
+.adom .a6-mcode { color: var(--rd-text-3); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); }
 .adom .a6-mtags { display: inline-flex; align-items: center; gap: var(--rd-space-2); }
 .adom .a6-muted { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); margin: 0; }
 @container (max-width: 720px) {
