@@ -88,7 +88,7 @@ function Funnel({ stages, lowest }: { stages: readonly B3Stage[]; lowest: B3Stag
             <div className="b3-funnel-step">
               <span className="b3-funnel-name">
                 <span className="b3-funnel-index" aria-hidden>{index + 1}</span>
-                <span><b>{item.stage}</b><small>{item.lifecycleLabel}</small></span>
+                <span><b>{item.stage}</b></span>
               </span>
               <span className="b3-funnel-track">
                 {width != null
@@ -111,7 +111,7 @@ function StageTable({ stages }: { stages: readonly B3Stage[] }) {
     <Table label="各步骤转化数据" className="b3-stage-table">
       <thead>
         <tr>
-          <Th>步骤</Th><Th>用户阶段</Th><Th align="right">用户数</Th><Th align="right">上一步人数</Th><Th align="right">转化率</Th>
+          <Th>步骤</Th><Th>用户阶段<Explain label="用户阶段的说明" content="内部的用户阶段编号（L1–L5），App 用户看不到；和运营阶段 P1–P6 不是一回事。" /></Th><Th align="right">用户数</Th><Th align="right">上一步人数</Th><Th align="right">转化率</Th>
           <Th align="right">与上月比较<Explain label="与上月比较的说明" content="系统目前不计算月比较，这一列都是「—」。看变化请用下面「按注册周看转化走势」。" /></Th>
           <Th>对应事件</Th>
         </tr>
@@ -153,10 +153,10 @@ function AuxStats({ aux }: { aux: B3Dashboard["auxMetrics"] }) {
         explain={<><p>注册之后看过商城的人 ÷ 注册人数，按人算，不是访问次数。</p><p>看它能判断：新用户有没有找到商城入口。偏低先查注册后的引导。</p></>} />
       <Stat tone="role-3" icon={ShoppingCart} label="浏览商城后首购" value={value("purchaseFromStoreRate", aux.purchaseFromStoreRate)}
         sub={frac("purchaseFromStoreRate", aux.purchaseFromStoreNumerator, aux.purchaseFromStoreDenominator)}
-        explain={<><p>按注册 → 看商城 → 购买的先后算：看过商城后又购买的人 ÷ 看过商城的人。</p><p>看它能判断：进了商城的人买不买。偏低先看商品和价格。主漏斗的首购不要求先看商城，所以两个人数可能不同。</p></>} />
+        explain={<><p>按注册 → 看商城 → 购买的先后算：看过商城后又购买的人 ÷ 看过商城的人。这一单不一定是首购：先买过、再看商城、又买一次，也算。</p><p>看它能判断：进了商城的人买不买。偏低先看商品和价格。主漏斗的首购不要求先看商城，所以两个人数可能不同。</p></>} />
       <Stat tone="role-3" icon={Zap} label={`首笔收益到账（${aux.day0WindowSeconds} 秒内）`} value={value("day0AccessRate", aux.day0AccessRate)}
         sub={hidden("day0AccessRate") ? "少于 5 人，不显示" : withTarget(frac("day0AccessRate", aux.day0Numerator, aux.day0Denominator), aux.day0Target)}
-        explain={<><p>注册之后、在 {aux.day0WindowSeconds} 秒内收到首笔收益的人 ÷ 注册人数。时限按收益事件里记录的到账耗时判断，在「用户行为事件」里设置，不是「注册当天」。</p><p>看它能判断：新用户是不是很快看到收益。目标只用来对照，不会拦截任何操作。</p></>} />
+        explain={<><p>注册后收到首笔收益、且收益事件记的到账耗时不超过 {aux.day0WindowSeconds} 秒的人 ÷ 注册人数。不按收益时间减注册时间算，也不是「注册当天」；时限在「用户行为事件」里设置。</p><p>看它能判断：新用户是不是很快看到收益。目标只用来对照，不会拦截任何操作。</p></>} />
       <Stat tone="role-3" icon={CalendarCheck} label="第 7 天仍活跃" value={value("day7Retention", aux.day7Retention)}
         sub={hidden("day7Retention") ? (aux.day7Mature ? "少于 5 人，不显示" : "还没有注册满 7 天的用户") : withTarget(frac("day7Retention", aux.day7Numerator, aux.day7Denominator), aux.day7Target)}
         explain={<><p>只算注册满 7 天的人：注册后第 7 天当天打开过 App 的人 ÷ 注册满 7 天的人。不是第 7 天以后任意一天活跃。</p><p>看它能判断：用户第一周之后还留不留下。</p></>} />
@@ -218,7 +218,7 @@ function ChannelPanel({ data }: { data: B3Dashboard }) {
             value: row.suppressed ? null : row.sharePct,
             text: row.suppressed || row.sharePct == null ? SMALL_SAMPLE_LABEL : `${row.sharePct.toFixed(1)}% · ${people(row.firstPurchaseUsers ?? 0)} 人`,
           }))} /></div>
-          {partial && <p className="rd-note">{channels.every((row) => row.suppressed) ? "每个渠道的首购都少于 5 人，不显示" : "少于 5 人的渠道不显示；其余占比没有重新计算，加起来不到 100%"}</p>}
+          {partial && <p className="rd-note">{channels.every((row) => row.suppressed) ? "每个渠道的首购都少于 5 人，不显示" : "少于 5 人的渠道不显示；其余占比仍按全部首购人数算，没有重新分配"}</p>}
         </div>
       )}
     </Panel>
@@ -371,7 +371,7 @@ export default function FunnelPage() {
       action={<Button icon={<RefreshCw size={14} aria-hidden />} loading={loading && !!data} disabled={loading} onClick={() => void reload()}>刷新</Button>}
       onClear={() => { setExportError(""); setFilters({ cohort: ALL, phase: ALL, ref: ALL }); }}
       canClear={filtered}
-      sort={<span className="rd-filter-result">改条件立即重新读取，不自动刷新<Explain label="读取方式说明" content="改筛选或换走势的步骤都会重新读取一次，读取会记入操作记录。正在读取时先显示上一次的结果，读完替换。" /></span>}>
+      sort={<span className="rd-filter-result">改条件立即重新读取，不自动刷新<Explain label="读取方式说明" content="改筛选或换走势的步骤都会重新读取一次。查看会尽量记一条操作记录，记不上也照常显示。正在读取时先显示上一次的结果，读完替换。" /></span>}>
       <FilterField label="注册批次">
         <Select aria-label="注册批次" value={isAll(filters.cohort) ? "" : filters.cohort} onChange={setFilter("cohort")}
           options={[{ value: "", label: "全部批次" }, ...options.cohorts.map((value) => ({ value, label: value === "SYSTEM" ? "系统默认" : value }))]} />
@@ -462,8 +462,8 @@ export default function FunnelPage() {
   } else {
     conclusion = (
       <Conclusion state="neutral" lead icon={TrendingDown} explain={conclusionExplain}
-        hint={<>注册 {people(register.distinctUsers)} 人，走到提现 {withdraw?.distinctUsers == null ? "少于 5 人" : `${people(withdraw.distinctUsers)} 人`}。想找原因，可到「用户转化与留存」或「运营阶段设置」。</>}>
-        用户转化：卡在「{lowest.stage}」，只有 <b>{pct(lowest.cvrFromPrev)}</b> 走到这一步
+        hint={<>注册 {people(register.distinctUsers)} 人，走到提现 {withdraw?.distinctUsers == null ? "少于 5 人" : `${people(withdraw.distinctUsers)} 人`}。可以结合「运营阶段设置」和「用户转化与留存」找原因。</>}>
+        转化率最低的一步：<b>{lowest.stage}</b>（从上一步转化 {pct(lowest.cvrFromPrev)}）
       </Conclusion>
     );
   }

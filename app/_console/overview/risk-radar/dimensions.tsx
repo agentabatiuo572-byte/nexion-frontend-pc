@@ -106,7 +106,7 @@ function abnormalDimension(data: B5Radar): Dimension {
     body: <BarList label="异常账户按类别" slot={3} rows={rows.map((row) => ({ key: row.category, label: operatorCopyText(row.label), value: row.count, text: `${fmtNum(row.count)} 个` }))} />,
     explain: <>
       <p>近 7 天被风险信号标记的账户，加上有冻结中提现的账户，按人去重。</p>
-      <p>一个账户可能同时在几类里，所以各类相加会比总数多。</p>
+      <p>一个账户可能同时在几类里，所以各类相加可能比总数多。</p>
     </>,
   };
 }
@@ -147,7 +147,7 @@ function backlogDimension(data: B5Radar): Dimension {
     ),
     explain: <>
       <p>已提交、审核通过、处理中这三类还没结束的提现。从提交起超过 {w.slaHours} 小时算超时，有超时的就标注意。</p>
-      <p>金额是各币种原金额直接相加，没有换算成 USDT，只能看量级，不能当 USDT 金额用。</p>
+      <p>金额是各币种金额直接相加（每笔先按两位小数取整），没有换算成 USDT，只能看量级，不能当 USDT 金额用。</p>
     </>,
   };
 }
@@ -184,7 +184,7 @@ function switchesDimension(data: B5Radar): Dimension {
     ),
     explain: <>
       <p>和「紧急停用开关」读同一份开关设置。这页只能看，开关和恢复到紧急停用开关页办。</p>
-      <p>开关没有有效设置时系统按关闭处理，也写已关停。地区限制不在这里，到「地区访问限制」看。</p>
+      <p>开关还没设置过时系统按关闭处理，也写已关停；设置值无效时整页读取会报错。地区限制不在这里，到「地区访问限制」看。</p>
     </>,
   };
 }
@@ -218,7 +218,7 @@ function coverageDimension(data: B5Radar): Dimension {
       }>{facts}</Figure>
     ),
     explain: <>
-      <p>和「资金与应付款总览」同一个快照：储备 ÷ 应付款，金额按 USDT 等值估。低于红线标告警，低于健康线标注意。</p>
+      <p>和「资金与应付款总览」同一个快照、同一组数：储备 ÷ 应付款，单位和那页一样。低于红线标告警，低于健康线标注意。</p>
       <p>这里的储备和提现压力用的可用储备算法不同，两个数不能直接比。</p>
     </>,
   };

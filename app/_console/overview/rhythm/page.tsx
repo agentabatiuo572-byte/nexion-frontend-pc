@@ -124,7 +124,7 @@ export default function RhythmPage() {
           <Explain label="数据从哪来、多久更新" rows={[
             { k: "来源", v: operatorCopyText(data.sourceStatement) },
             { k: "更新", v: "打开页面、换查看方式或阶段、点刷新时重读阶段和人数；钱的进出和预算只在打开页面时读一次，点刷新不重读。" },
-            { k: "记录", v: "每次读取、导出和去运营阶段设置都会记一条操作记录，不改任何数据。" },
+            { k: "记录", v: "读取阶段和人数、导出、点进运营阶段设置会记一条操作记录，不改数据；钱的进出和在新标签页打开不记。" },
           ]} />
         </span>
       ) : undefined}

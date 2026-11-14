@@ -43,7 +43,8 @@ function RatioPanel({ data }: { data: B4GrowthFlowHistory }) {
         <p className="b4-line">
           {!drawable ? <>近 8 个业务月都没有流出，比值算不出来，不画图</> : ratio === null
             ? <>{monthTick(latest.label)}还没有流出，算不出比值</>
-            : <>{monthTick(latest.label)}{ratio >= 1 ? "进得多" : "出得多"}：入金是流出的 <b className="b4-strong">{ratio}</b> 倍</>}
+            : ratio === 1 ? <>{monthTick(latest.label)}进出持平：入金和流出一样多</>
+              : <>{monthTick(latest.label)}{ratio > 1 ? "进得多" : "出得多"}：入金是流出的 <b className="b4-strong">{ratio}</b> 倍</>}
         </p>
         <p className="b4-amounts">
           <span>入金 <b>{usdt(latest.newInflowUsdt)}</b> USDT</span>

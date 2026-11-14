@@ -190,7 +190,7 @@ export async function submitB5ThresholdApproval<T>(
   const active = await readActive();
   if (ticket.status !== "pending") attempts.forget(slot, key);
   return { active, ticket, acknowledgement: ticket.status === "pending"
-    ? `已提交审批 · 审批单 ${ticket.id} · 等待另一位超管批准`
+    ? `已提交审批 · 审批单 ${ticket.id} · 等待另一位超级管理员批准`
     : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果` };
 }
 
@@ -266,7 +266,7 @@ export async function submitB1ThresholdApproval<T>(
   const active = await readActive();
   if (ticket.status !== "pending") attempts.forget(slot, key);
   return { active, ticket, acknowledgement: ticket.status === "pending"
-    ? `已提交审批 · 审批单 ${ticket.id} · 等待另一位超管批准`
+    ? `已提交审批 · 审批单 ${ticket.id} · 等待另一位超级管理员批准`
     : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果` };
 }
 

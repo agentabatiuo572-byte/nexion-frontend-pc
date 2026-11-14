@@ -12,12 +12,12 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ArrowDownUp, Download, Gauge, Landmark, ReceiptText, Scale, ShieldAlert, ShieldCheck, ShieldQuestion, SlidersHorizontal, TrendingUp, Wallet } from "lucide-react";
 import {
   BlockState, Button, Cell, Conclusion, Donut, Explain, Fact, Facts, Figure, IrreversibleTag, KeyValues, NumberInput, DiffField,
-  Notice, PageHeader, Panel, RdPage, Segments, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLine, TrendLines,
+  Notice, PageHeader, Panel, RdPage, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLine, TrendLines,
   type ChartSlot,
 } from "@/app/components/rd";
 import { useBDomainDashboard, type BLedger } from "@/lib/admin/b-client";
 import { downloadD3Csv, fetchD3NetExposure, type D3NetExposure } from "@/lib/admin/d-client";
-import { pendingThresholdConfigApproval, submitB1ThresholdApproval } from "@/lib/admin/withdrawal-config-approval";
+import { pendingThresholdConfigApproval, releaseConfigApproval, submitB1ThresholdApproval } from "@/lib/admin/withdrawal-config-approval";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { b1Commands, executeB1Command, type B1PendingWrite, type B1CommandFacts } from "@/lib/admin/b1-commands";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -70,22 +70,28 @@ interface B1PendingCommand {
   title: string;
   body: ReactNode;
   expired: boolean;
+  /** 第二行：能做什么。过期后直接写入查不到不等于没执行；审批单查不到可以解除。 */
+  note: string;
   onRetry?: () => void;
-  auditHref: string;
+  onQuery: () => void;
+  /** 只有审批提案过期、且刚刚按原请求查询明确没有这张单时才给（决定 R1-提案过期）。 */
+  onRelease?: () => void;
 }
 
-function PendingCommands({ items }: { items: readonly B1PendingCommand[] }) {
+function PendingCommands({ items, auditReachable }: { items: readonly B1PendingCommand[]; auditReachable: boolean }) {
   if (!items.length) return null;
   return (
     <>
       {items.map((item) => (
         <Notice key={item.commandKey} tone="warn" title={item.title} actionBelow
           action={<span className="b1-actions">
-            {item.expired ? undefined : <Button size="sm" disabledReason={item.onRetry ? undefined : "等待接入：按原操作重试"} onClick={item.onRetry}>按原操作重试</Button>}
-            <Link className="rd-link" href={item.auditHref} prefetch={false}>到「操作记录与审批」核对</Link>
+            <Button size="sm" onClick={item.onQuery}>查询原结果</Button>
+            {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原请求重试</Button>}
+            {item.onRelease && <Button size="sm" onClick={item.onRelease}>解除待确认</Button>}
+            {auditReachable && <Link className="rd-link" href="/platform/audit" prefetch={false}>到「操作记录与审批」核对</Link>}
           </span>}>
           <p>{item.body}</p>
-          <p>命令号 <span data-mono>{item.commandKey}</span>{item.expired ? "，已超过 24 小时，只能核对，不能重试。" : "。只能按原内容重试，不能换号重发。"}</p>
+          <p>{item.note}</p>
         </Notice>
       ))}
     </>
@@ -112,6 +118,10 @@ export default function DualLedgerPage() {
   const [, setPendingRevision] = useState(0);
   const [needsRead, setNeedsRead] = useState(false);
   const [exposureRevision, setExposureRevision] = useState(0);
+  // 只管界面：过期审批刚查到「没有这张单」、正在开解除框、这次会话里查到的待审批单。
+  const [releasableApproval, setReleasableApproval] = useState<string | null>(null);
+  const [releasing, setReleasing] = useState(false);
+  const [verifiedPendingKey, setVerifiedPendingKey] = useState<string | null>(null);
   const syncPending = () => setPendingRevision(value => value + 1);
   const pendingWrites = session ? b1Commands.list().filter(record => record.adminId === String(session.adminId)) : [];
   const pendingApproval = session ? pendingThresholdConfigApproval("B1", session.adminId) : undefined;
@@ -197,7 +207,7 @@ export default function DualLedgerPage() {
   const toHealthy = round2(coverageRatio - healthyPct);
   const distanceText =
     zone === "danger"
-      ? `低于红线 ${pointsText(round2(effRedline - coverageRatio))} 个百分点`
+      ? round2(effRedline - coverageRatio) > 0 ? `低于红线 ${pointsText(round2(effRedline - coverageRatio))} 个百分点` : "显示值等于红线，系统按精确值判断已低于红线"
       : bufferPct === 0
         ? "正好在红线上"
         : zone === "warning"
@@ -289,6 +299,7 @@ export default function DualLedgerPage() {
         healthyPct: round2(Number(values.healthyPct)),
       }, original?.reason ?? reason, readActive, lookupOnly ? "query" : original ? "retry" : "new", dialogFacts);
       if (!result) return false;
+      if (result.ticket.status === "pending") setVerifiedPendingKey(pendingThresholdConfigApproval("B1", session.adminId)?.commandKey ?? null);
       setToast(result.acknowledgement);
       setActionConfirm(null);
       return true;
@@ -310,7 +321,7 @@ export default function DualLedgerPage() {
     try {
       if (current.kind === "export") {
         await downloadD3Csv("reconciliation", reason, operator, `b1-export-${crypto.randomUUID()}`);
-        setToast("对账 CSV 已下载");
+        setToast("对账 CSV 已开始下载");
         setActionConfirm(null);
         return;
       }
@@ -379,7 +390,7 @@ export default function DualLedgerPage() {
       const refreshed = await refreshB1();
       if (refreshed) setToast(current.kind === "threshold"
         ? `已更新 · 红线 ${fmtConfigPct(refreshed.ledger.redlinePct)} / 健康线 ${fmtConfigPct(refreshed.ledger.healthyPct)}`
-        : current.kind === "injection" ? "储备注入已登记，覆盖率已更新" : "已标记为已处理");
+        : current.kind === "injection" ? refreshed.ledger.valuationReliable ? "储备注入已登记，覆盖率已重算" : "储备注入已登记；UVT 暂时无法估值，覆盖率算不出" : "已标记为已处理");
     } catch (err) {
       if (current.kind === "export") {
         const message = displayAdminReadError(err instanceof DOutcomeUnknownError ? "B1_EXPORT_FAILED" : err);
@@ -395,16 +406,30 @@ export default function DualLedgerPage() {
     ? { kind: "threshold", idempotencyKey: record.commandKey, original: record, baseline: record.facts }
     : { kind: record.kind, idempotencyKey: record.commandKey, original: record });
   const queryWrite = async (record: B1PendingWrite) => {
-    if (await refreshB1()) setToast(displayAdminError(new DOutcomeUnknownError(record.commandKey)));
+    if (await refreshB1()) setToast(record.expiresAt <= Date.now()
+      ? "已读回现在的值。现在的值说明不了原操作成没成，记录继续保留。"
+      : "已读回现在的值。说明不了原操作成没成，可以按原请求重试，不会重复执行。");
   };
   const queryApproval = async () => {
     if (!session || !pendingApproval) return;
+    const expired = pendingApproval.expiresAt <= Date.now();
     try {
       const result = await submitB1ThresholdApproval(session, pendingApproval.values, pendingApproval.reason, readActive, "query");
-      setToast(result?.acknowledgement ?? "暂未查到原审批单，请继续查询原操作。");
+      if (!result && expired) setReleasableApproval(pendingApproval.commandKey);
+      setVerifiedPendingKey(result?.ticket.status === "pending" ? pendingApproval.commandKey : null);
+      setToast(result?.acknowledgement ?? (expired ? "没有这张审批单：原申请没有建成。核对后可以解除待确认。" : "暂未查到原审批单，可以按原请求重试，不会建第二张。"));
       if (result && result.ticket.status !== "pending") setActionConfirm(null);
     } catch (error) { setToast(displayAdminReadError(error)); }
     finally { syncPending(); }
+  };
+  const releaseApproval = () => {
+    if (!session || !pendingApproval) return;
+    releaseConfigApproval("B1", session.adminId, pendingApproval.commandKey);
+    setReleasing(false);
+    setReleasableApproval(null);
+    syncPending();
+    void refreshB1();
+    setToast("已解除本页的待确认记录");
   };
   const recoverApproval = () => {
     if (!pendingApproval?.b1Facts) { void queryApproval(); return; }
@@ -412,16 +437,29 @@ export default function DualLedgerPage() {
   };
   const pendingItems: B1PendingCommand[] = pendingWrites.map(record => ({
     commandKey: record.commandKey,
-    title: `${record.kind === "threshold" ? "设置兑付覆盖率红线和健康线" : record.kind === "injection" ? "登记储备注入" : "标记覆盖率告警已处理"}结果未知`,
-    body: `${record.kind === "threshold" ? `红线 ${fmtConfigPct(record.facts.redlinePct)} → ${fmtConfigPct(Number(record.form.redlinePct))} · 健康线 ${fmtConfigPct(record.facts.healthyPct)} → ${fmtConfigPct(Number(record.form.healthyPct))}` : record.kind === "injection" ? `${money(Number(record.form.amount))} · ${record.form.voucherType}:${record.form.voucher}` : "标记覆盖率告警已处理"} · ${timeText(new Date(record.createdAt).toISOString())}`,
+    title: `${record.kind === "threshold" ? "调整红线和健康线" : record.kind === "injection" ? "登记储备注入" : "标记覆盖率告警已处理"} · 结果未知`,
+    body: `${record.kind === "threshold" ? `红线 ${fmtConfigPct(record.facts.redlinePct)} → ${fmtConfigPct(Number(record.form.redlinePct))} · 健康线 ${fmtConfigPct(record.facts.healthyPct)} → ${fmtConfigPct(Number(record.form.healthyPct))}` : record.kind === "injection" ? `${money(Number(record.form.amount))} · ${record.form.voucherType === "BANK" ? "银行流水号" : "链上交易哈希"} ${record.form.voucher}` : "标记覆盖率告警已处理"} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
     expired: record.expiresAt <= Date.now(),
+    note: record.expiresAt <= Date.now() ? "已超过 24 小时，不能重试，只能查询；查到的是现在的值，说明不了原操作成没成。" : "24 小时内只能按原请求重试，不能改值。",
     onRetry: () => recoverWrite(record),
-    auditHref: "/platform/audit",
+    onQuery: () => void queryWrite(record),
   }));
-  if (pendingApproval) pendingItems.push({
-    commandKey: pendingApproval.commandKey, title: "降低兑付覆盖率红线", body: `${fmtConfigPct(pendingApproval.values.redlinePct)} / ${fmtConfigPct(pendingApproval.values.healthyPct)} · ${timeText(new Date(pendingApproval.createdAt).toISOString())}`,
-    expired: pendingApproval.expiresAt <= Date.now(), onRetry: recoverApproval, auditHref: "/platform/audit",
-  });
+  if (pendingApproval) {
+    const expired = pendingApproval.expiresAt <= Date.now();
+    const verified = verifiedPendingKey === pendingApproval.commandKey;
+    pendingItems.push({
+      commandKey: pendingApproval.commandKey,
+      title: `降低红线的审批 · ${verified ? "待审批" : "结果未知"}`,
+      body: `红线 ${fmtConfigPct(pendingApproval.values.redlinePct)} · 健康线 ${fmtConfigPct(pendingApproval.values.healthyPct)} · ${timeText(new Date(pendingApproval.createdAt).toISOString())}提交`,
+      expired,
+      note: verified ? "等另一位超级管理员在「操作记录与审批」批准，批准前红线不变。"
+        : !expired ? "24 小时内只能按原请求重试，不会建第二张单。"
+          : releasableApproval === pendingApproval.commandKey ? "已超过 24 小时，查询结果是没有这张审批单，可以解除待确认。" : "已超过 24 小时，不能重试，只能查询原审批单。",
+      onRetry: verified ? undefined : recoverApproval,
+      onQuery: () => void queryApproval(),
+      onRelease: expired && releasableApproval === pendingApproval.commandKey ? () => setReleasing(true) : undefined,
+    });
+  }
   const openThreshold = () => setActionConfirm({
     kind: "threshold", idempotencyKey: `b1-threshold-${crypto.randomUUID()}`,
     baseline: { redlinePct, healthyPct, thresholdVersion: LEDGER.thresholdVersion },
@@ -442,7 +480,7 @@ export default function DualLedgerPage() {
   const conclusionExplain = (
     <>
       <p>兑付覆盖率 = 可用储备 ÷ 应付款，只在后台显示。</p>
-      <p>颜色按页面读到的两位小数和红线、健康线比。系统在提现放行等检查里用不舍入的值判断，刚好压线时以系统判断为准。</p>
+      <p>是否低于红线按系统的精确判断，和提现放行等检查一致；健康线按显示的两位小数比，刚好相等时按警戒算。</p>
       <p>告警确认只记下有人跟进，不停业务。系统读到覆盖率回到健康线以上时会清掉确认，之后再跌会重新提醒；两次读取之间短暂回升读不到。</p>
     </>
   );
@@ -457,7 +495,7 @@ export default function DualLedgerPage() {
     </Conclusion>
   ) : zone === "warning" ? (
     <Conclusion state="warn" lead icon={ShieldAlert} explain={conclusionExplain} action={conclusionAction}
-      hint={alertAcked ? ackHint : onRedline ? <>以系统的精确判断为准，先按跌破红线准备。{ackHint}</> : <>建议收紧大额提现，暂缓创世节点收益发放和调高参考年奖励率。{ackHint}</>}>
+      hint={alertAcked ? ackHint : onRedline ? <>系统精确判断还没跌破，再降一点提现审核就不能放行。{ackHint}</> : <>建议收紧大额提现，暂缓创世节点收益发放和调高参考年奖励率。{ackHint}</>}>
       资金需要注意：覆盖率 <b>{pctText(coverageRatio)}</b>，{onRedline ? "正好压在红线上" : "低于健康线"}
     </Conclusion>
   ) : onHealthy ? (
@@ -484,9 +522,9 @@ export default function DualLedgerPage() {
   const stats = (
     <StatBand label="储备和应付款" fit>
       <Stat tone="role-1" icon={Wallet} label="可用储备" value={amountText(reserveUsd, statDigits)} unit="USDT"
-        sub={`较 24 小时前 ${reserveChg > 0 ? "+" : reserveChg < 0 ? "−" : ""}${fmtPct(Math.abs(reserveChg))}`}
+        sub={prev.reserveUsd === 0 ? "24 小时前是 0，不算变化" : `较 24 小时前 ${reserveChg > 0 ? "+" : reserveChg < 0 ? "−" : ""}${fmtPct(Math.abs(reserveChg))}`}
         href={reserveLink ? "/finance/pool" : undefined} openLabel="可用储备，去资金储备与应付款"
-        explain={`平台现在能动用的钱：已确认的储备账本、VietQR 已收款，减去还锁着的质押本金，不低于 0。不是用户钱包余额，也不是链上在线核对的余额。24 小时前的值按这 24 小时的资金进出倒推。接口数值 ${reserveUsd} USDT。`} />
+        explain={`平台现在能动用的钱：已确认的储备账本、VietQR 已收款，减去还锁着的质押本金，不低于 0。不是用户钱包余额，也不是链上在线核对的余额。24 小时前的值 = 现在的储备 − 这 24 小时的净流入。接口数值 ${reserveUsd} USDT。`} />
       <Stat tone="role-2" icon={ReceiptText} label="应付款" value={valuationReliable ? amountText(liabilitiesUsd, statDigits) : TREASURY_VALUATION_UNAVAILABLE} unit={valuationReliable ? "USDT" : undefined}
         sub={`${accounts.length} 类`}
         explain={`平台之后要付给用户的九类钱，全口径合计，不是都能马上提现。构成在下面「应付款构成」。${UVT_NOTE}${valuationReliable ? `接口数值 ${liabilitiesUsd} USDT。` : ""}`} />
@@ -520,9 +558,10 @@ export default function DualLedgerPage() {
           {windowsToRedline != null && <p className="b1-caliber">只按储备减少的速度估算，没算应付款的变化</p>}
           <TrendLines label="近几个时段的覆盖率" ticks={seriesTicks} format={pctText} axisFormat={(v) => `${Number(v.toFixed(1))}%`} height={120}
             series={[{ key: "coverage", label: "覆盖率", slot: 2, values: coverageSeries }]}
+            // 图上第一条线的字写在线上方、第二条写在线下方：健康线在上、红线在下，两行字不叠。
             marks={[
-              { key: "redline", text: `红线 ${fmtConfigPct(effRedline)}`, value: effRedline, tone: "danger" },
               { key: "healthy", text: `健康线 ${fmtConfigPct(healthyPct)}`, value: healthyPct, tone: "ok" },
+              { key: "redline", text: `红线 ${fmtConfigPct(effRedline)}`, value: effRedline, tone: "danger" },
             ]} />
         </div>
       ) : (
@@ -616,7 +655,7 @@ export default function DualLedgerPage() {
   const crowded = exposureSeries.length - 1 - lastTicked > 0 && exposureSeries.length - 1 - lastTicked < tickStep / 2 ? lastTicked : -1;
   const exposurePanel = (
     <Panel title="差额走势" icon={TrendingUp} tone="role-1"
-      explain="每天的差额 = 当天的储备 − 现在的应付款。储备按资金进出倒推，应付款没有历史记录，一律用现在的值，所以这不是当时真实的差额，线的起伏只来自储备进出。科目按「资金储备与应付款」的预测设置计入，可能和上面的全口径差额不同。切换天数不影响对账 CSV。登记储备或改阈值后这张图不会自动重读，以数据时间为准。"
+      explain="每天的差额 = 当天的储备 − 现在的应付款。储备按资金进出倒推，应付款没有历史记录，一律用现在的值，所以这不是当时真实的差额，线的起伏只来自储备进出。科目按「资金储备与应付款」的预测设置计入，可能和上面的全口径差额不同。切换天数不影响对账 CSV。"
 >
       <div className="rd-stack">
       <p className="b1-caliber">历史点 = 当时的储备 − 现在的应付款，只反映储备变化</p>
@@ -662,17 +701,17 @@ export default function DualLedgerPage() {
     const lowering = redChanged && round2(red) < thresholdBaseline.redlinePct;
     return (
       <div className="rd-stack">
-        <DiffField before={pointsText(thresholdBaseline.redlinePct)} unit="%" label="红线" hint="80–150，步长 0.1" error={redBad}
+        <DiffField before={pointsText(thresholdBaseline.redlinePct)} beforeLabel={factWhen} unit="%" label="红线" hint="80–150，步长 0.1" error={redBad}
           explain="覆盖率低于红线时，提现审核不能放行，会让平台多付钱的调整也会被拒。"
           state={redChanged ? (lowering
             ? <StatusTag tone="warn">放宽 · 批准后生效</StatusTag>
             : <StatusTag tone="progress">{approval ? "收紧 · 批准后生效" : "收紧 · 立即生效"}</StatusTag>) : undefined}
           note={redChanged ? (lowering
-            ? `红线从 ${fmtConfigPct(thresholdBaseline.redlinePct)} 降到 ${fmtConfigPct(round2(red))}：覆盖率要跌到 ${fmtConfigPct(round2(red))} 以下才停止放行提现，比现在更晚触发。另一位超管批准前仍按 ${fmtConfigPct(thresholdBaseline.redlinePct)}。${valuationReliable && coverageRatio < round2(red) ? `现在覆盖率 ${pctText(coverageRatio)} 低于拟调整的红线，系统会拒绝这次提交。` : ""}`
+            ? `红线从 ${fmtConfigPct(thresholdBaseline.redlinePct)} 降到 ${fmtConfigPct(round2(red))}：覆盖率要跌到 ${fmtConfigPct(round2(red))} 以下才停止放行提现，比现在更晚触发。${valuationReliable && coverageRatio < round2(red) ? `现在覆盖率 ${pctText(coverageRatio)} 低于拟调整的红线，系统会拒绝这次提交。` : ""}`
             : `红线从 ${fmtConfigPct(thresholdBaseline.redlinePct)} 提到 ${fmtConfigPct(round2(red))}：覆盖率低于 ${fmtConfigPct(round2(red))} 就停止放行提现，比现在更早触发。`) : undefined}>
           {(control) => <NumberInput {...control} aria-label="红线 (%)" unit="%" min={80} max={150} step={0.1} disabled={locked} value={value.redlinePct ?? ""} onChange={(event) => onChange({ ...value, redlinePct: event.target.value })} />}
         </DiffField>
-        <DiffField size="body" before={pointsText(thresholdBaseline.healthyPct)} unit="%" label="健康线" hint="100–200，步长 0.1，要高于红线" error={healthyBad ?? order}
+        <DiffField size="body" before={pointsText(thresholdBaseline.healthyPct)} beforeLabel={factWhen} unit="%" label="健康线" hint="100–200，步长 0.1，要高于红线" error={healthyBad ?? order}
           explain="覆盖率低于健康线算警戒。已确认的告警要等系统读到覆盖率回到健康线以上才会清掉。"
           state={healthyChanged ? <StatusTag tone="progress">{approval ? "批准后生效" : "立即生效"}</StatusTag> : undefined}
           note={healthyChanged ? `健康线从 ${fmtConfigPct(thresholdBaseline.healthyPct)} 改到 ${fmtConfigPct(round2(healthy))}：覆盖率低于 ${fmtConfigPct(round2(healthy))} 就提示警戒，回到它以上才算恢复。` : undefined}>
@@ -683,7 +722,9 @@ export default function DualLedgerPage() {
   };
 
   const dialogCoverTone = dialogFacts.redlineBreached ? "danger" : dialogFacts.coverageRatio <= dialogFacts.healthyPct ? "warn" : "ok";
-  const coverageFact = dialogFacts.valuationReliable ? <Fact k="现在的覆盖率" tone={dialogCoverTone}>{pctText(dialogFacts.coverageRatio)}</Fact> : <Fact k="现在的覆盖率">{TREASURY_VALUATION_UNAVAILABLE}</Fact>;
+  // 恢复原操作时事实来自提交那一刻的记录，不是现在的读数。
+  const factWhen = mc?.original || mc?.facts ? "提交时" : "现在";
+  const coverageFact = dialogFacts.valuationReliable ? <Fact k={`${factWhen}的覆盖率`} tone={dialogCoverTone}>{pctText(dialogFacts.coverageRatio)}</Fact> : <Fact k={`${factWhen}的覆盖率`}>{TREASURY_VALUATION_UNAVAILABLE}</Fact>;
   const dialog = mc && (
     <OperationConfirmModal key={mc.idempotencyKey} blockedReason={mc.original ? !writePermission(mc.original.kind) ? "当前账号没有此操作权限，请重新读取权限后核对原操作。" : undefined : mc.approvalRecovery ? undefined : mc.kind !== "export" && newWriteBlocked ? "请先重新读取并核对原操作，再发起新修改。" : undefined} briefKind={mc.kind === "export" ? "export" : mc.kind === "threshold" ? "config" : mc.kind === "injection" ? "funds" : "record"}
       action={
@@ -713,7 +754,7 @@ export default function DualLedgerPage() {
         mc.kind === "threshold"
           ? (value: BusinessFormValue) => ({
               impact: value.redlinePct?.trim() && round2(Number(value.redlinePct)) < (thresholdBaseline?.redlinePct ?? 0)
-                ? "降低红线会放宽资金检查，要另一位有批准权限的超级管理员在「操作记录与审批」批准，发起人不能批自己的。"
+                ? "降低红线会放宽资金检查，要另一位超级管理员在「操作记录与审批」批准，自己不能批。"
                 : "提交后立即按新线判断之后的提现放行、放宽类调整和告警，已有储备、应付款和提现不会重算。",
               check: "核对前后值。提交时会核对打开这个框时的阈值版本，别人先改过会被拒，关掉重开就能看到最新值。",
             })
@@ -730,7 +771,7 @@ export default function DualLedgerPage() {
       }
       facts={
         mc.kind === "threshold" ? <Facts>{coverageFact}<Fact k="数据时间">{timeText(dialogFacts.generatedAt)}</Fact></Facts>
-          : mc.kind === "injection" ? <Facts><Fact k="现在的可用储备" tone="role-1" unit="USDT">{amountText(dialogFacts.reserveUsd)}</Fact>{coverageFact}</Facts>
+          : mc.kind === "injection" ? <Facts><Fact k={`${factWhen}的可用储备`} tone="role-1" unit="USDT">{amountText(dialogFacts.reserveUsd)}</Fact>{coverageFact}</Facts>
             : mc.kind === "export" ? (
               <Facts>
                 <Fact k="内容">三行：可用储备、应付款、差额</Fact>
@@ -743,7 +784,7 @@ export default function DualLedgerPage() {
               <Facts>
                 {coverageFact}
                 <Fact k="红线 / 健康线">{fmtConfigPct(dialogFacts.redlinePct)} / {fmtConfigPct(dialogFacts.healthyPct)}</Fact>
-                <Fact k="告警">还没人确认</Fact>
+                <Fact k={factWhen === "现在" ? "告警" : "提交时的告警"}>还没人确认</Fact>
               </Facts>
             )
       }
@@ -762,8 +803,8 @@ export default function DualLedgerPage() {
           ? "当前阈值已更新，请关闭弹窗后重新调整。"
           : undefined,
         resolve: (value) => pendingApproval || value.redlinePct?.trim() && round2(Number(value.redlinePct)) < thresholdBaseline.redlinePct ? {
-          coverageCheckCopy: "降低红线会放宽资金操作的覆盖率门槛。提交和批准时按拟调整红线校验覆盖率。",
-          completionCopy: `另一位超管批准前，当前红线仍为 ${thresholdBaseline.redlinePct}%。`,
+          coverageCheckCopy: "提交和批准时都按拟调整的红线校验覆盖率。",
+          completionCopy: pendingApproval ? `提交时红线是 ${fmtConfigPct(thresholdBaseline.redlinePct)}；批没批以查询原审批单为准。` : `另一位超级管理员批准前，红线仍是 ${fmtConfigPct(thresholdBaseline.redlinePct)}。`,
           disabledReason: !pendingApproval && thresholdBaseline.thresholdVersion === null ? "暂未取得当前阈值版本，请刷新后重试。" : undefined,
         } : undefined,
         renderForm: thresholdForm,
@@ -808,6 +849,12 @@ export default function DualLedgerPage() {
     />
   );
 
+  const releaseDialog = releasing && pendingApproval && (
+    <ReleaseModal onCancel={() => setReleasing(false)} onConfirm={releaseApproval}
+      label={`降低红线的审批 · 红线 ${fmtConfigPct(pendingApproval.values.redlinePct)} · 健康线 ${fmtConfigPct(pendingApproval.values.healthyPct)} · ${timeText(new Date(pendingApproval.createdAt).toISOString())}提交`}
+      explain="原申请已超过 24 小时，按原请求查询明确没有这张审批单，说明申请没有建成，之后也不会再建成。解除后可以重新调整红线。" />
+  );
+
   if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
     const loading = bDomain.loading && !bDomain.error;
     return (
@@ -817,8 +864,9 @@ export default function DualLedgerPage() {
         {loading
           ? <BlockState state="loading" title="正在读取储备、应付款和覆盖率…" />
           : <BlockState state="error" title="资金数据读取失败，不显示旧数据" detail={bDomain.error ? displayAdminReadError(bDomain.error) : undefined} onRetry={refreshB1} retryLabel="重新读取" />}
-        <PendingCommands items={pendingItems} />
+        <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />
         {dialog}
+        {releaseDialog}
         {toastNode}
       </RdPage>
     );
@@ -834,17 +882,18 @@ export default function DualLedgerPage() {
           title={b1DataError === "B1_LEDGER_ACCOUNTS_EMPTY" ? "应付款明细是空的，暂时算不出构成" : b1DataError}
           detail={b1DataError === "B1_LEDGER_ACCOUNTS_EMPTY" ? "系统没有返回九类应付款。重读一次；仍是空的请联系值班人员核对账本（B1_LEDGER_ACCOUNTS_EMPTY）。" : "覆盖率走势少于 2 个点。重读一次；仍不足请联系值班人员。"}
           onRetry={refreshB1} retryLabel="重新读取" />
-        <PendingCommands items={pendingItems} />
+        <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />
         {dialog}
+        {releaseDialog}
         {toastNode}
       </RdPage>
     );
   }
   return (
     <RdPage className="b1-page">
-      {header(<>数据时间 {timeText(generatedAt)} · 打开页面和写入后读取<Explain label="数据时间说明" content="上面的储备、应付款、覆盖率和告警是同一次读取。差额走势是另一次读取，时间写在那一块里，登记储备或改阈值后它不会自动重读。" /></>, headerActions, readOnly)}
+      {header(<>数据时间 {timeText(generatedAt)} · 打开页面和写入后读取<Explain label="数据时间说明" content="上面的储备、应付款、覆盖率和告警是同一次读取。差额走势是另一次读取，时间写在那一块里；写入后两块都会重读。" /></>, headerActions, readOnly)}
       {warningNotice}
-      <PendingCommands items={pendingItems} />
+      <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />
       {conclusion}
       {stats}
       <div className="rd-split" data-even="">
@@ -854,6 +903,7 @@ export default function DualLedgerPage() {
       {compositionPanel}
       {exposurePanel}
       {dialog}
+      {releaseDialog}
       {toastNode}
     </RdPage>
   );

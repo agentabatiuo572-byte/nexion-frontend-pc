@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { ArrowUpRight, BellRing, CheckCheck, FileText, LockOpen, Lock, Power, ShieldQuestion, SlidersHorizontal } from "lucide-react";
 import {
   BlockState, Button, Change, Check, CheckGroup, Conclusion, DiffField, Explain, Fact, Facts, Field, Input, Modal, Notice, NumberInput,
-  PageHeader, PageTabs, Panel, RdPage, StatusTag, Textarea, useTabIds,
+  PageHeader, PageTabs, Panel, RdPage, ReleaseModal, StatusTag, Textarea, useTabIds,
 } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useToast } from "@/app/components/domain-views/design-kit";
@@ -33,7 +33,7 @@ import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isBCommandRejection } from "@/lib/admin/b-command-rejection";
 import { b5Commands, executeB5Command, inspectB5Command, isB5Original, pendingB5Commands, rememberB5Command, type B5PendingWrite, type B5ThresholdFacts } from "@/lib/admin/b5-commands";
-import { pendingThresholdConfigApproval, submitB5ThresholdApproval } from "@/lib/admin/withdrawal-config-approval";
+import { pendingThresholdConfigApproval, releaseExpiredB5ThresholdApproval, submitB5ThresholdApproval } from "@/lib/admin/withdrawal-config-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
@@ -63,6 +63,12 @@ const TRIAGE_LABEL: Record<DimensionKey, string> = {
 
 const STATUS_TEXT = { handled: "已处理", resolved: "已解决" } as const;
 
+/** 订阅写成人话：开了哪些渠道，外部通知带地址。 */
+const subscriptionChannels = (value: { inApp: boolean; webhook: boolean; webhookUrl: string }) =>
+  [value.inApp && "站内告警", value.webhook && `外部通知 ${value.webhookUrl}`].filter(Boolean).join("、") || "没有开渠道";
+/** 后端没人保存过订阅时接收人是 unassigned。 */
+const subscriberText = (value: string) => (value === "unassigned" ? "暂无接收人" : value || "—");
+
 /** 全页时间一种写法：2026-11-13 14:30（北京时间），和资金与应付款总览一致。 */
 const timeText = (value: string) => `${formatBusinessTimeCompact(value, "—")}（${businessZone().label}）`;
 
@@ -87,11 +93,12 @@ function PendingCommands({ items, auditReachable }: { items: readonly B5PendingC
       {items.map((item) => (
         <Notice key={item.commandKey} tone="warn" title={item.title} actionBelow
           action={<span className="b5-row-actions">
-            {item.expired ? undefined : <Button size="sm" disabledReason={item.onRetry ? undefined : "等待接入：按原操作重试"} onClick={item.onRetry}>按原操作重试</Button>}
+            {item.onQuery && <Button size="sm" onClick={item.onQuery}>查询原结果</Button>}
+            {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原请求重试</Button>}
             {auditReachable && <Link className="rd-link" href="/platform/audit" prefetch={false}>到「操作记录与审批」核对</Link>}
           </span>}>
           <p>{item.body}</p>
-          <p>命令号 <span data-mono>{item.commandKey}</span>{item.expired ? "，已超过 24 小时，只能核对，不能重试。" : "。只能按原内容重试，不能换号重发。"}</p>
+          <p>{item.expired ? "已超过 24 小时，不能重试，只能查询；查到的是现在的值，说明不了原操作成没成。" : "24 小时内只能按原请求重试，不能改值。"}</p>
         </Notice>
       ))}
     </>
@@ -155,6 +162,7 @@ export default function RiskRadarPage() {
   const [subscriptionNeedsRead, setSubscriptionNeedsRead] = useState(false);
   const [inboxNeedsRead, setInboxNeedsRead] = useState(false);
   const [approvalVerifiedKey, setApprovalVerifiedKey] = useState<string | null>(null);
+  const [releasingApproval, setReleasingApproval] = useState(false);
   const pendingWrites = session ? pendingB5Commands(String(session.adminId)) : [];
   const newWriteBlocked = needsFreshRadar || !!radar.error || !radar.data;
   useEffect(() => {
@@ -167,7 +175,7 @@ export default function RiskRadarPage() {
     setInboxError("");
     fetchB5Inbox()
       .then((items) => { if (alive) { setInbox(items); setInboxNeedsRead(false); } })
-      .catch((cause) => { if (alive) setInboxError(displayAdminError(cause)); })
+      .catch((cause) => { if (alive) setInboxError(displayAdminReadError(cause)); })
       .finally(() => { if (alive) setInboxLoading(false); });
     return () => { alive = false; };
   }, [inboxReload]);
@@ -189,7 +197,7 @@ export default function RiskRadarPage() {
         setSubscriptionNeedsRead(false);
       })
       .catch((cause) => {
-        if (alive) setSubscriptionError(displayAdminError(cause));
+        if (alive) setSubscriptionError(displayAdminReadError(cause));
       })
       .finally(() => { if (alive) setSubscriptionLoading(false); });
     return () => {
@@ -481,7 +489,7 @@ export default function RiskRadarPage() {
         setSubscriber(current.data.subscriber); setSubscriptionVersion(current.data.version); setWebhookMode(current.data.webhookMode);
         setSubscriptionError(""); setSubscriptionLoading(false); setSubscriptionNeedsRead(false);
       }
-      setToast(displayAdminError(new B5OutcomeUnknownError(record.commandKey)));
+      setToast(isRetryExpired(record) ? "已读回现在的值。现在的值说明不了原操作成没成，记录继续保留。" : "已读回现在的值。说明不了原操作成没成，可以按原请求重试，不会重复执行。");
     }
     catch (cause) { setToast(displayAdminError(cause)); }
   };
@@ -489,9 +497,10 @@ export default function RiskRadarPage() {
     const original = isB5Original(record) ? record : null;
     const input = original?.body ? JSON.parse(original.body) : null;
     const body = original?.kind === "threshold" ? `黄线 ${fmtConfigPct(original.facts.yellowPct)} → ${fmtConfigPct(input.yellowPct)} · 红线 ${fmtConfigPct(original.facts.redPct)} → ${fmtConfigPct(input.redPct)}`
-      : original?.kind === "signal" ? `${original.facts.signalNo} · ${HANDLING[original.facts.handlingStatus].text} → ${STATUS_TEXT[input.targetStatus as "handled" | "resolved"]}`
-        : original?.kind === "ack" ? `${original.facts.signalNo} · 确认已读` : original?.kind === "subscription" ? "告警订阅" : record.fingerprint;
-    return { commandKey: record.commandKey, title: "结果还没确认，可能已经生效", body: `${body} · ${timeText(new Date(record.createdAt).toISOString())}`,
+      : original?.kind === "signal" ? `信号 ${original.facts.signalNo} · ${HANDLING[original.facts.handlingStatus].text} → ${STATUS_TEXT[input.targetStatus as "handled" | "resolved"]}`
+        : original?.kind === "ack" ? `信号 ${original.facts.signalNo}` : original?.kind === "subscription" ? subscriptionChannels(JSON.parse(original.body)) : "原记录不完整，到「操作记录与审批」核对";
+    const name = original?.kind === "threshold" ? "调整黄线和红线" : original?.kind === "signal" ? `标记${STATUS_TEXT[input.targetStatus as "handled" | "resolved"]}` : original?.kind === "ack" ? "确认站内告警已读" : original?.kind === "subscription" ? "保存告警订阅" : "原操作";
+    return { commandKey: record.commandKey, title: `${name} · 结果未知`, body: `${body} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
       expired: isRetryExpired(record), onRetry: () => recoverWrite(record), onQuery: () => void queryWrite(record) };
   });
 
@@ -505,11 +514,23 @@ export default function RiskRadarPage() {
     ? <Button key="threshold" variant="ghost" size={size} icon={<SlidersHorizontal size={14} aria-hidden />} onClick={openThreshold}>调整黄线 / 红线</Button>
     : null;
   const approvalPending = pendingApproval?.commandKey === approvalVerifiedKey && pendingApproval?.b5Ticket?.status === "pending" ? { redPct: pendingApproval.values.redPct, ticketId: pendingApproval.b5Ticket.id } : null;
+  // 过期、并且过期后按原请求查询明确没有这张单，才可以解除（决定 R1-提案过期；判断在 releaseExpiredB5ThresholdApproval 里再核一次）。
+  const approvalReleasable = !!pendingApproval && pendingApproval.expiresAt <= Date.now() && !!pendingApproval.b5NotFound;
+  const releaseApproval = () => {
+    if (!session || !pendingApproval) return;
+    const released = releaseExpiredB5ThresholdApproval(session.adminId, pendingApproval.commandKey);
+    setReleasingApproval(false);
+    syncPending(value => value + 1);
+    if (!released) { setToast("这条记录现在不能解除，请先查询原结果。"); return; }
+    setThreshold(null); setApprovalRecovery(null); setNeedsFreshRadar(true); void radar.reload();
+    setToast("已解除本页的待确认记录");
+  };
   const approvalTag = approvalPending
-    ? <StatusTag tone="progress" explain={`审批号 ${approvalPending.ticketId}。另一位有批准权限的超级管理员批准前，红线不变。`}>红线提高到 {fmtConfigPct(approvalPending.redPct)} 待审批</StatusTag>
+    ? <StatusTag tone="progress" explain={`审批单 ${approvalPending.ticketId}。另一位超级管理员批准前，红线不变。`}>红线提高到 {fmtConfigPct(approvalPending.redPct)} 待审批</StatusTag>
     : null;
   const actionsFor = (item: BuiltDimension, issue: boolean) => {
-    const list = [triageButton(item.key, issue ? "primary" : "ghost", issue ? "md" : "sm"), item.key === "bankrun" ? thresholdButton(issue ? "md" : "sm") : null].filter(Boolean);
+    // 一屏只留一个主按钮：排第一的那张卡（结论句说「先看」的那项），其余卡用次按钮。
+    const list = [triageButton(item.key, issue ? (item.key === issues[0]?.key ? "primary" : "secondary") : "ghost", issue ? "md" : "sm"), item.key === "bankrun" ? thresholdButton(issue ? "md" : "sm") : null].filter(Boolean);
     return list.length ? <>{list}</> : null;
   };
 
@@ -559,9 +580,16 @@ export default function RiskRadarPage() {
         {header(meta, !data || radar.error ? killSwitchLink : headerActions, !data || radar.error ? undefined : readOnly)}
         <PendingCommands items={pendingItems} auditReachable={canCross("/platform/audit")} />
         {pendingApproval && (
-          <Notice tone="warn" title="提高红线的审批：提交结果还没确认"
-            action={<Button size="sm" onClick={openThreshold}>{pendingApproval.expiresAt <= Date.now() ? "查询原审批" : "核对原审批"}</Button>}>
-            红线 {fmtConfigPct(pendingApproval.values.redPct)}、黄线 {fmtConfigPct(pendingApproval.values.yellowPct)}。先查原审批单，查到了就不要重复提交。
+          <Notice tone="warn" title={`提高红线的审批 · ${approvalPending ? "待审批" : "结果未知"}`} actionBelow
+            action={<span className="b5-row-actions">
+              <Button size="sm" onClick={openThreshold}>查询原结果</Button>
+              {approvalReleasable && <Button size="sm" onClick={() => setReleasingApproval(true)}>解除待确认</Button>}
+            </span>}>
+            <p>黄线 {fmtConfigPct(pendingApproval.values.yellowPct)} · 红线 {fmtConfigPct(pendingApproval.values.redPct)} · {timeText(new Date(pendingApproval.createdAt).toISOString())}提交</p>
+            <p>{approvalPending ? "等另一位超级管理员在「操作记录与审批」批准，批准前红线不变。"
+              : approvalReleasable ? "已超过 24 小时，查询结果是没有这张审批单，可以解除待确认。"
+                : pendingApproval.expiresAt <= Date.now() ? "已超过 24 小时，不能重试，只能查询原审批单。"
+                  : "先查原审批单；查不到时 24 小时内可以按原请求重试，不会建第二张单。"}</p>
           </Notice>
         )}
         {!data || radar.error ? <>
@@ -627,7 +655,8 @@ export default function RiskRadarPage() {
         const yellowDirection = !Number.isFinite(yellowPct) || yellowPct === threshold.yellowPct ? null : yellowPct > threshold.yellowPct
           ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="done" icon={Lock}>收紧</StatusTag>;
         const orderError = thresholdValid ? undefined : "黄线 5%–50%，红线 10%–80%，红线要高于黄线";
-        const submitLabel = approvalRecovery ? "重试原操作" : requiresApproval ? "提交审批" : "确认调整";
+        const recovering = !!thresholdOriginal || !!approvalRecovery;
+        const submitLabel = recovering ? "按原请求重试" : requiresApproval ? "提交审批" : "确认调整";
         const blocked = !canThreshold ? formatAdminApiError("ADMIN_PERMISSION_DENIED", "ADMIN_PERMISSION_DENIED") : staleThreshold ? "阈值刚被改过，关掉重新打开再调整"
           : !thresholdValid ? "先把黄线、红线填在范围内"
             : !reasonValid && approvalRecovery !== "retry" ? "理由要写 8–200 个字"
@@ -636,30 +665,33 @@ export default function RiskRadarPage() {
         return (
           <Modal title="调整提现压力的黄线和红线" icon={SlidersHorizontal} busy={savingThreshold} dirty
             sub={requiresApproval
-              ? <StatusTag tone="warn" icon={LockOpen} explain={<>提高红线要另一位有批准权限的超级管理员批准，自己不能批。批准前红线仍是 {fmtConfigPct(threshold.redPct)}；批准时系统再核一次版本，期间有人改过线，这张单会被拒。</>}>批准后生效</StatusTag>
+              ? <StatusTag tone="warn" icon={LockOpen} explain="提高红线要另一位超级管理员批准，自己不能批。批准时系统再核一次版本，期间有人改过线，这张单会被拒。">批准后生效</StatusTag>
               : <StatusTag tone="progress" filled>立即生效</StatusTag>}
             onClose={() => setThreshold(null)}
             footer={<>
               <Button disabled={savingThreshold} onClick={() => setThreshold(null)}>取消</Button>
-              {approvalRecovery && <Button variant={lookupOnly ? "primary" : "secondary"} loading={savingThreshold && lookupOnly} loadingText="查询中…" disabledReason={undefined} onClick={() => void submitThreshold(true)}>查询原操作</Button>}
+              {approvalRecovery && approvalReleasable && <Button disabled={savingThreshold} onClick={() => { setThreshold(null); setReleasingApproval(true); }}>解除待确认</Button>}
+              {approvalRecovery && <Button variant={lookupOnly ? "primary" : "secondary"} loading={savingThreshold && lookupOnly} loadingText="查询中…" disabledReason={undefined} onClick={() => void submitThreshold(true)}>查询原结果</Button>}
               {!lookupOnly && <Button variant="primary" loading={savingThreshold} loadingText="提交中…" disabledReason={canSubmitThreshold ? undefined : blocked ?? "暂不能提交"} onClick={() => void submitThreshold()}>{submitLabel}</Button>}
             </>}>
             <div className="b5-dialog">
               {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
               {previewError && <Notice tone="danger" title="预览失败">{previewError}</Notice>}
-              {thresholdError && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? "审批提交结果还没确认" : thresholdUnknown ? "结果还没确认，可能已经生效" : "没有调整成功"}>{thresholdError}</Notice>}
-              {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="上一次提交审批的结果还没确认">先点「查询原操作」查原审批单；查到了就不要重复提交。</Notice>}
-              <DiffField size="body" before={fmtConfigPct(threshold.yellowPct)} label="黄线改成" hint="5%–50%" state={yellowDirection}
+              {thresholdError && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? "审批单结果未知" : thresholdUnknown ? "结果未知，可能已经生效" : "没有调整成功"}>{approvalRecovery
+                ? approvalReleasable ? "已超过 24 小时，查询结果是没有这张审批单，可以解除待确认。" : "可能已经建了审批单。先点「查询原结果」；查不到时 24 小时内可以按原请求重试，不会建第二张单。"
+                : thresholdUnknown ? "可能已经生效。可以按原请求重试，不会重复执行；也可以关掉后点「查询原结果」。" : thresholdError}</Notice>}
+              {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="审批单结果未知">{approvalReleasable ? "已超过 24 小时，查询结果是没有这张审批单，可以解除待确认。" : "先点「查询原结果」查原审批单；查到了就不用再提交。"}</Notice>}
+              <DiffField size="body" before={fmtConfigPct(threshold.yellowPct)} beforeLabel={recovering ? "提交时" : undefined} label="黄线改成" hint="5%–50%" state={yellowDirection}
                 note={yellowDirection ? "黄线只决定什么时候标「注意」，不会自动暂停提现。" : undefined}>
                 {(control) => <NumberInput {...control} aria-label="黄线（5%–50%）" unit="%" min={5} max={50} value={yellowInput} disabled={thresholdLocked} onChange={(event) => setYellowInput(event.target.value)} />}
               </DiffField>
-              <DiffField before={fmtConfigPct(threshold.redPct)} label="红线改成" explain="紧急停用开关页把这条线叫挤兑红线，是同一条线。" hint="10%–80%，要高于黄线" state={redDirection} error={yellowInput && redInput ? orderError : undefined}
+              <DiffField before={fmtConfigPct(threshold.redPct)} beforeLabel={recovering ? "提交时" : undefined} label="红线改成" explain="紧急停用开关页把这条线叫挤兑红线，是同一条线。" hint="10%–80%，要高于黄线" state={redDirection} error={yellowInput && redInput ? orderError : undefined}
                 note={redDirection ? (raising ? "红线调高，自动暂停提现会更晚触发。" : "红线调低，自动暂停提现会更早触发，立即生效。") : undefined}>
                 {(control) => <NumberInput {...control} aria-label="红线（10%–80%）" unit="%" min={10} max={80} value={redInput} disabled={thresholdLocked} onChange={(event) => setRedInput(event.target.value)} />}
               </DiffField>
               <p className="b5-preview" role="status">
-                现在的提现压力 {pressure.ratio24h === null ? "暂无法计算" : ratioPct(pressure.ratio24h)}，标「{formatB5RiskLight(pressure.light)}」；
-                {previewReady ? <>按新的线会标 <StatusTag tone={preview!.light === "red" ? "danger" : preview!.light === "yellow" ? "warn" : preview!.light === "green" ? "ok" : "neutral"}>{formatB5RiskLight(preview!.light)}</StatusTag></>
+                {recovering ? "提交时" : "现在"}的提现压力 {pressure.ratio24h === null ? "暂无法计算" : ratioPct(pressure.ratio24h)}，标「{formatB5RiskLight(pressure.light)}」{recovering ? "。" : "；"}
+                {recovering ? null : previewReady ? <>按新的线会标 <StatusTag tone={preview!.light === "red" ? "danger" : preview!.light === "yellow" ? "warn" : preview!.light === "green" ? "ok" : "neutral"}>{formatB5RiskLight(preview!.light)}</StatusTag></>
                   : previewKey && !previewError ? "正在按新的线计算…" : "填好两条线后显示按新的线会标什么。"}
               </p>
               <Notice tone="neutral">
@@ -668,7 +700,11 @@ export default function RiskRadarPage() {
               </Notice>
               {requiresApproval && (
                 <Notice tone="warn" title="提高红线要审批">
-                  提交后由另一位有批准权限的超级管理员批准；批准前红线仍是 {fmtConfigPct(threshold.redPct)}。
+                  <Facts>
+                    <Fact k="谁来批">另一位超级管理员，自己不能批</Fact>
+                    <Fact k="批准人需有">审批批准权限</Fact>
+                    <Fact k={recovering ? "提交时的红线" : "批准前的红线"}>{fmtConfigPct(threshold.redPct)}{recovering ? "；批没批以查询原结果为准" : ""}</Fact>
+                  </Facts>
                 </Notice>
               )}
               <Field label="调整理由" required error={reason && !reasonValid && !thresholdLocked ? "理由要写 8–200 个字" : undefined}>
@@ -679,7 +715,14 @@ export default function RiskRadarPage() {
         );
       })()}
 
-      {subscriptionOpen && (canSubscribe || subscriptionOriginal) && (
+      {subscriptionOpen && (canSubscribe || subscriptionOriginal) && (() => {
+        // 恢复原请求时，上面是冻结的原内容（重试只发它），现在的订阅读不到放在后面，不挡原内容。
+        const subscriptionReadState = (
+          <BlockState state={subscriptionLoading ? "loading" : "error"} title={subscriptionLoading ? "正在读取现在的订阅…" : subscriptionOriginal ? "现在的订阅没读到，不影响按原请求重试" : "现在的订阅没读到"} detail={subscriptionError || undefined}
+            onRetry={subscriptionLoading ? undefined : () => setSubscriptionReload((value) => value + 1)} retryLabel="重新读取" />
+        );
+        const subscriptionConflict = subscriptionDraftPreserved && !subscriptionOriginal && !subscriptionLoading && !subscriptionError;
+        return (
         <Modal title="告警订阅" icon={BellRing} busy={savingSubscription} dirty={subscriptionChanged}
           sub={<StatusTag tone="progress" filled>立即生效</StatusTag>}
           onClose={() => setSubscriptionOpen(false)}
@@ -687,21 +730,38 @@ export default function RiskRadarPage() {
             <Button disabled={savingSubscription} onClick={() => setSubscriptionOpen(false)}>取消</Button>
             <Button variant="primary" loading={savingSubscription} loadingText="保存中…"
               disabledReason={!canSubscribe ? formatAdminApiError("ADMIN_PERMISSION_DENIED", "ADMIN_PERMISSION_DENIED") : subscriptionOriginal ? isRetryExpired(subscriptionOriginal) ? "已超过 24 小时，只能核对，不能重试。" : undefined : subscriptionNeedsRead || subscriptionLoading ? "正在读取现在的订阅" : subscriptionError ? "现在的订阅没读到，不能保存" : !subscriptionChanged ? "还没有改动" : !subscriptionValid ? "至少开一个渠道" : undefined}
-              onClick={() => void saveSubscription()}>保存订阅</Button>
+              onClick={() => void saveSubscription()}>{subscriptionOriginal ? "按原请求重试" : "保存订阅"}</Button>
           </>}>
           <div className="b5-dialog">
-            {(subscriptionLoading || subscriptionError) && (
-              <BlockState state={subscriptionLoading ? "loading" : "error"} title={subscriptionLoading ? "正在读取现在的订阅…" : "现在的订阅没读到"} detail={subscriptionError || undefined}
-                onRetry={subscriptionLoading ? undefined : () => setSubscriptionReload((value) => value + 1)} />
-            )}
+            {!subscriptionOriginal && (subscriptionLoading || subscriptionError) && subscriptionReadState}
             {(subscriptionOriginal || (!subscriptionLoading && !subscriptionError)) && (
               <>
+                {subscriptionOriginal && subscriptionUnknown && (
+                  <Notice tone="warn" title="结果未知，可能已经生效">
+                    下面是提交时的内容，已锁定。按原请求重试只发这一份，不会重复执行；也可以关掉后点「查询原结果」。
+                  </Notice>
+                )}
+                {subscriptionConflict && (() => {
+                  const diffs = ([
+                    ["站内告警", savedSubscription.inApp ? "开" : "关", subscription.inApp ? "开" : "关"],
+                    ["外部通知", savedSubscription.webhook ? "开" : "关", subscription.webhook ? "开" : "关"],
+                    ["外部通知地址", savedSubscription.webhookUrl || "—", subscription.webhookUrl || "—"],
+                  ] as const).filter(([, latest, draft]) => latest !== draft);
+                  return (
+                    <Notice tone="warn" title="别人刚保存过订阅">
+                      <p>{diffs.length ? "已读到最新的订阅，你的改动还在。核对差别后再保存。" : "已读到最新的订阅，和你的改动一样，不用再保存。"}</p>
+                      {diffs.length > 0 && <Facts>
+                        {diffs.map(([k, latest, draft]) => <Fact key={k} k={k}><Change from={`最新 ${latest}`} to={`你的 ${draft}`} /></Fact>)}
+                      </Facts>}
+                    </Notice>
+                  );
+                })()}
                 <Facts>
-                  <Fact k="现在的接收人">{subscriptionOriginal?.facts.subscriber ?? (subscriber || "—")}</Fact>
+                  <Fact k={subscriptionOriginal ? "提交时的接收人" : "现在的接收人"}>{subscriberText(subscriptionOriginal?.facts.subscriber ?? subscriber)}</Fact>
                   <Fact k="保存后的接收人">你</Fact>
                 </Facts>
                 <Notice tone="warn">
-                  这份订阅全平台只有一份，和「资金与应付款总览」共用。保存后你会成为唯一的接收人，之后的新告警只发给你；排队中的外部通知也会按新地址发。
+                  全平台只有一份，和「资金与应付款总览」共用。保存后新告警只发给你，排队中的外部通知也按新地址发。
                 </Notice>
                 <CheckGroup legend="发送渠道" summary={subscriptionValid ? undefined : "至少开一个"}>
                   <Check name="inApp" label="站内告警" checked={subscription.inApp} disabled={!canSubscribe || !!subscriptionOriginal || savingSubscription} onChange={(event) => setSubscription((value) => ({ ...value, inApp: event.target.checked }))} />
@@ -717,12 +777,14 @@ export default function RiskRadarPage() {
                       onChange={(event) => setSubscription((value) => ({ ...value, webhookUrl: event.target.value }))} />
                   </Field>
                 )}
-                {subscriptionSaveError && <Notice tone={subscriptionUnknown ? "warn" : "danger"} title={subscriptionUnknown ? "结果还没确认，可能已经生效" : "没有保存成功"}>{subscriptionSaveError}</Notice>}
+                {subscriptionSaveError && !subscriptionUnknown && !(subscriptionConflict && subscriptionSaveError === formatAdminApiError("B5_SUBSCRIPTION_VERSION_CONFLICT", "B5_SUBSCRIPTION_VERSION_CONFLICT")) && <Notice tone={subscriptionUnknown ? "warn" : "danger"} title={subscriptionUnknown ? "结果未知，可能已经生效" : "没有保存成功"}>{subscriptionSaveError}</Notice>}
               </>
             )}
+            {subscriptionOriginal && (subscriptionLoading || subscriptionError) && subscriptionReadState}
           </div>
         </Modal>
-      )}
+        );
+      })()}
 
       {statusDialog && (() => {
         const { alert, target } = statusDialog;
@@ -735,7 +797,7 @@ export default function RiskRadarPage() {
             footer={<>
               <Button disabled={busy} onClick={() => setStatusDialog(null)}>取消</Button>
               <Button variant="primary" loading={busy} loadingText="提交中…" disabledReason={!canTriage ? "你只能查看；分诊、调整黄线红线和告警订阅需要对应权限。" : statusOriginal && isRetryExpired(statusOriginal) ? "已超过 24 小时，只能核对，不能重试。" : valid ? undefined : "理由要写 8–200 个字"}
-                onClick={() => void changeSignalStatus(alert, target, statusReason)}>{statusUnknown ? "按原内容重试" : target === "handled" ? "确认标记已处理" : "确认标记已解决"}</Button>
+                onClick={() => void changeSignalStatus(alert, target, statusReason)}>{statusUnknown ? "按原请求重试" : target === "handled" ? "确认标记已处理" : "确认标记已解决"}</Button>
             </>}>
             <div className="b5-dialog">
               <Facts>
@@ -749,13 +811,18 @@ export default function RiskRadarPage() {
               <Field label="处理理由" required error={statusReason && !valid ? "理由要写 8–200 个字" : undefined}>
                 <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={200} rows={3} placeholder="8–200 字，例如：已核实、工单号" count={`${statusReason.trim().length} / 200`} onChange={(event) => setStatusReason(event.target.value)} />
               </Field>
-              {statusError && <Notice tone={statusUnknown ? "warn" : "danger"} title={statusUnknown ? "结果还没确认，可能已经生效" : "没有标记成功"}>
-                {statusUnknown ? "理由已锁住，只能按原内容重试；也可以关掉后刷新页面，看这条的处理进度变了没有。" : statusError}
+              {statusError && <Notice tone={statusUnknown ? "warn" : "danger"} title={statusUnknown ? "结果未知，可能已经生效" : "没有标记成功"}>
+                {statusUnknown ? "理由已锁住，只能按原请求重试；也可以关掉后点「查询原结果」，看这条的处理进度变了没有。" : statusError}
               </Notice>}
             </div>
           </Modal>
         );
       })()}
+      {releasingApproval && pendingApproval && (
+        <ReleaseModal onCancel={() => setReleasingApproval(false)} onConfirm={releaseApproval}
+          label={`提高红线的审批 · 黄线 ${fmtConfigPct(pendingApproval.values.yellowPct)} · 红线 ${fmtConfigPct(pendingApproval.values.redPct)} · ${timeText(new Date(pendingApproval.createdAt).toISOString())}提交`}
+          explain="原申请已超过 24 小时，按原请求查询明确没有这张审批单，说明申请没有建成，之后也不会再建成。解除后可以重新调整黄线和红线。" />
+      )}
       {toastNode}
     </RdPage>
   );
