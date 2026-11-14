@@ -164,7 +164,7 @@ function idempotencyKey() {
 }
 
 export class LOutcomeUnknownError extends Error {
-  constructor(message = "结果未知：可能已经生效。请按页面上方提示先查询原结果，或按原请求重试。") {
+  constructor(message = "结果未知：可能已经生效。请按页面上方的提示先核对，再决定是否重试。") {
     super(message);
     this.name = "LOutcomeUnknownError";
   }
