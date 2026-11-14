@@ -824,7 +824,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab === "F1" || tab === "F2" || tab === "F3" || tab === "F4" ? null : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
+      {tab === "F1" || tab === "F2" || tab === "F3" || tab === "F4" || tab === "F5" ? null : <DomainHeader {...meta} right={cta ? <button className="f-cta" onClick={cta.onClick}>{cta.label}</button> : undefined} />}
 
 
       {tab === "F1" && <F1Vrank ctx={ctx} />}
@@ -941,7 +941,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  // F1–F4 已改版：页头在页面里，整页包 RdPage。
-  return tab === "F1" || tab === "F2" || tab === "F3" || tab === "F4" ? <RdPage className="fdom">{page}</RdPage> : <div className="dkpage fdom">{page}</div>;
+  // F1–F5 已改版：页头在页面里，整页包 RdPage。
+  return tab === "F1" || tab === "F2" || tab === "F3" || tab === "F4" || tab === "F5" ? <RdPage className="fdom">{page}</RdPage> : <div className="dkpage fdom">{page}</div>;
 
 }
