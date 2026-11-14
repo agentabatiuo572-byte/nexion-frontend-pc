@@ -30,6 +30,7 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
   const [reason, setReason] = useState("");
   const [error, setError] = useState(""), [savedVersion, setSavedVersion] = useState<number>(), [reload, setReload] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [saved, setSaved] = useState(false);
   const [confirming, setConfirming] = useState(false);
   // BUG-122: a failed directory read is not an empty one; the saved group stays shown and stays the value saved.
   const [groupsFailed, setGroupsFailed] = useState(false);
@@ -43,6 +44,7 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
     query: supportUnboundPolicyClient.command,
     onSuccess: () => {
       awaitingSavedRead.current = true;
+      setSaved(true);
       setConfirming(false); setSavedVersion(undefined); setPolicy(null); setReason("");
       preserveDraft.current = false; setLoading(true); setReload(value => value + 1);
     },
@@ -81,6 +83,7 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
   function save() {
     if (!policy || !editable || !valid || !changed || !reasonOk || saving || loading || pending || groupBlocked) return;
     setSavedVersion(undefined);
+    setSaved(false);
     void command.run("submit", { alertMinutes: alert, fallbackMinutes: fallback, defaultGroupId: draft.group ? Number(draft.group) : null, expectedVersion: policy.version, reason: reason.trim() }, policy);
   }
 
@@ -115,7 +118,7 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
         {!denied && <p className="m5-pending-reason">原理由：{pending.payload.reason}</p>}
       </Notice>}
       {editable && !pending && command.message && <Notice tone="warn">{command.message}</Notice>}
-      {savedVersion !== undefined && <Notice tone="ok">已保存，现在是第 {savedVersion} 版。</Notice>}
+      {saved && <Notice tone="ok">{!loading && !policy ? "已保存。当前配置暂时读不到，读到后再改。" : savedVersion !== undefined ? `已保存，现在是第 ${savedVersion} 版。` : "已保存。"}</Notice>}
       {error && <BlockState state="error" title="待分配设置读不到" detail={error} onRetry={() => setReload((n) => n + 1)} retryLabel="重新加载" />}
       {!policy ? !error && <BlockState state="loading" title="正在读取待分配设置…" /> : pending ? null : <div className="m5-form">
         <div className="m5-unbound-fields">

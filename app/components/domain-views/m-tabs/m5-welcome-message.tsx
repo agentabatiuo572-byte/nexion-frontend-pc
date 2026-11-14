@@ -154,7 +154,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
         {loading && !current && <BlockState state="loading" title="正在读取欢迎语…" />}
         {!loading && (!current || readUnavailable) && <BlockState state="error" title="新用户欢迎语读不到" detail="暂时不能查看和修改。" onRetry={() => setReload((n) => n + 1)} />}
         {(error || command.message) && !readUnavailable && !confirm && !conflict && <Notice tone={errorTone}>{command.message || error}</Notice>}
-        {current && saved && !loading && !readUnavailable && <Notice tone="ok">已保存。之后注册的用户会收到新内容。</Notice>}
+        {saved && <Notice tone="ok">{!loading && readUnavailable ? "已保存。当前配置暂时读不到，读到后再改。" : "已保存。之后注册的用户会收到新内容。"}</Notice>}
         {current && shownTexts && <div className="m5-welcome-body">
           <div className="m5-welcome-edit">
             <LocaleTabs label="欢迎语语言" value={lang} onChange={setLang}

@@ -81,6 +81,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
   const [readUnavailable, setReadUnavailable] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [confirm, setConfirm] = useState(false);
   const [reason, setReason] = useState("");
@@ -90,7 +91,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
     store: ruleCommands, canQuery: Boolean(authorities?.includes("service_m1_read")), canWrite,
     fingerprint: (payload: RulePayload) => `support-rules:${payload.expectedVersion}`,
     write: m5ManagementClient.rules, query: m5ManagementClient.rulesCommand,
-    onSuccess: () => { preserveDraft.current = false; setConfirm(false); setLoading(true); setReadUnavailable(true); setReload(n => n + 1); setReason(""); },
+    onSuccess: () => { preserveDraft.current = false; setConfirm(false); setSaved(true); setLoading(true); setReadUnavailable(true); setReload(n => n + 1); setReason(""); },
     onRefusal: (cause, recovered, payload) => {
       setError(errorText(cause));
       if (recovered) { preserveDraft.current = true; setDraft(toDraft({ ...payload, version: payload.expectedVersion })); setConfirm(false); setLoading(true); setReadUnavailable(true); setReload(n => n + 1); }
@@ -132,6 +133,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
     if (current.inheritanceMode !== "UNCONFIGURED" && parsed.inheritanceMode === "UNCONFIGURED") {
       setError(errorText(new SupportClientError(422, 422, "SUPPORT_RULES_INVALID"))); return;
     }
+    setSaved(false);
     await command.run("submit", { ...parsed, expectedVersion: current.version, reason: reason.trim() }, current);
   }
 
@@ -204,6 +206,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
         {loading && !current && <BlockState state="loading" title="正在读取服务规则…" />}
         {!loading && (!current || readUnavailable) && <BlockState state="error" title="服务规则读不到，暂时不能查看和保存" detail={error || undefined} onRetry={() => setReload((n) => n + 1)} />}
         {(error || command.message) && !readUnavailable && !confirm && !conflict && <Notice tone={isIndeterminateText(command.message || error) ? "warn" : "danger"}>{command.message || error}</Notice>}
+        {saved && <Notice tone="ok">{!loading && readUnavailable ? "已保存。当前配置暂时读不到，读到后再改。" : "已保存。"}</Notice>}
         {draft && current && <div className="m5-form">
           <Field label="新客户怎么分" help={draft.unboundAssignmentMode === "AUTO_RANDOM"
             ? "第一次发消息时，马上分给负载最低的客服。"
