@@ -1,11 +1,11 @@
 "use client";
 
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { normalizeB5Radar, PRESSURE_RED_LINE, type B5Radar } from "@/lib/admin/b5-radar-contract";
 import { parseStrictFiniteNumber } from "@/lib/admin/strict-number";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 
 export { normalizeB5Radar, PRESSURE_RED_LINE, type B5Radar };
 const B5_RADAR_ENDPOINT = "/api/admin/risk/radar";
@@ -27,22 +27,31 @@ export type B5Subscription = {
   sharedWith: string;
   emailMode: string;
   webhookMode: string;
+  subscriber: string;
 };
 
 export type B5InboxItem = {
   id: number;
   signalNo: string;
   deliveryStatus: string;
-  receiptSource: string;
-  deliveredAt: string;
+  receiptSource: string | null;
+  deliveredAt: string | null;
   readAt: string | null;
   acknowledgedAt: string | null;
 };
 
 export class B5OutcomeUnknownError extends Error {
-  constructor(public readonly commandKey: string) {
-    super(`本次操作结果未知，可能已经生效。请先刷新核对；如需重试，请保持输入不变并使用当前操作重试。请求号：${commandKey}`);
+  readonly unknownOutcome = true;
+  constructor(public readonly commandKey: string, detail?: string) {
+    super(`${detail ? `${detail} ` : ""}本次操作结果未知，可能已经生效。请先刷新核对；如需重试，请保持输入不变并使用当前操作重试。请求号：${commandKey}`);
     this.name = "B5OutcomeUnknownError";
+  }
+}
+
+export class B5RequestError extends Error {
+  constructor(message: string, readonly status: number, readonly code: number, readonly backendMessage?: string) {
+    super(message);
+    this.name = "B5RequestError";
   }
 }
 
@@ -87,17 +96,20 @@ function invalid(field: string): never {
   throw new Error(`B5_RESPONSE_INVALID:${field}`);
 }
 
-function normalizeSubscription(value: unknown): B5Subscription {
+export function normalizeB5Subscription(value: unknown): B5Subscription {
   const subscription = row(value, "subscription");
+  const version = num(subscription.version, "subscription.version");
+  if (!Number.isSafeInteger(version)) invalid("subscription.version");
   return {
     inApp: bool(subscription.inApp, "subscription.inApp"),
     email: bool(subscription.email, "subscription.email"),
     webhook: bool(subscription.webhook, "subscription.webhook"),
     webhookUrl: typeof subscription.webhookUrl === "string" ? subscription.webhookUrl : invalid("subscription.webhookUrl"),
-    version: num(subscription.version, "subscription.version"),
+    version,
     sharedWith: text(subscription.sharedWith, "subscription.sharedWith"),
     emailMode: text(subscription.emailMode, "subscription.emailMode"),
     webhookMode: text(subscription.webhookMode, "subscription.webhookMode"),
+    subscriber: text(subscription.subscriber, "subscription.subscriber"),
   };
 }
 
@@ -115,8 +127,8 @@ function normalizeInbox(value: unknown): B5InboxItem[] {
       id,
       signalNo: text(delivery.signalNo, `inbox.${index}.signalNo`),
       deliveryStatus: text(delivery.deliveryStatus, `inbox.${index}.deliveryStatus`),
-      receiptSource: text(delivery.receiptSource, `inbox.${index}.receiptSource`),
-      deliveredAt: text(delivery.deliveredAt, `inbox.${index}.deliveredAt`),
+      receiptSource: optionalText(delivery.receiptSource, `inbox.${index}.receiptSource`),
+      deliveredAt: optionalText(delivery.deliveredAt, `inbox.${index}.deliveredAt`),
       readAt: optionalText(delivery.readAt, `inbox.${index}.readAt`),
       acknowledgedAt: optionalText(delivery.acknowledgedAt, `inbox.${index}.acknowledgedAt`),
     };
@@ -127,7 +139,7 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
-async function request<T>(endpoint: string, init?: RequestInit): Promise<T> {
+async function request<T>(endpoint: string, init?: RequestInit, preserveRejections = false): Promise<T> {
   // 传输层失败归「结果未知」(原来无 try/catch,裸 TypeError 到页面就被当确定失败弃号)。
   let response: Response;
   try {
@@ -137,18 +149,25 @@ async function request<T>(endpoint: string, init?: RequestInit): Promise<T> {
     if (commandKey) throw new B5OutcomeUnknownError(commandKey);
     throw error;
   }
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
-  if (!response.ok || !result || result.code !== 0 || result.data === undefined) {
-    if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
-    const commandKey = new Headers(init?.headers).get("Idempotency-Key");
-    // unknown 头只是增强信号,不再是唯一保险丝:5xx / 响应不可读同样归结果未知。
-    if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
-      || outcomeStaysUnknown(response.status, result?.code))) {
-      throw new B5OutcomeUnknownError(commandKey);
-    }
-    throw new Error(formatAdminApiError(result?.message, `B5_REQUEST_FAILED_${response.status}`));
+  const result = await response.json().catch(() => null);
+  const message = typeof result?.message === "string" ? result.message : undefined;
+  const commandKey = new Headers(init?.headers).get("Idempotency-Key");
+  if (isAdminAuthFailure(response.status, message) || isAdminAuthFailure(result?.code, message)) resetAdminSession();
+  if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+    || !result || typeof result.code !== "number")) throw new B5OutcomeUnknownError(commandKey);
+  if (!response.ok || !result || result.code !== 0 || result.data == null) {
+    const error = new B5RequestError(formatAdminApiError(message, `B5_REQUEST_FAILED_${response.status}`),
+      response.ok && typeof result?.code === "number" ? result.code : response.status, result?.code, message);
+    if (commandKey && !preserveRejections && !isExplicitRejection(error)) throw new B5OutcomeUnknownError(commandKey, error.message);
+    throw error;
   }
   return result.data;
+}
+
+/** The caller persists these exact bytes before sending; malformed success is still unknown. */
+export async function sendB5StoredWrite(endpoint: string, method: string, body: string, commandKey: string): Promise<unknown> {
+  return request(endpoint, { method, headers: { ...(body ? { "Content-Type": "application/json" } : {}), "Idempotency-Key": commandKey },
+    ...(body ? { body } : {}) }, true);
 }
 
 export async function fetchB5Radar() {
@@ -156,7 +175,7 @@ export async function fetchB5Radar() {
 }
 
 export async function fetchB5Subscription() {
-  return normalizeSubscription(await request<unknown>(B5_SUBSCRIPTION_ENDPOINT));
+  return normalizeB5Subscription(await request<unknown>(B5_SUBSCRIPTION_ENDPOINT));
 }
 
 export async function fetchB5Inbox() {
@@ -172,11 +191,19 @@ export async function acknowledgeB5Inbox(deliveryId: number, commandKey = idempo
 }
 
 export async function previewB5Thresholds(yellowPct: number, redPct: number, expectedVersion: number) {
-  return request<{ ratio24h: number | null; ratioCalculable: boolean; light: Light | "unavailable"; expectedVersion: number }>(B5_THRESHOLD_PREVIEW_ENDPOINT, {
+  const value = row(await request<unknown>(B5_THRESHOLD_PREVIEW_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ yellowPct, redPct, expectedVersion }),
-  });
+  }), "preview");
+  const ratio24h = nullableNum(value.ratio24h, "preview.ratio24h");
+  const ratioCalculable = bool(value.ratioCalculable, "preview.ratioCalculable");
+  const state = text(value.light, "preview.light");
+  const version = num(value.expectedVersion, "preview.expectedVersion");
+  if (!Number.isSafeInteger(version) || !["red", "yellow", "green", "unavailable"].includes(state)
+    || ratioCalculable !== (ratio24h !== null) || ratioCalculable && state === "unavailable"
+    || !ratioCalculable && state !== "red" && state !== "unavailable") invalid("preview");
+  return { ratio24h, ratioCalculable, light: state as Light | "unavailable", expectedVersion: version };
 }
 
 export async function updateB5Thresholds(
@@ -200,7 +227,7 @@ export async function updateB5Subscription(
   operator: string,
   commandKey = idempotencyKey("b5-subscription"),
 ) {
-  return normalizeSubscription(await request<unknown>(B5_SUBSCRIPTION_ENDPOINT, {
+  return normalizeB5Subscription(await request<unknown>(B5_SUBSCRIPTION_ENDPOINT, {
     method: "PUT",
     headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
     body: JSON.stringify({ ...value, expectedVersion, operator }),
@@ -213,11 +240,13 @@ export async function recordB5Triage(
   operator: string,
   commandKey = idempotencyKey("b5-triage"),
 ) {
-  return request<{ dimension: string; target: string }>(B5_TRIAGE_ENDPOINT, {
+  const receipt = await request<{ dimension: string; target: string }>(B5_TRIAGE_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
     body: JSON.stringify({ dimension, target, operator }),
-  });
+  }, true);
+  if (receipt.dimension !== dimension || receipt.target !== target) throw new B5OutcomeUnknownError(commandKey);
+  return receipt;
 }
 
 export async function updateB5SignalStatus(
@@ -229,7 +258,7 @@ export async function updateB5SignalStatus(
   operator: string,
   commandKey = idempotencyKey("b5-signal-status"),
 ) {
-  return request<{ signalNo: string; status: string; version: number }>(
+  return request<{ signalNo: string; handlingStatus: string; handlingVersion: number }>(
     `/api/admin/risk/radar/signals/${encodeURIComponent(signalNo)}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
@@ -247,10 +276,13 @@ export function useB5Radar() {
     setLoading(true);
     setError(null);
     try {
-      setData(await fetchB5Radar());
+      const next = await fetchB5Radar();
+      setData(next);
+      return next;
     } catch (cause) {
       setData(null);
       setError(displayAdminError(cause));
+      return null;
     } finally {
       setLoading(false);
     }
@@ -283,5 +315,9 @@ export function useB5Radar() {
     };
   }, [reload]);
 
-  return { data, loading, error, streamWarning, reload, setData };
+  return { data, loading, error, streamWarning, reload, setData: (current: B5Radar) => {
+    setData(current);
+    setError(null);
+    setLoading(false);
+  } };
 }

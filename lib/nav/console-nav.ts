@@ -563,6 +563,10 @@ export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals",
   "/analytics/export",
   "/emergency/geo-block",
   "/emergency/sop",
+  "/overview/dual-ledger",
+  "/overview/funnel",
+  "/overview/risk-radar",
+  "/overview/rhythm",
 ];
 /** 不在菜单里的详情页，路径带对象编号，按前缀认。 */
 export const REDESIGNED_DETAIL_PREFIXES: readonly string[] = ["/users/search/", "/service/customers/"];

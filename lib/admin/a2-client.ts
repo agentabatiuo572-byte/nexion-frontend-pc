@@ -640,10 +640,16 @@ export async function fetchA2ReasonPolicy(): Promise<A2ReasonPolicy> {
 }
 
 /** Exact original-maker lookup includes archived audit evidence; never resubmit a lost proposal. */
-export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false): Promise<A2OperationRow | null> {
+export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket = false): Promise<A2OperationRow | null> {
   try {
     const row = await a2Request<BackendTicket>(`/operations/proposals/by-idempotency-key?${new URLSearchParams({ idempotencyKey: commandKey })}`);
     if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new Error("提交结果不完整，请稍后再查。");
+    // B5 opts in before using the live receipt to show pending or release its original record.
+    // Other callers retain their current parser contract.
+    if (strictTicket && (!['pending', 'approved', 'rejected', 'withdrawn', 'expired'].includes(row.status.trim().toLowerCase())
+      || typeof row.mine !== "boolean" || typeof row.action !== "string" || typeof row.obj !== "string" || typeof row.operationCode !== "string")) {
+      throw new Error("提交结果不完整，请稍后再查。");
+    }
     return fromTicket(row);
   } catch (failure) {
     if (failure && typeof failure === "object" && "status" in failure && failure.status === 404
