@@ -188,7 +188,7 @@
 .i6-page .i6-course-meta dt { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .i6-page .i6-course-meta dd { margin: 0; min-width: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .i6-course-langs { display: flex; gap: var(--rd-space-2); }
-.i6-course-langs span { padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-ok-bg); color: var(--rd-ok); font-size: 12px; line-height: 18px; }
+.i6-course-langs span { padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-ok-bg); color: var(--rd-ok); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .i6-course-langs span[data-missing] { background: var(--rd-warn-bg); color: var(--rd-warn); }
 .i6-page .i6-course-actions { display: flex; align-items: center; gap: var(--rd-space-2); margin-top: auto; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
 .i6-card-act { display: inline-flex; align-items: center; gap: var(--rd-space-2); margin-left: auto; }

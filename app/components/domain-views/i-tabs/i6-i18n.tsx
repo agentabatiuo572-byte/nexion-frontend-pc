@@ -1242,8 +1242,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const isDraft = st === "draft" || st === "ready";
     const title = nexGridBrandText(c.title);
     return <Decision
-      danger={canWriteI7 && isDraft ? <Button variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} onClick={() => deleteCrs(c)}>删除草稿</Button>
-        : canWriteI7 && !archived ? <Button variant="danger-outline" icon={<Archive size={14} aria-hidden />} onClick={() => archiveCrs(c)}>下架</Button> : undefined}
+      danger={canWriteI7 && isDraft ? <Button variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} aria-label={`删除草稿 ${title}`} onClick={() => deleteCrs(c)}>删除草稿</Button>
+        : canWriteI7 && !archived ? <Button variant="danger-outline" icon={<Archive size={14} aria-hidden />} aria-label={`下架 ${title}`} onClick={() => archiveCrs(c)}>下架</Button> : undefined}
       others={<>
         <Button onClick={() => setVersionCourseId("")}>关闭</Button>
         {isDraft && canWriteI7 && <Button icon={<Pencil size={14} aria-hidden />} aria-label={`编辑 ${title}`} onClick={() => editCrs(c)}>编辑</Button>}
