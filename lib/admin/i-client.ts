@@ -6,6 +6,7 @@ import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExp
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { parseI4SectionVersion } from "./i4-trust-contract";
+import { parseI6Course, parseI6CourseVersion, parseI6Issue, parseI6Json, parseI6Message, parseI6Overview } from "./i6-learning-contract";
 
 type ApiResult<T> = {
   code?: number;
@@ -29,7 +30,7 @@ export type I3FormSnapshot = {
   estimatedAudience: number | null;
   estimatedAt: number | null;
 };
-type IContentPending = PendingMutationRecord & { i4?: I1Original & { snapshot?: TrustSectionVersionView }; i1?: I1Original; i2?: I1Original; i3?: I1Original & { snapshot?: NotificationCampaignRow; formSnapshot?: I3FormSnapshot } };
+type IContentPending = PendingMutationRecord & { i6?: I1Original; i4?: I1Original & { snapshot?: TrustSectionVersionView }; i1?: I1Original; i2?: I1Original; i3?: I1Original & { snapshot?: NotificationCampaignRow; formSnapshot?: I3FormSnapshot } };
 export type I1Command = PendingMutationRecord & {
   original?: I1Original;
   label: string;
@@ -42,8 +43,174 @@ export type I1Command = PendingMutationRecord & {
 // One instance for the domain. Retain expired evidence for query-only recovery.
 const uncertainCommandKeys = createPendingMutationStore<IContentPending>({
   storageKey: "nexion-admin-i-content-uncertain-commands-v1",
-  retainExpiredRecords: (row) => /^(POST|PUT|PATCH|DELETE):\/(copy-ab\/|nova\/|campaigns(?::|\/)|trust-disclosure\/trust-sections\/)/.test(row.fingerprint),
+  retainExpiredRecords: (row) => /^(POST|PUT|PATCH|DELETE):\/(copy-ab\/|nova\/|campaigns(?::|\/)|trust-disclosure\/trust-sections\/|i18n-learning\/)/.test(row.fingerprint),
 });
+
+export type I6Command = PendingMutationRecord & {
+  original?: I1Original;
+  scope: string;
+  operation: string;
+  label: string;
+  target: string;
+  version: string;
+  reason: string;
+  input: Record<string, unknown>;
+};
+
+/** Decode persisted originals once; replay always sends their saved bytes. Legacy fingerprints remain recoverable. */
+function readI6Command(row: IContentPending): I6Command | undefined {
+  const owner = useAdminAuth.getState().session?.adminId;
+  if (owner === undefined || (row.i6 ? row.i6.owner !== owner : !hasPersistedPendingCommandOwner(String(owner)))) return undefined;
+  const match = /^(POST|PATCH|DELETE):(\/i18n-learning\/[^:]+):([\s\S]*)$/.exec(row.fingerprint);
+  if (!match) return undefined;
+  const fallback: I6Command = { ...row, original: undefined, scope: "unknown", operation: "unknown", label: "结果未知", target: "", version: "", reason: "", input: {} };
+  try {
+    const [, method, path, body] = match;
+    const parts = path.split("/").map(decodeURIComponent);
+    const parsed: unknown = parseI6Json(body);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return fallback;
+    const input = parsed as Record<string, unknown>;
+    if (typeof input.reason !== "string" || typeof input.operator !== "string"
+      || row.i6 && (row.i6.method !== method || row.i6.path !== path || row.i6.body !== body)) return fallback;
+    let operation: string | undefined, target = parts[3] ?? "", version = parts[5] ?? "", scope = "";
+    if (parts.length === 3 && parts[2] === "rescan" && method === "POST") { operation = "rescan"; scope = "rescan"; }
+    if (parts[2] === "messages") {
+      operation = parts.length === 5 && parts[4] === "draft" && method === "PATCH" ? "message-draft"
+        : parts.length === 5 && parts[4] === "publish" && method === "POST" ? "message-publish"
+          : parts.length === 4 && method === "DELETE" ? "message-archive"
+            : parts.length === 7 && parts[4] === "versions" && parts[6] === "rollback" && method === "POST" ? "message-rollback" : undefined;
+      scope = `message:${target}`;
+      if (typeof input.expectedVersion !== "string") return { ...fallback, scope, target };
+    }
+    if (parts[2] === "integrity" && parts.length === 5 && parts[4] === "fix" && method === "POST") {
+      operation = "integrity-fix"; target = typeof input.messageKey === "string" ? input.messageKey : ""; scope = `message:${target}`;
+    }
+    if (parts[2] === "courses") {
+      scope = `course:${target}`;
+      operation = parts.length === 4 && target === "featured" && method === "PATCH" ? "featured"
+        : parts.length === 4 && method === "POST" ? "course-create"
+          : parts.length === 4 && method === "DELETE" ? "course-delete"
+            : parts.length === 5 && parts[4] === "draft" && method === "PATCH" ? "course-draft"
+              : parts.length === 5 && ["publish", "archive"].includes(parts[4]) && method === "POST" ? `course-${parts[4]}`
+                : parts[4] === "versions" && parts.length === 5 && method === "POST" ? "version-create"
+                  : parts[4] === "versions" && parts.length === 6 && method === "PATCH" ? "version-draft"
+                    : parts[4] === "versions" && parts.length === 6 && method === "DELETE" ? "version-delete"
+                      : parts[4] === "versions" && parts.length === 7 && ["publish", "rollback"].includes(parts[6]) && method === "POST" ? `version-${parts[6]}` : undefined;
+      if (operation === "featured") { target = String(input.courseId ?? ""); scope = "featured"; }
+      if (operation === "version-create") version = String(input.version ?? "");
+    }
+    const labels: Record<string, string> = { rescan: "重新检查全部文案", "message-draft": "保存三语草稿", "message-publish": "发布文案", "message-archive": "归档文案", "message-rollback": "回滚文案", "integrity-fix": "修复并存成草稿", "course-create": "保存新课程草稿", "course-draft": "保存课程草稿", "course-delete": "删除课程草稿", "course-publish": "发布课程", "course-archive": "下架课程", "version-create": "保存新版本草稿", "version-draft": "保存版本草稿", "version-delete": "删除版本草稿", "version-publish": "发布课程版本", "version-rollback": "回滚课程版本", featured: "更换首页推荐课" };
+    if (!operation || !labels[operation] || operation !== "rescan" && !target) return { ...fallback, scope, target, version };
+    if (["message-draft", "message-publish", "integrity-fix"].includes(operation)
+      && !["zh", "en", "vi"].every(key => typeof input[key] === "string")) return { ...fallback, scope, target };
+    if (["course-create", "course-draft", "version-create", "version-draft"].includes(operation)) {
+      parseI6CourseVersion({ courseId: target, version: version || "v1", status: "DRAFT", payload: input, revision: 0, createdAt: null, updatedAt: null });
+      if (operation.endsWith("draft") && (!Number.isSafeInteger(input.expectedRevision) || Number(input.expectedRevision) < 0)) return { ...fallback, scope, target };
+    }
+    return { ...row, original: { owner, method, path, body }, scope, operation, label: labels[operation], target, version, reason: input.reason, input };
+  } catch { return fallback; }
+}
+
+export function pendingI6Commands(): I6Command[] {
+  return uncertainCommandKeys.list().flatMap(row => { const command = readI6Command(row); return command ? [command] : []; });
+}
+
+export function i6RetryPermission(command: I6Command): string | undefined {
+  const auth = useAdminAuth.getState(), session = auth.session;
+  const permissions = command.operation.startsWith("message-") || ["rescan", "integrity-fix"].includes(command.operation)
+    ? ["content_i6_write"] : ["content_i7_write", ...(["course-publish", "version-publish", "version-rollback"].includes(command.operation) ? ["content_i7_course_reward_adjust"] : [])];
+  if (!auth.isAuthenticated || auth.logoutPending || !session || !permissions.every(permission => session.authorities.includes(permission))) return "当前账号没有这项操作权限，请查询原结果。";
+  if (!command.original) return "原操作记录不完整，只能查询核对，不能重试。";
+  return undefined;
+}
+
+async function sendI6Command(command: I6Command, retry: boolean): Promise<unknown> {
+  const uncertain = (message: string) => Object.assign(new OutcomeUnknownError(message), { commandKey: command.commandKey });
+  if (!command.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
+  if (command.original?.owner !== useAdminAuth.getState().session?.adminId) throw new Error("登录身份已变更，请重新打开页面。");
+  const permission = i6RetryPermission(command);
+  if (permission) throw new Error(permission);
+  if (isRetryExpired(command)) throw new Error(RETRY_EXPIRED_TEXT);
+  if (!uncertainCommandKeys.isDurablyStored(command.fingerprint, command.commandKey)) throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
+  let response: Response, payload: ApiResult<unknown>;
+  try {
+    response = await guardedFetch(`/api/admin/content${command.original!.path}`, { method: command.original!.method,
+      body: command.original!.body, headers: { "Content-Type": "application/json", "Idempotency-Key": command.commandKey }, cache: "no-store" });
+    payload = parseI6Json(await response.text()) as ApiResult<unknown>;
+  } catch { throw uncertain("结果未知，请查询原结果或按原请求重试。"); }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Number.isInteger(payload.code)
+    || payload.message !== undefined && typeof payload.message !== "string") throw uncertain("原操作回执无法核实，请保留记录并查询原结果。");
+  const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(payload.message);
+  if (!response.ok || payload.code !== 0 || unknown) {
+    const status = response.ok && payload.code! >= 400 && payload.code! < 500 ? payload.code : response.status;
+    const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status, reasonCode: payload.message });
+    const rejected = retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && payload.code! < 500;
+    if (rejected && !unknown) { uncertainCommandKeys.forget(command.fingerprint, command.commandKey); throw failure; }
+    throw uncertain(failure.message);
+  }
+  let valid = false;
+  try {
+    if (command.operation === "rescan") { parseI6Overview(payload.data); valid = true; }
+    else if (command.operation.startsWith("message-")) {
+      const message = parseI6Message(payload.data);
+      const expected = String(command.input.expectedVersion);
+      const next = `v${Number(expected.replace(/^v/i, "")) + 1}`;
+      valid = message.messageKey === command.target
+        && message.status === (command.operation === "message-draft" ? "draft" : command.operation === "message-archive" ? "archived" : "published")
+        && message.version === (["message-draft", "message-rollback"].includes(command.operation) ? next : expected);
+    } else if (command.operation === "integrity-fix") valid = parseI6Issue(payload.data).code === command.original!.path.split("/")[3];
+    else if (["course-delete", "version-delete"].includes(command.operation)) valid = payload.data === null;
+    else if (["version-create", "version-draft"].includes(command.operation)) {
+      const version = parseI6CourseVersion(payload.data);
+      valid = version.courseId === command.target && version.version === command.version && version.status === "DRAFT"
+        && version.revision === (command.operation === "version-create" ? 0 : Number(command.input.expectedRevision) + 1);
+    } else {
+      const course = parseI6Course(payload.data);
+      valid = course.id === command.target && (command.operation === "featured" ? course.featured
+        : course.status === (command.operation === "course-archive" ? "archived" : ["course-create", "course-draft"].includes(command.operation) ? "draft" : "published"))
+        && (!command.version || course.version === command.version);
+    }
+  } catch { /* An unreadable success is still an unresolved original. */ }
+  if (!valid) throw uncertain("原操作回执无法核实，请保留记录并查询原结果。");
+  uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+  return payload.data;
+}
+
+export async function retryI6Command(saved: I6Command): Promise<unknown> {
+  const command = pendingI6Commands().find(row => row.commandKey === saved.commandKey);
+  if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
+  return sendI6Command(command, true);
+}
+
+async function prepareI6Command(path: string, init: RequestInit): Promise<unknown> {
+  const owner = useAdminAuth.getState().session?.adminId;
+  if (!owner) throw new Error("请先登录后再提交。");
+  const i6 = { owner, path, method: init.method!, body: String(init.body) };
+  const fingerprint = `${i6.method}:${path}:${i6.body}`, commandKey = idempotencyKey();
+  const command = readI6Command({ fingerprint, commandKey, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000, i6 });
+  if (!command?.original) throw new Error("原操作记录不完整，尚未提交。");
+  const permission = i6RetryPermission(command);
+  if (permission) throw new Error(permission);
+  if (pendingI6Commands().some(row => row.scope === "unknown" || row.scope === command.scope)) throw new Error("此对象有结果未知的原操作，请先查询原结果。");
+  uncertainCommandKeys.remember(fingerprint, commandKey, { i6 });
+  if (!uncertainCommandKeys.isDurablyStored(fingerprint, commandKey)) {
+    uncertainCommandKeys.forget(fingerprint, commandKey);
+    throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
+  }
+  return sendI6Command(command, false);
+}
+
+/** Readback is evidence of current state, never proof that an old command executed. It never releases a direct record. */
+export async function queryI6Command(saved: I6Command) {
+  const command = pendingI6Commands().find(row => row.commandKey === saved.commandKey);
+  if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
+  const overview = parseI6Overview(await apiRequest("/i18n-learning/overview"));
+  const messageVersions = command.scope.startsWith("message:")
+    ? await iContentActions.fetchI6MessageVersions(command.target) : undefined;
+  const courseVersions = command.scope.startsWith("course:") && overview.courses.some(course => course.id === command.target)
+    ? await iContentActions.fetchI7CourseVersions(command.target) : undefined;
+  return { overview, messageVersions, courseVersions };
+}
 
 export type I4DraftCommand = PendingMutationRecord & {
   original?: I1Original;
@@ -669,7 +836,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   let payload: ApiResult<T>;
   try {
     const text = await res.text();
-    payload = text ? ((path === "/campaigns/overview" ? parseI3Json(text) : JSON.parse(text)) as ApiResult<T>) : {};
+    payload = text ? ((path === "/campaigns/overview" ? parseI3Json(text) : path.startsWith("/i18n-learning/") ? parseI6Json(text) : JSON.parse(text)) as ApiResult<T>) : {};
   } catch (error) {
     if (isWrite) throw new OutcomeUnknownError(formatAdminApiError(undefined, `CONTENT_API_${res.status}`));
     throw error;
@@ -850,8 +1017,8 @@ export type LearningCourseVersionView = {
   status: "DRAFT" | "PUBLISHED" | "SUPERSEDED";
   payload: Record<string, unknown>;
   revision: number;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 };
 
 export type NovaOptionView = { value: string; label: string };
@@ -1160,7 +1327,7 @@ export type LearningCourseView = {
   category: string;
   format: "Article" | "Video" | "Hands-on";
   level: "Beginner" | "Intermediate" | "Advanced";
-  rewardNex: number;
+  rewardNex: string | null;
   featured: boolean;
   duration: string;
   version: string;
@@ -1173,10 +1340,10 @@ export type LearningCourseView = {
   bodyEn: string;
   bodyVi: string;
   quizQuestions: LearningQuizQuestionView[];
-  passScore?: number;
-  retryLimit?: number;
-  completionCondition?: string;
-  rewardEvent?: string;
+  passScore?: number | null;
+  retryLimit?: number | null;
+  completionCondition?: string | null;
+  rewardEvent?: string | null;
   revision: number;
 };
 export type LearningQuizQuestionView = {
@@ -1186,6 +1353,8 @@ export type LearningQuizQuestionView = {
   optionsZh: string[];
   optionsEn: string[];
   correctOptionIndex: number;
+  questionVi?: string | null;
+  optionsVi?: string[] | null;
 };
 export type TutorialRewardRange = { min: number; max: number };
 export type LearningMetricView = { key: string; value: string };
@@ -1194,7 +1363,7 @@ export type I18nLearningOverview = {
   namespaces: I18nNamespaceView[];
   integrityIssues: I18nIntegrityIssueView[];
   hardcodedFindings: I18nHardcodedFindingView[];
-  focusMessage?: I18nMessagePairView;
+  focusMessage?: I18nMessagePairView | null;
   messages: I18nMessagePairView[];
   courses: LearningCourseView[];
   rewardRange: TutorialRewardRange;
@@ -1406,24 +1575,30 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   disableI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}/disable`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
   archiveI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}/archive`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
   deleteI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
-  rescanI6: (reason) => apiRequest("/i18n-learning/rescan", { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  saveI6LocalizedDraft: (messageKey, body, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  publishI6LocalizedMessage: (messageKey, body, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  archiveI6LocalizedMessage: (messageKey, expectedVersion, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
-  fetchI6MessageVersions: (messageKey) => apiRequest<I18nMessagePairView[]>(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/versions`),
-  rollbackI6LocalizedMessage: (messageKey, targetVersion, expectedVersion, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/versions/${encodeURIComponent(targetVersion)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
-  fixI6Integrity: (issueCode, body, reason) => apiRequest<I18nIntegrityIssueView>(`/i18n-learning/integrity/${encodeURIComponent(issueCode)}/fix`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }),
-  createI6Course: (courseId, body, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI7CourseDraft: (courseId, body, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  fetchI7CourseVersions: (courseId) => apiRequest<LearningCourseVersionView[]>(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions`),
-  createI7CourseVersion: (courseId, body, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI7CourseVersion: (courseId, version, body, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  deleteI7CourseVersion: (courseId, version, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  publishI7CourseVersion: (courseId, version, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}/publish`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  rollbackI7CourseVersion: (courseId, version, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}/rollback`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  deleteI7CourseDraft: (courseId, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  publishI6Course: (courseId, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/publish`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  archiveI6Course: (courseId, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/archive`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  rescanI6: (reason) => prepareI6Command("/i18n-learning/rescan", { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  saveI6LocalizedDraft: (messageKey, body, reason) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  publishI6LocalizedMessage: (messageKey, body, reason) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  archiveI6LocalizedMessage: (messageKey, expectedVersion, reason) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
+  fetchI6MessageVersions: (messageKey) => apiRequest<unknown>(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/versions`).then(value => {
+    if (!Array.isArray(value)) throw new Error("词条历史返回数据格式异常，请刷新重试");
+    return value.map(parseI6Message);
+  }),
+  rollbackI6LocalizedMessage: (messageKey, targetVersion, expectedVersion, reason) => prepareI6Command(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/versions/${encodeURIComponent(targetVersion)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
+  fixI6Integrity: (issueCode, body, reason) => prepareI6Command(`/i18n-learning/integrity/${encodeURIComponent(issueCode)}/fix`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(parseI6Issue),
+  createI6Course: (courseId, body, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  updateI7CourseDraft: (courseId, body, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  fetchI7CourseVersions: (courseId) => apiRequest<unknown>(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions`).then(value => {
+    if (!Array.isArray(value)) throw new Error("课程版本返回数据格式异常，请刷新重试");
+    return value.map(parseI6CourseVersion);
+  }),
+  createI7CourseVersion: (courseId, body, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  updateI7CourseVersion: (courseId, version, body, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  deleteI7CourseVersion: (courseId, version, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  publishI7CourseVersion: (courseId, version, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}/publish`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  rollbackI7CourseVersion: (courseId, version, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}/rollback`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  deleteI7CourseDraft: (courseId, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  publishI6Course: (courseId, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/publish`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  archiveI6Course: (courseId, reason) => prepareI6Command(`/i18n-learning/courses/${encodeURIComponent(courseId)}/archive`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI6CourseReward: (courseId, rewardNex, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/reward`, { method: "PATCH", body: JSON.stringify(withReason({ rewardNex }, reason)) }).then(() => undefined),
-  updateI6FeaturedCourse: (courseId, reason) => apiRequest("/i18n-learning/courses/featured", { method: "PATCH", body: JSON.stringify(withReason({ courseId }, reason)) }).then(() => undefined),
+  updateI6FeaturedCourse: (courseId, reason) => prepareI6Command("/i18n-learning/courses/featured", { method: "PATCH", body: JSON.stringify(withReason({ courseId }, reason)) }).then(() => undefined),
 };

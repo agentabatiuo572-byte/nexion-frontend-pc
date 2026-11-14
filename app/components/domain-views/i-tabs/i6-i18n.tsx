@@ -13,22 +13,22 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Link from "next/link";
 import { Archive, BadgeCheck, BookOpen, CodeXml, Eye, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
-import type { I18nMessagePairView, LearningCourseVersionView } from "@/lib/admin/i-client";
-import type { ICtx } from "./types";
+import { pendingI6Commands, retryI6Command, type I6Command, type I18nMessagePairView, type LearningCourseVersionView } from "@/lib/admin/i-client";
+import type { ActionConfirmReq, ICtx } from "./types";
 import { PaginationExemptionList } from "../design-kit";
-import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
-import { hiCourseScope, hiRewardProposal, pendingHIRewardCommand, pendingHIRewardCommands, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
-import { REVIEW_OPERATION_BY_ACTION, fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
+import { hiCourseScope, hiCourseRewardScope, hiRewardProposal, i6CourseProposalPermission, pendingHIRewardCommand, pendingHIRewardCommands, queryI6CourseProposal, retryI6CourseProposal, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
+import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
+import { i6Amount, i6RewardChange } from "@/lib/admin/i6-amount";
 import { AppCoursePreview, CATEGORY_LABEL, COMPLETION_LABEL, CompareRows, CourseEditor, FORMAT_LABEL, LANGS, LEVEL_LABEL, REWARD_EVENT_LABEL, blockedText, categoryIcon, categoryLabel, copyFormMissing, durationText, nsLabel, uvtText, type CourseForm, type CourseSpec, type Lang } from "./i6-parts";
 
-const COURSE_APPROVAL_OPS = new Set(["i7_course_first_publish", "i7_course_version_publish", "i7_course_version_rollback"]);
+const COURSE_APPROVAL_OPS = new Set(["i7_course_first_publish", "i7_course_version_publish", "i7_course_version_rollback", "i7_course_reward_adjust"]);
 /** 有奖励的课程激活和调奖：后端要另一位超级管理员，并有审批批准权限（A:124、G:717）。 */
 const APPROVER = "另一位超级管理员";
 const BJ = "北京时间";
@@ -48,7 +48,7 @@ type Course = {
   quizQuestions: { questionId: string; questionZh: string; questionEn: string; questionVi?: string; optionsZh: string[]; optionsEn: string[]; optionsVi?: string[]; correctOptionIndex: number }[];
   passScore?: number; retryLimit?: number; completionCondition?: string; rewardEvent?: string; revision: number;
   /** 后端原值，显示时不经 Number 丢精度。 */
-  rewardRaw: string;
+  rewardRaw: string | null;
 };
 type CopyEditor = { mode: "edit" | "fix"; issue?: IntegrityIssue; zh: string; vi: string; en: string; tried: boolean };
 type CourseEditorState = { spec: CourseSpec; title: string; sub?: ReactNode; save: (form: CourseForm) => void };
@@ -135,6 +135,10 @@ export function I6I18n({ ctx, errorText }: { ctx: ICtx; errorText: string | null
 
 function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
+  const latest = useRef(ctx);
+  latest.current = ctx;
+  const readReady = useRef(false);
+  const [, updateRecovery] = useState(0);
   const session = useAdminAuth((state) => state.session);
   const reach = useReach();
   const isSuperadmin = session?.role === "superadmin";
@@ -142,25 +146,34 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const canWriteI7 = isSuperadmin || !!session?.authorities.includes("content_i7_write");
   const canAdjustI7Reward = isSuperadmin || !!session?.authorities.includes("content_i7_course_reward_adjust");
   const canPublishI7 = canWriteI7 && canAdjustI7Reward;
-  const propose = usePropose();
+  const rewardApprovalBlocked = !session?.authorities.some(permission => ["platform_a2_write", "platform_a2_proposal_create"].includes(permission)) ? "缺少提交审批权限" : undefined;
   const canReadA2 = isSuperadmin || !!session?.authorities.includes("platform_a2_read");
   // 已建成、等别人批的课程审批单只在审批中心里；这里读一次，在课程区常显哪门课在等批。
   const [courseApprovals, setCourseApprovals] = useState<A2OperationRow[] | "error" | null>(null);
   const [lookupKey, setLookupKey] = useState("");
   const reloadCourseApprovals = async () => {
-    if (view !== "learn" || !canReadA2) return;
+    if (view !== "learn") return;
+    const records = pendingHIRewardCommands().filter(record => record.scope.startsWith("I/"));
+    const results = await Promise.allSettled(records.map(queryI6CourseProposal));
+    const mine = results.flatMap(result => result.status === "fulfilled" && result.value?.status === "pending" ? [result.value] : []);
     try {
-      const overview = await fetchA2Overview();
-      setCourseApprovals(overview.operationQueue.filter(row => {
-        const op = REVIEW_OPERATION_BY_ACTION[row.action];
-        return row.status === "pending" && COURSE_APPROVAL_OPS.has(op) && !!row.obj
-          && (!row.operationCode || row.operationCode === op);
-      }));
+      const overview = canReadA2 ? await fetchA2Overview() : undefined;
+      const rows = (overview?.operationQueue ?? []).filter(row => {
+        return row.status === "pending" && !!row.operationCode && COURSE_APPROVAL_OPS.has(row.operationCode) && !!row.obj;
+      });
+      setCourseApprovals([...rows, ...mine.filter(ticket => !rows.some(row => row.id === ticket.id))]);
     } catch {
       setCourseApprovals("error");
     }
+    if (results.some(result => result.status === "fulfilled" && result.value && result.value.status !== "pending")) {
+      readReady.current = false;
+      ctx.closeActionConfirm(); ctx.closeConfirm();
+      setCopyEditor(null); setCourseEditor(null);
+      await actions.reloadIContent();
+    }
+    updateRecovery(value => value + 1);
   };
-  useEffect(() => { void reloadCourseApprovals(); }, [view, canReadA2]);
+  useEffect(() => { void reloadCourseApprovals(); }, [view, canReadA2, content.i18nLearning]);
   const [catFlt, setCatFlt] = useState<CatFlt>("all");
   const [messageSearch, setMessageSearch] = useState("");
   const [msgScope, setMsgScope] = useState<MsgScope>("all");
@@ -185,6 +198,72 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const listRef = useRef<HTMLDivElement>(null);
   const courseTabIds = useTabIds();
   const data = content.i18nLearning;
+  useEffect(() => { readReady.current = !!data && !contentLoading && !ctx.contentError; }, [data, contentLoading, ctx.contentError]);
+
+  const newWriteProblem = (scope: string) => {
+    const current = latest.current;
+    if (!readReady.current || current.contentLoading || current.contentError || !current.content.i18nLearning) return "请先成功重新读取数据，再发起新的修改。";
+    if (pendingI6Commands().some(record => record.scope === "unknown" || record.scope === scope)) return "此对象有结果未知的原操作，请先查询原结果。";
+    const proposal = scope.startsWith("course:") ? pendingHIRewardCommands().find(record => record.payload.kind === "proposal"
+      && record.payload.input.command.domain === "I" && record.payload.input.obj === scope.slice(7) && record.ticketStatus !== "pending") : undefined;
+    if (proposal) return "此对象有结果未知的原操作，请先查询原结果。";
+    return undefined;
+  };
+  const finishRecovery = async () => {
+    readReady.current = false;
+    ctx.closeActionConfirm(); ctx.closeConfirm();
+    setCopyEditor(null); setCourseEditor(null);
+    await actions.reloadIContent();
+    updateRecovery(value => value + 1);
+  };
+  /** The first request owns its original confirmation; a retry never re-enters the editable callback. */
+  const confirmI6 = (scope: string, request: ActionConfirmReq) => {
+    const blocked = newWriteProblem(scope);
+    if (blocked) { toast(blocked, "warn"); return; }
+    const openedData = latest.current.content.i18nLearning;
+    let original: I6Command | undefined, proposal: HIRewardCommand | undefined, resolved = false;
+    openActionConfirm({ ...request,
+      getPendingReason: () => original ? pendingI6Commands().find(row => row.commandKey === original!.commandKey)?.reason
+        : proposal ? pendingHIRewardCommands().find(row => row.commandKey === proposal!.commandKey)?.payload.input.reason : undefined,
+      run: async (reason, value, form) => {
+        if (resolved) { ctx.closeActionConfirm(); throw new Error("原操作已处理，请重新打开修改入口。"); }
+        if (original || proposal) {
+          try {
+            if (original) { await retryI6Command(original); toast(`${original.label} · 已核对原操作`); }
+            else {
+              const ticket = await retryI6CourseProposal(proposal!);
+              toast(ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+            }
+            resolved = true;
+            await finishRecovery();
+          } catch (error) {
+            const remains = original ? pendingI6Commands().some(row => row.commandKey === original!.commandKey)
+              : pendingHIRewardCommands().some(row => row.commandKey === proposal!.commandKey);
+            if (!remains) { resolved = true; await finishRecovery(); }
+            throw error;
+          } finally { updateRecovery(current => current + 1); }
+          return;
+        }
+        const problem = newWriteProblem(scope);
+        if (problem) throw new Error(problem);
+        if (openedData !== latest.current.content.i18nLearning) {
+          ctx.closeActionConfirm(); throw new Error("数据已重新读取，请按最新内容重新打开修改入口。");
+        }
+        try {
+          const result = await request.run(reason, value, form);
+          if (result === false) return false;
+          resolved = true;
+          await finishRecovery();
+        } catch (error) {
+          const key = (error as { commandKey?: string }).commandKey;
+          original = key ? pendingI6Commands().find(row => row.commandKey === key) : undefined;
+          proposal = key ? pendingHIRewardCommands().find(row => row.commandKey === key) : undefined;
+          // Match I1: the domain owns the first rejection and keeps its confirmation, including business 403.
+          throw new Error(`操作失败:${displayAdminError(error)}`);
+        } finally { updateRecovery(current => current + 1); }
+      },
+    });
+  };
   useEffect(() => {
     setCourseVersions([]);
     setVersionsError(null);
@@ -212,8 +291,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     cat: c.category,
     format: c.format,
     level: c.level,
-    reward: Number(c.rewardNex),
-    rewardRaw: String(c.rewardNex),
+    reward: c.rewardNex === null ? Number.NaN : Number(c.rewardNex),
+    rewardRaw: c.rewardNex,
     featured: c.featured,
     duration: c.duration,
     v: c.version,
@@ -225,12 +304,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     bodyZh: c.bodyZh || c.body,
     bodyEn: c.bodyEn || "",
     bodyVi: c.bodyVi || "",
-    quizQuestions: c.quizQuestions ?? [],
-    passScore: c.passScore,
-    retryLimit: c.retryLimit,
-    completionCondition: c.completionCondition,
-    rewardEvent: c.rewardEvent,
-    revision: c.revision ?? 0,
+    quizQuestions: c.quizQuestions.map(question => ({ ...question, questionVi: question.questionVi ?? undefined, optionsVi: question.optionsVi ?? undefined })),
+    passScore: c.passScore ?? undefined,
+    retryLimit: c.retryLimit ?? undefined,
+    completionCondition: c.completionCondition ?? undefined,
+    rewardEvent: c.rewardEvent ?? undefined,
+    revision: c.revision,
   }));
   const TUTORIAL_REWARD_RANGE = data?.rewardRange ?? { min: 0, max: 0 };
   const TUTORIAL_FEATURED_DEFAULT = data?.featuredCourseId ?? "";
@@ -239,7 +318,6 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const runBackend = <T,>(task: Promise<T>, ok: string | ((result: T) => string)) => {
     return task
       .then(async (result) => {
-        await actions.reloadIContent();
         toast(typeof ok === "string" ? ok : ok(result));
       })
       .catch((error) => {
@@ -254,7 +332,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     ? configuredCategories
     : [...new Set(allCourses.map((course) => course.cat).filter(Boolean))];
   const liveStatus = (c: Course): string =>
-    c.status || "published";
+    c.status;
   const liveFeatured = (): string =>
     TUTORIAL_FEATURED_DEFAULT;
   const selectedMessage = MESSAGES.find((message) => message.messageKey === selectedMessageKey) ?? MESSAGES[0];
@@ -295,9 +373,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   /* ============ I6 actions ============ */
   const liveIntegrity = Math.max(0, I6_STATS.integrityIssues);
-  const rescan = () =>
+  const rescan = () => {
+    const blocked = newWriteProblem("rescan");
+    if (blocked) { toast(blocked, "warn"); return; }
+    let original: I6Command | undefined, resolved = false;
     openConfirm({ briefKind: "record",
       errorHandled: true,
+      freezePendingInputs: true,
+      getPendingReason: () => original ? pendingI6Commands().find(row => row.commandKey === original!.commandKey)?.reason : undefined,
       action: <>全量重扫 {I6_STATS.managedKeys} 词条</>,
       title: "重新检查全部文案",
       detail: <>按 6 类重新检查全部已登记文案：缺中文、缺英语、缺越南语、变量不一致、占位文字、旧品牌名。不改文案，结果覆盖下面的问题报告。</>,
@@ -305,11 +388,28 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       statedBrief: { impact: "重新算一遍问题报告，文案和 App 都不变。", check: "检查完看问题报告，有问题的逐条修。" },
       remarkHint: "选填，不会保存",
       okLabel: "开始检查",
-      run: () => runBackend(actions.rescanI6("全量重扫词条完整性"), "检查完成，请看下表的问题"),
+      run: async () => {
+        if (resolved) { ctx.closeConfirm(); return false; }
+        try {
+          if (original) await runBackend(retryI6Command(original), "检查完成，请看下表的问题");
+          else {
+            const problem = newWriteProblem("rescan");
+            if (problem) throw new Error(problem);
+            await runBackend(actions.rescanI6("全量重扫词条完整性"), "检查完成，请看下表的问题");
+          }
+          resolved = true;
+          await finishRecovery();
+        } catch (error) {
+          if (original && !pendingI6Commands().some(row => row.commandKey === original!.commandKey)) { resolved = true; await finishRecovery(); }
+          else original = pendingI6Commands().find(row => row.scope === "rescan");
+          throw error;
+        } finally { updateRecovery(value => value + 1); }
+      },
     });
+  };
 
   const editKeyDraft = (form: Pick<CopyEditor, "zh" | "en" | "vi">) => selectedMessage &&
-    openActionConfirm({ briefKind: "config",
+    confirmI6(`message:${selectedMessage.messageKey}`, { briefKind: "config",
       action: <>编辑词条草稿 · {selectedMessage.messageKey}</>,
       title: "保存三语草稿",
       detail: (
@@ -339,7 +439,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
 
   const pubKey = () =>
-    openActionConfirm({ briefKind: "content",
+    confirmI6(`message:${selectedMessage?.messageKey ?? ""}`, { briefKind: "content",
       action: <>发布词条 · {selectedMessage?.messageKey ?? "未选择"} {selectedMessage?.version ?? ""}</>,
       title: "发布文案",
       detail: (
@@ -371,7 +471,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       },
     });
 
-  const archiveKey = () => selectedMessage && openActionConfirm({ briefKind: "record",
+  const archiveKey = () => selectedMessage && confirmI6(`message:${selectedMessage.messageKey}`, { briefKind: "record",
     action: <>归档词条 · {selectedMessage.messageKey}</>,
     title: "归档文案",
     detail: <>撤下这条远程文案，App 改用安装包里自带的文字（有的话）；历史版本保留，能回滚。</>,
@@ -389,7 +489,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   });
 
   const rollbackMessageVersion = (target: I18nMessagePairView) =>
-    selectedMessage && openActionConfirm({ briefKind: "content",
+    selectedMessage && confirmI6(`message:${selectedMessage.messageKey}`, { briefKind: "content",
       action: <>回滚词条 · {selectedMessage.messageKey} → {target.version}</>,
       title: `回滚到 ${target.version}`,
       detail: <>
@@ -414,7 +514,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
 
   const fixIntegrity = (issue: IntegrityIssue, form: Pick<CopyEditor, "zh" | "en" | "vi">) =>
-    openActionConfirm({ briefKind: "config",
+    confirmI6(`message:${selectedMessage?.messageKey ?? ""}`, { briefKind: "config",
       action: <>修复完整性问题 · {issue.kind}</>,
       title: "修复并存成草稿",
       detail: (
@@ -450,17 +550,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   /* ============ tutorial actions ============ */
   const activateCourse = async (c: Course, kind: "first_publish" | "version_publish" | "version_rollback", reason: string, row?: LearningCourseVersionView) => {
     const scope = hiCourseScope(c.id);
-    const pending = pendingHIRewardCommand(scope);
-    if (pending) {
-      const result = await submitHIRewardCommand(scope, pending.payload);
-      await reloadCourseApprovals();
-      toast(result.kind === "proposal" && result.ticket.status === "pending"
-        ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
-      return;
-    }
+    if (pendingHIRewardCommand(scope)) throw new Error("此对象有原操作尚未核清，请先查询原结果。");
     const target = kind === "first_publish" ? (await actions.fetchI7CourseVersions(c.id)).find(v => v.status === "DRAFT") : row;
     if (kind !== "first_publish" && !target) throw new Error("目标课程版本读不到，请重新读取版本列表后核对。");
-    const rawReward = target ? target.payload.rewardNex : c.reward;
+    const rawReward = target ? target.payload.rewardNex : c.rewardRaw;
     if ((typeof rawReward !== "number" && typeof rawReward !== "string") || String(rawReward).trim() === "" || !Number.isFinite(Number(rawReward)))
       throw new Error("目标版本奖励读不到，本次未提交；请重新读取课程版本后核对。");
     if (Number(rawReward) > 0) {
@@ -469,7 +562,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       const values = { courseId: c.id, version: target?.version ?? c.v, expectedRevision: target?.revision ?? null,
         expectedCurrentVersion: c.v, expectedCurrentRevision: c.revision, expectedCurrentStatus: c.status };
       await submitHIRewardCommand(scope, { kind: "proposal", input: hiRewardProposal(session, `i7_course_${kind}`, values,
-        `${c.v} · ${c.status} · ${c.reward} UVT`, `${values.version} · published · ${rawReward} UVT`, reason) });
+        `${c.v} · ${c.status} · ${c.rewardRaw} UVT`, `${values.version} · published · ${rawReward} UVT`, reason) });
       await reloadCourseApprovals();
       toast("已提交，等待审批后执行");
       return;
@@ -483,8 +576,6 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const pending = pendingHIRewardCommand(hiCourseScope(c.id));
     if (!pending) return false;
     const original = pending.payload;
-    if (original.kind === "proposal" && original.input.command.op === op
-      && (!version || original.input.command.params.version === version)) return false;
     const label = original.kind === "proposal" ? `${original.input.action} · ${String(original.input.command.params.version)}` : original.tierName;
     toast(`原操作「${label}」结果未知，先在上方核对原操作再提交新的。`, "warn");
     return true;
@@ -507,7 +598,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const pubCrs = (c: Course) => {
     if (courseCommandBlocks(c, "i7_course_first_publish")) return;
-    openActionConfirm({ briefKind: "content",
+    confirmI6(`course:${c.id}`, { briefKind: "content",
       action: <>发布课程新版 · {nexGridBrandText(c.title)}</>,
       title: c.reward > 0 ? "提交审批：发布课程" : "发布课程",
       detail: (
@@ -519,15 +610,18 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       confirmLabel: c.reward > 0 ? "提交审批" : "发布",
       statedBrief: { impact: c.reward > 0 ? `批准后课程上线，学完并通过测验的用户每人领 ${uvtText(c.rewardRaw)} UVT；批准前用户看不到。` : "发布后用户能看到并学这门课。", check: "三种语言的标题、正文、测验都齐，奖励数核对过。" },
       facts: courseChange(c, { version: c.v, reward: c.rewardRaw, quiz: c.quizQuestions.length, pass: c.passScore }),
-      amplifies: false,
+      amplifies: c.reward > 0,
       getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
       run: (reason) => activateCourse(c, "first_publish", reason),
     });
   };
 
   // 课程奖励调整沿用原专用审批。
-  const adjRwd = (c: Course) =>
-    openActionConfirm({ briefKind: "config",
+  const adjRwd = (c: Course) => {
+    if (rewardApprovalBlocked) { toast(rewardApprovalBlocked, "warn"); return; }
+    if (c.rewardRaw === null) { toast("当前课程奖励未读到，请重新读取后调整。", "warn"); return; }
+    if (pendingHIRewardCommand(hiCourseRewardScope(c.id))) { toast("此对象有原操作尚未核清，请先查询原结果。", "warn"); return; }
+    confirmI6(`course:${c.id}`, { briefKind: "config",
       action: <>课程奖励调整 · {nexGridBrandText(c.title)}</>,
       title: "提交审批：调整课程奖励",
       detail: (
@@ -538,40 +632,50 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       effect: <StatusTag tone="progress" filled explain={`${APPROVER}在「操作记录与审批」批准后才改；批准前用户仍按现在的数领。`}>批准后生效</StatusTag>,
       confirmLabel: "提交审批",
       statedBrief: { impact: "批准后，之后学完领奖的用户按新数领；已经发出的不补也不扣。", check: "核对新数在范围内，理由写清为什么调。" },
-      edit: { kind: "number", current: String(c.reward), unit: "UVT/课", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max, step: 1,
+      edit: { kind: "number", current: c.rewardRaw ?? "", unit: "UVT/课", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max, step: 1,
+        amplifiesWhen: (value) => (i6RewardChange(value, c.rewardRaw)?.direction ?? 0) > 0,
         hint: `${TUTORIAL_REWARD_RANGE.min}–${TUTORIAL_REWARD_RANGE.max} UVT`,
-        preview: (value: string) => value && Number.isFinite(Number(value)) && Number(value) !== c.reward
-          ? `批准后每位学完的用户领 ${uvtText(value)} UVT，${Number(value) > c.reward ? "比现在多" : "比现在少"} ${uvtText(Math.abs(Number(value) - c.reward))} UVT。` : undefined },
+        preview: (value: string) => {
+          const change = i6RewardChange(value, c.rewardRaw);
+          return change?.direction ? `批准后每位学完的用户领 ${uvtText(value)} UVT，${change.direction > 0 ? "比现在多" : "比现在少"} ${uvtText(change.amount)} UVT。` : undefined;
+        } },
       facts: <Facts>
         <Fact k="课程">{nexGridBrandText(c.title)} · {c.v}</Fact>
         <Fact k="从什么时候">批准后学完领奖的用户</Fact>
         <Fact k="已经学完的">已发出的奖励不补差、不扣回</Fact>
         <Fact k="谁来批">{APPROVER}（需有审批批准和课程调奖权限）</Fact>
       </Facts>,
-      amplifies: true,
+      amplifies: false,
       coverageLead: "调高后每位学完的用户多领 UVT",
       run: (reason, v) => {
-        if (!v) return false;
+        if (!v?.trim() || i6Amount(v) === undefined) return false;
         const def = findHighOp("i7_course_reward_adjust")!;
-        return propose(toast, {
+        const session = useAdminAuth.getState().session;
+        if (!session) throw new Error("请先登录后再提交。");
+        const input = hiRewardProposal(session, "i7_course_reward_adjust", { courseId: c.id, rewardNex: i6Amount(v) }, `${c.rewardRaw} UVT/课`, `${v} UVT/课`, reason);
+        return submitHIRewardCommand(hiCourseRewardScope(c.id), { kind: "proposal", input: {
+          ...input,
           action: `课程奖励调整 · ${nexGridBrandText(c.title)}`,
           obj: c.id,
-          before: `${c.reward} UVT/课`,
-          after: `${v} UVT/课`,
+          beforeValue: `${c.rewardRaw} UVT/课`,
+          afterValue: `${v} UVT/课`,
           type: "fund",
-          amplifies: true,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
+          amplifies: (i6RewardChange(v, c.rewardRaw)?.direction ?? 0) > 0,
+          roleGate: def.gateLabel,
           reason,
           sourceDomain: "I7",
-          command: def.buildCommand({ courseId: c.id, rewardNex: Number(v) }),
+          command: def.buildCommand({ courseId: c.id, rewardNex: i6Amount(v) }),
           target: def.buildTarget({ courseId: c.id }),
-        });
+        } }, undefined, v).then(() => toast("已提交，等待审批后执行"));
       },
     });
+  };
 
-  const archiveCrs = (c: Course) =>
-    openActionConfirm({ briefKind: "content",
+  const archiveProblem = (c: Course) => c.featured || liveFeatured() === c.id ? "这门是首页推荐课，后端不允许下架，先换推荐课。" : undefined;
+  const archiveCrs = (c: Course) => {
+    const blocked = archiveProblem(c);
+    if (blocked) { toast(blocked, "warn"); return; }
+    confirmI6(`course:${c.id}`, { briefKind: "content",
       action: <>下架课程 · {nexGridBrandText(c.title)}</>,
       title: "下架课程",
       detail: (
@@ -589,9 +693,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       </div>,
       amplifies: false,
       run: (reason) => {
+        const current = latest.current.content.i18nLearning?.courses.find(course => course.id === c.id);
+        if (current?.featured || latest.current.content.i18nLearning?.featuredCourseId === c.id) throw new Error("这门是首页推荐课，后端不允许下架，先换推荐课。");
         return runBackend(actions.archiveI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已下架`);
       },
     });
+  };
 
   const coursePayload = (form?: Record<string, string>, expectedRevision?: number) => {
     const quizCount = Number(form?.quizCount || 0);
@@ -618,7 +725,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       category: form?.category || courseCategories[0] || "Basics",
       format: form?.format || data?.formats?.[0] || "Article",
       difficulty: form?.difficulty || data?.levels?.[0] || "Beginner",
-      rewardNex: Number(form?.reward),
+      rewardNex: form?.reward?.trim() ? i6Amount(form.reward) : null,
       duration: form?.duration || "5 min",
       publishState: "draft",
       quizQuestions,
@@ -644,7 +751,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   });
 
   const newCrs = () => setCourseEditor({ spec: courseSpec("create"), title: "新建课程", sub: "存成草稿，用户看不到",
-    save: (form) => openActionConfirm({ briefKind: "config",
+    save: (form) => confirmI6(`course:${form.slug.trim()}`, { briefKind: "config",
       action: <>新建课程(存为草稿)</>,
       title: "保存新课程草稿",
       detail: (
@@ -665,12 +772,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   });
 
   const editCrs = (c: Course) => setCourseEditor({ spec: courseSpec("edit", {
-    slug: c.id, category: c.cat, format: c.format, difficulty: c.level, duration: c.duration, reward: c.reward,
+    slug: c.id, category: c.cat, format: c.format, difficulty: c.level, duration: c.duration, reward: c.rewardRaw,
     titleZh: c.titleZh, titleEn: c.titleEn, titleVi: c.titleVi, bodyZh: c.bodyZh, bodyEn: c.bodyEn, bodyVi: c.bodyVi,
     quizQuestions: c.quizQuestions, passScore: c.passScore, retryLimit: c.retryLimit,
     completionCondition: c.completionCondition, rewardEvent: c.rewardEvent,
   }), title: "编辑课程草稿", sub: `${c.id} · ${c.v}`,
-  save: (form) => openActionConfirm({ briefKind: "config",
+  save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
     action: <>编辑课程草稿 · {nexGridBrandText(c.title)}</>,
     title: "保存课程草稿",
     detail: <>只有草稿可以编辑；别人刚改过时保存会被拒，刷新后重改。</>,
@@ -682,7 +789,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     run: (reason) => runBackend(actions.updateI7CourseDraft(c.id, coursePayload(form, c.revision), reason), `${nexGridBrandText(c.title)} 草稿已更新`).then(() => setCourseEditor(null)),
   }) });
 
-  const deleteCrs = (c: Course) => openActionConfirm({ briefKind: "record",
+  const deleteCrs = (c: Course) => confirmI6(`course:${c.id}`, { briefKind: "record",
     action: <>删除课程草稿 · {nexGridBrandText(c.title)}</>,
     title: "删除课程草稿",
     detail: <>只能删还没发布的草稿，已发布或已下架的课不能删。</>,
@@ -702,7 +809,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     format: String(payload?.format ?? c.format),
     difficulty: String(payload?.difficulty ?? c.level),
     duration: String(payload?.duration ?? c.duration),
-    reward: Number(payload?.rewardNex ?? c.reward),
+    reward: payload ? i6Amount(payload.rewardNex) ?? null : c.rewardRaw,
     titleZh: String(payload?.titleZh ?? c.titleZh), titleEn: String(payload?.titleEn ?? c.titleEn), titleVi: String(payload?.titleVi ?? c.titleVi),
     bodyZh: String(payload?.bodyZh ?? c.bodyZh), bodyEn: String(payload?.bodyEn ?? c.bodyEn), bodyVi: String(payload?.bodyVi ?? c.bodyVi),
     quizQuestions: (Array.isArray(payload?.quizQuestions) ? payload.quizQuestions : c.quizQuestions) as Course["quizQuestions"],
@@ -715,7 +822,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const maxVersion = Math.max(Number(c.v.replace(/^v/i, "")) || 0,
       ...courseVersions.map((row) => Number(row.version.replace(/^v/i, "")) || 0));
     setCourseEditor({ spec: courseSpec("version-create", courseCurrent(c, `v${maxVersion + 1}`)), title: "新版本草稿", sub: `${nexGridBrandText(c.title)} · 线上 ${c.v} 照常服务`,
-      save: (form) => openActionConfirm({ briefKind: "config",
+      save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
         action: <>新建课程版本草稿 · {nexGridBrandText(c.title)}</>,
         title: "保存新版本草稿",
         detail: <>当前发布版继续服务用户；新版本在独立草稿中编辑，发布后才整体替换当前版。</>,
@@ -732,7 +839,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   const editCourseVersion = (c: Course, row: LearningCourseVersionView) => setCourseEditor({
     spec: courseSpec("version-edit", courseCurrent(c, row.version, row.payload)), title: "编辑版本草稿", sub: `${nexGridBrandText(c.title)} · ${row.version}`,
-    save: (form) => openActionConfirm({ briefKind: "config",
+    save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
       action: <>编辑课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
       title: "保存版本草稿",
       detail: <>三语正文和三语测验都要填完整。如果别人刚改过，需要刷新后重改。</>,
@@ -746,7 +853,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     }),
   });
 
-  const deleteCourseVersion = (c: Course, row: LearningCourseVersionView) => openActionConfirm({ briefKind: "record",
+  const deleteCourseVersion = (c: Course, row: LearningCourseVersionView) => confirmI6(`course:${c.id}`, { briefKind: "record",
     action: <>删除课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
     title: `删除 ${row.version} 草稿`,
     detail: <>只能删除草稿；已发布和历史版本不能删除，以免影响用户进度和奖励。</>,
@@ -766,7 +873,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const publishCourseVersion = (c: Course, row: LearningCourseVersionView) => {
     if (courseCommandBlocks(c, "i7_course_version_publish", row.version)) return;
     const reward = Number(row.payload.rewardNex);
-    openActionConfirm({ briefKind: "content",
+    confirmI6(`course:${c.id}`, { briefKind: "content",
     action: <>发布课程版本 · {nexGridBrandText(c.title)} {row.version}</>,
     title: reward > 0 ? `提交审批：发布 ${row.version}` : `发布 ${row.version}`,
     detail: <>发布前会检查三语测验、兑付覆盖率和权限；发布后旧版本变为历史版本。</>,
@@ -774,7 +881,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     confirmLabel: reward > 0 ? "提交审批" : "发布",
     statedBrief: { impact: `${reward > 0 ? "批准后" : "发布后"}课程整体换成 ${row.version}：正文、测验、奖励一起换；在新版本学完的用户可以再领一次。`, check: "核对新版本的奖励和测验。" },
     facts: courseChange(c, versionTarget(row)),
-    amplifies: true,
+    amplifies: reward > 0,
     coverageLead: "这个版本学完会发 UVT，提交和批准时都检查兑付覆盖率",
     getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
     run: (reason) => activateCourse(c, "version_publish", reason, row),
@@ -784,7 +891,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const rollbackCourseVersion = (c: Course, row: LearningCourseVersionView) => {
     if (courseCommandBlocks(c, "i7_course_version_rollback", row.version)) return;
     const reward = Number(row.payload.rewardNex);
-    openActionConfirm({ briefKind: "content",
+    confirmI6(`course:${c.id}`, { briefKind: "content",
     action: <>回滚课程版本 · {nexGridBrandText(c.title)} → {row.version}</>,
     title: reward > 0 ? `提交审批：回滚到 ${row.version}` : `回滚到 ${row.version}`,
     detail: <>回滚后课程内容、测验和奖励设置一起恢复成这个版本；在这个版本领过奖励的用户不会重复领取。</>,
@@ -792,7 +899,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     confirmLabel: reward > 0 ? "提交审批" : "回滚",
     statedBrief: { impact: `${reward > 0 ? "批准后" : "回滚后"}正文、测验、奖励一起回到 ${row.version}；奖励不变或降低也要审批。`, check: "核对回滚后的奖励和测验。" },
     facts: courseChange(c, versionTarget(row)),
-    amplifies: true,
+    amplifies: reward > 0,
     coverageLead: "这个版本学完会发 UVT，提交和批准时都检查兑付覆盖率",
     getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
     run: (reason) => activateCourse(c, "version_rollback", reason, row),
@@ -803,7 +910,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const cur = liveFeatured();
     const publishedCourseOptions = COURSES.filter((course) => liveStatus(course) === "published").map((course) => course.id);
     const publishedCourseLabels = Object.fromEntries(COURSES.filter((course) => liveStatus(course) === "published").map((course) => [course.id, `${nexGridBrandText(course.title)}（${course.id}）`]));
-    openActionConfirm({ briefKind: "content",
+    confirmI6("featured", { briefKind: "content",
       action: <>更换推荐位课程</>,
       title: "更换首页推荐课",
       detail: (
@@ -830,7 +937,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   /* ============ 等批准和结果未知的课程操作 ============ */
   const courseRecords = view === "learn" ? pendingHIRewardCommands().filter((record) => record.scope.startsWith("I/")) : [];
-  const courseApprovalRows = Array.isArray(courseApprovals) ? courseApprovals : [];
+  const courseApprovalRows = (Array.isArray(courseApprovals) ? courseApprovals : []).filter(row => !courseRecords.some(record =>
+    record.ticketStatus === "pending" && record.payload.kind === "proposal"
+    && record.payload.input.obj === row.obj && record.payload.input.command.op === row.operationCode));
   const courseRecovery = (() => {
         if (view !== "learn") return null;
         const records = courseRecords;
@@ -841,18 +950,20 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         const lookupExpired = async (record: HIRewardCommand) => {
           setLookupKey(record.commandKey);
           try {
-            const result = await submitHIRewardCommand(record.scope, record.payload);
-            toast(result.kind === "proposal" && result.ticket.status === "pending"
-              ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
-            void reloadCourseApprovals();
+            const ticket = await queryI6CourseProposal(record);
+            toast(ticket?.status === "pending" ? "已提交，等待审批后执行"
+              : ticket ? "已查询到原审批单，请在操作记录核对执行状态" : "没有查到原审批单，请保留原记录核对。", "warn");
+            if (ticket && ticket.status !== "pending") await finishRecovery();
+            else await reloadCourseApprovals();
           } catch (error) {
             toast(displayAdminError(error), "warn");
           } finally {
             setLookupKey("");
+            updateRecovery(value => value + 1);
           }
         };
         const subject = (record: HIRewardCommand) => record.payload.kind === "proposal"
-          ? `${record.payload.input.action} · ${courseTitle(record.payload.input.obj)} ${String(record.payload.input.command.params.version ?? "")}`.trim()
+          ? `${record.payload.input.action} · ${record.payload.input.obj} ${String(record.payload.input.command.params.version ?? "")}`.trim()
           : "原操作";
         const change = (record: HIRewardCommand) => record.payload.kind === "proposal"
           ? <Change from={approvalValue(record.payload.input.beforeValue)} to={approvalValue(record.payload.input.afterValue)} /> : null;
@@ -863,14 +974,15 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           <ul className="i6-pending" aria-label="课程审批和结果未知列表">
             {records.map((record) => {
               const expired = isRetryExpired(record);
+              const queryOnly = expired || record.receiptKnown || !!i6CourseProposalPermission(record);
               const label = subject(record);
               return <li key={record.commandKey} role="status">
-                <StatusTag tone={expired ? "done" : "warn"}>{expired ? "已超过 24 小时" : "结果未知"}</StatusTag>
+                <StatusTag tone={record.ticketStatus === "pending" ? "progress" : expired ? "done" : "warn"}>{record.ticketStatus === "pending" ? "待审批" : expired ? "已超过 24 小时" : "结果未知"}</StatusTag>
                 <span className="i6-pending-what">{label}</span>
                 <span className="i6-pending-change">{change(record)}</span>
                 <span className="i6-pending-at">{businessStamp(record.createdAt)} 提交</span>
-                <Button size="sm" variant="primary" disabled={!canPublishI7 || !!lookupKey} loading={lookupKey === record.commandKey}
-                  onClick={() => expired ? void lookupExpired(record) : openActionConfirm({ briefKind: "record",
+                <Button size="sm" variant="primary" disabled={!!lookupKey} loading={lookupKey === record.commandKey}
+                  onClick={() => queryOnly ? void lookupExpired(record) : openActionConfirm({ briefKind: "record",
                   action: `核对原操作 · ${label}`,
                   title: "按原请求重试",
                   detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原请求查审批单；查不到才按原请求原样重发，不会重复建单。理由沿用原操作。</>,
@@ -880,12 +992,16 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   confirmLabel: expired ? "查询原审批单" : "核对原操作",
                   getPendingReason: () => pendingHIRewardCommands().find((row) => row.commandKey === record.commandKey)?.payload.input.reason,
                   run: async () => {
-                    const result = await submitHIRewardCommand(record.scope, record.payload);
-                    toast(result.kind === "proposal" && result.ticket.status === "pending"
-                      ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
-                    void reloadCourseApprovals();
+                    try {
+                      const ticket = await retryI6CourseProposal(record);
+                      toast(ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
+                      await finishRecovery();
+                    } catch (error) {
+                      if (!pendingHIRewardCommands().some(row => row.commandKey === record.commandKey)) await finishRecovery();
+                      throw error;
+                    } finally { updateRecovery(value => value + 1); }
                   },
-                })}>{expired ? "查询原结果" : "按原请求重试"}</Button>
+                })}>{queryOnly ? "查询原结果" : "按原请求重试"}</Button>
               </li>;
             })}
             {approvals.map((row) => <li key={row.id}>
@@ -1201,15 +1317,18 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   };
   const filteredCrs = allCourses.filter((c) => catFlt === "all" || c.cat === catFlt);
   const versionCourse = allCourses.find((course) => course.id === versionCourseId);
-  const approvalOf = (id: string) => courseApprovalRows.find((row) => row.obj === id);
-  const unknownOf = (id: string) => courseRecords.find((record) => record.scope === hiCourseScope(id));
+  const approvalOf = (id: string) => courseApprovalRows.find((row) => row.obj === id)
+    ?? courseRecords.find(record => record.payload.kind === "proposal" && record.payload.input.obj === id && record.ticketStatus === "pending");
+  const unknownOf = (id: string) => courseRecords.find((record) => record.payload.kind === "proposal" && record.payload.input.obj === id && record.ticketStatus !== "pending");
   const weekly = operatorCopyText(I6_STATS.weeklyNexPayout);
   const weeklyValue = weekly.replace(/\s*UVT$/, "");
-  const unknownCount = courseRecords.filter((record) => !isRetryExpired(record)).length;
+  const unknownCount = courseRecords.filter((record) => record.ticketStatus !== "pending").length;
+  const pendingCourseCount = new Set([...courseApprovalRows.map(row => row.obj), ...courseRecords.filter(record => record.ticketStatus === "pending")
+    .map(record => record.payload.kind === "proposal" ? record.payload.input.obj : "")].filter(Boolean)).size;
   const conclusion = unknownCount > 0
     ? { state: "warn" as const, text: `${count(unknownCount)} 个课程操作结果未知，先核对`, hint: "在下面「等批准和结果未知」里按原请求重试" }
-    : courseApprovalRows.length > 0
-      ? { state: "neutral" as const, text: `${count(courseApprovalRows.length)} 门课在等${APPROVER}批准`, hint: counts.draft ? `另有 ${count(counts.draft)} 门草稿没发布` : undefined }
+    : pendingCourseCount > 0
+      ? { state: "neutral" as const, text: `${count(pendingCourseCount)} 门课在等${APPROVER}批准`, hint: counts.draft ? `另有 ${count(counts.draft)} 门草稿没发布` : undefined }
       : counts.draft > 0
         ? { state: "warn" as const, text: `${count(counts.online)} 门课在线，${count(counts.draft)} 门草稿还没发布`, hint: "草稿用户看不到，在课程卡上发布" }
         : allCourses.length === 0
@@ -1222,14 +1341,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const title = nexGridBrandText(c.title);
     const more: MoreMenuItem[] = [];
     if (canWriteI7 && isDraft) more.push({ key: "delete", label: "删除草稿", danger: true, onSelect: () => deleteCrs(c) });
-    if (canWriteI7 && !archived && !isDraft) more.push({ key: "archive", label: "下架", danger: true, onSelect: () => archiveCrs(c) });
+    if (canWriteI7 && !archived && !isDraft) more.push({ key: "archive", label: "下架", danger: true, disabledReason: archiveProblem(c), onSelect: () => archiveCrs(c) });
     const primary = isDraft
       ? <>
         {canWriteI7 && <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`编辑 ${title}`} onClick={() => editCrs(c)}>编辑</Button>}
         {canPublishI7 && <Button size="sm" variant="primary" icon={<Send size={14} aria-hidden />} aria-label={`发布 ${title}`} onClick={() => pubCrs(c)}>{c.reward > 0 ? "提交发布" : "发布"}</Button>}
       </>
       : !archived && canAdjustI7Reward
-        ? <Button size="sm" aria-label={`调整奖励 ${title}`} onClick={() => adjRwd(c)}>调奖励</Button>
+        ? <Button size="sm" aria-label={`调整奖励 ${title}`} disabledReason={rewardApprovalBlocked} onClick={() => adjRwd(c)}>调奖励</Button>
         : null;
     return <>
       {where === "card" && <Button size="sm" variant="ghost" aria-label={`版本管理 ${title}`} onClick={() => { setVersionCourseId(c.id); setCourseTab("content"); setCourseLang("zh"); }}>详情与版本</Button>}
@@ -1243,11 +1362,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const title = nexGridBrandText(c.title);
     return <Decision
       danger={canWriteI7 && isDraft ? <Button variant="danger-outline" icon={<Trash2 size={14} aria-hidden />} aria-label={`删除草稿 ${title}`} onClick={() => deleteCrs(c)}>删除草稿</Button>
-        : canWriteI7 && !archived ? <Button variant="danger-outline" icon={<Archive size={14} aria-hidden />} aria-label={`下架 ${title}`} onClick={() => archiveCrs(c)}>下架</Button> : undefined}
+        : canWriteI7 && !archived ? <Button variant="danger-outline" icon={<Archive size={14} aria-hidden />} aria-label={`下架 ${title}`} disabledReason={archiveProblem(c)} onClick={() => archiveCrs(c)}>下架</Button> : undefined}
       others={<>
         <Button onClick={() => setVersionCourseId("")}>关闭</Button>
         {isDraft && canWriteI7 && <Button icon={<Pencil size={14} aria-hidden />} aria-label={`编辑 ${title}`} onClick={() => editCrs(c)}>编辑</Button>}
-        {!isDraft && !archived && canAdjustI7Reward && <Button aria-label={`调整奖励 ${title}`} onClick={() => adjRwd(c)}>调奖励</Button>}
+        {!isDraft && !archived && canAdjustI7Reward && <Button aria-label={`调整奖励 ${title}`} disabledReason={rewardApprovalBlocked} onClick={() => adjRwd(c)}>调奖励</Button>}
       </>}
       primary={isDraft && canPublishI7 ? <Button variant="primary" icon={<Send size={14} aria-hidden />} onClick={() => pubCrs(c)}>{c.reward > 0 ? "提交发布" : "发布"}</Button> : undefined} />;
   };
@@ -1364,7 +1483,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             </div>
             <AppCoursePreview lang={courseLang} title={versionCourse[`title${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "titleZh"]}
               body={versionCourse[`body${courseLang === "zh" ? "Zh" : courseLang === "vi" ? "Vi" : "En"}` as "bodyZh"]} category={versionCourse.cat} format={versionCourse.format}
-              level={versionCourse.level} duration={versionCourse.duration} reward={versionCourse.rewardRaw} quizCount={versionCourse.quizQuestions.length}
+              level={versionCourse.level} duration={versionCourse.duration} reward={versionCourse.rewardRaw ?? ""} quizCount={versionCourse.quizQuestions.length}
               passScore={String(versionCourse.passScore ?? "")} retries={String(versionCourse.retryLimit ?? "")} caption="App 里大致的样子；线上课程显示已发布的内容" />
           </div>}
           {courseTab === "quiz" && <div className="rd-stack">

@@ -1,3 +1,4 @@
+import { parseI6Overview } from "./i6-learning-contract";
 import { parseI4SectionVersion } from "./i4-trust-contract";
 
 type IModuleId = "I1" | "I2" | "I3" | "I4" | "I5" | "I6";
@@ -221,33 +222,13 @@ function validateTrustDisclosure(moduleId: IModuleId, value: Record<string, unkn
   }
 }
 
-function validateI6(moduleId: IModuleId, value: Record<string, unknown>) {
-  records(moduleId, value.namespaces);
-  for (const issue of records(moduleId, value.integrityIssues)) {
-    array(moduleId, issue.samples);
-  }
-  records(moduleId, value.hardcodedFindings);
-  for (const message of records(moduleId, value.messages)) {
-    array(moduleId, message.placeholders);
-  }
-  if (value.focusMessage !== undefined && value.focusMessage !== null) {
-    array(moduleId, record(moduleId, value.focusMessage).placeholders);
-  }
-  for (const course of records(moduleId, value.courses)) {
-    for (const question of records(moduleId, course.quizQuestions)) {
-      array(moduleId, question.optionsZh);
-      array(moduleId, question.optionsEn);
-    }
-  }
-  record(moduleId, value.rewardRange);
-  records(moduleId, value.metrics);
-}
 
 export function parseIOverview(moduleId: string, input: unknown): unknown {
   if (!Object.hasOwn(ARRAY_KEYS, moduleId)) {
     throw new Error("未知 I 域模块返回数据，已拒绝渲染");
   }
   const scopedModule = moduleId as IModuleId;
+  if (scopedModule === "I6") return parseI6Overview(input);
   const value = record(scopedModule, input);
   record(scopedModule, value.stats);
   for (const key of ARRAY_KEYS[scopedModule]) array(scopedModule, value[key]);
@@ -256,6 +237,5 @@ export function parseIOverview(moduleId: string, input: unknown): unknown {
   if (scopedModule === "I2") validateI2(scopedModule, value);
   if (scopedModule === "I3") validateI3(scopedModule, value);
   if (scopedModule === "I4" || scopedModule === "I5") validateTrustDisclosure(scopedModule, value);
-  if (scopedModule === "I6") validateI6(scopedModule, value);
   return input;
 }

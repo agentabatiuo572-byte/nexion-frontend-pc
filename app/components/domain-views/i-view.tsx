@@ -280,7 +280,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   if (tab === "I6") {
     return (
       <RdPage className="idom i6-page">
-        <I6I18n ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        <I6I18n key={scopeKey} ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
         {overlays}
       </RdPage>
     );

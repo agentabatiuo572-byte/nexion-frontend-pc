@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { BookOpen, Gem, GraduationCap, Plus, Rocket, Shield, Users, Zap, type LucideIcon } from "lucide-react";
 import { Button, Decision, Drawer, Field, Input, LocaleTabs, Notice, NumberInput, PageTabs, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { i6Amount } from "@/lib/admin/i6-amount";
 
 export type Lang = "zh" | "vi" | "en";
 export const LANGS: readonly { key: Lang; label: string; short: string }[] = [
@@ -36,17 +37,17 @@ export const durationText = (value: string) => {
 };
 /** 去掉后端补的末尾 0，最少 2 位，不舍入。 */
 export const uvtText = (value: unknown) => {
-  const raw = String(value ?? "").trim();
-  if (!raw || !Number.isFinite(Number(raw))) return "—";
+  const raw = i6Amount(value);
+  if (raw === undefined) return "—";
   const [int, frac = ""] = raw.split(".");
   const kept = frac.replace(/0+$/, "");
-  return `${Number(int).toLocaleString("en-US")}.${kept.length >= 2 ? kept : kept.padEnd(2, "0")}`;
+  return `${int.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${kept.length >= 2 ? kept : kept.padEnd(2, "0")}`;
 };
 
 export type CourseMode = "create" | "edit" | "version-create" | "version-edit";
 export type CourseForm = Record<string, string>;
 export type CourseCurrent = {
-  slug: string; version?: string; category: string; format: string; difficulty: string; duration: string; reward: number;
+  slug: string; version?: string; category: string; format: string; difficulty: string; duration: string; reward: string | null;
   titleZh: string; titleEn: string; titleVi: string; bodyZh: string; bodyEn: string; bodyVi: string;
   quizQuestions: { questionId: string; questionZh: string; questionEn: string; questionVi?: string; optionsZh: string[]; optionsEn: string[]; optionsVi?: string[]; correctOptionIndex: number }[];
   passScore?: number; retryLimit?: number; completionCondition?: string; rewardEvent?: string;
@@ -66,7 +67,7 @@ export function courseFormState(spec: CourseSpec): CourseForm {
     format: current?.format ?? spec.formats?.[0] ?? "Article",
     difficulty: current?.difficulty ?? spec.levels?.[0] ?? "Beginner",
     duration: current?.duration ?? DURATIONS[0],
-    reward: String(current?.reward ?? spec.rewardMin ?? 5),
+    reward: current ? current.reward ?? "" : String(spec.rewardMin),
     publishState: "draft",
     titleZh: current?.titleZh ?? "",
     titleEn: current?.titleEn ?? "",
