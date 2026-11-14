@@ -524,8 +524,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     ? <Conclusion state="danger" icon={ShieldAlert} lead explain={conclusionExplain} explainTitle="怎么判断"
       hint={[hint, "恢复上线或发布完整的版本后才能打开"].filter(Boolean).join(" · ")}>App 信任中心现在整页打不开：{issues.join("、")}</Conclusion>
     : blankedCount > 0
-      ? <Conclusion state="warn" explain={blankExplain} explainTitle="为什么是空的" action={pendingTrustSectionKeys.size > 0 ? pendingLink : undefined}>
-          六个版块都在公开，其中 <b>{blankedCount}</b> 个在 App 里是空的；{[pendingText, draftText].filter(Boolean).join("，") || "没有待发布的改动"}</Conclusion>
+      ? <Conclusion state="warn" explain={blankExplain} explainTitle="为什么是空的" action={pendingTrustSectionKeys.size > 0 ? pendingLink : undefined}
+          hint={[pendingText, draftText].filter(Boolean).join(" · ") || "没有待发布的改动"}>
+          六个版块都在公开，其中 <b>{blankedCount}</b> 个在 App 里是空的</Conclusion>
       : pendingTrustSectionKeys.size > 0
         ? <Conclusion state="warn" explain={conclusionExplain} explainTitle="怎么判断" action={pendingLink} hint={draftText || "批准前用户看到的不变"}>
             <b>{pendingTrustSectionKeys.size}</b> 个版块的申请等另一位批准</Conclusion>
