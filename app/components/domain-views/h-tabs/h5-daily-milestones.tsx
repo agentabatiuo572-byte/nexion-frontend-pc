@@ -1,18 +1,6 @@
 "use client";
 
-/**
- * H5 签到与UVT奖励 — 增长运营看签到的人多不多、用户签到一天拿多少；维护签到规则、连签奖励、成长权益、收益里程碑和检查间隔。
- * 原「里程碑」页（H6）已并进这一页，旧 /growth/milestones 重定向过来。这页不代用户签到、不代领、不直接发奖。
- *
- * 只改界面：读取、五类写入口的请求和改版前逐字节相同（签到规则走 A2 提案；连签奖励、成长权益、收益里程碑、检查间隔直接 PATCH）。
- * 写操作确认框放在这页自己挂（同一个 OperationConfirmModal、同一套失败提示），为的是把覆盖率检查时点、生效方式写准。
- *
- * 界面已备好、等代码 worker 接逻辑的状态（见重构说明「五、弹窗的排法」）：
- * - 结果未知的原操作：五类写现在都不保存原请求（B06），提醒列表恒为空；
- * - 待审批：签到规则提案和成长、收益、连签放大方向的专用审批，页面读不到待审票，行上的「待审批」标签恒不出现；
- * - 成长权益、收益里程碑、连签奖励的放大方向：后端要求提交审批（B01），现在仍直接保存，会被后端拒绝并显示原因；
- * - 签到基础奖励、连续7天奖励和连签奖励数量只收正整数（PD01）：输入框下写了规则，保存前拦截由代码 worker 接。
- */
+/** H5: approval routing and durable original-command recovery, using the established H5 forms. */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
@@ -25,12 +13,10 @@ import {
 import { OperationConfirmModal } from "../design-kit";
 import {
   fetchH5CheckIn,
-  updateH5EarnMilestone,
-  updateH5EarnTickInterval,
-  updateH5PowerUp,
-  updateH5StreakMilestone,
 } from "@/lib/admin/h-client";
-import { usePropose } from "@/lib/admin/use-propose";
+import { h5Amount, h5StreakReward, h5WholeReward, parseH5Model } from "@/lib/admin/h5-contract";
+import { useH5Mutations, type H5PendingCommand } from "@/lib/admin/use-h5-mutations";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -59,16 +45,8 @@ function rewardDestination(value: unknown) {
   } as Record<string, string>)[path] ?? "相关权益页";
 }
 
-function numericInput(value: unknown, fallback = 0) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-const NUMERIC_RULE_KEYS = new Set(["baseline", "bonus7", "broken"]);
-
-function numericText(value: unknown, fallback = "") {
-  const match = String(value ?? "").match(/-?\d+(?:\.\d+)?/);
-  return match ? match[0] : fallback;
+function decimalText(value: string) {
+  return value.trim().replace(/^0+(?=\d)/, "").replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
 }
 
 /** 谁来批：签到规则走旧规则审批，另一位有审批批准权限和签到规则修改权限的管理员就能批；成长、收益、连签的专用审批要另一位超级管理员。 */
@@ -101,27 +79,18 @@ function ruleValueText(rule: CheckInRule) {
   return copy.unit === "%" ? `${cur}%` : `${cur} ${copy.unit}`;
 }
 
-/**
- * 界面已备好、等代码 worker 接逻辑：
- * - UNKNOWN：本机保存的结果未知原操作（直接保存的和提交审批的），现在不保存（B06），恒为空；
- * - SERVER_PENDING：本人提交、还在等批准的申请，按对象（rule:键、streak:编号、power:编号、earn:键）标「待审批」，现在读不到，恒为空。
- * 接上后按同一个提醒列表和行上的「待审批」标签显示，不另画。
- */
-type H5Unknown = { key: string; name: string; change: string; submittedAt: number; kind: "direct" | "approval"; expired: boolean; ticket?: string };
-type H5Pending = { target: string; approver: string };
-const UNKNOWN: H5Unknown[] = [];
-const SERVER_PENDING: H5Pending[] = [];
+type H5Confirm = ActionConfirmReq & { target: string; original?: H5PendingCommand; confirmLabelForValue?: (value?: string) => string };
 
 type Tab = "rules" | "streak" | "power" | "earn" | "idle";
 
 export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
-  const { toast, openConfirm } = ctx;
-  const canRuleWrite = ctx.can("growth_h5_rule_write");
-  const canWrite = ctx.can("growth_h5_write");
+  const { toast } = ctx;
+  const session = useAdminAuth(s => s.session);
+  const canRuleWrite = !!session?.authorities.includes("growth_h5_rule_write");
+  const canWrite = !!session?.authorities.includes("growth_h5_write");
   const canWriteTick = useAdminAuth(({ session }) => !!session
     && ["superadmin", "super"].includes(session.role)
     && session.authorities.includes("growth_h5_tick_write"));
-  const propose = usePropose();
   const reach = useReach();
   const tabIds = useTabIds();
   const tabsRef = useRef<HTMLDivElement>(null);
@@ -130,13 +99,24 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const [error, setError] = useState<string | null>(null);
   const [readAt, setReadAt] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>("rules");
-  const [mc, setMc] = useState<ActionConfirmReq | null>(null);
-  const openActionConfirm = (req: ActionConfirmReq | null) => setMc(req);
+  const [mc, setMc] = useState<H5Confirm | null>(null);
+  const fresh = useRef(false);
+  const [approvalLabel, setApprovalLabel] = useState(false);
+  const openActionConfirm = (req: H5Confirm) => {
+    if (!req.original && (!fresh.current || mutations.record(req.target))) {
+      toast("请先查询原结果并成功刷新签到数据，再发起新的修改。");
+      return;
+    }
+    setApprovalLabel(false);
+    setMc(req);
+  };
 
   const reload = async () => {
+    fresh.current = false;
     setLoading(true);
     try {
-      setModel((await fetchH5CheckIn()) as H5Model);
+      setModel(parseH5Model(await fetchH5CheckIn()));
+      fresh.current = true;
       setReadAt(Date.now());
       setError(null);
     } catch (err) {
@@ -146,13 +126,25 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     }
   };
 
+  const mutations = useH5Mutations(toast, async () => {
+    fresh.current = false;
+    setMc(null);
+    await reload();
+  }, () => fresh.current);
+
+  const refresh = async () => {
+    setMc(null);
+    const results = await mutations.refreshTickets();
+    for (const result of results) if (result.status === "rejected") toast(displayAdminError(result.reason));
+    await reload();
+  };
   useEffect(() => {
-    void reload();
+    void refresh();
   }, []);
 
-  const apply = (next: Record<string, any>) => {
-    setModel(next as H5Model);
-    setReadAt(Date.now());
+  const proposal = (op: string, values: Record<string, unknown>) => {
+    const def = findHighOp(op)!;
+    return { command: def.buildCommand(values), target: def.buildTarget(values), type: def.type, amplifies: def.amplifies, roleGate: def.gateLabel };
   };
 
   const approveRuleTag = <StatusTag tone="progress" filled explain={`${RULE_APPROVER}批准后才生效，提交人不能批自己的；批准前仍按现在的值。`}>批准后生效</StatusTag>;
@@ -165,37 +157,34 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     <Fact k="需有权限">{FUND_APPROVER_RIGHTS}</Fact>
   </>;
 
-  const openRule = (rule: CheckInRule) => {
+  const openRule = (rule: CheckInRule, original?: H5PendingCommand) => {
+    const snapshot = original?.change.snapshot ?? model!;
+    const target = `rule:${rule.key}`;
     const current = text(rule.cur);
     const isProbability = rule.key === "p15" || rule.key === "p2";
-    const currentNumber = isProbability ? current : numericText(current);
+    const currentNumber = current;
     const name = operatorCopyText(rule.name);
     const copy = RULE_COPY[rule.key];
     const submit = async (reason: string, value?: string) => {
-      if (!value) return;
-      const nextValue = NUMERIC_RULE_KEYS.has(rule.key) ? numericText(value, currentNumber) : value;
-      if (!nextValue) return;
-      const def = findHighOp("h5_checkin_rule")!;
-      await propose(ctx.toast, {
-        action: `签到规则 · ${operatorCopyText(rule.name)}`,
-        obj: rule.key,
-        before: current,
-        after: String(nextValue),
-        type: "param",
-        amplifies: isProbability && Number(nextValue) > Number(currentNumber),
-        gate: { roles: [] },
-        gateLabel: def.gateLabel,
-        reason,
-        sourceDomain: "H5",
-        command: def.buildCommand({ ruleKey: rule.key, value: nextValue, expectedValue: currentNumber || current }),
-        target: def.buildTarget({ ruleKey: rule.key }),
+      if (!value) throw new Error("value is required");
+      const nextValue = value.trim();
+      if (["baseline", "bonus7"].includes(rule.key) && !h5WholeReward(nextValue)) throw new Error("CHECKIN_REWARD_POSITIVE_INTEGER_REQUIRED");
+      await mutations.run({ target, action: `签到规则 · ${operatorCopyText(rule.name)}`, name: `签到规则 · ${operatorCopyText(rule.name)}`,
+        before: rule.cur, after: nextValue, success: "已提交，等待审批后执行", reason, snapshot,
+        editValue: isProbability ? undefined : nextValue, businessValue: isProbability ? { [rule.key]: nextValue } : undefined,
+        approvalRequired: true, proposal: { ...proposal("h5_checkin_rule", { ruleKey: rule.key, value: nextValue, expectedValue: rule.cur }),
+          amplifies: isProbability && Number(nextValue) > Number(currentNumber) },
       });
     };
     const ruleBrief = { impact: copy?.effect ?? "批准后之后的签到按新值；已经签到的不变。", check: "核对新值和单位；理由写清依据或工单号。" };
     if (isProbability) {
-      const other = model!.rules.find((item) => item.key === (rule.key === "p15" ? "p2" : "p15"))!;
+      const other = snapshot.rules.find((item) => item.key === (rule.key === "p15" ? "p2" : "p15"));
+      if (!other || !other.cur.trim() || !rule.cur.trim()) {
+        toast("没有读到幸运倍率的设置。");
+        return;
+      }
       const otherProbability = Number(other.cur);
-      openActionConfirm({ briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
+      openActionConfirm({ target, original, briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
         action: `签到规则 · ${operatorCopyText(rule.name)}`,
         title: `调整${name}`,
         detail: <>每档概率必须在 0–100%，两档合计不能超过 100%。另一档当前为 {otherProbability}%。批准后生效。</>,
@@ -229,7 +218,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       return;
     }
     if (rule.hot) {
-      openActionConfirm({ briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
+      openActionConfirm({ target, original, briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
         action: `签到规则 · ${operatorCopyText(rule.name)}`,
         title: `调整${name}`,
         detail: <>当前 <b>{current}</b>。批准后生效。</>,
@@ -246,8 +235,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     }
     const idle = IDLE_RULE_KEYS.has(rule.key);
     const strip = STRIP_RULE_KEYS.has(rule.key);
-    openConfirm({ briefKind: "config",
-      errorHandled: true,
+    openActionConfirm({ target, original, briefKind: "config",
       action: `签到规则 · ${operatorCopyText(rule.name)}`,
       title: `调整${name}`,
       detail: <>当前 <b>{current}</b>。批准后生效。</>,
@@ -263,18 +251,21 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           </Facts>
         </div>
       ),
-      reason: true,
-      input: { label: strip ? `新值（${copy?.unit}，正整数）` : copy?.unit ? `新值（${copy.unit}）` : "新值", placeholder: `当前 ${currentNumber || current}` },
-      okLabel: "提交审批",
+      edit: { kind: strip || rule.key === "broken" || rule.key === "brokenHours" ? "number" : "text", current: rule.cur, unit: copy?.unit,
+        label: strip ? `新值（${copy?.unit}，正整数）` : copy?.unit ? `新值（${copy.unit}）` : "新值",
+        validate: strip ? (value) => h5WholeReward(value) ? undefined : displayAdminError(new Error("CHECKIN_REWARD_POSITIVE_INTEGER_REQUIRED")) : undefined },
+      confirmLabel: "提交审批",
       reasonPlaceholder: "例如：活动方案或工单号",
       run: submit,
     });
   };
 
-  const openStreak = (milestone: StreakMilestone) => {
+  const openStreak = (milestone: StreakMilestone, original?: H5PendingCommand) => {
+    const snapshot = original?.change.snapshot ?? model!;
+    const target = `streak:${milestone.id}`;
     const legacy = legacyRewardName(milestone.reward);
     const view = streakRewardView(milestone.reward, milestone.kind, operatorCopyText);
-    openActionConfirm({ briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
+    openActionConfirm({ target, original, briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
       action: `连签里程碑 · ${milestone.day}`,
       title: `改连签 ${milestone.day}奖励`,
       detail: legacy ? <>当前是 <b>{view.main}</b>，名称还是旧写法「{view.legacyName}」。</> : <>当前奖励 <b>{view.main}</b>。</>,
@@ -296,22 +287,33 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       coverageLead: "数量变多或换成别的资金、转盘票，平台会多付",
       coverageCheck: "提交审批时和批准时，后端检查兑付覆盖率不低于红线；变少、不变、改成徽章不检查。",
       amplifies: true,
-      edit: { kind: "text", current: milestone.reward, currentLabel: "现在的名称", hint: "一种奖励、数量是正整数：+5 UVT、+1 USDT、转盘票 ×2" },
+      edit: { kind: "text", current: milestone.reward, currentLabel: "现在的名称", hint: "一种奖励、数量是正整数：+5 UVT、+1 USDT、转盘票 ×2",
+        validate: value => { const issue = h5StreakReward(value).issue; return issue ? displayAdminError(new Error(issue)) : undefined; } },
+      confirmLabelForValue: value => value && h5StreakReward(value).amount && h5StreakReward(value).type.toLowerCase() !== milestone.kind?.toLowerCase() ? "提交审批" : "确认提交",
       run: async (reason, value) => {
-        if (!value) return;
-        apply(await updateH5StreakMilestone(milestone.id, value, milestone.reward, reason));
-        toast(`连签 ${milestone.day} 奖励已更新`);
+        if (!value) throw new Error("reward is required");
+        const reward = value.trim();
+        const parsed = h5StreakReward(reward);
+        if (parsed.issue) throw new Error(parsed.issue);
+        await mutations.run({ target, action: `连签里程碑 · ${milestone.day}`, name: `连签里程碑 · ${milestone.day}`, before: milestone.reward, after: reward,
+          success: `连签 ${milestone.day} 奖励已更新`, reason, snapshot, editValue: reward,
+          direct: { path: `/check-in/streak-milestones/${milestone.id}`, body: { key: "reward", value: reward, expectedValue: milestone.reward } },
+          proposal: proposal("h5_streak_milestone", { milestoneId: milestone.id, reward, expectedReward: milestone.reward }),
+          approvalRequired: parsed.amount !== undefined && parsed.amount > BigInt(0) && parsed.type.toLowerCase() !== milestone.kind?.toLowerCase(),
+        });
       },
     });
   };
 
-  const openPowerUp = (powerUp: PowerUp) => {
+  const openPowerUp = (powerUp: PowerUp, original?: H5PendingCommand) => {
+    const snapshot = original?.change.snapshot ?? model!;
+    const target = `power:${powerUp.id}`;
     const multiplier = powerUp.effectType === "CHECKIN_MULTIPLIER";
     const name = operatorCopyText(powerUp.label);
     const currentNote = text(powerUp.note, "");
     const amplifies = (values: Record<string, string>) => Number(values.day) < powerUp.day
-      || (multiplier && Number(values.note) > Number(currentNote));
-    openActionConfirm({ briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
+      || (multiplier && (h5Amount(values.note) ?? BigInt(0)) > (h5Amount(currentNote) ?? BigInt(0)));
+    openActionConfirm({ target, original, briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
       action: `连续签到成长奖励 · ${operatorCopyText(powerUp.label)}`,
       title: `调整${name}`,
       detail: <>当前连续签到 <b>{powerUp.day}</b> 天解锁。{multiplier ? "签到倍率会改变用户每天签到拿多少。" : "说明文字只改显示。"}</>,
@@ -336,38 +338,52 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       businessForm: {
         kind: "multi-field",
         amplifies,
+        onFieldChange: (_key, values) => { setApprovalLabel(amplifies(values)); return values; },
+        feedback: values => {
+          const day = Number(values.day);
+          const badDay = !/^\d+(?:\.0+)?$/.test(values.day) || !Number.isInteger(day) || day < 1 || day > 365;
+          const badNote = multiplier && (!/^\d+(?:\.\d{1,4})?$/.test(values.note) || (h5Amount(values.note) ?? BigInt(0)) <= BigInt(0) || Number(values.note) >= 100000000);
+          return { invalid: badDay || badNote, message: badDay ? "解锁天数须为 1–365 天的整数" : badNote ? displayAdminError(new Error("POWER_UP_MULTIPLIER_INVALID")) : "", field: badDay ? "day" : "note" };
+        },
         fields: [
           { key: "day", label: "解锁天数", inputKind: "number", current: String(powerUp.day), placeholder: "例如 30", help: "连签满几天解锁，1–365 天" },
           multiplier
-            ? { key: "note", label: "签到倍率", inputKind: "text", current: text(powerUp.note, ""), placeholder: "例如 1.5", required: false, help: "激活后每天的签到奖励乘这个数；不能留空，最多 4 位小数" }
+            ? { key: "note", label: "签到倍率", inputKind: "text", current: text(powerUp.note, ""), placeholder: "例如 1.5", required: true, help: "激活后每天的签到奖励乘这个数；不能留空，最多 4 位小数" }
             : { key: "note", label: "说明文字", inputKind: "text", current: text(powerUp.note, ""), placeholder: "可留空", required: false },
         ],
       },
       run: async (reason, _value, form) => {
-        if (!form) return;
-        if (!form.day) return;
-        const next = await updateH5PowerUp(
-          powerUp.id,
-          form.day,
-          form.note ?? "",
-          powerUp.day,
-          text(powerUp.note, ""),
-          reason,
-        );
-        apply(next);
-        toast(`${operatorCopyText(powerUp.label)} 已更新`);
+        if (!form || !form.day) throw new Error("POWER_UP_EXPECTED_STATE_REQUIRED");
+        if (powerUp.businessAvailable === false) throw new Error("H5_POWER_UP_BUSINESS_RETIRED");
+        const day = Number(form.day);
+        if (!/^\d+(?:\.0+)?$/.test(form.day) || !Number.isInteger(day) || day < 1 || day > 365) throw new Error("POWER_UP_DAY_INTEGER_REQUIRED");
+        const note = form.note ?? "";
+        if (multiplier && (!/^\d+(?:\.\d{1,4})?$/.test(note) || (h5Amount(note) ?? BigInt(0)) <= BigInt(0) || Number(note) >= 100000000)) throw new Error("POWER_UP_MULTIPLIER_INVALID");
+        await mutations.run({ target, action: `连续签到成长奖励 · ${name}`, name: `连续签到成长奖励 · ${name}`, before: `连签 ${powerUp.day} 天；${currentNote}`, after: `连签 ${day} 天；${note}`,
+          success: `${name} 已更新`, reason, snapshot, businessValue: { day: form.day, note }, approvalRequired: amplifies(form),
+          direct: { path: `/check-in/power-ups/${powerUp.id}/config`, body: { day, note, expectedDay: powerUp.day, expectedNote: currentNote } },
+          proposal: proposal("h5_power_up_config", { powerUpId: powerUp.id, day, note, expectedDay: powerUp.day, expectedNote: currentNote }),
+        });
       },
     });
   };
 
-  const openEarn = (milestone: EarnMilestone) => {
-    const list = model?.earnMilestones ?? [];
+  const openEarn = (milestone: EarnMilestone, original?: H5PendingCommand) => {
+    const snapshot = original?.change.snapshot ?? model!;
+    const target = `earn:${milestone.key}`;
+    const list = snapshot.earnMilestones;
     const index = list.findIndex((item) => item.key === milestone.key);
     const prev = index > 0 ? list[index - 1] : undefined;
     const next = index >= 0 && index < list.length - 1 ? list[index + 1] : undefined;
-    const amplifies = (values: Record<string, string>) => Number(values.threshold) < Number(milestone.threshold)
-      || Number(values.nex) > Number(milestone.nex);
-    openActionConfirm({ briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
+    const amplifies = (values: Record<string, string>) => (h5Amount(values.threshold) ?? h5Amount(milestone.threshold)!) < h5Amount(milestone.threshold)!
+      || (h5Amount(values.nex) ?? h5Amount(milestone.nex)!) > h5Amount(milestone.nex)!;
+    const issue = (values: Record<string, string>) => {
+      const threshold = h5Amount(values.threshold);
+      const reward = h5Amount(values.nex);
+      if (threshold === undefined || reward === undefined || threshold < BigInt(1000000) || threshold > BigInt("100000000000000") || reward > BigInt("100000000000000")) return "门槛为 1–100000000 USDT，奖励为 0–100000000 UVT，最多 6 位小数";
+      if (prev && threshold <= h5Amount(prev.threshold)! || next && threshold >= h5Amount(next.threshold)!) return displayAdminError(new Error("EARN_MILESTONE_THRESHOLD_ORDER_INVALID"));
+    };
+    openActionConfirm({ target, original, briefKind: "config", reasonPlaceholder: "例如：活动方案或工单号",
       action: `收益里程碑 · $${milestone.threshold}`,
       title: `调整收益里程碑 ${milestone.key}`,
       detail: <>当前门槛 <b>{amountText(milestone.threshold)} USDT</b>，奖励 <b>{amountText(milestone.nex)} UVT</b>。门槛要从小到大排列。</>,
@@ -392,50 +408,59 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       businessForm: {
         kind: "multi-field",
         amplifies,
+        onFieldChange: (_key, values) => { setApprovalLabel(amplifies(values)); return values; },
+        feedback: values => ({ invalid: !!issue(values), message: issue(values) ?? "" }),
         fields: [
           { key: "threshold", label: "门槛（累计收益 USDT）", inputKind: "number", current: String(milestone.threshold), placeholder: "500", help: "最多 6 位小数，在相邻两档之间" },
           { key: "nex", label: "奖励（UVT）", inputKind: "number", current: String(milestone.nex), placeholder: "250", help: "最多 6 位小数，可以是 0" },
         ],
       },
       run: async (reason, _value, form) => {
-        if (!form) return;
-        const threshold = numericInput(form.threshold, milestone.threshold);
-        const nex = numericInput(form.nex, milestone.nex);
-        apply(await updateH5EarnMilestone(milestone.key, threshold, nex, reason));
-        toast(`${milestone.key} 已更新`);
+        if (!form) throw new Error("EARN_MILESTONE_AMOUNTS_REQUIRED");
+        const invalid = issue(form);
+        if (invalid) throw new Error(invalid);
+        const threshold = decimalText(form.threshold);
+        const nex = decimalText(form.nex);
+        await mutations.run({ target, action: `收益里程碑 · $${milestone.threshold}`, name: `收益里程碑 · ${milestone.key}`,
+          before: `${milestone.threshold} USDT；${milestone.nex} UVT`, after: `${threshold} USDT；${nex} UVT`, success: `${milestone.key} 已更新`,
+          reason, snapshot, businessValue: { threshold, nex }, approvalRequired: amplifies(form),
+          direct: { path: `/earn-milestones/${encodeURIComponent(milestone.key)}`, body: { thresholdUsd: threshold, rewardNex: nex } },
+          proposal: proposal("h5_earn_milestone", { milestoneKey: milestone.key, thresholdUsd: threshold, rewardNex: nex, expectedThresholdUsd: decimalText(milestone.threshold), expectedRewardNex: decimalText(milestone.nex) }),
+        });
       },
     });
   };
 
-  const openTick = () => {
-    const current = text(model?.tickInterval?.seconds ?? model?.tickInterval?.value, "4");
-    const currentSeconds = String(model?.tickInterval?.seconds ?? numericText(model?.tickInterval?.value, "4"));
-    openConfirm({ briefKind: "config",
+  const openTick = (original?: H5PendingCommand) => {
+    const snapshot = original?.change.snapshot ?? model!;
+    const target = "tick:interval";
+    const current = String(snapshot.tickInterval.seconds);
+    const currentSeconds = current;
+    openActionConfirm({ target, original, briefKind: "config",
       action: "收益里程碑触发检查间隔",
       title: "调整收益里程碑检查间隔",
-      detail: <>当前 <b>{text(model?.tickInterval?.value, current)}</b>。目前没有任何地方按这个间隔检查收益里程碑，保存只改这一项的值。</>,
+      detail: <>当前 <b>{text(snapshot.tickInterval?.value, current)}</b>。目前没有任何地方按这个间隔检查收益里程碑，保存只改这一项的值。</>,
       effect: <StatusTag tone="progress" filled explain="保存后马上能读回新值。">立即保存</StatusTag>,
       statedBrief: { impact: "只改保存的值，不改变收益里程碑什么时候发：后端没有按这个间隔检查的任务，用户在 App 成就页主动领取。", check: "核对秒数；理由写清依据或工单号。" },
       content: (
         <div className="rd-stack">
           <Notice tone="warn" title="目前不影响收益里程碑">后端没有按这个间隔检查的任务；收益里程碑由用户在 App 成就页主动领取。</Notice>
           <Facts>
-            <Fact k="现在">{text(model?.tickInterval?.value, current)}</Fact>
-            {model?.tickInterval?.seconds === 0 && <Fact k="现在的值" tone="warn">0 秒不在 1–60 秒内，是以前存下的值</Fact>}
+            <Fact k="现在">{text(snapshot.tickInterval?.value, current)}</Fact>
+            {snapshot.tickInterval?.seconds === 0 && <Fact k="现在的值" tone="warn">0 秒不在 1–60 秒内，是以前存下的值</Fact>}
             <Fact k="谁能改">有检查间隔修改权限的超级管理员</Fact>
           </Facts>
         </div>
       ),
-      reason: true,
-      input: { label: "秒数（1–60）", placeholder: currentSeconds },
-      okLabel: "确认修改",
+      edit: { kind: "number", label: "秒数（1–60）", current: currentSeconds, min: 1, max: 60 },
+      confirmLabel: "确认修改",
       reasonPlaceholder: "例如：工单号或核对依据",
       run: async (reason, value) => {
-        if (!value) return;
-        const nextValue = numericText(value, currentSeconds);
-        if (!nextValue) return;
-        apply(await updateH5EarnTickInterval(nextValue, reason));
-        toast("收益里程碑触发检查间隔已更新");
+        if (!value || !/^\d+(?:\.\d+)?$/.test(value.trim()) || Number(value) < 1 || Number(value) > 60) throw new Error("TICK_INTERVAL_OUT_OF_RANGE");
+        await mutations.run({ target, action: "收益里程碑触发检查间隔", name: "收益里程碑触发检查间隔", before: snapshot.tickInterval.value, after: `${value} 秒`,
+          success: "收益里程碑触发检查间隔已更新", reason, snapshot, editValue: value, approvalRequired: false,
+          direct: { path: "/earn-milestones/tick-interval", body: { key: "tick", value } },
+        });
       },
     });
   };
@@ -443,18 +468,40 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const auditHref = "/platform/audit?domain=H";
   const canAudit = reach("/platform/audit");
   const anyWrite = canRuleWrite || canWrite || canWriteTick;
-  const pendingOf = (target: string) => SERVER_PENDING.find((item) => item.target === target);
+  const pendingOf = (target: string) => {
+    const original = mutations.record(target);
+    return original?.ticket?.status === "pending" ? { approver: target.startsWith("rule:") ? RULE_APPROVER : FUND_APPROVER } : undefined;
+  };
+  const blocked = (target: string) => mutations.record(target) ? "这一项有未结束的原操作，请先查询原结果" : !fresh.current ? "请先成功刷新签到数据" : undefined;
+  const restore = (original: H5PendingCommand) => {
+    const snapshot = original.change.snapshot;
+    const [kind, ...idParts] = original.change.target.split(":");
+    const id = idParts.join(":");
+    if (kind === "rule") openRule(snapshot.rules.find(item => item.key === id)!, original);
+    else if (kind === "streak") openStreak(snapshot.streakMilestones.find(item => item.id === Number(id))!, original);
+    else if (kind === "power") openPowerUp(snapshot.powerUps.find(item => item.id === Number(id))!, original);
+    else if (kind === "earn") openEarn(snapshot.earnMilestones.find(item => item.key === id)!, original);
+    else openTick(original);
+  };
+  const queryOriginal = async (original: H5PendingCommand) => {
+    try {
+      const result = await mutations.query(original);
+      if (result === null && isRetryExpired(original) && !original.acknowledged && !original.ticket) {
+        toast("原申请已过期，查询确认没有这张审批单。原记录继续保留。");
+      }
+    } catch (err) { toast(displayAdminError(err)); }
+  };
 
-  const recoveryRows: H5RecoveryRow[] = UNKNOWN.map((record) => ({
-    key: record.key,
-    name: record.name,
-    change: record.change,
-    submittedAt: record.submittedAt,
-    tag: record.expired ? expiredTag(record.kind) : unknownTag(record.kind),
-    ticket: record.ticket,
+  const recoveryRows: H5RecoveryRow[] = mutations.records.filter(record => !record.ticket).map((record) => ({
+    key: record.commandKey,
+    name: record.change.name,
+    change: `${record.change.before} → ${record.change.after}${record.acknowledged ? "；申请已建单，批没批准还没查到" : ""}`,
+    submittedAt: record.createdAt,
+    tag: isRetryExpired(record) ? expiredTag(record.request.kind) : unknownTag(record.request.kind),
+    ticket: record.ticket?.id,
     actions: <>
-      <Button size="sm">查询原结果</Button>
-      {!record.expired && <Button size="sm">按原请求重试</Button>}
+      <Button size="sm" onClick={() => void queryOriginal(record)}>查询原结果</Button>
+      {!isRetryExpired(record) && !record.acknowledged && <Button size="sm" disabledReason={mutations.canRetry(record) ? undefined : "当前账号没有原操作的修改权限"} onClick={() => restore(record)}>按原请求重试</Button>}
     </>,
   }));
   const recovery = (
@@ -474,23 +521,30 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       summary="看签到情况和用户签到拿多少，维护签到和奖励规则。"
       meta={readAt ? <span className="rd-toolbar">
         <span>{`${businessClock(readAt)} 读取（${businessZone().label}）· 打开时读取`}</span>
-        <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reload()}>刷新</Button>
+        <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void refresh()}>刷新</Button>
       </span> : undefined}
       readOnly={!anyWrite ? "你只能查看；改签到规则、奖励和里程碑要有这页的修改权限。" : undefined}
     />
   );
 
+  const activeCommand = mc ? mutations.record(mc.target) : undefined;
   const confirmModal = mc && (
-    <OperationConfirmModal briefKind={mc.briefKind}
+    <OperationConfirmModal key={`${mc.target}:${mc.original?.commandKey ?? "new"}`} briefKind={mc.briefKind}
       action={mc.action}
       title={mc.title}
       detail={mc.detail}
       amplifies={mc.amplifies}
-      edit={mc.edit}
+      edit={mc.edit && mc.original ? { ...mc.edit, initialValue: mc.original.change.editValue } : mc.edit}
       businessForm={mc.businessForm}
       facts={mc.facts}
       effect={mc.effect}
-      confirmLabel={mc.confirmLabel}
+      content={mc.content}
+      initialReason={mc.original?.change.reason}
+      getPendingReason={() => mutations.record(mc.target)?.change.reason}
+      getPendingBusinessValue={() => mc.original?.change.businessValue ?? mutations.record(mc.target)?.change.businessValue}
+      blockedReason={activeCommand && !mutations.canRetry(activeCommand) ? isRetryExpired(activeCommand) ? "已超过 24 小时，只能查询原结果" : "当前账号不能重试原操作，请查询原结果" : !mc.original && !mutations.record(mc.target) && !fresh.current ? "请先成功刷新签到数据" : undefined}
+      confirmLabelForValue={mc.confirmLabelForValue}
+      confirmLabel={mc.target.startsWith("power:") || mc.target.startsWith("earn:") ? approvalLabel ? "提交审批" : mc.confirmLabel : mc.confirmLabel}
       confirmTone={mc.confirmTone}
       statedBrief={mc.statedBrief}
       coverageLead={mc.coverageLead}
@@ -499,7 +553,10 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       onClose={() => setMc(null)}
       onConfirm={async (reason, newValue, businessValue) => {
         try {
-          await mc.run(reason, newValue, businessValue);
+          const original = mutations.record(mc.target);
+          if (original) await mutations.retry(original);
+          else if (mc.original) throw new Error("原操作已处理，请刷新后重新操作。");
+          else await mc.run(reason, newValue, businessValue);
           setMc(null);
         } catch (err) {
           toast(err instanceof Error ? displayAdminError(err) : "操作失败");
@@ -509,13 +566,14 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     />
   );
 
-  if (loading && !model) return <div className="h5-page">{header}{recovery}<BlockState state="loading" title="签到数据读取中…" /></div>;
+  if (loading && !model) return <div className="h5-page">{header}{recovery}<BlockState state="loading" title="签到数据读取中…" />{confirmModal}</div>;
   if (error || !model) {
     return (
       <div className="h5-page">
         {header}
         {recovery}
-        <BlockState state="error" title="签到数据读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改签到规则和奖励；一直失败请联系值班同事。`} onRetry={() => void reload()} retrying={loading} />
+        <BlockState state="error" title="签到数据读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改签到规则和奖励；一直失败请联系值班同事。`} onRetry={() => void refresh()} retrying={loading} />
+        {confirmModal}
       </div>
     );
   }
@@ -551,7 +609,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const multiplierPowerUp = model.powerUps.find((item) => item.effectType === "CHECKIN_MULTIPLIER" && item.businessAvailable !== false);
   const p15Number = Number(p15?.cur);
   const p2Number = Number(p2?.cur);
-  const luckyValid = p15 && p2 && Number.isFinite(p15Number) && Number.isFinite(p2Number) && p15Number >= 0 && p2Number >= 0 && p15Number + p2Number <= 100;
+  const luckyValid = p15 && p2 && p15.cur.trim() !== "" && p2.cur.trim() !== "" && Number.isFinite(p15Number) && Number.isFinite(p2Number) && p15Number >= 0 && p2Number >= 0 && p15Number + p2Number <= 100;
   const plainChance = luckyValid ? Number((100 - p15Number - p2Number).toFixed(6)) : null;
 
   const conclusion = (() => {
@@ -598,7 +656,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           {!fixed && <span className="h5-dir">改动都要批准</span>}
         </span>}
         action={!fixed && canRuleWrite ? (describedBy) => (
-          <Button size="sm" aria-describedby={describedBy} aria-label={`调整 ${name}`} disabledReason={pending ? "这一项有等批准的申请，审批结束前不能再提交" : undefined} onClick={() => openRule(rule)}>调整</Button>
+          <Button size="sm" aria-describedby={describedBy} aria-label={`调整 ${name}`} disabledReason={blocked(`rule:${rule.key}`)} onClick={() => openRule(rule)}>调整</Button>
         ) : undefined} />
     );
   };
@@ -641,7 +699,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 {pending && pendingTag(pending.approver)}
               </>,
               action: canWrite ? <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`修改连签 ${milestone.day}奖励`}
-                disabledReason={pending ? "这一档有等批准的申请，审批结束前不能再提交" : undefined} onClick={() => openStreak(milestone)}>改奖励</Button> : undefined,
+                disabledReason={blocked(`streak:${milestone.id}`)} onClick={() => openStreak(milestone)}>改奖励</Button> : undefined,
             };
           })} />
           : <BlockState state="empty" title="还没有连签奖励" detail="也可能是读取失败，这页分不出来。" />}
@@ -677,7 +735,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               mark: retired ? "业务已停用" : unknown ? "状态未知" : pending ? "待审批" : undefined,
               actions: canWrite && !retired
                 ? <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`调整成长奖励 ${operatorCopyText(powerUp.label)}（${powerUp.day} 天）`}
-                  disabledReason={pending ? "这一档有等批准的申请，审批结束前不能再提交" : undefined} onClick={() => openPowerUp(powerUp)}>调整</Button>
+                  disabledReason={blocked(`power:${powerUp.id}`)} onClick={() => openPowerUp(powerUp)}>调整</Button>
                 : canWrite && retired ? <span className="h5-readonly">只读</span> : undefined,
             };
           })} />
@@ -703,7 +761,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               secondary: `近 7 天达成 ${milestone.weekTrigger == null ? "—" : `${countText(milestone.weekTrigger)} 次`}`,
               mark: pending ? "待审批" : undefined,
               actions: canWrite ? <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`调整收益里程碑 ${milestone.key}`}
-                disabledReason={pending ? "这一档有等批准的申请，审批结束前不能再提交" : undefined} onClick={() => openEarn(milestone)}>调整</Button> : undefined,
+                disabledReason={blocked(`earn:${milestone.key}`)} onClick={() => openEarn(milestone)}>调整</Button> : undefined,
             };
           })} />
           : <BlockState state="empty" title="还没有收益里程碑" detail="也可能是读取失败，这页分不出来。" />}
@@ -726,7 +784,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                   <span className="h5-value-num">{ruleValueText(rule)}</span>
                   <StatusTag tone="neutral" icon={CircleSlash}>目前不影响签到</StatusTag>
                 </span>}
-                action={canRuleWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} aria-label={`调整 ${name}`} onClick={() => openRule(rule)}>调整</Button> : undefined} />
+                action={canRuleWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} aria-label={`调整 ${name}`} disabledReason={blocked(`rule:${rule.key}`)} onClick={() => openRule(rule)}>调整</Button> : undefined} />
             );
           })}
           <ConfigRow name="收益里程碑检查间隔"
@@ -740,7 +798,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               <StatusTag tone="neutral" icon={CircleSlash}>目前不影响收益里程碑</StatusTag>
             </span>}
             action={canWrite || canRuleWrite || canWriteTick ? (describedBy) => <Button size="sm" aria-describedby={describedBy} aria-label="调整 收益里程碑检查间隔"
-              disabledReason={canWriteTick ? undefined : "仅超级管理员可调整检查间隔，还要有检查间隔修改权限"} onClick={openTick}>调整</Button> : undefined} />
+              disabledReason={canWriteTick ? blocked("tick:interval") : "仅超级管理员可调整检查间隔，还要有检查间隔修改权限"} onClick={() => openTick()}>调整</Button> : undefined} />
         </ConfigList>
       </Panel>
     ),

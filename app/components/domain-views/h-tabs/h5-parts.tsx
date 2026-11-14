@@ -9,30 +9,7 @@ import { CircleHelp, Clock3, Gift, Hourglass } from "lucide-react";
 import { Explain, Notice, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 
-export type CheckInRule = { key: string; name: string; sub?: string; cur: string; hot?: boolean | number };
-export type StreakMilestone = { id: number; day: string; reward: string; kind?: string };
-export type PowerUp = {
-  id: number;
-  day: number;
-  label: string;
-  sub?: string;
-  downstream?: string;
-  note?: string;
-  effectType?: string;
-  /** 该档指向的业务当前是否对客可用;null/undefined = 该档不依赖受管业务。 */
-  businessAvailable?: boolean | null;
-};
-export type EarnMilestone = { id: number; key: string; threshold: number; nex: number; weekTrigger?: number };
-export type H5Model = {
-  stats?: Record<string, any>;
-  rules: CheckInRule[];
-  streakMilestones: StreakMilestone[];
-  streakDistribution?: Array<{ day: string; count: string; height: number }>;
-  powerUps: PowerUp[];
-  earnMilestones: EarnMilestone[];
-  tickInterval?: { value: string; seconds: number; min?: number; max?: number; note?: string };
-  coverage?: Record<string, any>;
-};
+export type { CheckInRule, StreakMilestone, PowerUp, EarnMilestone, H5Model } from "@/lib/admin/h5-contract";
 
 /** 整数加千分位；不是数字的原样返回。 */
 export function countText(value: unknown) {
@@ -55,7 +32,7 @@ export function amountText(value: unknown) {
   }
   const [, sign, int, frac = ""] = match;
   const decimals = frac.replace(/0+$/, "").padEnd(2, "0");
-  return `${sign}${Number(int).toLocaleString("en-US")}.${decimals}`;
+  return `${sign}${int.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${decimals}`;
 }
 
 /** 「3 天」→ 3；读不出天数时 null。 */

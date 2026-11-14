@@ -1555,6 +1555,31 @@ export const HIGH_OPS: HighOpDef[] = [
     buildTarget: (ctx) => ({ domain: "H", type: "checkin_rule", id: String(ctx.ruleKey) }),
   },
   {
+    op: "h5_streak_milestone", domain: "H", action: "放宽连签里程碑奖励", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h5_streak_milestone",
+    buildCommand: (ctx) => ({ domain: "H", op: "h5_streak_milestone", params: { values: {
+      milestoneId: Number(ctx.milestoneId), reward: String(ctx.reward), expectedReward: String(ctx.expectedReward),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h5_streak_milestone", id: String(ctx.milestoneId) }),
+  },
+  {
+    op: "h5_power_up_config", domain: "H", action: "放宽连签权益", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h5_power_up",
+    buildCommand: (ctx) => ({ domain: "H", op: "h5_power_up_config", params: { values: {
+      powerUpId: Number(ctx.powerUpId), day: Number(ctx.day), note: String(ctx.note), expectedDay: Number(ctx.expectedDay), expectedNote: String(ctx.expectedNote),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h5_power_up", id: String(ctx.powerUpId) }),
+  },
+  {
+    op: "h5_earn_milestone", domain: "H", action: "放宽收益里程碑", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h5_earn_milestone",
+    buildCommand: (ctx) => ({ domain: "H", op: "h5_earn_milestone", params: { values: {
+      milestoneKey: String(ctx.milestoneKey), thresholdUsd: String(ctx.thresholdUsd), rewardNex: String(ctx.rewardNex),
+      expectedThresholdUsd: String(ctx.expectedThresholdUsd), expectedRewardNex: String(ctx.expectedRewardNex),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h5_earn_milestone", id: String(ctx.milestoneKey) }),
+  },
+  {
     op: "h8_reward_param_change",
     domain: "H",
     action: "放宽新人礼与邀请奖励",
