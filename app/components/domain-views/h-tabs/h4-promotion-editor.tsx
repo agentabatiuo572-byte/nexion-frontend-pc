@@ -21,7 +21,7 @@ function NumericField({label, kind, value, binding, onChange, hint, inline = fal
     return inline ? <>{input}{help && <small id={id}>{help}</small>}</> : <Field label={label} hint={help}>{input}</Field>;
 }
 function focusFormatError() {
-    if (typeof document !== 'undefined') [...document.querySelectorAll('dialog[open]')].at(-1)?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+    if (typeof document !== 'undefined') [...document.querySelectorAll('dialog[open], .rd-modal')].at(-1)?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
 }
 function invalidNumbers(fields: Array<[string, PromotionNumericKind, string | number | null | undefined]>, inputs: NumericInputs) {
     return fields.some(([key, kind, value]) => !!parsePromotionNumericInput(inputs[key] ?? promotionInputText(value), kind).error);

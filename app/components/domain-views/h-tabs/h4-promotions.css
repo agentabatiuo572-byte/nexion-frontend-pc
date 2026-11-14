@@ -6,7 +6,7 @@
 
 /* 通用小件 */
 .h4-num { font-variant-numeric: tabular-nums; }
-.h4-mono { font-family: var(--rd-font-mono); font-size: 12px; color: var(--rd-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.h4-mono { font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); color: var(--rd-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .h4-dim { color: var(--rd-text-3); }
 .h4-row { display: flex; flex-wrap: wrap; gap: var(--rd-space-2); align-items: center; }
 .h4-page .h4-lede { margin: 0; color: var(--rd-text-2); font-size: var(--rd-text-body); }
@@ -77,7 +77,7 @@
 .h4-page .h4-reward-entry-name { display: flex; justify-content: space-between; gap: 8px; align-items: center; min-width: 0; }
 .h4-page .h4-reward-entry-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .h4-page .h4-reward-entry-main { font-size: var(--rd-text-body); }
-.h4-page .h4-reward-entry-main b { font-size: 20px; font-weight: var(--rd-weight-semibold); }
+.h4-page .h4-reward-entry-main b { font-size: var(--rd-text-title); font-weight: var(--rd-weight-semibold); }
 .h4-page .h4-reward-entry-main[data-tone="warn"] b { color: var(--rd-warn); }
 .h4-page .h4-reward-entry-sub { color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 
@@ -160,7 +160,7 @@
 /* 日期时间选择（自带日历层） */
 .h4-datetime-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .h4-datetime-field > span:first-child { font-size: var(--rd-text-aux); color: var(--rd-text-2); }
-.h4-datetime-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; height: var(--rd-control-h); padding: 0 10px 0 12px; border: 0; border-radius: var(--rd-radius-control); background: var(--rd-control); color: var(--rd-text); font: inherit; font-size: 14px; font-variant-numeric: tabular-nums; cursor: pointer; min-width: 180px; }
+.h4-datetime-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; height: var(--rd-control-h); padding: 0 10px 0 12px; border: 0; border-radius: var(--rd-radius-control); background: var(--rd-control); color: var(--rd-text); font: inherit; font-size: var(--rd-text-body); font-variant-numeric: tabular-nums; cursor: pointer; min-width: 180px; }
 .h4-datetime-trigger:disabled { background: var(--rd-disabled-bg); color: var(--rd-text-disabled); cursor: not-allowed; }
 .h4-datetime-field small { color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .h4-datetime-validation { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
@@ -168,7 +168,7 @@
 .h4-datetime-dialog::backdrop { background: var(--rd-scrim); }
 .h4-datetime-dialog .dialog-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px 8px; }
 .h4-datetime-dialog .dialog-head h2 { margin: 0; font-size: var(--rd-text-section); }
-.h4-datetime-dialog .close { background: none; border: 0; color: var(--rd-text-2); font-size: 18px; cursor: pointer; }
+.h4-datetime-dialog .close { background: none; border: 0; color: var(--rd-text-2); font-size: var(--rd-text-section); cursor: pointer; }
 .h4-datetime-body { padding: 0 20px; display: flex; flex-direction: column; gap: 10px; }
 .h4-datetime-body .muted { margin: 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .h4-calendar-heading { display: flex; justify-content: space-between; align-items: center; }
@@ -199,7 +199,7 @@
 }
 
 /* 旧子页面里没带类名的原生输入框，补上 rd 输入框的样子 */
-:is(.h4-page, .h4-dialog-body) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(.rd-input):not(.h4-datetime-validation), select:not(.rd-input), textarea:not(.rd-input)):not(.h4-legacy *):not(.h4-datetime-dialog *) { width: 100%; height: var(--rd-control-h); padding: 0 12px; border: 0; border-radius: var(--rd-radius-control); background: var(--rd-control); color: var(--rd-text); font: inherit; font-size: 14px; }
+:is(.h4-page, .h4-dialog-body) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(.rd-input):not(.h4-datetime-validation), select:not(.rd-input), textarea:not(.rd-input)):not(.h4-legacy *):not(.h4-datetime-dialog *) { width: 100%; height: var(--rd-control-h); padding: 0 12px; border: 0; border-radius: var(--rd-radius-control); background: var(--rd-control); color: var(--rd-text); font: inherit; font-size: var(--rd-text-body); }
 :is(.h4-page, .h4-dialog-body) textarea:not(.rd-input):not(.h4-legacy *) { height: auto; min-height: 72px; padding: 8px 12px; }
 .h4-page .rd-panel .rd-segbar-wrap + .rd-facts { margin-top: 12px; }
 .h4-dialog-foot .h4-row { justify-content: flex-end; flex: 1 1 auto; }
