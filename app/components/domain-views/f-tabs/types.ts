@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { OperatorBriefKind, EditSpec, BusinessFormSpec, BusinessFormValue, InlineOperationApproval } from "../design-kit";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { DirectReferralPolicy, DirectReferralUpdate } from "@/lib/admin/direct-referral-policy";
@@ -53,6 +54,15 @@ export interface McSpec {
   expectedVersion?: number;
   expectedMaterialRevision?: number;
   teamApproval?: Pick<InlineOperationApproval, "resolve" | "renderForm"> & { source: keyof TeamFundApprovalValues };
+  /** 以下只管确认框怎么显示，原样交给 OperationConfirmModal 的同名参数；不传时和原来一样。 */
+  title?: ReactNode;
+  facts?: ReactNode | ((value?: string) => ReactNode);
+  statedBrief?: { impact: string; check: string };
+  effect?: ReactNode;
+  confirmLabel?: string;
+  confirmTone?: "primary" | "danger";
+  coverageLead?: ReactNode;
+  coverageCheck?: string;
 }
 export type Mc = (McSpec & { teamApprovalOwner?: AdminSession["adminId"] }) | null;
 
