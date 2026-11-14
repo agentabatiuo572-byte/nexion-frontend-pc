@@ -12,14 +12,14 @@ import { ApprovalFact, effectApproval, effectDirect } from "./h4-legacy-parts";
 
 /** 每类玩法一句人话：用户做什么、拿到什么（字段见 H4EventRuleService 的规则闭集）。 */
 const PLAY_SENTENCE: Record<string, string> = {
-  discount: "活动期内买关联促销活动里的设备，额外得创世抽奖券。",
-  seasonal: "活动期内用户在商城领一张全场八折券；关联促销时再送创世抽奖券。",
-  referral: "期限内直接邀请够人数的好友购机，送赠品设备。",
-  onboarding: "新用户在期限内达到最低等级，送 UVT 和补签卡。",
-  regional: "各地区按加入后的有效支付金额排名，获胜地区按个人支付比例分 USDT 奖池。",
-  CHECKIN_MULTIPLIER: "指定星期签到，签到 UVT 奖励按倍数加成。",
+  discount: "买关联促销的设备，多得创世抽奖券。",
+  seasonal: "商城领全场八折券，关联促销再送抽奖券。",
+  referral: "期限内直邀够人数购机，送赠品设备。",
+  onboarding: "新用户期限内到等级，送 UVT 和补签卡。",
+  regional: "地区按支付额排名，获胜地区分 USDT 奖池。",
+  CHECKIN_MULTIPLIER: "指定星期签到，UVT 奖励按倍数加成。",
   REINVEST_TICKETS: "每锁定一档 USDT，送创世抽奖券。",
-  wheel: "每天免费抽一次转盘；奖品和概率在「转盘奖池」里维护。",
+  wheel: "每天免费抽一次，奖品在「转盘奖池」。",
 };
 const playKey = (row: Pick<EventRuleView, "kind" | "rules">) => row.kind === "boost" ? String(row.rules.action ?? "") : row.kind;
 const value = (rules: Record<string, unknown>, key: string) => rules[key] === undefined || rules[key] === null || rules[key] === "" ? "—" : String(rules[key]);

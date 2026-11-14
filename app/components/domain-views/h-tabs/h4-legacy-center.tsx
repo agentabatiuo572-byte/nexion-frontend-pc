@@ -332,7 +332,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       businessForm: {
         kind: "multi-field",
         fields: [
-          { key: "id", label: "活动编号", current: "", placeholder: "如 evt-summer", required: true, help: "英文字母、数字、_ 或 -，2–63 位，不能重复，建好后不能改" },
+          { key: "id", label: "活动编号", current: "", placeholder: "如 evt-summer", required: true, explain: "英文字母、数字、_ 或 -，2–63 位，不能重复，建好后不能改。" },
           { key: "name", label: "活动名", current: "", placeholder: "如 夏日狂欢", required: true },
           { key: "kind", label: "玩法", current: "discount", inputKind: "select", options: KIND_OPTIONS, optionLabels: Object.fromEntries(KIND_OPTIONS.map((kind) => [kind, KIND_LABEL(kind)])) },
           { key: "reward", label: "奖励", current: "", placeholder: "如 100 UVT", required: false, explain: "没有玩法规则的活动只认正数的 UVT 或 USDT。" },
