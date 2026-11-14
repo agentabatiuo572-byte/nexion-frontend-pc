@@ -96,12 +96,12 @@ export function courseFormState(spec: CourseSpec): CourseForm {
   return state;
 }
 
-type Missing = { key: string; text: string };
+type Missing = { key: string; text: string; need?: boolean };
 /** 和共用表单 course-authoring 的校验一字不差（design-kit missingBusinessFields），每项带上字段键，好把错误写在框下。 */
 export function courseFormMissing(spec: CourseSpec, state: CourseForm): Missing[] {
   const missing: Missing[] = [];
-  const needs = (key: string, text: string) => { if (!state[key]?.trim()) missing.push({ key, text }); };
-  const NAMES: Record<string, string> = { slug: "课程标识", category: "分类", format: "形式", difficulty: "难度", duration: "预计时长", reward: "完成奖励", titleZh: "中文标题", titleEn: "英文标题", titleVi: "越南语标题", bodyZh: "中文正文", bodyEn: "英文正文", bodyVi: "越南语正文" };
+  const needs = (key: string, text: string) => { if (!state[key]?.trim()) missing.push({ key, text, need: true }); };
+  const NAMES: Record<string, string> = { slug: "课程标识", category: "分类", format: "形式", difficulty: "难度", duration: "预计时长", reward: "完成奖励", titleZh: "中文标题", titleEn: "英语标题", titleVi: "越南语标题", bodyZh: "中文正文", bodyEn: "英语正文", bodyVi: "越南语正文" };
   Object.keys(NAMES).forEach((key) => needs(key, NAMES[key]));
   for (const key of ["titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"]) {
     if ((state[key] ?? "").trim().length > 1024) missing.push({ key, text: `${NAMES[key]}最多 1024 字` });
@@ -119,13 +119,13 @@ export function courseFormMissing(spec: CourseSpec, state: CourseForm): Missing[
   for (let q = 0; q < quizCount; q += 1) {
     needs(`quiz.${q}.id`, `第 ${q + 1} 题标识`);
     needs(`quiz.${q}.questionZh`, `第 ${q + 1} 题中文题干`);
-    needs(`quiz.${q}.questionEn`, `第 ${q + 1} 题英文题干`);
+    needs(`quiz.${q}.questionEn`, `第 ${q + 1} 题英语题干`);
     needs(`quiz.${q}.questionVi`, `第 ${q + 1} 题越南语题干`);
     const optionCount = Number(state[`quiz.${q}.optionCount`] || 0);
     if (!Number.isInteger(optionCount) || optionCount < 2) missing.push({ key: `quiz.${q}.optionCount`, text: `第 ${q + 1} 题至少两个选项` });
     for (let o = 0; o < optionCount; o += 1) {
       needs(`quiz.${q}.option.${o}.zh`, `第 ${q + 1} 题选项 ${o + 1} 中文`);
-      needs(`quiz.${q}.option.${o}.en`, `第 ${q + 1} 题选项 ${o + 1} 英文`);
+      needs(`quiz.${q}.option.${o}.en`, `第 ${q + 1} 题选项 ${o + 1} 英语`);
       needs(`quiz.${q}.option.${o}.vi`, `第 ${q + 1} 题选项 ${o + 1} 越南语`);
     }
     const correct = Number(state[`quiz.${q}.correctOptionIndex`]);
@@ -143,9 +143,9 @@ export function courseFormMissing(spec: CourseSpec, state: CourseForm): Missing[
 /** 和共用表单 localized-copy 的校验一致：三语都要填，原有的变量三语都要带上。 */
 export function copyFormMissing(placeholders: readonly string[], state: Record<Lang, string>): Missing[] {
   const missing: Missing[] = [];
-  if (!state.zh?.trim()) missing.push({ key: "zh", text: "中文文案" });
-  if (!state.en?.trim()) missing.push({ key: "en", text: "英文文案" });
-  if (!state.vi?.trim()) missing.push({ key: "vi", text: "越南语文案" });
+  if (!state.zh?.trim()) missing.push({ key: "zh", text: "中文", need: true });
+  if (!state.en?.trim()) missing.push({ key: "en", text: "英语", need: true });
+  if (!state.vi?.trim()) missing.push({ key: "vi", text: "越南语", need: true });
   placeholders.forEach((ph) => {
     if (!state.zh?.includes(ph) || !state.en?.includes(ph) || !state.vi?.includes(ph)) missing.push({ key: `ph:${ph}`, text: `变量 ${ph}` });
   });
@@ -153,7 +153,7 @@ export function copyFormMissing(placeholders: readonly string[], state: Record<L
 }
 
 export const blockedText = (missing: readonly Missing[]) => missing.length === 0 ? undefined
-  : missing.length === 1 ? `还没填好：${missing[0].text}` : `还没填好：${missing[0].text} 等 ${missing.length} 项`;
+  : missing.length === 1 ? `还没填好：${missing[0].text}` : `还没填好：${missing[0].text}等 ${missing.length} 项`;
 
 /* ---------- App 里的样子 ---------- */
 
@@ -216,7 +216,7 @@ export function CourseEditor({ open, spec, title, sub, busy, onClose, onSave }: 
   const missing = useMemo(() => spec ? courseFormMissing(spec, form) : [], [spec, form]);
   if (!spec) return null;
   const set = (key: string, value: string) => setForm((current) => ({ ...current, [key]: value }));
-  const err = (key: string) => tried ? missing.find((item) => item.key === key)?.text : undefined;
+  const err = (key: string) => { const item = tried ? missing.find((row) => row.key === key) : undefined; return item ? (item.need ? `请填${item.text}` : item.text) : undefined; };
   const quizCount = Math.max(1, Number(form.quizCount || 1));
   const langMissing = (code: Lang) => {
     const F = LANG_FIELD[code];

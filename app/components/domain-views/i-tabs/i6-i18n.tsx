@@ -11,7 +11,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Archive, BadgeCheck, BookOpen, CodeXml, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
+import { Archive, BadgeCheck, BookOpen, CodeXml, Eye, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import type { I18nMessagePairView, LearningCourseVersionView } from "@/lib/admin/i-client";
 import type { ICtx } from "./types";
@@ -115,7 +115,7 @@ export function I6I18n({ ctx, errorText }: { ctx: ICtx; errorText: string | null
   return (
     <>
       {header}
-      {errorText && <Notice tone="danger" title="数据没有读到最新" action={<Button size="sm" loading={reloading} onClick={reload}>重新加载</Button>}>
+      {errorText && <Notice tone="danger" title={data ? "数据没有读到最新" : "数据没有读到"} action={<Button size="sm" loading={reloading} onClick={reload}>重新加载</Button>}>
         {errorText}{data ? " 下面是上一次读到的内容。" : ""}
       </Notice>}
       {tabs.length > 1 && tab && <PageTabs label="多语言与课程" value={tab} onChange={choose} ids={tabIds}
@@ -1270,7 +1270,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     </StatBand>
 
     <Panel title="课程" icon={GraduationCap} tone="role-2" sub={`${count(filteredCrs.length)} 门`}
-      actions={canWriteI7 ? <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} onClick={newCrs}>新建课程</Button> : <StatusTag tone="neutral">只读</StatusTag>}>
+      actions={canWriteI7 ? <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} onClick={newCrs}>新建课程</Button> : <StatusTag tone="neutral" icon={Eye}>只读</StatusTag>}>
       <div className="i6-course-filter">
         <Segments label="按分类看" value={catFlt} onChange={setCatFlt}
           items={[{ value: "all", label: "全部", count: allCourses.length }, ...courseCategories.map((category) => ({ value: category, label: categoryLabel(category), count: allCourses.filter((c) => c.cat === category).length }))]} />
