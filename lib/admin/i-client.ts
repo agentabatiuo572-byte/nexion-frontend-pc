@@ -162,7 +162,7 @@ export type CopyVersionRow = {
 export type CopyExperimentRow = {
   id: string;
   copyKey: string;
-  variants: { name: string; split: number; cvr: number }[];
+  variants: { name: string; split: number; cvr: number; version?: string }[];
   audience: string;
   estimatedAudience?: number;
   impressions: string;
