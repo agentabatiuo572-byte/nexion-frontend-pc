@@ -61,7 +61,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
     effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: "批准后按执行那一刻的当前周重新计算池金额，并作为已解锁的 USDT 奖励真实入账到有资格的用户；本周已经结算过的会跳过，不补发差额。",
-      check: "后端执行时重新读成交额、比例、月上限、参与等级和票数；不检查兑付覆盖率。",
+      check: "执行时按当时的设置和票数重新计算；不检查兑付覆盖率。",
     },
     completionCopy: approvalCopy("F4 资金权限"),
     coverageLead: "这次结算会真实发钱",
@@ -71,7 +71,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
       <Fact k="有资格分的人">{count(data.participantCount)} 人（{unlockLabel}且有票）</Fact>
       <Fact k="怎么分">按各等级票数分，最后一位领取尾差</Fact>
     </Facts>,
-    detail: "按本周已付款成交额（不含退款和拒付）× 奖池比例计算，不超过本月剩余额度；按当前等级和票数分给达到参与等级的人。估算是现在读到的数，批准执行时会重新计算，可能和这里不同；没有合格票时不发钱。",
+    detail: "池金额 = 本周已付款成交额 × 奖池比例，不含退款和拒付，不超过本月剩余额度；按当前等级和票数分给达到参与等级的人。估算是现在读到的数，批准执行时会重新计算，可能和这里不同；没有合格票时不发钱。",
     run: async (reason) => {
       await ctx.proposeF4Settlement(reason);
     },

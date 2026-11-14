@@ -130,6 +130,8 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
           </Conclusion>}
       <F4RecoveryNotice rows={recoveryRows} />
 
+      {/* 外面包 .rd-tabs：三张卡就是页签，版面量尺按 .rd-tabs 里的页签逐个切换去量。 */}
+      <div className="rd-tabs f4-section-cards">
       <StatBand cards role="tablist" label="这页的三块内容">
         <Stat {...tabProps("pool")} openLabel="团队激励池"
           head={<span className="f4-card-head">团队激励池</span>}
@@ -165,6 +167,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
           </span>
         </Stat>
       </StatBand>
+      </div>
 
       <div {...ids.panel(section)} className="f4-section">
         {section === "pool" && <F4Pool ctx={ctx} data={data} settlement={settlement} />}

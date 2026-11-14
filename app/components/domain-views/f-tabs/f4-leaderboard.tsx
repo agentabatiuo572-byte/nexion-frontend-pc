@@ -95,7 +95,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
     facts: <Facts>
       <Fact k="总榜奖池" lead tone="role-1" unit={ppAllTime === "" ? undefined : "USDT"}>{prizeShown(ppAllTime)}</Fact>
       <Fact k="每个名次发多少">按名次分份数：第 1 名 N 份，往后每名少 1 份，最后一名 1 份；N 是上榜人数</Fact>
-      <Fact k="头部上限">第 1 名最多 {top1MaxPct}%，前 5 名合计最多 {top5MaxPct}%；超出的部分不再分给别人</Fact>
+      <Fact k="头部上限"><span className="rd-keep">第 1 名最多 {top1MaxPct}%，</span><span className="rd-keep">前 5 名合计最多 {top5MaxPct}%，</span><span className="rd-keep">超出的不再分给别人</span></Fact>
     </Facts>,
     detail: `总榜不会自动清零。按累计奖励前 100 名发放当前奖池 ${prizeShown(ppAllTime)} USDT，需要审批，不会重复发放。`,
     run: (reason) => ctx.proposeF4LeaderboardPayout("allTime", reason),

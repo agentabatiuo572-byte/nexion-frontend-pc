@@ -521,6 +521,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f4-page .f4-foot { display: flex; align-items: center; gap: var(--rd-space-2); margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 
 /* 首屏三张卡：也是三块内容的页签。窄时仍三张一排，内容少，不折成 2+1。 */
+.f4-page .f4-section-cards { display: block; }
 .f4-page .rd-stats[data-cards] > .rd-stat { flex: 1 1 calc(33.333% - 8px); }
 .f4-page .f4-card-head { font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
 .f4-page .f4-card-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); min-width: 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; }
@@ -550,14 +551,17 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f4-page .f4-quota-sum { display: grid; grid-template-columns: minmax(160px, max-content) minmax(0, 1fr); gap: var(--rd-space-6); align-items: end; margin-bottom: var(--rd-space-4); }
 .f4-page .f4-quota-figure .f4-pool-value { color: var(--rd-text); }
 .f4-page .f4-quota-bar { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; padding-bottom: var(--rd-space-2); --rd-track-w: 100%; }
-.f4-page .f4-quota-table { table-layout: fixed; }
-.f4-page .f4-quota-table th:nth-child(1) { width: 26%; }
-.f4-page .f4-quota-table th:nth-child(2) { width: auto; }
-.f4-page .f4-quota-table th:nth-child(3) { width: 30%; }
-.f4-page .f4-quota-table th:last-child { width: 88px; }
-.f4-page .f4-usage-table th:last-child { width: 72px; }
-.f4-page .f4-amb-table th:last-child { width: 96px; }
-.f4-page .f4-quota-use { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; }
+.f4-page .f4-quota-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--rd-space-3); margin: 0; padding: 0; list-style: none; }
+.f4-page .f4-quota-items li { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; padding: var(--rd-space-3) var(--rd-space-4); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); --rd-track-w: 100%; }
+:root[data-theme="light"] .f4-page .f4-quota-items li { outline: 1px solid var(--rd-line); outline-offset: -1px; }
+.f4-page .f4-quota-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--rd-space-3); }
+.f4-page .f4-quota-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.f4-page .f4-quota-name b { color: var(--rd-text); font-weight: var(--rd-weight-medium); overflow-wrap: anywhere; }
+.f4-page .f4-quota-name [data-mono] { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.f4-page .f4-quota-cond { color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.f4-page .f4-quota-use { display: flex; align-items: center; gap: var(--rd-space-2); color: var(--rd-text); }
+.f4-page .f4-quota-items + .rd-kv, .f4-page .rd-block-state + .rd-kv { margin-top: var(--rd-space-4); }
+.f4-page :is(.f4-usage-table, .f4-amb-table) td:last-child { text-align: right; }
 .f4-page .rd-table-scroll + .rd-kv { margin-top: var(--rd-space-4); }
 .f4-page .rd-panel .rd-fold { margin-top: var(--rd-space-4); }
 .f4-page .f4-usage-table { table-layout: fixed; }
@@ -670,7 +674,6 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
   .f4-page .f4-amb-table th:nth-child(2) { width: 0; }
   .f4-page .f4-amb-table th:nth-child(2), .f4-page .f4-amb-table td:nth-child(2) { display: none; }
   .f4-page .f4-usage-table th:nth-child(6), .f4-page .f4-usage-table td:nth-child(6) { display: none; }
-  .f4-page .f4-pool-value { font-size: 32px; line-height: 40px; }
   .f4-page .f4-board-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 720px) {

@@ -5,7 +5,7 @@
  * 写入口和请求沿用旧页面：额度、回收走 shell 的 param/dispose 提交（A2 审批），申请规则走 ctx.updateF4AmbassadorPolicy 或 ctx.submitTeamApproval。
  */
 import { useState } from "react";
-import { AlertCircle, BadgeCheck, FileText, Package, Users } from "lucide-react";
+import { AlertCircle, FileText, Package, Users } from "lucide-react";
 import { BlockState, Button, Cell, Explain, Field, Fold, Input, KeyValues, Panel, RatioBar, StatusDistributionBar, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel, formatF4AmbassadorBucketRule, formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
@@ -119,17 +119,18 @@ function openAmbassadorPolicy(ctx: FViewCtx, policy: F4AmbassadorPolicy) {
           onChange={(event) => change({ ...values, [field.key]: event.target.value })} />;
         return <div className="f4-policy-form">
           <div className="f4-policy-main">
-            <Field id={`f4-policy-${mainFields[0].key}`} label="规则版本" hint="3–64 位，字母数字点横线">{input(mainFields[0])}</Field>
-            <Field id={`f4-policy-${mainFields[1].key}`} label="默认预算" hint="100–10,000 USDT，要落在某一类的范围里">{input(mainFields[1])}</Field>
+            <Field id={`f4-policy-${mainFields[0].key}`} label="规则版本" explain="3–64 位，可用字母、数字、点、横线和下划线。">{input(mainFields[0])}</Field>
+            <Field id={`f4-policy-${mainFields[1].key}`} label="默认预算（USDT）" explain="100–10,000 USDT，要落在某一类的预算范围里。">{input(mainFields[1])}</Field>
           </div>
-          {bucketRows.map(({ bucket, name, fields }) => <fieldset key={bucket.id} className="f4-policy-bucket">
-            <legend>{name}<span data-mono>{bucket.id}</span></legend>
+          {bucketRows.map(({ bucket, name, fields }) => <Fold key={bucket.id} inset title={name} summary={`${decimalText(values[`${bucket.id}.min`] ?? "")}–${decimalText(values[`${bucket.id}.max`] ?? "")} USDT`}>
+            <fieldset className="f4-policy-bucket" aria-label={`${name}（${bucket.id}）`}>
             <Field id={`f4-policy-${fields[0].key}`} label="名称" hint="≤ 80 字">{input(fields[0])}</Field>
             <Field id={`f4-policy-${fields[2].key}`} label="显示范围" hint="≤ 80 字">{input(fields[2])}</Field>
-            <Field id={`f4-policy-${fields[3].key}`} label="最低预算" hint="USDT">{input(fields[3])}</Field>
-            <Field id={`f4-policy-${fields[4].key}`} label="最高预算" hint="USDT">{input(fields[4])}</Field>
+            <Field id={`f4-policy-${fields[3].key}`} label="最低预算（USDT）">{input(fields[3])}</Field>
+            <Field id={`f4-policy-${fields[4].key}`} label="最高预算（USDT）">{input(fields[4])}</Field>
             <div className="f4-policy-rule"><Field id={`f4-policy-${fields[1].key}`} label="申请条件" hint="≤ 500 字">{input(fields[1])}</Field></div>
-          </fieldset>)}
+            </fieldset>
+          </Fold>)}
         </div>;
       },
     },
@@ -226,24 +227,18 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
             <span className="f4-muted">已用 {count(used)} 台 · 共 {count(total)} 台</span>
           </div>
         </div>
-        <Table label="各商品本月名额" className="f4-quota-table">
-          <thead><tr><Th>商品</Th><Th>购买条件</Th><Th>本月已用</Th><Th data-fit=""><span className="rd-sr-only">操作</span></Th></tr></thead>
-          <tbody>
-            {data.quotaRows.length ? data.quotaRows.map((quota) => <Tr key={quota.id}>
-              <Td><Cell main={quota.name} sub={<span data-mono>{quota.productNo || quota.quotaCode}</span>} /></Td>
-              <Td><Cell main={quotaPrerequisites(quota)} /></Td>
-              <Td>
-                <span className="f4-quota-use">
-                  <RatioBar compact label={`${quota.name} 本月已用`} value={Math.min(quota.current, quota.cap)} total={quota.cap} tone={quota.tight ? "warn" : "role-2"}
-                    state={quota.cap > 0 ? "ready" : "empty"} emptyText="额度为 0" valueText={`已用 ${quota.current} 台，共 ${quota.cap} 台`} quiet />
-                  <span className="f4-num">{count(quota.current)} / {count(quota.cap)} 台</span>
-                  {quota.tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}
-                </span>
-              </Td>
-              <Td data-fit="">{canWrite && <Button size="sm" onClick={() => openQuota(quota)}>调额度</Button>}</Td>
-            </Tr>) : <TableMessage columns={4}>还没有设置购机名额</TableMessage>}
-          </tbody>
-        </Table>
+        {data.quotaRows.length ? <ul className="f4-quota-items" aria-label="各商品本月名额">
+          {data.quotaRows.map((quota) => <li key={quota.id} data-tight={quota.tight ? "" : undefined}>
+            <span className="f4-quota-head">
+              <span className="f4-quota-name"><b>{quota.name}</b><span data-mono>{quota.productNo || quota.quotaCode}</span></span>
+              {canWrite && <Button size="sm" onClick={() => openQuota(quota)}>调额度</Button>}
+            </span>
+            <span className="f4-quota-cond">{quotaPrerequisites(quota)}</span>
+            <RatioBar label={`${quota.name} 本月已用`} value={Math.min(quota.current, quota.cap)} total={quota.cap} tone={quota.tight ? "warn" : "role-2"}
+              state={quota.cap > 0 ? "ready" : "empty"} emptyText="额度为 0" valueText={`已用 ${quota.current} 台，共 ${quota.cap} 台`} quiet />
+            <span className="f4-quota-use"><span className="f4-num">已用 {count(quota.current)} / {count(quota.cap)} 台</span>{quota.tight && <StatusTag tone="warn" icon={AlertCircle}>快用完</StatusTag>}</span>
+          </li>)}
+        </ul> : <BlockState state="empty" title="还没有设置购机名额" />}
         <KeyValues rows={[
           { key: "pro", label: "专业设备购买门槛", value: presentText(data.proUnlock) },
           { key: "rack", label: "机柜设备购买门槛", value: presentText(data.rackUnlock) },
@@ -326,7 +321,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
             <KeyValues rows={[{ key: "default", label: "默认申请预算", value: `${decimalText(policy.defaultBudgetUsdt)} USDT`, explain: "申请人没改金额时用的预算，要落在某一类的范围里。" }]} />
             <ul className="f4-buckets" aria-label="四类申请">
               {policy.buckets.map((bucket) => <li key={bucket.id}>
-                <span className="f4-bucket-head"><BadgeCheck size={14} aria-hidden />{formatF4AmbassadorBucketTitle(bucket.id, bucket.title)}<span data-mono>{bucket.id}</span></span>
+                <span className="f4-bucket-head">{formatF4AmbassadorBucketTitle(bucket.id, bucket.title)}<span data-mono>{bucket.id}</span></span>
                 <span className="f4-bucket-range">{decimalText(bucket.minBudgetUsdt)}–{decimalText(bucket.maxBudgetUsdt)}<small>USDT</small></span>
                 <span className="f4-bucket-rule">{formatF4AmbassadorBucketRule(bucket.id, bucket.rule)}<Explain label={`${formatF4AmbassadorBucketTitle(bucket.id, bucket.title)}的原文`} rows={[
                   { k: "显示的金额范围", v: bucket.range || "—" },
