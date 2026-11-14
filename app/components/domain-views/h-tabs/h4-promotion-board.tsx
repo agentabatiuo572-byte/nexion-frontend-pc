@@ -89,7 +89,7 @@ export function PromotionCard({ item, catalog, onDetail, onEdit, onRewards, more
         <header className="h4-card-head">
             <div className="h4-card-title">
                 <h3>{item.name || '未命名草稿'}</h3>
-                <span className="h4-card-meta">{item.category === 'PROMOTION' ? '促销' : '邀请推广'} · {TEMPLATE_LABELS[item.template]}<span className="h4-mono" title={item.activityId}>{item.activityId}</span></span>
+                <span className="h4-card-meta"><span className="h4-card-kind">{item.category === 'PROMOTION' ? '促销' : '邀请推广'} · {TEMPLATE_LABELS[item.template]}</span><span className="h4-mono" title={item.activityId}>{item.activityId}</span></span>
             </div>
             <StatusTag tone={stateTone(item.state)}>{labelState(item.state)}</StatusTag>
         </header>

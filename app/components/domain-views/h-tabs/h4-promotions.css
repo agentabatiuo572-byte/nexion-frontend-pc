@@ -210,3 +210,4 @@
 .h4-attempts li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; align-items: center; }
 .h4-attempt-id { grid-column: 1 / -1; display: flex; gap: 6px; min-width: 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
 .h4-dialog-body .rd-fact { grid-template-columns: 136px minmax(0, 1fr); }
+.h4-page .h4-card-kind { flex: none; white-space: nowrap; }
