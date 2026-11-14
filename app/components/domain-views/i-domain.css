@@ -191,3 +191,96 @@
 
 /* 标题栏的三个点贴到右边线，和表格行内同一个做法，图标按钮自带的留白不算。 */
 .idom .rd-panel-actions > .rd-iconbtn:last-child { margin-right: -8px; }
+
+/* ============================ I2 消息推送（.i2-page 一段：频道卡、App 消息样子、概率条、三语并排、事件详情） ============================ */
+.i2-page { display: contents; }
+.i2-page .i2-muted { color: var(--rd-text-3); }
+.i2-sentence { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+
+/* 频道卡：同排等高，操作行贴卡底；1440 三列，1024 两列。 */
+.i2-channels { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--rd-space-4); margin-bottom: var(--rd-space-4); }
+.i2-channel { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; padding: var(--rd-space-4); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel); color: var(--rd-text); }
+.i2-channel[data-warn] { border-color: color-mix(in srgb, var(--rd-warn) 45%, var(--rd-line)); background: color-mix(in srgb, var(--rd-warn-bg) 55%, var(--rd-panel)); }
+.i2-channel-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: var(--rd-space-3); }
+.i2-channel-icon { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: var(--rd-radius-tile); background: var(--rd-role-2-tile); color: var(--rd-role-2-tile-ink); }
+.i2-channel[data-off] .i2-channel-icon { background: var(--rd-role-other-tile); color: var(--rd-role-other-tile-ink); }
+.i2-channel-title { display: grid; gap: 2px; min-width: 0; }
+.i2-channel-title b { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); overflow-wrap: anywhere; }
+.i2-channel[data-off] .i2-channel-title b { color: var(--rd-text-2); }
+.i2-channel-source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.i2-channel-warn { display: flex; flex-wrap: wrap; gap: var(--rd-space-2); }
+.i2-channel-rows { display: grid; gap: var(--rd-space-2); margin: 0; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
+.i2-channel-rows > div { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: var(--rd-space-2); align-items: start; }
+.i2-channel-rows dt { display: inline-flex; padding-top: 3px; color: var(--rd-text-3); }
+.i2-channel-rows dd { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--rd-space-2); margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); min-width: 0; }
+.i2-channel-tpl-name { min-width: 0; overflow-wrap: anywhere; }
+button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inherit; color: var(--rd-text); text-align: left; cursor: pointer; }
+.i2-channel-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-2); margin-top: auto; padding-top: var(--rd-space-3); border-top: 1px solid var(--rd-line); }
+.i2-channel-key { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+
+/* App 里 Nova 消息的样子：通知列表的一行，照 App 消息中心的排法。 */
+.i2-phone { display: grid; align-content: start; gap: var(--rd-space-2); margin: 0; overflow: hidden; border: 1px solid var(--rd-line); border-radius: 14px; background: var(--rd-bg); }
+.i2-phone-bar { padding: var(--rd-space-2) var(--rd-space-3); border-bottom: 1px solid var(--rd-line); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-medium); color: var(--rd-text-3); }
+.i2-phone-row { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--rd-space-2); padding: 0 var(--rd-space-3) var(--rd-space-3); }
+.i2-phone-icon { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--rd-role-2-tile); color: var(--rd-role-2-tile-ink); }
+/* 图标按 App 通知的类别：资金金、设备青、团队紫、活动品红、系统灰。 */
+.i2-phone-icon[data-category="finance"] { background: var(--rd-role-1-tile); color: var(--rd-role-1-tile-ink); }
+.i2-phone-icon[data-category="team"] { background: var(--rd-role-3-tile); color: var(--rd-role-3-tile-ink); }
+.i2-phone-icon[data-category="rewards"] { background: var(--rd-role-4-tile); color: var(--rd-role-4-tile-ink); }
+.i2-phone-icon[data-category="system"] { background: var(--rd-role-other-tile); color: var(--rd-role-other-tile-ink); }
+.i2-phone-main { display: grid; gap: var(--rd-space-2); min-width: 0; justify-items: start; }
+.i2-phone-top { display: flex; justify-content: space-between; gap: var(--rd-space-2); width: 100%; }
+.i2-phone-top b { min-width: 0; font-weight: var(--rd-weight-semibold); overflow-wrap: anywhere; }
+.i2-phone-top span { flex: none; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i2-phone-body { margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); color: var(--rd-text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.i2-phone-cta { display: inline-flex; margin-top: 4px; padding: 2px 10px; border: 1px solid var(--rd-line-strong); border-radius: 999px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text); }
+.i2-phone-missing { margin: 0; padding: 0 var(--rd-space-3) var(--rd-space-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+
+/* 三种语言上下三行：每行左边是标题正文（输入或原文），右边是这种语言在 App 里的样子，行和行之间一条线。 */
+.i2-langs { display: grid; gap: var(--rd-space-4); }
+.i2-lang { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: var(--rd-space-5); row-gap: var(--rd-space-3); align-items: start; min-width: 0; padding-top: var(--rd-space-4); border-top: 1px solid var(--rd-line); }
+.i2-lang > :not(.i2-phone) { grid-column: 1; }
+.i2-lang > .i2-phone { grid-column: 2; grid-row: 1 / span 4; }
+@container (max-width: 560px) { .i2-lang { grid-template-columns: minmax(0, 1fr); } .i2-lang > .i2-phone { grid-column: 1; grid-row: auto; } }
+.i2-lang-head { display: flex; align-items: center; gap: var(--rd-space-2); margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-semibold); color: var(--rd-text); }
+.i2-lang-text { display: grid; align-content: start; gap: var(--rd-space-2); margin: 0; }
+.i2-lang-text dt { font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i2-lang-text dd { margin: 0; color: var(--rd-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.i2-tpl-grid.rd-form-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.i2-vars { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.i2-vars-k { font-weight: var(--rd-weight-medium); color: var(--rd-text-2); }
+.i2-vars code { padding: 1px 6px; border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tag); font-family: var(--rd-font-mono); color: var(--rd-text-3); }
+.i2-vars code[data-used] { border-color: var(--rd-line-strong); color: var(--rd-text); }
+.i2-vars-note { color: var(--rd-text-3); }
+
+/* 表格里三种语言填没填：已填实字，缺的警示，可选没填的弱化。 */
+.i2-lang-chips { display: inline-flex; gap: 4px; }
+.i2-lang-chips span { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: var(--rd-radius-tag); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-medium); }
+.i2-lang-chips span[data-state="ok"] { background: var(--rd-ok-bg); color: var(--rd-ok); }
+.i2-lang-chips span[data-state="missing"] { background: var(--rd-warn-bg); color: var(--rd-warn); }
+.i2-lang-chips span[data-state="empty"] { border: 1px dashed var(--rd-line-strong); color: var(--rd-text-3); }
+
+/* 事件概率：读的是图表组件的分段条，改的是可拖的分界。 */
+.i2-dist { display: grid; gap: var(--rd-space-3); --rd-track-w: 100%; }
+.i2-dist .rd-segbar-wrap { max-width: 720px; }
+.i2-dist-edit { display: grid; gap: var(--rd-space-2); }
+.i2-dist-svg { display: block; width: calc(100% - 12px); margin: 0 6px; overflow: visible; touch-action: none; }
+.i2-dist-bg { fill: var(--rd-panel-inner); }
+.i2-dist-seg { fill: var(--slot); }
+.i2-dist-handle { fill: var(--rd-panel); stroke: var(--rd-text-2); stroke-width: 2; cursor: ew-resize; }
+.i2-dist-handle:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+.i2-dist-edit[data-disabled] .i2-dist-handle { cursor: default; }
+.i2-dist-help { margin: 0; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.i2-dist-rows { display: grid; gap: var(--rd-space-3); }
+.i2-dist-name { display: inline-flex; align-items: center; gap: var(--rd-space-2); }
+
+.i2-duration { display: flex; align-items: center; gap: var(--rd-space-2); }
+.i2-duration > :last-child { width: 112px; flex: none; }
+.i2-sample { display: grid; gap: var(--rd-space-2); max-width: 420px; margin-bottom: var(--rd-space-4); }
+.i2-unknown { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
+.i2-unknown li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+
+/* 事件详情里四个动作各一行：名称和后果在左，按钮在右。 */
+.i2-event-ops { display: grid; gap: var(--rd-space-3); }
+.i2-event-op { display: flex; align-items: center; justify-content: space-between; gap: var(--rd-space-3); padding: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); }
+.i2-event-op p { margin: 2px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
