@@ -46,6 +46,7 @@ function command(kind: Exclude<Mc["kind"], "threshold">): Mc {
 }
 
 /** 全页时间一种写法：2026-11-13 14:30（北京时间），和资金储备与应付款一致。 */
+const THRESHOLD_REFRESHED = "当前阈值已更新，请核对后再保存。";
 const timeText = (value: string | undefined) => `${formatBusinessTimeCompact(value, "—")}（${businessZone().label}）`;
 /** 接口给两位小数，原样写，不补也不舍（F04）。 */
 const pctText = (value: number) => `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
@@ -122,6 +123,9 @@ export default function DualLedgerPage() {
   const [releasableApproval, setReleasableApproval] = useState<string | null>(null);
   const [releasing, setReleasing] = useState(false);
   const [verifiedPendingKey, setVerifiedPendingKey] = useState<string | null>(null);
+  // 只管界面：写入已确认、随后重读失败时，读取失败页上留着这句结论，下一次读到数据就清掉。
+  const [savedWhileUnread, setSavedWhileUnread] = useState<string | null>(null);
+  useEffect(() => { if (bDomain.hasData && !bDomain.loading && !bDomain.error) setSavedWhileUnread(null); }, [bDomain.hasData, bDomain.loading, bDomain.error]);
   const syncPending = () => setPendingRevision(value => value + 1);
   const pendingWrites = session ? b1Commands.list().filter(record => record.adminId === String(session.adminId)) : [];
   const pendingApproval = session ? pendingThresholdConfigApproval("B1", session.adminId) : undefined;
@@ -358,7 +362,7 @@ export default function DualLedgerPage() {
           if (healthy <= redline) throw new Error("健康线必须高于红线");
           if (current.baseline.thresholdVersion !== LEDGER.thresholdVersion) {
             setActionConfirm({ ...current, baseline: LEDGER, facts: undefined, draft: form, draftReason: reason });
-            throw new Error("当前阈值已更新，请核对后再保存。");
+            throw new Error(THRESHOLD_REFRESHED);
           }
           if (redline < current.baseline.redlinePct) {
             if (current.baseline.thresholdVersion === null) throw new Error("暂未取得当前阈值版本，请刷新后重试。");
@@ -390,6 +394,7 @@ export default function DualLedgerPage() {
         if (isBCommandRejection(error, !!current.original)) {
           setActionConfirm(current.original ? null : { ...current, requestKey: `b1-${current.kind}-${crypto.randomUUID()}`, original: undefined, draft: original.form, draftReason: JSON.parse(original.body).reason });
           const fresh = await refreshB1();
+          if (fresh && !current.original && error instanceof Error && "reasonCode" in error && error.reasonCode === "CONFIG_VERSION_CONFLICT") throw new Error(THRESHOLD_REFRESHED);
           if (fresh && error instanceof Error && "reasonCode" in error && error.reasonCode === "B1_THRESHOLDS_APPROVAL_REQUIRED") {
             setActionConfirm({ kind: "threshold", idempotencyKey: `b1-threshold-${crypto.randomUUID()}`,
               baseline: fresh.ledger, draft: original.form, draftReason: JSON.parse(original.body).reason });
@@ -399,21 +404,22 @@ export default function DualLedgerPage() {
         throw error;
       } finally { syncPending(); }
       const success = current.kind === "threshold" ? "红线和健康线已更新"
-        : current.kind === "injection" ? "储备注入已登记" : "已标记为已处理";
-      setToast(success);
+        : current.kind === "injection" ? "储备注入已登记" : "覆盖率告警已标记为已处理";
+      setToast(success, "success");
       setActionConfirm(null);
       const refreshed = await refreshB1();
       if (refreshed) setToast(current.kind === "threshold"
         ? `已更新 · 红线 ${fmtConfigPct(refreshed.ledger.redlinePct)} / 健康线 ${fmtConfigPct(refreshed.ledger.healthyPct)}`
         : current.kind === "injection" ? refreshed.ledger.valuationReliable ? "储备注入已登记，覆盖率已重算" : "储备注入已登记；UVT 暂时无法估值，覆盖率算不出" : "已标记为已处理");
-      else setToast(`${success}；当前数据读取失败，新的修改暂不可用。`);
+      else { setSavedWhileUnread(success); setToast(success, "success"); }
     } catch (err) {
       if (current.kind === "export") {
         const message = displayAdminReadError(err instanceof DOutcomeUnknownError ? "B1_EXPORT_FAILED" : err);
         setToast(message);
         throw new Error(message);
       }
-      setToast(displayAdminError(err));
+      // 框里已经写了这句，不再弹同一句。
+      if (!(err instanceof Error && err.message === THRESHOLD_REFRESHED)) setToast(displayAdminError(err));
       throw err;
     }
   };
@@ -874,6 +880,7 @@ export default function DualLedgerPage() {
     return (
       <RdPage className="b1-page">
         {header()}
+        {savedWhileUnread && !loading && <Notice tone="ok" title={savedWhileUnread}>现在的数据没读到，读到后才能再改。</Notice>}
         <Conclusion state="unknown" icon={ShieldQuestion}>{loading ? "资金状态：正在读取" : "资金状态：暂时无法判断"}</Conclusion>
         {loading
           ? <BlockState state="loading" title="正在读取储备、应付款和覆盖率…" />

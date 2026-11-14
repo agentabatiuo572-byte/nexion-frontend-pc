@@ -240,7 +240,8 @@ export default function RiskRadarPage() {
     void submitB5ThresholdApproval(session, pendingApproval.values, pendingApproval.reason, fetchB5Radar, "query")
       .then((result) => {
         if (alive && result?.ticket.status === "pending") setApprovalVerifiedKey(pendingApproval.commandKey);
-        if (alive && result?.activeReadFailed) { setNeedsFreshRadar(true); setToast(result.acknowledgement); }
+        // 待审批条和读取失败块都在页面上，自动核对不再弹提示。
+        if (alive && result?.activeReadFailed) setNeedsFreshRadar(true);
         if (alive && result && result.ticket.status !== "pending") {
           setThreshold(null); setApprovalRecovery(null); setNeedsFreshRadar(true); void radar.reload();
         }
@@ -442,6 +443,7 @@ export default function RiskRadarPage() {
       setApprovalRecovery(null); setThresholdUnknown(false);
       await refreshAfterWrite();
     } catch (cause) {
+      let rereadAfterConflict = false;
       const rejected = isBCommandRejection(cause, !!thresholdOriginal || !!pendingApproval);
       if (rejected) {
         if (thresholdOriginal || pendingApproval) await refreshAfterWrite();
@@ -450,10 +452,13 @@ export default function RiskRadarPage() {
           setNeedsFreshRadar(true);
           const fresh = await radar.reload();
           if (fresh) setThreshold(fresh.bankrun);
+          rereadAfterConflict = !!fresh && cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "B5_THRESHOLD_VERSION_CONFLICT";
         }
       } else if (requiresApproval && pendingThresholdConfigApproval("B5", session.adminId)) setApprovalRecovery("lookup");
       setThresholdUnknown(!!original && !rejected);
-      setThresholdError(displayAdminError(cause)); setToast(displayAdminError(cause));
+      // 版本冲突已重读：框里写一句就够，不再弹同一句。
+      if (rereadAfterConflict) setThresholdError("当前阈值已更新，请核对后再保存。");
+      else { setThresholdError(displayAdminError(cause)); setToast(displayAdminError(cause)); }
     } finally { setSavingThreshold(false); syncPending(value => value + 1); }
   };
   const saveSubscription = async () => {
@@ -486,7 +491,9 @@ export default function RiskRadarPage() {
         }
       }
       setSubscriptionUnknown(!!original && !rejected);
-      setSubscriptionSaveError(displayAdminError(cause)); setToast(displayAdminError(cause));
+      setSubscriptionSaveError(displayAdminError(cause));
+      // 版本冲突由框里「别人刚保存过订阅」说明，不再弹「请重新读取」。
+      if (!(rejected && !subscriptionOriginal && cause instanceof B5RequestError && cause.backendMessage === "B5_SUBSCRIPTION_VERSION_CONFLICT")) setToast(displayAdminError(cause));
     } finally { setSavingSubscription(false); syncPending(value => value + 1); }
   };
   const recoverWrite = (record: ReturnType<typeof pendingB5Commands>[number]) => {
@@ -773,7 +780,7 @@ export default function RiskRadarPage() {
                   ] as const).filter(([, latest, draft]) => latest !== draft);
                   return (
                     <Notice tone="warn" title="别人刚保存过订阅">
-                      <p>{subscriptionRecipientChanged ? `当前接收人：${subscriberText(subscriber)}；再保存后由你接收。` : subscriptionChanged ? "已读到最新的订阅，你的改动还在。核对差别后再保存。" : "已读到最新的订阅，和你的改动一样，不用再保存。"}</p>
+                      <p>{subscriptionRecipientChanged ? "已读到最新的订阅。再保存，接收人会换成你。" : subscriptionChanged ? "已读到最新的订阅，你的改动还在。核对差别后再保存。" : "已读到最新的订阅，和你的改动一样，不用再保存。"}</p>
                       {diffs.length > 0 && <Facts>
                         {diffs.map(([k, latest, draft]) => <Fact key={k} k={k}><Change from={`最新 ${latest}`} to={`你的 ${draft}`} /></Fact>)}
                       </Facts>}

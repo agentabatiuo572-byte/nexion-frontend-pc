@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { normalizeB5Radar, PRESSURE_RED_LINE, type B5Radar } from "@/lib/admin/b5-radar-contract";
 import { parseStrictFiniteNumber } from "@/lib/admin/strict-number";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -281,7 +281,7 @@ export function useB5Radar() {
       return next;
     } catch (cause) {
       setData(null);
-      setError(displayAdminError(cause));
+      setError(displayAdminReadError(cause));
       return null;
     } finally {
       setLoading(false);
@@ -300,7 +300,7 @@ export function useB5Radar() {
         setLoading(false);
       } catch (cause) {
         setData(null);
-        setError(displayAdminError(cause));
+        setError(displayAdminReadError(cause));
       }
     };
     stream.addEventListener("radar", onRadar);

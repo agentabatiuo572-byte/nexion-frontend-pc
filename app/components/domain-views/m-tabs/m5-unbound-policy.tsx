@@ -112,7 +112,7 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
     }]} />}
     <Panel icon={Timer} tone="role-3" title="没人接的客户" sub={policy ? `第 ${policy.version} 版` : undefined}
       explain="客户发来消息后还没有专属客服时，按这里的时长提醒主管和自动兜底。保存后立即生效，正在等待的客户也按新时长算。">
-      {!editable && <Notice tone="neutral">只有带客服管理修改权限的超级管理员能改，你现在只能查看。</Notice>}
+      {!editable && <Notice tone="neutral">只有带客服管理修改权限的超级管理员能改。</Notice>}
       {pending && <Notice tone="warn" title="上次保存结果未知">
         <p>{saving ? "正在查询原结果…" : command.message || "先查询原结果；有结论前这里不能再改。"}</p>
         {!denied && <p className="m5-pending-reason">原理由：{pending.payload.reason}</p>}

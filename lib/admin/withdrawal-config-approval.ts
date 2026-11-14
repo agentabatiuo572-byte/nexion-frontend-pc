@@ -192,10 +192,10 @@ export async function submitB5ThresholdApproval<T>(
   try { active = await readActive(); }
   catch { activeReadFailed = true; }
   if (ticket.status !== "pending") attempts.forget(slot, key);
-  return { active, activeReadFailed, ticket, acknowledgement: (ticket.status === "pending"
-    ? `已提交审批 · 审批单 ${ticket.id} · 等待另一位超级管理员批准`
-    : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果`)
-      + (activeReadFailed ? "；当前数据读取失败，新的修改暂不可用。" : "") };
+  // 读取失败时页面上已有待审批条和读取失败块，这里只补一句短的，不重复「等批准」。
+  return { active, activeReadFailed, ticket, acknowledgement: ticket.status === "pending"
+    ? `已提交审批 · 审批单 ${ticket.id}${activeReadFailed ? "；数据没读到，暂不能再改" : " · 等待另一位超级管理员批准"}`
+    : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果${activeReadFailed ? "；数据没读到，暂不能再改" : ""}` };
 }
 
 /** Call only after the existing confirmation UI confirms R1-提案过期 release. */
@@ -272,10 +272,10 @@ export async function submitB1ThresholdApproval<T>(
   try { active = await readActive(); }
   catch { activeReadFailed = true; }
   if (ticket.status !== "pending") attempts.forget(slot, key);
-  return { active, activeReadFailed, ticket, acknowledgement: (ticket.status === "pending"
-    ? `已提交审批 · 审批单 ${ticket.id} · 等待另一位超级管理员批准`
-    : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果`)
-      + (activeReadFailed ? "；当前数据读取失败，新的修改暂不可用。" : "") };
+  // 读取失败时页面上已有待审批条和读取失败块，这里只补一句短的，不重复「等批准」。
+  return { active, activeReadFailed, ticket, acknowledgement: ticket.status === "pending"
+    ? `已提交审批 · 审批单 ${ticket.id}${activeReadFailed ? "；数据没读到，暂不能再改" : " · 等待另一位超级管理员批准"}`
+    : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果${activeReadFailed ? "；数据没读到，暂不能再改" : ""}` };
 }
 
 export function configApprovalOriginalInput(sourceDomain: "H8", input: string): H8ConfigApprovalInput;

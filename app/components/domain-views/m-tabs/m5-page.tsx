@@ -15,11 +15,13 @@ import { M5UnboundPolicy } from "./m5-unbound-policy";
 import { M5WelcomeMessage } from "./m5-welcome-message";
 import { M5Flow, type M5PolicySummary, type M5RulesSummary, type M5Tab, type M5WelcomeSummary } from "./m5-views";
 import type { MCtx } from "./types";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 export function M5Page({ ctx, permission, permissionUnknown, hasData, loading, loadError, title, summary, authEpoch }: {
   ctx: MCtx; permission: MSupportPermission; permissionUnknown: boolean; hasData: boolean; loading: boolean; loadError: string | null; title: string; summary: string; authEpoch: number;
 }) {
   const manager = permission !== "agent";
+  const canWriteM5 = useAdminAuth((s) => Boolean(s.session?.authorities.includes("service_m5_write")));
   const [tab, setTab] = useState<M5Tab>(manager ? "rules" : "content");
   const shownTab: M5Tab = !manager && (tab === "rules" || tab === "roster" || tab === "welcome") ? "content" : tab;
   const ids = useTabIds();
@@ -56,7 +58,7 @@ export function M5Page({ ctx, permission, permissionUnknown, hasData, loading, l
   return (
     <>
       <PageHeader pageId="M5" title={title} summary={summary}
-        readOnly={permission === "supervisor" ? "分配规则和欢迎语只有超级管理员能改；客服接待和话术按你的管理范围维护" : undefined} />
+        readOnly={permission === "supervisor" ? canWriteM5 ? "分配规则和欢迎语只有超级管理员能改；客服接待和话术按你的管理范围维护" : "你只能改客服接待的接单设置，其余只能查看" : undefined} />
       {permissionUnknown && <Notice tone="warn" action={<Button size="sm" onClick={() => void ctx.refreshContent()}>重试核对</Button>}>客服查看范围暂时没读到，对客操作和管理入口先不显示。</Notice>}
       {hasData && loadError && <Notice tone="danger" action={<Button size="sm" onClick={() => void ctx.refreshContent()}>重试</Button>}>客服中心有部分数据没同步成功，请稍后重试。</Notice>}
       {conclusion}

@@ -347,6 +347,10 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
     if (currentAdminId !== useAdminAuth.getState().session?.adminId
       || !useAdminAuth.getState().session?.authorities.includes(profile ? "service_m1_write" : "service_m5_write")) return false;
     const allowed = profile ? canManageSupportSeats && agentPageAvailable : key.startsWith("I.session.cat.") || key.startsWith("I.session.advisor.policy.") ? canManageM5Operations : canManageM5Content;
+    // 只换说法：读到之前照旧不提交，但在框里说清为什么点了没反应。
+    if (allowed && !inFlight.current && !blocked(key, profile?.adminId) && (needsRead || ctx.contentLoading || (profile ? !agentPageAvailable : !sessionTemplatesAvailable))) {
+      throw new Error("现在的数据还没读到，读到后才能提交。");
+    }
     if (!allowed || needsRead || ctx.contentLoading || (profile ? !agentPageAvailable : !sessionTemplatesAvailable) || inFlight.current || blocked(key, profile?.adminId)) return false;
     const command = buildM5Command(key, profile ? JSON.stringify({ ...JSON.parse(value), expectedVersion: profile.version }) : value, ctx.params, meta, currentAdminId, successMessage, profile);
     const fingerprint = `m5|${command.resource}`, commandKey = `m-${Date.now()}-${crypto.randomUUID()}`;
@@ -747,7 +751,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   const content = <>
     {!sessionTemplatesAvailable && (ctx.contentLoading ? <BlockState state="loading" title="正在读取话术与模板…" />
       : <BlockState state="error" title="话术与模板读不到，暂时不能修改" onRetry={() => void readCurrent()} retryLabel="重新读取" />)}
-    {sessionTemplatesAvailable && !canManageM5Content && <Notice tone="neutral">你只能查看；新建、发布和归档要超级管理员、内容运营或客服主管。</Notice>}
+    {sessionTemplatesAvailable && !canManageM5Content && <Notice tone="neutral">{isSupportM5Supervisor ? "你只能查看；新建、发布和归档还需要服务规则与话术的修改权限。" : "你只能查看；新建、发布和归档要超级管理员、内容运营或客服主管。"}</Notice>}
     <PageTabs level={2} label="话术与模板分类" ids={contentIds} value={contentView} onChange={setContentView} items={[
       { value: "scripts", label: "专属客服话术" },
       { value: "templates", label: "即时回复模板" },
@@ -951,7 +955,7 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
       sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">{agent.name} · 账号 #{agent.adminId}</span></>}
       footer={<>
         <Button disabled={saving} onClick={onClose}>取消</Button>
-        <Button variant="primary" loading={saving} disabled={!canSave} disabledReason={!saving && !reasonOk ? "操作理由要 8–200 字" : !saving && canSubmitNew && !canSave ? "同时接待上限要填 0–40 的整数" : undefined} onClick={() => void save()}>{pending ? "按原请求重试" : "保存"}</Button>
+        <Button variant="primary" loading={saving} disabled={!canSave} disabledReason={!saving && !pending && !canSubmitNew ? "名册没读到，或这位客服已不在你的范围" : !saving && !reasonOk ? "操作理由要 8–200 字" : !saving && canSubmitNew && !canSave ? "同时接待上限要填 0–40 的整数" : undefined} onClick={() => void save()}>{pending ? "按原请求重试" : "保存"}</Button>
       </>}>
       <Facts>
         <Fact k="客服">{agent.name || "名称未同步"} · {agent.email || "—"}</Fact>

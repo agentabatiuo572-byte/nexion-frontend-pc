@@ -473,6 +473,18 @@ function FaqModal({
   const [reason, setReason] = useState(recovery?.faq ? JSON.parse(recovery.faq.request.body).reason as string : "");
   const [tried, setTried] = useState(false);
   const [failure, setFailure] = useState("");
+  // 只管界面：记住打开时的版本，重读后版本变了就把别人改的项列出来，和框里你填的对照。
+  const [opened] = useState(row);
+  const latest = !recovery && row && opened && row.version !== opened.version ? row : null;
+  const latestChanges = latest && opened ? [
+    opened.question !== latest.question && `问题（最新）：${latest.question}`,
+    opened.answer !== latest.answer && `回答（最新）：${latest.answer}`,
+    opened.surface !== latest.surface && `显示位置：${surfaceName(opened.surface)} → ${surfaceName(latest.surface)}`,
+    opened.language !== latest.language && `语言：${languageName(opened.language)} → ${languageName(latest.language)}`,
+    opened.category !== latest.category && `分类：${catCN(opened.category)} → ${catCN(latest.category)}`,
+    opened.sortOrder !== latest.sortOrder && `排序：${opened.sortOrder} → ${latest.sortOrder}`,
+    opened.status !== latest.status && `发布状态：${opened.status === "published" ? "已发布" : "草稿"} → ${latest.status === "published" ? "已发布" : "草稿"}`,
+  ].filter((line): line is string => Boolean(line)) : [];
   // 和 saveFaq 同一套规则，只用来把错写在对应的框下面；真正挡写入的仍是 saveFaq。
   const sortValue = Number(sortOrder);
   const errors = {
@@ -516,7 +528,11 @@ function FaqModal({
       }
     >
       {row?.status === "published" && !recovery && <Notice tone="warn">这条在线上，保存后几分钟内用户就会看到新内容。</Notice>}
-      {failure && !unknown && <Notice tone="danger" title="没有保存成功"><p>{failure}</p></Notice>}
+      {failure && !unknown && !latest && <Notice tone="danger" title="没有保存成功"><p>{failure}</p></Notice>}
+      {latest && opened && <Notice tone="warn" title={failure ? "没有保存：这条问答刚被别人改过" : "这条问答刚被别人改过"}>
+        <p>现在是第 {latest.version} 版，你改的是第 {opened.version} 版。你填的内容还在，核对后再保存。</p>
+        {latestChanges.length > 0 && <ul className="m5-plain-list">{latestChanges.map((line) => <li key={line}>{line}</li>)}</ul>}
+      </Notice>}
       {(unknown || recovery) && <Notice tone="warn" title="结果未知">
         <p>{recovery && isRetryExpired(recovery) ? "原请求超过 24 小时，不能再重试，只能读回核对。" : "可能已经保存。内容已锁定为原请求，按原请求重试不会重复执行。"}</p>
       </Notice>}
