@@ -328,7 +328,7 @@ export function SupportQualificationEditor({ adminId, kind, onClose, onChanged }
       <p className="m1-field-value">资格不是角色，单独管理；同一账号可以同时有专属客服和主管资格。授予资格不会自动绑定客户，也不改账号角色。<Explain label="资格的说明" content="专属客服资格让这个账号以客服身份接待本人绑定的客户；有全部或管理范围的管理员仍可在权限范围内介入会话。主管资格用于管理客服组，不带账号管理权限。" /></p>
       {kind === "SUPERVISOR" && state !== "ENABLED" && <Notice tone="warn">停用或移除前，须先将全部负责组（含归档组）移交给有效主管。</Notice>}{kind === "SERVICE" && state !== "ENABLED" && <Notice tone="warn">停用或移除前，须先处理已有绑定客户并退出组；不会自动改派客户。</Notice>}
       <Field label="资格状态">{busy ? <p className="m1-field-value">{STATUS_TEXT[state]}</p> : <Select aria-label="资格状态" value={state} options={QUAL_OPTIONS} onChange={value => setState(value as QualificationStatus)} />}</Field>
-      <Field label="操作理由" required hint="8–200 字">{control => <Textarea {...control} value={reason} disabled={busy} count={`${Array.from(reason.trim()).length}/200`} onChange={e => setReason(e.target.value)} />}</Field></>}
+      <Field label="操作理由" required help="请填写 8–200 字，将记入操作记录。">{control => <Textarea {...control} value={reason} disabled={busy} count={`${Array.from(reason.trim()).length}/200`} onChange={e => setReason(e.target.value)} />}</Field></>}
     {allowed && pending && <Notice tone="warn">{QUERY_PENDING_TEXT}{!canReplayGroupCommand(pending) && expiredText()}</Notice>}{allowed && !pending && stale && <Notice tone="warn">版本已变化，请重读当前资格并再次确认。理由已保留。</Notice>}{error && data && <Notice tone={resultTone}>{error}</Notice>}
     </div>
   </Modal>;
