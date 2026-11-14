@@ -5,7 +5,7 @@
  * 奖励流水（筛选、勾选补发、点行看详情）、等价格、异常样本、暂停名单、处置历史。
  * 读取、筛选、翻批、导出和七个处置都调用 F 域外壳原有的函数，请求和改版前一样；这里只管排版和文字。
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Download, ListChecks, RotateCcw } from "lucide-react";
 import {
@@ -16,7 +16,11 @@ import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { F5CommissionEvent, F5CommissionQuery } from "@/lib/admin/f1-client";
 import { F5_KINDS as KINDS } from "@/lib/admin/f-overview-contract";
-import type { FViewCtx } from "./types";
+import type { F5Recovery, FViewCtx } from "./types";
+import { canRetryF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
+import { canRetryF5Anomaly } from "@/lib/admin/f5-anomaly-write";
+import { displayAdminError } from "@/lib/admin/error-messages";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   APPROVER, KIND_LABELS, STATUS_BY_LABEL, STATUS_META, StatusBadge, amountText, approvalTag, approverText, isFriend, isGrouped, knownRejection,
   statusName, timeText, userCode, zoneNote, F5ConfirmHost, Money, F5RecoveryNotice, type F5Confirm, type F5RecoveryRow,
@@ -64,8 +68,15 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   );
   const anyWrite = canWrite || canFreeze || canSuspend || canRelease || canReverse || canReissue;
   const rowWrite = canFreeze || canRelease || canReverse || canSuspend;
-  // 结果未知、待审批的原操作：代码 worker 接（从 F 域命令槽位读出完整原请求后逐条传进来），接之前没有行，提醒不显示。
-  const recoveryRows: F5RecoveryRow[] = [];
+  useEffect(() => {
+    // Refresh invalidates new confirmations; retained originals stay independently recoverable.
+    setConfirm(current => {
+      if (!current) return null;
+      const saved = current.snapshot ? ctx.getF5Operation(current.snapshot) : undefined;
+      if (saved) return current.recovery ? current : { ...current, recovery: saved };
+      return current.recovery || loading ? null : current;
+    });
+  }, [ctx.f5ReadEpoch, loading, ctx.f5Proposals, ctx.f5AnomalyWrites]);
 
   const query = (): F5CommissionQuery => ({
     kind: kind || undefined,
@@ -81,19 +92,21 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   };
 
   const applyKindFilter = (selectedKind: string) => {
-    const nextKind = kind === selectedKind ? "" : selectedKind;
+    const nextKind = applied.kind === selectedKind ? "" : selectedKind;
     setKind(nextKind);
+    setCurrency(""); setUserId(""); setCohort(""); setStatus("");
     setSelected([]);
     setTab("records");
-    load({ ...query(), kind: nextKind || undefined, cursor: undefined });
+    load({ kind: nextKind || undefined, limit: "20" });
   };
 
   const applyStatusFilter = (selectedStatus: string) => {
-    const nextStatus = status === selectedStatus ? "" : selectedStatus;
+    const nextStatus = applied.status === selectedStatus ? "" : selectedStatus;
     setStatus(nextStatus);
+    setKind(""); setCurrency(""); setUserId(""); setCohort("");
     setSelected([]);
     setTab("records");
-    load({ ...query(), status: nextStatus || undefined, cursor: undefined });
+    load({ status: nextStatus || undefined, limit: "20" });
   };
 
   const submitFilters = () => { setSelected([]); load(query()); };
@@ -118,11 +131,12 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       : <Fact k="处置范围">只{verb}这一笔</Fact>;
 
   // 单笔冻结 / 提前解锁 / 解冻：可逆的「先按住观察」，和不可逆的冲正分开。提交走外壳原有的 updateF5Config（f_commission_status 审批单）。
-  const dispose = (action: "freeze" | "unlock" | "unfreeze", row: F5CommissionEvent) => {
+  const dispose = (action: "freeze" | "unlock" | "unfreeze", row: F5CommissionEvent, recovery?: F5Recovery) => {
     const friend = isFriend(row);
     const grouped = isGrouped(row);
     if (action === "freeze") {
       setConfirm({
+        recovery, snapshot: recovery?.original.f5Snapshot ?? { action, row, coverage: data?.coverage },
         action: `冻结奖励 ${row.id}`, title: "冻结奖励", briefKind: "funds", effect: approvalTag(), completionCopy: completion,
         statedBrief: { impact: "批准后这笔停在冷却里，到期也不解锁；用户余额不变", check: "核对这笔奖励和用户，理由写清为什么要先按住。" },
         detail: `冻结 ${row.id}：批准后从冷却中改为已冻结，到期也不会解锁。和冲正不同，冻结可以解冻。`,
@@ -141,6 +155,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       });
     } else if (action === "unlock") {
       setConfirm({
+        recovery, snapshot: recovery?.original.f5Snapshot ?? { action, row, coverage: data?.coverage },
         action: `奖励提前解锁 ${row.id}`, title: "提前解锁奖励", briefKind: "funds", effect: approvalTag(), completionCopy: completion, amplify: true,
         coverageLead: "提前解锁会让这笔钱提前流出",
         coverageCheck: "提交前按页面读到的兑付覆盖率检查一次；批准执行时后端不再检查。",
@@ -168,6 +183,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       });
     } else {
       setConfirm({
+        recovery, snapshot: recovery?.original.f5Snapshot ?? { action, row, coverage: data?.coverage },
         action: `解冻奖励 ${row.id}`, title: "解冻奖励", briefKind: "funds", effect: approvalTag(), completionCopy: completion,
         statedBrief: { impact: "批准后这笔回到冷却中，到期后自动解锁；用户余额不变", check: "核对冻结的原因是否已经解除，理由写清依据。" },
         detail: `解冻 ${row.id}：批准后从已冻结回到冷却中，不是直接解锁。`,
@@ -191,10 +207,11 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     }
   };
 
-  const reverse = (row: F5CommissionEvent) => {
+  const reverse = (row: F5CommissionEvent, recovery?: F5Recovery) => {
     const friend = isFriend(row);
     const grouped = isGrouped(row);
     setConfirm({
+      recovery, snapshot: recovery?.original.f5Snapshot ?? { action: "reverse", row },
       action: `冲正奖励 ${row.id}`, title: "冲正奖励", briefKind: "funds", confirmTone: "danger", completionCopy: completion,
       effect: <>{approvalTag()}<IrreversibleTag /></>,
       blockedReason: knownRejection(row, "reverse"),
@@ -227,16 +244,16 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     });
   };
 
-  const reissue = () => {
-    if (selectedRows.some(row => isFriend(row) || row.reversalRecorded || row.status === "recovery_pending")) {
+  const reissue = (rows = selectedRows, policy = data?.coolingPolicy, recovery?: F5Recovery) => {
+    if (rows.some(row => isFriend(row) || row.reversalRecorded || row.status !== "reversed")) {
       ctx.toast("好友奖励、已退款或待追回的记录不能补发。");
       return;
     }
-    if (!selectedRows.length) {
+    if (!rows.length) {
       ctx.toast("请先勾选要补发的已冲正奖励");
       return;
     }
-    const coolingDays = (kindKey: string) => data?.coolingPolicy.find((item) => item.kind === kindKey)?.days;
+    const coolingDays = (kindKey: string) => policy?.find((item) => item.kind === kindKey)?.days;
     const after = (row: F5CommissionEvent) => {
       if (row.kind === "network" || row.kind === "binary") {
         const days = coolingDays(row.kind);
@@ -245,14 +262,15 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       return "批准后马上解锁";
     };
     setConfirm({
-      action: `批量补发 ${selectedRows.length} 笔奖励`, title: "批量补发奖励", briefKind: "funds", amplify: true, completionCopy: `${APPROVER}在「操作记录与审批」批准后才执行；批准前不生成新记录。`,
+      recovery, snapshot: recovery?.original.f5Snapshot ?? { action: "reissue", rows, coolingPolicy: policy, coverage: data?.coverage },
+      action: `批量补发 ${rows.length} 笔奖励`, title: "批量补发奖励", briefKind: "funds", amplify: true, completionCopy: `${APPROVER}在「操作记录与审批」批准后才执行；批准前不生成新记录。`,
       effect: approvalTag("批准前不生成新记录。"),
       coverageLead: "补发会让平台再付一次这些钱",
       coverageCheck: "提交前按页面读到的兑付覆盖率检查一次；批准执行时后端再查，低于红线整批不补发。",
       statedBrief: { impact: "批准后每笔生成一条新记录，原记录保持已冲正", check: "核对每一笔为什么能补发，理由写清依据。" },
-      detail: `补发已冲正的记录：${selectedRows.map((row) => row.id).join("、")}。每笔生成一条新记录，原记录不变。`,
+      detail: `补发已冲正的记录：${rows.map((row) => row.id).join("、")}。每笔生成一条新记录，原记录不变。`,
       facts: <Facts>
-        <Fact k="补发" lead unit="笔">{String(selectedRows.length)}</Fact>
+        <Fact k="补发" lead unit="笔">{String(rows.length)}</Fact>
         <Fact k="补发后">每笔生成一条新记录，原记录保持已冲正</Fact>
         <Fact k="整批" tone="warn">有一笔不合格，整批都不补，不会只补一部分</Fact>
         <Fact k="用户余额">团队购买、团队平衡两类重新冷却；其余四类批准后马上解锁</Fact>
@@ -260,11 +278,11 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         <Fact k="谁来批准">{approverText("补发权限")}</Fact>
       </Facts>,
       content: <section className="rd-impact" aria-label="这次补发的记录">
-        <h3 className="rd-impact-title">这次补发的 {selectedRows.length} 笔</h3>
+        <h3 className="rd-impact-title">这次补发的 {rows.length} 笔</h3>
         <Table label="这次补发的记录" className="f5-table">
           <thead><tr><Th>原记录</Th><Th>用户</Th><Th align="right">金额</Th><Th>补发后</Th></tr></thead>
           <tbody>
-            {selectedRows.map((row) => (
+            {rows.map((row) => (
               <Tr key={row.id}>
                 <Td><Cell main={<span data-mono>{row.id}</span>} sub={kindName(row.kind)} /></Td>
                 <Td><Cell mono main={row.user} /></Td>
@@ -276,15 +294,16 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         </Table>
       </section>,
       submit: async (reason) => {
-        await ctx.reissueF5Commissions(selectedRows.map((row) => row.id), reason);
+        await ctx.reissueF5Commissions(rows.map((row) => row.id), reason);
         setSelected([]);
         ctx.toast("批量补发已提交，等待审批");
       },
     });
   };
 
-  const suspend = (row: F5CommissionEvent) => {
+  const suspend = (row: F5CommissionEvent, recovery?: F5Recovery) => {
     setConfirm({
+      recovery, snapshot: recovery?.original.f5Snapshot ?? { action: "suspend", row },
       action: `暂停用户 ${row.userId} 的奖励`, title: "暂停用户奖励", briefKind: "funds", completionCopy: `${APPROVER}在「操作记录与审批」批准后才执行；批准前这位用户的奖励照常。`,
       effect: approvalTag("批准前这位用户的奖励照常。"),
       statedBrief: { impact: "批准后这位用户所选类型里还没结束的奖励都改为已冻结", check: "核对用户和要暂停的类型，理由写清依据。" },
@@ -321,9 +340,10 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     });
   };
 
-  const resume = (item: { userId: string; kind: string }) => {
+  const resume = (item: { userId: string; kind: string }, recovery?: F5Recovery) => {
     const friend = item.kind === "direct_purchase" || item.kind === "direct_device_earning";
     setConfirm({
+      recovery, snapshot: recovery?.original.f5Snapshot ?? { action: "resume", suspension: item },
       action: `恢复奖励 · ${item.userId} / ${KIND_LABELS[item.kind] ?? "所选奖励"}`, title: "恢复用户奖励",
       briefKind: friend ? "funds" : "record",
       completionCopy: `${APPROVER}在「操作记录与审批」批准后才执行；批准前继续暂停。`,
@@ -350,10 +370,11 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     });
   };
 
-  const editThreshold = () => {
-    const sigma = data?.configValues.commissionAnomalySigma ?? "3";
-    const ratio = data?.configValues.layerRatioAnomalyPct ?? "20";
+  const editThreshold = (snapshot?: F5ConfirmationSnapshot, recovery?: F5Recovery) => {
+    const sigma = snapshot?.sigma ?? data?.configValues.commissionAnomalySigma ?? "3";
+    const ratio = snapshot?.ratio ?? data?.configValues.layerRatioAnomalyPct ?? "20";
     setConfirm({
+      recovery, snapshot: snapshot ?? { action: "anomaly", sigma, ratio },
       action: "调整异常预警标准", title: "调整异常标准", briefKind: "config", confirmLabel: "保存",
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       completionCopy: "保存后马上生效，不走审批；会记一条处置历史。",
@@ -411,6 +432,57 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     });
   };
 
+  const openOriginal = (record: F5Recovery) => {
+    const saved = record.original.f5Snapshot;
+    if (!saved) { void ctx.recoverF5(record, "query").catch(error => ctx.toast(displayAdminError(error))); return; }
+    if (["freeze", "unlock", "unfreeze"].includes(saved.action)) dispose(saved.action as "freeze" | "unlock" | "unfreeze", saved.row!, record);
+    else if (saved.action === "reverse") reverse(saved.row!, record);
+    else if (saved.action === "suspend") suspend(saved.row!, record);
+    else if (saved.action === "resume") resume(saved.suspension!, record);
+    else if (saved.action === "reissue") reissue(saved.rows!, saved.coolingPolicy, record);
+    else editThreshold(saved, record);
+  };
+  const recoveryRows: F5RecoveryRow[] = [
+    ...ctx.f5Proposals.map(original => ({ kind: "proposal" as const, original })),
+    ...ctx.f5AnomalyWrites.map(original => ({ kind: "anomaly" as const, original })),
+  ].map(record => {
+    const original = record.original;
+    const ticket = record.kind === "proposal" ? record.original.ticket : undefined;
+    const retryable = record.kind === "proposal" ? canRetryF5Proposal(record.original) : canRetryF5Anomaly(record.original);
+    const spec = record.kind === "proposal" ? record.original.spec : undefined;
+    const request = record.kind === "anomaly" ? record.original.f5Request : undefined;
+    const saved = original.f5Snapshot;
+    const nextStatus = saved?.action === "freeze" ? "frozen" : saved?.action === "unlock" ? "unlocked" : saved?.action === "unfreeze" ? "cooling" : "reversed";
+    const change = saved?.row && ["freeze", "unlock", "unfreeze", "reverse"].includes(saved.action) ? `${statusName(saved.row.status)} → ${statusName(nextStatus)}`
+      : saved?.action === "reissue" ? "每笔生成一条新记录，原记录保持已冲正"
+        : saved?.action === "suspend" || saved?.action === "resume" ? `${((spec?.command.params.kinds ?? []) as string[]).map(kindName).join("、")} → ${saved.action === "suspend" ? "暂停中" : "恢复"}`
+          : request ? `金额偏离 ${saved?.sigma ?? "—"} → ${request.commissionAnomalySigma}；层比例 ${saved?.ratio ?? "—"}% → ${request.layerRatioAnomalyPct}%` : "原请求不完整，只能查询原结果。";
+    return { key: original.commandKey,
+      name: saved?.name ?? spec?.action ?? (record.kind === "anomaly" ? "调整异常预警标准" : "奖励处置"),
+      change: `${change}${!ticket && record.kind === "proposal" && record.original.received ? " · 原申请建过单，批没批准还没查到" : ""}`,
+      submittedAt: original.createdAt,
+      state: ticket?.status === "pending" ? "pending" : isRetryExpired(original) ? "expired" : "unknown",
+      actions: <>
+        <Button size="sm" onClick={() => { void ctx.recoverF5(record, "query").catch(error => ctx.toast(displayAdminError(error))); }}>查询原结果</Button>
+        {retryable && <Button size="sm" onClick={() => openOriginal(record)}>按原请求重试</Button>}
+      </>,
+    };
+  });
+  const ownTicketIds = new Set(ctx.f5Proposals.flatMap(row => row.ticket ? [row.ticket.id] : row.f5TicketId ? [row.f5TicketId] : []));
+  const pendingTickets = ctx.f5ApprovalRows.filter((ticket, index, rows) => ticket.mine && ticket.status === "pending"
+    && ["f_commission_status", "f5_commission_reverse", "f5_commission_reissue", "f5_commission_suspension"].includes(ticket.operationCode ?? "")
+    && !ownTicketIds.has(ticket.id) && rows.findIndex(other => other.id === ticket.id) === index);
+  recoveryRows.push(...pendingTickets.map(ticket => ({ key: ticket.id, name: ticket.action, change: `${ticket.before} → ${ticket.after}`, state: "pending" as const,
+    actions: <Button size="sm" onClick={() => { void ctx.refreshF5(applied); }}>查询原结果</Button>,
+  })));
+
+  const blockedRecord = (row: F5CommissionEvent) => {
+    const pending = [...ctx.f5ApprovalRows, ...ctx.f5Proposals.flatMap(original => original.ticket ? [original.ticket] : [])]
+      .some(ticket => ticket.status === "pending" && (ticket.obj === row.auditKey || ticket.obj.split(",").includes(row.id)));
+    const retained = ctx.f5Proposals.some(original => original.f5Snapshot?.row?.id === row.id
+      || original.f5Snapshot?.rows?.some(item => item.id === row.id));
+    return pending ? "这个对象已有待批单，等批准、驳回或撤回后再操作。" : retained ? "请先查询保存的原操作。" : undefined;
+  };
   const rowActions = (row: F5CommissionEvent): F5RowAction[] => {
     const list: F5RowAction[] = [];
     if (canFreeze && row.status === "cooling") list.push({ key: "freeze", label: "冻结", onSelect: () => dispose("freeze", row) });
@@ -418,7 +490,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     if (canFreeze && row.status === "frozen") list.push({ key: "unfreeze", label: "解冻", onSelect: () => dispose("unfreeze", row) });
     if (canSuspend) list.push({ key: "suspend", label: "暂停此类奖励", onSelect: () => suspend(row) });
     if (canReverse && !SETTLED.includes(row.status)) list.push({ key: "reverse", label: "冲正", danger: true, disabledReason: knownRejection(row, "reverse"), onSelect: () => reverse(row) });
-    return list;
+    return list.map(item => ({ ...item, disabledReason: blockedRecord(row) ?? item.disabledReason }));
   };
 
   // 同一个结算组的两笔挨着时，用左边的竖线连起来。
@@ -503,7 +575,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         {reissueAvailable && selectedRows.length > 0 && (
           <BatchBar summary={`已勾选 ${selectedRows.length} 笔已冲正的记录`} hint="只能勾选这一批里已冲正、不是好友奖励、来源没有退款的记录；改筛选会清掉勾选。">
             <Button size="sm" onClick={() => setSelected([])}>取消勾选</Button>
-            <Button size="sm" variant="primary" onClick={reissue}>批量补发</Button>
+            <Button size="sm" variant="primary" onClick={() => reissue()}>批量补发</Button>
           </BatchBar>
         )}
           <Table label="奖励流水" className="f5-table f5-record-table" aria-busy={loading} data-select={canReissue ? "" : undefined} data-actions={rowWrite ? "" : undefined}>
@@ -523,8 +595,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                     {appliedChips.length ? <>没有符合条件的奖励记录 <Button size="sm" onClick={clearFilters}>清除筛选</Button></> : "还没有奖励记录"}
                   </TableMessage>
                     : events.map((row, index) => {
-                      const selectable = canReissue && row.status === "reversed" && !isFriend(row) && !row.reversalRecorded;
-                      const blockedPick = row.status === "reversed" && !selectable ? isFriend(row) ? "好友奖励不能补发" : row.reversalRecorded ? "已退款的记录不能补发" : undefined : undefined;
+                      const selectable = !blockedRecord(row) && canReissue && row.status === "reversed" && !isFriend(row) && !row.reversalRecorded;
+                      const blockedPick = blockedRecord(row) ?? (row.status === "reversed" && !selectable ? isFriend(row) ? "好友奖励不能补发" : row.reversalRecorded ? "已退款的记录不能补发" : undefined : undefined);
                       const source = isFriend(row) ? `直接邀请的好友${row.sourceUserId ? ` ${userCode(row.sourceUserId)}` : ""}`
                         : [row.sourceUserId ? `来自 ${userCode(row.sourceUserId)}` : "", row.layer ? `第 ${row.layer} 层` : ""].filter(Boolean).join(" · ") || "—";
                       const items = rowActions(row);
@@ -580,8 +652,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           <div {...tabIds.panel(tab)} className="rd-tab-pane">
             {tab === "records" && recordsPanel}
             {tab === "pending" && data && <F5PendingList rows={data.pendingCalculations} count={data.pendingCalculationCount} statusFiltered={statusFiltered} />}
-            {tab === "anomalies" && data && <F5AnomalyList rows={data.anomalies} sigma={data.configValues.commissionAnomalySigma} ratio={data.configValues.layerRatioAnomalyPct} canWrite={canWrite} onAdjust={editThreshold} />}
-            {tab === "suspensions" && data && <F5SuspensionList rows={data.activeSuspensions} canSuspend={canSuspend} onResume={resume} />}
+            {tab === "anomalies" && data && <F5AnomalyList rows={data.anomalies} sigma={data.configValues.commissionAnomalySigma} ratio={data.configValues.layerRatioAnomalyPct} canWrite={canWrite} onAdjust={() => editThreshold()} />}
+            {tab === "suspensions" && data && <F5SuspensionList rows={data.activeSuspensions} canSuspend={canSuspend} onResume={item => resume(item)} />}
             {tab === "history" && data && <F5HistoryList rows={data.operationHistory} />}
           </div>
         </div>

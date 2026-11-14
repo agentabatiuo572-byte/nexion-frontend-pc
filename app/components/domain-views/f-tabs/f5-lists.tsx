@@ -36,7 +36,7 @@ export function F5PendingList({ rows, count, statusFiltered }: { rows: readonly 
                   <Td><Cell mono full main={row.settlementNo} /></Td>
                   <Td><Cell main={KIND_LABELS[row.kind] ?? "未知奖励类型"} sub={isFriend(row) ? "直接邀请的好友" : `第 ${row.layer} 层`} /></Td>
                   <Td><Cell main={<span data-mono>{row.sourceRef}</span>} sub={operatorNicknameText(row.sourceUserName)} title={row.sourceRef} /></Td>
-                  <Td align="right"><Cell num main={<Money value={Number(row.basisUsdt)} currency="USDT" />} /></Td>
+                  <Td align="right"><Cell num main={<Money value={row.basisUsdt} currency="USDT" />} /></Td>
                   <Td><Cell main={<StatusTag tone="neutral" icon={Clock3}>等价格</StatusTag>} sub="USDT、UVT 都还没算" /></Td>
                   <Td><Cell num main={timeText(row.ts)} sub={row.unlockAt ? `到期 ${timeText(row.unlockAt)}` : "算出金额后才定到期时间"} /></Td>
                 </Tr>

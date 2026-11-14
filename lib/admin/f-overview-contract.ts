@@ -343,20 +343,21 @@ export function assertF4MaterialPacket(value: unknown): asserts value is JsonRec
 export function assertF5Overview(value: unknown): asserts value is JsonRecord {
   const row = record(value, "F5");
   domain(row, "F5");
-  if (row.pendingCalculations !== undefined || row.pendingCalculationCount !== undefined) {
-    const pending = array(row, "pendingCalculations", "F5");
-    const pendingCount = nonNegativeInteger(row.pendingCalculationCount, "F5", "pendingCalculationCount");
-    if (pendingCount < pending.length) invalid("F5", "pendingCalculationCount");
-    const ids = new Set<string>();
-    pending.forEach((value, index) => {
-      const item = record(value, "F5", `pendingCalculations[${index}]`);
-      for (const key of ["id", "settlementNo", "sourceRef", "sourceUserName", "ts"]) text(item[key], "F5", key);
-      if (item.id !== item.settlementNo || ids.has(String(item.id)) || !["direct_purchase", "direct_device_earning"].includes(String(item.kind)) || item.status !== "waiting_calculation" || item.nexUsdtPrice !== null || finite(item.amountUSDT, "F5", "amountUSDT") !== 0 || finite(item.amountNEX, "F5", "amountNEX") !== 0 || positiveInteger(item.layer, "F5", "layer") !== 1) invalid("F5", `pendingCalculations[${index}].relation`);
-      nonNegative(item.basisUsdt, "F5", "basisUsdt");
-      if (item.unlockAt !== null && (typeof item.unlockAt !== "string" || !Number.isFinite(Date.parse(item.unlockAt)))) invalid("F5", "unlockAt");
-      ids.add(String(item.id));
-    });
-  }
+  const pending = array(row, "pendingCalculations", "F5");
+  const pendingCount = nonNegativeInteger(row.pendingCalculationCount, "F5", "pendingCalculationCount");
+  if (pendingCount !== pending.length) invalid("F5", "pendingCalculationCount");
+  const ids = new Set<string>();
+  pending.forEach((value, index) => {
+    const item = record(value, "F5", `pendingCalculations[${index}]`);
+    for (const key of ["id", "settlementNo", "sourceRef"]) text(item[key], "F5", key);
+    if (typeof item.sourceUserName !== "string") invalid("F5", "sourceUserName");
+    if (item.id !== item.settlementNo || ids.has(String(item.id)) || !["direct_purchase", "direct_device_earning"].includes(String(item.kind)) || item.status !== "waiting_calculation" || item.nexUsdtPrice !== null || finite(item.amountUSDT, "F5", "amountUSDT") !== 0 || finite(item.amountNEX, "F5", "amountNEX") !== 0 || positiveInteger(item.layer, "F5", "layer") !== 1) invalid("F5", `pendingCalculations[${index}].relation`);
+    nonNegative(item.basisUsdt, "F5", "basisUsdt");
+    for (const key of ["ts", "unlockAt"]) {
+      if (item[key] !== null && (typeof item[key] !== "number" || !Number.isSafeInteger(item[key]) || item[key] < 0 || !Number.isFinite(new Date(item[key]).getTime()))) invalid("F5", key);
+    }
+    ids.add(String(item.id));
+  });
   const summary = object(row, "summary", "F5");
   const spend = moneySnapshot(summary.monthlyCommissionSpend, "summary.monthlyCommissionSpend");
   const cooling = moneySnapshot(summary.coolingBalance, "summary.coolingBalance");
@@ -411,6 +412,10 @@ export function assertF5Overview(value: unknown): asserts value is JsonRecord {
     nonNegativeInteger(event.coolingDaysLeft, "F5", `commissionEvents[${index}].coolingDaysLeft`);
     const cooldownPercent = nonNegativeInteger(event.cooldownPercent, "F5", `commissionEvents[${index}].cooldownPercent`);
     nonNegativeInteger(event.version, "F5", `commissionEvents[${index}].version`);
+    if (event.unlockAt != null && (typeof event.unlockAt !== "number" || !Number.isSafeInteger(event.unlockAt) || event.unlockAt < 0 || !Number.isFinite(new Date(event.unlockAt).getTime()))) invalid("F5", "unlockAt");
+    for (const key of ["basisUsdt", "nexUsdtPrice", "amountUSDT", "amountNEX", "recoveryPendingUSDT", "recoveryPendingNEX"]) {
+      if (event[key] != null) nonNegative(event[key], "F5", key);
+    }
     const kind = text(event.kind, "F5", `commissionEvents[${index}].kind`);
     const currency = text(event.currency, "F5", `commissionEvents[${index}].currency`);
     const status = text(event.status, "F5", `commissionEvents[${index}].status`);

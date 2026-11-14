@@ -8,13 +8,16 @@ import type { ReactNode } from "react";
 import { CircleCheck, CircleHelp, CircleSlash, Clock3, Hourglass, Snowflake, TriangleAlert, Undo2, Wallet, type LucideIcon } from "lucide-react";
 import { Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type OperatorBriefKind } from "../design-kit";
-import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
+import { f4Decimal } from "@/lib/admin/f4-money";
+import { canRetryF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
+import { canRetryF5Anomaly } from "@/lib/admin/f5-anomaly-write";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import type { F5CommissionEvent } from "@/lib/admin/f1-client";
-import type { FViewCtx } from "./types";
+import type { F5Recovery, FViewCtx } from "./types";
 
 export const KIND_LABELS = F5_KIND_LABELS;
 
@@ -64,24 +67,21 @@ export const groupDigits = (text: string) => {
   return int.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (frac !== undefined ? `.${frac}` : "");
 };
 
-const plain = (value: number) => {
-  const text = String(value);
-  return /e/i.test(text) ? value.toFixed(20).replace(/\.?0+$/, "") : text;
-};
+const plain = (value: number | string) => f4Decimal(value)!.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
 
-export const decimals = (value: number) => (plain(value).split(".")[1] ?? "").length;
+export const decimals = (value: number | string) => (plain(value).split(".")[1] ?? "").length;
 
 /** 金额不舍入：原值有几位小数就写几位，不够 digits 位的补零对齐（同一列取这一列最多的位数，最少 2 位）。 */
-export const amountText = (value: number, digits = 2) => {
+export const amountText = (value: number | string, digits = 2) => {
   const [int, frac = ""] = plain(value).split(".");
   const width = Math.max(digits, frac.length);
   return groupDigits(width ? `${int}.${frac.padEnd(width, "0")}` : int);
 };
 
 /** 逐笔金额：每格写自己的位数（最少 2 位、不舍入），数字等宽右对齐，币种单独占固定宽度；悬停看后端原值。 */
-export function Money({ value, currency }: { value: number; currency: string }) {
+export function Money({ value, currency }: { value: number | string; currency: string }) {
   return (
-    <span className="f5-money" title={`后端原值 ${plain(value)} ${currency}`}>
+    <span className="f5-money" title={`后端原值 ${value} ${currency}`}>
       <span className="f5-money-num">{amountText(value)}</span>
       <span className="f5-money-cur">{currency}</span>
     </span>
@@ -99,6 +99,7 @@ export function timeText(value: unknown): string {
   if (typeof value === "number") return Number.isFinite(value) && value > 0 ? businessStamp(value) : "—";
   if (typeof value === "string" && value.trim()) {
     const text = value.trim();
+    if (text === "0") return "—";
     if (/^\d{10,}$/.test(text)) return Number(text) > 0 ? businessStamp(Number(text)) : "—";
     return formatBusinessTimeCompact(text, "—");
   }
@@ -128,19 +129,22 @@ export function approvalTag(note = "批准前这笔奖励不变。") {
 }
 
 /**
- * 后端批准时一定会拒的组合（F5-PD02、B02、B03）。判断条件由代码 worker 接（以后端返回的每笔能不能做为准，B48 F5-BE-06），
- * 接之前一律返回 undefined，入口照旧可点；返回原因时抽屉按钮和确认框都会禁用并写出这句。
+ * 后端批准时会拒的组合（F5-PD02、B02、B03）。结算组以返回的真实 unlockAt 毫秒判断；
+ * 缺少这个时点不凭 DATEDIFF=0 推断到期。其余拒绝由后端裁决。
  */
 export const REJECTION_TEXT = {
   reverseFrozenLegacy: "这笔是没有结算组的旧奖励，已冻结时冲正，批准时会被后端拒绝。先解冻回冷却中，再冲正。",
   releaseGroupCooling: "这笔属于结算组，冷却还没真正到期，批准时会被后端拒绝。到期后系统会自动解锁。",
 } as const;
-export function knownRejection(_row: F5CommissionEvent, _action: "release" | "reverse"): string | undefined {
-  // 代码 worker 接：判断条件写在这里，返回 REJECTION_TEXT 里对应的一句。
+export function knownRejection(row: F5CommissionEvent, action: "release" | "reverse"): string | undefined {
+  if (action === "reverse" && row.status === "frozen" && !isGrouped(row)) return REJECTION_TEXT.reverseFrozenLegacy;
+  if (action === "release" && isGrouped(row) && row.unlockAt !== undefined && row.unlockAt > Date.now()) return REJECTION_TEXT.releaseGroupCooling;
   return undefined;
 }
 
 export type F5Confirm = {
+  snapshot?: F5ConfirmationSnapshot;
+  recovery?: F5Recovery;
   /** 记进操作记录的名字，和旧页面一样。 */
   action: string;
   title: ReactNode;
@@ -164,6 +168,29 @@ export type F5Confirm = {
 
 /** F5 自己开的确认框：样子由页面给，提交走 ctx 上和旧页面相同的函数；成功、失败、结果未知的提示照 F 域外壳的写法。 */
 export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; ctx: FViewCtx; onClose: () => void }) {
+  const getOriginal = () => confirm.snapshot ? ctx.getF5Operation(confirm.snapshot) : undefined;
+  const original = getOriginal();
+  const savedValue = (): BusinessFormValue | undefined => {
+    const saved = getOriginal();
+    if (!saved) return undefined;
+    if (saved.kind === "anomaly") return saved.original.f5Request ? {
+      sigma: String(saved.original.f5Request.commissionAnomalySigma), ratio: String(saved.original.f5Request.layerRatioAnomalyPct),
+    } : undefined;
+    const params = saved.original.request?.command.params;
+    if (!params) return undefined;
+    return typeof params.refundRef === "string" ? { refundRef: params.refundRef }
+      : Array.isArray(params.kinds) ? { kinds: params.kinds.join(",") } : undefined;
+  };
+  const recover = async (mode: "query" | "retry") => {
+    const saved = getOriginal();
+    if (!saved) { onClose(); return true; }
+    try {
+      const resolved = await ctx.recoverF5(saved, mode);
+      if (resolved) onClose();
+      return resolved;
+    } finally { if (!getOriginal()) onClose(); }
+  };
+  const retryable = original && (original.kind === "proposal" ? canRetryF5Proposal(original.original) : canRetryF5Anomaly(original.original));
   return (
     <OperationConfirmModal
       briefKind={confirm.briefKind}
@@ -176,23 +203,40 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
       statedBrief={confirm.statedBrief}
       completionCopy={confirm.completionCopy}
       amplifies={!!confirm.amplify}
-      coverage={ctx.f5Overview?.coverage}
+      coverage={confirm.snapshot?.coverage ?? ctx.f5Overview?.coverage}
       coverageLead={confirm.coverageLead}
       coverageCheck={confirm.coverageCheck}
       confirmTone={confirm.confirmTone}
       confirmLabel={confirm.confirmLabel ?? "提交审批"}
-      blockedReason={confirm.blockedReason}
+      blockedReason={original ? undefined : confirm.blockedReason}
       reasonPlaceholder={confirm.reasonPlaceholder ?? "例如：工单号、核对依据"}
       businessForm={confirm.businessForm}
+      getPendingReason={() => {
+        const saved = getOriginal();
+        return saved?.kind === "proposal" ? saved.original.request?.reason : saved?.original.f5Request?.reason;
+      }}
+      getPendingBusinessValue={savedValue}
+      inlineApproval={confirm.snapshot ? {
+        resolve: () => undefined,
+        pending: !!original,
+        initialRecovery: original?.kind === "proposal" && (original.original.ticket || original.original.received) ? "lookup" : "retry",
+        expired: original ? isRetryExpired(original.original) : false,
+        disabledReason: original && !retryable ? "原操作当前只能查询原结果。" : undefined,
+        recover: () => recover("query"),
+        retry: async () => { await recover("retry"); },
+      } : undefined}
       onClose={onClose}
       onConfirm={async (reason, _newValue, businessValue) => {
         try {
+          if (getOriginal()) { await recover("retry"); return; }
+          ctx.prepareF5Confirmation(confirm.snapshot ? { ...confirm.snapshot, name: confirm.action } : undefined);
           await confirm.submit(reason, businessValue);
           onClose();
         } catch (error) {
           // 和 F 域外壳一致：结果未知不算失败，审批单可能已经建了，冠以失败会让人换个办法重做。
-          const message = error instanceof Error && error.name.endsWith("OutcomeUncertainError") ? operationConfirmErrorMessage(error) : displayAdminError(error);
-          ctx.toast(isA2OutcomeUncertainError(error) ? message : "提交失败 · " + message);
+          const uncertain = error instanceof Error && error.name.endsWith("OutcomeUncertainError");
+          const message = uncertain ? operationConfirmErrorMessage(error) : displayAdminError(error);
+          ctx.toast(uncertain ? message : "提交失败 · " + message);
           // 确认框自己管重试和错误样子，要把错误交回去。
           throw error;
         }

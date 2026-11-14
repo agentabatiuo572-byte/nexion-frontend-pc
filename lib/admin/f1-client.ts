@@ -366,6 +366,7 @@ interface BackendF5Filter {
 }
 
 interface BackendF5CommissionEvent {
+  unlockAt?: number | null;
   settlementNo?: string | null;
   sourceRef?: string | null;
   sourceDeviceId?: string | null;
@@ -423,8 +424,8 @@ interface BackendF5Pagination {
 }
 
 interface BackendF5CommissionAuditOverview {
-  pendingCalculations?: F5PendingCalculation[];
-  pendingCalculationCount?: number | string;
+  pendingCalculations: F5PendingCalculation[];
+  pendingCalculationCount: number | string;
   summary: BackendF5Summary;
   commissionKinds: BackendF5CommissionKind[];
   commissionFilters: BackendF5Filter[];
@@ -933,23 +934,24 @@ export interface F5CommissionFilter {
 }
 
 export interface F5CommissionEvent {
+  unlockAt?: number;
   settlementNo?: string;
   sourceRef?: string;
   sourceDeviceId?: string;
   policyVersion?: number;
-  basisUsdt?: number;
-  nexUsdtPrice?: number;
-  amountUSDT?: number;
-  amountNEX?: number;
-  recoveryPendingUSDT?: number;
-  recoveryPendingNEX?: number;
+  basisUsdt?: string;
+  nexUsdtPrice?: string;
+  amountUSDT?: string;
+  amountNEX?: string;
+  recoveryPendingUSDT?: string;
+  recoveryPendingNEX?: string;
   reversalRecorded?: boolean;
   id: string;
   eventId: number;
   kind: string;
   user: string;
   userId: number;
-  amt: number;
+  amt: string;
   cur: string;
   sourceUserId?: number;
   layer?: number;
@@ -973,12 +975,12 @@ export interface F5PendingCalculation {
   sourceRef: string;
   sourceUserName: string;
   basisUsdt: number | string;
-  amountUSDT: 0;
-  amountNEX: 0;
+  amountUSDT: number | string;
+  amountNEX: number | string;
   nexUsdtPrice: null;
   status: "waiting_calculation";
-  unlockAt: string | null;
-  ts: string;
+  unlockAt: number | null;
+  ts: number | null;
 }
 
 export interface F5CommissionQuery {
@@ -1014,7 +1016,7 @@ export interface F5OperationHistory {
   resultCommissionId: string;
   userId: string;
   kinds: string;
-  amount: number;
+  amount: string | null;
   currency: string;
   evidenceRef: string;
   reason: string;
@@ -1594,7 +1596,7 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       kind: asText(item.kind, "network"),
       user: asText(item.user, userId > 0 ? `U${String(userId).padStart(8, "0")}` : "usr_unknown"),
       userId,
-      amt: toNumber(item.amount),
+      amt: f4Decimal(item.amount!)!,
       cur: asText(item.currency, "USDT"),
       sourceUserId: item.sourceUserId == null ? undefined : toNumber(item.sourceUserId),
       layer: item.layer == null ? undefined : toNumber(item.layer),
@@ -1608,18 +1610,19 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       version: toNumber(item.version),
       frozenFromStatus: optionalText(item.frozenFromStatus),
       ledgerBizNo: optionalText(item.ledgerBizNo),
+      unlockAt: item.unlockAt ?? undefined,
       settlementNo: optionalText(item.settlementNo), sourceRef: optionalText(item.sourceRef), sourceDeviceId: optionalText(item.sourceDeviceId),
       policyVersion: item.policyVersion == null ? undefined : toNumber(item.policyVersion),
-      basisUsdt: item.basisUsdt == null ? undefined : toNumber(item.basisUsdt), nexUsdtPrice: item.nexUsdtPrice == null ? undefined : toNumber(item.nexUsdtPrice),
-      amountUSDT: item.amountUSDT == null ? undefined : toNumber(item.amountUSDT), amountNEX: item.amountNEX == null ? undefined : toNumber(item.amountNEX),
-      recoveryPendingUSDT: item.recoveryPendingUSDT == null ? undefined : toNumber(item.recoveryPendingUSDT), recoveryPendingNEX: item.recoveryPendingNEX == null ? undefined : toNumber(item.recoveryPendingNEX),
+      basisUsdt: item.basisUsdt == null ? undefined : f4Decimal(item.basisUsdt)!, nexUsdtPrice: item.nexUsdtPrice == null ? undefined : f4Decimal(item.nexUsdtPrice)!,
+      amountUSDT: item.amountUSDT == null ? undefined : f4Decimal(item.amountUSDT)!, amountNEX: item.amountNEX == null ? undefined : f4Decimal(item.amountNEX)!,
+      recoveryPendingUSDT: item.recoveryPendingUSDT == null ? undefined : f4Decimal(item.recoveryPendingUSDT)!, recoveryPendingNEX: item.recoveryPendingNEX == null ? undefined : f4Decimal(item.recoveryPendingNEX)!,
       reversalRecorded: item.reversalRecorded ?? undefined,
     };
   });
   const pagination = data.pagination;
   return {
-    pendingCalculations: data.pendingCalculations ?? [],
-    pendingCalculationCount: data.pendingCalculationCount == null ? 0 : toNumber(data.pendingCalculationCount),
+    pendingCalculations: data.pendingCalculations,
+    pendingCalculationCount: toNumber(data.pendingCalculationCount),
     summary: {
       monthlyCommissionSpendLabel: summary.monthlyCommissionSpendLabel,
       coolingBalanceLabel: summary.coolingBalanceLabel,
@@ -1651,7 +1654,7 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       id: asText(item.id, "AN-UNKNOWN"),
       type: asText(item.type, "unknown"),
       commissionId: asText(item.commissionId, ""),
-      userId: asText(item.userId, ""),
+      userId: item.userId == null ? "" : String(item.userId),
       evidence: asText(item.evidence, ""),
       relatedKCluster: asText(item.relatedKCluster, ""),
       status: asText(item.status, "open"),
@@ -1666,9 +1669,9 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       operationType: asText(item.operationType, ""),
       sourceCommissionId: asText(item.sourceCommissionId, ""),
       resultCommissionId: asText(item.resultCommissionId, ""),
-      userId: asText(item.userId, ""),
+      userId: item.userId == null ? "" : String(item.userId),
       kinds: asText(item.kinds, ""),
-      amount: toNumber(item.amount),
+      amount: item.amount == null ? null : f4Decimal(String(item.amount)),
       currency: asText(item.currency, ""),
       evidenceRef: asText(item.evidenceRef, ""),
       reason: asText(item.reason, ""),
@@ -1676,7 +1679,7 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       createdAt: asText(item.createdAt, ""),
     })),
     activeSuspensions: (data?.activeSuspensions ?? []).map((item) => ({
-      userId: asText(item.userId, ""),
+      userId: item.userId == null ? "" : String(item.userId),
       kind: asText(item.kind, ""),
       reason: asText(item.reason, ""),
       operator: asText(item.operator, ""),
@@ -1685,9 +1688,9 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
-    // coverage 可选:后端 commissions() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验),范式同 normalizeOverview。
-    coverage: data?.coverage
-      ? { coverageRatio: toNumber(data.coverage.coverageRatio), redlinePct: toNumber(data.coverage.redlinePct) }
+    // Missing coverage remains unknown. Only reissue has an execution-time backend B1 check.
+    coverage: finiteDashboardNumber(data.coverage?.coverageRatio) !== null && finiteDashboardNumber(data.coverage?.redlinePct) !== null
+      ? { coverageRatio: Number(data.coverage!.coverageRatio), redlinePct: Number(data.coverage!.redlinePct) }
       : undefined,
     sources: data?.sources ?? [],
   };
@@ -1753,6 +1756,10 @@ async function f1Request<T>(
     } else if (path === "/binary" && !isWrite) {
       const raw = await response.text();
       result = JSON.parse(raw.replace(/("h1BinaryDailyCap"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
+    } else if (path.startsWith("/commissions") && !isWrite) {
+      const raw = await response.text();
+      // Keep each monetary JSON lexeme before binary floating point can round it.
+      result = JSON.parse(raw.replace(/("(?:amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
     } else result = (await response.json()) as ApiResult<T>;
   } catch {
     bodyUnreadable = true;
@@ -1774,7 +1781,7 @@ async function f1Request<T>(
     // 头 + message 两路都认(与 a2-client 同款):teams proxy 目前不透传该头,靠下面的 5xx 兜底,
     // 但后端若改用「200 + 业务码非 0 + UPSTREAM_OUTCOME_UNKNOWN」表达未知,这一路能接住。
     if (response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown"
-      || (path === "/ambassador-policy" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) && isIdempotencyOutcomeOpen(result?.message)
+      || (path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) && isIdempotencyOutcomeOpen(result?.message)
       || result?.message?.trim().toUpperCase().includes("UPSTREAM_OUTCOME_UNKNOWN") === true) {
       throw new F1OutcomeUncertainError(
         formatAdminApiError(result?.message, "F1_REQUEST_OUTCOME_UNKNOWN"),
@@ -1810,8 +1817,8 @@ async function f1Request<T>(
       throw new F4MaterialReviewNotAppliedError(formatAdminApiError(reviewConflict, "F1_REQUEST_FAILED_409"), reviewConflict);
     }
     const error = new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
-    if (path.startsWith("/ranks/") || path === "/ambassador-policy" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
-      status: response.status, httpStatus: response.status, apiCode: result?.code,
+    if (path.startsWith("/ranks/") || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
+      status: path === "/commissions/anomaly-config" && response.ok && typeof result?.code === "number" ? result.code : response.status, httpStatus: response.status, apiCode: result?.code,
       backendMessage: result?.message, reasonCode: result?.message,
     });
     throw error;
@@ -2096,13 +2103,14 @@ export async function updateF5AnomalyConfig(
   layerRatioAnomalyPct: number,
   reason: string,
   operator: string,
+  commandKey: string,
 ) {
-  return f1StableWrite("f5-anomaly-config", JSON.stringify([commissionAnomalySigma, layerRatioAnomalyPct, operator]),
-    (commandKey) => f1Request<Record<string, unknown>>("/commissions/anomaly-config", {
-      method: "PUT",
-      body: JSON.stringify({ commissionAnomalySigma, layerRatioAnomalyPct, reason, operator }),
-      stableIdempotencyKey: commandKey,
-    }));
+  return f1Request<{ operationNo: string; commissionAnomalySigma: number; layerRatioAnomalyPct: number }>("/commissions/anomaly-config", {
+    method: "PUT",
+    body: JSON.stringify({ commissionAnomalySigma, layerRatioAnomalyPct, reason, operator }),
+    stableIdempotencyKey: commandKey,
+    expectsData: true,
+  });
 }
 
 export async function updateF1VRankThreshold(rank: string, field: string, value: string, reason: string, operator: string) {

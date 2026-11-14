@@ -8,6 +8,7 @@ import { roleLabel } from "../nav/console-nav";
 import { useAdminAuth } from "../store/admin-auth";
 import type { F3ConfirmationSnapshot } from "./f3-approval";
 import type { F4ConfirmationSnapshot } from "./f4-approval";
+import type { F5ConfirmationSnapshot } from "./f5-approval";
 
 export const F2_ACTIVATION_SLOT = "f-seven-layer-activation";
 export const F2_POLICY_SLOT = "f-direct-referral-policy";
@@ -28,6 +29,8 @@ export interface FDomainAttempt extends SlotAttemptRecord {
   absent?: boolean;
   f3Snapshot?: F3ConfirmationSnapshot;
   f4Snapshot?: F4ConfirmationSnapshot;
+  f5Snapshot?: F5ConfirmationSnapshot;
+  f5TicketId?: string;
 }
 // The legacy F1/F3/F4/F5 slot adapter and F2 share exactly one backing store.
 export const fCommands = createPendingMutationStore<FDomainAttempt>({
@@ -37,7 +40,9 @@ export const fCommands = createPendingMutationStore<FDomainAttempt>({
     || ["f-config:F.vrank.permanent", "f-config:F.vrank.titles", "f-config:F.prize.name"].includes(row.fingerprint)
     || row.spec?.sourceDomain === "F3" || row.fingerprint === "f-config-batch:F3" || row.fingerprint.startsWith("f-config:F.binary.")
     || row.spec?.sourceDomain === "F4" || /^f-config:F\.(?:pool|quota|ambassador|leaderboard)\./.test(row.fingerprint)
-    || /^f4-(?:settle|leaderboard):/.test(row.fingerprint) || row.fingerprint === "f-config-batch:F4",
+    || /^f4-(?:settle|leaderboard):/.test(row.fingerprint) || row.fingerprint === "f-config-batch:F4"
+    || row.spec?.sourceDomain === "F5" || /^f5-(?:reverse:|reissue$|suspension:)/.test(row.fingerprint)
+    || /^f-config:F\.commission\.CM-\d+\.status$/.test(row.fingerprint),
   isValidRecord: row => typeof row.inputFingerprint === "string" && row.inputFingerprint.length > 0,
 });
 export const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-f-commands-v1" }, fCommands);

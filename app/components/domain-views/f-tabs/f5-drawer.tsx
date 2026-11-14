@@ -119,7 +119,7 @@ export function F5Drawer({ row, rows, history, ledgerAllowed, coverageAllowed, l
             {friend ? <>
               <p>整组 {groupMoney ?? "—"}<Explain label="好友奖励怎么算" content="按下单时的好友奖励政策，用计价基数和当笔 UVT 价格算出 USDT 和 UVT 两笔，两笔一组。" /></p>
               <p className="f5-weak">计价基数 {row.basisUsdt !== undefined ? `${amountText(row.basisUsdt)} USDT` : "—"} · 当笔 UVT 价格 {row.nexUsdtPrice !== undefined ? `${amountText(row.nexUsdtPrice)} USDT` : "—"} · 政策版本 {row.policyVersion ?? "—"}</p>
-              {(row.recoveryPendingUSDT || row.recoveryPendingNEX) ? <p className="f5-trace-warn">待追回 {amountText(row.recoveryPendingUSDT ?? 0)} USDT + {amountText(row.recoveryPendingNEX ?? 0)} UVT</p> : null}
+              {(Number(row.recoveryPendingUSDT) > 0 || Number(row.recoveryPendingNEX) > 0) ? <p className="f5-trace-warn">待追回 {amountText(row.recoveryPendingUSDT ?? 0)} USDT + {amountText(row.recoveryPendingNEX ?? 0)} UVT</p> : null}
             </> : <>
               <p>这一笔 {money}</p>
               <p className="f5-weak">{grouped ? <>结算组 <span data-mono>{row.settlementNo}</span>，后端没有给计算过程</> : "后端没有给计算过程"}</p>

@@ -1,5 +1,6 @@
 import type { F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
 import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
+import type { F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
 import type { FDirectAttempt } from "@/lib/admin/f1-stable-write";
 import type { FDomainAttempt, F2Recovery } from "@/lib/admin/f2-approval";
 import type { ReactNode } from "react";
@@ -202,6 +203,13 @@ export interface FViewCtx {
   f5NextQuery: F5CommissionQuery | null;
   f5Loading: boolean;
   f5Error: string | null;
+  f5Proposals: FDomainAttempt[];
+  f5AnomalyWrites: FDirectAttempt[];
+  f5ApprovalRows: A2OperationRow[];
+  f5ReadEpoch: number;
+  prepareF5Confirmation: (snapshot: F5ConfirmationSnapshot | undefined) => void;
+  getF5Operation: (snapshot: F5ConfirmationSnapshot) => F5Recovery | undefined;
+  recoverF5: (record: F5Recovery, mode: "query" | "retry" | "release") => Promise<boolean>;
   refreshF5: (query?: F5CommissionQuery) => Promise<void>;
   exportF5Commissions: (
     query: F5CommissionQuery,
@@ -222,3 +230,5 @@ export interface FViewCtx {
     reason: string,
   ) => Promise<void>;
 }
+
+export type F5Recovery = { kind: "proposal"; original: FDomainAttempt } | { kind: "anomaly"; original: FDirectAttempt };

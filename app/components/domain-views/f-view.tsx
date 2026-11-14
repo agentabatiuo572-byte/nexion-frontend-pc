@@ -24,7 +24,6 @@ import {
   fetchF4AmbassadorPolicy,
   fetchF5CommissionAuditOverview,
   downloadF5RedactedCsv,
-  updateF5AnomalyConfig,
   fetchF2RatesOverview,
   fetchF2DirectReferralPolicy,
   fetchF1PromotionLog,
@@ -53,6 +52,8 @@ import { F3_SETTLEMENT_SLOT, listF3Proposals, queryF3Proposal, releaseF3Proposal
 import { listF1Proposals, queryF1Proposal, releaseF1Proposal, sendF1Proposal } from "@/lib/admin/f1-approval";
 import { canRetryF4Proposal, F4_POLICY_SLOT, f4PendingFor, f4PolicySpec, listF4Proposals, matchesF4Confirmation, queryF4Proposal, releaseF4Proposal, sendF4Proposal, type F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import { canRetryF4Policy, listF4PolicyWrites, queryF4Policy, sendF4Policy } from "@/lib/admin/f4-policy-write";
+import { f5ConfirmationSlot, listF5Proposals, queryF5Proposal, releaseF5Proposal, sendF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
+import { listF5AnomalyWrites, queryF5Anomaly, sendF5Anomaly } from "@/lib/admin/f5-anomaly-write";
 import { isF1OutcomeUncertainError, type FDirectAttempt } from "@/lib/admin/f1-stable-write";
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
 import { listF1PolicyOperations, queryF1PolicyOperation } from "@/lib/admin/f1-policy-change";
@@ -178,6 +179,12 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   } | null>(null);
   const [f5Loading, setF5Loading] = useState(tab === "F5");
   const [f5Error, setF5Error] = useState<string | null>(null);
+  const [f5Proposals, setF5Proposals] = useState<FDomainAttempt[]>([]);
+  const [f5AnomalyWrites, setF5AnomalyWrites] = useState<FDirectAttempt[]>([]);
+  const [f5ApprovalRows, setF5ApprovalRows] = useState<A2OperationRow[]>([]);
+  const [f5ReadEpoch, setF5ReadEpoch] = useState(0);
+  const f5Submission = useRef<F5ConfirmationSnapshot | undefined>(undefined);
+  const f5Query = useRef<F5CommissionQuery>({});
   const f1Generation = useRef(0);
   const f1PromotionGeneration = useRef(0);
   const f1PayoutGeneration = useRef(0);
@@ -197,7 +204,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (tab !== "F2") f2Generation.current += 1;
     if (tab !== "F3") f3Generation.current += 1;
     if (tab !== "F4") f4Generation.current += 1;
-    if (tab !== "F5") f5Generation.current += 1;
+    if (tab !== "F5") {
+      f5Generation.current += 1;
+      f5Query.current = {};
+    }
   }, [tab]);
   useEffect(() => () => {
     f1Generation.current += 1;
@@ -488,25 +498,76 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   };
 
-  const refreshF5 = useCallback(async (query: F5CommissionQuery = {}) => {
+  const refreshF5 = useCallback(async (query: F5CommissionQuery = f5Query.current) => {
     const request = ++f5Generation.current;
+    const owner = useAdminAuth.getState().session?.adminId;
+    f5Query.current = query;
+    const originals = owner === undefined ? [] : listF5Proposals(owner);
+    setF5Proposals(originals);
+    setF5AnomalyWrites(owner === undefined ? [] : listF5AnomalyWrites(owner));
     setF5Loading(true);
     setF5Error(null);
-    try {
-      const overview = await fetchF5CommissionAuditOverview(query);
-      if (request !== f5Generation.current) return;
-      setF5Page({
-        overview,
-        nextQuery: overview.nextCursor ? { ...query, cursor: overview.nextCursor } : null,
-      });
-    } catch (error) {
-      if (request !== f5Generation.current) return;
-      setF5Page(null);
-      setF5Error(errorMessage(error));
-    } finally {
-      if (request === f5Generation.current) setF5Loading(false);
+    const [overview, queue, ...lookups] = await Promise.allSettled([
+      fetchF5CommissionAuditOverview(query),
+      canReadA2 ? fetchA2Overview({ domain: "F" }, true) : Promise.resolve(null),
+      ...originals.map(row => queryF5Proposal(owner!, row)),
+    ]);
+    if (request !== f5Generation.current || owner !== useAdminAuth.getState().session?.adminId) return;
+    if (overview.status === "fulfilled") setF5Page({ overview: overview.value,
+      nextQuery: overview.value.nextCursor ? { ...query, cursor: overview.value.nextCursor } : null });
+    else { setF5Page(null); setF5Error(errorMessage(overview.reason)); }
+    const audit = queue.status === "fulfilled" ? queue.value as Awaited<ReturnType<typeof fetchA2Overview>> | null : null;
+    setF5ApprovalRows([...(audit?.operationQueue ?? []), ...lookups.flatMap(row => row.status === "fulfilled" && row.value ? [row.value as A2OperationRow] : [])]);
+    if (owner !== undefined) {
+      setF5Proposals(listF5Proposals(owner));
+      setF5AnomalyWrites(listF5AnomalyWrites(owner));
     }
-  }, []);
+    setF5ReadEpoch(epoch => epoch + 1);
+    setF5Loading(false);
+  }, [canReadA2, session?.adminId]);
+
+  const recoverF5: FViewCtx["recoverF5"] = async (record, mode) => {
+    const owner = useAdminAuth.getState().session?.adminId;
+    if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+    const original = (record.kind === "proposal" ? listF5Proposals(owner) : listF5AnomalyWrites(owner)).find(row => row.commandKey === record.original.commandKey);
+    if (!original) return true;
+    f5Generation.current += 1;
+    setF5Page(null); setF5Loading(true);
+    try {
+      if (record.kind === "anomaly") {
+        if (mode === "release") throw new Error("直接保存的原操作只能核对，不能解除记录。");
+        if (mode === "retry") await sendF5Anomaly(owner);
+        else {
+          const current = await queryF5Anomaly(owner, original as FDirectAttempt);
+          setToast(`当前金额偏离 ${current.configValues.commissionAnomalySigma}、层比例偏离 ${current.configValues.layerRatioAnomalyPct}%；只供核对，原操作结果仍未知。`);
+          return false;
+        }
+        return true;
+      }
+      const ticket = mode === "release" ? (await releaseF5Proposal(owner, original), null)
+        : mode === "retry" ? await sendF5Proposal(owner, original.fingerprint) : await queryF5Proposal(owner, original);
+      if (ticket) setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : "原申请已处理，请核对奖励记录。");
+      else if (mode === "query") setToast("没有查到原审批单，不能据此认定没有提交。");
+      return mode === "release" || !!ticket;
+    } finally { await refreshF5(); }
+  };
+
+  const sendF5 = async (slot: string, spec: ProposeSpec) => {
+    const owner = useAdminAuth.getState().session?.adminId;
+    if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+    if (!f5Page || f5Loading || f5Error) throw new Error("F5_CURRENT_DATA_REQUIRED");
+    const pending = f5ApprovalRows.filter(row => row.status === "pending").some(row => {
+      const obj = row.operationCode === "f_commission_status" ? row.obj.match(/^F\.commission\.(CM-\d+)\.status$/)?.[1] : row.obj;
+      return spec.command.op === "f5_commission_suspension" ? row.operationCode === spec.command.op && row.obj === spec.obj
+        : spec.command.op === "f5_commission_reissue" ? String(obj).split(",").some(id => (spec.command.params.commissionIds as string[]).includes(id))
+          : String(obj).split(",").includes(spec.target?.id ?? "");
+    });
+    if (pending) throw new Error("OBJECT_ALREADY_PENDING");
+    try {
+      const ticket = await sendF5Proposal(owner, slot, spec, f5Submission.current);
+      setF5ApprovalRows(rows => [...rows.filter(row => row.id !== ticket.id), ticket]);
+    } finally { setF5Proposals(listF5Proposals(owner)); }
+  };
 
   useEffect(() => {
     if (tab === "F5") void refreshF5();
@@ -594,6 +655,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (spec.sourceDomain === "F3") { await sendF3(slot, spec, snapshot); return; }
     if (spec.sourceDomain === "F2") return sendF2(slot, spec);
     if (spec.sourceDomain === "F4") return sendF4(slot, spec);
+    if (spec.sourceDomain === "F5") return sendF5(slot, spec);
     if (spec.sourceDomain === "F1") {
       const current = useAdminAuth.getState().session;
       if (!current || current.adminId !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
@@ -1045,6 +1107,22 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f5NextQuery: f5Page?.nextQuery ?? null,
     f5Loading,
     f5Error,
+    f5Proposals,
+    f5AnomalyWrites,
+    f5ApprovalRows,
+    f5ReadEpoch,
+    prepareF5Confirmation: snapshot => { f5Submission.current = snapshot; },
+    getF5Operation: snapshot => {
+      const owner = useAdminAuth.getState().session?.adminId;
+      if (owner === undefined || owner !== session?.adminId) return undefined;
+      if (snapshot.action === "anomaly") {
+        const original = listF5AnomalyWrites(owner)[0];
+        return original ? { kind: "anomaly", original } : undefined;
+      }
+      const original = listF5Proposals(owner).find(row => row.fingerprint === f5ConfirmationSlot(snapshot));
+      return original ? { kind: "proposal", original } : undefined;
+    },
+    recoverF5,
     refreshF5,
     exportF5Commissions: async (query, reason) => downloadF5RedactedCsv(query, reason),
     updateF5Config: async (key, value, reason, expectedVersion) => {
@@ -1125,7 +1203,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       });
     },
     updateF5AnomalyConfig: async (sigma, layerRatio, reason) => {
-      await updateF5AnomalyConfig(sigma, layerRatio, reason, ADMIN_OPERATOR());
+      const owner = useAdminAuth.getState().session?.adminId;
+      if (owner === undefined || owner !== session?.adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+      if (!f5Page || f5Loading || f5Error) throw new Error("F5_CURRENT_DATA_REQUIRED");
+      try {
+        await sendF5Anomaly(owner, { commissionAnomalySigma: sigma, layerRatioAnomalyPct: layerRatio, reason }, f5Submission.current);
+      } finally { setF5AnomalyWrites(listF5AnomalyWrites(owner)); }
+      setF5Page(null);
       await refreshF5();
     },
   };
