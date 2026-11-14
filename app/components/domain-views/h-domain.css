@@ -403,3 +403,64 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h7-dispose-item > .rd-btn { flex: none; }
 [data-h7-form] .rd-form-help { text-wrap: pretty; }
 .h7-preview-sentence { text-wrap: balance; }
+/* ============================ H5 签到与UVT奖励（.h5-page 一段：七天签到条、抽倍率条、连签奖励线、配置值、原操作提醒） ============================ */
+.h5-page { display: contents; }
+.h5-rules { display: flex; flex-direction: column; gap: var(--rd-space-4); min-width: 0; scroll-margin-top: var(--rd-space-6); }
+.h5-note { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.h5-readonly { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+/* 七天签到条：一格一天 */
+.h5-strip-block { display: flex; flex-direction: column; gap: var(--rd-space-5); min-width: 0; }
+.h5-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
+.h5-strip-day { display: flex; flex-direction: column; align-items: flex-start; gap: var(--rd-space-1); min-width: 0; padding: var(--rd-space-3) var(--rd-space-2); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.h5-strip-day[data-seventh] { border-color: var(--rd-role-4); }
+.h5-strip-label { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.h5-strip-base { display: inline-flex; align-items: baseline; gap: var(--rd-space-1); font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--rd-role-4); white-space: nowrap; }
+:root[data-theme="light"] .h5-strip-base { color: var(--rd-text); }
+.h5-strip-base small, .h5-strip-bonus small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 500; color: var(--rd-text-3); }
+.h5-strip-base[data-bad], .h5-strip-bonus[data-bad] { color: var(--rd-warn); }
+.h5-strip-bonus { display: flex; flex-direction: column; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--rd-text); white-space: nowrap; }
+.h5-strip-gift { display: flex; flex-direction: column; max-width: 100%; margin-top: auto; padding-top: var(--rd-space-2); border-top: 1px dashed var(--rd-line-strong); align-self: stretch; }
+.h5-strip-gift b { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; color: var(--rd-text); overflow-wrap: anywhere; }
+.h5-strip-gift small { display: inline-flex; align-items: center; gap: 2px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+.h5-strip-gift small > svg { flex: none; color: var(--rd-chart-4); }
+.h5-strip-gift .h5-strip-legacy { display: flex; flex-direction: column; align-items: flex-start; margin-top: 2px; white-space: normal; overflow-wrap: anywhere; color: var(--rd-text-2); }
+.h5-strip-gift .h5-strip-legacy > span:first-child { color: var(--rd-warn); }
+.h5-strip-gift[data-kind="badge"] small > svg { color: var(--rd-chart-other); }
+.h5-lucky { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: start; gap: var(--rd-space-2) var(--rd-space-4); }
+.h5-lucky-title { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); white-space: nowrap; padding-top: 1px; }
+.h5-lucky .rd-segbar-wrap { max-width: none; }
+.h5-dist { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; }
+/* 连签奖励线：点等距，只表示先后 */
+.h5-track { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: var(--rd-space-4) var(--rd-space-3); margin: 0 0 var(--rd-space-4); padding: 0; list-style: none; }
+.h5-track-node { position: relative; display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; }
+.h5-track-node::before { content: ""; position: absolute; top: 6px; left: 12px; right: calc(-1 * var(--rd-space-3)); height: 1px; background: var(--rd-line-strong); }
+.h5-track-node:last-child::before { display: none; }
+.h5-track-dot { position: relative; z-index: 1; width: 13px; height: 13px; border: 2px solid var(--rd-chart-4); border-radius: 50%; background: var(--rd-panel); }
+.h5-track-node[data-kind="badge"] .h5-track-dot { border-color: var(--rd-chart-other); }
+.h5-track-day { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.h5-track-card { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: var(--rd-space-2); min-width: 0; padding: var(--rd-space-3); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.h5-track-reward { max-width: 100%; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; color: var(--rd-text); overflow-wrap: anywhere; }
+.h5-track-legacy { display: block; margin-top: 2px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-2); }
+.h5-track-tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1); }
+.h5-track-action { margin-top: auto; padding-top: var(--rd-space-1); }
+.h5-kind { display: inline-flex; align-items: center; padding: 0 var(--rd-space-2); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tag); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); white-space: nowrap; }
+/* 配置值：值、标签、方向一行 */
+.h5-value { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); }
+.h5-value-num { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--rd-text); }
+.h5-value-num[data-empty] { color: var(--rd-text-3); }
+.h5-dir { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
+/* 原操作提醒（结果未知、待审批、已过期），和 G 域同一排法 */
+.h5-rec { display: grid; gap: var(--rd-space-2); margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }
+.h5-rec li { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.h5-rec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
+.h5-rec-change { min-width: 0; overflow-wrap: anywhere; color: var(--rd-text); }
+.h5-rec-time, .h5-rec-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.h5-rec-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.h5-rec-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--rd-space-2); }
+.h5-rec-zone { margin: var(--rd-space-2) 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+@media (max-width: 1279px) {
+  .h5-rec li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
+  .h5-rec-state { grid-column: 3; grid-row: 1; justify-content: flex-end; }
+  .h5-rec-time { grid-column: 1 / 3; grid-row: 2; }
+  .h5-rec-actions { grid-column: 3; grid-row: 2; }
+}
