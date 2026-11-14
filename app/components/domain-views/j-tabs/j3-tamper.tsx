@@ -14,15 +14,15 @@ import {
 } from "lucide-react";
 import {
   BarList, BlockState, Button, Cell, ColumnChart, Conclusion, DiffField, Explain, Fact, Facts, Field, FilterBar, Fold, Modal,
-  Notice, NumberInput, PageHeader, Panel, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr,
+  Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr,
 } from "@/app/components/rd";
 import type { JCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
-import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmergencyOutcomeUncertain, retryJ3Command } from "@/lib/admin/j-client";
+import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmergencyOutcomeUncertain, releaseExpiredJLegacyCommand, retryJ3Command } from "@/lib/admin/j-client";
 import type { J3PendingCommand, TamperAccount, TamperOverview, TamperReport } from "@/lib/admin/j-client";
 import { downloadJ3ReportFile } from "@/lib/admin/j3-report-download";
-import { createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { expiredTag } from "../g-tabs/g-recovery";
 import { businessClock, businessStamp, businessZone } from "@/lib/admin/business-time";
@@ -61,17 +61,19 @@ function j3ErrorText(error: unknown) {
   return error instanceof Error ? displayAdminError(error) : "操作失败，请刷新页面后重试。";
 }
 
-type SavedConfig = { threshold: number; feedK4: boolean; reason: string; createdAt: number; expiresAt: number; command?: J3PendingCommand };
+type SavedConfig = { threshold: number; feedK4: boolean; reason: string; createdAt: number; expiresAt: number; command?: J3PendingCommand; legacy?: { record: SlotAttemptRecord; store: "emergency" | "page" } };
 
 function readSavedConfig(): SavedConfig | null {
   const command = getJ3PendingCommand();
   if (command) return { ...command.tamper.input, createdAt: command.createdAt, expiresAt: command.expiresAt, command };
-  const record = getJ3LegacyCommand() ?? commandAttempt.list().find((row) => row.fingerprint === ALERT_CONFIG_SLOT);
+  const emergencyRecord = getJ3LegacyCommand();
+  const record = emergencyRecord ?? commandAttempt.list().find((row) => row.fingerprint === ALERT_CONFIG_SLOT);
   if (!record) return null;
   try {
     const input = JSON.parse(record.inputFingerprint) as { threshold?: unknown; feedK4?: unknown; reason?: unknown };
     if (typeof input.threshold !== "number" || typeof input.feedK4 !== "boolean") return null;
-    return { threshold: input.threshold, feedK4: input.feedK4, reason: typeof input.reason === "string" ? input.reason : "", createdAt: record.createdAt, expiresAt: record.expiresAt };
+    return { threshold: input.threshold, feedK4: input.feedK4, reason: typeof input.reason === "string" ? input.reason : "", createdAt: record.createdAt, expiresAt: record.expiresAt,
+      legacy: { record, store: emergencyRecord ? "emergency" : "page" } };
   } catch {
     return null;
   }
@@ -110,6 +112,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const [pendingReport, setPendingReport] = useState<TamperReport | null>(null);
   const [accountLoading, setAccountLoading] = useState(false);
   const [saved, setSaved] = useState<SavedConfig | null>(null);
+  const [releasing, setReleasing] = useState<SavedConfig["legacy"] | null>(null);
   const [readAt, setReadAt] = useState<number | null>(null);
   const accountsRef = useRef<HTMLDivElement>(null);
   const retryableReport = pendingReport?.window === window ? pendingReport : null;
@@ -235,7 +238,8 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       </>} />
   );
 
-  const savedNotice = saved && (
+  const savedNotice = <>
+    {saved && (
     <Notice tone="warn" title={<>修改告警设置 · 结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行。处理完之前不能发起新的修改。" /></>}>
       <ul className="j3-recovery" aria-label="结果未知的修改">
         <li>
@@ -247,11 +251,23 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
             <Button size="sm" loading={ctx.contentLoading} onClick={queryOriginal}>查询原结果</Button>
             {canConfigure && !isRetryExpired(saved) && <Button size="sm" disabledReason={!saved.command ? j3ErrorText(new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE")) : undefined}
               onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
+            {saved.legacy && isRetryExpired(saved) && <Button size="sm" onClick={() => setReleasing(saved.legacy)}>确认解除</Button>}
           </span>
         </li>
       </ul>
     </Notice>
-  );
+    )}
+    {releasing && <ReleaseModal label="告警设置"
+      explain="旧记录已超过 24 小时。解除只是不再提示这条旧记录，不代表原操作没执行；请先到「操作记录与审批」核对。"
+      onCancel={() => setReleasing(null)} onConfirm={() => {
+        if (releasing.store === "emergency") releaseExpiredJLegacyCommand(releasing.record);
+        // The old page and client saved the same operation in both stores.
+        const record = commandAttempt.list().find((row) => row.fingerprint === ALERT_CONFIG_SLOT && row.commandKey === releasing.record.commandKey);
+        if (record && isRetryExpired(record)) commandAttempt.forget(record.fingerprint, record.commandKey);
+        setReleasing(null);
+        syncSaved();
+      }} />}
+  </>;
 
   const reportNotice = retryableReport && (
     <Notice tone="warn" title="报表已生成，还没下载到本机"

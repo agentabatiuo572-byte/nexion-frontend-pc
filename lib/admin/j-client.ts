@@ -172,6 +172,14 @@ export const getJ3LegacyCommand = () => emergencyCommands.list().find((record) =
 export const listJ4PendingCommands = () => emergencyCommands.list().filter((record): record is J4PendingCommand => !!record.sop);
 export const listJ4PendingProposals = () => emergencyCommands.list().filter((record): record is J4PendingProposal => !!record.sopProposal);
 export const listJ4LegacyCommands = () => emergencyCommands.list().filter((record) => isJ4WriteSlot(record.fingerprint) && !record.sop);
+/** Local release after confirmation: expired legacy records cannot be replayed. */
+export function releaseExpiredJLegacyCommand(record: SlotAttemptRecord) {
+  const saved = emergencyCommands.list().find((row) => row.fingerprint === record.fingerprint && row.commandKey === record.commandKey);
+  if (!saved || !isRetryExpired(saved) || saved.geo || saved.tamper || saved.sop || saved.sopProposal
+    || !(isJ2WriteSlot(saved.fingerprint) || saved.fingerprint === J3_CONFIG_SLOT || isJ4WriteSlot(saved.fingerprint))) return false;
+  emergencyCommands.forget(saved.fingerprint, saved.commandKey);
+  return true;
+}
 export const getJ4PendingCommand = (slot: string) => listJ4PendingCommands().find((record) => record.fingerprint === slot);
 export const getJ4PendingProposal = (code: string) => listJ4PendingProposals().find((record) => record.fingerprint === j4ProposalSlot(code));
 

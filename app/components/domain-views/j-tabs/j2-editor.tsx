@@ -242,6 +242,7 @@ export type J2RecoveryRow = {
   expired: boolean;
   onQuery: () => void;
   onRetry?: () => void;
+  onRelease?: () => void;
   /** 最近一次查询或重试的结果，只是当下的事实。 */
   note?: ReactNode;
 };
@@ -267,6 +268,7 @@ export function J2RecoveryNotice({ rows, unknownTag, expiredTag }: { rows: J2Rec
             <span className="j2-rec-actions">
               <Button size="sm" onClick={row.onQuery}>查询原结果</Button>
               {!row.expired && row.onRetry && <Button size="sm" onClick={row.onRetry}>按原请求重试</Button>}
+              {row.expired && row.onRelease && <Button size="sm" onClick={row.onRelease}>确认解除</Button>}
             </span>
             {row.note && <span className="j2-rec-note">{row.note}</span>}
           </li>

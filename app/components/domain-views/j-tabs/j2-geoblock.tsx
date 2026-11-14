@@ -11,9 +11,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Ban, Globe2, Replace, Unplug, History, ListOrdered, Plus, Radar, RefreshCw, ShieldMinus, Siren, Waypoints } from "lucide-react";
-import { BarList, BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, Input, KeyValues, Notice, PageHeader, Panel, SearchSelect, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
+import { BarList, BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, Input, KeyValues, Notice, PageHeader, Panel, ReleaseModal, SearchSelect, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
+import { getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, releaseExpiredJLegacyCommand, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
@@ -168,6 +168,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
 
   const [pending, setPending] = useState<J2PendingCommand[]>([]);
   const [legacy, setLegacy] = useState<ReturnType<typeof listJ2LegacyCommands>>([]);
+  const [releasing, setReleasing] = useState<ReturnType<typeof listJ2LegacyCommands>[number] | null>(null);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
   const currentState = useRef({ data, contentLoading, contentError, authorities });
   currentState.current = { data, contentLoading, contentError, authorities };
@@ -242,12 +243,22 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     change: formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"),
     submittedAt: record.createdAt, expired: isRetryExpired(record),
     onQuery: () => void queryOriginal(record), note: pendingNotes[record.commandKey],
+    onRelease: isRetryExpired(record) ? () => setReleasing(record) : undefined,
   })));
   const countryWriteUnknown = [...pending, ...legacy].some((record) => record.fingerprint.includes("country-lists/") || record.fingerprint.endsWith("emergency-blocks"));
   const unknownOn = new Set([...pending, ...legacy].map((record) => record.fingerprint.includes("country-lists/")
     ? `list:${record.fingerprint.split("/").at(-1)}` : record.fingerprint.includes("endpoints/")
       ? `endpoint:${decodeURIComponent(record.fingerprint.split("/").at(-1)!)}` : record.fingerprint.endsWith("edge-judge") ? "edge" : "emergency"));
-  const recovery = <J2RecoveryNotice rows={recoveryRows} unknownTag={unknownTag("direct")} expiredTag={expiredTag("direct")} />;
+  const recovery = <>
+    <J2RecoveryNotice rows={recoveryRows} unknownTag={unknownTag("direct")} expiredTag={expiredTag("direct")} />
+    {releasing && <ReleaseModal label={recoveryRows.find((row) => row.key === releasing.commandKey)?.name}
+      explain="旧记录已超过 24 小时。解除只是不再提示这条旧记录，不代表原操作没执行；请先到「操作记录与审批」核对。"
+      onCancel={() => setReleasing(null)} onConfirm={() => {
+        releaseExpiredJLegacyCommand(releasing);
+        setReleasing(null);
+        syncPending();
+      }} />}
+  </>;
 
   function canRetry(record: J2PendingCommand) {
     const permission = record.geo.path.includes("country-lists/") ? "emergency_j2_country_manage"

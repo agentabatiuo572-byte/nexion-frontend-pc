@@ -18,7 +18,7 @@ import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messag
 import {
   createJEmergencyCommandKey, getJ4PendingProposal, isEmergencyOutcomeUncertain,
   j4ProposalSlot, listJ4LegacyCommands, listJ4PendingCommands, listJ4PendingProposals,
-  queryJ4Proposal, releaseExpiredJ4Proposal, retryJ4Command, retryJ4Proposal, submitJ4Proposal,
+  queryJ4Proposal, releaseExpiredJ4Proposal, releaseExpiredJLegacyCommand, retryJ4Command, retryJ4Proposal, submitJ4Proposal,
   type J4CommandContext, type J4PendingCommand, type J4PendingProposal, type J4PlaybookCreateInput, type Playbook, type SopExecution,
 } from "@/lib/admin/j-client";
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -121,6 +121,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const [pending, setPending] = useState<J4PendingCommand[]>([]);
   const [proposals, setProposals] = useState<J4PendingProposal[]>([]);
   const [legacy, setLegacy] = useState<ReturnType<typeof listJ4LegacyCommands>>([]);
+  const [releasingLegacy, setReleasingLegacy] = useState<ReturnType<typeof listJ4LegacyCommands>[number] | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [verifiedProposals, setVerifiedProposals] = useState<Record<string, A2OperationRow>>({});
   const [queue, setQueue] = useState<A2OperationRow[]>([]);
@@ -257,6 +258,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     key: record.commandKey, name: operationNames[record.fingerprint.endsWith("/drills") ? "drill" : record.fingerprint.endsWith("/cancel") ? "cancel" : record.fingerprint.endsWith("/resume") ? "resume" : record.fingerprint.endsWith("/rollback") ? "rollback" : record.fingerprint.startsWith("PUT") ? "update" : "create"],
     change: formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"),
     submittedAt: record.createdAt, kind: "direct", expired: isRetryExpired(record), onQuery: () => void queryOriginal(record), note: notes[record.commandKey],
+    onRelease: isRetryExpired(record) ? () => setReleasingLegacy(record) : undefined,
   })));
   const releaseOriginal = async (record: J4PendingProposal) => {
     setReleasing(null);
@@ -273,6 +275,13 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     {releasing && <ReleaseModal label={`${contextName(releasing.sopProposal.context)} · ${operationNames.execute}`}
       explain="原申请超过 24 小时，后端按原请求查不到这张申请，说明它没建成。确认时会再查一次，仍查不到才解除。"
       onCancel={() => setReleasing(null)} onConfirm={() => void releaseOriginal(releasing)} />}
+    {releasingLegacy && <ReleaseModal label={recoveryRows.find((row) => row.key === releasingLegacy.commandKey)?.name}
+      explain="旧记录已超过 24 小时。解除只是不再提示这条旧记录，不代表原操作没执行；请先到「操作记录与审批」核对。"
+      onCancel={() => setReleasingLegacy(null)} onConfirm={() => {
+        releaseExpiredJLegacyCommand(releasingLegacy);
+        setReleasingLegacy(null);
+        syncPending();
+      }} />}
   </>;
   const proposalRows = new Map([...queue, ...Object.values(verifiedProposals).filter((row) => row.status === "pending")].map((row) => [row.id, row]));
   const pendingProposals = [...proposalRows.values()].map((row) => {
