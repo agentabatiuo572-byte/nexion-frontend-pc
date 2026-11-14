@@ -1,4 +1,4 @@
-import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isDeterministicRejection, isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { createPendingMutationStore, createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
@@ -118,6 +118,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
   const isWrite = method !== "GET" && method !== "HEAD";
   const writeSlot = `${method} ${path}`;
   const isJ2Write = isWrite && isJ2WriteSlot(writeSlot);
+  let isJ2Retry = false;
   const inputFingerprint = emergencyInputFingerprint(init?.body);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (isWrite) {
@@ -127,6 +128,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
         throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
       }
       const saved = getJ2PendingCommand(writeSlot);
+      isJ2Retry = !!saved;
       if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
       if (saved && (saved.commandKey !== providedCommandKey || saved.geo.body !== init?.body)) {
         throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
@@ -195,7 +197,13 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       reasonCode: payload.message,
       unknownOutcome: res.headers.get("X-Nexion-Upstream-Outcome") === "unknown",
     });
-    if (isExplicitRejection(error)) {
+    const rejected = isJ2Retry ? isExplicitRejection(error)
+      : !error.unknownOutcome && !isIdempotencyOutcomeOpen(payload.message)
+        && isDeterministicRejection(res.status, payload.code);
+    if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
+      useAdminAuth.getState().signOut();
+    }
+    if (rejected) {
       emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
       throw error;
     }
