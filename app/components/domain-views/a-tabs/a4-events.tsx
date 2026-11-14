@@ -1255,7 +1255,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               const state = BATCH_STATE[batch.state];
               return (
                 <Tr key={batch.id} selected={batchIdx === index} onOpen={() => setBatchIdx(index)}>
-                  <Td><Cell main={operatorCopyText(batch.title)} sub={batch.details.length > 0 ? <span data-mono>{batch.details[0].item} · 工单 {batch.id}</span> : <span data-mono>工单 {batch.id}</span>} title={operatorCopyText(batch.title)} /></Td>
+                  <Td><span className="a4-ename" title={`工单 ${batch.id}`}><span className="a4-ename-desc">{operatorCopyText(batch.title)}</span><span data-mono>{batch.details.length > 0 ? breakable(batch.details[0].item) : `工单 ${batch.id}`}</span></span></Td>
                   <Td>{batch.newDomains.length > 0
                     ? <span className="a4-domains" data-inline="">{batch.newDomains.map((domain) => <span key={domain.name} className="a4-chip" data-pending={domain.n ? "" : undefined}><span data-mono>{domain.name}</span></span>)}</span>
                     : <span className="a4-dim">核对后台操作事件清单</span>}</Td>

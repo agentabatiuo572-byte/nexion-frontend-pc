@@ -87,7 +87,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
         {data && <>
           <Table label="积压事件明细" className="a4-backlog-table">
             <thead><tr>
-              <Th>事件</Th><Th>卡在哪</Th><Th align="right">已重试</Th><Th>产生 · 下次重试</Th><Th>失败原因</Th>
+              <Th>事件</Th><Th>卡在哪 · 已重试</Th><Th>产生 · 下次重试</Th><Th>失败原因</Th>
               <Th>使用方处理结果<Explain label="使用方处理结果是什么" content="每个使用这条事件的模块处理到了哪一步。没有发现回执不代表已经成功。" /></Th>
             </tr></thead>
             <tbody>
@@ -99,10 +99,10 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
                     <Td>
                       <span className="a4-pair">
                         <StatusTag tone={row.status === "FAILED" ? "warn" : "neutral"}>{statusText(row.status)}</StatusTag>
+                        <span className="a4-dim">已重试 <span data-num>{row.retryCount}</span> 次</span>
                         {row.auditLinkUnresolved && <StatusTag tone="warn" explain="这条「查看用户资料」事件找不到对应的操作记录，待核查。">缺操作记录</StatusTag>}
                       </span>
                     </Td>
-                    <Td align="right"><span data-num>{row.retryCount}</span> 次</Td>
                     <Td><Cell main={minute(row.createdAt)} sub={row.nextRetryAt ? `下次 ${minute(row.nextRetryAt)}` : "没有安排重试"} /></Td>
                     <Td>{errorText(row.errorCode)}</Td>
                     <Td>{row.receipts.length
@@ -111,7 +111,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
                   </Tr>
                 );
               })}
-              {!data.rows.length && <TableMessage columns={6}>{filtered ? "没有符合条件的记录" : "暂无积压"}</TableMessage>}
+              {!data.rows.length && <TableMessage columns={5}>{filtered ? "没有符合条件的记录" : "暂无积压"}</TableMessage>}
             </tbody>
           </Table>
           <div className="a4-next">
