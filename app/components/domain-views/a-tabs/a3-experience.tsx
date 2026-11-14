@@ -13,7 +13,7 @@ import { BlockState, Button, Cell, Check, Explain, KeepText, Fact, Facts, Field,
 import { useReach } from "@/lib/nav/use-reach";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import {
   fetchPlatformExperienceConfig,
   INTERFACE_LANGUAGES,
@@ -121,7 +121,7 @@ export function A3Experience({ toast }: { toast: (text: string, kind?: "success"
   return <div className="rd-tab-stack" data-testid="platform-experience-config" onChange={() => { setSuccess(null); }}>
     <div className="rd-toolbar a3-savebar" data-end="">
       <span className="rd-toolbar-note" data-tone={changed.length ? "warn" : undefined}>
-        {changed.length ? `有未保存的修改：${changed.join("、")}` : `版本 v${config.version}${config.updatedAt ? ` · ${formatBusinessTimeCompact(config.updatedAt, "—")} 读取` : ""}`}
+        {changed.length ? `有未保存的修改：${changed.join("、")}` : `版本 v${config.version}${config.updatedAt ? ` · ${formatBusinessTimeCompact(config.updatedAt, "—")} 读取（${businessZone().label}）` : ""}`}
       </span>
       <Button disabled={loading || saving} loading={loading} onClick={() => void refresh()}>刷新</Button>
       {canWrite && <Button variant="primary" disabledReason={loading ? "正在读取" : undefined} onClick={() => { setError(null); setConfirmOpen(true); }}>保存…</Button>}

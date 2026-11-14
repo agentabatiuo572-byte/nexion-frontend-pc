@@ -293,7 +293,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       : <BlockState state="error" title="开关和门槛读取失败" detail={loadError ?? undefined} onRetry={() => void refreshOverview()} />
   ) : (
     <div className="rd-tab-stack">
-      <Panel title="全平台开关" icon={ToggleLeft} tone="role-other" sub={`${featureFlags.length} 个`}
+      <Panel title="全平台开关" icon={ToggleLeft} tone="role-other" sub={`${featureFlags.length} 个 · 时间按${businessZone().label}`}
         explain="这里只放全平台通用的开关，各业务自己的设置在对应页面修改。只有超级管理员能切换，其他角色只能查看。">
         {featureFlags.length === 0 ? <p className="rd-note">后端没有登记全平台开关</p> : <ConfigList label="全平台开关">
           {featureFlags.map((flag) => {
@@ -347,7 +347,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
                 </>}
                 {!isRate && !isThreshold && <div><dt>说明</dt><dd>{param.desc || "—"}</dd></div>}
               </dl>
-              <p className="a3-param-foot"><span className="rd-keep">可设 {grouped(param.min)}–{grouped(param.max)} {param.unit}</span> · <span className="rd-keep">最近变更 {timeText(param.lastChange)}</span></p>
+              <p className="a3-param-foot"><span className="rd-keep">可设 {grouped(param.min)}–{grouped(param.max)} {param.unit}</span> · <span className="rd-keep">最近变更 {timeText(param.lastChange)}（{businessZone().label}）</span></p>
             </Panel>
           );
         })}

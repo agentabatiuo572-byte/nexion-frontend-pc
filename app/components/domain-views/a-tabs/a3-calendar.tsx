@@ -254,7 +254,7 @@ export function A3Calendar({ nonce, onSummary, toast }: { nonce: number; onSumma
       </div> : <p className="rd-note a3-cal-note">没有安排中的时区变更。同一时间只能有一个安排，最早可以安排 {view.earliestEffectiveDate} 生效。</p>}
     </Panel>
 
-    <Fold title="版本记录" icon={History} tone="role-other" summary={`${history.length} 条 · 最新在上 · 已撤销的不显示`}>
+    <Fold title="版本记录" icon={History} tone="role-other" summary={`${history.length} 条 · 最新在上 · 时间按${zoneText}`} explain="已撤销的安排不在这里显示。">
       <Table label="业务时区版本记录">
         <thead><tr><Th>适用模块</Th><Th>时区</Th><Th>生效日</Th><Th>状态</Th><Th>操作人</Th><Th>理由</Th></tr></thead>
         <tbody>
