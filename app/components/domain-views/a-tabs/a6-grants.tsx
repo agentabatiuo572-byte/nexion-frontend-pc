@@ -14,6 +14,8 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import type { A6GrantsPayload, A6RoleDetail } from "@/lib/admin/a6-client";
 import type { A7MenuTreeNode } from "@/lib/admin/a7-client";
 import type { A8Permission } from "@/lib/admin/a8-client";
+import { a6GrantsProblem } from "@/lib/admin/a6a7-mutations";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { domainOfPermission, groupPermissionsByDomain, type PermDomainGroup } from "@/lib/admin/perm-domain";
 import { F4_MATERIAL_PERMISSIONS } from "@/lib/admin/f4-ambassador-display";
 import { CONSOLE_NAV } from "@/lib/nav/console-nav";
@@ -258,6 +260,7 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
   const auditorWrites = detail.roleCode === "AUDITOR" ? [...permSet].filter((code) => { const t = permByCode.get(code)?.permType; return t === "WRITE" || t === "HIGH"; }).length : 0;
   const changed = permDiff.added.length + permDiff.removed.length + menuDiff.added.length + menuDiff.removed.length > 0;
   const allExpanded = menuCollapsed.size === 0;
+  const submissionProblem = a6GrantsProblem(detail.roleCode, { permissionCodes: [...permSet], menuIds: [...menuSet] }, allMenus, allPerms);
   const parents = allMenus.filter((node) => node.children.length > 0).map((node) => node.id);
 
   const changeText = (added: number, removed: number) => added + removed === 0 ? "没改" : [added ? `加 ${added}` : "", removed ? `去 ${removed}` : ""].filter(Boolean).join(" · ");
@@ -268,7 +271,9 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
       footer={<Decision note={changed ? `权限 ${changeText(permDiff.added.length, permDiff.removed.length)}，菜单 ${changeText(menuDiff.added.length, menuDiff.removed.length)}` : "还没有改动"}
         explain="提交的是勾选后的完整两组，一张审批单；批准后整组替换，批准前什么都不变。"
         others={<Button variant="secondary" onClick={onClose}>取消</Button>}
-        primary={<Button variant="primary" onClick={() => onSubmit({ permissionCodes: [...permSet], menuIds: [...menuSet] }, detail.permissionCodes.length, detail.menuIds.length)}>核对并提交</Button>} />}>
+        primary={<Button variant="primary" disabledReason={submissionProblem ? displayAdminError(new Error(submissionProblem)) : undefined} onClick={() => {
+          if (!submissionProblem) onSubmit({ permissionCodes: [...permSet], menuIds: [...menuSet] }, detail.permissionCodes.length, detail.menuIds.length);
+        }}>核对并提交</Button>} />}>
       <div className="a6-grants">
         <dl className="a6-grants-sum" aria-label="改动汇总">
           <div><dt>权限</dt><dd><b>{detail.permissionCodes.length}</b><span aria-hidden>→</span><b data-changed={permDiff.added.length + permDiff.removed.length ? "" : undefined}>{permSet.size}</b> 项</dd><dd className="a6-grants-delta">{changeText(permDiff.added.length, permDiff.removed.length)}</dd></div>

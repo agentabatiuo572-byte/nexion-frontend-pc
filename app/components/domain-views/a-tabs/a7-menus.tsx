@@ -1,13 +1,9 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Ban, CheckCircle2, ChevronDown, ChevronRight, Clock3, EyeOff, FolderTree, LayoutList, Minus, PanelLeft, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import {
   fetchA7MenusOverview,
-  createA7Menu,
-  updateA7Menu,
-  deleteA7Menu,
-  newA7IdempotencyKey,
   type A7MenuOverview,
   type A7MenuTreeNode,
   type A7MenuCreateInput,
@@ -17,6 +13,9 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { OperationConfirmModal, useToast, type OperatorBriefKind } from "@/app/components/domain-views/design-kit";
 import "../a-domain.css";
 import { PlatformMutationReadbackError } from "@/lib/admin/platform-contracts";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { useRbacCommands, type A7Original, type RbacCommand } from "@/lib/admin/a6a7-mutations";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { CONSOLE_NAV, resolveVisibleDomains, type EffectiveMenuNode, type NavDomain } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import {
@@ -38,6 +37,7 @@ type ConfirmReq = {
   facts: ReactNode;
   content?: ReactNode;
   run: (reason: string) => Promise<void>;
+  getRecord: () => RbacCommand | undefined;
 };
 
 const directTag = () => <StatusTag tone="progress" filled explain="填写理由并确认后立即生效，不走审批，保留操作记录。">立即生效</StatusTag>;
@@ -96,6 +96,8 @@ export default function A7Menus() {
   const role = useAdminAuth((s) => s.session?.role ?? s.role);
   const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
   const canWrite = role === "super" || role === "superadmin" || authorities.includes("platform_a7_write");
+  const actorId = useAdminAuth((s) => s.session?.adminId);
+  const commands = useRbacCommands("a7", actorId);
   const [overview, setOverview] = useState<A7MenuOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -103,18 +105,25 @@ export default function A7Menus() {
   const [mode, setMode] = useState<FormMode>(null);
   const [confirmReq, setConfirmReq] = useState<ConfirmReq | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const freshOverview = useRef<A7MenuOverview | null>(null);
+  const busy = useRef(false);
   const reach = useReach();
 
   const refresh = useCallback(async (quiet = false) => {
+    freshOverview.current = null;
     if (!quiet) setLoading(true);
     setLoadError(null);
     try {
-      setOverview(await fetchA7MenusOverview());
+      const next = await fetchA7MenusOverview();
+      freshOverview.current = next;
+      setOverview(next);
+      return next;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = displayAdminReadError(err);
       setOverview(null);
       setLoadError(message);
       setToast(message);
+      return null;
     } finally {
       if (!quiet) setLoading(false);
     }
@@ -153,10 +162,73 @@ export default function A7Menus() {
     requestAnimationFrame(() => document.getElementById("a7-node-detail")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   };
 
-  const openDelete = (n: A7MenuTreeNode, parent: A7MenuTreeNode | undefined) => {
-    const stableKey = newA7IdempotencyKey("a7-menu-delete");
+  const requireActor = (writing = false) => {
+    const auth = useAdminAuth.getState(), session = auth.session;
+    if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || !session || session.adminId !== actorId || session.passwordChangeRequired) throw new Error("RBAC_SESSION_CHANGED");
+    if (writing && !session.authorities.includes("platform_a7_write")) throw new Error("RBAC_OPERATION_FORBIDDEN");
+  };
+  const requireNew = (original: A7Original) => {
+    requireActor(true);
+    const current = freshOverview.current;
+    if (busy.current || !current) throw new Error("RBAC_FRESH_READ_REQUIRED");
+    if (commands.blocked(original)) throw new Error("RBAC_ORIGINAL_UNRESOLVED");
+    if (original.kind === "a7-create") {
+      if (original.input.parentCode && !current.tree.some(node => node.menuCode === original.input.parentCode && node.parentId === null && node.status === 1)) throw new Error("PARENT_MENU_NOT_FOUND");
+      return;
+    }
+    const node = current.tree.flatMap(root => [root, ...root.children]).find(node => node.id === original.node.id);
+    if (!node || node.version !== original.node.version) throw new Error("MENU_VERSION_STALE");
+    if (original.kind === "a7-delete") {
+      if (node.children.length > 0) throw new Error("MENU_NODE_HAS_CHILDREN");
+    } else if (original.input.status === 0 && node.children.some(child => child.status === 1)) throw new Error("MENU_NODE_HAS_ACTIVE_CHILDREN");
+    else if (original.input.status === 1 && node.parentId !== null && !current.tree.some(root => root.id === node.parentId && root.status === 1)) throw new Error("PARENT_MENU_NOT_ACTIVE");
+  };
+  const queryOriginal = async () => {
+    requireActor();
+    if (!await refresh()) throw new Error("RBAC_FRESH_READ_REQUIRED");
+    requireActor();
+    // A7 has no receipt lookup. Reading today's tree never releases an unresolved original command.
+    setToast(displayAdminReadError(new Error("RBAC_READBACK_ONLY")));
+  };
+  const openOperation = (original: A7Original, view: Omit<ConfirmReq, "run" | "getRecord">, recovery?: RbacCommand) => {
+    if (!recovery) {
+      try { requireNew(original); }
+      catch (error) { setToast(displayAdminError(error)); return; }
+    }
+    let saved = recovery;
+    const getRecord = () => saved ? commands.saved(saved.commandKey) : undefined;
+    setConfirmReq({ ...view, getRecord, run: async (reason) => {
+      try {
+        if (saved && !getRecord()) throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
+        const retry = !!saved;
+        if (!saved) {
+          requireNew(original);
+          saved = commands.capture(original, reason, operator, String(view.action), original.kind === "a7-create" ? original.input.menuCode : original.node.menuCode);
+        }
+        requireActor(true);
+        if (busy.current) throw new Error("RBAC_OPERATION_BUSY");
+        busy.current = true;
+        if (retry) { freshOverview.current = null; setMode(null); }
+        try {
+          try { await commands.send(saved, retry); }
+          catch (error) {
+            if (retry && !commands.saved(saved.commandKey)) { setConfirmReq(null); setMode(null); await refresh(); }
+            throw error;
+          }
+          requireActor();
+          setConfirmReq(null); setMode(null);
+          // The replay is a historical node. Close old inputs and GET the whole authoritative tree before allowing a new edit.
+          if (!await refresh()) { setToast(new PlatformMutationReadbackError(new Error("RBAC_FRESH_READ_REQUIRED")).message); return; }
+          setToast(original.kind === "a7-delete" ? "已删除" : "已保存");
+        } finally { busy.current = false; }
+      } catch (error) { setToast(displayAdminError(error)); throw error; }
+      finally { if (!recovery && saved && !commands.saved(saved.commandKey)) saved = undefined; }
+    } });
+  };
+
+  const openDelete = (n: A7MenuTreeNode, parent: A7MenuTreeNode | undefined, recovery?: RbacCommand) => {
     const name = n.menuNameZh || n.menuName;
-    setConfirmReq({ briefKind: "config",
+    openOperation({ kind: "a7-delete", node: n, parent }, { briefKind: "config",
       action: `删除菜单 · ${name}`,
       title: `删除菜单「${menuNameText(n)}」`,
       detail: <>删除菜单 <b>{name}</b>（<span data-mono>{n.menuCode}</span>）。</>,
@@ -183,20 +255,27 @@ export default function A7Menus() {
           <p>有启用的权限挂在它下面，或有角色勾了它，后端会拒绝；角色的勾选到「角色管理」取消。</p>
         </Notice>
       ),
-      run: async (reason) => {
-        try {
-          const next = await deleteA7Menu(n.id, n.version, reason, operator, stableKey);
-          setOverview(next);
-          setToast("已删除");
-        } catch (error) {
-          setToast(error instanceof PlatformMutationReadbackError
-            ? error.message
-            : error instanceof Error ? error.message : String(error));
-          throw error;
-        }
-      },
-    });
+    }, recovery);
   };
+
+  // The visual worker must connect the saved-command entry to this handler; A7 has no recovery-list markup yet.
+  const restoreOriginal = (record: RbacCommand) => {
+    const original = record.original;
+    if (original.kind === "a7-delete") openDelete(original.node, original.parent, record);
+    else if (original.kind === "a7-create" || original.kind === "a7-update") {
+      const mode: Exclude<FormMode, null> = original.kind === "a7-create" ? { kind: "create", parent: original.parent } : { kind: "update", node: original.node };
+      const input = original.input;
+      const [, action, detail, view] = menuFormConfirmation(mode, original.parent ? [original.parent] : [], {
+        menuCode: original.kind === "a7-create" ? original.input.menuCode : original.node.menuCode,
+        menuName: input.menuNameZh ?? input.menuName ?? "", parentCode: original.parent?.menuCode ?? "",
+        routePath: input.routePath ?? "", icon: input.icon ?? "", sortOrder: input.sortOrder ?? 0, status: original.kind === "a7-update" ? original.input.status! : 1,
+      });
+      openOperation(original, { briefKind: "config", action, detail, ...view }, record);
+    }
+  };
+  const readReason = loading || !overview || loadError ? displayAdminError(new Error("RBAC_FRESH_READ_REQUIRED")) : undefined;
+  const nodeReason = readReason ?? (selected && commands.blocked({ kind: "a7-delete", node: selected.node }) ? displayAdminError(new Error("RBAC_ORIGINAL_UNRESOLVED")) : undefined);
+  const recoveryRecord = confirmReq?.getRecord();
 
   const counts = overview ? (
     <>{overview.domainCount} 个一级菜单、{overview.pageCount} 个页面</>
@@ -219,7 +298,7 @@ export default function A7Menus() {
   return (
     <RdPage className="adom a7-page">
       <PageHeader pageId="A7" title="菜单管理" summary="管左侧导航怎么分组、排序和显示。"
-        actions={canWrite ? <Button variant="primary" onClick={() => setMode({ kind: "create" })}><Plus size={14} aria-hidden />新建一级菜单</Button> : undefined}
+        actions={canWrite ? <Button variant="primary" disabledReason={readReason} onClick={() => setMode({ kind: "create" })}><Plus size={14} aria-hidden />新建一级菜单</Button> : undefined}
         readOnly={canWrite ? undefined : "只读：可以查看菜单树，不能修改"} />
       {conclusion}
 
@@ -245,6 +324,7 @@ export default function A7Menus() {
             <div id="a7-node-detail" className="a7-detail-col">
               {selected ? (
                 <NodeDetail node={selected.node} parent={selected.parent} canWrite={canWrite} nav={navStateOf(selected.node, selected.parent, preview)} reach={reach}
+                  writeReason={nodeReason}
                   onCreate={() => setMode({ kind: "create", parent: selected.node })}
                   onEdit={() => setMode({ kind: "update", node: selected.node })}
                   onDelete={() => openDelete(selected.node, selected.parent)} />
@@ -268,33 +348,22 @@ export default function A7Menus() {
           onClose={() => setMode(null)}
           onSubmit={(payload, action, detail, view) => {
             const submittedMode = mode;
-            const stableKey = newA7IdempotencyKey(submittedMode.kind === "create" ? "a7-menu-create" : "a7-menu-update");
-            setConfirmReq({ briefKind: "config",
-              action,
-              detail,
-              ...view,
-              run: async (reason) => {
-                try {
-                  const next = submittedMode.kind === "create"
-                    ? await createA7Menu(payload as A7MenuCreateInput, reason, operator, stableKey)
-                    : await updateA7Menu(submittedMode.node.id, payload as A7MenuUpdateInput, reason, operator, stableKey);
-                  setOverview(next);
-                  setMode(null);
-                  setToast("已保存");
-                } catch (error) {
-                  setToast(error instanceof PlatformMutationReadbackError
-                    ? error.message
-                    : error instanceof Error ? error.message : String(error));
-                  throw error;
-                }
-              },
-            });
+            const original: A7Original = submittedMode.kind === "create" ? { kind: "a7-create", input: payload as A7MenuCreateInput,
+              parent: tree.find(node => node.menuCode === (payload as A7MenuCreateInput).parentCode) }
+              : { kind: "a7-update", node: submittedMode.node, input: payload as A7MenuUpdateInput,
+                parent: tree.find(node => node.id === submittedMode.node.parentId) };
+            openOperation(original, { briefKind: "config", action, detail, ...view });
           }}
         />
       )}
 
       {confirmReq && (
         <OperationConfirmModal briefKind={confirmReq.briefKind}
+          initialReason={recoveryRecord?.reason} getPendingReason={() => confirmReq.getRecord()?.reason}
+          blockedReason={!recoveryRecord ? readReason : undefined}
+          inlineApproval={{ resolve: () => undefined, pending: !!recoveryRecord, initialRecovery: "retry",
+            expired: !!recoveryRecord && isRetryExpired(recoveryRecord), disabledReason: recoveryRecord && !authorities.includes("platform_a7_write") ? displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN")) : undefined,
+            recover: async () => { await queryOriginal(); return true; } }}
           action={confirmReq.action}
           title={confirmReq.title}
           detail={confirmReq.detail}
@@ -366,10 +435,11 @@ function MenuRow({ node, depth, expanded, onToggle, selectedId, onPick, preview,
   );
 }
 
-function NodeDetail({ node, parent, canWrite, nav, reach, onCreate, onEdit, onDelete }: {
+function NodeDetail({ node, parent, canWrite, writeReason, nav, reach, onCreate, onEdit, onDelete }: {
   node: A7MenuTreeNode;
   parent?: A7MenuTreeNode;
   canWrite: boolean;
+  writeReason?: string;
   nav: NavState;
   reach: (href: string) => boolean;
   onCreate: () => void;
@@ -402,9 +472,9 @@ function NodeDetail({ node, parent, canWrite, nav, reach, onCreate, onEdit, onDe
         </dl>
         {canWrite && (
           <div className="a7-actions">
-            <Button variant="primary" aria-label={`编辑 ${targetName}`} onClick={onEdit}><Pencil size={14} aria-hidden />编辑</Button>
-            {isDomain && <Button variant="secondary" aria-label={`为 ${targetName} 新建下级菜单`} onClick={onCreate}><Plus size={14} aria-hidden />新建下级菜单</Button>}
-            <Button variant="danger-outline" aria-label={`删除 ${targetName}`} onClick={onDelete}><Trash2 size={14} aria-hidden />删除</Button>
+            <Button variant="primary" disabledReason={writeReason} aria-label={`编辑 ${targetName}`} onClick={onEdit}><Pencil size={14} aria-hidden />编辑</Button>
+            {isDomain && <Button variant="secondary" disabledReason={writeReason ?? (node.status !== 1 ? displayAdminError(new Error("PARENT_MENU_NOT_FOUND")) : undefined)} aria-label={`为 ${targetName} 新建下级菜单`} onClick={onCreate}><Plus size={14} aria-hidden />新建下级菜单</Button>}
+            <Button variant="danger-outline" disabledReason={writeReason ?? (node.children.length ? displayAdminError(new Error("MENU_NODE_HAS_CHILDREN")) : undefined)} aria-label={`删除 ${targetName}`} onClick={onDelete}><Trash2 size={14} aria-hidden />删除</Button>
             {node.children.length > 0 && <span className="a7-note"><TriangleAlert size={14} aria-hidden />还有 {node.children.length} 个下级菜单，删除会被拒绝</span>}
           </div>
         )}
@@ -455,6 +525,82 @@ function NavPreviewPanel({ preview, hidden, selected }: {
 type ConfirmView = Pick<ConfirmReq, "title" | "effect" | "confirmLabel" | "statedBrief" | "facts" | "content">;
 type FieldKey = "code" | "name" | "route" | "sort";
 
+type MenuFormValues = { menuCode: string; menuName: string; parentCode: string; routePath: string; icon: string; sortOrder: number; status: number };
+function menuFormConfirmation(mode: Exclude<FormMode, null>, tree: A7MenuTreeNode[], { menuCode, menuName, parentCode, routePath, icon, sortOrder, status }: MenuFormValues) {
+  const isCreate = mode.kind === "create";
+  const existing = isCreate ? null : mode.node;
+  const normalizedCode = menuCode.trim().toUpperCase(), normalizedName = menuName.trim(), normalizedRoute = routePath.trim();
+  const existingParent = existing ? tree.find((root) => root.children.some((child) => child.id === existing.id)) : undefined;
+    if (isCreate) {
+      const payload: A7MenuCreateInput = { menuCode: normalizedCode, menuName: normalizedName, menuNameZh: normalizedName, parentCode: parentCode.trim() || undefined, routePath: normalizedRoute || undefined, icon: icon.trim() || undefined, sortOrder };
+      const parent = tree.find((node) => node.menuCode === parentCode);
+      return [payload, `新建菜单 · ${menuName}`, <>新建菜单 <b>{menuName}</b>（<span data-mono>{menuCode}</span>）。</>, {
+        title: `新建菜单「${normalizedName}」`,
+        effect: directTag(),
+        confirmLabel: "确认新建",
+        statedBrief: {
+          impact: "确认后立即建好并启用；不生成页面，不给角色授权。",
+          check: "只有导航里登记过、地址和上一级都对上的才会显示；其他账号要到「角色管理」给角色勾上。用过又删除的标识会恢复原菜单。",
+        },
+        facts: <Facts>
+          <Fact k="菜单标识"><span data-mono>{normalizedCode}</span></Fact>
+          <Fact k="名称">{normalizedName}</Fact>
+          <Fact k="位置">{parent ? `${menuNameText(parent)} 下的页面` : "一级菜单"}</Fact>
+          <Fact k="页面地址">{normalizedRoute ? <span data-mono>{normalizedRoute}</span> : "—"}</Fact>
+          <Fact k="图标名称">{icon.trim() ? <span data-mono>{icon.trim()}</span> : "—"}</Fact>
+          <Fact k="排序">{sortOrder}</Fact>
+        </Facts>,
+        content: parent && parent.status !== 1 ? (
+          <Notice tone="danger" title="上一级菜单已停用"><p>后端只接受启用中的一级菜单作为上一级，这次提交会被拒绝。先启用「{menuNameText(parent)}」。</p></Notice>
+        ) : undefined,
+      }] as const;
+    } else if (existing) {
+      const payload: A7MenuUpdateInput = { menuName: normalizedName, menuNameZh: normalizedName, routePath: normalizedRoute || undefined, icon: icon.trim() || undefined, sortOrder, status, expectedVersion: existing.version };
+      const oldName = existing.menuNameZh || existing.menuName;
+      const routeCleared = !normalizedRoute && Boolean(existing.routePath);
+      const iconCleared = !icon.trim() && Boolean(existing.icon);
+      const routeChanged = Boolean(normalizedRoute) && normalizedRoute !== existing.routePath;
+      const stopping = existing.status === 1 && status === 0;
+      const starting = existing.status !== 1 && status === 1;
+      const notes: ReactNode[] = [];
+      if (stopping) notes.push(
+        <Notice key="stop" tone="warn" title="停用后左侧导航不再显示它">
+          <p>有启用的下级、启用的权限或任何角色勾了它时，后端会拒绝停用{existing.parentId == null ? "；停用后下面的页面也不显示" : ""}。</p>
+        </Notice>);
+      if (starting && existingParent && existingParent.status !== 1) notes.push(
+        <Notice key="start" tone="danger" title="上一级菜单已停用"><p>后端要求先启用上一级「{menuNameText(existingParent)}」，这次提交会被拒绝。</p></Notice>);
+      if (routeChanged) notes.push(
+        <Notice key="route" tone="warn" title="改了页面地址">
+          <p>新地址和已上线页面对不上时，菜单从导航消失，不会生成页面。</p>
+        </Notice>);
+      return [payload, `编辑菜单 · ${menuName}`, <>修改菜单 <b>{menuName}</b>（<span data-mono>{existing.menuCode}</span>）。</>, {
+        title: `修改菜单「${menuNameText(existing)}」`,
+        effect: <>{directTag()}<StatusTag tone="neutral" icon={Minus}>不改任何角色的授权</StatusTag></>,
+        confirmLabel: stopping ? "确认停用" : "确认保存",
+        statedBrief: {
+          impact: stopping
+            ? "确认后立即停用，左侧导航不再显示它；授权保留，重新启用后恢复。"
+            : "确认后立即保存；左侧导航要等账号重新读取登录信息才更新。",
+          check: "留空的地址和图标不会清掉原值。每次保存都带启停状态，后端会再检查上一级是否启用。",
+        },
+        facts: <Facts>
+          <Fact k="菜单">{menuNameText(existing)} <span className="a7-code" data-mono>{existing.menuCode}</span></Fact>
+          {normalizedName !== oldName && <Fact k="名称"><Change from={oldName} to={normalizedName} /></Fact>}
+          {routeCleared
+            ? <Fact k="页面地址" tone="warn">留空不会清掉原地址 {existing.routePath}</Fact>
+            : routeChanged ? <Fact k="页面地址"><Change from={existing.routePath || "—"} to={normalizedRoute} /></Fact> : null}
+          {iconCleared
+            ? <Fact k="图标名称" tone="warn">留空不会清掉原图标名 {existing.icon}</Fact>
+            : icon.trim() && icon.trim() !== existing.icon ? <Fact k="图标名称"><Change from={existing.icon || "—"} to={icon.trim()} /></Fact> : null}
+          {sortOrder !== existing.sortOrder && <Fact k="排序"><Change from={existing.sortOrder} to={sortOrder} /></Fact>}
+          <Fact k="状态">{status !== existing.status ? <Change from={existing.status === 1 ? "已启用" : "已停用"} to={status === 1 ? "已启用" : "已停用"} /> : status === 1 ? "已启用（不变）" : "已停用（不变）"}</Fact>
+        </Facts>,
+        content: notes.length ? <div className="a7-notes">{notes}</div> : undefined,
+      }] as const;
+    }
+  throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
+}
+
 function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
   mode: { kind: "create"; parent?: A7MenuTreeNode } | { kind: "update"; node: A7MenuTreeNode };
   tree: A7MenuTreeNode[];
@@ -499,78 +645,13 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
     }
     setValidationError("");
     setErrorField(null);
-    if (isCreate) {
-      const payload: A7MenuCreateInput = { menuCode: normalizedCode, menuName: normalizedName, menuNameZh: normalizedName, parentCode: parentCode.trim() || undefined, routePath: normalizedRoute || undefined, icon: icon.trim() || undefined, sortOrder };
-      const parent = tree.find((node) => node.menuCode === parentCode);
-      onSubmit(payload, `新建菜单 · ${menuName}`, <>新建菜单 <b>{menuName}</b>（<span data-mono>{menuCode}</span>）。</>, {
-        title: `新建菜单「${normalizedName}」`,
-        effect: directTag(),
-        confirmLabel: "确认新建",
-        statedBrief: {
-          impact: "确认后立即建好并启用；不生成页面，不给角色授权。",
-          check: "只有导航里登记过、地址和上一级都对上的才会显示；其他账号要到「角色管理」给角色勾上。用过又删除的标识会恢复原菜单。",
-        },
-        facts: <Facts>
-          <Fact k="菜单标识"><span data-mono>{normalizedCode}</span></Fact>
-          <Fact k="名称">{normalizedName}</Fact>
-          <Fact k="位置">{parent ? `${menuNameText(parent)} 下的页面` : "一级菜单"}</Fact>
-          <Fact k="页面地址">{normalizedRoute ? <span data-mono>{normalizedRoute}</span> : "—"}</Fact>
-          <Fact k="图标名称">{icon.trim() ? <span data-mono>{icon.trim()}</span> : "—"}</Fact>
-          <Fact k="排序">{sortOrder}</Fact>
-        </Facts>,
-        content: parent && parent.status !== 1 ? (
-          <Notice tone="danger" title="上一级菜单已停用"><p>后端只接受启用中的一级菜单作为上一级，这次提交会被拒绝。先启用「{menuNameText(parent)}」。</p></Notice>
-        ) : undefined,
-      });
-    } else if (existing) {
-      const payload: A7MenuUpdateInput = { menuName: normalizedName, menuNameZh: normalizedName, routePath: normalizedRoute || undefined, icon: icon.trim() || undefined, sortOrder, status, expectedVersion: existing.version };
-      const oldName = existing.menuNameZh || existing.menuName;
-      const routeCleared = !normalizedRoute && Boolean(existing.routePath);
-      const iconCleared = !icon.trim() && Boolean(existing.icon);
-      const routeChanged = Boolean(normalizedRoute) && normalizedRoute !== existing.routePath;
-      const stopping = existing.status === 1 && status === 0;
-      const starting = existing.status !== 1 && status === 1;
-      const notes: ReactNode[] = [];
-      if (stopping) notes.push(
-        <Notice key="stop" tone="warn" title="停用后左侧导航不再显示它">
-          <p>有启用的下级、启用的权限或任何角色勾了它时，后端会拒绝停用{existing.parentId == null ? "；停用后下面的页面也不显示" : ""}。</p>
-        </Notice>);
-      if (starting && existingParent && existingParent.status !== 1) notes.push(
-        <Notice key="start" tone="danger" title="上一级菜单已停用"><p>后端要求先启用上一级「{menuNameText(existingParent)}」，这次提交会被拒绝。</p></Notice>);
-      if (routeChanged) notes.push(
-        <Notice key="route" tone="warn" title="改了页面地址">
-          <p>新地址和已上线页面对不上时，菜单从导航消失，不会生成页面。</p>
-        </Notice>);
-      onSubmit(payload, `编辑菜单 · ${menuName}`, <>修改菜单 <b>{menuName}</b>（<span data-mono>{existing.menuCode}</span>）。</>, {
-        title: `修改菜单「${menuNameText(existing)}」`,
-        effect: <>{directTag()}<StatusTag tone="neutral" icon={Minus}>不改任何角色的授权</StatusTag></>,
-        confirmLabel: stopping ? "确认停用" : "确认保存",
-        statedBrief: {
-          impact: stopping
-            ? "确认后立即停用，左侧导航不再显示它；授权保留，重新启用后恢复。"
-            : "确认后立即保存；左侧导航要等账号重新读取登录信息才更新。",
-          check: "留空的地址和图标不会清掉原值。每次保存都带启停状态，后端会再检查上一级是否启用。",
-        },
-        facts: <Facts>
-          <Fact k="菜单">{menuNameText(existing)} <span className="a7-code" data-mono>{existing.menuCode}</span></Fact>
-          {normalizedName !== oldName && <Fact k="名称"><Change from={oldName} to={normalizedName} /></Fact>}
-          {routeCleared
-            ? <Fact k="页面地址" tone="warn">留空不会清掉原地址 {existing.routePath}</Fact>
-            : routeChanged ? <Fact k="页面地址"><Change from={existing.routePath || "—"} to={normalizedRoute} /></Fact> : null}
-          {iconCleared
-            ? <Fact k="图标名称" tone="warn">留空不会清掉原图标名 {existing.icon}</Fact>
-            : icon.trim() && icon.trim() !== existing.icon ? <Fact k="图标名称"><Change from={existing.icon || "—"} to={icon.trim()} /></Fact> : null}
-          {sortOrder !== existing.sortOrder && <Fact k="排序"><Change from={existing.sortOrder} to={sortOrder} /></Fact>}
-          <Fact k="状态">{status !== existing.status ? <Change from={existing.status === 1 ? "已启用" : "已停用"} to={status === 1 ? "已启用" : "已停用"} /> : status === 1 ? "已启用（不变）" : "已停用（不变）"}</Fact>
-        </Facts>,
-        content: notes.length ? <div className="a7-notes">{notes}</div> : undefined,
-      });
-    }
+    const [payload, action, detailNode, view] = menuFormConfirmation(mode, tree, { menuCode, menuName, parentCode, routePath, icon, sortOrder, status });
+    onSubmit(payload, action, detailNode, view);
   };
 
   // 只允许挂在顶级业务域下，避免生成控制台无法展示的第三级菜单。
   const parentOptions = tree
-    .filter((node) => node.parentId == null && node.menuCode !== existing?.menuCode)
+    .filter((node) => node.parentId == null && node.status === 1 && node.menuCode !== existing?.menuCode)
     .map((node) => ({ code: node.menuCode, label: `${menuNameText(node)} (${node.menuCode})`, stopped: node.status !== 1 }));
   const pickedParent = parentOptions.find((option) => option.code === parentCode);
   const err = (field: FieldKey) => (errorField === field ? validationError : undefined);
