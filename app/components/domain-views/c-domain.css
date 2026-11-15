@@ -187,7 +187,12 @@
 
 /* C6 注册与登录风险 */
 .c6-page { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
-.c6-pending { display: flex; flex-direction: column; gap: var(--rd-space-2); }
+.c6-pending { display: grid; gap: var(--rd-space-2); margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }
+.c6-pending li { display: grid; grid-template-columns: minmax(0, 1fr) max-content max-content max-content; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
+.c6-pending-name { min-width: 0; font-weight: var(--rd-weight-medium); color: var(--rd-text); overflow-wrap: anywhere; }
+.c6-pending-time, .c6-pending-zone { font-size: var(--rd-text-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.c6-pending-zone { margin: var(--rd-space-2) 0 0; }
+.c6-pending-actions { display: inline-flex; gap: var(--rd-space-2); justify-content: flex-end; }
 .c6-main .rd-panel:not([data-flush]) > :not(.rd-panel-head) + :not(.rd-panel-head) { margin-top: var(--rd-space-4); }
 /* 两级锁定的分界轴：和卡同宽，到 560 为止 */
 .c6-ladder { --rd-track-w: 100%; display: flex; flex-direction: column; gap: var(--rd-space-2); max-width: 560px; }

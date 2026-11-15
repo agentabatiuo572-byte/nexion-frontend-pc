@@ -12,9 +12,9 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Fingerprint, KeyRound, LockKeyhole, MessageSquareText, Network, RefreshCw, ShieldCheck, ShieldOff, SlidersHorizontal, Users } from "lucide-react";
-import { BlockState, Button, Change, ConfigList, ConfigRow, Conclusion, Fact, Facts, Fold, KeyValues, Notice, PageHeader, Panel, ScaleBar, Stat, StatBand, StatusTag } from "@/app/components/rd";
-import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { CircleHelp, Fingerprint, KeyRound, LockKeyhole, MessageSquareText, Network, RefreshCw, ShieldCheck, ShieldOff, SlidersHorizontal, Users } from "lucide-react";
+import { BlockState, Button, Change, ConfigList, ConfigRow, Conclusion, Explain, Fact, Facts, Fold, KeyValues, Notice, PageHeader, Panel, ScaleBar, Stat, StatBand, StatusTag } from "@/app/components/rd";
+import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { pendingC6Commands, prepareC6Command, submitC6Command, forgetC6Command, isCompleteC6Command, isC6ExplicitRejection, type C6Pending, type C6Original } from "@/lib/admin/c6-regrisk-commands";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
@@ -27,7 +27,6 @@ import type { CCtx } from "./types";
 
 const OPERATOR = currentAdminOperator;
 const EMPTY_AUTHORITIES: string[] = [];
-const K1_REJECT_CODE_FALLBACK = "MULTI_ACCOUNT_PARAM_BELONGS_TO_K1";
 const K1_PATH_FALLBACK = "/risk/multi-account";
 const K2_PATH = "/risk/abuse";
 const C5_PATH = "/users/security";
@@ -43,8 +42,7 @@ const CAPTCHA_RECOVERY_LABELS: Record<string, string> = {
 };
 
 /** 关闭期间仍然有效的部分（后端事实 F06、待后端 BE-04）。 */
-const CAPTCHA_STILL_ON = "H5 注册的强制验证照常要求拖滑块";
-const CAPTCHA_LIMITS_STILL_ON = "重发冷却、短时间内的发送次数、同号 24 小时上限、IP 频率限制照常执行";
+const CAPTCHA_LIMITS_STILL_ON = "重发冷却、发送次数上限、IP 频率限制";
 
 function text(value: unknown, fallback = "—") {
   return value === null || value === undefined || String(value).trim() === "" ? fallback : String(value);
@@ -71,7 +69,7 @@ function formatCaptchaRestoreAt(value: unknown) {
   const raw = text(value, "");
   const deadline = new Date(raw);
   if (!raw || Number.isNaN(deadline.getTime())) return "恢复时间未知";
-  return `${formatBusinessTimeFull(deadline.toISOString())}（${businessZone().label}）`;
+  return `${formatBusinessTimeCompact(deadline.toISOString())}（${businessZone().label}）`;
 }
 
 function sourceLabel(value: unknown) {
@@ -164,7 +162,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
   const pending = owner ? pendingC6Commands(owner) : [];
   const pendingFor = (target: C6Original["target"]) => pendingC6Commands(owner).find(row => !isCompleteC6Command(row) || row.target === target);
-  const unavailable = (target: C6Original["target"]) => busy ? "正在提交，请稍候" : pendingFor(target) ? "此对象有待确认的原操作，请先核对" : undefined;
+  const unavailable = (target: C6Original["target"]) => busy ? "正在提交，请稍候" : pendingFor(target) ? "这一项有一次提交结果未知，先在页面上方核对" : undefined;
   const canSubmit = () => {
     const auth = useAdminAuth.getState();
     return auth.session?.adminId === owner && (auth.session.role === "super" || auth.session.role === "superadmin" || auth.session.authorities.includes("user_c6_write"));
@@ -189,7 +187,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       const rejected = isC6ExplicitRejection(err);
       if (row && rejected) { forgetC6Command(row); invalidate(); }
       else if (row) { readEpoch.current += 1; overviewRef.current = null; setOverview(null); setLoading(false); }
-      const message = `${row && !rejected ? "结果待确认" : "操作失败"} · ${errorMessage(err)}`;
+      const message = `${row && !rejected ? "结果未知" : "操作失败"} · ${errorMessage(err)}`;
       setError(message);
       toast(message, row && !rejected ? "warn" : "error");
       return false;
@@ -208,7 +206,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         if (original) return perform(original);
         if (!canSubmit() || mutation.current || overviewRef.current !== basis || pendingFor(target)) {
           ctx.closeConfirms();
-          toast("请先刷新核对，再重新打开操作确认。", "warn");
+          toast("规则可能已变，请重新加载后再改。", "warn");
           return false;
         }
         const operator = OPERATOR(), version = Number(basis.configVersion);
@@ -229,7 +227,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       pageId="C6"
       title="注册与登录风险"
       summary="看今天的登录和验证码情况，调整 App 登录锁定和人机验证。"
-      meta={readAt && overview ? `读取于 ${formatBusinessTimeFull(new Date(readAt).toISOString())}（${businessZone().label}）· 手动刷新` : undefined}
+      meta={readAt && overview ? `读取于 ${businessStamp(readAt)}（${businessZone().label}）` : undefined}
       readOnly={canWrite ? undefined : "你只有查看权限，锁定规则和人机验证不能修改"}
       actions={<Button icon={<RefreshCw size={14} />} loading={loading} disabledReason={busy ? "正在提交，请稍候" : undefined} onClick={() => void loadData()}>刷新</Button>}
     />
@@ -237,18 +235,30 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
   // Restore from the saved request even when the overview cannot be loaded.
   const pendingNotices = pending.length > 0 && (
-    <div className="c6-pending" aria-label="结果待确认">
-      {pending.map((record) => (
-        <Notice key={record.commandKey} tone="warn" title={`${record.label ?? pendingLabel(record.fingerprint)}：结果待确认`} actionBelow
-          action={<>
-            <Button size="sm" loading={loading} disabledReason={busy ? "正在提交，请稍候" : undefined} onClick={() => void loadData()}>刷新核对</Button>
-            {isCompleteC6Command(record) && record.expiresAt > Date.now() && <Button size="sm" disabledReason={busy ? "正在提交，请稍候" : !canWrite ? "当前缺少原操作权限" : undefined} onClick={() => void perform(record)}>按原操作重试</Button>}
-          </>}>
-          <p>没有收到确定的结果，可能已经生效。先刷新，看当前规则是不是已经变成你要的值；已经是就不用再提交。</p>
-          <p>这条记录保留到 {formatBusinessTimeFull(new Date(record.expiresAt).toISOString())}（{businessZone().label}）· 命令号 <span data-mono>{record.commandKey}</span></p>
-        </Notice>
-      ))}
-    </div>
+    <Notice tone="warn" title={<>有 {pending.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，系统认得出是同一次提交，不会重复执行；超过 24 小时只能读回核对。「读回核对」只读当前规则，证明不了原操作有没有执行。有结论前这一项不能再改。" /></>}>
+      <ul className="c6-pending" aria-label="结果未知的操作">
+        {pending.map((record) => {
+          const complete = isCompleteC6Command(record);
+          const expired = record.expiresAt <= Date.now();
+          return (
+            <li key={record.commandKey}>
+              <span className="c6-pending-name">{record.label ?? pendingLabel(record.fingerprint)}</span>
+              <span className="c6-pending-time">{businessStamp(record.createdAt)} 提交</span>
+              <span>{!complete
+                ? <StatusTag tone="neutral" icon={CircleHelp} explain="这条是旧页面留下的记录，没有保存原请求，不能重试。">只能读回核对</StatusTag>
+                : expired
+                  ? <StatusTag tone="neutral" icon={CircleHelp} explain="原请求超过 24 小时，不能再重试。">已过期</StatusTag>
+                  : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>}</span>
+              <span className="c6-pending-actions">
+                <Button size="sm" loading={loading} disabledReason={busy ? "正在提交，请稍候" : undefined} onClick={() => void loadData()}>读回核对</Button>
+                {complete && !expired && <Button size="sm" variant="primary" disabledReason={busy ? "正在提交，请稍候" : !canWrite ? "你没有修改权限，只能读回核对" : undefined} onClick={() => void perform(record)}>按原请求重试</Button>}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="c6-pending-zone">提交时间为{businessZone().label}</p>
+    </Notice>
   );
 
   if (!overview) {
@@ -258,6 +268,11 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         {pendingNotices}
         {loading ? (
           <BlockState state="loading" title="正在读取注册与登录风险" />
+        ) : error && !error.startsWith("加载失败") ? (
+          <Notice tone={error.startsWith("操作失败") ? "danger" : "warn"} title={error.startsWith("操作失败") ? "这次修改没有保存，重新加载后再改" : "重新加载后再看当前规则"}
+            action={<Button size="sm" onClick={() => void loadData()}>重新加载</Button>}>
+            {error.startsWith("操作失败") && error.replace(/^操作失败 · /, "")}
+          </Notice>
         ) : (
           <BlockState state="error" title="数据暂不可用，已暂停显示和修改" detail={error ?? "没有读到这页的数据。"} onRetry={() => void loadData()} retrying={loading} retryLabel="重新加载" />
         )}
@@ -271,9 +286,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const otpCaptchaAfterSends = overview.captchaAfterSends!;
   const otpCaptchaStart = otpCaptchaAfterSends + 1;
   const captchaRestoreAt = overview.stats?.captchaTemporarilyDisabled ? text(overview.stats.captchaRestoreAt, "") : "";
-  const configVersion = toNumber(overview.configVersion, -1);
   const k1Guards = overview?.k1Guards ?? [];
-  const k1RejectCode = text(overview?.k1RejectCode, K1_REJECT_CODE_FALLBACK);
   const k1Path = text(overview?.k1Path, K1_PATH_FALLBACK);
   const shortParam = lockParams.find((row) => row.key === "lockShort");
   const longParam = lockParams.find((row) => row.key === "lockLong");
@@ -306,7 +319,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       const a = /^\d+$/.test(attempts ?? "") ? attempts : String(currentAttempts);
       const d = /^\d+$/.test(duration ?? "") ? duration : String(currentDuration);
       return isLong
-        ? `保存后，从第一次输错起 ${windowMinutes}内累计输错到 ${a} 次，就锁 ${d} 小时；之后新的输错都按这条规则。`
+        ? `保存后，${windowMinutes}计数窗口内累计输错到 ${a} 次就锁 ${d} 小时；短锁期间只有验证码登录输错还计数。`
         : `保存后，从第一次输错起 ${d} 分钟内输错 ${a} 次，就锁 ${d} 分钟；这段时间也是长锁的计数窗口。`;
     };
     const open = () => {
@@ -316,7 +329,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       getPendingReason: original.getPendingReason,
       action: `调整登录锁定 · ${name}`,
       title: `调整${name}`,
-      detail: <><b>{name}</b> · 当前 {text(param.value)} · 次数可设 {attemptMin}–{attemptMax}，时长可设 {durationMin}–{durationMax} {durationUnit}。长时锁定的次数须大于短时锁定。</>,
+      detail: <><b>{name}</b> · 当前 {text(param.value)} · 次数可设 {attemptMin}–{attemptMax}，时长可设 {durationMin}–{durationMax} {durationUnit}。长锁次数要大于短锁。</>,
       amplifies: false,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: `确认调整${name}`,
@@ -325,16 +338,16 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         <Facts>
           <Fact k="现在">{ruleText(lockRule(param, durationUnit), param)}</Fact>
           <Fact k={isLong ? "短锁（不改）" : "长锁（不改）"}>{ruleText(isLong ? shortRule : longRule, isLong ? shortParam : longParam)}</Fact>
-          <Fact k="正在被锁的账户">按原来的解锁时间解锁，已累计的输错次数不清零</Fact>
+          <Fact k="已锁的账户">这次修改不改它们的解锁时间和已累计次数</Fact>
         </Facts>
       ),
       statedBrief: (value) => ({
         impact: impactFor(value.attempts, value.duration),
-        check: `提交时检查整数范围、长锁次数大于短锁次数和配置版本（${configVersion}）；IP 每分钟的登录频率限制不是这里设置的。`,
+        check: "提交时检查次数和时长的范围；打开后如果已被别人改过，这次不会保存。",
       }),
       businessForm: {
         kind: "multi-field",
-        hint: `次数和时长会一起保存（当前版本 ${configVersion}）`,
+        hint: "次数和时长一起保存",
         fields: [
           { key: "attempts", label: "输错几次后锁定", inputKind: "number", current: String(currentAttempts), min: toNumber(param.min, 0), max: toNumber(param.max, 0), step: 1, required: true, help: `${attemptMin}–${attemptMax} 次，${relation}` },
           { key: "duration", label: `锁定时长(${durationUnit})`, inputKind: "number", current: String(currentDuration), min: toNumber(param.secondaryMin, 0), max: toNumber(param.secondaryMax, 0), step: 1, required: true, help: `${durationMin}–${durationMax} ${durationUnit}` },
@@ -349,7 +362,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         }
         if ((key === "lockShort" && attempts >= longAttempts)
           || (key === "lockLong" && attempts <= shortAttempts)) {
-          toast("长时锁定的次数须大于短时锁定，未保存");
+          toast("长锁次数要大于短锁次数，未保存");
           return false;
         }
         const value = `${attempts} 次 / ${duration} ${durationUnit}`;
@@ -361,11 +374,12 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     return (
       <ConfigRow key={rowKey(param)} id={`c6-${key}`}
         name={name}
-        what={isLong ? "输错太多次时的第二级锁定，锁的时间更长" : "连续输错时的第一级锁定"}
+        what={isLong ? `第二级锁定：${windowMinutes}计数窗口内累计输错到这个次数，锁更久，不强制改密码` : "第一级锁定：同一手机号输错到这个次数，先锁一段时间"}
         when="保存后立即生效，之后的输错按新规则计数和锁定"
         effect={isLong
-          ? `短锁的 ${windowMinutes}计数窗口内累计输错到这个次数就锁长锁。已经锁上的账户按原解锁时间解锁，不会强制用户重置密码`
-          : "这个时长同时是输错次数的计数窗口：从第一次输错起算，过了这段时间重新计数。已经锁上的账户按原解锁时间解锁"}
+          ? "次数越少越早锁长锁，误锁的用户要等很久或由运营解锁。短锁期间只有验证码登录输错还计数，单靠输错密码一般到不了长锁"
+          : "次数越少、时长越长，越挡得住批量试密码，正常用户也越容易被锁。时长同时是计数窗口：从第一次输错起算，过了就重新计数"}
+        note="修改不改已锁账户的解锁时间和已累计次数"
         where="App 登录、验证码登录和两步验证输错时；用户只看到「暂时锁定」，看不到解锁时间"
         value={rule ? <span className="c6-rule">输错 <b>{rule.attempts}</b> 次<span aria-hidden>→</span>锁 <b>{rule.duration}</b> {rule.unit}</span> : text(param.value)}
         action={canWrite && !param.readOnly
@@ -389,8 +403,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     detail: "人机验证立即恢复拦截。",
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
     statedBrief: {
-      impact: "提交后发短信验证码重新按规则要求拖滑块，不用等到原定的恢复时间；不影响已发出的验证码和用户的登录锁定。",
-      check: `提交时检查修改权限和配置版本（${configVersion}）；版本变了会被拒绝，请刷新后再提交。`,
+      impact: "提交后马上恢复按规则拖滑块，不用等原定的恢复时间。",
+      check: "打开后如果已被别人改过，这次不会保存，要重新加载后再提交。",
     },
     content: (
       <Facts>
@@ -418,28 +432,28 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     getPendingReason: original.getPendingReason,
     action: "紧急关闭人机验证",
     title: "临时关闭人机验证",
-    detail: <><b>关闭后，同一手机号频繁发验证码将不再被拦截</b>。只在人机验证服务出故障时使用，须选择恢复时间，到时自动开回。</>,
+    detail: "只在滑块服务出故障时使用，须选恢复时间，到点自动开回。",
     amplifies: false,
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
     confirmTone: "danger",
     confirmLabel: "确认临时关闭",
     reasonPlaceholder: "例如：滑块服务商故障，用户收不到验证码，工单号…",
     statedBrief: {
-      impact: "关闭期间发短信验证码不再要求拖滑块，挡批量发码的这一道暂时没有；到点由系统自动恢复。",
-      check: `提交时检查修改权限、恢复时间是否为四个固定选项之一和配置版本（${configVersion}）。`,
+      impact: "关闭期间发验证码不再要求拖滑块，强制验证除外；到点自动恢复。",
+      check: "恢复时间只能选这四档；打开后如果已被别人改过，这次不会保存。",
     },
     facts: (
       <Facts>
-        <Fact k="关闭期间仍会验证">{CAPTCHA_STILL_ON}</Fact>
+        <Fact k="关闭期间仍会验证">H5 注册的强制验证</Fact>
         <Fact k="关闭期间照常执行">{CAPTCHA_LIMITS_STILL_ON}</Fact>
-        <Fact k="谁能提前恢复">有本页修改权限的人，在这页点「立即恢复」</Fact>
+        <Fact k="提前恢复">有本页修改权限的人点「立即恢复」</Fact>
       </Facts>
     ),
     edit: {
       kind: "select", current: "开启", initialValue: CAPTCHA_RECOVERY_OPTIONS[0], options: CAPTCHA_RECOVERY_OPTIONS,
       label: "关闭多久", optionLabels: CAPTCHA_RECOVERY_LABELS,
       hint: "只能选这四档，不能永久关闭",
-      preview: (value) => `${CAPTCHA_RECOVERY_LABELS[value] ?? value}后自动恢复：从服务器收到这次提交时开始计时，恢复时间以页面刷新后显示的为准。`,
+      preview: (value) => `${CAPTCHA_RECOVERY_LABELS[value] ?? value}后自动恢复，从服务器执行关闭时起算；按原请求重试不会重新计时。`,
     },
     run: (reason, nextValue) => {
       const value = (nextValue ?? "").trim();
@@ -453,18 +467,17 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   };
 
   const k1Confirm = (guard: UserRegistrationRiskK1Guard) => openConfirm({ briefKind: "record",
-    action: `422 · ${text(guard.rejectCode, k1RejectCode)}`,
+    action: "打开「多账户风险排查」",
     title: "到「多账户风险排查」修改",
     detail: <><b>{operatorCopyText(text(guard.name))}</b> 在「多账户风险排查」修改。</>,
     statedBrief: {
-      impact: "只打开「多账户风险排查」，这一步不保存任何设置，备注也不会保存，不写操作记录。",
-      check: "到那一页后按那一页的规则修改；没有那一页的修改权限时只能查看。",
+      impact: "只跳转到「多账户风险排查」，不保存任何内容。",
+      check: "到那一页按那一页的规则修改；没有那一页的修改权限时只能查看。",
     },
     content: (
       <Facts>
         <Fact k="这一项">{operatorCopyText(text(guard.name))}</Fact>
         <Fact k="在哪里改">多账户风险排查</Fact>
-        <Fact k="归属码"><span data-mono>{text(guard.rejectCode, k1RejectCode)}</span></Fact>
       </Facts>
     ),
     remarkHint: "选填",
@@ -498,9 +511,9 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
       {captchaOff ? (
         <Conclusion state="warn" lead icon={ShieldOff}
-          hint={`关闭期间发验证码不要求拖滑块；${CAPTCHA_STILL_ON}。服务恢复后可以在下方立即恢复。`}
-          explain="人机验证的开关读自服务器；页面不会自己倒计时，到点后后端自动恢复，刷新页面才看得到。">
-          人机验证已临时关闭，{restoreText} 自动恢复
+          hint={canWrite ? "除 H5 注册的强制验证外，发验证码不用拖滑块；服务恢复后可在下方立即恢复。" : "除 H5 注册的强制验证外，发验证码不用拖滑块。"}
+          explain="到点系统自动恢复；页面不自己倒计时，刷新后才看得到。">
+          人机验证已临时关闭，{restoreText}自动恢复
         </Conclusion>
       ) : (
         <Conclusion state="ok" icon={ShieldCheck}
@@ -515,9 +528,9 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           href={reach(C5_PATH) ? C5_PATH : undefined} openLabel="到安全与登录设备查看被锁的账户"
           explain="今天新触发的锁定次数，同一个账户锁两次算两次；不是现在仍被锁的人数。要看或解除某个账户的锁定，到「安全与登录设备」。" />
         <Stat label="今日验证码记录" value={toNumber(overview?.stats?.otpToday).toLocaleString("en-US")} unit="次" icon={MessageSquareText} tone="role-2"
-          explain="今天新建的验证码记录数（登录、两步验证等），不含注册验证码，也不代表短信都发送成功了。统计范围已提给后端补全。" />
+          explain="今天登录、两步验证等申请验证码的次数，不含注册验证码，也不代表短信都送达了。统计范围已提给技术补全。" />
         <Stat label="今日人机验证记录" value={toNumber(overview?.stats?.captchaTriggeredToday).toLocaleString("en-US")} unit="次" icon={Fingerprint} tone="role-2"
-          explain="数的是「需要拖滑块」的事件记录。后端目前还没有写这类记录，0 不代表今天没人拖过滑块，已提给后端补上。" />
+          explain="统计要求拖滑块的次数。系统暂时还没开始记录这类情况，0 不代表今天没人拖过滑块，已提给技术补上。" />
         <Stat label="近 7 天多账户关联组" value={toNumber(overview?.stats?.stuffingClusters7d).toLocaleString("en-US")} unit="组" icon={Network} tone="role-3"
           href={reach(k1Path) ? k1Path : undefined} openLabel="到多账户风险排查查看关联组"
           explain="近 7 天新出现、达到多账户阈值的关联组数，不只是批量试密码，也不分是否已处理。明细在「多账户风险排查」。" />
@@ -525,7 +538,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
       <div className="rd-split c6-main" data-even="">
         <Panel title="App 登录锁定" icon={LockKeyhole} tone="role-3"
-          explain={<><p>同一个手机号输错密码、验证码或两步验证时计数。先到短锁，继续输错到长锁次数就升级成长锁。</p><p>IP 每分钟的登录频率限制是另一条固定规则，不在这里设置。</p></>}>
+          explain={<><p>同一手机号登录、验证码登录、两步验证输错都计数，先到短锁。短锁期间密码和两步验证直接被拒、不再计数，只有验证码登录输错还会累计到长锁。</p><p>IP 每分钟的登录频率限制是另一条固定规则，不在这里设置。</p></>}>
           <div className="c6-ladder">
             {ladderReady ? (
               <ScaleBar label="两级锁定" max={longRule.attempts + Math.max(3, longRule.attempts - shortRule.attempts)}
@@ -535,7 +548,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
             ) : (
               <ScaleBar label="两级锁定" max={1} valueText="锁定规则没有读全" state="empty" emptyText="锁定规则没有读全，下面写的是读到的原值。" />
             )}
-            {ladderReady && <p className="c6-ladder-note">从第一次输错起 {shortRule.duration} 分钟内累计计数，过了这段时间重新计数</p>}
+            {ladderReady && <p className="c6-ladder-note">从第一次输错起 {shortRule.duration} 分钟内累计；短锁期间只有验证码登录输错还计数</p>}
           </div>
           <ConfigList label="锁定规则">
             {lockParams.map(adjustRow)}
@@ -553,7 +566,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           <div className="c6-captcha" data-off={captchaOff ? "" : undefined}>
             <div className="c6-captcha-state">
               <StatusTag tone={captchaOff ? "warn" : "ok"}>{captchaOff ? "临时关闭" : "开启"}</StatusTag>
-              <strong>{captchaOff ? `${restoreText} 自动恢复` : "发验证码前按规则要求拖滑块"}</strong>
+              <strong>{captchaOff ? `${restoreText}自动恢复` : "发验证码前按规则要求拖滑块"}</strong>
             </div>
             {canWrite && (captchaOff
               ? <Button variant="primary" disabledReason={unavailable("captchaOff")} onClick={restoreCaptcha}>立即恢复</Button>
@@ -563,10 +576,10 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
             ...(captchaOff ? [
               { key: "left", label: "读取时还剩", value: remainingMinutes > 0 ? `约 ${remainingMinutes.toLocaleString("en-US")} 分钟` : "—", explain: "按读取这一刻算，页面不自动倒计时；刷新后更新。" },
               { key: "still", label: "关闭期间仍会验证", value: "H5 注册的强制验证" },
-              { key: "limits", label: "关闭期间照常执行", value: "重发冷却、发送次数上限、IP 频率限制" },
+              { key: "limits", label: "关闭期间照常执行", value: CAPTCHA_LIMITS_STILL_ON },
             ] : []),
             { key: "after", label: "什么时候要拖滑块", value: otpCaptchaAfterSends === 0 ? "同一手机号每次发验证码都要" : `同一手机号 24 小时内发满 ${otpCaptchaAfterSends} 次，第 ${otpCaptchaStart} 次起`,
-              explain: <><p>同一手机号 24 小时内发满 {otpCaptchaAfterSends} 次验证码后，从第 {otpCaptchaStart} 次起要拖动滑块。</p><p>有些场景（比如注册）可能第一次发验证码就要拖，按后端配置，本页读不到这一项。次数在「异常套利与刷量排查」修改。</p></> },
+              explain: <><p>按同一手机号 24 小时内的发送次数算，不论短信是否送达：发满 {otpCaptchaAfterSends} 次后，从第 {otpCaptchaStart} 次起要拖滑块。</p><p>注册等场景可能第一次就要拖，本页读不到这项设置。次数在「异常套利与刷量排查」修改。</p></> },
           ]} />
           {reach(K2_PATH) && (
             <nav className="rd-links" aria-label="滑块次数在别处修改">
@@ -587,7 +600,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
       <Fold title="多账户限制" icon={Users} tone="role-other"
         summary={k1Guards.length ? `${k1Guards.length} 项，在「多账户风险排查」修改` : "暂无"}
-        explain="同一 IP 每天注册上限、同一设备绑定上限、同一支付方式绑定上限，都在「多账户风险排查」设置，这页只列出归属。">
+        explain="同 IP 24 小时注册上限、同设备和同支付方式的绑定上限，都在「多账户风险排查」设置，这页只列出归属。">
         {k1Guards.length > 0 ? (
           <ConfigList label="多账户限制">
             {k1Guards.map((guard) => (
@@ -609,7 +622,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         <ConfigList label="统计口径与数据来源">
           <ConfigRow name="数据来源" value={(overview?.sources ?? ["登录风控设置", "用户安全状态", "多账户风控设置"]).map(sourceLabel).join("、")} />
           <ConfigRow name="登录锁定出现在" value="风险提醒、安全与登录设备" effect="注册完成会计入用户转化分析" />
-          <ConfigRow name="锁定的影响" value="锁定期间，该手机号的所有登录都会被拒绝" effect="已登录的设备不会因此下线；注册发验证码不受登录锁定影响" />
+          <ConfigRow name="锁定的影响" value="锁定期间，该手机号新的登录都会被拒绝" effect="已登录的设备不会因此下线；注册发验证码不受登录锁定影响" />
         </ConfigList>
       </Fold>
     </div>

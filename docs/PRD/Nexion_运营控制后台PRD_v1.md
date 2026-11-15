@@ -2480,13 +2480,15 @@ session / 2FA / 锁定态 server-canonical,client 仅订阅(§9.11d.2);时间戳
 
 24 小时从首次保存起算，过期保留原证据，只能读回核对，不重发。旧 key-only 记录不补造原请求，只读核对。关闭按同号重试若原命令成功，后端回放原截止，不延后；若第一次请求未执行，第一次实际执行时才从服务器 clock 开始算。成功回执不当作当前 overview；结案关闭旧确认，必须成功重读后才能按新基准发新修改，失败不把已确认成功说成操作失败。
 
+页面在顶部逐条列出结果未知的操作：改成什么、提交时间（北京时间，到分钟）和状态，按钮为「读回核对」「按原请求重试」；超过 24 小时标「已过期」，旧记录标「只能读回核对」，两者只留读回核对。给运营看的文字不出现命令号。明确被拒后主区提示「这次修改没有保存，重新加载后再改」并给出原因；结果未知时主区只提示重新加载，原因看顶部列表。
+
 **⑤ 认证链路、审计与待办**
 
 - **服务端认证顺序**：正式 App 注册使用 `POST /auth/users/register/otp/send` 发码、`POST /auth/users/register/otp/verify` 预验。预验核对 `countryCode/phone/challengeNo/code` 及注册场景、环境、有效期、剩余试次和未消费状态；错误累计试次并返回 `USER_REGISTRATION_OTP_INVALID`，成功只返回 `REGISTRATION_OTP_VERIFIED`，不消费挑战、不创建账户或会话、不签发 `verifyToken`。最终 `POST /auth/users/register` 再次校验并原子消费，错误或过期回到验码步骤；不能只凭填满 6 位或前端成功标记注册。短信登录 `/auth/users/login/otp/verify` 与二次登录 `/auth/users/login/2fa` 验证成功后才签会话；忘记密码 `/auth/users/password-reset/otp/verify` 先预验，`/auth/users/password-reset/otp/complete` 最终消费并改密、吊销会话。C6 提供 OTP/锁定/CAPTCHA 参数，不改变各场景顺序或允许跨场景复用。
 
 锁调整、关闭、恢复分别记 `C6_REGISTRATION_RISK_PARAM_UPDATED`、`C6_CAPTCHA_TEMPORARILY_DISABLED`、`C6_CAPTCHA_RESTORED`，自动恢复记 `C6_CAPTCHA_AUTOMATICALLY_RESTORED`；资源 AUTH_CONFIG，HIGH，必达审计失败会回滚。不是审批提案，也没有本页主动告警、生成多账户组或同步案件的写操作。
 
-已登记 B48 C6-BE-01（统计来源不全）、02（关联组不等于撞库团伙）、03（锁说明/执行及长锁可达性）、04（关闭范围及读接口缺少强制配置）。当前页面的待确认保留时长、关闭范围及锁升级文案仍须视觉 worker 按事实修改；逻辑 worker 不改屏幕文字。
+已登记 B48 C6-BE-01（统计来源不全）、02（关联组不等于撞库团伙）、03（锁说明/执行及长锁可达性）、04（关闭范围及读接口缺少强制配置）。页面文字已按上述事实改写：24 小时是重试截止而非记录保留时长；关闭只跳过非强制滑块，H5 注册的强制验证和冷却、发送上限、IP 频率限制照常；短锁期间只有验证码登录输错继续计数；调整锁定配置不改已有锁的解锁时间和累计次数；「去修改」多账户限制的确认框不再显示内部归属码。
 
 ---
 
