@@ -84,7 +84,7 @@ function useMutations() {
         const ticket = await fetchA2ProposalByKey(record.commandKey, true, true);
         if (ticket) {
           if (!ticket.mine || ticket.obj !== record.payload.input.obj) throw new Error("原提案归属无法核实，请到操作记录核对。");
-          commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal: ["approved", "rejected", "withdrawn", "expired"].includes(ticket.status) ? ticket.status : undefined });
+          commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal: ["approved", "rejected", "withdrawn", "expired"].includes(ticket.status) ? ticket.status : undefined });
           if (active.current) sync();
           return;
         }
@@ -93,7 +93,7 @@ function useMutations() {
       let writeResult: E6WriteReceipt | undefined;
       if (record.payload.kind === "proposal") {
         const ticket = await createA2OperationProposal(record.payload.input, record.commandKey, true);
-        commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies } });
+        commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies } });
       } else if (record.payload.kind === "device") {
         const i = record.payload.input;
         if (i.action === "activate") { const result = await activateE5Device(i.deviceId, false, i.reason, i.operator, record.commandKey); writeResult = { pendingDeactivate: result.pendingDeactivate }; }
@@ -161,7 +161,7 @@ function useMutations() {
       if (ticket && (!ticket.mine || ticket.obj !== record.payload.input.obj || record.ticketId && ticket.id !== record.ticketId)) throw new A2OutcomeUncertainError("原提案归属无法核实，请到操作记录核对。", record.commandKey);
       if (!ticket) { commands.remember(record.fingerprint, record.commandKey, { ...record, absent: true }); sync(); setNotes(n => ({ ...n, [record.commandKey]: "暂未查到原审批单，结果仍未确认；原请求继续保留。" })); return; }
       const terminal = ["approved", "rejected", "withdrawn", "expired"].includes(ticket.status) ? ticket.status : undefined;
-      commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal }); sync();
+      commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal }); sync();
       setNotes(n => ({ ...n, [record.commandKey]: `原提案 ${ticket.id}：${({ pending: "待审批", approved: "已批准，请刷新业务当前值", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" } as Record<string,string>)[ticket.status] ?? ticket.status}` }));
     } catch (failure) { if (active.current) setNotes(n => ({ ...n, [record.commandKey]: displayAdminError(failure) })); if (propagate) throw failure; }
     finally { if (active.current) setBusy(""); }
