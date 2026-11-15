@@ -81,8 +81,8 @@ function dispatch(write: I5Write, key: string, actions: IContentActions, propose
 /** 这条操作能怎么恢复，只写接口真有的（OP-95）。放进提示图标。 */
 function recoveryText(op: I5Op, canQuery: boolean): string {
   if (op.kind === "a2") return canQuery ? "审批单可能已经生成，批准前不会执行。可以先查原提案。" : "审批单可能已经生成，批准前不会执行。这个账号查不了原提案，可以请能看操作记录的同事核查。";
-  if (op.kind === "content") return "可能已经保存。按原请求重试，后端认得出是同一次提交，不会重复执行。";
-  return "可能已经生效。这个接口按修订号比较，原操作已生效时重试会按改动冲突被拒，不会写两次。";
+  if (op.kind === "content") return "可能已经保存。按原请求重试，系统认得出是同一次提交，不会重复执行。";
+  return "可能已经生效。重试不会写两次：原操作已生效时，重试会因内容已变被拒。";
 }
 
 /** 合并结果里要给人看的两类位置（路径）：别人改了的、两边都改了留下自己的。 */

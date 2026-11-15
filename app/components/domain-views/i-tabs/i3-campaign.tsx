@@ -1060,7 +1060,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
                 <Fact k="编号"><span data-mono="">{c.id}</span></Fact>
                 <Fact k="版本">{String(c.revision)}</Fact>
                 <Fact k="后端的发送文字">{c.schedule || "—"}</Fact>
-                <Fact k="旧跳转字段">{c.swipeTo && c.swipeTo !== "-" ? c.swipeTo : "—（不代表实际跳转）"}</Fact>
+                <Fact k="旧的跳转设置">{c.swipeTo && c.swipeTo !== "-" ? c.swipeTo : "—（不代表实际跳转）"}</Fact>
               </Facts>
             </Fold>
           </>;

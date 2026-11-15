@@ -1401,7 +1401,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       {ordinaryRecovery}
 
       <Panel title="三种语言齐不齐" icon={Languages} tone="role-2" sub={`共 ${count(total)} 条 · ${count(NAMESPACES.length)} 个模块`}
-        explain="按每条文案现在的内容算（草稿也算）。「可上线」是后端算的：已发布、三语齐、变量一致且通过质量检查的才算。">
+        explain="按每条文案现在的内容算（草稿也算）。「可上线」是系统算的：已发布、三语齐、变量一致且通过质量检查的才算。">
         <div className="i6-cov">
           <div className="i6-cov-langs">
             {missingByLang.map((item) => <div key={item.key} className="i6-cov-lang">
@@ -1808,9 +1808,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             </div>
             {versionsError ? <BlockState state="error" title="版本列表没有读到" detail={versionsError} onRetry={() => setVersionsRetry((value) => value + 1)} />
               : <Table label="课程版本">
-                <thead><tr><Th>版本</Th><Th>状态</Th><Th>中文标题</Th><Th align="right">学完发</Th><Th align="right">修订号</Th><Th>更新时间</Th><Th align="right">操作</Th></tr></thead>
+                <thead><tr><Th>版本</Th><Th>状态</Th><Th>中文标题</Th><Th align="right">学完发</Th><Th>更新时间</Th><Th align="right">操作</Th></tr></thead>
                 <tbody>
-                  {versionsLoading && <TableLoading columns={7} rows={3} />}
+                  {versionsLoading && <TableLoading columns={6} rows={3} />}
                   {!versionsLoading && courseVersions.map((row) => {
                     const status = VERSION_STATUS[row.status] ?? { text: "状态未知", tone: "warn" as StateTone };
                     const title = nexGridBrandText(String(row.payload.titleZh ?? row.payload.titleEn ?? "—"));
@@ -1832,9 +1832,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       </span></Td>
                     </Tr>;
                   })}
-                  {!versionsLoading && courseVersions.length === 0 && <TableMessage columns={7}>暂无历史版本</TableMessage>}
+                  {!versionsLoading && courseVersions.length === 0 && <TableMessage columns={6}>暂无历史版本</TableMessage>}
                 </tbody>
               </Table>}
+            {!versionsError && !versionsLoading && courseVersions.length > 0 && <Fold inset title="技术信息" summary="每个版本的修订号">
+              <Facts>{courseVersions.map((row) => <Fact key={`${row.courseId}-${row.version}`} k={row.version}>修订号 {row.revision}</Fact>)}</Facts>
+            </Fold>}
           </div>}
         </div>
       </section>}

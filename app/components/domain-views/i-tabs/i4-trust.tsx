@@ -98,8 +98,6 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const canDraftTrust = !!session?.authorities.includes("content_i4_write");
   const canPublishStandard = !!session?.authorities.includes("content_i4_publish_standard");
   const canPublishSensitive = !!session?.authorities.includes("content_i4_trust_section_manage");
-  /** 只有委托提案权、没有提交审批权的账号：按钮照旧给，确认框里先写明后端会拒（I4-N07，已提后端）。 */
-  const proposalOnly = !session?.authorities.includes("platform_a2_write") && !!session?.authorities.includes("platform_a2_proposal_create");
   const [secKey, setSecKey] = useState<TrustDetailKey | null>(null);
   const [draftEditor, setDraftEditor] = useState<DraftEditor | null>(null);
   const [detailLang, setDetailLang] = useState<Lang>("zh");
@@ -307,9 +305,6 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     <Fact k="谁来批">{APPROVER}，不能是提交人</Fact>
     <Fact k="需有权限">审批权限和{permissionText(s)}</Fact>
   </>;
-  const proposalOnlyNotice = proposalOnly
-    ? <Notice tone="warn" title="这个账号提交会被后端拒绝">只有委托提案权限的账号，信任中心的申请后端不受理，要有提交审批的权限。</Notice>
-    : null;
   const otherIssueNotice = (key: string, originalIssues?: string[]) => {
     const others = originalIssues ?? othersBroken(key);
     return others.length ? <Notice tone="danger" title="批准后 App 信任中心仍打不开">{others.join("、")}，要一起处理。</Notice> : null;
@@ -321,7 +316,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     if (blocked) { toast(blocked); return; }
     const fields = currentSectionFields(s);
     if (fields.length === 0) {
-      toast("当前发布版缺少字段模板，无法新建草稿");
+      toast("现在公开的版本没有内容模板，不能新建草稿");
       return;
     }
     setDraftEditor({
@@ -341,7 +336,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     if (blocked) { toast(blocked); return; }
     const publishedFields = section ? currentSectionFields(section) : [];
     if (publishedFields.length === 0 || !sameFieldSchema(draft.fields, publishedFields)) {
-      toast("草稿字段模板已过期，请删除后基于当前发布版新建");
+      toast("草稿的内容模板已过期，删掉后基于现在公开的版本新建");
       return;
     }
     setDraftEditor({
@@ -375,13 +370,13 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       || !draftEditor.structure.trim() || !draftEditor.reason.trim() || draftEditor.fields.length === 0
       || draftEditor.fields.some((field) => !field.key.trim() || !field.label.trim()
         || (!isOptionalTrustLinkField(field.key) && !field.value.trim()))) {
-      toast("请完整填写版本、说明、结构、字段和保存说明");
+      toast("请填完版本、说明、结构、内容和保存说明");
       return;
     }
     const fields = draftEditor.fields.map(field => ({ key: field.key.trim(), label: field.label.trim(), value: field.value.trim() }));
     const fieldIssue = i4AppFieldIssue(fields);
     if (fieldIssue) { toast(fieldIssue); return; }
-    if (i4OmittedTranslations(currentSectionFields(sectionSnapshot), fields)) { toast("这次保存会删掉已有译文，请保留当前版本的完整字段后再保存。"); return; }
+    if (i4OmittedTranslations(currentSectionFields(sectionSnapshot), fields)) { toast("这次保存会删掉已有译文，请留着现在公开版本的每一项内容后再保存。"); return; }
     const payload = {
       version: draftEditor.version,
       description: draftEditor.description.trim(),
@@ -410,7 +405,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     confirmTone: "danger",
     confirmLabel: "删除草稿",
     statedBrief: { impact: "只删这份草稿，用户看到的内容和历史版本都不变。", check: "核对版块和版本号，理由写清为什么删。" },
-    facts: <Facts><Fact k="版块">{sectionName(draft.sectionKey)}</Fact><Fact k="草稿">{draft.version} · {draft.fields.length} 个字段</Fact><Fact k="最近保存">{timeText(draft.updatedAt)} · {operatorText(draft.operator)}</Fact></Facts>,
+    facts: <Facts><Fact k="版块">{sectionName(draft.sectionKey)}</Fact><Fact k="草稿">{draft.version} · {draft.fields.length} 项内容</Fact><Fact k="最近保存">{timeText(draft.updatedAt)} · {operatorText(draft.operator)}</Fact></Facts>,
     run: (reason) => runBackend(() => actions.deleteI4TrustSectionDraft(
       draft.sectionKey, draft.version, draft.revision, reason, draft,
     ), `${draft.sectionKey} ${draft.version} 草稿已删除`),
@@ -435,12 +430,11 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       statedBrief: { impact: `批准后用户看到的${sectionName(s.key)}从 ${s.v} 换成 ${draft.version}；批准前不变。`, check: "逐项核对三种语言和关键数字，理由写清依据。" },
       facts: <div className="rd-stack">
         <Facts><Fact k="版块">{sectionName(s.key)}</Fact><Fact k="版本"><Change from={`${s.v}（现在公开）`} to={draft.version} /></Fact>{approverFacts(s)}</Facts>
-        {proposalOnlyNotice}
-        <VersionCompare beforeLabel={`现在公开的 ${s.v}`} afterLabel={`批准后公开的 ${draft.version}`} before={original?.snapshot?.current?.fields ?? currentSectionFields(s)} after={draft.fields} problems={problems.filter((item) => item !== "中越英字段不全")}
+        <VersionCompare beforeLabel={`现在公开的 ${s.v}`} afterLabel={`批准后公开的 ${draft.version}`} before={original?.snapshot?.current?.fields ?? currentSectionFields(s)} after={draft.fields} problems={problems.filter((item) => item !== "中越英三语不全")}
           afterBlanked={blankingOf(s.key, draft).all ? `提醒：${blankingOf(s.key, draft).all}` : undefined} />
         {otherIssueNotice(s.key, original?.snapshot?.otherIssues)}
       </div>,
-      blockedReason: i4AppFieldIssue(draft.fields) ?? (trilingualCheck.valid ? undefined : `中越英字段不完整：${trilingualCheck.missing.join("、")}，先编辑草稿补齐`),
+      blockedReason: i4AppFieldIssue(draft.fields) ?? (trilingualCheck.valid ? undefined : `中越英三语不完整：${trilingualCheck.missing.join("、")}，先编辑草稿补齐`),
       businessForm: {
         kind: "multi-field",
         fields: [
@@ -451,7 +445,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       run: async (reason, _value, form) => {
         const trilingual = i4TrilingualFields(draft.fields);
         if (!trilingual.valid) {
-          toast(`中越英字段不完整：${trilingual.missing.join("、")}`);
+          toast(`中越英三语不完整：${trilingual.missing.join("、")}`);
           return false;
         }
         const def = findHighOp("i4_trust_section_manage")!;
@@ -461,7 +455,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         if (fieldIssue) throw new Error(fieldIssue);
         if (dataSource.length > 500) throw new Error("财务/UVT 数据来源最多 500 字。");
         if (requiresDataSource(s) && !dataSource || !bilingualConfirmed) throw new Error("请完整填写数据来源和三语确认。");
-        if (i4OmittedTranslations(currentSectionFields(s), draft.fields)) throw new Error("这次发布会删掉已有译文，请先保留完整字段再提交。");
+        if (i4OmittedTranslations(currentSectionFields(s), draft.fields)) throw new Error("这次发布会删掉已有译文，请先留着每一项内容再提交。");
         const fingerprint = JSON.stringify([
           "publish", s.key, s.v, s.status, draft.version, draft.revision,
           dataSource, bilingualConfirmed, reason,
@@ -525,10 +519,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
             <Fact k="现在">{s.v} · {archived ? "已下架" : "公开中"}</Fact>
             {approverFacts(s)}
           </Facts>
-          {proposalOnlyNotice}
           {target && <VersionCompare beforeLabel={`现在的 ${s.v}`} afterLabel={`批准后公开的 ${target.version}`} before={original?.snapshot?.current?.fields ?? currentSectionFields(s)} after={target.fields} problems={problems}
             afterBlanked={blankingOf(s.key, target).all ? `提醒：${blankingOf(s.key, target).all}` : undefined} />}
-          {target && problems.length === 0 && <p className="rd-note">所选版本完整：有说明和结构，中越英字段齐全，不超过 {APP_FIELD_LIMIT} 个字段。</p>}
+          {target && problems.length === 0 && <p className="rd-note">所选版本完整：有说明和结构，中越英三语齐全，不超过 {APP_FIELD_LIMIT} 项内容。</p>}
           {otherIssueNotice(s.key, original?.snapshot?.otherIssues)}
         </div>;
       },
@@ -581,7 +574,6 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           {approverFacts(s)}
         </Facts>
         <Notice tone="danger" title={`${ARCHIVE_CONSEQUENCE}。`}>App 要求六个版块都公开才显示信任中心，已提后端改成可以单独下架。</Notice>
-        {proposalOnlyNotice}
       </div>,
       run: async (reason) => {
         const def = findHighOp("i4_trust_section_manage")!;
@@ -737,15 +729,15 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       const templateChanged = !!nowCurrent && !sameFieldSchema(nowCurrent.fields, editorAtReject.fields);
       rows = [{ label: "版块现在", left: state(nowSection), right: `基于 ${editorAtReject.expectedSectionVersion}`, changed: nowSection?.version !== editorAtReject.expectedSectionVersion || nowSection?.status !== editorAtReject.expectedSectionStatus },
         ...(nowDraft ? [conflictRow("草稿最近保存", saved(nowDraft), "你在改的")] : []),
-        ...(templateChanged ? [{ label: "字段模板", left: `${nowCurrent!.fields.length} 个字段`, right: `${editorAtReject.fields.length} 个字段`, changed: true }] : []),
+        ...(templateChanged ? [{ label: "内容模板", left: `${nowCurrent!.fields.length} 项内容`, right: `${editorAtReject.fields.length} 项内容`, changed: true }] : []),
         ...fieldRows(base, editorAtReject.fields)];
-      note = templateChanged ? "字段模板变了：你填的字段和译文原样留着，不会自动删；保存前对照现在公开的版本核对。" : "你填的内容留在编辑框里，保存时按最新的版本提交。";
+      note = templateChanged ? "内容模板变了：你填的内容和译文原样留着，不会自动删；保存前对照现在公开的版本核对。" : "你填的内容留在编辑框里，保存时按最新的版本提交。";
       rebuild = section && (editorAtReject.mode === "create" || nowDraft) ? () => setDraftEditor((current) => current && ({ ...current,
         revision: nowDraft?.revision ?? current.revision, expectedSectionVersion: section.v, expectedSectionStatus: section.status, published: currentVersionOf(section) })) : undefined;
     } else if (rejected?.action === "delete") {
       const nowDraft = latestData?.trustSectionVersions.find((row) => row.sectionKey === key && row.version === rejected.version);
       if (!gone && latestData && nowDraft?.status.toLowerCase() !== "draft") gone = `${rejected.version ?? ""} 已经不是草稿了（被删除或已发布）。`;
-      rows = [conflictRow("草稿最近保存", saved(rejected.snapshot ?? undefined), saved(nowDraft)), conflictRow("字段", `${rejected.snapshot?.fields.length ?? "—"} 个`, `${nowDraft?.fields.length ?? "—"} 个`)];
+      rows = [conflictRow("草稿最近保存", saved(rejected.snapshot ?? undefined), saved(nowDraft)), conflictRow("内容", `${rejected.snapshot?.fields.length ?? "—"} 项`, `${nowDraft?.fields.length ?? "—"} 项`)];
       rebuild = nowDraft ? () => { carry(); deleteSectionDraft(nowDraft); } : undefined;
     } else if (rejected && "before" in rejected) {
       const snap = rejected.snapshot;
@@ -811,8 +803,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     pendingTrustSectionKeys.size > 0 && `${pendingTrustSectionKeys.size} 个版块等另一位批准`,
     draftSections.size > 0 && `${draftSections.size} 个版块有待发布的草稿`,
   ].filter(Boolean).join(" · ") || undefined;
-  const conclusionExplain = <><p>App 只在六个版块都公开、每块当前版都有说明和结构、中越英字段齐全、不超过 {APP_FIELD_LIMIT} 个字段时，才显示信任中心；有一块不满足，整页打不开。</p><p>这里按后台读到的版本判断，安全文本和链接的细则以后端为准。</p></>;
-  const blankExplain = <><p>后端在正式环境公开时会清掉这几类内容：运营写的财务、徽章、上市文字；系统迁移写入的核心团队和审计版本；审计没填有效报告地址时的整块。后台照常保存和查看。</p>{conclusionExplain}</>;
+  const conclusionExplain = <><p>App 只在六个版块都公开、每块当前版都有说明和结构、中越英三语齐全、不超过 {APP_FIELD_LIMIT} 项内容时，才显示信任中心；有一块不满足，整页打不开。</p><p>这里按后台读到的版本判断，安全文本和链接的细则以后端为准。</p></>;
+  const blankExplain = <><p>正式环境公开时会清掉这几类内容：运营写的财务、徽章、上市文字；系统迁移写入的核心团队和审计版本；审计没填有效报告地址时的整块。后台照常保存和查看。</p>{conclusionExplain}</>;
   const pendingText = pendingTrustSectionKeys.size > 0 ? `${pendingTrustSectionKeys.size} 个版块等另一位批准` : "";
   const draftText = draftSections.size > 0 ? `${draftSections.size} 个版块有待发布的草稿` : "";
   const conclusion = issues.length
@@ -928,7 +920,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     !draftEditor.description.trim() && "版块说明",
     !draftEditor.structure.trim() && "内容结构",
     !draftEditor.reason.trim() && "保存说明",
-    draftEditor.fields.some((field) => !field.label.trim() || (!isOptionalTrustLinkField(field.key) && !field.value.trim())) && "空着的字段",
+    draftEditor.fields.some((field) => !field.label.trim() || (!isOptionalTrustLinkField(field.key) && !field.value.trim())) && "空着的内容项",
   ].filter(Boolean) as string[] : [];
 
   return (
@@ -961,7 +953,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
               return (
                 <Tr key={`${version.sectionKey}-${version.version}`} onOpen={section ? () => openSecDetail(section) : undefined}>
                   <Td><Cell main={sectionName(version.sectionKey)} sub={<LegacyText text={trustDescriptionText(version.description)} />} /></Td>
-                  <Td><Cell num main={version.version} sub={`${version.fields.length} 个字段`} /></Td>
+                  <Td><Cell num main={version.version} sub={`${version.fields.length} 项内容`} /></Td>
                   <Td><StatusTag tone={state.tone}>{state.text}</StatusTag></Td>
                   <Td><Cell main={changeText(version)} /></Td>
                   <Td><Cell num main={version.updatedAt ? timeText(version.updatedAt) : "—"} sub={operatorText(version.operator)} title={version.operator} /></Td>
@@ -999,9 +991,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
             <FieldList label={`${sectionName(sec.key)}现在公开的内容`} fields={secCurrent?.fields ?? []} lang={detailLang} blanked={secBlanking} />
           </section>
           {sec.key === "financials" && FINANCIALS_FIELDS.length > 0 && (
-            <Fold inset title="财务字段" summary={`${FINANCIALS_FIELDS.length} 项 · 运营填写的说明文字`}
-              explain="这些是运营写的展示文字，不是真实财务统计，页面不计算。「环比」一列后端存的是字段名称，不是环比数，原样显示。">
-              <Table label="财务字段">
+            <Fold inset title="财务指标" summary={`${FINANCIALS_FIELDS.length} 项 · 运营填写的说明文字`}
+              explain="这些是运营写的展示文字，不是真实财务统计，页面不计算。「环比」一列现在存的是这一项的名称，不是环比数，原样显示。">
+              <Table label="财务指标">
                 <thead><tr><Th>指标</Th><Th>内容</Th><Th>环比（原样）</Th></tr></thead>
                 <tbody>
                   {FINANCIALS_FIELDS.map((f) => (
@@ -1025,8 +1017,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
                     <div className="i4-vlist-main">
                       <span className="i4-vlist-no">{version.version}</span>
                       <StatusTag tone={state.tone}>{state.text}</StatusTag>
-                      {stale && <StatusTag tone="warn" explain="字段和现在公开的版本对不上，不能编辑，删掉后新建。">模板已变</StatusTag>}
-                      <span className="i4-vlist-change">{changeText(version)} · {version.fields.length} 个字段</span>
+                      {stale && <StatusTag tone="warn" explain="内容项和现在公开的版本对不上，不能编辑，删掉后新建。">模板已变</StatusTag>}
+                      <span className="i4-vlist-change">{changeText(version)} · {version.fields.length} 项内容</span>
                     </div>
                     <div className="i4-vlist-meta">{version.updatedAt ? timeText(version.updatedAt) : "—"} · {operatorText(version.operator)}</div>
                     <div className="i4-vlist-actions">{versionActions(version)}</div>

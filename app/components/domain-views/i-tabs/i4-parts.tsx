@@ -94,8 +94,8 @@ export function versionProblems(version: { version: string; description: string;
   const problems: string[] = [];
   if (!/^v[1-9][0-9]{0,8}$/.test(version.version)) problems.push("版本号不符合 App 规则");
   if (!version.description.trim() || !version.structure.trim()) problems.push("说明或结构是空的");
-  if (version.fields.length === 0) problems.push("没有字段");
-  else if (!i4TrilingualFields(version.fields.map((field) => ({ key: field.key, value: field.value }))).valid) problems.push("中越英字段不全");
+  if (version.fields.length === 0) problems.push("没有内容");
+  else if (!i4TrilingualFields(version.fields.map((field) => ({ key: field.key, value: field.value }))).valid) problems.push("中越英三语不全");
   const fieldIssue = i4AppFieldIssue(version.fields);
   if (fieldIssue && version.fields.length) problems.push(fieldIssue);
   return problems;
@@ -146,7 +146,7 @@ export function SectionCard({ card }: { card: SectionCardModel }) {
         </span>
         {card.preview.length
           ? <dl className="i4-app-lines" data-user-content="" data-blank={card.appHidden ? "" : undefined}>{card.preview.map((field) => <div key={field.key}><dt>{field.label}</dt><dd title={field.value}>{field.value || "—"}</dd></div>)}</dl>
-          : <p className="i4-app-blank">没有可显示的字段</p>}
+          : <p className="i4-app-blank">没有可显示的内容</p>}
       </div>
       {(card.draft || card.pending || card.problems.length > 0) && <div className="i4-card-tags">
         {card.problems.length > 0 && <StatusTag tone="danger" explain={`${card.problems.join("；")}。App 信任中心整页打不开。`}>{card.problems[0]}</StatusTag>}
@@ -167,7 +167,7 @@ export function SectionCard({ card }: { card: SectionCardModel }) {
 /** 一种语言下的字段清单：名称、内容；App 公开时清空的、和对照版不同的都标出来。 */
 export function FieldList({ fields, lang, blanked, changed, label }: { fields: readonly TrustField[]; lang: Lang; blanked?: { all?: string; keys: Set<string> }; changed?: Set<string>; label: string }) {
   const shown = fieldsFor(fields, lang);
-  if (!shown.length) return <p className="rd-note">这一版没有字段。</p>;
+  if (!shown.length) return <p className="rd-note">这一版没有内容。</p>;
   return (
     <dl className="i4-fields" aria-label={label} data-user-content="">
       {shown.map((field) => (
@@ -202,7 +202,7 @@ export function VersionCompare({ beforeLabel, afterLabel, before, after, problem
       <LocaleTabs label="对照语言" value={lang} onChange={setLang} items={localeItems(after)} />
       <div className="i4-compare-grid" role="table" aria-label="现在公开的和批准后公开的">
         <div className="i4-compare-row i4-compare-headrow" role="row">
-          <span role="columnheader">字段</span>
+          <span role="columnheader">内容项</span>
           <span role="columnheader">{beforeLabel}</span>
           <span role="columnheader">{afterLabel}</span>
         </div>
@@ -219,7 +219,7 @@ export function VersionCompare({ beforeLabel, afterLabel, before, after, problem
         })}
         {keys.length === 0 && <div className="i4-compare-row" role="row"><span role="cell" className="i4-compare-empty">这种语言没有改动</span></div>}
       </div>
-      {unchanged > 0 && <p className="rd-note">其余 {unchanged} 个字段两版一样。</p>}
+      {unchanged > 0 && <p className="rd-note">其余 {unchanged} 项两版一样。</p>}
       {problems && problems.length > 0 && <Notice tone="danger" title={`${afterLabel}：${problems.join("、")}`}>批准后 App 的信任中心整页不可用。</Notice>}
       {afterBlanked && <p className="rd-note">{afterBlanked}</p>}
     </div>
@@ -275,38 +275,38 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
           </Field>
         </div>
         <div className="i4-editor-fields-head">
-          <span className="i4-editor-count">字段 {editor.fields.length} 个<span className="rd-form-hint">App 最多 {APP_FIELD_LIMIT} 个</span>
-            <Explain label="字段怎么改" content={<><p>字段标识跟着现在公开的版本走，不能增删、不能改名，只改名称和内容。</p><p>提交发布时中文、越南语、英语三种都要齐，链接字段可以空；草稿可以先存。</p></>} />
+          <span className="i4-editor-count">{editor.fields.length} 项内容<span className="rd-form-hint">App 最多 {APP_FIELD_LIMIT} 项</span>
+            <Explain label="内容怎么改" content={<><p>有哪几项跟着现在公开的版本走，不能增删，只改每项的名称和内容。</p><p>提交发布时中文、越南语、英语三种都要齐，链接可以空；草稿可以先存。</p></>} />
           </span>
           {changed.size > 0 && <StatusTag tone="progress">和 {publishedVersion || "公开版"} 比改了 {changed.size} 项</StatusTag>}
         </div>
-        {overLimit && <Notice tone="warn">字段超过 {APP_FIELD_LIMIT} 个：后台能保存，但发布后 App 会拒收整份内容。</Notice>}
+        {overLimit && <Notice tone="warn">内容超过 {APP_FIELD_LIMIT} 项：后台能保存，但发布后 App 会拒收整份内容。</Notice>}
         <LocaleTabs label="编辑语言" value={lang} onChange={setLang} items={localeItems(editor.fields)} />
         <div className="i4-editor-list">
           {shown.map(({ field, index }) => (
             <div className="i4-editor-field" key={field.key} data-changed={changed.has(field.key) ? "" : undefined}>
               <div className="i4-editor-key">
-                <span data-mono="" data-trust-field-key="fixed" title="字段标识，不能改">{field.key}</span>
+                <span data-mono="" data-trust-field-key="fixed" title="内容项标识，不能改">{field.key}</span>
                 {changed.has(field.key) && <StatusTag tone="progress">已改</StatusTag>}
                 {!blanked.all && blanked.keys.has(field.key) && <span className="i4-field-note">App 公开时清空</span>}
               </div>
               <div className="i4-editor-pair">
-                <Field label="字段名称">
-                  <Input aria-label="字段名称" disabled={frozen} value={field.label} onChange={(event) => setField(index, { label: event.target.value })} />
+                <Field label="名称">
+                  <Input aria-label="名称" disabled={frozen} value={field.label} onChange={(event) => setField(index, { label: event.target.value })} />
                 </Field>
-                <Field label="字段内容" hint={/(url|href)$/i.test(field.key.trim()) ? "选填" : undefined}>
-                  <Textarea aria-label="字段内容" disabled={frozen} rows={1} value={field.value} onChange={(event) => setField(index, { value: event.target.value })} />
+                <Field label="内容" hint={/(url|href)$/i.test(field.key.trim()) ? "选填" : undefined}>
+                  <Textarea aria-label="内容" disabled={frozen} rows={1} value={field.value} onChange={(event) => setField(index, { value: event.target.value })} />
                 </Field>
               </div>
             </div>
           ))}
-          {shown.length === 0 && <p className="rd-note">这种语言没有字段。</p>}
+          {shown.length === 0 && <p className="rd-note">这种语言没有内容。</p>}
         </div>
       </div>
       <aside className="i4-editor-preview" aria-label="App 里的样子">
         <div className="i4-preview-head">
           <span>App 里的样子 · {LANGS.find((item) => item.value === lang)?.label}</span>
-          <Explain label="预览说明" content="按字段原样排列，只示意用户看到的文字，不是 App 的真实排版。" />
+          <Explain label="预览说明" content="按内容项原样排列，只示意用户看到的文字，不是 App 的真实排版。" />
         </div>
         {blanked.all && <Notice tone="neutral">{blanked.all}</Notice>}
         <FieldList label="App 里的样子" fields={editor.fields} lang={lang} blanked={blanked} changed={changed} />
