@@ -796,10 +796,12 @@ async function sendI1Command(command: I1Command, retry: boolean): Promise<unknow
   if ((payload.code !== undefined && typeof payload.code !== "number") || (payload.message !== undefined && typeof payload.message !== "string")) {
     throw Object.assign(new OutcomeUnknownError("原操作回执无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });
   }
-  if (!response.ok || payload.code !== 0) {
-    const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status: response.status, reasonCode: payload.message });
+  const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(payload.message);
+  if (!response.ok || payload.code !== 0 || unknown) {
+    const status = response.ok && payload.code! >= 400 && payload.code! < 500 ? payload.code : response.status;
+    const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status, reasonCode: payload.message });
     const rejected = retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && payload.code! < 500 && !isIdempotencyOutcomeOpen(payload.message);
-    if (rejected) {
+    if (rejected && !unknown) {
       uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
       throw failure;
     }

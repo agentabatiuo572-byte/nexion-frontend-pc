@@ -415,7 +415,6 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     if (blocked) { toast(blocked, "warn"); return; }
     let original: I6Command | undefined, resolved = false;
     openConfirm({ briefKind: "record",
-      errorHandled: true,
       freezePendingInputs: true,
       getPendingReason: () => original ? pendingI6Commands().find(row => row.commandKey === original!.commandKey)?.reason : undefined,
       action: <>全量重扫 {I6_STATS.managedKeys} 词条</>,
@@ -439,7 +438,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         } catch (error) {
           if (original && !pendingI6Commands().some(row => row.commandKey === original!.commandKey)) { resolved = true; await finishRecovery(); }
           else original = pendingI6Commands().find(row => row.scope === "rescan");
-          throw error;
+          throw new Error(`操作失败:${displayAdminError(error)}`);
         } finally { updateRecovery(value => value + 1); }
       },
     });
@@ -669,7 +668,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       effect: <StatusTag tone="progress" filled explain={`${APPROVER}在「操作记录与审批」批准后才改；批准前用户仍按现在的数领。`}>批准后生效</StatusTag>,
       confirmLabel: "提交审批",
       statedBrief: { impact: "批准后，之后学完领奖的用户按新数领；已经发出的不补也不扣。", check: "核对新数在范围内，理由写清为什么调。" },
-      edit: { kind: "number", current: c.rewardRaw ?? "", unit: "UVT/课", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max, step: 1,
+      edit: { kind: "number", current: c.rewardRaw ?? "", unit: "UVT/课", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max,
         amplifiesWhen: (value) => (i6RewardChange(value, c.rewardRaw)?.direction ?? 0) > 0,
         hint: `${TUTORIAL_REWARD_RANGE.min}–${TUTORIAL_REWARD_RANGE.max} UVT`,
         preview: (value: string) => {
