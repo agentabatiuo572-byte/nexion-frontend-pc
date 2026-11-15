@@ -15,8 +15,8 @@ import {
 export type { A2AuditDomain, A2AuditFilter } from "@/lib/admin/a2-policy";
 
 /**
- * 后端 66ecdb47 只给少数审批单回 operationCode（OpsAuditCenterService.ticketMetadata），G 参数、H4、课程单是空的。
- * 选展示方式时按后端写死的动作名认（H4GrowthApproval.proposalAction、LearningCourseActivationApproval.action、G2G7ParamApproval.proposalAction）。
+ * Backend 111e00cd returns the persisted command op for tickets and history.
+ * Retain action-name fallbacks for old records without a command (and E4 refunds without an order number).
  */
 export const REVIEW_OPERATION_BY_ACTION: Record<string, string> = {
   提高旧活动奖励: "h4_legacy_event_reward_update", 新增转盘奖项: "h4_wheel_tier_create", 放宽转盘奖项配置: "h4_wheel_tier_update",
@@ -103,6 +103,7 @@ interface BackendTicket {
 
 interface BackendHistory {
   ruleTaskAction?: A2RuleTaskAction | null;
+  operationCode?: string | null;
   id: string;
   action: string;
   st: string;
@@ -203,6 +204,8 @@ export interface A2OperationRow {
   ts: string;
   /** 后端原始时间，要按业务时区显示时用。ts 是按浏览器时区格式化好的。 */
   rawTs?: string;
+  /** Original status for domain-specific recovery receipt validation. */
+  rawStatus?: string;
   mine: boolean;
   roleGate: string;
   reason: string;
@@ -211,6 +214,7 @@ export interface A2OperationRow {
 
 export interface A2OperationHistory {
   ruleTaskAction?: A2RuleTaskAction | null;
+  operationCode?: string | null;
   id: string;
   action: string;
   st: string;
@@ -397,6 +401,7 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     roleGate: ticket.roleGate?.trim() || "超管",
     reason: ticket.reason?.trim() || "—",
     status: normalizeStatus(ticket.status),
+    rawStatus: ticket.status ?? undefined,
   };
 }
 
@@ -451,7 +456,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): A2Overview
   };
 }
 
-async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; commandKey?: string; strictOutcome?: boolean }) {
+async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; commandKey?: string; strictOutcome?: boolean | "proposal" }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -478,7 +483,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   // classification-ok: Strict recovery rejects malformed envelopes and wrapped business 5xx even under HTTP 200; HTTP failure classification below remains shared.
   if (init?.commandKey && init.strictOutcome && (!result || !Number.isInteger(result.code)
-      || result.code >= 500 || result.code !== 0 && result.code < 400)) {
+      || init.strictOutcome === true && (result.code >= 500 || result.code !== 0 && result.code < 400))) {
     throw new A2OutcomeUncertainError("提交结果暂未确认，请到操作记录里核对。", init.commandKey);
   }
 
@@ -508,6 +513,8 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
     throw Object.assign(new Error(await monthlyTargetPoolErrorText(result?.message, result?.data)
       ?? formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`)), {
       status: response.ok && typeof result?.code === "number" ? result.code : response.status,
+      httpStatus: response.status,
+      apiCode: result?.code,
       details: result?.data,
       backendMessage: result?.message,
     });
@@ -544,9 +551,15 @@ function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
-export async function fetchA2Overview(filter: A2AuditFilter = {}) {
+export async function fetchA2Overview(filter: A2AuditFilter = {}, requireQueue = false) {
   const query = buildA2FilterQuery(filter).toString();
-  return normalizeOverview(await a2Request<BackendOverview>(`/overview${query ? `?${query}` : ""}`));
+  const data = await a2Request<BackendOverview>(`/overview${query ? `?${query}` : ""}`);
+  if (requireQueue && (!data || !Array.isArray(data.operationQueue) || data.operationQueue.some(row =>
+    !row || typeof row.id !== "string" || !row.id || typeof row.obj !== "string" || typeof row.action !== "string"
+      || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "")))) {
+    throw new Error("F2_APPROVAL_RESPONSE_INVALID");
+  }
+  return normalizeOverview(data);
 }
 
 export async function approveA2Operation(operationId: string, reason: string, commandKey?: string) {
@@ -635,10 +648,16 @@ export async function fetchA2ReasonPolicy(): Promise<A2ReasonPolicy> {
 }
 
 /** Exact original-maker lookup includes archived audit evidence; never resubmit a lost proposal. */
-export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false): Promise<A2OperationRow | null> {
+export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket: boolean | "metadata" = false): Promise<A2OperationRow | null> {
   try {
     const row = await a2Request<BackendTicket>(`/operations/proposals/by-idempotency-key?${new URLSearchParams({ idempotencyKey: commandKey })}`);
     if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new Error("提交结果不完整，请稍后再查。");
+    // F recovery validates the original owner/object; B5 also requires raw action/operation metadata.
+    if (strictTicket && (typeof row.obj !== "string" || typeof row.mine !== "boolean"
+      || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(strictTicket === "metadata" ? row.status.trim().toLowerCase() : row.status)
+      || strictTicket === "metadata" && (typeof row.action !== "string" || typeof row.operationCode !== "string"))) {
+      throw new Error("提交结果不完整，请稍后再查。");
+    }
     return fromTicket(row);
   } catch (failure) {
     if (failure && typeof failure === "object" && "status" in failure && failure.status === 404
@@ -672,14 +691,16 @@ export async function createA2OperationProposal(input: {
   command: { domain: string; op: string; params: Record<string, unknown> };
   target?: { domain: string; type: string; id: string };
   targets?: { domain: string; type: string; id: string }[];
-}, commandKey?: string, strictOutcome = false) {
+}, commandKey?: string, strictOutcome: boolean | "proposal" = false) {
   const row = await a2Request<BackendTicket>("/operations", {
     method: "POST",
     strictOutcome,
     body: JSON.stringify(input),
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-proposal" }),
   });
-  if (strictOutcome && (!row || typeof row.id !== "string" || !row.id)) {
+  if (strictOutcome && (!row || typeof row.id !== "string" || !row.id
+      || strictOutcome === "proposal" && (typeof row.obj !== "string" || typeof row.mine !== "boolean"
+        || typeof row.operationCode !== "string" || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "")))) {
     throw new A2OutcomeUncertainError("提交结果不完整，请到操作记录里核对。", commandKey!);
   }
   return fromTicket(row);

@@ -4,7 +4,7 @@ import { Activity, AlertTriangle, Battery, Info, CircleMinus, MoreHorizontal, Pa
 import { E6ConfirmModal } from "./e6-confirm-modal";
 import { Button, Cell, ColumnPicker, Conclusion, Explain, Fact, Facts, FilterBar, IconButton, Input, MoreMenu, Pager, Panel, RatioBar, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type MoreMenuItem } from "@/app/components/rd";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { type E5Device } from "@/lib/admin/e5-client";
+import { canResumeE5UserDevicesFrom, type E5Device } from "@/lib/admin/e5-client";
 import type { EViewCtx } from "./types";
 import { E6PendingNotice, useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
 import { e6AmountPrecision } from "@/lib/admin/e6-decimal";
@@ -13,6 +13,8 @@ const STATES: Record<E5Device["state"],string>={active:"在线",busy:"任务中"
 const STATE_STYLE = { active: {tone:"ok"}, busy: {tone:"progress",icon:Activity}, offline: {tone:"done",icon:WifiOff}, inventory: {tone:"neutral",icon:Power}, "pending-deactivate": {tone:"progress"}, unbound: {tone:"done",icon:CircleMinus}, abnormal: {tone:"warn",icon:AlertTriangle}, unknown: {tone:"neutral",icon:Info} } as const;
 const LABELS={activate:"激活手机",deactivate:"取消激活",force:"强制激活",unbind:"解绑手机",pause:"暂停该用户",resume:"恢复该用户"};
 type Action=keyof typeof LABELS;
+// 主状态和后端的先后一致：停用、停用中排在运营暂停前面（暂停原因仍在问号里）。
+const shownPaused=(d:E5Device)=>!!d.pausedReason&&d.state!=="unbound"&&d.state!=="pending-deactivate";
 // 表头写「电量和心跳」，第二行常显距上次心跳多久；完整遥测仍在电量的气泡里。
 const heartbeatAge=(s:number|null)=>s==null?"心跳未采集":`心跳 ${s<60?`${s} 秒`:s<3600?`${Math.floor(s/60)} 分钟`:s<86400?`${Math.floor(s/3600)} 小时`:`${Math.floor(s/86400)} 天`}前`;
 export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
@@ -30,21 +32,21 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
     if(activatable&&ctx.canWriteE5&&d.state==="inventory")add("activate",full?"已达 6 台上限，请先停用其他设备":undefined);
     if(activatable&&ctx.canForceActivateE5&&m.canPropose)add("force",full?"已达 6 台上限，强制激活也不能绕过":undefined);
     if(deactivatable&&ctx.canWriteE5)add("deactivate");
-    if(deactivatable&&ctx.canWriteE5)add(d.pausedReason?"resume":"pause",m.locked(`user:${d.userId}`)?"这个用户有原操作待确认":undefined,!d.pausedReason);
+    if(ctx.canWriteE5&&(d.pausedReason?canResumeE5UserDevicesFrom(d):deactivatable))add(d.pausedReason?"resume":"pause",m.locked(`user:${d.userId}`)?"这个用户有原操作待确认":undefined,!d.pausedReason);
     if(deactivatable&&ctx.canUnbindE5&&m.canPropose)add("unbind",undefined,true);
     return result;
   };
   const scope=confirm?(confirm.action==="pause"||confirm.action==="resume"?`user:${confirm.device.userId}`:phoneScope(confirm.device)):"";
-  const consequence=confirm?.action==="activate"||confirm?.action==="force"?"每人最多 6 台设备，包含手机。激活后占用一个设备名额，强制激活也不能绕过上限。":confirm?.action==="deactivate"?"有任务则在本单完成结算后停用，不再派单。":confirm?.action==="unbind"?"设备将不再属于该用户。不退款，购入时间不变；批准后解绑，不能撤销。":confirm?.action==="pause"?"将暂停该用户全部设备（含手机）。停跑期间不计收益、不补发。":"将恢复该用户全部设备派单；停跑期间收益不补发。";
+  const consequence=confirm?.action==="activate"||confirm?.action==="force"?"每人最多 6 台设备，包含手机。激活后占用一个设备名额，强制激活也不能绕过上限。":confirm?.action==="deactivate"?"有任务则在本单完成结算后停用，不再派单。":confirm?.action==="unbind"?"设备将不再属于该用户。不退款，购入时间不变；批准后解绑，不能撤销。":confirm?.action==="pause"?"将暂停该用户全部设备（含手机）。停跑期间不计收益、不补发。":"只恢复运营手动暂停的设备；退款、注销、换机、离线、电量低等系统暂停保持不变。停跑期间收益不补发。";
   return <><E6PendingNotice section="phones" onRead={result=>{void ctx.refreshE5();if(result?.readbackFailed)ctx.toast("已取得操作回执，读回失败，请刷新核对。","warn");}}/>
     <Conclusion state="neutral" icon={Smartphone}>{ctx.e5Loading?"正在查询用户手机":ctx.e5DeviceError?"等手机列表读取成功后可用":`当前查询共 ${ctx.e5Total} 台手机`}{ctx.e5Keyword&& !ctx.e5DeviceError?` · ${ctx.e5Keyword}`:""}</Conclusion>
     <Panel title="用户手机" className="e6-phone-panel" icon={Smartphone} tone="role-2" flush data-proof="e6-phone-devices" explain="每人最多 6 台设备，包含手机。这里显示手机心跳状态，没有商城 SIM 任务进度。" actions={<ColumnPicker columns={columns}/> }>
       <div className="e6-phone-tools"><FilterBar><Input className="rd-filter-grow" aria-label="搜索用户手机" placeholder="搜索用户 / 手机" value={ctx.e5Keyword} onChange={e=>{ctx.setE5Keyword(e.target.value);query({phoneKeyword:e.target.value,phonePage:1});}}/>{(!ctx.e5DeviceError||ctx.e5Loading)&&<Button disabled={ctx.e5Loading} onClick={()=>void ctx.refreshE5()}>刷新</Button>}</FilterBar></div>
       <Table label="用户手机" className="e6-phones-table" data-tight><thead><tr><Th icon={Smartphone} tone="devices">设备</Th>{columns.isVisible("user")&&<Th icon={Users} tone="users">用户</Th>}<Th>状态</Th>{columns.isVisible("daily")&&<Th align="right">每日收益</Th>}{columns.isVisible("battery")&&<Th align="right" icon={Battery} tone="devices">电量和心跳</Th>}{columns.isVisible("task")&&<Th>当前任务</Th>}{canAct&&<Th sticky="end">操作</Th>}</tr></thead><tbody>
       {ctx.e5Loading?<TableLoading columns={columns.all.filter(c=>columns.isVisible(c.key)).length}/>:ctx.e5DeviceError?<TableMessage columns={columns.all.filter(c=>columns.isVisible(c.key)).length} role="alert">{ctx.e5DeviceError}<Button size="sm" onClick={()=>void ctx.refreshE5()}>重试</Button></TableMessage>:!ctx.e5Devices.length?<TableMessage columns={columns.all.filter(c=>columns.isVisible(c.key)).length}>暂无符合条件的手机</TableMessage>:ctx.e5Devices.map(d=><Tr key={d.deviceId}>
-        <Td className="e6-phone-device"><Cell main={<E6OriginalValues original={d.deviceName}><span className="e6-middle-text"><span>{d.deviceName.slice(0,-8)}</span><span>{d.deviceName.slice(-8)}</span></span></E6OriginalValues>} sub={<E6OriginalValues original={d.serial}><span data-mono className="e6-middle-text"><span>{d.serial.slice(0,-8)}</span><span>{d.serial.slice(-8)}</span></span></E6OriginalValues>} title={d.deviceName}/></Td>
+        <Td className="e6-phone-device"><Cell main={<E6OriginalValues original={d.deviceName}><span className="e6-end-text">{d.deviceName}</span></E6OriginalValues>} sub={<E6OriginalValues original={d.serial}><span data-mono className="e6-middle-text"><span>{d.serial.slice(0,-8)}</span><span>{d.serial.slice(-8)}</span></span></E6OriginalValues>} title={d.deviceName}/></Td>
         {columns.isVisible("user")&&<Td className="e6-phone-user"><Cell main={d.nickname} sub={d.userNo} title={`${d.nickname} · ${d.userNo}`}/></Td>}
-        <Td><span className="e6-phone-status"><StatusTag {...(d.pausedReason?{tone:"done",icon:PauseCircle} as const:STATE_STYLE[d.state])}>{d.pausedReason?"已暂停":STATES[d.state]}</StatusTag>{(d.pausedReason||d.state==="abnormal")&&<Explain label={`${d.serial}的状态原因`} rows={[...(d.pausedReason?[{k:"暂停原因",v:d.pausedReason}]:[]),...(d.state==="abnormal"?[{k:"异常状态",v:d.runtimeStatus}]:[])]}/>}</span></Td>
+        <Td><span className="e6-phone-status"><StatusTag {...(shownPaused(d)?{tone:"done",icon:PauseCircle} as const:STATE_STYLE[d.state])}>{shownPaused(d)?"已暂停":STATES[d.state]}</StatusTag>{(d.pausedReason||d.state==="abnormal")&&<Explain label={`${d.serial}的状态原因`} rows={[...(d.pausedReason?[{k:"暂停原因",v:d.pausedReason}]:[]),...(d.state==="abnormal"?[{k:"异常状态",v:d.runtimeStatus}]:[])]}/>}</span></Td>
         {columns.isVisible("daily")&&<Td align="right" data-num="">{d.dailyUsdt==null?"—":<><E6Amount raw={d.dailyUsdtText??String(d.dailyUsdt)} precision={precision} currency="USDT"/> USDT</>}</Td>}
         {columns.isVisible("battery")&&<Td align="right" data-num=""><Cell main={<Explain label={`${d.serial}的手机遥测`} align="end" rows={[{k:"原始状态",v:d.rawStatus},{k:"运行状态",v:d.runtimeStatus},{k:"电量",v:d.batteryLevel==null?"未采集":`${d.batteryLevel}%`},{k:"心跳",v:d.heartbeatAt&&d.heartbeatAt!=="—"?d.heartbeatAt:"未采集"},{k:"距心跳",v:d.heartbeatAgeSeconds==null?"未采集":`${d.heartbeatAgeSeconds} 秒`},{k:"充电",v:d.isCharging==null?"未采集":d.isCharging?"充电中":"未充电"},{k:"网络",v:d.isWifiConnected==null?"未采集":d.isWifiConnected?"网络可达":"网络断开"},{k:"温控",v:d.thermalState||"未采集"}]}>{d.batteryLevel==null?"未采集":`${d.batteryLevel}%`}</Explain>} sub={heartbeatAge(d.heartbeatAgeSeconds)}/></Td>}
         {columns.isVisible("task")&&<Td data-mono="" className="e6-phone-task">{d.activeTaskNo!=="—"?<E6OriginalValues original={d.activeTaskNo}><span className="e6-middle-text"><span>{d.activeTaskNo.slice(0,-8)}</span><span>{d.activeTaskNo.slice(-8)}</span></span></E6OriginalValues>:"—"}</Td>}
@@ -55,14 +57,17 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
     {confirm&&<E6ConfirmModal scope={scope} briefKind="record" statedBrief={{impact:consequence,check:"核对设备、用户、六台名额与处置后果，理由写明依据。"}} action={`${LABELS[confirm.action]} · ${confirm.device.serial}`} title={`${LABELS[confirm.action]} ${confirm.action==="pause"||confirm.action==="resume"?confirm.device.nickname:confirm.device.deviceName}`} reasonMin={8} reasonMax={200} confirmLabel={confirm.action==="force"||confirm.action==="unbind"?"确认提交":"确认执行"} confirmTone={confirm.action==="pause"||confirm.action==="unbind"?"danger":"primary"}
       detail={consequence}
       completionCopy={confirm.action==="force"||confirm.action==="unbind"?"由另一位具备批准权和设备处置权限的管理员复核。":"执行后读取手机列表核对真实状态。"}
-      facts={<Facts><Fact k={confirm.action==="pause"||confirm.action==="resume"?"操作范围":"手机"}>{confirm.action==="pause"||confirm.action==="resume"?"该用户全部设备，包含手机":confirm.device.deviceName}</Fact><Fact k="实例号"><span data-mono className="e6-serial">{confirm.device.serial}</span></Fact><Fact k="用户">{`${confirm.device.nickname} · ${confirm.device.userNo}`}</Fact><Fact k="原状态">{confirm.device.pausedReason?"已暂停":STATES[confirm.device.state]}</Fact>{(confirm.action==="activate"||confirm.action==="force")&&<Fact k="已占名额"><span className="e6-device-slots"><span>{confirm.device.activeDevicesForUser}/6 台</span><RatioBar label="设备名额" value={confirm.device.activeDevicesForUser} total={6} valueText={`${confirm.device.activeDevicesForUser}/6 台，含手机`} steps compact/></span></Fact>}</Facts>}
+      facts={<Facts><Fact k={confirm.action==="pause"||confirm.action==="resume"?"操作范围":"手机"}>{confirm.action==="pause"?"该用户全部设备，包含手机":confirm.action==="resume"?"该用户被运营暂停的设备，包含手机":confirm.device.deviceName}</Fact><Fact k="实例号"><span data-mono className="e6-serial">{confirm.device.serial}</span></Fact><Fact k="用户">{`${confirm.device.nickname} · ${confirm.device.userNo}`}</Fact><Fact k="原状态">{shownPaused(confirm.device)?"已暂停":STATES[confirm.device.state]}</Fact>{(confirm.action==="activate"||confirm.action==="force")&&<Fact k="已占名额"><span className="e6-device-slots"><span>{confirm.device.activeDevicesForUser}/6 台</span><RatioBar label="设备名额" value={confirm.device.activeDevicesForUser} total={6} valueText={`${confirm.device.activeDevicesForUser}/6 台，含手机`} steps compact/></span></Fact>}</Facts>}
       getPendingReason={()=>m.pendingReason(scope)} onClose={()=>setConfirm(null)} onConfirm={async reason=>{
         let result: E6WriteReceipt | undefined;
         const d=confirm.device,action=confirm.action,original=m.pending.find(r=>r.scope===scope);
         if(original)result=await m.send(original,true);
         else if(action==="force"||action==="unbind") {const def=findHighOp(action==="force"?"e5_device_force_activate":"e5_device_unbind")!,params={deviceId:d.deviceId};await m.proposal(scope,"phones",{action:`${LABELS[action]} · ${d.serial}`,obj:String(d.deviceId),beforeValue:STATES[d.state],afterValue:action==="force"?"激活":"解绑",type:def.type,amplifies:false,reason,sourceDomain:"E5",command:def.buildCommand(params),target:def.buildTarget(params)});}
-        else result=await m.device(scope,`${LABELS[action]} · ${d.serial}`,{before:`${STATES[d.state]}；已占 ${d.activeDevicesForUser}/6 台；暂停原因 ${d.pausedReason||"—"}`,serial:d.serial,deviceId:d.deviceId,userId:Number(d.userId),action,reason});
-        await ctx.refreshE5();setConfirm(null);ctx.toast(result?.readbackFailed?"已取得操作回执，读回失败，请刷新核对。":action==="force"||action==="unbind"?"已提交，等待审批后执行":action==="pause"||action==="resume"?result?.changedCount===undefined?"已取得用户设备操作回执，请核对列表":`${action==="pause"?"暂停":"恢复"}成功 · ${result.changedCount} 台设备`:action==="deactivate"&&result?.pendingDeactivate?"已申请停用，等待当前任务结算后自动停用":"已取得操作回执并读取手机列表，请核对当前状态",result?.readbackFailed?"warn":undefined);
+        else result=await m.device(scope,`${LABELS[action]} · ${d.serial}`,{before:`${STATES[d.state]}；已占 ${d.activeDevicesForUser}/6 台；暂停原因 ${d.pausedReason||"—"}`,serial:d.serial,deviceId:d.deviceId,userId:Number(d.userId),action,reason}).catch(async failure=>{
+          if(failure instanceof Error&&"backendMessage" in failure&&failure.backendMessage==="PAUSED_USER_DEVICES_NOT_FOUND")await ctx.refreshE5();
+          throw failure;
+        });
+        await ctx.refreshE5();setConfirm(null);ctx.toast(result?.readbackFailed?"已取得操作回执，读回失败，请刷新核对。":action==="force"||action==="unbind"?"已提交，等待审批后执行":action==="pause"||action==="resume"?result?.changedCount===undefined?"已取得用户设备操作回执，请核对列表":action==="pause"?`暂停成功 · ${result.changedCount} 台设备`:`已恢复 ${result.changedCount} 台运营暂停的设备`:action==="deactivate"&&result?.pendingDeactivate?"已申请停用，等待当前任务结算后自动停用":"已取得操作回执并读取手机列表，请核对当前状态",result?.readbackFailed?"warn":undefined);
       }}/>}
   </>;
 }

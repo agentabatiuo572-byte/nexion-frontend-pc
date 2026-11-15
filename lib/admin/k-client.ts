@@ -108,10 +108,11 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
       throw new K1OutcomeUncertainError(
         formatAdminApiError(payload.message, `RISK_REQUEST_OUTCOME_UNKNOWN_${res.status}`), commandKey);
     }
-    throw new K1RequestError(formatAdminApiError(payload.message, `RISK_API_${res.status}`), res.status, payload.message);
+    const status = (path.startsWith("/arbitrage/") || path.startsWith("/scoring/")) && res.ok && payload.code && payload.code >= 400 && payload.code < 500 ? payload.code : res.status;
+    throw new K1RequestError(formatAdminApiError(payload.message, `RISK_API_${res.status}`), status, payload.message);
   }
-  if (isWrite && path.startsWith("/withdraw-rules") && payload.code !== 0) {
-    throw new K1OutcomeUncertainError("K3_WRITE_RESULT_INVALID", commandKey);
+  if (isWrite && (path.startsWith("/withdraw-rules") || path.startsWith("/arbitrage/") || path.startsWith("/scoring/")) && payload.code !== 0) {
+    throw new K1OutcomeUncertainError(path.startsWith("/scoring/") ? "K4_WRITE_RESULT_INVALID" : path.startsWith("/arbitrage/") ? "K2_WRITE_RESULT_INVALID" : "K3_WRITE_RESULT_INVALID", commandKey);
   }
   return payload.data as T;
 }
@@ -277,6 +278,7 @@ export type ArbitrageOverview = {
   domain: "K2";
   stats: K2Stat[];
   params: KRiskParam[];
+  otpInitializationRequired: Record<string, boolean>;
   views: K2ViewGroup[];
   sources?: string[];
 };
@@ -442,11 +444,11 @@ export type K4UserOption = {
   overridden: boolean;
 };
 export type ScoringOverview = {
-  model: K4Model;
+  model: K4Model | null;
   draft: K4Model | null;
   modelHistory: K4Model[];
   dimensions: K4Dimension[];
-  config: K4Config;
+  config: K4Config | null;
   distribution: K4Distribution[];
   totalUsers: number;
   recomputePending: number;
@@ -456,15 +458,16 @@ export type ScoringOverview = {
 
 export type K4WithdrawalAlert = {
   id: string;
+  userNo: string | null;
   domain: "K4";
   level: "critical";
   title: string;
   hint: string;
   withdrawalNo: string;
-  riskScore: number;
-  priority: string;
-  modelVersion: string;
-  scoreAsOf: string;
+  riskScore: number | null;
+  priority: string | null;
+  modelVersion: string | null;
+  scoreAsOf: string | null;
   read: boolean;
   createdAt: string;
 };
@@ -896,8 +899,8 @@ const K2_REQUIRED_SOURCES = [
 
 function validateK2ParamValue(key: string, value: string): boolean {
   if (key === "trialCycleThreshold") {
-    const match = value.match(/^(>=|>)\s*(\d+)\s*次\s*\/\s*(7|14|30|60)\s*天$/);
-    return !!match && Number(match[2]) >= 2 && Number(match[2]) <= 10;
+    const match = value.match(/^(>=|>)\s*(\d+)\s*次\s*\/\s*(\d+)\s*天$/);
+    return !!match && Number(match[2]) >= 2 && Number(match[2]) <= 10 && Number(match[3]) >= 7 && Number(match[3]) <= 60;
   }
   if (key === "welcomeGiftAnomalyThreshold") {
     const match = value.match(/^(>=|>)\s*(\d+)\s*笔\s*\/\s*(实体|账户簇|手机号|设备)$/);
@@ -1027,7 +1030,7 @@ function normalizeK2(raw: unknown): ArbitrageOverview {
           invalidK2Response(`${rowPath}.clusterStatus`);
         }
         const clusterId = row.clusterId == null ? "" : requiredK2String(row.clusterId, `${rowPath}.clusterId`, true);
-        const level = requiredK2Integer(row.level, `${rowPath}.level`, 0, 3);
+        const level = requiredK2Integer(row.level, `${rowPath}.level`, 0, 5);
         return {
           rowId,
           rid: rowId,
@@ -1053,7 +1056,27 @@ function normalizeK2(raw: unknown): ArbitrageOverview {
   if (views.length !== K2_VIEW_KEYS.length || K2_VIEW_KEYS.some((key) => !viewKeys.has(key))) invalidK2Response("arbitrage.views");
   const sources = requiredK2StringArray(data.sources, "arbitrage.sources");
   if (K2_REQUIRED_SOURCES.some((source) => !sources.includes(source))) invalidK2Response("arbitrage.sources");
-  return { serverCanonical: true, domain: "K2", stats, params, views, sources };
+  const initialization = requiredK2Record(data.otpInitializationRequired, "arbitrage.otpInitializationRequired");
+  const otpInitializationRequired: Record<string, boolean> = {};
+  for (const key of K2_PARAM_KEYS.slice(3)) {
+    if (typeof initialization[key] !== "boolean") invalidK2Response(`arbitrage.otpInitializationRequired.${key}`);
+    otpInitializationRequired[key] = initialization[key] as boolean;
+  }
+  return { serverCanonical: true, domain: "K2", stats, params, otpInitializationRequired, views, sources };
+}
+
+/** A serialized K2 write is retained before sending, including the original operator and reason. */
+export type K2CommandRequest = { path: string; method: "PATCH" | "POST"; body: string };
+
+export async function executeK2Command(request: K2CommandRequest, commandKey: string): Promise<void> {
+  const result = await apiRequest<Record<string, unknown>>(request.path, { method: request.method, body: request.body, commandKey });
+  const valid = result && Number.isInteger(result.version) && Number(result.version) >= 0
+    && (request.method === "PATCH"
+      ? typeof result.key === "string" && request.path === `/arbitrage/params/${encodeURIComponent(result.key)}`
+        && typeof result.value === "string" && validateK2ParamValue(result.key, result.value)
+      : typeof result.rowId === "string" && request.path.startsWith(`/arbitrage/rows/${encodeURIComponent(result.rowId)}/`)
+        && typeof result.disposition === "string" && ["account_flagged", "gift_blocked", "leaderboard_flagged", "cluster_frozen"].includes(result.disposition));
+  if (!valid) throw new K1OutcomeUncertainError("K2_WRITE_RESULT_INVALID", commandKey);
 }
 
 const K3_RESPONSE_INVALID = "K3_RESPONSE_INVALID";
@@ -1348,9 +1371,9 @@ function normalizeK4OverridePage(value: unknown): AdminPage<K4Override> {
   };
 }
 
-function normalizeK4(raw: unknown): ScoringOverview {
+export function normalizeK4(raw: unknown): ScoringOverview {
   const data = requiredK4Record(raw, "scoring");
-  const model = normalizeK4Model(data.model, "model", "active");
+  const model = data.model === null ? null : normalizeK4Model(data.model, "model", "active");
   const draft = data.draft == null ? null : normalizeK4Model(data.draft, "draft", "draft");
   const modelHistory = requiredK4Array(data.modelHistory, "modelHistory")
     .map((value, index) => normalizeK4Model(value, `modelHistory[${index}]`));
@@ -1361,7 +1384,7 @@ function normalizeK4(raw: unknown): ScoringOverview {
     if (seen.has(dimKey)) invalidK4Response(`dimensions[${index}].dimKey`);
     seen.add(dimKey);
     const weightPct = requiredK4Integer(row.weightPct, `dimensions[${index}].weightPct`, 0, 100);
-    if (weightPct !== model.weights[dimKey]) invalidK4Response(`dimensions[${index}].weightPct`);
+    if (model && weightPct !== model.weights[dimKey]) invalidK4Response(`dimensions[${index}].weightPct`);
     return {
       dimKey,
       name: requiredK4String(row.name, `dimensions[${index}].name`),
@@ -1369,7 +1392,7 @@ function normalizeK4(raw: unknown): ScoringOverview {
       weightPct,
     };
   });
-  if (dimensions.length !== K4_DIMENSION_KEYS.length || K4_DIMENSION_KEYS.some((key) => !seen.has(key))) invalidK4Response("dimensions");
+  if (model && (dimensions.length !== K4_DIMENSION_KEYS.length || K4_DIMENSION_KEYS.some((key) => !seen.has(key)))) invalidK4Response("dimensions");
   const distribution = requiredK4Array(data.distribution, "distribution").map((value, index) => {
     const row = requiredK4Record(value, `distribution[${index}]`);
     return {
@@ -1392,12 +1415,12 @@ function normalizeK4(raw: unknown): ScoringOverview {
     draft,
     modelHistory,
     dimensions,
-    config: {
+    config: model ? {
       inputSources: model.inputSources,
       bandLowMax: model.bandLowMax,
       bandHighMin: model.bandHighMin,
       autoEscalateScore: model.autoEscalateScore,
-    },
+    } : null,
     distribution,
     totalUsers,
     recomputePending,
@@ -1416,7 +1439,7 @@ function normalizeK4Contributions(value: unknown, path: string, modelScore: numb
     return {
       dimKey,
       name: requiredK4String(row.name, `${path}[${index}].name`),
-      evidence: typeof row.evidence === "string" ? row.evidence.trim() : invalidK4Response(`${path}[${index}].evidence`),
+      evidence: typeof row.evidence === "string" ? row.evidence : invalidK4Response(`${path}[${index}].evidence`),
       hit: requiredK4Boolean(row.hit, `${path}[${index}].hit`),
       subScore: requiredK4Integer(row.subScore, `${path}[${index}].subScore`, 0, 100),
       weightPct: requiredK4Integer(row.weightPct, `${path}[${index}].weightPct`, 0, 100),
@@ -1431,7 +1454,7 @@ function normalizeK4Contributions(value: unknown, path: string, modelScore: numb
   return contributions;
 }
 
-function normalizeK4User(raw: unknown): K4User {
+export function normalizeK4User(raw: unknown): K4User {
   const data = requiredK4Record(raw, "scoreUser");
   const modelScore = requiredK4Integer(data.modelScore, "scoreUser.modelScore", 0, 100);
   const effectiveScore = requiredK4Integer(data.effectiveScore, "scoreUser.effectiveScore", 0, 100);
@@ -1590,11 +1613,67 @@ export async function fetchK4ScoringOverview(query: K4PaginationQuery = {}): Pro
 }
 
 export async function fetchK4WithdrawalAlerts(): Promise<K4WithdrawalAlertOverview> {
-  return apiRequest("/scoring/withdrawal-alerts");
+  const raw = requiredK4Record(await apiRequest("/scoring/withdrawal-alerts"), "alerts");
+  if (raw.source !== "nx_k4_withdrawal_alert_receipt") invalidK4Response("alerts.source");
+  const alerts = requiredK4Array(raw.alerts, "alerts.alerts").map((value, index): K4WithdrawalAlert => {
+    const path = `alerts.alerts[${index}]`;
+    const row = requiredK4Record(value, path);
+    if (row.domain !== "K4" || row.level !== "critical") invalidK4Response(path);
+    return {
+      id: requiredK4String(row.id, `${path}.id`), domain: "K4", level: "critical",
+      title: requiredK4String(row.title, `${path}.title`), hint: requiredK4String(row.hint, `${path}.hint`),
+      userNo: nullableK4String(row.userNo, `${path}.userNo`),
+      withdrawalNo: requiredK4String(row.withdrawalNo, `${path}.withdrawalNo`),
+      riskScore: row.riskScore === null ? null : requiredK4Integer(row.riskScore, `${path}.riskScore`, 0, 100),
+      priority: nullableK4String(row.priority, `${path}.priority`),
+      modelVersion: nullableK4String(row.modelVersion, `${path}.modelVersion`),
+      scoreAsOf: nullableK4String(row.scoreAsOf, `${path}.scoreAsOf`),
+      read: requiredK4Boolean(row.read, `${path}.read`), createdAt: requiredK4String(row.createdAt, `${path}.createdAt`),
+    };
+  });
+  return { alerts, source: "nx_k4_withdrawal_alert_receipt" };
 }
 
-export async function markK4WithdrawalAlertRead(eventId: string): Promise<void> {
-  await apiRequest(`/scoring/withdrawal-alerts/${encodeURIComponent(eventId)}/read`, { method: "POST" });
+export async function markK4WithdrawalAlertRead(eventId: string, commandKey = newK1CommandKey()): Promise<void> {
+  const value = await apiRequest(`/scoring/withdrawal-alerts/${encodeURIComponent(eventId)}/read`, { method: "POST", commandKey });
+  // K4WithdrawalAlertService.markRead returns only eventId and read; it has no command replay.
+  const receipt = rec(value);
+  if (receipt.eventId !== eventId || receipt.read !== true) throw new K1OutcomeUncertainError("K4_WRITE_RESULT_INVALID", commandKey);
+}
+
+/** Replay the stored bytes. A valid receipt confirms the original write, never the current read. */
+export type K4CommandRequest = { method: "POST" | "PUT"; path: string; body: string };
+export async function executeK4Command(request: K4CommandRequest, commandKey: string): Promise<void> {
+  const value = await apiRequest(request.path, { method: request.method, body: request.body, commandKey });
+  try {
+    const input = JSON.parse(request.body) as Record<string, unknown>;
+    if (request.path.startsWith("/scoring/model/")) {
+      const receipt = normalizeK4(value);
+      if (!receipt.model || (request.path === "/scoring/model/publish" ? receipt.draft !== null : receipt.draft === null)) invalidK4Response("write.model");
+    } else if (request.path === "/scoring/users/recompute") {
+      const receipt = requiredK4Record(value, "write.batch");
+      const count = requiredK4Integer(receipt.count, "write.batch.count", 0, 1000);
+      const users = requiredK4Array(receipt.users, "write.batch.users");
+      if (count !== users.length) invalidK4Response("write.batch.count");
+      const seen = new Set<string>();
+      for (const value of users) {
+        const row = requiredK4Record(value, "write.batch.user");
+        const userNo = requiredK4String(row.userNo, "write.batch.userNo");
+        if (seen.has(userNo) || row.modelVersion !== input.expectedModelVersion) invalidK4Response("write.batch.user");
+        seen.add(userNo);
+        requiredK4Integer(row.before, "write.batch.before", 0, 100);
+        requiredK4Integer(row.after, "write.batch.after", 0, 100);
+      }
+    } else {
+      // OpsRiskService.overrideScore/recomputeScore return repository views with history=[].
+      const receipt = normalizeK4User(value);
+      const userNo = decodeURIComponent(request.path.split("/")[3]);
+      if (receipt.userNo !== userNo || receipt.rowVersion !== Number(input.expectedVersion) + 1
+          || (request.path.endsWith("/override") ? !receipt.overridden || receipt.effectiveScore !== input.score : receipt.overridden)) invalidK4Response("write.user");
+    }
+  } catch {
+    throw new K1OutcomeUncertainError("K4_WRITE_RESULT_INVALID", commandKey);
+  }
 }
 
 const k2ActionMap: Record<string, string> = {

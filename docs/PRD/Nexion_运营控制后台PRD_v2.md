@@ -72,6 +72,8 @@
 
 #### [E1a] 商品目录 & 定价
 
+**2026-11-14 后端 111e00cd 同步**：eeac87ae 将阶段 meta/skus 的 null 投影规范为空串；PC原字符串边界允许空串并显示未填写/—，不放宽其他字段、不写回DB，请求与界面保持。出处 OpsDeviceService.e1GenerationGates:2052–2057。
+
 **2026-11-11 复查修正**：上架条件编辑、归档、绝对偏移和强制开放两方向统一使用商品编号作为审批目标，后端按同一真实对象阻止双待批单；本标签页已收到的待审批回执保留原命令号；页头刷新和打开商品资料或审批详情时按原命令号查询真实审批状态，明确读到已批准、已驳回、已撤回或已过期后解除该回执的对象锁。未查到或读取失败时保留待审批锁并提供重试，不因目录变化或回执刷新清除待确认存储里的未知原命令。媒体代理保留后端机器原因及未知标识；幂等冲突、无法分类的409保留原上传和原号。请求在途只显示提交中或上传中，原操作仍先保存再发送；失败或不完整回包后才展示结果未确认。成功显示审批单号，商品上有可查看的待审批标记；按原号核对找到待审批回执也显示同一标记。原操作及旧记录只展示简明事实，完整原记录仍可复制。商品、阶段与上架条件、折扣独立读取，已读取的商品不因关联失败隐藏；每个操作只依赖实际使用的来源：商品新增/编辑和上架需目录及开放阶段（编辑含审核契约），下架/删除只需目录；阶段新增/编辑及既有上架条件编辑、偏移、撤销强制、移除只需阶段，删除阶段、新增上架条件和强制提前开放还需目录；阶梯折扣只需折扣来源。独立配置区不因目录读取失败隐藏，失败块可独立重试；E3关联设置只控制抢先购调整，没有E3读取权限或读取失败时显示「当前设置未读取」并只禁用该项，其他E1操作不受此项影响；阶段未读到时商品卡标明「开放阶段未读取」，不据此误报阶段冲突，上架条件摘要和规则数量也标明未读取，不显示成零。
 
 托管机房单行完整显示，UVT、试用和阶段另排；商品名中间省略时断点处的空格保留；售罄标签与剩余数分开；购买条件图标与文字同一行；卡片行列间距一致；缺目标或不限库存不保留空图形块，同排底部操作对齐。在售未配置等级进入可筛选的警示结论，售罄只在卡片提示。只读商品名称直接打开资料，不留单项更多和空操作列。资料按四组默认收起，售价突出、购买条件为中文条目、阶段为名称、不适用字段不列。编辑四区在1024仍是固定两列，数字输入有合适宽度、售价更宽，任务等级一行四项。四类配置确认常显当前与新值；金额精度和卡片一致，提交原值不变。
@@ -408,393 +410,27 @@ E2、E5、E6 设备与任务原命令共用核查入口：超过 24 小时或后
 
 ---
 
-#### [E3a] 设备生命周期
-> **当前执行口径**：本小节凡出现旧衰减字段、加法衰减、总周期截断、旧 `/api/admin/config/lifecycle` 接口，均由 `specs/FEAT-DEV01-task-capacity-schedule.md` 覆盖。运行时使用三段逐月复利产能曲线，`cycleMonths` 只作图表视窗，第三段开区间持续至 floor；8 类 SKU 开关、补贴标注和任务锁定阈值均来自 `/api/admin/devices/e3/config`。
+#### [E3a] 设备使用与产能规则
 
+本页 `/devices/trade-in` 维护设备产能与升级置换配置，读取 `GET /api/admin/devices/e3/overview` 和 `GET /api/admin/devices/e3/tradein/overview`。打开及手动刷新读取，不自动轮询。后端 `111e00cd` 提供三段月龄台数：前期 `earlyDeviceCount` 为月龄 ≤ stageEarlyEnd，中期 `midDeviceCount` 为 stageEarlyEnd < 月龄 ≤ stageMidEnd，后期直接使用 `cliffDeviceCount`（月龄 > stageMidEnd），不在前端相减。页面在曲线右侧「在用设备在哪一段」用分段条显示三段台数及合计，没有在用设备时写「没有在用设备」。统计排除 RECYCLED/DEACTIVATED/INACTIVE/RETIRED；月龄是依次取购买、激活、创建时间到现在的整月数。没有在用设备时 `averageAgeMonths=null`，页面显示「—」（不带单位）；真实 0 月仍显示 0。除平均月龄允许 null 外，必需统计及计数缺失、null 或非法数值仍报读取失败；三段台数必须为非负整数。事务按最近 24 小时，恢复次数不计入成功率；本月申请与金额按服务器业务日历。`latestAt=null` 表示无最近记录，显示「—」。折抵金额为 USDT，全精度，不做金额舍入。
 
-**① 目的 & 对齐**
-设备效率衰减曲线的运营面,是「设备 12 月内自然失效 → 驱动 trade-in / 升级 / 锁仓」的核心机制控制点。对齐前端 §6.8(DeviceLifecycleBanner / `/earn` 入口,`lib/store/device-lifecycle.ts`)+ §9.11c.1(lifecycle,`GET /api/config/lifecycle`)+ **12 月节奏表 §6.1 衰减曲线**。服务的业务目标:LTV 与资金沉淀(设备衰减 → 持续升级消费,§1.4 硬件 GMV 复购 + 12 月节奏软退场)、损失感驱动的 trade-in 漏斗(联动 E3)。
+产能按分段复利：从 100% 乘各月所在段的 `(1+delta/100)` 后取 floor，下限不重置后续内部连乘。前期为 1..stageEarlyEnd，中期为其后至 stageMidEnd，后期从 stageMidEnd+1 起持续；cycleMonths 只决定图表范围，不截断产能。后端投影六位小数；PC 图表为数学预览。正变化合法且后端不封顶 100%，App 目前拒绝超过 100% 的投影，保留提示，后端待办 E3-BE-04。8 类商品各有参与曲线/固定 100% 的开关。补贴窗口从 purchasedAt 优先、否则 activatedAt 起算，只影响补贴显示，不改变 applyCapacity。页面对分界移动、参与递减与免递减的影响写条件说法（按曲线低于或高于 100%），不承诺「越久任务越少」。产能图纵轴按数据取到 5% 整数的上限，不再固定画到 150%。
 
-**② 后台界面**
-1. **衰减曲线配置面**:三段衰减率编辑 `[月 1-3 / 月 4-8 / 月 9-12+ 的月度衰减率]` + 累计效率曲线可视化(100% → ~22% floor)+ `MIN_EFFICIENCY` floor 编辑 + **分段月界与周期编辑**(早期段末月 `stageEarlyEnd` / 中期段末月 `stageMidEnd` / 总周期月数 `cycleMonths`,三值定义早/中/晚各段的月份范围与总寿命,默认 §6.1 的 3 / 8 / 12;早 / 中 / 晚段范围 = [1–早末] / [早末+1–中末] / [中末+1–总月数],改后曲线整体重算)。
-2. **豁免类型管理**:豁免设备类型清单(`phone` / `cloud-share`,产能 trivial / 平台云端自维护,§6.8)。
-3. **设备效率分布**:全网在网设备按效率分档(≥85% / 65-85% / <65%)的分布柱状(派生自设备 purchasedAt + 曲线),呈现「fleet 老化态势」。
-4. **网络月度损失面**:全网 `getNetworkMonthlyLoss` 聚合(`totalMonthlyLossUSD / degradableCount`)+ 任务锁定累计月度损失**触发阈值配置**(§6.5)。
-   > **第 4 区职责边界(触发门槛 vs 展示数字,与 E3a③ 注脚 + E2⑦ 一致)**:本区配置的是**触发门槛**——决定何时弹 §6.7 TaskLockCumulativeBanner;**banner 显示的具体损失数字由 E2 `dailyPotential` 实时派生(E2⑦),不从本配置表取值**。§6.8 DeviceLifecycleBanner 的损失叙事同理引用 E2 实时派生值。即本配置表只喂「触发时机」,不喂「展示数字」(开发不得将两者对接到同一数据源)。
+本页保留 14 个入口：前/中/后期每月变化、产能下限、补贴天数、升级置换开关、仅限更贵、最多抵扣台数、等级资格共 9 个单项；分段月份、提示升级金额、8 类商品参与开关、4 条分档线、5 档折抵比例共 5 个组合。单项 `command={domain:E,op:e3_config,params:{key,value}}`，`obj=完整键`，`target=E/device_e3_config/后端规范键`；组合 `op=e3_config_batch, params.values=整组完整键值`，obj 为所有完整键排序后逗号连接，targets 对应完整组，不拆单。sourceDomain=E3，type=param，sos=false，旧 beforeValue/afterValue、理由、action 和请求字段顺序保留；提交时的完整当前参数另存为恢复证据，不作为服务端版本校验。A09 的 309 字符对象在后端票据中截为 255，command/targets 不截断。
 
-**③ 可控参数**
+所有入口只向 `POST /api/admin/platform/audit/operations` 发提案，成功为待审批，批准才执行。设备写权之外还要 A2 write 或 proposal_create；仅 proposal_create 没有 A2 write 的账号，五组组合按既定决定不可用，不拆成逐项绕过 E3-BE-01。批准者须活跃、有 platform_a2_operation_approve、域范围允许且不是发起人；单项还须 device_e3_read，组合没有专用 E3 批准映射，不承诺固定超级管理员角色。批准执行以当时配置形成候选，无 expectedVersion/CAS。放大方向以后端真实候选为准；放大时兑付覆盖率缺失、不可靠、缺红线或低红线均拒绝；涉及曲线/参与变化且受影响商品的任务奖励上界超过 999999999999.999999 USDT 时拒绝。提案阶段不检查这两项。
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| `DEGRADATION_CURVE.month_1_3` | **12 月节奏表 §6.1 权威**:−0.04(−4%/月) | −0.20 – 0 | 仅新计算(影响所有用户次次重算效率,不追溯历史已派发收益) | §6.8 DeviceLifecycleBanner 效率 / §7.1 legacy 退化 |
-| `DEGRADATION_CURVE.month_4_8` | **§6.1 权威**:−0.06(−6%/月) | −0.20 – 0 | 仅新计算 | 同上 |
-| `DEGRADATION_CURVE.month_9_12` | **§6.1 权威**:−0.237(−23.7%/月) | −0.20 – 0 | 仅新计算 | 同上(段末落到 ~22% floor;−10% 只到 ~43%,与 floor 矛盾) |
-| `MIN_EFFICIENCY`(floor) | **§6.1 / 前端 §6.8 现状**:0.22 | 0–1 | 仅新计算 | §6.8 效率 floor(月 12+ 不再降) |
-| 豁免类型 | `phone` / `cloud-share`(§6.8) | 设备 kind 集合 | 实时(影响 isDegradable 判定) | §6.8 哪些设备显示衰减 banner |
-| 衰减分段月界与总周期(`stageEarlyEnd` / `stageMidEnd` / `cycleMonths`) | **默认 §6.1**:早期段末月 3 / 中期段末月 8 / 总周期 12(月);三值划定早 [1–早末] / 中 [早末+1–中末] / 晚 [中末+1–总月数] 三段的月份范围 | `stageEarlyEnd` ≥ 1;**须 `stageEarlyEnd < stageMidEnd < cycleMonths`**(接口侧强制校验,违反返回 400);`cycleMonths` ≥ 1 | 仅新计算(影响所有用户次次重算的分段判定,不追溯历史已派发收益) | §6.8 DeviceLifecycleBanner 效率分段 / 各段衰减率(`DEGRADATION_CURVE.*`)所作用的月份区间 |
-| 任务锁定月度损失阈值 | **12 月节奏表 §6.5 权威**:月 1-3 = $40、月 4-8 = $140、月 9-12 = $450(**后台配置的 banner 触发阈值,仅决定触发时机**) | ≥ 0 | 仅新对象 | §6.7 TaskLockCumulativeBanner 触发判定 |
+R1：每次发出前保存完整原提案 body（含 operator、原理由、command、锁）、命令号、当前全参数、新值、提交时间和 owner；存储失败不发。组合只有一条记录。未知后原框所有输入冻结；刷新仍有原记录与恢复入口，概览失败时恢复仍可用。24 小时内只按保存 body+key 重发；只有明确 4xx 业务拒绝才解除，401/403/408/425/429 和 IDEMPOTENCY_* 保留；超过 24 小时只查询。创建成功保留待批记录，页面刷新时按本人命令号查询权威票据：pending 保留全部参数标记及拟改值，approved/withdrawn/expired 移除，rejected 显示已有被驳回状态并允许新申请。重试的历史回包不当当前配置或当前审批状态：原号 POST 成功只确认这份申请建过单，先保留为「已提交，审批结果未查到」，只提供查询原结果；只有原号 GET 返回 pending 才显示待批准和批准后曲线。查询失败保留提示、原记录和参数的新内容拦截，不用成功提示覆盖查询失败；后续权威终态照常收敛。恢复后关闭原框并独立重读配置，成功读取前禁新修改。查询权限与重发权限分别判断。原票过期且按原号查询严格返回 A2_PROPOSAL_NOT_FOUND 时，提示条给出「解除待确认」，确认框确认后先重查、仍查无此单才解除本标签页记录。缺完整原请求的旧 E3 指纹单独一条提示，只能查询原结果，查到终态后移除，禁止重发。待批准记录列成一条「N 项修改等批准」，每项可单独查询审批结果。提示统一叫「结果未知」，按钮「查询原结果」「按原请求重试」，逐条写改了什么、提交时间（北京时间）和理由，不显示命令号。
 
-> **任务锁定阈值:配置触发值 vs 实际派生值的区别**:上述 $40 / $140 / $450 为**后台配置的 banner 触发阈值**,决定何时弹 §6.7 TaskLockCumulativeBanner;**banner 实际展示的锁定损失数字以 E2 任务定价 × QUEUE_SATURATION 实时派生(§6.3 `dailyPotential` 口径)**。后台配置值与平台实际月度产出损失计量值是**两个独立数据层,不可混用**——配置阈值决定触发时机,实际派生值决定展示数字(参见 E2 ⑦联动段 + 本子模块 ②第 4 区同口径)。
+#### [E3b] 升级置换规则与统计
 
-> **默认值口径声明(§7 硬规则)**:衰减曲线(−4% / −6% / −23.7%)、`MIN_EFFICIENCY=0.22`、任务锁定月度损失($40 / $140 / $450)**全部以 12 月节奏表 §6.1 / §6.5 为权威**,与前端 §6.8 现状常量(`DEGRADATION_PER_MONTH = { early: -0.04, middle: -0.06, late: -0.237 }`、`MIN_EFFICIENCY = 0.22`)一致,无冲突(late 率取 −23.7% 使月 9-12 累计落到 22% floor;原 −10% 只到 ~43%,与 floor 矛盾,已订正)。衰减按 `purchasedAt` 浮点月数平滑积分(跨段边界),E3 是曲线配置权威源。
->
-> **衰减曲线变更的追溯口径(硬规则)**:衰减曲线变更**仅影响下次效率快照(`efficiency` 字段)的重算,不追溯调整历史已派发收益**(`earnings.credited` 已入账金额不变);效率降低仅影响曲线变更后新触发的收益派发。即「调曲线」改的是未来产出节奏,不回溯既往账本。
+按旧设备累计产出 ÷ 旧设备实付金额 × 100 分 5 档；严格小于 cut 才在当前档，等于边界归下一档，第 5 档为不小于 cut4。4 条界线严格递增，5 档抵扣比例 0..100 且严格递减，第 5 档可为 0。折抵为实付金额 × 档位比例 ÷ 100，后端六位小数并不超过目标价格，只减应付，不进余额。关闭 requireHigherPrice 后可换不同商品的同价或更便宜设备，应付可为 0；仍检查来源设备归属、活跃、已付金额、目标上架/库存、发布及购买资格。
 
-**④ 操作动作**
+maxDevicesPerOrder 入口保留，但当前后端及 App 每次只取一个 sourceDeviceId，配大于 1 也不合并多源；已定 E3-BE-02，页面保留「目前每单只按 1 台处理」。三种 taskLock 金额仅保存，App 没有消费者，归「目前不生效」，已定 E3-BE-03。资格为全部用户及 L2+ 至 L6+ 六个单选，降低门槛是放大，全部用户仍受其他条件限制；九类通用 eligibility、旧 salvage/minHoldingMonths/promo/inventory 的规划入口未在当前 E3 实现，不能当已有能力恢复。
 
-| 动作 | 执行权 | 确认弹窗 | 审计点 |
-|---|---|---|---|
-| 调衰减曲线(三段衰减率任一) | 商品运营(lead)/ 超管 | E3a-MD1(理由必填)(**影响所有用户后续终身收益与 trade-in 节奏,高敏;不追溯历史已派发收益**) | `admin.lifecycle_curve_changed`(段 / before-after / operator / reason) |
-| 调 `MIN_EFFICIENCY` floor | 商品运营(lead)/ 超管 | E3a-MD2(理由必填)(决定设备「最低产出地板」,影响软退场节奏) | `admin.lifecycle_curve_changed`(field=MIN_EFFICIENCY / before-after / operator / reason) |
-| 调豁免类型 | 商品运营(lead) | E3a-MD3(理由必填)(改变哪些设备纳入衰减,影响产出叙事) | `admin.lifecycle_curve_changed`(field=exempt / before-after / operator / reason) |
-| 调衰减分段周期(段边界 + 总月数,一次调齐) | 商品运营(lead)/ 超管 | E3a-MD5(理由必填)(改变早/中/晚段的月份范围与总寿命,影响断崖到来时点与软退场节奏,高敏;不追溯历史已派发收益) | `admin.lifecycle_curve_changed`(field=stages / before-after / operator / reason) |
-| 调任务锁定月度损失阈值 | 收益运营(lead) | E3a-MD4(理由必填)(放大损失叙事向,影响升级转化) | `admin.lifecycle_curve_changed`(field=taskLockLoss / before-after / operator / reason) |
+本月申请数与折抵合计包括未完成/被拒申请，不是完成成交额。「近 30 天高频置换账户」是同期完成置换至少三次且有正佣金或礼品入账的用户数，不是 K2 阻断次数，不自动处置。回收/停用成功数按当前状态及更新时间，失败/恢复来自审计；置换各计数来自不同订单/申请口径。latestKind 按是否有失败数生成，不证明最后一条事件结果。
 
-> 2026-06 操作确认决议后,原复核层级转为执行门槛:调衰减曲线 / MIN_EFFICIENCY 原复核为超管层级,执行权就高 = 商品运营(lead)/ 超管;调豁免类型执行权 = 商品运营(lead);调任务锁定损失阈值执行权 = 收益运营(lead)。所有确认弹窗动作经理由必填(server 强制非空 400 `REASON_REQUIRED`)即时生效,落 A2 审计并实时告警超管 / 对应域 lead。曲线 / 阈值调整为产出叙事杠杆,不构成即时资金流出,不前置 B1 红线预检(改曲线建议在 B4 节奏与 B1 覆盖率约束下评估,见 ⑦)。
->
-> **「调衰减曲线」确认执行前提(不追溯原则)**:确认衰减曲线变更时须明确——变更**仅作用于曲线变更后新触发的效率重算与收益派发,历史已派发收益(`earnings.credited`)不受影响、不回溯核减**。此不追溯原则为确认前提,确认弹窗 reason 须载明变更生效边界(次次快照起),弹窗影响预览区恒显该边界提示(E3a-MD1)。
-
-**④a 交互与弹窗规格**
-
-**(1) 动作触发总表**
-
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 调衰减曲线 | ②第 1 区衰减曲线配置面「保存曲线变更」 | 主按钮 | 仅商品运营 lead / 超管渲染;三段均未变更时置灰 | 打开弹窗 E3a-MD1 |
-| 调 MIN_EFFICIENCY floor | ②第 1 区 floor 编辑「保存 floor」 | 主按钮 | 仅商品运营 lead / 超管渲染;未变更时置灰 | 打开弹窗 E3a-MD2 |
-| 调豁免类型 | ②第 2 区豁免类型管理「保存豁免清单」 | 主按钮 | 仅商品运营 lead / 超管渲染;清单未变更时置灰 | 打开弹窗 E3a-MD3 |
-| 调衰减分段周期 | ②第 1 区衰减曲线配置面「调分段周期」 | 主按钮 | 仅商品运营 lead / 超管渲染;三值均未变更时置灰 | 打开弹窗 E3a-MD5 |
-| 调任务锁定损失阈值 | ②第 4 区网络月度损失面「编辑触发阈值」 | 行内按钮 | 仅收益运营 lead / 超管渲染 | 打开弹窗 E3a-MD4 |
-| 查看效率分布 / 网络月度损失 | ②第 3 / 4 区 | 只读视图 | 恒可用 | 就地查看,无弹窗 |
-
-**(2) 弹窗规格(逐弹窗)**
-
-##### [E3a-MD1] 调衰减曲线确认
-- **功能**:更新三段月度衰减率(月 1-3 / 月 4-8 / 月 9-12+ 任一或多段),确认即生效,仅影响全体设备下次效率快照重算,不追溯历史已派发收益。
-- **布局结构**:1. **信息区**:三段当前衰减率(§6.1 权威值对照)/ MIN_EFFICIENCY / 当前全网效率分布摘要。2. **影响预览区(必有)**:before→after **累计效率曲线可视化并排预览**(server 预检按新曲线重算 100% → floor 轨迹下发);**「影响所有用户后续终身收益与 trade-in 节奏」红色警示条恒显**;**不追溯边界提示恒显**(「仅作用于变更后新触发的效率重算与收益派发,`earnings.credited` 不回溯核减,自次次快照起生效」);调陡方向附加提示「月 9-10 陡降集中投诉风险(§7 风险表)」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 month_1_3 衰减率 | 数字输入(步进 0.005) | 否(至少改一段) | −0.20 – 0(③ 范围);client 即时校验 + server 复核 | 当前值 |
-| 目标 month_4_8 衰减率 | 数字输入(步进 0.005) | 否(至少改一段) | −0.20 – 0(③) | 当前值 |
-| 目标 month_9_12 衰减率 | 数字输入(步进 0.005) | 否(至少改一段) | −0.20 – 0(③);server 附加校验段末累计不得高于 MIN_EFFICIENCY 矛盾警示 | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字(须载明生效边界);server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调衰减曲线]`(警示色主按钮;三段均未变更 / 越界 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(越界或与 floor 矛盾,server 回传违规段与允许范围,弹窗不关内联警示)/ 400 `REASON_REQUIRED` / 409(曲线已被他人变更,提示刷新当前值)/ 403。
-- **成功反馈**:弹窗关闭;曲线配置面与可视化就地更新;toast「衰减曲线已更新 · 自次次快照生效 · 不追溯 · 已记审计」;事件 `admin.lifecycle_curve_changed`(scope=curve)落 A2;实时告警超管 / 商品运营 lead。
-
-##### [E3a-MD2] 调 MIN_EFFICIENCY floor 确认
-- **功能**:更新效率地板,确认即生效,仅新计算生效。
-- **布局结构**:1. **信息区**:当前 MIN_EFFICIENCY(§6.1 权威 0.22 对照)/ 当前曲线段末累计效率。2. **影响预览区**:before→after floor 并排展示 + 曲线落点变化预览;floor 与曲线段末累计矛盾时阻断警示条(确认钮置灰);提示行「月 12+ 不再降,floor 决定软退场底线」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 MIN_EFFICIENCY | 数字输入(步进 0.01) | 是 | 0–1(③ 范围);不得与当前值相同;server 复核与曲线一致性 | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调 floor]`(主按钮;未变更 / 越界 / 矛盾阻断 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(越界或与曲线矛盾,内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;floor 与可视化就地更新;toast「MIN_EFFICIENCY 已更新 · 仅新计算生效 · 已记审计」;事件 `admin.lifecycle_curve_changed`(field=MIN_EFFICIENCY)落 A2;实时告警超管 / 商品运营 lead。
-
-##### [E3a-MD3] 调豁免类型确认
-- **功能**:更新豁免设备类型清单(纳入 / 移出衰减计算),确认即生效,实时影响 isDegradable 判定。
-- **布局结构**:1. **信息区**:当前豁免清单(`phone` / `cloud-share`)及豁免理由说明(产能 trivial / 平台云端自维护)。2. **影响预览区**:before→after 清单 diff(新增豁免 / 移出豁免逐项列出)+ 受影响在网设备数(server 预检下发);移出豁免方向提示「该 kind 设备将开始按曲线衰减并显示 banner」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 豁免类型清单 | 多选框组(设备 kind 集合) | 是 | 仅合法设备 kind;不得与当前清单相同 | 当前清单 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调豁免]`(主按钮;清单未变更 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(非法 kind,内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;豁免清单就地更新;toast「豁免类型已更新 · 已记审计」;事件 `admin.lifecycle_curve_changed`(field=exempt)落 A2;实时告警超管 / 商品运营 lead。
-
-##### [E3a-MD4] 调任务锁定损失阈值确认
-- **功能**:更新三档 banner 触发阈值(月 1-3 / 月 4-8 / 月 9-12),确认即生效,仅新对象生效;仅决定触发时机,不改展示数字(E2 派生)。
-- **布局结构**:1. **信息区**:三档当前阈值(§6.5 权威 $40 / $140 / $450 对照)。2. **影响预览区**:before→after 三档并排展示;提示行「本阈值仅决定 §6.7 TaskLockCumulativeBanner 何时弹;banner 展示数字由 E2 dailyPotential 实时派生,两数据层不可混用(②第 4 区口径)」;调低方向提示「banner 更早触发,放大损失叙事与升级转化压力」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标阈值(月 1-3,USD) | 数字输入 | 否(至少改一档) | ≥ 0(③ 范围) | 当前值 |
-| 目标阈值(月 4-8,USD) | 数字输入 | 否(至少改一档) | ≥ 0(③) | 当前值 |
-| 目标阈值(月 9-12,USD) | 数字输入 | 否(至少改一档) | ≥ 0(③) | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调阈值]`(主按钮;三档均未变更 / 越界 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(越界,内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;阈值配置就地更新;toast「触发阈值已更新 · 仅新对象生效 · 已记审计」;事件 `admin.lifecycle_curve_changed`(field=taskLockLoss)落 A2;实时告警超管 / 收益运营 lead。
-
-##### [E3a-MD5] 调衰减分段周期确认
-- **功能**:在一个弹窗内一次调齐早期段末月 / 中期段末月 / 总周期月数三值(定义早/中/晚各段的月份范围与设备总寿命),确认即生效,仅影响下次效率快照的分段重算,不追溯历史已派发收益。
-- **布局结构**:1. **信息区**:三值当前值(默认 §6.1 的 3 / 8 / 12 对照)/ 当前各段月份范围摘要。2. **影响预览区(必有)**:before→after **分段后的累计效率曲线并排预览**(server 按新边界重算 100% → floor 轨迹);**「改变断崖到来时点与软退场节奏,影响所有用户后续终身收益」红色警示条恒显**;不追溯边界提示恒显(「仅作用于变更后新触发的效率重算,自次次快照起生效」)。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 早期段末月(`stageEarlyEnd`) | 数字输入(整数月) | 否(三值至少改一项) | ≥ 1(③ 范围);client 即时 + server 复核 | 当前值 |
-| 目标 中期段末月(`stageMidEnd`) | 数字输入(整数月) | 否(至少改一项) | 须 > 早期段末月(③ 递增约束) | 当前值 |
-| 目标 总周期月数(`cycleMonths`) | 数字输入(整数月) | 否(至少改一项) | 须 > 中期段末月(③ 递增约束);server 强校验 `stageEarlyEnd < stageMidEnd < cycleMonths`,违反 400 | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字(须载明生效边界);server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调分段周期]`(警示色主按钮;三值均未变更 / 递增约束违反 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(递增约束违反或越界,server 回传违规项与允许范围,弹窗不关内联警示)/ 400 `REASON_REQUIRED` / 409(分段已被他人变更,提示刷新当前值)/ 403。
-- **成功反馈**:弹窗关闭;分段配置与曲线可视化就地更新;toast「衰减分段周期已更新 · 自次次快照生效 · 不追溯 · 已记审计」;事件 `admin.lifecycle_curve_changed`(scope=stages)落 A2;实时告警超管 / 商品运营 lead。
-
-**⑤ 接口**
-- `GET /api/admin/config/lifecycle` — 返回衰减配置 `{ degradationCurve: { month_1_3, month_4_8, month_9_12 }, stages: { stageEarlyEnd, stageMidEnd, cycleMonths }, minEfficiency, exemptKinds[], taskLockLossMonthly: { month_1_3, month_4_8, month_9_12 } }` + 全网效率分布 + 网络月度损失聚合;**server-canonical**,前端 `GET /api/config/lifecycle`(§9.11c.1 收敛 `lib/store/device-lifecycle.ts:31-39`)消费只读投影。
-- `PUT /api/admin/config/lifecycle` — 调衰减曲线 / 分段周期(段边界 + 总月数)/ floor / 豁免 / 损失阈值;经确认弹窗提交(E3a-MD1–E3a-MD5,body 携 reason,server 校验非空 400 `REASON_REQUIRED`,分段周期附 `stageEarlyEnd < stageMidEnd < cycleMonths` 递增校验违反 400)即时生效;响应回 `{ effectiveAt }`,**对存量与新设备的下次效率重算均生效**(衰减按 purchasedAt 派生,曲线变更影响全体的次次快照);**历史已派发收益(`earnings.credited`)不重算、不追溯**。
-
-**⑥ 权限 & 审计**
-
-| 动作 | 商品运营 | 收益运营 | 超管 | 只读审计 |
-|---|---|---|---|---|
-| 查看衰减配置 / 分布 | ✅ | ✅ | ✅ | ✅ |
-| 调衰减曲线 / 分段周期 / MIN_EFFICIENCY | ✅(lead) | — | ✅ | — |
-| 调豁免类型 | ✅(lead) | — | ✅ | — |
-| 调任务锁定损失阈值 | — | ✅(lead) | ✅ | — |
-
-> 「✅(lead)」指对应角色的 lead 层级,member 不可执行(2026-06 操作确认决议:原复核层级转为执行门槛)。审计字段引用 A2 统一 schema:`scope(curve|stages|minEfficiency|exempt|taskLockLoss) / segment / before / after / operator / reason / ts`。
-
-**⑦ 风控 & 联动**
-- **衰减 server 计算**:效率由服务端从 `purchasedAt`(server-canonical,§9.11d.2 防伪造老化设备)派生,client(`lib/store/device-lifecycle.ts`)仅 UI 重算展示;`purchasedAt` 不可由 client 篡改(防伪造老龄设备领里程碑 / 套利残值)。
-- **曲线决定后续终身收益与 trade-in 节奏(不追溯)**:衰减率是 12 月节奏「软退场」的核心杠杆——调陡(更负)加速失效与升级压力但增挫败风险(§7 风险表「月 9-10 陡降集中投诉」),调缓减缓沉淀;改曲线属影响所有用户后续终身收益的最高敏配置,执行权就高(商品运营 lead / 超管)+ 确认弹窗理由必填留痕,并在 B4 节奏 / B1 覆盖率约束下评估。**衰减曲线变更仅影响次次效率快照(`efficiency` 字段)的重算,不追溯调整历史已派发收益(`earnings.credited` 已入账金额不变);效率降低仅影响曲线变更后新触发的收益派发。**
-- **任务锁定阈值是触发判定,非实际损失计量**:E3 配置的月度损失阈值($40 / $140 / $450)是 §6.7 TaskLockCumulativeBanner 的触发判定依据(决定何时弹),与 E2 `dailyPotential`(决定弹什么数字,实时派生)是两个独立数据层,开发不得对接到同一数据源(参见 E2 ⑦ + 本子模块 ②第 4 区)。
-- **联动 E3 / E2**:衰减效率喂 E3 trade-in 时点决策(效率越低 trade-in 紧迫感越强)+ salvage 残值与 ageMonths 联动(E3 monthlyDecay);任务锁定损失阈值喂 E2 locked teaser 的损失叙事口径与 §6.7 TaskLockCumulativeBanner / §6.8 DeviceLifecycleBanner(效率衰减叙事)。
-
-**⑧ 埋点(事件)**
-对齐 A4(§2.4.5 ⑥ admin family):
-- **喂前端(数据源)**:E3 衰减配置喂前端 §6.8 DeviceLifecycleBanner(效率 / 月度损失派生展示);该 banner 的曝光 / 点击为 client UI 交互(`is_server_authoritative=false`)。**若 V2 落地时该 banner 维度转化分析事件 `device.lifecycle_banner_viewed` 已开始产生(含 client-side),须在 V2 gate 前完成 A4 schema registry 注册(操作确认 + A2 留痕)**——与 V1 §2.4.8「所有在用事件须经 registry」口径一致,不推迟至 V4。
-- **产生(admin 审计,须 A4 schema registry 注册)**:`admin.lifecycle_curve_changed` — 触发点:衰减曲线 / MIN_EFFICIENCY / 豁免 / 损失阈值确认执行(E3a-MD1–E3a-MD4);属性 `scope(curve|stages|minEfficiency|exempt|taskLockLoss) / segment / before / after / effective_at / operator / reason / ts`;喂 B4 节奏态势(衰减调整 → 升级压力变化)+ L3 + 审计。
-
----
-
-#### [E3b] Trade-in 配置
-> **当前执行口径**：本小节凡出现 `salvage/minHoldingMonths`、按设备月龄拒绝或旧 `/api/config/tradein` 接口，均由 `specs/FEAT-DEV02-tradein-ladder.md` 覆盖。现行模型按累计已结算产出/旧机实付比例选择 4 个界点、5 个折抵率；用户只走 `/api/app/trade-in/config|quote|submit`，submit 在单事务内扣钱包、写 D4、回收旧机并交付新机。
-
-
-**① 目的 & 对齐**
-旧机置换升级的核心漏斗配置面——残值参数、购买资格规则、promo banner 节奏、原子换机 tx 监控。对齐前端 §7.5(Trade-in,`lib/v3/_config/tradein-config.ts`)+ §9.11c.1(tradein-config,`GET /api/config/tradein`)。服务的业务目标:代际升级转化(§1.4 硬件 GMV 复购,12 月节奏 P3/P5 升级窗口的核心承接)、防套利(minHoldingMonths,联动 K2)。**E3 是 `minHoldingMonths` 等 trade-in 参数的唯一配置权威源**,K2 套利检测只读消费(§3.14 / §Ch8 K2)。
-
-**② 后台界面**
-1. **salvage 参数面**:残值率基准 / 月衰减 / floor 编辑 + 残值曲线可视化(`rate(t) = max(floor, baseline − monthlyDecay × t)`,月 12 归零)。
-2. **eligibility 规则组**:各 SKU 购买资格规则编辑(`open / any-of / all-of` + 9 种规则类型),呈现 S1 / Pro / Rack 各自的 `any-of` 条件组。
-3. **`minHoldingMonths` 配置**:最短持有月(防「买入立即 trade-in 套利」守卫,**E3 权威,K2 只读消费**)。
-4. **promo banner 节奏面**:`<TradeInPromoBanner>`(挂 `/me/devices`)的门控参数(enabled / cooldownHours / maxPerSession / delayMs / minDeviceAgeDays / hasEligibleDeviceInInventoryOrSlot / routes)。
-5. **库存软上限面**:设备仓库 `inventory.softMax` 库存软上限警告阈值配置。
-6. **原子换机 tx 监控**:recycle / replace / deactivate 三类置换 tx 的成功 / 失败 / 回滚监控(防 half-completed replace)。
-7. **TRADEIN_UPGRADE_MAP 视图**:代际抵扣映射(与 E1 折扣登记联动,Pro v2 −$300 / Rack P2 −$800)。
-
-**③ 可控参数**
-
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| `salvage.rate`(baseline,月 0 基准) | **前端 §7.5 现状**:0.30(30%) | 0–1;**须满足 `rate(baseline) ≤ monthlyDecay × 12`(月 12 归零约束,接口侧强制校验,违反返回 400,见 ⑦)** | 实时(仅新置换计算) | §7.5 残值额度 / TradeInSheet 抵扣 |
-| `salvage.monthlyDecay` | **现状**:0.025/月(月 12 归零) | 0–1;**须满足 `rate(baseline) ≤ monthlyDecay × 12`(月 12 归零约束,接口侧强制校验,违反返回 400,见 ⑦)** | 实时 | §7.5 残值随设备月龄递减 |
-| `salvage.floor` | **现状**:0 | ≥ 0 | 实时 | §7.5 残值触底为 $0 |
-| **`minHoldingMonths`** | **现状**:1(月)——**E3 权威,K2 只读消费** | ≥ 0 | 实时(server enforce 守卫) | §7.5.1 守卫 `if (ageMonths < minHoldingMonths) return 0` |
-| `eligibility[kind]`(E3 九类通用规则编辑器;**`kind` 为设备 kind 枚举值,如 `stellarbox-s1` / `stellarbox-pro` / `stellarrack-p1`,括号为可读简称非 API 字段名**) | **配置参考(§7.5.1,原型 `tradein-config.ts`)**:`stellarbox-s1`(S1)= `open`;`stellarbox-pro`(Pro)= `any-of`〔`own-kind`(kind=stellarbox-s1,≥1)/ V-Rank ≥2 / 累计入金 ≥$1000 / `trade-in`(fromKind=stellarbox-s1)〕;`stellarrack-p1`(Rack P1)= `any-of`〔own ≥1 Pro / V-Rank ≥4 / 累计入金 ≥$5000 / trade-in from Pro〕 | 规则组(9 类型) | **HOLD**：仅未来编辑器/映射；不覆盖当前成交授权 | §7.5.1；E3 通用编辑器 |
-| `purchaseGate[stellarbox-pro-v2]`(Gen-2 当前成交门) | E1 结构化规则默认 `rankMin=2,mode=all,enforce=true`；PC 可调整 | E1 purchaseGate schema | 用户查询与每次新成交实时复验 | `/api/store/purchase-eligibility` + 全成交入口 |
-| `purchaseGate[stellarrack-p2]`(Gen-2 当前成交门) | E1 结构化规则默认 `rankMin=4,mode=all,enforce=true`；PC 可调整 | E1 purchaseGate schema | 用户查询与每次新成交实时复验 | `/api/store/purchase-eligibility` + 全成交入口 |
-| `promo.enabled` | true(kill switch) | bool | 实时 | §7.5.4 promo banner 显隐 |
-| `promo.cooldownHours` | 24 | ≥ 0 | 实时 | §7.5.4 dismiss 后冷却 |
-| `promo.maxPerSession` | 1 | ≥ 0 | 实时 | §7.5.4 单会话弹出上限 |
-| `promo.delayMs` | 1500 | ≥ 0 | 实时 | §7.5.4 进页延迟弹出 |
-| `promo.triggerWhen.minDeviceAgeDays` | 30 | ≥ 0 | 实时 | §7.5.4 不为太新设备弹 promo |
-| `promo.triggerWhen.hasEligibleDeviceInInventoryOrSlot` | true | bool | 实时 | §7.5.4 promo 显示**粗 kill switch**(false 时无视其他门控强制不弹;对齐前端 §7.5.4 / §9.11c.1) |
-| `promo.routes` | `["/me/devices"]` | 路由白名单 | 实时 | §7.5.4 promo 路由门 |
-| `inventory.softMax`(设备仓库库存软上限警告阈值) | **现状(原型 `tradein-config.ts:160`)**:`0`(禁用,无软上限提示,原型现状;`hardMax` 同为 0) | ≥ 0 | 实时(超阈仅告警,不阻断;`0` = 禁用) | §11.1 / `/me/devices` 库存软上限警告 |
-| `TRADEIN_UPGRADE_MAP`(代际抵扣) | Pro v2 −$300 / Rack P2 −$800(与 E1 / §6.2 一致) | ≥ 0 | 仅新置换单 | §7.1 代际映射 / E1 折扣 |
-
-> **eligibility 规则类型说明(9 种规则类型;首次声明)**:eligibility 支持 9 种规则类型(`open` / `own-kind` / `own-prev-tier` / `trade-in` / V-Rank 门槛 / 累计入金门槛 等)。**`stellarbox-pro` 使用 `own-kind`(kind=stellarbox-s1)而非 `own-prev-tier`**——前者匹配**特定 kind**(原型 `tradein-config.ts:106-108` 实为 `{ type: "own-kind", kind: "stellarbox-s1", count: 1 }`),后者按升级阶梯**推断上一级**;Pro 的 trade-in from S1 规则在原型中是 `{ type: "trade-in", fromKind: "stellarbox-s1" }`。如需后台 UI 支持两种规则模式,**规则编辑器须分别提供 `own-kind`(指定 kind)与 `own-prev-tier`(阶梯推断)两种编辑入口**。
->
-> **默认值口径声明**:trade-in 具体数值(salvage rate / decay / floor / minHoldingMonths / eligibility / promo / inventory.softMax)**12 月节奏表 §6 未覆盖具体值**,上表取前端 §7.5 / §9.11c.1 / 原型 `tradein-config.ts` 现状值为参考并标注「现状」。**代际抵扣(−$300 / −$800)对齐 12 月节奏表 §6.2**(E1 权威登记,E3 落地置换)。`minHoldingMonths` 默认 1 月为防套利守卫值(§7.5.1)。Gen-2 当前用户成交资格采用 E1 结构化 `purchaseGate`（Pro v2 V≥2、Rack P2 V≥4）并已覆盖全部现行成交入口；E3 九类 eligibility 编辑器仍为 HOLD，不能把其 HOLD 误写成当前成交门 HOLD，也不能用其未来设计覆盖 E1 已完成门。
->
-> **Pro salvage 基价误差提示(承 E1③ 原型 bug)**:原型 `DEVICE_PRICE_USDT["stellarbox-pro"]=2639` 与权威定价 $2,399 不符,导致 **Pro 设备 salvage 计算基价在原型中存在约 $240 误差**(salvage = price × rate × 衰减,基价偏高 → 残值偏高)。**V2 服务端 salvage 计算须以 Pro Gen-1 权威定价 $2,399 为基价**,原型代码须同步修正(见 E1③)。
-
-**④ 操作动作**
-
-| 动作 | 执行权 | 确认弹窗 | 审计点 |
-|---|---|---|---|
-| 全局 kill(`enabled=false`,停 trade-in) | 商品运营(lead)/ 超管 | E3b-MD1(理由必填)(紧急停整条置换漏斗) | `admin.tradein_config_changed`(field=enabled / after=false / operator / reason) |
-| 调 salvage rate(baseline / decay / floor) | 商品运营(lead) | E3b-MD2(理由必填)(影响置换扣减额与 GMV / 应付;月 12 归零约束 server 强校验) | `admin.tradein_config_changed`(field=salvage.* / before-after / operator / reason) |
-| **临时降 `minHoldingMonths`(促销)** | 商品运营(lead)/ 超管 | E3b-MD3(理由必填)(**留意 K2 套利风险**:降低后买入即置换的套利窗口打开,确认即自动知会 K2 加强监控) | `admin.tradein_config_changed`(field=minHoldingMonths / before-after / operator / reason / k2_notified) |
-| 调 E3 九类通用 eligibility 配置(放宽 / 收紧参考规则) | 商品运营(lead) | E3b-MD4(理由必填)；编辑器与运行时映射仍 HOLD，不覆盖已完成的 E1 `purchaseGate` | `admin.tradein_config_changed`(field=eligibility[kind] / before-after / operator / reason) |
-| **编辑 E3 九类通用 eligibility(Pro v2 / Rack P2 未来扩展)** | 商品运营(lead) | E3b-MD5(理由必填)；当前编辑器与运行时映射 **HOLD**，不阻断或覆盖 E1 `purchaseGate` | `admin.tradein_config_changed`(field=eligibility[stellarbox-pro-v2\|stellarrack-p2] / before-after / operator / reason) |
-| 调 promo 节奏(cooldown / maxPerSession / delay / minAge / hasEligibleDeviceInInventoryOrSlot / routes) | 商品运营(lead) | E3b-MD6(理由必填)(放大 / 收缩 promo 推送强度) | `admin.tradein_config_changed`(field=promo.* / before-after / operator / reason) |
-| 调 `inventory.softMax`(库存软上限警告阈值) | 商品运营(lead) | E3b-MD7(理由必填)(库存软上限影响置换可承接判定) | `admin.tradein_config_changed`(field=inventory.softMax / before-after / operator / reason) |
-
-> 2026-06 操作确认决议后,原复核层级转为执行门槛:全局 kill / 临时降 `minHoldingMonths` 原复核为超管层级,执行权就高 = 商品运营(lead)/ 超管;其余动作执行权 = 商品运营(lead)。所有确认弹窗动作经理由必填(server 强制非空 400 `REASON_REQUIRED`)即时生效,落 A2 审计并实时告警超管 / 商品运营 lead。salvage / eligibility / promo 为转化面杠杆,salvage credit 仅结账抵扣不入余额(⑦ 不变量 M2),不构成即时资金流出,不前置 B1 红线预检;`minHoldingMonths` 反套利不变量与 K2 知会联动保留(⑦)。
-
-**④a 交互与弹窗规格**
-
-**(1) 动作触发总表**
-
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 全局 kill | ②第 4 区 promo 节奏面顶部「Trade-in 总开关」 | 开关(警示色) | 仅商品运营 lead / 超管渲染 | 打开弹窗 E3b-MD1 |
-| 调 salvage rate | ②第 1 区 salvage 参数面「保存残值参数」 | 主按钮 | 仅商品运营 lead / 超管渲染;三参数均未变更时置灰 | 打开弹窗 E3b-MD2 |
-| 临时降 minHoldingMonths | ②第 3 区 minHoldingMonths 配置「编辑」 | 行内按钮(警示色) | 仅商品运营 lead / 超管渲染 | 打开弹窗 E3b-MD3 |
-| 调 eligibility 门槛 | ②第 2 区 eligibility 规则组各 SKU 行尾「编辑规则」 | 行内按钮 | 仅商品运营 lead / 超管渲染 | 打开弹窗 E3b-MD4 |
-| 编辑 E3 九类通用 eligibility | ②第 2 区 Gen-2 SKU 行「未来规则编辑」 | 当前不渲染（HOLD） | 不得以 E3 编辑器阻断、覆盖或旁路 E1 `purchaseGate` | 解除 HOLD 后另行定义 |
-| 调 promo 节奏 | ②第 4 区 promo banner 节奏面「保存节奏配置」 | 主按钮 | 仅商品运营 lead / 超管渲染;未变更时置灰 | 打开弹窗 E3b-MD6 |
-| 调 inventory.softMax | ②第 5 区库存软上限面「保存阈值」 | 主按钮 | 仅商品运营 lead / 超管渲染;未变更时置灰 | 打开弹窗 E3b-MD7 |
-| 查看原子换机 tx 监控 / TRADEIN_UPGRADE_MAP | ②第 6 / 7 区 | 只读视图 | 恒可用 | 就地查看,无弹窗 |
-
-**(2) 弹窗规格(逐弹窗)**
-
-##### [E3b-MD1] Trade-in 全局开关确认
-- **功能**:切换 `promo.enabled` 总开关 / 全局停启 trade-in 漏斗,确认即生效。
-- **布局结构**:1. **信息区**:当前 enabled 态 / 当前在途置换 tx 数(server 下发)。2. **影响预览区(必有)**:kill 方向**「立即停整条置换漏斗(结账 intercept / promo banner / TradeInSheet 全停)」红色警示条恒显**;提示行「在途原子 tx 不中断,按事务边界完成或回滚」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认停用 Trade-in]` / `[确认恢复 Trade-in]`(警示色主按钮,按方向取文案;reason 未达标时置灰;loading 防双击)。
-- **错误态**:400 `REASON_REQUIRED` / 409(开关已被他人切换,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;开关态就地更新;toast「Trade-in 已停用 / 已恢复 · 已记审计」;事件 `admin.tradein_config_changed`(field=enabled)落 A2;实时告警超管 / 商品运营 lead。
-
-##### [E3b-MD2] 调 salvage 残值参数确认
-- **功能**:更新 salvage baseline / monthlyDecay / floor,确认即生效,仅新置换计算生效。
-- **布局结构**:1. **信息区**:三参数当前值(现状 0.30 / 0.025 / 0 对照)。2. **影响预览区(必有)**:before→after **残值曲线可视化并排预览**(`rate(t) = max(floor, baseline − monthlyDecay × t)`,server 预检下发);**月 12 归零约束校验结果回显**(`baseline ≤ monthlyDecay × 12`,违反时阻断警示条 + 确认钮置灰,文案含「server 将拒绝(400),防套利窗口意外开放」);提示行「Pro 基价以权威 $2,399 计(③ 原型 bug 注)」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 baseline | 数字输入(步进 0.01) | 否(至少改一项) | 0–1 且 `baseline ≤ monthlyDecay × 12`(③ 互锁,client 即时 + server 强校验 400) | 当前值 |
-| 目标 monthlyDecay | 数字输入(步进 0.005) | 否(至少改一项) | 0–1,同上互锁 | 当前值 |
-| 目标 floor | 数字输入 | 否(至少改一项) | ≥ 0(③) | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调残值参数]`(主按钮;均未变更 / 互锁违反 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(月 12 归零约束违反或越界,server 回传违规项,弹窗不关内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新当前值)/ 403。
-- **成功反馈**:弹窗关闭;参数面与曲线可视化就地更新;toast「残值参数已更新 · 仅新置换生效 · 已记审计」;事件 `admin.tradein_config_changed`(field=salvage.*)落 A2;实时告警超管 / 商品运营 lead。
-
-##### [E3b-MD3] 调 minHoldingMonths 确认
-- **功能**:更新最短持有月(防套利守卫),确认即生效(server enforce 实时切换),调降即自动知会 K2。
-- **布局结构**:1. **信息区**:当前 minHoldingMonths(现状 1 月)/ K2 当前套利命中率摘要(server 下发)。2. **影响预览区(必有)**:before→after 并排展示;**调降方向「买入即置换套利窗口扩大,确认后自动知会 K2 加强监控(审计携 `k2_notified`)」红色警示条恒显**;提示行「守卫 `if (ageMonths < minHoldingMonths) return 0` 由 server enforce,K2 只读消费此值」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 minHoldingMonths | 数字输入(整数) | 是 | ≥ 0(③ 范围);不得与当前值相同 | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调最短持有月]`(警示色主按钮;未变更 / 越界 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(越界,内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;配置就地更新;toast「minHoldingMonths 已更新 · K2 已知会 · 已记审计」;事件 `admin.tradein_config_changed`(field=minHoldingMonths,携 `k2_notified`)落 A2;实时告警超管 / 商品运营 lead + K2 风控通道。
-
-##### [E3b-MD4] 调 eligibility 规则确认
-- **功能**:编辑单 SKU 的 E3 通用资格配置参考(`open / any-of / all-of` + 9 种规则类型)；当前编辑器与运行时映射为 HOLD，不覆盖按用户成交已完成的 E1 `purchaseGate`。
-- **布局结构**:1. **信息区**:SKU kind / 当前 mode / 当前规则组逐条列出。2. **影响预览区**:before→after 规则 diff(新增 / 删除 / 修改逐条)；明确提示「当前只改变 E1 上架前置条件，不代表结账资格已生效」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| mode | 下拉单选(open / any-of / all-of) | 是 | 枚举内 | 当前 mode |
-| 规则组 | 规则编辑器(逐条增删改;`own-kind`〔指定 kind〕与 `own-prev-tier`〔阶梯推断〕分别提供编辑入口,③ 注) | mode≠open 时至少 1 条 | 仅 9 种合法规则类型;字段按类型 schema 校验(server 复核) | 当前规则组 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调资格规则]`(主按钮;规则未变更 / schema 不合法 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(规则 schema 不合法或 mode≠open 但规则为空,server 回传违规条目,弹窗不关内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。
-- **成功反馈**:当前产品不渲染该未来编辑器；不得产生“资格配置已更新”或改变成交授权的成功反馈。若后续解除 HOLD，必须另行补充服务端映射、回读与验收契约。
-
-##### [E3b-MD5] 未来 E3 九类 eligibility 编辑器（Gen-2 展示扩展）确认
-- **功能（未来扩展）**:为 Pro v2 / Rack P2 编辑 E3 九类通用 eligibility 规则组；当前不写入运行时、不解除 E1 阶段发布门，也不改变 E1 `purchaseGate`。
-- **布局结构(未来 E3 九类规则扩展)**:1. **信息区**:Gen-2 SKU kind / 当前 E1 `purchaseGate` 生效摘要 / 拟扩展 E3 规则状态。2. **影响预览区(必有)**:明确提示“现行成交授权继续由 E1 结构化门执行；E3 规则未完成服务端映射前不得覆盖或旁路”。3. **输入区**:同 E3b-MD4(mode + 规则编辑器 + reason)。4. **按钮区**。当前产品不渲染此未来编辑器，运营通过 E1 购买门配置区维护已生效规则。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| mode | 下拉单选(any-of / all-of;open 置灰) | 是 | 枚举内且 ≠ open(server 复核)；当前编辑器 HOLD | any-of(③ 建议值预填) |
-| 规则组 | 规则编辑器(同 E3b-MD4) | 至少 1 条 | 仅 9 种合法规则类型;schema 校验；当前不写入运行时 | ③ 建议规则组预填 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认编辑未来资格规则]`（当前产品不渲染主按钮；解除 HOLD 后另行定义）。
-- **错误态**:当前无运行时提交；解除 HOLD 后再定义 400/409/403 契约。
-- **成功反馈**:当前产品不渲染该未来 E3 编辑器；Gen-2 行不得再以“待补录”阻断 E1 `purchaseGate`。E1 购买门由 E1 配置区维护，E3 九类编辑器解除 HOLD 前不得写入或宣称生效。
-
-##### [E3b-MD6] 调 promo 节奏确认
-- **功能**:更新 promo banner 门控参数(cooldownHours / maxPerSession / delayMs / minDeviceAgeDays / hasEligibleDeviceInInventoryOrSlot / routes),确认即生效。
-- **布局结构**:1. **信息区**:各门控参数当前值。2. **影响预览区**:before→after 逐项 diff;放大方向(降 cooldown / 升 maxPerSession / 降 minAge)提示「推送强度放大,留意打扰与投诉面」;`hasEligibleDeviceInInventoryOrSlot=false` 时提示「粗 kill switch:无视其他门控强制不弹」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| cooldownHours | 数字输入 | 否(至少改一项) | ≥ 0(③) | 当前值 |
-| maxPerSession | 数字输入(整数) | 否(至少改一项) | ≥ 0(③) | 当前值 |
-| delayMs | 数字输入(整数) | 否(至少改一项) | ≥ 0(③) | 当前值 |
-| minDeviceAgeDays | 数字输入(整数) | 否(至少改一项) | ≥ 0(③) | 当前值 |
-| hasEligibleDeviceInInventoryOrSlot | 开关 | 否(至少改一项) | bool | 当前值 |
-| routes | 路由白名单编辑(逐条) | 否(至少改一项) | 合法路由路径格式(server 复核) | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调 promo 节奏]`(主按钮;均未变更 / 越界 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(越界或路由格式非法,内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;节奏面就地更新;toast「promo 节奏已更新 · 已记审计」;事件 `admin.tradein_config_changed`(field=promo.*)落 A2;实时告警超管 / 商品运营 lead。
-
-##### [E3b-MD7] 调 inventory.softMax 确认
-- **功能**:更新设备仓库库存软上限警告阈值(超阈仅告警不阻断;0 = 禁用),确认即生效。
-- **布局结构**:1. **信息区**:当前 softMax(现状 0 = 禁用)/ 当前全网用户仓库持有分布摘要(server 下发)。2. **影响预览区**:before→after 并排展示;提示行「软上限仅触发告警,不阻断置换可承接判定;0 = 禁用提示」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 softMax | 数字输入(整数) | 是 | ≥ 0(③ 范围);不得与当前值相同 | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调软上限]`(主按钮;未变更 / 越界 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(越界,内联警示)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;阈值就地更新;toast「库存软上限已更新 · 已记审计」;事件 `admin.tradein_config_changed`(field=inventory.softMax)落 A2;实时告警超管 / 商品运营 lead。
-
-**⑤ 接口**
-- `GET /api/admin/config/tradein` — 返回全 trade-in 配置 `{ salvage: { rate, monthlyDecay, floor }, minHoldingMonths, eligibility: { [kind]: { mode, rules[] } }, promo: { enabled, cooldownHours, maxPerSession, delayMs, routes, triggerWhen: { minDeviceAgeDays, hasEligibleDeviceInInventoryOrSlot } }, inventory: { softMax }, tradeinUpgradeMap }`;**server-canonical**。
-- `PUT /api/admin/config/tradein` — 更新配置 `{ salvage?, minHoldingMonths?, eligibility?, promo?, inventory: { softMax? }, tradeinUpgradeMap? }`;经确认弹窗提交(E3b-MD1–E3b-MD7,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效。**接口侧强制校验 `salvage` 的月 12 归零约束(`baseline ≤ monthlyDecay × 12`),违反返回 `400`(见 ⑦)。**
-- **运行时只读端点(K2 等消费方)**:`GET /api/config/tradein`(§7.5.1 / §9.11c.1,TBD candidate)——salvage 守卫、`<TradeInPromoBanner>` 与 **K2 套利检测**从此只读端点取 E3 权威值；E3 九类 eligibility 目前仅保留未来编辑器/展示语义，仍不得覆盖成交授权。Gen-2 当前成交资格由 E1 `purchaseGate` 及 `/api/store/purchase-eligibility`/全成交入口服务端复验负责。E3 是写权威源,`/api/config/tradein` 是其只读投影(K2 不另建配置端点,§Ch8 K2)。
-- **原子置换 endpoint**(server tx,替代 client composer,§9.11c.1):
-  - `POST /api/devices/recycle` — 回收旧设备置换(salvage 抵扣 → server 原子 tx)。
-  - `POST /api/devices/replace` — 置换换机(移除旧设备 + 加新设备 + server 原子事务从用户余额扣减净付款〔= price − salvageCredit〕+ 在 D4 落 `device.replaced` bill,单事务)。**server 在单事务内先读旧设备 `generation`,再以 `(old.generation ?? 1) + 1` 写入新设备(对齐 §7.5.3 M4),旧设备移除与新设备写入在同一原子边界内,防止并发 replace 导致 generation 断链。**
-  - `POST /api/devices/deactivate` — 出槽(槽满 replace-lowest 路径)。
-  - 三者均须 `Idempotency-Key`(防双击 / 重放,对齐 §7.5.3 M3 confirmingRef + M1 原子回滚)。
-- **360 设备卡 per-device 运维处置**(C1 用户 360 设备卡 inline CRUD,`app/components/hub/devices-section.tsx`,复用 `lib/store/ui.ts` confirm 弹窗 + 理由)— 单设备运营处置,均经操作确认(理由必填)+ 写设备审计,server-canonical 真改设备态(行状态 / 在线数 / 今日产出即时更新):
-  - 下线 / 上线 `POST /api/admin/devices/:id/{deactivate|activate}`(停止 / 恢复该设备算力产出)。
-  - **设备置换 / 回收**经 PC 代理提交 `POST /api/admin/devices/users/:userId/tradein/replace` 或 `POST /api/admin/devices/users/:userId/tradein/recycle`，请求含 `deviceId`、操作理由和 `Idempotency-Key` 请求头。服务端校验 `user_c2_write` 和设备归属，成功后写 `admin.tradein_action_executed` 审计并刷新设备状态。置换另生成设备置换记录，回收为纯退役，无新设备和残值抵扣。
-  - **撤销回收** `POST /api/admin/devices/:id/restore`(**2026-06 新增,误回收纠偏**)— 把已回收设备恢复为**离线**态(可再上线接回车队);此前「回收」为终态(已回收行只剩占位),本动作给运营误操作留后路。仅对已回收设备生效,经确认(理由必填)+ 写「撤销回收」设备审计。
-
-**⑥ 权限 & 审计**
-
-| 动作 | 商品运营 | 超管 | 风控运营 | 只读审计 |
-|---|---|---|---|---|
-| 查看 trade-in 配置 / tx 监控 | ✅ | ✅ | ✅(只读) | ✅ |
-| 全局 kill | ✅(lead) | ✅ | — | — |
-| 调 salvage rate / eligibility / promo / inventory.softMax | ✅(lead) | ✅ | — | — |
-| 编辑 E3 九类通用 eligibility（未来扩展） | ✅(lead) | ✅ | — | — |
-| 临时降 minHoldingMonths | ✅(lead) | ✅ | (自动知会 K2) | — |
-
-> 「✅(lead)」指商品运营角色的 lead 层级,member 不可执行(2026-06 操作确认决议:原复核层级转为执行门槛)。审计字段引用 A2 统一 schema:`field / before / after / operator / reason / ts`;`minHoldingMonths` 变更额外携带 `k2_notified`(K2 套利监控知会标记)。
-
-**⑦ 风控 & 联动**
-- **salvage credit server-canonical,仅结账抵扣不入余额**(§7.5 不变量 M2):残值额度服务端计算,**唯一用途是置换结账的扣减项(server 原子事务从用户余额扣减净付款 = price − salvageCredit,在 D4 落 bill),绝不写 `creditBalance`、不可提现、不可累加**;后台无「salvage 转余额」动作。残值守卫 `if (ageMonths < minHoldingMonths) return 0` 由 server enforce。
-- **`minHoldingMonths` server enforce(防套利,K2 联动)**:该阈值由 E3 配置、server 在残值计算时强制(buy-then-immediately-tradein 返 $0 salvage);**K2 套利检测只读消费此值**标记「买入未满最短持有月即尝试 trade-in」命中(§Ch8 K2 (b)),K2 不配置该阈值。临时降低 `minHoldingMonths` 经确认弹窗(E3b-MD3,理由必填)执行并自动知会 K2(套利窗口扩大,审计携 `k2_notified`)。
-- **月 12 归零约束 enforce(防套利窗口意外开放)**:`月 12 残值归零` 须在 E3 后台配置校验中 enforce——server 在接受 `PUT /api/admin/config/tradein` 时校验 `baseline ≤ monthlyDecay × 12`(归零约束),违反时返回 `400` + 提示;防止运营调高 `baseline` 而不同步调整 `monthlyDecay` 导致月 12 残值非零、trade-in 套利窗口意外开放(③参数表 `salvage.rate` / `salvage.monthlyDecay` 行「范围」列已明示此互锁约束,体例与 B1⑤ 黄线/红线互锁一致)。
-- **Gen-2 当前成交资格已闭环**：启动迁移仅在值为空时为 Pro v2 / Rack P2 写入 E1 结构化购买门（分别 V2 / V4，不覆盖 PC 已配置值）。App 查询端点与普通单、组合单、Sandbox 单、Trade-in、容量替换复用同一服务端判定；规则畸形、用户事实缺失或锁额售罄均 deny。E3 规划中的 9 类 eligibility 规则编辑器仍是后续扩展，不得与本轮已生效的 E1 结构化门混称为已实现。
-- **原子 tx(防 half-completed replace)**:置换三 endpoint 为 server 单事务,任一步失败全回滚(设备数组 + 余额 + bill 回到调用前,§7.5.3 M1);`generation lineage` 由 server 在单事务内维护(先读旧设备 `generation`,新设备 `generation = (old.generation ?? 1) + 1`,§7.5.3 M4,不写死 2;旧设备移除与新设备写入同一原子边界,防并发 replace 断链)。
-- **联动 E1 / E3 / D / K2**:代际抵扣(TRADEIN_UPGRADE_MAP)与 E1 折扣登记联动;salvage 残值与 E3 衰减效率 / ageMonths 联动;置换扣款走 D 余额、写 D4 bill;套利信号喂 K2(§3.14)。
-
-**⑧ 埋点(事件)**
-对齐 A4(§2.4.5 ③ money family + ⑥ admin family + ⑤ risk family 喂给方):
-- **产生(置换业务事件 + admin 审计,须 A4 schema registry 注册)**:
-  - `device.recycled` — 触发点:回收置换 tx 成功;属性 `userId / fromKind / salvageCredit / ageMonths / minHoldingMonths / is_server_authoritative: true / ts`。**`device.recycled` 为 V2 新增 money-class 事件**(V1 §2.4.5③ money family枚举不含此事件),**须在 V2 gate 时通过 A4 schema registry 正式扩展③ money family,并在 V4 §3.14 收口时补登扩展条目**。
-  - `device.replaced` — 触发点:换机 tx 成功;属性 `userId / fromKind / toKind / price / salvageCredit / netPaid / generation / is_server_authoritative: true / ts`(← 置换 GMV)。**`device.replaced` 同为 V2 新增 money-class 事件**(不在 V1 §2.4.5③ 枚举),**须在 V2 gate 时通过 A4 schema registry 正式扩展③ money family,并在 V4 §3.14 收口时补登扩展条目**;`is_server_authoritative: true`(置换 tx server 成功后发出)。
-  - `admin.tradein_config_changed` — 触发点:trade-in 配置确认执行(E3b-MD1–E3b-MD7);属性 `field(salvage.*|minHoldingMonths|eligibility[kind]|promo.*|inventory.softMax|enabled) / before / after / effective_at / operator / reason / k2_notified / ts`;喂 B4 + L3 + 审计。
-- **喂 K2(套利检测,§2.4.5 ⑤ risk)**:`device.recycled` / `device.replaced`(含 `ageMonths / minHoldingMonths`)+ `GET /api/config/tradein` 阈值,供 K2 产出 `risk.arbitrage_suspected`(买入未满最短持有月即置换的套利命中,§Ch8 K2 (b))。E3 产置换事实事件,K2 消费并检测(产消方向:E3 产、K2 消)。
-- **消费**:`device.replaced` 同时是 E4 订单 / D4 账本的入账依据(置换含扣款 + bill)。
+设备代理读取失败单独返回 DEVICES_BACKEND_READ_UNAVAILABLE，文案说明没有读到数据；B0 运营总览及 E1/E2/E3/E4/E5/E6共用该读取归类。写请求仍保留 DEVICES_BACKEND_UNAVAILABLE 的结果未知提示。本页无单台设备处置、审批决定或导出入口。接口、商品范围、权限和 14 项命令合同保持。
 
 ---
 
@@ -963,6 +599,8 @@ E2、E5、E6 设备与任务原命令共用核查入口：超过 24 小时或后
 
 #### [E5] 设备管理
 
+**2026-11-14 后端 111e00cd 同步**：用户级恢复只清有效归属设备上的运营暂停，保留退款、账户停用、手机离线/低电量、换机、解绑/停用/回收等系统暂停。一次最多200候选ID，仅更新该集合；实际恢复数取changedCount，无候选404 PAUSED_USER_DEVICES_NOT_FOUND，成功和无候选后刷新核对。入口用userDeviceSlotNo的有效归属投影及暂停原因判断；确认框写“只恢复运营手动暂停的设备；退款、注销、换机、离线、电量低等系统暂停保持不变”，范围写“这位用户被运营暂停的设备（含手机）”，执行摘要注明实际台数以回执为准、单次最多200台；成功提示“已恢复 n 台运营暂停的设备”；无候选404关框、页首提示“这位用户已没有运营暂停的设备，没有恢复任何设备”并刷新。出处 DeviceOpsMapper.RESUMABLE_OPERATIONAL_PAUSE/lockE5BatchCandidateIds/resumeDevicesByUser，OpsDeviceService.batchE5Devices。
+
 **2026-11-12 后端同步（代码侧）**：同一 overview 已增加 `errorRetry/legacyPending/waitingConfig`，客户端按非负整数读取，不另发列表计数。这三数按列表有效状态解析，与原四数的旧状态口径不同，不相加成分布；三数的可见展示由视觉 worker 接入。名额标记绑定后端 `userId` 精确筛选，清空旧搜索词但保留状态、来源、商品；普通搜索与 userId 取交集，分页、单项清除、全部清除及网址恢复携同一 userId。现有读回入口同时按号查询，只有权威成功或 `CONFIRMED_NOT_EXECUTED && newOperationAllowed && !locked` 才收敛；当前列表、查不到及403不解除。受控结案逻辑通过 `useE5Commands().check(record, evidence)` 暴露，只允许持调查权限及 E5 读权的超管提交，由服务端再次核实在职、绑定和证据。三数、证据框、入口、名额旧提示及新错误码中文留给视觉 worker，不改变现有屏幕组成。
 
 **① 范围（2026-11-11）**：仅购买 `ORDER`、置换 `TRADE_IN`、试用转正 `TRIAL`、赠送 `PROMOTION_GIFT` 的用户设备，不含手机、未转正试用和测试设备。手机在 E6「手机算力配置」。历史 `hostingLabel` 可为 null，显示「—」；不恢复机房登记与遥测。
@@ -993,6 +631,8 @@ E2、E5、E6 设备与任务原命令共用核查入口：超过 24 小时或后
 
 #### [E6a] 手机任务、收益、用户手机与校准规则
 
+**2026-11-14 后端 111e00cd 同步**：手机恢复沿E5运营暂停及有效归属范围，最多200候选，按changedCount和404核对刷新。风险结案不再传receiptOnly，接已有成功审计编号并传真实evidenceAuditId；63a4f669已将 E6_PHONE_RISK_SETTINGS / CONFIG / E.compute.phoneRisk.settings / ADMIN.PHONE_RISK_SETTINGS_UPDATED 纳入成功证据白名单，严格绑定原actor/method/path/recordId/scope/key/hash，接受SUCCESS及SUCCEEDED，证据不足仍UNKNOWN。旧无receiptVersion记录不升级。手机页恢复确认框与E5同一说法（范围“该用户被运营暂停的设备，包含手机”），成功提示同E5；无候选404时确认框内报原因并刷新列表。旧“不接受操作记录编号”分支已删除；结案框选“已执行”时显示“成功审计编号”输入，说明不再重复“证据不够记为仍未知”。出处 AdminCommandInvestigationService.supportedSuccessFact、AdminCommandInvestigationMapper.successEvidence。
+
 **2026-11-12 风控与直接命令同步（代码侧）**：新风控保存的原信封带 `receiptVersion=1`，PUT 按原修订、全部模式、两阈值、理由和 Idempotency-Key 去重；24 小时内恢复逻辑允许原样重试。升级前没有该标记的旧未知记录保持只读当前设置。GET `/api/admin/config/phone-calibration/risk/receipts/by-key?commandKey=` 精确代理保留查询串；`checkDirect` 验证 scope、key、原操作者、method/path/target/hash/status，只有原绑定一致且状态成功或确认未执行才收敛，当前设置独立读取。查不到不证明未执行，403不解除，旧无来源及仍在处理中继续保留；成功回执的 originalResponse=null 保持为空，不补造原 settings/stats。用户手机直接动作沿原 E5 命令的服务器绑定查询与证据核查，原页面、原快照和 E5/E6 对象锁保留。刷新后风控重试及明确的查原保存结果入口、手机核查／结案入口、确认框与使用说明的旧「不去重」说法，以及新错误码中文由视觉 worker 完成；本轮不改变屏幕组成和文案。
 
 **手机功能集中（2026-11-09）**：E6 顶部为「手机任务池」，使用 `GET /api/admin/devices/task-pools?kind=PHONE` 和 `/task-pools/PHONE/tasks` 展示英文任务名、类型、时长、`baseReward`、`asset` 与启用状态。没有随机添加；新增、编辑、启停继续使用现有 `/tasks` 与 A2 双人审批、覆盖率和版本规则，HTTP 和 A2 参数均携顶层 `poolCode:"PHONE"`，旧格式明确拒绝；仅可写 PHONE 类型。手机策略固定解析为 `["PHONE"]`，旧手机大类选择入口删除。
@@ -1014,9 +654,9 @@ E2 的「手机 5 档收益」「新用户引导收益对比」迁入本页，�
 
 用户手机停用中行与 E5 一样显示禁用「⋯」，提示「停用中，结算后自动停用，暂时没有可做的操作」。仅有暂停原因或异常状态的行在状态旁显示原因问号，只讲原因。「电量和心跳」列第一行是电量，第二行常显距上次心跳多久（「心跳 42 秒前」，按秒、分钟、小时、天取整），没采到写「心跳未采集」；每行电量均可点开遥测气泡，查看原始状态、运行状态、电量、心跳、距心跳秒数、充电、网络和温控；未采集字段明确写「未采集」，不当 0。Android 校准试算命中显示芯片名（后端 `model`），缺失时用 `socKey`；都缺失则写「命中规则未返回名称」，不把空值拼成 null。`fdc9f469` 的有效芯片规则要求名字和键均非空，缺失提示仅兜底展示。
 
-用户手机复用 E5 phones 模式与原权限：默认设备、用户、状态、每日收益、电量和心跳、操作六列；当前任务号在「显示更多列」保留。暂停原因优先；充电／网络遥测 null 显示「未采集」。查询只传 keyword/pageNum/pageSize，不造全平台手机状态分布。六种动作的六台门槛、全用户暂停范围、不退款／不补发及审批边界不变。
+用户手机复用 E5 phones 模式与原权限：默认设备、用户、状态、每日收益、电量和心跳、操作六列；当前任务号在「显示更多列」保留。状态先后和后端一致：已解绑 / 停用、停用中排在运营暂停前面，其余有暂停原因的写「已暂停」，原因在问号里；充电／网络遥测 null 显示「未采集」。查询只传 keyword/pageNum/pageSize，不造全平台手机状态分布。六种动作的六台门槛、全用户暂停范围、不退款／不补发及审批边界不变。
 
-2026-11-11 版式补充：金额显示去掉后端补零，同组／同列用真实最大小数位对齐且至少 2 位，不舍入；五档 USDT 为 3 位、UVT 为 2 位，悬停或聚焦可见后端原值，确认与命令保留完整字符串。手机状态用 rd 对应图标／色调；设备格最多两行，1440 实例号完整、1024 中间省略保留后缀。分界轴与输入等宽，1440 四列、1024 两行两列，校验约束在框下；硬件空态用标准空块加导入／新增入口，帮助跟标题。窄屏主题导航上移，待核验异常标记保留。任务、风控及换机数值错误贴着对应字段显示；预设预览取消后可再次载入。原值气泡适配长实例号，不溢出边框。可选当前任务号单行显示，窄列中间省略并保留后缀，悬停／聚焦可查全号。
+2026-11-11 版式补充：金额显示去掉后端补零，同组／同列用真实最大小数位对齐且至少 2 位，不舍入；五档 USDT 为 3 位、UVT 为 2 位，悬停或聚焦可见后端原值，确认与命令保留完整字符串。手机状态用 rd 对应图标／色调；设备格最多两行，1440 实例号完整、1024 中间省略保留后缀，复制和读屏仍是一整串；设备名和手机任务名不拆开，放不下在末尾省略。分界轴与输入等宽，1440 四列、1024 两行两列，校验约束在框下；硬件空态用标准空块加导入／新增入口，帮助跟标题。窄屏主题导航上移，待核验异常标记保留。任务、风控及换机数值错误贴着对应字段显示；预设预览取消后可再次载入。原值气泡适配长实例号，不溢出边框。可选当前任务号单行显示，窄列中间省略并保留后缀，悬停／聚焦可查全号。
 
 2026-11-11 复查补充：任务名称列设上限，操作统一用「⋯」；只读角色收起操作列，任务一项未改不能提案。任务与校准确认逐项显示「现在 → 改后」，支出增加用警示图标说明具体依据，同次试算的匹配、其中变化和待核验数常显。手机解绑、整用户暂停及本单结算后停用的后果常显在事实区。档位非递减校验和允许范围贴着输入框；换机四项在页面、编辑和确认中同名，未改禁用提交。成功提案用进行色显示对象、审批单与「查审批结果」，同分区多条合并展开；只有结果未知保留警示与原样重试，明确拒绝后突出解除。读失败每个资源只报一处，依赖块用中性等待文案；预约结论用进行色并标明时区，同时列出空 Android 规则及待核验硬件。试算变化数包含在匹配数内，待核验用警示色。
 
@@ -1122,158 +762,51 @@ F4 总览的 `voteWeights` 只列出有效等级的正整数票数。没有配�
 
 ---
 
-#### [F1] V-Rank 晋升管理
+#### [F1] 团队等级晋升
 
-**2026-11-05 条件与奖励审批（BUG-286）**：五项有效晋升条件放宽统一提交 A2，包括没有本级资金奖励的等级；资金奖励新增或价值增加须另一位有审批权的超管批准后生效。确认框展示真实前后值，待审时维持现行配置。收紧、等值、非资金编辑及移除沿用即时维护，历史已发奖励保留。USDT↔UVT 使用 B1 当时价格精确估值；原命令按账号、等级、动作持久恢复，原值和理由锁定。完整合同见 [F1 条件与奖励审批](F1-条件与奖励审批-20261105.md)。
+2026-11-15 按后端 `111e00cd`、App `44b55db8` 核对当前合同。路由 `/network/v-rank`，`network_f1_read` 控制读取；本节覆盖现有能力，不恢复旧稿从未实现的 V9–V12、奖励调序、批量派奖、领取或完整权益预览。
 
-本轮另确认局部移除恢复入口：仅原等级奖励区域存在本人未确认移除命令时显示“移除奖励结果待核对 · 核对原操作”。刷新后即使原奖励已被移除也可重开原框，奖励、理由和原请求编号锁定，只按原命令重试；不恢复已删除奖励，不新增审批或权限，不显示全页通用恢复栏。
+**页面与读取**：V0–V8 九级阶梯及所选一级详情；晋升记录、奖励发放记录、App 等级说明独立页签。总览、两套历史独立读取/报错，不轮询；说明页签打开时另读。总会员含 V0；本月晋升按增长与团队业务自然月计算升档日志人次，含人工升级，同人多次升档分别计数。历史每批 100 条，按 ID 倒序追加；晋升筛选用户/等级/批次/日期，发放筛选用户/等级/类型/状态。抽屉保留全部字段、快照、关联事件/审计/账单。筛选不写 URL。
 
-各级头衔提交只创建审批申请；确认框及成功提示统一写「批准后生效」，由另一位管理员批准前仍按原设置显示，申请进度到「操作记录与审批」核对（BUG-194、T02）。
+**五项晋升条件**：自购算力点、团队算力点、合格直接邀请人数、达标分支数及最低等级。正门槛才参与 AND；0 不要求；分支数正而最低等级未设置时不满足。直邀人数只计直接邀请的好友中自购达到 V1 门槛者，改 V1 会影响各级该人数。四项有效相邻门槛保序允许相等、跳过 0/未成对分支；直接邀请人数不做相邻保序。首次九级配置不做整组相邻保序。
 
-**当前权益边界**：V 级本人权益、晋升判定、等级奖励清单、培育奖和领导池票权保持原规则。平级奖能力位尚未开放，当前没有发奖程序，本轮不启用；保留参数不代表实际派奖。七层资格、层级覆盖与扩展网络可见性沿原规则；手动调级不自动补发历史未计奖励，不改变直属设备收益只给直接邀请人的范围。
+**17 个写入口与生效**：
 
-**① 目的 & 对齐**: 管理 13 阶 V 级头衔体系(V0–V12)的阶梯门槛、server 晋升判定、以及每个 V 级的**运营可配等级奖励清单**派发,是团队分润体系的「身份与解锁」中枢——V 级决定平级奖 / 领导池票数解锁、以及用户端网络深度可见性的渐进暴露。直属两类分成不按 V 级扩展层级。对齐前端 §8.2(V 级头衔体系 `/team/rank`)+ §13.2(V 级升级判定 server canonical)+ 12 月节奏表 §6.3(`ROYALTY_VISIBILITY_BY_VRANK` 可见性 gating)。服务的业务目标:用阶梯门槛与永久保留机制驱动持续团队业绩投入、用**可由运营自由编排的等级奖励清单**(USDT / NEX / 代金券 / 系统 SKU / 自定义项,每阶可多项,增删改走操作确认)强化晋升获得感、用可见性 gating 实现网络深度的渐进解锁(前期不暴露完整网络结构);为 B5 头部集中度监控供 V 级分布维度。**实物奖品 / 发货队列 / Claim 履约机制已下线**——奖励统一由结构化奖励清单表达,不再含需物流履约的实物条目。
+| 入口 | 权限/通道 | 生效与限制 |
+|---|---|---|
+| 五项门槛逐项维护（5） | `network_f1_write`；PATCH 或 A2 `f1_rank_policy_change` | 按引擎方向判断，放宽才审批；收紧/等值直存。分支数 0 时改最低级不算放宽；正分支但 NONE 时降数量仍不算放宽，设有效最低级才放宽。保存仅影响后续评估，无全量重算或历史补发。 |
+| 新增/编辑奖励（2） | 同权；POST/PUT 或同一专用审批 | usdt/uvt 金额为精确正小数字符串（12 位整数、6 位小数）；资金增加/改成资金/跨币按当时 B1 价格估值增加才审批。券、SKU 选当前可发/可履约候选，自定义非空。只改未来模板，历史快照不改。 |
+| 移除奖励（1） | 同权；DELETE 直存 | 不要求重选旧失效标的，不回收已发奖励，不删历史。 |
+| 开启/关闭保护（2） | `network_f1_permanent_protection`；A2 `f_ui_config` | `F.vrank.permanent`；on 保后续评估时的当前等级，off/缺值允许降到实际达到级。只改变后续评估，不扫描全体，不恢复历史最高级，人工 rollback 不受保护限制。 |
+| 奖品名/各级头衔（2） | `network_f1_write`；A2 `f_ui_config` | 只改显示/接口值，不晋升、不发奖。批准头衔覆盖 PC 等级名；App 当前只显示 Vn，无头衔与奖品名界面消费者。 |
+| 人工调级（1） | `network_f1_promote_user`；A2 `f_vrank_override` | 用户编号须正安全整数，目标/方向自己选；有 C1 读权时读取用户资料等级镜像，无结果保留未知，不能假定 V0。批准时重新核对真实等级及严格升/降方向；promote 只发目标级奖励，中间各级不补；rollback 不追回历史。 |
+| 重发/冲正（2） | `network_f1_reward_reissue` / `network_f1_reward_reverse`；A2 `f_reward_payout_action` | 重发只允许 REVERSED；冲正只允许 GRANTED/REISSUED/PENDING_GRANT。资金重发按原 sponsorUserId 决定收款人，资金冲正仅有关联事件时反向记账；SKU 恢复或取消履约/权益；券/custom 仅改发放单状态，不实际补发/收回。FAILED 无本页重试。 |
+| 首次九级配置（1） | `network_f1_write`；A2 `f_vrank_bootstrap` | 等级/奖励两表全空、mutex、一次 V0–V8、rewards=[]。标题/数字必填，V1–V8 至少一项正门槛，分支成对；不包含资金奖励。批准前仍显示空。 |
+| 保存/发布等级说明（1） | `network_f1_write`；PUT rank-policy 直接 CAS | 无额外发布权限/审批；1–10 个语言含 fil，每语言 1–100 段；理由 8–500，保存整体含保留公开版最大 1 MiB。DRAFT 保留公开快照，PUBLISHED 替换；version 可不变，revision 必须匹配。 |
 
-> **V3 / V4 头衔跨文档口径**:V3 / V4 头衔以前端 §8.2.1 为准——V3 = 「Captain 舰长」、V4 = 「Commander 指挥官」。12 月节奏表 §2.2「V 级阶梯渐进式深度解锁」表在 V3 行括号内使用 **Engineer**、V4-V5 行括号内使用 **Architect / Wing Leader** 作为辅助标记(非正式头衔),与 §8.2.1 的 Captain / Commander 不一致;后台配置面以前端 §8.2.1 为准,列入 V4 跨文档收口澄清。可见性 key 值逻辑不受头衔命名影响。
+8 个始终审批、7 个按方向审批、2 个直接入口；五门槛/奖励增改删 REST 和 A2 外层按命令去重，说明保存不去重。专用放宽/增资审批由另一位超级管理员且有 A2 批准权执行；普通八项按另一位管理员、A2 批准权、对应业务权和 maker/checker 分离处理。精确命令、目标、字段见 [F1 条件与奖励审批](F1-条件与奖励审批-20261105.md)。
 
-**② 后台界面**: V 级阶梯配置 + 晋升记录 + 等级奖励清单配置 + 奖励派发流水,四区。
+**待审批与直接保存**：来自可读 A2 队列与本人原票权威查询的 `f1_rank_policy_change` 在对应等级显示待审批。后端直存门槛/奖励不带版本、也不受该审批锁限制，PC 保持此行为；实际变更会让旧审批版本失配。等值保存未改变摘要时不一定失配。未获 A2 队列读权只能核到本人已保存的原申请，不能宣称覆盖其他人。
 
-- 「本月晋升」按 R-1 生效的增长与团队业务时区统计本自然月实际升档的记录人次，从月初（含）至下月月初（不含）。同一用户的多次升档分别计数，手动升档也计入。晋升记录流仍显示自身筛选后的总数。
-- 阶梯与「设置各级头衔」读取同一份已批准头衔。待审申请保留原值。尚未配置头衔时，阶梯沿用等级定义中的名称，配置框留空供首次填写。
+人工调级读取当前等级时，使用 C1 按内部用户编号精确筛选的唯一结果，并按该列表最小页长 20 请求；列表投影只有公开 userNo，不以缺失的内部 id/userId 再匹配。查无用户、数量不唯一或读取失败仍保留未知提示。原确认框在总览查询期间保持实例和原理由，收敛后关闭并重读。
 
-1. **13 阶阶梯表**:每阶一行 `[V 级 / 头衔 / 晋升条件(达标分支数 directRefs / 分支最低等级 vDownlines / selfBuyUSD / teamVolumeUSD 组合)/ 扩展版税覆盖度(unilevelDepth)/ 平级奖 % / 领导池票数 / 等级奖励清单(摘要:N 项)/ 可见性解锁档]`,支持编辑各阶门槛 / 奖励清单(经确认弹窗 + 理由必填,见 ④)。
-2. **晋升记录流**:`[userId / 晋升前 V → 晋升后 V / 触发时点 / 判定快照(各 check 完成度)/ 是否手动 / operator]`;支持按 V 级 / cohort / 时间筛选。手动晋升 / 回滚条目高亮并附审计号。
-3. **等级奖励清单配置**:每个 V 级一个**有序奖励清单**,清单内每项为一条结构化奖励 `[奖励类型(USDT / NEX / 代金券 / 系统 SKU / 自定义)/ 数量或标的 / 备注]`——`USDT` / `NEX` 填数额;`代金券`从现存 H7 代金券定义下拉选(`voucherId`);`系统 SKU`从现存上架 SKU 目录下拉选(`skuId`);`自定义`填运营自定义文案 + 可选金额(仅展示与记账标注,非物流履约)。支持一阶**多项**奖励、**增 / 删 / 改**单项与调序(均经确认弹窗 + 理由必填,见 ④)。清单为 V 级达成后的发放配方,server 在晋升判定通过时按配方逐项发放(可发放项即时入账,见 ⑦)。
-4. **奖励派发流水**:`[受奖 userId / 达成 V 级 / 奖励项(类型 + 标的 + 数量)/ 受奖上线 userId(培育类 NEX 发被培育者直接上线 L1 sponsor)/ 结算态 / 关联 D4 billId(资金类)]`;对齐 §8.2.5(培育类 NEX 即时入账无冷却,发被培育者直接上线、L2+ 不分);支持按 V 级 / 奖励类型 / cohort / 时间筛选,手动补发 / 撤销条目高亮并附审计号。
+**结果未知**：发送前持久保存完整原请求、操作者、对象、理由、创建时间与原号，存不下不发送。R-F1 沿用专用存储，普通八项和 F2 使用同一 F 域底层实例；旧记录只有输入指纹时仅核查，不伪造 POST。结果未知冻结确认输入与理由；24h 内原请求原号重试，超时只读核对。第一次明确拒绝按 deterministic 分类弃号；保留下来的原命令重试只以 explicit-rejection 判定，认证/限流和幂等未决不当结论。查询不写；成功重放后重读当前配置及审批状态，历史回执不作当前有效值。审批只有权威查询 pending 才标待批，查失败撤销该观察、保留原记录。
 
-**③ 可控参数**:
+**说明未知**：HTTP 4xx 或 HTTP 200 内非零业务码的明确拒绝保留编辑内容、解除本次保存记录，不冻结为结果未知；5xx、传输失败或不可读回包仍保留原记录。保存前完整保留原文档/revision/理由；刷新或重进编辑器恢复原内容并冻结。唯一恢复动作是 GET，按原版本/状态/全部语言内容和 revision+1 比对；不一致或读失败继续保留，绝不重发 PUT。读回匹配是当前内容确认，不是独立的命令回执。发布后 App 在下次成功读取时使用；缺回退语言或固定所需段落时可能不可用，不能将简化预览视作最终 App 排版保证。
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| V_RANKS 各阶门槛(`selfBuyUSD` / **达标分支数** `directRefs` / `teamVolumeUSD` / **分支最低等级** `vDownlines`) | **现状**(§8.2.1):V1 `selfBuyUSD≥$299` AND **达标分支数 ≥3**(`directRefs`)· V2 `teamVolumeUSD≥$5K`(仅团队业绩)· V3 `teamVolumeUSD≥$20K` AND **2 条分支 · 每条 ≥V1**(`vDownlines {1:2}`)· V4 `teamVolumeUSD≥$50K` AND **3 条分支 · 每条 ≥V2**(`vDownlines {2:3}`)… V12 `$500M`(各阶为 **AND 复合**条件) | 各阶门槛 ≥ 0;须保序(Vn 门槛 ≥ Vn-1) | 仅新判定(改后对下一次 server re-check 生效,不回溯已晋升者——§8.2.4 不降级) | `/team/rank` 晋升判定 + 进度条 + Missing 清单(§13.2 server canonical) |
-| 等级奖励清单(`rewards[V]` — 有序数组,每项 `{ type, amount?, voucherId?, skuId?, label? }`) | **现状**(§8.2.5 培育奖迁入此清单):各阶清单默认含一条 `type:"NEX"`(培育奖 NEX)——V1 500 / V2 2,000 / V3 10,000 / V4 50,000 / V5 200,000 / V6 800,000 / V7 3,200,000 / V8 10,000,000 / V9+ 空清单(高阶默认不发);运营可向任一阶清单增删 `USDT` / `NEX` / `代金券`(`voucherId`)/ `系统 SKU`(`skuId`)/ `自定义`(`label`)项 | `type ∈ {USDT, NEX, voucher, sku, custom}`;`USDT`/`NEX` amount ≥ 0;`voucher` 须为现存 H7 代金券 id;`sku` 须为现存上架 SKU id;清单可为空 | 实时(改后下一次达成该 V 级按新清单发放,不回溯已晋升者) | `/team/rank` 等级权益展示 + `/team/commissions`(NEX 培育类即时入 `nexBalance`)+ 代金券 / SKU 入用户对应账户(见 ⑦) |
-| 平级奖 `peerBonus[V]` | **现状**(§8.2.1):V0–V2 = 0 / V3+ = 5% | 0–100% | 仅新结算周期(peer 每月结,§8.6) | `/team/commissions`(peer 类,V3+ 解锁,同 V 级团员业绩 5%) |
-| V 级可见性 gating(`ROYALTY_VISIBILITY_BY_VRANK`) | **12 月 §6.3 权威**(全量数组):V0-1=`[direct]` / V2=`[direct,indirect]` / V3=`[direct,indirect,network_pool]` / V4=`[direct,indirect,network_pool,cultivation]` / V5=`[direct,indirect,network_pool,cultivation]` / V6+=`[direct,indirect,network_pool,cultivation,founders_tier]`(**V4 与 V5 为独立键,值相同但不可合并**) | 枚举映射(direct / indirect / network_pool / cultivation / founders_tier) | 实时(用户 V 级变更即解锁对应可见性) | `/team` 主页 + `/team/unilevel` 详情:按 V 级渐进暴露网络深度卡片(§8.3.2 / 12 月 §2.2) |
-| 不降级永久保留(`vRankPermanent`) | **现状**(§8.2.4):true(V 级一旦达成永久保留,唯一例外账户注销清零) | true / false | 实时 | `/team/rank` 维持期规则(无月度维护 / 无激活窗口) |
+等级行的 `unilevelDepth` 是配置/公开展示值；当前团队购买奖励结算读 F2 全局比例、暂停和 depthGate，未读取本级该字段，不能将其单独宣称为实际可拿奖励层数。现成首次配置确认框仍标资金放大，会受共享前端覆盖率阻断；后端首次配置不带奖励且没有这项覆盖率检查，交协调人和视觉 worker 统一现成提示与阻断。
 
-> **默认值口径**:V 级门槛 / 等级奖励清单(含培育奖 NEX)/ 平级奖为 12 月节奏表未覆盖的业务常量,以前端 §8.2.1 / §8.2.5 现状为参考;**V 级可见性 gating 以 12 月 §6.3 `ROYALTY_VISIBILITY_BY_VRANK` 为权威**(渐进解锁是 12 月节奏「前期不暴露完整网络结构」的直接落地,§2.2)。可见性参数表已按全量数组列出每一 V 级(含 V4 / V5 两条独立键),开发不得用「+cultivation」差量写法合并 V4 / V5。逐阶晋升不可越级(§8.2.2:即使一次满足 V5 条件也只先升下一阶),奖励清单按每次跨阶达成分别按该阶配方触发发放。
->
-> **晋升门槛术语对运营的易懂表达(运营面文案约定)**:`directRefs` 在运营界面称「**达标分支数**」(需要多少条达标的直推团队分支)、`vDownlines` 枚举称「**分支最低等级**」(每条分支至少达到的 V 级,展示如「2 条分支 · 每条 ≥V1」)。技术字段名(`directRefs` / `vDownlines`)在接口与数据模型层保留不变(见 ⑤),仅运营界面的列标题 / 弹窗 label / 进度提示采用易懂表达;开发不据此改字段名。
->
-> **V_RANKS 条件为 AND 复合,各阶字段组合不一**:每阶晋升条件为「AND 复合」(全部子条件同时满足才晋升),**且各阶要求的字段组合不同**——V1 同时要求 `selfBuyUSD` AND `directRefs`;V2 仅要求 `teamVolumeUSD`(无 `selfBuyUSD` 字段);V3+ 要求 `teamVolumeUSD` AND `vDownlines`(同样无 `selfBuyUSD`)。开发不得假设所有阶都有 `selfBuyUSD` 字段,须按阶读取实际存在的子条件做 server 判定。
->
-> **`vDownlines` 字段语义为枚举结构,不得字面比较 V 级编号**:`vDownlines` 字段语义为枚举结构 `{ targetV: count }`(参 §8.2.2),V3 表达式为 `{1: 2}`,即「≥2 个直推中 V≥1(含更高 V 级也算)」,而非字面比较 V 级编号或要求恰好 V1。同理 V4 `{2: 3}` = ≥3 个 V≥2 直推。开发须按枚举语义实现,不得实现为 `directV == n` 之类的字面数值比较。
+**显示与交付边界**：金额写币种，保留完整小数；历史 amount 在 JSON 数字解析前保留原十进制文本，不用 JS number 作为核对金额。缺保护按关闭执行；缺覆盖率不当 0。保护不保证永不降级；票权不保证随等级递增；人口不保证高等级更少。重发/冲正以类型分支为准。App 同级奖能力未开放，比例只是配置。
 
-**④ 操作动作**:
-
-| 动作 | 执行权 | 确认弹窗 | 审计点(A2) |
-|---|---|---|---|
-| 手动晋升 / 回滚用户 V 级 | 增长运营(lead)/ 超管 | F1-MD1(理由必填)(直接改 V 级 = 影响版税覆盖 / 平级奖 / 票数 / 可见性,高敏) | `admin.vrank_overridden`(userId / before-V / after-V / direction(promote\|rollback) / operator / reason) |
-| 编辑 V 级门槛 / 等级奖励清单(增删改奖励项)/ 可见性映射 | 增长运营(lead)/ 超管 | F1-MD2(理由必填;**奖励清单新增 / 调升资金类(USDT / NEX)项方向 + B1 红线预检**)(改门槛影响全站晋升节奏;增 / 调升资金奖励放大资金流出) | `admin.vrank_config_changed`(field / before / after / operator / reason) |
-| 手动补发 / 撤销单条奖励派发 | 财务(lead)/ 超管 | F1-MD4(理由必填;**资金类(USDT / NEX)补发方向 + B1 红线预检**)(资金类奖励变更,联动 D4 bill 与 C3 资产调整;代金券 / SKU 项补发为发账户权益,无 B1) | `admin.commission_reversed` / `admin.commission_reissued`(资金类,kind=cultivation 等,见 F5⑧)/ `admin.vrank_reward_granted`(代金券 / SKU 项) |
-
-> **手动调 V 级为高敏确认动作的依据(2026-06 操作确认决议)**:V 级直接决定平级奖 / 领导池票数解锁与网络深度可见性,手动 promote 可绕过 server 判定放大下游分润、rollback 可剥夺已得权益,风险等级与 C3 余额调整对称,故执行权就高(增长运营 lead / 超管,原超管复核层级转为执行门槛)+ 业务专属确认弹窗 + 理由必填(server 强制非空 400 `REASON_REQUIRED`)+ 即时生效 + 实时告警超管 / 增长 lead。**server 判定为常态**(§13.2:所有晋升由 server 二次判定,client preview 仅 UI 提示,client 显 100% 仍可能被 server reject),手动覆盖仅用于纠错 / 申诉处置,不替代 server 判定。等级奖励清单编辑与单条奖励补发 / 撤销执行权以 F1⑥ 权限矩阵为准。**新增 / 调升资金类(USDT / NEX)奖励项与补发资金类奖励为放大资金流出方向,确认弹窗前置 B1 覆盖率红线核验(低于红线 422 `COVERAGE_BELOW_REDLINE`);代金券 / SKU / 自定义项及调降 / 删除 / 撤销 / 收紧方向不前置**。
-
-**④a 交互与弹窗规格**
-
-**(1) 动作触发总表**
-
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 手动晋升 / 回滚 V 级 | ②第 2 区晋升记录流用户行「手动调级」 | 菜单项(警示色) | 仅增长运营 lead / 超管渲染 | 打开弹窗 F1-MD1 |
-| 编辑阶梯配置(含奖励清单增删改) | ②第 1 区 13 阶阶梯表行尾「编辑该阶」/ ②第 3 区奖励清单「添加奖励项 / 编辑 / 删除 / 调序」 | 行内按钮 + 清单内逐项控件 | 仅增长运营 lead / 超管渲染 | 打开弹窗 F1-MD2 |
-| 补发 / 撤销单条奖励派发 | ②第 4 区奖励派发流水行「补发 / 撤销」 | 菜单项(警示色) | 仅财务 lead / 超管渲染;已撤销条目「撤销」置灰 | 打开弹窗 F1-MD4 |
-| 晋升记录筛选(V 级 / cohort / 时间) | ②第 2 区筛选器 | 就地筛选 | 恒可用 | 就地筛选,无弹窗 |
-
-**(2) 弹窗规格(逐弹窗)**
-
-##### [F1-MD1] 手动晋升 / 回滚 V 级确认
-- **功能**:对单用户手动 promote / rollback V 级(纠错 / 申诉处置),确认即生效,server 原子置 V 级并联动版税覆盖 / 票数 / 可见性。
-- **布局结构**:1. **信息区**:userId / 当前 V 级 + 头衔 / server 判定快照(各 check 完成度)/ K1 簇命中标记(如有,标红)。2. **影响预览区(必有)**:before→after V 级并排展示 + **联动变化清单**(unilevelDepth 覆盖度 / 平级奖 % / 领导池票数 / 可见性解锁档 before→after,server 预检下发);promote 方向警示条「绕过 server 判定放大下游分润」、rollback 方向警示条「剥夺已得权益,§8.2.4 不降级原则的人工例外,须申诉依据」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 V 级 | 下拉单选(V0–V12) | 是 | 不得与当前 V 级相同;逐阶语义提示(跨多阶时警示) | 当前 V 级 |
-| direction | 自动派生(promote / rollback,按目标与当前比较) | — | server 复核一致性 | — |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调整 V 级]`(警示色主按钮;未变更 / reason 未达标时置灰;loading 防双击;请求携 `Idempotency-Key`)。
-- **错误态**:400 `REASON_REQUIRED` / 409(V 级已被他人变更或 server re-check 已自动晋升,提示刷新判定快照)/ 403。
-- **成功反馈**:弹窗关闭;晋升记录流新增高亮条目(手动标记 + 审计号);toast「V 级已调整 · 联动权益已原子生效 · 已记审计」;事件 `admin.vrank_overridden` 落 A2;实时告警超管 / 增长运营 lead。
-
-##### [F1-MD2] 编辑 V 级阶梯配置确认
-- **功能**:更新单阶(或多阶)门槛 / **等级奖励清单(增 / 删 / 改 / 调序奖励项)** / 平级奖 / 可见性映射,确认即生效;门槛与奖励清单改动仅作用于下一次 server re-check / 达成,不回溯已晋升者。
-- **布局结构**:1. **信息区**:目标阶 V 级 + 头衔 / 各字段当前值(conditions / 当前奖励清单 N 项逐项 / peerBonus / visibility)。2. **影响预览区(必有)**:before→after 逐字段 diff + **奖励清单 diff**(新增 / 删除 / 修改的奖励项逐条列出);**奖励清单新增或调升资金类(USDT / NEX)项、或调升平级奖方向时 B1 红线核验结果回显**(server 预检执行后覆盖率,**低于红线时红线警示条渲染 + 确认钮置灰**,文案含「server 将拒绝(422 `COVERAGE_BELOW_REDLINE`)」);门槛保序校验回显(Vn ≥ Vn-1,违反阻断);`代金券` / `SKU` 项的标的有效性回显(选中的 voucherId / skuId 须为现存可用项,失效时内联警示);提示行「改门槛 / 奖励清单不回溯已晋升者(§8.2.4 不降级)」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 各阶门槛(selfBuyUSD / **达标分支数** directRefs / teamVolumeUSD / **分支最低等级** vDownlines) | 数字输入 / 分支结构编辑器(`{分支最低等级: 数量}`,即 `{targetV: count}`) | 否(至少改一项) | ≥ 0;保序 Vn ≥ Vn-1(③,server 400);字段缺失语义按 ⑤(absent key ≠ 0) | 当前值 |
-| 等级奖励清单(逐项) | **清单编辑器**:每项 = 奖励类型下拉(USDT / NEX / 代金券 / 系统 SKU / 自定义)+ 类型相关副控件(USDT/NEX→数额输入;代金券→现存 H7 代金券下拉;系统 SKU→现存上架 SKU 下拉;自定义→文案输入 + 可选金额);支持「添加奖励项 / 删除项 / 调序」 | 否(至少改一项) | type 枚举内;USDT/NEX amount ≥ 0;voucher/sku 须为现存可用 id(③,server 复核);新增 / 调升资金类项触发 B1 预检 | 当前清单 |
-| peerBonus(%) | 数字输入 | 否(至少改一项) | 0–100%(③);调升触发 B1 预检 | 当前值 |
-| visibility 映射 | 多选枚举(direct / indirect / network_pool / cultivation / founders_tier) | 否(至少改一项) | 枚举内;V4 / V5 独立键不可合并(③ 注) | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认更新阶梯]`(主按钮;均未变更 / 保序违反 / 标的失效 / B1 阻断 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:400(保序违反 / voucherId / skuId 失效 / 枚举非法,server 回传违规字段,弹窗不关内联警示)/ 422 `COVERAGE_BELOW_REDLINE`(新增 / 调升资金类项方向 B1 阻断,回传当前覆盖率)/ 400 `REASON_REQUIRED` / 409(提示刷新当前值)/ 403。
-- **成功反馈**:弹窗关闭;阶梯表行与奖励清单就地更新;toast「阶梯配置已更新 · 仅新达成生效 · 已记审计」;事件 `admin.vrank_config_changed` 落 A2;实时告警超管 / 增长运营 lead。
-
-##### [F1-MD4] 补发 / 撤销单条奖励派发确认
-- **功能**:对单条奖励派发流水手动补发或撤销(纠错处置),确认即生效;资金类(USDT / NEX)联动 D4 bill 与 C3 资产调整(复用 F5 撤销 / 补发原语),代金券 / SKU 类联动用户对应账户权益的发放 / 收回。
-- **布局结构**:1. **信息区**:受奖 userId / 达成 V 级 / 奖励项(类型 + 标的 + 数量)/ 受奖上线 userId(培育类)/ 结算态 / 关联 D4 billId(资金类)。2. **影响预览区(必有)**:补发方向——**补发标的与联动预览**(资金类→D4 bill / C3 资产联动 + **B1 红线核验结果回显**,低于红线时红线警示条 + 确认钮置灰,422 文案;代金券 / SKU 类→发账户权益预览,无 B1);撤销方向——「撤销已发放奖励,资金类联动 C3 核减 + D4 冲正 / 权益类收回对应账户权益」警示条(无 B1 预检)。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 操作方向 | 单选(补发 / 撤销) | 是 | 撤销仅对已结算条目;补发仅对漏发 / 已撤销待纠错条目(server 复核) | 按入口预选 |
-| 目标数额 / 标的 | 数字输入(资金类)/ 标的只读回显(代金券 / SKU 类) | 补发时必填 | 资金类 > 0 且 ≤ 该阶清单对应奖励项配置值(③,server 复核);权益类按原标的 | 原值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认补发]` / `[确认撤销]`(警示色主按钮,按方向取文案;B1 阻断(资金类补发)/ reason 未达标时置灰;loading 防双击;请求携 `Idempotency-Key`)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(资金类补发方向 B1 阻断)/ 400(额度越界 / 标的失效)/ 400 `REASON_REQUIRED` / 409(条目已被处理,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;流水行结算态就地更新;toast「奖励已补发 / 已撤销 · 账户已原子联动 · 已记审计」;事件 `admin.commission_reissued` / `admin.commission_reversed`(资金类)或 `admin.vrank_reward_granted`(权益类)落 A2;实时告警超管 / 财务 lead。
-
-**⑤ 接口**:
-- `GET /api/admin/config/v-ranks` — 返回 13 阶完整配置 `{ ranks: [{ v, title, conditions:{selfBuyUSD?, directRefs?, teamVolumeUSD?, vDownlines?}, unilevelDepth, peerBonus, leadershipVotes, rewards:[{ type, amount?, voucherId?, skuId?, label? }], visibility:[...] }], permanent }`,**server-canonical**。`conditions` 字段语义:**字段缺失(absent key)= 该维度不作为此阶晋升条件;字段存在且 value>0 = AND 子条件**。V2+ 条件对象**不含 `selfBuyUSD` key**(而非 `value=0`);`vDownlines` 为枚举结构 `{ targetV: count }`(运营面称「分支最低等级: 数量」,见 ③ 注)。`rewards` 为有序数组,每项 `type ∈ {USDT, NEX, voucher, sku, custom}`(培育奖 NEX = `type:"NEX"` 项)。client preview 与 server re-check 须按此语义解读,不得把「key 缺失」当作「value=0 满足」。
-- `PUT /api/admin/config/v-ranks` — 更新阶梯配置(门槛 / **奖励清单 rewards** / 平级奖 / 可见性);经确认弹窗提交(F1-MD2,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效;**新增 / 调升资金类(USDT / NEX)奖励项或调升平级奖方向前置 B1 红线预检(低于红线返回 422 `COVERAGE_BELOW_REDLINE`)**;`voucher` / `sku` 项的 `voucherId` / `skuId` 须为现存可用项(失效返回 `400`)。门槛须保序(接口侧校验 Vn ≥ Vn-1,违反返回 `400`)。
-- `POST /api/admin/users/:userId/vrank/override` — 手动晋升 / 回滚单用户 V 级;payload `{ targetV, direction, reason }`(经确认弹窗 F1-MD1,reason server 校验非空 400 `REASON_REQUIRED`);**`Idempotency-Key` 必带**(V 级写入为状态变更,防重复触发);确认即时生效,server 原子置 V 级并联动版税覆盖 / 票数 / 可见性。
-- `GET /api/admin/team/reward-payouts` — 奖励派发流水;query `?type=&v=&cursor=`;返回 `[{ id, userId, v, reward:{ type, amount?, voucherId?, skuId?, label? }, sponsorUserId?, status, billId?, grantedAt }]`(`sponsorUserId` 仅培育类 NEX 有值)。
-- `POST /api/admin/team/reward-payouts/:id/{reissue|reverse}` — 手动补发 / 撤销单条奖励派发;经确认弹窗 F1-MD4(body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效;**资金类(USDT / NEX)补发前置 B1 红线预检(低于红线 422 `COVERAGE_BELOW_REDLINE`)**;**`Idempotency-Key` 必带**;资金类联动 D4 bill + C3 资产调整,代金券 / SKU 类联动用户账户权益发放 / 收回。
-- **server-side 判定与发放(非 admin)**:V 级晋升由 server 在 §8.2.3 被动评估触发点(自买 / 团队订单 paid / 直推注册 + KYC / 下家晋升)re-check;晋升通过时 server 按该阶 `rewards` 清单逐项发放(资金类入账户余额 / 落 D4 bill,代金券 / SKU 入对应账户)。F1 后台为判定提供门槛配置、奖励清单配置与派发记录观测,**不在 client 做判定**(§13.2)。
-
-**⑥ 权限 & 审计**:
-
-| 动作 \ 角色 | 超管 | 财务 | 增长 | 客服 | 只读审计 |
-|---|---|---|---|---|---|
-| 查看阶梯 / 晋升记录 / 奖励清单 / 派发流水 | ✅ | ✅(只读) | ✅ | ✅(只读) | ✅(只读) |
-| 编辑门槛 / 奖励清单 / 可见性 | ✅ | — | ✅(lead) | — | — |
-| 手动晋升 / 回滚 V 级 | ✅ | — | ✅(lead) | — | — |
-| 补发 / 撤销单条奖励派发 | ✅ | ✅(lead) | — | — | — |
-
-> 注:「✅(lead)」指对应角色的 lead 层级(增长 lead = 增长角色中经超管授权的高级别人员,见 F4b⑥ 角色对齐说明),member 不可执行(2026-06 操作确认决议:原复核层级转为执行门槛);F1④ 操作表与本矩阵以此矩阵为准,不引入 V1 §1.1 RBAC 未定义的独立「增长主管」角色行(增长 lead 为增长角色的授权粒度,非独立角色)。审计字段引用 A2 统一 schema:`userId / action(vrank_override\|config_change\|reward_reissue\|reward_reverse) / field / before / after / operator / reason / ts`。
-
-**⑦ 风控 & 联动**:
-- **V 级 server 判定(防伪造)**:V 级晋升 100% server-canonical(§13.2),client `nextRankProgress` / `nextRankGap`(`lib/v3/v-rank.ts`)仅 UI preview;**client 显 100% 时 server 仍可能 reject(anti-abuse / race / fraud check)是产品契约而非 bug**。F1 配置面改门槛不回溯已晋升者(§8.2.4 不降级),仅作用于下一次 server re-check。
-- **奖励异常高频检测(联动 K)**:奖励清单中的资金类项(尤其培育类 NEX)按下属跨阶晋升触发即时入账,**异常高频晋升簇(同实体多账户互相培育套取奖励)须联动 K**——晋升记录中关联 K1 簇命中(`risk.multi_account_flagged`)的 userId 标红,疑似「养号互升刷奖励」喂 K4 评分(套利维度)+ B5 风险雷达;F1 不重算评分,引用 K4(§3.14)。
-- **资金类奖励发放 = 应付负债流出,落 D4 bill**:奖励清单中 USDT / NEX 项发放即在 D4 落 commission bill(培育类 kind=cultivation,§3.14:D4 唯一记账源),手动补发 / 撤销联动 C3 资产调整 + D4 记账;**新增 / 调升资金类奖励项**前须核验 B1 覆盖率约束(§1.8 原则一)。代金券 / SKU / 自定义项为账户权益 / 标注类发放,不入 D4 应付负债账本(代金券为促销折扣不计负债,见 H7;SKU 为标的发放)。
-- **代金券 / SKU 奖励项标的有效性**:奖励清单引用的 `voucherId` 须为现存 H7 代金券定义、`skuId` 须为现存上架 SKU(E 域 SKU 目录),F1 配置面下拉只列现存可用项、不另建;标的下线 / 失效时配置面内联警示并阻断保存(⑤ 400)。
-
-**⑧ 埋点(事件)**:
-对齐 A4(§2.4.5③ money / ⑥ admin family):
-- **产生(资金记账,§2.4.5③)**:`commission.paid` — 触发点:奖励清单中资金类项派发(培育类 NEX 按下属跨阶晋升,USDT / NEX 项按 V 级达成);属性 `userId(受奖人 / 培育类为受奖上线)/ kind(cultivation 等)/ currency: "USDT" | "NEX" / amount / sourceUserId?(培育类被培育者)/ targetV / is_server_authoritative: true / ts`;落 D4 commission bill + 喂 B1/B2 应付负债(NEX 锁仓 / 可提负债科目)。**`commission.paid` 已在 V1 §2.4.5③ 登记,本章依赖其 `kind` 维度扩展(`kind` 枚举须 A4 注册,见 F5⑧)。**
-- **产生(admin 审计,须 A4 schema registry 注册)**:
-  - `admin.vrank_overridden` — 触发点:手动晋升 / 回滚 V 级确认执行(F1-MD1);属性 `userId / before_v / after_v / direction / operator / reason / ts`;喂 A2 + C1 用户画像(V 级变更)+ B5。
-  - `admin.vrank_reward_granted` — 触发点:代金券 / SKU 类奖励项发放(V 级达成自动发 或 F1-MD4 手动补发);属性 `userId / v / reward_type(voucher\|sku\|custom)/ voucher_id? / sku_id? / label? / operator?(手动补发时)/ ts`;喂 A2 + C1 用户画像(权益发放)。
-  - `admin.vrank_config_changed` — 触发点:阶梯门槛 / 奖励清单 / 可见性映射确认执行(F1-MD2);属性 `field / before / after / operator / reason / ts`;喂 A2 + B4(影响晋升节奏)。
-- **消费(晋升相关)**:`commission.paid`(kind=network/binary 等,判定 `teamVolumeUSD` 的订单事实由 §8.2.3 触发 re-check)、`checkout.completed`(自买 / 下游订单 → 重算 `selfBuyUSD` / `teamVolumeUSD`)、`auth.register_completed`(直推注册 → 重算 `directRefs`);F1 消费这些事实做 server 晋升 re-check 的输入,不作为其权威产生方。
-- **喂给**:C1 用户画像(V 级 + 风险分档不重算)、B5 风险雷达(V 级分布 / 头部集中度)、KPI 体系(V 级 cohort 维度)。
+逻辑接入未改既定排版或重写界面文字。R-A2 原操作列表、总览失败时的全局恢复入口、过期提案确认解除等未提供视觉位置；恢复数据和 query/retry/release 接口已提供，交视觉 worker 补现有设计。无通用直接写人工解除能力；跨账号恢复 BUG-308 本轮不扩展。浏览器拦截验证按域末项统一执行，本节不声称已验真实写入。
 
 ---
 
 #### [F2] 团队奖励设置
 
-> 后台页面名「团队奖励设置」（原「网络版税与分成」）。页面内：团队购买奖励（L1–L7 比例、按 L1–L7 分别暂停、团队购买奖励结算的启用 / 暂停 / 恢复）、好友奖励设置（好友购买奖励拆分 + 好友设备收益奖励，整组审批）、合作伙伴权益（按团队每月订单额解锁）、购买与其他奖励冷却。
+同一管理员的登录会话续期不重置尚未提交的确认输入；账号或审批读取资格变更按当前身份重新读取，发送前仍核对当前业务权限。批量提案拒绝不重建确认框，保留输入和理由；未知保留原请求供查询或原样重试。
+
+> 后台页面名「团队奖励设置」（原「网络版税与分成」）。页面内：团队购买奖励（L1–L7 比例、按 L1–L7 分别暂停、团队购买奖励结算的启用 / 暂停 / 恢复）、好友奖励设置（好友购买奖励拆分 + 好友设备收益奖励，整组审批）、合作伙伴权益门槛（当前仅保存，不自动开通）、购买与其他奖励冷却。
 
 **① 目的 & 对齐**：作为运营者，我想在同一页面配置七层购买、直属购买拆分和直属设备收益，以便核对同一来源的资金范围；作为审批者，我想按完整快照和引用版本批准，避免旧预览套用新支出规则。对齐 App 网络版税、F5、A2、B1 和 D4。
 
@@ -1281,11 +814,12 @@ A→B→C：B 购买时 A 是 L1；C 购买时 A 是 L2、B 是 L1。购买继�
 
 **② 后台界面**：入口 `/network/royalty`，按七层购买、直属购买拆分与设备分成、独立权益设置、确认审批的顺序呈现。
 
-- 七层购买：当前完整 L1–L7 基础预算率、额外 NEX 系数、暂停、资格门槛、Influence 边界、活动倍率和合并上限。L1 基础预算仍由原唯一配置固定 10%；读取缺失显示未配置，不凭页面常量初始化。L2–L7 可按旧规则调整。
+- 七层购买：当前已有 L1–L7 基础预算率、额外 NEX 系数、暂停、资格门槛、Influence 边界、活动倍率和合并上限。L1 基础预算仍由原唯一配置固定 10%；读取缺失显示未配置，不凭页面常量初始化。L2–L7 可按旧规则调整。
+- L2–L7 USDT 奖励比例按百分数输入，提案命令保留输入原文并带 `%`：`0.5 → "0.5%" → 0.005`、`1 → "1%" → 0.01`、`5 → "5%" → 0.05`、`100 → "100%" → 1`（末列为 `usdt_rate`）。PC 提案前后值带 `%`，调高/调低以同为百分数的当前值和输入值比较；提交只收录申请，批准后才生效。不得对 UVT 系数、金额、天数或本已明确按百分数解析的其他参数套用这项转换。后端现行审批描述仍将原值改写为「以服务器执行时状态为准」，并将 `f_unilevel_rule` 统一标记为放大；本次 PC 修复不宣称这些后端限制已消除。
 - 直属购买拆分：仅启用状态和 USDT 占比可编辑，NEX 自动补足；原 L1 预算与购买冷却只读引用。启用时拆分所得 NEX 替代旧 L1 额外 NEX；生效期间旧系数入口只读。关闭恢复未来 L1 全额 USDT 和旧系数 NEX，七层购买不停用。
 - 直属设备收益：独立启用、总比例、USDT 占比及冷却；只读引用已有 NEX 行情，不建立第二行情。
-- 独立设置：Partner Status 四档权益、原购买与其他佣金冷却、未接入参数的只读核查；不启用平级奖或其他未接入能力。
-- 默认态读取服务端实际值，编辑保留草稿；空态逐块显示未配置，`unilevelRates=[]` 合法；加载态阻止对应提交；失败态分块重试且保留草稿，不隐藏另一成功区域或补假默认。
+- 独立设置：Partner Status 四档门槛（当前只存配置，不会按月订单额自动判档或开通权益）、原购买与其他佣金冷却、未接入参数的只读核查；不启用平级奖或其他未接入能力。
+- 默认态读取服务端实际值，编辑保留草稿；空态逐块显示未配置，`unilevelRates=[]`、部分规则行和明确 null 均保留缺失状态；不以默认比例补齐；加载态阻止对应提交；失败态分块重试且保留草稿，不隐藏另一成功区域或补假默认。
 - 显示七层新结算是否已切换，与购买拆分开关分开；切换前仍按原代际，切换后关闭拆分仍是新七层结算。历史奖励不重算。
 
 ```mermaid
@@ -1319,7 +853,7 @@ flowchart LR
 | deviceEarning | enabled、totalRatePct、usdtSharePct、coolingDays；总比例 0–100%，启用时大于 0；两币占比均正；冷却 0–365 整天 |
 | nexUsdtPrice | 已有行情能力的正数或 null；缺价待计算，不默认价格或改发全 USDT |
 | F.cooldown / commission/cooling-days | 原七层购买与其他原奖励冷却，0–90 整天；购买从首次整链 preparedAt 起算并锁定 |
-| F.partner.tiers | Standard / Verified / Premium / Diamond 四档非负、非递减门槛；只决定权益 |
+| F.partner.tiers | Standard / Verified / Premium / Diamond 四档非负、非递减门槛；当前只保存，不会自动判档或开通权益 |
 | F.unilevel.* / F.influence.* / F.promo.weekMultiplier | 原七层唯一配置；L1 基础预算固定 10%，L2–L7 可配置；原合并上限按拆前预算占用 |
 
 购买先按原七层算出最终 L1 预算 U1，再发 `floor6(U1×USDT占比)` USDT 与 `floor6(U1×NEX占比/锁定价格)` NEX。七层合并上限占用仍为 U1，拆后现金减少不释放额度给深层。设备按真实已入账凭证 USDT+NEX×价格，乘设备总比例再拆双币；来源和价格快照不随重试改变。影子收益、充值、礼金、邀请佣金、团队奖励、开发模拟和测试工作器不属于设备收益。
@@ -1331,7 +865,9 @@ flowchart LR
 - 异常1：任何七层费率、暂停、门槛、倍率、影响边界、上限或购买冷却已批准变化，旧预览及待批引用失效，须重读、重新预览和重提；草稿不得静默覆盖。
 - 异常2：无权限、理由不足、比例非法、旧 schema 或购买第二总比例，前后端均拒绝，不修改资金或规则。
 - 异常3：关闭拆分须展示将恢复的旧 L1 NEX 系数及增加的 USDT 构成，B1 按实际两币支出判断，不能把关闭一概视为收缩；缩短冷却同样复验。
-- 异常4：超时重试沿用原命令号，先核验未知结果；待批不得显示为生效。
+- 异常4：所有 F2 提案在发送前持久化完整请求、理由、对象与原命令号；无法持久化不发送。结果未知后原确认框冻结，刷新后仍可从原记录查询/原样重试；写权限撤回不影响独立的查询入口，服务端仍按真实权限裁决。原样重试成功只证明建过单，须 GET 原号查询当前审批单，不能把历史 pending 回执投为当前待审批。
+- 待审批：A2 按 F 域读取，按 operationCode/obj 对齐具体参数和实际锁；费率与系数共享同层锁，暂停整组锁七个 ui_config。好友政策和整体结算分别匹配对应操作，刷新后保留。无读权、读取失败或响应不完整时显示审批进度未知，不解释为没有待审批。
+- 恢复了结后作废旧的新修改确认快照，重读当前规则/政策再允许依赖该数据的新修改；回放回执不设成当前业务数据。超过24小时保留原记录、只能查询；过期且精确返回 A2_PROPOSAL_NOT_FOUND 才可在确认后解除（解除逻辑已提供，现有界面缺确认入口，交视觉补接）。403/401/408/425/429和IDEMPOTENCY_*不是重试的明确结论；首次确定性拒绝按HTTP4xx或HTTP2xx非0业务码结束本次尝试，保留确认输入和真实原因。
 - 异常5：任一区块 API 失败、未配置或缺价，明确提示和重试，保留另一成功区域与草稿，不伪造费率、行情和到账。旧 L1 UVT 系数只有在已知七层与购买拆分均启用时才显示「已改用好友购买奖励拆分」；政策加载中、加载失败或尚未确认分别说明并禁止编辑，不推断拆分生效（BUG-200）。
 
 **④a 点击流**：
@@ -1343,14 +879,14 @@ flowchart LR
 | 设备总比例、拆分、冷却 | 独立数字校验，说明成员原收益不减 |
 | 提交审批 | 显示改前/改后、两版本、旧系数恢复范围、资金方向，理由 8–200 字；服务端执行时再核验 |
 | 取消 / 失败 | 不丢草稿和理由，有明确出口与重试 |
-| 重新读取 / 放弃草稿并重载 | 两者均请求实际配置；普通刷新保留草稿，显式放弃只在成功读回后按新版本重置草稿及待审批提示，失败保留草稿并显示错误（BUG-197） |
+| 重新读取 / 放弃草稿并重载 | 两者均请求实际配置；普通刷新保留草稿，显式放弃只在成功读回后按新版本重置草稿；待审批由A2权威状态收敛，不因放弃草稿被清掉，失败保留草稿并显示错误（BUG-197） |
 | 查看审批进度 | 有权限进入既有 A2；待批、生效、驳回分别呈现 |
 
 **⑤ 接口**：
 
 | 接口 | 契约 |
 |---|---|
-| GET /api/admin/teams/rates?schemaVersion=2 | 当前完整七层、独立参数及 sevenLayerRevision；不把 usdtPct 改为拆后现金率 |
+| GET /api/admin/teams/rates?schemaVersion=2 | 当前已有七层规则、独立参数及 sevenLayerRevision；不把 usdtPct 改为拆后现金率 |
 | GET /api/admin/teams/direct-referral-policy?schemaVersion=2 | 当前 v2 政策、代际、切换状态、sevenLayerRevision、sevenLayerReference、purchaseSplit 与 deviceEarning |
 | GET /api/config/commission/direct-referral?schemaVersion=2 | 同一已发布政策的只读投影 |
 | PUT /api/admin/teams/direct-referral-policy | schemaVersion=2、expectedVersion、expectedSevenLayerRevision、完整 purchaseSplit/deviceEarning、reason、Idempotency-Key；只经 A2 生效 |
@@ -1368,652 +904,176 @@ flowchart LR
 ---
 #### [F3] 团队平衡奖励
 
-**F3-A01 手动结算（2026-11-05，BUG-286）**。有 `network_f3_write` 的管理员填写用户编号、已结束的越南结算日和理由，提交 `F/f3_binary_settle` 审批。待审期间没有入账。另一位有 A2 审批权的超管批准时，服务端按实付订单、当前结算规则和 H1 封顶算出实际应付，并将该笔待付奖励计入兑付覆盖率复核。满足条件时生成一笔奖励及资金流水，A2 回显金额和奖励记录。未达到条件时返回原因，保留待审工单。已结算的同一用户和结算日返回原奖励记录。旧结算接口仅用于读回已结算结果。
+**当前实现（2026-11-15，后端 `111e00cd`）**：入口 `/network/binary`。运营读取团队A、B两组的历史结算、结算设置和H1当前上限；调整配置或提请手动结算需审批；给直接好友分组直接写入。共10个方向，A01–A08走A2并按原命令号去重，A09/A10不按命令号去重。请求、角色、数据和拒绝均以后端现行合同为准，不把申请登记说成已发放。
 
-**配置输入与结算单位（BUG-192、BUG-338、T14）**：门槛必须大于 0、上限 5000 USDT，最多 6 位小数（结算金额精度）；比例按百分比填写，必须大于 0、上限 20%，最多 10 位小数（对应结算比率 12 位小数）。空值与 0 分开拒绝，非数字、越界和超精度明确拒绝，不自动取整或四舍五入。超精度与越界一样立即禁用「确认提交」，在输入框旁显示范围和小数位限制，保留输入；提示中的上下限使用普通十进制，例如比例显示 `0.0000000001～20`，不使用科学计数法；提交时仍复核精度。合法边界门槛 `0.000001` / `5000`、比例 `0.0000000001` / `20` 在其余条件满足时均可提交。输入比例 `1` 提交 `1%`，结算使用 `0.01`；`0.5` 提交 `0.5%`，结算使用 `0.005`。存量裸值与带 `%` 值均按百分数展示，裸 `1` 为 `1%`，裸 `0.13` 为 `0.13%`；与系统 `normalizeMatchRate` 规则一致，非正、超过 20 或小数精度超过 10 位等拒绝值显示「比例尚未确认」并保留原文。提交只创建审批申请，批准后后续结算使用新设置，批准前展示原配置。系统写入、审批创建、批准执行、结算与公共佣金指引共用精确数值规则；非法配置直接返回 422，前端校验不能代替系统保护。
+**读数据和页面范围**：`GET /api/admin/teams/binary` 返回总览，`GET /api/admin/teams/binary/assignments` 返回一位邀请人的活跃直接好友。总览结算最多100条，按结算日、记录ID倒序；同一人可以多行，不是今日全量邀请人。A/B额、匹配订单额、记账奖励在SQL已舍为整数，PC不反算精确历史金额。匹配订单额不是奖励金额；历史参与人数是所有结算记录distinct owner，被拦下数是BLOCKED/REJECTED/FAILED/FROZEN行数。月累计SQL只有从当月起点的下界，日累计是业务日的matched_volume。近7天自动分组按assignment时间窗口计数，不含人工分组。未匹配池是按当前残额策略得到的双腿剩余中较大一侧合计，不是两腿差额。
 
-门槛和比例提交按当前已确认值显式标记资金方向：降低门槛或提高比例才标记放大；提高门槛、降低比例或原值不标记放大。无法解析的当前比例仍显示「比例尚未确认」，空当前值不转换为 0、不参与方向比较，不因虚假的上调误触发低覆盖率拦截。当前比例无法确认或门槛为空时，不显式指定资金方向，提案沿配置键既有资金分类处理，不声明为收紧；不扩展旧值格式解析，系统仍须按实际生效值复核。
+本地支持按邀请人编码、状态、注册月筛选，分页10/20/50，并按结算日汇总已读记录；不扩大后端100条范围。成员查询按编号排序、每页20，可按分组状态和页码查。页面进入时读取，不自动刷新。错误/缺值不伪装成0；总览必填嵌套字段严格检查，业务配置空文本仍保留以显示未配置，coverage为null不补0。
 
-**归零说明与实际边界（BUG-198、T08）**：系统业务日历决定实际归零时点。页面通过既有业务日历客户端的 `trackZones.GROWTH_TEAM`，按「业务时区」卡相同的名称查找与偏移计算显示当前增长与团队时区，例如「越南时间 UTC+7」，每月 1 日 00:00 切月。不能借用其他模块的时区名称或偏移，也不直接显示原始时区标识；名称缺失、加载失败或尚未确认时显示「业务时区尚未确认」，不回退到固定 UTC+7，历史周期不重算。页面分开显示实际业务日历和「已存归零说明」；旧 UTC 文本不是结算边界。「更新归零说明」仅提交文字配置审批，不改业务日历或历史结算。本轮只修正时区显示，不提交日历或历史变更。
+**设置与结算参数**：
 
-> 后台页面名「团队平衡奖励」（原「双轨结算引擎」）。页面按 A 组 / B 组显示：每组订单额门槛、匹配比例（较小一组订单额 × 比例）、自动分组与归零、结算周期与未匹配订单额处理、暂停发放，以及「成员分组」（把直接邀请的好友分到 A 组或 B 组）。未匹配处理的取值「每次对碰清零」仍是接口值，页面显示为「每次匹配后清零」。
+| 设置 | 合同、范围和实际用途 |
+|---|---|
+| 每组订单额门槛 | `F.binary.threshold`，>0且≤5000 USDT，最多6位小数。双腿对残额策略所得volumeWindow检查门槛。 |
+| 匹配比例 | `F.binary.matchRate`，百分数>0且≤20，最多10位小数；输入1提交1%，结算比率0.01。裸存值也为百分数。PC不因App小比例缺陷加下限，合法最小普通十进制输入0.0000000001%。 |
+| 自动分组 | `F.binary.spillover`，请求仍提交已启用/已关闭。结算消费兼容on/true/1/已启用与off/false/0/已关闭；PC照此判断，不信错误的overview boolean别名。开启只在结算遇到未分齐的直接好友时按两组人数补齐，平数先A，不按订单额，不立即批量分组。 |
+| 归零说明 | `F.binary.gvResetCron`，只保存非空说明文本，不是cron执行器。唯一选项及结算日元数据取业务日历`trackZones.GROWTH_TEAM`；日历未确认不回退越南默认值。实际订单窗口由业务日历和残额策略决定。 |
+| 周期和残额 | 一张`F/f_config_batch`含`F.binary.settlePeriod`和`F.binary.residualPolicy`，两个target均带上。每日/每周/每月分别每天/周日/月末结算；残额每月清零/每次对碰清零/转结。批准时原子写入active配置，任一失败整批回滚；不拆两张提案绕过权限。 |
+| 发放 | `F.binary.paused`，写on暂停/off恢复；消费判断trim、大小写不敏感，true/1/on均已暂停，false/0/off均未暂停，其他值不能按正常结算。页面状态、按钮方向和确认框同一判断。 |
+| 每日上限 | H1当前运营月`binaryDailyCap`，F3只读。使用总览`dailyCap.h1BinaryDailyCap`的精确十进制，缺值不补0，不用`currentLabel`缩写反推；标签原文留在技术信息。每期cap=日cap×1/7/当月天数，再扣该结算日已记金额。 |
 
-**① 目的 & 对齐**: 配置双轨对碰(平衡匹配)的较小侧匹配比例、两轨最低门槛、自动分配(内部 spillover)规则、结算周期与沉淀处置策略、月度 GV 归零,并以只读方式展示 H1 Phase 派发的双轨日封顶现值。对齐前端 §8.4(双轨平衡匹配 `/team/binary`,含 §8.4.1.2 结算周期与沉淀处置)+ §13.4.1(`binaryDailyCapUSD` Phase 派发)+ 12 月节奏表 §6.4(`binaryDailyCap` 权威值)。服务的业务目标:用 `min(A, B) × 10%` 较小侧匹配公式鼓励两轨均衡发展、用两轨门槛形成业绩沉淀缓冲、用自动分配增强网络绑定降低退出意愿、用日封顶随 Phase 收紧延长 LTV 并控制日结流出。**用户侧一律称 Track A / Track B,不暴露翼 / 左 / 右 / spillover / 上线 / 下线**(§8.4 铁律;内部 enum `binary: "left"|"right"` 仅技术字段)。
+降低门槛、提高比例由后端以当前值重判为资金放大；修复非法当前值也可能放大。后端A2建单只验证参数、权限及锁，不查B1；批准执行`updateUiConfig`才按放大方向查当前覆盖率。周期与残额不触发这两项的配置护栏；每笔实际结算还要核B1。PC既有确认框可以显示/拦截覆盖率快照，不能把它说成后端已完成批准预检。
 
-**② 后台界面**: 平衡匹配结算面 + 日封顶面 + 两轨门槛面 + 自动分配面 + 月归零面,五区。
-1. **平衡匹配结算面**:`[userId / Track A 月 GV / Track B 月 GV / 较小侧 / Balance Match(= min×比例)/ 是否达两轨门槛 / 当日已发(对日封顶)/ 状态]`;支持按用户 / cohort / 是否阻塞筛选。
-2. **日封顶面**:`binaryDailyCapUSD` 当前值(随 Phase)+ Phase 现值只读 + 距下一拐点(月 7 由 $5,000 → $2,000)+ 跳 H1 调整入口。**此面为只读展示,不内联编辑 cap**。
-3. **两轨门槛面**:两轨最低门槛 `$1,000/轨` 配置 + 未达门槛 pending 业绩沉淀池规模监控。
-4. **自动分配面**:spillover 规则配置(上游饱和自动填下游)+ 自动分配记录 `[网络伙伴 / 被分配成员数 / 目标轨]`(用户侧称 Auto-placement)。
-5. **结算周期 & 沉淀面**:结算周期(`settlePeriod`,每日/每周/每月)与沉淀处置策略(`residualPolicy`,每月清零/每次对碰清零/转结)配置 + 系统业务日历下的自然月归零口径（当前有效增长与团队时区，每月 1 日 00:00；时区加载失败则明确尚未确认）及已存说明 + 较大侧未匹配体量沉淀池监控。
+**结算五步的实际边界**：先按有效实付订单和残额策略得到两组体量；检查暂停、周期、门槛；计算可匹配额及已消费量；按当前比例与剩余每期cap向下6位算实际奖励；创建结算PENDING、奖励COOLING和USDT账本PENDING。冷却天数来自`commission/cooling-days`，无有效非负整数时默认30。每月清零取本月订单并扣月内消费；逐次清零按成功游标后且本月的新订单；转结取截止结算日全部有效订单，双腿分别扣全部已消费matched（包括较晚结算日已经消费的记录）。图形是概要，不是本笔奖励预估；`min(A,B)`不能自动称为本笔实际matched。
 
-**③ 可控参数**:
+**A01 手动结算**：精确`network_f3_write`，邀请人正安全整数、日期YYYY-MM-DD、业务日历中已结束的一天，理由依A2规则。提案`sourceDomain:F3`，`obj:<owner>:<date>`，`command:{domain:F,op:f3_binary_settle,params:{values:{ownerUserId,settlementDate}}}`，target`F/binary_settlement/<owner>:<date>`。创建申请不记账；另一位有效超级管理员、有A2批准权且非发起人批准时才按当时订单、配置、H1和实际新增负债核对B1。相同owner/date已有已提交回执返回原记录，不重算；不满足条件返回真实原因，审批执行不算成功。旧直结算接口仅读回已有回执，不能创单或绕审批。
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| 匹配比例(`balanceMatchRate`) | **现状**(§8.4.1):**10%**(`min(A, B) × 10%`,较小侧月 GV) | >0 且 ≤20%，最多 10 位小数 | 批准后生效，后续结算使用新值 | `/team/binary` 今日 Balance Match 估算 hero + 公式 |
-| 双轨日封顶(`binaryDailyCapUSD`) | **12 月 §6.4 权威 = H1 Phase 派发**:**月 1-6 = $5,000;月 7+ = $2,000**(直接引用 12 月 §6.4,以月份为口径)。**F3 是生效面,权威归 H1,不另设第二源** | 由 H1 Phase 引擎控制(F3 不写) | Phase 派发(月粒度;现值由 H1 服务端下发,F3 只读展示) | `/team/binary` 日封顶常量(§8.4.1 较小侧匹配公式;§13.4.1 接入点 — 直接显示金额,无 phase 提示) |
-| 两轨最低门槛(`binaryTrackMinUsd`) | **现状**(§8.4.1):**$1,000/轨**(Track A ≥ $1,000 且 Track B ≥ $1,000 才结算) | >0 且 ≤5000 USDT，最多 6 位小数 | 批准后生效，后续结算使用新值 | `/team/binary` 阻塞警告(任一轨 < $1,000)+ 资格 chip |
-| 自动分配规则(`spilloverEnabled` + 饱和阈值) | 现状:启用(上游节点饱和后新成员自动分配到下游轨,内部 `isSpillover: true`,§8.4.2) | 启用 / 停用 + 阈值 | 实时 | `/team/binary` 自动分配记录(Auto-placement,用户侧不暴露 spillover) |
-| 结算周期(`settlePeriod`) | **每月**(对齐前端 §8.4.1.2 默认) | 每日 / 每周 / 每月 | 仅新结算周期(改后对下一周期结算生效) | `/team/binary` 预计奖金 hero(金额 + 「本周期…估算」标签随周期联动)+ 公式「{周期}结算」+ 玩法说明结算频率 FAQ(§8.4.1.2) |
-| 沉淀处置策略(`residualPolicy`,原冻结字段 `unmatchedSurplusDisposition`,PM 裁定后解冻) | **每月清零**(PM 裁定:三档可配,默认每月清零;取代前端 §8.4.0.2「累积或备付金」并存表述) | 每月清零 / 每次对碰清零 / 转结 | 仅新结算周期 | `/team/binary` 月归零面沉淀监控 + 玩法说明沉淀处置 FAQ(§8.4.1.2) |
-| 月度 GV 归零说明(`gvResetCron`) | 允许保留旧文本，当前选项为每月 1 日 00:00 越南时间 UTC+7 | 文字说明不决定业务日历 | 说明批准后生效，历史不重算 | `/team/binary` 月业绩统计周期仍以业务日历为准 |
+**A02–A08 配置审批**：门槛、比例、自动分组、归零说明、暂停及恢复均`F/f_ui_config`，obj=key，target=`F/ui_config/key`，sourceDomain=F3；周期和残额为原子`f_config_batch`，obj为两key逗号连接、targets两项，不附重复单target。单项配置使用`network_f3_match_rate`，暂停/恢复使用`network_f3_engine_pause`，发起还需A2写或发起权。配置批准需另一位有效管理员的A2批准权及该目标业务权，不要求超级管理员身份。批量`requiredAuthority`缺逐项映射，委托账号可能收到`A2_BUSINESS_PERMISSION_UNMAPPED`；PC保留整批入口并显示真实原因（F3-BE-02），不绕过。
 
-> **默认值口径**:匹配比例 / 两轨门槛 / 自动分配 / GV 归零为前端 §8.4 现状值;**双轨日封顶 `binaryDailyCapUSD` 以 12 月 §6.4 为权威(月 1-6 = $5,000 / 月 7+ = $2,000,以月份数为口径),且权威归 H1 Phase 引擎**——F3 不另设 cap 源,只读展示 H1 下发现值。前端 §8.4.1 正文固定写 $5,000 与 §13.4.1 可变(月 7 起 $2,000)的现状差异已记入 V1 §3.15,后台以 12 月 §6.4 月份口径为准。
->
-> **`binaryDailyCap` 月份拐点权威(月 7,非月 6)**:以 12 月 §6.4 为权威——**月 6 cap 仍为 $5,000,月 7 起才切 $2,000**,不以「进入 P4(月段 6)」即切换。V1 §1.7 H1 矩阵注已明确「双轨日封顶在**月 7**(P4 带内)由 $5,000 降 $2,000」,故月份拐点权威已定,**无需向 H1 额外确认**;前端 §13.4.1 将 P4 月段标为 6-8(可能引起「月 6 即切」误读)的差异,后台 H1 调度器以**月份数**(非 Phase 编号)为 Phase dial 触发口径。
->
-> **`residualPolicy` 沉淀处置已裁定(原引言阻断项 5,PM 裁定解冻)**:较大侧未匹配体量的处置由 PM 裁定为**三档运营可配**枚举 `每月清零 | 每次对碰清零 | 转结`,默认 `每月清零`(前端 §8.4.1.2 权威口径,取代 §8.4.0.2「累积或备付金」并存表述)。本字段解冻为有效写入字段(F3⑤ PUT 接受校验);「转结」为放大平台负债方向(沉淀累积 → 利息负债科目 #3 + 佣金应付),改向「转结」前置 B1 兑付覆盖率红线核验(低于红线 422)。沉淀处置与结算周期(`settlePeriod`)正交配置:`每次对碰清零` 的清零频率 = 结算周期,`每月清零` 恒按自然月,`转结` 不清零。
->
-> **`settlePeriod` 结算周期(PM 裁定新增)**:对碰奖金派发节奏 `每日 | 每周 | 每月`,默认 `每月`(前端 §8.4.1.2 权威)。轨道 GV 始终按自然月累计,结算周期决定按何种节奏计算并派发;前端 hero 预计金额随周期联动(周期业绩 = 月业绩 × 周期天数/30,封顶 = 日封顶 × 周期天数),默认每月 = `min(月 Track A, 月 Track B) × 10%`。
->
-> **`binaryTrackMinUsd` 结算路径已裁定(原引言阻断项 6,PM 裁定)**:两轨任一未达 $1,000/月门槛 → 该周期匹配归零(前端 §8.4.1.2 权威口径);门槛恒按月口径,与结算周期正交。后台 UI 说明文案与结算逻辑据此口径(归零,非 pending 批量结算)落地。
+批准后设置立即用于下一次实际执行的结算，包括补结以前没结的日期；已提交回执不变。暂停只阻断后续F3新结算，不收回已记奖励；恢复只解除暂停，仍守其他条件，也不自动遍历补结全部暂停期间日期。
 
-**④ 操作动作**:
+**A09/A10 成员归组**：精确读权+写权。`POST /api/admin/teams/binary/assignments`，JSON仅`{ownerUserId,memberUserId,leg:A或B}`，无理由、无Idempotency-Key、无A2。原邀请人与成员必须符合后端直接好友关系。后端唯一行+行锁保证同组返回replayed，异组409不可换组；仅写assignment与审计，不触发结算。
 
-| 动作 | 执行权 | 确认弹窗 | 审计点(A2) |
-|---|---|---|---|
-| 调匹配比例(`balanceMatchRate`) | 增长运营(lead)/ 超管 | F3-MD1(理由必填;**上调方向 + B1 红线预检**)(上调比例放大双轨佣金流出) | `admin.binary_config_changed`(field=balanceMatchRate / before / after / operator / reason) |
-| 补发 / 纠错 Balance Match | 财务(lead)/ 超管 | F3-MD2(理由必填;**补发方向 + B1 红线预检**)(资产变更,联动 D4 bill) | `admin.commission_reissued` / `admin.commission_reversed`(kind=binary,见 F5⑧) |
-| 调两轨门槛 / 自动分配规则 | 增长运营(lead) | F3-MD3(理由必填;**降门槛方向 + B1 红线预检**)(门槛 / 分配影响结算资格与资金沉淀) | `admin.binary_config_changed`(field=trackMin\|spillover / before / after / operator / reason) |
-| 调结算周期 / 沉淀处置(`settlePeriod` / `residualPolicy`) | 增长运营(lead)/ 超管 | F3-MD5(理由必填;**沉淀改向「转结」+ B1 红线预检**)(转结放大负债;改结算周期影响派发节奏与用户预期) | `admin.binary_config_changed`(field=settlePeriod\|residualPolicy / before / after / operator / reason) |
-| 暂停 / 恢复双轨结算(故障应急) | 风控运营(lead)/ 增长运营(lead)(任一可独立执行) | F3-MD4(理由必填) | `admin.binary_settlement_paused`(paused / operator / reason) |
-| 调双轨日封顶 | **不在 F3 写** — 跳 H1(Phase dial)经 H1 侧确认弹窗 | 否(只读 + 导航) | cap 变更审计由 H1 记录(`phase.dial_changed`,§3.14) |
+**R1原操作恢复**：8个审批发前持久保存完整请求、对象、内容、理由、操作者、原命令号和首次时间，存不下不发。配置复用唯一`nexion-admin-f-commands-v1`实例；人工结算沿原共享`nexion-admin-withdrawal-config-proposals`实例。未知后原确认输入/理由冻结，刷新保留；读取原票和按原请求重试分开，查询不依赖现有写权。24小时后仍保留但不POST。首次明确拒绝按`isDeterministicRejection`丢本次号、保留表单原因；恢复重试只按`isExplicitRejection`收敛，401/403/408/425/429/幂等未收敛继续保留。原POST回放之后必须GET核当前mine/obj/operationCode/status，不能拿历史pending回执标当前待批；查询失败显示结果未知并保留。恢复先使旧总览失效，重读成功前不能新改。
 
-> **`binaryDailyCapUSD` 不在 F3 设定的依据**:双轨日封顶是 H1 Phase 派发 dial(权威 H1,§1.7 / §13.4.1 / 12 月 §6.4 / V1 §3.14),F3 是其在双轨结算的生效面,**不另设第二源**——运营调封顶去 H1 调度器经 H1 侧确认弹窗(理由必填)改 dial,F3 只读展示 Phase 现值 + 跳 H1。这与 D5「提现 cooldown/points = Phase 派发(H1)+ D5 生效面」、E1「代际发布门 = H1 Phase 月龄派发 + E1 生效」同一分工范式(类比 D5)。2026-06 操作确认决议后,原复核层级转为执行门槛:调匹配比例原复核为超管层级,执行权就高 = 增长运营(lead)/ 超管;补发 / 纠错原复核为超管 / 财务层级,执行权 = 财务(lead)/ 超管。**上调匹配比例 / 降两轨门槛 / 补发为放大资金流出方向,确认弹窗前置 B1 覆盖率红线核验(低于红线 422 `COVERAGE_BELOW_REDLINE`);下调比例 / 升门槛 / 纠错回收 / 暂停结算不前置**(§1.8 原则一)。所有确认弹窗动作经理由必填(server 强制非空 400 `REASON_REQUIRED`)即时生效,落 A2 审计并实时告警超管 / 对应域 lead。
+配置与人工结算共用视觉已留的原申请列表和既有确认框恢复入口，列表在总览失败分支之外；已查pending才显示待审批。人工结算查询未找到时保留原确认框，允许按原内容和原命令号重试；记录收敛后关闭。批量提案失败保留原输入和理由，不因重读重置。旧指纹/旧input-only记录不能补造完整POST，只按原key查询。过期且精确`A2_PROPOSAL_NOT_FOUND`可在明确确认后解除的API已接，缺确认容器交视觉。未去重分组发前保存admin/owner/member/leg，刷新恢复；结果未知只GET原owner+member，读到同组或异组可收敛，未分/缺行/读取失败保留，不重发POST。总览失败/读取中时，分组原intent也接到同一原申请列表，只GET核对。
 
-**④a 交互与弹窗规格**
-
-**(1) 动作触发总表**
-
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 调匹配比例 | ②第 1 区平衡匹配结算面「编辑匹配比例」 | 行内按钮 | 仅增长运营 lead / 超管渲染 | 打开弹窗 F3-MD1 |
-| 补发 / 纠错 Balance Match | ②第 1 区结算面用户行「补发 / 纠错」 | 菜单项(警示色) | 仅财务 lead / 超管渲染 | 打开弹窗 F3-MD2 |
-| 调两轨门槛 / 自动分配规则 | ②第 3 区两轨门槛面「保存门槛」/ ②第 4 区自动分配面「保存分配规则」 | 主按钮 | 仅增长运营 lead / 超管渲染;未变更时置灰 | 打开弹窗 F3-MD3 |
-| 调结算周期 / 沉淀处置 | ②第 5 区结算周期 & 沉淀面「调整周期 & 策略」 | 主按钮(警示色) | 仅增长运营 lead / 超管渲染 | 打开弹窗 F3-MD5 |
-| 暂停 / 恢复双轨结算 | ②第 1 区结算面顶部「结算总开关」 | 开关(警示色) | 仅风控运营 lead / 增长运营 lead / 超管渲染 | 打开弹窗 F3-MD4 |
-| 调双轨日封顶 | ②第 2 区日封顶面「去 H1 调整」 | 链接 | 恒可用(只读面) | 跳转 H1 调度器,无本模块弹窗 |
-| 结算面筛选(用户 / cohort / 阻塞) | ②第 1 区筛选器 | 就地筛选 | 恒可用 | 就地筛选,无弹窗 |
-
-**(2) 弹窗规格(逐弹窗)**
-
-##### [F3-MD1] 调匹配比例确认
-- **功能**:提交较小侧匹配比例的审批申请，另一位管理员批准后生效，后续结算使用新设置。
-- **布局结构**:当前百分比、新值及理由；显示当前→目标；仅调高方向提示增加资金流出并检查当前兑付覆盖率，不承诺尚未提供的收益测算。已结算的不变，日封顶仍由运营阶段控制。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 balanceMatchRate(%) | 数字输入 | 是 | >0 且 ≤20%，最多 10 位小数；以显式百分号提交 | 空，旁示当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认提交]`；空、非数字、越界、超精度、B1 阻断（调高方向）或理由未达标时禁用。越界或超精度在输入框旁显示范围及最多 10 位小数的原因，保留输入，不发送申请。
-- **错误态**：422 `F3_MATCH_RATE_INVALID` 显示比例范围、精度及百分比单位，提示回「团队平衡奖励」修改；空值 `TEAM_CONFIG_VALUE_REQUIRED` 提示补全新值。覆盖率阻断（上调方向）、理由不合格、409 或 403 按实际原因提示。
-- **成功反馈**:弹窗关闭，提示「匹配比例已提交，批准后生效；批准前仍按原设置执行」，当前比例不提前更新。申请进度到「操作记录与审批」核对。
-
-##### [F3-MD2] 补发 / 纠错 Balance Match 确认
-- **功能**:对单用户 Balance Match 补发(reissue)或纠错回收(reverse),确认即生效,server 原子写余额 + D4 bill。
-- **布局结构**:1. **信息区**:userId / Track A·B 月 GV / 当期已发 Balance Match / 关联结算记录。2. **影响预览区(必有)**:补发方向——金额与 D4 bill 联动预览 + **B1 红线核验结果回显**(低于红线阻断 + 置灰,422 文案);纠错回收方向——「回收已入账佣金,联动余额核减 + D4 冲正」警示条(无 B1 预检);提示行「日封顶约束同样适用于补发额(server 复核)」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| direction | 单选(reissue 补发 / reverse 回收) | 是 | 枚举内 | 按入口预选 |
-| amount(USDT) | 数字输入 | 是 | > 0;补发受日封顶与结算公式上限 server 复核 | 空 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认补发]` / `[确认回收]`(警示色主按钮,按方向取文案;B1 阻断(补发)/ 越界 / reason 未达标时置灰;loading 防双击;请求携 `Idempotency-Key`)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(补发方向 B1 阻断)/ 400(金额越界或超公式上限,server 回传允许上限)/ 400 `REASON_REQUIRED` / 409(该结算记录已被处理,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;结算面用户行就地更新;toast「Balance Match 已补发 / 已回收 · D4 已落账 · 已记审计」;事件 `admin.commission_reissued` / `admin.commission_reversed`(kind=binary)落 A2;实时告警超管 / 财务 lead。
-
-##### [F3-MD3] 调两轨门槛 / 自动分配规则确认
-- **功能**:门槛与自动分组使用各自入口提交审批，批准后生效；当前页面没有饱和阈值编辑。
-- **布局结构**:当前值、新值及理由；门槛降低方向提示增加资金流出并检查兑付覆盖率，升高不提示放大。门槛未达不参与结算。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 binaryTrackMinUsd | 数字输入 | 门槛入口必填 | >0 且 ≤5000 USDT，最多 6 位小数 | 空，旁示当前值 |
-| spilloverEnabled | 独立选择框 | 自动分组入口必填 | 已启用 / 已关闭 | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认提交]`；空、非数字、越界、超精度、B1 阻断（降门槛方向）或理由未达标时禁用。门槛越界或超精度在输入框旁显示范围及最多 6 位小数的原因，保留输入，不发送申请。
-- **错误态**：422 `F3_THRESHOLD_INVALID` 显示门槛范围和精度，提示回「团队平衡奖励」修改；覆盖率阻断（降门槛方向）、理由不合格、409 或 403 按实际原因提示。
-- **成功反馈**:弹窗关闭，门槛提示「已提交，批准后生效；批准前仍按原设置执行」，当前门槛不提前更新。自动分组保持审批提交路径。
-
-##### [F3-MD4] 暂停 / 恢复双轨结算确认
-- **功能**:故障应急暂停(或恢复)双轨日结算,确认即生效。
-- **布局结构**:1. **信息区**:当前结算态 / 当日已结算量 / 待结算队列规模(server 下发)。2. **影响预览区(必有)**:暂停方向**「全站双轨日结停止,恢复后不自动补结,须经 F5 审计面核对漏结」红色警示条恒显**;受影响用户量预估。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认暂停结算]` / `[确认恢复结算]`(警示色主按钮,按方向取文案;reason 未达标时置灰;loading 防双击)。
-- **错误态**:400 `REASON_REQUIRED` / 409(结算态已被他人变更,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;总开关态就地更新;toast「双轨结算已暂停 / 已恢复 · 已记审计」;事件 `admin.binary_settlement_paused` 落 A2;实时告警超管 / 风控 lead / 增长运营 lead。
-
-##### [F3-MD5] 调结算周期 / 沉淀处置确认
-- **功能**:更新 `settlePeriod`(结算周期)与 `residualPolicy`(沉淀处置策略),多字段一次确认,仅对下一结算周期生效。
-- **布局结构**:1. **信息区**:当前结算周期(现状每月)/ 当前沉淀处置(现状每月清零)/ 沉淀池规模。2. **影响预览区(必有)**:before→after 并排;**沉淀改向「转结」时 B1 红线核验结果回显**(沉淀累积放大负债 → 利息负债科目 #3 + 佣金应付;低于红线阻断 + 置灰,422 文案);提示行「仅新结算周期生效,不回溯已结算;前端 hero 预计金额与结算频率文案随之联动(§8.4.1.2)」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| settlePeriod | 单选 / 下拉(每日 / 每周 / 每月) | 否(至少改一项) | 枚举内 | 当前值 |
-| residualPolicy | 单选 / 下拉(每月清零 / 每次对碰清零 / 转结) | 否(至少改一项) | 枚举内 | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调周期 & 策略]`(警示色主按钮;均未变更 / 沉淀改向转结 B1 阻断 / reason 未达标时置灰;loading 防双击)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(沉淀改向「转结」B1 阻断)/ 400(枚举越界)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;结算周期 & 沉淀面就地更新;toast「结算周期 / 沉淀处置已更新 · 下一结算周期生效 · 已记审计」;事件 `admin.binary_config_changed`(field=settlePeriod|residualPolicy,携 `coverage_checked`)落 A2;实时告警超管 / 增长运营 lead。
-
-**⑤ 接口**:
-- `GET /api/admin/teams/binary` — 页面配置、公式和结算读模型；`configValues` / `config` 保留百分数字符串，每日封顶为「运营阶段设置」只读投影。公共 `GET /api/config/commission/guide?schemaVersion=2` 返回 ratio：`12.5% → 0.125`。
-- `PATCH /api/admin/teams/commissions/config/{key}` — `{value, reason}` 及 `Idempotency-Key`；门槛、比例非法返回 422，空值拒绝。F3 页的资金参数提交 `POST /api/admin/platform/audit/operations` 创建审批，再由另一位有权超管调用 `POST /api/admin/platform/audit/operations/{id}/approve`，批准后生效；创建和批准均检查数字及真实资金方向，自批拒绝。后续结算使用新值，历史不重算。
-- 「手动结算团队平衡奖励」在 F3 填用户编号与已结束的结算日（越南时间），创建审批，另一位超管在「操作记录与审批」批准执行。系统以两组真实已付订单额较小值 × ratio 计算，受门槛、周期、上限及兑付覆盖率约束；成功关联一笔结算、一笔奖励事件及一笔待解锁 USDT 流水，重复请求返回原结果。
-- `POST /api/admin/team/binary/:userId/adjust` — 补发 / 纠错单用户 Balance Match;payload `{ amount, direction(reissue|reverse), reason }`(经确认弹窗 F3-MD2,reason server 校验非空 400 `REASON_REQUIRED`;**reissue 方向前置 B1 红线预检,低于红线 422 `COVERAGE_BELOW_REDLINE`**);**`Idempotency-Key` 必带**(资产写入防重复);确认即时生效,server 原子写余额 + D4 bill。
-- **server-side 结算(非 admin)**:Balance Match 由 server 按 §8.4.1 / §8.4.1.2 公式、依 `settlePeriod` 结算(`min(leftVolumeMonth, rightVolumeMonth) × rate` 折算到结算周期,受 `binaryDailyCapUSD` 封顶 + 两轨门槛 gating);两轨门槛未达 → 该周期匹配归零,较大侧未匹配体量按 `residualPolicy`(每月清零 / 每次对碰清零 / 转结)处置(均 PM 已裁定,§8.4.1.2);F3 后台提供 `settlePeriod` / `residualPolicy` 规则配置,**结算 server-canonical**。
-
-**⑥ 权限 & 审计**:
-
-| 动作 \ 角色 | 超管 | 财务 | 增长 | 风控 | 只读审计 |
-|---|---|---|---|---|---|
-| 查看结算 / 封顶 / 门槛 / 分配 | ✅ | ✅(只读) | ✅ | ✅(只读) | ✅(只读) |
-| 调匹配比例 | ✅ | — | ✅(lead) | — | — |
-| 调门槛 / 自动分配 | ✅ | — | ✅(lead) | — | — |
-| 调结算周期 / 沉淀处置 | ✅ | — | ✅(lead) | — | — |
-| 补发 / 纠错 Balance Match | ✅ | ✅(lead) | — | — | — |
-| 暂停 / 恢复结算 | ✅ | — | ✅(lead,任一可独立执行) | ✅(lead,任一可独立执行) | — |
-
-> 「✅(lead)」指对应角色的 lead 层级,member 不可执行(2026-06 操作确认决议:原复核层级转为执行门槛)。审计字段引用 A2 统一 schema:`field / before / after / userId(纠错时)/ scope(rate\|trackMin\|spillover\|settlePeriod\|residualPolicy\|adjust\|pause) / operator / reason / ts`。(`settlePeriod` / `residualPolicy` scope 随 PM 裁定已纳入,经 F3-MD5 确认弹窗。)
-
-**⑦ 风控 & 联动**:
-- **server 结算 + binaryDailyCap Phase 派发**:双轨结算 100% server-canonical,日封顶由 H1 Phase 引擎下发(F3 不另设),较小侧匹配 + 两轨门槛 gating + 月归零均 server enforce(§9.11d.2);client 仅展示今日估算。**`binaryDailyCapUSD` 月份拐点权威为月 7**(12 月 §6.4 + V1 §1.7 矩阵注已确认月 7 切换,非月 6);Phase dial 触发以**月份数**为口径,前端 §13.4.1 P4 月段 6-8 的现状差异,**无须再向 H1 确认拐点**。
-- **未匹配大轨沉淀 & 结算周期**:较大侧未匹配体量按 `residualPolicy`(每月清零 / 每次对碰清零 / 转结,PM 已裁定,§8.4.1.2)处置,后台监控沉淀池规模;`settlePeriod` 决定派发节奏。**沉淀改向「转结」放大负债**(累积 → 利息负债科目 #3 + 佣金应付)→ 改向前置 B1 红线核验(低于红线 422)。
-- **放大流出前置约束**:上调匹配比例 / 降两轨门槛前 server 强制核验 B1 覆盖率(§1.8 原则一)。
-- **A2 申请方向（T11）**：`f_ui_config` 申请由服务端比较当前生效配置和拟改值。F3 下调订单额门槛或上调匹配比例时，A2 标为资金操作（`amplifies=true`）；上调门槛、下调比例或等值变更时，A2 标为参数操作（`amplifies=false`）。其他 F 配置按对应业务规则比较，客户端传入的标记不影响结果。提交申请时配置保持原值，批准执行时按实际生效值重新判定方向并应用 B1 规则。
-- **中性语言铁律**:界面与用户侧文案一律 Track A / Track B / 较小侧 / 自动分配 / 网络伙伴,**不暴露翼 / 左 / 右 / spillover / 上线 / 下线**(§8.4);内部 `binary: "left"|"right"` / `isSpillover` 仅后台技术字段。
-
-**⑧ 埋点(事件)**:
-对齐 A4(§2.4.5③ money / ⑥ admin family):
-- **产生(资金记账,§2.4.5③)**:`commission.paid` — 触发点:双轨平衡匹配日结算;属性 `userId / kind: "binary" / currency: "USDT" / amount / smallerTrackGv / matchRate / dailyCapApplied(bool)/ is_server_authoritative: true / ts`;落 D4 commission bill + 喂 B1/B2 应付负债 + 排行榜排序键(§8.11.3:本期累计佣金含 binary)。
-- **产生(admin 审计,须 A4 schema registry 注册)**:
-  - `admin.binary_config_changed` — 触发点:匹配比例 / 门槛 / 自动分配确认执行(F3-MD1 / F3-MD3);属性 `field / before / after / operator / reason / coverage_checked / ts`;喂 A2 + B4 + L3。
-  - `admin.binary_settlement_paused` — 触发点:双轨结算暂停 / 恢复确认执行(F3-MD4);属性 `paused / operator / reason / ts`;喂 A2 + B5。
-- **消费**:`checkout.completed` / `wallet.reinvest`(轨道下游订单 → 累加月 GV)、`phase.dial_changed`(H1 改 `binaryDailyCapUSD` → 反映在封顶面现值)、`risk.multi_account_flagged`(K1 簇 → 异常双轨业绩标记)。
-- **喂给**:D4 commission bill、B1/B2 应付负债、F4d 排行榜排序键(binary 佣金计入本期累计)、KPI 团队分润维度。
+**已登记边界**：F3-BE-01总览历史金额整数与原指标口径、F3-BE-02批量权限映射、BUG-430 App比例最低ratio1e-7与后端不一致均不由PC绕过。现有暂停note、只返回缩写上限的说法、流程图当前期/实色实际matched/无条件月归零/无条件恢复付款、配置建单查B1等措辞不成立，逐句登记在F3重构说明，留视觉修正；不声称此轮已完成真实页面写入验收。域末项统一在只读代理+页面拦截下验证全部写入方向。
 
 ---
 
 #### [F4] 团队激励池
 
-各等级票数入口使用原生按钮：有调整权限时可通过 Tab 聚焦、Enter 或空格打开同一确认框；无权限时禁用（BUG-201）。
+本节和 F4b/F4c/F4d 共同描述 `/network/leadership-pool`，按后端 `111e00cd` 核对（2026-11-15）。页面保留团队池、购机名额、大使材料及申请规则、日周月总榜的全部现行入口；没有额外注资、历史周池维护、榜单纠错/补发或单用户购机资格覆盖入口。角色名不代替精确权限。
 
-各榜奖池提交只创建审批申请；确认框及成功提示统一写「批准后生效」，显示所申请的日、周、月、总榜金额。由另一位管理员批准前仍按原设置执行，不提示已生效（BUG-194、T02）。
+**读取与金额**：进入及手动刷新读取 `/api/admin/teams/leadership-pool` 和 `/ambassador-policy`，没有页面自动轮询。总览失败时不使用旧数发起新修改；规则独立失败不影响申请查看，规则修改不可用。有效的空票数数组可读，未配置金额或覆盖率不补 0。池和四榜金额在 JSON 数字转换前保留十进制原文；月上限从原配置按后端 `$`/逗号/K/M 语法解释，避免使用后端整数投影。后端本来已取整的成交/实发指标、已舍入的汇总标签不反算精度，相关文案与字段缺口登记后交视觉/后端。
 
-> 后台显示名「团队激励池」（原「领导奖池」），位于「奖励池、名额与排行榜」页。
+**团队池规则**：本周未结算估值 = 已付款订单小计（排除退款/拒付）×比例，且不超过本月剩余额度；已发周取实发，最多6位小数。结算按执行时参与等级和正票权分配，最后一位接尾差。同周已有成功 leadership 事件则跳过，不补本周后来的订单差额。配置必须 READY；缺版本、比例、月上限、参与等级或合法定时表达式时不能结算。历史已发不因改配置重算。
 
-**① 目的 & 对齐**: 配置全球领导奖池的周注入比例、V_VOTES 票数权重与周结算,是 V3+ 头部用户的周度利润分享池。对齐前端 §8.5(全球领导奖池 `/team/leadership-pool`)。服务的业务目标:用周池 + V 级票数翻倍权重激励头部用户冲高 V 级、用周结算节奏强化头部活跃;奖池是平台利润分享的应付负债,须受兑付安全约束 + 头部集中度监控。
+| 写入口 | 参数/对象 | 权限与生效 |
+|---|---|---|
+| 提前结算本周池 | `F/f4_pool_settle`，空params；obj本周团队激励池；target `F/leadership_pool_settlement/current-week` | `network_f4_pool_fund` + A2发起；批准后按执行时当前周真实入账UNLOCKED USDT；0金额/无合格票不保证付款 |
+| 奖池比例 | `F.pool.ratio`，0–30百分数；1=1%，0.05=0.05% | 资金权限；A2批准后写入当前值，后续未结算部分使用；调高时执行端核B1 |
+| 每月上限 | `F.pool.monthlyCap`，非负数字，可带K/M、货币符号/逗号 | 写权限；A2批准；后端保存时未独立拒绝非法格式，非法后池HOLD，不能声称一定拒存 |
+| 自动结算时间 | `F.pool.settleCron`，5字段补秒0或合法6字段Spring cron | 写权限；A2批准，之后下一次调度命中即用新值；按业务日历GROWTH_TEAM当前时区解释 |
+| 参与等级 | `F.pool.unlockVRank`，V1–V8 | 写权限；A2批准；历史V9–V12可读不代表可以新写 |
+| 各等级票数 | `F.pool.votes.{V1…V8}`，0–1,000,000 | 页面入口和提交均须资金+写权限，后端A2实际验写权限；不放宽。小数后端向下取整；设0后本页正票投影不再返回该等级，不能在本页改回 |
 
-**② 后台界面**: 周池面 + V_VOTES 权重面 + 周结算面,三区。
-1. **周池面**:`[本周池总额(= 平台每周总交易额 × 注入比例)/ 距结算倒计时 / 全网 V3+ 票数总和 / 历史周池列表 / 头部集中度(topConcentration)]`;手动额外注入入口(活动补贴)。
-2. **V_VOTES 权重面**:`[V 级 / 票数权重 / 当前该级用户数 / 该级总票占比]`(V3=1 / V4=2 / … 每升一级翻倍 / V12=512)。
-3. **周结算面**:周结算时点(周日 23:59 UTC 快照)+ 中周达 V3 按比例计入规则(§8.5.3)+ 头部集中度监控(单用户 / Top-N 占池比,见 ⑤ `topConcentration` 结构)。
+自动调度每次只调用一次 `injectAndSettleLastClosedWeek`，只结最近结束的那一周，不回补遗漏的所有周。页面说明只解析能确定的每天、每周某天、每月1–28日单次写法，其他写法交后端解释，不猜频率。每月一次意味着其他各周不会自动结算；每天触发对已成功结算的周跳过。页面不得自行改运营的cron。GROWTH_TEAM时区从业务日历读取，日历未读到时不假定越南时间；实际周边界仍按后端VietnamBusinessPeriod的业务日历实现。
 
-**业务流程(server 周结算循环;F4 配置注入比例/票权/阈值,派发 server-canonical)**:
+**头部占比**：top1/top5两个入口保留在排行榜规则内，0–100%，缺配置消费者默认25/60。它们限制排行榜派奖，不限制团队池票权分配；不能改成只告警。已决定的F4-P01/P02/P03/P04及覆盖率、结算时间均按此现状交付。
 
-```mermaid
-flowchart TD
-  A["周一 00:00 开新池 · 上周池已派发"] --> B["整周 · 注入 5% GMV · 池额 = 周GMV×注入比例"]
-  B --> C["周日 23:59 票权快照 · 票权定格"]
-  C --> D["周一 00:00 自动派发 · 落 D4 commission bill + 入用户余额"]
-  D -. 每周循环 .-> A
-  C --> E{"V3 解锁判定"}
-  E -- 未达 V3 --> F["候选 · 不参与分配"]
-  E -- V3 及以上 --> G["按 V_VOTES 指数票权分配 · 份额 = 票数 ÷ 全网总票"]
-  G --> H["头部集中度监控(派生) · Top-N 占池比 → 超 top1≤25% / top5≤60% 告警联动 B5"]
-```
+**审批与R1（全页23条提交路径）**：普通参数/处置、提前结算、总榜派奖及提高预算都创建A2申请，不直接执行业务。普通批准需另一位有效管理员，有A2批准权及该项业务权限，不能是maker；只有提高大使预算要求另一位有效超级管理员。普通`command:F/f_ui_config`，sourceDomain F4、obj参数键、target `F/ui_config/<key>`；大使状态例外锁原申请，obj申请号；额度带expectedMonthlyQuota，批准大使带expectedMaterialRevision。
 
-**③ 可控参数**:
+每次发送前持久保存完整原body、理由、目标、操作者、原号、首次时间和原确认事实；存不下不发。普通审批共用原`nexion-admin-f-commands-v1`实例，预算审批共用原`nexion-admin-withdrawal-config-proposals`实例，规则直存共用原F域直写实例。F4记录按原管理员保留，换账号不丢且新账号不能重用；过24小时保留只能查。未决表单冻结，原记录从既有逐条提醒恢复，提醒不依赖总览成功；新修改与原记录恢复分开。
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| 池注入比例(`leadershipPoolInjectRate`) | **现状**(§8.5.1):**5%** 平台每周总交易额 | **3%–10%**(编辑自设安全护栏,见下注) | 仅新结算周(改后下一周池生效) | `/team/leadership-pool` 本周池子总额 hero |
-| V_VOTES 票数权重 | **现状**(§8.5.1):`{V3:1, V4:2, V5:4, V6:8, V7:16, V8:32, V9:64, V10:128, V11:256, V12:512}`(每升一级翻倍) | 各级 ≥ 0(建议保持翻倍序) | 仅新结算周(赛季制调整) | `/team/leadership-pool` 你的票数 / 全网票数 / 占比 + V 级票数权重完整表(后台与用户侧 §8.5.3 均展示 V3-V12 完整表) |
-| 周结算时点(`poolSettleCron`) | **现状**(§8.5.3):周日 23:59 UTC 快照 + 周一 00:00 UTC 开新池 | 固定(周) | — | `/team/leadership-pool` 距结算倒计时 + 结算时间表 |
-| 头部集中度告警阈值(`top1MaxPct` / `top5MaxPct`) | **编辑自设**:top1 单用户占池 ≤ **25%** / top5 合计占池 ≤ **60%**(超阈告警,非硬阻断;见下注) | top1 0–100% / top5 0–100% | 实时(下一周结算快照评估) | 无用户侧(运营内部头部集中度告警 + 联动 B5) |
-| 解锁门(`poolUnlockVRank`) | **现状**(§8.5):V3+ 解锁(V<3 显「V3+ to unlock」) | V0–V12 | 实时 | `/team/leadership-pool` V<3 升级路径 CTA |
+首次拒绝按`isDeterministicRejection`清本次号、保留原因；保留原号的重试只按`isExplicitRejection`收敛，401/403/408/425/429及幂等未收敛继续保留。审批重试回放的pending是历史回执，必须GET原号核当前mine/obj/operationCode/status后才标当前待批；查询失败保留未知。恢复了结即关旧确认、作废旧读取并重读，不能把历史回执设为当前配置。查询独立于现有写权限，由后端裁决读取资格。
 
-> **默认值口径**:注入比例 5% / V_VOTES / 周结算 / V3+ 解锁均为前端 §8.5 现状值,12 月节奏表未单列领导奖池参数,以 §8.5 为参考。手动额外注入与提前结算为运营活动 / 应急动作,非默认常量。注入基数为「平台每周总交易额」(前端 §8.5.1 现状口径),与 F4③/⑤/⑦ 统一。
->
-> **注入比例 3%–10% 范围与头部集中度阈值的来源标注(V2 gate 阻断,引言阻断项 10)**:**注入比例上下界(3%–10%)与头部集中度告警阈值(top1 ≤ 25% / top5 ≤ 60%)均为编辑自设安全护栏,非 12 月节奏表或前端 PRD 覆盖值**;PM 在 V2 gate 前须确认该上下界 / 阈值是否与实际业务需求一致,若需调整则修订本条并记入 §3.14 待补条目。**确认前 F4⑤ 接口对注入比例的越界校验从硬 400 改为可配告警(不硬阻断)或加超管覆盖确认门控**,避免上线即基于未授权参数锁死业务可用性。
->
-> **V_VOTES 展示口径**:后台配置面与用户侧 how-it-works(§8.5.3 §2 票数对照表)均展示 V3-V12 完整表(含 V11=256 / V12=512),与 `/team/leadership-pool` 主页票权表同一数据源(派生自全网分布 × 票权),指数翻倍序完整呈现以强化高阶头部集中的权重展示。各档周分红占比(单人份额 = 票数 ÷ 全网总票)运行时派生,非写死。
+审批过期且原号GET精确返回A2_PROPOSAL_NOT_FOUND后，可由明确确认解除；查询和解除逻辑已接，现有确认容器没有解除入口，交视觉worker补，不能自动清。规则直存及材料核验没有原号只读回执，查询当前业务状态不能证明原写不存在，记录保留；有效期内有去重的原POST/PUT可原样重试。旧版本只存指纹/理由而没存完整body的记录仅查，不补造请求。
 
-**④ 操作动作**:
+**覆盖率**：总览coverage取B1 treasury facade读数，部分缺失时不补0；后端未返回可靠性字段，页面读数不能证明资金预检已过。提前结算和总榜派奖的执行链没有B1检查，确认框只显示当前读取供运营判断；原有前端低于红线拦截仍是页面快照判断。不能写成后端执行时必查。大使预算提案创建与批准均查B1；大使最终批准在执行时重核材料及B1。新错误码提供原因及后续动作的中文。
 
-| 动作 | 执行权 | 确认弹窗 | 审计点(A2) |
-|---|---|---|---|
-| 手动注入额外 USDT(活动补贴) | 财务(lead)/ 增长运营(lead)/ 超管(任一可独立执行) | F4-MD1(理由必填 + B1 红线预检)(放大奖池 = 放大流出) | `admin.leadership_pool_injected`(amount / operator / reason / ts) |
-| 提前结算周池 | 增长运营(lead)/ 超管 | F4-MD2(理由必填)(改变结算节奏,影响周内业绩归属) | `admin.leadership_pool_settled_early`(week / operator / reason) |
-| 调注入比例 / 票数权重 / 头部集中度阈值(赛季) | 增长运营(lead)/ 超管 | F4-MD3(理由必填;**调升注入比例 / 权重方向 + B1 红线预检**)(影响全站奖池规模与头部分配) | `admin.leadership_pool_config_changed`(field=injectRate\|votes\|topConcentration / before / after / operator / reason) |
-
-> **手动注入 / 调权重为高敏确认动作的依据(2026-06 操作确认决议)**:额外注入直接放大奖池 USDT 流出(应付负债),调注入比例 / 票数权重影响全站奖池规模与头部集中分配,风险等级与 C3 余额调整对称;**放大流出方向(注入 / 调升比例·权重)确认弹窗前置 B1 覆盖率红线核验(低于红线 422 `COVERAGE_BELOW_REDLINE`),调降 / 收紧方向不前置**(§1.8 原则一)。原复核层级转为执行门槛:提前结算 / 调比例·权重原复核为超管层级,执行权就高 = 增长运营(lead)/ 超管;注入原复核为超管 / 财务层级,执行权 = 财务(lead)/ 增长运营(lead)/ 超管(任一可独立执行)。所有确认弹窗动作经理由必填(server 强制非空 400 `REASON_REQUIRED`)即时生效,资金写携 `Idempotency-Key`,落 A2 审计并实时告警超管 / 财务 lead / 增长 lead。
-
-**④a 交互与弹窗规格**
-
-**(1) 动作触发总表**
-
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 手动注入额外 USDT | ②第 1 区周池面「手动额外注入」 | 主按钮(警示色) | 仅财务 lead / 增长运营 lead / 超管渲染 | 打开弹窗 F4-MD1 |
-| 提前结算周池 | ②第 3 区周结算面「提前结算本周池」 | 行内按钮(警示色) | 仅增长运营 lead / 超管渲染;本周池已结算时置灰 | 打开弹窗 F4-MD2 |
-| 调注入比例 / 票数权重 / 阈值 | ②第 1 区「编辑注入比例」/ ②第 2 区权重表「编辑权重」/ ②第 3 区「编辑集中度阈值」 | 行内按钮 | 仅增长运营 lead / 超管渲染 | 打开弹窗 F4-MD3 |
-| 查看历史周池 / 集中度监控 | ②第 1 / 3 区 | 只读视图 | 恒可用 | 就地查看,无弹窗 |
-
-**(2) 弹窗规格(逐弹窗)**
-
-##### [F4-MD1] 手动注入奖池确认
-- **功能**:向当前周池手动注入额外 USDT(活动补贴),确认即生效,server 原子增池 + 记账。
-- **布局结构**:1. **信息区**:本周池当前总额 / 距结算倒计时 / 全网 V3+ 票数总和。2. **影响预览区(必有)**:注入后池总额预览 + 按当前票数分布的头部派发预估(top1 / top5 占比变化,server 预检下发);**B1 红线核验结果回显**(server 预检执行后覆盖率,**低于红线时红线警示条渲染 + 确认钮置灰**,文案含「server 将拒绝(422 `COVERAGE_BELOW_REDLINE`)」);提示行「注入计入 B1/B2 应付负债,周日结算随池派发」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| amountUsdt | 数字输入 | 是 | > 0;server 复核 B1 约束 | 空 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认注入]`(警示色主按钮;金额未填 / B1 阻断 / reason 未达标时置灰;loading 防双击;请求携 `Idempotency-Key`)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(B1 阻断,弹窗不关,回传当前覆盖率与红线值)/ 400(金额非法)/ 400 `REASON_REQUIRED` / 409(本周池已结算,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;周池面总额就地更新;toast「奖池已注入 · 已记账 · 已记审计」;事件 `admin.leadership_pool_injected`(携 `coverage_checked`)落 A2;实时告警超管 / 财务 lead / 增长运营 lead。
-
-##### [F4-MD2] 提前结算周池确认
-- **功能**:提前结算当前周池(server 按 V_VOTES 权重原子派发到 V3+ 用户 + 落 D4 bill),确认即生效。
-- **布局结构**:1. **信息区**:本周池总额 / 全网票数 / 原定结算时点(周日 23:59 UTC)/ 距原定结算剩余。2. **影响预览区(必有)**:**「改变结算节奏,周内后续业绩不再计入本池(中周达 V3 按比例规则同步截断)」红色警示条恒显**;按当前票数的派发预估(top1 / top5 份额);提示行「派发即落 D4 bill,不可撤回,纠错走 F5」。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认提前结算]`(警示色主按钮;reason 未达标时置灰;loading 防双击;请求携 `Idempotency-Key`)。
-- **错误态**:400 `REASON_REQUIRED` / 409(本周池已结算 / 正在结算,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;周结算面就地更新(历史周池入列 + 新池开启);toast「周池已提前结算并派发 · 已记审计」;事件 `admin.leadership_pool_settled_early` + 派发 `commission.paid`(kind=leadership)落 A2 / A4;实时告警超管 / 增长运营 lead。
-
-##### [F4-MD3] 调奖池配置确认
-- **功能**:更新注入比例 / V_VOTES 票数权重 / 头部集中度告警阈值 / 解锁门,确认即生效,仅新结算周生效。
-- **布局结构**:1. **信息区**:目标字段当前值(injectRate 现状 5% / 权重表 / top1≤25%·top5≤60% 阈值)。2. **影响预览区(必有)**:before→after diff + 按近 4 周交易额基数的周池规模重算预览(server 预检下发);**调升注入比例 / 权重方向 B1 红线核验结果回显**(低于红线阻断 + 置灰,422 文案);注入比例越界(3%–10% 编辑自设护栏)时**告警条提示但不硬阻断**(护栏待 PM 确认,③ 注 + 引言阻断项 10);破坏票数翻倍序时提示条。3. **输入区**:见下表。4. **按钮区**。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| injectRate(%) | 数字输入(步进 0.5) | 否(至少改一项) | 3%–10% 越界仅告警不阻断(③ 注,待 PM 确认后转硬校验) | 当前值 |
-| V_VOTES 权重(V3–V12 逐级) | 数字输入组 | 否(至少改一项) | 各级 ≥ 0;破坏翻倍序时告警提示 | 当前值 |
-| top1MaxPct / top5MaxPct(%) | 数字输入 | 否(至少改一项) | 0–100%(③) | 当前值 |
-| poolUnlockVRank | 下拉单选(V0–V12) | 否(至少改一项) | 枚举内 | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认调奖池配置]`(主按钮;均未变更 / B1 阻断(调升)/ reason 未达标时置灰;loading 防双击)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(调升方向 B1 阻断)/ 400(数值非法)/ 400 `REASON_REQUIRED` / 409(提示刷新当前值)/ 403。
-- **成功反馈**:弹窗关闭;配置面就地更新;toast「奖池配置已更新 · 下一结算周生效 · 已记审计」;事件 `admin.leadership_pool_config_changed` 落 A2;实时告警超管 / 增长运营 lead。
-
-**⑤ 接口**:
-- `GET /api/admin/config/leadership-pool` — 返回 `{ injectRate, votes:{V3..V12}, settleCron, unlockVRank, topConcentrationThreshold:{ top1MaxPct, top5MaxPct }, currentWeek:{ poolUsdt, totalVotes, countdownTo, topConcentration:{ top1Pct, top5Pct, alertThreshold } } }`,**server-canonical**;`topConcentration` 结构含 `top1Pct`(当前单用户最高占池比)/ `top5Pct`(Top5 合计占池比)/ `alertThreshold`(触发告警的阈值快照);周池总额由 A4 周交易额事件流聚合(非临时 SQL)。
-- `PUT /api/admin/config/leadership-pool` — 更新注入比例 / 票数权重 / 头部集中度阈值 / 解锁门;经确认弹窗提交(F4-MD3,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效;**调升比例 / 权重方向前置 B1 覆盖率红线校验(低于红线返回 422 `COVERAGE_BELOW_REDLINE`)**。**注入比例越界校验:V2 gate 确认 3%–10% 来源前,以可配告警形式提示(不硬返回 400 锁死);确认后再按授权范围补硬校验**(见 ③ 注 + 引言阻断项 10)。
-- `POST /api/admin/team/leadership-pool/inject` — 手动注入额外 USDT;payload `{ amountUsdt, reason }`(经确认弹窗 F4-MD1,reason server 校验非空 400 `REASON_REQUIRED`;**前置 B1 红线预检,低于红线 422 `COVERAGE_BELOW_REDLINE`**);**`Idempotency-Key` 必带**;确认即时生效,server 原子增池 + 记账。
-- `POST /api/admin/team/leadership-pool/settle` — 提前结算当前周池;经确认弹窗 F4-MD2(body 携 reason)即时生效;server 按 V_VOTES 权重原子派发到 V3+ 用户 USDT 余额 + 落 D4 bill。
-- **server-side 周结算(非 admin)**:周池按 §8.5.1 规则(平台每周总交易额 × 注入比例 → 按 V_VOTES 票数权重分配)在周日 23:59 UTC server 自动结算并派发;F4 后台提供配置,**周池 server-canonical**。
-
-**⑥ 权限 & 审计**:
-
-| 动作 \ 角色 | 超管 | 财务 | 增长 | 只读审计 |
-|---|---|---|---|---|
-| 查看周池 / 票数 / 结算 / 集中度 | ✅ | ✅(只读) | ✅ | ✅(只读) |
-| 手动注入额外 USDT | ✅ | ✅(lead,任一可独立执行) | ✅(lead,任一可独立执行) | — |
-| 提前结算 / 调比例 / 调权重 / 调阈值 | ✅ | — | ✅(lead) | — |
-
-> 「✅(lead)」指对应角色的 lead 层级,member 不可执行(2026-06 操作确认决议:原复核层级转为执行门槛)。审计字段引用 A2 统一 schema:`action(inject\|settle_early\|config_change) / field / before / after / amountUsdt(注入时)/ operator / reason / ts`。
-
-**⑦ 风控 & 联动**:
-- **周池 server 结算**:周池注入与按票数权重分配 100% server-canonical(§9.11d.2),client 仅展示预估分红 / 票数 / 占比;周池总额由 A4 周交易额事件流聚合,非临时查询(§1.8 原则三)。
-- **头部集中度监控**:单用户 / Top-N 占池比超 `top1MaxPct` / `top5MaxPct` 时后台告警(头部过度集中是兑付压力与合规风险信号),联动 B5 风险雷达头部集中度维度;F4 不持处置权,异常处置走 K / C。**阈值为编辑自设护栏,V2 gate 前须 PM 确认(见 ③ 注 + 引言阻断项 10)**。
-- **受 B1 覆盖率约束**:手动注入 / 调注入比例(放大奖池流出)前 server 强制核验 B1 覆盖率(§1.8 原则一);奖池发放计入 B1/B2 应付负债。
-
-**⑧ 埋点(事件)**:
-对齐 A4(§2.4.5③ money / ⑥ admin family):
-- **产生(资金记账,§2.4.5③)**:`commission.paid` — 触发点:领导奖池周结算派发到 V3+ 用户;属性 `userId / kind: "leadership" / currency: "USDT" / amount / week / votes / poolShare / is_server_authoritative: true / ts`;落 D4 commission bill + 喂 B1/B2 应付负债 + F4d 排行榜排序键(leadership 计入本期累计,§8.11.3)。
-- **产生(admin 审计,须 A4 schema registry 注册)**:
-  - `admin.leadership_pool_injected` — 触发点:手动注入确认执行(F4-MD1,B1 红线预检通过);属性 `amount_usdt / week / operator / reason / coverage_checked / ts`;喂 A2 + B1/B2(注入增储备分配池)+ L3。
-  - `admin.leadership_pool_config_changed` / `admin.leadership_pool_settled_early` — 触发点:配置变更 / 提前结算;属性见 ④;喂 A2 + B4。
-- **消费**:周交易额资金事件流(`checkout.completed` / `device.replaced` 等订单 → 聚合周池注入基数)、`admin.vrank_overridden`(V 级变更 → 票数重算)。
-- **喂给**:D4 commission bill、B1/B2 应付负债、B5 头部集中度、F4d 排行榜排序键。
+本轮为逻辑接入，未改版式/样式或重写既有文案。旧文字中的过度承诺、材料可批准状态、审批恢复统一叫法和缺少的解除确认容器逐句登记在F4重构说明及工作报告，由视觉worker处理。类型检查、目标构建和关卡3/6由本worker执行；真实页面写入拦截检查按共用安排由F域末项统一完成，不把静态检查当真实资金验收。
 
 ---
 
 #### [F5] 奖励记录核对
 
-> 后台页面名「奖励记录核对」（原「佣金事件审计」）。列表列「邀请关系」显示 L1–L7 或「直接邀请的好友」；冻结、提前解锁、解冻、冲正、批量补发、暂停用户奖励等操作名同步改为「奖励」。状态 `rejected`（后端名「已拒绝」）显示为「未发放」，`cooling` 显示为「奖励等待发放」；后端状态值和名称不变，前端按原名称归类。
+> 2026-11-15 按后端 `111e00cd` 接逻辑；路由 `/network/commissions`，保留八类、七态、九个请求入口。七个奖励处置先审批；异常标准直接保存；CSV 是有审计的只读产物。页面现有措辞中不成立的部分登记在重构说明，由视觉轮修正，不视为新的业务承诺。
 
-**① 目的 & 对齐**：作为财务和风控运营，我想按来源、奖种、币种和状态核对佣金与钱包账本，以便安全处置异常、冻结、退款及待追回金额。对齐 App 佣金列表、直属分成明细、后台 F2 政策、A2 审批、B1 覆盖率与 D4 账本。
+**① 目的 & 对齐**：逐笔核对奖励的来源、单币金额、状态、真实账本及处置历史，处理冻结、提前解锁、解冻、冲正、补发、用户奖种暂停和恢复。与 F2 政策、A2 审批、B1 覆盖率、D4 账本及 App 权威奖励投影对齐；提案成功只证明建单，不能称奖励已变更。
 
-**② 后台界面**：沿用 `/network/commissions`。八类为直属购买、直属设备收益、网络购买奖励、双轨匹配、平级、培育、领导池、创世；`network` 继续现行七层网络购买分类，同时保留历史账。所有分类汇总、筛选、分页、脱敏导出与详情使用同一查询口径；双币金额分币种汇总，不相加为一个金额。
+**② 后台界面与读取口径**：保留现有结论、七态流程、八类卡、奖励流水、等价格、异常样本、暂停名单、处置历史及详情抽屉。八类为 `direct_purchase/direct_device_earning/network/binary/peer/cultivation/leadership/genesis`；七态显示冷却中、已解锁、已提现、已冻结、已冲正、已拒绝、待追回，按原后端中文标题映射协议值。
 
-列表展示佣金号、结算组号、奖种、受益账户/来源账户、单币金额、来源编号、结算时间、冷却与状态。直属明细额外展示完整双币组、设备、政策版本、基数、价格快照、是否发生退款及两币待追回数额。没有真实来源路由时直接展示来源编号，不伪造跳转。保留异常预警、异常阈值、按奖种暂停/恢复、操作历史及 D4/B1/L4/A2/A4 关联入口。
+- 七态、八类、合计取同一概览的全局未删除八类事件聚合；不跟流水筛选变。点击状态或类型清除其他筛选，只查该状态或类型，匹配总数与相应节点/卡的全局笔数同口径；再点取消。手动查询可组合类型、币种、用户编号、收款成员注册月份和状态。每次查询清选择；下一批沿用产生游标的条件，20 笔替换显示，`total` 不含游标。
+- 单笔金额、整组两币、基数、价格、待追回保留 JSON 十进制文本，不经浮点数舍入；显示币种、每格最少两位小数并保留全部实际小数，悬停保留后端原值。汇总后端已经 HALF_UP 到两位，前端不补造精度。可空金额、价格和覆盖率不补 0。
+- 等价格最多 100 组，数量是本次返回数组长度；只跟 kind/userId/cohort，不跟币种，选状态时不返回。`ts/unlockAt` 接收后端整数 epoch 毫秒；0/空不显示成 1970。占位两币 0 不是到账，没有 eventId 不可处置。
+- 异常从全局最近 200 条挑选，金额偏离按奖种混币；频次至少 10；network 层比例也混币，不能当 USDT 估值。暂停名单全局最多 100 条，处置历史全局最近 50 条，不随筛选。
+- 进入、筛选、翻批和手动重读时读取，不轮询。加载时禁新查询和处置；概览失败清旧数据。原操作提醒在概览成功分支外，读取失败仍能查询原结果，符合条件时按原请求重试。
 
-待计算奖励与有金额账项分开呈现：按当前筛选返回 pendingCalculations，最多显示 100 组；pendingCalculationCount 为本次返回组数，不代表全部待计算奖励，超过时引导缩小筛选范围。包含结算号、奖种、原层级、来源成员/编号、等价基数、冷却到期和发生时间。两币显示待计算，不把协议占位 0 称到账；没有 eventId 的组不生成 CM 行，不提供冻结、解锁、冲正或补发。空/失败保留筛选和重试。
+**③ 字段与可控参数**：
 
-- 默认态：真实汇总与游标事件，支持种类、币种、账户、账户群、状态查询。
-- 空状态：明确当前筛选无记录，保留筛选与返回。
-- 加载态：保留页面结构和已加载结果，显示更新提示；筛选、奖种卡、状态卡、下一批、导出、选择和全部处置控件统一禁用，完成后恢复，失败清除旧结果并提供重试（BUG-199）。
-- 报错态：停止使用旧快照执行写动作，保留查询条件并提供重试。
-
-**③ 数据字典与可控参数**：
-
-| 字段 / 参数 | 约束 |
+| 字段 | 实际合同 |
 |---|---|
-| kind | direct_purchase / direct_device_earning / network / binary / peer / cultivation / leadership / genesis |
-| status | cooling / unlocked / withdrawn / frozen / reversed / rejected / recovery_pending |
-| eventId / commissionId / version | 服务端单币事件标识与版本 |
-| pendingCalculations / pendingCalculationCount | 缺价组独立只读；status=waiting_calculation，不混入账项计数、已计佣汇总或钱包到账 |
-| settlementNo / sourceRef | 直属双币共用结算号；订单号或真实设备结算凭证号 |
-| sourceUserId / sourceDeviceId | 来源账户及设备，按权限展示 |
-| policyVersion / basisUsdt / nexUsdtPrice | 原始政策、计价基数和价格快照，不随政策修改 |
-| amountUSDT / amountNEX | 直属整组应发两币数量 |
-| recoveryPendingUSDT / recoveryPendingNEX | 尚未实际追回金额；不得当作已追回 |
-| reversalRecorded | 来源已退款或人工冲正时为 true；禁止补发 |
-| commissionAnomalySigma | 沿用现有 2–5、步长 0.5 的异常阈值 |
-| layerRatioAnomalyPct | 沿用现有 10%–50% 的历史网络异常阈值 |
+| commissionId/eventId/auditKey/version | CM 事件号、当前事件版本；状态提案必须带原 expectedVersion |
+| settlementNo/unlockAt | 真实组号与组 release_at 的毫秒投影；不能用剩余天数为 0 推断已真正到期 |
+| sourceRef/sourceDeviceId/policyVersion/basisUsdt/nexUsdtPrice | 来源与政策快照；设备/价格/无组扩展字段按后端边界可空，不反算 |
+| amountUSDT/amountNEX/recoveryPendingUSDT/recoveryPendingNEX | 整组两币应发与未实际追回数，不相加为单币金额 |
+| commissionAnomalySigma | 2–5，步长 0.5 |
+| layerRatioAnomalyPct | 后端 10–50 可小数；现有控件步长 1，不扩充选择范围 |
+| ledgerBizNo | 有真实账本号才跳 D4，不用 CM 号伪造关联 |
 
-购买拆分冷却引用原七层配置，设备分成冷却归 F2 独立政策；其他奖励冷却仍归各自有效配置，不强制全部改为同一天数。新版政策不改旧事件快照。
+**④ 操作动作**：
 
-**④ 操作动作与验收**：查询、分页、详情、导出、冻结、提前解锁、解冻、冲正、合法补发、按奖种暂停/恢复与调整异常阈值。高敏处置都经确认、理由、稳定命令号与 A2；服务端重新核验状态、版本、权限和 B1。
+| 入口 | 请求与实际执行 |
+|---|---|
+| 冻结 / 提前解锁 / 解冻 | A2 `f_commission_status`，obj=原 auditKey，F/commission_event/CM 目标，含 value 和 expectedVersion。冻结/解冻需 freeze 权，提前解锁需 release 权。好友两类不开放提前解锁；network 结算组必须真正到 release_at，已知未来时点先禁提交，缺时点交后端裁决。 |
+| 冲正 | A2 `f5_commission_reverse`，commissionId/refundRef，F/commission_event 目标。无组旧冻结态先拦；需先解冻。证据可为此事件订单/等级发放号或任意未删除客服工单号；后端不核工单归属。组按余额上限回收、剩余待追回；无组余额不足回滚，不转待追回。 |
+| 批量补发 | A2 `f5_commission_reissue`，排序后的 commissionIds，多个事件锁，一票原子处理。只勾已冲正、非好友、来源未退款的行，维持 PD01；不新增已拒绝入口。每笔生成新记录，原行不变，来源只消费一次。network/binary 按当前冷却配置；其余四类直接 UNLOCKED。批准执行时查可靠 B1，低于红线整批拒。 |
+| 暂停 / 恢复 | A2 `f5_commission_suspension`，userId、排序后的 kinds、显式 suspended，F/commission_user_kind/{userId:kinds}。批准才生效。暂停冻结现存开放事件；直属奖励以后在 hold 下仍可生成 FROZEN/WAITING_CALCULATION，不等于停止产生。其他奖种的生成器未统一消费暂停表。恢复好友组时无其他 hold 才回冷却，release_at 不重算；其他奖种只恢复暂停表，不自动解冻旧行。 |
+| 调整标准 | PUT commissions/anomaly-config，保存两个数、原理由、操作者与原号。不审批，成功回执核对 operationNo 和原两值，再按当前有效筛选重读。新阈值影响后续读取历史样本的挑选，不改奖励金额或状态。 |
+| 导出筛选结果 | POST commissions/export，取筛选栏当前草稿，不带 limit/cursor，理由必填。最多 50,000 行/10MiB；12 列、用户编号仅后四位、单号保留。校验元数据、SHA256、BOM、固定表头和行数后立刻下载，无 24h 下载链接。产物按原号去重，不要求业务写 R1 锁。 |
 
-直属从任一币种行发起动作都必须作用于同一结算组，不能只改该行状态或 D4 记录。冷却或冻结期没有可消费钱包余额；双币入账同事务成功才显示已解锁。退款发生后未发放则取消，已发放则实际追回应退双币；余额不足记 `recovery_pending` 并保留尚待追回金额，不制造负可用余额，也不阻止购买者应得退款。退款、人工冲正后及待追回状态禁止补发；直属分成不复制补发，恢复须按同一原来源核对。
+**⑤ 结果未知与审批恢复**：七个提案与异常标准发前保存完整原请求、对象、理由、管理员、原号、首次时间及确认事实。持久存储失败不发。未知冻结理由和表单；刷新后在既有提醒逐条显示，可回原确认框。查询与写权限分别判，写权收回后仍保留只读入口，由后端判断读资格。第一次明确拒绝按 isDeterministicRejection；保留原请求的重试仅 isExplicitRejection 才解除，权限/超时/限流及 IDEMPOTENCY_* 不表示原结果已知。
 
-- Given 两币同一结算，When 从单币行冻结、解锁或冲正，Then 服务端整组执行，钱包、佣金和账本一致；任一币失败整组回滚。
-- 异常1：Given 事件版本或状态已变化，When 确认处置，Then 拒绝并要求刷新，不覆盖并发结果。
-- 异常2：Given 已退款或待追回，When 尝试补发，Then 页面禁用并说明原因，直调服务端同样拒绝。
-- 异常3：Given 权限不足、短理由、无幂等号、B1 放大预检不通过，When 确认，Then 无资金变化，显示可读原因。
-- 异常4：Given 网络结果不确定，When 重试，Then 保持同一命令号并指引核对 A2，不把未知结果提示为成功。
-- 异常5：Given 导出超限、分页快照变化或完整性校验失败，When 导出，Then 不下载不完整文件，保留筛选供缩小范围或重试。
+原号重试仅重放保存的 body 和 Idempotency-Key，24h 后保留、禁 POST、只查询。提案重放成功再按原号 GET 当前票，只有当前 pending 才标待审批并锁对象；GET 失败写建过单但当前审批状态未知。确认 mine/obj/operationCode，111e00cd 已给全部 F 命令 operationCode；不要求被服务端规范化的 action/before/after 与客户端相同。权威终态清原记录并重读；不把历史回放回执设成当前数据，重读失败时禁止新处置。直接阈值没有原命令回执查询端点，读当前两值只是核对，不凭相同或不同就删除未知记录。旧的不完整记录只查，不能重建 POST。
 
-**④a 交互与弹窗规格**：
+过期提案按原号明确 A2_PROPOSAL_NOT_FOUND 后可以经显式确认解除；逻辑已提供，现有页面缺此确认表面，交视觉轮接。直接阈值不适用此解除。
 
-| 触发控件 | 响应 | 可用条件 / 反馈 |
-|---|---|---|
-| 奖种卡、状态分布、筛选查询 | 同一服务端查询 | 每次筛选查询清空已选行；批量补发计数只计当前结果中的已选行；八类与七态完整（BUG-196） |
-| 下一批 | 服务端游标 | 沿用返回该游标的查询条件。筛选框中的新值应用后从首批读取，读取失败可重试 |
-| 来源详情 | 当前行完整快照 | 可折叠；双币、退款和待追回信息同屏 |
-| 导出 | 脱敏 CSV 确认 | 理由必填，使用当前完整筛选，校验文件与行数 |
-| 冻结 / 提前解锁 / 解冻 | 对应业务确认 | 状态允许且有处置权限；直属明确整组 |
-| 冲正 | 证据编号与理由确认 | 可处置状态；服务端验证真实证据和退款事实 |
-| 批量补发 | 已选合法历史记录确认 | 不含已退款、人工冲正或待追回；直属分成须按原来源核对，不复制补发 |
-| 暂停奖种 / 恢复奖种 | 奖种选择与理由确认 | 以现有权限控制；好友购买/设备收益奖励恢复时，没有其他冻结条件的结算组回到冷却期；其他奖种不自动解冻旧记录 |
-| 调整异常阈值 | 数值控件确认 | 当前值、合法范围、理由 |
-| D4 / B1 / L4 / A2 / A4 | 已有真实页面 | 按读取权限显示，缺关联显示原因 |
-| 取消 / 重试 | 当前页面 | 保留输入及筛选，无副作用 |
+**⑥ 权限 & 审计**：read/export/write 和 freeze/release/reverse/reissue/suspend 各自独立，导出仍要求精确 export 权。F5 合法描述的提案只需对应业务动作权，不额外要求 A2 写权；但当前 A2 canonicalF5Kinds 仍只收六个旧奖种且最多六项，好友类型暂停/恢复对仅 F5 专权账号被门禁拒，对仅 proposal_create 的委托账号被上下文拒，完整 A2 write 的旧通用路径仍可建单，需后端统一八类合同，不新增绕过路径。没有 A2 总览权仍可按原号读取本人合法原票。另一位有效管理员还需审批批准权、对应业务处置权、票范围且不是发起人。A2 读取到的本人待批单逐条显示，存下的本人原单还逐条精确查询；无总览权时不能列出未保存在本标签页的其他历史本人单。
 
-**⑤ 接口**：PC `/api/admin/teams/commissions` 代理服务端 `GET /api/admin/commissions`；沿用 `kind/currency/userId/cohort/status/cursor/limit` 查询和 `/export` 脱敏导出。状态处置沿用既有 F5 A2 命令；服务端把直属行解析为同一结算组，再执行冻结、解锁、冲正、补发或暂停。返回八类汇总、七态分布及完整来源快照；不以列表当前页代替全量汇总。真实退款事实优先于客户端提交的状态或金额。
+**⑦ 已知后端与文案边界**：用户奖种暂停把无组旧事件 unlock_at 清空，恢复奖种再手动解冻后仍无自动到期出口；不能泛称解冻后必自动到期。旧事件提前解锁执行链未见实时 B1 检查，前端只检查读到的快照；补发才在执行时查 B1。七态的 withdrawn 是 PAID/WITHDRAWN/SETTLED 归一，不能证明用户真的提走；unlocked 还包括即时奖种旧 PENDING/COOLING，不等于钱包可提余额。双币组仅为正金额币种建立事件，不能保证一组总有两笔。页面仍有这些过度概括，重构说明逐句登记，不凭通过静态关卡视为已修正文案。
 
-**⑥ 权限 & 审计**：按动作对资金的影响分权：读取 `network_f5_read`（增长、财务、风控、审计）；异常阈值 `network_f5_write`（增长、风控主管）；冻结与解冻 `network_f5_commission_freeze`（风控主管、财务主管）；暂停／恢复用户佣金 `network_f5_commission_suspend`（风控主管）；提前解锁与支付 `network_f5_commission_release`、冲正 `network_f5_commission_reverse`、补发 `network_f5_commission_reissue`（财务主管）。增长岗不处置佣金资金。所有处置走审批，提交人与审批人不同。权限由服务端验证，前端仅提供便利。审计追加记录结算组、源/结果事件、两币实际金额、追回与待追回、证据、理由、命令号、审批人及时间。导出按现有脱敏策略处理。
-
-**⑦ 风控 & 联动**：B1 检查仅资金放大；真实冻结、退款、释放及补发共用结算层，不能绕过两币事务。按来源唯一性防重复，不将政策版本加入防重键；退单重试不重复扣款、累计追回不超过原奖励。其他独立奖励保留原计算、冷却与处置；排行榜仅计合法净到账，不把未释放或已撤销奖励当作收入。D4、钱包、佣金状态与 A2 审计必须一致。
-
-**确认摘要（BUG-161 Follow-up 1）**：冲正奖励、暂停用户奖励、资金冻结与补发使用资金类别；恢复好友购买奖励或好友设备收益奖励可能使已冻结结算组回到冷却期，也使用资金类别。其他奖种仅恢复未来计算、没有旧奖励解冻时，保留普通记录类别。摘要必须保留用户、金额、风险规则与凭证核对项，不以提交审批尚未到账为由省略；审批、命令号与执行行为不变。
-
-**⑧ 埋点(事件)**：沿用服务端佣金计提、释放、冻结和冲正事件，新奖种为 `direct_purchase`、`direct_device_earning`，现行及历史 `network` 保留。结算号关联双币，来源编号关联真实订单/收益凭证；统计按合法净到账聚合，待审批、冷却、待追回不能伪装成功。事件继续向 B1/B2、D4、L4 与团队佣金统计供数。
+**⑧ 验证与联动**：类型检查、目标生产构建、F5 关卡 3/6 在本提交执行；不建单元测试或问题专属测试文件。真实页面拦截验收按共用安排由 F 域最终页面检查执行，覆盖九入口的成功/拒绝/未知/刷新/同 body 同号/过期只查，以及待价格毫秒、原票当前状态、对象锁、金额和全部计数。F1–F4 行为不改，命令存储仍各用既有单实例。
 
 ---
 
 #### [F4b] 硬件配额
 
-**① 目的 & 对齐**: 配置 NexionBox Pro / NexionRack 的配额解锁门(直推 / 月业绩)与月库存上限,是「团队业绩 → 高阶硬件购买资格」的销售前置门。对齐前端 §8.9(硬件配额解锁 `/team/quota`)。服务的业务目标:用「直推 / 月业绩解锁高阶设备」把团队拉新与硬件 GMV 绑定、用月库存上限制造稀缺与节奏;配额是销售前置门,与 E1 商城库存联动。
+购机名额沿F4总览返回有效商品、月cap/current、剩余、资格条件及最近已用记录。`current`是本月ACTIVE占用数量，剩余max(0,total−used)，85%及以上且cap>0标紧张。资格按directRefs、精确monthComputePointsText、ALL/EITHER解释；缺条件写未知，不补0。Pro/Rack字段是名称含PRO/RACK的首个商品月额度，不是资格门槛。
 
-**② 后台界面**: Pro / Rack 配额解锁进度 + 月库存,两区。
-1. **配额解锁进度面**:`[设备 tier(Pro / Rack P1)/ 解锁条件(直推数 / 月业绩)/ 达标用户数 / 本月已解锁数]`;支持查单用户解锁态。
-2. **月库存面**:`[设备 / 月库存上限 / 本月已售 / 剩余]`(Pro 1,000 / Rack 100);旺季扩容 / 断货暂停入口。
+- 调额度：`F.quota.tier.{quotaCode或id}.monthlyQuota`，0–1,000,000整数，发送原cap为`expectedMonthlyQuota`。写权限+A2发起；另一位管理员批准后CAS生效，新值低于本月已用或原值变化均409并给最新总览，不修改已用历史，不退单。
+- 回收：`F.quota.usage.{id}.status=recycled`，写权限+A2发起。批准将非删ACTIVE记录改RECYCLED，只释放名额，不退款、不删订单、不改变用户设备。页面对非ACTIVE记录禁用回收；服务端仍拒绝重复或缺失记录。
+- 现行 `TeamCommissionMapper.quotaUsages` 只返回本月ACTIVE、最新30条；回收后该记录消失，不能称为已回收历史列表。已回收行的前端禁用只能作为防御检查，不能用后端正常返回的RECYCLED夹具验收。历史回收不代表当月增加额度；列表/说明的对应原话交视觉收窄。
 
-**③ 可控参数**:
-
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| Pro 解锁条件(`proUnlockDirects`) | **现状**(§8.9):**≥ 5 已激活直推**(单条件) | ≥ 0 | 实时(改后下一次解锁判定) | `/team/quota` Pro tier 解锁进度条 + Buy/Invite CTA |
-| Rack P1 解锁条件(`rackP1UnlockDirects` / `rackP1UnlockVolumeUsd`) | **现状**(§8.9):**≥ 15 直推 或 月业绩 ≥ $20,000**(OR 关系) | directs ≥ 0 / volume ≥ 0 | 实时 | `/team/quota` Rack P1 tier 解锁进度(直推 / 月业绩双路径) |
-| Pro 月库存上限(`proMonthlyStock`) | **现状**(§8.9):**1,000 台** | ≥ 0 | 仅新月度周期(改后下月库存) | `/team/quota` Pro 月度库存进度 |
-| Rack P1 月库存上限(`rackP1MonthlyStock`) | **现状**(§8.9):**100 台** | ≥ 0 | 仅新月度周期 | `/team/quota` Rack 月度库存进度 |
-
-> **默认值口径**:Pro ≥5 直推 / Rack ≥15 直推或 $20K 月业绩 / Pro 1,000 / Rack 100 均为前端 §8.9 现状值,12 月节奏表未单列硬件配额参数,以 §8.9 为参考。配额是销售前置门(满足条件直跳 store 完成销售,不满足跳 team 邀请),与 E1 商城库存联动(见 ⑦)。**Pro 与 Rack P1 解锁条件参数 key 不混用**:Pro 用 `proUnlockDirects`(单条件),Rack P1 用 `rackP1UnlockDirects` + `rackP1UnlockVolumeUsd`(OR 关系),两者表结构独立分行,与 F4b⑤ `GET /api/admin/config/quota` 返回结构字段级对应。
->
-> **参数 key 代际命名(预留 Rack P2)**:Rack 配额参数 key 带 **P1 世代后缀**(`rackP1UnlockDirects` / `rackP1UnlockVolumeUsd` / `rackP1MonthlyStock`),预留 `rackP2*` 命名空间;**Rack P2 代际上线后须补 F4b Rack P2 配额门条目,届时以世代后缀区分参数 key**。
-
-**④ 操作动作**:
-
-| 动作 | 角色 | 确认弹窗 | 审计点(A2) |
-|---|---|---|---|
-| 覆盖单用户解锁资格(纠错 / 特批) | 增长(lead)/ 超管 | F4b-MD1(理由必填) | `admin.quota_unlocked`(userId / tier / mode(override)/ operator / reason) |
-| 调月库存上限(旺季扩容) | 增长(lead,含商城运营子角色发起)/ 超管 | F4b-MD2(理由必填) | `admin.quota_config_changed`(field=monthlyStock / before / after / operator / reason) |
-| 调解锁条件(直推 / 月业绩门槛) | 仅超管 | F4b-MD3(理由必填) | `admin.quota_config_changed`(field=unlockCondition) |
-| 暂停 Rack 解锁(断货) | 增长(lead)/ 超管 | F4b-MD4(理由必填;断货应急,确认即生效) | `admin.quota_paused`(tier=rack / paused / reason / operator) |
-
-> **覆盖解锁资格为高敏动作的依据**:配额解锁是高阶硬件(Pro / Rack)的销售前置门,override 绕过门可放大销售(更多应付收益负债);调月库存扩容联动 E1 商城库存供给,风险等级与 E1 定价 / 上下架对称,故经确认弹窗 + 理由必填执行(2026-06 操作确认决议:原复核层级转执行门槛——覆盖解锁/调库存/暂停执行权 = 增长 lead/超管,调解锁条件原复核为超管、执行权就高为仅超管),落 A2 审计并实时告警。**库存 / 断货类动作的发起角色为商城运营(归入增长角色的子角色,由超管在 A1 中以增长角色授权),不引入 V1 §1.1 RBAC 未定义的「商品运营 / 商品主管」独立角色**(见 ⑥ 注 + 子角色机制确认项)。
-
-**④a 交互与弹窗规格**
-
-**(1) 动作触发总表**
-
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 覆盖单用户解锁资格 | ②(1)配额解锁进度面单用户查询结果行「覆盖解锁」 | 行内按钮 | 仅未解锁用户行显示;增长(lead)/超管渲染 | 打开弹窗 F4b-MD1 |
-| 调月库存上限 | ②(2)月库存面行内「调库存」 | 行内按钮 | 增长(lead)/超管渲染 | 打开弹窗 F4b-MD2 |
-| 调解锁条件 | ②(1)进度面顶部「解锁条件配置」 | 次按钮 | 仅超管渲染 | 打开弹窗 F4b-MD3 |
-| 暂停 Rack 解锁 | ②(2)月库存面 Rack 行「暂停解锁」 | 行内警示按钮 | 仅未暂停态显示;增长(lead)/超管渲染 | 打开弹窗 F4b-MD4 |
-| 查单用户解锁态 | ②(1)进度面搜索框 | 筛选控件 | 恒可用 | 就地展示,无弹窗 |
-
-**(2) 弹窗规格**
-
-##### [F4b-MD1] 覆盖单用户解锁资格
-- **功能**:对单用户人工授予 Pro/Rack 购买资格(绕过解锁门,纠错/特批),确认即生效。
-- **布局结构**:1. **信息区**:userId(链 C1)/ 当前直推数与月业绩(server 实时值)/ 目标 tier 解锁条件与差距 / 该用户历史 override 记录(引自审计)。2. **影响预览区**:提示行「override 将放大该用户高阶硬件购买资格;本月该 tier 剩余库存 N 台」。3. **输入区**:见下表。4. **按钮区**:取消 / 确认覆盖。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标 tier | 单选(Pro / Rack P1) | 是 | 已解锁 tier 置灰 | 当前查询 tier |
-| reason | 多行文本 | 是 | 8–200 字;400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认覆盖]`(置灰条件同必填;loading;携 `Idempotency-Key`)。
-- **错误态**:409(该用户已解锁,提示刷新)/ 400 `REASON_REQUIRED` / 403。
-- **成功反馈**:弹窗关闭;该用户解锁态就地更新;toast「已覆盖解锁 · 已记审计」;事件 `admin.quota_unlocked`;实时告警;联动 E1 销售资格。
-
-##### [F4b-MD2] 调月库存上限
-- **功能**:调整 Pro/Rack 月库存上限(旺季扩容/收紧),确认后对下一月度周期生效。
-- **布局结构**:1. **信息区**:tier / 当前月库存上限 / 本月已售 / 剩余。2. **影响预览区**:before→after 并排;扩容方向提示行「扩容须与 E1 商城库存口径核对,防超卖」+ server 回传 E1 当前可售库存对照。3. **输入区**:目标上限(数字输入,≥0,引③表)+ reason(必填 8–200 字)。4. **按钮区**:取消 / 确认调整。
-- **错误态**:422 `E1_STOCK_MISMATCH`(与 E1 库存口径冲突,弹窗不关,展示两侧数值)/ 400 / 403 / 409。
-- **成功反馈**:弹窗关闭;库存面就地更新(标注「下月生效」);toast;事件 `admin.quota_config_changed`;实时告警;E1 联动核对记录。
-
-##### [F4b-MD3] 调解锁条件
-- **功能**:调整 Pro/Rack 解锁门槛(直推数/月业绩),确认即对下一次解锁判定生效;影响全站解锁节奏,执行权仅超管。
-- **布局结构**:1. **信息区**:当前各 tier 解锁条件 / 当前达标用户数。2. **影响预览区**:server 预检「新门槛下达标用户数变化(N→M)」;放宽方向提示行「放宽门槛将放大高阶硬件销售资格面」。3. **输入区**:proUnlockDirects / rackP1UnlockDirects / rackP1UnlockVolumeUsd(数字输入,≥0,引③表)+ reason(必填)。4. **按钮区**:取消 / 确认变更。
-- **错误态**:422(超范围)/ 400 / 403(非超管)/ 409。
-- **成功反馈**:弹窗关闭;条件就地更新;toast;事件 `admin.quota_config_changed`;实时告警全体超管。
-
-##### [F4b-MD4] 暂停 Rack 解锁
-- **功能**:断货应急暂停 Rack tier 解锁(新解锁判定一律拒绝),确认即生效;恢复经同弹窗反向操作。
-- **布局结构**:1. **信息区**:tier / 当前剩余库存 / 本月已解锁数。2. **输入区**:reason(必填 8–200 字)。3. **按钮区**:取消 / 确认暂停(警示色)。
-- **错误态**:409(已暂停)/ 400 / 403。
-- **成功反馈**:弹窗关闭;Rack 行标「已暂停」;toast;事件 `admin.quota_paused`;实时告警;前端 `/team/quota` 同步显示暂停态。
-
-**⑤ 接口**:
-- `GET /api/admin/config/quota` — 返回 `{ pro:{ unlockDirects, monthlyStock, soldThisMonth }, rackP1:{ unlockDirects, unlockVolumeUsd, monthlyStock, soldThisMonth } }`,**server-canonical**(`pro.unlockDirects` 对应 `proUnlockDirects` 单条件;`rackP1.unlockDirects` + `rackP1.unlockVolumeUsd` 对应 OR 双路径)。
-- `PUT /api/admin/config/quota` — 更新解锁条件 / 月库存;确认弹窗 F4b-MD2/MD3(body 携 reason,空值 400 `REASON_REQUIRED`;解锁条件变更仅超管);调库存扩容须联动 E1 商城库存口径核对(见 ⑦)。
-- `POST /api/admin/users/:userId/quota/override` — 覆盖单用户解锁资格;payload `{ tier, reason }`;**`Idempotency-Key` 必带**;确认弹窗 F4b-MD1。
-- `POST /api/admin/config/quota/:tier/pause` — 暂停某 tier 解锁(断货);确认弹窗 F4b-MD4(body 携 reason)。
-- **server-side 判定(非 admin)**:配额解锁由 server 按 §8.9 条件判定(Pro ≥5 激活直推 / Rack ≥15 直推 OR ≥$20K 月业绩),满足则放行 store 购买;F4b 后台提供门槛 / 库存配置,**解锁判定 server-canonical**。
-
-**⑥ 权限 & 审计**:
-
-| 动作 \ 角色 | 超管 | 增长(含商城运营子角色) | 财务 | 只读审计 |
-|---|---|---|---|---|
-| 查看配额进度 / 库存 | ✅ | ✅ | ✅(只读) | ✅(只读) |
-| 覆盖单用户解锁 | ✅ | ✅(lead) | — | — |
-| 调月库存 / 暂停 tier | ✅ | ✅(lead;商城运营子角色可发起,执行须 lead) | — | — |
-| 调解锁条件 | ✅ | — | — | — |
-
-> **角色对齐说明 + 子角色机制确认项**:F4b 不引入 V1 §1.1 RBAC 未定义的新角色——**「商城运营」= 增长角色的子角色**,由超管在 A1 中以增长角色授权;库存 / 断货 / 扩容类动作由该子角色发起,执行门槛为增长 lead 层级(= 增长角色经授权的高级别人员)或超管。**但 V1 §1.1 RBAC 未定义增长角色的子角色机制、V1 A1 RBAC 子模块亦无 sub-role 授权描述**,故本子角色粒度为 **V2 gate 前须确认项**:向 A1 RBAC 申请支持增长角色的「商城运营子角色」粒度授权;若 A1 V1 不支持子角色细化,则 F4b 退化为「增长 lead 统一持有库存 / 配额写权」并删除子角色分列。F4b 权限矩阵角色列与 V1 A1 RBAC 定义对齐,实现假设以 A1 确认结论为准。审计字段引用 A2 统一 schema:`operator / role / action(unlock_override\|config_change\|pause) / userId / tier / field / before / after / reason / ts`。
-
-**⑦ 风控 & 联动**:
-- **解锁 server 判定**:配额解锁 100% server-canonical(§9.11d.2),client `/team/quota` 仅展示解锁进度;override 绕过门仅用于纠错 / 特批,经确认弹窗 F4b-MD1(理由必填 + 实时告警)。
-- **与 E1 商城库存联动**:配额是 Pro / Rack 销售前置门——满足配额 → 跳 E1 store 完成销售;月库存上限须与 E1 商城库存口径一致(配额月库存是「分销侧解锁名额」,E1 是「商城实际可售库存」,两者口径须对齐,调库存扩容时联动核对避免超卖);F4b 不持商城库存权威(归 E1)。
-- **解锁基于团队业绩 = 防伪造**:解锁条件依赖 `directRefs`(去重计数,§8.2.2)/ 月业绩(server 累加),server 权威防伪造直推刷解锁。
-
-**⑧ 埋点(事件)**:
-对齐 A4(§2.4.5⑥ admin family):
-- **产生(admin 审计,须 A4 schema registry 注册)**:
-  - `admin.quota_unlocked` — 触发点:覆盖单用户解锁资格确认执行;属性 `user_id / tier(pro\|rack_p1)/ mode(override)/ operator / reason / ts`;喂 A2 + E1(销售资格联动)。
-  - `admin.quota_config_changed` / `admin.quota_paused` — 触发点:库存 / 解锁条件变更 / tier 暂停;属性见 ④;喂 A2 + E1(库存口径联动)+ B4。
-- **消费**:`auth.register_completed`(直推注册 → 重算解锁条件 directs)、`checkout.completed`(团队订单 → 重算月业绩 + 库存核减)、`admin.device_activated`(设备激活 → Pro 解锁「已激活直推」口径)。
-- **喂给**:E1 商城(销售资格 + 库存口径)、B4 节奏态势(配额解锁与硬件 GMV)。本子模块无独立用户侧 KPI 事件(配额解锁态由 server 判定,前端只读展示)。
+改版不新增覆盖单用户资格、修改购机条件、暂停Rack、区域库存或退款入口。所有原号恢复遵循F4统一R1。
 
 ---
 
 #### [F4c] 区域大使审批
 
-**原BE-27材料核验（2026-11-07）**：当前完整合同见[区域大使材料核验](BE-27-大使材料核验-20261107.md)。本节与该合同取代此前F4c中一次开四类额度、旧`/agent`接口示意和仅KOL发票核验的描述。
+材料合同另见[区域大使材料核验](BE-27-大使材料核验-20261107.md)。一份申请只选venue/kol/print/dev中的一类，批准仅开一笔所选类别额度，不付款，不是四类一起发。总览返回最新30份申请，PENDING优先；全历史汇总包括已批准总预算、所有申请总预算、kol_budget_pct最大值和待审最早活动日期，不是本月/预算上限/季度计划。后端金额标签已舍到2位，接口无完整汇总金额，PC不反算精度。
 
-**F4-A12 调整申请规则（2026-11-05，BUG-286）**。有 `network_f4_pool_fund` 的管理员提高默认预算或任一分类最高预算时，确认框显示当前和拟调整金额，提交 `F/f4_ambassador_policy_change` 审批。提交与批准都核对当前兑付覆盖率，批准需另一位有 A2 审批权的超管。若当前版本已变动，旧提案不能写入。待审时 PC 与 App 使用现行规则，批准后新申请按新版本校验。降低预算或修改说明等非放大动作按现有版本即时保存。历史申请保留提交时的金额。
+**材料读与核验**：查看材料GET原申请 `/ambassador-applications/{id}/materials`；附件GET私有files路径，没有PC上传/删除。本版核验分BUSINESS和FINANCE，两类均可直接POST`/materials/review`，不经A2、不批准预算、不付款。各需要对应专权、原材料版本、结论PASSED/NEEDS_MORE及理由；业务场地通过要求有效去重人数≥100且为整数，不能带财务认可金额；财务通过必填非负认可额，小数≤6位、整数≤12位，不能带人数。需补项须属于该类材料。两阶段无硬性先后顺序，页面流程图的顺序不能代替后端许可。缺认可额是尚未认可，0是合法已记录的0；材料申请额/认可额在JSON解析前保留十进制，12位整数+6位小数不经Number丢失。
 
-**① 申请与材料**：保留当前V5+申请资格及现行预算政策。每份原申请只选线下活动、KOL推广、物料或开发支持中的一类，保留编号、日期、城市及申请额。本人提交／补交私有材料形成新版本，旧核验不沿用；历史缺类别由本人明确补齐，已批准额度不重分。必要材料分别为签到／活动／费用，推广／流量／费用，清单／配额／费用，以及需求／工时／验收／费用。
+请求以admin+申请+原号+完整body保留成功回执。发前保存完整原理由和申请快照，持久失败不发；未知冻结原版/原结论/原理由，换账号、刷新和过期均保留。重试按共享明确拒绝收敛；MATERIAL_REVISION_STALE/APPLICATION_NOT_PENDING发生在保留成功回放之后，可以确认原核验未提交。过24小时不POST，仍可GET当前材料/历史，不能把当前相似结论当原号回执。重试成功后重新读材料及总览，历史packet不冒充现在。
 
-**② 页面与核验**：F4原列表显示单类别、申请额、材料版本和进度，“查看材料”打开原申请详情，按类别列附件、来源说明和缺项；业务和费用核验分别显示结论、核验人显示名、时间、理由、有效去重人数或认可额，保留历史核验可查。核验需明确选择通过／需补材料并填写理由；补材料沿原申请记录，不创建额外外部消息。线下业务通过需核实至少100人的有效去重人数，费用通过需认可金额；预计人数和日常签到不充当活动实际人数。材料未齐／未核／需补／过期或金额不足时禁批并显示原因。
+**批准/驳回**：两者在原材料详情创建`F/f_ui_config`申请、sourceDomain F4、obj申请号、target`F/ambassador_application/{id}`、paramKey`F.ambassador.{id}.status`，值approved/rejected。批准必须带expectedMaterialRevision并以后端canProposeApproval裁决；批准执行人不能是maker，也不能参与本版任何一次业务或财务核验。执行再次核版本/未处理、必要材料/私有文件、两阶段通过、场地人数、认可额≥申请额、活动日期已到、覆盖率。驳回不要求材料通过，不开额度，历史保留。列表只凭两阶段PASSED就显示“可以发起最终批准”的旧文案不构成后端保证，详情已有真实阻断原因，列表状态交视觉修正。
 
-**③ 批准**：同版必要材料、业务与费用核验均通过，认可金额不低于申请额，活动／服务日期不晚于业务今天后，F4按服务端`canProposeApproval`及现有权限发起A2。核验人可以作为提案maker；由另一位具原最终批准权且未参与该版核验的管理员最终执行，超管同样遵守，不增第三管理员门槛。确认框显示单类别、申请额／认可额和材料版本；批准仅登记所选类别的一份合法申请额度，不做钱包实际付款。认可金额不足时不自动降额，本人在退回补交时可下调原申请金额并重新核验。
+**申请规则两条提交路径**：精确`network_f4_pool_fund`，四类id固定。policyVersion 3–64位，原expectedRevision>0，默认预算落某类100–10000范围；各类min≤max、title/range≤80字、rule≤500字，金额完整十进制≤6位。
 
-**④ A2与恢复**：原`F/f_ui_config`批准命令携独立`expectedMaterialRevision`并持久保存；对象及锁为原申请。A2原票显示当前材料与提案版本、两金额和两核验摘要，按`canApprove`禁用职责不符、旧版或缺版执行；旧提案不能自动绑定新材料。最终执行时重核材料、版本、金额、申请状态、当前权限与原兑付覆盖率门。驳回保留原A2流程，不要求材料先核验通过。核验携幂等键，按账号和原申请保存原载荷／理由／版本；结果未知可在刷新或重开后继续原命令。保留的成功回执超过24小时仍可同键恢复并收敛，未知状态继续隔离，不换号重做，终态详情也保留原结果核对入口。A2批准／驳回意图按原命令生成的applicationDecision读取，不以可被说明文案替换的“变更后”判断；F4提案原因使用proposalBlockers，明确显示缺少A2提案权限的原因，最终执行仍使用approvalBlockers。
+- 未提高默认预算或任一最高预算：PUT`/ambassador-policy`直接保存，含policy/revision、原reason/operator，原号hash也含理由。只提高最低预算仍属直存。成功后revision+1，后续App新申请读新规则，已有申请不重算。
+- 提高默认或任一最高预算：POST A2 `F/f4_ambassador_policy_change`、params.values完整policy、obj default、target`F/ambassador_policy/default`。发起只需该专用资金权限（TeamFundApproval.canPropose），不额外要求普通A2发起权限；创建和批准均验B1和原版本，另一位有效超级管理员且有A2批准权方可执行。若页面误判直存，后端A2_CONFIRMATION_REQUIRED明确拒绝后转原内容提案；不误报已经保存。
 
-**⑤ 权限**：读取沿`network_f4_read`；业务核验为`network_f4_ambassador_material_review`，费用核验为`network_f4_ambassador_finance_review`。超管两项、财务主管仅费用与必需F4读／菜单、审计只读；普通增长不经`network_%`自动获新核验写权，指定业务主管通过现有A1／A6显式授权，不新造主管角色。最终批准仍认既有`network_f4_ambassador_approve`及A2执行权。A1账号与A6角色按实际授权分别展示两项能力，不预选授权，不显示核验管理员ID。
-
-**⑥ 接口**：列表仍为`GET /api/admin/teams/leadership-pool`；材料为`GET /api/admin/teams/ambassador-applications/{id}/materials`；私有文件为同路径`/files/{fileId}`（不透明字符串）；核验为`POST .../materials/review`，携`Idempotency-Key`及`expectedMaterialRevision,stage,decision,reason`，按职责携人数／认可金额，可携缺项。批准／驳回仍走原A2；跨端具体材料包、阻断码、预算映射、历史与恢复合同见本节所链规格。
-
-**⑦ 验收**：PC真实操作列表→材料→业务／财务核验→补交新版本→原申请发起A2→另一有权管理员最终执行→单类别额度与审计回读。覆盖未授权、核验人与批准人相同、旧版票、认可额不足、未来日期、终态、历史已批不重分与原键恢复。类型与构建只证明候选可编译；TEST页面与完整业务结果独立记录，不由本文代签。
+后台可维护四类文字，但PC/App已知id优先本地字典，自定义title/rule不保证直显。App刷新已有未提交草稿时保留用户已填预算并重新校验，不能承诺后台保存后立即替用户改值。原号提案、直存及材料的状态提示复用既有F4RecoveryNotice。
 
 ---
 
 #### [F4d] 排行榜 & 反欺诈
 
-运营后台「各榜奖池」优先回填已批准的各周期配置，真实的 0 照常回填。首次配置时从可用的实时榜单取当前金额，周榜沿用已有的独立金额口径。没有可确认金额时对应字段留空，由运营填写。暂停快照保留暂停时的展示金额，首次配置不引用快照。提交须填写四个非负金额，沿用现有审批流程。
+本页日/周/月/总榜只显示前三。服务端按有效正式用户本期已解锁USDT净奖励排序（不是订单额或算力），日/周/月总榜候选集最多20/50/100/100人；人数是截断后的候选数，不是全平台注册人数。周期按GROWTH_TEAM业务日历，当前为越南时间；前端显示时间按A3页面时区。榜单池精确十进制保留，后端已压精度的其他标签不能当完整原金额。
 
-**① 目的 & 对齐**: 邀请排行榜 4 周期奖池的派奖执行、Podium 实物履约与反欺诈处置(取消刷榜资格),是「邀请社会证明 + 奖池争夺」的运营执行面。对齐前端 §8.11(邀请排行榜 `/team/leaderboard`)+ §16.2 反欺诈。服务的业务目标:用 4 周期奖池 + TopN 分奖 + Podium 实物驱动用户冲榜增加邀请频次、用反欺诈保证排行榜社会证明真实性;**F4d owns 排行榜取消资格执行,复用 K1 反多账户引擎 + 消费 K2 刷榜信号,不重复 K1 去重 / K2 检测**(承 V1 §Ch8 K2④/⑤ + §3.14 待补条目)。
+| 写入口 | 合同与真实效果 |
+|---|---|
+| 四榜奖池 | `F.pool.periodPrize`单个JSON数字对象含today/week/month/allTime四项≥0，仍一张A2单，不拆请求；金额不经Number重写丢精度。日周月下个未结算周期读新值，总榜人工批准时读，已派周期不重发 |
+| 周榜覆盖额 | `F.leaderboard.poolUsd`，资金权+A2；消费者仅合法且>0时优先，否则用periodPrize.week。0不是关周池，保存端没有独立金额格式校验 |
+| 统一上榜门槛 | `F.leaderboard.minUsd`，非负USDT，写权限+A2。缺配置按服务端0回填，不再默认1；全周期共用，暂停快照仍为原值 |
+| 第1/前5最高占比 | `F.pool.top1MaxPct/top5MaxPct`，0–100%，资金权+A2；只限榜单派奖，不限团队池，没有两值大小关系校验。前5按合计剩余额度封顶，超出不重分 |
+| 暂停 | `F.leaderboard.paused=on`，榜单处置权+A2；批准时事务捕获四周期不可变快照，失败不改成功。重复暂停409。有效FROZEN才显示暂停名单，无快照明确不可用，不补实时榜 |
+| 恢复 | 同key=off，处置权+A2；批准恢复实时，快照历史保留。暂停时自动周期派奖返回0仍推进checkpoint，恢复不会补跳过周期；团队池不随榜单暂停 |
+| 本周前三取消资格 | `F.leaderboard.week.user.{memberUserId}.status=disqualified`，处置权+A2；发起与执行均核有效本周K2本人信号或匹配K1有效簇证据；无证据NO_RISK_EVIDENCE，不绕。移出week排名及派奖，不冻结/追回，后端处置无具体周到期过滤，下周不会自动恢复 |
+| 总榜派奖 | `F/f4_leaderboard_period_payout`，params.period=allTime，obj排行榜 allTime、target`F/leaderboard_settlement/allTime`；资金权+A2，暂停不可新提。批准后按执行时累计候选前100、名次N…1权重、top1/top5封顶、向下6位写UNLOCKED USDT；有成功lifetime事件则不重复，0池/无候选不发也不表示永久已完成 |
 
-**② 后台界面**: 4 周期奖池 + Podium 实物 + 反欺诈,三区。
-1. **4 周期奖池面**:`[period(today / week / month / all-time)/ 奖池 USD / TopN / 距重置倒计时 / 当前榜单 Top-N 快照]`;切 period 看不同奖池与榜单(§8.11.2 Period Tabs)。**正常派奖 server 自动执行(§8.11.3),本面展示结算结果 + 提供纠错入口,不内联手动派发常规奖**;all-time 奖池无自动 reset(§8.11.4 Resets In = —),其结算触发须按 V2 gate 确认结论(milestone 触发或纯手动)展示。
-2. **Podium 实物面**:`[period / #1-#3 / handle / 实物奖品(#1 Genesis Node + Rack ×1 / #2 NexionBox Pro ×3 / #3 NexionBox Pro ×1)/ KYC 地址确认态 / 履约状态]`。
-3. **反欺诈面**:`[userId / 本期累计 USDT 佣金(排序键)/ 刷榜增速倍数(对基线)/ 关联 K1 簇 / K2 刷榜信号态 / 是否已取消资格]`;取消资格 / 暂停榜单 / 追加奖池入口。
+本页没有分周期人工补发、纠错、追加奖池、App总榜触发开关。反欺诈检测在K1/K2，本页不维护K2增速阈值；风控命中数是本周信号用户和已处置用户合并去重，不能当作当前榜待处理的精确人数。风险证据不提前返回，提交拒绝按真实原因显示。暂停和总榜派发同其他F4申请统一保存原body、原理由、原号、原事实；去重不能由浏览器UTC日换号替代，已删除跨日造新号路径。
 
-**③ 可控参数**:
-
-| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
-|---|---|---|---|---|
-| 4 周期奖池(`PERIOD_PRIZE`) | **现状**(§8.11.4):today `$5,000`/TopN 20 · week `$50,000`/TopN 50 · month `$250,000`/TopN 100 · all-time `$1,000,000`/TopN 100 | 奖池 ≥ 0 / TopN ≥ 1 | 仅新周期(改后下一周期生效) | `/team/leaderboard` Prize Pool Hero + Pays to top {topN} |
-| Podium 实物(`PODIUM_PRIZE`) | **现状**(§8.11.5):#1 Genesis Node + Rack ×1 / #2 NexionBox Pro ×3 / #3 NexionBox Pro ×1 | 文本 | 仅新周期 | `/team/leaderboard` Podium 卡下方 3 行实物奖列表 |
-| 排序键口径(`leaderboardSortKey`) | **现状**(§8.11.3):本期累计 USDT 佣金(`unilevel` + binary + leadership + 邀请奖 + 平级奖之和) | 只读口径 | — | `/team/leaderboard` 排名 + Earned 列 |
-| 入榜门槛(`leaderboardMinUsd`) | **现状**(§8.11.3):本期累计 ≥ $1 | ≥ 0 | 实时 | `/team/leaderboard` 入榜资格 |
-| 更新频率(`snapshotIntervalMin`) | **现状**(§8.11.3):服务端每 **5 分钟** snapshot | 1–60 分钟 | 实时 | `/team/leaderboard` Footer「Rankings update every 5 minutes」 |
-
-> **默认值口径**:4 周期奖池 / TopN / Podium / 排序键 / 入榜门槛 / 5 分钟 snapshot 均为前端 §8.11.4 / §8.11.5 / §8.11.3 现状值,12 月节奏表未单列排行榜参数,以 §8.11 为参考。**`leaderboardSortKey` 的佣金组成项使用 `unilevel`(对齐前端 §8.11.3 排序键文案 + §12.5 CommissionEvent kind 枚举),不写 `network`**;kind 名称待 F5⑧ blocking 工单与 A4 确认后统一更新,本条跟随工单结论(若工单最终选 `network` 则同步)。**反欺诈刷榜增速阈值不在本参数表**——该阈值(> 5× 基线)由 K2 配置(K2③ `leaderboardVelocityMultiplier`)并产信号,F4d 只读消费,不持配置权(见 ⑦)。
-
-**④ 操作动作**:
-
-| 动作 | 角色 | 确认弹窗 | 审计点(A2) |
-|---|---|---|---|
-| 补发 / 纠错当期奖励(正常派奖为 server 自动) | 财务(lead)/ 超管 | F4d-MD1(理由必填+B1 红线预检) | `admin.leaderboard_prize_paid`(period / userId[] / amount[] / mode(reissue\|correct)/ operator / reason) |
-| 取消刷榜资格(F4d owns 执行) | 风控(lead)/ 超管 | F4d-MD2(理由必填;须附 K2 信号 / K1 簇证据) | `admin.leaderboard_disqualified`(userId / period / velocityMultiplier / k1ClusterId / reason / operator) |
-| 暂停榜单(异常应急) | 风控(lead)/ 增长(lead)/ 超管 | F4d-MD3(理由必填;应急止血,确认即生效) | `admin.leaderboard_paused`(period / paused / reason / operator) |
-| 追加奖池(活动) | 财务(lead)/ 超管 | F4d-MD4(理由必填+B1 红线预检) | `admin.leaderboard_pool_topped_up`(period / amount / reason / operator) |
-
-**④a 交互与弹窗规格**
-
-**(1) 动作触发总表**
-
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 补发 / 纠错奖励 | ②(1)奖池面结算结果区「纠错入口」 | 次按钮 | 仅已结算周期可用;财务(lead)/超管渲染 | 打开弹窗 F4d-MD1 |
-| 取消刷榜资格 | ②(3)反欺诈面行内「取消资格」 | 行内警示按钮 | 仅未取消资格行显示;须该行有 K2 信号或 K1 簇命中,否则置灰并提示「无信号证据」;风控(lead)/超管渲染 | 打开弹窗 F4d-MD2 |
-| 暂停榜单 | ②(1)奖池面顶部「暂停榜单」 | 警示按钮 | 仅运行中榜单 | 打开弹窗 F4d-MD3 |
-| 追加奖池 | ②(1)奖池面「追加奖池」 | 次按钮 | 财务(lead)/超管渲染 | 打开弹窗 F4d-MD4 |
-| 切换 period / 查看榜单 | ②(1)Period Tabs / 榜单行 | tab / 链接 | 恒可用 | 就地切换 / 下钻,无弹窗 |
-
-**(2) 弹窗规格**
-
-##### [F4d-MD1] 补发 / 纠错当期奖励
-- **功能**:对 server 漏发 / 误发的排行榜奖励人工补发或纠错(USDT 流出),确认即派发并落 D4 bill;非常规派奖通道(常规派奖 server 自动)。
-- **布局结构**:1. **信息区**:period / 该期奖池与 TopN / 拟补发条目清单(rank/userId/金额)/ 纠错依据摘要。2. **影响预览区**:server 预检「派发后兑付覆盖率」,低于黄线警示、低于红线阻断(确认钮置灰,文案含 422);本批合计金额。3. **输入区**:见下表。4. **按钮区**:取消 / 确认派发。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| mode | 单选(reissue 补发 / correct 纠错 / early 提前派发) | 是 | all-time 周期 early 选项隐藏(触发规则待 V2 gate 确认) | reissue |
-| reason | 多行文本 | 是 | 8–200 字;400 `REASON_REQUIRED` | 空 |
-
-- **按钮区**:`[取消]` · `[确认派发]`(置灰条件同上;loading;携 `Idempotency-Key`)。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(弹窗不关,内联回传当前覆盖率)/ 409(该期已被处理,提示刷新)/ 400 / 403。
-- **成功反馈**:弹窗关闭;结算结果区就地更新;toast「已派发 · 已记审计」;事件 `admin.leaderboard_prize_paid`;实时告警;D4 落 bill + B1/B2 计提。
-
-##### [F4d-MD2] 取消刷榜资格
-- **功能**:剔除用户出该周期奖池派发名单并标记 disqualified,确认即生效;须基于 K2 刷榜信号 + K1 簇证据,防误剔正常用户。
-- **布局结构**:1. **信息区**:userId(链 C1)/ period / 本期累计 USDT 佣金与当前排名 / **证据区**:刷榜增速倍数(对基线)、K2 信号详情、K1 簇 ID 与簇内账户数(链 K1 图谱)。2. **影响预览区**:提示行「取消后该用户出该期派发名单,名次顺延」。3. **输入区**:reason(多行文本,必填,8–200 字;须说明证据结论)。4. **按钮区**:取消 / 确认取消资格(警示色)。
-- **错误态**:422 `NO_RISK_EVIDENCE`(server 校验无 K2 信号且无 K1 簇时拒绝,弹窗不关)/ 409(已取消)/ 400 / 403。
-- **成功反馈**:弹窗关闭;反欺诈面行标「已取消资格」;toast;事件 `admin.leaderboard_disqualified`;实时告警;喂 K4 套利维度 + B5。
-
-##### [F4d-MD3] 暂停榜单
-- **功能**:应急暂停某 period 榜单(快照冻结、派奖挂起),确认即生效。
-- **布局结构**:1. **信息区**:period / 当前榜单状态 / 距重置倒计时。2. **输入区**:reason(必填 8–200 字)。3. **按钮区**:取消 / 确认暂停(警示色)。
-- **错误态**:409(已暂停)/ 400 / 403。
-- **成功反馈**:弹窗关闭;榜单标「已暂停」;toast;事件 `admin.leaderboard_paused`;实时告警;前端榜单页同步显示维护态。
-
-##### [F4d-MD4] 追加奖池
-- **功能**:为某 period 追加奖池金额(放大 USDT 流出),确认即生效。
-- **布局结构**:1. **信息区**:period / 当前奖池 / TopN。2. **影响预览区**:server 预检「追加后兑付覆盖率」,低于红线阻断(置灰+422 文案);追加后奖池 before→after。3. **输入区**:追加金额(数字输入,>0)+ reason(必填)。4. **按钮区**:取消 / 确认追加。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE` / 400 / 403 / 409。
-- **成功反馈**:弹窗关闭;奖池 Hero 就地更新;toast;事件 `admin.leaderboard_pool_topped_up`;实时告警;B1/B2 计提。
-
-> **派奖分工(自动 vs 人工纠错)+ 取消资格为高敏的依据**:**排行榜正常派奖为 server 自动执行**(§8.11.3:周期结束按比例自动派发到对应 USDT 余额,触发 `commission` 事件),F4d 后台展示结算结果;**F4d④ 的确认弹窗派奖动作(F4d-MD1)仅用于「补发 / 纠错」**(server 漏发 / 误发的人工纠正),非常规派奖通道——常规派奖不经手动操作。取消资格 = 剔除用户奖池资格(须基于 K2 刷榜信号 + K1 簇证据,防误剔正常用户);Podium 实物履约须核验 KYC 地址。**取消资格执行归 F4d**(承 V1 §Ch8 K2④/⑤:`POST /api/admin/risk/leaderboard/:userId/disqualify` 写端点与确认执行由 F4d 接管),F4d 不重复 K1 去重引擎 / K2 信号检测,仅 owns 排行榜取消资格 / 奖池剔除执行。**all-time 奖池无自动 reset**(§8.11.4 Resets In = —),其结算触发规则(milestone 触发或纯手动)须列为 V2 gate 确认项(引言阻断项 4),裁定前 all-time 派奖不固化触发机制。放大 / 追加奖池前须核 B1 覆盖率(§1.8 原则一)。
-
-**⑤ 接口**:
-- `GET /api/admin/leaderboard?period=&cursor=` — 4 周期奖池 + 榜单快照;返回 `{ period, poolUsd, topN, resetIn, snapshot:[{ rank, userId, handle, cumulativeUsdt, directs, velocityMultiplier, k1ClusterId?, k2Flagged(bool), disqualified(bool) }], podium:[...] }`,**server-canonical**(排序键 server 每 5 分钟 snapshot,§8.11.3);`resetIn` 在 all-time period 返回 `null`(无自动 reset,§8.11.4)。
-- `POST /api/admin/leaderboard/:period/payout` — **补发 / 纠错 / 提前派发**当期奖励到 TopN 用户 USDT 余额(**正常派奖 server 自动,本接口用于纠错 / 提前派发**);payload `{ mode(reissue|correct|early), reason }`(reason 空值 400 `REASON_REQUIRED`);**`Idempotency-Key` 必带**(派奖防重复);确认弹窗 F4d-MD1(server 前置 B1 覆盖率红线核验,低于红线 422 `COVERAGE_BELOW_REDLINE`);server 原子派发 + 落 D4 commission bill。**period 触发差异**:today / week / month 奖池在周期 reset 时 server 自动派发(本接口仅纠错 / 提前);**all-time 奖池无自动 reset(§8.11.4),其派发触发规则(milestone 触发或纯手动)待 V2 gate 确认(引言阻断项 4),确认前 all-time 派发走纯手动确认弹窗(F4d-MD1)**。派奖事件归属(`commission.paid(kind=leaderboard_prize)` 复用 vs 独立 `leaderboard.prize_paid`)待 F5⑧ blocking 工单二选一确认,与 F4d⑧ 保持一致。
-- `POST /api/admin/risk/leaderboard/:userId/disqualify` — **F4d owns 取消刷榜资格**;payload `{ period, reason, k1ClusterId? }`;**`Idempotency-Key` 必带**;确认弹窗 F4d-MD2(server 校验 K2 信号 / K1 簇证据存在,无证据 422 `NO_RISK_EVIDENCE`);server 原子剔除该用户出该周期奖池派发名单 + 标记 disqualified。**承 V1 §Ch8 K2② 末权责声明(取消资格执行归 F4d);端点路径挂 `/api/admin/risk/` namespace 为本章设计决策,V2 gate 须确认 K2 不在同路径双写**(K2 仅产刷榜信号、不在同路径双写写端点;引言阻断项 4)。
-- `POST /api/admin/leaderboard/:period/pause` — 暂停榜单;确认弹窗 F4d-MD3(body 携 reason)。
-- `POST /api/admin/leaderboard/:period/topup` — 追加奖池;确认弹窗 F4d-MD4(body 携 reason)+ B1 覆盖率前置(低于红线 422)。
-
-**⑥ 权限 & 审计**:
-
-| 动作 \ 角色 | 超管 | 财务 | 风控 | 增长 | 只读审计 |
-|---|---|---|---|---|---|
-| 查看奖池 / 榜单 / 反欺诈 | ✅ | ✅ | ✅ | ✅(只读) | ✅(只读) |
-| 补发 / 纠错当期奖励 | ✅ | ✅(lead) | — | — | — |
-| 取消刷榜资格 | ✅ | — | ✅(lead) | — | — |
-| 暂停榜单 | ✅ | — | ✅(lead) | ✅(lead) | — |
-| 追加奖池 | ✅ | ✅(lead) | — | — | — |
-
-审计字段引用 A2 统一 schema:`operator / role / action(payout\|disqualify\|pause\|topup) / period / userId(s) / amount / velocityMultiplier / k1ClusterId / reason / ts`。
-
-**⑦ 风控 & 联动**:
-- **复用 K1 反多账户 + 消费 K2 刷榜信号,F4d owns 取消资格执行**:F4d **复用 K1 反多账户引擎**(IP / 设备指纹 / 支付工具三层去重,§Ch8 K1)识别冲榜账户簇关联,**消费 K2 刷榜信号**(增速 > 5× 基线,§Ch8 K2④/⑤);**F4d 不重复 K1 去重引擎、不重复 K2 信号检测,仅 owns 排行榜取消资格 / 奖池剔除的确认执行**(承 V1 §Ch8 K2④/⑤:「取消资格执行接口归 F4d 接管,K2 仅产信号 + 标记」)。**增速阈值(> 5× 基线)由 K2 配置(K2③ `leaderboardVelocityMultiplier`),F4d 只读消费,不持该阈值配置权**。
-- **奖池发放受 B1 覆盖率约束**:补发 / 纠错 / 追加奖池(放大 USDT 流出)前 server 强制核验 B1 覆盖率(§1.8 原则一);奖池发放计入 B1/B2 应付负债。
-- **Podium KYC 地址确认**:Podium 实物履约前强制核验 C4 KYC 态与确认地址(§3.14:KYC 权威归 C4),F4d 引用不重算。
-- **排序键 server-canonical**:本期累计 USDT 佣金排序键由 server 每 5 分钟 snapshot(§8.11.3),client 仅按 period 切换读取;handle 完整显示不 mask(§8.11.3:真实平台强化攀比),取消资格基于 server 端 K2 信号 + K1 簇证据,不信 client。
-
-**⑧ 埋点(事件)**:
-对齐 A4(§2.4.5③ money / ⑤ risk / ⑥ admin family):
-- **消费(刷榜信号,§2.4.5⑤)**:K2 产出的刷榜信号——**V1 §2.4.5⑤ 同时登记 `risk.arbitrage_suspected`(含 `type=leaderboard`)与 `risk.leaderboard_velocity_flagged` 两个事件名;K2⑧ 正文实际产出 `risk.arbitrage_suspected(type=leaderboard)`(已登记),`risk.leaderboard_velocity_flagged` 为待注册清单条目(§9.3④ / 运行期注册 V4 收口)**。F4d 是该刷榜信号的**取消资格执行消费方**(承 §Ch8 K2「刷榜信号喂 F4d」);**消费锚点须明确**:若两者为独立细粒度事件,须在 F5⑧ blocking 工单中一并向 A4 申请注册并说明关系;若等价,统一改用已登记的 **`risk.arbitrage_suspected(type=leaderboard)`**,**不得在未注册状态下以 `risk.leaderboard_velocity_flagged` 作为消费锚点**。F4d 据此执行取消资格,**不重复 K2 的检测产出、不持增速阈值配置**。
-- **消费(邀请,§2.4.5①/②)**:`referral.invite_sent` / `referral.bound`(邀请关系 → 排行榜社会证明)+ `commission.paid`(network / binary / leadership / 邀请奖 / 平级奖 → 排序键本期累计,§8.11.3)。
-- **产生(派奖资金记账 + admin 审计)**:
-  - **排行榜派奖事件**(`commission.paid(kind=leaderboard_prize)` 复用 **或** 独立 `leaderboard.prize_paid`,**二选一须在 F5⑧ blocking 工单确认后与 F5⑧ 保持一致**)— 触发点:排行榜周期结束奖池按比例**自动**派发到 TopN 用户 USDT 余额(§8.11.3,today / week / month 自动;all-time 触发规则待确认);属性 `userId / kind: "leaderboard_prize"(若复用 commission.paid)/ currency: "USDT" / amount / period / rank / is_server_authoritative: true / ts`;落 D4 commission bill + 喂 B1/B2 应付负债。**`leaderboard_prize` 须列入 F5⑧ `commission.paid.kind` 七元素枚举注册工单**(若最终改走独立 `leaderboard.prize_paid` 事件,则从 commission.paid 枚举移除并在 A4 单独注册 money family 新事件)。
-  - `admin.leaderboard_prize_paid` — 触发点:补发 / 纠错派奖确认执行(常规派奖为 server 自动,不产此 admin 事件);属性 `period / user_ids[] / amounts[] / mode(reissue\|correct\|early)/ operator / reason / coverage_checked / ts`;喂 A2 + D4 + L3。
-  - `admin.leaderboard_disqualified` — 触发点:取消刷榜资格确认执行(**F4d 产**);属性 `user_id / period / velocity_multiplier / k1_cluster_id / k2_flagged / operator / reason / ts`;喂 A2 + K4(套利维度)+ B5。
-  - `admin.leaderboard_paused` / `admin.leaderboard_pool_topped_up` — 见 ④;喂 A2 + B4。
-- **承接关系**:本子模块取消资格执行承 **V1 §Ch8 K2④/⑤**(取消资格归 F4d / K2 仅产信号);消费段引用与引言、F4d⑦ 一致使用 K2④/⑤,不写 K2③/⑧。
-- **喂给**:D4 commission bill、B1/B2 应付负债、K4 风险评分(取消资格 → 套利维度)、B5 风险雷达。
+已决定的后端跟进包括：票数鉴权不一致、月上限/周池格式与0含义、零票恢复入口、取消资格到期、暂停不补发、统计精度/口径、跨端榜单指标和资金B1预检。PC不新增财务/风控规则作为绕过。真实页面的成功、拒绝、未知、刷新恢复、24小时到期、原号逐字节及权限/锁检查由F域最后的页面验收项集中执行。

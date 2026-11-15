@@ -1,12 +1,13 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import {
   l6UnavailableStateFromError,
   l6UnavailableStateFromFailures,
 } from "@/lib/admin/l6-runtime-state";
 import { assertL3FinanceContract, assertL3TreasurySnapshot } from "@/lib/admin/l3-finance-contract";
-import { assertL5OverviewContract, CURRENT_L5_REPORT_TYPES } from "@/lib/admin/l5-overview-contract";
+import { assertL5OverviewContract, assertL5ReportContract, assertL5TaskPageContract, CURRENT_L5_REPORT_TYPES } from "@/lib/admin/l5-overview-contract";
+import type { L3DetailRequest } from "./l3-detail-export";
 
 type ApiResult<T> = {
   code?: number;
@@ -35,6 +36,8 @@ export type LReportView = {
   status: string;
   note?: string;
   lastAction?: string;
+  lastActionAt?: string | null;
+  requestedAt?: string | null;
   reason?: string;
   snapshotAvailable: boolean;
 };
@@ -54,7 +57,12 @@ export type LExportTask = {
   chain: string;
   acts: ("approve" | "download" | "retry")[];
   approvalEligibility?: "ELIGIBLE" | "SELF" | "MAKER_UNVERIFIED";
+  requesterDisplayName?: string | null;
+  requestedAt?: string | null;
+  lastActionAt?: string | null;
 };
+
+export type L5TaskActionRequest = { includeSensitive: boolean; includeDecrypted: false; reason: string; operator: string };
 
 export type LBiData = {
   currentPhase?: Record<string, unknown>;
@@ -113,7 +121,7 @@ export type LRegulatoryDisclosureOption = {
   disclosureVersion: string;
   disclosureStatus: string;
   chapterCount: number;
-  publishedAt: string;
+  publishedAt: string | null;
 };
 
 export type LRegulatoryOptions = {
@@ -156,8 +164,8 @@ function idempotencyKey() {
 }
 
 export class LOutcomeUnknownError extends Error {
-  constructor() {
-    super("提交结果尚未确认，任务可能已创建。请先到「数据导出与监管报告」核对原操作，再决定是否重新提交。");
+  constructor(message = "结果未知：可能已经生效。请按页面上方的提示先核对，再决定是否重试。") {
+    super(message);
     this.name = "LOutcomeUnknownError";
   }
 }
@@ -173,7 +181,7 @@ function networkFailure(isReportCreation: boolean) {
     : new Error("网络连接已中断，本次操作结果尚未确认。请先核对原操作，再决定是否重试。");
 }
 
-async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function apiRequest<T>(path: string, init?: RequestInit, businessErrorStatus = false, attempt = { hadUncertainAttempt: false }): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
@@ -187,6 +195,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     // A lost response after report creation is safe to retry only because this
     // request reuses the same Idempotency-Key and the backend durably replays it.
     if (!isReportCreation) throw networkFailure(false);
+    attempt.hadUncertainAttempt = true;
     try {
       res = await execute();
     } catch {
@@ -198,7 +207,10 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   // 回复已经写明结果未知时重发也问不出结论，直接交给调用方留待确认。
   if (isReportCreation && res.status === 503) {
     const answered = await res.clone().json().then((body: ApiResult<T>) => isIdempotencyOutcomeOpen(body.message), () => false);
-    if (!answered) res = await execute().catch(() => { throw networkFailure(true); });
+    if (!answered) {
+      attempt.hadUncertainAttempt = true;
+      res = await execute().catch(() => { throw networkFailure(true); });
+    }
   }
   if (isReportCreation && res.status >= 500) throw networkFailure(true);
   let payload: ApiResult<T> = {};
@@ -216,10 +228,14 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     throw new LOutcomeUnknownError();
   }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    const error = new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`)) as Error & { code?: string; status: number; reasonCode?: string };
+    const error = new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`)) as Error & { code?: string; status: number; reasonCode?: string; hadUncertainAttempt: boolean };
     error.code = payload.message;
-    error.status = res.status;
+    // Retained L3/L4 commands need the business rejection even when the
+    // controller returns ApiResult.fail in HTTP 200. Other L callers keep their contract.
+    error.status = businessErrorStatus && res.ok && rejected ? payload.code! : res.status;
     error.reasonCode = payload.message;
+    // A later rejection cannot by itself settle an earlier uncertain attempt.
+    error.hadUncertainAttempt = attempt.hadUncertainAttempt;
     throw error;
   }
   return payload.data as T;
@@ -276,6 +292,8 @@ function normalizeReport(row: Record<string, unknown>): LReportView {
     status: str(row.status, "GENERATING").toUpperCase(),
     note: str(row.note),
     lastAction: str(row.lastAction),
+    lastActionAt: row.lastActionAt as string | null | undefined,
+    requestedAt: row.requestedAt as string | null | undefined,
     reason: str(row.reason),
     snapshotAvailable: bool(row.snapshotAvailable),
   };
@@ -283,7 +301,7 @@ function normalizeReport(row: Record<string, unknown>): LReportView {
 
 function formatRows(value: number) {
   if (value >= 10000) return value.toLocaleString("en-US");
-  return String(value || "—");
+  return String(value);
 }
 
 const REPORT_TYPE_LABELS: Record<string, string> = {
@@ -319,6 +337,8 @@ function reportToTask(report: LReportView): LExportTask {
     st: status,
     chain: report.note || report.reason || "后台生成",
     acts,
+    lastActionAt: report.lastActionAt,
+    requestedAt: report.requestedAt,
   };
 }
 
@@ -473,14 +493,18 @@ export async function fetchL6ClickHeat(route: string, input: L6BehaviorQuery = {
   return apiRequest<unknown>(`/behavior/click-heat?${query.toString()}`).then(rec);
 }
 
-export async function downloadL6Behavior(input: L6BehaviorQuery & { sortDir?: "asc" | "desc" } = {}) {
+export async function downloadL6Behavior(input: L6BehaviorQuery & { reason: string; sortDir?: "asc" | "desc" }) {
   const query = l6Query(input);
   if (input.sortDir) query.set("sortDir", input.sortDir);
+  query.set("reason", input.reason.trim());
   const res = await guardedFetch(`/api/admin/bi/export/behavior?${query.toString()}`, { cache: "no-store" });
   const contentType = res.headers.get("Content-Type") || "";
   if (!res.ok || contentType.includes("application/json")) {
     const payload = (await res.json().catch(() => null)) as ApiResult<unknown> | null;
     throw new Error(formatAdminApiError(payload?.message, `BI_L6_EXPORT_${res.status}`));
+  }
+  if (!contentType.toLowerCase().includes("text/csv")) {
+    throw new Error(formatAdminApiError("L6_EXPORT_FILE_INVALID", "L6_EXPORT_FILE_INVALID"));
   }
   return {
     blob: await res.blob(),
@@ -604,6 +628,8 @@ async function fetchL3FinanceOverview(query?: L3FinanceQuery): Promise<LBiData> 
       reserveUsd: num(coverage.reserveTotalUsdt),
       liabilitiesUsd: num(coverage.liabilityTotalUsdt),
     },
+    valuationReliable: liabilities.valuationReliable,
+    valuedLiabilitiesUsd: liabilities.valuedTotalUsdt,
     treasury: {
       coverageRatio: num(coverage.coverageRatio),
       redLine: num(coverage.redLine),
@@ -645,13 +671,14 @@ async function fetchL3FinanceOverview(query?: L3FinanceQuery): Promise<LBiData> 
     }),
     liabilities: liabilityRows.map((row, index) => ({
       id: index + 1,
+      category: str(row.category),
       name: str(row.label),
-      amount: num(row.amountUsdt),
+      amount: row.valuedAmountUsdt as number | null,
       color: liabilityColors[index] ?? "var(--ink-4)",
     })),
     maturityWindow: {
-      "7d": maturityTotals(maturity7Days),
-      "30d": maturityTotals(maturity30Days),
+      "7d": { ...maturityTotals(maturity7Days), trialStressIncluded: maturity7.trialStressIncluded, cumulativeUsdt: maturity7.cumulativeUsdt, daily: maturity7Days },
+      "30d": { ...maturityTotals(maturity30Days), trialStressIncluded: maturity30.trialStressIncluded, cumulativeUsdt: maturity30.cumulativeUsdt, daily: maturity30Days },
     },
     maturitySchedule: {
       weeks: maturityGroups.map(labelGroup),
@@ -678,21 +705,109 @@ export async function fetchL5ExportTasks(status = "", pageNum = 1, pageSize = 8)
     pageSize: String(pageSize),
   });
   if (status.trim()) query.set("status", status.trim());
-  return apiRequest<AdminPage<LReportView> & {
-    approvalEligibility?: Record<string, LExportTask["approvalEligibility"]>;
-  }>(`/reports?${query.toString()}`).then((page) => ({
+  const result = await apiRequest<unknown>(`/reports?${query.toString()}`);
+  let raw: Record<string, unknown>;
+  try { raw = assertL5TaskPageContract(result); }
+  catch { throw new Error(formatAdminApiError("L5_TASK_RESPONSE_INVALID", "L5_TASK_RESPONSE_INVALID")); }
+  const page = raw as unknown as AdminPage<LReportView> & {
+    approvalEligibility: Record<string, LExportTask["approvalEligibility"]>;
+    requesterDisplayNames: Record<string, string | null>;
+  };
+  return {
     total: page.total,
     pageNum: page.pageNum,
     pageSize: page.pageSize,
     records: page.records.map((report) => ({
       ...reportToTask(report),
-      approvalEligibility: page.approvalEligibility?.[report.reportId],
+      approvalEligibility: page.approvalEligibility[report.reportId],
+      requesterDisplayName: page.requesterDisplayNames[report.reportId],
     })),
-  }));
+  };
+}
+
+/** Current task data is for comparison, never a receipt for an earlier action. */
+export async function fetchL5ExportTask(reportId: string): Promise<LExportTask> {
+  const result = await apiRequest<unknown>(`/export/${encodeURIComponent(reportId)}`);
+  let raw: Record<string, unknown>;
+  try { raw = assertL5ReportContract(result); }
+  catch { throw new Error(formatAdminApiError("L5_TASK_RESPONSE_INVALID", "L5_TASK_RESPONSE_INVALID")); }
+  if (raw.reportId !== reportId) throw new Error(formatAdminApiError("L5_TASK_RESPONSE_INVALID", "L5_TASK_RESPONSE_INVALID"));
+  return reportToTask(normalizeReport(raw));
+}
+
+/** L5 sends the stored body once; retries belong to its persisted recovery path. */
+export async function submitL5TaskAction(reportId: string, action: "approve" | "rerun", request: L5TaskActionRequest, commandKey: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await guardedFetch(`/api/admin/bi/reports/${encodeURIComponent(reportId)}/${action}`, {
+      method: "POST", cache: "no-store",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
+      body: JSON.stringify(request),
+    });
+  } catch {
+    throw new OutcomeUnknownError(formatAdminApiError("L5_TASK_OUTCOME_UNKNOWN", "L5_TASK_OUTCOME_UNKNOWN"));
+  }
+  const raw: unknown = await response.json().catch(() => null);
+  const payload = rec(raw);
+  const apiCode = typeof payload.code === "number" ? payload.code : undefined;
+  const reasonCode = typeof payload.message === "string" ? payload.message : undefined;
+  if (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
+    throw new OutcomeUnknownError(formatAdminApiError("L5_TASK_OUTCOME_UNKNOWN", "L5_TASK_OUTCOME_UNKNOWN"));
+  }
+  if (!response.ok || (apiCode !== undefined && apiCode !== 0)) {
+    throw Object.assign(new Error(formatAdminApiError(reasonCode, `BI_API_${response.status}`)), {
+      status: response.ok && apiCode !== undefined ? apiCode : response.status,
+      httpStatus: response.status, apiCode, reasonCode,
+    });
+  }
+  const receipt = rec(payload.data);
+  if (payload.code !== 0 || receipt.reportId !== reportId || receipt.action !== action.toUpperCase()
+    || !["READY", "PENDING_CONFIRM"].includes(String(receipt.status))
+    || action === "approve" && receipt.status !== "READY"
+    || typeof receipt.containsPii !== "boolean" || !["NONE", "MASKED", "PARTIAL", "DECRYPTED"].includes(String(receipt.maskingPolicy))
+    || action === "rerun" && receipt.status !== (receipt.containsPii ? "PENDING_CONFIRM" : "READY")) {
+    throw new OutcomeUnknownError(formatAdminApiError("L5_TASK_OUTCOME_UNKNOWN", "L5_TASK_OUTCOME_UNKNOWN"));
+  }
 }
 
 export async function fetchL5ExportAudits(limit = 50): Promise<LExportAuditRow[]> {
   return apiRequest<LExportAuditRow[]>(`/export/audit?limit=${Math.max(1, Math.min(limit, 100))}`);
+}
+
+export type L3DetailReceipt = { reportId: string; status: string; replayed?: boolean };
+
+function l3DetailReceipt(value: unknown, request: L3DetailRequest): L3DetailReceipt {
+  const report = rec(value);
+  if (typeof report.reportId !== "string" || !/^EXP-[A-Z0-9]{8}$/.test(report.reportId)
+    || report.type !== "FINANCE_AGG" || report.containsPii !== true || report.maskingPolicy !== "MASKED"
+    || report.cycle !== request.timeRange || report.fields !== request.fields
+    || typeof report.status !== "string"
+    || !["PENDING_CONFIRM", "PENDING_SPLIT_CONFIRM", "PENDING", "GENERATING", "READY", "EXPIRED", "FAILED"].includes(report.status)) {
+    throw new Error(formatAdminApiError("L3_DETAIL_RECEIPT_INVALID", "L3_DETAIL_RECEIPT_INVALID"));
+  }
+  return { reportId: report.reportId, status: report.status };
+}
+
+/** L3 alone retains the complete request, including its original operator and reason. */
+export async function submitL3FinanceDetail(request: L3DetailRequest, commandKey: string): Promise<L3DetailReceipt> {
+  const attempt = { hadUncertainAttempt: false };
+  const data = await apiRequest<Record<string, unknown>>("/reports", {
+    method: "POST",
+    headers: { "Idempotency-Key": commandKey },
+    body: JSON.stringify(request),
+  }, true, attempt);
+  try {
+    return { ...l3DetailReceipt(data?.created, request), replayed: attempt.hadUncertainAttempt };
+  } catch {
+    // A malformed success receipt cannot settle a command which may have committed.
+    throw new LOutcomeUnknownError(formatAdminApiError("L3_DETAIL_RECEIPT_INVALID", "L3_DETAIL_RECEIPT_INVALID"));
+  }
+}
+
+export async function fetchL3FinanceDetail(reportId: string, request: L3DetailRequest): Promise<L3DetailReceipt> {
+  const report = l3DetailReceipt(await apiRequest<unknown>(`/export/${encodeURIComponent(reportId)}`), request);
+  if (report.reportId !== reportId) throw new Error(formatAdminApiError("L3_DETAIL_RECEIPT_INVALID", "L3_DETAIL_RECEIPT_INVALID"));
+  return report;
 }
 
 async function regulatoryRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -709,12 +824,39 @@ async function regulatoryRequest<T>(path: string, init?: RequestInit): Promise<T
   }
   if (path === "/report" && init?.method === "POST" && response.status === 503) response = await execute().catch(() => { throw networkFailure(true); });
   if (path === "/report" && init?.method === "POST" && response.status >= 500) throw networkFailure(true);
-  const text = await response.text();
-  const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
-  if (!response.ok || (payload.code !== undefined && payload.code >= 400)) {
-    throw new Error(formatAdminApiError(payload.message, `REGULATORY_API_${response.status}`));
+  const creating = path === "/report" && init?.method === "POST";
+  let raw: unknown;
+  try {
+    raw = await response.json();
+  } catch (error) {
+    if (creating && response.ok) throw new LOutcomeUnknownError();
+    throw error;
   }
-  return payload.data as T;
+  const payload = rec(raw) as ApiResult<T>;
+  if (creating && (isIdempotencyOutcomeOpen(payload.message)
+    || response.ok && (typeof payload.code !== "number" || !Number.isFinite(payload.code)))) throw new LOutcomeUnknownError();
+  if (!response.ok || (payload?.code !== undefined && payload.code !== 0)) {
+    throw Object.assign(new Error(formatAdminApiError(payload?.message, `REGULATORY_API_${response.status}`)), {
+      status: response.status, reasonCode: payload?.message,
+    });
+  }
+  return payload?.data as T;
+}
+
+/** Only L5 calls this wrapper; the other L pages keep their existing export contract. */
+export async function createL5SummaryReport(input: LReportCreateInput, reason: string): Promise<void> {
+  const data = await apiRequest<Record<string, unknown>>("/reports", {
+    method: "POST", body: JSON.stringify(withReason(input, reason)),
+  });
+  try {
+    const created = assertL5ReportContract(data?.created);
+    if (!/^EXP-[A-Z0-9]{8}$/.test(String(created.reportId)) || created.status !== "READY"
+      || created.containsPii !== false || created.maskingPolicy !== "NONE" || created.format !== "CSV") {
+      throw new Error("Invalid summary receipt");
+    }
+  } catch {
+    throw new LOutcomeUnknownError();
+  }
 }
 
 export async function fetchL5RegulatoryOptions(): Promise<LRegulatoryOptions> {
@@ -729,9 +871,9 @@ function filenameFromDisposition(disposition: string | null, fallback: string) {
   return ascii?.[1] ? ascii[1] : fallback;
 }
 
-async function downloadReportFile(reportId: string) {
-  const issued = await apiRequest<Record<string, unknown>>(`/exports/${encodeURIComponent(reportId)}/download-token`);
-  const token = typeof issued.downloadToken === "string" ? issued.downloadToken : "";
+async function downloadReportFile(reportId: string, savedToken?: string) {
+  const issued = savedToken ? undefined : await apiRequest<Record<string, unknown>>(`/exports/${encodeURIComponent(reportId)}/download-token`);
+  const token = savedToken ?? (typeof issued?.downloadToken === "string" ? issued.downloadToken : "");
   if (!token) throw new Error("下载链接签发失败 · 请重新尝试");
   const query = new URLSearchParams({ token });
   const res = await guardedFetch(`/api/admin/bi/exports/${encodeURIComponent(reportId)}/download?${query.toString()}`, { cache: "no-store" });
@@ -746,6 +888,20 @@ async function downloadReportFile(reportId: string) {
   };
 }
 
+/** A recovered L4 file read reuses its received token; it never issues another grant. */
+export const downloadL4NetworkFile = (reportId: string, token: string) => downloadReportFile(reportId, token);
+
+export async function fetchL4NetworkReport(reportId: string, request: { period: string; depth: number }): Promise<LNetworkTreeExportResult> {
+  const report = rec(await apiRequest<unknown>(`/export/${encodeURIComponent(reportId)}`));
+  if (report.reportId !== reportId || report.type !== "NETWORK_TREE" || report.format !== "CSV"
+    || report.scope !== `period=${request.period};depth=${request.depth}` || report.status !== "READY"
+    || report.containsPii !== true || report.maskingPolicy !== "PARTIAL" || report.snapshotAvailable !== true
+    || typeof report.rowCount !== "number" || !Number.isSafeInteger(report.rowCount) || report.rowCount <= 0 || report.rowCount > 100_000) {
+    throw new Error(formatAdminApiError("L4_TREE_RECEIPT_INVALID", "L4_TREE_RECEIPT_INVALID"));
+  }
+  return { reportId, status: "READY", rowCount: report.rowCount, containsPii: true, maskingPolicy: "PARTIAL", downloadTtlHours: 24 };
+}
+
 function withReason<T extends Record<string, unknown>>(body: T, reason: string) {
   return { ...body, reason, operator: currentAdminOperator() };
 }
@@ -756,23 +912,51 @@ export const lBiActions: LBiActions = {
     headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
     body: JSON.stringify(withReason(input, reason)),
   }).then(() => undefined),
-  createRegulatoryReport: (input, reason, stableIdempotencyKey) => regulatoryRequest("/report", {
-    method: "POST",
-    headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
-    body: JSON.stringify(withReason(input, reason)),
-  }).then(() => undefined),
+  createRegulatoryReport: async (input, reason, stableIdempotencyKey) => {
+    const data = await regulatoryRequest<Record<string, unknown>>("/report", {
+      method: "POST",
+      headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
+      body: JSON.stringify(withReason(input, reason)),
+    });
+    try {
+      const created = assertL5ReportContract(data?.created);
+      const disclosure = rec(data.disclosure);
+      if (!/^REG-[A-Z0-9]{8}$/.test(String(created.reportId)) || created.type !== "REGULATORY"
+        || created.status !== "READY" || created.containsPii !== false || created.maskingPolicy !== "MASKED"
+        || created.cycle !== input.period.trim() || data.taskStatus !== "READY"
+        || disclosure.jurisdictionCode !== input.jurisdictionCode.trim().toUpperCase()
+        || String(disclosure.disclosureVersion).toUpperCase() !== input.disclosureVersion.trim().toUpperCase()
+        || disclosure.chapterCount !== 7
+        || data.downloadPath !== `/api/admin/bi/exports/${created.reportId}/download-token`) {
+        throw new Error("Invalid regulatory receipt");
+      }
+    } catch {
+      throw new LOutcomeUnknownError();
+    }
+  },
   createNetworkTreeExport: (query, reason, stableIdempotencyKey) => {
     const params = new URLSearchParams({
       period: query.period,
       detail: "tree",
       depth: String(query.depth),
     });
-    return apiRequest<LNetworkTreeExportResult>(`/export/network?${params.toString()}`, {
+    return apiRequest<unknown>(`/export/network?${params.toString()}`, {
       method: "GET",
       headers: {
         "Idempotency-Key": stableIdempotencyKey,
         "X-Operation-Reason": encodeURIComponent(reason),
       },
+    }, true).then((value) => {
+      const result = rec(value);
+      // exportNetworkTreeOnce returns these fields, not an A2 proposal envelope.
+      if (typeof result.reportId !== "string" || !/^L4TREE-[A-Z0-9]{8}$/.test(result.reportId)
+        || result.status !== "READY" || result.scope !== `period=${query.period};depth=${query.depth}`
+        || typeof result.rowCount !== "number" || !Number.isSafeInteger(result.rowCount) || result.rowCount <= 0 || result.rowCount > 100_000
+        || result.maskingPolicy !== "PARTIAL" || result.containsPii !== true || result.downloadTtlHours !== 24) {
+        throw new LOutcomeUnknownError(formatAdminApiError("L4_TREE_RECEIPT_INVALID", "L4_TREE_RECEIPT_INVALID"));
+      }
+      return { reportId: result.reportId, status: result.status, rowCount: result.rowCount,
+        maskingPolicy: result.maskingPolicy, containsPii: result.containsPii, downloadTtlHours: result.downloadTtlHours };
     });
   },
   reportAction: (reportId, action, reason, includeSensitive = true) => apiRequest(`/reports/${encodeURIComponent(reportId)}/${encodeURIComponent(action)}`, {

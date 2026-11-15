@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import type { K4PaginationQuery, KRiskActions, KRiskData, KRiskOverviewQuery, MultiAccountOverview, ScoringOverview } from "@/lib/admin/k-client";
-import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, OperationApproval, OperatorBriefKind } from "../design-kit";
+import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, InlineOperationApproval, OperationApproval, OperatorBriefKind } from "../design-kit";
 import type { ToastKind } from "@/lib/store/ui";
 
 export type ActionConfirmReq = {
+  initialReason?: string;
   action: ReactNode;
   /** 框上写的短标题，只写动作和对象；action 照旧是记进操作记录的名字（VS-101）。 */
   title?: ReactNode;
@@ -24,6 +25,7 @@ export type ActionConfirmReq = {
   getPendingBusinessValue?: () => BusinessFormValue | undefined;
   completionCopy?: string;
   approval?: OperationApproval;
+  inlineApproval?: InlineOperationApproval;
   /** 生效标签，只在 RdPage 里显示。 */
   effect?: ReactNode;
   /** 确认按钮写动作，比如「确认放行」，默认「确认提交」。 */
@@ -60,6 +62,9 @@ export type ConfirmChip = [text: string, tone: "done" | "ready"];
 export type ConfirmReq = {
   /** A saved original freezes inputs while its result remains unresolved. */
   getPendingReason?: () => string | undefined;
+  /** 原覆盖分，恢复时只展示保存的输入。 */
+  getPendingValue?: () => string | undefined;
+  blockedReason?: string;
   briefKind: OperatorBriefKind;
   action: ReactNode;
   /** 框上写的短标题，不传就用 action（VS-101）。 */
@@ -93,6 +98,11 @@ export type ConfirmReq = {
   remarkHint?: string;
   /** 调用方已展示错误时，共享确认不重复提示。 */
   errorHandled?: boolean | ((error: unknown) => boolean);
+  /**
+   * K 域的结果未知写法（K2、K4 传）：重新打开保存的原操作时标题和按钮写「重试原操作」「按原请求重试」，
+   * 提交后结果未知时框里留一条看得见的提示，理由框的字数范围写在框下。别的域不传，样子不变。
+   */
+  recoveryUi?: boolean;
   okLabel?: string;
   /** 不能撤销的操作传 danger：确认按钮用危险色，标题用警告图标（VS-25）。 */
   confirmTone?: "primary" | "danger";

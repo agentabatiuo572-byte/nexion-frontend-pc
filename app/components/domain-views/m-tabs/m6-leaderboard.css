@@ -1,17 +1,87 @@
-.m6-public-leaderboard .sl-heading { padding-right:203px; flex-wrap:wrap; }
-.m6-public-leaderboard .sl-filters { flex-wrap:wrap; max-width:100%; }
-/* Real month and scope labels need a safe text area beyond the preview's short labels. */
-.m6-public-leaderboard .sl-filters .sl-select:has(select[aria-label="月份"]),
-.m6-public-leaderboard .sl-filters .sl-select:has(select[aria-label="榜单范围"]) { width:120px; min-width:120px; max-width:120px; }
-.m6-public-leaderboard .m6-leaderboard-search { display:flex; align-items:center; gap:8px; margin-left:auto; min-height:40px; font-size:12.5px; }
-.m6-public-leaderboard .m6-leaderboard-search .fld { width:130px; min-width:0; font-size:14px; }
-.m6-public-leaderboard .m6-leaderboard-search button { min-height:40px; padding:0 12px; border:1px solid var(--sl-border); border-radius:8px; font-size:14px; }
-.m6-public-leaderboard .m6-leaderboard-notice { margin:12px 6px; color:var(--ink-2); }
-.m6-public-leaderboard .m6-leaderboard-notice button { margin-left:10px; }
-.m6-leaderboard-summary dt { margin-top:14px; color:var(--ink-3); }
-.m6-leaderboard-summary dd { margin:4px 0 0; overflow-wrap:anywhere; }
-@container sl-board (max-width:1019px) {
-  .m6-public-leaderboard .sl-heading { padding-right:0; }
-  .m6-public-leaderboard .m6-leaderboard-search { margin-left:0; flex-wrap:wrap; }
-  .m6-public-leaderboard .sl-self { margin-top:0; }
+/* M6 业绩榜（改版，rd）。只用 --rd-* 令牌；版式随内容区宽度（容器查询）收。 */
+.m6-page { container: m6-page / inline-size; }
+.m6-page .m6-body { display: contents; }
+.m6-page .m6-board { display: flex; flex-direction: column; gap: var(--rd-section-gap); min-width: 0; }
+.m6-page .m6-ranking-anchor { min-width: 0; outline: none; scroll-margin-top: var(--rd-space-4); }
+.m6-page .m6-ranking-anchor:focus-visible > .rd-panel { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+
+/* 榜单口径：筛选栏右端一行短语加问号。 */
+.m6-page .m6-board-line { display: inline-flex; align-items: center; gap: var(--rd-space-2); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+
+/* 头像：和 M1、M3 一样的圆形，读不到图写姓名首字。 */
+.m6-avatar { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; overflow: hidden; background: var(--rd-brand-soft); color: var(--rd-text); font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); }
+.m6-avatar[data-size="lg"] { width: 48px; height: 48px; font-size: var(--rd-text-section); }
+.m6-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* 前三名：名次从左到右，三张卡等高；第 1 名描金边。整张卡是一颗按钮，点开公开成绩。 */
+.m6-page .m6-podium { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(var(--m6-cols, 3), minmax(0, 1fr)); gap: var(--rd-space-4); align-items: stretch; }
+.m6-page .m6-podium[data-count="1"] { --m6-cols: 1; max-width: 360px; }
+.m6-page .m6-podium[data-count="2"] { --m6-cols: 2; max-width: 720px; }
+.m6-page .m6-podium[data-count="4"] { --m6-cols: 4; }
+.m6-page .m6-podium > li { display: flex; min-width: 0; }
+.m6-page .m6-podium-card {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "avatar rank" "avatar name" "group group" "value value"; align-content: start; height: 100%;
+  column-gap: var(--rd-space-3); row-gap: var(--rd-space-1); width: 100%; padding: var(--rd-space-4); text-align: left;
+  border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); color: var(--rd-text); font: inherit; cursor: pointer; overflow: hidden;
 }
+@media (hover: hover) and (pointer: fine) { .m6-page .m6-podium-card:hover { border-color: var(--rd-line-strong); background: var(--rd-hover); } }
+.m6-page .m6-podium-card:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+.m6-page .m6-podium-card .m6-avatar { grid-area: avatar; align-self: center; }
+.m6-page .m6-podium-rank { grid-area: rank; display: inline-flex; align-items: baseline; gap: var(--rd-space-1); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.m6-page .m6-podium-rank::before { content: "第"; }
+.m6-page .m6-podium-rank::after { content: "名"; }
+.m6-page .m6-podium-rank b { color: var(--rd-text); font-size: var(--rd-text-section); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.m6-page .m6-podium-rank small { order: -1; font-size: inherit; }
+.m6-page .m6-podium-name { grid-area: name; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); }
+.m6-page .m6-podium-group { grid-area: group; display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; margin-top: var(--rd-space-2); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m6-page .m6-podium-value { grid-area: value; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-1); margin-top: var(--rd-space-1); }
+.m6-page .m6-podium-value b { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.m6-page .m6-podium-value small { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+.m6-page .m6-podium > li[data-rank="1"] .m6-podium-card { border-color: var(--rd-role-1); }
+.m6-page .m6-podium > li[data-rank="1"] .m6-podium-rank b { color: var(--rd-role-1); }
+:root[data-theme="light"] .m6-page .m6-podium > li[data-rank="1"] .m6-podium-rank b { color: var(--rd-text); }
+.m6-page .m6-podium-more { display: flex; align-items: center; gap: var(--rd-space-1); margin: var(--rd-space-3) 0 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.m6-page .m6-podium-more .rd-link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+
+/* 全部排名：搜索在面板标题行右边。 */
+.m6-page .m6-search { display: flex; align-items: center; gap: var(--rd-space-2); }
+.m6-page .m6-search .rd-input { width: 220px; }
+.m6-page .m6-table { table-layout: fixed; }
+.m6-page .m6-table th:nth-child(1) { width: 104px; }
+.m6-page .m6-table th:nth-child(2) { width: auto; }
+.m6-page .m6-table th:nth-child(3) { width: 22%; }
+.m6-page .m6-table th:nth-child(4), .m6-page .m6-table th:nth-child(5) { width: 17%; }
+.m6-page .m6-table th:nth-child(6) { width: 120px; }
+.m6-page .m6-th { display: inline-flex; flex-direction: column; align-items: flex-end; }
+.m6-page .m6-th small { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); }
+.m6-page .m6-table th[data-primary] .m6-th { color: var(--rd-text); }
+.m6-page .m6-table th[data-primary] .m6-th::after { content: ""; display: block; width: 100%; height: 2px; margin-top: 2px; border-radius: 1px; background: var(--rd-brand); }
+.m6-page .m6-table td[data-primary] .rd-cell-main { font-weight: var(--rd-weight-semibold); }
+.m6-page .m6-rank { display: inline-flex; align-items: baseline; gap: var(--rd-space-1); font-weight: var(--rd-weight-semibold); font-variant-numeric: tabular-nums; }
+.m6-page .m6-rank small { color: var(--rd-text-3); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); }
+.m6-page .m6-move { color: var(--rd-text-3); }
+.m6-page .m6-move[data-kind="up"] { color: var(--rd-ok); }
+.m6-page .m6-move[data-kind="down"] { color: var(--rd-text-2); }
+.m6-page .m6-identity { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; }
+.m6-page .m6-identity-text { display: flex; flex-direction: column; min-width: 0; }
+.m6-page .m6-identity-text .sl-person-name { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; }
+.m6-page .m6-identity-text .rd-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m6-page .m6-identity-text .m6-name { min-width: 0; max-width: 100%; justify-content: flex-start; padding-inline: 0; font-weight: var(--rd-weight-medium); }
+.m6-page .m6-identity-text .m6-name .rd-btn-face { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m6-page .m6-count-link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+.m6-page .m6-empty { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--rd-space-2); }
+.m6-page .m6-empty .rd-link { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+
+/* 公开成绩弹窗：先是谁，再是名次和三项成绩。 */
+.m6-page .m6-detail-who { display: flex; align-items: center; gap: var(--rd-space-3); }
+.m6-page .m6-detail-who > div { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.m6-page .m6-detail-who strong { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); }
+
+/* 窄内容区：搜索框收窄，表格收头像；前三名四位时两两一行。 */
+@container m6-page (max-width: 900px) {
+  .m6-page .m6-search .rd-input { width: 200px; }
+  .m6-page .m6-table .m6-avatar { display: none; }
+  .m6-page .m6-table th:nth-child(6) { width: 104px; }
+  .m6-page .m6-podium[data-count="4"] { --m6-cols: 2; }
+}
+.m6-page .m6-me { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-progress-bg); color: var(--rd-progress); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-medium); }

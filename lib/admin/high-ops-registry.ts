@@ -628,6 +628,19 @@ export const HIGH_OPS: HighOpDef[] = [
     buildTarget: (ctx) => ({ domain: "K", type: "arbitrage_row", id: String(ctx.rowId) }),
   },
   {
+    op: "k2_otp_initial_config",
+    domain: "K",
+    action: "首次配置验证码设置",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "超管",
+    targetType: "k2_otp_param",
+    buildCommand: (ctx) => ({ domain: "K", op: "k2_otp_initial_config", params: {
+      values: { key: String(ctx.key), value: String(ctx.value), expectedVersion: Number(ctx.expectedVersion) },
+    } }),
+    buildTarget: (ctx) => ({ domain: "K", type: "k2_otp_param", id: String(ctx.key) }),
+  },
+  {
     op: "k3_rule_create",
     domain: "K",
     action: "新建提现风控规则",

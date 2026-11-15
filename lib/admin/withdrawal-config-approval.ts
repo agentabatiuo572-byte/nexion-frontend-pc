@@ -4,18 +4,36 @@ import {
   createA2OperationProposal,
   fetchA2ProposalByKey,
   isA2OutcomeUncertainError,
+  type A2OperationRow,
 } from "./a2-client";
 import { isExplicitRejection } from "./explicit-rejection";
+import { isBCommandRejection } from "./b-command-rejection";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import type { F4AmbassadorPolicyUpdate } from "./f1-client";
+import type { FDomainAttempt } from "./f2-approval";
+import type { B1CommandFacts } from "./b1-commands";
+import type { B5ThresholdFacts } from "./b5-commands";
 
-const attempts = createPendingMutationStore<PendingMutationRecord & { input: string }>({
+export const configApprovalAttempts = createPendingMutationStore<PendingMutationRecord & Partial<FDomainAttempt> & {
+  input: string;
+  g4Ticket?: A2OperationRow;
+  g4Request?: Parameters<typeof createA2OperationProposal>[0];
+  b1Request?: Parameters<typeof createA2OperationProposal>[0];
+  b1Facts?: B1CommandFacts;
+  b1Ticket?: A2OperationRow;
+  b1NotFound?: true;
+  b5Request?: Parameters<typeof createA2OperationProposal>[0];
+  b5Facts?: B5ThresholdFacts;
+  b5Ticket?: A2OperationRow;
+  b5NotFound?: true;
+}>({
   storageKey: "nexion-admin-withdrawal-config-proposals",
   retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.input === "string",
 });
+const attempts = configApprovalAttempts;
 
 const commands = {
   D5: { domain: "D", op: "d5_withdrawal_limits", type: "withdrawal_limits", action: "放宽提现参数" },
@@ -75,7 +93,191 @@ export function pendingThresholdConfigApproval<T extends keyof ThresholdApproval
     || !fields.every((key) => typeof input[0][key] === "number" && Number.isFinite(input[0][key]))) {
     throw new Error("原审批内容不完整，请到操作记录核对。");
   }
+  if (source === "B1" && record.b1Request) {
+    const request = record.b1Request;
+    if (request.action !== "降低兑付覆盖率红线" || request.sourceDomain !== "B1" || request.obj !== "current"
+      || request.command?.domain !== "B" || request.command.op !== "b1_coverage_thresholds"
+      || request.target?.domain !== "B" || request.target.type !== "coverage_thresholds" || request.target.id !== "current"
+      || request.type !== "fund" || request.amplifies !== true || request.sos !== false || request.roleGate !== "超管"
+      || typeof request.operator !== "string" || typeof request.operatorRole !== "string"
+      || JSON.stringify([request.command.params.values, request.reason]) !== record.input) {
+      throw new Error("原审批内容不完整，请到操作记录核对。");
+    }
+  }
+  if (source === "B1" && record.b1Facts && (typeof record.b1Facts.valuationReliable !== "boolean" || typeof record.b1Facts.redlineBreached !== "boolean"
+    || ![record.b1Facts.reserveUsd, record.b1Facts.coverageRatio, record.b1Facts.redlinePct, record.b1Facts.healthyPct].every(Number.isFinite)
+    || record.b1Facts.thresholdVersion !== null && !Number.isSafeInteger(record.b1Facts.thresholdVersion))) {
+    throw new Error("原审批内容不完整，请到操作记录核对。");
+  }
+  if (source === "B5" && record.b5Request) {
+    const request = record.b5Request;
+    if (request.sourceDomain !== "B5" || request.obj !== "current" || request.action !== "提高提现压力红线"
+      || request.command?.domain !== "B" || request.command.op !== "b5_bankrun_thresholds"
+      || request.target?.domain !== "B" || request.target.type !== "bankrun_thresholds" || request.target.id !== "current"
+      || typeof request.operator !== "string" || typeof request.operatorRole !== "string" || request.type !== "fund"
+      || request.amplifies !== true || request.sos !== false || request.roleGate !== "超管"
+      || JSON.stringify([request.command.params.values, request.reason]) !== record.input) {
+      throw new Error("原审批内容不完整，请到操作记录核对。");
+    }
+  }
+  if (source === "B5" && record.b5Facts && (!Number.isSafeInteger(record.b5Facts.version)
+    || ![record.b5Facts.yellowPct, record.b5Facts.redPct].every(Number.isFinite)
+    || record.b5Facts.ratio24h !== null && !Number.isFinite(record.b5Facts.ratio24h)
+    || !["red", "yellow", "green", "unavailable"].includes(record.b5Facts.light))) {
+    throw new Error("原审批内容不完整，请到操作记录核对。");
+  }
   return { ...record, values: input[0] as ThresholdApprovalValues[T], reason: input[1] };
+}
+
+/** B5 uses the shared proposal store but never treats a creation replay as live pending status. */
+export async function submitB5ThresholdApproval<T>(
+  session: AdminSession,
+  values: ThresholdApprovalValues["B5"],
+  reason: string,
+  readActive: () => Promise<T>,
+  mode: "new" | "query" | "retry",
+  facts?: B5ThresholdFacts,
+) {
+  const slot = approvalSlot("B5", session.adminId);
+  const previous = pendingThresholdConfigApproval("B5", session.adminId);
+  if (mode !== "new" && !previous) return null;
+  if (mode === "new" && previous) throw new A2OutcomeUncertainError("请先查询原审批单。", previous.commandKey);
+  const key = previous?.commandKey ?? createA2CommandKey("b5_bankrun_thresholds");
+  const input = previous?.input ?? JSON.stringify([values, reason]);
+  const request = previous ? previous.b5Request : {
+    action: "提高提现压力红线", obj: "current", beforeValue: "—", afterValue: "—",
+    operator: session.operator || session.username, operatorRole: roleLabel(session.role),
+    type: "fund" as const, amplifies: true, sos: false, roleGate: "超管", reason, sourceDomain: "B5",
+    command: { domain: "B", op: "b5_bankrun_thresholds", params: { values } },
+    target: { domain: "B", type: "bankrun_thresholds", id: "current" },
+  };
+  const extra = { input, b5Request: request, b5Facts: previous?.b5Facts ?? facts };
+  attempts.remember(slot, key, extra);
+  if (!attempts.isDurablyStored(slot, key)) {
+    if (!previous) attempts.forget(slot, key);
+    throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
+  }
+  const queryOriginal = async () => {
+    try {
+      const ticket = await fetchA2ProposalByKey(key, true, "metadata");
+      // 111e00cd OpsAuditCenterService.ticketMetadata emits command.op for B5 too.
+      if (ticket && (ticket.mine !== true || ticket.obj !== "current" || ticket.action !== "提高提现压力红线"
+        || ticket.operationCode !== "b5_bankrun_thresholds")) {
+        throw new A2OutcomeUncertainError("回执与原审批不匹配，请继续核对。", key);
+      }
+      attempts.remember(slot, key, { ...extra, ...(ticket ? { b5Ticket: ticket }
+        : previous && previous.expiresAt <= Date.now() ? { b5NotFound: true as const } : {}) });
+      return ticket;
+    } catch {
+      attempts.remember(slot, key, extra);
+      throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
+    }
+  };
+  let ticket = previous ? await queryOriginal() : null;
+  if (!ticket) {
+    if (mode === "query") return null;
+    if (previous && (previous.expiresAt <= Date.now() || previous.b5Ticket || !request)) {
+      throw new A2OutcomeUncertainError("原审批暂未查到，请继续查询，不能重新提交。", key);
+    }
+    if (!session.authorities.includes("overview_b5_threshold_write")) throw new Error("当前账号缺少调整黄线红线的权限。");
+    try {
+      await createA2OperationProposal(request!, key, true);
+    } catch (error) {
+      if (isBCommandRejection(error, !!previous)) attempts.forget(slot, key);
+      throw error;
+    }
+    ticket = await queryOriginal();
+    if (!ticket) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
+  }
+  let active: T | null = null;
+  let activeReadFailed = false;
+  try { active = await readActive(); }
+  catch { activeReadFailed = true; }
+  if (ticket.status !== "pending") attempts.forget(slot, key);
+  // 读取失败时页面上已有待审批条和读取失败块，这里只补一句短的，不重复「等批准」。
+  return { active, activeReadFailed, ticket, acknowledgement: ticket.status === "pending"
+    ? `已提交审批 · 审批单 ${ticket.id}${activeReadFailed ? "；数据没读到，暂不能再改" : " · 等待另一位超级管理员批准"}`
+    : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果${activeReadFailed ? "；数据没读到，暂不能再改" : ""}` };
+}
+
+/** Call only after the existing confirmation UI confirms R1-提案过期 release. */
+export function releaseExpiredB5ThresholdApproval(adminId: string | number, commandKey: string) {
+  const record = pendingThresholdConfigApproval("B5", adminId);
+  if (!record || record.commandKey !== commandKey || record.expiresAt > Date.now() || !record.b5NotFound) return false;
+  attempts.forget(approvalSlot("B5", adminId), commandKey);
+  return true;
+}
+
+/** B1 keeps the complete request and queries the live ticket after any replay. */
+export async function submitB1ThresholdApproval<T>(
+  session: AdminSession,
+  values: ThresholdApprovalValues["B1"],
+  reason: string,
+  readActive: () => Promise<T>,
+  mode: "new" | "query" | "retry",
+  facts?: B1CommandFacts,
+) {
+  const slot = approvalSlot("B1", session.adminId);
+  const previous = pendingThresholdConfigApproval("B1", session.adminId);
+  if (mode !== "new" && !previous) return null;
+  if (mode === "new" && previous) throw new A2OutcomeUncertainError("请先查询原审批单。", previous.commandKey);
+  const input = previous?.input ?? JSON.stringify([values, reason]);
+  const key = previous?.commandKey ?? createA2CommandKey("b1_coverage_thresholds");
+  const request = previous ? previous.b1Request : {
+    action: "降低兑付覆盖率红线", obj: "current", beforeValue: "—", afterValue: "—",
+    operator: session.operator || session.username, operatorRole: roleLabel(session.role),
+    type: "fund" as const, amplifies: true, sos: false, roleGate: "超管", reason, sourceDomain: "B1",
+    command: { domain: "B", op: "b1_coverage_thresholds", params: { values } },
+    target: { domain: "B", type: "coverage_thresholds", id: "current" },
+  };
+  const extra = { input, b1Request: request, b1Facts: previous?.b1Facts ?? facts };
+  attempts.remember(slot, key, extra);
+  if (!attempts.isDurablyStored(slot, key)) {
+    if (!previous) attempts.forget(slot, key);
+    throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
+  }
+  const queryOriginal = async () => {
+    try {
+      const ticket = await fetchA2ProposalByKey(key, true);
+      // 111e00cd ticketMetadata now returns command.op for B1, including history.
+      if (ticket && (ticket.mine !== true || ticket.obj !== "current" || ticket.action !== "降低兑付覆盖率红线"
+        || ticket.operationCode !== "b1_coverage_thresholds")) {
+        throw new A2OutcomeUncertainError("回执与原审批不匹配，请继续核对。", key);
+      }
+      attempts.remember(slot, key, { ...extra, ...(ticket ? { b1Ticket: ticket } : { b1NotFound: true as const }) });
+      return ticket;
+    } catch {
+      // A saved creation receipt is not the current approval status.
+      attempts.remember(slot, key, extra);
+      throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
+    }
+  };
+  let ticket = previous ? await queryOriginal() : null;
+  if (!ticket) {
+    if (mode === "query") return null;
+    if (previous && (previous.expiresAt <= Date.now() || previous.b1Ticket || !request)) {
+      throw new A2OutcomeUncertainError("原审批暂未查到，请继续查询，不能重新提交。", key);
+    }
+    if (!session.authorities.includes("overview_b1_redline_write")) throw new Error("当前账号缺少设置兑付覆盖率阈值的权限。");
+    try {
+      await createA2OperationProposal(request!, key, true);
+    } catch (error) {
+      if (isBCommandRejection(error, !!previous)) attempts.forget(slot, key);
+      throw error;
+    }
+    ticket = await queryOriginal();
+    if (!ticket) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
+  }
+  // Re-read current data. A successful replay must never publish its old snapshot.
+  let active: T | null = null;
+  let activeReadFailed = false;
+  try { active = await readActive(); }
+  catch { activeReadFailed = true; }
+  if (ticket.status !== "pending") attempts.forget(slot, key);
+  // 读取失败时页面上已有待审批条和读取失败块，这里只补一句短的，不重复「等批准」。
+  return { active, activeReadFailed, ticket, acknowledgement: ticket.status === "pending"
+    ? `已提交审批 · 审批单 ${ticket.id}${activeReadFailed ? "；数据没读到，暂不能再改" : " · 等待另一位超级管理员批准"}`
+    : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果${activeReadFailed ? "；数据没读到，暂不能再改" : ""}` };
 }
 
 export function configApprovalOriginalInput(sourceDomain: "H8", input: string): H8ConfigApprovalInput;
@@ -118,8 +320,27 @@ export async function submitConfigApproval<T>(
   }
   const input = JSON.stringify([values, reason]);
   const key = previous?.commandKey ?? createA2CommandKey(op);
+  if (sourceDomain === "G4" && previous?.g4Request) {
+    const saved = previous.g4Request;
+    if (saved.sourceDomain !== "G4" || saved.obj !== "dividend" || saved.command?.domain !== "G" || saved.command.op !== op
+      || saved.target?.domain !== "G" || saved.target.type !== "genesis_param" || saved.target.id !== "dividend"
+      || typeof saved.operator !== "string" || typeof saved.operatorRole !== "string"
+      || JSON.stringify([saved.command.params, saved.reason]) !== previous.input) {
+      throw new A2OutcomeUncertainError("原日分红请求不完整，请保留命令号并核对原审批单。", key);
+    }
+  }
+  const objectId = values && sourceDomain === "F3" && "ownerUserId" in values && "settlementDate" in values
+    ? `${values.ownerUserId}:${values.settlementDate}`
+    : sourceDomain === "F4" ? "default" : sourceDomain === "G4" ? "dividend" : scope?.objectId ?? "current";
+  const proposal = sourceDomain === "G4" && previous?.g4Request ? previous.g4Request : values ? {
+    action, obj: objectId, beforeValue: "—", afterValue: "—",
+    operator: session.operator || session.username, operatorRole: roleLabel(session.role),
+    type: "fund" as const, amplifies: true, sos: false, roleGate: "超管", reason, sourceDomain,
+    command: { domain, op, params: sourceDomain === "G4" ? { ...values } : { values } },
+    target: { domain, type, id: objectId },
+  } : undefined;
   if (!previous) {
-    attempts.remember(slot, key, { input });
+    attempts.remember(slot, key, { input, ...(sourceDomain === "G4" ? { g4Request: proposal } : {}) });
     if (!attempts.isDurablyStored(slot, key)) {
       attempts.forget(slot, key);
       throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
@@ -140,7 +361,8 @@ export async function submitConfigApproval<T>(
       }
       canClearOnRejection = ticket === null;
     }
-    if (previous && !ticket && previous.expiresAt <= Date.now()) {
+    if (sourceDomain === "G4" && previous?.g4Ticket && !ticket) throw new A2OutcomeUncertainError("暂未查到已收录的原审批单，请继续核对，不能重新提交。", key);
+    if (previous && !ticket && (previous.expiresAt <= Date.now() || sourceDomain === "G4" && Date.now() < previous.createdAt)) {
       throw new A2OutcomeUncertainError("原审批命令已过期，暂未查到结果。请到操作记录核对，勿重复提交。", key);
     }
     if (lookupOnly && !ticket) return null;
@@ -148,26 +370,8 @@ export async function submitConfigApproval<T>(
       throw new A2OutcomeUncertainError("请用原配置和原理由核对该命令，或在操作记录中查询。", key);
     }
     if (!ticket) {
-      if (!values) throw new Error("请填写完整后提交。");
-      const objectId = sourceDomain === "F3" && "ownerUserId" in values && "settlementDate" in values
-        ? `${values.ownerUserId}:${values.settlementDate}`
-        : sourceDomain === "F4" ? "default" : sourceDomain === "G4" ? "dividend" : scope?.objectId ?? "current";
-      ticket = await createA2OperationProposal({
-        action,
-        obj: objectId,
-        beforeValue: "—",
-        afterValue: "—",
-        operator: session.operator || session.username,
-        operatorRole: roleLabel(session.role),
-        type: "fund",
-        amplifies: true,
-        sos: false,
-        roleGate: "超管",
-        reason,
-        sourceDomain,
-        command: { domain, op, params: sourceDomain === "G4" ? { ...values } : { values } },
-        target: { domain, type, id: objectId },
-      }, key, true);
+      if (!proposal) throw new Error("请填写完整后提交。");
+      ticket = await createA2OperationProposal(proposal, key, true);
     }
   } catch (error) {
     if (error instanceof Error && "backendMessage" in error
@@ -176,10 +380,19 @@ export async function submitConfigApproval<T>(
     }
     // 查无原单后的恢复，只能由带原因码的明确拒绝解除；权限、限流等仍保留原记录。
     // 首次新命令沿用原来的拒绝清理规则。
-    if (canClearOnRejection && (previous ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error))) attempts.forget(slot, key);
+    if (canClearOnRejection && (previous || sourceDomain === "G4" ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error))) attempts.forget(slot, key);
     throw error;
   }
 
+  if (sourceDomain === "G4") {
+    // AuditReplayBusinessPermissionGuard.validateProposalContext canonicalizes
+    // all dividend tickets; OpsAuditCenterService.ticketMetadata adds no G4 code.
+    if (ticket.mine !== true || ticket.obj !== "dividend" || ticket.action !== "批准创世分红操作"
+      || ticket.operationCode && ticket.operationCode !== op) {
+      throw new A2OutcomeUncertainError("回执与原日分红审批不匹配，请继续核对。", key);
+    }
+    attempts.remember(slot, key, { input: previous?.input ?? input, g4Ticket: ticket, g4Request: proposal });
+  }
   let active;
   try {
     active = await readActive();

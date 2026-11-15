@@ -11,7 +11,7 @@ import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { fetchK1MultiAccountOverview, fetchK2ArbitrageOverview, fetchK3WithdrawRuleOverview, fetchK4ScoringOverview, fetchKRiskOverviews, kRiskActions, type KRiskActions, type KRiskData, type KRiskOverviewQuery } from "@/lib/admin/k-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { KConfirmModal } from "./k-tabs/confirm-modal";
+import { KConfirmModal } from "./k-tabs/k-confirm-modal";
 import { K1MultiAccount } from "./k-tabs/k1-multiaccount";
 import { K2HeaderActions, K2Arbitrage } from "./k-tabs/k2-arbitrage";
 import { K3Rules } from "./k-tabs/k3-rules";
@@ -32,7 +32,34 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
   const [contentError, setContentError] = useState<string | null>(null);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
+  const [k2RereadPending, setK2RereadPending] = useState(false);
+  const [k2CommandVersion, setK2CommandVersion] = useState(0);
+  const [k4RereadPending, setK4RereadPending] = useState(false);
+  const [k4CommandVersion, setK4CommandVersion] = useState(0);
   const requestSequence = useRef(0);
+  const requireK4Reread = useCallback(() => {
+    requestSequence.current += 1;
+    setK4RereadPending(true);
+  }, []);
+  const syncK4Commands = useCallback(() => setK4CommandVersion(version => version + 1), []);
+  useEffect(() => {
+    if (tab !== "K4" || (!k4RereadPending && risk.scoring)) return;
+    if (mc && mc.getPendingReason?.() === undefined) setActionConfirm(null);
+    if (cf && cf.getPendingReason?.() === undefined) setCf(null);
+  }, [tab, k4RereadPending, risk.scoring, mc, cf, k4CommandVersion]);
+  const requireK2Reread = useCallback(() => {
+    // An earlier in-flight read cannot satisfy a recovery that just completed.
+    requestSequence.current += 1;
+    setK2RereadPending(true);
+  }, []);
+  const syncK2Commands = useCallback(() => setK2CommandVersion((version) => version + 1), []);
+
+  useEffect(() => {
+    if (tab !== "K2" || (!k2RereadPending && risk.arbitrage)) return;
+    if (mc && mc.getPendingReason?.() === undefined) setActionConfirm(null);
+    if (cf && cf.getPendingReason?.() === undefined) setCf(null);
+    // Settlement can turn the same recovery dialog into a stale new-edit dialog.
+  }, [tab, k2RereadPending, risk.arbitrage, mc, cf, k2CommandVersion]);
 
   const reloadKRisk = useCallback(async (query?: KRiskOverviewQuery) => {
     const sequence = ++requestSequence.current;
@@ -61,11 +88,13 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
         const arbitrage = await fetchK2ArbitrageOverview();
         if (sequence === requestSequence.current) {
           setRisk((current) => ({ ...current, arbitrage }));
+          setK2RereadPending(false);
         }
       } else if (query?.scoring || tab === "K4") {
         const scoring = await fetchK4ScoringOverview(query?.scoring);
         if (sequence === requestSequence.current) {
           setRisk((current) => ({ ...current, scoring }));
+          setK4RereadPending(false);
         }
       } else {
         const next = await fetchKRiskOverviews(query);
@@ -84,6 +113,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
     const scoring = await fetchK4ScoringOverview(query);
     if (activeSequence === requestSequence.current) {
       setRisk((current) => ({ ...current, scoring }));
+      setK4RereadPending(false);
       return scoring;
     }
   }, []);
@@ -116,7 +146,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "K1" && tab !== "K3" && <DomainHeader {...meta} right={right} />}
+      {tab !== "K1" && tab !== "K2" && tab !== "K3" && tab !== "K4" && <DomainHeader {...meta} right={right} />}
 
       {tab !== "K1" && tab !== "K2" && tab !== "K3" && tab !== "K4" && contentError && (
         <section className="l-card">
@@ -129,9 +159,9 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
       )}
 
       {tab === "K1" && <K1MultiAccount ctx={ctx} />}
-      {tab === "K2" && <K2Arbitrage ctx={ctx} />}
+      {tab === "K2" && <K2Arbitrage ctx={ctx} rereadPending={k2RereadPending} onRereadRequired={requireK2Reread} onCommandsChange={syncK2Commands} />}
       {tab === "K3" && <K3Rules ctx={ctx} />}
-      {tab === "K4" && <K4Scoring ctx={ctx} />}
+      {tab === "K4" && <K4Scoring ctx={ctx} rereadPending={k4RereadPending} onRereadRequired={requireK4Reread} onCommandsChange={syncK4Commands} />}
 
       {mc && (
         <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
@@ -145,6 +175,22 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
           businessForm={mc.businessForm}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
+          getPendingReason={mc.getPendingReason}
+          initialReason={mc.initialReason}
+          getPendingBusinessValue={mc.getPendingBusinessValue}
+          approval={mc.approval}
+          inlineApproval={mc.inlineApproval ? {
+            ...mc.inlineApproval,
+            retry: mc.inlineApproval.retry ? async () => {
+              await mc.inlineApproval!.retry!();
+              setActionConfirm((current) => current === mc ? null : current);
+            } : undefined,
+            recover: async (reason, value, editValue) => {
+              const found = await mc.inlineApproval!.recover(reason, value, editValue);
+              if (found) setActionConfirm((current) => current === mc ? null : current);
+              return found;
+            },
+          } : undefined}
           effect={mc.effect}
           confirmLabel={mc.confirmLabel}
           confirmTone={mc.confirmTone}
@@ -154,7 +200,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
           coverageLead={mc.coverageLead}
           reasonPlaceholder={mc.reasonPlaceholder}
           onClose={() => setActionConfirm(null)}
-          onConfirm={async (reason, newValue, businessValue) => { await mc.run(reason, newValue, businessValue); setActionConfirm(null); }}
+          onConfirm={async (reason, newValue, businessValue) => { await mc.run(reason, newValue, businessValue); setActionConfirm((current) => current === mc ? null : current); }}
         />
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
@@ -162,5 +208,5 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
     </>
   );
 
-  return tab === "K1" || tab === "K3" ? <RdPage className="kdom">{page}</RdPage> : <div className="dkpage kdom">{page}</div>;
+  return tab === "K1" || tab === "K2" || tab === "K3" || tab === "K4" ? <RdPage className="kdom">{page}</RdPage> : <div className="dkpage kdom">{page}</div>;
 }
