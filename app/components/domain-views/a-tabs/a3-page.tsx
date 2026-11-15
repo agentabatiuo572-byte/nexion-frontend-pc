@@ -451,7 +451,8 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
             <Panel key={param.key} className="a3-param" title={name} icon={isRate ? Gauge : ShieldCheck} tone={isRate ? "role-2" : "role-1"}
               explain={<>
                 <p>{isRate ? "App 和后台的普通接口每分钟合计能处理多少个请求。按接口分组计数，每分钟重新计；后台登录、支付回调、健康检查各有单独的额度。" : "单笔提现达到这个金额就进人工强审。和「提现参数」里的小额免审线是两回事。"}</p>
-                <p>只有超级管理员能改，不走审批。系统里叫「{param.name}」（<span data-mono>{param.key}</span>）。</p>
+                <p>只有超级管理员能改，不走审批。系统里叫「{param.name}」。</p>
+                <p className="rd-note" data-mono>{param.key}</p>
               </>}
               actions={param.writable ? <Button size="sm" loading={mutating === param.key} disabledReason={commands.find(`param:${param.key}`) ? "结果未知" : !overviewReady.current ? "正在读取" : mutating && mutating !== param.key ? "另一项正在提交" : undefined} onClick={() => paramChg(param)}>调整</Button> : <span className="rd-note">只读</span>}>
               <div className="a3-param-value" data-empty={value === null ? "" : undefined}>
