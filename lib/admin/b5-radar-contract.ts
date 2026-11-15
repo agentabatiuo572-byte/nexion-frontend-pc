@@ -1,6 +1,7 @@
 import { parseStrictFiniteNumber } from "./strict-number.ts";
 import { isConsecutiveDayLabels } from "./time-series-contract.ts";
 import { requiredReadAuthority } from "./cross-domain-authority.ts";
+import { readB5Amount } from "./b5-money.ts";
 
 export const PRESSURE_RED_LINE = 0.7;
 const GATE_KEYS = ["withdraw", "staking", "genesis", "exchange", "trial"] as const;
@@ -32,9 +33,9 @@ export type B5Radar = {
     byCategory: Array<{ category: string; label: string; count: number }>;
   };
   withdrawBacklog: {
-    byState: Array<{ state: typeof BACKLOG_STATES[number]; count: number; amountUsdt: number; overSlaCount: number; slaHours: number }>;
+    byState: Array<{ state: typeof BACKLOG_STATES[number]; count: number; amountUsdt: string; overSlaCount: number; slaHours: number }>;
     totalCount: number;
-    totalAmountUsdt: number;
+    totalAmountUsdt: string;
     slaHours: number;
     overSlaCount: number;
     light: Light;
@@ -170,7 +171,7 @@ export function normalizeB5Radar(value: unknown): B5Radar {
     return {
       state: text(item.state, `withdrawBacklog.byState.${index}.state`) as typeof BACKLOG_STATES[number],
       count: whole(item.count, `withdrawBacklog.byState.${index}.count`),
-      amountUsdt: num(item.amountUsdt, `withdrawBacklog.byState.${index}.amountUsdt`),
+      amountUsdt: readB5Amount(item.amountUsdt, `withdrawBacklog.byState.${index}.amountUsdt`),
       overSlaCount: whole(item.overSlaCount, `withdrawBacklog.byState.${index}.overSlaCount`),
       slaHours: whole(item.slaHours, `withdrawBacklog.byState.${index}.slaHours`),
     };
@@ -288,12 +289,14 @@ export function normalizeB5Radar(value: unknown): B5Radar {
   if (abnormalCount < abnormalCategoryMax || abnormalCount > abnormalCategorySum) invalid("abnormalAccounts.count");
 
   const totalCount = whole(backlog.totalCount, "withdrawBacklog.totalCount");
-  const totalAmountUsdt = num(backlog.totalAmountUsdt, "withdrawBacklog.totalAmountUsdt");
+  const totalAmountUsdt = readB5Amount(backlog.totalAmountUsdt, "withdrawBacklog.totalAmountUsdt");
   const slaHours = whole(backlog.slaHours, "withdrawBacklog.slaHours");
   const overSlaCount = whole(backlog.overSlaCount, "withdrawBacklog.overSlaCount");
   const backlogLight = light(backlog.light, "withdrawBacklog.light");
   if (totalCount !== byState.reduce((sum, item) => sum + item.count, 0)) invalid("withdrawBacklog.totalCount");
-  close(totalAmountUsdt, byState.reduce((sum, item) => sum + item.amountUsdt, 0), 0.01, "withdrawBacklog.totalAmountUsdt");
+  const amountScale = Math.max(...[totalAmountUsdt, ...byState.map(item => item.amountUsdt)].map(value => value.split(".")[1]?.length ?? 0));
+  const scaledAmount = (value: string) => { const [whole, fraction = ""] = value.split("."); return BigInt(whole + fraction.padEnd(amountScale, "0")); };
+  if (scaledAmount(totalAmountUsdt) !== byState.reduce((sum, item) => sum + scaledAmount(item.amountUsdt), BigInt(0))) invalid("withdrawBacklog.totalAmountUsdt");
   if (overSlaCount !== byState.reduce((sum, item) => sum + item.overSlaCount, 0)) invalid("withdrawBacklog.overSlaCount");
   if (byState.some((item) => item.overSlaCount > item.count)) invalid("withdrawBacklog.byState.overSlaCount");
   if (byState.some((item) => item.slaHours !== slaHours)) invalid("withdrawBacklog.slaHours");

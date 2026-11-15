@@ -13,6 +13,7 @@ import type { B5Radar } from "@/lib/admin/b5-client";
 import { UNAVAILABLE_GATES, byGateDisplayOrder } from "@/lib/admin/j-client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { amountText } from "@/lib/admin/treasury-amount";
+import { b5AmountDigits, b5AmountText } from "@/lib/admin/b5-money";
 import { fmtConfigPct, fmtNum } from "@/lib/format";
 
 export type DimensionKey = "bankrun" | "abnormal-accounts" | "withdraw-backlog" | "kill-switches" | "coverage";
@@ -115,6 +116,7 @@ const BACKLOG_STATE: Record<string, string> = { submitted: "已提交", "review-
 
 function backlogDimension(data: B5Radar): Dimension {
   const w = data.withdrawBacklog;
+  const amountDigits = b5AmountDigits([...w.byState.map(row => row.amountUsdt), w.totalAmountUsdt]);
   return {
     key: "withdraw-backlog",
     name: "提现积压",
@@ -134,14 +136,14 @@ function backlogDimension(data: B5Radar): Dimension {
             <span>{BACKLOG_STATE[row.state] ?? "其他"}</span>
             <span className="b5-num" data-zero={row.count === 0 ? "" : undefined}>{fmtNum(row.count)} 单</span>
             <span className="b5-num" data-tone={row.overSlaCount > 0 ? "warn" : undefined} data-zero={row.overSlaCount === 0 ? "" : undefined}>{fmtNum(row.overSlaCount)} 单</span>
-            <span className="b5-num" data-zero={row.amountUsdt === 0 ? "" : undefined}>{amountText(row.amountUsdt)}</span>
+            <span className="b5-num" data-zero={!/[1-9]/.test(row.amountUsdt) ? "" : undefined}>{b5AmountText(row.amountUsdt, amountDigits)}</span>
           </div>
         ))}
         <div className="b5-backlog-row" data-total="">
           <span>合计</span>
           <span className="b5-num">{fmtNum(w.totalCount)} 单</span>
           <span className="b5-num" data-tone={w.overSlaCount > 0 ? "warn" : undefined}>{fmtNum(w.overSlaCount)} 单</span>
-          <span className="b5-num">{amountText(w.totalAmountUsdt)}</span>
+          <span className="b5-num">{b5AmountText(w.totalAmountUsdt, amountDigits)}</span>
         </div>
       </div>
     ),
