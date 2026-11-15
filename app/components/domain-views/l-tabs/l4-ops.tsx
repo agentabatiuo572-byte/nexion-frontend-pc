@@ -332,7 +332,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       action: downloadOnly ? "下载团队明细" : "导出团队明细",
       detail: (
         <div>
-          <p>按 <b>{periodLabel}</b> 加入的时间导出团队关系，行数以导出为准。</p>
+          <p>按 <b>{periodLabel}</b> 加入的关系导出，行数以导出为准。</p>
           <p>用户编码部分隐藏，不含手机号、昵称。</p>
           <p>下载链接 24 小时有效，导出留高风险操作记录。</p>
         </div>
