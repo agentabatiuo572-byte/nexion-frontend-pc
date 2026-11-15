@@ -69,6 +69,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   }, []);
   useEffect(() => {
     if (!recovery) return;
+    setConflicted(false);
     setPendingKey(recovery.commandKey);
     setEditor(recovery.mode === "upload" ? { mode: "upload", document: recovery.document, file: null, fields: recovery.fields }
       : { mode: "restore", document: recovery.document, reason: recovery.fields.reason });
