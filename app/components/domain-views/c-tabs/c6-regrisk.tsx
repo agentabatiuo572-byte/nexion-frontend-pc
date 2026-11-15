@@ -45,6 +45,14 @@ const CAPTCHA_RECOVERY_LABELS: Record<string, string> = {
 
 /** 关闭期间仍然有效的部分（后端事实 F06、待后端 BE-04）。 */
 const CAPTCHA_LIMITS_STILL_ON = "重发冷却、发送次数上限、IP 频率限制";
+const CAPTCHA_SCENE_LABEL = { REGISTER: "注册", LOGIN: "登录", RESET: "找回密码" } as const;
+
+/** 关闭期间仍要验证的 H5 注册（后端 h5RegisterCaptcha / h5RegisterMissingDeviceCaptcha）；旧后端没有标志时用原写法。 */
+function h5ForcedText(overview: UserRegistrationRiskOverview) {
+  if (overview.h5RegisterCaptcha === true) return "H5 注册";
+  if (overview.h5RegisterCaptcha === false && overview.h5RegisterMissingDeviceCaptcha === true) return "缺设备信息的 H5 注册";
+  return "H5 注册的强制验证";
+}
 
 function text(value: unknown, fallback = "—") {
   return value === null || value === undefined || String(value).trim() === "" ? fallback : String(value);
@@ -338,6 +346,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const lockParams = params.filter((param) => param.group === "lock");
   const otpCaptchaAfterSends = overview.captchaAfterSends!;
   const otpCaptchaStart = otpCaptchaAfterSends + 1;
+  const stats = overview.stats;
+  const alwaysScenes = overview.captchaAlwaysScenes;
   const captchaRestoreAt = overview.stats?.captchaTemporarilyDisabled ? text(overview.stats.captchaRestoreAt, "") : "";
   const k1Guards = overview?.k1Guards ?? [];
   const k1Path = text(overview?.k1Path, K1_PATH_FALLBACK);
@@ -577,7 +587,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     facts: (
       <>
         <Facts>
-          <Fact k="关闭期间仍会验证">H5 注册的强制验证</Fact>
+          <Fact k="关闭期间仍会验证">{h5ForcedText(basis)}</Fact>
           <Fact k="关闭期间照常执行">{CAPTCHA_LIMITS_STILL_ON}</Fact>
           <Fact k="提前恢复">有本页修改权限的人点「立即恢复」</Fact>
         </Facts>
@@ -667,12 +677,12 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           href={reach(C5_PATH) ? C5_PATH : undefined} openLabel="到安全与登录设备查看被锁的账户"
           explain="今天新触发的锁定次数，同一个账户锁两次算两次；不是现在仍被锁的人数。要看或解除某个账户的锁定，到「安全与登录设备」。" />
         <Stat label="今日验证码记录" value={toNumber(overview?.stats?.otpToday).toLocaleString("en-US")} unit="次" icon={MessageSquareText} tone="role-2"
-          explain="今天登录、两步验证等申请验证码的次数，不含注册验证码，也不代表短信都送达了。统计范围已提给技术补全。" />
+          explain={`今天登录、两步验证等申请验证码的次数，${stats?.otpIncludesRegistration === true ? "含" : "不含"}注册验证码，${stats?.otpCountsSuccessfulSends === true ? "只算发送成功的" : stats?.otpCountsSuccessfulSends === false ? "发送失败的也算在内" : "也不代表短信都送达了"}。${stats?.otpIncludesRegistration === true ? "" : "统计范围已提给技术补全。"}`} />
         <Stat label="今日人机验证记录" value={toNumber(overview?.stats?.captchaTriggeredToday).toLocaleString("en-US")} unit="次" icon={Fingerprint} tone="role-2"
-          explain="统计要求拖滑块的次数。系统暂时还没开始记录这类情况，0 不代表今天没人拖过滑块，已提给技术补上。" />
+          explain={stats?.captchaTriggeredProducerFound === true ? "统计要求拖滑块的次数。" : "统计要求拖滑块的次数。系统暂时还没开始记录这类情况，0 不代表今天没人拖过滑块，已提给技术补上。"} />
         <Stat label="近 7 天多账户关联组" value={toNumber(overview?.stats?.stuffingClusters7d).toLocaleString("en-US")} unit="组" icon={Network} tone="role-3"
           href={reach(k1Path) ? k1Path : undefined} openLabel="到多账户风险排查查看关联组"
-          explain="近 7 天新出现、达到多账户阈值的关联组数，不只是批量试密码，也不分是否已处理。明细在「多账户风险排查」。" />
+          explain={`近 7 天${stats?.stuffingClusters7dCountsFirstInsertedOnly === false ? "" : "新出现、"}达到多账户阈值的关联组数${stats?.stuffingClusters7dIsCredentialStuffing === true ? "" : "，按共用注册 IP、设备和支付方式关联，不是试密码的检测"}${stats?.stuffingClusters7dIncludesAllDispositions === false ? "" : "，已处理的也算"}。明细在「多账户风险排查」。`} />
       </StatBand>
 
       <div className="rd-split c6-main" data-even="">
@@ -714,11 +724,12 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           <KeyValues rows={[
             ...(captchaOff ? [
               { key: "left", label: "读取时还剩", value: remainingMinutes > 0 ? `约 ${remainingMinutes.toLocaleString("en-US")} 分钟` : "—", explain: "按读取这一刻算，页面不自动倒计时；刷新后更新。" },
-              { key: "still", label: "关闭期间仍会验证", value: "H5 注册的强制验证" },
+              { key: "still", label: "关闭期间仍会验证", value: h5ForcedText(overview) },
               { key: "limits", label: "关闭期间照常执行", value: CAPTCHA_LIMITS_STILL_ON },
             ] : []),
             { key: "after", label: "什么时候要拖滑块", value: otpCaptchaAfterSends === 0 ? "同一手机号每次发验证码都要" : `同一手机号 24 小时内发满 ${otpCaptchaAfterSends} 次，第 ${otpCaptchaStart} 次起`,
-              explain: <><p>按同一手机号 24 小时内的发送次数算，不论短信是否送达：发满 {otpCaptchaAfterSends} 次后，从第 {otpCaptchaStart} 次起要拖滑块。</p><p>注册等场景可能第一次就要拖，本页读不到这项设置。次数在「异常套利与刷量排查」修改。</p></> },
+              explain: <><p>按同一手机号 24 小时内的发送次数算，不论短信是否送达：发满 {otpCaptchaAfterSends} 次后，从第 {otpCaptchaStart} 次起要拖滑块。</p><p>{alwaysScenes ? "" : "注册等场景可能第一次就要拖，本页读不到这项设置。"}次数在「异常套利与刷量排查」修改。</p></> },
+            ...(alwaysScenes && alwaysScenes.length > 0 && !captchaOff ? [{ key: "always", label: "每次都要拖滑块", value: alwaysScenes.map((scene) => CAPTCHA_SCENE_LABEL[scene]).join("、") }] : []),
           ]} />
           {reach(K2_PATH) && (
             <nav className="rd-links" aria-label="滑块次数在别处修改">
@@ -756,8 +767,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       </Fold>
 
       <Fold title="统计口径与数据来源" icon={SlidersHorizontal} tone="role-other"
-        summary={`${(overview?.sources ?? []).length} 个来源 · 今日按业务日计`}
-        explain="今日计数从业务日的零点起算；多账户关联组按数据库时间往前 7 天。">
+        summary={`${(overview?.sources ?? []).length} 个来源${stats?.countsUseBusinessDay === false ? "" : " · 今日按业务日计"}`}
+        explain={`${stats?.countsUseBusinessDay === false ? "" : "今日计数从业务日的零点起算；"}多账户关联组按数据库时间往前 7 天。`}>
         <ConfigList label="统计口径与数据来源">
           <ConfigRow name="数据来源" value={(overview?.sources ?? ["登录风控设置", "用户安全状态", "多账户风控设置"]).map(sourceLabel).join("、")} />
           <ConfigRow name="登录锁定出现在" value="风险提醒、安全与登录设备" effect="注册完成会计入用户转化分析" />
