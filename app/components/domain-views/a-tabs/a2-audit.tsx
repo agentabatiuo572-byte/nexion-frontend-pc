@@ -1477,7 +1477,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (!next) { notePending(record, record.kind === "param" ? "查询失败，这项设置暂时读不到。原记录继续保留。" : "查询失败，这张单暂时读不到。原记录继续保留。"); return; }
     if (record.kind === "param") {
       const now = next.mechanismParams.find((item) => item.key === record.target)?.value;
-      notePending(record, `查到：${PARAM_NAME[record.target] ?? record.target}现在是 ${now ? operatorCopyText(now) : "—"}，你提交的是 ${record.value}。值相同也可能是别人改的，原记录继续保留。`);
+      notePending(record, `查到：${PARAM_NAME[record.target] ?? record.target}现在是 ${now ? operatorCopyText(now) : "—"}，你提交的是 ${record.value}。原记录继续保留。`);
       return;
     }
     const found = ticketStatus(next, record.target);
