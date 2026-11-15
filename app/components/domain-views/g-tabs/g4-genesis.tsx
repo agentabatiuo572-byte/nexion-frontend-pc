@@ -47,7 +47,7 @@ import { G4FirstDividendConfirm } from "./g4-first-dividend-confirm";
 import { G4TierConfirm, hasPendingG4TierApproval, type G4TierChange } from "./g4-tier-confirm";
 import { canRetryG4DirectCommand, g4DirectAuthority, g4DirectCommandExpired, g4DirectObject, listG4DirectCommands, subscribeG4DirectCommands, g4DirectCommandVersion, type G4DirectCommand } from "@/lib/admin/g4-direct-command";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
-import { useGParamApproval } from "@/lib/admin/use-g-param-approval";
+import { canProposeGParam, useGParamApproval } from "@/lib/admin/use-g-param-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, unknownTag } from "./g-recovery";
 import { G4_PARAM_NAME, G4RecoveryNotice, g4Amount, g4ParamValueText, g4Plain, g4RecoveryTag, type G4ExtraRecovery } from "./g4-recovery";
@@ -77,7 +77,7 @@ function marketChangeText(raw: string) {
 }
 
 function paramEditValue(param: G4Param) {
-  return param.value || param.displayValue;
+  return param.value;
 }
 
 function paramByKey(overview: G4Overview, key: string) {
@@ -234,7 +234,7 @@ function G4GenesisPage() {
         : key === "airdropPct" ? "finprod_g4_airdrop_pct_write"
           : key === "emissionCurve" ? "finprod_g4_emission_curve_write"
             : key === "airdropLockDays" ? "finprod_g4_airdrop_lock_days_write" : "finprod_g4_write";
-  const canPropose = authorities.some((a) => a === "platform_a2_proposal_create" || a === "platform_a2_write");
+  const canPropose = (key: string) => canProposeGParam("G4", key, authorities);
   useSyncExternalStore(subscribeG4DirectCommands, g4DirectCommandVersion, () => 0);
   const directRecords = session ? listG4DirectCommands(session.adminId) : [];
   const directRecord = (object: string) => directRecords.find(row => g4DirectObject(row) === object);
@@ -712,8 +712,7 @@ function G4GenesisPage() {
               ? `仍是 ${currentText}；待审批期间你还可以把比例调低，调低立即生效，原调高申请批准时会被拒绝`
               : `仍是 ${currentText}；这一项被审批锁住，调高调低都改不了`}</Fact>}
             {dir === "loose" && <Fact k="批准后">再核对原值{param.key === "dividend" ? "和比例" : "和当前系列"}有没有被改过、兑付覆盖率够不够，通过后写入{nextText ? ` ${nextText}` : "新值"}</Fact>}
-            {dir === "loose" && !canPropose && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，这个方向会被拦下；请有提案权和这项修改权限的同事发起</Fact>}
-            {param.key === "divBase" && !param.value.trim() && !original && <Fact k="现在是空的" tone="warn">空的计算基数目前不能通过审批改成有内容（已在修），这次审批会被拒</Fact>}
+            {dir === "loose" && !canPropose(param.key) && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，这个方向会被拦下；请有提案权和这项修改权限的同事发起</Fact>}
             <Fact k="改了会怎样"><KeepText text={copy?.effect ?? operatorCopyText(param.note)} /></Fact>
             <Fact k="付不付钱"><KeepText text={copy?.money ?? "—"} /></Fact>
             {dir === "loose" && <Fact k="兑付覆盖率（现在）" tone={overview.coverage.redlineBreached ? "danger" : undefined}>{g4Plain(cov)}%，红线 {g4Plain(String(overview.coverage.redlinePct))}%</Fact>}
@@ -1185,7 +1184,7 @@ function G4GenesisPage() {
         effect={copy?.effect}
         note={[
           copy?.money ? `付不付钱：${copy.money}` : undefined,
-          allowed(paramAuthority(param.key)) && !canPropose && copy ? `这个账号没有发起审批的权限，${copy.tighten ? `只能${copy.tighten}` : "这一项改不了"}；${copy.loosen}请有提案权的同事发起。` : undefined,
+          allowed(paramAuthority(param.key)) && !canPropose(param.key) && copy ? `这个账号没有发起审批的权限，${copy.tighten ? `只能${copy.tighten}` : "这一项改不了"}；${copy.loosen}请有提案权的同事发起。` : undefined,
         ].filter(Boolean).join(" ") || undefined}
         value={<span className="g4x-param">
           <span className="g4x-value">
