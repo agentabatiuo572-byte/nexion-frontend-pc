@@ -87,11 +87,11 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
     <Panel icon={Route} tone="role-2" title="奖励走到哪一步" className="f5-flow-panel"
       sub={<>全部记录 · {totalCount.toLocaleString("en-US")} 笔{total && <> · 合计 {total.usdt} USDT · {total.uvt} UVT</>}</>}
       explain={<>
-        <p>数的是八类奖励的全部记录，不跟下方的筛选变。点一个状态，下方列表只看这个状态；再点一次取消。</p>
-        <p>合计是八类、所有状态的金额相加，包括已冲正和已拒绝，不是实际发出去的钱；两种币分开算，不相加。</p>
-        <p>等价格的好友奖励在 UVT 价格可用后算出金额，进入冷却中（也可能被拒或直接冻结）；有到期时间的到期后系统解锁；非好友奖励也可以提交审批提前解锁。已提现是后端的结束状态，不代表这页核过出款。</p>
+        <p>数的是全部记录，不跟下方筛选变。点一个状态只看这个状态，再点一次取消。</p>
+        <p>合计是八类、所有状态的金额相加，含已冲正和已拒绝，不是实际发出的钱；两种币分开算。</p>
+        <p>有到期时间的到期后系统解锁，不是好友奖励的也能申请提前解锁。已提现表示记录已结束，这页不核出款。</p>
         <p>冷却中、已解锁、已冻结一般都能冲正，没有结算组的旧已冻结记录除外；补发会生成一笔新记录，原记录不变。</p>
-        <p>只有冷却中和已解锁有金额，其余状态后端只给笔数。金额是后端汇总时四舍五入到两位小数的数。</p>
+        <p>只有冷却中和已解锁有金额，其余状态只有笔数；金额汇总时已四舍五入到两位小数。</p>
       </>}>
       <div className="f5-flow" role="group" aria-label="奖励状态流程">
         <div className="f5-flow-main">
@@ -101,7 +101,7 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
               <span className="f5-node-name">等价格</span>
             </span>
             <span className="f5-node-count" data-zero={pendingCount ? undefined : ""}>{pendingCount === undefined ? "—" : pendingCount.toLocaleString("en-US")}<small>组</small></span>
-            <span className="f5-node-note">{pendingCount === undefined ? "选了状态时不返回" : "金额还没算出"}</span>
+            <span className="f5-node-note">{pendingCount === undefined ? "选了状态时不显示" : "金额还没算出"}</span>
           </button>
           <FlowLink label="算出金额" />
           {node("cooling", { money: splitMoneyLabel(data.summary.coolingBalanceLabel) })}
@@ -130,7 +130,7 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
         </div>
       </div>
       <Fold inset title="各类奖励的冷却期" icon={Layers3}
-        summary={policy.length ? `${policy.length} 类 · ${policy.filter((item) => item.days > 0).map((item) => `${KIND_LABELS[item.kind] ?? "未知类型"} ${item.days} 天`).join("、") || "都是即时"}` : "后端没有返回"}
+        summary={policy.length ? `${policy.length} 类 · ${policy.filter((item) => item.days > 0).map((item) => `${KIND_LABELS[item.kind] ?? "未知类型"} ${item.days} 天`).join("、") || "都是即时"}` : "没读到"}
         explain="好友购买的冷却期跟七层的统一冷却，好友设备收益的冷却期在好友奖励政策里设，都不在这张表里。">
         {policy.length ? (
           <Table label="各类奖励的冷却期" className="f5-cool-table">
@@ -145,7 +145,7 @@ export function F5StatusFlow({ data, statusFilter, onStatus, pendingCount, onPen
               ))}
             </tbody>
           </Table>
-        ) : <p className="f5-weak">后端没有返回冷却期设置。</p>}
+        ) : <p className="f5-weak">没读到冷却期设置。</p>}
       </Fold>
     </Panel>
   );
@@ -157,7 +157,7 @@ export function F5KindTiles({ data, kindFilter, onKind }: { data: F5CommissionAu
   const total = counts.reduce((sum, value) => sum + value, 0);
   return (
     <Panel icon={Layers3} tone="role-1" title="八类奖励" sub="全部记录"
-      explain="每类的笔数和两种币的金额，算全部记录，不跟下方筛选变。条是这一类占全部笔数的比例，按笔数算，不按金额。金额是后端汇总时四舍五入到两位小数的数。">
+      explain="每类的笔数和两种币的金额，算全部记录，不跟下方筛选变。条是这一类占全部笔数的比例，按笔数算，不按金额。金额汇总时已四舍五入到两位小数。">
       <div className="f5-kinds">
         {data.commissionKinds.map((item, index) => {
           const money = splitMoneyLabel(item.amt);

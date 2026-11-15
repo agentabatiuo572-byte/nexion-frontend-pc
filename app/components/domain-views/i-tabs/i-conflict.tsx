@@ -1,0 +1,116 @@
+"use client";
+
+/**
+ * 内容与触达五页（I1–I4、I6）共用的「刚被别人改过」核对框。
+ * 第一次提交被后端以版本对不上明确拒绝后，页面已重读最新值、留住运营填的内容和理由；这里把两边并排给运营看。
+ * 「按最新的重新填写」只重建编辑器或确认框（输入和理由留着），不发请求；运营核对后再点原来的提交。
+ * 读取失败时不能继续；关掉框不丢记录，页面上留一条提醒可以再打开。
+ */
+import { Fragment, useState, type ReactNode } from "react";
+import { History, RefreshCw } from "lucide-react";
+import { BlockState, Button, Modal, Notice, Table, Td, Th, Tr } from "@/app/components/rd";
+import type { IConflictReview } from "@/lib/admin/i-conflict-review";
+
+/** 一行对照：left、right 两列的表头由 columns 定（编辑类写「现在 / 你填的」，确认类写「你打开时 / 现在」）。
+ * 框里只列 changed 的行，两边一样的只计数。group 是这一行归在哪一组（基本信息、发给谁、三语内容……）。 */
+export type IConflictRow = { label: string; left: ReactNode; right: ReactNode; changed?: boolean; group?: string;
+  /** 名称下面一行小字，比如内容项的标识。 */
+  hint?: string };
+
+/** 给一组行标上分组名。 */
+export function inGroup(group: string, rows: IConflictRow[]): IConflictRow[] {
+  return rows.map((row) => ({ ...row, group }));
+}
+
+/** 长文本先露三行，点「展开」看全文。 */
+function ConflictValue({ value }: { value: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const long = typeof value === "string" && value.length > 80;
+  if (!long) return <span className="i-conflict-value" data-user-content="">{value}</span>;
+  return <>
+    <span className="i-conflict-value" data-user-content="" data-clamp={open ? undefined : ""}>{value}</span>
+    <button type="button" className="i-conflict-more" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "收起" : "展开全文"}</button>
+  </>;
+}
+
+/** 框开着还是收起：每次新的冲突都重新打开。 */
+export function useIConflictView(review: IConflictReview<unknown, unknown> | null) {
+  const [hidden, setHidden] = useState<unknown>(null);
+  return {
+    open: !!review && hidden !== review.requested,
+    hide: () => setHidden(review?.requested ?? null),
+    show: () => setHidden(null),
+  };
+}
+
+export function IConflictModal({ review, subject, lead = "别人先改了，这次没保存，你填的都还在。", rows, columns, gone, note, rebuildLabel = "按最新的重新填写", onReread, onRebuild, onDiscard, onClose }: {
+  review: IConflictReview<unknown, unknown>;
+  /** 改的是哪一项，比如「文案 home.title」。 */
+  subject: ReactNode;
+  /** 主语后面那句：这次没做成什么、什么还留着。 */
+  lead?: string;
+  rows: IConflictRow[];
+  columns: [left: string, right: string];
+  /** 最新读取里这一项已经没有了（删掉、下架、状态变了）：写原因，不能重新填写，只能放弃。 */
+  gone?: string;
+  /** 重新填写之后还要注意的一句，比如「三语核对要重新勾」。 */
+  note?: ReactNode;
+  rebuildLabel?: string;
+  onReread: () => void;
+  onRebuild: () => void;
+  onDiscard: () => void;
+  onClose: () => void;
+}) {
+  const waiting = review.reading ? "正在读取最新的" : review.readError ? "最新的没读到，重新读取后再继续" : undefined;
+  const shown = rows.filter((row) => row.changed);
+  const same = rows.length - shown.length;
+  const grouped = new Set(shown.map((row) => row.group)).size > 1;
+  // 「现在」那一列是别人改后的样子，表头标出来。
+  const latest = columns.indexOf("现在");
+  const head = (index: number) => <Th>{columns[index]}{index === latest && <span className="i-conflict-th-note">别人改后</span>}</Th>;
+  return (
+    <Modal title="刚被别人改过" icon={History} wide onClose={onClose} footer={<>
+      <Button onClick={onClose}>稍后</Button>
+      <Button disabledReason={waiting} onClick={onDiscard}>放弃这次修改</Button>
+      <Button variant="primary" disabledReason={waiting ?? gone} onClick={onRebuild}>{rebuildLabel}</Button>
+    </>}>
+      <div className="rd-stack i-conflict">
+        <p><b>{subject}</b>：{lead}</p>
+        {review.reading
+          ? <BlockState state="loading" title="正在读取最新的…" />
+          : review.readError
+            ? <Notice tone="danger" title="最新的没读到" action={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={onReread}>重新读取</Button>}>{review.readError}</Notice>
+            : gone
+              ? <Notice tone="warn">{gone}</Notice>
+              : rows.length > 0 && <>
+                <p className="i-conflict-sum">{shown.length > 0 ? <><b>{shown.length} 项不一样</b>{same > 0 && `，另有 ${same} 项相同没列出`}</> : "逐项比过，两边一样。"}</p>
+                {shown.length > 0 && <Table label="最新的和你的对照" className="i-conflict-table">
+                  <thead><tr><Th>项目</Th>{head(0)}{head(1)}</tr></thead>
+                  <tbody>
+                    {shown.map((row, index) => <Fragment key={`${row.group ?? ""}:${row.label}:${row.hint ?? ""}`}>
+                      {grouped && row.group !== shown[index - 1]?.group && <tr className="i-conflict-group"><th colSpan={3} scope="colgroup">{row.group}</th></tr>}
+                      <Tr>
+                        <Td><span className="i-conflict-label">{row.label}</span>{row.hint && <span className="i-conflict-hint" data-mono="">{row.hint}</span>}</Td>
+                        <Td data-latest={latest === 0 ? "" : undefined}><ConflictValue value={row.left} /></Td>
+                        <Td data-latest={latest === 1 ? "" : undefined}><ConflictValue value={row.right} /></Td>
+                      </Tr>
+                    </Fragment>)}
+                  </tbody>
+                </Table>}
+              </>}
+        {note && !review.reading && !review.readError && !gone && <p className="rd-note">{note}</p>}
+      </div>
+    </Modal>
+  );
+}
+
+/** 核对框收起后留在页面上的提醒；核对完才能发起新的修改。 */
+export function IConflictPending({ subject, onOpen }: { subject: ReactNode; onOpen: () => void }) {
+  return <Notice tone="warn" title={<>{subject}刚被别人改过，还没核对</>} action={<Button size="sm" onClick={onOpen}>核对</Button>}>核对完才能发起新的修改。</Notice>;
+}
+
+/** 两边一样不标；空值写「—」。 */
+export function conflictRow(label: string, left: unknown, right: unknown): IConflictRow {
+  const text = (value: unknown) => value === undefined || value === null || String(value).trim() === "" ? "—" : String(value);
+  return { label, left: text(left), right: text(right), changed: text(left) !== text(right) };
+}

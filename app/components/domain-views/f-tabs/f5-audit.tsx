@@ -159,13 +159,13 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         recovery, snapshot: recovery?.original.f5Snapshot ?? { action, row, coverage: data?.coverage },
         action: `奖励提前解锁 ${row.id}`, title: "提前解锁奖励", briefKind: "funds", effect: approvalTag(), completionCopy: completion, amplify: true,
         coverageLead: "提前解锁后这笔钱可能提前流出",
-        coverageCheck: "提交前按页面读到的兑付覆盖率检查一次；批准执行时后端不再检查。",
+        coverageCheck: "提交前按页面读到的兑付覆盖率检查一次；批准执行时不再检查。",
         blockedReason: knownRejection(row, "release"),
         statedBrief: grouped
-          ? { impact: "批准时后端核对结算组的冷却是否真正到期，没到期会拒绝", check: "核对剩余冷却天数，理由写清为什么要提前。" }
+          ? { impact: "批准时系统核对结算组的冷却是否真正到期，没到期会拒绝", check: "核对剩余冷却天数，理由写清为什么要提前。" }
           : { impact: "批准后这笔改为已解锁，释放到用户钱包", check: "核对兑付覆盖率和这笔奖励，理由写清为什么要提前。" },
         detail: grouped
-          ? `提前解锁 ${row.id}：这笔属于结算组，批准时后端会核对冷却是否真正到期，没到期就拒绝，不会提前放钱。`
+          ? `提前解锁 ${row.id}：这笔属于结算组，冷却没真正到期就不会提前放钱。`
           : `提前解锁 ${row.id}：批准后从冷却中改为已解锁，释放到用户钱包；不改冷却设置。`,
         facts: <Facts>
           {recordFacts(row)}
@@ -195,7 +195,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           {friend
             ? <Fact k="到期时间" tone="warn">沿用原来的，不重新计算；用户还有其他冻结条件（暂停、风险）时批准会被拒</Fact>
             : grouped ? <Fact k="到期时间">沿用原来的，不重新计算</Fact>
-              : <Fact k="到期时间" tone="warn">沿用原来的<Explain label="暂停时冻结的旧记录" content="没有结算组的旧记录，如果是暂停用户奖励时被冻结的，到期时间已被清空，解冻后不会自动到期，要再提前解锁。已提后端修复。" /></Fact>}
+              : <Fact k="到期时间" tone="warn">沿用原来的<Explain label="暂停时冻结的旧记录" content="没有结算组的旧记录，如果是暂停用户奖励时被冻结的，到期时间已被清空，解冻后不会自动到期，要再提前解锁。已报给技术同事修复。" /></Fact>}
           <Fact k="用户余额">解冻本身不动余额</Fact>
           <Fact k="能不能撤回">能，可以再冻结</Fact>
           <Fact k="谁来批准">{approverText("奖励冻结权限")}</Fact>
@@ -218,7 +218,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       blockedReason: knownRejection(row, "reverse"),
       reasonPlaceholder: "例如：订单已退款，工单号",
       statedBrief: { impact: grouped ? "批准后收回这笔奖励，余额不够的部分记为待追回" : "批准后收回这笔奖励，余额不够时整次失败", check: "核对凭证单号和这笔奖励有关，理由写清收回的原因。" },
-      detail: `冲正 ${row.id}：批准后收回这笔奖励，状态改为已冲正；用户余额不够时，没收回的部分记为待追回。`,
+      detail: `冲正 ${row.id}：批准后收回这笔奖励，状态改为已冲正。`,
       facts: <Facts>
         {recordFacts(row)}
         <Fact k="状态"><Change from={statusName(row.status)} to="已冲正" /></Fact>
@@ -233,7 +233,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         kind: "multi-field",
         fields: [
           { key: "refundRef", label: "凭证单号", inputKind: "text", required: true, wide: true, placeholder: "关联订单号、等级发放单号或客服工单号",
-            explain: "后端核对这个编号存在：这笔奖励的订单号、等级奖励的发放单号，或任意一张没删除的客服工单号。不核对工单是不是这位用户的，请自己确认和这笔奖励有关。" },
+            explain: "系统只核对这个编号存在：这笔奖励的订单号、等级奖励的发放单号，或任意一张没删除的客服工单号。不核对工单是不是这位用户的，请自己确认和这笔奖励有关。" },
         ],
       },
       submit: async (reason, value) => {
@@ -267,9 +267,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       action: `批量补发 ${rows.length} 笔奖励`, title: "批量补发奖励", briefKind: "funds", amplify: true, completionCopy: `${APPROVER}在「操作记录与审批」批准后才执行；批准前不生成新记录。`,
       effect: approvalTag("批准前不生成新记录。"),
       coverageLead: "补发会给每笔生成一条新的应付奖励",
-      coverageCheck: "提交前按页面读到的兑付覆盖率检查一次；批准执行时后端再查，低于红线整批不补发。",
+      coverageCheck: "提交前按页面读到的兑付覆盖率检查一次；批准执行时再查一次，低于红线整批不补发。",
       statedBrief: { impact: "批准后每笔生成一条新记录，原记录保持已冲正", check: "核对每一笔为什么能补发，理由写清依据。" },
-      detail: `补发已冲正的记录：${rows.map((row) => row.id).join("、")}。每笔生成一条新记录，原记录不变。`,
+      detail: `补发已冲正的记录：${rows.map((row) => row.id).join("、")}。`,
       facts: <Facts>
         <Fact k="补发" lead unit="笔">{String(rows.length)}</Fact>
         <Fact k="补发后">每笔生成一条新记录，原记录保持已冲正</Fact>
@@ -308,12 +308,12 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       action: `暂停用户 ${row.userId} 的奖励`, title: "暂停用户奖励", briefKind: "funds", completionCopy: `${APPROVER}在「操作记录与审批」批准后才执行；批准前这位用户的奖励照常。`,
       effect: approvalTag("批准前这位用户的奖励照常。"),
       statedBrief: { impact: "批准后这位用户所选类型里未发完的记录改为已冻结（等价格、待追回的不动）", check: "核对用户和要暂停的类型，理由写清依据。" },
-      detail: "暂停这位用户所选类型的奖励：批准后，未发完的记录改为已冻结；好友两类以后算出金额的新记录也先冻结。",
+      detail: "暂停这位用户所选类型的奖励。",
       facts: <Facts>
         <Fact k="用户">{row.user}</Fact>
         <Fact k="从哪一笔打开"><span data-mono>{row.id}</span> · {kindName(row.kind)}</Fact>
         <Fact k="批准后">所选类型里未发完的记录改为已冻结<Explain label="哪些记录会被冻结" content="好友两类：冷却中和已冻结的整组按住，等价格的不动。其他类型：等发放、冷却中、已解锁的都改为已冻结，并清掉到期时间。已提现、已冲正、待追回的记录不动。" /></Fact>
-        <Fact k="以后" tone="warn">好友两类以后算出金额的先冻结；其他类型以后会不会继续产生，后端还没统一，不是全部停发</Fact>
+        <Fact k="以后" tone="warn">好友两类以后算出金额的先冻结；其他类型以后不一定停发</Fact>
         <Fact k="能不能撤回">能，在「暂停名单」恢复，也要审批</Fact>
         <Fact k="谁来批准">{approverText("暂停奖励权限")}</Fact>
       </Facts>,
@@ -351,15 +351,15 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       effect: approvalTag("批准前继续暂停。"),
       statedBrief: { impact: friend ? "批准后没有其他冻结条件的好友奖励回到冷却中" : "批准后只解除暂停，已冻结的记录不会自动解冻", check: "核对用户和奖励类型，理由写清为什么可以恢复。" },
       detail: friend
-        ? "需要审批。批准后解除这类暂停；没有其他冻结条件的好友奖励回到冷却期，风控、政策或价格条件仍可能拦住发放。"
-        : "需要审批。批准后解除暂停，已冻结的不会自动解冻。",
+        ? "批准后解除这类暂停；没有其他冻结条件的好友奖励回到冷却期，风控、政策或价格条件仍可能拦住发放。"
+        : "批准后解除暂停，已冻结的不会自动解冻。",
       facts: <Facts>
         <Fact k="用户">{userCode(item.userId)}</Fact>
         <Fact k="奖励类型">{kindName(item.kind)}</Fact>
         <Fact k="状态"><Change from="暂停中" to="恢复" /></Fact>
         {friend
           ? <Fact k="批准后">没有其他冻结条件的好友奖励回到冷却中，到期时间不重新计算；还有其他冻结条件的继续冻结</Fact>
-          : <Fact k="批准后" tone="warn">只解除暂停；之前冻结的这类记录不会自动解冻，要在「奖励流水」逐笔解冻<Explain label="解冻后会不会自动到期" content="暂停时被冻结的旧记录，到期时间已被清空，逐笔解冻后也不会自动到期，要再提前解锁。已提后端修复。" /></Fact>}
+          : <Fact k="批准后" tone="warn">只解除暂停；之前冻结的这类记录不会自动解冻，要在「奖励流水」逐笔解冻<Explain label="解冻后会不会自动到期" content="暂停时被冻结的旧记录，到期时间已被清空，逐笔解冻后也不会自动到期，要再提前解锁。已报给技术同事修复。" /></Fact>}
         <Fact k="谁来批准">{approverText("暂停奖励权限")}</Fact>
       </Facts>,
       submit: async (reason) => {
@@ -380,7 +380,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       completionCopy: "保存后马上生效，不走审批；会记一条处置历史。",
       statedBrief: { impact: "保存后马上按新标准重新挑异常样本，以前的样本也按新标准重算", check: "核对两个数，理由写清为什么调整。" },
-      detail: "金额偏离可设 2–5 倍标准差（σ），每次加减 0.5；L1–L7 比例偏离可设 10%–50%。数字越小，挑出的异常越多。保存后马上生效。",
+      detail: "数字越小，挑出的异常越多。",
       facts: <Facts>
         <Fact k="金额偏离">{sigma} 倍标准差</Fact>
         <Fact k="层比例偏离">{ratio}%</Fact>
@@ -416,7 +416,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       effect: <StatusTag tone="neutral">只生成文件，不改数据</StatusTag>,
       completionCopy: "不改奖励和余额，提交后直接生成文件。",
       statedBrief: { impact: "按筛选栏里现在填的条件导出全部记录，敏感信息已隐藏", check: "核对筛选条件，理由写清导出用途。" },
-      detail: "按当前筛选条件导出全部记录，不只是这一页。敏感信息已隐藏。",
+      detail: "导出符合筛选的全部奖励记录。",
       reasonPlaceholder: "例如：月度对账，工单号",
       facts: <Facts>
         <Fact k="筛选条件">{scope.length ? scope.join("、") : "没有填，导出全部记录"}</Fact>
@@ -539,7 +539,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     ].filter(Boolean);
     const hint = pendingCount ? `${pendingCount} 组好友奖励在等价格；价格长期不恢复时找值班处理。` : undefined;
     const explain = <>
-      <p>异常样本从最近 200 条奖励里挑出来；待追回、已冻结算全部记录，这三项不跟下方筛选变。等价格跟着类型、用户和批次筛选变，选了状态时不显示。</p>
+      <p>异常样本从最近 200 条奖励里挑出来；待追回、已冻结算全部记录，这三项不跟下方筛选变。等价格跟着类型、用户和注册月份筛选变，选了状态时不显示。</p>
       <p>提交的处置要{APPROVER}在「操作记录与审批」批准；这页显示读到的本人待批申请。</p>
     </>;
     const approvals = canReadA2 ? <Link className="rd-link" href="/platform/audit?domain=F" prefetch={false}>看待批准的处置</Link> : undefined;

@@ -47,7 +47,20 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
-  if (path.some((part) => part.toLowerCase().includes("acceptance") || part.toLowerCase().includes("sandbox"))) {
+  // These are real I2 resource keys, not retired sandbox endpoints. Keep every other path guard.
+  const novaResourceKey = path[0] === "nova" && ["channels", "templates"].includes(path[1])
+    && (path.length === 3 || path.length === 4 && path[3] === "status") && /^[A-Za-z0-9_-]{2,64}$/.test(path[2]);
+  // I6's registered message/course identifiers may contain these substrings. Only the identifier segment is exempt.
+  const i6ResourceKey = path[0] === "i18n-learning" && (path[1] === "messages"
+    && /^[a-zA-Z0-9_.-]+$/.test(path[2] ?? "")
+    && (path.length === 3 || path.length === 4 && ["draft", "publish", "versions"].includes(path[3])
+      || path.length === 6 && path[3] === "versions" && /^v[1-9][0-9]{0,8}$/i.test(path[4]) && path[5] === "rollback")
+    || path[1] === "courses" && /^[a-z0-9][a-z0-9-]{2,80}$/.test(path[2] ?? "")
+    && (path.length === 3 || path.length === 4 && ["draft", "publish", "archive", "reward", "versions"].includes(path[3])
+      || path.length === 5 && path[3] === "versions" && /^v[1-9][0-9]{0,8}$/i.test(path[4])
+      || path.length === 6 && path[3] === "versions" && /^v[1-9][0-9]{0,8}$/i.test(path[4]) && ["publish", "rollback"].includes(path[5])));
+  if (path.some((part, index) => !((novaResourceKey || i6ResourceKey) && index === 2)
+    && (part.toLowerCase().includes("acceptance") || part.toLowerCase().includes("sandbox")))) {
     return jsonError(410, "SANDBOX_RETIRED");
   }
   const targetPath = backendPath(path);

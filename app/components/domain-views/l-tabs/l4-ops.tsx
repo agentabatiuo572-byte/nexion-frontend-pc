@@ -139,11 +139,11 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
   };
   const applyCustom = () => {
     if (!from || !to) {
-      ctx.toast("请选择自定义周期的开始和结束日期；当前报表没有变化");
+      ctx.toast("请先选好开始和结束日期");
       return;
     }
     if (from > to) {
-      ctx.toast("开始日期不能晚于结束日期；当前报表没有变化");
+      ctx.toast("开始日期不能晚于结束日期");
       return;
     }
     updateQuery({ period: "custom", from, to });
@@ -151,9 +151,9 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
   const saveView = () => {
     try {
       window.localStorage.setItem("nexion:l4:view", JSON.stringify({ query, tab }));
-      ctx.toast("已保存在这台电脑的浏览器里：时间段、阶段和当前报表；统计方式没有改变", "success");
+      ctx.toast("视图已保存在这台电脑的浏览器里", "success");
     } catch {
-      ctx.toast("视图保存失败 · 浏览器存储不可用；报表数据没有变化", "error");
+      ctx.toast("视图没存上：这个浏览器现在存不了网站数据", "error");
     }
   };
 
@@ -193,7 +193,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       action: "导出运营报表",
       detail: <>按 <b>{data.period.label} · {data.phaseFilter === "ALL" ? "全部阶段" : data.phaseFilter}</b> 导出运营汇总，不含用户明细。</>,
       effect: <StatusTag tone="progress" filled>立即生成</StatusTag>,
-      statedBrief: { impact: "生成一份运营汇总 CSV 快照，不改业务数据，留操作记录。", check: "快照按生成那一刻的数据存好，以后下载还是那一份，不随页面刷新变。" },
+      statedBrief: { impact: "生成一份运营汇总 CSV，不改业务数据，留操作记录。", check: "文件按生成那一刻的数存好，以后下载还是这一份。" },
       facts: (
         <Facts>
           <Fact k="时间段和阶段">{scope}</Fact>
@@ -224,7 +224,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
         try {
           await ctx.biActions?.createReport(input, reason, commandKey);
           aggLastSuccessAtRef.current = Date.now();
-          ctx.toast("运营报表已导出（按当前周期和阶段）");
+          ctx.toast("运营汇总已生成（按现在看的时间段和阶段）");
           setOutcome({ kind: "agg-done", scope });
         } catch (error) {
           // 结果未知仍交给外壳关框、重读、提示（l-view）；这里只留一条提示。聚合快照不改业务数据，不做 R1 恢复（决定 B4-PD02）。
@@ -327,7 +327,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       action: downloadOnly ? "下载团队明细" : "导出团队明细",
       detail: (
         <div>
-          <p>按 <b>{periodLabel}</b> 导出团队关系，预计 <b>{relationships}</b> 条，以实际为准。</p>
+          <p>按 <b>{periodLabel}</b> 加入的关系导出，行数以导出为准。</p>
           <p>用户编码部分隐藏，不含手机号、昵称。</p>
           <p>下载链接 24 小时有效，导出留高风险操作记录。</p>
         </div>
@@ -338,15 +338,15 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
         check: "原来的时间段、追溯次数和理由不能改。",
       } : {
         impact: "直接生成并下载，不经另一位管理员放行；会留一条高风险的操作记录。不改团队关系和奖励。",
-        check: "核对时间段和追溯次数；快照在确认这一刻生成，以后下载还是这一份。",
+        check: "核对时间段和追溯次数；文件在确认这一刻生成，以后下载还是这一份。",
       },
       facts: (
         <Facts>
-          <Fact k="导出什么">每对「邀请链顶层 · 成员」一行，六列<Explain label="六列分别是什么" content={<>
-            <p>同一位成员可能在几条邀请链下各占一行，所以行数可以多于人数。</p>
+          <Fact k="导出什么">每对「上级 · 成员」一行，六列<Explain label="六列分别是什么" content={<>
+            <p>成员往上追溯次数以内的每位上级各占一行，所以同一位成员可能有几行，行数可以多于人数。</p>
             <p>成员用户编码（部分隐藏）。</p>
-            <p>邀请人用户编码（部分隐藏）：其实是这条邀请链最上面那个人，不一定是这位成员的直接邀请人。</p>
-            <p>关系深度：从最上面那个人往下第几层。V-Rank：关系记录上的等级，没有写 UNRANKED。</p>
+            <p>邀请人用户编码（部分隐藏）：这一行的上级，可能是直接邀请人，也可能是再往上几层的人。</p>
+            <p>关系深度：从这位上级往下第几层，1 是直接邀请。V-Rank：关系记录上的等级，没有写 UNRANKED。</p>
             <p>团队 GMV USDT：关系记录上的累计量，不是所选时间段的成交额，没有写 0。</p>
             <p>加入时间：这条关系建立的时间，按服务器时间原样写。</p>
           </>} /></Fact>
@@ -355,8 +355,8 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
           <Fact k="多少行">{downloadOnly ? `${count(original!.result!.rowCount)} 行（已生成）` : <>现有团队关系 {count(relationships)} 条，实际行数以导出为准<Explain label="行数上限" content="这个数是现在全部团队关系的累计条数，不按时间段和追溯次数筛。一次最多 100,000 行，超过时不导出，也不截断。" /></>}</Fact>
           <Fact k="记录">导出留一条高风险操作记录，下载也留记录</Fact>
           <Fact k="需要的权限">团队关系明细导出权限</Fact>
-          {!downloadOnly && <Fact k="理由字数" tone="warn">一个汉字按 9 计，最多约 22 个汉字<Explain label="为什么汉字按 9 计" content="后端暂时按传输编码后的长度校验理由（已提后端修）：汉字记 9，字母和数字记 1。下面的计数就是这个长度，写的内容不会被截短。" /></Fact>}
-          <Fact k="下载">确认后直接下载到这台电脑<Explain label="下载链接" content="下载链接从签发起 24 小时内有效，只给你用。" /></Fact>
+          {!downloadOnly && <Fact k="理由字数" tone="warn">一个汉字按 9 计，最多约 22 个汉字<Explain label="为什么汉字按 9 计" content="系统现在这样数理由的长度（已报给技术同事修）：汉字算 9，字母和数字算 1。下面的计数就是这么数的，写的内容不会被截短。" /></Fact>}
+          <Fact k="下载">确认后直接下载到这台电脑<Explain label="下载链接" content="下载链接 24 小时内有效，只有你能用。" /></Fact>
         </Facts>
       ),
       confirmLabel: original?.result ? "只下载" : "确认导出并下载",
@@ -461,8 +461,8 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     : <>你没有「{exportPageName}」的权限，请找有权限的同事核对。</>);
 
   const readBlocked = ctx.biLoading ? "正在读取，读完再导出" : ctx.biError ? "运营数据读取失败，暂时不能导出" : !data ? "还没有读到所选时间段的数据" : undefined;
-  const aggBlocked = readBlocked ?? (!queryMatchesData ? "请先应用有效周期，再导出对应报表" : !data?.available ? "这个周期没有可导出的数据" : undefined);
-  const treeBlocked = pendingTree ? formatAdminApiError("L4_TREE_PENDING", "L4_TREE_PENDING") : readBlocked ?? (!queryMatchesData ? "请先应用有效周期，再导出对应报表" : query.period === "custom" ? "团队明细只能按日、周、月导出" : (data?.liveFacts.teamRelationships ?? 0) <= 0 ? "当前没有可导出的团队关系" : undefined);
+  const aggBlocked = readBlocked ?? (!queryMatchesData ? "先应用所选的时间段，再导出" : !data?.available ? "这个时间段没有可导出的数据" : undefined);
+  const treeBlocked = pendingTree ? formatAdminApiError("L4_TREE_PENDING", "L4_TREE_PENDING") : readBlocked ?? (!queryMatchesData ? "先应用所选的时间段，再导出" : query.period === "custom" ? "团队明细只能按日、周、月导出" : (data?.liveFacts.teamRelationships ?? 0) <= 0 ? "当前没有可导出的团队关系" : undefined);
   const actions = (ctx.canExport || ctx.canExportNetworkTree) ? (
     <span className="l4-actions">
       {ctx.canExport && (
@@ -474,7 +474,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       {ctx.canExportNetworkTree && (
         <span className="l4-pair" data-pair="">
           <Button icon={<LockKeyhole size={14} aria-hidden />} loading={treeExporting} loadingText="正在生成…" disabledReason={treeBlocked} onClick={() => requestNetworkTreeExport()}>导出团队关系明细</Button>
-          <Explain label="团队关系明细是什么" content={<><p>敏感导出：每对「邀请链顶层 · 成员」一行，用户编码部分隐藏，要写理由，留高风险操作记录，最多 100,000 行。</p><p>只按日、周、月的加入时间筛，不跟运营阶段；确认后直接下载到这台电脑，不经另一位管理员放行。</p></>} />
+          <Explain label="团队关系明细是什么" content={<><p>敏感导出：每对「上级 · 成员」一行，一位成员可能有几行；用户编码部分隐藏，不含手机号、昵称；超过 100,000 行时不导出。只按日、周、月的加入时间筛，不跟运营阶段。</p><p>要有团队关系明细导出权限并写理由；确认后直接下载到这台电脑，不经另一位管理员放行，留高风险操作记录。</p></>} />
         </span>
       )}
       {ctx.canExport && !ctx.canExportNetworkTree && <span className="rd-toolbar-note">团队关系明细需要专门的导出权限</span>}
@@ -489,7 +489,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       summary={summary}
       actions={actions}
       meta={<span className="rd-toolbar">
-        <span>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}打开页面时读取，不自动刷新</span>
+        <span>{readAt ? `${readAt} 读取（${businessZone().label}），` : ""}不自动刷新</span>
         <Button variant="ghost" size="sm" loading={ctx.biLoading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.reloadBi?.()}>刷新</Button>
       </span>}
       readOnly={!ctx.canExport && !ctx.canExportNetworkTree ? "你只能查看，导出需要报表导出权限" : undefined}
@@ -505,7 +505,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     const outcome = shownOutcome;
     const close = <Button size="sm" onClick={() => setOutcome(null)}>知道了</Button>;
     if (outcome.kind === "agg-done") return (
-      <Notice tone="ok" title="已生成运营汇总快照" action={close}>
+      <Notice tone="ok" title="已生成运营汇总" action={close}>
         {outcome.scope}，不含个人信息。{exportPageLink(`到「${exportPageName}」下载`)}
       </Notice>
     );
@@ -559,7 +559,6 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     <Explain label="时间段和阶段管哪几块" content={<>
       <p>日、周、月是从现在往前滚动的近 24 小时、7 天、30 天，不是自然日、周、月。自定义按业务日（{businessZone().label}）算，含首尾两天，结束日不能晚于今天，最长 400 天。</p>
       <p>时间段和阶段管设备、任务、团队、运营阶段效果四块里「这段时间」的数。「读取那一刻」的数（在用设备、置换、团队关系）不随它们变。</p>
-      <p>四块用同一次读取，切报表卡不重新读取。</p>
     </>} />
   );
   const filterBar = (
@@ -608,7 +607,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
   if (!data) {
     const waitingCustom = !ctx.biLoading && !ctx.biError && query.period === "custom" && !(query.from && query.to);
     return page(<>
-      <Conclusion state="unknown">{ctx.biLoading ? "运营报表：正在读取" : ctx.biError ? "运营报表：读取失败，暂时无法判断" : waitingCustom ? "运营报表：等待所选周期数据" : "运营报表：没有读到数据"}</Conclusion>
+      <Conclusion state="unknown">{ctx.biLoading ? "运营报表：正在读取" : ctx.biError ? "运营报表：读取失败，暂时无法判断" : waitingCustom ? "运营报表：等待所选时间段的数据" : "运营报表：没有读到数据"}</Conclusion>
       {ctx.biLoading
         ? <BlockState state="loading" title="正在读取设备、任务、团队和各阶段的数…" />
         : ctx.biError
@@ -639,7 +638,7 @@ function L4Body({ data, tab, setTab, tabIds, reach, phaseNames }: {
 
   const conclusion = !data.available ? (
     <Conclusion state="neutral" icon={Activity} hint="换一个时间段或阶段再看。" explain="在用设备、置换和团队关系是读取那一刻的数，照常显示。">
-      运营报表：{scope}没有可核验的运营事件
+      运营报表：{scope}没有运营事件
     </Conclusion>
   ) : low ? (
     <Conclusion state="warn" lead icon={TriangleAlert} explain={ACCEPTANCE_EXPLAIN} explainTitle="任务承接率怎么算"
@@ -657,8 +656,8 @@ function L4Body({ data, tab, setTab, tabIds, reach, phaseNames }: {
   );
 
   const quality = data.available && !data.quality.sameActorRates ? (
-    <Notice tone="warn" title="同用户覆盖不完整">
-      有的事件缺少用户编号（能识别用户的事件占 {pct(data.quality.actorCoveragePct)}），按人算的承接率、推广率、触发率、留存率和转化率都写「—」，不用事件数代替人数。
+    <Notice tone="warn" title="部分事件没有用户编号">
+      能认出用户的事件只占 {pct(data.quality.actorCoveragePct)}，按人算的承接率、推广率、触发率、留存率和转化率先写「—」。
     </Notice>
   ) : null;
 

@@ -20,7 +20,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const [pendingReason, setPendingReason] = useState(() => req.freezePendingInput ? req.getPendingReason?.() : undefined);
   const [draftReason, setReason] = useState(pendingReason ?? req.initialReason ?? "");
   const reason = pendingReason ?? draftReason;
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(() => (req.freezePendingInput ? req.getPendingValue?.() : undefined) ?? req.initialInputValue ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 刚打开不报错：字数不够等失焦或点过提交才用警告色（DP-06）。
@@ -48,7 +48,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const inputOk = !req.input || req.input.required === false || (req.input.options ? value !== "" : value.trim().length >= 1);
   const valueProblem = req.input?.validate?.(value);
   const pendingBlockReason = req.freezePendingInput ? req.getPendingBlockReason?.() : undefined;
-  const can = !pendingBlockReason && reasonOk && inputOk && !valueProblem && policySettled;
+  const can = !pendingBlockReason && (req.replayPendingInput && pendingReason !== undefined || reasonOk && inputOk && !valueProblem && policySettled);
   const reasonShort = reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `已填写 ${reasonLength}/${reasonMax} 字`;
   const submit = async () => {
     if (!can || submitting) return;

@@ -225,7 +225,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     roles: ["content"],
     l2: [
       { id: "I1", name: "页面文案对比测试", path: "/content/copy-ab", prdAnchor: "I1", batch: "V4", status: "flagship" },
-      { id: "I2", name: "Nova 消息推送", path: "/content/nova", prdAnchor: "I2", batch: "V4", status: "flagship" },
+      { id: "I2", name: "消息推送", path: "/content/nova", prdAnchor: "I2", batch: "V4", status: "flagship" },
       { id: "I3", name: "通知活动", path: "/content/notifications", prdAnchor: "I3", batch: "V4", status: "flagship" },
       { id: "I4", name: "信任中心", path: "/content/trust", prdAnchor: "I4", batch: "V4", status: "flagship" },
       { id: "I5", name: "法律条款与风险披露", path: "/content/disclosures", prdAnchor: "I5", batch: "V4", status: "flagship" },
@@ -329,7 +329,7 @@ const LEGACY_MENU_NAMES: Record<string, string> = {
   "H3": "任务引擎",
   "H9": "历史估算配置",
   "I1": "转化文案 A/B",
-  "I2": "Nova 推送运营",
+  "I2": "消息推送运营",
   "I3": "通知 Campaign",
   "I6": "i18n 文案",
   "J1": "Kill-Switch 矩阵",
@@ -545,8 +545,10 @@ export function canAccessResolvedPath(domains: NavDomain[], pathname: string | n
 }
 
 /** 已按改版规范迁移的页面。浅色主题只对这些页的内容区生效，其余页的内容区保持深色，等迁移批次（06 VS-95）。 */
-export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals", "/finance/pool", "/devices/orders", "/growth/trial", "/analytics/kpi", "/risk/multi-account", "/emergency/kill-switch", "/service/sessions", "/content/disclosures", "/finance/fx-rate", "/finance/payout-vnd", "/finance/recon", "/finance/params", "/finance/ledger", "/users/assets", "/users/search", "/users/actions", "/platform/audit", "/platform/rbac", "/analytics/financial", "/analytics/operations", "/analytics/behavior-heatmap", "/emergency/tamper", "/network/commissions",
+export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals", "/finance/pool", "/devices/orders", "/growth/trial", "/analytics/kpi", "/analytics/financial", "/analytics/operations", "/analytics/behavior-heatmap", "/risk/multi-account", "/emergency/kill-switch", "/emergency/tamper", "/service/sessions", "/content/disclosures", "/finance/fx-rate", "/finance/payout-vnd", "/finance/recon", "/finance/params", "/finance/ledger", "/users/assets", "/users/search", "/users/actions", "/platform/audit", "/content/copy-ab", "/content/i18n", "/network/commissions", "/platform/rbac",
   "/growth/phase",
+  "/content/notifications",
+  "/content/trust",
   "/growth/public-stats",
   "/growth/referral-rewards",
   "/growth/quest",
@@ -586,6 +588,7 @@ export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals",
   "/analytics/export",
   "/emergency/geo-block",
   "/emergency/sop",
+  "/content/nova",
   "/devices/trade-in",
   "/overview/dual-ledger",
   "/overview/funnel",

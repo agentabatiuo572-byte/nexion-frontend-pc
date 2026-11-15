@@ -25,7 +25,7 @@ function sourceText(row: F5CommissionEvent): { title: ReactNode; sub?: ReactNode
     sub: <>{row.sourceRef ? <><span data-mono>{row.sourceRef}</span> · </> : null}设备 {row.sourceDeviceId ? <span data-mono>{row.sourceDeviceId}</span> : "不适用"}</>,
   };
   const layer = row.layer ? `第 ${row.layer} 层` : undefined;
-  if (!who && !layer && !row.sourceRef) return { title: KIND_LABELS[row.kind] ?? "未知奖励类型", sub: "后端没有给来源用户" };
+  if (!who && !layer && !row.sourceRef) return { title: KIND_LABELS[row.kind] ?? "未知奖励类型", sub: "没有来源用户" };
   return {
     title: <>{KIND_LABELS[row.kind] ?? "未知奖励类型"}{who ? <> · 来自 {who}</> : null}{layer ? ` · ${layer}` : ""}</>,
     sub: row.sourceRef ? <span data-mono>{row.sourceRef}</span> : undefined,
@@ -79,7 +79,7 @@ export function F5Drawer({ row, rows, history, ledgerAllowed, coverageAllowed, l
 
   const nowText = row.status === "cooling"
     ? row.coolingDaysLeft > 0 ? `还要冷却 ${row.coolingDaysLeft} 天，到期后系统按条件解锁` : "到期日是今天或没有到期时间，以到期时间为准"
-    : meta?.text ?? "后端给了页面不认识的状态";
+    : meta?.text ?? "这个状态页面还不认识，请联系技术同事";
   const points: JudgmentRow[] = [
     { label: "现在", value: <StatusBadge status={row.status} explain={false} />, reason: nowText, state: meta?.tone === "warn" || meta?.tone === "danger" ? meta.tone : undefined },
     { label: "金额", icon: Coins, tone: "money", value: <Money value={row.amt} currency={row.cur} />, reason: friend && groupMoney ? `整组 ${groupMoney}` : grouped ? "结算组里的一笔；同组另一种币（如有）是另一条记录" : undefined },
@@ -124,12 +124,12 @@ export function F5Drawer({ row, rows, history, ledgerAllowed, coverageAllowed, l
               <p>这一笔 {money}</p>
               {grouped && (row.basisUsdt !== undefined || row.nexUsdtPrice !== undefined || row.policyVersion !== undefined)
                 ? <p className="f5-weak">结算组 <span data-mono>{row.settlementNo}</span> · 计价基数 {row.basisUsdt !== undefined ? `${amountText(row.basisUsdt)} USDT` : "—"} · 锁定的 UVT 价格 {row.nexUsdtPrice !== undefined ? `${amountText(row.nexUsdtPrice)} USDT` : "—"} · 政策版本 {row.policyVersion ?? "—"}</p>
-                : <p className="f5-weak">{grouped ? <>结算组 <span data-mono>{row.settlementNo}</span>，后端没有给计算过程</> : "后端没有给计算过程"}</p>}
+                : <p className="f5-weak">{grouped ? <>结算组 <span data-mono>{row.settlementNo}</span>，没有计算明细</> : "没有计算明细"}</p>}
             </>}
           </Step>
           <Step icon={History} title="现在到哪一步" tone={meta?.tone === "warn" || meta?.tone === "danger" ? meta.tone : undefined}>
             <p><StatusBadge status={row.status} explain={false} />{row.status === "cooling" ? <> {nowText}</> : null}</p>
-            <p className="f5-weak">最后变动 {timeText(row.settledAt)}<Explain label="最后变动时间是什么" content="后端取这笔记录最后一次变动的时间，没有变动过就是生成时间；不一定是发奖的时刻。" /></p>
+            <p className="f5-weak">最后变动 {timeText(row.settledAt)}<Explain label="最后变动时间是什么" content="这笔记录最后一次变动的时间，没变过就是生成时间；不一定是发奖的时刻。" /></p>
           </Step>
           <Step icon={Receipt} title="入账记录">
             <p>{ledger}</p>
