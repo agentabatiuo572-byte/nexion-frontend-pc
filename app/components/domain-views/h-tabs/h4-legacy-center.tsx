@@ -262,10 +262,12 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     try {
       const owner = useAdminAuth.getState().session?.adminId;
       const result = await fetchH3QuestEvents("events");
-      if (owner !== useAdminAuth.getState().session?.adminId) return;
+      if (owner !== useAdminAuth.getState().session?.adminId) return false;
       setModel(result as Model); setError(null);
+      return true;
     } catch (err) {
       setError(displayAdminReadError(err));
+      return false;
     } finally {
       setLoading(false);
     }
@@ -273,8 +275,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
   const apply = async (next: Record<string, any>) => {
     if (isH4ApprovalReceipt(next)) { await reloadH4Approvals(); await reload(); toast(next.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态"); return false; }
-    await reload();
-    return true;
+    return await reload();
   };
 
   const proposeH4 = async (scope: string, op: string, values: Record<string, unknown>, before: string, after: string,
@@ -883,7 +884,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       },
     });
   };
-  const hiRecords = pendingH4Commands().filter(r => !r.asset);
+  const hiRecords = pendingH4Commands().filter(r => !r.asset && (!r.acknowledged || "proposal" in r.request));
   const h4Pending = [...new Map(h4TicketObservations().map(row => [row.id, row])).values()];
   const unknownCount = hiRecords.filter(r => !h4CommandHasPendingTicket(r.commandKey)).length;
   const recovery = <>

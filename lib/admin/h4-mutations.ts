@@ -105,7 +105,9 @@ export function pendingH4Commands(): H4Command[] {
     } catch { return []; }
   }));
 }
-export const h4PendingFor = (scope: string) => pendingH4Commands().find(r => r.scope === scope && !r.asset);
+export const h4PendingFor = (scope: string) => pendingH4Commands().find(r => r.scope === scope && !r.asset && (!r.acknowledged || "proposal" in r.request));
+/** Validated direct successes awaiting a current read, never unknown outcomes. */
+export const confirmedH4Saves = () => pendingH4Commands().filter(r => r.acknowledged && !r.asset && !("proposal" in r.request));
 export const recoveredH4Uploads = () => pendingH4Commands().filter(r => r.scope.includes("/h4_media/") && !!r.asset).map(r => ({ ...r,
   restoration: r.restoration ?? { canAutoRestore: !!r.uploadTarget, restored: false, reason: r.uploadTarget ? "等待在原对象中恢复" : "旧记录未保存目标对象，请重新选择" },
 }));
