@@ -583,7 +583,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; /** current 不是现在读到的值时（比如恢复原操作时带的是提交那一刻的值）写它是什么，只改显示的名字。 */ currentLabel?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; step?: number; /** Keyboard increment when it differs from the accepted numeric precision. */ inputStep?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; /** 范围之外的校验，比如和别的参数的关系：返回原因就不能提交，写在字段下。 */ validate?: (value: string) => string | undefined; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; /** current 不是现在读到的值时（比如恢复原操作时带的是提交那一刻的值）写它是什么，只改显示的名字。 */ currentLabel?: string; /** Display-only current value; comparisons and requests use current. */ displayCurrent?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; step?: number; /** Keyboard increment when it differs from the accepted numeric precision. */ inputStep?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; /** 范围之外的校验，比如和别的参数的关系：返回原因就不能提交，写在字段下。 */ validate?: (value: string) => string | undefined; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -669,6 +669,7 @@ function isEditValueValid(spec: EditSpec | null, value: string): boolean {
 /** 修改框里「现在」的值：选项写名字，数字加千分位；是数字时才带单位（「不设上限」后面不跟 USDT）。 */
 function editCurrent(spec: EditSpec, kind: string): { text: ReactNode; unit?: string } {
   const current = spec.current ?? "";
+  if (spec.displayCurrent !== undefined) return { text: spec.displayCurrent, unit: spec.unit };
   const label = spec.optionLabels?.[current];
   if (label !== undefined) return { text: label };
   if (kind !== "number" || !/^-?\d+(\.\d+)?$/.test(current.trim())) return { text: current };

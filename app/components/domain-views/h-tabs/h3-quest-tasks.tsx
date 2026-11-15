@@ -219,7 +219,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   };
 
   /** Keep the established confirmation fields; transport owns the approval route. */
-  type Look = Pick<H3ActionConfirmReq, "title" | "effect" | "facts" | "statedBrief" | "confirmLabel" | "confirmLabelForValue" | "coverageLead" | "coverageCheck"> & { hint?: ReactNode; preview?: (value: string) => ReactNode; detail?: ReactNode };
+  type Look = Pick<H3ActionConfirmReq, "title" | "effect" | "facts" | "statedBrief" | "confirmLabel" | "confirmLabelForValue" | "coverageLead" | "coverageCheck"> & { hint?: ReactNode; preview?: (value: string) => ReactNode; detail?: ReactNode; displayCurrent?: string; unit?: string };
 
   const openSimpleConfig = (key: string, label: string, current: string, amplifies = false, look: Look = {}, detail?: ReactNode) => {
     const { hint, preview, ...shown } = look;
@@ -237,7 +237,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   };
 
   const openTaskReward = (key: string, label: string, current: string, look: Look = {}) => {
-    const { hint, preview, ...shown } = look;
+    const { hint, preview, displayCurrent, unit, ...shown } = look;
     openActionConfirm({ target: key, briefKind: "config",
       action: `调整奖励 · ${label}`,
       detail: <>当前奖励 <b>{current}</b>。</>,
@@ -245,6 +245,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       edit: {
         kind: "number",
         current: decimalOf(current) ?? "",
+        ...(key.startsWith("monthly.") ? { displayCurrent, unit } : {}),
         min: 0,
         max: 100000,
         step: key.startsWith("monthly.") ? 0.000001 : 1,
@@ -1334,6 +1335,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                   {canModuleWrite && <Td sticky="end" data-fit=""><span className="rd-row-actions">
                     <Button size="sm" disabledReason={lockReason(`monthly.${text(mission.id)}.reward`)} onClick={() => openTaskReward(`monthly.${text(mission.id)}.reward`, text(mission.theme), text(mission.reward), {
                       title: "改月度挑战奖励",
+                      displayCurrent: rewardShown.replace(/\s*[A-Za-z]+$/, ""), unit,
                       detail: <>当前奖励 <b>{rewardShown}</b>{reward.legacy ? "（旧名称 NEX）" : ""}。</>,
                       effect: directionEffect("月度挑战"),
                       facts: (value) => {
