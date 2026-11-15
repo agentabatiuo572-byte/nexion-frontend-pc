@@ -1,3 +1,4 @@
+import { completeH4Uploads } from "./h4-upload-completion";
 import { guardedFetch, formatAdminApiError } from './error-messages.ts';
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "./outcome-classification.ts";
 import { isExplicitRejection } from "./explicit-rejection";
@@ -101,7 +102,7 @@ export async function promotionCommand(intent: PromotionCommandIntent, retry = f
   try {
     const result = await promotionRead<CommandReceipt>(intent.path,undefined,{method:intent.method,headers:{'Idempotency-Key':key},body:JSON.stringify(intent.body)});
     if (result.operation !== intent.operation || result.targetId !== intent.targetId || result.idempotencyKey !== key) uncertain();
-    if (result.status === 'SUCCEEDED') { remember(slot,key,{...intent,owner:actor.adminId,recoveryState:'SUCCEEDED',receipt:result}); return result; }
+    if (result.status === 'SUCCEEDED') { remember(slot,key,{...intent,owner:actor.adminId,recoveryState:'SUCCEEDED',receipt:result}); completeH4Uploads(intent, result); return result; }
     if (result.status === 'FAILED') { forget(slot); throw new PromotionApiError('原操作已明确失败，请核对当前状态后重试。',409,409,[],'PROMOTION_COMMAND_FAILED'); }
     uncertain();
   } catch (error) {
@@ -115,6 +116,7 @@ export async function recoverPromotionCommand(record: PendingPromotion): Promise
   if (!pendingPromotionCommands().some(r => r.commandKey === record.commandKey)) throw new PromotionApiError('原操作已处理，请关闭后重新读取。');
   const result = await promotionRead<CommandReceipt>(`/promotion-commands/${encodeURIComponent(record.commandKey)}`,{operation:record.operation,targetId:record.targetId});
   if (result.operation !== record.operation || result.targetId !== record.targetId || result.idempotencyKey !== record.commandKey) uncertain();
+  if (result.status === 'SUCCEEDED') completeH4Uploads(record, result);
   if (result.status === 'FAILED') forget(record.fingerprint);
   else remember(record.fingerprint,record.commandKey,{...record,recoveryState:result.status,...(result.status==='SUCCEEDED'?{receipt:result}:{})});
   return result;

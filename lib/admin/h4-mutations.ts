@@ -136,7 +136,10 @@ export async function restoreH4Uploads(target: H4UploadTarget, writable: boolean
     }
     const restoration = { canAutoRestore: !reason, restored: !reason, reason };
     if (!reason) { apply(record.asset!.assetId); restored.add(record.commandKey); }
-    h4CommandStores[record.store].remember(record.fingerprint, record.commandKey, { ...record, restoration });
+    if (record.restoration.canAutoRestore !== restoration.canAutoRestore || record.restoration.restored !== restoration.restored || record.restoration.reason !== restoration.reason) {
+      h4CommandStores[record.store].remember(record.fingerprint, record.commandKey, { ...record, restoration });
+      notify();
+    }
     results.push({ commandKey: record.commandKey, ...restoration });
   }
   return results;
