@@ -337,7 +337,7 @@ export function DayOneTimeline({ triReward, eligibilityHours }: { triReward: str
           <i aria-hidden />
           <span className="h3-tl-name">全额</span>
           <span className="h3-tl-amount">{amount(tri?.full, unset)}</span>
-          <span className="h3-tl-note">做完全部，注册后 24 小时内领</span>
+          <span className="h3-tl-note">注册 24 小时内领</span>
         </div>
         {grace && (
           <div className="h3-tl-seg" data-kind="grace">
@@ -345,7 +345,7 @@ export function DayOneTimeline({ triReward, eligibilityHours }: { triReward: str
             <i aria-hidden />
             <span className="h3-tl-name">宽限</span>
             <span className="h3-tl-amount">{amount(tri?.grace, unset)}</span>
-            <span className="h3-tl-note">{`注册后 ${hours} 小时内领`}</span>
+            <span className="h3-tl-note">{`注册 ${hours} 小时内领`}</span>
           </div>
         )}
         <div className="h3-tl-seg" data-kind="expired">

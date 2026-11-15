@@ -424,7 +424,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       effect: immediate,
       facts: <Facts>
         <Fact k="任务">{taskTitleText(label)}</Fact>
-        {whoFacts(false, "之后注册的用户、之后发布的每周任务按新类别和跳转显示")}
+        {whoFacts(false, "之后注册、之后发布的任务按新的显示")}
       </Facts>,
       statedBrief: { impact: "只改类别和跳转页面；不改奖励和完成条件。", check: "核对跳转页面能完成这个任务；理由写清依据。" },
       confirmLabel: "确认修改",
@@ -672,7 +672,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     openActionConfirm({ briefKind: "config",
       action: "新增任务完成条件",
       title: "新增完成条件",
-      detail: <>用户做了这件事，对应任务就算完成。新任务要先绑定再启用。</>,
+      detail: <>用户做了这件事，对应任务就算完成；先绑定再启用。</>,
       effect: immediate,
       facts: <Facts>{bindingWhoFacts}<Fact k="不会做的事">不自动启用任务，也不发钱</Fact></Facts>,
       statedBrief: { impact: "只决定以后的任务怎么算完成。", check: "核对用户操作、对应任务和算谁完成；同一件事不能有两条启用的条件。" },
@@ -746,7 +746,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       target: binding.bindingCode,
       action: `删除完成条件 · ${binding.bindingCode}`,
       title: "删除完成条件",
-      detail: <>删除后，以后的任务里做这件事不再算完成。操作记录会保留。</>,
+      detail: <>删除后，以后做这件事不再算完成；操作记录保留。</>,
       effect: <>{immediate}<IrreversibleTag /></>,
       confirmTone: "danger",
       content: <Facts>
@@ -944,11 +944,12 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       explain={<>
         <p>启用中按任务的状态数，只算首日和每周任务；历史月度挑战不算。</p>
         <p>「做不完」是已启用、但后端判定还没有启用的完成条件的任务：它会发给之后的用户，用户却完成不了。</p>
+        {active.length === 0 && <p>没有启用的任务时，已发出的那一份不变；之后注册的用户、之后发布的每周任务都不会有新任务。</p>}
         <p>等批准的奖励和倍率修改：有查看审批权限时这页会读出来并锁住对应项；没有这个权限时只显示你在这个标签页提交过的。</p>
       </>}
       action={canAudit ? <Link className="rd-link" href="/platform/audit?domain=H" prefetch={false}>看待批准的申请</Link> : undefined}>
       {active.length === 0
-        ? "没有启用的首日或每周任务；已发出的不变，之后不会再发新任务"
+        ? "没有启用的首日或每周任务"
         : `首日 ${dayOne.filter((task) => taskStatusOf(task) === "active").length} 个、每周 ${[...t1, ...t2].filter((task) => taskStatusOf(task) === "active").length} 个任务在启用`}
       {unknownCount > 0 && `；${unknownCount} 个修改结果未知`}
       {attention.length > 0 ? `；${attention.length} 件要处理` : mutations.auditKnown ? "，没有要处理的事" : shellCtx.can("platform_a2_read") ? "；审批进度这次没读到，点刷新重试" : ""}
