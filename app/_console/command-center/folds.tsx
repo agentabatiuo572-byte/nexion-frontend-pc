@@ -299,7 +299,7 @@ function PeriodDetail({ period, summary }: { period: B0SummaryPeriod; summary: B
             </>}
             {withdrawals.inTransit && (
               <li>
-                <span><Explain label="未到账的提现怎么算" content={`此刻用户还没收到钱的提现单：等审核、冷却中、打款中，也包括冻结和打款异常的单；不含测试账号。不随时段变，数据时间 ${formatBusinessTimeCompact(withdrawals.inTransit.asOf)}。被拒、打款失败等着退回的单不算，所以和「风险与开关」里进行中的提现不一样。`}>未到账的提现</Explain></span>
+                <span><Explain label="未到账的提现怎么算" content={`此刻用户还没收到钱的提现：等审核、冷却中、打款中、冻结和打款异常的单，不含测试账号，不随时段变。被拒、打款失败等着退回的单不算，所以和「风险与开关」里进行中的提现不一样。数据时间 ${formatBusinessTimeCompact(withdrawals.inTransit.asOf)}。`}>未到账的提现</Explain></span>
                 <span className="cc-num">{fmtNum(withdrawals.inTransit.count)} 笔，{usdtText(withdrawals.inTransit.amountUsdt)}</span>
               </li>
             )}
@@ -371,8 +371,8 @@ export function FlowFold({ blocks, period, summary, history, historyError, histo
   return (
     <Fold title="资金进出" summary={title} icon={ArrowLeftRight} tone="role-2" open={open} onOpenChange={onOpenChange}
       explain={blocks.netFlow ? <>
-        储备账每天已确认的进出，用余额买设备不算。流入：充值、财务注资、储备返还／冲正；流出：提现、拒付退回。链上提现放行就算流出，银行提现付款成功才算。
-        {netFlow24h != null && ` 滚动近 24 小时净流入 ${fmtAmount(netFlow24h)} USDT，时段不同，数可能不一样。`}{clock && ` 数据时间 ${clock}。`}
+        储备账每天已确认的进出：流入有充值、财务注资、储备返还／冲正，流出有提现、拒付退回；用余额买设备不算。链上提现放行就算流出，银行提现付款成功才算。
+        {netFlow24h != null && ` 滚动近 24 小时净流入 ${fmtAmount(netFlow24h)} USDT，时段不同，数可能不一样。`}
       </> : undefined}
       actions={blocks.netFlow ? <FoldLink reach={reach} href="/finance/pool?tab=flow" read="overview_b2_read">查看资金流</FoldLink> : undefined}>
       <div className="cc-cols">

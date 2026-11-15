@@ -41,7 +41,7 @@ export async function downloadB0Snapshot(adminId: number, snapshotJson: string, 
     throw new Error("浏览器存不下这次导出的记录，还没有提交登记；请允许浏览器保存网站数据后重试。");
   }
   const attempt = pendingB0Export(adminId)!;
-  const unknown = () => new Error("导出登记结果未知，原数据和理由已保留；按原请求重试不会重复登记。");
+  const unknown = () => new Error("导出登记结果未知，原数据和理由已保留。");
   let response: Response;
   try {
     response = await guardedFetch("/api/admin/ops-dashboard/exports", {

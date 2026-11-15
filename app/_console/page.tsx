@@ -415,7 +415,7 @@ export default function CommandCenter() {
           action="导出资金数据"
           effect={<StatusTag tone="progress" filled>立即生效</StatusTag>}
           facts={<Facts><Fact k="文件格式">JSON</Fact><Fact k="数据范围">点导出那一刻的资金数据</Fact></Facts>}
-          detail="文件里有覆盖率、红线、健康线、可用储备、应付款、差额和各账户金额。结果未知时保留原数据和理由，按原请求重试不会重复登记。"
+          detail="文件里有覆盖率、红线、健康线、可用储备、应付款、差额和各账户金额。"
           completionCopy="理由登记成功后，浏览器下载这份资金数据。"
           confirmLabel="登记并下载"
           reasonMax={200}
