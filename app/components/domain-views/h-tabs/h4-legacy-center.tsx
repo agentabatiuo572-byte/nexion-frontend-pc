@@ -29,6 +29,7 @@ import {
   createH4WheelGuard,
   updateH4WheelGuard,
 } from "@/lib/admin/h-client";
+import { fetchH4WheelDailyUsage, type H4WheelDailyUsage } from "@/lib/admin/h4-daily-usage";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { HI_WHEEL_SCOPE, hiEventScope, hiRewardProposal, pendingHIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -202,6 +203,13 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const canWheelWrite = ctx.can("growth_h4_wheel_pool_write");
   const [, pendingDeleteChanged] = useState(0);
   useEffect(() => { const changed = () => pendingDeleteChanged(v => v + 1); window.addEventListener("admin-h4-pending-changed", changed); return () => window.removeEventListener("admin-h4-pending-changed", changed); }, []);
+  const [wheelDailyUsage, setWheelDailyUsage] = useState<H4WheelDailyUsage | null>(null);
+  const [wheelDailyUsageError, setWheelDailyUsageError] = useState<string | null>(null);
+  const reloadWheelUsage = async () => {
+    setWheelDailyUsage(null); setWheelDailyUsageError(null);
+    try { setWheelDailyUsage(await fetchH4WheelDailyUsage()); }
+    catch (cause) { setWheelDailyUsageError(displayAdminError(cause)); }
+  };
   const [model, setModel] = useState<Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -233,6 +241,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   useEffect(() => { void reloadH4Approvals().then(reload); }, [canReadA2, adminId]);
 
   const reload = async () => {
+    void reloadWheelUsage();
     setLoading(true);
     try {
       const owner = useAdminAuth.getState().session?.adminId;
@@ -1056,7 +1065,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             explain="关掉后不再发真钱奖，抽中 USDT 改发 UVT 安慰奖。从关到开要另一位超级管理员批准。"
             action={<Button size="sm" variant={killState ? "danger-outline" : undefined} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={() => openWheelKill(kill)}>{killState ? "关闭" : "开启"}</Button>} />}
           {budget && <GuardCard title={GUARD_NAME.budget} icon={<Wallet size={14} aria-hidden />} value={<><span className="h4-num">{amountText(budgetNumber(text(budget.value, "")))}</span><small>USDT / 天</small></>}
-            sub={<>今天已发 <span className="h4-dim">—</span>（后端未提供）</>}
+            sub={<>今天已发 <span className="h4-dim">{wheelDailyUsage?.realPayoutUsdt == null ? "—" : `${amountText(wheelDailyUsage.realPayoutUsdt)} USDT`}</span></>}
             explain="每次抽中真钱奖前，今天已发的真钱加上这一次超过预算，就改发 UVT 安慰奖。后端按美元记，真钱奖只有 USDT。"
             action={<Button size="sm" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={() => openWheelBudget(budget)}>调整</Button>} />}
           {cap && <GuardCard title={GUARD_NAME.cap} icon={<Ticket size={14} aria-hidden />} value={<small>按各档的每日库存</small>}
