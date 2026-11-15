@@ -112,7 +112,8 @@ export async function sendE5Command(record: E5Command, retry: boolean) {
     return { ...ticket } as Record<string, unknown>;
   }
   if (isRetryExpired(record)) throw new Error("已超过 24 小时，只能读回核对，原操作仍保留。");
-  e5Commands.remember(record.fingerprint, record.commandKey, { ...record, retryRejection: undefined });
+  record = { ...record, retryRejection: undefined, proposalAbsent: false };
+  e5Commands.remember(record.fingerprint, record.commandKey, record);
   if (!e5Commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("原操作无法保存，暂不能提交。");
   let data: Record<string, unknown>;
   try {

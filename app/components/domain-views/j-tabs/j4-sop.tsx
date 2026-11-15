@@ -408,6 +408,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     try {
       if (original && "sop" in original) await retryJ4Command(original);
       else if (original && "sopProposal" in original) {
+        setAbsent(({ [original.commandKey]: _found, ...rest }) => rest);
         const row = await retryJ4Proposal(original);
         if (row) setVerifiedProposals((previous) => ({ ...previous, [original.commandKey]: row }));
         else throw new Error("J4_PROPOSAL_STATUS_UNAVAILABLE");

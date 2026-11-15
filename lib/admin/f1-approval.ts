@@ -83,6 +83,8 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
   }
   if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
   if (!original.request || !fCommands.isDurablyStored(slot, original.commandKey)) throw new Error("原操作没有完整的持久记录，请到操作记录核对。");
+  original.absent = false;
+  fCommands.remember(slot, original.commandKey, original);
   let ticket: A2OperationRow;
   try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }
   catch (error) {

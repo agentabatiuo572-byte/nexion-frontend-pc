@@ -212,6 +212,8 @@ export async function submitF1Policy(
       if (!ticket && previous?.received) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", key);
       if (!ticket && previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原操作已过期且暂未查到结果，请到操作记录核对，勿重复提交。", key);
       if (!ticket) {
+        attempts.remember(fingerprint, key, { ...record(), absent: false });
+        if (!attempts.isDurablyStored(fingerprint, key)) throw new Error("浏览器无法保存原操作，请允许会话存储后重试。");
         posting = true;
         ticket = await createA2OperationProposal(original.proposal!, key, "proposal");
         posting = false;

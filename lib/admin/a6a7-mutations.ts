@@ -191,6 +191,7 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
     requireOriginalActor(record, true);
     if (isRetryExpired(record) || current?.ticket || current?.receipt) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
     if (!current || !commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("RBAC_ORIGINAL_STORAGE_FAILED");
+    commands.remember(record.fingerprint, record.commandKey, { ...current, proposalNotFound: false }); sync();
     const request = wire(record.original, record.reason, record.operator);
     try {
       const response = await guardedFetch(`/api/admin/platform${request.path}`, { method: request.method, body: record.body, cache: "no-store",

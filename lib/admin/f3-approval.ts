@@ -134,6 +134,8 @@ export async function sendF3Proposal(adminId: number, slot: string, spec?: Propo
   }
   if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
   if (!original.request || !durable(original)) throw new Error("F3_PROPOSAL_ORIGINAL_INCOMPLETE");
+  original.absent = false;
+  remember(original);
   if (original.received || original.ticket) return queryReceivedF3Proposal(adminId, original);
   let ticket: A2OperationRow;
   try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }

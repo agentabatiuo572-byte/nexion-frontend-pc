@@ -295,6 +295,8 @@ export async function submitB1ThresholdApproval<T>(
       throw new A2OutcomeUncertainError("原审批暂未查到，请继续查询，不能重新提交。", key);
     }
     if (!session.authorities.includes("overview_b1_redline_write")) throw new Error("当前账号缺少设置兑付覆盖率阈值的权限。");
+    attempts.remember(slot, key, extra);
+    if (!attempts.isDurablyStored(slot, key)) throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
     try {
       await createA2OperationProposal(request!, key, true);
     } catch (error) {

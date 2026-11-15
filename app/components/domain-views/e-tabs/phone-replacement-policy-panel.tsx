@@ -233,6 +233,8 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
     }
     async function retryOriginal() {
       if(!pending||mutation.current||isRetryExpired(pending)||!canWrite)return;
+      proposals.remember(pending.fingerprint,pending.commandKey,{...pending,absent:false});syncPending();setMessage("");
+      if(!proposals.isDurablyStored(pending.fingerprint,pending.commandKey)){setError("浏览器无法保存恢复记录，请允许会话存储后再提交。");return;}
       mutation.current=true;setBusy(true);setError("");
       let checking = true;
       try {

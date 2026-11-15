@@ -109,7 +109,8 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
   const execute = async (record: E5Command, retry: boolean) => {
     if (busy) throw new Error("另一个设备操作正在提交，请稍后核对。");
     if (!allowed(record)) throw new Error("当前账号缺少原操作所需权限，请核对授权。");
-    setBusy(record.commandKey); setError(""); setErrorKey(record.commandKey); sync();
+    setBusy(record.commandKey); setError(""); setErrorKey(record.commandKey);
+    setQueryNotes(values => ({ ...values, [record.commandKey]: "" })); sync();
     try {
       const result = await sendE5Command(record, retry);
       sync();

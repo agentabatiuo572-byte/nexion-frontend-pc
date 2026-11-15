@@ -395,6 +395,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     if (Date.now() >= record.expiresAt) throw new Error("A1_RETRY_EXPIRED");
     requireActor(record.intent, true, record.request.kind === "proposal");
     if (!a1PendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("A1_COMMAND_STORAGE_UNAVAILABLE");
+    record = { ...record, proposalNotFound: false };
+    a1PendingCommands.remember(record.fingerprint, record.commandKey, record); reloadPending();
     if (retry) recoveryStarted();
     setMutatingAction(record.request.kind === "proposal" ? record.request.input.action.replace(/ \(A1\)$/, "")
       : record.intent.kind === "create" ? "新建账号" : record.intent.kind === "password" ? "重置密码" : record.intent.kind === "session" ? "让这台设备下线" : "登记新权限");

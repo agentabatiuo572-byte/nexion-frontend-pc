@@ -118,6 +118,8 @@ export async function sendF5Proposal(adminId: number, slot: string, spec?: Propo
   }
   if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
   if (!original.request || !fCommands.isDurablyStored(slot, original.commandKey)) throw new Error("F5_OPERATION_ORIGINAL_INCOMPLETE");
+  original.absent = false;
+  fCommands.remember(slot, original.commandKey, original);
   if (!original.received && !original.ticket) {
     let ticket: A2OperationRow;
     try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }

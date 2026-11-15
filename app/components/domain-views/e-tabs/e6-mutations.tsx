@@ -76,7 +76,7 @@ function useMutations() {
   async function send(record: E6Pending, retry: boolean) {
     if (sending.current || !allowed(record)) throw new Error("当前没有这项操作的提交权限。");
     if (retry && !canRetry(record)) throw new Error("原操作仅可核查，不能重新发送。");
-    record = { ...record, retryRejection: undefined };
+    record = { ...record, retryRejection: undefined, absent: false };
     commands.remember(record.fingerprint, record.commandKey, record);
     if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器无法保存原操作，本次未提交。请允许会话存储后重试。");
     sending.current = true; setBusy(record.commandKey);

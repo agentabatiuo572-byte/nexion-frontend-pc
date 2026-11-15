@@ -141,6 +141,8 @@ export async function sendF4Proposal(adminId: number, slot: string, spec?: Propo
   }
   if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
   if (!original.request || !storeFor(original).isDurablyStored(original.fingerprint, original.commandKey)) throw new Error("F4_PROPOSAL_ORIGINAL_INCOMPLETE");
+  original.absent = false;
+  remember(original);
   if (original.received || original.ticket) return queryReceived(adminId, original);
   let ticket: A2OperationRow;
   try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }
