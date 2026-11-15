@@ -315,15 +315,19 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const openEventReward = (event: LegacyEvent) => {
     if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     const current = text(event.reward);
+    // 带玩法规则的活动，后端把奖励修改当成只改文字，发奖按玩法规则不变。
+    const ruleBased = !!ruleOf(event.id);
     openActionConfirm({ briefKind: "config",
       action: `活动奖励 · ${event.name}`,
       title: "修改活动奖励",
-      effect: effectByDirection(),
-      detail: <>当前奖励 <b>{current}</b>。填写新奖励后确认。</>,
+      effect: ruleBased ? effectDirect : effectByDirection(),
+      detail: ruleBased ? "只改 App 上显示的奖励文字，不影响发多少。" : <>当前奖励 <b>{current}</b>。填写新奖励后确认。</>,
       facts: <>
-        <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="现在的奖励">{legacyName(current).text}{legacyName(current).legacy && <LegacyNameTag where="奖励文字" />}</Fact><ApprovalFact amplify="开放期间换资产或提高数量" object="奖励" /></Facts>
+        <Facts><Fact k="活动">{eventName(event.id)}</Fact><Fact k="现在的奖励">{legacyName(current).text}{legacyName(current).legacy && <LegacyNameTag where="奖励文字" />}</Fact>{ruleBased
+          ? <><Fact k="改的是">App 上显示的奖励文字</Fact><Fact k="发奖">按「七类玩法」的规则，不变</Fact></>
+          : <ApprovalFact amplify="开放期间换资产或提高数量" object="奖励" />}</Facts>
       </>,
-      amplifies: true,
+      amplifies: !ruleBased,
       confirmLabel: "提交修改",
       reasonPlaceholder: "例如：按运营排期调整奖励，工单号",
       getPendingReason: () => pendingHIRewardCommand(hiEventScope(event.id))?.payload.input.reason,
