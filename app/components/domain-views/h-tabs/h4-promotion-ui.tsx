@@ -210,8 +210,8 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
         }
         if (!record && e instanceof PromotionApiError && !e.unknownOutcome && !e.bodyUnreadable
             && ['PROMOTION_REVISION_CONFLICT', 'PROMOTION_CONCURRENT_CHANGE', 'PROMOTION_VERSION_NOT_CURRENT', 'PROMOTION_VERSION_STATE_INVALID'].includes(e.reasonCode || '')) {
-            setReloadNeeded(true);
             if (onReload) {
+                setReloadNeeded(true);
                 try { setNote(await onReload()); setError(null); setReloadNeeded(false); }
                 catch (readError) { setError(readError); }
             } else if (onVersionConflict) onVersionConflict();
