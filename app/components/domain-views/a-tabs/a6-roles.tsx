@@ -1,28 +1,80 @@
 "use client";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
 import "../a-domain.css";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Ban, CheckCircle2, CircleHelp, Clock3, Hourglass, KeyRound, ListTree, Minus, Plus, ShieldCheck, TriangleAlert, Undo2, UserCog, Users, XCircle, type LucideIcon } from "lucide-react";
 import {
-  fetchA6RolesOverview, fetchA6RoleDetail, createA6Role, updateA6Role, deleteA6Role, proposeA6RoleGrants, proposeA6RoleStatus, newA6IdempotencyKey,
-  type A6RoleOverview, type A6RoleDetail, type A6RoleCreateInput, type A6RoleUpdateInput, type A6GrantsPayload,
+  fetchA6RolesOverview, fetchA6RoleDetail,
+  type A6RoleOverview, type A6RoleDetail, type A6RoleCreateInput, type A6RoleUpdateInput, type A6RoleSummary,
 } from "@/lib/admin/a6-client";
 import { fetchA7MenusOverview, type A7MenuTreeNode } from "@/lib/admin/a7-client";
 import { fetchA8Permissions, type A8Permission } from "@/lib/admin/a8-client";
-import { groupPermissionsByDomain, type PermDomainGroup } from "@/lib/admin/perm-domain";
+import { domainOfPermission } from "@/lib/admin/perm-domain";
 import { F4_MATERIAL_PERMISSIONS } from "@/lib/admin/f4-ambassador-display";
-import { CONSOLE_NAV } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { Card, CardH, CodeTag, Badge, Btn, Drawer, OperationConfirmModal, useToast } from "@/app/components/domain-views/design-kit";
-import { DomainHeader } from "../domain-header";
-import { buildRoleMetadataPayload } from "@/lib/admin/platform-contracts";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { OperationConfirmModal, useToast, type InlineOperationApproval, type OperatorBriefKind } from "@/app/components/domain-views/design-kit";
+import { buildRoleMetadataPayload, PlatformMutationReadbackError } from "@/lib/admin/platform-contracts";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { a6GrantsProblem, rbacAuthority, rbacProposal, useRbacCommands, type A6Original, type RbacCommand } from "@/lib/admin/a6a7-mutations";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { useReach } from "@/lib/nav/use-reach";
+import {
+  BarList, BlockState, Button, Change, Conclusion, Explain, Fact, Facts, Field, Fold, IconTile, Input, IrreversibleTag, Modal, Notice,
+  PageHeader, Panel, RdPage, ReleaseModal, StatusTag, Textarea,
+} from "@/app/components/rd";
+import {
+  AMPLIFIES_EXPLAIN, GrantsEditorDrawer, MenuChangeList, MismatchNotice, PermChangeList, SENSITIVE_EXPLAIN, flattenMenus, grantMismatch, setDiff,
+} from "./a6-grants";
 
-type ConfirmReq = { briefKind: import("../design-kit").OperatorBriefKind; action: React.ReactNode; detail: React.ReactNode; completionCopy?: string; run: (reason: string) => Promise<unknown> };
+type ConfirmReq = {
+  briefKind: OperatorBriefKind;
+  /** 记进操作记录的名字，和改版前一样。 */
+  action: ReactNode;
+  title: ReactNode;
+  detail: ReactNode;
+  effect: ReactNode;
+  confirmLabel: string;
+  confirmTone?: "primary" | "danger";
+  statedBrief: { impact: string; check: string };
+  facts: ReactNode;
+  content?: ReactNode;
+  run: (reason: string) => Promise<unknown>;
+  getRecord: () => RbacCommand | undefined;
+};
 
-/** 域代号 → 域色 var(用于菜单树节点圆点)。 */
-const DOMAIN_ACCENT: Record<string, string> = Object.fromEntries(CONSOLE_NAV.map((d) => [d.code, `var(${d.accentVar})`]));
+/** 原请求的持久化审批观察；只有按原号查询才更新当前状态。 */
+type Submitted = {
+  ticket: string;
+  roleId: number;
+  roleCode: string;
+  roleName: string;
+  label: string;
+  change: string;
+  at: number;
+  status?: "pending" | "approved" | "rejected" | "withdrawn" | "expired";
+  /** 改授权时提交的完整两组，用来和之后读到的详情比，看实际存下了什么（A6-PD01）。 */
+  desired?: { permissionCodes: string[]; menuIds: number[] };
+};
 
-/** A6 角色管理（经典 RBAC 核心配置面）。旗舰外壳 + 左列表右详情 + 双绑定编辑（grants:Drawer→OperationConfirmModal→PUT）。 */
+/** 已备好的原操作提醒，由持久保存的完整请求驱动。 */
+type UnknownRow = { key: string; name: string; change: string; submittedAt: number; tag: ReactNode; actions: ReactNode };
+
+/** 审批单最后一次查到的状态；只有回执、还没查到状态时单独写。 */
+const TICKET_LOOK: Record<NonNullable<Submitted["status"]>, { label: string; tone: "progress" | "ok" | "neutral"; icon: LucideIcon }> = {
+  pending: { label: "待审批", tone: "progress", icon: Clock3 },
+  approved: { label: "已批准", tone: "ok", icon: CheckCircle2 },
+  rejected: { label: "已驳回", tone: "neutral", icon: XCircle },
+  withdrawn: { label: "已撤回", tone: "neutral", icon: Undo2 },
+  expired: { label: "审批已过期", tone: "neutral", icon: Hourglass },
+};
+const ticketTag = (status: Submitted["status"]) => {
+  if (!status) return <StatusTag tone="warn" icon={CircleHelp} explain="审批单已经建好，还没查到它现在的状态。点「查询原结果」再查。">已建单，状态未查到</StatusTag>;
+  const look = TICKET_LOOK[status];
+  return <StatusTag tone={look.tone} icon={look.icon} explain="上次查到的状态。重新进入这页会再查一次，也可以点「查询原结果」。">{look.label}</StatusTag>;
+};
+
 /**
  * 是否为自动验收残留的临时角色(zentao #101)。
  *
@@ -37,14 +89,47 @@ export function isAcceptanceTempRole(role: { roleCode: string; remark?: string |
   return /^(M3|F2_RO|K[0-9]_FLAG)[A-Z0-9_]{4,}$/.test(code);
 }
 
+/** 8 内置角色中文职责说明(角色定义,从 A1 挪来)。自定义角色用 remark 兜底。职责只是说明，不是授权。 */
+const ROLE_DESC: Record<string, { desc: string; scope: string }> = {
+  SUPER_ADMIN: { desc: "平台负责人，拥有全部权限", scope: "全部模块" },
+  CONFIG_ADMIN: { desc: "查看运营总览的部分页面", scope: "运营总览（部分）" },
+  FINANCE: { desc: "负责资金对账、提现、账单和资金储备", scope: "运营总览、资金与财务" },
+  RISK: { desc: "负责风控规则、风险评分和反作弊", scope: "用户与账户、风控，以及部分其他模块" },
+  CONTENT: { desc: "负责文案、通知、信任中心和风险披露", scope: "内容与合规" },
+  GROWTH: { desc: "负责活动、任务、代金券和运营节奏", scope: "增长与活动" },
+  SUPPORT: { desc: "负责工单、会话、知识库和话术", scope: "客服中心" },
+  AUDITOR: { desc: "全域只读，可导出脱敏文件", scope: "全部模块（只读）" },
+};
+
+const ADMIN_COUNT_EXPLAIN = "绑定到这个角色的账号记录数：不排除已停用的账号，也不是在线人数。账号分配在「运营账号与权限」。";
+const CARD_COUNT_EXPLAIN = "卡片上的权限数、菜单数是角色里绑定的条数，不等于实际生效的权限或导航里能看到的菜单；「启用」是其中启用中的账号数。";
+const approvalTag = (note: string, extra?: string) => (
+  <StatusTag tone="progress" filled explain={`提交到「操作记录与审批」，另一位管理员批准后执行。${note}${extra ?? ""}`}>批准后生效</StatusTag>
+);
+const directTag = () => <StatusTag tone="progress" filled explain="填写理由并确认后立即生效，保留操作记录。">立即生效</StatusTag>;
+const approverFact = (authority: string) => <Fact k="批准人">另一位管理员，需有批准审批单的权限和{authority}</Fact>;
+const roleFact = (name: string, code: string) => <Fact k="角色">{name} <span className="a6-code" data-mono>{code}</span></Fact>;
+const describeOriginal = (original: A6Original) => original.kind === "a6-create" ? original.input.roleCode
+  : original.kind === "a6-update" ? `${original.role.roleName} → ${original.input.roleName ?? original.role.roleName}`
+    : original.kind === "a6-status" ? `${original.role.status === 1 ? "已启用" : "已停用"} → ${original.status === 1 ? "已启用" : "已停用"}`
+      : original.kind === "a6-delete" ? `解绑 ${original.bound ?? "—"} 个账号`
+        : `权限 ${original.role.permissionCodes.length} → ${original.input.permissionCodes.length} 项 · 菜单 ${original.role.menuIds.length} → ${original.input.menuIds.length} 个`;
+
 export default function A6Roles() {
-  const [toast, setToast] = useToast();
+  const [, setToast] = useToast();
+  const searchParams = useSearchParams();
+  const roleIds = searchParams.getAll("roleId");
+  const requestedId = roleIds.length === 1 && /^[1-9]\d*$/.test(roleIds[0]) ? Number(roleIds[0]) : NaN;
+  const locatedId = Number.isSafeInteger(requestedId) ? requestedId : null;
+  const appliedLocation = useRef<number | null | undefined>(undefined);
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const role = useAdminAuth((s) => s.session?.role ?? s.role);
   const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
   const isSuper = role === "super" || role === "superadmin";
   const canWrite = isSuper || authorities.includes("platform_a6_write");
   const canGrant = isSuper || authorities.includes("platform_a6_role_grants_update");
+  const actorId = useAdminAuth((s) => s.session?.adminId);
+  const commands = useRbacCommands("a6", actorId);
   const [overview, setOverview] = useState<A6RoleOverview | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [loadedDetail, setDetail] = useState<A6RoleDetail | null>(null);
@@ -57,37 +142,56 @@ export default function A6Roles() {
   const [allPerms, setAllPerms] = useState<A8Permission[]>([]);
   const [menuCatalogReady, setMenuCatalogReady] = useState(false);
   const [permissionCatalogReady, setPermissionCatalogReady] = useState(false);
+  // 只用来在按钮上写清为什么打不开授权；读取和提示照旧。
+  const [catalogFailed, setCatalogFailed] = useState<string | null>(null);
   const [formMode, setFormMode] = useState<{ kind: "create" } | { kind: "update" } | null>(null);
   const [grantsOpen, setGrantsOpen] = useState(false);
   const [confirmReq, setConfirmReq] = useState<ConfirmReq | null>(null);
+  const [recheckOriginal, setRecheckOriginal] = useState<A6Original | null>(null);
+  const [releasing, setReleasing] = useState<RbacCommand | null>(null);
+  const freshOverview = useRef<A6RoleOverview | null>(null);
+  const freshDetail = useRef<A6RoleDetail | null>(null);
+  const busy = useRef(false);
+  const needsRecheck = useRef(false);
+  const queried = useRef(new Set<string>());
+  const reach = useReach();
 
   const refreshOverview = useCallback(async () => {
+    freshOverview.current = null;
     setLoading(true);
     setLoadError(null);
-    try { setOverview(await fetchA6RolesOverview()); }
+    try {
+      const next = await fetchA6RolesOverview();
+      freshOverview.current = next;
+      setOverview(next);
+      return next;
+    }
     catch (e) {
-      const message = displayAdminError(e);
+      const message = displayAdminReadError(e);
       setOverview(null);
       setLoadError(message);
       setToast(message);
+      return null;
     }
     finally { setLoading(false); }
   }, [setToast]);
 
-  useEffect(() => {
-    void refreshOverview();
+  const refreshCatalogs = useCallback(async () => {
+    setMenuCatalogReady(false);
+    setPermissionCatalogReady(false);
+    setCatalogFailed(null);
     if (!canGrant) {
       setMenuTree([]);
       setAllPerms([]);
       setMenuCatalogReady(false);
       setPermissionCatalogReady(false);
-      return;
+      return false;
     }
-    void fetchA7MenusOverview()
-      .then((o) => { setMenuTree(o.tree); setMenuCatalogReady(true); })
-      .catch((error) => setToast(`菜单列表加载失败，暂时不能编辑授权：${displayAdminError(error)}`));
+    const results = await Promise.all([fetchA7MenusOverview()
+      .then((o) => { setMenuTree(o.tree); setMenuCatalogReady(true); return true; })
+      .catch((error) => { setCatalogFailed("菜单列表没读到，暂时不能改授权；刷新页面再试"); setToast(`菜单列表加载失败，暂时不能编辑授权：${displayAdminError(error)}`); return false; }),
     // A8 分页有上限(pageSize 被后端收口),多页拉全权限全集供 GrantsEditor 分组(避免缺域/缺权限)
-    void (async () => {
+    (async () => {
       try {
         const all: A8Permission[] = [];
         let pageNum = 1;
@@ -108,495 +212,828 @@ export default function A6Roles() {
         if (all.length !== total) throw new Error("A8_CATALOG_INCOMPLETE");
         setAllPerms(all);
         setPermissionCatalogReady(true);
+        return true;
       } catch (error) {
+        setCatalogFailed("权限列表没读到，暂时不能改授权；刷新页面再试");
         setToast(`权限列表加载失败，暂时不能编辑授权：${displayAdminError(error)}`);
+        return false;
       }
-    })();
-  }, [canGrant, refreshOverview, setToast]);
+    })()]);
+    return results.every(Boolean);
+  }, [canGrant, setToast]);
+
+  useEffect(() => {
+    void refreshOverview();
+    void refreshCatalogs();
+  }, [refreshOverview, refreshCatalogs]);
+
+  useEffect(() => {
+    // 只在首次读到角色目录或网址定位改变时选中；普通刷新不覆盖运营手动选择。
+    if (!overview || appliedLocation.current === locatedId) return;
+    appliedLocation.current = locatedId;
+    setSelectedId(overview.roles.some((role) => role.id === locatedId) ? locatedId : null);
+  }, [overview, locatedId]);
 
   useEffect(() => {
     let active = true;
+    freshDetail.current = null;
     setDetail(null);
     setDetailError(null);
     if (selectedId == null) return;
     fetchA6RoleDetail(selectedId)
-      .then((result) => { if (active) setDetail(result); })
-      .catch((e) => { if (active) setDetailError(displayAdminError(e)); });
+      .then((result) => { if (active) { freshDetail.current = result; setDetail(result); } })
+      .catch((e) => { if (active) setDetailError(displayAdminReadError(e)); });
     return () => { active = false; };
   }, [selectedId, detailRetry]);
 
-  const roles = overview?.roles ?? [];
+  const roles = useMemo(() => overview?.roles ?? [], [overview]);
+  const builtinRoles = roles.filter((r) => r.builtin);
+  const customRoles = roles.filter((r) => !r.builtin);
+  const stopped = roles.filter((r) => r.status !== 1);
+  const tempRoles = roles.filter((r) => isAcceptanceTempRole(r));
+  const unbound = roles.filter((r) => r.adminCount === 0);
+  const summary = roles.find((r) => r.id === selectedId) ?? null;
+  const permByCode = useMemo(() => new Map(allPerms.map((perm) => [perm.permissionCode, perm])), [allPerms]);
+  const menuById = useMemo(() => new Map(flattenMenus(menuTree).map((node) => [node.id, node])), [menuTree]);
+  const catalogsReady = menuCatalogReady && permissionCatalogReady;
+
+  const pick = (id: number) => {
+    setSelectedId(id);
+    // 窄屏时详情排在列表下面，点了滚过去。
+    requestAnimationFrame(() => document.getElementById("a6-role-detail")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+  };
+
+  const requireActor = (original?: A6Original, writing = false) => {
+    const auth = useAdminAuth.getState(), session = auth.session;
+    if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || !session || session.adminId !== actorId || session.passwordChangeRequired) throw new Error("RBAC_SESSION_CHANGED");
+    if (writing && (!original || !session.authorities.includes(rbacAuthority(original)))) throw new Error("RBAC_OPERATION_FORBIDDEN");
+  };
+  const requireNew = (original: A6Original) => {
+    requireActor(original, true);
+    if (busy.current || needsRecheck.current || !freshOverview.current) throw new Error("RBAC_FRESH_READ_REQUIRED");
+    if (commands.blocked(original)) throw new Error("RBAC_ORIGINAL_UNRESOLVED");
+    if (original.kind === "a6-create") return;
+    if (!freshDetail.current || JSON.stringify(freshDetail.current) !== JSON.stringify(original.role)) throw new Error("RBAC_FRESH_READ_REQUIRED");
+    if (original.kind === "a6-status" && original.role.roleCode === "SUPER_ADMIN") throw new Error("SUPER_ADMIN_ROLE_IMMUTABLE");
+    if (original.kind === "a6-delete" && original.role.builtin) throw new Error("BUILTIN_ROLE_NOT_DELETABLE");
+    if (original.kind === "a6-grants") {
+      if (!catalogsReady) throw new Error("A6_CATALOG_REQUIRED");
+      const problem = a6GrantsProblem(original.role.roleCode, original.input, flattenMenus(menuTree), allPerms);
+      if (problem) throw new Error(problem);
+    }
+  };
+  const reloadCurrent = async (roleId = selectedId, keepConfirmation = false) => {
+    freshDetail.current = null;
+    setFormMode(null); setGrantsOpen(false);
+    if (!keepConfirmation) setConfirmReq(null);
+    setDetail(null);
+    const next = await refreshOverview();
+    if (!next) throw new Error("RBAC_FRESH_READ_REQUIRED");
+    if (roleId == null) return;
+    if (!next.roles.some(role => role.id === roleId)) {
+      setSelectedId(null); setConfirmReq(null); setRecheckOriginal(null); needsRecheck.current = false; return;
+    }
+    setSelectedId(roleId);
+    try {
+      const latest = await fetchA6RoleDetail(roleId);
+      requireActor();
+      freshDetail.current = latest; setDetail(latest); setDetailError(null);
+    } catch (error) { setDetailError(displayAdminReadError(error)); throw error; }
+  };
+  const queryOriginal = async (record: RbacCommand, announce = true) => {
+    requireActor();
+    queried.current.add(record.commandKey);
+    if (!rbacProposal(record.original)) {
+      await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
+      setToast(displayAdminError(new Error("RBAC_READBACK_ONLY")));
+      return false;
+    }
+    // A lookup failure cannot erase a previously confirmed creation or decision.
+    const ticket = await commands.queryProposal(record);
+    requireActor();
+    commands.observe(record, ticket);
+    if (!ticket) { setToast(displayAdminReadError(new Error("A6_ORIGINAL_PROPOSAL_NOT_FOUND"))); return false; }
+    setConfirmReq(null);
+    // A terminal ticket is authoritative about the decision; the current grants still require a real GET.
+    let readbackFailed = false;
+    if (ticket.status !== "pending") {
+      try { await reloadCurrent("role" in record.original ? record.original.role.id : selectedId); }
+      catch { readbackFailed = true; setToast(displayAdminReadError(new Error("A6_ROLE_READBACK_FAILED"))); }
+    }
+    if (announce && !readbackFailed) setToast(displayAdminReadError(new Error(`A6_PROPOSAL_${ticket.status.toUpperCase()}`)));
+    return { ticket, readbackFailed };
+  };
+  const executeOriginal = async (record: RbacCommand, retry: boolean) => {
+    if (!record.original.kind.startsWith("a6-")) throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
+    const original = record.original as A6Original;
+    const current = commands.saved(record.commandKey);
+    if (retry && (current?.ticket || current?.receipt)) { await queryOriginal(current); return; }
+    requireActor(original, true);
+    if (busy.current) throw new Error("RBAC_OPERATION_BUSY");
+    busy.current = true;
+    if (retry) { freshOverview.current = null; freshDetail.current = null; setFormMode(null); setGrantsOpen(false); }
+    try {
+      let result;
+      try { result = await commands.send(record, retry); }
+      catch (error) {
+        if (!commands.saved(record.commandKey)) {
+          if (retry) setConfirmReq(null);
+          else { needsRecheck.current = true; setRecheckOriginal(original); }
+          const reads = await Promise.allSettled([
+            reloadCurrent("role" in original ? original.role.id : selectedId, !retry),
+            ...(original.kind === "a6-grants" ? [refreshCatalogs()] : []),
+          ]);
+          for (const read of reads) if (read.status === "rejected") setToast(displayAdminReadError(read.reason));
+        }
+        throw error;
+      }
+      requireActor();
+      if (result.kind === "proposal") {
+        // The retained POST receipt may predate approval. Only GET by the original key determines today's status.
+        try {
+          const current = await queryOriginal(record, false);
+          if (!current) throw new Error("A6_PROPOSAL_STATUS_UNKNOWN");
+          const { ticket, readbackFailed } = current;
+          if (readbackFailed) return;
+          if (ticket.status === "pending") {
+            if (original.kind === "a6-status") setToast(`已提交${original.status === 1 ? "启用" : "停用"}审批，等另一位管理员批准 · 审批单 ${ticket.id}`, "success");
+            else if (original.kind === "a6-delete") setToast(`已提交删除审批，等另一位管理员批准 · 审批单 ${ticket.id}`, "success");
+            else setToast(`已提交权限修改审批，等另一位管理员批准 · 审批单 ${ticket.id}`, "success");
+          } else setToast(displayAdminReadError(new Error(`A6_PROPOSAL_${ticket.status.toUpperCase()}`)));
+        } catch (error) { throw new Error("A6_PROPOSAL_STATUS_UNKNOWN", { cause: error }); }
+      } else {
+        try { await reloadCurrent(result.roleId); }
+        catch (error) { setToast(new PlatformMutationReadbackError(error).message); return; }
+        setToast(original.kind === "a6-create" ? "角色已创建，还没有任何权限" : "已保存");
+      }
+    } finally { busy.current = false; }
+  };
+  const openOperation = (original: A6Original, view: Omit<ConfirmReq, "run" | "getRecord">, recovery?: RbacCommand) => {
+    if (!recovery) {
+      try { requireNew(original); }
+      catch (error) { setToast(displayAdminError(error)); return; }
+    }
+    let saved = recovery;
+    const getRecord = () => saved ? commands.saved(saved.commandKey) : undefined;
+    setConfirmReq({ ...view, getRecord, run: async (reason) => {
+      try {
+        if (saved && !getRecord()) throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
+        const retry = !!saved;
+        if (!saved) {
+          requireNew(original);
+          saved = commands.capture(original, reason, operator, String(view.action), describeOriginal(original));
+        }
+        await executeOriginal(getRecord() ?? saved, retry);
+      } catch (error) { setToast(displayAdminError(error)); throw error; }
+      finally { if (!recovery && saved && !commands.saved(saved.commandKey)) saved = undefined; }
+    } });
+  };
+
+  const openStatus = (original: Extract<A6Original, { kind: "a6-status" }>, recovery?: RbacCommand) => {
+    const d = original.role, nextStatus = original.status;
+    const actionLabel = nextStatus === 1 ? "启用" : "停用";
+    const bound = original.bound;
+    openOperation(original, { briefKind: "security",
+      action: `${actionLabel}角色 · ${d.roleName}`,
+      title: `${actionLabel}角色「${d.roleName}」`,
+      detail: <>{actionLabel}角色 <b>{d.roleName}</b>（<span data-mono>{d.roleCode}</span>）。</>,
+      effect: approvalTag(nextStatus === 0 ? "批准前角色照常生效。" : "批准前角色保持停用。"),
+      confirmLabel: `提交${actionLabel}审批`,
+      statedBrief: nextStatus === 0
+        ? { impact: bound === 0
+              ? "批准后角色停用，授权保留，重新启用后恢复。"
+              : `批准后，绑定它的${bound === undefined ? "" : ` ${bound} 个`}账号失去这个角色的权限；授权保留，重新启用后恢复。`,
+            check: "其他角色给的权限不受影响，已登录的不会被退出。绑定账号数是现在读到的，批准时按当时实际绑定执行。" }
+        : { impact: `批准后，绑定它的${bound === undefined ? "" : ` ${bound} 个`}账号重新得到这个角色的权限。`,
+            check: "左侧菜单要等账号重新读取登录信息才更新。启用前核对它现在存着的权限和菜单。" },
+      facts: <Facts>
+        <Fact k="绑定账号" lead unit="个">{bound ?? "—"}</Fact>
+        {roleFact(d.roleName, d.roleCode)}
+        <Fact k="状态"><Change from={d.status === 1 ? "已启用" : "已停用"} to={nextStatus === 1 ? "已启用" : "已停用"} /></Fact>
+        {approverFact("角色管理的修改权限")}
+      </Facts>,
+    }, recovery);
+  };
+
+  const openDelete = (original: Extract<A6Original, { kind: "a6-delete" }>, recovery?: RbacCommand) => {
+    const d = original.role, bound = original.bound;
+    openOperation(original, { briefKind: "security",
+      action: `删除角色 · ${d.roleName}`,
+      title: `删除角色「${d.roleName}」`,
+      detail: <>删除角色 <b>{d.roleName}</b>（<span data-mono>{d.roleCode}</span>）。</>,
+      effect: <>{approvalTag("批准前角色和绑定都不变。")}<IrreversibleTag>批准后不能撤销</IrreversibleTag></>,
+      confirmLabel: "提交删除审批",
+      confirmTone: "danger",
+      statedBrief: {
+        impact: bound !== undefined && bound > 0
+          ? `批准后，${bound} 个账号和它解绑、失去它的权限；授权清空，角色从列表消失。`
+          : "批准后授权清空，角色从列表消失。",
+        check: "账号本身、其他角色和历史记录不删。账号数含停用的账号，是现在读到的，批准时按当时实际绑定执行。以后用同一个标识新建，得到的是没有任何权限的角色。",
+      },
+      facts: <Facts>
+        <Fact k="会解绑的账号" lead unit="个" tone={bound !== undefined && bound > 0 ? "warn" : undefined}>{bound ?? "—"}</Fact>
+        {roleFact(d.roleName, d.roleCode)}
+        <Fact k="会清空的授权">权限 {d.permissionCodes.length} 项 · 菜单 {d.menuIds.length} 个</Fact>
+        {approverFact("角色管理的修改权限")}
+      </Facts>,
+    }, recovery);
+  };
+
+  const openGrants = (original: Extract<A6Original, { kind: "a6-grants" }>, recovery?: RbacCommand) => {
+    const d = original.role, payload = original.input, bound = original.bound;
+    const permBefore = d.permissionCodes.length, menuBefore = d.menuIds.length;
+    const permByCode = new Map(original.permissions.map(perm => [perm.permissionCode, perm]));
+    const menuById = new Map(flattenMenus(original.menus).map(menu => [menu.id, menu]));
+    const permDiff = setDiff(d.permissionCodes, payload.permissionCodes);
+    const menuDiff = setDiff(d.menuIds, payload.menuIds);
+    const addedSensitive = permDiff.added.filter((code) => permByCode.get(code)?.permType === "HIGH").length;
+    const addedAmplifies = permDiff.added.filter((code) => permByCode.get(code)?.amplifies === 1).length;
+    const nothing = permDiff.added.length + permDiff.removed.length + menuDiff.added.length + menuDiff.removed.length === 0;
+    const mismatch = grantMismatch(payload.permissionCodes, payload.menuIds, permByCode, menuById);
+    openOperation(original, { briefKind: "security",
+      action: `改角色授权 · ${d.roleName}`,
+      title: `改「${d.roleName}」的权限和菜单`,
+      detail: <>改角色 <b>{d.roleName}</b>（<span data-mono>{d.roleCode}</span>）的权限和菜单：权限 {permBefore}→{payload.permissionCodes.length} · 菜单 {menuBefore}→{payload.menuIds.length}。</>,
+      effect: approvalTag("批准前这个角色的权限和菜单都不变。"),
+      confirmLabel: "提交授权审批",
+      statedBrief: {
+        impact: `批准后整组替换，绑定它的${bound === undefined ? "" : ` ${bound} 个`}账号按新的权限和菜单使用。`,
+        check: "其他角色给的权限不受影响；左侧菜单要等账号重新读取登录信息才更新。核对加了和去掉的，特别是敏感操作。",
+      },
+      facts: <Facts>
+        <Fact k="会受影响的账号" lead unit="个">{bound ?? "—"}</Fact>
+        {roleFact(d.roleName, d.roleCode)}
+        <Fact k="权限"><Change from={`${permBefore} 项`} to={`${payload.permissionCodes.length} 项`} /></Fact>
+        <Fact k="菜单"><Change from={`${menuBefore} 个`} to={`${payload.menuIds.length} 个`} /></Fact>
+        {d.status === 0 && <Fact k="角色状态" tone="warn">已停用：批准后也不生效，启用后才生效</Fact>}
+        {approverFact("改角色授权的权限")}
+      </Facts>,
+      content: (
+        <div className="a6-diff">
+          {addedSensitive > 0 && (
+            <Notice tone="warn" title={<>加了 {addedSensitive} 项敏感操作{addedAmplifies ? `，其中 ${addedAmplifies} 项可能多付钱` : ""}<Explain label="敏感操作" content={<><p>{SENSITIVE_EXPLAIN}</p><p>{AMPLIFIES_EXPLAIN}</p></>} /></>} />
+          )}
+          {d.status === 0 && permDiff.added.length > 0 && (
+            <Notice tone="warn" title="这个角色已停用">
+              <p>新加的权限批准后可能存不上（已提后端修），批准后回这页核对。</p>
+            </Notice>
+          )}
+          {d.roleCode === "SUPER_ADMIN" && (
+            <Notice tone="danger" title="超级管理员角色的授权不能修改，提交会被拒绝" />
+          )}
+          {nothing && <Notice tone="neutral" title="权限和菜单都没有改动"><p>照样会建一张审批单，批准后内容不变。</p></Notice>}
+          <MismatchNotice mismatch={mismatch} menuById={menuById} title="提交后权限和菜单有对不上的地方" />
+          {(permDiff.added.length > 0 || permDiff.removed.length > 0) && (
+            <section className="a6-diff-block" aria-label="权限改动">
+              <h3 className="a6-subhead">权限：加 {permDiff.added.length} 项 · 去掉 {permDiff.removed.length} 项</h3>
+              <PermChangeList codes={permDiff.added} permByCode={permByCode} kind="add" />
+              <PermChangeList codes={permDiff.removed} permByCode={permByCode} kind="remove" />
+            </section>
+          )}
+          {(menuDiff.added.length > 0 || menuDiff.removed.length > 0) && (
+            <section className="a6-diff-block" aria-label="菜单改动">
+              <h3 className="a6-subhead">菜单：加 {menuDiff.added.length} 个 · 去掉 {menuDiff.removed.length} 个</h3>
+              <MenuChangeList ids={menuDiff.added} menuById={menuById} kind="add" />
+              <MenuChangeList ids={menuDiff.removed} menuById={menuById} kind="remove" />
+            </section>
+          )}
+        </div>
+      ),
+    }, recovery);
+  };
+
+  const showOriginal = (original: A6Original, record?: RbacCommand) => {
+    if (original.kind === "a6-status") openStatus(original, record);
+    else if (original.kind === "a6-delete") openDelete(original, record);
+    else if (original.kind === "a6-grants") openGrants(original, record);
+    else if (original.kind === "a6-create" || original.kind === "a6-update") {
+      const d = original.kind === "a6-update" ? original.role : null;
+      const [, action, detailNode, view] = roleFormConfirmation(original.kind === "a6-create", d,
+        original.kind === "a6-create" ? original.input.roleCode : original.role.roleCode,
+        original.input.roleName ?? d!.roleName, original.input.remark ?? "");
+      openOperation(original, { briefKind: "config", action, detail: detailNode, ...view }, record);
+    }
+  };
+  const restoreOriginal = (record: RbacCommand) => {
+    if (record.original.kind.startsWith("a6-")) showOriginal(record.original as A6Original, record);
+  };
+  useEffect(() => {
+    if (!recheckOriginal || loading || !freshOverview.current || recheckOriginal.kind === "a6-grants" && !catalogsReady) return;
+    if (recheckOriginal.kind === "a6-create") {
+      needsRecheck.current = false;
+      setRecheckOriginal(null); showOriginal(recheckOriginal); return;
+    }
+    const role = freshDetail.current;
+    if (!role || role.id !== recheckOriginal.role.id) return;
+    setRecheckOriginal(null);
+    needsRecheck.current = false;
+    const bound = freshOverview.current.roles.find(row => row.id === role.id)?.adminCount;
+    if (recheckOriginal.kind === "a6-update") showOriginal({ ...recheckOriginal, role });
+    else if (recheckOriginal.kind === "a6-grants") showOriginal({ ...recheckOriginal, role, bound, menus: menuTree, permissions: allPerms });
+    else showOriginal({ ...recheckOriginal, role, bound });
+    // Keep the existing modal mounted so the operator's reason and requested changes survive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recheckOriginal, loading, loadedDetail, catalogsReady, menuTree, allPerms]);
+  useEffect(() => {
+    for (const record of commands.records) {
+      if ((record.ticket || record.receipt) && !queried.current.has(record.commandKey)) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)));
+    }
+    // Query persisted observations once on this mount; explicit reads can query them again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commands.records]);
+
+  const readReason = loading || !overview || loadError ? displayAdminError(new Error("RBAC_FRESH_READ_REQUIRED")) : undefined;
+  const roleRecords = commands.records.filter(record => "role" in record.original && record.original.role.id === selectedId);
+  const writeReason = readReason ?? (roleRecords.some(record => !record.ticket) ? displayAdminError(new Error("RBAC_ORIGINAL_UNRESOLVED")) : undefined);
+  const approvalReason = writeReason ?? (roleRecords.some(record => record.ticket?.status === "pending") ? displayAdminError(new Error("OBJECT_ALREADY_PENDING")) : undefined);
+  const unknownRows: UnknownRow[] = commands.records.filter(record => !record.ticket && !record.receipt).map(record => {
+    const expired = isRetryExpired(record);
+    // 决定表「R1-提案过期」：只有删除和改授权这两种一定建审批单的，过期且按原请求明确查不到才可解除。
+    const releasable = expired && record.proposalNotFound && (record.original.kind === "a6-delete" || record.original.kind === "a6-grants");
+    return {
+      key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
+      tag: expired
+        ? <StatusTag tone="neutral" icon={Hourglass} explain={releasable ? "原请求超过 24 小时，不能再重试。按原请求查过，明确没有这张审批单，可以解除这条记录。" : "原请求超过 24 小时，不能再重试，只能查询原结果。"}>已过期</StatusTag>
+        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已经建了审批单。24 小时内可以按原请求重试，后端认得出是同一次提交，不会重复执行。">结果未知</StatusTag>,
+      actions: <>
+        <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
+        {!expired && <Button variant="ghost" onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+        {releasable && <Button variant="ghost" onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+      </>,
+    };
+  });
+  const submitted: Submitted[] = commands.records.flatMap(record => {
+    const original = record.original;
+    const evidence = record.ticket ?? record.receipt;
+    if (!evidence || !("role" in original)) return [];
+    return [{ ticket: evidence.id, status: record.ticket?.status, roleId: original.role.id, roleCode: original.role.roleCode, roleName: original.role.roleName,
+      label: original.kind === "a6-status" ? `${original.status === 1 ? "启用" : "停用"}角色` : original.kind === "a6-delete" ? "删除角色" : "改权限和菜单",
+      change: record.change, at: record.createdAt, desired: original.kind === "a6-grants" ? original.input : undefined }];
+  });
+  const recoveryRecord = confirmReq?.getRecord();
+  const recovery: InlineOperationApproval | undefined = confirmReq ? {
+    resolve: () => undefined, pending: !!recoveryRecord, initialRecovery: "retry", expired: !!recoveryRecord && isRetryExpired(recoveryRecord),
+    disabledReason: recoveryRecord && !authorities.includes(rbacAuthority(recoveryRecord.original)) ? displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN")) : undefined,
+    recover: async () => { const record = confirmReq.getRecord(); if (record) await queryOriginal(record); return true; },
+  } : undefined;
+
+  const header = (
+    <PageHeader pageId="A6" title="角色管理" summary="设置每个角色能做的操作和能看的菜单。"
+      actions={canWrite ? <Button variant="primary" disabledReason={readReason} onClick={() => setFormMode({ kind: "create" })}><Plus size={14} aria-hidden />新建角色</Button> : undefined}
+      readOnly={!canWrite && !canGrant ? "只读：可以查看角色和授权，不能修改"
+        : !canWrite ? "只能改权限和菜单；新建、改名称、启停和删除要角色管理的修改权限" : undefined} />
+  );
+
+  const conclusion = loading ? (
+    <Conclusion state="neutral" icon={Clock3}>正在加载角色…</Conclusion>
+  ) : loadError ? (
+    <Conclusion state="danger" icon={TriangleAlert} hint="点角色目录里的「重试」再读一次。">角色列表没读到，这部分没有判断</Conclusion>
+  ) : tempRoles.length > 0 ? (
+    <Conclusion state="warn" icon={TriangleAlert} hint="确认没人用后删除，删除要另一位管理员批准。"
+      explain="名字像自动验收建的、没有绑定账号的角色会被标成测试残留。只是按名字判断，不会自动删除。">
+      有 {tempRoles.length} 个测试残留角色，建议删除
+    </Conclusion>
+  ) : stopped.length > 0 ? (
+    <Conclusion state="warn" icon={TriangleAlert} explain="停用的角色保留授权和绑定，但它的权限对绑定的账号不生效。">
+      {roles.length} 个角色里有 {stopped.length} 个已停用，它们的权限对账号不生效
+    </Conclusion>
+  ) : (
+    <Conclusion state="ok" icon={ShieldCheck} explain={`角色和绑定账号数在打开页面、新建或改名称后读取。${ADMIN_COUNT_EXPLAIN}`}>
+      {roles.length} 个角色都在启用{unbound.length > 0 ? `，${unbound.length} 个还没有绑定账号` : ""}
+    </Conclusion>
+  );
 
   return (
-    <div className="dkpage adom">
-      <DomainHeader domainCode="A" domainName="平台基础" accentVar="--admin-domain-a"
-        l2Id="A6" l2Name="角色管理"
-        summary="管理后台角色，设置每个角色能做的操作和能看的菜单。新建角色、修改名称和备注：立即生效。启停、授权和删除：提交到「操作记录与审批」，由另一位管理员批准后生效。"
-        right={canWrite ? <Btn variant="primary" sm onClick={() => setFormMode({ kind: "create" })}>+ 新建角色</Btn> : <Badge tone="neutral">只读</Badge>} />
+    <RdPage className="adom a6-page">
+      {header}
+      {conclusion}
 
-      <div className="two-col" style={{ alignItems: "flex-start" }}>
-        <Card>
-          <CardH title="角色" sub={`${roles.length} 个（含 8 个内置角色）`} />
-          {loading ? <div style={{ padding: 24, color: "var(--ink-3)" }}>加载中…</div> : loadError ? (
-            <div className="alertbar warn" role="alert" style={{ margin: 16 }}>
-              角色列表加载失败，请重试。<Btn sm onClick={() => void refreshOverview()}>重试</Btn>
-            </div>
-          ) : (
-            <div style={{ padding: "4px 8px" }}>
-              {roles.map((r) => (
-                <div key={r.id} onClick={() => setSelectedId(r.id)}
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={selectedId === r.id}
-                  aria-label={`查看角色 ${r.roleName || r.roleCode}`}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" && event.key !== " ") return;
-                    event.preventDefault();
-                    setSelectedId(r.id);
-                  }}
-                  style={{ padding: "10px 12px", cursor: "pointer", background: selectedId === r.id ? "var(--surface-2)" : "transparent", borderRadius: 8, marginBottom: 4, border: "1px solid var(--border)" }}>
-                  <div className="row" style={{ alignItems: "center", gap: 8 }}>
-                    <span style={{ fontWeight: 600 }}>{r.roleName || r.roleCode}</span>
-                    {r.builtin && <Badge tone="neutral">内置</Badge>}
-                    {/* 自动验收残留的临时角色必须与真实角色目录可区分(zentao #101)。
-                        它们零账号绑定,混在「启用」里会让运营误选,也让角色数量失真。 */}
-                    {isAcceptanceTempRole(r) && <Badge tone="warn">测试用 · 建议删除</Badge>}
-                    <Badge tone={r.status === 1 ? "ok" : "dim"}>{r.status === 1 ? "启用" : "停用"}</Badge>
-                    <span style={{ flex: 1 }} />
-                    <span className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>{r.adminCount} 个账号</span>
-                  </div>
-                  {(ROLE_DESC[r.roleCode]?.desc || r.remark) && (
-                    <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 3, lineHeight: 1.4 }}>{ROLE_DESC[r.roleCode]?.desc || r.remark}</div>
-                  )}
-                  <CodeTag><span className="mono" style={{ fontSize: 11 }}>{r.roleCode}</span></CodeTag>
+      {unknownRows.length > 0 && (
+        <Notice tone="warn" title="有原操作结果未知">
+          <ul className="a6-recovery" aria-label="结果未知的原操作">
+            {unknownRows.map((row) => (
+              <li key={row.key}>
+                <span className="a6-recovery-name">{row.name}</span>
+                <span className="a6-recovery-change">{row.change}</span>
+                <span className="a6-recovery-time">{businessStamp(row.submittedAt)} 提交</span>
+                {row.tag}
+                <span className="a6-recovery-actions">{row.actions}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="a6-zone">提交时间为{businessZone().label}</p>
+        </Notice>
+      )}
+
+      {submitted.length > 0 && (
+        <Notice tone={submitted.some(row => row.status === "pending" || !row.status) ? "progress" : "neutral"} title="已提交的审批">
+          <ul className="a6-recovery" aria-label="已提交的审批">
+            {submitted.map((row) => (
+              <li key={`${row.ticket}-${row.at}`}>
+                <span className="a6-recovery-name">{row.label}</span>
+                <span className="a6-recovery-change">{row.change}</span>
+                <span className="a6-recovery-time">{businessStamp(row.at)} 提交</span>
+                {ticketTag(row.status)}
+                <span className="a6-recovery-actions">
+                  <Button variant="ghost" onClick={() => { const record = commands.records.find(record => (record.ticket ?? record.receipt)?.id === row.ticket); if (record) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error))); }}>查询原结果</Button>
+                  {reach("/platform/audit") && <Link className="rd-link" href={`/platform/audit?domain=A&object=${encodeURIComponent(row.roleCode)}`}>看审批单 <span data-mono>{row.ticket}</span></Link>}
+                </span>
+                {row.desired && detail?.id === row.roleId && <SavedCheck desired={row.desired} detail={detail} approved={row.status === "approved"} permByCode={permByCode} menuById={menuById} onRetry={() => { const record = commands.records.find(record => (record.ticket ?? record.receipt)?.id === row.ticket); if (record) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error))); }} />}
+              </li>
+            ))}
+          </ul>
+          <p className="a6-zone">提交时间为{businessZone().label}</p>
+        </Notice>
+      )}
+
+      <div className="a6-layout">
+        <div className="rd-split a6-main" data-detail="">
+          <Panel title="角色目录" icon={Users} tone="role-3" sub={overview ? `${roles.length} 个` : undefined}
+            explain={<><p>点一个角色，在右边看它能做什么、能看哪些菜单、有多少账号在用。</p><p>{CARD_COUNT_EXPLAIN}</p></>}>
+            {loading ? <BlockState state="loading" title="正在加载角色…" />
+              : loadError ? <BlockState state="error" title="角色列表加载失败" detail={loadError} onRetry={() => void refreshOverview()} />
+              : roles.length === 0 ? <BlockState state="empty" title="还没有角色" />
+              : (
+                <div className="a6-groups">
+                  <RoleGroup title="内置角色" count={builtinRoles.length}
+                    explain="系统自带的 8 个角色，不能删除。超级管理员角色还不能停用、不能改授权。"
+                    roles={builtinRoles} selectedId={selectedId} onPick={pick} />
+                  <RoleGroup title="自定义角色" count={customRoles.length}
+                    explain="不在内置 8 个之内的角色，包括系统迁移建的（比如财务主管）和运营新建的。可以删除，删除要审批。"
+                    roles={customRoles} selectedId={selectedId} onPick={pick} empty="还没有自定义角色" />
                 </div>
-              ))}
-            </div>
-          )}
-        </Card>
+              )}
+          </Panel>
 
-        <Card>
-          <CardH title="角色详情" sub={detail ? `权限 ${detail.permissionCodes.length} 项 · 菜单 ${detail.menuIds.length} 个` : selectedId == null ? "选择左侧角色" : "当前选中角色"} />
-          {detailError ? (
-            <div className="alertbar warn" role="alert" style={{ margin: 16 }}>
-              角色详情加载失败：{detailError} <Btn sm onClick={() => setDetailRetry((value) => value + 1)}>重试</Btn>
-            </div>
-          ) : !detail ? (
-            <div style={{ padding: 24, color: "var(--ink-3)", textAlign: "center" }}>{selectedId == null ? "选择一个角色查看详情" : "角色详情加载中…"}</div>
-          ) : (
-            <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-              <Row label="角色标识"><span className="mono">{detail.roleCode}</span></Row>
-              <Row label="名称">{detail.roleName}</Row>
-              {ROLE_DESC[detail.roleCode] && <Row label="职责说明">{ROLE_DESC[detail.roleCode].desc}（范围：{ROLE_DESC[detail.roleCode].scope}）</Row>}
-              <Row label="备注">{detail.remark || "—"}</Row>
-              <Row label="状态"><Badge tone={detail.status === 1 ? "ok" : "dim"}>{detail.status === 1 ? "启用" : "停用"}</Badge></Row>
-              <Row label="权限">{detail.permissionCodes.length} 项</Row>
-              <div className="amb-permission-summary"><b>区域大使独立核验权限</b>
-                {F4_MATERIAL_PERMISSIONS.map((permission) => <div key={permission.code}><span>{permission.label}</span><Badge tone={detail.permissionCodes.includes(permission.code) ? "ok" : "dim"}>{detail.permissionCodes.includes(permission.code) ? "已授权" : "未授权"}</Badge></div>)}
-                <p>核验与最终批准分别授权；普通增长不会自动获得核验写权，审计保持只读。</p>
-              </div>
-              <Row label="可见菜单">{detail.menuIds.length} 个菜单</Row>
-              <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                {canWrite && <Btn sm onClick={() => setFormMode({ kind: "update" })}>编辑基本信息</Btn>}
-                {canWrite && <Btn sm disabled={detail.roleCode === "SUPER_ADMIN"} onClick={() => {
-                  const nextStatus = detail.status === 1 ? 0 : 1;
-                  const actionLabel = nextStatus === 1 ? "启用" : "停用";
-                  const stableKey = newA6IdempotencyKey("a6-role-status");
-                  setConfirmReq({ briefKind: "security",
-                    action: `${actionLabel}角色 · ${detail.roleName}`,
-                    completionCopy: "提交到「操作记录与审批」，由另一位管理员批准后生效。",
-                    detail: <>{actionLabel}角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）。确认生效后，该角色下账号的权限随之{actionLabel === "停用" ? "失效" : "恢复"}。</>,
-                    run: async (reason) => {
-                      try {
-                        const ticket = await proposeA6RoleStatus(detail.id, nextStatus, reason, operator, stableKey);
-                        setToast(`已提交${actionLabel}，等待确认 · ${ticket.id}`);
-                        return ticket;
-                      } catch (error) {
-                        setToast(displayAdminError(error));
-                        throw error;
-                      }
-                    },
-                  });
-                }}>{detail.status === 1 ? "停用角色" : "启用角色"}</Btn>}
-                {canGrant && <Btn
-                  sm
-                  variant="primary"
-                  disabled={!menuCatalogReady || !permissionCatalogReady}
-                  title={!menuCatalogReady || !permissionCatalogReady ? "菜单或权限列表还没加载完" : undefined}
-                  onClick={() => setGrantsOpen(true)}
-                >编辑权限和菜单</Btn>}
-                {canWrite && <Btn sm onClick={() => {
-                  if (detail.builtin) { setToast("内置角色不可删除"); return; }
-                  const stableKey = newA6IdempotencyKey("a6-role-delete");
-                  setConfirmReq({ briefKind: "security",
-                    action: `删除角色 · ${detail.roleName}`,
-                    completionCopy: "提交到「操作记录与审批」，由另一位管理员批准后生效。",
-                    detail: <>删除角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）。确认生效后，该角色下 {roles.find((x) => x.id === detail.id)?.adminCount ?? 0} 个账号会失去这个角色和对应的权限。</>,
-                    run: async (reason) => {
-                      try {
-                        const ticket = await deleteA6Role(detail.id, reason, operator, stableKey);
-                        setToast(`已提交，等待确认 · ${ticket.id}`);
-                        return ticket;
-                      } catch (error) {
-                        setToast(displayAdminError(error));
-                        throw error;
-                      }
-                    },
-                  });
-                }}>删除角色</Btn>}
-              </div>
-            </div>
-          )}
-        </Card>
+          <div id="a6-role-detail" className="a6-detail-col">
+            {selectedId == null ? (
+              <Panel title="角色详情" icon={KeyRound} tone="role-4">
+                <p className="a6-muted">点左边一个角色，看它能做什么。</p>
+                {roles.length > 0 && (
+                  <div className="a6-overview-bars">
+                    <h3 className="a6-subhead">各角色绑定的账号<Explain label="绑定账号" content={ADMIN_COUNT_EXPLAIN} /></h3>
+                    <BarList label="各角色绑定的账号" slot={3} rows={[...roles].sort((a, b) => b.adminCount - a.adminCount).map((r) => ({
+                      key: String(r.id), label: r.roleName || r.roleCode, value: r.adminCount, text: `${r.adminCount} 个`,
+                    }))} />
+                  </div>
+                )}
+              </Panel>
+            ) : detailError ? (
+              <Panel title={summary?.roleName || "角色详情"} icon={KeyRound} tone="role-4">
+                <BlockState state="error" title="角色详情加载失败" detail={detailError} onRetry={() => setDetailRetry((value) => value + 1)} />
+              </Panel>
+            ) : !detail ? (
+              <Panel title={summary?.roleName || "角色详情"} icon={KeyRound} tone="role-4">
+                <BlockState state="loading" title="角色详情加载中…" />
+              </Panel>
+            ) : (
+              <RoleDetail detail={detail} summary={summary} canWrite={canWrite} canGrant={canGrant}
+                writeReason={writeReason} approvalReason={approvalReason}
+                catalogsReady={catalogsReady} catalogFailed={catalogFailed} permByCode={permByCode} menuById={menuById}
+                reach={reach}
+                onEdit={() => setFormMode({ kind: "update" })}
+                onGrants={() => setGrantsOpen(true)}
+                onStatus={() => openStatus({ kind: "a6-status", role: detail, status: detail.status === 1 ? 0 : 1, bound: summary?.adminCount })}
+                onDelete={() => openDelete({ kind: "a6-delete", role: detail, bound: summary?.adminCount })}
+                onBuiltinDelete={() => setToast("内置角色不可删除")} />
+            )}
+          </div>
+        </div>
       </div>
 
       {formMode && (
-        <RoleFormDrawer mode={formMode} detail={detail} onClose={() => setFormMode(null)}
-          onSubmit={(payload, action, detailNode) => {
+        <RoleFormModal mode={formMode} detail={detail} onClose={() => setFormMode(null)}
+          onSubmit={(payload, action, detailNode, confirmView) => {
             setFormMode(null);
-            const stableKey = newA6IdempotencyKey(formMode.kind === "create" ? "a6-role-create" : "a6-role-update");
-            setConfirmReq({ briefKind: "config",
-              action, detail: detailNode,
-              completionCopy: "填写理由并确认后立即生效，保留操作记录。",
-              run: async (reason) => {
-                try {
-                  if (formMode.kind === "create") {
-                    const created = await createA6Role(payload as A6RoleCreateInput, reason, operator, stableKey);
-                    setDetail(created);
-                    await refreshOverview();
-                    setSelectedId(created.id);
-                    setToast("角色已创建，还没有任何权限");
-                    return created;
-                  }
-                  const updated = await updateA6Role(detail!.id, payload as A6RoleUpdateInput, reason, operator, stableKey);
-                  setDetail(updated);
-                  await refreshOverview();
-                  setSelectedId(updated.id);
-                  setToast("已保存");
-                  return updated;
-                } catch (error) {
-                  setToast(displayAdminError(error));
-                  throw error;
-                }
-              },
-            });
+            const original: A6Original = formMode.kind === "create" ? { kind: "a6-create", input: payload as A6RoleCreateInput }
+              : { kind: "a6-update", role: detail!, input: payload as A6RoleUpdateInput };
+            openOperation(original, { briefKind: "config", action, detail: detailNode, ...confirmView });
           }} />
       )}
 
       {grantsOpen && detail && (
         <GrantsEditorDrawer detail={detail} menuTree={menuTree} allPerms={allPerms} onClose={() => setGrantsOpen(false)}
-          onSubmit={(payload, permBefore, menuBefore) => {
+          onSubmit={(payload) => {
             setGrantsOpen(false);
-            const stableKey = newA6IdempotencyKey("a6-role-grants");
-            setConfirmReq({ briefKind: "security",
-               action: `改角色授权 · ${detail.roleName}`,
-               completionCopy: "由另一位管理员批准后生效，生效后该角色下的账号按新权限使用。",
-               detail: <>改角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）的权限/菜单绑定。权限 {permBefore}→{payload.permissionCodes.length} · 菜单 {menuBefore}→{payload.menuIds.length}。提交到「操作记录与审批」，由另一位管理员批准后生效。</>,
-               run: async (reason) => {
-                 try {
-                   const ticket = await proposeA6RoleGrants(detail.id, payload, reason, operator, stableKey);
-                   setToast(`权限修改已提交，等待确认 · ${ticket.id}`);
-                   return ticket;
-                 } catch (error) {
-                   setToast(displayAdminError(error));
-                   throw error;
-                 }
-               },
-            });
+            openGrants({ kind: "a6-grants", role: detail, input: payload, bound: summary?.adminCount, menus: menuTree, permissions: allPerms });
+          }} />
+      )}
+
+      {releasing && (
+        <ReleaseModal label={<>{releasing.name}<br />{businessStamp(releasing.createdAt)} 提交</>}
+          explain={`提交时间为${businessZone().label}。确认后先按原请求再查一次审批单：明确没有这张单才解除，原操作不会执行；查到了就不解除，请点「查询原结果」。`}
+          onCancel={() => setReleasing(null)}
+          onConfirm={() => {
+            const record = releasing;
+            setReleasing(null);
+            void commands.releaseExpiredProposal(record, true)
+              .then(() => setToast("已解除原操作记录", "success"))
+              .catch(error => setToast(displayAdminError(error)));
           }} />
       )}
 
       {confirmReq && (
         <OperationConfirmModal briefKind={confirmReq.briefKind}
-          action={confirmReq.action} detail={confirmReq.detail} completionCopy={confirmReq.completionCopy}
+          initialReason={recoveryRecord?.reason} getPendingReason={() => confirmReq.getRecord()?.reason} inlineApproval={recovery}
+          blockedReason={!recoveryRecord ? readReason : undefined}
+          action={confirmReq.action} title={confirmReq.title} detail={confirmReq.detail}
+          effect={confirmReq.effect} confirmLabel={confirmReq.confirmLabel} confirmTone={confirmReq.confirmTone}
+          statedBrief={confirmReq.statedBrief} facts={confirmReq.facts} content={confirmReq.content}
           onClose={() => setConfirmReq(null)}
           onConfirm={async (reason) => { await confirmReq.run(reason); setConfirmReq(null); }} />
       )}
-      {toast}
+    </RdPage>
+  );
+}
+
+function RoleGroup({ title, count, explain, roles, selectedId, onPick, empty }: {
+  title: string; count: number; explain: string; roles: A6RoleSummary[]; selectedId: number | null; onPick: (id: number) => void; empty?: string;
+}) {
+  return (
+    <section className="a6-group" aria-label={title}>
+      <h3 className="a6-subhead">{title}<span className="a6-group-count">{count}</span><Explain label={title} content={explain} /></h3>
+      {roles.length === 0 ? <p className="a6-muted">{empty}</p> : (
+        <ul className="a6-roles">
+          {roles.map((r) => {
+            const desc = ROLE_DESC[r.roleCode]?.desc || r.remark;
+            const temp = isAcceptanceTempRole(r);
+            const selected = r.id === selectedId;
+            return (
+              <li key={r.id}>
+                <button type="button" className="a6-role" aria-pressed={selected} data-selected={selected ? "" : undefined} data-stopped={r.status !== 1 ? "" : undefined}
+                  aria-label={`查看角色 ${r.roleName || r.roleCode}`} onClick={() => onPick(r.id)}>
+                  <IconTile tone={r.status === 1 ? "role-3" : "neutral"} icon={r.builtin ? ShieldCheck : UserCog} size={28} />
+                  <span className="a6-role-main">
+                    <span className="a6-role-name">
+                      <span className="a6-role-title">{r.roleName || r.roleCode}</span>
+                      <span className="a6-role-code" data-mono title={r.roleCode}>{r.roleCode}</span>
+                      {r.status !== 1 && <StatusTag tone="neutral" icon={Ban}>已停用</StatusTag>}
+                      {/* 自动验收残留的临时角色必须与真实角色目录可区分（zentao 101）。 */}
+                      {temp && <StatusTag tone="warn" icon={TriangleAlert}>测试用 · 建议删除</StatusTag>}
+                    </span>
+                    {desc && <span className="a6-role-desc" title={desc}>{desc}</span>}
+                    {(r.permissionCount !== undefined || r.menuGrantCount !== undefined) && (
+                      <span className="a6-role-meta">
+                        {r.permissionCount !== undefined && <span>已绑定权限 {r.permissionCount} 项</span>}
+                        {r.menuGrantCount !== undefined && <span>{r.permissionCount !== undefined ? "" : "已绑定"}菜单 {r.menuGrantCount} 个</span>}
+                      </span>
+                    )}
+                  </span>
+                  <span className="a6-role-count" data-empty={r.adminCount === 0 ? "" : undefined}>
+                    <b>{r.adminCount}</b><small>个账号</small>
+                    {r.enabledAdminCount !== undefined && <small>启用 {r.enabledAdminCount}</small>}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function RoleDetail({ detail, summary, canWrite, canGrant, writeReason, approvalReason, catalogsReady, catalogFailed, permByCode, menuById, reach, onEdit, onGrants, onStatus, onDelete, onBuiltinDelete }: {
+  detail: A6RoleDetail;
+  summary: A6RoleSummary | null;
+  canWrite: boolean;
+  canGrant: boolean;
+  writeReason?: string;
+  approvalReason?: string;
+  catalogsReady: boolean;
+  catalogFailed: string | null;
+  permByCode: ReadonlyMap<string, A8Permission>;
+  menuById: ReadonlyMap<number, A7MenuTreeNode>;
+  reach: (href: string) => boolean;
+  onEdit: () => void;
+  onGrants: () => void;
+  onStatus: () => void;
+  onDelete: () => void;
+  onBuiltinDelete: () => void;
+}) {
+  const isSuperRole = detail.roleCode === "SUPER_ADMIN";
+  const duty = ROLE_DESC[detail.roleCode];
+  const permsKnown = permByCode.size > 0;
+  const sensitive = permsKnown ? detail.permissionCodes.filter((code) => permByCode.get(code)?.permType === "HIGH").length : null;
+  const amplifies = permsKnown ? detail.permissionCodes.filter((code) => permByCode.get(code)?.amplifies === 1).length : null;
+  const byDomain = new Map<string, { label: string; count: number; sensitive: number }>();
+  for (const code of detail.permissionCodes) {
+    const domain = domainOfPermission(code);
+    const row = byDomain.get(domain.code) ?? { label: domain.code === "?" ? "其他" : `${domain.code} ${domain.name}`, count: 0, sensitive: 0 };
+    row.count += 1;
+    if (permByCode.get(code)?.permType === "HIGH") row.sensitive += 1;
+    byDomain.set(domain.code, row);
+  }
+  const domainRows = [...byDomain.entries()].sort((a, b) => b[1].count - a[1].count);
+  const mismatch = catalogsReady ? grantMismatch(detail.permissionCodes, detail.menuIds, permByCode, menuById) : null;
+  const grantReason = isSuperRole ? displayAdminError(new Error("SUPER_ADMIN_ROLE_IMMUTABLE"))
+    : approvalReason ?? (!catalogsReady ? (catalogFailed ?? "菜单或权限列表还没加载完") : undefined);
+  const links = [
+    { href: "/platform/rbac", label: "运营账号与权限", text: "把账号分给这个角色" },
+    { href: "/platform/permissions", label: "权限清单", text: "查一项权限管什么" },
+    { href: "/platform/menus", label: "菜单管理", text: "改菜单本身" },
+  ].filter((link) => reach(link.href));
+
+  return (
+    <Panel title={detail.roleName} icon={detail.builtin ? ShieldCheck : UserCog} tone="role-3"
+      sub={<span data-mono>{detail.roleCode}</span>}
+      actions={<span className="a6-tags">
+        <StatusTag tone="neutral" icon={detail.builtin ? ShieldCheck : UserCog}>{detail.builtin ? "内置" : "自定义"}</StatusTag>
+        {detail.status === 1 ? <StatusTag tone="ok" icon={CheckCircle2}>已启用</StatusTag> : <StatusTag tone="neutral" icon={Ban}>已停用</StatusTag>}
+      </span>}>
+      <div className="a6-detail">
+        <dl className="a6-nums">
+          <div>
+            <dt>绑定账号<Explain label="绑定账号" content={ADMIN_COUNT_EXPLAIN} /></dt>
+            <dd data-empty={summary?.adminCount === 0 ? "" : undefined}><b>{summary?.adminCount ?? "—"}</b> 个</dd>
+            {summary?.enabledAdminCount !== undefined && <dd className="a6-nums-sub">启用中 {summary.enabledAdminCount} 个</dd>}
+          </div>
+          <div>
+            <dt>能做的操作<Explain label="能做的操作" content={<><p>这个角色存着的、启用中的接口权限数。</p><p>{SENSITIVE_EXPLAIN}</p></>} /></dt>
+            <dd data-empty={detail.permissionCodes.length === 0 ? "" : undefined}><b>{detail.permissionCodes.length}</b> 项</dd>
+            {sensitive === null
+              ? <dd className="a6-nums-sub">敏感操作数要能读权限清单</dd>
+              : <><dd className="a6-nums-sub">敏感操作 {sensitive} 项</dd>{amplifies ? <dd className="a6-nums-sub">可能多付钱 {amplifies} 项<Explain label="可能多付钱" content={AMPLIFIES_EXPLAIN} /></dd> : null}</>}
+          </div>
+          <div>
+            <dt>能看的菜单<Explain label="能看的菜单" content="存着的菜单数，一级菜单和页面都算，停用或还没上线的也算在内，所以不等于左侧导航实际显示的页数。" /></dt>
+            <dd data-empty={detail.menuIds.length === 0 ? "" : undefined}><b>{detail.menuIds.length}</b> 个</dd>
+          </div>
+        </dl>
+
+        <dl className="a6-kv">
+          {duty && <div><dt>默认职责<Explain label="默认职责" content="页面上写的职责说明，不是授权。这个角色实际能做什么，以存着的权限和菜单为准。" /></dt><dd>{duty.desc}（{duty.scope}）</dd></div>}
+          <div><dt>备注</dt><dd data-empty={detail.remark ? undefined : ""}>{detail.remark || "—"}</dd></div>
+        </dl>
+
+
+        {mismatch && <MismatchNotice mismatch={mismatch} menuById={menuById} />}
+
+        <section aria-label="能做的操作按模块">
+          <h3 className="a6-subhead">能做的操作，按模块<span className="a6-group-count">{byDomain.size} 个模块</span></h3>
+          {domainRows.length === 0
+            ? <p className="a6-muted">还没有任何权限{canGrant ? "，点下面「改权限和菜单」给它授权" : ""}</p>
+            : <BarList label="能做的操作按模块" slot={4} rows={domainRows.map(([code, row]) => ({
+                key: code, label: row.label, value: row.count, text: permsKnown && row.sensitive ? `${row.count} 项 · 敏感 ${row.sensitive}` : `${row.count} 项`,
+              }))} />}
+        </section>
+
+        <section className="a6-f4" aria-label="区域大使核验">
+          <h3 className="a6-subhead">区域大使核验<Explain label="区域大使核验" content="材料核验和费用核验分开授权，最终批准另有权限，核验的人不能批准同一版本。增长角色不会自动拿到核验权限；审计角色的默认职责是只读。" /></h3>
+          <dl className="a6-kv">
+            {F4_MATERIAL_PERMISSIONS.map((permission) => {
+              const on = detail.permissionCodes.includes(permission.code);
+              return <div key={permission.code}><dt>{permission.label}</dt><dd>{on ? <StatusTag tone="ok" icon={CheckCircle2}>已授权</StatusTag> : <StatusTag tone="neutral" icon={Minus}>未授权</StatusTag>}</dd></div>;
+            })}
+          </dl>
+        </section>
+
+        {(canWrite || canGrant) && (
+          <div className="a6-actions">
+            {canWrite && (
+              <div className="a6-action-group">
+                <span className="a6-action-cap">立即生效</span>
+                <div className="a6-action-row">
+                  <Button variant="secondary" disabledReason={writeReason} onClick={onEdit}>编辑名称和备注</Button>
+                </div>
+              </div>
+            )}
+            <div className="a6-action-group">
+              <span className="a6-action-cap">要另一位管理员批准</span>
+              <div className="a6-action-row">
+                {canGrant && <Button variant="primary" disabledReason={grantReason} onClick={onGrants}>改权限和菜单</Button>}
+                {canWrite && <Button variant="secondary" disabledReason={isSuperRole ? "超级管理员角色不能停用" : approvalReason} onClick={onStatus}>{detail.status === 1 ? "停用" : "启用"}</Button>}
+                {canWrite && <Button variant="danger-outline" disabledReason={detail.builtin ? "内置角色不能删除" : approvalReason} onBlockedClick={detail.builtin ? onBuiltinDelete : undefined} onClick={onDelete}>删除</Button>}
+              </div>
+            </div>
+            {isSuperRole && <p className="a6-note"><TriangleAlert size={14} aria-hidden />超管角色的权限和菜单改了会被后端拒绝</p>}
+          </div>
+        )}
+
+        {links.length > 0 && (
+          <nav className="a6-links" aria-label="相关页面">
+            {links.map((link) => <span key={link.href}><Link className="rd-link" href={link.href}>{link.label}</Link><span className="a6-muted">{link.text}</span></span>)}
+          </nav>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+/** A6-PD01：提交的整组和现在读到的详情比，列出没存上的权限。审批还没批准时两边也会不一样，所以只陈述差别。 */
+function SavedCheck({ desired, detail, approved, permByCode, menuById, onRetry }: { desired: { permissionCodes: string[]; menuIds: number[] }; detail: A6RoleDetail; approved: boolean; permByCode: ReadonlyMap<string, A8Permission>; menuById: ReadonlyMap<number, A7MenuTreeNode>; onRetry: () => void }) {
+  const missing = desired.permissionCodes.filter((code) => !detail.permissionCodes.includes(code));
+  const extra = detail.permissionCodes.filter((code) => !desired.permissionCodes.includes(code));
+  const menuSame = setDiff(desired.menuIds, detail.menuIds);
+  const menuDiffs = menuSame.added.length + menuSame.removed.length;
+  const same = missing.length === 0 && extra.length === 0 && menuDiffs === 0;
+  const parts = [missing.length ? `${missing.length} 项权限提交了、现在没有` : "", extra.length ? `多出 ${extra.length} 项权限` : "", menuDiffs ? `菜单有 ${menuDiffs} 个不同` : ""].filter(Boolean);
+  return (
+    <div className="a6-saved">
+      {approved && (same ? <span>现在存着的和提交的一致</span> : (
+        <Fold inset title="和提交的不一样" alert summary={parts.join("；")}
+          explain={`只说明现在存着的和这次申请不同：可能没存上，也可能之后又改过授权${detail.status === 0 ? "；停用角色新加的权限可能存不上，已提后端修" : ""}。`}>
+          {missing.length > 0 && <PermChangeList codes={missing} permByCode={permByCode} kind="missing" limit={20} />}
+          {menuDiffs > 0 && <>
+            <h4 className="a6-subhead">菜单：提交了、现在没有 {menuSame.removed.length} 个 · 现在多出 {menuSame.added.length} 个</h4>
+            <MenuChangeList ids={menuSame.removed} menuById={menuById} kind="remove" />
+            <MenuChangeList ids={menuSame.added} menuById={menuById} kind="add" />
+          </>}
+          {missing.length === 0 && menuDiffs === 0 && <p className="a6-muted">提交的权限都在，现在多出 {extra.length} 项权限。</p>}
+        </Fold>
+      ))}
+      <Button variant="ghost" onClick={onRetry}>重新读取</Button>
     </div>
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div><div style={{ color: "var(--ink-3)", fontSize: 12, marginBottom: 4 }}>{label}</div><div>{children}</div></div>;
+type ConfirmView = Pick<ConfirmReq, "title" | "effect" | "confirmLabel" | "statedBrief" | "facts">;
+
+function roleFormConfirmation(isCreate: boolean, detail: A6RoleDetail | null, roleCode: string, roleName: string, remark: string) {
+  const clearsRemark = !isCreate && Boolean(detail?.remark) && !remark.trim();
+    if (isCreate) {
+      return [{ roleCode: roleCode.trim(), roleName: roleName.trim(), remark: remark.trim() || undefined, status: 1 },
+        `新建角色 · ${roleName}`,
+        <>新建角色 <b>{roleName}</b>（<span data-mono>{roleCode}</span>）。新角色没有任何权限，创建后再编辑权限和菜单。</>,
+        {
+          title: `新建角色「${roleName.trim()}」`,
+          effect: directTag(),
+          confirmLabel: "确认新建",
+          statedBrief: {
+            impact: "确认后立即建好，没有任何权限和菜单。",
+            check: "接着改权限和菜单，再到「运营账号与权限」分给账号。标识建好后不能改；用过又删除的标识会恢复原角色并清空旧授权和绑定。",
+          },
+          facts: <Facts>
+            <Fact k="角色标识"><span data-mono>{roleCode.trim()}</span></Fact>
+            <Fact k="名称">{roleName.trim()}</Fact>
+            <Fact k="备注">{remark.trim() || "—"}</Fact>
+            <Fact k="权限和菜单">没有，建好后再授权</Fact>
+          </Facts>,
+        }] as const;
+    } else {
+      const nextName = roleName.trim();
+      const nextRemark = remark.trim();
+      return [buildRoleMetadataPayload(roleName, remark),
+        `编辑角色 · ${roleName}`,
+        <>修改角色 <b>{roleName}</b>（<span data-mono>{detail?.roleCode}</span>）的名称和备注。</>,
+        {
+          title: `修改角色「${detail?.roleName ?? nextName}」`,
+          effect: <>{directTag()}<StatusTag tone="neutral" icon={Minus}>不改权限和菜单</StatusTag></>,
+          confirmLabel: "确认保存",
+          statedBrief: {
+            impact: "确认后立即保存，只改名称和备注。",
+            check: "核对新名称；角色标识不能改。",
+          },
+          facts: <Facts>
+            <Fact k="角色标识"><span data-mono>{detail?.roleCode}</span></Fact>
+            <Fact k="名称">{nextName === detail?.roleName ? nextName : <Change from={detail?.roleName ?? "—"} to={nextName} />}</Fact>
+            {clearsRemark
+              ? <Fact k="备注" tone="warn"><Change from={detail?.remark ?? "—"} to="清空" /></Fact>
+              : <Fact k="备注">{nextRemark === (detail?.remark ?? "") ? nextRemark || "—" : <Change from={detail?.remark || "—"} to={nextRemark} />}</Fact>}
+          </Facts>,
+        }] as const;
+    }
 }
 
-function RoleFormDrawer({ mode, detail, onClose, onSubmit }: {
+function RoleFormModal({ mode, detail, onClose, onSubmit }: {
   mode: { kind: "create" } | { kind: "update" };
   detail: A6RoleDetail | null;
   onClose: () => void;
-  onSubmit: (payload: A6RoleCreateInput | A6RoleUpdateInput, action: React.ReactNode, detailNode: React.ReactNode) => void;
+  onSubmit: (payload: A6RoleCreateInput | A6RoleUpdateInput, action: ReactNode, detailNode: ReactNode, view: ConfirmView) => void;
 }) {
   const isCreate = mode.kind === "create";
   const [roleCode, setRoleCode] = useState(isCreate ? "" : detail?.roleCode ?? "");
   const [roleName, setRoleName] = useState(isCreate ? "" : detail?.roleName ?? "");
   const [remark, setRemark] = useState(isCreate ? "" : detail?.remark ?? "");
-  const fieldStyle = { width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--ink)" } as const;
-  const labelStyle = { color: "var(--ink-3)", fontSize: 12, marginBottom: 4 } as const;
+  const [tried, setTried] = useState(false);
+  const codeMissing = isCreate && !roleCode.trim();
+  const nameMissing = !roleName.trim();
+  const dirty = isCreate ? Boolean(roleCode || roleName || remark) : roleName !== (detail?.roleName ?? "") || remark !== (detail?.remark ?? "");
+  const clearsRemark = !isCreate && Boolean(detail?.remark) && !remark.trim();
 
   const submit = () => {
+    setTried(true);
     if (isCreate && !roleCode.trim()) return;
     if (!roleName.trim()) return;
-    if (isCreate) {
-      onSubmit({ roleCode: roleCode.trim(), roleName: roleName.trim(), remark: remark.trim() || undefined, status: 1 },
-        `新建角色 · ${roleName}`,
-        <>新建角色 <b>{roleName}</b>（<span className="mono">{roleCode}</span>）。新角色没有任何权限，创建后再编辑权限和菜单。</>);
-    } else {
-      onSubmit(buildRoleMetadataPayload(roleName, remark),
-        `编辑角色 · ${roleName}`,
-        <>修改角色 <b>{roleName}</b>（<span className="mono">{detail?.roleCode}</span>）的名称和备注。</>);
-    }
+    const [payload, action, detailNode, view] = roleFormConfirmation(isCreate, detail, roleCode, roleName, remark);
+    onSubmit(payload, action, detailNode, view);
   };
 
   return (
-    <Drawer title={isCreate ? "新建角色" : `编辑 · ${detail?.roleName}`} sub={isCreate ? undefined : detail?.roleCode} onClose={onClose}
-      footer={<Btn variant="primary" onClick={submit}>{isCreate ? "提交（需确认）" : "保存（需确认）"}</Btn>}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
-        <div><div style={labelStyle}>角色标识 {isCreate ? "" : "（不能修改）"}</div>
-          <input style={fieldStyle} value={roleCode} onChange={(e) => setRoleCode(e.target.value)} disabled={!isCreate} placeholder="如 CONTENT_EDITOR" /></div>
-        <div><div style={labelStyle}>名称</div>
-          <input style={fieldStyle} value={roleName} onChange={(e) => setRoleName(e.target.value)} placeholder="如 内容编辑员" /></div>
-        <div><div style={labelStyle}>备注</div>
-          <input style={fieldStyle} value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="职责说明" /></div>
-
-      </div>
-    </Drawer>
-  );
-}
-
-const PERM_TONE: Record<string, string> = { HIGH: "danger", WRITE: "warn", READ: "ok" };
-
-/** 8 内置角色中文职责说明(角色定义,从 A1 挪来)。自定义角色用 remark 兜底。 */
-const ROLE_DESC: Record<string, { desc: string; scope: string }> = {
-  SUPER_ADMIN: { desc: "平台负责人，拥有全部权限", scope: "全部模块" },
-  CONFIG_ADMIN: { desc: "查看运营总览的部分页面", scope: "运营总览（部分）" },
-  FINANCE: { desc: "负责资金对账、提现、账单和资金储备", scope: "运营总览、资金与财务" },
-  RISK: { desc: "负责风控规则、风险评分和反作弊", scope: "用户与账户、风控，以及部分其他模块" },
-  CONTENT: { desc: "负责文案、通知、信任中心和风险披露", scope: "内容与合规" },
-  GROWTH: { desc: "负责活动、任务、代金券和运营节奏", scope: "增长与活动" },
-  SUPPORT: { desc: "负责工单、会话、知识库和话术", scope: "客服中心" },
-  AUDITOR: { desc: "全域只读，可导出脱敏文件", scope: "全部模块（只读）" },
-};
-
-/** 权限授权编辑 Drawer:按业务域 A-M(中文+域色) → 域内页面(L2) → 权限 三级分组 + 搜索定位。 */
-function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubmit }: {
-  detail: A6RoleDetail;
-  menuTree: A7MenuTreeNode[];
-  allPerms: A8Permission[];
-  onClose: () => void;
-  onSubmit: (payload: A6GrantsPayload, permBefore: number, menuBefore: number) => void;
-}) {
-  const [permSet, setPermSet] = useState<Set<string>>(() => new Set(detail.permissionCodes));
-  const [menuSet, setMenuSet] = useState<Set<number>>(() => new Set(detail.menuIds));
-  // 反转语义:折叠集(默认空 = 全展开);menuTree 异步加载后即默认全展开,无需 effect 填充
-  const [menuCollapsed, setMenuCollapsed] = useState<Set<number>>(() => new Set());
-  const [permQuery, setPermQuery] = useState("");
-  const [selectedDomain, setSelectedDomain] = useState<string>("A");
-  const [pageExpanded, setPageExpanded] = useState<Set<string>>(() => new Set());
-
-  const togglePerm = (code: string) => {
-    setPermSet((prev) => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; });
-  };
-  const togglePermGroup = (codes: string[], allOn: boolean) => {
-    setPermSet((prev) => { const n = new Set(prev); codes.forEach((c) => allOn ? n.delete(c) : n.add(c)); return n; });
-  };
-  const toggleMenu = (node: A7MenuTreeNode, checked: boolean) => {
-    setMenuSet((prev) => {
-      const n = new Set(prev);
-      const apply = (nd: A7MenuTreeNode, val: boolean) => { val ? n.add(nd.id) : n.delete(nd.id); nd.children.forEach((c) => apply(c, val)); };
-      apply(node, checked);
-      return n;
-    });
-  };
-
-  const groups = useMemo<PermDomainGroup[]>(() => groupPermissionsByDomain(allPerms), [allPerms]);
-
-  // 搜索过滤(权限码 / 中文名 / 页面 id / 页面名,跨域定位)
-  const q = permQuery.trim().toLowerCase();
-  const filteredGroups = useMemo(() => {
-    if (!q) return groups;
-    return groups
-      .map((g) => ({
-        ...g,
-        pages: g.pages
-          .map((p) => ({
-            ...p,
-            perms: p.perms.filter(
-              (pp) =>
-                pp.permissionCode.toLowerCase().includes(q) ||
-                (F4_MATERIAL_PERMISSIONS.find((item) => item.code === pp.permissionCode)?.label ?? pp.permissionName).toLowerCase().includes(q) ||
-                p.l2.id.toLowerCase().includes(q) ||
-                p.l2.name.toLowerCase().includes(q),
-            ),
-          }))
-          .filter((p) => p.perms.length > 0),
-      }))
-      .filter((g) => g.pages.length > 0);
-  }, [groups, q]);
-
-  // 选中域不在过滤结果(搜索后命中变) → 自动选第一个命中域
-  useEffect(() => {
-    if (filteredGroups.length && !filteredGroups.some((g) => g.domain.code === selectedDomain)) {
-      setSelectedDomain(filteredGroups[0].domain.code);
-    }
-  }, [filteredGroups, selectedDomain]);
-
-  const activeGroup = filteredGroups.find((g) => g.domain.code === selectedDomain) || filteredGroups[0];
-  // 切换选中域 → 自动展开该域全部页面(权限直出,超出右栏滚动)
-  useEffect(() => {
-    if (activeGroup) {
-      setPageExpanded(new Set(activeGroup.pages.map((p) => `${activeGroup.domain.code}:${p.l2.id}`)));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDomain]);
-  const togglePage = (key: string) => {
-    setPageExpanded((p) => { const n = new Set(p); n.has(key) ? n.delete(key) : n.add(key); return n; });
-  };
-
-  return (
-    <Drawer wide title={`编辑授权 · ${detail.roleName}`} sub={detail.roleCode} onClose={onClose}
-      footer={<Btn variant="primary" onClick={() => onSubmit({ permissionCodes: [...permSet], menuIds: [...menuSet] }, detail.permissionCodes.length, detail.menuIds.length)}>保存（需确认）</Btn>}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16, height: "calc(100vh - 200px)", overflow: "hidden" }}>
-        {/* 菜单授权(左,可见性) ‖ 权限授权(右,操作权)— 左右并排,各栏独立滚动 */}
-        <div style={{ display: "flex", gap: 12, flex: 1, minHeight: 0 }}>
-          {/* 菜单授权(可见性)— 常驻左栏,默认全展开,栏内独立滚动 */}
-          <div style={{ width: 340, flexShrink: 0, display: "flex", flexDirection: "column", minHeight: 0, border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-            <div style={{ padding: "9px 14px", borderBottom: "1px solid var(--border)", background: "var(--surface-2)", fontWeight: 700, fontSize: 13 }}>
-              能看的菜单<span className="mono" style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 400 }}>· 已选 {menuSet.size} 项 · 勾选上级会同时勾选下级</span>
-            </div>
-            <div style={{ overflow: "auto", flex: 1, minHeight: 0, padding: 8 }}>
-              {menuTree.map((node) => (
-                <MenuCheckRow key={node.id} node={node} depth={0} menuSet={menuSet} collapsed={menuCollapsed}
-                  onToggleCollapse={(id) => setMenuCollapsed((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; })}
-                  onToggle={toggleMenu} />
-              ))}
-              {!menuTree.length && <div style={{ color: "var(--ink-4)", padding: 12 }}>正在加载菜单…</div>}
-            </div>
-          </div>
-
-          {/* 权限授权(操作权)— 整体卡:标题头 + 搜索 + 左域右详情 master-detail */}
-          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-          <div style={{ padding: "9px 14px", borderBottom: "1px solid var(--border)", background: "var(--surface-2)", fontWeight: 700, fontSize: 13 }}>
-            能做的操作<span className="mono" style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 400 }}>· 左侧选模块，右侧勾选权限</span>
-          </div>
-          <div style={{ padding: 10, borderBottom: "1px solid var(--border)" }}>
-            <input aria-label="权限搜索" placeholder="搜索权限名或页面，如 质押、提现"
-              value={permQuery} onChange={(e) => setPermQuery(e.target.value)}
-              style={{ width: "100%", padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--ink)" }} />
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 12, flex: 1, minHeight: 0, padding: 10 }}>
-          {/* 左:域列表 A-M(选中高亮 + 域色 + 计数) */}
-          <div style={{ overflow: "auto", border: "1px solid var(--border)", borderRadius: 8, padding: 6, minHeight: 0 }}>
-            {filteredGroups.map((g) => {
-              const accent = `var(${g.domain.accentVar})`;
-              const sel = g.domain.code === selectedDomain;
-              const codes = g.pages.flatMap((p) => p.perms.map((pp) => pp.permissionCode));
-              const selCnt = codes.filter((c) => permSet.has(c)).length;
-              return (
-                <button key={g.domain.code} onClick={() => setSelectedDomain(g.domain.code)}
-                  style={{ display: "flex", alignItems: "center", gap: 7, width: "100%", padding: "8px 10px", marginBottom: 3, borderRadius: 7, cursor: "pointer", textAlign: "left", fontFamily: "inherit",
-                    background: sel ? `color-mix(in srgb, ${accent} 16%, transparent)` : "transparent",
-                    border: sel ? `1px solid color-mix(in srgb, ${accent} 42%, transparent)` : "1px solid transparent",
-                    color: sel ? accent : "var(--ink-2)", fontWeight: sel ? 600 : 400, fontSize: 12.5 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: accent, flexShrink: 0 }} />
-                  <span style={{ flex: 1, minWidth: 0 }}>{g.domain.code} · {g.domain.name}</span>
-                  <span className="mono" style={{ fontSize: 10.5, color: "var(--ink-4)" }}>{selCnt}/{codes.length}</span>
-                </button>
-              );
-            })}
-            {!filteredGroups.length && <div style={{ color: "var(--ink-4)", padding: 12, fontSize: 12 }}>{allPerms.length ? "没有匹配的模块" : "正在加载权限…"}</div>}
-          </div>
-
-          {/* 右:选中域详情(页面 L2 + 权限,超出滚动) */}
-          <div style={{ overflow: "auto", border: "1px solid var(--border)", borderRadius: 8, padding: 12, minHeight: 0 }}>
-            {activeGroup ? (() => {
-              const accent = `var(${activeGroup.domain.accentVar})`;
-              const domCodes = activeGroup.pages.flatMap((p) => p.perms.map((pp) => pp.permissionCode));
-              const domAllOn = domCodes.length > 0 && domCodes.every((c) => permSet.has(c));
-              return (
-                <>
-                  <div className="row" style={{ alignItems: "center", gap: 8, marginBottom: 10, paddingBottom: 8, borderBottom: "1px solid var(--border)" }}>
-                    <span style={{ width: 10, height: 10, borderRadius: "50%", background: accent }} />
-                    <span style={{ fontWeight: 700, color: accent, fontSize: 14 }}>{activeGroup.domain.code} · {activeGroup.domain.name}</span>
-                    <span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{domCodes.filter((c) => permSet.has(c)).length}/{domCodes.length}</span>
-                    <span style={{ flex: 1 }} />
-                    <button className="l-btn sm" onClick={() => togglePermGroup(domCodes, domAllOn)}>{domAllOn ? "全部取消" : "全选本模块"}</button>
-                  </div>
-                  {activeGroup.pages.map((p) => {
-                    const pageKey = `${activeGroup.domain.code}:${p.l2.id}`;
-                    const pageCodes = p.perms.map((pp) => pp.permissionCode);
-                    const pageAllOn = pageCodes.length > 0 && pageCodes.every((c) => permSet.has(c));
-                    const pageSel = pageCodes.filter((c) => permSet.has(c)).length;
-                    const pgOpen = pageExpanded.has(pageKey) || !!q;
-                    return (
-                      <div key={pageKey} style={{ marginBottom: 8 }}>
-                        <div className="row" style={{ alignItems: "center", gap: 6, padding: "5px 0" }}>
-                          <button onClick={() => togglePage(pageKey)} style={{ background: "none", border: "none", color: "var(--ink-4)", cursor: "pointer", fontSize: 9, padding: 0, width: 12 }}>{pgOpen ? "▼" : "▶"}</button>
-                          <span className="mono" style={{ fontWeight: 700, fontSize: 12 }}>{p.l2.id}</span>
-                          <span style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{p.l2.name}</span>
-                          <span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{pageSel}/{pageCodes.length}</span>
-                          <span style={{ flex: 1 }} />
-                          <button className="l-btn sm" onClick={() => togglePermGroup(pageCodes, pageAllOn)}>{pageAllOn ? "全部取消" : "全选"}</button>
-                        </div>
-                        {pgOpen && (
-                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: 4, padding: "2px 0 6px 22px" }}>
-                            {p.perms.map((pp) => {
-                              const on = permSet.has(pp.permissionCode);
-                              const tone = PERM_TONE[pp.permType] ?? "neutral";
-                              return (
-                                <label key={pp.permissionCode} title={pp.permissionCode} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 6, cursor: "pointer", fontSize: 12, background: on ? "var(--surface-2)" : "transparent" }}>
-                                  <input type="checkbox" checked={on} onChange={() => togglePerm(pp.permissionCode)} />
-                                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{F4_MATERIAL_PERMISSIONS.find((item) => item.code === pp.permissionCode)?.label ?? operatorCopyText(pp.permissionName || pp.permissionCode)}</span>
-                                  <Badge tone={tone}>{({ HIGH: "敏感操作", WRITE: "修改", READ: "查询" } as Record<string,string>)[pp.permType] ?? "未知权限类型"}</Badge>
-                                  {pp.amplifies === 1 && <span title="会让平台多付钱" style={{ color: "var(--danger)", fontSize: 12 }}>⚠</span>}
-                                </label>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </>
-              );
-            })() : <div style={{ color: "var(--ink-4)", padding: 24, textAlign: "center" }}>{allPerms.length ? "没有匹配的权限" : "正在加载权限…"}</div>}
-          </div>
-          </div>
-        </div>
-        </div>
-
-        <div className="atint" style={{ fontSize: 12 }}>确认生效后，该角色下的账号立即按新权限使用。</div>
-      </div>
-    </Drawer>
-  );
-}
-
-function MenuCheckRow({ node, depth, menuSet, collapsed, onToggleCollapse, onToggle }: {
-  node: A7MenuTreeNode;
-  depth: number;
-  menuSet: Set<number>;
-  collapsed: Set<number>;
-  onToggleCollapse: (id: number) => void;
-  onToggle: (node: A7MenuTreeNode, checked: boolean) => void;
-}) {
-  const hasChildren = node.children.length > 0;
-  const checked = menuSet.has(node.id);
-  const isOpen = !collapsed.has(node.id);
-  const accent = depth === 0 ? (DOMAIN_ACCENT[node.menuCode?.[0]?.toUpperCase() ?? ""] ?? "var(--ink-4)") : null;
-  return (
-    <div>
-      <div className="row" style={{ alignItems: "center", gap: 6, padding: "4px 0", paddingLeft: depth * 16 }}>
-        <button onClick={() => hasChildren && onToggleCollapse(node.id)} style={{ width: 16, background: "none", border: "none", color: "var(--ink-4)", cursor: hasChildren ? "pointer" : "default", fontSize: 10, padding: 0 }}>
-          {hasChildren ? (isOpen ? "▼" : "▶") : "·"}
-        </button>
-        <input type="checkbox" checked={checked} onChange={(e) => onToggle(node, e.target.checked)} />
-        {accent && <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: accent, flexShrink: 0 }} />}
-        <span style={{ fontSize: 12, fontWeight: node.parentId == null ? 600 : 400 }}>{node.menuNameZh || node.menuName}</span>
-        <span className="mono" style={{ fontSize: 10, color: "var(--ink-4)" }}>{node.menuCode}</span>
-      </div>
-      {hasChildren && isOpen && node.children.map((c) => (
-        <MenuCheckRow key={c.id} node={c} depth={depth + 1} menuSet={menuSet} collapsed={collapsed} onToggleCollapse={onToggleCollapse} onToggle={onToggle} />
-      ))}
-    </div>
+    <Modal title={isCreate ? "新建角色" : "编辑名称和备注"} icon={isCreate ? Plus : ListTree} sub={isCreate ? directTag() : <>{directTag()}<StatusTag tone="neutral" icon={Minus}>不改权限和菜单</StatusTag></>}
+      onClose={onClose} dirty={dirty}
+      footer={<><Button variant="secondary" onClick={onClose}>取消</Button><Button variant="primary" onClick={submit}>下一步：确认</Button></>}>
+      <Field label="角色标识" required={isCreate} help={isCreate ? "大写字母开头，只用大写字母、数字和下划线，3–64 位。" : "不能修改。"}
+        error={tried && codeMissing ? "填写角色标识" : undefined}
+        explain={isCreate ? "建好后不能改。不能用 8 个内置角色的标识，也不能和现有角色重复。用过又删除的标识会恢复成原来那个角色，旧的授权和绑定全部清空。" : undefined}>
+        {(control) => <Input {...control} value={roleCode} onChange={(e) => setRoleCode(e.target.value)} disabled={!isCreate} placeholder="如 CONTENT_EDITOR" data-mono="" />}
+      </Field>
+      <Field label="名称" required help="最多 64 字。" error={tried && nameMissing ? "填写名称" : undefined}>
+        {(control) => <Input {...control} value={roleName} onChange={(e) => setRoleName(e.target.value)} placeholder="如 内容编辑员" />}
+      </Field>
+      <Field label="备注" help={clearsRemark ? "留空保存会清空原备注。" : "最多 255 字。"}>
+        {(control) => <Textarea {...control} rows={2} value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="这个角色负责什么" />}
+      </Field>
+    </Modal>
   );
 }

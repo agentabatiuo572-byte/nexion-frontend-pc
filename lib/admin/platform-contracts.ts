@@ -49,12 +49,11 @@ export function normalizeProposalTicket(raw: unknown): A2ProposalTicket | null {
 
 export function buildRoleMetadataPayload(roleName: string, remark: string): {
   roleName: string;
-  remark?: string;
+  remark: string;
 } {
-  const normalizedRemark = remark.trim();
   return {
     roleName: roleName.trim(),
-    ...(normalizedRemark ? { remark: normalizedRemark } : {}),
+    remark: remark.trim(),
   };
 }
 

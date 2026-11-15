@@ -119,7 +119,7 @@ function normalize(raw: unknown): PlatformExperienceConfig {
   const share = root.share && typeof root.share === "object" && !Array.isArray(root.share) ? root.share as Record<string, unknown> : null;
   const download = share?.appDownload && typeof share.appDownload === "object" && !Array.isArray(share.appDownload) ? share.appDownload as Record<string, unknown> : null;
   const channels = Array.isArray(share?.channels) ? share.channels : [];
-  if (!share || !download || !Number.isSafeInteger(Number(root.version)) || !Array.isArray(channels)
+  if (!share || !download || (typeof root.version !== "number" || !Number.isSafeInteger(root.version) || root.version < 0) || !Array.isArray(channels)
     || typeof root.homeNewcomerTasksEnabled !== "boolean"
     || typeof root.homeWeeklyPromoEnabled !== "boolean") throw new Error("PLATFORM_EXPERIENCE_RESPONSE_INVALID");
   const source = String(download.source ?? "unavailable").trim() as ExperienceSource;
@@ -169,11 +169,7 @@ export async function fetchPlatformExperienceConfig() {
   return normalize(await request<unknown>());
 }
 
-export async function updatePlatformExperienceConfig(
-  config: PlatformExperienceConfig,
-  reason: string,
-  operator = "",
-) {
+export function platformExperienceBody(config: PlatformExperienceConfig, reason: string, operator = "") {
   if (!Number.isSafeInteger(config.version) || reason.trim().length < 8 || reason.trim().length > 200) throw new Error("A3_REASON_LENGTH_INVALID");
   if (config.appDownload.source === "official") {
     for (const [field, label] of [["officialUrl", "官方安装链接"], ["iosUrl", "iOS 官方下载链接"], ["androidUrl", "Android 官方下载链接"], ["apkUrl", "APK 下载链接"]] as const) {
@@ -188,6 +184,11 @@ export async function updatePlatformExperienceConfig(
   }
   const body: Record<string, unknown> = { expectedVersion: config.version, baseUrl: config.baseUrl, channels: config.channels, appDownload: config.appDownload, reason: reason.trim(), operator };
   if (config.interfaceLanguages) body.interfaceLanguages = config.interfaceLanguages;
+  return body;
+}
+
+export async function updatePlatformExperienceConfig(config: PlatformExperienceConfig, reason: string, operator = "") {
+  const body = platformExperienceBody(config, reason, operator);
   const slot = "platform-experience:update";
   const fingerprint = JSON.stringify(body);
   const idempotencyKey = commandAttempts.resolve(slot, fingerprint, () => `a3-experience-${crypto.randomUUID()}`);
@@ -211,3 +212,5 @@ export async function updatePlatformExperienceConfig(
     throw cause;
   }
 }
+
+export { normalize as parsePlatformExperienceConfig };

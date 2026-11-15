@@ -24,7 +24,13 @@ export type A7MenuNode = {
   version: string;
 };
 
-export type A7MenuTreeNode = A7MenuNode & { children: A7MenuTreeNode[] };
+export type A7MenuTreeNode = A7MenuNode & {
+  children: A7MenuTreeNode[];
+  /** Undeleted role-menu binding rows, including disabled roles; absent on older backends. */
+  roleBindingCount?: number;
+  /** Enabled, undeleted permission rows of all resource types; absent on older backends. */
+  activePermissionCount?: number;
+};
 
 export type A7MenuOverview = {
   tree: A7MenuTreeNode[];

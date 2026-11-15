@@ -196,7 +196,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     paramKey: `F.quota.usage.${usage.id}.status`, fixedVal: "recycled",
     title: `回收名额 #${usage.id}`, effect: approvalTag(), confirmTone: "danger", confirmLabel: "提交回收",
     statedBrief: {
-      impact: "批准后这条记录改为已回收，这几台的名额回到本月剩余里；不退款、不删订单，用户已买的设备不受影响。",
+      impact: "批准后这条记录改为已回收，这几台的名额回到它所属月份的剩余里；不退款、不删订单，用户已买的设备不受影响。",
       check: "只有还在占用的记录能回收；已回收或不存在的会被拒绝。",
     },
     completionCopy: approvalCopy("F4 写权限"),
@@ -205,7 +205,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       { key: "item", label: "哪一类", value: `${productName(usage)} · ${count(usage.quantity)} 台` },
       { key: "order", label: "订单号", value: usage.orderNo ? <span data-mono>{usage.orderNo}</span> : "无订单号" },
     ]} />,
-    detail: "只能回收已使用的配额，回收后这个月的名额马上释放。",
+    detail: "跨月才批准时，名额仍回到原来那个月，批准当月的剩余不会增加。",
   };
       break;
     }
