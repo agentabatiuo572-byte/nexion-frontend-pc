@@ -16,7 +16,7 @@ import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 
 /** 90 天不再提供。已有的 90 天草稿还看得到，但不能连别的改动一起保存（PCN-38）。 */
 export const FORECAST_90D_BLOCK = "90 天不再提供，改成 7 天或 30 天才能保存。";
-const UVT_VALUATION_NOTE = "UVT 按最新有效价格折算。系统返回缺价状态时，UVT 金额、应付款总额及占比显示「暂时无法估值」；储备、非 UVT 金额和到期预测继续显示。";
+const UVT_VALUATION_NOTE = "UVT 按最新有效价格折算；没有有效价格时，UVT 金额、应付款总额和占比显示「暂时无法估值」，储备、其他类金额和到期预测照常显示。";
 
 export type ForecastValues = Pick<D3ForecastConfig, "reserveCategories" | "liabilityCategories" | "forecastWindow" | "genesisIncluded" | "includeFarLiabilities" | "stakingInterestMode" | "trialStressEnabled">;
 export interface Loadable<T> { data: T | null; loading: boolean; error: string }
@@ -163,7 +163,7 @@ export function OverviewTab({ main, links }: { main: D3Main; links: readonly Cro
   const sources = Array.from(new Set([...reserve.sources, ...liabilities.sources].map(treasurySourceLabel)));
   const reserveParts = [
     { key: "usdt", name: "USDT 储备", sub: "基础可动用储备", value: reserve.usdtReserveUsdt, slot: 1 as ChartSlot },
-    { key: "other", name: "其他高流动资产", sub: "其他高流动资产暂不参与储备计算。", value: reserve.otherLiquidUsdt, slot: "other" as ChartSlot },
+    { key: "other", name: "其他高流动资产", sub: "暂不计入储备", value: reserve.otherLiquidUsdt, slot: "other" as ChartSlot },
   ];
   const liveParts = reserveParts.filter((part) => part.value > 0);
   const share = (value: number) => (reserve.reserveTotalUsdt > 0 ? `${(value / reserve.reserveTotalUsdt * 100).toFixed(1)}%` : "—");
@@ -191,7 +191,7 @@ export function OverviewTab({ main, links }: { main: D3Main; links: readonly Cro
     : null;
   const noDue = maturity7.cumulativeUsdt === 0;
   const levels = (
-    <Panel title="资金安全等级" icon={ShieldCheck} tone={quiet ? "role-other" : tone} explain="按未来 7 天到期的应付款判断，不随页面选的窗口变。「关注」是水位提醒，不等同今日概览的资金告警，两页按各自阈值判断。">
+    <Panel title="资金安全等级" icon={ShieldCheck} tone={quiet ? "role-other" : tone} explain="按未来 7 天到期的应付款判断，不随页签里选的窗口变。「关注」只是提醒，和今日概览的资金告警各按各的标准。">
       <div className="d3-levels">
         <Figure width={560} stack="wide" graphic={tiers
           ? <TierBand label="资金安全等级" tiers={tiers} current={water.tier} value={noDue || water.reserveCoverDays >= COVER_CAP_DAYS ? null : water.reserveCoverDays} valueText={formatReserveCoverDays(maturity7.cumulativeUsdt, water.reserveCoverDays)} boundText={(value) => (value === COVER_CAP_DAYS ? "1 年" : value === 0 ? "0" : `${value} 天`)} />
@@ -207,9 +207,9 @@ export function OverviewTab({ main, links }: { main: D3Main; links: readonly Cro
   return (
     <>
       <StatBand label="资金概况">
-        <Stat lead tone="role-1" icon={Wallet} label="可用储备" value={amountText(reserve.reserveTotalUsdt, statDigits)} unit="USDT" sub={`累计注入 ${amountText(reserve.injectedCumulativeUsdt)}`} explain={`USDT 储备已扣除质押锁定金额。其他高流动资产暂不参与储备计算。累计注入按登记的凭证汇总，不是当前余额。接口数值 ${reserve.reserveTotalUsdt} USDT。`} />
-        <Stat tone="role-2" icon={ReceiptText} label="应付款" value={amountText(liabilities.totalUsdt, statDigits)} unit={liabilities.totalUsdt === null ? undefined : "USDT"} explain={`共 9 类，待核实的银行充值算在第 9 类。明细在「应付款与到期」。${UVT_VALUATION_NOTE}${liabilities.totalUsdt === null ? "" : `接口数值 ${liabilities.totalUsdt} USDT。`}`} />
-        <Stat tone={water.tier === "DANGER" ? "danger" : water.tier === "WARNING" ? "warn" : "role-3"} icon={CalendarClock} label="7 天到期应付款" value={amountText(maturity7.cumulativeUsdt, statDigits)} unit="USDT" explain={`${dueParts(main.config, maturity7.trialStressIncluded)}。固定看未来 7 天。接口数值 ${maturity7.cumulativeUsdt} USDT。`} />
+        <Stat lead tone="role-1" icon={Wallet} label="可用储备" value={amountText(reserve.reserveTotalUsdt, statDigits)} unit="USDT" sub={`累计注入 ${amountText(reserve.injectedCumulativeUsdt)}`} explain={`USDT 储备已扣除质押锁定的钱，其他高流动资产暂不计入。累计注入是登记过的凭证合计，不是现在的余额。精确值 ${reserve.reserveTotalUsdt} USDT。`} />
+        <Stat tone="role-2" icon={ReceiptText} label="应付款" value={amountText(liabilities.totalUsdt, statDigits)} unit={liabilities.totalUsdt === null ? undefined : "USDT"} explain={`共 9 类，待核实的银行充值算在第 9 类。明细在「应付款与到期」。${UVT_VALUATION_NOTE}${liabilities.totalUsdt === null ? "" : `精确值 ${liabilities.totalUsdt} USDT。`}`} />
+        <Stat tone={water.tier === "DANGER" ? "danger" : water.tier === "WARNING" ? "warn" : "role-3"} icon={CalendarClock} label="7 天到期应付款" value={amountText(maturity7.cumulativeUsdt, statDigits)} unit="USDT" explain={`${dueParts(main.config, maturity7.trialStressIncluded)}。固定看未来 7 天。精确值 ${maturity7.cumulativeUsdt} USDT。`} />
       </StatBand>
       {/* 面板位置固定，危险态只换颜色和内容，眼睛靠位置找东西（06 审查 6）。 */}
       {levels}
@@ -364,7 +364,7 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
       sub={exposure.data?.valuationReliable === false ? undefined
         : net !== null ? (net > 0 ? <StatusTag tone="ok">有富余</StatusTag> : net === 0 ? <StatusTag tone="warn">刚好够</StatusTag> : <StatusTag tone="danger">不够付</StatusTag>)
           : exposure.loading ? undefined : <>读取失败 · <InlineRetry onRetry={onExposureRetry} /></>}
-      explain="储备 − 应付款，按当前预测设置计入的储备和应付款算。过去每天的应付款没有记录，算不出真实的历史差额，所以这里不画走势。计入的 UVT 应付款缺少有效价格时，差额暂时无法估值；没有计入远期 UVT 时仍可计算。" />
+      explain="储备 − 应付款，只算预测设置里计入的项。过去每天的应付款没有记录，所以不画走势。计入的 UVT 应付款没有有效价格时，差额暂时无法估值。" />
   );
   const liabilityTable = (
     <Table label="九类应付款" className="d-num-gap d3-liabilities">
@@ -401,17 +401,17 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
           </div>
           <StatBand label="到期和覆盖">
             {gapStat}
-            <Stat tone="role-3" icon={AlarmClock} label={`未来 ${windowDays(windowValue)}累计到期`} value={shown ? amountText(shown.cumulativeUsdt, statDigits) : "—"} unit="USDT" explain={`${dueParts(main.config, shown?.trialStressIncluded)}。提现按冷却到期日排，窗口之外的不算在这里，所以可能比待处理提现少。${shown ? `接口数值 ${shown.cumulativeUsdt} USDT。` : ""}`} />
+            <Stat tone="role-3" icon={AlarmClock} label={`未来 ${windowDays(windowValue)}累计到期`} value={shown ? amountText(shown.cumulativeUsdt, statDigits) : "—"} unit="USDT" explain={`${dueParts(main.config, shown?.trialStressIncluded)}。提现按冷却到期日排，窗口之外的不算在这里，所以可能比待处理提现少。${shown ? `精确值 ${shown.cumulativeUsdt} USDT。` : ""}`} />
             {/* 能付多久是状态，和资金概况那句话同一个颜色；覆盖率是和红线比的数，角色四（VS-12）。 */}
             <Stat tone={WATER_TONE[water.tier]} icon={Gauge} label="能付多久" value={formatReserveCoverDays(main.maturity7.cumulativeUsdt, water.reserveCoverDays)} explain={main.maturity7.cumulativeUsdt === 0 ? "未来 7 天没有到期，算不出能付多少天。" : `按未来 7 天每天平均到期额算，储备够付多少天。精确值 ${Number(water.reserveCoverDays).toLocaleString("en-US")} 天。`} />
-            <Stat tone="role-4" icon={Landmark} label="兑付覆盖率" value={main.liabilities.totalUsdt === null ? TREASURY_VALUATION_UNAVAILABLE : coverage === null ? "无应付款" : `${coverage.toFixed(1)}%`} explain={`可用储备 ÷ 应付款总额，看全部应付款够不够付。可覆盖天数按最近到期速度算，和覆盖率独立。${UVT_VALUATION_NOTE}${coverage === null ? "" : `完整计算值 ${coverage}%。`}`} />
+            <Stat tone="role-4" icon={Landmark} label="兑付覆盖率" value={main.liabilities.totalUsdt === null ? TREASURY_VALUATION_UNAVAILABLE : coverage === null ? "无应付款" : `${coverage.toFixed(1)}%`} explain={`可用储备 ÷ 应付款总额，看全部应付款够不够付；和「能付多久」分开算。${UVT_VALUATION_NOTE}${coverage === null ? "" : `精确值 ${coverage}%。`}`} />
           </StatBand>
           <MaturityPanel maturity={shown} loading={maturity.loading} error={maturity.error} onRetry={onMaturityRetry} />
           <Panel
             flush
             title="应付款 · 9 类"
             sub={main.liabilities.totalUsdt === null ? "UVT 应付款缺少有效价格" : `${breakdown.filter((row) => row.amountUsdt !== null && row.amountUsdt > 0).length} 类有金额`}
-            explain={`九类里统计了 ${main.liabilities.hardLiabilityCategoryCount} 类。试用业务只做压力测试，开启后影响到期预测和资金安全等级，不计入实际应付款或当前差额。${UVT_VALUATION_NOTE}`}
+            explain={`九类里统计了 ${main.liabilities.hardLiabilityCategoryCount} 类。试用业务只做压力测试：开启后算进到期预测和资金安全等级，不算进应付款和差额。${UVT_VALUATION_NOTE}`}
             icon={ReceiptText}
             tone="role-2"
             actions={canExport ? <Button size="sm" disabledReason={exportBlocked} onClick={onExport}>导出应付款 CSV</Button> : undefined}
@@ -439,14 +439,14 @@ export function DueTab({ main, mainState, windowValue, onWindow, maturity, expos
             <Facts>
               <Fact k="金额" lead tone="role-2" unit={current.amountUsdt === null ? undefined : "USDT"}>{amountText(current.amountUsdt)}</Fact>
               <Fact k="占比">{shareText(current.share)}</Fact>
-              <Fact k="类型编号"><span data-mono>{current.category}</span></Fact>
               <Fact k="差额">{offReason ? `不计入，${offReason}` : "计入"}</Fact>
               <Fact k="到期预测">{!DUE_CATEGORIES.includes(current.category) ? <>这类不进到期预测<Explain label="到期预测算哪些" content="到期预测只算提现、质押奖励和创世节点收益" /></> : offReason ? `不计入，${offReason}` : "计入"}</Fact>
               <Fact k="数据来源">{treasurySourceLabel(current.source)}</Fact>
             </Facts>
-            <Fold inset title="技术详情" summary="接口原标签、来源和数值">
+            <Fold inset title="技术详情" summary="系统原标签、类型编号、来源和数值">
               <Facts>
                 <Fact k="原标签">{current.label}</Fact>
+                <Fact k="类型编号"><span data-mono>{current.category}</span></Fact>
                 <Fact k="原来源"><span className="d3-raw" data-mono>{current.source}</span></Fact>
                 <Fact k="原金额" unit={current.amountUsdt === null ? undefined : "USDT"}>{current.amountUsdt === null ? TREASURY_VALUATION_UNAVAILABLE : String(current.amountUsdt)}</Fact>
                 <Fact k="原占比">{current.share === null ? TREASURY_VALUATION_UNAVAILABLE : String(current.share)}</Fact>
@@ -509,7 +509,7 @@ export function FlowTab({ history }: { history: { data: B2LiquidityHistory | nul
   );
   return (
     <>
-    {history.data && <p className="rd-note">历史统计时间：{timeText(history.data.generatedAt)} · 日期按接口业务日，金额单位万 USDT</p>}
+    {history.data && <p className="rd-note">历史统计时间：{timeText(history.data.generatedAt)} · 日期按业务日，金额单位万 USDT</p>}
     {history.error && !history.data && <BlockState state="error" title="资金流历史暂不可用" detail={history.error} onRetry={history.reload} />}
     <div className="rd-split" data-even="">
       <Panel title="这几天钱是进多还是出多" sub={flowsEmpty ? `近 ${flows.length} 天` : `近 ${flows.length || 8} 天 · 万 USDT`} explain="按储备账已确认的流入、流出统计。流入包括充值、财务注资和储备返还／冲正；流出包括提现扣储备和拒付退回。非银行提现在放行时扣储备，银行提现在付款成功时结算，不代表全部已实际打款。用余额买设备不算。" icon={ArrowDownUp} tone="role-2" data-testid="b2-fund-flow-history">
@@ -572,7 +572,7 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
   return (
     <>
       {pending && (
-        <Notice tone="progress" title={`待生效 v${config.pendingVersion}`}>
+        <Notice tone="progress" title="有一版设置待生效">
           窗口 {windowDays(pending.forecastWindow)}，储备 {Number(pending.reserveCategories.usdt)} 开启，应付款 {enabledCount(pending.liabilityCategories)} 开启，创世节点收益{includedText(pending.genesisIncluded)}，生效时间 {timeText(config.pendingEffectiveAt)}。
         </Notice>
       )}
@@ -583,7 +583,7 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
       )}
       {!canConfig && <Notice tone="done">你只能查看；调整预测设置需财务主管。</Notice>}
       {canConfig && lockedNote && <Notice tone="warn">{lockedNote}</Notice>}
-      <p className="rd-note">当前版本 v{config.version}（已生效 v{config.effectiveVersion}）· 储备 {Number(draft.reserveCategories.usdt)} 开启 · 应付款 {enabledCount(draft.liabilityCategories)} 开启<Explain label="预测设置什么时候生效" content={`${effectiveText()}，不影响历史。`} /></p>
+      <p className="rd-note">储备 {Number(draft.reserveCategories.usdt)} 开启 · 应付款 {enabledCount(draft.liabilityCategories)} 开启<Explain label="预测设置什么时候生效" content={`${effectiveText()}，不影响历史。`} /></p>
       {canConfig && !lockedNote ? (
         <>
           <Panel title="预测窗口和算法" icon={CalendarClock} tone="role-3">
@@ -604,7 +604,7 @@ export function SettingsTab({ main, draft, mainState, canConfig, dirty, lockedNo
               <CheckGroup legend="计入哪些应付款" summary={`${enabledCount(draft.liabilityCategories)} 开启`} explain="差额只算勾选的类。到期预测只看提现、质押奖励和创世节点收益这三类。页面上的九类金额不变。">
                 {Object.entries(draft.liabilityCategories).map(([key, enabled]) => <Check key={key} label={categoryText(key)} checked={enabled} onChange={(event) => onChange({ ...draft, liabilityCategories: { ...draft.liabilityCategories, [key]: event.target.checked } })} />)}
               </CheckGroup>
-              <CheckGroup legend="其他口径">
+              <CheckGroup legend="其他计入项">
                 <Check label="计入创世节点收益" explain="到期和差额都算创世节点收益。上面「计入哪些应付款」也要勾着这一类。" checked={draft.genesisIncluded} onChange={(event) => onChange({ ...draft, genesisIncluded: event.target.checked })} />
                 <Check label="计入远期应付款" explain="差额里算 UVT 锁仓到期应付，不进到期预测。上面「计入哪些应付款」也要勾着这一类。" checked={draft.includeFarLiabilities} onChange={(event) => onChange({ ...draft, includeFarLiabilities: event.target.checked })} />
                 <Check label="试用业务压力测试" explain="到期预测和资金安全等级每天多算一笔试用业务压力值，差额不算。" checked={draft.trialStressEnabled} onChange={(event) => onChange({ ...draft, trialStressEnabled: event.target.checked })} />

@@ -483,7 +483,7 @@ export function D3Treasury() {
       action: "调整应付款预测设置",
       title: "保存预测设置",
       revision,
-      detail: `预测 ${values.forecastWindow.replace("d", " 天")}，创世节点收益${values.genesisIncluded ? "计入" : "不计入"}。不影响历史。也影响今日概览的可覆盖天数；不改全部应付款算的兑付覆盖率。`,
+      detail: `预测 ${values.forecastWindow.replace("d", " 天")}，创世节点收益${values.genesisIncluded ? "计入" : "不计入"}。不改历史数据，也不改兑付覆盖率；今日概览的可覆盖天数会跟着变。`,
       facts: (
         <div className="rd-stack">
           {/* 这次没动、但 USDT 储备本来就不计入时，照旧提醒一句。 */}
@@ -614,7 +614,7 @@ export function D3Treasury() {
       await retry.resend();
     } catch (err) {
       if (isPermissionDenied(err)) announcePermissionDenied();
-      setPendingNotes((current) => ({ ...current, [retry.commandKey]: `${businessClock(Date.now())} 重试没有成功：${errorText(err, "原因未知")} 这说明不了原操作的结果，记录继续保留。` }));
+      setPendingNotes((current) => ({ ...current, [retry.commandKey]: `${businessClock(Date.now())} 重试没有成功：${errorText(err, "原因未知")} 原操作结果仍未知，记录继续保留。` }));
       if (isExplicitRejection(err)) setRetryRejected((current) => [...current, retry.commandKey]);
     } finally {
       setRetrying(false);
@@ -771,7 +771,7 @@ export function D3Treasury() {
   return (
     <RdPage>
       {header}
-      {main?.liabilities.totalUsdt === null && <Notice tone="warn">UVT 缺少有效价格，应付款总额暂时无法估值。导出的 CSV 里无法估值的金额和占比留空，并标注估值状态，不能当完整总额用。</Notice>}
+      {main?.liabilities.totalUsdt === null && <Notice tone="warn">UVT 没有有效价格，应付款总额暂时无法估值；导出的 CSV 里这些金额和占比留空并标明无法估值，不能当完整总额用。</Notice>}
       {fundAlarm && fundConclusion}
       {mainFailed && (
         <Notice tone="warn" title="资金状态：暂时无法判断" action={<Button size="sm" onClick={reloadAll}>重新加载</Button>}>
@@ -884,7 +884,7 @@ export function D3Treasury() {
         <Field label="凭证类型" required explain="到账凭证是链上交易还是银行流水。会写进理由，不进凭证号。">
           <Select aria-label="凭证类型" value={voucherType} options={VOUCHER_TYPES} onChange={setVoucherType} />
         </Field>
-        <Field label="凭证编号 / 哈希" required explain="填原始编号，至少 6 位，须能查到。" error={injectShown.voucher ? voucherIssue : undefined}>
+        <Field label="凭证号" required explain="填原始编号，至少 6 位，须能查到。" error={injectShown.voucher ? voucherIssue : undefined}>
           {(control) => (
             <div className="rd-reason-box">
               <Input {...control} className="rd-input-counted" maxLength={96} value={voucherNo} onChange={(event) => setVoucherNo(event.target.value)} onBlur={() => setInjectShown((current) => ({ ...current, voucher: true }))} placeholder="不能重复" aria-label="凭证号（必填，不能重复）" />
