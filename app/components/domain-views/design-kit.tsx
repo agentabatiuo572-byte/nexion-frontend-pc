@@ -4032,7 +4032,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       {!surface && content}
       {surface ? (blockedReason || submitError) && (
         // 红只给明确失败；被别人改了、结果还不知道是要人处理，用橙黄（VS-107）。
-        <div className="rd-confirm-alert"><RdNotice tone={blockedReason || approvalRecovery || submitUnknown ? "warn" : "danger"}>{keepCommandKey(blockedReason ?? submitError)}</RdNotice></div>
+        <div className="rd-confirm-alert"><RdNotice tone={blockedReason || approvalRecovery || submitUnknown ? "warn" : "danger"}>{keepCommandKey(blockedReason || submitError)}</RdNotice></div>
       ) : blockedReason
         ? <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{blockedReason}</div>
         : submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}

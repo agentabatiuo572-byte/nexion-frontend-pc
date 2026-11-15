@@ -786,7 +786,8 @@ function h8String(value: unknown, field: string): string {
 
 function h8IsoInstant(value: unknown, field: string): string {
   const text = h8String(value, field);
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(text)
+  // OffsetDateTime.toString() drops the seconds when they are zero (e.g. 1970-01-01T08:00+08:00).
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(text)
       || Number.isNaN(Date.parse(text))) {
     h8Invalid(field);
   }
