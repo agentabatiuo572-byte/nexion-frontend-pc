@@ -180,7 +180,7 @@ export function F2Layers({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: Ope
   return (
     <Panel title="每层分多少" icon={Layers} tone="role-4" sub={`示例订单 ${num(SAMPLE_ORDER)} USDT`}
       explain="好友（第 1 层）和好友的好友（第 2 层）……一直到第 7 层买设备时，按层给上面的人发 USDT 奖励，另按系数加发 UVT。示例金额只按比例和系数算，没算影响分、活动倍率、等级门槛和奖励总额上限，不是真实订单。">
-      {!complete ? <Notice tone="warn" title={rates.length ? "七层规则不完整" : "七层规则还没配置"}>缺的层或字段目前要由后端补齐。后台只能改已有的规则，第 1 层比例后台也不能改；配齐前不能启用整体结算。</Notice> : (
+      {!complete ? <Notice tone="warn" title={rates.length ? "七层规则不完整" : "七层规则还没配置"}>缺的层或字段要由后端补齐，后台只能改已有的规则；配齐前不能启用整体结算。</Notice> : (
         <Figure width={420} stack="wide" graphic={
           <div className="f2-sum-graphic">
             <ScaleBar label="七层合计占订单" max={axisMax} value={activeSum} fill target={m.cap ?? undefined} tone="role-4"

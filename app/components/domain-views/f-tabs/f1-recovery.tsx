@@ -23,6 +23,8 @@ import type { FViewCtx } from "./types";
 type State = "unknown" | "received" | "pending" | "expired";
 type Row = { key: string; name: string; change: ReactNode; submittedAt?: number; state: State; direct?: boolean; actions: ReactNode };
 
+/** 等级说明所在页签的名字，和 f1-vrank 的页签一致。 */
+const HOW_TAB = "App 等级说明";
 const UNIT: Record<string, string> = { selfBuy: " 点", teamGv: " 点", directRefs: " 人", legCount: " 个", legRank: "" };
 const thresholdText = (field: string, raw: string | undefined) => raw === undefined || raw === "" ? "—" : raw === "NONE" ? "未设置" : `${formatF1ExactAmount(raw)}${UNIT[field] ?? ""}`;
 
@@ -126,7 +128,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
     change: <KeepText text={`版本号 ${howSave.document.version || "—"} · ${Object.keys(howSave.document.locales).length} 种语言`} phrases={[`版本号 ${howSave.document.version || "—"}`, `· ${Object.keys(howSave.document.locales).length} 种语言`]} />,
     submittedAt: howSave.createdAt, state: "unknown", direct: true,
     actions: <Button size="sm" onClick={() => void queryF1RankHow(owner).then((result) => {
-      toast(result.matched ? "已核对：现在的等级说明就是原提交的内容" : "和原提交对不上，保存结果仍未知；到「App 等级说明」核对后可以解除");
+      toast(result.matched ? "已核对：现在的等级说明就是原提交的内容" : `和原提交对不上，保存结果仍未知；到「${HOW_TAB}」核对后可以解除`);
       onRankHowChecked();
     }, (error) => toast(displayAdminError(error)))}>重新读取核对</Button>,
   });
