@@ -1,6 +1,7 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { parseE4OrderPage } from "@/lib/admin/e456-overview-contract";
 import { operatorSkuLabel } from "@/lib/admin/e-operator-display";
+import { parseE4MoneyJson, readE4Money } from "./e4-refund-amount";
 
 export interface E4PendingApproval {
   action: string | null;
@@ -12,7 +13,8 @@ export interface E4Order {
   id: string;
   user: string;
   sku: string;
-  amt: number;
+  amt: string | null;
+  refundAmountUsdt: string | null;
   state: string;
   dc: string;
   age: string;
@@ -40,6 +42,7 @@ interface BackendOrder {
   skuName?: string | null;
   skuSource?: "ORDER_ITEM" | "PRODUCT_CATALOG" | "UNAVAILABLE" | string | null;
   amount?: number | string | null;
+  refundAmountUsdt?: string | null;
   state?: string | null;
   dcLocation?: string | null;
   ageText?: string | null;
@@ -113,6 +116,7 @@ export function e4FundingLedgerHref(item: E4OrderFunding): string | null {
 
 export interface E4OrderDetail {
   order: E4Order;
+  refundReason: string | null;
   pendingApproval?: E4PendingApproval | null;
   userId: number;
   quantity: number;
@@ -138,7 +142,7 @@ export interface E4OrderDetail {
   refundImpact: E4RefundImpact | null;
 }
 
-interface BackendOrderDetail extends Omit<E4OrderDetail, "order" | "funding" | "refundImpact"> {
+interface BackendOrderDetail extends Omit<E4OrderDetail, "order" | "funding" | "refundImpact" | "refundReason"> {
   order: BackendOrder;
   funding?: Array<Omit<E4OrderFunding, "amount"> & { amount?: number | string | null }>;
   refundImpact?: unknown;
@@ -207,7 +211,7 @@ async function e4Request<T>(path: string, init?: RequestInit & { idempotencyPref
     headers,
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(parseE4MoneyJson).catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
     throw new Error(formatAdminApiError(result?.message, `E4_REQUEST_FAILED_${response.status}`));
@@ -231,7 +235,8 @@ function fromOrder(order: BackendOrder): E4Order {
     id: order.orderNo,
     user: order.userNo,
     sku: operatorSkuLabel(order).replace(/×(\d+)/gu, " × $1"),
-    amt: toNumber(order.amount),
+    amt: readE4Money(order.amount),
+    refundAmountUsdt: readE4Money(order.refundAmountUsdt),
     state: normalizeState(order.state),
     dc: order.dcLocation?.trim() || "—",
     age: order.ageText?.trim() || "—",
@@ -310,6 +315,7 @@ export async function fetchE4OrderDetail(orderId: string): Promise<E4OrderDetail
   return {
     ...detail,
     order: fromOrder(detail.order),
+    refundReason: detail.history?.findLast(row => row.toState.toLowerCase() === "refunded")?.reason ?? null,
     userId: toNumber(detail.userId),
     quantity: toNumber(detail.quantity, 1),
     subtotalUsdt: toNumber(detail.subtotalUsdt),

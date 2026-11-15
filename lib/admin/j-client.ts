@@ -203,7 +203,10 @@ function validateJ4ProposalTicket(row: A2OperationRow, record: J4PendingProposal
 
 export async function queryJ4Proposal(record: J4PendingProposal) {
   const row = await fetchA2ProposalByKey(record.commandKey, true);
-  if (!row) return null;
+  if (!row) {
+    if (record.sopProposal.accepted) throw new Error("J4_PROPOSAL_STATUS_UNAVAILABLE");
+    return null;
+  }
   validateJ4ProposalTicket(row, record);
   if (row.status !== "pending") emergencyCommands.forget(record.fingerprint, record.commandKey);
   else emergencyCommands.remember(record.fingerprint, record.commandKey, { inputFingerprint: record.sopProposal.body, sopProposal: { ...record.sopProposal, accepted: true } });
@@ -214,6 +217,7 @@ export async function queryJ4Proposal(record: J4PendingProposal) {
 export async function releaseExpiredJ4Proposal(record: J4PendingProposal) {
   const saved = getJ4PendingProposal(record.sopProposal.context.playbook.code);
   if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+  if (saved.sopProposal.accepted) throw new Error("J4_PROPOSAL_STATUS_UNAVAILABLE");
   if (!isRetryExpired(saved)) throw new Error("J4_PROPOSAL_NOT_EXPIRED");
   if (await queryJ4Proposal(saved)) return false;
   emergencyCommands.forget(saved.fingerprint, saved.commandKey);
@@ -233,7 +237,7 @@ export async function submitJ4Proposal(input: J4ProposalInput, commandKey: strin
   if (!saved) emergencyCommands.remember(slot, commandKey, { inputFingerprint: body, sopProposal: { body, context, accepted: false } });
   if (!emergencyCommands.isDurablyStored(slot, commandKey)) {
     if (!saved) emergencyCommands.forget(slot, commandKey);
-    throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+    throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
   }
   const original = getJ4PendingProposal(context.playbook.code)!;
   try {
@@ -336,7 +340,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       const original = getJ2PendingCommand(writeSlot)!;
       if (!emergencyCommands.isDurablyStored(writeSlot, original.commandKey)) {
         if (!saved) emergencyCommands.forget(writeSlot, original.commandKey);
-        throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+        throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
       }
     } else if (isJ3Config) {
       if (getJ3LegacyCommand()) throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
@@ -358,7 +362,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       const original = getJ3PendingCommand();
       if (!original || !emergencyCommands.isDurablyStored(writeSlot, original.commandKey)) {
         if (!saved) emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
-        throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+        throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
       }
     } else if (isJ4Write) {
       if (listJ4LegacyCommands().some((record) => record.fingerprint === writeSlot)) throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
@@ -373,7 +377,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       }
       if (!emergencyCommands.isDurablyStored(writeSlot, commandKey)) {
         if (!saved) emergencyCommands.forget(writeSlot, commandKey);
-        throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+        throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
       }
       headers.set("Idempotency-Key", commandKey);
     } else if (path === "/tamper/reports") {
@@ -386,6 +390,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       headers.set("Idempotency-Key", commandKey);
     } else {
       const fingerprint = inputFingerprint;
+      const saved = emergencyAttempts.list().find(record => record.fingerprint === writeSlot && record.inputFingerprint === fingerprint);
       const commandKey = emergencyAttempts.resolve(
         writeSlot,
         fingerprint,
@@ -393,7 +398,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       );
       if (!emergencyAttempts.isDurablyStored(writeSlot, fingerprint, commandKey)) {
         emergencyAttempts.forget(writeSlot);
-        throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+        throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
       }
       headers.set("Idempotency-Key", commandKey);
     }

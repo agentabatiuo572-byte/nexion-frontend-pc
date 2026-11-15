@@ -63,6 +63,14 @@ export function gParamAuthority(page: Page, key: string) {
         : key === "airdropLockDays" ? "finprod_g4_airdrop_lock_days_write" : "finprod_g4_write";
 }
 
+export function canProposeGParam(page: Page, key: string, authorities: readonly string[]) {
+  return authorities.includes(gParamAuthority(page, key))
+    // royalty/airdropPct/emissionCurve/airdropLockDays: the backend admits the POST on the exact grant,
+    // but not the by-key lookup (G4-BE-18), so they keep the global proposal grant until it does.
+    && (page === "G4" && ["supply", "price", "divBase"].includes(key)
+      || authorities.some(a => a === "platform_a2_proposal_create" || a === "platform_a2_write"));
+}
+
 // Mirror HALF_UP without binary floating point. Unrecognized values go to the official
 // direct endpoint; its APPROVAL_REQUIRED response is authoritative and routes to A2.
 function rounded(value: string, scale: number) {
@@ -113,7 +121,7 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     const auth = useAdminAuth.getState();
     if (!auth.isAuthenticated || auth.logoutPending || !auth.session || auth.session.adminId !== adminId || !adminId
       || !auth.session.authorities.includes(gParamAuthority(page, key))) throw new Error("当前账号没有此参数的修改权限，请核对授权。");
-    if (proposing && !auth.session.authorities.some(a => a === "platform_a2_proposal_create" || a === "platform_a2_write")) {
+    if (proposing && !canProposeGParam(page, key, auth.session.authorities)) {
       throw new Error("当前账号没有发起审批的权限，请由有提案权和此参数修改权限的同事发起。");
     }
     return auth.session;
@@ -193,8 +201,7 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
       return { ...r, status: terminal ? r.ticket!.status : retryExpired ? "expired" : r.ticket ? "pending" : "unknown",
         retryExpired, canQuery: true, canRelease: terminal,
         canRetry: !terminal && !retryExpired && auth.isAuthenticated && !auth.logoutPending && !!auth.session && auth.session.adminId === adminId
-          && auth.session.authorities.includes(gParamAuthority(page, r.request.obj))
-          && auth.session.authorities.some(a => a === "platform_a2_proposal_create" || a === "platform_a2_write") };
+          && canProposeGParam(page, r.request.obj, auth.session.authorities) };
     }),
     query: (key: string) => {
       const original = record(key);

@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { Inbox, RefreshCw } from "lucide-react";
 import { fetchA4OutboxDiagnostics } from "@/lib/admin/a4-client";
 import type { OutboxDiagnostics, OutboxFilters } from "@/lib/admin/a4-outbox-diagnostics";
@@ -9,6 +10,12 @@ import { BACKLOG_STATUS, RECEIPT_STATUS, errorText, minute, waited, zoneNote } f
 
 const statusText = (value: string) => BACKLOG_STATUS[value] ?? RECEIPT_STATUS[value] ?? "未知状态";
 const emptyFilters: OutboxFilters = { eventType: "", status: "", unresolvedOnly: false };
+export const A4_USER_NOTE = "能看到用户编号的才显示，点编号打开用户详情。显示「—」可能是这条事件不属于某位用户、没查到这位用户、用户已删除、你没有查看用户的权限，或这位用户不在你的客服范围内；页面分不出是哪一种。";
+/** Whose event this is: a user number links to the user detail; an empty one stays 「—」, whatever the reason. */
+export function a4UserCell(userNo: string | null | undefined, canOpenUser: boolean): ReactNode {
+  if (!userNo) return "—";
+  return canOpenUser ? <Link className="rd-link" data-mono href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>{userNo}</Link> : <span data-mono>{userNo}</span>;
+}
 
 /** 投递积压的查询状态。查询、翻页的写法和旧页面一样：草稿和已应用分开，下一页用已应用的条件。 */
 export function useA4OutboxDiagnostics(canRead: boolean) {
@@ -39,7 +46,7 @@ export function useA4OutboxDiagnostics(canRead: boolean) {
 export type A4OutboxState = ReturnType<typeof useA4OutboxDiagnostics>;
 
 /** 「投递与死信」页签上半部分：卡住没送到的事件，按类型汇总，再看逐条明细。只查询，不修改。 */
-export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState; describe: (eventType: string) => string | undefined }) {
+export function A4OutboxDiagnostics({ state, describe, canOpenUser }: { state: A4OutboxState; describe: (eventType: string) => string | undefined; canOpenUser: boolean }) {
   const { canRead, filters, setFilters, applied, data, busy, error, page, load } = state;
   const filtered = !!(applied.eventType || applied.status || applied.unresolvedOnly);
   const typeName = (value: string) => {
@@ -57,7 +64,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
         {!data && !error && busy && <BlockState state="loading" title="正在查询投递积压…" />}
         {!data && !error && !busy && <BlockState state="empty" title="还没有查询" detail="点「重新查询」读一次。" onRetry={() => void load(emptyFilters)} retryLabel="查询" />}
         {data && <>
-          {data.total === 0 ? <Notice tone="ok">没有积压：所有事件都已发出或已结束。</Notice> : (
+          {data.total === 0 ? <Notice tone="ok">没有积压：现在没有待发送或发送失败的事件。</Notice> : (
             <div className="a4-backlog-sum">
               <dl className="a4-backlog-facts">
                 <div><dt>积压</dt><dd><b>{data.total}</b> 条</dd></div>
@@ -87,7 +94,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
         {data && <>
           <Table label="积压事件明细" className="a4-backlog-table">
             <thead><tr>
-              <Th>事件</Th><Th>卡在哪 · 已重试</Th><Th>产生 · 下次重试</Th><Th>失败原因</Th>
+              <Th>事件</Th><Th>用户<Explain label="用户编号怎么显示" content={A4_USER_NOTE} /></Th><Th>卡在哪 · 已重试</Th><Th>产生 · 下次重试</Th><Th>失败原因</Th>
               <Th>处理结果<Explain label="处理结果是什么" content="每个使用这条事件的模块（使用方）处理到了哪一步。还没有处理结果，不代表已经成功。" /></Th>
             </tr></thead>
             <tbody>
@@ -96,6 +103,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
                 return (
                   <Tr key={`${row.eventId}-${index}`}>
                     <Td><Cell main={name.main} sub={<span data-mono className="a4-mid" title={row.eventId}><span>{row.eventId.slice(0, -8)}</span><span>{row.eventId.slice(-8)}</span></span>} /></Td>
+                    <Td>{a4UserCell(row.userNo, canOpenUser)}</Td>
                     <Td>
                       <span className="a4-pair">
                         <StatusTag tone={row.status === "FAILED" ? "warn" : "neutral"}>{statusText(row.status)}</StatusTag>
@@ -111,7 +119,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
                   </Tr>
                 );
               })}
-              {!data.rows.length && <TableMessage columns={5}>{filtered ? "没有符合条件的记录" : "暂无积压"}</TableMessage>}
+              {!data.rows.length && <TableMessage columns={6}>{filtered ? "没有符合条件的记录" : "暂无积压"}</TableMessage>}
             </tbody>
           </Table>
           <div className="a4-next">

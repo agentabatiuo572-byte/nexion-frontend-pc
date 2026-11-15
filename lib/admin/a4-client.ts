@@ -1,6 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { normalizeOutboxDiagnostics, outboxDiagnosticsQuery, type OutboxFilters } from "./a4-outbox-diagnostics";
+import { normalizeOutboxDiagnostics, nullableA4UserNo, outboxDiagnosticsQuery, type OutboxFilters } from "./a4-outbox-diagnostics";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "./a2-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import type { AdminSession } from "@/lib/store/admin-auth";
@@ -353,7 +353,7 @@ export type A4SchemaRegistrationInput = {
 
 type A4RegistryActor = Pick<AdminSession, "adminId" | "operator" | "username" | "role">;
 type A4RegistryProposal = Parameters<typeof createA2OperationProposal>[0];
-type A4RegistryAttempt = PendingMutationRecord & { input: A4RegistryProposal };
+type A4RegistryAttempt = PendingMutationRecord & { input: A4RegistryProposal; received?: boolean };
 const REGISTRY_STRING_FIELDS: Record<string, string[]> = {
   a4_schema_register: ["eventName", "ownerDomain", "producer", "consumer", "propertyName", "propertyType", "samplingPolicy", "expectedVersion"],
   a4_schema_property_add: ["eventName", "propertyName", "propertyType", "expectedVersion"],
@@ -396,8 +396,10 @@ async function postRegistryProposal(attempt: A4RegistryAttempt, retry = false) {
   if (!registryAttempts.isDurablyStored(attempt.fingerprint, attempt.commandKey)) throw new Error("A4_ORIGINAL_STORAGE_FAILED");
   let created = false;
   try {
-    const ticket = validateRegistryTicket(await createA2OperationProposal(attempt.input, attempt.commandKey, true, true), attempt);
+    const receipt = await createA2OperationProposal(attempt.input, attempt.commandKey, true, true);
     created = true;
+    registryAttempts.remember(attempt.fingerprint, attempt.commandKey, { ...attempt, received: true });
+    const ticket = validateRegistryTicket(receipt, attempt);
     // A replay proves the application was created, not its current approval state.
     const current = retry ? await fetchA2ProposalByKey(attempt.commandKey, true, "a") : ticket;
     if (!current) throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
@@ -428,6 +430,7 @@ export async function recoverA4RegistryProposal(adminId: number, retryOriginal =
     registryAttempts.forget(attempt.fingerprint, attempt.commandKey);
     return { ...ticket, a4CommandKey: attempt.commandKey };
   }
+  if (attempt.received) throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
   if (!retryOriginal) return null;
   if (Date.now() >= attempt.expiresAt) {
     throw new OutcomeUnknownError("A4_ORIGINAL_QUERY_ONLY");
@@ -438,8 +441,13 @@ export async function recoverA4RegistryProposal(adminId: number, retryOriginal =
 /** Call only after the operator confirms clearing an expired, authoritatively absent proposal. */
 export async function releaseExpiredA4RegistryProposal(adminId: number, commandKey: string) {
   const attempt = pendingA4RegistryProposal(adminId);
-  if (!attempt || attempt.commandKey !== commandKey || Date.now() < attempt.expiresAt) throw new Error("A4_ORIGINAL_UNRESOLVED");
-  if (await fetchA2ProposalByKey(commandKey, true, "a")) throw new Error("A4_ORIGINAL_UNRESOLVED");
+  if (!attempt || attempt.received || attempt.commandKey !== commandKey || Date.now() < attempt.expiresAt) throw new Error("A4_ORIGINAL_UNRESOLVED");
+  const ticket = await fetchA2ProposalByKey(commandKey, true, "a");
+  if (ticket) {
+    validateRegistryTicket(ticket, attempt);
+    registryAttempts.remember(attempt.fingerprint, commandKey, { ...attempt, received: true });
+    throw new Error("A4_ORIGINAL_UNRESOLVED");
+  }
   registryAttempts.forget(attempt.fingerprint, commandKey);
 }
 
@@ -541,6 +549,8 @@ export async function runA4RetentionNow(reason: string, commandKey: string): Pro
  * this function never accepts or sends the immutable event payload/source.
  */
 export type A4H3DeadOutboxRedrivePreview = {
+  // Optional only for original command snapshots saved before this read projection existed.
+  userNo?: string | null;
   eventId: string;
   eventType: string;
   status: "DEAD";
@@ -551,7 +561,7 @@ export type A4H3DeadOutboxRedrivePreview = {
   deliveryLastError: string | null;
 };
 
-export type A4H3DeadOutboxRedriveResult = Omit<A4H3DeadOutboxRedrivePreview, "status" | "deliveryStatus"> & {
+export type A4H3DeadOutboxRedriveResult = Omit<A4H3DeadOutboxRedrivePreview, "status" | "deliveryStatus" | "userNo"> & {
   status: "PENDING";
   deliveryStatus: "FAILED";
 };
@@ -567,6 +577,7 @@ function normalizeH3DeadOutboxPreview(value: unknown): A4H3DeadOutboxRedrivePrev
   if (lastError != null && !/^[A-Z][A-Z0-9_:-]{0,127}$/.test(lastError)) invalid("h3DeadOutbox.lastError");
   if (deliveryLastError != null && !/^[A-Z][A-Z0-9_:-]{0,127}$/.test(deliveryLastError)) invalid("h3DeadOutbox.deliveryLastError");
   return {
+    userNo: nullableA4UserNo(row.userNo),
     eventId: requiredText(row.eventId, "h3DeadOutbox.eventId"),
     eventType: requiredText(row.eventType, "h3DeadOutbox.eventType"),
     status: "DEAD",
@@ -580,7 +591,8 @@ function normalizeH3DeadOutboxPreview(value: unknown): A4H3DeadOutboxRedrivePrev
 
 function normalizeH3DeadOutboxRedriveResult(value: unknown): A4H3DeadOutboxRedriveResult {
   const row = rec(value);
-  const preview = normalizeH3DeadOutboxPreview({ ...row, status: "DEAD", deliveryStatus: "DEAD" });
+  // POST receipts have no authorized user projection, including replayed receipts.
+  const { userNo: _userNo, ...preview } = normalizeH3DeadOutboxPreview({ ...row, userNo: null, status: "DEAD", deliveryStatus: "DEAD" });
   if (row.status !== "PENDING" || row.deliveryStatus !== "FAILED") invalid("h3DeadOutbox.redrive.status");
   return { ...preview, status: "PENDING", deliveryStatus: "FAILED" };
 }

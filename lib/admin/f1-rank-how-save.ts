@@ -14,6 +14,8 @@ const saves = createPendingMutationStore<Original>({
 });
 
 export const pendingF1RankHow = (adminId: number) => saves.list().find(row => row.adminId === adminId);
+const inFlight = new Set<number>();
+export const isF1RankHowInFlight = (adminId: number) => inFlight.has(adminId);
 
 export interface F1RankHowComparison {
   revision: { submitted: number; expected: number; current: number; matches: boolean };
@@ -62,8 +64,9 @@ export async function saveF1RankHow(adminId: number, document: PublishedContentD
   saves.remember(fingerprint, key, { adminId, document, reason });
   if (!saves.isDurablyStored(fingerprint, key)) {
     saves.forget(fingerprint, key);
-    throw new Error("浏览器无法保存原操作，请允许会话存储后重试。");
+    throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   }
+  inFlight.add(adminId);
   try {
     const value = await updateRankHowPolicyAdmin(document, reason);
     if (value.revision !== document.revision + 1 || value.version !== document.version.trim()
@@ -79,5 +82,7 @@ export async function saveF1RankHow(adminId: number, document: PublishedContentD
       else throw new OutcomeUnknownError(error instanceof Error ? error.message : "保存结果未知，请重新读取核对。");
     }
     throw error;
+  } finally {
+    inFlight.delete(adminId);
   }
 }

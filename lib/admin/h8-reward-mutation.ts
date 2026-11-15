@@ -113,17 +113,17 @@ export function createH8RewardCommand(adminId: number, original: H8Original): H8
     createdAt: now, expiresAt: now + PENDING_MUTATION_TTL_MS };
 }
 
-function remember(record: H8RewardCommand) {
+function remember(record: H8RewardCommand, storageErrorCode: string) {
   if (record.kind === "param-approval") {
     const original = record.original;
     const previous = pendingConfigApproval("H8", record.adminId, { objectId: "current", field: record.paramKey! });
     storeH8ConfigApproval(record.adminId, record.paramKey!, record.commandKey, {
       input: previous?.input ?? JSON.stringify([{ key: record.paramKey, value: record.value, expectedVersion: original?.overview.version }, original?.kind === "param-approval" ? original.request.reason : ""]),
       h8Original: original, h8Ticket: record.ticket, h8Acknowledged: record.acknowledged,
-    });
+    }, storageErrorCode);
   } else {
     commands.remember(record.fingerprint, record.commandKey, record);
-    if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("H8_REQUEST_STORAGE_UNAVAILABLE");
+    if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error(storageErrorCode);
   }
 }
 function forget(record: H8RewardCommand) {
@@ -156,13 +156,13 @@ export async function queryH8RewardCommand(record: H8RewardCommand) {
     if (ticket) checkTicket(record, ticket);
   } catch (error) {
     // A previous pending observation is no longer authoritative after a failed query.
-    remember({ ...record, ticket: undefined });
+    remember({ ...record, ticket: undefined }, record.acknowledged ? "H8_REQUEST_RESULT_STORAGE_UNAVAILABLE" : "H8_REQUEST_RETRY_STORAGE_UNAVAILABLE");
     throw error;
   }
   if (ticket) {
-    remember({ ...record, ticket, acknowledged: true });
+    remember({ ...record, ticket, acknowledged: true }, "H8_REQUEST_RESULT_STORAGE_UNAVAILABLE");
     if (ticket.status !== "pending") forget(record);
-  } else remember({ ...record, ticket: undefined });
+  } else remember({ ...record, ticket: undefined }, record.acknowledged ? "H8_REQUEST_RESULT_STORAGE_UNAVAILABLE" : "H8_REQUEST_RETRY_STORAGE_UNAVAILABLE");
   return ticket;
 }
 
@@ -178,7 +178,7 @@ export async function sendH8RewardCommand(record: H8RewardCommand, recovering = 
   }
   if (!canRetryH8RewardCommand(record)) throw new Error(RETRY_EXPIRED_TEXT);
   requireH8Actor(record.adminId, record.kind === "settlement" ? "settlement" : "param");
-  try { remember(record); }
+  try { remember(record, recovering ? "H8_REQUEST_RETRY_STORAGE_UNAVAILABLE" : "H8_REQUEST_STORAGE_UNAVAILABLE"); }
   catch (error) { if (!recovering) forget(record); throw error; }
   const original = record.original!;
   try {
@@ -208,7 +208,7 @@ export async function sendH8RewardCommand(record: H8RewardCommand, recovering = 
   }
   // An idempotent POST receipt is historical. GET determines the current pending/terminal state.
   const acknowledged = { ...record, acknowledged: true };
-  remember(acknowledged);
+  remember(acknowledged, "H8_REQUEST_RESULT_STORAGE_UNAVAILABLE");
   const current = await queryH8RewardCommand(acknowledged);
   if (!current) throw new OutcomeUnknownError("H8_PROPOSAL_STATUS_UNREADABLE");
   return current;

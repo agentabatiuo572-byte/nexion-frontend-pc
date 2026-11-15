@@ -159,7 +159,6 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
 
   /* ---------------- 运营汇总导出：请求体、命令号、2 秒防连点和改版前一致（L4-A04） ---------------- */
   const aggExportingRef = useRef(false);
-  const aggIntentKeyRef = useRef({ fingerprint: "", key: "" });
   const aggLastSuccessAtRef = useRef(0);
   const [aggExporting, setAggExporting] = useState(false);
   const queryMatchesData = data?.period.key === query.period && data.phaseFilter === query.phase
@@ -219,15 +218,11 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
           || JSON.stringify(latest.l4Query) !== JSON.stringify(ctx.l4Query)) {
           throw new Error(formatAdminApiError("L4_EXPORT_VIEW_CHANGED", "L4_EXPORT_VIEW_CHANGED"));
         }
-        const fingerprint = JSON.stringify([input, reason]);
-        if (aggLastSuccessAtRef.current || aggIntentKeyRef.current.fingerprint !== fingerprint) {
-          aggIntentKeyRef.current = { fingerprint, key: `l4-ops-${Date.now()}-${Math.random().toString(36).slice(2, 10)}` };
-          aggLastSuccessAtRef.current = 0;
-        }
+        const commandKey = `l4-ops-${crypto.randomUUID()}`;
         aggExportingRef.current = true;
         setAggExporting(true);
         try {
-          await ctx.biActions?.createReport(input, reason, aggIntentKeyRef.current.key);
+          await ctx.biActions?.createReport(input, reason, commandKey);
           aggLastSuccessAtRef.current = Date.now();
           ctx.toast("运营汇总已生成（按现在看的时间段和阶段）");
           setOutcome({ kind: "agg-done", scope });

@@ -89,7 +89,8 @@ function requireActor(adminId: number, path: string, write: boolean) {
     : path === "/exchange/swap" ? "finprod_g2_swap_toggle"
     : path.endsWith("/cancel") ? "finprod_g2_queue_cancel" : "finprod_g2_write";
   if (!auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== adminId
-    || write && !auth.session.authorities.includes(authority)) {
+    || write && !auth.session.authorities.includes(authority)
+    || !write && path === BATCH_PATH && !auth.session.authorities.includes("finprod_g2_read")) {
     throw new Error("登录身份或兑换处理权限已变化，请关闭后重新打开。");
   }
   return auth.authEpoch;
@@ -104,7 +105,7 @@ async function confirmBatch(response: BackendOverview, original: G2PendingComman
 }
 
 export async function recoverG2ExchangeQueue(adminId: number, commandKey: string) {
-  requireActor(adminId, BATCH_PATH, true);
+  requireActor(adminId, BATCH_PATH, false);
   const original = listG2ExchangeCommands(adminId).find(record => record.commandKey === commandKey && record.path === BATCH_PATH);
   if (!original) throw new Error("原处理记录已变化，请重新打开核对入口。");
   // Only this endpoint returns a receipt by command number. A 404 never releases evidence.
@@ -116,7 +117,7 @@ export async function queryG2ExchangeCommand(adminId: number, commandKey: string
   requireActor(adminId, "/exchange", false);
   const original = listG2ExchangeCommands(adminId).find(record => record.commandKey === commandKey);
   if (!original) throw new Error("原操作记录已结束，请关闭弹窗后重新读取页面。");
-  if (original.path === BATCH_PATH && useAdminAuth.getState().session!.authorities.includes("finprod_g2_write")) {
+  if (original.path === BATCH_PATH) {
     return { confirmed: true, ...await recoverG2ExchangeQueue(adminId, commandKey) };
   }
   const overview = await fetchG2ExchangeOverview();
@@ -131,7 +132,7 @@ async function send(original: G2PendingCommand, recovering = false) {
   }
   const epoch = requireActor(original.adminId, original.path, true);
   if (!commands.isDurablyStored(original.fingerprint, original.commandKey)) {
-    throw new Error("浏览器无法保存原操作，请允许会话存储后重试。");
+    throw new Error(recovering ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   }
   try {
     const response = await g2Request<BackendOverview>(original.path, {
@@ -175,7 +176,7 @@ async function execute(path: string, method: "PATCH" | "POST", input: CommandBod
   commands.remember(fingerprint, key, { adminId, context });
   if (!commands.isDurablyStored(fingerprint, key)) {
     commands.forget(fingerprint, key);
-    throw new Error("无法保存原命令，请允许浏览器会话存储后再提交。");
+    throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   }
   return send(pendingG2ExchangeCommand(adminId, path)!);
 }
@@ -194,6 +195,6 @@ export async function cancelG2ExchangeQueueOrder(exchangeNo: string, reason: str
 }
 
 export async function processG2ExchangeQueue(adminId: number, limit: number, reason: string, operator: string) {
-  requireActor(adminId, BATCH_PATH, true);
+  requireActor(adminId, BATCH_PATH, false);
   return execute(BATCH_PATH, "POST", { limit, reason, operator }, "g2-queue-batch") as Promise<{ overview: import("./g2-client").G2Overview; batch: ReturnType<typeof normalizeG2BatchResult> }>;
 }

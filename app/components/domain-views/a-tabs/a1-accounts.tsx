@@ -352,7 +352,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       || intent.picked === current.role || recovery && (current.role === "super" || intent.picked !== "super"))) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
     if (intent.kind === "enable" && recovery && (current.role !== "super" || !current.tfa)) throw new Error("ADMIN_GOVERNANCE_FROZEN");
     if (intent.kind === "2fa" && !current.tfa) throw new Error("ADMIN_MFA_NOT_BOUND");
-    if ((intent.kind === "disable" || intent.kind === "2fa" || intent.kind === "role" && intent.picked !== "super") && current.role === "super" && current.status === "enabled" && data.stats.effectiveSupers <= 2) throw new Error("MIN_EFFECTIVE_SUPER_REQUIRED");
+    if ((intent.kind === "disable" || intent.kind === "2fa" || intent.kind === "role" && intent.picked !== "super") && current.role === "super" && current.status === "enabled" && current.tfa && data.stats.effectiveSupers <= 2) throw new Error("MIN_EFFECTIVE_SUPER_REQUIRED");
     if ((intent.kind === "disable" && current.status !== "enabled") || (intent.kind === "enable" && current.status !== "disabled")) throw new Error("ACCOUNT_VERSION_STALE");
     if (intent.kind === "logout" || intent.kind === "session") {
       if (current.id === String(currentAdminId) || current.role === "super" || current.sessions === 0) throw new Error("FORCE_LOGOUT_FORBIDDEN");
@@ -371,14 +371,16 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       toast(displayAdminError(new Error("A1_READBACK_ONLY")));
       return false;
     }
+    a1PendingCommands.remember(record.fingerprint, record.commandKey, { ...record, proposalNotFound: false }); reloadPending();
     const ticket = await fetchA2ProposalByKey(record.commandKey, true, "a");
     if (useAdminAuth.getState().session?.adminId !== record.actorId) throw new Error("A1_SESSION_CHANGED");
     if (!ticket) {
+      if (record.received || record.ticket) throw new Error("A1_PROPOSAL_STATUS_UNKNOWN");
       a1PendingCommands.remember(record.fingerprint, record.commandKey, { ...record, ticket: undefined, proposalNotFound: true }); reloadPending();
       return false;
     }
     checkTicket(record, ticket);
-    a1PendingCommands.remember(record.fingerprint, record.commandKey, { ...record, ticket, proposalNotFound: false }); reloadPending();
+    a1PendingCommands.remember(record.fingerprint, record.commandKey, { ...record, received: true, ticket, proposalNotFound: false }); reloadPending();
     if (ticket.status === "pending") { if (announce) toast("已提交，等待审批后执行"); return true; }
     a1PendingCommands.forget(record.fingerprint, record.commandKey); reloadPending();
     if (announce) recoveryStarted();
@@ -393,6 +395,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     if (Date.now() >= record.expiresAt) throw new Error("A1_RETRY_EXPIRED");
     requireActor(record.intent, true, record.request.kind === "proposal");
     if (!a1PendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("A1_COMMAND_STORAGE_UNAVAILABLE");
+    record = { ...record, proposalNotFound: false };
+    a1PendingCommands.remember(record.fingerprint, record.commandKey, record); reloadPending();
     if (retry) recoveryStarted();
     setMutatingAction(record.request.kind === "proposal" ? record.request.input.action.replace(/ \(A1\)$/, "")
       : record.intent.kind === "create" ? "新建账号" : record.intent.kind === "password" ? "重置密码" : record.intent.kind === "session" ? "让这台设备下线" : "登记新权限");
@@ -411,6 +415,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     } finally { setMutatingAction(null); }
     if (useAdminAuth.getState().session?.adminId !== record.actorId) throw new Error("A1_SESSION_CHANGED");
     if (result.kind === "proposal") {
+      record = { ...record, received: true, proposalNotFound: false };
+      a1PendingCommands.remember(record.fingerprint, record.commandKey, record); reloadPending();
       checkTicket(record, result.ticket);
       // A replayed POST is the old creation receipt, never today's ticket state.
       if (retry) {
@@ -559,7 +565,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           toast("新角色与当前角色相同");
           return;
         }
-        if (op.role === "super" && op.status === "enabled" && roleStr !== "super" && effectiveSupers - 1 < 2) {
+        if (op.role === "super" && op.status === "enabled" && op.tfa && roleStr !== "super" && effectiveSupers - 1 < 2) {
           toast("不能执行：有效的超级管理员会少于 2 人");
           return;
         }
@@ -731,7 +737,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   };
 
   const disableAcct = (op: A1Operator) => {
-    if (!restoring.current && op.role === "super" && op.status === "enabled" && effectiveSupers - 1 < 2) {
+    if (!restoring.current && op.role === "super" && op.status === "enabled" && op.tfa && effectiveSupers - 1 < 2) {
       toast("不能执行：有效的超级管理员会少于 2 人");
       return;
     }
@@ -1183,7 +1189,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       <Fact k="提交时间">{`${businessStamp(record.createdAt)}（${businessZone().label}）`}</Fact>
     </Facts>,
     run: async () => {
-      if (Date.now() < record.expiresAt || record.request.kind !== "proposal" || await fetchA2ProposalByKey(record.commandKey, true, "a")) throw new Error("A1_ORIGINAL_OPERATION_PENDING");
+      const current = a1PendingCommands.list().find(item => item.commandKey === record.commandKey);
+      if (!current || current.received || current.ticket || Date.now() < current.expiresAt || current.request.kind !== "proposal" || await queryOriginal(current, false)) throw new Error("A1_ORIGINAL_OPERATION_PENDING");
       recoveryStarted(); await refreshOverview(true);
       a1PendingCommands.forget(record.fingerprint, record.commandKey); reloadPending();
     },
@@ -1210,8 +1217,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         : unknownTag(request.kind === "proposal" ? "approval" : "direct", request.kind === "proposal" ? undefined : DIRECT_UNKNOWN_NOTE[intent.kind]),
       actions: <>
         <Button size="sm" disabledReason={mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => void queryOriginal(record).catch(error => toast(errorMessage(error)))}>查询原结果</Button>
-        {!record.ticket && !expired && <Button size="sm" variant="primary" disabledReason={mutatingAction ? "正在提交，请稍候" : retryBlock} onClick={() => restoreOperation(record)}>按原请求重试</Button>}
-        {request.kind === "proposal" && expired && record.proposalNotFound && <Button size="sm" onClick={() => releaseExpiredProposal(record)}>解除原操作记录</Button>}
+        {!record.ticket && !record.received && !expired && <Button size="sm" variant="primary" disabledReason={mutatingAction ? "正在提交，请稍候" : retryBlock} onClick={() => restoreOperation(record)}>按原请求重试</Button>}
+        {request.kind === "proposal" && expired && record.proposalNotFound && !record.received && !record.ticket && <Button size="sm" onClick={() => releaseExpiredProposal(record)}>解除原操作记录</Button>}
       </>,
     };
   });
@@ -1299,7 +1306,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           explain="启用中、还没绑定两步验证的账号，登录时要先绑定才能用后台。临时免验证开关打开时，superadmin 不验证也能登录，上线前要关掉。点这格只看这些账号。"
           onOpen={() => pickFilter("unbound")} openLabel="只看未绑定两步验证的账号" selected={filter === "unbound"} selectedText="已筛选" aria-pressed={filter === "unbound"} />
         <Stat icon={ClipboardCheck} tone="role-3" label="待审批的账号变更" value={pending === undefined || pending === null ? "—" : String(pending)} unit={pending === undefined || pending === null ? undefined : "件"}
-          explain="资料、角色、两步验证、启停、撤销全部登录的申请可能没算进来，数字会偏少，以「操作记录与审批」为准。"
+          explain="资料、角色、两步验证、启停、撤销全部登录的申请都算在内。只有早期少数缺少申请内容的旧申请不计，所以可能比「操作记录与审批」里少几件。"
           href="/platform/audit" openLabel="去操作记录与审批" />
         <Stat icon={MonitorSmartphone} tone="role-3" label="在线登录" value={stats ? stats.activeSessions.toLocaleString("en-US") : "—"} unit={stats ? "个" : undefined}
           sub={`${onlineAccounts} 个账号在线`}

@@ -14,6 +14,7 @@ export interface AccountDeletionRequest {
   reviewedAt?: string | null;
   completedAt?: string | null;
   reason?: string | null;
+  originalReason: string | null;
   /** 被系统拦下（已拒绝）时的原因码，比如 UNSETTLED_FUNDS_OR_ORDERS；运营拒绝时是运营写的理由。 */
   blockReason?: string | null;
   sessionsRevoked?: boolean;
@@ -60,6 +61,7 @@ function normalizeRow(raw: unknown): AccountDeletionRequest {
   if (!requestNo || !Number.isSafeInteger(userId) || !Number.isSafeInteger(version) || version < 0) {
     throw new Error("ACCOUNT_DELETION_RESPONSE_INVALID");
   }
+  if (row.originalReason !== null && typeof row.originalReason !== "string") throw new Error("ACCOUNT_DELETION_RESPONSE_INVALID");
   return { ...row, requestNo, userId, version, status: typeof row.status === "string" ? row.status : "UNKNOWN" } as AccountDeletionRequest;
 }
 

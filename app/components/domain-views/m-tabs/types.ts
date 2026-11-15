@@ -35,5 +35,6 @@ export type MCtx = {
   unboundAlertMinutes?: number;
   openActionConfirm: (req: import("../k-tabs/types").ActionConfirmReq & { briefKind: import("../design-kit").OperatorBriefKind }) => void;
   closeActionConfirm?: () => void;
+  actionConfirm?: import("../k-tabs/types").ActionConfirmReq | null;
   openConfirm: (req: import("../k-tabs/types").ConfirmReq) => void;
 };

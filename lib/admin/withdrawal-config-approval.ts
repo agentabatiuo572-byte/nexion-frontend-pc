@@ -1,3 +1,4 @@
+import { fundCommandOrigin, type FundCommandOrigin } from "./fund-command-investigation";
 import {
   A2OutcomeUncertainError,
   createA2CommandKey,
@@ -19,6 +20,8 @@ import type { B5ThresholdFacts } from "./b5-commands";
 
 export const configApprovalAttempts = createPendingMutationStore<PendingMutationRecord & Partial<FDomainAttempt> & {
   input: string;
+  commandOrigin?: FundCommandOrigin;
+  withdrawalRequest?: Parameters<typeof createA2OperationProposal>[0];
   h8Original?: H8Original;
   h8Ticket?: A2OperationRow;
   h8Acknowledged?: boolean;
@@ -86,10 +89,10 @@ export function releaseConfigApproval(sourceDomain: keyof typeof commands, admin
 /** H8 uses this existing store instance so other domains' in-flight approvals stay intact. */
 export function storeH8ConfigApproval(adminId: number, field: string, commandKey: string, extra: {
   input: string; h8Original?: H8Original; h8Ticket?: A2OperationRow; h8Acknowledged?: boolean;
-}) {
+}, storageErrorCode: string) {
   const slot = approvalSlot("H8", adminId, { objectId: "current", field });
   attempts.remember(slot, commandKey, extra);
-  if (!attempts.isDurablyStored(slot, commandKey)) throw new Error("H8_REQUEST_STORAGE_UNAVAILABLE");
+  if (!attempts.isDurablyStored(slot, commandKey)) throw new Error(storageErrorCode);
 }
 
 type ThresholdApprovalValues = {
@@ -164,11 +167,11 @@ export async function submitB5ThresholdApproval<T>(
     command: { domain: "B", op: "b5_bankrun_thresholds", params: { values } },
     target: { domain: "B", type: "bankrun_thresholds", id: "current" },
   };
-  const extra = { input, b5Request: request, b5Facts: previous?.b5Facts ?? facts };
+  const extra = { ...previous, input, b5Request: request, b5Facts: previous?.b5Facts ?? facts, b5NotFound: undefined };
   attempts.remember(slot, key, extra);
   if (!attempts.isDurablyStored(slot, key)) {
     if (!previous) attempts.forget(slot, key);
-    throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
+    throw new Error(previous ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   }
   const queryOriginal = async () => {
     try {
@@ -178,7 +181,8 @@ export async function submitB5ThresholdApproval<T>(
         || ticket.operationCode !== "b5_bankrun_thresholds")) {
         throw new A2OutcomeUncertainError("回执与原审批不匹配，请继续核对。", key);
       }
-      attempts.remember(slot, key, { ...extra, ...(ticket ? { b5Ticket: ticket }
+      if (!ticket && (extra.received || extra.b5Ticket)) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
+      attempts.remember(slot, key, { ...extra, ...(ticket ? { b5Ticket: ticket, received: true }
         : previous && previous.expiresAt <= Date.now() ? { b5NotFound: true as const } : {}) });
       return ticket;
     } catch {
@@ -189,7 +193,7 @@ export async function submitB5ThresholdApproval<T>(
   let ticket = previous ? await queryOriginal() : null;
   if (!ticket) {
     if (mode === "query") return null;
-    if (previous && (previous.expiresAt <= Date.now() || previous.b5Ticket || !request)) {
+    if (previous && (previous.expiresAt <= Date.now() || previous.received || previous.b5Ticket || !request)) {
       throw new A2OutcomeUncertainError("原审批暂未查到，请继续查询，不能重新提交。", key);
     }
     if (!session.authorities.includes("overview_b5_threshold_write")) throw new Error("当前账号缺少调整黄线红线的权限。");
@@ -199,6 +203,8 @@ export async function submitB5ThresholdApproval<T>(
       if (isBCommandRejection(error, !!previous)) attempts.forget(slot, key);
       throw error;
     }
+    extra.received = true;
+    attempts.remember(slot, key, extra);
     ticket = await queryOriginal();
     if (!ticket) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
   }
@@ -214,12 +220,28 @@ export async function submitB5ThresholdApproval<T>(
 }
 
 /** Call only after the existing confirmation UI confirms R1-提案过期 release. */
-export function releaseExpiredB5ThresholdApproval(adminId: string | number, commandKey: string) {
-  const record = pendingThresholdConfigApproval("B5", adminId);
-  if (!record || record.commandKey !== commandKey || record.expiresAt > Date.now() || !record.b5NotFound) return false;
-  attempts.forget(approvalSlot("B5", adminId), commandKey);
+async function releaseExpiredThresholdApproval(source: "B1" | "B5", adminId: string | number, commandKey: string) {
+  const record = pendingThresholdConfigApproval(source, adminId);
+  const ticketField = source === "B1" ? "b1Ticket" : "b5Ticket";
+  const missingField = source === "B1" ? "b1NotFound" : "b5NotFound";
+  if (!record || record.commandKey !== commandKey || record.expiresAt > Date.now() || !record[missingField] || record.received || record[ticketField]) return false;
+  const slot = approvalSlot(source, adminId);
+  attempts.remember(slot, commandKey, { ...record, [missingField]: undefined });
+  const ticket = await fetchA2ProposalByKey(commandKey, true, "metadata");
+  if (ticket) {
+    const action = source === "B1" ? "降低兑付覆盖率红线" : "提高提现压力红线";
+    if (ticket.mine !== true || ticket.obj !== "current" || ticket.action !== action || ticket.operationCode !== commands[source].op) {
+      throw new A2OutcomeUncertainError("回执与原审批不匹配，请继续核对。", commandKey);
+    }
+    attempts.remember(slot, commandKey, { ...record, received: true, [ticketField]: ticket, [missingField]: undefined });
+    return false;
+  }
+  attempts.forget(slot, commandKey);
   return true;
 }
+
+export const releaseExpiredB5ThresholdApproval = (adminId: string | number, commandKey: string) => releaseExpiredThresholdApproval("B5", adminId, commandKey);
+export const releaseExpiredB1ThresholdApproval = (adminId: string | number, commandKey: string) => releaseExpiredThresholdApproval("B1", adminId, commandKey);
 
 /** B1 keeps the complete request and queries the live ticket after any replay. */
 export async function submitB1ThresholdApproval<T>(
@@ -243,11 +265,11 @@ export async function submitB1ThresholdApproval<T>(
     command: { domain: "B", op: "b1_coverage_thresholds", params: { values } },
     target: { domain: "B", type: "coverage_thresholds", id: "current" },
   };
-  const extra = { input, b1Request: request, b1Facts: previous?.b1Facts ?? facts };
+  const extra = { ...previous, input, b1Request: request, b1Facts: previous?.b1Facts ?? facts, b1NotFound: undefined };
   attempts.remember(slot, key, extra);
   if (!attempts.isDurablyStored(slot, key)) {
     if (!previous) attempts.forget(slot, key);
-    throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
+    throw new Error(previous ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   }
   const queryOriginal = async () => {
     try {
@@ -257,7 +279,8 @@ export async function submitB1ThresholdApproval<T>(
         || ticket.operationCode !== "b1_coverage_thresholds")) {
         throw new A2OutcomeUncertainError("回执与原审批不匹配，请继续核对。", key);
       }
-      attempts.remember(slot, key, { ...extra, ...(ticket ? { b1Ticket: ticket } : { b1NotFound: true as const }) });
+      if (!ticket && (extra.received || extra.b1Ticket)) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
+      attempts.remember(slot, key, { ...extra, ...(ticket ? { b1Ticket: ticket, received: true } : { b1NotFound: true as const }) });
       return ticket;
     } catch {
       // A saved creation receipt is not the current approval status.
@@ -268,16 +291,20 @@ export async function submitB1ThresholdApproval<T>(
   let ticket = previous ? await queryOriginal() : null;
   if (!ticket) {
     if (mode === "query") return null;
-    if (previous && (previous.expiresAt <= Date.now() || previous.b1Ticket || !request)) {
+    if (previous && (previous.expiresAt <= Date.now() || previous.received || previous.b1Ticket || !request)) {
       throw new A2OutcomeUncertainError("原审批暂未查到，请继续查询，不能重新提交。", key);
     }
     if (!session.authorities.includes("overview_b1_redline_write")) throw new Error("当前账号缺少设置兑付覆盖率阈值的权限。");
+    attempts.remember(slot, key, extra);
+    if (!attempts.isDurablyStored(slot, key)) throw new Error(previous ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     try {
       await createA2OperationProposal(request!, key, true);
     } catch (error) {
       if (isBCommandRejection(error, !!previous)) attempts.forget(slot, key);
       throw error;
     }
+    extra.received = true;
+    attempts.remember(slot, key, extra);
     ticket = await queryOriginal();
     if (!ticket) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
   }
@@ -345,7 +372,7 @@ export async function submitConfigApproval<T>(
   const objectId = values && sourceDomain === "F3" && "ownerUserId" in values && "settlementDate" in values
     ? `${values.ownerUserId}:${values.settlementDate}`
     : sourceDomain === "F4" ? "default" : sourceDomain === "G4" ? "dividend" : scope?.objectId ?? "current";
-  const proposal = sourceDomain === "G4" && previous?.g4Request ? previous.g4Request : values ? {
+  const proposal = (sourceDomain === "D5" || sourceDomain === "D7") && previous?.withdrawalRequest ? previous.withdrawalRequest : sourceDomain === "G4" && previous?.g4Request ? previous.g4Request : values ? {
     action, obj: objectId, beforeValue: "—", afterValue: "—",
     operator: session.operator || session.username, operatorRole: roleLabel(session.role),
     type: "fund" as const, amplifies: true, sos: false, roleGate: "超管", reason, sourceDomain,
@@ -353,10 +380,12 @@ export async function submitConfigApproval<T>(
     target: { domain, type, id: objectId },
   } : undefined;
   if (!previous) {
-    attempts.remember(slot, key, { input, ...(sourceDomain === "G4" ? { g4Request: proposal } : {}) });
+    attempts.remember(slot, key, { input, ...(sourceDomain === "G4" ? { g4Request: proposal } : {}),
+      ...((sourceDomain === "D5" || sourceDomain === "D7") ? { withdrawalRequest: proposal,
+        commandOrigin: fundCommandOrigin("POST", "/api/admin/platform/audit/operations", sourceDomain === "D5" ? "finance_d5_read" : "finance_d7_read") } : {}) });
     if (!attempts.isDurablyStored(slot, key)) {
       attempts.forget(slot, key);
-      throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
+      throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
   }
 

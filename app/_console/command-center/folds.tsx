@@ -11,17 +11,19 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowLeftRight, ShieldAlert, Target, Users, Wallet, XCircle } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { BarList, Bars, BlockState, Button, Explain, Fact, Facts, Figure, Fold, Modal, StatusTag, ThresholdMeter, TrendLines } from "@/app/components/rd";
-import { fetchB0Kpis, fetchB0Redemption, type B0Kpi } from "@/lib/admin/b0-client";
+import { fetchB0Kpis, fetchB0Redemption, type B0BusinessSummary, type B0Kpi, type B0SummaryPeriod } from "@/lib/admin/b0-client";
 import type { B0Blocks } from "@/lib/admin/b0-access";
 import type { B2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import type { BLedger, BLiquidity, BRiskRadar } from "@/lib/admin/b-client";
 import { useB3Funnel } from "@/lib/admin/b3-client";
 import { fetchD1TopupOverview } from "@/lib/admin/d-client";
 import { rollupKpiPassState } from "@/lib/admin/dashboard-number";
+import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { liabilityDisplayName } from "@/lib/admin/liability-labels";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { UNAVAILABLE_GATES, byGateDisplayOrder } from "@/lib/admin/j-client";
 import { fmtAmount, fmtConfigPct, fmtNum, fmtPct } from "@/lib/format";
+import { PERIODS, usdtText } from "./period";
 import type { FundLevel } from "./status";
 import { useBlock } from "./use-block";
 
@@ -233,13 +235,13 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                 </li>
                 <li>
                   <span>
-                    <Explain label="提现在途怎么算" content="还没结案的提现单：等审核、打款中，也包括被拒绝或打款失败、钱还没退回的单。所以比待处理里的待审核提现多。">提现在途</Explain>
+                    <Explain label="进行中的提现怎么算" content="所有还没结束的提现单：等审核、打款中，也包括被拒或打款失败、钱还没退回的单，测试账号也算。所以比待处理里的待审核提现多。">进行中的提现（含待退回）</Explain>
                   </span>
                   <span className="cc-num">{fmtNum(ledger.queueBacklogCount)} 笔，{usdt(ledger.queueBacklogUsd)}</span>
                 </li>
                 <li>
                   <span>
-                    <Explain label="风险分怎么算" content={<>这些提现单绑定的风控决定分的平均，满分 100，70 以上为高危。没有风控决定的单按 0 算，所以可能比提现审核页的分低，单笔以提现审核页为准。 <FoldLink reach={reach} href="/risk/scoring">风险评分规则</FoldLink></>}>在途提现平均风险分</Explain>
+                    <Explain label="风险评分均值怎么算" content={<>进行中的提现单的风险分平均，满分 100，70 分以上算高危。没有风险分的单按 0 算，所以可能比提现审核页低，单笔看提现审核页。 <FoldLink reach={reach} href="/risk/scoring">风险评分规则</FoldLink></>}>提现风险评分均值</Explain>
                   </span>
                   <span className="cc-num" data-tone={ledger.avgRiskScore === 0 ? "done" : undefined}>{ledger.avgRiskScore}</span>
                 </li>
@@ -263,8 +265,60 @@ function flowConclusion(history: B2LiquidityHistory) {
   return `今日储备净流入 ${net > 0 ? "+" : ""}${usdt(net)}，${trend}`;
 }
 
-export function FlowFold({ blocks, history, historyError, historyRetrying, onRetryHistory, topupOnCard, netFlow24h, clock, refreshKey, reach, open, onOpenChange }: FoldProps & {
+/** 经营数据卡的分项：B36 这一期的入金渠道、提现构成和此刻没完成的提现。读不到时卡上已经写了重试，这里不再写。 */
+const DEPOSIT_CHANNELS = [
+  ["bep20Usdt", "BEP20 链上"], ["erc20Usdt", "ERC20 链上"], ["trc20Usdt", "TRC20 链上"], ["bankUsdt", "银行卡支付、银行转账"],
+  ["externalDirectUsdt", "外部直付购机"], ["legacyCardUsdt", "国际卡刷卡（已停用）"], ["otherUsdt", "其他"],
+] as const;
+
+function PeriodDetail({ period, summary }: { period: B0SummaryPeriod; summary: B0BusinessSummary }) {
+  const label = PERIODS.find((item) => item.value === period)!.label;
+  const deposits = summary.blocks.deposits?.breakdown;
+  const withdrawals = summary.blocks.withdrawals;
+  const channels = deposits ? DEPOSIT_CHANNELS.filter(([key]) => !/^0(?:\.0*)?$/.test(String(deposits[key]))) : [];
+  return (
+    <>
+      {deposits && (
+        <section aria-label={`${label}入金渠道`}>
+          <h3 className="cc-sub">入金渠道 · {label}</h3>
+          {channels.length === 0 ? <p className="cc-line" data-muted="">这一期没有入金</p> : (
+            <ul className="cc-list">
+              {channels.map(([key, name]) => <li key={key}><span>{name}</span><span className="cc-num">{usdtText(String(deposits[key]))}</span></li>)}
+            </ul>
+          )}
+        </section>
+      )}
+      {withdrawals && (
+        <section aria-label={`${label}提现构成`}>
+          <h3 className="cc-sub">提现构成 · {label}</h3>
+          <ul className="cc-list">
+            {withdrawals.breakdown && <>
+              <li><span>链上 USDT 本金</span><span className="cc-num">{usdtText(String(withdrawals.breakdown.usdt))}</span></li>
+              <li><span>越南盾银行提现本金</span><span className="cc-num">{usdtText(String(withdrawals.breakdown.vndPrincipalUsdt))}</span></li>
+              <li><span>手续费</span><span className="cc-num">{usdtText(String(withdrawals.breakdown.feesUsdt))}</span></li>
+            </>}
+            {withdrawals.inTransit && (
+              <li>
+                <span><Explain label="等着到账的提现怎么算" content={`此刻还在走、用户还没收到钱的提现：等审核、冷却中、打款中、冻结和打款异常的单，不含测试账号，不随时段变。被拒、打款失败等着退回的单不算，所以不会多于「风险与开关」里进行中的提现。数据时间 ${formatBusinessTimeCompact(withdrawals.inTransit.asOf)}。`}>等着到账的提现</Explain></span>
+                <span className="cc-num">{fmtNum(withdrawals.inTransit.count)} 笔，{usdtText(withdrawals.inTransit.amountUsdt)}</span>
+              </li>
+            )}
+          </ul>
+        </section>
+      )}
+    </>
+  );
+}
+
+export function FlowFold({ blocks, period, summary, summaryError, summaryLoading, onRetrySummary, history, historyError, historyRetrying, onRetryHistory, topupOnCard, netFlow24h, clock, refreshKey, reach, open, onOpenChange }: FoldProps & {
   blocks: B0Blocks;
+  /** 经营数据选中的时段和它读到的数，读不到时为 null。 */
+  period: B0SummaryPeriod;
+  summary: B0BusinessSummary | null;
+  /** 经营摘要还没读到或读失败：本期入金渠道和提现构成的位置写加载中或读取失败，不留空折叠。 */
+  summaryError: string | null;
+  summaryLoading: boolean;
+  onRetrySummary: () => void;
   history: B2LiquidityHistory | null;
   historyError: string | null;
   historyRetrying: boolean;
@@ -280,13 +334,17 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
   // 充值渠道只看 D1 读权，不跟入金卡走：入金卡读不到时这里照样有，各自重试。
   const topup = useBlock(fetchD1TopupOverview, opened && blocks.topup, refreshKey);
   const redemption = useBlock(fetchB0Redemption, opened && blocks.redemption, refreshKey);
-  const summary = !blocks.netFlow ? `今日${[blocks.topup ? "充值" : "", blocks.redemption ? "提现" : ""].filter(Boolean).join("和")}明细` : historyError ? "读取失败" : history ? flowConclusion(history) : "正在读取…";
+  const title = !blocks.netFlow ? "入金和提现明细" : historyError ? "读取失败" : history ? flowConclusion(history) : "正在读取…";
   const todayFlow = history?.flowWindows.at(-1);
   const moved = history?.flowWindows.some((item) => item.inflowWan > 0 || item.outflowWan > 0);
   // 近 8 天全是 0 时结论在标题行写过，这里不再写，今日明细左右排。
   const quiet = blocks.netFlow && history !== null && !moved && !historyError;
   const today = (
     <>
+      {summary ? <PeriodDetail period={period} summary={summary} />
+        : (blocks.deposits || blocks.withdrawals) && (summaryError
+          ? <BlockState compact state="error" title="入金和提现明细读取失败" detail={summaryError} onRetry={onRetrySummary} retrying={summaryLoading} />
+          : <BlockState compact state="loading" title="正在读取…" />)}
       {blocks.topup && (
         <section aria-label="今日充值">
           <h3 className="cc-sub">今日充值</h3>
@@ -318,10 +376,10 @@ export function FlowFold({ blocks, history, historyError, historyRetrying, onRet
     </>
   );
   return (
-    <Fold title="资金进出" summary={summary} icon={ArrowLeftRight} tone="role-2" open={open} onOpenChange={onOpenChange}
+    <Fold title="资金进出" summary={title} icon={ArrowLeftRight} tone="role-2" open={open} onOpenChange={onOpenChange}
       explain={blocks.netFlow ? <>
-        按储备账已确认的流入、流出统计。流入包括充值、财务注资和储备返还／冲正；流出包括提现扣储备和拒付退回。非银行提现在放行时扣储备，银行提现在付款成功时结算，不代表全部已实际打款。用余额买设备不算。
-        {netFlow24h != null && ` 另一个算法是滚动近 24 小时：${fmtAmount(netFlow24h)} USDT，时间段不同，数可能不一样。`}{clock && ` 数据时间 ${clock}。`}
+        储备账每天已确认的进出：流入有充值、财务注资、储备返还／冲正，流出有提现、拒付退回；用余额买设备不算。链上提现放行就算流出，银行提现付款成功才算。
+        {netFlow24h != null && ` 滚动近 24 小时净流入 ${fmtAmount(netFlow24h)} USDT，时段不同，数可能不一样。`}
       </> : undefined}
       actions={blocks.netFlow ? <FoldLink reach={reach} href="/finance/pool?tab=flow" read="overview_b2_read">查看资金流</FoldLink> : undefined}>
       <div className="cc-cols">
@@ -375,13 +433,45 @@ function FunnelBody({ onSummary }: { onSummary: (text: string) => void }) {
   );
 }
 
-export function FunnelFold({ refreshKey, reach, open, onOpenChange }: FoldProps & { refreshKey: number; reach: Reach }) {
+type Registrations = NonNullable<B0BusinessSummary["blocks"]["registrations"]>;
+
+/** 经营数据选中时段每天（「全部」按月）的新注册。今日只有一天，不画。 */
+function RegistrationTrend({ period, registrations }: { period: B0SummaryPeriod; registrations: Registrations }) {
+  const label = PERIODS.find((item) => item.value === period)!.label;
+  const byMonth = period === "all";
+  const rows = byMonth
+    ? Object.entries(registrations.trend.reduce<Record<string, number>>((months, point) => ({ ...months, [point.from.slice(0, 7)]: (months[point.from.slice(0, 7)] ?? 0) + point.count }), {}))
+      .map(([month, count]) => ({ label: month, values: [count] }))
+    : registrations.trend.map((point) => ({ label: point.from.slice(5), values: [point.count] }));
+  return (
+    <section aria-label={`${label}新注册走势`}>
+      <h3 className="cc-sub">{byMonth ? "每月新注册 · 全部" : `每天新注册 · ${label}`}</h3>
+      {rows.every((row) => row.values[0] === 0)
+        ? <p className="cc-line" data-muted="">这一期没有新注册</p>
+        : <Bars label={`${label}${byMonth ? "每月" : "每天"}新注册人数`} series={[{ name: "新注册", slot: 3 }]} rows={rows} format={(value) => `${fmtNum(value)} 人`} height={96} />}
+    </section>
+  );
+}
+
+export function FunnelFold({ funnel, period, registrations, refreshKey, reach, open, onOpenChange }: FoldProps & {
+  /** 有转化读权才读漏斗；只有注册读权时这里只放新注册走势。 */
+  funnel: boolean;
+  period: B0SummaryPeriod;
+  registrations: Registrations | null;
+  refreshKey: number;
+  reach: Reach;
+}) {
   const opened = useOpenedOnce(open);
   const [summary, setSummary] = useState<string | null>(null);
+  const trend = registrations && period !== "today" ? <RegistrationTrend period={period} registrations={registrations} /> : null;
+  const title = funnel ? summary ?? (opened ? "正在读取…" : "点开看注册到提现各步人数")
+    : registrations ? (period === "today" ? "选本周、本月或全部看新注册走势" : `${PERIODS.find((item) => item.value === period)!.label}新注册 ${fmtNum(registrations.count)} 人的走势`)
+      : "正在读取…";
   return (
-    <Fold title="用户与转化" summary={summary ?? (opened ? "正在读取…" : "点开看注册到提现各步人数")} icon={Users} tone="role-3" open={open} onOpenChange={onOpenChange}
+    <Fold title="用户与转化" summary={title} icon={Users} tone="role-3" open={open} onOpenChange={onOpenChange}
       actions={<FoldLink reach={reach} href="/overview/funnel">查看明细</FoldLink>}>
-      {opened && <FunnelBody key={refreshKey} onSummary={setSummary} />}
+      {trend && funnel ? <div className="cc-fold-stack">{trend}{opened && <FunnelBody key={refreshKey} onSummary={setSummary} />}</div>
+        : trend ?? (funnel && opened && <FunnelBody key={refreshKey} onSummary={setSummary} />)}
     </Fold>
   );
 }

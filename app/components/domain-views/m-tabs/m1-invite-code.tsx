@@ -71,11 +71,11 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
 
   const issue = async () => {
     if (busy || !view || pending || !adminId) return;
-    if (view.code !== null && view.version === null) { setError("当前邀请码没有版本号，暂时不能重置；请刷新后再试。"); return; }
+    if (view.code !== null && view.version === null) { setError("当前邀请码的资料不全，暂时不能重置；请刷新后再试。"); return; }
     const expectedVersion = view.code === null ? null : view.version, commandKey = crypto.randomUUID();
     groupPendingCommands.remember(fingerprint, commandKey, { actorId: adminId, intent: { kind: "INVITE_ISSUE", payload: { expectedVersion } }, label: expectedVersion === null ? "生成邀请码" : "重置邀请码" });
     const record = findPending();
-    if (record?.commandKey !== commandKey || !groupPendingCommands.isDurablyStored(fingerprint, commandKey)) { groupPendingCommands.forget(fingerprint, commandKey); setError("浏览器无法保存这次操作的记录，已停止提交。请检查浏览器设置后重试。"); return; }
+    if (record?.commandKey !== commandKey || !groupPendingCommands.isDurablyStored(fingerprint, commandKey)) { groupPendingCommands.forget(fingerprint, commandKey); setError("浏览器存不下这次操作，没有提交；请允许浏览器保存网站数据后重试。"); return; }
     setBusy(true); setError("");
     let acknowledged = false;
     try {
@@ -108,8 +108,8 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
     } catch (cause) {
       const absent = cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND";
       setUnresolved(absent);
-      const reason = absent ? "尚未找到原命令回执，这不能证明原请求没有执行。" : "暂时无法查询原操作。";
-      setError(reason + (!canReplayGroupCommand(pending) ? "原操作已超过可重发时间，不能直接重发，请稍后再查询。" : absent ? "可以用原命令重试原操作。" : "原命令仍保留，请稍后继续查询。"));
+      const reason = absent ? "还没查到原操作的结果，这说明不了它没有执行。" : "暂时查不到原结果。";
+      setError(reason + (!canReplayGroupCommand(pending) ? "原操作已超过 24 小时，不能再重试，请稍后再查询。" : absent ? "可以按原请求重试。" : "原操作仍保留，请稍后再查询。"));
     } finally { setBusy(false); }
   };
   // Same key and frozen request body; the server dedupes it if the original did arrive.
@@ -125,8 +125,8 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
       settle(pending);
       toast(pending.intent.payload.expectedVersion === null ? "邀请码已生成。" : "邀请码已重置，旧码已失效。");
     } catch (cause) {
-      if (acknowledged) { setError("已取得操作回执，读回失败，请刷新核对。"); return; }
-      if (!commandRejected(cause)) { setError("重试结果仍未确认，原命令已保留，请稍后再查询或重试。"); return; }
+      if (acknowledged) { setError("操作已成功，但邀请码没刷新出来，请刷新核对。"); return; }
+      if (!commandRejected(cause)) { setError("重试的结果仍然未知，原操作已保留，请稍后再查询或重试。"); return; }
       settle(pending);
       setError(errorText(cause));
     } finally { setBusy(false); }
@@ -150,7 +150,7 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
   return <section className="m1-invite" aria-label="我的邀请码">
 
     {pending ? <>
-      <Notice tone="warn" action={<><Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void reconcile()}>{busy ? "正在处理…" : "查询原操作"}</Button>{unresolved && canReplayGroupCommand(pending) && <Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void replay()}>重试原操作</Button>}</>}>上次{pending.intent.payload.expectedVersion === null ? "生成" : "重置"}邀请码的结果还没确认；确认前暂不提供复制、链接和二维码。</Notice>
+      <Notice tone="warn" action={<><Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void reconcile()}>{busy ? "正在处理…" : "查询原结果"}</Button>{unresolved && canReplayGroupCommand(pending) && <Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void replay()}>按原请求重试</Button>}</>}>上次{pending.intent.payload.expectedVersion === null ? "生成" : "重置"}邀请码结果未知；查到结果前不能复制，也不显示链接和二维码。</Notice>
     </> : readFailed ? <>
       <Notice tone="danger" action={<Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" onClick={() => setReload(n => n + 1)}>重试</Button>}>暂时无法读取邀请码，请重试。</Notice>
     </> : !view ? <p className="m1-invite-note m1-invite-muted" role="status">正在读取邀请码…</p>

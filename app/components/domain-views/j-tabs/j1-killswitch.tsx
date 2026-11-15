@@ -11,10 +11,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeftRight, Ban, CalendarClock, Coins, Gem, Landmark, Layers, ListChecks, Power, RefreshCw, ScrollText, ShieldAlert, ShieldCheck, SlidersHorizontal, Siren, Ticket, type LucideIcon } from "lucide-react";
-import { BatchBar, BlockState, Button, Cell, Change, Checkbox, Conclusion, ConfigList, ConfigRow, ControlCard, ControlGrid, Explain, Fact, Facts, KeepText, Figure, Fold, Notice, PageHeader, Panel, RecordList, ReleaseModal, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr } from "@/app/components/rd";
+import { BatchBar, BlockState, Button, Cell, Change, Checkbox, Conclusion, ConfigList, ConfigRow, ControlCard, ControlGrid, Explain, Fact, Facts, KeepText, Figure, Fold, Notice, PageHeader, Panel, RecordList, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { UNAVAILABLE_GATES, createJEmergencyCommandKey, isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
 import type { AutoConfirmationRow, AutoRuleRow, EmergencySlaRow, JGate, KillSwitchOverview } from "@/lib/admin/j-client";
@@ -26,7 +28,7 @@ import { A2OutcomeUncertainError, createA2OperationProposal, fetchA2Overview, fe
 import type { ActionConfirmReq, JCtx } from "./types";
 
 type RestoreProposal = Parameters<typeof createA2OperationProposal>[0];
-type RestoreAttempt = PendingMutationRecord & { input: RestoreProposal };
+type RestoreAttempt = PendingMutationRecord & { input: RestoreProposal; commandOrigin?: FundCommandOrigin };
 const restoreAttempts = createPendingMutationStore<RestoreAttempt>({
   storageKey: "nexion-admin-j1-restore-proposals",
   retainExpiredRecords: true,
@@ -57,7 +59,7 @@ const RULE_MODE_LABEL: Record<AutoRuleRow["mode"], string> = { automatic: "达�
 const RULE_SOURCE: Record<string, string> = { withdrawSurge: "/overview/risk-radar", tamperCluster: "/emergency/tamper" };
 const EXPIRED = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
 const READING = "正在读取最新状态，读完再操作";
-const LOCKED = "这项有结果未确认的操作，先处理页面上方的待确认";
+const LOCKED = "这项有结果未知的操作，先到页面上方查询原结果";
 const BLOCKED_RESUME = "系统尚未允许恢复，暂不能发起资金业务恢复审批。到「资金储备与应付款」核对覆盖率和估值，待系统允许恢复后再申请。";
 const REASON_HINT = "例如：监管通知编号、工单号、事件编号";
 const STALE = "这个值刚被别人改过，本次没有保存。";
@@ -75,6 +77,7 @@ type J1Command =
   | { kind: "backfill"; gate: string; incidentId: string; decision: "keep_disabled" | "recommend_restore" };
 
 type J1Pending = PendingMutationRecord & {
+  commandOrigin?: FundCommandOrigin;
   /** 待确认条上写的「做了什么」。 */
   label: string;
   /** 这次操作锁住的对象：业务 key、sla:{id}、rule:{id}。结果确认前不能再操作（OP-93）。 */
@@ -159,7 +162,6 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
   /** 最近一次重试被后端明确拒绝的命令号，只有它们才能人工解除。 */
   const [retryRejected, setRetryRejected] = useState<string[]>([]);
-  const [releasing, setReleasing] = useState<J1Pending | null>(null);
 
   const syncPending = () => {
     setPending(pendingKeys.list());
@@ -186,7 +188,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   }, [canReadApprovals, session?.adminId, data]);
 
   const reload = () => void actions.reloadJEmergency().catch(() => undefined);
-  const notePending = (record: J1Pending, note: string) => setPendingNotes((current) => ({ ...current, [record.fingerprint]: `${businessClock(Date.now())} ${note}` }));
+  const notePending = (record: PendingMutationRecord, note: string) => setPendingNotes((current) => ({ ...current, [record.fingerprint]: `${businessClock(Date.now())} ${note}` }));
 
   const dispatch = (command: J1Command, reason: string, key: string) => {
     switch (command.kind) {
@@ -207,7 +209,14 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const sendCommand = async (scope: string, extra: J1Extra, after?: () => void) => {
     const retained = pendingKeys.get(scope);
     const key = retained ?? createJEmergencyCommandKey();
-    pendingKeys.remember(scope, key, extra);
+    const original = pendingKeys.list().find(record => record.fingerprint === scope && record.commandKey === key);
+    const command = extra.command;
+    const base = "/api/admin/emergency/kill-switches/";
+    const path = command.kind === "toggle" ? base + encodeURIComponent(command.gate) : command.kind === "batch" ? base + "emergency-disable"
+      : command.kind === "sla" ? base + "emergency-sla/" + encodeURIComponent(command.id)
+        : command.kind === "rule" ? base + "auto-rules/" + encodeURIComponent(command.id) : base + "auto-confirmations/" + encodeURIComponent(command.gate);
+    const method = command.kind === "toggle" ? "PUT" : command.kind === "sla" || command.kind === "rule" ? "PATCH" : "POST";
+    pendingKeys.remember(scope, key, { ...extra, commandOrigin: retained ? original?.commandOrigin : fundCommandOrigin(method, path, "emergency_j1_read") });
     if (!pendingKeys.isDurablyStored(scope, key)) {
       if (!retained) pendingKeys.forget(scope, key);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
@@ -222,7 +231,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         syncPending();
         await actions.reloadJEmergency().catch(() => undefined);
         if (unknown) {
-          toast("结果未确认，不要重复操作。到页面上方读回核对或按原操作重试。", "warn");
+          toast("结果未知，不要重复操作。到页面上方查询原结果，或按原请求重试。", "warn");
           return;
         }
         // 确认框留着时原因写在框里，重试的原因写在待确认条上，都不再弹同一句；权限层的 403 由确认框提示并关框（OP-132）。
@@ -257,7 +266,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       return;
     }
     if (!pendingKeys.isDurablyStored(record.fingerprint, record.commandKey)) {
-      notePending(record, "浏览器里读不到这条记录，这次没有发送。待确认继续保留，请到操作记录与审批核对。");
+      notePending(record, "浏览器里读不到这条记录，这次没有发送。记录继续保留，请到操作记录与审批核对。");
       return;
     }
     setRetryRejected((current) => current.filter((key) => key !== record.commandKey));
@@ -265,28 +274,37 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     try {
       await sendCommand(fingerprint, extra);
     } catch (cause) {
-      notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，原命令继续保留。`);
+      notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，记录继续保留。`);
       if (isExplicitRejection(cause)) setRetryRejected((current) => [...current, commandKey]);
     }
   };
 
-  /** 重试被拒后，人核实过原操作的结果才解除。只放开本页的锁，不发请求。 */
-  const releasePending = (record: J1Pending) => {
-    pendingKeys.forget(record.fingerprint, record.commandKey);
-    syncPending();
-    setReleasing(null);
-    toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
-  };
-
-  /** 读回只给现在的事实。状态变了可能是别人改的，不能当成原命令的回执（OP-95 丙档）。 */
-  const verifyPending = async (record: J1Pending) => {
+  const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [closing, setClosing] = useState<J1Pending | RestoreAttempt | null>(null);
+  const [settled, setSettled] = useState<FundSettled[]>([]);
+  /** Evidence forms reuse this path; missing/unknown/failed receipts preserve the saved command. */
+  const checkInvestigation = async (record: J1Pending | RestoreAttempt, evidence?: FundCommandEvidence) => {
+    setSubmitting(record.fingerprint);
     try {
-      await actions.reloadJEmergency();
-      notePending(record, "已读回最新状态，看下面的业务卡核对。状态可能是别人改的，待确认继续保留。");
-    } catch {
-      notePending(record, "读回失败，暂时读不到。待确认继续保留。");
-    }
+      const receipt = await checkFundCommand(record, evidence);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+      if (fundCommandSettled(receipt)) {
+        if ("input" in record) restoreAttempts.forget(record.fingerprint, record.commandKey);
+        else pendingKeys.forget(record.fingerprint, record.commandKey);
+        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: "input" in record ? record.input.action : record.label, status: receipt!.originalStatus, proposal: "input" in record }]);
+        syncPending();
+        await actions.reloadJEmergency();
+      }
+      return receipt;
+    } catch (cause) {
+      const error = displayAdminError(cause);
+      // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
+      if (!evidence) setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      throw cause;
+    } finally { setSubmitting(""); }
   };
+  /** 读回只给现在的事实。状态变了可能是别人改的，不能当成原命令的回执（OP-95 丙档）。 */
+  const verifyPending = async (record: J1Pending) => { await checkInvestigation(record).catch(() => undefined); };
 
   const submitRestore = async (g: Pick<JGate, "key" | "name" | "amplifies">, reason?: string) => {
     if (!session || !canResume) throw new Error("当前账号没有发起恢复审批的权限。");
@@ -313,10 +331,10 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       target: { domain: "J", type: "kill_switch", id: g.key },
     };
     if (!previous) {
-      restoreAttempts.remember(slot, key, { input });
+      restoreAttempts.remember(slot, key, { input, commandOrigin: fundCommandOrigin("POST", "/api/admin/platform/audit/operations", "emergency_j1_read") });
       if (!restoreAttempts.isDurablyStored(slot, key)) {
         restoreAttempts.forget(slot, key);
-        throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
+        throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
       }
     }
     setCheckingRestore(g.key);
@@ -364,40 +382,43 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   };
 
   const visibleRestores = pendingRestores.filter((record) => record.fingerprint.startsWith(`${session?.adminId}:`));
-  const restoreNotices = visibleRestores.map((record) => (
-    <Notice key={record.commandKey} tone="warn" title={`${record.input.action} · 申请结果未确认`}
-      action={<Button size="sm" disabled={checkingRestore !== null} disabledReason={canResume ? undefined : RETRY_DENIED} onClick={() => {
-        void submitRestore({ key: record.input.obj, name: record.input.action.replace("恢复业务开关 · ", ""), amplifies: record.input.amplifies === true })
-          .catch((error) => setPendingNotes((notes) => ({ ...notes, [record.fingerprint]: record.expiresAt <= Date.now() ? `${EXPIRED}。原申请结果仍待核实。` : displayAdminError(error) })));
-      }}>核对原恢复申请</Button>}>
-      提交恢复审批不会打开业务。{record.expiresAt <= Date.now() ? EXPIRED : "先查原审批单，未查到且仍在 24 小时内才按原内容、原理由和原命令号重试。"}
-      {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J">到操作记录与审批核对</Link></>}
-      <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.input.reason}`} />
-      {pendingNotes[record.fingerprint] && <div><KeepText text={pendingNotes[record.fingerprint]} /></div>}
-    </Notice>
-  ));
-
-  const pendingNotices = pending.map((record) => {
+  /** 恢复申请按原请求重试：先按原请求查审批单，查不到且在 24 小时内才用原内容再建（submitRestore 的原有流程）。 */
+  const retryRestore = (record: RestoreAttempt) => {
+    const gate = data?.activeGates.find((row) => row.key === record.input.obj)
+      ?? { key: record.input.obj, name: record.input.action.replace(/^恢复业务开关 · /, ""), amplifies: record.input.amplifies };
+    void submitRestore(gate).catch((error: unknown) => notePending(record, `重试没有完成：${error instanceof Error ? displayAdminError(error) : "原因未知"} 记录继续保留。`));
+  };
+  const restoreRows = visibleRestores.map((record): FundRecoveryRow => {
     const expired = record.expiresAt <= Date.now();
-    return (
-      <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`}
-        action={<>
-          <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>读回核对</Button>
-          {!expired && <Button size="sm" disabled={!expired && !!submitting} disabledReason={expired ? EXPIRED : canRetry(record) ? undefined : RETRY_DENIED} onClick={() => void retryPending(record)}>按原操作重试</Button>}
-          {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
-        </>}>
-        {expired ? formatBusinessTimeCompact(new Date(record.createdAt).toISOString()) : businessClock(record.createdAt)}（{businessZone().label}）发出，<KeepText text={expired ? `${EXPIRED}。` : "可能已经生效。重发原内容，已成功的不会重复执行。"} />
-        {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J">到操作记录与审批核对</Link></>}
-        <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.reason}`} />
-        {pendingNotes[record.fingerprint] && <div><KeepText text={pendingNotes[record.fingerprint]} /></div>}
-      </Notice>
-    );
+    return { key: record.commandKey, title: `${record.input.action}（恢复申请）`, record, outcome: investigationResults[record.commandKey], createdAt: record.createdAt, expired, canRetry: !expired && canResume,
+      actions: <>
+        <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={checkingRestore !== null || !!submitting} checking={submitting === record.fingerprint}
+          onCheck={() => void checkInvestigation(record).catch(() => undefined)} onClose={() => setClosing(record)} />
+        {!expired && <Button size="sm" loading={checkingRestore === record.input.obj} disabled={checkingRestore !== null || !!submitting} disabledReason={canResume ? undefined : RETRY_DENIED} onClick={() => retryRestore(record)}>按原请求重试</Button>}
+      </>,
+      detail: <>
+        <p>提交恢复审批不会打开业务。按原请求重试会先核对原审批单，已建的不会重复建。</p>
+        {pendingNotes[record.fingerprint] && <p><KeepText text={pendingNotes[record.fingerprint]} /></p>}
+      </>,
+      tech: `理由 ${record.input.reason}` };
   });
 
-  const releaseModal = releasing && (
-    <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒说明不了原操作的结果，到操作记录确认过再解除。解除只移除本地记录，不办理后端核查结案；后端仍可能锁住这个对象。" />
-  );
+  const pendingRows = pending.map((record): FundRecoveryRow => {
+    const expired = record.expiresAt <= Date.now();
+    return { key: record.fingerprint, title: record.label, record, outcome: investigationResults[record.commandKey], createdAt: record.createdAt, expired, canRetry: !expired && canRetry(record),
+      actions: <>
+        <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={!!submitting} checking={submitting === record.fingerprint}
+          onCheck={() => void verifyPending(record)} onClose={() => setClosing(record)} />
+        {!expired && <Button size="sm" disabled={!!submitting} disabledReason={canRetry(record) ? undefined : RETRY_DENIED} onClick={() => void retryPending(record)}>按原请求重试</Button>}
+      </>,
+      detail: pendingNotes[record.fingerprint] ? <p><KeepText text={pendingNotes[record.fingerprint]} /></p> : undefined,
+      tech: `理由 ${record.reason}` };
+  });
+  const recoveryPanel = <FundRecoveryPanel rows={[...pendingRows, ...restoreRows]} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
+    link={reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=J">到操作记录与审批核对</Link>} />;
+
+  const releaseModal = closing && <FundClosureModal label={"input" in closing ? closing.input.action : closing.label} createdAt={closing.createdAt}
+    onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />;
 
   const header = (
     <PageHeader pageId="J1" title="紧急停用开关"
@@ -413,8 +434,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   if (contentError) {
     return <>
       {header}
-      {pendingNotices}
-      {restoreNotices}
+      {recoveryPanel}
       <BlockState state="error" title="当前无法确认最新状态" detail={`${contentError.startsWith("操作") ? "业务开关读取失败。" : contentError}为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} />
       {lastRead.current && <>
         <p className="rd-note">这是 {readAt} 读到的状态，可能已过期</p>
@@ -431,8 +451,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   if (!data) {
     return <>
       {header}
-      {pendingNotices}
-      {restoreNotices}
+      {recoveryPanel}
       <BlockState state="loading" title="业务开关加载中" detail="正在确认各业务开关的最新状态" />
       {releaseModal}
     </>;
@@ -525,7 +544,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           await submitRestore(gate, reason);
         } catch (error) {
           if (!isA2OutcomeUncertainError(error)) throw error;
-          toast("恢复申请结果未确认。批准前业务保持关停，到页面上方核对原恢复申请。", "warn");
+          toast("恢复申请结果未知。批准前业务保持关停，到页面上方查询原结果。", "warn");
         }
       },
     });
@@ -705,8 +724,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   return (
     <>
       {header}
-      {pendingNotices}
-      {restoreNotices}
+      {recoveryPanel}
 
       {overdue.length > 0 ? (
         <div data-proof="j1-backfill-overdue-banner">
@@ -721,7 +739,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       ) : killed > 0 ? (
         <Conclusion state="warn" hint={<>{nextStepHelp}{resumeBlocked && <div>{recoveryBlock}</div>}</>} explainTitle="恢复审批怎么走" explain={approvalHelp}>{conclusionFacts}</Conclusion>
       ) : pending.length + visibleRestores.length > 0 ? (
-        <Conclusion state="warn" hint="到上方核对原操作结果。" explainTitle="待确认结果怎么核对" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：可用业务全部开启，<b>{pending.length + visibleRestores.length}</b> 项操作或审批结果未确认</Conclusion>
+        <Conclusion state="warn" hint="到上方查询原结果。" explainTitle="结果未知的操作怎么核对" explain="业务卡读到的是现在的状态，不能当成这次操作的结果。">业务开关：可用业务全部开启，<b>{pending.length + visibleRestores.length}</b> 项操作或审批结果未知</Conclusion>
       ) : restoreApprovals.length > 0 ? (
         <Conclusion state="warn" hint="到业务卡上核对原审批。">业务开关：可用业务全部开启，<b>{restoreApprovals.length}</b> 项恢复申请待审批</Conclusion>
       ) : (

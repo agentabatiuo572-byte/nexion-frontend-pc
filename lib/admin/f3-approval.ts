@@ -84,9 +84,10 @@ function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
 export async function queryF3Proposal(adminId: number, original: FDomainAttempt) {
   actor(adminId); // Lookup deliberately does not require the current write grant.
   if (original.adminId !== undefined && original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-  remember({ ...original, ticket: undefined, absent: false });
+  remember({ ...original, absent: false });
   const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
   if (!ticket) {
+    if (original.received || original.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
     remember({ ...original, ticket: undefined, absent: true });
     return null;
   }
@@ -133,6 +134,8 @@ export async function sendF3Proposal(adminId: number, slot: string, spec?: Propo
   }
   if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
   if (!original.request || !durable(original)) throw new Error("F3_PROPOSAL_ORIGINAL_INCOMPLETE");
+  original.absent = false;
+  remember(original);
   if (original.received || original.ticket) return queryReceivedF3Proposal(adminId, original);
   let ticket: A2OperationRow;
   try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }
@@ -162,6 +165,7 @@ async function queryReceivedF3Proposal(adminId: number, original: FDomainAttempt
 
 /** R1-提案过期: invoke only after an explicit confirmation in the visual layer. */
 export async function releaseF3Proposal(adminId: number, original: FDomainAttempt) {
+  if (original.received || original.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
   if (!isRetryExpired(original)) throw new Error("原操作尚未过期，请先查询原结果。");
   const ticket = await queryF3Proposal(adminId, original);
   if (ticket?.status === "pending") throw new Error("这张申请仍在等待审批。");

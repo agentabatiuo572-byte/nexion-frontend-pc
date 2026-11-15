@@ -182,7 +182,7 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
     const current = saved(record.commandKey);
     // A status PATCH can also succeed directly when the target status already matches.
     // A missing A2 ticket cannot settle that union response; only always-proposal endpoints qualify.
-    if (!confirmed || !current || !["a6-delete", "a6-grants"].includes(current.original.kind) || !isRetryExpired(current) || !current.proposalNotFound) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
+    if (!confirmed || !current || !["a6-delete", "a6-grants"].includes(current.original.kind) || !isRetryExpired(current) || !current.proposalNotFound || current.ticket || current.receipt) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
     if (await queryProposal(current)) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
     forget(current);
   };
@@ -190,7 +190,8 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
     const current = saved(record.commandKey);
     requireOriginalActor(record, true);
     if (isRetryExpired(record) || current?.ticket || current?.receipt) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
-    if (!current || !commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("RBAC_ORIGINAL_STORAGE_FAILED");
+    if (!current || !commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error(retry ? "RBAC_ORIGINAL_RETRY_STORAGE_FAILED" : "RBAC_ORIGINAL_STORAGE_FAILED");
+    commands.remember(record.fingerprint, record.commandKey, { ...current, proposalNotFound: false }); sync();
     const request = wire(record.original, record.reason, record.operator);
     try {
       const response = await guardedFetch(`/api/admin/platform${request.path}`, { method: request.method, body: record.body, cache: "no-store",
@@ -209,7 +210,7 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
       const original = record.original;
       if (rbacProposal(original) && object(result.data) && typeof result.data.id === "string") {
         checkTicket(original, result.data);
-        commands.remember(record.fingerprint, record.commandKey, { ...current, receipt: result.data, ticket: retry ? current.ticket : result.data });
+        commands.remember(record.fingerprint, record.commandKey, { ...current, receipt: result.data, ticket: retry ? current.ticket : result.data, proposalNotFound: false });
         sync();
         return { kind: "proposal" as const, ticket: result.data };
       }

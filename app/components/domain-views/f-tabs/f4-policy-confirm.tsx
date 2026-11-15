@@ -69,7 +69,7 @@ export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy):
   return { briefKind: "config",
     name: "调整区域大使申请规则",
     title: "调整大使申请规则",
-    businessForm: { kind: "multi-field", fields: [...mainFields, ...bucketRows.flatMap(({ fields }) => fields)] },
+    businessForm: { kind: "multi-field", fields: [...mainFields, ...bucketRows.flatMap(({ fields }) => fields)], amplifies: values => requiresApproval(changedLimits(values)) },
     statedBrief: {
       impact: "保存后 App 的大使申请页下次打开或刷新就用新规则；已经提交的申请不按新规则改金额。",
       check: "只改文字、调低预算或调高最低预算时直接保存；调高默认预算或任一类的最高预算要另一位超级管理员批准。",

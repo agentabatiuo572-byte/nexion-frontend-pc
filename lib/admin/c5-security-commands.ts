@@ -30,7 +30,7 @@ export function prepareC5Command(original: C5Original) {
   commands.remember(scope, key, original);
   if (!commands.isDurablyStored(scope, key)) {
     commands.forget(scope, key);
-    throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
+    throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   }
   return commands.list().find(row => row.commandKey === key)!;
 }

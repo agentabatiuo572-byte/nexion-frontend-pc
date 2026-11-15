@@ -172,7 +172,7 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
       body: JSON.stringify(original.input), form, editValue });
     if (!commands.isDurablyStored(`${session.adminId}:${scope}`, key)) {
       commands.forget(`${session.adminId}:${scope}`, key);
-      throw new Error("浏览器无法保存完整原操作，本次未发送；请允许会话存储后重试。");
+      throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
   }
   const record = pendingHIRewardCommand(scope)!;

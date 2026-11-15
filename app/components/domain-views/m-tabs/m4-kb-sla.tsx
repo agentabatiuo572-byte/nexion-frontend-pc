@@ -86,6 +86,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const [pageSize, setPageSize] = useState(FAQ_PAGE_SIZE);
   const [openId, setOpenId] = useState<string | null>(null);
   const [statusTarget, setStatusTarget] = useState<SupportFaq | null>(null);
+  const deleteConfirmation = useRef<{ faq: SupportFaq; request: Parameters<MCtx["openActionConfirm"]>[0] } | null>(null);
   const [statusFailure, setStatusFailure] = useState("");
   const [writePending, setWritePending] = useState(false);
   const writeInFlight = useRef(false);
@@ -243,7 +244,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   };
   const requestDeleteFaq = (faq: SupportFaq, original?: MCommandRecord) => {
     const published = faq.status === "published";
-    openActionConfirm({
+    const request: Parameters<MCtx["openActionConfirm"]>[0] = {
       action: <>删除常见问答 <span className="mono">{faq.id}</span></>,
       title: "删除这条问答",
       effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag>本页不能恢复</IrreversibleTag></>,
@@ -275,8 +276,24 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         if (!actorId || !current || current.version !== faq.version || current.status !== faq.status) return false;
         return commitM4Write(buildM4FaqCommand("delete", faq, faq, reason, actorId), `${faq.id} 已删除`);
       },
-    });
+    };
+    deleteConfirmation.current = original ? null : { faq, request };
+    openActionConfirm(request);
   };
+  useEffect(() => {
+    if (recovery || !knowledgeAvailable) return;
+    setStatusTarget(current => {
+      if (!current) return null;
+      const fresh = faqs.find(row => row.id === current.id);
+      // Do not turn a publish confirmation into an unpublish (or vice versa).
+      return fresh?.status === current.status ? fresh : null;
+    });
+    const current = deleteConfirmation.current;
+    if (!current || ctx.actionConfirm !== current.request) return;
+    const fresh = faqs.find(row => row.id === current.faq.id);
+    if (!fresh) { deleteConfirmation.current = null; ctx.closeActionConfirm?.(); return; }
+    if (fresh.version !== current.faq.version || fresh.status !== current.faq.status) requestDeleteFaq(fresh);
+  }, [faqs, recovery, knowledgeAvailable]);
 
   const openCreate = () => { setRecovery(null); createFaqTempId.current = nextFaqId(); setEditFaq(null); setShowAddFaq(true); };
   const openEdit = (faq: SupportFaq) => { setRecovery(null); createFaqTempId.current = null; setShowAddFaq(false); setEditFaq(faq); };

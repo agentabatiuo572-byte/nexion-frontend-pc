@@ -8,7 +8,7 @@ import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, describeSettleCron, settleCadenceNote, stamp, usdt, zoneNote } from "./f4-shared";
 import { decimalText } from "./f4-shared";
-import { f4Decimal, f4PeriodPrizes } from "@/lib/admin/f4-money";
+import { f4Decimal, f4HeadCapAmplifies, f4PeriodPrizes } from "@/lib/admin/f4-money";
 import { f4PolicyConfirmation } from "./f4-policy-confirm";
 import type { FViewCtx, McSpec } from "./types";
 
@@ -65,8 +65,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
   const board = leaderboardState(data);
   const current = data.leaderboardPeriods?.[period];
   const lbMinUsd = data.configValues["F.leaderboard.minUsd"] ?? "0";
-  const top1MaxPct = data.configValues["F.pool.top1MaxPct"] ?? "25";
-  const top5MaxPct = data.configValues["F.pool.top5MaxPct"] ?? "60";
+  const top1MaxPct = data.configValues["F.pool.top1MaxPct"]?.trim() || "25";
+  const top5MaxPct = data.configValues["F.pool.top5MaxPct"]?.trim() || "60";
   const periodPrizeRaw = data.configValues["F.pool.periodPrize"] ?? "";
   const periodPrizes = f4PeriodPrizes(periodPrizeRaw);
   const currentPeriodPrize = (key: Period) => {
@@ -102,7 +102,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     },
     completionCopy: approvalCopy("F4 资金权限"),
     coverageLead: "这次结算按算出的金额真实发钱",
-    coverageCheck: "后端执行这次结算时不检查兑付覆盖率。下面是确认框打开时记下的覆盖率，后端没读到时也是 0，请自己判断。",
+    coverageCheck: "执行这次结算时不检查兑付覆盖率，请按这里的数自己判断。",
     facts: <Facts>
       <Fact k={settled ? "本周已结算（实发）" : "本周池（估算）"} lead tone="role-1" unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
       <Fact k="有资格分的人">{count(data.participantCount)} 人（{unlockLabel}且有票）</Fact>
@@ -135,9 +135,9 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       spec = { briefKind: "config", name: "调整团队激励池比例", amplify: true, op: "param", paramKey: "F.pool.ratio",
               edit: { kind: "text", current: data.poolRatio, unit: "%" },
               title: "调整团队激励池比例", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "批准后，还没结算的这周估算和之后每次结算按新比例放钱；已经发的不重算。", check: "后端只接受 0–30 的百分数，比如 5 表示 5%，0.05 表示 0.05%。" },
+              statedBrief: { impact: "批准后，还没结算的这周估算和之后每次结算按新比例放钱；已经发的不重算。", check: "只接受 0–30 的百分数：5 表示 5%，0.05 表示 0.05%。" },
               completionCopy: approvalCopy("F4 资金权限"),
-              detail: `每周已付款成交额中放进团队激励池的比例 · 当前 ${ratioEff}。` };
+              detail: `放进团队激励池的成交额比例，现在是 ${ratioEff}。` };
       break;
     }
     case action === "F.pool.monthlyCap": {
@@ -232,11 +232,11 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     title: "发放总榜奖励", effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: "批准后按执行那一刻的总榜，把总榜奖池按名次分给累计已解锁奖励最多的前 100 名（不足 100 名按实际人数），作为已解锁的 USDT 奖励真实入账。",
-      check: "总榜成功派过一次后再执行不会再发；奖池为 0 或没有人上榜时不发钱。后端执行时不检查兑付覆盖率。",
+      check: "总榜成功派过一次后再执行不会再发；奖池为 0 或没有人上榜时不发钱。执行时不检查兑付覆盖率。",
     },
     completionCopy: approvalCopy("F4 资金权限"),
     coverageLead: "这次派奖按算出的金额真实发钱",
-    coverageCheck: "后端执行这次派奖时不检查兑付覆盖率。下面是确认框打开时记下的覆盖率，后端没读到时也是 0，请自己判断。",
+    coverageCheck: "执行这次派奖时不检查兑付覆盖率，请按这里的数自己判断。",
     facts: <Facts>
       <Fact k="总榜奖池" lead tone="role-1" unit={ppAllTime === "" ? undefined : "USDT"}>{prizeShown(ppAllTime)}</Fact>
       <Fact k="每个名次发多少">按名次分份数：第 1 名 N 份，往后每名少 1 份，最后一名 1 份；N 是上榜人数</Fact>
@@ -319,7 +319,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     }
     case action === "F.pool.top1MaxPct": {
       spec = { briefKind: "config", name: "调整第 1 名最高占比", amplify: true, op: "param", paramKey: "F.pool.top1MaxPct",
-              edit: { kind: "number", current: top1MaxPct, unit: "%" },
+              edit: { kind: "number", current: top1MaxPct, unit: "%", amplifiesWhen: value => f4HeadCapAmplifies("F.pool.top1MaxPct", data.configValues["F.pool.top1MaxPct"], value) },
               title: "调整第 1 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，之后排行榜派奖时第 1 名最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "后端只接受 0–100。" },
               completionCopy: approvalCopy("F4 资金权限"),
@@ -328,7 +328,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     }
     case action === "F.pool.top5MaxPct": {
       spec = { briefKind: "config", name: "调整前 5 名最高占比", amplify: true, op: "param", paramKey: "F.pool.top5MaxPct",
-              edit: { kind: "number", current: top5MaxPct, unit: "%" },
+              edit: { kind: "number", current: top5MaxPct, unit: "%", amplifiesWhen: value => f4HeadCapAmplifies("F.pool.top5MaxPct", data.configValues["F.pool.top5MaxPct"], value) },
               title: "调整前 5 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，之后排行榜派奖时前 5 名合计最多拿奖池的这个百分比，超出的部分不再分给别人。只约束排行榜派奖，不影响团队激励池。", check: "后端只接受 0–100。" },
               completionCopy: approvalCopy("F4 资金权限"),
@@ -346,7 +346,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       },
       completionCopy: "提交后由另一位管理员在「操作记录与审批」批准才生效。批准人需有大使最终批准权限和审批权限，不能核验过这一版材料，也不能是你自己。",
       coverageLead: "批准会开通一笔预算额度",
-      coverageCheck: "批准执行时检查兑付覆盖率；下面的覆盖率后端没读到时也是 0。",
+      coverageCheck: "批准执行时还会检查兑付覆盖率，读不到也不执行。",
       facts: <Facts>
         <Fact k="申请金额" lead tone="role-1" unit="USDT">{decimalText(packet!.budgetUsdt)}</Fact>
         <Fact k="认可金额">{packet!.financeReview.recognizedBudgetUsdt == null ? "尚未认可" : `${decimalText(packet!.financeReview.recognizedBudgetUsdt)} USDT`}</Fact>

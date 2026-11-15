@@ -6,7 +6,7 @@ import { createPendingMutationStore, type PendingMutationRecord } from "./pendin
 export type PlacementStatus = "ALL" | "ASSIGNED" | "UNASSIGNED";
 export type Placement = {
   ownerUserId: number; memberUserId: number; leg: "A" | "B" | null;
-  assignedBy: string | null; assignedAt: string | null; assignmentSource: "AUTO" | "MANUAL" | null;
+  assignedBy: string | null; assignedAt: string | null; assignedAtIso?: string | null; assignmentSource: "AUTO" | "MANUAL" | null;
 };
 export type PlacementPage = {
   ownerUserId: number; status: PlacementStatus; page: number; pageSize: number; total: number; records: Placement[];
@@ -80,6 +80,7 @@ export async function readPlacements(ownerUserId: number, status: PlacementStatu
     if (!row || row.ownerUserId !== ownerUserId || !id(row.memberUserId) || (memberUserId !== undefined && row.memberUserId !== memberUserId)
       || ![null, "A", "B"].includes(row.leg) || (status === "ASSIGNED" && row.leg === null) || (status === "UNASSIGNED" && row.leg !== null)
       || (row.assignedBy !== null && typeof row.assignedBy !== "string") || (row.assignedAt !== null && typeof row.assignedAt !== "string")
+      || (row.assignedAtIso != null && (typeof row.assignedAtIso !== "string" || !/(?:Z|[+-]\d{2}:\d{2})$/.test(row.assignedAtIso) || !Number.isFinite(Date.parse(row.assignedAtIso))))
       || ![null, "AUTO", "MANUAL"].includes(row.assignmentSource)) throw invalid();
   }
   return value;

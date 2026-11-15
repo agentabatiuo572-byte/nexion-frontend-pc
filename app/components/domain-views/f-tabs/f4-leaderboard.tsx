@@ -44,8 +44,8 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
   const current = data.leaderboardPeriods?.[period];
   const available = !!current && board.available;
   const lbMinUsd = data.configValues["F.leaderboard.minUsd"] ?? "0";
-  const top1MaxPct = data.configValues["F.pool.top1MaxPct"] ?? "25";
-  const top5MaxPct = data.configValues["F.pool.top5MaxPct"] ?? "60";
+  const top1MaxPct = data.configValues["F.pool.top1MaxPct"]?.trim() || "25";
+  const top5MaxPct = data.configValues["F.pool.top5MaxPct"]?.trim() || "60";
   const periodPrizeRaw = data.configValues["F.pool.periodPrize"] ?? "";
   const periodPrizes = f4PeriodPrizes(periodPrizeRaw);
   const currentPeriodPrize = (key: Period) => {
@@ -137,12 +137,12 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
             when: "批准后从还没结算的周期起用；暂停期间的快照仍按暂停时的门槛。",
             effect: "调高上榜的人变少。",
             open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.leaderboard.minUsd", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
-          {paramRow({ name: "第 1 名最高占比", value: data.configValues["F.pool.top1MaxPct"] !== undefined ? `${top1MaxPct}%` : "未设置（按 25%）", allowed: canFund,
+          {paramRow({ name: "第 1 名最高占比", value: data.configValues["F.pool.top1MaxPct"]?.trim() ? `${top1MaxPct}%` : "未设置（按 25%）", allowed: canFund,
             what: "排行榜派奖时第 1 名最多拿到奖池的百分比，0–100。只约束排行榜派奖。",
             when: "批准后对还没结算的榜生效，已发的不追回。",
             effect: "超出上限的部分不再分给别人。调高会多发钱给第 1 名。",
             open: () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "F.pool.top1MaxPct", overview: data, policy: ctx.f4AmbassadorPolicy, period })) })}
-          {paramRow({ name: "前 5 名最高占比", value: data.configValues["F.pool.top5MaxPct"] !== undefined ? `${top5MaxPct}%` : "未设置（按 60%）", allowed: canFund,
+          {paramRow({ name: "前 5 名最高占比", value: data.configValues["F.pool.top5MaxPct"]?.trim() ? `${top5MaxPct}%` : "未设置（按 60%）", allowed: canFund,
             what: "排行榜派奖时前 5 名合计最多拿到奖池的百分比，0–100。只约束排行榜派奖。",
             when: "批准后对还没结算的榜生效，已发的不追回。",
             effect: "超出上限的部分不再分给别人。和第 1 名上限各自独立，后端不检查两者的大小关系。",

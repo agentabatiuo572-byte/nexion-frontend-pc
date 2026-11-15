@@ -21,7 +21,7 @@ export type A1Request =
 export type A1Pending = PendingMutationRecord & {
   actorId: number; intent: A1Intent; snapshot: A1Snapshot; request: A1Request;
   confirmationReason: string; businessValue?: Record<string, string>;
-  ticket?: A2OperationRow; proposalNotFound?: boolean;
+  ticket?: A2OperationRow; received?: boolean; proposalNotFound?: boolean;
 };
 type LegacyCreation = PendingMutationRecord & { actorId: number; form: A1CreateAccountInput & { reason: string }; reason: string; operator: string };
 

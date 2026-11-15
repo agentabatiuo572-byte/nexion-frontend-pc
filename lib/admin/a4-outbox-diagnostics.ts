@@ -3,6 +3,7 @@ export type OutboxDiagnostics = {
   total: number; unresolved: number; oldestSeconds: number; groupsTruncated: boolean;
   groups: { eventType: string; status: string; count: number; oldestAt: string; unresolved: number }[];
   rows: { eventId: string; eventType: string; status: string; retryCount: number; createdAt: string;
+    userNo: string | null;
     nextRetryAt: string | null; errorCode: string | null; auditLinkUnresolved: boolean;
     receipts: { status: string; count: number }[] }[];
   nextCursor: string | null; hasMore: boolean;
@@ -17,6 +18,14 @@ const errorCodes = new Set(["OTHER_ERROR", "C1_AUDIT_EVIDENCE_NOT_UNIQUE", "C1_A
   "F4_ALERT_AUDIT_ALREADY_CLAIMED", "F4_ALERT_RECEIPT_FAILED", "F4_ALERT_RECEIPT_CONFLICT",
   "F4_ALERT_PUBLICATION_FAILED", "F4_ALERT_VERIFICATION_UNAVAILABLE"]);
 function invalid(): never { throw new Error("A4_OUTBOX_DIAGNOSTICS_INVALID"); }
+export function nullableA4UserNo(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string" || !/^U\d{8,19}$/.test(value)
+    || BigInt(value.slice(1)) <= BigInt(0) || BigInt(value.slice(1)) > BigInt("9223372036854775807")) {
+    throw new Error("A4_USER_NUMBER_INVALID");
+  }
+  return value;
+}
 function obj(v: unknown): Record<string, unknown> { return v !== null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : invalid(); }
 function count(v: unknown): number { return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : invalid(); }
 function bool(v: unknown): boolean { return typeof v === "boolean" ? v : invalid(); }
@@ -37,7 +46,7 @@ export function normalizeOutboxDiagnostics(value: unknown): OutboxDiagnostics {
     rows: rows(d.rows, 50).map(value => {
       const r = obj(value), id = text(r.eventId), errorCode = r.errorCode === null ? null : text(r.errorCode);
       if (!/^(?:[a-f0-9]{32}|INVALID_EVENT_ID)$/.test(id) || (errorCode !== null && !errorCodes.has(errorCode))) invalid();
-      return { eventId: id, eventType: code(r.eventType), status: state(r.status), retryCount: count(r.retryCount),
+      return { eventId: id, eventType: code(r.eventType), status: state(r.status), retryCount: count(r.retryCount), userNo: nullableA4UserNo(r.userNo),
         createdAt: stamp(r.createdAt), nextRetryAt: r.nextRetryAt === null ? null : stamp(r.nextRetryAt), errorCode,
         auditLinkUnresolved: bool(r.auditLinkUnresolved), receipts: rows(r.receipts, 8).map(value => { const receipt = obj(value); return { status: state(receipt.status, true), count: count(receipt.count) }; }) };
     }), nextCursor, hasMore,

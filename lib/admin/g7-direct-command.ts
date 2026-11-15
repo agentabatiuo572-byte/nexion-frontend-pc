@@ -87,7 +87,7 @@ export async function executeG7DirectCommand<T>(paramKey: string, input: G7Direc
     commands.remember(fingerprint, commandKey, { adminId, currentValue, g4Capacity });
     if (!commands.isDurablyStored(fingerprint, commandKey)) {
       commands.forget(fingerprint, commandKey);
-      throw new Error("浏览器存不下完整原请求，本次没有发送。请允许会话存储后再操作。");
+      throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
     original = listG7DirectCommands(adminId).find(record => record.commandKey === commandKey)!;
     changed();

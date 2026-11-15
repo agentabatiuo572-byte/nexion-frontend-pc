@@ -16,7 +16,7 @@ import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { a2ActionText } from "@/lib/admin/operator-copy";
 import { b0Blocks } from "@/lib/admin/b0-access";
 import { coverDaysText } from "@/lib/admin/treasury-cover-days";
-import { fetchB0ActiveUsers, fetchB0Devices, fetchB0MoneyFlows, fetchB0Registrations, fetchB0Sales } from "@/lib/admin/b0-client";
+import { fetchB0Business, fetchB0Devices } from "@/lib/admin/b0-client";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { fetchB2Reserve } from "@/lib/admin/b2-client";
@@ -31,7 +31,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
 import { downloadB0Snapshot, pendingB0Export } from "@/lib/admin/b0-export-client";
 import { toast } from "@/lib/store/ui";
-import { BusinessPanel, usePeriodChoice } from "./command-center/business";
+import { BusinessPanel, shownBusinessPeriod, usePeriodChoice } from "./command-center/business";
 import { availableGates, FlowFold, FundFold, FunnelFold, KpiFold, pressureLevel, RiskFold, useFoldChoices } from "./command-center/folds";
 import { PendingPanel, type PendingFailure, type PendingRow } from "./command-center/pending";
 import { fundLevel, statusSentence } from "./command-center/status";
@@ -77,10 +77,7 @@ export default function CommandCenter() {
   const bDomain = useBDomainDashboard(blocks.fund);
   const reserve = useBlock(fetchB2Reserve, blocks.coverDays, refreshKey);
   const flows = useBlock(fetchB2LiquidityHistory, blocks.netFlow, refreshKey);
-  const moneyFlows = useBlock(fetchB0MoneyFlows, blocks.moneyFlows, refreshKey);
-  const sales = useBlock(fetchB0Sales, blocks.sales, refreshKey);
-  const registrations = useBlock(fetchB0Registrations, blocks.newUsers, refreshKey);
-  const activeUsers = useBlock(fetchB0ActiveUsers, blocks.activeUsers, refreshKey);
+  const business = useBlock(fetchB0Business, blocks.moneyFlows || blocks.sales || blocks.newUsers || blocks.activeUsers, refreshKey);
   const devices = useBlock(fetchB0Devices, blocks.devices, refreshKey);
   const approvals = useBlock(fetchA2Overview, blocks.approvals && reach("/platform/audit"), refreshKey);
   // 待审核按提现读权读：提现审核页可达时写在待处理，不可达时写在提现卡上，都要有这个数。
@@ -156,8 +153,8 @@ export default function CommandCenter() {
   const hasPendingSource = blocks.fund || blocks.j1 || blocks.withdrawals || blocks.approvals || blocks.support || blocks.devices;
   const showPending = hasPendingSource && (rows.length > 0 || pendingLoading);
 
-  const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || moneyFlows.loading || sales.loading || registrations.loading || activeUsers.loading || systemProcessing.loading || devices.loading || pendingLoading;
-  const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading || [reserve, flows, moneyFlows, sales, registrations, activeUsers, devices].some(firstLoad);
+  const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || business.loading || systemProcessing.loading || devices.loading || pendingLoading;
+  const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading || [reserve, flows, business, devices].some(firstLoad);
   const [readAt, setReadAt] = useState<number | null>(null);
   useEffect(() => { if (!firstScreenLoading) setReadAt(Date.now()); }, [firstScreenLoading]);
   const clock = readAt === null ? null : businessClock(readAt);
@@ -188,8 +185,8 @@ export default function CommandCenter() {
   const fundText = `资金安全：${fundWord}${days ? `，${days}` : ""}`;
   const fundExplain = (
     <>
-      看两样，取更差的：覆盖率（储备除以应付款，和红线、健康线比）和可覆盖天数（储备除以未来 7 天日均到期金额）。
-      {water && !noDue && ` 现在按日均到期 ${fmtAmount(water.dailyAverageDueUsdt)} USDT 算，可覆盖 ${fmtNum(coverDays)} 天。天数很大是因为近期要付的钱少，不是算错。`}
+      取两样里更差的：覆盖率（储备 ÷ 应付款）和可覆盖天数（储备 ÷ 未来 7 天日均到期金额）。
+      {water && !noDue && ` 现在日均到期 ${fmtAmount(water.dailyAverageDueUsdt)} USDT，可覆盖 ${fmtNum(coverDays)} 天；天数大是因为近期要付的钱少。`}
       {clock && ` 数据时间 ${clock}。`}
     </>
   );
@@ -209,10 +206,10 @@ export default function CommandCenter() {
     pendingRows,
     fundSafe: fundReady && level === "ok" && !reserve.error,
     failed: [
-      ...(moneyFlows.error ? ["入金和提现"] : []),
-      ...(sales.error ? ["销售额"] : []),
-      ...(registrations.error ? ["注册用户"] : []),
-      ...(activeUsers.error ? ["活跃用户"] : []),
+      ...(business.error && blocks.moneyFlows ? ["入金和提现"] : []),
+      ...(business.error && blocks.sales ? ["销售额"] : []),
+      ...(business.error && blocks.newUsers ? ["注册用户"] : []),
+      ...(business.error && blocks.activeUsers ? ["活跃用户"] : []),
       ...(flows.error ? ["资金进出"] : []),
       ...(devices.error ? ["设备数据"] : []),
       ...pendingFailed,
@@ -238,6 +235,7 @@ export default function CommandCenter() {
   const fundOpen = folds.isOpen("fund", fundAlert);
 
   const { period, setPeriod } = usePeriodChoice(session?.adminId);
+  const shownPeriod = shownBusinessPeriod(blocks, period);
   const anyBusinessCard = blocks.moneyFlows || blocks.sales || blocks.newUsers || blocks.activeUsers || blocks.devices;
   const showFundLine = blocks.fund && !(fundReady && level !== "ok") && !sentence.fundFailed;
 
@@ -326,8 +324,8 @@ export default function CommandCenter() {
       </section>
       {/* 导出结果未知：原快照、理由和请求号在浏览器里，刷新后也要看得见，并能回到原确认框（入口同页头按钮）。放在今天的状况下面，不抢首屏结论。 */}
       {canExport && pendingExport && (
-        <Notice tone="warn" title="上次导出资金数据的结果待确认" action={<Button size="sm" onClick={exportSnapshot}>查看原导出</Button>}>
-          {formatBusinessTimeCompact(new Date(pendingExport.createdAt).toISOString())}（{businessZone().label}）发起。原快照、理由和请求号已保留，打开原确认框核对。
+        <Notice tone="warn" title="上次导出资金数据结果未知" action={<Button size="sm" onClick={exportSnapshot}>查看原导出</Button>}>
+          {formatBusinessTimeCompact(new Date(pendingExport.createdAt).toISOString())}（{businessZone().label}）发起。原数据和理由已保留，{pendingExport.expiresAt > Date.now() ? "打开后可以按原请求重试。" : "已超过 24 小时不能再重试，请联系值班人员到操作记录核对。"}
         </Notice>
       )}
 
@@ -336,10 +334,7 @@ export default function CommandCenter() {
           blocks={blocks}
           period={period}
           onPeriodChange={setPeriod}
-          moneyFlows={moneyFlows}
-          sales={sales}
-          registrations={registrations}
-          activeUsers={activeUsers}
+          business={business}
           devices={devices}
           reviewPending={reviewPending}
           systemProcessing={systemProcessing}
@@ -383,7 +378,7 @@ export default function CommandCenter() {
             />
           </div>
         )}
-        {(blocks.netFlow || blocks.topup || blocks.redemption) && (
+        {(blocks.netFlow || blocks.topup || blocks.redemption || blocks.withdrawals) && (
           <div data-fold="flow">
             <FlowFold
               blocks={blocks}
@@ -391,7 +386,12 @@ export default function CommandCenter() {
               historyError={flows.error}
               historyRetrying={flows.loading}
               onRetryHistory={flows.reload}
-              topupOnCard={blocks.moneyFlows && !moneyFlows.error}
+              period={shownPeriod}
+              summary={business.data?.[shownPeriod] ?? null}
+              summaryError={business.error || null}
+              summaryLoading={business.loading}
+              onRetrySummary={business.reload}
+              topupOnCard={blocks.deposits && !business.error}
               netFlow24h={fundReady ? ledger.netFlow24hUsd : null}
               clock={clock}
               refreshKey={refreshKey}
@@ -401,9 +401,9 @@ export default function CommandCenter() {
             />
           </div>
         )}
-        {blocks.funnel && (
+        {(blocks.funnel || blocks.newUsers) && (
           <div data-fold="funnel">
-            <FunnelFold refreshKey={refreshKey} reach={reach} open={folds.isOpen("funnel")} onOpenChange={(open) => folds.setOpen("funnel", open)} />
+            <FunnelFold funnel={blocks.funnel} period={shownPeriod} registrations={business.data?.[shownPeriod].blocks.registrations ?? null} refreshKey={refreshKey} reach={reach} open={folds.isOpen("funnel")} onOpenChange={(open) => folds.setOpen("funnel", open)} />
           </div>
         )}
         {blocks.kpi && (
@@ -417,9 +417,9 @@ export default function CommandCenter() {
           briefKind="export"
           action="导出资金数据"
           effect={<StatusTag tone="progress" filled>立即生效</StatusTag>}
-          facts={<Facts><Fact k="文件格式">JSON</Fact><Fact k="数据范围">本次点击时的资金账本快照</Fact></Facts>}
-          detail="快照包含覆盖率、红线、健康线、可用储备、应付款、差额及账户金额。结果未确认时保留原快照和理由，按原操作重试。"
-          completionCopy="登记导出理由成功后，浏览器下载本次原始快照。"
+          facts={<Facts><Fact k="文件格式">JSON</Fact><Fact k="数据范围">点导出那一刻的资金数据</Fact></Facts>}
+          detail="文件里有覆盖率、红线、健康线、可用储备、应付款、差额和各账户金额。"
+          completionCopy="理由登记成功后，浏览器下载这份资金数据。"
           confirmLabel="登记并下载"
           reasonMax={200}
           getPendingReason={() => pendingB0Export(exportConfirm.adminId)?.reason}

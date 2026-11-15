@@ -11,7 +11,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, CircleHelp, Coins, Download, Lock, RefreshCw, ShieldAlert, ShieldCheck, Snowflake, Users, type LucideIcon } from "lucide-react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
-  Button, Cell, ColumnPicker, Decision, Explain, Fact, Facts, Field, FilterBar, FilterField, InlineRetry, Input, KeepText, Modal, Notice, PageHeader,
+  BlockState, Button, Cell, ColumnPicker, Decision, Explain, Fact, Facts, Field, FilterBar, FilterField, InlineRetry, Input, KeepText, Modal, Notice, PageHeader,
   Pager, Panel, ReleaseBody, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr,
   useTableColumns, type StateTone,
 } from "@/app/components/rd";
@@ -316,6 +316,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
   const searchParams = useSearchParams();
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
+  const canRead = session?.role === "superadmin" || authorities.includes("user_c1_read");
   const canReadRisk = session?.role === "superadmin" || authorities.includes("risk_k4_read");
   const canExport = authorities.includes("user_c1_export");
   const fullExport = FULL_EXPORT_ROLES.includes(session?.role ?? "");
@@ -364,6 +365,12 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
 
   useEffect(() => {
     const requestId = ++listRequest.current;
+    if (!canRead) {
+      setList(null); setListLoading(false); setReadAt(null);
+      setShape({ balance: false, device: false });
+      setListError(displayAdminReadError(new Error("ADMIN_PERMISSION_DENIED")));
+      return;
+    }
     setListLoading(true);
     setListError("");
     void fetchUserProfilesPage({ ...exportQueryOf(applied), pageNum: page, pageSize }).then((data) => {
@@ -382,10 +389,14 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     });
     // listKey 已含 applied、page、pageSize。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listKey, listReload]);
+  }, [canRead, listKey, listReload]);
 
   useEffect(() => {
     const requestId = ++overviewRequest.current;
+    if (!canRead) {
+      setOverview(null); setOverviewFailed(true); setOverviewLoading(false);
+      return;
+    }
     setOverviewLoading(true);
     void fetchC1Overview().then((data) => {
       if (requestId !== overviewRequest.current) return;
@@ -398,7 +409,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     }).finally(() => {
       if (requestId === overviewRequest.current) setOverviewLoading(false);
     });
-  }, [overviewReload]);
+  }, [canRead, overviewReload]);
 
   useEffect(() => {
     writeQuery(applied, page, pageSize);
@@ -494,7 +505,8 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
 
   const shown = list?.key === listKey ? list.data : null;
   const total = shown?.total ?? 0;
-  const exportBlocked = listLoading && !shown ? "名单还在读取，读完再导出"
+  const exportBlocked = !canRead ? "导出要先能查看用户名单，请管理员开通「查看用户资料」"
+    : listLoading && !shown ? "名单还在读取，读完再导出"
     : listError ? "用户列表加载失败，暂不能导出"
       : problem ? "查询条件有误，改好后再导出"
         : listLoading ? "名单还在读取，读完再导出"
@@ -505,7 +517,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
   const pendingNeedsRisk = !!pending && (present(pending.query.riskBand) || present(pending.query.riskMin));
   const retryBlocked = !pending ? undefined
     : pendingExpired ? RETRY_EXPIRED_TEXT
-      : pendingNeedsRisk && !canReadRisk ? "原操作按风险条件筛选，你的账号现在没有风险读权，不能按原操作重试，请到操作记录与审批核对" : undefined;
+      : pendingNeedsRisk && !canReadRisk ? "原操作按风险条件筛选，你的账号现在没有风险读权，不能按原请求重试，请到操作记录与审批核对" : undefined;
 
   const closeDialog = () => {
     if (exporting) return;
@@ -604,7 +616,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       }
       syncPending();
       setDialog({ mode: "pending" });
-      setDialogNotice({ tone: "warn", title: "导出结果未确认", text: `${exportCause(error)}，不知道名单生成没有。可能已生成文件并记录导出，请先到操作记录与审批核对，或按原操作重试。` });
+      setDialogNotice({ tone: "warn", title: "导出结果未知", text: `${exportCause(error)}，不知道名单生成没有。可能已生成文件并记录导出，请先到操作记录与审批核对，或按原请求重试。` });
     } finally {
       exportCooldownUntil.current = Date.now() + 1_000;
       exportingRef.current = false;
@@ -624,7 +636,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       return;
     }
     if (!exportStore.isDurablyStored(pending.fingerprint, pending.commandKey)) {
-      setDialogNotice({ tone: "warn", title: "没有重试", text: "浏览器里查不到这条记录，本次没有发送。待确认继续保留，请到操作记录与审批核对。" });
+      setDialogNotice({ tone: "warn", title: "没有重试", text: "浏览器里查不到这条记录，本次没有发送。记录继续保留，请到操作记录与审批核对。" });
       return;
     }
     exportingRef.current = true;
@@ -638,8 +650,8 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       const verdict = retryVerdict(error);
       setRetryRejected(verdict);
       setDialogNotice(outcomeUnknown(error)
-        ? { tone: "warn", title: "重试结果未确认", text: `${exportCause(error)}，不知道这次重试生效没有。原操作继续保留，可以稍后再按原操作重试。` }
-        : { tone: "warn", title: "重试没有成功", text: `${exportCause(error)}。原操作的结果仍不确定，${verdict ? "核实后可以解除待确认，再发起新导出。" : "继续保留，请到操作记录与审批核对。"}` });
+        ? { tone: "warn", title: "重试结果未知", text: `${exportCause(error)}，不知道这次重试生效没有。原操作继续保留，可以稍后再按原请求重试。` }
+        : { tone: "warn", title: "重试没有成功", text: `${exportCause(error)}。原操作的结果仍不确定，${verdict ? "核实后可以解除原操作记录，再发起新导出。" : "继续保留，请到操作记录与审批核对。"}` });
     } finally {
       exportCooldownUntil.current = Date.now() + 1_000;
       exportingRef.current = false;
@@ -654,7 +666,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     setDialog(null);
     setDialogNotice(null);
     setRetryRejected(false);
-    ctx.toast("已解除待确认，可以发起新导出", "success");
+    ctx.toast("已解除原操作记录，可以发起新导出", "success");
   };
 
   // ---- 显示 ----
@@ -704,7 +716,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
   return <>
     <PageHeader pageId="C1" title="查找用户与查看资料" summary={<AutoGloss>按用户编码、昵称或推荐码找用户，点一行看完整资料。</AutoGloss>}
       guideExtra={canExport ? undefined : <p>你的账号不能导出名单，「导出名单」这件事不适用。</p>}
-      meta={<span className="rd-toolbar">
+      meta={canRead && <span className="rd-toolbar">
         <span>{readAt ? `${businessClock(readAt)} 读取（${businessZone().label}），` : ""}不自动刷新</span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={listLoading && !!shown} onClick={refresh}>刷新</Button>
       </span>}
@@ -716,17 +728,19 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       ) : undefined} />
 
     {pending && (
-      <Notice tone="warn" title="导出用户名单 · 结果未确认">
+      <Notice tone="warn" title="导出用户名单 · 结果未知">
         {/* 按逗号、句号分段整段换行，不在「24 小 / 时」「原操 / 作」这种词中间断开；链接放进句子里只写一遍。 */}
         <KeepText text={`${businessStamp(pending.createdAt)}（${businessZone().label}）发起，可能已生成文件并记录导出，确认前不能发起新导出。`} />
         {!canExport ? <><span className="rd-keep">你的账号现在不能导出名单，</span><span className="rd-keep">请到{auditLink}核对。</span></>
           : pendingExpired ? <><KeepText text="已超过 24 小时，不能再重试，" /><span className="rd-keep">请到{auditLink}核对。</span></>
-            : retryBlocked ? <><KeepText text="你的账号现在没有风险读权，不能按原操作重试，" /><span className="rd-keep">请到{auditLink}核对。</span></>
-              : <><span className="rd-keep">点右上角「继续原导出」按原操作重试，</span><span className="rd-keep">或到{auditLink}核对。</span></>}
+            : retryBlocked ? <><KeepText text="你的账号现在没有风险读权，不能按原请求重试，" /><span className="rd-keep">请到{auditLink}核对。</span></>
+              : <><span className="rd-keep">点右上角「继续原导出」按原请求重试，</span><span className="rd-keep">或到{auditLink}核对。</span></>}
         <Explain label="技术信息" content={`原请求编号 ${pending.commandKey} ｜ 操作者 ${pending.operator} ｜ 理由 ${pending.reason}`} />
       </Notice>
     )}
 
+    {/* 没有用户资料读权：整页写缺什么、找谁开，不发列表和汇总请求，也不显示成「没有找到用户」（N03）。 */}
+    {!canRead ? <BlockState state="denied" title="你的账号不能查找用户" detail="需要「查看用户资料」的权限，请管理员在「运营账号与权限」里开通。" /> : <>
     <StatBand label="用户汇总" fit>
       <Stat icon={Users} tone="role-3" label="注册用户" value={overview ? countText(overview.totalUsers) : "—"} unit={overview ? "人" : undefined}
         sub={statFailed ? <>统计读取失败 <InlineRetry retrying={overviewLoading} onRetry={() => setOverviewReload((value) => value + 1)} /></> : undefined}
@@ -902,10 +916,11 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
         {links}
       </nav>
     )}
+    </>}
 
     {dialog?.mode === "release" ? (
       // 解除在同一个框里换内容（PG-38）：「返回」回到原操作，× 关掉整个框。
-      <Modal title="解除待确认" icon={ShieldCheck} onClose={closeDialog} footer={<>
+      <Modal title="解除原操作记录" icon={ShieldCheck} onClose={closeDialog} footer={<>
         <Button autoFocus onClick={backToPending}>返回</Button>
         <Button variant="primary" onClick={releasePending}>确认解除</Button>
       </>}>
@@ -921,13 +936,13 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
               onBlockedClick={() => setReasonTouched(true)} onClick={() => void runNewExport()}>确认并导出</Button>} />
         ) : (
           <Decision
-            explain={<><p>按原操作重试：{RETRY_EXPLAIN}</p><p>原操作结果确认前不能发起新导出。重试被明确拒绝后，核实原操作的结果，可以解除待确认。</p></>}
+            explain={<><p>按原请求重试：{RETRY_EXPLAIN}</p><p>原操作有结果前不能发起新导出。重试被明确拒绝后，核实原操作的结果，可以解除原操作记录。</p></>}
             others={<>
               <Button disabled={exporting} onClick={closeDialog}>稍后处理</Button>
-              {retryRejected && <Button ref={releaseButton} disabled={exporting} onClick={() => setDialog({ mode: "release" })}>解除待确认</Button>}
+              {retryRejected && <Button ref={releaseButton} disabled={exporting} onClick={() => setDialog({ mode: "release" })}>解除原操作记录</Button>}
             </>}
             primary={<Button variant="primary" loading={exporting} loadingText="生成中…" disabledReason={retryBlocked}
-              onClick={() => void retryExport()}>按原操作重试</Button>} />
+              onClick={() => void retryExport()}>按原请求重试</Button>} />
         )}>
         <div className="rd-stack">
           {dialogNotice ? <Notice tone={dialogNotice.tone} title={dialogNotice.title}><KeepText text={dialogNotice.text} /></Notice>

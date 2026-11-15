@@ -33,6 +33,8 @@ const attempts = createPendingMutationStore<F1PolicyRecord>({
   storageKey: "nexion-admin-f1-policy-commands-v1", retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.input === "string",
 });
+const inFlight = new Set<string>();
+export const isF1PolicyInFlight = (commandKey: string) => inFlight.has(commandKey);
 const MONEY = /^(0|[1-9]\d{0,11})(?:\.\d{1,6})?$/;
 const DECIMAL = /^(0|[1-9]\d*)(?:\.\d+)?$/;
 const ZERO = BigInt(0);
@@ -187,25 +189,31 @@ export async function submitF1Policy(
     attempts.remember(fingerprint, key, { input: JSON.stringify(original) });
     if (!attempts.isDurablyStored(fingerprint, key)) {
       attempts.forget(fingerprint, key);
-      throw new Error("浏览器无法保存原操作，请允许会话存储后重试。");
+      throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
   }
   const record = () => attempts.list().find(item => item.commandKey === key)!;
   let posting = false;
   let acknowledgement: string;
+  if (mode === "submit") inFlight.add(key);
   try {
     if (original.approval) {
       let ticket;
       if (previous || mode === "lookup") {
-        // Clear stale observations before a fresh authoritative query.
-        attempts.remember(fingerprint, key, { ...record(), ticket: undefined, absent: false });
+        // A failed read cannot revoke an earlier authoritative pending observation.
+        attempts.remember(fingerprint, key, { ...record(), absent: false });
         ticket = await fetchA2ProposalByKey(key, true, "f");
-        if (!ticket) attempts.remember(fingerprint, key, { ...record(), ticket: undefined, absent: true });
+        if (!ticket) {
+          if (record().received || record().ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", key);
+          attempts.remember(fingerprint, key, { ...record(), ticket: undefined, absent: true });
+        }
       }
       if (mode === "lookup" && !ticket) return null;
       if (!ticket && previous?.received) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", key);
       if (!ticket && previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原操作已过期且暂未查到结果，请到操作记录核对，勿重复提交。", key);
       if (!ticket) {
+        attempts.remember(fingerprint, key, { ...record(), absent: false });
+        if (!attempts.isDurablyStored(fingerprint, key)) throw new Error(previous ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
         posting = true;
         ticket = await createA2OperationProposal(original.proposal!, key, "proposal");
         posting = false;
@@ -245,6 +253,8 @@ export async function submitF1Policy(
     if (rejected) attempts.forget(fingerprint, key);
     else if (saved && !isA2OutcomeUncertainError(error)) throw new A2OutcomeUncertainError(error instanceof Error ? error.message : "原操作结果未知，请查询原结果。", key);
     throw error;
+  } finally {
+    if (mode === "submit") inFlight.delete(key);
   }
   // The command's known result is independent of this subsequent read.
   const active = await fetchF1VRankOverview().catch(() => null);
@@ -265,7 +275,8 @@ export async function releaseF1PolicyProposal(owner: number, commandKey: string)
   const saved = listF1PolicyOperations(owner).find(item => item.commandKey === commandKey);
   if (!saved || !saved.original.approval || saved.expiresAt > Date.now()) throw new Error("这条原操作不能解除，请先查询原结果。");
   if (useAdminAuth.getState().session?.adminId !== owner) throw new Error("ADMIN_PERMISSION_DENIED");
-  const ticket = await fetchA2ProposalByKey(commandKey, true, "f");
-  if (ticket) throw new Error("已找到原审批单，请核对它现在的处理结果。");
+  if (saved.received || saved.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", commandKey);
+  const result = await queryF1PolicyOperation(owner, commandKey);
+  if (result) throw new Error("已找到原审批单，请核对它现在的处理结果。");
   attempts.forget(saved.fingerprint, commandKey);
 }

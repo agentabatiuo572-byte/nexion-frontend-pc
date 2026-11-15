@@ -14,7 +14,7 @@ export const cents = (value: number) => Math.round(value * 100) / 100;
 export const usdt = (value: number | null, digits?: number) => (value === null ? TREASURY_VALUATION_UNAVAILABLE : `${amountText(value, digits)} USDT`);
 export const count = (value: number) => value.toLocaleString("en-US");
 /** 接口给两位小数，原样写，不补也不舍。 */
-export const pctText = (value: number) => `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
+export const pctText = (value: number | null) => value === null ? TREASURY_VALUATION_UNAVAILABLE : `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}%`;
 
 /* ------------------------------ 本期收入构成 ------------------------------ */
 

@@ -9,15 +9,16 @@
 import "./dual-ledger.css";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import { ArrowDownUp, Download, Gauge, Landmark, ReceiptText, Scale, ShieldAlert, ShieldCheck, ShieldQuestion, SlidersHorizontal, TrendingUp, Wallet } from "lucide-react";
+import { ArrowDownUp, Download, Gauge, Landmark, ReceiptText, Scale, SearchCheck, ShieldAlert, ShieldCheck, ShieldQuestion, SlidersHorizontal, TrendingUp, Wallet } from "lucide-react";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import {
   BlockState, Button, Cell, Conclusion, Donut, Explain, Fact, Facts, Figure, IrreversibleTag, KeyValues, NumberInput, DiffField,
   Notice, PageHeader, Panel, RdPage, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLine, TrendLines,
-  type ChartSlot,
+  type ChartSlot, type StateTone,
 } from "@/app/components/rd";
 import { useBDomainDashboard, type BLedger } from "@/lib/admin/b-client";
 import { downloadD3Csv, fetchD3NetExposure, type D3NetExposure } from "@/lib/admin/d-client";
-import { pendingThresholdConfigApproval, releaseConfigApproval, submitB1ThresholdApproval } from "@/lib/admin/withdrawal-config-approval";
+import { pendingThresholdConfigApproval, releaseExpiredB1ThresholdApproval, submitB1ThresholdApproval } from "@/lib/admin/withdrawal-config-approval";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { b1Commands, executeB1Command, type B1PendingWrite, type B1CommandFacts } from "@/lib/admin/b1-commands";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -69,10 +70,14 @@ const WINDOWS = [{ value: "7d", label: "7 天" }, { value: "30d", label: "30 天
  */
 interface B1PendingCommand {
   commandKey: string;
-  title: string;
+  /** 操作和对象，一行写得下。 */
+  object: string;
+  tag: { tone: StateTone; label: string };
+  /** 紧跟标签的一句结论。 */
+  line: string;
   body: ReactNode;
   expired: boolean;
-  /** 第二行：能做什么。过期后直接写入查不到不等于没执行；审批单查不到可以解除。 */
+  /** 展开后：能做什么。过期后直接写入查不到不等于没执行；审批单查不到可以解除。 */
   note: string;
   onRetry?: () => void;
   onQuery: () => void;
@@ -80,23 +85,22 @@ interface B1PendingCommand {
   onRelease?: () => void;
 }
 
+/** 和资金页同一个恢复面板：每条一行，按钮位置固定，「到操作记录与审批核对」整块只放一次。 */
 function PendingCommands({ items, auditReachable }: { items: readonly B1PendingCommand[]; auditReachable: boolean }) {
-  if (!items.length) return null;
+  const waiting = items.filter((item) => item.tag.label === "待审批").length;
   return (
-    <>
-      {items.map((item) => (
-        <Notice key={item.commandKey} tone="warn" title={item.title} actionBelow
-          action={<span className="b1-actions">
-            <Button size="sm" onClick={item.onQuery}>查询原结果</Button>
-            {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原请求重试</Button>}
-            {item.onRelease && <Button size="sm" onClick={item.onRelease}>解除待确认</Button>}
-            {auditReachable && <Link className="rd-link" href="/platform/audit" prefetch={false}>到「操作记录与审批」核对</Link>}
-          </span>}>
-          <p>{item.body}</p>
-          <p>{item.note}</p>
-        </Notice>
-      ))}
-    </>
+    <RecoveryPanel title={recoveryTitle(items.length - waiting, waiting)} tone={waiting === items.length ? "progress" : "warn"} explainLabel="结果未知怎么处理"
+      explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；24 小时内只能按原请求重试，不能改值。有结果前，红线、健康线和储备注入不能再提交。"
+      foot={auditReachable ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link> : undefined}
+      items={items.map((item): RecoveryItem => ({
+        key: item.commandKey, object: item.object, tag: <StatusTag tone={item.tag.tone}>{item.tag.label}</StatusTag>, line: item.line,
+        actions: <>
+          <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={item.onQuery}>查询原结果</Button>
+          {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原请求重试</Button>}
+          {item.onRelease && <Button size="sm" onClick={item.onRelease}>解除原操作记录</Button>}
+        </>,
+        detail: <><p>{item.body}</p><p>{item.note}</p></>,
+      }))} />
   );
 }
 
@@ -439,23 +443,27 @@ export default function DualLedgerPage() {
   const queryApproval = async () => {
     if (!session || !pendingApproval) return;
     const expired = pendingApproval.expiresAt <= Date.now();
+    setReleasableApproval(null);
     try {
       const result = await submitB1ThresholdApproval(session, pendingApproval.values, pendingApproval.reason, readActive, "query");
       if (!result && expired) setReleasableApproval(pendingApproval.commandKey);
       setVerifiedPendingKey(result?.ticket.status === "pending" ? pendingApproval.commandKey : null);
-      setToast(result?.acknowledgement ?? (expired ? "没有这张审批单：原申请没有建成。核对后可以解除待确认。" : "暂未查到原审批单，可以按原请求重试，不会建第二张。"));
+      setToast(result?.acknowledgement ?? (expired ? "没有这张审批单：原申请没有建成。核对后可以解除这条记录。" : "暂未查到原审批单，可以按原请求重试，不会建第二张。"));
       if (result && result.ticket.status !== "pending") setActionConfirm(null);
     } catch (error) { setToast(displayAdminReadError(error)); }
     finally { syncPending(); }
   };
-  const releaseApproval = () => {
+  const releaseApproval = async () => {
     if (!session || !pendingApproval) return;
-    releaseConfigApproval("B1", session.adminId, pendingApproval.commandKey);
-    setReleasing(false);
-    setReleasableApproval(null);
-    syncPending();
-    void refreshB1();
-    setToast("已解除本页的待确认记录");
+    try {
+      const released = await releaseExpiredB1ThresholdApproval(session.adminId, pendingApproval.commandKey);
+      setReleasing(false);
+      setReleasableApproval(null);
+      if (!released) { setToast(displayAdminReadError(new Error("OPERATION_RESULT_UNKNOWN"))); return; }
+      void refreshB1();
+      setToast("已解除本页的待确认记录");
+    } catch (error) { setToast(displayAdminReadError(error)); }
+    finally { syncPending(); }
   };
   const recoverApproval = () => {
     if (!pendingApproval?.b1Facts) { void queryApproval(); return; }
@@ -463,7 +471,9 @@ export default function DualLedgerPage() {
   };
   const pendingItems: B1PendingCommand[] = pendingWrites.map(record => ({
     commandKey: record.commandKey,
-    title: `${record.kind === "threshold" ? "调整红线和健康线" : record.kind === "injection" ? "登记储备注入" : "标记覆盖率告警已处理"} · 结果未知`,
+    object: record.kind === "threshold" ? "调整红线和健康线" : record.kind === "injection" ? "登记储备注入" : "标记覆盖率告警已处理",
+    tag: { tone: "warn", label: record.expiresAt <= Date.now() ? "已过期" : "结果未知" },
+    line: record.expiresAt <= Date.now() ? "超过 24 小时不能再重试，先查询原结果。" : "可能已经生效，先查询原结果。",
     body: `${record.kind === "threshold" ? `红线 ${fmtConfigPct(record.facts.redlinePct)} → ${fmtConfigPct(Number(record.form.redlinePct))} · 健康线 ${fmtConfigPct(record.facts.healthyPct)} → ${fmtConfigPct(Number(record.form.healthyPct))}` : record.kind === "injection" ? `${money(Number(record.form.amount))} · ${record.form.voucherType === "BANK" ? "银行流水号" : "链上交易哈希"} ${record.form.voucher}` : "标记覆盖率告警已处理"} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
     expired: record.expiresAt <= Date.now(),
     note: record.expiresAt <= Date.now() ? "已超过 24 小时，不能重试，只能查询；查到的是现在的值，说明不了原操作成没成。" : "24 小时内只能按原请求重试，不能改值。",
@@ -475,15 +485,17 @@ export default function DualLedgerPage() {
     const verified = verifiedPendingKey === pendingApproval.commandKey;
     pendingItems.push({
       commandKey: pendingApproval.commandKey,
-      title: `降低红线的审批 · ${verified ? "待审批" : "结果未知"}`,
+      object: "降低红线的审批",
+      tag: verified ? { tone: "progress", label: "待审批" } : { tone: "warn", label: expired ? "已过期" : "结果未知" },
+      line: verified ? "等另一位超级管理员批准，批准前红线不变。" : !expired ? "可能已经提交，先查询原结果。" : releasableApproval === pendingApproval.commandKey ? "查不到这张审批单，说明没建成；可以解除。" : "超过 24 小时不能再重试，先查询原审批单。",
       body: `红线 ${fmtConfigPct(pendingApproval.values.redlinePct)} · 健康线 ${fmtConfigPct(pendingApproval.values.healthyPct)} · ${timeText(new Date(pendingApproval.createdAt).toISOString())}提交`,
       expired,
       note: verified ? "等另一位超级管理员在「操作记录与审批」批准，批准前红线不变。"
         : !expired ? "24 小时内只能按原请求重试，不会建第二张单。"
-          : releasableApproval === pendingApproval.commandKey ? "已超过 24 小时，查询结果是没有这张审批单，可以解除待确认。" : "已超过 24 小时，不能重试，只能查询原审批单。",
+          : releasableApproval === pendingApproval.commandKey ? "已超过 24 小时，查询结果是没有这张审批单，可以解除这条记录。" : "已超过 24 小时，不能重试，只能查询原审批单。",
       onRetry: verified ? undefined : recoverApproval,
       onQuery: () => void queryApproval(),
-      onRelease: expired && releasableApproval === pendingApproval.commandKey ? () => setReleasing(true) : undefined,
+      onRelease: expired && releasableApproval === pendingApproval.commandKey && !pendingApproval.received && !pendingApproval.b1Ticket ? () => setReleasing(true) : undefined,
     });
   }
   const openThreshold = () => setActionConfirm({

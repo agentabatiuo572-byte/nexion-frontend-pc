@@ -1,3 +1,4 @@
+import { preserveUserFundAmounts } from "@/lib/admin/user-latest-funds-contract";
 import { cookies } from "next/headers";
 import { phoneUserRoute } from "@/lib/admin/phone-replacement-routes";
 import { paymentPasswordRoute } from "@/lib/admin/payment-password-routes";
@@ -54,6 +55,9 @@ function backendPath(parts: string[]) {
   }
   if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "overview") {
     return "/api/admin/users/account-actions/overview";
+  }
+  if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "accounts") {
+    return "/api/admin/users/account-actions/accounts";
   }
   if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "alerts") {
     return "/api/admin/users/account-actions/alerts";
@@ -241,7 +245,12 @@ async function proxy(request: Request, context: RouteContext) {
       targetPath.startsWith("/api/admin/users/")
     ) {
       try {
-        const sanitized = sanitizePhoneMasked(JSON.parse(new TextDecoder().decode(body)));
+        const text = new TextDecoder().decode(body);
+        const detail360 = request.method === "GET" && /^\/api\/admin\/users\/profiles\/[^/]+\/360$/.test(targetPath);
+        const exact = detail360 ? preserveUserFundAmounts(text)
+          : request.method === "GET" && targetPath === "/api/admin/users/profiles"
+            ? text.replace(/("(?:walletUsdt|walletNex)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"') : text;
+        const sanitized = sanitizePhoneMasked(JSON.parse(exact));
         return new Response(JSON.stringify(sanitized), {
           status: upstream.status,
           headers: responseHeaders,

@@ -62,9 +62,12 @@
 /* ---------- 两张表 ---------- */
 .radarpage .b5-lists { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; }
 .radarpage .b5-signals th:nth-child(2), .radarpage .b5-signals td:nth-child(2) { width: 110px; }
-.radarpage .b5-signals th:nth-child(3), .radarpage .b5-signals td:nth-child(3) { width: 180px; }
+.radarpage .b5-signals th:nth-child(3), .radarpage .b5-signals td:nth-child(3) { width: 230px; }
 .radarpage .b5-signals th:nth-child(4), .radarpage .b5-signals td:nth-child(4) { width: 140px; white-space: nowrap; }
-.radarpage .b5-signal-main { display: inline-flex; align-items: center; gap: var(--rd-space-2); }
+/* 一行：级别标签、类别、具体情况；放不下省略，悬停看全句，点行看详情 */
+.radarpage .b5-signals .rd-cell-main > .rd-tag { margin-right: var(--rd-space-2); vertical-align: middle; }
+.radarpage .b5-signal-fact { color: var(--rd-text-2); }
+.radarpage .b5-handler { color: var(--rd-text-2); }
 .radarpage .b5-inbox th:nth-child(2), .radarpage .b5-inbox td:nth-child(2) { width: 200px; }
 .radarpage .b5-inbox th:nth-child(3), .radarpage .b5-inbox td:nth-child(3) { width: 160px; }
 .radarpage .b5-inbox th:nth-child(4), .radarpage .b5-inbox td:nth-child(4) { width: 200px; }

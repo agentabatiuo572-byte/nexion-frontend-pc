@@ -74,7 +74,7 @@ export async function sendH7VoucherMutation(record: H7DirectMutation, recovering
   commands.remember(record.fingerprint, record.commandKey, record);
   if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) {
     if (!recovering) commands.forget(record.fingerprint, record.commandKey);
-    throw new Error("H7_REQUEST_STORAGE_UNAVAILABLE");
+    throw new Error(recovering ? "H7_REQUEST_RETRY_STORAGE_UNAVAILABLE" : "H7_REQUEST_STORAGE_UNAVAILABLE");
   }
   try {
     const payload = await growthRequest<Record<string, unknown>>(record.request.path, {

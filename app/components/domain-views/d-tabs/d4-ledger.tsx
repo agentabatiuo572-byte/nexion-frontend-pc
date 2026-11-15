@@ -460,9 +460,18 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   };
 
   // A failed export rejects into the confirm dialog, which stays open with the reason; the loaded bills are unaffected.
+  const exportApplied: Applied = canGlobalRead ? applied
+    : { userId: selectedUserId ?? undefined, keyword: "", status: "", from: applied.from, to: applied.to };
   const exportCsv = async (reason: string) => {
+    const current = useAdminAuth.getState().session;
+    const globalRead = current?.role === "superadmin" || current?.authorities.includes("finance_d4_read");
+    if (!current || current.adminId !== session?.adminId
+      || !(current.role === "superadmin" || current.authorities.includes("finance_d4_export"))
+      || (canGlobalRead ? !globalRead : !selectedUserId || !canUserRead
+        || !current.authorities.includes("finance_d4_user_read") && !globalRead)) throw new Error("ADMIN_PERMISSION_DENIED");
     await downloadD4BillsCsv(
-      { type, ...applied, bizNo: exactBizNo, keyword: exactBizNo ? undefined : applied.keyword },
+      canGlobalRead ? { type, ...applied, bizNo: exactBizNo, keyword: exactBizNo ? undefined : applied.keyword }
+        : { userId: selectedUserId!, from: applied.from, to: applied.to },
       reason,
     );
     ctx.toast("账单 CSV 已下载", "success");
@@ -474,7 +483,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     facts: (
       <Facts>
         {canGlobalRead && <Fact k="账单条数" lead unit="条">{bills.total.toLocaleString("en-US")}</Fact>}
-        <Fact k="范围">{appliedConditions(applied, type, bizNo)}</Fact>
+        <Fact k="范围">{appliedConditions(exportApplied, canGlobalRead ? type : "", canGlobalRead ? bizNo : "")}</Fact>
         <Fact k="去向">浏览器直接下载</Fact>
         <Fact k="隐藏内容">不含昵称和备注，用户编码只留首尾</Fact>
       </Facts>
@@ -484,7 +493,9 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     confirmLabel: "确认导出",
     run: (reason) => exportCsv(reason),
   });
-  const exportBlocked = !canGlobalRead ? undefined
+  const exportBlocked = !canGlobalRead ? !selectedUserId ? "还没选用户"
+    : userLoading ? "账单还在读取，读完再导出"
+      : userError || !userData ? "账单加载失败，暂不能导出" : undefined
     : loading ? "账单还在读取，读完再导出"
       : error ? "账单加载失败，暂不能导出"
         : filterProblem ? "查询条件有误，改好后再导出"

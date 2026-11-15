@@ -16,7 +16,7 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, ...prop
   const [unknown, setUnknown] = useState(false);
   const record = m.pending.find(r => r.scope === scope);
   const rejected = !!record && m.rejected.includes(record.commandKey);
-  const blockedReason = props.blockedReason ?? (rejected ? "原操作重试已被明确拒绝，请关闭窗口并解除待确认。" : undefined);
+  const blockedReason = props.blockedReason ?? (rejected ? "按原请求重试被明确拒绝，请关闭窗口，核对后解除这条记录。" : undefined);
   const facts = (value?: string) => {
     const direction = props.edit?.amplifiesWhen;
     const amplifies = typeof direction === "function" ? !!value && direction(value)

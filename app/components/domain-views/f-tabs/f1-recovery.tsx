@@ -13,8 +13,8 @@ import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { f1ProposalAuthority } from "@/lib/admin/f1-approval";
-import { f1ConditionLabels, formatF1ExactAmount, listF1PolicyOperations, queryF1PolicyOperation, releaseF1PolicyProposal, type F1PolicyEditor, type F1PolicyReward } from "@/lib/admin/f1-policy-change";
-import { pendingF1RankHow, queryF1RankHow } from "@/lib/admin/f1-rank-how-save";
+import { f1ConditionLabels, formatF1ExactAmount, isF1PolicyInFlight, listF1PolicyOperations, queryF1PolicyOperation, releaseF1PolicyProposal, type F1PolicyEditor, type F1PolicyReward } from "@/lib/admin/f1-policy-change";
+import { isF1RankHowInFlight, pendingF1RankHow, queryF1RankHow } from "@/lib/admin/f1-rank-how-save";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { f1RewardPolicyLabel } from "./f1-policy-confirm";
 import { FReleaseButton } from "./f-release";
@@ -87,7 +87,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
       actions: <>
         <Button size="sm" onClick={() => void ctx.recoverF1(original.fingerprint, "query").catch((error) => toast(displayAdminError(error)))}>查询原结果</Button>
         {canRetry && <Button size="sm" disabledReason={retryBlock} onClick={() => { setRetryError(null); setRetrying({ original, name, change }); }}>按原请求重试</Button>}
-        {expired && original.absent && !original.ticket && <FReleaseButton label={name} toast={toast} onRelease={() => ctx.recoverF1(original.fingerprint, "release")} />}
+        {expired && original.absent && !original.ticket && !original.received && <FReleaseButton label={name} toast={toast} onRelease={() => ctx.recoverF1(original.fingerprint, "release")} />}
       </>,
     });
   }
@@ -95,6 +95,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
   let policyBroken = false;
   try {
     for (const record of listF1PolicyOperations(owner)) {
+      if (isF1PolicyInFlight(record.commandKey)) continue;
       const { editor, form, values, approval } = record.original;
       const field = editor.field;
       const name = `${editor.row.v} · ${editor.action === "threshold" ? f1ConditionLabels[field!] : editor.action === "reward_add" ? "添加奖励" : editor.action === "reward_remove" ? "移除奖励" : "编辑奖励"}`;
@@ -114,7 +115,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
               if (result?.active) ctx.acceptF1PolicyOverview(result.active); else void ctx.refreshF1();
             }, (error) => toast(displayAdminError(error)))}>查询原结果</Button>
             : <Button size="sm" onClick={() => onOpenPolicy({ ...editor, recoveryCommandKey: record.commandKey })}>查看原操作</Button>}
-          {approval && expired && record.absent && !record.ticket && <FReleaseButton label={name} toast={toast}
+          {approval && expired && record.absent && !record.ticket && !record.received && <FReleaseButton label={name} toast={toast}
             onRelease={async () => { await releaseF1PolicyProposal(owner, record.commandKey); await ctx.refreshF1(); }} />}
         </>,
       });
@@ -122,7 +123,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
   } catch { policyBroken = true; }
 
   const howSave = pendingF1RankHow(owner);
-  if (howSave) rows.push({
+  if (howSave && !isF1RankHowInFlight(owner)) rows.push({
     key: howSave.commandKey, name: `App 等级说明 · ${howSave.document.status === "PUBLISHED" ? "保存并发布" : "保存草稿"}`,
     // 1024 下这格窄：版本号和「· N 种语言」各自整段换行，不留两个字的孤行。
     change: <KeepText text={`版本号 ${howSave.document.version || "—"} · ${Object.keys(howSave.document.locales).length} 种语言`} phrases={[`版本号 ${howSave.document.version || "—"}`, `· ${Object.keys(howSave.document.locales).length} 种语言`]} />,

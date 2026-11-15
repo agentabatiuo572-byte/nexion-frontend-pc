@@ -212,3 +212,22 @@
 .ui-support-contact-picker .ui-bulk-contact-list label:has(> input[type="checkbox"]) { display: flex; align-items: center; gap: 12px; margin: 0; padding: 12px 14px; border: 0; border-radius: 0; background: var(--surface); cursor: pointer; }
 .ui-support-contact-picker .ui-bulk-contact-list label:has(> input:disabled) { opacity: .5; cursor: not-allowed; }
 .ui-support-contact-picker .ui-bulk-contact-list label:focus-within { outline: 2px solid var(--brand); outline-offset: -2px; }
+
+/* 结果未知的恢复面板：一个 Notice，里面每条一行，列对齐；同 A6 的恢复列表。 */
+.fund-rows { list-style: none; margin: var(--rd-space-2) 0 0; padding: 0; display: flex; flex-direction: column; }
+.fund-row + .fund-row { border-top: 1px solid var(--rd-line); }
+.fund-row-line { display: grid; grid-template-columns: minmax(200px, 280px) 104px minmax(0, 1fr) auto; align-items: center; gap: var(--rd-space-3); min-height: 40px; padding: 4px 0; }
+.fund-row-toggle { display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: var(--rd-weight-semibold); text-align: left; cursor: pointer; }
+.fund-row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fund-row-chevron { flex: none; color: var(--rd-text-3); transition: transform .15s; }
+.fund-row-toggle[aria-expanded="true"] .fund-row-chevron { transform: rotate(90deg); }
+.fund-row-line > .rd-tag { justify-self: start; }
+.fund-row-text { min-width: 0; color: var(--rd-text-2); }
+.fund-row-actions { display: inline-flex; justify-content: flex-end; gap: var(--rd-space-2); }
+.fund-row-detail { display: grid; gap: 4px; margin: 0 0 var(--rd-space-2) 18px; color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.fund-row-detail p { margin: 0; }
+.fund-row-detail [role="status"] { color: var(--rd-text); }
+.fund-rows-foot { display: flex; align-items: center; gap: var(--rd-space-3); margin-top: var(--rd-space-1); }
+.fund-settled { display: flex; align-items: center; gap: var(--rd-space-2); margin: 0; color: var(--rd-ok, var(--rd-text-2)); font-size: var(--rd-text-aux); }
+.fund-settled span { color: var(--rd-text-2); }
+.fund-check-audit { width: 200px; max-width: 100%; font-variant-numeric: tabular-nums; }

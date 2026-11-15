@@ -244,6 +244,7 @@ async function e5Request<T>(path: string, init?: RequestInit & { idempotencyKey?
       );
     }
     throw Object.assign(new Error(formatAdminApiError(result?.message, `E5_REQUEST_FAILED_${response.status}`)), {
+      httpStatus: response.status, apiCode: result?.code,
       status: response.ok && result && result.code >= 400 && result.code < 500 ? result.code : response.status, backendMessage: result?.message ?? "",
     });
   }

@@ -266,6 +266,9 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   const canManageM5Operations = hasM5WriteAuthority && (isSuperAdmin || isSupportM5Supervisor);
   const canManageSupportSeats = (isSuperAdmin || Boolean(authorities?.includes("service_m1_write")))
     && (isSuperAdmin || isSupportM5Supervisor);
+  const profileRestriction = (agent: MSupportAgent) => isSuperAdmin ? undefined
+    : agent.adminId === currentAdminId ? displayAdminError(new Error("SUPPORT_SEAT_ASSIGNMENT_SELF_FORBIDDEN"))
+      : agent.seatType === "MANAGER" ? displayAdminError(new Error("SUPPORT_SEAT_MANAGER_ASSIGNMENT_SUPER_ONLY")) : undefined;
   useEffect(() => {
     setManagementScope(null);
     if (!hasM1ReadAuthority || currentRoleKey !== "support" || !currentAdminId) return;
@@ -308,7 +311,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
     if (isRetryExpired(record)) { toast(RETRY_EXPIRED_TEXT, "warn"); return false; }
     if (!mCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
       if (!recovered) { mCommands.forget(record.fingerprint, record.commandKey); syncPending(); }
-      toast("浏览器未能保存原操作，尚未提交。请恢复会话存储后重试。", "warn"); return false;
+      toast(recovered ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。", "warn"); return false;
     }
     inFlight.current = true; setWritePending(true);
     const epoch = useAdminAuth.getState().authEpoch;
@@ -343,7 +346,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
     if (key === "I.support.advisorAssignment.__delete") return ctx.setParam(key, value, meta);
     if (activeConfirm.current.original?.m5) return commitOriginal(activeConfirm.current.original, true);
     const profile = key === "I.support.agentProfile.__update" ? supportAgents.find(agent => agent.adminId === profileAgent?.adminId) : undefined;
-    if (key === "I.support.agentProfile.__update" && !profile) return false;
+    if (key === "I.support.agentProfile.__update" && (!profile || profileRestriction(profile))) return false;
     if (currentAdminId !== useAdminAuth.getState().session?.adminId
       || !useAdminAuth.getState().session?.authorities.includes(profile ? "service_m1_write" : "service_m5_write")) return false;
     const allowed = profile ? canManageSupportSeats && agentPageAvailable : key.startsWith("I.session.cat.") || key.startsWith("I.session.advisor.policy.") ? canManageM5Operations : canManageM5Content;
@@ -727,7 +730,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
                         </Td>
                         <Td align="right"><span className="m5-cap" data-empty={agent.maxConcurrent === 0 ? "" : undefined}>{compactSupportBoardValue(agent.maxConcurrent, "count") === "-" ? "—" : `${agent.maxConcurrent} 位`}</span></Td>
                         <Td>{agent.tags?.length ? <span className="m5-tags">{agent.tags.map((tag) => <span key={tag} className="m5-chip">{tag}</span>)}</span> : <span className="rd-note">—</span>}</Td>
-                        {canManageSupportSeats && <Td sticky="end"><Button size="sm" icon={<SlidersHorizontal size={14} aria-hidden />} disabled={writePending || needsRead || blocked("I.support.agentProfile.__update", agent.adminId)} onClick={() => { activeConfirm.current = {}; setProfileRecovery(undefined); setProfileAgent(agent); }}>接单设置</Button></Td>}
+                        {canManageSupportSeats && <Td sticky="end"><Button size="sm" icon={<SlidersHorizontal size={14} aria-hidden />} disabled={writePending || needsRead || blocked("I.support.agentProfile.__update", agent.adminId)} disabledReason={profileRestriction(agent)} onClick={() => { activeConfirm.current = {}; setProfileRecovery(undefined); setProfileAgent(agent); }}>接单设置</Button></Td>}
                       </Tr>;
                     })}
           </tbody>
@@ -886,7 +889,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       {pane("channels", channels)}
       </> : fallback}
       {profileAgent && (canManageSupportSeats || profileRecovery) && <AgentProfileModal agent={profileRecovery ? profileAgent : supportAgents.find(agent => agent.adminId === profileAgent.adminId) ?? profileAgent} agents={supportAgents} pending={profileRecovery}
-        canSubmitNew={agentPageAvailable && supportAgents.some(agent => agent.adminId === profileAgent.adminId) && !needsRead && !ctx.contentLoading && !writePending && !blocked("I.support.agentProfile.__update", profileAgent.adminId) && Boolean(authorities?.includes("service_m1_write"))}
+        canSubmitNew={agentPageAvailable && supportAgents.some(agent => agent.adminId === profileAgent.adminId && !profileRestriction(agent)) && !needsRead && !ctx.contentLoading && !writePending && !blocked("I.support.agentProfile.__update", profileAgent.adminId) && Boolean(authorities?.includes("service_m1_write"))}
         ctx={{ ...ctx, setParam: async (key, value, meta) => {
         try { return profileRecovery ? await commitOriginal(profileRecovery, true) : await commitM5Write(key, value, meta, `${profileAgent.name} 客服接单设置已保存`); }
         catch (cause) { toast(displayAdminError(cause), "warn"); return false; }

@@ -86,7 +86,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
     if (!command) throw new Error("无法保留原校正请求，请重试");
     // 先落盘再发（OP-92）：存不下时刷新就丢命令号，结果未知后没法恢复。
     if (!corrections.isDurablyStored(slot, command.commandKey)) {
-      if (retained) { setNotice({ tone: "warn", text: "本机存储里查不到原校正，这次没有发送。到操作记录与审批核对，待确认继续保留。" }); return; }
+      if (retained) { setNotice({ tone: "warn", text: "本机存储里查不到原校正，这次没有发送。到操作记录与审批核对，记录继续保留。" }); return; }
       corrections.forget(slot, command.commandKey);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
     }
@@ -138,7 +138,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
     corrections.forget(slot);
     refreshPending();
     setReleasing(false);
-    setNotice({ tone: "ok", text: "已移除本地待确认记录，后端结果和锁定状态不变。" });
+    setNotice({ tone: "ok", text: "已解除本页这条原操作记录，原操作的结果和锁定不变。" });
   };
   const expired = !!pending && pending.expiresAt <= Date.now();
   const correctable = !pending && canCorrect && !!actorKey && data?.status === "MATCHED" && data.storedCreatedAt !== data.deliveryFactTime;
@@ -151,13 +151,13 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
     explain={<><p>读取证据不会修改通知。校正时间需要单独确认，已读状态保持不变。</p><p>此处展示当前回读证据；是否曾执行校正请查审计记录。</p></>}
     footer={correctable ? <Decision primary={<Button variant="primary" onClick={() => setConfirmation(data)}>按投递事实校正时间</Button>} /> : undefined}>
     {notice && <Notice tone={notice.tone}><KeepText text={notice.text} /></Notice>}
-    {pending && canCorrect && actorKey && <Notice tone="warn" title="原校正请求结果尚未确认。"
+    {pending && canCorrect && actorKey && <Notice tone="warn" title="原校正结果未知"
       action={<>
         <Button size="sm" loading={submitting} disabledReason={expired ? EXPIRED_TEXT : undefined} onClick={() => void submit(pending.reason)}>重试原校正</Button>
-        {isExplicitRejection(pending.rejection) && <Button size="sm" disabled={submitting} onClick={() => setReleasing(true)}>解除待确认</Button>}
+        {isExplicitRejection(pending.rejection) && <Button size="sm" disabled={submitting} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
       </>}>
-      {expired ? `${EXPIRED_TEXT}。` : "重试将保留原证据、理由和请求号。"}原理由：{pending.reason}
-      <Explain label="技术信息" content={`请求号：${pending.commandKey}`} />
+      {expired ? `${EXPIRED_TEXT}。` : "按原请求重试会用原证据和理由。"}原理由：{pending.reason}
+      <Explain label="技术信息" content={`原请求编号 ${pending.commandKey}`} />
     </Notice>}
     {!data && !error && <BlockState state="loading" title="正在读取关联证据…" />}
     {error && <BlockState state="error" title={error} onRetry={() => setAttempt(value => value + 1)} />}
@@ -185,6 +185,6 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
       statedBrief={{ impact: "只改这条通知显示的时间，不重新发送，已读状态不变。", check: "核对当前记录时间和投递事实时间，理由写明依据。" }}
       reasonMax={500} onClose={() => { if (!busy.current) setConfirmation(null); }} onConfirm={submit} />}
     {releasing && pending && <ReleaseModal label={`校正通知 ${notificationId} 的时间`} onCancel={() => setReleasing(false)} onConfirm={release}
-      explain="重试被明确拒绝也说明不了原校正的结果，先到操作记录核实。解除只移除本标签页的待确认记录，后端结果和锁不变。" />}
+      explain="重试被明确拒绝也说明不了原校正的结果，先到操作记录核实。解除只移除本页这条原操作记录，原操作的结果和锁定不变。" />}
   </Drawer>;
 }
