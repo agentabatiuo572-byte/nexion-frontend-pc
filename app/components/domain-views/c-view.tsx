@@ -58,6 +58,7 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
           coverageLead={mc.coverageLead}
           edit={mc.edit}
           businessForm={mc.businessForm}
+          businessFormRevision={mc.businessFormRevision}
           completionCopy={mc.completionCopy}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}

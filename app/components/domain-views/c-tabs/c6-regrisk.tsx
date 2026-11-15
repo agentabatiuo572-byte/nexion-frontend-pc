@@ -169,7 +169,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     const auth = useAdminAuth.getState();
     return auth.session?.adminId === owner && (auth.session.role === "super" || auth.session.role === "superadmin" || auth.session.authorities.includes("user_c6_write"));
   };
-  const perform = async (original: C6Pending, retry = true) => {
+  const perform = async (original: C6Pending, retry = true, onRejected?: (latest: UserRegistrationRiskOverview | null) => void) => {
     if (mutation.current || !canSubmit()) return false;
     mutation.current = true;
     setBusy(true);
@@ -188,8 +188,18 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     } catch (err) {
       const rejected = retry ? isC6ExplicitRejection(err)
         : err instanceof UsersRequestError && isDeterministicRejection(err.status, err.businessStatus);
-      if (row && rejected) { forgetC6Command(row); invalidate(); }
-      else if (row) { readEpoch.current += 1; overviewRef.current = null; setOverview(null); setLoading(false); }
+      if (row && rejected) {
+        forgetC6Command(row);
+        if (retry) invalidate();
+        else {
+          // Keep the mounted form and its draft while replacing its read basis.
+          readEpoch.current += 1;
+          overviewRef.current = null;
+          setOverview(null);
+          await loadData(true);
+          onRejected?.(overviewRef.current);
+        }
+      } else if (row) { readEpoch.current += 1; overviewRef.current = null; setOverview(null); setLoading(false); }
       const message = row && !rejected ? "结果未知 · 已保留原请求，在页面上方读回核对或按原请求重试" : `操作失败 · ${errorMessage(err)}`;
       setError(message);
       toast(message, row && !rejected ? "warn" : "error");
@@ -201,14 +211,15 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   };
   // Each open form owns at most one original command. A settled form cannot
   // silently become a new mutation, even if its callback is still being invoked.
-  const commandRun = (target: C6Original["target"], kind: C6Original["kind"], label: string, successMessage: (value: string) => string, basis: UserRegistrationRiskOverview) => {
+  const commandRun = (target: C6Original["target"], kind: C6Original["kind"], label: string, successMessage: (value: string) => string, basis: UserRegistrationRiskOverview, rebase: (latest: UserRegistrationRiskOverview) => void) => {
     let original: C6Pending | undefined;
+    let settled = false;
     return {
       getPendingReason: () => original && pendingC6Commands(owner).find(row => row.commandKey === original!.commandKey)?.reason,
       run: async (value: string, reason: string) => {
+        if (settled) return false;
         if (original) return perform(original);
         if (!canSubmit() || mutation.current || overviewRef.current !== basis || pendingFor(target)) {
-          ctx.closeConfirms();
           toast("规则可能已变，请重新加载后再改。", "warn");
           return false;
         }
@@ -220,7 +231,11 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         // getPendingReason freezes its inputs when no verdict is received.
         try { original = prepareC6Command(request); }
         catch (failure) { toast(errorMessage(failure), "error"); return false; }
-        return perform(original, false);
+        return perform(original, false, latest => {
+          original = undefined;
+          settled = true;
+          if (latest) rebase(latest);
+        });
       },
     };
   };
@@ -301,8 +316,14 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
   const ruleText = (rule: ReturnType<typeof lockRule>, param?: UserRegistrationRiskParam) => rule ? `输错 ${rule.attempts} 次 · 锁 ${rule.duration} ${rule.unit}` : text(param?.value);
 
-  const adjustRow = (param: UserRegistrationRiskParam) => {
-    const key = param.key;
+  const openLock = (key: string, basis: UserRegistrationRiskOverview, rebasing = false) => {
+    const lockParams = basis.params!.filter(param => param.group === "lock");
+    const param = lockParams.find(param => param.key === key);
+    if (!param) return;
+    const shortParam = lockParams.find(param => param.key === "lockShort");
+    const longParam = lockParams.find(param => param.key === "lockLong");
+    const shortRule = lockRule(shortParam, "分钟");
+    const longRule = lockRule(longParam, "小时");
     const currentValue = text(param.value, "");
     const [currentAttempts = 0, currentDuration = 0] = numericParts(currentValue);
     const shortAttempts = numericParts(lockParams.find((row) => row.key === "lockShort")?.value)[0] ?? 0;
@@ -325,10 +346,9 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         ? `保存后，${windowMinutes}计数窗口内累计输错到 ${a} 次就锁 ${d} 小时；短锁期间只有验证码登录输错还计数。`
         : `保存后，从第一次输错起 ${d} 分钟内输错 ${a} 次，就锁 ${d} 分钟；这段时间也是长锁的计数窗口。`;
     };
-    const open = () => {
-      if (!canSubmit() || mutation.current || pendingFor(key as C6Original["target"]) || overviewRef.current !== overview) return;
-      const original = commandRun(key as C6Original["target"], "lock", `调整${name}`, value => `${name} 已更新为 ${value}`, overview);
-      openActionConfirm({ briefKind: "config",
+    if (!rebasing && (!canSubmit() || mutation.current || pendingFor(key as C6Original["target"]) || overviewRef.current !== basis)) return;
+    const original = commandRun(key as C6Original["target"], "lock", `调整${name}`, value => `${name} 已更新为 ${value}`, basis, latest => openLock(key, latest, true));
+    openActionConfirm({ briefKind: "config",
       getPendingReason: original.getPendingReason,
       action: `调整登录锁定 · ${name}`,
       title: `调整${name}`,
@@ -348,6 +368,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         impact: impactFor(value.attempts, value.duration),
         check: "提交时检查次数和时长的范围；打开后如果已被别人改过，这次不会保存。",
       }),
+      businessFormRevision: Number(basis.configVersion),
       businessForm: {
         kind: "multi-field",
         hint: "次数和时长一起保存",
@@ -357,8 +378,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         ],
       },
       run: async (reason, _nextValue, businessValue) => {
-        const attempts = Number(businessValue?.attempts);
-        const duration = Number(businessValue?.duration);
+        const attempts = businessValue?.attempts?.trim() ? Number(businessValue.attempts) : NaN;
+        const duration = businessValue?.duration?.trim() ? Number(businessValue.duration) : NaN;
         if (!key || !Number.isInteger(attempts) || !Number.isInteger(duration)) {
           toast("请填写有效的整数次数和锁定时长");
           return false;
@@ -372,7 +393,14 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         return original.run(value, reason);
       },
     });
-    };
+  };
+
+  const adjustRow = (param: UserRegistrationRiskParam) => {
+    const key = param.key;
+    const isLong = key === "lockLong";
+    const name = operatorCopyText(text(param.name));
+    const durationUnit = text(param.secondaryUnit, isLong ? "小时" : "分钟");
+    const windowMinutes = shortRule ? `${shortRule.duration} 分钟` : "短锁时长";
     const rule = lockRule(param, durationUnit);
     return (
       <ConfigRow key={rowKey(param)} id={`c6-${key}`}
@@ -386,19 +414,19 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         where="App 登录、验证码登录和两步验证输错时；用户只看到「暂时锁定」，看不到解锁时间"
         value={rule ? <span className="c6-rule">输错 <b>{rule.attempts}</b> 次<span aria-hidden>→</span>锁 <b>{rule.duration}</b> {rule.unit}</span> : text(param.value)}
         action={canWrite && !param.readOnly
-          ? <Button size="sm" disabledReason={!key ? "这项缺少参数键，暂时不能调整" : unavailable(key as C6Original["target"])} onClick={open}>调整</Button>
+          ? <Button size="sm" disabledReason={!key ? "这项缺少参数键，暂时不能调整" : unavailable(key as C6Original["target"])} onClick={() => openLock(key!, overview)}>调整</Button>
           : undefined}
       />
     );
   };
 
-  const restoreCaptcha = () => {
+  const restoreCaptcha = (basis: UserRegistrationRiskOverview, rebasing = false) => {
     if (!canWrite) {
       toast("你只有查看权限，不能恢复人机验证");
       return;
     }
-    if (mutation.current || pendingFor("captchaOff") || overviewRef.current !== overview) return;
-    const original = commandRun("captchaOff", "captcha-restore", "立即恢复人机验证", () => "人机验证已恢复", overview);
+    if (!rebasing && (mutation.current || pendingFor("captchaOff") || overviewRef.current !== basis)) return;
+    const original = commandRun("captchaOff", "captcha-restore", "立即恢复人机验证", () => "人机验证已恢复", basis, latest => restoreCaptcha(latest, true));
     openConfirm({ briefKind: "record",
     getPendingReason: original.getPendingReason,
     action: "恢复人机验证",
@@ -411,8 +439,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     },
     content: (
       <Facts>
-        <Fact k="人机验证"><Change from="临时关闭" to="开启" /></Fact>
-        <Fact k="原定恢复">{formatCaptchaRestoreAt(captchaRestoreAt)}</Fact>
+        <Fact k="人机验证"><Change from={basis.stats?.captchaTemporarilyDisabled ? "临时关闭" : "开启"} to="开启" /></Fact>
+        <Fact k="原定恢复">{formatCaptchaRestoreAt(basis.stats?.captchaRestoreAt)}</Fact>
       </Facts>
     ),
     reason: true,
@@ -424,13 +452,13 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     });
   };
 
-  const disableCaptcha = () => {
+  const disableCaptcha = (basis: UserRegistrationRiskOverview, rebasing = false) => {
     if (!canWrite) {
       toast("你只有查看权限，不能关闭人机验证");
       return;
     }
-    if (mutation.current || pendingFor("captchaOff") || overviewRef.current !== overview) return;
-    const original = commandRun("captchaOff", "captcha-disable", "临时关闭人机验证", value => `人机验证已临时关闭 · ${value}`, overview);
+    if (!rebasing && (mutation.current || pendingFor("captchaOff") || overviewRef.current !== basis)) return;
+    const original = commandRun("captchaOff", "captcha-disable", "临时关闭人机验证", value => `人机验证已临时关闭 · ${value}`, basis, latest => disableCaptcha(latest, true));
     openActionConfirm({ briefKind: "config",
     getPendingReason: original.getPendingReason,
     action: "紧急关闭人机验证",
@@ -453,7 +481,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       </Facts>
     ),
     edit: {
-      kind: "select", current: "开启", initialValue: CAPTCHA_RECOVERY_OPTIONS[0], options: CAPTCHA_RECOVERY_OPTIONS,
+      kind: "select", current: basis.stats?.captchaTemporarilyDisabled ? formatCaptchaRestoreAt(basis.stats.captchaRestoreAt) : "开启", initialValue: CAPTCHA_RECOVERY_OPTIONS[0], options: CAPTCHA_RECOVERY_OPTIONS,
       label: "关闭多久", optionLabels: CAPTCHA_RECOVERY_LABELS,
       hint: "只能选这四档，不能永久关闭",
       preview: (value) => `${CAPTCHA_RECOVERY_LABELS[value] ?? value}后自动恢复，从服务器执行关闭时起算；按原请求重试不会重新计时。`,
@@ -572,8 +600,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
               <strong>{captchaOff ? `${restoreText}自动恢复` : "发验证码前按规则要求拖滑块"}</strong>
             </div>
             {canWrite && (captchaOff
-              ? <Button variant="primary" disabledReason={unavailable("captchaOff")} onClick={restoreCaptcha}>立即恢复</Button>
-              : <Button variant="danger-outline" disabledReason={unavailable("captchaOff")} onClick={disableCaptcha}>紧急关闭</Button>)}
+              ? <Button variant="primary" disabledReason={unavailable("captchaOff")} onClick={() => restoreCaptcha(overview)}>立即恢复</Button>
+              : <Button variant="danger-outline" disabledReason={unavailable("captchaOff")} onClick={() => disableCaptcha(overview)}>紧急关闭</Button>)}
           </div>
           <KeyValues rows={[
             ...(captchaOff ? [
