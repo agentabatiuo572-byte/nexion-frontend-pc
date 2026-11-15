@@ -1014,6 +1014,8 @@ Nexion 运营控制后台
 
 **2026-11-15 B36 接线**：经营数据唯一来源为 `/api/admin/overview/business-summary`；today/week/month/all、注册 day/week/month 走势、range/comparison/statisticsStart/asOf/rollupAsOf 与六块权限/不可用原因均在边界解析。金额保留后端原文本，入金/完成提现/净入金与销售额、客单价、注册/活跃接现有位置，不再本地累加31天。销售仅总额权限不显示未授权分项；all 活跃和未知退款不造0；403 触发权限重读。新增周期/分项等界面及旧解释文字交视觉。出处 backend `04d11022` `BusinessSummaryService.summary:42–125`、`depositBreakdown:140–145`、`withdrawalBreakdown:146–149`、`salesBreakdown:150–154`。
 
+2026-11-15 F01：B36 全部金额键（含 bep20Usdt／erc20Usdt／trc20Usdt）在第一次 JSON 解析前保留十进制原文本；计数仍按整数校验。部分授权省略块、销售不可用及 all 无比较的语义保持。页面验收须经真实 Next 代理入口，不能拦截代理之后的最终回包。
+
 **2026-11-12 设备概览后端同步（代码侧）**：`fetchB0Devices` 从原 GET `/api/admin/devices/overview` 增加读取 `errorRetry/legacyPending/waitingConfig` 三个权威台数，不另发列表请求。原 total/running/waitingActivation/stopped 口径保留；新三数按有效状态解析，不能与原四数相加作分布。视觉 worker 在现有设备卡接入三数，点击分别到 `/devices/ops?simState=ERROR`、`LEGACY_PENDING`、`WAITING_CONFIG`；本轮未改设备卡的组成或现有链接。
 
 **2026-11-11 小问题修正：** 时段选择本地读写失败均回到今日；超过 5 条的待处理来源读取失败仍有对应重试入口；`default_off` 仅说明当前没有有效配置、系统按关闭处理，不推断历史设置。

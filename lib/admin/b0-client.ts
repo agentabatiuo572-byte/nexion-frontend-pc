@@ -15,7 +15,7 @@ type Row = Record<string, unknown>;
 
 async function read(endpoint: string, exactMoney = false): Promise<Row> {
   const response = await guardedFetch(endpoint, { cache: "no-store" });
-  const result = (await (exactMoney ? response.text().then(text => JSON.parse(text.replace(/("(?:[A-Za-z]*Usdt|usdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"'))) : response.json()).catch(() => null)) as ApiResult<Row> | null;
+  const result = (await (exactMoney ? response.text().then(text => JSON.parse(text.replace(/("(?:amountUsdt|previousAmountUsdt|bep20Usdt|erc20Usdt|trc20Usdt|bankUsdt|externalDirectUsdt|legacyCardUsdt|otherUsdt|usdt|vndPrincipalUsdt|feesUsdt|grossUsdt|refundsUsdt|averageOrderUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"'))) : response.json()).catch(() => null)) as ApiResult<Row> | null;
   if (!response.ok || !result || result.code !== 0 || !result.data) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
     if (response.status === 403) announcePermissionDenied();
