@@ -65,8 +65,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
   const board = leaderboardState(data);
   const current = data.leaderboardPeriods?.[period];
   const lbMinUsd = data.configValues["F.leaderboard.minUsd"] ?? "0";
-  const top1MaxPct = data.configValues["F.pool.top1MaxPct"] ?? "25";
-  const top5MaxPct = data.configValues["F.pool.top5MaxPct"] ?? "60";
+  const top1MaxPct = data.configValues["F.pool.top1MaxPct"]?.trim() || "25";
+  const top5MaxPct = data.configValues["F.pool.top5MaxPct"]?.trim() || "60";
   const periodPrizeRaw = data.configValues["F.pool.periodPrize"] ?? "";
   const periodPrizes = f4PeriodPrizes(periodPrizeRaw);
   const currentPeriodPrize = (key: Period) => {
