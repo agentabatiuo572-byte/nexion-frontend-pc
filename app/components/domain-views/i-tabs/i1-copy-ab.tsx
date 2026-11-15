@@ -884,7 +884,8 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       }
     } else if (path.startsWith("/copy-ab/version-options/")) {
       const key = part(3);
-      const option = conflict.latest?.versionOptions.find((row) => row.versionKey === key);
+      const latestOption = conflict.latest?.versionOptions.find((row) => row.versionKey === key);
+      const option = latestOption && { ...latestOption, usageCount: latestOption.usageCount ?? conflict.latest!.versions.filter(row => row.version === key).length };
       subject = <>版本 <span data-mono="">{key}</span></>;
       if (ready && !option) gone = "这个版本在最新读取里没有了，不能按最新的重做。";
       if (original?.method === "PUT") {
