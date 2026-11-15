@@ -50,7 +50,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
   return (
     <Panel data-proof="a4-outbox-diagnostics" title="没投递出去的事件" icon={Inbox} tone="role-2"
       sub={data ? `共 ${data.total} 条 · ${zoneNote()}` : undefined}
-      explain={<><p>还在等发送（待发送）或发送失败、等下次重试的事件。只能查询，不会修改。</p><p>上面的总数和按类型汇总总是全部积压，不受下面筛选影响；筛选只影响逐条明细。</p><p>已终止（死信）的事件不在这里，见下方「重新排队一条任务事件」。</p><p>奖励池结算告警显示「已处理」只说明告警投递已登记，不代表结算已恢复。</p></>}
+      explain={<><p>还在等发送或发送失败、等下次重试的事件，只能查询。上面的总数和按类型汇总不受筛选影响。</p><p>已终止（死信）的不在这里，见「重新排队一条任务事件」。奖励池结算告警显示「已处理」，不代表结算已恢复。</p></>}
       actions={canRead ? <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={busy && !filtered} onClick={() => void load(applied)}>重新查询</Button> : undefined}>
       {!canRead ? <BlockState state="denied" title="你没有查看事件的权限" detail="查看投递积压要有用户行为事件的查看权限。" /> : <>
         {error && <BlockState state="error" title="查询失败，请重试。" onRetry={() => void load(applied)} retrying={busy} />}
@@ -71,7 +71,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
                     text: <>{group.count} 条 <span className="a4-dim">· 最早 {minute(group.oldestAt)}</span></> };
                 })} />
                 {(data.groups.length > 8 || data.groupsTruncated) && <p className="a4-note">
-                  {data.groupsTruncated ? "只返回了前 200 组，各组相加不等于总数。" : `另有 ${data.groups.length - 8} 组没列出，逐条明细里能筛到。`}
+                  {data.groupsTruncated ? "只列出前 200 组，各组相加不等于总数。" : `另有 ${data.groups.length - 8} 组没列出，逐条明细里能筛到。`}
                 </p>}
               </div>
             </div>
@@ -88,7 +88,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
           <Table label="积压事件明细" className="a4-backlog-table">
             <thead><tr>
               <Th>事件</Th><Th>卡在哪 · 已重试</Th><Th>产生 · 下次重试</Th><Th>失败原因</Th>
-              <Th>处理结果<Explain label="处理结果是什么" content="每个使用这条事件的模块（使用方）处理到了哪一步。没有发现回执不代表已经成功。" /></Th>
+              <Th>处理结果<Explain label="处理结果是什么" content="每个使用这条事件的模块（使用方）处理到了哪一步。还没有处理结果，不代表已经成功。" /></Th>
             </tr></thead>
             <tbody>
               {data.rows.map((row, index) => {
@@ -107,7 +107,7 @@ export function A4OutboxDiagnostics({ state, describe }: { state: A4OutboxState;
                     <Td>{errorText(row.errorCode)}</Td>
                     <Td>{row.receipts.length
                       ? <span className="a4-receipts">{row.receipts.map((receipt) => <span key={receipt.status}>{RECEIPT_STATUS[receipt.status] ?? "其他"} {receipt.count}</span>)}</span>
-                      : <span className="a4-dim a4-stack"><span>未发现回执</span><span>不代表成功</span></span>}</Td>
+                      : <span className="a4-dim a4-stack"><span>还没有处理结果</span><span>不代表成功</span></span>}</Td>
                   </Tr>
                 );
               })}

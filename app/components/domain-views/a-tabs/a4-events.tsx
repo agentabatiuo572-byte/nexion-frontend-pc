@@ -435,7 +435,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       confirmLabel: "确认调整",
       statedBrief: {
         impact: "关键指标 #1 和用户转化分析按新值重算，历史时段的结果也会变；原始事件不改。",
-        check: "提交时后端核对 30–600 秒的整数；和现在一样的值会被拒绝。",
+        check: "要填 30–600 秒的整数，不能和现在一样。",
       },
       detail: (
         <>
@@ -474,7 +474,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       confirmLabel: "确认调整",
       statedBrief: {
         impact: "不马上删数据；下次清理按新月数判断所有记录，改短会多删旧记录，已删的找不回。",
-        check: "提交时后端核对 13–60 的整数月；和现在一样的值会被拒绝。",
+        check: "要填 13–60 个月的整数，不能和现在一样。",
       },
       detail: (
         <>
@@ -513,7 +513,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       confirmLabel: "确认调整",
       statedBrief: {
         impact: "只影响之后的浏览、会话类事件：调低后这两类记下的条数大约按比例变少，不回补；资金、风控、转化类始终全记。",
-        check: "提交时后端核对 0–100 的整数；资金、风控、转化必须保持 100%。",
+        check: "要填 0–100 的整数；资金、风控、转化类始终 100%。",
       },
       detail: (
         <>
@@ -561,7 +561,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       completion: "批准前目录不变；批准后从「新建」开始，要再按步推进上线。",
       statedBrief: {
         impact: "",
-        check: "提交和批准时都核对格式和版本。",
+        check: "格式不对，或事件目录已被别人改过，提交或批准时会被拒绝。",
       },
       detail: "新事件或字段要先登记才能用；事件名写成 模块.对象_动作，动作用过去式，不能含隐私信息。",
       // 改版页用 rd 画的多字段表单；字段键、初值和旧的事件登记表单一样，提交时 submit 读到的值不变。
@@ -649,7 +649,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       completion: "批准后多一个必填字段，之后不带它的事件会被拒绝；旧事件不补。",
       statedBrief: {
         impact: "",
-        check: "提交和批准时都核对字段和版本。",
+        check: "字段不合规，或事件目录已被别人改过，提交或批准时会被拒绝。",
       },
       facts: <Facts>
         <Fact k="事件"><span data-mono>{schemaSnapshot.eventName}</span></Fact>
@@ -757,7 +757,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       confirmLabel: "确认清理",
       statedBrief: {
         impact: "直接执行，删了不能恢复。",
-        check: "执行时后端取当前的留存月数并加锁；已有清理在进行时，这次不删任何数据。",
+        check: "按执行那一刻的留存期算；已有清理在进行时，这次不删任何数据。",
       },
       facts: <Facts>
         <Fact k="会删掉" tone="danger">{reviewedCutoff ? `约 ${reviewedCutoff} 之前的记录` : "留存期以前的记录"}</Fact>
@@ -839,7 +839,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       confirmLabel: "确认重新排队",
       statedBrief: {
         impact: "会再触发一次原来的处理：成功时用户的周任务按这条事件算完成，可能因此发奖；失败会重新停下。不保证奖励补发。",
-        check: "执行时后端核对两层都还是已终止、失败次数没变；事件内容、编号和失败次数都不改。",
+        check: "原事件和任务处理都还是已终止、失败次数没变时才执行；事件内容和编号不改。",
       },
       facts: <Facts>
         <Fact k="事件编号"><span data-mono>{snapshot.eventId}</span></Fact>
@@ -891,12 +891,11 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       confirmLabel: next === "disabled" ? "确认停用" : `确认改为${lifecycleText(next)}`,
       statedBrief: {
         impact: `推进后${next === "disabled" ? "停用" : `改为${lifecycleText(next)}`}：${LIFECYCLE_AFTER[next]}`,
-        check: "后端核对现在的上线进度和版本，只能推进到下一步；别人先改过会被拒绝，刷新后重来。",
+        check: "只能推进到下一步；别人先改过会被拒绝，刷新后重来。",
       },
       facts: <Facts>
         <Fact k="事件"><span data-mono>{schema.eventName}</span></Fact>
         <Fact k="上线进度"><Change from={lifecycleText(schema.lifecycleState)} to={lifecycleText(next)} tone={next === "disabled" ? "danger" : undefined} /></Fact>
-        <Fact k="进度版本">v{schema.lifecycleVersion}</Fact>
       </Facts>,
       detail: <>从 <b>{lifecycleText(schema.lifecycleState)}</b> 改为 <b>{lifecycleText(next)}</b>。</>,
       amplifies: false,
@@ -989,7 +988,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       submittedAt: pendingRegistry.createdAt,
       tag: expired
         ? <StatusTag tone="neutral" icon={Hourglass} explain="原申请超过 24 小时，不能再重试，只能查询原审批单。按原请求明确查不到这张单时，可以解除这条记录。">已过期</StatusTag>
-        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会建第二张。">结果未知</StatusTag>,
+        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>,
       actions: <>
         <Button size="sm" onClick={() => openRegistryRecovery()}>查询原结果</Button>
         {expired
@@ -1042,7 +1041,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     tag: isRetryExpired(record)
       ? <StatusTag tone="neutral" icon={Hourglass} explain="原操作超过 24 小时，不能再重试，只能查询当前数据核对。">已过期</StatusTag>
       : <StatusTag tone="warn" icon={CircleHelp} explain={record.original.kind === "redrive"
-        ? "提交时没收到成功结果，可能已经重新排队。先查询原结果：重新读这条事件的两层状态；按原请求重试会带原来的理由，后端认得出是同一次，不会再排一次。" : undefined}>结果未知</StatusTag>,
+        ? "提交时没收到确定结果，可能已经重新排队。先查询原结果，核对这条事件现在的状态；按原请求重试不会再排一次。" : undefined}>结果未知</StatusTag>,
     actions: <>
       <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
       <Button size="sm" disabledReason={isRetryExpired(record) ? "原操作超过 24 小时，不能再重试，只能查询"
@@ -1052,7 +1051,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   })));
   const recoveryNotice = (
     <A4RecoveryNotice title={`有 ${recoveryRows.length} 项原操作要处理`} rows={recoveryRows}
-      explain={<><p>提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内可以按原请求重试，内容和理由都不变，后端认得出是同一次提交，不会重复执行。</p><p>原请求保存在这个浏览器标签页里，刷新后还在，关掉标签页就没有了。登记按原请求查到审批单后清掉；参数、上线进度、清理和重新排队只读当前数据核对，按原请求重试拿到结果后才清掉。</p></>} />
+      explain={<><p>提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内可以按原请求重试，不会重复执行。</p><p>记录存在这个浏览器标签页里，刷新后还在，关掉就没有了。登记查到审批单后清掉；其他操作的查询只能看当前数据，按原请求重试拿到结果后才清掉。</p></>} />
   );
 
   const ticketNotice = currentRegistryTicket && (() => {
@@ -1276,10 +1275,10 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         ) : <BlockState state="empty" title="暂无通用字段" />}
       </Fold>
 
-      <Fold title="事件从产生到报表" summary={`产生 → 去重 → 保留 ${liveEventRetention || "—"} → 分析和对账`} icon={Activity}>
+      <Fold title="事件从产生到报表" summary={`产生 → 合并重复 → 保留 ${liveEventRetention || "—"} → 分析和对账`} icon={Activity}>
         <ol className="a4-flow" aria-label="事件流向">
           <li><b>产生</b><span>资金和状态类由服务器在业务发生时记录；App 只发页面浏览、点击和商城浏览这几类行为，而且只在用户登录后记录。</span></li>
-          <li><b>去重</b><span>服务器事件按系统生成的事件编号去重；App 事件按 App 生成的编号去重。</span></li>
+          <li><b>合并重复</b><span>同一条事件只记一次：服务器事件按系统生成的编号认，App 事件按 App 生成的编号认。</span></li>
           <li><b>保留</b><span>留存期 {liveEventRetention || "—"}，到期的记录按「统计参数与清理」里的规则删除。</span></li>
           <li><b>使用</b><span>用户转化分析、数据报表、风控和对账；关键指标大多只统计服务器记录的事件，商城浏览和推送点击例外，也统计 App 上报的。</span></li>
         </ol>
@@ -1294,7 +1293,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     <>
       <A4OutboxDiagnostics state={outbox} describe={(eventType) => eventDesc(overview, eventType)} />
       <Panel title="重新排队一条任务事件" icon={RotateCcw} tone="role-2" sub="每次一条 · 只限 5 种周任务事件"
-        explain={<><p>用户完成了周任务却没拿到奖励时，可能是任务事件发送失败、已终止（死信）。在这里输入事件编号，查到两层都已终止，就能把它重新排队一次。</p><p>死信没有汇总数，要按事件编号逐条查。只支持这 5 种：{H3_DEAD_REDRIVABLE_EVENT_TYPES.map((type) => H3_TYPE_TEXT[type]).join("；")}。</p></>}>
+        explain={<><p>用户完成了周任务却没拿到奖励时，可能是任务事件发送失败、已终止（死信）。在这里输入事件编号，查到原事件和任务处理都已终止，就能把它重新排队一次。</p><p>死信没有汇总数，要按事件编号逐条查。只支持这 5 种：{H3_DEAD_REDRIVABLE_EVENT_TYPES.map((type) => H3_TYPE_TEXT[type]).join("；")}。</p></>}>
         <FilterBar onSubmit={() => void previewH3DeadEvent()} querying={redrivePreviewing}
           notice={redrivePreviewError ? `查询失败：${redrivePreviewError}` : undefined}
           action={<Button variant="primary" disabledReason={redriveBlocked ?? (redrivePreviewing ? "正在查询" : undefined)} loading={redrivePreviewing} onClick={() => void previewH3DeadEvent()}>查询</Button>}>
@@ -1330,7 +1329,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               <div className="rd-toolbar" data-end="">
                 <span className="rd-toolbar-note">只放回发送队列，不改内容</span>
                 <Button variant="primary" icon={<RotateCcw size={14} aria-hidden />}
-                  disabledReason={redriveBlocked ?? (redrivePreview.status !== "DEAD" || redrivePreview.deliveryStatus !== "DEAD" ? "两层都已终止才能重新排队" : undefined)}
+                  disabledReason={redriveBlocked ?? (redrivePreview.status !== "DEAD" || redrivePreview.deliveryStatus !== "DEAD" ? "原事件和任务处理都已终止才能重新排队" : undefined)}
                   onClick={() => redriveAuditedH3DeadEvent()}>重新排队</Button>
               </div>
             </div>
@@ -1418,7 +1417,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         </div>
       </Panel>
       <Panel title="接入批次" icon={Layers} tone="role-3" sub={`完成 ${batchDone} / ${batchTotal} 批`}
-        explain="一个批次是一组要接入的模块或事件。登记新模块只建接入工单，不会自动接上发送和使用的代码，也不会自动建事件；批次的状态在这里只能查看。"
+        explain="一个批次是一组要接入的模块或事件。登记新模块只建接入工单：接通要技术同事另做，也不会自动建事件。批次状态这里只能查看。"
         actions={<Button size="sm" variant="primary" icon={<FilePlus2 size={14} aria-hidden />} disabledReason={writeBlocked} onClick={registerBatch}>登记新模块</Button>}>
         <StatusDistributionBar label="接入批次按状态" selectedKey={batchFilter === "all" ? undefined : batchFilter}
           state={DOMAIN_EXTENSIONS.length ? "ready" : "empty"} emptyText="还没有接入批次"
@@ -1599,7 +1598,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       {/* ───── 登记新模块：先填四项，下一步到确认框 ───── */}
       <Drawer open={naBatch && !registryConfirm} onClose={() => setNaBatch(false)} icon={Puzzle} tone="role-3"
         title="登记新模块" sub={<StatusTag tone="progress" filled>批准后生效</StatusTag>}
-        explain="只建一张接入工单，经另一位超级管理员批准后生效；不会自动接上发送和使用的代码，也不会自动建事件。"
+        explain="只建一张接入工单，经另一位超级管理员批准后生效；接通要技术同事另做，也不会自动建事件。"
         footer={<Decision others={<Button onClick={() => setNaBatch(false)}>取消</Button>}
           primary={<Button variant="primary" disabledReason={!canWrite ? "你只有查看权限" : batchMissing.length ? `还要填好：${batchMissing.join("、")}` : undefined}
             onBlockedClick={() => setBatchTouched({ domain: true, event: true, producer: true, consumer: true })}
@@ -1611,10 +1610,10 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               openRegistryConfirm({ briefKind: "record",
                 action: `登记新模块 · ${domain}`,
                 title: "登记新模块",
-                completion: "批准后只建接入工单，不会自动接上代码或建事件。",
+                completion: "批准后只建接入工单，不会自动接通，也不会自动建事件。",
                 statedBrief: {
                   impact: "",
-                  check: "提交时后端核对模块名不是已有模块、事件名属于这个模块并用过去式、同样的组合没登记过。",
+                  check: "模块已存在、事件名不合规，或同样的组合已登记过时，会被拒绝。",
                 },
                 facts: <Facts>
                   <Fact k="模块"><span data-mono>{domain}</span></Fact>
