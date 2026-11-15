@@ -84,7 +84,6 @@ const STATE: Record<string, { label: string; tone: StateTone; icon: LucideIcon; 
 };
 const stateOf = (state: string) => STATE[state.toLowerCase()] ?? { label: operatorCopyText(state), tone: "neutral" as StateTone, icon: CircleHelp, explain: "后端给的状态，这页不认识。" };
 
-const PAUSE_VALUES = ["true", "1", "on", "false", "0", "off"];
 const SPILLOVER_VALUES = ["true", "1", "on", "已启用", "false", "0", "off", "已关闭"];
 
 type View = "teams" | "dates";
@@ -148,7 +147,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const periodEff = cfg?.settlePeriod ?? "";
   const residualEff = cfg?.residualPolicy ?? "";
   const pausedRaw = ctx.f3ConfigValues["F.binary.paused"];
-  const binaryPaused = f3PauseState(pausedRaw) === true;
+  const pauseState = f3PauseState(pausedRaw, cfg?.paused);
+  const binaryPaused = pauseState === true;
   const capText = dailyCap?.amountUsdt != null ? `${fmtDecimal(dailyCap.amountUsdt)} USDT` : null;
   const residualPool = compactMoney(cfg?.residualPool ?? "");
   const rule: F3Rule = { threshold: thresholdText, rate: ratePercent === null ? null : `${ratePercent}%`, cap: capText, period: periodEff, residual: residualEff };
@@ -160,7 +160,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     !PERIOD_TEXT[periodEff] ? "结算周期" : null,
     !RESIDUAL_TEXT[residualEff] ? "没匹配上的订单额怎么处理" : null,
     !resetEff.trim() ? "归零说明" : null,
-    pausedRaw === undefined || !PAUSE_VALUES.includes(pausedRaw.trim().toLowerCase()) ? "发放开关" : null,
+    pauseState === null ? "发放开关" : null,
     !SPILLOVER_VALUES.includes((cfg?.spillover ?? "").trim().toLowerCase()) ? "自动分组" : null,
     !capText || Number(dailyCap?.amountUsdt) <= 0 ? "每日上限（运营阶段设置）" : null,
   ].filter((item): item is string => !!item);
@@ -536,7 +536,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             when="暂停和恢复都要提交审批，批准后写入，之后的结算立即按新状态判断。"
             effect="暂停：已经记账的不收回。恢复：之后照常结算，仍要满足门槛、分组、上限和兑付覆盖率；暂停期间的周期不自动补结。"
             note={pausedRaw !== undefined && !["on", "off"].includes(pausedRaw) ? `存的值是「${pausedRaw}」，不是 on 或 off；这页和结算按同一套规则判断是不是暂停。` : undefined}
-            value={<span className="f3-cfg">{f3PauseState(pausedRaw) === null
+            value={<span className="f3-cfg">{pauseState === null
               ? <StatusTag tone="danger" icon={Ban} explain="存的值认不出是暂停还是发放，结算时整期被拦下；重新选一次暂停或恢复。">配置无效</StatusTag>
               : binaryPaused ? <StatusTag tone="warn" icon={PauseCircle}>已暂停</StatusTag>
               : <StatusTag tone="ok" icon={PlayCircle}>发放中</StatusTag>}<span className="f3-cfg-dir">{binaryPaused ? "恢复会继续付钱" : "只在紧急情况下暂停"}</span></span>}
@@ -606,7 +606,7 @@ function f3ConfigurationConfirm(ctx: FViewCtx, snapshot: F3ConfirmationSnapshot,
   const rateEff = ratePercent === null ? `比例尚未确认 · 已存值 ${text(cfg.matchRate)}` : `${ratePercent}%`;
   const spillOn = f3SpilloverState(cfg.spillover) === true;
   const resetEff = cfg.gvResetCron, periodEff = cfg.settlePeriod, residualEff = cfg.residualPolicy;
-  const binaryPaused = f3PauseState(snapshot.configValues["F.binary.paused"]) === true;
+  const binaryPaused = f3PauseState(snapshot.configValues["F.binary.paused"], cfg.paused) === true;
   const rule: F3Rule = { threshold: thresholdText, rate: ratePercent === null ? null : `${ratePercent}%`, cap: snapshot.dailyCap.amountUsdt != null ? `${fmtDecimal(snapshot.dailyCap.amountUsdt)} USDT` : null, period: periodEff, residual: residualEff };
   const approvalTag = (more: string) => (
     <StatusTag tone="progress" filled explain={`${CONFIG_APPROVER}（需有团队平衡奖励的${more}权限和审批批准权限）在「操作记录与审批」批准后写入；批准前仍按现在的设置结算。`}>批准后生效</StatusTag>

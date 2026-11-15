@@ -1,5 +1,6 @@
 /** BinarySettlementPolicyProvider at 111e00cd: trim + Locale.ROOT case folding. */
-export function f3PauseState(raw: string | undefined): boolean | null {
+export function f3PauseState(raw: string | undefined, authoritative?: boolean | null): boolean | null {
+  if (authoritative !== undefined) return authoritative;
   const value = raw?.trim().toLowerCase();
   if (["true", "1", "on"].includes(value ?? "")) return true;
   if (["false", "0", "off"].includes(value ?? "")) return false;

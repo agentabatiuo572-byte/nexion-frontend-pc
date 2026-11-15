@@ -190,6 +190,7 @@ interface BackendF3DailyCap {
 }
 
 interface BackendF3Config {
+  paused?: boolean | null;
   threshold?: string | null;
   matchRate?: string | null;
   spillover?: string | null;
@@ -667,6 +668,7 @@ export interface F3DailyCap {
 export const F3_GV_RESET_PARAM_KEY = ["F", "binary", "gvResetCron"].join(".");
 
 export interface F3BinaryConfig {
+  paused?: boolean | null;
   threshold: string;
   matchRate: string;
   spillover: string;
@@ -1356,6 +1358,7 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
   const formula = data?.formula ?? {};
   const dailyCap = data?.dailyCap ?? {};
   const config = data?.config ?? {};
+  if (config.paused !== undefined && config.paused !== null && typeof config.paused !== "boolean") throw new Error("F3_RESPONSE_INVALID:config.paused");
   return {
     metrics,
     formula: {
@@ -1388,6 +1391,7 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
       matchRate: asText(config.matchRate),
       spillover: asText(config.spillover),
       spilloverEnabled: f3SpilloverState(config.spillover ?? undefined) === true,
+      paused: config.paused,
       gvResetCron: asText(config.gvResetCron),
       settlePeriod: asText(config.settlePeriod),
       residualPolicy: asText(config.residualPolicy),
