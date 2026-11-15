@@ -79,9 +79,9 @@ type TrialProduct = {
   unavailableReason?: string;
 };
 
-// 库存没有数（不限库存的份额、或后端没给）时不写成 0。
+// 候选商品都是限量库存，库存一定有数；万一没给，写「—」不写成 0。
 const stockText = (product: TrialProduct) => product.stock === null || product.stock === undefined || product.stock === ""
-  ? product.inventoryMode === "UNLIMITED" ? "不限库存" : "库存 —"
+  ? "库存 —"
   : `库存 ${product.stock}`;
 
 type H2Model = {
@@ -786,10 +786,10 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           explain="试用中、宽限中和已延长的人数，每人只算最近一次试用，算的是全部记录。" />
         <Stat tone="role-4" icon={TrendingUp} label="试用转购买率" value={text(stats.trialBuyRate)}
           sub={`提前购买率 ${text(stats.earlyBuyRate)}`}
-          explain={<><p>转购买率：开始过试用的人里买下设备的比例，每人只算最近一次。</p><p>提前购买率：其中享受了提前购买立减的比例；立减设为 0 时的购买不算。</p><p>算不出时显示「—」，不是 0。绑卡环节已停用，不再算绑卡转化。</p></>} />
+          explain={<><p>转购买率：开始过试用的人里买下设备的比例，每人只算最近一次。</p><p>提前购买率：开始过试用的人里，按提前购买立减买下的比例；立减设为 0 时的购买不算。</p><p>算不出时显示「—」，不是 0。绑卡环节已停用，不再算绑卡转化。</p></>} />
         <Stat tone="role-2" icon={Ticket} label="今日实际剩余免费名额" value={seatsKnown ? text(seats?.cur) : "—"} unit={seatsKnown ? "人" : undefined}
           sub={seats?.businessDate && seats.businessDate !== "UNKNOWN" ? `日期 ${seats.businessDate}` : undefined}
-          explain="今天还能开始试用的人数，和 App 一致。「每日免费名额上限」是设的上限，这里是减掉今天已领后的剩余。" />
+          explain="今天最多还能开始试用的人数，和 App 一致。「每日免费名额上限」是设的上限，这里是减掉今天已领后的剩余。" />
         <Stat tone="role-other" icon={Ban} label="拦截反复薅试用" value={text(stats.k2Blocked)} unit="人"
           explain="被风控判定为反复试用的人数，这些用户不能再试用。" />
       </StatBand>
