@@ -244,6 +244,8 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
       }); }}
       onDiscard={() => finish(() => { setEditor(null); setPendingKey(null); setConflicted(false); setEditorError(null); })} />;
   })();
+  // 被告知「已经是默认文件」并重读后：结果正是要的，用一条中性的说明代替「立即生效」和红色的失败提示。
+  const alreadyDefault = editor?.mode === "restore" && editor.document.source === "DEFAULT" && !!editorError && !pendingKey && !conflicted;
 
   return (
     <section data-testid="trust-documents">
@@ -301,7 +303,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
         {editor && <div className="rd-stack i4-doc-editor">
           {editor.mode === "upload"
             ? <Notice tone="warn" title={UPLOAD_PUBLIC}>不走审批；App 下次读取时换成这份，之后可以恢复成默认文件。</Notice>
-            : <Notice tone="warn" title="恢复后立即生效">不走审批；App 下次读取时改显示随系统发布的默认文件。</Notice>}
+            : !alreadyDefault && <Notice tone="warn" title="恢复后立即生效">不走审批；App 下次读取时改显示随系统发布的默认文件。</Notice>}
           {editorError && (pendingKey
             ? <Notice tone="warn" title={editor.mode === "upload" ? "上传结果未知" : "恢复结果未知"}
               action={<Button size="sm" loading={loading} onClick={() => void readBack()}>重新读取核对</Button>} actionBelow>
@@ -313,7 +315,9 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
                 action={<Button size="sm" onClick={conflictView.show}>核对</Button>} actionBelow>
                 这份资料刚被别人换过；核对完之前，下面的内容都改不了。
               </Notice>
-              : <Notice tone="danger" title={editor.mode === "upload" ? "这次没有上传" : "这次没有恢复"}>{editorError}</Notice>)}
+              : alreadyDefault
+                ? <Notice tone="neutral" title="已经是默认文件">{editorError}</Notice>
+                : <Notice tone="danger" title={editor.mode === "upload" ? "这次没有上传" : "这次没有恢复"}>{editorError}</Notice>)}
           <Facts>
             <Fact k={conflicted ? "你打开时用的" : "现在用的"}>{editor.document.source === "UPLOADED" ? "已上传的文件" : "默认文件"}</Fact>
             <Fact k="文件"><span title={editor.document.fileName} data-user-content="">{editor.document.fileName}</span></Fact>
