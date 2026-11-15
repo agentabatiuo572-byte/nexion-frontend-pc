@@ -900,7 +900,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           </div>}
       </Panel>
 
-      <Fold title="点了和左滑去哪" icon={Route} tone="role-other" summary={`App 实际规则 · 后端目录 ${SWIPE_ROWS.length} 行`}
+      <Fold title="点了和左滑去哪" icon={Route} tone="role-other" summary={`App 实际规则 · 系统登记的说明 ${SWIPE_ROWS.length} 行`}
         explain="App 里点通知的按钮或左滑通知会跳到哪里。这页不跳转、不改用户的通知。">
         <div className="i3-route">
           <section aria-labelledby="i3-route-real">
@@ -917,8 +917,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             </Table>
           </section>
           <section aria-labelledby="i3-route-catalog">
-            <h4 className="i3-sub-title" id="i3-route-catalog">后端目录<Explain label="后端目录是什么" content="后端返回的固定说明，和 App 实际跳转不全一致（比如退款没有对应的通知类型），以上面的实际规则为准。已提后端统一。" /></h4>
-            <Table label="后端左滑目录" className="i3-route-table">
+            <h4 className="i3-sub-title" id="i3-route-catalog">系统登记的说明<Explain label="系统登记的说明是什么" content="系统里写死的三行说明，和 App 实际跳转不全一致（比如退款没有对应的通知类型），以上面的实际规则为准；已提出统一。" /></h4>
+            <Table label="系统登记的左滑说明" className="i3-route-table">
               <thead><tr><Th>通知类型</Th><Th>写的跳转</Th><Th>说明</Th></tr></thead>
               <tbody>
                 {SWIPE_ROWS.map((r) => (
@@ -943,9 +943,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             reason: "后端一次返回全部活动、不分页；全部视图每个状态组先显示 6 条，其余点「显示全部」按状态筛出",
           },
           {
-            label: "后端左滑目录",
+            label: "系统登记的左滑说明",
             maxRows: 3,
-            reason: "后端固定的三行说明",
+            reason: "系统固定的三行说明",
           },
         ]}
       />
