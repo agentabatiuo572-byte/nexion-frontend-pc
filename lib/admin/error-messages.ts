@@ -1,6 +1,7 @@
 import { SKU_MODEL_UNRECOGNIZED_REASON } from "./device-monthly-target.ts";
 
 export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  A4_USER_NUMBER_INVALID: "事件的用户编号数据不完整，请重新查询后核对。",
   // F5 reward reconciliation and retained requests (backend 111e00cd).
   F5_EXPECTED_VERSION_REQUIRED: "缺少原奖励版本，不能提交状态处置。请重新查询并打开原记录。",
   F5_OPERATION_AUDIT_CONFLICT: "奖励状态处置的操作记录写入冲突，请保留原申请并查询原结果。",

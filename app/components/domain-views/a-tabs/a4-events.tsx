@@ -832,6 +832,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     }
     // The command key is selected in the confirmation callback, when the full
     // normalized request (including the audit reason) is available.
+    const { userNo: _userNo, ...commandSnapshot } = snapshot;
     openActionConfirm({ briefKind: "record",
       action: "重新发送任务事件",
       title: "重新排队这条任务事件",
@@ -860,7 +861,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       reasonMax: 200,
       initialReason: original?.reason,
       getPendingReason: () => commands.find(`redrive:${snapshot.eventId}`)?.reason,
-      run: (reason) => runDirect(saved ?? { kind: "redrive", snapshot }, reason, "重新排队任务事件", snapshot.eventId),
+      run: (reason) => runDirect(saved ?? { kind: "redrive", snapshot: commandSnapshot }, reason, "重新排队任务事件", snapshot.eventId),
     });
   };
 
