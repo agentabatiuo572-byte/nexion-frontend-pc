@@ -199,6 +199,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     const isEnabled = param.key === "enabled";
     const numeric = param.kind === "number";
     const rawCurrent = String(snapshot.params[param.key]);
+    if (fixedValue !== undefined && fixedValue === rawCurrent) { ctx.toast("和现在一样"); return; }
     const current = isEnabled
       ? ENABLED_LABELS[rawCurrent] ?? ENABLED_LABELS.false
       : param.kind === "select" ? LOCK_MODE_LABELS[rawCurrent] ?? LOCK_MODE_LABELS.risk_bucket : rawCurrent;

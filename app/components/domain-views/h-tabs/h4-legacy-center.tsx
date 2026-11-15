@@ -366,18 +366,19 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const openEventFeatured = (event: LegacyEvent) => {
     if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     const next = conflictDraft.intent === undefined ? !Boolean(event.featured) : conflictDraft.intent === "true";
+    if (next === Boolean(event.featured)) { toast("没有改动"); return; }
     openConfirm({ rebaseValue: String(next), briefKind: "record",
-      action: `${event.featured ? "取消主推" : "设为主推"} · ${event.name}`,
-      title: event.featured ? "取消主推" : "设为主推",
+      action: `${next ? "设为主推" : "取消主推"} · ${event.name}`,
+      title: next ? "设为主推" : "取消主推",
       effect: effectDirect,
       detail: <>同时只能有一个进行中的主推活动。</>,
       content: <Facts>
         <Fact k="活动">{eventName(event.id)}</Fact>
-        <Fact k="主推"><Change from={event.featured ? "是" : "否"} to={event.featured ? "否" : "是"} /></Fact>
-        <Fact k="影响">只改 App 活动页的主推位，不发奖、不改奖励{event.featured ? "" : "；已经有别的主推活动时后端会拒绝，先取消那一个"}</Fact>
+        <Fact k="主推"><Change from={event.featured ? "是" : "否"} to={next ? "是" : "否"} /></Fact>
+        <Fact k="影响">只改 App 活动页的主推位，不发奖、不改奖励{!next ? "" : "；已经有别的主推活动时后端会拒绝，先取消那一个"}</Fact>
       </Facts>,
       reason: true,
-      okLabel: event.featured ? "取消主推" : "设为主推",
+      okLabel: next ? "设为主推" : "取消主推",
       reasonPlaceholder: "例如：按运营排期调整首页主推",
       run: async (reason) => {
         if (await apply(await updateH4EventFeatured(event.id, next, Boolean(event.featured), reason))) toast(`${event.name} 主推状态已更新`);
@@ -604,6 +605,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const current = text(guard.value);
     const on = killOn(current);
     const next = conflictDraft.intent ?? (on ? "关" : "开");
+    if (killOn(next) === on) { toast("没有改动"); return; }
     const closing = next === "关", approval = !on && !closing;
     openActionConfirm({ rebaseValue: next, blockedReason: killOn(next) === on ? "没有改动" : undefined, briefKind: "config",
       action: `转盘安全限制 · 实际奖品发放开关`,

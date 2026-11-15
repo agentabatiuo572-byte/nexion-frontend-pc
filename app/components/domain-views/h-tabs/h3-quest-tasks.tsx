@@ -301,6 +301,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const current = text(model?.promoBanner?.status, "").toLowerCase();
     if (!current) { toast(displayAdminError(new Error("PROMO_BANNER_NOT_CONFIGURED"))); return; }
     const next = conflictDraft.intent ?? (current === "active" ? "paused" : "active");
+    if (next === current) { toast("和现在一样，没有改动"); return; }
     openActionConfirm({ rebaseValue: next, target: "promoBanner.status", briefKind: "record",
       action: next === "active" ? "启用首页备用促销卡" : "暂停首页备用促销卡",
       title: next === "active" ? "启用首页备用促销卡" : "暂停首页备用促销卡",
@@ -573,6 +574,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const openBindingStatus = (binding: H3QuestEventBinding) => {
     const enabled = Number(binding.status) === 1;
     const nextEnabled = conflictDraft.intent === undefined ? !enabled : conflictDraft.intent === "true";
+    if (nextEnabled === enabled) { toast("和现在一样，没有改动"); return; }
     openConfirm({ rebaseValue: String(nextEnabled), briefKind: "record",
       target: binding.bindingCode,
       action: `${!nextEnabled ? "停用" : "启用"}完成条件 · ${binding.bindingCode}`,
@@ -591,7 +593,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       statedBrief: { impact: "只改以后的任务怎么算完成，不改已经发出的任务。", check: "核对条件和对应任务；理由写清依据。" },
       reason: true,
       reasonPlaceholder: "例如：工单号、调整依据",
-      okLabel: enabled ? "确认停用" : "确认启用",
+      okLabel: nextEnabled ? "确认启用" : "确认停用",
       run: async (reason) => {
         await runWrite({ store: "binding", path: `/quest-events/bindings/${encodeURIComponent(binding.bindingCode)}`, method: "PATCH", target: binding.bindingCode,
           body: {
