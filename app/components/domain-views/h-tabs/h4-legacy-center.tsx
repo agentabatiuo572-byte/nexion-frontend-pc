@@ -176,7 +176,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const facts = "facts" in req ? typeof req.facts === "function" ? req.facts(value) : req.facts : "content" in req ? req.content : undefined;
     return hApprovalReconfirm(error, { action: req.action, title: req.title, reason, approver: "另一位超级管理员", holds: "这一项",
       change: edit && value !== undefined ? <Change from={`${edit.current || "—"}${edit.unit ? ` ${edit.unit}` : ""}`} to={`${value}${edit.unit ? ` ${edit.unit}` : ""}`} /> : undefined,
-      context: edit ? undefined : facts });
+      context: edit ? undefined : facts, completed: async result => { await apply(result); } });
   };
   const openActionConfirm = (req: ActionConfirmReq) => {
     const version = h4ReadVersion("overview");
@@ -289,7 +289,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     }
   };
 
-  const apply = async (next: Record<string, any>) => {
+  const apply = async (next: unknown) => {
     if (isH4ApprovalReceipt(next)) { await reloadH4Approvals(); await reload(); toast(next.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态"); return false; }
     return await reload();
   };
@@ -1069,8 +1069,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     </div>
 
     <div hidden={sub !== "plays"} className="h4-tabpanel">
-      <H4EventRules ctx={ctx} onRowsChange={setRules} />
-      <H4GenesisRaffle ctx={ctx} onRowsChange={setRaffles} />
+      <H4EventRules ctx={ctx} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRules} />
+      <H4GenesisRaffle ctx={ctx} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRaffles} />
     </div>
 
     <div hidden={sub !== "wheel"} className="h4-tabpanel">

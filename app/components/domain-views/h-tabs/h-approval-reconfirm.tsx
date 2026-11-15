@@ -20,6 +20,7 @@ export function hApprovalReconfirm(error: HApprovalRequired, look: {
   extra?: ReactNode;
   /** 改动写不成一行「从多少到多少」时，原确认框的事实块整块放在这里。 */
   context?: ReactNode;
+  completed?: (result: unknown) => Promise<void>;
 }): ConfirmReq {
   return {
     formKey: ++opened,
@@ -41,6 +42,6 @@ export function hApprovalReconfirm(error: HApprovalRequired, look: {
     initialReason: look.reason,
     getPendingReason: () => look.reason,
     okLabel: "提交审批",
-    run: async () => { await error.confirm(); },
+    run: async () => { const result = await error.confirm(); await look.completed?.(result); },
   };
 }

@@ -28,7 +28,7 @@ const PRIZE_UNIT: Record<RafflePrize["rewardType"], string> = { UVT: "UVT", USDT
 const prizeText = (prize: RafflePrize) => prize.rewardType === "DEVICE" ? `设备 ${prize.productNo || "未选"} × 1 台` : `${amountText(String(prize.amount))} ${PRIZE_UNIT[prize.rewardType]}`;
 const seats = (prizes: RafflePrize[]) => prizes.reduce((sum, prize) => sum + prize.quantity, 0);
 
-export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRowsChange?: (rows: AdminRaffle[] | null) => void }) {
+export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted }: { ctx: HCtx; onApprovalCompleted?: () => Promise<void>; onRowsChange?: (rows: AdminRaffle[] | null) => void }) {
   const [rows, setRows] = useState<AdminRaffle[]>([]), [base, setBase] = useState<AdminRaffle | null>(null), [draft, setDraft] = useState<RaffleDraft | null>(null);
   const [enabled, setEnabled] = useState(false), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
   const [readFailed, setReadFailed] = useState(false);
@@ -94,19 +94,23 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
       run: async reason => {
         if (operator !== currentAdminOperator() || !ctx.can("growth_h4_write")) throw new Error("登录身份或权限已变化，请重新打开配置。");
         const own = generation.current; setSaving(true); setError("");
+        const complete = async (result: unknown) => {
+          if (own !== generation.current) return;
+          if (isH4ApprovalReceipt(result)) await onApprovalCompleted?.();
+          await load(); setDraft(null); setBase(null);
+          ctx.toast(isH4ApprovalReceipt(result) ? result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "创世抽奖设置已保存");
+        };
         try {
           const original = originalKey ? pendingH4Commands().find(r => r.commandKey === originalKey) : undefined;
           if (!original) assertH4Fresh("raffles", readVersion);
           const result = original ? await retryH4Command(original) : await saveAdminRaffle(savedDraft, previous?.revision ?? null, nextEnabled, reason, opening);
-          if (own !== generation.current) return;
-          await load(); setDraft(null); setBase(null);
-          ctx.toast(isH4ApprovalReceipt(result) ? result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "创世抽奖设置已保存");
+          await complete(result);
         } catch (cause) {
           // 直接保存被判定要走审批：换成审批确认，内容和理由沿用（H-改走审批）。
           if (cause instanceof HApprovalRequired) {
             ctx.openActionConfirm(null);
             ctx.openConfirm(hApprovalReconfirm(cause, { action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh}`, title: "保存抽奖配置", reason,
-              approver: "另一位超级管理员", holds: "这一期", extra: <Fact k="这一期">{savedDraft.titleZh || "—"} · {savedDraft.id}</Fact> }));
+              completed: complete, approver: "另一位超级管理员", holds: "这一期", extra: <Fact k="这一期">{savedDraft.titleZh || "—"} · {savedDraft.id}</Fact> }));
             return;
           }
           if (own === generation.current) setError(displayAdminError(cause));

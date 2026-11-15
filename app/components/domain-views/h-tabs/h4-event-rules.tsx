@@ -50,7 +50,7 @@ function rawParams(row: Pick<EventRuleView, "kind" | "rules">): Array<[string, s
   }
 }
 
-export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsChange?: (rows: EventRuleView[] | null) => void }) {
+export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }: { ctx: HCtx; onApprovalCompleted?: () => Promise<void>; onRowsChange?: (rows: EventRuleView[] | null) => void }) {
   const [rows, setRows] = useState<EventRuleView[]>([]), [selected, setSelected] = useState<EventRuleView | null>(null);
   const [draft, setDraft] = useState<EventRuleChange | null>(null), [regions, setRegions] = useState("");
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
@@ -130,19 +130,23 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
       run: async reason => {
         if (operator !== currentAdminOperator() || !ctx.can("growth_h4_write")) throw new Error("登录身份或权限已变化，请重新打开活动配置。");
         const own = generation.current; setSaving(true); setError("");
+        const complete = async (result: unknown) => {
+          if (own !== generation.current) return;
+          if (isH4ApprovalReceipt(result)) await onApprovalCompleted?.();
+          await load(); setSelected(null); setDraft(null);
+          ctx.toast(isH4ApprovalReceipt(result) ? result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "活动规则已保存");
+        };
         try {
           const original = originalKey ? pendingH4Commands().find(r => r.commandKey === originalKey) : undefined;
           if (!original) assertH4Fresh("rules", readVersion);
           const saved = original ? await retryH4Command(original) : await updateEventRule(base.eventCode, next, base.revision, reason, firstOpen);
-          if (own !== generation.current) return;
-          await load();
-          ctx.toast(isH4ApprovalReceipt(saved) ? saved.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "活动规则已保存");
+          await complete(saved);
         } catch (cause) {
           // 直接保存被判定要走审批：换成审批确认，内容和理由沿用（H-改走审批）。
           if (cause instanceof HApprovalRequired) {
             ctx.openActionConfirm(null);
             ctx.openConfirm(hApprovalReconfirm(cause, { action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`, title: "保存玩法配置", reason,
-              approver: "另一位超级管理员", holds: "玩法", extra: <Fact k="玩法">{EVENT_KIND_LABELS[base.kind] ?? "其他活动"} · {base.eventCode}</Fact> }));
+              completed: complete, approver: "另一位超级管理员", holds: "玩法", extra: <Fact k="玩法">{EVENT_KIND_LABELS[base.kind] ?? "其他活动"} · {base.eventCode}</Fact> }));
             return;
           }
           if (own === generation.current) setError(displayAdminError(cause));
