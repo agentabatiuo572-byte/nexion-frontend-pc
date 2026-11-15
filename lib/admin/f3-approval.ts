@@ -85,7 +85,7 @@ export async function queryF3Proposal(adminId: number, original: FDomainAttempt)
   actor(adminId); // Lookup deliberately does not require the current write grant.
   if (original.adminId !== undefined && original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
   remember({ ...original, ticket: undefined, absent: false });
-  const ticket = await fetchA2ProposalByKey(original.commandKey, true, true);
+  const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
   if (!ticket) {
     remember({ ...original, ticket: undefined, absent: true });
     return null;

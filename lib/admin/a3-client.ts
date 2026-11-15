@@ -147,15 +147,6 @@ function asText(value: unknown, fallback = "—") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
-function toNumber(value: number | string | null | undefined, fallback = 0) {
-  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  }
-  return fallback;
-}
-
 function normalizeTone(value: string | null | undefined): A3SystemHealth["tone"] {
   const normalized = value?.trim().toLowerCase();
   return normalized === "ok" || normalized === "warn" || normalized === "bad" ? normalized : "bad";
@@ -201,7 +192,14 @@ function normalizeGate(row: BackendA3KillSwitch): A3KillSwitch {
   };
 }
 
+function requiredNumber(value: unknown): number {
+  if ((typeof value !== "number" && typeof value !== "string") || String(value).trim() === "" || !Number.isSafeInteger(Number(value)) || Number(value) < 0) throw new Error("A3_RESPONSE_INVALID");
+  return Number(value);
+}
+
 function normalizeOverview(data: BackendA3Overview | null | undefined): A3Overview {
+  if (!data || !Array.isArray(data.featureFlags) || !Array.isArray(data.killSwitches) || !Array.isArray(data.systemHealth)
+    || !Array.isArray(data.platformParams) || !data.stats) throw new Error("A3_RESPONSE_INVALID");
   const featureFlags = (data?.featureFlags ?? []).map(normalizeFeature);
   const killSwitches = (data?.killSwitches ?? []).map(normalizeGate);
   const systemHealth = (data?.systemHealth ?? []).map((row) => ({
@@ -217,12 +215,12 @@ function normalizeOverview(data: BackendA3Overview | null | undefined): A3Overvi
     featureFlags,
     killSwitches,
     systemHealth,
-    platformParams: (data?.platformParams ?? []).map((item) => ({ key: asText(item.key), name: asText(item.name), desc: asText(item.desc), value: asText(item.value), unit: asText(item.unit), min: toNumber(item.min), max: toNumber(item.max), consumer: asText(item.consumer), writable: item.writable === true, lastChange: asText(item.lastChange, "未知") })),
+    platformParams: (data?.platformParams ?? []).map((item) => ({ key: asText(item.key), name: asText(item.name), desc: asText(item.desc), value: asText(item.value), unit: asText(item.unit), min: requiredNumber(item.min), max: requiredNumber(item.max), consumer: asText(item.consumer), writable: item.writable === true, lastChange: asText(item.lastChange, "未知") })),
     stats: {
-      flagCount: toNumber(stats.flagCount, featureFlags.length),
-      flagOnCount: toNumber(stats.flagOnCount, featureFlags.filter((flag) => flag.status === "on").length),
-      killGates: toNumber(stats.killGates, killSwitches.length),
-      killGatesUp: toNumber(stats.killGatesUp, killSwitches.filter((gate) => gate.up).length),
+      flagCount: requiredNumber(stats.flagCount),
+      flagOnCount: requiredNumber(stats.flagOnCount),
+      killGates: requiredNumber(stats.killGates),
+      killGatesUp: requiredNumber(stats.killGatesUp),
     },
   };
 }
