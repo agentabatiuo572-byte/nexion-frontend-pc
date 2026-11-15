@@ -1088,3 +1088,5 @@ F3 读取可空 `assignedAtIso`，存在时按全站业务时区显示同一 ins
 2026-11-15 复查 F02：升级前仅label/orderNo/spec的 E4 提案仍可用原命令键取得当前票据；严格校验mine/obj及operationCode（历史无code则核原action），成功后解除未知记录并重读当前订单，pending由后端订单pendingApproval显示，终态按当前状态处理。查不到/失败/不匹配保留；不补来源、不重发。出处 backend04d11022 OpsAuditCenterService.proposalByIdempotencyKey/toTicket。
 
 2026-11-15 R1提案过期修正：E4仅在过期后严格原键查询返回 A2_PROPOSAL_NOT_FOUND 时记本标签页可解除资格；新查询开始撤销旧资格，查询错误/其他404/匹配票据均不授予资格。现有解除确认框承载确认，确认时重核过期和对应记录，再解除并重读订单。D2/D3直接写不适用。
+
+2026-11-15 I01：E4退款按有效小数精度校验，去掉小数尾零后不超过6位，70.1234560/70.0000000可在本金足够时提交，70.1234561拒绝；仅比较用规范化串，传给A2的金额和未知恢复仍保存原输入文本。后端 `04d11022 OpsDeviceService.refundAmount:1853–1863` 以 BigDecimal stripTrailingZeros().scale()≤6 校验，最终 setScale(6)，前端不先舍入。

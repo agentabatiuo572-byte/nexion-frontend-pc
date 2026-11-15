@@ -13,7 +13,10 @@ export function readE4Money(value: unknown): string | null {
 
 /** Validate the operator's original text; commands retain it without Number or rounding. */
 export function e4RefundAmountError(value: string, original: string | null): string | undefined {
-  if (!/^\d+(?:\.\d{1,6})?$/.test(value) || !/[1-9]/.test(value)) return "退款金额须大于 0 USDT，最多 6 位小数";
+  if (!/^\d+(?:\.\d+)?$/.test(value) || !/[1-9]/.test(value)) return "退款金额须大于 0 USDT，最多 6 位小数";
+  // Backend uses stripTrailingZeros().scale(); preserve the submitted text but compare its exact value.
+  const normalized = value.includes(".") ? value.replace(/0+$/, "").replace(/\.$/, "") : value;
+  if ((normalized.split(".")[1]?.length ?? 0) > 6) return "退款金额须大于 0 USDT，最多 6 位小数";
   if (original === null) return "订单本金未提供，不能申请退款";
-  if (compareE6Decimal(value, original) > 0) return "退款金额不能超过订单本金（USDT）";
+  if (compareE6Decimal(normalized, original) > 0) return "退款金额不能超过订单本金（USDT）";
 }
