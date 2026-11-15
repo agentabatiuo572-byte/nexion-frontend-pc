@@ -80,7 +80,7 @@ export function E1Page() {
   const [conflict, setConflict] = useState(false);
   const [conflictLatest, setConflictLatest] = useState<E1CatalogSnapshot | null>(null);
   const [attemptKey, setAttemptKey] = useState("");
-  const syncPending = useCallback(() => { setPending(e1Pending(actor)); setLegacy(e1LegacyCommands(actor)); setMedia(e1MediaCommands.list().filter(r => r.actorId === actor)); }, [actor]);
+  const syncPending = useCallback(() => { const records = e1Pending(actor); setPending(records); setRejected(records.filter(r => r.retryRejection).map(r => r.commandKey)); setLegacy(e1LegacyCommands(actor)); setMedia(e1MediaCommands.list().filter(r => r.actorId === actor)); }, [actor]);
   useEffect(syncPending, [syncPending]);
   const refreshProducts = useCallback(async () => {
     setLoading(true); setError(null);
@@ -174,7 +174,7 @@ export function E1Page() {
     if (!canWrite || !actor || record.actorId !== actor || sending.current) throw new Error("账号、权限或提交状态不允许重试，请先核对原操作");
     if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
     const store = record.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands;
-    store.remember(record.fingerprint, record.commandKey, { actorId: record.actorId, spec: record.spec });
+    store.remember(record.fingerprint, record.commandKey, { ...record, retryRejection: undefined });
     if (!store.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器无法保存原操作，本次没有发送；原记录和对象锁仍保留。");
     sending.current = true; setBusy(record.commandKey); setRejected(keys => keys.filter(k => k !== record.commandKey));
     try {
@@ -191,7 +191,10 @@ export function E1Page() {
       if (!latest) toast("申请已提交，部分目录或关联设置未读取完整");
     } catch (failure) {
       if (!retry && isExplicitRejection(failure) && !isA2OutcomeUncertainError(failure)) forgetE1(record);
-      else if (retry && isExplicitRejection(failure)) setRejected(keys => [...keys, record.commandKey]);
+      else if (retry && isExplicitRejection(failure)) {
+        store.remember(record.fingerprint, record.commandKey, { ...record, retryRejection: e1Error(failure) });
+        setRejected(keys => [...keys, record.commandKey]);
+      }
       setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) }));
       if (!isExplicitRejection(failure)) { setConfirmation(null); setEdit(null); }
       if (String((failure as Error).message).includes("VERSION_CONFLICT") || String((failure as { backendMessage?: string }).backendMessage).includes("VERSION_CONFLICT")) setConflict(true);
