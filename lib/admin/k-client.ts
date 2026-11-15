@@ -2,6 +2,7 @@ import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outco
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { isK1LocalIsoDateTime } from "@/lib/admin/k1-date-contract";
+import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import type { A3PlatformParam } from "@/lib/admin/a3-client";
 
 type ApiResult<T> = {
@@ -102,14 +103,15 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
     throw new K1OutcomeUncertainError(formatAdminApiError(payload.message, "RISK_REQUEST_OUTCOME_UNKNOWN"), commandKey);
   }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    // 5xx 不是「确定失败」:后端可能已经落库,弃号重试会变成第二条命令(统一口径见
-    // outcome-classification.ts)。只有 4xx / 2xx 业务码非 0 才确定这次没生效。
-    if (isWrite && outcomeStaysUnknown(res.status, payload.code)) {
+    const status = (path.startsWith("/arbitrage/") || path.startsWith("/scoring/")) && res.ok && payload.code && payload.code >= 400 && payload.code < 500 ? payload.code : res.status;
+    const failure = new K1RequestError(formatAdminApiError(payload.message, `RISK_API_${res.status}`), status, payload.message);
+    // General 5xx remain unknown; the shared verdict recognises only K3's exact
+    // write-before-mutation 503. Upstream unknown signals have already taken precedence.
+    if (isWrite && outcomeStaysUnknown(res.status, payload.code) && !isExplicitRejection(failure)) {
       throw new K1OutcomeUncertainError(
         formatAdminApiError(payload.message, `RISK_REQUEST_OUTCOME_UNKNOWN_${res.status}`), commandKey);
     }
-    const status = (path.startsWith("/arbitrage/") || path.startsWith("/scoring/")) && res.ok && payload.code && payload.code >= 400 && payload.code < 500 ? payload.code : res.status;
-    throw new K1RequestError(formatAdminApiError(payload.message, `RISK_API_${res.status}`), status, payload.message);
+    throw failure;
   }
   if (isWrite && (path.startsWith("/withdraw-rules") || path.startsWith("/arbitrage/") || path.startsWith("/scoring/")) && payload.code !== 0) {
     throw new K1OutcomeUncertainError(path.startsWith("/scoring/") ? "K4_WRITE_RESULT_INVALID" : path.startsWith("/arbitrage/") ? "K2_WRITE_RESULT_INVALID" : "K3_WRITE_RESULT_INVALID", commandKey);

@@ -1,7 +1,7 @@
 /**
  * 「解除待确认」的判断（OP-96、OP-153）：按原操作重试失败后，只有后端对这条命令下了结论，才给人核实后放开本页的锁。
  *
- * 明确拒绝 = 带原因码的 4xx。下面这些都不算，原命令照旧保留，页面不放出「解除待确认」：
+ * 明确拒绝 = 带原因码的 4xx，或下方精确 K3 写前业务拒绝 503。下面这些都不算，原命令照旧保留，页面不放出「解除待确认」：
  * - 401、403、408、425、429：登录、权限、超时、太早、限流，不是对命令的结论；403 仅下方精确业务码名单例外；
  * - IDEMPOTENCY_*：幂等层的状态（处理中、结果查不清、内容和原号对不上）；
  * - 结果未知、处理中、响应读不懂、本地没发出去（没有状态码）。
@@ -32,6 +32,9 @@ export function isExplicitRejection(error: unknown): boolean {
   const value = error as { status?: unknown; reasonCode?: unknown; backendMessage?: unknown; unknownOutcome?: unknown };
   if (value.unknownOutcome === true) return false;
   const code = typeof value.reasonCode === "string" ? value.reasonCode : typeof value.backendMessage === "string" ? value.backendMessage : "";
+  // 441c412b OpsRiskService.requireK3CoveragePrecheck rejects before either rule UPDATE,
+  // inside the idempotency callback. Only this exact 503 is a business verdict.
+  if (value.status === 503 && code === "K3_COVERAGE_UNAVAILABLE") return true;
   return typeof value.status === "number" && value.status >= 400 && value.status < 500
     && (!NOT_A_VERDICT.has(value.status) || value.status === 403 && BUSINESS_REJECTION_BEFORE_WRITE.has(code))
     && code !== "" && !code.startsWith("IDEMPOTENCY_");

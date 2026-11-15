@@ -258,7 +258,8 @@ function loosensRule(rule: K3Rule, before: BusinessFormValue, after: BusinessFor
     }
   }
 }
-function coverageBlock(coverage: K3Coverage | null) {
+function coverageBlock(coverage: K3Coverage | null, canReadCoverage: boolean) {
+  if (!canReadCoverage) return undefined;
   return !coverage?.reliable ? "兑付覆盖率暂时读不到，读到之前不能提交"
     : coverage.redlineBreached ? "兑付覆盖率低于红线，暂时无法提交" : undefined;
 }
@@ -290,11 +291,12 @@ type WriteDialogProps = {
   draft: WriteDraft; pending?: SavedCommand; submitting?: boolean; onSubmit: (reason: string, value?: BusinessFormValue, rule?: K3Rule) => Promise<void>;
   onClose: () => void; onRebase: (rule: K3Rule) => Promise<K3Rule>; lastInDimension: boolean; activeRules: number;
   coverage: K3Coverage | null;
+  canReadCoverage: boolean;
 };
 function WriteDialog(props: WriteDialogProps) {
   return props.draft.kind === "create" || props.draft.kind === "edit" ? <RuleEditor {...props} /> : <RuleConfirmation {...props} />;
 }
-function RuleConfirmation({ draft, pending, submitting, onSubmit, onClose, onRebase, lastInDimension, activeRules, coverage }: WriteDialogProps) {
+function RuleConfirmation({ draft, pending, submitting, onSubmit, onClose, onRebase, lastInDimension, activeRules, coverage, canReadCoverage }: WriteDialogProps) {
   const { kind } = draft;
   const [rule, setRule] = useState(draft.rule);
   const [revision, setRevision] = useState(0);
@@ -312,8 +314,8 @@ function RuleConfirmation({ draft, pending, submitting, onSubmit, onClose, onReb
       // 停用这一类最后一条是最重要的后果，做成提示的标题；资金未检查是它下面的一行（F3）。
       : kind === "paused" ? <Notice tone="warn" title={lastInDimension ? "停用后，这类提现没有生效规则可检查。" : undefined}>{CASH_NOTICE}</Notice> : undefined}
     amplifies={kind === "paused" && rule?.state === "active" && rule.action !== "pass"}
-    coverage={coverage?.reliable ? coverage : undefined} coverageReliable={coverage?.reliable === true} coverageUnavailableBlocks
-    blockedReason={pending && !submitting ? UNKNOWN_RESULT_TEXT : !allowedState ? "规则当前状态不支持原操作，请关闭后核对最新规则" : kind === "paused" && rule?.action !== "pass" && coverageBlock(coverage) || conflict && <ConflictBar message="这条规则刚被别人改过。读取最新后请重新核对并填写理由。" onRead={async () => {
+    coverage={canReadCoverage && coverage?.reliable ? coverage : undefined} coverageReliable={canReadCoverage ? coverage?.reliable === true : undefined} coverageUnavailableBlocks={canReadCoverage}
+    blockedReason={pending && !submitting ? UNKNOWN_RESULT_TEXT : !allowedState ? "规则当前状态不支持原操作，请关闭后核对最新规则" : kind === "paused" && rule?.action !== "pass" && coverageBlock(coverage, canReadCoverage) || conflict && <ConflictBar message="这条规则刚被别人改过。读取最新后请重新核对并填写理由。" onRead={async () => {
       setRule(await onRebase(rule!)); setRevision((n) => n + 1); setConflict(false);
     }} />}
     confirmLabel={kind === "dry-run" ? "开始模拟" : kind === "active" ? "确认启用" : kind === "paused" ? "确认停用" : "确认归档"}
@@ -446,11 +448,16 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
     try {
       result = await executeK3Command(record.request, record.commandKey);
     } catch (error) {
-      const message = isExplicitRejection(error) ? errorText(error) : UNKNOWN_RESULT_TEXT;
-      if (isExplicitRejection(error) && !retry) commands.forget(record.fingerprint, record.commandKey);
-      else commands.remember(record.fingerprint, record.commandKey, { ...record, rejected: retry && isExplicitRejection(error), message });
+      const rejected = isExplicitRejection(error);
+      const coverageRejected = rejected && error instanceof K1RequestError
+        && (error.status === 503 && error.reasonCode === "K3_COVERAGE_UNAVAILABLE"
+          || error.status === 422 && error.reasonCode === "COVERAGE_BELOW_REDLINE");
+      const message = rejected ? errorText(error) : UNKNOWN_RESULT_TEXT;
+      if (rejected && (!retry || coverageRejected)) commands.forget(record.fingerprint, record.commandKey);
+      else commands.remember(record.fingerprint, record.commandKey, { ...record, rejected: retry && rejected, message });
       syncPending();
-      if (!isExplicitRejection(error)) throw new K1OutcomeUncertainError(UNKNOWN_RESULT_TEXT, record.commandKey);
+      if (retry && coverageRejected) ctx.toast(message);
+      if (!rejected) throw new K1OutcomeUncertainError(UNKNOWN_RESULT_TEXT, record.commandKey);
       throw error;
     } finally { inFlight.current = false; setBusyKey(null); }
     commands.forget(record.fingerprint, record.commandKey); syncPending(); setDraft(null);
@@ -477,13 +484,13 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
       if (!conditionText || !action || priority === null) throw new Error("规则配置不完整");
       if (kind === "edit") {
         const before = parseK3Condition(k3KindFromDimension(rule!.dimension), rule!.conditionText).value;
-        if ((!before || loosensRule(rule!, before, businessValue!)) && coverageBlock(coverage)) throw new Error(coverageBlock(coverage));
+        if ((!before || loosensRule(rule!, before, businessValue!)) && coverageBlock(coverage, canReadCoverage)) throw new Error(coverageBlock(coverage, canReadCoverage));
       }
       body = kind === "create" ? { dimension, conditionText, action, priority } : { conditionText, action, priority, expectedVersion: rule!.version };
       path = kind === "create" ? "/withdraw-rules" : `/withdraw-rules/${encodeURIComponent(rule!.ruleId)}/condition`;
     } else if (kind === "dry-run") { path = "/withdraw-rules/dry-runs"; body = {}; }
     else {
-      if (kind === "paused" && rule!.state === "active" && rule!.action !== "pass" && coverageBlock(coverage)) throw new Error(coverageBlock(coverage));
+      if (kind === "paused" && rule!.state === "active" && rule!.action !== "pass" && coverageBlock(coverage, canReadCoverage)) throw new Error(coverageBlock(coverage, canReadCoverage));
       path = `/withdraw-rules/${encodeURIComponent(rule!.ruleId)}/status`; body = { state: kind, expectedVersion: rule!.version };
     }
     const fingerprint = `k3:${session.adminId}:${target}`;
@@ -618,7 +625,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
       ]} /><div className="rd-toolbar"><Button size="sm" onClick={() => void navigator.clipboard.writeText(`${hitDetail.withdrawalNo}\n${hitDetail.userNo}`).then(() => ctx.toast("提现单号和账户已复制", "success")).catch(() => ctx.toast("复制失败，请手动选择复制", "error"))}>复制单号与账户</Button></div>
         <Fold title="技术信息" inset summary="原始原因、金额与统计口径"><KeyValues rows={[{ key: "reason", label: "原因原文", value: hitDetail.reason || "—" }, { key: "amount", label: "金额原文", value: hitDetail.amount }, { key: "scope", label: "统计口径", value: "每条是一次规则命中，不是提现的最终结果。" }, { key: "reasonScope", label: "原因说明", value: "可能按现在的规则条件写，不一定是触发时的原话。" }]} /></Fold></>}
     </Drawer>
-    {draft && <WriteDialog key={`${draft.kind}:${draft.rule?.ruleId ?? "new"}`} draft={draft} coverage={coverage} submitting={!!busyKey && inFlight.current} pending={pending.find((record): record is SavedCommand => isSavedCommand(record) && record.target === targetOf(draft.kind, draft.rule))}
+    {draft && <WriteDialog key={`${draft.kind}:${draft.rule?.ruleId ?? "new"}`} draft={draft} coverage={coverage} canReadCoverage={canReadCoverage} submitting={!!busyKey && inFlight.current} pending={pending.find((record): record is SavedCommand => isSavedCommand(record) && record.target === targetOf(draft.kind, draft.rule))}
       onSubmit={submit} onClose={() => setDraft(null)} activeRules={dimensions.length} lastInDimension={!!draft.rule && dimensions.filter((dimension) => dimensionLabel(dimension.name) === dimensionLabel(draft.rule!.dimension)).length === 1}
       onRebase={async (rule) => {
         const latest = await import("@/lib/admin/k-client").then((client) => client.fetchK3WithdrawRuleOverview(query.withdrawRules));
@@ -647,10 +654,11 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
 }
 
 /** Long, typed rule form uses shared modal/fields so abandoning can save the same draft and reason. */
-function RuleEditor({ draft, pending, onSubmit, onClose, onRebase, coverage }: {
+function RuleEditor({ draft, pending, onSubmit, onClose, onRebase, coverage, canReadCoverage }: {
   draft: WriteDraft; pending?: SavedCommand; submitting?: boolean; onSubmit: (reason: string, value?: BusinessFormValue, rule?: K3Rule) => Promise<void>;
   onClose: () => void; onRebase: (rule: K3Rule) => Promise<K3Rule>;
   coverage: K3Coverage | null;
+  canReadCoverage: boolean;
 }) {
   const [rule, setRule] = useState(draft.rule);
   const form = (draft.kind === "create" ? newK3RuleBusinessForm(draft.initialDimension) : k3RuleBusinessForm(k3KindFromDimension(rule!.dimension), rule!.conditionText, rule!.action, rule!.priority)) as Extract<BusinessFormSpec, { kind: "multi-field" }>;
@@ -686,7 +694,7 @@ function RuleEditor({ draft, pending, onSubmit, onClose, onRebase, coverage }: {
   const changed = draft.kind === "create" ? hasDraftChanges : condition !== buildK3Condition(k3KindFromDimension(dimension), originalValue)
     || actionFromBusinessValue(value) !== rule!.action || priorityFromBusinessValue(value) !== rule!.priority;
   const dirty = hasDraftChanges || reason.length > 0;
-  const disabledReason = pending ? "原操作结果未知，内容已锁定；请关闭后查询原结果或按原请求重试" : rule && editableReason(rule) ? editableReason(rule) : conflict ? "请先读取最新版本并重新核对" : !policy ? policyError ?? "正在读取理由规则" : Object.values(issues).find(Boolean) ?? reasonError ?? (draft.kind === "edit" && !changed ? "条件、命中处置和优先级都没有改动" : draft.kind === "edit" && loosensRule(rule!, originalValue, value) ? coverageBlock(coverage) : undefined);
+  const disabledReason = pending ? "原操作结果未知，内容已锁定；请关闭后查询原结果或按原请求重试" : rule && editableReason(rule) ? editableReason(rule) : conflict ? "请先读取最新版本并重新核对" : !policy ? policyError ?? "正在读取理由规则" : Object.values(issues).find(Boolean) ?? reasonError ?? (draft.kind === "edit" && !changed ? "条件、命中处置和优先级都没有改动" : draft.kind === "edit" && loosensRule(rule!, originalValue, value) ? coverageBlock(coverage, canReadCoverage) : undefined);
   const effect = draft.kind === "create" ? CREATE_EFFECT : rule!.state === "active" ? ACTIVE_EFFECT : rule!.state === "draft" ? "仍为草稿，启用后才参与检查。" : "仍为已停用，重新启用后才参与检查。";
   const save = async () => {
     if (busy || disabledReason) return;
