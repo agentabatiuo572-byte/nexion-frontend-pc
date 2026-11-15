@@ -1084,3 +1084,5 @@ flowchart LR
 ### 2026-11-15 F3 分组时间字段同步
 
 F3 读取可空 `assignedAtIso`，存在时按全站业务时区显示同一 instant，缺失/null 回退原 assignedAt；两者均空显示—。不把存储 +08:00 当业务展示时区，不重写历史时间。固定「北京时间」列名交视觉同步。后端 `04d11022` `team/mapper/BinaryCommissionSettlementMapper.AssignmentMemberRow.assignedAtIso:62–66`。
+
+2026-11-15 复查 F02：升级前仅label/orderNo/spec的 E4 提案仍可用原命令键取得当前票据；严格校验mine/obj及operationCode（历史无code则核原action），成功后解除未知记录并重读当前订单，pending由后端订单pendingApproval显示，终态按当前状态处理。查不到/失败/不匹配保留；不补来源、不重发。出处 backend04d11022 OpsAuditCenterService.proposalByIdempotencyKey/toTicket。

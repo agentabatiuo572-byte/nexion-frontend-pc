@@ -618,14 +618,23 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     } catch (cause) { investigationNote = displayAdminError(cause); }
     setE4Retrying(record.fingerprint);
     try {
-      const original = await fetchA2ProposalByKey(record.commandKey, true);
+      const original = await fetchA2ProposalByKey(record.commandKey, true, "a");
       if (!original) {
         setE4QueryMissing((current) => [...current, record.commandKey]);
         noteE4Pending(record, `${investigationNote} 暂未查到原提案，结果仍待核实。原操作继续保留，不会重新提交。`);
         return;
       }
       if (!original.mine || original.obj !== record.orderNo
-        || original.operationCode && original.operationCode !== record.spec.command.op) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+        || (original.operationCode ? original.operationCode !== record.spec.command.op : original.action !== record.spec.action)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+      if (!record.request) {
+        // Legacy proposals can still be proven by their original-key current ticket; never invent their origin.
+        e4PendingCommands.forget(record.fingerprint, record.commandKey);
+        syncE4Pending();
+        setActionConfirm(null); setSelOrder(null); setE4Detail(null);
+        await refreshE4();
+        setToast(`已找回原审批单 ${original.id}，${E4_PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`, "success");
+        return;
+      }
       noteE4Pending(record, `${investigationNote} 原审批单 ${original.id}：${E4_PROPOSAL_STATUS[original.status]}。原操作继续保留。`);
     } catch (error) {
       noteE4Pending(record, `查询没有成功：${displayAdminError(error)} 原操作继续保留。`);
