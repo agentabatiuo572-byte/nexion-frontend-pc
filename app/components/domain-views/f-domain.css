@@ -468,6 +468,7 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 
 /* App 等级说明：左边编辑，右边 App 上的样子 */
 .f1-page .f1-how-head { margin-bottom: 12px; }
+.f1-page .rd-panel > .rd-notice + :is(.rd-notice, .f1-how-head) { margin-top: 12px; }  /* 等级说明顶上的提示条和下面的状态行、另一条提示隔开 */
 .f1-page .f1-how-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: var(--rd-text-body); color: var(--rd-text-2); font-variant-numeric: tabular-nums; }
 .f1-page .f1-how > .f1-how-edit { flex: 7 1 380px; display: flex; flex-direction: column; gap: 16px; }
 .f1-page .f1-how > .f1-how-phone { flex: 4 1 280px; max-width: 400px; position: sticky; top: 16px; }

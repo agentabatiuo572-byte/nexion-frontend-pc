@@ -7,7 +7,7 @@
  */
 import { useState, type ReactNode } from "react";
 import { CircleHelp, Clock3, Hourglass, RotateCcw } from "lucide-react";
-import { Button, Change, Decision, Fact, Facts, Modal, Notice, StatusTag } from "@/app/components/rd";
+import { Button, Change, Decision, Fact, Facts, KeepText, Modal, Notice, StatusTag } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -122,10 +122,11 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
   const howSave = pendingF1RankHow(owner);
   if (howSave) rows.push({
     key: howSave.commandKey, name: `App 等级说明 · ${howSave.document.status === "PUBLISHED" ? "保存并发布" : "保存草稿"}`,
-    change: `版本号 ${howSave.document.version || "—"} · ${Object.keys(howSave.document.locales).length} 种语言`,
+    // 1024 下这格窄：版本号和「· N 种语言」各自整段换行，不留两个字的孤行。
+    change: <KeepText text={`版本号 ${howSave.document.version || "—"} · ${Object.keys(howSave.document.locales).length} 种语言`} phrases={[`版本号 ${howSave.document.version || "—"}`, `· ${Object.keys(howSave.document.locales).length} 种语言`]} />,
     submittedAt: howSave.createdAt, state: "unknown", direct: true,
     actions: <Button size="sm" onClick={() => void queryF1RankHow(owner).then((result) => {
-      toast(result.matched ? "已核对：现在的等级说明就是原提交的内容" : "现在的内容和原提交不一致，保存结果仍未知");
+      toast(result.matched ? "已核对：现在的等级说明就是原提交的内容" : "和原提交对不上，保存结果仍未知；到「App 等级说明」核对后可以解除");
       onRankHowChecked();
     }, (error) => toast(displayAdminError(error)))}>重新读取核对</Button>,
   });

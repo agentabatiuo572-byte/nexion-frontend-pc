@@ -116,7 +116,7 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
           action={canAudit ? <Link className="rd-link" href="/platform/audit">去操作记录与审批查看</Link> : undefined}>
           <p>批准前结算状态不变。批准后点页头「刷新」看最新状态。</p>
         </Notice></li>}
-        {ctx.f2ActivationPendingError && <li><Notice tone="warn" title="审批进度没读到">{ctx.f2ActivationPendingError}</Notice></li>}
+        {ctx.f2ActivationPendingError && <li><Notice tone="warn" title="审批进度没读到">{ctx.f2ActivationPendingError === "审批进度没读到" ? canAudit ? "点页头「刷新」重读；读到之前不能提交整体结算的申请。" : "这个账号没有查看审批的权限。" : ctx.f2ActivationPendingError}</Notice></li>}
         {policy && !supported && <li><Notice tone="warn" title="暂时只能查看">后台版本和后端的结算接口对不上，刷新后再试；仍不行请联系值班人员。</Notice></li>}
       </ul>}
     </Panel>
@@ -146,16 +146,18 @@ function attemptLabel(attempt: F2Recovery): { name: string; change: string } {
  * 页面最上方的原申请逐条提醒（全站-结果未知叫法）：费率读取失败时也在。只列本人保存的原申请；按钮调用已有的恢复入口。
  */
 export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FViewCtx; recovering: boolean; setRecovering: (value: boolean) => void }) {
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ query: boolean; text: string } | null>(null);
+  // 只让点的那个按钮转圈：查询时别的行和「按原请求重试」只灰着，不显示「正在重试…」。
+  const [active, setActive] = useState<string | null>(null);
   const attempts = ctx.f2Proposals;
   if (!attempts.length && !error) return null;
   const canAudit = ctx.can("platform_a2_read");
   async function recover(attempt: F2Recovery, query: boolean) {
     if (recovering || (query ? !attempt.canQuery : !attempt.canRetry)) return;
-    setRecovering(true); setError(null);
+    setRecovering(true); setError(null); setActive(`${attempt.commandKey}:${query ? "query" : "retry"}`);
     try { if (query) await ctx.queryF2Proposal(attempt.fingerprint); else await ctx.retryF2Proposal(attempt.fingerprint); }
-    catch (cause) { setError(cause instanceof Error && cause.name.endsWith("OutcomeUncertainError") ? displayAdminError("F2_PROPOSAL_OUTCOME_UNKNOWN") : displayAdminError(cause)); }
-    finally { setRecovering(false); }
+    catch (cause) { setError({ query, text: cause instanceof Error && cause.name.endsWith("OutcomeUncertainError") ? displayAdminError("F2_PROPOSAL_OUTCOME_UNKNOWN") : displayAdminError(cause) }); }
+    finally { setRecovering(false); setActive(null); }
   }
   const open = attempts.filter((attempt) => attempt.ticket?.status !== "pending").length;
   return (
@@ -174,15 +176,15 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
                 : expired ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除待确认。">已过期</StatusTag>
                   : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>}</span>
             <span className="f2-actions">
-              {attempt.canQuery && <Button size="sm" loading={recovering} onClick={() => void recover(attempt, true)}>查询原结果</Button>}
-              {attempt.canRetry && !expired && <Button size="sm" loading={recovering} loadingText="正在重试…" onClick={() => void recover(attempt, false)}>按原请求重试</Button>}
+              {attempt.canQuery && <Button size="sm" loading={active === `${attempt.commandKey}:query`} disabled={recovering} onClick={() => void recover(attempt, true)}>查询原结果</Button>}
+              {attempt.canRetry && !expired && <Button size="sm" loading={active === `${attempt.commandKey}:retry`} disabled={recovering} loadingText="正在重试…" onClick={() => void recover(attempt, false)}>按原请求重试</Button>}
               {attempt.canRelease && !attempt.ticket && <FReleaseButton label={name} toast={ctx.toast} onRelease={() => ctx.releaseF2Proposal(attempt.fingerprint)} />}
             </span>
           </li>;
         })}
       </ul>
       <p className="f2-recovery-zone">提交时间为{businessZone().label}{canAudit && <> · <Link className="rd-link" href="/platform/audit">去操作记录与审批核对</Link></>}</p>
-      {error && <Notice tone="danger" title="查询或重试没有成功">{error}</Notice>}
+      {error && <Notice tone="danger" title={error.query ? "查询原结果没有成功" : "按原请求重试没有成功"}>{error.text}</Notice>}
     </Notice>
   );
 }

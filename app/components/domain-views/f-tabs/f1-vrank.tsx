@@ -419,7 +419,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         {view === "ladder" && <>{ladder}{detail}{shared}</>}
         {view === "promotions" && <F1PromotionHistory ctx={ctx} rows={rows} canPromote={canPromote} onOverride={openOverride} />}
         {view === "payouts" && <F1PayoutHistory ctx={ctx} rows={rows} canReissue={canReissue} canReverse={canReverse} openConfirm={setConfirm} />}
-        {view === "howto" && <F1RankHow key={howEpoch} ladder={rows} onPendingChange={() => setRecoveryEpoch(value => value + 1)} />}
+        {view === "howto" && <F1RankHow key={howEpoch} ladder={rows} toast={ctx.toast} onPendingChange={() => setRecoveryEpoch(value => value + 1)} />}
       </div>
       {dialogs}
     </div>

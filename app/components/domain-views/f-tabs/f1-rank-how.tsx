@@ -6,13 +6,14 @@
  * 正文、状态、语言、理由的规则和提交内容逐字不变。共用编辑器别的页面还在用，这里只换 F1 的样子。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpenText, CircleHelp, Plus, RefreshCw, Smartphone, Trash2 } from "lucide-react";
-import { BlockState, Button, Field, Fold, Input, Notice, Panel, Segments, StatusTag, Textarea } from "@/app/components/rd";
+import { BookOpenText, CircleHelp, Plus, RefreshCw, ShieldCheck, Smartphone, Trash2 } from "lucide-react";
+import { BlockState, Button, Explain, Fact, Facts, Field, Fold, Input, KeepText, Modal, Notice, Panel, Segments, StatusTag, Textarea } from "@/app/components/rd";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchRankHowPolicyAdmin, type PublishedContentDocument } from "@/lib/admin/published-content-client";
-import { pendingF1RankHow, queryF1RankHow, saveF1RankHow, type F1RankHowComparison } from "@/lib/admin/f1-rank-how-save";
+import { pendingF1RankHow, queryF1RankHow, releaseF1RankHow, saveF1RankHow, type F1RankHowComparison } from "@/lib/admin/f1-rank-how-save";
 import type { F1VRankRow } from "@/lib/admin/f1-client";
 
 type Row = Record<string, unknown>;
@@ -28,7 +29,6 @@ const CONFLICT = "版本已变化，草稿已保留，请核对后再保存。";
 function draftDiff(draft: PublishedContentDocument, latest: PublishedContentDocument) {
   const rows: { key: string; label: string; text: string }[] = [];
   if (draft.version.trim() !== latest.version.trim()) rows.push({ key: "version", label: "版本号", text: `草稿 ${draft.version || "—"}，最新 ${latest.version || "—"}` });
-  const statusName = (value: string) => value === "PUBLISHED" ? "发布" : "草稿";
   if (draft.status !== latest.status) rows.push({ key: "status", label: "保存为", text: `草稿选的是${statusName(draft.status)}，最新是${statusName(latest.status)}` });
   for (const code of [...new Set([...Object.keys(draft.locales), ...Object.keys(latest.locales)])]) {
     const label = LOCALE_NAMES[code] ?? code;
@@ -50,7 +50,11 @@ function draftDiff(draft: PublishedContentDocument, latest: PublishedContentDocu
   return rows;
 }
 
-export function F1RankHow({ ladder, onPendingChange }: { ladder: F1VRankRow[]; onPendingChange: () => void }) {
+const statusName = (value: string) => value === "PUBLISHED" ? "发布" : "草稿";
+/** 解除框里的一行：相同只写一次值，不同写原提交和现在。 */
+const sameOr = (matches: boolean, submitted: string, current: string) => matches ? `相同（${submitted || "—"}）` : `原提交 ${submitted || "—"}，现在 ${current || "—"}`;
+
+export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankRow[]; onPendingChange: () => void; toast: (message: string) => void }) {
   const session = useAdminAuth((state) => state.session);
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("network_f1_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("network_f1_write") === true;
@@ -66,6 +70,7 @@ export function F1RankHow({ ladder, onPendingChange }: { ladder: F1VRankRow[]; o
   const { unknown } = recovery;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [releasing, setReleasing] = useState<"open" | "busy" | null>(null);
   const baselineStale = useRef(false);
   const preserveDraft = useRef(false);
   const refresh = useCallback(async () => {
@@ -107,12 +112,34 @@ export function F1RankHow({ ladder, onPendingChange }: { ladder: F1VRankRow[]; o
       if (result.matched) {
         preserveDraft.current = false; baselineStale.current = false;
         setDocument(result.current); setBaseline(result.current); setReason(""); setRecovery({ unknown: false, comparison: null });
+        toast(`已核对：原内容已保存，修订号 ${result.current.revision}`);
       } else {
         setRecovery({ unknown: true, comparison: result.comparison });
-        setError("当前读取与原提交内容或修订号不一致，保存结果仍未知，请保留原内容并到操作记录核对。");
       }
     } catch (cause) { setError(displayAdminError(cause)); }
     finally { setLoading(false); onPendingChange(); }
+  };
+  /** 核对后解除（决定 F1-说明解除）：函数里再读一次；一致按已保存收场，不一致只清本标签页的记录。编辑器留着原来填的内容，基于现在的修订号保存。 */
+  const release = async () => {
+    if (!session) return;
+    const original = pendingF1RankHow(session.adminId);
+    setReleasing("busy"); setError(null);
+    try {
+      const result = await releaseF1RankHow(session.adminId);
+      preserveDraft.current = false; baselineStale.current = false;
+      if (result.matched || !original) {
+        setDocument(result.current); setBaseline(result.current); setReason("");
+        toast(`已核对：原内容已保存，修订号 ${result.current.revision}`);
+      } else {
+        setDocument({ ...result.current, version: original.document.version, status: original.document.status, locales: original.document.locales });
+        setBaseline(result.current);
+        toast(`已解除。你填的内容还在，保存时基于修订号 ${result.current.revision}`);
+      }
+      setRecovery({ unknown: false, comparison: null });
+    } catch (cause) {
+      setRecovery({ unknown: true, comparison: null });
+      setError("没有解除：解除前的读取没有成功，原记录还在。稍后重新读取核对。");
+    } finally { setReleasing(null); onPendingChange(); }
   };
   const locked = saving || unknown || loading;
   const updateLocale = (value: Row) => document && setDocument({ ...document, locales: { ...document.locales, [locale]: value } });
@@ -141,8 +168,10 @@ export function F1RankHow({ ladder, onPendingChange }: { ladder: F1VRankRow[]; o
       const value = await saveF1RankHow(session.adminId, payload, reason.trim());
       preserveDraft.current = false;
       setDocument(value); setBaseline(value); setReason("");
+      toast(`${value.status === "PUBLISHED" ? "已发布" : "已保存草稿"}，修订号 ${value.revision}`);
     } catch (cause) {
-      setError(displayAdminError(cause)); setRecovery({ unknown: cause instanceof OutcomeUnknownError, comparison: null });
+      // 结果未知由上面的「保存结果未知」提示条说清；不再叠一条「请检查网络后重试」，这项保存不能重发。
+      setError(cause instanceof OutcomeUnknownError ? null : displayAdminError(cause)); setRecovery({ unknown: cause instanceof OutcomeUnknownError, comparison: null });
       if (!(cause instanceof OutcomeUnknownError) && (cause as { reasonCode?: string }).reasonCode === "RANK_HOW_POLICY_VERSION_CONFLICT") {
         baselineStale.current = true;
         preserveDraft.current = true;
@@ -152,6 +181,7 @@ export function F1RankHow({ ladder, onPendingChange }: { ladder: F1VRankRow[]; o
     finally { setSaving(false); onPendingChange(); }
   };
 
+  const comparison = recovery.comparison;
   const status = document?.status === "UNPUBLISHED" ? "DRAFT" : document?.status;
   const baseStatus = baseline?.status === "UNPUBLISHED" ? "DRAFT" : baseline?.status;
   const current = row(document?.locales[locale]);
@@ -166,7 +196,15 @@ export function F1RankHow({ ladder, onPendingChange }: { ladder: F1VRankRow[]; o
   const preview = [...sections].map((item, index) => ({ item, index })).sort((a, b) => (Number(a.item.order) || 0) - (Number(b.item.order) || 0));
   const reasonLength = reason.trim().length;
 
-  const statusLine = document && <span className="f1-how-status">
+  // 结果未知时编辑器里是原提交，不是后端现在的内容：状态行写原提交，不写成当前状态。
+  const original = unknown && session ? pendingF1RankHow(session.adminId) : undefined;
+  const howSave = comparison ? original : undefined;
+  const statusLine = original ? <span className="f1-how-status">
+    <StatusTag tone="warn" icon={CircleHelp}>原提交</StatusTag>
+    <span>{original.document.status === "PUBLISHED" ? "保存并发布" : "保存草稿"}</span>
+    <span>基于修订号 {original.document.revision}</span>
+    <span>{businessStamp(original.createdAt)}（{businessZone().label}）提交</span>
+  </span> : document && <span className="f1-how-status">
     {baseStatus === "PUBLISHED" ? <StatusTag tone="ok">已发布</StatusTag> : <StatusTag tone="neutral">草稿</StatusTag>}
     <span>版本号 {document.version || "—"}</span>
     <span>修订号 {document.revision}</span>
@@ -179,9 +217,27 @@ export function F1RankHow({ ladder, onPendingChange }: { ladder: F1VRankRow[]; o
       explain="App「等级怎么升」页面的说明文字，按语言分开写。保存草稿不替换 App 正在读的版本；保存并发布后，App 下一次读取成功就换成新内容，缺用户的语言或缺固定段落时可能显示不全。保存直接生效，不走审批。"
       actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void (unknown ? checkOriginal() : refresh())}>重新读取</Button>}>
       {unknown && <Notice tone="warn" title="保存结果未知" actionBelow
-        action={<Button size="sm" loading={loading} onClick={() => void checkOriginal()}>重新读取核对</Button>}>
-        <p>提交时没收到确定结果，可能已经保存。这项保存后端不认重复提交，不能按原内容再提交一次；先读回核对，你填的内容还在下面。</p>
+        action={<><Button size="sm" loading={loading} disabled={!!releasing} onClick={() => void checkOriginal()}>重新读取核对</Button>
+          {comparison && howSave && <Button size="sm" variant="ghost" disabled={loading || !!releasing} onClick={() => setReleasing("open")}>解除待确认</Button>}</>}>
+        {comparison
+          ? <p>{`现在的内容和原提交对不上：修订号应为 ${comparison.revision.expected}，实际是 ${comparison.revision.current}，内容${comparison.contentMatches ? "相同" : "不同"}。核对后可以解除。`}</p>
+          : <p>提交时没收到确定结果，可能已经保存。不能按原内容重发，先读回核对；你填的内容还在下面。</p>}
       </Notice>}
+      {releasing && comparison && howSave && <Modal title="解除待确认" icon={ShieldCheck} busy={releasing === "busy"} onClose={() => setReleasing(null)}
+        footer={<><Button disabled={releasing === "busy"} onClick={() => setReleasing(null)}>取消</Button>
+          <Button variant="primary" loading={releasing === "busy"} onClick={() => void release()}>确认解除</Button></>}>
+        <div className="rd-stack rd-release-body">
+          <Facts>
+            <Fact k="原操作">App 等级说明 · {howSave.document.status === "PUBLISHED" ? "保存并发布" : "保存草稿"}</Fact>
+            <Fact k="提交时间">{businessStamp(howSave.createdAt)}（{businessZone().label}）</Fact>
+            <Fact k="修订号" tone={comparison.revision.matches ? undefined : "warn"}>{`原基于 ${comparison.revision.submitted}，保存成功应为 ${comparison.revision.expected}，现在 ${comparison.revision.current}`}</Fact>
+            <Fact k="版本号" tone={comparison.version.matches ? undefined : "warn"}>{sameOr(comparison.version.matches, comparison.version.submitted, comparison.version.current)}</Fact>
+            <Fact k="保存为" tone={comparison.status.matches ? undefined : "warn"}>{sameOr(comparison.status.matches, statusName(comparison.status.submitted), statusName(comparison.status.current))}</Fact>
+            <Fact k="内容" tone={comparison.contentMatches ? undefined : "warn"}>{comparison.contentMatches ? "全部语言相同" : "和原提交不同"}</Fact>
+          </Facts>
+          <p><KeepText text="确认时会再读一次。只清本标签页的记录，不撤销原保存；你填的内容留在编辑器里。" /><Explain label="为什么可以解除" content="这项保存按修订号比较：原请求就算晚到也只会生效一次，之后基于旧修订号的保存会被后端拒绝并重读，不会悄悄覆盖。" /></p>
+        </div>
+      </Modal>}
       {preserveDraft.current && document && baseline && (() => {
         const diff = draftDiff(document, baseline);
         return <Notice tone="warn" title="版本已变化，草稿已保留">
