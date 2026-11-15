@@ -571,6 +571,7 @@ type A2PendingCommand = PendingMutationRecord & {
   fundEffect?: A2OperationRow["fundEffect"];
   /** 退款单的原订单号：重试前要先读到退款金额（F01）。 */
   refundOrderNo?: string;
+  refundAmountUsdt?: number;
   /** 审批单的原动作，重试时写进标签。 */
   action?: string;
   ruleTaskAction?: A2OperationRow["ruleTaskAction"];
@@ -583,6 +584,8 @@ const a2Commands = createPendingMutationStore<A2PendingCommand>({
   storageKey: "nexion-admin-a2-commands-v1",
   // 过期后不能再用原号重试，记录和锁都留着（OP-96）。
   retainExpiredRecords: true,
+  isValidRecord: record => record.refundAmountUsdt === undefined
+    || Number.isFinite(record.refundAmountUsdt) && record.refundAmountUsdt > 0,
 });
 
 type RefundAmount = { state: "loading" } | { state: "ok"; amount: number } | { state: "error"; message: string };
@@ -1300,11 +1303,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
   };
 
-  type DecisionTicket = TicketIdentity & Pick<A2OperationRow, "id" | "refundOrderNo"> & { rule?: DecisionRule | null };
+  type DecisionTicket = TicketIdentity & Pick<A2OperationRow, "id" | "refundOrderNo" | "refundAmountUsdt"> & { rule?: DecisionRule | null };
   const runDecision = (kind: "approve" | "reject" | "withdraw", w: DecisionTicket, reason: string, by = operator) => sendCommand(
     `${kind}|${w.id}`,
     { kind, label: `${DECISION_VERB[kind]} · ${actionName(w)}`, target: w.id, reason, operator: by, rule: w.rule !== undefined ? w.rule : decisionRule(w),
-      operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, action: w.action, ruleTaskAction: w.ruleTaskAction },
+      operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, refundAmountUsdt: w.refundAmountUsdt, action: w.action, ruleTaskAction: w.ruleTaskAction },
     `a2-${kind}-${w.id}`,
     (key) => kind === "approve" ? approveA2Operation(w.id, reason, key)
       : kind === "reject" ? rejectA2Operation(w.id, reason, key)
@@ -1382,6 +1385,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /** 重试前退款单要先读到退款金额，和新开的批准框同一个前提（F01）；读不到只能读回核对，原命令照旧保留。 */
   const retryAmount = (record: A2PendingCommand): RefundAmount | undefined => {
     if (record.kind !== "approve" || record.fundEffect !== "ORDER_REFUND") return undefined;
+    if (record.refundAmountUsdt !== undefined) return { state: "ok", amount: record.refundAmountUsdt };
     const ticket = main?.operationQueue.find((w) => w.id === record.target);
     return mainLoading ? { state: "loading" } : ticket ? refundAmount(ticket)
       : { state: "error", message: "退款金额未读取" };
@@ -1413,7 +1417,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       const ticketLike = { id: record.target, action: record.action ?? queued?.action ?? record.target, obj: record.obj ?? queued?.obj ?? "",
         ruleTaskAction: record.ruleTaskAction ?? queued?.ruleTaskAction,
         before: queued?.before ?? "", after: queued?.after ?? "", operationCode: record.operationCode ?? queued?.operationCode,
-        fundEffect: record.fundEffect ?? queued?.fundEffect, refundOrderNo: recordOrderNo(record), rule: recordRule(record) };
+        fundEffect: record.fundEffect ?? queued?.fundEffect, refundOrderNo: recordOrderNo(record),
+        refundAmountUsdt: record.refundAmountUsdt ?? queued?.refundAmountUsdt, rule: recordRule(record) };
       const outcome = record.kind === "param" ? await runParam(record.target as "ttl" | "retention" | "schema", record.value ?? "", record.reason, record.operator)
         : record.kind === "retention" ? await runRetention(record.reason, record.operator)
           : record.kind === "export" ? await runExport(record.reason, record.filter ?? {}, record.operator)
