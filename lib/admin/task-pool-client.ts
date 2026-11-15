@@ -1,4 +1,5 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { TASK_CLASSES } from "@/lib/admin/task-classes";
 
 export type TaskClass = typeof TASK_CLASSES[number];
@@ -27,7 +28,7 @@ export type TaskPoolErrorCode = "TASK_POOL_FORMAT_RETIRED" | "TASK_POOL_KIND_FOR
 /** Preserve the wire verdict: translated copy never decides whether a command can be released. */
 export class TaskPoolApiError extends Error {
   constructor(message: string, readonly status?: number, readonly httpStatus?: number,
-    readonly reasonCode = "", readonly data?: unknown, readonly unknownOutcome = true) { super(message); }
+    readonly reasonCode = "", readonly data?: unknown, readonly unknownOutcome = true, readonly initialRejection = false) { super(message); }
 }
 
 const POOL_ERRORS: Record<string, string> = {
@@ -124,7 +125,12 @@ async function request(path: string, method = "GET", body?: object): Promise<unk
     }
     const unknown = !status || status < 400 || status >= 500 || [401, 403, 408, 425, 429].includes(status)
       || !code || code.startsWith("IDEMPOTENCY_") || code === "TASK_POOL_IDEMPOTENCY_CONFLICT";
-    throw new TaskPoolApiError(message, status, response.status, code, envelope.data, unknown);
+    // Keep the original strict verdict for retries and every other caller.
+    const initialRejection = Number.isInteger(envelope.code) && Number(envelope.code) < 500 && !!code
+      && !code.startsWith("IDEMPOTENCY_") && code !== "TASK_POOL_IDEMPOTENCY_CONFLICT"
+      && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() !== "unknown"
+      && isDeterministicRejection(response.status, Number(envelope.code));
+    throw new TaskPoolApiError(message, status, response.status, code, envelope.data, unknown, initialRejection);
   }
   return envelope.data;
 }

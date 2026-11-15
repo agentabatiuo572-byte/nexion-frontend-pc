@@ -208,7 +208,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       document.getElementById("e2-task-heading")?.focus();
     } catch (error) {
       const explicit = isExplicitRejection(error) && !(error instanceof TaskPoolApiError && error.reasonCode === "TASK_POOL_IDEMPOTENCY_CONFLICT");
-      if (!retry && explicit) {
+      const firstRejection = !retry && error instanceof TaskPoolApiError && error.initialRejection;
+      if (firstRejection) {
         e2Commands.forget(record.fingerprint, record.commandKey); syncPending();
         setDialog(old => old ? { ...old, key: crypto.randomUUID() } : old);
         setDialogError(displayAdminError(error));
@@ -219,7 +220,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         else setRejected(old => old.filter(key => key !== record.commandKey));
       }
       setDialogErrorCode(error instanceof TaskPoolApiError ? error.reasonCode : "");
-      if (isPermissionDenied(error) || error instanceof TaskPoolApiError && [401, 403].includes(error.status ?? error.httpStatus ?? 0)) { announcePermissionDenied(); setDialog(null); }
+      if (isPermissionDenied(error) || error instanceof TaskPoolApiError && [401, 403].includes(error.status ?? error.httpStatus ?? 0)) { announcePermissionDenied(); if (!firstRejection) setDialog(null); }
     } finally { busy.current = false; setSaving(false); }
   }
   async function submit() {

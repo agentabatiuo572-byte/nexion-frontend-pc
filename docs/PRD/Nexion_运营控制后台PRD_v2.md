@@ -383,6 +383,8 @@ SKU 目录管理台,自上而下三区:
 
 #### [E2] 任务池
 
+2026-11-15 R1首次拒绝补修：DEVICE随机添加、批量启用/停用首次收到可读确定业务拒绝时清原记录和对象锁，原确认保留并在既有错误位置显示原因；再提交使用新命令号。网络、5xx、坏回包、幂等未收敛及上游unknown仍保留原信封。原号重试继续按严格拒绝判断；task-pool-client原unknownOutcome与其他读取方行为不变，仅新增供E2首发使用的initialRejection事实。两个入口均直接写，不适用审批提案查无单解除，原命令调查与结案路径保持。
+
 E2、E5、E6 设备与任务原命令共用核查入口：超过 24 小时或后端结果未知时沿用现行核查权限；最新查询仍为 `PROCESSING` 时不显示结案入口，原记录和锁继续保留。依据后端 `66ecdb47` 的 `AdminCommandInvestigationService.investigate`，超期不改变处理中不可结案的规则。
 
 **2026-11-12 后端同步（代码侧）**：随机添加与批量启停仍在 JSON 中保存原 `idempotencyKey`，24 小时内只原样重试。原「读回核对」同时用原命令号、POST 方法和完整 `/api/admin/devices/task-pools/...` 路径查询服务器绑定；查询为空、403、UNKNOWN/PROCESSING 均保留原记录与锁。共享调查客户端只向服务器提交 `scope/commandKey/requestHash/conclusion/evidenceReference/evidenceAuditId?`，scope/hash 来自查询，不由浏览器生成；仅持调查权限及本页读权的在职超管可提交。SUCCEEDED/NOT_EXECUTED/STILL_UNKNOWN 是待服务器验证的结论，缺有效证据不能解锁。受控结案的新入口和证据表单由视觉 worker 接入 `checkE2Command(record, evidence)`；本轮没有增加界面。
