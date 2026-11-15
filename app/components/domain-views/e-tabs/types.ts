@@ -179,6 +179,7 @@ export interface EViewCtx {
   canQueryE4: boolean;
   /** 查过且明确查不到的命令号，只有这些才开放重试（OP-93）。 */
   e4QueryMissing: string[];
+  e4ExpiredNotFound: string[];
   releaseE4Pending: (record: E4PendingCommand) => void;
   selOrder: EOrder | null;
   e4Detail: E4OrderDetail | null;

@@ -492,6 +492,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e4RetryRejected, setE4RetryRejected] = useState<string[]>([]);
   const [e4Retrying, setE4Retrying] = useState("");
   const [e4QueryMissing, setE4QueryMissing] = useState<string[]>([]);
+  const [e4ExpiredNotFound, setE4ExpiredNotFound] = useState<string[]>([]);
   const syncE4Pending = useCallback(() => setE4Pending(e4PendingCommands.list()), []);
   const e4ReceiptAttempts = commandAttempts.list().flatMap((record) => {
     const [op, orderNo] = record.fingerprint.split("|");
@@ -609,6 +610,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
   };
   /** Query bound authority and current ticket; a ticket alone cannot dismiss a still-unknown command. */
   const checkE4Pending = async (record: E4PendingCommand) => {
+    setE4ExpiredNotFound(current => current.filter(key => key !== record.commandKey));
     setE4Retrying(record.fingerprint);
     let investigationNote = "";
     try {
@@ -621,6 +623,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       const original = await fetchA2ProposalByKey(record.commandKey, true, "a");
       if (!original) {
         setE4QueryMissing((current) => [...current, record.commandKey]);
+        if (record.expiresAt <= Date.now()) setE4ExpiredNotFound(current => [...current, record.commandKey]);
         noteE4Pending(record, `${investigationNote} 暂未查到原提案，结果仍待核实。原操作继续保留，不会重新提交。`);
         return;
       }
@@ -644,6 +647,15 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
   };
   /** The old local-release control now performs authoritative lookup without deleting unknown evidence. */
   const releaseE4Pending = (record: E4PendingCommand) => {
+    // R1 proposal exception: the existing confirmation UI may dismiss an expired, explicitly absent ticket.
+    if (record.expiresAt <= Date.now() && e4ExpiredNotFound.includes(record.commandKey)
+      && e4PendingCommands.list().some(saved => saved.fingerprint === record.fingerprint && saved.commandKey === record.commandKey)) {
+      e4PendingCommands.forget(record.fingerprint, record.commandKey);
+      setE4ExpiredNotFound(current => current.filter(key => key !== record.commandKey));
+      syncE4Pending(); setActionConfirm(null); setSelOrder(null); setE4Detail(null);
+      void refreshE4().catch(error => setToast(displayAdminError(error), "error"));
+      return;
+    }
     void checkE4Pending(record);
   };
 
@@ -781,7 +793,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     canReadE2, canWriteE2, tasks, phoneTiers, yieldComparisons, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask,
     canWriteE3, e3Proposals, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4ReadBlock, e4Total, e4Query, e4KeywordInput, e4Counts, e4CountsFailed, e4ReadAt, updateE4Query, setE4KeywordInput, clearE4Filters, refreshE4,
-    orderState, e4Pending, e4ReceiptAttempts, checkE4Receipt, e4PendingNotes, e4InvestigationResults, e4InvestigationAccess: fundInvestigationAccess, checkE4Investigation, e4RetryRejected, e4Retrying, retryE4Pending, checkE4Pending, canQueryE4, e4QueryMissing, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
+    orderState, e4Pending, e4ReceiptAttempts, checkE4Receipt, e4PendingNotes, e4InvestigationResults, e4InvestigationAccess: fundInvestigationAccess, checkE4Investigation, e4RetryRejected, e4Retrying, retryE4Pending, checkE4Pending, canQueryE4, e4QueryMissing, e4ExpiredNotFound, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
     canReadE5, canWriteE5, canForceActivateE5, canUnbindE5,
     runE5DeviceAction, runE5UserBatch,
     e5Devices, e5Overview, e5Loading, e5DeviceError, e5OverviewError, e5Page, e5PageSize, e5Total,
