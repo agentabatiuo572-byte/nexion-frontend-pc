@@ -438,6 +438,8 @@ maxDevicesPerOrder 入口保留，但当前后端及 App 每次只取一个 sour
 
 **2026-11-15 B38 接线**：新提案保存 A2 完整 request 与 commandOrigin，原样重试不改操作人/角色/业务内容。重试成功后查当前审批单，不把建单回放当成现在待批。checkE4Investigation(record,evidence?)、e4InvestigationResults、e4InvestigationAccess 提供核查数据；只有权威终态解除未知，关闭旧确认并重读当前数据。查不到或读取失败通常保留；审批提案遵循 R1 特例：过期后原键查询明确 A2_PROPOSAL_NOT_FOUND，允许现有确认框确认后解除。直接写不适用；旧提案查到匹配当前票据可恢复，不补造来源。核查输入/按钮/结果/联系人及旧框文字由视觉接。A2_COMMAND 成功仅证明建单命令完成，不证明退款执行。出处 eb08d01a OpsCommandInvestigationController、AdminCommandInvestigationService、AdminCommandOrigin。
 
+2026-11-15 I01：过期无单的解除确认会再次按原键严格读取当前审批；只有仍为 A2_PROPOSAL_NOT_FOUND 才清记录。查到票据沿当前状态恢复，普通404、403、5xx、坏回包均保留原记录；已见票号/建单证据不进入无单解除。
+
 **① 目的 & 对齐**
 设备订单的进度核对与审批处置入口——列表、详情、按事实推进及退款；设备分配和激活在设备管理办理。对齐前端 §7.4(订单管理 `/store/orders`,4 阶段直通车)+ §9.11f(订单失败态补全:当前前端 `cancelled` 折叠所有失败为一类,后台须拆分缺失态)。服务的业务目标:履约可观测(订单从下单到激活的状态流转)、退款与资金回退的合规处置(联动 D 域)、失败态精细化(区分支付失败 / 过期 / 退款 / 拒付 / 配机失败)。**E4 持订单状态机权威,订单支付走 D1 / PSP、paid 写 D4 账本**。
 

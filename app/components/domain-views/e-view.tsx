@@ -697,17 +697,22 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   };
   /** The old local-release control now performs authoritative lookup without deleting unknown evidence. */
-  const releaseE4Pending = (record: E4PendingCommand) => {
+  const releaseE4Pending = async (record: E4PendingCommand) => {
     // R1 proposal exception: the existing confirmation UI may dismiss an expired, explicitly absent ticket.
     const saved = e4PendingCommands.list().find(row => row.fingerprint === record.fingerprint && row.commandKey === record.commandKey);
     if (saved && saved.expiresAt <= Date.now() && !saved.receivedTicketId && !saved.creationConfirmed && e4ExpiredNotFound.includes(saved.commandKey)) {
-      e4PendingCommands.forget(record.fingerprint, record.commandKey);
-      setE4ExpiredNotFound(current => current.filter(key => key !== record.commandKey));
-      syncE4Pending(); setActionConfirm(null); setSelOrder(null); setE4Detail(null);
-      void refreshE4().catch(error => setToast(displayAdminError(error), "error"));
+      setE4Retrying(saved.fingerprint);
+      try {
+        if (await readE4CurrentProposal(saved)) return;
+        e4PendingCommands.forget(saved.fingerprint, saved.commandKey);
+        setE4ExpiredNotFound(current => current.filter(key => key !== saved.commandKey));
+        syncE4Pending(); setActionConfirm(null); setSelOrder(null); setE4Detail(null);
+        await refreshE4();
+      } catch (error) { noteE4Pending(saved, displayAdminError(error)); }
+      finally { setE4Retrying(""); }
       return;
     }
-    void checkE4Pending(record);
+    await checkE4Pending(record);
   };
 
   // ── E5 设备管理:服务端 fleet / overview 为单一来源 ──
