@@ -1071,6 +1071,45 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const reward = (value: unknown) => value === undefined || value === null || value === "" ? "—" : `${uvtText(value)} UVT/人`;
     const quiz = (payload?: { quizQuestions?: unknown; passScore?: unknown }) => Array.isArray(payload?.quizQuestions)
       ? `${payload.quizQuestions.length} 题 · ${String(payload.passScore ?? "—")} 分及格` : "—";
+    const courseContentRows = (left: Record<string, unknown> | undefined, right: Record<string, unknown> | undefined): IConflictRow[] => {
+      const bodyRow = (label: string, left: unknown, right: unknown): IConflictRow[] => {
+        const a = String(left ?? ""), b = String(right ?? "");
+        if (a === b) return [];
+        let at = 0;
+        while (at < a.length && at < b.length && a[at] === b[at]) at++;
+        const from = Math.max(0, at - 8);
+        const cut = (text: string) => text ? `${from > 0 ? "…" : ""}${text.slice(from, from + 40)}${text.length > from + 40 ? "…" : ""}` : "—";
+        return [{ label, left: <span title={a}>{cut(a)}</span>, right: <span title={b}>{cut(b)}</span>, changed: true }];
+      };
+      const leftQuiz = (left?.quizQuestions ?? []) as Course["quizQuestions"];
+      const rightQuiz = (right?.quizQuestions ?? []) as Course["quizQuestions"];
+      return [
+        conflictRow("中文标题", left?.titleZh, right?.titleZh), conflictRow("越南语标题", left?.titleVi, right?.titleVi), conflictRow("英语标题", left?.titleEn, right?.titleEn),
+        ...bodyRow("中文正文", left?.bodyZh, right?.bodyZh), ...bodyRow("越南语正文", left?.bodyVi, right?.bodyVi), ...bodyRow("英语正文", left?.bodyEn, right?.bodyEn),
+        conflictRow("分类", left?.category, right?.category), conflictRow("形式", left?.format, right?.format), conflictRow("难度", left?.difficulty, right?.difficulty),
+        conflictRow("预计时长", left?.duration, right?.duration), conflictRow("学完发", reward(left?.rewardNex), reward(right?.rewardNex)),
+        conflictRow("及格分", left?.passScore, right?.passScore), conflictRow("最多重试次数", left?.retryLimit, right?.retryLimit),
+        conflictRow("完成条件", COMPLETION_LABEL[String(left?.completionCondition)] ?? left?.completionCondition, COMPLETION_LABEL[String(right?.completionCondition)] ?? right?.completionCondition),
+        conflictRow("何时发奖", REWARD_EVENT_LABEL[String(left?.rewardEvent)] ?? left?.rewardEvent, REWARD_EVENT_LABEL[String(right?.rewardEvent)] ?? right?.rewardEvent),
+        conflictRow("测验", quiz(left), quiz(right)),
+        ...Array.from({ length: Math.max(leftQuiz.length, rightQuiz.length) }, (_, index) => {
+          const a = leftQuiz[index], b = rightQuiz[index];
+          return [
+            conflictRow(`第 ${index + 1} 题`, a?.questionId, b?.questionId),
+            ...LANGS.flatMap((lang) => {
+              const suffix = lang.key === "zh" ? "Zh" : lang.key === "vi" ? "Vi" : "En";
+              const questionKey = `question${suffix}` as "questionZh" | "questionVi" | "questionEn";
+              const optionsKey = `options${suffix}` as "optionsZh" | "optionsVi" | "optionsEn";
+              const aOptions = a?.[optionsKey] ?? [], bOptions = b?.[optionsKey] ?? [];
+              return [conflictRow(`第 ${index + 1} 题 · ${lang.label}题干`, a?.[questionKey], b?.[questionKey]),
+                ...Array.from({ length: Math.max(aOptions.length, bOptions.length) }, (_, option) =>
+                  conflictRow(`第 ${index + 1} 题 · 选项 ${option + 1}（${lang.label}）`, aOptions[option], bOptions[option]))];
+            }),
+            conflictRow(`第 ${index + 1} 题 · 正确答案`, a ? a.correctOptionIndex + 1 : undefined, b ? b.correctOptionIndex + 1 : undefined),
+          ];
+        }).flat(),
+      ];
+    };
     let subject: ReactNode = "这一项";
     let rows: IConflictRow[] = [];
     let columns: [string, string] = ["你打开时", "现在"];
@@ -1125,42 +1164,32 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         if (!gone && conflict.latest && !version && now && !["draft", "ready"].includes(now.status)) gone = `这门课现在是 ${state(now)}，不能再改草稿。`;
         columns = ["现在", "你填的"];
         rebuildLabel = "按最新的重新填写";
-        // 正文长，只在不一样时列一行，截出开始不一样的那一段，全文放悬停。
-        const bodyRow = (label: string, left: unknown, right: unknown): IConflictRow[] => {
-          const a = String(left ?? ""), b = String(right ?? "");
-          if (a === b) return [];
-          let at = 0;
-          while (at < a.length && at < b.length && a[at] === b[at]) at++;
-          const from = Math.max(0, at - 8);
-          const cut = (text: string) => text ? `${from > 0 ? "…" : ""}${text.slice(from, from + 40)}${text.length > from + 40 ? "…" : ""}` : "—";
-          return [{ label, left: <span title={a}>{cut(a)}</span>, right: <span title={b}>{cut(b)}</span>, changed: true }];
-        };
-        rows = [conflictRow("中文标题", base?.titleZh, input.titleZh), conflictRow("越南语标题", base?.titleVi, input.titleVi), conflictRow("英语标题", base?.titleEn, input.titleEn),
-          ...bodyRow("中文正文", base?.bodyZh, input.bodyZh), ...bodyRow("越南语正文", base?.bodyVi, input.bodyVi), ...bodyRow("英语正文", base?.bodyEn, input.bodyEn),
-          conflictRow("学完发", reward(base?.rewardNex), reward(input.rewardNex)), conflictRow("测验", quiz(base), quiz(input))];
+        rows = courseContentRows(base, input);
         note = "保存会用你填的整份内容替换现在的草稿；别人改的要留，先在编辑框里补上。";
         rebuild = course && (!version || nowVersion) ? () => carry() ?? setCourseEditor((current) => {
           const fresh = version ? editCourseVersionState(course, nowVersion!) : editCrsState(course);
           return current ? fresh : { ...fresh, spec: { ...fresh.spec, current: courseCurrent(course, version ?? course.v, input) } };
         }) : undefined;
-      } else if (op.startsWith("i7_course_")) {
-        lead = "别人先改了，这次没提交审批。";
+      } else if (op.startsWith("i7_course_") || ["course-publish", "version-publish", "version-rollback"].includes(op)) {
         const adjust = op === "i7_course_reward_adjust";
-        const firstPublish = op === "i7_course_first_publish";
-        const target = adjust ? undefined : conflict.latest?.versions?.find((row) => firstPublish ? row.status === "DRAFT" : row.version === input.version);
+        const firstPublish = op === "i7_course_first_publish" || op === "course-publish";
+        const rollback = op === "i7_course_version_rollback" || op === "version-rollback";
+        lead = op.startsWith("i7_course_") ? "别人先改了，这次没提交审批。" : rollback ? "别人先改了，这次没回滚。" : "别人先改了，这次没发布。";
+        const target = adjust ? undefined : conflict.latest?.versions?.find((row) => firstPublish ? row.status === "DRAFT" : row.version === (input.version ?? rejected?.version));
         const legacy = firstPublish && !target ? now : undefined;
         const openedTarget = rejected?.snapshot?.courseVersion;
         rows = [{ label: "课程", left: opened ? state(opened) : `${String(input.expectedCurrentVersion ?? "—")}`, right: state(now), changed: !!opened && !!now && state(opened) !== state(now) },
           conflictRow(adjust ? "现在的奖励" : "课程现在发", reward(opened?.rewardNex), reward(now?.rewardNex))];
         if (!adjust) {
-          const wanted = op === "i7_course_version_rollback" ? "SUPERSEDED" : "DRAFT";
+          const wanted = rollback ? "SUPERSEDED" : "DRAFT";
           rows.push(conflictRow(`要发布的 ${String(target?.version ?? legacy?.version ?? input.version ?? "")}`, openedTarget ? `${reward(openedTarget.payload.rewardNex)} · ${quiz(openedTarget.payload)}` : firstPublish && opened ? `${reward(opened.rewardNex)} · ${quiz(opened)}` : "—",
             target ? `${reward(target.payload.rewardNex)} · ${quiz(target.payload)}` : legacy ? `${reward(legacy.rewardNex)} · ${quiz(legacy)}` : "没有了"));
+          rows.push(...courseContentRows(openedTarget?.payload ?? (firstPublish ? opened : undefined), target?.payload ?? legacy));
           if (!gone && conflict.latest && (legacy ? legacy.status !== "draft" : target?.status !== wanted)) gone = `${String(input.version ?? "目标版本")} 现在不能${wanted === "DRAFT" ? "发布" : "回滚"}了（没有了或状态变了）。`;
         } else note = <>你填的新奖励 {reward(input.rewardNex)} 会带回确认框。</>;
         rebuild = !course ? undefined : adjust ? () => { carry(String(input.rewardNex ?? "")); adjRwd(course); }
-          : op === "i7_course_first_publish" ? () => { carry(); void pubCrs(course); }
-            : target ? () => { carry(); if (op === "i7_course_version_publish") publishCourseVersion(course, target); else rollbackCourseVersion(course, target); } : undefined;
+          : firstPublish ? () => { carry(); void pubCrs(course); }
+            : target ? () => { carry(); if (!rollback) publishCourseVersion(course, target); else rollbackCourseVersion(course, target); } : undefined;
       }
     }
     if (!rebuild && !gone) { rebuildLabel = "知道了"; note = "最新的已经读到页面上，关掉后重新打开要做的操作。"; }

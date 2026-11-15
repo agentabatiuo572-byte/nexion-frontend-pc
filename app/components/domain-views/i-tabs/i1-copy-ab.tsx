@@ -189,7 +189,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     });
   const conflictView = useIConflictView(conflictReview.review);
   /** 核对冲突后重开确认框时带回的理由和表单，只给紧接着打开的那一个框用。 */
-  const prefill = useRef<{ reason: string; business?: BusinessFormValue } | null>(null);
+  const prefill = useRef<{ reason: string; value?: string; business?: BusinessFormValue } | null>(null);
   const [pending, setPending] = useState<I1Command[]>([]);
   const [retrying, setRetrying] = useState<string | null>(null);
   const retryInFlight = useRef(false);
@@ -278,7 +278,9 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     let pendingKey: string | undefined;
     let savedValue: string | undefined;
     const original = () => pendingI1Commands().find((row) => row.commandKey === pendingKey);
-    ctx.openConfirm({ ...req, freezePendingInputs: true, getPendingReason: () => original()?.reason, getPendingValue: () => original() ? savedValue : undefined,
+    const carried = prefill.current;
+    prefill.current = null;
+    ctx.openConfirm({ ...req, initialReason: carried?.reason, initialValue: carried?.value, freezePendingInputs: true, getPendingReason: () => original()?.reason, getPendingValue: () => original() ? savedValue : undefined,
       run: async (reason, value) => {
         if (pendingKey) {
           const record = original();
@@ -867,7 +869,14 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         rebuildLabel = "按最新的重新填写";
         const latestText = findVersion(key, copy?.draftVersion) ?? findVersion(key, copy?.version);
         rows = [conflictRow("这条文案", state, `存成 ${String(body.version ?? "—")}`),
-          conflictRow("中文", latestText?.zh, body.zh), conflictRow("英语", latestText?.en, body.en), conflictRow("越南语", latestText?.vi, body.vi)];
+          conflictRow("中文", latestText?.zh, body.zh), conflictRow("英语", latestText?.en, body.en), conflictRow("越南语", latestText?.vi, body.vi),
+          conflictRow("投放模块", latestText?.surface, body.surface), conflictRow("文案位置", latestText?.copyPosition, body.copyPosition),
+          conflictRow("受众", latestText?.audience, body.audience),
+          conflictRow("最低阶段", audienceTargetFields(latestText?.audienceTarget).phaseMin, body.phaseMin),
+          conflictRow("最高阶段", audienceTargetFields(latestText?.audienceTarget).phaseMax, body.phaseMax),
+          conflictRow("语言", audienceTargetFields(latestText?.audienceTarget).language, body.language),
+          conflictRow("注册超过", audienceTargetFields(latestText?.audienceTarget).registrationDaysGt, body.registrationDaysGt),
+          conflictRow("分流比例", latestText?.trafficSplit, body.trafficSplit), conflictRow("版本说明", latestText?.versionNote, body.versionNote)];
         note = original?.method === "PATCH" ? "保存会用你填的整份内容替换现在的草稿；别人改的要留，先在编辑框里补上。" : "你填的内容留在编辑框里，提交时按最新的版本。";
         rebuild = copy ? () => (prefill.current = { reason: conflict.requested.reason }) && setEditor((current) => current?.kind === "edit" && current.copy.key === key
           ? { ...current, copy, base: findVersion(key, current.base?.v) ?? current.base } : current) : undefined;
@@ -891,7 +900,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       if (original?.method === "PUT") {
         columns = ["现在", "你填的"];
         rebuildLabel = "按最新的重新填写";
-        rows = [conflictRow("名称", option?.name, body.name), conflictRow("说明", option?.description, body.description), conflictRow("状态", optionState(option?.status), optionState(body.status))];
+        rows = [conflictRow("名称", option?.name, body.name), conflictRow("说明", option?.description, body.description), conflictRow("状态", optionState(option?.status), optionState(body.status)), conflictRow("排序", option?.sortOrder, body.sortOrder)];
         rebuild = option && reopen(() => editCopyVersionOption(option));
       } else {
         rows = [conflictRow("用到它的文案", "—", option ? `${option.usageCount} 条` : "—"), conflictRow("状态", "—", option?.status)];
@@ -906,7 +915,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       rows = [conflictRow("值", body.expectedValue, param?.cur), conflictRow("你填的新值", body.value, body.value)];
       rows[1].changed = false;
       note = "这个框带不回你填的新值和理由，重新打开后照上面再填一次。";
-      rebuild = param && (() => adjustFramework(param.key, param.name, param.cur));
+      rebuild = param && (() => { prefill.current = { reason: conflict.requested.reason, value: conflict.requested.value }; adjustFramework(param.key, param.name, param.cur); });
     }
     if (!rebuild && !gone) { rebuildLabel = "知道了"; note = "最新的已经读到页面上，关掉后重新打开要做的操作。"; }
     const finish = (task?: () => void) => {

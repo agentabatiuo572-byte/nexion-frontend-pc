@@ -183,6 +183,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const CAP_TIERS = data?.capRules ?? [];
   const AUDIENCE_CATALOG = data?.audienceCatalog;
   const DELIVERY_CATALOG = data?.deliveryCatalog;
+  const kindLabel = (kind: string) => DELIVERY_CATALOG?.kinds.find((option) => option.value === kind)?.label ?? "类型未知";
   const SWIPE_ROWS = data?.swipeRoutes ?? [];
   const readBarrier = useRef(data);
   const latestRead = useRef(data);
@@ -280,7 +281,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     const openedData = data;
     let key = restored?.commandKey;
     const original = () => pendingI3Commands().find((row) => row.commandKey === key);
-    ctx.openConfirm({ ...req, errorHandled: false, freezePendingInputs: true, getPendingReason: () => original()?.reason,
+    const carried = restored ? null : prefill.current;
+    prefill.current = null;
+    ctx.openConfirm({ ...req, initialReason: carried?.reason, initialValue: carried?.value, errorHandled: false, freezePendingInputs: true, getPendingReason: () => original()?.reason,
       run: async (reason, value) => {
         if (key) {
           const record = original();
@@ -535,10 +538,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           conflictRow("点了去哪", now?.ctaHref, form.ctaHref),
           conflictRow("按钮文字", now?.ctaLabel, DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === form.ctaHref)?.label),
           conflictRow("优先级", now ? TIER[now.tier].label : undefined, TIER[form.tier].label),
-          conflictRow("P 阶段下限", now?.audienceTarget.phaseMin, form.phaseMin),
-          conflictRow("P 阶段上限", now?.audienceTarget.phaseMax, form.phaseMax),
+          conflictRow("P 阶段从", now?.audienceTarget.phaseMin, form.phaseMin),
+          conflictRow("P 阶段到", now?.audienceTarget.phaseMax, form.phaseMax),
           conflictRow("语言", now?.audienceTarget.language, form.language),
-          conflictRow("注册满几天", now?.audienceTarget.registrationDaysMin, targetFromForm(form).registrationDaysMin),
+          conflictRow("注册超过", now?.audienceTarget.registrationDaysMin, targetFromForm(form).registrationDaysMin),
           conflictRow("预算", now?.budget === null || now?.budget === undefined ? undefined : `${now.budget} USD`, form.budget.trim() ? `${form.budget.trim()} USD` : undefined)];
         rows[0].changed = !!now && now.status !== "draft";
         if (!gone && now && now.status !== "draft") gone = `这条通知现在是${stateText(now)}，不能再改草稿。`;
@@ -558,8 +561,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         rows = [conflictRow("状态", opened ? stateText(opened) : "—", stateText(now)), conflictRow("中文内容", opened?.bodyZh, now?.bodyZh)];
         rows[0].changed = !opened || stateText(opened) !== stateText(now);
         rebuild = path.endsWith("/send-now") ? reopen(() => sendNow(live))
-          : path.endsWith("/cancel") ? () => cancelScheduled(live)
-            : campaignCommand?.original?.method === "DELETE" ? () => deleteDraft(live) : undefined;
+          : path.endsWith("/cancel") ? reopen(() => cancelScheduled(live))
+            : campaignCommand?.original?.method === "DELETE" ? reopen(() => deleteDraft(live)) : undefined;
         if (!path.endsWith("/send-now") && rebuild) note = "这个确认框带不回理由，重新打开后再填一次。";
       }
     }
@@ -669,7 +672,6 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   };
 
   /* ---------- render helpers ---------- */
-  const kindLabel = (kind: string) => DELIVERY_CATALOG?.kinds.find((option) => option.value === kind)?.label ?? "类型未知";
   const ctaLabelOf = (href: string) => DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? href;
   const NO_CRITICAL = "排期、发送和取消紧急通知要有紧急通知发送权限";
 

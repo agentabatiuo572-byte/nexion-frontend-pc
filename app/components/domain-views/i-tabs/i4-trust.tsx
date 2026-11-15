@@ -754,14 +754,17 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     } else if (rejected?.action === "delete") {
       const nowDraft = latestData?.trustSectionVersions.find((row) => row.sectionKey === key && row.version === rejected.version);
       if (!gone && latestData && nowDraft?.status.toLowerCase() !== "draft") gone = `${rejected.version ?? ""} 已经不是草稿了（被删除或已发布）。`;
-      rows = [conflictRow("草稿最近保存", saved(rejected.snapshot ?? undefined), saved(nowDraft)), conflictRow("内容", `${rejected.snapshot?.fields.length ?? "—"} 项`, `${nowDraft?.fields.length ?? "—"} 项`)];
+      rows = [conflictRow("草稿最近保存", saved(rejected.snapshot ?? undefined), saved(nowDraft)), conflictRow("内容", `${rejected.snapshot?.fields.length ?? "—"} 项`, `${nowDraft?.fields.length ?? "—"} 项`),
+        conflictRow("版块说明", rejected.snapshot?.description, nowDraft?.description), conflictRow("内容结构", rejected.snapshot?.structure, nowDraft?.structure),
+        ...fieldRows(rejected.snapshot?.fields ?? [], nowDraft?.fields ?? [])];
       rebuild = nowDraft ? () => { carry(); deleteSectionDraft(nowDraft); } : undefined;
     } else if (rejected && "before" in rejected) {
       const snap = rejected.snapshot;
       rows = [{ label: "版块", left: snap ? state(snap.section) : rejected.before ?? "—", right: state(nowSection), changed: !!snap && state(snap.section) !== state(nowSection) }];
       const target = rejected.action === "publish" ? latestData?.trustSectionVersions.find((row) => row.sectionKey === key && row.version === rejected.after) : undefined;
       if (rejected.action === "publish") {
-        rows.push(conflictRow(`草稿 ${rejected.after ?? ""} 最近保存`, saved(snap?.target), saved(target)), ...fieldRows(snap?.target?.fields ?? [], target?.fields ?? []));
+        rows.push(conflictRow(`草稿 ${rejected.after ?? ""} 最近保存`, saved(snap?.target), saved(target)),
+          conflictRow("版块说明", snap?.target?.description, target?.description), conflictRow("内容结构", snap?.target?.structure, target?.structure), ...fieldRows(snap?.target?.fields ?? [], target?.fields ?? []));
         if (!gone && latestData && target?.status.toLowerCase() !== "draft") gone = `${rejected.after ?? "这份草稿"} 已经不是草稿了，不能再提交发布。`;
         note = "三语核对要重新勾。";
       }
