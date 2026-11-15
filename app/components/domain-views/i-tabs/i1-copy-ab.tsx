@@ -19,7 +19,7 @@ import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { pendingI1Commands, retryI1Command, type I1Command } from "@/lib/admin/i-client";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
-import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   CompareTexts, CopyEditorDrawer, ExperimentCard, ExperimentDrawer, LangBlocks, PositionCard,
   audienceText, copyStatus, experimentState, missingLangs, moduleLabel, versionStatus,
@@ -137,7 +137,7 @@ type I1Pending = { id: string; label: string; change: string; at: string; retryB
 function PendingNotice({ items, onQuery, onRetry }: { items: readonly I1Pending[]; onQuery: (record: I1Command) => void; onRetry: (record: I1Command) => void }) {
   if (items.length === 0) return null;
   return (
-    <Notice tone="warn" title={`${items.length} 项操作结果未知`} actionBelow>
+    <Notice tone="warn" title={<>{`${items.length} 项操作结果未知`}<Explain label="结果未知怎么处理" content={<><p>提交时没收到确定结果，可能已经执行。「查询原结果」只重读现在的内容，不能证明原操作成没成，记录继续保留。</p><p>24 小时内可以「按原请求重试」，后端认得出是同一次提交，不会重复执行；过了 24 小时只能查询。</p></>} /></>} actionBelow>
       <ul className="i1-pending">
         {items.map((item) => (
           <li key={item.id}>
@@ -292,10 +292,10 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const pendingNotice = <PendingNotice items={pending.map((record) => ({
     id: record.commandKey, label: `${record.label} · ${record.target.slice(record.target.indexOf(":") + 1)}`, change: record.change,
     at: new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(record.createdAt),
-    retryBlocked: retrying ? "提交中…" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : !record.original ? "原操作记录不完整，只能查询核对，不能重试。"
+    retryBlocked: retrying ? "提交中…" : isRetryExpired(record) ? "已超过 24 小时，不能再重试，只能查询。" : !record.original ? "原操作记录不完整，只能查询核对，不能重试。"
       : !(isSuperadmin || session?.authorities.includes(record.permission)) ? "当前账号没有这项操作权限，请查询原结果。" : undefined,
     record,
-  }))} onRetry={restore} onQuery={() => { void actions.reloadIContent().then(() => toast(reach("/platform/audit") ? "结果未知，请到操作记录与审批核对。" : "结果未知")); }} />;
+  }))} onRetry={restore} onQuery={() => { void actions.reloadIContent().then(() => toast("已重新读取；现在的内容不能证明原操作的结果，记录继续保留。")); }} />;
   const lockReason = (target: string): string | undefined => {
     if (newMutationReason) return newMutationReason;
     const related = target.startsWith("copy:")
@@ -512,7 +512,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         {!draft && i18nFact(c.i18nKey)}
       </Facts>,
       content: <>
-        {pauses && <Notice tone="warn" title="存草稿会让这条文案暂停投放">按位置取文案时取不到它，直到你发布或删除这个草稿。</Notice>}
+        {pauses && <Notice tone="warn" title="存草稿会撤下线上内容">按位置取文案时取不到这条文案，发布或删掉这个草稿后恢复。</Notice>}
         {!draft && crowdNotice(form.copyPosition, c.key)}
         <CompareTexts beforeLabel={`现在 ${c.version}`} afterLabel={draft ? `草稿 ${target}` : `发布后 ${target}`} before={textsOf(current)} after={textsOfForm(form)} />
       </>,
@@ -536,7 +536,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         };
         const done = (result: unknown) => { if (result !== false) setEditor(null); return result; };
         if (form?.saveMode === "存草稿") {
-          return runBackend(actions.saveI1CopyDraft(c.key, payload, reason), `${c.key} 草稿已保存 · 尚未对用户生效`).then(done);
+          return runBackend(actions.saveI1CopyDraft(c.key, payload, reason), pauses ? `${c.key} 草稿已保存，暂停投放` : `${c.key} 草稿已保存，线上不变`).then(done);
         } else {
           return runBackend(actions.publishI1CopyVersion(c.key, payload, reason), `${c.key} 新版本已发布生效`).then(done);
         }
@@ -720,7 +720,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       amplifies: false,
       effect: LIVE,
       confirmLabel: "确认回滚",
-      statedBrief: { impact: `${v} 重新发布，现在的 ${copy.version} 转为已归档；草稿和实验不受影响，同名词条一起更新。`, check: "核对内容对比；历史版本缺位置或受众时后端会拒绝。" },
+      statedBrief: { impact: `${v} 重新发布，现在的 ${copy.version} 转为已归档，位置和模块按 ${v} 的；草稿和实验记录保留，同名词条一起更新。`, check: "核对内容对比；历史版本缺位置或受众时后端会拒绝。" },
       facts: <Facts>
         <Fact k="文案">{copy.desc} · <span data-mono="">{copy.key}</span></Fact>
         <Fact k="位置">{positionName(target?.copyPosition)} · {moduleLabel(target?.surface)}</Fact>
@@ -879,7 +879,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       amplifies: false,
       effect: LIVE,
       confirmLabel: "确认启动",
-      statedBrief: { impact: "启动后，用户第一次请求这个位置时按分流分组，之后一直在这组；版本、分流和受众不能再改。", check: "核对各组版本、分流和受众。" },
+      statedBrief: { impact: "启动后，用户第一次请求这个位置时按分流分组，实验进行中一直在这组；版本、分流和受众不能再改。", check: "核对各组版本、分流和受众。" },
       facts: exp && <Facts>
         {experimentFacts(exp)}
         <Fact k="受众">{exp.audience || "—"}</Fact>
@@ -915,7 +915,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       amplifies: false,
       effect: LIVE,
       confirmLabel: "确认停止",
-      statedBrief: { impact: "停止后不再分组，按位置取文案回到现在发布的版本；数据保留，之后可以采纳或弃用。", check: "App 已缓存的内容要等它重新读取才变。" },
+      statedBrief: { impact: "停止后不再分组，按位置取文案回到已发布的版本；这条文案存了草稿时仍取不到。数据保留，之后可以采纳或弃用。", check: "App 已缓存的内容要等它重新读取才变。" },
       facts: exp && <Facts>
         {experimentFacts(exp)}
         <Fact k="合计看到">{countOf(exp.impressions) === null ? "—" : `${countOf(exp.impressions)!.toLocaleString()} 人`}</Fact>
@@ -936,18 +936,19 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     openActionConfirm({ briefKind: "content",
       action: <>采纳获胜变体 · {id}</>,
       title: "采纳实验结果",
-      detail: <>把转化率最高的那组正式发布。</>,
+      detail: <>把转化率最高的那组发布为现在的版本。</>,
       amplifies: false,
       effect: LIVE,
       confirmLabel: "确认采纳",
-      statedBrief: { impact: "后端按真实转化率选唯一最高的一组，把它的版本正式发布，替换现在的版本；同名词条一起更新。", check: "每组至少 100 人看到、转化率唯一最高才能采纳，不满足会被拒绝；没有显著性检验。" },
+      statedBrief: { impact: "后端按真实转化率选唯一最高的一组，把它的版本发布为现在的版本；同名词条一起更新。", check: "每组至少 100 人看到、转化率唯一最高才能采纳；后端不重跑发布时的内容检查，先核对内容对比。没有显著性检验。" },
       facts: exp && <Facts>
         {experimentFacts(exp)}
-        <Fact k="按页面的数" tone={winner ? "ok" : "warn"}>{winner ? `${winner.name} 组 ${winner.version} 最高（${winner.cvr.toFixed(2)}%）` : "没有唯一最高的一组，后端会拒绝"}</Fact>
+        <Fact k="按页面的数" tone={winner ? "ok" : "warn"}>{winner ? `${winner.name} 组 ${winner.version} 最高（${winner.impressions != null && winner.conversions != null ? `${winner.conversions.toLocaleString()} / ${winner.impressions.toLocaleString()} 人，` : ""}${winner.cvr.toFixed(2)}%）` : "没有唯一最高的一组，后端会拒绝"}</Fact>
         {copy && i18nFact(copy.i18nKey)}
       </Facts>,
       content: <>
         {copy && crowdNotice(winnerVersion?.copyPosition ?? copy.copyPosition, copy.key)}
+        {copy?.draftVersion && <Notice tone="warn" title="这条文案存了草稿">{`采纳后仍是草稿状态，按位置取文案取不到；要发布或删掉草稿 ${copy.draftVersion}。`}</Notice>}
         {copy && winnerVersion && <CompareTexts beforeLabel={`现在 ${copy.version}`} afterLabel={`采纳后 ${winnerVersion.v}`} before={textsOf(findVersion(copy.key, copy.version))} after={textsOf(winnerVersion)!} />}
       </>,
       run: (reason) => {
@@ -978,13 +979,13 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
 
   const sampleOf = (exp: ExpRow): { text: ReactNode; tone: "warn" | null } => {
     if (exp.state === "scheduled") return { text: "还没开始", tone: null };
-    const need = exp.variants.length * 100;
-    if (exp.variants.some((variant) => variant.impressions !== undefined && variant.impressions < 100)) {
+    const short = exp.variants.filter((variant) => variant.impressions !== undefined && variant.impressions < 100);
+    if (short.length > 0) {
       if (exp.variants.every((variant) => variant.impressions === 0)) return { text: "还没有人看到", tone: null };
-      return { text: `不够，至少要 ${need} 人`, tone: exp.state === "adopted" || exp.state === "discarded" ? null : "warn" };
+      return { text: `${short.map((variant) => variant.name).join("、")} 组不到 100 人`, tone: exp.state === "adopted" || exp.state === "discarded" ? null : "warn" };
     }
     if (exp.variants.length < 2 || exp.variants.some((variant) => variant.impressions === undefined)) return { text: "—", tone: null };
-    return { text: `合计已满 ${need} 人`, tone: null };
+    return { text: "每组都满 100 人", tone: null };
   };
 
   const openExperiment = (id: string) => {
@@ -1063,7 +1064,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     : crowded.length > 0
       ? <Conclusion state="danger" icon={TriangleAlert} hint="下架多出来的一条。">{crowded[0].name}有 <b>{COPY_POOL.filter((copy) => isPublished(copy) && copy.copyPosition === crowded[0].positionKey).length}</b> 条在投放，App 取不到这个位置的内容</Conclusion>
       : paused.length > 0
-        ? <Conclusion state="warn" icon={TriangleAlert} hint="发布或删除草稿后恢复投放。" explain="存草稿会把文案改成草稿状态，按位置取文案时取不到它。后端已按缺陷登记。"><b>{paused.length}</b> 条文案存了草稿，暂停投放</Conclusion>
+        ? <Conclusion state="warn" icon={TriangleAlert} hint="发布草稿后恢复投放。" explain={<><p>存草稿会把文案改成草稿状态，按位置取文案时取不到它。后端已按缺陷登记。</p><p>删掉草稿只在现在的版本还是已发布时恢复；下架后存的草稿，删掉也不会恢复。</p></>}><b>{paused.length}</b> 条文案存了草稿，暂停投放</Conclusion>
         : awaiting.length + scheduled.length > 0
           ? <Conclusion state="neutral" icon={ListChecks} hint={[awaiting.length ? `${awaiting.length} 个已结束，去采纳或弃用` : "", scheduled.length ? `${scheduled.length} 个待启动` : ""].filter(Boolean).join("，")}>有 {awaiting.length + scheduled.length} 个实验等你处理</Conclusion>
           : COPY_POOL.length === 0

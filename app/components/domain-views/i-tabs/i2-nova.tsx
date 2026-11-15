@@ -28,7 +28,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useReach } from "@/lib/nav/use-reach";
 import { pendingI2Commands, retryI2Command, type I2Command, type NovaSocialEventSampleView } from "@/lib/admin/i-client";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
-import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   AppNotice, ChannelCard, DIST_SLOT, NO_SOURCE, PHASE_CHANNELS, PhaseNote, SOCIAL_CHANNEL, TEMPLATE_STATE_TEXT, TemplateTag,
   catalogName, channelName, cooldownSentence, noticeCategory, readable, orderDist, placeholdersOf, previewText, sourceText, tickSentence,
@@ -229,6 +229,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [form, setForm] = useState<NovaForm>(EMPTY_FORM);
   const [drawerPendingKey, setDrawerPendingKey] = useState<string | null>(null);
   const [drawerSubmitting, setDrawerSubmitting] = useState(false);
+  const [drawerError, setDrawerError] = useState<string | null>(null);
   const drawerInFlight = useRef(false);
   const drawerSource = useRef(data);
 
@@ -256,7 +257,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     });
     setNovaDrawer(true);
   };
-  const closeDrawer = () => { if (drawerInFlight.current) return; setNovaDrawer(false); setEditNovaKey(null); setForm(EMPTY_FORM); setDrawerPendingKey(null); };
+  const closeDrawer = () => { if (drawerInFlight.current) return; setNovaDrawer(false); setEditNovaKey(null); setForm(EMPTY_FORM); setDrawerPendingKey(null); setDrawerError(null); };
 
   const cadenceError = validateNovaCadence(
     form.tickValue,
@@ -290,6 +291,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const cd = formatNovaDuration(form.cooldownValue, form.cooldownUnit);
     drawerInFlight.current = true;
     setDrawerSubmitting(true);
+    setDrawerError(null);
     try {
       if (editNovaKey) {
         const prev = novas.find((x) => x.key === editNovaKey);
@@ -315,6 +317,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       }
     } catch (error) {
       if (isOutcomeUnknownError(error)) setDrawerPendingKey((error as { commandKey?: string }).commandKey ?? null);
+      else setDrawerError(displayAdminError(error));
       syncPending();
       // runBackend displays the refusal. Keep the drawer and its inputs; unknown requests freeze below.
     } finally {
@@ -667,7 +670,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   };
   const STATUS_COPY = {
     DISABLED: { verb: "停用", impact: "这条事件暂时不会被抽到，过期前可以恢复；人物、金额、时间不能改，已经发出的不撤回。", check: "只想永久不用，选「立即过期」。", place: "例如：内容需要核对，先停用" },
-    ACTIVE: { verb: "恢复", impact: "这条事件重新可以被抽到，直到原过期时间；已经发过的不会重发。", check: "过期时间不变，到期后自动失效。", place: "例如：核对无误，恢复使用" },
+    ACTIVE: { verb: "恢复", impact: "这条事件重新可以被抽到，直到原过期时间；发过的之后也可能再被抽到。", check: "过期时间不变，到期后自动失效。", place: "例如：核对无误，恢复使用" },
     EXPIRED: { verb: "立即过期", impact: "这条事件永久不再被抽到，不能恢复；原过期时间不变，已经发出的不撤回。", check: "只想暂时不用，选「停用」。", place: "例如：事件已过时" },
   } as const;
   const changeSocialEventStatus = (event: SocialEvent, status: "ACTIVE" | "DISABLED" | "EXPIRED") => openConfirm({ briefKind: "content",
@@ -738,14 +741,14 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       actions={canWriteI2 ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={lockReason("channel-create")} onClick={openNewNova}>新增频道</Button> : undefined} />
   );
   const unknownNotice = pending.length > 0 && (
-    <Notice tone="warn" title={`${pending.length} 个操作结果未知`} actionBelow>
+    <Notice tone="warn" title={`${pending.length} 项操作结果未知`} actionBelow>
       <ul className="i2-unknown">
         {pending.map((row) => (
           <li key={row.commandKey}>
             <span><b>{row.action}</b>{` · ${row.object} · ${row.change} · ${formatBusinessTimeCompact(row.createdAt, "—")} 提交`}</span>
             {isRetryExpired(row) ? <StatusTag tone="done">已过 24 小时，只能查询</StatusTag> : <StatusTag tone="warn">结果未知</StatusTag>}
             <span className="rd-row-actions"><Button size="sm" disabledReason={!canReadI2 ? "当前账号没有读取权限" : recovering ? "等当前操作完成" : undefined} onClick={() => {
-              void actions.reloadIContent().then(() => toast(reach("/platform/audit") ? "结果未知，请到操作记录与审批核对。" : "结果未知"));
+              void actions.reloadIContent().then(() => toast("已重新读取；现在的状态不能证明原操作的结果，记录继续保留。"));
             }}>查询原结果</Button>{!isRetryExpired(row) && <Button size="sm" disabledReason={recovering ? "等当前操作完成" : !row.original ? "原操作记录不完整，只能查询核对，不能重试。" : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined} onClick={() => void restore(row)}>按原请求重试</Button>}</span>
           </li>
         ))}
@@ -771,16 +774,16 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const distBad = SOCIAL_DIST.length > 0 && distTotal !== 100;
   const problems = noPublished.length > 0 || socialDry || distBad;
   const conclusion = novas.length === 0
-    ? <Conclusion state="neutral" icon={Radio} hint={canWriteI2 ? "点右上角「新增频道」建第一个。" : undefined}>还没有频道，不会推送</Conclusion>
+    ? <Conclusion state="neutral" icon={Radio} hint={canWriteI2 ? "点右上角「新增频道」建第一个。" : undefined}>还没有频道</Conclusion>
     : <Conclusion state={problems ? "warn" : "ok"} icon={Radio}
       hint={noPublished.length > 0 ? "到「消息模板」给它们写好模板并发布。" : socialDry ? "到「真实动态素材」点「同步事件」取新素材。" : undefined}
       explain={<>
         <p>在推＝频道已启用。启用只说明开关开着；真正发出还要有已发布模板、有素材、到了扫描时间、过了个人间隔，用户也要允许系统通知。</p>
-        <p>素材按最近读到的 20 条真实事件看，只对「真实动态」频道有意义。</p>
+        <p>素材按最近读到的 20 条真实事件看，只对「真实动态」频道有意义；发送时每类查最近 100 条，读到的 20 条之外可能还有能用的。</p>
       </>}>
       {`${onlineCount} 个频道在推，共 ${novas.length} 个`}
       {noPublished.length > 0 && `；${noPublished.length} 个没有已发布的模板，启用不了`}
-      {socialDry && "；真实动态最近 20 条事件里没有有效的，发不出"}
+      {socialDry && "；最近读到的 20 条真实事件里没有有效的，可能发不出"}
       {distBad && `；事件概率合计 ${distTotal}%，不是 100%`}
     </Conclusion>;
 
@@ -791,8 +794,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         explain="频道开关开着的个数，不代表一定发得出。" />
       <Stat tone="role-2" icon={Send} label="今日真实动态" value={String(I2_STATS.todayDelivered)} unit="条" sub="只数真实动态频道"
         explain={`真实动态频道今天（业务日，${businessZone().label}）已发出的通知条数；不含其他频道，也不代表都到了用户手机的系统推送。`} />
-      <Stat tone="role-3" icon={History} label="近 7 天投递" value={String(I2_STATS.weeklySocial)} unit="次" sub="按批次算，不是人数"
-        explain="最近 7 天（滚动，不是自然周）有过投递的真实事件，累计被投递的批次数；一批可能发给很多人。" />
+      <Stat tone="role-3" icon={History} label="投递批次（累计）" value={String(I2_STATS.weeklySocial)} unit="次" sub="近 7 天投递过的事件"
+        explain="最近 7 天投递过的真实事件，各自累计被投递的批次数之和，不只算这 7 天；一批可能发给很多人，不是人数。" />
       <Stat tone="role-4" icon={Timer} label="频道点击率均值" value={ctrNumber} unit={ctrNumber === "—" ? undefined : "%"}
         sub={ctrComparable ? `目标均值 ${ctrTargetValue}% · ${ctrValue > ctrTargetValue ? "已高于目标" : "未到目标"}` : "暂不能和目标比较"}
         explain="各频道存下来的点击率取平均，不是按点击÷送达实时算的；目前没有查到点击后会更新这个值。" />
@@ -805,12 +808,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const t = tplOf(n.key);
     const phase = PHASE_CHANNELS.has(n.key);
     const social = n.key === SOCIAL_CHANNEL;
-    const sandboxKey = /sandbox|acceptance/i.test(n.key);
     const warn = st !== "published"
       ? <StatusTag tone="warn">{st === "missing" ? "没有模板，启用不了" : `模板是${TEMPLATE_STATE_TEXT[st] ?? st}，启用不了`}</StatusTag>
-      : social && n.on && recentActive === 0 ? <StatusTag tone="warn">最近 20 条事件里没有有效的，发不出</StatusTag>
-        : sandboxKey ? <StatusTag tone="warn" explain="频道编号里有 sandbox 或 acceptance，后台代理会拒绝按编号编辑、启停和删除。">编辑和启停会被拒</StatusTag>
-          : undefined;
+      : social && n.on && recentActive === 0 ? <StatusTag tone="warn" explain="只看了最近读到的 20 条；发送时每类查最近 100 条，可能还有能用的。">最近 20 条里没有有效事件</StatusTag>
+        : undefined;
     const toggleBlocked = lockReason(`channel:${n.key}`) || (!n.on && st !== "published" ? "先给它发布模板才能启用" : undefined);
     const cardActions = canWriteI2 ? <>
       <Button size="sm" icon={n.on ? <PowerOff size={14} aria-hidden /> : <Power size={14} aria-hidden />} disabledReason={toggleBlocked} aria-label={`${n.on ? "停用" : "启用"} ${channelName(n.key, n.name)}`} onClick={() => toggleNova(n)}>{n.on ? "停用" : "启用"}</Button>
@@ -822,7 +823,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         source={social ? "提现到账等五类真实事件" : sourceText(n.trigger, n.name, RUNTIME_SOURCE_OPTIONS)}
         tick={n.tick} cooldown={n.cd} phase={phase ? <PhaseNote text={n.phaseKeyed} /> : undefined}
         template={t ? { name: t.name, version: t.v } : undefined} templateState={st} warn={warn}
-        stats={social ? <div><dt><Send size={14} aria-label="推送量" /></dt><dd>{`今日 ${I2_STATS.todayDelivered} 条 · 近 7 天 ${I2_STATS.weeklySocial} 次`}</dd></div> : undefined}
+        stats={social ? <div><dt><Send size={14} aria-label="推送量" /></dt><dd>{`今日 ${I2_STATS.todayDelivered} 条 · 累计 ${I2_STATS.weeklySocial} 批`}</dd></div> : undefined}
         ctr={Number.isFinite(n.ctr) ? `${n.ctr}%` : "—"}
         actions={cardActions} onTemplate={t ? () => setDetailTpl(t.ch) : undefined} />
     );
@@ -879,10 +880,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         {novas.length === 0
           ? <BlockState state="empty" title="新增的频道会显示在这里" detail={canWriteI2 ? "新增后先写好模板并发布，再启用。" : undefined} />
           : <div className="i2-channels">{channelCards}</div>}
-        <Fold title="不在频道里的推送" inset summary={offTableChannels.length ? `${offTableChannels.length} 条 · 节奏由别处的设置决定` : "全部推送都在上面的频道里"}
+        <Fold title="不在频道里的推送" inset summary={offTableChannels.length ? `${offTableChannels.length} 条 · 节奏由别处的设置决定` : "没有"}
           explain="市场行情和市场事件通知是两个独立频道，可以分别启停、设间隔。">
           {offTableChannels.length === 0
-            ? <p className="i2-muted">所有推送频道都已列在上面。</p>
+            ? <p className="i2-muted">节奏表里的频道都在上面；通知活动等别的通知不在这页。</p>
             : <Table label="不在频道里的推送">
               <thead><tr><Th>推送</Th><Th>什么时候推</Th><Th>节奏归谁</Th><Th>状态</Th></tr></thead>
               <tbody>
@@ -959,7 +960,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                 <AppNotice lang={sample.lang} title={sample.value.title ?? ""} body={sample.value.body} category={noticeCategory(SOCIAL_CHANNEL)} />
                 <p className="i2-sentence">{`${businessClock(sample.at)} 抽到${sample.value.id !== undefined ? ` #${sample.value.id}` : ""}：只是预览，不会发出，也不计投递次数。`}</p>
               </>
-              : <Notice tone="warn">现在没有能发的真实事件，这一轮不会推送。</Notice>}
+              : <Notice tone="warn">这次没抽到能发的真实事件；有新素材时照常推送。</Notice>}
           </div>
         )}
         <FilterBar onClear={() => { setEventTypeFilter(""); setEventStatusFilter(""); setEventPage(1); }} canClear={eventFiltered}
@@ -1059,7 +1060,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                     <div><dt>正文</dt><dd>{nexGridBrandText(body) || "—"}</dd></div>
                   </dl>
                   <AppNotice lang={lang} title={shown.title} body={shown.body} cta={t.cta} ctaNote={ctaNote} raw={!social} category={noticeCategory(t.ch)}
-                    missing={filled ? undefined : req ? `${label}没填，发布会被拒` : social ? "没填英语：中文、越南语以外的用户收到通用英文提示" : "没填英语：中文、越南语以外的用户收到空白的标题和正文"} />
+                    missing={filled ? undefined : req ? `${label}没填，发布会被拒` : "没填英语：中文、越南语以外的用户收到通用英文提示，有译文的语言用译文"} />
                 </section>;
               })}
             </div>
@@ -1107,8 +1108,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       )}
       {novaDrawer && (
         <ChannelDrawer editing={!!editNovaKey} form={form} setForm={setForm} cadenceError={cadenceError} sources={RUNTIME_SOURCE_OPTIONS}
-          locked={drawerSubmitting || !!drawerPendingKey} saving={drawerSubmitting}
-          blocked={drawerPendingKey ? (() => { const row = pending.find((item) => item.commandKey === drawerPendingKey); return row && isRetryExpired(row) ? RETRY_EXPIRED_TEXT : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined; })() : lockReason(editNovaKey ? `channel:${editNovaKey}` : `channel-name:${form.name.trim()}`)}
+          locked={drawerSubmitting || !!drawerPendingKey} saving={drawerSubmitting} retry={!!drawerPendingKey} error={drawerPendingKey ? null : drawerError}
+          blocked={drawerPendingKey ? (() => { const row = pending.find((item) => item.commandKey === drawerPendingKey); return row && isRetryExpired(row) ? "已超过 24 小时，不能再重试，只能查询。" : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined; })() : lockReason(editNovaKey ? `channel:${editNovaKey}` : `channel-name:${form.name.trim()}`)}
           fixedSource={editNovaKey && !form.runtimeSource ? (() => { const prev = drawerSource.current?.channels.find((x) => x.key === editNovaKey); return prev ? sourceText(prev.trigger, prev.name, drawerSource.current?.runtimeSourceOptions ?? []) : ""; })() : undefined}
           onClose={closeDrawer} onSubmit={() => void submitDrawer()} />
       )}

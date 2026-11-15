@@ -20,7 +20,7 @@ export const ctaLabel = (options: readonly NovaOptionView[], value: string) => {
 
 export type ChannelFormValue = { name: string; runtimeSource: string; tickValue: string; tickUnit: NovaTimeUnit; cooldownValue: string; cooldownUnit: NovaTimeUnit };
 
-export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, fixedSource, locked, saving, blocked: requestBlocked, onClose, onSubmit }: {
+export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, fixedSource, locked, saving, blocked: requestBlocked, retry, error, onClose, onSubmit }: {
   editing: boolean;
   form: ChannelFormValue;
   setForm: (next: ChannelFormValue) => void;
@@ -31,12 +31,15 @@ export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, f
   locked?: boolean;
   saving?: boolean;
   blocked?: string;
+  /** 结果未知后冻结的原请求：主按钮改叫「按原请求重试」。 */
+  retry?: boolean;
+  /** 后端明确拒绝时的原因，抽屉不关、输入保留。 */
+  error?: string | null;
   onClose: () => void;
   onSubmit: () => void;
 }) {
   const name = form.name.trim();
   const blocked = requestBlocked || (!name ? "填写频道名称" : !editing && !form.runtimeSource ? "选择从哪类事情取材" : cadenceError ? "多久找一次、同一个人至少隔多久没填好" : undefined);
-  const sandbox = /sandbox|acceptance/i.test(name);
   // 校验规则仍是 validateNovaCadence，这里只把它的话换成这个抽屉里的字段名。
   const CADENCE_TEXT: Record<string, [field: "tick" | "cooldown", text: string]> = {
     "请填写检查间隔": ["tick", "填写多久找一次"],
@@ -53,10 +56,12 @@ export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, f
         <p>系统按「多久找一次」扫描；有满足条件的业务事情、这个人又过了个人间隔，才给他发一条。</p>
         <p>点击率不用填，新频道从 0% 开始。</p>
       </>}
-      footer={<Decision primary={<Button variant="primary" loading={saving} disabledReason={blocked} onClick={onSubmit}>{editing ? "保存" : "新增频道"}</Button>} />}>
+      footer={<Decision primary={<Button variant="primary" loading={saving} disabledReason={blocked} onClick={onSubmit}>{retry ? "按原请求重试" : editing ? "保存" : "新增频道"}</Button>} />}>
       <div className="rd-stack i2-form">
-        {!editing && <Notice tone="progress">新增后是停用的：先给它写好模板并发布，再启用。</Notice>}
-        <Field label="频道名称" required error={sandbox ? "名称里有 sandbox 或 acceptance 时，建好后编辑、启停和删除会被拒，换个名称。" : undefined}>
+        {error && <Notice tone="danger" title={editing ? "没有保存" : "没有新增"}>{error}</Notice>}
+        {retry && <Notice tone="warn" title="结果未知">原请求已冻结，只能按原请求重试或在页面上方查询原结果。</Notice>}
+        {!editing && !retry && <Notice tone="progress">新增后是停用的：先给它写好模板并发布，再启用。</Notice>}
+        <Field label="频道名称" required>
           <Input disabled={locked} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如：每周回顾" />
         </Field>
         <Field label="从哪类事情取材" required={!editing} explain="只能从系统里登记过的业务事件里选，不能手填。">
@@ -120,7 +125,7 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
   return (
     <Drawer open wide onClose={onClose} title={editing ? "编辑模板" : "新建模板"} icon={FileText} tone="role-4" sub={editing ? form.name : undefined}
       explain={<>
-        <p>模板就是用户收到的标题和正文。保存后是草稿，发布后频道才用它。</p>
+        <p>用户收到的标题和正文以模板为底：发送时可能替换变量、按长度截断，没填的语言用通用提示；已发出的通知不跟着改。保存后是草稿，发布后频道才用它。</p>
         <p>App 里标题最多显示 128 字、正文 512 字，按用户账户的语言选一种。</p>
       </>}
       footer={<Decision primary={<Button variant="primary" disabledReason={blocked} onClick={onSubmit}>保存草稿</Button>} />}>
@@ -166,14 +171,14 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
                   {(control) => <Textarea {...control} rows={4} maxLength={4000} value={body} count={`${body.length}/4000`} onChange={(e) => setForm({ ...form, [`body${l.key}`]: e.target.value })} placeholder={l.key === "Zh" ? "例如：{actor} 在 {city} 刚刚提现到账 {amount}" : `${l.label}正文`} />}
                 </Field>
                 <AppNotice lang={l.lang} title={shown.title} body={shown.body} cta={form.cta} ctaNote={ctaNote} raw={!social} category={noticeCategory(form.channel)}
-                  missing={filled ? undefined : l.required ? `${l.label}还没填，发布前要补上` : social ? "没填英语：中文、越南语以外的用户收到通用英文提示" : "没填英语：中文、越南语以外的用户收到空白的标题和正文"} />
+                  missing={filled ? undefined : l.required ? `${l.label}还没填，发布前要补上` : "没填英语：中文、越南语以外的用户收到通用英文提示，有译文的语言用译文"} />
               </section>
             );
           })}
         </div>
         <p className="i2-sentence">{social
           ? sample ? `预览用最近一条真实事件 #${sample.id} 填进变量，只在这里显示，不会发出。` : "现在没有可用的真实事件，预览里变量原样显示。"
-          : "预览里的变量原样显示，和用户现在看到的一样。"}</p>
+          : "预览是示意：变量原样显示，实际按 App 截断。"}</p>
       </div>
     </Drawer>
   );

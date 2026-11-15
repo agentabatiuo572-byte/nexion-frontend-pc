@@ -31,7 +31,7 @@ export function copyStatus(status: string): { tone: StateTone; text: string; exp
   const value = status.toLowerCase();
   if (value === "published") return { tone: "ok", text: "已发布" };
   if (value === "archived") return { tone: "done", text: "已下架" };
-  if (value === "draft-saved" || value === "draft") return { tone: "warn", text: "暂停投放", explain: "存了草稿，这条文案的状态变成草稿，按位置取文案时取不到它。发布或删除草稿后恢复。" };
+  if (value === "draft-saved" || value === "draft") return { tone: "warn", text: "暂停投放", explain: "存了草稿，这条文案的状态变成草稿，按位置取文案时取不到它。发布草稿后恢复；删掉草稿只在现在的版本还是已发布时恢复。" };
   return { tone: "neutral", text: "状态待核实", explain: `后端返回的状态是 ${status}，这页不认识。` };
 }
 
@@ -209,7 +209,7 @@ export function ExperimentCard({ id, title, sub, state, variants, impressions, c
               <header className="i1-variant-head">
                 <span className="i1-variant-badge">{variant.name}</span>
                 <span className="i1-variant-ver"><b data-mono="">{variant.version || "—"}</b>{variant.versionName ? ` · ${variant.versionName}` : ""}</span>
-                {lead && <StatusTag tone="ok" icon={Trophy}>领先</StatusTag>}
+                {lead && <StatusTag tone="ok" icon={Trophy} explain="按转化人数 ÷ 看到人数的原始数比较，转化率四舍五入后相同也能分出高低。">领先</StatusTag>}
               </header>
               <p className="i1-variant-text" data-user-content="" title={variant.text ? nexGridBrandText(variant.text) : undefined}>
                 {variant.text ? nexGridBrandText(variant.text) : <span className="i1-weak">读不到这个版本的中文</span>}
@@ -225,8 +225,8 @@ export function ExperimentCard({ id, title, sub, state, variants, impressions, c
                   ? <ScaleBar quiet label="转化率" valueText={`${variant.cvr.toFixed(2)}%，刻度 0 到 ${axis}%`} max={axis} value={variant.cvr} fill ticks={ticks} tone="role-3" />
                   : <span className="i1-weak">{started ? "还没有人看到" : "还没开始"}</span>}
                 <div>
-                  <dt>看到的人<Explain label="各组人数" content="后端只给这个实验的合计人数，没给每组各多少人。" /></dt>
-                  <dd data-empty={variant.impressions == null ? "" : undefined}>{variant.impressions == null ? "—" : `${variant.impressions.toLocaleString()} 人`}</dd>
+                  <dt>看到 / 转化</dt>
+                  <dd data-empty={variant.impressions == null ? "" : undefined}>{variant.impressions == null ? "—" : `${variant.impressions.toLocaleString()} / ${variant.conversions == null ? "—" : variant.conversions.toLocaleString()} 人`}</dd>
                 </div>
               </dl>
             </section>
@@ -238,7 +238,7 @@ export function ExperimentCard({ id, title, sub, state, variants, impressions, c
           <div><dt>合计看到</dt><dd data-empty={impressions ? undefined : ""}>{started && impressions !== null ? `${impressions.toLocaleString()} 人` : "—"}</dd></div>
           <div><dt>转化</dt><dd data-empty={conversions ? undefined : ""}>{started && conversions !== null ? `${conversions.toLocaleString()} 人` : "—"}</dd></div>
           <div>
-            <dt>样本<Explain label="样本怎么判断" content={<><p>采纳要求每组至少 100 人看到，并且转化率唯一最高；不满足时后端拒绝采纳。</p><p>这页只拿到合计人数，合计不到「组数 × 100」一定不够；够了也要采纳时由后端逐组核对。转化只算已付款或已完成的订单，一人只算一次。</p></>} /></dt>
+            <dt>样本<Explain label="样本怎么判断" content={<><p>采纳要求每一组都至少 100 人看到，并且转化率唯一最高；不满足时后端拒绝采纳。合计再多，有一组不到 100 人也不够。</p><p>人数是累计去重数。转化只算已付款或已完成的订单，一人只算一次。</p></>} /></dt>
             <dd>{sample.tone ? <StatusTag tone={sample.tone}>{sample.text}</StatusTag> : sample.text}</dd>
           </div>
           <div className="i1-exp-aud"><dt>受众</dt><dd>{audience}</dd></div>
@@ -412,7 +412,7 @@ export function CopyEditorDrawer({ spec, title, sub, basedOn, pausesDelivery, on
     <>
       <Drawer open wide onClose={close} title={title} sub={sub} icon={FilePen} tone="role-1"
         footer={<Decision
-          explain={!isCreate && pausesDelivery ? "存草稿会让这条文案暂停投放，发布或删除草稿后恢复。" : undefined}
+          note={!isCreate && pausesDelivery ? "存草稿会撤下线上内容，发布或删掉草稿后恢复投放。" : undefined}
           others={<Button onClick={close}>取消</Button>}
           primary={<>
             {!isCreate && <Button disabledReason={draftCheck.blocked} onBlockedClick={() => setAttempted(true)} onClick={() => onSubmit(form, "存草稿")}>存草稿</Button>}

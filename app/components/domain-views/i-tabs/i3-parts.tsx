@@ -5,7 +5,7 @@
  * 只排版，不发请求、不判权限；数据和按钮由 i3-campaign.tsx 传进来。
  */
 import type { ReactNode } from "react";
-import { AlertTriangle, ArrowDown, ArrowUp, Ban, Bell, CheckCheck, CircleHelp, Clock3, FilePen, Lock, Minus, Send, Siren, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Ban, Bell, CheckCheck, CircleHelp, Clock3, FilePen, Hourglass, Lock, Minus, Send, Siren, type LucideIcon } from "lucide-react";
 import { Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
 import type { NotificationCampaignRow } from "@/lib/admin/i-client";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -185,7 +185,8 @@ export function ScheduleItem({ row, first, children }: { row: CampaignRow; first
 }
 
 /** 一档保留上限：现在留几条、怎么清理、能不能调。 */
-export function CapCard({ tier, cap, policy, locked, action }: { tier: TierK; cap: string; policy: string; locked: boolean; action?: ReactNode }) {
+/** pending：这一档有本标签页提交、已查到在等批准的申请，写申请的新值。 */
+export function CapCard({ tier, cap, policy, locked, pending, action }: { tier: TierK; cap: string; policy: string; locked: boolean; pending?: string; action?: ReactNode }) {
   const critical = tier === "critical";
   const digits = cap.match(/\d+/)?.[0];
   return (
@@ -193,6 +194,7 @@ export function CapCard({ tier, cap, policy, locked, action }: { tier: TierK; ca
       <div className="i3-cap-head">
         <TierTag tier={tier} />
         {locked && <StatusTag tone="neutral" icon={Lock} explain="后端把这一档锁定了，不能调整。">锁定</StatusTag>}
+        {pending && <StatusTag tone="progress" icon={Hourglass} explain="批准前上限不变。">{`等批准 → ${pending}`}</StatusTag>}
       </div>
       <div className="i3-cap-value">
         {critical
@@ -200,7 +202,7 @@ export function CapCard({ tier, cap, policy, locked, action }: { tier: TierK; ca
           : <><span className="i3-cap-num">{digits ?? "—"}</span><span className="i3-cap-unit">{digits ? "条" : ""}</span></>}
       </div>
       <p className="i3-cap-note">
-        {critical ? "不按数量清理" : tier === "low" ? "超出删最旧的；满 48 小时也删" : "超出的删最旧的，未读也删"}
+        {critical ? "不按数量清理" : tier === "low" ? "超出删最旧的；超过 48 小时的也删" : "超出的删最旧的，未读也删"}
         <Explain label={`${TIER[tier].label}优先级怎么清理`} content={policy} />
       </p>
       {action && <div className="i3-cap-action">{action}</div>}
@@ -208,7 +210,8 @@ export function CapCard({ tier, cap, policy, locked, action }: { tier: TierK; ca
   );
 }
 
-export type I3RecoveryRow = { key: string; name: string; object: string; change?: string; submittedAt: number; expired: boolean; actions: ReactNode };
+/** submitted：审批单已建，批没批准还没查到。note：查询后的一句结论。 */
+export type I3RecoveryRow = { key: string; name: string; object: string; change?: string; submittedAt: number; expired: boolean; submitted?: boolean; note?: string; actions: ReactNode };
 
 /**
  * 结果未知逐条提醒：由页面传入持久化的原操作；未读取到概览时同样显示。
@@ -220,6 +223,7 @@ export function I3RecoveryNotice({ rows }: { rows: I3RecoveryRow[] }) {
     <Notice tone="warn" title={<>{`${rows.length} 项操作结果未知`}<Explain label="结果未知怎么处理" content={<>
       <p>提交时没收到确定结果，可能已经执行。先「查询原结果」。</p>
       <p>24 小时内可以「按原请求重试」，后端认得出是同一次提交，不会重复发送或重复建审批单；过了 24 小时只能查询。</p>
+      <p>保留上限的申请过期后，后端按原请求明确查不到这张单，说明没建成，可以确认解除。</p>
     </>} /></>}>
       <ul className="i3-recovery" aria-label="结果未知的操作">
         {rows.map((row) => (
@@ -227,7 +231,34 @@ export function I3RecoveryNotice({ rows }: { rows: I3RecoveryRow[] }) {
             <span className="i3-recovery-name">{row.name}</span>
             <span className="i3-recovery-object">{row.object}{row.change ? ` · ${row.change}` : ""}</span>
             <span className="i3-recovery-time">{`${businessStamp(row.submittedAt)} 提交`}</span>
-            <StatusTag tone={row.expired ? "neutral" : "warn"} icon={CircleHelp}>{row.expired ? "已过期" : "结果未知"}</StatusTag>
+            <StatusTag tone={row.expired || row.submitted ? "neutral" : "warn"} icon={CircleHelp}>{row.expired ? "已过期" : row.submitted ? "已提交，状态未查到" : "结果未知"}</StatusTag>
+            <span className="i3-recovery-actions">{row.actions}</span>
+            {row.note && <span className="i3-recovery-note">{row.note}</span>}
+          </li>
+        ))}
+      </ul>
+      <p className="i3-recovery-zone">{`提交时间为${businessZone().label}`}</p>
+    </Notice>
+  );
+}
+
+export type I3PendingCapRow = { key: string; tier: string; change: string; submittedAt: number; actions: ReactNode };
+
+/** 已查到在等批准的保留上限申请：读不到活动列表时也显示，能查询原审批单。 */
+export function I3PendingCapNotice({ rows, link }: { rows: I3PendingCapRow[]; link?: ReactNode }) {
+  if (rows.length === 0) return null;
+  return (
+    <Notice tone="progress" title={<>{`${rows.length} 张保留上限申请等批准`}<Explain label="等批准的申请" content={<>
+      <p>批准前上限不变。批准后按新上限立刻清理一次。</p>
+      <p>这里只列你在这个标签页提交的申请；别人提交的到「操作记录与审批」看。</p>
+    </>} /></>} action={link}>
+      <ul className="i3-recovery" aria-label="等批准的申请">
+        {rows.map((row) => (
+          <li key={row.key}>
+            <span className="i3-recovery-name">调整保留上限</span>
+            <span className="i3-recovery-object">{`${row.tier} · ${row.change}`}</span>
+            <span className="i3-recovery-time">{`${businessStamp(row.submittedAt)} 提交`}</span>
+            <StatusTag tone="progress" icon={Hourglass}>等批准</StatusTag>
             <span className="i3-recovery-actions">{row.actions}</span>
           </li>
         ))}

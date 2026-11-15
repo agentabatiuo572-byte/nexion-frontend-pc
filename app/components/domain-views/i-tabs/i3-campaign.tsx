@@ -11,19 +11,19 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, CalendarClock, FilePen, Layers, Plus, RefreshCw, Route, Send, Trash2, Users } from "lucide-react";
-import { BlockState, Button, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { PaginationExemptionList } from "../design-kit";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { pendingI3Commands, retryI3Command, i3RetryPermission, parseI3Json, fetchI3CampaignOverview, type I3Command, type NotificationAudienceTarget } from "@/lib/admin/i-client";
-import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
+import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, releaseExpiredI3Cap, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
-import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
-import { BODY_SENT, CampaignCard, CampaignStatusTag, CapCard, chars, I3RecoveryNotice, LANG_NAME, NotificationPreview, quantityText, reachLabel, ScheduleItem, splitBody, TIER, TierTag, TITLE_SENT, whenText, type CampaignRow, type I3RecoveryRow, type Lang, type TierK } from "./i3-parts";
+import { BODY_SENT, CampaignCard, CampaignStatusTag, CapCard, chars, I3PendingCapNotice, I3RecoveryNotice, LANG_NAME, NotificationPreview, quantityText, reachLabel, ScheduleItem, splitBody, TIER, TierTag, TITLE_SENT, whenText, type CampaignRow, type I3RecoveryRow, type Lang, type TierK } from "./i3-parts";
 
 type StFlt = "all" | "scheduled" | "sent" | "draft" | "failed" | "cancelled";
 const ST_FLT: [StFlt, string][] = [
@@ -113,6 +113,7 @@ const KIND_DEFAULT_ROUTE: Record<string, string> = {
 /** 一组里默认显示几张卡，多的点「显示全部」切到这个状态。 */
 const GROUP_PREVIEW = 6;
 const AUDIT_HREF = "/platform/audit?domain=I";
+const RETRY_EXPIRED = "已超过 24 小时，不能再重试，只能查询。";
 export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | null }) {
   const { toast, actions, content, contentLoading } = ctx;
   const reach = useReach();
@@ -122,6 +123,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const canWriteI3 = isSuperadmin || authorities.includes("content_i3_write");
   const capPermission = i3CapPermission();
   const canAdjustI3Cap = !capPermission;
+  /** 有保留上限调整权、缺提交审批权：按钮灰着并写原因。 */
+  const showCapAdjust = canAdjustI3Cap || authorities.includes("content_i3_cap_adjust");
   const canReadI3 = isSuperadmin || authorities.includes("content_i3_read");
   const canSendCriticalI3 = isSuperadmin || authorities.includes("content_i3_critical_send");
   const canSendCampaign = (campaign: CampaignRow) =>
@@ -148,6 +151,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const [drawerPendingKey, setDrawerPendingKey] = useState<string | null>(null);
   const [schedulePendingKey, setSchedulePendingKey] = useState<string | null>(null);
   const [recovering, setRecovering] = useState<string | null>(null);
+  /** 按原请求查过、后端明确没有这张审批单的保留上限申请（过期后可以确认解除）。 */
+  const [absentCaps, setAbsentCaps] = useState<Record<string, true>>({});
+  const [releasing, setReleasing] = useState<I3CapCommand | null>(null);
   const [requiresReload, setRequiresReload] = useState(false);
   const recoveryInFlight = useRef(false);
   const active = useRef(true);
@@ -358,7 +364,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     confirmTone: "danger",
     reasonPlaceholder: "例如：重复建了一条、内容作废",
     reason: true,
-    okLabel: "确认删除",
+    okLabel: restored ? "按原请求重试" : "确认删除",
     run: (reason) => runBackend(actions.deleteI3Campaign(c.id, c.revision, reason, { ...c, status: c.st }), `${c.id} 已删除`),
   }, restored);
 
@@ -387,7 +393,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       check: "预计人数是保存草稿时的估算；实际人数以发出后的送达为准，可能更少。",
     },
     confirmTone: "danger",
-    confirmLabel: "确认立即发送",
+    confirmLabel: restored ? "按原请求重试" : "确认立即发送",
     reasonPlaceholder: "例如：活动提前开始，需要马上通知",
     amplifies: false,
     run: (reason) => {
@@ -414,7 +420,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     statedBrief: { impact: "这条不会再发出。已经开始发送的取消不了，用户已收到的也撤不回。", check: "取消后不能改回草稿，要再发就新建一条。" },
     reasonPlaceholder: "例如：活动改期，不再按原时间发送",
     reason: true,
-    okLabel: "确认取消",
+    okLabel: restored ? "按原请求重试" : "确认取消",
     run: (reason) => {
       return runBackend(actions.cancelI3Campaign(c.id, c.revision, reason, { ...c, status: c.st }), `${c.id} 已取消`);
     },
@@ -426,22 +432,22 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     detail: (
       <>
         <span className="rd-keep">当前 <b>{cap}</b>。</span><span className="rd-keep">批准执行时按新上限立刻清理，未读的也删；</span><span className="rd-keep">调高不恢复已删的。</span>
-        {tier === "low" && <span className="rd-keep">低优先级另外满 48 小时就删。</span>}
+        {tier === "low" && <span className="rd-keep">低优先级超过 48 小时的也会删。</span>}
       </>
     ),
     effect: <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后才执行；批准前上限不变。">批准后生效</StatusTag>,
     completionCopy: "另一位管理员在「操作记录与审批」批准后执行；批准前上限不变。",
     statedBrief: {
       impact: "调低：批准执行时立刻删掉每位用户这一档超出上限的旧通知，未读的也删。调高：以后多留，已删的不恢复。",
-      check: "会删多少条这页读不到；等批准的修改也在「操作记录与审批」看。",
+      check: "会删多少条这页读不到。",
     },
     facts: (
       <Facts>
-        <Fact k="谁来批">另一位管理员，不能是提交人</Fact>
-        <Fact k="需有权限">提交审批权限和通知保留上限调整权限</Fact>
+        <Fact k="谁来批">另一位有审批批准权限和通知保留上限调整权限的管理员，不能是提交人</Fact>
+        <Fact k="提交人需有">提交审批权限和通知保留上限调整权限</Fact>
       </Facts>
     ),
-    confirmLabel: "提交审批",
+    confirmLabel: restored ? "按原请求重试" : "提交审批",
     reasonPlaceholder: "例如：用户反馈普通通知太多，调低保留数量",
     amplifies: false,
     edit: {
@@ -618,7 +624,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         if (ticket) {
           toast(ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${I3_TICKET[ticket.status]}`);
           if (ticket.status !== "pending") await refreshAfterMutation();
-        } else toast("没有查到原审批单，原操作记录继续保留。");
+        } else {
+          setAbsentCaps((prev) => ({ ...prev, [record.commandKey]: true }));
+          toast("没有查到原审批单，原操作记录继续保留。");
+        }
       } else {
         await fetchI3CampaignOverview();
         await actions.reloadIContent();
@@ -634,16 +643,33 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canReadI3 ? undefined : "缺少通知活动读取权限"} onClick={() => void query(row)}>查询原结果</Button>
         {!isRetryExpired(row) && <Button size="sm" disabledReason={!row.original || row.action !== "create" && !row.snapshot ? "原操作记录不完整，只能查询核对，不能重试。" : i3RetryPermission(row)} onClick={() => restore(row)}>按原请求重试</Button>}
       </> })),
-    ...pendingCaps.filter((row) => row.ticketStatus !== "pending").map((row) => ({ key: row.commandKey, name: "调整通知保留数量", object: TIER[row.tier as TierK].label,
-      change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt, expired: isRetryExpired(row), actions: <>
+    ...pendingCaps.filter((row) => row.ticketStatus !== "pending").map((row) => ({ key: row.commandKey, name: "调整通知保留数量", object: `${TIER[row.tier as TierK].label}优先级`,
+      change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt, expired: isRetryExpired(row), submitted: !!row.receiptKnown,
+      note: absentCaps[row.commandKey]
+        ? `后端按原请求查不到这张审批单，说明没建成；${isRetryExpired(row) ? "可以确认解除。" : "24 小时内可以按原请求重试。"}`
+        : row.receiptKnown ? "审批单已建，批没批准还没查到；点「查询原结果」看当前状态。" : undefined,
+      actions: <>
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button>
         {!isRetryExpired(row) && !row.receiptKnown && <Button size="sm" disabledReason={!row.request ? "原操作记录不完整，只能查询核对，不能重试。" : capPermission} onClick={() => adjustCap(row.tier as TierK, row.before, row)}>按原请求重试</Button>}
+        {isRetryExpired(row) && absentCaps[row.commandKey] && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(row)}>确认解除</Button>}
       </> })),
   ];
+  const pendingCapRows = pendingCaps.filter((row) => row.ticketStatus === "pending").map((row) => ({ key: row.commandKey, tier: `${TIER[row.tier as TierK].label}优先级`,
+    change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt,
+    actions: <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button> }));
+  const releaseCap = async (record: I3CapCommand) => {
+    setReleasing(null);
+    try {
+      await releaseExpiredI3Cap(record);
+      setAbsentCaps((prev) => { const next = { ...prev }; delete next[record.commandKey]; return next; });
+      toast("已解除这条记录；需要的话可以重新提交调整");
+    } catch (error) { toast(displayAdminError(error)); }
+    syncPending();
+  };
   const drawerOriginal = pending.find((row) => row.commandKey === drawerPendingKey);
-  const drawerRetryReason = drawerOriginal && isRetryExpired(drawerOriginal) ? RETRY_EXPIRED_TEXT : drawerOriginal ? i3RetryPermission(drawerOriginal) : undefined;
+  const drawerRetryReason = drawerOriginal && isRetryExpired(drawerOriginal) ? RETRY_EXPIRED : drawerOriginal ? i3RetryPermission(drawerOriginal) : undefined;
   const scheduleOriginal = pending.find((row) => row.commandKey === schedulePendingKey);
-  const scheduleRetryReason = scheduleOriginal && isRetryExpired(scheduleOriginal) ? RETRY_EXPIRED_TEXT : scheduleOriginal ? i3RetryPermission(scheduleOriginal) : undefined;
+  const scheduleRetryReason = scheduleOriginal && isRetryExpired(scheduleOriginal) ? RETRY_EXPIRED : scheduleOriginal ? i3RetryPermission(scheduleOriginal) : undefined;
 
   const readStamp = readAt ? `${businessClock(readAt)} 读取（${businessZone().label}）` : "";
   const header = (
@@ -676,8 +702,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     : <Conclusion state={failedN > 0 ? "warn" : scheduledN + sendingN > 0 ? "neutral" : "ok"} icon={failedN > 0 ? undefined : CalendarClock}
       hint={failedN > 0 ? "发送失败的不能重发，要发请新建一条。" : undefined}
       explain={<>
-        <p>等着发是已排期和发送中的活动；时间是北京时间，到点后约 30 秒内发出。</p>
-        <p>保留上限的修改要批准后才生效，等批准的修改这页读不到，到「操作记录与审批」看。</p>
+        <p>等着发是已排期和发送中的活动；时间是北京时间。到点后由后台自动发出，后台每 30 秒检查一次，排队多时会晚。</p>
+        <p>保留上限的修改要批准后才生效。这页只查得到你在这个标签页提交的申请，别人提交的到「操作记录与审批」看。</p>
       </>}
       action={auditReachable ? <Link className="rd-link" href={AUDIT_HREF} prefetch={false}>看等批准的上限修改</Link> : undefined}>
       {scheduledN + sendingN > 0
@@ -709,6 +735,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       {header}
       {data && errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={contentLoading} onClick={() => void actions.reloadIContent()}>重新加载</Button>}>{`${errorText} 下面是上次读到的内容。`}</Notice>}
       <I3RecoveryNotice rows={recoveryRows} />
+      <I3PendingCapNotice rows={pendingCapRows} link={auditReachable ? <Link className="rd-link" href={AUDIT_HREF} prefetch={false}>到操作记录与审批看</Link> : undefined} />
+      {releasing && <ReleaseModal label={`调整${TIER[releasing.tier as TierK].label}优先级保留上限 · ${releasing.before} → ${releasing.after} 条`}
+        explain="原申请超过 24 小时，后端按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
+        onCancel={() => setReleasing(null)} onConfirm={() => void releaseCap(releasing)} />}
       {!data ? contentLoading ? <BlockState state="loading" title="通知活动加载中…" /> : <BlockState state="error" title="通知活动读取失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void actions.reloadIContent()} /> : <>
       {conclusion}
 
@@ -753,7 +783,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
 
       <Panel title="每位用户最多保留几条" icon={Layers} tone="role-4" data-proof="i3-cap-rules"
         sub={`${CAP_TIERS.length} 档`}
-        explain="按优先级分别算：每位用户每种优先级只留最新的几条，超出的删掉，未读的也删。调整要提交审批，批准执行时立刻对全体用户清理一次；调高不会恢复已删的。这是保留条数，不是发送数量。">
+        explain="按优先级分别算：每位用户每种优先级只留最新的几条，超出的删掉，未读的也删；清理在发送通知、执行调整或用户读通知时进行。调整要提交审批，批准执行时立刻对全体用户清理一次；调高不会恢复已删的。这是保留条数，不是发送数量。">
         {CAP_TIERS.length === 0
           ? <BlockState state="empty" title="没有读到保留规则" />
           : <div className="i3-caps">
@@ -762,7 +792,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
               const cap = liveCap(tier, row.cap);
               return (
                 <CapCard key={tier} tier={tier} cap={row.cap} policy={operatorCopyText(row.policy)} locked={row.locked}
-                  action={!row.locked && canAdjustI3Cap ? <Button size="sm" aria-label={`调整${TIER[tier].label}优先级保留上限`} disabledReason={newMutationReason || (pendingCaps.some((item) => item.tier === tier) ? "此对象有原审批尚未处理，请查询原结果。" : undefined)} onClick={() => adjustCap(tier, cap)}>调整</Button> : undefined} />
+                  pending={(() => { const item = pendingCaps.find((p) => p.tier === tier && p.ticketStatus === "pending"); return item ? `${item.after} 条` : undefined; })()}
+                  action={!row.locked && showCapAdjust ? <Button size="sm" aria-label={`调整${TIER[tier].label}优先级保留上限`} disabledReason={capPermission || newMutationReason || (pendingCaps.some((item) => item.tier === tier) ? (pendingCaps.some((item) => item.tier === tier && item.ticketStatus === "pending") ? "这一档有申请等批准，批准或驳回后才能再调。" : "此对象有原审批尚未处理，请查询原结果。") : undefined)} onClick={() => adjustCap(tier, cap)}>调整</Button> : undefined} />
               );
             })}
           </div>}
@@ -773,7 +804,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         <div className="i3-route">
           <section aria-labelledby="i3-route-real">
             <h4 className="i3-sub-title" id="i3-route-real">App 实际怎么跳</h4>
-            <p className="i3-route-lead">设了「点了去哪」：点按钮和左滑都去那里。没设：点了只标已读，左滑按下表。</p>
+            <p className="i3-route-lead">设了「点了去哪」：点按钮去那里，左滑也去（系统通知左滑不跳）。没设：点了只标已读，左滑按下表。</p>
             <Table label="没设跳转时左滑去哪" className="i3-route-table">
               <thead><tr><Th>通知类型</Th><Th>没设「点了去哪」时左滑去</Th></tr></thead>
               <tbody>
@@ -861,7 +892,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             <Button disabled={submitting} onClick={() => setScheduleRow(null)}>取消</Button>
             <Button variant="primary" loading={submitting}
               disabledReason={schedulePendingKey ? scheduleRetryReason : lockReason(scheduleRow.id) || (!scheduledAt ? "还没选发送时间" : !scheduleVerified ? "还没勾选已核对" : scheduleReason.trim().length < 8 ? "操作理由至少 8 字" : scheduleReason.trim().length > 200 ? "操作理由最多 200 字" : undefined)}
-              onClick={() => void submitSchedule()}>确认排期</Button>
+              onClick={() => void submitSchedule()}>{schedulePendingKey ? "按原请求重试" : "确认排期"}</Button>
           </>}>
           <Facts>
             <Fact k="预计" lead unit="人">{quantityText(scheduleRow.reach)}</Fact>
@@ -871,7 +902,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             <Fact k="能不能撤">发出前可以取消，取消后不能再排期；发出后撤不回</Fact>
           </Facts>
           {scheduleRow.reach.trim() === "0" && <Notice tone="warn">保存时估算是 0 人。排期时后端会重新估算，还是 0 人会被拒绝。</Notice>}
-          <Field label={`发送时间（${businessZone().label}）`} required help="要晚于现在。到点后约 30 秒内发出，按那时符合条件的用户发送；预计人数是保存草稿时的估算。">
+          <Field label={`发送时间（${businessZone().label}）`} required help="要晚于现在。到点后自动发出，排队多时会晚；按那时符合条件的用户发送。">
             {(control) => <Input {...control} disabled={!!schedulePendingKey} type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />}
           </Field>
           <Check label="我已核对中文、越南语、英语的标题和正文，以及发给谁" checked={scheduleVerified} disabled={!!schedulePendingKey} onChange={(e) => setScheduleVerified(e.target.checked)} />
@@ -915,12 +946,12 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
                 ]} />
               </div>
               <NotificationPreview lang={detailLang} title={lang.title} body={lang.body} ctaLabel={c.ctaHref ? (c.ctaLabel || ctaLabelOf(c.ctaHref)) : ""} tier={c.tier} kindLabel={kindLabel(c.kind)}
-                missing={detailLang === "en" && enMissing} fallback="英语没填：英语和其他语言的用户收到后端默认的英文标题和正文。" />
+                missing={detailLang === "en" && enMissing} fallback="英语没填：英语用户收到后端默认的英文；其他语言有译文用译文，没有也用默认英文。" />
             </section>
             <Facts>
               <Fact k="送达 / 已读">{c.st === "sent" ? `${quantityText(c.sent)} / ${quantityText(c.read)}` : "—"}</Fact>
               <Fact k="点了去哪">{c.ctaHref ? ctaLabelOf(c.ctaHref) : "无跳转（点了只标已读）"}</Fact>
-              <Fact k="左滑">{c.ctaHref ? `去「${ctaLabelOf(c.ctaHref)}」` : c.kind === "system" ? "不跳转" : fallbackRoute ? `去「${ctaLabelOf(fallbackRoute)}」（按类型默认）` : "不跳转"}</Fact>
+              <Fact k="左滑">{c.kind === "system" ? "不跳转（系统通知左滑不跳）" : c.ctaHref ? `去「${ctaLabelOf(c.ctaHref)}」` : fallbackRoute ? `去「${ctaLabelOf(fallbackRoute)}」（按类型默认）` : "不跳转"}</Fact>
               <Fact k="预算">{budget === undefined || budget === "null" ? "—" : `${budget} USD（只记录，不扣款、不发奖）`}</Fact>
             </Facts>
             {c.tier === "critical" && <Notice tone="neutral">紧急通知不看用户的通知设置，也不按保留上限清理。</Notice>}
@@ -1015,7 +1046,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
     <Drawer open wide data-i3-form="" busy={submitting} onClose={onClose} title={editing ? "编辑通知草稿" : "新建通知"} sub={editing ? editing.name : "保存为草稿，不会发给任何人"} icon={FilePen} tone="role-3"
       explain="左边填，右边看 App 里的样子。保存后是草稿；之后在卡片上点「排期」或「立即发送」才会发出。"
       footer={<Decision note={missing.length ? `还缺：${missing.join("、")}` : over.length ? `${over.map((l) => LANG_NAME[l]).join("、")}有超长的内容，App 只收到前面一段` : undefined}
-        primary={<Button variant="primary" loading={submitting} disabledReason={blocked} onClick={onSubmit}>{editing ? "保存修改" : "保存草稿"}</Button>}
+        primary={<Button variant="primary" loading={submitting} disabledReason={blocked} onClick={onSubmit}>{frozen ? "按原请求重试" : editing ? "保存修改" : "保存草稿"}</Button>}
         others={<Button disabled={submitting} onClick={onClose}>取消</Button>} />}>
       <div className="rd-split i3-form-split" data-detail="" data-preview="">
         <div className="i3-form">
@@ -1041,7 +1072,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
 
           <section className="i3-form-section" aria-labelledby="i3-f-text">
             <div className="i3-form-head">
-              <h3 id="i3-f-text" className="i3-sub-title">通知内容</h3>
+              <h3 id="i3-f-text" className="i3-sub-title">通知内容<Explain label="字数怎么算" content="这里按字符数。保存上限（标题 160、正文 4000）后端另按长度算，表情等特殊字符算 2 个，可能没到上限就被拒。" /></h3>
               <LocaleTabs label="内容语言" value={lang} onChange={setLang} items={[
                 { value: "zh", label: "中文", missing: langMissing("zh") },
                 { value: "vi", label: "越南语", missing: langMissing("vi") },
@@ -1051,7 +1082,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
             <Field label={`${LANG_NAME[lang]}标题`} required={required} help={lengthHelp(titleLen, TITLE_SENT, SAVE_TITLE_MAX) ?? `${titleLen}/${TITLE_SENT} 字，App 收到前 ${TITLE_SENT} 字`}>
               {(control) => <Input {...control} disabled={frozen} value={title} placeholder={lang === "vi" ? "Dòng đầu tiên" : lang === "en" ? "First line in the list" : "通知列表里的第一行"} onChange={(e) => set(TITLE_KEY[lang], e.target.value)} />}
             </Field>
-            <Field label={`${LANG_NAME[lang]}正文`} required={required} help={lengthHelp(bodyLen, BODY_SENT, SAVE_BODY_MAX) ?? (lang === "en" && enEmpty ? "不填时，英语和其他语言的用户收到后端默认的英文内容。" : "{name} 这类占位符三种语言要一致。")}>
+            <Field label={`${LANG_NAME[lang]}正文`} required={required} help={lengthHelp(bodyLen, BODY_SENT, SAVE_BODY_MAX) ?? (lang === "en" && enEmpty ? "不填时英语用户收到后端默认的英文；只填标题或正文时，缺的那部分用默认。" : "{name} 这类占位符三种语言要一致。")}>
               {(control) => <Textarea {...control} disabled={frozen} rows={6} value={body} count={`${bodyLen}/${BODY_SENT}`} placeholder={lang === "vi" ? "Nội dung thông báo" : lang === "en" ? "Notification body" : "点开后看到的正文"} onChange={(e) => set(BODY_KEY[lang], e.target.value)} />}
             </Field>
           </section>
@@ -1081,13 +1112,15 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
             </div>
             <div className="i3-estimate" role="status" aria-live="polite">
               <span className="i3-estimate-label">预计</span>
-              {estimating
+              {frozen && estimatedAudience === null
+                ? <span className="i3-estimate-num" data-words="">—</span>
+                : estimating
                 ? <span className="i3-estimate-num" data-words="">估算中…</span>
                 : estimatedAudience === null
                   ? <span className="i3-estimate-num" data-words="">暂时估不出</span>
                   : <><span className="i3-estimate-num">{estimatedAudience.toLocaleString("en-US")}</span><span className="i3-estimate-unit">人</span></>}
               <span className="i3-estimate-note">
-                {estimatedAudience === null && !estimating ? "估算请求失败，改一下条件会重新估" : `${estimatedAt ? `${businessClock(estimatedAt)} 估算（${businessZone().label}）` : ""}，发出时可能更少`}
+                {frozen && estimatedAudience === null ? "原记录没存提交时的估算" : estimatedAudience === null && !estimating ? "估算请求失败，改一下条件会重新估" : `${estimatedAt ? `${businessClock(estimatedAt)} 估算（${businessZone().label}）` : ""}，发出时可能更少`}
                 <Explain label="估算和实际差多少" content={<>
                   <p>按估算那一刻的平台阶段和活跃用户数算，不看用户的通知设置。</p>
                   <p>发出时去掉关了这类通知的用户（紧急通知不去），所以实际送达可能更少，甚至是 0。</p>
@@ -1098,7 +1131,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
 
           <section className="i3-form-section" aria-labelledby="i3-f-budget">
             <h3 id="i3-f-budget" className="i3-sub-title">预算记录</h3>
-            <Field label="预算" hint="选填" help="只记录，不扣款、不发奖。不填按 0 保存。">
+            <Field label="预算" hint="选填" help="只记录，不扣款、不发奖。不填就不记。">
               {(control) => <NumberInput {...control} disabled={frozen} unit="USD" value={form.budget} onChange={(e) => set("budget", e.target.value)} />}
             </Field>
           </section>
@@ -1110,7 +1143,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
             <span className="i3-weak">{LANG_NAME[lang]}</span>
           </div>
           <NotificationPreview lang={lang} title={title.trim()} body={body.trim()} ctaLabel={selectedCta?.value ? selectedCta.label : ""} tier={form.tier} kindLabel={kindLabel(form.kind)}
-            missing={lang === "en" && enEmpty} fallback="英语没填：英语和其他语言的用户收到后端默认的英文标题和正文。" />
+            missing={lang === "en" && enEmpty} fallback="英语没填：英语用户收到后端默认的英文；其他语言有译文用译文，没有也用默认英文。" />
           <p className="i3-weak">示意图，实际样式以 App 为准。</p>
         </aside>
       </div>

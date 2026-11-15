@@ -134,7 +134,7 @@ export function ChannelCard({ name, keyText, on, source, tick, cooldown, phase, 
 
 export const PLACEHOLDERS = ["{actor}", "{name}", "{city}", "{amount}", "{eventType}", "{sourceNote}"] as const;
 export const PLACEHOLDER_TEXT: Record<string, string> = {
-  "{actor}": "人物（脱敏）", "{name}": "人物（同 {actor}）", "{city}": "地区（脱敏）", "{amount}": "金额区间或人数", "{eventType}": "事件类型代码", "{sourceNote}": "来源备注",
+  "{actor}": "人物（脱敏）", "{name}": "人物（同 {actor}）", "{city}": "地区（脱敏）", "{amount}": "金额区间或人数", "{eventType}": "事件类型代码", "{sourceNote}": "来源备注；提现类是内部状态码，会原样进通知",
 };
 export const placeholdersOf = (text: string) => [...new Set(text.match(/\{[A-Za-z][A-Za-z0-9_]*}/g) ?? [])];
 
