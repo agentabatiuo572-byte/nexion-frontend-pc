@@ -340,7 +340,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       facts: <Facts>
         <Fact k="任务名称">{String(bv.missionName ?? "").trim()}</Fact>
         <Fact k="任务编号"><span data-mono="">{String(bv.missionCode ?? "").trim()}</span></Fact>
-        <Fact k="奖励">{reward == null ? "—" : `${amountText(reward)} UVT${missionType === "DAY_ONE" ? "（新手任务不单发，做完全部统一领新手任务奖励）" : ""}`}</Fact>
+        <Fact k="奖励">{reward == null ? "—" : `${amountText(reward)} UVT${missionType === "DAY_ONE" ? "（不单发，统一领新手任务奖励）" : ""}`}</Fact>
         <Fact k="类别和跳转">{`${TASK_CATEGORY_LABELS[bv.category] ?? bv.category} · ${TASK_ACTION_ROUTE_LABELS[bv.actionRoute] ?? bv.actionRoute}`}</Fact>
         <Fact k="建好后">已停用；绑定完成条件、启用以后用户才看得到</Fact>
         {approval ? <Fact k="什么时候生效" tone="warn">奖励大于 0：提交审批，批准后才建好</Fact> : <Fact k="什么时候生效">奖励是 0：确认后直接建好</Fact>}
@@ -1178,9 +1178,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           <div className="h3-tasks-layout">
           {cards("dayOne", dayOne)}
         <AppPreview kind="dayOne" tasks={dayOneActive.map((task) => previewTask(task, false))}
-          header={<><b>新手任务</b><span>{`${dayOneActive.length} 项 · 倒计时 ${eligibility ? `${eligibility}:00:00` : "—"}`}</span></>}
-          footer="完成全部任务后领取奖励；做完出现「领取新手任务奖励」，到期显示「资格已结束」"
-          empty="未参加新手任务（当前没有启用任务）" />
+          header={<><b>新手任务</b>{dayOneActive.length > 0 && <span>{`${dayOneActive.length} 项 · 倒计时 ${eligibility ? `${eligibility}:00:00` : "—"}`}</span>}</>}
+          footer={dayOneActive.length > 0 ? <>做完全部出现「领取新手任务奖励」<br />到期显示「资格已结束」</> : undefined}
+          empty={<>未参加新手任务<br />（当前没有启用任务）</>} />
           </div>
         </Panel>
     </div>
