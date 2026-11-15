@@ -24,7 +24,7 @@ import { finishRetiredH2TrialChargeLookup, H2_TRIAL_ACTIONS, pendingH2TrialAppro
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
-import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ADVANCED_TRIAL_GROUPS, COMMON_TRIAL_PARAMS, TRIAL_PARAM_HELP, TRIAL_STATE_HELP } from "@/lib/admin/config-help/h2-trial";
 import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -62,7 +62,7 @@ type TrialSession = {
 /** 列表格里只留「待审批」，动作、提交人和时间写在抽屉里（PG-43 每格最多两行）。动作名后面带的记录编号抽屉标题下已有，这里去掉，一行放得下。 */
 function trialApprovalMeta(approval: NonNullable<TrialSession["pendingApproval"]>, sid: string) {
   const bare = sid.replace(/^trial-/, "");
-  return [approval.action?.split(" · ").filter((part) => !part.endsWith(bare)).join(" · "), approval.submittedBy, approval.submittedAt && formatBusinessTimeFull(approval.submittedAt, "—")].filter(Boolean).join(" · ");
+  return [approval.action?.split(" · ").filter((part) => !part.endsWith(bare)).join(" · "), approval.submittedBy, approval.submittedAt && formatBusinessTimeCompact(approval.submittedAt, "—")].filter(Boolean).join(" · ");
 }
 
 type TrialState = { key: string; label: string; tone: string };
@@ -103,7 +103,7 @@ const LOCKED = "这条记录有一次操作结果未知，先到页面上方处�
 const PARAM_LOCKED = "这项有一次修改结果未知，先到页面上方处理";
 const APPROVAL_SENT = "已提交审批，超级管理员批准后执行，进度到「操作记录与审批」看。";
 // 后端的强制扣款走已退役的入口，固定回 410 TRIAL_EXPLICIT_PURCHASE_REQUIRED（AppTrialLifecycleService.redeemOnce）。
-const CHARGE_RESULT = "强制扣款已停用，用户要购买请到 App 或 H5 的试用页自己确认";
+const CHARGE_RESULT = "强制扣款已停用，用户要买请到 App 或 H5 试用页确认";
 const NO_WRITE = "这个账号已没有这项权限，请有权限的同事处理";
 // 每个审批框都一样的话，收进生效标签的提示图标（N09）。发起人不能批自己的单（后端 A2_MAKER_CHECKER_REQUIRED）。
 const APPROVAL_NOTE = "超级管理员批准后才执行，批准前这条记录不变。发起人不能批自己提交的单。";
@@ -176,7 +176,7 @@ function trialProductReason(reason: string | undefined) {
 
 /** 时区只写第一条（TX-25）。 */
 function sessionTime(value: string | undefined, zoned = false) {
-  return value ? `${formatBusinessTimeFull(value, "—")}${zoned ? `（${businessZone().label}）` : ""}` : "—";
+  return value ? `${formatBusinessTimeCompact(value, "—")}${zoned ? `（${businessZone().label}）` : ""}` : "—";
 }
 
 /** 中间省略，全值在悬停和复制里（ST-04）。编号开头都一样，留开头分不出谁是谁。 */
@@ -592,7 +592,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       summary="设置试用商品、时长和优惠，查看试用记录。"
       guideExtra={guideExtra}
       meta={model ? <span className="rd-toolbar">
-        <span>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}打开时读取</span>
+        <span>{readAt ? `${readAt} 读取（${businessZone().label}），` : ""}不自动刷新</span>
         <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reload()}>刷新</Button>
       </span> : undefined}
       readOnly={model && !canWrite ? "你只能查看；修改试用设置要有这页的修改权限。" : undefined}
@@ -709,7 +709,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         {!expired && <Button size="sm" disabled={!!recovering} disabledReason={retryBlock} onClick={() => void retryPending(record)}>按原请求重试</Button>}
         {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>}>
-        {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，
+        {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，
         <KeepText text={proposal ? "审批可能已经提交，批准前不会执行；有结果前这条记录不能再操作。" : "可能已经生效，有结果前这项不能再改。"} />
         {proposal && !canQuery ? " 这个账号查不了原审批单，请能看操作记录的同事核查。" : ""}
         <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查询原结果，查不到再按原请求重试。" : " 按原请求重试不会重复执行。"} />
