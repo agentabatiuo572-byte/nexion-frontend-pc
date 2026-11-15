@@ -547,6 +547,7 @@ export class UsersRequestError extends Error {
     public readonly status: number,
     public readonly code: string | undefined,
     message: string,
+    public readonly businessStatus?: number,
   ) {
     super(message);
     this.name = "UsersRequestError";
@@ -623,7 +624,7 @@ export function isUsersRequestNotFound(error: unknown) {
   return error instanceof UsersRequestError && error.status === 404;
 }
 
-async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string }) {
+async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string; requireReadableOutcome?: boolean }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -659,6 +660,11 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     throw error;
   }
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  // C6 first-send rejection classification needs a readable business verdict.
+  // A bare/malformed 4xx must not discard the saved original request.
+  if (init?.requireReadableOutcome && (!result || typeof result.code !== "number" || !Number.isFinite(result.code))) {
+    throw new UsersOutcomeUnknownError(headers.get("Idempotency-Key")!);
+  }
 
   if (!response.ok || !result || result.code !== 0) {
     const authFailure = isAdminAuthFailure(response.status, result?.message);
@@ -686,6 +692,7 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
       response.status,
       serverMessage,
       formatAdminApiError(serverMessage, `USERS_REQUEST_FAILED_${response.status}`),
+      result?.code,
     ), { reasonCode: serverMessage });
   }
 
@@ -1093,8 +1100,8 @@ function c6ResponseInvalid(): never {
 }
 
 function c6Numeric(value: unknown) {
-  return (typeof value === "number" && Number.isFinite(value))
-    || (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)));
+  return (typeof value === "number" || typeof value === "string" && value.trim() !== "")
+    && Number.isSafeInteger(Number(value)) && Number(value) >= 0;
 }
 
 function requireC6Overview(value: unknown): UserRegistrationRiskOverview {
@@ -1115,6 +1122,12 @@ function requireC6Overview(value: unknown): UserRegistrationRiskOverview {
   if (typeof stats.captchaTemporarilyDisabled !== "boolean" || typeof stats.captchaRestoreAt !== "string") {
     return c6ResponseInvalid();
   }
+  // state() may retain an expired ISO deadline before the recovery scheduler
+  // clears it. No window / malformed persisted window becomes "", false, 0.
+  const deadline = stats.captchaRestoreAt;
+  if (deadline !== "" && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(deadline) || !Number.isFinite(Date.parse(deadline)))
+    || stats.captchaTemporarilyDisabled !== (Number(stats.captchaRemainingSeconds) > 0)
+    || stats.captchaTemporarilyDisabled && deadline === "") return c6ResponseInvalid();
   if (!value.params.every((param) => isJsonRecord(param)
     && typeof param.group === "string"
     && typeof param.key === "string"
@@ -1164,6 +1177,7 @@ export async function updateUserRegistrationRiskParam(
     method: "PATCH",
     body: JSON.stringify({ value, reason, operator, expectedVersion }),
     idempotencyKey: stableIdempotencyKey,
+    requireReadableOutcome: true,
   });
 }
 
