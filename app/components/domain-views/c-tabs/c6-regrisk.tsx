@@ -161,9 +161,9 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   /** 只用于页头「读取于」，不参与任何判断。 */
   const [readAt, setReadAt] = useState<number | null>(null);
 
-  const loadData = useCallback(async (silent = false) => {
+  const loadData = useCallback(async () => {
     const epoch = ++readEpoch.current;
-    if (!silent) setLoading(true);
+    setLoading(true);
     try {
       const data = await fetchUserRegistrationRiskOverview();
       if (epoch !== readEpoch.current) return false;
@@ -215,7 +215,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       // Close every old confirmation before a new authoritative read enables writes.
       invalidate();
       toast(row.successMessage!);
-      await loadData(true);
+      await loadData();
       return true;
     } catch (err) {
       const rejected = retry ? isC6ExplicitRejection(err)
@@ -228,7 +228,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           readEpoch.current += 1;
           overviewRef.current = null;
           setOverview(null);
-          await loadData(true);
+          await loadData();
           onRejected?.(overviewRef.current, err);
         }
       } else if (row) { readEpoch.current += 1; overviewRef.current = null; setOverview(null); setLoading(false); }
