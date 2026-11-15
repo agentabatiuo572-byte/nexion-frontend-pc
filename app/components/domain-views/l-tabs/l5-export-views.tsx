@@ -71,7 +71,7 @@ export function MaskTag({ mask }: { mask: LExportTask["mask"] }) {
 
 const STATUS: Record<string, { label: string; tone: StateTone; icon?: LucideIcon; explain: string }> = {
   PENDING_CONFIRM: { label: "待放行", tone: "warn", icon: Clock3, explain: "含隐私的脱敏明细，要另一位有导出审批权的管理员放行后才能下载。" },
-  PENDING_SPLIT_CONFIRM: { label: "待放行", tone: "warn", icon: Clock3, explain: "这份是分批确认的待放行，放行方式和普通的一样。" },
+  PENDING_SPLIT_CONFIRM: { label: "待放行", tone: "warn", icon: Clock3, explain: "状态名是「待拆分确认」，放行方式和普通待放行一样。" },
   PENDING: { label: "待处理", tone: "neutral", explain: "还没开始生成。" },
   GENERATING: { label: "生成中", tone: "progress", explain: "正常的导出创建时就生成好了；停在这里的不会自己变成可下载，请联系技术同事。" },
   READY: { label: "可下载", tone: "ok", explain: "文件已生成。每次点「下载」签发一个只给你用、24 小时内有效的链接。" },
