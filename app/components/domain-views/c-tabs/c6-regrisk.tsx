@@ -17,8 +17,10 @@ import { BlockState, Button, Change, ConfigList, ConfigRow, Conclusion, Explain,
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { pendingC6Commands, prepareC6Command, submitC6Command, forgetC6Command, isCompleteC6Command, isC6ExplicitRejection, type C6Pending, type C6Original } from "@/lib/admin/c6-regrisk-commands";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import {
   fetchUserRegistrationRiskOverview,
+  UsersRequestError,
   type UserRegistrationRiskK1Guard,
   type UserRegistrationRiskOverview,
   type UserRegistrationRiskParam,
@@ -167,7 +169,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     const auth = useAdminAuth.getState();
     return auth.session?.adminId === owner && (auth.session.role === "super" || auth.session.role === "superadmin" || auth.session.authorities.includes("user_c6_write"));
   };
-  const perform = async (original: C6Pending) => {
+  const perform = async (original: C6Pending, retry = true) => {
     if (mutation.current || !canSubmit()) return false;
     mutation.current = true;
     setBusy(true);
@@ -184,7 +186,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       await loadData(true);
       return true;
     } catch (err) {
-      const rejected = isC6ExplicitRejection(err);
+      const rejected = retry ? isC6ExplicitRejection(err)
+        : err instanceof UsersRequestError && isDeterministicRejection(err.status, err.businessStatus);
       if (row && rejected) { forgetC6Command(row); invalidate(); }
       else if (row) { readEpoch.current += 1; overviewRef.current = null; setOverview(null); setLoading(false); }
       const message = row && !rejected ? "结果未知 · 已保留原请求，在页面上方读回核对或按原请求重试" : `操作失败 · ${errorMessage(err)}`;
@@ -217,7 +220,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         // getPendingReason freezes its inputs when no verdict is received.
         try { original = prepareC6Command(request); }
         catch (failure) { toast(errorMessage(failure), "error"); return false; }
-        return perform(original);
+        return perform(original, false);
       },
     };
   };
