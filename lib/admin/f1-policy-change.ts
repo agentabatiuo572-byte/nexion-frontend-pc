@@ -33,6 +33,8 @@ const attempts = createPendingMutationStore<F1PolicyRecord>({
   storageKey: "nexion-admin-f1-policy-commands-v1", retainExpiredRecords: true,
   isValidRecord: (record) => typeof record.input === "string",
 });
+const inFlight = new Set<string>();
+export const isF1PolicyInFlight = (commandKey: string) => inFlight.has(commandKey);
 const MONEY = /^(0|[1-9]\d{0,11})(?:\.\d{1,6})?$/;
 const DECIMAL = /^(0|[1-9]\d*)(?:\.\d+)?$/;
 const ZERO = BigInt(0);
@@ -193,12 +195,13 @@ export async function submitF1Policy(
   const record = () => attempts.list().find(item => item.commandKey === key)!;
   let posting = false;
   let acknowledgement: string;
+  if (mode === "submit") inFlight.add(key);
   try {
     if (original.approval) {
       let ticket;
       if (previous || mode === "lookup") {
-        // Clear stale observations before a fresh authoritative query.
-        attempts.remember(fingerprint, key, { ...record(), ticket: undefined, absent: false });
+        // A failed read cannot revoke an earlier authoritative pending observation.
+        attempts.remember(fingerprint, key, { ...record(), absent: false });
         ticket = await fetchA2ProposalByKey(key, true, true);
         if (!ticket) attempts.remember(fingerprint, key, { ...record(), ticket: undefined, absent: true });
       }
@@ -245,6 +248,8 @@ export async function submitF1Policy(
     if (rejected) attempts.forget(fingerprint, key);
     else if (saved && !isA2OutcomeUncertainError(error)) throw new A2OutcomeUncertainError(error instanceof Error ? error.message : "原操作结果未知，请查询原结果。", key);
     throw error;
+  } finally {
+    if (mode === "submit") inFlight.delete(key);
   }
   // The command's known result is independent of this subsequent read.
   const active = await fetchF1VRankOverview().catch(() => null);
