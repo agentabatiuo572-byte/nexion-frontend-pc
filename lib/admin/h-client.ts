@@ -641,6 +641,26 @@ export interface H8SettlementRow {
   inviterNex?: number | string;
   status?: string;
   createdAt?: string;
+  frozenCount?: number | null;
+  proposerName?: string | null;
+  approverName?: string | null;
+}
+
+export interface H8SettlementEligibility {
+  invitedUserId: number;
+  effectiveAt: string;
+  configReady: boolean;
+  registeredAt: string | null;
+  walletPresent: boolean | null;
+  settled: boolean | null;
+  freezeGift: boolean | null;
+  frozenGiftCount: number | null;
+  firstPaidOrder: boolean | null;
+  riskBlocked: boolean | null;
+  eligible: boolean;
+  willFreeze: boolean;
+  releasePossible: boolean;
+  reason: string;
 }
 
 export type H8RewardParamKey = "newcomer.usdt" | "newcomer.nex" | "inviter.nex" | "newcomer.lockMode" | "enabled";
@@ -797,6 +817,9 @@ export function parseH8ReferralRewardOverview(value: unknown): H8ReferralRewardO
           inviterNex: h8Decimal(row.inviterNex, `recentSettlements.${index}.inviterNex`),
           status,
           createdAt: row.createdAt == null ? undefined : h8String(row.createdAt, `recentSettlements.${index}.createdAt`),
+          frozenCount: row.frozenCount == null ? row.frozenCount : h8NonNegativeCount(row.frozenCount, `recentSettlements.${index}.frozenCount`),
+          proposerName: row.proposerName == null ? row.proposerName : h8String(row.proposerName, `recentSettlements.${index}.proposerName`),
+          approverName: row.approverName == null ? row.approverName : h8String(row.approverName, `recentSettlements.${index}.approverName`),
         };
       })
     : h8Invalid("recentSettlements");
@@ -850,6 +873,28 @@ export function parseH8ReferralRewardOverview(value: unknown): H8ReferralRewardO
 export async function fetchH8ReferralRewards(cursor = ""): Promise<H8ReferralRewardOverview> {
   const query = cursor ? `?cursor=${encodeURIComponent(cursor)}&pageSize=20` : "?pageSize=20";
   return parseH8ReferralRewardOverview(await growthRequest<unknown>(`/referral-rewards${query}`));
+}
+
+/** Eligibility is a point-in-time read, not a promise of release or sufficient coverage. */
+export async function fetchH8SettlementEligibility(invitedUserId: number): Promise<H8SettlementEligibility> {
+  const row = h8Record(await growthRequest<unknown>(`/referral-rewards/settlements/eligibility?invitedUserId=${encodeURIComponent(invitedUserId)}`), "eligibility");
+  const boolean = (key: string, nullable = false): boolean | null => {
+    if (nullable && row[key] === null) return null;
+    if (typeof row[key] !== "boolean") h8Invalid(`eligibility.${key}`);
+    return row[key];
+  };
+  return {
+    invitedUserId: h8PositiveCount(row.invitedUserId, "eligibility.invitedUserId"),
+    effectiveAt: h8IsoInstant(row.effectiveAt, "eligibility.effectiveAt"),
+    configReady: boolean("configReady")!,
+    registeredAt: row.registeredAt === null ? null : h8IsoInstant(row.registeredAt, "eligibility.registeredAt"),
+    walletPresent: boolean("walletPresent", true), settled: boolean("settled", true),
+    freezeGift: boolean("freezeGift", true), firstPaidOrder: boolean("firstPaidOrder", true),
+    riskBlocked: boolean("riskBlocked", true),
+    frozenGiftCount: row.frozenGiftCount === null ? null : h8NonNegativeCount(row.frozenGiftCount, "eligibility.frozenGiftCount"),
+    eligible: boolean("eligible")!, willFreeze: boolean("willFreeze")!, releasePossible: boolean("releasePossible")!,
+    reason: h8String(row.reason, "eligibility.reason"),
+  };
 }
 
 export async function updateH8ReferralRewardParam(
