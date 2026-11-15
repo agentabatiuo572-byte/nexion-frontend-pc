@@ -207,16 +207,22 @@
 .h8-settle-foot { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--rd-line); }
 .h8-target { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin: 0; }
 .h8-target .rd-form-field { width: 220px; }
+.h8-target-check { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 .h8-settle-foot > p { margin: 0; }
 .h8-latest { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
 
 /* 结算记录 */
 .h8-records { table-layout: fixed; width: 100%; }
-.h8-col-no { width: 25%; }
-.h8-col-user { width: 12%; }
-.h8-col-gift { width: 20%; }
-.h8-col-invite { width: 19%; }
-.h8-col-state { width: 12%; }
+.h8-col-no { width: 15%; }
+.h8-col-user { width: 9%; }
+.h8-col-gift { width: 17%; }
+.h8-col-invite { width: 11%; }
+.h8-col-time { width: 12%; }
+.h8-col-batch { width: 18%; }
+.h8-col-state { width: 9%; }
+.h8-batch { display: flex; flex-direction: column; min-width: 0; }
+.h8-batch > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.h8-batch small { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .h8-no { display: flex; min-width: 0; font-family: var(--rd-font-mono); }
 .h8-no-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .h8-no-tail { flex: none; white-space: nowrap; }
