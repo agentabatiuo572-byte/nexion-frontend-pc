@@ -17,10 +17,10 @@ import { Modal, Btn, Chip, OperatorBriefBlock } from "../design-kit";
 import type { ConfirmReq } from "./types";
 
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
-  const [pendingReason, setPendingReason] = useState(() => req.freezePendingInputs ? req.getPendingReason?.() : undefined);
+  const [pendingReason, setPendingReason] = useState(() => req.freezePendingInput ? req.getPendingReason?.() : undefined);
   const [draftReason, setReason] = useState(pendingReason ?? req.initialReason ?? "");
   const reason = pendingReason ?? draftReason;
-  const [value, setValue] = useState(() => (req.freezePendingInputs ? req.getPendingValue?.() : undefined) ?? req.initialValue ?? "");
+  const [value, setValue] = useState(() => (req.freezePendingInput ? req.getPendingValue?.() : undefined) ?? req.initialInputValue ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 刚打开不报错：字数不够等失焦或点过提交才用警告色（DP-06）。
@@ -47,7 +47,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   // chips 模式:所选项即非空,用精确判空(防空串 option 误配后按钮静默禁用);文本模式:仍要求 trim 后非空(拒纯空白)。
   const inputOk = !req.input || req.input.required === false || (req.input.options ? value !== "" : value.trim().length >= 1);
   const valueProblem = req.input?.validate?.(value);
-  const can = !(req.freezePendingInputs && req.blockedReason) && (pendingReason !== undefined || reasonOk && inputOk && !valueProblem && policySettled);
+  const pendingBlockReason = req.freezePendingInput ? req.getPendingBlockReason?.() : undefined;
+  const can = !pendingBlockReason && (req.replayPendingInput && pendingReason !== undefined || reasonOk && inputOk && !valueProblem && policySettled);
   const reasonShort = reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `已填写 ${reasonLength}/${reasonMax} 字`;
   const submit = async () => {
     if (!can || submitting) return;
@@ -66,7 +67,11 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       const handled = typeof req.errorHandled === "function" ? req.errorHandled(cause) : req.errorHandled;
       if (!handled) setError(displayAdminError(cause));
     } finally {
-      setPendingReason(req.freezePendingInputs ? req.getPendingReason?.() : undefined);
+      if (req.freezePendingInput) {
+        const retained = req.getPendingReason?.();
+        setPendingReason(retained);
+        if (pendingReason !== undefined && retained === undefined) onClose();
+      }
       setSubmitting(false);
     }
   };
@@ -88,7 +93,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
               variant={req.confirmTone ?? "primary"}
               loading={submitting}
               loadingText="提交中…"
-              disabledReason={can || submitting ? undefined : [!policySettled && "正在读取理由规则", !inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
+              disabledReason={can || submitting ? undefined : pendingBlockReason ?? [!policySettled && "正在读取理由规则", !inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
               onBlockedClick={() => setAttempted(true)}
               onClick={() => void submit()}
             >

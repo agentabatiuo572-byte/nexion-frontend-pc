@@ -283,7 +283,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     const original = () => pendingI3Commands().find((row) => row.commandKey === key);
     const carried = restored ? null : prefill.current;
     prefill.current = null;
-    ctx.openConfirm({ ...req, initialReason: carried?.reason, initialValue: carried?.value, errorHandled: false, freezePendingInputs: true, getPendingReason: () => original()?.reason,
+    ctx.openConfirm({ ...req, initialReason: carried?.reason, initialInputValue: carried?.value, errorHandled: false, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason,
       run: async (reason, value) => {
         if (key) {
           const record = original();

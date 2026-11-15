@@ -1462,6 +1462,23 @@ export const HIGH_OPS: HighOpDef[] = [
   },
   // —— H 域增长(批 7) ——
   {
+    op: "h3_quest_config", domain: "H", action: "放大用户任务奖励配置", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h3_quest_config",
+    buildCommand: (ctx) => ({ domain: "H", op: "h3_quest_config", params: { values: {
+      configKey: String(ctx.configKey), value: String(ctx.value), expectedValue: String(ctx.expectedValue),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h3_quest_config", id: String(ctx.configKey) }),
+  },
+  {
+    op: "h3_mission_create", domain: "H", action: "新建带奖励的任务", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h3_mission",
+    buildCommand: (ctx) => ({ domain: "H", op: "h3_mission_create", params: { values: {
+      missionCode: String(ctx.missionCode), missionName: String(ctx.missionName), missionType: String(ctx.missionType),
+      rewardPoints: Number(ctx.rewardPoints), category: String(ctx.category), actionRoute: String(ctx.actionRoute),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h3_mission", id: String(ctx.missionCode) }),
+  },
+  {
     op: "h3_weekly_region_policy",
     domain: "H",
     action: "调整每周任务地区映射",
@@ -1553,6 +1570,31 @@ export const HIGH_OPS: HighOpDef[] = [
         expectedValue: String(ctx.expectedValue),
       } }),
     buildTarget: (ctx) => ({ domain: "H", type: "checkin_rule", id: String(ctx.ruleKey) }),
+  },
+  {
+    op: "h5_streak_milestone", domain: "H", action: "放宽连签里程碑奖励", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h5_streak_milestone",
+    buildCommand: (ctx) => ({ domain: "H", op: "h5_streak_milestone", params: { values: {
+      milestoneId: Number(ctx.milestoneId), reward: String(ctx.reward), expectedReward: String(ctx.expectedReward),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h5_streak_milestone", id: String(ctx.milestoneId) }),
+  },
+  {
+    op: "h5_power_up_config", domain: "H", action: "放宽连签权益", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h5_power_up",
+    buildCommand: (ctx) => ({ domain: "H", op: "h5_power_up_config", params: { values: {
+      powerUpId: Number(ctx.powerUpId), day: Number(ctx.day), note: String(ctx.note), expectedDay: Number(ctx.expectedDay), expectedNote: String(ctx.expectedNote),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h5_power_up", id: String(ctx.powerUpId) }),
+  },
+  {
+    op: "h5_earn_milestone", domain: "H", action: "放宽收益里程碑", amplifies: true, type: "fund",
+    gateLabel: "另一位超级管理员", targetType: "h5_earn_milestone",
+    buildCommand: (ctx) => ({ domain: "H", op: "h5_earn_milestone", params: { values: {
+      milestoneKey: String(ctx.milestoneKey), thresholdUsd: String(ctx.thresholdUsd), rewardNex: String(ctx.rewardNex),
+      expectedThresholdUsd: String(ctx.expectedThresholdUsd), expectedRewardNex: String(ctx.expectedRewardNex),
+    } } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h5_earn_milestone", id: String(ctx.milestoneKey) }),
   },
   {
     op: "h8_reward_param_change",
@@ -1774,6 +1816,31 @@ export const HIGH_OPS: HighOpDef[] = [
       expectedCurrentStatus: ctx.expectedCurrentStatus,
     } }),
     buildTarget: (ctx) => ({ domain: "I", type: "learning_course_activation", id: String(ctx.courseId) }),
+  },
+  {
+    op: "h4_event_rule_enable", domain: "H", action: "启用活动或放宽转盘资金护栏", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_event_rule",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_event_rule_enable", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_event_rule", id: String(ctx.eventCode) }),
+  },
+  {
+    op: "h4_genesis_raffle_open", domain: "H", action: "启用活动或放宽转盘资金护栏", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_genesis_raffle",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_genesis_raffle_open", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_genesis_raffle", id: String(ctx.id) }),
+  },
+  {
+    op: "h4_wheel_guard_create", domain: "H", action: "启用活动或放宽转盘资金护栏", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_wheel_guard",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_wheel_guard_create", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_wheel_guard", id: String(ctx.guardKey) }),
+  },
+  {
+    op: "h4_wheel_guard_update", domain: "H", action: "启用活动或放宽转盘资金护栏", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_wheel_guard",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_wheel_guard_update", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_wheel_guard", id: String(ctx.guardKey) }),
+  },
+  {
+    op: "h4_legacy_event_open", domain: "H", action: "开放旧活动资金奖励", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_legacy_event",
+    buildCommand: (ctx) => ({ domain: "H", op: "h4_legacy_event_open", params: { values: ctx } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "h4_legacy_event", id: String(ctx.eventCode) }),
   },
   {
     op: "h4_legacy_event_reward_update", domain: "H", action: "提高旧活动奖励", amplifies: true, type: "fund", gateLabel: "超管", targetType: "h4_legacy_event",

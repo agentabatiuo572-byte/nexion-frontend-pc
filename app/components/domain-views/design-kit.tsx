@@ -17,6 +17,7 @@ import { ToastHost } from "@/app/components/kit/toast-host";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { fetchA2ReasonPolicy, isA2OutcomeUncertainError, visibleReasonLength } from "@/lib/admin/a2-client";
+import type { H4UploadTarget } from "@/lib/admin/h4-mutations";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOptionalTrustLinkField, validateTrustSectionTrilingualFields } from "@/lib/admin/trust-section-validation";
@@ -582,7 +583,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; /** current 不是现在读到的值时（比如恢复原操作时带的是提交那一刻的值）写它是什么，只改显示的名字。 */ currentLabel?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; step?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; /** 范围之外的校验，比如和别的参数的关系：返回原因就不能提交，写在字段下。 */ validate?: (value: string) => string | undefined; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; label?: string; current?: string; /** current 不是现在读到的值时（比如恢复原操作时带的是提交那一刻的值）写它是什么，只改显示的名字。 */ currentLabel?: string; /** Display-only current value; comparisons and requests use current. */ displayCurrent?: string; initialValue?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; disabledOptions?: string[]; min?: number; max?: number; maxDecimals?: number; step?: number; /** Keyboard increment when it differs from the accepted numeric precision. */ inputStep?: number; disallowCurrent?: boolean; /** 清空也是合法的新值时写这个选项的名字，比如「不设上限」。要人点它才算清空，框里什么都没填或填坏了都不算。 */ emptyOption?: string; /** 怎么填，只在 RdPage 里显示（CP-87）。 */ hint?: ReactNode; /** 改了会怎样，随输入变化，只在 RdPage 里显示。 */ preview?: (value: string) => ReactNode; /** 范围之外的校验，比如和别的参数的关系：返回原因就不能提交，写在字段下。 */ validate?: (value: string) => string | undefined; amplifiesWhen?: "increase" | "decrease" | { from: string; to: string } | ((value: string) => boolean); submitEditValue?: boolean };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -668,6 +669,7 @@ function isEditValueValid(spec: EditSpec | null, value: string): boolean {
 /** 修改框里「现在」的值：选项写名字，数字加千分位；是数字时才带单位（「不设上限」后面不跟 USDT）。 */
 function editCurrent(spec: EditSpec, kind: string): { text: ReactNode; unit?: string } {
   const current = spec.current ?? "";
+  if (spec.displayCurrent !== undefined) return { text: spec.displayCurrent, unit: spec.unit };
   const label = spec.optionLabels?.[current];
   if (label !== undefined) return { text: label };
   if (kind !== "number" || !/^-?\d+(\.\d+)?$/.test(current.trim())) return { text: current };
@@ -777,7 +779,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; /** 跨字段校验。传 field 时写在那一项下面，不传写在表单最后。 */ feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean; field?: string }; amplifies?: (value: BusinessFormValue) => boolean; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "date" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; mustChoose?: boolean; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; /** 这一项是什么、怎么填：收进字段名旁的提示图标（DP-06），只在 RdPage 里显示。 */ explain?: ReactNode; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; /** 跨字段校验。传 field 时写在那一项下面，不传写在表单最后。 */ feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean; field?: string }; amplifies?: (value: BusinessFormValue) => boolean; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "date" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; mustChoose?: boolean; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; /** 这一项是什么、怎么填：收进字段名旁的提示图标（DP-06），只在 RdPage 里显示。 */ explain?: ReactNode; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; uploadTarget?: H4UploadTarget; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; typeLocked?: boolean; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -1976,6 +1978,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
                           usage: f.uploadUsage ?? "general",
                           entityType: "MEDIA_ASSET",
                           operator: f.uploadOperator,
+                          uploadTarget: f.uploadTarget,
                         });
                     void upload.then((asset) => {
                       set(f.key, asset.assetId);
@@ -2081,6 +2084,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
                         usage: f.uploadUsage ?? "general",
                         entityType: "MEDIA_ASSET",
                         operator: f.uploadOperator,
+                          uploadTarget: f.uploadTarget,
                       });
                   void upload.then((asset) => {
                     set(f.key, asset.assetId);
@@ -4108,7 +4112,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
               </div>
             ) : <>
               {kind === "number" ? (
-                <RdNumberInput {...control} key={emptyChosen ? "empty" : "value"} aria-label="目标新值" unit={spec.unit} min={spec.min} max={spec.max} step={spec.step} value={newVal} disabled={formLocked || emptyChosen} aria-invalid={showEditError && !editValueOk && (!!newVal || numberBad) ? true : undefined} onChange={(e) => setNewVal(e.target.value)} onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)} onBlur={() => setEditLeft(true)} />
+                <RdNumberInput {...control} key={emptyChosen ? "empty" : "value"} aria-label="目标新值" unit={spec.unit} min={spec.min} max={spec.max} step={spec.inputStep ?? spec.step} value={newVal} disabled={formLocked || emptyChosen} aria-invalid={showEditError && !editValueOk && (!!newVal || numberBad) ? true : undefined} onChange={(e) => setNewVal(e.target.value)} onInput={(e) => setNumberBad(e.currentTarget.validity.badInput)} onBlur={() => setEditLeft(true)} />
               ) : (
                 <input {...control} className="rd-input" aria-label="目标新值" type="text" disabled={formLocked} value={newVal} onChange={(e) => setNewVal(e.target.value)} onBlur={() => setEditLeft(true)} placeholder="输入新值" />
               )}

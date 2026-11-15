@@ -19,7 +19,8 @@ import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import H1Phase from "./h-tabs/h1-phase";
 import H2Trial from "./h-tabs/h2-trial";
-import H3QuestEvents, { H4ActivityCenter } from "./h-tabs/h3-quest-events";
+import H3QuestTasks from "./h-tabs/h3-quest-tasks";
+import H4LegacyCenter from "./h-tabs/h4-legacy-center";
 import H5DailyMilestones from "./h-tabs/h5-daily-milestones";
 import H7VoucherConfig from "./h-tabs/h7-voucher-config";
 import H8ReferralRewards from "./h-tabs/h8-referral-rewards";
@@ -52,6 +53,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,
+    closeConfirm: () => setCf(null),
     can,
   };
 
@@ -61,19 +63,20 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "H4" && tab !== "H2" && tab !== "H1" && <DomainHeader {...meta} right={right} />}
+      {tab !== "H4" && tab !== "H2" && tab !== "H1" && tab !== "H3" && tab !== "H5" && tab !== "H7" && tab !== "H8" && tab !== "H9" && <DomainHeader {...meta} right={right} />}
+
 
       {tab === "H1" && <H1Phase ctx={ctx} onRhythmChange={setRhythm} />}
       {tab === "H2" && <H2Trial ctx={ctx} />}
-      {tab === "H3" && <H3QuestEvents ctx={ctx} />}
-      {tab === "H4" && <H4Promotions ctx={ctx} legacy={<><DomainHeader {...meta} right={right} /><H4ActivityCenter ctx={ctx} /></>} />}
+      {tab === "H3" && <H3QuestTasks ctx={ctx} />}
+      {tab === "H4" && <H4Promotions ctx={ctx} legacy={(section, go) => <H4LegacyCenter ctx={ctx} section={section} onSection={go} />} />}
       {tab === "H5" && <H5DailyMilestones ctx={ctx} />}
       {tab === "H7" && <H7VoucherConfig ctx={ctx} />}
       {tab === "H8" && <H8ReferralRewards ctx={ctx} />}
       {tab === "H9" && <H9PublicStats ctx={ctx} />}
 
       {mc && (
-        <OperationConfirmModal briefKind={mc.briefKind}
+        <OperationConfirmModal key={mc.formKey} initialReason={mc.initialReason} briefKind={mc.briefKind}
           action={mc.action}
           title={mc.title}
           detail={mc.detail}
@@ -81,6 +84,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           edit={mc.edit}
           businessForm={mc.businessForm}
           facts={mc.facts}
+          content={mc.content}
           effect={mc.effect}
           confirmLabel={mc.confirmLabel}
           confirmTone={mc.confirmTone}
@@ -91,7 +95,8 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           inlineApproval={mc.inlineApproval}
           reasonMin={mc.inlineApproval ? mc.reasonMin : undefined}
           reasonMax={mc.inlineApproval ? mc.reasonMax : undefined}
-          getPendingReason={mc.inlineApproval || tab === "H4" ? mc.getPendingReason : undefined}
+          getPendingReason={mc.inlineApproval || tab === "H4" || tab === "H9" ? mc.getPendingReason : undefined}
+          blockedReason={tab === "H4" || tab === "H9" ? mc.blockedReason : undefined}
           getPendingBusinessValue={tab === "H4" ? mc.getPendingBusinessValue : undefined}
           completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
           onClose={() => setActionConfirm(null)}
@@ -107,10 +112,11 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           }}
         />
       )}
-      {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
+      {cf && <KConfirmModal key={cf.formKey} req={cf} onClose={() => setCf(null)} />}
       {toastNode}
     </>
   );
-  if (tab === "H2" || tab === "H1") return <RdPage className="hdom">{page}</RdPage>;
+  if (tab === "H2" || tab === "H1" || tab === "H3" || tab === "H4" || tab === "H5" || tab === "H7" || tab === "H8" || tab === "H9") return <RdPage className="hdom">{page}</RdPage>;
+
   return <div className={tab === "H4" ? "hdom" : "dkpage hdom"}>{page}</div>;
 }

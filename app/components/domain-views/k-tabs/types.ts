@@ -62,11 +62,17 @@ export type ActionConfirmReq = {
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type ConfirmReq = {
-  /** Editable inputs carried from an explicitly reviewed first-attempt conflict. */
+  /** Fixed operation intent retained by useHConflictDraft; not an editable input default. */
+  rebaseValue?: string;
+  /** Editable input restored only after the operator reviews a rejected first attempt. */
+  initialInputValue?: string;
   initialReason?: string;
-  initialValue?: string;
-  /** I1 retains the exact direct request after an unknown outcome; other callers keep their existing form behavior. */
-  freezePendingInputs?: boolean;
+  formKey?: number;
+  /** Opt-in for domains retaining the complete request after an unknown result. */
+  freezePendingInput?: boolean;
+  /** The caller replays its saved request, so current form validation must not block it. */
+  replayPendingInput?: boolean;
+  getPendingBlockReason?: () => string | undefined;
   getPendingReason?: () => string | undefined;
   /** 原覆盖分，恢复时只展示保存的输入。 */
   getPendingValue?: () => string | undefined;

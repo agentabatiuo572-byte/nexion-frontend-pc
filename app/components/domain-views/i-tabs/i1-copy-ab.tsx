@@ -280,7 +280,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     const original = () => pendingI1Commands().find((row) => row.commandKey === pendingKey);
     const carried = prefill.current;
     prefill.current = null;
-    ctx.openConfirm({ ...req, initialReason: carried?.reason, initialValue: carried?.value, freezePendingInputs: true, getPendingReason: () => original()?.reason, getPendingValue: () => original() ? savedValue : undefined,
+    ctx.openConfirm({ ...req, initialReason: carried?.reason, initialInputValue: carried?.value, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason, getPendingValue: () => original() ? savedValue : undefined,
       run: async (reason, value) => {
         if (pendingKey) {
           const record = original();

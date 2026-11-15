@@ -516,7 +516,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     const restoreAt = formatCaptchaRestoreAt(basis.stats?.captchaRestoreAt);
     const restoreChanged = !!reread && formatCaptchaRestoreAt(reread.opened.stats?.captchaRestoreAt) !== restoreAt;
     openConfirm({ briefKind: "record",
-    freezePendingInputs: true,
+    freezePendingInput: true,
     getPendingReason: original.getPendingReason,
     action: "恢复人机验证",
     title: "立即恢复人机验证",

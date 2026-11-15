@@ -165,7 +165,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const openedData = data;
     let pendingKey: string | undefined;
     const original = () => pendingI2Commands().find((row) => row.commandKey === pendingKey);
-    ctx.openConfirm({ ...req, errorHandled: false, freezePendingInputs: true, getPendingReason: () => original()?.reason,
+    ctx.openConfirm({ ...req, errorHandled: false, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason,
       run: async (reason, value) => {
         if (pendingKey) {
           const record = original();

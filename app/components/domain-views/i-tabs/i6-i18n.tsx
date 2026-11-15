@@ -475,7 +475,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     if (blocked) { toast(blocked, "warn"); return; }
     let original: I6Command | undefined, resolved = false;
     openConfirm({ briefKind: "record",
-      freezePendingInputs: true,
+      freezePendingInput: true, replayPendingInput: true,
       getPendingReason: () => original ? pendingI6Commands().find(row => row.commandKey === original!.commandKey)?.reason : undefined,
       action: <>全量重扫 {I6_STATS.managedKeys} 词条</>,
       title: "重新检查全部文案",

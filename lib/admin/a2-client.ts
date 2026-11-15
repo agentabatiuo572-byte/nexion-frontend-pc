@@ -654,23 +654,31 @@ function hasProposalTicketFacts(row: BackendTicket) {
     && ["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "");
 }
 
-export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket: false | "a" | "f" | "metadata" = false): Promise<A2OperationRow | null> {
+export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket: false | "a" | "f" | "metadata" | "h8" = false): Promise<A2OperationRow | null> {
   try {
     const row = await a2Request<BackendTicket>(`/operations/proposals/by-idempotency-key?${new URLSearchParams({ idempotencyKey: commandKey })}`);
     if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new Error("提交结果不完整，请稍后再查。");
     // A requires raw action; F does not. B5 additionally requires operation metadata and normalizes status.
-    if (strictTicket && (typeof row.obj !== "string" || typeof row.mine !== "boolean"
+    if (strictTicket && strictTicket !== "h8" && (typeof row.obj !== "string" || typeof row.mine !== "boolean"
       || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(strictTicket === "metadata" ? row.status.trim().toLowerCase() : row.status)
       || strictTicket !== "f" && typeof row.action !== "string"
       || strictTicket === "metadata" && typeof row.operationCode !== "string")) {
       throw new Error("提交结果不完整，请稍后再查。");
     }
+    if (strictTicket === "h8" && !validH8CommandTicket(row)) throw new Error("H8_PROPOSAL_RECEIPT_INVALID");
     return fromTicket(row);
   } catch (failure) {
     if (failure && typeof failure === "object" && "status" in failure && failure.status === 404
         && (!strictNotFound || "backendMessage" in failure && failure.backendMessage === "A2_PROPOSAL_NOT_FOUND")) return null;
     throw failure;
   }
+}
+
+/** H8 consumes command metadata added in backend 111e00cd, before display normalization. */
+function validH8CommandTicket(row: BackendTicket) {
+  return typeof row.status === "string" && ["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status.trim().toLowerCase())
+    && typeof row.mine === "boolean" && typeof row.obj === "string" && !!row.obj
+    && typeof row.operationCode === "string" && !!row.operationCode;
 }
 
 export async function withdrawA2Operation(operationId: string, reason: string, operator: string, commandKey?: string) {
@@ -709,6 +717,9 @@ export async function createA2OperationProposal(input: {
       || strictOutcome === "proposal" && (typeof row.obj !== "string" || typeof row.mine !== "boolean"
         || typeof row.operationCode !== "string" || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "")))) {
     throw new A2OutcomeUncertainError("提交结果不完整，请到操作记录里核对。", commandKey!);
+  }
+  if (strictOutcome && input.sourceDomain === "H8" && !validH8CommandTicket(row)) {
+    throw new A2OutcomeUncertainError("H8_PROPOSAL_RECEIPT_INVALID", commandKey!);
   }
   if (strictTicket && !hasProposalTicketFacts(row)) throw new A2OutcomeUncertainError("提交结果不完整，请到操作记录里核对。", commandKey!);
   return fromTicket(row);
