@@ -23,6 +23,7 @@ import type { FViewCtx } from "./types";
 import { SUPER_APPROVER, safeCustomLabel } from "./f1-shared";
 
 const typeLabels = { usdt: "USDT（资金）", uvt: "UVT（资金）", voucher: "券", sku: "商品", custom: "自定义奖品" };
+const REBASED = "没有保存：已按刚读到的值重算，核对后再提交。";
 const valueLabel = (value: string) => value === "NONE" ? "未设置" : formatF1ExactAmount(value);
 const UNIT: Record<string, string> = { selfBuy: "点", teamGv: "点", directRefs: "人", legCount: "个" };
 const RANGE: Record<string, string> = { selfBuy: "0–9007199254740991 的整数", teamGv: "0–9007199254740991 的整数", directRefs: "0–2147483647 的整数", legCount: "0–2147483647 的整数" };
@@ -101,6 +102,11 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
           setBaseline({ ...editor, row, reward, valuation: active.rewardValuationUsdtPerUvt, approvalRequired: false });
           ctx.acceptF1PolicyOverview(active);
           setBaselineReady(true);
+          // 读回的值或估值变了：后端那句拒绝是按旧值说的，换成现状（数字在「刚被改过」那一行）。没变就照旧给后端的原因。
+          const rewardKey = (item?: typeof reward) => item ? JSON.stringify([item.type, item.amountText, item.voucherId, item.skuId, item.custom]) : "";
+          const moved = isCondition ? (editor.row[editor.field!] ?? "") !== (row[editor.field!] ?? "")
+            : rewardKey(editor.reward) !== rewardKey(reward || undefined) || editor.valuation !== active.rewardValuationUsdtPerUvt;
+          if (moved) throw new Error(REBASED);
         } else {
           // Keep the existing read-failure lock; neither direction nor submission
           // may use the rejected snapshot if its replacement could not be read.
@@ -163,7 +169,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     ? [(requested.row[editor.field!] ?? "") !== (editor.row[editor.field!] ?? "") && `打开时 ${withUnit(requested.row[editor.field!] ?? "")}，现在 ${withUnit(editor.row[editor.field!] ?? "")}`]
     : [requested.reward && editor.reward && f1RewardPolicyLabel(requested.reward, ctx) !== currentLabel && `打开时 ${f1RewardPolicyLabel(requested.reward, ctx)}，现在 ${currentLabel}`,
       requested.valuation !== editor.valuation && `UVT 估值 ${requested.valuation ?? "—"} → ${editor.valuation ?? "—"} USDT`] : [];
-  const rebased = changes.filter(Boolean).length ? `${changes.filter(Boolean).join("；")}；已按现在的值判断` : "";
+  const rebased = changes.filter(Boolean).join("；");
   const facts = <Facts>
     {rebased && <Fact k="刚被改过" tone="warn"><KeepText text={rebased} /></Fact>}
     {!isCondition && <Fact k={remove ? "要移除的奖励" : editor.reward ? "现在的奖励" : "等级"}>{editor.reward ? currentLabel : `${editor.row.v} · 现在 ${(ctx.rewards[editor.row.v] ?? []).length} 项奖励`}</Fact>}
