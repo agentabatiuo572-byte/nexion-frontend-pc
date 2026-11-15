@@ -52,12 +52,7 @@ export function canQueryI3Cap(): boolean {
 export async function queryI3CapCommand(saved: I3CapCommand): Promise<A2OperationRow | null> {
   const original = pendingI3CapCommands().find((row) => row.commandKey === saved.commandKey);
   if (!original) throw new Error("原操作已处理，请重新读取后再操作。");
-  let ticket: A2OperationRow | null;
-  try { ticket = await fetchA2ProposalByKey(original.commandKey, true); }
-  catch (error) {
-    pending.remember(original.fingerprint, original.commandKey, { ...original, ticketStatus: undefined });
-    throw error;
-  }
+  const ticket = await fetchA2ProposalByKey(original.commandKey, true);
   if (!ticket) {
     pending.remember(original.fingerprint, original.commandKey, { ...original, ticketStatus: undefined });
     return null;

@@ -81,12 +81,7 @@ function originalI6Proposal(saved: HIRewardCommand): HIRewardCommand & { payload
 /** A POST receipt may be a historical pending response; only this authoritative lookup sets a pending marker. */
 export async function queryI6CourseProposal(saved: HIRewardCommand): Promise<A2OperationRow | null> {
   const record = originalI6Proposal(saved), input = record.payload.input;
-  let ticket: A2OperationRow | null;
-  try { ticket = await fetchA2ProposalByKey(record.commandKey, true); }
-  catch (error) {
-    commands.remember(record.fingerprint, record.commandKey, { ...record, ticketStatus: undefined });
-    throw error;
-  }
+  const ticket = await fetchA2ProposalByKey(record.commandKey, true);
   if (!ticket) {
     commands.remember(record.fingerprint, record.commandKey, { ...record, ticketStatus: undefined });
     return null;
@@ -94,7 +89,6 @@ export async function queryI6CourseProposal(saved: HIRewardCommand): Promise<A2O
   // 24972948 ticketMetadata returns the persisted operationCode for all command-backed I6 tickets.
   if (!ticket.mine || ticket.obj !== input.obj || ticket.operationCode !== input.command.op
     || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(ticket.rawStatus ?? "")) {
-    commands.remember(record.fingerprint, record.commandKey, { ...record, ticketStatus: undefined });
     throw new Error("查询回执与原操作不符，请保留原记录并查询原结果。");
   }
   if (ticket.status === "pending") commands.remember(record.fingerprint, record.commandKey, { ...record, receiptKnown: true, ticketStatus: "pending" });

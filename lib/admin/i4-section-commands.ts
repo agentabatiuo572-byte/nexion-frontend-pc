@@ -70,12 +70,7 @@ export function pendingI4SectionCommands(): I4SectionCommand[] {
 export async function queryI4SectionCommand(saved: I4SectionCommand): Promise<A2OperationRow | null> {
   const original = pendingI4SectionCommands().find(row => row.commandKey === saved.commandKey);
   if (!original) throw new Error("原操作已处理，请重新读取后再操作。");
-  let ticket: A2OperationRow | null;
-  try { ticket = await fetchA2ProposalByKey(original.commandKey, true); }
-  catch (error) {
-    pending.remember(original.fingerprint, original.commandKey, { ...original, ticketStatus: undefined });
-    throw error;
-  }
+  const ticket = await fetchA2ProposalByKey(original.commandKey, true);
   if (!ticket) {
     pending.remember(original.fingerprint, original.commandKey, { ...original, ticketStatus: undefined });
     return null;
@@ -86,7 +81,6 @@ export async function queryI4SectionCommand(saved: I4SectionCommand): Promise<A2
     || ticket.action !== `${{ publish: "发布", rollback: "回滚", archive: "下架" }[original.action]}信任版块 · ${original.sectionKey}`
     || original.before && ticket.before !== original.before || original.after && ticket.after !== original.after
     || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(ticket.rawStatus ?? "")) {
-    pending.remember(original.fingerprint, original.commandKey, { ...original, ticketStatus: undefined });
     throw new Error("返回的审批单与原操作不符，请保留原记录并查询原结果。");
   }
   if (ticket.status === "pending") pending.remember(original.fingerprint, original.commandKey, { ...original, receiptKnown: true, ticketStatus: "pending" });
