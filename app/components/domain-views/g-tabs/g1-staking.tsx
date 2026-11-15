@@ -97,7 +97,7 @@ const POSITION_STATES: Record<StateKey, { label: string; tone: StateTone; icon: 
 const positionStateLabel = (state: string): string => POSITION_STATES[state as StateKey]?.label ?? "状态未知";
 const rowState = (status: string) => POSITION_STATES[status.toLowerCase() as StateKey];
 /** 「计算奖励中」但已过到期时间的仓位：后端只在用户读仓位时转为到期未领，这页按读取时间和到期时间比出来，不改状态。 */
-const OVERDUE = { label: "已过到期时间", tone: "warn" as StateTone, icon: AlarmClock, meaning: "过了到期时间，状态还是计算奖励中：用户在 App 里打开质押仓位后才会变成到期未领，后台看这页不会改状态。和到期未领一样等用户自己领取，系统不会自动发放。" };
+const OVERDUE = { label: "已过到期时间", tone: "warn" as StateTone, icon: AlarmClock, meaning: "按这次读取的时间比，已过到期时间，状态还是计算奖励中：用户在 App 里打开质押仓位后才会变成到期未领，后台看这页不会改状态。和到期未领一样等用户自己领取，系统不会自动发放。" };
 
 const STAGES: readonly { key: string; title: string; explain: string; states: readonly StateKey[] }[] = [
   { key: "locked", title: "还在锁定", explain: "待确认和计算奖励中的仓位，本金还没回到用户手里。用户在 App 里打开质押仓位后才会变成到期未领，所以过了到期时间的也会留在这里，单独标出。", states: ["pending_lock", "active"] },
@@ -306,7 +306,7 @@ export function G1Staking() {
           sub={overdue > 0 ? `另有${atLeast} ${fmtCount(overdue)} 笔已过到期时间` : undefined}
           explain="已到期、等用户自己领取的仓位。系统不会自动发放，后台也不能代领。只算状态已经是到期未领的；过了到期时间、状态还是计算奖励中的另写在下面一行，只在读到的仓位里数，没读全时写「至少」。" />
         <Stat tone="role-1" icon={Coins} label="奖励估计" value={usdtText(stats.interestUsd)} unit="USDT" sub="整期估计 · 含四档以外产品"
-          explain="所有「计算奖励中」「到期未领」仓位开仓时算好的整期奖励之和：不按已锁天数折算，还含四档以外产品的仓位。不是已产生或已发放的奖励，只作量级参考。" />
+          explain="「计算奖励中」「到期未领」仓位开仓时算好的整期奖励之和，不按已锁天数折算。还含四档以外的产品，和上面的仓位范围对不上，正在修。不是已产生或已发放的奖励，只作量级参考。" />
       </StatBand>}
 
       <Panel plain={pools.length > 0} title="四档历史产品" icon={Coins} tone="role-1"
