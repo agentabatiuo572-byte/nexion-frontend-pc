@@ -8,6 +8,7 @@ import { BlockState, Button, Cell, Change, Check, ColumnPicker, Conclusion, Conf
 import { TipSide } from "@/app/components/rd/button";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { executeK3Command, fetchK3Coverage, K1OutcomeUncertainError, K1RequestError, newK1CommandKey, type K3CommandRequest, type K3Coverage, type K3DryRunResult, type K3Hit, type K3RouteCount, type K3Rule, type RuleAction, type RuleState } from "@/lib/admin/k-client";
 import { fetchA2ReasonPolicy, visibleReasonLength } from "@/lib/admin/a2-client";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -42,7 +43,10 @@ const ADDRESS_SOURCE_LABEL: Record<string, string> = {
   internal: "内部", "third-party": "第三方", combined: "组合",
 };
 
-function errorText(error: unknown) { return error instanceof K1OutcomeUncertainError ? UNKNOWN_RESULT_TEXT : error instanceof Error ? displayAdminError(error) : "未知错误"; }
+/** 441c412b 放宽前查覆盖率低于红线时规则不变；全站通用句里的「估值不可靠」在这里不会出现，换成这页的说法。 */
+const BELOW_REDLINE_TEXT = "兑付覆盖率低于红线，这次没有保存，规则保持原样。覆盖率回到红线以上后再提交。";
+const belowRedline = (error: unknown) => error instanceof K1RequestError && error.status === 422 && error.reasonCode === "COVERAGE_BELOW_REDLINE";
+function errorText(error: unknown) { return belowRedline(error) ? BELOW_REDLINE_TEXT : error instanceof K1OutcomeUncertainError ? UNKNOWN_RESULT_TEXT : error instanceof Error ? displayAdminError(error) : "未知错误"; }
 function conditionCore(text: string) { return (text.split(/->|→/)[0] ?? "").trim(); }
 function formatMoney(value: string | undefined) {
   const raw = (value ?? "").replaceAll(",", "");
@@ -190,7 +194,8 @@ const STATE_ICON = { draft: FileText, active: CheckIcon, paused: Pause, archived
 const DIM_ICON = { 金额: Coins, 速度: Gauge, 新账户: Users, 地址信誉: ShieldCheck };
 const REASON_PLACEHOLDER = "例如：依据提现风险复核工单，调整新账户的检查条件";
 const UNKNOWN_RESULT_TEXT = "结果未知，可能已经生效，已保留原请求。可以查询原结果，或按原请求重试。";
-const CASH_NOTICE = "这项操作可能让平台多付钱，保存时不检查资金。";
+const COVERAGE_LEAD = "这项操作可能让平台多付钱";
+const COVERAGE_CHECK = "提交时会先检查兑付覆盖率。";
 const ACTIVE_EFFECT = "保存后直接用于后续评估；已创建提现在放行复核时也可能按当前规则判断。";
 const CREATE_EFFECT = "先保存草稿，不参与提现检查；启用后才参与后续评估。";
 const PAUSE_EFFECT = "之后评估不再使用此规则，可能减少拦截；已有延迟或冻结单不会因此立即打款。";
@@ -263,6 +268,18 @@ function coverageBlock(coverage: K3Coverage | null, canReadCoverage: boolean) {
   return !coverage?.reliable ? "兑付覆盖率暂时读不到，读到之前不能提交"
     : coverage.redlineBreached ? "兑付覆盖率低于红线，暂时无法提交" : undefined;
 }
+/** 编辑框放宽时的资金提示，和共用确认框同一种排法；没有资金读取权限时只说提交时检查，不放数字位。 */
+function CoverageNotice({ coverage, canReadCoverage }: { coverage: K3Coverage | null; canReadCoverage: boolean }) {
+  const blocked = coverageBlock(coverage, canReadCoverage);
+  const known = canReadCoverage && coverage?.reliable ? coverage : null;
+  return <div className="rd-confirm-funding"><Notice tone={blocked ? "danger" : "warn"} title={<>{COVERAGE_LEAD}{!canReadCoverage && <Explain label="什么时候检查" content={COVERAGE_CHECK} />}</>}>
+    {canReadCoverage && <div className="rd-funding-coverage">
+      兑付覆盖率 <b>{known ? fmtPct(known.coverageRatio) : "—"}</b>，红线 <b>{known ? fmtConfigPct(known.redlinePct) : "—"}</b>{!known && "，暂时读不到"}
+      <Explain label="这项操作对资金的影响" content={COVERAGE_CHECK} />
+    </div>}
+    {blocked && <p>{known ? "低于红线，暂时无法提交。" : "读到之前不能提交。"}</p>}
+  </Notice></div>;
+}
 const readPage = (value: string | null) => /^\d+$/.test(value ?? "") && Number.isSafeInteger(Number(value)) && Number(value) >= 1 ? Number(value) : 1;
 const readSize = (value: string | null, hits = false) => (hits ? [5, 10, 20, 50] : [5, 10, 20]).includes(Number(value)) ? Number(value) : 5;
 function ActionTag({ action }: { action: RuleAction }) { return <StatusTag tone={ACTION_TONE[action]} icon={ACTION_ICON[action]}>{action === "pass" ? "历史放行" : ACTION_LABELS[action]}</StatusTag>; }
@@ -311,16 +328,20 @@ function RuleConfirmation({ draft, pending, submitting, onSubmit, onClose, onReb
     reasonMin={8} reasonMax={200} reasonPlaceholder={REASON_PLACEHOLDER} getPendingReason={() => commands.list().filter(isSavedCommand).find((record) => record.target === targetOf(kind, rule))?.reason}
     effect={<StatusTag tone={kind === "dry-run" ? "neutral" : "progress"} filled>{kind === "dry-run" ? "不影响线上" : "直接生效"}</StatusTag>}
     content={kind === "dry-run" && activeRules === 0 ? <Notice tone="warn">没有生效规则，本次不会评估提现样本。</Notice>
-      // 停用这一类最后一条是最重要的后果，做成提示的标题；资金未检查是它下面的一行（F3）。
-      : kind === "paused" ? <Notice tone="warn" title={lastInDimension ? "停用后，这类提现没有生效规则可检查。" : undefined}>{CASH_NOTICE}</Notice> : undefined}
-    amplifies={kind === "paused" && rule?.state === "active" && rule.action !== "pass"}
+      // 停用这一类最后一条是最重要的后果；资金提示由共用框按覆盖率画。
+      : kind === "paused" && lastInDimension ? <Notice tone="warn">停用后，这类提现没有生效规则可检查。</Notice> : undefined}
+    amplifies={kind === "paused" && rule?.state === "active" && rule.action !== "pass"} coverageLead={COVERAGE_LEAD} coverageCheck={COVERAGE_CHECK}
     coverage={canReadCoverage && coverage?.reliable ? coverage : undefined} coverageReliable={canReadCoverage ? coverage?.reliable === true : undefined} coverageUnavailableBlocks={canReadCoverage}
-    blockedReason={pending && !submitting ? UNKNOWN_RESULT_TEXT : !allowedState ? "规则当前状态不支持原操作，请关闭后核对最新规则" : kind === "paused" && rule?.action !== "pass" && coverageBlock(coverage, canReadCoverage) || conflict && <ConflictBar message="这条规则刚被别人改过。读取最新后请重新核对并填写理由。" onRead={async () => {
+    // 没有阻断时要传 undefined：共用框按 blockedReason ?? 提交错误显示，传 false 会把被拒的原因盖成空条。
+    blockedReason={(pending && !submitting ? UNKNOWN_RESULT_TEXT : !allowedState ? "规则当前状态不支持原操作，请关闭后核对最新规则" : kind === "paused" && rule?.action !== "pass" && coverageBlock(coverage, canReadCoverage) || conflict && <ConflictBar message="这条规则刚被别人改过。读取最新后请重新核对并填写理由。" onRead={async () => {
       setRule(await onRebase(rule!)); setRevision((n) => n + 1); setConflict(false);
-    }} />}
+    }} />) || undefined}
     confirmLabel={kind === "dry-run" ? "开始模拟" : kind === "active" ? "确认启用" : kind === "paused" ? "确认停用" : "确认归档"}
     confirmTone={kind === "archived" ? "danger" : "primary"} onClose={onClose} onConfirm={async (reason) => {
-      try { await onSubmit(reason, undefined, rule); } catch (error) { if (error instanceof K1RequestError && error.status === 409 && isExplicitRejection(error)) setConflict(true); throw error; }
+      try { await onSubmit(reason, undefined, rule); } catch (error) {
+        if (error instanceof K1RequestError && error.status === 409 && isExplicitRejection(error)) setConflict(true);
+        throw belowRedline(error) ? new K1RequestError(BELOW_REDLINE_TEXT, 422, "COVERAGE_BELOW_REDLINE") : error;
+      }
     }} />;
 }
 
@@ -717,7 +738,7 @@ function RuleEditor({ draft, pending, onSubmit, onClose, onRebase, coverage, can
           { key: "condition", label: "条件", before: conditionCopy(rule!), after: condition ? conditionCopy({ dimension, conditionText: condition }) : "待填写条件" }, { key: "action", label: "命中处置", before: ACTION_LABELS[rule!.action], after: value.action }, { key: "priority", label: "优先级", before: String(rule!.priority), after: value.priority },
         ]} /></>}
       <Notice tone="progress">{effect}</Notice>
-      {draft.kind === "edit" && condition && !Object.values(issues).some(Boolean) && loosensRule(rule!, originalValue, value) && <Notice tone="warn">{CASH_NOTICE}</Notice>}
+      {draft.kind === "edit" && condition && !Object.values(issues).some(Boolean) && loosensRule(rule!, originalValue, value) && <CoverageNotice coverage={coverage} canReadCoverage={canReadCoverage} />}
       {conflict && <ConflictBar message="这条规则刚被别人改过。你的编辑草稿仍保留，读取最新后请重新核对并填写理由。" onRead={async () => { setRule(await onRebase(rule!)); setReason(""); setConflict(false); setError(null); }} />}
       {pending && !busy && <Notice tone="warn">{UNKNOWN_RESULT_TEXT}</Notice>}
       {error && !pending && !conflict && <Notice tone="danger">{error}</Notice>}

@@ -144,7 +144,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
       { name: "两种分布", text: "历史分布按逐规则命中记录累计，一笔可计多条；模拟分布按这一次实际评估样本的最终K3裁决，每笔计一次。" },
       { name: "结果未知", text: "原对象、内容和理由保存在本标签页。可以查询原结果或按原请求重试；超过24小时保留记录但不重发，读回相同值不能证明原操作成功。" },
     ],
-    more: "K3 /risk/withdrawal-rules；读取overview，写入create、condition、status、dry-runs原接口，不提交审批提案；新建draft→active→paused，paused可再启用或归档，archived无出口；禁止新建、编辑或启用放行规则；金额100–50,000 USD、速度1–20笔或500–50,000 USD、注册0–30天、地址信誉0–1；速度新建默认>3或>5,000，已启用规则调整也可能影响已有提现的放行复核；延迟与冻结到期默认回人工复核，不承诺打款；K3 接口目前不检查资金；只有原重试被明确业务拒绝后，人工核实才能解除本页待确认，401/403/408/425/429和IDEMPOTENCY_*均不算；高危登记OPS-K-03：k3_rule_create、k3_rule_toggle、k3_rule_archive，无独立编辑或模拟高危op；历史版本、回滚、草稿效果预览和逐规则模拟明细不提供。",
+    more: "K3 /risk/withdrawal-rules；读取overview，写入create、condition、status、dry-runs原接口，不提交审批提案；新建draft→active→paused，paused可再启用或归档，archived无出口；禁止新建、编辑或启用放行规则；金额100–50,000 USD、速度1–20笔或500–50,000 USD、注册0–30天、地址信誉0–1；速度新建默认>3或>5,000，已启用规则调整也可能影响已有提现的放行复核；延迟与冻结到期默认回人工复核，不承诺打款；停用在用规则、放宽条件或降低处置时，提交前检查兑付覆盖率，读不到或低于红线不保存；只有原重试被明确业务拒绝后，人工核实才能解除本页待确认，401/403/408/425/429和IDEMPOTENCY_*均不算；高危登记OPS-K-03：k3_rule_create、k3_rule_toggle、k3_rule_archive，无独立编辑或模拟高危op；历史版本、回滚、草稿效果预览和逐规则模拟明细不提供。",
   },
   E5: {
     keep: ["后两者不等于人工待激活。"],
