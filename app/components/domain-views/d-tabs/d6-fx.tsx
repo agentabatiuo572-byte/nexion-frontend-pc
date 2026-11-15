@@ -347,6 +347,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
           <Fact k="不受影响"><KeepText text="买设备用银行卡付款的报价（最长 15 分钟）、提现报价" phrases={["提现报价"]} /></Fact>
         </> : <Fact k="买入价" unit="₫/USDT"><Change from={vnd(quote.quoteRateVndPerUsdt)} to={vnd(newRate)} /></Fact>}
         {approvalRequired && <Fact k="资金检查">{checkCopy}</Fact>}
+        {approvalRequired && <Fact k="批准人需有">汇率管理权限和审批批准权限</Fact>}
         {!approvalRequired && quote.approval?.status === "pending" && <Fact k="待批原单" tone="warn">直接保存会改掉这组汇率，这张待批单批准时会因已被改过而不能执行。</Fact>}
         {changed && <Fact k="刚被别人改过" tone="warn">{changed}<p className="rd-note">理由已清空，请按最新的值重写</p></Fact>}
       </Facts>,
