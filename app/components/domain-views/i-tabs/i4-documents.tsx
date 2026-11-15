@@ -193,7 +193,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   const name = editor ? TRUST_DOCUMENT_NAMES[editor.document.slot] : "";
   const pendingFile = pendingKey && editor?.mode === "upload" ? pendingI4DocumentCommands().find(row => row.commandKey === pendingKey)?.file : undefined;
   const setField = (key: keyof TrustDocumentUpload, value: string) =>
-    !saving && !pendingKey && editor?.mode === "upload" && setEditor({ ...editor, fields: { ...editor.fields, [key]: value } });
+    !saving && !pendingKey && !conflicted && editor?.mode === "upload" && setEditor({ ...editor, fields: { ...editor.fields, [key]: value } });
   const uploaded = documents.filter((document) => document.source === "UPLOADED").length;
 
   /* ---------- 别人先换过：现在用的文件对着运营要传的，确认后在最新的基础上继续 ---------- */
@@ -315,31 +315,31 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
           </Facts>
           {editor.mode === "upload" ? <>
             {!pendingFile && <Field label="PDF 文件" required help="最大 20 MB、80 页">
-              <input aria-label="PDF 文件" className="rd-input rd-file-input" type="file" disabled={saving || !!pendingKey} accept="application/pdf,.pdf"
-                onChange={(event) => { if (!saving && !pendingKey) setEditor({ ...editor, file: event.target.files?.[0] ?? null }); }} />
+              <input aria-label="PDF 文件" className="rd-input rd-file-input" type="file" disabled={saving || !!pendingKey || conflicted} accept="application/pdf,.pdf"
+                onChange={(event) => { if (!saving && !pendingKey && !conflicted) setEditor({ ...editor, file: event.target.files?.[0] ?? null }); }} />
             </Field>}
             <div className="rd-form-grid" data-cols="2" data-dense="">
               <Field label="版本号" required={editor.document.slot === "whitepaper"} hint={editor.document.slot === "whitepaper" ? undefined : "选填"}>
-                <Input aria-label="版本号" disabled={saving || !!pendingKey} maxLength={32} placeholder="如 v1.4" value={editor.fields.version} onChange={(event) => setField("version", event.target.value)} />
+                <Input aria-label="版本号" disabled={saving || !!pendingKey || conflicted} maxLength={32} placeholder="如 v1.4" value={editor.fields.version} onChange={(event) => setField("version", event.target.value)} />
               </Field>
               <Field label="文件语言" hint="选填">
-                <Input aria-label="文件语言" disabled={saving || !!pendingKey} maxLength={32} placeholder="如 English" value={editor.fields.language} onChange={(event) => setField("language", event.target.value)} />
+                <Input aria-label="文件语言" disabled={saving || !!pendingKey || conflicted} maxLength={32} placeholder="如 English" value={editor.fields.language} onChange={(event) => setField("language", event.target.value)} />
               </Field>
             </div>
             {editor.document.slot !== "whitepaper" && <div className="rd-form-grid" data-cols="2" data-dense="">
               <Field label="登记号" required>
-                <Input aria-label="登记号" disabled={saving || !!pendingKey} maxLength={64} value={editor.fields.referenceNo} onChange={(event) => setField("referenceNo", event.target.value)} />
+                <Input aria-label="登记号" disabled={saving || !!pendingKey || conflicted} maxLength={64} value={editor.fields.referenceNo} onChange={(event) => setField("referenceNo", event.target.value)} />
               </Field>
               <Field label="官方查询链接" hint="选填，https 开头">
-                <Input aria-label="官方查询链接" disabled={saving || !!pendingKey} maxLength={512} placeholder="https://" value={editor.fields.verifyUrl} onChange={(event) => setField("verifyUrl", event.target.value)} />
+                <Input aria-label="官方查询链接" disabled={saving || !!pendingKey || conflicted} maxLength={512} placeholder="https://" value={editor.fields.verifyUrl} onChange={(event) => setField("verifyUrl", event.target.value)} />
               </Field>
             </div>}
             <Field label="操作原因" required hint={`至少 ${reasonMin} 字`}>
-              <Textarea aria-label="操作原因" disabled={saving || !!pendingKey} rows={3} maxLength={200} count={`${editor.fields.reason.trim().length}/200`} value={editor.fields.reason} onChange={(event) => setField("reason", event.target.value)} />
+              <Textarea aria-label="操作原因" disabled={saving || !!pendingKey || conflicted} rows={3} maxLength={200} count={`${editor.fields.reason.trim().length}/200`} value={editor.fields.reason} onChange={(event) => setField("reason", event.target.value)} />
             </Field>
           </> : <>
             <Field label="操作原因" required hint={`至少 ${reasonMin} 字`}>
-              <Textarea aria-label="操作原因" disabled={saving || !!pendingKey} rows={3} maxLength={200} count={`${editor.reason.trim().length}/200`} value={editor.reason} onChange={(event) => { if (!saving && !pendingKey) setEditor({ ...editor, reason: event.target.value }); }} />
+              <Textarea aria-label="操作原因" disabled={saving || !!pendingKey || conflicted} rows={3} maxLength={200} count={`${editor.reason.trim().length}/200`} value={editor.reason} onChange={(event) => { if (!saving && !pendingKey && !conflicted) setEditor({ ...editor, reason: event.target.value }); }} />
             </Field>
           </>}
         </div>}
