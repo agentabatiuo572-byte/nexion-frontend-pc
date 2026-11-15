@@ -564,13 +564,13 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
         <Panel title="历史命中处置分布" plain explain="累计现存的全部命中记录，没有时间筛选、不随下方动作筛选改变；不是全部提现的放行率。"><Distribution rows={overview!.routeCounts} total={overview!.routeTotal} /></Panel>
         <div className="k3-hit-filters"><Segments label="命中处置筛选" value={hitAction} items={[{ value: "all", label: "全部" }, { value: "delay", label: "延迟" }, { value: "freeze", label: "冻结" }, { value: "manual", label: "转人工" }]} onChange={(value) => setQuery({ hitPage: 1, hitAction: value })} />
           <Button variant="ghost" disabledReason={hitAction === "all" ? "当前没有动作筛选" : undefined} onClick={() => setQuery({ hitAction: "all", hitPage: 1 })}>清除筛选</Button><ColumnPicker columns={hitColumns} /></div>
-        <div className="k3-table-frame"><Table label="触发记录" className="k3-hits-table"><thead><tr><Th>提现 / 账户</Th><Th align="right">金额<Explain label="触发金额口径" content={<KeepText text="接口未提供币种。保留原金额，不作币种推定。" />} /></Th><Th>规则 / 维度</Th><Th>命中处置</Th>{hitColumns.isVisible("reason") && <Th>触发原因</Th>}{hitColumns.isVisible("time") && <Th>时间<Explain label="服务端时间" content="服务端时间，时区尚未提供；保留原值，不按浏览器时区转换。" /></Th>}</tr></thead>
+        <div className="k3-table-frame"><Table label="触发记录" className="k3-hits-table"><thead><tr><Th>提现 / 账户</Th><Th align="right">金额<Explain label="触发金额口径" content={<KeepText text="系统没有记下币种，按原金额显示，不推定币种。" />} /></Th><Th>规则 / 维度</Th><Th>命中处置</Th>{hitColumns.isVisible("reason") && <Th>触发原因</Th>}{hitColumns.isVisible("time") && <Th>时间<Explain label="触发时间" content={`规则命中的时间，按${businessZone().label}显示。`} /></Th>}</tr></thead>
           <tbody>{hits.length === 0 && <TableMessage columns={4 + Number(hitColumns.isVisible("reason")) + Number(hitColumns.isVisible("time"))}>{hitAction === "all" ? "暂无触发记录" : "当前处置没有匹配的触发记录"}</TableMessage>}
             {hits.map((hit, index) => <Tr key={`${hit.withdrawalNo}-${hit.ruleId}-${index}`} selected={hitDetail === hit} onOpen={() => setHitDetail(hit)}>
               <Td><Cell mono main={<span className="k3-id"><span>{hit.withdrawalNo.slice(0, -8)}</span><span>{hit.withdrawalNo.slice(-8)}</span></span>} sub={hit.userNo} title={`${hit.withdrawalNo} / ${hit.userNo}`} /></Td>
               <Td align="right"><Cell num main={hitAmount(hit.amount)} sub="币种未提供" title={hit.amount} /></Td>
               <Td><Cell main={hit.ruleId} sub={dimensionLabel(hit.dimension)} title={hit.ruleId} mono /></Td><Td><ActionTag action={hit.action} /></Td>
-              {hitColumns.isVisible("reason") && <Td><Cell main={hitSummary(hit)} title={hitSummary(hit)} /></Td>}{hitColumns.isVisible("time") && <Td><Cell num main={hit.timeText} sub="时区未提供" title={hit.timeText} /></Td>}
+              {hitColumns.isVisible("reason") && <Td><Cell main={hitSummary(hit)} title={hitSummary(hit)} /></Td>}{hitColumns.isVisible("time") && <Td><Cell num main={formatBusinessTimeCompact(hit.timeText, "—")} /></Td>}
             </Tr>)}
           </tbody></Table></div>
         {overview!.hits.total > 0 && <Pager label="触发记录" total={overview!.hits.total} page={overview!.hits.pageNum} pageSize={overview!.hits.pageSize} sizes={[5, 10, 20, 50]} onPage={(page) => setQuery({ hitPage: page })} onPageSize={(size) => setQuery({ hitPage: 1, hitPageSize: size })} />}
@@ -587,12 +587,12 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
     <Drawer open={!!hitDetail} onClose={() => setHitDetail(null)} title="触发记录详情" sub={hitDetail?.withdrawalNo} icon={History}>
       {hitDetail && <><KeyValues rows={[
         { key: "withdrawal", label: "提现单号", value: hitDetail.withdrawalNo, mono: true }, { key: "user", label: "账户", value: hitDetail.userNo, mono: true },
-        { key: "amount", label: "金额", value: `${hitAmount(hitDetail.amount)} · 币种未提供` }, { key: "rule", label: "触发规则", value: hitDetail.ruleId, mono: true },
+        { key: "amount", label: "金额", value: `${hitAmount(hitDetail.amount)} · 币种未记录` }, { key: "rule", label: "触发规则", value: hitDetail.ruleId, mono: true },
         { key: "dim", label: "维度", value: dimensionLabel(hitDetail.dimension) }, { key: "action", label: "命中处置", value: <ActionTag action={hitDetail.action} /> },
         { key: "reason", label: "触发原因", value: hitSummary(hitDetail) },
-        ...(rules.find((rule) => rule.ruleId === hitDetail.ruleId) ? [{ key: "condition", label: "当前规则条件", value: <ConditionText text={conditionCopy(rules.find((rule) => rule.ruleId === hitDetail.ruleId)!)} /> }] : []), { key: "time", label: "服务端时间", value: `${hitDetail.timeText} · 时区未提供` },
+        ...(rules.find((rule) => rule.ruleId === hitDetail.ruleId) ? [{ key: "condition", label: "当前规则条件", value: <ConditionText text={conditionCopy(rules.find((rule) => rule.ruleId === hitDetail.ruleId)!)} /> }] : []), { key: "time", label: "触发时间", value: `${formatBusinessTimeCompact(hitDetail.timeText, "—")}（${businessZone().label}）` },
       ]} /><div className="rd-toolbar"><Button size="sm" onClick={() => void navigator.clipboard.writeText(`${hitDetail.withdrawalNo}\n${hitDetail.userNo}`).then(() => ctx.toast("提现单号和账户已复制", "success")).catch(() => ctx.toast("复制失败，请手动选择复制", "error"))}>复制单号与账户</Button></div>
-        <Fold title="技术信息" inset summary="后端原始原因、金额与统计口径"><KeyValues rows={[{ key: "reason", label: "reason 原值", value: hitDetail.reason || "—" }, { key: "amount", label: "amountText 原值", value: hitDetail.amount }, { key: "scope", label: "统计口径", value: "逐规则命中记录，不是提现最终状态；原因不承诺为触发时的不可变快照。" }]} /></Fold></>}
+        <Fold title="技术信息" inset summary="原始原因、金额与统计口径"><KeyValues rows={[{ key: "reason", label: "原因原文", value: hitDetail.reason || "—" }, { key: "amount", label: "金额原文", value: hitDetail.amount }, { key: "scope", label: "统计口径", value: "每条是一次规则命中，不是提现的最终结果。" }, { key: "reasonScope", label: "原因说明", value: "可能按现在的规则条件写，不一定是触发时的原话。" }]} /></Fold></>}
     </Drawer>
     {draft && <WriteDialog key={`${draft.kind}:${draft.rule?.ruleId ?? "new"}`} draft={draft} submitting={!!busyKey && inFlight.current} pending={pending.find((record): record is SavedCommand => isSavedCommand(record) && record.target === targetOf(draft.kind, draft.rule))}
       onSubmit={submit} onClose={() => setDraft(null)} activeRules={dimensions.length} lastInDimension={!!draft.rule && dimensions.filter((dimension) => dimensionLabel(dimension.name) === dimensionLabel(draft.rule!.dimension)).length === 1}
