@@ -659,7 +659,7 @@ async function sendI2Command(command: I2Command, retry: boolean): Promise<unknow
     // I2 services return ApiResult.fail(4xx, reason) inside HTTP 200. Preserve that business status for the shared retry verdict.
     const status = response.ok && payload.code >= 400 && payload.code < 500 ? payload.code : response.status;
     const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status, reasonCode: payload.message });
-    if (retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && !isIdempotencyOutcomeOpen(payload.message)) {
+    if (retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && payload.code < 500 && !isIdempotencyOutcomeOpen(payload.message)) {
       uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
       throw Object.assign(failure, { rejectedCommand: retry ? undefined : command });
     }
