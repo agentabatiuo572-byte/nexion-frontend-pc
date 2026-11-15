@@ -1245,7 +1245,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   TRIAL_PRODUCT_ID_INVALID: "试用目标商品编号无效，请从商品列表里重新选择。",
   TRIAL_PRODUCT_CATALOG_UNAVAILABLE: "商品目录暂时不可用，本次修改没有保存；请稍后重试。",
   TRIAL_PRODUCT_NOT_FOUND_IN_E1: "「商品管理与上架条件」里找不到这个试用商品，请刷新页面后重新选择。",
-  TRIAL_PRODUCT_PHYSICAL_FINITE_REQUIRED: "试用商品只能选有库存的实物设备，Cloud Share 这类不限量的份额不行。",
+  TRIAL_PRODUCT_PHYSICAL_FINITE_REQUIRED: "试用商品只能选限量库存的实物设备，Cloud Share 这类不限量的份额不行。",
   TRIAL_PRODUCT_NAME_REQUIRED: "试用目标商品缺少名称，请先在「商品管理与上架条件」补全商品资料。",
   TRIAL_PRODUCT_NOT_ON_SALE: "试用目标商品未在售，请先到「商品管理与上架条件」核对上架状态。",
   TRIAL_PRODUCT_PRICE_INVALID: "试用目标商品价格无效，请先到「商品管理与上架条件」配置正确售价。",
