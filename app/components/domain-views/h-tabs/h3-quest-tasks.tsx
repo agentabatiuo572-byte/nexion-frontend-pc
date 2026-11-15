@@ -187,7 +187,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       if (isHGrowthReadConflict(error)) {
         setStale({ title: attempt.action, before: write.before, after: write.after });
         if (write.store === "region" && !attempt.commandKey) await region.reload(true);
-        if (!attempt.commandKey) conflictDraft.retain(reason, attempt.editValue, attempt.businessValue, String(write.body.value ?? write.body.status ?? write.body.enabled ?? ""));
       }
       throw error;
     } finally {
@@ -302,7 +301,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const current = text(model?.promoBanner?.status, "").toLowerCase();
     if (!current) { toast(displayAdminError(new Error("PROMO_BANNER_NOT_CONFIGURED"))); return; }
     const next = conflictDraft.intent ?? (current === "active" ? "paused" : "active");
-    openActionConfirm({ target: "promoBanner.status", briefKind: "record",
+    openActionConfirm({ rebaseValue: next, target: "promoBanner.status", briefKind: "record",
       action: next === "active" ? "启用首页备用促销卡" : "暂停首页备用促销卡",
       title: next === "active" ? "启用首页备用促销卡" : "暂停首页备用促销卡",
       detail: <>只改备用促销卡的状态，不影响每周任务卡。App 目前不显示备用卡。</>,
@@ -480,7 +479,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     if (status === "archived") return;
     const targetStatus = conflictDraft.intent ?? (status === "active" ? "paused" : "active");
     const enabling = targetStatus === "active";
-    openConfirm({ briefKind: "config",
+    openConfirm({ rebaseValue: targetStatus, briefKind: "config",
       target: taskCode,
       action: `${targetStatus === "active" ? "启用" : "停用"}任务 · ${label}`,
       title: `${enabling ? "启用" : "停用"}${monthly ? "月度挑战" : "任务"}`,
@@ -573,7 +572,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const openBindingStatus = (binding: H3QuestEventBinding) => {
     const enabled = Number(binding.status) === 1;
     const nextEnabled = conflictDraft.intent === undefined ? !enabled : conflictDraft.intent === "true";
-    openConfirm({ briefKind: "record",
+    openConfirm({ rebaseValue: String(nextEnabled), briefKind: "record",
       target: binding.bindingCode,
       action: `${!nextEnabled ? "停用" : "启用"}完成条件 · ${binding.bindingCode}`,
       title: `${!nextEnabled ? "停用" : "启用"}完成条件`,

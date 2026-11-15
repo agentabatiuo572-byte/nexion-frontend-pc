@@ -183,7 +183,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         setStale(null);
         try { await req.run(reason, value, businessValue); }
         catch (cause) {
-          if (isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.openActionConfirm(null); await reload(); conflictDraft.retain(reason, value, businessValue, req.rebaseValue); }
+          if (isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.openActionConfirm(null); await reload(); }
           throw cause;
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
@@ -207,7 +207,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         setStale(null);
         try { return await req.run(reason, value); }
         catch (cause) {
-          if (isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.closeConfirm?.(); await reload(); conflictDraft.retain(reason, value, undefined, req.rebaseValue); }
+          if (isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.closeConfirm?.(); await reload(); }
           throw cause;
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }

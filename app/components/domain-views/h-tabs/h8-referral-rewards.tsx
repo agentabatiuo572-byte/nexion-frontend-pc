@@ -166,13 +166,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         currentRead.current.ready = false;
         setReadReady(false);
         await load();
-        if (isHGrowthReadConflict(error) && !recovering && record.original) {
-          const original = record.original;
-          conflictDraft.retain(original.kind === "direct" ? original.reason : original.request.reason,
-            original.kind === "settlement" ? String(original.limit) : undefined,
-            original.kind === "settlement" ? undefined : { value: original.value },
-            original.kind === "settlement" ? undefined : original.value);
-        }
+
       }
       throw error;
     }
@@ -255,7 +249,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       if (dir === "same") return <StatusTag tone="neutral">和现在一样</StatusTag>;
       return undefined;
     };
-    openConfirm({ briefKind: "config",
+    openConfirm({ rebaseValue: fixedValue, briefKind: "config",
       action: isEnabled ? enabling ? "启用新人礼与邀请奖励" : "停用新人礼与邀请奖励" : `调整邀请奖励 · ${param.label}`,
       title: isEnabled ? enabling ? "启用新人礼与邀请奖励" : "停用新人礼与邀请奖励" : `调整${paramTitle(param)}`,
       detail: isEnabled

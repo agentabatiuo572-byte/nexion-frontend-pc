@@ -145,7 +145,6 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     try { await mutations.run(change); setStale(null); } catch (error) {
       if (isHGrowthReadConflict(error)) {
         setStale({ name: change.name, before: change.before, after: change.after });
-        conflictDraft.retain(change.reason, change.editValue, change.businessValue);
       }
       throw error;
     }
