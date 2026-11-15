@@ -16,7 +16,7 @@ type Action=keyof typeof LABELS;
 // 主状态和后端的先后一致：停用、停用中排在运营暂停前面（暂停原因仍在问号里）。
 const shownPaused=(d:E5Device)=>!!d.pausedReason&&d.state!=="unbound"&&d.state!=="pending-deactivate";
 // 表头写「电量和心跳」，第二行常显距上次心跳多久；完整遥测仍在电量的气泡里。
-const heartbeatAge=(s:number|null)=>s==null?"心跳未采集":`心跳 ${s<60?`${s} 秒`:s<3600?`${Math.floor(s/60)} 分钟`:s<86400?`${Math.floor(s/3600)} 小时`:`${Math.floor(s/86400)} 天`}前`;
+const heartbeatAge=(s:number|null)=>s==null?"心跳未采集":`心跳 ${s<60?`${Math.floor(s)} 秒`:s<3600?`${Math.floor(s/60)} 分钟`:s<86400?`${Math.floor(s/3600)} 小时`:`${Math.floor(s/86400)} 天`}前`;
 export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
   const m=useE6Mutations();
   const canAct=ctx.canWriteE5||m.canPropose&&(ctx.canForceActivateE5||ctx.canUnbindE5);
