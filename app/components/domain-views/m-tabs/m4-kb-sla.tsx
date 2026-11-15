@@ -255,7 +255,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         <Fact k="给谁看">{surfaceName(faq.surface)} · {languageName(faq.language)}</Fact>
         <Fact k="状态">{published ? "已发布，删除后几分钟内从 App 消失" : "草稿"}</Fact>
       </Facts></>,
-      detail: <>删除后这条问答从知识库里消失，所有位置都不再读到“{faq.question}”，且不可在本页恢复。</>,
+      detail: <>删除后要再用，只能重新新建这条问答。</>,
       reasonPlaceholder: "例如：内容已过时，已由新问答替代",
       reasonMin: 8,
       getPendingReason: () => {
