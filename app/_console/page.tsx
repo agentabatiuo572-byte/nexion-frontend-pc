@@ -185,8 +185,8 @@ export default function CommandCenter() {
   const fundText = `资金安全：${fundWord}${days ? `，${days}` : ""}`;
   const fundExplain = (
     <>
-      看两样，取更差的：覆盖率（储备除以应付款，和红线、健康线比）和可覆盖天数（储备除以未来 7 天日均到期金额）。
-      {water && !noDue && ` 现在按日均到期 ${fmtAmount(water.dailyAverageDueUsdt)} USDT 算，可覆盖 ${fmtNum(coverDays)} 天。天数很大是因为近期要付的钱少，不是算错。`}
+      取两样里更差的：覆盖率（储备 ÷ 应付款）和可覆盖天数（储备 ÷ 未来 7 天日均到期金额）。
+      {water && !noDue && ` 现在日均到期 ${fmtAmount(water.dailyAverageDueUsdt)} USDT，可覆盖 ${fmtNum(coverDays)} 天；天数大是因为近期要付的钱少。`}
       {clock && ` 数据时间 ${clock}。`}
     </>
   );
@@ -324,8 +324,8 @@ export default function CommandCenter() {
       </section>
       {/* 导出结果未知：原快照、理由和请求号在浏览器里，刷新后也要看得见，并能回到原确认框（入口同页头按钮）。放在今天的状况下面，不抢首屏结论。 */}
       {canExport && pendingExport && (
-        <Notice tone="warn" title="上次导出资金数据的结果待确认" action={<Button size="sm" onClick={exportSnapshot}>查看原导出</Button>}>
-          {formatBusinessTimeCompact(new Date(pendingExport.createdAt).toISOString())}（{businessZone().label}）发起。原快照、理由和请求号已保留，打开原确认框核对。
+        <Notice tone="warn" title="上次导出资金数据结果未知" action={<Button size="sm" onClick={exportSnapshot}>查看原导出</Button>}>
+          {formatBusinessTimeCompact(new Date(pendingExport.createdAt).toISOString())}（{businessZone().label}）发起。原数据和理由已保留，打开后可以按原请求重试。
         </Notice>
       )}
 
@@ -414,9 +414,9 @@ export default function CommandCenter() {
           briefKind="export"
           action="导出资金数据"
           effect={<StatusTag tone="progress" filled>立即生效</StatusTag>}
-          facts={<Facts><Fact k="文件格式">JSON</Fact><Fact k="数据范围">本次点击时的资金账本快照</Fact></Facts>}
-          detail="快照包含覆盖率、红线、健康线、可用储备、应付款、差额及账户金额。结果未确认时保留原快照和理由，按原操作重试。"
-          completionCopy="登记导出理由成功后，浏览器下载本次原始快照。"
+          facts={<Facts><Fact k="文件格式">JSON</Fact><Fact k="数据范围">点导出那一刻的资金数据</Fact></Facts>}
+          detail="文件里有覆盖率、红线、健康线、可用储备、应付款、差额和各账户金额。结果未知时保留原数据和理由，按原请求重试不会重复登记。"
+          completionCopy="理由登记成功后，浏览器下载这份资金数据。"
           confirmLabel="登记并下载"
           reasonMax={200}
           getPendingReason={() => pendingB0Export(exportConfirm.adminId)?.reason}

@@ -235,13 +235,13 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                 </li>
                 <li>
                   <span>
-                    <Explain label="提现在途怎么算" content="还没结案的提现单：等审核、打款中，也包括被拒绝或打款失败、钱还没退回的单。所以比待处理里的待审核提现多。">提现在途</Explain>
+                    <Explain label="进行中的提现怎么算" content="所有还没结束的提现单：等审核、打款中，也包括被拒或打款失败、钱还没退回的单，测试账号也算。所以比待处理里的待审核提现多。">进行中的提现</Explain>
                   </span>
                   <span className="cc-num">{fmtNum(ledger.queueBacklogCount)} 笔，{usdt(ledger.queueBacklogUsd)}</span>
                 </li>
                 <li>
                   <span>
-                    <Explain label="风险分怎么算" content={<>这些提现单绑定的风控决定分的平均，满分 100，70 以上为高危。没有风控决定的单按 0 算，所以可能比提现审核页的分低，单笔以提现审核页为准。 <FoldLink reach={reach} href="/risk/scoring">风险评分规则</FoldLink></>}>在途提现平均风险分</Explain>
+                    <Explain label="风险评分均值怎么算" content={<>进行中的提现单的风险分平均，满分 100，70 分以上算高危。没有风险分的单按 0 算，所以可能比提现审核页低，单笔看提现审核页。 <FoldLink reach={reach} href="/risk/scoring">风险评分规则</FoldLink></>}>提现风险评分均值</Explain>
                   </span>
                   <span className="cc-num" data-tone={ledger.avgRiskScore === 0 ? "done" : undefined}>{ledger.avgRiskScore}</span>
                 </li>
@@ -299,7 +299,7 @@ function PeriodDetail({ period, summary }: { period: B0SummaryPeriod; summary: B
             </>}
             {withdrawals.inTransit && (
               <li>
-                <span><Explain label="还没完成的提现怎么算" content={`此刻还没完成的提现单：等审核、冷却中、打款中，也包括冻结和打款异常的单。不随时段变，数据时间 ${formatBusinessTimeCompact(withdrawals.inTransit.asOf)}。和「风险与开关」的提现在途算法不同，数可能不一样。`}>此刻还没完成的提现</Explain></span>
+                <span><Explain label="未到账的提现怎么算" content={`此刻用户还没收到钱的提现单：等审核、冷却中、打款中，也包括冻结和打款异常的单；不含测试账号。不随时段变，数据时间 ${formatBusinessTimeCompact(withdrawals.inTransit.asOf)}。被拒、打款失败等着退回的单不算，所以和「风险与开关」里进行中的提现不一样。`}>未到账的提现</Explain></span>
                 <span className="cc-num">{fmtNum(withdrawals.inTransit.count)} 笔，{usdtText(withdrawals.inTransit.amountUsdt)}</span>
               </li>
             )}
@@ -371,8 +371,8 @@ export function FlowFold({ blocks, period, summary, history, historyError, histo
   return (
     <Fold title="资金进出" summary={title} icon={ArrowLeftRight} tone="role-2" open={open} onOpenChange={onOpenChange}
       explain={blocks.netFlow ? <>
-        按储备账已确认的流入、流出统计。流入包括充值、财务注资和储备返还／冲正；流出包括提现扣储备和拒付退回。非银行提现在放行时扣储备，银行提现在付款成功时结算，不代表全部已实际打款。用余额买设备不算。
-        {netFlow24h != null && ` 另一个算法是滚动近 24 小时：${fmtAmount(netFlow24h)} USDT，时间段不同，数可能不一样。`}{clock && ` 数据时间 ${clock}。`}
+        储备账每天已确认的进出，用余额买设备不算。流入：充值、财务注资、储备返还／冲正；流出：提现、拒付退回。链上提现放行就算流出，银行提现付款成功才算。
+        {netFlow24h != null && ` 滚动近 24 小时净流入 ${fmtAmount(netFlow24h)} USDT，时段不同，数可能不一样。`}{clock && ` 数据时间 ${clock}。`}
       </> : undefined}
       actions={blocks.netFlow ? <FoldLink reach={reach} href="/finance/pool?tab=flow" read="overview_b2_read">查看资金流</FoldLink> : undefined}>
       <div className="cc-cols">

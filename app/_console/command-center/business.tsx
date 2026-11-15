@@ -23,8 +23,8 @@ const cardState = (block: Block<unknown>) => (block.data !== null ? "ready" : bl
 /** 一个笔数分项：读不到时就在这一行重试，不当 0。 */
 const countRow = (k: string, block: Block<number>) => ({ k, v: block.error ? <>暂时读不到 · <InlineRetry onRetry={block.reload} /></> : block.data === null ? "…" : `${fmtNum(block.data)} 笔` });
 /** 后端这一期没有返回这一块：账号没有这一项的读取权限，不是 0。 */
-const DENIED = <>没有查看权限<Explain label="为什么没有" content="这个账号没有这一项的读取权限。需要看，请管理员在「运营账号与权限」里开通。" /></>;
-const REFUND_UNKNOWN = "这段时间里有退款订单查不到实际退了多少，销售额先不算，也不拿别的数顶上。到「订单进度」查这些订单。";
+const DENIED = <>没有查看权限<Explain label="为什么没有" content="你的账号没有这一项的查看权限。需要看，请管理员在「运营账号与权限」里开通。" /></>;
+const REFUND_UNKNOWN = "这段时间有退款单查不到实际退了多少，所以先不算销售额。到「订单进度」查这些订单。";
 
 /** 只有设备卡时切时段没有用，不放切换，按今日。 */
 const canSwitchPeriod = (blocks: B0Blocks) => blocks.moneyFlows || blocks.sales || blocks.newUsers || blocks.activeUsers;
@@ -152,7 +152,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
             explain={<>
               <p>算：已经完成的提现本金，有链上 USDT 和越南盾银行提现折成的 USDT，按完成时间算。</p>
               <p>不算：待审、处理中、被拒、已退款的单和模拟打款。手续费不在里面，在下面「资金进出」里。</p>
-              <p>系统处理中和提现审核页的「系统处理中」是同一组单：已提交、冷却中、已放行、处理中、已发出。是此刻的笔数，不随时段变。{reviewOnCard ? "待审核是此刻等人审核的笔数。" : "待审核的笔数在上面待处理里。"}</p>
+              <p>系统处理中是此刻已提交、冷却中、已放行、处理中、已发出的笔数，和提现审核页的同名分组一致，不随时段变。{reviewOnCard ? "待审核是此刻等人审核的笔数。" : "待审核的在上面待处理里。"}</p>
             </>}
             href={link("/finance/withdrawals")}
             openLabel="查看提现审核"
@@ -251,9 +251,9 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
           rows={devices.data ? [
             { k: <>等待启动<Explain label="等待启动统计范围" content="包含待激活、等待初始化和旧任务未结清的设备。" /></>, v: `${fmtNum(devices.data.waitingActivation)} 台`, tone: devices.data.waitingActivation > 0 ? "warn" : undefined },
             { k: "已停用", v: `${fmtNum(devices.data.stopped)} 台` },
-            ...(deviceAttention > 0 ? [{ k: <>需要处理<Explain label="需要处理统计范围" content={`出错重试中 ${fmtNum(devices.data.errorRetry)} 台、旧任务未结清 ${fmtNum(devices.data.legacyPending)} 台、等待配置 ${fmtNum(devices.data.waitingConfig)} 台。按设备当前的有效状态算，和上面的台数分开统计，同一台设备可能两边都算到，不能相加。逐项入口在「待处理」。`} /></>, v: `${fmtNum(deviceAttention)} 台`, tone: "warn" as const }] : []),
+            ...(deviceAttention > 0 ? [{ k: <>需要处理<Explain label="需要处理统计范围" content={`出错重试中 ${fmtNum(devices.data.errorRetry)} 台、旧任务未结清 ${fmtNum(devices.data.legacyPending)} 台、等待配置 ${fmtNum(devices.data.waitingConfig)} 台。和上面的台数分开算，同一台可能两边都有，不能相加。逐项入口在「待处理」。`} /></>, v: `${fmtNum(deviceAttention)} 台`, tone: "warn" as const }] : []),
           ] : []}
-          explain="只算用户设备，不含手机。总数包含所有用户设备状态；运行中、等待启动和已停用是其中三类，不一定加起来等于总数。等待启动包含待激活、等待初始化和旧任务未结清的设备。这些是此刻的台数，不随时段变。"
+          explain="此刻的用户设备台数，不含手机，不随时段变。运行中、等待启动和已停用只是其中三类，加起来不一定等于总数。"
           explainAbove
           href={link("/devices/ops")}
           openLabel="查看设备管理"
