@@ -29,8 +29,9 @@ function decimal(value: unknown): string {
 }
 function voteValue(row: Record<string, unknown>): VoteValue {
   if (row.currency !== "USDT") invalid();
-  return { available: true, currency: "USDT", poolUsd: decimal(row.poolUsd), totalVotes: decimal(row.totalVotes),
-    perVoteUsd: row.perVoteUsd === null ? null : decimal(row.perVoteUsd) };
+  const perVoteUsd = row.perVoteUsd;
+  if (perVoteUsd !== null && (typeof perVoteUsd !== "string" || !/^-?\d+(?:\.\d+)?$/.test(perVoteUsd))) invalid();
+  return { available: true, currency: "USDT", poolUsd: decimal(row.poolUsd), totalVotes: decimal(row.totalVotes), perVoteUsd };
 }
 
 export function readF4VoteProjection(value: unknown): F4VoteProjection {
