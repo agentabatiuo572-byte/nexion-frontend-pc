@@ -29,7 +29,7 @@ import {
   type PayoutVndConfig, type PayoutVndValues, type PayoutVndWritableField,
 } from "@/lib/admin/payout-vnd-contract";
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, RecoveryPanel, recoveryTitle, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import { configApprovalOriginalInput, pendingConfigApproval, releaseConfigApproval, submitConfigApproval, withdrawalApprovalDisabledReason } from "@/lib/admin/withdrawal-config-approval";
@@ -807,11 +807,9 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
 
       {pendingPanel}
       {approvalRejected && <Notice tone="danger" title="放宽提交被拒绝">{approvalRejected}</Notice>}
-      {queue.rows.map((ticket) => (
-        <Notice key={ticket.id} tone="progress" action={canReachAudit ? <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批查看</Link> : undefined}>
-          放宽单 {ticket.id} 等待批准，批准前当前参数不变
-        </Notice>
-      ))}
+      <RecoveryPanel title={recoveryTitle(0, queue.rows.length)} tone="progress" label="等待批准的放宽单"
+        foot={canReachAudit ? <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批查看</Link> : undefined}
+        items={queue.rows.map((ticket) => ({ key: ticket.id, object: `放宽单 ${ticket.id}`, tag: <StatusTag tone="progress">待审批</StatusTag>, line: "等另一位超级管理员批准，批准前当前参数不变。" }))} />
       {showSentTicket && !canReadQueue && (
         <Notice tone="progress">放宽单 {sentTicket.id} 已提交，等待另一位超管批准，批准前当前参数不变。这个账号看不到后续进度，结果请问超级管理员。</Notice>
       )}
