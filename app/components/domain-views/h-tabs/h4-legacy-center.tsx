@@ -167,6 +167,9 @@ function increasesUvtFallback(tiers: Array<Record<string, any>>, changed: Record
 
 export type LegacySection = "events" | "plays" | "wheel";
 
+/** 输入框不带单位（共用改值框放不下长单位）、再确认里要写单位的改值框，按标题给单位，只用于显示。 */
+const RECONFIRM_UNIT: Record<string, string> = { 调整每日真钱奖预算: "USDT / 天" };
+
 export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: HCtx; section: LegacySection; onSection: (section: LegacySection) => void }) {
   const { toast } = ctx;
   const adminId = useAdminAuth(state => state.session?.adminId);
@@ -188,7 +191,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     return hApprovalReconfirm(error, { changes,
       hasPending: () => !!h4PendingFor(h4Scope((error.input as { path: string }).path, JSON.parse((error.input as { body: string }).body))),
       onUnknown: () => ctx.closeConfirm?.(), action: req.action, title: req.title, reason, approver: "另一位超级管理员", holds: creating ? "现有配置" : "这一项",
-      change: edit && value !== undefined ? <Change from={`${edit.current || "—"}${edit.unit ? ` ${edit.unit}` : ""}`} to={`${value}${edit.unit ? ` ${edit.unit}` : ""}`} /> : undefined,
+      change: edit && value !== undefined ? (unit => <Change from={`${edit.current || "—"}${unit ? ` ${unit}` : ""}`} to={`${value}${unit ? ` ${unit}` : ""}`} />)(edit.unit ?? RECONFIRM_UNIT[String(req.title)]) : undefined,
       // 有逐项改动时不再放原框的「现在」事实；只有改已有一项时补一行对象（目前是转盘奖项编辑）。
       context: edit || changes ? undefined : facts,
       subject: changes && !creating && typeof req.action === "string" && req.action.includes(" · ") ? <Fact k="奖项">{req.action.slice(req.action.indexOf(" · ") + 3)}</Fact> : undefined,
@@ -636,7 +639,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       amplifies: true,
       coverageLead: "调高预算会让转盘每天多发真钱",
       reasonPlaceholder: "例如：活动期放宽每日真钱奖预算",
-      edit: { kind: "number", current: budgetNumber(current), unit: "USDT / 天", min: 0.01, max: 1_000_000_000, step: 0.01, hint: "大于 0，最多两位小数，单位 USDT" },
+      edit: { kind: "number", current: budgetNumber(current), min: 0.01, max: 1_000_000_000, step: 0.01, hint: "大于 0，最多两位小数，单位 USDT" },
       run: async (reason, value) => {
         if (!value) return;
         if (await apply(await updateH4WheelGuard(guard.key, value, current, reason))) toast("转盘安全限制「每日实际奖励预算（美元）」已更新");
