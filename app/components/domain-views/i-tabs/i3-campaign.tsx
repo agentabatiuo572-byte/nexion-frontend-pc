@@ -1252,7 +1252,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
 
           <section className="i3-form-section" aria-labelledby="i3-f-budget">
             <h3 id="i3-f-budget" className="i3-sub-title">预算记录</h3>
-            <Field label="预算" hint="选填" help="只记录，不扣款、不发奖。不填就不记。">
+            <Field label="预算" hint="选填" help="只记录，不扣款、不发奖。不填就不记。系统按两位小数保存（四舍五入）。">
               {(control) => <NumberInput {...control} disabled={frozen} unit="USD" value={form.budget} onChange={(e) => set("budget", e.target.value)} />}
             </Field>
           </section>
