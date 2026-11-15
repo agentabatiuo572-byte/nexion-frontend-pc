@@ -267,7 +267,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       : <Facts>
         <Fact k="现价">{priceMissing ? "暂不可用" : `${price(overview!.currentPrice)} USDT`}</Fact>
         <Fact k="暂停之后">每日推进和 5 分钟采样都停下</Fact>
-        <Fact k="仍会改价的">应急改现价、固定生效日照常发布价格，暂停挡不住这两项</Fact>
+        <Fact k="仍会改价的">应急改现价、固定生效日的价格照常发布</Fact>
       </Facts>,
     statedBrief: paused
       ? { impact: "排程已配置、没有固定时，价格重新按七天计划推进，之后的兑换按推进后的价格。", check: "核对兑付覆盖率和固定生效日，理由写清为什么恢复。" }
@@ -287,7 +287,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
     const unused = {
       volatilityPct: "后端把它记进当天配置，下次推进时被计划值替换；发布价格直接用目标价，没有按它随机涨跌。",
       deviationPct: "后端只保存这个值，没有任何地方拿现价和外部价格比较，也不会告警。",
-      costBasis: "App 接口会带上它，但现在没有页面显示盈亏，也不影响价格和兑换。",
+      costBasis: "App 会收到这个值，但现在没有页面显示盈亏，也不影响价格和兑换。",
     } as const;
     return { briefKind: "config",
       action: `手动设置 · ${label}`,
@@ -597,7 +597,7 @@ function G3MarketEditor() {
             initialRecovery: "retry",
             expired: !!pendingDirect && g3MarketCommandExpired(pendingDirect),
             disabledReason: pendingDirect && g3MarketCommandExpired(pendingDirect)
-              ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项没有按原请求查询结果的接口，请到「操作记录与审批」核对。"
+              ? "原请求已超过 24 小时，只保留原内容供核对，不能重试；这一项查不了原结果，请到「操作记录与审批」核对。"
               : pendingDirect && session && !canWriteG3MarketChange(session, pendingDirect.change, pendingDirect.value) ? "你没有修改这一项的权限。" : undefined,
             resolve: () => undefined,
             recover: async () => {
@@ -866,7 +866,7 @@ function G3MarketEditor() {
         <Stat tone={overview.coverage.redlineBreached ? "danger" : "role-2"} icon={ShieldCheck} label="兑付覆盖率" value={cov} unit="%"
           sub={`红线 ${redline}`}
           explain={<>
-            <p>现在的储备能付多少应付款，来自「资金储备与应付款」的当前快照，不是这次修改后的值。</p>
+            <p>现在的储备能付多少应付款，来自「资金储备与应付款」的当前数据，不是这次修改后的值。</p>
             <p>提高价格、固定到更高的一天时，后端按拟发布的价格重估；恢复自动变化时按现在的覆盖率检查。低于红线就拒绝。</p>
             <p>读不到可靠数据时后端也可能返回 0，这时以「资金储备与应付款」为准。</p>
           </>} />
@@ -980,7 +980,7 @@ function G3MarketEditor() {
           <ConfigRow name="偏离告警阈值" what="现价和外部价格相差多少算偏离" effect="后端没有拿现价和外部价格比较，也不会告警"
             value={<span className="g3-value">{overview.overrides.deviationPct == null ? "未配置" : pctText(overview.overrides.deviationPct)}<ObjectTag state={OBJECT_STATES.deviationPct} /></span>}
             action={allowed("finprod_g3_write") || hasRecovery("deviationPct") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("deviationPct")} onClick={() => adj("deviationPct", "偏离告警阈值", rawValue(overview.overrides.deviationPct), "可设 0–50%")}>调整</Button> : undefined} />
-          <ConfigRow name="初始成本价" what="UVT 的初始成本价" effect="App 接口会带上它，但现在没有页面显示盈亏；不影响价格和兑换"
+          <ConfigRow name="初始成本价" what="UVT 的初始成本价" effect="App 会收到这个值，但现在没有页面显示盈亏；不影响价格和兑换"
             value={<span className="g3-value">{overview.overrides.costBasis == null ? "未配置" : `${price(overview.overrides.costBasis)} USDT`}<ObjectTag state={OBJECT_STATES.costBasis} /></span>}
             action={allowed("finprod_g3_write") || hasRecovery("costBasis") ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={lockReason("costBasis")} onClick={() => adj("costBasis", "初始成本价", rawValue(overview.overrides.costBasis), "App 现在没有页面显示它，不影响价格和兑换")}>调整</Button> : undefined} />
         </ConfigList>

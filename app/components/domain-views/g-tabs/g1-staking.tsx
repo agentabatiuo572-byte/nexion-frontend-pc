@@ -87,7 +87,7 @@ type StateKey = "pending_lock" | "active" | "mature_unclaimed" | "claimed" | "ea
 /** 七种仓位状态：名字、色调、图标和它是什么意思（按后端现行行为写，见重构说明「后端事实」）。 */
 const POSITION_STATES: Record<StateKey, { label: string; tone: StateTone; icon: LucideIcon; meaning: string }> = {
   pending_lock: { label: "待确认", tone: "neutral", icon: Clock3, meaning: "历史记录里还在等锁仓确认的仓位，本金已计入锁定金额。" },
-  active: { label: "计算奖励中", tone: "progress", icon: CircleDashed, meaning: "锁仓中，按下单时的奖励率算奖励。过了到期时间的也可能还在这里：状态要等用户在 App 里读到仓位才转为到期未领。" },
+  active: { label: "计算奖励中", tone: "progress", icon: CircleDashed, meaning: "锁仓中，按下单时的奖励率算奖励。过了到期时间的也可能还在这里：用户在 App 里打开质押仓位后才会变成到期未领。" },
   mature_unclaimed: { label: "到期未领", tone: "warn", icon: Hourglass, meaning: "已到期，锁定金额和奖励等用户自己领取；系统不会自动发放，后台也不能代领。" },
   claimed: { label: "已领取", tone: "done", icon: CheckCheck, meaning: "用户已领取锁定金额和奖励。" },
   early_withdrawn: { label: "提前解锁", tone: "done", icon: LogOut, meaning: "到期前退出：按下单时的比例扣锁定金额，质押奖励不发放。" },
@@ -97,10 +97,10 @@ const POSITION_STATES: Record<StateKey, { label: string; tone: StateTone; icon: 
 const positionStateLabel = (state: string): string => POSITION_STATES[state as StateKey]?.label ?? "状态未知";
 const rowState = (status: string) => POSITION_STATES[status.toLowerCase() as StateKey];
 /** 「计算奖励中」但已过到期时间的仓位：后端只在用户读仓位时转为到期未领，这页按读取时间和到期时间比出来，不改状态。 */
-const OVERDUE = { label: "已过到期时间", tone: "warn" as StateTone, icon: AlarmClock, meaning: "过了到期时间，但状态还是计算奖励中。状态要等用户在 App 里读到仓位才转为到期未领，后台读这页不会改状态。和到期未领一样等用户自己领取，系统不会自动发放。" };
+const OVERDUE = { label: "已过到期时间", tone: "warn" as StateTone, icon: AlarmClock, meaning: "按这次读取的时间比，已过到期时间，状态还是计算奖励中：用户在 App 里打开质押仓位后才会变成到期未领，后台看这页不会改状态。和到期未领一样等用户自己领取，系统不会自动发放。" };
 
 const STAGES: readonly { key: string; title: string; explain: string; states: readonly StateKey[] }[] = [
-  { key: "locked", title: "还在锁定", explain: "待确认和计算奖励中的仓位，本金还没回到用户手里。状态要等用户在 App 里读到仓位才转为到期未领，所以过了到期时间的也会留在这里，单独标出。", states: ["pending_lock", "active"] },
+  { key: "locked", title: "还在锁定", explain: "待确认和计算奖励中的仓位，本金还没回到用户手里。用户在 App 里打开质押仓位后才会变成到期未领，所以过了到期时间的也会留在这里，单独标出。", states: ["pending_lock", "active"] },
   { key: "due", title: "到期待领取", explain: "到期后由用户自己领取，系统不会自动发放；没领之前一直停在这里。", states: ["mature_unclaimed"] },
   { key: "ended", title: "已结束", explain: "领取、提前解锁、罚没或退款后就结束了。提前解锁只算本月（按业务日历的月份），其余不限时间。", states: ["claimed", "early_withdrawn", "slashed", "refunded"] },
 ];
@@ -250,7 +250,7 @@ export function G1Staking() {
   const conclusion = mature + overdue > 0
     ? <Conclusion state="warn" explain={COUNT_EXPLAIN}
         hint={overdue > 0
-          ? <>其中{atLeast} {fmtCount(overdue)} 笔已过到期时间，状态还是计算奖励中：要等用户在 App 里读到仓位才转为到期未领。到期后由用户自己领取，系统不会自动发放。</>
+          ? <>其中{atLeast} {fmtCount(overdue)} 笔已过到期时间，状态还是计算奖励中，用户在 App 里打开质押仓位后才会变成到期未领。到期后由用户自己领取，系统不会自动发放。</>
           : "到期后由用户自己领取，系统不会自动发放；这页只能查看。"}>
         质押已退役，还有 {fmtCount(open)} 笔历史仓位没结清，其中{atLeast} {fmtCount(mature + overdue)} 笔已到期、等用户领取
       </Conclusion>
@@ -304,14 +304,14 @@ export function G1Staking() {
           explain="待确认、计算奖励中、到期未领三种仓位的锁定金额合计，只算四档 USDT 历史质押。这页只查这四档，不含 UVT 质押。" />
         <Stat tone={mature + overdue > 0 ? "warn" : "role-3"} icon={CalendarClock} label="到期未领" value={fmtCount(mature)} unit="笔"
           sub={overdue > 0 ? `另有${atLeast} ${fmtCount(overdue)} 笔已过到期时间` : undefined}
-          explain="已到期、等用户自己领取的仓位。系统不会自动发放，后台也不能代领。这个数只算状态已经是到期未领的；过了到期时间、状态还是计算奖励中的另写在下面一行。它按这次读取的时间和每笔的到期时间比，只在读到的仓位里数，计算奖励中没读全时写「至少」。" />
+          explain="已到期、等用户自己领取的仓位。系统不会自动发放，后台也不能代领。只算状态已经是到期未领的；过了到期时间、状态还是计算奖励中的另写在下面一行，只在读到的仓位里数，没读全时写「至少」。" />
         <Stat tone="role-1" icon={Coins} label="奖励估计" value={usdtText(stats.interestUsd)} unit="USDT" sub="整期估计 · 含四档以外产品"
-          explain="后端把所有「计算奖励中」「到期未领」仓位开仓时算好的整期奖励加起来：不按已锁天数折算，也算进了四档以外产品的仓位。它不是已产生或已发放的奖励，后端改成和仓位同一范围之前只作量级参考。" />
+          explain="「计算奖励中」「到期未领」仓位开仓时算好的整期奖励之和，不按已锁天数折算。还含四档以外的产品，和上面的仓位范围对不上，正在修。不是已产生或已发放的奖励，只作量级参考。" />
       </StatBand>}
 
       <Panel plain={pools.length > 0} title="四档历史产品" icon={Coins} tone="role-1"
         sub={`USDT · 质押总开关${gate.enabled ? "开启" : "已关闭"} · 紧急暂停 ${fmtCount(stats.killedCount)} 档`}
-        explain={<><p>质押已退役，这里是四档的原配置，只能查看：不能改奖励率、扣款、最低额，也不能开售、停售、暂停或恢复，App 显示入口同样不在这里。</p><p>原档位状态只说明当时的配置，不代表现在可以买。质押总开关是 J1 紧急停用开关里读到的当前值；紧急暂停数是被暂停的档位数，不是被罚没的仓位数。</p></>}>
+        explain={<><p>质押已退役，这里是四档的原配置，只能查看：不能改奖励率、扣款、最低额，也不能开售、停售、暂停或恢复，App 显示入口同样不在这里。</p><p>原档位状态只说明当时的配置，不代表现在可以买。质押总开关是「紧急停用开关」页里的当前值；紧急暂停数是被暂停的档位数，不是被罚没的仓位数。</p></>}>
         {pools.length === 0
           ? <BlockState compact state="empty" title="暂无历史质押档位" detail="退役后没有档位是正常状态。" />
           : (
@@ -329,7 +329,7 @@ export function G1Staking() {
                     <dl className="rd-stat-rows">
                       <div className="rd-stat-row"><dt>参考年奖励率</dt><dd>{pool.apyDisplay}</dd></div>
                       <div className="rd-stat-row"><dt>提前解锁扣款</dt><dd>{pool.penalty}%</dd></div>
-                      <div className="rd-stat-row"><dt>最低锁仓额<Explain label="最低锁仓额的口径" content="没有单独配置时，显示的是产品表里的默认值，后端先把它舍到两位小数；单独配置过的按原值显示。" /></dt><dd>{minText(pool.minDisplayValue)}</dd></div>
+                      <div className="rd-stat-row"><dt>最低锁仓额<Explain label="最低锁仓额的口径" content="没有单独配置时显示产品的默认值，已舍到两位小数；单独配置过的按原值显示。" /></dt><dd>{minText(pool.minDisplayValue)}</dd></div>
                     </dl>
                   </Stat>
                 );
@@ -358,10 +358,10 @@ export function G1Staking() {
                   return (
                     <button key={key} type="button" role="radio" className="g1-lane-item" data-state={key} data-tone={meta.tone}
                       aria-checked={checked} tabIndex={key === shownState ? 0 : -1} disabled={!present}
-                      data-zero={count ? undefined : ""} title={present ? undefined : "接口没有返回这一组，打不开清单"}
+                      data-zero={count ? undefined : ""} title={present ? undefined : "这一组没有读到，打不开清单"}
                       onClick={() => selectState(key)}>
                       <span className="g1-lane-name"><Icon size={14} strokeWidth={1.9} aria-hidden />{key === "early_withdrawn" ? `本月${meta.label}` : meta.label}</span>
-                      <span className="g1-lane-count">{count === null ? <>—<small>没有返回</small></> : <>{fmtCount(count)}<small>笔</small></>}</span>
+                      <span className="g1-lane-count">{count === null ? <>—<small>没读到</small></> : <>{fmtCount(count)}<small>笔</small></>}</span>
                       {key === "active" && overdue > 0 && <span className="g1-lane-flag">{atLeast && `${atLeast} `}{fmtCount(overdue)} 笔已过到期时间</span>}
                     </button>
                   );
@@ -428,7 +428,7 @@ export function G1Staking() {
         const nickname = operatorNicknameText(current.nickname);
         return (
           <Drawer open onClose={() => setCurrent(null)} title="仓位详情" sub={current.positionNo} icon={Layers} tone="role-2"
-            explain="下单时的奖励率、扣款和期限都以这笔仓位开仓时的记录为准，后来改档位配置不影响它。时间按后端记录原样显示。金额字段在库里为空时，后端目前会返回 0，看到 0 先别当成真实金额。"
+            explain="奖励率、扣款和期限以开仓时的记录为准，后来改档位配置不影响它。时间是系统记录的原值，没有换算时区。金额没有记录时目前也显示 0，看到 0 先别当成真实金额。"
             nav={{ onPrev: () => setCurrent(rows[index - 1]), onNext: () => setCurrent(rows[index + 1]), hasPrev: index > 0, hasNext: index >= 0 && index < rows.length - 1 }}
             footer={<Decision note="只能查看，这里不能手动改仓位。" primary={<Button onClick={() => setCurrent(null)}>关闭</Button>} />}>
             <JudgmentPoints rows={[

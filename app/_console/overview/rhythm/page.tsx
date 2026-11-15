@@ -216,7 +216,7 @@ export default function RhythmPage() {
 
       <Fold title={`第 ${data.filters.month} 个月的重点参数`} icon={Target} tone="role-4" open={leverOpen} onOpenChange={setLeverOpen}
         summary={`${data.monthLeverCombo.length} 项：${data.monthLeverCombo.map((lever) => lever.key).join("、")}`}
-        explain="按这个月倍率大于 1 的加成、加强合规审查，再加固定的提现和结算两项，依次取前 3 项。用途是固定说明，不是效果统计，也不表示这个月实际改了这几项。">
+        explain="从这个月倍率大于 1 的加成、加强合规审查，以及提现、结算两项里，按顺序取前 3 项来提示。不是效果统计，也不代表这个月改过它们。">
         <div className="b4-lever">
           <label className="b4-lever-month">
             <span>看第几个月</span>
@@ -257,7 +257,7 @@ export default function RhythmPage() {
             <span key={item.key} aria-disabled="true">{TARGET_NOTE[item.key] ?? operatorCopyText(item.label)} · 无访问权限</span>
           )
         ))}
-        <Explain label="相关页面是什么" content="这几页只给链接，这页不算效果。运营阶段设置的入口会先记一条跳转记录再打开；其余直接打开，不带这页的阶段之外的条件。" />
+        <Explain label="相关页面是什么" content="这几页只给链接，这页不算效果。打开运营阶段设置会记一条操作记录；其余直接打开，最多带上选的阶段，不带这页的其他条件。" />
       </nav>
     </RdPage>
   );

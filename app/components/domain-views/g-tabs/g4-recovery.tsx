@@ -53,11 +53,11 @@ export function g4ParamValueText(key: string, raw: string | undefined) {
 }
 
 /** 每日收益比例的调高申请在等批准时，仍可直接调低（立即生效）；调低后原申请批准时后端按当前值已变拒绝。其他参数待审批时调高调低都改不了。 */
-export const G4_DIVIDEND_PENDING_NOTE = "批准前仍是原比例；这期间仍可以把比例调低，调低立即生效，原调高申请批准时会因为比例变了被后端拒绝。";
+export const G4_DIVIDEND_PENDING_NOTE = "批准前仍是原比例；这期间仍可以把比例调低，调低立即生效，原调高申请批准时会因为比例变了被拒绝。";
 
 export function g4RecoveryTag(record: Pick<GParamRecovery, "status">, batch = false, obj?: string) {
   if (record.status === "unknown") return unknownTag("approval");
-  if (record.status === "pending") return pendingTag(batch ? "批准前不付款；批准时后端按原批次的待付明细发放。"
+  if (record.status === "pending") return pendingTag(batch ? "批准前不付款；批准时按原批次的待付明细发放。"
     : obj === "dividend" ? G4_DIVIDEND_PENDING_NOTE : "批准前参数不变；这一项被审批锁住，调高调低都改不了。");
   if (record.status === "expired") return expiredTag("approval");
   return resolvedTag(record.status);
@@ -94,9 +94,9 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
   const dividendWaiting = records.some((record) => record.request.obj === "dividend" && record.ticket?.status === "pending");
   const lockedWaiting = records.some((record) => record.request.obj !== "dividend" && record.request.command.op !== "g4_genesis_rerun_dividend" && record.ticket?.status === "pending");
   const waitingLead = dividendWaiting && !lockedWaiting
-    ? "批准前每日收益比例不变；这期间仍可以把比例调低（立即生效），调低后原调高申请批准时会被后端拒绝。其他参数照常可改。"
+    ? "批准前每日收益比例不变；这期间仍可以把比例调低（立即生效），调低后原调高申请批准时会被拒绝。其他参数照常可改。"
     : dividendWaiting
-      ? "批准前这几项不变。有待审批申请的参数调高调低都改不了，只有每日收益比例仍可调低（立即生效，原调高申请批准时会被后端拒绝）；其他参数照常可改。"
+      ? "批准前这几项不变。有待审批申请的参数调高调低都改不了，只有每日收益比例仍可调低（立即生效，原调高申请批准时会被拒绝）；其他参数照常可改。"
       : "批准前这几项不变；有待审批申请的参数调高调低都改不了，其他参数照常可改。";
   const rows: GRecoveryRow[] = [
     ...records.map((record) => {
@@ -121,7 +121,7 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
     title={`${waiting ? "在等审批的原申请" : "还没有结论的原操作"} · ${total} 项`}
     lead={waiting ? waitingLead : `这些操作先只能查询原结果或在 24 小时内按原请求重试，不能改成别的值${dividendWaiting ? "（每日收益比例的调高申请在等批准时，仍可直接调低）" : ""}；其他照常可改。`}
     explain={<>
-      <p>这里列你在这台电脑上提交过、还没处理完的原操作：参数修改、每日收益比例、补发收益、价格档位，以及直接生效但没收到结果的修改。原操作只能查询，或在 24 小时内按原内容重试，不能改值。</p>
+      <p>这里列你在这台电脑上提交过、还没处理完的原操作：参数修改、每日收益比例、补发收益、价格档位，以及直接生效但没收到结果的修改。原操作只能查询原结果，或在 24 小时内按原请求重试，不能改值。</p>
       <p>补发收益按原批次号恢复，不会换成今天的批次。要改成别的值，等原操作有结论后再发起新修改。</p>
     </>} />;
 }

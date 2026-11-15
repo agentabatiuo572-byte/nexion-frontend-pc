@@ -76,7 +76,7 @@ const STATUS_LOOK: Record<string, { tone: StateTone; icon: LucideIcon; explain: 
   REVOKED: { tone: "done", icon: Ban, explain: "这条批准已撤销；同一环境没有别的有效批准时，资格随之收回。申请人可以在 App 重新申请。" },
   EXPIRED: { tone: "done", icon: Hourglass, explain: "已结束，只能查看。后台没有设为过期的操作，也不会到期自动过期。" },
 };
-const UNKNOWN_LOOK = { tone: "neutral" as StateTone, icon: CircleHelp, explain: "后端返回了这页不认识的状态，不能操作。" };
+const UNKNOWN_LOOK = { tone: "neutral" as StateTone, icon: CircleHelp, explain: "这条申请的状态这页认不出，不能操作。" };
 
 /** 表格里不带解释（一行一个可点的词太吵），抽屉和确认框里带。 */
 function StatusBadge({ status, quiet, bare }: { status: string; quiet?: boolean; bare?: boolean }) {
@@ -372,7 +372,7 @@ export function A9DeveloperAccess() {
         <span className="a9-rec-state">
           {expired
             ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试。记录会一直留着，可以查看申请现状来核对。">已过期</StatusTag>
-            : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。按原请求重试用的是同一次提交的编号和备注，后端认得出，不会重复执行。">结果未知</StatusTag>}
+            : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。按原请求重试不会重复执行。">结果未知</StatusTag>}
         </span>
         <span className="a9-rec-actions">
           <Button size="sm" variant="ghost" onClick={() => findOriginal(record)}>查看申请现状</Button>
@@ -385,7 +385,7 @@ export function A9DeveloperAccess() {
   const columnCount = 6;
   const judgment: JudgmentRow[] = shown ? [
     { label: "申请人", icon: Building2, tone: "users", value: shown.company, reason: shown.email },
-    { label: "平台用户", icon: User, tone: "users", value: <>用户编号 {shown.userNo ?? <>—<Explain label="为什么没有用户编号" content="你没有查看用户资料的权限，或这个用户不在你能查看的范围内、已被删除时，后端不给编号。" /></>}{shown.userNo && reach("/users/search") && <> · 到<Link className="rd-link" href={`/users/search?q=${encodeURIComponent(shown.userNo)}`}>查找用户与查看资料</Link>里打开</>}</> },
+    { label: "平台用户", icon: User, tone: "users", value: <>用户编号 {shown.userNo ?? <>—<Explain label="为什么没有用户编号" content="你没有查看用户资料的权限，或这个用户不在你能查看的范围内、已被删除时，不显示编号。" /></>}{shown.userNo && reach("/users/search") && <> · 到<Link className="rd-link" href={`/users/search?q=${encodeURIComponent(shown.userNo)}`}>查找用户与查看资料</Link>里打开</>}</> },
     { label: "申请的环境", icon: Server, value: scopeText(shown), reason: shown.sourceEnvironment === "SANDBOX" ? "批准只对这个测试批次有效" : undefined },
     { label: "提交时间", icon: Clock3, value: shown.status === "PENDING" ? `${timeText(shown.createdAt)} · 已等 ${waitedText(shown.createdAt, now)}` : timeText(shown.createdAt) },
     { label: "现在", value: <StatusBadge status={shown.status} />, state: shown.status === "PENDING" ? "warn" : undefined,
@@ -425,8 +425,8 @@ export function A9DeveloperAccess() {
     {conclusion}
 
     {recoveryRows.length > 0 && <Notice tone="warn" title={<>{recoveryRows.length} 个操作结果未知<Explain label="结果未知怎么处理" content={<>
-      <p>提交时没收到确定结果，可能已经生效。按原请求重试用同一次提交的编号和备注，后端认得出，不会重复执行。</p>
-      <p>这页没有按原请求查询结果的接口。「查看申请现状」读的是这条申请现在的状态，不能证明原操作成没成，也不会解除这条记录。</p>
+      <p>提交时没收到确定结果，可能已经生效。按原请求重试不会重复执行。</p>
+      <p>这页查不到原结果。「查看申请现状」读的是这条申请现在的状态，不能证明原操作成没成，也不会解除这条记录。</p>
     </>} /></>}>
       <ul className="a9-rec" aria-label="结果未知的操作">{recoveryRows}</ul>
       <p className="a9-rec-zone">提交时间为{zone}</p>
@@ -544,7 +544,7 @@ function ReviewDialog({ state, busy, failure, reason, touched, onReason, onTouch
   const retrying = mode !== "new";
   const length = normalizeDeveloperAccessReason(reason).length;
   const short = mode !== "recovery" && length < 8;
-  const reasonError = touched && short ? (length === 0 ? "请填写备注" : `还差 ${8 - length} 字`) : length > 500 ? "超过 500 字，后端会拒绝，请删短" : undefined;
+  const reasonError = touched && short ? (length === 0 ? "请填写备注" : `还差 ${8 - length} 字`) : length > 500 ? "超过 500 字，请删短" : undefined;
   const zone = businessZone().label;
   return (
     <Modal title={retrying ? "按原请求重试" : look.title} icon={look.icon} tone={look.danger && !retrying ? "danger" : "neutral"} busy={busy}
@@ -558,8 +558,8 @@ function ReviewDialog({ state, busy, failure, reason, touched, onReason, onTouch
           {retrying ? "按原请求重试" : look.confirm}
         </Button>} />}>
       {retrying && <Notice tone="warn">{mode === "recovery"
-        ? `上次${reviewActionLabel[action]}没收到确定结果，可能已经生效。重试用同一次提交的编号和备注，后端认得出，不会重复执行。`
-        : "这条记录是旧版本保存的，没有存原备注。填上次提交的原备注，一字不差，后端才认得出是同一次提交。"}</Notice>}
+        ? `上次${reviewActionLabel[action]}没收到确定结果，可能已经生效。按原请求重试不会重复执行。`
+        : "这条记录是旧版本保存的，没有存原备注。填上次提交的原备注，一字不差，才算同一次提交、不会重复执行。"}</Notice>}
       <Facts>
         {retrying && <Fact k="原操作">{reviewActionLabel[action]}</Fact>}
         {retrying && previous && !previous.row && <Fact k="资料来源" tone="warn">旧记录没存当时的资料，下面的公司、邮箱和环境是现在读到的</Fact>}

@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useState, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { Activity, Ban, CalendarClock, CircleHelp, CircleOff, Gauge, Hourglass, Megaphone, RefreshCw, ShieldAlert, ShieldCheck, Siren, SlidersHorizontal, ToggleLeft, TriangleAlert, type LucideIcon } from "lucide-react";
-import { BlockState, Button, ConfigList, ConfigRow, Conclusion, Explain, Fact, Facts, KeepText, Modal, Notice, PageHeader, PageTabs, Panel, Stat, StatBand, StatusTag, TodoItem, TodoList, useTabIds, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, ConfigList, ConfigRow, Conclusion, Explain, Fact, Facts, Fold, KeepText, Modal, Notice, PageHeader, PageTabs, Panel, Stat, StatBand, StatusTag, TodoItem, TodoList, useTabIds, type StateTone } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -98,7 +98,7 @@ function gateLabel(gate: A3KillSwitch): { text: string; tone: StateTone; icon?: 
 }
 
 const HEALTH_HELP: Record<string, string> = {
-  "事件待投递": "待投递和投递失败的事件条数，以及最早一条等了多久。超过 100 条或 5 分钟是警告，超过 1000 条或 1 小时是严重异常；有画像事件缺少审计关联时，直接算严重异常。",
+  "事件待投递": "待投递和投递失败的事件条数，以及最早一条等了多久。超过 100 条或 5 分钟是警告，超过 1000 条或 1 小时是严重异常；有「查看用户资料」事件对不上操作记录时，直接算严重异常。",
   "资金账本可读性": "最近 24 小时账本记录能不能读、查一次用了多久。超过 200 毫秒是警告，超过 1 秒是严重异常。只说明能读，不代表对账一致。",
   "数据库时钟偏差": "数据库时间和后台服务时间差多少。超过 1 秒是警告，超过 5 秒是严重异常。",
   "后台服务 JVM": "当前这台后台服务已运行多久、内存用了多少。超过 85% 是警告，超过 95% 是严重异常。只代表这一台，不是整个集群。",
@@ -245,7 +245,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     openActionConfirm({ briefKind: "config",
       action: `调整平台参数 · ${param.name}`,
       title: `调整${name}`,
-      detail: <>{name}影响 {consumerLabel(param.consumer)}，后端直接生效，不走审批。</>,
+      detail: <>{name}影响 {consumerLabel(param.consumer)}，确认后直接生效，不走审批。</>,
       amplifies: false, reasonMin: 8, reasonMax: 200,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmTone: "danger",
@@ -314,7 +314,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
             return;
           }
           setChecks(value => ({ ...value, [record.commandKey]: result.comparison }));
-          toast("已读回现在的内容。", "warn");
+          toast("已读到现在的内容。", "warn");
           return;
         }
       }
@@ -344,7 +344,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
           const latest = result.current as PublishedHowContentDocument;
           setRestored({ kind: "how", document: { ...latest, version: original.document.version, contents: original.document.contents }, baseline: latest, reason: record.reason });
         }
-        toast(`已解除。你填的内容还在，保存时基于修订号 ${result.current.revision}`, "success");
+        toast("已解除。你填的内容还在，可以核对后再保存。", "success");
       }
     } catch {
       dropCheck(record.commandKey);
@@ -359,15 +359,15 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   };
   // 说明内容本来就不能重发，过没过 24 小时都一样：标签只说怎么收场，不说「记录继续保留」。
   const contentTag = (record: A3Command) => isRetryExpired(record)
-    ? <StatusTag tone="neutral" icon={Hourglass} explain="原提交已超过 24 小时。这类保存本来就不能重发：读回和原提交一致按已保存收场，对不上时可以核对后解除。">已过期</StatusTag>
-    : <StatusTag tone="warn" icon={CircleHelp} explain="这类保存不能重发。点「查询原结果」读回：和原提交一致按已保存收场，对不上时可以核对后解除。">结果未知</StatusTag>;
+    ? <StatusTag tone="neutral" icon={Hourglass} explain="原提交已超过 24 小时。这类保存不能重试：查询结果和原提交一致就算已保存，对不上时可以核对后解除。">已过期</StatusTag>
+    : <StatusTag tone="warn" icon={CircleHelp} explain="这类保存不能重试。点「查询原结果」：和原提交一致就算已保存，对不上时可以核对后解除。">结果未知</StatusTag>;
   const recoveryRows: GRecoveryRow[] = commands.pending.map(record => ({
     // 说明内容的版本号带种子前缀 default-，写给人看时去掉（和编辑区同一规则）。
     key: record.commandKey, name: record.name, change: a3Deduplicates(record) ? record.change : record.change.replace(" · default-", " · "), submittedAt: record.createdAt,
     tag: !a3Deduplicates(record) ? contentTag(record) : isRetryExpired(record) ? expiredTag("direct") : unknownTag("direct"),
     actions: <>
       <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
-      {checks[record.commandKey] && <Button size="sm" variant="ghost" disabled={querying === record.commandKey} onClick={() => openRelease(record)}>解除待确认…</Button>}
+      {checks[record.commandKey] && <Button size="sm" variant="ghost" disabled={querying === record.commandKey} onClick={() => openRelease(record)}>解除原操作记录…</Button>}
       {a3Deduplicates(record) && !isRetryExpired(record) && <Button size="sm" disabledReason={(record.original.kind === "experience" ? canWriteExperience : session?.role === "superadmin") ? undefined : "你只能查看"}
         onClick={() => recoverOriginal(record)}>按原请求重试</Button>}
     </>,
@@ -421,7 +421,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     <div className="rd-tab-stack">
       <Panel title="全平台开关" icon={ToggleLeft} tone="role-other" sub={`${featureFlags.length} 个 · 时间按${businessZone().label}`}
         explain="这里只放全平台通用的开关，各业务自己的设置在对应页面修改。只有超级管理员能切换，其他角色只能查看。">
-        {featureFlags.length === 0 ? <p className="rd-note">后端没有登记全平台开关</p> : <ConfigList label="全平台开关">
+        {featureFlags.length === 0 ? <p className="rd-note">还没有全平台开关</p> : <ConfigList label="全平台开关">
           {featureFlags.map((flag) => {
             const name = FLAG_LABEL[flag.key] ?? flag.name;
             const on = flag.status === "on";
@@ -451,7 +451,8 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
             <Panel key={param.key} className="a3-param" title={name} icon={isRate ? Gauge : ShieldCheck} tone={isRate ? "role-2" : "role-1"}
               explain={<>
                 <p>{isRate ? "App 和后台的普通接口每分钟合计能处理多少个请求。按接口分组计数，每分钟重新计；后台登录、支付回调、健康检查各有单独的额度。" : "单笔提现达到这个金额就进人工强审。和「提现参数」里的小额免审线是两回事。"}</p>
-                <p>后端登记名「{param.name}」，参数键 {param.key}。只有超级管理员能改，不走审批。</p>
+                <p>只有超级管理员能改，不走审批。系统里叫「{param.name}」。</p>
+                <p className="rd-note" data-mono>{param.key}</p>
               </>}
               actions={param.writable ? <Button size="sm" loading={mutating === param.key} disabledReason={commands.find(`param:${param.key}`) ? "结果未知" : !overviewReady.current ? "正在读取" : mutating && mutating !== param.key ? "另一项正在提交" : undefined} onClick={() => paramChg(param)}>调整</Button> : <span className="rd-note">只读</span>}>
               <div className="a3-param-value" data-empty={value === null ? "" : undefined}>
@@ -477,7 +478,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
             </Panel>
           );
         })}
-        {platformParams.length === 0 && <Panel title="全平台参数" icon={SlidersHorizontal}><p className="rd-note">后端没有返回全局限流和提现强审门槛，这两项暂时不能查看和调整</p></Panel>}
+        {platformParams.length === 0 && <Panel title="全平台参数" icon={SlidersHorizontal}><p className="rd-note">全局限流和提现强审门槛没有读到，暂时不能查看和调整</p></Panel>}
       </div>
     </div>
   );
@@ -498,7 +499,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
           {reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去紧急停用开关</Link>}
           {reach("/emergency/geo-block", "emergency_j2_read") && <Link className="rd-link" href="/emergency/geo-block" prefetch={false}>去地区访问限制</Link>}
         </span>}>
-        {gates.length === 0 ? <p className="rd-note">后端没有返回应急开关</p> : <ul className="a3-gates" aria-label="应急开关状态">
+        {gates.length === 0 ? <p className="rd-note">没有读到应急开关</p> : <ul className="a3-gates" aria-label="应急开关状态">
           {gates.map((gate) => {
             const state = gateLabel(gate);
             return <li key={gate.key} data-down={gate.up ? undefined : ""}>
@@ -512,16 +513,16 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
 
       <Panel title="系统运行状况" icon={Activity} tone="role-other" sub={`${systemHealth.length} 项 · 时间按${businessZone().label}`}
         explain="每次读取本页时现查。出现异常请联系技术值班；资金异常请到「资金储备与应付款」查看。这里不会自动通知或建工单。">
-        {systemHealth.length === 0 ? <p className="rd-note">后端没有返回运行状况，不能当作正常</p> : <ul className="a3-health" aria-label="系统运行状况">
+        {systemHealth.length === 0 ? <p className="rd-note">没有读到运行状况，不能当作正常</p> : <ul className="a3-health" aria-label="系统运行状况">
           {systemHealth.map((row) => {
             const state = healthLabel(row);
             return <li key={row.name} data-tone={state.tone}>
               <span className="a3-health-head">
-                <span className="a3-health-name">{row.name}<Explain label={`${row.name}怎么算`} content={<><p>{HEALTH_HELP[row.name] ?? "后端探针的读数。"}</p><p>来源：{row.source || "—"}</p></>} /></span>
+                <span className="a3-health-name">{row.name}<Explain label={`${row.name}怎么算`} content={<><p>{HEALTH_HELP[row.name] ?? "系统自动检测的读数。"}</p><p>来源：{row.source || "—"}</p></>} /></span>
                 <StatusTag tone={state.tone} icon={state.icon}>{state.text}</StatusTag>
               </span>
               <span className="a3-health-metric">{row.metric ? metricText(row.metric).split(" · ").map((part, index, parts) => index < parts.length - 1 ? <span key={index}><span className="rd-keep">{part} ·</span> </span> : <span key={index} className="rd-keep">{part}</span>) : "—"}</span>
-              <span className="a3-health-time">{row.stale ? "探针没读到，不推测正常" : `检测于 ${timeText(row.observedAt)}`}</span>
+              <span className="a3-health-time">{row.stale ? "这次没测到，不能算正常" : `检测于 ${timeText(row.observedAt)}`}</span>
             </li>;
           })}
         </ul>}
@@ -531,25 +532,29 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
 
   const calendarValue = calendar?.zone ?? (calendar?.failed ? "—" : "…");
   const contentLead = commands.pending.filter(record => checks[record.commandKey])
-    .map(record => <span key={record.commandKey} className="a3-check-line">{record.name}读回对不上：{contentCheckLine(checks[record.commandKey])}</span>);
+    .map(record => <span key={record.commandKey} className="a3-check-line">{record.name}查询结果对不上：{contentCheckLine(checks[record.commandKey])}</span>);
   const releaseModal = (record: A3Command, busy: boolean) => {
     const original = record.original;
     const check = checks[record.commandKey];
     if (!check || (original.kind !== "docs" && original.kind !== "how")) return null;
     const close = () => setReleasing(null);
-    return <Modal title="解除待确认" icon={ShieldCheck} busy={busy} onClose={close}
+    return <Modal title="解除原操作记录" icon={ShieldCheck} busy={busy} onClose={close}
       footer={<><Button disabled={busy} onClick={close}>取消</Button>
         <Button variant="primary" loading={busy} onClick={() => void release()}>确认解除</Button></>}>
       <div className="rd-stack rd-release-body">
         <Facts>
           <Fact k="原操作">{record.name} · {original.mode === "PUBLISHED" ? "发布" : "保存草稿"}</Fact>
           <Fact k="提交时间">{businessStamp(record.createdAt)}（{businessZone().label}）</Fact>
-          <Fact k="修订号" tone={check.revision.matches ? undefined : "warn"}>{`原基于 ${check.revision.submitted}，保存成功应为 ${check.revision.expected}，现在 ${check.revision.current}`}</Fact>
           <Fact k={original.kind === "docs" ? "正文版本" : "文档版本"} tone={check.version.matches ? undefined : "warn"}>{sameOr(check.version.matches, check.version.submitted.replace(/^default-/, ""), check.version.current.replace(/^default-/, ""))}</Fact>
           <Fact k="保存为" tone={check.status.matches ? undefined : "warn"}>{sameOr(check.status.matches, SAVE_AS[check.status.submitted], SAVE_AS[check.status.current] ?? check.status.current)}</Fact>
           <Fact k="内容" tone={check.contentMatches ? undefined : "warn"}>{check.contentMatches ? original.kind === "docs" ? "全部语言相同" : "六页内容相同" : "和原提交不同"}</Fact>
         </Facts>
-        <p><KeepText text="确认时会再读一次。只清本标签页的记录，不撤销原保存；你填的内容放回编辑器。" /><Explain label="为什么可以解除" content="这项保存按修订号比较：原请求就算晚到也只会生效一次，之后基于旧修订号的保存会被后端拒绝并重读，不会悄悄覆盖。" /></p>
+        <Fold inset title="技术信息" summary={check.revision.matches ? "修改序号对得上" : "修改序号对不上"}>
+          <Facts>
+            <Fact k="修改序号" tone={check.revision.matches ? undefined : "warn"}>{`提交时 ${check.revision.submitted}，保存成功应为 ${check.revision.expected}，现在 ${check.revision.current}（每保存一次加 1）`}</Fact>
+          </Facts>
+        </Fold>
+        <p><KeepText text="确认时会再读一次。只清本标签页的记录，不撤销原保存；你填的内容放回编辑器。" /><Explain label="为什么可以解除" content="原请求就算晚到也只会生效一次；内容被别人改过时，之后的保存会被拒绝并重新读取，不会悄悄覆盖。" /></p>
       </div>
     </Modal>;
   };
@@ -562,7 +567,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         actions={<Button icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => { void refreshOverview(); setCalendarNonce((value) => value + 1); }}>刷新</Button>} />
 
       <GRecoveryNotice title="有原操作结果未知" rows={recoveryRows}
-        explain={<><p>提交时没收到确定结果，可能已经生效。先点「查询原结果」读当前值核对。</p><p>开关、参数、业务日历、App 分享与下载：24 小时内可以按原请求重试，后端认得出是同一次提交。说明内容和开发者文档后端不防重复，不能重试：读回和原提交一致按已保存收场，对不上时可以核对后解除。</p></>}
+        explain={<><p>提交时没收到确定结果，可能已经生效。先点「查询原结果」读当前值核对。</p><p>开关、参数、业务日历、App 分享与下载：24 小时内可以按原请求重试，不会重复执行。说明内容和开发者文档不能重试：查询结果和原提交一致就算已保存，对不上时可以核对后解除。</p></>}
         lead={contentLead.length ? contentLead : undefined} />
 
       {releasing && releaseModal(releasing.record, releasing.busy)}

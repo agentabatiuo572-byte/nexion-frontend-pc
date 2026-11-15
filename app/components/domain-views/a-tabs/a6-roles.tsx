@@ -475,7 +475,7 @@ export default function A6Roles() {
           )}
           {d.status === 0 && permDiff.added.length > 0 && (
             <Notice tone="warn" title="这个角色已停用">
-              <p>新加的权限批准后可能存不上（已提后端修），批准后回这页核对。</p>
+              <p>新加的权限批准后可能存不上，批准后回这页核对。</p>
             </Notice>
           )}
           {d.roleCode === "SUPER_ADMIN" && (
@@ -554,7 +554,7 @@ export default function A6Roles() {
       key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
       tag: expired
         ? <StatusTag tone="neutral" icon={Hourglass} explain={releasable ? "原请求超过 24 小时，不能再重试。按原请求查过，明确没有这张审批单，可以解除这条记录。" : "原请求超过 24 小时，不能再重试，只能查询原结果。"}>已过期</StatusTag>
-        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已经建了审批单。24 小时内可以按原请求重试，后端认得出是同一次提交，不会重复执行。">结果未知</StatusTag>,
+        : <StatusTag tone="warn" icon={CircleHelp} explain="没收到确定结果，可能已生效或已建审批单。24 小时内可以按原请求重试，不会重复执行。">结果未知</StatusTag>,
       actions: <>
         <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
         {!expired && <Button variant="ghost" onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
@@ -849,7 +849,7 @@ function RoleDetail({ detail, summary, canWrite, canGrant, writeReason, approval
             {summary?.enabledAdminCount !== undefined && <dd className="a6-nums-sub">启用中 {summary.enabledAdminCount} 个</dd>}
           </div>
           <div>
-            <dt>能做的操作<Explain label="能做的操作" content={<><p>这个角色存着的、启用中的接口权限数。</p><p>{SENSITIVE_EXPLAIN}</p></>} /></dt>
+            <dt>能做的操作<Explain label="能做的操作" content={<><p>这个角色存着的、启用中的权限数。</p><p>{SENSITIVE_EXPLAIN}</p></>} /></dt>
             <dd data-empty={detail.permissionCodes.length === 0 ? "" : undefined}><b>{detail.permissionCodes.length}</b> 项</dd>
             {sensitive === null
               ? <dd className="a6-nums-sub">敏感操作数要能读权限清单</dd>
@@ -906,7 +906,7 @@ function RoleDetail({ detail, summary, canWrite, canGrant, writeReason, approval
                 {canWrite && <Button variant="danger-outline" disabledReason={detail.builtin ? "内置角色不能删除" : approvalReason} onBlockedClick={detail.builtin ? onBuiltinDelete : undefined} onClick={onDelete}>删除</Button>}
               </div>
             </div>
-            {isSuperRole && <p className="a6-note"><TriangleAlert size={14} aria-hidden />超管角色的权限和菜单改了会被后端拒绝</p>}
+            {isSuperRole && <p className="a6-note"><TriangleAlert size={14} aria-hidden />超级管理员角色的权限和菜单不能修改，提交会被拒绝</p>}
           </div>
         )}
 
@@ -932,7 +932,7 @@ function SavedCheck({ desired, detail, approved, permByCode, menuById, onRetry }
     <div className="a6-saved">
       {approved && (same ? <span>现在存着的和提交的一致</span> : (
         <Fold inset title="和提交的不一样" alert summary={parts.join("；")}
-          explain={`只说明现在存着的和这次申请不同：可能没存上，也可能之后又改过授权${detail.status === 0 ? "；停用角色新加的权限可能存不上，已提后端修" : ""}。`}>
+          explain={`只说明现在存着的和这次申请不同：可能没存上，也可能之后又改过授权${detail.status === 0 ? "；停用角色新加的权限可能存不上" : ""}。`}>
           {missing.length > 0 && <PermChangeList codes={missing} permByCode={permByCode} kind="missing" limit={20} />}
           {menuDiffs > 0 && <>
             <h4 className="a6-subhead">菜单：提交了、现在没有 {menuSame.removed.length} 个 · 现在多出 {menuSame.added.length} 个</h4>

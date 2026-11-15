@@ -69,7 +69,7 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
 
   return <fieldset className="ios-model-rules e6-hw-directory" aria-label="Android 芯片档">
     <legend><span className="e6-actions">Android 芯片档（{rules.length} 档 · {rules.reduce((sum, rule) => sum + rule.chips.length, 0)} 颗芯片）
-      <Explain label="Android 芯片匹配的说明" content="按手机芯片匹配，不区分机型和内存。每档一个运营预设区间，档内所有芯片共用；用户首次校准时服务端在区间内取值并保存。芯片连同它的全部标识一起移档，标识不能拆到别的档。"/></span></legend>
+      <Explain label="Android 芯片匹配的说明" content="按手机芯片匹配，不区分机型和内存。每档一个运营预设区间，档内所有芯片共用；用户首次校准时系统在区间内取值并保存。芯片连同它的全部标识一起移档，标识不能拆到别的档。"/></span></legend>
     {rules.length > 0 && <div className="e6-hw-tools"><Field label="搜索芯片或标识"><Input value={query} maxLength={64} onChange={event => setQuery(event.target.value)} /></Field>{actions}</div>}
     {error && !importOpen && <Notice tone="warn">{error}</Notice>}
     {importOpen && <Drawer open title="载入芯片预设" icon={Cpu} sub={<StatusTag tone="done" icon={FilePenLine} filled>仅保存草稿</StatusTag>}

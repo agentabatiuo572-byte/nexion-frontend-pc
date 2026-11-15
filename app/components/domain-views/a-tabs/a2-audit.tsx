@@ -125,21 +125,21 @@ const HIST_TONE: Record<string, StateTone> = { pending: "warn", approved: "ok", 
 const OWN_TICKET_REASON = "这是你发起的，需要另一位管理员处理";
 const RETIRED_OPERATION_COPY = "此操作已退役，不能批准或重新发起；保留原申请和历史记录，待审申请可按原权限驳回或撤回。";
 const COVERAGE_ON_APPROVAL_COPY = "批准执行时，系统会检查兑付覆盖率。低于红线时，审批单继续待处理，账户组状态和提现限制保持原样。";
-const PENDING_LOCK = "这条有结果未确认的操作，先到页面上方核对";
+const PENDING_LOCK = "这张单有一次操作结果未知，先到页面上方核对";
 const RELOADING = "审批单还在读取，读完再处理";
 const SUBMITTING = "正在提交";
 const NO_WITHDRAW = "你没有撤回申请的权限";
 const NO_DECIDE = "这个账号没有处理这张单的权限";
 /** 页面判断不了这张单要哪项业务权限或附加条件时，入口照常放出，写这一句（协调人第五轮定）。 */
-const BACKEND_CHECKS_NOTE = "这类单的业务权限由后端在批准时检查，没有权限会被拒绝并写明原因";
+const BACKEND_CHECKS_NOTE = "批准时系统再核对业务权限，没有权限会被拒绝并写明原因";
 const WAIT_OTHERS = "等待有权限的人处理";
-const UNKNOWN_TOAST = "结果未确认，不要重复操作。到页面上方读回核对或按原操作重试。";
+const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果，或按原请求重试。";
 const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请在「操作记录」里按单号核对。";
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请在「操作记录」里按单号核对";
 
 function approvalCoverageCopy(w: A2OperationRow) {
   return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
-    ? "批准执行时，系统会重新核验材料版本、核验结论、认可金额及兑付覆盖率。任一条件不满足时，审批单继续待处理，申请状态和所选类别预算额度保持原样。"
+    ? "批准时系统会重新核对材料、核验结论、认可金额和兑付覆盖率；有一项不满足就不执行，审批单继续待处理，申请和预算额度不变。"
     : COVERAGE_ON_APPROVAL_COPY;
 }
 
@@ -596,12 +596,12 @@ const REFUND_AMOUNT_REQUIRED = "先读到退款金额才能批准";
 const DECISION_VERB: Record<"approve" | "reject" | "withdraw", string> = { approve: "批准", reject: "驳回", withdraw: "撤回" };
 const DECISION_STATUS: Record<"approve" | "reject" | "withdraw", A2OperationRow["status"]> = { approve: "approved", reject: "rejected", withdraw: "withdrawn" };
 const RECOVERY_HINT: Record<A2CommandKind, string> = {
-  approve: "读回只看这张单现在的状态，说明不了这次操作的结果。可以按原操作重试，不会重复执行。",
-  reject: "读回只看这张单现在的状态，说明不了这次操作的结果。可以按原操作重试，不会重复执行。",
-  withdraw: "读回只看这张单现在的状态，说明不了这次操作的结果。可以按原操作重试，不会重复执行。",
-  param: "读回只看现在的值，值相同也可能是别人改的。可以按原操作重试，不会重复执行。",
-  retention: "读回只看最近一次手动清理。可以按原操作重试，不会重复清理。",
-  export: "读回只看有没有这次的导出记录。可以按原操作重试，按当时的条件重新下载。",
+  approve: "查询只能看到这张单现在的状态，证明不了这次操作的结果。可以按原请求重试，不会重复执行。",
+  reject: "查询只能看到这张单现在的状态，证明不了这次操作的结果。可以按原请求重试，不会重复执行。",
+  withdraw: "查询只能看到这张单现在的状态，证明不了这次操作的结果。可以按原请求重试，不会重复执行。",
+  param: "查询只能看到现在的值，值相同也可能是别人改的。可以按原请求重试，不会重复执行。",
+  retention: "查询只能看到最近一次手动清理。可以按原请求重试，不会重复清理。",
+  export: "查询只能看到有没有这次的导出记录。可以按原请求重试，按当时的条件重新下载。",
 };
 const PARAM_NAME: Record<string, string> = { ttl: "操作理由最短长度", retention: "操作记录保留期", schema: "记录字段版本" };
 const PARAM_TITLE: Record<"ttl" | "retention" | "schema", string> = { ttl: "调整操作理由最短长度", retention: "调整操作记录保留期", schema: "升级记录字段版本" };
@@ -620,9 +620,9 @@ function decisionDeniedText(kind: "approve" | "reject", cause: unknown, retry = 
   const code = backendCode(cause);
   if (!code.startsWith("A2_BUSINESS_PERMISSION_DENIED")) return undefined;
   const missing = /^A2_BUSINESS_PERMISSION_DENIED:([A-Za-z0-9_]+)$/.exec(code)?.[1];
-  const denied = `后端按业务权限拒绝了这次${kind === "approve" ? "批准" : "驳回"}，这个账号没有这张单要的业务权限${missing ? `（权限码 ${missing}）` : ""}`;
+  const denied = `这个账号没有这张单要的业务权限，这次${kind === "approve" ? "批准" : "驳回"}被拒绝`;
   // 重试被拒说明不了原操作的结果，后半句由重试那边写。
-  return retry ? denied : `${denied}。${kind === "approve" ? "原操作没有执行" : "这张单没有驳回"}，还是待审批；请换有这项权限的管理员处理。`;
+  return retry ? `${denied}${missing ? `（缺的权限编码 ${missing}）` : ""}` : `${denied}。${kind === "approve" ? "原操作没有执行" : "这张单没有驳回"}，还是待审批；请换有这项权限的管理员处理${missing ? `（缺的权限编码 ${missing}）` : ""}。`;
 }
 
 /** 后端现在写「统一字段 · v3」，parseA2SchemaVersion 只认旧的「统一 schema · v3」，认不出时取里面的版本号。 */
@@ -657,7 +657,7 @@ const CHANGE_LABELS: Record<string, string> = {
   aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "大模型推理性能", aiVideoMinPerHour: "视频渲染性能",
   aiFineTuneMins: "LoRA 微调性能", aiUnlocks: "解锁算力池", features: "产品特性", generation: "产品代际",
   lifecycle: "生命周期", supersededBy: "后继商品", tradeinDiscount: "换新折扣", unlockPhase: "解锁阶段",
-  purchaseGate: "购买限制", imageAssetId: "产品图标识", imageObjectKey: "产品图对象键", imagePreviewUrl: "产品图预览",
+  purchaseGate: "购买限制", imageAssetId: "产品图编号", imageObjectKey: "产品图存储位置", imagePreviewUrl: "产品图预览",
   tag: "商品标签", status: "商城状态", inventoryMode: "库存模式", expectedUpdatedAt: "修改前的更新时间",
   updatedAt: "更新时间", trialEligible: "允许试用", productType: "商品类型", reason: "操作理由", operator: "操作人",
   rankMin: "最低 V 等级", directsMin: "最低有效直接邀请", teamUsdtMin: "最低团队订单额", mode: "条件组合",
@@ -674,13 +674,13 @@ const HI_CHANGE_LABELS: Record<string, string> = {
   eventCode: "活动编号", rewardName: "奖励名称", rewardType: "奖励资产", rewardAmount: "发放数量",
   value: "目标值", expectedValue: "原值", tierName: "奖项编号", rewardKind: "奖励类型",
   probabilityPct: "概率（%）", realOutflow: "实际资金流出", dailyStock: "每日库存（0 为不限）",
-  expectedSignature: "提交时奖池签名", wheelSignature: "奖池签名", tiers: "奖池档位",
-  wheelEvidence: "核对证据", wheelSnapshot: "原奖池快照",
-  courseId: "课程编号", version: "课程版本", revision: "修订号", rewardNex: "奖励（UVT）",
-  sourceStatus: "目标版本原状态", expectedRevision: "目标修订号", expectedCurrentVersion: "当前课程版本",
-  expectedCurrentRevision: "当前课程修订号", expectedCurrentStatus: "当前课程状态",
+  expectedSignature: "提交时的奖池核对码", wheelSignature: "奖池核对码", tiers: "奖池档位",
+  wheelEvidence: "核对证据", wheelSnapshot: "原奖池内容",
+  courseId: "课程编号", version: "课程版本", revision: "修改序号", rewardNex: "奖励（UVT）",
+  sourceStatus: "目标版本原状态", expectedRevision: "目标版本的修改序号", expectedCurrentVersion: "当前课程版本",
+  expectedCurrentRevision: "当前课程的修改序号", expectedCurrentStatus: "当前课程状态",
   tier: "奖项编号", status: "状态", reward: "奖励名称", prob: "概率（%）", kind: "奖励类型", amount: "发放数量", real: "实际资金流出",
-  voucherId: "代金券 ID", category: "课程分类", format: "课程形式", level: "难度", duration: "时长",
+  voucherId: "代金券编号", category: "课程分类", format: "课程形式", level: "难度", duration: "时长",
   titleZh: "中文标题", titleEn: "英文标题", titleVi: "越南语标题", bodyZh: "中文正文", bodyEn: "英文正文", bodyVi: "越南语正文",
   quizQuestions: "测验题", passScore: "及格题数", retryLimit: "可重试次数", completionCondition: "完成条件", rewardEvent: "奖励事件",
   courseTarget: "目标版本的其他内容", field: "内容", content: "目标版本",
@@ -1425,7 +1425,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const blocked = retryBlock(record);
     if (blocked) { notePending(record, blocked); return; }
     if (!a2Commands.isDurablyStored(record.fingerprint, record.commandKey)) {
-      notePending(record, "浏览器里查不到这条记录，本次没有发送。待确认继续保留，请在「操作记录」里核对。");
+      notePending(record, "浏览器里查不到这条记录，本次没有发送。原记录继续保留，请在「操作记录」里核对。");
       return;
     }
     setRetryRejected((current) => current.filter((key) => key !== record.commandKey));
@@ -1441,14 +1441,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             : await runDecision(record.kind, ticketLike, record.reason, record.operator);
       // 导出和清理自己会提示「已下载」「清理完成」，不再多弹一条。
       if (outcome === "ok") { if (record.kind !== "export" && record.kind !== "retention") toast(`已确认：${record.label}已生效`, "success"); }
-      else notePending(record, "重试的结果仍未确认，待确认继续保留。");
+      else notePending(record, "重试的结果仍然未知，原记录继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       const why = ((record.kind === "approve" || record.kind === "reject" ? decisionDeniedText(record.kind, cause, true) : undefined) ?? displayAdminError(cause)).replace(/[。.]$/, "");
       if (isExplicitRejection(cause)) {
         notePending(record, `重试没有成功：${why}。这说明不了原操作的结果，原记录继续保留。`);
         setRetryRejected((current) => [...current, record.commandKey]);
-      } else notePending(record, `这次没能确认结果：${why}。原操作继续保留，稍后再读回或重试。`);
+      } else notePending(record, `这次没查到结果：${why}。原记录继续保留，稍后再查询或重试。`);
     }
   };
 
@@ -1457,33 +1457,33 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (record.kind === "export") {
       // 后端把命令号写进这次导出记录的详情，按对象查得到；查到也只说明后端生成过，文件没下到时按原操作重试。
       const found = await fetchA2Overview({ action: "A2_AUDIT_EXPORTED", object: record.commandKey }).catch(() => null);
-      if (!found) { notePending(record, "读回失败，导出记录暂时读不到。待确认继续保留。"); return; }
+      if (!found) { notePending(record, "查询失败，导出记录暂时读不到。原记录继续保留。"); return; }
       const hit = found.recentLogs[0];
       notePending(record, hit
-        ? `读回：${logTime(hit)} 有这次的导出记录（${hit.obj.split(" · ").pop()}）。没下到文件就按原操作重试。待确认继续保留。`
-        : "读回：没找到这次导出的记录，可能没有生成。待确认继续保留。");
+        ? `查到：${logTime(hit)} 有这次的导出记录（${hit.obj.split(" · ").pop()}）。没下到文件就按原请求重试。原记录继续保留。`
+        : "没查到这次导出的记录，可能没有生成。原记录继续保留。");
       return;
     }
     if (record.kind === "retention") {
       const latest = await fetchA2RetentionLatest().catch(() => undefined);
-      if (latest === undefined) { notePending(record, "读回失败，上次手动清理暂时读不到。待确认继续保留。"); return; }
+      if (latest === undefined) { notePending(record, "查询失败，上次手动清理暂时读不到。原记录继续保留。"); return; }
       setRetentionRun(latest);
       notePending(record, latest
-        ? `读回：最近一次手动清理在 ${bizTime(latest.evaluatedAt, latest.evaluatedAt)}，归档 ${latest.archivedRows} 条、移除 ${latest.deletedRows} 条。说明不了是不是这次的结果，待确认继续保留。`
-        : "读回：还没有手动清理过的记录。待确认继续保留。");
+        ? `查到：最近一次手动清理在 ${bizTime(latest.evaluatedAt, latest.evaluatedAt)}，归档 ${latest.archivedRows} 条、移除 ${latest.deletedRows} 条。证明不了是不是这次的结果，原记录继续保留。`
+        : "查到：还没有手动清理过的记录。原记录继续保留。");
       return;
     }
     const next = await loadMain().catch(() => null);
-    if (!next) { notePending(record, record.kind === "param" ? "读回失败，这项设置暂时读不到。待确认继续保留。" : "读回失败，这张单暂时读不到。待确认继续保留。"); return; }
+    if (!next) { notePending(record, record.kind === "param" ? "查询失败，这项设置暂时读不到。原记录继续保留。" : "查询失败，这张单暂时读不到。原记录继续保留。"); return; }
     if (record.kind === "param") {
       const now = next.mechanismParams.find((item) => item.key === record.target)?.value;
-      notePending(record, `读回：${PARAM_NAME[record.target] ?? record.target}现在是 ${now ? operatorCopyText(now) : "—"}，你提交的是 ${record.value}。值相同也可能是别人改的，待确认继续保留。`);
+      notePending(record, `查到：${PARAM_NAME[record.target] ?? record.target}现在是 ${now ? operatorCopyText(now) : "—"}，你提交的是 ${record.value}。原记录继续保留。`);
       return;
     }
     const found = ticketStatus(next, record.target);
     notePending(record, found
-      ? `读回：这张单现在是「${HIST_LABEL[found.status] ?? found.status}」${found.actor ? `，处理人 ${found.actor}` : ""}，发出时是「待审批」。状态可能是别人处理的，待确认继续保留。`
-      : "读回失败，这张单暂时读不到。待确认继续保留。");
+      ? `查到：这张单现在是「${HIST_LABEL[found.status] ?? found.status}」${found.actor ? `，处理人 ${found.actor}` : ""}，发出时是「待审批」。状态可能是别人处理的，原记录继续保留。`
+      : "查询失败，这张单暂时读不到。原记录继续保留。");
   };
 
   /** 重试被拒后，人核实过原操作的结果才解除。只放开本页的锁，不发请求，后端仍按这张单现在的状态校验。 */
@@ -1491,8 +1491,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     a2Commands.forget(record.fingerprint, record.commandKey);
     syncPending();
     setReleasing(null);
-    toast(record.kind === "param" ? "已解除待确认，这项设置可以重新调整" : record.kind === "retention" ? "已解除待确认，可以重新清理"
-      : record.kind === "export" ? "已解除待确认，可以重新导出" : "已解除待确认，这张单可以重新处理", "success");
+    toast(record.kind === "param" ? "已解除原操作记录，这项设置可以重新调整" : record.kind === "retention" ? "已解除原操作记录，可以重新清理"
+      : record.kind === "export" ? "已解除原操作记录，可以重新导出" : "已解除原操作记录，这张单可以重新处理", "success");
   };
 
   /** 「在操作记录里查看」：切到操作记录，对象填审批单号或机制、清理的资源名，导出按这次的命令号查，模块不限。 */
@@ -1685,7 +1685,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /* 导出：按已查询的条件（appliedFilter），和其他写操作一样先存原命令（M2）。能不能导按后端查到的结果判断（M4）。 */
   const exportPending = pendingCommands.some((record) => record.kind === "export");
   const exportBlock = !canExport ? undefined
-    : exportPending ? "导出有结果未确认，先到页面上方核对"
+    : exportPending ? "导出有一次结果未知，先到页面上方核对"
       : recordsLoading ? "操作记录还在读取，读完再导出"
         : recordsError || !records ? "操作记录读取失败，暂不能导出"
           : logRows.length === 0 ? "当前筛选没有可导出的记录" : undefined;
@@ -1712,7 +1712,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <Facts>
           <Fact k="范围">{scope || "全部模块，不限时间"}</Fact>
           <Fact k="文件">CSV，最多 5,000 条</Fact>
-          <Fact k="隐藏">操作者、资源编号、业务编号超过 4 个字符时只留首尾两位；不超过 4 个字符时全部隐藏</Fact>
+          <Fact k="隐藏">操作者、资源编号、业务编号只留首尾两位，4 位及以下的全部隐藏</Fact>
         </Facts>
       ),
       statedBrief: { impact: "按查询条件生成 CSV 下载，这次导出也会记录。", check: "核对导出范围，理由写明导出依据或工单号。" },
@@ -1726,7 +1726,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /* 机制参数：理由最短长度、保留期、字段版本。 */
   const paramBlock = (key: string) => submitting ? SUBMITTING
-    : pendingParams.has(key) ? "这项有结果未确认的调整，先到页面上方核对"
+    : pendingParams.has(key) ? "这项有一次调整结果未知，先到页面上方核对"
       : mainLoading ? "设置还在读取，读完再调整" : undefined;
 
   /** 字段版本只能逐版升级：现在 v3 时能填的只有 v4，直接写出来，不让人手打（必须改 11）。 */
@@ -1749,7 +1749,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       ? { impact: "全后台确认框按新字数检查，已有记录不受影响。", check: "核对新字数，理由写清依据或工单号。" }
       : key === "retention"
         ? { impact: "只对之后新写的操作记录生效，已有记录按自己的到期时间。", check: "核对新值，理由写清依据或工单号。" }
-        : { impact: "之后新写的记录带新版本号，历史记录不改。", check: "核对目标版本，理由写清依据或工单号。" };
+        : { impact: "之后新写的记录按新版本记，历史记录不改。", check: "核对目标版本，理由写清依据或工单号。" };
     openActionConfirm({
       briefKind: "config",
       title: PARAM_TITLE[key],
@@ -1781,7 +1781,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   };
 
   const retentionBlock = submitting ? SUBMITTING
-    : retentionPending ? "清理有结果未确认，先到页面上方核对"
+    : retentionPending ? "清理有一次结果未知，先到页面上方核对"
       : retentionPreviewError ? `清理范围加载失败，暂不能清理：${retentionPreviewError}`
         : !retentionPreview || retentionLoading ? "正在加载清理范围，请稍后重试"
           : !main || mainLoading ? "设置还在读取，读完再清理"
@@ -1895,11 +1895,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const expired = isRetryExpired(record);
     const amount = retryAmount(record);
     return (
-      <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`} actionBelow
+      <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`} actionBelow
         action={<>
-          <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>读回核对</Button>
-          <Button size="sm" disabled={!!submitting} disabledReason={retryBlock(record)} onClick={() => void retryPending(record)}>按原操作重试</Button>
-          {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
+          <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原结果</Button>
+          <Button size="sm" disabled={!!submitting} disabledReason={retryBlock(record)} onClick={() => void retryPending(record)}>按原请求重试</Button>
+          {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
           <Button size="sm" variant="ghost" onClick={() => showInRecords(record)}>在操作记录里查看</Button>
         </>}>
         <p>
@@ -1931,7 +1931,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /** 有结果未确认的操作时这一行也标出来，滚下去看不到上方的待确认条也知道（建议 4）。 */
   const markers = (w: A2OperationRow) => {
     const tags = <>
-      {pendingTicketIds.has(w.id) && <StatusTag tone="warn" explain={PENDING_LOCK}>待核对</StatusTag>}
+      {pendingTicketIds.has(w.id) && <StatusTag tone="warn" explain={PENDING_LOCK}>结果未知</StatusTag>}
       {w.sos && <StatusTag tone="danger" icon={Siren}>应急</StatusTag>}
       {w.amplifies && <StatusTag tone="warn" icon={Flame}>多付钱</StatusTag>}
     </>;
@@ -2248,7 +2248,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         nav={{ hasPrev: Boolean(prevTicket), hasNext: Boolean(nextTicket), onPrev: () => { if (prevTicket) setTicketId(prevTicket.id); }, onNext: () => { if (nextTicket) setTicketId(nextTicket.id); } }}
         footer={ticketFooter}>
         {shown && <>
-          {pendingTicketIds.has(shown.id) && <Notice tone="warn">这条有结果未确认的操作，不要重复处理。状态变了也不算确认。到页面上方核对。</Notice>}
+          {pendingTicketIds.has(shown.id) && <Notice tone="warn">这张单有一次操作结果未知，先到页面上方查询原结果，不要重复处理；单子状态变了也不算查到结果。</Notice>}
           <JudgmentPoints title={`判断要点 · 时间为${zone}`} rows={judgment} />
           {shown.coverageCheckOnApproval && <Notice tone="warn">{approvalCoverageCopy(shown)}</Notice>}
           {shown.amplifies && !shown.coverageCheckOnApproval && <Notice tone="warn">会让平台多付钱：批准时系统检查兑付覆盖率，低于红线不执行。如已跌破红线请驳回并写明原因。</Notice>}
@@ -2304,7 +2304,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       </Drawer>
 
       <Drawer open={confirmListOpen} onClose={() => setConfirmListOpen(false)} title={`需要确认的操作（${confirmCategories.length} 类）`} icon={ListChecks}
-        explain="分类说明不改变各操作的权限和审批规则。此清单仅作说明。提交审批的操作须由另一位有权管理员批准后生效；直接执行的操作按各页面提示立即生效并保留操作记录。">
+        explain="清单只是说明，不改变权限和审批规则。走审批的要另一位管理员批准后才生效，直接执行的确认后立即生效。">
         {confirmCategories.length ? (
           <Table label="需要确认的操作">
             <thead><tr><Th>类别</Th><Th>例子</Th><Th>谁能执行</Th></tr></thead>
@@ -2322,7 +2322,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       </Drawer>
 
       {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-        explain="重试被拒说明不了原操作的结果，先在操作记录里核对。解除后原操作不再重试，系统仍按这张单现在的状态校验。" />}
+        explain="重试被拒证明不了原操作的结果，先在操作记录里核对。解除后这次操作不再重试。" />}
     </>
   );
 }

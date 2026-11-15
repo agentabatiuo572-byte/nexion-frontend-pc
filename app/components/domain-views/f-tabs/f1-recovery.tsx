@@ -29,7 +29,7 @@ const UNIT: Record<string, string> = { selfBuy: " 点", teamGv: " 点", directRe
 const thresholdText = (field: string, raw: string | undefined) => raw === undefined || raw === "" ? "—" : raw === "NONE" ? "未设置" : `${formatF1ExactAmount(raw)}${UNIT[field] ?? ""}`;
 
 function stateTag(state: State, direct: boolean) {
-  if (state === "pending") return <StatusTag tone="progress" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>;
+  if (state === "pending") return <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>;
   if (state === "received") return <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>;
   if (state === "expired") return <StatusTag tone="neutral" icon={Hourglass} explain={direct
     ? "原请求超过 24 小时，不能再重试。查询只读回当前内容，证明不了原操作有没有执行，到「操作记录与审批」核对。"

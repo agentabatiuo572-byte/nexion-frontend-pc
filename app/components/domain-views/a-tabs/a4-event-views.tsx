@@ -27,7 +27,7 @@ export const LIFECYCLE_NOW: Record<A4Lifecycle, string> = {
 export const LIFECYCLE_AFTER: Record<Exclude<A4Lifecycle, "new">, string> = {
   pending_publish: "仍然不记录、也不投递，只是标成准备发布；下一步才开始分批开放。",
   gray: "服务器发的事件按归属对象（如订单、用户）抽约 10% 放行；App 发来的行为事件这一步仍不放行。",
-  full: "所有来源都按事件规则记录和投递，字段、来源和采样的检查照常。",
+  full: "所有来源都按事件规则记录和投递，字段、来源和采集比例的检查照常。",
   disabled: "之后不再记录也不再投递，已排队的也可能被拦下；旧事件不删，不能再开放。",
 };
 export const NEXT_LIFECYCLE: Partial<Record<A4Lifecycle, Exclude<A4Lifecycle, "new">>> = { new: "pending_publish", pending_publish: "gray", gray: "full", full: "disabled" };
@@ -68,15 +68,15 @@ const ERROR_TEXT: Record<string, string> = {
   C1_AUDIT_ENVELOPE_INVALID: "查看用户资料：事件外层格式不对",
   C1_AUDIT_PAYLOAD_INVALID: "查看用户资料：事件内容不对",
   C1_AUDIT_DELIVERY_NOT_COMPLETE: "查看用户资料：操作记录还没投递完",
-  C1_AUDIT_RECEIPT_NOT_PERSISTED: "查看用户资料：回执没保存下来",
+  C1_AUDIT_RECEIPT_NOT_PERSISTED: "查看用户资料：处理结果没保存下来",
   C1_AUDIT_SOURCE_INVALID: "查看用户资料：事件来源不对",
   H3_EVENT_BINDING_PENDING: "任务事件：还在等关联到用户任务",
   L6_EVIDENCE_FACT_MISSING: "行为热力图：找不到原始记录",
   L6_EVIDENCE_ENVELOPE_INVALID: "行为热力图：事件外层格式不对",
   L6_EVIDENCE_PAYLOAD_INVALID: "行为热力图：事件内容不对",
   L6_EVIDENCE_FACT_CONFLICT: "行为热力图：和原始记录对不上",
-  L6_EVIDENCE_RECEIPT_FAILED: "行为热力图：回执写入失败",
-  L6_EVIDENCE_RECEIPT_CONFLICT: "行为热力图：回执和已有的冲突",
+  L6_EVIDENCE_RECEIPT_FAILED: "行为热力图：处理结果写入失败",
+  L6_EVIDENCE_RECEIPT_CONFLICT: "行为热力图：处理结果和已有的冲突",
   L6_EVIDENCE_PUBLICATION_FAILED: "行为热力图：发布失败",
   L6_EVIDENCE_VERIFICATION_UNAVAILABLE: "行为热力图：暂时无法核验",
   F4_ALERT_AUDIT_MISSING: "奖励池告警：缺对应的操作记录",
@@ -85,8 +85,8 @@ const ERROR_TEXT: Record<string, string> = {
   F4_ALERT_AUDIT_NOT_UNIQUE: "奖励池告警：对应的操作记录不止一条",
   F4_ALERT_AUDIT_CONFLICT: "奖励池告警：和操作记录对不上",
   F4_ALERT_AUDIT_ALREADY_CLAIMED: "奖励池告警：操作记录已被另一条认领",
-  F4_ALERT_RECEIPT_FAILED: "奖励池告警：回执写入失败",
-  F4_ALERT_RECEIPT_CONFLICT: "奖励池告警：回执和已有的冲突",
+  F4_ALERT_RECEIPT_FAILED: "奖励池告警：处理结果写入失败",
+  F4_ALERT_RECEIPT_CONFLICT: "奖励池告警：处理结果和已有的冲突",
   F4_ALERT_PUBLICATION_FAILED: "奖励池告警：发布失败",
   F4_ALERT_VERIFICATION_UNAVAILABLE: "奖励池告警：暂时无法核验",
 };
@@ -146,7 +146,7 @@ export const MODULE_TEXT: Record<string, string> = {
   admin: "后台操作", app: "App 页面行为", auth: "注册登录", checkout: "下单支付", commission: "团队奖励", compute: "算力",
   content: "内容", daily: "签到", device: "设备", disclosure: "风险披露", earnings: "收益", event: "活动中心",
   exchange: "兑换", genesis: "创世节点", leadership_pool: "奖励池", learn: "课程", market: "市场", milestone: "里程碑",
-  nova: "Nova 消息推送", notification: "通知", onboarding: "新手引导", order: "订单", phase: "运营阶段", quest: "用户任务",
+  nova: "消息推送", notification: "通知", onboarding: "新手引导", order: "订单", phase: "运营阶段", quest: "用户任务",
   referral: "邀请", repurchase: "锁定计划", risk: "风控", staking: "质押", store: "商城", trial: "免费试用",
   voucher: "代金券", wallet: "钱包", withdraw: "提现", nex: "UVT（旧名 nex）",
 };
