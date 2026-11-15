@@ -251,6 +251,10 @@
 .h4-page .h4l-ops { flex-wrap: nowrap; justify-content: flex-end; }
 /* 转盘概率条 */
 .h4l-wheelbar { --rd-track-w: 100%; min-width: 0; }
+/* 转盘问号里的「App 检查的四项」：问号气泡渲染在页面外，类名不挂 .h4-page。 */
+.h4l-explain-more { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rd-line); }
+.h4l-explain-more > summary { cursor: pointer; color: var(--rd-text); }
+.h4l-explain-more ul { margin: 4px 0 0; padding-left: 18px; }
 .h4-page .h4l-wheel-figure { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: var(--rd-radius-tile); background: var(--rd-panel-inner); border: 1px solid var(--rd-line); margin-bottom: 16px; }
 .h4-page .h4l-wheel-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; }
 .h4-page .h4l-sum { color: var(--rd-text-2); font-size: var(--rd-text-body); }
