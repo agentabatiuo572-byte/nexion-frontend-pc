@@ -89,10 +89,10 @@ export function releaseConfigApproval(sourceDomain: keyof typeof commands, admin
 /** H8 uses this existing store instance so other domains' in-flight approvals stay intact. */
 export function storeH8ConfigApproval(adminId: number, field: string, commandKey: string, extra: {
   input: string; h8Original?: H8Original; h8Ticket?: A2OperationRow; h8Acknowledged?: boolean;
-}) {
+}, storageErrorCode: string) {
   const slot = approvalSlot("H8", adminId, { objectId: "current", field });
   attempts.remember(slot, commandKey, extra);
-  if (!attempts.isDurablyStored(slot, commandKey)) throw new Error("H8_REQUEST_STORAGE_UNAVAILABLE");
+  if (!attempts.isDurablyStored(slot, commandKey)) throw new Error(storageErrorCode);
 }
 
 type ThresholdApprovalValues = {

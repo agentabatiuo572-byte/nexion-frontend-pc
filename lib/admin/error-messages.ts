@@ -1858,6 +1858,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   M3_TIMEOUT_REASON_LENGTH_INVALID: "会话超时策略变更理由须为 8-200 个字符。",
   M3_TIMEOUT_POLICY_STALE: "会话超时策略已被其他操作员修改，本次未覆盖；请关闭弹窗并重新打开后再试。",
   M3_TIMEOUT_POLICY_UNCHANGED: "会话超时策略没有变化，本次未写入。",
+  H8_REQUEST_RESULT_STORAGE_UNAVAILABLE: "申请已经发出，但浏览器没能记下结果；不要重新提交，请保留本页，到操作记录与审批核对原申请。",
+  H8_REQUEST_RETRY_STORAGE_UNAVAILABLE: "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。",
   H8_REQUEST_STORAGE_UNAVAILABLE: "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。",
   H8_OVERVIEW_REQUIRED: "还没读到最新奖励设置，暂时不能发起新修改；请先重新读取。",
   H8_ORIGINAL_RESOLVED: "原操作已有结论，请关闭确认框，重新读取后再操作。",
