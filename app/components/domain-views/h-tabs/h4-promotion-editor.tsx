@@ -144,7 +144,7 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
     activity: Promotion;
     catalog: Catalog;
     can: (v: string) => boolean;
-    onSaved: (nextStep?: number) => Promise<void>;
+    onSaved: (nextStep?: number) => Promise<Promotion | undefined>;
     onBack: () => void;
     onReview: () => void;
     onStep?: (step: number) => void;
@@ -165,6 +165,15 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
     const limitsFormatInvalid = limitErrors.length > 0;
     const limitsIncomplete = !!buyerLimit !== !!inviterLimit;
     const dirty = bannerUploading || limitsFormatInvalid || JSON.stringify(draft) !== JSON.stringify(version.draft);
+    useEffect(() => {
+        if (dirty || saving || rule || budgetOpen || limitsOpen || combinationOpen || policiesOpen || template) return;
+        setActivity(requestedActivity);
+        setPreview(null);
+        setLimitInputs({});
+        setDraft(structuredClone(requestedActivity.current!.draft));
+        setBuyerLimit(requestedActivity.current!.draft.perPersonLimit?.buyer || null);
+        setInviterLimit(requestedActivity.current!.draft.perPersonLimit?.directInviter || null);
+    }, [requestedActivity]);
     useEffect(() => { onStep?.(step); }, [step, onStep]);
     useEffect(() => { if (limitsOpen && limitsFormatInvalid) focusFormatError(); }, [limitsOpen, limitsFormatInvalid]);
     useEffect(() => { const warn = (e: BeforeUnloadEvent) => { if (dirty) {
@@ -230,7 +239,7 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
         const latest = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(activity.activityId)}`);
         if (!latest.current || latest.current.version !== version.version || latest.current.state !== 'DRAFT') throw new Error('PROMOTION_VERSION_NOT_CURRENT');
         setActivity(latest); return '';
-    }} writeAllowed={!readOnly && !bannerUploading && !limitsIncomplete} title="保存活动草稿" intent={{ operation: 'saveDraft', targetId: activity.activityId, path: `/promotions/${activity.activityId}/draft`, method: 'PUT' }} body={{ expectedRevision: version.revision, draft }} onClose={() => { setSaving(false); setNextStep(null); }} onSuccess={async () => { await onSaved(nextStep??undefined); if(nextStep!==null)setStep(nextStep); setNextStep(null); setSaving(false); if (exitTarget === 'review')
+    }} writeAllowed={!readOnly && !bannerUploading && !limitsIncomplete} title="保存活动草稿" intent={{ operation: 'saveDraft', targetId: activity.activityId, path: `/promotions/${activity.activityId}/draft`, method: 'PUT' }} body={{ expectedRevision: version.revision, draft }} onClose={() => { setSaving(false); setNextStep(null); }} onSuccess={async (_result, isCurrent) => { const saved = await onSaved(nextStep??undefined); if (!isCurrent()) return; if (saved?.current) { setActivity(saved); setDraft(structuredClone(saved.current.draft)); setBuyerLimit(saved.current.draft.perPersonLimit?.buyer || null); setInviterLimit(saved.current.draft.perPersonLimit?.directInviter || null); setLimitInputs({}); setPreview(null); } if(nextStep!==null)setStep(nextStep); setNextStep(null); setSaving(false); if (exitTarget === 'review')
         onReview();
     else if (exitTarget === 'detail')
         onBack(); }}><Summary rows={[['活动', draft.name || '未命名草稿'], ['候选版本', `v${version.version}`], ['影响', '仅保存候选配置，已发布规则不变']]}/></ConfirmCommand>}

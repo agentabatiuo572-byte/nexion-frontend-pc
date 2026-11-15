@@ -163,7 +163,7 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     body: Record<string, unknown>;
     children?: ReactNode;
     onClose: () => void;
-    onSuccess: (result: CommandReceipt) => void | Promise<void>;
+    onSuccess: (result: CommandReceipt, isCurrent: () => boolean) => void | Promise<void>;
     onReload?: () => Promise<string>;
     onVersionConflict?: () => void;
     writeAllowed: boolean;
@@ -179,14 +179,20 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     sub?: ReactNode;
     evidenceNote?: ReactNode;
 }) {
-    useEffect(() => {
-        const settled = () => onClose();
-        window.addEventListener('admin-promotion-original-settled', settled);
-        return () => window.removeEventListener('admin-promotion-original-settled', settled);
-    }, [onClose]);
     const initial = pendingPromotionCommands().find(p => p.operation === intent.operation && p.targetId === intent.targetId)?.body as Record<string, unknown> | undefined;
     const policy = useRead(fetchA2ReasonPolicy, []), [reason, setReason] = useState(String(initial?.reason || '')), [evidence, setEvidence] = useState<string[]>(Array.isArray(initial?.evidenceRefs) ? initial.evidenceRefs : []), [busy, setBusy] = useState(false), [error, setError] = useState<unknown>(null), [note, setNote] = useState(''), [version, setVersion] = useState(0), [upload, setUpload] = useState<Record<string, string>>({}), [uploadState, setUploadState] = useState<string>();
     const record = pendingPromotionCommands().find(p => p.operation === intent.operation && p.targetId === intent.targetId);
+    const originalKey = useRef(record?.commandKey);
+    if (record) originalKey.current = record.commandKey;
+    const active = useRef(true);
+    useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
+    useEffect(() => {
+        const settled = (event: Event) => {
+            if ((event as CustomEvent<string>).detail === originalKey.current) onClose();
+        };
+        window.addEventListener('admin-promotion-original-settled', settled);
+        return () => window.removeEventListener('admin-promotion-original-settled', settled);
+    }, [onClose]);
     const restoredUploads = useRef(new Set<string>());
     const uploadTarget: H4UploadTarget = { kind: "evidence", objectId: intent.targetId, revision: Number(body.expectedRevision), position: "evidenceAssetId", operation: intent.operation };
     useEffect(() => {
@@ -199,14 +205,14 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     const payload = { ...body, reason, ...('evidenceRefs' in body ? { evidenceRefs: evidence } : {}) };
     const submit = async (retry = false) => { if (!writeAllowed || reloadNeeded || record && isRetryExpired(record)) return; setBusy(true); setError(null); try {
         const result = record?.receipt || await promotionCommand(record && retry ? record : { ...intent, body: payload }, retry);
-        if (record) window.dispatchEvent(new Event('admin-promotion-original-settled'));
-        await onSuccess(result);
+        if (active.current) await onSuccess(result, () => active.current);
+        if (record) window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: record.commandKey }));
         acknowledgePromotionCommand(result);
     }
     catch (e) {
         setError(e);
         if (record && !pendingPromotionCommands().some(r => r.commandKey === record.commandKey)) {
-            window.dispatchEvent(new Event('admin-promotion-original-settled'));
+            window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: record.commandKey }));
         }
         if (!record && e instanceof PromotionApiError && !e.unknownOutcome && !e.bodyUnreadable
             && ['PROMOTION_REVISION_CONFLICT', 'PROMOTION_CONCURRENT_CHANGE', 'PROMOTION_VERSION_NOT_CURRENT', 'PROMOTION_VERSION_STATE_INVALID'].includes(e.reasonCode || '')) {
@@ -238,11 +244,11 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
         return; setBusy(true); setError(null); try {
         const result = record.receipt || await recoverPromotionCommand(record);
         if (result.status === 'SUCCEEDED') {
-            window.dispatchEvent(new Event('admin-promotion-original-settled'));
-            await onSuccess(result);
+            if (active.current) await onSuccess(result, () => active.current);
+            window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: record.commandKey }));
             acknowledgePromotionCommand(result);
         }
-        else if (result.status === 'FAILED') window.dispatchEvent(new Event('admin-promotion-original-settled'));
+        else if (result.status === 'FAILED') window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: record.commandKey }));
         else
             setNote(result.status === 'NOT_FOUND' ? '未查到原操作，可按原参数和原操作编号重试。' : `原操作：${labelState(result.status)}。保留输入，继续核查。`);
     }
