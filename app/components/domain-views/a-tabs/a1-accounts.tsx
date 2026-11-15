@@ -32,6 +32,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import type { ACtx, ActionConfirmReq } from "./types";
 import type { BusinessFormValue } from "../design-kit";
 import { avatarDrafts, avatarDraftFingerprint } from "@/lib/admin/account-avatar-pending";
+import { AVATAR_GENDER_OPTIONS } from "@/lib/admin/account-avatar-contract";
 import { SupportAvatar } from "../m-tabs/support-avatar";
 import { SupportQualificationEditor, canManageSupportQualifications } from "../m-tabs/m1-group-management";
 import {
@@ -159,6 +160,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const [filter, setFilter] = useState<ListFilter>("all");
   const [roleTarget, setRoleTarget] = useState<A1Operator | null>(null);
   const [passwordFromCreate, setPasswordFromCreate] = useState(false);
+  const [recheckIntent, setRecheckIntent] = useState<A1Intent | null>(null);
+  const needsRecheck = useRef(false);
 
   const refreshOverview = useCallback(async (quiet = false) => {
     const actorId = useAdminAuth.getState().session?.adminId;
@@ -333,7 +336,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   };
   const requireNewIntent = (intent: A1Intent) => {
     const data = freshOverview.current;
-    if (!data || mutatingAction) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
+    if (!data || needsRecheck.current || mutatingAction) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
     if (pendingFor(intent)) throw new Error("A1_ORIGINAL_OPERATION_PENDING");
     const recovery = data.stats.effectiveSupers < 2;
     requireActor(intent, true, intent.kind === "create" ? intent.approval : !["password", "permission", "session"].includes(intent.kind));
@@ -360,7 +363,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     if (record.request.kind !== "proposal" || !ticket.mine || ticket.obj !== record.request.input.obj || ticket.action !== record.request.input.action
       || ticket.operationCode !== record.request.input.command.op) throw new Error("A1_PROPOSAL_RECEIPT_MISMATCH");
   };
-  const queryOriginal = async (record: A1Pending) => {
+  const queryOriginal = async (record: A1Pending, announce = true) => {
     requireActor(record.intent, false);
     if (record.request.kind !== "proposal") {
       if (record.request.kind === "permission") await fetchA8PermissionDetail(record.request.input.permissionCode);
@@ -376,12 +379,14 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     }
     checkTicket(record, ticket);
     a1PendingCommands.remember(record.fingerprint, record.commandKey, { ...record, ticket, proposalNotFound: false }); reloadPending();
-    if (ticket.status === "pending") { toast("已提交，等待审批后执行"); return true; }
-    recoveryStarted();
-    await refreshOverview(true);
+    if (ticket.status === "pending") { if (announce) toast("已提交，等待审批后执行"); return true; }
     a1PendingCommands.forget(record.fingerprint, record.commandKey); reloadPending();
-    ctx.closeActionConfirm?.();
-    toast(`原审批单：${({ approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" })[ticket.status]}`);
+    if (announce) recoveryStarted();
+    await refreshOverview(true);
+    if (announce) {
+      ctx.closeActionConfirm?.();
+      toast(`原审批单：${({ approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" })[ticket.status]}`);
+    }
     return true;
   };
   const executeOriginal = async (record: A1Pending, retry: boolean) => {
@@ -398,7 +403,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       const status = (error as { status?: number } | null)?.status;
       if (retry ? isExplicitRejection(error) : !uncertain && typeof status === "number" && isDeterministicRejection(status)) {
         a1PendingCommands.forget(record.fingerprint, record.commandKey); reloadPending();
-        if (retry) { await refreshOverview(true); ctx.closeActionConfirm?.(); }
+        if (retry) ctx.closeActionConfirm?.();
+        else { needsRecheck.current = true; setRecheckIntent(record.intent); }
+        await refreshOverview(true);
       }
       throw error;
     } finally { setMutatingAction(null); }
@@ -657,6 +664,14 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
 
   const editAccount = (op: A1Operator, form: A1UpdateAccountInput & { reason: string }) => {
     const usernameChanged = form.username !== (op.username || "").trim().toLowerCase();
+    const changes: Array<[string, string, string]> = [
+      ["登录名", (op.username || "").trim().toLowerCase(), form.username],
+      ["显示名", op.name, form.displayName],
+      ["工作邮箱", op.email || "", form.email ?? op.email ?? ""],
+    ];
+    if (form.avatarAssetId !== undefined) changes.push(["头像", op.avatarAssetId ?? "", form.avatarAssetId]);
+    if (form.avatarGender !== undefined) changes.push(["头像性别", AVATAR_GENDER_OPTIONS.find(item => item.value === op.avatarGender)?.label ?? "", AVATAR_GENDER_OPTIONS.find(item => item.value === form.avatarGender)!.label]);
+    const changed = changes.filter(([, before, after]) => before !== after);
     openOperation({ kind: "profile", account: op, form }, { briefKind: "security",
       action: `编辑账号 · ${operatorDisplayName(op)}`,
       title: "提交资料修改",
@@ -686,8 +701,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         const outcome = await propose(toast, {
           action: `编辑账号 · ${operatorDisplayName(op)}`,
           obj: String(op.id),
-          before: op.username || "—",
-          after: form.username,
+          before: changed.map(([label, before]) => `${label}：${before || "未设置"}`).join("；"),
+          after: changed.map(([label, , after]) => `${label}：${after || "未设置"}`).join("；"),
           type: "acct",
           amplifies: false,
           gate: { roles: [] },
@@ -1107,10 +1122,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       </>} />
   );
 
-  const restoreOperation = (record: A1Pending) => {
-    restoring.current = record;
-    try {
-      const intent = record.intent;
+  const showIntent = (intent: A1Intent) => {
       switch (intent.kind) {
         case "create": createAccount(intent.form); break;
         case "profile": editAccount(intent.account, intent.form); break;
@@ -1123,8 +1135,32 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         case "session": revokeOneSession(intent.account, intent.sessionId); break;
         case "permission": submitPermissionRegistration(intent.draft); break;
       }
-    } finally { restoring.current = null; }
   };
+  const restoreOperation = (record: A1Pending) => {
+    restoring.current = record;
+    try { showIntent(record.intent); }
+    finally { restoring.current = null; }
+  };
+  useEffect(() => {
+    if (!recheckIntent || !overviewReady || mutatingAction || recheckIntent.kind === "role" && !permissionDiffReady) return;
+    setRecheckIntent(null);
+    needsRecheck.current = false;
+    if ("account" in recheckIntent) {
+      const account = freshOverview.current?.operators.find(op => op.id === recheckIntent.account.id);
+      if (!account) { ctx.closeActionConfirm?.(); return; }
+      showIntent({ ...recheckIntent, account });
+    } else showIntent(recheckIntent);
+    // Replace the confirmation's baseline after a refusal; the mounted modal retains input and reason.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recheckIntent, overviewReady, mutatingAction, permissionDiffReady]);
+  useEffect(() => {
+    for (const record of a1PendingCommands.list()) {
+      if (record.actorId === currentAdminId && record.ticket?.status === "pending")
+        void queryOriginal(record, false).catch(error => toast(errorMessage(error)));
+    }
+    // Reconcile saved observations on entry and after each successful overview read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentAdminId, overview]);
   const releaseExpiredProposal = (record: A1Pending) => ctx.openConfirm({
     briefKind: "security", action: "解除原操作记录", title: "解除原操作记录", reason: false,
     detail: errorMessage(new Error("A1_EXPIRED_PROPOSAL_NOT_FOUND")),
