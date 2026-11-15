@@ -204,7 +204,7 @@ function DisclosureHeader({ tab, head, readOnly, guideExtra }: { tab: TabKey | n
 function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ctx: ICtx; errorText: string | null; writes: I5Writes; has: (code: string) => boolean; queueNonce: number; onHead: (key: TabKey, head: TabHead) => void }) {
   const { toast, openActionConfirm, actions, content, contentLoading } = ctx;
   const reach = useReach();
-  const data = content.trustDisclosure;
+  const data = content.disclosures;
   const canDraft = has("content_i5_write");
   const canPropose = has("platform_a2_write") || has("platform_a2_proposal_create");
   const canPublish = has("content_i5_disclosure_publish") && canPropose;

@@ -23,10 +23,8 @@ const ARRAY_KEYS: Record<IModuleId, readonly string[]> = {
     "disclosureVersions", "sources",
   ],
   I5: [
-    "trustSections", "trustSectionVersions", "pendingTrustSectionKeys",
-    "financialFields", "sectionFields", "jurisdictions", "countryOptions",
-    "chapters", "gatedActions", "roleGates", "languageScopes",
-    "disclosureVersions", "sources",
+    "jurisdictions", "countryOptions", "chapters", "gatedActions", "roleGates",
+    "languageScopes", "disclosureVersions", "sources",
   ],
   I6: [
     "namespaces", "integrityIssues", "hardcodedFindings", "messages", "courses",
@@ -199,13 +197,12 @@ function validateTrustDisclosure(moduleId: IModuleId, value: Record<string, unkn
       if (!["sectionKey", "key", "value"].every(key => typeof field[key] === "string")) fail(moduleId);
     }
   }
-  for (const key of [
-    "trustSections", "financialFields", "sectionFields", "countryOptions",
-    "chapters", "gatedActions",
-  ]) {
+  for (const key of moduleId === "I4"
+    ? ["trustSections", "financialFields", "sectionFields", "countryOptions", "chapters", "gatedActions"]
+    : ["countryOptions", "chapters", "gatedActions"]) {
     records(moduleId, value[key]);
   }
-  for (const version of records(moduleId, value.trustSectionVersions)) {
+  if (moduleId === "I4") for (const version of records(moduleId, value.trustSectionVersions)) {
     records(moduleId, version.fields);
   }
   for (const jurisdiction of records(moduleId, value.jurisdictions)) {

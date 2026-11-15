@@ -47,9 +47,8 @@ function contentErrorForTab(tab: string, content: IContentData) {
       ? "nova"
       : tab === "I3"
         ? "campaigns"
-        : tab === "I4" || tab === "I5"
-          ? "trustDisclosure"
-          : "i18nLearning";
+        : tab === "I4" ? "trustDisclosure"
+          : tab === "I5" ? "disclosures" : "i18nLearning";
   const error = content.errors?.[key];
   if (!error) return null;
   if (tab === "I5" && error === "I4 返回数据格式异常，请刷新重试") {
@@ -87,7 +86,7 @@ function liveFromBackend(tab: string, content: IContentData, loading: boolean, e
     return stats ? `信任版块 ${countText(stats.managedSections)} 个` : "";
   }
   if (tab === "I5") {
-    const stats = content.trustDisclosure?.stats;
+    const stats = content.disclosures?.stats;
     if (!stats) return "";
     const coverage = stats.reackPct !== undefined
       ? `${stats.reackJurisdiction || "适用地区"} 已重新确认 ${stats.reackPct}% · 待确认 ${countText(stats.staleAckUsers)} 人`

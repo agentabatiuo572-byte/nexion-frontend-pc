@@ -1423,11 +1423,12 @@ export type IContentData = {
   nova?: NovaOverview;
   campaigns?: NotificationCampaignOverview;
   trustDisclosure?: TrustDisclosureOverview;
+  disclosures?: TrustDisclosureOverview;
   i18nLearning?: I18nLearningOverview;
   errors?: Partial<Record<IContentErrorKey, string>>;
 };
 
-export type IContentErrorKey = "copyAb" | "nova" | "campaigns" | "trustDisclosure" | "i18nLearning";
+export type IContentErrorKey = "copyAb" | "nova" | "campaigns" | "trustDisclosure" | "disclosures" | "i18nLearning";
 
 export type IContentActions = {
   reloadIContent: () => Promise<void>;
@@ -1514,11 +1515,13 @@ export type IContentActions = {
 };
 
 export async function fetchIContentOverviews(): Promise<IContentData> {
-  const [copyAb, nova, campaigns, trustDisclosure, i18nLearning] = await Promise.allSettled([
+  const trust = apiRequest<unknown>("/trust-disclosure/overview");
+  const [copyAb, nova, campaigns, trustDisclosure, disclosures, i18nLearning] = await Promise.allSettled([
     apiRequest<unknown>("/copy-ab/overview").then((value) => parseIOverview("I1", value) as CopyAbOverview),
     apiRequest<unknown>("/nova/overview").then((value) => parseIOverview("I2", value) as NovaOverview),
     fetchI3CampaignOverview(),
-    apiRequest<unknown>("/trust-disclosure/overview").then((value) => parseIOverview("I4", value) as TrustDisclosureOverview),
+    trust.then(value => parseIOverview("I4", value) as TrustDisclosureOverview),
+    trust.then(value => parseIOverview("I5", value) as TrustDisclosureOverview),
     apiRequest<unknown>("/i18n-learning/overview").then((value) => parseIOverview("I6", value) as I18nLearningOverview),
   ]);
 
@@ -1535,12 +1538,14 @@ export async function fetchIContentOverviews(): Promise<IContentData> {
     nova: nova.status === "fulfilled" ? nova.value : undefined,
     campaigns: campaigns.status === "fulfilled" ? campaigns.value : undefined,
     trustDisclosure: trustDisclosure.status === "fulfilled" ? trustDisclosure.value : undefined,
+    disclosures: disclosures.status === "fulfilled" ? disclosures.value : undefined,
     i18nLearning: i18nLearning.status === "fulfilled" ? i18nLearning.value : undefined,
     errors: {
       copyAb: safeError("I1", copyAb),
       nova: safeError("I2", nova),
       campaigns: safeError("I3", campaigns),
       trustDisclosure: safeError("I4", trustDisclosure),
+      disclosures: safeError("I5", disclosures),
       i18nLearning: safeError("I6", i18nLearning),
     },
   };
