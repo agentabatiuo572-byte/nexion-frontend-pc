@@ -2,7 +2,7 @@
 
 /**
  * C2 账户操作（工作台页，PG-45）。一页四件事，分四个页签：账户处置（默认）、注销申请、用户数据只读视图、账户名单。
- * 首屏一句话说有没有注销申请等处理，统计带写全量；账户处置有查找框，表格只是最近注册的 50 个样本。
+ * 首屏一句话说有没有注销申请等处理，统计带写全量；账户处置有查找框，表格按账户状态分页列出全部账户（默认冻结）。
  * 写操作照提现审核：先把原操作存好再发；结果未知转成页面上方的待确认条，对象锁住，只能原样重试，
  * 后端明确拒绝后才能解除（OP-91～OP-96）。退出全部设备走审批，未决记录和安全与登录设备共用一份。
  */
@@ -36,6 +36,7 @@ import {
   fetchUserAccountActionContext,
   fetchUserAccountActionOverview,
   fetchUserAccountActionPage,
+  type UserAccountActionStatus,
   isUsersRequestNotFound,
   removeUserAccountList,
   startUserImpersonation,
@@ -65,6 +66,11 @@ const K1_PATH = "/risk/multi-account";
 const D1_PATH = "/finance/recon";
 const FOCUS_SOURCES: Record<string, string> = { C1: "用户详情", M1: "客服工作台", M3: "专属会话", J3: "篡改防御监控" };
 const PAGE_SIZES = [10, 20, 50] as const;
+/** 账户列表的五种状态，叫法和用户详情一致；冻结排第一，是这里最常处理的。 */
+const ACCOUNT_FILTERS: readonly { value: UserAccountActionStatus; label: string }[] = [
+  { value: "FROZEN", label: "冻结" }, { value: "RESTRICTED", label: "受限" }, { value: "BANNED", label: "封禁" },
+  { value: "ACTIVE", label: "正常" }, { value: "DISABLED", label: "已注销" },
+];
 const TABS = ["accounts", "deletions", "views", "lists"] as const;
 type Tab = (typeof TABS)[number];
 
@@ -211,10 +217,6 @@ function riskOf(account: Pick<User360Profile, "riskBand" | "riskScore"> | null |
 }
 
 /** 表格里只给中、高风险上色，低风险和没有档的不上色（VS-21）。 */
-function RiskCell({ account }: { account?: Pick<User360Profile, "riskBand" | "riskScore"> }) {
-  const risk = riskOf(account);
-  return risk.tone === "danger" || risk.tone === "warn" ? <StatusTag tone={risk.tone}>{risk.text}</StatusTag> : <Cell main={risk.text} />;
-}
 
 /** 金额按接口原值显示，至少两位小数，不舍入，千分位（TX-20，同用户详情）。读不到写「—」，不当成 0。 */
 function amountValue(value: unknown) {
@@ -703,8 +705,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       if (statusDiff !== 0) return statusDiff;
       return (count(b.riskScore) ?? 0) - (count(a.riskScore) ?? 0);
     }), [data]);
-  const sessions = useMemo(() => data?.sessions ?? [], [data]);
-  const sessionsTruncated = (count(data?.totalSessions) ?? 0) > sessions.length;
   // 生效中在前，再按加入时间新的在前；按时间值比，不按格式化后的字符串。
   const listRows = useMemo(() => [...(data?.accountLists ?? [])].sort((a, b) => {
     const activeDiff = Number(isActiveListEntry(b)) - Number(isActiveListEntry(a));
@@ -718,6 +718,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     return (parseBusinessTime(text(b.createdAt, "")) || 0) - (parseBusinessTime(text(a.createdAt, "")) || 0);
   }), [data]);
 
+  const [accountStatus, setAccountStatus] = useState<UserAccountActionStatus>("FROZEN");
   const [accountPage, setAccountPage] = useState(1);
   const [accountSize, setAccountSize] = useState<number>(10);
   const [accountList, setAccountList] = useState<Block<UserPage<UserAccountActionRow>>>({ data: null, loading: canReadC2, error: "" });
@@ -727,7 +728,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     const seq = ++accountListSeq.current;
     setAccountList(block => ({ ...block, loading: true, error: "" }));
     try {
-      const page = await fetchUserAccountActionPage("FROZEN", accountPage, accountSize);
+      const page = await fetchUserAccountActionPage(accountStatus, accountPage, accountSize);
       if (seq !== accountListSeq.current) return;
       const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
       if (page.pageNum > lastPage) { setAccountPage(lastPage); return; }
@@ -735,7 +736,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     } catch (cause) {
       if (seq === accountListSeq.current) setAccountList({ data: null, loading: false, error: readError(cause) });
     }
-  }, [canReadC2, accountPage, accountSize]);
+  }, [canReadC2, accountStatus, accountPage, accountSize]);
   useEffect(() => { void loadAccountList(); }, [loadAccountList, authEpoch]);
   const [listPage, setListPage] = useState(1);
   const [listSize, setListSize] = useState<number>(10);
@@ -1555,7 +1556,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     <StatBand label="账户操作概况">
       {/* 读不到时四格都写「—」，重试在下面页签里的失败块上，不挂在第一格下（看着像只重试这一格）。 */}
       <Stat tone="role-3" icon={Snowflake} label="冻结中账户" value={statValue(frozenUsers)} unit={frozenUsers === null ? undefined : "个"}
-        explain="现在冻结中的全部账户，含随账户组冻结和充值异常冻结的。下面的列表只有最近注册的 50 个，不一定都在。" />
+        explain="现在冻结中的全部账户，含随账户组冻结和充值异常冻结的。" />
       <Stat tone="progress" icon={Eye} label="只读视图进行中" value={statValue(activeViews)} unit={activeViews === null ? undefined : "个"}
         sub={longestLeft !== null && activeViews ? `最长剩 ${longestLeft} 分钟` : undefined}
         explain={activeViews ? "「最长剩」按页面读取时算，不会自己倒数，点「刷新」更新。" : "现在打开着的用户数据只读视图。"} onOpen={() => changeTab("views")} openLabel="到用户数据只读视图" />
@@ -1596,13 +1597,17 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const accountActions = canFreeze || canUnfreeze;
   // 时区只在面板标题旁写一次，表头不再写（TX-25）。
   const zoneNote = `时间为${zone}`;
+  // 冻结列表多三列冻结的事实：来源和原因、时间和操作人、停住的提现；其余状态只写状态和注册时间。
+  const frozenView = accountStatus === "FROZEN";
+  const statusName = ACCOUNT_FILTERS.find((item) => item.value === accountStatus)!.label;
+  const accountColumns = (frozenView ? 5 : 3) + (accountActions ? 1 : 0);
 
   const accountsPane = (
     <div className="rd-stack">
       {/* 右端写列表的范围：为什么要用查找框，也让定宽的框右边不空着（量尺 P2-side）。 */}
       <FilterBar onSubmit={() => void findAccount()} querying={lookup.state === "loading"}
         action={<Button type="submit" loading={lookup.state === "loading"}>打开</Button>}
-        sort={!overviewFailedFirst ? <span className="rd-filter-result">列表只取最近注册的 50 个账户</span> : undefined}
+        sort={<span className="rd-filter-result">下面按账户状态列出全部账户</span>}
         notice={lookup.state === "empty" ? "填用户编码、系统编号、邀请码或邮箱。" : lookup.state === "error" ? <>{lookup.error} <InlineRetry onRetry={() => void findAccount()} /></> : undefined}>
         {/* 定宽查找框，「打开」紧贴右边（同 Ant Input.Search、提现审核），不横跨整行。 */}
         <FilterField>
@@ -1613,43 +1618,48 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       {/* 没找到不是错误：灰字写在框下，不带重试。 */}
       {lookup.state === "not-found" && <p className="rd-weak" role="status">没有找到这个用户，核对后再查。</p>}
       {staleNotice}
-      {(accountList.error ? <BlockState state="error" title="账户概况读取失败，不显示旧数据" detail={accountList.error} onRetry={() => void loadAccountList()} retrying={accountList.loading} /> : null) ?? (
-        <Panel title="账户" icon={UserRound} tone="role-3" flush
-          sub={accountList.loading && !accountList.data ? undefined : accountList.data ? `共 ${accountList.data.total.toLocaleString("en-US")} 个账户 · ${zoneNote}` : zoneNote}
-          explain="冻结的排在前面；冻结中的账户不一定都在这里，找具体用户用上面的查找。在线设备按最近 200 条登录记录数，可能少算，准确数在详情里。">
+      <Panel title="账户" icon={UserRound} tone="role-3" flush
+        sub={accountList.data && !accountList.error ? `共 ${accountList.data.total.toLocaleString("en-US")} 个${frozenView ? "冻结" : statusName}账户 · ${zoneNote}` : zoneNote}
+        explain={frozenView ? "按冻结时间从新到旧排。随账户组冻结、充值异常冻结的不能在这里恢复，到对应页面处理。冻结的来源单号在账户详情里。" : "找具体用户用上面的查找。"}
+        actions={<Segments label="账户状态" value={accountStatus} items={ACCOUNT_FILTERS} onChange={(next) => { setAccountStatus(next); setAccountPage(1); }} />}>
+        {accountList.error ? <BlockState state="error" title={`${statusName}账户读取失败，不显示旧数据`} detail={accountList.error} onRetry={() => void loadAccountList()} retrying={accountList.loading} /> : (
           <Table label="账户">
             <thead><tr>
               <Th icon={User} tone="users">账户</Th>
-              <Th>账户状态</Th>
-              <Th>风险</Th>
-              <Th>注册 · 最近登录</Th>
-              <Th align="right">{sessionsTruncated ? "在线设备（至少）" : "在线设备"}</Th>
+              {frozenView ? <>
+                <Th>冻结来源 · 原因</Th>
+                <Th>冻结时间 · 操作人</Th>
+                <Th align="right">停住的提现 <Explain label="停住的提现怎么算" content="因为这次账户冻结一起停住的提现单。恢复账户时一起恢复，之后按原来的提现流程处理。" /></Th>
+              </> : <Th>账户状态</Th>}
+              <Th>注册时间</Th>
               {accountActions && <Th sticky="end">操作</Th>}
             </tr></thead>
             <tbody>
-              {accountList.loading ? <TableLoading columns={accountActions ? 6 : 5} rows={5} />
-                : accountRows.length === 0 ? <TableMessage columns={accountActions ? 6 : 5}>暂无账户</TableMessage>
+              {accountList.loading ? <TableLoading columns={accountColumns} rows={5} />
+                : accountRows.length === 0 ? <TableMessage columns={accountColumns}>{`没有${statusName}的账户`}</TableMessage>
                   : accountRows.map((account) => {
                     const id = accountId(account);
+                    const stuck = account.d2FrozenWithdrawalCount;
                     return (
                       <Tr key={id} selected={accountId(acct) === id} aria-label={`查看账户 ${displayAccount(account)}`} onOpen={() => openAccount(account)}>
-                        {/* 账户列伸缩，时间列按内容定宽，在线设备紧跟在后面（第 6 列的列宽）。 */}
+                        {/* 账户列伸缩，其余列按内容定宽。 */}
                         <Td grow><Cell main={<span data-mono>{text(account.userNo, id)}</span>} sub={userNicknameText(text(account.nickname), account.phoneMasked)} /></Td>
-                        <Td><AccountStatusTag status={account.status} table /></Td>
-                        <Td><RiskCell /></Td>
-                        {/* 最近登录帮着判断账户还在不在用；列表是最近注册的 50 个，注册时间说明排在这里的是谁。 */}
-                        <Td data-fit=""><Cell num main={timeText(account.registeredAt)} sub="—" /></Td>
-                        <Td align="right"><Cell num main="—" /></Td>
+                        {frozenView ? <>
+                          <Td><Cell main={freezeSourceText(account.freezeSource)} sub={freezeReasonText(account)} title={freezeReasonText(account)} /></Td>
+                          <Td data-fit=""><Cell num main={timeText(account.frozenAt)} sub={text(account.freezeOperator)} /></Td>
+                          <Td align="right">{stuck > 0 ? <StatusTag tone="warn">{`${stuck.toLocaleString("en-US")} 笔`}</StatusTag> : <Cell num main="0 笔" />}</Td>
+                        </> : <Td><AccountStatusTag status={account.status} table /></Td>}
+                        <Td data-fit=""><Cell num main={timeText(account.registeredAt)} /></Td>
                         {accountActions && <Td sticky="end">{rowAction(account)}</Td>}
                       </Tr>
                     );
                   })}
             </tbody>
           </Table>
-          {accountList.data && accountList.data.total > 0 && <Pager label="账户" total={accountList.data.total} page={accountPage} pageSize={accountSize} sizes={PAGE_SIZES} loading={accountList.loading}
-            onPage={setAccountPage} onPageSize={(size) => { setAccountSize(size); setAccountPage(1); }} />}
-        </Panel>
-      )}
+        )}
+        {!accountList.error && accountList.data && accountList.data.total > 0 && <Pager label="账户" total={accountList.data.total} page={accountPage} pageSize={accountSize} sizes={PAGE_SIZES} loading={accountList.loading}
+          onPage={setAccountPage} onPageSize={(size) => { setAccountSize(size); setAccountPage(1); }} />}
+      </Panel>
     </div>
   );
 

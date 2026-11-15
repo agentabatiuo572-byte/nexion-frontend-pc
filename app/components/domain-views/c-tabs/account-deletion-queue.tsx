@@ -354,6 +354,8 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
     { label: "用户", value: <>系统编号 {selected.userId}{canReadUserDetail && <> · <Link className="rd-link" href={`/users/search/${selected.userId}`} prefetch={false}>到用户详情</Link></>}</>,
       reason: selected.status === "IN_REVIEW" || selected.status === "REQUESTED" ? "完成注销前到用户详情核对资金和订单" : undefined },
     { label: "申请时间", value: formatBusinessTimeCompact(selected.requestedAt, "—") },
+    // 用户在 App 申请时自己填的理由，之后审核、拒绝、取消都不改它；没填或早期没记下时写「—」，不拿最近理由顶上。
+    { label: "用户申请理由", value: selected.originalReason ?? "—" },
     ...(selected.status === "BLOCKED" ? [{ label: SYSTEM_BLOCKS.includes(blockedRaw) ? "拦下原因" : "拒绝理由", value: <><span className="rd-point-mark" data-tone="warn"><AlertTriangle size={14} aria-hidden /></span>{reasonText(blockedRaw)}{blockedRaw === "UNSETTLED_FUNDS_OR_ORDERS" && <> <Explain label="零头余额的处理方法" content={<>低于最低提现额或最低兑换量的零头余额，用户联系客服后由财务在「{canReadAssetAdjustments
         ? <a className="rd-link" href={`/users/assets?userId=${selected.userId}&returnTo=${encodeURIComponent(`/users/actions?tab=deletions${status ? `&deletionStatus=${status}` : ""}`)}`}>余额与资产调整</a>
         : "余额与资产调整"}<KeepText text="」写理由，经审批清零，之后运营点「重新审核」再「完成注销」。" phrases={["「重新审核」", "「完成注销」。"]} /></>} /></>}</>,
@@ -427,7 +429,8 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
               <Fact k="审核时间">{formatBusinessTimeCompact(selected.reviewedAt, "—")}</Fact>
               <Fact k="完成时间">{formatBusinessTimeCompact(selected.completedAt, "—")}</Fact>
               {/* 已拒绝时理由就是上面那一行，同一句不写两次（DP-61）。 */}
-              <Fact k="原因">{selected.originalReason ?? "—"}</Fact>
+              {/* 最近理由和用户申请理由一样时（还没人处理过）不写第二遍。 */}
+              {selected.status !== "BLOCKED" && (selected.reason ?? "").trim() !== (selected.originalReason ?? "").trim() && <Fact k="最近理由">{latestReason(selected)}</Fact>}
             </Facts>
           </Panel>}
         </div>}
