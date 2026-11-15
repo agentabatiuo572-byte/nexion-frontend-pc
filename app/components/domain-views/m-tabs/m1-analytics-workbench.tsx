@@ -152,7 +152,7 @@ function dateText(value: string | null): string {
 }
 function Numeric({ value, observed, label, kind = "count", onClick, unavailable = false, places }: { value: string | null; observed?: string | null; label: string; kind?: "count" | "amount"; onClick?: () => void; unavailable?: boolean; places?: number }) {
   const content = value === null ? "—" : kind === "amount" ? fullAmount(value, places) : value.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  const explanation = unavailable ? "资料暂不可用" : content === "—" ? observed == null ? "资料未同步" : `已观测 ${observed}，完整数值仍在统计` : `已核实 ${value}${observed != null && observed !== value ? `，已观测 ${observed}` : ""}`;
+  const explanation = unavailable ? "资料暂不可用" : content === "—" ? observed == null ? "资料未同步" : `已数到 ${observed}，完整数还在统计` : `已核实 ${value}${observed != null && observed !== value ? `，已数到 ${observed}` : ""}`;
   const quiet = content === "—" ? " sa-quiet sa-dash" : /^0(\.0+)?$/.test(content) ? " sa-quiet" : "";
   return <span className="sa-number-wrap">{onClick ? <button type="button" className={`rd-link sa-number sa-link${quiet}`} title={explanation} aria-label={`${label}：${explanation}；查看明细`} onClick={onClick}>{content}</button> : <span className={`sa-number${quiet}`} tabIndex={0} title={explanation} aria-label={`${label}：${explanation}`}>{content}</span>}</span>;
 }
@@ -177,7 +177,7 @@ function amountPlaces(values: ReadonlyArray<string | null | undefined>): number 
 function CustomerValue({ value, observed, status, kind, label, onClick, places }: { value: string | null; observed?: string | null; status: Count["status"]; kind: "count" | "amount"; label: string; onClick: () => void; places?: number }) {
   const missing = value === null || status !== "AVAILABLE";
   const text = missing ? "—" : kind === "amount" ? fullAmount(value, places) : value;
-  const note = !missing ? text : status === "FAILED" || status === "UNAVAILABLE" ? "资料暂不可用" : observed == null ? "数据还在同步" : `已观测 ${observed}，完整数值仍在统计`;
+  const note = !missing ? text : status === "FAILED" || status === "UNAVAILABLE" ? "资料暂不可用" : observed == null ? "数据还在同步" : `已数到 ${observed}，完整数还在统计`;
   return <button type="button" className={`rd-link sa-cell-value sa-link${/^0(\.0+)?$/.test(text) ? " zero" : missing ? " unknown sa-dash" : ""}`} title={missing ? note : undefined} aria-label={`${label}：${note}；查看明细`} onClick={onClick}>{text}</button>;
 }
 function countValue(count: Count): string | null { return count.confirmed === null || count.status !== "AVAILABLE" ? null : String(count.confirmed); }
@@ -206,7 +206,7 @@ type Drill = (changes: Partial<AnalyticsQueryState>) => void;
 export function AnalyticsTable({ data, currency, drill, openProfile, session }: { data: SupportAnalyticsResponse; currency: Currency; drill: Drill; openProfile: (customerId: string) => void; session?: CustomerSessionStart }) {
   const [agentId, setAgentId] = useState<string | null>(null);
   const agent = data.view === "AGENTS" && agentId ? data.records.find(row => row.accountId === agentId) : undefined;
-  if (!data.records.length) return <BlockState state="empty" title={data.total === null ? "当前范围与筛选下暂无已观测记录，总数仍在统计。" : "当前筛选下没有记录。"} />;
+  if (!data.records.length) return <BlockState state="empty" title={data.total === null ? "还没数到记录，总数还在统计。" : "当前筛选下没有记录。"} />;
   const name = (row: Pick<SupportAnalyticsCustomer, "nickname" | "customerNo" | "customerId">) => operatorNicknameText(row.nickname || "") || m1CustomerCode(row.customerId);
   const unit = nexGridBrandText(currency);
   if (data.view === "AGENTS") {
@@ -245,8 +245,8 @@ function clockText(value: string | null): string {
 function SessionBusyDialog({ customer, hold, onRead, onClose }: { customer: string; hold: SupportSessionHold; onRead: () => void; onClose: () => void }) {
   const holder = hold.holder!, role = SUPPORT_SESSION_ROLE_LABEL[holder.role];
   return <Modal title="暂时不能发起会话" onClose={onClose} footer={<><Button onClick={onRead}>查看会话记录</Button><Button variant="primary" onClick={onClose}>知道了</Button></>}>
-    <Facts><Fact k="客户">{customer}</Fact><Fact k="当前接待人">{holder.name} · {role}</Fact><Fact k="最后发言">{hold.lastSentAt ? dateText(hold.lastSentAt) : "—"}</Fact><Fact k="预计无人发言结束接待">{hold.autoEndAt ? dateText(hold.autoEndAt) : "—"}</Fact></Facts>
-    <p>当前由 {holder.name} 接待，暂不能同时发起接待。可以查看会话记录，或等接待释放后再联系。</p><Fold inset title="接待规则" summary={hold.endMinutes === null ? "期限未读取" : `无人发言 ${hold.endMinutes} 分钟`}><p>无人发言结束接待只释放接待人，不结束对话、不改变专属客服，也不清除待回复；新发言会顺延释放时间。</p></Fold>
+    <Facts><Fact k="客户">{customer}</Fact><Fact k="当前接待人">{holder.name} · {role}</Fact><Fact k="接待人最后发消息">{hold.lastSentAt ? dateText(hold.lastSentAt) : "—"}</Fact><Fact k="预计无人发言结束接待">{hold.autoEndAt ? dateText(hold.autoEndAt) : "—"}</Fact></Facts>
+    <p>当前由 {holder.name} 接待，暂不能同时发起接待。可以查看会话记录，或等接待结束后再联系。</p><Fold inset title="接待规则" summary={hold.endMinutes === null ? "期限未读取" : `无人发言 ${hold.endMinutes} 分钟`}><p>接待人最后发消息后这么久没再发，接待就结束（客户发消息不算）；不结束对话、不改专属客服，也不清除待回复。</p></Fold>
   </Modal>;
 }
 
@@ -503,7 +503,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {scope && scope.scopeSummary.mode !== "PERSONAL" && canAccessResolvedPath(visible, "/service/sessions") && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
     {authSession && (scope || readModes?.length || authSession.role === "super" || authSession.role === "superadmin") && authSession.authorities.some(code => code === "service_m1_read" || code === "service_m3_read") && canAccessResolvedPath(visible, "/service/leaderboard") && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{!noScopedContent && <Button onClick={() => refreshScope()}>刷新</Button>}
   </>} />;
-  if (!scope) return <section className="sa-workbench" aria-busy={!scopeError}>{header}<Panel><BlockState state={noScopedContent ? "empty" : scopeError ? "error" : "loading"} title={noScopedContent ? "当前账号没有可查看的负责组，也没有可查看的本人客户，这页暂无可查看的内容。" : scopeError || "正在核对当前可见范围…"} onRetry={scopeError && !noScopedContent ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重新核对范围" /></Panel></section>;
+  if (!scope) return <section className="sa-workbench" aria-busy={!scopeError}>{header}<Panel><BlockState state={noScopedContent ? "empty" : scopeError ? "error" : "loading"} title={noScopedContent ? "你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" : scopeError || "正在核对当前可见范围…"} onRetry={scopeError && !noScopedContent ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重新核对范围" /></Panel></section>;
 
   const mode = scope.scopeSummary.mode, currency = queryState.currency ?? "USDT";
   const leadPermission: Permission = mode === "ALL" ? "superadmin" : "supervisor";
@@ -549,15 +549,15 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   return <section className="sa-workbench" {...tabIds.panel(currentTab)}>
     {header}
     {!isPersonal && <M1LiveService ctx={ctx} />}
-    {(maintenanceInBar || unresolvedPool || unresolvedGroups || unresolvedInvite || unresolvedAvatar || unresolvedBulk || unresolvedPayments.length > 0) && <Notice tone="warn" title="有操作结果待确认，先查询原操作" actionBelow action={<>
+    {(maintenanceInBar || unresolvedPool || unresolvedGroups || unresolvedInvite || unresolvedAvatar || unresolvedBulk || unresolvedPayments.length > 0) && <Notice tone="warn" title="有操作结果未知，先查询原结果" actionBelow action={<>
       {maintenanceInBar && <Button size="sm" onClick={() => openTab(isPersonal ? "my-customers" : "mine")}>核对维护原操作</Button>}
       {unresolvedPool && <Button size="sm" onClick={() => openTab("pool")}>核对分配原操作</Button>}
       {unresolvedGroups && <Button size="sm" onClick={() => openTab("team")}>核对分组原操作</Button>}
       {unresolvedInvite && <Button size="sm" onClick={() => openTab(isPersonal ? "home" : "mine")}>核对邀请码原操作</Button>}
       {unresolvedAvatar && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => setRecoveryRevision(n => n + 1)} />}
       {unresolvedBulk && <Button size="sm" onClick={() => setBulkRecovery(true)}>核对群发原操作</Button>}
-      {unresolvedPayments.map(row => <Button size="sm" key={row.commandKey} onClick={() => setProfileId(row.userId)}>{unresolvedPayments.length > 1 ? `核对支付安全原操作 · user:${row.userId}` : "核对支付安全原操作"}</Button>)}
-    </>}>原对象、内容、理由与命令号保留；超过 24 小时只查询和核对。</Notice>}
+      {unresolvedPayments.map(row => <Button size="sm" key={row.commandKey} onClick={() => setProfileId(row.userId)}>{unresolvedPayments.length > 1 ? `核对支付安全原操作 · 用户 ${row.userId}` : "核对支付安全原操作"}</Button>)}
+    </>}>原内容和理由已保留；超过 24 小时只能查询，不能再重试。</Notice>}
 
     {!(isPersonal && currentTab === "home") && navigation}
 <TransferPendingNotes key={transferRevision} onOpen={setTransferCustomer} />
@@ -586,7 +586,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {!isPersonal && section === "mine" && <M1PersonalWorkbench permission="supervisor" ctx={ctx} view={personalView} onViewChange={setPersonalView} onTransfer={setTransferCustomer} transferRevision={transferRevision} />}
     {showStatistics && <Panel className="sa-stats" icon={currentTab === "customers" ? Users : BarChart3} tone="role-1" title={isPersonal ? "本人客户画像" : currentTab === "customers" ? mode === "ALL" ? "全部客户" : "负责组客户" : mode === "ALL" ? "平台运营总览" : "我的分组数据"}
       sub={<>{selectedGroup?.name || (queryState.groupId ? "组名未同步" : isPersonal ? "本人当前客户" : mode === "ALL" ? "全部获准客服范围" : "全部负责组")} · {nexGridBrandText(currency)}{data ? <> · <AnalyticsFreshness asOf={data.asOf} label="" explain={false} onRefresh={() => refreshScope()} /> · {data.versionState === "READY" ? "统计已核实" : "数据仍在同步"}</> : <> · {businessZone().label}</>}</>}
-      explain={<>{caption}。绑定与人员规模按所选分组统计，客户数据按当前筛选；邀请金额不计入分组经营金额。统计约每分钟更新，另需计算时间；刷新读取最新完成版本。</>} explainLabel="统计口径"
+      explain={<>{caption}。绑定和人员数按所选分组算，客户数据按当前筛选；邀请金额不算进分组金额。统计约每分钟更新一次，刷新读最近算好的一版。</>} explainLabel="统计口径"
       actions={!isPersonal && <div className="m1-group-scope"><span aria-hidden="true">负责组</span><Select aria-label="负责组范围" value={String(queryState.groupId ?? "")} onChange={value => change({ groupId: value || undefined })} options={[{ value: "", label: mode === "ALL" ? "全部获准范围" : "全部负责组" }, ...groups.map(g => ({ value: g.groupId, label: g.name || "组名未同步" }))]} /></div>}>
       {restoreNotice && <Notice tone="warn" action={<Button size="sm" type="button" onClick={() => setRestoreNotice("")}>知道了</Button>}>{restoreNotice}</Notice>}
       {(isPersonal || queryState.view !== "CUSTOMERS") && <PageTabs level={2} label="数据视角" value={queryState.view} items={DATASETS.filter(x => isPersonal ? !["OVERVIEW", "AGENTS"].includes(x.value) : x.value !== "CUSTOMERS")} onChange={value => change({ view: value, ...(value === "DEVICES" ? { basis: "CURRENT_ASSET" as const } : {}) })} />}
@@ -615,7 +615,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
           <div><span>{queryState.basis === "PERIOD_EVENT" ? "期间充值" : "客户累计充值"} / {nexGridBrandText(currency)}</span><MoneyValue money={deposits} label={`充值 ${nexGridBrandText(currency)}`} onClick={() => change({ view: "FINANCE", basis: queryState.basis === "CURRENT_ASSET" ? "CURRENT_CUSTOMER_HISTORY" : queryState.basis })} /></div>
           {queryState.basis === "PERIOD_EVENT" && <><div><span>期间首次付费</span><CountValue count={data.scopeSummary.financial.firstCandidates} label="期间首次付费；查看同范围资金事件" onClick={() => change({ view: "FINANCE" })} /></div><div><span>期间购机 / {nexGridBrandText(currency)}</span><MoneyValue money={data.scopeSummary.financial.currencies.find(x => x.currency === currency)?.purchases} label={`期间购机 ${nexGridBrandText(currency)}；查看同范围资金事件`} onClick={() => change({ view: "FINANCE" })} /></div></>}
         </div>
-        {queryState.view === "FINANCE" && <section className="sa-current-funds" aria-label="当前客户资金观测"><p>当前客户资金<Explain label="当前客户资金的说明" content="当前筛选客户的余额与提现观测，不受月份筛选；提现发生时的客户归属暂无记录。" /></p><div className="sa-inline-metrics">{(["balance", "successPrincipal", "successNet", "processingPrincipal"] as const).map(metric => {
+        {queryState.view === "FINANCE" && <section className="sa-current-funds" aria-label="当前客户资金观测"><p>当前客户资金<Explain label="当前客户资金的说明" content="当前筛选客户的余额和提现，不受月份筛选；系统没有记下提现当时客户归谁。" /></p><div className="sa-inline-metrics">{(["balance", "successPrincipal", "successNet", "processingPrincipal"] as const).map(metric => {
           const amount = fundAmount(data.funds, metric, currency);
           return <div key={metric}><span>{fundLabels[metric]} / {nexGridBrandText(currency)}</span><Numeric kind="amount" value={amount.confirmed} observed={amount.observed} label={fundLabels[metric] + " " + nexGridBrandText(currency)} onClick={() => setFundMetric(metric)} /></div>;
         })}</div></section>}
@@ -632,14 +632,14 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
           {!data.scopeSummary.groups.length && mode === "MANAGED" && <BlockState state="empty" title="当前没有负责组。" />}
         </> : <>{queryState.view === "CUSTOMERS" && <div className="sa-legend"><span>金额单位 {nexGridBrandText(currency)}</span><span><span className="sa-dot on" aria-hidden="true" />本统计期活跃</span><span><span className="sa-dot off" aria-hidden="true" />本统计期未活跃</span><span><span className="sa-cell-unknown">-</span> 数据还在同步</span><span>点客户名查看资料与记录</span></div>}
           {sessionError && <Notice tone="danger" action={<><Button size="sm" type="button" onClick={() => { const row = sessionError; setSessionError(null); openSessions(row); }}>查看会话记录</Button><Button size="sm" type="button" onClick={() => setSessionError(null)}>知道了</Button></>}>{customerName(sessionError)}：暂时无法核对接待状态，请稍后重试。</Notice>}
-          <AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} session={!isPersonal && queryState.view === "CUSTOMERS" ? sessionStart : undefined} /><footer className="sa-pager"><p>{data.total === null ? `已观测 ${data.observedTotal} 条；总数仍在统计` : `共 ${data.total} 条`} · 第 {queryState.pageNum} 页</p><div><Button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</Button><Button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</Button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">当前结果尚未确认，暂时无法继续翻页。请刷新后重试。</p>}</>}
+          <AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} session={!isPersonal && queryState.view === "CUSTOMERS" ? sessionStart : undefined} /><footer className="sa-pager"><p>{data.total === null ? `已数到 ${data.observedTotal} 条，总数还在统计` : `共 ${data.total} 条`} · 第 {queryState.pageNum} 页</p><div><Button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</Button><Button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</Button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">当前结果尚未确认，暂时无法继续翻页。请刷新后重试。</p>}</>}
       </>}
     </Panel>}
     {(showStatistics || periodDetail) && fundSource && <M1StatisticDetails key={`${periodDetail ?? fundMetric}:${fundSource.kind === "fund" ? fundSource.origin.asOf : ""}`} source={fundSource} onClose={() => { setFundMetric(null); setPeriodDetail(null); }} onInvalid={invalidateFund} />}
     {sessionBusy && <SessionBusyDialog customer={customerName(sessionBusy.row)} hold={sessionBusy.hold} onClose={() => setSessionBusy(null)} onRead={() => { const row = sessionBusy.row; setSessionBusy(null); openSessions(row); }} />}
     {transferCustomer && <CustomerTransferDialog key={transferCustomer} customerId={transferCustomer} mode={mode === "ALL" ? "ALL" : "MANAGED"} onClose={() => closeTransfer()} onDone={notice => { closeTransfer(); setTransferNotice(notice); setTransferRevision(n => n + 1); setRetry(n => n + 1); }} onOpenOwn={canMine ? () => { closeTransfer(true); openTab("mine"); } : undefined} />}
     {bulkRecovery && <SupportBulkComposer ctx={ctx} onClose={() => setBulkRecovery(false)} />}
-    {profileId && <Drawer open wide title="客户资料与原业务明细" onClose={() => setProfileId(null)} footer={<div className="m1-drawer-actions"><Button type="button" onClick={() => setProfileId(null)}>返回统计列表</Button></div>}><p className="sa-disclosure">按你的客户资料查看权限显示；统计可见不增加资金操作或回复权限。</p>{profileStats && ["CUSTOMERS", "ACTIVITY"].includes(data?.view || "") && <Fold title="统计依据" summary={`${m1CustomerCode(profileStats.customerId)} · ${currency}`}><Facts>
+    {profileId && <Drawer open wide title="客户资料与原业务明细" onClose={() => setProfileId(null)} footer={<div className="m1-drawer-actions"><Button type="button" onClick={() => setProfileId(null)}>返回统计列表</Button></div>}><p className="sa-disclosure">按你的客户资料查看权限显示；能看到统计不代表能操作资金或回复客户。</p>{profileStats && ["CUSTOMERS", "ACTIVITY"].includes(data?.view || "") && <Fold title="统计依据" summary={`${m1CustomerCode(profileStats.customerId)} · ${currency}`}><Facts>
       <Fact k="直接邀请的好友"><CustomerValue kind="count" value={countValue(profileStats.invitations.direct)} observed={profileStats.invitations.direct.observed === null ? null : String(profileStats.invitations.direct.observed)} status={profileStats.invitations.direct.status} label="直接邀请的好友" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
       <Fact k="团队成员"><CustomerValue kind="count" value={countValue(profileStats.invitations.descendants)} observed={profileStats.invitations.descendants.observed === null ? null : String(profileStats.invitations.descendants.observed)} status={profileStats.invitations.descendants.status} label="团队成员" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
       <Fact k={`本人累充 / ${currency}`}><MoneyValue money={profileStats.lifetime.find(x => x.currency === currency)?.deposits} label="本人累充" onClick={() => setProfileId(profileStats.customerId)} /></Fact>

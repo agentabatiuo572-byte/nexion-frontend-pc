@@ -22,7 +22,7 @@ const beijingTime = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "
 /** TX-26 full time in Beijing time, 2026-11-05 14:30:00; callers state the zone once. */
 export const beijing = (time: string) => { const parts = Object.fromEntries(beijingTime.formatToParts(new Date(time)).map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`; };
 const changed = () => new SupportClientError(409, undefined, "SUPPORT_STATISTIC_CHANGED");
-const summaryCounts = (total: number, visible: number, restricted: number, unit: string) => "原统计 " + total + unit + " · 可见 " + visible + unit + " · 受限 " + restricted + unit;
+const summaryCounts = (total: number, visible: number, restricted: number, unit: string) => "统计 " + total + unit + " · 你能看到 " + visible + unit + " · 看不到 " + restricted + unit;
 
 async function maintenancePage(source: Extract<StatisticSource, { kind: "maintenance" }>, page: number, version: string | undefined, cache: { current: SuccessList | null }, signal: AbortSignal): Promise<Result> {
   const { overview, choice: { metric, day } } = source;
@@ -35,7 +35,7 @@ async function maintenancePage(source: Extract<StatisticSource, { kind: "mainten
     return { headings: ["客户编号", "客户名称", "当前归属客服编号"], rows: list.records.map(row => [row.customerNo ?? row.customerId, operatorNicknameText(row.displayName ?? "") || "未登记", String(row.agentAdminId ?? "未知")]), total: list.total, next: page * PAGE_SIZE < list.total, summary: "当前暂停主动维护 " + list.total + " 人", note: "按当前归属逐页核对 · 本页核对时间（北京时间） " + beijing(current.overview.evaluatedAt) };
   }
   const byCustomer = metric === "SUCCESSFUL_CUSTOMER";
-  if (!performance.scopeVersion) return { headings: [], rows: [], total: null, next: false, summary: "明细版本待同步", note: "原工作台未返回范围版本，暂时无法核对这项维护统计。" };
+  if (!performance.scopeVersion) return { headings: [], rows: [], total: null, next: false, summary: "明细还在同步", note: "这项维护统计还在同步，暂时核对不了明细，稍后刷新工作台再看。" };
   const rawMetric: PerformanceMetric = byCustomer ? "SUCCESSFUL_CYCLE" : metric;
   const pageSize = byCustomer ? 100 : PAGE_SIZE;
   const first = await supportClient.performanceDetails(overview, rawMetric, day, { pageNum: byCustomer ? 1 : page, pageSize, expectedQueryVersion: version, signal });
@@ -82,7 +82,7 @@ function groupedAmount(value: string, places = 2): string {
   return `${parts[1]}${parts[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${(parts[3] ?? "").replace(/0+$/, "").padEnd(Math.max(2, places), "0")}`;
 }
 function amountText(amount?: Amount, places?: number) {
-  return amount?.confirmed != null ? groupedAmount(amount.confirmed, places) : amount?.observed == null ? "未知" : groupedAmount(amount.observed, places) + "（已观测）";
+  return amount?.confirmed != null ? groupedAmount(amount.confirmed, places) : amount?.observed == null ? "未知" : groupedAmount(amount.observed, places) + "（未核实完）";
 }
 function exactGroupSum(values: string[], total: string) {
   const digits = Math.max(...[total, ...values].map(value => (value.split(".")[1] ?? "").length));
@@ -127,8 +127,8 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
       : [row.agentId == null ? null : "客服 " + row.agentId, groupName(row.groupId)].filter(Boolean).join(" · ");
     const facts = [
       { k: "统计总额", v: <>{money(detail.totalAmount!)} · {detail.totalCount} 条 · {detail.customerCount} 位客户</> },
-      { k: "确认情况", v: detail.status === "AVAILABLE" ? "全部已确认"
-        : <>部分已确认{detail.observedAmount != null && <> · 已观察到 {money(detail.observedAmount)}</>}<Explain label="部分已确认是什么意思" content="有的资金记录还没核实完。统计总额只算已确认的，已观察到的数含还没确认的部分。" /></> },
+      { k: "核实情况", v: detail.status === "AVAILABLE" ? "全部已核实"
+        : <>部分已核实{detail.observedAmount != null && <> · 含未核实的共 {money(detail.observedAmount)}</>}<Explain label="部分已核实是什么意思" content="有的资金记录还没核实完。统计总额只算已核实的，「含未核实的共」把还没核实的也算进去。" /></> },
       { k: "你能看到", v: <>{money(detail.visibleAmount!)} · {detail.visibleCount} 条 · {detail.visibleCustomerCount} 位客户</> },
       { k: "看不到的", v: detail.restrictedCount === 0 ? "没有"
         : <>{money(detail.restrictedAmount!)} · {detail.restrictedCount} 条 · {detail.restrictedCustomerCount} 位客户<Explain label="看不到的是什么" content="这些客户不在你的查看范围里，金额计入统计总额，不列明细。" /></> },
@@ -136,7 +136,7 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
     return { headings: ["成功时间（北京时间）", "客户编号", "客户名称", "原归属", "金额 / " + unit],
       rows: list.records.map(row => [beijing(row.succeededAt), row.customerNo ?? row.customerId, operatorNicknameText(row.nickname ?? "") || "未登记", owner(row), groupedAmount(row.amount)]),
       total: list.total, next: list.canContinue, facts,
-      summary: "原统计 " + detail.totalAmount + " " + unit + " · 可见 " + detail.visibleAmount + " " + unit + " · 受限 " + detail.restrictedAmount + " " + unit,
+      summary: "统计 " + detail.totalAmount + " " + unit + " · 你能看到 " + detail.visibleAmount + " " + unit + " · 看不到 " + detail.restrictedAmount + " " + unit,
       note: view === "NET_CONTRIBUTIONS" ? "列出成功时间在这段时间里的每一笔，按成功那一刻的归属算给客服和小组；金额是原币种原值，负数是退款或提现扣回。"
         : "每位客户只有一笔" + title + "，成功时间在这段时间里的才列出，按成功那一刻的归属算给客服和小组。",
       tech: list.records.length ? "本页记录编号：" + list.records.map(row => row.id).join("、") : undefined,
@@ -154,7 +154,7 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
   const places = amountPlaces(list.records.map(row => { const amount = amountFor(row); return amount?.confirmed ?? amount?.observed; }));
   const rows = list.records.map(row => [row.customerNo ?? row.customerId, operatorNicknameText(row.nickname ?? "") || "未登记", amountText(amountFor(row), places)]);
   const stable = Boolean(origin.queryVersion && list.queryVersion);
-  return { headings: ["客户编号", "客户名称", fundLabels[metric] + " / " + nexGridBrandText(currency)], rows, total: stable ? list.total : null, next: stable && list.canContinue, summary, note: (metric === "net" ? "按原范围当前客户的累计净额核对。" : "按原筛选的当前客户逐人核对，不受月份筛选。未知表示缺少可核实金额。") + (stable ? "" : " 当前显示本次核权返回的 " + rows.length + " 名客户。暂无查询版本，暂不能翻页。"), version: stable ? list.queryVersion ?? undefined : undefined };
+  return { headings: ["客户编号", "客户名称", fundLabels[metric] + " / " + nexGridBrandText(currency)], rows, total: stable ? list.total : null, next: stable && list.canContinue, summary, note: (metric === "net" ? "按原范围当前客户的累计净额核对。" : "按原筛选的当前客户逐人核对，不受月份筛选。未知表示缺少可核实金额。") + (stable ? "" : " 这次只列出 " + rows.length + " 位客户；统计还在同步，暂时不能翻页。"), version: stable ? list.queryVersion ?? undefined : undefined };
 }
 
 export function M1StatisticDetails({ source, onClose, onInvalid }: { source: StatisticSource; onClose: () => void; onInvalid: (status: number) => void }) {
