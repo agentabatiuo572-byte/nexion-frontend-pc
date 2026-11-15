@@ -1321,25 +1321,27 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                 const reward = legacyAssetText(text(mission.reward));
                 // 月度奖励只改金额，币种沿用后端存的（UVT 或 USDT），确认框里新金额带上同一个币种。
                 const unit = /[A-Za-z]+$/.exec(reward.text.trim())?.[0];
+                // 后端把金额补到 6 位小数：去掉末尾的 0，最少留 2 位，不舍入。
+                const rewardShown = reward.text.replace(/^(\d+)(?:\.(\d+))?/, (_, w: string, f = "") => `${amountText(w)}.${f.replace(/0+$/, "").padEnd(2, "0")}`);
                 const status = taskStatusOf(mission);
                 const label = text(mission.theme);
                 return <Tr key={text(mission.id)}>
                   <Td grow><Cell main={label} sub={text(mission.goals, "") || "—"} title={label} /></Td>
                   <Td><Cell main={text(mission.age)} /></Td>
-                  <Td align="right"><Cell num main={reward.text} sub={reward.legacy ? "旧名称 NEX" : undefined} /></Td>
+                  <Td align="right"><Cell num main={rewardShown} sub={reward.legacy ? "旧名称 NEX" : undefined} /></Td>
                   <Td><TaskStatusTag task={mission} /></Td>
                   {canModuleWrite && <Td sticky="end" data-fit=""><span className="rd-row-actions">
                     <Button size="sm" disabledReason={lockReason(`monthly.${text(mission.id)}.reward`)} onClick={() => openTaskReward(`monthly.${text(mission.id)}.reward`, text(mission.theme), text(mission.reward), {
                       title: "改月度挑战奖励",
-                      detail: <>当前奖励 <b>{reward.text}</b>{reward.legacy ? "（旧名称 NEX）" : ""}。</>,
+                      detail: <>当前奖励 <b>{rewardShown}</b>{reward.legacy ? "（旧名称 NEX）" : ""}。</>,
                       effect: directionEffect("月度挑战"),
                       facts: (value) => {
                         const current = decimalOf(mission.reward);
                         const direction = directionOf(current, value ?? null);
                         return <Facts>
                           <Fact k="月度挑战">{label}</Fact>
-                          <Fact k="奖励金额">{value ? <Change from={reward.text} to={unit ? `${value} ${unit}` : value} /> : reward.text}</Fact>
-                          <Fact k="币种">{unit ? `${unit}，不变` : "不变，只改金额"}</Fact>
+                          <Fact k="奖励金额">{value ? <Change from={rewardShown} to={unit ? `${value} ${unit}` : value} /> : rewardShown}</Fact>
+                          <Fact k="奖励类型">不变，只改金额</Fact>
                           {whenFact(direction)}
                           <Fact k="用户">App 现在没有月度入口，改了不会发给任何人</Fact>
                           {approverFacts(direction === "up")}

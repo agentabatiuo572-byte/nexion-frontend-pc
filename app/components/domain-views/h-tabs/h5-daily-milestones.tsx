@@ -257,9 +257,9 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       statedBrief: ruleBrief,
       content: (
         <div className="rd-stack">
-          {idle && <Notice tone="warn" title="目前不影响签到">{copy?.effect}保存只改这一项的值。</Notice>}
+          {idle && <Notice tone="warn" title="目前不影响签到">保存只改这一项的值，签到和发奖不变。</Notice>}
           <Facts>
-            <Fact k="现在" lead={strip} unit={strip ? copy?.unit : undefined}>{strip ? current : ruleValueText(rule)}</Fact>
+            {strip && <Fact k="现在" lead unit={copy?.unit}>{current}</Fact>}
             {strip && !positiveInteger(current) && <Fact k="现在的值" tone="warn">不是正整数，App 发不出，用户签到会失败</Fact>}
             {ruleApproverFacts}
           </Facts>
@@ -506,11 +506,13 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     } catch (err) { toast(displayAdminError(err)); }
   };
 
+  // 连签档后端存的旧名称（+5 NEX）原样标成旧名称，不让裸的 NEX 出现。
+  const shownReward = (value: string) => /\bNEX\b/i.test(value) ? `旧名称「${value}」` : value;
   const releasable = (record: H5PendingCommand) => record.request.kind === "approval" && isRetryExpired(record) && !record.acknowledged && !record.ticket;
   const recoveryRows: H5RecoveryRow[] = mutations.records.map((record) => ({
     key: record.commandKey,
     name: record.change.name,
-    change: `${record.change.before} → ${record.change.after}`,
+    change: `${shownReward(record.change.before)} → ${shownReward(record.change.after)}`,
     submittedAt: record.createdAt,
     tag: record.ticket ? pendingTag(...(record.change.target.startsWith("rule:") ? [RULE_APPROVER, RULE_PENDING_NOTE] : [FUND_APPROVER, FUND_PENDING_NOTE]) as [string, string])
       : record.acknowledged ? acknowledgedTag() : isRetryExpired(record) ? expiredTag(record.request.kind) : unknownTag(record.request.kind),
@@ -534,7 +536,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       </>}
       link={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link> : undefined} />
   );
-  const releaseModal = releasing && <ReleaseModal label={<>{releasing.change.name} · {releasing.change.before} → {releasing.change.after}</>}
+  const releaseModal = releasing && <ReleaseModal label={<>{releasing.change.name} · {shownReward(releasing.change.before)} → {shownReward(releasing.change.after)}</>}
     explain={<><p>原申请已超过 24 小时，不会再重发。</p><p>确认时先按原申请再查一次：明确查不到这张审批单才解除，说明申请没建成；查到了就按它现在的状态显示，不解除。</p></>}
     onCancel={() => setReleasing(null)} onConfirm={() => {
       const record = releasing;
@@ -545,7 +547,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     }} />;
   const staleNotice = stale && <Notice tone="warn" title={`没有保存：「${stale.name}」已被别人改过`}
     action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>
-    {`你打开时是 ${stale.before}，这次要改成 ${stale.after}。页面已读到最新值，以下面显示的为准，核对后重新调整。`}
+    {`你打开时是 ${shownReward(stale.before)}，这次要改成 ${shownReward(stale.after)}。页面已读到最新值，以下面显示的为准，核对后重新调整。`}
   </Notice>;
 
   const header = (

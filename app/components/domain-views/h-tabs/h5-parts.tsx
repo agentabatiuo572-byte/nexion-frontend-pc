@@ -176,7 +176,7 @@ export function H5RecoveryNotice({ title, explain, rows, link }: { title: ReactN
   if (rows.length === 0) return null;
   const timed = rows.some((row) => row.submittedAt !== undefined);
   return (
-    <Notice tone="warn" title={<>{title}{explain && <Explain label="原操作怎么处理" content={explain} />}</>} action={link}>
+    <Notice tone="warn" title={<>{title}{explain && <Explain label="原操作怎么处理" content={explain} />}</>}>
       <ul className="h5-rec" aria-label="原操作">
         {rows.map((row) => (
           <li key={row.key}>
@@ -191,7 +191,7 @@ export function H5RecoveryNotice({ title, explain, rows, link }: { title: ReactN
           </li>
         ))}
       </ul>
-      {timed && <p className="h5-rec-zone">提交时间为{businessZone().label}</p>}
+      {(timed || link) && <p className="h5-rec-zone">{timed && `提交时间为${businessZone().label}`}{timed && link && " · "}{link}</p>}
     </Notice>
   );
 }
