@@ -73,13 +73,16 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
       effect: live ? <StatusTag tone="progress" filled>立即生效</StatusTag> : <StatusTag tone="neutral" filled>保存草稿，线上不变</StatusTag>,
       confirmLabel: form.status === "PUBLISHED" ? "确认发布，立即生效" : form.status === "UNPUBLISHED" ? "确认撤下，立即生效" : "保存草稿",
       statedBrief: form.status === "PUBLISHED"
-        ? { impact: "用户马上看到这个版本，没有译文的语言显示英语，不用重新同意；旧的公开版被替换，这页找不回。", check: "核对正文版本和改动的语言，只发布已审核的正文，理由写清依据。" }
+        ? { impact: "用户马上看到这个版本，不用重新同意。App 只显示中文、越南语和英语，其他语言的用户看英语。旧的公开版被替换、找不回；发布后只能整份撤下，撤下后用户读不到隐私政策。", check: "核对正文版本和改动的语言，只发布已审核的正文，理由写清依据。" }
         : form.status === "UNPUBLISHED"
           ? { impact: "公开版本立即撤下，用户读不到隐私政策。", check: "确认要下架，理由写清依据。" }
           : { impact: "只保存草稿，公开版本不变。", check: "核对改动，理由写清修改依据。" },
       facts: <DiffList rows={[
         { key: "status", label: "状态", before: STATUS_NAME[baseline.status], after: form.status === "DRAFT" && baseline.hasPublishedVersion ? "另存草稿，公开版不变" : STATUS_NAME[form.status] },
-        { key: "version", label: "正文版本", before: versionName(baseline.version) || "—", after: versionName(form.version) },
+        // 比较用原值；只有去掉前缀后两边一样时才显示原值，免得改了前缀显示成没变。
+        { key: "version", label: "正文版本", ...(baseline.version === form.version || versionName(baseline.version) !== versionName(form.version)
+          ? { before: versionName(baseline.version) || "—", after: versionName(form.version) }
+          : { before: baseline.version, after: form.version }) },
         { key: "locales", label: "语言", before: Object.keys(baseline.locales).map(localeName).join("、") || "—", after: Object.keys(form.locales).map(localeName).join("、") },
         { key: "content", label: "有改动的语言", before: "—", after: changedLocales.map(localeName).join("、") || "—" },
       ]} />,
@@ -98,7 +101,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
   const conclusion = !doc ? null
     : writes.isLocked("privacy") ? <Conclusion state="warn" hint="到页面上方处理。">隐私政策：有操作结果未知</Conclusion>
       : doc.status === "PUBLISHED"
-        ? <Conclusion state="ok" icon={FileCheck2} explain="用户看到自己语言的版本，没有译文时显示英语。">隐私政策：已发布，正文版本 {versionName(doc.version)}</Conclusion>
+        ? <Conclusion state="ok" icon={FileCheck2} explain="中文、越南语用户看自己语言的版本，没有译文时看英语；其他语言的用户都看英语。">隐私政策：已发布，正文版本 {versionName(doc.version)}</Conclusion>
         : doc.status === "UNPUBLISHED"
           ? <Conclusion state="warn">隐私政策：已撤下公开版本，用户读不到</Conclusion>
           : doc.hasPublishedVersion
@@ -188,7 +191,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
   };
   const addLocale = () => {
     const normalized = newLocale.trim().toLowerCase().replace("_", "-");
-    if (!/^[a-z]{2}(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setLocaleError("语言代码格式不对，例如 en、zh、vi 或 zh-cn。"); return; }
+    if (!/^[a-z]{2}(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setLocaleError("语言代码格式不对，例如 en、zh 或 vi。"); return; }
     if (!form.locales[normalized] && localeKeys.length >= 10) { setLocaleError("最多维护 10 种语言。"); return; }
     setForm((doc) => ({ ...doc, locales: { ...doc.locales, [normalized]: doc.locales[normalized] ?? { hero: "", sections: [{ id: "section-1", title: "", body: "", order: 0 }] } } }));
     setLocale(normalized);
@@ -218,7 +221,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
   const saveBlocked = blockedReason
     ?? (!dirty ? "内容没有变化，无需提交。"
       : form.status !== "DRAFT" && !canPublish ? "发布或撤下隐私政策需要发布权限，请先改为草稿。"
-        : form.status === "PUBLISHED" && !form.locales.en ? "发布要有英语：没有译文的语言都显示英语。译文没写完可以先存草稿。"
+        : form.status === "PUBLISHED" && !form.locales.en ? "发布要有英语：其他语言的用户和没有译文的中文、越南语用户都看英语。译文没写完可以先存草稿。"
           : !form.version.trim() ? "请填写正文版本"
             : !localeKeys.length ? "至少保留一种语言。"
               : needNewVersion ? "改了内容再发布，要换一个正文版本。"
@@ -247,7 +250,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
             <MoreMenu label="内容语言的更多操作" items={[{ key: "remove", label: "删除当前语言", danger: true, disabledReason: localeKeys.length <= 1 ? "至少保留一种语言。" : undefined, onSelect: () => setRemoving(true) }]} />
           </span>
         </div>}
-        {(addingLocale || !localeKeys.length) && <Field label="新增语言" error={localeError}>{(control) => <div className="rd-inline-form"><Input {...control} placeholder="例如 vi、zh-cn" maxLength={11} value={newLocale} onChange={(event) => setNewLocale(event.target.value)} /><Button size="sm" onClick={addLocale}>添加</Button></div>}</Field>}
+        {(addingLocale || !localeKeys.length) && <Field label="新增语言" error={localeError} explain="App 只显示中文（zh）、越南语（vi）和英语（en），加别的语言用户也看不到。">{(control) => <div className="rd-inline-form"><Input {...control} placeholder="例如 vi" maxLength={11} value={newLocale} onChange={(event) => setNewLocale(event.target.value)} /><Button size="sm" onClick={addLocale}>添加</Button></div>}</Field>}
         {localeKeys.length > 0 && <>
           <Field label="开头说明" required>{(control) => <Textarea {...control} rows={3} maxLength={500} value={current.hero} onChange={(event) => setContent({ ...current, hero: event.target.value })} />}</Field>
           <h3 className="rd-form-group-title">规则段落 · {current.sections.length} 段</h3>

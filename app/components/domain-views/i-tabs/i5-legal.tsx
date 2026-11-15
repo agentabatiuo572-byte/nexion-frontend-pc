@@ -186,8 +186,9 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
       confirmTone: "danger",
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认发布，立即生效",
-      statedBrief: { impact: jurisdiction === "GLOBAL" ? `${scopeText} 的公开条款立即换成这个版本，用户不用重新同意；旧版本转为历史，发布后不能再改，可以撤回。` : `${scopeText} 的条款立即换成这个版本，但 App 现在只读 GLOBAL，用户看不到；发布后不能再改，可以撤回。`, check: "核对版本、节数和生效时间，理由写清发布依据。" },
-      facts: <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本"><Change from={published ? `${published.version}（${published.sections.length} 节）` : "无已发布版本"} to={`${row.version}（${row.sections.length} 节）`} /></Fact><Fact k="条文生效时间">{timeText(row.effectiveAt)}（{businessZone().label}）</Fact></Facts>,
+      statedBrief: { impact: jurisdiction !== "GLOBAL" ? `${scopeText} 的条款立即换成这个版本，${published ? "旧版本转为历史，" : ""}发布后不能再改。App 现在只读 GLOBAL，用户看不到这个版本。`
+        : `用户立即看到这个版本，不用重新同意。${published ? "旧版本转为历史，" : ""}发布后不能再改。撤回不会恢复旧版本，撤回后这些用户${locale === "en" ? "读不到条款" : "改看英文版"}；要用回旧内容，只能新建草稿再发布。`, check: "核对版本、节数和生效时间，理由写清发布依据。" },
+      facts: <Facts><Fact k="范围">{scopeText}</Fact>{jurisdiction === "GLOBAL" && <Fact k="谁会看到">{locale === "en" ? "看英文和另外六种语言的用户，以及没有自己版本的中文、越南语用户" : `看${localeName(locale)}的用户`}</Fact>}<Fact k="版本"><Change from={published ? `${published.version}（${published.sections.length} 节）` : "无已发布版本"} to={`${row.version}（${row.sections.length} 节）`} /></Fact><Fact k="条文生效时间">{timeText(row.effectiveAt)}（{businessZone().label}）</Fact></Facts>,
       reasonPlaceholder: "例如：法务审定稿，工单号",
       run: async (reason) => {
         const result = await writes.send({ target, label: `发布法律条款 · ${scopeText} ${row.version}`, op: { kind: "legal-transition", action: "publish", row, reason } });
@@ -201,13 +202,13 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
   const revoke = (row: LegalTermsVersion) => openActionConfirm(withConflict(ctx, { briefKind: "content",
     action: <>撤回法律条款 · {row.version}</>,
     title: "撤回法律条款",
-    detail: <>{locale === "en" && jurisdiction === "GLOBAL" ? "这是兜底版本，有自己已发布版本的语言和地区不受影响。" : "App 改读英文或 GLOBAL 的已发布版本。"}撤回不走审批。</>,
+    detail: <>{jurisdiction !== "GLOBAL" ? "App 现在只读 GLOBAL，用户本来就看不到这个版本。" : locale === "en" ? "有自己已发布版本的中文、越南语用户不受影响。" : `看${localeName(locale)}的用户改看英文版。`}撤回不走审批。</>,
     amplifies: false,
     confirmTone: "danger",
     effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>,
     confirmLabel: "确认撤回，立即生效",
-    statedBrief: { impact: `${scopeText} 的公开条款立即下架，不能恢复这个版本。`, check: "确认要下架线上条款，理由写清依据。" },
-    facts: <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本">{row.version} · {row.title}</Fact><Fact k="状态"><Change from="生效中" to="已撤回" /></Fact><Fact k="后果" tone="danger">{locale === "en" && jurisdiction === "GLOBAL" ? "看英文和没有自己版本的语言的用户都读不到" : "英文和 GLOBAL 都没有已发布版本时，用户读不到条款"}</Fact></Facts>,
+    statedBrief: { impact: `${scopeText} 的公开条款立即下架。这个版本不能恢复，被它替换的旧版本也不会回来。`, check: "确认要下架线上条款，理由写清依据。" },
+    facts: <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本">{row.version} · {row.title}</Fact><Fact k="状态"><Change from="生效中" to="已撤回" /></Fact><Fact k="后果" tone="danger">{jurisdiction !== "GLOBAL" ? "用户本来就看不到，没有影响" : locale === "en" ? "英文用户和没有自己版本的用户都读不到条款" : "英文版也没有时，这些用户读不到条款"}</Fact></Facts>,
     reasonPlaceholder: "例如：条款有误，法务要求下架",
     run: async (reason) => {
       const result = await writes.send({ target, label: `撤回法律条款 · ${scopeText} ${row.version}`, op: { kind: "legal-transition", action: "revoke", row, reason } });
@@ -218,7 +219,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
 
   const closeEditor = useCallback(() => { setEditing(null); setLatest(null); setUnread(null); }, []);
 
-  const fallbackHint = "这里只看这个语言和地区。这个范围没有已发布版本时，App 改读英文或 GLOBAL 的版本。";
+  const fallbackHint = "这里只看这个语言和地区。App 只读 GLOBAL：中文、越南语没有已发布版本时看英文版，英文也没有时用户读不到条款。";
   const conclusion = !scopeReady ? null
     : busy ? <Conclusion state="unknown">正在加载条款…</Conclusion>
       : error ? null
@@ -235,7 +236,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
 
   return <div data-testid="legal-terms-editor" className="rd-tab-stack">
     <div className="rd-scope-bar">
-      <FilterField label="语言"><Select aria-label="语言" value={locale} options={LOCALE_OPTIONS} disabled={!!editing} onChange={setLocale} /></FilterField>
+      <FilterField label={<span>语言 <Explain label="哪些用户看哪种语言" content="App 的中文、越南语用户看对应语言，另外六种语言的用户看英文。" /></span>}><Select aria-label="语言" value={locale} options={LOCALE_OPTIONS} disabled={!!editing} onChange={setLocale} /></FilterField>
       <FilterField label={<span>适用法律地区 <Explain label="适用法律地区是什么" content="按这个代码读条款，默认 GLOBAL。App 现在只读 GLOBAL，别的地区代码用户看不到。回车或离开输入框后读取。" /></span>}>
         <Input aria-label="适用法律地区" value={jurisdictionInput} maxLength={32} aria-invalid={!!scopeError} disabled={!!editing} onChange={(event) => setJurisdictionInput(event.target.value)} onBlur={applyScope} onKeyDown={(event) => { if (event.key === "Enter") applyScope(); }} />
       </FilterField>

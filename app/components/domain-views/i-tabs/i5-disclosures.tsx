@@ -151,7 +151,10 @@ export function I5Disclosures({ ctx, errorText }: { ctx: ICtx; errorText: string
         choose("privacy");
         setPrivacyNonce((value) => value + 1);
         const document = await fetchPrivacyPolicyAdmin();
-        return `查到隐私政策现在是${PRIVACY_STATUS[document.status] ?? "状态待核实"}，正文版本 ${document.version.replace(/^default-/, "")}。`;
+        // 去掉 default- 后和发出的版本一样、原值却不同时写原值，不然像是已经改成功。
+        const shown = document.version.replace(/^default-/, "");
+        const version = shown === op.document.version.replace(/^default-/, "") && document.version !== op.document.version ? document.version : shown;
+        return `查到隐私政策现在是${PRIVACY_STATUS[document.status] ?? "状态待核实"}，正文版本 ${version}。`;
       }
       if (op.kind !== "legal-save" && op.kind !== "legal-transition") return "这条操作查不到结果。";
       // 查证的是原操作的语言、地区和版本，不是页面现在选的范围（REV2-02）。
@@ -576,7 +579,9 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       confirmTone: "danger",
       effect: irreversibleApproval,
       confirmLabel: "提交发布审批",
-      statedBrief: { impact: "批准后用户还看当前版本；另外切换生效版本后才换成这版，用户原来的确认失效。这个版本封存，不能再改或删除。", check: `逐章核对${languageNames(row.languageScope)}内容，理由写清版本依据。` },
+      statedBrief: { impact: catalog.some((item) => item.code === row.jurisdiction && item.hasActiveMapping)
+        ? "批准后用户还看当前版本；「调整生效版本」换成这版后，用户原来的确认失效，之后也能切回旧版本或归档生效设置。这个版本封存，不能再改或删除。"
+        : "批准后用户还读不到披露，「设置生效版本」选了这版才显示。这个版本封存，不能再改或删除。", check: `逐章核对${languageNames(row.languageScope)}内容，理由写清版本依据。` },
       facts: <>
         <Facts><Fact k="适用范围">{row.jurisdiction} · {nameOf(row.jurisdiction)}</Fact><Fact k="版本"><Change from={current?.version ?? j?.version ?? "无生效版"} to={row.version} /></Fact><Fact k="语言">{scopeChanged ? <Change from={languageText(current?.languageScope)} to={languageText(row.languageScope)} /> : languageText(row.languageScope)}</Fact><Fact k="切换后确认失效">{isSmall(affected) ? SMALL_SAMPLE : `${count(affected)} 人，现在未确认 ${count(pendingAck)} 人`}，近 7 天拦截 {count(row.blocked ?? j?.blocked ?? 0)} 次 <Explain label="不确认会怎样" content={activeGates.length ? `切换后没确认的用户做${activeGates.join("、")}时会被拦下。` : "现在没有受限的操作，不确认也不影响使用。"} /></Fact></Facts>
         <PublishDiff current={current} target={row} />
@@ -796,7 +801,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
     <Fold title="适用范围目录" icon={Globe2} tone="role-2" summary={`${catalog.length} 个适用范围 · ${activeCatalog.length} 个已启用`}
       actions={canDraft ? <Button size="sm" disabledReason={blocked()} onClick={() => editJurisdiction()}>新增适用范围</Button> : undefined}>
       <Table label="适用范围目录">
-        <thead><tr><Th>适用范围</Th><Th>状态</Th><Th align="right">版本数</Th><Th>当前生效设置</Th><Th>最后操作</Th>{(canDraft || canPublish) && <Th sticky="end" align="right">操作</Th>}</tr></thead>
+        <thead><tr><Th>适用范围</Th><Th>状态</Th><Th align="right">版本数<Explain label="版本数怎么算" content="这个适用范围用过的版本都算，删掉的草稿也算，所以可能比版本列表多。不是 0 就不能删除。" /></Th><Th>当前生效设置</Th><Th>最后操作</Th>{(canDraft || canPublish) && <Th sticky="end" align="right">操作</Th>}</tr></thead>
         <tbody>
           {catalog.map((item) => {
             const status = item.status.toLowerCase();
