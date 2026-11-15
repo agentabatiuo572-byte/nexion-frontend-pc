@@ -31,6 +31,7 @@ const seats = (prizes: RafflePrize[]) => prizes.reduce((sum, prize) => sum + pri
 export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRowsChange?: (rows: AdminRaffle[] | null) => void }) {
   const [rows, setRows] = useState<AdminRaffle[]>([]), [base, setBase] = useState<AdminRaffle | null>(null), [draft, setDraft] = useState<RaffleDraft | null>(null);
   const [enabled, setEnabled] = useState(false), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState("");
+  const [readFailed, setReadFailed] = useState(false);
   const generation = useRef(0), operator = currentAdminOperator();
   const read = ctx.can("growth_h4_read"), write = ctx.can("growth_h4_write"), locked = !!base && base.status !== "DRAFT";
   const [, pendingChanged] = useState(0);
@@ -40,9 +41,9 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
   /** 合并后回到表单：放回了几项自己改的。只决定显示。 */
   const [merged, setMerged] = useState(0);
   const load = async () => {
-    const own = ++generation.current; setLoading(true); setError("");
+    const own = ++generation.current; setLoading(true); setError(""); setReadFailed(false);
     try { const values = await fetchAdminRaffles(); if (own === generation.current) { setRows(values); return values; } return null; }
-    catch (cause) { if (own === generation.current) setError(displayAdminError(cause)); return null; }
+    catch (cause) { if (own === generation.current) { setReadFailed(true); setError(displayAdminError(cause)); } return null; }
     finally { if (own === generation.current) setLoading(false); }
   };
   useEffect(() => { setSaving(false); setError(""); setRows([]); setDraft(null); setBase(null); if (read) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [read, operator]);
@@ -64,6 +65,8 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
   const save = (rebased?: { base: AdminRaffle; draft: RaffleDraft; enabled: boolean; reason: string }) => {
     if (conflictReview.current) { setError(displayAdminError(conflictReview.current)); return; }
     const savedDraft = rebased?.draft ?? draft, previous = rebased?.base ?? base, nextEnabled = rebased?.enabled ?? (!!base && enabled);
+    if (savedDraft && confirmedH4Saves().some(record => record.scope === `H/h4_genesis_raffle/${savedDraft.id}`)) return;
+    setReadFailed(false);
     if (!savedDraft || !write || !rebased && saving || (previous && (previous.status === "PROCESSING" || previous.status === "DRAWN" || (previous.status === "OPEN" && previous.totalEntries > 0)))) return;
     const invalid = raffleDraftError(savedDraft); if (invalid) { setError(invalid); return; }
     const opening = nextEnabled && previous?.status === "DRAFT";
@@ -178,7 +181,8 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
   const savedUnread = !!draft && confirmedH4Saves().some(record => record.scope === `H/h4_genesis_raffle/${draft.id}`);
   if (!read) return <BlockState state="denied" title="没有查看创世抽奖的权限" detail="创世抽奖需要「活动中心查看」权限。" />;
 
-  const formLocked = !write || saving || !!draft && h4Blocked(`H/h4_genesis_raffle/${draft.id}`) || !!review;
+  const showSaved = savedUnread && (!error || readFailed);
+  const formLocked = !write || saving || savedUnread || !!draft && h4Blocked(`H/h4_genesis_raffle/${draft.id}`) || !!review;
   const enableBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || base.totalEntries > 0);
   return <Panel id="h4l-raffle" title="创世抽奖" icon={Trophy} tone="role-4" sub={loading ? undefined : `最近 ${rows.length} 期`}
     explain={<><p>用户用创世抽奖券报名，到开奖时间系统自动开奖、发奖；这里没有人工开奖或补发。</p><p>从草稿开放报名要另一位超级管理员批准。还没人报名时可以关闭回草稿再改；有人报名后奖项和时间锁定。只显示最近 50 期。</p></>}
@@ -212,7 +216,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
       explain="保存前先在这里填完整：三语名称、时间和奖项。关闭这个抽屉会丢掉没保存的改动。"
       footer={<Decision note={!write ? "没有修改创世抽奖的权限" : saveBlocked ? (base?.status === "OPEN" ? "已有人报名：奖项和时间锁定，也不能关闭" : "已开奖或正在开奖，只能查看") : undefined}
         others={<Button disabled={saving} onClick={close}>关闭配置</Button>}
-        primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!write ? "没有修改创世抽奖的权限" : saveBlocked ? "这一期不能再改" : review ? "先在上面选一种继续" : undefined} onClick={() => save()}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
+        primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!write ? "没有修改创世抽奖的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : saveBlocked ? "这一期不能再改" : review ? "先在上面选一种继续" : undefined} onClick={() => save()}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
       {draft && <div className="h4-dialog-body">
         {review && <H4ConflictCompare groups={compareGroups} mergeDisabledReason={mergeBlocked ? review.message : undefined} onMerge={mergeConflict} onKeepMine={keepMine} />}
         {merged > 0 && <Notice tone="neutral" title="已合并，还没保存" action={<Button size="sm" variant="ghost" onClick={() => setMerged(0)}>知道了</Button>}>{`表单是最新的这一期，放回了你改的 ${merged} 项。核对后点「保存配置」。`}</Notice>}
@@ -248,7 +252,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
             <Button size="sm" icon={<Plus size={13} aria-hidden />} disabled={formLocked || locked || draft.prizes.length >= 20} onClick={() => setDraft({ ...draft, prizes: [...draft.prizes, { id: `prize-${Date.now().toString(36)}-${draft.prizes.length}`, nameZh: "", nameEn: "", nameVi: "", rewardType: "UVT", amount: "", quantity: 1 }] })}>添加奖项</Button>
           </div>
         </fieldset>
-        {error && !review && <Notice tone={savedUnread ? "warn" : "danger"} title={savedUnread ? "已保存，但没读到最新的这一期" : stale ? "没有保存：最新的这一期也没读到" : "没有保存"}>{savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
+        {(error || savedUnread) && !review && <Notice tone={showSaved ? "warn" : "danger"} title={showSaved ? "已保存，但没读到最新的这一期" : stale ? "没有保存：最新的这一期也没读到" : "没有保存"}>{showSaved ? "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
       </fieldset></div>}
     </Drawer>
   </Panel>;

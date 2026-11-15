@@ -182,6 +182,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const version = h4ReadVersion("overview");
     let retained: H4Command | undefined;
     ctx.openActionConfirm(conflictDraft.action({ ...req,
+      blockedReason: req.blockedReason ?? (version === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
       getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
       run: async (reason, value, businessValue) => {
         if (retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) {
@@ -206,6 +207,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const version = h4ReadVersion("overview");
     let retained: H4Command | undefined;
     ctx.openConfirm(conflictDraft.confirm({ ...req, freezePendingInput: true,
+      getPendingBlockReason: () => req.getPendingBlockReason?.() ?? (version === undefined ? displayAdminError(new Error("H4_REFRESH_REQUIRED")) : undefined),
       getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
       run: async (reason, value) => {
         if (retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) {
