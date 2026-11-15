@@ -8,17 +8,17 @@ import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session"
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { finiteDashboardNumber } from "@/lib/admin/dashboard-number";
 import type { KpiTrendPoint } from "@/lib/admin/kpi-trend";
-import { fetchC1Overview, fetchUserProfilesPage } from "@/lib/admin/user360-client";
-import { businessDay } from "@/lib/admin/business-time";
+import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 
 type ApiResult<T> = { code: number; message?: string; data?: T };
 type Row = Record<string, unknown>;
 
-async function read(endpoint: string): Promise<Row> {
+async function read(endpoint: string, exactMoney = false): Promise<Row> {
   const response = await guardedFetch(endpoint, { cache: "no-store" });
-  const result = (await response.json().catch(() => null)) as ApiResult<Row> | null;
+  const result = (await (exactMoney ? response.text().then(text => JSON.parse(text.replace(/("(?:[A-Za-z]*Usdt|usdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"'))) : response.json()).catch(() => null)) as ApiResult<Row> | null;
   if (!response.ok || !result || result.code !== 0 || !result.data) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
+    if (response.status === 403) announcePermissionDenied();
     throw new Error(formatAdminApiError(result?.message, `B0_LOAD_FAILED_${response.status}`));
   }
   return result.data;
@@ -32,56 +32,85 @@ function amount(value: unknown, field: string): number {
   return finiteDashboardNumber(value) ?? invalid(field);
 }
 
-/** 经营数据的三个时段，切换时不重读：三段数据都在第一次读齐（B0 5.6）。 */
 export type B0Period = "today" | "week" | "month";
+export type B0SummaryPeriod = B0Period | "all";
+type MoneyBlock = {
+  amountUsdt: string | null; previousAmountUsdt: string | null;
+  available: boolean; reason?: string; previousUnavailableReason?: string;
+  breakdown?: Record<string, string | number | null>;
+  previousBreakdown?: Record<string, string | number | null>;
+  inTransit?: { count: number; amountUsdt: string; asOf: string };
+};
+export type B0BusinessSummary = {
+  period: B0SummaryPeriod; timezone: string; statisticsStart: string;
+  asOf: string; generatedAt: string; rollupAsOf: string;
+  range: { from: string; toExclusive: string }; comparison: { from: string; toExclusive: string } | null;
+  blocks: {
+    deposits?: MoneyBlock; withdrawals?: MoneyBlock; netDeposits?: MoneyBlock; sales?: MoneyBlock;
+    registrations?: { count: number; previousCount: number | null; cumulativeCount: number;
+      firstDepositCount: number; previousFirstDepositCount: number | null; firstPurchaseCount: number; previousFirstPurchaseCount: number | null;
+      trendGranularity: "day" | "week" | "month"; trend: { from: string; count: number }[] };
+    activeUsers?: { available: boolean; count: number | null; previousCount: number | null; reason?: string;
+      devices?: { online: number; abnormal: number; asOf: string } };
+  };
+};
 
-/** 某个业务日的昨天、周一、上周一、上周日、1 日。只做日期串运算，不碰浏览器时区。 */
-export function b0PeriodDays(today: string) {
-  const [year, month, day] = today.split("-").map(Number);
-  const shifted = (offset: number) => new Date(Date.UTC(year, month - 1, day + offset)).toISOString().slice(0, 10);
-  const sinceMonday = (new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7;
-  return { yesterday: shifted(-1), monday: shifted(-sinceMonday), lastMonday: shifted(-sinceMonday - 7), lastSunday: shifted(-sinceMonday - 1), monthStart: `${today.slice(0, 8)}01` };
+/** B36 is the only source of operating totals, including unavailable blocks and same-elapsed-time comparisons. */
+export async function fetchB0BusinessSummary(period: B0SummaryPeriod, registrationGranularity: "day" | "week" | "month" = "day"): Promise<B0BusinessSummary> {
+  const raw = await read(`/api/admin/overview/business-summary?period=${period}&registrationGranularity=${registrationGranularity}`, true);
+  const row = (value: unknown): Row => value && typeof value === "object" && !Array.isArray(value) ? value as Row : invalid("object");
+  const text = (value: unknown): string => typeof value === "string" && value.length > 0 ? value : invalid("text");
+  const count = (value: unknown): number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : invalid("count");
+  const money = (value: unknown): string => typeof value === "string" && /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value) ? value : invalid("amount");
+  const stamp = (value: unknown): string => { const result = text(value); return /(?:Z|[+-]\d{2}:\d{2})$/.test(result) && Number.isFinite(Date.parse(result)) ? result : invalid("instant"); };
+  const date = (value: unknown): string => { const result = text(value); return /^\d{4}-\d{2}-\d{2}$/.test(result) && new Date(`${result}T00:00:00Z`).toISOString().slice(0, 10) === result ? result : invalid("date"); };
+  const range = (value: unknown) => { const r = row(value); return { from: stamp(r.from), toExclusive: stamp(r.toExclusive) }; };
+  const blocks: B0BusinessSummary["blocks"] = {};
+  const source = row(raw.blocks);
+  for (const key of ["deposits", "withdrawals", "netDeposits", "sales"] as const) {
+    if (source[key] === undefined) continue; // Permission omission is distinct from a successful zero.
+    const r = row(source[key]);
+    if (r.available !== undefined && typeof r.available !== "boolean") invalid("available");
+    const available = r.available !== false;
+    const result: MoneyBlock = { available, amountUsdt: r.amountUsdt === null && !available ? null : money(r.amountUsdt), previousAmountUsdt: r.previousAmountUsdt === null ? null : money(r.previousAmountUsdt) };
+    if (!available) result.reason = text(r.reason);
+    if (r.previousUnavailableReason !== undefined) result.previousUnavailableReason = text(r.previousUnavailableReason);
+    for (const field of ["breakdown", "previousBreakdown"] as const) {
+      if (r[field] === undefined) continue;
+      const b = row(r[field]);
+      const fields = key === "deposits" ? ["bep20Usdt", "erc20Usdt", "trc20Usdt", "bankUsdt", "externalDirectUsdt", "legacyCardUsdt", "otherUsdt", "count"]
+        : key === "withdrawals" ? ["usdt", "vndPrincipalUsdt", "feesUsdt", "count"] : ["grossUsdt", "refundsUsdt", "orderCount", "averageOrderUsdt"];
+      result[field] = Object.fromEntries(fields.map(name => [name, name === "count" || name === "orderCount" ? count(b[name]) : name === "averageOrderUsdt" && b[name] === null ? null : money(b[name])]));
+    }
+    if (key === "withdrawals") { const stock = row(r.inTransit); result.inTransit = { count: count(stock.count), amountUsdt: money(stock.amountUsdt), asOf: stamp(stock.asOf) }; }
+    blocks[key] = result;
+  }
+  if (source.registrations !== undefined) {
+    const r = row(source.registrations);
+    if (!["day", "week", "month"].includes(String(r.trendGranularity)) || !Array.isArray(r.trend)) invalid("trend");
+    const trend = (r.trend as unknown[]).map(value => { const point = row(value); return { from: date(point.from), count: count(point.count) }; });
+    if (trend.some((point, index) => index > 0 && point.from <= trend[index - 1].from)) invalid("trend.order");
+    blocks.registrations = { count: count(r.count), previousCount: r.previousCount === null ? null : count(r.previousCount), cumulativeCount: count(r.cumulativeCount),
+      firstDepositCount: count(r.firstDepositCount), previousFirstDepositCount: r.previousFirstDepositCount === null ? null : count(r.previousFirstDepositCount),
+      firstPurchaseCount: count(r.firstPurchaseCount), previousFirstPurchaseCount: r.previousFirstPurchaseCount === null ? null : count(r.previousFirstPurchaseCount),
+      trendGranularity: r.trendGranularity as "day" | "week" | "month", trend };
+  }
+  if (source.activeUsers !== undefined) {
+    const r = row(source.activeUsers);
+    if (typeof r.available !== "boolean") invalid("active.available");
+    const active: NonNullable<B0BusinessSummary["blocks"]["activeUsers"]> = { available: r.available as boolean, count: r.available === false && r.count === null ? null : count(r.count), previousCount: r.previousCount === null ? null : count(r.previousCount) };
+    if (!active.available) active.reason = text(r.reason);
+    if (r.devices !== undefined) { const d = row(r.devices); active.devices = { online: count(d.online), abnormal: count(d.abnormal), asOf: stamp(d.asOf) }; }
+    blocks.activeUsers = active;
+  }
+  if (raw.period !== period) invalid("period");
+  return { period, timezone: text(raw.timezone), statisticsStart: date(raw.statisticsStart), asOf: stamp(raw.asOf), generatedAt: stamp(raw.generatedAt), rollupAsOf: stamp(raw.rollupAsOf),
+    range: range(raw.range), comparison: raw.comparison === null && period === "all" ? null : range(raw.comparison), blocks };
 }
 
-/** 设备销售额和订单数，带上一期全期的金额。totalUsdt 把团队奖励这种支出也算了，不用（B0 4.2）。 */
-export async function fetchB0Sales() {
-  const period = async (name: "day" | "week" | "month") => {
-    const data = await read(`/api/admin/bi/finance/revenue?period=${name}`);
-    if (!Array.isArray(data.streams)) invalid("streams");
-    const sales = (data.streams as Row[]).find((row) => row.stream === "device_sales") ?? invalid("streams.device_sales");
-    return { amount: amount(sales.amountUsdt, "amountUsdt"), orders: amount(sales.orderCount, "orderCount"), previous: amount(sales.previousAmountUsdt, "previousAmountUsdt") };
-  };
-  const [today, week, month] = await Promise.all([period("day"), period("week"), period("month")]);
-  return { today, week, month };
-}
-
-/** 用户入金和已完成提现。按天的接口最多 31 天，够算本月和上周，不够算上月，所以本月没有对比。今天取接口最后一天，和后端切日一致。 */
-export async function fetchB0MoneyFlows() {
-  const data = await read("/api/admin/bi/finance/daily-flows?days=31");
-  if (!Array.isArray(data.days) || data.days.length === 0) invalid("days");
-  const days = (data.days as Row[]).map((row) => ({
-    date: typeof row.date === "string" ? row.date : invalid("date"),
-    topup: amount(row.userTopupUsdt, "userTopupUsdt"),
-    topupCount: amount(row.userTopupCount, "userTopupCount"),
-    withdrawal: amount(row.withdrawalUsdt, "withdrawalUsdt"),
-    withdrawalCount: amount(row.withdrawalCount, "withdrawalCount"),
-  }));
-  const today = days[days.length - 1].date;
-  const { yesterday, monday, lastMonday, lastSunday, monthStart } = b0PeriodDays(today);
-  // 金额是两位小数，相加相减后回到分，净入金才不会出现 +0.00。
-  const cents = (value: number) => Math.round(value * 100) / 100;
-  const between = (from: string, to: string) => {
-    const rows = days.filter((row) => row.date >= from && row.date <= to);
-    const total = (pick: (row: (typeof days)[number]) => number) => cents(rows.reduce((sum, row) => sum + pick(row), 0));
-    const topup = total((row) => row.topup);
-    const withdrawal = total((row) => row.withdrawal);
-    return { topup, topupCount: total((row) => row.topupCount), withdrawal, withdrawalCount: total((row) => row.withdrawalCount), net: cents(topup - withdrawal) };
-  };
-  return {
-    today: { current: between(today, today), previous: between(yesterday, yesterday) },
-    week: { current: between(monday, today), previous: between(lastMonday, lastSunday) },
-    month: { current: between(monthStart, today), previous: null },
-  };
+export async function fetchB0Business() {
+  const [today, week, month, all] = await Promise.all((["today", "week", "month", "all"] as const).map(period => fetchB0BusinessSummary(period)));
+  return { today, week, month, all };
 }
 
 /** 今天的提现提交、完成、拒绝笔数和平均到账小时数。 */
@@ -93,25 +122,6 @@ export async function fetchB0Redemption() {
     rejected: amount(data.rejected, "rejected"),
     averageLatencyHours: finiteDashboardNumber(data.averageLatencyHours),
   };
-}
-
-/** 累计注册和今日、本周、本月新增，按业务日历取日期（B0 5.6）。接口每页至少 20 条，传小了分页校验不过，只用 total。 */
-export async function fetchB0Registrations() {
-  const today = businessDay();
-  const { monday, monthStart } = b0PeriodDays(today);
-  const joined = async (from: string) => (await fetchUserProfilesPage({ joinedFrom: from, joinedTo: today, pageNum: 1, pageSize: 20 })).total;
-  const [overview, todayNew, weekNew, monthNew] = await Promise.all([fetchC1Overview(), joined(today), joined(monday), joined(monthStart)]);
-  return { total: overview.totalUsers, today: todayNew, week: weekNew, month: monthNew };
-}
-
-/** 今日和昨日活跃人数。当天没有记录时接口给 null，不当 0。 */
-export async function fetchB0ActiveUsers() {
-  const data = await read("/api/admin/users/active-summary");
-  const count = (day: unknown, field: string) => {
-    if (!day || typeof day !== "object") invalid(field);
-    return finiteDashboardNumber((day as Row).activeUsers);
-  };
-  return { today: count(data.today, "today"), yesterday: count(data.yesterday, "yesterday") };
 }
 
 export async function fetchB0Devices() {

@@ -16,7 +16,7 @@ import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { a2ActionText } from "@/lib/admin/operator-copy";
 import { b0Blocks } from "@/lib/admin/b0-access";
 import { coverDaysText } from "@/lib/admin/treasury-cover-days";
-import { fetchB0ActiveUsers, fetchB0Devices, fetchB0MoneyFlows, fetchB0Registrations, fetchB0Sales } from "@/lib/admin/b0-client";
+import { fetchB0Business, fetchB0Devices } from "@/lib/admin/b0-client";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { fetchB2Reserve } from "@/lib/admin/b2-client";
@@ -77,10 +77,7 @@ export default function CommandCenter() {
   const bDomain = useBDomainDashboard(blocks.fund);
   const reserve = useBlock(fetchB2Reserve, blocks.coverDays, refreshKey);
   const flows = useBlock(fetchB2LiquidityHistory, blocks.netFlow, refreshKey);
-  const moneyFlows = useBlock(fetchB0MoneyFlows, blocks.moneyFlows, refreshKey);
-  const sales = useBlock(fetchB0Sales, blocks.sales, refreshKey);
-  const registrations = useBlock(fetchB0Registrations, blocks.newUsers, refreshKey);
-  const activeUsers = useBlock(fetchB0ActiveUsers, blocks.activeUsers, refreshKey);
+  const business = useBlock(fetchB0Business, blocks.moneyFlows || blocks.sales || blocks.newUsers || blocks.activeUsers, refreshKey);
   const devices = useBlock(fetchB0Devices, blocks.devices, refreshKey);
   const approvals = useBlock(fetchA2Overview, blocks.approvals && reach("/platform/audit"), refreshKey);
   // 待审核按提现读权读：提现审核页可达时写在待处理，不可达时写在提现卡上，都要有这个数。
@@ -156,8 +153,8 @@ export default function CommandCenter() {
   const hasPendingSource = blocks.fund || blocks.j1 || blocks.withdrawals || blocks.approvals || blocks.support || blocks.devices;
   const showPending = hasPendingSource && (rows.length > 0 || pendingLoading);
 
-  const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || moneyFlows.loading || sales.loading || registrations.loading || activeUsers.loading || systemProcessing.loading || devices.loading || pendingLoading;
-  const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading || [reserve, flows, moneyFlows, sales, registrations, activeUsers, devices].some(firstLoad);
+  const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || business.loading || systemProcessing.loading || devices.loading || pendingLoading;
+  const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading || [reserve, flows, business, devices].some(firstLoad);
   const [readAt, setReadAt] = useState<number | null>(null);
   useEffect(() => { if (!firstScreenLoading) setReadAt(Date.now()); }, [firstScreenLoading]);
   const clock = readAt === null ? null : businessClock(readAt);
@@ -209,10 +206,10 @@ export default function CommandCenter() {
     pendingRows,
     fundSafe: fundReady && level === "ok" && !reserve.error,
     failed: [
-      ...(moneyFlows.error ? ["入金和提现"] : []),
-      ...(sales.error ? ["销售额"] : []),
-      ...(registrations.error ? ["注册用户"] : []),
-      ...(activeUsers.error ? ["活跃用户"] : []),
+      ...(business.error && blocks.moneyFlows ? ["入金和提现"] : []),
+      ...(business.error && blocks.sales ? ["销售额"] : []),
+      ...(business.error && blocks.newUsers ? ["注册用户"] : []),
+      ...(business.error && blocks.activeUsers ? ["活跃用户"] : []),
       ...(flows.error ? ["资金进出"] : []),
       ...(devices.error ? ["设备数据"] : []),
       ...pendingFailed,
@@ -336,10 +333,7 @@ export default function CommandCenter() {
           blocks={blocks}
           period={period}
           onPeriodChange={setPeriod}
-          moneyFlows={moneyFlows}
-          sales={sales}
-          registrations={registrations}
-          activeUsers={activeUsers}
+          business={business}
           devices={devices}
           reviewPending={reviewPending}
           systemProcessing={systemProcessing}
@@ -391,7 +385,7 @@ export default function CommandCenter() {
               historyError={flows.error}
               historyRetrying={flows.loading}
               onRetryHistory={flows.reload}
-              topupOnCard={blocks.moneyFlows && !moneyFlows.error}
+              topupOnCard={blocks.deposits && !business.error}
               netFlow24h={fundReady ? ledger.netFlow24hUsd : null}
               clock={clock}
               refreshKey={refreshKey}
