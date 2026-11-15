@@ -447,9 +447,11 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     if (others.length === 0) return null;
     return <Notice tone="warn" title="这个位置已有发布中的内容">「{others.map((copy) => copy.desc).join("、")}」已在{positionName(positionKey)}发布。再发布一条会让这个位置在 App 里取不到内容。</Notice>;
   };
-  const i18nFact = (key: string) => (
+  // I6-BE-03：发布会把同名词条最新的草稿直接改成这版内容并发布，那边草稿里写的就没了。
+  const i18nFact = (key: string) => (<>
     <Fact k="同时更新">词条 <span data-mono="">{key}</span>（{reach("/content/i18n") ? <Link className="rd-link" href="/content/i18n" prefetch={false}>多语言与课程</Link> : "多语言与课程"}）</Fact>
-  );
+    <Fact k="会盖掉" tone="warn">这个词条还没发布的草稿</Fact>
+  </>);
   const variantsText = (exp: ExpRow) => exp.variants.map((variant) => `${variant.name} ${variant.version || "—"} ${variant.split}%`).join(" · ");
 
   const runBackend = (task: Promise<void>, ok: string) => {
