@@ -270,6 +270,7 @@ function G2ExchangePage() {
   // 原命令回包不是当前概览；重读完成前不能按旧概览发起新修改。
   const [rereadPending, setRereadPending] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const readGeneration = useRef(0);
   const latest = useRef({ overview, loading, busyKey, readFailed, rereadPending });
   latest.current = { overview, loading, busyKey, readFailed, rereadPending };
   const confirmationRecovery = useRef<{ request: G2ConfirmReq; saved: boolean } | null>(null);
@@ -286,7 +287,11 @@ function G2ExchangePage() {
     latest.current.rereadPending = true;
     setRereadPending(true);
     setReadFailed(true);
-    setOverview(await fetchG2ExchangeOverview());
+    const generation = ++readGeneration.current;
+    const next = await fetchG2ExchangeOverview();
+    if (generation !== readGeneration.current) return;
+    setLoading(false);
+    setOverview(next);
     setReadFailed(false);
     setRereadPending(false);
   });
@@ -321,6 +326,7 @@ function G2ExchangePage() {
   }, [batchAdminId, canProcessBatch]);
 
   const reload = useCallback(async (silent = false) => {
+    const generation = ++readGeneration.current;
     latest.current.readFailed = true;
     latest.current.rereadPending = true;
     setRereadPending(true);
@@ -328,50 +334,34 @@ function G2ExchangePage() {
     setReadFailed(true);
     setError("");
     try {
-      setOverview(await fetchG2ExchangeOverview());
+      const next = await fetchG2ExchangeOverview();
+      if (generation !== readGeneration.current) return;
+      setOverview(next);
       setReadFailed(false);
       setRereadPending(false);
     } catch (err) {
+      if (generation !== readGeneration.current) return;
       setOverview(null);
       setError(messageOf(err));
     } finally {
-      if (!silent) setLoading(false);
+      if (generation === readGeneration.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setReadFailed(true);
-      setError("");
-      try {
-        const next = await fetchG2ExchangeOverview();
-        if (!cancelled) {
-          setOverview(next);
-          setReadFailed(false);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setOverview(null);
-          setError(messageOf(err));
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void reload();
+    return () => { readGeneration.current += 1; };
+  }, [reload]);
 
   const mutate = useCallback(async (key: string, action: () => Promise<G2Overview>, success: string, recovered = false) => {
     if (recovered) { latest.current.rereadPending = true; setRereadPending(true); }
     setBusyKey(key);
     setError("");
     try {
-      setOverview(await action());
+      const next = await action();
+      readGeneration.current += 1;
+      setOverview(next);
+      setLoading(false);
       if (recovered) { setReadFailed(false); setRereadPending(false); }
       if (key.startsWith("param:")) setLockedParams(rows => { const next = { ...rows }; delete next[key.slice(6)]; return next; });
       toast(success);
@@ -388,6 +378,8 @@ function G2ExchangePage() {
   }, [batchAdminId, toast]);
 
   const showBatchResult = useCallback((result: Awaited<ReturnType<typeof processG2ExchangeQueue>>) => {
+    readGeneration.current += 1;
+    setLoading(false);
     setOverview(result.overview);
     setBatchResult(result.batch);
     setReadFailed(false);
@@ -403,7 +395,9 @@ function G2ExchangePage() {
     setError("");
     try {
       const result = await queryG2ExchangeCommand(original.adminId, original.commandKey);
-      setOverview(result.overview);
+      readGeneration.current += 1;
+    setLoading(false);
+    setOverview(result.overview);
       setReadFailed(false);
       setRereadPending(false);
       setError(result.confirmed ? "" : result.message);
@@ -505,6 +499,8 @@ function G2ExchangePage() {
         try {
           const current = await fetchG2ExchangeOverview();
           requireBatchActor(batchAdminId);
+          readGeneration.current += 1;
+          setLoading(false);
           setOverview(current);
           setReadFailed(false);
           setRereadPending(false);
@@ -541,14 +537,20 @@ function G2ExchangePage() {
         showBatchResult(result);
         setRecoveryKey(null);
       } else {
-        setOverview(result.overview);
+        readGeneration.current += 1;
+    setLoading(false);
+    setOverview(result.overview);
         setReadFailed(false);
         setRereadPending(false);
         setRecoveryError({ message: result.message, notFound: false });
       }
     } catch (error) {
       try {
-        setOverview(await fetchG2ExchangeOverview());
+        const generation = ++readGeneration.current;
+    const next = await fetchG2ExchangeOverview();
+    if (generation !== readGeneration.current) return;
+    setLoading(false);
+    setOverview(next);
         setReadFailed(false);
         setRereadPending(false);
       } catch (readError) {
@@ -744,6 +746,8 @@ function G2ExchangePage() {
             () => updateG2ExchangeParam(cap.key, nextValue!, reason, OPERATOR(), currentCap!));
           setLockedParams(rows => { const next = { ...rows }; delete next[cap.key]; return next; });
           if ("direct" in result) {
+            readGeneration.current += 1;
+            setLoading(false);
             setOverview(result.direct);
             toast(`${operatorCopyText(cap.name)}已立即生效`);
           }
