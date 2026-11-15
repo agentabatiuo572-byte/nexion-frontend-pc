@@ -13,6 +13,7 @@ import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
@@ -190,13 +191,16 @@ export function E1Page() {
       const latest = await refresh();
       if (!latest) toast("申请已提交，部分目录或关联设置未读取完整");
     } catch (failure) {
-      if (!retry && isExplicitRejection(failure) && !isA2OutcomeUncertainError(failure)) forgetE1(record);
+      const response = failure as { httpStatus?: number; apiCode?: number };
+      const firstRejection = !retry && !isA2OutcomeUncertainError(failure) && response.httpStatus !== undefined
+        && isDeterministicRejection(response.httpStatus, response.apiCode);
+      if (firstRejection) forgetE1(record);
       else if (retry && isExplicitRejection(failure)) {
         store.remember(record.fingerprint, record.commandKey, { ...record, retryRejection: e1Error(failure) });
         setRejected(keys => [...keys, record.commandKey]);
       }
       setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) }));
-      if (!isExplicitRejection(failure)) { setConfirmation(null); setEdit(null); }
+      if (!firstRejection && !isExplicitRejection(failure)) { setConfirmation(null); setEdit(null); }
       if (String((failure as Error).message).includes("VERSION_CONFLICT") || String((failure as { backendMessage?: string }).backendMessage).includes("VERSION_CONFLICT")) setConflict(true);
       // Throw the original error so OperationConfirmModal keeps reason and fields.
       if (retry) toast(e1Error(failure));
