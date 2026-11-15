@@ -2,7 +2,7 @@ import { growthRequest } from "./h-client";
 import { h4CommandRequest, markH4Read, type H4ApprovalReceipt } from "./h4-mutations";
 
 // Backend 04d11022: H4EventRuleService.CODES (lines 28–30), used by
-// OpsGrowthService.supportsH4EventRules. Keep synchronized until reads expose support.
+// OpsGrowthService.supportsH4EventRules. Fallback for older reads without capability flags.
 export const H4_EVENT_RULE_CODES = new Set([
   "evt-pro-upgrade-7d", "evt-refer-5-get-pro", "evt-weekend-double-nex", "evt-regional-pk",
   "evt-spring-spin", "evt-reinvest-bonus", "evt-onboarding-7d", "evt-black-friday", "evt-anniversary-spin",
@@ -18,12 +18,15 @@ export interface EventRuleView {
   endsAt: string | null;
   rules: Record<string, unknown>;
   readiness: { ready: boolean; missing: string[] };
+  supported?: boolean;
+  rewardCopyOnly?: boolean;
 }
 export type EventRuleChange = Pick<EventRuleView, "enabled" | "startsAt" | "endsAt" | "rules">;
 export interface EventVoucherOption { id: string; name: string; percent: number; status: "active" | "paused"; }
 export function parseEventRule(value: unknown): EventRuleView {
   const row = value as EventRuleView | null;
   if (!row || typeof row.eventCode !== "string" || !row.eventCode || typeof row.kind !== "string"
+    || [row.supported, row.rewardCopyOnly].some(value => value !== undefined && typeof value !== "boolean")
     || !Number.isSafeInteger(row.revision) || row.revision < 0 || typeof row.enabled !== "boolean" || typeof row.rulesLocked !== "boolean"
     || !row.rules || typeof row.rules !== "object" || Array.isArray(row.rules)
     || typeof row.readiness?.ready !== "boolean" || !Array.isArray(row.readiness.missing) || row.readiness.missing.some(item => typeof item !== "string")

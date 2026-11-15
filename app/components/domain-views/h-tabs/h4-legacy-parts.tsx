@@ -10,6 +10,7 @@ import { CalendarRange, CircleAlert, Clock3, Flag, Gift, Hourglass, CircleHelp, 
 import { Explain, Fact, Facts, MoreMenu, SegmentBar, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { EVENT_KIND_LABELS } from "@/lib/admin/event-rule-form";
+import type { H4EventCapabilities } from "@/lib/admin/h-client";
 import { amountText, formatTime } from "./h4-promotion-ui";
 
 // ===== 取值小工具：照旧页面原样 =====
@@ -56,7 +57,7 @@ export const KIND_OPTIONS = ["discount", "referral", "regional", "boost", "seaso
 export const WHEEL_KIND_LABEL: Record<string, string> = { uvt: "UVT", usdt: "USDT", coupon: "代金券", nex: "UVT（旧奖型 nex）", points: "积分（已退役）" };
 export const wheelUnit = (tier: Record<string, unknown>) => ({ uvt: "UVT", nex: "UVT", usdt: "USDT", points: "积分" } as Record<string, string>)[text(tier.kind, "").toLowerCase()];
 
-export type LegacyEvent = {
+export type LegacyEvent = H4EventCapabilities & {
   id: string;
   name: string;
   kind?: string;

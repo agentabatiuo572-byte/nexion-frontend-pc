@@ -343,7 +343,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const current = text(event.reward);
     // Rule existence and fixed-code support are independent backend conditions.
     // Unknown reads must not be interpreted as a rule-less event.
-    const ruleBased = rules === null ? null : H4_EVENT_RULE_CODES.has(event.id) && !!ruleOf(event.id);
+    const ruleBased = event.rewardCopyOnly !== undefined ? event.rewardCopyOnly
+      : rules === null ? null : H4_EVENT_RULE_CODES.has(event.id) && !!ruleOf(event.id);
     if (ruleBased === null) { toast("活动规则读取失败，请刷新后重试。", "warn"); return; }
     openActionConfirm({ briefKind: "config",
       action: `活动奖励 · ${event.name}`,

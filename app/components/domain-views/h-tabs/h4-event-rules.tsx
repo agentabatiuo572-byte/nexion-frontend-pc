@@ -279,7 +279,7 @@ export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }:
       : !rows.length && error ? <BlockState state="error" title="玩法规则没有读到" detail={error} onRetry={() => void load()} />
       : !rows.length ? <BlockState state="empty" title="暂无活动规则" />
       : <div className="h4-cards">{rows.map(row => {
-        const supported = !!EVENT_KIND_LABELS[row.kind];
+        const supported = row.supported ?? !!EVENT_KIND_LABELS[row.kind];
         const lack = missing(row);
         return <article key={row.eventCode} className="h4-card h4l-play" aria-label={`${EVENT_KIND_LABELS[row.kind] ?? "其他活动"} · ${row.eventCode}`} data-dim={!supported || ended(row) ? "" : undefined}>
           <header className="h4-card-head">

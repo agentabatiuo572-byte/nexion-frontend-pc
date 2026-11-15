@@ -351,10 +351,23 @@ export async function chargeH2TrialSession(sessionId: string, reason: string) {
   );
 }
 
+export type H4EventCapabilities = {
+  supported?: boolean | null;
+  rewardCopyOnly?: boolean | null;
+  hasRule?: boolean;
+};
+
 export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
   if (section === "tasks") return growthRequest<Record<string, any>>("/quest-events/tasks");
   markH4Read("overview", false);
   const result = await growthRequest<Record<string, any>>("/quest-events/events-overview");
+  if (Array.isArray(result.events)) {
+    for (const event of result.events) {
+      if (!event || typeof event !== "object" || Array.isArray(event)
+        || [event.supported, event.rewardCopyOnly].some(value => value !== undefined && value !== null && typeof value !== "boolean")
+        || event.hasRule !== undefined && typeof event.hasRule !== "boolean") throw new Error("活动规则读取失败，请刷新后重试。");
+    }
+  }
   markH4Read("overview", true);
   return result;
 }
