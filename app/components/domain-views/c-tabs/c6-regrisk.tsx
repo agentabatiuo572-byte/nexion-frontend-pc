@@ -548,7 +548,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
             ) : (
               <ScaleBar label="两级锁定" max={1} valueText="锁定规则没有读全" state="empty" emptyText="锁定规则没有读全，下面写的是读到的原值。" />
             )}
-            {ladderReady && <p className="c6-ladder-note">从第一次输错起 {shortRule.duration} 分钟内累计；短锁期间只有验证码登录输错还计数</p>}
+            {ladderReady && <p className="c6-ladder-note">{shortRule.duration} 分钟窗口内累计；短锁期间只有验证码登录输错还计数</p>}
           </div>
           <ConfigList label="锁定规则">
             {lockParams.map(adjustRow)}
