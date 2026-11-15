@@ -92,8 +92,8 @@ export function SummaryBand({ summary, scope, device }: { summary: HeatSummary; 
       <Stat label="浏览次数" icon={Eye} tone="role-2" value={n(summary.totalPv)} unit="次"
         explain={`离开一页（换到下一页）时记一次浏览，同一页看两次算两次。${scopeNote}`} />
       <Stat label="点击次数" icon={MousePointerClick} tone="role-2" value={n(summary.totalClicks)} unit="次"
-        sub={device === "APP" || device === "MP" ? "这一端还没上报点击" : noView ? "没有浏览，点击率算不出" : `点击率 ${pct(summary.totalClicks / summary.totalPv)}`}
-        explain={`App 上报的点击事件次数，不是人数。点击率是点击次数 ÷ 浏览次数，可能超过 100%。${scopeNote}`} />
+        sub={device === "APP" || device === "MP" ? "这一端还没记录点击" : noView ? "没有浏览，点击率算不出" : `点击率 ${pct(summary.totalClicks / summary.totalPv)}`}
+        explain={`App 记下的点击次数，不是人数。点击率是点击次数 ÷ 浏览次数，可能超过 100%。${scopeNote}`} />
       <Stat label="平均停留" icon={Clock3} tone="role-3" value={noView ? "—" : dwell(summary.avgDwellMs)}
         sub={noView ? "没有浏览，算不出" : undefined} explain={DWELL_EXPLAIN} />
       <Stat label="平均跳出率" icon={LogOut} tone={!noView && summary.avgBounceRate > BOUNCE_WARN ? "warn" : "role-3"}
@@ -264,8 +264,8 @@ export function ClickPanel({ gradId, row, heat, aggregate, loaded, failed, scope
   const small = row.clicks < SMALL_SAMPLE;
   const noCoords = loaded && !heat.points.length && !heat.zones.length;
   const nativeNote = device === "APP" || device === "MP"
-    ? "选了原生应用或小程序：App 里这两端的点击上报还没接上，所以多半没有点击位置。"
-    : "目前只有移动网页会上报点击位置，原生应用和小程序的点击还没接上。";
+    ? "选了原生应用或小程序：这两端还不记录点击，所以多半没有点击位置。"
+    : "目前只有移动网页记录点击位置，原生应用和小程序还没有。";
   const body = aggregate ? (
     <Notice tone="progress" title="按一级、二级汇总时没有点击位置">
       {row.pageCount > 1 ? `「${name}」这一行合并了 ${row.pageCount} 个有事件的页面。` : `「${name}」这一行代表这一组页面。`}点击位置只按单个页面统计，不同页面叠在一起没有意义。把「页面层级」换成「全部页面」或「三级」，再点具体页面。
@@ -307,9 +307,9 @@ export function ClickPanel({ gradId, row, heat, aggregate, loaded, failed, scope
     <Panel id="l6-drill" className="l6-drill-panel" title="点击位置" icon={Smartphone} tone="role-2"
       sub={<span className="l6-drill-sub"><b>{name}</b> · {scope}{aggregate ? "" : ` · ${n(row.clicks)} 次点击`}</span>}
       explain={<>
-        <p>坐标是点击时手指在手机屏幕上的位置，按屏幕宽高换算成 0–1、取两位小数合并，不是页面滚动后的位置。</p>
+        <p>位置是点击时手指在屏幕上的位置，按屏幕宽高的百分比合并，不是页面滚动后的位置。</p>
         <p>不同尺寸的手机叠在一起，只能看大概的区域，对不到具体按钮。颜色按点击次数，不是人数。</p>
-        <p>少于 {SMALL_SAMPLE} 次点击不画分布，区域占比照列；{SMALL_SAMPLE} 次是这页定的显示门槛，不是后端的限制。</p>
+        <p>少于 {SMALL_SAMPLE} 次点击不画分布，区域占比照列；{SMALL_SAMPLE} 次是这页定的门槛。</p>
         <p>{nativeNote}</p>
       </>}>
       {body}
@@ -383,11 +383,11 @@ export function ScopeFold({ data }: { data: L6BehaviorHeatmapData }) {
   return (
     <Fold title="统计范围和口径" summary={`页面目录 ${n(data.trackedCount)} 个页面 · 时区 ${data.businessTimeZone} · 只读`}>
       <Facts>
-        <Fact k="统计哪些页面">页面目录里的 {n(data.trackedCount)} 个页面都在统计<Explain label="页面目录" content="页面目录来自 App 的页面登记表，按迁移时的版本存在后台，不是每次实时读 App。已退役的页面不在目录里：热力表不列，但合计和导出的 CSV 还会算它们这段时间的历史事件。" /></Fact>
+        <Fact k="统计哪些页面">页面目录里的 {n(data.trackedCount)} 个页面都在统计<Explain label="页面目录" content="页面目录是从 App 的页面清单复制到后台的一份，不随 App 实时更新。已退役的页面不在目录里：热力表不列，但合计和导出的 CSV 还会算它们这段时间的历史事件。" /></Fact>
         <Fact k="事件从哪来">App 上报的页面浏览和元素点击，只算正式环境的事件</Fact>
         <Fact k="什么时候记浏览">离开这一页、换到下一页时记一次浏览和停留<Explain label="哪些不记" content="切到后台、退出 App 时正在看的那一页会丢掉，不补记；所以浏览次数不是「进入页面」的次数。" /></Fact>
-        <Fact k="采样">只统计采样后存下来的事件，不按采样比例放大<Explain label="采样是什么" content="后端入库时按「用户行为事件」页的采样设置抽样，没抽中的不进统计。上报失败或被限流的也不在里面，所以不是全部真实操作。" /></Fact>
-        <Fact k="设备和语言">只按 App 上报的标记筛；目前只有移动网页上报点击位置</Fact>
+        <Fact k="抽样">只算抽样记下的事件，不按比例放大<Explain label="抽样是什么" content="记录时按「用户行为事件」页的采集比例抽样，没抽中的不进统计；发送失败或被限流的也不在里面，所以不是全部真实操作。" /></Fact>
+        <Fact k="设备和语言">只按 App 记下的标记筛；目前只有移动网页记录点击位置</Fact>
         <Fact k="时间">从读取那一刻往前滚动；时区 {data.businessTimeZone}</Fact>
         <Fact k="这页能做什么">只能查看和导出，不改页面目录、采集设置和任何业务规则；每次导出留一条操作记录</Fact>
       </Facts>
