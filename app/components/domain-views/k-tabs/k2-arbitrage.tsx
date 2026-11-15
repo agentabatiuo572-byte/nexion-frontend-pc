@@ -878,8 +878,8 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
   }
 
   const stat = (key: string) => overview.stats.find((item) => item.key === key)?.value ?? "—";
-  // 本人提交、查询确认还在等批准的冻结申请：行上打「待审批」，不算进待处置。
-  const awaitingApproval = (row: K2Row) => !row.disposition && approvalVerified(pendingFor(row.rowId));
+  // The read projection includes other operators' active freeze locks too.
+  const awaitingApproval = (row: K2Row) => !row.disposition && (Boolean(row.pendingApproval) || approvalVerified(pendingFor(row.rowId)));
   const summaries = views.map((view) => {
     const awaiting = view.rows.filter(awaitingApproval).length;
     const pendingRows = view.rows.filter((row) => !row.disposition && !awaitingApproval(row));
@@ -926,7 +926,8 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
   const rowActions = (r: K2Row, size: "sm" | "md") => {
     if (r.disposition) return null;
     const locked = pendingFor(r.rowId);
-    const lockedReason = locked ? errorText(new Error(approvalVerified(locked) ? "OBJECT_ALREADY_PENDING" : "IDEMPOTENCY_RESULT_UNKNOWN")) : newWriteBlockedReason;
+    const lockedReason = r.pendingApproval ? errorText(new Error("OBJECT_ALREADY_PENDING"))
+      : locked ? errorText(new Error(approvalVerified(locked) ? "OBJECT_ALREADY_PENDING" : "IDEMPOTENCY_RESULT_UNKNOWN")) : newWriteBlockedReason;
     const buttons = r.actions.map((action) => {
       if (action === "flag") return canFlag ? <Button key={action} size={size} disabledReason={lockedReason} onClick={() => markArb(r)}>标记套利</Button> : null;
       if (action === "blockgift") return canBlockGift ? <Button key={action} size={size} disabledReason={lockedReason} onClick={() => blockGift(r)}>拦截新人礼</Button> : null;

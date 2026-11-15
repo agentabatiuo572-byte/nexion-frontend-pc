@@ -272,6 +272,7 @@ export type K2Row = {
   version: number;
   clusterStatus?: string;
   clusterVersion?: number;
+  pendingApproval?: { action: string | null; submittedBy: string | null; submittedAt: string | null } | null;
 };
 export type K2ViewGroup = { key: string; label: string; sub: string; head: string[]; note: string; rows: K2Row[] };
 export type K2Stat = { key: string; name: string; value: string; sub: string; tone: string };
@@ -339,11 +340,16 @@ export type K3DryRunResult = {
   hitCountsByRule: Record<string, number>;
   routeCounts: K3RouteCount[];
   completedAt: string;
+  completedAtZone?: string;
+  completedAtOffset?: string;
 };
 export type K3Hit = {
   withdrawalNo: string;
   userNo: string;
   amount: string;
+  amountValue?: string | null;
+  currency?: string | null;
+  amountSource?: string | null;
   ruleId: string;
   dimension: string;
   action: RuleAction;
@@ -1049,6 +1055,16 @@ function normalizeK2(raw: unknown): ArbitrageOverview {
         }
         const clusterId = row.clusterId == null ? "" : requiredK2String(row.clusterId, `${rowPath}.clusterId`, true);
         const level = requiredK2Integer(row.level, `${rowPath}.level`, 0, 5);
+        let pendingApproval: K2Row["pendingApproval"];
+        if (row.pendingApproval === null) pendingApproval = null;
+        else if (row.pendingApproval !== undefined) {
+          const pending = requiredK2Record(row.pendingApproval, `${rowPath}.pendingApproval`);
+          pendingApproval = {
+            action: pending.action === null ? null : requiredK2String(pending.action, `${rowPath}.pendingApproval.action`),
+            submittedBy: pending.submittedBy === null ? null : requiredK2String(pending.submittedBy, `${rowPath}.pendingApproval.submittedBy`),
+            submittedAt: pending.submittedAt === null ? null : requiredK2String(pending.submittedAt, `${rowPath}.pendingApproval.submittedAt`),
+          };
+        }
         return {
           rowId,
           rid: rowId,
@@ -1058,6 +1074,7 @@ function normalizeK2(raw: unknown): ArbitrageOverview {
           cells: requiredK2StringArray(row.cells, `${rowPath}.cells`),
           level,
           lvl: level,
+          pendingApproval,
           actions,
           acts: actions,
           disposition,
@@ -1231,6 +1248,9 @@ function normalizeK3(raw: unknown): WithdrawRuleOverview {
     withdrawalNo: requiredK3String(row.withdrawalNo, `${path}.withdrawalNo`),
     userNo: requiredK3String(row.userNo, `${path}.userNo`),
     amount: requiredK3DisplayText(row.amount ?? row.amountText, `${path}.amount`),
+    amountValue: row.amountValue === undefined || row.amountValue === null ? row.amountValue : requiredK3String(row.amountValue, `${path}.amountValue`),
+    currency: row.currency === undefined || row.currency === null ? row.currency : requiredK3String(row.currency, `${path}.currency`),
+    amountSource: row.amountSource === undefined || row.amountSource === null ? row.amountSource : requiredK3String(row.amountSource, `${path}.amountSource`),
     ruleId: requiredK3String(row.ruleId, `${path}.ruleId`),
     dimension: requiredK3String(row.dimension, `${path}.dimension`),
     action: requiredK3RuleAction(row.action, `${path}.action`),
@@ -1581,6 +1601,8 @@ function normalizeK3DryRun(raw: unknown): K3DryRunResult {
     ])),
     routeCounts,
     completedAt: requiredK3String(data.completedAt, "withdrawRules.dryRun.completedAt"),
+    completedAtZone: data.completedAtZone === undefined ? undefined : requiredK3String(data.completedAtZone, "withdrawRules.dryRun.completedAtZone"),
+    completedAtOffset: data.completedAtOffset === undefined ? undefined : requiredK3String(data.completedAtOffset, "withdrawRules.dryRun.completedAtOffset"),
   };
 }
 

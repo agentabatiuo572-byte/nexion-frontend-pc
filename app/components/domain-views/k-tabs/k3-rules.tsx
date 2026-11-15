@@ -620,7 +620,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
           <tbody>{hits.length === 0 && <TableMessage columns={4 + Number(hitColumns.isVisible("reason")) + Number(hitColumns.isVisible("time"))}>{hitAction === "all" ? "暂无触发记录" : "当前处置没有匹配的触发记录"}</TableMessage>}
             {hits.map((hit, index) => <Tr key={`${hit.withdrawalNo}-${hit.ruleId}-${index}`} selected={hitDetail === hit} onOpen={() => setHitDetail(hit)}>
               <Td><Cell mono main={<span className="k3-id"><span>{hit.withdrawalNo.slice(0, -8)}</span><span>{hit.withdrawalNo.slice(-8)}</span></span>} sub={hit.userNo} title={`${hit.withdrawalNo} / ${hit.userNo}`} /></Td>
-              <Td align="right"><Cell num main={hitAmount(hit.amount)} sub="币种未提供" title={hit.amount} /></Td>
+              <Td align="right"><Cell num main={hit.amountValue ?? hitAmount(hit.amount)} sub={hit.currency ?? "币种未提供"} title={hit.amount} /></Td>
               <Td><Cell main={hit.ruleId} sub={dimensionLabel(hit.dimension)} title={hit.ruleId} mono /></Td><Td><ActionTag action={hit.action} /></Td>
               {hitColumns.isVisible("reason") && <Td><Cell main={hitSummary(hit)} title={hitSummary(hit)} /></Td>}{hitColumns.isVisible("time") && <Td><Cell num main={formatBusinessTimeCompact(hit.timeText, "—")} title={formatBusinessTimeFull(hit.timeText, "") || undefined} /></Td>}
             </Tr>)}
@@ -639,7 +639,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
     <Drawer open={!!hitDetail} onClose={() => setHitDetail(null)} title="触发记录详情" sub={hitDetail?.withdrawalNo} icon={History}>
       {hitDetail && <><KeyValues rows={[
         { key: "withdrawal", label: "提现单号", value: hitDetail.withdrawalNo, mono: true }, { key: "user", label: "账户", value: hitDetail.userNo, mono: true },
-        { key: "amount", label: "金额", value: `${hitAmount(hitDetail.amount)} · 币种未记录` }, { key: "rule", label: "触发规则", value: hitDetail.ruleId, mono: true },
+        { key: "amount", label: "金额", value: `${hitDetail.amountValue ?? hitAmount(hitDetail.amount)} ${hitDetail.currency ?? "· 币种未记录"}` }, { key: "rule", label: "触发规则", value: hitDetail.ruleId, mono: true },
         { key: "dim", label: "维度", value: dimensionLabel(hitDetail.dimension) }, { key: "action", label: "命中处置", value: <ActionTag action={hitDetail.action} /> },
         { key: "reason", label: "触发原因", value: hitSummary(hitDetail) },
         ...(rules.find((rule) => rule.ruleId === hitDetail.ruleId) ? [{ key: "condition", label: "当前规则条件", value: <ConditionText text={conditionCopy(rules.find((rule) => rule.ruleId === hitDetail.ruleId)!)} /> }] : []), { key: "time", label: "触发时间", value: <span title={formatBusinessTimeFull(hitDetail.timeText, "") || undefined}>{formatBusinessTimeCompact(hitDetail.timeText, "—")}（{businessZone().label}）</span> },
