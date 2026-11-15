@@ -324,7 +324,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           proposal = key ? pendingHIRewardCommands().find(row => row.commandKey === key) : undefined;
           if (!original && !proposal && await conflictReview.reject(error, { scope, reason, value, form }, async () => {
             const overview = await fetchI6LearningOverview();
-            const versions = scope.startsWith("course:") ? await actions.fetchI7CourseVersions(scope.slice(7)) : undefined;
+            const versions = scope.startsWith("course:") && overview.courses.some(course => course.id === scope.slice(7))
+              ? await actions.fetchI7CourseVersions(scope.slice(7)) : undefined;
             const messages = scope.startsWith("message:") ? await actions.fetchI6MessageVersions(scope.slice(8)) : undefined;
             await actions.reloadIContent();
             return { overview, versions, messages };
