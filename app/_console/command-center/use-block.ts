@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 
 export type Block<T> = { data: T | null; error: string | null; loading: boolean; reload: () => void };
 
@@ -18,7 +19,11 @@ export function useBlock<T>(load: () => Promise<T>, enabled: boolean, refreshKey
     setState((current) => ({ ...current, error: null, loading: true }));
     load().then(
       (data) => { if (id === latest.current) setState({ data, error: null, loading: false }); },
-      (cause: unknown) => { if (id === latest.current) setState({ data: null, error: displayAdminError(cause), loading: false }); },
+      (cause: unknown) => {
+        if (id !== latest.current) return;
+        if (isPermissionDenied(cause)) announcePermissionDenied();
+        setState({ data: null, error: displayAdminError(cause), loading: false });
+      },
     );
   }, [load]);
   useEffect(() => {
