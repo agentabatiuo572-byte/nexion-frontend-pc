@@ -13,8 +13,8 @@ export function eventBacklogMetric(metric: string, details: {
   const duration = oldestSeconds < 60 ? `${oldestSeconds} 秒`
     : oldestSeconds < 3600 ? `${minutes} 分钟`
       : `${hours} 小时${minutes % 60 ? ` ${minutes % 60} 分钟` : ""}`;
-  const backlog = backlogCount === 0 ? "没有积压" : `${backlogCount} 条在排队，最久等了 ${duration}`;
+  const backlog = backlogCount === 0 ? "没有积压" : `${backlogCount.toLocaleString("en-US")} 条在排队 · 最久 ${duration}`;
   return auditLinkUnresolvedCount > 0
-    ? `${backlog} · ${auditLinkUnresolvedCount} 条用户画像事件对不上操作记录，请技术同事核对`
+    ? `${backlog} · ${auditLinkUnresolvedCount.toLocaleString("en-US")} 条「查看用户资料」事件对不上操作记录`
     : backlog;
 }
