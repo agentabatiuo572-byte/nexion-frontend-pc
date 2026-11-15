@@ -1,5 +1,6 @@
 "use client";
 
+import { HApprovalRequired } from "./h-approval-required";
 import { isHGrowthReadConflict } from "./h-write-conflict";
 
 import { useEffect, useReducer, useRef } from "react";
@@ -179,6 +180,34 @@ export function useH3Mutations(toast: (message: string) => void, settled: () => 
     await settled();
     toast(r.change.success);
   };
+  const run = async (write: H3Write, reason: string, approvalConfirmed = false) => {
+    const actor = requireActor(true, write.store === "region");
+    if (!isFresh()) throw new Error("请先成功刷新用户任务数据，再发起新的修改。");
+    if (blocked(write.change.target)) throw new Error("这一项有未结束的原操作，请先查询原结果。");
+    const change = { ...write.change, reason };
+    const proposal = (approval: boolean): Proposal | undefined => {
+      if (!approval) return undefined;
+      const op = write.regionParams ? "h3_weekly_region_policy" : write.configKey ? "h3_quest_config" : "h3_mission_create";
+      const values = write.regionParams ?? (write.configKey ? { configKey: write.configKey, value: write.body.value, expectedValue: write.body.expectedValue } : write.body);
+      const def = findHighOp(op)!;
+      return { action: change.action, obj: change.target, beforeValue: change.before, afterValue: change.after,
+        operator, operatorRole: roleLabel(actor.role), type: def.type, amplifies: true, sos: false, roleGate: def.gateLabel,
+        reason, sourceDomain: write.regionParams ? "H" : "H3", command: def.buildCommand(values), target: def.buildTarget(values) };
+    };
+    const create = (approval: boolean): H3PendingCommand => {
+      const p = proposal(approval), now = Date.now();
+      return { store: write.store, fingerprint: `${actor.adminId}|H3|${change.target}`, commandKey: createA2CommandKey(p ? "h3-proposal" : "h3-direct"),
+        createdAt: now, expiresAt: now + PENDING_MUTATION_TTL_MS, adminId: actor.adminId, operator, change,
+        request: p ? { kind: "approval", body: p } : { kind: "direct", path: write.path, method: write.method, body: JSON.stringify({ ...write.body, reason, operator }) } };
+    };
+    const approval = approvalConfirmed || !!write.regionParams || (write.configKey ? h3ConfigNeedsApproval(write.configKey, String(write.body.expectedValue), String(write.body.value)) : write.path === "/quest-events/missions" && Number(write.body.rewardPoints) > 0);
+    try { await send(create(approval), false); } catch (error) {
+      const code = (error as { reasonCode?: string }).reasonCode;
+      if (!approval && firstRejection(error) && code === "H3_APPROVAL_REQUIRED" && (write.configKey || write.path === "/quest-events/missions")) throw new HApprovalRequired((error as Error).message, { write, reason }, () => run(write, reason, true));
+      else throw error;
+    }
+  };
+
   return {
     records: records(), record, blocked, query, pendingApprovals: pendingApprovals(), auditKnown: auditRows.current !== null,
     canRetry(r: H3PendingCommand) {
@@ -214,32 +243,6 @@ export function useH3Mutations(toast: (message: string) => void, settled: () => 
       if (r.request.kind === "direct" || !isRetryExpired(r) || await query(r, true) !== null) throw new Error("原申请不能解除，请查询原结果。");
       forget(r); await settled();
     },
-    async run(write: H3Write, reason: string) {
-      const actor = requireActor(true, write.store === "region");
-      if (!isFresh()) throw new Error("请先成功刷新用户任务数据，再发起新的修改。");
-      if (blocked(write.change.target)) throw new Error("这一项有未结束的原操作，请先查询原结果。");
-      const change = { ...write.change, reason };
-      const proposal = (approval: boolean): Proposal | undefined => {
-        if (!approval) return undefined;
-        const op = write.regionParams ? "h3_weekly_region_policy" : write.configKey ? "h3_quest_config" : "h3_mission_create";
-        const values = write.regionParams ?? (write.configKey ? { configKey: write.configKey, value: write.body.value, expectedValue: write.body.expectedValue } : write.body);
-        const def = findHighOp(op)!;
-        return { action: change.action, obj: change.target, beforeValue: change.before, afterValue: change.after,
-          operator, operatorRole: roleLabel(actor.role), type: def.type, amplifies: true, sos: false, roleGate: def.gateLabel,
-          reason, sourceDomain: write.regionParams ? "H" : "H3", command: def.buildCommand(values), target: def.buildTarget(values) };
-      };
-      const create = (approval: boolean): H3PendingCommand => {
-        const p = proposal(approval), now = Date.now();
-        return { store: write.store, fingerprint: `${actor.adminId}|H3|${change.target}`, commandKey: createA2CommandKey(p ? "h3-proposal" : "h3-direct"),
-          createdAt: now, expiresAt: now + PENDING_MUTATION_TTL_MS, adminId: actor.adminId, operator, change,
-          request: p ? { kind: "approval", body: p } : { kind: "direct", path: write.path, method: write.method, body: JSON.stringify({ ...write.body, reason, operator }) } };
-      };
-      const approval = !!write.regionParams || (write.configKey ? h3ConfigNeedsApproval(write.configKey, String(write.body.expectedValue), String(write.body.value)) : write.path === "/quest-events/missions" && Number(write.body.rewardPoints) > 0);
-      try { await send(create(approval), false); } catch (error) {
-        const code = (error as { reasonCode?: string }).reasonCode;
-        if (!approval && firstRejection(error) && code === "H3_APPROVAL_REQUIRED" && (write.configKey || write.path === "/quest-events/missions")) await send(create(true), false);
-        else throw error;
-      }
-    },
+    run,
   };
 }

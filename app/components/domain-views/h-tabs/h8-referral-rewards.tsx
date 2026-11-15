@@ -7,6 +7,7 @@
  * 两种结算都只提交审批，另一位管理员批准后才发。结果未知保存完整原请求和确认事实，恢复不依赖概览。
  */
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
+import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { useReach } from "@/lib/nav/use-reach";
 import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
@@ -380,7 +381,11 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         catch (error) {
           // The server's direction is authoritative if its live state requires A2.
           if ((error as { reasonCode?: string }).reasonCode !== "A2_CONFIRMATION_REQUIRED") throw error;
-          await sendCommand(approvalCommand(value, reason), false);
+          throw new HApprovalRequired((error as Error).message, { param, value, reason, snapshot }, async () => {
+            ensureSession();
+            if (!currentRead.current.ready || currentRead.current.data !== snapshot) throw new Error("H8_OVERVIEW_REQUIRED");
+            await sendCommand(approvalCommand(value, reason), false);
+          });
         }
       },
     });

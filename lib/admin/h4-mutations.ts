@@ -1,3 +1,4 @@
+import { HApprovalRequired } from "./h-approval-required";
 import { isHGrowthReadConflict } from "./h-write-conflict";
 import { guardedFetch, formatAdminApiError } from "./error-messages";
 import { saveH4UploadFile, readH4UploadFile, deleteH4UploadFile } from "./h4-upload-file";
@@ -323,7 +324,9 @@ export async function h4CommandRequest(path: string, init: Omit<Direct, "path">,
     return await send({ store: "direct", owner: actor.adminId, scope, fingerprint: `${actor.adminId}:${scope}`, commandKey: createA2CommandKey("h4-direct"),
       createdAt: now, expiresAt: now + 86400000, action, reason: body.reason, request: { ...init, path } }, false);
   } catch (error) {
-    if (op && rejected(error, false) && (error as { reasonCode?: string }).reasonCode === "H4_APPROVAL_REQUIRED") return propose();
+    if (op && rejected(error, false) && (error as { reasonCode?: string }).reasonCode === "H4_APPROVAL_REQUIRED") {
+      throw new HApprovalRequired((error as Error).message, { path, ...init, action }, () => h4CommandRequest(path, init, action, true));
+    }
     throw error;
   }
 }

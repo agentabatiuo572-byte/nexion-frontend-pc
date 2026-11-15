@@ -1,5 +1,6 @@
 "use client";
 
+import { HApprovalRequired } from "./h-approval-required";
 import { isHGrowthReadConflict } from "./h-write-conflict";
 
 import { useEffect, useReducer } from "react";
@@ -212,6 +213,37 @@ export function useH5Mutations(toast: (message: string) => void, settled: () => 
     await settled();
     toast(original.change.success);
   };
+  const run = async (change: H5Change) => {
+    const actor = requireActor(change.target, true);
+    if (!isFresh()) throw new Error("请先成功刷新签到数据，再发起新的修改。");
+    if (record(change.target)) throw new Error("这一项有未结束的原操作，请先查询原结果。");
+    const fingerprint = `${actor.adminId}|H5|${change.target}`;
+    const proposal = change.proposal ? {
+      action: change.action, obj: change.target.slice(change.target.indexOf(":") + 1), beforeValue: change.before, afterValue: change.after,
+      operator: actor.operator || actor.username, operatorRole: roleLabel(actor.role), sos: false, sourceDomain: "H5", reason: change.reason,
+      ...change.proposal,
+    } : undefined;
+    const create = (approval: boolean): H5PendingCommand => {
+      const request: H5PendingCommand["request"] = approval && proposal ? { kind: "approval", body: proposal }
+        : change.direct ? { kind: "direct", path: change.direct.path, body: JSON.stringify({ ...change.direct.body, reason: change.reason, operator: actor.operator || actor.username }) }
+          : (() => { throw new Error("H5_PROPOSAL_INVALID"); })();
+      const now = Date.now();
+      return { fingerprint, commandKey: createA2CommandKey(request.kind === "approval" ? "h5-proposal" : "h5-direct"), createdAt: now, expiresAt: now + PENDING_MUTATION_TTL_MS, adminId: actor.adminId, change, request };
+    };
+    try {
+      await send(create(change.approvalRequired), false);
+    } catch (error) {
+      const e = error as { reasonCode?: string; backendMessage?: string };
+      // The streak read model has no stored amount. Its direct endpoint determines direction.
+      // Only an explicit first-attempt no-write verdict may switch to a new A2 command.
+      if (!change.approvalRequired && proposal && firstRejection(error) && (e.reasonCode ?? e.backendMessage) === "H5_APPROVAL_REQUIRED") {
+        throw new HApprovalRequired((error as Error).message, change, () => run({ ...change, approvalRequired: true }));
+      } else {
+        throw error;
+      }
+    }
+  };
+
   return {
     records: records(), record, query,
     canRetry(original: H5PendingCommand) {
@@ -242,35 +274,6 @@ export function useH5Mutations(toast: (message: string) => void, settled: () => 
       forget(original);
       await settled();
     },
-    async run(change: H5Change) {
-      const actor = requireActor(change.target, true);
-      if (!isFresh()) throw new Error("请先成功刷新签到数据，再发起新的修改。");
-      if (record(change.target)) throw new Error("这一项有未结束的原操作，请先查询原结果。");
-      const fingerprint = `${actor.adminId}|H5|${change.target}`;
-      const proposal = change.proposal ? {
-        action: change.action, obj: change.target.slice(change.target.indexOf(":") + 1), beforeValue: change.before, afterValue: change.after,
-        operator: actor.operator || actor.username, operatorRole: roleLabel(actor.role), sos: false, sourceDomain: "H5", reason: change.reason,
-        ...change.proposal,
-      } : undefined;
-      const create = (approval: boolean): H5PendingCommand => {
-        const request: H5PendingCommand["request"] = approval && proposal ? { kind: "approval", body: proposal }
-          : change.direct ? { kind: "direct", path: change.direct.path, body: JSON.stringify({ ...change.direct.body, reason: change.reason, operator: actor.operator || actor.username }) }
-            : (() => { throw new Error("H5_PROPOSAL_INVALID"); })();
-        const now = Date.now();
-        return { fingerprint, commandKey: createA2CommandKey(request.kind === "approval" ? "h5-proposal" : "h5-direct"), createdAt: now, expiresAt: now + PENDING_MUTATION_TTL_MS, adminId: actor.adminId, change, request };
-      };
-      try {
-        await send(create(change.approvalRequired), false);
-      } catch (error) {
-        const e = error as { reasonCode?: string; backendMessage?: string };
-        // The streak read model has no stored amount. Its direct endpoint determines direction.
-        // Only an explicit first-attempt no-write verdict may switch to a new A2 command.
-        if (!change.approvalRequired && proposal && firstRejection(error) && (e.reasonCode ?? e.backendMessage) === "H5_APPROVAL_REQUIRED") {
-          await send(create(true), false);
-        } else {
-          throw error;
-        }
-      }
-    },
+    run,
   };
 }
