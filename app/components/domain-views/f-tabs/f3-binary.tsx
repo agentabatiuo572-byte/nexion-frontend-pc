@@ -535,7 +535,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             what="暂停时，全平台之后的团队平衡奖励结算都被拦下，不发钱。"
             when="暂停和恢复都要提交审批，批准后写入，之后的结算立即按新状态判断。"
             effect="暂停：已经记账的不收回。恢复：之后照常结算，仍要满足门槛、分组、上限和兑付覆盖率；暂停期间的周期不自动补结。"
-            note={pausedRaw !== undefined && !["on", "off"].includes(pausedRaw) ? `存的值是「${pausedRaw}」，不是 on 或 off；这页和结算按同一套规则判断是不是暂停。` : undefined}
+            note={pauseState === null && pausedRaw !== undefined ? `存的值是「${pausedRaw}」，认不出是暂停还是发放。` : undefined}
             value={<span className="f3-cfg">{pauseState === null
               ? <StatusTag tone="danger" icon={Ban} explain="存的值认不出是暂停还是发放，结算时整期被拦下；重新选一次暂停或恢复。">配置无效</StatusTag>
               : binaryPaused ? <StatusTag tone="warn" icon={PauseCircle}>已暂停</StatusTag>
