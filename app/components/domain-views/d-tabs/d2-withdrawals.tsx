@@ -20,7 +20,7 @@ import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { fetchWithdrawalGateOpen } from "@/lib/admin/ops-dashboard-client";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { FundCheckButtons, FundCheckResult, FundClosureModal, FundSettledNotices, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { bankEvidenceLabels, bankEvidenceTime } from "@/lib/admin/bank-payout-evidence";
@@ -784,8 +784,8 @@ const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请到操作记�
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请到操作记录与审批核对";
 
 const RECOVERY_HINT: Record<string, string> = {
-  review: "先查询原结果。按原请求重试用的是原内容，不会多做一次。",
-  batch: "先查询原结果。按原请求重试会按原来那批提现单和理由原样重发，不会多做一次。",
+  review: "",
+  batch: "按原请求重试会按原来那批提现单和理由原样重发。",
   cregis: "按原请求重试不会重新打款。",
   bank: "按原请求重试只查原单，不会重新打款。",
   simulate: "只在本地开发环境出现。",
@@ -1689,26 +1689,22 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const copyNo = (value: string) => {
     void navigator.clipboard?.writeText(value).then(() => toast("已复制提现单号", "success"), () => toast("复制失败，请手动选择单号", "error"));
   };
-  const pendingNotices = pendingCommands.map((record) => {
+  const pendingRows = pendingCommands.map((record): FundRecoveryRow => {
     const expired = record.expiresAt <= Date.now();
     const unsupported = !!fundInvestigationAccess(record).unavailableReason;
     const check = () => void (record.kind === "batch" ? checkInvestigation(record).catch(() => undefined) : verifyPending(record));
-    return <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`}
-      action={<>
+    return { key: record.fingerprint, title: record.label, record, outcome: investigationResults[record.commandKey], createdAt: record.createdAt, expired, canRetry: !expired && canRetry(record),
+      actions: <>
         <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={!!submitting} checking={submitting === record.fingerprint}
           onCheck={check} onClose={() => setClosing(record)} />
         {unsupported && record.kind !== "batch" && <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>读回现在的状态</Button>}
         <Button size="sm" disabled={!!submitting} disabledReason={expired ? RETRY_EXPIRED : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>
-      </>}>
-      {timeText(new Date(record.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效。{expired ? `${RETRY_EXPIRED}。` : unsupported ? RECOVERY_HINT[record.kind].replace("先查询原结果。", "") : RECOVERY_HINT[record.kind]}
-      {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=D&object=${encodeURIComponent(record.nos[0])}`}>到操作记录与审批核对</Link></>}
-      {pendingNotes[record.fingerprint] && <div>{pendingNotes[record.fingerprint]}</div>}
-      <FundCheckResult record={record} outcome={investigationResults[record.commandKey]} expired={expired} canRetry={canRetry(record)}
-        copy={{ unsupported: record.kind === "cregis" ? "Cregis 打款恢复的结果系统还查不了。请到 Cregis 核对这笔打款；按原请求重试不会重新打款。"
-          : "银行查单的结果系统还查不了。请到 HDPay 核对这笔打款；按原请求重试只查原单，不会重新打款。" }}
-        techFacts={`操作人 ${record.operator} ｜ 理由 ${record.reason}`} />
-    </Notice>;
+      </>,
+      detail: <>{RECOVERY_HINT[record.kind] && <p>{RECOVERY_HINT[record.kind]}</p>}{pendingNotes[record.fingerprint] && <p>{pendingNotes[record.fingerprint]}</p>}</>,
+      tech: `操作人 ${record.operator} ｜ 理由 ${record.reason}`,
+      copy: { unsupported: record.kind === "cregis" ? "Cregis 打款恢复查不了原结果，到 Cregis 核对这笔打款。" : "银行查单查不了原结果，到 HDPay 核对这笔打款。" } };
   });
+  const auditLink = reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href={`/platform/audit?domain=D${pendingCommands.length === 1 ? `&object=${encodeURIComponent(pendingCommands[0].nos[0])}` : ""}`}>到操作记录与审批核对</Link>;
 
   return <>
     <PageHeader pageId="D2" title="提现审核" summary={<AutoGloss>审核用户提现，先看风险和兑付覆盖率。</AutoGloss>}
@@ -1730,8 +1726,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       action={reach("/finance/pool", "finance_d3_read") ? <Link className="rd-link" href="/finance/pool">去资金储备与应付款</Link> : undefined}>
       现在 {fmtPct(d5.coverageRatio)}，红线 {fmtConfigPct(d5.redlinePct)}。补足储备后再放行。拒绝、延迟、冻结、解冻和退款照常可用。
     </Notice>}
-    <FundSettledNotices items={settled} onDismiss={key => setSettled(current => current.filter(item => item.key !== key))} />
-    {pendingNotices}
+    <FundRecoveryPanel rows={pendingRows} link={auditLink} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />
 
     <StatBand label="提现汇总">
       <Stat lead tone="role-2" icon={Inbox} label="要处理" value={todoCount ?? "—"} unit={todoCount === undefined ? undefined : "笔"} sub={countsFailed ? "数量暂时读不到" : undefined}

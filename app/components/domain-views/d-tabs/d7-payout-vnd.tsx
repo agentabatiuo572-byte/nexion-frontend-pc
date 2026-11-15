@@ -29,7 +29,7 @@ import {
   type PayoutVndConfig, type PayoutVndValues, type PayoutVndWritableField,
 } from "@/lib/admin/payout-vnd-contract";
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { FundCheckButtons, FundCheckResult, FundClosureModal, FundSettledNotices, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import { configApprovalOriginalInput, pendingConfigApproval, releaseConfigApproval, submitConfigApproval, withdrawalApprovalDisabledReason } from "@/lib/admin/withdrawal-config-approval";
@@ -643,29 +643,29 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  const auditLink = canReachAudit && <> <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批核对</Link></>;
+  const auditLink = canReachAudit && <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批核对</Link>;
   const sentAt = (record: PendingMutationRecord) => `${formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（${zone}）发出`;
   const expiredDirect = canReachAudit ? `${RETRY_EXPIRED_TEXT}。` : EXPIRED_DIRECT_NO_AUDIT;
   const expiredApproval = canReachAudit ? `${RETRY_EXPIRED_TEXT}。` : canQueryOriginal ? EXPIRED_APPROVAL_NO_AUDIT : EXPIRED_NO_QUERY;
 
-  const directNotices = direct.map((record) => {
+  const directRows = direct.map((record): FundRecoveryRow => {
     const expired = isRetryExpired(record);
     const canRetry = canManage && (!record.forceInverted || canForce);
-    return (
-      <Notice key={record.commandKey} tone="warn" title="参数修改 · 结果未知" action={<>
+    return { key: record.commandKey, title: "参数修改", createdAt: record.createdAt, expired, canRetry: !expired && canRetry,
+      status: { tone: expired ? "warn" : "neutral", label: expired ? "已过期" : "不能查询", line: expired ? "超过 24 小时不能再重试，点「读回核对」看版本有没有变。" : "直接保存的修改查不了原结果，点「读回核对」看版本有没有变。" },
+      actions: <>
         <Button size="sm" disabled={!!recovering} loading={recovering === `verify:${record.commandKey}`} onClick={() => void verifyDirect(record)}>读回核对</Button>
         {!expired && <Button size="sm" disabled={!!recovering} loading={recovering === `retry:${record.commandKey}`} disabledReason={canRetry ? undefined : NO_WRITE} onClick={() => void retryDirect(record)}>按原请求重试</Button>}
         {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ kind: "direct", record })}>解除原操作记录</Button>}
-      </>}>
-        {sentAt(record)}，可能已经生效。这组参数有结果前不能再改。{expired ? expiredDirect : "按原请求重试会重发原内容，已成功的不会重复执行。直接保存的修改查不了原结果。"}
-        {auditLink}
-        <Explain label="技术信息" content={`原请求编号 ${record.commandKey} ｜ 发出时版本 v${record.expectedVersion} ｜ 理由 ${record.reason} ｜ 拟改值：${valuesSummary(record.values)}${record.forceInverted ? " ｜ 强制保存倒挂价" : ""}`} />
-        {notes[record.commandKey] && <div>{notes[record.commandKey]}</div>}
-      </Notice>
-    );
+      </>,
+      detail: <>
+        <p>可能已经生效，这组参数有结果前不能再改。{expired ? expiredDirect : "按原请求重试会重发原内容，已成功的不会重复执行。"}</p>
+        {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
+      </>,
+      tech: `原请求编号 ${record.commandKey} ｜ 发出时版本 v${record.expectedVersion} ｜ 理由 ${record.reason} ｜ 拟改值：${valuesSummary(record.values)}${record.forceInverted ? " ｜ 强制保存倒挂价" : ""}` };
   });
 
-  const approvalNotice = approval && (() => {
+  const approvalRow = approval && ((): FundRecoveryRow => {
     const expired = isRetryExpired(approval);
     const missing = queryMissing.includes(approval.commandKey);
     const showRetry = !expired && (missing || !canQueryOriginal);
@@ -676,22 +676,21 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     } catch (cause) {
       original = cause instanceof Error ? cause.message : "原审批内容读不到";
     }
-    return (
-      <Notice tone="warn" title="放宽提交 · 结果未知" action={<>
+    return { key: approval.commandKey, title: "放宽提交", record: approval, outcome: investigationResults[approval.commandKey], createdAt: approval.createdAt, expired, canRetry: showRetry && canManage,
+      status: !canQueryOriginal && !expired ? { tone: "warn", label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
+      actions: <>
         {canQueryOriginal && <FundCheckButtons record={approval} outcome={investigationResults[approval.commandKey]} busy={!!recovering} checking={recovering === "query" || recovering === approval.commandKey}
           onCheck={() => void lookupApproval()} onClose={() => setClosing(true)} />}
         {showRetry && <Button size="sm" disabled={!!recovering} loading={recovering === "approval-retry"} disabledReason={canManage ? undefined : NO_WRITE} onClick={() => void retryApproval()}>按原请求重试</Button>}
-      </>}>
-        {sentAt(approval)}，可能已生成审批单。这组参数有结果前不能再改。
-        {expired ? expiredApproval : !canQueryOriginal ? "这个账号查不了原审批单，可以按原请求重试，已成功的不会重复执行。" : missing ? "" : "先查询原结果，查不到审批单再按原请求重试。"}
-        {auditLink}
-        {notes[approval.commandKey] && <div>{notes[approval.commandKey]}</div>}
-        <FundCheckResult record={approval} outcome={investigationResults[approval.commandKey]} expired={expired} canRetry={showRetry && canManage} techFacts={original} />
-      </Notice>
-    );
+      </>,
+      detail: <>
+        <p>可能已生成审批单，这组参数有结果前不能再改。{expired ? expiredApproval : missing ? "" : canQueryOriginal ? "查不到审批单再按原请求重试。" : ""}</p>
+        {notes[approval.commandKey] && <p>{notes[approval.commandKey]}</p>}
+      </>,
+      tech: original };
   })();
-
-  const settledNotices = <FundSettledNotices items={settled} onDismiss={key => setSettled(current => current.filter(item => item.key !== key))} />;
+  const pendingPanel = <FundRecoveryPanel rows={[...directRows, ...(approvalRow ? [approvalRow] : [])]} link={auditLink || undefined}
+    settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />;
   const releaseModal = <>
     {releasing && <ReleaseModal label="参数修改" onCancel={() => setReleasing(null)} onConfirm={releasePending}
       explain="重试被拒说明不了原操作的结果，先读回核对版本有没有变。解除后原操作不再重试。" />}
@@ -726,8 +725,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   if (!config) {
     return <>
       {header}
-      {settledNotices}{directNotices}
-      {approvalNotice}
+      {pendingPanel}
       {loading
         ? <BlockState state="loading" title="正在读取越南盾提现参数…" />
         // 资金页读取失败不留旧值（ST-36），写法和汇率设置一样：一句话加「失败原因」问号，汇率来源不可用时另起一行给去处。
@@ -805,8 +803,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
           {nothingToDo ? "HDPay 打款设置已配置，没有要处理的事" : "HDPay 打款设置已配置"}
         </Conclusion>}
 
-      {settledNotices}{directNotices}
-      {approvalNotice}
+      {pendingPanel}
       {approvalRejected && <Notice tone="danger" title="放宽提交被拒绝">{approvalRejected}</Notice>}
       {queue.rows.map((ticket) => (
         <Notice key={ticket.id} tone="progress" action={canReachAudit ? <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批查看</Link> : undefined}>

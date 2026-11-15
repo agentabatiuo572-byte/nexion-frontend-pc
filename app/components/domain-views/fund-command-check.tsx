@@ -1,99 +1,134 @@
 "use client";
 import "./fund-command-check.css";
 import { useEffect, useState, type ReactNode } from "react";
-import { SearchCheck } from "lucide-react";
-import { Button, Check, Explain, Fact, Facts, Field, Input, IrreversibleTag, Modal, Notice, Segments, StatusTag, Textarea, type StateTone } from "@/app/components/rd";
+import { CheckCircle2, ChevronRight, SearchCheck, X } from "lucide-react";
+import { Button, Check, Explain, Fact, Facts, Field, IconButton, Input, IrreversibleTag, Modal, Notice, Segments, StatusTag, Textarea, type StateTone } from "@/app/components/rd";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { fundInvestigationAccess, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 
 /**
- * 资金类「结果未知」记录的查询原结果：D2、D3、D5、D6、D7、J1、K1、L1、E4 共用一个样子。
- * 查询只读（GET by-command-key）；核查结案是另一个按钮、另一个确认框，只给有调查权限的超级管理员。
- * 资金操作后端证明不了「确实没执行」，所以没查到、仍未知都不能写成没执行。
+ * 资金类「结果未知」记录的恢复面板：D2、D3、D5、D6、D7、J1、K1、L1、E4 共用一个样子。
+ * 一个面板、每条一行（操作 · 状态 · 一句结论 · 固定在右侧的按钮），点开一行才看发出时间、详细说明和技术信息。
+ * 查询原结果只读（GET by-command-key）；核查结案是另一个按钮、另一个确认框，只给有调查权限的超级管理员。
+ * 资金操作系统证明不了「确实没执行」，所以没查到、仍未知都不写成没执行。
  */
 
-type Tone = Extract<StateTone, "ok" | "warn" | "danger" | "progress" | "neutral" | "done">;
-type Shown = { tone: Tone; title: string; text: string };
 export type FundCheckCopy = {
-  /** 这条记录不支持核查时找谁、去哪核对（CREGIS 恢复、银行查单等）。 */
+  /** 这条记录不支持查询时的一句话（找谁、去哪核对）。 */
   unsupported?: string;
-  /** 页面上核对当前结果的地方，例如「到操作记录与审批核对」。 */
+  /** 页面上核对当前结果的地方，例如「操作记录与审批」。 */
   where?: string;
 };
 export type FundSettled = { key: string; label: string; status: FundCommandInvestigation["originalStatus"] };
+export type FundRecoveryRow = {
+  key: string;
+  /** 操作和对象，一行写得下。 */
+  title: ReactNode;
+  /** 支持查询的原记录；页面自己判断的记录（直接保存、待审批）不传。 */
+  record?: FundCommandRecord;
+  outcome?: FundInvestigationOutcome;
+  /** 发出时间；旧记录没有时不写。 */
+  createdAt?: number;
+  expired: boolean;
+  /** 现在这个账号能不能按原请求重试。 */
+  canRetry: boolean;
+  /** 页面自己的状态（待审批、直接保存查不了等），优先于查询结果。 */
+  status?: { tone: StateTone; label: string; line: string };
+  actions: ReactNode;
+  /** 展开后显示：这条记录特有的事实（金额、改动、页面的读回说明等）。 */
+  detail?: ReactNode;
+  tech?: string;
+  copy?: FundCheckCopy;
+};
 
-const CLOSE_NEEDED = "要结案，请把这条记录交给有调查权限的超级管理员，由对方按证据核查。";
+type Shown = { tone: StateTone; label: string; line: string };
+const INTRO = "这些操作发出后没收到明确结果，可能已经生效。先查询原结果；按原请求重试只会重发原内容，不会多做一次。有结果前，相关对象不能再操作。";
 
-function shown(outcome: FundInvestigationOutcome, expired: boolean, canRetry: boolean, where: string): Shown {
-  if ("error" in outcome) {
-    const forbidden = /只有原操作人或有调查权限/.test(outcome.error);
-    return forbidden
-      ? { tone: "danger", title: "没有查询权限", text: `${outcome.error}` }
-      : { tone: "danger", title: "查询没有完成", text: `${outcome.error} 这不代表原操作没有执行，记录继续保留，请稍后再查。` };
-  }
+function shown(row: FundRecoveryRow): Shown {
+  const where = row.copy?.where ?? "操作记录与审批";
+  if (row.status) return row.status;
+  const access = row.record ? fundInvestigationAccess(row.record) : null;
+  if (access?.unavailableReason) return { tone: "neutral", label: "不能查询", line: access.unavailableReason === "MISSING_ORIGIN"
+    ? `升级前的记录查不了原结果，到${where}核对。` : row.copy?.unsupported ?? `这类操作查不了原结果，到${where}核对。` };
+  const outcome = row.outcome;
+  if (!outcome) return row.expired
+    ? { tone: "warn", label: "已过期", line: `超过 24 小时不能再重试，先查询原结果。` }
+    : { tone: "warn", label: "结果未知", line: access && !access.canRead ? "只有原操作人或有调查权限的超级管理员能查询。" : "可能已经生效，先查询原结果。" };
+  if ("error" in outcome) return /只有原操作人或有调查权限/.test(outcome.error)
+    ? { tone: "danger", label: "没有查询权限", line: "请原操作人或有调查权限的超级管理员查询。" }
+    : { tone: "danger", label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" };
   const receipt = outcome.receipt;
-  if (!receipt) return { tone: "warn", title: "没有查到这次请求", text: expired || !canRetry
-    ? `后端没有这次请求的记录。查不到不等于没执行，记录继续保留；请${where}，不要另做一次。`
-    : `后端没有这次请求的记录。查不到不等于没执行，先${where}；确认没有执行后再按原请求重试，重试用原请求，不会多做一次。` };
-  if (receipt.originalStatus === "PROCESSING") return { tone: "progress", title: "原操作还在执行", text: "稍后再查。执行完之前不要重试，也不要另做一次。" };
-  if (receipt.originalStatus === "FAILED") return { tone: "neutral", title: "原操作没有成功", text: expired || !canRetry
-    ? `后端记为失败，这次请求没有生效。记录继续保留；请${where}后再决定要不要重新发起。`
-    : "后端记为失败，这次请求没有生效。可以按原请求重试，会用原内容再执行一次。" };
-  if (receipt.originalStatus === "UNKNOWN") return { tone: "warn", title: "后端也没有结果", text: "原操作中途中断，后端同样记为结果未知，相关对象继续锁着。重试只会得到同样的结果，需要按证据核查结案。" };
-  // SUCCEEDED / CONFIRMED_* 已由页面清掉记录，这里只在页面没清（读回失败等）时兜底。
-  return { tone: "done", title: "原操作已有结论", text: "刷新页面查看现在的结果。" };
+  if (!receipt) return { tone: "warn", label: "没有查到", line: `查不到不等于没执行，先到${where}核对，不要另做一次。` };
+  if (receipt.originalStatus === "PROCESSING") return { tone: "progress", label: "还在执行", line: "稍后再查，执行完之前不要重试。" };
+  if (receipt.originalStatus === "FAILED") return { tone: "neutral", label: "没有成功", line: row.canRetry && !row.expired
+    ? "这次没有生效，可以按原请求重试。" : `这次没有生效，到${where}核对后再决定要不要重新发起。` };
+  if (receipt.originalStatus === "UNKNOWN") return { tone: "warn", label: "仍未知", line: access?.canSubmit
+    ? "系统也没有结果，重试也一样，请按证据核查结案。" : "系统也没有结果，请有调查权限的超级管理员核查结案。" };
+  return { tone: "done", label: "已有结论", line: "刷新页面查看现在的结果。" };
 }
 
 const CONCLUSION_TEXT: Record<FundCommandEvidence["conclusion"], string> = { SUCCEEDED: "已执行", NOT_EXECUTED: "未执行", STILL_UNKNOWN: "仍未知" };
 
-/** 查询原结果只在拿到后端回执后才写结论；没有查过时不显示任何结论。 */
-export function FundCheckResult({ record, outcome, expired, canRetry, copy, techFacts, hideTech }: {
-  record: FundCommandRecord;
-  outcome?: FundInvestigationOutcome;
-  expired: boolean;
-  /** 现在这个账号能不能按原请求重试（页面自己的判断）。 */
-  canRetry: boolean;
-  copy?: FundCheckCopy;
-  /** 页面自己的技术信息（操作人、理由等），和原请求编号放在同一个折叠里。 */
-  techFacts?: string;
-  /** 页面已经有自己的原操作技术信息折叠时不再重复。 */
-  hideTech?: boolean;
-}) {
+function RecoveryRow({ row }: { row: FundRecoveryRow }) {
+  const [open, setOpen] = useState(false);
   const [checkedAt, setCheckedAt] = useState<number>();
-  useEffect(() => { if (outcome) setCheckedAt(Date.now()); }, [outcome]);
-  const access = fundInvestigationAccess(record);
-  const where = copy?.where ?? "到操作记录与审批核对";
-  const origin = record.commandOrigin;
-  const tech = [`原请求编号 ${record.commandKey}`, origin ? `${origin.originalMethod} ${origin.originalPath}` : "", techFacts ?? ""].filter(Boolean).join(" ｜ ");
-  if (access.unavailableReason) return <div className="fund-check" role="status">
-    <div className="fund-check-head"><StatusTag tone="neutral">不能查询原结果</StatusTag>{!hideTech && <Explain label="技术信息" content={tech} />}</div>
-    <p>{access.unavailableReason === "MISSING_ORIGIN"
-      ? `这条记录是升级前留下的，缺少原请求的来源，系统查不到它的结果。请${where}；需要结案时找有调查权限的超级管理员。`
-      : copy?.unsupported ?? `这类操作系统还不支持查询原结果。请${where}；需要结案时找有调查权限的超级管理员。`}</p>
-  </div>;
-  const result = outcome && shown(outcome, expired, canRetry, where);
-  const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
+  useEffect(() => { if (row.outcome) setCheckedAt(Date.now()); }, [row.outcome]);
+  const view = shown(row);
+  const receipt = row.outcome && "receipt" in row.outcome ? row.outcome.receipt : null;
+  const error = row.outcome && "error" in row.outcome ? row.outcome.error : "";
   const last = receipt?.investigation;
-  const needClose = receipt?.originalStatus === "UNKNOWN";
-  // 还没查过：不画分隔线，技术信息跟在正文后面。
-  if (!result) return <>
-    {!access.canRead && <p className="fund-check-aux">只有原操作人或有调查权限的超级管理员能查询原结果。{CLOSE_NEEDED}</p>}
-    {!hideTech && <>{" "}<Explain label="技术信息" content={tech} /></>}
-  </>;
-  return <div className="fund-check" role="status">
-    <div className="fund-check-head">
-      <StatusTag tone={result.tone}>{result.title}</StatusTag>
-      {checkedAt && <span className="fund-check-time">{formatBusinessTimeCompact(new Date(checkedAt).toISOString(), "—")} 查询</span>}
-      {!hideTech && <Explain label="技术信息" content={tech} />}
+  const origin = row.record?.commandOrigin;
+  const tech = [row.record ? `原请求编号 ${row.record.commandKey}` : "", origin ? `${origin.originalMethod} ${origin.originalPath}` : "", row.tech ?? ""].filter(Boolean).join(" ｜ ");
+  const id = `fund-row-${row.key.replace(/[^A-Za-z0-9_-]/g, "-")}`;
+  return <li className="fund-row">
+    <div className="fund-row-line">
+      <button type="button" className="fund-row-toggle" aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}>
+        <ChevronRight className="fund-row-chevron" size={14} aria-hidden /><span className="fund-row-title">{row.title}</span>
+      </button>
+      <StatusTag tone={view.tone}>{view.label}</StatusTag>
+      <span className="fund-row-text">{view.line}</span>
+      <span className="fund-row-actions">{row.actions}</span>
     </div>
-    <p>{result.text}</p>
-    {last && <p className="fund-check-aux">上次核查 {formatBusinessTimeCompact(last.investigatedAt, "—")}：结论「{CONCLUSION_TEXT[last.conclusion]}」{last.requestedConclusion !== last.conclusion && `（申请的是「${CONCLUSION_TEXT[last.requestedConclusion as FundCommandEvidence["conclusion"]] ?? last.requestedConclusion}」，证据不够）`}。</p>}
-    {needClose && !access.canSubmit && <p className="fund-check-aux">{CLOSE_NEEDED}</p>}
-  </div>;
+    {open && <div className="fund-row-detail" id={id}>
+      {(row.createdAt !== undefined || checkedAt) && <p>{[row.createdAt !== undefined ? `${formatBusinessTimeCompact(new Date(row.createdAt).toISOString(), "—")} 发出` : "", checkedAt ? `${formatBusinessTimeCompact(new Date(checkedAt).toISOString(), "—")} 查询` : ""].filter(Boolean).join("，")}（{businessZone().label}）。</p>}
+      {row.detail}
+      {error && <p>{error}</p>}
+      {last && <p>上次核查 {formatBusinessTimeCompact(last.investigatedAt, "—")}：结论「{CONCLUSION_TEXT[last.conclusion]}」{last.requestedConclusion !== last.conclusion && `（申请的是「${CONCLUSION_TEXT[last.requestedConclusion as FundCommandEvidence["conclusion"]] ?? last.requestedConclusion}」，证据不够）`}。</p>}
+      {tech && <p className="fund-row-tech"><Explain label="技术信息" content={tech}>技术信息</Explain></p>}
+    </div>}
+  </li>;
 }
 
-/** 待处理条上的两个查询类按钮：查询原结果（只读）、核查结案（单独确认框）。按原请求重试由页面自己放。 */
+/** 一个面板列出这页所有结果未知的操作；默认露三条，其余点开。 */
+export function FundRecoveryPanel({ rows, link, settled, onDismissSettled, heading }: {
+  rows: readonly FundRecoveryRow[];
+  /** 「到操作记录与审批核对」这类去处，整块只放一次。 */
+  link?: ReactNode;
+  settled?: readonly FundSettled[];
+  onDismissSettled?: (key: string) => void;
+  /** 默认「N 项操作结果未知」；有待审批等别的状态时页面自己写。 */
+  heading?: string;
+}) {
+  const [all, setAll] = useState(false);
+  const visible = all ? rows : rows.slice(0, 3);
+  return <>
+    {settled?.map(item => <p key={item.key} className="fund-settled" role="status">
+      <CheckCircle2 size={14} aria-hidden />
+      <span><b>{item.label}</b>{item.status === "CONFIRMED_NOT_EXECUTED" ? " 核查确认没有执行，记录已解除，可以重新发起。" : " 原操作已执行，记录已解除，不要再做一次。"}</span>
+      {onDismissSettled && <IconButton aria-label="关闭这条提示" onClick={() => onDismissSettled(item.key)}><X size={14} aria-hidden /></IconButton>}
+    </p>)}
+    {rows.length > 0 && <Notice tone="warn" title={<>{heading ?? `${rows.length} 项操作结果未知`}<Explain label="结果未知怎么处理" content={INTRO} /></>}>
+      <ul className="fund-rows" aria-label="结果未知的操作">{visible.map(row => <RecoveryRow key={row.key} row={row} />)}</ul>
+      {(rows.length > 3 || link) && <div className="fund-rows-foot">
+        {rows.length > 3 && <Button size="sm" variant="ghost" onClick={() => setAll(value => !value)}>{all ? "只看前 3 条" : `展开全部 ${rows.length} 条`}</Button>}
+        {link}
+      </div>}
+    </Notice>}
+  </>;
+}
+
+/** 每行右侧的查询类按钮：查询原结果（只读）、核查结案（单独确认框）。按原请求重试由页面自己放在后面。 */
 export function FundCheckButtons({ record, outcome, busy, checking, onCheck, onClose }: {
   record: FundCommandRecord;
   outcome?: FundInvestigationOutcome;
@@ -109,19 +144,6 @@ export function FundCheckButtons({ record, outcome, busy, checking, onCheck, onC
       disabledReason={access.canRead ? undefined : "只有原操作人或有调查权限的超级管理员能查询"} onClick={onCheck}>查询原结果</Button>}
     {receipt?.originalStatus === "UNKNOWN" && access.canSubmit && <Button size="sm" variant="danger-outline" disabled={busy} onClick={onClose}>核查结案</Button>}
   </>;
-}
-
-/** 查到原操作已有结论后记录会从待处理里消失；这条一直留到运营点「知道了」。 */
-export function FundSettledNotices({ items, onDismiss }: { items: readonly FundSettled[]; onDismiss: (key: string) => void }) {
-  return <>{items.map(item => {
-    const text = item.status === "CONFIRMED_NOT_EXECUTED"
-      ? { title: "核查确认没有执行", body: "原操作没有执行，这条记录已解除。重新核对现在的情况后，可以重新发起。" }
-      : item.status === "CONFIRMED_SUCCEEDED"
-        ? { title: "核查确认已执行", body: "超级管理员按证据确认原操作已经执行，这条记录已解除。不要再做一次；现在的结果看刷新后的页面。" }
-        : { title: "原操作已执行", body: "后端有原操作的完成记录，这条记录已解除。不要再做一次；现在的结果看刷新后的页面。" };
-    return <Notice key={item.key} tone="ok" title={<>{item.label} · <span className="rd-keep">{text.title}</span></>}
-      action={<Button size="sm" onClick={() => onDismiss(item.key)}>知道了</Button>}>{text.body}</Notice>;
-  })}</>;
 }
 
 /** 核查结案：资金操作只能按证据确认「已执行」，或留下「仍未知」的核查记录；后端决定证据够不够。 */

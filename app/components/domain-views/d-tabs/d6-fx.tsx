@@ -17,7 +17,7 @@ import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
-import { FundCheckButtons, FundCheckResult, FundClosureModal, FundSettledNotices, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
@@ -427,43 +427,32 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   );
 
   // 待确认常显，读取失败时也在（OP-93）。正文写发生了什么和下一步，动作排在正文下面（DT-09）。
-  const pendingNotice = pending && (() => {
+  const canAudit = reach("/platform/audit", "platform_a2_read");
+  const pendingRow = pending && (() => {
     const param = paramOf(pending.param);
     const expired = pending.expiresAt <= Date.now();
-    const canAudit = reach("/platform/audit", "platform_a2_read");
-    const auditLink = canAudit && <Link className="rd-link" href="/platform/audit?domain=D&object=VND_USDT" prefetch={false}>操作记录与审批</Link>;
-    const when = minuteText(new Date(pending.createdAt).toISOString());
     const what = `把${param.label}改成 ${valueText(pending.param, pending.after)}`;
     const retryBlock = expired ? "已超过 24 小时，不能再重试" : !canManage ? NO_WRITE : retryRejected ? RETRY_AGAIN : undefined;
-    return (
-      <Notice tone="warn" title="保存结果未知，已停止展示旧的买入价" actionBelow action={<>
+    return { key: pending.commandKey, title: what, record: pending.proposal ? pending : undefined, outcome: investigationResults[pending.commandKey], createdAt: pending.createdAt, expired, canRetry: !retryBlock,
+      status: pending.proposal ? undefined : { tone: expired ? "warn" as const : "neutral" as const, label: expired ? "已过期" : "不能查询", line: "直接修改查不了原结果，到下面的调整历史核对。" },
+      copy: { where: "操作记录与审批和调整历史" },
+      actions: <>
         {pending.proposal && canQueryOriginal && <FundCheckButtons record={pending} outcome={investigationResults[pending.commandKey]} busy={retrying}
           onCheck={() => void lookupProposal(pending)} onClose={() => setClosing(true)} />}
-        <span data-pair="">
-          <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原请求重试</Button>
-          {!retryBlock && <Explain label="按原请求重试会怎样" content="重发原内容，已成功的不会重复执行。" />}
-        </span>
+        <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原请求重试</Button>
         {retryRejected && !expired && !pending.proposal && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
-        {auditLink && !expired && <span>到{auditLink}核对</span>}
-        <Explain label="技术信息" content={`原请求编号 ${pending.commandKey} ｜ 原版本 ${pending.expectedVersion} ｜ 理由 ${pending.reason}`}>技术信息</Explain>
-      </>}>
-        <p><KeepText text={`${when}（${zone}）${what} 的操作可能已经提交，${data ? "下面是重新读到的值。" : ""}有结果前不能再改。`} phrases={["有结果前不能再改。"]} /></p>
-        {/* 过期后不能重试、不能解除，也不引导关标签页绕过：如实写怎么核对、交给谁（F4、BE-03）。 */}
-        {expired && (canAudit
-          ? <p>已超过 24 小时，不能再重试。请财务负责人到{auditLink}和下面的调整历史核对这次修改有没有生效。</p>
-          : <p>已超过 24 小时，不能再重试。这个账号看不到操作记录，请在下面的调整历史里核对这次修改有没有生效，再交财务负责人处理。</p>)}
+      </>,
+      detail: <>
+        <p>这次修改可能已经提交，已停止展示旧的买入价{data ? "，下面是重新读到的值" : ""}。有结果前不能再改。</p>
+        {expired && <p>{canAudit ? "请财务负责人到操作记录与审批和下面的调整历史核对这次修改有没有生效。" : "这个账号看不到操作记录，请在下面的调整历史里核对，再交财务负责人处理。"}</p>}
         {!expired && !canManage && <p>{NO_WRITE}。</p>}
-        {retryRejected && !expired && <>
-          <p>重试没有成功：{retryRejected}</p>
-          <p>{pending.proposal ? "先查询原结果；查不到审批单不能证明没执行。" : "先到调整历史核对；列表里找不到记录不能证明没执行。「解除原操作记录」只清本页这条记录，后端原操作没有结案时仍会阻止新提交。"}</p>
-        </>}
+        {retryRejected && !expired && <p>重试没有成功：{retryRejected} {pending.proposal ? "查不到审批单不能证明没执行。" : "列表里找不到记录不能证明没执行。「解除原操作记录」只清本页这条记录，原操作没有结案时系统仍会阻止新提交。"}</p>}
         {pendingNote && <p>{pendingNote}</p>}
-        {pending.proposal && <FundCheckResult record={pending} outcome={investigationResults[pending.commandKey]} expired={expired} canRetry={!retryBlock} copy={{ where: "到操作记录与审批和下面的调整历史核对" }} hideTech />}
-        {!pending.proposal && <p>直接修改查不了原结果，请在下面的调整历史里核对。</p>}
-      </Notice>
-    );
+      </>,
+      tech: `原版本 ${pending.expectedVersion} ｜ 理由 ${pending.reason}${pending.proposal ? "" : ` ｜ 原请求编号 ${pending.commandKey}`}` };
   })();
-  const settledNotices = <FundSettledNotices items={settled} onDismiss={key => setSettled(current => current.filter(item => item.key !== key))} />;
+  const pendingNotice = <FundRecoveryPanel rows={pendingRow ? [pendingRow] : []} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
+    link={canAudit && <Link className="rd-link" href="/platform/audit?domain=D&object=VND_USDT" prefetch={false}>到操作记录与审批核对</Link>} />;
   const releaseModal = <>
     {pending && releasing && <ReleaseModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} onCancel={() => setReleasing(false)} onConfirm={() => releasePending(pending)} />}
     {pending && closing && <FundClosureModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} createdAt={pending.createdAt}
@@ -474,7 +463,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     return (
       <>
         {header}
-        {settledNotices}{pendingNotice}
+        {pendingNotice}
         {loading
           ? <BlockState state="loading" title="正在读取汇率设置…" />
           : <BlockState state="error" title="汇率设置加载失败"
@@ -500,7 +489,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     <>
       {header}
 
-      {settledNotices}{pendingNotice}
+      {pendingNotice}
 
       {/* 正常时一句话、不放大（VS-23）；有待确认时上面的提示条就是结论。 */}
       {loading

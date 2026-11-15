@@ -25,7 +25,7 @@ import { readL1LiveTotals } from "./l1-l2-live-data";
 import { L1LiveTotals } from "./l1-l2-live-fallback";
 import type { LCtx } from "./types";
 import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, isLOutcomeUnknownError, type L1KpiQuery, type LReportCreateInput } from "@/lib/admin/l-client";
-import { FundCheckButtons, FundCheckResult, FundClosureModal, FundSettledNotices, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-kpi-contract";
@@ -318,17 +318,19 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
       <Explain label="导出的说明" content="要填理由，生成下载任务，留操作记录。" />
     </>) : null,
     notices: <>
-      <FundSettledNotices items={settled} onDismiss={key => setSettled(current => current.filter(item => item.key !== key))} />
-      {pending && (
-        <Notice tone="warn" title={`${pending.label} · 结果未知`} action={<>
-          <FundCheckButtons record={pending} outcome={investigationResults[pending.commandKey]} busy={retrying} onCheck={() => void checkInvestigation(pending).catch(() => undefined)} onClose={() => setClosing(true)} />
-          {!expired && <Button size="sm" loading={retrying} disabledReason={!ctx.canExport ? "这个账号已没有导出权限，请有权限的同事处理" : undefined} onClick={() => void retry(pending)}>按原请求重试</Button>}
-        </>}>
-          {formatBusinessTimeFull(new Date(pending.createdAt).toISOString(), "—")}（{businessZone().label}）发出，任务可能已经生成，不要重新导出。<KeepText text={expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !ctx.canExport ? "这个账号已没有导出权限，不能重试，请有权限的同事处理。" : "先查询原结果；按原请求重试会重发原内容，已成功的不会重复执行。"} />{exportPage(`到「${pageName}」核对`)}
-          {!expired && retryNote && <div><KeepText text={retryNote} /></div>}
-          <FundCheckResult record={pending} outcome={investigationResults[pending.commandKey]} expired={expired} canRetry={!expired && !!ctx.canExport} copy={{ where: `到「${pageName}」和操作记录与审批核对` }} techFacts={`理由 ${pending.reason}`} />
-        </Notice>
-      )}
+      <FundRecoveryPanel settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
+        link={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=L">到操作记录与审批核对</Link> : undefined}
+        rows={pending ? [{ key: pending.commandKey, title: pending.label, record: pending, outcome: investigationResults[pending.commandKey], createdAt: pending.createdAt, expired, canRetry: !expired && !!ctx.canExport,
+          copy: { where: `「${pageName}」和操作记录与审批` },
+          actions: <>
+            <FundCheckButtons record={pending} outcome={investigationResults[pending.commandKey]} busy={retrying} onCheck={() => void checkInvestigation(pending).catch(() => undefined)} onClose={() => setClosing(true)} />
+            {!expired && <Button size="sm" loading={retrying} disabledReason={!ctx.canExport ? "这个账号已没有导出权限，请有权限的同事处理" : undefined} onClick={() => void retry(pending)}>按原请求重试</Button>}
+          </>,
+          detail: <>
+            <p>任务可能已经生成，不要重新导出。{!expired && !ctx.canExport ? "这个账号已没有导出权限，不能重试，请有权限的同事处理。" : ""}{exportPage(`到「${pageName}」核对`)}</p>
+            {!expired && retryNote && <p><KeepText text={retryNote} /></p>}
+          </>,
+          tech: `理由 ${pending.reason}` }] : []} />
       {finished && !pending && (
         <Notice tone="ok" title={finished === "series" ? "关键指标趋势已提交导出" : "关键指标当前汇总已提交导出"} action={<Button size="sm" onClick={() => setFinished(null)}>知道了</Button>}>
           任务生成后才能下载。{exportPage(`到「${pageName}」下载`)}

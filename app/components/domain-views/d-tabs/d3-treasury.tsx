@@ -36,7 +36,7 @@ import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-mess
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
-import { FundCheckButtons, FundCheckResult, FundClosureModal, FundSettledNotices, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandRecord, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { exportScope, treasuryCommandKey, treasuryCommands, type TreasuryExportKind } from "@/lib/admin/treasury-commands";
 import { LeaveDialog, useLeaveGuard, type EditorSwitch } from "../i-tabs/i5-writes";
@@ -706,9 +706,9 @@ export function D3Treasury() {
       label: `登记储备注入 ${money(Number(record.amount))}`,
       commandKey: record.commandKey,
       record,
-      title: "登记储备注入结果未知，可能已经入账",
+      title: "可能已经入账",
       body: <>{money(Number(record.amount))}，凭证号 {record.voucherNo}，{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
-      hint: "先查询原结果；按原请求重试不会重复登记。",
+      hint: "按原请求重试不会重复登记。",
       expiresAt: record.expiresAt,
       allowed: canInject,
       auditHref: `/platform/audit?domain=D&object=${encodeURIComponent(record.voucherNo)}`,
@@ -728,9 +728,9 @@ export function D3Treasury() {
       label: "保存预测设置",
       commandKey: forecastRecord.commandKey,
       record: forecastRecord,
-      title: "预测设置保存结果未知，可能已经保存",
+      title: "可能已经保存",
       body: <>{timeText(new Date(forecastRecord.createdAt).toISOString())} 提交。</>,
-      hint: "先查询原结果；按原请求重试不会重复保存。",
+      hint: "按原请求重试不会重复保存。",
       expiresAt: forecastRecord.expiresAt,
       allowed: canConfig && originalOwner(savedForecast),
       auditHref: "/platform/audit?domain=D",
@@ -750,9 +750,9 @@ export function D3Treasury() {
       label: `导出${EXPORT_LABEL[record.exportKind]}`,
       commandKey: record.commandKey,
       record,
-      title: `${EXPORT_LABEL[record.exportKind]} 导出结果未知`,
+      title: "导出任务可能已经生成",
       body: <>{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
-      hint: "文件可能没有下载下来。先查询原结果；按原请求重试不会多记一次。",
+      hint: "文件可能没有下载下来；按原请求重试不会多记一次。",
       expiresAt: record.expiresAt,
       allowed: (record.exportKind === "liabilities" ? canExportLiabilities : canExportReconciliation) && originalOwner(record),
       auditHref: "/platform/audit?domain=D",
@@ -777,30 +777,25 @@ export function D3Treasury() {
           加载失败，已暂停显示旧数据。{mainError || "数据不完整。"}
         </Notice>
       )}
-      <FundSettledNotices items={settled} onDismiss={key => setSettled(current => current.filter(entry => entry.key !== key))} />
-      {pendingItems.map((item) => (
-        <Notice
-          key={item.commandKey}
-          tone="warn"
-          title={item.title}
-          action={(
-            <>
+      <FundRecoveryPanel settled={settled} onDismissSettled={key => setSettled(current => current.filter(entry => entry.key !== key))}
+        link={reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=D">到操作记录与审批核对</Link>}
+        rows={pendingItems.map((item) => {
+          const expired = item.expiresAt <= Date.now();
+          return { key: item.commandKey, title: item.label, record: item.investigationRecord, outcome: investigationResults[item.commandKey], createdAt: item.investigationRecord.createdAt, expired, canRetry: !expired && item.allowed,
+            actions: <>
               <FundCheckButtons record={item.investigationRecord} outcome={investigationResults[item.commandKey]} onCheck={() => void verifyPending(item)} onClose={() => setClosing(item)} />
-              <Button size="sm" disabledReason={item.expiresAt <= Date.now() ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原请求重试</Button>
-            </>
-          )}
-        >
-          {item.body}{item.expiresAt <= Date.now() ? `${RETRY_EXPIRED}。` : item.hint}
-          {reach(item.auditHref, "platform_a2_read") && <> <Link className="rd-link" href={item.auditHref}>到操作记录与审批核对</Link></>}
-          {pendingNotes[item.commandKey] && <div><KeepText text={pendingNotes[item.commandKey]} /></div>}
-          <FundCheckResult record={item.investigationRecord} outcome={investigationResults[item.commandKey]} expired={item.expiresAt <= Date.now()} canRetry={item.allowed} hideTech />
-          <Fold inset title="原操作技术信息" summary="原请求编号、完整内容和提交时间">
-            <p className="rd-note d3-raw" data-mono>原请求编号 {item.commandKey}</p>
-            <pre className="rd-note d3-raw">{JSON.stringify(item.record, null, 2)}</pre>
-            <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(JSON.stringify(item.record, null, 2)).then(() => toast("已复制原操作记录", "success"), () => toast("复制失败，请手动选择原操作记录", "error"))}>复制原操作记录</Button>
-          </Fold>
-        </Notice>
-      ))}
+              <Button size="sm" disabledReason={expired ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原请求重试</Button>
+            </>,
+            detail: <>
+              <p>{item.title}。{item.body}{expired ? "" : item.hint}</p>
+              {pendingNotes[item.commandKey] && <p><KeepText text={pendingNotes[item.commandKey]} /></p>}
+              <Fold inset title="原操作完整内容" summary="原请求编号、完整内容和提交时间">
+                <p className="rd-note d3-raw" data-mono>原请求编号 {item.commandKey}</p>
+                <pre className="rd-note d3-raw">{JSON.stringify(item.record, null, 2)}</pre>
+                <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(JSON.stringify(item.record, null, 2)).then(() => toast("已复制原操作记录", "success"), () => toast("复制失败，请手动选择原操作记录", "error"))}>复制原操作记录</Button>
+              </Fold>
+            </> };
+        })} />
       <PageTabs
         ids={tabIds}
         label="资金储备内容"

@@ -55,7 +55,7 @@ import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from 
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from "@/lib/admin/config-help/d5-withdrawal";
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { FundCheckButtons, FundCheckResult, FundClosureModal, FundSettledNotices, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
   configApprovalOriginalInput,
@@ -869,7 +869,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   };
 
   const auditHref = "/platform/audit";
-  const auditLink = reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录与审批核对</Link></>;
+  const auditLink = reach(auditHref, "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>到操作记录与审批核对</Link>;
   const zone = businessZone().label;
 
   // 待确认常显，读取失败时也在（OP-93）。
@@ -882,45 +882,44 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       return { ...loosenPending, values: null, reason: "" };
     }
   })();
-  const pendingNotices = <>
-    <FundSettledNotices items={settled} onDismiss={key => setSettled(current => current.filter(item => item.key !== key))} />
-    {loosenRecord && (() => {
+  const pendingRows: FundRecoveryRow[] = [
+    ...(loosenRecord ? [(() => {
       const key = loosenRecord.commandKey;
       const expired = loosenRecord.expiresAt <= Date.now();
       const needQuery = canLookupOwn && !queryMissing.includes(key);
       const canRetry = !!loosenRecord.values && commandAuthorities(loosenRecord.values).every(can) && !proposeBlock;
-      return (
-        <Notice tone="warn" title="放宽提现参数 · 结果未知" action={<>
+      return { key, title: "放宽提现参数", record: loosenRecord, outcome: investigationResults[key], createdAt: loosenRecord.createdAt, expired, canRetry: !expired && canRetry,
+        status: !canLookupOwn && !expired ? { tone: "warn" as const, label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
+        actions: <>
           {canLookupOwn && <FundCheckButtons record={loosenRecord} outcome={investigationResults[key]} busy={!!recovering} checking={recovering === key}
             onCheck={() => void lookupLoosen()} onClose={() => setClosing(true)} />}
           {!expired && <Button size="sm" disabled={!!recovering}
             disabledReason={!canRetry ? NO_WRITE : needQuery ? "先查询原结果，明确查不到审批单才能重试" : undefined}
             onClick={() => void recoverLoosen("retry")}>按原请求重试</Button>}
-        </>}>
-          {`${formatBusinessTimeFull(new Date(loosenRecord.createdAt).toISOString(), "—")}（${zone}）发出：${loosenRecord.values ? describeChanges(loosenRecord.values) : "原内容读不到"}。审批单可能已经提交，批准前当前值不变。有结果前不能再提交放宽，收紧照常。`}
-          {expired ? `${RETRY_EXPIRED_TEXT}。` : !canLookupOwn ? "这个账号查不了原审批单，按原请求重试会重发原内容，已提交的不会重复提交。" : "先查询原结果，查不到审批单再按原请求重试。"}
-          {auditLink}
-          {notes[key] && <div>{notes[key]}</div>}
-          <FundCheckResult record={loosenRecord} outcome={investigationResults[key]} expired={expired} canRetry={!expired && canRetry}
-            techFacts={loosenRecord.reason ? `理由 ${loosenRecord.reason}` : undefined} />
-        </Notice>
-      );
-    })()}
-    {tightenPending.map((record) => {
+        </>,
+        detail: <>
+          <p>{`改动：${loosenRecord.values ? describeChanges(loosenRecord.values) : "原内容读不到"}。审批单可能已经提交，批准前现在的值不变。有结果前不能再提交放宽，收紧照常。`}</p>
+          {notes[key] && <p>{notes[key]}</p>}
+        </>,
+        tech: loosenRecord.reason ? `理由 ${loosenRecord.reason}` : undefined };
+    })()] : []),
+    ...tightenPending.map((record): FundRecoveryRow => {
       const expired = record.expiresAt <= Date.now();
-      return (
-        <Notice key={record.commandKey} tone="warn" title={`${editTitle(record.label.replace(/^调整提现参数 · /, ""))} · 结果未知`} action={<>
+      return { key: record.commandKey, title: editTitle(record.label.replace(/^调整提现参数 · /, "")), createdAt: record.createdAt, expired, canRetry: !expired,
+        status: { tone: expired ? "warn" : "neutral", label: expired ? "已过期" : "不能查询", line: expired ? "超过 24 小时不能再重试，到操作记录与审批核对。" : "直接保存的修改查不了原结果，按原请求重试不会重复生效。" },
+        actions: <>
           {!expired && <Button size="sm" disabled={!!recovering} disabledReason={commandAuthorities(record.changes).every(can) ? undefined : NO_WRITE} onClick={() => void retryTighten(record)}>按原请求重试</Button>}
           {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
-        </>}>
-          {`${formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（${zone}）发出：${describeChanges(record.changes)}。可能已经生效，有结果前这页不能再修改。`}
-          {expired ? `${RETRY_EXPIRED_TEXT}。` : "按原请求重试不会重复生效。"}
-          {"直接保存的修改查不了原结果，"}{auditLink || "请到操作记录与审批核对。"}
-          <Explain label="技术信息" content={`原请求编号 ${record.commandKey} ｜ 版本 v${record.expectedVersion} ｜ 理由 ${record.reason}`} />
-          {notes[record.commandKey] && <div>{notes[record.commandKey]}</div>}
-        </Notice>
-      );
-    })}
+        </>,
+        detail: <>
+          <p>{`改动：${describeChanges(record.changes)}。可能已经生效，有结果前这页不能再修改。`}</p>
+          {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
+        </>,
+        tech: `原请求编号 ${record.commandKey} ｜ 版本 v${record.expectedVersion} ｜ 理由 ${record.reason}` };
+    }),
+  ];
+  const pendingNotices = <>
+    <FundRecoveryPanel rows={pendingRows} link={auditLink || undefined} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />
     {closing && loosenRecord && <FundClosureModal label="放宽提现参数" createdAt={loosenRecord.createdAt} facts={loosenRecord.values ? <Fact k="改动">{describeChanges(loosenRecord.values)}</Fact> : undefined}
       onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(loosenRecord, evidence); setClosing(false); }} />}
   </>;
@@ -1030,13 +1029,13 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <Notice tone="warn" title="用户现在不能发起 USDT 提现">{networks.outage}。{outageNext}</Notice>
     )}
     {pendingApproval.length > 0 && (tightenPending.length || loosenRecord || coverageBlock || networks.outage) && (
-      <Notice tone="warn" title={`有 ${pendingApproval.length} 项放宽等批准`}>{pendingApproval.map(approvalLine).join("；")}。批准前当前值不变。{auditLink}</Notice>
+      <Notice tone="warn" title={`有 ${pendingApproval.length} 项放宽等批准`}>{pendingApproval.map(approvalLine).join("；")}。批准前当前值不变。{auditLink && <> {auditLink}</>}</Notice>
     )}
     {networks.unknown.length > 0 && (tightenPending.length || loosenRecord || coverageBlock || pendingApproval.length > 0) && (
       <Notice tone="warn" title="部分提现网络的实际状态暂未知">配置照常显示，请到「网络和费用」核对原因。</Notice>
     )}
     {canQuery && approvals.state === "failed" && (
-      <Notice tone="neutral" title="审批状态暂时读不到">有没有放宽在等批准现在不知道，到操作记录与审批核对。{auditLink}</Notice>
+      <Notice tone="neutral" title="审批状态暂时读不到">有没有放宽在等批准现在不知道，到操作记录与审批核对。{auditLink && <> {auditLink}</>}</Notice>
     )}
   </>;
 

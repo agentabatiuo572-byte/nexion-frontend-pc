@@ -15,7 +15,7 @@ import { BatchBar, BlockState, Button, Cell, Change, Checkbox, Conclusion, Confi
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
-import { FundCheckButtons, FundCheckResult, FundClosureModal, FundSettledNotices, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { UNAVAILABLE_GATES, createJEmergencyCommandKey, isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
@@ -387,37 +387,34 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       ?? { key: record.input.obj, name: record.input.action.replace(/^恢复业务开关 · /, ""), amplifies: record.input.amplifies };
     void submitRestore(gate).catch((error: unknown) => notePending(record, `重试没有完成：${error instanceof Error ? displayAdminError(error) : "原因未知"} 记录继续保留。`));
   };
-  const restoreNotices = visibleRestores.map((record) => {
+  const restoreRows = visibleRestores.map((record): FundRecoveryRow => {
     const expired = record.expiresAt <= Date.now();
-    return <Notice key={record.commandKey} tone="warn" title={`${record.input.action} · 申请结果未知`}
-      action={<>
+    return { key: record.commandKey, title: `${record.input.action}（恢复申请）`, record, outcome: investigationResults[record.commandKey], createdAt: record.createdAt, expired, canRetry: !expired && canResume,
+      actions: <>
         <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={checkingRestore !== null || !!submitting} checking={submitting === record.fingerprint}
           onCheck={() => void checkInvestigation(record).catch(() => undefined)} onClose={() => setClosing(record)} />
         {!expired && <Button size="sm" loading={checkingRestore === record.input.obj} disabled={checkingRestore !== null || !!submitting} disabledReason={canResume ? undefined : RETRY_DENIED} onClick={() => retryRestore(record)}>按原请求重试</Button>}
-      </>}>
-      提交恢复审批不会打开业务。{expired ? `${EXPIRED}。` : "先查询原结果；没查到再按原请求重试，会先核对原审批单，已建的不会重复建。"}
-      {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J">到操作记录与审批核对</Link></>}
-      {pendingNotes[record.fingerprint] && <div><KeepText text={pendingNotes[record.fingerprint]} /></div>}
-      <FundCheckResult record={record} outcome={investigationResults[record.commandKey]} expired={expired} canRetry={!expired && canResume} techFacts={`理由 ${record.input.reason}`} />
-    </Notice>;
+      </>,
+      detail: <>
+        <p>提交恢复审批不会打开业务。按原请求重试会先核对原审批单，已建的不会重复建。</p>
+        {pendingNotes[record.fingerprint] && <p><KeepText text={pendingNotes[record.fingerprint]} /></p>}
+      </>,
+      tech: `理由 ${record.input.reason}` };
   });
 
-  const pendingNotices = pending.map((record) => {
+  const pendingRows = pending.map((record): FundRecoveryRow => {
     const expired = record.expiresAt <= Date.now();
-    return (
-      <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`}
-        action={<>
-          <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={!!submitting} checking={submitting === record.fingerprint}
-            onCheck={() => void verifyPending(record)} onClose={() => setClosing(record)} />
-          {!expired && <Button size="sm" disabled={!expired && !!submitting} disabledReason={expired ? EXPIRED : canRetry(record) ? undefined : RETRY_DENIED} onClick={() => void retryPending(record)}>按原请求重试</Button>}
-        </>}>
-        {expired ? formatBusinessTimeCompact(new Date(record.createdAt).toISOString()) : businessClock(record.createdAt)}（{businessZone().label}）发出，<KeepText text={expired ? `${EXPIRED}。` : "可能已经生效。先查询原结果；按原请求重试会重发原内容，已成功的不会重复执行。"} />
-        {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href="/platform/audit?domain=J">到操作记录与审批核对</Link></>}
-        {pendingNotes[record.fingerprint] && <div><KeepText text={pendingNotes[record.fingerprint]} /></div>}
-        <FundCheckResult record={record} outcome={investigationResults[record.commandKey]} expired={expired} canRetry={!expired && canRetry(record)} techFacts={`理由 ${record.reason}`} />
-      </Notice>
-    );
+    return { key: record.fingerprint, title: record.label, record, outcome: investigationResults[record.commandKey], createdAt: record.createdAt, expired, canRetry: !expired && canRetry(record),
+      actions: <>
+        <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={!!submitting} checking={submitting === record.fingerprint}
+          onCheck={() => void verifyPending(record)} onClose={() => setClosing(record)} />
+        {!expired && <Button size="sm" disabled={!!submitting} disabledReason={canRetry(record) ? undefined : RETRY_DENIED} onClick={() => void retryPending(record)}>按原请求重试</Button>}
+      </>,
+      detail: pendingNotes[record.fingerprint] ? <p><KeepText text={pendingNotes[record.fingerprint]} /></p> : undefined,
+      tech: `理由 ${record.reason}` };
   });
+  const recoveryPanel = <FundRecoveryPanel rows={[...pendingRows, ...restoreRows]} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
+    link={reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=J">到操作记录与审批核对</Link>} />;
 
   const releaseModal = closing && <FundClosureModal label={"input" in closing ? closing.input.action : closing.label} createdAt={closing.createdAt}
     onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />;
@@ -436,9 +433,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   if (contentError) {
     return <>
       {header}
-      <FundSettledNotices items={settled} onDismiss={key => setSettled(current => current.filter(item => item.key !== key))} />
-      {pendingNotices}
-      {restoreNotices}
+      {recoveryPanel}
       <BlockState state="error" title="当前无法确认最新状态" detail={`${contentError.startsWith("操作") ? "业务开关读取失败。" : contentError}为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} />
       {lastRead.current && <>
         <p className="rd-note">这是 {readAt} 读到的状态，可能已过期</p>
@@ -455,9 +450,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   if (!data) {
     return <>
       {header}
-      <FundSettledNotices items={settled} onDismiss={key => setSettled(current => current.filter(item => item.key !== key))} />
-      {pendingNotices}
-      {restoreNotices}
+      {recoveryPanel}
       <BlockState state="loading" title="业务开关加载中" detail="正在确认各业务开关的最新状态" />
       {releaseModal}
     </>;
@@ -730,9 +723,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   return (
     <>
       {header}
-      <FundSettledNotices items={settled} onDismiss={key => setSettled(current => current.filter(item => item.key !== key))} />
-      {pendingNotices}
-      {restoreNotices}
+      {recoveryPanel}
 
       {overdue.length > 0 ? (
         <div data-proof="j1-backfill-overdue-banner">

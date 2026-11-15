@@ -15,7 +15,7 @@ import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { e4RefundAmountError } from "@/lib/admin/e4-refund-amount";
 import { useReach } from "@/lib/nav/use-reach";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
-import { FundCheckResult, FundClosureModal } from "../fund-command-check";
+import { FundClosureModal, FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
 import type { E4PendingCommand, EViewCtx } from "./types";
 import { E4_PAGE_SIZES, ORDER_FINAL_STATES, ORDER_FLOW, ORDER_STATE_GROUPS, ORDER_STATE_TONE, orderAmount, orderAmountDigits, orderMoney, stateLabel, type E4Query } from "./data";
 
@@ -179,38 +179,40 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       </span>}
       readOnly={ctx.canWriteE4 || ctx.canRefundE4 ? undefined : "你只能查看；处理订单需要对应的修改权限"} />
 
-    {ctx.e4ReceiptAttempts.map((record) => <Notice key={record.commandKey} tone="warn" title={`${record.orderNo} · 结果未知`}
-      action={ctx.canQueryE4 && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Receipt(record)}>查询原结果</Button>}>
-      可能已经建了审批单，查到原审批单前不要重复处理。{!ctx.canQueryE4 && "请有操作记录读取权限的同事核对。"}
-    </Notice>)}
-    {ctx.e4Pending.map((record) => {
-      const expired = record.expiresAt <= Date.now();
-      // 能查原提案就先查，明确查不到才重试；重试要当前还有这项写权（OP-93）。
-      const canRetry = record.spec.command.op === "e4_order_refund" ? ctx.canRefundE4 : ctx.canWriteE4;
-      const created = !!record.receivedTicketId || record.creationConfirmed === true;
-      const needQuery = ctx.canQueryE4 && !ctx.e4QueryMissing.includes(record.commandKey);
-      const retryBlock = expired ? undefined : !canRetry ? "这个账号已没有这项权限，请有权限的同事处理" : needQuery ? "先查询原结果，明确查不到才能重试" : undefined;
-      const waiting = record.proposalStatus === "pending";
-      const outcome = ctx.e4InvestigationResults[record.commandKey];
-      const access = ctx.e4InvestigationAccess(record);
-      const sent = `${formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（${businessZone().label}）发出`;
-      const ticketText = record.receivedTicketId ? `审批单 ${record.receivedTicketId} ` : "审批单";
-      return <Notice key={record.fingerprint} tone={waiting ? "progress" : "warn"} title={`${record.label} · ${waiting ? "待审批" : created ? "进度没读到" : "结果未知"}`} actionBelow
-        action={<>
-          {ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint && created} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Pending(record)}>{waiting ? "刷新审批进度" : "查询原结果"}</Button>}
-          {!created && outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "UNKNOWN" && access.canSubmit && <Button size="sm" variant="danger-outline" disabled={!!ctx.e4Retrying} onClick={() => setClosing(record)}>核查结案</Button>}
-          {!expired && !created && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原请求重试</Button>}
-          {!created && expired && ctx.e4ExpiredNotFound.includes(record.commandKey) && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
-        </>}>
-        <p>{waiting ? `${sent}，${ticketText}已建好，正在等另一位超级管理员批准。批准前这单不能再操作。`
-          : created ? `${sent}，${ticketText}已建好，但现在的审批进度没读到。点「查询原结果」再读一次，不要重新提交。`
-            : `${sent}，可能已经提交。${expired ? ctx.e4ExpiredNotFound.includes(record.commandKey) ? "已超过 24 小时，按原请求也查不到审批单，说明申请没有建成，可以解除这条记录。" : "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? "这个账号已没有这项权限，不能重试。" : needQuery ? "先查询原结果，查不到审批单再按原请求重试。" : "按原请求重试会重发原内容，已成功的不会重复执行。"}有结果前这单不能再操作。`}
-        {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(record.orderNo)}`}>到操作记录与审批核对</Link></>}
-        <Explain label="技术信息" content={`原请求编号 ${record.commandKey}${record.receivedTicketId ? ` ｜ 审批单 ${record.receivedTicketId}` : ""} ｜ 理由 ${record.spec.reason}`} /></p>
-        {ctx.e4PendingNotes[record.fingerprint] && <p><KeepText text={ctx.e4PendingNotes[record.fingerprint]} phrases={["本次没有发送", "结果仍未知", "记录继续保留"]} /></p>}
-        {!created && <FundCheckResult record={record} outcome={outcome} expired={expired} canRetry={!expired && canRetry} hideTech />}
-      </Notice>;
-    })}
+    <FundRecoveryPanel heading={`${ctx.e4Pending.length + ctx.e4ReceiptAttempts.length} 项订单操作结果未知或在等审批`}
+      link={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=E">到操作记录与审批核对</Link> : undefined}
+      rows={[...ctx.e4ReceiptAttempts.map((record): FundRecoveryRow => ({ key: record.commandKey, title: record.orderNo, expired: false, canRetry: false,
+        status: { tone: "warn", label: "结果未知", line: ctx.canQueryE4 ? "可能已经建了审批单，查到之前不要重复处理。" : "可能已经建了审批单，请有操作记录读取权限的同事核对。" },
+        actions: ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Receipt(record)}>查询原结果</Button>,
+        tech: `原请求编号 ${record.commandKey}` })),
+      ...ctx.e4Pending.map((record): FundRecoveryRow => {
+        const expired = record.expiresAt <= Date.now();
+        // 能查原提案就先查，明确查不到才重试；重试要当前还有这项写权（OP-93）。
+        const canRetry = record.spec.command.op === "e4_order_refund" ? ctx.canRefundE4 : ctx.canWriteE4;
+        const created = !!record.receivedTicketId || record.creationConfirmed === true;
+        const needQuery = ctx.canQueryE4 && !ctx.e4QueryMissing.includes(record.commandKey);
+        const retryBlock = expired ? undefined : !canRetry ? "这个账号已没有这项权限，请有权限的同事处理" : needQuery ? "先查询原结果，明确查不到才能重试" : undefined;
+        const waiting = record.proposalStatus === "pending";
+        const outcome = ctx.e4InvestigationResults[record.commandKey];
+        const access = ctx.e4InvestigationAccess(record);
+        const ticket = record.receivedTicketId ? `审批单 ${record.receivedTicketId}` : "审批单";
+        const expiredMissing = expired && ctx.e4ExpiredNotFound.includes(record.commandKey);
+        return { key: record.fingerprint, title: record.label, record: created ? undefined : record, outcome, createdAt: record.createdAt, expired, canRetry: !expired && canRetry,
+          status: waiting ? { tone: "progress", label: "待审批", line: `${ticket}已建好，在等另一位超级管理员批准。` }
+            : created ? { tone: "warn", label: "进度没读到", line: `${ticket}已建好，审批进度没读到，再查一次，不要重新提交。` }
+              : expiredMissing ? { tone: "neutral", label: "没有建成", line: "超过 24 小时也查不到审批单，申请没有建成，可以解除这条记录。" } : undefined,
+          actions: <>
+            {ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint && created} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Pending(record)}>{waiting ? "刷新审批进度" : "查询原结果"}</Button>}
+            {!created && outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "UNKNOWN" && access.canSubmit && <Button size="sm" variant="danger-outline" disabled={!!ctx.e4Retrying} onClick={() => setClosing(record)}>核查结案</Button>}
+            {!expired && !created && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原请求重试</Button>}
+            {expiredMissing && !created && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+          </>,
+          detail: <>
+            <p>{waiting ? "批准前这单不能再操作。" : created ? "点「查询原结果」再读一次审批进度。" : `可能已经提交，有结果前这单不能再操作。${!expired && !canRetry ? "这个账号已没有这项权限，不能重试。" : ""}`}</p>
+            {ctx.e4PendingNotes[record.fingerprint] && <p><KeepText text={ctx.e4PendingNotes[record.fingerprint]} phrases={["本次没有发送", "结果仍未知", "记录继续保留"]} /></p>}
+          </>,
+          tech: `${created ? `原请求编号 ${record.commandKey} ｜ ` : ""}${record.receivedTicketId ? `审批单 ${record.receivedTicketId} ｜ ` : ""}订单 ${record.orderNo} ｜ 理由 ${record.spec.reason}` };
+      })]} />
 
     {ctx.e4CountsFailed
       ? <Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshE4()}>重试</Button>}>订单数量读不到，还不知道有没有要处理的</Conclusion>

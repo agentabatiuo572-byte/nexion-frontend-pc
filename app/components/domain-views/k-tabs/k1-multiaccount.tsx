@@ -21,7 +21,7 @@ import { K1_PARAM_HELP, type K1ParamHelp } from "@/lib/admin/config-help/k1-mult
 import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1ProtectedEntry, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { FundCheckButtons, FundCheckResult, FundClosureModal, FundSettledNotices, type FundSettled } from "../fund-command-check";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -1395,28 +1395,28 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         </Notice>
       )}
 
-      <FundSettledNotices items={settled} onDismiss={key => setSettled(current => current.filter(item => item.key !== key))} />
-      {pending.map((record) => {
-        const blocked = retryBlocked(record);
-        const expired = record.expiresAt <= Date.now();
-        return (
-        <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`} action={<>
-          {record.kind === "cluster" && canQueryProposal && !fundInvestigationAccess(record).canRead
-            ? <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>查询原结果</Button>
-            : record.kind !== "registration-param" && <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={Boolean(retrying || checking)} checking={checking === record.fingerprint}
-              onCheck={() => void lookupPending(record)} onClose={() => setClosing(record)} />}
-          {!expired && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原请求重试</Button>}
-          {record.kind === "registration-param" && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
-        </>}>
-          {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，<KeepText text={expired ? EXPIRED_TEXT : `${RECOVERY_HINT[record.kind]}${blocked ?? "按原请求重试会重发原内容，已成功的不会重复执行。"}`} />
-          {record.kind === "registration-param" && "注册设置的修改查不了原结果。"}
-          {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=K&object=${encodeURIComponent(record.target)}`}>到操作记录与审批核对</Link></>}
-          {record.kind === "registration-param" && <>{" "}<Explain label="技术信息" content={`原请求编号 ${record.commandKey} ｜ 操作人 ${record.operator} ｜ 理由 ${record.reason}`} /></>}
-          {pendingNotes[record.fingerprint] && !(expired && pendingNotes[record.fingerprint].includes("重试")) && <div><KeepText text={pendingNotes[record.fingerprint]} /></div>}
-          {record.kind !== "registration-param" && <FundCheckResult record={record} outcome={investigationResults[record.commandKey]} expired={expired} canRetry={!blocked} techFacts={`操作人 ${record.operator} ｜ 理由 ${record.reason}`} />}
-        </Notice>
-        );
-      })}
+      <FundRecoveryPanel settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
+        link={reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href={`/platform/audit?domain=K${pending.length === 1 ? `&object=${encodeURIComponent(pending[0].target)}` : ""}`}>到操作记录与审批核对</Link>}
+        rows={pending.map((record): FundRecoveryRow => {
+          const blocked = retryBlocked(record);
+          const expired = record.expiresAt <= Date.now();
+          const registration = record.kind === "registration-param";
+          return { key: record.fingerprint, title: record.label, record: registration ? undefined : record, outcome: investigationResults[record.commandKey], createdAt: record.createdAt, expired, canRetry: !blocked,
+            status: registration ? { tone: expired ? "warn" : "neutral", label: expired ? "已过期" : "不能查询", line: "注册设置的修改查不了原结果，到操作记录与审批核对。" } : undefined,
+            actions: <>
+              {record.kind === "cluster" && canQueryProposal && !fundInvestigationAccess(record).canRead
+                ? <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>查询原结果</Button>
+                : !registration && <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={Boolean(retrying || checking)} checking={checking === record.fingerprint}
+                  onCheck={() => void lookupPending(record)} onClose={() => setClosing(record)} />}
+              {!expired && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原请求重试</Button>}
+              {registration && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+            </>,
+            detail: <>
+              <p><KeepText text={expired ? EXPIRED_TEXT : `${RECOVERY_HINT[record.kind]}${blocked ?? ""}`} /></p>
+              {pendingNotes[record.fingerprint] && !(expired && pendingNotes[record.fingerprint].includes("重试")) && <p><KeepText text={pendingNotes[record.fingerprint]} /></p>}
+            </>,
+            tech: `${registration ? `原请求编号 ${record.commandKey} ｜ ` : ""}操作人 ${record.operator} ｜ 理由 ${record.reason}` };
+        })} />
 
       <PageTabs ids={tabIds} label="多账户风险排查内容" value={tab} onChange={setTab} items={[
         { value: "accounts", label: "账户组排查" },
