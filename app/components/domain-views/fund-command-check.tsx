@@ -119,6 +119,29 @@ function RecoveryRow({ row }: { row: FundRecoveryRow }) {
   </li>;
 }
 
+/**
+ * 新出现的记录排在最前面，并把面板滚进视野：已经有记录时再多一条，新的不会藏在「展开全部」后面。
+ * 面板原来是空的就不用排：新面板本身就出现在页面上方。
+ */
+function useFreshFirst<T extends { key: string }>(rows: readonly T[]) {
+  const known = useRef<Set<string> | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const [fresh, setFresh] = useState<string[]>([]);
+  const keys = rows.map(row => row.key);
+  const signature = keys.join("\n");
+  useEffect(() => {
+    const before = known.current;
+    known.current = new Set(keys);
+    if (!before?.size) return;
+    const added = keys.filter(key => !before.has(key));
+    setFresh(list => [...added, ...list.filter(key => !added.includes(key) && keys.includes(key))]);
+    if (added.length) box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature]);
+  const ordered = [...fresh.flatMap(key => rows.filter(row => row.key === key)), ...rows.filter(row => !fresh.includes(row.key))];
+  return { ordered, box };
+}
+
 /** 面板标题：结果未知、在等审批、已有结论分开数，只写有的那几种。 */
 export function recoveryTitle(unknown: number, waiting = 0, ended = 0) {
   return [unknown ? `${unknown} 项操作结果未知` : "", waiting ? `${waiting} 项${unknown ? "" : "操作"}在等审批` : "", ended ? `${ended} 项${unknown || waiting ? "" : "操作"}已有结论` : ""].filter(Boolean).join("，");
@@ -161,6 +184,7 @@ export function RecoveryPanel({ title, explain, explainLabel = "这些记录怎�
 }) {
   const [all, setAll] = useState(false);
   const [open, setOpen] = useState<string[]>([]);
+  const { ordered, box } = useFreshFirst(items);
   const seen = useRef<Record<string, string>>({});
   const answers = items.map(item => [item.key, typeof item.note === "string" ? item.note : item.noteKey ?? ""] as const);
   useEffect(() => {
@@ -169,8 +193,8 @@ export function RecoveryPanel({ title, explain, explainLabel = "这些记录怎�
     if (fresh.length) setOpen(keys => [...new Set([...keys, ...fresh])]);
   });
   if (!items.length) return null;
-  const shownItems = all ? items : items.slice(0, 3);
-  return <Notice tone={tone} title={<>{title}{explain && <Explain label={explainLabel} content={explain} />}</>}>
+  const shownItems = all ? ordered : ordered.slice(0, 3);
+  return <div ref={box}><Notice tone={tone} title={<>{title}{explain && <Explain label={explainLabel} content={explain} />}</>}>
     <ul className="fund-rows" aria-label={label}>{shownItems.map(item => {
       const expanded = open.includes(item.key);
       const id = `recovery-row-${item.key.replace(/[^A-Za-z0-9_-]/g, "-")}`;
@@ -191,7 +215,7 @@ export function RecoveryPanel({ title, explain, explainLabel = "这些记录怎�
       {items.length > 3 && <Button size="sm" variant="ghost" aria-expanded={all} onClick={() => setAll(value => !value)}>{all ? "只看前 3 条" : `展开全部 ${items.length} 条`}</Button>}
       {foot}
     </div>}
-  </Notice>;
+  </Notice></div>;
 }
 
 /** 一个面板列出这页所有结果未知的操作；默认露三条，其余点开。 */
@@ -205,18 +229,19 @@ export function FundRecoveryPanel({ rows, link, settled, onDismissSettled, headi
   heading?: string;
 }) {
   const [all, setAll] = useState(false);
-  const visible = all ? rows : rows.slice(0, 3);
+  const { ordered, box } = useFreshFirst(rows);
+  const visible = all ? ordered : ordered.slice(0, 3);
   return <>
     {settled?.map(item => <SettledLine key={item.key} label={item.label} text={item.status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。"
       : item.proposal ? "审批申请已提交，记录已解除；到操作记录与审批看审批进度，不要再提交一次。" : "原操作已执行，记录已解除，不要再做一次。"}
       onDismiss={onDismissSettled && (() => onDismissSettled(item.key))} />)}
-    {rows.length > 0 && <Notice tone="warn" title={<>{heading ?? `${rows.length} 项操作结果未知`}<Explain label="结果未知怎么处理" content={INTRO} /></>}>
+    {rows.length > 0 && <div ref={box}><Notice tone="warn" title={<>{heading ?? `${rows.length} 项操作结果未知`}<Explain label="结果未知怎么处理" content={INTRO} /></>}>
       <ul className="fund-rows" aria-label="结果未知的操作">{visible.map(row => <RecoveryRow key={row.key} row={row} />)}</ul>
       {(rows.length > 3 || link) && <div className="fund-rows-foot">
         {rows.length > 3 && <Button size="sm" variant="ghost" onClick={() => setAll(value => !value)}>{all ? "只看前 3 条" : `展开全部 ${rows.length} 条`}</Button>}
         {link}
       </div>}
-    </Notice>}
+    </Notice></div>}
   </>;
 }
 

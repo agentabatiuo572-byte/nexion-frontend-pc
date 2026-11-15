@@ -20,7 +20,7 @@ function times(a: string | number, b: string) {
   return scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits;
 }
 const ESTIMATE_GONE: Record<string, string> = {
-  CURRENT_WEEK_SETTLED: "本周已经结算，不再估算；实发见右边。",
+  CURRENT_WEEK_SETTLED: "本周已经结算，不再估算；实发看「最近已结算」。",
   SETTLEMENT_CONFIG_UNAVAILABLE: "池的设置不完整，算不出本周估算。",
   NO_ELIGIBLE_VOTERS: "现在没有人有资格分，本周估算里没有人能分到钱。",
   NO_CURRENT_POOL: "本周池里还没有钱，算不出每票值。",

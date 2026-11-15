@@ -71,9 +71,9 @@ const MATURITY_EXPLAIN: Record<string, ReactNode> = {
 };
 
 const VALUATION_NOTE = "UVT 锁仓到期应付按最新有效价格折算。没有有效价格时，这一类金额、应付款合计、覆盖率、差额和各类占比都写「暂时无法估值」；储备和其余 8 类照常显示。";
-/** The coverage read did not say whether it used a valid price: not the same as UVT having no price. */
-const COVERAGE_UNREAD = "暂时读不到";
-const COVERAGE_UNREAD_NOTE = "这次读到的覆盖率没有带上「是否按有效价格算」的说明，所以先不显示覆盖率和差额，也不下结论。储备和九类应付款照常显示，重新加载后再看。";
+/** The coverage read did not confirm a valid-price valuation (flag missing or false): not the same as UVT having no price. */
+const COVERAGE_UNREAD = "暂不显示";
+const COVERAGE_UNREAD_NOTE = "这次读到的覆盖率没有确认按有效价格算，所以先不显示覆盖率和差额，也不下结论。储备和九类应付款照常显示，重新加载后再看。";
 
 type ExportOutcome =
   | { kind: "summary-done" | "summary-unknown" }
@@ -708,7 +708,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       <div className="rd-stack">
         {coverageUnavailable
           ? coverageUnread
-            ? <BlockState state="empty" title={`覆盖率${COVERAGE_UNREAD}`} detail="这次没读到覆盖率是否按有效价格算，先不显示。储备和应付款照常，红线和健康线照常生效。" />
+            ? <BlockState state="empty" title={`覆盖率${COVERAGE_UNREAD}`} detail="这次读到的覆盖率没有确认按有效价格算，先不显示。储备和应付款照常，红线和健康线照常生效。" />
             : <BlockState state="empty" title={`覆盖率${TREASURY_VALUATION_UNAVAILABLE}`} detail="UVT 锁仓到期应付缺少有效价格，算不出应付款合计。红线和健康线照常生效。" />
           : noLiability
             ? <p className="rd-note">目前没有应付款，不画覆盖率尺。</p>

@@ -10,7 +10,7 @@ import { BACKLOG_STATUS, RECEIPT_STATUS, errorText, minute, waited, zoneNote } f
 
 const statusText = (value: string) => BACKLOG_STATUS[value] ?? RECEIPT_STATUS[value] ?? "未知状态";
 const emptyFilters: OutboxFilters = { eventType: "", status: "", unresolvedOnly: false };
-export const A4_USER_NOTE = "能看到用户编号的才显示，点编号打开用户详情。显示「—」可能是这条事件不属于某位用户、用户已删除、你没有查看用户的权限，或这位用户不在你的客服范围内；页面分不出是哪一种。";
+export const A4_USER_NOTE = "能看到用户编号的才显示，点编号打开用户详情。显示「—」可能是这条事件不属于某位用户、没查到这位用户、用户已删除、你没有查看用户的权限，或这位用户不在你的客服范围内；页面分不出是哪一种。";
 /** Whose event this is: a user number links to the user detail; an empty one stays 「—」, whatever the reason. */
 export function a4UserCell(userNo: string | null | undefined, canOpenUser: boolean): ReactNode {
   if (!userNo) return "—";

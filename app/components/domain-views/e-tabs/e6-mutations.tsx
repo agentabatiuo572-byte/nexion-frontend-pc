@@ -271,7 +271,8 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
     ...records.map(r => {
       const expired = isRetryExpired(r), refused = m.rejected.includes(r.commandKey), waiting = !!r.ticketId && !r.terminal, end = r.terminal ? PROPOSAL_END[r.terminal] : undefined;
       const state = end ? { tag: end.tag, tone: end.tone, line: end.text, more: "按「准备新变更」清掉这条后，这一项可以重新提交。" }
-        : waiting ? { tag: "待审批", tone: "progress" as const, line: RECOVERY_LINE.pending, more: `审批单 ${r.ticketId}。` }
+        : waiting ? m.notes[r.commandKey] === TICKET_UNREAD ? { tag: "进度没读到", tone: "warn" as const, line: RECOVERY_LINE.created, more: `审批单 ${r.ticketId} 已经建了，批没批准还没查到；点「查询审批结果」再查，不会再建一张。` }
+          : { tag: "待审批", tone: "progress" as const, line: RECOVERY_LINE.pending, more: `审批单 ${r.ticketId}。` }
           : refused ? { tag: "重试被拒绝", tone: "danger" as const, line: RECOVERY_LINE.refused, more: "按原请求重试被明确拒绝；核对拒绝原因后，可以解除这条记录。" }
             : r.payload.kind === "proposal" ? r.absent ? expired ? { tag: "没有建成", tone: "warn" as const, line: RECOVERY_LINE.missing, more: "按原请求查不到这张审批单，说明没建成；确认解除时会再查一次。" }
               : { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.absent, more: "按原请求查不到这张审批单，现在还没建成；按原请求重试不会重复建单。" }
@@ -291,7 +292,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
         note: noteOf(r) || outcomes[r.commandKey] || riskShown || closureOpen(outcomes[r.commandKey], expired) ? note : undefined,
         noteKey: [noteOf(r) ?? "", outcomes[r.commandKey] ? JSON.stringify(outcomes[r.commandKey]) : "", riskReceipts[r.commandKey]?.status ?? ""].join("|").replace(/^\|+$/, ""),
         actions: <>
-          {r.payload.kind === "proposal" && !r.terminal && !refused && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => void m.check(r)}>{waiting ? "查询审批结果" : "查询原结果"}</Button>}
+          {r.payload.kind === "proposal" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => void m.check(r)}>{waiting ? "查询审批结果" : "查询原结果"}</Button>}
           {r.payload.kind === "device" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showDevice(r, receipt as ECommandInvestigation | null), () => { /* checkDirect keeps the query failure on the row. */ }).finally(() => onRead?.()); }}>查询原结果</Button>}
           {r.payload.kind === "risk" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showRisk(r, receipt as PhoneRiskReceipt | null), () => { /* The row retains the query failure. */ }).finally(() => window.dispatchEvent(new Event("e6-read-risk"))); }}>{r.payload.receiptVersion === 1 ? "查询原结果" : "读取当前风控设置"}</Button>}
           {r.payload.kind === "device" && m.canInvestigate && closureOpen(outcomes[r.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
@@ -325,8 +326,8 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
       }} />}
     {release && (release.payload.kind === "proposal" && isRetryExpired(release) && release.absent
       ? <MissingProposalReleaseModal label={release.label} createdAt={release.createdAt} onCancel={() => m.setRelease(null)} onConfirm={async () => {
-        try { const released = await m.releaseMissing(release); m.setRelease(null); onRead?.(); if (released) toast("已解除这条记录，可以重新提交", "success"); }
-        catch (failure) { throw new Error(release.ticketId ? TICKET_UNREAD : m.notes[release.commandKey] ?? eReadError(failure)); }
+        try { const released = await m.releaseMissing(release); m.setRelease(null); onRead?.(); toast(released ? "已解除这条记录，可以重新提交" : "查到了这张审批单，没有解除", released ? "success" : "warn"); }
+        catch (failure) { throw new Error(release.ticketId ? TICKET_UNREAD : eReadError(failure)); }
       }} />
       : <ReleaseModal label={release.label} onCancel={() => m.setRelease(null)} onConfirm={() => { m.forget(release); m.setRelease(null); onRead?.(); toast("已解除这条记录", "success"); }} />)}
   </>;

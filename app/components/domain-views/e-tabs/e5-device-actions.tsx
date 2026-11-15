@@ -58,7 +58,6 @@ const CommandsContext = createContext<ActionsState | null>(null);
 const PROPOSALS: E5Intent[] = ["force-activate", "unbind", "legacy"];
 const TICKET_UNREAD = "刚查过：还是没查到审批进度，稍后再查。";
 const E5_UNKNOWN = "没有收到结果，原请求和理由已保留；可以查询原结果，或按原请求重试。";
-const endText = (label: string, id: string, status: string) => `${label} · 审批单 ${id} ${PROPOSAL_END[status]?.tag ?? "状态待核实"}${PROPOSAL_END[status] ? `：${PROPOSAL_END[status].text}` : ""}`;
 /** Query failures of an approval request, in words an operator can act on. */
 const proposalQueryError = (record: E5Command, cause: unknown) => record.receivedTicketId ? TICKET_UNREAD
   : cause instanceof Error && cause.message === "提案缺少有效票号" ? "查到的审批单和原请求对不上，记录保留；请到操作记录与审批核对。" : eReadError(cause);
@@ -81,6 +80,9 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
   const [outcomes, setOutcomes] = useState<Record<string, CommandOutcome>>({});
   /** Records the lookup found settled: one light line each above the panel until dismissed. */
   const [settled, setSettled] = useState<{ key: string; label: string; text: string }[]>([]);
+  /** An approval that ended (approved, rejected, withdrawn, expired) stays as one light line until the operator dismisses it. */
+  const settleEnd = (record: E5Command, id: string, status: string) => setSettled(list => [...list.filter(item => item.key !== record.commandKey),
+    { key: record.commandKey, label: `${record.label} · ${record.device.serial}`, text: `审批单 ${id} ${PROPOSAL_END[status]?.tag ?? "状态待核实"}${PROPOSAL_END[status] ? `：${PROPOSAL_END[status].text}` : "。"}` }]);
   const [closing, setClosing] = useState<E5Command | null>(null);
   const [missing, setMissing] = useState<E5Command | null>(null);
   const [queryNotes, setQueryNotes] = useState<Record<string, string>>({});
@@ -116,7 +118,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
         ? result.pendingDeactivate ? "已申请停用，等待当前任务结算后自动停用" : "设备已取消激活"
         : record.intent === "pause" ? `暂停成功 · ${result.changedCount} 台设备` : record.intent === "resume" ? `已恢复 ${result.changedCount} 台运营暂停的设备` : "设备已激活";
       if (!submitted || !retry || result.status === "pending") { toast(message); await refresh(message); }
-      else { toast(endText(`${record.label} · ${record.device.serial}`, String(result.id), String(result.status))); await refresh(); }
+      else { settleEnd(record, String(result.id), String(result.status)); await refresh(); }
     } catch (cause) {
       if (cause instanceof Error && "status" in cause && (cause.status === 401 || cause.status === 403)) announcePermissionDenied();
       sync();
@@ -138,7 +140,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
         try { ticket = await queryE5Proposal(record); }
         catch (cause) { setQueryNotes(values => ({ ...values, [record.commandKey]: proposalQueryError(record, cause) })); throw cause; }
         setQueryNotes(values => ({ ...values, [record.commandKey]: !ticket ? "刚查过：没有这张审批单。" : "刚查过：还在等批准。" }));
-        if (ticket && ticket.status !== "pending") { toast(endText(`${record.label} · ${record.device.serial}`, ticket.id, ticket.status)); await refresh(); }
+        if (ticket && ticket.status !== "pending") { settleEnd(record, ticket.id, ticket.status); await refresh(); }
         return null;
       }
       return await checkE5Command(record, evidence);
@@ -190,9 +192,9 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
         object: <span title={`${record.label} · ${record.device.serial}`}>{record.label} · {record.device.serial.slice(-8)}</span>, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line, note,
         noteKey: [readResults[record.commandKey], outcomes[record.commandKey] ? JSON.stringify(outcomes[record.commandKey]) : "", errorKey === record.commandKey ? error : ""].join("|").replace(/^\|+$/, ""),
         actions: <>
-          {!refused && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void queryRow(record)}>{proposal && record.proposalStatus === "pending" ? "查询审批结果" : "查询原结果"}</Button>}
+          {<Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void queryRow(record)}>{proposal && record.proposalStatus === "pending" ? "查询审批结果" : "查询原结果"}</Button>}
           {direct(record) && canInvestigate && closureOpen(outcomes[record.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!busy} onClick={() => setClosing(record)}>核查结案</Button>}
-          {retryable && <Button size="sm" loading={busy === record.commandKey} disabledReason={!allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : undefined} onClick={() => { void execute(record, true).catch(() => { /* The record row displays this failure. */ }); }}>按原请求重试</Button>}
+          {!(proposal && record.proposalStatus === "pending") && <Button size="sm" loading={busy === record.commandKey} disabledReason={expired ? "超过 24 小时不能再重试" : proposal && record.receivedTicketId ? "审批单已经建了，只能查询" : !allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : undefined} onClick={() => { void execute(record, true).catch(() => { /* The record row displays this failure. */ }); }}>按原请求重试</Button>}
           {refused && <Button size="sm" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>解除原操作记录</Button>}
           {releasable && <Button size="sm" disabled={!!busy} onClick={() => setMissing(record)}>解除原操作记录</Button>}
         </>,
@@ -222,7 +224,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
         setMissing(null);
         if (!ticket) toast("已解除这条记录，可以重新提交");
         else if (ticket.status === "pending") { setQueryNotes(values => ({ ...values, [missing.commandKey]: `审批单 ${ticket.id} 还在等批准` })); toast(`查到了审批单 ${ticket.id}，还在等批准，没有解除`); }
-        else { toast(endText(`${missing.label} · ${missing.device.serial}`, ticket.id, ticket.status)); await refresh(); }
+        else { settleEnd(missing, ticket.id, ticket.status); await refresh(); }
       } catch (cause) { const shown = proposalQueryError(missing, cause); setQueryNotes(values => ({ ...values, [missing.commandKey]: shown })); throw new Error(shown); }
       finally { sync(); setBusy(""); }
     }} />}

@@ -372,8 +372,8 @@ export function E1Page() {
       return { key: record.commandKey, object: record.spec.action,
         tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? record.retryRejection,
         actions: <>
-          {canQuery && !(rejected.includes(record.commandKey) && !expired) && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void check(record)}>查询原结果</Button>}
-          {!record.receivedTicketId && !expired && !rejected.includes(record.commandKey) && <Button size="sm" disabledReason={!canWrite ? "当前账号不能重试" : busy ? "正在提交原操作" : undefined} onClick={() => { void send(record, true).catch(failure => toast(e1Pending(actor).find(r => r.commandKey === record.commandKey)?.receivedTicketId ? TICKET_UNREAD : e1Error(failure))); }}>按原请求重试</Button>}
+          {canQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void check(record)}>查询原结果</Button>}
+          {<Button size="sm" disabledReason={!canWrite ? "当前账号不能重试" : busy ? "正在提交原操作" : expired ? "超过 24 小时不能再重试" : record.receivedTicketId ? "审批单已经建了，只能查询" : undefined} onClick={() => { void send(record, true).catch(failure => toast(e1Pending(actor).find(r => r.commandKey === record.commandKey)?.receivedTicketId ? TICKET_UNREAD : e1Error(failure))); }}>按原请求重试</Button>}
           {canRelease && <Button size="sm" disabled={!!busy} onClick={() => setRelease(record)}>解除原操作记录</Button>}
         </>,
         detail: <>
@@ -421,7 +421,7 @@ export function E1Page() {
       onClose={() => setConfirmation(null)} onConfirm={confirm} />}
     {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在读取…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptDetail.after}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? APPROVAL : "审批已结束，此回执不再锁定对象；请按当前目录重新核对后编辑。"}</p></Drawer>}
     {release && (isRetryExpired(release)
-      ? <MissingProposalReleaseModal label={release.spec.action} createdAt={release.createdAt} onCancel={() => setRelease(null)} onConfirm={async () => { const released = await releaseMissing(release); setRelease(null); if (released) toast("已解除这条记录，可以重新提交", "success"); }} />
+      ? <MissingProposalReleaseModal label={release.spec.action} createdAt={release.createdAt} onCancel={() => setRelease(null)} onConfirm={async () => { const released = await releaseMissing(release); setRelease(null); if (released) toast("已解除这条记录，可以重新提交", "success"); else if (released === false) toast("查到了这张审批单，没有解除", "warn"); }} />
       : <ReleaseModal label={release.spec.action} onCancel={() => setRelease(null)} onConfirm={() => { forgetE1(release); syncPending(); setRelease(null); toast("已解除这条记录", "success"); }} />)}
     {toastNode}
   </RdPage>;
