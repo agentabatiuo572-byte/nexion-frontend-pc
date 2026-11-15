@@ -88,7 +88,7 @@ export async function queryE5Proposal(record: E5Command) {
   }
   if (!ticket.mine || ticket.obj !== String(record.device.deviceId) || record.receivedTicketId && record.receivedTicketId !== ticket.id)
     throw new A2OutcomeUncertainError("提案缺少有效票号", record.commandKey);
-  if (ticket.status === "pending") e5Commands.remember(record.fingerprint, record.commandKey, { ...record, receivedTicketId: ticket.id, proposalStatus: ticket.status, proposalAbsent: false });
+  if (ticket.status === "pending") e5Commands.remember(record.fingerprint, record.commandKey, { ...record, receivedTicketId: ticket.id, proposalStatus: ticket.status, proposalAbsent: false, retryRejection: undefined });
   else e5Commands.forget(record.fingerprint, record.commandKey);
   return ticket;
 }
