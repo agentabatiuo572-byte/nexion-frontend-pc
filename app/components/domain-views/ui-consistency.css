@@ -226,6 +226,7 @@
 .fund-row-actions { display: inline-flex; justify-content: flex-end; gap: var(--rd-space-2); }
 .fund-row-detail { display: grid; gap: 4px; margin: 0 0 var(--rd-space-2) 18px; color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .fund-row-detail p { margin: 0; }
+.fund-row-detail [role="status"] { color: var(--rd-text); }
 .fund-rows-foot { display: flex; align-items: center; gap: var(--rd-space-3); margin-top: var(--rd-space-1); }
 .fund-settled { display: flex; align-items: center; gap: var(--rd-space-2); margin: 0; color: var(--rd-ok, var(--rd-text-2)); font-size: var(--rd-text-aux); }
 .fund-settled span { color: var(--rd-text-2); }

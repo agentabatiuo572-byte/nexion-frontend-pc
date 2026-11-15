@@ -9,7 +9,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Ban, CheckCircle2, Copy, Eye, Inbox, Info, ListChecks, LogOut, RefreshCw, ShieldCheck, Snowflake, User, UserRound } from "lucide-react";
+import { Ban, CheckCircle2, Copy, Eye, Inbox, Info, ListChecks, LogOut, RefreshCw, SearchCheck, ShieldCheck, Snowflake, User, UserRound } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton,
   InlineMeter, InlineRetry, Input, JudgmentPoints, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, ReleaseModal,
@@ -17,6 +17,7 @@ import {
   type JudgmentRow, type MoreMenuItem,
 } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/fund-command-check";
 import { fetchAccountDeletion, fetchAccountDeletions, updateAccountDeletion, AccountDeletionRequestError, type AccountDeletionRequest, type AccountDeletionStatus } from "@/lib/admin/account-deletion-client";
 import { A2OutcomeUncertainError, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { nexGridBrandText, operatorNicknameText, platformSessionDeviceText, userNicknameText } from "@/lib/admin/brand-copy";
@@ -1484,49 +1485,46 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       guideExtra={canWriteAny ? undefined : <p>你的账号只能查看，上面的操作步骤要有对应权限的同事办。</p>} />
   );
 
-  const pendingNotices = <>
-    {pending.map((record) => {
-      const expired = isRetryExpired(record);
-      return (
-        <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`} actionBelow
-          action={<>
-            <Button size="sm" disabled={busy} onClick={() => void verifyPending(record)}>查询原结果</Button>
-            <Button size="sm" disabled={busy} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>
-            {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
-          </>}>
-          <p>
-            {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。
-            {expired ? `${RETRY_EXPIRED_TEXT}。` : "可以按原请求重试，不会重复执行。"}
-            {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link></> : "请有操作记录读权限的同事核对。"}
-            <Explain label="这次操作的技术信息" rows={[
-              { k: "命令号", v: <span data-mono>{record.commandKey}</span> },
-              { k: "操作人", v: record.operator },
-              { k: "理由", v: record.reason },
-            ]} />
-          </p>
-          {pendingNotes[record.fingerprint] && <p>{pendingNotes[record.fingerprint]}</p>}
-        </Notice>
-      );
-    })}
-    {revocations.map((record) => {
+  /** 结果未知的记录收成一个面板：每条一行，通用说明只在标题问号里说一次；按钮和可用条件照旧。 */
+  const techRows = (record: { commandKey: string; operator: string; reason: string }) => <p><Explain label="这次操作的技术信息" rows={[
+    { k: "原请求编号", v: <span data-mono>{record.commandKey}</span> },
+    { k: "操作人", v: record.operator },
+    { k: "理由", v: record.reason },
+  ]}>技术信息</Explain></p>;
+  const recoveryItems: RecoveryItem[] = [
+    ...pending.map((record) => {
+      const expired = isRetryExpired(record), refused = retryRejected.includes(record.commandKey);
+      return {
+        key: record.fingerprint, object: record.label,
+        tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
+        line: refused ? "重试被明确拒绝；查询原结果核对后，可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : "可能已经生效，先查询原结果。",
+        note: pendingNotes[record.fingerprint],
+        actions: <>
+          <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={busy} onClick={() => void verifyPending(record)}>查询原结果</Button>
+          <Button size="sm" disabled={busy} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>
+          {refused && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+        </>,
+        detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出。{expired ? `${RETRY_EXPIRED_TEXT}。` : "按原请求重试只发原内容，不会重复执行。"}</p>,
+        tech: techRows(record),
+      };
+    }),
+    ...revocations.map((record) => {
       const fingerprint = `revoke|${record.userId}`;
-      return (
-        <Notice key={record.fingerprint} tone="warn" title={`退出全部设备 · ${record.label} · 结果未知`} actionBelow
-          action={<Button size="sm" disabled={busy} loading={submitting === `user|${record.userId}`} disabledReason={canRevoke ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryRevocation(record)}>按原请求重试</Button>}>
-          <p>
-            {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）提交审批，可能已经提交成功。按原请求重试会先查原审批单，查不到再用原理由提交，不会重复提交。
-            {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link></> : "请有操作记录读权限的同事核对。"}
-            <Explain label="这次操作的技术信息" rows={[
-              { k: "命令号", v: <span data-mono>{record.commandKey}</span> },
-              { k: "操作人", v: record.operator },
-              { k: "理由", v: record.reason },
-            ]} />
-          </p>
-          {pendingNotes[fingerprint] && <p>{pendingNotes[fingerprint]}</p>}
-        </Notice>
-      );
-    })}
-  </>;
+      return {
+        key: record.fingerprint, object: `退出全部设备 · ${record.label}`,
+        tag: <StatusTag tone="warn">结果未知</StatusTag>,
+        line: "审批可能已经提交；重试会先查原审批单，不会重复提交。",
+        note: pendingNotes[fingerprint],
+        actions: <Button size="sm" disabled={busy} loading={submitting === `user|${record.userId}`} disabledReason={canRevoke ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryRevocation(record)}>按原请求重试</Button>,
+        detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）提交审批。按原请求重试会先查原审批单，查不到再用原理由提交。</p>,
+        tech: techRows(record),
+      };
+    }),
+  ];
+  const pendingNotices = <RecoveryPanel title={recoveryTitle(recoveryItems.length)} explainLabel="结果未知怎么处理"
+    explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；按原请求重试只发原内容，不会重复执行。有结果前，相关账户、名单或申请不能再操作。"
+    foot={canReadAudit ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link> : <span>请有操作记录读权限的同事核对。</span>}
+    items={recoveryItems} />;
 
   const focusNotice = focusUserCode && canReadC2 && (
     <Notice tone={focusState === "not-found" || focusState === "error" ? "warn" : "neutral"}

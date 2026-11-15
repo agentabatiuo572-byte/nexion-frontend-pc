@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { SearchCheck } from "lucide-react";
 import Link from "next/link";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
@@ -16,7 +17,7 @@ import { activateE5Device, deactivateE5Device, setE5UserDevicesPaused, fetchE5De
 import { savePhoneRisk, fetchPhoneRisk, fetchPhoneRiskReceipt, type PhoneRiskReceipt, type PhoneRiskOverview, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
 import { canInvestigateECommand, discoverECommand, investigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { Button, Explain, Notice, Fold, ReleaseModal, StatusTag, Fact } from "@/app/components/rd";
-import { ClosureContact, CommandClosureModal, CommandOutcomeLine, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, closureOpen, eReadError, type CommandOutcome, type RecoveryItem } from "./e-command-check";
+import { ClosureContact, CommandClosureModal, CommandOutcomeLine, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, SettledLine, closureOpen, eReadError, recoveryTitle, type CommandOutcome, type RecoveryItem } from "./e-command-check";
 import type { ToastKind } from "@/lib/store/ui";
 
 export type { E6Pending, E6Proposal, E6Section } from "@/lib/admin/e6-command";
@@ -238,6 +239,9 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
   const m = useE6Mutations();
   const records = m.pending.filter(r => r.section === section && m.visible(section));
   const [outcomes, setOutcomes] = useState<Record<string, CommandOutcome>>({});
+  /** Records the lookup found settled: one light line each above the panel until dismissed. */
+  const [settled, setSettled] = useState<{ key: string; label: string; text: string }[]>([]);
+  const settle = (record: E6Pending, text: string) => setSettled(list => [...list.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: record.label, text }]);
   const [riskReceipts, setRiskReceipts] = useState<Record<string, PhoneRiskReceipt>>({});
   const [closing, setClosing] = useState<E6Pending | null>(null);
   // A later successful lookup supersedes the failure note an earlier lookup left on the same record.
@@ -246,7 +250,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
     setAnswered(values => ({ ...values, [record.commandKey]: m.notes[record.commandKey] }));
     if (receipt && eCommandSettled(receipt)) {
       const status = receipt.originalStatus;
-      toast(`${record.label}：${status === "CONFIRMED_NOT_EXECUTED" ? "核查确认原操作没有执行，可以重新发起。" : status === "CONFIRMED_SUCCEEDED" ? "核查确认原操作已执行，不再重试；以当前状态为准。" : "原操作已完成，以当前状态为准。"}`, "success");
+      settle(record, status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。" : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。");
     } else setOutcomes(values => ({ ...values, [record.commandKey]: { receipt } }));
   };
   const riskDone = (status: PhoneRiskReceipt["status"] | "RETRIED") => toast(status === "CONFIRMED_NOT_EXECUTED"
@@ -254,15 +258,15 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
   const showRisk = (record: E6Pending, receipt: PhoneRiskReceipt | null) => {
     if (!receipt) return;
     setAnswered(values => ({ ...values, [record.commandKey]: m.notes[record.commandKey] }));
-    if (["SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED"].includes(receipt.status)) riskDone(receipt.status);
+    if (["SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED"].includes(receipt.status)) settle(record, receipt.status === "CONFIRMED_NOT_EXECUTED" ? "核查确认原保存没有执行，记录已解除，可以重新修改风控设置。" : "原保存已完成，记录已解除；设置以「机型风控」显示的为准。");
     else setRiskReceipts(values => ({ ...values, [record.commandKey]: receipt }));
   };
   const noteOf = (r: E6Pending) => m.notes[r.commandKey] && m.notes[r.commandKey] !== answered[r.commandKey] && !GENERIC_NOTES.includes(m.notes[r.commandKey]) ? m.notes[r.commandKey]
     : m.rejected.includes(r.commandKey) ? r.retryRejection : undefined;
   const technical = (r: E6Pending) => <div className="e6-fold-content"><p>原请求编号：<code>{r.commandKey}</code></p><p>原对象：{r.label}</p>{r.payload.kind === "device" && <p>原状态：{r.payload.input.before}</p>}<pre className="e6-json">{JSON.stringify({ scope: r.scope, request: JSON.parse(r.body) }, null, 2)}</pre>{m.technicalErrors[r.commandKey] && <pre className="e6-json">{m.technicalErrors[r.commandKey]}</pre>}</div>;
   const items: RecoveryItem[] = [
-    ...(section === "phones" ? m.devicePending.map(r => ({ key: r.commandKey, object: r.label, tag: <StatusTag tone="warn">在设备管理待核对</StatusTag>,
-      line: "原操作在设备管理，到那里核对。", actions: <Link className="rd-link" href="/devices/ops">设备管理</Link>,
+    ...(section === "phones" ? m.devicePending.map(r => ({ key: r.commandKey, object: r.label, tag: <StatusTag tone="warn">待核对</StatusTag>,
+      line: "原操作在设备管理，到那里查询和处理。", actions: <Link className="rd-link" href="/devices/ops">设备管理</Link>,
       detail: <p>原操作在设备管理保留；相关设备或用户先暂停新操作。</p> })) : []),
     ...records.map(r => {
       const expired = isRetryExpired(r), refused = m.rejected.includes(r.commandKey), waiting = !!r.ticketId && !r.terminal, end = r.terminal ? PROPOSAL_END[r.terminal] : undefined;
@@ -287,15 +291,15 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
         note: noteOf(r) || outcomes[r.commandKey] || riskShown || closureOpen(outcomes[r.commandKey], expired) ? note : undefined,
         noteKey: [noteOf(r) ?? "", outcomes[r.commandKey] ? JSON.stringify(outcomes[r.commandKey]) : "", riskReceipts[r.commandKey]?.status ?? ""].join("|").replace(/^\|+$/, ""),
         actions: <>
-          {r.payload.kind === "proposal" && !r.terminal && !refused && <Button size="sm" disabled={!!m.busy} onClick={() => void m.check(r)}>{waiting ? "查询审批结果" : "查询原结果"}</Button>}
-          {r.payload.kind === "device" && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showDevice(r, receipt as ECommandInvestigation | null), () => { /* checkDirect keeps the query failure on the row. */ }).finally(() => onRead?.()); }}>查询原结果</Button>}
-          {r.payload.kind !== "risk" && !r.ticketId && !expired && !refused && <Button size="sm" disabled={!m.allowed(r) || !!m.busy} onClick={() => { void m.send(r, true).then(onRead).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原请求重试</Button>}
-          {r.payload.kind === "risk" && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showRisk(r, receipt as PhoneRiskReceipt | null), () => { /* The row retains the query failure. */ }).finally(() => window.dispatchEvent(new Event("e6-read-risk"))); }}>{r.payload.receiptVersion === 1 ? "查询原结果" : "读取当前风控设置"}</Button>}
-          {r.payload.kind === "risk" && m.canRetry(r) && !refused && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.send(r, true).then(result => { riskDone("RETRIED"); window.dispatchEvent(new Event("e6-read-risk")); onRead?.(result); }).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原请求重试</Button>}
-          {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && m.canInvestigateRisk && riskReceipts[r.commandKey]?.status !== "PROCESSING" && (closureOpen(outcomes[r.commandKey], expired) || riskReceipts[r.commandKey]?.status === "UNKNOWN") && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
+          {r.payload.kind === "proposal" && !r.terminal && !refused && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => void m.check(r)}>{waiting ? "查询审批结果" : "查询原结果"}</Button>}
+          {r.payload.kind === "device" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showDevice(r, receipt as ECommandInvestigation | null), () => { /* checkDirect keeps the query failure on the row. */ }).finally(() => onRead?.()); }}>查询原结果</Button>}
+          {r.payload.kind === "risk" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showRisk(r, receipt as PhoneRiskReceipt | null), () => { /* The row retains the query failure. */ }).finally(() => window.dispatchEvent(new Event("e6-read-risk"))); }}>{r.payload.receiptVersion === 1 ? "查询原结果" : "读取当前风控设置"}</Button>}
           {r.payload.kind === "device" && m.canInvestigate && closureOpen(outcomes[r.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
+          {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && m.canInvestigateRisk && riskReceipts[r.commandKey]?.status !== "PROCESSING" && (closureOpen(outcomes[r.commandKey], expired) || riskReceipts[r.commandKey]?.status === "UNKNOWN") && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
+          {r.payload.kind !== "risk" && !r.ticketId && !expired && !refused && <Button size="sm" disabled={!m.allowed(r) || !!m.busy} onClick={() => { void m.send(r, true).then(onRead).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原请求重试</Button>}
+          {r.payload.kind === "risk" && m.canRetry(r) && !refused && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.send(r, true).then(result => { riskDone("RETRIED"); window.dispatchEvent(new Event("e6-read-risk")); onRead?.(result); }).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原请求重试</Button>}
           {r.terminal && <Button size="sm" onClick={() => { m.forget(r); onRead?.(); }}>准备新变更</Button>}
-          {(refused || r.payload.kind === "proposal" && r.absent && !r.ticketId && expired) && <Button variant="primary" size="sm" onClick={() => m.setRelease(r)}>{refused ? "解除待确认" : "确认解除"}</Button>}
+          {(refused || r.payload.kind === "proposal" && r.absent && !r.ticketId && expired) && <Button size="sm" onClick={() => m.setRelease(r)}>解除原操作记录</Button>}
         </>,
         detail: <><p>{formatBusinessTimeCompact(new Date(r.createdAt).toISOString(), "—")} 提交，理由：{r.payload.input.reason}</p><p>{state.more}</p><TicketVerdict record={r} /></>, tech: <Fold inset title="技术信息" summary={r.commandKey}>{technical(r)}</Fold> };
     }),
@@ -306,7 +310,8 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
   ];
   const release = m.release?.section === section ? m.release : null;
   return <>
-    <RecoveryPanel title={`${items.length} 项变更还没有结论`} tone={items.every(item => item.key.startsWith("waiting:")) ? "progress" : "warn"}
+    {settled.map(item => <SettledLine key={item.key} label={item.label} text={item.text} onDismiss={() => setSettled(list => list.filter(other => other.key !== item.key))} />)}
+    <RecoveryPanel title={recoveryTitle(items.length - items.filter(item => item.key.startsWith("waiting:")).length - records.filter(r => r.terminal).length, items.filter(item => item.key.startsWith("waiting:")).length, records.filter(r => r.terminal).length)} tone={items.every(item => item.key.startsWith("waiting:")) ? "progress" : "warn"}
       explain="原内容和理由都已保存；有结论前，这些对象不能提交新修改。点行首的箭头看提交时间、说明和原请求。" foot={m.canAudit ? <Link className="rd-link" href="/platform/audit?domain=E">到操作记录与审批核对</Link> : undefined} items={items} />
     {closing && (closing.payload.kind === "device" || closing.payload.kind === "risk") && <CommandClosureModal label={closing.label} commandKey={closing.commandKey} createdAt={closing.createdAt}
       facts={<>{closing.payload.kind === "device" && <Fact k="原状态">{closing.payload.input.before}</Fact>}<Fact k="原理由">{closing.payload.input.reason}</Fact></>}

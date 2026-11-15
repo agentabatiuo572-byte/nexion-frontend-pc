@@ -7,7 +7,8 @@ import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-
 import { accountVersion, canReplayGroupCommand, commandRejected, groupPendingCommands, inviteRevokeReason, isInvitePending, observedVersion, supportGroupClient, type GroupPendingRecord, type InviteCodeView, type InviteRevokeRecord, type QualificationKind, type QualificationStatus, type SupportGroup, type SupportGroupDirectory, type SupportGroupDetail, type SupportGroupMember, type SupportQualifications } from "@/lib/admin/support-group-client";
 import { Btn, Modal } from "../design-kit";
 import { BlockState, Button, Change, Explain, Fact, Facts, Field, Fold, Input, MoreMenu, Notice, PageTabs, Panel, ReleaseModal, Select, StatusTag, Table, Th, Tr, Td, Textarea } from "@/app/components/rd";
-import { ChevronLeft, Network, UsersRound } from "lucide-react";
+import { ChevronLeft, Network, SearchCheck, UsersRound } from "lucide-react";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../fund-command-check";
 import { SupportClientError } from "@/lib/admin/m-support-client";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import "./m-support-admin.css";
@@ -236,6 +237,20 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
     </div>
   </Modal>;
   useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [pending, inviteStoreTick]);
+  const QUERY_ICON = <SearchCheck size={14} aria-hidden />;
+  /** 组操作和邀请码作废的结果未知记录收成一个面板，每条一行；按钮和可用条件照旧。 */
+  const recoveryItems: RecoveryItem[] = [
+    ...(allowed && pending ? [{ key: pending.commandKey, object: pending.label,
+      tag: <StatusTag tone="warn">{canReplayGroupCommand(pending) ? "结果未知" : "已过期"}</StatusTag>,
+      line: canReplayGroupCommand(pending) ? QUERY_PENDING_TEXT : "超过 24 小时不能再重试，先查询原结果。",
+      actions: <Button size="sm" icon={QUERY_ICON} disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>,
+      detail: <p>{canReplayGroupCommand(pending) ? "原内容和理由已保留，查到结果前不能重复提交。" : expiredText()}</p> }] : []),
+    ...revokePendings.map(r => { const refused = inviteRejected.includes(r.commandKey), expired = !canReplayGroupCommand(r); return { key: r.commandKey, object: `作废邀请码 · ${r.intent.payload.name}`,
+      tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
+      line: refused ? "重试被明确拒绝；查询原结果核对后，可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : "确认前不能修改或重新提交，先查询原结果。",
+      actions: <><Button size="sm" icon={QUERY_ICON} disabled={inviteBusy} onClick={() => void checkInviteRevoke(r)}>查询原结果</Button>{replayButton(r) && <Button size="sm" disabled={inviteBusy} onClick={() => void replayInviteRevoke(r)}>按原请求重试</Button>}{refused && <Button size="sm" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteRelease(r); }}>解除原操作记录</Button>}</>,
+      detail: <p>邀请码 {r.intent.payload.code}；原因：「{r.intent.payload.reason}」。{expired && expiredText()}</p> }; }),
+  ];
   const targetGroups = rows.filter(g => g.status === "ENABLED" && g.id !== draft?.member?.currentMember.groupId);
   const groupNameValid = Boolean(draft?.name.trim() && draft.name.trim().length <= 120);
   const groupNameRequired = draft?.kind === "CREATE" || draft?.kind === "RENAME";
@@ -249,9 +264,9 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
         ...(currentDetail.group.status === "ENABLED" ? [{ key: "disable", label: "停用组", disabledReason: currentDetail.blockers.canExit ? undefined : "先处理全部成员、待分配客户和未结束管理任务", onSelect: () => open("STATUS", undefined, "DISABLED") }] : currentDetail.group.status === "DISABLED" ? [{ key: "enable", label: "启用组", onSelect: () => open("STATUS", undefined, "ENABLED") }, { key: "archive", label: "归档组", danger: true, disabledReason: currentDetail.blockers.canExit ? undefined : "先处理全部成员、待分配客户和未结束管理任务", onSelect: () => open("STATUS", undefined, "ARCHIVED") }] : []),
       ]} /></>}</>}>
     {mode === "ALL" && !selectedId && <PageTabs level={2} label="分组目录" value={directoryView} onChange={value => { setDirectoryView(value); setPage(1); }} items={[{ value: "groups", label: "客服组" }, { value: "unassigned", label: "待分组客服" }]} />}
-    {!allowed && <Notice tone="danger">当前账号不能管理客服组。主管只能管理本人负责的组。</Notice>}{notice && <Notice tone={notice === INVITE_READBACK_FAILED ? "warn" : "ok"}>{notice}</Notice>}{error && <Notice tone="danger">{error}</Notice>}
-    {allowed && pending && <Notice tone="warn" action={<Btn sm disabled={saving} onClick={() => void checkPending()}>查询原结果</Btn>}>{QUERY_PENDING_TEXT}{!canReplayGroupCommand(pending) && expiredText()}</Notice>}{allowed && loading && <p className="m1-group-state" role="status">正在加载获准组资料…</p>}
-    {revokePendings.map(r => <Notice key={r.commandKey} tone="warn" actionBelow action={<>{<Btn sm disabled={inviteBusy} onClick={() => void checkInviteRevoke(r)}>查询原结果</Btn>}{replayButton(r) && <Btn sm disabled={inviteBusy} onClick={() => void replayInviteRevoke(r)}>按原请求重试</Btn>}{inviteRejected.includes(r.commandKey) && <Btn sm disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteRelease(r); }}>解除原操作记录</Btn>}</>}>作废 {r.intent.payload.name} 的邀请码 {r.intent.payload.code} 结果待确认；原因已冻结：「{r.intent.payload.reason}」。确认前不能修改或重新提交。{!canReplayGroupCommand(r) && expiredText()}</Notice>)}{!invitePanel && inviteError && <Notice tone="danger">{inviteError}</Notice>}
+    {!allowed && <Notice tone="danger">当前账号不能管理客服组。主管只能管理本人负责的组。</Notice>}{notice && <Notice tone={notice === INVITE_READBACK_FAILED ? "warn" : "ok"}>{notice}</Notice>}{error && <Notice tone={pending ? "warn" : "danger"}>{error}</Notice>}
+    {allowed && loading && <p className="m1-group-state" role="status">正在加载获准组资料…</p>}
+    <RecoveryPanel title={recoveryTitle(recoveryItems.length)} explainLabel="结果未知怎么处理" explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；有结果前，相关的组、成员或邀请码不能再修改或重新提交。" items={recoveryItems} />{!invitePanel && inviteError && <Notice tone={inviteRejected.length || !revokePendings.length ? "danger" : "warn"}>{inviteError}</Notice>}
     {directoryReady && !loading && !selectedId && directoryView === "groups" && <div className="m-admin-table-wrap"><Table label="客服与分组" className="m1-group-directory"><thead><Tr><Th>组 / 负责人</Th><Th align="right">客服（人）</Th><Th align="right">绑定客户（人）</Th><Th align="right">待分配（人）</Th><Th>状态</Th><Th sticky="end">操作</Th></Tr></thead><tbody>{rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(g => <Tr key={g.id}>
       <Td data-label="组 / 负责人"><span className="m-group-name" title={g.name}>{g.name}</span><span className="rd-note" title={g.supervisorName ?? undefined}>{g.supervisorName ?? "负责人未同步"}</span></Td>
       <Td align="right" data-label="客服（人）"><Button variant="ghost" size="sm" className={`m-group-count${g.memberCount ? "" : " m-group-quiet"}`} type="button" disabled={saving} title={g.memberCount == null ? "客服数量暂不可用，查看名单" : `${g.memberCount} 人`} aria-label={`查看${g.name}的客服名单，${g.memberCount == null ? "数量暂不可用" : `${g.memberCount} 人`}`} onClick={() => { closeDraft(); setSelectedId(g.id); setPage(1); }}>{g.memberCount == null ? "—" : g.memberCount.toLocaleString("en-US")}</Button></Td>
@@ -286,7 +301,7 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
         <Field label="目标组">{saving || pending ? <p className="m1-field-value">{draft.target?.name ?? "待分组"}</p> : <Select aria-label="目标组" value={draft.targetGroupId} options={[...(mode === "ALL" ? [{ value: "", label: "待分组" }] : []), ...targetGroups.map(g => ({ value: g.id, label: g.name }))]} placeholder="选择启用的目标组" onChange={targetGroupId => { setDraft({ ...draft, targetGroupId, target: undefined, stale: true }); if (draft.member) void previewMove(draft.member.adminId, targetGroupId, draft); }} />}</Field>
       </>}
       {draft.kind === "OWNER" && <p className="m1-field-value">移交后由新负责人管理本组成员和待分配客户；客服已绑定的客户和历史记录不变。成员 {currentDetail?.memberCount ?? "-"} 人，待分配 {currentDetail?.routedCustomers ?? "-"} 人。</p>}
-      <Field label="操作理由" required help={reasonLeft && !reasonValid(draft.reason) ? undefined : "请填写 8–200 字，将记入操作记录。"} error={reasonLeft && !reasonValid(draft.reason) ? "请填写 8–200 字的理由。" : undefined}>{control => <Textarea {...control} value={draft.reason} count={`${Array.from(draft.reason.trim()).length}/200`} disabled={saving || !!pending || previewBusy} onBlur={() => setReasonLeft(true)} onChange={e => setDraft({ ...draft, reason: e.target.value })} />}</Field>{previewBusy && <p className="m1-group-state" role="status">正在读取最新的成员和分组资料…</p>}{draft.stale && <Notice tone="warn">预览还没核实或资料变了，请重读预览后再确认。</Notice>}{error && <Notice tone="danger">{error}</Notice>}
+      <Field label="操作理由" required help={reasonLeft && !reasonValid(draft.reason) ? undefined : "请填写 8–200 字，将记入操作记录。"} error={reasonLeft && !reasonValid(draft.reason) ? "请填写 8–200 字的理由。" : undefined}>{control => <Textarea {...control} value={draft.reason} count={`${Array.from(draft.reason.trim()).length}/200`} disabled={saving || !!pending || previewBusy} onBlur={() => setReasonLeft(true)} onChange={e => setDraft({ ...draft, reason: e.target.value })} />}</Field>{previewBusy && <p className="m1-group-state" role="status">正在读取最新的成员和分组资料…</p>}{draft.stale && <Notice tone="warn">预览还没核实或资料变了，请重读预览后再确认。</Notice>}{error && <Notice tone={pending ? "warn" : "danger"}>{error}</Notice>}
       </div>
     </Modal>}
   </Panel>;
