@@ -147,7 +147,7 @@ function diffText(row: D1ReconciliationRow) {
   return row.reconciled ? `已挂账 · 差异仍在` : `待挂账：${gapText(row)}`;
 }
 
-/** 结果未确认的写请求叫什么，按路径认，不露路径（D1-A09）。 */
+/** 结果未知的写请求叫什么，按路径认，不露路径（D1-A09）。 */
 function pendingLabel(path: string) {
   if (path.startsWith("/topup/reconciliation/")) return `对账差异挂账 · ${depositChannelText(path.split("/")[3] ?? "")}`;
   if (path.endsWith("/enabled")) return `启用或停用充值渠道 · ${depositChannelText(path.split("/")[3] ?? "")}`;
@@ -320,11 +320,11 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
   const bankSettingsPending = pending.filter(command => !command.path.startsWith("/topup/reconciliation/"));
   useEffect(() => {
     onBankActivity([
-      ...(bankPending.length ? [`有 ${bankPending.length} 次人工入账结果未确认`] : []),
-      ...(bankSettingsPending.length ? [`有 ${bankSettingsPending.length} 次设置修改结果未确认`] : []),
+      ...(bankPending.length ? [`有 ${bankPending.length} 次人工入账结果未知`] : []),
+      ...(bankSettingsPending.length ? [`有 ${bankSettingsPending.length} 次设置修改结果未知`] : []),
     ]);
   }, [onBankActivity, bankPending.length, bankSettingsPending.length]);
-  useEffect(() => { onLedgerActivity(ledgerPending.length ? [`有 ${ledgerPending.length} 次挂账结果未确认`] : []); }, [onLedgerActivity, ledgerPending.length]);
+  useEffect(() => { onLedgerActivity(ledgerPending.length ? [`有 ${ledgerPending.length} 次挂账结果未知`] : []); }, [onLedgerActivity, ledgerPending.length]);
 
   const refreshAfterWrite = async () => {
     syncPending();
@@ -488,7 +488,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
   /** 读回这条命令改的对象现在是什么样，只给事实，不当成原命令的结果（OP-93、OP-95）。 */
   const verifyCommand = async (path: string) => {
     const code = decodeURIComponent(path.split("/")[3] ?? "");
-    const kept = "状态可能是别人改的，待确认继续保留。";
+    const kept = "状态可能是别人改的，记录继续保留。";
     if (path === "/vietqr/config") {
       const current = await loadD1VietQrOverview("inflight");
       setVietQr(current);
@@ -497,7 +497,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     if (path.startsWith("/vietqr/orders/")) {
       const latest = await fetchD1BankOrders({ keyword: code, pageNum: 1, pageSize: 20 });
       const order = latest.records.find(value => value.intentNo === code);
-      return order ? `读回：这笔现在是「${orderStatusText(order.status)}」${order.creditedUsdt > 0 ? `，已入账 ${usdt(order.creditedUsdt)} USDT` : "，还没入账"}。${kept}` : "读回：列表里暂时找不到这笔，待确认继续保留。";
+      return order ? `读回：这笔现在是「${orderStatusText(order.status)}」${order.creditedUsdt > 0 ? `，已入账 ${usdt(order.creditedUsdt)} USDT` : "，还没入账"}。${kept}` : "读回：列表里暂时找不到这笔，记录继续保留。";
     }
     const current = await fetchD1TopupOverview();
     setOverview(current);
@@ -507,7 +507,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       return row ? `读回：${name}今天的差异现在是「${diffText(row)}」。${kept}` : `读回：今天没有${name}的对账记录。${kept}`;
     }
     const channel = current.channels.find(value => value.code === code);
-    if (!channel) return `读回：暂时读不到${name}。待确认继续保留。`;
+    if (!channel) return `读回：暂时读不到${name}。记录继续保留。`;
     return path.endsWith("/enabled") ? `读回：${name}现在是「${channel.enabled ? "启用" : "停用"}」。${kept}`
       : `读回：${name}单笔上限现在是 ${channel.maxAmountValue == null ? "未设置" : `${channel.maxAmountValue.toLocaleString("en-US")} USD`}。${kept}`;
   };
@@ -515,7 +515,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     key: command.commandKey,
     label: pendingLabel(command.path),
     createdAt: command.createdAt,
-    hint: "先点「读回核对」；按原操作重试重发同一份原请求，不会重复执行。",
+    hint: "先读回现在的状态；按原请求重试只重发原请求，不会重复执行。",
     blocked: command.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : permitted ? undefined : "这个账号没有这项权限",
     auditHref: "/platform/audit?domain=D",
     verify: () => verifyCommand(command.path),
@@ -524,7 +524,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     after: () => { void refreshAfterWrite(); setBankKey(value => value + 1); },
   });
   const bankItems: D1PendingItem[] = [
-    ...bankPending.map(command => ({ ...pendingItem({ ...command, method: "POST", body: "" }, () => retryD1PendingBankOrderCommand(command.commandKey), canBankReconcile), hint: "先在下面的列表核对订单和用户钱包；按原操作重试不会重复入账。" })),
+    ...bankPending.map(command => ({ ...pendingItem({ ...command, method: "POST", body: "" }, () => retryD1PendingBankOrderCommand(command.commandKey), canBankReconcile), hint: "先在下面的列表核对订单和用户钱包；按原请求重试不会重复入账。" })),
     ...bankSettingsPending.map(command => pendingItem(command, () => command.path === "/vietqr/config" ? retryD1PendingCommand(command.commandKey) : retryD1PendingTopupCommand(command.commandKey),
       command.path === "/vietqr/config" ? canManageBankConfig : canManageChannels)),
   ];

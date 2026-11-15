@@ -1,6 +1,7 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { eventBacklogMetric } from "@/lib/admin/event-backlog-metric";
 
 interface ApiResult<T> {
   code: number;
@@ -38,6 +39,9 @@ interface BackendA3SystemHealth {
   observedAt?: string | null;
   source?: string | null;
   stale?: boolean | null;
+  backlogCount?: number | null;
+  oldestSeconds?: number | null;
+  auditLinkUnresolvedCount?: number | null;
 }
 
 interface BackendA3Stats {
@@ -205,7 +209,7 @@ function normalizeOverview(data: BackendA3Overview | null | undefined): A3Overvi
   const systemHealth = (data?.systemHealth ?? []).map((row) => ({
     name: asText(row.name),
     tone: normalizeTone(row.tone),
-    metric: asText(row.metric),
+    metric: row.name === "事件待投递" ? eventBacklogMetric(asText(row.metric), row) : asText(row.metric),
     observedAt: asText(row.observedAt, "未知"),
     source: asText(row.source, "未声明"),
     stale: row.stale !== false,

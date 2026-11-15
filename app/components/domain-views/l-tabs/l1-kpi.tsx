@@ -13,9 +13,10 @@ import { Activity, CheckCircle2, CircleHelp, Download, Flag, Gauge, ListChecks, 
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { KpiTrendPoint } from "@/lib/admin/kpi-trend";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
-import { KeepText, BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, Figure, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, RecordList, ReleaseModal, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
+import { KeepText, BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, Figure, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, RecordList, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { businessClock, businessDay, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
 import { PaginationExemptionList } from "../design-kit";
@@ -24,6 +25,8 @@ import { readL1LiveTotals } from "./l1-l2-live-data";
 import { L1LiveTotals } from "./l1-l2-live-fallback";
 import type { LCtx } from "./types";
 import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, isLOutcomeUnknownError, type L1KpiQuery, type LReportCreateInput } from "@/lib/admin/l-client";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-kpi-contract";
 import { L1_EXPORT_RECIPIENT, l1ReportInput, resolveL1ExportMode, resolveL1ExportUnavailableReason, type L1ExportMode, type L1ExportSource } from "./l1-export-contract";
@@ -154,7 +157,7 @@ function queryScope(query: L1KpiQuery) {
   return [time, ...SLICES.filter((key) => query[key]).map((key) => `${SLICE_NAME[key]} ${query[key]}`)].join("，");
 }
 
-type L1PendingExport = PendingMutationRecord & { label: string; mode: L1ExportMode; input: LReportCreateInput; reason: string };
+type L1PendingExport = PendingMutationRecord & { label: string; mode: L1ExportMode; input: LReportCreateInput; reason: string; commandOrigin?: FundCommandOrigin };
 
 const EXPORT_SCOPE = "l1-export";
 const EXPORT_PAGE = "/analytics/export";
@@ -168,13 +171,14 @@ const pendingExports = createPendingMutationStore<L1PendingExport>({
 });
 
 /** 导出的全部状态：按钮、确认框、待确认条、成功条。写法同提现审核的 sendCommand、retryPending、releasePending。 */
-function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
+function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, reread: () => void) {
   const reach = useReach();
   const [pending, setPending] = useState<L1PendingExport | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryRejected, setRetryRejected] = useState(false);
   const [retryNote, setRetryNote] = useState("");
-  const [releasing, setReleasing] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [settled, setSettled] = useState<FundSettled[]>([]);
   const [finished, setFinished] = useState<L1ExportMode | null>(null);
   const syncPending = () => setPending(pendingExports.list()[0] ?? null);
   useEffect(syncPending, []);
@@ -196,7 +200,8 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     if (!createReport) throw new Error("关键指标暂时不能导出，请刷新后再试");
     const retained = pendingExports.get(EXPORT_SCOPE);
     const key = retained ?? `l1-export-${crypto.randomUUID()}`;
-    pendingExports.remember(EXPORT_SCOPE, key, { label, mode, input, reason });
+    const original = pendingExports.list().find(record => record.commandKey === key);
+    pendingExports.remember(EXPORT_SCOPE, key, { label, mode, input, reason, commandOrigin: retained ? original?.commandOrigin : fundCommandOrigin("POST", "/api/admin/bi/reports", "bi_l1_read") });
     if (!pendingExports.isDurablyStored(EXPORT_SCOPE, key)) {
       pendingExports.forget(EXPORT_SCOPE, key);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
@@ -204,7 +209,11 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     try {
       await createReport(input, reason, key);
     } catch (cause) {
-      const unknown = isLOutcomeUnknownError(cause);
+      const failure = cause as { status?: number; reasonCode?: string; hadUncertainAttempt?: boolean };
+      const rejected = retained || failure.hadUncertainAttempt ? isExplicitRejection(cause)
+        : !isLOutcomeUnknownError(cause) && !failure.reasonCode?.startsWith("IDEMPOTENCY_")
+          && isDeterministicRejection(failure.status ?? 0);
+      const unknown = !rejected;
       if (!unknown && !retained) pendingExports.forget(EXPORT_SCOPE);
       syncPending();
       if (!unknown) throw cause;
@@ -266,30 +275,43 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     try {
       await send(record.mode, record.input, record.reason, record.label);
     } catch (cause) {
-      setRetryNote(`重试被拒绝：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，原操作继续保留。`);
+      setRetryNote(`重试被拒绝：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，记录继续保留。`);
       setRetryRejected(isExplicitRejection(cause));
     } finally {
       setRetrying(false);
     }
   };
 
-  /** 只放开这页的锁，不发请求，不写操作记录。 */
-  const release = (record: L1PendingExport) => {
-    pendingExports.forget(record.fingerprint, record.commandKey);
-    syncPending();
-    setRetryRejected(false);
-    setRetryNote("");
-    setReleasing(false);
-    ctx.toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
+  const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
+  const checkInvestigation = async (record: L1PendingExport, evidence?: FundCommandEvidence) => {
+    setRetrying(true);
+    try {
+      const receipt = await checkFundCommand(record, evidence);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+      if (fundCommandSettled(receipt)) {
+        pendingExports.forget(record.fingerprint, record.commandKey);
+        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: record.label, status: receipt!.originalStatus }]);
+        syncPending();
+        setRetryRejected(false); setRetryNote("");
+        reread();
+      }
+      return receipt;
+    } catch (cause) {
+      const error = displayAdminError(cause);
+      // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
+      if (!evidence) setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      throw cause;
+    } finally { setRetrying(false); }
   };
 
   const expired = pending ? pending.expiresAt <= Date.now() : false;
 
   return {
+    investigation: { check: checkInvestigation, results: investigationResults, access: pending ? fundInvestigationAccess(pending) : null },
     button: ctx.canExport ? (<>
       <Button
         icon={<Download size={14} aria-hidden />}
-        disabledReason={pending ? "上一次导出结果未确认，先处理页面上方的待确认" : exportMode === null || ctx.biLoading ? exportUnavailableReason : undefined}
+        disabledReason={pending ? "上一次导出结果未知，先到页面上方查询原结果" : exportMode === null || ctx.biLoading ? exportUnavailableReason : undefined}
         onClick={() => { if (exportMode) { setFinished(null); openConfirm(exportMode); } }}
       >
         {exportMode === "series" ? "导出关键指标序列 CSV" : "导出关键指标当前汇总 CSV"}
@@ -297,22 +319,26 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
       <Explain label="导出的说明" content="要填理由，生成下载任务，留操作记录。" />
     </>) : null,
     notices: <>
-      {pending && (
-        <Notice tone="warn" title={`${pending.label} · 结果未确认`} action={<>
-          {!expired && <Button size="sm" loading={retrying} disabledReason={!ctx.canExport ? "这个账号已没有导出权限，请有权限的同事处理" : undefined} onClick={() => void retry(pending)}>按原操作重试</Button>}
-          {!expired && retryRejected && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除待确认</Button>}
-        </>}>
-          {formatBusinessTimeFull(new Date(pending.createdAt).toISOString(), "—")}（{businessZone().label}）发出，任务可能已经生成，不要重新导出。<KeepText text={expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !ctx.canExport ? "这个账号已没有导出权限，不能重试，请有权限的同事处理。" : "重发原内容，已成功的不会重复执行。"} />{exportPage(`到「${pageName}」核对`)}
-          <Explain label="技术信息" content={`原请求编号 ${pending.commandKey} ｜ 理由 ${pending.reason}`} />
-          {!expired && retryNote && <div><KeepText text={retryNote} /></div>}
-        </Notice>
-      )}
+      <FundRecoveryPanel settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
+        link={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=L">到操作记录与审批核对</Link> : undefined}
+        rows={pending ? [{ key: pending.commandKey, title: pending.label, record: pending, outcome: investigationResults[pending.commandKey], createdAt: pending.createdAt, expired, canRetry: !expired && !!ctx.canExport,
+          copy: { where: `「${pageName}」和操作记录与审批` },
+          actions: <>
+            <FundCheckButtons record={pending} outcome={investigationResults[pending.commandKey]} busy={retrying} onCheck={() => void checkInvestigation(pending).catch(() => undefined)} onClose={() => setClosing(true)} />
+            {!expired && <Button size="sm" loading={retrying} disabledReason={!ctx.canExport ? "这个账号已没有导出权限，请有权限的同事处理" : undefined} onClick={() => void retry(pending)}>按原请求重试</Button>}
+          </>,
+          detail: <>
+            <p>任务可能已经生成，不要重新导出。{!expired && !ctx.canExport ? "这个账号已没有导出权限，不能重试，请有权限的同事处理。" : ""}{exportPage(`到「${pageName}」核对`)}</p>
+            {!expired && retryNote && <p><KeepText text={retryNote} /></p>}
+          </>,
+          tech: `理由 ${pending.reason}` }] : []} />
       {finished && !pending && (
         <Notice tone="ok" title={finished === "series" ? "关键指标趋势已提交导出" : "关键指标当前汇总已提交导出"} action={<Button size="sm" onClick={() => setFinished(null)}>知道了</Button>}>
           任务生成后才能下载。{exportPage(`到「${pageName}」下载`)}
         </Notice>
       )}
-      {releasing && pending && <ReleaseModal label={pending.label} onCancel={() => setReleasing(false)} onConfirm={() => release(pending)} explain={`重试被拒说明不了原操作的结果，先到「${pageName}」确认任务有没有生成。解除后原操作不再重试。`} />}
+      {closing && pending && <FundClosureModal label={pending.label} createdAt={pending.createdAt}
+        onClose={() => setClosing(false)} onSubmit={async evidence => { await checkInvestigation(pending, evidence); setClosing(false); }} />}
     </>,
   };
 }
@@ -371,7 +397,7 @@ function OffsetModal({ current, onApply, onClose }: { current: number; onApply: 
 
 export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LCtx; onExportSource?: (source: L1ExportSource) => void; source?: L1ExportSource | null; title: ReactNode; summary: string }) {
   const reach = useReach();
-  const exporting = useL1Export(ctx, source);
+  const exporting = useL1Export(ctx, source, () => retryFirstRead());
   const [picked, setPicked] = useState<number | null>(null); // 没点过时跟着排在最前的那一项
   const [ylOffset, setYlOffset] = useState(10);
   const [phaseOn, setPhaseOn] = useState(true);

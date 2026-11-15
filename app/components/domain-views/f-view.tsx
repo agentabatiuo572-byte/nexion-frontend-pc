@@ -16,11 +16,13 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
+import { f4HeadCapAmplifies } from "@/lib/admin/f4-money";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import {
   addF1VRankReward,
   fetchF3BinaryOverview,
   fetchF4LeadershipPoolOverview,
+  fetchF4VoteProjection,
   fetchF4AmbassadorPolicy,
   fetchF5CommissionAuditOverview,
   downloadF5RedactedCsv,
@@ -61,6 +63,7 @@ import { pendingConfigApproval, submitConfigApproval, teamFundApprovalAuthority,
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { findHighOp, isFFundAmplifyingKey } from "@/lib/admin/high-ops-registry";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import type { F4VoteProjectionRead } from "@/lib/admin/f4-vote-projection";
 import type { Mc, McSpec, FViewCtx } from "./f-tabs/types";
 import { F1Vrank } from "./f-tabs/f1-vrank";
 import { RdPage } from "@/app/components/rd";
@@ -157,6 +160,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f2ActivationPendingLoading, setF2ActivationPendingLoading] = useState(tab === "F2");
   const [f2ActivationPendingError, setF2ActivationPendingError] = useState<string | null>(null);
   const canReadA2 = can("platform_a2_read");
+  const canReadF4 = can("network_f4_read");
   const [f2Loading, setF2Loading] = useState(tab === "F2");
   const [f2Error, setF2Error] = useState<string | null>(null);
   const [f3Proposals, setF3Proposals] = useState<FDomainAttempt[]>([]);
@@ -166,6 +170,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f3Loading, setF3Loading] = useState(tab === "F3");
   const [f3Error, setF3Error] = useState<string | null>(null);
   const [f4Overview, setF4Overview] = useState<F4LeadershipPoolOverview | null>(null);
+  const [f4VoteProjection, setF4VoteProjection] = useState<F4VoteProjectionRead>({ status: "idle" });
   const [f4AmbassadorPolicy, setF4AmbassadorPolicy] = useState<F4AmbassadorPolicy | null>(null);
   const [f4Loading, setF4Loading] = useState(tab === "F4");
   const [f4Error, setF4Error] = useState<string | null>(null);
@@ -424,6 +429,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     setF4PolicyWrites(owner === undefined ? [] : listF4PolicyWrites(owner));
     setF4Loading(true);
     setF4Error(null);
+    setF4VoteProjection(canReadF4 ? { status: "loading" } : { status: "denied" });
+    if (canReadF4) void fetchF4VoteProjection().then(data => {
+      if (request === f4Generation.current && owner === useAdminAuth.getState().session?.adminId) setF4VoteProjection({ status: "ready", data });
+    }, error => {
+      if (request === f4Generation.current && owner === useAdminAuth.getState().session?.adminId) setF4VoteProjection(
+        error?.status === 403 ? { status: "denied" } : { status: "error", message: errorMessage(error) });
+    });
     setActionConfirm(current => current?.f4Snapshot && !current.f4Recovery ? null : current);
     const [overview, ambassadorPolicy, calendar, queue, ...lookups] = await Promise.allSettled([
       fetchF4LeadershipPoolOverview(),
@@ -449,7 +461,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setActionConfirm(current => current?.f4Recovery && ![...proposals, ...direct].some(row => row.commandKey === current.f4Recovery!.original.commandKey) ? null : current);
     }
     setF4Loading(false);
-  }, [canReadA2, session?.adminId]);
+  }, [canReadA2, canReadF4, session?.adminId]);
 
   useEffect(() => {
     if (tab === "F4") void refreshF4();
@@ -463,6 +475,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!original) { setActionConfirm(null); return true; }
     f4Generation.current += 1;
     setF4Overview(null); setF4AmbassadorPolicy(null); setF4Loading(true);
+    setF4VoteProjection({ status: "idle" });
     setActionConfirm(current => current?.f4Snapshot && !current.f4Recovery ? null : current);
     let resolved = false;
     try {
@@ -1051,6 +1064,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       await proposeFConfig("F3", key, value, reason, undefined, amplifies, undefined, snapshot);
     },
     f4Overview,
+    f4VoteProjection,
     f4AmbassadorPolicy,
     refreshF4PolicyBaseline: async () => {
       setF4AmbassadorPolicy(null);
@@ -1069,7 +1083,12 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     refreshF4,
     updateF4Config: async (key, value, reason, expectedVersion, expectedMaterialRevision) => {
       const vote = f4Overview?.voteWeights.find((row) => (row.configKey || `F.pool.votes.${row.v}`) === key);
-      await proposeFConfig("F4", key, value, reason, expectedVersion, vote ? Number(value) > vote.votes : undefined, expectedMaterialRevision);
+      const headCap = key === "F.pool.top1MaxPct" || key === "F.pool.top5MaxPct";
+      const current = f4Submission.current?.overview ?? f4Overview;
+      const amplifies = headCap && current
+        ? f4HeadCapAmplifies(key, current.configValues[key], value)
+        : vote ? Number(value) > vote.votes : undefined;
+      await proposeFConfig("F4", key, value, reason, expectedVersion, amplifies, expectedMaterialRevision);
     },
     updateF4AmbassadorPolicy: async (policy, reason) => {
       const current = requireTeamApprovalSession("F4");
@@ -1252,6 +1271,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         coverageCheck={mc.coverageCheck}
         detail={mc.detail ?? "从下一笔结算开始生效，已经算好的不变。"}
         amplifies={!!mc.amplify}
+        coverageReliable={tab === "F4" ? (mc.f4Snapshot ? mc.f4Snapshot.overview.coverage : f4Overview?.coverage)?.reliable === true : undefined}
+        coverageUnavailableBlocks={tab === "F4" && (mc.f4Snapshot?.action === "approve" || mc.f4Snapshot?.action === "policy")}
         // coverage 按当前 tab 选源(A1 批1b 修复):原硬编码 f1Overview?.coverage → 切到 F2-F5 时仍显示 F1 覆盖率(跨域误用)。
         // 现按 tab 路由到对应 overview 的 coverage,与后端 rates()/binary()/leadershipPool()/commissions() 注入的 B1 快照一致。
         coverage={(tab === "F1" ? f1Overview?.coverage

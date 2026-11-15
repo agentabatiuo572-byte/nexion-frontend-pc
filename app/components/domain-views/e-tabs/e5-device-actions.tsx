@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, SearchCheck } from "lucide-react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -13,14 +13,14 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { canResumeE5UserDevicesFrom, fetchLegacyUnknownCandidate, type E5Device } from "@/lib/admin/e5-client";
 import { sameLegacyUnknownProof, type LegacyUnknownCandidate } from "@/lib/admin/legacy-unknown-resolution";
-import { e5Commands, e5LegacyCommands, e5CommandBlocks, checkE5Command, sendE5Command, type E5Command, type E5Intent } from "@/lib/admin/e5-command";
+import { e5Commands, e5LegacyCommands, e5CommandBlocks, checkE5Command, queryE5Proposal, releaseMissingE5Proposal, sendE5Command, type E5Command, type E5Intent } from "@/lib/admin/e5-command";
 import { canInvestigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { e6Commands, type E6Pending } from "@/lib/admin/e6-command";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { BlockState, Button, Change, Check, Fact as RdFact, Facts, Fold, IconButton, IrreversibleTag, Modal, MoreMenu, Notice, RatioBar, ReleaseBody, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import { E5_STATES } from "./e5-device-state";
-import { ClosureContact, CommandClosureModal, CommandOutcomeLine, SettledCommandNotices, closureOpen, type CommandOutcome, type SettledCommand } from "./e-command-check";
+import { ClosureContact, CommandClosureModal, CommandOutcomeLine, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, SettledLine, closureOpen, eReadError, recoveryTitle, type CommandOutcome, type RecoveryItem } from "./e-command-check";
 import type { EViewCtx } from "./types";
 
 function Fact({ label, value, mono, copy }: { label: string; value?: ReactNode; mono?: boolean; copy?: boolean }) {
@@ -55,6 +55,12 @@ interface ActionsState {
   toast: (message: string) => void;
 }
 const CommandsContext = createContext<ActionsState | null>(null);
+const PROPOSALS: E5Intent[] = ["force-activate", "unbind", "legacy"];
+const TICKET_UNREAD = "刚查过：还是没查到审批进度，稍后再查。";
+const E5_UNKNOWN = "没有收到结果，原请求和理由已保留；可以查询原结果，或按原请求重试。";
+/** Query failures of an approval request, in words an operator can act on. */
+const proposalQueryError = (record: E5Command, cause: unknown) => record.receivedTicketId ? TICKET_UNREAD
+  : cause instanceof Error && cause.message === "提案缺少有效票号" ? "查到的审批单和原请求对不上，记录保留；请到操作记录与审批核对。" : eReadError(cause);
 export const useE5Commands = () => useContext(CommandsContext)!;
 
 export function E5CommandScope({ children, refresh, readBack, toast }: { children: ReactNode; refresh: (successMessage?: string) => Promise<void>; readBack?: (record: E5Command) => Promise<string>; toast: (message: string) => void }) {
@@ -72,17 +78,26 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
   const [releaseChecked, setReleaseChecked] = useState(false);
   const [release, setRelease] = useState<E5Command | null>(null);
   const [outcomes, setOutcomes] = useState<Record<string, CommandOutcome>>({});
-  const [settled, setSettled] = useState<SettledCommand[]>([]);
+  /** Records the lookup found settled: one light line each above the panel until dismissed. */
+  const [settled, setSettled] = useState<{ key: string; label: string; text: string }[]>([]);
+  /** An approval that ended (approved, rejected, withdrawn, expired) stays as one light line until the operator dismisses it. */
+  const settleEnd = (record: E5Command, id: string, status: string) => setSettled(list => [...list.filter(item => item.key !== record.commandKey),
+    { key: record.commandKey, label: `${record.label} · ${record.device.serial}`, text: `审批单 ${id} ${PROPOSAL_END[status]?.tag ?? "状态待核实"}${PROPOSAL_END[status] ? `：${PROPOSAL_END[status].text}` : "。"}` }]);
   const [closing, setClosing] = useState<E5Command | null>(null);
+  const [missing, setMissing] = useState<E5Command | null>(null);
+  const [queryNotes, setQueryNotes] = useState<Record<string, string>>({});
+  const [errorKey, setErrorKey] = useState("");
   const sync = useCallback(() => {
-    setRecords(e5Commands.list().filter(r => r.actorId === actorId));
+    const saved = e5Commands.list().filter(r => r.actorId === actorId);
+    setRecords(saved);
+    setRejected(Object.fromEntries(saved.filter(r => r.retryRejection).map(r => [r.commandKey, r.retryRejection!])));
     setPhonePending(e6Commands.list().filter(r => String(r.owner) === actorId && r.section === "phones"));
   }, [actorId]);
   const phoneBlocks = (device: E5Device, intent?: E5Intent) => phonePending.some(r => r.scope === `user:${device.userId}`
     || r.scope === `phone:${device.deviceId}:${device.userId}`
     || (intent === "pause" || intent === "resume") && r.scope.startsWith("phone:") && r.scope.split(":")[2] === device.userId);
   useEffect(() => {
-    sync(); setRelease(null); setRejected({}); setReadResults({}); setOutcomes({}); setSettled([]); setClosing(null);
+    sync(); setRelease(null); setReadResults({}); setOutcomes({}); setSettled([]); setClosing(null); setMissing(null); setQueryNotes({});
     try { setOld(e5LegacyCommands()); } catch (cause) { setError(`旧操作记录无法读取：${displayAdminError(cause)}`); }
   }, [sync, epoch]);
   const allowed = (r: E5Command) => {
@@ -94,28 +109,43 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
   const execute = async (record: E5Command, retry: boolean) => {
     if (busy) throw new Error("另一个设备操作正在提交，请稍后核对。");
     if (!allowed(record)) throw new Error("当前账号缺少原操作所需权限，请核对授权。");
-    setBusy(record.commandKey); setError(""); sync();
+    setBusy(record.commandKey); setError(""); setErrorKey(record.commandKey);
+    setQueryNotes(values => ({ ...values, [record.commandKey]: "" })); sync();
     try {
       const result = await sendE5Command(record, retry);
       sync();
       const submitted = ["force-activate", "unbind", "legacy"].includes(record.intent);
-      const message = submitted ? `A2 ${result.id} 已提交，等待审批后执行` : record.intent === "deactivate"
+      const message = submitted ? `已提交审批 · 审批单 ${result.id}，批准前设备状态不变` : record.intent === "deactivate"
         ? result.pendingDeactivate ? "已申请停用，等待当前任务结算后自动停用" : "设备已取消激活"
         : record.intent === "pause" ? `暂停成功 · ${result.changedCount} 台设备` : record.intent === "resume" ? `已恢复 ${result.changedCount} 台运营暂停的设备` : "设备已激活";
-      toast(message);
-      await refresh(message);
+      if (!submitted || !retry || result.status === "pending") { toast(message); await refresh(message); }
+      else { settleEnd(record, String(result.id), String(result.status)); await refresh(); }
     } catch (cause) {
       if (cause instanceof Error && "status" in cause && (cause.status === 401 || cause.status === 403)) announcePermissionDenied();
       sync();
-      if (retry && isExplicitRejection(cause)) setRejected(rows => ({ ...rows, [record.commandKey]: displayAdminError(cause) }));
-      setError(isExplicitRejection(cause) ? displayAdminError(cause) : cause instanceof Error && cause.message === "提案缺少有效票号" ? "申请回执未包含审批单号，请到操作记录与审批核对。原请求已保留。" : "没有收到可确认的操作回执，原对象、内容、理由和命令号已保留。");
+      if (retry && !e5Commands.list().find(r => r.commandKey === record.commandKey)?.receivedTicketId && isExplicitRejection(cause)) setRejected(rows => ({ ...rows, [record.commandKey]: displayAdminError(cause) }));
+      const pausedGone = cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "PAUSED_USER_DEVICES_NOT_FOUND" && !retry && !e5Commands.get(record.fingerprint);
+      const saved = e5Commands.list().find(r => r.commandKey === record.commandKey);
+      // A first-submit "nothing to resume" closes the dialog and is told by a toast, so it leaves no notice behind.
+      if (!pausedGone) setError((!retry && !e5Commands.get(record.fingerprint) || isExplicitRejection(cause)) ? displayAdminError(cause) : saved?.receivedTicketId ? TICKET_UNREAD : cause instanceof Error && cause.message === "提案缺少有效票号" ? "查到的审批单和原请求对不上，记录保留；请到操作记录与审批核对。" : E5_UNKNOWN);
       if (cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "PAUSED_USER_DEVICES_NOT_FOUND") await refresh();
       throw cause;
     } finally { setBusy(""); }
   };
   const check = async (record: E5Command, evidence?: ECommandEvidence) => {
     setBusy(record.commandKey);
-    try { return await checkE5Command(record, evidence); }
+    try {
+      if (["force-activate", "unbind", "legacy"].includes(record.intent)) {
+        let ticket;
+        if (errorKey === record.commandKey) setError("");
+        try { ticket = await queryE5Proposal(record); }
+        catch (cause) { setQueryNotes(values => ({ ...values, [record.commandKey]: proposalQueryError(record, cause) })); throw cause; }
+        setQueryNotes(values => ({ ...values, [record.commandKey]: !ticket ? "刚查过：没有这张审批单。" : "刚查过：还在等批准。" }));
+        if (ticket && ticket.status !== "pending") { settleEnd(record, ticket.id, ticket.status); await refresh(); }
+        return null;
+      }
+      return await checkE5Command(record, evidence);
+    }
     finally { sync(); setBusy(""); }
   };
   const direct = (record: E5Command) => ["activate", "deactivate", "pause", "resume"].includes(record.intent);
@@ -123,40 +153,61 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
   const showOutcome = (record: E5Command, outcome: CommandOutcome) => {
     if ("receipt" in outcome && outcome.receipt && eCommandSettled(outcome.receipt)) {
       const status = outcome.receipt.originalStatus;
-      setSettled(rows => [...rows.filter(row => row.key !== record.commandKey), { key: record.commandKey, label: `${record.label} · ${record.device.serial}`, status }]);
+      setSettled(list => [...list.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: `${record.label} · ${record.device.serial}`, text: status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。" : status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。" }]);
     } else setOutcomes(values => ({ ...values, [record.commandKey]: outcome }));
   };
   const canInvestigate = canInvestigateECommand("device_e5_read");
+  const queryRow = async (record: E5Command) => {
+    setReadResults(values => ({ ...values, [record.commandKey]: "正在查询…" }));
+    try {
+      const outcome: CommandOutcome | null = await check(record).then(receipt => direct(record) ? { receipt } : null, cause => direct(record) ? { error: displayAdminReadError(cause) } : null);
+      if (outcome) showOutcome(record, outcome);
+      const result = readBack ? await readBack(record) : (await refresh(), "已刷新设备列表；现在的状态不代表原操作的结果。");
+      setReadResults(values => ({ ...values, [record.commandKey]: result }));
+    } catch (cause) { setReadResults(values => ({ ...values, [record.commandKey]: displayAdminReadError(cause) })); }
+  };
+  const items: RecoveryItem[] = [
+    ...phonePending.map(r => ({ key: r.commandKey, object: r.label, tag: <StatusTag tone="warn">待核对</StatusTag>,
+      line: "原操作在手机算力配置，到那里查询和处理。",
+      actions: <Link className="rd-link" href="/devices/compute-config?tab=phones">手机算力配置</Link>,
+      detail: <p>原操作在手机算力配置保留；相关设备或整个用户先暂停新操作。</p> })),
+    ...old.map(row => ({ key: row.commandKey, object: "升级前的设备操作", tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
+      line: "旧记录缺原请求，不能重试；到操作记录与审批核对。",
+      actions: <Button size="sm" disabled={!!busy} onClick={() => void refresh()}>刷新设备列表</Button>,
+      detail: <Facts><Fact label="原请求编号" value={row.commandKey} mono copy /></Facts> })),
+    ...records.map(record => {
+      const expired = isRetryExpired(record), proposal = PROPOSALS.includes(record.intent), refused = rejected[record.commandKey];
+      const state = refused ? { tag: "重试被拒绝", tone: "danger" as const, line: RECOVERY_LINE.refused, more: "按原请求重试被明确拒绝；核对原操作的结果后，可以解除这条记录。" }
+        : proposal && record.proposalStatus === "pending" ? { tag: "待审批", tone: "progress" as const, line: RECOVERY_LINE.pending, more: `审批单 ${record.receivedTicketId ?? ""}；批准前设备状态不变。` }
+          : proposal && record.receivedTicketId ? { tag: "进度没读到", tone: "warn" as const, line: RECOVERY_LINE.created, more: "审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。" }
+            : proposal && record.proposalAbsent ? expired ? { tag: "没有建成", tone: "warn" as const, line: RECOVERY_LINE.missing, more: "按原请求查不到这张审批单，说明没建成；确认解除时会再查一次。" }
+              : { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.absent, more: "按原请求查不到这张审批单，现在还没建成；按原请求重试不会重复建单。" }
+              : expired ? { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.expired, more: proposal ? "已超过 24 小时，不能再重试；查不到这张审批单时可以确认解除。" : "已超过 24 小时，不能再重试；现在的设备状态不代表原操作的结果。" }
+                : { tag: "结果未知", tone: "warn" as const, line: proposal ? RECOVERY_LINE.unknown : RECOVERY_LINE.direct, more: proposal ? "可以查询原结果，或按原请求重试；重试用原来的请求，不会重复建单。" : "可以查询原结果，或按原请求重试；重试用原来的请求，不会重复执行。" };
+      const releasable = proposal && expired && record.proposalAbsent && !record.receivedTicketId && !record.proposalStatus;
+      const retryable = !refused && !expired && !(proposal && record.receivedTicketId);
+      const note = busy === record.commandKey && !retryable ? "正在查询…" : direct(record)
+        ? <>{outcomes[record.commandKey] ? <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={expired} /> : readResults[record.commandKey]}{!canInvestigate && closureOpen(outcomes[record.commandKey], expired) && <ClosureContact />}{errorKey === record.commandKey && error && error !== E5_UNKNOWN && <span role="alert">{error}</span>}</>
+        : errorKey === record.commandKey && error && error !== E5_UNKNOWN ? error : queryNotes[record.commandKey];
+      return { key: proposal && record.proposalStatus === "pending" ? `waiting:${record.commandKey}` : record.commandKey, createdAt: record.createdAt,
+        object: <span title={`${record.label} · ${record.device.serial}`}>{record.label} · {record.device.serial.slice(-8)}</span>, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line, note,
+        noteKey: [readResults[record.commandKey], outcomes[record.commandKey] ? JSON.stringify(outcomes[record.commandKey]) : "", errorKey === record.commandKey ? error : ""].join("|").replace(/^\|+$/, ""),
+        actions: <>
+          {<Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void queryRow(record)}>{proposal && record.proposalStatus === "pending" ? "查询审批结果" : "查询原结果"}</Button>}
+          {direct(record) && canInvestigate && closureOpen(outcomes[record.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!busy} onClick={() => setClosing(record)}>核查结案</Button>}
+          {!(proposal && record.proposalStatus === "pending") && <Button size="sm" loading={busy === record.commandKey} disabledReason={expired ? "超过 24 小时不能再重试" : proposal && record.receivedTicketId ? "审批单已经建了，只能查询" : !allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : undefined} onClick={() => { void execute(record, true).catch(() => { /* The record row displays this failure. */ }); }}>按原请求重试</Button>}
+          {refused && !releasable && <Button size="sm" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>解除原操作记录</Button>}
+          {releasable && <Button size="sm" disabled={!!busy} onClick={() => setMissing(record)}>解除原操作记录</Button>}
+        </>,
+        detail: <>
+          <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString())} 提交 · {record.device.user} · 理由：{record.reason}</p>
+          <p>{state.more}</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact label="实例号" value={record.device.serial} mono /><Fact label="原请求编号" value={record.commandKey} mono copy /><Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono /></Facts></Fold> };
+    }),
+  ];
   return <CommandsContext.Provider value={{ records, phoneBlocks, legacyBlocked: old.length > 0 || !!error && !records.length && !old.length && error.includes("旧操作"), busy, execute, check, canInvestigate, refresh, toast }}>
-    <SettledCommandNotices items={settled} onDismiss={key => setSettled(rows => rows.filter(row => row.key !== key))} />
-    {phonePending.map(r => <Notice key={r.commandKey} tone="warn" title={`${r.label} · 手机页有原操作待核对`}><p>原对象、内容、理由和命令号在手机算力配置保留，请回原页面核对。相关设备或整用户的新操作继续暂停。</p><Link className="rd-link" href="/devices/compute-config?tab=phones">手机算力配置</Link></Notice>)}
-    {old.map(row => <Notice key={row.commandKey} tone="warn" title="旧操作缺少原请求，不能原样重试" action={<Button size="sm" disabled={!!busy} onClick={() => void refresh()}>读回核对</Button>}><p>原命令号：<code>{row.commandKey}</code></p><p>请到操作记录与审批核对。原记录保留，不能用当前草稿补成原操作。</p></Notice>)}
-    {records.map(record => <Notice key={record.commandKey} tone={rejected[record.commandKey] ? "danger" : "warn"} title={`${record.label} · ${rejected[record.commandKey] ? "原号重试已拒绝" : "结果待确认"}`} actionBelow action={<div className="rd-toolbar">
-      <Button size="sm" disabled={!!busy} onClick={async () => {
-        setReadResults(values => ({ ...values, [record.commandKey]: "正在读取最新设备状态…" }));
-        try {
-          const outcome: CommandOutcome | null = await check(record).then(receipt => direct(record) ? { receipt } : null, cause => ({ error: displayAdminReadError(cause) }));
-          if (outcome) showOutcome(record, outcome);
-          const result = readBack ? await readBack(record) : (await refresh(), "已请求刷新，请核对列表与操作记录；原操作继续待确认。");
-          setReadResults(values => ({ ...values, [record.commandKey]: result }));
-        } catch (cause) { setReadResults(values => ({ ...values, [record.commandKey]: displayAdminReadError(cause) })); }
-      }}>{direct(record) ? "查原操作结果" : "读回核对"}</Button>
-      <Button size="sm" variant={rejected[record.commandKey] || closureOpen(outcomes[record.commandKey], false) ? "secondary" : "primary"} loading={busy === record.commandKey} disabledReason={isRetryExpired(record) ? "已超过 24 小时，只能读回核对" : !allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : undefined} onClick={() => { void execute(record, true).catch(() => { /* The persistent notice displays this failure. */ }); }}>按原操作重试</Button>
-      {direct(record) && canInvestigate && closureOpen(outcomes[record.commandKey], isRetryExpired(record)) && <Button size="sm" variant="danger-outline" disabled={!!busy} onClick={() => setClosing(record)}>核查结案</Button>}
-      {rejected[record.commandKey] && <Button size="sm" variant="primary" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>解除待确认</Button>}
-    </div>}>
-      <p>{record.device.serial} · {record.device.user} · {formatBusinessTimeCompact(new Date(record.createdAt).toISOString())}</p>
-      <p>{rejected[record.commandKey] ? "本次原号重试被明确拒绝。核对原操作结果后，可解除本页待确认。" : direct(record) ? isRetryExpired(record) ? "当前状态不代表原操作结果，先查原操作结果。" : "当前状态不代表原操作结果，先查原操作结果。重试会重新发送保存的原请求，后端按原命令号去重。" : "当前状态不代表原操作结果。重试会重新发送保存的原请求，后端按原命令号去重。"}</p>
-      {readResults[record.commandKey] && <p role="status">{readResults[record.commandKey]}</p>}
-      {isRetryExpired(record) && <p>{direct(record) ? "已超过 24 小时，不能再重试。原操作与对象锁继续保留，可以查原操作结果。" : "已超过 24 小时，原操作与对象锁继续保留，请到操作记录与审批核对。"}</p>}
-      {direct(record) && <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={isRetryExpired(record)} />}
-      {direct(record) && !canInvestigate && closureOpen(outcomes[record.commandKey], isRetryExpired(record)) && <ClosureContact />}
-      <Fold inset title="原操作与技术信息" summary="原对象、内容、理由和命令号已保留"><Facts>
-        <Fact label="操作理由" value={record.reason} /><Fact label="命令号" value={record.commandKey} mono copy />
-        <Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono />
-      </Facts></Fold>
-      {error && <p role="alert">{error}</p>}
-    </Notice>)}
+    {settled.map(item => <SettledLine key={item.key} label={item.label} text={item.text} onDismiss={() => setSettled(list => list.filter(other => other.key !== item.key))} />)}
+    <RecoveryPanel title={recoveryTitle(items.filter(item => !item.key.startsWith("waiting:")).length, items.filter(item => item.key.startsWith("waiting:")).length)} tone={items.every(item => item.key.startsWith("waiting:")) ? "progress" : "warn"}
+      explain="有结论前，相关设备或用户不能做新操作。点行首的箭头看提交时间、说明和原请求。" items={items} />
     {error && !records.length && <Notice tone="warn" title={error} />}
     {closing && <CommandClosureModal label={closing.label} commandKey={closing.commandKey} createdAt={closing.createdAt}
       facts={<>{closing.intent === "pause" || closing.intent === "resume" ? <Fact label="用户" value={closing.device.user} /> : <><Fact label="设备" value={closing.device.deviceName} /><Fact label="实例号" value={closing.device.serial} mono /></>}<Fact label="原理由" value={closing.reason} /></>}
@@ -165,15 +216,26 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
         showOutcome(closing, { receipt });
         setClosing(null);
         if (eCommandSettled(receipt)) await refresh();
-        else toast("核查结论已记录，后端仍记为结果未知，原操作继续锁定。");
+        else toast("核查结论已记录；原操作仍记为结果未知，继续锁定。");
       }} />}
-    {release && <Modal title="解除待确认" onClose={() => setRelease(null)} footer={<><Button onClick={() => setRelease(null)}>取消</Button><Button variant="primary" disabledReason={!releaseChecked ? "请先核对原操作的结果并勾选确认" : undefined} onClick={() => {
-      e5Commands.forget(release.fingerprint, release.commandKey); sync(); setRelease(null); setError(""); toast("已解除本页待确认，后端结果和锁不变。");
+    {missing && <MissingProposalReleaseModal label={`${missing.label} · ${missing.device.serial}`} createdAt={missing.createdAt} onCancel={() => setMissing(null)} onConfirm={async () => {
+      setBusy(missing.commandKey);
+      try {
+        const ticket = await releaseMissingE5Proposal(missing);
+        setMissing(null);
+        if (!ticket) toast("已解除这条记录，可以重新提交");
+        else if (ticket.status === "pending") { setQueryNotes(values => ({ ...values, [missing.commandKey]: `审批单 ${ticket.id} 还在等批准` })); toast(`查到了审批单 ${ticket.id}，还在等批准，没有解除`); }
+        else { settleEnd(missing, ticket.id, ticket.status); await refresh(); }
+      } catch (cause) { const shown = proposalQueryError(missing, cause); setQueryNotes(values => ({ ...values, [missing.commandKey]: shown })); throw new Error(shown); }
+      finally { sync(); setBusy(""); }
+    }} />}
+    {release && <Modal title="解除原操作记录" onClose={() => setRelease(null)} footer={<><Button onClick={() => setRelease(null)}>取消</Button><Button variant="primary" disabledReason={!releaseChecked ? "请先核对原操作的结果并勾选确认" : undefined} onClick={() => {
+      e5Commands.forget(release.fingerprint, release.commandKey); sync(); setRelease(null); setError(""); toast("已解除这条记录");
     }}>确认解除</Button></>}>
       <ReleaseBody label={`${release.label} · ${release.device.serial}`} />
-      <Facts><Fact label="原操作时间" value={formatBusinessTimeCompact(new Date(release.createdAt).toISOString())} /><Fact label="命令号" value={release.commandKey} mono copy /></Facts>
-      <Notice tone="danger" title="本次原号重试被明确拒绝">{rejected[release.commandKey]}</Notice>
-      <Check label="已核对原操作的结果，确认只解除本页待确认" checked={releaseChecked} onChange={event => setReleaseChecked(event.target.checked)} />
+      <Facts><Fact label="原操作时间" value={formatBusinessTimeCompact(new Date(release.createdAt).toISOString())} /><Fact label="原请求编号" value={release.commandKey} mono copy /></Facts>
+      <Notice tone="danger" title="按原请求重试被拒绝">{rejected[release.commandKey]}</Notice>
+      <Check label="已核对原操作的结果，确认只解除本页这条记录" checked={releaseChecked} onChange={event => setReleaseChecked(event.target.checked)} />
     </Modal>}
     {children}
   </CommandsContext.Provider>;
@@ -280,7 +342,12 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
         if (!e5Commands.isDurablyStored(fingerprint, commandKey)) { e5Commands.forget(fingerprint, commandKey); throw new Error("原操作无法保存，暂不能提交。"); }
         const record = e5Commands.list().find(row => row.commandKey === commandKey)!;
         try { await state.execute(record, false); setAction(null); }
-        catch (cause) { if (e5Commands.get(fingerprint)) setAction(null); throw cause; }
+        catch (cause) {
+          if (e5Commands.get(fingerprint)) setAction(null);
+          // Nothing is left to resume: the list was reread, so close the dialog instead of offering the same 404 again.
+          else if (cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "PAUSED_USER_DEVICES_NOT_FOUND") { setAction(null); state.toast(displayAdminError(cause)); return; }
+          throw cause;
+        }
       }} />}
   </>;
 }

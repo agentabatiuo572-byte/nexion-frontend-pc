@@ -19,7 +19,7 @@ import type { DCtx } from "./types";
 
 const methodText: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "银行卡支付", CREGIS_USDT_BSC: "USDT（BEP20）", CREGIS_USDT_ERC20: "USDT（ERC20）", CREGIS_USDT_TRC20: "USDT（TRC20）" };
 const methodNote: Record<PurchasePaymentMethod, string> = { HDPAY_BANK: "按手续费收取，不收网络费，不需要支付密码。", CREGIS_USDT_BSC: "按手续费和网络费收取，不需要支付密码。", CREGIS_USDT_ERC20: "以太坊网络费较高，单独设置，不需要支付密码。", CREGIS_USDT_TRC20: "TRON 网络，按手续费和网络费收取，不需要支付密码。" };
-const stateText: Record<PurchasePaymentState, string> = { CREATING: "正在创建", SUBMIT_UNKNOWN: "创建结果未确认", AWAITING_PAYMENT: "等待付款", FUNDS_CONFIRMED: "已收款，待完成", DELIVERED: "已完成", MANUAL_REVIEW: "需人工处理", EXPIRED: "已过期" };
+const stateText: Record<PurchasePaymentState, string> = { CREATING: "正在创建", SUBMIT_UNKNOWN: "创建结果未知", AWAITING_PAYMENT: "等待付款", FUNDS_CONFIRMED: "已收款，待完成", DELIVERED: "已完成", MANUAL_REVIEW: "需人工处理", EXPIRED: "已过期" };
 const stateTone = (state: PurchasePaymentState): StateTone => state === "MANUAL_REVIEW" ? "warn" : state === "DELIVERED" ? "ok" : state === "EXPIRED" ? "done" : "progress";
 const STATE_GROUPS: readonly { label: string; states: readonly PurchasePaymentState[] }[] = [
   { label: "要处理", states: ["MANUAL_REVIEW"] },
@@ -52,7 +52,7 @@ function deliveryNote(record: PurchasePaymentRecord) {
 /** 重新核对到账为什么不能点，按顺序写第一条（OP-126）。 */
 function revalidateBlock(record: PurchasePaymentRecord | null, pending: boolean) {
   if (!record) return "正在读取这笔付款";
-  if (pending) return "这笔有一次操作还没确认结果";
+  if (pending) return "这笔有一次操作结果未知";
   if (purchaseWasDelivered(record)) return "已完成";
   if (record.receipt) return "已有业务回执，请核对原业务记录";
   if (record.status === "EXPIRED") return "已过期的付款不能重新核对";
@@ -133,7 +133,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
   useEffect(() => { onUnconfigured(unconfigured); }, [onUnconfigured, unconfigured]);
   const activity = useMemo(() => [
     ...(changed ? [`付款手续费有 ${changedChannels.length} 种付款方式没保存`] : []),
-    ...(pending.length ? [`有 ${pending.length} 次操作结果未确认`] : []),
+    ...(pending.length ? [`有 ${pending.length} 次操作结果未知`] : []),
   ], [changed, changedChannels.length, pending.length]);
   useEffect(() => { onActivity(activity); }, [onActivity, activity]);
 
@@ -147,18 +147,18 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
       key: row.commandKey,
       label: isPolicy ? "修改付款手续费" : `重新核对到账 · ${row.scope}`,
       createdAt: row.createdAt,
-      hint: "先读回核对；按原操作重试不会重复执行。",
+      hint: "先读回现在的状态；按原请求重试不会重复执行。",
       blocked: !canRetryPurchasePayment(row) ? RETRY_WINDOW_TEXT : permitted ? undefined : "这个账号没有这项权限",
       auditHref: isPolicy ? "/platform/audit?domain=D" : `/platform/audit?domain=D&object=${encodeURIComponent(row.scope)}`,
       verify: async () => {
         if (isPolicy) {
           const current = await fetchPurchasePaymentPolicy();
           if (owns()) { setPolicy(current); if (!changed) setDraft(current.channels.map(item => ({ ...item }))); }
-          return `读回：手续费现在是第 ${current.version} 版。那次修改是否生效，请到操作记录确认。待确认继续保留。`;
+          return `读回：手续费现在是第 ${current.version} 版。那次修改是否生效，请到操作记录确认。记录继续保留。`;
         }
         const current = await fetchPurchasePaymentRecord(row.scope);
         if (owns()) setSelected(current.intentNo);
-        return `读回：这笔付款现在是「${stateText[current.status]}」。状态可能是别人改的，待确认继续保留。`;
+        return `读回：这笔付款现在是「${stateText[current.status]}」。状态可能是别人改的，记录继续保留。`;
       },
       retry: async () => {
         if (mutation.current || !owns()) throw new Error("上一项操作还在处理，请稍后再试");
@@ -209,7 +209,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
     if (!before.configured && row[field] === null) return [field, undefined];
     return [field, feeIssue(field, row[field], policy)];
   })) as Record<FeeField, string | undefined>) : [];
-  const saveBlock = !canEdit ? "只有超级管理员能改" : policyLoading ? "正在读取最新数据" : busy ? "正在提交" : policyPending ? "上次保存结果未确认，先在本页上方核对"
+  const saveBlock = !canEdit ? "只有超级管理员能改" : policyLoading ? "正在读取最新数据" : busy ? "正在提交" : policyPending ? "上次保存结果未知，先在本页上方核对"
     : !policy?.constraints ? "暂时拿不到可填范围，只能查看" : !changed ? "还没有修改" : !valid ? "有填错的项，按框下的提示改" : undefined;
   const feeSummary = policyLoading ? "正在读取" : policyError ? "读取失败" : policy
     ? `${policy.channels.length + missingMethods.length} 种付款方式${unconfigured ? `，${unconfigured} 种未配置 · 用户付款时看不到` : "，都已配置"}${changed ? "，有修改没保存" : ""}` : "—";
@@ -253,7 +253,7 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
                     <Td sticky="start"><Cell mono full main={row.intentNo} sub={time(row.createdAt)} /></Td>
                     <Td><Cell main={row.userId} sub={`${kindText[row.kind] ?? "用途待确认"} · ${methodText[row.paymentMethod]}`} /></Td>
                     <Td align="right"><Cell num main={usdt(row.totalUsdt)} sub={`订单 ${usdt(row.subtotalUsdt)}`} /></Td>
-                    <Td><Cell main={<StatusTag tone={stateTone(row.status)}>{stateText[row.status]}</StatusTag>} sub={rowPending ? "有操作结果未确认" : purchaseWasDelivered(row) && row.status !== "DELIVERED" ? "业务已完成" : row.reason ?? undefined} title={row.reason ?? undefined} /></Td>
+                    <Td><Cell main={<StatusTag tone={stateTone(row.status)}>{stateText[row.status]}</StatusTag>} sub={rowPending ? "有操作结果未知" : purchaseWasDelivered(row) && row.status !== "DELIVERED" ? "业务已完成" : row.reason ?? undefined} title={row.reason ?? undefined} /></Td>
                     <Td sticky="end" align="right"><Button size="sm" variant="ghost" onClick={() => setSelected(row.intentNo)}>查看详情</Button></Td>
                   </Tr>;
                 })}
@@ -390,7 +390,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
         { label: "用户", icon: User, tone: "users", value: r.userId, reason: `${kindText[r.kind] ?? "用途待确认"} · ${methodText[r.paymentMethod]}` },
         { label: "状态", state: stateTone(r.status) === "progress" ? undefined : stateTone(r.status), value: stateText[r.status], reason: r.reason ?? undefined },
         { label: "是否完成", state: purchaseWasDelivered(r) && r.status === "DELIVERED" && r.receipt ? undefined : "warn", value: purchaseWasDelivered(r) ? "已完成" : r.receipt ? "已有回执，待确认" : "还没完成", reason: deliveryNote(r) },
-        ...(pending ? [{ label: "待确认", state: "warn" as const, value: "这笔付款有一次操作还没确认结果，请在页面上方的提醒里查看。" }] : []),
+        ...(pending ? [{ label: "结果未知", state: "warn" as const, value: "这笔付款有一次操作结果未知，请在页面上方的提醒里查看。" }] : []),
       ] : []} />}
     {r && <>
       <Fold inset title="金额明细" summary={r.paymentMethod === "HDPAY_BANK" ? (r.amountVnd ? `应付 ${vnd(r.amountVnd)} ₫` : "应付越南盾尚未提供") : r.paymentMethod === "CREGIS_USDT_TRC20" ? "外部链上费用由用户另付" : "矿工费由用户另付"}>

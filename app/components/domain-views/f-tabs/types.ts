@@ -1,5 +1,6 @@
 import type { F3ConfirmationSnapshot } from "@/lib/admin/f3-approval";
 import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
+import type { F4VoteProjectionRead } from "@/lib/admin/f4-vote-projection";
 import type { F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
 import type { FDirectAttempt } from "@/lib/admin/f1-stable-write";
 import type { FDomainAttempt, F2Recovery } from "@/lib/admin/f2-approval";
@@ -186,6 +187,7 @@ export interface FViewCtx {
   updateF3Config: (key: string, value: string, reason: string, amplifies?: boolean, snapshot?: F3ConfirmationSnapshot) => Promise<void>;
   // -- 领导奖池/硬件配额/大使/榜单(F4)· 读 + 配置写入 --
   f4Overview: F4LeadershipPoolOverview | null;
+  f4VoteProjection: F4VoteProjectionRead;
   f4AmbassadorPolicy: F4AmbassadorPolicy | null;
   refreshF4PolicyBaseline: () => Promise<F4AmbassadorPolicy>;
   f4Loading: boolean;

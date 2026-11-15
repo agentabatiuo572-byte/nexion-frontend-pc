@@ -31,17 +31,17 @@ export async function downloadB0Snapshot(adminId: number, snapshotJson: string, 
   }
   const previous = pendingB0Export(adminId);
   if (previous && previous.expiresAt <= Date.now()) {
-    throw new Error("原导出已超过 24 小时安全重试期限，原快照、理由和请求号仍保留；请联系值班人员核对操作记录，暂不能重新登记。");
+    throw new Error("原导出已超过 24 小时，不能再重试；原数据和理由仍保留，请联系值班人员核对操作记录。");
   }
   const fingerprint = `b0-export:${adminId}`;
   const commandKey = previous?.commandKey ?? `b0-export-${crypto.randomUUID()}`;
   if (!previous) attempts.remember(fingerprint, commandKey, { adminId, snapshotJson, reason: reason.trim() });
   if (!attempts.isDurablyStored(fingerprint, commandKey)) {
     if (!previous) attempts.forget(fingerprint, commandKey);
-    throw new Error("浏览器无法保存本次导出快照和请求号，尚未提交登记；请恢复浏览器存储后重试。");
+    throw new Error("浏览器存不下这次导出的记录，还没有提交登记；请允许浏览器保存网站数据后重试。");
   }
   const attempt = pendingB0Export(adminId)!;
-  const unknown = () => new Error(`导出登记结果尚未确认，原快照和理由已保留；请重新打开导出并按原操作重试。请求号：${commandKey}`);
+  const unknown = () => new Error("导出登记结果未知，原数据和理由已保留。");
   let response: Response;
   try {
     response = await guardedFetch("/api/admin/ops-dashboard/exports", {
@@ -69,7 +69,7 @@ export async function downloadB0Snapshot(adminId: number, snapshotJson: string, 
       || typeof receipt.recordedAt !== "string" || !Number.isFinite(Date.parse(receipt.recordedAt))) throw unknown();
   const current = useAdminAuth.getState();
   if (current.authEpoch !== auth.authEpoch || current.session?.adminId !== adminId || current.logoutPending) {
-    throw new Error("登录身份或权限已变化，本次未触发下载；请使用原账号重新打开导出核对。");
+    throw new Error("登录账号或权限变了，这次没有下载；请用原账号重新打开导出。");
   }
   const url = URL.createObjectURL(new Blob([attempt.snapshotJson], { type: "application/json" }));
   const link = document.createElement("a");

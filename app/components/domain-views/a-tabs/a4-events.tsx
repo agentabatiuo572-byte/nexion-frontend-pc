@@ -2,7 +2,7 @@
 import { useReach } from "@/lib/nav/use-reach";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
-import { A4OutboxDiagnostics, useA4OutboxDiagnostics } from "./a4-outbox-diagnostics";
+import { A4OutboxDiagnostics, A4_USER_NOTE, a4UserCell, useA4OutboxDiagnostics } from "./a4-outbox-diagnostics";
 
 /**
  * A4 用户行为事件（改版）。App 里用户做的每件事都记成一条事件，报表、任务完成、奖励发放都靠它。
@@ -832,6 +832,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     }
     // The command key is selected in the confirmation callback, when the full
     // normalized request (including the audit reason) is available.
+    const { userNo: _userNo, ...commandSnapshot } = snapshot;
     openActionConfirm({ briefKind: "record",
       action: "重新发送任务事件",
       title: "重新排队这条任务事件",
@@ -860,7 +861,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       reasonMax: 200,
       initialReason: original?.reason,
       getPendingReason: () => commands.find(`redrive:${snapshot.eventId}`)?.reason,
-      run: (reason) => runDirect(saved ?? { kind: "redrive", snapshot }, reason, "重新排队任务事件", snapshot.eventId),
+      run: (reason) => runDirect(saved ?? { kind: "redrive", snapshot: commandSnapshot }, reason, "重新排队任务事件", snapshot.eventId),
     });
   };
 
@@ -992,8 +993,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       actions: <>
         <Button size="sm" onClick={() => openRegistryRecovery()}>查询原结果</Button>
         {expired
-          ? <Button size="sm" onClick={() => releaseExpiredRegistry(pendingRegistry.commandKey)}>解除原操作记录</Button>
-          : <Button size="sm" disabledReason={!canWrite ? "你只有查看权限" : undefined} onClick={() => openRegistryRecovery(true)}>按原请求重试</Button>}
+          ? !pendingRegistry.received && <Button size="sm" onClick={() => releaseExpiredRegistry(pendingRegistry.commandKey)}>解除原操作记录</Button>
+          : !pendingRegistry.received && <Button size="sm" disabledReason={!canWrite ? "你只有查看权限" : undefined} onClick={() => openRegistryRecovery(true)}>按原请求重试</Button>}
       </>,
     });
   }
@@ -1291,7 +1292,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   const redriveBlocked = !canRedriveH3Dead ? "你没有重新排队任务事件的权限（要有事件修改和操作审批的写权限）" : loadError || !overviewReady.current ? "数据刷新失败，先重新读取" : mutating ? "正在提交另一项修改，完成后再操作" : undefined;
   const deliveryTab = (
     <>
-      <A4OutboxDiagnostics state={outbox} describe={(eventType) => eventDesc(overview, eventType)} />
+      <A4OutboxDiagnostics state={outbox} describe={(eventType) => eventDesc(overview, eventType)} canOpenUser={reach("/users/search", "user_c1hub_read")} />
       <Panel title="重新排队一条任务事件" icon={RotateCcw} tone="role-2" sub="每次一条 · 只限 5 种周任务事件"
         explain={<><p>用户完成了周任务却没拿到奖励时，可能是任务事件发送失败、已终止（死信）。在这里输入事件编号，查到原事件和任务处理都已终止，就能把它重新排队一次。</p><p>死信没有汇总数，要按事件编号逐条查。只支持这 5 种：{H3_DEAD_REDRIVABLE_EVENT_TYPES.map((type) => H3_TYPE_TEXT[type]).join("；")}。</p></>}>
         <FilterBar onSubmit={() => void previewH3DeadEvent()} querying={redrivePreviewing}
@@ -1312,6 +1313,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 <span className="a4-redrive-type">{H3_TYPE_TEXT[redrivePreview.eventType] ?? redrivePreview.eventType}</span>
                 <span data-mono>{redrivePreview.eventId}</span>
               </div>
+              <p className="a4-redrive-user">用户 {a4UserCell(redrivePreview.userNo, reach("/users/search", "user_c1hub_read"))}<Explain label="用户编号怎么显示" content={A4_USER_NOTE} /></p>
               <ol className="a4-layers" aria-label="卡在哪一步">
                 <li data-dead={redrivePreview.status === "DEAD" ? "" : undefined}>
                   <span className="a4-layer-name">原事件</span>

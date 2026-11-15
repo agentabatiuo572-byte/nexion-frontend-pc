@@ -247,7 +247,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
         reviewAttempts.remember(fingerprint, attempt.commandKey, { actorId, applicationId: application.id, input: attempt.input, application });
         if (!reviewAttempts.isDurablyStored(fingerprint, attempt.commandKey)) {
           if (!original) reviewAttempts.forget(fingerprint, attempt.commandKey);
-          throw new Error("F4_OPERATION_STORAGE_UNAVAILABLE");
+          throw new Error(original ? "F4_OPERATION_RETRY_STORAGE_UNAVAILABLE" : "F4_OPERATION_STORAGE_UNAVAILABLE");
         }
         pendingRef.current = attempt; setPending(attempt);
         try {

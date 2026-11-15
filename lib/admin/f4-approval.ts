@@ -102,9 +102,13 @@ function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
 export async function queryF4Proposal(adminId: number, original: FDomainAttempt) {
   actor(adminId); // Read permission is adjudicated by the endpoint, independently of write grants.
   if (original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-  remember({ ...original, ticket: undefined, absent: false });
+  remember({ ...original, absent: false });
   const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
-  if (!ticket) { remember({ ...original, ticket: undefined, absent: true }); return null; }
+  if (!ticket) {
+    if (original.received || original.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
+    remember({ ...original, ticket: undefined, absent: true });
+    return null;
+  }
   checkTicket(original, ticket);
   if (ticket.status === "pending") remember({ ...original, received: true, ticket, absent: false });
   else forget(original);
@@ -137,6 +141,8 @@ export async function sendF4Proposal(adminId: number, slot: string, spec?: Propo
   }
   if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
   if (!original.request || !storeFor(original).isDurablyStored(original.fingerprint, original.commandKey)) throw new Error("F4_PROPOSAL_ORIGINAL_INCOMPLETE");
+  original.absent = false;
+  remember(original);
   if (original.received || original.ticket) return queryReceived(adminId, original);
   let ticket: A2OperationRow;
   try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }
@@ -163,6 +169,7 @@ async function queryReceived(adminId: number, original: FDomainAttempt) {
 
 /** The visual layer must explicitly confirm release after authoritative exact absence. */
 export async function releaseF4Proposal(adminId: number, original: FDomainAttempt) {
+  if (original.received || original.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
   if (!isRetryExpired(original)) throw new Error("原操作尚未过期，请先查询原结果。");
   const ticket = await queryF4Proposal(adminId, original);
   if (ticket?.status === "pending") throw new Error("这张申请仍在等待审批。");

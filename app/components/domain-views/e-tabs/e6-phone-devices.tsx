@@ -9,6 +9,7 @@ import type { EViewCtx } from "./types";
 import { E6PendingNotice, useE6Mutations, type E6WriteReceipt } from "./e6-mutations";
 import { e6AmountPrecision } from "@/lib/admin/e6-decimal";
 import { E6Amount, E6OriginalValues } from "./e6-amount";
+import { displayAdminError } from "@/lib/admin/error-messages";
 const STATES: Record<E5Device["state"],string>={active:"在线",busy:"任务中",offline:"离线",inventory:"待激活","pending-deactivate":"停用中",unbound:"已解绑 / 停用",abnormal:"异常",unknown:"状态未知"};
 const STATE_STYLE = { active: {tone:"ok"}, busy: {tone:"progress",icon:Activity}, offline: {tone:"done",icon:WifiOff}, inventory: {tone:"neutral",icon:Power}, "pending-deactivate": {tone:"progress"}, unbound: {tone:"done",icon:CircleMinus}, abnormal: {tone:"warn",icon:AlertTriangle}, unknown: {tone:"neutral",icon:Info} } as const;
 const LABELS={activate:"激活手机",deactivate:"取消激活",force:"强制激活",unbind:"解绑手机",pause:"暂停该用户",resume:"恢复该用户"};
@@ -38,7 +39,7 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
   };
   const scope=confirm?(confirm.action==="pause"||confirm.action==="resume"?`user:${confirm.device.userId}`:phoneScope(confirm.device)):"";
   const consequence=confirm?.action==="activate"||confirm?.action==="force"?"每人最多 6 台设备，包含手机。激活后占用一个设备名额，强制激活也不能绕过上限。":confirm?.action==="deactivate"?"有任务则在本单完成结算后停用，不再派单。":confirm?.action==="unbind"?"设备将不再属于该用户。不退款，购入时间不变；批准后解绑，不能撤销。":confirm?.action==="pause"?"将暂停该用户全部设备（含手机）。停跑期间不计收益、不补发。":"只恢复运营手动暂停的设备；退款、注销、换机、离线、电量低等系统暂停保持不变。停跑期间收益不补发。";
-  return <><E6PendingNotice section="phones" onRead={result=>{void ctx.refreshE5();if(result?.readbackFailed)ctx.toast("已提交成功，但重新读取失败，请刷新核对。","warn");}}/>
+  return <><E6PendingNotice section="phones" toast={ctx.toast} onRead={result=>{void ctx.refreshE5();if(result?.readbackFailed)ctx.toast("已提交成功，但重新读取失败，请刷新核对。","warn");}}/>
     <Conclusion state="neutral" icon={Smartphone}>{ctx.e5Loading?"正在查询用户手机":ctx.e5DeviceError?"等手机列表读取成功后可用":`当前查询共 ${ctx.e5Total} 台手机`}{ctx.e5Keyword&& !ctx.e5DeviceError?` · ${ctx.e5Keyword}`:""}</Conclusion>
     <Panel title="用户手机" className="e6-phone-panel" icon={Smartphone} tone="role-2" flush data-proof="e6-phone-devices" explain="每人最多 6 台设备，包含手机。这里显示手机心跳状态，没有商城 SIM 任务进度。" actions={<ColumnPicker columns={columns}/> }>
       <div className="e6-phone-tools"><FilterBar><Input className="rd-filter-grow" aria-label="搜索用户手机" placeholder="搜索用户 / 手机" value={ctx.e5Keyword} onChange={e=>{ctx.setE5Keyword(e.target.value);query({phoneKeyword:e.target.value,phonePage:1});}}/>{(!ctx.e5DeviceError||ctx.e5Loading)&&<Button disabled={ctx.e5Loading} onClick={()=>void ctx.refreshE5()}>刷新</Button>}</FilterBar></div>
@@ -63,10 +64,17 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
         const d=confirm.device,action=confirm.action,original=m.pending.find(r=>r.scope===scope);
         if(original)result=await m.send(original,true);
         else if(action==="force"||action==="unbind") {const def=findHighOp(action==="force"?"e5_device_force_activate":"e5_device_unbind")!,params={deviceId:d.deviceId};await m.proposal(scope,"phones",{action:`${LABELS[action]} · ${d.serial}`,obj:String(d.deviceId),beforeValue:STATES[d.state],afterValue:action==="force"?"激活":"解绑",type:def.type,amplifies:false,reason,sourceDomain:"E5",command:def.buildCommand(params),target:def.buildTarget(params)});}
-        else result=await m.device(scope,`${LABELS[action]} · ${d.serial}`,{before:`${STATES[d.state]}；已占 ${d.activeDevicesForUser}/6 台；暂停原因 ${d.pausedReason||"—"}`,serial:d.serial,deviceId:d.deviceId,userId:Number(d.userId),action,reason}).catch(async failure=>{
-          if(failure instanceof Error&&"backendMessage" in failure&&failure.backendMessage==="PAUSED_USER_DEVICES_NOT_FOUND")await ctx.refreshE5();
-          throw failure;
-        });
+        else {
+          try{result=await m.device(scope,`${LABELS[action]} · ${d.serial}`,{before:`${STATES[d.state]}；已占 ${d.activeDevicesForUser}/6 台；暂停原因 ${d.pausedReason||"—"}`,serial:d.serial,deviceId:d.deviceId,userId:Number(d.userId),action,reason});}
+          catch(failure){
+            if(failure instanceof Error&&"backendMessage" in failure&&failure.backendMessage==="PAUSED_USER_DEVICES_NOT_FOUND"){
+              await ctx.refreshE5();
+              // Same as E5: nothing is left to resume, so close the dialog and say so once.
+              if(!m.pendingReason(scope)){setConfirm(null);ctx.toast(displayAdminError(failure),"warn");return;}
+            }
+            throw failure;
+          }
+        }
         await ctx.refreshE5();setConfirm(null);ctx.toast(result?.readbackFailed?"已提交成功，但重新读取失败，请刷新核对。":action==="force"||action==="unbind"?"已提交，等待审批后执行":action==="pause"||action==="resume"?result?.changedCount===undefined?"已提交成功，请核对列表":action==="pause"?`暂停成功 · ${result.changedCount} 台设备`:`已恢复 ${result.changedCount} 台运营暂停的设备`:action==="deactivate"&&result?.pendingDeactivate?"已申请停用，等待当前任务结算后自动停用":"已取得操作回执并读取手机列表，请核对当前状态",result?.readbackFailed?"warn":undefined);
       }}/>}
   </>;

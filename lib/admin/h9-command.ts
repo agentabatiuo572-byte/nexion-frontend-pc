@@ -87,7 +87,7 @@ export async function sendH9Command<T>(kind: H9CommandKind, record: H9Command, p
   store.remember(record.fingerprint, record.commandKey, record);
   if (!store.isDurablyStored(record.fingerprint, record.commandKey)) {
     if (!recovering) store.forget(record.fingerprint, record.commandKey);
-    throw new Error("H9_REQUEST_STORAGE_UNAVAILABLE");
+    throw new Error(recovering ? "H9_REQUEST_RETRY_STORAGE_UNAVAILABLE" : "H9_REQUEST_STORAGE_UNAVAILABLE");
   }
   try {
     const raw = await growthRequest<unknown>(record.original.path, {

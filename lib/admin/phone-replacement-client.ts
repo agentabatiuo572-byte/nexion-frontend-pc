@@ -101,7 +101,7 @@ export function preparePhoneCommand(owner: number, userId: string, type: PhoneCo
     pending.remember(fingerprint, key, { owner, userId, type, target, body, ...context });
     if (!pending.isDurablyStored(fingerprint, key)) {
         pending.forget(fingerprint, key);
-        throw new Error("浏览器无法保存恢复记录，请允许会话存储后再提交。");
+        throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
     return pending.list().find(row => row.commandKey === key)!;
 }

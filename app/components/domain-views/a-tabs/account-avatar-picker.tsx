@@ -68,7 +68,7 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
     let sent = false;
     try {
       if (!command) command = { fingerprint, actorId, scope, kind: "DEFAULT", gender, clientUploadId: crypto.randomUUID(), commandKey: crypto.randomUUID(), createdAt: Date.now(), expiresAt: Date.now() + 86400000 };
-      command = rememberAvatarDraft(command); setDraft(command);
+      command = rememberAvatarDraft(command, wasPending); setDraft(command);
       if (scope === "self") await fetchSelfAvatar();
       if (!active(token)) return;
       const abort = new AbortController(); controller.current = abort;
@@ -96,7 +96,7 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
     let sent = false;
     const token = generation.current; setBusy(true); setError(""); onBlocking(true);
     try {
-      const command = rememberAvatarDraft({ ...draft, cancelKey: draft.cancelKey ?? crypto.randomUUID() }); setDraft(command);
+      const command = rememberAvatarDraft({ ...draft, cancelKey: draft.cancelKey ?? crypto.randomUUID() }, Boolean(draft.cancelKey)); setDraft(command);
       if (scope === "self") {
         const snapshot = await fetchSelfAvatar();
         if (!active(token)) return;

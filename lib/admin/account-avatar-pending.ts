@@ -27,10 +27,10 @@ export const selfAvatarCommands = createPendingMutationStore<SelfAvatarPending>(
     try { avatarKey(row.commandKey); selfAvatarSaveInput(row.input); return Number.isSafeInteger(row.actorId) && row.actorId > 0; } catch { return false; }
   },
 });
-export function rememberAvatarDraft(draft: AvatarDraft): AvatarDraft {
+export function rememberAvatarDraft(draft: AvatarDraft, recovering = false): AvatarDraft {
   const { fingerprint, commandKey, createdAt: _createdAt, expiresAt: _expiresAt, ...extra } = draft;
   avatarDrafts.remember(fingerprint, commandKey, extra);
-  if (!avatarDrafts.isDurablyStored(fingerprint, commandKey)) throw new Error("AVATAR_COMMAND_STORAGE_UNAVAILABLE");
+  if (!avatarDrafts.isDurablyStored(fingerprint, commandKey)) throw new Error(recovering ? "AVATAR_COMMAND_RETRY_STORAGE_UNAVAILABLE" : "AVATAR_COMMAND_STORAGE_UNAVAILABLE");
   return avatarDrafts.list().find(row => row.fingerprint === fingerprint && row.commandKey === commandKey)!;
 }
 export async function avatarFileHash(file: File): Promise<string> {

@@ -7,7 +7,9 @@ import type { useE3Proposals } from "./e3-proposals";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E4OrderDetail, E4PendingApproval } from "@/lib/admin/e4-client";
 import type { PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import type { FundCommandOrigin, FundCommandEvidence, FundCommandInvestigation, FundInvestigationAccess, FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
+import type { createA2OperationProposal } from "@/lib/admin/a2-client";
 import type { E5Device, E5Overview } from "@/lib/admin/e5-client";
 import type { E6ComputeConfigView } from "@/lib/admin/e6-client";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
@@ -73,6 +75,7 @@ export interface McSpec {
   generationGateId?: string;
   generationGate?: E1GenerationGateInput;
   orderId?: string;         // 退款 / 取消 / 补建终态目标订单
+  refundFacts?: { originalAmountUsdt: string | null; wholeOrderTerminal: true; promotionRecovery: "WHOLE_ORDER"; coveragePreview: "FULL_REFUND" };
   title?: ReactNode;        // 框上的短标题；name 照旧记进操作记录
   effect?: ReactNode;       // E4 确认框：生效标签、确认按钮文字、要核对的事实
   confirmLabel?: string;
@@ -89,14 +92,15 @@ export interface McSpec {
 export type Mc = McSpec | null;
 
 /** E4 结果未确认的提案。原内容、理由和命令号一起存，重试只能原样发（OP-94）。 */
-export type E4PendingCommand = PendingMutationRecord & { label: string; orderNo: string; spec: ProposeSpec };
+export type E4PendingCommand = PendingMutationRecord & { label: string; orderNo: string; spec: ProposeSpec; commandOrigin?: FundCommandOrigin; request?: Parameters<typeof createA2OperationProposal>[0]; receivedTicketId?: string; creationConfirmed?: boolean; proposalStatus?: "pending" | "approved" | "rejected" | "withdrawn" | "expired" };
 
 /** 订单行(队列 / 状态机派生)。 */
 export interface EOrder {
   id: string;
   user: string;
   sku: string;
-  amt: number;
+  amt: string | null;
+  refundAmountUsdt: string | null;
   state: string;
   dc: string;
   age: string;
@@ -165,6 +169,9 @@ export interface EViewCtx {
   e4ReceiptAttempts: { fingerprint: string; commandKey: string; orderNo: string }[];
   checkE4Receipt: (record: EViewCtx["e4ReceiptAttempts"][number]) => Promise<void>;
   e4PendingNotes: Record<string, string>;
+  e4InvestigationResults: Record<string, FundInvestigationOutcome>;
+  e4InvestigationAccess: (record: E4PendingCommand) => FundInvestigationAccess;
+  checkE4Investigation: (record: E4PendingCommand, evidence?: FundCommandEvidence) => Promise<FundCommandInvestigation | null>;
   e4RetryRejected: string[];
   e4Retrying: string;
   retryE4Pending: (record: E4PendingCommand) => Promise<void>;
@@ -172,6 +179,7 @@ export interface EViewCtx {
   canQueryE4: boolean;
   /** 查过且明确查不到的命令号，只有这些才开放重试（OP-93）。 */
   e4QueryMissing: string[];
+  e4ExpiredNotFound: string[];
   releaseE4Pending: (record: E4PendingCommand) => void;
   selOrder: EOrder | null;
   e4Detail: E4OrderDetail | null;

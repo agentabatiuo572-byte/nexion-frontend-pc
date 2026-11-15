@@ -8,6 +8,7 @@ import { normalizeC3Adjustment } from "@/lib/admin/c3-adjustment-contract";
 import { parseStrictFiniteNumber } from "@/lib/admin/strict-number";
 import { parseBusinessTime } from "@/lib/admin/business-time";
 import { supportRequest, supportObject, parseSupportId } from "./m-support-client.ts";
+import { parseUserLatestFunds, preserveUserFundAmounts, type UserLatestFundActivity } from "./user-latest-funds-contract";
 
 interface ApiResult<T> {
   code: number;
@@ -267,6 +268,22 @@ export interface UserAccountActionOverview extends JsonRecord {
   redlines?: string[] | null;
 }
 
+export type UserAccountActionStatus = "ACTIVE" | "FROZEN" | "BANNED" | "RESTRICTED" | "DISABLED";
+/** Deliberately excludes risk, wallet, contact and login projections. */
+export interface UserAccountActionRow extends JsonRecord {
+  id: number;
+  userNo: string;
+  nickname: string | null;
+  status: UserAccountActionStatus;
+  registeredAt: string | null;
+  freezeSource: string | null;
+  freezeSourceRef: string | null;
+  freezeReason: string | null;
+  freezeOperator: string | null;
+  frozenAt: string | null;
+  d2FrozenWithdrawalCount: number;
+}
+
 export interface UserAccountActionContext extends JsonRecord {
   account?: User360Profile | null;
   accountList?: UserAccountListEntry | null;
@@ -422,6 +439,10 @@ export interface User360Section {
 }
 
 export interface User360Detail extends JsonRecord {
+  latestDeposit?: UserLatestFundActivity | null;
+  latestWithdrawal?: UserLatestFundActivity | null;
+  latestDepositStatus?: "READY" | "ERROR";
+  latestWithdrawalStatus?: "READY" | "ERROR";
   profile?: User360Profile | null;
   security?: JsonRecord | null;
   sessions?: JsonRecord[] | null;
@@ -659,7 +680,12 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     }
     throw error;
   }
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(text => {
+    const exact = path.endsWith("/360") ? preserveUserFundAmounts(text) : text;
+    return JSON.parse(path.startsWith("/profiles")
+      ? exact.replace(/("(?:walletUsdt|walletNex)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')
+      : exact);
+  }).catch(() => null)) as ApiResult<T> | null;
   // C6 first-send rejection classification needs a readable business verdict.
   // A bare/malformed 4xx must not discard the saved original request.
   if (init?.requireReadableOutcome && (!result || typeof result.code !== "number" || !Number.isFinite(result.code))) {
@@ -701,7 +727,8 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
 }
 
 export async function fetchUser360(userKey: string) {
-  return usersRequest<User360Detail>(`/profiles/${encodeURIComponent(userKey)}/360`);
+  const detail = await usersRequest<User360Detail>(`/profiles/${encodeURIComponent(userKey)}/360`);
+  return { ...detail, ...parseUserLatestFunds(detail) };
 }
 
 export async function fetchSupportCustomerFullProfile(customerId: string, signal?: AbortSignal): Promise<User360Detail> {
@@ -717,8 +744,8 @@ export async function fetchSupportCustomerFullProfile(customerId: string, signal
         else if (status !== "READY") detail[key] = { sourceStatus: status === "ERROR" ? "ERROR" : "UNKNOWN" };
       }
     }
-    return detail;
-  }, { signal });
+    return { ...detail, ...parseUserLatestFunds(detail) };
+  }, { signal, transformResponseText: preserveUserFundAmounts });
 }
 
 export type NotificationTimeEvidence = {
@@ -915,6 +942,21 @@ function requireC2Overview(value: unknown): UserAccountActionOverview {
 
 export async function fetchUserAccountActionOverview() {
   return requireC2Overview(await usersRequest<unknown>("/account-actions/overview"));
+}
+
+export async function fetchUserAccountActionPage(status: UserAccountActionStatus = "FROZEN", pageNum = 1, pageSize = 20): Promise<UserPage<UserAccountActionRow>> {
+  const raw = await usersRequest<PageResult<unknown>>(`/account-actions/accounts${queryString({ status, pageNum, pageSize })}`);
+  const page = normalizeAuthoritativePage(raw, pageNum, pageSize);
+  const records = page.records.map(value => {
+    if (!isJsonRecord(value) || !Number.isSafeInteger(value.id) || Number(value.id) < 1
+      || typeof value.userNo !== "string" || !value.userNo.trim() || value.status !== status
+      || !Number.isSafeInteger(value.d2FrozenWithdrawalCount) || Number(value.d2FrozenWithdrawalCount) < 0) return c2ResponseInvalid();
+    for (const key of ["nickname", "registeredAt", "freezeSource", "freezeSourceRef", "freezeReason", "freezeOperator", "frozenAt"]) {
+      if (value[key] !== null && typeof value[key] !== "string") return c2ResponseInvalid();
+    }
+    return value as UserAccountActionRow;
+  });
+  return { ...page, records };
 }
 
 export async function fetchUserAccountActionAccount(userKey: string) {

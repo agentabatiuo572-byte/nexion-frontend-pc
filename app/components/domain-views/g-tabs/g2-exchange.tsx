@@ -84,8 +84,8 @@ function amount(value: number | string) {
 }
 
 /** 资产数量：去掉补的 0，不补位，带千分位。 */
-function quantity(value: number) {
-  const text = value.toFixed(6).replace(/\.?0+$/, "");
+function quantity(value: number | string) {
+  const text = (typeof value === "number" ? value.toFixed(6) : value).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
   const [whole, fraction] = text.split(".");
   return `${BigInt(whole).toLocaleString("en-US")}${fraction ? `.${fraction}` : ""}`;
 }
@@ -97,7 +97,7 @@ function percent(value: number | string) {
 }
 
 /** 一种资产的数量：USDT 按金额写（至少两位小数），UVT 去掉补的 0。 */
-function assetNum(value: number, asset: string) {
+function assetNum(value: number | string, asset: string) {
   return asset === "USDT" ? amount(value) : quantity(value);
 }
 
@@ -106,8 +106,9 @@ function fmtCount(value: number) {
 }
 
 /** 以 1e-6 为单位的整数，避免小数相减出错。 */
-function micros(value: number) {
-  return BigInt(Math.round(value * 1_000_000));
+function micros(value: number | string) {
+  const [whole, fraction = ""] = String(value).split(".");
+  return BigInt(whole) * BigInt(1_000_000) + BigInt(fraction.padEnd(6, "0"));
 }
 
 function fromMicros(value: bigint) {
@@ -136,7 +137,7 @@ function normalizeCapSubmitValue(cap: G2Cap, value: string | undefined) {
 function requireBatchActor(adminId: number, write = true) {
   const auth = useAdminAuth.getState();
   if (!auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== adminId
-      || write && !auth.session.authorities.includes(BATCH_AUTHORITY)) {
+      || !auth.session.authorities.includes(write ? BATCH_AUTHORITY : "finprod_g2_read")) {
     throw new Error("登录身份或兑换处理权限已变化，请关闭后重新打开。");
   }
 }
@@ -242,7 +243,7 @@ function ExchangeNo({ value }: { value: string }) {
 }
 
 function orderAmount(order: G2ExchangeOrder) {
-  return `${assetNum(order.fromAmount, order.fromAsset)} ${order.fromAsset} → ${assetNum(order.toAmount, order.toAsset)} ${order.toAsset}`;
+  return `${assetNum(order.fromAmountText ?? order.fromAmount, order.fromAsset)} ${order.fromAsset} → ${assetNum(order.toAmountText ?? order.toAmount, order.toAsset)} ${order.toAsset}`;
 }
 
 export function G2Exchange() {
@@ -270,6 +271,7 @@ function G2ExchangePage() {
   // 原命令回包不是当前概览；重读完成前不能按旧概览发起新修改。
   const [rereadPending, setRereadPending] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const readGeneration = useRef(0);
   const latest = useRef({ overview, loading, busyKey, readFailed, rereadPending });
   latest.current = { overview, loading, busyKey, readFailed, rereadPending };
   const confirmationRecovery = useRef<{ request: G2ConfirmReq; saved: boolean } | null>(null);
@@ -286,7 +288,11 @@ function G2ExchangePage() {
     latest.current.rereadPending = true;
     setRereadPending(true);
     setReadFailed(true);
-    setOverview(await fetchG2ExchangeOverview());
+    const generation = ++readGeneration.current;
+    const next = await fetchG2ExchangeOverview();
+    if (generation !== readGeneration.current) return;
+    setLoading(false);
+    setOverview(next);
     setReadFailed(false);
     setRereadPending(false);
   });
@@ -299,7 +305,7 @@ function G2ExchangePage() {
   const [recoveryError, setRecoveryError] = useState<{ message: string; notFound: boolean } | null>(null);
   /** 只用于显示：直接修改时后端答复这一项被审批锁住，在这一行标出来。下一次提交仍由后端核对。 */
   const [lockedParams, setLockedParams] = useState<Record<string, string>>({});
-  const ownPendingBatch = pendingBatch?.adminId === batchAdminId ? pendingBatch : undefined;
+  const ownPendingBatch = authorities.includes("finprod_g2_read") && pendingBatch?.adminId === batchAdminId ? pendingBatch : undefined;
   const recoveryBatch = ownPendingBatch?.commandKey === recoveryKey ? ownPendingBatch : undefined;
   const [recoverBusy, setRecoverBusy] = useState(false);
   /** 只用于显示：这些错误句已经由原操作提醒里的一行承接，不再在「操作提示」里重复。 */
@@ -321,6 +327,7 @@ function G2ExchangePage() {
   }, [batchAdminId, canProcessBatch]);
 
   const reload = useCallback(async (silent = false) => {
+    const generation = ++readGeneration.current;
     latest.current.readFailed = true;
     latest.current.rereadPending = true;
     setRereadPending(true);
@@ -328,50 +335,34 @@ function G2ExchangePage() {
     setReadFailed(true);
     setError("");
     try {
-      setOverview(await fetchG2ExchangeOverview());
+      const next = await fetchG2ExchangeOverview();
+      if (generation !== readGeneration.current) return;
+      setOverview(next);
       setReadFailed(false);
       setRereadPending(false);
     } catch (err) {
+      if (generation !== readGeneration.current) return;
       setOverview(null);
       setError(messageOf(err));
     } finally {
-      if (!silent) setLoading(false);
+      if (generation === readGeneration.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setReadFailed(true);
-      setError("");
-      try {
-        const next = await fetchG2ExchangeOverview();
-        if (!cancelled) {
-          setOverview(next);
-          setReadFailed(false);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setOverview(null);
-          setError(messageOf(err));
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void reload();
+    return () => { readGeneration.current += 1; };
+  }, [reload]);
 
   const mutate = useCallback(async (key: string, action: () => Promise<G2Overview>, success: string, recovered = false) => {
     if (recovered) { latest.current.rereadPending = true; setRereadPending(true); }
     setBusyKey(key);
     setError("");
     try {
-      setOverview(await action());
+      const next = await action();
+      readGeneration.current += 1;
+      setOverview(next);
+      setLoading(false);
       if (recovered) { setReadFailed(false); setRereadPending(false); }
       if (key.startsWith("param:")) setLockedParams(rows => { const next = { ...rows }; delete next[key.slice(6)]; return next; });
       toast(success);
@@ -388,6 +379,8 @@ function G2ExchangePage() {
   }, [batchAdminId, toast]);
 
   const showBatchResult = useCallback((result: Awaited<ReturnType<typeof processG2ExchangeQueue>>) => {
+    readGeneration.current += 1;
+    setLoading(false);
     setOverview(result.overview);
     setBatchResult(result.batch);
     setReadFailed(false);
@@ -403,6 +396,8 @@ function G2ExchangePage() {
     setError("");
     try {
       const result = await queryG2ExchangeCommand(original.adminId, original.commandKey);
+      readGeneration.current += 1;
+      setLoading(false);
       setOverview(result.overview);
       setReadFailed(false);
       setRereadPending(false);
@@ -455,7 +450,7 @@ function G2ExchangePage() {
           ? record.context?.cap ? <Change from={paramValueText(param, record.context.cap.value, record.context.cap.displayValue)} to={paramValueText(param, record.input.value)} /> : <>改成 {paramValueText(param, record.input.value)}</>
           : batch ? <>这一批最多 {fmtCount(record.input.limit ?? 0)} 单</>
           : record.path === "/exchange/swap" ? <Change from="开着" to="暂停" />
-          : <><span data-mono>{order?.exchangeNo ?? decodeURIComponent(cancelNo ?? "")}</span>{order ? ` · ${amount(order.amountUsdt)} USDT` : ""}</>;
+          : <><span data-mono>{order?.exchangeNo ?? decodeURIComponent(cancelNo ?? "")}</span>{order ? ` · ${amount(order.amountUsdtText ?? order.amountUsdt)} USDT` : ""}</>;
         const expired = g2ExchangeCommandExpired(record);
         const canRetry = !expired && (param ? !!record.context?.cap && authorities.includes(capAuthority(param))
           : record.path === "/exchange/swap" ? record.context?.queueDepth !== undefined && authorities.includes("finprod_g2_swap_toggle")
@@ -505,6 +500,8 @@ function G2ExchangePage() {
         try {
           const current = await fetchG2ExchangeOverview();
           requireBatchActor(batchAdminId);
+          readGeneration.current += 1;
+          setLoading(false);
           setOverview(current);
           setReadFailed(false);
           setRereadPending(false);
@@ -542,6 +539,8 @@ function G2ExchangePage() {
         showBatchResult(result);
         setRecoveryKey(null);
       } else {
+        readGeneration.current += 1;
+        setLoading(false);
         setOverview(result.overview);
         setReadFailed(false);
         setRereadPending(false);
@@ -549,7 +548,11 @@ function G2ExchangePage() {
       }
     } catch (error) {
       try {
-        setOverview(await fetchG2ExchangeOverview());
+        const generation = ++readGeneration.current;
+        const next = await fetchG2ExchangeOverview();
+        if (generation !== readGeneration.current) return;
+        setLoading(false);
+        setOverview(next);
         setReadFailed(false);
         setRereadPending(false);
       } catch (readError) {
@@ -647,9 +650,14 @@ function G2ExchangePage() {
     const loosens = (value?: string) => {
       if (!value) return undefined;
       if (isQueueMode) return value !== cap.displayValue ? value === "排队" : undefined;
-      const next = Number(value);
-      const now = Number(capEditValue(cap));
-      if (!Number.isFinite(next) || !Number.isFinite(now) || next === now) return undefined;
+      const [next, now] = [value, capEditValue(cap)].map(raw => {
+        const match = /^(\d+)(?:\.(\d+))?$/.exec(raw.trim());
+        if (!match) return undefined;
+        const fraction = match[2] ?? "";
+        return BigInt(match[1] + fraction.slice(0, 6).padEnd(6, "0"))
+          + (Number(fraction[6] ?? "0") >= 5 ? BigInt(1) : BigInt(0));
+      });
+      if (next === undefined || now === undefined || next === now) return undefined;
       return cap.key === "fee" || cap.key === "feeMin" ? next < now : next > now;
     };
     const capFacts = (value?: string) => {
@@ -694,7 +702,7 @@ function G2ExchangePage() {
         ? `${copy?.loosen ?? "放宽"}${name}会让平台多付 USDT，要另一位超级管理员批准`
         : `${copy?.loosen ?? "放宽"}${name}会让平台每天可能多付 USDT，要另一位超级管理员批准`,
       coverageCheck: cap.key === "fee" || cap.key === "feeMin"
-        ? "提交审批时和批准时，后端各检查一次：原值没被别人改过；把现在排队中的真实单（不含停用账户和测试账户）按新旧费用各算一次到手 USDT，多出来的加进应付款后，兑付覆盖率不低于红线。低于红线或算不准都拒绝。"
+        ? "提交审批时和批准时各检查一次：原值没被别人改过；把现在排队中、启用中的非测试账户的单按新旧费用各算一次到手 USDT，多出来的加进应付款后，兑付覆盖率不低于红线。低于红线或算不准都会被拒绝。"
         : "提交审批时和批准时，后端各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
       edit: isQueueMode
         ? { kind: "select", current: cap.displayValue, currentLabel: originalDirect ? "提交时" : undefined, disallowCurrent: true, initialValue: originalValue === undefined ? undefined : originalValue === "REJECT" ? "拒绝" : "排队", options: ["排队", "拒绝"], amplifiesWhen: { from: "拒绝", to: "排队" } }
@@ -745,6 +753,8 @@ function G2ExchangePage() {
             () => updateG2ExchangeParam(cap.key, nextValue!, reason, OPERATOR(), currentCap!));
           setLockedParams(rows => { const next = { ...rows }; delete next[cap.key]; return next; });
           if ("direct" in result) {
+            readGeneration.current += 1;
+            setLoading(false);
             setOverview(result.direct);
             toast(`${operatorCopyText(cap.name)}已立即生效`);
           }
@@ -834,12 +844,12 @@ function G2ExchangePage() {
       confirmTone: "danger",
       confirmLabel: "确认取消",
       facts: <Facts>
-        <Fact k="折合" lead tone="role-1" unit="USDT">{amount(order.amountUsdt)}</Fact>
+        <Fact k="折合" lead tone="role-1" unit="USDT">{amount(order.amountUsdtText ?? order.amountUsdt)}</Fact>
         <Fact k="影响">1 单</Fact>
         <Fact k="兑换单号"><span data-mono>{order.exchangeNo}</span></Fact>
         <Fact k="用户">{order.userNo} · {operatorNicknameText(order.nickname)}</Fact>
         <Fact k="兑换">{orderAmount(order)}</Fact>
-        <Fact k="退款">有预占记录的退回 {assetNum(order.fromAmount, order.fromAsset)} {order.fromAsset}（原来源币种、原数额）；没有预占记录的历史单只取消，不扣不退</Fact>
+        <Fact k="退款">有预占记录的退回 {assetNum(order.fromAmountText ?? order.fromAmount, order.fromAsset)} {order.fromAsset}（原来源币种、原数额）；没有预占记录的历史单只取消，不扣不退</Fact>
       </Facts>,
       statedBrief: { impact: "这笔兑换马上取消，之后不会再成交；不收取消费。", check: "核对单号和用户，理由写清为什么由后台取消。" },
       getPendingReason: () => pendingG2ExchangeCommand(batchAdminId, path)?.input.reason,
@@ -902,7 +912,7 @@ function G2ExchangePage() {
   const usedMicros = micros(stats.todayUsd);
   const capMicros = Number.isFinite(platformCapValue) ? micros(platformCapValue) : undefined;
   const leftMicros = capMicros === undefined ? undefined : capMicros - usedMicros;
-  const queueTotalMicros = queue.reduce((sum, row) => sum + micros(row.amountUsdt), BigInt(0));
+  const queueTotalMicros = queue.reduce((sum, row) => sum + micros(row.amountUsdtText ?? row.amountUsdt), BigInt(0));
   const queueAllVisible = queue.length >= stats.queueDepth;
 
   const openBatch = () => openActionConfirm({ briefKind: "funds",
@@ -914,12 +924,12 @@ function G2ExchangePage() {
     facts: (value?: string) => {
       const count = value && /^\d+$/.test(value) ? Number(value) : undefined;
       const oldest = count === undefined ? [] : [...queue].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || Number(a.id) - Number(b.id)).slice(0, count);
-      const oldestMicros = oldest.reduce((sum, row) => sum + micros(row.amountUsdt), BigInt(0));
+      const oldestMicros = oldest.reduce((sum, row) => sum + micros(row.amountUsdtText ?? row.amountUsdt), BigInt(0));
       return <Facts>
         <Fact k="这一批" lead unit={count === undefined ? undefined : "单"}>{count === undefined ? "填写最多处理几单" : `最多 ${fmtCount(count)}`}</Fact>
         <Fact k="选哪几单">从最早排队的开始选，不限创建日期；不是列表里勾选的行。停用账户和测试账户的单不在这一批里</Fact>
         <Fact k="金额">{count === undefined ? `排队中 ${fmtCount(stats.queueDepth)} 单` : queueAllVisible && stats.queueDepth > 0
-          ? `最早的 ${fmtCount(Math.min(count, queue.length))} 单合计 ${fromMicros(oldestMicros)} USDT（实际以处理结果为准）`
+          ? `按列表估算：最早 ${fmtCount(Math.min(count, queue.length))} 单合计 ${fromMicros(oldestMicros)} USDT。列表里停用、测试账户的单也算进去了，以处理结果为准`
           : `列表只显示最近 ${fmtCount(queue.length)} 单，算不出这一批的金额；处理结果里逐单列出`}</Fact>
         <Fact k="每一单">依次检查兑换开关、用户、钱包、平台和个人日额度、地区、手续费；通过的马上成交，额度不够的留在队列；额度检查通过后地区被封锁的取消，有预占的退回</Fact>
         {swap.emergencyPaused === true && <Fact k="现在" tone="warn">兑换已暂停，后端会拒绝这一批</Fact>}
@@ -962,7 +972,7 @@ function G2ExchangePage() {
     : stats.queueDepth > 0
       ? <Conclusion state="warn" icon={ListOrdered}
           hint={canProcessBatch ? "排队的单不会自动成交，在下面「排队中的兑换」点「处理排队」。" : "排队的单不会自动成交，请有处理权限的同事处理。"}
-          explain="排队数是所有还在排队的单，不限哪天创建。后端没有定时处理队列的任务，单子上的「明天 00:00」是固定文字，不是排好的处理时间。">
+          explain="排队数是所有还在排队的单，不限哪天创建。系统不会定时处理队列，单子上的「明天 00:00」是固定文字，不是排好的处理时间。">
           兑换开着，有 {fmtCount(stats.queueDepth)} 单在排队等处理</Conclusion>
       : <Conclusion state="neutral" icon={ArrowLeftRight}
           explain="只说开关和队列：兑换开着、没有排队的单。今天的额度用量和拦截在下面。">
@@ -1131,7 +1141,7 @@ function G2ExchangePage() {
               <Tr key={order.exchangeNo} selected={order.exchangeNo === queueDrawer} onOpen={busy ? undefined : () => setQueueDrawer(order.exchangeNo)}>
                 <Td><ExchangeNo value={order.exchangeNo} /></Td>
                 <Td><Cell main={order.userNo} sub={operatorNicknameText(order.nickname)} title={`${order.userNo} · ${operatorNicknameText(order.nickname)}`} /></Td>
-                <Td align="right"><Cell num main={`${assetNum(order.toAmount, order.toAsset)} ${order.toAsset}`} sub={`${assetNum(order.fromAmount, order.fromAsset)} ${order.fromAsset} 换`} /></Td>
+                <Td align="right"><Cell num main={`${assetNum(order.toAmountText ?? order.toAmount, order.toAsset)} ${order.toAsset}`} sub={`${assetNum(order.fromAmountText ?? order.fromAmount, order.fromAsset)} ${order.fromAsset} 换`} /></Td>
                 <Td grow><Cell main={order.gateReason} title={order.gateReason} /></Td>
                 <Td><Cell num main={timeText(order.createdAt)} /></Td>
               </Tr>
@@ -1196,7 +1206,7 @@ function G2ExchangePage() {
                   <tr key={row.exchangeNo}>
                     <Td><Cell main={row.userNo} sub={operatorNicknameText(row.nickname)} /></Td>
                     <Td><ExchangeNo value={row.exchangeNo} /></Td>
-                    <Td align="right"><Cell num main={`${assetNum(row.toAmount, row.toAsset)} ${row.toAsset}`} sub={`${assetNum(row.fromAmount, row.fromAsset)} ${row.fromAsset} 换`} /></Td>
+                    <Td align="right"><Cell num main={`${assetNum(row.toAmountText ?? row.toAmount, row.toAsset)} ${row.toAsset}`} sub={`${assetNum(row.fromAmountText ?? row.fromAmount, row.fromAsset)} ${row.fromAsset} 换`} /></Td>
                     <Td grow><Cell main={row.gateReason} title={row.gateReason} /></Td>
                   </tr>
                 ))}
@@ -1218,9 +1228,9 @@ function G2ExchangePage() {
             { label: "用户所在地区", value: selectedQueue.countryCode, reason: "处理排队时按这个国家判断地区封锁。" },
           ]} />
           <Facts>
-            <Fact k="兑换" lead tone="role-1" unit={selectedQueue.toAsset}>{assetNum(selectedQueue.toAmount, selectedQueue.toAsset)}</Fact>
-            <Fact k="付出">{assetNum(selectedQueue.fromAmount, selectedQueue.fromAsset)} {selectedQueue.fromAsset}</Fact>
-            <Fact k="折合">{amount(selectedQueue.amountUsdt)} USDT</Fact>
+            <Fact k="兑换" lead tone="role-1" unit={selectedQueue.toAsset}>{assetNum(selectedQueue.toAmountText ?? selectedQueue.toAmount, selectedQueue.toAsset)}</Fact>
+            <Fact k="付出">{assetNum(selectedQueue.fromAmountText ?? selectedQueue.fromAmount, selectedQueue.fromAsset)} {selectedQueue.fromAsset}</Fact>
+            <Fact k="折合">{amount(selectedQueue.amountUsdtText ?? selectedQueue.amountUsdt)} USDT</Fact>
             <Fact k="方向">{operatorCopyText(selectedQueue.directionLabel)}</Fact>
             <Fact k="汇率">{selectedQueue.rate ? `1 UVT = ${quantity(selectedQueue.rate)} USDT` : "—"}</Fact>
             <Fact k="用户编码">{selectedQueue.userNo}</Fact>

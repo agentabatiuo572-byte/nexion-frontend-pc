@@ -51,7 +51,7 @@ export function useSupportManagementCommand<T, R>(options: {
       store.remember(slot, key, { payload: input });
       if (!store.isDurablyStored(slot, key)) {
         store.forget(slot, key);
-        setMessage("浏览器未能保存原操作，尚未提交。请恢复会话存储后重试。");
+        setMessage("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
         return;
       }
       command = store.list().find(row => row.commandKey === key);

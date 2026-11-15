@@ -32,6 +32,13 @@ export type L3TreasurySnapshot = Pick<
   "coverage" | "liabilities" | "maturity7" | "maturity30"
 >;
 
+type L3CoverageValuation = {
+  valuationReliable: boolean;
+  valuationStatus: "AVAILABLE" | "VALUATION_UNAVAILABLE";
+  valuedCoverageRatio: number | null;
+  valuedNetExposureUsdt: string | null;
+};
+
 function fail(field: string): never {
   throw new Error(`L3_FINANCE_PROTOCOL_INVALID:${field}`);
 }
@@ -134,7 +141,7 @@ function assertConsecutiveDaily(value: unknown, days: number, field: string) {
  * function validates source identity, cardinality and cross-source arithmetic
  * before the view mapper is allowed to format anything.
  */
-export function assertL3FinanceContract(input: L3FinanceRawContract): L3FinanceRawContract {
+export function assertL3FinanceContract(input: L3FinanceRawContract): L3FinanceRawContract & { coverage: Record<string, unknown> & L3CoverageValuation } {
   const revenuePeriod = period(input.revenue.period, "revenue.period");
   if (input.revenue.serverAuthoritative !== true) fail("revenue.serverAuthoritative");
   const revenueRows = list(input.revenue.streams, "revenue.streams");
@@ -174,6 +181,19 @@ export function assertL3FinanceContract(input: L3FinanceRawContract): L3FinanceR
   const yellowLine = number(input.coverage.yellowLine, "coverage.yellowLine");
   if (yellowLine < redLine) fail("coverage.thresholdOrder");
   close(number(input.coverage.netExposureUsdt, "coverage.netExposureUsdt", -Number.MAX_VALUE), reserve - liability, "coverage.netExposureUsdt");
+  // Older reads and any flag other than true cannot establish a reliable valuation.
+  const coverageReliable = input.coverage.valuationReliable === true;
+  let valuedCoverageRatio: number | null = null;
+  let valuedNetExposureUsdt: string | null = null;
+  if (coverageReliable) {
+    if (input.coverage.valuationStatus !== "AVAILABLE") fail("coverage.valuationStatus");
+    valuedCoverageRatio = number(input.coverage.valuedCoverageRatio, "coverage.valuedCoverageRatio");
+    if (valuedCoverageRatio !== input.coverage.coverageRatio) fail("coverage.valuedCoverageRatio");
+    const amount = input.coverage.valuedNetExposureUsdt;
+    if (typeof amount !== "string" || !/^-?\d+(?:\.\d+)?$/.test(amount)) fail("coverage.valuedNetExposureUsdt");
+    close(number(Number(amount), "coverage.valuedNetExposureUsdt", -Number.MAX_VALUE), reserve - liability, "coverage.valuedNetExposureUsdt");
+    valuedNetExposureUsdt = amount;
+  }
   if (!text(input.coverage.source, "coverage.source").includes("B1")) fail("coverage.source");
   const coverageSeries = list(input.coverage.series, "coverage.series");
   if (coverageSeries.length < 2) fail("coverage.series.length");
@@ -237,5 +257,6 @@ export function assertL3FinanceContract(input: L3FinanceRawContract): L3FinanceR
   }
 
   record(input.overview, "overview");
-  return input;
+  return { ...input, coverage: { ...input.coverage, valuationReliable: coverageReliable,
+    valuationStatus: coverageReliable ? "AVAILABLE" : "VALUATION_UNAVAILABLE", valuedCoverageRatio, valuedNetExposureUsdt } };
 }

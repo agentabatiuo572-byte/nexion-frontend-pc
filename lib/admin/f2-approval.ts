@@ -91,7 +91,7 @@ export function listF2Proposals(adminId: number): F2Recovery[] {
       canRetry: !isRetryExpired(row) && !!row.request && !row.ticket && !row.received && !!session && session.adminId === adminId
         && session.authorities.includes(f2ProposalAuthority(row.fingerprint))
         && session.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create"),
-      canRelease: isRetryExpired(row) && row.absent === true,
+      canRelease: isRetryExpired(row) && row.absent === true && !row.received && !row.ticket,
     }));
 }
 
@@ -114,6 +114,7 @@ export async function queryF2Proposal(adminId: number, original: F2Recovery) {
   remember({ ...original, absent: false });
   const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
   if (!ticket) {
+    if (original.received || original.ticket) throw new Error("F2_PROPOSAL_STATUS_UNAVAILABLE");
     remember({ ...original, ticket: undefined, absent: true });
     return null;
   }
@@ -153,7 +154,9 @@ export async function sendF2Proposal(adminId: number, slot: string, spec?: Propo
   }
   if (isRetryExpired(original)) throw new Error("F2_PROPOSAL_RETRY_EXPIRED");
   if (!original.request) throw new Error("F2_PROPOSAL_ORIGINAL_INCOMPLETE");
-  if (!storeFor(slot).isDurablyStored(slot, original.commandKey)) throw new Error("F2_PROPOSAL_STORAGE_UNAVAILABLE");
+  if (!storeFor(slot).isDurablyStored(slot, original.commandKey)) throw new Error(recovering ? "F2_PROPOSAL_RETRY_STORAGE_UNAVAILABLE" : "F2_PROPOSAL_STORAGE_UNAVAILABLE");
+  original.absent = false;
+  remember(original);
   let ticket: A2OperationRow;
   try {
     ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal");
@@ -177,6 +180,7 @@ export async function sendF2Proposal(adminId: number, slot: string, spec?: Propo
 
 // The visual worker must provide the existing confirmation surface's release action.
 export async function releaseF2Proposal(adminId: number, original: F2Recovery) {
+  if (original.received || original.ticket) throw new Error("F2_PROPOSAL_STATUS_UNAVAILABLE");
   if (!isRetryExpired(original)) throw new Error("F2_PROPOSAL_UNRESOLVED");
   const ticket = await queryF2Proposal(adminId, original);
   if (ticket?.status === "pending") throw new Error("F2_PROPOSAL_UNRESOLVED");

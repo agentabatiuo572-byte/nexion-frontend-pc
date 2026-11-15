@@ -132,12 +132,15 @@ export interface G2ExchangeOrder {
   toAsset: string;
   fromAmount: number;
   toAmount: number;
+  fromAmountText?: string;
+  toAmountText?: string;
   rate: number;
   status: string;
   statusLabel: string;
   statusTone: string;
   directionLabel: string;
   amountUsdt: number;
+  amountUsdtText?: string;
   amountUsdtDisplay: string;
   exchangeAmountDisplay: string;
   gateType: string;
@@ -248,12 +251,15 @@ function normalizeOrder(row: BackendOrder): G2ExchangeOrder {
     toAsset,
     fromAmount,
     toAmount,
+    fromAmountText: String(row.fromAmount),
+    toAmountText: String(row.toAmount),
     rate: toNumber(row.rate),
     status: asText(row.status, "UNKNOWN"),
     statusLabel: asText(row.statusLabel, asText(row.status, "UNKNOWN")),
     statusTone: asText(row.statusTone, "dim"),
     directionLabel: asText(row.directionLabel, `${fromAsset}->${toAsset}`),
     amountUsdt,
+    amountUsdtText: String(row.amountUsdt),
     amountUsdtDisplay: fmtUsd(amountUsdt),
     exchangeAmountDisplay: `${fmtNumber(fromAmount)} ${fromAsset} -> ${fmtNumber(toAmount)} ${toAsset}`,
     gateType: asText(row.gateType, ""),
@@ -349,7 +355,9 @@ export async function g2Request<T>(path: string, init?: RequestInit) {
     headers,
     cache: "no-store",
   });
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(text => JSON.parse(text.replace(
+    /("(?:fromAmount|toAmount|amountUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"',
+  ))).catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {

@@ -65,9 +65,10 @@ function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
 export async function queryF5Proposal(adminId: number, original: FDomainAttempt) {
   actor(adminId); // The endpoint judges read grants independently from the POST grant.
   if (original.adminId !== undefined && original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-  fCommands.remember(original.fingerprint, original.commandKey, { ...original, f5TicketId: original.ticket?.id ?? original.f5TicketId, ticket: undefined, absent: false });
+  fCommands.remember(original.fingerprint, original.commandKey, { ...original, f5TicketId: original.ticket?.id ?? original.f5TicketId, absent: false });
   const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
   if (!ticket) {
+    if (original.received || original.ticket || original.f5TicketId) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
     fCommands.remember(original.fingerprint, original.commandKey, { ...original, ticket: undefined, absent: true });
     return null;
   }
@@ -117,6 +118,8 @@ export async function sendF5Proposal(adminId: number, slot: string, spec?: Propo
   }
   if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
   if (!original.request || !fCommands.isDurablyStored(slot, original.commandKey)) throw new Error("F5_OPERATION_ORIGINAL_INCOMPLETE");
+  original.absent = false;
+  fCommands.remember(slot, original.commandKey, original);
   if (!original.received && !original.ticket) {
     let ticket: A2OperationRow;
     try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }
@@ -144,6 +147,7 @@ export async function sendF5Proposal(adminId: number, slot: string, spec?: Propo
 
 /** Requires the visual layer's explicit confirmation after authoritative expired absence. */
 export async function releaseF5Proposal(adminId: number, original: FDomainAttempt) {
+  if (original.received || original.ticket || original.f5TicketId) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
   if (!isRetryExpired(original)) throw new Error("原操作尚未过期，请先查询原结果。");
   const ticket = await queryF5Proposal(adminId, original);
   if (ticket?.status === "pending") throw new Error("OBJECT_ALREADY_PENDING");

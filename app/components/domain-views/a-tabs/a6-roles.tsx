@@ -549,7 +549,7 @@ export default function A6Roles() {
   const unknownRows: UnknownRow[] = commands.records.filter(record => !record.ticket && !record.receipt).map(record => {
     const expired = isRetryExpired(record);
     // 决定表「R1-提案过期」：只有删除和改授权这两种一定建审批单的，过期且按原请求明确查不到才可解除。
-    const releasable = expired && record.proposalNotFound && (record.original.kind === "a6-delete" || record.original.kind === "a6-grants");
+    const releasable = expired && record.proposalNotFound && !record.ticket && !record.receipt && (record.original.kind === "a6-delete" || record.original.kind === "a6-grants");
     return {
       key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
       tag: expired
