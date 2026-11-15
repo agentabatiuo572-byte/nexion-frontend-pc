@@ -75,14 +75,16 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
   const [settled, setSettled] = useState<SettledCommand[]>([]);
   const [closing, setClosing] = useState<E5Command | null>(null);
   const sync = useCallback(() => {
-    setRecords(e5Commands.list().filter(r => r.actorId === actorId));
+    const saved = e5Commands.list().filter(r => r.actorId === actorId);
+    setRecords(saved);
+    setRejected(Object.fromEntries(saved.filter(r => r.retryRejection).map(r => [r.commandKey, r.retryRejection!])));
     setPhonePending(e6Commands.list().filter(r => String(r.owner) === actorId && r.section === "phones"));
   }, [actorId]);
   const phoneBlocks = (device: E5Device, intent?: E5Intent) => phonePending.some(r => r.scope === `user:${device.userId}`
     || r.scope === `phone:${device.deviceId}:${device.userId}`
     || (intent === "pause" || intent === "resume") && r.scope.startsWith("phone:") && r.scope.split(":")[2] === device.userId);
   useEffect(() => {
-    sync(); setRelease(null); setRejected({}); setReadResults({}); setOutcomes({}); setSettled([]); setClosing(null);
+    sync(); setRelease(null); setReadResults({}); setOutcomes({}); setSettled([]); setClosing(null);
     try { setOld(e5LegacyCommands()); } catch (cause) { setError(`旧操作记录无法读取：${displayAdminError(cause)}`); }
   }, [sync, epoch]);
   const allowed = (r: E5Command) => {

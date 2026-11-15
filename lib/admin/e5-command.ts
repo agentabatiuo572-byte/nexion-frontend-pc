@@ -18,10 +18,12 @@ export interface E5Command extends PendingMutationRecord {
   method: "POST";
   body: string;
   proof?: LegacyUnknownCandidate;
+  retryRejection?: string;
 }
 export const e5Commands = createPendingMutationStore<E5Command>({
   storageKey: "nexion-admin-e5-full-commands-v1", retainExpiredRecords: true,
-  isValidRecord: row => typeof row.actorId === "string" && !!row.actorId && Number.isInteger(row.authEpoch)
+  isValidRecord: row => (row.retryRejection === undefined || typeof row.retryRejection === "string")
+    && typeof row.actorId === "string" && !!row.actorId && Number.isInteger(row.authEpoch)
     && ["activate", "deactivate", "pause", "resume", "force-activate", "unbind", "legacy"].includes(row.intent)
     && typeof row.label === "string" && typeof row.reason === "string" && typeof row.body === "string"
     && row.method === "POST" && /^\/api\/admin\/(devices\/|platform\/audit\/operations$)/.test(row.path)
@@ -70,6 +72,7 @@ export async function sendE5Command(record: E5Command, retry: boolean) {
   const auth = useAdminAuth.getState();
   if (String(auth.session?.adminId ?? "") !== record.actorId || !retry && auth.authEpoch !== record.authEpoch) throw new Error("管理员会话已变化，请重新进入设备页面。");
   if (isRetryExpired(record)) throw new Error("已超过 24 小时，只能读回核对，原操作仍保留。");
+  e5Commands.remember(record.fingerprint, record.commandKey, { ...record, retryRejection: undefined });
   if (!e5Commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("原操作无法保存，暂不能提交。");
   let data: Record<string, unknown>;
   try {
@@ -99,6 +102,9 @@ export async function sendE5Command(record: E5Command, retry: boolean) {
     }
   } catch (cause) {
     if (!retry && isExplicitRejection(cause)) e5Commands.forget(record.fingerprint, record.commandKey);
+    else if (retry && isExplicitRejection(cause)) e5Commands.remember(record.fingerprint, record.commandKey, {
+      ...record, retryRejection: cause instanceof Error ? cause.message : String(cause),
+    });
     throw cause;
   }
   e5Commands.forget(record.fingerprint, record.commandKey);

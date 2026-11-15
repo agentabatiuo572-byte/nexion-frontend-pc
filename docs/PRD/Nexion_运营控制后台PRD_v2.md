@@ -601,6 +601,8 @@ maxDevicesPerOrder 入口保留，但当前后端及 App 每次只取一个 sour
 
 #### [E5] 设备管理
 
+2026-11-15 READ-05：原请求重试得到明确拒绝时，拒绝标记随同一原记录持久保存；刷新后仍能核对并解除。开始新的原请求重试时复位该标记，未知或认证拒绝不伪造明确结论；成功和人工解除仍按原逻辑清整条记录。请求内容、理由与命令号不变。
+
 **2026-11-14 后端 111e00cd 同步**：用户级恢复只清有效归属设备上的运营暂停，保留退款、账户停用、手机离线/低电量、换机、解绑/停用/回收等系统暂停。一次最多200候选ID，仅更新该集合；实际恢复数取changedCount，无候选404 PAUSED_USER_DEVICES_NOT_FOUND，成功和无候选后刷新核对。入口用userDeviceSlotNo的有效归属投影及暂停原因判断；确认框写“只恢复运营手动暂停的设备；退款、注销、换机、离线、电量低等系统暂停保持不变”，范围写“这位用户被运营暂停的设备（含手机）”，执行摘要注明实际台数以回执为准、单次最多200台；成功提示“已恢复 n 台运营暂停的设备”；无候选404关框、页首提示“这位用户已没有运营暂停的设备，没有恢复任何设备”并刷新。出处 DeviceOpsMapper.RESUMABLE_OPERATIONAL_PAUSE/lockE5BatchCandidateIds/resumeDevicesByUser，OpsDeviceService.batchE5Devices。
 
 **2026-11-12 后端同步（代码侧）**：同一 overview 已增加 `errorRetry/legacyPending/waitingConfig`，客户端按非负整数读取，不另发列表计数。这三数按列表有效状态解析，与原四数的旧状态口径不同，不相加成分布；三数的可见展示由视觉 worker 接入。名额标记绑定后端 `userId` 精确筛选，清空旧搜索词但保留状态、来源、商品；普通搜索与 userId 取交集，分页、单项清除、全部清除及网址恢复携同一 userId。现有读回入口同时按号查询，只有权威成功或 `CONFIRMED_NOT_EXECUTED && newOperationAllowed && !locked` 才收敛；当前列表、查不到及403不解除。受控结案逻辑通过 `useE5Commands().check(record, evidence)` 暴露，只允许持调查权限及 E5 读权的超管提交，由服务端再次核实在职、绑定和证据。三数、证据框、入口、名额旧提示及新错误码中文留给视觉 worker，不改变现有屏幕组成。
