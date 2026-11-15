@@ -11,13 +11,13 @@ import { ADMIN_ERROR_MESSAGES, displayAdminReadError } from "@/lib/admin/error-m
  */
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { AlarmClock, Ban, CalendarClock, CheckCheck, CircleCheck, CircleDashed, CircleSlash, Clock3, Coins, Hourglass, Layers, LogOut, PauseCircle, RefreshCw, Undo2, Wallet, type LucideIcon } from "lucide-react";
+import { Ban, CalendarClock, CheckCheck, CircleCheck, CircleDashed, CircleSlash, Clock3, Coins, Hourglass, Layers, LogOut, PauseCircle, RefreshCw, Undo2, Wallet, type LucideIcon } from "lucide-react";
 import {
   BlockState, Button, Cell, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Input, JudgmentPoints, KeepText, Notice,
   PageHeader, Panel, RatioBar, RdPage, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr, type StateTone,
 } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
-import { businessClock, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import { PaginationExemption } from "../design-kit";
 import {
@@ -96,8 +96,6 @@ const POSITION_STATES: Record<StateKey, { label: string; tone: StateTone; icon: 
 };
 const positionStateLabel = (state: string): string => POSITION_STATES[state as StateKey]?.label ?? "状态未知";
 const rowState = (status: string) => POSITION_STATES[status.toLowerCase() as StateKey];
-/** 「计算奖励中」但已过到期时间的仓位：后端只在用户读仓位时转为到期未领，这页按读取时间和到期时间比出来，不改状态。 */
-const OVERDUE = { label: "已过到期时间", tone: "warn" as StateTone, icon: AlarmClock, meaning: "按这次读取的时间比，已过到期时间，状态还是计算奖励中：用户在 App 里打开质押仓位后才会变成到期未领，后台看这页不会改状态。和到期未领一样等用户自己领取，系统不会自动发放。" };
 
 const STAGES: readonly { key: string; title: string; explain: string; states: readonly StateKey[] }[] = [
   { key: "locked", title: "还在锁定", explain: "待确认和计算奖励中的仓位，本金还没回到用户手里。用户在 App 里打开质押仓位后才会变成到期未领，所以过了到期时间的也会留在这里，单独标出。", states: ["pending_lock", "active"] },
@@ -220,15 +218,6 @@ export function G1Staking() {
   const active = countOf("active") ?? 0;
   const mature = countOf("mature_unclaimed") ?? 0;
   const open = pending + active + mature;
-  // 已过到期时间：按这次读取的时间和每笔的到期时间比（后端按 unlock_at <= now 转为到期未领）。只在读到的行里数，没读全时是下限。
-  const pastDue = (row: G1PositionRow) => readAt !== null && parseBusinessTime(row.unlockAt) <= readAt;
-  const isOverdue = (row: G1PositionRow) => row.status.toLowerCase() === "active" && pastDue(row);
-  const pendingRows = groupByStatus.get("pending_lock")?.rows ?? [];
-  const activeRows = groupByStatus.get("active")?.rows ?? [];
-  const overdue = activeRows.filter(pastDue).length;
-  const overdueCut = active > activeRows.length;
-  const lockedCut = overdueCut || pending > pendingRows.length;
-  const atLeast = overdueCut ? "至少" : "";
 
   const firstWithRows = STATE_ORDER.find((key) => (groupByStatus.get(key)?.count ?? 0) > 0);
   const shownState: StateKey = state ?? (["mature_unclaimed", "active", "pending_lock"] as const).find((key) => (groupByStatus.get(key)?.count ?? 0) > 0) ?? firstWithRows ?? "mature_unclaimed";
@@ -247,20 +236,14 @@ export function G1Staking() {
   // 查找只在已读到的行里找：读到的行数少于总数的状态，可能还有更早的仓位没显示。
   const cut = STATE_ORDER.filter((key) => { const g = groupByStatus.get(key); return g !== undefined && g.count > g.rows.length; });
 
-  const conclusion = mature + overdue > 0
+  const conclusion = mature > 0
     ? <Conclusion state="warn" explain={COUNT_EXPLAIN}
-        hint={overdue > 0
-          ? <>其中{atLeast} {fmtCount(overdue)} 笔已过到期时间，状态还是计算奖励中，用户在 App 里打开质押仓位后才会变成到期未领。到期后由用户自己领取，系统不会自动发放。</>
-          : "到期后由用户自己领取，系统不会自动发放；这页只能查看。"}>
-        质押已退役，还有 {fmtCount(open)} 笔历史仓位没结清，其中{atLeast} {fmtCount(mature + overdue)} 笔已到期、等用户领取
+        hint="到期后由用户自己领取，系统不会自动发放；这页只能查看。">
+        质押已退役，还有 {fmtCount(open)} 笔历史仓位没结清，其中 {fmtCount(mature)} 笔已到期、等用户领取
       </Conclusion>
     : open > 0
       ? <Conclusion state="neutral" explain={COUNT_EXPLAIN}
-          hint={[...pendingRows, ...activeRows].some(pastDue)
-            ? "到期后由用户自己领取。"
-            : lockedCut
-              ? "读到的仓位都还没到到期时间；每种状态只读到最近更新的 50 笔，没读到的看不到到期时间。到期后由用户自己领取。"
-              : "这些仓位都还没到到期时间；到期后由用户自己领取。"}>
+          hint="到期后由用户自己领取。">
           质押已退役，还有 {fmtCount(open)} 笔历史仓位在锁定中
         </Conclusion>
       : noPositions
@@ -302,8 +285,7 @@ export function G1Staking() {
           explain={COUNT_EXPLAIN} />
         <Stat tone="role-1" icon={Wallet} label="锁定中的本金" value={usdtText(stats.usdtPoolUsd)} unit="USDT"
           explain="待确认、计算奖励中、到期未领三种仓位的锁定金额合计，只算四档 USDT 历史质押。这页只查这四档，不含 UVT 质押。" />
-        <Stat tone={mature + overdue > 0 ? "warn" : "role-3"} icon={CalendarClock} label="到期未领" value={fmtCount(mature)} unit="笔"
-          sub={overdue > 0 ? `另有${atLeast} ${fmtCount(overdue)} 笔已过到期时间` : undefined}
+        <Stat tone={mature > 0 ? "warn" : "role-3"} icon={CalendarClock} label="到期未领" value={fmtCount(mature)} unit="笔"
           explain="已到期、等用户自己领取的仓位。系统不会自动发放，后台也不能代领。只算状态已经是到期未领的；过了到期时间、状态还是计算奖励中的另写在下面一行，只在读到的仓位里数，没读全时写「至少」。" />
         <Stat tone="role-1" icon={Coins} label="奖励估计" value={usdtText(stats.interestUsd)} unit="USDT" sub="整期估计 · 含四档以外产品"
           explain="「计算奖励中」「到期未领」仓位开仓时算好的整期奖励之和，不按已锁天数折算。还含四档以外的产品，和上面的仓位范围对不上，正在修。不是已产生或已发放的奖励，只作量级参考。" />
@@ -362,7 +344,6 @@ export function G1Staking() {
                       onClick={() => selectState(key)}>
                       <span className="g1-lane-name"><Icon size={14} strokeWidth={1.9} aria-hidden />{key === "early_withdrawn" ? `本月${meta.label}` : meta.label}</span>
                       <span className="g1-lane-count">{count === null ? <>—<small>没读到</small></> : <>{fmtCount(count)}<small>笔</small></>}</span>
-                      {key === "active" && overdue > 0 && <span className="g1-lane-flag">{atLeast && `${atLeast} `}{fmtCount(overdue)} 笔已过到期时间</span>}
                     </button>
                   );
                 })}
@@ -403,7 +384,6 @@ export function G1Staking() {
             )}
             {rows.map((row) => {
               const meta = rowState(row.status);
-              const late = isOverdue(row);
               return (
                 <Tr key={row.positionNo} selected={row.positionNo === current?.positionNo} onOpen={() => setCurrent(row)}>
                   <Td><Cell mono full main={<span className="g1-no"><span className="g1-no-head">{row.positionNo.slice(0, -8)}</span><span className="g1-no-tail">{row.positionNo.slice(-8)}</span></span>} title={row.positionNo} /></Td>
@@ -411,9 +391,7 @@ export function G1Staking() {
                   <Td><Cell main={operatorCopyText(row.tier)} sub={row.lockedApy} title={`${operatorCopyText(row.tier)}，下单时年奖励率 ${row.lockedApy}`} /></Td>
                   <Td align="right"><Cell num main={rowAmount(row.amount)} /></Td>
                   <Td><Cell num main={dateText(row.unlockAt)} sub={dateText(row.lockedAt)} title={`到期 ${timeText(row.unlockAt)}，开始 ${timeText(row.lockedAt)}`} /></Td>
-                  <Td>{late
-                    ? <Cell main={<StatusTag tone={OVERDUE.tone} icon={OVERDUE.icon}>{OVERDUE.label}</StatusTag>} sub="状态还是计算奖励中" title={`${OVERDUE.meaning}（${noteText(row.note)}）`} />
-                    : <Cell main={meta ? <StatusTag tone={meta.tone} icon={meta.icon}>{meta.label}</StatusTag> : <StatusTag tone="neutral">{operatorCopyText(row.statusLabel)}</StatusTag>} sub={noteText(row.note)} title={noteText(row.note)} />}</Td>
+                  <Td><Cell main={meta ? <StatusTag tone={meta.tone} icon={meta.icon}>{meta.label}</StatusTag> : <StatusTag tone="neutral">{operatorCopyText(row.statusLabel)}</StatusTag>} sub={noteText(row.note)} title={noteText(row.note)} /></Td>
                 </Tr>
               );
             })}
@@ -424,7 +402,6 @@ export function G1Staking() {
 
       {current && (() => {
         const meta = rowState(current.status);
-        const late = isOverdue(current);
         const nickname = operatorNicknameText(current.nickname);
         return (
           <Drawer open onClose={() => setCurrent(null)} title="仓位详情" sub={current.positionNo} icon={Layers} tone="role-2"
@@ -432,9 +409,7 @@ export function G1Staking() {
             nav={{ onPrev: () => setCurrent(rows[index - 1]), onNext: () => setCurrent(rows[index + 1]), hasPrev: index > 0, hasNext: index >= 0 && index < rows.length - 1 }}
             footer={<Decision note="只能查看，这里不能手动改仓位。" primary={<Button onClick={() => setCurrent(null)}>关闭</Button>} />}>
             <JudgmentPoints rows={[
-              late
-                ? { label: "状态", value: <StatusTag tone={OVERDUE.tone} icon={OVERDUE.icon}>{OVERDUE.label}</StatusTag>, reason: OVERDUE.meaning }
-                : { label: "状态", value: meta ? <StatusTag tone={meta.tone} icon={meta.icon}>{meta.label}</StatusTag> : operatorCopyText(current.statusLabel), reason: meta?.meaning },
+              { label: "状态", value: meta ? <StatusTag tone={meta.tone} icon={meta.icon}>{meta.label}</StatusTag> : operatorCopyText(current.statusLabel), reason: meta?.meaning },
               { label: "锁定金额", value: `${rowAmount(current.amount)} USDT` },
               { label: "到期", value: timeText(current.unlockAt) },
               { label: "用户", value: <>{nickname} · {reach("/users/search", "user_c1hub_read") ? <Link className="rd-link" href={`/users/search/${encodeURIComponent(current.userNo)}`} prefetch={false}>{current.userNo}</Link> : current.userNo}</> },
