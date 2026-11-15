@@ -4,7 +4,7 @@ import { formatAdminApiError } from "./error-messages";
 import type { PendingMutationRecord } from "./pending-mutation-store";
 
 export type FundCommandOrigin = Omit<ECommandLocator, "commandKey"> & {
-  readAuthority: "finance_d2_read" | "finance_d3_read" | "device_e4_read";
+  readAuthority: "finance_d2_read" | "finance_d3_read" | "device_e4_read" | "emergency_j1_read" | "risk_k1_read" | "bi_l1_read" | "user_c1hub_read" | "finance_d5_read" | "finance_d6_read" | "finance_d7_read";
 };
 export type FundCommandRecord = PendingMutationRecord & { commandOrigin?: FundCommandOrigin };
 export type FundInvestigationOutcome = { receipt: ECommandInvestigation | null } | { error: string };
@@ -44,7 +44,7 @@ export async function checkFundCommand(record: FundCommandRecord, evidence?: ECo
     || typeof origin.originalPath !== "string" || !origin.originalPath.startsWith("/api/admin/")) throw new Error(formatAdminApiError("INVESTIGATION_ORIGINAL_LOCATOR_INVALID", "INVESTIGATION_RECEIPT_UNREADABLE"));
   if (evidence ? !access.canSubmit : !access.canRead) throw new Error(formatAdminApiError("COMMAND_INVESTIGATION_FORBIDDEN", "COMMAND_INVESTIGATION_FORBIDDEN"));
   const locator = { ...origin, commandKey: record.commandKey };
-  if (evidence) return investigateECommand(record, locator, evidence);
+  if (evidence) return investigateECommand(record, locator, evidence, origin.readAuthority);
   return discoverECommand(locator);
 }
 

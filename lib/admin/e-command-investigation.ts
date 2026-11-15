@@ -37,7 +37,7 @@ export function eCommandSettled(receipt: ECommandInvestigation | null) {
 }
 
 /** UI eligibility only; the endpoint also enforces active employment, original read scope and evidence. */
-export function canInvestigateECommand(authority: "device_e2_read" | "device_e5_read" | "device_e6_read" | "device_e4_read" | "finance_d2_read" | "finance_d3_read") {
+export function canInvestigateECommand(authority: string) {
   const session = useAdminAuth.getState().session;
   return session?.role === "superadmin" && session.authorities.includes("platform_a2_unknown_investigate")
     && session.authorities.includes(authority);
@@ -50,7 +50,11 @@ function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvesti
     : locator.originalPath.startsWith("/api/admin/finance/withdrawals/") ? /^D2(?:[_:])/.test(String(row.scope))
       : locator.originalPath.startsWith("/api/admin/treasury/") ? /^D3(?:[_:])/.test(String(row.scope))
         : locator.originalPath.startsWith("/api/admin/devices/orders/") ? /^E4(?:[_:])/.test(String(row.scope))
-          : /^(E2_POOL_|E5_DEVICE_)/.test(String(row.scope)) || row.scope === "E6_PHONE_RISK_SETTINGS";
+          : locator.originalPath.startsWith("/api/admin/emergency/kill-switches/") ? /^J1(?:[_:])/.test(String(row.scope))
+            : locator.originalPath.startsWith("/api/admin/risk/multi-account/") ? /^K1(?:[_:])/.test(String(row.scope))
+              : locator.originalPath === "/api/admin/bi/reports" || locator.originalPath.startsWith("/api/admin/bi/reports/") ? row.scope === "L_BI_REPORT_CREATE" || /^L_BI_REPORT_ACTION/.test(String(row.scope))
+                : locator.originalPath.startsWith("/api/admin/users/profiles/") || locator.originalPath.startsWith("/api/admin/devices/users/") ? /^C[1-6](?:[_:])/.test(String(row.scope))
+                  : /^(E2_POOL_|E5_DEVICE_)/.test(String(row.scope)) || row.scope === "E6_PHONE_RISK_SETTINGS";
   if (!Number.isSafeInteger(row.originalRecordId) || Number(row.originalRecordId) < 1
     || typeof row.scope !== "string" || !scopeMatches
     || row.commandKey !== locator.commandKey || row.originalMethod !== locator.originalMethod || row.originalPath !== locator.originalPath
@@ -99,12 +103,12 @@ export async function discoverECommand(locator: ECommandLocator): Promise<EComma
 }
 
 /** Missing receipts, forbidden reads, processing writers and insufficient evidence never release a local record. */
-export async function investigateECommand(record: PendingMutationRecord, locator: ECommandLocator, evidence: ECommandEvidence) {
-  const authority = locator.originalPath === "/api/admin/config/phone-calibration/risk" ? "device_e6_read"
+export async function investigateECommand(record: PendingMutationRecord, locator: ECommandLocator, evidence: ECommandEvidence, readAuthority?: string) {
+  const authority = readAuthority ?? (locator.originalPath === "/api/admin/config/phone-calibration/risk" ? "device_e6_read"
     : locator.originalPath.startsWith("/api/admin/finance/withdrawals/") ? "finance_d2_read"
       : locator.originalPath.startsWith("/api/admin/treasury/") ? "finance_d3_read"
         : locator.originalPath === "/api/admin/platform/audit/operations" || locator.originalPath.startsWith("/api/admin/devices/orders/") ? "device_e4_read"
-    : locator.originalPath.includes("/task-pools/") ? "device_e2_read" : "device_e5_read";
+    : locator.originalPath.includes("/task-pools/") ? "device_e2_read" : "device_e5_read");
   if (!canInvestigateECommand(authority)) throw Object.assign(new Error("COMMAND_INVESTIGATION_FORBIDDEN"), { status: 403, backendMessage: "COMMAND_INVESTIGATION_FORBIDDEN" });
   const original = await discoverECommand(locator);
   if (!original) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
