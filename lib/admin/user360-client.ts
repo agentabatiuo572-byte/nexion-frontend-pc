@@ -155,6 +155,14 @@ export interface UserRegistrationRiskStats extends JsonRecord {
   captchaTemporarilyDisabled?: boolean | null;
   captchaRestoreAt?: string | null;
   captchaRemainingSeconds?: number | string | null;
+  otpIncludesRegistration?: boolean | null;
+  otpCountsSuccessfulSends?: boolean | null;
+  captchaTriggeredProducerFound?: boolean | null;
+  countsUseBusinessDay?: boolean | null;
+  stuffingClusters7dIsCredentialStuffing?: boolean | null;
+  stuffingClusters7dCountsMultiAccountThresholdHits?: boolean | null;
+  stuffingClusters7dCountsFirstInsertedOnly?: boolean | null;
+  stuffingClusters7dIncludesAllDispositions?: boolean | null;
 }
 
 export interface UserRegistrationRiskParam extends JsonRecord {
@@ -192,6 +200,9 @@ export interface UserRegistrationRiskOverview extends JsonRecord {
   k1Path?: string | null;
   sources?: string[] | null;
   redlines?: string[] | null;
+  captchaAlwaysScenes?: Array<"REGISTER" | "LOGIN" | "RESET"> | null;
+  h5RegisterCaptcha?: boolean | null;
+  h5RegisterMissingDeviceCaptcha?: boolean | null;
 }
 
 export interface UserSecurityQuery {
@@ -1116,6 +1127,16 @@ function requireC6Overview(value: unknown): UserRegistrationRiskOverview {
     || (value.captchaAfterSends as number) > 50
     || !c6Numeric(value.configVersion)) return c6ResponseInvalid();
   const stats = value.stats;
+  // Optional on older backends; absence remains unknown rather than a false scope flag.
+  for (const key of ["otpIncludesRegistration", "otpCountsSuccessfulSends", "captchaTriggeredProducerFound", "countsUseBusinessDay",
+    "stuffingClusters7dIsCredentialStuffing", "stuffingClusters7dCountsMultiAccountThresholdHits", "stuffingClusters7dCountsFirstInsertedOnly", "stuffingClusters7dIncludesAllDispositions"]) {
+    if (stats[key] != null && typeof stats[key] !== "boolean") return c6ResponseInvalid();
+  }
+  for (const key of ["h5RegisterCaptcha", "h5RegisterMissingDeviceCaptcha"]) {
+    if (value[key] != null && typeof value[key] !== "boolean") return c6ResponseInvalid();
+  }
+  if (value.captchaAlwaysScenes != null && (!Array.isArray(value.captchaAlwaysScenes)
+    || value.captchaAlwaysScenes.some(scene => !["REGISTER", "LOGIN", "RESET"].includes(scene)))) return c6ResponseInvalid();
   for (const key of ["otpToday", "captchaTriggeredToday", "lockedShort", "lockedLong", "locked", "stuffingClusters7d", "captchaRemainingSeconds"]) {
     if (!c6Numeric(stats[key])) return c6ResponseInvalid();
   }

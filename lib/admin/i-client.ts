@@ -5,7 +5,7 @@ import { parseIOverview, parseNotificationCampaign, parseNovaSocialEventPage, pa
 import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { parseI4SectionVersion } from "./i4-trust-contract";
+import { parseI4PublishedSnapshot, parseI4SectionVersion } from "./i4-trust-contract";
 import { parseI6Course, parseI6CourseVersion, parseI6Issue, parseI6Json, parseI6Message, parseI6Overview } from "./i6-learning-contract";
 
 type ApiResult<T> = {
@@ -366,6 +366,11 @@ export async function fetchI6LearningOverview(): Promise<I18nLearningOverview> {
 
 export async function fetchI4TrustOverview(): Promise<TrustDisclosureOverview> {
   return parseIOverview("I4", await apiRequest("/trust-disclosure/overview")) as TrustDisclosureOverview;
+}
+
+/** I4-only read; the backend requires content_i4_read, including for unavailable snapshots. */
+export async function fetchI4PublishedSnapshot(signal?: AbortSignal): Promise<TrustPublishedSnapshotView> {
+  return parseI4PublishedSnapshot(await apiRequest("/trust-disclosure/published-snapshot", { signal }));
 }
 
 /** Preserve BigDecimal budget digits at each I3 JSON boundary, following the E6/G7 decimal boundary convention. */
@@ -1236,6 +1241,22 @@ export type TrustDisclosureStats = {
   weeklyGateBlocked: number;
   reackJurisdiction?: string;
   reackPct?: number;
+};
+
+export type TrustPublishedSnapshotView = {
+  sampledAt: string;
+  available: boolean;
+  reason: string | null;
+  source: string | null;
+  sourceEnvironment: string;
+  runId: string | null;
+  sections: Array<{
+    sectionKey: string;
+    version: string | null;
+    available: boolean;
+    reason: string | null;
+    fields: Array<{ key: string; cleared: boolean; reason: string | null }>;
+  }>;
 };
 
 export type TrustSectionView = {

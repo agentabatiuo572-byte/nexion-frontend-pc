@@ -198,6 +198,16 @@ export function transferTargetLabel(t: TransferTarget): string {
   return t.kind === "agent" ? t.name : t.kind === "queue" ? t.queue : STANDBY_POOL_LABEL;
 }
 
+export type ConversationWriteState = {
+  threadOwnerAgentId: string | null;
+  threadOwnerAgentName: string | null;
+  currentAssignmentAgentId: string | null;
+  currentAssignmentAgentName: string | null;
+  writableConversationNo: string | null;
+  // Current-thread identity only; existing account/permission checks still apply.
+  canReply: boolean;
+};
+
 export type SessionConvo = {
   id: string;          // 镜像前端 Conversation.id
   version: number;     // 后端会话头版本,所有核心写入必须携带 CAS
@@ -219,6 +229,7 @@ export type SessionConvo = {
   owner: string;       // 后台分配坐席
   messages: SessionMsg[]; // 镜像前端 messages{sender,text,ctaHref,ts}
   detailReady?: boolean; // True means detail loaded; history completeness is separate.
+  writeState?: ConversationWriteState | null;
   historyTruncated?: boolean; // Only false confirms a loaded detail covers the complete history.
   lastPreview?: string;
   lastPublicMessageId?: number | null; // Positive = public message exists; zero = empty; missing/null = unknown.

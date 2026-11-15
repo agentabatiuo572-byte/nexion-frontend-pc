@@ -1269,7 +1269,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
   const canWriteM3 = isSuperAdmin || Boolean(authorities?.includes("service_m3_write"));
   const conversationsAvailable = ctx.pget("I.session.conversationsAvailable") === "1";
   const owned = Boolean(conv?.customerId && currentAdminId && conv.ownerAdminId === currentAdminId && conv.type !== "ai" && conv.status === "open");
-  const canWrite = canWriteM3 && Boolean(supportReadModes?.includes("PERSONAL")) && conversationsAvailable && owned && conv?.detailReady === true;
+  const canWrite = canWriteM3 && Boolean(supportReadModes?.includes("PERSONAL")) && conversationsAvailable && owned && conv?.detailReady === true && conv.writeState?.canReply !== false;
   const canReviewAll = isSuperAdmin || Boolean(supportReadModes?.includes("MANAGED"));
   const privateScopeLost = conversationsAvailable && (!conv || conv.ownerAdminId !== currentAdminId && !canReviewAll);
   const dockSlot = pendingForAdmin?.fingerprint ?? `dock|${currentAdminId}|${conv?.id ?? ""}`;

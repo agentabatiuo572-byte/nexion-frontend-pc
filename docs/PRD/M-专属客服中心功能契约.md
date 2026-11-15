@@ -1,5 +1,11 @@
 # M 专属客服中心功能契约
 
+## 2026-11-16 M3/M4 只读增量（hd-sync10）
+
+- M3 后端 `b22edbe3` 管理详情的可空 `writeState`：`threadOwnerAgentId/Name`、`currentAssignmentAgentId/Name`、`writableConversationNo` 均为字符串或 null，`canReply` 为布尔。只表示当前分配下最新 advisor/support 线程是否等于本条，不授予账号发送权限。PC 在详情入口校验一次并传入 `SessionConvo.writeState`；显式 false 加入现有 writable 禁用条件，原有资格、写权、归属、接待状态、消息上下文保护保持。旧响应缺字段/为 null 保持原行为，不影响创建新线程和原结果核查。
+- M3 没有适合旧线程禁用原因的现成句子；现有回退句「只有这位客户的专属客服能发消息，主管查看时不能代发。」不能解释“本人负责但旧线程不可写”。本轮不改界面，原因及线程归属展示交视觉 worker。
+- M4 后端 `a7a1fd26` 的 `faqLastModifiedBy` 是 FAQ id→当前版本修改人显示名/null。只匹配本版本的服务端 outbox 事件，查不到不回退旧人。PC 在知识库接收边界校验 map，保留到 `MContentData.faqLastModifiedBy` 和 `I.support.faqLastModifiedBy`；缺字段/null 为未知，FAQ 本体及写请求不增加管理员信息。修改人显示交视觉 worker，现有更新时间/版本位置可承接。
+
 **2026-11-12 接待恢复补充**：结束请求被 SUPPORT_SESSION_CHANGED 明确拒绝后立即重读当前接待，保留原请求和人工核实解除资格；当前接待变化不改原 ref。人工解除仅移除所选命令，从剩余原记录中恢复提示与查询入口，并再次重读接待；旧无 ref 记录继续保留，不能因新命令解除而隐藏或结案。
 
 **2026-11-12 M3 接待实例同步（后端 66ecdb47）**：读取接待状态保留 `sessionRef`，新结束命令带 `{sessionRef}`，按操作者／客户／接待实例保存原号和内容。未知先查原号，成功回执先于当前实例校验收尾；精确未找到后，只有有原 ref 且未满 24 小时才可按原 ref 原号补发。`SUPPORT_SESSION_CHANGED` 表示这一次接待已变，原结束请求不再适用，不能改绑新接待。旧无 ref 记录只查询，24 小时内外均不重发、不补当前 ref、不自动清号。若旧记录已超期且原号精确未找到，当前为本人接待、ref 中 UTC started_at 明确晚于旧命令创建时间，操作者可再次点结束当前接待，形成独立的绑定新实例的意图；旧号和旧记录仍保留，新成功不将旧操作结案。依据 SupportSessionService.end:102–125、SupportReceptionMapper.receive:37–44。其他未知／无权限／实例未读取时继续保留保护。

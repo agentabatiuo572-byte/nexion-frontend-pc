@@ -1329,6 +1329,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 ### 9.3 C 用户与账户
 
+**2026-11-16 C6 管理读取元数据（hd-sync10，后端 6015e7e4）**：`UserRegistrationRiskStats` 接入可选 `otpIncludesRegistration`、`otpCountsSuccessfulSends`、`captchaTriggeredProducerFound`、`countsUseBusinessDay`、`stuffingClusters7dIsCredentialStuffing`、`stuffingClusters7dCountsMultiAccountThresholdHits`、`stuffingClusters7dCountsFirstInsertedOnly`、`stuffingClusters7dIncludesAllDispositions`；当前值依次为 false/false/false/true/false/true/true/true。概览接入 `captchaAlwaysScenes`（REGISTER/LOGIN/RESET 子集）、`h5RegisterCaptcha` 和 `h5RegisterMissingDeviceCaptcha`。在现有接收边界校验非空值类型，旧响应缺字段/null 保持未知。只补只读合同，不修改统计、认证、关闭窗口、权限或页面；口径与作用范围展示由视觉 worker 接入。
+
 | 弹窗 ID | 标题 | B1 红线预检 | 细则 |
 |---|---|---|---|
 | C2-MD1 | 冻结账户确认 | — | v1 C2④ |
@@ -1496,6 +1498,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | H6-MD2 | watcher tick 间隔变更 | 是 | v3 H6④a |
 
 ### 9.9 I 内容与合规 CMS
+
+**2026-11-16 I4 实际公开状态读取（hd-sync10，后端 bcf0125b）**：新增 `fetchI4PublishedSnapshot(signal?)` 读取 `GET /api/admin/content/trust-disclosure/published-snapshot`，复用内容代理的 trust-disclosure 白名单、会话令牌和错误处理，此精确路径只允许 GET，后端仅授予 `content_i4_read`。返回 `sampledAt/available/reason/source/sourceEnvironment/runId/sections`；每节为 `sectionKey/version/available/reason/fields`，每项为 `key/cleared/reason`。可空字符串保留 null；失效快照仍返回成功管理响应及六节不可用占位，不能将 available=false 当请求失败。`cleared` 只表示非空原值被清空，reason 可以非空但 cleared=false；不包含被扣下的值，也不是语言派生后 App 的完整文字。读取函数暂不由页面调用，旧环境不自动请求新接口；原页面推断暂保留，由视觉 worker 决定展示与读取时机。
 
 **I4 删除草稿冲突理由（2026-11-15）**：删除确认的首次修订冲突将本次确认的理由和原 sectionKey 直接交给冲突核对，不再误取未打开的草稿编辑器保存说明。核对后仍删除原栏目/原版本，带回原理由，重新确认才以最新 revision 和新命令号提交。保存草稿继续保留完整 draftEditor 及保存说明；共用确认框无需为此重置表单。
 

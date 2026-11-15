@@ -1,10 +1,31 @@
-import type { TrustSectionVersionView } from "./i-client";
+import type { TrustPublishedSnapshotView, TrustSectionVersionView } from "./i-client";
 
 export type TrustField = { key: string; label: string; value: string };
 export const APP_FIELD_LIMIT = 80;
 export const APP_SECTION_ORDER = ["financials", "leadership", "nexNarrative", "complianceBadges", "auditsReserves", "listings"] as const;
 const APP_FIELD_KEY = /^[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+)*$/;
 const LANGUAGES = "zh|vi|en|id|ms|fil|ru|kk|uz";
+
+/** Canonical public status before language derivation; no withheld content values are returned. */
+export function parseI4PublishedSnapshot(value: unknown): TrustPublishedSnapshotView {
+  const row = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  if (!row || typeof row.sampledAt !== "string" || typeof row.available !== "boolean"
+    || typeof row.sourceEnvironment !== "string"
+    || ["reason", "source", "runId"].some(key => row[key] !== null && typeof row[key] !== "string")
+    || !Array.isArray(row.sections) || !row.sections.every(section => section && typeof section === "object" && !Array.isArray(section)
+      && typeof section.sectionKey === "string" && typeof section.available === "boolean"
+      && (section.version === null || typeof section.version === "string")
+      && (section.reason === null || typeof section.reason === "string")
+      && Array.isArray(section.fields) && section.fields.every((field: unknown) => {
+        if (!field || typeof field !== "object" || Array.isArray(field)) return false;
+        const item = field as Record<string, unknown>;
+        return typeof item.key === "string" && typeof item.cleared === "boolean"
+          && (item.reason === null || typeof item.reason === "string");
+      }))) {
+    throw new Error("I4 返回数据格式异常，请刷新重试");
+  }
+  return row as TrustPublishedSnapshotView;
+}
 
 /** Storage and HTTP responses enter here once; empty legacy fields and timestamps are legal. */
 export function parseI4SectionVersion(value: unknown): TrustSectionVersionView {
@@ -52,7 +73,7 @@ export function i4TrilingualFields(fields: readonly Pick<TrustField, "key" | "va
 
 /** Mirror OpsTrustDisclosureService.isSafeTrustSectionLink:1586–1654 at 24972948.
  * Java URI does not normalize whitespace, percent escapes, host names or dot segments like URL does.
- * Keep this with the public blanking rule until I4-BE-06 supplies a canonical projection.
+ * Page inference remains until the visual pass connects fetchI4PublishedSnapshot.
  */
 function safeLink(value: string): boolean {
   if (!value || value !== value.trim() || value.length > 2048 || /[\\\x00-\x1f\x7f-\x9f]/.test(value)
@@ -97,7 +118,7 @@ const UNSUPPORTED_SUBHERO = new Set([
 ]);
 
 /** Inference from normal-runtime publishedSections:179–194, backend 24972948.
- * Admin overview does not expose runtime/public projection (I4-BE-06); this is not a public read receipt.
+ * Admin overview alone does not expose the public projection; the page does not yet read the new snapshot.
  */
 export function appBlanking(sectionKey: string, operator: string, fields: readonly TrustField[]): { all?: string; keys: Set<string> } {
   const keys = new Set<string>();

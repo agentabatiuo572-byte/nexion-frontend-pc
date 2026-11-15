@@ -65,6 +65,11 @@ async function proxy(request: Request, context: RouteContext) {
   }
   const targetPath = backendPath(path);
   if (!targetPath) return jsonError(404, "CONTENT_ROUTE_NOT_FOUND");
+  // bcf0125b: the existing trust-disclosure whitelist includes this I4 read.
+  // Authorization remains the backend's content_i4_read check, using the session token below.
+  if (path.length === 2 && path[0] === "trust-disclosure" && path[1] === "published-snapshot" && request.method !== "GET") {
+    return jsonError(405, "METHOD_NOT_ALLOWED");
+  }
   if (path[0] === "support-workbench" && path[1] === "customers" && path[3] === "payment-password") {
     const payment = paymentPasswordSupportRoute(path);
     if (!payment) return jsonError(404, "CONTENT_ROUTE_NOT_FOUND");

@@ -25,6 +25,7 @@ export type { MTicketAssigneeCandidate } from "@/lib/admin/m-support-read-contra
 import type {
   AdvisorScript,
   CustomerProfile,
+  ConversationWriteState,
   SessionCategory,
   SessionConvo,
   SessionMsg,
@@ -220,6 +221,7 @@ type ContentConversationDetail = {
   messages?: ContentConversationMessageView[];
   historyTruncated?: boolean;
   customerProfile?: ConversationCustomerProfile;
+  writeState?: ConversationWriteState | null;
 };
 
 type SupportFaqView = {
@@ -255,6 +257,7 @@ type SupportKnowledgeOverview = {
   queues?: string[];
   escalations?: string[];
   sources?: string[];
+  faqLastModifiedBy?: Record<string, string | null> | null;
 };
 
 const SLA_CATEGORIES = ["account", "withdrawal", "deposit", "hardware", "earnings", "genesis", "technical", "other"] as const;
@@ -286,6 +289,9 @@ function assertSupportKnowledgeOverview(value: unknown): SupportKnowledgeOvervie
   };
   if (!value || typeof value !== "object" || Array.isArray(value)) malformed();
   const overview = value as SupportKnowledgeOverview;
+  if (overview.faqLastModifiedBy != null && (typeof overview.faqLastModifiedBy !== "object"
+    || Array.isArray(overview.faqLastModifiedBy)
+    || Object.values(overview.faqLastModifiedBy).some(name => name !== null && typeof name !== "string"))) malformed();
   const arrays = [
     overview.faqs,
     overview.sla,
@@ -489,6 +495,7 @@ export type MContentData = {
   tickets: SupportTicket[];
   conversations: SessionConvo[];
   faqs: SupportFaq[];
+  faqLastModifiedBy?: Record<string, string | null> | null;
   sla: SupportSla[];
   loadConfig: MLoadConfig;
   agentState: MAgentState;
@@ -1198,6 +1205,13 @@ function assertConversationDetail(value: unknown): ContentConversationDetail {
   if (!value || typeof value !== "object") throw new Error("M3_CONVERSATION_DETAIL_INVALID");
   const detail = value as ContentConversationDetail;
   assertConversationRow(detail.conversation);
+  const state = detail.writeState;
+  if (state != null && (typeof state !== "object" || Array.isArray(state)
+    || typeof state.canReply !== "boolean"
+    || (["threadOwnerAgentId", "threadOwnerAgentName", "currentAssignmentAgentId", "currentAssignmentAgentName", "writableConversationNo"] as const)
+      .some(key => state[key] !== null && typeof state[key] !== "string"))) {
+    throw new Error("M3_CONVERSATION_DETAIL_INVALID");
+  }
   if ((detail.historyTruncated !== undefined && typeof detail.historyTruncated !== "boolean")
     || !Array.isArray(detail.messages) || !detail.messages.every((message) =>
     message
@@ -1358,6 +1372,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     owner: str(base.ownerAgentName, "Unassigned"),
     messages,
     detailReady,
+    writeState: "writeState" in detail ? detail.writeState : undefined,
     historyTruncated: "historyTruncated" in detail ? detail.historyTruncated : undefined,
     lastPreview: str(base.lastMessage),
     lastPublicMessageId: base.lastPublicMessageId,
@@ -1710,7 +1725,7 @@ export async function sendM5Command(command: M5Command, commandKey: string): Pro
 
 export async function readSupportKnowledge() {
   const knowledge = assertSupportKnowledgeOverview(await apiRequest<unknown>("/knowledge/overview"));
-  return { faqs: knowledge.faqs!.map(adaptFaq), sla: knowledge.sla!.map(adaptSla), knowledgeAvailable: true };
+  return { faqs: knowledge.faqs!.map(adaptFaq), faqLastModifiedBy: knowledge.faqLastModifiedBy, sla: knowledge.sla!.map(adaptSla), knowledgeAvailable: true };
 }
 
 export async function fetchMContentData(onProgress?: (data: MContentData) => void, page?: string): Promise<MContentData> {
@@ -2039,6 +2054,7 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
     "I.support.tickets": JSON.stringify(data.tickets),
     "I.support.sla": JSON.stringify(data.sla),
     "I.support.faqs": JSON.stringify(data.faqs),
+    "I.support.faqLastModifiedBy": data.faqLastModifiedBy == null ? "" : JSON.stringify(data.faqLastModifiedBy),
     "I.support.agents": JSON.stringify(data.supportAgents),
     "I.support.agentsAvailable": data.supportAgentsAvailable ? "1" : "0",
     "I.support.agentsError": data.supportAgentsError,
