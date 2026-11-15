@@ -714,7 +714,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
             : <TrendLines label="近几个时段的覆盖率" ticks={coverageTicks.map((tick) => tick.slice(-5))} format={pctText} axisFormat={(value) => `${Number(value.toFixed(1))}%`} height={120}
               series={[{ key: "coverage", label: "覆盖率", slot: 4, values: coverageSeries }]}
               marks={[{ key: "red", text: `红线 ${pctText(redLine)}`, value: redLine, tone: "danger" }, { key: "healthy", text: `健康线 ${pctText(healthyLine)}`, value: healthyLine, tone: "ok" }]} />}
-          <p className="rd-note">{breaches.length ? `越线记录：${breaches.map((item) => `${coverageTicks[item.i]} ${item.label}`).join("；")}` : "越线记录：暂时没有这项数据"}</p>
+          <p className="rd-note">{breaches.length ? `越线记录：${breaches.map((item) => `${coverageTicks[item.i]} ${item.label}`).join("；")}` : "越线记录：系统还没提供这项数据，是否越线看上面的走势和红线"}</p>
         </div>
       </div>
     </Panel>
