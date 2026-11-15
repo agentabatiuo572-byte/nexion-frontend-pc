@@ -167,10 +167,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const adminId = useAdminAuth(state => state.session?.adminId);
   const activeRecovery = useRef<string | null>(null);
   const openActionConfirm = (req: ActionConfirmReq) => {
-    req = conflictDraft.action(req);
     const version = h4ReadVersion("overview");
     let retained: H4Command | undefined;
-    ctx.openActionConfirm({ ...req,
+    ctx.openActionConfirm(conflictDraft.action({ ...req,
       getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
       run: async (reason, value, businessValue) => {
         if (retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) {
@@ -188,13 +187,12 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
       },
-    });
+    }));
   };
   const openConfirm = (req: ConfirmReq) => {
-    req = conflictDraft.confirm(req);
     const version = h4ReadVersion("overview");
     let retained: H4Command | undefined;
-    ctx.openConfirm({ ...req, freezePendingInput: true,
+    ctx.openConfirm(conflictDraft.confirm({ ...req, freezePendingInput: true,
       getPendingReason: () => retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey) ? retained.reason : undefined,
       run: async (reason, value) => {
         if (retained && pendingH4Commands().some(r => r.commandKey === retained!.commandKey)) {
@@ -212,7 +210,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         }
         finally { retained = pendingH4Commands().find(r => !before.has(r.commandKey)); }
       },
-    });
+    }));
   };
   const canModuleWrite = ctx.can("growth_h4_write");
   const canWheelWrite = ctx.can("growth_h4_wheel_pool_write");
@@ -239,6 +237,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const [rules, setRules] = useState<EventRuleView[] | null>(null);
   const [raffles, setRaffles] = useState<AdminRaffle[] | null>(null);
   const [contentId, setContentId] = useState<string | null>(null);
+  const localizedDraft = useRef<{ code: string; field: string; locale: LocaleCode; value: string; reason: string } | null>(null);
   const reloadH4Approvals = async () => {
     const owner = useAdminAuth.getState().session?.adminId;
     setH4Approvals(null);
@@ -390,17 +389,22 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const openLocalizedContent = (code: string, field: "name" | "description" | "rewardName", locale: LocaleCode, source: string) => {
     if (h4Blocked(hiEventScope(code))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     const current = localizedValue(code, field, locale);
-    openActionConfirm({ briefKind: "config",
+    const saved = localizedDraft.current;
+    const draft = saved?.code === code && saved.field === field && saved.locale === locale ? saved : undefined;
+    openActionConfirm({ initialReason: draft?.reason, briefKind: "config",
       action: `编辑 ${locale.toUpperCase()} 内容 · ${source}`,
       title: `编辑${LOCALE_NAME[locale]}${FIELD_NAME[field]}`,
       effect: effectDirect,
       detail: <>不填时 App 显示英文或原文，不自动翻译。</>,
       facts: <Facts><Fact k="活动">{eventName(code)}</Fact><Fact k="原文">{source || "—"}</Fact></Facts>,
       reasonPlaceholder: "例如：补齐上线前的翻译",
-      edit: { kind: "text", current },
+      edit: { kind: "text", current, initialValue: draft?.value },
       run: async (reason, value) => {
         if (!value) return;
-        if (await apply(await updateH4LocalizedContent(code, field, locale, value, casExpected(current), reason))) toast(`${source} ${locale.toUpperCase()} 文案已保存`);
+        localizedDraft.current = { code, field, locale, value, reason };
+        const result = await updateH4LocalizedContent(code, field, locale, value, casExpected(current), reason);
+        localizedDraft.current = null;
+        if (await apply(result)) toast(`${source} ${locale.toUpperCase()} 文案已保存`);
       },
     });
   };
