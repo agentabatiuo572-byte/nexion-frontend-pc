@@ -77,11 +77,12 @@ export function E1Page() {
   const sending = useRef(false);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [rejected, setRejected] = useState<string[]>([]);
+  const [absent, setAbsent] = useState<string[]>([]);
   const [release, setRelease] = useState<E1Pending | null>(null);
   const [conflict, setConflict] = useState(false);
   const [conflictLatest, setConflictLatest] = useState<E1CatalogSnapshot | null>(null);
   const [attemptKey, setAttemptKey] = useState("");
-  const syncPending = useCallback(() => { const records = e1Pending(actor); setPending(records); setRejected(records.filter(r => r.retryRejection).map(r => r.commandKey)); setLegacy(e1LegacyCommands(actor)); setMedia(e1MediaCommands.list().filter(r => r.actorId === actor)); }, [actor]);
+  const syncPending = useCallback(() => { const records = e1Pending(actor); setPending(records); setAbsent(records.filter(r => r.absent && !r.receivedTicketId).map(r => r.commandKey)); setRejected(records.filter(r => r.retryRejection).map(r => r.commandKey)); setLegacy(e1LegacyCommands(actor)); setMedia(e1MediaCommands.list().filter(r => r.actorId === actor)); }, [actor]);
   useEffect(syncPending, [syncPending]);
   const refreshProducts = useCallback(async () => {
     setLoading(true); setError(null);
@@ -228,11 +229,14 @@ export function E1Page() {
     return send(e1Commands.list().find(r => r.commandKey === commandKey)!, false);
   };
   const check = async (record: { commandKey: string }, propagate = false) => {
+    const full = e1Pending(actor).find(r => r.commandKey === record.commandKey);
+    const store = full?.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands;
+    if (full) { store.remember(full.fingerprint, full.commandKey, { ...full, absent: false }); syncPending(); }
     try {
       const row = await fetchA2ProposalByKey(record.commandKey, true, true);
-      const full = e1Pending(actor).find(r => r.commandKey === record.commandKey);
       if (row && full && (!row.mine || row.obj !== full.spec.obj || full.receivedTicketId && row.id !== full.receivedTicketId)) throw new A2OutcomeUncertainError("没有读到原审批单，不能解除对象锁，请重试或到操作记录与审批核对", record.commandKey);
       if (!row && full?.receivedTicketId) throw new A2OutcomeUncertainError("没有读到原审批单，不能解除对象锁，请重试或到操作记录与审批核对", record.commandKey);
+      if (!row && full) { store.remember(full.fingerprint, full.commandKey, { ...full, absent: true }); syncPending(); }
       if (!row) { setNotes(n => ({ ...n, [record.commandKey]: "没有查到原审批单，不能据此认定没有提交；请保留原记录核对。" })); return; }
       setNotes(n => ({ ...n, [record.commandKey]: `原审批单 ${row.id} · ${{ pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[row.status] ?? "状态待核实"}` }));
       toast(`已找到原审批单 ${row.id}，原操作已有回执`);
@@ -243,6 +247,13 @@ export function E1Page() {
         if (row.status !== "pending") { await refresh(); await refreshEarly(); }
       }
     } catch (failure) { setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) })); if (propagate) throw failure; }
+  };
+
+  const releaseMissing = async (record: E1Pending) => {
+    if (String(useAdminAuth.getState().session?.adminId ?? "") !== record.actorId || !isRetryExpired(record) || record.receivedTicketId) return;
+    await check(record, true);
+    const current = e1Pending(record.actorId).find(r => r.commandKey === record.commandKey);
+    if (current?.absent && !current.receivedTicketId) { forgetE1(current); syncPending(); }
   };
 
   const confirm = async (reason: string, value?: string, business?: Record<string, string>) => {
@@ -338,7 +349,7 @@ export function E1Page() {
       {pending.filter(record => record.commandKey !== busy).map(record => <Notice key={record.commandKey} tone="warn" title="结果未确认" actionBelow action={<>
         <Button disabledReason={!canWrite ? "当前账号不能重试" : busy ? "正在提交原操作" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : undefined} onClick={() => { void send(record, true).catch(failure => toast(e1Error(failure))); }}>按原操作重试</Button>
         {canQuery && <Button disabled={!!busy} onClick={() => void check(record)}>读回核对</Button>}
-        {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button disabled={!!busy} onClick={() => setRelease(record)}>解除待确认</Button>}
+        {(rejected.includes(record.commandKey) && !isRetryExpired(record) || absent.includes(record.commandKey) && isRetryExpired(record)) && <Button disabled={!!busy} onClick={() => setRelease(record)}>解除待确认</Button>}
         {canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}
       </>}>
         <p><strong>{record.spec.obj}</strong> · {record.spec.action}</p>
@@ -373,7 +384,7 @@ export function E1Page() {
       </> : !canWrite ? "当前不能提交，请先核对权限和读取状态" : readBlock(mc)}
       onClose={() => setConfirmation(null)} onConfirm={confirm} />}
     {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在读取…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptDetail.after}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? APPROVAL : "审批已结束，此回执不再锁定对象；请按当前目录重新核对后编辑。"}</p></Drawer>}
-    {release && <ReleaseModal label={`${release.spec.obj} · ${release.spec.action}`} onCancel={() => setRelease(null)} onConfirm={() => { forgetE1(release); syncPending(); setRelease(null); }} />}
+    {release && <ReleaseModal label={`${release.spec.obj} · ${release.spec.action}`} onCancel={() => setRelease(null)} onConfirm={() => { if (isRetryExpired(release)) { void releaseMissing(release).then(() => setRelease(null), failure => toast(e1Error(failure))); } else { forgetE1(release); syncPending(); setRelease(null); } }} />}
     {toastNode}
   </RdPage>;
 }
