@@ -190,7 +190,7 @@ const STATE_ICON = { draft: FileText, active: CheckIcon, paused: Pause, archived
 const DIM_ICON = { 金额: Coins, 速度: Gauge, 新账户: Users, 地址信誉: ShieldCheck };
 const REASON_PLACEHOLDER = "例如：依据提现风险复核工单，调整新账户的检查条件";
 const UNKNOWN_RESULT_TEXT = "结果未知，可能已经生效，已保留原请求。可以查询原结果，或按原请求重试。";
-const CASH_NOTICE = "这项操作可能让平台多付钱。K3 接口目前不检查资金。";
+const CASH_NOTICE = "这项操作可能让平台多付钱，保存时不检查资金。";
 const ACTIVE_EFFECT = "保存后直接用于后续评估；已创建提现在放行复核时也可能按当前规则判断。";
 const CREATE_EFFECT = "先保存草稿，不参与提现检查；启用后才参与后续评估。";
 const PAUSE_EFFECT = "之后评估不再使用此规则，可能减少拦截；已有延迟或冻结单不会因此立即打款。";
@@ -517,7 +517,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
         {invalidActive && <Notice tone="warn">生效规则包含历史放行或未知格式条件，请由风控负责人核查；只按原权限停用、归档。</Notice>}
         <Conclusion state={invalidActive || missing.length ? "warn" : "neutral"} icon={missing.length ? ShieldAlert : ShieldCheck}
           hint={missing.length === 4 ? "仅指本页检查未拦截，提现仍按审核与合规规则处理。" : missing.length ? "缺少的类别尚未参与检查，请核对是否需要补齐规则。" : undefined}
-          explain="只计算完整概览中的已启用规则投影；草稿、已停用和已归档规则不参与检查。四类齐全不代表所有提现安全，也不表示立即打款。">
+          explain="只算完整概览里已启用的规则；草稿、已停用和已归档规则不参与检查。四类齐全不代表所有提现安全，也不表示立即打款。">
           {invalidActive ? "生效规则需要核查，暂时无法判断检查是否完整" : missing.length === 4 ? "尚未配置生效规则，目前提现按默认规则放行" : missing.length ? `检查不完整 · 缺${missing.join("、")}` : "金额、速度、新账户、地址信誉均有生效规则"}
         </Conclusion>
         <StatBand cards label="四类检查覆盖">{byDimension.map((group) => {
@@ -582,7 +582,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
       footer={detail && <Decision others={ruleActions(detail, true)} />}>
       {detail && <><JudgmentPoints rows={[{ label: "当前状态", value: <RuleTag state={detail.state} /> }, { label: "条件", value: conditionCopy(detail) }, { label: "命中处置", value: <ActionTag action={detail.action} /> }, { label: "优先级 / 版本", value: `P${detail.priority} / v${detail.version}` }, { label: "检查维度", value: dimensionLabel(detail.dimension) }, { label: "内置标记", value: detail.builtIn ? "内置" : "自建" }]} />
         {editableReason(detail) && <Notice tone="warn">{editableReason(detail)}</Notice>}{locked(detail.ruleId) && <Notice tone="warn">这条规则有结果未知的原操作，暂时不能发起新的变更。</Notice>}
-        <Fold title="技术信息" inset summary="原条件与接口字段"><KeyValues rows={[{ key: "raw", label: "conditionText", value: detail.conditionText }, { key: "state", label: "state", value: detail.state }, { key: "action", label: "action", value: detail.action }]} /></Fold></>}
+        <Fold title="技术信息" inset summary="原条件与原始数据"><KeyValues rows={[{ key: "raw", label: "conditionText", value: detail.conditionText }, { key: "state", label: "state", value: detail.state }, { key: "action", label: "action", value: detail.action }]} /></Fold></>}
     </Drawer>
     <Drawer open={!!hitDetail} onClose={() => setHitDetail(null)} title="触发记录详情" sub={hitDetail?.withdrawalNo} icon={History}>
       {hitDetail && <><KeyValues rows={[

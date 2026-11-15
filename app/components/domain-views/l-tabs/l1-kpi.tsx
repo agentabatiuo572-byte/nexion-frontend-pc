@@ -303,7 +303,7 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
           {!expired && retryRejected && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除待确认</Button>}
         </>}>
           {formatBusinessTimeFull(new Date(pending.createdAt).toISOString(), "—")}（{businessZone().label}）发出，任务可能已经生成，不要重新导出。<KeepText text={expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !ctx.canExport ? "这个账号已没有导出权限，不能重试，请有权限的同事处理。" : "重发原内容，已成功的不会重复执行。"} />{exportPage(`到「${pageName}」核对`)}
-          <Explain label="技术信息" content={`命令号 ${pending.commandKey} ｜ 理由 ${pending.reason}`} />
+          <Explain label="技术信息" content={`原请求编号 ${pending.commandKey} ｜ 理由 ${pending.reason}`} />
           {!expired && retryNote && <div><KeepText text={retryNote} /></div>}
         </Notice>
       )}
@@ -320,17 +320,17 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
 /** fx 公式渲染:fxBold 词高亮(cyan b),其余纯文本。 */
 /** 后端第 6 项写成了推送送达，事件实际是 Nova 站内通知发出。只改这页显示，等后端同步。 */
 const NOVA_FX = "nova.push_clicked ÷ nova.push_sent";
-const NOVA_PLAIN = "Nova 通知操作去重用户 ÷ Nova 站内通知发出去重用户";
+const NOVA_PLAIN = "Nova 通知操作用户数 ÷ Nova 站内通知发出用户数";
 const NOVA_NOTE = "统计的是站内通知事件，不代表手机系统推送送达率。";
 
 function renderFx(fx: string, bold: string[]) {
   const firstYield = /^device\.first_yield_received\.latency_sec ≤ ([0-9.]+) ÷ auth\.register_completed$/.exec(fx);
   fx = firstYield ? `${firstYield[1]} 秒内收到首笔收益的人数 ÷ 注册完成人数` : ({
     "day7 app.dau ÷ register cohort": "注册满 7 天当日的活跃人数 ÷ 同批注册人数",
-    "store.viewed distinct user ÷ auth.register_completed": "浏览商城的去重用户数 ÷ 注册完成人数",
-    "checkout.completed ÷ store.viewed": "支付完成的去重用户数 ÷ 浏览商城的去重用户数",
+    "store.viewed distinct user ÷ auth.register_completed": "浏览商城的用户数 ÷ 注册完成人数",
+    "checkout.completed ÷ store.viewed": "支付完成的用户数 ÷ 浏览商城的用户数",
     "device holder referral.invite_sent ÷ device holders": "发出邀请的设备持有者人数 ÷ 设备持有者人数",
-    "nova.push_clicked ÷ nova.push_sent": "有 Nova 通知操作事件的去重用户数 ÷ 有 Nova 站内通知发出事件的去重用户数。不代表手机系统推送送达率。",
+    "nova.push_clicked ÷ nova.push_sent": "有 Nova 通知操作的用户数 ÷ 收到 Nova 站内通知的用户数（同一人只算一次）。不代表手机系统推送送达率。",
     "L1 referred first commission.paid ÷ referral.bound": "直接邀请的好友中带来首笔团队奖励的人数 ÷ 直接邀请的好友人数",
     "genesis.purchased cumulative 1,000 days": "累计售出 1,000 个节点所用的自然日数",
   } as Record<string,string>)[fx] ?? fx;

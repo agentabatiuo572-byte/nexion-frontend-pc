@@ -535,8 +535,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       key: record.commandKey,
       label: cregisCommandLabel(record.path),
       createdAt: record.createdAt,
-      hint: replayable ? "先读回核对；按原操作重试用同一个命令号，不会重复执行。"
-        : "这项操作未接入命令号去重，不能重试。读回只展示当前事实，记录保留到关标签页。",
+      hint: replayable ? "先读回核对；按原操作重试重发同一份原请求，不会重复执行。"
+        : "这项操作不能按原请求重试。读回只显示现在的状态，记录保留到关掉标签页。",
       blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : (refund ? canRefund : canManage) ? undefined : "这个账号没有这项权限",
       auditHref: "/platform/audit?domain=D",
       verify: () => verifyCregisCommand(record),

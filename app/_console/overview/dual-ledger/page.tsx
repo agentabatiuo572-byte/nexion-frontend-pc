@@ -543,10 +543,10 @@ export default function DualLedgerPage() {
       <Stat tone="role-1" icon={Wallet} label="可用储备" value={amountText(reserveUsd, statDigits)} unit="USDT"
         sub={prev.reserveUsd === 0 ? "24 小时前是 0，不算变化" : `较 24 小时前 ${reserveChg > 0 ? "+" : reserveChg < 0 ? "−" : ""}${fmtPct(Math.abs(reserveChg))}`}
         href={reserveLink ? "/finance/pool" : undefined} openLabel="可用储备，去资金储备与应付款"
-        explain={`平台现在能动用的钱：已确认的储备账本、VietQR 已收款，减去还锁着的质押本金，不低于 0。不是用户钱包余额，也不是链上在线核对的余额。24 小时前的值 = 现在的储备 − 这 24 小时的净流入。接口数值 ${reserveUsd} USDT。`} />
+        explain={`平台现在能动用的钱：已确认的储备账本、VietQR 已收款，减去还锁着的质押本金，不低于 0。不是用户钱包余额，也不是链上在线核对的余额。24 小时前的值 = 现在的储备 − 这 24 小时的净流入。原始数值 ${reserveUsd} USDT。`} />
       <Stat tone="role-2" icon={ReceiptText} label="应付款" value={valuationReliable ? amountText(liabilitiesUsd, statDigits) : TREASURY_VALUATION_UNAVAILABLE} unit={valuationReliable ? "USDT" : undefined}
         sub={`${accounts.length} 类`}
-        explain={`平台之后要付给用户的九类钱，全口径合计，不是都能马上提现。构成在下面「应付款构成」。${UVT_NOTE}${valuationReliable ? `接口数值 ${liabilitiesUsd} USDT。` : ""}`} />
+        explain={`平台之后要付给用户的九类钱，全口径合计，不是都能马上提现。构成在下面「应付款构成」。${UVT_NOTE}${valuationReliable ? `原始数值 ${liabilitiesUsd} USDT。` : ""}`} />
       <Stat icon={Scale} iconTone="role-other" label="差额（储备 − 应付款）"
         value={valuationReliable ? `${netShown < 0 ? "−" : ""}${amountText(Math.abs(netShown), statDigits)}` : TREASURY_VALUATION_UNAVAILABLE}
         unit={valuationReliable ? "USDT" : undefined}
@@ -615,7 +615,7 @@ export default function DualLedgerPage() {
           },
           {
             key: "risk", label: "提现风险评分均值",
-            explain: "只算进行中的 USDT 提现，没有风险评分的单按 0 算，不是全部用户的平均。接口没有上一时段的值，所以不写变化。",
+            explain: "只算进行中的 USDT 提现，没有风险评分的单按 0 算，不是全部用户的平均。系统没给上一时段的值，所以不写变化。",
             value: <span className="b1-kv-value">{linked("/risk/scoring", scoreLink, "提现风险评分均值，去风险评分", `${avgRiskScore} / 100`)}</span>,
           },
         ]} />

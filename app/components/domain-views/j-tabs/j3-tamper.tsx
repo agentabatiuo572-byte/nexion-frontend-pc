@@ -153,7 +153,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       facts: (
         <Facts>
           <Fact k="时间范围">{WINDOW_TEXT[window]}（从生成报表的时刻往前算）</Fact>
-          <Fact k="内容">各接口的拦截汇总，和这个范围内全部达到告警阈值的账户（不只是当前页）</Fact>
+          <Fact k="内容">各入口的拦截汇总，和这个范围内全部达到告警阈值的账户（不只是当前页）</Fact>
           <Fact k="脱敏">用户编号只留首字符和末 4 位，比如 U****1234；不含昵称、手机号</Fact>
           <Fact k="上限">达到告警阈值的账户超过 10,000 个时不能导出，请换短一点的时间范围</Fact>
           <Fact k="文件">CSV 文件，确认后由浏览器下载，没有下载链接</Fact>
@@ -376,7 +376,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
   const deltaText = deltaPrevPct === null ? `${PREVIOUS_SPAN[win]}为 0，无法比较`
     : `比${PREVIOUS_SPAN[win]} ${deltaPrevPct > 0 ? "+" : ""}${deltaPrevPct}%`;
   const conclusionExplain = <>
-    <p>拦截次数是{W}里系统已经处理完的拦截事件之和，只统计已登记的 {data.coverage.registeredCount} 类接口；还没处理完的事件不算在内。</p>
+    <p>拦截次数是{W}里系统已经处理完的拦截事件之和，只统计已登记的 {data.coverage.registeredCount} 类入口；还没处理完的事件不算在内。</p>
     <p>账户达到告警阈值：{W}内被拦次数 ≥ {num(alertThreshold)} 次（每 24 小时 {data.alertConfig.threshold} 次 × {win === "24h" ? 1 : win === "7d" ? 7 : 30}）。</p>
   </>;
 
@@ -399,8 +399,8 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
         : <Conclusion state="ok" icon={ShieldCheck} explain={conclusionExplain}>{W}没有拦截记录</Conclusion>}
 
     {!coverageComplete && (
-      <Notice tone="warn" title={`还有 ${data.coverage.registeredCount - data.coverage.activeCount} 类接口没接入拦截统计`}>
-        这些接口被篡改时不会出现在这页，「没有拦截」只说明已接入的 {data.coverage.activeCount} 类接口：{data.coverage.missingPaths.map((key) => PATH_NAMES[key] ?? key).join("、")}。
+      <Notice tone="warn" title={`还有 ${data.coverage.registeredCount - data.coverage.activeCount} 类入口没接入拦截统计`}>
+        这些入口被篡改时不会出现在这页，「没有拦截」只说明已接入的 {data.coverage.activeCount} 类入口：{data.coverage.missingPaths.map((key) => PATH_NAMES[key] ?? key).join("、")}。
       </Notice>
     )}
 
@@ -408,7 +408,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
       scope={<Segments<J3Window> label="篡改趋势时间范围" value={win}
         items={WINDOWS.map((value) => ({ value, label: WINDOW_TEXT[value], disabled: accountLoading && value !== win }))}
         onChange={loadWindow} />}
-      sort={<span className="rd-filter-result">时间范围管拦截次数、走势、接口、告警账户和导出</span>} />
+      sort={<span className="rd-filter-result">时间范围管拦截次数、走势、入口、告警账户和导出</span>} />
 
     <StatBand label="篡改拦截统计" fit>
       <Stat lead={accountTotal === 0 && totalPath > 0} tone="role-2" icon={ShieldAlert} label={`${W}拦截`} value={num(totalPath)} unit="次" sub={deltaText}
@@ -428,7 +428,7 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
       <Panel title="拦截走势" icon={ChartColumn} tone="role-2" sub={`${W} · ${win === "24h" ? "按小时" : "按天"} · ${zone}`}
         explain="只画有拦截的时段，没有拦截的时段不占位，所以柱子之间的间隔不代表时间长短。都是已被拦下的请求。">
         {!data.hasData || d.pts.length === 0
-          ? <BlockState state="empty" title={`${W}没有拦截记录`} detail={coverageComplete ? undefined : "没接入的接口不在统计里。"} />
+          ? <BlockState state="empty" title={`${W}没有拦截记录`} detail={coverageComplete ? undefined : "没接入的入口不在统计里。"} />
           : <>
             <ColumnChart label={`${W}每${win === "24h" ? "小时" : "天"}的拦截次数`} height={220} format={(value) => `${num(value)} 次`} axisFormat={num}
               series={[{ label: "拦截次数", slot: 2 }]}
@@ -437,11 +437,11 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
           </>}
       </Panel>
 
-      <Panel title="被拦最多的接口" icon={Route} tone="role-2" sub={`${W} · 共 ${num(totalPath)} 次`}
-        explain="按接口统计被拦下的篡改请求，从多到少排。中文名后面是接口的内部编号；账户数是被拦过的不同账户。">
+      <Panel title="被拦最多的入口" icon={Route} tone="role-2" sub={`${W} · 共 ${num(totalPath)} 次`}
+        explain="按入口统计被拦下的篡改请求，从多到少排。中文名后面是入口的编号；账户数是被拦过的不同账户。">
         {TAMPER_PATHS.length === 0
           ? <BlockState state="empty" title={`${W}没有篡改记录`} />
-          : <BarList label={`${W}各接口的拦截次数`} slot={2}
+          : <BarList label={`${W}各入口的拦截次数`} slot={2}
               rows={TAMPER_PATHS.map((path) => ({
                 key: path.id,
                 label: <span className="j3-path" title={path.desc || undefined}>
@@ -499,9 +499,9 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
     </div>
 
     <Fold title="统计范围" icon={ListChecks} tone="role-other"
-      summary={`已登记 ${data.coverage.registeredCount} 类接口，${data.coverage.activeCount} 类在统计里 · 数据来源：系统实际拦截记录`}
-      explain="已登记是后端发布时登记的拦截接口清单，不是实时探测；统计只算已经处理完的拦截事件。">
-      <ul className="j3-coverage" aria-label="已登记的拦截接口">
+      summary={`已登记 ${data.coverage.registeredCount} 类入口，${data.coverage.activeCount} 类在统计里 · 数据来源：系统实际拦截记录`}
+      explain="已登记的是系统发布时登记的拦截入口，不是实时探测；统计只算已经处理完的拦截事件。">
+      <ul className="j3-coverage" aria-label="已登记的拦截入口">
         {data.coverage.registeredPaths.map((key) => {
           const active = data.coverage.activePaths.includes(key);
           return (

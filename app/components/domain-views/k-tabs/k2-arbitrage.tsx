@@ -87,7 +87,7 @@ const K2_PARAM_HELP: Record<string, { label: string; what: string; effect: strin
   },
   leaderboardVelocityMultiplier: {
     label: "刷榜增速倍数",
-    what: "本周佣金在最近两次快照之间的增长，达到全体正增长中位数的多少倍算刷榜；比较符选「超过」时要严格大于。已标记刷榜的账户不参与算中位数。",
+    what: "本周佣金在最近两次统计之间的增长，达到全体正增长中位数的多少倍算刷榜；比较符选「超过」时要严格大于。已标记刷榜的账户不参与算中位数。",
     effect: "调低会多出命中；调高后不再达到的未处置命中会消失。",
   },
 };
@@ -272,7 +272,7 @@ const VIEW_UI: Record<string, ViewUi> = {
   },
   board: {
     name: "排行榜刷榜", icon: TrendingUp, subject: "账户", objectSub: { label: "账户组", index: 4 },
-    what: "本周佣金在最近两次快照（每 5 分钟一次）之间的增长，达到全体正增长中位数的检测倍数；比较符选「超过」时要严格大于。",
+    what: "本周佣金在最近两次统计（每 5 分钟一次）之间的增长，达到全体正增长中位数的检测倍数；比较符选「超过」时要严格大于。",
     levelRule: "增长超过中位数 10 倍为 4 级，否则 3 级。",
     measure: "本周累计佣金和增速倍数都保留 2 位小数。",
     columns: [
@@ -910,7 +910,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
 
   const conclusionExplain = (
     <>
-      <p>按命中记录计数，不按用户去重；同一账户可能在几类里各有一条。</p>
+      <p>按命中记录计数，不按用户合并；同一账户可能在几类里各有一条。</p>
       <p>风险等级 0–5 级：2 级可疑，3 级判定异常，4、5 级高危。全部命中里 3 级及以上 {stat("loopConfirmed")} 条、2 级 {stat("loopWarn")} 条（含已处置）。</p>
       <p>系统约每分钟检测一次，打开本页时也会检测。</p>
     </>

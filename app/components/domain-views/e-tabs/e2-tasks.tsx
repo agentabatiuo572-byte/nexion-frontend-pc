@@ -282,7 +282,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         if (eCommandSettled(receipt)) await refresh();
         else ctx.toast("核查结论已记录，后端仍记为结果未知，原操作继续锁定。");
       }} />}
-    {pools.state === "error" && <BlockState state="error" title={pools.data.length ? "任务等级读取失败，以下为上次快照，暂不能操作" : "任务等级读取失败"} detail={pools.error} onRetry={() => void refresh()} />}
+    {pools.state === "error" && <BlockState state="error" title={pools.data.length ? "任务等级读取失败，以下是上次读到的数据，暂不能操作" : "任务等级读取失败"} detail={pools.error} onRetry={() => void refresh()} />}
     {(pools.state !== "error" || pools.data.length > 0) && <div className="e2-levels"><StatBand cards role="tablist" label="任务等级">
       {(pools.data.length ? pools.data.map(data => ({ code: data.code, name: data.name, data })) : FIXED_DEVICE_LEVELS.map(card => ({ ...card, data: undefined }))).map(({ data: level, ...card }, index) => {
         const loaded = !!level;
@@ -360,7 +360,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             : impactError ? <BlockState state="error" title="停用影响读取失败" detail={impactError} onRetry={() => void readImpact(dialog)} retryLabel="重新计算影响" />
               : impact && <>{dialog.original && <p className="rd-aux">首次读取的影响 · {impactAt ? businessStamp(impactAt) : "—"} · {businessZoneText()}</p>}
                 {impact.productsLosingAllTasks.length > 0 ? <Notice tone="warn" title="以下商品将没有可用任务"><ul className="e2-command-tasks">{impact.productsLosingAllTasks.map(item => <li key={item.productKey}>{item.productName}</li>)}</ul>
-                  <Facts><Fact lead tone="warn" k="影响设备" unit={<>台<Explain label="影响设备的口径" content="按商品全部已发布等级判断候选。设备数统计已激活且未停用、状态合格的非手机生产设备；正在完成当前单的设备也计入，当前单照常完成。不等于设备管理列表总数。影响是读取时的快照，提交时设备数可能变化。" /></>}>{impact.devicesAffected}</Fact></Facts><p>当前单照常完成，之后等待配置；停跑期间不计收益、不补发。</p>
+                  <Facts><Fact lead tone="warn" k="影响设备" unit={<>台<Explain label="影响设备的口径" content="按商品全部已发布等级判断候选。设备数统计已激活且未停用、状态合格的非手机生产设备；正在完成当前单的设备也计入，当前单照常完成。不等于设备管理列表总数。影响按读取时算，提交时设备数可能变化。" /></>}>{impact.devicesAffected}</Fact></Facts><p>当前单照常完成，之后等待配置；停跑期间不计收益、不补发。</p>
                 </Notice> : <Notice tone="neutral">没有商品会失去全部可用任务；当前单照常完成。</Notice>}</>}</>}
           {!dialog.original && dialog.kind === "random" && <><Field label="任务数量" required help="1–50 个，整数" explain="每次添加 1–50 个，默认启用。各类任务的时长范围见「技术信息」。" error={touched.count && !countReady ? "任务数量要填 1–50 的整数" : undefined}>
             <NumberInput unit="个" min={1} max={50} step={1} value={count} disabled={saving} onChange={event => setCount(event.target.value)} onBlur={() => setTouched(old => ({ ...old, count: true }))} /></Field>

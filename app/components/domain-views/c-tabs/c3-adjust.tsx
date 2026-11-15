@@ -97,7 +97,7 @@ const WAITING = "等待有批准权限的同事处理";
 const A2_WITHOUT_USER_DOMAIN = ["finance", "finance_lead", "growth", "content"];
 const AUDIT_ELSEWHERE = "请能查看「用户与账户」操作记录的同事按单号核对";
 const LARGE_EXPLAIN = "超过 500 USDT 等值，只有财务主管或超级管理员能发起。";
-const LARGE_REQUEST_RETIRED = "旧大额请求接口已退役，不能重试。原记录和对象锁继续保留，请按命令号核对。";
+const LARGE_REQUEST_RETIRED = "旧的大额申请入口已停用，不能重试。原记录保留，请到「操作记录与审批」核对。";
 /** 状态已被别人或系统改了：框不关，读回写最新状态（D2-C89）。 */
 const MOVED_CODES = ["ASSET_ADJUSTMENT_REVIEW_RACE_LOST", "INVALID_STATE_TRANSITION", "C3_ADJUSTMENT_WITHDRAW_CONFLICT", "C3_ADJUSTMENT_WITHDRAW_RACE_LOST", "C3_ALREADY_REVERSED", "C3_ONLY_ORIGINAL_APPROVED_ADJUSTMENT_REVERSIBLE"];
 
@@ -1405,10 +1405,10 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         </>}>
         <p>
           {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。
-          {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}。` : "按原操作重试会用同一个命令号重新发送，不会多建单，也不会重复入账。"}
+          {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}。` : "按原操作重试会重发同一份原请求，不会多建单，也不会重复入账。"}
           {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批按单号核对</Link></> : <KeepText text={`${AUDIT_ELSEWHERE}。`} />}
           <Explain label="这次操作的技术信息" rows={[
-            { k: "命令号", v: <span data-mono>{record.commandKey}</span> },
+            { k: "原请求编号", v: <span data-mono>{record.commandKey}</span> },
             { k: "操作人", v: record.operator },
             { k: "理由", v: record.reason ?? record.input?.reason },
           ]} />

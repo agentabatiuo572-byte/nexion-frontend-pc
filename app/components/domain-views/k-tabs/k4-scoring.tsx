@@ -935,7 +935,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
 
   const overrideTable = (
     <Panel title="手动改分记录" icon={FilePenLine} tone="role-other" sub={`共 ${fmt(overridesPage.total)} 条 · 生效中 ${fmt(overview.overrideActive)} 人`}
-      explain={<><p>谁、改了谁的分、改成多少、为什么。生效中的排在前面。</p><p>「系统评分」是改分那一刻的系统评分快照，之后不随重算变化，不一定等于改分前的有效分。「已失效」表示这次改分已经不生效：可能被恢复了系统评分，也可能被之后的又一次改分替换。</p><p>时间为{businessZone().label}。</p></>}
+      explain={<><p>谁、改了谁的分、改成多少、为什么。生效中的排在前面。</p><p>「系统评分」是改分那一刻的系统评分，之后不随重算变化，不一定等于改分前的有效分。「已失效」表示这次改分已经不生效：可能被恢复了系统评分，也可能被之后的又一次改分替换。</p><p>时间为{businessZone().label}。</p></>}
       actions={canRecompute ? <Button variant="danger-outline" disabledReason={overview.totalUsers > 1000 ? "超过 1000 人不能手动全部重算；发布评分规则会分批重算，但保留人工改分" : undefined} onClick={recomputeAll}>全部恢复系统评分</Button> : undefined}
       flush>
       <Table label="手动改分记录" className="k4-overrides">
