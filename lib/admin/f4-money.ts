@@ -11,6 +11,17 @@ export function f4Decimal(value: string | number): string | null {
   return `${match[1] === "-" && /[1-9]/.test(digits) ? "-" : ""}${whole.replace(/^0+(?=\d)/, "")}${fraction ? `.${fraction}` : ""}`;
 }
 
+/** top1/top5 use percentage points, matching OpsTeamService.parseDecimal. */
+export function f4HeadCapAmplifies(current: string, value: string): boolean {
+  const before = f4Decimal(current.replace(/[%,]/g, "")) ?? "0";
+  const after = f4Decimal(value.replace(/[%,]/g, "")) ?? "0";
+  const [beforeWhole, beforeFraction = ""] = before.split(".");
+  const [afterWhole, afterFraction = ""] = after.split(".");
+  const scale = Math.max(beforeFraction.length, afterFraction.length);
+  return BigInt(afterWhole + afterFraction.padEnd(scale, "0"))
+    > BigInt(beforeWhole + beforeFraction.padEnd(scale, "0"));
+}
+
 export function f4MonthlyCap(raw: string): string | null {
   const text = raw.trim().toUpperCase().replace(/[$,]/g, "");
   const multiplier = text.endsWith("K") ? 3 : text.endsWith("M") ? 6 : 0;

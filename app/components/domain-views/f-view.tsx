@@ -16,6 +16,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
+import { f4HeadCapAmplifies } from "@/lib/admin/f4-money";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import {
   addF1VRankReward,
@@ -1082,7 +1083,12 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     refreshF4,
     updateF4Config: async (key, value, reason, expectedVersion, expectedMaterialRevision) => {
       const vote = f4Overview?.voteWeights.find((row) => (row.configKey || `F.pool.votes.${row.v}`) === key);
-      await proposeFConfig("F4", key, value, reason, expectedVersion, vote ? Number(value) > vote.votes : undefined, expectedMaterialRevision);
+      const headCap = key === "F.pool.top1MaxPct" || key === "F.pool.top5MaxPct";
+      const current = f4Submission.current?.overview ?? f4Overview;
+      const amplifies = headCap && current
+        ? f4HeadCapAmplifies(current.configValues[key] ?? "", value)
+        : vote ? Number(value) > vote.votes : undefined;
+      await proposeFConfig("F4", key, value, reason, expectedVersion, amplifies, expectedMaterialRevision);
     },
     updateF4AmbassadorPolicy: async (policy, reason) => {
       const current = requireTeamApprovalSession("F4");
