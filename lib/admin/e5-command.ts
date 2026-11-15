@@ -22,11 +22,13 @@ export interface E5Command extends PendingMutationRecord {
   proof?: LegacyUnknownCandidate;
   retryRejection?: string;
   receivedTicketId?: string;
+  proposalAbsent?: boolean;
   proposalStatus?: A2OperationRow["status"];
 }
 export const e5Commands = createPendingMutationStore<E5Command>({
   storageKey: "nexion-admin-e5-full-commands-v1", retainExpiredRecords: true,
   isValidRecord: row => (row.receivedTicketId === undefined || typeof row.receivedTicketId === "string")
+    && (row.proposalAbsent === undefined || typeof row.proposalAbsent === "boolean")
     && (row.proposalStatus === undefined || ["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.proposalStatus))
     && (row.retryRejection === undefined || typeof row.retryRejection === "string")
     && typeof row.actorId === "string" && !!row.actorId && Number.isInteger(row.authEpoch)
@@ -77,15 +79,26 @@ export async function checkE5Command(record: E5Command, evidence?: ECommandEvide
 export async function queryE5Proposal(record: E5Command) {
   if (String(useAdminAuth.getState().session?.adminId ?? "") !== record.actorId
       || !["force-activate", "unbind", "legacy"].includes(record.intent)) throw new Error("管理员会话已变化，请重新进入设备页面。");
+  e5Commands.remember(record.fingerprint, record.commandKey, { ...record, proposalAbsent: false });
   const ticket = await fetchA2ProposalByKey(record.commandKey, true, true);
   if (!ticket) {
     if (record.receivedTicketId) throw new A2OutcomeUncertainError("提案缺少有效票号", record.commandKey);
+    e5Commands.remember(record.fingerprint, record.commandKey, { ...record, proposalAbsent: true });
     return null;
   }
   if (!ticket.mine || ticket.obj !== String(record.device.deviceId) || record.receivedTicketId && record.receivedTicketId !== ticket.id)
     throw new A2OutcomeUncertainError("提案缺少有效票号", record.commandKey);
-  if (ticket.status === "pending") e5Commands.remember(record.fingerprint, record.commandKey, { ...record, receivedTicketId: ticket.id, proposalStatus: ticket.status });
+  if (ticket.status === "pending") e5Commands.remember(record.fingerprint, record.commandKey, { ...record, receivedTicketId: ticket.id, proposalStatus: ticket.status, proposalAbsent: false });
   else e5Commands.forget(record.fingerprint, record.commandKey);
+  return ticket;
+}
+
+/** Visual handoff: invoke only after the original operator confirms release. Direct writes never qualify. */
+export async function releaseMissingE5Proposal(record: E5Command) {
+  if (!isRetryExpired(record) || record.receivedTicketId || record.proposalStatus)
+    throw new Error("已超过 24 小时，只能读回核对，原操作仍保留。");
+  const ticket = await queryE5Proposal(record);
+  if (!ticket) e5Commands.forget(record.fingerprint, record.commandKey);
   return ticket;
 }
 
