@@ -46,3 +46,7 @@
 ### 2026-11-15 J1 B38 受控核查
 
 直接 J1 scopes 与 A2 恢复提案受 `AdminCommandOrigin.supported:77–82` 支持。发出前保存原 method/path/adminId/readAuthority，重试保留原来源，不从后来账号重建；查询纯读 `commands/investigations/by-command-key`，证据可交同一 `checkInvestigation`。仅 `SUCCEEDED/CONFIRMED_SUCCEEDED` 或后端允许新操作的 `CONFIRMED_NOT_EXECUTED` 且未锁终态清记录并重读 J1。NOT_FOUND/FAILED/UNKNOWN/PROCESSING/错误均保留。旧记录缺 origin 不猜。依据 backend `04d11022` AdminCommandInvestigationService.discover/investigate/requireReader。现有解除说明、核查表单与独立恢复原请求重试入口由视觉补齐。
+
+### 2026-11-15 K1 B38 核查
+
+K1 direct scopes 与处置提案 A2_COMMAND 均支持，初发保原method/path/adminId/readAuthority，重试不覆盖。checkInvestigation(record,evidence?) 查询/提交同一原命令，只认已证明成功或已确认未执行且允许新操作的未锁终态；其余保留，旧无origin不能核。终态后重读账户组/收益。现有本地解除改查询，证据/结果/交接人显示及 direct 常驻查询入口交视觉。出处 backend `04d11022` AdminCommandOrigin:57–82、AdminCommandInvestigationService.discover/investigate；OpsRiskService.idempotentK1。
