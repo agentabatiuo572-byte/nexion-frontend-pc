@@ -257,7 +257,7 @@ export default function RhythmPage() {
             <span key={item.key} aria-disabled="true">{TARGET_NOTE[item.key] ?? operatorCopyText(item.label)} · 无访问权限</span>
           )
         ))}
-        <Explain label="相关页面是什么" content="这几页只给链接，这页不算效果。打开运营阶段设置会先记一条操作记录；其余直接打开，除了阶段不带这页的其他条件。" />
+        <Explain label="相关页面是什么" content="这几页只给链接，这页不算效果。打开运营阶段设置会记一条操作记录；其余直接打开，最多带上选的阶段，不带这页的其他条件。" />
       </nav>
     </RdPage>
   );
