@@ -324,7 +324,7 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, seatsLeft }
 
   // 名称这一列只放名称和提示图标（PG-46）；库存、阻断原因和入口是值的补充，排在值后面。
   const productLine = [
-    currentProduct && `库存 ${currentProduct.stock ?? 0}`,
+    currentProduct && stockText(currentProduct),
     productMissing && "不在可选列表",
     // 阻断原因要看得见，不只放在灰按钮的提示里（OP-126）。
     deadEndLead,

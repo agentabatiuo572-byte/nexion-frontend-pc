@@ -116,7 +116,7 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
     when: AT_PURCHASE,
     impact: "符合条件时再减这笔，并结算全部试用天数的收益",
     how: "0–100 USDT，最多两位小数，填 0 表示关闭。",
-    howMore: "试用期内购买才有；领取资料不全、或每日 USDT 和 UVT 收益有一项为 0 的试用没有。在购买减价和试用收益抵扣之后再减，最多减到应付 0 USDT。有立减时收益按全部试用天数结算：抵扣只用已累计的 USDT，其余收益购买后进余额，入账前查覆盖率。",
+    howMore: "试用期内购买才有；领取资料不全、或每日 USDT 或 UVT 收益为 0 的没有。在其他优惠之后再减，不超过还要付的钱。抵扣只用已累计 USDT，其余收益购买后进余额，入账前查覆盖率。",
     where: "App 试用详情的「额外立减」标题和「专享立减」明细，满足提前购买条件时出现",
     input: { unit: "USDT", min: 0, max: 100, step: 0.01 },
     whatIf: (value) => (Number(value) === 0 ? "改成 0：关闭提前购买立减和整期结算，购买时只结算已累计的收益。" : `改成 ${value}：符合提前购买条件时再减 ${value} USDT，并结算全部试用天数的收益；其他按已累计结算。`),
