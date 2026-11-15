@@ -399,3 +399,5 @@ M3 显示：后台会话消息带 `origin` 字段，欢迎语为 `"WELCOME"`，�
 ## 2026-11-15 B29／BUG-164 期间明细同步
 
 `supportAnalyticsClient.details` 接三个独立金融视图，严格 PERIOD_EVENT、UTC from/to、单币种、ALL 分类/首充/维护、无关键词。第一页不携带原总览版本，后页只回传当前新视图的 queryVersion；UNKNOWN 不续页。detailSummary 原始金额/符号与受限金额、三组计数独立解析，不从当前页求和，不暴露受限记录。个人净贡献与充值/购机首充、期间净额抽屉接新事实。原历史 FINANCE 与累计净额读取保留。现有三列表仅接客户与原金额，事实编号/成功时间/原客服组及 observedAmount 的新显示交视觉。后端 `04d11022` `SupportAnalyticsPrivateQueryService.validateView:116–130`、`financialDetails:132–184`、`query:70–94`；查询422、范围403/404、源不可用503、版本409均保留读取失败，不能冒充空表。
+
+2026-11-15 BUG-163：仅组管理原理由输入去掉原生 UTF-16 maxLength=200，沿已有 Array.from 的码点计数与8–200提交校验；共用输入、其他理由合同均未改。后端 `04d11022` `SupportGroupService` 组理由 codePointCount，8/200可提交，7/201拒绝。
