@@ -135,6 +135,23 @@ export function I6I18n({ ctx, errorText }: { ctx: ICtx; errorText: string | null
   );
 }
 
+function messagePublication(message?: I18nMessagePairView) {
+  const missingLocales = message
+    ? ([["中文", message.zh], ["英文", message.en], ["越南语", message.vi]] as const).filter(([, value]) => !value.trim()).map(([label]) => label)
+    : [];
+  const messageVariables = message
+    ? [message.zh, message.en, message.vi].map((value) => [...new Set(value.match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join("、"))
+    : [];
+  const variablesMatch = new Set(messageVariables).size === 1;
+  const qualityIssues = message ? i6CopyQualityIssues(message.zh, message.en, message.vi) : [];
+  const publicationIssues = [
+    ...missingLocales.map((locale) => `缺少${locale}文案`),
+    ...(missingLocales.length === 0 && !variablesMatch ? ["三语变量不一致"] : []),
+    ...qualityIssues,
+  ];
+  return { missingLocales, messageVariables, variablesMatch, qualityIssues, publicationIssues };
+}
+
 function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) {
   const { toast, openActionConfirm, openConfirm, actions: backendActions, content, contentLoading } = ctx;
   const latest = useRef(ctx);
@@ -410,19 +427,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const liveFeatured = (): string =>
     TUTORIAL_FEATURED_DEFAULT;
   const selectedMessage = MESSAGES.find((message) => message.messageKey === selectedMessageKey) ?? MESSAGES[0];
-  const missingLocales = selectedMessage
-    ? ([["中文", selectedMessage.zh], ["英文", selectedMessage.en], ["越南语", selectedMessage.vi]] as const).filter(([, value]) => !value.trim()).map(([label]) => label)
-    : [];
-  const messageVariables = selectedMessage
-    ? [selectedMessage.zh, selectedMessage.en, selectedMessage.vi].map((value) => [...new Set(value.match(/\{[a-zA-Z0-9_.-]+}/g) ?? [])].sort().join("、"))
-    : [];
-  const variablesMatch = new Set(messageVariables).size === 1;
-  const qualityIssues = selectedMessage ? i6CopyQualityIssues(selectedMessage.zh, selectedMessage.en, selectedMessage.vi) : [];
-  const publicationIssues = [
-    ...missingLocales.map((locale) => `缺少${locale}文案`),
-    ...(missingLocales.length === 0 && !variablesMatch ? ["三语变量不一致"] : []),
-    ...qualityIssues,
-  ];
+  const { missingLocales, messageVariables, variablesMatch, qualityIssues, publicationIssues } = messagePublication(selectedMessage);
   useEffect(() => {
     const messageKey = selectedMessage?.messageKey;
     if (view !== "i18n" || !messageKey) {
@@ -511,9 +516,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       },
     });
 
-  const pubKey = () =>
-    confirmI6(`message:${selectedMessage?.messageKey ?? ""}`, { briefKind: "content",
-      action: <>发布词条 · {selectedMessage?.messageKey ?? "未选择"} {selectedMessage?.version ?? ""}</>,
+  const pubKey = (message = selectedMessage) => {
+    const { missingLocales, messageVariables, variablesMatch, qualityIssues, publicationIssues } = messagePublication(message);
+    confirmI6(`message:${message?.messageKey ?? ""}`, { briefKind: "content",
+      action: <>发布词条 · {message?.messageKey ?? "未选择"} {message?.version ?? ""}</>,
       title: "发布文案",
       detail: (
         <>
@@ -526,64 +532,66 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       statedBrief: { impact: "App 下次成功拉取文案后换成这一版，切回前台会重新拉取。", check: "三种语言都读一遍，变量和占位一致。" },
       confirmLabel: "发布",
-      facts: selectedMessage && <Facts>
-        <Fact k="文案键">{selectedMessage.messageKey}</Fact>
-        <Fact k="发布版本">{selectedMessage.version}</Fact>
+      facts: message && <Facts>
+        <Fact k="文案键">{message.messageKey}</Fact>
+        <Fact k="发布版本">{message.version}</Fact>
         <Fact k="三种语言">{missingLocales.length === 0 ? "齐了" : `缺${missingLocales.join("、")}`}</Fact>
         <Fact k="变量">{messageVariables[0] || "无"}</Fact>
       </Facts>,
       amplifies: false,
       run: (reason) => {
-        if (!selectedMessage || selectedMessage.status !== "draft" || publicationIssues.length > 0) return false;
-        return runBackend(actions.publishI6LocalizedMessage(selectedMessage.messageKey, {
-          zh: selectedMessage.zh,
-          en: selectedMessage.en,
-          vi: selectedMessage.vi,
-          expectedVersion: selectedMessage.version,
-        }, reason), `${selectedMessage.messageKey} ${selectedMessage.version} 已发布`);
+        if (!message || message.status !== "draft" || publicationIssues.length > 0) return false;
+        return runBackend(actions.publishI6LocalizedMessage(message.messageKey, {
+          zh: message.zh,
+          en: message.en,
+          vi: message.vi,
+          expectedVersion: message.version,
+        }, reason), `${message.messageKey} ${message.version} 已发布`);
       },
     });
 
-  const archiveKey = () => selectedMessage && confirmI6(`message:${selectedMessage.messageKey}`, { briefKind: "record",
-    action: <>归档词条 · {selectedMessage.messageKey}</>,
+  };
+
+  const archiveKey = (message = selectedMessage) => message && confirmI6(`message:${message.messageKey}`, { briefKind: "record",
+    action: <>归档词条 · {message.messageKey}</>,
     title: "归档文案",
     detail: <>撤下这条远程文案；App 拉到新文案包后改用安装包里自带的文字（有的话）。历史版本保留，能回滚。</>,
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
     statedBrief: { impact: "App 不再拿到这条远程文案，屏幕上的字不一定消失。", check: "确认这条文字不再需要后台管理。" },
     confirmLabel: "归档",
     confirmTone: "danger",
-    facts: <Facts><Fact k="文案键">{selectedMessage.messageKey}</Fact><Fact k="现在">{selectedMessage.version} · 已发布</Fact></Facts>,
+    facts: <Facts><Fact k="文案键">{message.messageKey}</Fact><Fact k="现在">{message.version} · 已发布</Fact></Facts>,
     amplifies: false,
     run: (reason) => runBackend(actions.archiveI6LocalizedMessage(
-      selectedMessage.messageKey,
-      selectedMessage.version,
+      message.messageKey,
+      message.version,
       reason,
-    ), `${selectedMessage.messageKey} 已归档`),
+    ), `${message.messageKey} 已归档`),
   });
 
-  const rollbackMessageVersion = (target: I18nMessagePairView) =>
-    selectedMessage && confirmI6(`message:${selectedMessage.messageKey}`, { briefKind: "content",
-      action: <>回滚词条 · {selectedMessage.messageKey} → {target.version}</>,
+  const rollbackMessageVersion = (target: I18nMessagePairView, message = selectedMessage) =>
+    message && confirmI6(`message:${message.messageKey}`, { briefKind: "content",
+      action: <>回滚词条 · {message.messageKey} → {target.version}</>,
       title: `回滚到 ${target.version}`,
       detail: <>
         把这个旧版本的三语内容复制成一个新版本发布，旧记录不会被改动。
-        当前版本 <b>{selectedMessage.version}</b>，回滚到 <b>{target.version}</b>。
+        当前版本 <b>{message.version}</b>，回滚到 <b>{target.version}</b>。
       </>,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       statedBrief: { impact: `复制 ${target.version} 的三语发布成新版本，App 下次拉取文案时换成它；原来的版本和历史都保留。`, check: "逐语言看新旧对比。" },
       confirmLabel: "回滚",
       facts: <div className="rd-stack">
-        <Facts><Fact k="文案键">{selectedMessage.messageKey}</Fact><Fact k="版本"><Change from={`${selectedMessage.version}（现在）`} to={`新版本（复制 ${target.version}）`} /></Fact></Facts>
-        <CompareRows beforeLabel={`现在 ${selectedMessage.version}`} afterLabel={`回滚后（${target.version} 的内容）`}
-          rows={LANGS.map((item) => ({ key: item.key, label: item.label, before: langValue(selectedMessage, item.key), after: langValue(target, item.key) }))} />
+        <Facts><Fact k="文案键">{message.messageKey}</Fact><Fact k="版本"><Change from={`${message.version}（现在）`} to={`新版本（复制 ${target.version}）`} /></Fact></Facts>
+        <CompareRows beforeLabel={`现在 ${message.version}`} afterLabel={`回滚后（${target.version} 的内容）`}
+          rows={LANGS.map((item) => ({ key: item.key, label: item.label, before: langValue(message, item.key), after: langValue(target, item.key) }))} />
       </div>,
       amplifies: false,
       run: (reason) => runBackend(actions.rollbackI6LocalizedMessage(
-        selectedMessage.messageKey,
+        message.messageKey,
         target.version,
-        selectedMessage.version,
+        message.version,
         reason,
-      ), `${selectedMessage.messageKey} 已从 ${target.version} 恢复为新发布版本`),
+      ), `${message.messageKey} 已从 ${target.version} 恢复为新发布版本`),
     });
 
   const fixIntegrity = (issue: IntegrityIssue, form: Pick<CopyEditor, "zh" | "en" | "vi">) =>
@@ -1083,11 +1091,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       } else {
         rows = [{ label: "版本", left: opened ? state(opened) : String(input.expectedVersion ?? "—"), right: state(now), changed: !!now && now.version !== (opened?.version ?? input.expectedVersion) },
           ...LANGS.map((item) => conflictRow(item.label, opened?.[item.key], now?.[item.key]))];
-        const target = op === "message-rollback" ? conflict.latest?.messages?.find((row) => row.version === rejected?.version) : undefined;
+        const target = op === "message-rollback" ? conflict.latest?.messages?.find((row) => row.messageKey === key && row.version === rejected?.version) : undefined;
         if (op === "message-rollback" && conflict.latest && !target) gone = `回滚目标 ${rejected?.version ?? ""} 在最新读取里没有了。`;
-        rebuild = op === "message-publish" ? () => { carry(); pubKey(); }
-          : op === "message-archive" ? () => { carry(); archiveKey(); }
-            : target ? () => { carry(); rollbackMessageVersion(target); } : undefined;
+        rebuild = op === "message-publish" ? () => { carry(); pubKey(now); }
+          : op === "message-archive" ? () => { carry(); archiveKey(now); }
+            : target ? () => { carry(); rollbackMessageVersion(target, now); } : undefined;
       }
     } else if (scope.startsWith("course:")) {
       const id = scope.slice(7);
@@ -1398,9 +1406,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           primary={<Button variant="primary" disabledReason={editorBlocked} onBlockedClick={() => setCopyEditor({ ...copyEditor, tried: true })}
             onClick={() => copyEditor.mode === "fix" && copyEditor.issue ? fixIntegrity(copyEditor.issue, copyEditor) : editKeyDraft(copyEditor)}>{copyEditor.mode === "fix" ? "保存修复" : "保存草稿"}</Button>} />
       : <Decision
-          danger={sm.status === "published" ? <Button variant="danger-outline" icon={<Archive size={14} aria-hidden />} onClick={archiveKey}>归档</Button> : undefined}
+          danger={sm.status === "published" ? <Button variant="danger-outline" icon={<Archive size={14} aria-hidden />} onClick={() => archiveKey()}>归档</Button> : undefined}
           others={<Button icon={<Pencil size={14} aria-hidden />} onClick={() => startEdit("edit")}>编辑三语草稿</Button>}
-          primary={sm.status === "draft" ? <Button variant="primary" icon={<Send size={14} aria-hidden />} disabledReason={publicationIssues.length > 0 ? `暂不能发布：${publicationIssues.join("；")}` : undefined} onClick={pubKey}>发布</Button> : undefined} />;
+          primary={sm.status === "draft" ? <Button variant="primary" icon={<Send size={14} aria-hidden />} disabledReason={publicationIssues.length > 0 ? `暂不能发布：${publicationIssues.join("；")}` : undefined} onClick={() => pubKey()}>发布</Button> : undefined} />;
 
     return <>
       <Conclusion state={conclusionParts.length ? "warn" : "ok"} icon={conclusionParts.length ? TriangleAlert : BadgeCheck}
