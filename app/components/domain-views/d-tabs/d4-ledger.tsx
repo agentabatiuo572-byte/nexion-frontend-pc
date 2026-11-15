@@ -14,7 +14,7 @@ import {
   useTabIds, useTableColumns, type JudgmentRow, type StateTone,
 } from "@/app/components/rd";
 import { ADMIN_ERROR_MESSAGES, displayAdminReadError } from "@/lib/admin/error-messages";
-import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import {
   downloadD4BillsCsv,
   fetchD4Bills,
@@ -532,7 +532,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       { label: "金额", value: `${signed(bill)} ${unit(bill.asset)}` },
       { label: "变动后余额", value: `${amountText(bill.balanceAfter)} ${unit(bill.asset)}` },
       { label: "账户", tone: "users", value: userLabel(bill) },
-      { label: "时间", value: formatBusinessTimeCompact(bill.createdAt, "—") },
+      { label: "时间", value: <span title={formatBusinessTimeFull(bill.createdAt, "") || undefined}>{formatBusinessTimeCompact(bill.createdAt, "—")}</span> },
     ];
     if (check) {
       rows.push(check.breakDetected
@@ -887,7 +887,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
               <Fact k="原始备注">{shown.bill.remark ? <span data-mono>{shown.bill.remark}</span> : "—"}</Fact>
               <Fact k="业务类型原值"><span data-mono>{shown.bill.bizType}</span></Fact>
               <Fact k="方向">{`${credit(shown.bill) ? "入账" : "出账"}（${shown.bill.direction}）`}</Fact>
-              <Fact k="更新时间">{formatBusinessTimeCompact(shown.bill.updatedAt, "—")}</Fact>
+              <Fact k="更新时间"><span title={formatBusinessTimeFull(shown.bill.updatedAt, "") || undefined}>{formatBusinessTimeCompact(shown.bill.updatedAt, "—")}</span></Fact>
             </Facts>
           </div>
         </Fold>

@@ -8,7 +8,7 @@ import {
 } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
-import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, type E4PendingApproval, type E4RefundImpact } from "@/lib/admin/e4-client";
 import { operatorDeviceStatus, operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
@@ -521,7 +521,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
       <Fold inset title="订单信息" icon={Package} tone="devices" open={infoOpen} onOpenChange={setInfoOpen} summary={infoOpen ? undefined : `${o.dc === "—" ? "托管机房标签未提供" : o.dc} · 下单 ${o.age}前`}>
         <Facts>
           <Fact k="托管机房标签">{o.dc}</Fact>
-          <Fact k="下单时间">{o.orderedAt ? `${formatBusinessTimeCompact(o.orderedAt, "—")}（${businessZone().label}）` : "—"}</Fact>
+          <Fact k="下单时间">{o.orderedAt ? <span title={formatBusinessTimeFull(o.orderedAt, "") || undefined}>{formatBusinessTimeCompact(o.orderedAt, "—")}（{businessZone().label}）</span> : "—"}</Fact>
           {e4Detail && !finalized && !refundableState && <Fact k="兑付覆盖率">{coverageText}</Fact>}
         </Facts>
       </Fold>
@@ -542,7 +542,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           {e4Detail.history.length === 1
             ? e4Detail.history.map((item) => <Facts key={item.createdAt}>
               <Fact k="状态变化">{stateLabel(item.fromState)} → {stateLabel(item.toState)}</Fact>
-              <Fact k="时间">{formatBusinessTimeCompact(item.createdAt, "—")}（{businessZone().label}）</Fact>
+              <Fact k="时间"><span title={formatBusinessTimeFull(item.createdAt, "") || undefined}>{formatBusinessTimeCompact(item.createdAt, "—")}（{businessZone().label}）</span></Fact>
               <Fact k="操作人">{maskAuditActor(operatorOrderHistoryActor(item.operator))}</Fact>
               {item.reason && <Fact k="原因">{operatorOrderHistoryReason(item.reason, e4Detail.paymentMethod)}</Fact>}
             </Facts>)

@@ -17,7 +17,7 @@ import {
 } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { nexGridBrandText, operatorNicknameText } from "@/lib/admin/brand-copy";
-import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { formatC1RiskBand } from "@/lib/admin/c1-detail-display";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
@@ -1366,7 +1366,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       value: detailLoading ? "正在读取…" : !detail ? <span className="rd-weak">读不到</span> : !shownCoverage?.reliable ? "算不出来"
         : <><Change from={pct(shownCoverage.ratio)} to={`批准后约 ${shownCoverageAfter == null ? "应付款为 0" : pct(shownCoverageAfter)}`} /> · 红线 {fmtConfigPct(shownCoverage.redline)}</>,
     }] : []),
-    { label: "提交人", value: text(shown.maker), reason: formatBusinessTimeCompact(shown.createdAt, "—") },
+    { label: "提交人", value: text(shown.maker), reason: <span title={formatBusinessTimeFull(shown.createdAt, "") || undefined}>{formatBusinessTimeCompact(shown.createdAt, "—")}</span> },
     // 能不能批只写结论，原因只在底部一句（DT-12）。
     ...(shownPending && canApprove && !shownMine ? [{ label: "能不能批", value: shownApproveBlock ? "不能" : "能" }] : []),
   ];
@@ -1484,7 +1484,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           <Fact k="凭证">{text(shown.evidenceRef)}</Fact>
           {!shownPending && <Fact k="复核人">{text(shown.checker)}</Fact>}
           {!shownPending && <Fact k="复核理由">{reviewReasonText}</Fact>}
-          {!shownPending && <Fact k="复核时间">{formatBusinessTimeCompact(shown.reviewedAt, "—")}</Fact>}
+          {!shownPending && <Fact k="复核时间"><span title={formatBusinessTimeFull(shown.reviewedAt, "") || undefined}>{formatBusinessTimeCompact(shown.reviewedAt, "—")}</span></Fact>}
           {shown.reversalOf && <Fact k="原调整单"><span data-mono>{text(shown.reversalOf)}</span></Fact>}
           {shown.reversedBy && <Fact k="冲正单"><span data-mono>{text(shown.reversedBy)}</span></Fact>}
         </Facts>

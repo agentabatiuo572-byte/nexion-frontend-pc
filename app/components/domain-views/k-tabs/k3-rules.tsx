@@ -14,7 +14,7 @@ import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operat
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import { K3_FIELD_HELP } from "@/lib/admin/config-help/k3-rules";
@@ -570,7 +570,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
               <Td><Cell mono main={<span className="k3-id"><span>{hit.withdrawalNo.slice(0, -8)}</span><span>{hit.withdrawalNo.slice(-8)}</span></span>} sub={hit.userNo} title={`${hit.withdrawalNo} / ${hit.userNo}`} /></Td>
               <Td align="right"><Cell num main={hitAmount(hit.amount)} sub="币种未提供" title={hit.amount} /></Td>
               <Td><Cell main={hit.ruleId} sub={dimensionLabel(hit.dimension)} title={hit.ruleId} mono /></Td><Td><ActionTag action={hit.action} /></Td>
-              {hitColumns.isVisible("reason") && <Td><Cell main={hitSummary(hit)} title={hitSummary(hit)} /></Td>}{hitColumns.isVisible("time") && <Td><Cell num main={formatBusinessTimeCompact(hit.timeText, "—")} /></Td>}
+              {hitColumns.isVisible("reason") && <Td><Cell main={hitSummary(hit)} title={hitSummary(hit)} /></Td>}{hitColumns.isVisible("time") && <Td><Cell num main={formatBusinessTimeCompact(hit.timeText, "—")} title={formatBusinessTimeFull(hit.timeText, "") || undefined} /></Td>}
             </Tr>)}
           </tbody></Table></div>
         {overview!.hits.total > 0 && <Pager label="触发记录" total={overview!.hits.total} page={overview!.hits.pageNum} pageSize={overview!.hits.pageSize} sizes={[5, 10, 20, 50]} onPage={(page) => setQuery({ hitPage: page })} onPageSize={(size) => setQuery({ hitPage: 1, hitPageSize: size })} />}
@@ -590,7 +590,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
         { key: "amount", label: "金额", value: `${hitAmount(hitDetail.amount)} · 币种未记录` }, { key: "rule", label: "触发规则", value: hitDetail.ruleId, mono: true },
         { key: "dim", label: "维度", value: dimensionLabel(hitDetail.dimension) }, { key: "action", label: "命中处置", value: <ActionTag action={hitDetail.action} /> },
         { key: "reason", label: "触发原因", value: hitSummary(hitDetail) },
-        ...(rules.find((rule) => rule.ruleId === hitDetail.ruleId) ? [{ key: "condition", label: "当前规则条件", value: <ConditionText text={conditionCopy(rules.find((rule) => rule.ruleId === hitDetail.ruleId)!)} /> }] : []), { key: "time", label: "触发时间", value: `${formatBusinessTimeCompact(hitDetail.timeText, "—")}（${businessZone().label}）` },
+        ...(rules.find((rule) => rule.ruleId === hitDetail.ruleId) ? [{ key: "condition", label: "当前规则条件", value: <ConditionText text={conditionCopy(rules.find((rule) => rule.ruleId === hitDetail.ruleId)!)} /> }] : []), { key: "time", label: "触发时间", value: <span title={formatBusinessTimeFull(hitDetail.timeText, "") || undefined}>{formatBusinessTimeCompact(hitDetail.timeText, "—")}（{businessZone().label}）</span> },
       ]} /><div className="rd-toolbar"><Button size="sm" onClick={() => void navigator.clipboard.writeText(`${hitDetail.withdrawalNo}\n${hitDetail.userNo}`).then(() => ctx.toast("提现单号和账户已复制", "success")).catch(() => ctx.toast("复制失败，请手动选择复制", "error"))}>复制单号与账户</Button></div>
         <Fold title="技术信息" inset summary="原始原因、金额与统计口径"><KeyValues rows={[{ key: "reason", label: "原因原文", value: hitDetail.reason || "—" }, { key: "amount", label: "金额原文", value: hitDetail.amount }, { key: "scope", label: "统计口径", value: "每条是一次规则命中，不是提现的最终结果。" }, { key: "reasonScope", label: "原因说明", value: "可能按现在的规则条件写，不一定是触发时的原话。" }]} /></Fold></>}
     </Drawer>
