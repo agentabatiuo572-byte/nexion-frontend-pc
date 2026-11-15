@@ -391,8 +391,9 @@ export default function RiskRadarPage() {
       await recordB5Triage(dimension, target, operator, commandKey);
       router.push(target);
     } catch (cause) {
-      // 分诊只留一条审计，失败了如实说没成功、重新点一次即可（决定 B4-PD02）。
-      setToast(`没有跳转：分诊记录没记上，请再点一次。${cause instanceof B5OutcomeUnknownError ? "" : cause instanceof Error ? displayAdminReadError(cause) : ""}`);
+      // 分诊只留一条审计，失败了如实说没成功、重新点一次即可（决定 B4-PD02）；没有权限时再点也一样，不叫人再点。
+      const forbidden = cause instanceof B5RequestError && cause.status === 403;
+      setToast(`${forbidden ? "没有跳转：分诊记录没记上。" : "没有跳转：分诊记录没记上，请再点一次。"}${cause instanceof B5OutcomeUnknownError ? "" : cause instanceof Error ? displayAdminReadError(cause) : ""}`);
     } finally {
       setTriaging(null);
     }
