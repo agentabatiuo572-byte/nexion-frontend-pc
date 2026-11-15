@@ -39,7 +39,7 @@ export function useM3MessagePages(summary: SessionConvo | null, scope: string, o
       const page = await fetchM3MessagePage(current.id, cursor, abort.signal);
       if (!isCurrent()) return;
       if (page.conversation.customerId !== current.customerId || page.conversation.ownerAdminId !== current.ownerAdminId || page.conversation.assignmentId !== current.assignmentId) throw Object.assign(new Error("会话范围已变化，请重新核对。"), { status: 403 });
-      if (page.conversation.version < current.version) throw Object.assign(new Error("会话版本已变化，请重试加载。"), { status: 409 });
+      if (page.conversation.version < current.version) throw Object.assign(new Error("会话刚有变化，请重新加载。"), { status: 409 });
       readCursor.current = cursor;
       setState(previous => {
         const base = kind === "reset" || previous.key !== requestKey ? empty(requestKey) : previous;

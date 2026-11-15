@@ -1,3 +1,4 @@
+import { uploadH4Media, type H4UploadTarget } from "./h4-mutations";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 
 interface ApiResult<T> {
@@ -54,7 +55,7 @@ async function mediaRequest<T>(path: string, init?: RequestInit & { idempotencyP
 
 export async function uploadAdminMedia(
   file: File,
-  options: { domain: string; usage: string; entityType?: string; entityId?: string; operator?: string },
+  options: { domain: string; usage: string; entityType?: string; entityId?: string; operator?: string; uploadTarget?: H4UploadTarget },
 ) {
   const body = new FormData();
   body.append("file", file);
@@ -73,6 +74,7 @@ export async function uploadAdminMedia(
     params.set("operator", options.operator);
   }
 
+  if (options.domain === "growth" && ["promotion-banner", "promotion-evidence"].includes(options.usage)) return sameOriginPreview(await uploadH4Media(file, params, options.uploadTarget));
   return sameOriginPreview(await mediaRequest<UploadedAsset>(`/uploads?${params.toString()}`, {
     method: "POST",
     body,

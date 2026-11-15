@@ -57,12 +57,12 @@ export function H4DateTimeField({ label, hint, value, timeZone, onChange, disabl
         const day = new Date(start); day.setUTCDate(index - start.getUTCDay() + 1); return day;
     }) : [];
 
-    return <div className="field h4-datetime-field">
+    return <div className="h4-datetime-field">
         <span id={`${id}-label`}>{label}</span>
         <button ref={trigger} type="button" className="h4-datetime-trigger" disabled={disabled} aria-disabled={readOnly || undefined}
             aria-labelledby={`${id}-label ${id}-value`} aria-describedby={hint ? `${id}-hint` : undefined}
             aria-haspopup="dialog" aria-expanded={open} aria-controls={`${id}-dialog`} onClick={show}>
-            <span id={`${id}-value`}>{value ? value.replace('T', ' ').replaceAll('-', '/') : '请选择日期和时间'}</span>
+            <span id={`${id}-value`}>{value ? value.replace('T', ' ') : '请选择日期和时间'}</span>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18M8 15h2M14 15h2"/></svg>
         </button>
         {hint && <small id={`${id}-hint`}>{hint}</small>}

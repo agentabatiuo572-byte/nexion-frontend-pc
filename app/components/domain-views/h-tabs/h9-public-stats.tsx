@@ -1,23 +1,24 @@
 "use client";
 
 /**
- * H9「历史数据展示设置」—— 规格 FEAT-HOME02b 后台单元。
+ * H9「首页与网络展示设置」—— 规格 FEAT-HOME02b 后台单元。
  *
- * 运营在这里维护首页展示和历史估算参数；设备预估排名由独立卡片维护。
- * 虚拟人口与算力分位表不参与设备预估排名。整组原子保存:
- * 确认弹窗给前后值 diff → 必填理由 → 服务端落审计 + 防重复提交编号,任一项非法整组不落库。
+ * 运营在这里维护 App 首页和网络页给用户看的展示数字：首屏六张卡是六块现在的展示值，也是页签；
+ * 每块先画 App 上的样子和按现在参数接下来怎么涨，旁边是参数。设备预估排名是独立的一套设置。
+ * 整组原子保存：确认框给前后值和对 App 的影响 → 必填理由 → 服务端落审计 + 防重复提交编号，任一项非法整组不落库。
  *
- * 页面里没有任何平台数字的字面量:当前值、默认种子、历史日产锚都从服务端读模型来。
- *    「改了设备总数会连带改掉哪些金额」由下方影响预览现算给运营看(规格 ②异常2),
- *    不靠运营自己心算,也不在后台另存一份日产档。
+ * 页面里没有任何平台数字的字面量：当前值、默认值、历史日产锚都从服务端读模型来。
+ * 「改了设备总数会连带改掉哪些金额」由历史估算的影响预览现算，不靠运营心算，也不在后台另存一份日产档。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
+import { RefreshCw, SlidersHorizontal, Smartphone, TableProperties } from "lucide-react";
+import { BlockState, Button, Change, Conclusion, DiffList, Explain, Fact, KeepText, Facts, Field, Notice, NumberInput, PageHeader, Panel, RatioBar, StatusTag, Table, Td, Th, Tr, TrendLines, useTabIds, type DiffRow } from "@/app/components/rd";
 import { PaginationExemption } from "../design-kit";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import {
   H9_FIELDS,
   fetchH9PublicStats,
+  prepareH9PublicStats,
   updateH9PublicStats,
   type H9EditableValues,
   type H9FieldDef,
@@ -28,6 +29,7 @@ import {
 // 🔴 分位表值域规则唯一来源(与前端 network-rank.ts 行为等价,契约测试钉着)——
 //    面板不许手写第二份判据;parity 门查的是「用途位」出现,不是 import 位。
 import {
+  h9MoneyPrecisionValid,
   H9_BAND_MIN,
   H9_BAND_TOPS_MIN,
   h9BandRowErrors,
@@ -40,41 +42,53 @@ import {
 import type { HCtx } from "./types";
 import { H9DeviceRank } from "./h9-device-rank";
 import { H9GlobeDisplay } from "./h9-globe-display";
-import { TabGroup } from "@/app/components/kit/tab-group";
+import { H9ModuleCards, moduleLabel, type H9Module, type RankSnapshot } from "./h9-overview";
+import { AppNumber, AppPreview, AuditFoot, axisShort, ConfirmFacts, PAID_UNIT, PAID_UNIT_NOTE, paid, DAY_LABELS, DAY_TICKS, H9RecoveryNotice, HOUR_LABELS, HOUR_TICKS, ModuleToolbar, averageGain, count, memberSpread, membersAt, saveIssueKind, usd, usdApprox, usdProduct, type MemberModel, type SaveIssueKind } from "./h9-parts";
 import { reconcileH9Editor, type H9EditorState } from "@/lib/admin/h9-module-drafts";
+import { canRetryH9Command, pendingH9Command, type H9Command } from "@/lib/admin/h9-command";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { useSearchParams } from "next/navigation";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
 
 type ScalarKey = H9FieldDef["key"];
 type ScalarDrafts = Record<ScalarKey, string>;
 
-/** 分位表两个数值列的业务精度 —— 与下方 input 的 step 同一取值,不许两处各写一份。 */
-const H9_BAND_STEP = 0.1;
-
-const HOME_SECTIONS: { title: string; keys: ScalarKey[] }[] = [
-  { title: "介绍页与网络脉搏在线设备", keys: ["homeOnlineCurrent", "homeOnlineStepMin", "homeOnlineStepMax"] },
-  { title: "首页累计已发放", keys: ["homePaidCurrent", "homePaidStepMin", "homePaidStepMax"] },
-];
-
-const SECTIONS: { title: string; sub: string; keys: ScalarKey[] }[] = [
-  { title: "历史规模配置", sub: "仅用于历史估算；介绍页与网络脉搏在线设备使用上方首页数字设置", keys: ["fleetDevices", "onlineRatePct", "onlineJitter"] },
-  { title: "网络脉搏注册用户", sub: "设置跳动间隔和每次最少、最多增加人数后，从基数开始每隔一段时间在范围内增加；三项留空时按月增长率推算。不参与设备预估排名，不改变真实账户", keys: ["registeredUsersBase", "registeredUsersTickIntervalSec", "registeredUsersTickStepMin", "registeredUsersTickStepMax", "registeredUsersMonthlyGrowthPct"] },
-  { title: "历史排名估算", sub: "仅用于历史本地估算；虚拟人口不参与设备预估排名", keys: ["virtualUserCount"] },
-  { title: "全球作业进行中", sub: "只用于展示，不参与任务派发、结算或资金", keys: ["activeJobsBase"] },
-];
-type H9Module = "home" | "network" | "jobs" | "globe" | "rank" | "history";
-const MODULES: { id: H9Module; label: string }[] = [
-  { id: "home", label: "首页数字增长" }, { id: "network", label: "首页网络实况" }, { id: "jobs", label: "赚取页任务中心" },
-  { id: "globe", label: "全球网络" }, { id: "rank", label: "设备预估排名" }, { id: "history", label: "历史估算" },
-];
+const HOME_KEYS: ScalarKey[] = ["homeOnlineCurrent", "homeOnlineStepMin", "homeOnlineStepMax", "homePaidCurrent", "homePaidStepMin", "homePaidStepMax"];
+const NETWORK_KEYS: ScalarKey[] = ["registeredUsersBase", "registeredUsersTickIntervalSec", "registeredUsersTickStepMin", "registeredUsersTickStepMax", "registeredUsersMonthlyGrowthPct"];
+const HISTORY_KEYS: ScalarKey[] = ["fleetDevices", "onlineRatePct", "onlineJitter", "virtualUserCount"];
 const MODULE_KEYS: Record<H9Module, ScalarKey[]> = {
-  home: HOME_SECTIONS.flatMap(section => section.keys), network: SECTIONS[1].keys, jobs: SECTIONS[3].keys,
-  globe: [], rank: [], history: [...SECTIONS[0].keys, ...SECTIONS[2].keys],
+  home: HOME_KEYS, network: NETWORK_KEYS, jobs: ["activeJobsBase"], globe: [], rank: [], history: HISTORY_KEYS,
+};
+const MONEY_KEYS = new Set<ScalarKey>(["homePaidCurrent", "homePaidStepMin", "homePaidStepMax"]);
+/** 有「恢复默认」的三块（A07）；首页、全球网络、排名后端也给默认值，但没有恢复入口。 */
+const DEFAULTABLE: readonly H9Module[] = ["network", "jobs", "history"];
+
+/** 页面上的字段名和这是什么。说法按后端现行行为写（BF13、BF16、BF30），不用 h9-client 里过时的 hint。 */
+const FIELD_COPY: Record<ScalarKey, { name: string; what: string }> = {
+  homeOnlineCurrent: { name: "当前值", what: "App 上在线设备从这个数开始。只有改了它，保存后才从这个数重新开始；没改就接着 App 上已经涨到的数。" },
+  homeOnlineStepMin: { name: "每秒最少增加", what: "开启增长时，每秒在最少和最多之间随机加一个整数，所有用户看到同一个数。" },
+  homeOnlineStepMax: { name: "每秒最多增加", what: "开启增长时，每秒在最少和最多之间随机加一个整数，所有用户看到同一个数。" },
+  homePaidCurrent: { name: "当前值", what: "App 上累计已发放从这个金额开始，App 上显示为 $。只有改了它，保存后才从这个金额重新开始。这是展示数字，不是真实已完成提现。" },
+  homePaidStepMin: { name: "每秒最少增加", what: "开启增长时，每秒在最少和最多之间随机加一个金额（按整数分）。" },
+  homePaidStepMax: { name: "每秒最多增加", what: "开启增长时，每秒在最少和最多之间随机加一个金额（按整数分）。" },
+  registeredUsersBase: { name: "注册人数基数", what: "网络脉搏注册人数从这个数开始推算。改了它，推算起点重置为保存时刻。" },
+  registeredUsersTickIntervalSec: { name: "跳动间隔", what: "每隔多少秒加一次人数。三项一起填；改了它，推算起点重置为保存时刻。" },
+  registeredUsersTickStepMin: { name: "每次最少增加", what: "每跳一次至少加多少人，可以填 0。" },
+  registeredUsersTickStepMax: { name: "每次最多增加", what: "每跳一次最多加多少人，不能小于最少值。所有用户看到同一个数。" },
+  registeredUsersMonthlyGrowthPct: { name: "月增长率", what: "没设跳动时，注册人数按每月这个比例复利增长。只改它不会重置推算起点，会按原起点重算整段。" },
+  fleetDevices: { name: "历史估算设备总数", what: "历史估算的设备台数，不是实际设备数。" },
+  onlineRatePct: { name: "历史在线设备占比", what: "历史在线估算 = 设备总数 × 这个比例。" },
+  onlineJitter: { name: "历史在线浮动幅度", what: "保存后不参与任何计算，这页的估算也不用它。" },
+  virtualUserCount: { name: "虚拟人口", what: "历史估算分母 = 注册账号总数 + 虚拟人口。不参与设备预估排名。" },
+  activeJobsBase: { name: "全球作业基座", what: "只用于展示，不参与任务派发、结算或资金" },
 };
 
-const int = (value: number) => (Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "—");
-const money = (value: number) => (Number.isFinite(value) ? `$${Math.round(value).toLocaleString("en-US")}` : "—");
-const money2 = (value: number) => (Number.isFinite(value) ? `$${value.toFixed(2)}` : "—");
-const shown = (value: number | null | undefined, unit: string) => (value == null ? "未设置" : `${value}${unit}`);
-const when = (ms: number) => (Number.isFinite(ms) && ms > 0 ? new Date(ms).toLocaleString("zh-CN", { hour12: false }) : "—");
+const RECOVERY_EXPLAIN = <>
+  <p>提交时没收到确定结果：这次保存可能已经生效，也可能没有。</p>
+  <p>点「查询原结果」读现在的值；现在的值证明不了原保存的结果。24 小时内「按原请求重试」用同样的值和理由，后端认得出是同一次提交，不会重复保存。有结论前这一块不能发起新的保存。</p>
+</>;
+
+type SaveIssue = { kind: SaveIssueKind; message: string; module: H9Module; change: string; at: number };
 
 function bandDraftsFrom(values: H9PublicStatsValues): BandDraft[] {
   return values.hashratePercentileTable.map((band) => ({
@@ -83,13 +97,14 @@ function bandDraftsFrom(values: H9PublicStatsValues): BandDraft[] {
   }));
 }
 
-/** 单个数值参数的合法域校验 → 返回运营看得懂的红字,合法返回空串。 */
+/** 单个数值参数的合法域校验 → 返回运营看得懂的提示，合法返回空串。 */
 function scalarError(field: H9FieldDef, raw: string): string {
   if ((field.pairedOptional || field.clearable) && !raw.trim()) return "";
   const value = num(raw);
   if (!Number.isFinite(value)) return "请填数字";
   if (value < field.min || value > field.max) return `要在 ${field.min}–${field.max}${field.unit} 之间`;
   if (field.integer && !Number.isInteger(value)) return "只能填整数";
+  if (MONEY_KEYS.has(field.key) && !h9MoneyPrecisionValid(raw)) return "金额最多两位小数";
   return "";
 }
 
@@ -97,40 +112,54 @@ function sameBands(a: H9PercentileBand[], b: H9PercentileBand[]) {
   return a.length === b.length && a.every((row, index) => row.tops === b[index].tops && row.cumPct === b[index].cumPct);
 }
 
-function bandsText(rows: H9PercentileBand[]) {
-  return rows.map((row) => `${row.tops} 算力→${row.cumPct}%`).join(" · ") || "(空)";
+/** 一个参数值写成人话：金额两位起、不舍入；空写清楚是什么。 */
+function valueText(key: ScalarKey, value: number | null | undefined): string {
+  if (value === undefined) return "未设置";
+  if (value === null) return "不发布";
+  const field = H9_FIELDS.find((item) => item.key === key)!;
+  return MONEY_KEYS.has(key) ? paid(value) : `${count(value)} ${field.unit}`;
 }
 
 export function H9PublicStats({ ctx }: { ctx: HCtx }) {
-  const [module, setModule] = useState<H9Module>("home");
-  return <div className="h9-workspace">
-    <div className="h9-navigation"><TabGroup label="H9展示模块" value={module} items={MODULES.map(item => item.id)} onSelect={setModule}
-      itemClassName={(_item, selected) => `l-btn${selected ? " mc" : ""}`}>{id => MODULES.find(item => item.id === id)!.label}</TabGroup></div>
-    <H9DisplayStats ctx={ctx} module={module} />
-    <div hidden={module !== "rank"}><H9DeviceRank ctx={ctx} /></div>
-  </div>;
-}
-
-function H9DisplayStats({ ctx, module }: { ctx: HCtx; module: H9Module }) {
   const canWrite = ctx.can("growth_h9_write");
+  const ids = useTabIds();
+  const search = useSearchParams();
+  const selected = search.get("module");
+  const module: H9Module = selected && ["home", "network", "jobs", "globe", "rank", "history"].includes(selected) ? selected as H9Module : "home";
+  const setModule = (next: H9Module) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("module", next);
+    window.history.replaceState(null, "", url);
+  };
+  const [, syncPending] = useReducer(n => n + 1, 0);
+  const pending = pendingH9Command("main");
+  const [saving, setSaving] = useState(false);
+  const ready = useRef(false);
+  const [rank, setRank] = useState<RankSnapshot>({ state: "loading" });
   const [data, setData] = useState<H9PublicStatsOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<SaveIssue | null>(null);
   const [editor, setEditor] = useState<H9EditorState | null>(null);
+  const [readAt, setReadAt] = useState(0);
+  const currentVersion = useRef(data?.version);
+  currentVersion.current = data?.version;
   const drafts = editor?.drafts ?? null;
   const bands = editor?.bands ?? [];
   const setDrafts = (update: (current: ScalarDrafts) => ScalarDrafts) => setEditor(current => current ? { ...current, drafts: update(current.drafts) } : current);
   const setBands = (update: BandDraft[] | ((current: BandDraft[]) => BandDraft[])) => setEditor(current => current ? { ...current, bands: typeof update === "function" ? update(current.bands) : update } : current);
 
   const load = useCallback(async (scope?: H9Module) => {
+    ready.current = false;
     setLoading(true);
+    ctx.openActionConfirm(null);
     try {
       const next = await fetchH9PublicStats();
       setData(next);
       setEditor(current => reconcileH9Editor(current, next.values, H9_FIELDS.map(field => field.key), scope ? MODULE_KEYS[scope] : [], !scope || scope === "history"));
       setError(null);
       setSaveError(null);
+      setReadAt(Date.now());
       return next;
     } catch (cause) {
       // 运营面只出中文:解析错 / 网络错的机器码都过一遍共享错误字典。
@@ -140,7 +169,8 @@ function H9DisplayStats({ ctx, module }: { ctx: HCtx; module: H9Module }) {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { syncPending(); void load(); }, [load]);
+  ready.current = !!data && !loading && !error && !saving && !pending && saveError?.kind !== "conflict";
 
   const fieldErrors = useMemo(() => {
     if (!drafts) return {} as Record<ScalarKey, string>;
@@ -167,7 +197,7 @@ function H9DisplayStats({ ctx, module }: { ctx: HCtx; module: H9Module }) {
     : "";
   const conflict = !!data && !!editor && (MODULE_KEYS[module].some(key => h9DraftText(editor.baseline[key]) !== h9DraftText(data.values[key]))
     || module === "history" && !sameBands(editor.baseline.hashratePercentileTable, data.values.hashratePercentileTable));
-  const allValid = !loading && !conflict && MODULE_KEYS[module].every(key => !fieldErrors[key])
+  const allValid = !loading && !error && !saving && !pending && saveError?.kind !== "conflict" && !conflict && MODULE_KEYS[module].every(key => !fieldErrors[key])
     && (module !== "history" || rowErrors.every(text => !text) && !bandCountError);
 
   /** 后端还没返回全球作业基座时,这一项不可编辑、也不提交。 */
@@ -203,9 +233,9 @@ function H9DisplayStats({ ctx, module }: { ctx: HCtx; module: H9Module }) {
     const perDevice = data.publishedDailyUsdPerDevice;
     const derive = (fleet: number, ratePct: number, virtualCount: number) => ({
       online: fleet * ratePct / 100,
-      daily: fleet * perDevice,
+      daily: usdProduct(fleet, perDevice),
       perSec: fleet * perDevice / 86_400,
-      monthly: fleet * perDevice * 30,
+      monthly: usdProduct(usdProduct(fleet, perDevice), 30),
       denominator: data.realUserCount + virtualCount,
     });
     const current = derive(data.values.fleetDevices, data.values.onlineRatePct, data.values.virtualUserCount);
@@ -232,252 +262,490 @@ function H9DisplayStats({ ctx, module }: { ctx: HCtx; module: H9Module }) {
     ctx.toast("已填入默认值，还没保存。点「保存变更」确认后才生效");
   };
 
-  const save = (enabled?: boolean) => {
-    if (!data || !nextValues) return;
-    const submitted = { ...nextValues, homeDisplayEnabled: enabled ?? data.values.homeDisplayEnabled };
-    // 🔴 这里不铸防重复提交编号:键由 updateH9PublicStats 从槽位存储按「值 + 版本 + 理由」取,
-    //    否则每点一次「保存变更」都是一条全新命令,失败横幅承诺的「同一个防重复提交编号」就是空的。
-    const diffs = H9_FIELDS
-      .filter((field) => submitted[field.key] !== data.values[field.key])
-      .map((field) => `${field.label}:${shown(data.values[field.key], field.unit)} → ${shown(submitted[field.key], field.unit)}`);
-    if (!sameBands(submitted.hashratePercentileTable, data.values.hashratePercentileTable)) {
-      diffs.push(`算力分位表:${bandsText(data.values.hashratePercentileTable)} → ${bandsText(submitted.hashratePercentileTable)}`);
-    }
-    if (submitted.homeDisplayEnabled !== data.values.homeDisplayEnabled) diffs.push(submitted.homeDisplayEnabled ? "开启首页数字增长" : "暂停首页数字增长，保留当前值");
-    const fleetChanged = nextValues.fleetDevices !== data.values.fleetDevices;
-    const baseChanged = nextValues.registeredUsersBase !== data.values.registeredUsersBase
-      || nextValues.registeredUsersTickIntervalSec !== data.values.registeredUsersTickIntervalSec
-      || nextValues.registeredUsersTickStepMin !== data.values.registeredUsersTickStepMin
-      || nextValues.registeredUsersTickStepMax !== data.values.registeredUsersTickStepMax;
-    const virtualZero = nextValues.virtualUserCount === 0 && data.values.virtualUserCount !== 0;
-    const nextDaily = nextValues.fleetDevices * data.publishedDailyUsdPerDevice;
+  /** 网络脉搏的推算模型：已保存的，和按草稿保存后的（改基数或跳动三项时起点重置为保存时刻，只改月增长率不重置）。 */
+  const memberModels = useMemo(() => {
+    if (!data || !drafts) return null;
+    const saved = data.values;
+    const savedModel: MemberModel = {
+      base: saved.registeredUsersBase, anchorAt: saved.registeredUsersAnchorAt, monthlyPct: saved.registeredUsersMonthlyGrowthPct,
+      tick: saved.registeredUsersTickIntervalSec !== undefined && saved.registeredUsersTickStepMin !== undefined && saved.registeredUsersTickStepMax !== undefined
+        ? { intervalSec: saved.registeredUsersTickIntervalSec, stepMin: saved.registeredUsersTickStepMin, stepMax: saved.registeredUsersTickStepMax } : undefined,
+    };
+    const valid = NETWORK_KEYS.every((key) => !fieldErrors[key]);
+    const tickFilled = !!drafts.registeredUsersTickIntervalSec.trim();
+    const draftModel: MemberModel = {
+      base: num(drafts.registeredUsersBase), anchorAt: saved.registeredUsersAnchorAt, monthlyPct: num(drafts.registeredUsersMonthlyGrowthPct),
+      tick: tickFilled ? { intervalSec: num(drafts.registeredUsersTickIntervalSec), stepMin: num(drafts.registeredUsersTickStepMin), stepMax: num(drafts.registeredUsersTickStepMax) } : undefined,
+    };
+    const resets = draftModel.base !== savedModel.base || draftModel.tick?.intervalSec !== savedModel.tick?.intervalSec
+      || draftModel.tick?.stepMin !== savedModel.tick?.stepMin || draftModel.tick?.stepMax !== savedModel.tick?.stepMax;
+    const changed = NETWORK_KEYS.some((key) => drafts[key].trim() !== h9DraftText(saved[key]));
+    return { saved: savedModel, draft: valid && changed ? { ...draftModel, anchorAt: resets ? readAt : saved.registeredUsersAnchorAt } : null, resets };
+  }, [data, drafts, fieldErrors, readAt]);
 
+  const memberSeries = (model: MemberModel) => DAY_TICKS.map((day) => membersAt(model, readAt + day * 86_400_000));
+  /** 保存后 App 上的注册人数会不会突然跳：按读取时刻比一比现在的数和按草稿保存后的数。 */
+  const memberJump = memberModels?.draft ? { from: membersAt(memberModels.saved, readAt), to: membersAt(memberModels.draft, readAt) } : null;
+  const jumpNotice = memberJump && memberJump.from != null && memberJump.to != null && memberJump.from !== memberJump.to
+    ? <Notice tone="warn" title={`App 上的注册人数会从约 ${count(memberJump.from)} 人${memberJump.to < memberJump.from ? "跳回" : "跳到"} ${count(memberJump.to)} 人`}>
+      {memberModels?.resets
+        ? <>改了基数或跳动参数，推算起点重置为保存时刻、从新基数重新开始。要接着现在的数涨，把基数填成约 {count(memberJump.from)}。</>
+        : <>只改月增长率不重置推算起点，会按原起点重算整段。</>}
+    </Notice> : null;
+
+  const save = (enabled?: boolean) => {
+    if (!canWrite || !ready.current || !data || !nextValues) return;
+    const submitted = { ...nextValues, homeDisplayEnabled: enabled ?? data.values.homeDisplayEnabled };
+    // 完整原请求在确认提交时创建一次；未知后只恢复该记录，不按草稿或理由变化换号。
+    const rows: DiffRow[] = H9_FIELDS
+      .filter((field) => submitted[field.key] !== data.values[field.key])
+      .map((field) => ({ key: field.key, label: field.key === "homeOnlineCurrent" ? "在线设备" : field.key === "homePaidCurrent" ? "累计已发放" : FIELD_COPY[field.key].name, before: valueText(field.key, data.values[field.key]), after: valueText(field.key, submitted[field.key]) }));
+    if (!sameBands(submitted.hashratePercentileTable, data.values.hashratePercentileTable)) {
+      const before = data.values.hashratePercentileTable, after = submitted.hashratePercentileTable;
+      const band = (row?: H9PercentileBand) => row ? `${count(row.tops)} TOPS · ${row.cumPct}%` : "没有";
+      for (let index = 0; index < Math.max(before.length, after.length); index += 1) {
+        if (band(before[index]) !== band(after[index])) rows.push({ key: `band-${index}`, label: `分位表第 ${index + 1} 档`, before: band(before[index]), after: after[index] ? band(after[index]) : "删除" });
+      }
+    }
+    const toggled = submitted.homeDisplayEnabled !== data.values.homeDisplayEnabled;
+    if (toggled) rows.unshift({ key: "enabled", label: "首页数字增长", before: data.values.homeDisplayEnabled ? "增长中" : "已暂停", after: submitted.homeDisplayEnabled ? "增长中" : "已暂停" });
+    const fleetChanged = nextValues.fleetDevices !== data.values.fleetDevices;
+    const virtualZero = nextValues.virtualUserCount === 0 && data.values.virtualUserCount !== 0;
+    const currentChanged = nextValues.homeOnlineCurrent !== data.values.homeOnlineCurrent || nextValues.homePaidCurrent !== data.values.homePaidCurrent;
+    const stepsChanged = (["homeOnlineStepMin", "homeOnlineStepMax", "homePaidStepMin", "homePaidStepMax"] as const).some((key) => nextValues[key] !== data.values[key]);
+    const label = moduleLabel(module);
+    const title = toggled ? (submitted.homeDisplayEnabled ? "开启首页数字增长" : "暂停首页数字增长") : `保存${label}`;
+    const impactText = toggled
+      ? submitted.homeDisplayEnabled
+        ? `开启后 App 首页的在线设备和累计已发放每秒在区间内随机增加，${currentChanged ? "从你填的新当前值开始" : "接着 App 上现在的数继续"}。`
+        : `暂停后 App 首页的两个数停住不再增加，${currentChanged ? "停在你填的新当前值" : "停在 App 上现在的数"}；再开启从那里接着涨。`
+      : module === "home" ? `保存后按新参数生成 App 首页的展示数字，${currentChanged ? "从你填的新当前值开始" : "接着 App 上现在的数继续"}；增长开关不变。`
+        : module === "network" ? (memberModels?.resets ? "保存后 App 网络脉搏的注册人数从新基数、在保存时刻重新开始推算。" : "保存后 App 网络脉搏的注册人数按新的月增长率、从原推算起点重算整段。")
+          : module === "jobs" ? `保存后 App 赚取页任务中心和全球网络页显示${nextValues.activeJobsBase == null ? "真实进行中作业数，不加基座" : `真实进行中作业数 + ${count(nextValues.activeJobsBase)}`}。`
+            : "这组参数 App 正式页面不读，保存后只改变这页的历史估算。";
+    const homeCompare = (module === "home" || toggled) && stepsChanged;
+    const facts = <ConfirmFacts rows={rows} facts={<>
+        <Fact k="改的是">{label}</Fact>
+        <Fact k="主配置版本"><Change from={`v${data.version}`} to={`v${data.version + 1}`} /></Fact>
+        {toggled && dirty && <Fact k="一起保存">首页填写中的 {rows.length - 1} 项改动</Fact>}
+        {module === "network" && memberModels?.resets && <Fact k="推算起点"><Change from={businessStamp(data.values.registeredUsersAnchorAt)} to="保存时刻" /></Fact>}
+        <Fact k="操作记录">记一条高风险操作记录（不走审批）</Fact>
+      </>}>
+      {fleetChanged && impact && <Notice tone="neutral" title="历史估算会跟着变">
+        日金额估算从 {usd(impact.current.daily)} USD 变成 {usd(usdProduct(nextValues.fleetDevices, data.publishedDailyUsdPerDevice))} USD（每台每日 {usd(data.publishedDailyUsdPerDevice)} USD 不变）。这是内部估算，不是实付，App 不显示。
+      </Notice>}
+      {virtualZero && <Notice tone="neutral">虚拟人口填了 0：历史估算分母只按注册账号总数（{count(data.realUserCount)} 人）算。</Notice>}
+      {homeCompare && <div className="h9-confirm-chart">
+        <p className="h9-chart-title">开启时接下来 24 小时平均增加的在线设备</p>
+        <TrendLines label="新旧参数下 24 小时在线设备平均增加量" ticks={HOUR_LABELS} height={120} format={(value) => `${count(Math.round(value))} 台`} axisFormat={axisShort("台")}
+          series={[
+            { key: "before", label: "现在的参数", slot: "other", values: HOUR_TICKS.map((hour) => averageGain(data.values.homeOnlineStepMin, data.values.homeOnlineStepMax, hour)) },
+            { key: "after", label: "改后", slot: 2, values: HOUR_TICKS.map((hour) => averageGain(nextValues.homeOnlineStepMin, nextValues.homeOnlineStepMax, hour)) },
+          ]} />
+      </div>}
+      {module === "network" && jumpNotice}
+      {module === "network" && memberModels?.draft && <div className="h9-confirm-chart">
+        <p className="h9-chart-title">接下来 30 天的注册人数</p>
+        <TrendLines label="新旧参数下 30 天注册人数推算" ticks={DAY_LABELS} height={120} format={(value) => `${count(value)} 人`} axisFormat={axisShort("人")}
+          series={[
+            { key: "before", label: "现在的参数", slot: "other", values: memberSeries(memberModels.saved) },
+            { key: "after", label: "改后", slot: 3, values: memberSeries(memberModels.draft) },
+          ]} />
+      </div>}
+    </ConfirmFacts>;
+
+    const change = rows.slice(0, 2).map(row => `${row.label} ${row.before} → ${row.after}`).join("；") + (rows.length > 2 ? `；等 ${rows.length} 项` : "");
+    let command: H9Command | undefined;
     ctx.openActionConfirm({ briefKind: "config",
-      action: `保存${MODULES.find(item => item.id === module)!.label}`,
-      detail: <>
-        <div>本次改动（{diffs.length} 项）：</div>
-        {diffs.map((line) => <div key={line}>· {line}</div>)}
-        {fleetChanged && <div>
-          ⚠️ 历史估算日金额从 {money(data.values.fleetDevices * data.publishedDailyUsdPerDevice)} 变成 {money(nextDaily)}
-          (每台每日配置值 {money2(data.publishedDailyUsdPerDevice)} 不变)。这是内部估算，不代表实际支付，也不改变正式 App 对外统计。
-        </div>}
-        {baseChanged && <div>改动注册用户基数、跳动间隔或每次增加人数范围后，网络脉搏会从基数重新开始计算；注册用户数字不参与设备预估排名，也不改变真实账户。</div>}
-        {virtualZero && <div>虚拟人口填了 0：历史估算只按真实注册人数（{int(data.realUserCount)} 人）计算。</div>}
-        <div>如果别人同时改了这页，你需要刷新后重改；有任何一项不合法，整组都不会保存。</div>
-        <div>首页数字只在开启后增长，暂停后停在当前值；App 最多 60 秒内同步。</div>
-      </>,
+      getPendingReason: () => command && pendingH9Command("main")?.commandKey === command.commandKey ? command.original?.reason : undefined,
+      action: `保存${label}`,
+      title,
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      confirmLabel: toggled ? (submitted.homeDisplayEnabled ? "确认开启" : "确认暂停") : "确认保存",
+      statedBrief: { impact: impactText, check: "核对改动和对 App 的影响，理由写清调整依据。" },
+      reasonPlaceholder: "例如：运营活动安排、工单号",
+      facts,
+      detail: "主配置整组保存：任何一项不合法，整组都不保存；页面上其他块没保存的草稿不会带上。",
       // 🔴 不挂 amplifies:它的语义是「放大资金流出方向,系统会先检查备付金覆盖率」(K 域契约),
-      //    而本页改的是历史数据展示设置,一分钱都不流出,也没传 coverage —— 挂上等于在弹窗里
-      //    向运营承诺一道根本没跑的资金闸。改设备总数的警示由上方 fleetChanged 段落负责。
+      //    而本页改的是展示数字,一分钱都不流出,也没传 coverage —— 挂上等于在弹窗里
+      //    向运营承诺一道根本没跑的资金闸。
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: "保存后马上生效，并记入操作记录。",
       run: async (reason) => {
+        const recovering = !!command && pendingH9Command("main")?.commandKey === command.commandKey;
+        if (!recovering && (!ready.current || data.version !== currentVersion.current)) throw new Error("H9_CURRENT_READ_REQUIRED");
+        command ??= prepareH9PublicStats(submitted, data.version, reason, {
+          module, title, action: `保存${label}`, impact: impactText, change: change || title,
+          rows: rows.map(row => ({ key: String(row.key), label: String(row.label), before: String(row.before), after: String(row.after) })),
+          extraFacts: [
+            ...(toggled && dirty ? [{ label: "一起保存", value: `首页填写中的 ${rows.length - 1} 项改动` }] : []),
+            ...(module === "network" && memberModels?.resets ? [{ label: "推算起点", before: businessStamp(data.values.registeredUsersAnchorAt), after: "保存时刻" }] : []),
+          ],
+        });
+        ready.current = false;
+        setSaving(true);
         try {
-          const saved = await updateH9PublicStats(submitted, data.version, reason);
-          setData(saved);
-          setEditor(current => reconcileH9Editor(current, saved.values, H9_FIELDS.map(field => field.key), MODULE_KEYS[module], module === "history"));
+          const saved = await updateH9PublicStats(command, recovering);
+          if (recovering) {
+            ctx.openActionConfirm(null);
+            await load(module);
+          } else {
+            setData(saved);
+            setEditor(current => reconcileH9Editor(current, saved.values, H9_FIELDS.map(field => field.key), MODULE_KEYS[module], module === "history"));
+            setReadAt(Date.now());
+          }
           setSaveError(null);
-          ctx.toast(`展示设置已保存`);
+          ctx.toast(`${label}已保存，主配置 v${saved.version}`, "success");
         } catch (cause) {
+          const unresolved = pendingH9Command("main");
           const message = formatAdminApiError(cause instanceof Error ? cause.message : null, "H9_SAVE_FAILED");
-          setSaveError(message);
-          ctx.toast(`保存结果待核对 · ${message}`);
+          const kind = unresolved ? "unknown" : saveIssueKind(cause, ["H9_CONFIG_VERSION_CONFLICT"], recovering);
+          if (kind === "conflict") ready.current = false;
+          setSaveError({ kind, message, module, change: change || title, at: command.createdAt });
+          if (!unresolved) {
+            command = undefined;
+            if (recovering) { ctx.openActionConfirm(null); await load(module); }
+          }
+          ctx.toast(kind === "unknown" ? `保存结果未知 · ${message}` : message, kind === "unknown" ? "warn" : "error");
           throw cause;
-        }
+        } finally { setSaving(false); syncPending(); }
       },
     });
   };
 
-  if (loading && !data) return <section className="l-card"><div className="l-b">展示设置加载中…</div></section>;
+  /** 全球网络保存没得到明确结果：和主配置同一个对象，写进同一条提醒。 */
+  const onGlobeIssue = (cause: unknown, change: string) => {
+    const message = formatAdminApiError(cause instanceof Error ? cause.message : null, "H9_SAVE_FAILED");
+    setSaveError({ kind: saveIssueKind(cause, ["H9_CONFIG_VERSION_CONFLICT"]), message, module: "globe", change, at: Date.now() });
+  };
+
+  const recover = (record: H9Command) => {
+    const original = record.original;
+    if (!original) return;
+    const display = original.display;
+    ctx.openActionConfirm({ briefKind: "config", action: display.action, title: display.title,
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>, confirmLabel: "按原请求重试",
+      statedBrief: { impact: display.impact, check: "核对改动和对 App 的影响，理由写清调整依据。" },
+      detail: "主配置整组保存：任何一项不合法，整组都不保存；页面上其他块没保存的草稿不会带上。",
+      getPendingReason: () => pendingH9Command("main")?.commandKey === record.commandKey ? original.reason : undefined,
+      blockedReason: !canRetryH9Command(record) ? RETRY_EXPIRED_TEXT : !canWrite ? formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED") : undefined,
+      facts: <ConfirmFacts rows={display.rows} facts={<>
+        <Fact k="改的是">{display.objectLabel ?? moduleLabel(display.module)}</Fact>
+        <Fact k="主配置版本"><Change from={`v${original.expectedVersion}`} to={`v${original.expectedVersion + 1}`} /></Fact>
+        {display.extraFacts?.map(fact => <Fact key={fact.label} k={fact.label}>{fact.value ?? <Change from={fact.before} to={fact.after} />}</Fact>)}
+        <Fact k="操作记录">记一条高风险操作记录（不走审批）</Fact>
+      </>} />,
+      run: async () => {
+        ready.current = false;
+        setSaving(true);
+        try {
+          const saved = await updateH9PublicStats(record, true);
+          ctx.openActionConfirm(null);
+          await load(display.module);
+          ctx.toast(`${moduleLabel(display.module)}已保存，主配置 v${saved.version}`, "success");
+        } catch (cause) {
+          if (!pendingH9Command("main")) { ctx.openActionConfirm(null); await load(display.module); }
+          throw cause;
+        } finally { setSaving(false); syncPending(); }
+      },
+    });
+  };
+  const recoveryRows = pending ? [{
+    key: pending.commandKey, name: pending.original ? moduleLabel(pending.original.display.module) : "首页与网络展示设置",
+    change: pending.original?.display.change ?? formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE"), submittedAt: pending.createdAt,
+    actions: <>
+      <Button size="sm" disabled={loading} onClick={() => { if (pending.original) setModule(pending.original.display.module); void load(pending.original?.display.module); }}>查询原结果</Button>
+      <Button size="sm" disabledReason={!canRetryH9Command(pending) ? pending.original ? RETRY_EXPIRED_TEXT : formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE") : !canWrite ? formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED") : undefined}
+        disabled={saving} onClick={() => recover(pending)}>按原请求重试</Button>
+    </>,
+  }] : [];
+  const recoveryNotice = <H9RecoveryNotice rows={recoveryRows} explain={RECOVERY_EXPLAIN} />;
+  /** 排名的结果未知提醒在排名那一块里；切到别的块时，在页面上方给一个入口。 */
+  const rankPending = pendingH9Command("rank");
+  const unresolved = [pending && (pending.original ? moduleLabel(pending.original.display.module) : "主配置"), rankPending && "设备预估排名"].filter(Boolean).join("、");
+  const rankJump = rankPending && module !== "rank" ? <Button size="sm" onClick={() => setModule("rank")}>去设备预估排名处理</Button> : undefined;
+
+  const header = (
+    <PageHeader pageId="H9" title="首页与网络展示设置" summary="管 App 首页和网络页给用户看的展示数字。"
+      meta={data ? <>主配置 v{data.version} · {businessStamp(Date.parse(data.effectiveAt))} 生效（{businessZone().label}）· 打开时读取</> : undefined}
+      readOnly={!canWrite ? "你只能查看；修改要有这页的修改权限。" : undefined} />
+  );
+
+  const cards = <H9ModuleCards data={data} failed={!data && !loading} rank={rank} rankUnknown={!!rankPending} module={module} onSelect={setModule} ids={ids} readAt={readAt} />;
+  const rankPanel = <div key="rank" hidden={module !== "rank"} {...ids.panel("rank")}><H9DeviceRank ctx={ctx} onData={setRank} /></div>;
 
   if (!data || !drafts) {
-    return <section className="l-card">
-      <div className="l-h"><span className="ttl">展示设置加载失败</span></div>
-      <div className="l-b">
-        {/* 文案拼接走 h9PlaceholderCopy:字典整句自带句号,直接再拼「。」就是双句号(P2-15 回归)。 */}
-        <div className="htint danger">{h9PlaceholderCopy(error)}</div>
-        <div style={{ marginTop: 10 }}><button className="l-btn" onClick={() => void load()}>重试</button></div>
-      </div>
-    </section>;
+    return <div className="h9-page">
+      {header}
+      {recoveryNotice}
+      {rankJump && <Notice tone="warn" title="设备预估排名有一次保存结果未知" action={rankJump}>{rankPending?.original?.display.change ?? "原保存的内容没有存全"} · {businessStamp(rankPending!.createdAt)} 提交（{businessZone().label}）</Notice>}
+      {loading
+        ? <Conclusion state="unknown">展示设置读取中…</Conclusion>
+        /* 文案拼接走 h9PlaceholderCopy:字典整句自带句号,直接再拼「。」就是双句号(P2-15 回归)。 */
+        : <Notice tone="danger" title="主配置读取失败，这页暂时不能改" action={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => void load()}>重新读取</Button>}><KeepText text={h9PlaceholderCopy(error)} /></Notice>}
+      {cards}
+      {module !== "rank" && <div {...ids.panel(module)}>
+        <BlockState state={loading ? "loading" : "error"} title={loading ? "读取中…" : `${moduleLabel(module)}暂时看不到`} detail={loading ? undefined : "主配置读到后才显示这一块；设备预估排名照常可用。"} />
+      </div>}
+      {rankPanel}
+    </div>;
   }
 
-  const renderField = (key: ScalarKey, compact = false) => {
+  const values = data.values;
+  const savedTick = values.registeredUsersTickIntervalSec !== undefined;
+  const changedBands = module !== "history" ? 0 : Array.from({ length: Math.max(bands.length, values.hashratePercentileTable.length) },
+    (_, index) => bands[index]?.tops.trim() !== h9DraftText(values.hashratePercentileTable[index]?.tops) || bands[index]?.cumPct.trim() !== h9DraftText(values.hashratePercentileTable[index]?.cumPct)).filter(Boolean).length;
+  const changedKeys = MODULE_KEYS[module].filter((key) => drafts[key].trim() !== h9DraftText(values[key]));
+  const badCount = MODULE_KEYS[module].filter((key) => fieldErrors[key]).length + (module === "history" ? rowErrors.filter(Boolean).length + (bandCountError ? 1 : 0) : 0);
+  const saveBlock = pending ? formatAdminApiError("H9_ORIGINAL_UNRESOLVED", "H9_ORIGINAL_UNRESOLVED") : error ? formatAdminApiError("H9_CURRENT_READ_REQUIRED", "H9_CURRENT_READ_REQUIRED") : saving ? "正在保存" : loading ? "正在读取最新数据，读完再保存" : conflict ? "这块已被别人改过，先刷新这一块" : !dirty ? "没有改动" : !allValid ? "有填错的项，按框下的提示改" : undefined;
+  const toolbarNote = loading ? "正在读取…" : !canWrite ? "只能查看" : !dirty ? "没有改动" : badCount ? `有 ${badCount} 处要改` : `改了 ${changedKeys.length + changedBands || 1} 项，还没保存`;
+
+  const renderField = (key: ScalarKey) => {
     const field = H9_FIELDS.find((item) => item.key === key)!;
     const pending = key === "activeJobsBase" && !jobsBaseSupported;
-    return <div className="p-row" key={key}>
-      <div className="txt">
-        <div className="k">{field.label} {pending && <span className="s">后端待支持</span>}</div>
-        {!compact && <div className="s">可填 {field.min}–{field.max}{field.unit}{field.integer ? "（整数）" : ""}{field.clearable ? "，可留空" : ""} · {field.hint}</div>}
-        {fieldErrors[key] && <div className="ferr">{fieldErrors[key]}</div>}
-      </div>
-      {/* 🔴 type="text" 而不是 type="number"(zentao #200)。
-          Chrome 对 number 控件的可访问值走 float32 转换:String(97.6) 得到的
-          字符串会被重新解析成 97.5999984741211 再交给无障碍树 —— 视觉文本是 97.6,
-          读屏/自动化却读到二进制尾差,编辑后还会把尾差提交回去。这与 #185 的
-          D5 数值输入是同一个缺陷类,修法也一致:用文本控件承载已按业务精度规范化
-          的草稿,inputMode 保留移动端数字键盘。合法域校验仍由 scalarError 执行。 */}
-      <input
+    const defaultable = DEFAULTABLE.includes(module);
+    const isDefault = defaultable && h9DraftText(values[key]) === h9DraftText(data.defaults[key]) && values[key] !== undefined;
+    const unit = MONEY_KEYS.has(key) ? PAID_UNIT : field.unit;
+    const range = MONEY_KEYS.has(key) ? `$${count(field.min)}–$${count(field.max)}` : `${count(field.min)}–${count(field.max)} ${unit}${field.integer ? "，整数" : ""}`;
+    const defaultText = defaultable && !isDefault ? `默认 ${data.defaults[key] == null ? "不发布" : `${count(data.defaults[key])} ${field.unit}`}` : "";
+    return <Field key={key} label={<>{FIELD_COPY[key].name}{isDefault && <StatusTag tone="neutral">默认值</StatusTag>}</>}
+      explain={FIELD_COPY[key].what} hint={range}
+      help={[field.clearable ? "留空表示不发布" : pending ? "后端还没返回这一项，暂时不能改" : "", defaultText].filter(Boolean).join("；") || undefined}
+      error={fieldErrors[key] || undefined}>
+      {(control) => <NumberInput {...control}
         aria-label={`${field.label}目标值`}
-        className="l-inp"
-        type="text"
+        unit={unit} min={field.min} max={field.max} step={field.step}
         inputMode={field.integer ? "numeric" : "decimal"}
         value={drafts[key]}
         placeholder={pending ? "后端待支持" : field.clearable ? "不发布" : undefined}
-        disabled={!canWrite || loading || pending}
-        onChange={(event) => setDraft(key, event.target.value)}
-      />
-      <span className="unit">{field.unit}</span>
+        disabled={!canWrite || loading || !!error || saving || !!pendingH9Command("main") || pending}
+        onChange={(event) => setDraft(key, event.target.value)} />}
+    </Field>;
+  };
+
+  const toolbar = (extra?: ReactNode) => <ModuleToolbar note={toolbarNote} tone={dirty && badCount ? "warn" : undefined}>
+    <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} disabled={loading} onClick={() => void load(module)}>刷新这一块</Button>
+    {canWrite && extra}
+    {canWrite && <Button size="sm" disabled={!dirty || !!pending || saving || loading || !!error} onClick={restoreCurrent}>放弃改动</Button>}
+    {canWrite && <Button variant="primary" size="sm" disabledReason={saveBlock} onClick={() => save()}>保存变更</Button>}
+  </ModuleToolbar>;
+  const defaultsButton = <Button size="sm" disabled={loading || !!error || saving || !!pending} onClick={fillDefaults}>恢复默认</Button>;
+
+  const conflictNotice = conflict && <Notice tone="warn" title="这块已被别人改过" action={<Button size="sm" onClick={() => void load(module)}>刷新这一块</Button>}>
+    你填的内容还在。刷新会读最新值并放弃这一块没保存的改动，再按最新值重新改，避免盖掉别人的设置。
+  </Notice>;
+
+  // 首页：增长推算（只算增加量：App 上此刻的数这页读不到）。
+  const homeDraftValid = HOME_KEYS.every((key) => !fieldErrors[key]);
+  const homeStepsDirty = (["homeOnlineStepMin", "homeOnlineStepMax", "homePaidStepMin", "homePaidStepMax"] as const).some((key) => drafts[key].trim() !== h9DraftText(values[key]));
+  const homeSeries = (min: number, max: number) => HOUR_TICKS.map((hour) => averageGain(min, max, hour));
+  const growthChart = (kind: "online" | "paid") => {
+    const [minKey, maxKey] = kind === "online" ? ["homeOnlineStepMin", "homeOnlineStepMax"] as const : ["homePaidStepMin", "homePaidStepMax"] as const;
+    const showDraft = homeStepsDirty && homeDraftValid;
+    const format = kind === "online" ? (value: number) => `${count(Math.round(value))} 台` : (value: number) => paid(Number(value.toFixed(2)));
+    const perDay = (min: number, max: number) => kind === "online" ? `${count(min * 86_400)}–${count(max * 86_400)} 台` : `${paid(usdProduct(min, 86_400))}–${paid(usdProduct(max, 86_400))}`;
+    return <div className="h9-chart">
+      <p className="h9-chart-title">{kind === "online" ? "在线设备" : "累计已发放（$）"} · 开启时 24 小时平均增加</p>
+      <TrendLines label={`${kind === "online" ? "在线设备" : "累计已发放"}开启后 24 小时平均增加量`} ticks={HOUR_LABELS} height={120} format={format} axisFormat={axisShort(kind === "online" ? "台" : "")}
+        series={[
+          { key: "saved", label: "现在的参数", slot: showDraft ? "other" : 2, values: homeSeries(values[minKey], values[maxKey]) },
+          ...(showDraft ? [{ key: "draft", label: "填写中", slot: 2 as const, values: homeSeries(num(drafts[minKey]), num(drafts[maxKey])) }] : []),
+        ]} />
+      <p className="h9-chart-note">一天增加 {perDay(values[minKey], values[maxKey])}{showDraft && <>，改后 {perDay(num(drafts[minKey]), num(drafts[maxKey]))}</>}</p>
     </div>;
   };
 
-  return <>
-    {error && <div className="htint danger" role="alert">刷新未完成：{error}；已填写内容保留，请重试。</div>}
-    {conflict && <div className="htint warn" role="alert">本模块已被其他操作员修改。草稿已保留，请刷新本模块后重新修改，避免覆盖他人的设置。</div>}
-    <div hidden={module !== "home"}>
-    <section className="l-card" aria-label="首页数字增长" style={{ marginBottom: 24 }}>
-      <div className="l-h">
-        <span className="ttl">首页数字增长</span>
-        <span className="sub">{data.values.homeDisplayEnabled ? "已开启" : "已暂停"}</span>
-        <div className="r">
-          {canWrite && <button className="l-btn mc" disabled={!allValid} onClick={() => save(!data.values.homeDisplayEnabled)}>{data.values.homeDisplayEnabled ? "暂停增长" : "开启增长"}</button>}
-        </div>
+  const homeModule = <div className="rd-split h9-module" data-detail="" data-even="" hidden={module !== "home"} {...ids.panel("home")} aria-label="首页数字增长">
+    <Panel title="App 上的样子" icon={Smartphone} tone="role-2" explain="App 介绍页、首页和网络脉搏的在线设备都是这个数；累计已发放在介绍页。数字由服务端按秒生成，所有用户看到同一个数。">
+      <AppPreview where="App 介绍页 · 网络脉搏"
+        explain={<><p>增长开着时，两个数每秒在区间里随机增加，所有用户看到同一个数；暂停后停在暂停那一刻，再开启从那里接着涨。保存参数不会改开关。</p><p>App 页面开着时一般 60 秒内读到新参数，退到后台或断网时不保证。</p></>}
+        status={values.homeDisplayEnabled ? <><StatusTag tone="progress">增长中</StatusTag>每秒在区间里随机增加</> : <><StatusTag tone="neutral">已暂停</StatusTag>App 上的数停住不动</>}>
+        <AppNumber label="在线设备 · 设定值" value={count(values.homeOnlineCurrent)} unit="台" />
+        <AppNumber label={<>累计已发放 · 设定值<Explain label="累计已发放的单位" content={PAID_UNIT_NOTE} /></>} value={paid(values.homePaidCurrent)} />
+      </AppPreview>
+      {growthChart("online")}
+      {growthChart("paid")}
+    </Panel>
+    <Panel title="参数" icon={SlidersHorizontal} tone="role-4" sub={`主配置 v${data.version}`}
+      actions={canWrite && <Button size="sm" variant={values.homeDisplayEnabled ? "secondary" : "primary"}
+        disabledReason={pending ? formatAdminApiError("H9_ORIGINAL_UNRESOLVED", "H9_ORIGINAL_UNRESOLVED") : error ? formatAdminApiError("H9_CURRENT_READ_REQUIRED", "H9_CURRENT_READ_REQUIRED") : saving ? "正在保存" : loading ? "正在读取最新数据" : conflict ? "这块已被别人改过，先刷新这一块" : !allValid ? "首页有填错的项，改好后才能切换" : undefined}
+        onClick={() => save(!values.homeDisplayEnabled)}>{values.homeDisplayEnabled ? "暂停增长" : "开启增长"}</Button>}
+      explain="开启或暂停会把首页这块填写中的改动一起保存；只保存参数不会改开关。">
+      {conflictNotice}
+      <div className="h9-group">
+        <h3 className="h9-group-title">在线设备</h3>
+        {renderField("homeOnlineCurrent")}
+        <div className="h9-pair">{renderField("homeOnlineStepMin")}{renderField("homeOnlineStepMax")}</div>
       </div>
-      <div className="l-b">
-        <div className="two-col" style={{ marginBottom: 0 }}>
-          {HOME_SECTIONS.map((section) => <div key={section.title} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "4px 16px 12px" }}>
-            <div className="hgrp"><span className="t">{section.title}</span></div>
-            {section.keys.map((key) => renderField(key, true))}
-          </div>)}
-        </div>
+      <div className="h9-group">
+        <h3 className="h9-group-title">累计已发放<Explain label="累计已发放的单位" content={PAID_UNIT_NOTE} /> <span className="h9-group-rule">App 上显示为 $，金额最多两位小数，多了后端会拒绝</span></h3>
+        {renderField("homePaidCurrent")}
+        <div className="h9-pair">{renderField("homePaidStepMin")}{renderField("homePaidStepMax")}</div>
       </div>
-      <div className="l-h" style={{ borderTop: "1px solid var(--border)", borderBottom: 0 }}>
-        <span className="sub">每秒在区间内随机增加；暂停保留累计值。保存配置不会自动开启。</span>
-        <div className="r">
-          <button className="l-btn sm" onClick={() => void load("home")}>刷新</button>
-          {canWrite && <button className="l-btn sm" disabled={!dirty} onClick={restoreCurrent}>放弃改动</button>}
-          {canWrite && <button className="l-btn" disabled={!dirty || !allValid} title={!dirty ? "没有改动" : !allValid ? "有参数不对，请先按红字修改" : undefined} onClick={() => save()}>保存变更</button>}
-        </div>
+      {toolbar()}
+    </Panel>
+  </div>;
+
+  // 网络脉搏注册人数。
+  const members = membersAt(memberModels!.saved, readAt);
+  const spread = memberModels!.saved.tick ? memberSpread(memberModels!.saved.tick.stepMin, memberModels!.saved.tick.stepMax) : 0;
+  const networkModule = <div className="rd-split h9-module" data-detail="" data-even="" hidden={module !== "network"} {...ids.panel("network")}>
+    <Panel title="App 上的样子" icon={Smartphone} tone="role-3" explain="注册人数是按参数推算的展示数字，不改真实账户，也不参与设备预估排名。">
+      <AppPreview where="App 首页 · 网络脉搏"
+        explain={savedTick
+          ? <>按读取这页的时刻、用后端同一个公式推算。每跳一次另有 0–{count(spread)} 人的固定随机偏移，所以 App 上会比这里多 0–{count(spread)} 人，所有用户一致。</>
+          : <>只配了月增长率：网络脉搏卡片显示这个数，网络快照等位置会显示「不可用」。</>}
+        status={savedTick ? `App 上比这里多 0–${count(spread)} 人` : <><StatusTag tone="warn">部分位置不显示</StatusTag>网络快照显示「不可用」</>}>
+        <AppNumber label="注册用户 · 现在约" value={members == null ? "—" : count(members)} unit={members == null ? undefined : "人"} empty={members == null} />
+      </AppPreview>
+      <div className="h9-chart">
+        <p className="h9-chart-title">接下来 30 天</p>
+        <TrendLines label="接下来 30 天注册人数推算" ticks={DAY_LABELS} height={140} format={(value) => `${count(value)} 人`} axisFormat={axisShort("人")}
+          series={[
+            { key: "saved", label: "现在的参数", slot: memberModels!.draft ? "other" : 3, values: memberSeries(memberModels!.saved) },
+            ...(memberModels!.draft ? [{ key: "draft", label: "填写中", slot: 3 as const, values: memberSeries(memberModels!.draft) }] : []),
+          ]} />
       </div>
-    </section>
+      {jumpNotice}
+      <Facts>
+        <Fact k="推算起点">{businessStamp(values.registeredUsersAnchorAt)}（{businessZone().label}）</Fact>
+      </Facts>
+    </Panel>
+    <Panel title="参数" icon={SlidersHorizontal} tone="role-4" sub={`主配置 v${data.version}`}
+      explain="改基数、跳动间隔或每次人数，推算起点重置为保存时刻；只改月增长率不重置起点，会按原起点重算整段。">
+      {conflictNotice}
+      {!savedTick && <Notice tone="warn" title="只配了月增长率">App 网络脉搏卡片照常显示注册人数，网络快照等位置会显示「不可用」。要各处都显示，填上跳动间隔和每次增加人数（三项一起）。</Notice>}
+      {renderField("registeredUsersBase")}
+      <div className="h9-group">
+        <h3 className="h9-group-title">按跳动增长</h3>
+        {renderField("registeredUsersTickIntervalSec")}
+        <div className="h9-pair">{renderField("registeredUsersTickStepMin")}{renderField("registeredUsersTickStepMax")}</div>
+      </div>
+      {savedTick
+        ? <div className="h9-group" data-idle="">
+          <h3 className="h9-group-title">目前不生效 <StatusTag tone="neutral" explain="已设了跳动，注册人数只按跳动算。月增长率还能保存，但不会被用到。">设了跳动后不用</StatusTag></h3>
+          {renderField("registeredUsersMonthlyGrowthPct")}
+        </div>
+        : <div className="h9-group">
+          <h3 className="h9-group-title">按月增长</h3>
+          {renderField("registeredUsersMonthlyGrowthPct")}
+        </div>}
+      {toolbar(defaultsButton)}
+    </Panel>
+  </div>;
+
+  // 全球作业基座。
+  const jobs = values.activeJobsBase;
+  const jobsModule = <div className="rd-split h9-module" data-detail="" data-even="" hidden={module !== "jobs"} {...ids.panel("jobs")}>
+    <Panel title="App 上的样子" icon={Smartphone} tone="role-2" explain="赚取页任务中心和全球网络页用同一个数，基座只加一次。">
+      <AppPreview where="App 赚取页 · 任务中心"
+        explain="真实进行中作业数这页读不到。真实数读不到时，只有当天两种币的已实现收益都确为 0，App 才只显示基座；否则显示不可用。全球网络页的进行中任务也是这个数。"
+        status="真实进行中作业数这页读不到">
+        <AppNumber label="全球作业进行中" value={jobs == null ? "真实数" : <>真实数 + {count(jobs)}</>} unit="个" empty={jobs == null}
+          sub={jobs == null ? "基座未发布，只显示真实进行中作业数" : jobs === 0 ? "发布了 0，显示的就是真实数" : undefined} />
+      </AppPreview>
+    </Panel>
+    <Panel title="参数" icon={SlidersHorizontal} tone="role-4" sub={`主配置 v${data.version}`}>
+      {conflictNotice}
+      {renderField("activeJobsBase")}
+      {toolbar(defaultsButton)}
+    </Panel>
+  </div>;
+
+  // 历史估算：App 不读，整块归「目前不生效」。
+  const impactRows = impact ? [
+    { key: "online", label: "历史在线估算", now: `${count(impact.current.online)} 台`, next: `${count(impact.next.online)} 台` },
+    { key: "daily", label: "日金额估算", now: `${usd(impact.current.daily)} USD`, next: `${usd(impact.next.daily)} USD` },
+    { key: "perSec", label: "每秒金额估算", now: `${usdApprox(impact.current.perSec)} USD`, next: `${usdApprox(impact.next.perSec)} USD` },
+    { key: "monthly", label: "30 天金额估算", now: `${usd(impact.current.monthly)} USD`, next: `${usd(impact.next.monthly)} USD` },
+    { key: "denominator", label: "历史估算分母", now: `${count(impact.current.denominator)} 人`, next: `${count(impact.next.denominator)} 人` },
+  ].map((row) => ({ ...row, next: row.next.includes("NaN") || row.next.startsWith("—") ? "—" : row.next })) : [];
+  const historyModule = <div className="h9-stack" hidden={module !== "history"} {...ids.panel("history")}>
+    <Notice tone="neutral" title="这组参数目前不生效">App 正式页面不读历史估算，在线设备、已完成提现和设备预估排名都不用它。保存后只改变这页的估算。</Notice>
+    <div className="rd-split h9-module" data-detail="" data-even="">
+      <Panel title="估算结果" icon={TableProperties} tone="role-other" sub={`每台每日 ${usd(data.publishedDailyUsdPerDevice)} USD`}
+        explain="按你填的值随填随算，保存前就能看到。日金额 = 设备总数 × 每台每日；不是实付金额，也不改账户、设备或资金账单。">
+        <Table label="历史估算的影响">
+          <thead><tr><Th>指标</Th><Th align="right">现在</Th><Th align="right">按填写的值</Th></tr></thead>
+          <tbody>
+            {impactRows.map((row) => <Tr key={row.key}>
+              <Td>{row.label}</Td>
+              <Td align="right">{row.now}</Td>
+              <Td align="right">{row.now === row.next ? row.next : <span className="h9-changed">{row.next}</span>}</Td>
+            </Tr>)}
+          </tbody>
+        </Table>
+      </Panel>
+      <Panel title="参数" icon={SlidersHorizontal} tone="role-4" sub={`主配置 v${data.version}`}>
+        {conflictNotice}
+        {renderField("fleetDevices")}
+        {renderField("onlineRatePct")}
+        {renderField("virtualUserCount")}
+        <div className="h9-group" data-idle="">
+          <h3 className="h9-group-title">目前不生效 <StatusTag tone="neutral" explain="保存后不参与任何计算，这页的估算也不用它。">没有地方用</StatusTag></h3>
+          {renderField("onlineJitter")}
+        </div>
+      </Panel>
     </div>
-    <div hidden={module !== "globe"}>
-      <H9GlobeDisplay ctx={ctx} data={data} refreshing={loading} onSaved={next => {
-        setData(next); setEditor(current => reconcileH9Editor(current, next.values, H9_FIELDS.map(field => field.key)));
+    <Panel title="算力分位表" icon={TableProperties} tone="role-other" sub={`${bands.length} 档`}
+      explain={<>累计占比是算力达到或低于这一档的人占历史估算分母的比例；100% 表示覆盖全部。只用于历史估算，设备预估排名用的是自己的档位。</>}
+      actions={<>
+        <PaginationExemption label="算力分位表" reason="整表统一保存，需同时检查各行数值顺序" maxRows={bands.length} kind="fixed-matrix" />
+        {canWrite && <Button size="sm" disabled={loading || !!error || saving || !!pending} onClick={addBand}>添加档</Button>}
+      </>}>
+      {bandCountError && <Notice tone="warn">{bandCountError}。{canWrite ? "点「添加档」补齐。" : ""}</Notice>}
+      {bands.length > 0 && <Table label="算力分位表">
+        <thead><tr><Th>档</Th><Th>算力档位</Th><Th>累计占比</Th><Th>含义</Th>{canWrite && <Th align="right">操作</Th>}</tr></thead>
+        <tbody>
+          {bands.map((row, index) => {
+            const pct = num(row.cumPct);
+            return <Tr key={index}>
+              <Td>{index + 1}</Td>
+              <Td><NumberInput aria-label={`第 ${index + 1} 档算力档位`} unit="TOPS" min={H9_BAND_TOPS_MIN} inputMode="decimal" value={row.tops} disabled={!canWrite || loading || !!error || saving || !!pending} onChange={(event) => setBand(index, "tops", event.target.value)} /></Td>
+              <Td><span className="h9-band-pct">
+                {Number.isFinite(pct) && pct >= 0 && pct <= 100 && <RatioBar compact quiet label="累计占比" value={pct} total={100} valueText={`累计 ${pct}%`} tone="role-other" />}
+                <NumberInput aria-label={`第 ${index + 1} 档累计占比`} unit="%" min={0} max={100} inputMode="decimal" value={row.cumPct} disabled={!canWrite || loading || !!error || saving || !!pending} onChange={(event) => setBand(index, "cumPct", event.target.value)} />
+              </span></Td>
+              <Td>{rowErrors[index] ? <span className="h9-row-error">{rowErrors[index]}</span> : h9BandMeaning(row.tops, row.cumPct)}</Td>
+              {canWrite && <Td align="right"><Button size="sm" variant="ghost" aria-label={`删除第 ${index + 1} 档`} disabled={loading || !!error || saving || !!pending} onClick={() => removeBand(index)}>删除</Button></Td>}
+            </Tr>;
+          })}
+        </tbody>
+      </Table>}
+      <p className="h9-band-rule">算力从 {H9_BAND_TOPS_MIN} 起从小到大排；累计占比逐行不变小，最高 100%；至少 {H9_BAND_MIN} 档。</p>
+      {toolbar(defaultsButton)}
+    </Panel>
+  </div>;
+
+  const issue = saveError;
+
+  return <div className="h9-page">
+    {header}
+    {recoveryNotice}
+    {issue?.kind === "conflict" && <Notice tone="warn" title={`保存没成功：${moduleLabel(issue.module)}所在的主配置已被别人改过`}
+      action={<Button size="sm" onClick={() => { setModule(issue.module); void load(issue.module); }}>刷新这一块</Button>}>
+      这次没有保存。刷新读到最新值后再改，避免盖掉别人的设置。
+    </Notice>}
+    {issue?.kind === "rejected" && <Notice tone="danger" title={`保存被拒：${moduleLabel(issue.module)}`}>{issue.message} 这次没有保存，按原因改好后再保存。</Notice>}
+    {error && <Notice tone="danger" title="刷新没成功">{error} 页面上还是上次读到的值，已填写的内容保留，请重试。</Notice>}
+    {!issue && !error && (unresolved
+      ? <Conclusion state="warn" action={rankJump}>{unresolved}的保存结果未知：先查询原结果，有结论前不能再保存</Conclusion>
+      : savedTick
+      ? <Conclusion state="ok">首页数字{values.homeDisplayEnabled ? "增长中" : "已暂停"}，设备预估排名{rank.state === "ready" ? rank.config.enabled ? "已开启" : "已关闭" : rank.state === "failed" ? "读取失败" : "读取中"}；没有要处理的事</Conclusion>
+      : <Conclusion state="warn" action={module !== "network" ? <Button size="sm" onClick={() => setModule("network")}>去看注册人数</Button> : undefined}>网络脉搏注册人数只配了月增长率，App 上有的位置显示「不可用」</Conclusion>)}
+    {cards}
+    {homeModule}
+    {networkModule}
+    {jobsModule}
+    <div hidden={module !== "globe"} {...ids.panel("globe")}>
+      <H9GlobeDisplay ctx={ctx} data={data} refreshing={loading} blocked={!!error || saving || !!pending || saveError?.kind === "conflict"} ready={ready} onPending={syncPending} onIssue={onGlobeIssue} onSaved={next => {
+        setData(next); setEditor(current => reconcileH9Editor(current, next.values, H9_FIELDS.map(field => field.key))); setSaveError(null); setReadAt(Date.now());
       }} onRefresh={() => load("globe")} />
     </div>
-    <div className="f-stats" hidden={module !== "history"}>
-      <div className="f-stat cyan"><div className="k">历史设备配置</div><div className="v">{int(data.values.fleetDevices)}</div><div className="sub">设置值，不是实际设备数</div></div>
-      <div className="f-stat"><div className="k">历史在线估算</div><div className="v">{int(data.values.fleetDevices * data.values.onlineRatePct / 100)}</div><div className="sub">设备数 × 在线比例 {data.values.onlineRatePct}%</div></div>
-      <div className="f-stat"><div className="k">网络脉搏注册基数</div><div className="v">{int(data.values.registeredUsersBase)}</div><div className="sub">「网络脉搏」显示用；{data.values.registeredUsersTickIntervalSec !== undefined && data.values.registeredUsersTickStepMin !== undefined && data.values.registeredUsersTickStepMax !== undefined
-        ? `每 ${data.values.registeredUsersTickIntervalSec} 秒增加 ${data.values.registeredUsersTickStepMin === data.values.registeredUsersTickStepMax ? int(data.values.registeredUsersTickStepMin) : `${int(data.values.registeredUsersTickStepMin)}–${int(data.values.registeredUsersTickStepMax)}`} 人`
-        : `每月增长 ${data.values.registeredUsersMonthlyGrowthPct}%`}</div></div>
-      <div className="f-stat ok"><div className="k">历史估算分母</div><div className="v">{int(data.realUserCount + data.values.virtualUserCount)}</div><div className="sub">真实注册人数 + 虚拟人口</div></div>
-    </div>
-
-    {saveError && <div className="htint danger" style={{ marginBottom: 12 }}>
-      上次保存结果需核对：{saveError}。
-      如果是别人同时改了这页，先点「刷新」再改；否则可以直接再点「保存变更」重试，不会重复保存；
-      也可以点「放弃改动」恢复成当前生效的值。
-    </div>}
-
-    <div className={module === "history" ? "two-col" : undefined} hidden={module !== "network" && module !== "jobs" && module !== "history"}>
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">{module === "network" ? "首页网络实况" : module === "jobs" ? "赚取页任务中心" : "历史规模与排名估算"}</span>
-          <span className="sub">· 生效版本 v{data.version} · {when(Date.parse(data.effectiveAt))} · {canWrite ? "可修改" : "你只能查看"}</span>
-          <div className="r">
-            <button className="l-btn sm" onClick={() => void load(module)}>刷新</button>
-            {canWrite && <button className="l-btn sm" onClick={fillDefaults}>恢复默认</button>}
-            {canWrite && <button className="l-btn sm" disabled={!dirty} onClick={restoreCurrent}>放弃改动</button>}
-            {canWrite && <button className="l-btn mc" disabled={!dirty || !allValid} title={!dirty ? "没有改动" : !allValid ? "有参数不对，请先按红字修改" : undefined} onClick={() => save()}>保存变更</button>}
-          </div>
-        </div>
-        <div className="l-b">
-          {module === "network" && <div className="htint">注册用户在此配置；在线设备沿用「首页数字增长」，排名由「设备预估排名」独立配置。</div>}
-          {module === "jobs" && !jobsBaseSupported && <div className="htint warn">全球作业基座后端待支持，暂时不能修改；其他展示设置照常保存。</div>}
-          {SECTIONS.filter((_section, index) => module === "network" ? index === 1 : module === "jobs" ? index === 3 : index === 0 || index === 2).map((section) => <div key={section.title}>
-            <div className="hgrp"><span className="t">{section.title}</span><span className="s">{section.sub}</span></div>
-            {section.keys.map((key) => renderField(key))}
-          </div>)}
-          <div className="p-row" hidden={module !== "network"}>
-            <div className="txt">
-              <div className="k">注册用户推算起点 </div>
-              <div className="s">用于网络脉搏注册用户展示。修改基数、跳动间隔或每次增加人数范围时，起点自动重置为保存时刻。</div>
-            </div>
-            <span className="v">{when(data.values.registeredUsersAnchorAt)}</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="l-card" hidden={module !== "history"}>
-        <div className="l-h"><span className="ttl">改动影响预览</span><span className="sub">· 按你填的值实时计算，保存前就能看到</span></div>
-        <div className="l-b">
-          <div className="htint cyan">
-            每台每日配置值 <b>{money2(impact?.perDevice ?? Number.NaN)}</b> 仅用于历史估算；下表不是实付金额。
-          </div>
-          <table className="l-tbl" style={{ marginTop: 10 }}>
-            <thead><tr><th>指标</th><th className="num">当前生效</th><th className="num">保存后</th></tr></thead>
-            <tbody>
-              {[
-                { label: "在线设备估算", now: int(impact?.current.online ?? Number.NaN), next: int(impact?.next.online ?? Number.NaN) },
-                { label: "日金额估算", now: money(impact?.current.daily ?? Number.NaN), next: money(impact?.next.daily ?? Number.NaN) },
-                { label: "每秒金额估算", now: money2(impact?.current.perSec ?? Number.NaN), next: money2(impact?.next.perSec ?? Number.NaN) },
-                { label: "30 天金额估算", now: money(impact?.current.monthly ?? Number.NaN), next: money(impact?.next.monthly ?? Number.NaN) },
-                { label: "历史估算分母", now: int(impact?.current.denominator ?? Number.NaN), next: int(impact?.next.denominator ?? Number.NaN) },
-              ].map((row) => <tr key={row.label}>
-                <td>{row.label}</td>
-                <td className="num">{row.now}</td>
-                <td className={`num${row.now === row.next ? "" : " chg"}`}>{row.next}</td>
-              </tr>)}
-            </tbody>
-          </table>
-          <div className="htint warn" style={{ marginTop: 10 }}>
-            下表是历史规模估算，与首页在线设备展示独立；不改变实际账户、设备或资金账单。
-          </div>
-        </div>
-      </section>
-    </div>
-
-    <section className="l-card" hidden={module !== "history"}>
-      <div className="l-h">
-        <span className="ttl">算力分位表</span>
-        <span className="sub">· 只用于历史估算</span>
-        <div className="r">
-          <PaginationExemption label="算力分位表" reason="整表统一保存，需同时检查各行数值顺序" maxRows={bands.length} kind="fixed-matrix" />
-          {canWrite && <button className="l-btn sm" onClick={addBand}>添加档</button>}
-        </div>
-      </div>
-      <div className="l-b">
-        {bandCountError && <div className="htint danger" style={{ marginBottom: 10 }}>{bandCountError}。{bands.length < H9_BAND_MIN ? "点右上角「添加档」补齐，少于两档无法换算成百分比。" : ""}</div>}
-        {bands.length === 0
-          ? <div className="htint">还没有任何档位。历史估算表至少需要 {H9_BAND_MIN} 档才能保存。</div>
-          : <table className="l-tbl">
-              <thead><tr><th>档</th><th>算力档位 </th><th>累计占比(%) </th><th>含义</th><th /></tr></thead>
-              <tbody>
-                {bands.map((row, index) => <tr key={index}>
-                  <td className="mono">{index + 1}</td>
-                  <td><input aria-label={`第 ${index + 1} 档算力档位`} className="l-inp" type="text" inputMode="numeric" value={row.tops} disabled={!canWrite} onChange={(event) => setBand(index, "tops", event.target.value)} /></td>
-                  <td><input aria-label={`第 ${index + 1} 档累计占比`} className="l-inp" type="text" inputMode="decimal" value={row.cumPct} disabled={!canWrite} onChange={(event) => setBand(index, "cumPct", event.target.value)} /></td>
-                  <td>{rowErrors[index]
-                    ? <span className="ferr">{rowErrors[index]}</span>
-                    : h9BandMeaning(row.tops, row.cumPct)}</td>
-                  <td><button className="l-btn sm" disabled={!canWrite} onClick={() => removeBand(index)}>删除</button></td>
-                </tr>)}
-              </tbody>
-            </table>}
-        <div className="htint" style={{ marginTop: 10 }}>
-          填写规则：算力从 {H9_BAND_TOPS_MIN} 起从小到大排；累计占比要逐行不变小，最高 100%。
-          这张表只用于历史估算；设备预估排名用的是上方单独的档位设置。
-        </div>
-      </div>
-    </section>
-
-    <p className="f-foot">
-      <b>这些数字用在哪</b>：介绍页和「网络脉搏」显示的在线设备数，开启后按设置的区间增长；「网络脉搏」的注册用户按基数和月增长率推算；在线设备数也用于设备预估排名；赚取页任务中心「N 个全球作业进行中」显示真实进行中作业数加上全球作业基座，未发布时只显示真实作业数。这些都只是展示，不影响真实设备、算力和资金。修改记录在{" "}
-      <Link href="/platform/audit" className="l-btn sm">操作记录与审批</Link>{" "}查看。
-    </p>
-  </>;
+    {rankPanel}
+    {historyModule}
+    <AuditFoot />
+  </div>;
 }
 
 export default H9PublicStats;

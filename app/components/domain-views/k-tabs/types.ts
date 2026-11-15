@@ -62,7 +62,12 @@ export type ActionConfirmReq = {
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type ConfirmReq = {
-  /** A saved original freezes inputs while its result remains unresolved. */
+  rebaseValue?: string;
+  initialReason?: string;
+  formKey?: number;
+  /** Opt-in for domains retaining the complete request after an unknown result. */
+  freezePendingInput?: boolean;
+  getPendingBlockReason?: () => string | undefined;
   getPendingReason?: () => string | undefined;
   /** 原覆盖分，恢复时只展示保存的输入。 */
   getPendingValue?: () => string | undefined;

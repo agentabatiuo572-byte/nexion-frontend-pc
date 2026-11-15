@@ -13,6 +13,7 @@ import { createPendingMutationStore, type PendingMutationRecord } from "./pendin
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import type { F4AmbassadorPolicyUpdate } from "./f1-client";
+import type { H8Original } from "./h8-reward-mutation";
 import type { FDomainAttempt } from "./f2-approval";
 import type { B1CommandFacts } from "./b1-commands";
 import type { B5ThresholdFacts } from "./b5-commands";
@@ -21,6 +22,9 @@ export const configApprovalAttempts = createPendingMutationStore<PendingMutation
   input: string;
   commandOrigin?: FundCommandOrigin;
   withdrawalRequest?: Parameters<typeof createA2OperationProposal>[0];
+  h8Original?: H8Original;
+  h8Ticket?: A2OperationRow;
+  h8Acknowledged?: boolean;
   g4Ticket?: A2OperationRow;
   g4Request?: Parameters<typeof createA2OperationProposal>[0];
   b1Request?: Parameters<typeof createA2OperationProposal>[0];
@@ -80,6 +84,15 @@ export function pendingConfigApproval(sourceDomain: keyof typeof commands, admin
 /** 按原操作重试被明确拒绝、人核实过结果后解除本页的锁。不发请求，只删这一条原命令（OP-153）。 */
 export function releaseConfigApproval(sourceDomain: keyof typeof commands, adminId: string | number, commandKey: string, scope?: ApprovalScope) {
   attempts.forget(approvalSlot(sourceDomain, adminId, scope), commandKey);
+}
+
+/** H8 uses this existing store instance so other domains' in-flight approvals stay intact. */
+export function storeH8ConfigApproval(adminId: number, field: string, commandKey: string, extra: {
+  input: string; h8Original?: H8Original; h8Ticket?: A2OperationRow; h8Acknowledged?: boolean;
+}) {
+  const slot = approvalSlot("H8", adminId, { objectId: "current", field });
+  attempts.remember(slot, commandKey, extra);
+  if (!attempts.isDurablyStored(slot, commandKey)) throw new Error("H8_REQUEST_STORAGE_UNAVAILABLE");
 }
 
 type ThresholdApprovalValues = {

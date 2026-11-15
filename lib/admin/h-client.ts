@@ -1,3 +1,4 @@
+import { h4CommandRequest, markH4Read } from "./h4-mutations";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -324,7 +325,11 @@ export async function chargeH2TrialSession(sessionId: string, reason: string) {
 }
 
 export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
-  return growthRequest<Record<string, any>>(section === "events" ? "/quest-events/events-overview" : "/quest-events/tasks");
+  if (section === "tasks") return growthRequest<Record<string, any>>("/quest-events/tasks");
+  markH4Read("overview", false);
+  const result = await growthRequest<Record<string, any>>("/quest-events/events-overview");
+  markH4Read("overview", true);
+  return result;
 }
 
 export type H3WeeklyRegionMapping = { callingCode: string; zoneId: string };
@@ -387,7 +392,7 @@ export function h3WeeklyRegionPolicyParams(policy: H3WeeklyRegionPolicy, mapping
   };
 }
 
-const h3WeeklyRegionProposals = createPendingMutationStore({ storageKey: "nexion-admin-h3-weekly-region-proposals-v1" });
+const h3WeeklyRegionProposals = createPendingMutationStore({ storageKey: "nexion-admin-h3-weekly-region-proposals-v1", retainExpiredRecords: true });
 export async function withH3WeeklyRegionProposalKey(
   params: ReturnType<typeof h3WeeklyRegionPolicyParams>, reason: string, submit: (commandKey: string) => Promise<unknown>,
 ) {
@@ -436,10 +441,10 @@ async function h4EventMutation(
   expectedValue: string | boolean,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/events/${encodeURIComponent(eventId)}/${field}`,
     { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue) },
-    `h4-${field}`,
+    `活动${field === "reward" ? "奖励" : field === "status" ? "状态" : "主推"} · ${eventId}`,
   );
 }
 
@@ -507,8 +512,90 @@ export async function updateH5EarnTickInterval(value: string | number, reason: s
   );
 }
 
-export async function fetchH7Vouchers(): Promise<Record<string, any>> {
-  return growthRequest<Record<string, any>>("/vouchers");
+export type H7PendingApproval = {
+  action: string | null; ticketId: string | null; submittedBy: string | null; submittedAt: string | null;
+};
+
+export type H7Voucher = {
+  id: string; name: string; type: "fixed" | "percent";
+  amountUSD?: number; percent?: number; minPurchaseUSD?: number; maxDiscountUSD?: number;
+  applicableSkus: string[]; audience: "new" | "all"; startAt: number; endAt: number; claimSurfaces: string[];
+  popupEnabled: boolean; popupDelayMs: number; popupCooldownHours: number; popupMaxPerSession: number;
+  popupCadenceEnabled: boolean; stackWithTrial: boolean; stackWithOthers: boolean; splittable: boolean;
+  issuanceLimit: number; version: number; issuedCount: number; availableCount: number;
+  redeemedCount: number; revokedCount: number; batchCount: number; status: "active" | "paused";
+  /** GET is authoritative. Write receipts deliberately do not project locks. */
+  pendingApproval?: H7PendingApproval | null;
+};
+export type H7Overview = {
+  vouchers: H7Voucher[];
+  skus: { id: string; name: string; status: "on" | "off" }[];
+  stats: { total: number; active: number; paused: number; popup: number };
+};
+
+/** Decode the GET boundary once; null is never a numeric zero or an unlocked object. */
+export function parseH7Voucher(raw: unknown): H7Voucher {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("H7_VOUCHER_RESPONSE_INVALID");
+  const row = raw as Record<string, unknown>;
+  const number = (key: string, integer = true, min = 0, max = Number.MAX_SAFE_INTEGER) => {
+    const value = row[key];
+    if (typeof value !== "number" || !Number.isFinite(value) || integer && !Number.isSafeInteger(value)
+      || value < min || value > max) throw new Error(`H7_VOUCHER_RESPONSE_INVALID:${key}`);
+    return value;
+  };
+  const boolean = (key: string) => {
+    if (typeof row[key] !== "boolean") throw new Error(`H7_VOUCHER_RESPONSE_INVALID:${key}`);
+    return row[key];
+  };
+  const strings = (key: string) => {
+    const value = row[key];
+    if (!Array.isArray(value) || value.some(v => typeof v !== "string")) throw new Error(`H7_VOUCHER_RESPONSE_INVALID:${key}`);
+    return value as string[];
+  };
+  if (typeof row.id !== "string" || !row.id.trim() || typeof row.name !== "string" || !row.name.trim()
+    || row.type !== "fixed" && row.type !== "percent" || row.audience !== "new" && row.audience !== "all"
+    || row.status !== "active" && row.status !== "paused") throw new Error("H7_VOUCHER_RESPONSE_INVALID");
+  let pendingApproval: H7PendingApproval | null | undefined;
+  if (row.pendingApproval === null) pendingApproval = null;
+  else if (row.pendingApproval !== undefined) {
+    if (!row.pendingApproval || typeof row.pendingApproval !== "object" || Array.isArray(row.pendingApproval)) throw new Error("H7_VOUCHER_RESPONSE_INVALID:pendingApproval");
+    const pending = row.pendingApproval as Record<string, unknown>;
+    for (const key of ["action", "ticketId", "submittedBy", "submittedAt"]) {
+      if (pending[key] !== null && typeof pending[key] !== "string") throw new Error("H7_VOUCHER_RESPONSE_INVALID:pendingApproval");
+    }
+    pendingApproval = pending as H7PendingApproval;
+  }
+  return {
+    id: row.id, name: row.name, type: row.type, audience: row.audience, status: row.status,
+    amountUSD: number("amountUSD", false), percent: number("percent", false),
+    minPurchaseUSD: number("minPurchaseUSD", false), maxDiscountUSD: number("maxDiscountUSD", false),
+    applicableSkus: strings("applicableSkus"), claimSurfaces: strings("claimSurfaces"),
+    startAt: number("startAt"), endAt: number("endAt"), issuanceLimit: number("issuanceLimit"), version: number("version", true, 1),
+    issuedCount: number("issuedCount"), availableCount: number("availableCount"), redeemedCount: number("redeemedCount"),
+    revokedCount: number("revokedCount"), batchCount: number("batchCount"),
+    popupEnabled: boolean("popupEnabled"), popupCadenceEnabled: boolean("popupCadenceEnabled"),
+    popupDelayMs: number("popupDelayMs", true, 0, 60000), popupCooldownHours: number("popupCooldownHours", true, 0, 720),
+    popupMaxPerSession: number("popupMaxPerSession", true, 1, 10),
+    stackWithTrial: boolean("stackWithTrial"), stackWithOthers: boolean("stackWithOthers"), splittable: boolean("splittable"),
+    pendingApproval,
+  };
+}
+
+export async function fetchH7Vouchers(): Promise<H7Overview> {
+  const payload = await growthRequest<Record<string, unknown>>("/vouchers");
+  if (!payload || !Array.isArray(payload.vouchers) || !Array.isArray(payload.skus)
+    || !payload.stats || typeof payload.stats !== "object") throw new Error("H7_VOUCHER_RESPONSE_INVALID");
+  const vouchers = payload.vouchers.map(parseH7Voucher);
+  if (vouchers.some(v => v.pendingApproval === undefined)) throw new Error("H7_VOUCHER_RESPONSE_INVALID:pendingApproval");
+  const skus = payload.skus.map<H7Overview["skus"][number]>((raw: unknown) => {
+    if (!raw || typeof raw !== "object") throw new Error("H7_VOUCHER_RESPONSE_INVALID:skus");
+    const sku = raw as Record<string, unknown>;
+    if (typeof sku.id !== "string" || typeof sku.name !== "string" || sku.status !== "on" && sku.status !== "off") throw new Error("H7_VOUCHER_RESPONSE_INVALID:skus");
+    return { id: sku.id, name: sku.name, status: sku.status };
+  });
+  const stats = payload.stats as H7Overview["stats"];
+  if (![stats.total, stats.active, stats.paused, stats.popup].every(n => typeof n === "number" && Number.isSafeInteger(n) && n >= 0)) throw new Error("H7_VOUCHER_RESPONSE_INVALID:stats");
+  return { vouchers, skus, stats };
 }
 
 export async function createH7Voucher(voucher: Record<string, any>, reason: string) {
@@ -629,10 +716,10 @@ export async function updateH4LocalizedContent(
   expectedValue: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/events/${encodeURIComponent(eventCode)}/content/${field}/${locale}`,
     { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue) },
-    `h4-content-${field}`,
+    `编辑 ${locale.toUpperCase()} 内容 · ${eventCode}`,
   );
 }
 
@@ -646,6 +733,7 @@ function h8Record(value: unknown, field: string): Record<string, unknown> {
 }
 
 function h8NonNegativeCount(value: unknown, field: string): number {
+  if (typeof value !== "number" && (typeof value !== "string" || !/^\d+$/.test(value))) h8Invalid(field);
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0) h8Invalid(field);
   return parsed;
@@ -807,6 +895,7 @@ export async function updateH8ReferralRewardParam(
 
 const h3MissionCommands = createPendingMutationStore({
   storageKey: "nexion-admin-h3-mission-commands-v1",
+  retainExpiredRecords: true,
 });
 
 export class H3MissionOutcomeUncertainError extends Error {
@@ -901,7 +990,20 @@ export type H3QuestEventBindingCommand = {
  */
 const h3BindingCommands = createPendingMutationStore({
   storageKey: "nexion-admin-h3-binding-commands-v1",
+  retainExpiredRecords: true,
 });
+
+// H3's redesigned view shares the existing instances with the legacy client.
+// Metadata is validated at the recovery reader, before it can authorize a replay.
+const h3ConfigCommands = createPendingMutationStore({ storageKey: "nexion-admin-h3-config-commands-v1", retainExpiredRecords: true });
+const h3Stores = { config: h3ConfigCommands, mission: h3MissionCommands, binding: h3BindingCommands, region: h3WeeklyRegionProposals };
+export type H3CommandStore = keyof typeof h3Stores;
+export const h3CommandStorage = {
+  list: () => Object.entries(h3Stores).flatMap(([store, commands]) => commands.list().map(record => ({ store: store as H3CommandStore, record }))),
+  remember: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].remember(record.fingerprint, record.commandKey, record),
+  forget: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].forget(record.fingerprint, record.commandKey),
+  durable: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].isDurablyStored(record.fingerprint, record.commandKey),
+};
 
 export class H3BindingOutcomeUncertainError extends Error {
   constructor(message: string, readonly commandKey: string, readonly readback?: Record<string, any>) {
@@ -1021,54 +1123,26 @@ export function deleteH3Mission(taskCode: string, taskKind: H3MissionKind, reaso
     { taskKind, targetStatus: "deleted", expectedStatus: "archived", reason });
 }
 
-interface PendingH4EventDelete extends PendingMutationRecord { eventId: string; expectedVersion: string; reason: string }
-const h4EventDeletes = createPendingMutationStore<PendingH4EventDelete>({
-  storageKey: "nexion-admin-h4-event-deletes-v1",
-  isValidRecord: record => typeof record.eventId === "string" && typeof record.expectedVersion === "string" && typeof record.reason === "string",
-});
-export const pendingH4EventDeletes = () => h4EventDeletes.list();
-
+export { pendingH4EventDeletes } from "./h4-mutations";
 export async function deleteH4QuestEvent(eventId: string, expectedVersion: string, reason: string) {
-  const previous = h4EventDeletes.list().find(record => record.fingerprint === eventId);
-  if (previous && (previous.expectedVersion !== expectedVersion || previous.reason !== reason)) {
-    throw new Error("有一个删除操作结果还没确认，请先在活动列表上方查看结果。");
-  }
-  const commandKey = previous?.commandKey ?? nextIdempotencyKey("h4-event-delete");
-  h4EventDeletes.remember(eventId, commandKey, { eventId, expectedVersion, reason });
-  if (!h4EventDeletes.isDurablyStored(eventId, commandKey)) {
-    if (!previous) h4EventDeletes.forget(eventId);
-    throw new Error("当前页面无法保存操作记录，尚未提交，请检查浏览器设置。");
-  }
-  let acknowledged = false;
-  try {
-    const receipt = await growthRequest<{ eventId: string; deleted: boolean }>(`/quest-events/events/${encodeURIComponent(eventId)}`, {
-      method: "DELETE", headers: { "Idempotency-Key": commandKey }, body: JSON.stringify({ expectedVersion, reason }),
-    });
-    if (receipt?.eventId !== eventId || receipt.deleted !== true) throw new Error("删除结果尚未确认，请恢复原操作核实。");
-    acknowledged = true;
-    const overview = await fetchH3QuestEvents("events");
-    h4EventDeletes.forget(eventId);
-    return overview;
-  } catch (error) {
-    const { status, apiCode, bodyUnreadable } = error as Error & { status?: number; apiCode?: number; bodyUnreadable?: boolean };
-    if (!previous && !acknowledged && typeof status === "number" && !bodyUnreadable && !outcomeStaysUnknown(status, apiCode)) h4EventDeletes.forget(eventId);
-    throw error;
-  }
+  return h4CommandRequest(`/quest-events/events/${encodeURIComponent(eventId)}`, {
+    method: "DELETE", body: JSON.stringify({ expectedVersion, reason }),
+  }, `删除既有活动 · ${eventId}`);
 }
 
 export async function createH4QuestEvent(event: Record<string, any>, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     "/quest-events/events",
     { method: "POST", body: JSON.stringify({ ...event, reason, operator: currentAdminOperator() }) },
-    "h4-event-create",
+    `新建既有活动 · ${event.id}`,
   );
 }
 
 export async function createH4WheelTier(tier: Record<string, any>, expectedSignature: string, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     "/quest-events/wheel-tiers",
     { method: "POST", body: JSON.stringify({ ...tier, expectedSignature, reason, operator: currentAdminOperator() }) },
-    "h4-tier-create",
+    `新建转盘奖项 · ${tier.tierName}`,
   );
 }
 
@@ -1077,10 +1151,10 @@ export async function updateH4WheelProbabilities(
   expectedSignature: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     "/quest-events/wheel-tiers/probabilities",
     { method: "PATCH", body: JSON.stringify({ probabilities, expectedSignature, reason, operator: currentAdminOperator() }) },
-    "h4-tier-probabilities",
+    "调整转盘奖项概率",
   );
 }
 
@@ -1090,29 +1164,29 @@ export async function updateH4WheelTier(
   expectedSignature: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/wheel-tiers/${encodeURIComponent(tierName)}`,
     { method: "PATCH", body: JSON.stringify({ ...tier, expectedSignature, reason, operator: currentAdminOperator() }) },
-    "h4-tier-update",
+    `编辑转盘奖项 · ${tierName}`,
   );
 }
 
 export async function deleteH4WheelTier(tierName: string, expectedSignature: string, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/wheel-tiers/${encodeURIComponent(tierName)}`,
     {
       method: "DELETE",
       body: commandBody("delete", "delete", reason, currentAdminOperator(), expectedSignature),
     },
-    "h4-tier-delete",
+    `删除转盘奖项 · ${tierName}`,
   );
 }
 
 export async function createH4WheelGuard(guard: Record<string, any>, reason: string) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     "/quest-events/wheel-guards",
     { method: "POST", body: JSON.stringify({ ...guard, reason, operator: currentAdminOperator() }) },
-    "h4-guard-create",
+    `新建转盘护栏 · ${guard.guardLabel}`,
   );
 }
 
@@ -1122,12 +1196,12 @@ export async function updateH4WheelGuard(
   expectedValue: string,
   reason: string,
 ) {
-  return growthRequest<Record<string, any>>(
+  return h4CommandRequest(
     `/quest-events/wheel-guards/${encodeURIComponent(guardKey)}`,
     {
       method: "PATCH",
       body: commandBody(guardKey, value, reason, currentAdminOperator(), expectedValue),
     },
-    "h4-guard-update",
+    `转盘安全限制 · ${guardKey}`,
   );
 }

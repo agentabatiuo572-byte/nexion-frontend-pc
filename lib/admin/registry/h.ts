@@ -45,7 +45,7 @@ export const DOMAIN_H: ModuleEntry[] = [
   },
   {
     path: "/growth/referral-rewards",
-    summary: "设置新人礼和邀请奖励金额，处理待结算的邀请并发奖。同一新人只会发一次。",
+    summary: "设置新人礼和邀请奖励金额，给待结算的新人发奖（有没有邀请人都算）。同一新人只会发一次。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

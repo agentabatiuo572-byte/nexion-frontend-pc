@@ -159,7 +159,7 @@ function SupportMessage({message,previous,customerId,customerAvatarRef,customerN
         {safeLegacy&&(canCheckLegacy?<a className="rd-link" href={safeLegacy}>核对原推荐页面</a>:<span aria-disabled="true">核对原推荐页面（无访问权限）</span>)}
       </div>
       {/* M-29: delivered is the normal case and says nothing; only 已读 or a missing message id is worth showing. */}
-      {mine&&(message.status==="read"||!message.id)&&<small className="m3s-receipt" data-warn={message.id?undefined:""}>{message.status==="read"?"已读":"提交状态未知"}</small>}
+      {mine&&(message.status==="read"||!message.id)&&<small className="m3s-receipt" data-warn={message.id?undefined:""}>{message.status==="read"?"已读":"发送结果未知"}</small>}
     </div>
   </div>;
 }
@@ -188,13 +188,13 @@ function SupportContactPicker({onClose,onSelect}:{onClose:()=>void;onSelect:(id:
   const pages=Math.max(1,Math.ceil((rows?.total??0)/10));
   return <Modal title="主动联系本人客户" icon="users" onClose={onClose}>
     <div className="m3s-picker">
-      <Field label="搜索客户" explain="只可选择当前本人客户；不再维护客户可在原求助会话中继续普通服务回复。选择后只打开客户，不会发送。">{control=><Input {...control} data-search aria-label="搜索客户" placeholder="昵称、手机号或用户编码" maxLength={200} value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/>}</Field>
+      <Field label="搜索客户" explain="只能选你名下的客户，选中后只打开对话、不发消息；不再维护的客户在原会话里照常回复。">{control=><Input {...control} data-search aria-label="搜索客户" placeholder="昵称、手机号或用户编码" maxLength={200} value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/>}</Field>
       {error?<Notice tone="danger" action={<Button size="sm" onClick={()=>setRetry(n=>n+1)}>重试客户列表</Button>}>{error}</Notice>:!rows?<BlockState state="loading" title="正在加载客户…"/>:<>
         <p className="m3s-aux" role="status">共 {rows.total} 位客户 · 每页 10 条</p>
         {!rows.records.length?<BlockState state="empty" title="暂无匹配的客户。"/>:<ul className="m3s-picker-list" aria-label="可联系客户">
           {rows.records.map(c=><li key={c.customerId}><button type="button" disabled={c.agentAdminId!==adminId||!c.maintenanceEnabled} onClick={()=>onSelect(c.customerId)}>
             <span><strong>{c.displayName||c.customerNo||c.customerId}</strong><small>用户编码：U{c.customerId.padStart(8,"0")}</small></span>
-            <span className="m3s-aux">{!c.maintenanceEnabled?"不再维护":c.agentAdminId!==adminId?"当前归属其他专属客服":"选择"}</span>
+            <span className="m3s-aux">{!c.maintenanceEnabled?"不再维护":c.agentAdminId!==adminId?"已归其他专属客服":"选择"}</span>
           </button></li>)}
         </ul>}
         <nav className="m3s-picker-pager" aria-label="客户分页">
@@ -247,7 +247,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     if (adminId) void supportClient.overview({ signal: controller.signal }).then(({ scope }) => {
       if (controller.signal.aborted || generation !== reviewGeneration.current || scope.actorId !== adminId) return;
       setReviewScope({ identity: scopeIdentity, mode: scope.mode });
-    }).catch((cause: unknown) => { if (!controller.signal.aborted && generation === reviewGeneration.current) { setReviewScope(null); if (cause instanceof SupportClientError && cause.status === 403) setScopeDenied(true); else setReviewScopeError("当前会话范围暂时无法核对。请重试。"); } });
+    }).catch((cause: unknown) => { if (!controller.signal.aborted && generation === reviewGeneration.current) { setReviewScope(null); if (cause instanceof SupportClientError && cause.status === 403) setScopeDenied(true); else setReviewScopeError("暂时读不到你能看的客户范围，请重试。"); } });
     const invalidate = () => { controller.abort(); reviewGeneration.current++; setReviewScope(null); setScopeRetry(value => value + 1); };
     window.addEventListener("support-scope-invalidated", invalidate);
     return () => { controller.abort(); reviewGeneration.current++; window.removeEventListener("support-scope-invalidated", invalidate); };
@@ -525,7 +525,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const myRoleLabel = session?.role === "super" || session?.role === "superadmin" ? "超级管理员" : "客服主管";
   const myName = session?.operator || session?.username || "";
   const canContinueClosed = Boolean(canWriteM3 && selected?.detailReady && selected.status !== "open" && selected.ownerAdminId === adminId);
-  const historyReadOnlyHint = (selected?.status === "transferred" ? "此会话已转出，仅可查看历史。" : "历史会话只读。") + (canContinueClosed ? "前往当前会话会重新核对专属客服归属。" : "");
+  const historyReadOnlyHint = (selected?.status === "transferred" ? "此会话已转出，仅可查看历史。" : "历史会话只读。") + (canContinueClosed ? "可以前往当前会话继续。" : "");
   // M-26 / M-54: messages are service replies by default. Per SPEC FEAT-M04 and CONTRACTS §5 (owner decision R05),
   // maintenance is counted only through an explicit 联系维护 intent, so it is an opt-in switch, never inferred.
   const intentSource = requestedCustomerId && !selected ? firstDetail : profileDetail?.customerId === selected?.customerId ? profileDetail : null;
@@ -729,14 +729,14 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             }
             if (JSON.parse(sessionStorage.getItem("nexion-admin-m3-private-pending-v1") || "{}")[record.commandKey]?.payload !== JSON.stringify(locator)) throw new Error("Private recovery row not stored");
           }
-          if (!pendingMessages.isDurablyStored(slot, record.commandKey)) setRecoveryError("原消息编号仅保留在本页；恢复浏览器存储前请勿刷新或关闭页面，再重试查询。");
+          if (!pendingMessages.isDurablyStored(slot, record.commandKey)) setRecoveryError("浏览器没能保存这条消息的记录，只留在本页；请先别刷新或关闭页面，稍后再查询。");
         }
       } catch {
         try {
           sessionStorage.removeItem("nexion-admin-m3-private-pending-v1");
           setRecoveryError("原消息内容已清除，但浏览器没能保存恢复记录；请不要刷新或关闭页面。");
         } catch {
-          setRecoveryError("本地私聊缓存清理失败，旧消息正文可能仍留在本机；已关闭对应会话操作，请恢复浏览器存储后重试清理。");
+          setRecoveryError("这台电脑上的旧消息没清理掉，相关会话先关着；请检查浏览器的存储设置后重试。");
         }
       }
     }
@@ -856,7 +856,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (!record || "readOnlyRecovery" in record || record.customerId !== requestedCustomerId || !record.key || !record.clientMessageId || !record.assignmentId || !record.body) return;
       setFirstPending(record);
       setDrafts((old) => ({ ...old, [`first:${requestedCustomerId}`]: record.body }));
-      setSendError("上次发送结果待确认。请用原命令查询并重试。");
+      setSendError("上条消息发送结果未知，请点「查询结果并重试」，不会重复发送。");
     } catch { pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); }
   }, [adminId, requestedCustomerId, authEpoch, qualificationUnknown]);
   useEffect(() => {
@@ -870,7 +870,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       setPending(saved);
       if (!requestedCustomerId) setSelectedId(convo.id);
       if (saved.kind === "TEXT") setDrafts((old) => ({ ...old, [convo.id]: saved.body }));
-      setSendError("上次发送结果待确认。请用原命令重试同一条消息。");
+      setSendError("上条消息发送结果未知，请点「查询结果并重试」，不会重复发送。");
     } catch { pendingMessages.forget(pendingKey(adminId)); }
   }, [adminId, conversationsAvailable, authEpoch, visible, pending, requestedCustomerId, revokeCustomer, qualificationUnknown]);
   useEffect(() => { clearAttachment(); if (!pending && !firstPending) setSendError(""); }, [selected?.id, selected?.ownerAdminId, selected?.assignmentId, requestedCustomerId, clearAttachment]);
@@ -898,7 +898,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   }, [selected?.id, selected?.ownerAdminId, selected?.version, readContextsKey, messagePages.readCursor, messagePages.readReady, conversationsAvailable, adminId, authEpoch, readRetry, screen, revokeCustomer]);
   useEffect(() => {
     if (qualificationUnknown || !lostAccess && (!selected || selected.ownerAdminId === adminId || canReviewAll)) return;
-    revokeCustomer(selected ? String(selected.customerId) : undefined); setSendError("当前已无权访问该会话，请返回客户列表刷新。");
+    revokeCustomer(selected ? String(selected.customerId) : undefined); setSendError("你已经看不了这个会话，请回客户列表刷新。");
   }, [lostAccess, selected, adminId, canReviewAll, revokeCustomer, qualificationUnknown]);
 
   useEffect(() => {
@@ -947,8 +947,8 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
 
   const select = (convo: SessionConvo) => {
     setMessageOpening(value => value + 1);
-    if (firstPending) { if (!busy) setSendError("首次联系的发送结果待确认，请先查询原命令结果，再切换会话。"); return; }
-    clearAttachment(pending?.kind !== "IMAGE"); setRequestedCustomerId(null); setSelectedId(convo.id); setScreen("chat"); setMaintenanceChosen(false); setReadError(""); setSendError(pending && !busy ? "上条消息的结果待确认，请返回原会话用同一命令重试。" : "");
+    if (firstPending) { if (!busy) setSendError("首条消息发送结果未知，请先查询结果，再切换会话。"); return; }
+    clearAttachment(pending?.kind !== "IMAGE"); setRequestedCustomerId(null); setSelectedId(convo.id); setScreen("chat"); setMaintenanceChosen(false); setReadError(""); setSendError(pending && !busy ? "上条消息发送结果未知，请回原会话查询结果并重试。" : "");
     const url = new URL(window.location.href); url.searchParams.delete("customerId"); url.searchParams.set("conversationNo",convo.id); window.history.replaceState(null, "", url);
   };
 
@@ -959,10 +959,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     try {
       const result = await supportClient.command(locator.key);
       if (identityRef.current !== identity) return;
-      if (result.status !== "SUCCEEDED" && result.status !== "FAILED") { setRecoveryError("原消息结果仍未确认，请稍后继续查询；不会重新发送。"); return; }
+      if (result.status !== "SUCCEEDED" && result.status !== "FAILED") { setRecoveryError("原消息结果仍未知，请稍后再查；不会重新发送。"); return; }
       pendingMessages.forget(slot); readRecoveries();
       setRecoveryError(result.status === "SUCCEEDED" ? "原消息已发送。请刷新会话查看。" : "原消息发送失败。重新发送前请核对当前归属。");
-    } catch (cause) { if (identityRef.current === identity) setRecoveryError(`原消息结果暂无法查询：${displayAdminError(cause)} 编号已保留，不会重新发送。`); }
+    } catch (cause) { if (identityRef.current === identity) setRecoveryError(`原消息结果暂时查不到：${displayAdminError(cause)} 记录已保留，不会重新发送。`); }
     finally { if (identityRef.current === identity) setRecoveryBusy(""); }
   };
   // Decision M-C23: a new maintenance message goes out only while the customer is due. What the page read earlier can be stale, so ask once more. Original commands are not rechecked.
@@ -974,9 +974,9 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (current.due === true) return true;
       setMaintenanceChosen(false);
       if (selected) setProfileDetail(current); else setFirstDetail(current);
-      setSendError("该客户的维护已不再到期，本条没有发送，原文已保留。可以作为服务回复发送。");
+      setSendError("这位客户的维护已经不到期了，这条没发出，原文已保留；可以改作服务回复发送。");
     } catch (cause) {
-      if (identityRef.current === identity) setSendError(`维护到期状态暂时无法核对：${displayAdminError(cause)} 本条没有发送，原文已保留。`);
+      if (identityRef.current === identity) setSendError(`暂时查不到维护是否到期：${displayAdminError(cause)} 这条没发出，原文已保留。`);
     }
     return false;
   };
@@ -1015,7 +1015,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             const result = await supportClient.startConversation({ customerId: record.customerId, openingText: record.body, intent: record.intent, clientMessageId: record.clientMessageId, expectedAssignmentId: record.assignmentId, expectedVersion: record.version, replyTargets: record.replyTargets }, record.key);
             conversationNo = result.conversationNo;
           } else {
-          if (recovered.status !== "SUCCEEDED" && recovered.status !== "FAILED") { setSendError("发送结果仍在确认，请稍后用原命令重试。"); return; }
+          if (recovered.status !== "SUCCEEDED" && recovered.status !== "FAILED") { setSendError("发送结果仍未知，请稍后查询结果并重试。"); return; }
           if (recovered.status === "FAILED") { pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null); setSendError("消息发送失败。草稿已保留，可修改后重新发送。"); return; }
           const result = recovered.result;
           if (result && typeof result === "object" && "conversationNo" in result && typeof result.conversationNo === "string") conversationNo = result.conversationNo;
@@ -1052,7 +1052,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             pendingMessages.forget(firstPendingKey(adminId, requestedCustomerId)); setFirstPending(null);
             if (lostPermission(cause)) { ctx.invalidateScope(undefined, requestedCustomerId, "消息没有发出，内容已清除：这位客户的归属或你的会话权限变了。请回客户列表核对。"); setSendError("当前客户归属或会话权限已变化，请返回客户列表核对。"); }
             else { setDetailRetry((value) => value + 1); setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对客户归属后修改重发。`); }
-          } else { if (lostPermission(cause)) { ctx.invalidateScope(undefined, requestedCustomerId, "这条消息的发送结果待确认：这位客户的归属或你的会话权限变了。请回客户列表核对，不要重发。"); } setSendError("发送结果待确认，请查询发送结果。"); }
+          } else { if (lostPermission(cause)) { ctx.invalidateScope(undefined, requestedCustomerId, "这条消息发送结果未知：这位客户的归属或你的会话权限变了。请回客户列表核对，不要重发。"); } setSendError("发送结果未知，请查询结果。"); }
         }
       }
       finally { if (identityRef.current === identity) setBusy(false); }
@@ -1110,12 +1110,12 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           throw cause;
         });
         if (identityRef.current !== identity) return;
-        if (recovered && recovered.status !== "SUCCEEDED" && recovered.status !== "FAILED") { setSendError("发送结果仍在确认，请稍后查询原命令。"); return; }
+        if (recovered && recovered.status !== "SUCCEEDED" && recovered.status !== "FAILED") { setSendError("发送结果仍未知，请稍后再查。"); return; }
         if (recovered?.status === "FAILED") { pendingMessages.forget(pendingKey(adminId)); setPending(null); setSendError("消息发送失败。草稿已保留，可修改后重新发送。"); return; }
         if (!recovered && sendRetryExpired) { setSendError(RETRY_EXPIRED_TEXT); return; }
         if (!recovered) {
           if (!writable || currentProfileDetail?.assignmentId !== record.expectedAssignmentId) {
-            setSendError("原命令未找到；请先恢复会话详情并核对当前归属，再用原命令重试。");
+            setSendError("没查到原消息；请先刷新会话、核对归属，再查询结果并重试。");
             return;
           }
           submitted = true; await supportClient.sendConversationReply(record.conversationId, input, record.key);
@@ -1141,7 +1141,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         else setSendError(`本次发送已被拒绝：${displayAdminError(cause)} 原文已保留，请核对会话后修改重发。`);
         return;
       }
-      if (identityRef.current === identity) { if (lostPermission(cause)) { ctx.invalidateScope(selected.id, String(selected.customerId), "这条消息的发送结果待确认：你对这个会话的权限变了。请回客户列表核对，不要重发。"); } setSendError("发送结果待确认，请查询发送结果。"); }
+      if (identityRef.current === identity) { if (lostPermission(cause)) { ctx.invalidateScope(selected.id, String(selected.customerId), "这条消息发送结果未知：你对这个会话的权限变了。请回客户列表核对，不要重发。"); } setSendError("发送结果未知，请查询结果。"); }
     }
     finally { if (identityRef.current === identity) setBusy(false); }
     if (identityRef.current !== identity) return;
@@ -1237,7 +1237,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       action: `结束服务会话 ${conversation.id}`,
       title: "标记已解决",
       briefKind: "conversation",
-      detail: "将这段服务会话标记为已解决，不改变客户的专属客服。客户再次发消息时，会继续当前对话。",
+      detail: "这段会话变成已解决，接待随之结束。客户再发消息，对话会重新打开，专属客服不变。",
       statedBrief: { impact: "这段会话变成已解决，接待随之结束。客户再发消息，对话会重新打开，专属客服不变。", check: "确认客户的问题处理完了，理由写清依据或工单号。" },
       facts: <Facts><Fact k="客户">{title}</Fact><Fact k="会话编号"><span data-mono="">{conversation.id}</span></Fact></Facts>,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>, confirmLabel: "确认标记已解决",
@@ -1295,11 +1295,11 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (stamp !== identityRef.current) return;
       if (receipt?.status === "SUCCEEDED") { settle(); return; }
       if (receipt?.status === "FAILED") { settle("原操作没有结束会话，请确认后再点一次。"); return; }
-      if (receipt) { if (current()) setActionError("结束会话的结果尚未确认，原操作还在处理，请稍后再查询。"); return; }
+      if (receipt) { if (current()) setActionError("结束会话的结果还没出来，请稍后再查。"); return; }
       if (recovering && !command.sessionRef) {
         if (current()) {
           setLegacyEndChecked(command.commandKey);
-          setActionError(laterReception ? "按原操作查不到结果，原记录继续保留，不会重发。现在是之后新开始的一次接待；再点「结束会话」只结束这一次接待，原操作仍保留待核对。" : "原结束请求没有记下是哪一次接待，不能重发，也不能算到现在这次接待上。原记录继续保留，请稍后查询原结果。");
+          setActionError(laterReception ? "原操作查不到结果，原记录继续保留，不会重发。现在是新的一次接待，再点「结束会话」只结束这一次。" : "上次结束请求没记下是哪一次接待，不能重发，也不算到这次接待上；原记录继续保留，请稍后再查。");
         }
         return;
       }
@@ -1310,9 +1310,9 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     } catch (cause) {
       if (stamp !== identityRef.current) return;
       if (submitted && isExplicitRejection(cause)) {
-        if (current()) { setHoldEndRejected(command.commandKey); setActionError(`这次结束会话被明确拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原操作已保留，请核实原结果后再解除待确认。`); if (cause instanceof SupportClientError && cause.backendMessage === "SUPPORT_SESSION_CHANGED") setHoldRetry(value => value + 1); }
+        if (current()) { setHoldEndRejected(command.commandKey); setActionError(`结束会话被拒绝：${displayAdminError(cause).replace(/[。.]$/, "")}。原记录已保留，核实后可以解除原操作记录。`); if (cause instanceof SupportClientError && cause.backendMessage === "SUPPORT_SESSION_CHANGED") setHoldRetry(value => value + 1); }
       }
-      else if (current()) { setActionError("结束会话的结果尚未确认。请再点「结束会话」，会先查询原操作，不会重复结束。"); setHoldRetry((value) => value + 1); }
+      else if (current()) { setActionError("结束会话结果未知。再点「结束会话」会先查原结果，不会重复结束。"); setHoldRetry((value) => value + 1); }
     } finally { if (current()) setHoldEnding(false); }
   };
   const insertText = (text: string) => {
@@ -1368,7 +1368,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       if (typeof saved.key !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(saved.key) || saved.key !== row.commandKey || typeof saved.operator !== "string" || !saved.input || !Number.isInteger(saved.input.warnMinutes) || saved.input.warnMinutes < 1 || saved.input.warnMinutes > 30 || !Number.isInteger(saved.input.closeMinutes) || saved.input.closeMinutes <= saved.input.warnMinutes || saved.input.closeMinutes > 120 || saved.input.sessionEndMinutes !== undefined && (!Number.isInteger(saved.input.sessionEndMinutes) || saved.input.sessionEndMinutes < 2 || saved.input.sessionEndMinutes > 120) || typeof saved.input.reason !== "string" || saved.input.reason.trim().length < 6 || saved.input.reason.trim().length > 200) throw new Error("上次的修改记录读不到，暂时不能再改。");
       return saved;
     });
-    if (commands.some((saved) => JSON.stringify(saved) !== JSON.stringify(commands[0]))) throw new Error("存在不同的原策略记录，暂不能另发变更。");
+    if (commands.some((saved) => JSON.stringify(saved) !== JSON.stringify(commands[0]))) throw new Error("浏览器里有两份不同的上次修改记录，暂时不能再改。");
     return commands[0] ?? null;
   };
   const forgetTimeoutCommand = (command: TimeoutCommand) => {
@@ -1390,7 +1390,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
       setTimeoutPolicy(saved?.policy ?? conflictBaseline ?? policy);
       setTimeoutPending(saved);
       const savedRow = saved ? [...pendingTimeoutPolicies.list(), ...pendingMessages.list()].find(row => row.commandKey === saved.key) : undefined;
-      if (saved) { setTimeoutLatest(policy); setTimeoutInput(saved.input); setTimeoutError(savedRow && isRetryExpired(savedRow) ? RETRY_EXPIRED_TEXT : "原操作结果待确认，请先查询原操作。"); }
+      if (saved) { setTimeoutLatest(policy); setTimeoutInput(saved.input); setTimeoutError(savedRow && isRetryExpired(savedRow) ? RETRY_EXPIRED_TEXT : "上次保存结果未知，请先查询原结果。"); }
       else if (timeoutConflict) { setTimeoutLatest(policy); }
     } catch (cause) {
       if (stamp === timeoutIdentityRef.current) {
@@ -1416,7 +1416,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   };
   const saveTimeout = async (input: TimeoutInput) => {
     if (!timeoutPolicy || !canTimeout || !canReadTimeout || timeoutSaving || timeoutConflict || timeoutPending) return false;
-    try { if (readTimeoutCommand()) { setTimeoutError("原操作结果待确认，请先查询原操作。"); return false; } }
+    try { if (readTimeoutCommand()) { setTimeoutError("上次保存结果未知，请先查询原结果。"); return false; } }
     catch { setTimeoutError("上次的修改记录读不到，暂时不能再改。"); return false; }
     const command = { key: newKey(), input, policy: timeoutPolicy, operator: session?.operator || session?.username || "unknown-admin" };
     pendingTimeoutPolicies.remember(timeoutSlot, command.key, { payload: JSON.stringify(command) });
@@ -1445,7 +1445,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         if (status === 403) await revokeTimeoutWrite(stamp);
         else if (status === 409) { setTimeoutConflict(true); setTimeoutError("设置刚被别人改过，你填写的内容还在；请看最新设置后重新确认。"); await refreshTimeoutLatest(); }
         else setTimeoutError(displayAdminError(cause));
-      } else { setTimeoutPending(command); setTimeoutError("原操作结果待确认，请查询原操作；不会重复提交。"); }
+      } else { setTimeoutPending(command); setTimeoutError("保存结果未知，请查询原结果；不会重复提交。"); }
       return false;
     } finally { if (stamp === timeoutIdentityRef.current) setTimeoutSaving(false); }
   };
@@ -1466,11 +1466,11 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
         if (policy) setTimeoutPolicy(policy); setTimeoutError("");
       } else if (result.status === "FAILED") {
         forgetTimeoutCommand(command); setTimeoutPending(null); setTimeoutPolicy(command.policy); setTimeoutConflict(true); setTimeoutError("上次修改没有成功，你填写的内容还在；请看最新设置后再确认。"); await refreshTimeoutLatest();
-      } else setTimeoutError("原操作仍待确认，请稍后查询；原操作记录与输入已保留。");
+      } else setTimeoutError("结果仍未知，请稍后再查；原记录和输入已保留。");
     } catch (cause) {
       if (stamp !== timeoutIdentityRef.current) return;
       if (cause && typeof cause === "object" && "status" in cause && cause.status === 403) await revokeTimeoutWrite(stamp);
-      else setTimeoutError("暂时无法确认原操作结果；原操作记录与输入已保留。");
+      else setTimeoutError("暂时查不到原结果；原记录和输入已保留。");
     } finally { if (stamp === timeoutIdentityRef.current) setTimeoutSaving(false); }
   };
 
@@ -1593,7 +1593,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           {archiveMode && <div className="m3s-batch"><span role="status">已选 {archiveIds.size} 位客户</span><Button size="sm" disabled={!archiveIds.size || actionChecking} onClick={() => void archiveBatch().then(() => setArchiveMode(false))}>归档已选 {archiveIds.size}</Button><Button size="sm" variant="ghost" onClick={() => { setArchiveMode(false); setArchiveIds(new Set()); }}>取消</Button></div>}
         </header>
         <div ref={rowsRef} className="m3s-rows" onScroll={event => { const el = event.currentTarget; if (listLimit < filtered.length && el.scrollTop + el.clientHeight >= el.scrollHeight - 80) setListLimit(n => n + LIST_CHUNK); }}>
-          {(recoveries.length > 0 || recoveryError) && <Notice tone="warn" action={recoveries.map(({ slot, locator }, index) => <Button size="sm" key={slot} disabled={Boolean(recoveryBusy)} onClick={() => void queryRecovery(slot, locator)}>查询原消息 {index + 1}</Button>)}>{recoveryError || "原消息结果待确认；私聊正文与图片已清除，只保留原编号供查询。"}</Notice>}
+          {(recoveries.length > 0 || recoveryError) && <Notice tone="warn" action={recoveries.map(({ slot, locator }, index) => <Button size="sm" key={slot} disabled={Boolean(recoveryBusy)} onClick={() => void queryRecovery(slot, locator)}>查询原消息 {index + 1}</Button>)}>{recoveryError || "原消息发送结果未知；正文和图片已从本机清除，可以按编号查询。"}</Notice>}
           {!conversationsAvailable && <div className="m3s-empty"><p>读不到会话。</p></div>}
           {openElsewhere && <p className="m3s-row-note">打开的{title}不符合当前筛选 <button type="button" className="rd-link rd-link-button" onClick={() => { setQuery(""); changeTab(selected?.archived ? "archived" : "all"); }}>{selected?.archived ? "看归档" : "看全部"}</button></p>}
           {conversationsAvailable && !qualificationUnknown && filtered.length === 0 && <div className="m3s-empty">
@@ -1650,7 +1650,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           </div>
         </header>
         {(endPending && !holdEnding || serviceStatus && conversationsAvailable || actionError || actionResult || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
-          {endPending && !holdEnding && <Notice tone="warn" action={mayEndLaterReception ? <Button size="sm" onClick={() => void endHold(true)}>查原结束结果</Button> : holdEndCommand && holdEndRejected === holdEndCommand.commandKey ? <Button size="sm" onClick={() => setHoldEndRelease(holdEndCommand)}>解除待确认</Button> : undefined}>{holdEndCommand && !holdEndCommand.sessionRef ? "上次的结束请求没有记下是哪一次接待：点「结束会话」只查询原操作的结果，不会重发，也不会算到现在这次接待上；原记录继续保留。" : holdEndCommand && isRetryExpired(holdEndCommand) ? RETRY_EXPIRED_TEXT : "上次结束会话的结果尚未确认，原操作已保留。点「结束会话」会先查询原操作，不会重复结束。"}</Notice>}
+          {endPending && !holdEnding && <Notice tone="warn" action={mayEndLaterReception ? <Button size="sm" onClick={() => void endHold(true)}>查询原结果</Button> : holdEndCommand && holdEndRejected === holdEndCommand.commandKey ? <Button size="sm" onClick={() => setHoldEndRelease(holdEndCommand)}>解除原操作记录</Button> : undefined}>{holdEndCommand && !holdEndCommand.sessionRef ? "上次结束请求没记下是哪一次接待：点「结束会话」只查原结果，不会重发，也不算到这次接待上。" : holdEndCommand && isRetryExpired(holdEndCommand) ? RETRY_EXPIRED_TEXT : "上次结束会话结果未知。点「结束会话」会先查原结果，不会重复结束。"}</Notice>}
           {serviceStatus && conversationsAvailable && <Notice tone="danger">{serviceStatus}</Notice>}
           {actionResult && <Notice tone="progress" action={<Button size="sm" onClick={() => setActionResult("")}>知道了</Button>}>{actionResult}</Notice>}
           {actionError && <Notice tone="danger" action={<Button size="sm" onClick={() => setActionError("")}>知道了</Button>}>{actionError}</Notice>}
@@ -1666,14 +1666,14 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             ? conversationError ? <BlockState state="error" title="会话详情加载失败" detail={conversationError} retryLabel="重新加载详情" onRetry={() => { void messagePages.retry(); }} /> : <BlockState state="loading" title="正在加载会话消息…" />
             : selected && paneMessages?.length
               ? paneMessages.map((message, index) => { const day = messageDay(message.ts); return <div key={message.id ?? `${message.ts}-${index}`} data-m3-message-id={message.id}>{day && day !== messageDay(paneMessages[index - 1]?.ts ?? 0) && <div className="m3s-day"><span>{day}</span></div>}<SupportMessage message={message} previous={paneMessages[index - 1]} newlyArrived={message.id !== undefined && newMessageIds.has(message.id)} customerId={String(selected.customerId)} customerAvatarRef={selected.customerAvatarRef} customerName={title} onRevoked={() => ctx.invalidateScope(selected.id, String(selected.customerId))} /></div>; })
-              : !conversationsAvailable ? <p className="m3s-blank">读不到消息</p> : <BlockState state="empty" title={requestedCustomerId ? "尚无进行中会话。核对归属后即可发送首次联系。" : selected ? historyComplete ? "这段会话尚无消息。" : "历史消息尚未完整加载，请查看加载进度或重试失败片段。" : "选择会话后查看消息。"} />}
+              : !conversationsAvailable ? <p className="m3s-blank">读不到消息</p> : <BlockState state="empty" title={requestedCustomerId ? "尚无进行中会话。核对归属后即可发送首次联系。" : selected ? historyComplete ? "这段会话尚无消息。" : "历史消息还没加载完，请稍候或点重试。" : "选择会话后查看消息。"} />}
         </div>
         <div className="m3s-composer">
           {detailError && <Notice tone="danger" action={<><Button size="sm" onClick={() => setDetailRetry((value) => value + 1)}>重试</Button><a className="rd-link" href="/service/overview">返回我的客户</a></>}>客户资料加载失败：{detailError}</Notice>}
-          {requestedCustomerId && !selected && firstDetail && firstDetail.agentAdminId !== adminId && !holdAllowsOther && !heldByOther && <Notice tone="warn">{canReviewAll && canWriteM3 && hold === undefined ? "正在核对接待状态…" : "该客户由当前专属客服服务，本账号仅可审阅。"}</Notice>}
-          {requestedCustomerId && firstDetail && firstDetail.agentAdminId === adminId && !firstDetail.assignmentId && <Notice tone="warn">当前归属资料未就绪，暂不能发送。请刷新客户资料。</Notice>}
+          {requestedCustomerId && !selected && firstDetail && firstDetail.agentAdminId !== adminId && !holdAllowsOther && !heldByOther && <Notice tone="warn">{canReviewAll && canWriteM3 && hold === undefined ? "正在核对接待状态…" : "这位客户由专属客服负责，你只能查看。"}</Notice>}
+          {requestedCustomerId && firstDetail && firstDetail.agentAdminId === adminId && !firstDetail.assignmentId && <Notice tone="warn">还没读到这位客户的归属，暂不能发送，请刷新客户资料。</Notice>}
           {selected && !writable && composerMode === "write" && (currentProfileDetail || profileError || recoveryBlocksTarget || !canWriteM3 || selected.status !== "open") && (recoveryBlocksTarget
-            ? <Notice tone="warn" action={<Button size="sm" onClick={() => setScreen("list")}>返回列表查询原消息</Button>}>原消息结果待确认，暂不能重复发送。</Notice>
+            ? <Notice tone="warn" action={<Button size="sm" onClick={() => setScreen("list")}>返回列表查询原消息</Button>}>原消息发送结果未知，暂时不能再发。</Notice>
             : !canWriteM3 ? <Notice tone="neutral">你只能查看会话，发消息需要会话操作权限。</Notice>
             : selected.status !== "open" ? <Notice tone="neutral">{historyReadOnlyHint}</Notice>
             : selectedUnbound ? <Notice tone="warn">该客户还没有专属客服，等待主管分配后回复。</Notice>
@@ -1681,9 +1681,9 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             : !currentProfileDetail.assignmentId || currentProfileDetail.agentAdminId !== selected.ownerAdminId ? <Notice tone="warn" action={<Button size="sm" onClick={() => void ctx.refreshConversations()}>刷新会话</Button>}>客户归属已变化，请刷新会话后重试。</Notice>
             : conversationError ? null
             : messagePages.gap ? <Notice tone="warn" action={<Button size="sm" onClick={() => void messagePages.newest()}>查看最新10条</Button>}>有新消息尚未展开，请查看后再发送。</Notice>
-            : !messagePages.contextReady || messagePages.page?.replyContext.ready !== true ? <Notice tone="warn" action={<Button size="sm" disabled={messagePages.loading} onClick={() => void messagePages.refresh()}>重新核对发送目标</Button>}>待回复目标暂时无法核对。</Notice>
-            : <Notice tone="neutral">仅当前专属客服可发送消息；主管审阅不能代发。</Notice>)}
-          {!selected && recoveryBlocksTarget && <Notice tone="warn" action={<Button size="sm" onClick={() => setScreen("list")}>返回列表查询原消息</Button>}>原消息结果待确认，暂不能重复发送。</Notice>}
+            : !messagePages.contextReady || messagePages.page?.replyContext.ready !== true ? <Notice tone="warn" action={<Button size="sm" disabled={messagePages.loading} onClick={() => void messagePages.refresh()}>重新核对</Button>}>暂时核对不了要回复哪几条消息。</Notice>
+            : <Notice tone="neutral">只有这位客户的专属客服能发消息，主管查看时不能代发。</Notice>)}
+          {!selected && recoveryBlocksTarget && <Notice tone="warn" action={<Button size="sm" onClick={() => setScreen("list")}>返回列表查询原消息</Button>}>原消息发送结果未知，暂时不能再发。</Notice>}
           {requestedCustomerId && !selected && !canWriteM3 && <Notice tone="neutral">你只能查看会话，发消息需要会话操作权限。</Notice>}
           {replyCustomerId && closedCandidateRows.length > 0 && (displayedIntent === "MAINTENANCE" && !closedCandidateError && !closedCandidateMissing.length
             ? <fieldset className="m3s-targets"><legend>同时标记旧会话的待回复消息已处理（可不选）</legend>{closedCandidateRows.map(row => <Check key={row.conversationNo} label={row.text} checked={displayedClosedIds.has(row.conversationNo)} disabled={!writable || busy || Boolean(pending || firstPending)} onChange={event => setSelectedClosedIds(old => { const next = new Set(old); if (event.target.checked) next.add(row.conversationNo); else next.delete(row.conversationNo); return next; })} />)}</fieldset>
@@ -1722,8 +1722,8 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             <div className="m3s-input"><Textarea aria-label="输入会话消息" value={draft} disabled readOnly /><Button variant="primary" disabled icon={<SendHorizontal size={16} />}>发送</Button></div>
             {draft.trim() && <p className="m3s-aux">草稿已保留，恢复后可以继续发送。</p>}
           </>}
-          {!busy && pending && selected?.id !== pending.conversationId && <Notice tone="warn" action={<Button size="sm" onClick={() => { const original = visible.find((convo) => convo.id === pending.conversationId); if (original) select(original); }}>返回原会话</Button>}>另一条消息的结果待确认。请先返回原会话处理。</Notice>}
-          {(sendError || !busy && (pending || firstPending)) && <Notice tone={pending || firstPending || sendError.includes("待确认") ? "warn" : "danger"} action={<>{sendError.startsWith("消息已发送") && <Button size="sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</Button>}{(pending || firstPending) && <Button size="sm" disabled={busy || Boolean(pending && selected?.id !== pending.conversationId)} onClick={() => { if (pending) void send(pending.kind, pending); else void send("TEXT"); }}>{sendRetryExpired ? "查询原操作" : "查询结果并重试"}</Button>}{(pending || firstPending) && sendRetryExpired && <Button size="sm" disabledReason={RETRY_EXPIRED_TEXT}>重试</Button>}</>}>{sendRetryExpired ? RETRY_EXPIRED_TEXT : sendError || "上条消息的结果待确认，请查询发送结果。"}</Notice>}
+          {!busy && pending && selected?.id !== pending.conversationId && <Notice tone="warn" action={<Button size="sm" onClick={() => { const original = visible.find((convo) => convo.id === pending.conversationId); if (original) select(original); }}>返回原会话</Button>}>另一条消息发送结果未知，请先回原会话处理。</Notice>}
+          {(sendError || !busy && (pending || firstPending)) && <Notice tone={pending || firstPending || sendError.includes("未知") ? "warn" : "danger"} action={<>{sendError.startsWith("消息已发送") && <Button size="sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</Button>}{(pending || firstPending) && <Button size="sm" disabled={busy || Boolean(pending && selected?.id !== pending.conversationId)} onClick={() => { if (pending) void send(pending.kind, pending); else void send("TEXT"); }}>{sendRetryExpired ? "查询原结果" : "查询结果并重试"}</Button>}{(pending || firstPending) && sendRetryExpired && <Button size="sm" disabledReason={RETRY_EXPIRED_TEXT}>重试</Button>}</>}>{sendRetryExpired ? RETRY_EXPIRED_TEXT : sendError || "上条消息发送结果未知，请查询结果。"}</Notice>}
         </div>
       </div>
 
