@@ -460,8 +460,10 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
   const supportScopeUnknown = snapshot.role === "support" && !snapshot.supportReadModes?.length;
   // M-48: an advisor who can only read the knowledge base (M4) or service rules (M5) uses that content inside
   // the conversation; the read-only configuration pages only add menu noise. This narrows, never widens, access.
+  // M5 also hosts managed agent profiles, whose writes use M1 authority rather than M5 authority.
   // While the support qualification is unknown those pages are all the advisor has, so they stay.
-  const supportWrites = (code: string) => (snapshot.authorities ?? []).some((authority) => {
+  const supportWrites = (code: string) => (code === "M5" && snapshot.supportReadModes?.includes("MANAGED")
+    && snapshot.authorities?.includes("service_m1_write")) || (snapshot.authorities ?? []).some((authority) => {
     const upper = authority.toUpperCase();
     return upper.includes(`_${code}_`) && /_(WRITE|MANAGE|PUBLISH|EDIT)(_|$)/.test(upper);
   });
@@ -543,7 +545,7 @@ export function canAccessResolvedPath(domains: NavDomain[], pathname: string | n
 }
 
 /** 已按改版规范迁移的页面。浅色主题只对这些页的内容区生效，其余页的内容区保持深色，等迁移批次（06 VS-95）。 */
-export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals", "/finance/pool", "/devices/orders", "/growth/trial", "/analytics/kpi", "/analytics/financial", "/analytics/operations", "/analytics/behavior-heatmap", "/risk/multi-account", "/emergency/kill-switch", "/emergency/tamper", "/service/sessions", "/content/disclosures", "/finance/fx-rate", "/finance/payout-vnd", "/finance/recon", "/finance/params", "/finance/ledger", "/users/assets", "/users/search", "/users/actions", "/platform/audit",
+export const REDESIGNED_PATHS: readonly string[] = ["/", "/network/commissions", "/finance/withdrawals", "/finance/pool", "/devices/orders", "/growth/trial", "/analytics/kpi", "/risk/multi-account", "/emergency/kill-switch", "/service/sessions", "/content/disclosures", "/finance/fx-rate", "/finance/payout-vnd", "/finance/recon", "/finance/params", "/finance/ledger", "/users/assets", "/users/search", "/users/actions", "/platform/audit", "/analytics/financial", "/analytics/operations", "/analytics/behavior-heatmap", "/emergency/tamper",
   "/growth/phase",
   "/growth/public-stats",
   "/growth/referral-rewards",
@@ -560,15 +562,27 @@ export const REDESIGNED_PATHS: readonly string[] = ["/", "/finance/withdrawals",
   "/devices/pricing",
   "/users/security",
   "/service/overview",
+  "/service/kb-sla",
+  "/service/scripts",
+  "/service/leaderboard",
   "/finance-products/exchange",
   "/finance-products/market",
   "/finance-products/staking",
   "/growth/vouchers",
   "/growth/daily",
+  "/network/v-rank",
+  "/network/royalty",
+  "/network/binary",
+  "/network/leadership-pool",
   "/analytics/funnel-cohort",
   "/analytics/export",
   "/emergency/geo-block",
   "/emergency/sop",
+  "/devices/trade-in",
+  "/overview/dual-ledger",
+  "/overview/funnel",
+  "/overview/risk-radar",
+  "/overview/rhythm",
 ];
 /** 不在菜单里的详情页，路径带对象编号，按前缀认。 */
 export const REDESIGNED_DETAIL_PREFIXES: readonly string[] = ["/users/search/", "/service/customers/"];

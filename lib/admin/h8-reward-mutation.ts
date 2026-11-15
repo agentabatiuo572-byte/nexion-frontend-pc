@@ -152,7 +152,7 @@ export async function queryH8RewardCommand(record: H8RewardCommand) {
   if (record.kind === "direct") throw new Error("H8_DIRECT_RESULT_REQUIRES_AUDIT");
   let ticket;
   try {
-    ticket = await fetchA2ProposalByKey(record.commandKey, true, true);
+    ticket = await fetchA2ProposalByKey(record.commandKey, true, "h8");
     if (ticket) checkTicket(record, ticket);
   } catch (error) {
     // A previous pending observation is no longer authoritative after a failed query.

@@ -33,7 +33,7 @@ async function proxyDevicesCollection(request: Request) {
       },
     });
   } catch {
-    return jsonError(503, "DEVICES_BACKEND_UNAVAILABLE");
+    return jsonError(503, "DEVICES_BACKEND_READ_UNAVAILABLE");
   }
 }
 

@@ -13,12 +13,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
-import { Icon, Btn, Chip, Drawer, KV, OperationConfirmModal, useToast } from "./design-kit";
+import { Btn, Chip, Drawer, KV, OperationConfirmModal, useToast } from "./design-kit";
 import { RdPage, ReleaseModal } from "@/app/components/rd";
 import { businessClock } from "@/lib/admin/business-time";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
@@ -62,8 +62,8 @@ import type { E4PendingCommand, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types
 import { DevicePoolChoices, FIXED_DEVICE_LEVELS } from "./e-tabs/task-type-policy";
 import { E1Page } from "./e-tabs/e1-page";
 import { E2Tasks } from "./e-tabs/e2-tasks";
-import { E3Lifecycle } from "./e-tabs/e3-lifecycle";
-import { E3Manual } from "./e-tabs/e3-manual";
+import { useE3Proposals } from "./e-tabs/e3-proposals";
+import { E3Lifecycle, E3_APPROVER_BATCH, E3_APPROVER_SINGLE, E3_COVERAGE_CHECK } from "./e-tabs/e3-lifecycle";
 import { E4Orders } from "./e-tabs/e4-orders";
 import { E5Ops } from "./e-tabs/e5-ops";
 import { E6ComputeConfig as E6ComputeConfigComp } from "./e-tabs/e6-compute-config";
@@ -128,7 +128,6 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e4Detail, setE4Detail] = useState<E4OrderDetail | null>(null);
   const [e4DetailLoading, setE4DetailLoading] = useState(false);
   const [e4DetailError, setE4DetailError] = useState<string | null>(null);
-  const [manualOpen, setManualOpen] = useState(false); // E3 操作说明手册弹窗
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const canReadE1 = useAdminAuth((s) => s.session?.authorities.includes("device_e1_read") ?? false);
   const canWriteE1 = useAdminAuth((s) => s.session?.authorities.includes("device_e1_write") ?? false);
@@ -158,6 +157,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     s.session?.role === "growth"
       && s.session.authorities.includes("platform_a2_proposal_create"));
   const canToggleE6 = canWriteE6 || hasToggleE6 || canProposeE6;
+  const e3Proposals = useE3Proposals();
   const rawPropose = usePropose(); // E 域高敏动作统一入 A2 后端待确认队列
   // A2 提案咽喉:E 域每一次提案的命令号都由本函数派,调用点携号也一律以稳定号为准。
   // 指纹**不含 reason**:理由是审计元数据不是意图 —— 运营在「结果未知」后补一句理由再点是极自然的
@@ -167,6 +167,12 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     // 槽位用**结构化动作标识**(command.op)而不是 spec.action:后者是运营展示文案,常内嵌输入值
     // (「上架节奏 · 延迟 1 个月 · Gen3」),值进槽位就退化成 store 文档明令避开的形态 ——
     // 换个值提交成功只清了新槽,旧槽的号原样滞留,改回原值时会复用它被后端静默去重。
+    if (spec.sourceDomain === "E3") {
+      if (!e3Ready || e3Loading || e3Error) throw new Error("E3_READ_MODEL_INVALID");
+      await e3Proposals.submit(spec, { ...e3Params });
+      toast("已提交，等待审批后执行");
+      return "proposed" as const;
+    }
     const slot = `${spec.command.op}|${spec.obj}`;
     const retained = commandAttempts.list().find(record => record.fingerprint === slot);
     if (retained && isRedesignedELegacyCommand(retained)) {
@@ -207,6 +213,9 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     k.startsWith("E.device.") || k.startsWith("E.tradein.") || k.startsWith("E.release.earlyAccess.");
   const pE = (k: string): string => isE3ParamKey(k) ? (e3Params[k] ?? "—") : "—";
   const e3Ready = Object.keys(e3Params).length > 0;
+  const e3ConfirmKeys = mc?.op === "param" && mc.paramKey && isE3ParamKey(mc.paramKey) ? [mc.paramKey]
+    : mc?.op === "param-multi" && mc.paramKeys?.every(p => isE3ParamKey(p.paramKey)) ? mc.paramKeys.map(p => p.paramKey) : [];
+  const e3Original = () => e3Proposals.records.find(r => r.state === "unknown" && r.keys.some(k => e3ConfirmKeys.includes(k)));
 
   // ── E1 商品目录 / 上架门:后端接口为单一来源 ──
   const [e1Skus, setE1Skus] = useState<OpsSku[]>([]);
@@ -293,24 +302,31 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [canReadE2]);
   useEffect(() => { if (tab === "E6" && canReadE2) void refreshE2(); }, [tab, canReadE2, refreshE2]);
 
+  const e3Reconcile = useRef(e3Proposals.reconcile);
+  e3Reconcile.current = e3Proposals.reconcile;
   // ── E3 设备使用与升级置换:服务端配置 / 概览 / tx 监控为单一来源 ──
   const refreshE3 = useCallback(async () => {
     setE3Loading(true);
     setE3Error(null);
+    setActionConfirm(current => current && (current.op === "param" && current.paramKey?.startsWith("E.") || current.op === "param-multi" && current.paramKeys?.every(p => p.paramKey.startsWith("E."))) && tab === "E3" ? null : current);
     try {
+      if (tab === "E3") {
+        const queryErrors = await e3Reconcile.current();
+        if (queryErrors.length) setToast(queryErrors[0], "error");
+      }
       const snapshot = await fetchE3Snapshot();
       setE3Params(snapshot.params);
       setE3Stats(snapshot.stats);
       setE3Operations(snapshot.operations);
     } catch (error) {
-      setE3Error(displayAdminError(error));
+      setE3Error(displayAdminReadError(error));
       setE3Params({});
       setE3Stats(null);
       setE3Operations([]);
     } finally {
       setE3Loading(false);
     }
-  }, []);
+  }, [tab]);
   useEffect(() => { if (tab === "E1" || tab === "E3") void refreshE3(); }, [tab, refreshE3]);
 
   // ── E4 订单进度:服务端数据为单一来源 ──
@@ -709,7 +725,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     canWriteE1: false, skus, e1InvalidSkus, e1Loading, e1Error, e1Gates, e1BundleDiscount, phaseCur, refreshE1,
     openSku: () => setToast("请到商品管理与上架条件编辑商品"), delSku: () => setToast("请到商品管理与上架条件删除商品"),
     canReadE2, canWriteE2, tasks, phoneTiers, yieldComparisons, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask,
-    canWriteE3, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
+    canWriteE3, e3Proposals, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4ReadBlock, e4Total, e4Query, e4KeywordInput, e4Counts, e4CountsFailed, e4ReadAt, updateE4Query, setE4KeywordInput, clearE4Filters, refreshE4,
     orderState, e4Pending, e4ReceiptAttempts, checkE4Receipt, e4PendingNotes, e4RetryRejected, e4Retrying, retryE4Pending, checkE4Pending, canQueryE4, e4QueryMissing, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
     canReadE5, canWriteE5, canForceActivateE5, canUnbindE5,
@@ -769,22 +785,19 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     setToast("E_PARAM_BACKEND_ROUTE_MISSING:" + paramKey);
   };
 
-  const headerRight =
-    tab === "E3" ? <button className="f-cta manual" onClick={() => setManualOpen(true)}><Icon name="doc" size={15} /> 操作说明手册</button>
-          : undefined;
+  // E3 的确认框写真实的批准资格和覆盖率检查时点（单项、成组各一句）。
+  const e3Confirm = mc && ((mc.op === "param" && !!mc.paramKey && isE3ParamKey(mc.paramKey))
+    || (mc.op === "param-multi" && !!mc.paramKeys?.every(({ paramKey }) => isE3ParamKey(paramKey)))) ? mc.op : null;
 
   const page = (
     <>
-      {tab !== "E4" && tab !== "E2" && tab !== "E5" && tab !== "E6" && <DomainHeader {...meta} right={headerRight} />}
+      {tab !== "E4" && tab !== "E2" && tab !== "E3" && tab !== "E5" && tab !== "E6" && <DomainHeader {...meta} />}
 
       {tab === "E2" && <E2Tasks ctx={ctx} />}
       {tab === "E3" && <E3Lifecycle ctx={ctx} />}
       {tab === "E4" && <E4Orders ctx={ctx} />}
       {tab === "E5" && <E5Ops ctx={ctx} />}
       {tab === "E6" && <E6ComputeConfigComp ctx={ctx} />}
-
-      {/* E3 操作说明手册弹窗(右上角按钮触发) */}
-      {tab === "E3" && manualOpen && <E3Manual ctx={ctx} onClose={() => setManualOpen(false)} />}
 
       {taskDrawer && <Drawer title={editTaskId ? "编辑手机任务" : "新增手机任务"} sub="仅用于手机任务池 · 另一位管理员批准后生效" onClose={() => setTaskDrawer(false)}
         footer={<><Btn onClick={() => setTaskDrawer(false)}>取消</Btn><Btn variant="primary" disabled={!canMutateE2Tasks || !taskForm.n.trim()} onClick={editTaskId ? submitTaskEdit : submitTask}>提交审批</Btn></>}>
@@ -810,14 +823,15 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
         amplifies={!!mc.amplify}
         edit={mc.edit}
         businessForm={mc.businessForm}
-        getPendingReason={mc.orderId ? () => e4PendingCommands.list().find(record => record.orderNo === mc.orderId)?.spec.reason : undefined}
+        getPendingReason={e3Confirm ? () => e3Proposals.pendingReason(e3ConfirmKeys) : mc.orderId ? () => e4PendingCommands.list().find(record => record.orderNo === mc.orderId)?.spec.reason : undefined}
         getPendingBusinessValue={mc.orderId ? () => {
           const original = e4PendingCommands.list().find(record => record.orderNo === mc.orderId);
           return original ? Object.fromEntries(Object.entries(original.spec.command.params).map(([key, value]) => [key, String(value)])) : undefined;
         } : undefined}
         reasonMin={8}
         reasonMax={200}
-        completionCopy={mc.orderId ? undefined : isE2TaskMutation(mc.op)
+        coverageCheck={e3Confirm ? E3_COVERAGE_CHECK : undefined}
+        completionCopy={mc.orderId ? undefined : e3Confirm ? (e3Confirm === "param" ? E3_APPROVER_SINGLE : E3_APPROVER_BATCH) : isE2TaskMutation(mc.op)
           ? "批准后生效：提交后请另一位有批准权限和任务池修改权限的管理员在「操作记录与审批」中批准。"
           : ["sku-save", "sku-status", "sku-delete"].includes(mc.op)
             ? "批准后生效：提交后请另一位有批准权限和商品修改权限的管理员在「操作记录与审批」中批准。"
@@ -829,10 +843,24 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
         facts={mc.facts}
         statedBrief={mc.statedBrief}
         reasonPlaceholder={mc.reasonPlaceholder}
-        blockedReason={mc.orderId ? e4ReadBlock : undefined}
+        blockedReason={e3Confirm ? (e3Original() ? isRetryExpired(e3Original()!) ? RETRY_EXPIRED_TEXT : !e3Proposals.allowed(e3Confirm === "param-multi") ? "这个账号已没有这项权限，请有权限的同事处理" : undefined : e3Loading || e3Error || !e3Ready ? "规则和统计没有读到" : undefined) : mc.orderId ? e4ReadBlock : undefined}
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;
+          if (e3Confirm) {
+            const saved = e3Original();
+            if (saved) {
+              try { await e3Proposals.send(saved); }
+              catch (error) {
+                if (isExplicitRejection(error)) { setActionConfirm(null); await refreshE3(); }
+                throw error;
+              }
+              setActionConfirm(null);
+              await refreshE3();
+              return;
+            }
+            if (!e3Proposals.allowed(e3Confirm === "param-multi") || e3Loading || e3Error || !e3Ready) throw new Error("FORBIDDEN");
+          }
           const original = mc.orderId ? e4PendingCommands.list().find(record => record.orderNo === mc.orderId) : undefined;
           if (original) {
             await sendE4Proposal(original.spec, original);
@@ -1017,5 +1045,5 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  return tab === "E4" || tab === "E2" || tab === "E6" ? <RdPage>{page}</RdPage> : <div className="dkpage edom">{page}</div>;
+  return tab === "E4" || tab === "E2" || tab === "E3" || tab === "E6" ? <RdPage>{page}</RdPage> : <div className="dkpage edom">{page}</div>;
 }

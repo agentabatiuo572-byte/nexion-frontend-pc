@@ -1,17 +1,21 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { finiteDashboardNumber } from "@/lib/admin/dashboard-number";
 import { formatAdminApiError, guardedFetch, rawFetch } from "@/lib/admin/error-messages";
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { F1OutcomeUncertainError, f1StableWrite } from "@/lib/admin/f1-stable-write";
 import { verifyF5CsvArtifact } from "@/lib/admin/f5-export-verifier";
 import { parseDirectReferralPolicy } from "@/lib/admin/direct-referral-policy";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 import type { F1PolicyValues } from "./f1-policy-change";
+import { f3SpilloverState } from "./f3-policy";
+import { f4Decimal, f4MonthlyCap } from "./f4-money";
+import type { BusinessZone } from "./business-time";
 import {
   assertF1Overview,
   assertF2Overview,
   assertF3Overview,
   assertF4Overview,
+  assertF4MaterialPacket,
   assertF5Overview,
 } from "@/lib/admin/f-overview-contract";
 
@@ -174,6 +178,7 @@ interface BackendF3Formula {
 }
 
 interface BackendF3DailyCap {
+  h1BinaryDailyCap?: string | number | null;
   currentLabel?: string | null;
   windowLabel?: string | null;
   nextTrigger?: string | null;
@@ -361,6 +366,7 @@ interface BackendF5Filter {
 }
 
 interface BackendF5CommissionEvent {
+  unlockAt?: number | null;
   settlementNo?: string | null;
   sourceRef?: string | null;
   sourceDeviceId?: string | null;
@@ -418,8 +424,8 @@ interface BackendF5Pagination {
 }
 
 interface BackendF5CommissionAuditOverview {
-  pendingCalculations?: F5PendingCalculation[];
-  pendingCalculationCount?: number | string;
+  pendingCalculations: F5PendingCalculation[];
+  pendingCalculationCount: number | string;
   summary: BackendF5Summary;
   commissionKinds: BackendF5CommissionKind[];
   commissionFilters: BackendF5Filter[];
@@ -521,6 +527,8 @@ export interface F1RewardPayout {
   rankCode: string;
   rewardType: string;
   amount: number;
+  /** 后端给的金额原文，显示用；amount 已转成数字，会丢小数位。 */
+  amountText: string;
   voucherId: string;
   skuId: string;
   customLabel: string;
@@ -561,8 +569,8 @@ export interface F2Metric {
 
 export interface F2UnilevelRate {
   l: string;
-  usdt: number;
-  nex: number;
+  usdt: number | null;
+  nex: number | null;
   ui: string;
   direct: boolean;
   configKey: string;
@@ -637,6 +645,7 @@ export interface F3Formula {
 }
 
 export interface F3DailyCap {
+  amountUsdt: string | null;
   currentLabel: string;
   windowLabel: string;
   nextTrigger: string;
@@ -725,6 +734,7 @@ export interface F4Podium {
 
 export interface F4LeaderboardPeriod {
   poolUsd: number;
+  poolUsdText?: string;
   participantCount: number;
   topN: number;
   timezone: "Asia/Shanghai";
@@ -786,6 +796,10 @@ export interface F4AmbassadorReviewInput {
   missingKinds?: string[];
 }
 export class F4MaterialReviewNotAppliedError extends Error {
+  readonly status = 409;
+  readonly httpStatus = 409;
+  readonly apiCode = 409;
+  get backendMessage() { return this.code; }
   constructor(message: string, public readonly code: "MATERIAL_REVISION_STALE" | "APPLICATION_NOT_PENDING") {
     super(message); this.name = "F4MaterialReviewNotAppliedError";
   }
@@ -837,6 +851,7 @@ export interface F4Config {
 }
 
 export interface F4LeadershipPoolOverview {
+  settlementZone?: BusinessZone | null;
   configVersion: string;
   settlementConfigStatus: "READY" | "HOLD";
   settlementConfigUnavailableKey: string;
@@ -844,11 +859,13 @@ export interface F4LeadershipPoolOverview {
   metrics: F4Metric[];
   weeklyInjectedUsd: number;
   currentWeekPoolUsd: number | null;
+  currentWeekPoolAmount?: string | null;
   weeklyGmvUsd: number;
   poolRatio: string;
   poolRatioValue: number;
   monthlyCapLabel: string;
   monthlyCapUsd: number;
+  monthlyCapAmount?: string | null;
   participantCount: number;
   topN: number;
   topSharePct: number;
@@ -917,23 +934,24 @@ export interface F5CommissionFilter {
 }
 
 export interface F5CommissionEvent {
+  unlockAt?: number;
   settlementNo?: string;
   sourceRef?: string;
   sourceDeviceId?: string;
   policyVersion?: number;
-  basisUsdt?: number;
-  nexUsdtPrice?: number;
-  amountUSDT?: number;
-  amountNEX?: number;
-  recoveryPendingUSDT?: number;
-  recoveryPendingNEX?: number;
+  basisUsdt?: string;
+  nexUsdtPrice?: string;
+  amountUSDT?: string;
+  amountNEX?: string;
+  recoveryPendingUSDT?: string;
+  recoveryPendingNEX?: string;
   reversalRecorded?: boolean;
   id: string;
   eventId: number;
   kind: string;
   user: string;
   userId: number;
-  amt: number;
+  amt: string;
   cur: string;
   sourceUserId?: number;
   layer?: number;
@@ -957,12 +975,12 @@ export interface F5PendingCalculation {
   sourceRef: string;
   sourceUserName: string;
   basisUsdt: number | string;
-  amountUSDT: 0;
-  amountNEX: 0;
+  amountUSDT: number | string;
+  amountNEX: number | string;
   nexUsdtPrice: null;
   status: "waiting_calculation";
-  unlockAt: string | null;
-  ts: string;
+  unlockAt: number | null;
+  ts: number | null;
 }
 
 export interface F5CommissionQuery {
@@ -998,7 +1016,7 @@ export interface F5OperationHistory {
   resultCommissionId: string;
   userId: string;
   kinds: string;
-  amount: number;
+  amount: string | null;
   currency: string;
   evidenceRef: string;
   reason: string;
@@ -1161,11 +1179,9 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
   const skuOptions = data?.skuOptions ?? [];
   // coverage 可选:后端 ranks() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验)。
   const rawCoverage = data?.coverage;
-  const coverage = rawCoverage
-    ? {
-        coverageRatio: toNumber(rawCoverage.coverageRatio),
-        redlinePct: toNumber(rawCoverage.redlinePct),
-      }
+  const coverage = rawCoverage?.coverageRatio != null && rawCoverage.redlinePct != null
+    && Number.isFinite(Number(rawCoverage.coverageRatio)) && Number.isFinite(Number(rawCoverage.redlinePct))
+    ? { coverageRatio: Number(rawCoverage.coverageRatio), redlinePct: Number(rawCoverage.redlinePct) }
     : undefined;
   return {
     rows,
@@ -1225,6 +1241,8 @@ function normalizePayoutPage(data: Record<string, unknown> | null | undefined): 
         rankCode: asText(row.rankCode),
         rewardType: asText(row.rewardType),
         amount: toNumber(row.amount),
+        // 后端给的金额原文：转成数字再显示会丢小数位（F1-B04），页面显示用这一份。
+        amountText: asScalarText(row.amount),
         voucherId: asText(row.voucherId),
         skuId: asText(row.skuId),
         customLabel: asText(row.customLabel),
@@ -1262,8 +1280,8 @@ function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2Rate
   }));
   const unilevel = (data?.unilevelRates ?? []).map((item) => ({
     l: asText(item.level, "L?"),
-    usdt: toNumber(item.usdtPct),
-    nex: toNumber(item.nexReward),
+    usdt: item.usdtPct === null ? null : toNumber(item.usdtPct),
+    nex: item.nexReward === null ? null : toNumber(item.nexReward),
     ui: asText(item.label, ""),
     direct: toBoolean(item.direct),
     configKey: asText(item.configKey, ""),
@@ -1355,6 +1373,7 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
     autoPlacement7dCount: toNumber(data?.autoPlacement7dCount),
     dailyMatchUsd: toNumber(data?.dailyMatchUsd),
     dailyCap: {
+      amountUsdt: dailyCap.h1BinaryDailyCap == null ? null : asScalarText(dailyCap.h1BinaryDailyCap),
       currentLabel: asText(dailyCap.currentLabel),
       windowLabel: asText(dailyCap.windowLabel),
       nextTrigger: asText(dailyCap.nextTrigger),
@@ -1366,7 +1385,7 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
       threshold: asText(config.threshold),
       matchRate: asText(config.matchRate),
       spillover: asText(config.spillover),
-      spilloverEnabled: toBoolean(config.spilloverEnabled),
+      spilloverEnabled: f3SpilloverState(config.spillover ?? undefined) === true,
       gvResetCron: asText(config.gvResetCron),
       settlePeriod: asText(config.settlePeriod),
       residualPolicy: asText(config.residualPolicy),
@@ -1376,9 +1395,9 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
-    // coverage 可选:后端 binary() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验),范式同 normalizeOverview。
-    coverage: data?.coverage
-      ? { coverageRatio: toNumber(data.coverage.coverageRatio), redlinePct: toNumber(data.coverage.redlinePct) }
+    // binary() 的可空 B1 快照不补0；配置护栏在批准执行，实际结算仍按当时金额复核。
+    coverage: data?.coverage && finiteDashboardNumber(data.coverage.coverageRatio) !== null && finiteDashboardNumber(data.coverage.redlinePct) !== null
+      ? { coverageRatio: Number(data.coverage.coverageRatio), redlinePct: Number(data.coverage.redlinePct) }
       : undefined,
     sources: data?.sources ?? [],
   };
@@ -1418,7 +1437,8 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
       if (!raw || typeof raw !== "object") continue;
       const row = raw as Record<string, unknown>;
       const max = period === "today" ? 20 : period === "week" ? 50 : 100;
-      if (typeof row.poolUsd !== "number" || !Number.isFinite(row.poolUsd) || row.poolUsd < 0
+      const poolUsd = finiteDashboardNumber(row.poolUsd);
+      if (poolUsd === null || poolUsd < 0
         || !integer(row.participantCount) || row.participantCount > max
         || !integer(row.topN) || row.topN > row.participantCount
         || row.timezone !== "Asia/Shanghai" || typeof row.snapshotAt !== "string" || !Number.isFinite(Date.parse(row.snapshotAt))
@@ -1427,7 +1447,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
         || !row.podium.every((item, index) => item && item.rank === index + 1
           && integer(item.memberUserId, 1) && typeof item.userId === "string" && !!item.userId.trim()
           && label(item.gmvLabel) && typeof item.tip === "string" && typeof item.className === "string")) continue;
-      leaderboardPeriods[period] = { poolUsd: row.poolUsd, participantCount: row.participantCount,
+      leaderboardPeriods[period] = { poolUsd, poolUsdText: f4Decimal(String(row.poolUsd)) ?? undefined, participantCount: row.participantCount,
         topN: row.topN, timezone: row.timezone, snapshotAt: row.snapshotAt, podium: row.podium as F4Podium[] };
     }
   }
@@ -1497,11 +1517,13 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     metrics,
     weeklyInjectedUsd: toNumber(data?.weeklyInjectedUsd),
     currentWeekPoolUsd: finiteDashboardNumber(data?.currentWeekPoolUsd),
+    currentWeekPoolAmount: data?.currentWeekPoolUsd == null ? null : f4Decimal(data.currentWeekPoolUsd),
     weeklyGmvUsd: toNumber(data?.weeklyGmvUsd),
     poolRatio: asText(data?.poolRatio, asText(config.poolRatio)),
     poolRatioValue: toNumber(data?.poolRatioValue),
     monthlyCapLabel: asText(data?.monthlyCapLabel, asText(config.monthlyCap)),
     monthlyCapUsd: toNumber(data?.monthlyCapUsd),
+    monthlyCapAmount: f4MonthlyCap(data?.configValues?.["F.pool.monthlyCap"] ?? ""),
     participantCount: toNumber(data?.participantCount),
     topN: toNumber(data?.topN),
     topSharePct: toNumber(data?.topSharePct),
@@ -1541,9 +1563,9 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
-    // coverage 可选:后端 leadershipPool() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验),范式同 normalizeOverview。
-    coverage: data?.coverage
-      ? { coverageRatio: toNumber(data.coverage.coverageRatio), redlinePct: toNumber(data.coverage.redlinePct) }
+    // A01/A18 have no execution-time B1 check. Missing values never become zero.
+    coverage: finiteDashboardNumber(data?.coverage?.coverageRatio) !== null && finiteDashboardNumber(data?.coverage?.redlinePct) !== null
+      ? { coverageRatio: Number(data!.coverage!.coverageRatio), redlinePct: Number(data!.coverage!.redlinePct) }
       : undefined,
     sources: data?.sources ?? [],
   };
@@ -1574,7 +1596,7 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       kind: asText(item.kind, "network"),
       user: asText(item.user, userId > 0 ? `U${String(userId).padStart(8, "0")}` : "usr_unknown"),
       userId,
-      amt: toNumber(item.amount),
+      amt: f4Decimal(item.amount!)!,
       cur: asText(item.currency, "USDT"),
       sourceUserId: item.sourceUserId == null ? undefined : toNumber(item.sourceUserId),
       layer: item.layer == null ? undefined : toNumber(item.layer),
@@ -1588,18 +1610,19 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       version: toNumber(item.version),
       frozenFromStatus: optionalText(item.frozenFromStatus),
       ledgerBizNo: optionalText(item.ledgerBizNo),
+      unlockAt: item.unlockAt ?? undefined,
       settlementNo: optionalText(item.settlementNo), sourceRef: optionalText(item.sourceRef), sourceDeviceId: optionalText(item.sourceDeviceId),
       policyVersion: item.policyVersion == null ? undefined : toNumber(item.policyVersion),
-      basisUsdt: item.basisUsdt == null ? undefined : toNumber(item.basisUsdt), nexUsdtPrice: item.nexUsdtPrice == null ? undefined : toNumber(item.nexUsdtPrice),
-      amountUSDT: item.amountUSDT == null ? undefined : toNumber(item.amountUSDT), amountNEX: item.amountNEX == null ? undefined : toNumber(item.amountNEX),
-      recoveryPendingUSDT: item.recoveryPendingUSDT == null ? undefined : toNumber(item.recoveryPendingUSDT), recoveryPendingNEX: item.recoveryPendingNEX == null ? undefined : toNumber(item.recoveryPendingNEX),
+      basisUsdt: item.basisUsdt == null ? undefined : f4Decimal(item.basisUsdt)!, nexUsdtPrice: item.nexUsdtPrice == null ? undefined : f4Decimal(item.nexUsdtPrice)!,
+      amountUSDT: item.amountUSDT == null ? undefined : f4Decimal(item.amountUSDT)!, amountNEX: item.amountNEX == null ? undefined : f4Decimal(item.amountNEX)!,
+      recoveryPendingUSDT: item.recoveryPendingUSDT == null ? undefined : f4Decimal(item.recoveryPendingUSDT)!, recoveryPendingNEX: item.recoveryPendingNEX == null ? undefined : f4Decimal(item.recoveryPendingNEX)!,
       reversalRecorded: item.reversalRecorded ?? undefined,
     };
   });
   const pagination = data.pagination;
   return {
-    pendingCalculations: data.pendingCalculations ?? [],
-    pendingCalculationCount: data.pendingCalculationCount == null ? 0 : toNumber(data.pendingCalculationCount),
+    pendingCalculations: data.pendingCalculations,
+    pendingCalculationCount: toNumber(data.pendingCalculationCount),
     summary: {
       monthlyCommissionSpendLabel: summary.monthlyCommissionSpendLabel,
       coolingBalanceLabel: summary.coolingBalanceLabel,
@@ -1631,7 +1654,7 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       id: asText(item.id, "AN-UNKNOWN"),
       type: asText(item.type, "unknown"),
       commissionId: asText(item.commissionId, ""),
-      userId: asText(item.userId, ""),
+      userId: item.userId == null ? "" : String(item.userId),
       evidence: asText(item.evidence, ""),
       relatedKCluster: asText(item.relatedKCluster, ""),
       status: asText(item.status, "open"),
@@ -1646,9 +1669,9 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       operationType: asText(item.operationType, ""),
       sourceCommissionId: asText(item.sourceCommissionId, ""),
       resultCommissionId: asText(item.resultCommissionId, ""),
-      userId: asText(item.userId, ""),
+      userId: item.userId == null ? "" : String(item.userId),
       kinds: asText(item.kinds, ""),
-      amount: toNumber(item.amount),
+      amount: item.amount == null ? null : f4Decimal(String(item.amount)),
       currency: asText(item.currency, ""),
       evidenceRef: asText(item.evidenceRef, ""),
       reason: asText(item.reason, ""),
@@ -1656,7 +1679,7 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       createdAt: asText(item.createdAt, ""),
     })),
     activeSuspensions: (data?.activeSuspensions ?? []).map((item) => ({
-      userId: asText(item.userId, ""),
+      userId: item.userId == null ? "" : String(item.userId),
       kind: asText(item.kind, ""),
       reason: asText(item.reason, ""),
       operator: asText(item.operator, ""),
@@ -1665,9 +1688,9 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
-    // coverage 可选:后端 commissions() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验),范式同 normalizeOverview。
-    coverage: data?.coverage
-      ? { coverageRatio: toNumber(data.coverage.coverageRatio), redlinePct: toNumber(data.coverage.redlinePct) }
+    // Missing coverage remains unknown. Only reissue has an execution-time backend B1 check.
+    coverage: finiteDashboardNumber(data.coverage?.coverageRatio) !== null && finiteDashboardNumber(data.coverage?.redlinePct) !== null
+      ? { coverageRatio: Number(data.coverage!.coverageRatio), redlinePct: Number(data.coverage!.redlinePct) }
       : undefined,
     sources: data?.sources ?? [],
   };
@@ -1718,7 +1741,26 @@ async function f1Request<T>(
   let result: ApiResult<T> | null = null;
   let bodyUnreadable = false;
   try {
-    result = (await response.json()) as ApiResult<T>;
+    if (path.startsWith("/reward-payouts") && !isWrite) {
+      const raw = await response.text();
+      // Preserve DECIMAL(18,6) before JSON.parse can round a JSON number.
+      result = JSON.parse(raw.replace(/("amount"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
+    } else if (/^\/ambassador-applications\/\d+\/materials(?:\/review)?$/.test(path)) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("(?:budgetUsdt|recognizedBudgetUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+        (_match, key: string, amount: string) => `${key}${JSON.stringify(f4Decimal(amount) ?? amount)}`)) as ApiResult<T>;
+    } else if (path === "/leadership-pool" && !isWrite) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("(?:currentWeekPoolUsd|poolUsd)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+        (_match, key: string, amount: string) => `${key}${JSON.stringify(f4Decimal(amount) ?? amount)}`)) as ApiResult<T>;
+    } else if (path === "/binary" && !isWrite) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("h1BinaryDailyCap"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
+    } else if (path.startsWith("/commissions") && !isWrite) {
+      const raw = await response.text();
+      // Keep each monetary JSON lexeme before binary floating point can round it.
+      result = JSON.parse(raw.replace(/("(?:amount|basisUsdt|nexUsdtPrice|amountUSDT|amountNEX|recoveryPendingUSDT|recoveryPendingNEX)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
+    } else result = (await response.json()) as ApiResult<T>;
   } catch {
     bodyUnreadable = true;
   }
@@ -1739,6 +1781,7 @@ async function f1Request<T>(
     // 头 + message 两路都认(与 a2-client 同款):teams proxy 目前不透传该头,靠下面的 5xx 兜底,
     // 但后端若改用「200 + 业务码非 0 + UPSTREAM_OUTCOME_UNKNOWN」表达未知,这一路能接住。
     if (response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown"
+      || (path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) && isIdempotencyOutcomeOpen(result?.message)
       || result?.message?.trim().toUpperCase().includes("UPSTREAM_OUTCOME_UNKNOWN") === true) {
       throw new F1OutcomeUncertainError(
         formatAdminApiError(result?.message, "F1_REQUEST_OUTCOME_UNKNOWN"),
@@ -1773,7 +1816,12 @@ async function f1Request<T>(
       && (reviewConflict === "MATERIAL_REVISION_STALE" || reviewConflict === "APPLICATION_NOT_PENDING")) {
       throw new F4MaterialReviewNotAppliedError(formatAdminApiError(reviewConflict, "F1_REQUEST_FAILED_409"), reviewConflict);
     }
-    throw new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
+    const error = new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
+    if (path.startsWith("/ranks/") || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
+      status: response.ok && typeof result?.code === "number" ? result.code : response.status, httpStatus: response.status, apiCode: result?.code,
+      backendMessage: result?.message, reasonCode: result?.message,
+    });
+    throw error;
   }
 
   return result.data as T;
@@ -1871,28 +1919,35 @@ export async function fetchF4AmbassadorPolicy() {
 }
 
 export async function fetchF4AmbassadorMaterials(applicationId: number) {
-  return f1Request<F4AmbassadorMaterialPacket>(`/ambassador-applications/${applicationId}/materials`);
+  const packet = await f1Request<unknown>(`/ambassador-applications/${applicationId}/materials`);
+  assertF4MaterialPacket(packet);
+  return packet as unknown as F4AmbassadorMaterialPacket;
 }
 
 export async function reviewF4AmbassadorMaterials(applicationId: number, input: F4AmbassadorReviewInput, commandKey: string) {
-  return f1Request<F4AmbassadorMaterialPacket>(`/ambassador-applications/${applicationId}/materials/review`, {
+  const packet = await f1Request<unknown>(`/ambassador-applications/${applicationId}/materials/review`, {
     method: "POST", stableIdempotencyKey: commandKey, expectsData: true, body: JSON.stringify(input),
   });
+  try { assertF4MaterialPacket(packet); }
+  catch { throw new F1OutcomeUncertainError(formatAdminApiError(undefined, "F1_RESPONSE_UNREADABLE"), commandKey); }
+  return packet as unknown as F4AmbassadorMaterialPacket;
 }
 
 export async function updateF4AmbassadorPolicy(
   policy: F4AmbassadorPolicyUpdate,
   reason: string,
   operator: string,
+  originalCommandKey?: string,
 ) {
-  const fingerprint = JSON.stringify([policy, operator]);
-  return f1StableWrite("f4-ambassador-policy", fingerprint, async (commandKey) =>
+  const fingerprint = JSON.stringify([policy, reason, operator]);
+  const write = async (commandKey: string) =>
     normalizeF4AmbassadorPolicy(await f1Request<unknown>("/ambassador-policy", {
       method: "PUT",
       stableIdempotencyKey: commandKey,
       expectsData: true,
       body: JSON.stringify({ ...policy, reason, operator }),
-    })));
+    }));
+  return originalCommandKey ? write(originalCommandKey) : f1StableWrite("f4-ambassador-policy", fingerprint, write);
 }
 
 export interface F5ExportReceipt {
@@ -2048,13 +2103,14 @@ export async function updateF5AnomalyConfig(
   layerRatioAnomalyPct: number,
   reason: string,
   operator: string,
+  commandKey: string,
 ) {
-  return f1StableWrite("f5-anomaly-config", JSON.stringify([commissionAnomalySigma, layerRatioAnomalyPct, operator]),
-    (commandKey) => f1Request<Record<string, unknown>>("/commissions/anomaly-config", {
-      method: "PUT",
-      body: JSON.stringify({ commissionAnomalySigma, layerRatioAnomalyPct, reason, operator }),
-      stableIdempotencyKey: commandKey,
-    }));
+  return f1Request<{ operationNo: string; commissionAnomalySigma: number; layerRatioAnomalyPct: number }>("/commissions/anomaly-config", {
+    method: "PUT",
+    body: JSON.stringify({ commissionAnomalySigma, layerRatioAnomalyPct, reason, operator }),
+    stableIdempotencyKey: commandKey,
+    expectsData: true,
+  });
 }
 
 export async function updateF1VRankThreshold(rank: string, field: string, value: string, reason: string, operator: string) {

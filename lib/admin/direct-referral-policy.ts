@@ -92,7 +92,7 @@ export function parseDirectReferralPolicy(value: unknown): DirectReferralPolicy 
   if (validateDirectReferralUpdate({ ...result, expectedVersion: result.policyVersion, expectedSevenLayerRevision: result.sevenLayerRevision }) || (result.nexUsdtPrice !== null && result.nexUsdtPrice <= 0)) return invalid();
   const reference = result.sevenLayerReference;
   if (!result.purchaseSplitConfigured && (result.purchaseSplit.enabled || result.purchaseSplit.usdtSharePct !== 50)) return invalid();
-  if (reference.revision !== result.sevenLayerRevision || (reference.baseRatePct !== null && reference.baseRatePct !== 10) || (reference.coolingDays !== null && (!Number.isInteger(reference.coolingDays) || reference.coolingDays < 0 || reference.coolingDays > 90)) || (reference.legacyNexPerUsd !== null && reference.legacyNexPerUsd < 0) || (result.sevenLayerEnabled && result.cutoverAt === null)) return invalid();
+  if (reference.revision !== result.sevenLayerRevision || (reference.coolingDays !== null && (!Number.isInteger(reference.coolingDays) || reference.coolingDays < 0 || reference.coolingDays > 90)) || (reference.legacyNexPerUsd !== null && reference.legacyNexPerUsd < 0) || (result.sevenLayerEnabled && result.cutoverAt === null)) return invalid();
   if (result.configured ? result.policyVersion < 1 || result.effectiveAt === null : result.policyVersion !== 0 || result.effectiveAt !== null || result.purchaseSplit.enabled || result.purchaseSplit.usdtSharePct !== 50 || result.deviceEarning.enabled || result.deviceEarning.totalRatePct !== 0 || result.deviceEarning.usdtSharePct !== 50 || result.deviceEarning.coolingDays !== 0) return invalid();
   return result;
 }

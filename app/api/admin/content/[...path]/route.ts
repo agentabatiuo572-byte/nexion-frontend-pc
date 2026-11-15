@@ -145,6 +145,14 @@ async function proxy(request: Request, context: RouteContext) {
       if (disposition) responseHeaders.set("Content-Disposition", disposition);
       return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
     }
+    if (publicLeaderboardAvatar && (!upstream.ok || upstreamType.split(";")[0].toLowerCase() === "application/json")) {
+      // M6 needs the actual permission, environment or version verdict, including
+      // method-security failures carried by an HTTP 200 JSON envelope.
+      return new Response(await upstream.text(), {
+        status: upstream.status,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
+    }
     if (attachmentContent) {
       if (!upstream.ok) return jsonError(upstream.status, "CONTENT_ATTACHMENT_READ_FAILED");
       if (!upstream.body) return jsonError(502, "CONTENT_ATTACHMENT_EMPTY");

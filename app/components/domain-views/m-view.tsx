@@ -26,6 +26,7 @@ import {
   type MLoadConfigWrite,
 } from "@/lib/admin/m-client";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { mCommands } from "@/lib/admin/m-pending-commands";
 import { MDomainLoadCoordinator } from "@/lib/admin/m-content-load-coordinator";
 import { shouldStartM3ConversationRecovery } from "@/lib/admin/m-conversation-recovery-gate";
 import { failClosedSupportAgentsAfterReload, preserveVerifiedSupportAgentsDuringReload } from "@/lib/admin/m-progressive-support-state";
@@ -35,7 +36,7 @@ import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { M1AnalyticsWorkbench } from "./m-tabs/m1-analytics-workbench";
 import { useSupportInboxAlerts } from "@/lib/admin/support-alerts";
 import { supportUnboundPolicyClient } from "@/lib/admin/m-support-client";
-import { STANDBY_POOL_LABEL, type AdvisorScript, type SessionConvo, type SessionMsg, type SessionReplyTpl, type SessionType, type SupportFaq, type SupportSla, type SupportTicket, type SupportTicketCategory, type SupportTicketPriority } from "./m-tabs/data";
+import { STANDBY_POOL_LABEL, type AdvisorScript, type SessionConvo, type SessionMsg, type SessionReplyTpl, type SessionType, type SupportTicket, type SupportTicketCategory, type SupportTicketPriority } from "./m-tabs/data";
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 import { Button, Notice, PageHeader, RdPage } from "@/app/components/rd";
@@ -47,8 +48,7 @@ import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 
 const M3DedicatedChat = dynamic(() => import("./m-tabs/m3-dedicated-chat").then(m => m.M3DedicatedChat), { loading: DomainModuleLoading });
 const M4KbSla = dynamic(() => import("./m-tabs/m4-kb-sla").then(m => m.M4KbSla), { loading: DomainModuleLoading });
-const M5Scripts = dynamic(() => import("./m-tabs/m5-scripts").then(m => m.M5Scripts), { loading: DomainModuleLoading });
-const M5ServiceRules = dynamic(() => import("./m-tabs/m5-service-rules").then(m => m.M5ServiceRules), { loading: DomainModuleLoading });
+const M5Page = dynamic(() => import("./m-tabs/m5-page").then(m => m.M5Page), { loading: DomainModuleLoading });
 
 /**
  * M 域两类写入的命令号共用一张表,靠 fingerprint 前缀分命名空间:
@@ -57,23 +57,6 @@ const M5ServiceRules = dynamic(() => import("./m-tabs/m5-service-rules").then(m 
  *   m3direct| M3 标签 / 备注直写(`m3:add-tag:会话号:标签`)
  * 落 sessionStorage:刷新后「写入失败或结果未知」的重试必须仍是同一命令号,后端才能去重。
  */
-interface MCommandRecord extends PendingMutationRecord {
-  /** 本次提交的值:带 commandKey 的调用点靠它保证重试提交的仍是同一个值。 */
-  value?: string;
-  /** 参数指纹(`参数键\0值\0理由`)。同一参数换了逻辑命令 id 时,靠它回收上一次的命令号。 */
-  paramFingerprint?: string;
-  clientMessageId?: string;
-  /** The exact normalized reason of a pending M3 end command survives refresh. */
-  closeReason?: string;
-}
-const mCommands = createPendingMutationStore<MCommandRecord>({
-  storageKey: "nexion-admin-m-content-commands-v1",
-  retainExpiredRecords: true,
-  isValidRecord: (record) => (record.value === undefined || typeof record.value === "string")
-    && (record.paramFingerprint === undefined || typeof record.paramFingerprint === "string")
-    && (record.clientMessageId === undefined || typeof record.clientMessageId === "string")
-    && (record.closeReason === undefined || typeof record.closeReason === "string"),
-});
 interface DockCommandRecord extends PendingMutationRecord { payload: string; conversationNo: string; customerId?: string; readOnlyRecovery?: boolean }
 const dockCommands = createPendingMutationStore<DockCommandRecord>({
   storageKey: "nexion-admin-m-dock-pending-v1",
@@ -153,7 +136,6 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "M1", [meta.l2Id]);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const session = useAdminAuth((state) => state.session);
-  const [m5Pane, setM5Pane] = useState<"rules" | "templates">("rules");
   // M3 opened from the 客户 list (发起会话) links back to that list with its filters and page.
   const [fromCustomers, setFromCustomers] = useState(false);
   useEffect(() => { setFromCustomers(tab === "M3" && new URLSearchParams(window.location.search).get("from") === "customers"); }, [tab]);
@@ -187,8 +169,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     setUiParams(session?.adminId ? readDockUi(session.adminId) : {});
   }, [authEpoch, session?.adminId]);
 
-  const reloadMContent = useCallback(async () => {
-    if (currentAuthEpoch.current !== authEpoch) return;
+  const reloadMContent = useCallback(async (requireM5Snapshot = false) => {
+    if (currentAuthEpoch.current !== authEpoch) {
+      if (requireM5Snapshot) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+      return;
+    }
     const generation = mLoadCoordinator.current.beginFullLoad();
     const isCurrent = () => currentAuthEpoch.current === authEpoch
       && mLoadCoordinator.current.isFullLoadCurrent(generation);
@@ -207,13 +192,22 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         if (!isCurrent()) return;
         setMData((previous) => preserveVerifiedSupportAgentsDuringReload(previous, partial));
       }, tab);
-      if (!isCurrent()) return;
+      if (!isCurrent()) {
+        if (requireM5Snapshot) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+        return;
+      }
+      if (requireM5Snapshot && (!next.sessionTemplatesAvailable
+        || session?.authorities.includes("service_m1_read") && !next.supportAgentsAvailable)) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
       setMData((previous) => preserveVerifiedSupportAgentsDuringReload(previous, next));
       setMError(null);
     } catch (error) {
-      if (!isCurrent()) return;
+      if (!isCurrent()) {
+        if (requireM5Snapshot) throw error;
+        return;
+      }
       setMData((previous) => failClosedSupportAgentsAfterReload(previous));
       setMError(displayAdminError(error));
+      if (requireM5Snapshot) throw error;
     } finally {
       if (isCurrent()) setMLoading(false);
     }
@@ -627,6 +621,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       }
     },
     refreshContent: reloadMContent,
+    refreshM5Content: () => reloadMContent(true),
     contentLoading: mLoading,
     refreshKnowledge,
     loadConversationDetail,
@@ -638,6 +633,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     removeCustomerNote,
     toast: setToast,
     openActionConfirm: setActionConfirm,
+    closeActionConfirm: () => setActionConfirm(null),
     openConfirm: setCf,
   };
 
@@ -647,7 +643,6 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     ? "superadmin"
     : session?.supportReadModes?.includes("MANAGED")
       ? "supervisor" : "agent";
-  const effectiveM5Pane = permission === "agent" ? "templates" : m5Pane;
 
   // 实时计数:M1/M2/M3 的「实时计数/汇总」从后端会话 / 工单快照派生;
   // M4/M5 是描述标签(未声称计数)保留原文。
@@ -678,11 +673,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "M3" && tab !== "M1" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
+      {tab !== "M3" && tab !== "M1" && tab !== "M4" && tab !== "M5" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
       {tab !== "M3" && shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<>{operationNotice?.tone === "danger" && <Link className="rd-link" href="/service/sessions">到专属会话核对</Link>}<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button></>}>{shownOperationNotice}</Notice>}
       {tab === "M3" && !safeMData && <PageHeader pageId="M3" title="专属会话" summary={M3_SUMMARY} back={backToCustomers} />}
 
-      {tab !== "M3" && mError && (
+      {tab !== "M3" && tab !== "M4" && tab !== "M5" && mError && (
         <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Icon name="bell" size={16} />
           <span className="dim" style={{ fontSize: 13 }}>客服中心暂时无法同步数据,请稍后重试。</span>
@@ -693,7 +688,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           </button>
         </div>
       )}
-      {(permissionUnknown && (tab === "M1" || tab === "M2" || tab === "M5") || tab === "M2" && safeMData && !safeMData.supportAgentsAvailable) && <div className="card card-pad" role="status">坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。<button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>重试核对</button></div>}
+      {(permissionUnknown && (tab === "M1" || tab === "M2") || tab === "M2" && safeMData && !safeMData.supportAgentsAvailable) && <div className="card card-pad" role="status">坐席身份暂时无法核对，对客操作和管理入口已暂缓显示。<button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>重试核对</button></div>}
 
       {tab === "M3" && !safeMData && m3Banner}
       {tab === "M3" && !reconnectExhausted && safeMData?.conversationsAvailable && (
@@ -701,9 +696,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       )}
 
       {tab === "M1" && <M1AnalyticsWorkbench key={authEpoch} permission={permission} ctx={ctx} />}
-      {tab === "M5" && permission !== "agent" && <nav className="s5a-nav" aria-label="服务配置"><button type="button" className={m5Pane === "rules" ? "active" : ""} onClick={() => setM5Pane("rules")}>服务规则</button><button type="button" className={m5Pane === "templates" ? "active" : ""} onClick={() => setM5Pane("templates")}>话术与模板</button></nav>}
-      {tab === "M5" && effectiveM5Pane === "rules" && <M5ServiceRules key={authEpoch} permission={permission} />}
-      {tab !== "M1" && !(tab === "M5" && effectiveM5Pane === "rules") && !safeMData ? (
+      {tab === "M4" && <M4KbSla ctx={ctx} title={meta.l2Name} summary={meta.summary} loadError={mError} />}
+      {tab === "M5" && <M5Page ctx={ctx} permission={permission} permissionUnknown={permissionUnknown} hasData={Boolean(safeMData)} loading={mLoading} loadError={mError} title={meta.l2Name} summary={meta.summary} authEpoch={authEpoch} />}
+      {tab !== "M1" && tab !== "M4" && tab !== "M5" && !safeMData ? (
         <div className="card card-pad">
           <span className="dim" style={{ fontSize: 13 }}>
             {mError ? "客服中心暂时无法同步数据,请稍后重试。" : mLoading ? "正在加载客服中心…" : "暂无可展示的客服信息"}
@@ -713,14 +708,14 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         <>
           {tab === "M2" && <p>工单服务已下线，请通过客户会话继续联系。</p>}
           {tab === "M3" && <M3DedicatedChat ctx={ctx} back={backToCustomers} summary={M3_SUMMARY} banner={m3Banner} streamReady={conversationStreamReady} reconnectExhausted={reconnectExhausted} />}
-          {tab === "M4" && <M4KbSla ctx={ctx} />}
-          {tab === "M5" && effectiveM5Pane === "templates" && <M5Scripts ctx={ctx} showSeatOperations={false} showSeatProfiles={permission !== "agent"} />}
         </>
       )}
 
       {mc && (
         <OperationConfirmModal
           action={mc.action}
+          getPendingReason={tab === "M4" || tab === "M5" ? mc.getPendingReason : undefined}
+          initialReason={tab === "M4" || tab === "M5" ? mc.initialReason : undefined}
           title={mc.title}
           detail={mc.detail}
           amplifies={mc.amplifies}
@@ -754,7 +749,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       {toastNode}
     </>
   );
-  return tab === "M3" || tab === "M1" ? <RdPage className="mdom">{page}</RdPage> : <div className="dkpage mdom">{page}</div>;
+  return tab === "M3" || tab === "M1" || tab === "M4" || tab === "M5" ? <RdPage className={tab === "M4" ? "mdom m4-page" : tab === "M5" ? "mdom m5-page" : "mdom"}>{page}</RdPage> : <div className="dkpage mdom">{page}</div>;
 }
 
 /* ============ MP2 持续接待 dock —— 切页不挂断(M3 自身是全屏对话台,故 M3 不显)============ */
@@ -1001,47 +996,6 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
   // 不经会话写链,不污染会话消息流。此处无需处理 profile 字段变化。
 }
 
-async function writeFaqRows(prev: SupportFaq[], next: SupportFaq[], reason: string, idempotencyKey?: string) {
-  const added = addedRow(prev, next);
-  if (added) {
-    await mContentActions.createFaq(
-      {
-        category: added.category,
-        question: added.question,
-        answer: added.answer,
-        status: added.status,
-        surface: added.surface,
-        language: added.language,
-        sortOrder: added.sortOrder,
-      },
-      reason,
-      idempotencyKey,
-    );
-    return;
-  }
-  const row = changedRow(prev, next);
-  if (!row) return;
-  const before = prev.find((item) => item.id === row.id);
-  if (!before) return;
-  const contentChanged = row.category !== before.category
-    || row.question !== before.question
-    || row.answer !== before.answer
-    || row.surface !== before.surface
-    || row.language !== before.language
-    || row.sortOrder !== before.sortOrder;
-  if (row.status !== before.status && !contentChanged) await mContentActions.updateFaqStatus(row.id, row.status, before.status, before.version, reason, idempotencyKey);
-  else await mContentActions.updateFaq(row, before, reason, idempotencyKey);
-}
-
-async function writeSlaRows(prev: SupportSla[], next: SupportSla[], reason: string, idempotencyKey?: string) {
-  const row = next.find((item) => {
-    const before = prev.find((old) => old.category === item.category);
-    return before && JSON.stringify(before) !== JSON.stringify(item);
-  }) ?? next.find((item) => !prev.some((old) => old.category === item.category));
-  const before = row ? prev.find((old) => old.category === row.category) : undefined;
-  if (row && before) await mContentActions.updateSla(row, before.version, reason, idempotencyKey);
-}
-
 function currentLoadPayload(data: MContentData | null): MLoadConfigWrite {
   if (!data) {
     throw new Error("M_LOAD_CONFIG_BACKEND_SNAPSHOT_MISSING");
@@ -1091,12 +1045,6 @@ async function applyMBackendWrite(
     await mContentActions.archiveConversations(payload.conversationNos, payload.expectedVersions, reason, idempotencyKey);
     return;
   }
-  if (key === "I.support.faq.__delete") {
-    const payload = parseRecord<{ faqId?: string; expectedStatus?: SupportFaq["status"]; expectedVersion?: number }>(value);
-    if (!payload?.faqId || !payload.expectedStatus || !Number.isSafeInteger(payload.expectedVersion)) throw new Error("M4_FAQ_DELETE_PAYLOAD_INVALID");
-    await mContentActions.deleteFaq(payload.faqId, payload.expectedStatus, payload.expectedVersion!, reason, idempotencyKey);
-    return;
-  }
   if (key === "I.support.load.__bulk") {
     const payload = parseRecord<MLoadConfigWrite>(value);
     if (payload) await mContentActions.updateLoadConfig(payload, reason, idempotencyKey);
@@ -1123,24 +1071,6 @@ async function applyMBackendWrite(
     }>(value);
     if (payload?.adminId && Number.isSafeInteger(payload.expectedVersion)) {
       await mContentActions.updateSupportAgentProfile(payload.adminId, { ...payload, expectedVersion: payload.expectedVersion! }, reason, idempotencyKey);
-    }
-    return;
-  }
-  if (key === "I.support.seatAssignment.__update") {
-    const payload = parseRecord<{
-      adminId?: number;
-      position?: string;
-      serviceTypes?: Array<"support" | "advisor">;
-      tags?: string[];
-      maxConcurrent?: number;
-      enabled?: boolean;
-      transferable?: boolean;
-      busy?: boolean;
-      userIds?: number[];
-      expectedVersion?: number;
-    }>(value);
-    if (payload?.adminId && payload.position && Number.isSafeInteger(payload.expectedVersion)) {
-      await mContentActions.assignSupportSeat(payload.adminId, { ...payload, position: payload.position, expectedVersion: payload.expectedVersion! }, reason, idempotencyKey);
     }
     return;
   }
@@ -1241,14 +1171,6 @@ async function applyMBackendWrite(
   }
   if (key === "I.session.convos") {
     return writeConversationRows(parseRows<SessionConvo>(legacyParams[key]), parseRows<SessionConvo>(value), reason, meta?.action, data, idempotencyKey);
-  }
-  if (key === "I.support.faqs") {
-    await writeFaqRows(parseRows<SupportFaq>(legacyParams[key]), parseRows<SupportFaq>(value), reason, idempotencyKey);
-    return;
-  }
-  if (key === "I.support.sla") {
-    await writeSlaRows(parseRows<SupportSla>(legacyParams[key]), parseRows<SupportSla>(value), reason, idempotencyKey);
-    return;
   }
   const catMatch = key.match(/^I\.session\.cat\.(.+)\.enabled$/);
   if (catMatch) {

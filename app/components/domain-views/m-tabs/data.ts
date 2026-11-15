@@ -65,7 +65,8 @@ export type SupportFaq = {
   answer: string;
   status: "published" | "draft";
   surface: "Help Center" | "Ticket Create" | "Nova";
-  language: "zh-CN" | "en-US" | "vi-VN";
+  language: "zh-CN" | "en-US" | "vi-VN" | "id" | "ms" | "fil" | "ru" | "kk" | "uz";
+  translations?: Record<string, { question: string; answer: string }>;
   sortOrder: number;
   version: number;
   updatedAt: string;
