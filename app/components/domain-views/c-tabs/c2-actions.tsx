@@ -35,6 +35,7 @@ import {
   fetchUserAccountActionAccount,
   fetchUserAccountActionContext,
   fetchUserAccountActionOverview,
+  fetchUserAccountActionPage,
   isUsersRequestNotFound,
   removeUserAccountList,
   startUserImpersonation,
@@ -47,6 +48,8 @@ import {
   type User360Profile,
   type UserAccountActionContext,
   type UserAccountActionOverview,
+  type UserAccountActionRow,
+  type UserPage,
   type UserAccountListEntry,
   type UserImpersonationSession,
   type UserSession,
@@ -702,14 +705,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     }), [data]);
   const sessions = useMemo(() => data?.sessions ?? [], [data]);
   const sessionsTruncated = (count(data?.totalSessions) ?? 0) > sessions.length;
-  const sessionCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const row of sessions) {
-      if (!isActiveSession(row) || row.userId === null || row.userId === undefined) continue;
-      counts.set(String(row.userId), (counts.get(String(row.userId)) ?? 0) + 1);
-    }
-    return counts;
-  }, [sessions]);
   // 生效中在前，再按加入时间新的在前；按时间值比，不按格式化后的字符串。
   const listRows = useMemo(() => [...(data?.accountLists ?? [])].sort((a, b) => {
     const activeDiff = Number(isActiveListEntry(b)) - Number(isActiveListEntry(a));
@@ -725,21 +720,37 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
   const [accountPage, setAccountPage] = useState(1);
   const [accountSize, setAccountSize] = useState<number>(10);
+  const [accountList, setAccountList] = useState<Block<UserPage<UserAccountActionRow>>>({ data: null, loading: canReadC2, error: "" });
+  const accountListSeq = useRef(0);
+  const loadAccountList = useCallback(async () => {
+    if (!canReadC2) return;
+    const seq = ++accountListSeq.current;
+    setAccountList(block => ({ ...block, loading: true, error: "" }));
+    try {
+      const page = await fetchUserAccountActionPage("FROZEN", accountPage, accountSize);
+      if (seq !== accountListSeq.current) return;
+      const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
+      if (page.pageNum > lastPage) { setAccountPage(lastPage); return; }
+      setAccountList({ data: page, loading: false, error: "" });
+    } catch (cause) {
+      if (seq === accountListSeq.current) setAccountList({ data: null, loading: false, error: readError(cause) });
+    }
+  }, [canReadC2, accountPage, accountSize]);
+  useEffect(() => { void loadAccountList(); }, [loadAccountList, authEpoch]);
   const [listPage, setListPage] = useState(1);
   const [listSize, setListSize] = useState<number>(10);
   // 刷新后名单回第 1 页（C2-Q11）；账户页码超出时收回末页。
   useEffect(() => { setListPage(1); }, [data]);
-  const accountPages = Math.max(1, Math.ceil(accounts.length / accountSize));
-  useEffect(() => { if (accountPage > accountPages) setAccountPage(accountPages); }, [accountPage, accountPages]);
-  const accountRows = accounts.slice((accountPage - 1) * accountSize, accountPage * accountSize);
+  const accountRows = accountList.data?.records ?? [];
   const listPageRows = listRows.slice((listPage - 1) * listSize, listPage * listSize);
 
   /* ── 写入后回读 ── */
   const refreshAfterWrite = async () => {
-    await Promise.all([loadOverview(), acct ? Promise.resolve(reloadContext()) : Promise.resolve()]);
+    await Promise.all([loadOverview(), loadAccountList(), acct ? Promise.resolve(reloadContext()) : Promise.resolve()]);
   };
   const refreshAll = () => {
     void loadOverview();
+    void loadAccountList();
     void loadDeletionCounts();
     setDeletionRefresh((value) => value + 1);
     if (acct) reloadContext();
@@ -1568,13 +1579,13 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const rowAction = (account: User360Profile) => {
     const id = accountId(account);
     const status = upper(account.status);
-    const reason = listBlock(`user|${id}`);
+    const reason = listBlock(`user|${id}`) ?? (accountList.loading ? REFRESHING : accountList.error ? STALE : undefined);
     if (status === "ACTIVE" && canFreeze) {
       return <Button size="sm" aria-label={`冻结 ${displayAccount(account)}`} disabled={busy && opening !== `freeze|${id}`} loading={opening === `freeze|${id}`} disabledReason={reason} onClick={() => void confirmStatus(account, "freeze")}>冻结</Button>;
     }
     if (status === "FROZEN" && canUnfreeze) {
       // 随账户组、充值异常冻结的这里不能恢复：概况里有冻结来源时行内就禁用，完整原因在抽屉（OP-127）。
-      const source = upper(data?.controlFacts?.find((item) => String(item.userId) === id)?.freezeSource);
+      const source = upper(account.freezeSource ?? data?.controlFacts?.find((item) => String(item.userId) === id)?.freezeSource);
       const sourceBlock = source === "K1_MULTI_ACCOUNT_CLUSTER" ? K1_BLOCK : source === "CREGIS_DEPOSIT_INCIDENT" ? CREGIS_BLOCK : undefined;
       return <Button size="sm" aria-label={`恢复 ${displayAccount(account)}`} disabled={busy && opening !== `unfreeze|${id}`} loading={opening === `unfreeze|${id}`} disabledReason={reason ?? sourceBlock} onClick={() => void confirmStatus(account, "unfreeze")}>恢复</Button>;
     }
@@ -1583,12 +1594,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
   // 一个写权都没有时不放操作列（OP-124）：只读账号不看一列空格子。
   const accountActions = canFreeze || canUnfreeze;
-  // 样本截断时「至少」写在表头一次，格子里只写数（建议 1）。
-  const sessionCell = (account: User360Profile) => {
-    const n = sessionCounts.get(accountId(account)) ?? 0;
-    if (!sessionsTruncated) return n === 0 ? <span className="rd-weak">0 台</span> : `${n} 台`;
-    return n === 0 ? <span className="rd-weak" title="最近 200 条登录里没有这个账户的，准确数打开详情看">—</span> : `${n} 台`;
-  };
   // 时区只在面板标题旁写一次，表头不再写（TX-25）。
   const zoneNote = `时间为${zone}`;
 
@@ -1608,9 +1613,9 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       {/* 没找到不是错误：灰字写在框下，不带重试。 */}
       {lookup.state === "not-found" && <p className="rd-weak" role="status">没有找到这个用户，核对后再查。</p>}
       {staleNotice}
-      {overviewBlock("账户概况") ?? (
+      {(accountList.error ? <BlockState state="error" title="账户概况读取失败，不显示旧数据" detail={accountList.error} onRetry={() => void loadAccountList()} retrying={accountList.loading} /> : null) ?? (
         <Panel title="账户" icon={UserRound} tone="role-3" flush
-          sub={firstLoading ? undefined : totalAccounts !== null && totalAccounts > accounts.length ? `共 ${totalAccounts.toLocaleString("en-US")} 个账户 · ${zoneNote}` : zoneNote}
+          sub={accountList.loading && !accountList.data ? undefined : accountList.data ? `共 ${accountList.data.total.toLocaleString("en-US")} 个账户 · ${zoneNote}` : zoneNote}
           explain="冻结的排在前面；冻结中的账户不一定都在这里，找具体用户用上面的查找。在线设备按最近 200 条登录记录数，可能少算，准确数在详情里。">
           <Table label="账户">
             <thead><tr>
@@ -1622,7 +1627,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
               {accountActions && <Th sticky="end">操作</Th>}
             </tr></thead>
             <tbody>
-              {firstLoading ? <TableLoading columns={accountActions ? 6 : 5} rows={5} />
+              {accountList.loading ? <TableLoading columns={accountActions ? 6 : 5} rows={5} />
                 : accountRows.length === 0 ? <TableMessage columns={accountActions ? 6 : 5}>暂无账户</TableMessage>
                   : accountRows.map((account) => {
                     const id = accountId(account);
@@ -1631,17 +1636,17 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                         {/* 账户列伸缩，时间列按内容定宽，在线设备紧跟在后面（第 6 列的列宽）。 */}
                         <Td grow><Cell main={<span data-mono>{text(account.userNo, id)}</span>} sub={userNicknameText(text(account.nickname), account.phoneMasked)} /></Td>
                         <Td><AccountStatusTag status={account.status} table /></Td>
-                        <Td><RiskCell account={account} /></Td>
+                        <Td><Cell main="—" /></Td>
                         {/* 最近登录帮着判断账户还在不在用；列表是最近注册的 50 个，注册时间说明排在这里的是谁。 */}
-                        <Td data-fit=""><Cell num main={timeText(account.registeredAt)} sub={account.lastLoginAt ? timeText(account.lastLoginAt) : "没有登录记录"} /></Td>
-                        <Td align="right"><Cell num main={sessionCell(account)} /></Td>
+                        <Td data-fit=""><Cell num main={timeText(account.registeredAt)} sub="—" /></Td>
+                        <Td align="right"><Cell num main="—" /></Td>
                         {accountActions && <Td sticky="end">{rowAction(account)}</Td>}
                       </Tr>
                     );
                   })}
             </tbody>
           </Table>
-          {!firstLoading && accounts.length > 0 && <Pager label="账户" total={accounts.length} page={accountPage} pageSize={accountSize} sizes={PAGE_SIZES} loading={overview.loading}
+          {accountList.data && accountList.data.total > 0 && <Pager label="账户" total={accountList.data.total} page={accountPage} pageSize={accountSize} sizes={PAGE_SIZES} loading={accountList.loading}
             onPage={setAccountPage} onPageSize={(size) => { setAccountSize(size); setAccountPage(1); }} />}
         </Panel>
       )}

@@ -2033,6 +2033,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   IMPERSONATION_PAGE_INVALID: "这个页面不能在用户数据只读视图里打开，请换一个页面。",
   USER_KEY_REQUIRED: "请填写用户编码、系统编号、邀请码或邮箱。",
   C2_RESPONSE_INVALID: "账户数据不完整，这次不显示，请刷新重试。",
+  ACCOUNT_ACTION_STATUS_INVALID: "账户状态筛选无效，请重新选择后读取。",
+  ACCOUNT_ACTION_PAGE_INVALID: "账户列表页码或每页条数无效，请重新读取。",
   ACCOUNT_DELETION_VERSION_CONFLICT: "申请状态已变化，请刷新后再审核。",
   ACCOUNT_DELETION_INVALID_STATE_TRANSITION: "这个申请现在的状态不能这样处理，请刷新后查看最新状态。",
   ACCOUNT_DELETION_CONCURRENT_UPDATE: "申请刚被别人处理了，请刷新后查看最新状态。",

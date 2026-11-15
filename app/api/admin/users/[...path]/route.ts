@@ -55,6 +55,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "overview") {
     return "/api/admin/users/account-actions/overview";
   }
+  if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "accounts") {
+    return "/api/admin/users/account-actions/accounts";
+  }
   if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "alerts") {
     return "/api/admin/users/account-actions/alerts";
   }

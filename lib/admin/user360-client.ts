@@ -268,6 +268,22 @@ export interface UserAccountActionOverview extends JsonRecord {
   redlines?: string[] | null;
 }
 
+export type UserAccountActionStatus = "ACTIVE" | "FROZEN" | "BANNED" | "RESTRICTED" | "DISABLED";
+/** Deliberately excludes risk, wallet, contact and login projections. */
+export interface UserAccountActionRow extends JsonRecord {
+  id: number;
+  userNo: string;
+  nickname: string | null;
+  status: UserAccountActionStatus;
+  registeredAt: string | null;
+  freezeSource: string | null;
+  freezeSourceRef: string | null;
+  freezeReason: string | null;
+  freezeOperator: string | null;
+  frozenAt: string | null;
+  d2FrozenWithdrawalCount: number;
+}
+
 export interface UserAccountActionContext extends JsonRecord {
   account?: User360Profile | null;
   accountList?: UserAccountListEntry | null;
@@ -914,6 +930,21 @@ function requireC2Overview(value: unknown): UserAccountActionOverview {
 
 export async function fetchUserAccountActionOverview() {
   return requireC2Overview(await usersRequest<unknown>("/account-actions/overview"));
+}
+
+export async function fetchUserAccountActionPage(status: UserAccountActionStatus = "FROZEN", pageNum = 1, pageSize = 20): Promise<UserPage<UserAccountActionRow>> {
+  const raw = await usersRequest<PageResult<unknown>>(`/account-actions/accounts${queryString({ status, pageNum, pageSize })}`);
+  const page = normalizeAuthoritativePage(raw, pageNum, pageSize);
+  const records = page.records.map(value => {
+    if (!isJsonRecord(value) || !Number.isSafeInteger(value.id) || Number(value.id) < 1
+      || typeof value.userNo !== "string" || !value.userNo.trim() || value.status !== status
+      || !Number.isSafeInteger(value.d2FrozenWithdrawalCount) || Number(value.d2FrozenWithdrawalCount) < 0) return c2ResponseInvalid();
+    for (const key of ["nickname", "registeredAt", "freezeSource", "freezeSourceRef", "freezeReason", "freezeOperator", "frozenAt"]) {
+      if (value[key] !== null && typeof value[key] !== "string") return c2ResponseInvalid();
+    }
+    return value as UserAccountActionRow;
+  });
+  return { ...page, records };
 }
 
 export async function fetchUserAccountActionAccount(userKey: string) {
