@@ -1,6 +1,6 @@
 "use client";
 
-/** 充值与收款对账四个区共用的小件：网址参数、要处理的数、金额写法、结果未确认的提醒条。 */
+/** 充值与收款对账四个区共用的小件：网址参数、要处理的数、金额写法、结果未知的提醒条。 */
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Copy, PowerOff } from "lucide-react";
@@ -11,6 +11,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { useReach } from "@/lib/nav/use-reach";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/fund-command-check";
 
 export type D1Section = "payments" | "bank" | "usdt" | "ledger";
 export const D1_SECTIONS: readonly D1Section[] = ["payments", "bank", "usdt", "ledger"];
@@ -45,7 +46,7 @@ export type D1Count = { n: number; capped?: boolean } | "failed" | undefined;
 export const countText = (count: D1Count): number | string | undefined =>
   count === undefined ? undefined : count === "failed" ? "—" : count.capped ? `${count.n}+` : count.n;
 
-/** 这个区有哪些别的区该知道的事：没保存的修改、结果未确认、待审批。 */
+/** 这个区有哪些别的区该知道的事：没保存的修改、结果未知、待审批。 */
 export type D1Activity = readonly string[];
 
 /** USDT 金额：千分位，至少两位小数，后端给的精度照写，不舍入。 */
@@ -115,7 +116,7 @@ const unknownOutcome = (error: unknown) => isDOutcomeUnknownError(error)
   || (typeof error === "object" && error !== null && (error as { unknownOutcome?: unknown }).unknownOutcome === true);
 
 /**
- * 结果未确认的写操作，所在页签顶部常显（OP-93）。只能按原请求重试（OP-94）；重试被后端明确拒绝后才出现「解除待确认」，
+ * 结果未知的写操作，所在页签顶部常显（OP-93）。只能按原请求重试（OP-94）；重试被后端明确拒绝后才出现「解除待确认」，
  * 后端不按命令号去重的操作只读回事实，不给重试或解除，记录保留到关标签页（决定 03）。解除只清本地记录，不发请求（OP-153）。
  */
 export function PendingNotices({ items, disabled }: { items: readonly D1PendingItem[]; disabled?: boolean }) {
@@ -139,7 +140,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
         note(item.key, `重试被拒：${displayAdminError(error)} 这说明不了原操作的结果，先核实原操作，再决定要不要解除。`);
         setReleasable((current) => [...current, item.key]);
       } else if (unknownOutcome(error)) note(item.key, "重试结果仍未确认，原操作继续保留。");
-      else note(item.key, `这次没能确认结果：${displayAdminError(error)} 原操作继续保留。`);
+      else note(item.key, `这次没查到结果：${displayAdminError(error)} 原操作记录继续保留。`);
     } finally {
       setRunning("");
       item.after();
@@ -150,38 +151,41 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
     setRunning(item.key);
     try {
       note(item.key, await item.verify());
-    } catch (error) { note(item.key, `读回失败：${displayAdminError(error)} 待确认继续保留。`); }
+    } catch (error) { note(item.key, `读回失败：${displayAdminError(error)} 记录继续保留。`); }
     finally { setRunning(""); }
   };
   return (
     <>
-      {items.map((item) => {
-        const hint = item.retry ? item.blocked ?? item.hint : item.hint;
-        const message = notes[item.key];
-        return (
-        <Notice key={item.key} tone="warn" title={`${item.label} · 结果未确认`}
-          action={<>
-            {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>读回核对</Button>}
-            {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原操作重试</Button>}
-            {item.retry && releasable.includes(item.key) && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>解除待确认</Button>}
-          </>}>
-          {businessStamp(item.createdAt)}（{zoneLabel()}）<KeepText text="发出，可能已经生效。" />{typeof hint === "string" ? <KeepText text={hint} /> : hint}
-          {item.auditHref && reach(item.auditHref, "platform_a2_read") && <> <Link className="rd-link" href={item.auditHref}>到操作记录与审批核对</Link></>}
-          <Explain label="技术信息" content={`命令号 ${item.key}`} />
-          {message && <div>{typeof message === "string" ? <KeepText text={message} /> : message}</div>}
-        </Notice>
-        );
-      })}
+      <RecoveryPanel title={recoveryTitle(items.length)} explainLabel="结果未知怎么处理"
+        explain="这些操作发出后没收到明确结果，可能已经生效。先读回现在的状态；按原请求重试只重发原请求，不会重复执行。有结果前，相关对象不能再操作。"
+        items={items.map((item): RecoveryItem => {
+          const hint = item.retry ? item.blocked ?? item.hint : item.hint;
+          const refused = item.retry && releasable.includes(item.key);
+          return {
+            key: item.key, object: item.label,
+            tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : "结果未知"}</StatusTag>,
+            line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.blocked ? `${item.blocked}。` : "可能已经生效，先读回现在的状态。" : "可能已经生效，这项只能读回现在的状态核对。",
+            note: notes[item.key],
+            actions: <>
+              {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>读回现在的状态</Button>}
+              {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原请求重试</Button>}
+              {refused && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>解除原操作记录</Button>}
+            </>,
+            detail: <p>{businessStamp(item.createdAt)}（{zoneLabel()}）<KeepText text="发出，可能已经生效。" />{typeof hint === "string" ? <KeepText text={hint} /> : hint}
+              {item.auditHref && reach(item.auditHref, "platform_a2_read") && <> <Link className="rd-link" href={item.auditHref}>到操作记录与审批核对</Link></>}</p>,
+            tech: <p><Explain label="技术信息" content={`原请求编号 ${item.key}`}>技术信息</Explain></p>,
+          };
+        })} />
       {releasing && (
         <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)}
-          explain="重试被明确拒绝后，先到操作记录核实原操作。解除只移除本标签页的待确认记录，后端结果和锁定状态不变。"
+          explain="重试被明确拒绝后，先到操作记录核实原操作。解除只移除本页这条原操作记录，原操作的结果和锁定不变。"
           onConfirm={() => { releasing.release(); setReleasing(null); releasing.after(); }} />
       )}
     </>
   );
 }
 
-/** 跨区提醒：别的区有没保存的修改、结果未确认、待审批时，在页签上方说一声，带「返回…」。 */
+/** 跨区提醒：别的区有没保存的修改、结果未知、待审批时，在页签上方说一声，带「返回…」。 */
 export function CrossAreaNotice({ rows, onGo }: { rows: readonly { section: D1Section; lines: D1Activity }[]; onGo: (section: D1Section) => void }) {
   if (!rows.length) return null;
   return (

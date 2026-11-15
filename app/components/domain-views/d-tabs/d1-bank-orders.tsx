@@ -58,14 +58,14 @@ type OrderActions = {
   canManage: boolean;
   /** 刷新中或提交中：依赖最新数据的写入口禁用，原因写这里。 */
   busyReason?: string;
-  /** 这一行有人工入账结果未确认。 */
+  /** 这一行有人工入账结果未知。 */
   blocked: (order: D1BankOrder) => boolean;
   onManualCredit: (order: D1BankOrder, onSettled: () => void | Promise<void>) => void;
 };
 
 /** 人工确认入账为什么不能点，按顺序写第一条。 */
 function creditBlock(order: D1BankOrder, actions: OrderActions) {
-  if (actions.blocked(order)) return "结果未确认，请先在上方核对";
+  if (actions.blocked(order)) return "结果未知，请先在上方核对";
   if (actions.busyReason) return actions.busyReason;
   if (order.paymentRail !== "HDPAY") return manualBlockText("MANUAL_BANK_RECEIPT_FLOW");
   if (!order.manualCreditAllowed) return manualBlockText(order.manualCreditBlockReason);
@@ -182,7 +182,7 @@ export function D1BankOrders({ refreshKey, onCount, allManualReviewCount, onRefr
                     <Td sticky="start"><Cell mono full main={order.intentNo} sub={`用户 ${order.userId}`} /></Td>
                     <Td align="right"><Cell num main={vnd(order.payableVnd)} sub={`申请 ${usdt(order.requestedUsdt)} USDT`} /></Td>
                     <Td align="right"><Cell num main={order.receivedVnd === null ? "—" : vnd(order.receivedVnd)} sub={done ? `入账 ${usdt(order.creditedUsdt)} USDT` : order.receivedVnd === null ? "还没收到" : time(order.receivedAt)} /></Td>
-                    <Td><Cell main={<StatusTag tone={orderTone(order)}>{orderStatusText(order.status)}</StatusTag>} sub={actions.blocked(order) ? "有入账结果未确认" : order.settlementStatus === "MANUAL_REVIEW" ? "本地待人工核对" : providerStatusText(order.providerStatus)} /></Td>
+                    <Td><Cell main={<StatusTag tone={orderTone(order)}>{orderStatusText(order.status)}</StatusTag>} sub={actions.blocked(order) ? "有入账结果未知" : order.settlementStatus === "MANUAL_REVIEW" ? "本地待人工核对" : providerStatusText(order.providerStatus)} /></Td>
                     <Td sticky="end" align="right"><span className="rd-row-actions">
                       {actions.canManage && !done
                         ? <Button size="sm" disabledReason={block} onClick={() => actions.onManualCredit(order, async () => { await load(); void loadCounts(); })}>人工确认入账</Button>
