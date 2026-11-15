@@ -36,7 +36,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { HI_WHEEL_SCOPE, hiEventScope, hiRewardProposal, pendingHIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
-import type { EventRuleView } from "@/lib/admin/event-rules-client";
+import { H4_EVENT_RULE_CODES, type EventRuleView } from "@/lib/admin/event-rules-client";
 import type { AdminRaffle } from "@/lib/admin/genesis-raffle-client";
 import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
 import { H4_APPROVAL_OPS, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4TicketObservations, replaceH4TicketObservations, clearH4AuditProjection, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, retryH4Command, canRetryH4Command, releaseExpiredH4Proposal, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, type H4Command } from "@/lib/admin/h4-mutations";
@@ -319,8 +319,10 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const openEventReward = (event: LegacyEvent) => {
     if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
     const current = text(event.reward);
-    // 带玩法规则的活动，后端把奖励修改当成只改文字，发奖按玩法规则不变。
-    const ruleBased = !!ruleOf(event.id);
+    // Rule existence and fixed-code support are independent backend conditions.
+    // Unknown reads must not be interpreted as a rule-less event.
+    const ruleBased = rules === null ? null : H4_EVENT_RULE_CODES.has(event.id) && !!ruleOf(event.id);
+    if (ruleBased === null) { toast("活动规则读取失败，请刷新后重试。", "warn"); return; }
     openActionConfirm({ briefKind: "config",
       action: `活动奖励 · ${event.name}`,
       title: "修改活动奖励",
@@ -1010,7 +1012,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const ended = life.key === "ended";
     const wheelEvent = text(event.kind).toLowerCase() === "wheel";
     return [
-      ...(!wheelEvent ? [{ key: "reward", label: "修改奖励", disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : ended ? "已结束的活动不能改奖励" : undefined, onSelect: conflictDraft.register(JSON.stringify(["openEventReward:1", event.id]), () => openEventReward(event)) }]
+      ...(!wheelEvent ? [{ key: "reward", label: "修改奖励", disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : rules === null ? "玩法规则没有读到" : ended ? "已结束的活动不能改奖励" : undefined, onSelect: conflictDraft.register(JSON.stringify(["openEventReward:1", event.id]), () => openEventReward(event)) }]
         : [{ key: "wheel", label: "去转盘奖池改奖品", onSelect: () => go("wheel", "h4l-wheel") }]),
       ...(!ended && event.state === "ongoing" ? [{ key: "featured", label: event.featured ? "取消主推" : "设为主推", disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : undefined, onSelect: conflictDraft.register(JSON.stringify(["openEventFeatured:1", event.id]), () => openEventFeatured(event)) }] : []),
       { key: "content", label: "三语内容与 App 上的样子", onSelect: () => setContentId(event.id) },

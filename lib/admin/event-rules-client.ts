@@ -1,6 +1,13 @@
 import { growthRequest } from "./h-client";
 import { h4CommandRequest, markH4Read, type H4ApprovalReceipt } from "./h4-mutations";
 
+// Backend 04d11022: H4EventRuleService.CODES (lines 28–30), used by
+// OpsGrowthService.supportsH4EventRules. Keep synchronized until reads expose support.
+export const H4_EVENT_RULE_CODES = new Set([
+  "evt-pro-upgrade-7d", "evt-refer-5-get-pro", "evt-weekend-double-nex", "evt-regional-pk",
+  "evt-spring-spin", "evt-reinvest-bonus", "evt-onboarding-7d", "evt-black-friday", "evt-anniversary-spin",
+]);
+
 export interface EventRuleView {
   eventCode: string;
   kind: string;
