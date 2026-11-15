@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Drawer, Button, BlockState, Fact, Facts, Fold, Table, Th, Tr, Td } from "@/app/components/rd";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Drawer, Button, BlockState, Explain, Fact, Facts, Fold, Table, Th, Tr, Td } from "@/app/components/rd";
 import { nexGridBrandText, operatorNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, type PerformanceMetric, type SupportOverview } from "@/lib/admin/m-support-client";
 import { supportAnalyticsClient, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer, type SupportAnalyticsQuery, type SupportAnalyticsResponse } from "@/lib/admin/support-analytics-client";
@@ -14,7 +14,8 @@ export type FundMetric = keyof typeof fundLabels;
 export type StatisticSource =
   | { kind: "maintenance"; overview: SupportOverview; choice: MaintenanceChoice }
   | { kind: "fund"; origin: SupportAnalyticsResponse; query: SupportAnalyticsQuery; metric: FundMetric; detailView?: SupportAnalyticsDetailView };
-type Result = { headings: string[]; rows: string[][]; total: number | null; next: boolean; summary: string; note?: string; version?: string };
+/** facts 有值时代替一行「核对摘要」；tech 放进折叠的技术信息。 */
+type Result = { headings: string[]; rows: string[][]; total: number | null; next: boolean; summary: string; note?: string; version?: string; facts?: readonly { k: string; v: ReactNode }[]; tech?: string };
 type SuccessList = { version: string; rows: string[][]; restricted: number };
 const PAGE_SIZE = 10;
 const beijingTime = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Asia/Shanghai", hourCycle: "h23" });
@@ -118,11 +119,28 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
     const detail = list.detailSummary;
     if (expected?.confirmed == null || !exactGroupSum([detail.totalAmount!], expected.confirmed)) throw changed();
     const title = view === "NET_CONTRIBUTIONS" ? fundLabels.net : view === "FIRST_DEPOSITS" ? "充值首充" : "付费购机首充";
-    return { headings: ["客户编号", "客户名称", title + " / " + nexGridBrandText(currency)],
-      rows: list.records.map(row => [row.customerNo ?? row.customerId, operatorNicknameText(row.nickname ?? "") || "未登记", row.amount]),
-      total: list.total, next: list.canContinue,
-      summary: "原统计 " + detail.totalAmount + " " + nexGridBrandText(currency) + " · 可见 " + detail.visibleAmount + " " + nexGridBrandText(currency) + " · 受限 " + detail.restrictedAmount + " " + nexGridBrandText(currency),
-      note: summaryCounts(detail.totalCount, detail.visibleCount, detail.restrictedCount, " 条"), version: list.queryVersion ?? undefined };
+    const unit = nexGridBrandText(currency);
+    const money = (value: string) => groupedAmount(value) + " " + unit;
+    const groupName = (groupId: string | null) => groupId == null ? null : origin.scopeSummary.groups.find(row => row.groupId === groupId)?.name ?? "组编号 " + groupId;
+    // 原归属是这笔钱成功那一刻算给的客服和小组，不是客户现在的归属；没有有效归属写「没有归属」。
+    const owner = (row: (typeof list.records)[number]) => row.agentId == null && row.groupId == null ? "没有归属"
+      : [row.agentId == null ? null : "客服 " + row.agentId, groupName(row.groupId)].filter(Boolean).join(" · ");
+    const facts = [
+      { k: "统计总额", v: <>{money(detail.totalAmount!)} · {detail.totalCount} 条 · {detail.customerCount} 位客户</> },
+      { k: "确认情况", v: detail.status === "AVAILABLE" ? "全部已确认"
+        : <>部分已确认{detail.observedAmount != null && <> · 已观察到 {money(detail.observedAmount)}</>}<Explain label="部分已确认是什么意思" content="有的资金记录还没核实完。统计总额只算已确认的，已观察到的数含还没确认的部分。" /></> },
+      { k: "你能看到", v: <>{money(detail.visibleAmount!)} · {detail.visibleCount} 条 · {detail.visibleCustomerCount} 位客户</> },
+      { k: "看不到的", v: detail.restrictedCount === 0 ? "没有"
+        : <>{money(detail.restrictedAmount!)} · {detail.restrictedCount} 条 · {detail.restrictedCustomerCount} 位客户<Explain label="看不到的是什么" content="这些客户不在你的查看范围里，金额计入统计总额，不列明细。" /></> },
+    ];
+    return { headings: ["成功时间（北京时间）", "客户编号", "客户名称", "原归属", "金额 / " + unit],
+      rows: list.records.map(row => [beijing(row.succeededAt), row.customerNo ?? row.customerId, operatorNicknameText(row.nickname ?? "") || "未登记", owner(row), groupedAmount(row.amount)]),
+      total: list.total, next: list.canContinue, facts,
+      summary: "原统计 " + detail.totalAmount + " " + unit + " · 可见 " + detail.visibleAmount + " " + unit + " · 受限 " + detail.restrictedAmount + " " + unit,
+      note: view === "NET_CONTRIBUTIONS" ? "列出成功时间在这段时间里的每一笔，按成功那一刻的归属算给客服和小组；金额是原币种原值，负数是退款或提现扣回。"
+        : "每位客户只有一笔" + title + "，成功时间在这段时间里的才列出，按成功那一刻的归属算给客服和小组。",
+      tech: list.records.length ? "本页记录编号：" + list.records.map(row => row.id).join("、") : undefined,
+      version: list.queryVersion ?? undefined };
   }
   // Net uses the entire authorized scope. Wallet and withdrawal totals use the selected current customers.
   // Without a query version there is no next page, so this one read takes everything the backend allows instead of cutting the list at PAGE_SIZE.
@@ -159,7 +177,6 @@ export function M1StatisticDetails({ source, onClose, onInvalid }: { source: Sta
   }, [source, page, retry, onInvalid]);
   const title = source.kind === "maintenance" ? maintenanceLabels[source.choice.metric] : source.detailView === "FIRST_DEPOSITS" ? "充值首充" : source.detailView === "FIRST_PURCHASES" ? "付费购机首充" : fundLabels[source.metric];
   const cutoff = source.kind === "maintenance" ? source.overview.evaluatedAt : source.origin.asOf;
-  const unit = "条";
   const move = (next: number) => { setResult(null); setPage(next); };
   const group = source.kind === "fund" && source.query.groupId != null ? source.origin.scopeSummary.groups.find(row => row.groupId === String(source.query.groupId)) : null;
   return <Drawer open title={title + "明细"} sub={"统计截至 " + beijing(cutoff) + "（北京时间）"} onClose={onClose} wide footer={<div className="m1-stat-footer"><Button type="button" onClick={onClose}>返回工作台</Button>{result && result.total !== null && <div className="m1-stat-pager"><Button type="button" disabled={page === 1} onClick={() => move(page - 1)}>上一页</Button><span>第 {page} 页</span><Button type="button" disabled={!result.next} onClick={() => move(page + 1)}>下一页</Button></div>}</div>}>
@@ -167,7 +184,7 @@ export function M1StatisticDetails({ source, onClose, onInvalid }: { source: Sta
       {source.kind === "fund" && <p className="rd-note">{source.query.groupId != null ? group?.name ?? "组编号 " + source.query.groupId : "当前获准范围"}{source.query.agentId != null && " · 客服编号 " + source.query.agentId} · {nexGridBrandText(source.query.currency ?? "USDT")}{source.metric === "net" && source.query.from && source.query.to && " · 统计区间（北京时间）" + beijing(source.query.from) + " 至 " + beijing(source.query.to) + "，不含结束时刻。"}</p>}
       {!result && !error && <BlockState state="loading" title="正在读取明细…" />}
       {error && <BlockState state="error" title="明细读取失败，请重试。" onRetry={() => setRetry(n => n + 1)} retryLabel="重试" />}
-      {result && <><Facts><Fact k="核对摘要">{result.summary}</Fact></Facts><Fold title="统计口径" summary={result.version ? "已核对同版统计" : "无稳定查询版本"}><p>{result.note}</p></Fold>{result.headings.length > 0 && <div className="m1-stat-table"><Table label={title + "明细"}><thead><Tr>{result.headings.map(header => <Th key={header} scope="col">{header}</Th>)}</Tr></thead><tbody>{result.rows.map((row, index) => <Tr key={index}>{row.map((cell, i) => <Td key={i}>{i === 3 && source.kind === "maintenance" ? <Fold inset title="关联记录" summary="查看完整编号"><span data-mono>{cell}</span></Fold> : <span title={cell} tabIndex={0}>{cell}</span>}</Td>)}</Tr>)}</tbody></Table></div>}{!result.rows.length && result.total !== null && <BlockState state="empty" title={`当前可见列表为 0 ${unit}。`} />}</>}
+      {result && <><Facts>{result.facts ? result.facts.map(row => <Fact key={row.k} k={row.k}>{row.v}</Fact>) : <Fact k="核对摘要">{result.summary}</Fact>}</Facts><Fold title="统计口径" summary={result.version ? "和工作台是同一份统计" : "只能看这一页"}><p>{result.note}</p></Fold>{result.headings.length > 0 && <div className="m1-stat-table"><Table label={title + "明细"}><thead><Tr>{result.headings.map(header => <Th key={header} scope="col">{header}</Th>)}</Tr></thead><tbody>{result.rows.map((row, index) => <Tr key={index}>{row.map((cell, i) => <Td key={i}>{i === 3 && source.kind === "maintenance" ? <Fold inset title="关联记录" summary="查看完整编号"><span data-mono>{cell}</span></Fold> : <span title={cell} tabIndex={0}>{cell}</span>}</Td>)}</Tr>)}</tbody></Table></div>}{!result.rows.length && result.total !== null && <BlockState state="empty" title="没有你能看到的记录" />}{result.tech && <Fold title="技术信息" summary="记录编号"><p data-mono>{result.tech}</p></Fold>}</>}
     </section>
   </Drawer>;
 }
