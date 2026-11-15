@@ -1,7 +1,7 @@
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 
 export type TreasuryExportKind = "reconciliation" | "liabilities";
-export type TreasuryPendingRecord = PendingMutationRecord & { amount?: string; voucherNo?: string; reason?: string; operator?: string; exportKind?: TreasuryExportKind };
+export type TreasuryPendingRecord = PendingMutationRecord & { amount?: string; voucherNo?: string; reason?: string; operator?: string; ownerAdminId?: number; exportKind?: TreasuryExportKind };
 
 /** 储备注入和导出的命令号跨刷新存活:注资是真金白银入账,重铸命令号 = 后端无法去重 = 重复入账。
  *  fingerprint 已编码动作类型(injection)与目标对象(凭证号,后端唯一去重位)+ 金额。
