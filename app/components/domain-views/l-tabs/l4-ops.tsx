@@ -153,7 +153,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
       window.localStorage.setItem("nexion:l4:view", JSON.stringify({ query, tab }));
       ctx.toast("视图已保存在这台电脑的浏览器里", "success");
     } catch {
-      ctx.toast("视图没存上：这个浏览器不允许保存网站数据", "error");
+      ctx.toast("视图没存上：这个浏览器现在存不了网站数据", "error");
     }
   };
 
