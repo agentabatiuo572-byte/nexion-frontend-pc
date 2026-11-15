@@ -1078,6 +1078,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     let note: ReactNode;
     let rebuildLabel = "按最新的重新确认";
     let rebuild: (() => void) | undefined;
+    let lead: string | undefined;
     if (scope.startsWith("message:")) {
       const key = scope.slice(8);
       const now = latestOverview?.messages.find((row) => row.messageKey === key);
@@ -1101,6 +1102,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       } else {
         rows = [{ label: "版本", left: opened ? state(opened) : String(input.expectedVersion ?? "—"), right: state(now), changed: !!now && now.version !== (opened?.version ?? input.expectedVersion) },
           ...LANGS.map((item) => conflictRow(item.label, opened?.[item.key], now?.[item.key]))];
+        lead = { "message-publish": "别人先改了，这次没发布。", "message-archive": "别人先改了，这次没归档。", "message-rollback": "别人先改了，这次没回滚。" }[op];
         const target = op === "message-rollback" ? conflict.latest?.messages?.find((row) => row.messageKey === key && row.version === rejected?.version) : undefined;
         if (op === "message-rollback" && conflict.latest && !target) gone = `回滚目标 ${rejected?.version ?? ""} 在最新读取里没有了。`;
         rebuild = op === "message-publish" ? () => { carry(); pubKey(now); }
@@ -1142,6 +1144,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           return current ? fresh : { ...fresh, spec: { ...fresh.spec, current: courseCurrent(course, version ?? course.v, input) } };
         }) : undefined;
       } else if (op.startsWith("i7_course_")) {
+        lead = "别人先改了，这次没提交审批。";
         const adjust = op === "i7_course_reward_adjust";
         const firstPublish = op === "i7_course_first_publish";
         const target = adjust ? undefined : conflict.latest?.versions?.find((row) => firstPublish ? row.status === "DRAFT" : row.version === input.version);
@@ -1167,7 +1170,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       if (task) window.setTimeout(task, 0);
     };
     return conflictView.open
-      ? <IConflictModal review={conflict} subject={subject} rows={rows} columns={columns} gone={gone} note={note} rebuildLabel={rebuildLabel}
+      ? <IConflictModal review={conflict} subject={subject} lead={lead} rows={rows} columns={columns} gone={gone} note={note} rebuildLabel={rebuildLabel}
           onReread={() => void conflictReview.reread()} onClose={conflictView.hide} onRebuild={() => finish(rebuild)}
           onDiscard={() => finish(() => { if (scope.startsWith("message:")) setCopyEditor(null); else setCourseEditor(null); })} />
       : <IConflictPending subject={subject} onOpen={conflictView.show} />;
