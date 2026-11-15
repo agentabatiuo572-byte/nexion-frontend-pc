@@ -92,7 +92,7 @@ function BudgetPanel({ data }: { data: B4GrowthFlowHistory }) {
     : budget.reason === "B4_OPERATION_BUDGET_SOURCE_INCOMPLETE" && missing.length ? `缺${missing.join("、")}。` : undefined;
   return (
     <Panel data-testid="b6-monthly-budget-allocation" title="本月运营预算怎么分" sub="四类 · USDT" icon={PieChart} tone="role-1"
-      explain="运营预算配置里本月四类的金额和占比，是配好的预算，不是已经花掉的钱。占比由后端按两位小数算好，加起来可能差一点 100%。">
+      explain="运营预算配置里本月四类的金额和占比，是配好的预算，不是已经花掉的钱。占比保留两位小数，加起来可能和 100% 差一点。">
       {budget.available && budget.totalUsdt !== undefined ? (
         <div className="b4-stack">
           {usdt(budget.totalUsdt).length > 10 && <p className="b4-line">合计 <b className="b4-strong">{usdt(budget.totalUsdt)}</b> USDT</p>}
@@ -114,7 +114,7 @@ export function PhaseMoney() {
   if (!history.data) {
     const failed = !history.loading;
     const state = failed ? (
-      <BlockState state="error" title="钱的进出和预算没有读到" detail={history.error ?? "响应为空"} onRetry={() => void history.reload()} />
+      <BlockState state="error" title="钱的进出和预算没有读到" detail={history.error ?? "没有读到内容"} onRetry={() => void history.reload()} />
     ) : <BlockState state="loading" title="正在读取…" />;
     return (
       <div className="rd-split" data-even="">

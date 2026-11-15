@@ -166,7 +166,7 @@ const DIALS: Record<string, { name: string; what: string; detail: string; retire
     detail: "这项已经退役：新提现的惩罚费现在是 0，运营阶段设置里也没有这一项。这里只显示配置里还留着的数，不会向用户收。" },
   withdrawCooldownDays: { name: "到账审查窗口", what: "大额提现要等的天数",
     detail: "加强合规审查开启时，USDT 提现每笔人工审查，本金大于 1,000 USDT 的还要等这些天；0 天也要人工审查。不是所有提现都要等。" },
-  binaryDailyCap: { name: "团队平衡奖励每日上限", what: "团队平衡奖励每天封顶", detail: "每天团队平衡奖励最多发这么多；设成 0 时这项按不可用处理。" },
+  binaryDailyCap: { name: "团队平衡奖励每日上限", what: "团队平衡奖励每天封顶", detail: "每天团队平衡奖励最多发这么多；设成 0 时这项会显示为不可用。" },
   questBonusMultiplier: { name: "任务加成", what: "任务奖励的倍率", detail: "任务奖励按这个倍率算，有当周设置时按当周的；改了不重算已结算的任务。" },
   complianceHoldEnabled: { name: "加强合规审查", what: "USDT 提现人工审查开关",
     detail: "开启时 USDT 三个网络的提现每笔人工审查。开着不等于每一笔都会被挂起等待。" },
@@ -213,7 +213,7 @@ export function DialsPanel({ data, canJump, busy, jumping, filteredPhase, onJump
       sub={`${named(currentPhase)} · ${source ? operatorCopyText(source) : `第 ${data.rhythm.currentMonth} 个月`}`}
       explain={<>
         <p>按运营阶段设置当前月份的值，和上面选的查看方式、阶段、月份无关。要改到运营阶段设置去改，这页只能看。</p>
-        <p>这里不写「生效 / 未生效」：后端现在给的是写死的文字，不反映真实情况，已提后端纠正。</p>
+        <p>这里不标「生效 / 未生效」：系统现在给的这项状态不准，已提给技术同事修正。</p>
       </>}>
       <p className="b4-panel-note">
         {last ? "已是最后一个月，后面没有要切换的参数。"
