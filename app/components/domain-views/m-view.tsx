@@ -607,6 +607,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     );
   }, [runM3DirectWrite]);
   const ctx: MCtx = {
+    actionConfirm: mc,
     unboundAlertMinutes: alertMinutes,
     pget: (k) => mergedParams[k] as string | undefined,
     params: mergedParams,
