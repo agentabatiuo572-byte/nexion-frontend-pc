@@ -51,7 +51,18 @@ const TRIAGE = {
   "withdraw-backlog": "/finance/withdrawals",
   "kill-switches": "/emergency/kill-switch",
   coverage: "/overview/dual-ledger",
+  abuse: "/risk/abuse",
+  tamper: "/emergency/tamper",
+  scoring: "/risk/scoring",
 } as const;
+
+const QUEUE_TRIAGE: Record<string, keyof typeof TRIAGE> = {
+  "/risk/multi-account": "abnormal-accounts",
+  "/finance/withdrawals": "withdraw-backlog",
+  "/risk/abuse": "abuse",
+  "/emergency/tamper": "tamper",
+  "/risk/scoring": "scoring",
+};
 
 /** 五项分诊的按钮名：写去哪一页。 */
 const TRIAGE_LABEL: Record<DimensionKey, string> = {
@@ -152,7 +163,7 @@ export default function RiskRadarPage() {
   const [thresholdUnknown, setThresholdUnknown] = useState(false);
   const [subscriptionUnknown, setSubscriptionUnknown] = useState(false);
   const [tab, setTab] = useState<"signals" | "inbox">("signals");
-  const [triaging, setTriaging] = useState<DimensionKey | null>(null);
+  const [triaging, setTriaging] = useState<keyof typeof TRIAGE | null>(null);
   const tabIds = useTabIds();
   const [, syncPending] = useState(0);
   const [thresholdOriginal, setThresholdOriginal] = useState<Extract<B5PendingWrite, { kind: "threshold" }> | null>(null);
@@ -663,6 +674,7 @@ export default function RiskRadarPage() {
                   近 7 个业务日最新 {data.recentAlerts.length} 条 · {openCount} 条待处理
                 </TabNote>
                 <SignalsTable alerts={data.recentAlerts} canTriage={canTriage} updating={updatingSignal} reach={canCross}
+                  onTriage={(target) => { const dimension = QUEUE_TRIAGE[target]; if (!dimension || !canTriageDimension(dimension)) return false; void triage(dimension); return true; }}
                   onStatus={(alert, target) => { const saved = pendingWrites.find(record => record.fingerprint === `signal-status:${alert.signalNo}`); if (saved) { recoverWrite(saved); return; } if (newWriteBlocked) return; setStatusOriginal(null); setStatusReason(""); setStatusError(""); setStatusUnknown(false); setStatusDialog({ alert, target }); }} />
               </Panel>
             ) : (

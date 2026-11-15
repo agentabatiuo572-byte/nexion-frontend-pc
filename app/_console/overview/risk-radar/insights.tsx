@@ -114,11 +114,12 @@ export function AlertDistribution({ data }: { data: B5Radar }) {
   );
 }
 
-export function SignalsTable({ alerts, canTriage, updating, reach, onStatus }: {
+export function SignalsTable({ alerts, canTriage, updating, reach, onTriage, onStatus }: {
   alerts: B5Radar["recentAlerts"];
   canTriage: boolean;
   updating: string;
   reach: (path: string) => boolean;
+  onTriage: (path: string) => boolean;
   onStatus: (alert: Alert, target: "handled" | "resolved") => void;
 }) {
   return (
@@ -146,7 +147,7 @@ export function SignalsTable({ alerts, canTriage, updating, reach, onStatus }: {
                 <Td><Cell num main={shortStamp(alert.createdAt)} /></Td>
                 <Td><Cell main={<StatusTag tone={HANDLING[alert.handlingStatus].tone}>{HANDLING[alert.handlingStatus].text}</StatusTag>} sub={deliveryStatusText(alert.deliveryStatus)} /></Td>
                 <Td>{reach(alert.target)
-                  ? <Link className="rd-link" href={alert.target} prefetch={false}>{page}</Link>
+                  ? <Link className="rd-link" href={alert.target} prefetch={false} onNavigate={(event) => { if (onTriage(alert.target)) event.preventDefault(); }}>{page}</Link>
                   : <span className="b5-muted">没有{page}权限</span>}</Td>
                 {canTriage && (
                   <Td align="right" data-fit="">
