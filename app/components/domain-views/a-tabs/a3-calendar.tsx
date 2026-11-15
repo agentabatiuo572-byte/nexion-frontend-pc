@@ -260,7 +260,7 @@ export function A3Calendar({ commands, recovery, onRecovered, nonce, onSummary, 
           <Fact k="安排人">{operatorText(pending.operator)} · {formatBusinessTimeCompact(pending.createdAt, "—")}</Fact>
           <Fact k="理由">{pending.reason || "—"}</Fact>
         </Facts>
-        <p className="rd-note">切换时刻是新旧时区当天零点里较早的那个，不一定是新时区的 00:00。生效前可以撤销。</p>
+        <p className="rd-note">切换时刻是新旧时区当天零点里较早的那个，不一定是新时区的 00:00；之前的日子不按新时区重算。生效前可以撤销，生效后撤销不了，只能再安排新的。</p>
       </div> : <p className="rd-note a3-cal-note">没有安排中的时区变更。同一时间只能有一个安排，最早可以安排 {view.earliestEffectiveDate} 生效。</p>}
     </Panel>
 

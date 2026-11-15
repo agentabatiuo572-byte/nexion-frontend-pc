@@ -620,9 +620,9 @@ function decisionDeniedText(kind: "approve" | "reject", cause: unknown, retry = 
   const code = backendCode(cause);
   if (!code.startsWith("A2_BUSINESS_PERMISSION_DENIED")) return undefined;
   const missing = /^A2_BUSINESS_PERMISSION_DENIED:([A-Za-z0-9_]+)$/.exec(code)?.[1];
-  const denied = `这个账号没有这张单要的业务权限${missing ? `（缺 ${missing}）` : ""}，这次${kind === "approve" ? "批准" : "驳回"}被拒绝`;
+  const denied = `这个账号没有这张单要的业务权限，这次${kind === "approve" ? "批准" : "驳回"}被拒绝`;
   // 重试被拒说明不了原操作的结果，后半句由重试那边写。
-  return retry ? denied : `${denied}。${kind === "approve" ? "原操作没有执行" : "这张单没有驳回"}，还是待审批；请换有这项权限的管理员处理。`;
+  return retry ? denied : `${denied}。${kind === "approve" ? "原操作没有执行" : "这张单没有驳回"}，还是待审批；请换有这项权限的管理员处理。${missing ? `技术信息：缺的权限编码 ${missing}。` : ""}`;
 }
 
 /** 后端现在写「统一字段 · v3」，parseA2SchemaVersion 只认旧的「统一 schema · v3」，认不出时取里面的版本号。 */
@@ -1477,7 +1477,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (!next) { notePending(record, record.kind === "param" ? "查询失败，这项设置暂时读不到。原记录继续保留。" : "查询失败，这张单暂时读不到。原记录继续保留。"); return; }
     if (record.kind === "param") {
       const now = next.mechanismParams.find((item) => item.key === record.target)?.value;
-      notePending(record, `查到：${PARAM_NAME[record.target] ?? record.target}现在是 ${now ? operatorCopyText(now) : "—"}，你提交的是 ${record.value}。原记录继续保留。`);
+      notePending(record, `查到：${PARAM_NAME[record.target] ?? record.target}现在是 ${now ? operatorCopyText(now) : "—"}，你提交的是 ${record.value}；一样也不一定是你改的，原记录继续保留。`);
       return;
     }
     const found = ticketStatus(next, record.target);

@@ -2835,7 +2835,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   TARGET_ALREADY_EFFECTIVE_SUPER: "目标已经是有效超级管理员，不能重复执行服务器恢复。",
   SUPER_ADMIN_ROLE_WRITE_FAILED: "服务器恢复的超级管理员角色写入失败，请由运维核对原执行记录。",
   A1_RESPONSE_INVALID: "运营账号返回的数据不完整，已停止使用本次读取。请重新加载或联系值班人员。",
-  A1_MUTATION_RESPONSE_UNREADABLE: "提交结果没读全，不能判断原操作成没成；原请求已保留，请查询原结果。",
+  A1_MUTATION_RESPONSE_UNREADABLE: "提交结果没读全，不能判断原操作成没成；原请求已保留，请先查询结果再处理。",
   A1_ORIGINAL_OPERATION_CONFIRMED: "原操作已确认，已重新读取当前资料；后续修改请按最新资料重新发起。",
   A1_SESSION_CHANGED: "登录身份或账号访问范围已变化，请重新登录后查询原操作。原记录仍保留。",
   A1_OPERATION_FORBIDDEN: "当前账号缺少这项操作的权限，请核对授权；已保存的原操作仍可按查看权限查询。",

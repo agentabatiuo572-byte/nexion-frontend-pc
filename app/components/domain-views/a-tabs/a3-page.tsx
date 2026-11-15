@@ -451,7 +451,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
             <Panel key={param.key} className="a3-param" title={name} icon={isRate ? Gauge : ShieldCheck} tone={isRate ? "role-2" : "role-1"}
               explain={<>
                 <p>{isRate ? "App 和后台的普通接口每分钟合计能处理多少个请求。按接口分组计数，每分钟重新计；后台登录、支付回调、健康检查各有单独的额度。" : "单笔提现达到这个金额就进人工强审。和「提现参数」里的小额免审线是两回事。"}</p>
-                <p>系统里的名称「{param.name}」，参数键 {param.key}。只有超级管理员能改，不走审批。</p>
+                <p>只有超级管理员能改，不走审批。系统里叫「{param.name}」（<span data-mono>{param.key}</span>）。</p>
               </>}
               actions={param.writable ? <Button size="sm" loading={mutating === param.key} disabledReason={commands.find(`param:${param.key}`) ? "结果未知" : !overviewReady.current ? "正在读取" : mutating && mutating !== param.key ? "另一项正在提交" : undefined} onClick={() => paramChg(param)}>调整</Button> : <span className="rd-note">只读</span>}>
               <div className="a3-param-value" data-empty={value === null ? "" : undefined}>
@@ -521,7 +521,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
                 <StatusTag tone={state.tone} icon={state.icon}>{state.text}</StatusTag>
               </span>
               <span className="a3-health-metric">{row.metric ? metricText(row.metric).split(" · ").map((part, index, parts) => index < parts.length - 1 ? <span key={index}><span className="rd-keep">{part} ·</span> </span> : <span key={index} className="rd-keep">{part}</span>) : "—"}</span>
-              <span className="a3-health-time">{row.stale ? "没检测到，不算正常" : `检测于 ${timeText(row.observedAt)}`}</span>
+              <span className="a3-health-time">{row.stale ? "这次没测到，不能算正常" : `检测于 ${timeText(row.observedAt)}`}</span>
             </li>;
           })}
         </ul>}
@@ -544,7 +544,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         <Facts>
           <Fact k="原操作">{record.name} · {original.mode === "PUBLISHED" ? "发布" : "保存草稿"}</Fact>
           <Fact k="提交时间">{businessStamp(record.createdAt)}（{businessZone().label}）</Fact>
-          <Fact k="修改序号" tone={check.revision.matches ? undefined : "warn"}>{`提交时 ${check.revision.submitted}，保存成功应为 ${check.revision.expected}，现在 ${check.revision.current}`}</Fact>
+          <Fact k="修改序号（每保存一次加 1）" tone={check.revision.matches ? undefined : "warn"}>{`提交时 ${check.revision.submitted}，保存成功应为 ${check.revision.expected}，现在 ${check.revision.current}`}</Fact>
           <Fact k={original.kind === "docs" ? "正文版本" : "文档版本"} tone={check.version.matches ? undefined : "warn"}>{sameOr(check.version.matches, check.version.submitted.replace(/^default-/, ""), check.version.current.replace(/^default-/, ""))}</Fact>
           <Fact k="保存为" tone={check.status.matches ? undefined : "warn"}>{sameOr(check.status.matches, SAVE_AS[check.status.submitted], SAVE_AS[check.status.current] ?? check.status.current)}</Fact>
           <Fact k="内容" tone={check.contentMatches ? undefined : "warn"}>{check.contentMatches ? original.kind === "docs" ? "全部语言相同" : "六页内容相同" : "和原提交不同"}</Fact>

@@ -839,7 +839,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       confirmLabel: "确认重新排队",
       statedBrief: {
         impact: "会再触发一次原来的处理：成功时用户的周任务按这条事件算完成，可能因此发奖；失败会重新停下。不保证奖励补发。",
-        check: "原事件和任务处理都还是已终止、失败次数没变时才执行；事件内容和编号不改。",
+        check: "原事件和任务处理都还是已终止、失败次数没变时才执行；事件内容、编号和失败次数都不改。",
       },
       facts: <Facts>
         <Fact k="事件编号"><span data-mono>{snapshot.eventId}</span></Fact>

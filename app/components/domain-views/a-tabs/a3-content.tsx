@@ -22,7 +22,7 @@ export type A3Restored =
   | { kind: "how"; document: PublishedHowContentDocument; baseline: PublishedHowContentDocument; reason: string };
 /** 读回和原提交对不上时的一句话（页面上方提示条和保存框里共用）。 */
 export const contentCheckLine = (check: A3ContentComparison) =>
-  `修改序号应为 ${check.revision.expected}，现在是 ${check.revision.current}；内容${check.contentMatches ? "相同" : "不同"}。核对后可以解除。`;
+  `修改序号（每保存一次加 1）应为 ${check.revision.expected}，现在是 ${check.revision.current}；内容${check.contentMatches ? "相同" : "不同"}。核对后可以解除。`;
 type ReleaseProps = { checks: Record<string, A3ContentComparison>; onRelease: (record: A3Command) => void; restored: A3Restored | null; onRestored: () => void };
 type Toast = (text: string, kind?: "success" | "error" | "warn" | "info") => void;
 type Row = Record<string, unknown>;
@@ -594,7 +594,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
         { key: "pages", label: "有改动的页面", before: "—", after: changedPages.map((item) => PAGE_LABELS[item]).join("、") || "—" },
       ]} />}
       extra={<>
-        {mode === "PUBLISHED" && refPages.length > 0 && <Notice tone="danger" title="发布后 App 会打不开这些说明">{refPages.map((item) => PAGE_LABELS[item]).join("、")}含规则引用块，App 收到没换成数值的 {"{value}"} 会整页拒收。</Notice>}
+        {mode === "PUBLISHED" && refPages.length > 0 && <Notice tone="danger" title="发布后 App 会打不开这些说明">{refPages.map((item) => PAGE_LABELS[item]).join("、")}含规则引用块，App 收到没换成数值的 {"{value}"} 会整页打不开。</Notice>}
         {check && original ? <ReleaseNotice check={check} onOpen={() => { setMode(null); onRelease(original); }} />
           : <Notice tone="neutral">六页一起保存，不能重试：结果未知时先刷新核对，<KeepText text="不要直接再点一次。" /><Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>}
       </>} />}
