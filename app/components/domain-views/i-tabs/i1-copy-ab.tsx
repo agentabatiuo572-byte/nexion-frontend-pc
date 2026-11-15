@@ -855,6 +855,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     let note: ReactNode;
     let rebuildLabel = "按最新的重新确认";
     let rebuild: (() => void) | undefined;
+    let lead: string | undefined;
     const optionState = (value: unknown) => !value ? undefined : String(value).toUpperCase() === "ACTIVE" ? "启用" : "停用";
     const reopen = (task: () => void) => () => { prefill.current = { reason: conflict.requested.reason, business: conflict.requested.form }; task(); prefill.current = null; };
     if (path.startsWith("/copy-ab/copies/")) {
@@ -883,6 +884,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           ? { ...current, copy, base: findVersion(key, current.base?.v) ?? current.base } : current) : undefined;
       } else {
         const version = part(5);
+        lead = path.endsWith("/rollback") ? "别人先改了，这次没回滚。" : path.endsWith("/archive") ? "别人先改了，这次没下架。" : "别人先改了，这次没删除。";
         rows = [conflictRow("这条文案", String(body.expectedVersion ?? "—"), state)];
         const target = version ? findVersion(key, version) : undefined;
         if (version) rows.push(conflictRow(`版本 ${version}`, "—", target ? versionStatus(target.st).text : "没有了"));
@@ -904,7 +906,8 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         rows = [conflictRow("名称", option?.name, body.name), conflictRow("说明", option?.description, body.description), conflictRow("状态", optionState(option?.status), optionState(body.status)), conflictRow("排序", option?.sortOrder, body.sortOrder)];
         rebuild = option && reopen(() => editCopyVersionOption(option));
       } else {
-        rows = [conflictRow("用到它的文案", "—", option ? `${option.usageCount} 条` : "—"), conflictRow("状态", "—", option?.status)];
+        lead = "别人先改了，这次没删除。";
+        rows = [conflictRow("用到它的文案", "—", option ? `${option.usageCount} 条` : "—"), conflictRow("状态", "—", optionState(option?.status))];
         rebuild = option && reopen(() => deleteCopyVersionOption(option));
       }
     } else if (path.startsWith("/copy-ab/framework/")) {
@@ -913,9 +916,8 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       const param = latestParam && { ...latestParam, cur: latestParam.current };
       subject = <>{param?.name ?? key}</>;
       if (ready && !param) gone = "这个参数在最新读取里没有了。";
-      rows = [conflictRow("值", body.expectedValue, param?.cur), conflictRow("你填的新值", body.value, body.value)];
-      rows[1].changed = false;
-      note = "这个框带不回你填的新值和理由，重新打开后照上面再填一次。";
+      rows = [conflictRow("值", body.expectedValue, param?.cur)];
+      note = <>你填的新值 {String(body.value ?? "—")} 和理由会带回确认框。</>;
       rebuild = param && (() => { prefill.current = { reason: conflict.requested.reason, value: conflict.requested.value }; adjustFramework(param.key, param.name, param.cur); });
     }
     if (!rebuild && !gone) { rebuildLabel = "知道了"; note = "最新的已经读到页面上，关掉后重新打开要做的操作。"; }
@@ -925,7 +927,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       if (task) window.setTimeout(task, 0);
     };
     return conflictView.open
-      ? <IConflictModal review={conflict} subject={subject} rows={rows} columns={columns} gone={gone} note={note} rebuildLabel={rebuildLabel}
+      ? <IConflictModal review={conflict} subject={subject} lead={lead} rows={rows} columns={columns} gone={gone} note={note} rebuildLabel={rebuildLabel}
           onReread={() => void conflictReview.reread()} onClose={conflictView.hide} onRebuild={() => finish(rebuild)}
           onDiscard={() => finish(() => setEditor(null))} />
       : <IConflictPending subject={subject} onOpen={conflictView.show} />;

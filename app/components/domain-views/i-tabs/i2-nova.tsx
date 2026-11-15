@@ -584,7 +584,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     return conflictView.open
       ? <IConflictModal review={conflict} subject={subject} columns={["现在", "你填的"]} rebuildLabel="按最新的重新填写"
           rows={orderDist(latest).map((item) => conflictRow(operatorCopyText(item.name), `${Number(item.pct)}%`, distDraft[item.key] === undefined ? "—" : `${Number(distDraft[item.key])}%`))}
-          note="你填的五类概率留在编辑框里；这个确认框带不回理由，保存时再填一次。"
+          note="理由会带进确认框；核对后再点「保存概率」。"
           onReread={() => void conflictReview.reread()} onClose={conflictView.hide}
           onRebuild={() => finish(() => { setDistReason(conflict.requested.reason); setDistDrawer(true); })} onDiscard={() => finish(() => setDistDrawer(false))} />
       : <IConflictPending subject={subject} onOpen={conflictView.show} />;

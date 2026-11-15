@@ -739,6 +739,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     let note: ReactNode;
     let rebuildLabel = "按最新的重新确认";
     let rebuild: (() => void) | undefined;
+    // 删草稿直接执行；发布、回滚、下架都是提交审批。
+    const lead = !editorAtReject && rejected ? rejected.action === "delete" ? "别人先改了，这次没删除。" : "别人先改了，这次没提交审批。" : undefined;
     const carry = (extra?: { value?: string; dataSource?: string }) => { prefill.current = { key, reason: conflict.requested.reason, ...extra }; };
     if (editorAtReject) {
       columns = ["现在", "你填的"];
@@ -787,7 +789,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       if (task) window.setTimeout(task, 0);
     };
     return conflictView.open
-      ? <IConflictModal review={conflict} subject={subject} rows={rows} columns={columns} gone={gone} note={note} rebuildLabel={rebuildLabel}
+      ? <IConflictModal review={conflict} subject={subject} lead={lead} rows={rows} columns={columns} gone={gone} note={note} rebuildLabel={rebuildLabel}
           onReread={() => void conflictReview.reread()} onClose={conflictView.hide} onRebuild={() => finish(rebuild)}
           onDiscard={() => finish(() => { if (editorAtReject) { setDraftEditor(null); setEditorCommandKey(null); } })} />
       : <IConflictPending subject={subject} onOpen={conflictView.show} />;
