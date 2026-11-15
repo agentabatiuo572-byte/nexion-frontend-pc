@@ -29,6 +29,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { fetchI2NovaOverview, type NovaOverview, pendingI2Commands, retryI2Command, type I2Command, type NovaSocialEventSampleView } from "@/lib/admin/i-client";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
+import { conflictRow, IConflictModal, IConflictPending, useIConflictView } from "./i-conflict";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   AppNotice, ChannelCard, DIST_SLOT, NO_SOURCE, PHASE_CHANNELS, PhaseNote, SOCIAL_CHANNEL, TEMPLATE_STATE_TEXT, TemplateTag,
@@ -151,7 +152,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         try { return await req.run(reason, value, businessForm); }
         catch (error) {
           if (isOutcomeUnknownError(error)) pendingKey = (error as { commandKey?: string }).commandKey;
-          await reviewConflict(error, reason, value, businessForm);
+          if (await reviewConflict(error, reason, value, businessForm)) ctx.closeActionConfirm();
           syncPending();
           // First-attempt refusals stay in the original confirmation, including business 403s.
           throw new Error(`操作失败:${displayAdminError(error)}`);
@@ -183,7 +184,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             setTplDrawer(false);
             setDistDrawer(false);
           }
-          await reviewConflict(error, reason, value);
+          if (await reviewConflict(error, reason, value)) ctx.closeConfirm();
           syncPending();
           throw new Error(`操作失败:${displayAdminError(error)}`);
         }
@@ -565,6 +566,27 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     },
   });
 
+  // ── 刚被别人改过：五类概率被别人先改了，看最新的和自己填的，确认后按最新的重新保存。──
+  const conflictView = useIConflictView(conflictReview.review);
+  const conflictUi = (() => {
+    const conflict = conflictReview.review;
+    if (!conflict) return null;
+    const latest = conflict.latest?.socialDistribution ?? [];
+    const finish = (task: () => void) => {
+      if (!conflictReview.confirm(conflict, () => undefined)) return;
+      conflictView.show();
+      window.setTimeout(task, 0);
+    };
+    const subject = "业务动态事件概率";
+    return conflictView.open
+      ? <IConflictModal review={conflict} subject={subject} columns={["现在", "你填的"]} rebuildLabel="按最新的重新填写"
+          rows={orderDist(latest).map((item) => conflictRow(operatorCopyText(item.name), `${Number(item.pct)}%`, distDraft[item.key] === undefined ? "—" : `${Number(distDraft[item.key])}%`))}
+          note="你填的五类概率留在编辑框里；这个确认框带不回理由，保存时再填一次。"
+          onReread={() => void conflictReview.reread()} onClose={conflictView.hide}
+          onRebuild={() => finish(() => setDistDrawer(true))} onDiscard={() => finish(() => setDistDrawer(false))} />
+      : <IConflictPending subject={subject} onOpen={conflictView.show} />;
+  })();
+
   // ── 真实事件生命周期:事件只能从受信业务表同步，管理端不提供伪造入口。──
   const [eventTypeFilter, setEventTypeFilter] = useState("");
   const [eventStatusFilter, setEventStatusFilter] = useState("");
@@ -769,10 +791,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   );
 
   if (contentLoading && !data) {
-    return <>{header}{unknownNotice}<BlockState state="loading" title="正在读取推送数据…" /></>;
+    return <>{header}{unknownNotice}{conflictUi}<BlockState state="loading" title="正在读取推送数据…" /></>;
   }
   if (!data) {
-    return <>{header}{unknownNotice}{contentError
+    return <>{header}{unknownNotice}{conflictUi}{contentError
       ? <BlockState state="error" title="推送数据读取失败" detail={contentError} onRetry={() => void actions.reloadIContent()} retryLabel="重新加载" />
       : <BlockState state="empty" title="暂无推送数据" />}</>;
   }
@@ -883,6 +905,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     <div className="i2-page">
       {header}
       {unknownNotice}
+      {conflictUi}
       {contentError && <Notice tone="danger" title="最新数据没读到" action={<Button size="sm" onClick={() => void actions.reloadIContent()}>重新加载</Button>}>{`${contentError}下面仍是 ${readAt ? businessClock(readAt) : "上次"} 读到的数据。`}</Notice>}
       {conclusion}
       {stats}

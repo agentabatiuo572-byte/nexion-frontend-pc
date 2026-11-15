@@ -20,6 +20,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchI1CopyOverview, type CopyAbOverview, pendingI1Commands, retryI1Command, type I1Command } from "@/lib/admin/i-client";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
+import { conflictRow, IConflictModal, IConflictPending, useIConflictView, type IConflictRow } from "./i-conflict";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   CompareTexts, CopyEditorDrawer, ExperimentCard, ExperimentDrawer, LangBlocks, PositionCard,
@@ -186,6 +187,9 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       await actions.reloadIContent();
       return latest;
     });
+  const conflictView = useIConflictView(conflictReview.review);
+  /** 核对冲突后重开确认框时带回的理由和表单，只给紧接着打开的那一个框用。 */
+  const prefill = useRef<{ reason: string; business?: BusinessFormValue } | null>(null);
   const [pending, setPending] = useState<I1Command[]>([]);
   const [retrying, setRetrying] = useState<string | null>(null);
   const retryInFlight = useRef(false);
@@ -235,9 +239,12 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     let pendingKey: string | undefined;
     let savedBusiness: BusinessFormValue | undefined;
     const original = () => pendingI1Commands().find((row) => row.commandKey === pendingKey);
+    const carried = prefill.current;
+    prefill.current = null;
     ctx.openActionConfirm({ ...req,
+      initialReason: carried?.reason,
       getPendingReason: () => original()?.reason,
-      getPendingBusinessValue: () => original() ? savedBusiness : undefined,
+      getPendingBusinessValue: () => original() ? savedBusiness : carried?.business,
       run: async (reason, value, form) => {
         if (pendingKey) {
           const record = original();
@@ -257,7 +264,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
             setEditor(null);
             setCreatingExperiment(false);
           }
-          await reviewConflict(error, reason, value, form);
+          if (await reviewConflict(error, reason, value, form)) ctx.closeActionConfirm();
           syncPending();
           // The domain owns first-attempt rejection: keep the confirmation and its input even for business 403.
           throw new Error(`操作失败:${displayAdminError(error)}`);
@@ -286,7 +293,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         try { return await req.run(reason, value); }
         catch (error) {
           if (isOutcomeUnknownError(error)) { pendingKey = (error as { commandKey?: string }).commandKey; savedValue = value; }
-          await reviewConflict(error, reason, value);
+          if (await reviewConflict(error, reason, value)) ctx.closeConfirm?.();
           syncPending();
           throw new Error(`操作失败:${displayAdminError(error)}`);
         }
@@ -821,6 +828,88 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     },
   });
 
+  /* ---------- 刚被别人改过：看最新的和自己填的，确认后按最新的重建编辑器或确认框 ---------- */
+  const conflictUi = (() => {
+    const conflict = conflictReview.review;
+    if (!conflict) return null;
+    const original = (conflict.rejectedCommand as I1Command | undefined)?.original;
+    const path = original?.path ?? "";
+    let body: Record<string, unknown> = {};
+    try { body = original ? JSON.parse(original.body) as Record<string, unknown> : {}; } catch { body = {}; }
+    const part = (index: number) => decodeURIComponent(path.split("/")[index] ?? "");
+    const ready = !!conflict.latest;
+    let subject: ReactNode = "这一项";
+    let rows: IConflictRow[] = [];
+    let columns: [string, string] = ["你打开时", "现在"];
+    let gone: string | undefined;
+    let note: ReactNode;
+    let rebuildLabel = "按最新的重新确认";
+    let rebuild: (() => void) | undefined;
+    const reopen = (task: () => void) => () => { prefill.current = { reason: conflict.requested.reason, business: conflict.requested.form }; task(); prefill.current = null; };
+    if (path.startsWith("/copy-ab/copies/")) {
+      const key = part(3);
+      const copy = findCopy(key);
+      subject = <>文案 <span data-mono="">{key}</span></>;
+      if (ready && !copy) gone = "这条文案在最新读取里没有了，不能按最新的重做。";
+      const state = copy ? `${copy.version} · ${versionStatus(copy.status).text}${copy.draftVersion ? ` · 草稿 ${copy.draftVersion}` : ""}` : "—";
+      const editing = (original?.method === "PATCH" && path.endsWith("/draft")) || (original?.method === "POST" && /\/versions$/.test(path));
+      if (editing) {
+        columns = ["现在", "你填的"];
+        rebuildLabel = "按最新的重新填写";
+        const latestText = findVersion(key, copy?.draftVersion) ?? findVersion(key, copy?.version);
+        rows = [conflictRow("这条文案", state, `存成 ${String(body.version ?? "—")}`),
+          conflictRow("中文", latestText?.zh, body.zh), conflictRow("英语", latestText?.en, body.en), conflictRow("越南语", latestText?.vi, body.vi)];
+        note = "你填的内容留在编辑框里，提交时按最新的版本。";
+        rebuild = copy ? () => setEditor((current) => current?.kind === "edit" && current.copy.key === key
+          ? { ...current, copy, base: findVersion(key, current.base?.v) ?? current.base } : current) : undefined;
+      } else {
+        const version = part(5);
+        rows = [conflictRow("这条文案", String(body.expectedVersion ?? "—"), state)];
+        const target = version ? findVersion(key, version) : undefined;
+        if (version) rows.push(conflictRow(`版本 ${version}`, "—", target ? versionStatus(target.st).text : "没有了"));
+        if (ready && version && !target) gone = `${version} 在最新读取里没有了。`;
+        rebuild = !copy ? undefined
+          : path.endsWith("/rollback") ? target && reopen(() => rollbackTo(copy, version))
+            : path.endsWith("/archive") ? reopen(() => archiveCurrentVersion(copy, copy.version))
+              : original?.method === "DELETE" && target ? reopen(() => deleteDraftVersion(key, version, copy.revision ?? 0)) : undefined;
+      }
+    } else if (path.startsWith("/copy-ab/version-options/")) {
+      const key = part(3);
+      const option = VERSION_OPTIONS.find((row) => row.versionKey === key);
+      subject = <>版本 <span data-mono="">{key}</span></>;
+      if (ready && !option) gone = "这个版本在最新读取里没有了，不能按最新的重做。";
+      if (original?.method === "PUT") {
+        columns = ["现在", "你填的"];
+        rebuildLabel = "按最新的重新填写";
+        rows = [conflictRow("名称", option?.name, body.name), conflictRow("说明", option?.description, body.description), conflictRow("状态", option?.status, body.status)];
+        rebuild = option && reopen(() => editCopyVersionOption(option));
+      } else {
+        rows = [conflictRow("用到它的文案", "—", option ? `${option.usageCount} 条` : "—"), conflictRow("状态", "—", option?.status)];
+        rebuild = option && reopen(() => deleteCopyVersionOption(option));
+      }
+    } else if (path.startsWith("/copy-ab/framework/")) {
+      const key = part(3);
+      const param = EXP_FRAMEWORK.find((row) => row.key === key);
+      subject = <>{param?.name ?? key}</>;
+      if (ready && !param) gone = "这个参数在最新读取里没有了。";
+      rows = [conflictRow("值", body.expectedValue, param?.cur), conflictRow("你填的新值", body.value, body.value)];
+      rows[1].changed = false;
+      note = "这个框带不回你填的新值和理由，重新打开后照上面再填一次。";
+      rebuild = param && (() => adjustFramework(param.key, param.name, param.cur));
+    }
+    if (!rebuild && !gone) { rebuildLabel = "知道了"; note = "最新的已经读到页面上，关掉后重新打开要做的操作。"; }
+    const finish = (task?: () => void) => {
+      if (!conflictReview.confirm(conflict, () => undefined)) return;
+      conflictView.show();
+      if (task) window.setTimeout(task, 0);
+    };
+    return conflictView.open
+      ? <IConflictModal review={conflict} subject={subject} rows={rows} columns={columns} gone={gone} note={note} rebuildLabel={rebuildLabel}
+          onReread={() => void conflictReview.reread()} onClose={conflictView.hide} onRebuild={() => finish(rebuild)}
+          onDiscard={() => finish(() => setEditor(null))} />
+      : <IConflictPending subject={subject} onOpen={conflictView.show} />;
+  })();
+
   const createExperiment = () => {
     if (EXPERIMENT_COPY_OPTIONS.length === 0) {
       toast(`暂无可创建实验的文案：${experimentUnavailableReason}`);
@@ -1028,6 +1117,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       <>
         {header}
         {pendingNotice}
+        {conflictUi}
         {contentLoading && !errorText
           ? <BlockState state="loading" title="文案数据加载中…" />
           : errorText
@@ -1395,6 +1485,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         <Explain label="现在 App 能看到什么" content={<><p>发布、回滚、采纳会同步「多语言与课程」里的同名词条，App 用到这个词条的地方会跟着变。</p><p>按位置取文案和实验分组的接口已经有，App 还没有页面调用，所以实验分组现在不会真正发生在 App 上。</p></>} />
       </Notice>
       {pendingNotice}
+      {conflictUi}
       {conclusion}
       <StatBand label="文案对比测试关键数字">
         <Stat icon={MapPin} tone="role-2" label="文案位置" value={String(COPY_POSITION_ROWS.length)} unit="个" sub={`启用 ${activePositions}`} />

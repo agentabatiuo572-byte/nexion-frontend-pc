@@ -18,6 +18,7 @@ import { pendingI3Commands, retryI3Command, i3RetryPermission, parseI3Json, fetc
 import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, releaseExpiredI3Cap, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
+import { conflictRow, IConflictModal, IConflictPending, useIConflictView, type IConflictRow } from "./i-conflict";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -165,6 +166,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     reason: string; value?: string; business?: Record<string, string>; form?: NewForm;
     editing?: CampaignRow | null; scheduleRow?: CampaignRow | null; scheduledAt?: string;
   }>();
+  const conflictView = useIConflictView(conflictReview.review);
+  /** 核对冲突后重开确认框时带回的理由和新值，只给紧接着打开的那一个框用。 */
+  const prefill = useRef<{ reason: string; value?: string } | null>(null);
   const reviewConflict = (error: unknown, requested: NonNullable<typeof conflictReview.review>["requested"]) =>
     conflictReview.reject(error, requested, async () => {
       const latest = await fetchI3CampaignOverview();
@@ -248,8 +252,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     const openedData = data;
     let key = restored?.commandKey;
     const original = () => (cap ? pendingI3CapCommands() : pendingI3Commands()).find((row) => row.commandKey === key);
-    ctx.openActionConfirm({ ...req, getPendingReason: () => original()?.reason,
-      edit: req.edit && restored && "after" in restored ? { ...req.edit, initialValue: restored.after } : req.edit,
+    const carried = restored ? null : prefill.current;
+    prefill.current = null;
+    ctx.openActionConfirm({ ...req, getPendingReason: () => original()?.reason, initialReason: carried?.reason,
+      edit: req.edit && restored && "after" in restored ? { ...req.edit, initialValue: restored.after } : req.edit && carried?.value ? { ...req.edit, initialValue: carried.value } : req.edit,
       run: async (reason, value, business) => {
         if (key) {
           const record = original();
@@ -262,7 +268,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         } catch (error) {
           const candidate = (error as { commandKey?: string }).commandKey;
           key = (cap ? pendingI3CapCommands() : pendingI3Commands()).find((row) => row.commandKey === candidate)?.commandKey;
-          await reviewConflict(error, { reason, value, business });
+          if (await reviewConflict(error, { reason, value, business })) ctx.closeActionConfirm();
           syncPending();
           throw new Error(displayAdminError(error));
         }
@@ -282,7 +288,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           return replay(record);
         }
         try { requireNewMutation(openedData); return await req.run(reason, value); }
-        catch (error) { const candidate = (error as { commandKey?: string }).commandKey; key = pendingI3Commands().find((row) => row.commandKey === candidate)?.commandKey; await reviewConflict(error, { reason, value }); syncPending(); throw new Error(displayAdminError(error)); }
+        catch (error) { const candidate = (error as { commandKey?: string }).commandKey; key = pendingI3Commands().find((row) => row.commandKey === candidate)?.commandKey; if (await reviewConflict(error, { reason, value })) ctx.closeConfirm(); syncPending(); throw new Error(displayAdminError(error)); }
       },
     });
   };
@@ -481,6 +487,79 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       return true;
     },
   }, restored, true);
+
+  /* ---------- 刚被别人改过：看最新的和自己填的，确认后按最新的重建表单或确认框 ---------- */
+  const conflictUi = (() => {
+    const conflict = conflictReview.review;
+    if (!conflict) return null;
+    const requested = conflict.requested;
+    const rejected = conflict.rejectedCommand as { original?: { method: string; path: string; body: string }; tier?: string; before?: string; after?: string } | undefined;
+    const latestRows = conflict.latest?.campaigns ?? [];
+    const ready = !!conflict.latest;
+    const path = rejected?.original?.path ?? "";
+    let subject: ReactNode = "这一项";
+    let rows: IConflictRow[] = [];
+    let columns: [string, string] = ["你打开时", "现在"];
+    let gone: string | undefined;
+    let note: ReactNode;
+    let rebuildLabel = "按最新的重新确认";
+    let rebuild: (() => void) | undefined;
+    const reopen = (task: () => void, value?: string) => () => { prefill.current = { reason: requested.reason, value }; task(); prefill.current = null; };
+    const stateText = (row?: { status?: string; st?: string; schedule: string }) => row ? `${STATUS_TEXT[(row.status ?? row.st) as CampaignRow["st"]] ?? "状态未知"}${row.schedule ? ` · ${row.schedule}` : ""}` : "没有了";
+    const campaignId = requested.editing?.id ?? requested.scheduleRow?.id ?? decodeURIComponent(path.split("/")[2] ?? "");
+    const now = latestRows.find((row) => row.id === campaignId);
+    const live = CAMPAIGNS.find((row) => row.id === campaignId);
+    if (rejected?.tier) {
+      const tier = rejected.tier as TierK;
+      const capRow = (conflict.latest?.capRules ?? []).find((row) => row.tier === tier);
+      subject = <>{TIER[tier]?.label ?? tier}优先级保留上限</>;
+      rows = [conflictRow("上限", rejected.before ? `${rejected.before} 条` : "—", capRow?.cap)];
+      note = <>你填的新上限 {rejected.after} 条会带回确认框。</>;
+      rebuild = capRow ? reopen(() => adjustCap(tier, capRow.cap), rejected.after) : undefined;
+      if (ready && !capRow) gone = "这一档在最新读取里没有了。";
+    } else {
+      subject = <>通知 <span data-mono="">{campaignId || "—"}</span></>;
+      if (ready && campaignId && !now) gone = "这条通知在最新读取里没有了，不能按最新的重做。";
+      if (requested.editing && requested.form) {
+        const form = requested.form;
+        columns = ["现在", "你填的"];
+        rebuildLabel = "按最新的重新填写";
+        rows = [conflictRow("状态", stateText(now), "草稿"), conflictRow("名称", now?.name, form.name),
+          conflictRow("中文正文", now?.bodyZh, form.bodyZh), conflictRow("越南语正文", now?.bodyVi, form.bodyVi), conflictRow("英语正文", now?.bodyEn, form.bodyEn)];
+        rows[0].changed = !!now && now.status !== "draft";
+        if (!gone && now && now.status !== "draft") gone = `这条通知现在是${stateText(now)}，不能再改草稿。`;
+        note = "你填的内容留在表单里，保存时按最新的版本提交。";
+        rebuild = live ? () => setEditing(live) : undefined;
+      } else if (requested.scheduleRow) {
+        columns = ["现在", "你填的"];
+        rebuildLabel = "按最新的重新填写";
+        rows = [conflictRow("状态", stateText(now), "草稿"), conflictRow("发送时间", now?.schedule, requested.scheduledAt),
+          conflictRow("中文正文", now?.bodyZh, requested.scheduleRow.bodyZh)];
+        rows[0].changed = !!now && now.status !== "draft";
+        if (!gone && now && now.status !== "draft") gone = `这条通知现在是${stateText(now)}，不能再排期。`;
+        note = "发送时间和理由留着；「已核对」要重新勾。";
+        rebuild = live ? () => { setScheduleRow(live); setScheduleVerified(false); } : undefined;
+      } else if (live) {
+        rows = [conflictRow("状态", "—", stateText(now)), conflictRow("中文正文", "—", now?.bodyZh)];
+        rows[0].changed = true;
+        rebuild = path.endsWith("/send-now") ? reopen(() => sendNow(live))
+          : path.endsWith("/cancel") ? () => cancelScheduled(live)
+            : rejected?.original?.method === "DELETE" ? () => deleteDraft(live) : undefined;
+        if (!path.endsWith("/send-now") && rebuild) note = "这个确认框带不回理由，重新打开后再填一次。";
+      }
+    }
+    if (!rebuild && !gone) { rebuildLabel = "知道了"; note = "最新的已经读到页面上，关掉后重新打开要做的操作。"; }
+    const finish = (task?: () => void) => {
+      if (!conflictReview.confirm(conflict, () => undefined)) return;
+      conflictView.show();
+      if (task) window.setTimeout(task, 0);
+    };
+    return conflictView.open
+      ? <IConflictModal review={conflict} subject={subject} rows={rows} columns={columns} gone={gone} note={note} rebuildLabel={rebuildLabel}
+          onReread={() => void conflictReview.reread()} onClose={conflictView.hide} onRebuild={() => finish(rebuild)}
+          onDiscard={() => finish(() => { if (requested.editing) { setNewOpen(false); setEditing(null); setForm(FORM_INIT); } if (requested.scheduleRow) setScheduleRow(null); })} />
+      : <IConflictPending subject={subject} onOpen={conflictView.show} />;
+  })();
 
   /* ---------- new campaign drawer 提交 ---------- */
   const submitNew = async () => {
@@ -751,6 +830,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       {header}
       {data && errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={contentLoading} onClick={() => void actions.reloadIContent()}>重新加载</Button>}>{`${errorText} 下面是上次读到的内容。`}</Notice>}
       <I3RecoveryNotice rows={recoveryRows} />
+      {conflictUi}
       <I3PendingCapNotice rows={pendingCapRows} link={auditReachable ? <Link className="rd-link" href={AUDIT_HREF} prefetch={false}>到操作记录与审批看</Link> : undefined} />
       {releasing && <ReleaseModal label={`调整${TIER[releasing.tier as TierK].label}优先级保留上限 · ${releasing.before} → ${releasing.after} 条`}
         explain="原申请超过 24 小时，后端按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
