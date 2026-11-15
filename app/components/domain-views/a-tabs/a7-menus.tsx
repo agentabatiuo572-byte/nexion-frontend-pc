@@ -44,7 +44,7 @@ type ConfirmReq = {
 
 const directTag = () => <StatusTag tone="progress" filled explain="填写理由并确认后立即生效，不走审批，保留操作记录。">立即生效</StatusTag>;
 const ROUTE_HELP = "后台页面的地址，要和已上线页面的地址一模一样，比如 /platform/roles。对不上时这个菜单不会出现在左侧导航里；这里不会生成新页面。";
-const ICON_HELP = "只存在菜单表里。左侧导航的图标是页面代码里固定的，改这里不会换导航图标。";
+const ICON_HELP = "改这里不会换左侧导航的图标，导航图标是系统固定的。";
 
 function menuReferenceProblem(node: A7MenuTreeNode) {
   if (node.activePermissionCount !== undefined && node.activePermissionCount > 0) return "MENU_NODE_HAS_PERMISSIONS";
@@ -285,7 +285,7 @@ export default function A7Menus() {
       confirmTone: "danger",
       statedBrief: {
         impact: "确认后立即删除，左侧导航不再有这个入口；已打开的后台要重新读取登录信息才更新。",
-        check: "不删下级、页面和角色授权。有下级菜单、启用的权限挂在它下面，或任何角色（含已停用的）勾了它，后端会拒绝，什么都不改。",
+        check: "不连带删除下级、页面和角色授权。有下级菜单、挂着启用的权限，或有角色（含已停用的）勾了它时，删除会被拒绝，什么都不改。",
       },
       facts: <Facts>
         <Fact k="菜单">{menuNameText(n)} <span className="a7-code" data-mono>{n.menuCode}</span></Fact>
@@ -294,17 +294,17 @@ export default function A7Menus() {
         <Fact k="下级菜单" tone={n.children.length ? "danger" : undefined}>{n.children.length ? `${n.children.length} 个，删除会被拒绝` : "没有"}</Fact>
         {n.roleBindingCount !== undefined && <Fact k="勾了它的角色" tone={n.roleBindingCount ? "danger" : undefined}>{n.roleBindingCount ? `${n.roleBindingCount} 个（含已停用的），删除会被拒绝` : "没有"}</Fact>}
         {n.activePermissionCount !== undefined && <Fact k="挂着的权限" tone={n.activePermissionCount ? "danger" : undefined}>{n.activePermissionCount ? `${n.activePermissionCount} 项启用的，删除会被拒绝` : "没有"}</Fact>}
-        {(n.roleBindingCount === undefined || n.activePermissionCount === undefined) && <Fact k="权限和角色引用">这页读不到，由后端提交时检查</Fact>}
+        {(n.roleBindingCount === undefined || n.activePermissionCount === undefined) && <Fact k="权限和角色引用">这页读不到，提交时再检查</Fact>}
       </Facts>,
       content: n.children.length ? (
         <Notice tone="danger" title={`还有 ${n.children.length} 个下级菜单`}>
-          <p>后端不会连带删除，这次会被拒绝；先删除下级菜单。</p>
+          <p>不会连带删除下级，这次会被拒绝；先删除下级菜单。</p>
         </Notice>
       ) : referenceBlockText(n, "删除") ? (
         <Notice tone="danger" title={referenceBlockText(n, "删除")} />
       ) : n.roleBindingCount === undefined || n.activePermissionCount === undefined ? (
         <Notice tone="warn" title="有权限或角色引用时删不掉">
-          <p>有启用的权限挂在它下面，或有角色勾了它，后端会拒绝；角色的勾选到「角色管理」取消。</p>
+          <p>挂着启用的权限或有角色勾了它时，删除会被拒绝；角色的勾选到「角色管理」取消。</p>
         </Notice>
       ) : undefined,
     }, recovery, rechecked);
@@ -340,11 +340,11 @@ export default function A7Menus() {
   ) : loadError || !overview ? (
     <Conclusion state="danger" icon={TriangleAlert} hint="点菜单树里的「重试」再读一次。">菜单列表没读到，这部分没有判断</Conclusion>
   ) : tree.length === 0 ? (
-    <Conclusion state="warn" icon={TriangleAlert}>还没有菜单，左侧导航只能按页面代码里的默认目录显示</Conclusion>
+    <Conclusion state="warn" icon={TriangleAlert}>还没有菜单，左侧导航只能按系统默认目录显示</Conclusion>
   ) : (
     <Conclusion state={stoppedCount ? "warn" : "ok"} icon={stoppedCount ? TriangleAlert : CheckCircle2}
       hint={hidden.length ? `另有 ${hidden.length} 个启用的菜单对不上已上线的页面，不会出现在导航里。` : undefined}
-      explain="个数包括停用的菜单，按菜单表算，和左侧导航实际显示的页数不同。每个账号能看到哪些菜单，还取决于它的角色。">
+      explain="个数包括停用的菜单，和左侧导航实际显示的页数不同。每个账号能看到哪些菜单，还取决于它的角色。">
       {counts}{stoppedCount ? `，${stoppedCount} 个已停用` : "，都在启用"}
     </Conclusion>
   );
@@ -367,8 +367,8 @@ export default function A7Menus() {
                   <span className="a7-recovery-change" data-mono>{record.change}</span>
                   <span className="a7-recovery-time">{businessStamp(record.createdAt)} 提交</span>
                   {expired
-                    ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试。菜单是直接写入的，没有按原请求查结果的接口，读到的菜单只能用来核对，这条记录不会自动解除。">已过期</StatusTag>
-                    : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，后端认得出是同一次提交，不会重复执行。">结果未知</StatusTag>}
+                    ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，也查不到原结果；读到的菜单只能用来核对，这条记录不会自动解除。">已过期</StatusTag>
+                    : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。">结果未知</StatusTag>}
                   <span className="a7-recovery-actions">
                     <Button variant="ghost" onClick={() => void queryOriginal().catch(error => setToast(displayAdminReadError(error)))}>重新读取菜单</Button>
                     {!expired && <Button variant="ghost" disabledReason={canWrite ? undefined : displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN"))} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
@@ -576,7 +576,7 @@ function NavPreviewPanel({ preview, hidden, selected }: {
   return (
     <Panel title="左侧导航预览" icon={PanelLeft} tone="role-other"
       sub={`${preview.domains.length} 组 · ${preview.domains.reduce((sum, domain) => sum + domain.l2.length, 0)} 页`}
-      explain="拥有全部菜单的账号（比如超级管理员）看到的左侧导航，按现在的菜单表算。菜单表里还是旧名称的，导航显示页面代码里的名称。其他账号只看到自己角色勾了的那部分；已经打开的页面要重新读取登录信息后才更新。">
+      explain="拥有全部菜单的账号（比如超级管理员）看到的左侧导航，按现在的菜单表算。菜单里还是旧名称的，导航按系统定的名称显示。其他账号只看到自己角色勾了的那部分；已经打开的页面要重新读取登录信息后才更新。">
       <ul className="a7-preview" aria-label="左侧导航预览">
         {preview.domains.map((domain: NavDomain) => {
           const Icon = domain.icon;
@@ -634,7 +634,7 @@ function menuFormConfirmation(mode: Exclude<FormMode, null>, tree: A7MenuTreeNod
           <Fact k="排序">{sortOrder}</Fact>
         </Facts>,
         content: parent && parent.status !== 1 ? (
-          <Notice tone="danger" title="上一级菜单已停用"><p>后端只接受启用中的一级菜单作为上一级，这次提交会被拒绝。先启用「{menuNameText(parent)}」。</p></Notice>
+          <Notice tone="danger" title="上一级菜单已停用"><p>上一级必须是启用中的一级菜单，这次提交会被拒绝。先启用「{menuNameText(parent)}」。</p></Notice>
         ) : undefined,
       }] as const;
     } else if (existing) {
@@ -648,10 +648,10 @@ function menuFormConfirmation(mode: Exclude<FormMode, null>, tree: A7MenuTreeNod
       const notes: ReactNode[] = [];
       if (stopping) notes.push(
         <Notice key="stop" tone="warn" title="停用后左侧导航不再显示它">
-          <p>有启用的下级、启用的权限或任何角色勾了它时，后端会拒绝停用{existing.parentId == null ? "；停用后下面的页面也不显示" : ""}。</p>
+          <p>有启用的下级、启用的权限或任何角色勾了它时，停用会被拒绝{existing.parentId == null ? "；停用后下面的页面也不显示" : ""}。</p>
         </Notice>);
       if (starting && existingParent && existingParent.status !== 1) notes.push(
-        <Notice key="start" tone="danger" title="上一级菜单已停用"><p>后端要求先启用上一级「{menuNameText(existingParent)}」，这次提交会被拒绝。</p></Notice>);
+        <Notice key="start" tone="danger" title="上一级菜单已停用"><p>要先启用上一级「{menuNameText(existingParent)}」，这次提交会被拒绝。</p></Notice>);
       if (routeChanged) notes.push(
         <Notice key="route" tone="warn" title="改了页面地址">
           <p>新地址和已上线页面对不上时，菜单从导航消失，不会生成页面。</p>
@@ -664,7 +664,7 @@ function menuFormConfirmation(mode: Exclude<FormMode, null>, tree: A7MenuTreeNod
           impact: stopping
             ? "确认后立即停用，左侧导航不再显示它。"
             : "确认后立即保存；左侧导航要等账号重新读取登录信息才更新。",
-          check: stopping ? "留空的地址和图标不会清掉原值。后端会再检查启用的下级、启用的权限和角色勾选。" : "留空的地址和图标不会清掉原值。保存为启用时，后端会再检查上一级是否启用。",
+          check: stopping ? "留空的地址和图标不会清掉原值。提交时会再检查下级、权限和角色勾选。" : "留空的地址和图标不会清掉原值。保存为启用时，会再检查上一级是否启用。",
         },
         facts: <Facts>
           <Fact k="菜单">{menuNameText(existing)} <span className="a7-code" data-mono>{existing.menuCode}</span></Fact>
@@ -759,7 +759,7 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
           {(control) => <Input {...control} value={menuName} onChange={(e) => setMenuName(e.target.value)} placeholder="如 角色管理" />}
         </Field>
         {isCreate && (
-          <Field label="上一级" help="不选就是一级菜单；最多两级。" error={pickedParent?.stopped ? "这个一级菜单已停用，选它会被后端拒绝" : undefined}>
+          <Field label="上一级" help="不选就是一级菜单；最多两级。" error={pickedParent?.stopped ? "这个一级菜单已停用，选它会被拒绝" : undefined}>
             {(control) => <Select {...control} aria-label="上一级" value={parentCode} onChange={setParentCode}
               options={[{ value: "", label: "（一级菜单）" }, ...parentOptions.map((o) => ({ value: o.code, label: o.stopped ? `${o.label} · 已停用` : o.label }))]} />}
           </Field>
@@ -778,7 +778,7 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
         </div>
         {!isCreate && (
           <Field label="状态" error={referenceProblem && existing ? referenceBlockText(existing, "停用") : undefined}
-            help={status === 0 && existing?.status === 1 && !referenceProblem ? "停用后左侧导航不再显示它；有启用的下级、启用的权限或角色勾了它时后端会拒绝。" : undefined}>
+            help={status === 0 && existing?.status === 1 && !referenceProblem ? "停用后左侧导航不再显示它；有启用的下级、启用的权限或角色勾了它时会被拒绝。" : undefined}>
             <Segments label="状态" value={status} onChange={setStatus} items={[{ value: 1, label: "启用" }, { value: 0, label: "停用" }]} />
           </Field>
         )}
