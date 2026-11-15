@@ -78,6 +78,7 @@ function useMutations() {
     commands.remember(record.fingerprint, record.commandKey, record);
     if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器无法保存原操作，本次未提交。请允许会话存储后重试。");
     sending.current = true; setBusy(record.commandKey);
+    let checkingProposal = retry && record.payload.kind === "proposal";
     try {
       if (retry && record.payload.kind === "proposal") {
         const ticket = await fetchA2ProposalByKey(record.commandKey, true, true);
@@ -88,6 +89,7 @@ function useMutations() {
           return;
         }
       }
+      checkingProposal = false;
       let writeResult: E6WriteReceipt | undefined;
       if (record.payload.kind === "proposal") {
         const ticket = await createA2OperationProposal(record.payload.input, record.commandKey, true);
@@ -121,13 +123,13 @@ function useMutations() {
         && !isIdempotencyOutcomeOpen(response.backendMessage) && response.status !== undefined
         && isDeterministicRejection(response.httpStatus ?? response.status, response.apiCode);
       if (firstRejection) commands.forget(record.fingerprint, record.commandKey);
-      else if (retry && isExplicitRejection(failure)) commands.remember(record.fingerprint, record.commandKey, {
+      else if (!checkingProposal && retry && isExplicitRejection(failure)) commands.remember(record.fingerprint, record.commandKey, {
         ...record, retryRejection: displayAdminError(failure),
       });
       if (active.current) {
         sync();
-        if (retry && isExplicitRejection(failure)) setRejected(r => [...r, record.commandKey]);
-        setNotes(n => ({ ...n, [record.commandKey]: isExplicitRejection(failure) ? "原操作重试已被明确拒绝，可核对后解除待确认。" : "原请求已保留，结果仍待核实。" }));
+        if (!checkingProposal && retry && isExplicitRejection(failure)) setRejected(r => [...r, record.commandKey]);
+        setNotes(n => ({ ...n, [record.commandKey]: !checkingProposal && isExplicitRejection(failure) ? "原操作重试已被明确拒绝，可核对后解除待确认。" : "原请求已保留，结果仍待核实。" }));
         setTechnicalErrors(n => ({ ...n, [record.commandKey]: JSON.stringify(failure instanceof Error ? { ...failure, name: failure.name, message: failure.message } : failure, null, 2) }));
       }
       throw failure;
