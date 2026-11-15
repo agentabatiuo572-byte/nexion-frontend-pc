@@ -589,6 +589,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   CREGIS_BEP20_BOOTSTRAP_CHAIN_DRIFT: "BEP20 首次空库存对账未完成：取证期间链上区块发生变化，证据已失效。请核对链状态和原对账记录，重新完成完整对账。",
   CREGIS_BEP20_BOOTSTRAP_NOT_EMPTY_OR_READY: "BEP20 首次空库存对账条件不符：本地已有地址或资金历史、存在未解决风险，或资金和网络开关未全部关闭等准备条件未满足。请联系技术值班人员核对历史、风险、确认数和开关；不要绕过开关。",
   CREGIS_BEP20_BOOTSTRAP_PROVIDER_NOT_EMPTY: "BEP20 首次空库存对账未完成：收款服务的取证窗口内已有记录，不能按空库存确认。请核对供应商记录与本地资金历史，按正常完整对账流程处理。",
+  CREGIS_CREDITED_PROVIDER_MISMATCH: "完整对账没完成：有一笔已入账的充值和收款服务的记录对不上，已记为紧急告警；告警超过 5 分钟没解决会暂停收款和出款。请先核对这笔入金。",
   MATERIAL_REVISION_STALE: "材料版本已变化，请刷新原申请，旧版本核验或批准不能继续执行。",
   MATERIALS_NOT_SUBMITTED: "申请人尚未提交材料，暂不能批准。",
   MATERIALS_NEEDS_MORE: "请申请人按核验意见补交材料，再重新核验。",
