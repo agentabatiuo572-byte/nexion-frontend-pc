@@ -905,3 +905,11 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .rd-drawer .f5-trace-ops li:first-child { padding-top: 0; border-top: 0; }
 .rd-drawer .f5-trace-op-name { font-weight: var(--rd-weight-medium); }
 .rd-drawer .f5-trace-ops .f5-weak { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+
+/* 这周的钱怎么分：票数下面并排「本周估算」和「最近已结算」两块。 */
+.f4-page .f4-vote-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--rd-space-6); margin-top: var(--rd-space-4); padding-top: var(--rd-space-4); border-top: 1px solid var(--rd-line); }
+.f4-page .f4-vote-value { display: grid; gap: var(--rd-space-2); align-content: start; min-width: 0; }
+.f4-page .f4-vote-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); }
+.f4-page .f4-vote-note { margin: 0; color: var(--rd-text-2); }
+.f4-page .rd-stepbar + .rd-block-state { margin-top: var(--rd-space-4); }
+@media (max-width: 960px) { .f4-page .f4-vote-values { grid-template-columns: minmax(0, 1fr); } }
