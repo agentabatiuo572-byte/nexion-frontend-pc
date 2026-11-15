@@ -352,6 +352,10 @@ async function prepareI4DraftCommand(path: string, init: RequestInit, snapshot?:
   return sendI4DraftCommand(command, false);
 }
 
+export async function fetchI6LearningOverview(): Promise<I18nLearningOverview> {
+  return parseIOverview("I6", await apiRequest("/i18n-learning/overview")) as I18nLearningOverview;
+}
+
 export async function fetchI4TrustOverview(): Promise<TrustDisclosureOverview> {
   return parseIOverview("I4", await apiRequest("/trust-disclosure/overview")) as TrustDisclosureOverview;
 }

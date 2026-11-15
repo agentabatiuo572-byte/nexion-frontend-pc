@@ -9,9 +9,11 @@ import { formatAdminApiError, guardedFetch } from "./error-messages";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError } from "./outcome-classification";
 import type { A2OperationRow } from "./a2-client";
 
+import type { I6CommandSnapshot } from "./i-client";
+
 export type HIProposal = Parameters<typeof createA2OperationProposal>[0];
 type Payload = { kind: "proposal"; input: HIProposal } | { kind: "retire"; tierName: string; input: { reason: string; operator: string; confirmed: true; expectedSignature: string } };
-export type HIRewardCommand = PendingMutationRecord & { owner: number; scope: string; body: string; payload: Payload; form?: Record<string, string>; editValue?: string; receiptKnown?: boolean; ticketStatus?: A2OperationRow["status"] };
+export type HIRewardCommand = PendingMutationRecord & { owner: number; scope: string; body: string; payload: Payload; form?: Record<string, string>; editValue?: string; snapshot?: I6CommandSnapshot; receiptKnown?: boolean; ticketStatus?: A2OperationRow["status"] };
 const commands = createPendingMutationStore<HIRewardCommand>({
   storageKey: "nexion-admin-hi-reward-commands-v1", retainExpiredRecords: true,
   isValidRecord: r => Number.isSafeInteger(r.owner) && typeof r.scope === "string" && typeof r.body === "string"
@@ -149,14 +151,14 @@ export async function releaseExpiredI6CourseProposal(saved: HIRewardCommand): Pr
 }
 
 /** The complete envelope is saved before dispatch; an unresolved scope can only replay its original envelope. */
-export async function submitHIRewardCommand(scope: string, payload: Payload, form?: Record<string, string>, editValue?: string) {
+export async function submitHIRewardCommand(scope: string, payload: Payload, form?: Record<string, string>, editValue?: string, snapshot?: I6CommandSnapshot) {
   const session = useAdminAuth.getState().session;
   if (!session) throw new Error("登录已失效，请重新登录后核对原操作。");
   const previous = pendingHIRewardCommand(scope);
   if (payload.kind === "proposal" && payload.input.command.domain === "I") {
     if (previous) throw new Error("此对象有原操作尚未核清，请先查询原结果。");
     const key = createA2CommandKey(payload.input.command.op), fingerprint = `${session.adminId}:${scope}`;
-    const draft: HIRewardCommand = { owner: session.adminId, scope, payload, body: JSON.stringify(payload.input), form, editValue,
+    const draft: HIRewardCommand = { owner: session.adminId, scope, payload, body: JSON.stringify(payload.input), form, editValue, snapshot,
       fingerprint, commandKey: key, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 };
     const permission = i6CourseProposalPermission(draft);
     if (permission) throw new Error(permission);
