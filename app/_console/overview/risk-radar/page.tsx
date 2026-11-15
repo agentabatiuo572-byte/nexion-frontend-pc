@@ -393,7 +393,10 @@ export default function RiskRadarPage() {
     } catch (cause) {
       // 分诊只留一条审计，失败了如实说没成功、重新点一次即可（决定 B4-PD02）；没有权限时再点也一样，不叫人再点。
       const forbidden = cause instanceof B5RequestError && cause.status === 403;
-      setToast(`${forbidden ? "没有跳转：分诊记录没记上。" : "没有跳转：分诊记录没记上，请再点一次。"}${cause instanceof B5OutcomeUnknownError ? "" : cause instanceof Error ? displayAdminReadError(cause) : ""}`);
+      // 后端统一拒绝页只回「无权限访问」四个字，没有句号、也不说怎么办；换成全站的无权限说明，接在后面读得通。
+      const reason = forbidden && cause.backendMessage === "无权限访问" ? formatAdminApiError("ADMIN_PERMISSION_DENIED", "ADMIN_PERMISSION_DENIED")
+        : cause instanceof B5OutcomeUnknownError ? "" : cause instanceof Error ? displayAdminReadError(cause) : "";
+      setToast(`${forbidden ? "没有跳转：分诊记录没记上。" : "没有跳转：分诊记录没记上，请再点一次。"}${reason}`);
     } finally {
       setTriaging(null);
     }
