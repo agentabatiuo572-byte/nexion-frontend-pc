@@ -14,7 +14,7 @@ import Link from "next/link";
 import { Archive, BadgeCheck, BookOpen, CircleSlash, CodeXml, Eye, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import { fetchI6LearningOverview, i6RetryPermission, pendingI6Commands, queryI6Command, retryI6Command, type I6Command, type I6CommandSnapshot, type I18nMessagePairView, type LearningCourseVersionView, type LearningCourseView } from "@/lib/admin/i-client";
-import type { ActionConfirmReq, ICtx } from "./types";
+import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { PaginationExemptionList } from "../design-kit";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -216,7 +216,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const [notFoundKeys, setNotFoundKeys] = useState<string[]>([]);
   const [releasing, setReleasing] = useState<HIRewardCommand | null>(null);
   const [ordinaryBusy, setOrdinaryBusy] = useState("");
-  const courseConfirm = useRef<{ scope: string; request: ActionConfirmReq; versions?: LearningCourseVersionView[] } | null>(null);
+  const courseConfirm = useRef<{ scope: string; request: ActionConfirmReq; versions?: LearningCourseVersionView[]; commandKey: () => string | undefined; finish: () => void } | null>(null);
+  const recoveryConfirm = useRef<{ commandKey: () => string | undefined; finish: () => void } | null>(null);
   const reloadCourseApprovals = async () => {
     if (view !== "learn") return;
     const records = pendingHIRewardCommands().filter(record => record.scope.startsWith("I/"));
@@ -231,15 +232,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     } catch {
       setCourseApprovals("error");
     }
-    const closedCourses = new Set(results.flatMap(result => result.status === "fulfilled" && result.value && result.value.status !== "pending" ? [result.value.obj] : []));
-    if (closedCourses.size) {
+    const closedCommands = results.flatMap((result, index) => result.status === "fulfilled" && result.value && result.value.status !== "pending" ? [records[index].commandKey] : []);
+    if (closedCommands.length) {
       readReady.current = false;
-      const confirmation = courseConfirm.current;
-      if (confirmation?.scope.startsWith("course:") && closedCourses.has(confirmation.scope.slice(7))) {
-        ctx.closeActionConfirm(confirmation.request);
-        courseConfirm.current = null;
-      }
-      setCourseEditor(current => current?.courseId && closedCourses.has(current.courseId) ? null : current);
+      const confirmation = recoveryConfirm.current;
+      if (confirmation && closedCommands.includes(confirmation.commandKey() ?? "")) confirmation.finish();
       await actions.reloadIContent();
     }
     updateRecovery(value => value + 1);
@@ -283,10 +280,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     if (proposal) return proposal.receiptKnown ? "这门课的申请已提交，审批状态还没查到；先点「查询原结果」。" : "此对象有结果未知的原操作，请先查询原结果。";
     return undefined;
   };
-  const finishRecovery = async () => {
+  const finishRecovery = async (commandKey?: string, finish?: () => void) => {
     readReady.current = false;
-    ctx.closeActionConfirm(); ctx.closeConfirm();
-    setCopyEditor(null); setCourseEditor(null);
+    if (finish) finish();
+    else {
+      const confirmation = recoveryConfirm.current;
+      if (commandKey && confirmation?.commandKey() === commandKey) confirmation.finish();
+    }
     await actions.reloadIContent();
     updateRecovery(value => value + 1);
   };
@@ -295,6 +295,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const blocked = newWriteProblem(scope);
     if (blocked) { toast(blocked, "warn"); return; }
     const openedData = latest.current.content.i18nLearning;
+    const openedCopyEditor = copyEditor, openedCourseEditor = courseEditor;
+    const finish = () => {
+      ctx.closeActionConfirm(confirmation);
+      setCopyEditor(current => current === openedCopyEditor ? null : current);
+      setCourseEditor(current => current === openedCourseEditor ? null : current);
+      if (courseConfirm.current?.request === confirmation) courseConfirm.current = null;
+    };
     let original: I6Command | undefined, proposal: HIRewardCommand | undefined, resolved = false;
     const carried = prefill.current?.scope === scope ? prefill.current : null;
     prefill.current = null;
@@ -304,7 +311,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       getPendingReason: () => original ? pendingI6Commands().find(row => row.commandKey === original!.commandKey)?.reason
         : proposal ? pendingHIRewardCommands().find(row => row.commandKey === proposal!.commandKey)?.payload.input.reason : undefined,
       run: async (reason, value, form) => {
-        if (resolved) { ctx.closeActionConfirm(); throw new Error("原操作已处理，请重新打开修改入口。"); }
+        if (resolved) { ctx.closeActionConfirm(confirmation); throw new Error("原操作已处理，请重新打开修改入口。"); }
         if (original || proposal) {
           try {
             if (original) { await retryI6Command(original); toast(`${original.label} · 已核对原操作`); }
@@ -313,11 +320,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               toast(ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
             }
             resolved = true;
-            await finishRecovery();
+            await finishRecovery(undefined, finish);
           } catch (error) {
             const remains = original ? pendingI6Commands().some(row => row.commandKey === original!.commandKey)
               : pendingHIRewardCommands().some(row => row.commandKey === proposal!.commandKey);
-            if (!remains) { resolved = true; await finishRecovery(); }
+            if (!remains) { resolved = true; await finishRecovery(undefined, finish); }
             throw error;
           } finally { updateRecovery(current => current + 1); }
           return;
@@ -333,13 +340,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           return false;
         }
         if (openedData !== currentData && !unchangedCourse) {
-          ctx.closeActionConfirm(); throw new Error("数据已重新读取，请按最新内容重新打开修改入口。");
+          throw new Error("数据已重新读取，请按最新内容重新打开修改入口。");
         }
         try {
           const result = await request.run(reason, value, form);
           if (result === false) return false;
           resolved = true;
-          await finishRecovery();
+          await finishRecovery(undefined, finish);
         } catch (error) {
           const key = (error as { commandKey?: string }).commandKey;
           original = key ? pendingI6Commands().find(row => row.commandKey === key) : undefined;
@@ -357,7 +364,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         } finally { updateRecovery(current => current + 1); }
       },
     };
-    courseConfirm.current = { scope, request: confirmation, versions };
+    courseConfirm.current = { scope, request: confirmation, versions, commandKey: () => original?.commandKey ?? proposal?.commandKey, finish };
+    recoveryConfirm.current = courseConfirm.current;
     openActionConfirm(confirmation);
   };
   useEffect(() => {
@@ -474,7 +482,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const blocked = newWriteProblem("rescan");
     if (blocked) { toast(blocked, "warn"); return; }
     let original: I6Command | undefined, resolved = false;
-    openConfirm({ briefKind: "record",
+    const confirmation: ConfirmReq = { briefKind: "record",
       freezePendingInput: true, replayPendingInput: true,
       getPendingReason: () => original ? pendingI6Commands().find(row => row.commandKey === original!.commandKey)?.reason : undefined,
       action: <>全量重扫 {I6_STATS.managedKeys} 词条</>,
@@ -485,7 +493,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       remarkHint: "选填，不会保存",
       okLabel: "开始检查",
       run: async () => {
-        if (resolved) { ctx.closeConfirm(); return false; }
+        if (resolved) { ctx.closeConfirm(confirmation); return false; }
         try {
           if (original) await runBackend(retryI6Command(original), "检查完成，请看下表的问题");
           else {
@@ -494,14 +502,16 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             await runBackend(actions.rescanI6("全量重扫词条完整性"), "检查完成，请看下表的问题");
           }
           resolved = true;
-          await finishRecovery();
+          await finishRecovery(undefined, () => ctx.closeConfirm(confirmation));
         } catch (error) {
-          if (original && !pendingI6Commands().some(row => row.commandKey === original!.commandKey)) { resolved = true; await finishRecovery(); }
+          if (original && !pendingI6Commands().some(row => row.commandKey === original!.commandKey)) { resolved = true; await finishRecovery(undefined, () => ctx.closeConfirm(confirmation)); }
           else original = pendingI6Commands().find(row => row.scope === "rescan");
           throw new Error(`操作失败:${displayAdminError(error)}`);
         } finally { updateRecovery(value => value + 1); }
       },
-    });
+    };
+    recoveryConfirm.current = { commandKey: () => original?.commandKey, finish: () => ctx.closeConfirm(confirmation) };
+    openConfirm(confirmation);
   };
 
   const editKeyDraft = (form: Pick<CopyEditor, "zh" | "en" | "vi">) => selectedMessage &&
@@ -1267,10 +1277,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     try {
       await retryI6Command(record);
       toast(`${record.label} · 已按原请求完成`);
-      await finishRecovery();
+      await finishRecovery(record.commandKey);
     } catch (error) {
       toast(`操作失败:${displayAdminError(error)}`, "warn");
-      if (!pendingI6Commands().some((row) => row.commandKey === record.commandKey)) await finishRecovery();
+      if (!pendingI6Commands().some((row) => row.commandKey === record.commandKey)) await finishRecovery(record.commandKey);
     } finally { setOrdinaryBusy(""); updateRecovery((value) => value + 1); }
   };
   // 课程操作写课程名，和同一列表里的审批行一致；文案操作写文案键（表格里也是它）。
@@ -1312,7 +1322,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             toast(ticket?.status === "pending" ? "已提交，等待审批后执行"
               : ticket ? "已查询到原审批单，请在操作记录核对执行状态"
                 : isRetryExpired(record) ? "没查到这张审批单。" : "还没查到原审批单，记录继续保留。", "warn");
-            if (ticket && ticket.status !== "pending") await finishRecovery();
+            if (ticket && ticket.status !== "pending") await finishRecovery(record.commandKey);
             else await reloadCourseApprovals();
           } catch (error) {
             toast(displayAdminError(error), "warn");
@@ -1344,7 +1354,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 <Button size="sm" disabled={!!lookupKey && lookupKey !== record.commandKey} loading={lookupKey === record.commandKey} onClick={() => void lookupExpired(record)}>查询原结果</Button>
                 {!record.receiptKnown && expired && notFoundKeys.includes(record.commandKey) && record.ticketStatus !== "pending" && <Button size="sm" variant="primary" disabled={!!lookupKey} onClick={() => setReleasing(record)}>确认解除</Button>}
                 {!queryOnly && <Button size="sm" variant="primary" disabled={!!lookupKey}
-                  onClick={() => openActionConfirm({ briefKind: "record",
+                  onClick={() => {
+                  const confirmation: ActionConfirmReq = { briefKind: "record",
                   action: `核对原操作 · ${label}`,
                   title: "按原请求重试",
                   detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原请求查审批单；查不到才按原请求原样重发，不会重复建单。理由沿用原操作。</>,
@@ -1357,13 +1368,16 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                     try {
                       const ticket = await retryI6CourseProposal(record);
                       toast(ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态");
-                      await finishRecovery();
+                      await finishRecovery(record.commandKey);
                     } catch (error) {
-                      if (!pendingHIRewardCommands().some(row => row.commandKey === record.commandKey)) await finishRecovery();
+                      if (!pendingHIRewardCommands().some(row => row.commandKey === record.commandKey)) await finishRecovery(record.commandKey);
                       throw error;
                     } finally { updateRecovery(value => value + 1); }
                   },
-                })}>按原请求重试</Button>}
+                };
+                  recoveryConfirm.current = { commandKey: () => record.commandKey, finish: () => ctx.closeActionConfirm(confirmation) };
+                  openActionConfirm(confirmation);
+                }}>按原请求重试</Button>}
                 </span>
                 {record.receiptKnown && record.ticketStatus !== "pending" && <span className="i6-pending-note">审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。</span>}
                 {!record.receiptKnown && expired && notFoundKeys.includes(record.commandKey) && <span className="i6-pending-note">按原请求查不到这张审批单，说明没建成；核对后可以确认解除。</span>}
@@ -1384,7 +1398,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             onCancel={() => setReleasing(null)} onConfirm={() => {
               const record = releasing;
               setReleasing(null);
-              void releaseExpiredI6CourseProposal(record).then(() => { toast("已解除，这门课可以重新提交"); return finishRecovery(); },
+              void releaseExpiredI6CourseProposal(record).then(() => { toast("已解除，这门课可以重新提交"); return finishRecovery(record.commandKey); },
                 (error) => toast(displayAdminError(error), "warn")).finally(() => { setNotFoundKeys((keys) => keys.filter((key) => key !== record.commandKey)); updateRecovery((value) => value + 1); });
             }} />}
         </Panel>;

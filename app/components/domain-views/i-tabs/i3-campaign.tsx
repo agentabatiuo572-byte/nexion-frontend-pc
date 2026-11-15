@@ -213,14 +213,24 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     if (conflictReview.blockedReason()) throw new Error(conflictReview.blockedReason());
     if (newMutationBlocked.current || latestRead.current !== openedData) throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
   };
-  const refreshAfterMutation = async () => {
+  const recoveryConfirm = useRef<{ key: () => string | undefined; close: () => void } | null>(null);
+  const recoveryEditors = useRef({ drawer: drawerPendingKey, schedule: schedulePendingKey });
+  recoveryEditors.current = { drawer: drawerPendingKey, schedule: schedulePendingKey };
+  const refreshAfterMutation = async (record?: I3Command | I3CapCommand) => {
     if (!active.current) return;
     readBarrier.current = latestRead.current;
     newMutationBlocked.current = "最新数据没读到";
     setRequiresReload(true);
-    ctx.closeActionConfirm(); ctx.closeConfirm();
-    setNewOpen(false); setEditing(null); setDrawerPendingKey(null);
-    setScheduleRow(null); setSchedulePendingKey(null);
+    if (record) {
+      const confirmation = recoveryConfirm.current;
+      if (confirmation?.key() === record.commandKey) confirmation.close();
+      if (recoveryEditors.current.drawer === record.commandKey) { setNewOpen(false); setEditing(null); setDrawerPendingKey(null); }
+      if (recoveryEditors.current.schedule === record.commandKey) { setScheduleRow(null); setSchedulePendingKey(null); }
+    } else {
+      ctx.closeActionConfirm(); ctx.closeConfirm();
+      setNewOpen(false); setEditing(null); setDrawerPendingKey(null);
+      setScheduleRow(null); setSchedulePendingKey(null);
+    }
     syncPending();
     await actions.reloadIContent();
   };
@@ -242,10 +252,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     } catch (error) {
       syncPending();
       const retained = [...pendingI3Commands(), ...pendingI3CapCommands()].some((row) => row.commandKey === record.commandKey);
-      if (!retained) await refreshAfterMutation();
+      if (!retained) await refreshAfterMutation(record);
       throw new Error(displayAdminError(error));
     }
-    await refreshAfterMutation();
+    await refreshAfterMutation(record);
     return true;
   };
   const openActionConfirm = (req: ActionConfirmReq, restored?: I3Command | I3CapCommand, cap = false) => {
@@ -255,7 +265,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     const original = () => (cap ? pendingI3CapCommands() : pendingI3Commands()).find((row) => row.commandKey === key);
     const carried = restored ? null : prefill.current;
     prefill.current = null;
-    ctx.openActionConfirm({ ...req, getPendingReason: () => original()?.reason, initialReason: carried?.reason,
+    const confirmation: ActionConfirmReq = { ...req, getPendingReason: () => original()?.reason, initialReason: carried?.reason,
       edit: req.edit && restored && "after" in restored ? { ...req.edit, initialValue: restored.after } : req.edit && carried?.value ? { ...req.edit, initialValue: carried.value } : req.edit,
       run: async (reason, value, business) => {
         if (key) {
@@ -274,7 +284,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           throw new Error(displayAdminError(error));
         }
       },
-    });
+    };
+    recoveryConfirm.current = { key: () => key, close: () => ctx.closeActionConfirm(confirmation) };
+    ctx.openActionConfirm(confirmation);
   };
   const openConfirm = (req: ConfirmReq, restored?: I3Command) => {
     if (!restored) { try { requireNewMutation(); } catch (error) { toast(displayAdminError(error)); return; } }
@@ -283,7 +295,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     const original = () => pendingI3Commands().find((row) => row.commandKey === key);
     const carried = restored ? null : prefill.current;
     prefill.current = null;
-    ctx.openConfirm({ ...req, initialReason: carried?.reason, initialInputValue: carried?.value, errorHandled: false, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason,
+    const confirmation: ConfirmReq = { ...req, initialReason: carried?.reason, initialInputValue: carried?.value, errorHandled: false, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason,
       run: async (reason, value) => {
         if (key) {
           const record = original();
@@ -293,7 +305,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         try { requireNewMutation(openedData); return await req.run(reason, value); }
         catch (error) { const candidate = (error as { commandKey?: string }).commandKey; key = pendingI3Commands().find((row) => row.commandKey === candidate)?.commandKey; if (await reviewConflict(error, { reason, value })) ctx.closeConfirm(); syncPending(); throw new Error(displayAdminError(error)); }
       },
-    });
+    };
+    recoveryConfirm.current = { key: () => key, close: () => ctx.closeConfirm(confirmation) };
+    ctx.openConfirm(confirmation);
   };
 
   useEffect(() => {
@@ -749,7 +763,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         const ticket = await queryI3CapCommand(record);
         if (ticket) {
           toast(ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${I3_TICKET[ticket.status]}`);
-          if (ticket.status !== "pending") await refreshAfterMutation();
+          if (ticket.status !== "pending") await refreshAfterMutation(record);
         } else {
           setAbsentCaps((prev) => ({ ...prev, [record.commandKey]: true }));
           toast("没有查到原审批单，原操作记录继续保留。");

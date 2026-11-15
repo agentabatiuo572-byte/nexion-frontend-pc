@@ -194,7 +194,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
     activeActionConfirm: mc,
     closeActionConfirm: (request) => setActionConfirm(current => !request || current === request ? null : current),
     openConfirm: setCf,
-    closeConfirm: () => setCf(null),
+    closeConfirm: (request) => setCf(current => !request || current === request ? null : current),
     content,
     actions,
     contentLoading,
@@ -231,14 +231,14 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
           onBusinessSelectionChange={mc.onBusinessSelectionChange}
-          onClose={() => setActionConfirm(null)}
+          onClose={() => setActionConfirm(current => current === mc ? null : current)}
           onConfirm={async (reason, newValue, businessValue) => {
             const succeeded = await mc.run(reason, newValue, businessValue);
-            if (succeeded !== false) setActionConfirm(null);
+            if (succeeded !== false) setActionConfirm(current => current === mc ? null : current);
           }}
         />
       )}
-      {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
+      {cf && <KConfirmModal req={cf} onClose={() => setCf(current => current === cf ? null : current)} />}
       {toastNode}
     </>
   );

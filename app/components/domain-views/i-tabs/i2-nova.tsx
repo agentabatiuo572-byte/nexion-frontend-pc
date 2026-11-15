@@ -103,17 +103,25 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const lockReason = (target: string) => newMutationReason || (pending.some((row) => !row.original || row.target === target
     || target.startsWith("channel-name:") && row.original.method === "POST" && row.original.path === "/nova/channels"
       && row.object.trim() === target.slice("channel-name:".length)) ? "此对象有结果未知的原操作，请先到页面上方核对。" : undefined);
-  const refreshAfterMutation = async () => {
-    // Idempotent replay returns an old receipt. Close stale forms and wait for a successful fresh overview.
+  const recoveryConfirm = useRef<{ key: () => string | undefined; close: () => void } | null>(null);
+  const recoveryEditors = useRef<{ drawer: string | null }>({ drawer: null });
+  const refreshAfterMutation = async (record?: I2Command) => {
+    // Idempotent replay returns a historical receipt. Preserve other drafts while requiring a fresh overview.
     readBarrier.current = latestRead.current;
     newMutationBlocked.current = "最新数据没读到";
     setRequiresReload(true);
-    ctx.closeActionConfirm();
-    ctx.closeConfirm();
-    setNovaDrawer(false);
-    setDrawerPendingKey(null);
-    setTplDrawer(false);
-    setDistDrawer(false);
+    if (record) {
+      const confirmation = recoveryConfirm.current;
+      if (confirmation?.key() === record.commandKey) confirmation.close();
+      if (recoveryEditors.current.drawer === record.commandKey) { setNovaDrawer(false); setDrawerPendingKey(null); }
+    } else {
+      ctx.closeActionConfirm();
+      ctx.closeConfirm();
+      setNovaDrawer(false);
+      setDrawerPendingKey(null);
+      setTplDrawer(false);
+      setDistDrawer(false);
+    }
     syncPending();
     await actions.reloadIContent();
   };
@@ -123,13 +131,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     } catch (error) {
       syncPending();
       if (!pendingI2Commands().some((row) => row.commandKey === record.commandKey)) {
-        await refreshAfterMutation();
+        await refreshAfterMutation(record);
         toast(`操作失败:${displayAdminError(error)}`);
         return false;
       }
       throw new Error(`操作失败:${displayAdminError(error)}`);
     }
-    await refreshAfterMutation();
+    await refreshAfterMutation(record);
     toast(`${record.action} · ${record.object}`);
   };
   const openActionConfirm = (req: ActionConfirmReq) => {
@@ -137,7 +145,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const openedData = data;
     let pendingKey: string | undefined;
     const original = () => pendingI2Commands().find((row) => row.commandKey === pendingKey);
-    ctx.openActionConfirm({ ...req, getPendingReason: () => original()?.reason,
+    const confirmation: ActionConfirmReq = { ...req, getPendingReason: () => original()?.reason,
       run: async (reason, value, businessForm) => {
         if (pendingKey) {
           const record = original();
@@ -158,14 +166,16 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           throw new Error(`操作失败:${displayAdminError(error)}`);
         }
       },
-    });
+    };
+    recoveryConfirm.current = { key: () => pendingKey, close: () => ctx.closeActionConfirm(confirmation) };
+    ctx.openActionConfirm(confirmation);
   };
   const openConfirm = (req: ConfirmReq) => {
     if (newMutationBlocked.current) { toast(newMutationBlocked.current); return; }
     const openedData = data;
     let pendingKey: string | undefined;
     const original = () => pendingI2Commands().find((row) => row.commandKey === pendingKey);
-    ctx.openConfirm({ ...req, errorHandled: false, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason,
+    const confirmation: ConfirmReq = { ...req, errorHandled: false, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason,
       run: async (reason, value) => {
         if (pendingKey) {
           const record = original();
@@ -189,7 +199,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           throw new Error(`操作失败:${displayAdminError(error)}`);
         }
       },
-    });
+    };
+    recoveryConfirm.current = { key: () => pendingKey, close: () => ctx.closeConfirm(confirmation) };
+    ctx.openConfirm(confirmation);
   };
   const restore = async (record: I2Command) => {
     if (recoveryInFlight.current) return;
@@ -241,6 +253,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [editNovaKey, setEditNovaKey] = useState<string | null>(null);
   const [form, setForm] = useState<NovaForm>(EMPTY_FORM);
   const [drawerPendingKey, setDrawerPendingKey] = useState<string | null>(null);
+  recoveryEditors.current = { drawer: drawerPendingKey };
   const [drawerSubmitting, setDrawerSubmitting] = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
   const drawerInFlight = useRef(false);

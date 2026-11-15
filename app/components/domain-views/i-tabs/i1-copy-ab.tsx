@@ -206,15 +206,21 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     if (requiresReload && data && data !== readBarrier.current && !contentLoading && !errorText) setRequiresReload(false);
   }, [requiresReload, data, contentLoading, errorText]);
 
-  const refreshAfterMutation = async () => {
-    // A replay returns the old receipt. Close every confirmation based on the old overview before rereading.
+  const recoveryConfirm = useRef<{ key: () => string | undefined; close: () => void } | null>(null);
+  const refreshAfterMutation = async (record?: I1Command) => {
+    // A replay returns a historical receipt. Retire only its own confirmation and require a fresh overview.
     readBarrier.current = latestRead.current;
     newMutationBlocked.current = "数据没有读到最新，请重新加载";
     setRequiresReload(true);
-    ctx.closeActionConfirm();
-    ctx.closeConfirm?.();
-    setEditor(null);
-    setCreatingExperiment(false);
+    if (record) {
+      const confirmation = recoveryConfirm.current;
+      if (confirmation?.key() === record.commandKey) confirmation.close();
+    } else {
+      ctx.closeActionConfirm();
+      ctx.closeConfirm?.();
+      setEditor(null);
+      setCreatingExperiment(false);
+    }
     syncPending();
     await actions.reloadIContent();
   };
@@ -224,13 +230,13 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     } catch (error) {
       syncPending();
       if (!pendingI1Commands().some((row) => row.commandKey === record.commandKey)) {
-        await refreshAfterMutation();
+        await refreshAfterMutation(record);
         toast(`操作失败:${displayAdminError(error)}`);
         return false;
       }
       throw new Error(`操作失败:${displayAdminError(error)}`);
     }
-    await refreshAfterMutation();
+    await refreshAfterMutation(record);
     toast(`${record.label} · ${record.target.slice(record.target.indexOf(":") + 1)}`);
   };
   const openActionConfirm = (req: ActionConfirmReq) => {
@@ -241,7 +247,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     const original = () => pendingI1Commands().find((row) => row.commandKey === pendingKey);
     const carried = prefill.current;
     prefill.current = null;
-    ctx.openActionConfirm({ ...req,
+    const confirmation: ActionConfirmReq = { ...req,
       initialReason: carried?.reason,
       getPendingReason: () => original()?.reason,
       getPendingBusinessValue: () => original() ? savedBusiness : carried?.business,
@@ -270,7 +276,9 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           throw new Error(`操作失败:${displayAdminError(error)}`);
         }
       },
-    });
+    };
+    recoveryConfirm.current = { key: () => pendingKey, close: () => ctx.closeActionConfirm(confirmation) };
+    ctx.openActionConfirm(confirmation);
   };
   const openConfirm = (req: ConfirmReq) => {
     if (newMutationBlocked.current) { toast(newMutationBlocked.current); return; }
@@ -280,7 +288,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     const original = () => pendingI1Commands().find((row) => row.commandKey === pendingKey);
     const carried = prefill.current;
     prefill.current = null;
-    ctx.openConfirm({ ...req, initialReason: carried?.reason, initialInputValue: carried?.value, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason, getPendingValue: () => original() ? savedValue : undefined,
+    const confirmation: ConfirmReq = { ...req, initialReason: carried?.reason, initialInputValue: carried?.value, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason, getPendingValue: () => original() ? savedValue : undefined,
       run: async (reason, value) => {
         if (pendingKey) {
           const record = original();
@@ -300,7 +308,9 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           throw new Error(`操作失败:${displayAdminError(error)}`);
         }
       },
-    });
+    };
+    recoveryConfirm.current = { key: () => pendingKey, close: () => ctx.closeConfirm(confirmation) };
+    ctx.openConfirm(confirmation);
   };
   const restore = async (record: I1Command) => {
     if (retryInFlight.current) return;

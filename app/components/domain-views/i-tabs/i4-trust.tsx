@@ -123,14 +123,14 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const [recovering, setRecovering] = useState<string | null>(null);
   const [sectionNotFound, setSectionNotFound] = useState<string[]>([]);
   const [releasingSection, setReleasingSection] = useState<I4SectionCommand | null>(null);
-  const sectionConfirm = useRef<{ key: string; request: ActionConfirmReq } | null>(null);
+  const sectionConfirm = useRef<{ key: string; request: ActionConfirmReq; commandKey: () => string | undefined } | null>(null);
   const inFlight = useRef(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [editorCommandKey, setEditorCommandKey] = useState<string | null>(null);
   const [mustRead, setMustRead] = useState(false);
   const invalidatedData = useRef(data);
-  const latest = useRef({ data, errorText, contentLoading, mustRead, draftEditor });
-  latest.current = { data, errorText, contentLoading, mustRead, draftEditor };
+  const latest = useRef({ data, errorText, contentLoading, mustRead, draftEditor, editorCommandKey });
+  latest.current = { data, errorText, contentLoading, mustRead, draftEditor, editorCommandKey };
   const syncCommands = () => { setDraftCommands(pendingI4DraftCommands()); setSectionCommands(pendingI4SectionCommands()); setDocumentCommands(pendingI4DocumentCommands()); };
   useEffect(() => { syncCommands(); }, []);
   useEffect(() => {
@@ -142,8 +142,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     void Promise.allSettled(originals.map(queryI4SectionCommand)).then(results => {
       if (!active) return;
       syncCommands();
-      const closedKeys = results.flatMap((result, index) => result.status === "fulfilled" && result.value && result.value.status !== "pending" ? [originals[index].sectionKey] : []);
-      if (closedKeys.length) void rereadAfterResolution(closedKeys);
+      const closedKeys = results.flatMap((result, index) => result.status === "fulfilled" && result.value && result.value.status !== "pending" ? [originals[index]] : []);
+      if (closedKeys.length) void rereadAfterResolution(closedKeys.map(row => row.sectionKey), closedKeys.map(row => row.commandKey));
     });
     return () => { active = false; };
   }, [data]);
@@ -171,14 +171,16 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       && ["published", "superseded", "PUBLISHED", "SUPERSEDED"].includes(row.status)
       && (row.version !== section.v || section.status.toLowerCase() === "archived"))
     .map((row) => row.version);
-  const rereadAfterResolution = async (sectionKeys: string[]) => {
+  const rereadAfterResolution = async (sectionKeys: string[], commandKeys: string[]) => {
     invalidatedData.current = latest.current.data;
     setMustRead(true);
-    if (latest.current.draftEditor && sectionKeys.includes(latest.current.draftEditor.sectionKey)) {
+    if (latest.current.draftEditor && sectionKeys.includes(latest.current.draftEditor.sectionKey)
+      && commandKeys.includes(latest.current.editorCommandKey ?? "")) {
       setDraftEditor(null); setEditorCommandKey(null);
     }
     const confirmation = sectionConfirm.current;
-    if (confirmation && sectionKeys.includes(confirmation.key)) {
+    if (confirmation && sectionKeys.includes(confirmation.key)
+      && commandKeys.includes(confirmation.commandKey() ?? "")) {
       ctx.closeActionConfirm(confirmation.request);
       sectionConfirm.current = null;
     }
@@ -195,9 +197,12 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     return proposing ? i4SectionPermission(key, section.highSensitivity) : i4DraftPermission();
   };
   const runBackend = async (task: () => Promise<void>, ok: string, sectionKey: string, requested: NonNullable<typeof conflictReview.review>["requested"]): Promise<boolean> => {
+    const confirmation = requested.draftEditor ? null : sectionConfirm.current;
     try {
       await task();
-      await rereadAfterResolution([sectionKey]);
+      if (requested.draftEditor) setDraftEditor(current => current === requested.draftEditor ? null : current);
+      if (confirmation) ctx.closeActionConfirm(confirmation.request);
+      await rereadAfterResolution([sectionKey], []);
       toast(ok);
       return true;
     } catch (error) {
@@ -207,6 +212,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     finally { syncCommands(); }
   };
   const proposeTrustSection = async (_attemptKey: string, fingerprint: string, spec: ProposeSpec) => {
+    const confirmation = sectionConfirm.current;
     const section = TRUST_SECTIONS.find(row => row.key === spec.obj)!;
     const result = await proposeI4Section(spec, fingerprint, {
       section: { ...section, version: section.v }, current: currentVersionOf(section),
@@ -214,7 +220,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       otherIssues: othersBroken(spec.obj),
     });
     toast(result.status === "pending" ? "已提交，等待审批后执行" : `原申请${statusZh(result.status)}`);
-    await rereadAfterResolution([spec.obj]);
+    if (confirmation) ctx.closeActionConfirm(confirmation.request);
+    await rereadAfterResolution([spec.obj], []);
     return true;
   };
   const openTrustConfirm = (req: ActionConfirmReq, key: string, original?: I4SectionCommand | I4DraftCommand) => {
@@ -240,10 +247,10 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           try {
             if ("version" in command) await retryI4DraftCommand(command);
             else await retryI4SectionCommand(command);
-            await rereadAfterResolution([key]);
+            await rereadAfterResolution([key], [command.commandKey]);
             return true;
           } catch (error) {
-            if (![...pendingI4DraftCommands(), ...pendingI4SectionCommands()].some(row => row.commandKey === command.commandKey)) await rereadAfterResolution([key]);
+            if (![...pendingI4DraftCommands(), ...pendingI4SectionCommands()].some(row => row.commandKey === command.commandKey)) await rereadAfterResolution([key], [command.commandKey]);
             throw error;
           } finally { syncCommands(); }
         }
@@ -262,7 +269,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         finally { originalKey = saved()?.commandKey; syncCommands(); }
       },
     };
-    sectionConfirm.current = { key, request: confirmation };
+    sectionConfirm.current = { key, request: confirmation, commandKey: () => originalKey };
     openActionConfirm(confirmation);
   };
 
@@ -330,6 +337,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       toast("现在公开的版本没有内容模板，不能新建草稿");
       return;
     }
+    setEditorCommandKey(null);
     setDraftEditor({
       mode: "create",
       sectionKey: s.key,
@@ -350,6 +358,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       toast("草稿的内容模板已过期，删掉后基于现在公开的版本新建");
       return;
     }
+    setEditorCommandKey(null);
     setDraftEditor({
       mode: "edit",
       sectionKey: draft.sectionKey,
@@ -623,7 +632,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     inFlight.current = true; setRecovering(record.commandKey);
     if (retry) setSavingDraft(true);
     try {
-      if (retry) { await retryI4DraftCommand(record); await rereadAfterResolution([record.sectionKey]); toast(`${record.sectionKey} ${record.version} 草稿已${record.action === "delete" ? "删除" : "保存"}`); }
+      if (retry) { await retryI4DraftCommand(record); await rereadAfterResolution([record.sectionKey], [record.commandKey]); toast(`${record.sectionKey} ${record.version} 草稿已${record.action === "delete" ? "删除" : "保存"}`); }
       else {
         const current = await fetchI4TrustOverview();
         const row = current.trustSectionVersions.find(row => row.sectionKey === record.sectionKey && row.version === record.version);
@@ -632,7 +641,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       }
     } catch (error) {
       toast(displayAdminError(error));
-      if (!pendingI4DraftCommands().some(row => row.commandKey === record.commandKey)) await rereadAfterResolution([record.sectionKey]);
+      if (!pendingI4DraftCommands().some(row => row.commandKey === record.commandKey)) await rereadAfterResolution([record.sectionKey], [record.commandKey]);
     } finally { inFlight.current = false; setRecovering(null); if (retry) setSavingDraft(false); syncCommands(); }
   };
   const recoverSection = async (record: I4SectionCommand) => {
@@ -643,7 +652,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       if (!ticket && !record.receiptKnown && isRetryExpired(record)) setSectionNotFound(keys => keys.includes(record.commandKey) ? keys : [...keys, record.commandKey]);
       toast(ticket ? ticket.status === "pending" ? "已提交，等待审批后执行" : `原申请${statusZh(ticket.status)}`
         : !record.receiptKnown && isRetryExpired(record) ? "没查到这张审批单。" : "还没查到原审批单，记录继续保留。");
-      if (ticket && ticket.status !== "pending") await rereadAfterResolution([record.sectionKey]);
+      if (ticket && ticket.status !== "pending") await rereadAfterResolution([record.sectionKey], [record.commandKey]);
     } catch (error) { toast(displayAdminError(error)); }
     finally { inFlight.current = false; setRecovering(null); syncCommands(); }
   };
@@ -696,7 +705,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   ];
   const releaseSection = async (record: I4SectionCommand) => {
     setReleasingSection(null);
-    try { await releaseExpiredI4SectionCommand(record); toast("已解除，这一块可以重新提交"); await rereadAfterResolution([record.sectionKey]); }
+    try { await releaseExpiredI4SectionCommand(record); toast("已解除，这一块可以重新提交"); await rereadAfterResolution([record.sectionKey], [record.commandKey]); }
     catch (error) { toast(displayAdminError(error)); }
     finally { setSectionNotFound(keys => keys.filter(key => key !== record.commandKey)); syncCommands(); }
   };
