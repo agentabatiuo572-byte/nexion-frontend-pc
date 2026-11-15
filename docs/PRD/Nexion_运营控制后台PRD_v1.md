@@ -300,11 +300,11 @@ A2请求为 `sourceDomain:A1`、`type:acct`、`amplifies:false`、`sos:false`、
 
 **⑤ 接口与安全基线**
 
-读取：GET `/api/admin/platform/accounts/overview`、`/roles/overview`、逐角色详情、`/audit/reason-policy`；权限登记读回GET `/permissions/:code`另受A8read约束。提案POST `/api/admin/platform/audit/operations`，原号GET `/operations/proposals/by-idempotency-key`。直写、头像及资格端点见上表及重构说明W01–W16。旧资料/角色/2FA/启停/全登出直接REST仍在后端，但本页不调用；不因旁路存在绕审批。安全基线写当前固定拒绝，删除账号无入口。
+读取：GET `/api/admin/platform/accounts/overview`、`/roles/overview`、逐角色详情、`/audit/reason-policy`；权限登记读回GET `/permissions/:code`另受A8read约束。提案POST `/api/admin/platform/audit/operations`，原号GET `/operations/proposals/by-idempotency-key`。直写、头像及资格端点见上表及重构说明W01–W16。资料、角色、2FA、启停、全登出的直接REST保留供A2批准回放：后端 `e83c9ce7` 在实际写入前要求回放上下文，否则409 `A2_CONFIRMATION_REQUIRED`；无变化的资料请求仍返回当前资料，先于该守卫的权限、版本、对象锁、恢复期和人数校验仍可先拒绝。已有成功原号仍先回放操作者绑定的幂等回执。本页所有入口及原请求恢复均走A2提案，全仓没有这五个直写client方法的调用者；创建、密码重置和单设备撤销不受此次守卫影响。该409沿现有明确拒绝处理，不留结果未知记录。安全基线写当前固定拒绝，删除账号无入口。
 
 **⑥ 固定后端限制与视觉接续**
 
-- A1-BE-01：正常治理期高危直写旁路仍存在，PC保持审批；候选不当已上线。
+- A1-BE-01 已交付：后端 `e83c9ce7`（本次按 `acafc33c` 重核）将五项高危写限制在A2批准回放内；PC原有审批流程保持，运行中的后端仍须升级后真实复验。
 - A1-BE-02：`OpsAdminAuthService.login:94–104` 在临时开关开启且用户名superadmin、角色super时可绕MFA。发布配置必须关闭/移除；本次未登录superadmin、未读取运行配置，也不承诺后端无例外强制MFA。
 - A1-BE-04：管理账号取消头像无原命令去重/终态读回；本次禁未知取消重试。A1-BE-06：未绑定MFA的enabled super停用/降级仍可能被多减1而错误阻断，不能绕过后台底线。
 - 待审批统计旧票/其它生产者仍可能漏标；角色默认scope文字不等于真实授权。客服/主管及头像合同还见 [M 专属客服中心功能契约](M-专属客服中心功能契约.md)。
