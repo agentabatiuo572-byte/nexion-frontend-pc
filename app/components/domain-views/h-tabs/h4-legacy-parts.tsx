@@ -235,7 +235,7 @@ export function WheelLegend() {
     <li><span data-slot="1" />发真钱（USDT）</li>
     <li><span data-slot="2" />代金券</li>
     <li><span data-slot="3" />UVT</li>
-    <li><span data-slot="other" />后端不认的旧奖型</li>
+    <li><span data-slot="other" />旧奖型</li>
   </ul>;
 }
 
@@ -263,7 +263,7 @@ export function ProbabilityCompare({ tiers, store, valueOf }: { tiers: WheelTier
   const total = Object.values(next).reduce((sum, value) => sum + Math.round(value * 10000), 0) / 10000;
   const changed = tiers.filter((tier) => readable && next[text(tier.tier)] !== numericValue(tier.prob));
   return <div className="h4l-compare">
-    <div className="h4l-compare-row"><span className="h4l-compare-key">现在</span><WheelBar tiers={tiers} label="现在的概率" /><span className="h4l-compare-total"><Explain label="颜色表示什么" content="金色发真钱（USDT），青色代金券，紫色 UVT，灰色是后端不认的旧奖型；橙色是还差的概率。" /></span></div>
+    <div className="h4l-compare-row"><span className="h4l-compare-key">现在</span><WheelBar tiers={tiers} label="现在的概率" /><span className="h4l-compare-total"><Explain label="颜色表示什么" content="金色发真钱（USDT），青色代金券，紫色 UVT，灰色是旧奖型；橙色是还差的概率。" /></span></div>
     <div className="h4l-compare-row"><span className="h4l-compare-key">改后</span>{readable ? <WheelBar tiers={tiers} values={next} label="改后的概率" /> : <span className="h4-dim">填好全部概率后画出来</span>}<span className="h4l-compare-total" data-tone={readable && total !== 100 ? "warn" : undefined}>{readable ? <>合计 <b className="h4-num">{percentText(total)}%</b></> : null}</span></div>
     {changed.length > 0 && <ul className="h4l-delta" aria-label="每 1000 次抽奖大约的变化">
       {changed.map((tier) => {

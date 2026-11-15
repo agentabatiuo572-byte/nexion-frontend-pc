@@ -873,7 +873,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           <Fact k="为什么">后端已不支持积分奖型。奖池里只要还有这一档，App 抽奖会整池校验失败，用户抽不了</Fact>
           <Fact k="退役之后" tone="warn">奖池概率合计少 {percentText(probability)}%，要在「调整概率」里用 UVT、USDT 或代金券补足到 100%，App 才能抽奖；调高概率要提交审批单</Fact>
         </Facts>
-        {otherInvalid.length > 0 && <Notice tone="warn" title="还要等后端">{otherInvalid.map((row) => text(row.tier)).join("、")} 的奖型是后端不认的旧名，这一步不处理，修好前 App 仍抽不了。</Notice>}
+        {otherInvalid.length > 0 && <Notice tone="warn" title="还有旧奖型">{otherInvalid.map((row) => text(row.tier)).join("、")} 不受这一步影响。</Notice>}
       </>,
       confirmLabel: "确认退役",
       confirmTone: "danger",
@@ -1020,7 +1020,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
   const todos: Array<{ key: string; tag: ReactNode; title: string; sub: string; onOpen: () => void }> = [
     ...(wheelBroken ? [{ key: "wheel", tag: <StatusTag tone="danger" icon={CircleAlert}>转盘抽不了</StatusTag>, title: "转盘奖池",
-      sub: [pointsTiers.length ? `${pointsTiers.length} 档积分奖型要退役` : "", nexTiers.length ? `${nexTiers.length} 档奖型还存着旧名，等后端改数据` : "", probabilityOk ? "" : `概率合计 ${percentText(probabilitySum)}%，要正好 100%`].filter(Boolean).join("；"),
+      sub: [pointsTiers.length ? `${pointsTiers.length} 档积分奖型要退役` : "", nexTiers.length ? `${nexTiers.length} 档存的是旧奖型，只能调概率` : "", probabilityOk ? "" : `概率合计 ${percentText(probabilitySum)}%，要正好 100%`].filter(Boolean).join("；"),
       onOpen: () => go("wheel", "h4l-wheel") }] : []),
     ...(gapCount > 0 ? [{ key: "locale", tag: <StatusTag tone="warn">翻译没填</StatusTag>, title: `${gapsByEvent.length} 个既有活动`,
       sub: `${gapCount} 项中文、越南语内容没填，这些活动不能开放`, onOpen: () => go("events", "h4l-events") }] : []),
@@ -1105,7 +1105,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         actions={<>{wheelPending && pendingTag("转盘奖池")}<Button variant="primary" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openWheelProbabilities:1"]), openWheelProbabilities)}>调整概率</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openCreateWheelTier:1"]), openCreateWheelTier)}>新建奖项</Button></>}>
         {wheelBroken && <Notice tone="danger" title="抽不了的原因">
           {[pointsTiers.length ? `${pointsTiers.map((tier) => text(tier.tier)).join("、")} 是积分奖型，后端已不支持：点「退役」后补足概率。` : "",
-            nexTiers.length ? `${nexTiers.map((tier) => text(tier.tier)).join("、")} 是 UVT 奖，但奖型还存着旧名，App 不认；要等后端改好数据。` : "",
+            nexTiers.length ? `${nexTiers.map((tier) => text(tier.tier)).join("、")} 存的是旧奖型：App 按 UVT 发奖；这几档不能编辑，可以调概率。` : "",
             probabilityOk ? "" : `概率合计 ${percentText(probabilitySum)}%，要在「调整概率」里补到 100%。`].filter(Boolean).map((line) => <p key={line}>{line}</p>)}
         </Notice>}
         {wheelDailyUsageError && <Notice tone="warn" title="今天的用量没读到" action={<Button size="sm" onClick={() => void reloadWheelUsage()}>重试</Button>}>已用次数和今天已发先显示「—」，不是 0；奖池其他内容照常。</Notice>}
@@ -1121,7 +1121,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
               const kindKey = text(tier.kind, "").toLowerCase();
               const unit = wheelUnit(tier);
               const kindNode = wheelPointsTier(tier) ? <StatusTag tone="danger" explain="后端已不支持积分奖型，要退役">积分奖型</StatusTag>
-                  : wheelLegacyNexTier(tier) ? <StatusTag tone="warn" explain="这一档是 UVT 奖，但奖型还存着旧名，App 不认；要等后端改好数据。">UVT · 旧奖型</StatusTag>
+                  : wheelLegacyNexTier(tier) ? <StatusTag tone="warn" explain="后台存的是旧奖型，App 按 UVT 发奖。这一档不能编辑，可以调概率。">UVT · 旧奖型</StatusTag>
                   : <span className="h4l-kind">{WHEEL_KIND_LABEL[kindKey] ?? "其他奖励"}{boolValue(tier.real) && <StatusTag tone="warn" explain="这一档发真钱（USDT）：抽中前还要过真钱奖开关、覆盖率和每日预算，不过就改发 UVT 安慰奖。">发真钱</StatusTag>}</span>;
               /** 1024 宽时类型列收起，奖品格第二行只留要人注意的标签（奖品名已带币种）。 */
               const kindTag = wheelPointsTier(tier) || wheelLegacyNexTier(tier) ? kindNode : boolValue(tier.real) ? <StatusTag tone="warn" explain="这一档发真钱（USDT）：抽中前还要过真钱奖开关、覆盖率和每日预算，不过就改发 UVT 安慰奖。">发真钱</StatusTag> : null;
@@ -1142,7 +1142,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
                 <Td sticky="end" data-fit=""><span className="h4-row h4l-ops">{wheelPointsTier(tier)
                   ? <Button size="sm" variant="danger-outline" aria-label={`退役 ${text(tier.tier)}（${name.text}）`} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openRetirePointsTier:1", tier.tier]), () => openRetirePointsTier(tier))}>退役</Button>
                   : <>
-                    <Button size="sm" aria-label={`编辑 ${text(tier.tier)}（${name.text}）`} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : wheelLegacyNexTier(tier) ? "这一档的奖型还存着旧名，现在编辑保存会连奖型一起改掉；等后端改好数据再编辑。" : undefined} onClick={conflictDraft.register(JSON.stringify(["openEditWheelTier:1", tier.tier]), () => openEditWheelTier(tier))}>编辑</Button>
+                    <Button size="sm" aria-label={`编辑 ${text(tier.tier)}（${name.text}）`} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : wheelLegacyNexTier(tier) ? "这一档存的是旧奖型，整档保存会把奖型改掉；要改只能调概率。" : undefined} onClick={conflictDraft.register(JSON.stringify(["openEditWheelTier:1", tier.tier]), () => openEditWheelTier(tier))}>编辑</Button>
                     <Button size="sm" icon={<Trash2 size={13} aria-hidden />} aria-label={`删除 ${text(tier.tier)}（${name.text}）`} disabledReason={numericValue(tier.prob) !== 0 ? "先把概率调成 0%" : !canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openDeleteWheelTier:1", tier.tier]), () => openDeleteWheelTier(tier))}>删除</Button>
                   </>}</span></Td>
               </Tr>;
