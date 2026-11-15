@@ -649,9 +649,14 @@ function G2ExchangePage() {
     const loosens = (value?: string) => {
       if (!value) return undefined;
       if (isQueueMode) return value !== cap.displayValue ? value === "排队" : undefined;
-      const next = Number(value);
-      const now = Number(capEditValue(cap));
-      if (!Number.isFinite(next) || !Number.isFinite(now) || next === now) return undefined;
+      const [next, now] = [value, capEditValue(cap)].map(raw => {
+        const match = /^(\d+)(?:\.(\d+))?$/.exec(raw.trim());
+        if (!match) return undefined;
+        const fraction = match[2] ?? "";
+        return BigInt(match[1] + fraction.slice(0, 6).padEnd(6, "0"))
+          + (Number(fraction[6] ?? "0") >= 5 ? BigInt(1) : BigInt(0));
+      });
+      if (next === undefined || now === undefined || next === now) return undefined;
       return cap.key === "fee" || cap.key === "feeMin" ? next < now : next > now;
     };
     const capFacts = (value?: string) => {
