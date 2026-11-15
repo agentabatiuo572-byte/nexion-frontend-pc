@@ -42,7 +42,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: s
     } catch (e) { if (active(token)) setError(displayAdminError(e)); }
     finally { if (active(token)) setBusy(false); }
   }
-  async function submit(record: SelfAvatarPending) {
+  async function submit(record: SelfAvatarPending, recovering = true) {
     const token = generation.current, abort = new AbortController(); controller.current = abort; setBusy(true); setError("");
     let sent = false, saved = false;
     try {
@@ -51,7 +51,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: s
       setSnapshot(current); setAllowed(true);
       if (current.assetId === record.input.assetId) { complete(record, current); return true; }
       if (Date.now() >= record.expiresAt) throw new Error("AVATAR_COMMAND_EXPIRED");
-      if (!selfAvatarCommands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("AVATAR_COMMAND_STORAGE_UNAVAILABLE");
+      if (!selfAvatarCommands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error(recovering ? "AVATAR_COMMAND_RETRY_STORAGE_UNAVAILABLE" : "AVATAR_COMMAND_STORAGE_UNAVAILABLE");
       sent = true;
       await saveSelfAvatar(record.input, record.commandKey, abort.signal); saved = true; if (!active(token)) return false;
       const readback = await fetchSelfAvatar(abort.signal); if (!active(token)) return false;
@@ -82,7 +82,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: s
         selfAvatarCommands.remember(fingerprint, commandKey, { actorId, input });
         const record = selfAvatarCommands.list().find(row => row.commandKey === commandKey);
         if (!record || !selfAvatarCommands.isDurablyStored(fingerprint, commandKey)) { setError("浏览器无法保存这次操作的记录，还没提交；请检查浏览器设置后重试。"); return false; }
-        setPending(record); return submit(record);
+        setPending(record); return submit(record, false);
       },
     });
   }

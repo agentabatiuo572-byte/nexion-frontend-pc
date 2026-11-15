@@ -193,7 +193,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     if(!recover&&!original&&image?.assetId&&image.assetExpiresAt!==undefined&&Date.now()>=image.assetExpiresAt){setError("图片已过有效期，请返回编写内容移除旧图并重新准备。");return;}
     if(busy||!recover&&!original?.action&&!ready)return;
     const record=original??pending??(input?{fingerprint:`${actorId}:create`,commandKey:crypto.randomUUID(),createdAt:Date.now(),expiresAt:Date.now()+86400000,actorId,payload:input}:null);if(!record)return;
-    commands.remember(record.fingerprint,record.commandKey,{actorId:record.actorId,payload:record.payload,batchId:record.batchId,action:record.action,mutation:record.mutation,readOnlyRecovery:record.readOnlyRecovery});setPending(record);if(!commands.isDurablyStored(record.fingerprint,record.commandKey)){setError("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");return;}setBusy(true);setError("");const saved=stamp.current;
+    commands.remember(record.fingerprint,record.commandKey,{actorId:record.actorId,payload:record.payload,batchId:record.batchId,action:record.action,mutation:record.mutation,readOnlyRecovery:record.readOnlyRecovery});setPending(record);if(!commands.isDurablyStored(record.fingerprint,record.commandKey)){setError(recover ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");return;}setBusy(true);setError("");const saved=stamp.current;
     let submitted=false;
     try{
       const recovered=recover?await supportClient.command(record.commandKey).catch(e=>{if(e instanceof SupportClientError&&e.status===404&&e.backendMessage==="SUPPORT_COMMAND_NOT_FOUND")return null;throw e;}):null;

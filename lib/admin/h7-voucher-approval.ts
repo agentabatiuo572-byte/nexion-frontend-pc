@@ -99,7 +99,7 @@ export async function submitH7VoucherApproval(session: AdminSession, input: H7Vo
   attempts.remember(slot, key, { ...original, proposal });
   if (!attempts.isDurablyStored(slot, key)) {
     if (!previous) attempts.forget(slot, key);
-    throw new Error("H7_REQUEST_STORAGE_UNAVAILABLE");
+    throw new Error(previous ? "H7_REQUEST_RETRY_STORAGE_UNAVAILABLE" : "H7_REQUEST_STORAGE_UNAVAILABLE");
   }
   try {
     const receipt = await createA2OperationProposal(proposal, key, true);

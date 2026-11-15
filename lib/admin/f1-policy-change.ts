@@ -213,7 +213,7 @@ export async function submitF1Policy(
       if (!ticket && previous && previous.expiresAt <= Date.now()) throw new A2OutcomeUncertainError("原操作已过期且暂未查到结果，请到操作记录核对，勿重复提交。", key);
       if (!ticket) {
         attempts.remember(fingerprint, key, { ...record(), absent: false });
-        if (!attempts.isDurablyStored(fingerprint, key)) throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
+        if (!attempts.isDurablyStored(fingerprint, key)) throw new Error(previous ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
         posting = true;
         ticket = await createA2OperationProposal(original.proposal!, key, "proposal");
         posting = false;

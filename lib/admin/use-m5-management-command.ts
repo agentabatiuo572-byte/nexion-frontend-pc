@@ -66,7 +66,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
       return;
     }
     if (action !== "query" && !store.isDurablyStored(record.fingerprint, record.commandKey)) {
-      setMessage("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
+      setMessage(action === "replay" ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
       return;
     }
     const current = () => actorId === useAdminAuth.getState().session?.adminId && epoch === useAdminAuth.getState().authEpoch;

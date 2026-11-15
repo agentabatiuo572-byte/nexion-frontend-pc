@@ -154,7 +154,7 @@ export async function sendF2Proposal(adminId: number, slot: string, spec?: Propo
   }
   if (isRetryExpired(original)) throw new Error("F2_PROPOSAL_RETRY_EXPIRED");
   if (!original.request) throw new Error("F2_PROPOSAL_ORIGINAL_INCOMPLETE");
-  if (!storeFor(slot).isDurablyStored(slot, original.commandKey)) throw new Error("F2_PROPOSAL_STORAGE_UNAVAILABLE");
+  if (!storeFor(slot).isDurablyStored(slot, original.commandKey)) throw new Error(recovering ? "F2_PROPOSAL_RETRY_STORAGE_UNAVAILABLE" : "F2_PROPOSAL_STORAGE_UNAVAILABLE");
   original.absent = false;
   remember(original);
   let ticket: A2OperationRow;

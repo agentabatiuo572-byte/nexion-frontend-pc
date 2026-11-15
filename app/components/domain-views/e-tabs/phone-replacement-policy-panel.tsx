@@ -234,7 +234,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
     async function retryOriginal() {
       if(!pending||mutation.current||isRetryExpired(pending)||!canWrite)return;
       proposals.remember(pending.fingerprint,pending.commandKey,{...pending,absent:false});syncPending();setMessage("");
-      if(!proposals.isDurablyStored(pending.fingerprint,pending.commandKey)){setError("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");return;}
+      if(!proposals.isDurablyStored(pending.fingerprint,pending.commandKey)){setError("浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。");return;}
       mutation.current=true;setBusy(true);setError("");
       let checking = true;
       try {

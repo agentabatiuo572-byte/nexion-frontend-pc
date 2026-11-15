@@ -188,7 +188,7 @@ export function A9DeveloperAccess() {
     if (!developerAccessAttempts.isDurablyStored(identity, key)) {
       if (!saved) developerAccessAttempts.forget(identity, key);
       setAttemptsTick(value => value + 1);
-      return { kind: "failed", message: displayAdminError("DEVELOPER_ACCESS_ORIGINAL_STORAGE_FAILED") };
+      return { kind: "failed", message: displayAdminError(saved ? "DEVELOPER_ACCESS_ORIGINAL_RETRY_STORAGE_FAILED" : "DEVELOPER_ACCESS_ORIGINAL_STORAGE_FAILED") };
     }
     try {
       if (action === "approve") await approveDeveloperAccess(originalRow, reason, key, body);

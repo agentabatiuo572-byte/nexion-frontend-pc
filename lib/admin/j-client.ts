@@ -237,7 +237,7 @@ export async function submitJ4Proposal(input: J4ProposalInput, commandKey: strin
   if (!saved) emergencyCommands.remember(slot, commandKey, { inputFingerprint: body, sopProposal: { body, context, accepted: false } });
   if (!emergencyCommands.isDurablyStored(slot, commandKey)) {
     if (!saved) emergencyCommands.forget(slot, commandKey);
-    throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+    throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
   }
   const original = getJ4PendingProposal(context.playbook.code)!;
   try {
@@ -340,7 +340,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       const original = getJ2PendingCommand(writeSlot)!;
       if (!emergencyCommands.isDurablyStored(writeSlot, original.commandKey)) {
         if (!saved) emergencyCommands.forget(writeSlot, original.commandKey);
-        throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+        throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
       }
     } else if (isJ3Config) {
       if (getJ3LegacyCommand()) throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
@@ -362,7 +362,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       const original = getJ3PendingCommand();
       if (!original || !emergencyCommands.isDurablyStored(writeSlot, original.commandKey)) {
         if (!saved) emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
-        throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+        throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
       }
     } else if (isJ4Write) {
       if (listJ4LegacyCommands().some((record) => record.fingerprint === writeSlot)) throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
@@ -377,7 +377,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       }
       if (!emergencyCommands.isDurablyStored(writeSlot, commandKey)) {
         if (!saved) emergencyCommands.forget(writeSlot, commandKey);
-        throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+        throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
       }
       headers.set("Idempotency-Key", commandKey);
     } else if (path === "/tamper/reports") {
@@ -390,6 +390,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       headers.set("Idempotency-Key", commandKey);
     } else {
       const fingerprint = inputFingerprint;
+      const saved = emergencyAttempts.list().find(record => record.fingerprint === writeSlot && record.inputFingerprint === fingerprint);
       const commandKey = emergencyAttempts.resolve(
         writeSlot,
         fingerprint,
@@ -397,7 +398,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       );
       if (!emergencyAttempts.isDurablyStored(writeSlot, fingerprint, commandKey)) {
         emergencyAttempts.forget(writeSlot);
-        throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
+        throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
       }
       headers.set("Idempotency-Key", commandKey);
     }

@@ -171,7 +171,7 @@ export async function submitB5ThresholdApproval<T>(
   attempts.remember(slot, key, extra);
   if (!attempts.isDurablyStored(slot, key)) {
     if (!previous) attempts.forget(slot, key);
-    throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
+    throw new Error(previous ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   }
   const queryOriginal = async () => {
     try {
@@ -269,7 +269,7 @@ export async function submitB1ThresholdApproval<T>(
   attempts.remember(slot, key, extra);
   if (!attempts.isDurablyStored(slot, key)) {
     if (!previous) attempts.forget(slot, key);
-    throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
+    throw new Error(previous ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   }
   const queryOriginal = async () => {
     try {
@@ -296,7 +296,7 @@ export async function submitB1ThresholdApproval<T>(
     }
     if (!session.authorities.includes("overview_b1_redline_write")) throw new Error("当前账号缺少设置兑付覆盖率阈值的权限。");
     attempts.remember(slot, key, extra);
-    if (!attempts.isDurablyStored(slot, key)) throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
+    if (!attempts.isDurablyStored(slot, key)) throw new Error(previous ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     try {
       await createA2OperationProposal(request!, key, true);
     } catch (error) {

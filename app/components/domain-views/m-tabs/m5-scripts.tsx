@@ -311,7 +311,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
     if (isRetryExpired(record)) { toast(RETRY_EXPIRED_TEXT, "warn"); return false; }
     if (!mCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
       if (!recovered) { mCommands.forget(record.fingerprint, record.commandKey); syncPending(); }
-      toast("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。", "warn"); return false;
+      toast(recovered ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。", "warn"); return false;
     }
     inFlight.current = true; setWritePending(true);
     const epoch = useAdminAuth.getState().authEpoch;

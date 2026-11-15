@@ -105,7 +105,7 @@ export function useE3Proposals() {
   async function send(record: E3Proposal, retry = true) {
     if (sending.current || !allowed(record.input.command.op === "e3_config_batch")) throw new Error("FORBIDDEN");
     if (record.owner !== owner || isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
-    if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("E3_PROPOSAL_STORAGE_UNAVAILABLE");
+    if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error(retry ? "E3_PROPOSAL_RETRY_STORAGE_UNAVAILABLE" : "E3_PROPOSAL_STORAGE_UNAVAILABLE");
     sending.current = true; setBusy(record.commandKey);
     try {
       const ticket = await createA2OperationProposal(record.input, record.commandKey, true);

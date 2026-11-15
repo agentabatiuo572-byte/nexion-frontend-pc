@@ -78,7 +78,7 @@ function useMutations() {
     if (retry && !canRetry(record)) throw new Error("原操作仅可核查，不能重新发送。");
     record = { ...record, retryRejection: undefined, absent: false };
     commands.remember(record.fingerprint, record.commandKey, record);
-    if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
+    if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error(retry ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     sending.current = true; setBusy(record.commandKey);
     let checkingProposal = retry && record.payload.kind === "proposal";
     try {
