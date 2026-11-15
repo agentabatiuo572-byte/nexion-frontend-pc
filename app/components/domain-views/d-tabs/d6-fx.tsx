@@ -17,6 +17,7 @@ import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
   d6QuoteRate,
@@ -117,7 +118,7 @@ function changeText(key: ParamKey, before: number, after: number) {
 
 /** 一次写操作的全部内容。结果未知时原样保存，重试只能发这一份（OP-92、OP-94）。 */
 type FxCommand = { param: ParamKey; values: FxValues; before: number; after: number; expectedVersion: number; reason: string; operator: string; proposal?: Parameters<typeof createA2OperationProposal>[0] };
-type PendingFx = PendingMutationRecord & FxCommand;
+type PendingFx = PendingMutationRecord & FxCommand & { commandOrigin?: FundCommandOrigin };
 /** 三项共用一个版本号，待确认锁整组，指纹只有一个。 */
 const SCOPE = "d6|fx-quote";
 
@@ -226,7 +227,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   const sendCommand = async (item: FxCommand, retry?: PendingFx) => {
     if (!retry && pendingFx.get(SCOPE)) throw new Error(LOCKED);
     const key = retry?.commandKey ?? fxCommandKey();
-    pendingFx.remember(SCOPE, key, item);
+    pendingFx.remember(SCOPE, key, { ...item, commandOrigin: retry ? retry.commandOrigin : item.proposal ? fundCommandOrigin("POST", "/api/admin/platform/audit/operations", "finance_d6_read") : undefined });
     if (!pendingFx.isDurablyStored(SCOPE, key)) {
       if (!retry) pendingFx.forget(SCOPE, key);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
@@ -274,13 +275,29 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  /** 重试被拒后，人核实过原操作的结果才解除。只放开本地锁，不发请求。 */
+  const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
+  const checkProposalInvestigation = async (record: PendingFx, evidence?: FundCommandEvidence) => {
+    setRetrying(true);
+    try {
+      const receipt = await checkFundCommand(record, evidence);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+      if (fundCommandSettled(receipt)) {
+        pendingFx.forget(record.fingerprint, record.commandKey);
+        syncPending(); setRetryRejected(""); setPendingNote(""); await load();
+      } else if (!receipt) setPendingNote(displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED")));
+      return receipt;
+    } catch (cause) {
+      const error = displayAdminError(cause);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      setPendingNote(error); throw cause;
+    } finally { setRetrying(false); }
+  };
   const releasePending = (record: PendingFx) => {
-    pendingFx.forget(record.fingerprint, record.commandKey);
-    syncPending();
     setReleasing(false);
-    setRetryRejected("");
-    setPendingNote("");
+    if (record.proposal) { void checkProposalInvestigation(record).catch(() => undefined); return; }
+    // Direct D6_FX_QUOTE_UPDATE has no supported investigation origin in this backend.
+    pendingFx.forget(record.fingerprint, record.commandKey);
+    syncPending(); setRetryRejected(""); setPendingNote("");
     toast("已解除本页待确认；后端原操作未结案时仍会阻止新提交", "success");
   };
 

@@ -4712,3 +4712,7 @@ M3 群发已有待确认原命令时，「查询原操作结果」独立于「�
 ### 2026-11-15 复查 F01
 
 普通 GET profiles/{id}/360 的 users 代理在手机号脱敏的首次 JSON.parse 前调用 preserveUserFundAmounts，最近一笔和同回包钱包/账本/订单/提现费用/合计金额均保留原文本，count/id/状态和其他 users 路由行为不变。客服 full-profile 原文转发后用同一 helper。实际验收须后端侧回包经过真实 Next 代理，再比普通与客服页面，不可拦最终浏览器回包掩盖代理问题。依据 backend04d11022 OpsUser360Service.detail/UserAccountView/WithdrawalOrderView/TreasuryLedgerBillView/UserLatestFundActivityView。
+
+### 2026-11-15 D6 B38 核查支持边界
+
+backend04d11022 OpsVietnamPaymentService.updateFxQuote:182–190 使用 D6_FX_QUOTE_UPDATE，AdminCommandOrigin:65映射的是 D6_FX_QUOTE，supported:77–82不含D6，直接修改不连接。A2敏感汇率提案为受支持A2_COMMAND，保存原POST/admin/path/readAuthority，原完整proposal仍冻结；本地解除提案改受控查询，只有权威未锁终态清记录并重新读取，其他状态保留。旧无来源不补造。checkProposalInvestigation与结果/权限供视觉接证据和结果/交接人。
