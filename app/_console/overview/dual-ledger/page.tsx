@@ -22,6 +22,7 @@ import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-mess
 import { b1Commands, executeB1Command, type B1PendingWrite, type B1CommandFacts } from "@/lib/admin/b1-commands";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isBCommandRejection } from "@/lib/admin/b-command-rejection";
+import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { DOutcomeUnknownError } from "@/lib/admin/d-client";
 import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 import { amountDigits, amountText } from "@/lib/admin/treasury-amount";
@@ -300,6 +301,8 @@ export default function DualLedgerPage() {
     if (!next) throw new Error("资金数据读取失败，不显示旧数据");
     return next;
   };
+  // 框关掉之后框里的错误行看不到，原因改用提示条写一次；缺权限由外壳统一提示。
+  const toastClosedDialogError = (error: unknown) => { if (!isPermissionDenied(error)) setToast(displayAdminError(error)); };
   const submitThresholdApproval = async (reason: string, values: BusinessFormValue, lookupOnly = false) => {
     if (!session || !thresholdBaseline) return false;
     const original = pendingThresholdConfigApproval("B1", session.adminId);
@@ -322,6 +325,7 @@ export default function DualLedgerPage() {
         await refreshB1();
       } else if (original && (isExplicitRejection(error) || !pendingThresholdConfigApproval("B1", session.adminId))) {
         setActionConfirm(null);
+        toastClosedDialogError(error);
         await refreshB1();
       }
       throw error;
@@ -345,8 +349,10 @@ export default function DualLedgerPage() {
       }
       let original = current.original;
       if (original && !b1Commands.list().some(record => record.commandKey === original!.commandKey)) {
+        const handled = new Error("原操作已处理，请重新读取后再操作。");
         setActionConfirm(null);
-        throw new Error("原操作已处理，请重新读取后再操作。");
+        toastClosedDialogError(handled);
+        throw handled;
       }
       if (!original) {
         if (newWriteBlocked || pendingWrites.some(record => record.kind === current.kind) || current.kind === "threshold" && pendingApproval) {
@@ -393,6 +399,7 @@ export default function DualLedgerPage() {
       } catch (error) {
         if (isBCommandRejection(error, !!current.original)) {
           setActionConfirm(current.original ? null : { ...current, requestKey: `b1-${current.kind}-${crypto.randomUUID()}`, original: undefined, draft: original.form, draftReason: JSON.parse(original.body).reason });
+          if (current.original) toastClosedDialogError(error);
           const fresh = await refreshB1();
           if (fresh && !current.original && error instanceof Error && "reasonCode" in error && error.reasonCode === "CONFIG_VERSION_CONFLICT") throw new Error(THRESHOLD_REFRESHED);
           if (fresh && error instanceof Error && "reasonCode" in error && error.reasonCode === "B1_THRESHOLDS_APPROVAL_REQUIRED") {
