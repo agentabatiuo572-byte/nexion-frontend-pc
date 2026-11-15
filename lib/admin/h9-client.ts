@@ -70,6 +70,22 @@ export interface H9PublicStatsOverview {
   effectiveAt: string;
 }
 
+export interface H9AppDisplay {
+  source: "server:home-display+public-stats" | "sandbox:h9-public-stats";
+  sourceEnvironment: "PRODUCTION" | "SANDBOX";
+  version: number;
+  capturedAt: string;
+  available: boolean;
+  reason: string | null;
+  homeDisplay: { enabled: boolean; startAt: number; serverNow: number; validUntil: number; sequence: number; onlineDevices: number; paidCents: number; paid: string } | null;
+  registeredUsers: number | null;
+  activeJobsBase: number | null;
+  activeJobsActual: null;
+  globeDisplay: GlobeDisplayConfig | null;
+  centerNodes: null;
+  unavailable: { field: string; reason: string }[];
+}
+
 /** 单个数值参数的运营面定义:中文标签 + 英文标识 + 合法域(逐字取自规格 FEAT-HOME02b ③)。 */
 export interface H9FieldDef {
   key: keyof Omit<H9EditableValues, "hashratePercentileTable" | "homeDisplayEnabled" | "globeDisplay">;
@@ -322,6 +338,43 @@ export function parseH9PublicStatsOverview(payload: unknown): H9PublicStatsOverv
 
 export async function fetchH9PublicStats(): Promise<H9PublicStatsOverview> {
   return parseH9PublicStatsOverview(await growthRequest<unknown>("/public-stats"));
+}
+
+/** Server snapshot only; never replace saved configuration or guess absent App sources. */
+export async function fetchH9AppDisplay(signal?: AbortSignal): Promise<H9AppDisplay> {
+  const row = record(await growthRequest<unknown>("/public-stats/app-display", { signal }), "appDisplay");
+  if ((row.source !== "server:home-display+public-stats" || row.sourceEnvironment !== "PRODUCTION")
+    && (row.source !== "sandbox:h9-public-stats" || row.sourceEnvironment !== "SANDBOX")) invalid("appDisplay.source");
+  const text = (value: unknown, field: string) => typeof value === "string" && value.trim() ? value : invalid(`appDisplay.${field}`);
+  const capturedAt = text(row.capturedAt, "capturedAt");
+  if (Number.isNaN(Date.parse(capturedAt)) || typeof row.available !== "boolean"
+    || row.activeJobsActual !== null || row.centerNodes !== null) invalid("appDisplay");
+  let homeDisplay: H9AppDisplay["homeDisplay"] = null;
+  if (row.homeDisplay !== null) {
+    const batch = record(row.homeDisplay, "appDisplay.homeDisplay");
+    if (typeof batch.enabled !== "boolean") invalid("appDisplay.homeDisplay.enabled");
+    const paid = typeof batch.paid === "number" || typeof batch.paid === "string" ? String(batch.paid) : "";
+    if (!/^\d+(?:\.\d+)?$/.test(paid)) invalid("appDisplay.homeDisplay.paid");
+    homeDisplay = { enabled: batch.enabled,
+      startAt: nonNegativeInteger(batch.startAt, "appDisplay.homeDisplay.startAt"),
+      serverNow: nonNegativeInteger(batch.serverNow, "appDisplay.homeDisplay.serverNow"),
+      validUntil: nonNegativeInteger(batch.validUntil, "appDisplay.homeDisplay.validUntil"),
+      sequence: nonNegativeInteger(batch.sequence, "appDisplay.homeDisplay.sequence"),
+      onlineDevices: nonNegativeInteger(batch.onlineDevices, "appDisplay.homeDisplay.onlineDevices"),
+      paidCents: nonNegativeInteger(batch.paidCents, "appDisplay.homeDisplay.paidCents"), paid };
+  }
+  if (row.available !== (homeDisplay !== null) || !Array.isArray(row.unavailable)) invalid("appDisplay.available");
+  return { source: row.source as H9AppDisplay["source"], sourceEnvironment: row.sourceEnvironment as H9AppDisplay["sourceEnvironment"],
+    version: nonNegativeInteger(row.version, "appDisplay.version"), capturedAt, available: row.available,
+    reason: row.reason === null ? null : text(row.reason, "reason"), homeDisplay,
+    registeredUsers: row.registeredUsers === null ? null : nonNegativeInteger(row.registeredUsers, "appDisplay.registeredUsers"),
+    activeJobsBase: row.activeJobsBase === null ? null : nonNegativeInteger(row.activeJobsBase, "appDisplay.activeJobsBase"),
+    activeJobsActual: null, centerNodes: null,
+    globeDisplay: row.globeDisplay === null ? null : parseGlobeDisplay(row.globeDisplay) ?? invalid("appDisplay.globeDisplay"),
+    unavailable: row.unavailable.map((value, index) => {
+      const item = record(value, `appDisplay.unavailable.${index}`);
+      return { field: text(item.field, `unavailable.${index}.field`), reason: text(item.reason, `unavailable.${index}.reason`) };
+    }) };
 }
 
 /** Freeze the complete original request, including the actor, before the first dispatch. */
