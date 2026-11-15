@@ -358,9 +358,11 @@ export default function H1Phase({ ctx,
         "").length ?? 0))])),
     [rows]);
   const permitted = (row: H1Pending) => !(row.requests.some((request) => request.kind === "proposal") && !canPropose) && (row.scope === "rhythm" || row.scope.startsWith("dial:") ? canWrite : row.scope.startsWith("control:") ? canControl && canPropose : canRevoke && canPropose);
+  const canQueryOriginal = (row: H1Pending) => !row.scope.startsWith("override:") || canRevoke && canPropose;
 
   const afterWrite = async (row: H1Pending,
     retry = false) => {
+    if (!permitted(row)) throw new Error("你没有原操作的权限");
     setChecked(undefined);
     setFeedback(undefined);
     setSending(row.commandKey);
@@ -775,6 +777,7 @@ export default function H1Phase({ ctx,
     });
   };
   const readOriginal = async (row: H1Pending) => {
+    if (!canQueryOriginal(row)) return;
     setBusy(true);
     try {
       const ticket = await lookupH1(row); syncPending();
@@ -806,7 +809,7 @@ export default function H1Phase({ ctx,
       <b>从「运营阶段状态」跳转而来</b> {deepLink.phase} {deepLink.dial === "phaseAttribution" ? "阶段归因" : DIALS.find((dial) => dial.key === deepLink.dial)?.label ?? deepLink.dial}{deepLink.dial && deepLink.dial !== "phaseAttribution" && !DIALS.some((dial) => dial.key === deepLink.dial) && " · 未找到对应参数"}</Notice>}
     {pending.filter((row) => row.commandKey !== sending).map((row) => <Notice key={row.commandKey} tone={row.state === "approval" ? "progress" : "warn"} actionBelow action={<>
       <Button size="sm" onClick={() => setDetail(row)}>原操作详情</Button>
-      <Button size="sm" loading={busy} onClick={() => void readOriginal(row)}>查询原结果</Button>
+      <Button size="sm" disabledReason={!canQueryOriginal(row) ? "你没有原操作的权限" : undefined} loading={busy} onClick={() => void readOriginal(row)}>查询原结果</Button>
       {row.state !== "approval" && <Button size="sm" disabledReason={!permitted(row) ? "你没有原操作的权限" : isRetryExpired(row) ? RETRY_EXPIRED_TEXT : undefined} loading={busy} onClick={async () => {
         setBusy(true); try {
           await afterWrite(row,
