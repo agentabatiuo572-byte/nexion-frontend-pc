@@ -31,7 +31,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
 import { downloadB0Snapshot, pendingB0Export } from "@/lib/admin/b0-export-client";
 import { toast } from "@/lib/store/ui";
-import { BusinessPanel, usePeriodChoice } from "./command-center/business";
+import { BusinessPanel, shownBusinessPeriod, usePeriodChoice } from "./command-center/business";
 import { availableGates, FlowFold, FundFold, FunnelFold, KpiFold, pressureLevel, RiskFold, useFoldChoices } from "./command-center/folds";
 import { PendingPanel, type PendingFailure, type PendingRow } from "./command-center/pending";
 import { fundLevel, statusSentence } from "./command-center/status";
@@ -235,6 +235,7 @@ export default function CommandCenter() {
   const fundOpen = folds.isOpen("fund", fundAlert);
 
   const { period, setPeriod } = usePeriodChoice(session?.adminId);
+  const shownPeriod = shownBusinessPeriod(blocks, period);
   const anyBusinessCard = blocks.moneyFlows || blocks.sales || blocks.newUsers || blocks.activeUsers || blocks.devices;
   const showFundLine = blocks.fund && !(fundReady && level !== "ok") && !sentence.fundFailed;
 
@@ -377,7 +378,7 @@ export default function CommandCenter() {
             />
           </div>
         )}
-        {(blocks.netFlow || blocks.topup || blocks.redemption) && (
+        {(blocks.netFlow || blocks.topup || blocks.redemption || blocks.withdrawals) && (
           <div data-fold="flow">
             <FlowFold
               blocks={blocks}
@@ -385,6 +386,8 @@ export default function CommandCenter() {
               historyError={flows.error}
               historyRetrying={flows.loading}
               onRetryHistory={flows.reload}
+              period={shownPeriod}
+              summary={business.data?.[shownPeriod] ?? null}
               topupOnCard={blocks.deposits && !business.error}
               netFlow24h={fundReady ? ledger.netFlow24hUsd : null}
               clock={clock}
@@ -395,9 +398,9 @@ export default function CommandCenter() {
             />
           </div>
         )}
-        {blocks.funnel && (
+        {(blocks.funnel || blocks.newUsers) && (
           <div data-fold="funnel">
-            <FunnelFold refreshKey={refreshKey} reach={reach} open={folds.isOpen("funnel")} onOpenChange={(open) => folds.setOpen("funnel", open)} />
+            <FunnelFold funnel={blocks.funnel} period={shownPeriod} registrations={business.data?.[shownPeriod].blocks.registrations ?? null} refreshKey={refreshKey} reach={reach} open={folds.isOpen("funnel")} onOpenChange={(open) => folds.setOpen("funnel", open)} />
           </div>
         )}
         {blocks.kpi && (
