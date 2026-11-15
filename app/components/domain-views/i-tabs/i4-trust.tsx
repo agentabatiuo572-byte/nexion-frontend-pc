@@ -718,11 +718,14 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     const saved = (row?: TrustSectionVersion) => row ? `${row.updatedAt ? timeText(row.updatedAt) : "—"} · ${operatorText(row.operator)}` : "—";
     const fieldRows = (left: { key: string; label: string; value: string }[], right: { key: string; label: string; value: string }[]) => {
       const keys = [...new Set([...left.map((field) => field.key), ...right.map((field) => field.key)])];
-      const differ = keys.flatMap((fieldKey) => {
+      return keys.flatMap((fieldKey) => {
         const a = left.find((field) => field.key === fieldKey), b = right.find((field) => field.key === fieldKey);
-        return (a?.value ?? "") === (b?.value ?? "") && (a?.label ?? "") === (b?.label ?? "") ? [] : [conflictRow(b?.label || a?.label || fieldKey, a?.value, b?.value)];
+        return [
+          ...(!a || !b ? [conflictRow(fieldKey, a?.key, b?.key)] : []),
+          ...(a?.label !== b?.label ? [conflictRow(`${fieldKey} · 名称`, a?.label, b?.label)] : []),
+          ...(a?.value !== b?.value ? [conflictRow(`${b?.label || a?.label || fieldKey} (${fieldKey})`, a?.value, b?.value)] : []),
+        ];
       });
-      return differ.length > 8 ? [...differ.slice(0, 8), { label: `另有 ${differ.length - 8} 项不同`, left: "", right: "", changed: true }] : differ;
     };
     let rows: IConflictRow[] = [];
     let columns: [string, string] = ["你打开时", "现在"];
@@ -739,6 +742,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       const base = editorAtReject.mode === "edit" ? nowDraft?.fields ?? [] : nowCurrent?.fields ?? [];
       const templateChanged = !!nowCurrent && !sameFieldSchema(nowCurrent.fields, editorAtReject.fields);
       rows = [{ label: "版块现在", left: state(nowSection), right: `基于 ${editorAtReject.expectedSectionVersion}`, changed: nowSection?.version !== editorAtReject.expectedSectionVersion || nowSection?.status !== editorAtReject.expectedSectionStatus },
+        conflictRow("版本号", nowDraft?.version ?? nowCurrent?.version, editorAtReject.version),
+        conflictRow("版块说明", nowDraft?.description ?? nowCurrent?.description, editorAtReject.description),
+        conflictRow("内容结构", nowDraft?.structure ?? nowCurrent?.structure, editorAtReject.structure),
         ...(nowDraft ? [conflictRow("草稿最近保存", saved(nowDraft), "你在改的")] : []),
         ...(templateChanged ? [{ label: "内容模板", left: `${nowCurrent!.fields.length} 项内容`, right: `${editorAtReject.fields.length} 项内容`, changed: true }] : []),
         ...fieldRows(base, editorAtReject.fields)];
