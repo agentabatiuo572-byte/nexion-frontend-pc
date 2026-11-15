@@ -9,6 +9,7 @@ import { fetchSkuDatacenterLabels, fetchTaskPools, type TaskPool } from "@/lib/a
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import { guardedFetch, displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
@@ -121,15 +122,17 @@ export function E1Editor({ request, gates, writable, currentSku, onClose, onRevi
       const result = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null;
       const data = result?.data && typeof result.data === "object" && !Array.isArray(result.data) ? result.data as Record<string, unknown> : null;
       const message = typeof result?.message === "string" ? result.message : "";
-      if (!response.ok || result?.code !== 0 || !data || typeof data.assetId !== "string" || !data.assetId.trim() || typeof data.objectKey !== "string" || !data.objectKey.trim()
+      const upstreamUnknown = response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown";
+      if (upstreamUnknown || !response.ok || result?.code !== 0 || !data || typeof data.assetId !== "string" || !data.assetId.trim() || typeof data.objectKey !== "string" || !data.objectKey.trim()
         || data.sizeBytes != null && (typeof data.sizeBytes !== "number" || !Number.isFinite(data.sizeBytes) || data.sizeBytes < 0)) {
-        throw Object.assign(new Error(message || "上传结果未确认，请保留原文件和命令号核对"), { status: response.status, backendMessage: message, unknownOutcome: result?.unknownOutcome === true || response.status >= 500 || response.ok || response.status === 409 && (!message || message === "MEDIA_REQUEST_FAILED") });
+        throw Object.assign(new Error(message || "上传结果未确认，请保留原文件和命令号核对"), { status: response.status, apiCode: result?.code, backendMessage: message, unknownOutcome: upstreamUnknown || result?.unknownOutcome === true || !Number.isInteger(result?.code) || result?.code === 0 || Number(result?.code) >= 500 || response.status >= 500 || isIdempotencyOutcomeOpen(message) || response.status === 409 && (!message || message === "MEDIA_REQUEST_FAILED") });
       }
       const assetId = data.assetId, objectKey = data.objectKey, size = data.sizeBytes == null ? record.size : data.sizeBytes as number;
       setMedia(m => ({ kind: record.kind, src: `/api/admin/media/uploads/${encodeURIComponent(assetId)}/content`, name: record.fileName, size, w: m?.w, h: m?.h, duration: m?.duration, assetId, objectKey }));
       e1MediaCommands.forget(record.fingerprint, record.commandKey); setMediaPending(null); fileRef.current = null; onMediaChange(); toast("已上传；商品关联仍需提交审批");
     } catch (error) {
-      if (!retry && isExplicitRejection(error)) { e1MediaCommands.forget(record.fingerprint, record.commandKey); setMediaPending(null); fileRef.current = null; }
+      const response = error as { status?: number; apiCode?: number; unknownOutcome?: boolean };
+      if (!retry && !response.unknownOutcome && response.status !== undefined && isDeterministicRejection(response.status, response.apiCode)) { e1MediaCommands.forget(record.fingerprint, record.commandKey); setMediaPending(null); fileRef.current = null; }
       else { setMediaPending(record); if (retry && isExplicitRejection(error)) setMediaRejected(true); }
       setMediaError(displayAdminError(error)); onMediaChange();
     } finally { uploadBusy.current = false; setMediaBusy(false); onMediaChange(); }
