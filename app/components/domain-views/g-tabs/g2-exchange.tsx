@@ -513,6 +513,7 @@ function G2ExchangePage() {
         }
         requireBatchActor(batchAdminId);
         const message = "处理结果未知。可以关掉确认框后点「核对原处理」，查看原批次的结果。";
+        coveredErrors.current.add(message);
         setError(message);
         toast(message);
         throw new Error(message);
@@ -1022,7 +1023,7 @@ function G2ExchangePage() {
     <>
       {header}
       {confirmModal}
-      {error && !coveredErrors.current.has(error) && !/^(提交结果暂未确认|处理结果暂未确认)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
+      {error && !coveredErrors.current.has(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
       {conclusion}
       {recoveryNotice()}
 
