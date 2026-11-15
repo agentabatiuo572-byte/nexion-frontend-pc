@@ -23,7 +23,10 @@ function reward(value: unknown) {
   const [whole, fraction = ""] = mantissa.split(".");
   const digits = whole + fraction;
   // Only the decimal-point position is an integer; the amount never enters floating point.
-  const point = whole.length + Number(exponent);
+  const shift = Number(exponent);
+  // Bound expansion before allocating zeros; preserve valid decimal tokens exactly.
+  if (!Number.isSafeInteger(shift) || Math.abs(shift) > 1000) invalid();
+  const point = whole.length + shift;
   if (!Number.isSafeInteger(point)) invalid();
   return point <= 0 ? `0.${"0".repeat(-point)}${digits}`
     : point >= digits.length ? digits + "0".repeat(point - digits.length)
