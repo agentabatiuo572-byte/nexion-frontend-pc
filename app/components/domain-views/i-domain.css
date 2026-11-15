@@ -663,3 +663,5 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i-conflict .i-conflict-value[data-clamp] { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 .i-conflict .i-conflict-hint { display: block; max-width: 200px; white-space: normal; overflow-wrap: anywhere; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .i-conflict .i-conflict-more { display: block; margin-top: var(--rd-space-1); padding: 0; border: 0; background: none; color: var(--rd-brand-ink); font: inherit; font-size: var(--rd-text-aux); cursor: pointer; }
+/* 结果未知多于三条时的「显示全部」：按钮文字和上面各行的名称左对齐。 */
+.i-recovery-more > .rd-btn { margin-left: calc(-1 * var(--rd-space-2)); }

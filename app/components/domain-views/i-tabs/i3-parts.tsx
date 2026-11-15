@@ -4,9 +4,9 @@
  * 通知活动的展示件：活动卡、排期时间线的一行、App 通知预览、保留上限卡、结果未知逐条提醒。
  * 只排版，不发请求、不判权限；数据和按钮由 i3-campaign.tsx 传进来。
  */
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowDown, ArrowUp, Ban, Bell, CheckCheck, CircleHelp, Clock3, FilePen, Hourglass, Lock, Minus, Send, Siren, type LucideIcon } from "lucide-react";
-import { Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
+import { Button, Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
 import type { NotificationCampaignRow } from "@/lib/admin/i-client";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
@@ -218,6 +218,8 @@ export type I3RecoveryRow = { key: string; name: string; object: string; change?
  * 每条写改的是什么、对哪条、从多少到多少、什么时候提交，按钮「查询原结果」「按原请求重试」。
  */
 export function I3RecoveryNotice({ rows }: { rows: I3RecoveryRow[] }) {
+  // 多条时默认露出三条，其余点开再看，首屏留给通知列表（提示不盖正事）。
+  const [all, setAll] = useState(false);
   if (rows.length === 0) return null;
   const submitted = rows.filter((row) => row.submitted).length;
   const title = [rows.length - submitted > 0 && `${rows.length - submitted} 项操作结果未知`, submitted > 0 && `${submitted} 张申请已提交，状态未查到`].filter(Boolean).join(" · ");
@@ -228,7 +230,7 @@ export function I3RecoveryNotice({ rows }: { rows: I3RecoveryRow[] }) {
       <p>保留上限的申请过期后，按原请求明确查不到这张单，说明没建成，可以确认解除。</p>
     </>} /></>}>
       <ul className="i3-recovery" aria-label="结果未知的操作">
-        {rows.map((row) => (
+        {(all ? rows : rows.slice(0, 3)).map((row) => (
           <li key={row.key}>
             <span className="i3-recovery-name">{row.name}</span>
             <span className="i3-recovery-object">{row.object}{row.change ? ` · ${row.change}` : ""}</span>
@@ -239,6 +241,7 @@ export function I3RecoveryNotice({ rows }: { rows: I3RecoveryRow[] }) {
           </li>
         ))}
       </ul>
+      {rows.length > 3 && <div className="i-recovery-more"><Button size="sm" variant="ghost" onClick={() => setAll((open) => !open)}>{all ? "只看前 3 条" : `显示全部 ${rows.length} 条`}</Button></div>}
       <p className="i3-recovery-zone">{`提交时间为${businessZone().label}`}</p>
     </Notice>
   );

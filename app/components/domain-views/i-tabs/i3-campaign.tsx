@@ -756,7 +756,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     finally { recoveryInFlight.current = false; setRecovering(null); }
   };
   const recoveryRows: I3RecoveryRow[] = [
-    ...pending.map((row) => ({ key: row.commandKey, name: I3_ACTION[row.action], object: row.name, change: row.change,
+    // 新建和编辑草稿记下的变更是优先级代码和受众原文，不给运营看；这两类只写动作和通知名。
+    ...pending.map((row) => ({ key: row.commandKey, name: row.action === "delete" && row.snapshot?.status === "cancelled" ? "删除已取消的通知" : I3_ACTION[row.action], object: row.name, change: row.action === "create" || row.action === "draft" ? undefined : row.change,
       submittedAt: row.createdAt, expired: isRetryExpired(row), actions: <>
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canReadI3 ? undefined : "缺少通知活动读取权限"} onClick={() => void query(row)}>查询原结果</Button>
         {!isRetryExpired(row) && <Button size="sm" disabledReason={!row.original || row.action !== "create" && !row.snapshot ? "原操作记录不完整，只能查询核对，不能重试。" : i3RetryPermission(row)} onClick={() => restore(row)}>按原请求重试</Button>}

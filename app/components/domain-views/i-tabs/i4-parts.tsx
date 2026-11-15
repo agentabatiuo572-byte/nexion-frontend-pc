@@ -8,7 +8,7 @@
  */
 import { useState, type ReactNode } from "react";
 import { BadgeCheck, CircleHelp, Coins, FileSearch, Landmark, ShieldCheck, Store, Users, type LucideIcon } from "lucide-react";
-import { Explain, Field, IconTile, Input, LocaleTabs, Notice, StatusTag, Textarea, type StateTone } from "@/app/components/rd";
+import { Button, Explain, Field, IconTile, Input, LocaleTabs, Notice, StatusTag, Textarea, type StateTone } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { APP_FIELD_LIMIT, i4AppFieldIssue, i4TrilingualFields } from "@/lib/admin/i4-trust-contract";
 export { APP_FIELD_LIMIT, APP_SECTION_ORDER, appBlanking } from "@/lib/admin/i4-trust-contract";
@@ -323,6 +323,8 @@ export function unknownTag() {
   return <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先「查询原结果」；24 小时内也可以「按原请求重试」，系统认得出是同一次提交，不会建第二张。">结果未知</StatusTag>;
 }
 export function I4RecoveryNotice({ rows }: { rows: RecoveryRow[] }) {
+  // 多条时默认露出三条，其余点开再看，首屏留给版块（提示不盖正事）。
+  const [all, setAll] = useState(false);
   if (!rows.length) return null;
   const pending = rows.filter((row) => row.kind === "pending").length;
   const submitted = rows.filter((row) => row.kind === "submitted").length;
@@ -335,7 +337,7 @@ export function I4RecoveryNotice({ rows }: { rows: RecoveryRow[] }) {
       <p>PDF 上传不能重发，只能查询核对。</p>
     </>} /></>}>
       <ul className="i4-recovery" aria-label="结果未知的操作">
-        {rows.map((row) => (
+        {(all ? rows : rows.slice(0, 3)).map((row) => (
           <li key={row.key}>
             <span className="i4-recovery-name">{row.name}</span>
             <span>{row.change}</span>
@@ -346,6 +348,7 @@ export function I4RecoveryNotice({ rows }: { rows: RecoveryRow[] }) {
           </li>
         ))}
       </ul>
+      {rows.length > 3 && <div className="i-recovery-more"><Button size="sm" variant="ghost" onClick={() => setAll((open) => !open)}>{all ? "只看前 3 条" : `显示全部 ${rows.length} 条`}</Button></div>}
       <p className="rd-note">提交时间为{businessZone().label}</p>
     </Notice>
   );

@@ -1273,11 +1273,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       if (!pendingI6Commands().some((row) => row.commandKey === record.commandKey)) await finishRecovery();
     } finally { setOrdinaryBusy(""); updateRecovery((value) => value + 1); }
   };
+  // 课程操作写课程名，和同一列表里的审批行一致；文案操作写文案键（表格里也是它）。
+  const courseOf = (record: I6Command) => record.scope.startsWith("course:") ? COURSES.find((course) => course.id === record.target) : undefined;
   const ordinaryItems = ordinaryRecords.map((record) => {
     const expired = isRetryExpired(record);
     return <li key={record.commandKey} role="status">
       <StatusTag tone={expired ? "done" : "warn"}>{expired ? "已超过 24 小时" : "结果未知"}</StatusTag>
-      <span className="i6-pending-what">{record.label}{record.target ? <> · <span className="i6-mono">{record.target}</span></> : null}</span>
+      <span className="i6-pending-what">{record.label}{record.target ? <> · {courseOf(record) ? nexGridBrandText(courseOf(record)!.titleZh || courseOf(record)!.title) : <span className="i6-mono">{record.target}</span>}</> : null}</span>
       <span className="i6-pending-change">{ordinaryChange(record)}</span>
       <span className="i6-pending-at">{businessStamp(record.createdAt)} 提交</span>
       <span className="i6-pending-act">
