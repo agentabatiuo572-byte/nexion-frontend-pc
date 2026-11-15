@@ -73,13 +73,13 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
       effect: live ? <StatusTag tone="progress" filled>立即生效</StatusTag> : <StatusTag tone="neutral" filled>保存草稿，线上不变</StatusTag>,
       confirmLabel: form.status === "PUBLISHED" ? "确认发布，立即生效" : form.status === "UNPUBLISHED" ? "确认撤下，立即生效" : "保存草稿",
       statedBrief: form.status === "PUBLISHED"
-        ? { impact: "用户马上看到这个版本，没有译文的语言显示英语；用户不用重新同意。", check: "核对正文版本和改动的语言，只发布已审核的正文，理由写清依据。" }
+        ? { impact: "用户马上看到这个版本，没有译文的语言显示英语，不用重新同意；旧的公开版被替换，这页找不回。", check: "核对正文版本和改动的语言，只发布已审核的正文，理由写清依据。" }
         : form.status === "UNPUBLISHED"
           ? { impact: "公开版本立即撤下，用户读不到隐私政策。", check: "确认要下架，理由写清依据。" }
           : { impact: "只保存草稿，公开版本不变。", check: "核对改动，理由写清修改依据。" },
       facts: <DiffList rows={[
         { key: "status", label: "状态", before: STATUS_NAME[baseline.status], after: form.status === "DRAFT" && baseline.hasPublishedVersion ? "另存草稿，公开版不变" : STATUS_NAME[form.status] },
-        { key: "version", label: "正文版本", before: baseline.version || "—", after: form.version },
+        { key: "version", label: "正文版本", before: versionName(baseline.version) || "—", after: versionName(form.version) },
         { key: "locales", label: "语言", before: Object.keys(baseline.locales).map(localeName).join("、") || "—", after: Object.keys(form.locales).map(localeName).join("、") },
         { key: "content", label: "有改动的语言", before: "—", after: changedLocales.map(localeName).join("、") || "—" },
       ]} />,
@@ -96,7 +96,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
   if (loading && !doc) return <Conclusion state="unknown">正在加载隐私政策…</Conclusion>;
 
   const conclusion = !doc ? null
-    : writes.isLocked("privacy") ? <Conclusion state="warn" hint="到页面上方核对原操作结果。">隐私政策：有操作结果未知</Conclusion>
+    : writes.isLocked("privacy") ? <Conclusion state="warn" hint="到页面上方处理。">隐私政策：有操作结果未知</Conclusion>
       : doc.status === "PUBLISHED"
         ? <Conclusion state="ok" icon={FileCheck2} explain="用户看到自己语言的版本，没有译文时显示英语。">隐私政策：已发布，正文版本 {versionName(doc.version)}</Conclusion>
         : doc.status === "UNPUBLISHED"

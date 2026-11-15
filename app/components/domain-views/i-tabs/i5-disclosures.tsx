@@ -151,7 +151,7 @@ export function I5Disclosures({ ctx, errorText }: { ctx: ICtx; errorText: string
         choose("privacy");
         setPrivacyNonce((value) => value + 1);
         const document = await fetchPrivacyPolicyAdmin();
-        return `查到隐私政策现在是${PRIVACY_STATUS[document.status] ?? "状态待核实"}，正文版本 ${document.version}。`;
+        return `查到隐私政策现在是${PRIVACY_STATUS[document.status] ?? "状态待核实"}，正文版本 ${document.version.replace(/^default-/, "")}。`;
       }
       if (op.kind !== "legal-save" && op.kind !== "legal-transition") return "这条操作查不到结果。";
       // 查证的是原操作的语言、地区和版本，不是页面现在选的范围（REV2-02）。
@@ -655,7 +655,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   const queueLimit = queueUnknown ? (!canQueue ? "这个账号看不到待审批" : queueRead ? "待审批没读到" : "待审批还在读取") : undefined;
   const unconfirmed = writes.unconfirmed((target) => target === "gate" || target.startsWith("jur:"));
   const conclusion = unconfirmed > 0 && !issues.size
-    ? <Conclusion state="warn" action={headActions} hint="到页面上方核对原操作结果。"><b>{unconfirmed}</b> 项操作结果未知</Conclusion>
+    ? <Conclusion state="warn" action={headActions} hint="到页面上方处理。"><b>{unconfirmed}</b> 项操作结果未知</Conclusion>
     : issues.size
     ? <Conclusion state="danger" icon={ShieldAlert} action={headActions} hint={todoHint}><b>{issues.size}</b> 个适用范围的生效版本有问题，App 可能读不到披露</Conclusion>
     : unmapped.length
