@@ -384,7 +384,7 @@ export function ScopeFold({ data }: { data: L6BehaviorHeatmapData }) {
     <Fold title="统计范围和口径" summary={`页面目录 ${n(data.trackedCount)} 个页面 · 时区 ${data.businessTimeZone} · 只读`}>
       <Facts>
         <Fact k="统计哪些页面">页面目录里的 {n(data.trackedCount)} 个页面都在统计<Explain label="页面目录" content="页面目录是从 App 的页面清单复制到后台的一份，不随 App 实时更新。已退役的页面不在目录里：热力表不列，但合计和导出的 CSV 还会算它们这段时间的历史事件。" /></Fact>
-        <Fact k="事件从哪来">App 上报的页面浏览和元素点击，只算正式环境的事件</Fact>
+        <Fact k="事件从哪来">App 记下的页面浏览和元素点击，只算正式环境的事件</Fact>
         <Fact k="什么时候记浏览">离开这一页、换到下一页时记一次浏览和停留<Explain label="哪些不记" content="切到后台、退出 App 时正在看的那一页会丢掉，不补记；所以浏览次数不是「进入页面」的次数。" /></Fact>
         <Fact k="抽样">只算抽样记下的事件，不按比例放大<Explain label="抽样是什么" content="记录时按「用户行为事件」页的采集比例抽样，没抽中的不进统计；发送失败或被限流的也不在里面，所以不是全部真实操作。" /></Fact>
         <Fact k="设备和语言">只按 App 记下的标记筛；目前只有移动网页记录点击位置</Fact>
