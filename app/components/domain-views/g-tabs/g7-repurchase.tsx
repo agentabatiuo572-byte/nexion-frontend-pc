@@ -697,7 +697,8 @@ function G7RepurchasePage() {
     const direct = directRecord(param.key);
     const recovery = record ? records.find((row) => row.commandKey === record.commandKey) : undefined;
     const editable = canEdit(param.key);
-    const disabledReason = busy ? "正在处理上一项，稍候再操作" : readFailed && !record && !direct ? "当前值没读到，重新加载后再改" : undefined;
+    const disabledReason = busy ? "正在处理上一项，稍候再操作" : readFailed && !record && !direct ? "当前值没读到，重新加载后再改"
+      : lockedParams[param.key] && !record && !direct ? lockedParams[param.key].message : undefined;
     return (
       <ConfigRow key={param.key} name={name}
         what={copy?.what ?? operatorCopyText(param.sub)}
