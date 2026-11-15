@@ -65,6 +65,15 @@ function grouped(value: number) {
 }
 
 const timeText = (value: string) => formatBusinessTimeCompact(value, value && value.trim() ? value : "—");
+/** 探针读数里后端写的「N 秒」换成天、小时、分钟，只改显示（和用户行为事件页「最久已等」同一写法）。 */
+const metricText = (metric: string) => metric.replace(/(\d+) 秒/g, (_, raw: string) => {
+  const seconds = Number(raw);
+  if (seconds < 60) return `${seconds} 秒`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? `${hours} 小时 ${minutes % 60} 分` : `${Math.floor(hours / 24)} 天 ${hours % 24} 小时`;
+});
 
 function healthLabel(row: A3SystemHealth): { text: string; tone: StateTone; icon?: LucideIcon } {
   if (row.stale) return { text: "状态未知", tone: "warn", icon: CircleHelp };
@@ -455,7 +464,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
                 <span className="a3-health-name">{row.name}<Explain label={`${row.name}怎么算`} content={<><p>{HEALTH_HELP[row.name] ?? "后端探针的读数。"}</p><p>来源：{row.source || "—"}</p></>} /></span>
                 <StatusTag tone={state.tone} icon={state.icon}>{state.text}</StatusTag>
               </span>
-              <span className="a3-health-metric">{row.metric || "—"}</span>
+              <span className="a3-health-metric">{row.metric ? metricText(row.metric).split(" · ").map((part, index, parts) => index < parts.length - 1 ? <span key={index}><span className="rd-keep">{part} ·</span> </span> : <span key={index} className="rd-keep">{part}</span>) : "—"}</span>
               <span className="a3-health-time">{row.stale ? "探针没读到，不推测正常" : `检测于 ${timeText(row.observedAt)}`}</span>
             </li>;
           })}
