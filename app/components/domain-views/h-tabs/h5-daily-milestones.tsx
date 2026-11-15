@@ -259,7 +259,6 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         <div className="rd-stack">
           {idle && <Notice tone="warn" title="目前不影响签到">保存只改这一项的值，签到和发奖不变。</Notice>}
           <Facts>
-            {strip && <Fact k="现在" lead unit={copy?.unit}>{current}</Fact>}
             {strip && !positiveInteger(current) && <Fact k="现在的值" tone="warn">不是正整数，App 发不出，用户签到会失败</Fact>}
             {ruleApproverFacts}
           </Facts>
