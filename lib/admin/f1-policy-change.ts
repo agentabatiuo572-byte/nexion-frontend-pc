@@ -199,7 +199,7 @@ export async function submitF1Policy(
       if (previous || mode === "lookup") {
         // Clear stale observations before a fresh authoritative query.
         attempts.remember(fingerprint, key, { ...record(), ticket: undefined, absent: false });
-        ticket = await fetchA2ProposalByKey(key, true, true);
+        ticket = await fetchA2ProposalByKey(key, true, "f");
         if (!ticket) attempts.remember(fingerprint, key, { ...record(), ticket: undefined, absent: true });
       }
       if (mode === "lookup" && !ticket) return null;
@@ -211,7 +211,7 @@ export async function submitF1Policy(
         posting = false;
         attempts.remember(fingerprint, key, { ...record(), received: true });
         // The receipt is historical on replay; always query its current status.
-        ticket = await fetchA2ProposalByKey(key, true, true);
+        ticket = await fetchA2ProposalByKey(key, true, "f");
         if (!ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", key);
       }
       if (!ticket.mine || ticket.obj !== original.values.rank || ticket.operationCode !== "f1_rank_policy_change") {
@@ -265,7 +265,7 @@ export async function releaseF1PolicyProposal(owner: number, commandKey: string)
   const saved = listF1PolicyOperations(owner).find(item => item.commandKey === commandKey);
   if (!saved || !saved.original.approval || saved.expiresAt > Date.now()) throw new Error("这条原操作不能解除，请先查询原结果。");
   if (useAdminAuth.getState().session?.adminId !== owner) throw new Error("ADMIN_PERMISSION_DENIED");
-  const ticket = await fetchA2ProposalByKey(commandKey, true, true);
+  const ticket = await fetchA2ProposalByKey(commandKey, true, "f");
   if (ticket) throw new Error("已找到原审批单，请核对它现在的处理结果。");
   attempts.forget(saved.fingerprint, commandKey);
 }

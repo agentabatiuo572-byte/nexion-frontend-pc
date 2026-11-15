@@ -39,7 +39,7 @@ export async function queryF1Proposal(adminId: number, original: FDomainAttempt)
   actor(adminId); // Read permission is adjudicated independently by the lookup endpoint.
   if (original.adminId !== undefined && original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
   fCommands.remember(original.fingerprint, original.commandKey, { ...original, ticket: undefined, absent: false });
-  const ticket = await fetchA2ProposalByKey(original.commandKey, true, true);
+  const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
   if (!ticket) {
     fCommands.remember(original.fingerprint, original.commandKey, { ...original, ticket: undefined, absent: true });
     return null;
