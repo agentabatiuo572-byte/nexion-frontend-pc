@@ -1151,7 +1151,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           conflictRow(adjust ? "现在的奖励" : "课程现在发", reward(opened?.rewardNex), reward(now?.rewardNex))];
         if (!adjust) {
           const wanted = op === "i7_course_version_rollback" ? "SUPERSEDED" : "DRAFT";
-          rows.push(conflictRow(`要发布的 ${String(input.version ?? "")}`, openedTarget ? `${reward(openedTarget.payload.rewardNex)} · ${quiz(openedTarget.payload)}` : firstPublish && opened ? `${reward(opened.rewardNex)} · ${quiz(opened)}` : "—",
+          rows.push(conflictRow(`要发布的 ${String(target?.version ?? legacy?.version ?? input.version ?? "")}`, openedTarget ? `${reward(openedTarget.payload.rewardNex)} · ${quiz(openedTarget.payload)}` : firstPublish && opened ? `${reward(opened.rewardNex)} · ${quiz(opened)}` : "—",
             target ? `${reward(target.payload.rewardNex)} · ${quiz(target.payload)}` : legacy ? `${reward(legacy.rewardNex)} · ${quiz(legacy)}` : "没有了"));
           if (!gone && conflict.latest && (legacy ? legacy.status !== "draft" : target?.status !== wanted)) gone = `${String(input.version ?? "目标版本")} 现在不能${wanted === "DRAFT" ? "发布" : "回滚"}了（没有了或状态变了）。`;
         } else note = <>你填的新奖励 {reward(input.rewardNex)} 会带回确认框。</>;
