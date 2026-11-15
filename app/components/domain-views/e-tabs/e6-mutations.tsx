@@ -234,8 +234,8 @@ export function E6PendingNotice({ section, onRead }: { section: E6Section; onRea
     <SettledCommandNotices items={settled} onDismiss={key => setSettled(rows => rows.filter(row => row.key !== key))} />
     {riskDone.map(done => <Notice key={done.key} tone="done" title={<>保存机型风控设置 · <span className="rd-keep">{done.status === "CONFIRMED_NOT_EXECUTED" ? "核查确认原保存没有执行" : "原保存已完成"}</span></>} action={<Button size="sm" onClick={() => setRiskDone(rows => rows.filter(row => row.key !== done.key))}>知道了</Button>}>
       {done.status === "CONFIRMED_NOT_EXECUTED" ? <p>本页待确认已解除，可以重新修改风控设置。</p> : <>
-        {done.revision !== undefined ? <p>原保存完成后的版本是 {done.revision}。</p> : done.status !== "RETRIED" && <p>原保存结果里没有带回保存后的设置。</p>}
-        <p>当前设置已重新读取，以下方「机型风控」显示的版本和设置为准；这期间可能有人改过。</p>
+        {done.revision === undefined && done.status !== "RETRIED" && <p>原保存结果里没有带回保存后的设置。</p>}
+        <p>当前设置已重新读取，以下方「机型风控」显示的设置为准；这期间可能有人改过。</p>
       </>}
     </Notice>)}
     {section === "phones" && m.devicePending.map(r => <Notice key={r.commandKey} tone="warn" title={`${r.label} · 设备管理有原操作待核对`}><p>原操作在设备管理保留，请到设备管理核对。相关设备和整个用户的新操作先暂停。</p><Link className="rd-link" href="/devices/ops">设备管理</Link></Notice>)}
