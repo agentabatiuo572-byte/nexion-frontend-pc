@@ -12,16 +12,17 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Archive, BadgeCheck, BookOpen, CodeXml, Eye, FilePen, GraduationCap, History, Languages, ListChecks, Pencil, Plus, RefreshCw, RotateCcw, Search, Send, Star, Trash2, TriangleAlert } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
-import { fetchI6LearningOverview, pendingI6Commands, retryI6Command, type I6Command, type I6CommandSnapshot, type I18nMessagePairView, type LearningCourseVersionView } from "@/lib/admin/i-client";
+import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, FilterField, Fold, IconTile, Input, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, RatioBar, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTabIds, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
+import { fetchI6LearningOverview, i6RetryPermission, pendingI6Commands, queryI6Command, retryI6Command, type I6Command, type I6CommandSnapshot, type I18nMessagePairView, type LearningCourseVersionView } from "@/lib/admin/i-client";
 import type { ActionConfirmReq, ICtx } from "./types";
 import { PaginationExemptionList } from "../design-kit";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
-import { hiCourseScope, hiCourseRewardScope, hiRewardProposal, i6CourseProposalPermission, pendingHIRewardCommand, pendingHIRewardCommands, queryI6CourseProposal, retryI6CourseProposal, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
+import { hiCourseScope, hiCourseRewardScope, hiRewardProposal, i6CourseProposalPermission, pendingHIRewardCommand, pendingHIRewardCommands, queryI6CourseProposal, releaseExpiredI6CourseProposal, retryI6CourseProposal, submitHIRewardCommand, type HIRewardCommand } from "@/lib/admin/hi-reward-commands";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
+import { conflictRow, IConflictModal, IConflictPending, useIConflictView, type IConflictRow } from "./i-conflict";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -177,6 +178,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     overview: Awaited<ReturnType<typeof fetchI6LearningOverview>>;
     versions?: LearningCourseVersionView[]; messages?: I18nMessagePairView[];
   }, { scope: string; reason: string; value?: string; form?: Record<string, string> }>();
+  const conflictView = useIConflictView(conflictReview.review);
+  /** 核对冲突后重开确认框时带回的理由和新值，只用一次。 */
+  const prefill = useRef<{ scope: string; reason: string; value?: string } | null>(null);
   const readReady = useRef(false);
   const [, updateRecovery] = useState(0);
   const session = useAdminAuth((state) => state.session);
@@ -191,6 +195,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   // 已建成、等别人批的课程审批单只在审批中心里；这里读一次，在课程区常显哪门课在等批。
   const [courseApprovals, setCourseApprovals] = useState<A2OperationRow[] | "error" | null>(null);
   const [lookupKey, setLookupKey] = useState("");
+  /** 过期后按原请求查不到审批单的记录：可以确认解除。 */
+  const [notFoundKeys, setNotFoundKeys] = useState<string[]>([]);
+  const [releasing, setReleasing] = useState<HIRewardCommand | null>(null);
+  const [ordinaryBusy, setOrdinaryBusy] = useState("");
   const reloadCourseApprovals = async () => {
     if (view !== "learn") return;
     const records = pendingHIRewardCommands().filter(record => record.scope.startsWith("I/"));
@@ -265,7 +273,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     if (blocked) { toast(blocked, "warn"); return; }
     const openedData = latest.current.content.i18nLearning;
     let original: I6Command | undefined, proposal: HIRewardCommand | undefined, resolved = false;
+    const carried = prefill.current?.scope === scope ? prefill.current : null;
+    prefill.current = null;
     openActionConfirm({ ...request,
+      initialReason: carried?.reason,
+      edit: request.edit && carried?.value !== undefined ? { ...request.edit, initialValue: carried.value } : request.edit,
       getPendingReason: () => original ? pendingI6Commands().find(row => row.commandKey === original!.commandKey)?.reason
         : proposal ? pendingHIRewardCommands().find(row => row.commandKey === proposal!.commandKey)?.payload.input.reason : undefined,
       run: async (reason, value, form) => {
@@ -301,13 +313,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           const key = (error as { commandKey?: string }).commandKey;
           original = key ? pendingI6Commands().find(row => row.commandKey === key) : undefined;
           proposal = key ? pendingHIRewardCommands().find(row => row.commandKey === key) : undefined;
-          if (!original && !proposal) await conflictReview.reject(error, { scope, reason, value, form }, async () => {
+          if (!original && !proposal && await conflictReview.reject(error, { scope, reason, value, form }, async () => {
             const overview = await fetchI6LearningOverview();
             const versions = scope.startsWith("course:") ? await actions.fetchI7CourseVersions(scope.slice(7)) : undefined;
             const messages = scope.startsWith("message:") ? await actions.fetchI6MessageVersions(scope.slice(8)) : undefined;
             await actions.reloadIContent();
             return { overview, versions, messages };
-          });
+          })) ctx.closeActionConfirm();
           // Match I1: the domain owns the first rejection and keeps its confirmation, including business 403.
           throw new Error(`操作失败:${displayAdminError(error)}`);
         } finally { updateRecovery(current => current + 1); }
@@ -463,7 +475,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       title: "保存三语草稿",
       detail: (
         <>
-          中文、越南语、英语三份一起保存为草稿；不覆盖现在发布的版本，发布后用户才看到。
+          中文、越南语、英语三份一起存成新草稿；已发布的内容不变，发布后用户才看到。
         </>
       ),
       effect: <StatusTag tone="neutral" filled>只存草稿</StatusTag>,
@@ -500,7 +512,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         </>
       ),
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      statedBrief: { impact: "App 下次拉取文案时换成这一版；用户把 App 切回前台会重新拉取，已打开的页面不会马上变。", check: "三种语言都读一遍，变量和占位一致。" },
+      statedBrief: { impact: "App 下次成功拉取文案后换成这一版，切回前台会重新拉取。", check: "三种语言都读一遍，变量和占位一致。" },
       confirmLabel: "发布",
       facts: selectedMessage && <Facts>
         <Fact k="文案键">{selectedMessage.messageKey}</Fact>
@@ -523,7 +535,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const archiveKey = () => selectedMessage && confirmI6(`message:${selectedMessage.messageKey}`, { briefKind: "record",
     action: <>归档词条 · {selectedMessage.messageKey}</>,
     title: "归档文案",
-    detail: <>撤下这条远程文案，App 改用安装包里自带的文字（有的话）；历史版本保留，能回滚。</>,
+    detail: <>撤下这条远程文案；App 拉到新文案包后改用安装包里自带的文字（有的话）。历史版本保留，能回滚。</>,
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
     statedBrief: { impact: "App 不再拿到这条远程文案，屏幕上的字不一定消失。", check: "确认这条文字不再需要后台管理。" },
     confirmLabel: "归档",
@@ -605,10 +617,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       : versions.find(v => v.version === target.version);
     if (!currentTarget || currentTarget.version !== target.version || currentTarget.revision !== target.revision
       || currentTarget.status !== target.status || JSON.stringify(currentTarget.payload) !== JSON.stringify(target.payload))
-      throw new Error("目标课程版本读不到，请重新读取版本列表后核对。");
+      throw new Error(`${target.version} 刚变了或读不到，这次没有提交；关掉后重新打开核对。`);
     const current = (await fetchI6LearningOverview()).courses.find(course => course.id === c.id);
     if (!current || current.version !== c.v || current.revision !== c.revision || current.status !== c.status)
-      throw new Error("数据已重新读取，请按最新内容重新打开修改入口。");
+      throw new Error("这门课刚被改过，这次没有提交；关掉后重新打开核对。");
     const rawReward = target.payload.rewardNex;
     if (i6Amount(rawReward) === undefined)
       throw new Error("目标版本奖励读不到，本次未提交；请重新读取课程版本后核对。");
@@ -649,6 +661,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     <Fact k="版本"><Change from={liveStatus(c) === "published" ? `${c.v}（线上）` : `${c.v}（${COURSE_STATUS[liveStatus(c)]?.text ?? "草稿"}）`} to={`${target.version}（线上）`} /></Fact>
     <Fact k="学完发">{liveStatus(c) === "published" && uvtText(c.rewardRaw) !== uvtText(target.reward)
       ? <Change from={`${uvtText(c.rewardRaw)} UVT/人`} to={`${uvtText(target.reward)} UVT/人`} /> : `${uvtText(target.reward)} UVT/人`}</Fact>
+    {liveStatus(c) !== "published" && uvtText(c.rewardRaw) !== uvtText(target.reward)
+      && <Fact k="课程卡上" tone="warn">{`${uvtText(c.rewardRaw)} UVT/人，是主课程草稿的数；发布按 ${target.version} 的数`}</Fact>}
     {target.quiz !== undefined && <Fact k="测验">{target.quiz} 题 · {String(target.pass ?? "—")} 分及格</Fact>}
     {approverFact(Number(target.reward))}
   </Facts>;
@@ -675,6 +689,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       statedBrief: { impact: reward > 0 ? `批准后课程上线，学完并通过测验的用户每人领 ${uvtText(rawReward)} UVT；批准前用户看不到。` : "发布后用户能看到并学这门课。", check: "三种语言的标题、正文、测验都齐，奖励数核对过。" },
       facts: courseChange(c, versionTarget(target)),
       amplifies: reward > 0,
+      coverageLead: "这门课学完会发 UVT",
+      coverageCheck: "提交和批准时都检查兑付覆盖率。",
       getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
       run: (reason) => activateCourse(c, "first_publish", reason, target),
     });
@@ -693,9 +709,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           分类「{categoryLabel(c.cat)}」完成 UVT 奖励调整。调高会多发 UVT，批准时覆盖率低于红线会被拒。
         </>
       ),
-      effect: <StatusTag tone="progress" filled explain={`${APPROVER}在「操作记录与审批」批准后才改；批准前用户仍按现在的数领。`}>批准后生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled explain={`${APPROVER}在「操作记录与审批」批准后才改；批准前发奖按现在的数。`}>批准后生效</StatusTag>,
       confirmLabel: "提交审批",
-      statedBrief: { impact: "批准后，之后学完领奖的用户按新数领；已经发出的不补也不扣。", check: "核对新数在范围内，理由写清为什么调。" },
+      statedBrief: { impact: "批准后，还没发到账的奖励都按新数发；已经发出的不补也不扣。", check: "核对新数在范围内，理由写清为什么调。" },
       edit: { kind: "number", current: c.rewardRaw ?? "", unit: "UVT/课", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max,
         amplifiesWhen: (value) => (i6RewardChange(value, c.rewardRaw)?.direction ?? 0) > 0,
         hint: `${TUTORIAL_REWARD_RANGE.min}–${TUTORIAL_REWARD_RANGE.max} UVT`,
@@ -705,17 +721,18 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         } },
       facts: <Facts>
         <Fact k="课程">{nexGridBrandText(c.title)} · {c.v}</Fact>
-        <Fact k="从什么时候">批准后学完领奖的用户</Fact>
-        <Fact k="已经学完的">已发出的奖励不补差、不扣回</Fact>
+        <Fact k="按新数发">批准后还没发到账的，包括已学完、奖励还没发的</Fact>
+        <Fact k="已经发出的">不补差、不扣回</Fact>
         <Fact k="谁来批">{APPROVER}（需有审批批准和课程调奖权限）</Fact>
       </Facts>,
       amplifies: false,
       coverageLead: "调高后每位学完的用户多领 UVT",
+      coverageCheck: "提交时不查覆盖率；调高的申请在批准执行时检查。",
       run: async (reason, v) => {
         if (!v?.trim() || i6Amount(v) === undefined) return false;
         const current = (await fetchI6LearningOverview()).courses.find(course => course.id === c.id);
         if (!current || current.version !== c.v || current.revision !== c.revision || current.status !== c.status || current.rewardNex !== c.rewardRaw)
-          throw new Error("数据已重新读取，请按最新内容重新打开修改入口。");
+          throw new Error("这门课刚被改过，这次没有提交；关掉后重新打开核对。");
         const def = findHighOp("i7_course_reward_adjust")!;
         const session = useAdminAuth.getState().session;
         if (!session) throw new Error("请先登录后再提交。");
@@ -838,7 +855,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     }),
   });
 
-  const editCrs = (c: Course) => setCourseEditor({ spec: courseSpec("edit", {
+  const editCrsState = (c: Course): CourseEditorState => ({ spec: courseSpec("edit", {
     slug: c.id, category: c.cat, format: c.format, difficulty: c.level, duration: c.duration, reward: c.rewardRaw,
     titleZh: c.titleZh, titleEn: c.titleEn, titleVi: c.titleVi, bodyZh: c.bodyZh, bodyEn: c.bodyEn, bodyVi: c.bodyVi,
     quizQuestions: c.quizQuestions, passScore: c.passScore, retryLimit: c.retryLimit,
@@ -855,6 +872,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     amplifies: false,
     run: (reason) => runBackend(actions.updateI7CourseDraft(c.id, coursePayload(form, c.revision), reason), `${nexGridBrandText(c.title)} 草稿已更新`).then(() => setCourseEditor(null)),
   }) });
+  const editCrs = (c: Course) => setCourseEditor(editCrsState(c));
 
   const deleteCrs = (c: Course) => confirmI6(`course:${c.id}`, { briefKind: "record",
     action: <>删除课程草稿 · {nexGridBrandText(c.title)}</>,
@@ -904,7 +922,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
   };
 
-  const editCourseVersion = (c: Course, row: LearningCourseVersionView) => setCourseEditor({
+  const editCourseVersionState = (c: Course, row: LearningCourseVersionView): CourseEditorState => ({
     spec: courseSpec("version-edit", courseCurrent(c, row.version, row.payload)), title: "编辑版本草稿", sub: `${nexGridBrandText(c.title)} · ${row.version}`,
     save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
       action: <>编辑课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
@@ -919,6 +937,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         actions.updateI7CourseVersion(c.id, row.version, coursePayload(form, row.revision), reason), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`).then(() => setCourseEditor(null)),
     }),
   });
+  const editCourseVersion = (c: Course, row: LearningCourseVersionView) => setCourseEditor(editCourseVersionState(c, row));
 
   const deleteCourseVersion = (c: Course, row: LearningCourseVersionView) => confirmI6(`course:${c.id}`, { briefKind: "record",
     action: <>删除课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
@@ -949,7 +968,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     statedBrief: { impact: `${reward > 0 ? "批准后" : "发布后"}课程整体换成 ${row.version}：正文、测验、奖励一起换；在新版本学完的用户可以再领一次。`, check: "核对新版本的奖励和测验。" },
     facts: courseChange(c, versionTarget(row)),
     amplifies: reward > 0,
-    coverageLead: "这个版本学完会发 UVT，提交和批准时都检查兑付覆盖率",
+    coverageLead: "这个版本学完会发 UVT",
+    coverageCheck: "提交和批准时都检查兑付覆盖率。",
     getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
     run: (reason) => activateCourse(c, "version_publish", reason, row),
   });
@@ -967,7 +987,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     statedBrief: { impact: `${reward > 0 ? "批准后" : "回滚后"}正文、测验、奖励一起回到 ${row.version}；奖励不变或降低也要审批。`, check: "核对回滚后的奖励和测验。" },
     facts: courseChange(c, versionTarget(row)),
     amplifies: reward > 0,
-    coverageLead: "这个版本学完会发 UVT，提交和批准时都检查兑付覆盖率",
+    coverageLead: "这个版本学完会发 UVT",
+    coverageCheck: "提交和批准时都检查兑付覆盖率。",
     getPendingReason: () => pendingHIRewardCommand(hiCourseScope(c.id))?.payload.input.reason,
     run: (reason) => activateCourse(c, "version_rollback", reason, row),
   });
@@ -1002,8 +1023,177 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
   };
 
+  /* ============ 刚被别人改过：看最新的和自己填的，确认后按最新的重建编辑器或确认框 ============ */
+  const conflictUi = (() => {
+    const conflict = conflictReview.review;
+    if (!conflict) return null;
+    const scope = conflict.requested.scope;
+    const rejected = conflict.rejectedCommand as Partial<I6Command> & Partial<HIRewardCommand> | undefined;
+    const proposalInput = rejected?.payload?.kind === "proposal" ? rejected.payload.input : undefined;
+    const op = rejected?.operation ?? proposalInput?.command.op ?? "";
+    const input: Record<string, unknown> = rejected?.operation ? rejected.input ?? {} : proposalInput?.command.params ?? {};
+    const latestOverview = conflict.latest?.overview;
+    const carry = (value?: string) => { prefill.current = { scope, reason: conflict.requested.reason, value }; };
+    const reward = (value: unknown) => value === undefined || value === null || value === "" ? "—" : `${uvtText(value)} UVT/人`;
+    const quiz = (payload?: { quizQuestions?: unknown; passScore?: unknown }) => Array.isArray(payload?.quizQuestions)
+      ? `${payload.quizQuestions.length} 题 · ${String(payload.passScore ?? "—")} 分及格` : "—";
+    let subject: ReactNode = "这一项";
+    let rows: IConflictRow[] = [];
+    let columns: [string, string] = ["你打开时", "现在"];
+    let gone: string | undefined;
+    let note: ReactNode;
+    let rebuildLabel = "按最新的重新确认";
+    let rebuild: (() => void) | undefined;
+    if (scope.startsWith("message:")) {
+      const key = scope.slice(8);
+      const now = latestOverview?.messages.find((row) => row.messageKey === key);
+      const opened = rejected?.snapshot?.message;
+      const state = (row?: { version: string; status?: string }) => row ? `${row.version} · ${statusLabel(row.status)}` : "—";
+      subject = <>文案 <span className="i6-mono">{key}</span></>;
+      if (conflict.latest && !now) gone = "这条文案在最新读取里没有了，不能按最新的重做。";
+      if (op === "message-draft" || op === "integrity-fix") {
+        columns = ["现在", "你填的"];
+        rebuildLabel = "按最新的重新填写";
+        rows = [{ label: "版本", left: state(now), right: `基于 ${String(input.expectedVersion ?? opened?.version ?? "—")}`, changed: !!now && now.version !== (input.expectedVersion ?? opened?.version) },
+          ...LANGS.map((item) => conflictRow(item.label, now?.[item.key], input[item.key]))];
+        note = "三种语言照你填的留着，保存时按最新版本提交。";
+        rebuild = () => {
+          setSelectedMessageKey(key); setMessageDrawer(true);
+          const issue = INTEGRITY_ISSUES.find((row) => row.code === rejected?.snapshot?.integrityIssue?.code);
+          setCopyEditor((current) => current ? { ...current, tried: false } : { mode: op === "integrity-fix" && issue ? "fix" : "edit", issue,
+            zh: String(input.zh ?? ""), vi: String(input.vi ?? ""), en: String(input.en ?? ""), tried: false });
+        };
+      } else {
+        rows = [{ label: "版本", left: opened ? state(opened) : String(input.expectedVersion ?? "—"), right: state(now), changed: !!now && now.version !== (opened?.version ?? input.expectedVersion) },
+          ...LANGS.map((item) => conflictRow(item.label, opened?.[item.key], now?.[item.key]))];
+        const target = op === "message-rollback" ? conflict.latest?.messages?.find((row) => row.version === rejected?.version) : undefined;
+        if (op === "message-rollback" && conflict.latest && !target) gone = `回滚目标 ${rejected?.version ?? ""} 在最新读取里没有了。`;
+        rebuild = op === "message-publish" ? () => { carry(); pubKey(); }
+          : op === "message-archive" ? () => { carry(); archiveKey(); }
+            : target ? () => { carry(); rollbackMessageVersion(target); } : undefined;
+      }
+    } else if (scope.startsWith("course:")) {
+      const id = scope.slice(7);
+      const now = latestOverview?.courses.find((row) => row.id === id);
+      const course = COURSES.find((row) => row.id === id);
+      const opened = rejected?.snapshot?.course;
+      const state = (row?: { version: string; status: string }) => row ? `${row.version} · ${(COURSE_STATUS[row.status] ?? { text: "状态未知" }).text}` : "—";
+      subject = <>课程「{nexGridBrandText(now?.titleZh || now?.title || opened?.titleZh || id)}」</>;
+      if (conflict.latest && (!now || !course)) gone = "这门课在最新读取里没有了，不能按最新的重做。";
+      if (op === "course-draft" || op === "version-draft") {
+        const version = op === "version-draft" ? rejected?.version : undefined;
+        const nowVersion = version ? conflict.latest?.versions?.find((row) => row.version === version) : undefined;
+        const base: Record<string, unknown> | undefined = version ? nowVersion?.payload : now;
+        if (!gone && conflict.latest && version && nowVersion?.status !== "DRAFT") gone = `${version} 已经不是草稿了，不能再改。`;
+        if (!gone && conflict.latest && !version && now && !["draft", "ready"].includes(now.status)) gone = `这门课现在是 ${state(now)}，不能再改草稿。`;
+        columns = ["现在", "你填的"];
+        rebuildLabel = "按最新的重新填写";
+        rows = [conflictRow("中文标题", base?.titleZh, input.titleZh), conflictRow("越南语标题", base?.titleVi, input.titleVi), conflictRow("英语标题", base?.titleEn, input.titleEn),
+          conflictRow("学完发", reward(base?.rewardNex), reward(input.rewardNex)), conflictRow("测验", quiz(base), quiz(input))];
+        note = "你填的内容留在编辑框里，保存时按最新的草稿提交。";
+        rebuild = course && (!version || nowVersion) ? () => setCourseEditor((current) => {
+          const fresh = version ? editCourseVersionState(course, nowVersion!) : editCrsState(course);
+          return current ? fresh : { ...fresh, spec: { ...fresh.spec, current: courseCurrent(course, version ?? course.v, input) } };
+        }) : undefined;
+      } else if (op.startsWith("i7_course_")) {
+        const adjust = op === "i7_course_reward_adjust";
+        const target = adjust ? undefined : conflict.latest?.versions?.find((row) => row.version === input.version);
+        const openedTarget = rejected?.snapshot?.courseVersion;
+        rows = [{ label: "课程", left: opened ? state(opened) : `${String(input.expectedCurrentVersion ?? "—")}`, right: state(now), changed: !!opened && !!now && state(opened) !== state(now) },
+          conflictRow(adjust ? "现在的奖励" : "课程现在发", reward(opened?.rewardNex), reward(now?.rewardNex))];
+        if (!adjust) {
+          const wanted = op === "i7_course_version_rollback" ? "SUPERSEDED" : "DRAFT";
+          rows.push(conflictRow(`要发布的 ${String(input.version ?? "")}`, openedTarget ? `${reward(openedTarget.payload.rewardNex)} · ${quiz(openedTarget.payload)}` : "—",
+            target ? `${reward(target.payload.rewardNex)} · ${quiz(target.payload)}` : "没有了"));
+          if (!gone && conflict.latest && target?.status !== wanted) gone = `${String(input.version ?? "目标版本")} 现在不能${wanted === "DRAFT" ? "发布" : "回滚"}了（没有了或状态变了）。`;
+        } else note = <>你填的新奖励 {reward(input.rewardNex)} 会带回确认框。</>;
+        rebuild = !course ? undefined : adjust ? () => { carry(String(input.rewardNex ?? "")); adjRwd(course); }
+          : op === "i7_course_first_publish" ? () => { carry(); void pubCrs(course); }
+            : target ? () => { carry(); if (op === "i7_course_version_publish") publishCourseVersion(course, target); else rollbackCourseVersion(course, target); } : undefined;
+      }
+    }
+    if (!rebuild && !gone) { rebuildLabel = "知道了"; note = "最新的已经读到页面上，关掉后重新打开要做的操作。"; }
+    const finish = (task?: () => void) => {
+      if (!conflictReview.confirm(conflict, () => undefined)) return;
+      conflictView.show();
+      if (task) window.setTimeout(task, 0);
+    };
+    return conflictView.open
+      ? <IConflictModal review={conflict} subject={subject} rows={rows} columns={columns} gone={gone} note={note} rebuildLabel={rebuildLabel}
+          onReread={() => void conflictReview.reread()} onClose={conflictView.hide} onRebuild={() => finish(rebuild)}
+          onDiscard={() => finish(() => { if (scope.startsWith("message:")) setCopyEditor(null); else setCourseEditor(null); })} />
+      : <IConflictPending subject={subject} onOpen={conflictView.show} />;
+  })();
+
   /* ============ 等批准和结果未知的课程操作 ============ */
   const courseRecords = view === "learn" ? pendingHIRewardCommands().filter((record) => record.scope.startsWith("I/")) : [];
+  /* 普通写（文案、课程草稿、下架、换推荐）结果未知：刷新后也列出来，读不到概览时同样显示。 */
+  const ordinaryRecords = pendingI6Commands().filter((record) => record.scope === "unknown"
+    || (view === "i18n" ? record.scope === "rescan" || record.scope.startsWith("message:") : record.scope === "featured" || record.scope.startsWith("course:")));
+  const ordinaryChange = (record: I6Command) => {
+    const from = String(record.input.expectedVersion ?? "");
+    switch (record.operation) {
+      case "message-draft": return `${from} → 新草稿`;
+      case "message-publish": return `发布 ${from}`;
+      case "message-archive": return `${from} → 已归档`;
+      case "message-rollback": return `${from} → 复制 ${record.version} 发布`;
+      case "integrity-fix": return `存成草稿 · ${record.snapshot?.integrityIssue ? issueName(record.snapshot.integrityIssue) : "完整性问题"}`;
+      case "rescan": return "重算问题报告";
+      case "course-create": return `新课草稿 · 学完发 ${uvtText(record.input.rewardNex)} UVT/人`;
+      case "course-draft": return `草稿 · 学完发 ${uvtText(record.input.rewardNex)} UVT/人`;
+      case "course-delete": return "删除草稿";
+      case "course-archive": return "在线 → 已下架";
+      case "version-create": case "version-draft": return `${record.version} 草稿 · 学完发 ${uvtText(record.input.rewardNex)} UVT/人`;
+      case "version-delete": return `删除 ${record.version} 草稿`;
+      case "featured": return `${record.snapshot?.featuredCourseId || "—"} → ${record.target}`;
+      default: return "原记录不完整";
+    }
+  };
+  const queryOrdinary = async (record: I6Command) => {
+    setOrdinaryBusy(record.commandKey);
+    try {
+      const result = await queryI6Command(record);
+      const message = record.scope.startsWith("message:") ? result.overview.messages.find((row) => row.messageKey === record.target) : undefined;
+      const course = record.scope.startsWith("course:") ? result.overview.courses.find((row) => row.id === record.target) : undefined;
+      const now = record.scope === "featured" ? `首页推荐现在是 ${result.overview.featuredCourseId || "—"}`
+        : record.scope === "rescan" ? `问题报告现在 ${count(Math.max(0, result.overview.stats.integrityIssues))} 处`
+          : message ? `${record.target} 现在 ${message.version} · ${statusLabel(message.status)}`
+            : course ? `${record.target} 现在 ${course.version} · ${(COURSE_STATUS[course.status] ?? { text: "状态未知" }).text}` : `${record.target || "原对象"} 现在读不到`;
+      toast(`已重新读取：${now}。这不能证明原操作的结果，记录继续保留。`, "warn");
+      await actions.reloadIContent();
+    } catch (error) { toast(displayAdminError(error), "warn"); }
+    finally { setOrdinaryBusy(""); updateRecovery((value) => value + 1); }
+  };
+  const retryOrdinary = async (record: I6Command) => {
+    setOrdinaryBusy(record.commandKey);
+    try {
+      await retryI6Command(record);
+      toast(`${record.label} · 已按原请求完成`);
+      await finishRecovery();
+    } catch (error) {
+      toast(`操作失败:${displayAdminError(error)}`, "warn");
+      if (!pendingI6Commands().some((row) => row.commandKey === record.commandKey)) await finishRecovery();
+    } finally { setOrdinaryBusy(""); updateRecovery((value) => value + 1); }
+  };
+  const ordinaryItems = ordinaryRecords.map((record) => {
+    const expired = isRetryExpired(record);
+    return <li key={record.commandKey} role="status">
+      <StatusTag tone={expired ? "done" : "warn"}>{expired ? "已超过 24 小时" : "结果未知"}</StatusTag>
+      <span className="i6-pending-what">{record.label}{record.target ? <> · <span className="i6-mono">{record.target}</span></> : null}</span>
+      <span className="i6-pending-change">{ordinaryChange(record)}</span>
+      <span className="i6-pending-at">{businessStamp(record.createdAt)} 提交</span>
+      <span className="i6-pending-act">
+        <Button size="sm" disabled={!!ordinaryBusy && ordinaryBusy !== record.commandKey} loading={ordinaryBusy === record.commandKey} onClick={() => void queryOrdinary(record)}>查询原结果</Button>
+        <Button size="sm" variant="primary" disabledReason={ordinaryBusy ? "正在处理另一项" : expired ? "已超过 24 小时，不能再重试，只能查询。" : i6RetryPermission(record)}
+          onClick={() => void retryOrdinary(record)}>按原请求重试</Button>
+      </span>
+    </li>;
+  });
+  const ordinaryExplain = "提交时没收到确定结果，可能已经生效。先「查询原结果」看现在的内容；24 小时内可以「按原请求重试」，后端认得出是同一次提交，不会重复执行；过了 24 小时只能查询。";
+  const ordinaryRecovery = view === "i18n" && ordinaryItems.length > 0
+    ? <Panel title="结果未知的文案操作" icon={TriangleAlert} tone="warn" sub={`${ordinaryItems.length} 项 · 时间为${BJ}`} explain={ordinaryExplain}>
+      <ul className="i6-pending" aria-label="结果未知的文案操作">{ordinaryItems}</ul>
+    </Panel> : null;
   const courseApprovalRows = (Array.isArray(courseApprovals) ? courseApprovals : []).filter(row => !courseRecords.some(record =>
     record.ticketStatus === "pending" && record.payload.kind === "proposal"
     && record.payload.input.obj === row.obj && record.payload.input.command.op === row.operationCode));
@@ -1011,15 +1201,17 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         if (view !== "learn") return null;
         const records = courseRecords;
         const approvals = courseApprovalRows;
-        if (!records.length && !approvals.length && courseApprovals !== "error") return null;
+        if (!records.length && !approvals.length && !ordinaryItems.length && courseApprovals !== "error") return null;
         const courseTitle = (id: string) => nexGridBrandText(allCourses.find((course) => course.id === id)?.title ?? id);
         // 超过 24 小时的原操作只查原审批单、不重发：查询直接做，不经确认框（共用确认框带锁定理由时按钮固定写「重试原操作」）。
         const lookupExpired = async (record: HIRewardCommand) => {
           setLookupKey(record.commandKey);
           try {
             const ticket = await queryI6CourseProposal(record);
+            if (!ticket && isRetryExpired(record)) setNotFoundKeys((keys) => keys.includes(record.commandKey) ? keys : [...keys, record.commandKey]);
             toast(ticket?.status === "pending" ? "已提交，等待审批后执行"
-              : ticket ? "已查询到原审批单，请在操作记录核对执行状态" : "没有查到原审批单，请保留原记录核对。", "warn");
+              : ticket ? "已查询到原审批单，请在操作记录核对执行状态"
+                : isRetryExpired(record) ? "后端按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" : "还没查到原审批单，记录继续保留。", "warn");
             if (ticket && ticket.status !== "pending") await finishRecovery();
             else await reloadCourseApprovals();
           } catch (error) {
@@ -1035,8 +1227,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         const change = (record: HIRewardCommand) => record.payload.kind === "proposal"
           ? <Change from={approvalValue(record.payload.input.beforeValue)} to={approvalValue(record.payload.input.afterValue)} /> : null;
         const auditHref = "/platform/audit?domain=I";
-        return <Panel title="等批准和结果未知的课程操作" icon={TriangleAlert} tone="warn" sub={`${records.length + approvals.length} 项`}
-          explain="有奖励的课程发布、发布新版本、回滚到旧版本，都要另一位超级管理员批准；批准前课程保持现在的版本，这门课的其他发布或回滚会被拦下。"
+        return <Panel title="等批准和结果未知的课程操作" icon={TriangleAlert} tone="warn" sub={`${records.length + approvals.length + ordinaryItems.length} 项 · 时间为${BJ}`}
+          explain={<><p>有奖励的课程发布、发布新版本、回滚和调奖，都要另一位超级管理员批准；批准前课程不变。</p><p>发布、回滚在等批准时，这门课不能再提交发布或回滚；调奖单独审批，不受它拦。两张都批准时，后执行的那张可能因课程已变而失败。</p><p>{ordinaryExplain}</p></>}
           actions={canReadA2 && <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reloadCourseApprovals()}>刷新审批进度</Button>}>
           <ul className="i6-pending" aria-label="课程审批和结果未知列表">
             {records.map((record) => {
@@ -1044,19 +1236,22 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               const queryOnly = expired || record.receiptKnown || !!i6CourseProposalPermission(record);
               const label = subject(record);
               return <li key={record.commandKey} role="status">
-                <StatusTag tone={record.ticketStatus === "pending" ? "progress" : expired ? "done" : "warn"}>{record.ticketStatus === "pending" ? "待审批" : expired ? "已超过 24 小时" : "结果未知"}</StatusTag>
+                <StatusTag tone={record.ticketStatus === "pending" ? "progress" : expired || record.receiptKnown ? "done" : "warn"}>{record.ticketStatus === "pending" ? "待审批" : record.receiptKnown ? "已提交，状态未查到" : expired ? "已超过 24 小时" : "结果未知"}</StatusTag>
                 <span className="i6-pending-what">{label}</span>
                 <span className="i6-pending-change">{change(record)}</span>
                 <span className="i6-pending-at">{businessStamp(record.createdAt)} 提交</span>
-                <Button size="sm" variant="primary" disabled={!!lookupKey} loading={lookupKey === record.commandKey}
-                  onClick={() => queryOnly ? void lookupExpired(record) : openActionConfirm({ briefKind: "record",
+                <span className="i6-pending-act">
+                <Button size="sm" disabled={!!lookupKey && lookupKey !== record.commandKey} loading={lookupKey === record.commandKey} onClick={() => void lookupExpired(record)}>查询原结果</Button>
+                {expired && notFoundKeys.includes(record.commandKey) && record.ticketStatus !== "pending" && <Button size="sm" variant="primary" disabled={!!lookupKey} onClick={() => setReleasing(record)}>确认解除</Button>}
+                {!queryOnly && <Button size="sm" variant="primary" disabled={!!lookupKey}
+                  onClick={() => openActionConfirm({ briefKind: "record",
                   action: `核对原操作 · ${label}`,
                   title: "按原请求重试",
                   detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原请求查审批单；查不到才按原请求原样重发，不会重复建单。理由沿用原操作。</>,
                   effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>,
                   statedBrief: { impact: "先查原审批单，查不到才原样重发；不会建第二张单。", check: "核对是哪门课、哪个版本。" },
                   facts: <Facts><Fact k="原操作">{label}</Fact><Fact k="改动">{change(record) ?? "—"}</Fact><Fact k="提交时间">{businessStamp(record.createdAt)}（{BJ}）</Fact></Facts>,
-                  confirmLabel: expired ? "查询原审批单" : "核对原操作",
+                  confirmLabel: "按原请求重试",
                   getPendingReason: () => pendingHIRewardCommands().find((row) => row.commandKey === record.commandKey)?.payload.input.reason,
                   run: async () => {
                     try {
@@ -1068,7 +1263,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       throw error;
                     } finally { updateRecovery(value => value + 1); }
                   },
-                })}>{queryOnly ? "查询原结果" : "按原请求重试"}</Button>
+                })}>按原请求重试</Button>}
+                </span>
+                {record.receiptKnown && record.ticketStatus !== "pending" && <span className="i6-pending-note">审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。</span>}
+                {expired && notFoundKeys.includes(record.commandKey) && <span className="i6-pending-note">后端按原请求查不到这张审批单，说明没建成；核对后可以确认解除。</span>}
               </li>;
             })}
             {approvals.map((row) => <li key={row.id}>
@@ -1079,16 +1277,25 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               {reach(auditHref, "platform_a2_read") ? <Link className="rd-link" href={auditHref} prefetch={false}>去审批中心看</Link> : <span />}
             </li>)}
             {courseApprovals === "error" && <li><Notice tone="danger">审批进度读取失败，请点「刷新审批进度」重试。</Notice></li>}
+            {ordinaryItems}
           </ul>
+          {releasing && <ReleaseModal label={<>{subject(releasing)}{change(releasing) && <> · {change(releasing)}</>}</>}
+            explain="原申请超过 24 小时，后端按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
+            onCancel={() => setReleasing(null)} onConfirm={() => {
+              const record = releasing;
+              setReleasing(null);
+              void releaseExpiredI6CourseProposal(record).then(() => { toast("已解除，这门课可以重新提交"); return finishRecovery(); },
+                (error) => toast(displayAdminError(error), "warn")).finally(() => { setNotFoundKeys((keys) => keys.filter((key) => key !== record.commandKey)); updateRecovery((value) => value + 1); });
+            }} />}
         </Panel>;
       })();
 
   /* ============ 读取中、读不到 ============ */
   if (contentLoading && !data) {
-    return <>{courseRecovery}<BlockState state="loading" title={view === "i18n" ? "正在加载文案…" : "正在加载课程…"} /></>;
+    return <>{conflictUi}{ordinaryRecovery}{courseRecovery}<BlockState state="loading" title={view === "i18n" ? "正在加载文案…" : "正在加载课程…"} /></>;
   }
   if (!data) {
-    return <>{courseRecovery}<BlockState state="error" title={view === "i18n" ? "文案没有读到" : "课程没有读到"} detail="点上方「重新加载」重试。" /></>;
+    return <>{conflictUi}{ordinaryRecovery}{courseRecovery}<BlockState state="error" title={view === "i18n" ? "文案没有读到" : "课程没有读到"} detail="点上方「重新加载」重试。" /></>;
   }
 
   /* ============ App 文案 ============ */
@@ -1149,7 +1356,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const editorBlocked = blockedText(editorMissing);
     const startEdit = (mode: CopyEditor["mode"], issue?: IntegrityIssue) => sm && setCopyEditor({ mode, issue, zh: sm.zh, vi: sm.vi, en: sm.en, tried: false });
     const whenSeen = !sm ? "—" : sm.status === "published" ? "已在远程文案里；App 下次拉取时用它"
-      : sm.status === "draft" ? "草稿，用户看不到；发布后 App 下次拉取时换上" : sm.status === "archived" ? "已撤下远程文案，App 改用自带文字" : "—";
+      : sm.status === "draft" ? "草稿，用户看不到；发布后 App 下次拉取时换上" : sm.status === "archived" ? "已撤下远程文案；App 拉到新文案包后改用自带文字" : "—";
     const judgment: JudgmentRow[] = sm ? [
       { label: "状态", value: <><StatusTag tone={msgStatus(sm.status).tone}>{msgStatus(sm.status).text}</StatusTag> {sm.version}</> },
       { label: "在 App 哪里", value: <>{nsLabel(sm.namespace)} · <span className="i6-mono">{keyPath || sm.messageKey}</span></> },
@@ -1173,6 +1380,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         explain="缺翻译按每条文案现在的内容算，草稿也算；完整性问题是上次检查存下的报告。">
         {conclusionParts.length ? conclusionParts.join("，") : `${count(total)} 条文案三种语言都齐了，没有待发布的草稿`}
       </Conclusion>
+      {conflictUi}
+      {ordinaryRecovery}
 
       <Panel title="三种语言齐不齐" icon={Languages} tone="role-2" sub={`共 ${count(total)} 条 · ${count(NAMESPACES.length)} 个模块`}
         explain="按每条文案现在的内容算（草稿也算）。「可上线」是后端算的：已发布、三语齐、变量一致且通过质量检查的才算。">
@@ -1214,7 +1423,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
       <div ref={listRef} className="i6-list-anchor">
         <Panel title="找一句文案" icon={Search} tone="role-other" sub={filtered ? `${count(filteredMessages.length)} / ${count(total)} 条` : `${count(total)} 条`}
-          explain="按键名或中文、越南语、英语的内容搜。只能维护 App 已登记的文案键，新键随 App 版本登记。">
+          explain="按键名或中文、越南语、英语的内容搜。只能维护已登记的文案键；新建课程会自动登记课程的键。">
           <FilterBar
             scope={<div className="rd-filter-scope-row"><Segments label="按状态看" value={msgScope} onChange={(value) => { setMsgScope(value); setMsgPage(1); }}
               items={[
@@ -1253,7 +1462,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   <Td><Cell main={<StatusTag tone={msgStatus(message.status).tone} icon={message.status === "draft" ? FilePen : undefined}>{msgStatus(message.status).text}</StatusTag>} sub={message.version} /></Td>
                 </Tr>;
               })}
-              {total === 0 && <TableMessage columns={5}>还没有登记的文案。新文案键随 App 版本登记后出现在这里。</TableMessage>}
+              {total === 0 && <TableMessage columns={5}>还没有登记的文案。</TableMessage>}
               {total > 0 && filteredMessages.length === 0 && <TableMessage columns={5}>没有符合条件的文案。<button type="button" className="rd-link" onClick={clearFilters}>清除筛选</button></TableMessage>}
             </tbody>
           </Table>
@@ -1264,7 +1473,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
       <Fold title="完整性检查" icon={ListChecks} tone={openIssues.length ? "warn" : "role-other"} alert={liveIntegrity > 0}
         summary={liveIntegrity > 0 ? `${count(liveIntegrity)} 处问题 · ${openIssues.filter((issue) => issue.cnt > 0).map((issue) => `${issueName(issue)} ${count(issue.cnt)}`).join(" · ")}` : INTEGRITY_ISSUES.length ? "问题报告里没有待修的" : "还没有问题报告"}
-        explain="检查 6 类：缺中文、缺英语、缺越南语、变量不一致、占位文字、旧品牌名。报告存在后台，点「重新检查」才更新；报告是空的不代表文案都没问题。一条文案可能同时算进几类。"
+        explain="检查 6 类：缺中文、缺英语、缺越南语、变量不一致、占位文字、旧品牌名。报告存在后台，点「重新检查」或修复一条后更新；报告是空的不代表文案都没问题。一条文案可能同时算进几类。"
         actions={canWriteI6 ? <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={rescan}>重新检查</Button> : undefined}>
         {INTEGRITY_ISSUES.length === 0
           ? <BlockState state="empty" title="还没有问题报告" detail={canWriteI6 ? "点「重新检查」生成一份。" : undefined} />
@@ -1361,7 +1570,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         </>}
         {sm && copyEditor && <>
           {copyEditor.mode === "fix" && copyEditor.issue && <Facts><Fact k="问题">{issueName(copyEditor.issue)} · {count(copyEditor.issue.cnt)} 处</Fact><Fact k="修哪一条">{sm.messageKey}</Fact></Facts>}
-          <p className="i6-muted">存成草稿，不覆盖现在发布的 {sm.version}；发布后用户才看到。</p>
+          <p className="i6-muted">存成新草稿，已发布的内容不变；发布后用户才看到。</p>
+          {i1 && <Notice tone="warn">这条文案来自页面文案对比测试：那边发布时会直接盖掉这里没发布的草稿。</Notice>}
           {LANGS.map((item) => {
             const value = copyEditor[item.key];
             const missingVars = (sm.placeholders ?? []).filter((ph) => !value.includes(ph));
@@ -1389,11 +1599,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const unknownOf = (id: string) => courseRecords.find((record) => record.payload.kind === "proposal" && record.payload.input.obj === id && record.ticketStatus !== "pending");
   const weekly = operatorCopyText(I6_STATS.weeklyNexPayout);
   const weeklyValue = weekly.replace(/\s*UVT$/, "");
-  const unknownCount = courseRecords.filter((record) => record.ticketStatus !== "pending").length;
+  const unknownCount = courseRecords.filter((record) => record.ticketStatus !== "pending").length + ordinaryRecords.length;
   const pendingCourseCount = new Set([...courseApprovalRows.map(row => row.obj), ...courseRecords.filter(record => record.ticketStatus === "pending")
     .map(record => record.payload.kind === "proposal" ? record.payload.input.obj : "")].filter(Boolean)).size;
   const conclusion = unknownCount > 0
-    ? { state: "warn" as const, text: `${count(unknownCount)} 个课程操作结果未知，先核对`, hint: "在下面「等批准和结果未知」里按原请求重试" }
+    ? { state: "warn" as const, text: `${count(unknownCount)} 个课程操作结果未知，先核对`, hint: "在下面「等批准和结果未知」里先查询原结果" }
     : pendingCourseCount > 0
       ? { state: "neutral" as const, text: `${count(pendingCourseCount)} 门课在等${APPROVER}批准`, hint: counts.draft ? `另有 ${count(counts.draft)} 门草稿没发布` : undefined }
       : counts.draft > 0
@@ -1444,6 +1654,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
 
   return <>
     <Conclusion state={conclusion.state} icon={conclusion.state === "ok" ? BadgeCheck : conclusion.state === "warn" ? TriangleAlert : GraduationCap} hint={conclusion.hint}>{conclusion.text}</Conclusion>
+    {conflictUi}
     {courseRecovery}
     <StatBand label="课程概况">
       <Stat tone="role-2" icon={GraduationCap} label="在线课程" value={count(I6_STATS.coursesOnline)} unit="门" sub={`共 ${count(allCourses.length)} 门 · 草稿 ${count(counts.draft)} · 已下架 ${count(counts.archived)}`} />

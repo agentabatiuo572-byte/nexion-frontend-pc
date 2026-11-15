@@ -480,6 +480,7 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i4-recovery { display: flex; flex-direction: column; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
 .i4-recovery li { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 1.4fr) auto auto auto; align-items: center; gap: var(--rd-space-3); }
 .i4-recovery-name { font-weight: var(--rd-weight-medium); }
+.i4-recovery-note { grid-column: 1 / -1; font-size: var(--rd-text-aux); color: var(--rd-text-2); }
 
 /* 详情抽屉里的版本清单：版本、状态、改了什么一行，时间和人一行，动作在右。 */
 .i4-vlist { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
@@ -551,6 +552,8 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i6-page .i6-pending-what small { margin-left: var(--rd-space-2); font-weight: var(--rd-weight-regular); color: var(--rd-text-3); }
 .i6-page .i6-pending-change { min-width: 0; font-size: var(--rd-text-aux); color: var(--rd-text-2); }
 .i6-page .i6-pending-at { font-size: var(--rd-text-aux); color: var(--rd-text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.i6-page .i6-pending-act { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--rd-space-2); }
+.i6-page .i6-pending-note { grid-column: 1 / -1; font-size: var(--rd-text-aux); color: var(--rd-text-2); }
 @container idom (max-width: 900px) { .i6-page .i6-pending li { grid-template-columns: max-content minmax(0, 1fr) max-content; } .i6-page .i6-pending-change, .i6-page .i6-pending-at { grid-column: 2 / 3; } }
 
 /* 课程卡 */
@@ -642,3 +645,7 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i6-page .i6-clean { display: flex; align-items: center; gap: var(--rd-space-1); margin-top: var(--rd-space-3); }
 .i6-page .i6-issue-fix { display: inline-flex; align-items: center; gap: var(--rd-space-3); margin-left: auto; min-width: 0; }
 .i6-page .i6-issue-fix [data-pair] { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
+
+/* 刚被别人改过的核对框（I1–I4、I6 共用）：值保留换行，长串折行。 */
+.idom .i-conflict-label, .i-conflict .i-conflict-label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); white-space: nowrap; }
+.i-conflict .i-conflict-value { white-space: pre-wrap; overflow-wrap: anywhere; }

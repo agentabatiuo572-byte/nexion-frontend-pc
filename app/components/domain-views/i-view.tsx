@@ -222,8 +222,10 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
           confirmTone={mc.confirmTone}
           statedBrief={mc.statedBrief}
           coverageLead={mc.coverageLead}
+          coverageCheck={mc.coverageCheck}
           blockedReason={mc.blockedReason}
           reasonPlaceholder={mc.reasonPlaceholder}
+          initialReason={mc.initialReason}
           getPendingReason={mc.getPendingReason}
           getPendingBusinessValue={mc.getPendingBusinessValue}
           reasonMin={mc.reasonMin}

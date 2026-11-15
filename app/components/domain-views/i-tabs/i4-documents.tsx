@@ -28,7 +28,7 @@ type Editor =
   | { mode: "restore"; document: TrustDocument; reason: string };
 
 const sizeText = (bytes: number) => bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-const UPLOAD_PUBLIC = "上传成功后立即对所有用户公开";
+const UPLOAD_PUBLIC = "上传成功后立即公开";
 
 export function I4Documents({ onPendingChange, recovery }: { onPendingChange: () => void; recovery: I4DocumentCommand | null }) {
   const session = useAdminAuth((state) => state.session);
@@ -47,6 +47,8 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [fresh, setFresh] = useState(false);
   const [editorBaselineReady, setEditorBaselineReady] = useState(true);
+  /** 第一次提交被明确拒绝是因为资料刚被别人换过（不是结果未知）。 */
+  const [conflicted, setConflicted] = useState(false);
   const submitting = useRef(false);
   /** 只管显示：第一次读完之前画加载块，不画「没读到」。 */
   const [read, setRead] = useState(false);
@@ -76,7 +78,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
 
   const openUpload = (document: TrustDocument) => {
     if (!fresh || loading || i4DocumentPermission(document.slot) || pendingI4DocumentCommands().some(row => row.document.slot === document.slot)) return;
-    setPendingKey(null); setEditorError(null); setEditorBaselineReady(true);
+    setPendingKey(null); setEditorError(null); setEditorBaselineReady(true); setConflicted(false);
     setEditor({ mode: "upload", document, file: null, fields: {
       version: document.slot === "whitepaper" ? "" : document.version ?? "",
       language: document.language ?? "",
@@ -87,7 +89,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   };
   const openRestore = (document: TrustDocument) => {
     if (!fresh || loading || i4DocumentPermission(document.slot) || pendingI4DocumentCommands().some(row => row.document.slot === document.slot)) return;
-    setPendingKey(null); setEditorError(null); setEditorBaselineReady(true);
+    setPendingKey(null); setEditorError(null); setEditorBaselineReady(true); setConflicted(false);
     setEditor({ mode: "restore", document, reason: "" });
   };
   const preview = async (document: TrustDocument) => {
@@ -140,6 +142,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
       const pending = pendingI4DocumentCommands().find(row => row.document.slot === editor.document.slot);
       if (pending) setPendingKey(pending.commandKey);
       else if (isIConflictRejection(cause)) {
+        setConflicted(true);
         setEditorBaselineReady(false);
         await refresh();
       }
@@ -164,11 +167,14 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
         // and show the fresh document in the existing facts before the next submission.
         setEditor(current => current ? { ...current, document } : null);
         setEditorBaselineReady(true);
+        setConflicted(false);
+        setEditorError(null);
       } else setEditorBaselineReady(false);
     }
   };
 
   const name = editor ? TRUST_DOCUMENT_NAMES[editor.document.slot] : "";
+  const pendingFile = pendingKey && editor?.mode === "upload" ? pendingI4DocumentCommands().find(row => row.commandKey === pendingKey)?.file : undefined;
   const setField = (key: keyof TrustDocumentUpload, value: string) =>
     !saving && !pendingKey && editor?.mode === "upload" && setEditor({ ...editor, fields: { ...editor.fields, [key]: value } });
   const uploaded = documents.filter((document) => document.source === "UPLOADED").length;
@@ -177,7 +183,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
     <section data-testid="trust-documents">
       <Panel title="四份公司资料" icon={FileBadge2} tone="role-1"
         sub={documents.length ? `${uploaded} 份用上传的 · ${documents.length - uploaded} 份用默认文件` : undefined}
-        explain={<><p>App 信任中心和白皮书页展示的 PDF。没上传过的显示随系统发布的默认文件。</p><p>上传和恢复默认不走审批，成功后立即对所有用户公开。白皮书要标准发布或信任中心管理权限，三份公司登记资料要信任中心管理权限。</p></>}
+        explain={<><p>App 信任中心和白皮书页展示的 PDF。没有用上传的文件时，显示随系统发布的默认文件。</p><p>上传和恢复默认不走审批，成功后立即公开，App 下次读取时换上。白皮书要标准发布或信任中心管理权限，三份公司登记资料要信任中心管理权限。</p></>}
         actions={<Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void refresh()}>刷新</Button>}>
         {error && documents.length > 0 && <div className="rd-panel-line"><Notice tone="danger" title="资料没读到最新">{error} 下面是上次读到的。</Notice></div>}
         {!documents.length
@@ -197,11 +203,11 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
                   <p className="i4-doc-file" title={document.fileName} data-user-content="">{document.fileName}</p>
                   <p className="i4-doc-size">PDF · {sizeText(document.sizeBytes)} · {document.pageCount} 页{document.language ? ` · ${document.language}` : ""}</p>
                   <dl className="i4-doc-facts">
-                    <div><dt>现在用的</dt><dd><StatusTag tone={isUploaded ? "progress" : "neutral"} explain={isUploaded ? "用的是后台上传的文件，可以恢复成默认文件。" : "没上传过，用随系统发布的默认文件。"}>{isUploaded ? "上传的文件" : "默认文件"}</StatusTag></dd></div>
+                    <div><dt>现在用的</dt><dd><StatusTag tone={isUploaded ? "progress" : "neutral"} explain={isUploaded ? "用的是后台上传的文件，可以恢复成默认文件。" : "现在用随系统发布的默认文件。"}>{isUploaded ? "上传的文件" : "默认文件"}</StatusTag></dd></div>
                     {document.slot === "whitepaper"
                       ? <div><dt>版本</dt><dd data-empty={document.version ? undefined : ""}>{document.version ?? "—"}</dd></div>
                       : <div><dt>登记号</dt><dd data-mono="" data-empty={document.referenceNo ? undefined : ""}>{document.referenceNo ?? "—"}</dd></div>}
-                    <div><dt>最近上传</dt><dd data-empty={document.updatedAt ? undefined : ""}>{document.updatedAt ? timeText(document.updatedAt) : "— 没有上传记录"}</dd></div>
+                    <div><dt>最近上传</dt><dd data-empty={document.updatedAt ? undefined : ""}>{document.updatedAt ? timeText(document.updatedAt) : "—"}</dd></div>
                     {document.updatedAt && <div><dt>上传人</dt><dd data-empty={document.updatedBy ? undefined : ""}>{document.updatedBy ?? "—"}</dd></div>}
                   </dl>
                   <footer className="i4-doc-actions">
@@ -225,26 +231,35 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
         title={editor?.mode === "restore" ? "恢复默认文件" : "上传新版本"} sub={name} icon={editor?.mode === "restore" ? RotateCcw : Upload} tone="role-1"
         footer={editor && <Decision
           others={<Button onClick={close} disabled={saving}>取消</Button>}
-          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，请重新读取核对，不能重发原上传请求。" : isRetryExpired(pendingI4DocumentCommands().find(row => row.commandKey === pendingKey) ?? { expiresAt: 0 }) ? RETRY_EXPIRED_TEXT : i4DocumentPermission(editor.document.slot)) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : "恢复默认文件"}</Button>} />}>
+          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，请重新读取核对，不能重发原上传请求。" : isRetryExpired(pendingI4DocumentCommands().find(row => row.commandKey === pendingKey) ?? { expiresAt: 0 }) ? RETRY_EXPIRED_TEXT : i4DocumentPermission(editor.document.slot)) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : pendingKey ? "按原请求重试" : "恢复默认文件"}</Button>} />}>
         {editor && <div className="rd-stack i4-doc-editor">
           {editor.mode === "upload"
-            ? <Notice tone="warn" title={UPLOAD_PUBLIC}>不走审批；之后可以恢复成默认文件。</Notice>
-            : <Notice tone="warn" title="恢复后立即对所有用户生效">不走审批；App 改显示随系统发布的默认文件。</Notice>}
-          {editorError && <Notice tone="danger" title={editor.mode === "upload" ? "没收到上传成功的结果" : "没收到恢复成功的结果"}
-            action={<Button size="sm" loading={loading} onClick={() => void readBack()}>重新读取核对</Button>} actionBelow>
-            <p>{editorError}</p>
-            <p>{editor.mode === "upload" ? "刚才的上传可能已经成功：先重新读取，核对卡片上的文件名和上传时间，再决定要不要重传。" : "先重新读取，核对卡片上是不是已经变回默认文件。"}</p>
-          </Notice>}
+            ? <Notice tone="warn" title={UPLOAD_PUBLIC}>不走审批；App 下次读取时换成这份，之后可以恢复成默认文件。</Notice>
+            : <Notice tone="warn" title="恢复后立即生效">不走审批；App 下次读取时改显示随系统发布的默认文件。</Notice>}
+          {editorError && (pendingKey
+            ? <Notice tone="warn" title={editor.mode === "upload" ? "上传结果未知" : "恢复结果未知"}
+              action={<Button size="sm" loading={loading} onClick={() => void readBack()}>重新读取核对</Button>} actionBelow>
+              <p>{editorError}</p>
+              <p>{editor.mode === "upload" ? "可能已经成功。上传不能重发：第一次若已成功，重发会被当成文件已变而拒绝。重新读取后，对照卡片上的文件指纹和上传时间。" : "可能已经成功。重新读取，看卡片是不是已经变回默认文件；没变可以按原请求重试。"}</p>
+            </Notice>
+            : conflicted
+              ? <Notice tone="warn" title={editor.mode === "upload" ? "这次没有上传" : "这次没有恢复"}
+                action={<Button size="sm" loading={loading} onClick={() => void readBack()}>重新读取核对</Button>} actionBelow>
+                <p>{editorError}</p>
+                <p>这份资料刚被别人换过。重新读取后看现在用的文件，你填的内容和理由还在，再决定要不要提交。</p>
+              </Notice>
+              : <Notice tone="danger" title={editor.mode === "upload" ? "这次没有上传" : "这次没有恢复"}>{editorError}</Notice>)}
           <Facts>
             <Fact k="现在用的">{editor.document.source === "UPLOADED" ? "已上传的文件" : "默认文件"}</Fact>
             <Fact k="文件"><span title={editor.document.fileName} data-user-content="">{editor.document.fileName}</span></Fact>
             {editor.mode === "restore" && <Fact k="恢复成">随系统发布的默认文件</Fact>}
+            {pendingFile && <Fact k="原上传的文件"><span data-user-content="" title={`SHA256 ${pendingFile.sha256}`}>{`${pendingFile.name} · ${sizeText(pendingFile.size)} · 指纹 ${pendingFile.sha256.slice(0, 12)}…`}</span></Fact>}
           </Facts>
           {editor.mode === "upload" ? <>
-            <Field label="PDF 文件" required help="最大 20 MB、80 页">
+            {!pendingFile && <Field label="PDF 文件" required help="最大 20 MB、80 页">
               <input aria-label="PDF 文件" className="rd-input rd-file-input" type="file" disabled={saving || !!pendingKey} accept="application/pdf,.pdf"
                 onChange={(event) => { if (!saving && !pendingKey) setEditor({ ...editor, file: event.target.files?.[0] ?? null }); }} />
-            </Field>
+            </Field>}
             <div className="rd-form-grid" data-cols="2" data-dense="">
               <Field label="版本号" required={editor.document.slot === "whitepaper"} hint={editor.document.slot === "whitepaper" ? undefined : "选填"}>
                 <Input aria-label="版本号" disabled={saving || !!pendingKey} maxLength={32} placeholder="如 v1.4" value={editor.fields.version} onChange={(event) => setField("version", event.target.value)} />

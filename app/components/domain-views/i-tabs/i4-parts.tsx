@@ -276,7 +276,7 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
         </div>
         <div className="i4-editor-fields-head">
           <span className="i4-editor-count">字段 {editor.fields.length} 个<span className="rd-form-hint">App 最多 {APP_FIELD_LIMIT} 个</span>
-            <Explain label="字段怎么改" content={<><p>字段标识跟着现在公开的版本走，不能增删、不能改名，只改名称和内容。</p><p>中文、越南语、英语三种都要填；链接字段可以空。</p></>} />
+            <Explain label="字段怎么改" content={<><p>字段标识跟着现在公开的版本走，不能增删、不能改名，只改名称和内容。</p><p>提交发布时中文、越南语、英语三种都要齐，链接字段可以空；草稿可以先存。</p></>} />
           </span>
           {changed.size > 0 && <StatusTag tone="progress">和 {publishedVersion || "公开版"} 比改了 {changed.size} 项</StatusTag>}
         </div>
@@ -316,15 +316,23 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
 }
 
 /** 结果未知、待审批的原操作逐条列在页头下（R1）。现在的逻辑进不了这个状态，界面先备好，等代码 worker 接。 */
-export type RecoveryRow = { key: string; name: string; change: ReactNode; submittedAt?: string; tag: ReactNode; actions: ReactNode };
+/** kind：结果未知、已建单但状态没查到、已查到在等批准。note：这一行下面的一句说明。 */
+export type RecoveryRow = { key: string; kind: "unknown" | "submitted" | "pending"; name: string; change: ReactNode; submittedAt?: string; tag: ReactNode; actions: ReactNode; note?: ReactNode };
 export const RECOVERY_PLACEHOLDER: RecoveryRow[] = [];
 export function unknownTag() {
   return <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先「查询原结果」；24 小时内也可以「按原请求重试」，后端认得出是同一次提交，不会建第二张。">结果未知</StatusTag>;
 }
 export function I4RecoveryNotice({ rows }: { rows: RecoveryRow[] }) {
   if (!rows.length) return null;
+  const pending = rows.filter((row) => row.kind === "pending").length;
+  const open = rows.length - pending;
+  const title = [open > 0 && `${open} 项操作结果未知`, pending > 0 && `${pending} 张申请等另一位批准`].filter(Boolean).join(" · ");
   return (
-    <Notice tone="warn" title={`${rows.length} 项操作结果未知`}>
+    <Notice tone={open > 0 ? "warn" : "progress"} title={<>{title}<Explain label="这些操作怎么处理" content={<>
+      <p>结果未知：提交时没收到确定结果，可能已经生效。先「查询原结果」；24 小时内也可以「按原请求重试」，后端认得出是同一次提交，过了 24 小时只能查询。</p>
+      <p>申请过期后，后端按原请求查不到这张审批单，说明没建成，可以确认解除。</p>
+      <p>PDF 上传不能重发，只能查询核对。</p>
+    </>} /></>}>
       <ul className="i4-recovery" aria-label="结果未知的操作">
         {rows.map((row) => (
           <li key={row.key}>
@@ -333,6 +341,7 @@ export function I4RecoveryNotice({ rows }: { rows: RecoveryRow[] }) {
             <span>{row.submittedAt ? `${row.submittedAt} 提交` : ""}</span>
             <span>{row.tag}</span>
             <span className="rd-row-actions">{row.actions}</span>
+            {row.note && <span className="i4-recovery-note">{row.note}</span>}
           </li>
         ))}
       </ul>
