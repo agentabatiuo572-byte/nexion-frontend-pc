@@ -154,10 +154,9 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     return () => { alive = false; };
   }, [adminId]);
 
-  const reload = async () => {
+  const reload = async (preserveDraft = false) => {
     fresh.current = false;
-    openActionConfirm(null);
-    setForm(null);
+    if (!preserveDraft) { openActionConfirm(null); setForm(null); }
     setLoading(true);
     try {
       applyResponse(await fetchH7Vouchers());
@@ -483,7 +482,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       const record = releasing;
       setReleasing(null);
       void releaseExpiredH7VoucherApproval(session, record)
-        .then(() => { toast("已解除这条记录，可以重新提交。"); return reload(); })
+        .then(() => { toast("已解除这条记录，可以重新提交。"); return reload(true); })
         .catch(cause => toast(displayAdminError(cause)))
         .finally(syncPending);
     }} />;
