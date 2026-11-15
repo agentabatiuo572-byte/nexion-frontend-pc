@@ -1,6 +1,7 @@
-import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
+import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { accountAvatarFields, avatarBase, avatarGender, avatarId, avatarKey, parsePreparedAvatar, parseSelfAvatarSnapshot, selfAvatarSaveInput, type AvatarGender, type AvatarScope, type SelfAvatarSave } from "@/lib/admin/account-avatar-contract";
+import { parseA1Created, parseA1Operator, parseA1Overview, parseA1PasswordReset, parseA1Permission } from "./a1-read-contract";
 export type { AvatarGender, SelfAvatarSnapshot, SelfAvatarSave } from "@/lib/admin/account-avatar-contract";
 
 export type GrantCell = "-" | "R" | "M" | "C";
@@ -52,16 +53,16 @@ export interface A1Operator {
 
 export interface A1SessionDetail {
   sessionId: string;
-  ipAddress: string;
-  device: string;
-  issuedAt: string;
-  lastSeenAt: string;
+  ipAddress: string | null;
+  device: string | null;
+  issuedAt: string | null;
+  lastSeenAt: string | null;
 }
 
 export interface A1RoleHistory {
-  fromRole: string;
+  fromRole: string | null;
   toRole: string;
-  changedAt: string;
+  changedAt: string | null;
   operator: string;
   source: "AUDIT" | "CURRENT_ASSIGNMENT";
 }
@@ -129,6 +130,7 @@ function idempotencyKey(prefix: string) {
 }
 
 export class A1OutcomeUncertainError extends Error {
+  readonly unknownOutcome = true;
   constructor(message: string, public readonly commandKey: string, options?: ErrorOptions) {
     super(message, options);
     this.name = "A1OutcomeUncertainError";
@@ -139,7 +141,7 @@ export function isA1OutcomeUncertainError(error: unknown): error is A1OutcomeUnc
   return error instanceof A1OutcomeUncertainError;
 }
 
-async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; retryTransport?: boolean }) {
+async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; retryTransport?: boolean }, parse?: (value: unknown) => T) {
   const headers = new Headers(init?.headers);
   let commandKey = headers.get("Idempotency-Key") ?? "";
   if (init?.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
@@ -174,24 +176,29 @@ async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
-    if (init?.idempotencyPrefix && response.ok && !result) {
+    if (init?.idempotencyPrefix && (!result || !Number.isInteger(result.code) || result.code >= 500)) {
       throw new A1OutcomeUncertainError("A1_MUTATION_RESPONSE_UNREADABLE", commandKey);
     }
     // 5xx 不是确定失败:后端可能已经落库,弃号重试 = 第二条命令(统一口径见 outcome-classification.ts)。
     if (init?.idempotencyPrefix && outcomeStaysUnknown(response.status, result?.code)) {
       throw new A1OutcomeUncertainError(`A1_MUTATION_OUTCOME_UNCERTAIN_${response.status}`, commandKey);
     }
-    if (init?.idempotencyPrefix && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH", "AVATAR_STATE_CONFLICT"].includes(result?.message ?? "")) {
+    if (init?.idempotencyPrefix && isIdempotencyOutcomeOpen(result?.message)) {
       throw new A1OutcomeUncertainError("A1_MUTATION_OUTCOME_UNCERTAIN", commandKey);
     }
-    throw Object.assign(new Error(formatAdminApiError(result?.message, `A1_REQUEST_FAILED_${response.status}`)), { status: response.status, backendMessage: result?.message });
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `A1_REQUEST_FAILED_${response.status}`)), { status: response.ok ? result?.code : response.status, backendMessage: result?.message });
   }
 
-  return result.data as T;
+  if (!parse) return result.data as T;
+  try { return parse(result.data); }
+  catch (cause) {
+    if (init?.idempotencyPrefix) throw new A1OutcomeUncertainError("A1_MUTATION_RESPONSE_UNREADABLE", commandKey, { cause });
+    throw cause;
+  }
 }
 
 export function fetchA1Overview() {
-  return a1Request<A1Overview>("/accounts/overview");
+  return a1Request<unknown>("/accounts/overview").then(parseA1Overview);
 }
 
 export function createA1Account(input: A1CreateAccountInput, reason: string, operator: string, stableKey?: string) {
@@ -200,7 +207,8 @@ export function createA1Account(input: A1CreateAccountInput, reason: string, ope
     body: JSON.stringify({ ...input, ...accountAvatarFields(input, true), reason, operator }),
     idempotencyPrefix: "a1-account-create",
     headers: stableKey ? { "Idempotency-Key": stableKey } : undefined,
-  });
+    retryTransport: stableKey ? false : undefined,
+  }, parseA1Created);
 }
 
 export async function uploadA1Avatar(file: File, clientUploadId: string, key: string, signal?: AbortSignal) {
@@ -286,12 +294,14 @@ export function resetA1Account2fa(accountId: string, reason: string, operator: s
   });
 }
 
-export function resetA1AccountPassword(accountId: string, reason: string, operator: string, expectedVersion: string) {
+export function resetA1AccountPassword(accountId: string, reason: string, operator: string, expectedVersion: string, stableKey?: string) {
   return a1Request<A1PasswordResetResult>(`/accounts/${encodeURIComponent(accountId)}/password/reset`, {
     method: "POST",
     body: JSON.stringify({ reason, operator, expectedVersion }),
     idempotencyPrefix: "a1-reset-password",
-  });
+    headers: stableKey ? { "Idempotency-Key": stableKey } : undefined,
+    retryTransport: stableKey ? false : undefined,
+  }, parseA1PasswordReset);
 }
 
 export function revokeA1AccountSessions(accountId: string, reason: string, operator: string, expectedVersion: string) {
@@ -308,12 +318,15 @@ export function revokeA1AccountSession(
   reason: string,
   operator: string,
   expectedVersion: string,
+  stableKey?: string,
 ) {
   return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}/sessions/${encodeURIComponent(sessionId)}/revoke`, {
     method: "POST",
     body: JSON.stringify({ reason, operator, expectedVersion }),
     idempotencyPrefix: "a1-session-revoke-one",
-  });
+    headers: stableKey ? { "Idempotency-Key": stableKey } : undefined,
+    retryTransport: stableKey ? false : undefined,
+  }, parseA1Operator);
 }
 
 export function updateA1SecurityBaseline(
@@ -350,14 +363,16 @@ export function registerA1Permission(input: {
   permissionCode: string;
   permissionName: string;
   resourcePath: string;
-  permType: "READ" | "WRITE";
+  permType: "READ" | "WRITE" | "HIGH";
   amplifies: boolean;
   reason: string;
   operator: string;
-}) {
+}, stableKey?: string) {
   return a1Request<A1PermissionRegistration>("/accounts/permissions", {
     method: "POST",
     body: JSON.stringify({ ...input, expectedAbsent: true }),
     idempotencyPrefix: "a1-permission-register",
-  });
+    headers: stableKey ? { "Idempotency-Key": stableKey } : undefined,
+    retryTransport: stableKey ? false : undefined,
+  }, parseA1Permission);
 }

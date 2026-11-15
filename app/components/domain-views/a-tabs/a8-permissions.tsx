@@ -1,22 +1,38 @@
 "use client";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import "../a-domain.css";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { Check as CheckIcon, Coins, Eye, KeyRound, PenLine, ShieldAlert, Users } from "lucide-react";
 import { fetchA8Permissions, fetchA8PermissionDetail, type A8Permission, type A8PermissionPage } from "@/lib/admin/a8-client";
 import { fetchA6RolesOverview, fetchA6RoleDetail, type A6RoleSummary } from "@/lib/admin/a6-client";
-import { Card, CardH, CodeTag, Chip, Badge, Btn, Drawer, DataListPager, useToast } from "@/app/components/domain-views/design-kit";
-import { DomainHeader } from "../domain-header";
+import {
+  BlockState, Button, Cell, Conclusion, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Input, JudgmentPoints, Notice,
+  PageHeader, Pager, Panel, RdPage, Segments, Select, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr,
+} from "@/app/components/rd";
+import { useToast } from "@/app/components/domain-views/design-kit";
 import { CONSOLE_NAV } from "@/lib/nav/console-nav";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { useReach } from "@/lib/nav/use-reach";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 
 const DOMAINS = [{ code: "ALL", label: "全部" }, ...CONSOLE_NAV.map((d) => ({ code: d.code, label: `${d.code} ${d.name}` })), { code: "UNMAPPED", label: "未归类" }];
 const PERM_TYPES = ["ALL", "READ", "WRITE", "HIGH"];
-const TONE_BY_TYPE: Record<string, string> = { HIGH: "danger", WRITE: "warn", READ: "ok" };
 const LABEL_BY_TYPE: Record<string, string> = { HIGH: "敏感操作", WRITE: "修改", READ: "查看" };
+const ICON_BY_TYPE = { HIGH: ShieldAlert, WRITE: PenLine, READ: Eye } as const;
+const PAGE_SIZES = [10, 20, 50] as const;
+const ROLE_CHIPS = 2;
+const ROLES_PATH = "/platform/roles";
 
 type RoleGrants = { role: A6RoleSummary; codes: Set<string>; readable: boolean };
 
-/** A8 权限清单（只读）。服务端分页 + 搜索 debounce + 域 tab + 类型筛选 + 详情 drawer + 角色矩阵。 */
+function TypeTag({ type }: { type: string }) {
+  const Icon = ICON_BY_TYPE[type as keyof typeof ICON_BY_TYPE];
+  return <StatusTag tone={type === "HIGH" ? "warn" : "neutral"} icon={Icon}>{LABEL_BY_TYPE[type] || "未知类型"}</StatusTag>;
+}
+
+const AMPLIFIES_EXPLAIN = "登记时标了这个记号：这项权限对应的操作可能让平台多付钱。老数据没有记号时后端按「可能」处理。这只是登记的标记，查看这页时不做任何资金检查。";
+
+/** A8 权限清单（只读）。服务端分页 + 搜索 debounce + 模块和类型筛选 + 详情抽屉 + 按需读取的角色对照。 */
 export default function A8Permissions() {
   const [toast, setToast] = useToast();
   const [pageNum, setPageNum] = useState(1);
@@ -26,7 +42,7 @@ export default function A8Permissions() {
   const [domain, setDomain] = useState("ALL");
   const [permType, setPermType] = useState("ALL");
   const [result, setResult] = useState<A8PermissionPage | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [detail, setDetail] = useState<A8Permission | null>(null);
@@ -40,6 +56,9 @@ export default function A8Permissions() {
   // 依赖数组按 Object.is 比不出变化,effect 根本不会重跑,界面却从报错切成
   // 「没有可展示的角色」,比不重试更误导。同页主列表(reloadKey)早就是这个写法。
   const [matrixReloadKey, setMatrixReloadKey] = useState(0);
+  const [detailCode, setDetailCode] = useState<string | null>(null);
+  const [view, setView] = useState<"list" | "matrix">("list");
+  const reach = useReach();
 
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +69,7 @@ export default function A8Permissions() {
       .then((data) => { if (!cancelled) setResult(data); })
       .catch((err) => {
         if (!cancelled) {
-          setLoadError(displayAdminError(err));
+          setLoadError(displayAdminReadError(err));
           setToast("权限列表加载失败，请重试");
         }
       })
@@ -64,8 +83,10 @@ export default function A8Permissions() {
     let cancelled = false;
     setMatrixLoading(true);
     setMatrixError(null);
+    setGrants(null);
     fetchA6RolesOverview()
       .then(async (overview) => {
+        if (cancelled) return [];
         // 某个角色读不到时只让那一列变「读不到」,不能让它显示成「没这个权限」。
         const details = await Promise.allSettled(overview.roles.map((role) => fetchA6RoleDetail(role.id)));
         return overview.roles.map((role, index) => {
@@ -76,7 +97,7 @@ export default function A8Permissions() {
         });
       })
       .then((rows) => { if (!cancelled) setGrants(rows); })
-      .catch((err) => { if (!cancelled) setMatrixError(displayAdminError(err)); })
+      .catch((err) => { if (!cancelled) setMatrixError(displayAdminReadError(err)); })
       .finally(() => { if (!cancelled) setMatrixLoading(false); });
     return () => { cancelled = true; };
   }, [matrixOpen, matrixReloadKey]);
@@ -90,214 +111,228 @@ export default function A8Permissions() {
   const openDetail = (code: string) => {
     if (!code) return;
     const requestId = ++detailRequestSeq.current;
+    setDetailCode(code);
     setDetailLoading(true);
     setDetail(null);
     fetchA8PermissionDetail(code)
       .then((d) => { if (requestId === detailRequestSeq.current) setDetail(d); })
       .catch((err) => {
         if (requestId === detailRequestSeq.current) {
-          setToast(err instanceof Error ? err.message : "权限详情加载失败，请重试");
+          setToast(displayAdminReadError(err));
         }
       })
       .finally(() => {
         if (requestId === detailRequestSeq.current) setDetailLoading(false);
       });
   };
+  const closeDetail = () => {
+    detailRequestSeq.current += 1;
+    setDetail(null);
+    setDetailLoading(false);
+    setDetailCode(null);
+  };
 
   const records = result?.records ?? [];
   const total = result?.total ?? 0;
+  const filtered = keyword !== "" || keywordInput.trim() !== "" || domain !== "ALL" || permType !== "ALL";
+  const clearFilters = () => { setKeywordInput(""); setDomain("ALL"); setPermType("ALL"); setPageNum(1); };
+  const rolesReady = matrixOpen && !matrixLoading && !matrixError && grants !== null;
+  const unreadableRoles = rolesReady ? grants.filter(({ readable }) => !readable) : [];
+  const drawerOpen = Boolean(detail || detailLoading);
+  const current = drawerOpen ? detailCode : null;
+  const currentIndex = current ? records.findIndex((p) => p.permissionCode === current) : -1;
+  const domainLabel = DOMAINS.find((d) => d.code === domain)?.label ?? domain;
+  const rolesHref = reach(ROLES_PATH, "platform_a6_read") ? ROLES_PATH : null;
+
+  const rolesWith = (code: string) => (grants ?? []).filter(({ readable, codes }) => readable && codes.has(code));
+  const roleChip = ({ role }: RoleGrants) => {
+    const label = <>{role.roleName}{role.status === 0 && <span className="a8-role-off">已停用</span>}</>;
+    return rolesHref
+      ? <Link key={role.id} className="a8-role" href={`${rolesHref}?roleId=${role.id}`} prefetch={false} aria-label={`去角色管理看「${role.roleName}」`}>{label}</Link>
+      : <span key={role.id} className="a8-role">{label}</span>;
+  };
+
+  const rolesCell = (p: A8Permission) => {
+    if (matrixOpen && matrixLoading) return <span className="rd-skeleton a8-role-skel" aria-label="正在加载角色" />;
+    if (!rolesReady) {
+      return <Cell num main={<span className={p.boundRoleCount === 0 ? "a8-muted" : undefined}>{p.boundRoleCount} 个角色</span>}
+        sub={matrixOpen && matrixError ? "角色名没读到" : undefined} />;
+    }
+    const has = rolesWith(p.permissionCode);
+    const rest = has.slice(ROLE_CHIPS);
+    return (
+      <span className="a8-roles">
+        {has.length === 0 && unreadableRoles.length === 0 && <span className="a8-muted">没有角色</span>}
+        {has.slice(0, ROLE_CHIPS).map(roleChip)}
+        {rest.length > 0 && <Explain label={`另外 ${rest.length} 个角色`} content={rest.map(({ role }) => `${role.roleName}${role.status === 0 ? "（已停用）" : ""}`).join("、")}>等 {has.length} 个</Explain>}
+        {unreadableRoles.length > 0 && <span className="a8-role" data-tone="warn" title={`${unreadableRoles.length} 个角色的授权没读到，不代表没有这项权限`}>? {unreadableRoles.length} 个没读到</span>}
+      </span>
+    );
+  };
+
+  const countText = loading ? "正在统计…" : loadError ? "数量没读到" : `共 ${total} 条`;
+
+  const conclusion = loading && !result ? null : loadError ? (
+    <Conclusion state="unknown" icon={KeyRound}>权限列表没读到，这页没有判断</Conclusion>
+  ) : (
+    <Conclusion state="neutral" icon={KeyRound}
+      explain="只算启用中的接口权限；数量跟着搜索和筛选变。权限由运营账号与权限登记，授权在角色管理。">
+      {filtered ? `当前筛选下有 ${total} 项权限` : `共 ${total} 项已登记的权限`}
+    </Conclusion>
+  );
 
   return (
-    <div className="dkpage adom">
+    <RdPage className="a8-page">
       {toast}
-      <DomainHeader domainCode="A" domainName="平台基础" accentVar="--admin-domain-a"
-        l2Id="A8" l2Name="权限清单"
-        summary="查看全平台的操作权限，以及每项权限属于哪个菜单、分给了几个角色。权限分为查看、修改和敏感操作三类，由系统维护，这里只能查看。"
-        right={<span className="mono" style={{ color: "var(--ink-3)", fontSize: 12 }}>{loading ? "正在统计…" : `共 ${total} 条`}</span>} />
-      <Card>
-        <CardH title="权限列表" />
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
-          <input
-            aria-label="权限搜索"
-            placeholder="搜索权限编码或名称"
-            value={keywordInput}
-            onChange={(e) => setKeywordInput(e.target.value)}
-            style={{ flex: "1 1 240px", minWidth: 200, padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--ink)" }}
-          />
-          <div className="row" style={{ gap: 4, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ color: "var(--ink-3)", fontSize: 12 }}>模块：</span>
-            {DOMAINS.map((d) => (
-              <Chip key={d.code} sel={domain === d.code} tab onClick={() => { setDomain(d.code); setPageNum(1); }}>{d.label}</Chip>
-            ))}
-          </div>
-          <div className="row" style={{ gap: 4, alignItems: "center", flexWrap: "wrap" }}>
-            <span style={{ color: "var(--ink-3)", fontSize: 12 }}>类型：</span>
-            {PERM_TYPES.map((t) => (
-              <Chip key={t} sel={permType === t} tab onClick={() => { setPermType(t); setPageNum(1); }}>{t === "ALL" ? "全部" : LABEL_BY_TYPE[t]}</Chip>
-            ))}
-          </div>
-        </div>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: "var(--surface-2)", color: "var(--ink-3)", textAlign: "left" }}>
-              <th style={{ padding: "10px 12px", fontWeight: 600 }}>权限编码</th>
-              <th style={{ padding: "10px 12px", fontWeight: 600 }}>名称</th>
-              <th style={{ padding: "10px 12px", fontWeight: 600, width: 80 }}>类型</th>
-              <th style={{ padding: "10px 12px", fontWeight: 600 }}>所属菜单</th>
-              <th style={{ padding: "10px 12px", fontWeight: 600, width: 70 }}>多付钱</th>
-              <th style={{ padding: "10px 12px", fontWeight: 600, width: 90 }}>绑定角色</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "var(--ink-3)" }}>加载中…</td></tr>
-            ) : loadError ? (
-              <tr><td colSpan={6} style={{ padding: 24, textAlign: "center" }}>
-                <div className="alertbar warn" role="alert" style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                  权限列表加载失败，请重试。<Btn sm onClick={() => setReloadKey((value) => value + 1)}>重试</Btn>
-                </div>
-              </td></tr>
-            ) : records.length === 0 ? (
-              <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "var(--ink-3)" }}>无匹配权限</td></tr>
-            ) : records.map((p) => (
-              <tr
-                key={p.permissionCode}
-                className="click"
-                onClick={() => openDetail(p.permissionCode)}
-                style={{ cursor: "pointer", borderBottom: "1px solid var(--border)" }}
-              >
-                <td style={{ padding: "10px 12px" }}>
-                  {/* 整行点击此前是打开权限详情的唯一入口:辅助树里行只是 row/cell,
-                      键盘既停不上也按不动。给权限值本身一个真实按钮,整行点击保留。 */}
-                  <button
-                    type="button"
-                    aria-label={`查看权限详情 ${p.permissionCode}`}
-                    onClick={(event) => { event.stopPropagation(); openDetail(p.permissionCode); }}
-                    style={{ border: 0, background: "none", padding: 0, font: "inherit", cursor: "pointer" }}
-                  >
-                    <CodeTag>{p.permissionCode}</CodeTag>
-                  </button>
-                </td>
-                <td style={{ padding: "10px 12px" }}>{operatorCopyText(p.permissionName || "—")}</td>
-                <td style={{ padding: "10px 12px" }}><Badge tone={TONE_BY_TYPE[p.permType] || "neutral"}>{LABEL_BY_TYPE[p.permType] || "未知类型"}</Badge></td>
-                <td style={{ padding: "10px 12px" }}><span className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>{operatorCopyText(p.menuCodePath)}</span></td>
-                <td style={{ padding: "10px 12px", textAlign: "center" }}>{p.amplifies ? <span title="会让平台多付钱，执行时会检查兑付覆盖率">⚠️</span> : "—"}</td>
-                <td style={{ padding: "10px 12px" }}><span className="mono">{p.boundRoleCount}</span></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!loadError && <DataListPager
-          label="权限清单"
-          page={pageNum}
-          pageSize={pageSize}
-          total={total}
-          onPageChange={setPageNum}
-          onPageSizeChange={(s) => { setPageSize(s); setPageNum(1); }}
-        />}
-      </Card>
-      <Card>
-        <CardH title="角色权限对照表" right={
-          <Btn sm onClick={() => setMatrixOpen((open) => !open)}>{matrixOpen ? "收起" : "展开对照表"}</Btn>
-        } />
-        {matrixOpen && (
-          <div style={{ padding: "12px 16px" }}>
-            <div className="tint tiny" style={{ marginBottom: 10 }}>
-              横向是角色，纵向是上面列表当前页的 {records.length} 项权限，打勾表示该角色有这项权限。
-            </div>
-            {matrixLoading ? (
-              <div style={{ padding: 20, color: "var(--ink-3)" }}>正在加载…</div>
+      <PageHeader pageId="A8" title="权限清单" summary="查一个权限管什么、风险多大、哪些角色有它。"
+        readOnly="这页只能查看；登记和授权在别的页面" />
+      {conclusion}
+
+      <FilterBar onClear={clearFilters} canClear={filtered}
+        scope={<div className="rd-filter-scope-row a8-scope">
+          <Segments label="权限类型" value={permType} onChange={(t) => { setPermType(t); setPageNum(1); }}
+            items={PERM_TYPES.map((t) => ({ value: t, label: t === "ALL" ? "全部类型" : LABEL_BY_TYPE[t] }))} />
+          {matrixOpen && <Segments label="怎么看" value={view} onChange={setView}
+            items={[{ value: "list", label: "权限列表" }, { value: "matrix", label: "角色对照表" }]} />}
+        </div>}
+        sort={<Button icon={<Users size={14} aria-hidden />} aria-pressed={matrixOpen}
+          onClick={() => { setView(matrixOpen ? "list" : "matrix"); setMatrixOpen((open) => !open); }}>{matrixOpen ? "收起对照表" : "展开对照表"}</Button>}>
+        <FilterField grow><Input aria-label="权限搜索" placeholder="搜索权限编码或名称" value={keywordInput} onChange={(e) => setKeywordInput(e.target.value)} /></FilterField>
+        <FilterField><Select aria-label="模块筛选" value={domain} onChange={(d) => { setDomain(d); setPageNum(1); }}
+          options={DOMAINS.map((d) => ({ value: d.code, label: d.code === "ALL" ? "全部模块" : d.label }))} /></FilterField>
+      </FilterBar>
+
+      {view === "matrix" && matrixOpen ? (
+        <Panel flush icon={Users} title="角色权限对照表"
+          sub={rolesReady && records.length > 0 && grants.length > 0 ? `本页 ${records.length} 项权限 × ${grants.length} 个角色` : countText}
+          explain={`横向是角色，纵向是列表当前页的${!loading && !loadError ? ` ${records.length} 项` : ""}权限，打勾表示该角色有这项权限。包括已停用的角色。翻页只换行，角色的授权不重新读取；要最新的就收起再展开。`}>
+          {loading ? <BlockState state="loading" title="加载中…" /> : loadError ? <BlockState state="error" title="权限列表加载失败，请重试。" detail={loadError} onRetry={() => setReloadKey((value) => value + 1)} /> : <>
+          {matrixLoading ? (
+              <BlockState state="loading" title="正在加载…" detail="要逐个读取每个角色的授权，角色多时要等几秒。" />
             ) : matrixError ? (
-              <div className="alertbar warn" role="alert" style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                各角色的权限加载失败，对照表暂不可信。{matrixError}
-                <Btn sm onClick={() => setMatrixReloadKey((value) => value + 1)}>重试</Btn>
-              </div>
+              <BlockState state="error" title="各角色的权限加载失败，对照表暂不可信。" detail={matrixError} onRetry={() => setMatrixReloadKey((value) => value + 1)} />
             ) : !grants || grants.length === 0 ? (
-              <div style={{ padding: 20, color: "var(--ink-3)" }}>没有可展示的角色</div>
+              <BlockState state="empty" title="没有可展示的角色" />
             ) : records.length === 0 ? (
-              <div style={{ padding: 20, color: "var(--ink-3)" }}>当前筛选下没有权限</div>
+              <BlockState state="empty" title="当前筛选下没有权限" />
             ) : (
               <>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ borderCollapse: "collapse", fontSize: 12.5 }}>
-                    <thead>
-                      <tr style={{ background: "var(--surface-2)", color: "var(--ink-3)" }}>
-                        <th style={{ padding: "10px 12px", fontWeight: 600, textAlign: "left", position: "sticky", left: 0, background: "var(--surface-2)", minWidth: 220 }}>权限</th>
-                        {grants.map(({ role, readable }) => (
-                          <th key={role.id} style={{ padding: "10px 12px", fontWeight: 600, textAlign: "center", minWidth: 92 }}>
-                            <div style={{ color: "var(--ink-2)" }}>{role.roleName}</div>
-                            <div className="mono" style={{ marginTop: 2, color: "var(--ink-3)", fontSize: 11.5 }}>{role.roleCode}</div>
-                            {!readable && <div style={{ marginTop: 2, color: "var(--warning)", fontSize: 11.5 }}>加载失败</div>}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {records.map((p) => (
-                        <tr key={p.permissionCode} style={{ borderBottom: "1px solid var(--border)" }}>
-                          <td style={{ padding: "10px 12px", position: "sticky", left: 0, background: "var(--surface)" }}>
-                            <div>{operatorCopyText(p.permissionName || p.permissionCode)}</div>
-                            <div className="mono" style={{ marginTop: 2, color: "var(--ink-3)", fontSize: 11.5 }}>{p.permissionCode}</div>
-                          </td>
-                          {grants.map(({ role, codes, readable }) => (
-                            <td key={role.id} style={{ padding: "10px 12px", textAlign: "center" }}
-                              title={!readable ? `${role.roleName} 的权限加载失败，这一格不代表没有权限` : codes.has(p.permissionCode) ? `${role.roleName} 有此权限` : `${role.roleName} 没有此权限`}>
-                              {!readable
-                                ? <span style={{ color: "var(--warning)" }}>?</span>
-                                : codes.has(p.permissionCode)
-                                  ? <span style={{ color: "var(--success)", fontWeight: 600 }}>✓</span>
-                                  : <span style={{ color: "var(--ink-4)" }}>—</span>}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {grants.some(({ readable }) => !readable) && (
-                  <div className="alertbar warn" role="alert" style={{ marginTop: 10 }}>
+                {unreadableRoles.length > 0 && (
+                  <Notice tone="warn" title={`${unreadableRoles.length} 个角色的权限没读到`}>
                     部分角色的权限没加载出来，标「?」的列不代表没有权限，请刷新后再看。
-                  </div>
+                  </Notice>
                 )}
+                <Table label="角色权限对照表" className="a8-matrix">
+                  <thead><tr>
+                    <Th sticky="start">权限</Th>
+                    {grants.map(({ role, readable }) => (
+                      <Th key={role.id} className="a8-matrix-role">
+                        <span className="a8-matrix-head">
+                          <span>{role.roleName}</span>
+                          <span className="a8-matrix-code">{role.roleCode}</span>
+                          {role.status === 0 && <span className="a8-role-off">已停用</span>}
+                          {!readable && <span className="a8-matrix-fail">加载失败</span>}
+                        </span>
+                      </Th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {records.map((p) => (
+                      <Tr key={p.permissionCode}>
+                        <Td sticky="start"><Cell title={operatorCopyText(p.permissionName || p.permissionCode)} main={operatorCopyText(p.permissionName || p.permissionCode)} sub={<span data-mono>{p.permissionCode}</span>} /></Td>
+                        {grants.map(({ role, codes, readable }) => (
+                          <Td key={role.id} className="a8-matrix-cell"
+                            title={!readable ? `${role.roleName} 的权限加载失败，这一格不代表没有权限` : codes.has(p.permissionCode) ? `${role.roleName} 有此权限` : `${role.roleName} 没有此权限`}>
+                            {!readable
+                              ? <span className="a8-mark" data-mark="unknown" aria-label={`${role.roleName} 的权限加载失败，这一格不代表没有权限`}>?</span>
+                              : codes.has(p.permissionCode)
+                                ? <span className="a8-mark" data-mark="yes" aria-label={`${role.roleName} 有此权限`}><CheckIcon size={14} aria-hidden /></span>
+                                : <span className="a8-mark" data-mark="no" aria-label={`${role.roleName} 没有此权限`}>—</span>}
+                          </Td>
+                        ))}
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+                <p className="a8-legend"><span className="a8-mark" data-mark="yes"><CheckIcon size={12} aria-hidden /></span>有这项权限<span className="a8-mark" data-mark="no">—</span>没有<span className="a8-mark" data-mark="unknown">?</span>没读到，不代表没有</p>
               </>
             )}
-          </div>
-        )}
-      </Card>
-      {(detail || detailLoading) && (
-        <Drawer
-          title={detail ? operatorCopyText(detail.permissionName || detail.permissionCode) : "加载中…"}
-          sub={detail?.permissionCode}
-          onClose={() => {
-            detailRequestSeq.current += 1;
-            setDetail(null);
-            setDetailLoading(false);
-          }}
-        >
-          {detailLoading ? (
-            <div style={{ padding: 24, color: "var(--ink-3)" }}>加载中…</div>
-          ) : detail ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
-              <Row label="权限编码"><span className="mono">{detail.permissionCode}</span></Row>
-              <Row label="名称">{operatorCopyText(detail.permissionName || "—")}</Row>
-              <Row label="类型"><Badge tone={TONE_BY_TYPE[detail.permType] || "neutral"}>{LABEL_BY_TYPE[detail.permType] || "未知类型"}</Badge></Row>
-              <Row label="所属菜单"><span className="mono" style={{ fontSize: 13 }}>{operatorCopyText(detail.menuCodePath)}</span></Row>
-              <Row label="接口地址"><span className="mono" style={{ fontSize: 13 }}>{detail.resourcePath || "—"}</span></Row>
-              <Row label="会让平台多付钱">{detail.amplifies ? "是（执行时检查兑付覆盖率）" : "否"}</Row>
-              <Row label="已绑定角色"><span className="mono">{detail.boundRoleCount} 个</span></Row>
-            </div>
-          ) : null}
-        </Drawer>
+          </>}
+        {!loadError && result && <Pager label="权限清单" total={total} page={pageNum} pageSize={pageSize} sizes={PAGE_SIZES} loading={loading}
+          onPage={setPageNum} onPageSize={(s) => { setPageSize(s); setPageNum(1); }} />}
+        </Panel>
+      ) : (
+        <Panel flush icon={KeyRound} title={domain === "ALL" ? "权限列表" : `${domainLabel}的权限`} sub={countText}
+          explain="点一行看这项权限的详情。哪些角色有它：先显示绑定的角色数，点右上「展开对照表」读出每个角色后显示角色名。">
+        <Table label="权限清单" aria-busy={loading} className="a8-table">
+          <thead><tr>
+            <Th>权限</Th>
+            <Th><Explain label="类型怎么分" rows={[
+              { k: "查看", v: "只能看这一页或这类数据" },
+              { k: "修改", v: "能改数据或配置" },
+              { k: "敏感操作", v: "风险更高的修改，比如动钱、动权限" },
+            ]}>允许做什么</Explain></Th>
+            <Th><Explain label="资金风险是什么" content={AMPLIFIES_EXPLAIN}>资金风险</Explain></Th>
+            <Th><Explain label="角色数怎么算" content="角色数只算启用中的角色。对照表里也列出已停用的角色，所以打勾的角色可能更多。">哪些角色有</Explain></Th>
+          </tr></thead>
+          <tbody>
+            {loading ? <TableLoading columns={4} rows={Math.min(pageSize, 10)} />
+              : loadError ? <TableMessage columns={4} role="alert">权限列表加载失败，请重试。{loadError !== "权限列表加载失败，请重试。" && <span className="a8-muted">{loadError}</span>} <Button size="sm" onClick={() => setReloadKey((value) => value + 1)}>重试</Button></TableMessage>
+                : records.length === 0 ? <TableMessage columns={4} role="status">
+                  {filtered ? <>无匹配权限：换个关键词，或把模块、类型改回全部。 <Button size="sm" onClick={clearFilters}>清除筛选</Button></> : "无匹配权限"}
+                </TableMessage>
+                  : records.map((p) => (
+                    <Tr key={p.permissionCode} selected={p.permissionCode === current} onOpen={() => openDetail(p.permissionCode)}>
+                      <Td><Cell title={operatorCopyText(p.permissionName || p.permissionCode)}
+                        main={<button type="button" className="rd-cell-link" aria-label={`查看权限详情 ${p.permissionCode}`} aria-haspopup="dialog"
+                          onClick={(event) => { event.stopPropagation(); openDetail(p.permissionCode); }}>{operatorCopyText(p.permissionName || "—")}</button>}
+                        sub={<span data-mono>{p.permissionCode}</span>} /></Td>
+                      <Td><Cell main={<TypeTag type={p.permType} />} sub={operatorCopyText(p.menuCodePath)} title={operatorCopyText(p.menuCodePath)} /></Td>
+                      <Td><Cell main={p.amplifies ? <StatusTag tone="warn" icon={Coins}>可能多付钱</StatusTag> : <span className="a8-muted">—</span>} /></Td>
+                      <Td>{rolesCell(p)}</Td>
+                    </Tr>
+                  ))}
+          </tbody>
+        </Table>
+        {!loadError && result && <Pager label="权限清单" total={total} page={pageNum} pageSize={pageSize} sizes={PAGE_SIZES} loading={loading}
+          onPage={setPageNum} onPageSize={(s) => { setPageSize(s); setPageNum(1); }} />}
+        </Panel>
       )}
-    </div>
-  );
-}
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div style={{ color: "var(--ink-3)", fontSize: 12, marginBottom: 4 }}>{label}</div>
-      <div>{children}</div>
-    </div>
+      <nav className="rd-links" aria-label="相关页面">
+        <span>相关页面</span>
+        {reach("/platform/rbac") && <Link className="rd-link" href="/platform/rbac" prefetch={false}>运营账号与权限</Link>}
+        {rolesHref && <Link className="rd-link" href={rolesHref} prefetch={false}>角色管理</Link>}
+        {reach("/platform/menus") && <Link className="rd-link" href="/platform/menus" prefetch={false}>菜单管理</Link>}
+      </nav>
+
+      <Drawer open={drawerOpen} onClose={closeDetail} icon={KeyRound} tone="role-3"
+        title="权限详情"
+        sub={detail ? operatorCopyText(detail.permissionName || detail.permissionCode) : current ?? undefined}
+        explain="每次打开都重新读取这项权限，可能和列表里的略有不同。这里只能查看。"
+        nav={{ hasPrev: currentIndex > 0, hasNext: currentIndex >= 0 && currentIndex < records.length - 1,
+          onPrev: () => openDetail(records[currentIndex - 1].permissionCode), onNext: () => openDetail(records[currentIndex + 1].permissionCode) }}>
+        {detailLoading || !detail ? <JudgmentPoints loading rows={[]} /> : (
+          <>
+            <JudgmentPoints rows={[
+              { label: "允许做什么", value: <span className="a8-allow"><TypeTag type={detail.permType} />{operatorCopyText(detail.menuCodePath)}</span> },
+              { label: "资金风险", value: detail.amplifies ? <StatusTag tone="warn" icon={Coins} explain={AMPLIFIES_EXPLAIN}>可能多付钱</StatusTag> : "没有标记", state: detail.amplifies ? "warn" : undefined },
+              { label: "已绑定角色", value: rolesReady && unreadableRoles.length === 0
+                ? <span className="a8-roles">{rolesWith(detail.permissionCode).length === 0 ? <span className="a8-muted">没有角色</span> : rolesWith(detail.permissionCode).map(roleChip)}</span>
+                : <span className="a8-allow">{detail.boundRoleCount} 个（启用中的角色）{!matrixOpen && <Button size="sm" onClick={() => setMatrixOpen(true)}>看是哪几个</Button>}</span> },
+            ]} />
+            <Facts>
+              <Fact k="权限编码"><span data-mono>{detail.permissionCode}</span></Fact>
+              <Fact k="所属菜单">{operatorCopyText(detail.menuCodePath)}</Fact>
+              <Fact k="登记的资源路径"><span data-mono>{detail.resourcePath || "—"}</span></Fact>
+            </Facts>
+            <nav className="rd-links" aria-label="去别的页面">
+              {rolesHref && <Link className="rd-link" href={rolesHref} prefetch={false}>去角色管理看各角色的授权</Link>}
+              {reach("/platform/rbac") && <Link className="rd-link" href="/platform/rbac" prefetch={false}>去运营账号与权限登记权限</Link>}
+            </nav>
+          </>
+        )}
+      </Drawer>
+    </RdPage>
   );
 }

@@ -648,14 +648,21 @@ export async function fetchA2ReasonPolicy(): Promise<A2ReasonPolicy> {
 }
 
 /** Exact original-maker lookup includes archived audit evidence; never resubmit a lost proposal. */
-export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket: boolean | "metadata" = false): Promise<A2OperationRow | null> {
+function hasProposalTicketFacts(row: BackendTicket) {
+  return row && typeof row.id === "string" && !!row.id && typeof row.mine === "boolean"
+    && typeof row.action === "string" && typeof row.obj === "string"
+    && ["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "");
+}
+
+export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket: false | "a" | "f" | "metadata" = false): Promise<A2OperationRow | null> {
   try {
     const row = await a2Request<BackendTicket>(`/operations/proposals/by-idempotency-key?${new URLSearchParams({ idempotencyKey: commandKey })}`);
     if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new Error("提交结果不完整，请稍后再查。");
-    // F recovery validates the original owner/object; B5 also requires raw action/operation metadata.
+    // A requires raw action; F does not. B5 additionally requires operation metadata and normalizes status.
     if (strictTicket && (typeof row.obj !== "string" || typeof row.mine !== "boolean"
       || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(strictTicket === "metadata" ? row.status.trim().toLowerCase() : row.status)
-      || strictTicket === "metadata" && (typeof row.action !== "string" || typeof row.operationCode !== "string"))) {
+      || strictTicket !== "f" && typeof row.action !== "string"
+      || strictTicket === "metadata" && typeof row.operationCode !== "string")) {
       throw new Error("提交结果不完整，请稍后再查。");
     }
     return fromTicket(row);
@@ -691,7 +698,7 @@ export async function createA2OperationProposal(input: {
   command: { domain: string; op: string; params: Record<string, unknown> };
   target?: { domain: string; type: string; id: string };
   targets?: { domain: string; type: string; id: string }[];
-}, commandKey?: string, strictOutcome: boolean | "proposal" = false) {
+}, commandKey?: string, strictOutcome: boolean | "proposal" = false, strictTicket = false) {
   const row = await a2Request<BackendTicket>("/operations", {
     method: "POST",
     strictOutcome,
@@ -703,6 +710,7 @@ export async function createA2OperationProposal(input: {
         || typeof row.operationCode !== "string" || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "")))) {
     throw new A2OutcomeUncertainError("提交结果不完整，请到操作记录里核对。", commandKey!);
   }
+  if (strictTicket && !hasProposalTicketFacts(row)) throw new A2OutcomeUncertainError("提交结果不完整，请到操作记录里核对。", commandKey!);
   return fromTicket(row);
 }
 

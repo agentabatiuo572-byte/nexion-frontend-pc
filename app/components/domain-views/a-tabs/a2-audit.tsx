@@ -6,6 +6,7 @@ import { a2ActionText, operatorCopyText, shareBaseRateText } from "@/lib/admin/o
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
+import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin/f4-ambassador-display";
 
 /**
  * A2 操作记录与审批（列表页·队列模式，PG-44）。三个页签：待审批（默认）、操作记录（含审批结果）、机制设置。
@@ -143,18 +144,22 @@ function approvalCoverageCopy(w: A2OperationRow) {
 }
 
 function approvalExecutorLabel(w: A2OperationRow) {
+  if (["a6_role_status_update", "a6_role_disable", "a6_role_delete", "a6_role_grants_update"].includes(w.operationCode ?? ""))
+    return "另一位有审批批准权限和对应业务权限的管理员";
   if (w.operationCode === "h1_phase_dial") return "另一位有审批批准权限和运营阶段修改权限的超级管理员";
   if (w.operationCode === "c2_session_revoke_all" || !w.operationCode && w.action.startsWith("强制登出 · ")) return "另一位有审批批准权限和退出全部设备权限的超级管理员";
-  if (w.operationCode === "h5_streak_milestone") return "另一位有审批批准权限的超级管理员";
+  // H5GrowthApproval：三类成长审批都要超级管理员且有审批批准权限。
+  if (w.operationCode === "h5_streak_milestone" || w.operationCode === "h5_power_up_config" || w.operationCode === "h5_earn_milestone") return "另一位有审批批准权限的超级管理员";
   if (/^(?:兑换|回购)参数调整 · /.test(w.action)) return "另一位有审批批准权限的超级管理员";
   if (/^调整创世参数 · /.test(w.action)) return "另一位有审批批准权限和该参数业务权限的超级管理员";
   if (["提高旧活动奖励", "放宽转盘奖项配置", "新增转盘奖项", "删除转盘奖项并提高安慰奖", "提高转盘奖项概率",
     "首次发布奖励课程", "发布奖励课程版本", "回滚至有奖励的课程版本"].includes(w.action)) return "另一位有审批批准权限的超级管理员";
-  if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位有批准权限和商品修改权限的管理员";
-  if (w.action === "发布规则任务") return "另一位有批准权限和任务池修改权限的管理员";
+  if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位有审批批准权限和商品修改权限的管理员";
+  if (w.action === "发布规则任务") return "另一位有审批批准权限和任务池修改权限的管理员";
   return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
     ? "另一位具有审批和大使批准权限、且未参与本版材料核验的管理员"
-    : w.roleGate === "超管" ? "超级管理员" : w.roleGate;
+    // 后端存的「门槛者」只是占位叫法（A2-BE-02）；只改显示，请求里带的值不动。
+    : w.roleGate === "超管" ? "超级管理员" : w.roleGate === "门槛者" ? "另一位有审批批准权限和对应业务权限的管理员" : w.roleGate;
 }
 
 function isCurrentOperator(w: A2OperationRow, username: string | undefined) {
@@ -905,12 +910,28 @@ function ReviewRows({ name, rows, labels = CHANGE_LABELS }: { name: string; rows
  * - 成组记录（等级、奖励）：小表，不拼成一大片文字（VS-109）；
  * - 变更前是空（首次配置）：不画变更前，标题旁写「新建」。
  */
+/** 两边都是「字段：值」（多项用「；」连起来）、字段一一对应时，返回 [字段, 原值, 新值]。 */
+function fieldPairs(before: string, after: string): Array<[string, string, string]> | null {
+  const split = (text: string) => text.split("；").map((part) => /^([^：；]{1,12})：(.*)$/.exec(part));
+  const b = split(before), a = split(after);
+  if (a.length !== b.length || a.some((m, i) => !m || !b[i] || m[1] !== b[i]![1])) return null;
+  return a.map((m, i) => [m![1], b[i]![2] || "未设置", m![2] || "未设置"]);
+}
+
+/** 大使申请单的变更前是后端拼的一句（类别代码、材料状态代码），只把两个代码换成页面上的叫法。 */
+const changeBefore = (row: { before: string; ambassadorMaterialProposal?: unknown }) => !row.ambassadorMaterialProposal ? row.before
+  : row.before.replace(/^类别 ([a-z]+)；/, (_, code: string) => `类别 ${ambassadorBucketLabel(code)}；`)
+    .replace(/；(NOT_SUBMITTED|PENDING|NEEDS_MORE|PASSED)$/, (_, state: string) => `；${ambassadorMaterialStateLabel(state)}`);
+
 export function A2ChangeReview({ before, after, omit = [], operationCode }: { before: string; after: string; omit?: readonly string[]; operationCode?: string }) {
   const { b, a, labels } = reviewPair(before, after, operationCode);
   const created = !b;
   let body: ReactNode;
   if (!a) {
     body = <Facts><Fact k="变更后">—</Fact></Facts>;
+  } else if (a.kind === "text" && b?.kind === "text" && fieldPairs(b.text, a.text)) {
+    // 「显示名：甲；工作邮箱：乙」这类逐项摘要：两边字段一一对应时每项一行，不拼成一长句折行。
+    body = <Facts>{fieldPairs(b.text, a.text)!.map(([label, from, to]) => <Fact key={label} k={label}><Change from={from} to={to} /></Fact>)}</Facts>;
   } else if (a.kind === "text") {
     body = <Facts><Fact k={created ? "内容" : "变更"}>{!b ? a.text : <Change from={b.kind === "text" ? b.text : valueText(undefined, b.kind === "object" ? b.value : b.rows, labels)} to={a.text} />}</Fact></Facts>;
   } else if (a.kind === "rows") {
@@ -1568,7 +1589,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       facts: ticketFacts(w, "approve"),
       content: (
         <div className="rd-stack">
-          <A2ChangeReview operationCode={reviewOperation(w)} before={w.before} after={w.after} omit={g3 ? ["生效时间"] : undefined} />
+          <A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={w.after} omit={g3 ? ["生效时间"] : undefined} />
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={w.ambassadorMaterialProposal} expectedMaterialRevision={w.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? w.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
           {isRefund && w.refundOrderNo && <PromotionRefundImpact orderNo={w.refundOrderNo} />}
@@ -1953,7 +1974,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     {queueFiltered ? <>没有符合条件的待审批操作 <Button size="sm" onClick={() => { setQType("all"); setQOperator("all"); setQPage(1); }}>清除筛选</Button></> : "没有待审批的操作"}
                   </TableMessage>
                 ) : qPageRows.map((w) => {
-                  const change = changeSummary(w.before, w.after, g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w));
+                  const change = changeSummary(changeBefore(w), w.after, g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w));
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
@@ -2235,7 +2256,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {shown.sos && <Notice tone="danger">{isJ4Execution(shown)
             ? "应急预案逐步执行：中途失败时，前面的步骤可能已经生效。批准前核对值班授权和影响范围，失败后到「监管要求应急处理」的执行追溯里核对每一步。"
             : "应急操作：涉及紧急停用或恢复，请核对值班授权、影响范围和恢复条件后再处理。"}</Notice>}
-          <A2ChangeReview operationCode={reviewOperation(shown)} before={shown.before} after={shown.after} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
+          <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={shown.after} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
           {shown.phoneCalibrationProposal && <PhoneCalibrationReview proposal={shown.phoneCalibrationProposal} />}
           {shown.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={shown.ambassadorMaterialProposal} expectedMaterialRevision={shown.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? shown.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
         </>}

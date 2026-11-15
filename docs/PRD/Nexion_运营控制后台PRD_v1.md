@@ -247,171 +247,66 @@ V1 聚焦"看得见资金与用户态势、管得住资金流出、调得动运�
 
 #### [A1] 运营账号 & RBAC
 
-最后更新：2026-11-08
+最后更新：2026-11-15；本章按后端 `111e00cd` 和 PC `rd/a-domain` 本次接线核实。浏览器验收集中到本域最后一项，本章不代表真实写入已验收。
 
-客服性别、头像及资格职责引用 [M 专属客服中心功能契约](M-专属客服中心功能契约.md#6-继承头像与-m3-保留能力)；主管资格不自动取得账号管理权。新建客服明确男/女/未指定，从许可且已审核的对应默认人像池随机一次，持久化 avatarGender、avatarAssetId、avatarVersion；未指定用混合池。刷新、改名/性别、调组不重抽，历史头像不自动替换。本人或原账号管理范围内有权人员可明确更换，成功保存后替换，失败保留旧像、未知先回查；池失败不造假照片。
+**① 目的与权威**
 
-**客服/主管资格理由（BUG-163，2026-11-08，实景待验收）**
+A1 管理内部运营账号的创建、资料、角色、登录凭证、后台会话与客服资格，和 C 域终端用户账户分离。新建审批回执须带与原请求完全一致的 operationCode；缺失或不符时保留原请求并按结果未知处理，不把历史无命令票的可空字段套到新提案。A6 管角色及角色授权，A8 管权限字典，A7 管菜单。A1 使用 A6 角色详情的 `permissionCodes` 比较两个角色，不维护第二份授权矩阵，不按角色说明文字推断权限；权限详情缺失时不显示成零差异并禁止新改角色。当前会话的真实授权来自后端有效角色关联查询。
 
-A1「账号管理」的专属客服/主管资格弹窗与 M1 组管理共用理由校验：沿现有首尾裁剪规则，以 Unicode 码点判断8–200，「𠮷」计1，输入框不再按200个 UTF-16 单位截断；7或201码点不可提交。仍需原总管理员身份、账号读写权限及资格退出交接条件，使用当前账号/资格版本并保留确认、原操作和审计。共享范围及恢复规则见 [M 专属客服中心功能契约 §3.1](M-专属客服中心功能契约.md#31-bug-163原操作恢复与组理由2026-11-08)。本项为已确认的候选实现，A1实际弹窗及持久结果尚待实景验收，不表示已通过。
+**② 现页面与读取**
 
-**① 目的 & 对齐**
-A1 是后台的**运营账号、登录安全与会话治理地基**。A1 负责账号创建/启停/资料/角色分配、强制 MFA、登录锁定、会话与安全基线；**A6 是角色定义及角色授权的唯一权威，A8 是权限码字典的唯一权威，A7 管理菜单节点**。A1 只读取 A6/A8 的实时结果做角色变更影响预览，不再维护第二份权限矩阵或 `member/lead` 层级。A2(§2.2)记录所有账号治理写操作，服务端在每次请求上按真实权限码判权，客户端角色只用于展示。
+- `/platform/rbac`：安全结论、有效超级管理员/未绑定两步验证/待审批/在线会话统计、按安全状态筛选的账号列表、详情及账号操作、后台登录规则和登记权限。筛选与分页在全量概览内完成；首次打开、手动刷新和写后读取，不自动刷新。
+- 详情展示账号资料、角色实际权限、大使两项独立材料核验权、后台登录设备及角色审计。`CURRENT_ASSIGNMENT` 只表示没有读到更早记录，可能是审计为空或读取异常，不能解释为从未改过角色。
+- 概览必填统计与列表字段严格校验，不把缺字段转成0。`tfaResetAt`、普通概览的 `temporaryPassword`、头像资产/分类可空；会话设备、IP及时间、角色历史的前角色/时间可空。合法空值沿原界面显示，必填字段损坏阻止使用本次概览。
+- 有效超级管理员必须同时启用、主角色为super、真实MFA已绑定。固定下限2人；登录临时绕过不计入有效人数。
+- 登录session及lock规则只读。session来自系统政策（默认无操作60分钟、无绝对时限；闲置登出关闭时展示disabled）；锁规则由C6 `auth.risk.*` 生成，服务端缺配置fallback为5次/15分钟、10次/24小时，不固定套用历史数值。
+- A1待审批数仍由后端按action含`(A1)`统计；本页七类提案统一带该标记，修复新票漏计。未回填旧票，也不能保证其它生产者已带标记；页面保留原来的口径提示。
 
-> **运营账号 ≠ 用户账户(C 域)**:A1 管理的是**平台运营方内部员工**的后台登录账号(角色 / 2FA / session),与 C 域(§5 章)管理的**终端用户**账户是两套完全独立的实体与生命周期。后台账号不在用户事件流(A4)中,不持任何用户资产;C 域用户的冻结 / impersonate / 资产调整等动作,其**操作者**是 A1 运营账号、**对象**是 C 域用户账户。两者在本 PRD 中严格区分,不可混用。
+**③ 写操作与审批**
 
-**② 后台界面**
-1. **运营账号列表**:`账号 ID / 登录名 / 显示名 / 当前角色或暂未分配 / MFA 绑定态 / 账号状态 / 最近登录 / 活跃 session 数`。列表提供新建、编辑、启停、变更角色、重置密码、重置 MFA 与强制登出入口；**没有删除账号入口，账号生命周期只允许禁用和重新启用**。
-2. **账号详情**:展示账号资料、真实 MFA 绑定态、服务端审计生成的角色变更记录，以及每条活跃 session 的`设备 / IP / 起始时间 / 最近活动时间`；超管可按单条 session 吊销，也可从列表吊销目标账号全部 session。不得吊销自己的当前账号或任何超管账号的 session。
-3. **角色影响预览**:角色选择项来自 A6；选择新角色时用 A6 返回的真实权限码集合显示“新增/失去”的差异，同角色选择必须禁用确认。A6 角色详情或权限差异不完整时必须显式报错并停用“改角色”，不得以空权限集继续提交。A1 顶部提供 A6“角色管理”和 A8“权限字典”的明确跳转，不复制其数据模型。
-4. **安全基线**:只读展示 MFA、session、登录锁定与最少有效超管数,页面不提供调整入口。系统进入“治理恢复模式”时显示阻断原因，并只开放恢复双超管所必需的创建超管、提升为超管或启用已绑定 MFA 超管动作。
+| 合同/原弹窗ID | 入口与权限 | 执行与效果 |
+|---|---|---|
+| W01 / A1-MD1 | 正常新建：当前super/superadmin + `platform_a1_write` | 直接POST accounts，系统生成20位临时密码；enabled账号，默认support，可显式空角色为unassigned；support原子创建SERVICE资格/未分组成员/客服档案，不授主管、不自动绑定客户。默认池无图可成功创建缺图账号，不能重复创建 |
+| W02 / A1-MD1恢复 | 有效super不足2时，只能新建super；另需`platform_a2_write` | `a1_account_create`提案，另一位超级管理员批准后创建。本页不取得批准回放中的临时密码，之后到列表重置密码交付；不可自批或网页破窗 |
+| W03 / 资料修改 | `platform_a1_write` + `platform_a2_write`，非恢复期 | `a1_account_update_profile`提案；批准执行校验版本、用户名/邮箱唯一及头像。改登录名撤全会话；其它资料不主动撤会话 |
+| W04 / A1-MD4 | `platform_a1_account_role_change` + `platform_a2_write`；两角色权限已读全 | `a1_account_change_role`提案；批准执行改主角色、清理旧权限缓存，不主动踢出会话。转成非support/super时先交接并移除独立资格；support→super不能泛称移除资格 |
+| W05 / A1-MD5 | `platform_a1_account_2fa_reset` + `platform_a2_write`；已绑定、非恢复、保人数底线 | `a1_account_reset_2fa`提案；批准执行清secret/boundAt，撤全部会话，下次重新绑定。核验方式/时间/工单拼入reason，后端不独立验证核验事实 |
+| W06 / 重置密码 | 当前super/superadmin + `platform_a1_account_password_reset`，非恢复 | 直接POST password/reset；20位临时密码、PASSWORD_CHANGE_REQUIRED、撤全会话，MFA不变。结果抽屉仅本次显示，不代表服务器不保存幂等回执 |
+| W07/W08 / A1-MD2/MD3 | `platform_a1_account_disable` + `platform_a2_write` | `a1_account_status_update`提案；批准后停用才撤全会话/禁止登录，保角色及普通SERVICE绑定/成员；主管须先交接。启用保角色/MFA、不自动恢复已撤资格；恢复期间只能启用已绑MFA的super |
+| W09 / 撤销全部登录 | 当前super/superadmin + `platform_a1_account_sessions_revoke` + `platform_a2_write`；非自己、非super目标且在线 | `a1_account_force_logout`提案；批准时在线会话全部下线，密码/MFA不变，可重新登录。不是确认即下线 |
+| W10 / A1-MD6单设备 | 当前super/superadmin + `platform_a1_account_sessions_revoke`；同目标限制 | 直接POST指定session/revoke，携账号版本；只撤这台设备，版本递增，目标session消失时404。提交中禁用原按钮 |
+| W11 / 登记权限 | `platform_a1_rbac_grants_update`，本页非恢复 | 直接POST accounts/permissions，`expectedAbsent:true`；不付款、不查覆盖率、不授予任何角色。amplifies=true必须发送HIGH，本次已接自动编码；false仍READ/WRITE。编码6–96位、路径/api/admin/开头、理由8–200，退役权限拒绝 |
+| W12/W13 / 头像选择 | 原账号管理范围、当前超级管理员及A1write | 上传或明确准备默认头像只生成READY资产，不换现图；创建直接attach，编辑须批准执行attach。默认性别未指定合法；不因刷新、改名/性别或调组重抽 |
+| W14 / 取消新头像 | 原素材所有者及原写权 | 管理scope取消不按命令号去重；首次明确拒绝释放cancel意图，未知保留且不再发送。没有终态查询接口，不能把图片404当已取消 |
+| W15/W16 / 专属客服/主管资格 | 当前超级管理员、A1read+A1write、会话/菜单有效、非强制改密/登出中；外层非治理恢复 | 窄GET qualifications，PATCH两个独立kind；可兼任，不授角色、不自动绑客户。SERVICE停用/移除须先交接客户并退出组，SUPERVISOR须移交全部负责组含归档。UNKNOWN不是ABSENT，只有ABSENT的资格版本可为0 |
 
-**③ 可控参数**
+资料修改的新提案只列真正变化的字段及中文前后值（登录名、显示名、邮箱、头像资产、头像性别）；未改字段不写，已保存原请求恢复时不重拼摘要。首次明确拒绝后重读概览及角色权限，现有确认按最新账号版本重建，输入、理由和核验资料保留；重读失败不发新请求。进入页面及每次概览成功后，按原命令号查询本人保存的待审批记录；终态清记录并重读，查询失败保留。账号列表的状态格对这些仍是待审批的记录显示「停用待审批」「改角色待审批」这类标记（判断和操作菜单的「已提交，等待审批后执行」相同，问号里写审批单号），查到终态后标记随记录消失。首次被 `ACCOUNT_VERSION_STALE` 拒绝时，所有账号操作统一提示「账号刚被改过，这次没有执行；请按最新的账号资料核对后再提交。」
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响 / 依据 |
-|---|---|---|---|---|
-| 运营账号角色集 | A6 当前启用角色；内置 8 角色:`SUPER_ADMIN / CONFIG_ADMIN / FINANCE / RISK / CONTENT / GROWTH / SUPPORT / AUDITOR`，并允许 A6 中启用的自定义角色 | 以 A6 为准 | 角色分配实时 | A1 不维护固定七角色副本，不存在 `member/lead` 隐式层级 |
-| 后台强制 2FA | 强制开启(全角色) | 固定开启(不可关) | 实时(登录时校验) | 后台账号安全基线,§1.8 原则二;无 2FA 不得完成登录 |
-| 运营账号 session 时限 | 无有效操作 60min 自动登出;有效操作续期;无绝对登录时限 | 只读基线,不可调 | 每次请求实时校验 | Redis 保存 `issuedAt / lastSeen / IP / User-Agent`；首次强制改密换发 session 时继承本次请求真实 IP/User-Agent；闲置登出停用时显示「已停用 / 无固定上限」 |
-| 登录失败锁定 | 短锁 5 次 / 15min;累计 10 次升级长锁 24h(C6 默认值) | 只读基线;阈值由 C6「注册与登录风险」`auth.risk.*` 派生,A1 只展示当前生效值 | 密码与 MFA 失败均计数 | 用户名哈希后写 Redis；错误文案不区分账号、密码或锁定态 |
-| 最小权限默认 | 新账号默认“专属客服” | 可显式选择 A6 启用角色或暂不分配；恢复模式仅超管 | 创建即生效 | 客服默认 8 项客服权限、M/M1–M5 菜单及个人服务资格，不授主管资格；暂不分配时权限和菜单为空 |
-| 最少有效超管数 | ≥ 2 | 固定下限 2 | 每次账号治理写操作前 | “有效超管”=账号启用 + 超管角色 + MFA 已真实绑定；不足 2 时进入治理恢复模式 |
+A2请求为 `sourceDomain:A1`、`type:acct`、`amplifies:false`、`sos:false`、`roleGate:超管`。已有账号的 `obj`、`target.id`、`params.accountId` 同规范账号ID，`target={domain:A,type:account,id}`；创建以username为obj/target.id。profile、role、2FA、status的Guard逐动作业务权不变，create/force_logout不冒充这四项映射。所有走审批的确认按钮沿现界面「提交审批」。批准者必须是不同maker、当前有效管理员、有审批批准权/票访问权与相应业务权，A1业务回放要求超级管理员；不把页面的权限差异当批准权。
 
-> **MFA 登录闭环**:密码校验成功只签发一次性 MFA challenge，绝不签发 JWT/session。challenge 在正确验证码路径中以 Redis 原子删除裁决，只允许一个并发请求消费；同一账号已接受的 TOTP 时间步以原子 `SET NX` 标记，换新 challenge 也不得在有效窗口内重放同一验证码。首次登录展示 TOTP 绑定信息，密钥经 AES-GCM 加密落库；完成正确 TOTP 后才建立 Redis session 并签发 8h 上限的 JWT/cookie。重置 MFA 会先校验双超管下限，再清除绑定并吊销该账号全部 session，下一次登录重新绑定。登出只有在服务端确认撤销 session(或确认 token 已无效)后才清除浏览器 HttpOnly cookie；后端/Redis 不可用时返回失败、保留凭据并提示重试，不得伪报成功。
+本人停用沿后端现行规则：另一位超级管理员批准，且批准后至少保留两位有效超级管理员；生效后本人全部设备下线、不能再登录。确认框尚缺「这是你自己的账号」的明确提醒，交视觉补充；账号ID与当前登录adminId已可比较。
 
-> **双超管恢复范围（S09、BUG-294）**:有效超管不足 2 时，页面只保留创建超管、提升为超管、启用已绑定 MFA 的超管、完成两步验证及既有会话撤销入口。改角色只保留当前角色供对照和「超级管理员」这一变更目标；不能原角色重复提交，已有超管不能降级。普通账号和未绑定 MFA 的超管不能启用。资料编辑、禁用、重置 MFA/密码、客服/主管资格、登记权限及安全基线变更关闭；恢复到 2 个有效超管后按原权限恢复。
->
-> **执行边界（2026-11-06，BUG-294 / BUG-297）**:恢复期间新建、提升和启用均提交 A2，须另一位超管批准，不能自批；正常状态新建保留直接创建及一次性临时密码展示。只剩一位可用超管时请运维执行服务器恢复，恢复已有且已绑定两步验证的合法管理员；页面不提供自批或破窗。人数补足后刷新恢复正常状态，服务器恢复记录在 A2 现有详情展示执行人与原因。
+**④ R1原请求与恢复**
 
-**④ 操作动作**
+- 正常创建、全部账号提案、密码重置、单设备撤销及权限登记复用一份原创建键store `nexion-a1-support-avatar-account-create`；兼容已有创建记录。写前完整持久化actor、对象、请求内容、理由、身份核验值、原账号/角色权限事实、命令key和首次时间，存不下不发。资格继续共用原support group store，头像继续共用原avatar draft store，不建同键第二实例。
+- 头像首次准备在发出请求前保存失败时，移除本次未发送的内存记录，保留所选文件并允许取消或再次准备；不把它当作结果未知。已有原请求保存失败仍保留原记录。
+- 结果未知后确认输入冻结；页面概览读取失败时原操作提示/恢复入口仍在。恢复按保存的intent和事实生成原确认，不拿当前状态改原动作。新修改受最新读取、当前权限及待处理原记录约束；恢复与新修改分别判断。
+- 首次拒绝用 `isDeterministicRejection`，4xx或2xx非零业务码明确未执行时丢本次号、保输入；5xx、不可读响应、未收敛幂等码、unknown头保记录。原号重试只用 `isExplicitRejection` 释放，401/403/408/425/429和IDEMPOTENCY_*不当原命令结论。
+- 24小时内可按原key/原body重发去重接口；过期保留、只能查询。直接账号接口没有独立原号GET，读回当前概览或权限详情只供核对，不能证明原命令成败，不自动解除记录。资格按原号GET状态、终态后成功窄GET当前资格才清记录，不重发。
+- 提案重试的POST回放是建单时回执，之后必须按原号GET当前票；111e00cd已对持久command票返回operationCode，新A1验收回包必须带真实op，旧无command票可空；只有权威读到pending才标待审批。查询失败保原记录、不伪造待审批；终态后重读并结束恢复。过期且严格按原号GET明确`A2_PROPOSAL_NOT_FOUND`，才可通过既有确认框解除本地提案记录；直写记录不适用。
+- 写回包不当当前概览；明确原结果后重新GET，成功读取之前不准新修改，旧详情/编辑/新建/改角色框关闭。回包不完整继续保原记录。
 
-| 动作 | 角色 | 确认弹窗 | 审计点 |
-|---|---|---|---|
-| 创建运营账号 | 仅超管 | A1-MD1(理由必填) | `admin.operator_account_created`(account_id / initial_role / operator；不记录初始密码) |
-| 禁用运营账号 | 仅超管 | A1-MD2(理由必填;禁用前服务端校验剩余有效超管 ≥ 2) | `admin.operator_account_disabled`(account_id / reason / operator) |
-| 启用运营账号 | 仅超管 | A1-MD3(理由必填) | `admin.operator_account_enabled`(account_id / reason / operator) |
-| 分配 / 变更角色 | 仅超管 | A1-MD4(理由必填) | `admin.operator_role_changed`(account_id / before_role / after_role / operator) |
-| 重置运营账号 2FA(员工丢设备) | 仅超管 | A1-MD5(理由必填) | `admin.operator_2fa_reset`(account_id / reason / operator);留痕同 A2 |
-| 强制登出运营账号 session | 仅超管(非自己、非超管目标) | A1-MD6(理由必填;止血动作,确认即生效) | admin 审计事件(目标账号 / session / reason / operator) |
-| 查看账号列表 / 跳转 A6 角色管理 / A8 权限字典 | 由 `platform_a1_read / platform_a6_read / platform_a8_read` 分别判定 | 否(只读) | admin 审计事件(查看范围 / operator) |
+**⑤ 接口与安全基线**
 
-> 后台账号的创建 / 禁用 / 启用 / 角色变更 / MFA 重置五类动作均为后台权限边界写操作,**执行权仅超级管理员**，经确认弹窗 + 理由必填即时生效并落 A2 审计。**强制登出运营账号 session**同样仅限超管，但为避免自锁和双超管互相踢出，服务端拒绝当前账号与超管目标；每次必须记录 reason。
+读取：GET `/api/admin/platform/accounts/overview`、`/roles/overview`、逐角色详情、`/audit/reason-policy`；权限登记读回GET `/permissions/:code`另受A8read约束。提案POST `/api/admin/platform/audit/operations`，原号GET `/operations/proposals/by-idempotency-key`。直写、头像及资格端点见上表及重构说明W01–W16。旧资料/角色/2FA/启停/全登出直接REST仍在后端，但本页不调用；不因旁路存在绕审批。安全基线写当前固定拒绝，删除账号无入口。
 
-**④a 交互与弹窗规格**
+**⑥ 固定后端限制与视觉接续**
 
-> ④ 表「确认弹窗」列的弹窗 ID 在此逐一定义。弹窗容器统一复用基础 Modal/Drawer,弹窗内容逐弹窗单独设计;本段约定结构/分区/控件类型/行为与状态,不约定视觉。
-
-**(1) 动作触发总表**
-
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| 创建运营账号 | ②(a)账号列表页顶部「新建账号」 | 主按钮 | 仅超管渲染 | 打开弹窗 A1-MD1 |
-| 禁用 / 启用账号 | ②(a)账号列表行内菜单 + 账号详情页操作区 | 菜单项 / 次按钮 | 启用态账号显示「禁用」,已禁用账号显示「启用」;仅超管渲染;目标为超管且剩余有效超管 < 3 时「禁用」置灰并提示双超管下限 | 打开弹窗 A1-MD2 / A1-MD3 |
-| 分配 / 变更角色 | ②(a)账号详情页角色卡「变更角色」 | 次按钮 | 仅超管渲染 | 打开弹窗 A1-MD4 |
-| 重置运营账号 2FA | ②(a)账号详情页安全卡「重置 2FA」 | 次按钮 | 仅超管渲染;目标账号 2FA 未绑定时置灰 | 打开弹窗 A1-MD5 |
-| 强制登出 session | ②(a)账号详情页 session 列表行内「强制登出」 | 行内按钮 | 仅超管可用；自己、超管目标或无活跃 session 时置灰并解释原因 | 打开弹窗 A1-MD6 |
-| 查看角色定义 / 权限字典 | A1 顶部“A6 角色管理”/“A8 权限字典” | 链接 | 按 A6/A8 read 权限展示 | 跳转权威视图,无弹窗 |
-
-**(2) 弹窗规格**
-
-##### [A1-MD1] 创建运营账号
-- **功能**:正常状态填写理由确认后创建并留操作记录；可用超管不足 2 人时仅可新建超管，提交 A2 提案，须另一位超管批准后创建（2026-11-06，BUG-294 / BUG-297）。
-- **权限与登录**:默认创建专属客服，按所选角色的当前授权开通权限。客服的个人服务资格、待分组成员及有效档案与账号在同一事务创建，失败一并回滚；不自动授主管资格。首次登录须绑定 MFA 并修改初始密码。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 账号 ID(登录名) | 单行文本 | 是 | 3–32 字符,字母数字与 `.`/`_`;server 唯一性校验(重复返 409) | 空 |
-| 显示名 | 单行文本 | 是 | 2–32 字符 | 空 |
-| 初始角色 | A6 启用角色 + 「暂不分配」 | 否 | 恢复模式下只能选择超管；省略为客服，显式空或暂不分配不授角色 | 专属客服 |
-| 客服性别 | 男 / 女 / 未指定 | 否 | 有权操作者明确选择，不由姓名或照片推断 | 未指定 |
-| 客服头像 | 默认池预览或原受控上传 | 否 | 新建随机一次持久化，失败保留缺失态；旧像不自动替换 | 对应许可且审核通过的池 |
-| 临时密码 | 系统生成，不由操作者输入 | — | 正常创建成功后显示一次；恢复提案批准不返回密码，须在账号列表点「重置密码」后交付 | 20 位临时密码 |
-| reason(创建理由) | 多行文本 | 是 | server 空值返回 `REASON_REQUIRED`；初始密码不得进入审计/提案 payload | 空 |
-
-- **按钮区**:`[取消]` · 正常状态 `[确认创建账号]` / 恢复期 `[提交创建审批]`（必填未过校验置灰）。
-- **错误态**:409 账号 ID 已存在(弹窗不关,字段下内联错误)/ 400 `REASON_REQUIRED` / 403(非超管)。
-- **成功反馈**:正常创建后显示一次临时密码；恢复期只提示提案已提交，批准后创建账号；请随后在账号列表点「重置密码」，把临时密码交给账号持有人，不承诺审批返回密码。首次登录须完成两步验证并修改密码。
-- **治理恢复**:可用超管少于 2 人时，仅开放新建、提升、启用已绑定两步验证的超管、完成两步验证和撤销会话；新建、提升、启用均须另一位超管批准，不能自批。没有第二位可用超管时由运维执行服务器恢复，页面不提供破窗入口。旧页面直接写入被拒时，提示刷新后提案及联系运维的处理路径。服务器恢复后重新加载人数与状态；A2 现有操作记录以「服务器恢复超级管理员」显示，可在详情查看执行人和原因。
-
-##### [A1-MD2] 禁用运营账号
-- **功能**:收回目标账号的后台访问权(即时踢出全部活跃 session),确认即生效。
-- **布局结构**:1. **信息区**:目标账号 ID / 显示名 / 角色 / 活跃 session 数 / 最近登录时间。2. **影响预览区**:目标为超管时展示「当前有效超管数 N → 禁用后 N−1」;N−1 < 2 时升级为阻断提示(确认钮置灰,文案含「低于双超管下限,server 将拒绝(422)」)。3. **输入区**:reason(多行文本,必填,8–200 字)。4. **按钮区**:取消 / 确认禁用。
-- **按钮区**:`[取消]` · `[确认禁用]`(警示色主按钮;reason 未达标或触发双超管下限时置灰)。
-- **错误态**:422 `MIN_SUPERADMIN_VIOLATION`(弹窗不关,内联阻断条)/ 400 `REASON_REQUIRED` / 409(账号已被禁用,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;行内状态更新「已禁用」;toast「已禁用并登出全部 session · 已记审计」;事件 `admin.operator_account_disabled`;实时告警全体超管。
-
-##### [A1-MD3] 启用运营账号
-- **功能**:恢复已禁用账号的后台访问权，提交到「操作记录与审批」，由另一位超级管理员批准后生效(账号须重新完成 2FA 登录)；恢复期间仅允许已绑定 MFA 的超管。
-- **布局结构**:1. **信息区**:目标账号 ID / 显示名 / 角色 / 禁用时间 / 禁用理由(引自审计)。2. **输入区**:reason(多行文本,必填,8–200 字)。3. **按钮区**:取消 / 确认启用。
-- **错误态**:400 `REASON_REQUIRED` / 409(账号已为启用态)/ 403。
-- **成功反馈**:提案成功后弹窗关闭并提示等待审批；批准后重新加载显示实际状态/角色。提案失败保留确认框和理由。账号变更与操作记录由系统执行。
-
-##### [A1-MD4] 变更角色
-- **功能**:把目标账号分配到 A6 的一个启用角色，或清空为“暂不分配”；提交到「操作记录与审批」，由另一位超级管理员批准后生效并清除权限缓存。恢复期间只能提升为超管。权限缓存失效属于同一事务闭环：Redis 删除失败必须让角色/授权事务回滚，禁止 DB 已变更而旧权限缓存继续存活。
-- **布局结构**:1. **信息区**:目标账号 / 当前角色。2. **影响预览区**:用 A6 返回的权限码集合展示“新增/失去”；授予超管时提示最高权限。3. **输入区**:见下表。4. **按钮区**:取消 / 确认变更。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标角色 | A6 启用角色 + 「暂不分配」 | 是 | 不得与当前角色相同；不存在 `member/lead` 字段 | 当前角色 |
-| reason | 多行文本 | 是 | server 空值返回 `REASON_REQUIRED` | 空 |
-
-- **错误态**:422 `RBAC_BASELINE_VIOLATION`(server 返回违反的基线条目,弹窗不关)/ A6 权限差异加载不完整(前端停用提交)/ Redis 权限缓存失效失败(事务回滚、提示重试)/ 400 / 409(角色已被他人变更,提示刷新)/ 403。
-- **成功反馈**:提案成功后弹窗关闭并提示等待审批；批准后重新加载显示实际状态/角色。提案失败保留确认框和理由。账号变更与操作记录由系统执行。
-
-##### [A1-MD5] 重置运营账号 MFA
-- **功能**:解绑目标账号的 TOTP(员工丢设备场景)，同时吊销其全部活跃 session；目标账号下次登录必须重新绑定。
-- **布局结构**:信息区展示目标账号、当前 MFA 态与最近登录；输入区要求 reason；按钮区为取消 / 确认重置。身份核验通过既有安全工单流程完成，工单号应写入 reason，A1 不虚构未落库的渠道/时间字段。
-- **错误态**:`REASON_REQUIRED` / MFA 未绑定 / 重置后有效超管少于 2 / 非超管或治理恢复模式阻断。
-- **成功反馈**:安全卡更新为“未绑定(待重绑)”，活跃 session 清零，A2 写入 `admin.operator_2fa_reset`。
-
-##### [A1-MD6] 强制登出 session
-- **功能**:立即终止目标账号的指定活跃 session(疑似账号被盗时快速止血),确认即生效。
-- **布局结构**:1. **信息区**:目标账号 ID / session 设备 / IP / 起始时间。2. **输入区**:reason(多行文本,必填,8–200 字)。3. **按钮区**:取消 / 确认登出。
-- **错误态**:400 `REASON_REQUIRED` / 409(session 已结束,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;session 行移除;toast「session 已终止 · 已记审计」;admin 审计事件落 A2。**草稿不为风控单方面赋予运营账号 session 踢出权**:已落地 §1.1 未授予风控此权,且 C2 的强制登出针对用户账号(与运营账号 session 踢出是两件不同的事);若后续确认风控需紧急止血路径,须在 §2.1 RBAC(T3)正式定义后方可引入,当前不在本章自定。
-
-**⑤ 接口**
-- 登录:`POST /api/admin/auth/login` → MFA challenge；`POST /api/admin/auth/mfa/verify` → JWT/session；`POST /api/admin/auth/logout` → 服务端撤销当前 session；`GET /api/admin/auth/me`。
-- 账号:`GET /api/admin/platform/accounts/overview`；`POST /api/admin/platform/accounts`；`PATCH /api/admin/platform/accounts/:id/profile|role|status`；`POST /api/admin/platform/accounts/:id/reset-2fa|password/reset`。
-- 会话:`POST /api/admin/platform/accounts/:id/sessions/revoke`(全部)；`POST /api/admin/platform/accounts/:id/sessions/:sessionId/revoke`(单条)。
-- 基线:只读。`PATCH /api/admin/platform/accounts/security-baselines/:baselineKey` 恒被服务端拒绝(`SECURITY_BASELINE_LOCKED`),不是可用写入口。角色与权限权威接口分别位于 `/api/admin/platform/roles`(A6)和 `/api/admin/platform/permissions`(A8)。
-
-所有写 endpoint 按专用权限码 + 服务端业务不变量双重校验，并要求 reason / `Idempotency-Key`。**A1 不提供 DELETE endpoint**；任何历史删除调用必须失败，账号只能禁用。
-
-**⑥ 权限 & 审计**
-
-> 本表只描述 A1 自身账号治理动作；实际授权以 A6 角色授予和 A8 权限码为准，不再声明角色内隐式层级。
-
-| 动作 | 超管 | 财务 | 风控 | 增长 | 内容 | 客服 | 只读审计 |
-|---|---|---|---|---|---|---|---|
-| 查看 A1 账号；跳转 A6/A8 | ✅ | 按实际 read 权限 | 按实际 read 权限 | 按实际 read 权限 | 按实际 read 权限 | 按实际 read 权限 | 按实际 read 权限 |
-| 查看运营账号列表 | ✅ | — | — | — | — | — | ✅(只读) |
-| 创建账号 | ✅ | — | — | — | — | — | — |
-| 禁用 / 启用账号 | ✅ | — | — | — | — | — | — |
-| 分配 / 变更角色 | ✅ | — | — | — | — | — | — |
-| 重置运营账号 2FA | ✅ | — | — | — | — | — | — |
-| 强制登出运营账号 session | ✅(非自己、非超管目标) | — | — | — | — | — | — |
-
-审计记录字段:`操作者 / 角色 / 动作(operator_account_created|operator_account_disabled|operator_account_enabled|operator_role_changed|operator_2fa_reset|logout_session) / 目标账号 ID / 前角色 / 后角色(角色变更时)/ reason / 时间(ms)`。**运营账号体系的所有写操作落 A2 审计**(§2.2),只读审计角色可全量追溯谁在何时创建 / 禁用了运营账号、变更了谁的角色——这是后台内部权限滥用的取证地基。
-
-**⑦ 风控 & 联动**
-- **后台账号强制 MFA + 最小权限**:全角色强制 MFA；新建账号默认专属客服及个人服务资格，不自动授主管资格；显式暂不分配时无业务权限。A6 角色授权负责跨域最小权限约束，A1 只消费其结果。
-- **运营账号 ≠ 用户账户(防混淆)**:A1 运营账号与 C 域用户账户是两套实体;后台对用户的处置(冻结 / impersonate / 调资产)的操作者是运营账号、对象是用户账户,二者绝不互通(运营账号不持用户资产、不入 A4 用户事件流)。
-- **角色变更经 A2 审计 + 操作确认**:角色授予/撤销仅超管可执行，理由必填、即时生效、清权限缓存并留痕；同角色操作在前后端均拒绝。
-- **双超管按“有效”而非账号行数计算**:只有启用、超管角色且 MFA 已绑定的账号计入；不足 2 即进入治理恢复模式，避免“账面双超管、实际单点”。
-
-**⑧ 埋点(事件)**
-对齐 A4(§2.4.5 ⑥ admin family):
-- **产生(admin 审计,§2.4.5 ⑥ admin family)**:
-  - `admin.operator_account_created` — 触发点:创建运营账号确认执行;属性:`account_id / initial_role / operator / reason / ts`;喂 A2 审计。
-  - `admin.operator_account_disabled` — 触发点:禁用运营账号确认执行;属性:`account_id / reason / operator / ts`;喂 A2 审计。
-  - `admin.operator_account_enabled` — 触发点:启用运营账号确认执行;属性:`account_id / reason / operator / ts`;喂 A2 审计。
-  - `admin.operator_role_changed` — 触发点:角色分配 / 变更确认执行;属性:`account_id / before_role / after_role / operator / reason / ts`;喂 A2 审计。
-  - `admin.operator_2fa_reset` — 触发点:运营账号 2FA 重置确认执行;属性:`account_id / reason / operator / ts`;喂 A2 审计。
-- **消费**:无(A1 为账号治理域,不消费用户事件流)。
-- **注**:上列五个 `admin.operator_*` 事件须各自经 A4 schema registry 注册(归入 §2.4.5 ⑥ admin family),与各章 admin.* 审计事件统一在 A4 命名空间下;**`operator_` 前缀用于与用户侧 `admin.user_*` 事件区分,防命名空间冲突**(与 C5 用户侧 `admin.2fa_disabled` 对称但命名独立)。强制登出 session、查看类操作仅产 A2 审计记录,无独立 KPI 事件(纯运营内部账号治理,无用户侧事件)。
+- A1-BE-01：正常治理期高危直写旁路仍存在，PC保持审批；候选不当已上线。
+- A1-BE-02：`OpsAdminAuthService.login:94–104` 在临时开关开启且用户名superadmin、角色super时可绕MFA。发布配置必须关闭/移除；本次未登录superadmin、未读取运行配置，也不承诺后端无例外强制MFA。
+- A1-BE-04：管理账号取消头像无原命令去重/终态读回；本次禁未知取消重试。A1-BE-06：未绑定MFA的enabled super停用/降级仍可能被多减1而错误阻断，不能绕过后台底线。
+- 待审批统计旧票/其它生产者仍可能漏标；角色默认scope文字不等于真实授权。客服/主管及头像合同还见 [M 专属客服中心功能契约](M-专属客服中心功能契约.md)。
+- 逻辑worker不改布局/样式/原文：登记处「提交会被拒绝」及确认类型、通用direct/过期标签的创建专用说明、审批建单时版本检查的过强说法、MFA无例外说法等，逐句登记在A1重构说明的「后端事实」及worker报告，由视觉worker修。头像未知在概览失败时独立恢复需要现有头像入口的补位，见报告；不造后端未交付的查询。
 
 ---
 
@@ -471,6 +366,8 @@ A2 承载各域操作记录、已提交的业务审批与后台记录机制设�
 2. **识别不了的照常给入口**。认不出类型、旧记录拿不到原单、摘要不足以判断条件时，具A2批准权者仍可打开批准／驳回；已能确认的条件仍须满足。抽屉「谁能批准」下一行、批准框详情及相关原重试提示写「这类单的业务权限由后端在批准时检查，没有权限会被拒绝并写明原因」。不能沿第三轮把这类单整张禁用，也不能把保留入口当成已获业务授权。
 3. **最终以后端为准**。`A2_BUSINESS_PERMISSION_DENIED:权限码` 首次拒绝时，批准／驳回框说明缺该业务权限、原操作未执行／该单未驳回、仍待审批，并列后端给出的权限码；首次确定拒绝丢新号，留框和输入，不新增待确认。原号重试遭403不能证明原操作结果，原记录继续保留且不给解除。
 4. **B44 待后端**：队列和详情直接返回当前查看者能否批准、能否驳回；交付前保留上述已知规则加提示方案，不写成已有这两个权威字段。D5／D6／D7结构化前后值或稳定显示摘要也仍待后端。
+
+A6启停（含旧a6_role_disable）、删除、改授权的批准人显示沿用「另一位有审批批准权限和对应业务权限的管理员」。前两类业务权为platform_a6_write，授权为platform_a6_role_grants_update，不要求超级管理员；后端给出的roleGate只是摘要，不能代替真实业务门槛。A1账号提案仍要求超级管理员，A4目录登记仍按专项超管审批，A3/A7/A9现有写入口不建A2票。
 
 现有已映射规则举要（均叠加A2批准权、本人限制及服务端当前检查）：
 
@@ -555,136 +452,75 @@ A4定义事件命名与字段，A2承载操作记录和审批追溯；业务事�
 
 #### [A3] 系统配置
 
-**① 目的 & 对齐**
-A3 托管**平台级横切配置**——feature flag 平台、**kill-switch config store**、系统健康(运营可视/可配范围);并承载两条**固定后端不变量**——server time 单源、Idempotency-Key 去重——作为全平台时间判定与幂等去重的服务端地基(平台强制、运营不可调,**不设配置卡**,约束见 ⑦)。这些底座被多域依赖。对齐前端 **§9.11a.4 中「当前时间权威值」职责**(server time 权威——Trial / Phase 等一切时间判定以服务端时钟为准,防 client clock skew;§9.11a.4 其余 8 条 server-side responsibilities 由 H2 Trial 承接)+ §9.11e(`Idempotency-Key`——资金写入幂等去重键,server 24h dedup)+ §9.11d.3(feature flag / A-B 实验值 server-driven)+ §9.11d.1(kill-switch 闸清单)。服务的业务目标:为 §1.8 原则二.1(server-canonical)与原则二.3(幂等)提供平台级技术底座;**kill-switch config store 是 B5 风险雷达(Ch4)所引用「服务端 kill-switch config store」的实际托管处**(§9.11d.1 定义闸清单,B5 只读其状态灯)。
+> 2026-11-15 按后端 `111e00cd` 和当前改版接线复核。此节描述现行入口；旧的 A3 应急写面已迁至 J1/J2，不再作为可执行合同。App 消费按 `44b55db8`（test）、`68df587c`（h5-lite）核对。页面浏览器验收按域集中执行，本节不表示已完成真实写入验收。
 
-> **§9.11d.3 内容归属边界(A3 覆盖范围示例)**:§9.11d.3 中 PHASES 全表由 H1 Phase 调度器承接(§3.3 H1),chargeFailRate 归 H2,multiplier/做市价格曲线由对应业务域接管;**A3 feature flag 平台仅承接无明确业务域归属的横切平台 flag**,不覆盖 §9.11d.3 全部内容。归属判定示例——**归 A3 的横切 flag**:A-B 实验开关、灰度发布百分比开关、跨域通用能力开关;**不归 A3 的反例**:PHASES 全表归 H1、chargeFailRate 归 H2、业务域 multiplier 归对应业务域。
+**① 范围与读取**
 
-> **kill-switch 托管的 V1→V4 边界**:**V1 阶段由 A3 config store 托管 6 闸(5 个二元功能闸〔4 源自前端 §9.11d.1 + 后台应急新增 withdraw 提现闸〕 + 1 个 geo-block 闸)的闸状态与切换入口**(临时承载);**V4 由 J1(Kill-Switch 矩阵,5 功能闸)/ J2(Geo-block)接管管理操作面**——J1/J2 是 kill-switch 的管理操作面,A3 config store 是 V1 阶段的状态存储与临时切换面。**本章是 kill-switch config store 的存储端定义**:B5⑦ 为消费方声明,二者协作而非竞争——A3 为存储端权威、B5 为消费引用方。B5⑦ 中「或专属 config endpoint 待开发确认」的不确定性由本章终结:A3 config store 已终结 B5⑦「落点待开发确认」的不确定性,**B5⑦ 正文须同批次更新为「V1 由 A3 `/api/admin/killswitch` 承载;切换面 V4 归 J1/J2」**,B5⑦「以本子模块此处声明为准」限定改为「仅指消费端读取视图,存储端权威见后台 PRD §2.3 A3」。B5② / B5④ / B5⑦ 已声明「状态在 V1 阶段来自服务端 kill-switch config store(§9.11d.1),V4 归 J1/J2」,本子模块即该 config store 的托管定义,与 B5 引用逐一吻合。(§3.14 跨域归属表目前无「kill-switch 状态」权威归属行。)
+入口 `/platform/config`，五个页签各读各存，没有一次保存全页：
 
-**② 后台界面**
-四视图:(a) feature flag 平台 + (b) kill-switch config store + (c) 系统健康 + (d) 应用体验配置。**server time 单源与 Idempotency-Key 去重不在本配置面**——为固定后端不变量(平台强制、运营不可调,无卡;约束见 ⑦)。
+| 页签 | 读取与用途 | 写入边界 |
+|---|---|---|
+| 开关与门槛 | `GET /api/admin/platform/config/overview`；维护公告、全局限流、提现强审门槛 | W01/W02；服务登记且 `writable` 的行才可修改 |
+| 业务日历 | `GET /api/admin/platform/business-calendar`；两条轨道当前时区、未来安排和有效版本历史 | W03/W04；有效超级管理员 |
+| App 分享与下载 | `GET /api/admin/platform/config/experience`；分享基础链接、渠道、官方下载、九语目录；H3 首页开关只读 | W05，整组版本保护；H3 开关去「用户任务管理」修改 |
+| 说明内容 | `GET /api/admin/developer/docs` 与 `GET /api/admin/content/how-it-works`；两份独立草稿及公开状态 | W06/W07，各自整份快照保存；六类业务说明一起保存/发布 |
+| 应急与运行 | 共用 overview 的 J1/J2 投影及四个探针 | 只读；按目标菜单和权限跳 J1/J2 |
 
-1. **(a) feature flag 平台**:feature flag 清单 `[flag key / 当前态(on/off/灰度%)/ 适用范围(全量/cohort/Phase)/ 最近变更]`;A-B 实验值 server-driven(§9.11d.3),客户端读取派发结果。flag 切换经 ④ 确认弹窗(A3-MD1,理由必填)。**A3 feature flag 覆盖范围示例**:归 A3 的横切 flag(A-B 实验开关 / 灰度发布百分比 / 跨域通用能力开关);不归 A3 的反例(PHASES→H1 / chargeFailRate→H2 / 业务域 multiplier→对应业务域)。
-2. **(b) kill-switch config store**:6 闸(5 个二元功能闸 + 1 个 geo-block 闸)的服务端闸状态托管表 `[闸 key / 状态(enabled/disabled,geo-block 为 activeCountries 非空判定)/ 最近变更(operator / reason)]`——`withdraw 提现(后台应急新增,enforce 于 D 域提现 endpoint)/ staking 单档 / genesis / exchange / trial`(5 个二元功能闸,其中 4 个源自前端 §9.11d.1)+ `geo-block`(国家级屏蔽,结构 `{ key:'geo-block', enabled: countryList.length>0, activeCountries:[] }`);闸切换经 ④ 确认弹窗(熔断 A3-MD2 / 恢复 A3-MD3,V1 临时入口,V4 转 J1/J2)。**默认态**:5 个二元功能闸 `enabled=true`(未熔断);geo-block 默认 `activeCountries` 为空列表(无封锁),`enabled = activeCountries.length > 0`(非 boolean ON/OFF)。
-3. **(c) 系统健康**:服务端关键依赖健康面(事件管道 / 账本写入 / endpoint 可用性 / NTP 同步)的运营内部监控总览。
-4. **(d) 应用体验配置 · 界面语言(2026-11-04)**:「应用体验配置」卡片(分享渠道、官方应用安装、首页新手任务与周促销开关回显)新增「界面语言」一节,按固定顺序列出 9 种界面语言:中文 `zh`、English `en`、Tiếng Việt `vi`、Bahasa Indonesia `id`、Bahasa Melayu `ms`、Filipino `fil`、Русский `ru`、Қазақ тілі `kk`、Oʻzbekcha `uz`;每行显示语言本身的写法、中文名和代码。zh/en/vi 为基础语言,始终开启、不能取消;其余 6 种可勾选开关。随卡片原有「保存」一起提交,沿用同一保存理由(8–200 字)、版本号和操作记录。关闭后 App 与 H5 Lite 用户在语言列表里看不到该语言,正在使用它的用户改用英文;重新开启后需要用户再选一次。从未配置时为全部 9 种开启。权限同卡片其他部分(`platform_a3_read` 查看 / `platform_a3_write` 修改)。
-   - 后端 B26 上线前(读取结果不含 `interfaceLanguages`):该节只读,全部显示为开启,并提示「系统支持后，可以在这里开关界面语言，现在只能查看。」保存时不提交该字段,卡片其余保存行为不变。
-   - 读取到的列表含未知代码、重复或缺少 zh/en/vi 时,整张卡片按数据异常处理(与其他字段相同):首次加载和点「刷新」都隐藏表单,只显示报错,之后刷新成功即恢复编辑;保存后返回的列表与提交的不一致时,提示「其他设置已保存，但界面语言没有按你的选择保存」,需刷新核对后重新保存。
+首次挂载分别读取，切页签保留内存修改。各区加载/错误互不替代；读取失败不当作零、空列表或未发布。概览失败时，已保存的结果未知原记录及恢复入口仍在页头。参数 min/max 和统计字段必须是合法非负整数，缺失不补零；体验版本必须是后端非负安全整数，不能把 null 当 v0。日历按后端真实可空边界允许 `countryCode=null`、`pending=null`，LocalDateTime 接受存储时间的空格格式及 ISO 格式。
 
-**③ 可控参数**
+**② 七个写合同**
 
-| 参数 | 默认值 | 范围 | 生效时机 | 影响 / 依据 |
-|---|---|---|---|---|
-| feature flag 清单 | 平台 flag 集(灰度发布开关) | 配置级(增删 flag 须发布) | 实时(切换即派发) | §9.11d.3:A-B 实验 / 灰度 server-driven;client 读派发结果 |
-| kill-switch 闸清单与默认态(6 闸) | 5 个二元功能闸 `enabled=true`(含后台应急新增 withdraw) + geo-block `activeCountries` 空(无封锁) | 各闸 enabled/disabled(geo-block 为国家列表) | 实时(熔断即服务端 enforce) | §9.11d.1(4 闸)+ 后台应急 withdraw:监管点名/紧急下架时全局停用闸;V1 由 A3 托管、V4 归 J1/J2 |
-| geo-block 国家列表 | 空(无封锁) | 国家码列表 | 实时(enforce 即生效) | §9.11d.1 Region geo-block;`enabled = countryList.length > 0`(非纯 boolean);通过同一 `PUT /api/admin/killswitch?key=geo-block` + activeCountries 字段实现,不设独立 endpoint |
+七个合同均直接执行或安排生效，不建 A2 审批单，不声称存在本页审批锁或资金覆盖率预检。
 
-> **kill-switch 闸数量口径(6 闸:5 个二元功能闸 + 1 个 geo-block 国家列表闸)**:前端 §9.11d.1 Kill Switch 表原列 Staking pool 单档 / Genesis 一二级 pause / NEX↔USDT swap(exchange)/ Free-trial entry / NEX v2 Lock / Premium 订阅 / Region geo-block 等二元闸 + 「Risk-disclosure 版本号 + 司法辖区双维 re-ack」条款 re-ack 机制(非二元熔断闸,运营面归 I5 / J 域,V4)。**NEX v2 Lock / Premium 订阅两产品已下线,其 kill 闸随产品移除**;故后台 A3 托管的二元功能闸源自前端 §9.11d.1 的 4 个(Staking 单档 / Genesis pause / exchange swap pause / Free-trial entry)。**后台另在前端 §9.11d.1 之外应急新增 `withdraw` 提现闸**(enforce 于 D 域提现 endpoint,用于监管点名/挤兑场景一键冻结全平台提现流出)。故 A3 config store 托管 **6 个 kill-switch 闸(5 个二元功能闸〔4 源自前端 §9.11d.1 + 后台应急新增 withdraw〕 + 1 个 geo-block 国家列表闸)**——其中 5 个功能闸为二元 enabled/disabled、geo-block 为国家列表语义(`enabled = activeCountries.length > 0`)。geo-block 默认态 = `activeCountries` 为空列表(无封锁);其余 5 个功能闸默认 `enabled=true`,与 B5② geo-block 灯语义声明完全对齐(A3 全章与 B5②④⑦ 统一使用「6 闸」整体计数口径)。
-
-> **默认值口径**:kill-switch 5 个功能闸默认 `enabled=true` 为未熔断常态（4 源自前端 §9.11d.1 + 后台应急新增 withdraw;熔断为监管/应急例外动作），geo-block 默认空列表(无封锁)。12 月节奏表 §6 未覆盖系统配置类参数（flag / 闸），本表按前端 §9.11d.1 / §9.11d.3 现状规则设默认并注明依据（§1.3 默认值口径）。**server time 单源与 Idempotency-Key（24h dedup）为固定后端不变量,非本表可调参数**（平台强制,依据 §9.11a.4 / §9.11e）。
-
-**④ 操作动作**
-
-| 动作 | 角色 | 确认弹窗 | 审计点 |
+| 编号 | 方法与路径 | 完整请求/保护 | 生效与权限 |
 |---|---|---|---|
-| feature flag 切换(on/off/灰度%) | 增长(限增长类 flag)/ 超管 | A3-MD1(理由必填) | `admin.feature_flag_changed`(flag / before / after / operator / reason) |
-| kill-switch 功能闸熔断(enable→disable,V1 临时入口) | 风控 / 财务 / 超管 | A3-MD2(理由必填;止血方向,确认即生效) | `admin.killswitch_toggled`(闸 key / disable / operator / reason) |
-| kill-switch 功能闸恢复(disable→enable,V1 临时入口) | 仅超管 | A3-MD3(理由必填+B1 红线预检) | `admin.killswitch_toggled`(闸 key / enable / operator / reason) |
-| geo-block 国家列表配置(V1 临时入口) | 风控 / 超管 | A3-MD4(理由必填;V4 转 J2;排除财务,见下注) | `admin.killswitch_toggled`(key=geo-block / 国家列表变更 / operator / reason) |
-| 查看系统健康 / flag 清单 / 闸状态 | 全角色(各按可见性裁剪)/ 只读审计可全量 | 否(只读) | admin 审计事件(查看范围 / operator) |
+| W01 | `PUT /api/admin/platform/config` | `{kind:"flag",flagKey,value,expectedValue,reason,operator}`；命令号去重 | 仅登记维护公告，on/off；`platform_a3_write` 加服务端 SUPER_ADMIN；理由 8–200 |
+| W02 | 同上 | `{kind:"param",flagKey,value,expectedValue,reason,operator}`；命令号去重 | 仅两项平台注册参数，Long 整数；同写权及角色要求；理由 8–200 |
+| W03 | `PUT /api/admin/platform/business-calendar` | `{countryCode,zoneId,effectiveDate,reason}`；命令号去重 | 19 个允许时区，日期至少后端最早日，同一时刻仅一个未来 GLOBAL；有效超级管理员；理由 8–200 |
+| W04 | `POST /api/admin/platform/business-calendar/cancel` | `{versionId,reason}`；命令号去重 | 仅撤未生效 GLOBAL 安排；有效超级管理员；理由 8–200 |
+| W05 | `PUT /api/admin/platform/config/experience` | `{expectedVersion,baseUrl,channels,appDownload,reason,operator,interfaceLanguages?}`；CAS 与命令号去重 | `platform_a3_write`；理由 8–200；版本加一；不写只读 H3 开关 |
+| W06 | `PUT /api/admin/developer/docs` | 整份 `{version,status,locales,expectedRevision,reason}`，保留既有展开只读属性；不发 `revision`；**无命令号去重** | `platform_a3_write` 加 developer 域写权/超级管理员豁免；理由 8–500；revision CAS |
+| W07 | `PUT /api/admin/content/how-it-works` | 整份 `{version,status,contents,expectedRevision,reason}`，保留既有展开只读属性；不发 `revision`；**无命令号去重** | `platform_a3_write` 加 content 域写权；理由 8–500；revision CAS；SANDBOX 缺 runId 明确拒绝 |
 
-> kill-switch 两个方向区别对待(2026-06 操作确认决议):**熔断(enable→disable)是止血方向**——监管点名 / 紧急下架场景需分钟级响应,风控/财务/超管单人经确认弹窗即时执行,执行后实时告警全体超管 + 全运营账号广播;**恢复(disable→enable)是放大流出方向**——执行权仅超管,且前置 B1 兑付覆盖率红线核验(低于红线 server 拒绝 422,弹窗内展示预检结果)。V1 由 A3 config store 临时承载切换入口,V4 由 J1(5 功能闸,含后台应急新增 withdraw)/ J2(geo-block)接管管理操作面。**执行角色分层依据**:① **feature flag** — 增长仅可执行与增长活动/A-B 实验相关的 flag(如 quest 倍率实验);涉及资金/Phase dial/风控行为的 flag 执行权为超管,服务端按 flag 分类校验执行角色资质。② **kill-switch 功能闸熔断** — 资金安全止血场景,财务可参与执行。③ **geo-block** — 为合规/监管驱动(非资金止血),财务不参与、风控主导;与功能闸熔断执行角色不一致是设计意图(分层依据不同),非笔误。
+前五个去重 scope 分别为 `A3_FEATURE_FLAG:<key>`、`A3_PLATFORM_PARAM:<key>`、`R1_BUSINESS_CALENDAR`、`R1_BUSINESS_CALENDAR_CANCEL`、`A3_PLATFORM_EXPERIENCE`，24 小时从首次提交计算，不因重试续期。W06/W07 的 revision 防覆盖不等于按命令防重。
 
-**④a 交互与弹窗规格**
+**③ 原请求与结果未知（R1）**
 
-**(1) 动作触发总表**
+发送前用同一个页面级 `nexion-admin-a3-pending-commands-v1` store 保存原对象、原表单快照、精确方法/路径/JSON 字符串、理由、命令号、首次提交和过期时间；存储不成功不发送。每个对象保留原记录，不能改输入或理由覆盖它。结果未知后原输入冻结，页头逐条显示原操作及查询/恢复入口；刷新后从保存的原记录恢复。
 
-| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
-|---|---|---|---|---|
-| feature flag 切换 | ②(a)flag 清单行内开关 / 灰度% 编辑 | 开关 / 行内按钮 | 按 flag 分类裁剪(增长仅见增长类);无权限角色只读 | 打开弹窗 A3-MD1 |
-| 功能闸熔断 | ②(b)闸状态表行内「熔断」 | 行内警示按钮 | 仅 `enabled` 态闸显示;风控/财务/超管渲染 | 打开弹窗 A3-MD2 |
-| 功能闸恢复 | ②(b)闸状态表行内「恢复」 | 行内按钮 | 仅 `disabled` 态闸显示;仅超管渲染 | 打开弹窗 A3-MD3 |
-| geo-block 配置 | ②(b)geo-block 行「编辑国家列表」 | 行内按钮 | 风控/超管渲染 | 打开弹窗 A3-MD4 |
-| 查看健康/清单/状态 | ②(a)-(c) 导航 tab | 链接 | 恒可用(按角色裁剪) | 跳转对应视图,无弹窗 |
+- 首次失败按 `isDeterministicRejection`：4xx 或 2xx 非零业务码为本次明确拒绝；幂等未收敛码、5xx、网络失败、读不懂的包继续保留。第一次明确拒绝丢本次号，确认框保留输入。
+- W01–W05 恢复只能发送原方法、原路径、原 body 字符串和原 `Idempotency-Key`。重试被拒仅 `isExplicitRejection` 认定的明确拒绝才解除；401/403/408/425/429 及 IDEMPOTENCY_* 均保留。W03 的 `EFFECTIVE_DATE_TOO_EARLY` 在幂等查询前检查，时间前进后的拒绝也保留原记录。
+- 超过 24 小时保留证据且禁止发送写请求，只能查询。W06/W07任何时候都不重发：读取修订号恰为原请求+1，且正文版本、目标状态、完整locales/contents一致时按已保存收场并清记录；单纯当前值相同不结案。对象键顺序不影响比较，数组顺序仍保留。
+- 当前后端没有A3原命令回执或受控核查origin；W06/W07读回不一致时可以在运营核对并确认后解除：解除函数再次读取，失败不解除，一致按已保存收场，不一致才清记录，返回修订号、正文版本、状态和内容是否一致。页面：「查询原结果」读回不一致时，页头结果未知提示条写一句「修订号应为 N，现在是 M；内容相同／不同」，该行和原保存框给「解除待确认…」；确认框列原操作、提交时间、修订号（原基于、应为、现在）、版本、保存为、内容是否相同，确认后再读一次：读取失败不解除并提示原记录还在，一致按已保存收场，不一致才清记录并把原来填的内容放回编辑器、基于现在的修订号保存。两类内容的结果未知和「已过期」标签都写「不能重发，读回一致按已保存收场，对不上可以核对后解除」，不再写「记录继续保留」。其它过期直写继续保留，不能借A2核查伪造结案。
+- 得到写入成功或恢复明确拒绝后结束恢复模式，关闭旧确认框，再独立读取当前配置；重读成功前新修改不可用。幂等回放只证明当时的写入，不能当现在数据。PUT 成功后 GET 失败属于读回失败，不报提交失败，也不重发新命令。
 
-**(2) 弹窗规格**
+**④ 参数与业务日历口径**
 
-##### [A3-MD1] feature flag 切换确认
-- **功能**:切换单个 feature flag 的状态(on/off)或灰度百分比,确认即派发(server-driven,client 读结果)。
-- **布局结构**:1. **信息区**:flag key / 分类(增长类|平台类)/ 当前态 / 适用范围(全量|cohort|Phase)/ 最近变更记录(引自审计)。2. **影响预览区**:目标态(before→after 并排);灰度% 变更时展示受影响用户占比估算。3. **输入区**:见下表。4. **按钮区**:取消 / 确认切换。
-- **输入与选择控件**:
+- 全局限流 `platform.global_rate_limit_per_minute`：100–1,000,000 次/分钟。后端按 epoch minute 和路由 family 分预算：管理员登录 `max(100,L/10)`、回调 `max(500,L/2)`、健康 `max(120,L/20)`、普通请求 L；IP 桶为相应预算的 `max(20,total/10)`，认证主体还有独立 `max(20,L/10)` 桶。OPTIONS/非相关路径排除，不承诺所有流量都用一个桶。配置/Redis 故障失败关闭，不清空已有分钟计数。
+- 提现强审门槛 `withdrawal.strong_review_threshold_usdt`：20–10,000,000 USDT，整数字符串；`amount>=threshold` 进入强审并阻止 fastTrack。与 D5 小额免审线独立；已提交金额不重写，但已有单批量放行仍按当前门槛检查。金额写 USDT，不舍入、不用空值零。
+- 当前时区以 `CalendarView.trackZones.LEGACY/GROWTH_TEAM` 为权威，未来 `pending` 不提前当现行。`pending` 是 `GLOBAL && effectiveStorageAt>now`，包含在 history；撤销是软删，已撤安排不出现在 active history。
+- 切换 instant 为新时区及两条旧轨道 D 日零点的最早值，转换成北京时间存储值；不是总在新时区 D 日 00:00。最早日期是两轨道今日中较晚者加一天。
+- 切换前一天长度按 `BusinessCalendar.Track.startOf(D)-startOf(D-1)`：`24+(旧offset-新offset)/60` 小时。+8/+7 改 +7：其他模块 25h、增长与团队 24h；改 +9：23h/22h；改 +6:30：25.5h/24.5h。切换 instant 与日区间边界是不同口径，不用切换 instant 反推日长。版本历史保留，已结算周期不重算；存储时钟、UTC 转盘、越南银行日和单日提现限额等固定规则不跟随。
 
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标态 | 单选(on / off / 灰度) | 是 | 不得与当前态相同 | 当前态 |
-| 灰度百分比 | 数字输入(0–100,步长 5) | 选灰度时必填 | 0–100 整数 | 当前值 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
+首次明确的A3开关/参数原值冲突、体验版本冲突、两类内容修订冲突后，保留输入、理由与拒因，将旧基线标为待重读。成功读取最新原值/版本/修订后使用现有确认重新核对；读取失败不发新命令，手动重读不冲掉冲突草稿。结果未知的原请求及其版本保持不变。
 
-- **错误态**:403(flag 分类与角色资质不符,server 校验)/ 400 `REASON_REQUIRED` / 409(已被他人变更,提示刷新)。
-- **成功反馈**:弹窗关闭;清单行就地更新;toast「flag 已切换 · 已记审计」;事件 `admin.feature_flag_changed`。
+**⑤ App 与内容合同**
 
-##### [A3-MD2] kill-switch 功能闸熔断确认
-- **功能**:全局停用单个能力闸(staking 单档/genesis/exchange/trial/withdraw),止血动作,确认即 server enforce。
-- **布局结构**:1. **信息区**:闸 key / 当前态 enabled / 该能力的当前活跃量(如在锁 position 数、24h 提现单量,server 派生)/ 最近一次该闸变更记录。2. **影响预览区**:警示条「熔断后该能力 endpoint 全局拒绝,影响全体用户;熔断即时生效并广播全运营账号」;withdraw 闸额外提示「全平台提现流出将冻结」。3. **输入区**:reason(多行文本,必填,8–200 字)+ 触发依据单选(监管点名 / 挤兑风险 / 安全事件 / 其他)。4. **按钮区**:取消 / 确认熔断(警示色)。
-- **错误态**:400 `REASON_REQUIRED` / 409(闸已为 disabled,提示刷新)/ 403。
-- **成功反馈**:弹窗关闭;闸状态灯变 disabled;toast「已熔断 · 已广播 · 已记审计」;事件 `admin.killswitch_toggled`;实时告警全体超管 + 全运营账号广播;B5 风险雷达状态灯同步。
+分享链接按 App `baseUrl+referralCode` 拼接，不补斜杠；PC 示例邀请码只用于预览。空远端渠道只留下 App 固定复制/海报，PC 推荐九渠道先填本地、保存后才生效。BUG-432 后 Zalo/Messenger 的 enabled scheme 已显示，点击复制文案并引导粘贴；页面旧“不显示”文案和只统计 web 的预览交视觉 worker修正，不据旧句修改合同。system 仅 H5 且支持系统分享时显示。关闭推荐奖励时，App 不采用这里的文案模板。
 
-##### [A3-MD3] kill-switch 功能闸恢复确认
-- **功能**:恢复已熔断的能力闸(disable→enable),放大流出方向,仅超管,前置 B1 红线核验,确认即生效。
-- **布局结构**:1. **信息区**:闸 key / 熔断时间 / 熔断理由(引自审计)/ 熔断时长。2. **影响预览区**:server 预检「恢复后兑付覆盖率」(尤其 withdraw 闸:展示待处理提现单总额与覆盖率冲击);低于红线时阻断提示(确认钮置灰,文案含「覆盖率低于红线,server 将拒绝(422)」)。3. **输入区**:reason(多行文本,必填,8–200 字)。4. **按钮区**:取消 / 确认恢复。
-- **错误态**:422 `COVERAGE_BELOW_REDLINE`(含 server 回传当前覆盖率,弹窗不关)/ 400 / 409 / 403(非超管)。
-- **成功反馈**:弹窗关闭;闸状态灯变 enabled;toast「已恢复 · 已记审计」;事件 `admin.killswitch_toggled`;实时告警全体超管;B5 同步。
+官网下载来源仅 official/unavailable：官网必须 HTTPS、允许锚点，包地址可空、非空不允许锚点。未编辑的 APK URL、androidPackage/iosScheme 随完整快照保留；选 unavailable 时原请求仍带旧输入，由后端保存时清 URL、版本和说明。zh/en/vi 必保留，另外六语可开关；设备显示回退英文不是强制写远端资料。六种新语言的文档/说明请求在当前 App 仍投影英文；PC 编辑允许 `fil` 及合法地区后缀。
 
-##### [A3-MD4] geo-block 国家列表配置
-- **功能**:编辑国家级屏蔽列表(增删国家码),确认即 server enforce(`enabled = activeCountries.length > 0`)。
-- **布局结构**:1. **信息区**:当前 activeCountries 列表(国家码 chip 集)/ 最近变更记录。2. **影响预览区**:本次 diff(新增屏蔽 / 解除屏蔽两组 chip 并排);新增屏蔽国家展示该国当前活跃用户数(server 派生);解除屏蔽视为放大方向,提示行「解除屏蔽将恢复该国用户访问」。3. **输入区**:见下表。4. **按钮区**:取消 / 确认变更。
-- **输入与选择控件**:
+开发者文档示例、接口和事件只是发布文案。DRAFT 保留以前公开快照；首次草稿仍保留随包默认公开内容；PUBLISHED 替换之后公共读取的内容，不推送设备立即刷新。业务说明六键保持维护，发布必须六键齐；锁定计划旧 App 入口已经退个人中心，不恢复退役入口。总正文 version 与每页 version 分开：缺属性回退总版本，显式空字符串仍被后端拒绝。
 
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 国家列表 | 多选搜索框(ISO 国家码) | 是 | 合法 ISO 码;与当前列表相同则确认钮置灰 | 当前列表 |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
+业务说明 ruleRef 的 canonical、key、version、`{value}` 保存语法保留。后端 `111e00cd` 尚不解析引用，App 拒绝未替换占位符；按 A3-PD01，PC 阻断所有页/所有语言中含规则引用或未解析占位符的发布，草稿仍按后端结构校验维护；不删除占位符、不把未知规则值写死。两份内容包含保留公开快照合计上限为 1,048,576 UTF-8 字节，不是 65535。
 
-- **错误态**:400 `REASON_REQUIRED` / 403(财务角色调用返回 403,见 ⑤)/ 409(列表已被他人变更,提示刷新)。
-- **成功反馈**:弹窗关闭;geo-block 行就地更新;toast「屏蔽列表已更新 · 已记审计」;事件 `admin.killswitch_toggled`(key=geo-block);实时告警全体超管。
+**⑥ 应急、健康与已知限制**
 
-**⑤ 接口**
-- `GET /api/admin/system/config` — 返回系统健康 `{ health:{ pipeline, ledger, ntp, endpoints } }`(server time 单源 / Idempotency-Key 为固定后端不变量,**不在本 endpoint 配置面**;feature flag / kill-switch 走各自 endpoint)。
-- `GET /api/admin/platform/config/experience` / `PUT /api/admin/platform/config/experience` — 应用体验配置(②(d))。PUT 携 `expectedVersion / baseUrl / channels / appDownload / reason / operator` 与 `Idempotency-Key`;GET 返回 `interfaceLanguages` 时 PUT 一并提交 `interfaceLanguages: string[]`(已开启的代码,含 zh/en/vi,按固定顺序),与其他字段同一版本号、同一条操作记录;校验不通过返回 422 `PLATFORM_EXPERIENCE_LANGUAGES_INVALID`。该字段由后端 B26(uvel-docs 交接 20)提供,App 公共接口 `GET /api/config/platform` 顶层下发同名字段。
-- `GET /api/admin/feature-flags` / `PUT /api/admin/feature-flags` — feature flag 清单查询 / 切换(body 携 reason;服务端按 flag 分类校验执行角色资质;切换产 `admin.feature_flag_changed`)。
-- `GET /api/admin/killswitch` / `PUT /api/admin/killswitch`(**V1 临时**)— kill-switch 闸状态查询 / 切换 `{ key, enabled, activeCountries?, reason }`,geo-block 闸 `enabled = activeCountries.length > 0`(非纯 boolean,对齐 B5⑤)。**单一 endpoint 按 key 路由**:每次调用切换单一闸,**服务端按 key 与方向校验执行角色资质——功能闸熔断(→disabled)可为风控/财务/超管;功能闸恢复(→enabled)仅超管,且 server 前置 B1 覆盖率红线核验(低于红线返回 422 `COVERAGE_BELOW_REDLINE`);geo-block 拒绝财务(返回 403),仅风控/超管可执行**;geo-block 不设独立 endpoint(经同一 `PUT /api/admin/killswitch?key=geo-block` + activeCountries 字段实现)。**请求体须携 `Idempotency-Key`(server 24h dedup,防网络抖动重复熔断/恢复,§1.8 原则二.3)与 reason(缺失 400 `REASON_REQUIRED`);操作者经确认弹窗(A3-MD2~MD4)直接调用,写入与审计同事务,熔断动作另触发全运营账号广播**;切换产 `admin.killswitch_toggled`。**V4 落地后切换面迁移至 J1/J2 endpoint**,A3 `/killswitch` 标注「V1 临时,V4 转 J 域」。
+A3 只显示 J1/J2 当前投影，不恢复旧 A3-MD2/MD3/MD4 应急写入口。blocked/limited 两列表均空才没有限制，读取失败为不可确认。四个探针是事件待投递、资金账本可读性、数据库时钟偏差、当前服务 JVM，读数里的秒数按天、小时、分钟显示；probe 异常标 stale，不猜正常，不自动建通知或工单。
 
-server-canonical;**server time 为单源时间权威**(防 client clock skew,§9.11a.4 当前时间权威值)、`Idempotency-Key` 由服务端 dedup（§9.11e）、kill-switch 由服务端 enforce（client 不可绕，§9.11d.2 篡改防御）。
+后端待处理仍包括 ruleRef 公开解析、内容写命令回执、A3 原命令查询/受控核查、内容读取故障返回默认/UNPUBLISHED 成功、health observedAt 无显式时区的系统时钟来源，以及地区投影旧“禁止访问/限流”叫法。健康时间超前的旧运行现象本次未起页面重验，不能声称已修。
 
-**⑥ 权限 & 审计**
-
-| 动作 | 超管 | 财务 | 风控 | 增长 | 内容 | 客服 | 只读审计 |
-|---|---|---|---|---|---|---|---|
-| 查看系统配置 / 健康 / flag / 闸状态 | ✅ | ✅(只读) | ✅(只读) | ✅(只读) | — | — | ✅(只读) |
-| feature flag 切换 | ✅(全部) | — | — | ✅(限增长类 flag) | — | — | — |
-| kill-switch 功能闸熔断 | ✅ | ✅ | ✅ | — | — | — | — |
-| kill-switch 功能闸恢复 | ✅ | — | — | — | — | — | — |
-| geo-block 配置 | ✅ | — | ✅ | — | — | — | — |
-
-> **kill-switch 按方向分两行**:熔断(止血)财务/风控可执行,恢复(放大流出)仅超管 + B1 前置——服务端按 key 与方向区分执行资质(geo-block 拒绝财务返回 403,见 ⑤)。恢复方向执行权就高为超管独占,与 K4 模型发布、A1 账号治理同属 2026-06 操作确认决议的执行门槛就高类。
-
-审计记录字段:`操作者 / 角色 / 动作(feature_flag_change|killswitch_toggle|geo_block_config) / 对象(flag key|闸 key) / 前值 / 后值 / reason / 时间(ms)`。只读审计可全量追溯 feature flag 切换史、kill-switch 熔断/恢复史——这是平台级配置变更的取证地基。
-
-**⑦ 风控 & 联动**
-- **server time 单源(核心约束)**:服务端时钟是全平台一切时间判定的唯一权威(Trial 倒计时 / Phase 月龄 / 提现冷却 / 锁仓到期),client 时钟仅 UI 显示、不参与判定(§9.11a.4 当前时间权威值);防用户改本地时钟套利（如伪造 Trial 到期、提前解锁）。H2 Trial / H1 Phase 的时间判定均依赖此单源。
-- **幂等键防重复（§9.11e）**:资金 / 资产写入 endpoint 强制携 `Idempotency-Key`，server 在 TTL（默认 24h）内 dedup；A2 审批放行的资金写入亦经此键去重，网络 retry 不致重复扣款 / 重复入账 / 重复放行。
-- **kill-switch server enforce（client 不可绕，核心约束）**:闸状态服务端权威，熔断后对应能力 endpoint 在服务端直接拒绝（§9.11d.2 篡改防御：client localStorage 改 flag 无效，真值在 server）；client 仅读 enabled 灯渲染。B5 风险雷达只读其状态、不持开关（避免双写分叉）。
-- **feature flag / A-B server-driven（§9.11d.3）**:灰度 / 实验值由服务端派发，client 读结果；flag 切换经确认弹窗 + 理由必填 + 审计告警，误改可快速追溯回滚。
-- **kill-switch 托管的 V1→V4 单一源**:V1 由 A3 config store 托管闸状态（存储端权威,B5 为消费引用方）,V4 J1/J2 接管管理操作面后,闸状态权威随之迁移;迁移前后 B5 始终只读单一源、不持开关。
-
-**⑧ 埋点(事件)**
-对齐 A4(§2.4.5 ⑥ admin family):
-- **产生(admin 审计,§2.4.5 ⑥ admin family)**:
-  - `admin.feature_flag_changed` — 触发点:feature flag 切换确认执行;属性:`flag_key / before / after / scope(all|cohort|phase) / operator / reason / ts`;喂 A2 审计。
-  - `admin.killswitch_toggled` — 触发点:kill-switch 闸熔断/恢复确认执行（含 geo-block 国家列表变更）;属性:`switch_key / action(enable|disable) / active_countries(geo-block 时)/ operator / reason / ts`;喂 A2 审计 + B5 风险雷达（状态灯变更,V1 阶段由 A3 产生此事件）。
-- **消费**:无用户侧事件;A3 为平台配置域,仅产 admin 审计事件。
-- **注**:`admin.feature_flag_changed` / `admin.killswitch_toggled` 须经 A4 schema registry 注册（归入 §2.4.5 ⑥ admin family）、经 A2 落 append-only 审计库;**B5② / B5⑦ 须补充反向引用「V1 阶段 kill-switch 状态来自后台 A3 系统配置（§2.3 A3）托管的 config store」**,与 A3① 形成双向引用;**B5⑧ 消费端事件名应对齐为 `admin.killswitch_toggled`(V1 阶段由 A3 产生;V4 J1/J2 落地后由 J 域产生)**。
+共用确认框 select 的旧画法和未知提示叫法留设计组件负责人；页面不改布局、样式或重写原句。`a3-config.tsx` 仍被 verify 的幂等哨兵引用，连同其旧组件依赖及仍引用的 CSS 暂保留，不删坏检查源。
 
 ### 2.4 埋点事件体系(A4)
 
@@ -699,11 +535,11 @@ server-canonical;**server time 为单源时间权威**(防 client clock skew,§9
 
 | 标识 | 含义 |
 |---|---|
-| `anon_id` | 注册前的设备 / 会话匿名 ID(落地页、onboarding 阶段已开始打点) |
+| `anon_id` | 当前 App 行为摄取链中为已认证用户 ID 的伪名散列；不能据此推断已经支持注册前采集 |
 | `user_id` | 注册后服务端权威用户 ID |
 | `session_id` | 单次会话 ID |
 
-**拼接**:`auth.register_completed` 同时携带旧 `anon_id` 与新 `user_id`,服务端做身份拼接,使注册前漏斗事件归因到该 user;归因 `ref`(推荐码 / 渠道)在 `anon_id` 阶段捕获,拼接后落到 user。
+**当前实现（后端 `111e00cd`）**：通用 App 行为摄取要求已登录，未找到注册前设备身份与注册用户自动拼接的执行链。`ref/source` 是事件归因字段，不构成已实现跨身份关联的证明；服务端仍有相关静态说明，列 A4-BE-02 待纠正。
 
 #### 2.4.3 事件命名规范
 
@@ -717,8 +553,8 @@ server-canonical;**server time 为单源时间权威**(防 client clock skew,§9
 |---|---|
 | `event_id` | 服务端生成唯一 ID,用于幂等去重 |
 | `event_name` | 见 §2.4.3 |
-| `ts` | **服务端权威时间**(ms epoch);client 事件以 server 收到时间为准,防 clock skew |
-| `user_id` / `anon_id` | 身份(二选一或拼接期并存) |
+| `ts` | 毫秒时间戳；可以取自经校验的事件发生时间，未提供时才取服务端当前时间，不总是接收时刻 |
+| `user_id` / `anon_id` | envelope 补齐字段，值可以为空；通用 App 行为链按已认证用户归属 |
 | `session_id` | 会话 |
 | `phase` | 事件发生时用户所处 Phase(P1–P6)+ 账户月龄 —— **Phase 效果归因关键** |
 | `cohort` | 注册周 `YYYY-Www` —— cohort 分析维度 |
@@ -744,7 +580,7 @@ server-canonical;**server time 为单源时间权威**(防 client clock skew,§9
 
 | KPI | 事件口径 |
 |---|---|
-| 1 · Day0 接入 >95% | `device.first_yield_received.latency_sec ≤ 90` ÷ `auth.register_completed` |
+| 1 · Day0 接入 >95% | `device.first_yield_received.latency_sec ≤ 当前 Day0 窗口` ÷ `auth.register_completed`；默认 90 秒，可调 30–600 秒，历史查询也读当前值 |
 | 2 · Day7 留存 >60% | day7 有 `app.dau` ÷ register cohort |
 | 3 · L2→L3 >30% | `store.viewed` 去重用户 ÷ 注册数 |
 | 4 · L3→L4 5–10% | `checkout.completed` ÷ `store.viewed` |
@@ -760,8 +596,8 @@ server-canonical;**server time 为单源时间权威**(防 client clock skew,§9
 #### 2.4.8 管道与治理
 
 - **管道**:事件 → 采集(资金/状态由 server emit;UI 交互由 client SDK emit)→ 去重(`event_id`)→ 事件库 → B3 实时漏斗 + L BI。
-- **治理**:**schema registry**(A4 owns,事件名/属性 schema + 版本);PII 不入事件;事件 schema 变更经超管确认弹窗(A2-MD1,理由必填)。
-- **防篡改**:资金 / KPI 口径事件**只认 `is_server_authoritative=true`**(server 在状态机推进时发,§9.11d/f);client 事件可丢可重,不影响资金账与 KPI 权威。
+- **治理**：A4 维护事件名、字段和目录版本。登记新事件、给已有事件新增字段、登记新模块经 A2 提案，由另一位具备审批批准权限的有效超级管理员批准；发起人不能批准自己的申请，批准前业务目录不变。新增字段是必填字段，旧事件不回填。新模块批准只建接入工单，不自动接上生产消费代码或创建事件。
+- **来源校验**：资金业务以账本与服务端事实为准。L1/B3 大部分事件要求服务端权威；`store.viewed`（L1/B3）及 `nova.push_clicked`（L1）是允许的非权威例外。App 行为失败可能影响统计或后续消费者，不能承诺不影响所有奖励资格。
 
 #### 2.4.9 默认参数(锚定 12 月运营周期)
 
@@ -773,6 +609,83 @@ server-canonical;**server time 为单源时间权威**(防 client clock skew,§9
 | 事件留存期 | 13 个月(完整 12 月周期 + 1 月缓冲) | 12 月运营周期 |
 | 采样率 | view/session 类 10%;资金 / 风控 / 转化类 **100% 全量** | 成本 vs 准确性 |
 | Phase 归因 | 每事件带 `phase` + 账户月龄 | §6.4 月粒度模型 |
+
+#### 2.4.10 用户行为事件页面与原请求恢复（2026-11-15）
+
+A4 生命周期首次明确版本/原状态冲突后使原基线失效，保留原目标与理由；成功重读概览及精确事件后，现有确认框按最新状态/版本再次核对。原目标已不是下一步则不发送，不能自动推进到另一个目标。已知登记审批单与查询入口在概览加载和读取失败时仍保留；查票不依赖目录读取。
+
+`/platform/events` 保留事件目录、投递与死信、统计参数与清理、模块接入四个页签及十二个写入口。页面打开独立读取概况、最近手动清理结果和默认条件的投递积压；积压失败只对该部分显示没有判断，不影响其它读取。积压不含已终止的死信，无死信总数；精确事件名不存在时提示未登记并可带入登记表单。近期 schema 列表可以为空，无自定义字段显示为空，不虚构字段或零值。
+
+- 三项参数直接执行：首笔收益到账时限 30–600 秒，历史查询每次按当前值重算；留存期 13–60 月，下次清理按新月数判断已有记录；采样率 0–100%，受保护族/权威事件始终通过采样关，其它校验仍执行。采样仅在传入可信采样键的链上执行，不回补以前未收的事件。
+- 上线进度依次为新建、待发布、分批开放、全面开放、已停用；独立生命周期版本校验。前两步不记录不投递；分批开放按可信聚合对象范围的固定散列放行 10%，不放行通用 App 行为事件；停用是终点，可能阻止已经排队的事件，旧事实不删除。
+- 清理是持事件写权和 A2 写权的直接执行，不走批准。按执行时留存期物理删除到期的 PUBLISHED/RECORDED/DEAD analytics outbox，以及到期行为事实；PENDING/FAILED、资金账本不删，每张表一次最多 2000 条，不能恢复。当前 `evaluatedAt` 在拿到锁时是截止时间，未拿到锁时是执行时间；latest 的 null 也可能是历史结果不可读（A4-BE-01）。
+- 重新排队限五种原 H3 周任务事件，原 outbox 和指定消费投递都必须 DEAD；提交冻结两层失败次数，后端先按原命令号去重，再做资格和版本检查。成功是重新排队，不是奖励到账证明；可能再次触发任务奖励。
+- 所有写请求在发送前保存原对象、完整输入、理由、首次时间及原命令号；保存失败不发送。结果未知后冻结确认输入，页面逐条显示原操作，刷新后仍在。恢复不依赖概况读取成功；只能用原输入、原理由和原命令号重试。第一次拒绝按统一确定拒绝判据，恢复重试只在明确拒绝时解除；认证、限流、超时和未收敛幂等状态继续保留。超过 24 小时只查不发。
+- 直接写的查询读当前业务数据，不能把相同当前值或最近清理结果当成本命令回执；查询后记录仍保留。成功或恢复明确拒绝结束原确认，幂等旧回包不写成当前概况；成功重新读取之前禁止新修改。三类登记重试拿到建单回包后还要按原键查当前审批单，查不到当前状态时保留原记录，不显示成已确认待批准。
+
+后端清理/重排在去重前校验当前理由下限；原理由被新的下限拒绝时仍保留原请求，因为这不能说明原操作是否执行。此处不改原理由、不换号，待后端提供可回放原成功的校验顺序（A4-BE-03）。
+
+登记提案过期后，严格原键查询返回 `A2_PROPOSAL_NOT_FOUND` 才可在运营确认后解除；本次已提供再核验后解除的逻辑，现有页面没有此确认入口，交视觉轮决定入口及文字。直接写不适用此解除规则。原操作提醒及审批框的已有文字仍有历史说法，逐句差异在 A4 重构说明及本轮报告登记，不把未修改文案视为已交付。
+
+#### [A5] 平台参数目录（2026-11-15 接线）
+
+`/platform/params-registry` 是只读索引，仅 GET `/api/admin/platform/params-registry`，精确要求 `platform_a5_read`。参数按后端归属列出，修改在归属页执行；本页没有编辑、保存、导出、审批或高危写入口，不建立结果未知记录。
+
+- 本地关键词匹配名称、参数键、描述、当前值、后端归属旧名与导航现名；模块条件与关键词同时生效，手动重读保留条件。链接及可访问名用菜单现名；「任务池」「首页与网络展示设置」可搜，旧名仍兼容。
+- 后端成功PARTIAL保留已知参数；J1/J2分别失败不遮蔽其它成功来源，健康失败按行标未取得实时值。配置列表源失败仍使整个GET失败（A5-BE-04），前端如实显示错误，不伪造空目录、正常、0或成功PARTIAL。
+- currentValue/unit空串合法，live/stale/observedAt保留真实可空兼容；必填身份、唯一键、serverCanonical和计数一致性仍严格。普通数值不转Number、不舍入，单位/币种依后端元数据，不从空值或裸数字推算。
+- 「已启用」只证明启用记录可读，非业务已消费；SECRET只证明脱敏标记，非凭据非空或可用。紧急状态时间是lastChange，健康是采样，root是组装时间；展示按当前业务时区，解析不了的原文保留。
+- operationConfirm统计并不证明每个归属页真实确认框或审批要求（A5-BE-01）；H5固定0，连续在线旧参数仅兼容读取。泛化描述、旧归属名、默认时间与现有屏幕说法的边界已逐句登记A5重构说明，交视觉与后端处理，不用改文案掩盖合同差异。
+
+#### [A6] 角色与整组授权（2026-11-15 接逻辑）
+
+首次明确拒绝后重读概览及该角色，改授权还重读完整菜单和权限目录；现有确认以最新基线重建，目标输入及理由保留，读取失败不能继续提交。审批建单回执与最后确认的当前票分别持久保存；已有回执或单号时重试只查询，不重发，不用旧确认闭包抹掉已知单号。首次建单返回的pending是当时已知结论；原号重放仅证明建过单，查询失败不抹掉既有结论，也不把历史pending当现在的pending。已知票及查询入口不依赖角色概览/详情成功；已确认终态后角色读回失败只报角色读取失败，保留审批结论。
+
+概览读模型接收 A6-BE-03 的可选 `permissionCount`、`menuGrantCount`：分别是详情相同口径的权限码绑定数和菜单绑定数，不代表账号实际有效权限或可见菜单。另接 A6-BE-04 的 `enabledAdminCount`：未删绑定中，启用且未删除的不同账号数；不按角色启停过滤，不代表MFA、在线或实际有效权限。旧后端缺字段保持缺失，不补零；字段存在时须为非负安全整数。角色卡写「已绑定权限 N 项」「菜单 N 个」和启用账号数（问号说明按绑定口径，不等于实际生效的权限或看得到的菜单），字段缺失时不显示。已提交的审批按最后查到的状态写待审批、已批准、已驳回、已撤回、审批已过期，只有建单回执时写「已建单，状态未查到」；删除和改授权的原请求超过 24 小时且按原请求明确查不到审批单时，运营确认后可解除本标签页的记录（启停不适用）。备注留空保存会清空原备注。
+
+`/platform/roles`读取未删角色、未删绑定关系记录数和当前授权。名称/备注、新建直接写；启停、删除、完整权限/菜单替换由角色service生成A2提案，另一位持批准权及对应业务权的有效管理员批准后执行。绑定账号的自定义角色可以删除，批准时清除角色的全部未删账号绑定、权限和菜单；现有确认显示会解绑的账号数及失去该角色权限的后果。N是overview.adminCount的未删绑定关系行数，含停用账号，不是enabledAdminCount或在线人数。SUPER_ADMIN不可停用/改授权，8内置不可删；AUDITOR按已定只读规则仅准READ，PC提交前拒WRITE/HIGH，后端强约束仍待A6-BE-02。
+
+- 授权PUT携带完整`permissionCodes`、`menuIds`、reason/operator，一张票，无expectedVersion；不得按搜索结果裁掉筛外选择、拆票或改为增量。菜单必须启用未删，权限须为目录内有效API权限；任一失效整次阻断。新建/软删同码恢复清旧绑定；元数据空备注现在带空串，能够清除旧备注。
+- 原请求发送前持久保存，存不下不发；结果未知冻结原理由，刷新后原记录继续存在，24小时内只用原body/原号，过期只查询。第一次明确拒绝释放本次号，恢复重试仅按明确拒绝判据解除；直接写查询当前值不证明原命令结果。
+- 三类提案按原号严格查询实际mine/obj/action/operationCode/五态；重放建单回执不能直接标为待批准。只有权威pending拦同角色新审批，元数据仍按后端实际可维护。批准后再GET真实详情比较完整两集合；停用角色新权限漏存A6-BE-01仍在，不以先启用绕过、不凭成功回执承诺全部存下。
+- 恢复结束清原闭包并重读当前数据，重读成功前禁新修改。一定走提案的授权/删除过期后，经严格A2_PROPOSAL_NOT_FOUND并再次核实可在运营确认下解除；状态PATCH可能直接返回详情，单靠无票不解除。授权/删除现缺解除确认入口，交视觉。A6-only写权不保证A2原票查询权限，后端恢复权限缺口如实显示，不擅补A2读权。
+- 已接既有A6原操作提醒及保存对比。持久审批观察的标题/状态、清空备注旧提示、批准后差异的过强因果说法及共享恢复词交视觉；本轮不改布局、样式或旧屏幕文案。统计与读模型保持严格，空值不当0，本页无金额换算。
+
+#### [A7] 菜单元数据与原请求（2026-11-15 接逻辑）
+
+首次明确MENU_VERSION_STALE后废弃冲突基线并重读整树，保留表单、原目标和理由。现有确认框用最新节点/版本重新核对，下一次新请求才使用新命令；读取失败不得继续旧快照。未知原命令保持原版本/原body/原号。
+
+`/platform/menus`保留整树、选择详情、导航预览及三种直接写，精确要求platform_a7_read/write；不新增审批。新建父菜单必须启用根，最多两层；删除有任何未删下级（含停用）前端拦截。概览每节点新增可选 `roleBindingCount`（未删角色菜单绑定行数，不是不同角色数，含停用角色）与 `activePermissionCount`（启用未删权限行数，不限API）。删除/停用入口及新发送守卫以已知正数提前阻断、给出相应原因，后端仍最终核对；缺字段保持未知、由后端检查，不把缺失当0。详情显示「勾了它的角色」「挂着的权限」，删除和停用前写明「N 个角色勾了它、挂着 N 项启用的权限，不能删除（停用）」；父子不汇总。结果未知的原记录刷新后列在页面上方（菜单读取失败时也显示），24 小时内可按原请求重试；「重新读取菜单」只读现在的菜单树，不能证明原操作结果，过期记录不会自动解除。
+
+- 新建/编辑/删除发送前保存原对象、完整body、版本、理由/operator、actorId和原号；结果未知冻结并保持原请求；过24小时只读。A7没有按原号权威回执/受控结案，当前树值相同或目标不存在均不能解除原命令。
+- 写成功就关闭旧确认/草稿，再单独读取当前整树；读取失败只报告读回失败，不保留可重发旧写的成功确认。幂等历史节点不设当前数据，重读成功前禁新修改。读取错误统一displayAdminReadError。
+- 结果未知的原操作列在页面上方（见上），同一原确认可查询／重试，持久记录继续挡同对象新写。保存成功后重读整树失败：提示「操作已提交成功，但最新数据读取失败。请不要重复提交」，菜单树的读取失败块只写「菜单列表加载失败，请重试」和读取类原因，不写写操作的「操作未完成」。
+- 菜单名称/path/icon/sort/status请求及expectedVersion保留，空地址/icon仍省略而保留原值；改表内图标不改静态侧栏图标。即时写入元数据不等于已打开会话的侧栏即时刷新；引导句和共享恢复文案的事实边界见重构说明，交视觉同步。后端111e00cd，无App导航效果承诺。
+
+#### [A8] 权限清单（2026-11-15 接线）
+
+`/platform/permissions` 的列表与按码详情要求 `platform_a8_read`，仅列启用未删除API权限。列表按码/名、模块、类型服务端筛选，350ms关键词防抖，默认20条，界面支持10/20/50条；失败不是有效0、没有分页成功结论。详情每次另读，登记资源路径只作文本，可能是旧页面路由，不保证HTTP方法。
+
+- 角色对照仅在打开或明确重试时读取角色overview与每个角色详情，额外要求 `platform_a6_read`。缺权或overview失败只影响对照；单角色失败只标该列未知，成功列继续显示。翻页只换当前页权限行，不重读角色；收起后overview才完成不再启动逐角色请求。
+- boundRoleCount只计启用未删除角色，矩阵包含停用但未删除角色；勾只证明存储绑定，非某账号此刻的菜单/业务执行资格。详情有任意未读角色时保留权威启用角色计数，不把部分角色快照当成完整「没有角色」。
+- 角色名链接需可见A6菜单及A6查看权，带 `/platform/roles?roleId=<角色id>`。A6读取成功角色目录后仅定位存在的安全正整数；缺失、非法、重复或不存在参数不选中、不报定位错误，也不发非法详情。普通目录重读不覆盖手动选择。此参数不打开授权框、不改变写权限或现有写合同。
+- menuId可null，remark/permissionName/resourcePath按后端投影及既有空串边界读取；状态、布尔、ID、数组、计数及唯一性仍严格。amplifies缺值是后端保守投影1，仅登记风险标记，A8不做覆盖率检查。未知非空权限类型的服务端透传与PC严格合同差异交协调人统一，不默默改变共享A6授权目录。
+- 本页业务写与R1恢复均为0；PERMISSION_CODE_REQUIRED/PERMISSION_NOT_FOUND与角色读合同异常有中文原因。现有超时提示、指南双表说法、只读链接的授权承诺等原句差异见A8重构说明，交视觉轮，不改布局/样式/文案。
+
+#### [A9] 开发者访问审批（2026-11-15 接逻辑）
+
+首次明确状态冲突后保留原动作、备注和拒因，令原状态基线失效；现有「刷新列表」在确认内按申请编号、不带旧状态筛选读取当前行。读到且重新核对前不发送，原动作在新状态不再合法时保持禁止；结果未知的原命令仍按原请求恢复。
+
+`/platform/developer-access` 全局读取申请，默认待审批、第1页、20条；按状态及申请编号/公司/邮箱/用途筛选，待审批筛选默认传 `sortDirection=ASC`，按创建时间/id同向升序；其它筛选含全部传 `DESC` 保留倒序。批准、驳回、撤销保持直接执行，分别要求 `developer_access_approve/reject/revoke` 或 `ROLE_SUPER_ADMIN`；读取与查询只要求相应读权。PENDING 可批准/驳回，APPROVED 可撤销，不建 A2 审批单，不新增环境禁写或审批锁状态。
+
+- 三个备注入口及发送前统一按后端 Spring hasText、Java String.trim 和 UTF-16 字符串长度检查 8–500；超过500使用原有提示位置阻断，不按可见字素或码点计数，不改理由规则。成功回包必须能读为对应申请及目标状态；空/错回包不能当成功。
+- 发送前把原申请确认事实、原动作/状态、完整 JSON body、备注、操作者和原号保存到同一 sessionStorage；无法持久保存就不发送。新修改要求当前筛选已成功读取，读取中、失败或写后尚未重读均不可发起；GET 错误统一读取文案，不冒称写结果未知。
+- 结果未知的记录独立于列表保留；原申请已变成 APPROVED/REJECTED/REVOKED、换筛选或读取失败仍可从已保存的原请求恢复。重试沿原 body 和原号，备注及确认事实冻结；同申请有未决操作时不允许换动作另发。首次明确拒绝按 isDeterministicRejection 释放新号、留确认框；原请求重试仅 isExplicitRejection 认定的明确拒绝才解除。401/403/408/425/429、幂等冲突/处理中和5xx不证明原操作未执行。
+- 24小时从首次保存起算、不续期；过期继续留证、禁止重发。A9没有按原号权威回执或受控结案接口，列表当前状态/查不到均不能结清原记录；不套用审批提案过期未建单的解除规则。旧记录没有完整确认事实时不补造历史快照；无备注的沿既有旧记录流程填写原备注，存下后不再可改。
+- 成功或原重试明确拒绝后结束旧恢复框，再单独读取当前列表；不把历史回放快照设为当前状态。抽屉处理成功自动切下一条时，不删除其它未决原请求。读模型严格核必填、状态/环境/来源、分页与整数；reviewer/reviewReason/时间允许真实null，空runId合法；未来创建时间的已等待时长为「—」，不修正后端返回时刻。
+- 驳回、撤销框的备注说明：「只填一个公开理由代码时申请人看得到对应理由，其他备注看不到。」问号里列四个公开理由代码（不分大小写），和后端 AppDeveloperAccessService 的白名单一致。
+- 后端2aa01c03已交付A9-BE-02：仅列表records增加可空userNo；需要user_c1hub_read，客服对象范围外、用户缺失或软删均null；写回执不附、无独立详情GET。读取合同兼容缺字段的旧回执/原记录为null；现有用户编号位置只接服务端userNo，无值为—，查找用户链接只在有编号且目标可达时按userNo查询，不用内部userId冒充编号。详情抽屉的「—」旁有问号：没有查看用户资料的权限，或用户不在可查看范围内、已被删除时，后端不给编号。
+- A9-BE-01 已在后端1a6b80a4修复：OpsDeveloperAccessService.instant按存储时区（BusinessCalendar.STORAGE_ZONE）换算，后台和App对同一申请的提交、处理时间一致，「已等」按真实时长计算；「这页怎么用」不再提示时差。A9-BE-03/04已在24972948交付并接入：可选 `statusCounts` 为五个存储状态的条数，沿关键词/环境/未删过滤，不沿当前status/分页，不根据时间推导EXPIRED；旧后端无字段仍缺失，不补0。状态筛选上显示各状态条数；待审批按提交时间从早到晚排，其他状态和全部从新到旧。结果未知的恢复行有独立的「查看申请现状」，只读这条申请现在的状态，不能证明原操作结果，也不解除原记录；按原请求重试成功的提示写明现在的状态以列表为准。前端不加减时间、不造用户编码。自由备注通常不外发，但精确匹配四个白名单理由码时App可收到并翻译，不承诺任何备注都不可见。
 
 ---
 

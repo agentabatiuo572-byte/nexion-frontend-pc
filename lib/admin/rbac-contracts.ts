@@ -52,6 +52,9 @@ export function normalizeA6Overview(raw: unknown) {
       status,
       builtin: flag(row.builtin, message),
       adminCount: integer(row.adminCount, message),
+      permissionCount: row.permissionCount === undefined ? undefined : integer(row.permissionCount, message),
+      menuGrantCount: row.menuGrantCount === undefined ? undefined : integer(row.menuGrantCount, message),
+      enabledAdminCount: row.enabledAdminCount === undefined ? undefined : integer(row.enabledAdminCount, message),
     };
   });
   const total = integer(data.total, message);
@@ -95,6 +98,8 @@ function normalizeA7Node(raw: unknown): Record<string, unknown> & { children: Re
     sortOrder: integer(node.sortOrder, message),
     status,
     version: string(node.version, message),
+    roleBindingCount: wrapper.roleBindingCount === undefined ? undefined : integer(wrapper.roleBindingCount, message),
+    activePermissionCount: wrapper.activePermissionCount === undefined ? undefined : integer(wrapper.activePermissionCount, message),
     children: wrapper.children.map(normalizeA7Node),
   };
 }
