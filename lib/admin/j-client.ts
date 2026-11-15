@@ -723,6 +723,31 @@ export type GeoEndpoint = {
   configurable: boolean;
 };
 export type GeoHit = { cc: string; name: string; nm: string; count: number; ct: number };
+export type GeoHitSummary = {
+  domain: "J2"; window: "ROLLING_24H"; available: true;
+  windowStart: string; capturedAt: string; totalBlockedEvents: number; countryCount: number;
+  source: string[]; sourceFields: string[]; definition: string;
+  coverage: "recorded_geo_block_events_only"; uniqueUsers: false; allAccessProof: false;
+};
+
+/** Separate from the overview's top-20 sum; local database times stay unconverted. */
+export async function fetchJ2GeoHitSummary(signal?: AbortSignal): Promise<GeoHitSummary> {
+  const row = rec(await apiRequest<unknown>("/geo-block/hit-summary", { signal }));
+  if (row.domain !== "J2" || row.window !== "ROLLING_24H" || row.available !== true
+    || row.coverage !== "recorded_geo_block_events_only" || row.uniqueUsers !== false || row.allAccessProof !== false) {
+    throw new Error("J_DOMAIN_FIELD_REQUIRED:geo.hitSummary");
+  }
+  const count = (key: string) => {
+    const value = requiredNum(row[key], `geo.hitSummary.${key}`);
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error(`J_DOMAIN_FIELD_REQUIRED:geo.hitSummary.${key}`);
+    return value;
+  };
+  return { domain: "J2", window: "ROLLING_24H", available: true,
+    windowStart: requiredText(row.windowStart, "geo.hitSummary.windowStart"), capturedAt: requiredText(row.capturedAt, "geo.hitSummary.capturedAt"),
+    totalBlockedEvents: count("totalBlockedEvents"), countryCount: count("countryCount"),
+    source: requiredStringArray(row.source, "geo.hitSummary.source"), sourceFields: requiredStringArray(row.sourceFields, "geo.hitSummary.sourceFields"),
+    definition: requiredText(row.definition, "geo.hitSummary.definition"), coverage: "recorded_geo_block_events_only", uniqueUsers: false, allAccessProof: false };
+}
 export type GeoEdgeMetric = { key: string; k: string; value: string; v: string; tone: string };
 export type GeoBlockOverview = {
   blocked: GeoCountry[];
