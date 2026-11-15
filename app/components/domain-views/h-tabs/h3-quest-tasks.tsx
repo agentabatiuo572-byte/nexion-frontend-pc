@@ -478,6 +478,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const { taskCode, taskKind, status } = taskIdentity(task, monthly);
     if (status === "archived") return;
     const targetStatus = conflictDraft.intent ?? (status === "active" ? "paused" : "active");
+    if (targetStatus === status) { toast("和现在一样，没有改动"); return; }
     const enabling = targetStatus === "active";
     openConfirm({ rebaseValue: targetStatus, briefKind: "config",
       target: taskCode,
