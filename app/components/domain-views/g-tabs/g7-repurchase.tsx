@@ -212,7 +212,7 @@ function paramEditValue(param: Pick<G7Param, "value" | "displayValue">) {
 function orderStatus(status: string) {
   const key = status.toLowerCase();
   const name = STATE_NAME[key];
-  if (!name) return <StatusTag tone="warn" icon={CircleHelp} explain={`后端返回的状态是 ${status}，这页不认识，没有换成别的状态。`}>未知状态</StatusTag>;
+  if (!name) return <StatusTag tone="warn" icon={CircleHelp} explain={`系统给的状态是 ${status}，这页还不认识，没有换成别的状态。`}>未知状态</StatusTag>;
   if (key === "active") return <StatusTag tone="progress" icon={Lock}>{name}</StatusTag>;
   if (key === "pending_lock" || key === "mature_unclaimed") return <StatusTag tone="neutral" icon={Clock3}>{name}</StatusTag>;
   return <StatusTag tone="done">{name}</StatusTag>;
