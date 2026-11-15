@@ -32,7 +32,7 @@ import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { h7DateInput as toDateInput, h7DateMs as toMs, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
+import { h7DateInput as toDateInput, h7DateMs as toMs, h7EditedDateMs, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
 import { createH7VoucherMutation, pendingH7VoucherMutations, requireH7Actor, sendH7VoucherMutation, type H7DirectContext, type H7DirectMutation } from "@/lib/admin/h7-voucher-mutation";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import {
@@ -44,7 +44,7 @@ import { H7VoucherForm, changedRows, initialForm, type H7FormValue } from "./h7-
 type OpsVoucher = H7Voucher;
 
 /** businessValue → OpsVoucher(逗号串拆 SKU/入口 · 日期转 ms · 数值清洗)。 */
-function parseVoucher(bv: Record<string, string>, id: string, version = 1): OpsVoucher {
+function parseVoucher(bv: Record<string, string>, id: string, version = 1, original?: OpsVoucher): OpsVoucher {
   const type: OpsVoucher["type"] = bv.type === "percent" ? "percent" : "fixed";
   const skus = (bv.applicableSkus ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   const surfaces = (bv.claimSurfaces ?? "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -58,8 +58,8 @@ function parseVoucher(bv: Record<string, string>, id: string, version = 1): OpsV
     maxDiscountUSD: Number(bv.maxDiscountUSD) || 0,
     applicableSkus: skus,
     audience: bv.audience === "new" ? "new" : "all",
-    startAt: toMs(bv.startDate),
-    endAt: toMs(bv.endDate, true),
+    startAt: h7EditedDateMs(bv.startDate, original?.startAt),
+    endAt: h7EditedDateMs(bv.endDate, original?.endAt, true),
     claimSurfaces: surfaces,
     popupEnabled: bv.popupEnabled !== "false",
     popupDelayMs: Number.isFinite(Number(bv.popupDelayMs)) ? Number(bv.popupDelayMs) : 1300,
@@ -310,7 +310,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       initialReason: restored?.reason,
       getPendingReason: () => directRecord(v.id)?.reason,
       inlineApproval: directRecovery(v.id, restored, initialRecovery),
-      run: (reason) => runDirect({ kind: "update", voucher: v, before, values: bv, skuLabels: labels }, parseVoucher(bv, v.id, v.version), reason),
+      run: (reason) => runDirect({ kind: "update", voucher: v, before, values: bv, skuLabels: labels }, parseVoucher(bv, v.id, v.version, v), reason),
     });
   };
 

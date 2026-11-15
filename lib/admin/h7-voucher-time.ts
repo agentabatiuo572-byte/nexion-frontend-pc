@@ -19,3 +19,14 @@ export function h7Stamp(ms: number): string {
   }).formatToParts(ms).map(part => [part.type, part.value]));
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
+
+/** An unchanged calendar field must not migrate a stored timestamp. */
+export function h7EditedDateMs(date: string, originalMs: number | undefined, end = false): number {
+  return originalMs !== undefined && date === h7DateInput(originalMs) ? originalMs : h7DateMs(date, end);
+}
+
+/** Exact facts for the visual worker's legacy-time presentation. Zero is the API's open boundary. */
+export function h7DateFacts(ms: number, end = false) {
+  return { milliseconds: ms, beijingTime: ms === 0 ? null : new Date(ms + 8 * 3_600_000).toISOString().replace("Z", "+08:00"),
+    calendarDate: h7DateInput(ms), wholeDayBoundary: ms === 0 || ms === h7DateMs(h7DateInput(ms), end) };
+}

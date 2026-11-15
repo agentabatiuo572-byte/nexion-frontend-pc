@@ -8,7 +8,7 @@
 import { useMemo, useState } from "react";
 import { BellOff, Layers, Lock, Ticket } from "lucide-react";
 import { Button, Check, CheckGroup, Decision, Drawer, Field, Fold, Input, Modal, Notice, NumberInput, Segments, StatusTag } from "@/app/components/rd";
-import { h7Stamp, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
+import { h7Stamp, h7EditedDateMs, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
 import { AUDIENCE_LABEL, SURFACE_LABEL, UNIT, VoucherFace, amountText, countText, voucherSentence, startText, endText, type H7Voucher } from "./h7-voucher-parts";
 
 export type H7FormValue = Record<string, string>;
@@ -75,7 +75,7 @@ const num = (s: string | undefined) => (s && s.trim() !== "" && Number.isFinite(
 const dateStamp = (date: string, toMs: (date: string, end?: boolean) => number, end = false) => { const ms = toMs(date, end); return ms ? h7Stamp(ms) : ""; };
 
 /** 填写中的值拼成一张券的样子，给预览用；不进提交。 */
-function previewVoucher(state: H7FormValue, toMs: (date: string, end?: boolean) => number) {
+function previewVoucher(state: H7FormValue, toMs: (date: string, end?: boolean) => number, original?: H7Voucher) {
   return {
     type: state.type === "percent" ? "percent" as const : "fixed" as const,
     amountUSD: num(state.amountUSD),
@@ -84,8 +84,8 @@ function previewVoucher(state: H7FormValue, toMs: (date: string, end?: boolean) 
     maxDiscountUSD: num(state.maxDiscountUSD) ?? 0,
     applicableSkus: list(state.applicableSkus),
     audience: state.audience === "new" ? "new" as const : "all" as const,
-    startAt: toMs(state.startDate),
-    endAt: toMs(state.endDate, true),
+    startAt: original ? h7EditedDateMs(state.startDate, original.startAt) : toMs(state.startDate),
+    endAt: original ? h7EditedDateMs(state.endDate, original.endAt, true) : toMs(state.endDate, true),
   };
 }
 
@@ -160,7 +160,7 @@ export function H7VoucherForm({ voucher, initial, latest, skuOptions, skuLabels,
     return { ...state, [key]: (sel.includes(item) ? sel.filter((x) => x !== item) : [...sel, item]).join(",") };
   });
   const bool = (key: string) => value[key] === "true";
-  const preview = previewVoucher(value, toMs);
+  const preview = previewVoucher(value, toMs, voucher);
   const percent = value.type === "percent";
   const showMax = percent || (num(value.maxDiscountUSD) ?? 0) > 0;
   const selectedSkus = list(value.applicableSkus);
