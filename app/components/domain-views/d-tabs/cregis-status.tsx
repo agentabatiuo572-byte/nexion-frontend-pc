@@ -667,7 +667,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
                 <MoreMenu label={`${network} 更多操作`} items={[{ key: "recon", label: "立即完整对账", disabledReason: readBlock ?? (networkConfigured(data, network) ? undefined : "这个网络尚未配置") ?? d1PendingObjectReason(`/cregis/reconciliation/run?network=${network}`), onSelect: () => confirmCommand({ kind: "record",
                   action: `立即运行 ${network} 完整对账`, title: `立即完整对账`, confirmLabel: "确认对账", effect: now,
                   facts: <Facts><Fact k="网络">{network}</Fact><Fact k="最近完整对账">{reconLatest(network) ? `${time(reconLatest(network))}（${zone}）` : "尚无"}</Fact></Facts>,
-                  detail: `核对收款服务和 ${network} 链上记录。`, completion: "可能给漏掉的充值补入账。查出来源不明或对不上的款，会暂停 USDT 收款和出款（银行卡充值和越南盾出款不受影响）；已入账的款 5 分钟后仍对不上，还会冻结这个用户和他的提现、扣住这笔钱，并让他退出登录。",
+                  detail: `核对收款服务和 ${network} 链上记录。`, completion: "可能给漏掉的充值补入账。查出不明或对不上的款，会暂停 USDT 收款和出款（银行卡、越南盾照常）；已入账的款 5 分钟后仍对不上，还会冻结该用户、他的提现和这笔钱，并让他退出登录。",
                   path: `/cregis/reconciliation/run?network=${network}` }) }]} />
               </span></Td>}
             </tr>)}</tbody>
