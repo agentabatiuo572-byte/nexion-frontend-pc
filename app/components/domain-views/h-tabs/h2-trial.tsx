@@ -26,7 +26,7 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { ADVANCED_TRIAL_GROUPS, COMMON_TRIAL_PARAMS, TRIAL_PARAM_HELP, TRIAL_STATE_HELP } from "@/lib/admin/config-help/h2-trial";
-import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
@@ -386,7 +386,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       setError(null);
     } catch (err) {
       if (requestEpoch !== reloadEpochRef.current) return;
-      setError(displayAdminError(err));
+      setError(displayAdminReadError(err));
     } finally {
       if (requestEpoch === reloadEpochRef.current) setLoading(false);
     }

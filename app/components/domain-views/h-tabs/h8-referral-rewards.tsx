@@ -31,7 +31,7 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { canRetryH8RewardCommand, createH8RewardCommand, pendingH8RewardCommands, queryH8RewardCommand, releaseExpiredH8RewardProposal, requireH8Actor, sendH8RewardCommand, type H8RewardCommand } from "@/lib/admin/h8-reward-mutation";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { withdrawalApprovalDisabledReason } from "@/lib/admin/withdrawal-config-approval";
 import { OperationConfirmModal, type BusinessFormValue } from "../design-kit";
 import { Amount, amountParts, amountText, countText, decimalsOf, expiredTag, H8RecoveryNotice, H8SavedUnreadNotice, multiplierText, pendingTag, RewardFlow, unknownTag, type H8RecoveryRow } from "./h8-reward-parts";
@@ -117,7 +117,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     } catch (cause) {
       if (request !== loadGeneration.current) return false;
       if (!append) { setReadReady(false); if (!keepSaved) setData(null); }
-      if (!keepSaved) setError(displayAdminError(cause));
+      if (!keepSaved) setError(displayAdminReadError(cause));
       return false;
     } finally {
       if (request === loadGeneration.current) {

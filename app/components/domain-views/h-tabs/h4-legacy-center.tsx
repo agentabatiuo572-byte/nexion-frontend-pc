@@ -33,7 +33,7 @@ import {
 import { fetchH4WheelDailyUsage, type H4WheelDailyUsage } from "@/lib/admin/h4-daily-usage";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { HI_WHEEL_SCOPE, hiEventScope, hiRewardProposal, pendingHIRewardCommand } from "@/lib/admin/hi-reward-commands";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import type { EventRuleView } from "@/lib/admin/event-rules-client";
 import type { AdminRaffle } from "@/lib/admin/genesis-raffle-client";
@@ -265,7 +265,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       if (owner !== useAdminAuth.getState().session?.adminId) return;
       setModel(result as Model); setError(null);
     } catch (err) {
-      setError(displayAdminError(err));
+      setError(displayAdminReadError(err));
     } finally {
       setLoading(false);
     }

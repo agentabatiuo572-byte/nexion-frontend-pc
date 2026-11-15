@@ -18,7 +18,7 @@ import { h5Amount, h5StreakReward, h5WholeReward, parseH5Model } from "@/lib/adm
 import { useH5Mutations, type H5PendingCommand } from "@/lib/admin/use-h5-mutations";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -127,7 +127,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       setReadAt(Date.now());
       setError(null);
     } catch (err) {
-      setError(displayAdminError(err));
+      setError(displayAdminReadError(err));
     } finally {
       setLoading(false);
     }

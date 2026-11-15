@@ -16,7 +16,7 @@ import {
   type H3WeeklyRegionPolicy,
 } from "@/lib/admin/h-client";
 import { fetchA2Overview } from "@/lib/admin/a2-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { HCtx } from "./types";
@@ -63,7 +63,7 @@ export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType
         }
       }
     } catch (cause) {
-      if (request === generation.current) setError(displayAdminError(cause));
+      if (request === generation.current) setError(displayAdminReadError(cause));
     } finally {
       if (request === generation.current) setLoading(false);
     }

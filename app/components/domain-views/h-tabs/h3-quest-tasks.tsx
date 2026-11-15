@@ -22,7 +22,7 @@ import { compareH3Decimal, h3Decimal, parseH3Model } from "@/lib/admin/h3-contra
 import { useH3Mutations, type H3PendingCommand, type H3Write } from "@/lib/admin/use-h3-mutations";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
@@ -145,7 +145,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       setError(null);
       setReadAt(Date.now());
     } catch (err) {
-      setError(displayAdminError(err));
+      setError(displayAdminReadError(err));
     } finally {
       setLoading(false);
     }

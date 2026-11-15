@@ -31,7 +31,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { h7DateInput as toDateInput, h7DateMs as toMs, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
 import { createH7VoucherMutation, pendingH7VoucherMutations, requireH7Actor, sendH7VoucherMutation, type H7DirectContext, type H7DirectMutation } from "@/lib/admin/h7-voucher-mutation";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
@@ -146,7 +146,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       })
       .catch((err) => {
         if (!alive) return;
-        setError(displayAdminError(err));
+        setError(displayAdminReadError(err));
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -164,7 +164,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       setError(null);
       return true;
     } catch (err) {
-      setError(displayAdminError(err));
+      setError(displayAdminReadError(err));
       return false;
     } finally {
       setLoading(false);
