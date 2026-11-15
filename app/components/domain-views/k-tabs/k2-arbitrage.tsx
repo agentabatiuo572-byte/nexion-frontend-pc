@@ -179,7 +179,7 @@ function k2ParamBusinessForm(p: KRiskParam): BusinessFormSpec | null {
         { key: "operator", label: "比较符", current: current.operator, inputKind: "select", options: [">=", ">"], optionLabels: OPERATOR_LABELS },
         { key: "count", label: "已结算笔数", current: current.count, inputKind: "number", min: 1, max: 5, step: 1, help: "1–5 的整数" },
         { key: "scope", label: "检测范围", current: current.scope, inputKind: "select", options: ["实体", "账户簇", "手机号", "设备"], optionLabels: GIFT_SCOPE_LABELS,
-          help: "目前只按账户组检测，选哪一项都按账户组算",
+          help: "目前不论选哪项，都按账户组检测",
           explain: "后端能保存这四种范围，但检测时只按账户组统计；按同一人或组织、手机号、设备检测还没有接上。" },
       ],
     };

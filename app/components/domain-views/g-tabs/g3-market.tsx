@@ -267,7 +267,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       : <Facts>
         <Fact k="现价">{priceMissing ? "暂不可用" : `${price(overview!.currentPrice)} USDT`}</Fact>
         <Fact k="暂停之后">每日推进和 5 分钟采样都停下</Fact>
-        <Fact k="仍会改价的">应急改现价、固定生效日照常发布价格，暂停挡不住这两项</Fact>
+        <Fact k="仍会改价的">应急改现价、固定生效日的价格照常发布</Fact>
       </Facts>,
     statedBrief: paused
       ? { impact: "排程已配置、没有固定时，价格重新按七天计划推进，之后的兑换按推进后的价格。", check: "核对兑付覆盖率和固定生效日，理由写清为什么恢复。" }
