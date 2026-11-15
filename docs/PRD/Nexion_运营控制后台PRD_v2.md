@@ -635,6 +635,8 @@ maxDevicesPerOrder 入口保留，但当前后端及 App 每次只取一个 sour
 
 #### [E6a] 手机任务、收益、用户手机与校准规则
 
+2026-11-15 READ-05：原请求重试得到明确拒绝时，拒绝标记随同一原记录持久保存；刷新后仍能核对并解除。开始新的原请求重试时复位该标记，未知或认证拒绝不伪造明确结论；成功和人工解除仍按原逻辑清整条记录。请求内容、理由与命令号不变。
+
 **2026-11-14 后端 111e00cd 同步**：手机恢复沿E5运营暂停及有效归属范围，最多200候选，按changedCount和404核对刷新。风险结案不再传receiptOnly，接已有成功审计编号并传真实evidenceAuditId；63a4f669已将 E6_PHONE_RISK_SETTINGS / CONFIG / E.compute.phoneRisk.settings / ADMIN.PHONE_RISK_SETTINGS_UPDATED 纳入成功证据白名单，严格绑定原actor/method/path/recordId/scope/key/hash，接受SUCCESS及SUCCEEDED，证据不足仍UNKNOWN。旧无receiptVersion记录不升级。手机页恢复确认框与E5同一说法（范围“该用户被运营暂停的设备，包含手机”），成功提示同E5；无候选404时确认框内报原因并刷新列表。旧“不接受操作记录编号”分支已删除；结案框选“已执行”时显示“成功审计编号”输入，说明不再重复“证据不够记为仍未知”。出处 AdminCommandInvestigationService.supportedSuccessFact、AdminCommandInvestigationMapper.successEvidence。
 
 **2026-11-12 风控与直接命令同步（代码侧）**：新风控保存的原信封带 `receiptVersion=1`，PUT 按原修订、全部模式、两阈值、理由和 Idempotency-Key 去重；24 小时内恢复逻辑允许原样重试。升级前没有该标记的旧未知记录保持只读当前设置。GET `/api/admin/config/phone-calibration/risk/receipts/by-key?commandKey=` 精确代理保留查询串；`checkDirect` 验证 scope、key、原操作者、method/path/target/hash/status，只有原绑定一致且状态成功或确认未执行才收敛，当前设置独立读取。查不到不证明未执行，403不解除，旧无来源及仍在处理中继续保留；成功回执的 originalResponse=null 保持为空，不补造原 settings/stats。用户手机直接动作沿原 E5 命令的服务器绑定查询与证据核查，原页面、原快照和 E5/E6 对象锁保留。刷新后风控重试及明确的查原保存结果入口、手机核查／结案入口、确认框与使用说明的旧「不去重」说法，以及新错误码中文由视觉 worker 完成；本轮不改变屏幕组成和文案。

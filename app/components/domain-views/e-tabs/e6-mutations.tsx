@@ -35,7 +35,9 @@ function useMutations() {
   const [release, setRelease] = useState<E6Pending | null>(null);
   const active = useRef(true), sending = useRef(false);
   const sync = () => {
-    setPending(commands.list().filter(r => r.owner === owner));
+    const saved = commands.list().filter(r => r.owner === owner);
+    setPending(saved);
+    setRejected(saved.filter(r => r.retryRejection).map(r => r.commandKey));
     setDevicePending(e5Commands.list().filter(r => r.actorId === String(owner)));
   };
   const canPropose = rights.some(r => ["platform_a2_write", "platform_a2_proposal_create"].includes(r));
@@ -71,6 +73,9 @@ function useMutations() {
   async function send(record: E6Pending, retry: boolean) {
     if (sending.current || !allowed(record)) throw new Error("当前没有这项操作的提交权限。");
     if (retry && !canRetry(record)) throw new Error("原操作仅可核查，不能重新发送。");
+    record = { ...record, retryRejection: undefined };
+    commands.remember(record.fingerprint, record.commandKey, record);
+    if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器无法保存原操作，本次未提交。请允许会话存储后重试。");
     sending.current = true; setBusy(record.commandKey);
     try {
       if (retry && record.payload.kind === "proposal") {
@@ -111,6 +116,9 @@ function useMutations() {
       return writeResult;
     } catch (failure) {
       if (!retry && isExplicitRejection(failure)) commands.forget(record.fingerprint, record.commandKey);
+      else if (retry && isExplicitRejection(failure)) commands.remember(record.fingerprint, record.commandKey, {
+        ...record, retryRejection: displayAdminError(failure),
+      });
       if (active.current) {
         sync();
         if (retry && isExplicitRejection(failure)) setRejected(r => [...r, record.commandKey]);
