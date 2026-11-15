@@ -246,13 +246,12 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
           <span className="j3-recovery-name">告警设置</span>
           <span className="j3-recovery-change">{savedChange(saved)}</span>
           <span className="j3-recovery-time">{businessStamp(saved.createdAt)} 提交（{businessZone().label}）</span>
-          <span className="j3-recovery-state">{!isRetryExpired(saved) ? <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag> : saved.legacy
+          <span className="j3-recovery-state">{!isRetryExpired(saved) ? <StatusTag tone="warn" icon={CircleHelp} explain={saved.command ? undefined : "旧记录没存原请求，不能重试，只能查询原结果。"}>结果未知</StatusTag> : saved.legacy
             ? <StatusTag tone="neutral" icon={Hourglass} explain="已超过 24 小时。旧记录没存原请求，不能重试；到「操作记录与审批」核对过，可以确认解除。">已过期</StatusTag>
             : expiredTag("direct")}</span>
           <span className="j3-recovery-actions">
             <Button size="sm" loading={ctx.contentLoading} onClick={queryOriginal}>查询原结果</Button>
-            {canConfigure && !isRetryExpired(saved) && <Button size="sm" disabledReason={!saved.command ? j3ErrorText(new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE")) : undefined}
-              onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
+            {canConfigure && !isRetryExpired(saved) && !!saved.command && <Button size="sm" onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
             {saved.legacy && isRetryExpired(saved) && <Button size="sm" onClick={() => setReleasing(saved.legacy)}>确认解除</Button>}
           </span>
         </li>
