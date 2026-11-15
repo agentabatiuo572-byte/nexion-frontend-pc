@@ -353,7 +353,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       confirmLabel: "提交修改",
       reasonPlaceholder: "例如：按运营排期调整奖励，工单号",
       getPendingReason: () => pendingHIRewardCommand(hiEventScope(event.id))?.payload.input.reason,
-      edit: { kind: "text", current, initialValue: pendingHIRewardCommand(hiEventScope(event.id))?.editValue },
+      edit: { kind: "text", current, initialValue: pendingHIRewardCommand(hiEventScope(event.id))?.editValue, hint: ruleBased ? undefined : "只认正数的 UVT 或 USDT，如 100 UVT" },
       run: async (reason, value) => {
         const scope = hiEventScope(event.id);
         if (!value) return;
@@ -1028,7 +1028,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const ended = life.key === "ended";
     const wheelEvent = text(event.kind).toLowerCase() === "wheel";
     return [
-      ...(!wheelEvent ? [{ key: "reward", label: "修改奖励", disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : rules === null ? "玩法规则没有读到" : ended ? "已结束的活动不能改奖励" : undefined, onSelect: conflictDraft.register(JSON.stringify(["openEventReward:1", event.id]), () => openEventReward(event)) }]
+      ...(!wheelEvent ? [{ key: "reward", label: "修改奖励", disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : rules === null ? "玩法规则没读到，判断不了改奖励的后果。到「玩法与抽奖」刷新「七类玩法」后再改。" : ended ? "已结束的活动不能改奖励" : undefined, onSelect: conflictDraft.register(JSON.stringify(["openEventReward:1", event.id]), () => openEventReward(event)) }]
         : [{ key: "wheel", label: "去转盘奖池改奖品", onSelect: () => go("wheel", "h4l-wheel") }]),
       ...(!ended && event.state === "ongoing" ? [{ key: "featured", label: event.featured ? "取消主推" : "设为主推", disabledReason: !canModuleWrite ? "没有修改既有活动的权限" : undefined, onSelect: conflictDraft.register(JSON.stringify(["openEventFeatured:1", event.id]), () => openEventFeatured(event)) }] : []),
       { key: "content", label: "三语内容与 App 上的样子", onSelect: () => setContentId(event.id) },
