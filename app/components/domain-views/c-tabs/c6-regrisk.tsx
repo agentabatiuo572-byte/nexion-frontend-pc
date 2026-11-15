@@ -163,6 +163,13 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   }, [loadData]);
 
   const pending = owner ? pendingC6Commands(owner) : [];
+  const [expiryNow, setExpiryNow] = useState(Date.now);
+  const nextExpiry = pending.reduce((next, row) => row.expiresAt > expiryNow ? Math.min(next, row.expiresAt) : next, Infinity);
+  useEffect(() => {
+    if (!Number.isFinite(nextExpiry)) return;
+    const timer = window.setTimeout(() => setExpiryNow(Date.now()), Math.max(0, nextExpiry - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [nextExpiry]);
   const pendingFor = (target: C6Original["target"]) => pendingC6Commands(owner).find(row => !isCompleteC6Command(row) || row.target === target);
   const unavailable = (target: C6Original["target"]) => busy ? "正在提交，请稍候" : pendingFor(target) ? "这一项有一次提交结果未知，先在页面上方核对" : undefined;
   const canSubmit = () => {
