@@ -3,9 +3,10 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import Link from "next/link";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
-import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey } from "@/lib/admin/a2-client";
+import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { isRetryExpired, RETRY_EXPIRED_TEXT, hasPersistedPendingCommandOwner } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import { eDomainLegacyCommands as legacyCommands, e5LegacyCommands as legacyPhones } from "@/lib/admin/e-domain-commands";
 import { e5Commands, type E5Command } from "@/lib/admin/e5-command";
 import { e6Commands as commands, type E6DeviceInput as DeviceInput, type E6Payload as Payload, type E6Pending, type E6Proposal, type E6Section } from "@/lib/admin/e6-command";
@@ -115,7 +116,11 @@ function useMutations() {
       if (active.current) { sync(); setNotes(n => ({ ...n, [record.commandKey]: record.payload.kind === "proposal" ? "已提交，等待审批后执行。" : "已取得操作回执，请刷新核对当前值。" })); }
       return writeResult;
     } catch (failure) {
-      if (!retry && isExplicitRejection(failure)) commands.forget(record.fingerprint, record.commandKey);
+      const response = failure as { status?: number; httpStatus?: number; apiCode?: number; backendMessage?: string };
+      const firstRejection = !retry && !isA2OutcomeUncertainError(failure) && !!response.backendMessage
+        && !isIdempotencyOutcomeOpen(response.backendMessage) && response.status !== undefined
+        && isDeterministicRejection(response.httpStatus ?? response.status, response.apiCode);
+      if (firstRejection) commands.forget(record.fingerprint, record.commandKey);
       else if (retry && isExplicitRejection(failure)) commands.remember(record.fingerprint, record.commandKey, {
         ...record, retryRejection: displayAdminError(failure),
       });
