@@ -16,7 +16,7 @@ import { activateE5Device, deactivateE5Device, setE5UserDevicesPaused, fetchE5De
 import { savePhoneRisk, fetchPhoneRisk, fetchPhoneRiskReceipt, type PhoneRiskReceipt, type PhoneRiskOverview, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
 import { canInvestigateECommand, discoverECommand, investigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { Button, Explain, Notice, Fold, ReleaseModal, StatusTag, Fact } from "@/app/components/rd";
-import { ClosureContact, CommandClosureModal, CommandOutcomeLine, MissingProposalReleaseModal, PROPOSAL_END, RecoveryPanel, closureOpen, eReadError, type CommandOutcome, type RecoveryItem } from "./e-command-check";
+import { ClosureContact, CommandClosureModal, CommandOutcomeLine, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, closureOpen, eReadError, type CommandOutcome, type RecoveryItem } from "./e-command-check";
 import type { ToastKind } from "@/lib/store/ui";
 
 export type { E6Pending, E6Proposal, E6Section } from "@/lib/admin/e6-command";
@@ -259,21 +259,22 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
   };
   const noteOf = (r: E6Pending) => m.notes[r.commandKey] && m.notes[r.commandKey] !== answered[r.commandKey] && !GENERIC_NOTES.includes(m.notes[r.commandKey]) ? m.notes[r.commandKey]
     : m.rejected.includes(r.commandKey) ? r.retryRejection : undefined;
-  const technical = (r: E6Pending) => <div className="e6-fold-content"><p>原请求编号：<code>{r.commandKey}</code></p><p>发起：{formatBusinessTimeCompact(new Date(r.createdAt).toISOString(), "—")}（北京时间）</p><p>原对象：{r.label}</p>{r.payload.kind === "device" && <p>原状态：{r.payload.input.before}</p>}<p>理由：{r.payload.input.reason}</p><TicketVerdict record={r} /><pre className="e6-json">{JSON.stringify({ scope: r.scope, request: JSON.parse(r.body) }, null, 2)}</pre>{m.technicalErrors[r.commandKey] && <pre className="e6-json">{m.technicalErrors[r.commandKey]}</pre>}</div>;
+  const technical = (r: E6Pending) => <div className="e6-fold-content"><p>原请求编号：<code>{r.commandKey}</code></p><p>原对象：{r.label}</p>{r.payload.kind === "device" && <p>原状态：{r.payload.input.before}</p>}<pre className="e6-json">{JSON.stringify({ scope: r.scope, request: JSON.parse(r.body) }, null, 2)}</pre>{m.technicalErrors[r.commandKey] && <pre className="e6-json">{m.technicalErrors[r.commandKey]}</pre>}</div>;
   const items: RecoveryItem[] = [
     ...(section === "phones" ? m.devicePending.map(r => ({ key: r.commandKey, object: r.label, tag: <StatusTag tone="warn">在设备管理待核对</StatusTag>,
-      line: "原操作在设备管理保留，到那里核对；相关设备或用户先暂停新操作。", actions: <Link className="rd-link" href="/devices/ops">设备管理</Link> })) : []),
+      line: "原操作在设备管理，到那里核对。", actions: <Link className="rd-link" href="/devices/ops">设备管理</Link>,
+      detail: <p>原操作在设备管理保留；相关设备或用户先暂停新操作。</p> })) : []),
     ...records.map(r => {
       const expired = isRetryExpired(r), refused = m.rejected.includes(r.commandKey), waiting = !!r.ticketId && !r.terminal, end = r.terminal ? PROPOSAL_END[r.terminal] : undefined;
-      const state = end ? { tag: end.tag, tone: end.tone, line: end.text }
-        : waiting ? { tag: "待审批", tone: "progress" as const, line: `审批单 ${r.ticketId} 等另一位管理员批准；批准前不生效。` }
-          : refused ? { tag: "重试被拒绝", tone: "danger" as const, line: "按原请求重试被明确拒绝；核对拒绝原因后，可以解除这条记录。" }
-            : r.payload.kind === "proposal" ? r.absent ? expired ? { tag: "没有建成", tone: "warn" as const, line: "按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" }
-              : { tag: "结果未知", tone: "warn" as const, line: "按原请求查不到这张审批单，现在还没建成；可以按原请求重试，不会重复建单。" }
-              : { tag: "结果未知", tone: "warn" as const, line: expired ? "已超过 24 小时，不能再重试；先查询原结果。" : "不知道审批单建没建成。可以查询原结果，或按原请求重试，不会重复建单。" }
-              : r.payload.kind === "risk" ? { tag: "结果未知", tone: "warn" as const, line: r.payload.receiptVersion !== 1 ? "升级前的记录查不到原结果，只能读取现在的设置核对；设置一样也不代表原保存成功。"
-                : expired ? "已超过 24 小时，不能再重试；先查询原结果。设置一样也不代表原保存成功。" : "先查询原结果，或按原请求重试，不会重复保存。设置一样也不代表原保存成功。" }
-                : { tag: "结果未知", tone: "warn" as const, line: expired ? "已超过 24 小时，不能再重试；先查询原结果。" : "现在的状态不代表原操作的结果。先查询原结果，或按原请求重试，只发原内容和原理由。" };
+      const state = end ? { tag: end.tag, tone: end.tone, line: end.text, more: "按「准备新变更」清掉这条后，这一项可以重新提交。" }
+        : waiting ? { tag: "待审批", tone: "progress" as const, line: RECOVERY_LINE.pending, more: `审批单 ${r.ticketId}。` }
+          : refused ? { tag: "重试被拒绝", tone: "danger" as const, line: RECOVERY_LINE.refused, more: "按原请求重试被明确拒绝；核对拒绝原因后，可以解除这条记录。" }
+            : r.payload.kind === "proposal" ? r.absent ? expired ? { tag: "没有建成", tone: "warn" as const, line: RECOVERY_LINE.missing, more: "按原请求查不到这张审批单，说明没建成；确认解除时会再查一次。" }
+              : { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.absent, more: "按原请求查不到这张审批单，现在还没建成；按原请求重试不会重复建单。" }
+              : { tag: "结果未知", tone: "warn" as const, line: expired ? RECOVERY_LINE.expired : RECOVERY_LINE.unknown, more: expired ? "已超过 24 小时，不能再重试；查不到这张审批单时可以确认解除。" : "可以查询原结果，或按原请求重试；重试只发原内容和原理由，不会重复建单。" }
+              : r.payload.kind === "risk" ? { tag: "结果未知", tone: "warn" as const, line: r.payload.receiptVersion !== 1 ? "旧记录查不到原结果，只能读取现在的设置。" : expired ? RECOVERY_LINE.expired : "先查询原结果；重试不会重复保存。",
+                more: "现在的设置一样，也不代表原保存成功了。" }
+                : { tag: "结果未知", tone: "warn" as const, line: expired ? RECOVERY_LINE.expired : RECOVERY_LINE.direct, more: expired ? "已超过 24 小时，不能再重试；现在的状态不代表原操作的结果。" : "可以查询原结果，或按原请求重试；重试只发原内容和原理由。" };
       const riskShown = r.payload.kind === "risk" && !outcomes[r.commandKey] && riskReceipts[r.commandKey] ? RISK_STATUS[riskReceipts[r.commandKey].status] : undefined;
       const note = <>
         {noteOf(r) && <span>{noteOf(r)}</span>}
@@ -284,6 +285,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
       </>;
       return { key: waiting ? `waiting:${r.commandKey}` : r.commandKey, object: r.label, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line,
         note: noteOf(r) || outcomes[r.commandKey] || riskShown || closureOpen(outcomes[r.commandKey], expired) ? note : undefined,
+        noteKey: [noteOf(r) ?? "", outcomes[r.commandKey] ? JSON.stringify(outcomes[r.commandKey]) : "", riskReceipts[r.commandKey]?.status ?? ""].join("|").replace(/^\|+$/, ""),
         actions: <>
           {r.payload.kind === "proposal" && !r.terminal && !refused && <Button size="sm" disabled={!!m.busy} onClick={() => void m.check(r)}>{waiting ? "查询审批结果" : "查询原结果"}</Button>}
           {r.payload.kind === "device" && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showDevice(r, receipt as ECommandInvestigation | null), () => { /* checkDirect keeps the query failure on the row. */ }).finally(() => onRead?.()); }}>查询原结果</Button>}
@@ -295,17 +297,17 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
           {r.terminal && <Button size="sm" onClick={() => { m.forget(r); onRead?.(); }}>准备新变更</Button>}
           {(refused || r.payload.kind === "proposal" && r.absent && !r.ticketId && expired) && <Button variant="primary" size="sm" onClick={() => m.setRelease(r)}>{refused ? "解除待确认" : "确认解除"}</Button>}
         </>,
-        detail: technical(r) };
+        detail: <><p>{formatBusinessTimeCompact(new Date(r.createdAt).toISOString(), "—")} 提交，理由：{r.payload.input.reason}</p><p>{state.more}</p><TicketVerdict record={r} /></>, tech: <Fold inset title="技术信息" summary={r.commandKey}>{technical(r)}</Fold> };
     }),
     ...m.legacy.filter(r => section === "tasks" ? r.fingerprint.startsWith("e2_task_") : section === "tiers" ? r.fingerprint.startsWith("e2_phone_tier") : section === "phones" ? r.fingerprint.startsWith("e5") : r.fingerprint.startsWith("e6_")).map(r => ({
       key: r.commandKey, object: "升级前的原提案", tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
-      line: "旧记录没存完整内容和理由，只能到操作记录与审批核对，不能重试或解除。",
+      line: "旧记录缺原请求，不能重试或解除；到操作记录与审批核对。",
       detail: <p>原请求编号：<code>{r.commandKey}</code></p> })),
   ];
   const release = m.release?.section === section ? m.release : null;
   return <>
-    <RecoveryPanel title={`变更还没有结论（${items.length} 条）`} tone={items.every(item => item.key.startsWith("waiting:")) ? "progress" : "warn"}
-      lead={<>原内容和理由都已保存；有结论前，这些对象不能提交新修改。{m.canAudit && <> <Link className="rd-link" href="/platform/audit?domain=E">核对操作记录与审批</Link></>}</>} items={items} />
+    <RecoveryPanel title={`${items.length} 项变更还没有结论`} tone={items.every(item => item.key.startsWith("waiting:")) ? "progress" : "warn"}
+      explain="原内容和理由都已保存；有结论前，这些对象不能提交新修改。点行首的箭头看提交时间、说明和原请求。" foot={m.canAudit ? <Link className="rd-link" href="/platform/audit?domain=E">到操作记录与审批核对</Link> : undefined} items={items} />
     {closing && (closing.payload.kind === "device" || closing.payload.kind === "risk") && <CommandClosureModal label={closing.label} commandKey={closing.commandKey} createdAt={closing.createdAt}
       facts={<>{closing.payload.kind === "device" && <Fact k="原状态">{closing.payload.input.before}</Fact>}<Fact k="原理由">{closing.payload.input.reason}</Fact></>}
       onClose={() => setClosing(null)} onSubmit={async evidence => {

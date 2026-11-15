@@ -19,7 +19,7 @@ import { BlockState, Button, Conclusion, ConfigList, ConfigRow, Explain, Fact, F
   Modal, ReleaseBody, ScaleBar, SegmentBar, Stat, StatBand, StatusTag, StepBar, Table, TableMessage, Td, Th, Tr, TrendLines } from "@/app/components/rd";
 import type { EViewCtx, McSpec } from "./types";
 import { E3Manual } from "./e3-manual";
-import { MissingProposalReleaseModal, PROPOSAL_END, RecoveryPanel, eReadError, type RecoveryItem } from "./e-command-check";
+import { MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, type RecoveryItem } from "./e-command-check";
 
 /** 批准资格的真实路径（后端 A2：不同于发起人、有批准权、能访问 E 域；单项另要 E3 读权）。 */
 export const E3_APPROVER_SINGLE = "另一位有批准权限、能查看这页的管理员在「操作记录与审批」批准后生效，发起人不能自批；批准前规则不变。";
@@ -188,12 +188,12 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const pendingList = E3_PROPOSALS.filter(p => p.state === "pending");
   const items: RecoveryItem[] = [
     ...E3_PROPOSALS.map(p => {
-      const state = p.state === "pending" ? { tag: "待审批", tone: "progress" as const, line: "等另一位管理员批准；批准前按现在的规则执行。" }
-        : p.state === "unknown" ? { tag: "结果未知", tone: "warn" as const, line: "不知道审批单建没建成。可以查询原结果，或按原请求重试，不会重复建单。" }
-          : p.state === "submitted" ? { tag: "已提交，状态未查到", tone: "warn" as const, line: "审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。" }
-            : p.state === "expired" ? e3Proposals.missing.includes(p.commandKey) ? { tag: "没有建成", tone: "warn" as const, line: "按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" }
-              : { tag: "结果未知", tone: "warn" as const, line: "已超过 24 小时，不能再重试；先查询原结果。" }
-              : { tag: "已驳回", tone: "neutral" as const, line: "规则没有变化。要改请重新提交。" };
+      const state = p.state === "pending" ? { tag: "待审批", tone: "progress" as const, line: "等另一位管理员批准，批准前按现在的规则执行。" }
+        : p.state === "unknown" ? { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.unknown }
+          : p.state === "submitted" ? { tag: "已提交，状态未查到", tone: "warn" as const, line: RECOVERY_LINE.created }
+            : p.state === "expired" ? e3Proposals.missing.includes(p.commandKey) ? { tag: "没有建成", tone: "warn" as const, line: RECOVERY_LINE.missing }
+              : { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.expired }
+              : { tag: "已驳回", tone: "neutral" as const, line: "规则没有变化，要改请重新提交。" };
       return { key: p.state === "pending" ? `waiting:${p.id}` : p.id, object: what(p), tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line,
         actions: p.state === "rejected" ? undefined : <>
           {query(p, p.state === "pending" ? "查询审批结果" : "查询原结果")}
@@ -205,14 +205,14 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     ...e3Proposals.legacy.map(r => {
       const names = [...new Set(r.fingerprint.split("|")[1].split(",").map(keyName))];
       return { key: r.commandKey, object: `${names.slice(0, 3).join("、")}${names.length > 3 ? ` 等 ${names.length} 项` : ""}`, tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
-        line: "早期版本的提交没有保存改成什么和理由，只能查询原结果，不能重试。",
+        line: "早期提交缺原请求，只能查询，不能重试。",
         actions: E3_RECOVERY.legacy && <Button size="sm" disabled={e3Loading} onClick={() => void E3_RECOVERY.legacy!(r)}>查询原结果</Button>,
         detail: <p>{businessStamp(r.createdAt)} 提交（{zone}）</p> };
     }),
   ];
   const recovery = <>
-    <RecoveryPanel title={`修改还没有结论（${items.length} 条）`} tone={items.every(item => item.key.startsWith("waiting:")) ? "progress" : "warn"}
-      lead={`有结论前，这几项不能再改；时间为${zone}。`} items={items} />
+    <RecoveryPanel title={`${items.length} 项修改还没有结论`} tone={items.every(item => item.key.startsWith("waiting:")) ? "progress" : "warn"}
+      explain={`有结论前，这几项不能再改。点行首的箭头看改了什么、提交时间（${zone}）和理由。`} items={items} />
     {releasing && <MissingProposalReleaseModal label={changeText(releasing)} createdAt={releasing.createdAt} onCancel={() => setReleasing(null)} onConfirm={() => E3_RECOVERY.release(releasing)} />}
   </>;
   const missing = REQUIRED_E3_KEYS.filter((key) => pE(key) === "—");

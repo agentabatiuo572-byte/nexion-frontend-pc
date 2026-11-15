@@ -1,7 +1,7 @@
 "use client";
-import { useState, type ReactNode } from "react";
-import { SearchCheck, ShieldCheck } from "lucide-react";
-import { Button, Check, Facts, Fact, Field, Input, IrreversibleTag, Modal, Notice, Select, StatusTag, Textarea, type StateTone, type Tone } from "@/app/components/rd";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ChevronRight, SearchCheck, ShieldCheck } from "lucide-react";
+import { Button, Check, Explain, Facts, Fact, Field, Input, IrreversibleTag, Modal, Notice, Select, StatusTag, Textarea, type StateTone, type Tone } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { ECommandEvidence, ECommandInvestigation } from "@/lib/admin/e-command-investigation";
@@ -132,40 +132,65 @@ export const PROPOSAL_END: Record<string, { tag: string; tone: StateTone; text: 
   expired: { tag: "已过期", tone: "neutral", text: "过期没人处理，原内容没有生效；需要时重新提交。" },
 };
 
+/** One-line conclusions for recovery rows; the longer wording sits in the row details. */
+export const RECOVERY_LINE = {
+  unknown: "不知道审批单建没建成；先查询，重试不会重复建单。",
+  absent: "现在查不到这张审批单，可以按原请求重试。",
+  expired: "超过 24 小时不能重试，先查询原结果。",
+  created: "审批单已建，进度没查到；只查询，不会再建。",
+  missing: "按原请求查不到，说明没建成；核对后可以解除。",
+  refused: "重试被明确拒绝；核对原因后可以解除。",
+  pending: "等另一位管理员批准，批准前不生效。",
+  direct: "现在的状态不代表原操作的结果，先查询原结果。",
+} as const;
+
 export type RecoveryItem = {
   key: string;
   object: ReactNode;
   tag: ReactNode;
-  /** One sentence: where this record stands and what to do. */
-  line: ReactNode;
-  /** The answer of the last query on this record. */
+  /** One short sentence beside the tag: where this record stands and what to do. */
+  line: string;
+  /** The answer of the last query on this record; opens the row when it changes. */
   note?: ReactNode;
+  /** Identity of the note when it is not plain text, so a new answer still opens the row. */
+  noteKey?: string;
   actions?: ReactNode;
-  /** Original request, reason and request number; opened on demand. */
+  /** Submission time and the longer explanation; opened with the row arrow. */
   detail?: ReactNode;
+  /** Original request and request number, folded under the details. */
+  tech?: ReactNode;
 };
 
-/** All unsettled records of one page in one notice: one row each, three shown until the operator asks for all. */
-export function RecoveryPanel({ title, lead, items, tone = "warn" }: { title: ReactNode; lead?: ReactNode; items: readonly RecoveryItem[]; tone?: StateTone }) {
+/** All unsettled records of one page in one notice: one table-like row each, three shown until the operator asks for all. */
+export function RecoveryPanel({ title, explain, foot, items, tone = "warn" }: { title: ReactNode; explain?: ReactNode; foot?: ReactNode; items: readonly RecoveryItem[]; tone?: StateTone }) {
   const [all, setAll] = useState(false);
   const [open, setOpen] = useState<string[]>([]);
+  const seen = useRef<Record<string, string>>({});
+  const answers = items.map(item => [item.key, typeof item.note === "string" ? item.note : item.noteKey ?? ""] as const);
+  useEffect(() => {
+    const fresh = answers.filter(([key, answer]) => answer && seen.current[key] !== undefined && seen.current[key] !== answer).map(([key]) => key);
+    seen.current = Object.fromEntries(answers);
+    if (fresh.length) setOpen(keys => [...new Set([...keys, ...fresh])]);
+  });
   if (!items.length) return null;
   const shown = all ? items : items.slice(0, 3);
-  return <Notice tone={tone} title={title}>
-    {lead && <p>{lead}</p>}
+  return <Notice tone={tone} title={<>{title}{explain && <Explain label="这些记录怎么处理" content={explain} />}</>}>
     <ul className="e-recovery-list">{shown.map(item => {
       const expanded = open.includes(item.key);
-      return <li key={item.key} className="e-recovery-row">
-        <div className="e-recovery-main">
-          <span className="e-recovery-head"><strong className="e-recovery-object">{item.object}</strong>{item.tag}</span>
-          <span className="e-recovery-line">{item.line}</span>
-          {item.note && <span className="e-recovery-note" role="status">{item.note}</span>}
-        </div>
-        <div className="e-recovery-actions">{item.actions}{item.detail && <Button size="sm" variant="ghost" aria-expanded={expanded} onClick={() => setOpen(keys => expanded ? keys.filter(key => key !== item.key) : [...keys, item.key])}>{expanded ? "收起" : "详情"}</Button>}</div>
-        {item.detail && expanded && <div className="e-recovery-detail">{item.detail}</div>}
+      const toggle = () => setOpen(keys => expanded ? keys.filter(key => key !== item.key) : [...keys, item.key]);
+      return <li key={item.key} className="e-recovery-row" data-open={expanded ? "" : undefined}>
+        <button type="button" className="e-recovery-toggle" aria-expanded={expanded} aria-label={expanded ? "收起这条" : "展开这条"} onClick={toggle}><ChevronRight size={14} aria-hidden /></button>
+        <strong className="e-recovery-object">{item.object}</strong>
+        <span className="e-recovery-tag">{item.tag}</span>
+        <span className="e-recovery-line" title={item.line}>{item.line}</span>
+        <span className="e-recovery-actions">{item.actions}</span>
+        {expanded && <div className="e-recovery-detail">{item.detail}{item.note && <p role="status">{item.note}</p>}{item.tech}</div>}
       </li>;
     })}</ul>
-    {items.length > 3 && <Button size="sm" variant="ghost" className="e-recovery-more" aria-expanded={all} onClick={() => setAll(!all)}>{all ? "只看前 3 条" : `查看全部（${items.length} 条）`}</Button>}
+    {(items.length > 3 || foot) && <div className="e-recovery-foot">
+      {items.length > 3 && <Button size="sm" variant="ghost" aria-expanded={all} onClick={() => setAll(!all)}>{all ? "只看前 3 条" : `展开全部 ${items.length} 条`}</Button>}
+      {foot}
+    </div>}
   </Notice>;
 }
 

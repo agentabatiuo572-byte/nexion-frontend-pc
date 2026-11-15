@@ -20,7 +20,7 @@ import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { BlockState, Button, Change, Check, Fact as RdFact, Facts, Fold, IconButton, IrreversibleTag, Modal, MoreMenu, Notice, RatioBar, ReleaseBody, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import { E5_STATES } from "./e5-device-state";
-import { ClosureContact, CommandClosureModal, CommandOutcomeLine, MissingProposalReleaseModal, PROPOSAL_END, RecoveryPanel, closureOpen, eReadError, type CommandOutcome, type RecoveryItem } from "./e-command-check";
+import { ClosureContact, CommandClosureModal, CommandOutcomeLine, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, closureOpen, eReadError, type CommandOutcome, type RecoveryItem } from "./e-command-check";
 import type { EViewCtx } from "./types";
 
 function Fact({ label, value, mono, copy }: { label: string; value?: ReactNode; mono?: boolean; copy?: boolean }) {
@@ -163,28 +163,30 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
   };
   const items: RecoveryItem[] = [
     ...phonePending.map(r => ({ key: r.commandKey, object: r.label, tag: <StatusTag tone="warn">在手机页待核对</StatusTag>,
-      line: "原操作在手机算力配置保留，到那里核对；相关设备或整个用户先暂停新操作。",
-      actions: <Link className="rd-link" href="/devices/compute-config?tab=phones">手机算力配置</Link> })),
+      line: "原操作在手机页，到那里核对。",
+      actions: <Link className="rd-link" href="/devices/compute-config?tab=phones">手机算力配置</Link>,
+      detail: <p>原操作在手机算力配置保留；相关设备或整个用户先暂停新操作。</p> })),
     ...old.map(row => ({ key: row.commandKey, object: "升级前的设备操作", tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
-      line: "这条记录没有保存原请求，不能原样重试；请到操作记录与审批核对。",
+      line: "旧记录缺原请求，不能重试；到操作记录与审批核对。",
       actions: <Button size="sm" disabled={!!busy} onClick={() => void refresh()}>刷新设备列表</Button>,
       detail: <Facts><Fact label="原请求编号" value={row.commandKey} mono copy /></Facts> })),
     ...records.map(record => {
       const expired = isRetryExpired(record), proposal = PROPOSALS.includes(record.intent), refused = rejected[record.commandKey];
-      const state = refused ? { tag: "重试被拒绝", tone: "danger" as const, line: "按原请求重试被明确拒绝；核对原操作的结果后，可以解除这条记录。" }
-        : proposal && record.proposalStatus === "pending" ? { tag: "待审批", tone: "progress" as const, line: `审批单 ${record.receivedTicketId ?? ""} 等另一位管理员批准；批准前设备状态不变。` }
-          : proposal && record.receivedTicketId ? { tag: "已提交，状态未查到", tone: "warn" as const, line: "审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。" }
-            : proposal && record.proposalAbsent ? expired ? { tag: "没有建成", tone: "warn" as const, line: "按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" }
-              : { tag: "结果未知", tone: "warn" as const, line: "按原请求查不到这张审批单，现在还没建成；可以按原请求重试，不会重复建单。" }
-              : expired ? { tag: "结果未知", tone: "warn" as const, line: proposal ? "已超过 24 小时，不能再重试；先查询原结果。" : "已超过 24 小时，不能再重试；先查询原结果，现在的设备状态不代表原操作的结果。" }
-                : { tag: "结果未知", tone: "warn" as const, line: proposal ? "不知道审批单建没建成。可以查询原结果，或按原请求重试，不会重复建单。" : "现在的设备状态不代表原操作的结果。先查询原结果，或按原请求重试，不会重复执行。" };
+      const state = refused ? { tag: "重试被拒绝", tone: "danger" as const, line: RECOVERY_LINE.refused, more: "按原请求重试被明确拒绝；核对原操作的结果后，可以解除这条记录。" }
+        : proposal && record.proposalStatus === "pending" ? { tag: "待审批", tone: "progress" as const, line: RECOVERY_LINE.pending, more: `审批单 ${record.receivedTicketId ?? ""}；批准前设备状态不变。` }
+          : proposal && record.receivedTicketId ? { tag: "已提交，状态未查到", tone: "warn" as const, line: RECOVERY_LINE.created, more: "审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。" }
+            : proposal && record.proposalAbsent ? expired ? { tag: "没有建成", tone: "warn" as const, line: RECOVERY_LINE.missing, more: "按原请求查不到这张审批单，说明没建成；确认解除时会再查一次。" }
+              : { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.absent, more: "按原请求查不到这张审批单，现在还没建成；按原请求重试不会重复建单。" }
+              : expired ? { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.expired, more: proposal ? "已超过 24 小时，不能再重试；查不到这张审批单时可以确认解除。" : "已超过 24 小时，不能再重试；现在的设备状态不代表原操作的结果。" }
+                : { tag: "结果未知", tone: "warn" as const, line: proposal ? RECOVERY_LINE.unknown : RECOVERY_LINE.direct, more: proposal ? "可以查询原结果，或按原请求重试；重试用原来的请求，不会重复建单。" : "可以查询原结果，或按原请求重试；重试用原来的请求，不会重复执行。" };
       const releasable = proposal && expired && record.proposalAbsent && !record.receivedTicketId && !record.proposalStatus;
       const retryable = !refused && !expired && !(proposal && record.receivedTicketId);
       const note = busy === record.commandKey && !retryable ? "正在查询…" : direct(record)
         ? <>{outcomes[record.commandKey] ? <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={expired} /> : readResults[record.commandKey]}{!canInvestigate && closureOpen(outcomes[record.commandKey], expired) && <ClosureContact />}{errorKey === record.commandKey && error && error !== E5_UNKNOWN && <span role="alert">{error}</span>}</>
         : errorKey === record.commandKey && error && error !== E5_UNKNOWN ? error : queryNotes[record.commandKey];
       return { key: proposal && record.proposalStatus === "pending" ? `waiting:${record.commandKey}` : record.commandKey,
-        object: `${record.label} · ${record.device.serial}`, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line, note,
+        object: <span title={`${record.label} · ${record.device.serial}`}>{record.label} · {record.device.serial.slice(-8)}</span>, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line, note,
+        noteKey: [readResults[record.commandKey], outcomes[record.commandKey] ? JSON.stringify(outcomes[record.commandKey]) : "", errorKey === record.commandKey ? error : ""].join("|").replace(/^\|+$/, ""),
         actions: <>
           {!refused && <Button size="sm" disabled={!!busy} onClick={() => void queryRow(record)}>{proposal && record.proposalStatus === "pending" ? "查询审批结果" : "查询原结果"}</Button>}
           {retryable && <Button size="sm" loading={busy === record.commandKey} disabledReason={!allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : undefined} onClick={() => { void execute(record, true).catch(() => { /* The record row displays this failure. */ }); }}>按原请求重试</Button>}
@@ -192,16 +194,14 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
           {refused && <Button size="sm" variant="primary" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>解除待确认</Button>}
           {releasable && <Button size="sm" variant="primary" disabled={!!busy} onClick={() => setMissing(record)}>确认解除</Button>}
         </>,
-        detail: <Facts>
-          <Fact label="用户" value={record.device.user} /><Fact label="提交时间" value={formatBusinessTimeCompact(new Date(record.createdAt).toISOString())} />
-          <Fact label="操作理由" value={record.reason} /><Fact label="原请求编号" value={record.commandKey} mono copy />
-          <Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono />
-        </Facts> };
+        detail: <>
+          <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString())} 提交 · {record.device.user} · 理由：{record.reason}</p>
+          <p>{state.more}</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact label="实例号" value={record.device.serial} mono /><Fact label="原请求编号" value={record.commandKey} mono copy /><Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono /></Facts></Fold> };
     }),
   ];
   return <CommandsContext.Provider value={{ records, phoneBlocks, legacyBlocked: old.length > 0 || !!error && !records.length && !old.length && error.includes("旧操作"), busy, execute, check, canInvestigate, refresh, toast }}>
-    <RecoveryPanel title={`设备操作还没有结论（${items.length} 条）`} tone={items.every(item => item.key.startsWith("waiting:")) ? "progress" : "warn"}
-      lead="有结论前，相关设备或用户不能做新操作。" items={items} />
+    <RecoveryPanel title={`${items.length} 项设备操作还没有结论`} tone={items.every(item => item.key.startsWith("waiting:")) ? "progress" : "warn"}
+      explain="有结论前，相关设备或用户不能做新操作。点行首的箭头看提交时间、说明和原请求。" items={items} />
     {error && !records.length && <Notice tone="warn" title={error} />}
     {closing && <CommandClosureModal label={closing.label} commandKey={closing.commandKey} createdAt={closing.createdAt}
       facts={<>{closing.intent === "pause" || closing.intent === "resume" ? <Fact label="用户" value={closing.device.user} /> : <><Fact label="设备" value={closing.device.deviceName} /><Fact label="实例号" value={closing.device.serial} mono /></>}<Fact label="原理由" value={closing.reason} /></>}
