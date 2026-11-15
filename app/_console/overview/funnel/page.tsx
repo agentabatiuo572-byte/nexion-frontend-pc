@@ -48,7 +48,7 @@ const caliberNote = () => (
   <>
     <p>同一批用户按时间先后走四步：注册 → 首购 → 锁定计划 → 提现，后一步必须晚于前一步，同一时刻不算。</p>
     <p>首购：这次注册之后最早的一笔购买。锁定计划：首购之后第一次锁定计划，或第二次购买（二次购机也算）。提现：提交了提现申请，不代表已经到账。</p>
-    <p>人数按用户去重。转化率 = 这一步人数 ÷ 上一步人数。日期按平台业务日（{businessZone().label}）算，不按你电脑的时区。</p>
+    <p>同一人只算一次。转化率 = 这一步人数 ÷ 上一步人数。日期按平台业务日（{businessZone().label}）算，不按你电脑的时区。</p>
     <p>{PROTECT_NOTE}</p>
   </>
 );
@@ -111,7 +111,7 @@ function StageTable({ stages }: { stages: readonly B3Stage[] }) {
     <Table label="各步骤转化数据" className="b3-stage-table">
       <thead>
         <tr>
-          <Th>步骤</Th><Th>用户阶段<Explain label="用户阶段的说明" content="内部的用户阶段编号（L1–L5），和运营阶段 P1–P6 不是一回事。" /></Th><Th align="right">用户数</Th><Th align="right">上一步人数</Th><Th align="right">转化率</Th>
+          <Th>步骤</Th><Th>用户阶段<Explain label="用户阶段的说明" content="系统给用户分的阶段（L1–L5），和运营阶段 P1–P6 不是一回事。" /></Th><Th align="right">用户数</Th><Th align="right">上一步人数</Th><Th align="right">转化率</Th>
           <Th align="right">与上月比较<Explain label="与上月比较的说明" content="系统目前不计算月比较，这一列都是「—」。看变化请用下面「按注册周看转化走势」。" /></Th>
           <Th>对应事件</Th>
         </tr>
@@ -153,10 +153,10 @@ function AuxStats({ aux }: { aux: B3Dashboard["auxMetrics"] }) {
         explain={<><p>注册之后看过商城的人 ÷ 注册人数，按人算，不是访问次数。</p><p>看它能判断：新用户有没有找到商城入口。偏低先查注册后的引导。</p></>} />
       <Stat tone="role-3" icon={ShoppingCart} label="浏览商城后首购" value={value("purchaseFromStoreRate", aux.purchaseFromStoreRate)}
         sub={frac("purchaseFromStoreRate", aux.purchaseFromStoreNumerator, aux.purchaseFromStoreDenominator)}
-        explain={<><p>按注册 → 看商城 → 购买的先后算：看过商城后又购买的人 ÷ 看过商城的人。这一单不一定是首购：先买过、再看商城、又买一次，也算。</p><p>看它能判断：进了商城的人买不买。偏低先看商品和价格。主漏斗的首购不要求先看商城，所以两个人数可能不同。</p></>} />
+        explain={<><p>看过商城后又购买的人 ÷ 看过商城的人。这一单不一定是首购，先买过、再看商城又买的也算。</p><p>看它能判断：进了商城的人买不买。偏低先看商品和价格。主漏斗的首购不要求先看商城，所以两个人数可能不同。</p></>} />
       <Stat tone="role-3" icon={Zap} label={`首笔收益到账（${aux.day0WindowSeconds} 秒内）`} value={value("day0AccessRate", aux.day0AccessRate)}
         sub={hidden("day0AccessRate") ? "少于 5 人，不显示" : withTarget(frac("day0AccessRate", aux.day0Numerator, aux.day0Denominator), aux.day0Target)}
-        explain={<><p>注册后收到首笔收益、且收益事件记的到账耗时不超过 {aux.day0WindowSeconds} 秒的人 ÷ 注册人数。不按收益时间减注册时间算，也不是「注册当天」；时限在「用户行为事件」里设置。</p><p>看它能判断：新用户是不是很快看到收益。目标只用来对照，不会拦截任何操作。</p></>} />
+        explain={<><p>注册后首笔收益在 {aux.day0WindowSeconds} 秒内到账的人 ÷ 注册人数。用时以收益记录上写的为准，不是收益时间减注册时间，也不是「注册当天」；时限在「用户行为事件」里设置。</p><p>看它能判断：新用户是不是很快看到收益。目标只用来对照，不会拦截任何操作。</p></>} />
       <Stat tone="role-3" icon={CalendarCheck} label="第 7 天仍活跃" value={value("day7Retention", aux.day7Retention)}
         sub={hidden("day7Retention") ? (aux.day7Mature ? "少于 5 人，不显示" : "还没有注册满 7 天的用户") : withTarget(frac("day7Retention", aux.day7Numerator, aux.day7Denominator), aux.day7Target)}
         explain={<><p>只算注册满 7 天的人：注册后第 7 天当天打开过 App 的人 ÷ 注册满 7 天的人。不是第 7 天以后任意一天活跃。</p><p>看它能判断：用户第一周之后还留不留下。</p></>} />
@@ -371,7 +371,7 @@ export default function FunnelPage() {
       action={<Button icon={<RefreshCw size={14} aria-hidden />} loading={loading && !!data} disabled={loading} onClick={() => void reload()}>刷新</Button>}
       onClear={() => { setExportError(""); setFilters({ cohort: ALL, phase: ALL, ref: ALL }); }}
       canClear={filtered}
-      sort={<span className="rd-filter-result">改条件立即重新读取，不自动刷新<Explain label="读取方式说明" content="改筛选或换走势的步骤都会重新读取一次。查看会尽量记一条操作记录，记不上也照常显示。正在读取时先显示上一次的结果，读完替换。" /></span>}>
+      sort={<span className="rd-filter-result">不自动刷新<Explain label="读取方式说明" content="改筛选或换走势的步骤会立即重新读取，读取时先显示上一次的结果。查看会尽量记一条操作记录，记不上也照常显示。" /></span>}>
       <FilterField label="注册批次">
         <Select aria-label="注册批次" value={isAll(filters.cohort) ? "" : filters.cohort} onChange={setFilter("cohort")}
           options={[{ value: "", label: "全部批次" }, ...options.cohorts.map((value) => ({ value, label: value === "SYSTEM" ? "系统默认" : value }))]} />
@@ -428,7 +428,7 @@ export default function FunnelPage() {
         {filterBar}
         {exportNotice}
         <Conclusion state="unknown" icon={Filter}
-          hint={coverage ? "事件数据补齐前不出结果，可到「用户行为事件」核对事件上报。" : "换一个注册批次、阶段或渠道再看。"}>
+          hint={coverage ? "事件数据补齐前算不出，可到「用户行为事件」查看。" : "换一个注册批次、阶段或渠道再看。"}>
           用户转化：当前条件下暂时无法计算
         </Conclusion>
         <BlockState state="empty" title={coverage ? "部分事件缺少用户或时间，已停止计算" : "当前筛选下没有注册用户"} detail={data.message || data.reason || "用户行为数据不完整。"} />
