@@ -235,7 +235,7 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                 </li>
                 <li>
                   <span>
-                    <Explain label="进行中的提现怎么算" content="所有还没结束的提现单：等审核、打款中，也包括被拒或打款失败、钱还没退回的单，测试账号也算。所以比待处理里的待审核提现多。">进行中的提现</Explain>
+                    <Explain label="进行中的提现怎么算" content="所有还没结束的提现单：等审核、打款中，也包括被拒或打款失败、钱还没退回的单，测试账号也算。所以比待处理里的待审核提现多。">进行中的提现（含待退回）</Explain>
                   </span>
                   <span className="cc-num">{fmtNum(ledger.queueBacklogCount)} 笔，{usdt(ledger.queueBacklogUsd)}</span>
                 </li>
@@ -267,8 +267,8 @@ function flowConclusion(history: B2LiquidityHistory) {
 
 /** 经营数据卡的分项：B36 这一期的入金渠道、提现构成和此刻没完成的提现。读不到时卡上已经写了重试，这里不再写。 */
 const DEPOSIT_CHANNELS = [
-  ["bep20Usdt", "BEP20 链上"], ["erc20Usdt", "ERC20 链上"], ["trc20Usdt", "TRC20 链上"], ["bankUsdt", "银行卡"],
-  ["externalDirectUsdt", "外部直付购机"], ["legacyCardUsdt", "旧银行卡充值"], ["otherUsdt", "其他"],
+  ["bep20Usdt", "BEP20 链上"], ["erc20Usdt", "ERC20 链上"], ["trc20Usdt", "TRC20 链上"], ["bankUsdt", "银行卡支付、银行转账"],
+  ["externalDirectUsdt", "外部直付购机"], ["legacyCardUsdt", "国际卡刷卡（已停用）"], ["otherUsdt", "其他"],
 ] as const;
 
 function PeriodDetail({ period, summary }: { period: B0SummaryPeriod; summary: B0BusinessSummary }) {
@@ -299,7 +299,7 @@ function PeriodDetail({ period, summary }: { period: B0SummaryPeriod; summary: B
             </>}
             {withdrawals.inTransit && (
               <li>
-                <span><Explain label="未到账的提现怎么算" content={`此刻用户还没收到钱的提现：等审核、冷却中、打款中、冻结和打款异常的单，不含测试账号，不随时段变。被拒、打款失败等着退回的单不算，所以和「风险与开关」里进行中的提现不一样。数据时间 ${formatBusinessTimeCompact(withdrawals.inTransit.asOf)}。`}>未到账的提现</Explain></span>
+                <span><Explain label="等着到账的提现怎么算" content={`此刻还在走、用户还没收到钱的提现：等审核、冷却中、打款中、冻结和打款异常的单，不含测试账号，不随时段变。被拒、打款失败等着退回的单不算，所以比「风险与开关」里进行中的提现少。数据时间 ${formatBusinessTimeCompact(withdrawals.inTransit.asOf)}。`}>等着到账的提现</Explain></span>
                 <span className="cc-num">{fmtNum(withdrawals.inTransit.count)} 笔，{usdtText(withdrawals.inTransit.amountUsdt)}</span>
               </li>
             )}
@@ -310,11 +310,15 @@ function PeriodDetail({ period, summary }: { period: B0SummaryPeriod; summary: B
   );
 }
 
-export function FlowFold({ blocks, period, summary, history, historyError, historyRetrying, onRetryHistory, topupOnCard, netFlow24h, clock, refreshKey, reach, open, onOpenChange }: FoldProps & {
+export function FlowFold({ blocks, period, summary, summaryError, summaryLoading, onRetrySummary, history, historyError, historyRetrying, onRetryHistory, topupOnCard, netFlow24h, clock, refreshKey, reach, open, onOpenChange }: FoldProps & {
   blocks: B0Blocks;
   /** 经营数据选中的时段和它读到的数，读不到时为 null。 */
   period: B0SummaryPeriod;
   summary: B0BusinessSummary | null;
+  /** 经营摘要还没读到或读失败：本期入金渠道和提现构成的位置写加载中或读取失败，不留空折叠。 */
+  summaryError: string | null;
+  summaryLoading: boolean;
+  onRetrySummary: () => void;
   history: B2LiquidityHistory | null;
   historyError: string | null;
   historyRetrying: boolean;
@@ -337,7 +341,10 @@ export function FlowFold({ blocks, period, summary, history, historyError, histo
   const quiet = blocks.netFlow && history !== null && !moved && !historyError;
   const today = (
     <>
-      {summary && <PeriodDetail period={period} summary={summary} />}
+      {summary ? <PeriodDetail period={period} summary={summary} />
+        : (blocks.deposits || blocks.withdrawals) && (summaryError
+          ? <BlockState compact state="error" title="入金和提现明细读取失败" detail={summaryError} onRetry={onRetrySummary} retrying={summaryLoading} />
+          : <BlockState compact state="loading" title="正在读取…" />)}
       {blocks.topup && (
         <section aria-label="今日充值">
           <h3 className="cc-sub">今日充值</h3>

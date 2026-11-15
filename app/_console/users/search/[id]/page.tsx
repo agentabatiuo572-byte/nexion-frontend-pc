@@ -60,6 +60,7 @@ import {
   riskBandTone,
 } from "@/lib/admin/c1-detail-display";
 import { NotificationTimeEvidenceDrawer, pendingCorrections, type PendingCorrection } from "./notification-time-evidence";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/fund-command-check";
 import { PaymentSecurityBlock, type PaymentSecurityState } from "@/app/components/payment-security/payment-security-block";
 
 /**
@@ -172,7 +173,7 @@ const ORDER_STATE: Record<string, readonly [string, "ok" | "warn" | "danger" | "
 };
 /** 充值状态码按后端充值流水的三组上色（OpsFinanceService TOPUP_FLOW_STATUSES），最近一笔的银行卡订单状态按银行卡订单页分组：待确认、待付款是处理中，异常和待核对是要核对的；已入账和不认识的码不上色。 */
 const DEPOSIT_TONE: Record<string, "progress" | "danger"> = Object.fromEntries([
-  ...["CREATED", "PENDING", "CONFIRMING", "WAITING_CONFIRMATION", "CREATING", "AWAITING_PAYMENT", "PROCESSING", "RETURN_PENDING"].map((code) => [code, "progress"] as const),
+  ...["CREATED", "PENDING", "CONFIRMING", "WAITING_CONFIRMATION", "CREATING", "AWAITING_PAYMENT", "PROCESSING", "RETURN_PENDING", "OPEN"].map((code) => [code, "progress"] as const),
   ...["UNKNOWN", "RECEIPT_REVIEW", "MISMATCH_REVIEW", "LATE_REVIEW", "MANUAL_REVIEW"].map((code) => [code, "danger"] as const),
   ...["FAILED", "DECLINED", "EXPIRED", "REJECTED", "ABNORMAL", "CHARGEBACK", "DISPUTED", "CHARGEBACK_REVIEW", "CHARGEBACK_REFUNDED", "CHARGEBACK_RECOVERED", "CHARGEBACK_PARTIAL"].map((code) => [code, "danger"] as const),
 ]);
@@ -188,7 +189,7 @@ const DEPOSIT_STATUS: Record<string, string> = {
   ABNORMAL: "账务异常", CHARGEBACK: "拒付待处理", DISPUTED: "拒付争议中", CHARGEBACK_REVIEW: "拒付复核中", CHARGEBACK_REFUNDED: "拒付已退款",
   CHARGEBACK_RECOVERED: "拒付已追回", CHARGEBACK_PARTIAL: "拒付部分追回", CREATING: "创建中", AWAITING_PAYMENT: "待付款", UNKNOWN: "结果未知",
   CANCELLED: "已取消", RETURNED: "已退回", RECEIPT_REVIEW: "回单待核对", MISMATCH_REVIEW: "信息不一致待核对", LATE_REVIEW: "逾期回单待核对",
-  RETURN_PENDING: "退回处理中", MANUAL_REVIEW: "待人工核对",
+  RETURN_PENDING: "退回处理中", MANUAL_REVIEW: "待人工核对", OPEN: "转账待对账",
 };
 const DIRECTION: Record<string, string> = { IN: "收入", OUT: "支出" };
 const EXPIRED_TEXT = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
@@ -441,7 +442,7 @@ const DEPOSIT_RECORD = { title: "充值记录", sub: (row: JsonRecord) => mono(r
 const LATEST_DEPOSIT_RECORD = { title: "最近一笔充值", sub: (row: JsonRecord) => mono(row.depositNo), facts: (row: JsonRecord) => [
   ["充值金额", amountText(row.amount, row.asset)],
   ...(row.paymentCurrency != null && asText(row.paymentCurrency, "") !== asText(row.asset, "")
-    ? [["用户付款", row.paymentAmount == null ? `${assetText(row.paymentCurrency)}，金额没有记下` : amountText(row.paymentAmount, row.paymentCurrency)] as const] : []),
+    ? [["用户付款", row.paymentAmount == null ? `${assetText(row.paymentCurrency)}，这里看不到付款金额` : amountText(row.paymentAmount, row.paymentCurrency)] as const] : []),
   ["状态", depositStatus(row)], ["来源", asText(row.channel)], ["发起时间", detailTime(row.createdAt)],
 ] as const };
 const RECORD: Record<RecordKind, { title: string; sub: (row: JsonRecord) => ReactNode; facts: (row: JsonRecord) => readonly (readonly [string, ReactNode])[] }> = {
@@ -451,7 +452,7 @@ const RECORD: Record<RecordKind, { title: string; sub: (row: JsonRecord) => Reac
   payment: { title: "支付方式", sub: (row) => `${asText(row.brand)} ···· ${asText(row.last4)}`, facts: (row) => [
     ["状态", paymentTag(row)], ["提供商", asText(row.provider)], ["有效期", asText(row.expiryLabel, "无到期信息")],
     ["历史试用关联", row.trialGuard ? `历史试用记录 · ${asText(row.trialRefId, "关联试用")}` : "否"],
-    ["解绑时间", shortTime(row.unboundAt)], ["支付商撤销状态", asText(row.pspRevokeStatus)], ["撤销命令号", asText(row.revokeCommandNo)],
+    ["解绑时间", shortTime(row.unboundAt)], ["支付商撤销状态", asText(row.pspRevokeStatus)], ["撤销请求编号", asText(row.revokeCommandNo)],
     ["重试次数", asText(row.revokeAttempts)], ["撤销时限", shortTime(row.revokeDeadlineAt)], ["最近错误", asText(row.revokeLastError)],
   ] },
   deposit: DEPOSIT_RECORD,
@@ -860,7 +861,7 @@ export default function UserDetailPage() {
         if (!unknown && !retained) c1UserCommands.forget(slot);
         syncPending();
         if (unknown) {
-          toast.warn("结果未确认，不要重复操作", "到页面上方读回核对或按原操作重试。");
+          toast.warn("结果未知，不要重复操作", "到页面上方读回现在的状态，或按原请求重试。");
           return;
         }
         if (isPermissionDenied(cause)) throw cause;
@@ -920,11 +921,11 @@ export default function UserDetailPage() {
   };
 
   const busyReason = loading ? "正在重新读取，读完再操作" : actionPending ? `正在执行：${actionPending}` : undefined;
-  const nicknameBlock = pendingCommands.some((command) => command.kind === "nickname") ? "重置昵称的结果未确认，先到页面上方核对" : busyReason;
+  const nicknameBlock = pendingCommands.some((command) => command.kind === "nickname") ? "重置昵称的结果未知，先到页面上方核对" : busyReason;
   const methodBlock = (method: UserPaymentMethod) => pendingCommands.some((command) => command.methodId === method.id)
-    ? "这张卡有结果未确认的操作，先到页面上方核对"
+    ? "这张卡有结果未知的操作，先到页面上方核对"
     : paymentLoading ? "正在读取支付方式，读完再操作" : busyReason;
-  const deviceBlock = (deviceId: number) => pendingCommands.some((command) => command.deviceId === deviceId) ? "这台设备有结果未确认的操作，先到页面上方核对" : busyReason;
+  const deviceBlock = (deviceId: number) => pendingCommands.some((command) => command.deviceId === deviceId) ? "这台设备有结果未知的操作，先到页面上方核对" : busyReason;
 
   const openNicknameReset = () => setActionConfirm({ briefKind: "record",
     action: `重置昵称 · ${displayNickname}`,
@@ -1025,11 +1026,11 @@ export default function UserDetailPage() {
     ? { id, label: `${name} · 加载失败` }
     : count ? { id, label: `${name} ${count}`, alert: true } : { id, label: waiting ? `${name} · ${waiting}` : name };
   const sections: SectionNavItem[] = [
-    securityPresent && navItem("security", "安全", securityFailed, securityIssues > 0 ? `${securityIssues} 项` : "", paymentSecurity.pending ? "解除结果待确认" : ""),
+    securityPresent && navItem("security", "安全", securityFailed, securityIssues > 0 ? `${securityIssues} 项` : "", paymentSecurity.pending ? "解除结果未知" : ""),
     fundsPresent && navItem("funds", "资金", fundsFailed, withdrawalExceptions > 0 ? `${withdrawalExceptions} 笔` : "", withdrawalsWaiting > 0 ? `${withdrawalsWaiting} 笔待处理` : ""),
     devicesPresent && navItem("devices", "设备与收益", devicesFailed, deviceExceptions > 0 ? `${deviceExceptions} 台` : ""),
     teamPresent && navItem("team", "团队与互动", teamFailed, ""),
-    recordsPresent && navItem("records", "记录", recordsFailed, failedPushCount + orderExceptions > 0 ? `${failedPushCount + orderExceptions} 条` : "", corrections.length > 0 ? "校正结果待确认" : ""),
+    recordsPresent && navItem("records", "记录", recordsFailed, failedPushCount + orderExceptions > 0 ? `${failedPushCount + orderExceptions} 条` : "", corrections.length > 0 ? "校正结果未知" : ""),
   ].filter((item) => item !== false);
   const nav = useSectionNav(sections, { ready: layoutReady, onReveal: showFold });
   const foldProps = (group: string, alert: boolean) => ({
@@ -1191,42 +1192,52 @@ export default function UserDetailPage() {
   ].filter((item): item is [string, string] => Array.isArray(item));
 
   const auditLink = canReadA2 && <> <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录与审批核对</Link></>;
-  const pendingNotices = pendingCommands.map((command) => {
-    const expired = command.expiresAt <= Date.now();
-    // 重试和普通入口一样看现在的入口和权限（OP-123）。没权限只留核对，提示和记录都留着。
-    const device = command.kind === "replace" || command.kind === "recycle";
-    const writable = device ? canWriteC2 : canWriteC1;
-    const hasWrite = device ? hasC2Write : hasC1Write;
-    const nextStep = expired ? `${EXPIRED_TEXT}。` : command.legacy
-      ? "这是升级前发出的操作，没有存下原理由，不能重试，先核对原操作有没有生效。"
-      : !writable
-        ? hasWrite ? "客服入口不能重试，到用户详情处理。" : "这个账号现在没有这项操作的权限，不能重试，请有权限的同事处理。"
-        : "按原操作重试用同一个命令号，不会重复执行。";
-    // 能重试时这句只是解释，进问号，提示留一行（DP-06）；不能重试的原因常显。
-    const quietStep = !expired && !command.legacy && writable;
-    return <Notice key={command.fingerprint} tone="warn" title={`${command.label} · 结果未确认`}
-      action={<>
-        <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>读回核对</Button>
-        {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason} onClick={() => void retryPending(command)}>按原操作重试</Button>}
-        {writable && !command.legacy && isExplicitRejection(command.rejection) && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除待确认</Button>}
-      </>}>
-      {shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）<KeepText text={`发出，可能已经生效，不要重复操作。${quietStep ? "" : nextStep}`} />
-      {supportScope && hasWrite && <> <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link></>}
-      {auditLink}
-      <Explain label="技术信息" content={<>{quietStep && <p>{nextStep}</p>}<p>{command.legacy ? `命令号 ${command.commandKey} ｜ 升级前的记录，没有存操作人和理由` : `命令号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`}</p></>} />
-      {pendingNotes[command.fingerprint] && <div><KeepText text={pendingNotes[command.fingerprint]} /></div>}
-    </Notice>;
-  });
-  const correctionNotices = corrections.map((command) => {
-    const expired = command.expiresAt <= Date.now();
-    const id = command.preview.notificationId;
-    return <Notice key={command.fingerprint} tone="warn" title={`校正通知 ${id} 的时间 · 结果未确认`}
-      action={canReadNotificationEvidence && <Button size="sm" onClick={() => setNotificationEvidence({ userKey, authEpoch, id })}>打开时间证据</Button>}>
-      {shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{expired ? `${EXPIRED_TEXT}。` : "在时间证据里按原校正重试。"}
-      {auditLink}
-      <Explain label="技术信息" content={`请求号 ${command.commandKey} ｜ 理由 ${command.reason}`} />
-    </Notice>;
-  });
+  /** 结果未知的操作收成一个面板（和资金页同一个样子）：每条一行，通用说明只在标题问号里说一次；按钮和可用条件照旧。 */
+  const recoveryItems: RecoveryItem[] = [
+    ...pendingCommands.map((command): RecoveryItem => {
+      const expired = command.expiresAt <= Date.now();
+      // 重试和普通入口一样看现在的入口和权限（OP-123）。没权限只留核对，提示和记录都留着。
+      const device = command.kind === "replace" || command.kind === "recycle";
+      const writable = device ? canWriteC2 : canWriteC1;
+      const hasWrite = device ? hasC2Write : hasC1Write;
+      const refused = writable && !command.legacy && isExplicitRejection(command.rejection);
+      const nextStep = expired ? `${EXPIRED_TEXT}。` : command.legacy
+        ? "这是升级前发出的操作，没有存下原理由，不能重试，先核对原操作有没有生效。"
+        : !writable
+          ? hasWrite ? "客服入口不能重试，到用户详情处理。" : "这个账号现在没有这项操作的权限，不能重试，请有权限的同事处理。"
+          : "按原请求重试只重发原请求，不会重复执行。";
+      return {
+        key: command.fingerprint, object: command.label,
+        tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
+        line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先读回现在的状态。" : command.legacy ? "升级前的记录不能重试，先读回现在的状态。" : !writable ? "可能已经生效，这个账号只能读回核对。" : "可能已经生效，先读回现在的状态。",
+        note: pendingNotes[command.fingerprint],
+        actions: <>
+          <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>读回现在的状态</Button>
+          {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason} onClick={() => void retryPending(command)}>按原请求重试</Button>}
+          {refused && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除原操作记录</Button>}
+        </>,
+        detail: <p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{nextStep}
+          {supportScope && hasWrite && <> <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link></>}
+          {auditLink}</p>,
+        tech: <p><Explain label="技术信息" content={command.legacy ? `原请求编号 ${command.commandKey} ｜ 升级前的记录，没有存操作人和理由` : `原请求编号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`}>技术信息</Explain></p>,
+      };
+    }),
+    ...corrections.map((command): RecoveryItem => {
+      const expired = command.expiresAt <= Date.now();
+      const id = command.preview.notificationId;
+      return {
+        key: command.fingerprint, object: `校正通知 ${id} 的时间`,
+        tag: <StatusTag tone="warn">{expired ? "已过期" : "结果未知"}</StatusTag>,
+        line: expired ? "超过 24 小时不能再重试，打开时间证据核对。" : "可能已经生效，在时间证据里按原请求重试。",
+        actions: canReadNotificationEvidence && <Button size="sm" onClick={() => setNotificationEvidence({ userKey, authEpoch, id })}>打开时间证据</Button>,
+        detail: <p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{expired ? `${EXPIRED_TEXT}。` : ""}{auditLink}</p>,
+        tech: <p><Explain label="技术信息" content={`原请求编号 ${command.commandKey} ｜ 理由 ${command.reason}`}>技术信息</Explain></p>,
+      };
+    }),
+  ];
+  const recoveryPanel = <RecoveryPanel title={recoveryTitle(recoveryItems.length)} explainLabel="结果未知怎么处理"
+    explain="这些操作发出后没收到明确结果，可能已经生效。先读回现在的状态；按原请求重试只重发原请求，不会重复执行。有结果前，相关对象不能再操作。"
+    items={recoveryItems} />;
 
   const current = record && (record.kind === "withdrawal" && record.latest ? latestWithdrawal : recordRows[record.kind][record.index]);
   const currentDevice = record?.kind === "device" && current ? current : null;
@@ -1286,7 +1297,7 @@ export default function UserDetailPage() {
   const securityText = securityFailed
     ? joined([securityUnread && "账号锁定和两步验证暂时无法确认", paymentSecurity.state === "failed" && "支付安全暂时无法确认", paymentError && "支付方式加载失败", !paymentError && revokeScanFailed && "撤销状态加载失败"])
     : securityAlert
-      ? joined([summary.locked === true && "账号已锁定", paymentSecurity.state === "exception" && "支付密码有异常", paymentSecurity.pending && "解除结果等待确认", unfinishedRevokes.length > 0 && `${unfinishedRevokes.length} 张卡仍可能被扣款`])
+      ? joined([summary.locked === true && "账号已锁定", paymentSecurity.state === "exception" && "支付密码有异常", paymentSecurity.pending && "支付密码解除结果未知", unfinishedRevokes.length > 0 && `${unfinishedRevokes.length} 张卡仍可能被扣款`])
       : joined([
         detail.sessions && `在线登录设备 ${numberLabel(summary.activeSessionCount)}`,
         detail.sessions && `两步验证${summary.twoFactorEnabled ? "开启" : "关闭"}`,
@@ -1320,7 +1331,7 @@ export default function UserDetailPage() {
   const recordsText = recordsFailed
     ? "有区块加载失败"
     : recordsAlert
-      ? joined([failedPushCount > 0 && `${failedPushCount} 条通知推送失败`, orderExceptions > 0 && `${orderExceptions} 单订单异常`, corrections.length > 0 && "通知校正结果未确认"])
+      ? joined([failedPushCount > 0 && `${failedPushCount} 条通知推送失败`, orderExceptions > 0 && `${orderExceptions} 单订单异常`, corrections.length > 0 && "通知校正结果未知"])
       : joined([
         detail.notifications && `未读 ${numberLabel(detail.notifications.unreadCount)} 条`,
         detail.commerce && `订单 ${numberLabel(detail.commerce.total)} 单`,
@@ -1354,9 +1365,8 @@ export default function UserDetailPage() {
         guideExtra={hiddenNote ? <p>这个账号看不到的区块不显示：{hiddenNote}。</p> : undefined} />
 
       {conclusion}
-      {pendingNotices}
+      {recoveryPanel}
       {writeResultNotice}
-      {correctionNotices}
 
       {kpis.length > 0 && <StatBand label="关键数字">
         {kpis.map((kpi, index) => (

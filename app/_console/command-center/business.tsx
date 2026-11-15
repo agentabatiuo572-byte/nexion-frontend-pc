@@ -134,7 +134,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
             compare={denied(deposits) ? DENIED : moneyCompare(deposits)}
             rows={deposits?.breakdown ? [{ k: "笔数", v: `${fmtNum(deposits.breakdown.count as number)} 笔` }] : []}
             explain={<>
-              <p>算：用户从外部打进平台、已经入账的钱，有链上充值、银行转账、外部直付购机和历史银行卡，按入账时间算。</p>
+              <p>算：用户从外部打进平台、已经入账的钱，有链上充值、越南盾的银行卡支付和银行转账、外部直付购机，以及已停用的国际卡刷卡，按入账时间算。</p>
               <p>不算：用余额买设备、财务注资、调账、待确认和失败的单。各渠道的金额在下面「资金进出」里。</p>
             </>}
             href={link("/finance/recon")}

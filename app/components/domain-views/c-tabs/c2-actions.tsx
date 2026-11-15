@@ -1554,7 +1554,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     <StatBand label="账户操作概况">
       {/* 读不到时四格都写「—」，重试在下面页签里的失败块上，不挂在第一格下（看着像只重试这一格）。 */}
       <Stat tone="role-3" icon={Snowflake} label="冻结中账户" value={statValue(frozenUsers)} unit={frozenUsers === null ? undefined : "个"}
-        explain="现在冻结中的全部账户，含随账户组冻结和充值异常冻结的。" />
+        explain="现在冻结中的全部账户，含多账户风险排查冻结和充值异常冻结的。" />
       <Stat tone="progress" icon={Eye} label="只读视图进行中" value={statValue(activeViews)} unit={activeViews === null ? undefined : "个"}
         sub={longestLeft !== null && activeViews ? `最长剩 ${longestLeft} 分钟` : undefined}
         explain={activeViews ? "「最长剩」按页面读取时算，不会自己倒数，点「刷新」更新。" : "现在打开着的用户数据只读视图。"} onOpen={() => changeTab("views")} openLabel="到用户数据只读视图" />
@@ -1933,7 +1933,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   if (!canReadC2 && !canReadDeletions) {
     return <>
       {header}
-      <BlockState state="denied" title="你的账号不能查看账户操作" detail="需要账户操作或注销申请的查看权限，请超级管理员在「运营账号与权限」里开通。" />
+      <BlockState state="denied" title="你的账号不能查看账户操作" detail="需要账户操作或注销申请的查看权限，请管理员在「运营账号与权限」里开通。" />
     </>;
   }
 

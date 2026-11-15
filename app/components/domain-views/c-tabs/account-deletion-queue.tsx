@@ -429,8 +429,8 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
               <Fact k="审核时间">{formatBusinessTimeCompact(selected.reviewedAt, "—")}</Fact>
               <Fact k="完成时间">{formatBusinessTimeCompact(selected.completedAt, "—")}</Fact>
               {/* 已拒绝时理由就是上面那一行，同一句不写两次（DP-61）。 */}
-              {/* 最近理由和用户申请理由一样时（还没人处理过）不写第二遍。 */}
-              {selected.status !== "BLOCKED" && (selected.reason ?? "").trim() !== (selected.originalReason ?? "").trim() && <Fact k="最近理由">{latestReason(selected)}</Fact>}
+              {/* 没有最近理由（还没人处理过），或和用户申请理由一样时，不写这一项。 */}
+              {selected.status !== "BLOCKED" && (selected.reason ?? "").trim() !== "" && (selected.reason ?? "").trim() !== (selected.originalReason ?? "").trim() && <Fact k="最近理由">{latestReason(selected)}</Fact>}
             </Facts>
           </Panel>}
         </div>}
