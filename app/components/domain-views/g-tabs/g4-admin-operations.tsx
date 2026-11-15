@@ -103,7 +103,7 @@ export function g4ConfigValueShown(key: string, value: unknown) {
 
 const GROUPS: { key: string; title: string; explain: string; keys: readonly string[] }[] = [
   { key: "eligibility", title: "购买资格", explain: "资格只看这三项。以前的入金、旗舰设备、V 等级、邀请码条件已停用；设备商城的购买条件在另一个页面，不受影响。国家、地区限制、预售时间和市场开关另外限制购买。", keys: ["eligibility.enabled", "eligibility.maxPerUser", "eligibility.minAccountAgeDays"] },
-  { key: "presale", title: "预售", explain: "开始和结束时间可以分两次保存；开启预售时两端都要填好，保存「开启预售」时检查。", keys: ["presale.enabled", "presale.showCountdown", "presale.unitPrice", "presale.maxPerUser", "presale.startAt", "presale.endAt"] },
+  { key: "presale", title: "预售", explain: "开始和结束时间可以分两次保存；开启预售时两端都要填好，开始要早于结束，保存「开启预售」时检查。", keys: ["presale.enabled", "presale.showCountdown", "presale.unitPrice", "presale.maxPerUser", "presale.startAt", "presale.endAt"] },
   { key: "holder", title: "持有人规则", explain: "可以分步配置：某一步保存后 App 的持有人权益可能暂时显示不可用（预留为 0、门槛顺序不对、生效时间没到），App 读取时才检查，保存时不拦。", keys: ["holder.allocationNexPerHolding", "holder.priorityTop1Percent", "holder.priorityTop3Percent", "holder.priorityTop5Percent", "holder.policyVersion", "holder.effectiveAt"] },
 ];
 
@@ -245,7 +245,7 @@ export default function G4AdminOperations({ ctx, refreshVersion = 0, blocked = f
   }
 
   const configuredCount = G4_CONFIGS.filter((definition) => data.config[definition.key] != null && data.config[definition.key] !== "").length;
-  const simulationAction = canWrite && <Button size="sm" variant="primary" disabledReason={blocked || readFailed ? "页面要先重新读取成功，才能再改" : !!session && listG4DirectCommands(session.adminId).some(row => g4DirectObject(row) === "operations/simulations") ? "请先核对原操作" : !(Number(quantity) > 0) || !(Number(unitPrice) > 0) ? "数量和单价都要大于 0" : undefined} onClick={createSimulation}>创建模拟成交</Button>;
+  const simulationAction = canWrite && <Button size="sm" variant="primary" disabledReason={blocked || readFailed ? "页面要先重新读取成功，才能再改" : !!session && listG4DirectCommands(session.adminId).some(row => g4DirectObject(row) === "operations/simulations") ? "上次操作结果未知，先查询原结果" : !(Number(quantity) > 0) || !(Number(unitPrice) > 0) ? "数量和单价都要大于 0" : undefined} onClick={createSimulation}>创建模拟成交</Button>;
   return <>
     {error && <Notice tone="warn" title="刷新失败，下面是上次加载的数据" action={<Button size="sm" onClick={() => void load()}>重试</Button>}><p>{error}</p></Notice>}
     <Fold title="认购、预售与持有人规则" icon={ShieldCheck} tone="role-3"
