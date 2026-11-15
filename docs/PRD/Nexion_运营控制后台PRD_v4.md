@@ -52,3 +52,5 @@
 K1 direct scopes 与处置提案 A2_COMMAND 均支持，初发保原method/path/adminId/readAuthority，重试不覆盖。checkInvestigation(record,evidence?) 查询/提交同一原命令，只认已证明成功或已确认未执行且允许新操作的未锁终态；其余保留，旧无origin不能核。终态后重读账户组/收益。现有本地解除改查询，证据/结果/交接人显示及 direct 常驻查询入口交视觉。出处 backend `04d11022` AdminCommandOrigin:57–82、AdminCommandInvestigationService.discover/investigate；OpsRiskService.idempotentK1。
 
 K1范围补核：`OpsRiskController.updateK1RegistrationParam:142–147` 委托 `OpsPlatformConfigService.updateK1RegistrationParam:119–122/updateParam:214–215`，真实scope为A3_PLATFORM_PARAM，不在supported。该类不连接受控核查，原本地处理保留。RiskReleaseParamsService.update:87为K1_RELEASE_PARAM、EarningsReleaseService.manualRelease:387为K1_EARNINGS_MANUAL_RELEASE，二者属于已支持K1前缀，但成功审计是否被allowedFact接受仍以服务端为准。
+
+2026-11-15 F03：K1 处置仍保留按原命令号严格查询当前审批单的入口，核本人、原对象、原动作及可选 operationCode，匹配即恢复；严格 A2_PROPOSAL_NOT_FOUND 才记录查无，查询失败不开放重试。有 A2 读权限的旧无 origin 记录同样可查询，不补造来源。B38 是补充，不取代原审批查询。

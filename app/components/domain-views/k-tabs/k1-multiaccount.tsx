@@ -862,7 +862,30 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       throw cause;
     } finally { setChecking(""); }
   };
-  const checkPending = (record: K1PendingCommand) => checkInvestigation(record).catch(() => undefined);
+  const checkPending = async (record: K1PendingCommand) => {
+    if (record.kind !== "cluster" || !canQueryProposal) return checkInvestigation(record).catch(() => undefined);
+    setChecking(record.fingerprint);
+    setProposalNotFound(current => current.filter(key => key !== record.commandKey));
+    setPendingNotes(current => ({ ...current, [record.fingerprint]: "" }));
+    try {
+      const original = await fetchA2ProposalByKey(record.commandKey, true, "a");
+      if (!original) {
+        setProposalNotFound(current => [...current, record.commandKey]);
+        setPendingNotes(current => ({ ...current, [record.fingerprint]: "暂未查到原提案，结果仍待核实。" }));
+        return;
+      }
+      if (!original.mine || original.obj !== record.target || original.action !== `${LEGACY_CLUSTER_RECEIPTS[record.clusterAction!][1]} · ${record.target}`
+        || (original.operationCode && original.operationCode !== CLUSTER_OPS[record.clusterAction!].def().op)) {
+        setPendingNotes(current => ({ ...current, [record.fingerprint]: "回执与原操作不符，保留原记录，请到操作记录核对。" }));
+        return;
+      }
+      pendingCommands.forget(record.fingerprint, record.commandKey);
+      syncPending();
+      await reloadAfter(`已找回原审批单 ${original.id}，${PROPOSAL_STATUS[original.status]}。`, `已找回原审批单 ${original.id}，但页面刷新失败；请重新加载核对。`);
+    } catch (cause) {
+      setPendingNotes(current => ({ ...current, [record.fingerprint]: `查询没有成功：${errorText(cause)} 原操作继续保留。` }));
+    } finally { setChecking(""); }
+  };
   const releasePending = (record: K1PendingCommand) => {
     setReleasing(null);
     if (record.kind === "registration-param") {
@@ -1370,7 +1393,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const expired = record.expiresAt <= Date.now();
         return (
         <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`} action={<>
-          {record.kind === "cluster" && fundInvestigationAccess(record).canRead && <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>查询原结果</Button>}
+          {record.kind === "cluster" && (canQueryProposal || fundInvestigationAccess(record).canRead) && <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>查询原结果</Button>}
           {!expired && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原请求重试</Button>}
           {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
