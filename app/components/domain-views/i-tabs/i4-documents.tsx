@@ -316,7 +316,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
                 这份资料刚被别人换过；核对完之前，下面的内容都改不了。
               </Notice>
               : alreadyDefault
-                ? <Notice tone="neutral" title="已经是默认文件">{editorError}</Notice>
+                ? <Notice tone="neutral">{editorError}</Notice>
                 : <Notice tone="danger" title={editor.mode === "upload" ? "这次没有上传" : "这次没有恢复"}>{editorError}</Notice>)}
           <Facts>
             <Fact k={conflicted ? "你打开时用的" : "现在用的"}>{editor.document.source === "UPLOADED" ? "已上传的文件" : "默认文件"}</Fact>
