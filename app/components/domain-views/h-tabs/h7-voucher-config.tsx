@@ -14,7 +14,7 @@ import Link from "next/link";
 import { Ban, BellOff, LayoutGrid, List, Pencil, Play, Pause, Plus, ReceiptText, RefreshCw, Send, Ticket, TicketCheck, Trash2 } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, FilterBar, Fold, IrreversibleTag, Notice,
-  PageHeader, Panel, RatioBar, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr,
+  PageHeader, Panel, RatioBar, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr,
 } from "@/app/components/rd";
 import {
   fetchH7Vouchers, type H7Overview,
@@ -22,6 +22,7 @@ import {
 import {
   H7_VOUCHER_ACTIONS, canRetryH7VoucherApproval,
   pendingH7VoucherApprovals,
+  releaseExpiredH7VoucherApproval,
   submitH7VoucherApproval,
   type H7VoucherApprovalInput,
   type H7VoucherApprovalMode,
@@ -35,7 +36,7 @@ import { h7DateInput as toDateInput, h7DateMs as toMs, H7_TIME_ZONE } from "@/li
 import { createH7VoucherMutation, pendingH7VoucherMutations, requireH7Actor, sendH7VoucherMutation, type H7DirectContext, type H7DirectMutation } from "@/lib/admin/h7-voucher-mutation";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import {
-  AUDIENCE_LABEL, H7RecoveryNotice, UNIT, UsageBar, VoucherCard, VoucherFace, VoucherTags, amountText, conditionLines, countText, endText, expiredTag,
+  AUDIENCE_LABEL, H7RecoveryNotice, UNIT, UsageBar, VoucherCard, VoucherFace, VoucherTags, acknowledgedTag, amountText, conditionLines, countText, endText, expiredTag,
   faceValue, limitReached, pendingTag, periodText, skuText, startText, surfacesText, unknownTag, voucherPhase, voucherSentence, type H7RecoveryRow, type H7Voucher,
 } from "./h7-voucher-parts";
 import { H7VoucherForm, changedRows, initialForm, type H7FormValue } from "./h7-voucher-form";
@@ -108,6 +109,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const [view, setView] = useState<View>("cards");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
+  const [releasing, setReleasing] = useState<ReturnType<typeof pendingH7VoucherApprovals>[number] | null>(null);
 
   useEffect(() => {
     const lookups = session ? pendingH7VoucherApprovals(session.adminId).map(record =>
@@ -330,7 +332,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         <Facts>
           <Fact k="代金券">{v.name}</Fact>
           <Fact k="状态"><Change from={v.status === "active" ? "投放中" : "已暂停"} to={next === "active" ? "投放中" : "已暂停"} /></Fact>
-          <Fact k="有效期">{periodText(v)}</Fact>
+          <Fact k="有效期" tone={next === "active" && voucherPhase(v, Date.now()) === "expired" ? "warn" : undefined}>{next === "active" && voucherPhase(v, Date.now()) === "expired"
+            ? `${periodText(v)}，已过期：投放后用户仍领不到、用不了；要继续发，先编辑有效期` : periodText(v)}</Fact>
           <Fact k="还没用">{`${countText(v.availableCount)} 张`}</Fact>
         </Facts>
       ),
@@ -435,6 +438,16 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     else if (c.kind === "update") reviewEdit(c.voucher, c.before, c.values, record, mode);
     else openToggle(c.voucher, record, mode);
   };
+  // 每条原操作改了什么：普通写用保存的原确认内容，处置写处置后的样子。
+  const directChange = (record: H7DirectMutation) => {
+    const c = record.context;
+    if (c.kind === "status") return <Change from={c.voucher.status === "active" ? "投放中" : "已暂停"} to={c.voucher.status === "active" ? "已暂停" : "投放中"} />;
+    if (c.kind === "create") return voucherSentence(parseVoucher(c.values, record.voucherId), c.skuLabels);
+    const rows = changedRows(c.before, c.values, c.skuLabels, toMs, c.voucher.issuedCount, c.voucher);
+    if (rows.length === 0) return "没有改动的项";
+    return <>{rows.slice(0, 2).map((row, i) => <span key={row.key}>{i > 0 && "；"}{row.label} <Change from={row.before} to={row.after} /></span>)}{rows.length > 2 && `；另 ${rows.length - 2} 项`}</>;
+  };
+  const releasable = (record: (typeof pendingApprovals)[number]) => isRetryExpired(record) && !record.acknowledged && !record.ticket;
   const recoveryRows: H7RecoveryRow[] = [
     ...pendingApprovals.map((record) => {
       const expired = isRetryExpired(record);
@@ -442,29 +455,44 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         key: record.commandKey,
         name: H7_VOUCHER_ACTIONS[record.op],
         object: `「${record.voucherName}」`,
+        change: record.op === "h7_voucher_delete" ? "删除券模板，已发出的券不收回"
+          : `作废还没用的券${record.voucher ? `（提交时 ${countText(record.voucher.availableCount)} 张）` : ""}`,
         submittedAt: record.createdAt,
-        tag: record.ticket ? pendingTag() : expired ? expiredTag() : unknownTag("approval"),
+        tag: record.ticket ? pendingTag() : record.acknowledged ? acknowledgedTag() : expired ? expiredTag("approval") : unknownTag("approval"),
         ticket: record.ticket?.id,
         actions: <>
           <Button size="sm" onClick={() => openDisposition(record, "lookup")}>查询原结果</Button>
-          {!expired && <Button size="sm" disabledReason={!canWrite || !canRetryH7VoucherApproval(record) ? "请查询原结果" : undefined} onClick={() => openDisposition(record, "retry")}>按原请求重试</Button>}
+          {!expired && !record.ticket && !record.acknowledged && <Button size="sm" disabledReason={!canWrite || !canRetryH7VoucherApproval(record) ? "请查询原结果" : undefined} onClick={() => openDisposition(record, "retry")}>按原请求重试</Button>}
+          {releasable(record) && <Button size="sm" variant="ghost" onClick={() => setReleasing(record)}>查无此单时解除</Button>}
         </>,
       };
     }),
-    ...directUnknown.map((record) => ({ key: record.commandKey, name: record.action, object: `「${record.voucherName}」`, submittedAt: record.createdAt,
-      tag: isRetryExpired(record) ? expiredTag() : unknownTag("direct"), actions: <>
+    ...directUnknown.map((record) => ({ key: record.commandKey, name: record.action, object: `「${record.voucherName}」`, change: directChange(record), submittedAt: record.createdAt,
+      tag: isRetryExpired(record) ? expiredTag("direct") : unknownTag("direct"), actions: <>
         <Button size="sm" onClick={() => openDirectRecovery(record, "lookup")}>查询原结果</Button>
         {!isRetryExpired(record) && <Button size="sm" disabledReason={!canWrite ? "请查询原结果" : undefined} onClick={() => openDirectRecovery(record)}>按原请求重试</Button>}
       </> })),
   ];
   const pendingCount = pendingApprovals.filter(r => r.ticket).length;
-  const unknownCount = recoveryRows.length - pendingCount;
+  const builtCount = pendingApprovals.filter(r => !r.ticket && r.acknowledged).length;
+  const unknownCount = recoveryRows.length - pendingCount - builtCount;
+  const releaseModal = releasing && session && <ReleaseModal label={<>{H7_VOUCHER_ACTIONS[releasing.op]} · 「{releasing.voucherName}」</>}
+    explain={<><p>原申请已超过 24 小时，不会再重发。</p><p>确认时先按原申请再查一次：明确查不到这张审批单才解除，说明申请没建成；查到了就按它现在的状态显示，不解除。</p></>}
+    onCancel={() => setReleasing(null)} onConfirm={() => {
+      const record = releasing;
+      setReleasing(null);
+      void releaseExpiredH7VoucherApproval(session, record)
+        .then(() => { toast("已解除这条记录，可以重新提交。"); return reload(); })
+        .catch(cause => toast(displayAdminError(cause)))
+        .finally(syncPending);
+    }} />;
   const recovery = (
-    <H7RecoveryNotice title={`${unknownCount ? `${unknownCount} 个申请结果未知` : ""}${unknownCount && pendingCount ? "；" : ""}${pendingCount ? `${pendingCount} 个申请在等批准` : ""}`} rows={recoveryRows}
+    <H7RecoveryNotice title={[unknownCount && `${unknownCount} 个操作结果未知`, pendingCount && `${pendingCount} 个申请在等批准`, builtCount && `${builtCount} 个申请没查到进度`].filter(Boolean).join("；")} rows={recoveryRows}
       explain={<>
-        <p>提交时没收到确定结果，原申请（哪张券、哪种处置、理由和命令号）保存在这个浏览器标签页里。</p>
-        <p>先「查询原结果」；查不到、又没过 24 小时，可以「按原请求重试」，后端认得出是同一次提交，不会建第二张审批单。过了 24 小时只能查询。</p>
-        <p>结果确认之前，这张券不能再提交删除或作废。</p>
+        <p>原操作（哪张券、做了什么、理由）保存在这个浏览器标签页里。</p>
+        <p>结果未知：提交时没收到确定结果。没过 24 小时可以「按原请求重试」，后端认得出是同一次提交，不会重复执行或建第二张审批单；过了 24 小时只能查询。</p>
+        <p>新增、编辑、暂停、投放的「查询原结果」只是重读现在的券，证明不了原操作成没成。删除和作废查的是原审批单。</p>
+        <p>结果确认之前，这张券不能再改。</p>
       </>}
       link={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link> : undefined} />
   );
@@ -483,11 +511,12 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     />
   );
 
-  if (loading && !readAt) return <div className="h7-page">{header}{recovery}<BlockState state="loading" title="代金券读取中…" /></div>;
+  if (loading && !readAt) return <div className="h7-page">{header}{recovery}{releaseModal}<BlockState state="loading" title="代金券读取中…" /></div>;
   if (error) return (
     <div className="h7-page">
       {header}
       {recovery}
+      {releaseModal}
       <BlockState state="error" title="代金券读取失败" detail={`${error} · 为避免误操作，读到之前不能新增、编辑和处置。`} onRetry={() => void reload()} />
     </div>
   );
@@ -511,19 +540,20 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       explain={<>
         <p>投放中只看券的状态，不核对有效期、发给谁、发行上限和用户是否已领，不是「现在有多少人能领」。</p>
         <p>发出和使用是这页现有券的合计，按领取记录数算（不是人数）；删掉的券不再计入。</p>
-        <p>本人刚提交、正在等批准的删除和作废申请这页读不到，到「操作记录与审批」看。</p>
+        <p>有删除或作废在等批准的券，卡上标「待审批」，不论是谁提交的；审批结束前这张券不能再改。</p>
       </>}
       action={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>看待批准的申请</Link> : undefined}>
       {`${countText(activeN)} 张券在投放，共发出 ${countText(issuedSum)} 张，已用 ${countText(redeemedSum)} 张`}
       {expiredActive.length > 0 && `；${expiredActive.length} 张已过有效期但还是投放中，可以暂停`}
       {fullActive.length > 0 && `；${fullActive.length} 张已发完，用户领不到`}
-      {unknownCount > 0 && `；${unknownCount} 个申请结果未知，先查询原结果`}
+      {unknownCount > 0 && `；${unknownCount} 个操作结果未知，先查询原结果`}
     </Conclusion>;
 
   return (
     <div className="h7-page">
       {header}
       {recovery}
+      {releaseModal}
       {conclusion}
 
       <StatBand label="代金券概况">
@@ -539,7 +569,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
 
       <Panel title="代金券" icon={Ticket} tone="role-4" data-proof="h7-voucher-config"
         sub={`${shown.length} 张 · 时间为${H7_TIME_ZONE.label}`}
-        explain="每张卡是一张券的模板：左边是券面，右边是谁能用、什么时候能用，下面是已发出的券用了多少。点名字或「详情」看全部设置；删除和作废在详情里。"
+        explain="每张卡是一张券的模板：左边是券面，右边是谁能用、什么时候能用，下面是已发出的券用了多少。点「详情」看全部设置；删除和作废在详情里。"
         >
         <FilterBar scope={<Segments label="按状态筛选" value={filter} onChange={setFilter} items={[
           { value: "all", label: "全部", count: list.length },
@@ -598,7 +628,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
               <VoucherFace v={v} size="large" />
               <div className="h7-detail-head">
                 <VoucherTags v={v} now={now} showPending={false} />
-                {serverPending && <StatusTag tone="warn">{`${serverPending.action ?? ""}待审批`}</StatusTag>}
+                {serverPending && pendingTag(serverPending)}
                 <p className="h7-preview-sentence">{voucherSentence(v, skuLabels)}</p>
               </div>
             </div>
@@ -638,7 +668,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
             <Fold title="叠加与拆分" tone="role-other" inset summary={[v.splittable && "可拆分", v.stackWithTrial && "可与试用收益叠加", v.stackWithOthers && "可与其它优惠叠加"].filter(Boolean).join("、") || "都不允许"}>
               <Facts>
                 <Fact k="可拆分">{v.splittable ? "是（目前整张核销，不会分次使用）" : "否"}</Fact>
-                <Fact k="可与试用收益叠加">{v.stackWithTrial ? "是（下单时后端目前不检查）" : "否"}</Fact>
+                <Fact k="可与试用收益叠加">{v.stackWithTrial ? "是（试用转购目前用不了代金券，暂不起作用）" : "否"}</Fact>
                 <Fact k="可与其它优惠叠加">{v.stackWithOthers ? "是" : "否"}</Fact>
               </Facts>
             </Fold>
@@ -673,7 +703,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         })()}
       </Drawer>
 
-      {form && <H7VoucherForm key={form.key} voucher={form.voucher} initial={form.initial} skuOptions={skuOptions} skuLabels={skuLabels} toMs={toMs}
+      {form && <H7VoucherForm key={form.key} voucher={form.voucher} initial={form.initial} latest={form.before} skuOptions={skuOptions} skuLabels={skuLabels} toMs={toMs}
         onClose={closeForm}
         onReview={(bv) => (form.voucher ? reviewEdit(form.voucher, form.before ?? form.initial, bv) : reviewAdd(bv))} />}
     </div>

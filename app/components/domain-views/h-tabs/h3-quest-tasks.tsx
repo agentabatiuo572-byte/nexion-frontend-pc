@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag,
-  JudgmentPoints, MoreMenu, Notice, PageHeader, PageTabs, Panel, Stat, StatBand, StatusTag, Table, Td, Th, Tr, useTabIds, type MoreMenuItem,
+  JudgmentPoints, MoreMenu, Notice, PageHeader, PageTabs, Panel, ReleaseModal, Stat, StatBand, StatusTag, Table, Td, Th, Tr, useTabIds, type MoreMenuItem,
 } from "@/app/components/rd";
 import { OperationConfirmModal, PaginationExemptionList } from "../design-kit";
 import {
@@ -23,6 +23,7 @@ import { useH3Mutations, type H3PendingCommand, type H3Write } from "@/lib/admin
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, ConfirmReq, HCtx } from "./types";
@@ -31,10 +32,10 @@ import {
   H3_BINDING_EVENT_LABELS, H3_BINDING_EVENT_OPTIONS, H3_BINDING_EVENT_PRODUCERS, H3_BINDING_USER_FIELDS, H3_BINDING_USER_FIELD_LABELS,
   TASK_ACTION_ROUTES, TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS,
   activeUnbound, amountText, bindingEventText, boolValue, casExpected, cleanPhaseKey, contractForTask, decimalOf, legacyAssetText, mulDecimal,
-  numericValue, parseTriReward, pendingTag, producerText, sumDecimal, taskStatusOf, taskTitleText, taskUnbound, text,
+  acknowledgedTag, expiredTag, numericValue, parseTriReward, pendingTag, producerText, sumDecimal, taskStatusOf, taskTitleText, taskUnbound, text, unknownTag,
   type FormulaRow, type H3Model, type H3RecoveryRow, type PreviewTask, type QuestTask,
 } from "./h3-quest-parts";
-import { H3RegionPanel, useH3RegionPolicy } from "./h3-region-policy";
+import { H3RegionPanel, REGION_APPROVER, useH3RegionPolicy } from "./h3-region-policy";
 import { H3MissionFormDrawer, type H3MissionForm } from "./h3-mission-form";
 
 type H3ActionConfirmReq = ActionConfirmReq & { target?: string; confirmLabelForValue?: (value?: string) => string };
@@ -77,6 +78,9 @@ const immediate = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 
 export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const [mc, setMc] = useState<H3ActionConfirmReq | null>(null);
+  // 保存被「别人先改过」拒绝：页面已重读，这里留住这次要改的内容，让运营和现值对照。
+  const [stale, setStale] = useState<{ title: string; before: string; after: string } | null>(null);
+  const [releasing, setReleasing] = useState<H3PendingCommand | null>(null);
   const toast = shellCtx.toast;
   const canModuleWrite = shellCtx.can("growth_h3_write");
   const fresh = useRef(false);
@@ -174,6 +178,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     try {
       await mutations.run({ ...write, change: { target: write.target, action: attempt.action, title: attempt.title,
         before: write.before, after: write.after, success: write.success, editValue: attempt.editValue, businessValue: attempt.businessValue } }, reason);
+      setStale(null);
+    } catch (error) {
+      if (isHGrowthReadConflict(error)) setStale({ title: attempt.action, before: write.before, after: write.after });
+      throw error;
     } finally {
       attempt.commandKey = mutations.record(write.target)?.commandKey;
     }
@@ -211,7 +219,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   };
 
   /** Keep the established confirmation fields; transport owns the approval route. */
-  type Look = Pick<H3ActionConfirmReq, "title" | "effect" | "facts" | "statedBrief" | "confirmLabel" | "confirmLabelForValue" | "coverageLead" | "coverageCheck"> & { hint?: ReactNode; preview?: (value: string) => ReactNode };
+  type Look = Pick<H3ActionConfirmReq, "title" | "effect" | "facts" | "statedBrief" | "confirmLabel" | "confirmLabelForValue" | "coverageLead" | "coverageCheck"> & { hint?: ReactNode; preview?: (value: string) => ReactNode; detail?: ReactNode };
 
   const openSimpleConfig = (key: string, label: string, current: string, amplifies = false, look: Look = {}, detail?: ReactNode) => {
     const { hint, preview, ...shown } = look;
@@ -784,8 +792,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   );
   const openRecovery = (original: H3PendingCommand) => {
     const c = original.change;
-    setMc({ briefKind: "config", action: c.action, title: c.title, detail: <Change from={c.before} to={c.after} />,
-      facts: <Facts><Fact k="改的是">{c.action}</Fact><Fact k="原请求"><Change from={c.before} to={c.after} /></Fact></Facts>,
+    setMc({ briefKind: "config", action: c.action, title: c.title, detail: <Change from={shownValue(c.before)} to={shownValue(c.after)} />,
+      facts: <Facts><Fact k="改的是">{c.action}</Fact><Fact k="原请求"><Change from={shownValue(c.before)} to={shownValue(c.after)} /></Fact></Facts>,
       initialReason: c.reason, getPendingReason: () => mutations.record(c.target)?.change.reason,
       inlineApproval: { pending: true, initialRecovery: "retry", expired: isRetryExpired(original), resolve: () => undefined,
         disabledReason: mutations.canRetry(original) ? undefined : isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "请查询原结果",
@@ -793,22 +801,50 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       run: async () => { await mutations.retry(original); },
     });
   };
-  const recoveryRows: H3RecoveryRow[] = mutations.records.map(original => ({
-    key: original.commandKey, name: original.change.action, change: <Change from={original.change.before} to={original.change.after} />,
-    submittedAt: original.createdAt, tag: original.ticket ? pendingTag() : <StatusTag tone="warn">{isRetryExpired(original) ? "已过期" : "结果未知"}</StatusTag>,
-    actions: <><Button size="sm" onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>查询原结果</Button>
-      <Button size="sm" disabledReason={mutations.canRetry(original) ? undefined : isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "请查询原结果"} onClick={() => openRecovery(original)}>按原请求重试</Button></>,
-  }));
-  const unknownCount = mutations.records.filter(r => !r.ticket).length;
-  const pendingCount = mutations.records.length - unknownCount;
+  // 记录里存的是请求里的原值（状态码、类别码），显示时换成页面上的叫法。
+  const shownValue = (value: string) => value.split(" · ").map(part => ({ active: "已启用", paused: "已停用", archived: "已归档", deleted: "已删除", __MISSING__: "—" })[part]
+    ?? TASK_CATEGORY_LABELS[part] ?? TASK_ACTION_ROUTE_LABELS[part] ?? part).join(" · ");
+  const releasable = (original: H3PendingCommand) => original.request.kind !== "direct" && isRetryExpired(original) && !original.acknowledged && !original.ticket;
+  const recoveryRows: H3RecoveryRow[] = mutations.records.map(original => {
+    const approval = original.request.kind !== "direct";
+    return {
+      key: original.commandKey, name: original.change.action, change: <Change from={shownValue(original.change.before)} to={shownValue(original.change.after)} />,
+      submittedAt: original.createdAt,
+      tag: original.ticket ? pendingTag(original.store === "region" ? REGION_APPROVER : undefined) : original.acknowledged ? acknowledgedTag()
+        : isRetryExpired(original) ? expiredTag(approval ? "approval" : "direct") : unknownTag(approval ? "approval" : "direct"),
+      actions: <><Button size="sm" onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>查询原结果</Button>
+        {!original.ticket && !original.acknowledged && !isRetryExpired(original)
+          && <Button size="sm" disabledReason={mutations.canRetry(original) ? undefined : "请查询原结果"} onClick={() => openRecovery(original)}>按原请求重试</Button>}
+        {releasable(original) && <Button size="sm" variant="ghost" onClick={() => setReleasing(original)}>查无此单时解除</Button>}</>,
+    };
+  });
+  const unknownCount = mutations.records.filter(r => !r.ticket && !r.acknowledged).length;
+  const pendingCount = mutations.records.filter(r => r.ticket).length;
+  const builtCount = mutations.records.filter(r => !r.ticket && r.acknowledged).length;
+  const recoveryTitle = [unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, builtCount && `${builtCount} 个申请没查到进度`].filter(Boolean).join("；");
   const recovery = recoveryRows.length > 0 && (
-    <Notice tone="warn" title={<>{`${unknownCount ? `${unknownCount} 个修改结果未知` : ""}${unknownCount && pendingCount ? "；" : ""}${pendingCount ? `${pendingCount} 个修改在等批准` : ""}`}<Explain label="结果未知怎么处理" content={<>
-      <p>提交时没收到确定结果，可能已经生效。先「查询原结果」；没过 24 小时可以「按原请求重试」，后端认得出是同一次提交，不会重复执行。</p>
-      <p>过了 24 小时只能查询。结果确认之前，同一项不能再提交新的修改。</p>
+    <Notice tone="warn" title={<>{recoveryTitle}<Explain label="原操作怎么处理" content={<>
+      <p>结果未知：提交时没收到确定结果，可能已经生效。先「查询原结果」；没过 24 小时可以「按原请求重试」，后端认得出是同一次提交，不会重复执行。过了 24 小时只能查询。</p>
+      <p>待审批、已建单：申请已经建好，点「查询原结果」看审批进度，不会重发。</p>
+      <p>结果确认之前，这页不能再改同一项。</p>
     </>} /></>}>
       <H3RecoveryList rows={recoveryRows} />
     </Notice>
   );
+  const releasingRow = releasing && recoveryRows.find(row => row.key === releasing.commandKey);
+  const releaseModal = releasing && <ReleaseModal label={<>{releasing.change.action}{releasingRow && <> · {releasingRow.change}</>}</>}
+    explain={<><p>原申请已超过 24 小时，不会再重发。</p><p>确认时先按原申请再查一次：明确查不到这张审批单才解除，说明申请没建成；查到了就按它现在的状态显示，不解除。</p></>}
+    onCancel={() => setReleasing(null)} onConfirm={() => {
+      const record = releasing;
+      setReleasing(null);
+      void mutations.releaseExpired(record)
+        .then(() => toast("已解除这条记录，可以重新提交。"))
+        .catch(cause => toast(displayAdminError(cause)));
+    }} />;
+  const staleNotice = stale && <Notice tone="warn" title={`没有保存：「${stale.title}」已被别人改过`}
+    action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>
+    你打开时是 {shownValue(stale.before)}，这次要改成 {shownValue(stale.after)}。页面已读到最新值，以下面显示的为准，核对后重新调整。
+  </Notice>;
 
   const savedForConfirm = confirmation.current?.target ? mutations.record(confirmation.current.target) : undefined;
   const confirmModal = mc && (
@@ -855,12 +891,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         />
       );
 
-  if (loading && !model) return <div className="h3-page">{header}{recovery}{confirmModal}<BlockState state="loading" title="用户任务读取中…" /></div>;
+  if (loading && !model) return <div className="h3-page">{header}{recovery}{confirmModal}{releaseModal}<BlockState state="loading" title="用户任务读取中…" /></div>;
   if (error || !model) return (
     <div className="h3-page">
       {header}
       {recovery}
       {confirmModal}
+      {releaseModal}
       <BlockState state="error" title="用户任务读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改；一直失败请联系值班同事。`} retryLabel="重试读取" onRetry={() => void refresh().catch(cause => toast(displayAdminError(cause)))} />
     </div>
   );
@@ -907,14 +944,14 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       explain={<>
         <p>启用中按任务的状态数，只算首日和每周任务；历史月度挑战不算。</p>
         <p>「做不完」是已启用、但后端判定还没有启用的完成条件的任务：它会发给之后的用户，用户却完成不了。</p>
-        <p>本人提交、正在等批准的资金修改这页现在读不到，到「操作记录与审批」看。</p>
+        <p>等批准的奖励和倍率修改：有查看审批权限时这页会读出来并锁住对应项；没有这个权限时只显示你在这个标签页提交过的。</p>
       </>}
       action={canAudit ? <Link className="rd-link" href="/platform/audit?domain=H" prefetch={false}>看待批准的申请</Link> : undefined}>
       {active.length === 0
-        ? "没有启用的首日或每周任务，新用户拿不到任务"
+        ? "没有启用的首日或每周任务；已发出的不变，之后不会再发新任务"
         : `首日 ${dayOne.filter((task) => taskStatusOf(task) === "active").length} 个、每周 ${[...t1, ...t2].filter((task) => taskStatusOf(task) === "active").length} 个任务在启用`}
       {unknownCount > 0 && `；${unknownCount} 个修改结果未知`}
-      {attention.length > 0 ? `；${attention.length} 件要处理` : mutations.auditKnown ? "，没有要处理的事" : ""}
+      {attention.length > 0 ? `；${attention.length} 件要处理` : mutations.auditKnown ? "，没有要处理的事" : shellCtx.can("platform_a2_read") ? "；审批进度这次没读到，点刷新重试" : ""}
     </Conclusion>
   );
 
@@ -1048,7 +1085,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <ConfigList label="首日参数">
           <ConfigRow name="首日奖励" value={tri ? `全额 ${amountText(tri.full)} UVT · 宽限 ${amountText(tri.grace)} UVT · 过期 0` : triRaw ? operatorCopyText(triRaw) : "还没设置"}
             sub={lockTag("dayOne.triReward") ?? "调高或第一次设置要批准"}
-            what="做完全部首日任务拿的奖励，按完成时间分全额、宽限、过期三档。"
+            what="做完全部首日任务后领取的奖励，按领取时离注册多久分全额、宽限、过期三档。"
             when={`调高或第一次设置：提交审批，${FUND_APPROVER}批准后生效；调低确认后立即生效。`}
             effect="只影响之后注册的用户；已经注册的按注册时定下的三档。"
             action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("dayOne.triReward")} onClick={() => openSimpleConfig("dayOne.triReward", "首日任务奖励", text(model.dayOneTriReward), true, {
@@ -1114,8 +1151,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           <div className="h3-tasks-layout">
           {cards("dayOne", dayOne)}
         <AppPreview kind="dayOne" tasks={dayOneActive.map((task) => previewTask(task, false))}
-          header={<><b>新手任务</b><span>{tri ? `24 小时内做完全部得 ${amountText(tri.full)} UVT` : "首日奖励还没设置"}</span></>}
-          footer={tri && eligibility ? `超过 24 小时做完得 ${amountText(tri.grace)} UVT · 注册 ${eligibility} 小时后过期` : undefined}
+          header={<><b>新手任务</b><span>{tri ? `注册 24 小时内领得 ${amountText(tri.full)} UVT` : "首日奖励还没设置"}</span></>}
+          footer={tri && eligibility ? `之后领得 ${amountText(tri.grace)} UVT · 注册 ${eligibility} 小时后过期` : undefined}
           empty="新用户看不到首日任务卡" />
           </div>
         </Panel>
@@ -1197,7 +1234,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           <div className="h3-tasks-layout"><div className="h3-tier-groups">
           <div className="h3-sub-head">
             <h3>{`一档 · ${t1.length} 个`}</h3>
-            <Explain label="一档怎么给用户" content="App 首页显示排在最前面的一个已启用一档任务（按建立顺序）。后台没有按用户条件挑选的规则。" />
+            <Explain label="一档怎么给用户" content="App 首页只放一个一档任务：用户本周拿到的一档里，排在最前、还在有效期内、还没领的那个；领完就不再显示。后台不能按用户挑选。" />
           </div>
           {cards("t1", t1)}
           <div className="h3-sub-head">
@@ -1282,6 +1319,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             <tbody>
               {monthly.map((mission) => {
                 const reward = legacyAssetText(text(mission.reward));
+                // 月度奖励只改金额，币种沿用后端存的（UVT 或 USDT），确认框里新金额带上同一个币种。
+                const unit = /[A-Za-z]+$/.exec(reward.text.trim())?.[0];
                 const status = taskStatusOf(mission);
                 const label = text(mission.theme);
                 return <Tr key={text(mission.id)}>
@@ -1292,14 +1331,15 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                   {canModuleWrite && <Td sticky="end" data-fit=""><span className="rd-row-actions">
                     <Button size="sm" disabledReason={lockReason(`monthly.${text(mission.id)}.reward`)} onClick={() => openTaskReward(`monthly.${text(mission.id)}.reward`, text(mission.theme), text(mission.reward), {
                       title: "改月度挑战奖励",
+                      detail: <>当前奖励 <b>{reward.text}</b>{reward.legacy ? "（旧名称 NEX）" : ""}。</>,
                       effect: directionEffect("月度挑战"),
                       facts: (value) => {
                         const current = decimalOf(mission.reward);
                         const direction = directionOf(current, value ?? null);
                         return <Facts>
                           <Fact k="月度挑战">{label}</Fact>
-                          <Fact k="奖励金额">{value ? <Change from={reward.text} to={value} /> : reward.text}</Fact>
-                          <Fact k="奖励类型">不变，只改金额</Fact>
+                          <Fact k="奖励金额">{value ? <Change from={reward.text} to={unit ? `${value} ${unit}` : value} /> : reward.text}</Fact>
+                          <Fact k="币种">{unit ? `${unit}，不变` : "不变，只改金额"}</Fact>
                           {whenFact(direction)}
                           <Fact k="用户">App 现在没有月度入口，改了不会发给任何人</Fact>
                           {approverFacts(direction === "up")}
@@ -1308,7 +1348,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                       statedBrief: { impact: "只改历史记录里的金额。", check: "核对新金额。" },
                       confirmLabelForValue: (value) => directionOf(decimalOf(mission.reward), value ?? null) === "up" ? "提交审批" : "确认修改",
                       coverageLead: "调高月度挑战奖励是放大方向，要另一位超级管理员批准",
-                      hint: "0–100,000 的整数",
+                      hint: "0–100,000，最多 6 位小数",
                     })}>改奖励</Button>
                     <MoreMenu label={`${label} 的更多操作`} items={status === "archived"
                       ? [{ key: "delete", label: "删除", danger: true, onSelect: () => openMissionDelete(mission, label, true) }]
@@ -1452,6 +1492,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     <div className="h3-page">
       {header}
       {recovery}
+      {staleNotice}
+      {releaseModal}
       {conclusion}
       {attentionList}
       {stats}

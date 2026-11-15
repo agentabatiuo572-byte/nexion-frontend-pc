@@ -7,9 +7,9 @@
 import type { ReactNode } from "react";
 import { CalendarClock, CheckCircle2, CircleHelp, Clock3, Hourglass, PauseCircle, TriangleAlert } from "lucide-react";
 import { Button, Explain, Notice, SegmentBar, StatusTag } from "@/app/components/rd";
-import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
-import type { H7Voucher } from "@/lib/admin/h-client";
+import type { H7PendingApproval, H7Voucher } from "@/lib/admin/h-client";
 import { h7Stamp } from "@/lib/admin/h7-voucher-time";
 export type { H7Voucher } from "@/lib/admin/h-client";
 
@@ -91,7 +91,7 @@ export function VoucherTags({ v, now, showPending = true }: { v: H7Voucher; now:
   const phase = voucherPhase(v, now);
   return (
     <span className="h7-tags">
-      {showPending && v.pendingApproval && pendingTag(v.pendingApproval.action)}
+      {showPending && v.pendingApproval && pendingTag(v.pendingApproval)}
       {phase === "expired"
         ? <StatusTag tone="done" icon={Hourglass} explain={`有效期已过，用户不能再领，已领到的也不能再用。模板状态还是「${v.status === "active" ? "投放中" : "已暂停"}」。`}>已过期</StatusTag>
         : v.status === "active"
@@ -163,8 +163,8 @@ export function VoucherCard({ v, now, skuLabels, selected, onOpen, actions }: { 
   );
 }
 
-/** 结果未知的一行：处置是什么、哪张券、什么时候提交的、现在怎样、能做什么。 */
-export type H7RecoveryRow = { key: string; name: string; object: ReactNode; submittedAt?: number; tag: ReactNode; ticket?: string; actions: ReactNode };
+/** 原操作的一行：做的是什么、哪张券、改了什么、什么时候提交的、现在怎样、能做什么。 */
+export type H7RecoveryRow = { key: string; name: string; object: ReactNode; change?: ReactNode; submittedAt?: number; tag: ReactNode; ticket?: string; actions: ReactNode };
 
 export function unknownTag(kind: "direct" | "approval") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
@@ -172,12 +172,30 @@ export function unknownTag(kind: "direct" | "approval") {
     : "提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会建第二张。"}>结果未知</StatusTag>;
 }
 
-export function pendingTag(action?: string | null) {
-  return <StatusTag tone="warn" icon={Clock3} explain="等另一位管理员在「操作记录与审批」批准。批准前券模板和已发出的券都不变，这张券也不能编辑、暂停或投放。">{action ? `${action}待审批` : "待审批"}</StatusTag>;
+/** 后端读到的审批锁：读得出单子就写是哪张、谁什么时候提交的；四项都是空的只说明有锁。 */
+export function pendingFacts(pending: H7PendingApproval) {
+  if (!pending.action && !pending.ticketId && !pending.submittedBy && !pending.submittedAt) return null;
+  return [pending.ticketId && `审批单 ${pending.ticketId}`, pending.submittedBy && `${pending.submittedBy} 提交`,
+    pending.submittedAt && `${formatBusinessTimeCompact(pending.submittedAt, "—")}（${businessZone().label}）`].filter(Boolean).join(" · ");
 }
 
-export function expiredTag() {
-  return <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查不到也不能据此认定没提交。">已过期</StatusTag>;
+export function pendingTag(pending?: H7PendingApproval | null) {
+  const facts = pending ? pendingFacts(pending) : "";
+  if (pending && facts === null) {
+    return <StatusTag tone="warn" icon={Clock3} explain="后端显示这张券有一张没结束的审批，没读出是哪张单、谁提交的；到「操作记录与审批」核对。审批结束前不能编辑、暂停、投放、删除或作废。">审批锁定</StatusTag>;
+  }
+  return <StatusTag tone="warn" icon={Clock3} explain={`等另一位管理员在「操作记录与审批」批准。${facts ? `${facts}。` : ""}批准前券模板和已发出的券都不变，这张券也不能编辑、暂停或投放。`}>{pending?.action ? `${pending.action}待审批` : "待审批"}</StatusTag>;
+}
+
+/** 申请已建单，但这次没查到审批进度：只能查询，不会重发。 */
+export function acknowledgedTag() {
+  return <StatusTag tone="neutral" icon={Clock3} explain="申请已建单，这次没查到审批进度。点「查询原结果」再查；不会重发。">已建单</StatusTag>;
+}
+
+export function expiredTag(kind: "direct" | "approval") {
+  return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "direct"
+    ? "原请求超过 24 小时，不能再重试，只能查询；查询读到的是现在的券，不能据此认定原操作成没成，记录继续保留。"
+    : "原申请超过 24 小时，不能再重试，只能查询原审批单。明确查不到这张单时可以解除。"}>已过期</StatusTag>;
 }
 
 export function H7RecoveryNotice({ title, explain, rows, link }: { title: ReactNode; explain: ReactNode; rows: H7RecoveryRow[]; link?: ReactNode }) {
@@ -188,7 +206,7 @@ export function H7RecoveryNotice({ title, explain, rows, link }: { title: ReactN
         {rows.map((row) => (
           <li key={row.key}>
             <span className="h7-rec-name">{row.name}</span>
-            <span className="h7-rec-object">{row.object}</span>
+            <span className="h7-rec-object">{row.object}{row.change && <span className="h7-rec-change">{row.change}</span>}</span>
             <span className="h7-rec-time">{row.submittedAt === undefined ? "" : `${businessStamp(row.submittedAt)} 提交`}</span>
             <span className="h7-rec-state">{row.tag}{row.ticket && <span className="h7-rec-ticket">审批单 <span data-mono="">{row.ticket}</span></span>}</span>
             <span className="h7-rec-actions">{row.actions}</span>

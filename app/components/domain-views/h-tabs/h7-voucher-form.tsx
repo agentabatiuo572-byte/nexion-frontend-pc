@@ -134,9 +134,11 @@ export function changedRows(before: H7FormValue, after: H7FormValue, skuLabels: 
     .map((row) => issued > 0 && AFFECTS_ISSUED.has(row.key) ? { ...row, note: "已发出还没用的券也按改后的值使用" } : row);
 }
 
-export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, onClose, onReview }: {
+export function H7VoucherForm({ voucher, initial, latest, skuOptions, skuLabels, toMs, onClose, onReview }: {
   voucher?: H7Voucher;
   initial: H7FormValue;
+  /** 保存被「别人先改过」拒绝后重开：最新读到的值。表单里还是运营填的，改动按最新值对照。 */
+  latest?: H7FormValue;
   skuOptions: string[];
   skuLabels: Record<string, string>;
   toMs: (date: string, end?: boolean) => number;
@@ -170,7 +172,7 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
   const issued = voucher?.issuedCount ?? 0;
   const zone = H7_TIME_ZONE.label;
   const startAt = dateStamp(value.startDate, toMs), endAt = dateStamp(value.endDate, toMs, true);
-  const changed = voucher ? changedRows(initial, value, skuLabels, toMs, issued, voucher) : [];
+  const changed = voucher ? changedRows(latest ?? initial, value, skuLabels, toMs, issued, voucher) : [];
   const touchesIssued = changed.some((row) => AFFECTS_ISSUED.has(row.key));
 
   return (
@@ -182,6 +184,11 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
           others={<Button onClick={close}>取消</Button>} />}>
         <div className="rd-split h7-form-split" data-detail="" data-preview="">
           <div className="h7-form">
+            {latest && <Notice tone="warn" title="没有保存：这张券刚被别人改过">
+              {changed.length
+                ? `下面还是你填的内容，和最新值有 ${changed.length} 处不同：${changed.map((row) => row.label).join("、")}。核对后点「下一步」，确认框里逐项对照。`
+                : "下面还是你填的内容，和最新值已经一样，不用再保存。"}
+            </Notice>}
             <section className="h7-form-section" aria-labelledby="h7-f-face">
               <h3 id="h7-f-face" className="h7-form-title">券面</h3>
               <Field label="名称" required hint="最多 80 字" error={shown.name}>
@@ -212,7 +219,7 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
             <section className="h7-form-section" aria-labelledby="h7-f-who">
               <h3 id="h7-f-who" className="h7-form-title">谁能用、在哪领</h3>
               <CheckGroup legend="适用商品" summary={selectedSkus.length ? `已选 ${selectedSkus.length} 个` : "不选＝全部商品可用"}
-                explain="商品名和「商品管理与上架条件」一致，这里只列在售的商品。只选一个时，用户点「使用」直接去这个商品；选多个或不选去商城。">
+                explain="商品名和「商品管理与上架条件」一致，这里只列在售的商品。只选一个时，用户从奖励列表点「使用」直接去这个商品；其他情况去商城。">
                 {skuOptions.map((id) => <Check key={id} label={skuLabels[id] ?? id} checked={selectedSkus.includes(id)} onChange={() => toggle("applicableSkus", id)} />)}
                 {orphanSkus.map((id) => <Check key={id} label={`已不在当前目录（${id}）`} checked onChange={() => toggle("applicableSkus", id)} />)}
                 {skuOptions.length === 0 && orphanSkus.length === 0 && <p className="h7-form-note">没有读到在售商品；不选就是全部商品可用。</p>}
@@ -230,7 +237,7 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
             <section className="h7-form-section" aria-labelledby="h7-f-when">
               <h3 id="h7-f-when" className="h7-form-title">什么时候能领能用</h3>
               <div className="rd-form-grid" data-cols="2" data-dense="">
-                <Field label="开始日期" hint="不填＝立即" help={startAt ? `从 ${startAt}（${zone}）起` : "保存后立即可领"}>
+                <Field label="开始日期" hint="不填＝立即" help={startAt ? `从 ${startAt}（${zone}）起` : "从保存时开始"}>
                   {(control) => <Input {...control} type="date" value={value.startDate} onChange={(e) => set("startDate", e.target.value)} />}
                 </Field>
                 <Field label="结束日期" hint="不填＝长期" help={endAt ? `到 ${endAt}（${zone}）为止，已领没用的也不能再用` : "长期有效"}>
@@ -276,7 +283,7 @@ export function H7VoucherForm({ voucher, initial, skuOptions, skuLabels, toMs, o
             <Fold title="叠加与拆分" icon={Layers} tone="role-other" inset summary={[bool("splittable") && "可拆分", bool("stackWithTrial") && "可与试用收益叠加", bool("stackWithOthers") && "可与其它优惠叠加"].filter(Boolean).join("、") || "都不勾"}
               open={folds.stack} onOpenChange={(open) => setFolds((f) => ({ ...f, stack: open }))}>
               <Check label="可拆分" help="目前整张核销：用一次就整张用掉，勾了也不会分次使用。" checked={bool("splittable")} onChange={(e) => set("splittable", e.target.checked ? "true" : "false")} />
-              <Check label="可与试用收益叠加" help="下单时后端目前不检查这一项，只有 App 选券时会参考。" checked={bool("stackWithTrial")} onChange={(e) => set("stackWithTrial", e.target.checked ? "true" : "false")} />
+              <Check label="可与试用收益叠加" help="试用转购目前用不了代金券，这一项暂时不起作用。" checked={bool("stackWithTrial")} onChange={(e) => set("stackWithTrial", e.target.checked ? "true" : "false")} />
               <Check label="可与其它优惠叠加" help="决定能不能和促销活动一起用；不是一单用两张券。" checked={bool("stackWithOthers")} onChange={(e) => set("stackWithOthers", e.target.checked ? "true" : "false")} />
             </Fold>
           </div>

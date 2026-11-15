@@ -186,7 +186,7 @@ export function H3RegionPanel({ region, canAudit }: { region: H3RegionState; can
           <tr>
             <Th>手机号区号</Th>
             <Th>时区</Th>
-            <Th>{`这个区号的用户本周（${businessZone().label}）`}<Explain label="本周怎么算" content="示意：按这个时区的周一 00:00 到下周一 00:00，换成北京时间显示。规则改动后，用户从他自己的下一周开始换。" /></Th>
+            <Th>{`常规的一周（${businessZone().label}）`}<Explain label="这一列怎么算" content={`示意，不是每位用户的实际周：按这个时区周一 00:00 到下周一 00:00，换成${businessZone().label}写。规则第一次生效和用户换了区号的那一周，从他原来那一周结束时接上。改动后用户从自己的下一周开始换。`} /></Th>
             {draft && <Th sticky="end"><span className="rd-sr-only">删除</span></Th>}
           </tr>
         </thead>

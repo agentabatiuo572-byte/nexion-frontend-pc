@@ -370,6 +370,7 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h7-rec li { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) max-content max-content auto; align-items: center; gap: var(--rd-space-2) var(--rd-space-4); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel); }
 .h7-rec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
 .h7-rec-object { min-width: 0; overflow-wrap: anywhere; color: var(--rd-text); }
+.h7-rec-change { display: block; margin-top: var(--rd-space-1); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 .h7-rec-time { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .h7-rec-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
 .h7-rec-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }

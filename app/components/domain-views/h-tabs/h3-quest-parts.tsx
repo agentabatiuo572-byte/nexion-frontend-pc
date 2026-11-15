@@ -227,16 +227,25 @@ export function TaskStatusTag({ task }: { task: QuestTask }) {
   return <StatusTag tone="warn" icon={CircleAlert} explain="后端返回了这页不认识的状态，请联系后端核对。">状态未知</StatusTag>;
 }
 
-export function unknownTag() {
-  return <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行。">结果未知</StatusTag>;
+export function unknownTag(kind: "direct" | "approval") {
+  return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
+    ? "提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会重复执行。"
+    : "提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会建第二张。"}>结果未知</StatusTag>;
 }
 
-export function pendingTag(note = "批准前什么都不变；这一项被审批锁住，审批结束前不能再改。") {
-  return <StatusTag tone="warn" icon={Clock3} explain={`等另一位超级管理员在「操作记录与审批」批准。${note}`}>待审批</StatusTag>;
+export function pendingTag(approver = "另一位超级管理员", note = "批准前什么都不变；审批结束前这页不能再改这一项。") {
+  return <StatusTag tone="warn" icon={Clock3} explain={`等${approver}在「操作记录与审批」批准。${note}`}>待审批</StatusTag>;
 }
 
-export function expiredTag() {
-  return <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询；查询读到的是现在的值，不能据此认定原操作成没成，记录继续保留。">已过期</StatusTag>;
+/** 申请已建单，但这次没查到审批进度：只能查询，不会重发。 */
+export function acknowledgedTag() {
+  return <StatusTag tone="neutral" icon={Clock3} explain="申请已建单，这次没查到审批进度。点「查询原结果」再查；不会重发。">已建单</StatusTag>;
+}
+
+export function expiredTag(kind: "direct" | "approval") {
+  return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "direct"
+    ? "原请求超过 24 小时，不能再重试，只能查询；查询读到的是现在的值，不能据此认定原操作成没成，记录继续保留。"
+    : "原申请超过 24 小时，不能再重试，只能查询原审批单。明确查不到这张单时可以解除。"}>已过期</StatusTag>;
 }
 
 // ===== 任务卡 =====
@@ -321,14 +330,14 @@ export function DayOneTimeline({ triReward, eligibilityHours }: { triReward: str
     : <b data-empty="">{fallback}</b>;
   const unset = triReward.trim() ? "读不懂" : "还没设置";
   return (
-    <figure className="h3-timeline" aria-label={`首日奖励时间线：注册后 24 小时内全额${tri ? ` ${tri.full} UVT` : ""}，${grace ? `到注册后 ${hours} 小时宽限${tri ? ` ${tri.grace} UVT` : ""}，` : ""}之后过期`}>
+    <figure className="h3-timeline" aria-label={`首日奖励时间线，按领取时刻：注册后 24 小时内全额${tri ? ` ${tri.full} UVT` : ""}，${grace ? `到注册后 ${hours} 小时宽限${tri ? ` ${tri.grace} UVT` : ""}，` : ""}之后过期`}>
       <div className="h3-timeline-track" data-grace={grace ? String(Math.min(Math.max(Math.round((hours! - 24) / 24), 1), 6)) : "0"}>
         <div className="h3-tl-seg" data-kind="full">
           <span className="h3-tl-tick">注册</span>
           <i aria-hidden />
           <span className="h3-tl-name">全额</span>
           <span className="h3-tl-amount">{amount(tri?.full, unset)}</span>
-          <span className="h3-tl-note">24 小时内做完全部任务</span>
+          <span className="h3-tl-note">做完全部，注册后 24 小时内领</span>
         </div>
         {grace && (
           <div className="h3-tl-seg" data-kind="grace">
@@ -336,7 +345,7 @@ export function DayOneTimeline({ triReward, eligibilityHours }: { triReward: str
             <i aria-hidden />
             <span className="h3-tl-name">宽限</span>
             <span className="h3-tl-amount">{amount(tri?.grace, unset)}</span>
-            <span className="h3-tl-note">{`注册后 ${hours} 小时内做完`}</span>
+            <span className="h3-tl-note">{`注册后 ${hours} 小时内领`}</span>
           </div>
         )}
         <div className="h3-tl-seg" data-kind="expired">
@@ -348,10 +357,10 @@ export function DayOneTimeline({ triReward, eligibilityHours }: { triReward: str
         </div>
       </div>
       <figcaption className="h3-timeline-cap">
-        从用户注册那一刻算，全额时限固定 24 小时
+        按领取时离注册多久分档，全额时限固定 24 小时
         <Explain label="首日时间怎么算" content={<>
           <p>用户注册时，系统给他定下这一份首日任务：任务、完成条件、名称、类别、跳转、三档奖励、任务加成和资格期限都按那一刻的设置，之后改设置不影响他。</p>
-          <p>注册后不到 24 小时做完全部任务拿全额；之后、资格期限到之前做完拿宽限奖励；到资格期限那一刻（含）按过期处理，不能领取。</p>
+          <p>做完全部任务才能领。按领取那一刻算：注册后不到 24 小时领拿全额；之后、资格期限到之前领拿宽限奖励；到资格期限那一刻（含）按过期处理，不能领取。做完了没及时领，会落到后一档。</p>
           <p>全额和宽限可以设成一样多，不一定「变少」。{hours == null ? "资格期限这次没读到。" : ""}</p>
         </>} />
       </figcaption>
@@ -381,7 +390,7 @@ export function WeeklyFormula({ rows, h1, h1Phase, weekly, weeklyPhase, h1Link }
         <span role="columnheader" aria-hidden />
         <span role="columnheader">每周阶段倍率</span>
         <span role="columnheader" aria-hidden />
-        <span role="columnheader">用户拿到</span>
+        <span role="columnheader">乘积</span>
       </div>
       {rows.map((row) => (
         <div className="h3-formula-row" role="row" key={row.key}>
@@ -492,7 +501,7 @@ export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
   );
 }
 
-// ===== 结果未知逐条提醒（和 G 域、H7 同一排法） =====
+// ===== 原操作逐条提醒：结果未知、待审批、已建单、已过期（和 G 域、H7 同一排法） =====
 export type H3RecoveryRow = { key: string; name: string; change: ReactNode; submittedAt?: number; tag: ReactNode; actions: ReactNode };
 
 export function H3RecoveryList({ rows }: { rows: H3RecoveryRow[] }) {
@@ -500,7 +509,7 @@ export function H3RecoveryList({ rows }: { rows: H3RecoveryRow[] }) {
   const timed = rows.some((row) => row.submittedAt !== undefined);
   return (
     <>
-      <ul className="h3-rec" aria-label="结果未知的修改">
+      <ul className="h3-rec" aria-label="原操作">
         {rows.map((row) => (
           <li key={row.key}>
             <span className="h3-rec-name">{row.name}</span>

@@ -157,14 +157,19 @@ export function unknownTag(kind: "direct" | "approval") {
     : "提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，后端认得出是同一次提交，不会建第二张。"}>结果未知</StatusTag>;
 }
 
-export function pendingTag(approver: string, note = "批准前仍按现在的值；这一项被审批锁住，有结论前不能再提交。") {
+export function pendingTag(approver: string, note = "批准前仍按现在的值；审批结束前这页不能再改这一项。") {
   return <StatusTag tone="warn" icon={Clock3} explain={`等${approver}在「操作记录与审批」批准。${note}`}>待审批</StatusTag>;
+}
+
+/** 申请已建单，但这次没查到审批进度：只能查询，不会重发。 */
+export function acknowledgedTag() {
+  return <StatusTag tone="neutral" icon={Clock3} explain="申请已建单，这次没查到审批进度。点「查询原结果」再查；不会重发。">已建单</StatusTag>;
 }
 
 export function expiredTag(kind: "direct" | "approval") {
   return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "direct"
     ? "原请求超过 24 小时，不能再重试，只能查询。查询读到的是现在的值，不能据此认定原操作成没成。"
-    : "原请求超过 24 小时，不能再重试，只能查询原审批单。查不到也不能据此认定没提交。"}>已过期</StatusTag>;
+    : "原申请超过 24 小时，不能再重试，只能查询原审批单。明确查不到这张单时可以解除。"}>已过期</StatusTag>;
 }
 
 export function H5RecoveryNotice({ title, explain, rows, link }: { title: ReactNode; explain?: ReactNode; rows: H5RecoveryRow[]; link?: ReactNode }) {
