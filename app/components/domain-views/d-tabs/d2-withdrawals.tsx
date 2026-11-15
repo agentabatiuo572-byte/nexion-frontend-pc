@@ -889,7 +889,7 @@ function noBatchHint(row: D2Withdrawal) {
 }
 
 const BANK_BLOCK = "收款账户暂不能审核放行，原因见详情里的「HDPay 银行打款」。";
-const LARGE_BLOCK = "这笔达到大额门槛，要财务主管放行";
+const LARGE_BLOCK = "这笔达到大额门槛，要财务主管或超级管理员放行";
 
 function shortAddress(value: string) {
   return value.length > 14 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value;
@@ -984,7 +984,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     ? "冻结、解冻和手动退款需财务主管、风控主管或超级管理员操作"
     : undefined;
   /** 只看这一笔的情况就知道放行必被拒的原因，行、抽屉、批量共用（DP-42）。全局的开关和覆盖率在 approveGateText。 */
-  const approvalRole = (row: D2Withdrawal) => row.addressVerificationRequired === true ? "财务主管" : ACTION_ROLE.APPROVE;
+  const approvalRole = (row: D2Withdrawal) => row.addressVerificationRequired === true ? "财务主管或超级管理员" : ACTION_ROLE.APPROVE;
   const approveBlock = (row: D2Withdrawal) => {
     if (routingUnavailable(row)) return "风险分暂时算不出来，暂不能放行";
     if (!canApproveLarge && row.addressVerificationRequired === true) return `这笔是大额提现，需${approvalRole(row)}放行`;
