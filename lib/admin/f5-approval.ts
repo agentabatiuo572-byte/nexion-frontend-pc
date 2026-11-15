@@ -68,6 +68,7 @@ export async function queryF5Proposal(adminId: number, original: FDomainAttempt)
   fCommands.remember(original.fingerprint, original.commandKey, { ...original, f5TicketId: original.ticket?.id ?? original.f5TicketId, absent: false });
   const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
   if (!ticket) {
+    if (original.received || original.ticket || original.f5TicketId) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
     fCommands.remember(original.fingerprint, original.commandKey, { ...original, ticket: undefined, absent: true });
     return null;
   }
@@ -144,6 +145,7 @@ export async function sendF5Proposal(adminId: number, slot: string, spec?: Propo
 
 /** Requires the visual layer's explicit confirmation after authoritative expired absence. */
 export async function releaseF5Proposal(adminId: number, original: FDomainAttempt) {
+  if (original.received || original.ticket || original.f5TicketId) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
   if (!isRetryExpired(original)) throw new Error("原操作尚未过期，请先查询原结果。");
   const ticket = await queryF5Proposal(adminId, original);
   if (ticket?.status === "pending") throw new Error("OBJECT_ALREADY_PENDING");

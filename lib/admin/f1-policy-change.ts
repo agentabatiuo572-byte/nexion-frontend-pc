@@ -203,7 +203,10 @@ export async function submitF1Policy(
         // A failed read cannot revoke an earlier authoritative pending observation.
         attempts.remember(fingerprint, key, { ...record(), absent: false });
         ticket = await fetchA2ProposalByKey(key, true, "f");
-        if (!ticket) attempts.remember(fingerprint, key, { ...record(), ticket: undefined, absent: true });
+        if (!ticket) {
+          if (record().received || record().ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", key);
+          attempts.remember(fingerprint, key, { ...record(), ticket: undefined, absent: true });
+        }
       }
       if (mode === "lookup" && !ticket) return null;
       if (!ticket && previous?.received) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", key);
@@ -270,7 +273,8 @@ export async function releaseF1PolicyProposal(owner: number, commandKey: string)
   const saved = listF1PolicyOperations(owner).find(item => item.commandKey === commandKey);
   if (!saved || !saved.original.approval || saved.expiresAt > Date.now()) throw new Error("这条原操作不能解除，请先查询原结果。");
   if (useAdminAuth.getState().session?.adminId !== owner) throw new Error("ADMIN_PERMISSION_DENIED");
-  const ticket = await fetchA2ProposalByKey(commandKey, true, "f");
-  if (ticket) throw new Error("已找到原审批单，请核对它现在的处理结果。");
+  if (saved.received || saved.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", commandKey);
+  const result = await queryF1PolicyOperation(owner, commandKey);
+  if (result) throw new Error("已找到原审批单，请核对它现在的处理结果。");
   attempts.forget(saved.fingerprint, commandKey);
 }

@@ -72,7 +72,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
             ctx.openActionConfirm({ ...confirm, edit: confirm.edit ? { ...confirm.edit, initialValue: original.f4Snapshot.value } : undefined, f4Recovery: record });
           } else void ctx.recoverF4(record, "query").catch(error => ctx.toast(displayAdminError(error)));
         }}>查询原结果</Button>
-        {record.kind === "proposal" && isRetryExpired(record.original) && record.original.absent && !record.original.ticket
+        {record.kind === "proposal" && isRetryExpired(record.original) && record.original.absent && !record.original.ticket && !record.original.received
           && <FReleaseButton label={confirm?.name ?? spec?.action ?? "原申请"} toast={ctx.toast} onRelease={() => ctx.recoverF4(record, "release")} />}
       </>,
     };

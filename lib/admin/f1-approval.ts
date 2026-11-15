@@ -41,6 +41,7 @@ export async function queryF1Proposal(adminId: number, original: FDomainAttempt)
   fCommands.remember(original.fingerprint, original.commandKey, { ...original, absent: false });
   const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
   if (!ticket) {
+    if (original.received || original.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
     fCommands.remember(original.fingerprint, original.commandKey, { ...original, ticket: undefined, absent: true });
     return null;
   }
@@ -104,6 +105,7 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
 
 /** Call only from an explicit confirmation surface (R1-提案过期). */
 export async function releaseF1Proposal(adminId: number, original: FDomainAttempt) {
+  if (original.received || original.ticket) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
   if (!isRetryExpired(original)) throw new Error("原操作尚未过期，请先查询原结果。");
   const ticket = await queryF1Proposal(adminId, original);
   if (ticket?.status === "pending") throw new Error("这张申请仍在等待审批。");

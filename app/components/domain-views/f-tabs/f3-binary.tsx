@@ -314,7 +314,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       : original.expiresAt <= Date.now()
         ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除待确认。">已过期</StatusTag>
         : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>;
-  const release = (original: FDomainAttempt, label: ReactNode) => original.expiresAt <= Date.now() && original.absent && !original.ticket
+  const release = (original: FDomainAttempt, label: ReactNode) => original.expiresAt <= Date.now() && original.absent && !original.ticket && !original.received
     ? <FReleaseButton label={label} toast={ctx.toast} onRelease={() => ctx.recoverF3(original, "release")} /> : null;
   const recoveryCount = (settlePending ? 1 : 0) + configProposals.length + (showPlacementRecovery ? 1 : 0);
   const recoveryOpen = [...(settlePending ? [settlePending] : []), ...configProposals].some((row) => row.ticket?.status !== "pending") || showPlacementRecovery;

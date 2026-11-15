@@ -87,7 +87,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
       actions: <>
         <Button size="sm" onClick={() => void ctx.recoverF1(original.fingerprint, "query").catch((error) => toast(displayAdminError(error)))}>查询原结果</Button>
         {canRetry && <Button size="sm" disabledReason={retryBlock} onClick={() => { setRetryError(null); setRetrying({ original, name, change }); }}>按原请求重试</Button>}
-        {expired && original.absent && !original.ticket && <FReleaseButton label={name} toast={toast} onRelease={() => ctx.recoverF1(original.fingerprint, "release")} />}
+        {expired && original.absent && !original.ticket && !original.received && <FReleaseButton label={name} toast={toast} onRelease={() => ctx.recoverF1(original.fingerprint, "release")} />}
       </>,
     });
   }
@@ -115,7 +115,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
               if (result?.active) ctx.acceptF1PolicyOverview(result.active); else void ctx.refreshF1();
             }, (error) => toast(displayAdminError(error)))}>查询原结果</Button>
             : <Button size="sm" onClick={() => onOpenPolicy({ ...editor, recoveryCommandKey: record.commandKey })}>查看原操作</Button>}
-          {approval && expired && record.absent && !record.ticket && <FReleaseButton label={name} toast={toast}
+          {approval && expired && record.absent && !record.ticket && !record.received && <FReleaseButton label={name} toast={toast}
             onRelease={async () => { await releaseF1PolicyProposal(owner, record.commandKey); await ctx.refreshF1(); }} />}
         </>,
       });
