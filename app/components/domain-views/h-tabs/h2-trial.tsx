@@ -79,6 +79,11 @@ type TrialProduct = {
   unavailableReason?: string;
 };
 
+// 库存没有数（不限库存的份额、或后端没给）时不写成 0。
+const stockText = (product: TrialProduct) => product.stock === null || product.stock === undefined || product.stock === ""
+  ? product.inventoryMode === "UNLIMITED" ? "不限库存" : "库存 —"
+  : `库存 ${product.stock}`;
+
 type H2Model = {
   stats?: Record<string, any>;
   params: TrialParam[];
@@ -271,7 +276,7 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, seatsLeft }
         <span className="h2-product-option" key={product.productNo}>
           <span className="h2-product-dot" aria-hidden />
           <span className="h2-product-name">{product.name}{product.productNo === current && <small>当前</small>}</span>
-          <span className="h2-product-meta">库存 {product.stock ?? 0} · {usdt(product.priceUsdt)}</span>
+          <span className="h2-product-meta">{stockText(product)} · {usdt(product.priceUsdt)}</span>
           {!product.selectable && <span className="h2-product-reason">不可选：{trialProductReason(product.unavailableReason)}</span>}
         </span>
       )])),
@@ -297,7 +302,7 @@ function ParamRow({ ctx, param, trialProducts, send, reach, blocked, seatsLeft }
           <b>{name}</b> · 当前 <span className="mono">{displayCurrent}</span>。
           {param.serverOnly ? "这个值只由系统使用，页面不显示。" : ""}
           {isProduct && currentProduct && !currentProduct.selectable ? (
-            <span className="rd-form-error">试用目标商品不可用 · 库存 {currentProduct.stock ?? 0} · {trialProductReason(currentProduct.unavailableReason)}</span>
+            <span className="rd-form-error">试用目标商品不可用 · {stockText(currentProduct)} · {trialProductReason(currentProduct.unavailableReason)}</span>
           ) : null}
         </>
       ),
@@ -738,7 +743,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const issues: Array<{ key: string; tone: StateTone; title: string; body: ReactNode }> = [];
   if (j1Closed) issues.push({ key: "j1", tone: "danger", title: "试用已被紧急停用开关关闭", body: <>用户现在不能开始试用。{reach(j1Href) && <Link className="rd-link" href={j1Href} prefetch={false}>去紧急停用开关</Link>}</> });
   if (productBlocked) issues.push({ key: "product", tone: "danger", title: "试用目标商品不可用", body: product
-    ? <>库存 {product.stock ?? 0} · {trialProductReason(product.unavailableReason)}</>
+    ? <>{stockText(product)} · {trialProductReason(product.unavailableReason)}</>
     : <>商品编号 {productNo || "未设置"} 不在可选列表，用户现在不能开始试用。{reach(pricingHref) && <Link className="rd-link" href={pricingHref} prefetch={false}>到商品管理与上架条件核对「允许试用」</Link>}</> });
   if (phaseClosed) issues.push({ key: "phase", tone: "warn", title: "当前运营阶段不开放试用", body: <>用户现在不能开始试用。{reach(phaseHref) && <Link className="rd-link" href={phaseHref} prefetch={false}>去运营阶段设置</Link>}</> });
   if (!seatsKnown) issues.push({ key: "seats", tone: "warn", title: "今日实际剩余名额读不到", body: operatorCopyText(seats?.sub ?? "名额计数暂不可用，请稍后刷新；不能作为领取依据") });
