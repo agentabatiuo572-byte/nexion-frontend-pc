@@ -233,7 +233,7 @@ export function I3RecoveryNotice({ rows }: { rows: I3RecoveryRow[] }) {
             <span className="i3-recovery-name">{row.name}</span>
             <span className="i3-recovery-object">{row.object}{row.change ? ` · ${row.change}` : ""}</span>
             <span className="i3-recovery-time">{`${businessStamp(row.submittedAt)} 提交`}</span>
-            <StatusTag tone={row.expired || row.submitted ? "neutral" : "warn"} icon={CircleHelp}>{row.expired ? "已过期" : row.submitted ? "已提交，状态未查到" : "结果未知"}</StatusTag>
+            <StatusTag tone={row.expired || row.submitted ? "neutral" : "warn"} icon={CircleHelp}>{row.submitted ? "已提交，状态未查到" : row.expired ? "已过期" : "结果未知"}</StatusTag>
             <span className="i3-recovery-actions">{row.actions}</span>
             {row.note && <span className="i3-recovery-note">{row.note}</span>}
           </li>
