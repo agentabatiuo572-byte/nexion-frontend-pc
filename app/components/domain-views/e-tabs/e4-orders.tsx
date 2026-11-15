@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { AlertTriangle, ClipboardList, Coins, Copy, History, Package, Receipt, RefreshCw, Route, Server, User, Workflow } from "lucide-react";
+import { AlertTriangle, ClipboardList, Coins, Copy, History, Package, Receipt, RefreshCw, Route, SearchCheck, Server, User, Workflow } from "lucide-react";
 import {
   Button, Cell, Change, ColumnPicker, Conclusion, Decision, Drawer, Explain, Fact, Facts, KeepText, FilterBar, FilterField, Fold, IconButton, Input, IrreversibleTag,
   JudgmentPoints, Notice, PageHeader, Pager, Panel, RecordList, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Steps, Table, TableLoading, TableMessage, Td, Th, Timeline, Tr,
@@ -15,6 +15,7 @@ import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { e4RefundAmountError } from "@/lib/admin/e4-refund-amount";
 import { useReach } from "@/lib/nav/use-reach";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
+import { FundCheckResult, FundClosureModal } from "../fund-command-check";
 import type { E4PendingCommand, EViewCtx } from "./types";
 import { E4_PAGE_SIZES, ORDER_FINAL_STATES, ORDER_FLOW, ORDER_STATE_GROUPS, ORDER_STATE_TONE, orderAmount, orderAmountDigits, orderMoney, stateLabel, type E4Query } from "./data";
 
@@ -56,7 +57,7 @@ const REFUND_APPROVAL_NOTE = "要另一位有退款权和批准权的超级管�
 
 // 决定钱的规则一条一句，不写成一段（DT-02）。
 const REFUND_RULES = [
-  { title: "能退哪些", rules: ["只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款", "具退款权限的财务主管或超管发起，另一位有权超管批准；提交时后端核实退款权限来源", "批准执行时会检查平台资金是否够退"] },
+  { title: "能退哪些", rules: ["只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款", "有退款权的财务主管或超级管理员发起，另一位超级管理员批准；提交时后端核实退款权限来源", "批准执行时会检查平台资金是否够退"] },
   { title: "退了以后", rules: ["批准后钱退回用户钱包，退款不可撤销", "仍属于原购买者且未退款、未回收的购买设备停用并标为已退款", "普通订单已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回", "已发放的赠品设备收回并停止任务，已到账的赠品收益不扣回，由平台承担", "试用转购奖励可能追回", "促销奖励另按售后规则追回，追不回的部分由平台承担"] },
 ];
 
@@ -134,6 +135,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   const { orders, e4Query: query, e4Counts: counts, e4Loading: loading, e4Error: error } = ctx;
   const reach = useReach();
   const [releasing, setReleasing] = useState<E4PendingCommand | null>(null);
+  const [closing, setClosing] = useState<E4PendingCommand | null>(null);
   const columns = useTableColumns("e4-orders", ORDER_COLUMNS);
   const currentGroup = ORDER_STATE_GROUPS.find((group) => group.value === query.group);
   // 数量只写在汇总和流程表里，分段不再带数（DP-61）。
@@ -188,16 +190,25 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       const created = !!record.receivedTicketId || record.creationConfirmed === true;
       const needQuery = ctx.canQueryE4 && !ctx.e4QueryMissing.includes(record.commandKey);
       const retryBlock = expired ? undefined : !canRetry ? "这个账号已没有这项权限，请有权限的同事处理" : needQuery ? "先查询原结果，明确查不到才能重试" : undefined;
-      return <Notice key={record.fingerprint} tone="warn" title={`${record.label} · ${record.proposalStatus === "pending" ? "待审批" : "结果未知"}`} actionBelow
+      const waiting = record.proposalStatus === "pending";
+      const outcome = ctx.e4InvestigationResults[record.commandKey];
+      const access = ctx.e4InvestigationAccess(record);
+      const sent = `${formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（${businessZone().label}）发出`;
+      const ticketText = record.receivedTicketId ? `审批单 ${record.receivedTicketId} ` : "审批单";
+      return <Notice key={record.fingerprint} tone={waiting ? "progress" : "warn"} title={`${record.label} · ${waiting ? "待审批" : created ? "进度没读到" : "结果未知"}`} actionBelow
         action={<>
-          {ctx.canQueryE4 && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Pending(record)}>查询原结果</Button>}
+          {ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint && created} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Pending(record)}>{waiting ? "刷新审批进度" : "查询原结果"}</Button>}
+          {!created && outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "UNKNOWN" && access.canSubmit && <Button size="sm" variant="danger-outline" disabled={!!ctx.e4Retrying} onClick={() => setClosing(record)}>核查结案</Button>}
           {!expired && !created && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原请求重试</Button>}
-          {(!created && ((!expired && ctx.e4RetryRejected.includes(record.commandKey)) || (expired && ctx.e4ExpiredNotFound.includes(record.commandKey)))) && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除待确认</Button>}
+          {!created && expired && ctx.e4ExpiredNotFound.includes(record.commandKey) && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
         </>}>
-        <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，可能已经提交。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? "这个账号已没有这项权限，不能重试。" : needQuery ? "先查询原结果，查不到再按原请求重试。" : "重发原内容，已成功的不会重复执行。"}有结论前这单不能再操作。{ctx.e4RetryRejected.includes(record.commandKey) && "解除待确认只清本页的记录，不改原操作的结果。"}
+        <p>{waiting ? `${sent}，${ticketText}已建好，正在等另一位超级管理员批准。批准前这单不能再操作。`
+          : created ? `${sent}，${ticketText}已建好，但现在的审批进度没读到。点「查询原结果」再读一次，不要重新提交。`
+            : `${sent}，可能已经提交。${expired ? ctx.e4ExpiredNotFound.includes(record.commandKey) ? "已超过 24 小时，按原请求也查不到审批单，说明申请没有建成，可以解除这条记录。" : "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? "这个账号已没有这项权限，不能重试。" : needQuery ? "先查询原结果，查不到审批单再按原请求重试。" : "按原请求重试会重发原内容，已成功的不会重复执行。"}有结果前这单不能再操作。`}
         {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(record.orderNo)}`}>到操作记录与审批核对</Link></>}
-        <Explain label="技术信息" content={`原请求编号 ${record.commandKey} ｜ 理由 ${record.spec.reason}`} /></p>
-        {ctx.e4PendingNotes[record.fingerprint] && <p><KeepText text={ctx.e4PendingNotes[record.fingerprint]} phrases={["本次没有发送", "结果仍未知", "原命令继续保留", "原操作继续保留", "请查询原操作"]} /></p>}
+        <Explain label="技术信息" content={`原请求编号 ${record.commandKey}${record.receivedTicketId ? ` ｜ 审批单 ${record.receivedTicketId}` : ""} ｜ 理由 ${record.spec.reason}`} /></p>
+        {ctx.e4PendingNotes[record.fingerprint] && <p><KeepText text={ctx.e4PendingNotes[record.fingerprint]} phrases={["本次没有发送", "结果仍未知", "记录继续保留"]} /></p>}
+        {!created && <FundCheckResult record={record} outcome={outcome} expired={expired} canRetry={!expired && canRetry} hideTech />}
       </Notice>;
     })}
 
@@ -210,8 +221,8 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
                 {!!flowWait && <Button size="sm" onClick={() => ctx.updateE4Query({ group: "flow", state: "" })}>看进行中的订单</Button>}
                 {refundWait > 0 && <Button size="sm" onClick={() => ctx.updateE4Query({ group: "failed", state: "provisioning_failed" })}>看开通失败的订单</Button>}
               </>}>{waitTitle}</Conclusion>
-          : error ? <Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshE4()}>重试</Button>}>订单列表没读到；按计数没有要处理的订单</Conclusion>
-          : ctx.e4Pending.length + ctx.e4ReceiptAttempts.length > 0 ? <Conclusion state="warn">除了上方结果未知的 {new Set([...ctx.e4Pending, ...ctx.e4ReceiptAttempts].map((record) => record.orderNo)).size} 单，没有要处理的订单</Conclusion>
+          : error ? <Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshE4()}>重试</Button>}>订单列表没读到，还不能确认有没有要处理的订单</Conclusion>
+          : ctx.e4Pending.length + ctx.e4ReceiptAttempts.length > 0 ? <Conclusion state="warn" hint="有结果前这些单不能再操作。">上方有 {new Set([...ctx.e4Pending, ...ctx.e4ReceiptAttempts].map((record) => record.orderNo)).size} 单的操作结果未知或在等审批，先到上方核对</Conclusion>
           : <Conclusion state="ok" hint={counts?.placed ? `${counts.placed} 单在等用户付款，不用操作。` : undefined} explain={searchNote || undefined}>没有要处理的订单</Conclusion>}
 
     <StatBand label="订单汇总">
@@ -261,7 +272,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
                       <Td><Cell main={<StatusTag tone={ORDER_STATE_TONE[state] ?? "neutral"}>{stateLabel(state)}</StatusTag>} sub={order.pendingApproval ? <StatusTag tone="warn">待审批</StatusTag> : STATE_NEXT[state]} /></Td>
                       {columns.isVisible("user") && <Td><Cell mono main={order.user} /></Td>}
                       {columns.isVisible("sku") && <Td className="e4-sku"><Cell main={order.sku} title={order.sku} /></Td>}
-                      {columns.isVisible("amount") && <Td align="right"><Cell num main={orderAmount(order.amt, amountDigits)} /></Td>}
+                      {columns.isVisible("amount") && <Td align="right"><Cell num main={orderAmount(order.amt, amountDigits)} sub={order.state === "refunded" && order.refundAmountUsdt !== null && Number(order.refundAmountUsdt) !== Number(order.amt) ? `实退 ${orderAmount(order.refundAmountUsdt)}` : undefined} /></Td>}
                       {columns.isVisible("dc") && <Td><Cell main={order.dc} title={order.dc} /></Td>}
                       {columns.isVisible("age") && <Td align="right"><Cell num main={ORDER_FINAL_STATES.includes(state) ? "—" : order.age} /></Td>}
                     </Tr>
@@ -299,7 +310,9 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     <E4OrderDrawer ctx={ctx} />
 
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => { ctx.releaseE4Pending(releasing); setReleasing(null); }}
-      explain="重试被拒说明不了原操作的结果，先到操作记录确认它有没有提交。解除后原操作不再重试，系统仍按这单现在的状态校验。" />}
+      explain="已超过 24 小时，按原请求查不到这张审批单，说明申请没有建成。确认时会再查一次，查到审批单就不解除。解除后这单可以重新处理，系统按这单现在的状态校验。" />}
+    {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt} facts={<Fact k="订单">{closing.orderNo}</Fact>}
+      onClose={() => setClosing(null)} onSubmit={async evidence => { await ctx.checkE4Investigation(closing, evidence); setClosing(null); }} />}
   </>;
 }
 
@@ -404,11 +417,14 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
     : !refundableState ? { label: "退款", value: "不能退款", reason: "用户还没付款。只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款。" }
       : !e4Detail ? { label: "退款", ...pendingFact }
         : pendingApproval ? { label: "退款", value: "等待审批结束" }
-          : refundAvailable ? { label: "退款", value: canRefundE4 ? "可申请退款审批" : "符合退款条件，需具退款权限的财务主管或超管发起", reason: coverageReason }
+          : refundAvailable ? { label: "退款", value: canRefundE4 ? "可申请退款审批" : "符合退款条件，需有退款权的财务主管或超级管理员发起", reason: coverageReason }
           : { label: "退款", value: refundBlockText, reason: coverageKnown ? coverageReason : "要先读到兑付覆盖率才能退款。过一会儿重新打开这单。", state: coverageKnown ? "danger" : "warn" };
   const rows: JudgmentRow[] = [
     nextRow,
-    ...(finalized && closeRecord && e4Detail ? [{ label: FAILED_STATES.includes(eff) ? "失败原因" : "原因", value: operatorOrderHistoryReason(closeRecord.reason, e4Detail.paymentMethod) }] : []),
+    ...(finalized && closeRecord && e4Detail ? [{ label: FAILED_STATES.includes(eff) ? "失败原因" : eff === "refunded" ? "退款原因" : "原因", value: operatorOrderHistoryReason(closeRecord.reason, e4Detail.paymentMethod) }] : []),
+    ...(eff === "refunded" ? [o.refundAmountUsdt === null
+      ? { label: "实退金额", value: "—", reason: `没有记录实退金额；原订单金额 ${orderMoney(o.amt)}` }
+      : { label: "实退金额", value: orderMoney(o.refundAmountUsdt), reason: `原订单金额 ${orderMoney(o.amt)}` }] : []),
     { label: "对象", icon: User, tone: "users", value: o.user, reason: o.sku },
     { label: "金额", icon: Coins, tone: "money", value: orderMoney(o.amt), reason: e4Detail ? `${e4Detail.quantity} 台 · ${operatorOrderFact("type", e4Detail.orderType)}` : undefined },
     e4Detail
@@ -454,17 +470,17 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
             briefKind: "funds", name: "退款 · " + o.id, title: "退款订单", op: "order-refund", orderId: o.id, amplify: false, fixedVal: channel,
             refundFacts: { originalAmountUsdt: o.amt, wholeOrderTerminal: true, promotionRecovery: "WHOLE_ORDER", coveragePreview: "FULL_REFUND" },
             effect: <><StatusTag tone="progress" filled explain={REFUND_APPROVAL_NOTE}>批准后生效</StatusTag><IrreversibleTag /></>, confirmLabel: "提交审批", confirmTone: "danger", reasonPlaceholder: reasonHint,
-            statedBrief: { impact: `另一位有权超管批准后，钱退回用户钱包；符合条件的购买设备停用${giftClause}`, check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
+            statedBrief: { impact: `另一位超级管理员批准后，退款金额退回用户钱包；符合条件的购买设备停用${giftClause}`, check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
             facts: <div className="rd-stack">
               <div className={e4Detail.orderType !== "TRIAL_CONVERT" ? "e4-refund-grid" : undefined}>
                 <div className="rd-stack">
                   <Facts>
-                    <Fact k="退款金额" lead tone="role-1" unit="USDT">{orderAmount(o.amt)}</Fact>
+                    <Fact k="原订单金额" lead tone="role-1" unit="USDT">{orderAmount(o.amt)}</Fact>
                     <Fact k="订单"><span data-mono>{o.id}</span></Fact>
                     <Fact k="用户">{o.user}</Fact>
                     {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
                     {/* 退款入口只在读到覆盖率时开。 */}
-                    <Fact k="兑付覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">红线 {fmtConfigPct(e4Detail.coverageRedline!)}</span><Explain label="兑付覆盖率什么时候检查" content="批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
+                    <Fact k="兑付覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">按全额退款估算 · 红线 {fmtConfigPct(e4Detail.coverageRedline!)}</span><Explain label="兑付覆盖率什么时候检查" content="这里按整单全额退款估算，少退时实际影响更小。批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
                     {e4Detail.orderType === "TRIAL_CONVERT" && <Fact k="试用奖励">这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></Fact>}
                   </Facts>
                   <Fold title="商品与购买设备" summary={purchaseDevices == null ? "明细未提供" : purchaseDevices.length ? `${purchaseDevices.length} 台` : "尚未生成"} inset>
@@ -472,7 +488,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
                       <Facts>
                         <Fact k="商品">{o.sku}</Fact>
                         <Fact k="购买设备"><KeepText text={refundDeviceLine} phrases={["已到账收益不扣回"]} /><Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
-                        <Fact k="审批身份"><KeepText text="具退款权限的财务主管或超管发起，另一位有权超管批准" phrases={["另一位有权超管批准"]} /><Explain label="发起身份如何核实" content="会话不提供每项权限的角色来源，主角色不能证明退款权来源。这里仅开放申请入口，提交时由后端核实退款权来自财务主管，或发起人是真实超管。" /></Fact>
+                        <Fact k="审批身份"><KeepText text="有退款权的财务主管或超级管理员发起，另一位有退款权和批准权的超级管理员批准" phrases={["另一位有退款权和批准权的超级管理员批准"]} /><Explain label="发起身份如何核实" content="会话不提供每项权限的角色来源，主角色不能证明退款权来源。这里仅开放申请入口，提交时由后端核实退款权来自财务主管，或发起人是超级管理员。" /></Fact>
                       </Facts>
                     </div>
                   </Fold>

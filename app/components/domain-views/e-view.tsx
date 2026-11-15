@@ -514,7 +514,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
         if (saved.receivedTicketId || saved.creationConfirmed) throw new Error("OPERATION_RESULT_UNKNOWN");
         setE4QueryMissing(current => [...current, saved.commandKey]);
         if (saved.expiresAt <= Date.now()) setE4ExpiredNotFound(current => [...current, saved.commandKey]);
-        noteE4Pending(saved, "暂未查到原提案，结果仍待核实。原操作继续保留，不会重新提交。");
+        noteE4Pending(saved, "暂未查到原审批单，结果仍未知。记录继续保留，不会重新提交。");
         return null;
       }
       if (!ticket.mine || ticket.obj !== saved.orderNo || saved.receivedTicketId && saved.receivedTicketId !== ticket.id
@@ -625,12 +625,11 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
           syncE4Pending();
           await readE4CurrentProposal({ ...saved, creationConfirmed: true });
         }
-      } else if (!receipt) noteE4Pending(record, displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED")));
+      }
       return receipt;
     } catch (cause) {
       const error = displayAdminError(cause);
       setE4InvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
-      noteE4Pending(record, error);
       throw cause;
     } finally { setE4Retrying(""); }
   };
@@ -650,7 +649,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     // 先核实持久副本；读取失败只停发，不能把本地故障当成原命令结案。
     if (!e4PendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
-      noteE4Pending(record, "浏览器里查不到这条记录，本次没有发送，结果仍未知。原命令继续保留，请查询原操作。");
+      noteE4Pending(record, "浏览器里查不到这条记录，本次没有发送，结果仍未知。记录继续保留，请查询原结果。");
       return;
     }
     setE4Retrying(record.fingerprint);
@@ -658,7 +657,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       await sendE4Proposal(record.spec, record);
       await refreshE4();
     } catch (error) {
-      noteE4Pending(record, `重试没有成功：${displayAdminError(error)} 这说明不了原操作的结果，原操作继续保留。`);
+      noteE4Pending(record, `重试没有成功：${displayAdminError(error)} 这说明不了原操作的结果，记录继续保留。`);
     } finally {
       setE4Retrying("");
     }
@@ -689,7 +688,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       await readE4CurrentProposal(record);
     } catch (error) {
-      noteE4Pending(record, `查询没有成功：${displayAdminError(error)} 原操作继续保留。`);
+      noteE4Pending(record, `查询没有成功：${displayAdminError(error)} 记录继续保留。`);
     } finally {
       setE4Retrying("");
     }
