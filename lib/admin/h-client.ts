@@ -14,6 +14,16 @@ interface ApiResult<T> {
 
 export type H1RhythmParamKey = "totalMonths" | "currentMonth" | "phaseProgressPct";
 
+export interface H1RhythmState {
+  available: boolean;
+  missing: string[];
+  invalid: { key: string; reason: string }[];
+  zero: string[];
+  totalMonths: number;
+  currentMonth: number;
+  phaseProgressPct: number;
+}
+
 export interface H1RhythmOverview {
   totalMonths: number | null;
   currentMonth: number | null;
@@ -21,6 +31,7 @@ export interface H1RhythmOverview {
   phaseProgressPct: number | null;
   options: number[];
   sources: string[];
+  rhythmState?: H1RhythmState;
   /**
    * 服务端权威排程事实。
    *
@@ -94,6 +105,21 @@ function normalizeRhythm(raw?: Record<string, unknown> | null): H1RhythmOverview
   const currentPhase = typeof raw.currentPhase === "string" && raw.currentPhase.trim()
     ? raw.currentPhase.trim()
     : "";
+  let rhythmState: H1RhythmState | undefined;
+  if (raw.rhythmState !== undefined) {
+    const value = raw.rhythmState;
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("H1_RESPONSE_INVALID:rhythmState");
+    const state = value as Record<string, unknown>;
+    if (typeof state.available !== "boolean"
+      || !Array.isArray(state.missing) || !state.missing.every(key => typeof key === "string" && key.trim())
+      || !Array.isArray(state.zero) || !state.zero.every(key => typeof key === "string" && key.trim())
+      || !Array.isArray(state.invalid) || !state.invalid.every(issue => issue && typeof issue === "object"
+        && typeof issue.key === "string" && issue.key.trim() && typeof issue.reason === "string" && issue.reason.trim())
+      || ![state.totalMonths, state.currentMonth, state.phaseProgressPct].every(Number.isSafeInteger)) {
+      throw new Error("H1_RESPONSE_INVALID:rhythmState");
+    }
+    rhythmState = state as unknown as H1RhythmState;
+  }
   return {
     totalMonths,
     currentMonth: rawCurrentMonth,
@@ -101,6 +127,7 @@ function normalizeRhythm(raw?: Record<string, unknown> | null): H1RhythmOverview
     phaseProgressPct: rawPhaseProgress,
     options,
     sources: Array.isArray(raw?.sources) ? raw.sources.map(String) : [],
+    rhythmState,
     schedule: normalizeSchedule(raw.schedule),
   };
 }

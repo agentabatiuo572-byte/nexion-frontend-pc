@@ -340,6 +340,11 @@ export default function H1Phase({ ctx,
   !monthValid && "当前月份不可用",
   !phaseKnown && "当前阶段没有设置或不在阶段列表里",
   monthValid && !currentRow && "缺本月参数"].filter(Boolean).join("；");
+  // Diagnostics describe primary configuration; legacy numbers can be fallback values.
+  // Keep the existing write preconditions independent of this read-only diagnosis.
+  const configUnavailable = rhythm?.rhythmState
+    ? rhythm.rhythmState.available ? "" : "阶段配置不可用"
+    : unavailable;
   const coverage = model?.coverage;
   const ratio = number(coverage?.coverageRatio);
   const redline = number(coverage?.redlinePct);
@@ -822,7 +827,7 @@ export default function H1Phase({ ctx,
     {feedback && !pending.some((row) => row.commandKey === checked && row.commandKey !== sending) && <Notice tone="warn">{feedback}</Notice>}
     {!canRead ? <BlockState state="denied" title="没有运营阶段读取权限" /> : loading && !model ? <BlockState state="loading" title="正在加载运营阶段…" /> : error && !model ? <BlockState state="error" title="运营阶段数据加载失败" detail={error} onRetry={() => void reload()} /> : model && rhythm && <>
       {error && <Notice tone="danger" action={<Button size="sm" onClick={() => void reload()}>重试</Button>}>运营阶段数据加载失败：{error} 下面是上次读到的值，刷新成功前不能修改。</Notice>}
-      <Conclusion state={unavailable ? "warn" : "neutral"} icon={Flag} hint={unavailable ? `${unavailable}。请联系值班人员处理后刷新；这页不会自动补默认值。` : undefined}>{unavailable ? "阶段配置不可用" : `当前 ${phaseLabel}`} · {describeH1Schedule(rhythm.schedule)}</Conclusion>
+      <Conclusion state={configUnavailable ? "warn" : "neutral"} icon={Flag} hint={configUnavailable ? `${configUnavailable}。请联系值班人员处理后刷新；这页不会自动补默认值。` : undefined}>{configUnavailable ? "阶段配置不可用" : `当前 ${phaseLabel}`} · {describeH1Schedule(rhythm.schedule)}</Conclusion>
       {fundingBlocked && <Notice tone="warn" action={reach("/finance/pool") ? <Link className="rd-link" href="/finance/pool" prefetch={false}>核对资金储备与应付款 →</Link> : undefined}>暂时不能放大调整：{!coverage?.reliable ? "兑付覆盖率读数不可靠。" : "兑付覆盖率低于红线或没读到。"}</Notice>}
       <div className="h1-navigation">
         <SectionNav row label="本页分组" items={SECTIONS} nav={nav} />
