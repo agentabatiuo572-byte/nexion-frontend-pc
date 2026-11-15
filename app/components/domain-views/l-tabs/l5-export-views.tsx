@@ -71,9 +71,9 @@ export function MaskTag({ mask }: { mask: LExportTask["mask"] }) {
 
 const STATUS: Record<string, { label: string; tone: StateTone; icon?: LucideIcon; explain: string }> = {
   PENDING_CONFIRM: { label: "待放行", tone: "warn", icon: Clock3, explain: "含隐私的脱敏明细，要另一位有导出审批权的管理员放行后才能下载。" },
-  PENDING_SPLIT_CONFIRM: { label: "待放行", tone: "warn", icon: Clock3, explain: "后端状态是「待拆分确认」，放行方式和普通待放行一样。" },
-  PENDING: { label: "待处理", tone: "neutral", explain: "后端还没开始生成。" },
-  GENERATING: { label: "生成中", tone: "progress", explain: "现在的导出创建时就生成好，不会停在这里；停在生成中的任务不会自己变成可下载，请联系技术同事核对。" },
+  PENDING_SPLIT_CONFIRM: { label: "待放行", tone: "warn", icon: Clock3, explain: "这份是分批确认的待放行，放行方式和普通的一样。" },
+  PENDING: { label: "待处理", tone: "neutral", explain: "还没开始生成。" },
+  GENERATING: { label: "生成中", tone: "progress", explain: "正常的导出创建时就生成好了；停在这里的不会自己变成可下载，请联系技术同事。" },
   READY: { label: "可下载", tone: "ok", explain: "文件已生成。每次点「下载」签发一个只给你用、24 小时内有效的链接。" },
   EXPIRED: { label: "已过期", tone: "done", explain: "可以「重新发起」：用原来那份文件改回可下载，不重新取数；含隐私的要再放行一次。" },
   FAILED: { label: "生成失败", tone: "danger", explain: "可以「重新发起」：用原来那份文件改回可下载，不重新取数；含隐私的要再放行一次。" },
@@ -82,7 +82,7 @@ const STATUS: Record<string, { label: string; tone: StateTone; icon?: LucideIcon
 export function taskStatus(task: LExportTask): { label: string; tone: StateTone; icon?: LucideIcon; explain: string } {
   if (!task.supported) return { label: "历史类型已关闭", tone: "neutral", explain: "这种导出类型现在已关闭，只保留记录，不能下载或重新发起。" };
   if (task.st === "READY" && !task.snapshotAvailable) return { label: "没有文件", tone: "neutral", explain: "这份任务没有保存文件，不能下载；需要的话重新创建一份。" };
-  return STATUS[task.st] ?? { label: "状态未知", tone: "warn", explain: `后端返回了页面不认识的状态 ${task.st}，请刷新；仍然这样请联系技术同事。` };
+  return STATUS[task.st] ?? { label: "状态未知", tone: "warn", explain: `这个状态页面认不出（${task.st}），请刷新；仍然这样请联系技术同事。` };
 }
 
 export function TaskStatusTag({ task, unknown }: { task: LExportTask; unknown?: boolean }) {
@@ -121,7 +121,7 @@ export function PendingCard({ task, title, source, scope, fields, requester, act
       <dl className="l5-pending-facts">
         <div><dt>来源</dt><dd>{source}</dd></div>
         <div><dt>范围</dt><dd title={scope}>{scope}</dd></div>
-        <div><dt>字段</dt><dd title={fields}>{fields}</dd></div>
+        <div><dt>内容</dt><dd title={fields}>{fields}</dd></div>
         <div><dt>行数</dt><dd data-num="">{task.rows === "—" ? <span className="l5-weak">—</span> : <>{rowsText(task.rows)} 行</>}</dd></div>
         <div><dt>脱敏</dt><dd><MaskTag mask={task.mask} /></dd></div>
         {requester !== undefined && <div><dt>申请人</dt><dd>{requester}</dd></div>}
@@ -154,7 +154,7 @@ export function L5RecoveryNotice({ rows }: { rows: L5RecoveryItem[] }) {
   return (
     <Notice tone="warn" title={<>有 {rows.length} 项操作结果未知<Explain label="结果未知怎么处理" content={<>
       <p>放行或重新发起时没收到确定结果，任务可能已经变了状态。</p>
-      <p>先点「查询原结果」读回任务现在的状态。24 小时内也可以「按原请求重试」：后端认得出是同一次提交，不会放行两次。超过 24 小时只能查询。</p>
+      <p>先点「查询原结果」看任务现在的状态。24 小时内也可以按原请求重试，不会放行两次；超过 24 小时只能查询。</p>
       <p>任务变成可下载，也可能是另一位管理员放行的，不能据此认定是你这一次生效。</p>
     </>} /></>}>
       <ul className="l5-recovery" aria-label="结果未知的操作">
@@ -193,8 +193,8 @@ export type MaskRule = { f: string; cat: string; catTone: string; rule: string; 
 
 export function MaskRuleTable({ rules }: { rules: MaskRule[] }) {
   return (
-    <Table label="字段脱敏规则">
-      <thead><tr><Th>字段</Th><Th>类别</Th><Th>导出来长什么样</Th><Th>能不能解密</Th><Th>解密要谁确认</Th></tr></thead>
+    <Table label="脱敏规则">
+      <thead><tr><Th>信息</Th><Th>类别</Th><Th>导出来长什么样</Th><Th>能不能解密</Th><Th>解密要谁确认</Th></tr></thead>
       <tbody>
         {rules.map((rule) => (
           <Tr key={rule.f}>
@@ -205,7 +205,7 @@ export function MaskRuleTable({ rules }: { rules: MaskRule[] }) {
             <Td>{rule.appr}</Td>
           </Tr>
         ))}
-        {rules.length === 0 && <TableMessage columns={5} role="alert">字段规则没有读到，已按最小权限处理：隐私字段一律不能原文导出。</TableMessage>}
+        {rules.length === 0 && <TableMessage columns={5} role="alert">脱敏规则没有读到，隐私信息一律按不能原文导出处理。</TableMessage>}
       </tbody>
     </Table>
   );
