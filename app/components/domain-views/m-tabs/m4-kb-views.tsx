@@ -102,7 +102,7 @@ function Translations({ faq }: { faq: M4Faq }) {
   if (!entries.length) return null;
   return (
     <Fold inset title="附带的翻译" summary={`${entries.length} 种语言`}
-      explain="只有英语问答能带翻译。改成别的语言保存，翻译会被清掉；英语保存时不带翻译，原翻译保留。App 现在只按中文、英语、越南语读取，这些翻译暂时不会显示给用户。">
+      explain="只有英语问答能带翻译：用英语保存不影响翻译，改成别的语言保存会清掉。App 现在只读中文、英语、越南语，这些翻译暂时不显示给用户。">
       {entries.map(([code, text]) => (
         <div key={code} className="m4-translation">
           <span className="m4-translation-lang">{languageName(code)}</span>
@@ -201,7 +201,7 @@ export type M4PendingRow = { key: string; question: string; change: ReactNode; s
 export function M4PendingWrites({ rows }: { rows: readonly M4PendingRow[] }) {
   if (rows.length === 0) return null;
   return (
-    <Notice tone="warn" title={<>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内按原请求重试，后端认得出是同一次提交，不会重复执行。「读回核对」只重读列表看现状，证明不了原操作有没有执行，记录也不会因此消失。有结论前这条问答不能再改。" /></>}>
+    <Notice tone="warn" title={<>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到结果，可能已经生效。24 小时内可以按原请求重试，系统认得出是同一次提交，不会重复执行。「读回核对」只看现在的列表，证明不了原操作有没有执行，记录也不会因此消失。有结论前这条问答不能再改。" /></>}>
       <ul className="m4-pending" aria-label="结果未知的操作">
         {rows.map((row) => (
           <li key={row.key}>

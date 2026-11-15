@@ -112,21 +112,21 @@ export function DeviceReport({ data, scope, links, panel }: { data: L4Operations
   const by = bucketWord(data);
   return (
     <Panel {...panel} title="设备" icon={Cpu} tone="role-2" sub={scope} actions={links}
-      explain={<><p>「这段时间」的数按所选时间段和阶段里的设备事件算；「读取那一刻」的数来自当前设备表，不随时间段变。</p><p>这页只能看，不处置设备。</p></>}>
+      explain={<><p>「这段时间」的数按所选时间段和阶段里的设备事件算；「读取那一刻」的数是现在的累计数，不随时间段变。</p><p>这页只能看，不处置设备。</p></>}>
       <div className="l4-stack">
         <div className="l4-groups">
           <section className="l4-group">
             <Sub>这段时间</Sub>
             <Nums label="这段时间的设备数" rows={[
-              { key: "buy", name: "购置", value: count(s.periodPurchasedDevices), unit: "台", explain: "这段时间完成购买的设备，按设备去重；不等于期末还在用的台数。" },
-              { key: "retire", name: "退役", value: count(s.periodRetiredDevices), unit: "台", explain: "这段时间退役的设备，按设备去重。" },
-              { key: "lock", name: "锁定", value: count(s.periodLockedDevices), unit: "台", explain: "这段时间被锁定的设备，按设备去重。" },
-              { key: "first", name: "首次产出", value: count(s.periodFirstYieldDevices), unit: "台", explain: "这段时间第一次拿到收益的设备，按设备去重。" },
+              { key: "buy", name: "购置", value: count(s.periodPurchasedDevices), unit: "台", explain: "这段时间完成购买的设备，同一台只算一次；不等于期末还在用的台数。" },
+              { key: "retire", name: "退役", value: count(s.periodRetiredDevices), unit: "台", explain: "这段时间退役的设备，同一台只算一次。" },
+              { key: "lock", name: "锁定", value: count(s.periodLockedDevices), unit: "台", explain: "这段时间被锁定的设备，同一台只算一次。" },
+              { key: "first", name: "首次产出", value: count(s.periodFirstYieldDevices), unit: "台", explain: "这段时间第一次拿到收益的设备，同一台只算一次。" },
             ]} />
             <Nums label="这段时间的产出" rows={[
               { key: "usdt", name: "产出", value: money(s.dailyYieldUsdt, digits), unit: "USDT", explain: "这段时间收益入账的 USDT 合计。" },
               { key: "uvt", name: "产出", value: money(s.dailyYieldNex), unit: "UVT", explain: "这段时间收益入账的 UVT 合计。" },
-              { key: "loss", name: "衰减影响", value: money(s.degradationLossUsdt, digits), unit: "USDT", explain: "每一笔收益都拿基准产出减实际产出，少于 0 的算 0，再加起来；不是两个总数直接相减。" },
+              { key: "loss", name: "衰减影响", value: money(s.degradationLossUsdt, digits), unit: "USDT", explain: "每笔收益比基准少产出的部分加起来，多产出的不抵。" },
             ]} />
           </section>
           <section className="l4-group" data-now="">
@@ -159,7 +159,7 @@ export function DeviceReport({ data, scope, links, panel }: { data: L4Operations
         <Fold inset title="按衰减程度看产出"
           summary={data.device.degradation.length ? `${data.device.degradation.length} 段 · 衰减影响合计 ${money(s.degradationLossUsdt, digits)} USDT` : "这段时间没有收益事件"}
           explain="收益事件按记下的衰减比例分段（四舍五入到两位），没有标衰减的写「未标注」。">
-          {data.device.degradation.length === 0 ? <p className="rd-note">这段时间没有可核验的设备产出和衰减事件。</p> : (
+          {data.device.degradation.length === 0 ? <p className="rd-note">这段时间没有收益事件。</p> : (
             <Table label="按衰减程度看产出" className="l4-table">
               <thead><tr><Th>衰减段</Th><Th align="right">收益事件</Th><Th align="right">实际产出</Th><Th align="right">衰减影响</Th></tr></thead>
               <tbody>{data.device.degradation.map((row) => {
@@ -186,8 +186,8 @@ export function DeviceReport({ data, scope, links, panel }: { data: L4Operations
 export const ACCEPTANCE_EXPLAIN = (
   <>
     <p>任务承接率 = 完成数 ÷ 派发数，是两个计数之比，可能超过 100%。</p>
-    <p>完成数按每个时间段分别数：同一个用户的同一个任务在两个时间段都完成，算两次；派发数按整个时间段去重，只算一次。所以它不是「派出去的任务里完成了多少」。</p>
-    <p>派发数是 0 或有的事件缺少用户、任务编号时算不出，写「—」。后端目前还没有产生任务派发记录，派发数多半是 0。</p>
+    <p>同一个人的同一个任务，完成在每一段各数一次，派发整段只数一次，所以它不是「派出的任务完成了几成」。</p>
+    <p>派发数是 0 或有的事件缺少用户、任务编号时算不出，写「—」。系统现在还不记任务派发，派发数多半是 0。</p>
     <p>低于 60% 时提醒，这条线固定，不能在这页调。</p>
   </>
 );
@@ -230,7 +230,7 @@ export function TaskReport({ data, scope, links, panel }: { data: L4OperationsDa
               series={[{ label: "完成", slot: 2 }]} pick={(row) => [row.tasksCompleted]} />
           </div>
           <Dist title="完成按任务类型" rows={data.tasks.byTier} slot={2} unit="次"
-            explain="和上面的完成数是同一批完成，按任务记下的类型分；后端有哪几类就列哪几类，不补空类型。" />
+            explain="和上面的完成数是同一批，按任务记下的类型分；只列有记录的类型。" />
         </div>
       </div>
     </Panel>
@@ -253,9 +253,9 @@ export function TeamReport({ data, scope, links, panel }: { data: L4OperationsDa
           <section className="l4-group">
             <Sub>这段时间</Sub>
             <Nums label="这段时间的团队数" rows={[
-              { key: "refs", name: "新增直接邀请", value: count(s.directRefs), unit: "人", explain: "这段时间绑定了邀请关系的好友，按被邀请的人去重。" },
-              { key: "gmv", name: "团队成交额", value: money(s.teamGmvUsdt, digits), unit: "USDT", explain: "先找出这段时间先绑定邀请、后来下过单的人，再把这些人这段时间的全部订单金额加起来；包括绑定之前的订单。" },
-              { key: "paid", name: "团队奖励发放", value: money(s.commissionPaidUsdt, digits), unit: "USDT", sub: `${count(s.commissionEvents)} 笔`, explain: "这段时间发放的全部奖励，不只团队奖励这一层。" },
+              { key: "refs", name: "新增直接邀请", value: count(s.directRefs), unit: "人", explain: "这段时间绑定了邀请关系的好友，同一个人只算一次。" },
+              { key: "gmv", name: "团队成交额", value: money(s.teamGmvUsdt, digits), unit: "USDT", explain: "这段时间新绑定邀请、之后又下过单的人，他们这段时间的全部订单金额，含绑定前的单。" },
+              { key: "paid", name: "团队奖励发放", value: money(s.commissionPaidUsdt, digits), unit: "USDT", sub: `${count(s.commissionEvents)} 笔`, explain: "这段时间发出的全部奖励，不只团队奖励一类。" },
             ]} />
             <Nums label="这段时间的比例" rows={[
               { key: "promo", name: "推广率", value: pct(s.promotionRate), explain: "这段时间买了设备、之后又发出邀请的人 ÷ 这段时间买了设备的人；不是全部持有设备的人。业务上也叫 L4→L5 推广率。算不出时写「—」。" },
@@ -304,8 +304,8 @@ export function bestConversion(rows: readonly L4PhaseRow[]) {
 }
 
 const PHASE_EXPLAIN = {
-  active: "这个阶段有日活记录的人数，同一个人只算一次；日活事件的来源还没确认，不代表所有打开过 App 的人。",
-  retention: "在这个阶段注册、之后又活跃过的人 ÷ 在这个阶段注册的人；不是第 7 天留存。算不出时写「—」。",
+  active: "这个阶段有日活记录的人数，同一个人只算一次。日活事件还没接上，这个数可能偏低甚至是 0。",
+  retention: "在这个阶段注册、之后又活跃过的人 ÷ 在这个阶段注册的人；不是第 7 天留存。日活事件还没接上，可能偏低甚至是 0%。算不出时写「—」。",
   conversion: "在这个阶段先逛过商店、之后下单的人 ÷ 逛过商店的人。算不出时写「—」。",
   yield: "这个阶段的收益入账 USDT 合计。",
 };

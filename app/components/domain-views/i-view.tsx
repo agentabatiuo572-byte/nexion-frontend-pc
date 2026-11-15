@@ -47,9 +47,8 @@ function contentErrorForTab(tab: string, content: IContentData) {
       ? "nova"
       : tab === "I3"
         ? "campaigns"
-        : tab === "I4" || tab === "I5"
-          ? "trustDisclosure"
-          : "i18nLearning";
+        : tab === "I4" ? "trustDisclosure"
+          : tab === "I5" ? "disclosures" : "i18nLearning";
   const error = content.errors?.[key];
   if (!error) return null;
   if (tab === "I5" && error === "I4 返回数据格式异常，请刷新重试") {
@@ -87,7 +86,7 @@ function liveFromBackend(tab: string, content: IContentData, loading: boolean, e
     return stats ? `信任版块 ${countText(stats.managedSections)} 个` : "";
   }
   if (tab === "I5") {
-    const stats = content.trustDisclosure?.stats;
+    const stats = content.disclosures?.stats;
     if (!stats) return "";
     const coverage = stats.reackPct !== undefined
       ? `${stats.reackJurisdiction || "适用地区"} 已重新确认 ${stats.reackPct}% · 待确认 ${countText(stats.staleAckUsers)} 人`
@@ -192,8 +191,10 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   const ctx: ICtx = {
     toast: setToast,
     openActionConfirm: setActionConfirm,
-    closeActionConfirm: () => setActionConfirm(null),
+    activeActionConfirm: mc,
+    closeActionConfirm: (request) => setActionConfirm(current => !request || current === request ? null : current),
     openConfirm: setCf,
+    closeConfirm: (request) => setCf(current => !request || current === request ? null : current),
     content,
     actions,
     contentLoading,
@@ -210,6 +211,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
           action={mc.action}
           title={mc.title}
           detail={mc.detail}
+          content={mc.content}
           amplifies={mc.amplifies}
           edit={mc.edit}
           businessForm={mc.businessForm}
@@ -220,24 +222,71 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
           confirmTone={mc.confirmTone}
           statedBrief={mc.statedBrief}
           coverageLead={mc.coverageLead}
+          coverageCheck={mc.coverageCheck}
           blockedReason={mc.blockedReason}
           reasonPlaceholder={mc.reasonPlaceholder}
+          initialReason={mc.initialReason}
           getPendingReason={mc.getPendingReason}
           getPendingBusinessValue={mc.getPendingBusinessValue}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
           onBusinessSelectionChange={mc.onBusinessSelectionChange}
-          onClose={() => setActionConfirm(null)}
+          onClose={() => setActionConfirm(current => current === mc ? null : current)}
           onConfirm={async (reason, newValue, businessValue) => {
             const succeeded = await mc.run(reason, newValue, businessValue);
-            if (succeeded !== false) setActionConfirm(null);
+            if (succeeded !== false) setActionConfirm(current => current === mc ? null : current);
           }}
         />
       )}
-      {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
+      {cf && <KConfirmModal req={cf} onClose={() => setCf(current => current === cf ? null : current)} />}
       {toastNode}
     </>
   );
+
+  if (tab === "I1") {
+    return (
+      <RdPage className="idom i1-page">
+        <I1CopyAb ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
+  if (tab === "I2") {
+    return (
+      <RdPage className="idom">
+        <I2Nova ctx={{ ...ctx, contentError: contentError ? contentErrorText(contentError) : null }} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
+  if (tab === "I3") {
+    return (
+      <RdPage className="idom i3-page">
+        <I3Campaign key={scopeKey} ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
+  if (tab === "I4") {
+    return (
+      <RdPage className="idom i4-page">
+        <I4Trust key={scopeKey} ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
+
+  if (tab === "I6") {
+    return (
+      <RdPage className="idom i6-page">
+        <I6I18n key={scopeKey} ctx={ctx} errorText={contentError ? contentErrorText(contentError) : null} />
+        {overlays}
+      </RdPage>
+    );
+  }
 
   if (tab === "I5") {
     return (
@@ -267,11 +316,6 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
         </section>
       )}
 
-      {(!contentError || contentReadable) && tab === "I1" && <I1CopyAb ctx={ctx} />}
-      {(!contentError || contentReadable) && tab === "I2" && <I2Nova ctx={ctx} />}
-      {(!contentError || contentReadable) && tab === "I3" && <I3Campaign ctx={ctx} />}
-      {(!contentError || contentReadable) && tab === "I4" && <I4Trust ctx={ctx} />}
-      {(!contentError || contentReadable) && tab === "I6" && <I6I18n ctx={ctx} />}
 
       {overlays}
     </div>

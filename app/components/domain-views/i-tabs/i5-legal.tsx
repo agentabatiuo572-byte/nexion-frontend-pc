@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { FileCheck2, FilePen, FileText, History, Scale } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterField, Fold, Input, IrreversibleTag, MoreMenu, Notice, Panel, RecordList, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, type StateTone } from "@/app/components/rd";
-import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchLegalTermsAdmin, type LegalTermsSection, type LegalTermsVersion } from "@/lib/admin/legal-terms-client";
 import { currentLegalTermsDateTime, normalizeLegalTermsDateTime } from "@/lib/admin/legal-terms-contract";
@@ -26,7 +26,7 @@ const STATUS: Record<string, { text: string; tone: StateTone }> = {
   REVOKED: { text: "已撤回", tone: "warn" },
 };
 const statusOf = (row: LegalTermsVersion) => STATUS[row.status] ?? { text: "版本状态待核实", tone: "warn" as StateTone };
-const timeText = (value: string) => formatBusinessTimeFull(value, value);
+const timeText = (value: string) => formatBusinessTimeCompact(value, value);
 const validTime = (value: string) => { try { normalizeLegalTermsDateTime(value); return true; } catch { return false; } };
 
 const sameContent = (left: LegalTermsVersion, right: LegalTermsVersion) => JSON.stringify([left.title, left.summary, left.sections]) === JSON.stringify([right.title, right.summary, right.sections]);
@@ -34,7 +34,7 @@ const FIELD_NAME: Record<string, string> = { title: "标题", summary: "摘要",
 
 function scopeProblem(jurisdiction: string) {
   if (!jurisdiction) return "请填写适用法律地区，例如 GLOBAL。";
-  return /^[A-Z][A-Z0-9_-]{1,15}$/.test(jurisdiction) ? null : "适用法律地区需为 2–16 位，以字母开头，只含字母、数字、下划线或短横线。";
+  return /^[A-Z][A-Z0-9_-]{1,15}$/.test(jurisdiction) ? null : "地区代码要 2–16 位，字母开头，只用字母、数字、_ 或 -。";
 }
 
 export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHead }: { ctx: ICtx; writes: I5Writes; canWrite: boolean; canPublish: boolean; nonce: number;
@@ -114,7 +114,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
   const history = rows.filter((row) => row.status !== "PUBLISHED" && row.status !== "DRAFT");
   const shown = viewing === null ? null : rows.find((row) => row.id === viewing) ?? null;
   const scopeText = `${localeName(locale)} · ${jurisdiction}`;
-  const writeBlocked = !scopeReady ? "适用法律地区还没读取，先完成地区" : busy ? "正在读取最新数据，读完再操作" : error ? "当前范围的条款尚未确认，请先点「重试」。" : writes.isLocked(target) ? WRITE_LOCKED : undefined;
+  const writeBlocked = !scopeReady ? "先填好适用法律地区并读取" : busy ? "正在读取最新数据，读完再操作" : error ? "这个范围的条款没读到，先点「重试」。" : writes.isLocked(target) ? WRITE_LOCKED : undefined;
 
   /** 节数比现行版本少的草稿不发布：会用少的几节换掉线上全部条款。 */
   const sectionsBlocked = (row: LegalTermsVersion) => published && row.sections.length < published.sections.length
@@ -186,8 +186,9 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
       confirmTone: "danger",
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认发布，立即生效",
-      statedBrief: { impact: `这个版本立即替换 ${scopeText} 的公开条款，旧发布版转为历史版本。发布后不能再改。`, check: "核对版本、节数和生效时间，理由写清发布依据。" },
-      facts: <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本"><Change from={published ? `${published.version}（${published.sections.length} 节）` : "无已发布版本"} to={`${row.version}（${row.sections.length} 节）`} /></Fact><Fact k="条文生效时间">{timeText(row.effectiveAt)}（{businessZone().label}）</Fact></Facts>,
+      statedBrief: { impact: jurisdiction !== "GLOBAL" ? `${scopeText} 的条款立即换成这个版本，${published ? "旧版本转为历史，" : ""}发布后不能再改。App 现在只读 GLOBAL，用户看不到这个版本。`
+        : `用户立即看到这个版本，不用重新同意。${published ? "旧版本转为历史，" : ""}发布后不能再改。撤回不会恢复旧版本，撤回后这些用户${locale === "en" ? "读不到条款" : "改看英文版"}；要用回旧内容，只能新建草稿再发布。`, check: "核对版本、节数和生效时间，理由写清发布依据。" },
+      facts: <Facts><Fact k="范围">{scopeText}</Fact>{jurisdiction === "GLOBAL" && <Fact k="谁会看到">{locale === "en" ? "看英文和另外六种语言的用户，以及没有自己版本的中文、越南语用户" : `看${localeName(locale)}的用户`}</Fact>}<Fact k="版本"><Change from={published ? `${published.version}（${published.sections.length} 节）` : "无已发布版本"} to={`${row.version}（${row.sections.length} 节）`} /></Fact><Fact k="条文生效时间">{timeText(row.effectiveAt)}（{businessZone().label}）</Fact></Facts>,
       reasonPlaceholder: "例如：法务审定稿，工单号",
       run: async (reason) => {
         const result = await writes.send({ target, label: `发布法律条款 · ${scopeText} ${row.version}`, op: { kind: "legal-transition", action: "publish", row, reason } });
@@ -201,13 +202,13 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
   const revoke = (row: LegalTermsVersion) => openActionConfirm(withConflict(ctx, { briefKind: "content",
     action: <>撤回法律条款 · {row.version}</>,
     title: "撤回法律条款",
-    detail: <>{locale === "en" && jurisdiction === "GLOBAL" ? "这是最后的回退范围。有自己已发布版本的语言和地区不受影响。" : "App 改读英文或 GLOBAL 的已发布版本。"}撤回不走审批。</>,
+    detail: <>{jurisdiction !== "GLOBAL" ? "App 现在只读 GLOBAL，用户本来就看不到这个版本。" : locale === "en" ? "中文、越南语自己的版本不受影响。" : `看${localeName(locale)}的用户改看英文版。`}撤回不走审批。</>,
     amplifies: false,
     confirmTone: "danger",
     effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag /></>,
     confirmLabel: "确认撤回，立即生效",
-    statedBrief: { impact: `${scopeText} 的公开条款立即下架，不能恢复这个版本。`, check: "确认要下架线上条款，理由写清依据。" },
-    facts: <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本">{row.version} · {row.title}</Fact><Fact k="状态"><Change from="生效中" to="已撤回" /></Fact><Fact k="后果" tone="danger">{locale === "en" && jurisdiction === "GLOBAL" ? `读${scopeText} 的用户，以及回退到这里的用户都读不到条款` : "英文和 GLOBAL 都没有已发布版本时，用户读不到条款"}</Fact></Facts>,
+    statedBrief: { impact: `${scopeText} 的公开条款立即下架。这个版本不能恢复，被它替换的旧版本也不会回来。`, check: "确认要下架线上条款，理由写清依据。" },
+    facts: <Facts><Fact k="范围">{scopeText}</Fact><Fact k="版本">{row.version} · {row.title}</Fact><Fact k="状态"><Change from="生效中" to="已撤回" /></Fact><Fact k="后果" tone="danger">{jurisdiction !== "GLOBAL" ? "用户本来就看不到，没有影响" : locale === "en" ? "英文用户和没有自己版本的用户都读不到条款" : "英文版也没有时，这些用户读不到条款"}</Fact></Facts>,
     reasonPlaceholder: "例如：条款有误，法务要求下架",
     run: async (reason) => {
       const result = await writes.send({ target, label: `撤回法律条款 · ${scopeText} ${row.version}`, op: { kind: "legal-transition", action: "revoke", row, reason } });
@@ -218,12 +219,12 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
 
   const closeEditor = useCallback(() => { setEditing(null); setLatest(null); setUnread(null); }, []);
 
-  const fallbackHint = "这里只看这个语言和地区。App 没有读到时会回退到英文或 GLOBAL 的已发布版本。";
+  const fallbackHint = "这里只看这个语言和地区。App 只读 GLOBAL：中文、越南语没有已发布版本时看英文版，英文也没有时用户读不到条款。";
   const conclusion = !scopeReady ? null
     : busy ? <Conclusion state="unknown">正在加载条款…</Conclusion>
       : error ? null
-        : writes.isLocked(target) ? <Conclusion state="warn" hint="到页面上方核对原操作结果。">{scopeText}：有操作结果未确认</Conclusion>
-        : !rows.length ? <Conclusion state="warn" explain={fallbackHint}>当前适用地区暂无条款版本。</Conclusion>
+        : writes.isLocked(target) ? <Conclusion state="warn" hint="到页面上方处理。">{scopeText}：有操作结果未知</Conclusion>
+        : !rows.length ? <Conclusion state="warn" explain={fallbackHint}>{scopeText}：还没有条款版本</Conclusion>
           : !published ? <Conclusion state="warn" explain={fallbackHint}>{scopeText}：没有已发布版本</Conclusion>
             : drafts.length ? <Conclusion state="neutral" icon={FilePen}>{scopeText}：{published.version} 生效中，有 {drafts.length} 个草稿待发布</Conclusion>
               : <Conclusion state="ok" icon={FileCheck2}>{scopeText}：{published.version} 生效中，没有草稿</Conclusion>;
@@ -235,15 +236,15 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
 
   return <div data-testid="legal-terms-editor" className="rd-tab-stack">
     <div className="rd-scope-bar">
-      <FilterField label="语言"><Select aria-label="语言" value={locale} options={LOCALE_OPTIONS} disabled={!!editing} onChange={setLocale} /></FilterField>
-      <FilterField label={<span>适用法律地区 <Explain label="适用法律地区是什么" content="按这个代码读条款，大写字母开头，默认 GLOBAL。回车或离开输入框后读取。" /></span>}>
+      <FilterField label={<span>语言 <Explain label="哪些用户看哪种语言" content="App 的中文、越南语用户看对应语言，另外六种语言的用户看英文。" /></span>}><Select aria-label="语言" value={locale} options={LOCALE_OPTIONS} disabled={!!editing} onChange={setLocale} /></FilterField>
+      <FilterField label={<span>适用法律地区 <Explain label="适用法律地区是什么" content="按这个代码读条款，默认 GLOBAL。App 现在只读 GLOBAL，别的地区代码用户看不到。回车或离开输入框后读取。" /></span>}>
         <Input aria-label="适用法律地区" value={jurisdictionInput} maxLength={32} aria-invalid={!!scopeError} disabled={!!editing} onChange={(event) => setJurisdictionInput(event.target.value)} onBlur={applyScope} onKeyDown={(event) => { if (event.key === "Enter") applyScope(); }} />
       </FilterField>
     </div>
-    {scopeError && <Notice tone="warn" title="请先完成适用法律地区，再加载条款。">{scopeError}</Notice>}
+    {scopeError && <Notice tone="warn" title="先填好适用法律地区，再读取条款">{scopeError}</Notice>}
     {scopePending && <BlockState state="empty" compact title={`回车或离开输入框后读取 ${typedScope} 的条款`} />}
     {conclusion}
-    {scopeReady && error && !busy && <BlockState state="error" title="当前范围的条款尚未确认" detail={error} onRetry={() => void refresh()} />}
+    {scopeReady && error && !busy && <BlockState state="error" title="这个范围的条款没读到" detail={error} onRetry={() => void refresh()} />}
 
     {scopeReady && !error && !busy && <>
       <Panel title="当前生效版本" icon={Scale} tone="role-2" actions={published ? <>
@@ -378,7 +379,7 @@ function LegalEditor({ initial, latest, base, sectionsBlocked, canPublish, block
         {readFailed && <Notice tone="warn" title="最新内容没读到" action={<Button size="sm" onClick={onRetryRead}>重新读取</Button>}>你的修改还在，读到后再保存。</Notice>}
         <MergeNotice report={merged} name={fieldName} />
         {isNew && base && (base.locale !== form.locale || base.jurisdiction !== form.jurisdiction) && <Notice tone="warn" title={`内容带入自 ${localeName(base.locale)} · ${base.jurisdiction} ${base.version}`}>这个范围还没有版本。改成这个范围要用的内容再保存。</Notice>}
-        {isNew && !base && <Notice tone="warn" title="没有可以带入的版本">这个范围和回退范围都没有已发布版本，这里只有一节，不能增删节。</Notice>}
+        {isNew && !base && <Notice tone="warn" title="没有可以带入的版本">这个范围、英文和 GLOBAL 都没有已发布版本，只能写一节，不能增删节。</Notice>}
         {sectionsBlocked(form) && <Notice tone="warn" title="这个草稿不能发布">{sectionsBlocked(form)}</Notice>}
         {unchanged && base.locale === form.locale && base.jurisdiction === form.jurisdiction && <Notice tone="progress">内容和 {base.version} 相同，改完再保存，不改也能存成新草稿。</Notice>}
         <div className="rd-form-grid">

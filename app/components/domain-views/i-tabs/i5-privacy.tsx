@@ -73,13 +73,16 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
       effect: live ? <StatusTag tone="progress" filled>立即生效</StatusTag> : <StatusTag tone="neutral" filled>保存草稿，线上不变</StatusTag>,
       confirmLabel: form.status === "PUBLISHED" ? "确认发布，立即生效" : form.status === "UNPUBLISHED" ? "确认撤下，立即生效" : "保存草稿",
       statedBrief: form.status === "PUBLISHED"
-        ? { impact: "公开隐私政策马上显示这个版本，没有译文的语言回退到英语。", check: "核对正文版本和改动的语言，只发布已审核的正文，理由写清依据。" }
+        ? { impact: "用户马上看到这个版本，不用重新同意。App 只显示中文、越南语和英语，其他语言的用户看英语。旧的公开版被替换、找不回；发布后只能整份撤下，撤下后用户读不到隐私政策。", check: "核对正文版本和改动的语言，只发布已审核的正文，理由写清依据。" }
         : form.status === "UNPUBLISHED"
-          ? { impact: "公开版本立即撤下，公开接口读不到隐私政策。", check: "确认要下架，理由写清依据。" }
+          ? { impact: "公开版本立即撤下，用户读不到隐私政策。", check: "确认要下架，理由写清依据。" }
           : { impact: "只保存草稿，公开版本不变。", check: "核对改动，理由写清修改依据。" },
       facts: <DiffList rows={[
         { key: "status", label: "状态", before: STATUS_NAME[baseline.status], after: form.status === "DRAFT" && baseline.hasPublishedVersion ? "另存草稿，公开版不变" : STATUS_NAME[form.status] },
-        { key: "version", label: "正文版本", before: baseline.version || "—", after: form.version },
+        // 比较用原值；只有去掉前缀后两边一样时才显示原值，免得改了前缀显示成没变。
+        { key: "version", label: "正文版本", ...(baseline.version === form.version || versionName(baseline.version) !== versionName(form.version)
+          ? { before: versionName(baseline.version) || "—", after: versionName(form.version) }
+          : { before: baseline.version, after: form.version }) },
         { key: "locales", label: "语言", before: Object.keys(baseline.locales).map(localeName).join("、") || "—", after: Object.keys(form.locales).map(localeName).join("、") },
         { key: "content", label: "有改动的语言", before: "—", after: changedLocales.map(localeName).join("、") || "—" },
       ]} />,
@@ -93,20 +96,20 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
     }, () => void refresh()));
   };
 
-  if (loading && !doc) return <Conclusion state="unknown">正在加载发布内容…</Conclusion>;
+  if (loading && !doc) return <Conclusion state="unknown">正在加载隐私政策…</Conclusion>;
 
   const conclusion = !doc ? null
-    : writes.isLocked("privacy") ? <Conclusion state="warn" hint="到页面上方核对原操作结果。">隐私政策：有操作结果未确认</Conclusion>
+    : writes.isLocked("privacy") ? <Conclusion state="warn" hint="到页面上方处理。">隐私政策：有操作结果未知</Conclusion>
       : doc.status === "PUBLISHED"
-        ? <Conclusion state="ok" icon={FileCheck2} explain="公开接口按语言读取，没有译文时回退到英语。">隐私政策：已发布，正文版本 {versionName(doc.version)}</Conclusion>
+        ? <Conclusion state="ok" icon={FileCheck2} explain="中文、越南语用户看自己语言的版本，没有译文时看英语；其他语言的用户都看英语。">隐私政策：已发布，正文版本 {versionName(doc.version)}</Conclusion>
         : doc.status === "UNPUBLISHED"
           ? <Conclusion state="warn">隐私政策：已撤下公开版本，用户读不到</Conclusion>
           : doc.hasPublishedVersion
-            ? <Conclusion state="neutral" icon={FilePen}>隐私政策：有草稿 {versionName(doc.version)}，已有公开版，草稿不替换</Conclusion>
-            : <Conclusion state="warn">隐私政策：有草稿 {versionName(doc.version)}，暂无公开版</Conclusion>;
+            ? <Conclusion state="neutral" icon={FilePen}>隐私政策：有草稿 {versionName(doc.version)}，用户看的还是已发布的版本</Conclusion>
+            : <Conclusion state="warn">隐私政策：有草稿 {versionName(doc.version)}，没有公开版，用户读不到</Conclusion>;
 
   return <div data-testid="published-content-privacyPolicy" className="rd-tab-stack">
-    {!doc || error ? <BlockState state="error" title="公开内容状态尚未确认" detail={error ?? undefined} onRetry={() => void refresh()} /> : <>
+    {!doc || error ? <BlockState state="error" title="隐私政策没读到" detail={error ?? undefined} onRetry={() => void refresh()} /> : <>
       {conclusion}
       <Panel title="各语言内容" icon={Languages} tone="role-2" flush actions={canWrite ? <Button variant="primary" size="sm" disabledReason={writeBlocked} onClick={() => { setViewing(null); setEditing(true); }}>编辑隐私政策</Button> : undefined}>
         <Table label="各语言内容">
@@ -122,7 +125,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
                 </Tr>
               );
             })}
-            {!locales.length && <TableMessage columns={3}>公开内容尚未加载，请刷新重试。</TableMessage>}
+            {!locales.length && <TableMessage columns={3}>还没有语言内容。</TableMessage>}
           </tbody>
         </Table>
       </Panel>
@@ -188,7 +191,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
   };
   const addLocale = () => {
     const normalized = newLocale.trim().toLowerCase().replace("_", "-");
-    if (!/^[a-z]{2}(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setLocaleError("语言 格式无效，例如 en、zh、vi 或 zh-cn。"); return; }
+    if (!/^[a-z]{2}(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setLocaleError("语言代码格式不对，例如 en、zh 或 vi。"); return; }
     if (!form.locales[normalized] && localeKeys.length >= 10) { setLocaleError("最多维护 10 种语言。"); return; }
     setForm((doc) => ({ ...doc, locales: { ...doc.locales, [normalized]: doc.locales[normalized] ?? { hero: "", sections: [{ id: "section-1", title: "", body: "", order: 0 }] } } }));
     setLocale(normalized);
@@ -218,10 +221,10 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
   const saveBlocked = blockedReason
     ?? (!dirty ? "内容没有变化，无需提交。"
       : form.status !== "DRAFT" && !canPublish ? "发布或撤下隐私政策需要发布权限，请先改为草稿。"
-        : form.status === "PUBLISHED" && !form.locales.en ? "发布隐私政策必须包含完整的 en 默认语言，供其他未发布语言回退使用；未完成的译文可先保存为草稿。"
+        : form.status === "PUBLISHED" && !form.locales.en ? "发布要有英语：其他语言的用户和没有译文的中文、越南语用户都看英语。译文没写完可以先存草稿。"
           : !form.version.trim() ? "请填写正文版本"
             : !localeKeys.length ? "至少保留一种语言。"
-              : needNewVersion ? "发布修改后的隐私政策需要新的版本号，请修改版本号后再发布。"
+              : needNewVersion ? "改了内容再发布，要换一个正文版本。"
                 : problems.length ? `还缺：${problems.slice(0, 3).join("、")}` : undefined);
   const saveLabel = form.status === "PUBLISHED" ? "保存并发布" : form.status === "UNPUBLISHED" ? "保存并撤下" : "保存草稿";
   const close = guard.askClose;
@@ -238,7 +241,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
         {readFailed && <Notice tone="warn" title="最新内容没读到" action={<Button size="sm" onClick={onRetryRead}>重新读取</Button>}>你的修改还在，读到后再保存。</Notice>}
         <MergeNotice report={merged} name={fieldName} />
         <div className="rd-form-grid">
-          <Field label="正文版本" required error={needNewVersion ? "发布修改后的隐私政策需要新的版本号，请修改版本号后再发布。" : undefined}>{(control) => <Input {...control} maxLength={64} value={form.version} onChange={(event) => setForm((doc) => ({ ...doc, version: event.target.value }))} />}</Field>
+          <Field label="正文版本" required error={needNewVersion ? "改了内容再发布，要换一个正文版本。" : undefined}>{(control) => <Input {...control} maxLength={64} value={form.version} onChange={(event) => setForm((doc) => ({ ...doc, version: event.target.value }))} />}</Field>
         </div>
         {localeKeys.length > 0 && <div className="rd-inline-form rd-inline-form-between">
           <Segments label="内容语言" value={locale} onChange={setLocale} items={localeKeys.map((key) => ({ value: key, label: localeName(key), tone: localeProblem(key) ? "warn" as const : undefined }))} />
@@ -247,7 +250,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
             <MoreMenu label="内容语言的更多操作" items={[{ key: "remove", label: "删除当前语言", danger: true, disabledReason: localeKeys.length <= 1 ? "至少保留一种语言。" : undefined, onSelect: () => setRemoving(true) }]} />
           </span>
         </div>}
-        {(addingLocale || !localeKeys.length) && <Field label="新增语言" error={localeError}>{(control) => <div className="rd-inline-form"><Input {...control} placeholder="例如 vi、zh-cn" maxLength={11} value={newLocale} onChange={(event) => setNewLocale(event.target.value)} /><Button size="sm" onClick={addLocale}>添加</Button></div>}</Field>}
+        {(addingLocale || !localeKeys.length) && <Field label="新增语言" error={localeError} explain="App 只显示中文（zh）、越南语（vi）和英语（en），加别的语言用户也看不到。">{(control) => <div className="rd-inline-form"><Input {...control} placeholder="例如 vi" maxLength={11} value={newLocale} onChange={(event) => setNewLocale(event.target.value)} /><Button size="sm" onClick={addLocale}>添加</Button></div>}</Field>}
         {localeKeys.length > 0 && <>
           <Field label="开头说明" required>{(control) => <Textarea {...control} rows={3} maxLength={500} value={current.hero} onChange={(event) => setContent({ ...current, hero: event.target.value })} />}</Field>
           <h3 className="rd-form-group-title">规则段落 · {current.sections.length} 段</h3>
@@ -281,6 +284,6 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
     {removing && <Modal title={`删除${localeName(locale)}`} icon={Trash2} onClose={() => setRemoving(false)} footer={<>
       <Button onClick={() => setRemoving(false)}>取消</Button>
       <Button variant="danger" onClick={removeLocale}>删除这种语言</Button>
-    </>}><p>这种语言的开头说明和全部段落从表单里去掉。保存前点「取消」关掉抽屉可以放弃，保存后这种语言改读英语。</p></Modal>}
+    </>}><p>表单里去掉这种语言的全部内容。发布后这种语言的用户看英语；保存前关掉抽屉可以放弃。</p></Modal>}
   </>;
 }
