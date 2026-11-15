@@ -91,7 +91,7 @@ export function useE3Proposals() {
       commands.forget(record.fingerprint, record.commandKey);
     } else throw new Error("OPERATION_RESULT_UNKNOWN");
     sync();
-    return true;
+    return ticket;
   }
   async function reconcile() {
     sync();

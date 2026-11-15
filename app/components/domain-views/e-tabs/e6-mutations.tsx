@@ -16,7 +16,8 @@ import { activateE5Device, deactivateE5Device, setE5UserDevicesPaused, fetchE5De
 import { savePhoneRisk, fetchPhoneRisk, fetchPhoneRiskReceipt, type PhoneRiskReceipt, type PhoneRiskOverview, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
 import { canInvestigateECommand, discoverECommand, investigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { Button, Explain, Notice, Fold, ReleaseModal, StatusTag, Fact } from "@/app/components/rd";
-import { ClosureContact, CommandClosureModal, CommandOutcomeLine, SettledCommandNotices, closureOpen, type CommandOutcome, type SettledCommand } from "./e-command-check";
+import { ClosureContact, CommandClosureModal, CommandOutcomeLine, MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, closureOpen, eReadError, type CommandOutcome, type RecoveryItem } from "./e-command-check";
+import type { ToastKind } from "@/lib/store/ui";
 
 export type { E6Pending, E6Proposal, E6Section } from "@/lib/admin/e6-command";
 export type E6WriteReceipt = { changedCount?: number; pendingDeactivate?: boolean; readbackFailed?: boolean; originalRiskResponse?: PhoneRiskOverview };
@@ -159,18 +160,19 @@ function useMutations() {
       if (!active.current) return;
       if (!ticket && record.ticketId) throw new A2OutcomeUncertainError("原提案归属无法核实，请到操作记录核对。", record.commandKey);
       if (ticket && (!ticket.mine || ticket.obj !== record.payload.input.obj || record.ticketId && ticket.id !== record.ticketId)) throw new A2OutcomeUncertainError("原提案归属无法核实，请到操作记录核对。", record.commandKey);
-      if (!ticket) { commands.remember(record.fingerprint, record.commandKey, { ...record, absent: true }); sync(); setNotes(n => ({ ...n, [record.commandKey]: "暂未查到原审批单，结果仍未确认；原请求继续保留。" })); return; }
+      if (!ticket) { commands.remember(record.fingerprint, record.commandKey, { ...record, absent: true }); sync(); setNotes(n => ({ ...n, [record.commandKey]: "刚查过：没有这张审批单。" })); return; }
       const terminal = ["approved", "rejected", "withdrawn", "expired"].includes(ticket.status) ? ticket.status : undefined;
       commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal }); sync();
-      setNotes(n => ({ ...n, [record.commandKey]: `原提案 ${ticket.id}：${({ pending: "待审批", approved: "已批准，请刷新业务当前值", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" } as Record<string,string>)[ticket.status] ?? ticket.status}` }));
-    } catch (failure) { if (active.current) setNotes(n => ({ ...n, [record.commandKey]: displayAdminError(failure) })); if (propagate) throw failure; }
+      setNotes(n => ({ ...n, [record.commandKey]: `审批单 ${ticket.id} ${({ pending: "还在等批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" } as Record<string,string>)[ticket.status] ?? "状态待核实"}` }));
+    } catch (failure) { if (active.current) setNotes(n => ({ ...n, [record.commandKey]: record.ticketId ? TICKET_UNREAD : eReadError(failure) })); if (propagate) throw failure; }
     finally { if (active.current) setBusy(""); }
   }
   async function releaseMissing(record: E6Pending) {
     if (record.payload.kind !== "proposal" || !isRetryExpired(record) || record.ticketId) throw new Error("原操作仅可核查，不能重新发送。");
     await check(record, true);
     const current = commands.list().find(r => r.commandKey === record.commandKey && r.owner === owner);
-    if (current?.absent && !current.ticketId) { commands.forget(current.fingerprint, current.commandKey); sync(); }
+    if (current?.absent && !current.ticketId) { commands.forget(current.fingerprint, current.commandKey); sync(); return true; }
+    return false;
   }
   async function checkDirect(record: E6Pending, evidence?: ECommandEvidence) {
     if (!visible(record.section)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
@@ -199,7 +201,7 @@ function useMutations() {
       if (eCommandSettled(receipt)) commands.forget(record.fingerprint, record.commandKey);
       return receipt;
     } catch (failure) {
-      if (active.current) setNotes(n => ({ ...n, [record.commandKey]: displayAdminError(failure) }));
+      if (active.current) setNotes(n => ({ ...n, [record.commandKey]: eReadError(failure) }));
       throw failure;
     } finally { if (active.current) { sync(); setBusy(""); } }
   }
@@ -218,6 +220,7 @@ export function E6MutationProvider({ children }: { children: ReactNode }) {
   return <Context.Provider value={mutations}>{children}</Context.Provider>;
 }
 export function useE6Mutations() { return useContext(Context)!; }
+const TICKET_UNREAD = "这次没查到审批进度；审批单已经建了，稍后再查，不会再建一张。";
 const TICKET_TYPE: Record<string, string> = { sos: "应急", fund: "资金类", param: "参数类", acct: "账号/处置" };
 /** The backend recomputes the ticket type and amplification; the local preview is not shown as the ticket's verdict. */
 function TicketVerdict({ record }: { record: E6Pending }) {
@@ -226,19 +229,16 @@ function TicketVerdict({ record }: { record: E6Pending }) {
   return <span className="e6-ticket-verdict">系统判定：{TICKET_TYPE[receipt.type] ?? receipt.type} · {receipt.amplifies ? "会让平台多付钱，执行时检查兑付覆盖率" : "不会让平台多付钱"}</span>;
 }
 const RISK_STATUS: Partial<Record<PhoneRiskReceipt["status"], { tone: "progress" | "warn" | "neutral"; title: string; text: string }>> = {
-  PROCESSING: { tone: "progress", title: "原保存仍在处理", text: "后端还在保存，稍后再查；不要重复保存。" },
-  UNKNOWN: { tone: "warn", title: "后端结果仍未知", text: "原保存中途中断，再按原请求重试也是同样结果，需要按证据核查结案。" },
+  PROCESSING: { tone: "progress", title: "原保存仍在处理", text: "还在保存，稍后再查；不要重复保存。" },
+  UNKNOWN: { tone: "warn", title: "结果仍未知", text: "原保存中途中断，再按原请求重试也是同样结果，需要按证据核查结案。" },
   FAILED: { tone: "neutral", title: "原保存以失败结束", text: "原保存没有成功。24 小时内可以按原请求重试，会按原内容再执行一次。" },
 };
-type RiskDone = { key: string; status: PhoneRiskReceipt["status"] | "RETRIED"; revision?: number };
-export function E6PendingNotice({ section, onRead }: { section: E6Section; onRead?: (result?: E6WriteReceipt) => void }) {
+const GENERIC_NOTES = ["原请求已保留，结果仍待核实。", "原操作重试已被明确拒绝，可核对后解除待确认。", "已提交，等待审批后执行。"];
+export function E6PendingNotice({ section, onRead, toast }: { section: E6Section; onRead?: (result?: E6WriteReceipt) => void; toast: (message: string, kind?: ToastKind) => void }) {
   const m = useE6Mutations();
   const records = m.pending.filter(r => r.section === section && m.visible(section));
-  const waiting = records.filter(r => r.ticketId && !r.terminal);
   const [outcomes, setOutcomes] = useState<Record<string, CommandOutcome>>({});
   const [riskReceipts, setRiskReceipts] = useState<Record<string, PhoneRiskReceipt>>({});
-  const [settled, setSettled] = useState<SettledCommand[]>([]);
-  const [riskDone, setRiskDone] = useState<RiskDone[]>([]);
   const [closing, setClosing] = useState<E6Pending | null>(null);
   // A later successful lookup supersedes the failure note an earlier lookup left on the same record.
   const [answered, setAnswered] = useState<Record<string, string | undefined>>({});
@@ -246,49 +246,68 @@ export function E6PendingNotice({ section, onRead }: { section: E6Section; onRea
     setAnswered(values => ({ ...values, [record.commandKey]: m.notes[record.commandKey] }));
     if (receipt && eCommandSettled(receipt)) {
       const status = receipt.originalStatus;
-      setSettled(rows => [...rows.filter(row => row.key !== record.commandKey), { key: record.commandKey, label: record.label, status }]);
+      toast(`${record.label}：${status === "CONFIRMED_NOT_EXECUTED" ? "核查确认原操作没有执行，可以重新发起。" : status === "CONFIRMED_SUCCEEDED" ? "核查确认原操作已执行，不再重试；以当前状态为准。" : "原操作已完成，以当前状态为准。"}`, "success");
     } else setOutcomes(values => ({ ...values, [record.commandKey]: { receipt } }));
   };
+  const riskDone = (status: PhoneRiskReceipt["status"] | "RETRIED") => toast(status === "CONFIRMED_NOT_EXECUTED"
+    ? "核查确认原保存没有执行，可以重新修改风控设置。" : "原保存已完成；设置已重新读取，以「机型风控」显示的为准。", "success");
   const showRisk = (record: E6Pending, receipt: PhoneRiskReceipt | null) => {
     if (!receipt) return;
     setAnswered(values => ({ ...values, [record.commandKey]: m.notes[record.commandKey] }));
-    if (["SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED"].includes(receipt.status))
-      setRiskDone(rows => [...rows.filter(row => row.key !== record.commandKey), { key: record.commandKey, status: receipt.status, revision: receipt.originalResponse?.settings.revision }]);
+    if (["SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED"].includes(receipt.status)) riskDone(receipt.status);
     else setRiskReceipts(values => ({ ...values, [record.commandKey]: receipt }));
   };
+  const noteOf = (r: E6Pending) => m.notes[r.commandKey] && m.notes[r.commandKey] !== answered[r.commandKey] && !GENERIC_NOTES.includes(m.notes[r.commandKey]) ? m.notes[r.commandKey]
+    : m.rejected.includes(r.commandKey) ? r.retryRejection : undefined;
+  const technical = (r: E6Pending) => <div className="e6-fold-content"><p>原请求编号：<code>{r.commandKey}</code></p><p>原对象：{r.label}</p>{r.payload.kind === "device" && <p>原状态：{r.payload.input.before}</p>}<pre className="e6-json">{JSON.stringify({ scope: r.scope, request: JSON.parse(r.body) }, null, 2)}</pre>{m.technicalErrors[r.commandKey] && <pre className="e6-json">{m.technicalErrors[r.commandKey]}</pre>}</div>;
+  const items: RecoveryItem[] = [
+    ...(section === "phones" ? m.devicePending.map(r => ({ key: r.commandKey, object: r.label, tag: <StatusTag tone="warn">在设备管理待核对</StatusTag>,
+      line: "原操作在设备管理，到那里核对。", actions: <Link className="rd-link" href="/devices/ops">设备管理</Link>,
+      detail: <p>原操作在设备管理保留；相关设备或用户先暂停新操作。</p> })) : []),
+    ...records.map(r => {
+      const expired = isRetryExpired(r), refused = m.rejected.includes(r.commandKey), waiting = !!r.ticketId && !r.terminal, end = r.terminal ? PROPOSAL_END[r.terminal] : undefined;
+      const state = end ? { tag: end.tag, tone: end.tone, line: end.text, more: "按「准备新变更」清掉这条后，这一项可以重新提交。" }
+        : waiting ? { tag: "待审批", tone: "progress" as const, line: RECOVERY_LINE.pending, more: `审批单 ${r.ticketId}。` }
+          : refused ? { tag: "重试被拒绝", tone: "danger" as const, line: RECOVERY_LINE.refused, more: "按原请求重试被明确拒绝；核对拒绝原因后，可以解除这条记录。" }
+            : r.payload.kind === "proposal" ? r.absent ? expired ? { tag: "没有建成", tone: "warn" as const, line: RECOVERY_LINE.missing, more: "按原请求查不到这张审批单，说明没建成；确认解除时会再查一次。" }
+              : { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.absent, more: "按原请求查不到这张审批单，现在还没建成；按原请求重试不会重复建单。" }
+              : { tag: "结果未知", tone: "warn" as const, line: expired ? RECOVERY_LINE.expired : RECOVERY_LINE.unknown, more: expired ? "已超过 24 小时，不能再重试；查不到这张审批单时可以确认解除。" : "可以查询原结果，或按原请求重试；重试只发原内容和原理由，不会重复建单。" }
+              : r.payload.kind === "risk" ? { tag: "结果未知", tone: "warn" as const, line: r.payload.receiptVersion !== 1 ? "旧记录查不到原结果，只能读取现在的设置。" : expired ? RECOVERY_LINE.expired : "先查询原结果；重试不会重复保存。",
+                more: "现在的设置一样，也不代表原保存成功了。" }
+                : { tag: "结果未知", tone: "warn" as const, line: expired ? RECOVERY_LINE.expired : RECOVERY_LINE.direct, more: expired ? "已超过 24 小时，不能再重试；现在的状态不代表原操作的结果。" : "可以查询原结果，或按原请求重试；重试只发原内容和原理由。" };
+      const riskShown = r.payload.kind === "risk" && !outcomes[r.commandKey] && riskReceipts[r.commandKey] ? RISK_STATUS[riskReceipts[r.commandKey].status] : undefined;
+      const note = <>
+        {noteOf(r) && <span>{noteOf(r)}</span>}
+        {(r.payload.kind === "device" || r.payload.kind === "risk" && outcomes[r.commandKey]) && <CommandOutcomeLine outcome={outcomes[r.commandKey]} expired={expired} />}
+        {riskShown && <div className="e-check-outcome"><StatusTag tone={riskShown.tone}>{riskShown.title}</StatusTag><p>{riskShown.text}</p></div>}
+        {r.payload.kind === "device" && !m.canInvestigate && closureOpen(outcomes[r.commandKey], expired) && <ClosureContact />}
+        {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && !m.canInvestigateRisk && (closureOpen(outcomes[r.commandKey], expired) || riskReceipts[r.commandKey]?.status === "UNKNOWN") && <ClosureContact />}
+      </>;
+      return { key: waiting ? `waiting:${r.commandKey}` : r.commandKey, object: r.label, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line,
+        note: noteOf(r) || outcomes[r.commandKey] || riskShown || closureOpen(outcomes[r.commandKey], expired) ? note : undefined,
+        noteKey: [noteOf(r) ?? "", outcomes[r.commandKey] ? JSON.stringify(outcomes[r.commandKey]) : "", riskReceipts[r.commandKey]?.status ?? ""].join("|").replace(/^\|+$/, ""),
+        actions: <>
+          {r.payload.kind === "proposal" && !r.terminal && !refused && <Button size="sm" disabled={!!m.busy} onClick={() => void m.check(r)}>{waiting ? "查询审批结果" : "查询原结果"}</Button>}
+          {r.payload.kind === "device" && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showDevice(r, receipt as ECommandInvestigation | null), () => { /* checkDirect keeps the query failure on the row. */ }).finally(() => onRead?.()); }}>查询原结果</Button>}
+          {r.payload.kind !== "risk" && !r.ticketId && !expired && !refused && <Button size="sm" disabled={!m.allowed(r) || !!m.busy} onClick={() => { void m.send(r, true).then(onRead).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原请求重试</Button>}
+          {r.payload.kind === "risk" && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showRisk(r, receipt as PhoneRiskReceipt | null), () => { /* The row retains the query failure. */ }).finally(() => window.dispatchEvent(new Event("e6-read-risk"))); }}>{r.payload.receiptVersion === 1 ? "查询原结果" : "读取当前风控设置"}</Button>}
+          {r.payload.kind === "risk" && m.canRetry(r) && !refused && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.send(r, true).then(result => { riskDone("RETRIED"); window.dispatchEvent(new Event("e6-read-risk")); onRead?.(result); }).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原请求重试</Button>}
+          {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && m.canInvestigateRisk && riskReceipts[r.commandKey]?.status !== "PROCESSING" && (closureOpen(outcomes[r.commandKey], expired) || riskReceipts[r.commandKey]?.status === "UNKNOWN") && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
+          {r.payload.kind === "device" && m.canInvestigate && closureOpen(outcomes[r.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
+          {r.terminal && <Button size="sm" onClick={() => { m.forget(r); onRead?.(); }}>准备新变更</Button>}
+          {(refused || r.payload.kind === "proposal" && r.absent && !r.ticketId && expired) && <Button variant="primary" size="sm" onClick={() => m.setRelease(r)}>{refused ? "解除待确认" : "确认解除"}</Button>}
+        </>,
+        detail: <><p>{formatBusinessTimeCompact(new Date(r.createdAt).toISOString(), "—")} 提交，理由：{r.payload.input.reason}</p><p>{state.more}</p><TicketVerdict record={r} /></>, tech: <Fold inset title="技术信息" summary={r.commandKey}>{technical(r)}</Fold> };
+    }),
+    ...m.legacy.filter(r => section === "tasks" ? r.fingerprint.startsWith("e2_task_") : section === "tiers" ? r.fingerprint.startsWith("e2_phone_tier") : section === "phones" ? r.fingerprint.startsWith("e5") : r.fingerprint.startsWith("e6_")).map(r => ({
+      key: r.commandKey, object: "升级前的原提案", tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
+      line: "旧记录缺原请求，不能重试或解除；到操作记录与审批核对。",
+      detail: <p>原请求编号：<code>{r.commandKey}</code></p> })),
+  ];
+  const release = m.release?.section === section ? m.release : null;
   return <>
-    <SettledCommandNotices items={settled} onDismiss={key => setSettled(rows => rows.filter(row => row.key !== key))} />
-    {riskDone.map(done => <Notice key={done.key} tone="done" title={<>保存机型风控设置 · <span className="rd-keep">{done.status === "CONFIRMED_NOT_EXECUTED" ? "核查确认原保存没有执行" : "原保存已完成"}</span></>} action={<Button size="sm" onClick={() => setRiskDone(rows => rows.filter(row => row.key !== done.key))}>知道了</Button>}>
-      {done.status === "CONFIRMED_NOT_EXECUTED" ? <p>本页待确认已解除，可以重新修改风控设置。</p> : <>
-        {done.revision === undefined && done.status !== "RETRIED" && <p>原保存结果里没有带回保存后的设置。</p>}
-        <p>当前设置已重新读取，以下方「机型风控」显示的设置为准；这期间可能有人改过。</p>
-      </>}
-    </Notice>)}
-    {section === "phones" && m.devicePending.map(r => <Notice key={r.commandKey} tone="warn" title={`${r.label} · 设备管理有原操作待核对`}><p>原操作在设备管理保留，请到设备管理核对。原操作涉及的设备或用户，新操作先暂停。</p><Link className="rd-link" href="/devices/ops">设备管理</Link></Notice>)}
-    {waiting.length === 1 && <Notice tone="progress" action={<Button size="sm" disabled={!!m.busy} onClick={() => void m.check(waiting[0])}>查审批结果</Button>}><p>{waiting[0].label}的变更已提交，等待审批 · <span data-mono>{waiting[0].ticketId}</span></p><TicketVerdict record={waiting[0]} /></Notice>}
-    {waiting.length > 1 && <Notice tone="progress"><Fold title={`${waiting.length} 项变更等待审批`} summary="展开查看审批单" inset><div className="e6-pending-list">{waiting.map(r => <div key={r.commandKey} className="e6-pending-row"><span className="e6-pending-ticket"><span>{r.label} · <span data-mono>{r.ticketId}</span></span><TicketVerdict record={r} /></span><Button size="sm" disabled={!!m.busy} onClick={() => void m.check(r)}>查审批结果</Button></div>)}</div></Fold></Notice>}
-    {records.filter(r => !r.ticketId || r.terminal).map(r => <Notice key={r.commandKey} tone={r.terminal ? "done" : "warn"} title={<>{r.label} · <span className="rd-keep">{r.terminal ? "原提案已结束" : m.rejected.includes(r.commandKey) ? "原操作重试已被明确拒绝" : "结果未知"}</span></>} actionBelow action={<>
-      {r.payload.kind === "proposal" && <Button size="sm" disabled={!!m.busy} onClick={() => void m.check(r)}>查审批结果</Button>}
-      {r.payload.kind === "device" && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showDevice(r, receipt as ECommandInvestigation | null), () => { /* checkDirect keeps the query failure in the notice. */ }).finally(() => onRead?.()); }}>查询原结果</Button>}
-      {r.payload.kind !== "risk" && !r.ticketId && !isRetryExpired(r) && !m.rejected.includes(r.commandKey) && <Button size="sm" disabled={!m.allowed(r) || !!m.busy} onClick={() => { void m.send(r, true).then(onRead).catch(() => { /* send has recorded the failure in the persistent notice. */ }); }}>按原请求重试</Button>}
-      {r.payload.kind === "risk" && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showRisk(r, receipt as PhoneRiskReceipt | null), () => { /* The original notice retains the query failure. */ }).finally(() => window.dispatchEvent(new Event("e6-read-risk"))); }}>{r.payload.receiptVersion === 1 ? "查询原结果" : "读取当前风控设置"}</Button>}
-      {r.payload.kind === "risk" && m.canRetry(r) && !m.rejected.includes(r.commandKey) && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.send(r, true).then(result => { setRiskDone(rows => [...rows.filter(row => row.key !== r.commandKey), { key: r.commandKey, status: "RETRIED", revision: result?.originalRiskResponse?.settings.revision }]); window.dispatchEvent(new Event("e6-read-risk")); onRead?.(result); }).catch(() => { /* send has recorded the failure in the persistent notice. */ }); }}>按原请求重试</Button>}
-      {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && m.canInvestigateRisk && riskReceipts[r.commandKey]?.status !== "PROCESSING" && (closureOpen(outcomes[r.commandKey], isRetryExpired(r)) || riskReceipts[r.commandKey]?.status === "UNKNOWN") && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
-      {r.payload.kind === "device" && m.canInvestigate && closureOpen(outcomes[r.commandKey], isRetryExpired(r)) && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
-      {r.terminal && <Button size="sm" onClick={() => { m.forget(r); onRead?.(); }}>原提案已结束，准备新变更</Button>}
-      {(m.rejected.includes(r.commandKey) || r.payload.kind === "proposal" && r.absent && !r.ticketId && isRetryExpired(r)) && <Button variant="primary" size="sm" onClick={() => m.setRelease(r)}>解除待确认</Button>}
-      {m.canAudit && <Link href="/platform/audit?domain=E">核对操作记录与审批</Link>}
-    </>}>
-      {!r.terminal && <p>原内容和理由已保存，有结论前这一项不能提交新修改。{r.payload.kind === "risk" ? r.payload.receiptVersion === 1 ? isRetryExpired(r) ? "请先查询原结果；现在的设置一样，也不能证明原保存成功了。" : "先查询原结果，也可以按原请求重试，不会重复保存。现在的设置一样，也不能证明原保存成功了。" : "这是升级前的记录，查不到原结果，只能读取现在的设置核对；设置一样也不能证明原保存成功了。" : m.rejected.includes(r.commandKey) ? "请核对拒绝结果，再解除这条原操作。" : r.payload.kind === "device" ? "先查询原结果；重试只会发原内容和原理由。" : "重试只会发原内容和原理由。"}</p>}
-      {isRetryExpired(r) && <p>{RETRY_EXPIRED_TEXT}</p>}{m.notes[r.commandKey] && m.notes[r.commandKey] !== answered[r.commandKey] && !["原请求已保留，结果仍待核实。","原操作重试已被明确拒绝，可核对后解除待确认。"].includes(m.notes[r.commandKey]) && <p>{m.notes[r.commandKey]}</p>}
-      {r.payload.kind === "device" && <CommandOutcomeLine outcome={outcomes[r.commandKey]} expired={isRetryExpired(r)} />}
-      {r.payload.kind === "device" && !m.canInvestigate && closureOpen(outcomes[r.commandKey], isRetryExpired(r)) && <ClosureContact />}
-      {r.payload.kind === "risk" && !outcomes[r.commandKey] && riskReceipts[r.commandKey] && RISK_STATUS[riskReceipts[r.commandKey].status] && <div className="e-check-outcome" role="status"><StatusTag tone={RISK_STATUS[riskReceipts[r.commandKey].status]!.tone}>{RISK_STATUS[riskReceipts[r.commandKey].status]!.title}</StatusTag><p>{RISK_STATUS[riskReceipts[r.commandKey].status]!.text}</p></div>}
-      {r.payload.kind === "risk" && outcomes[r.commandKey] && <CommandOutcomeLine outcome={outcomes[r.commandKey]} expired={isRetryExpired(r)} />}
-      {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && !m.canInvestigateRisk && (closureOpen(outcomes[r.commandKey], isRetryExpired(r)) || riskReceipts[r.commandKey]?.status === "UNKNOWN") && <ClosureContact />}
-      <Fold title="原操作与技术信息" summary="原请求编号、原内容和理由" inset><div className="e6-fold-content"><p>原请求编号：<code>{r.commandKey}</code></p><p>发起：{formatBusinessTimeCompact(new Date(r.createdAt).toISOString(), "—")}（北京时间）</p><p>原对象：{r.label}</p>{r.payload.kind === "device" && <p>原状态：{r.payload.input.before}</p>}<p>理由：{r.payload.input.reason}</p><pre className="e6-json">{JSON.stringify({ scope: r.scope, request: JSON.parse(r.body) }, null, 2)}</pre>{m.technicalErrors[r.commandKey] && <pre className="e6-json">{m.technicalErrors[r.commandKey]}</pre>}</div></Fold>
-    </Notice>)}
-    {m.legacy.filter(r => section === "tasks" ? r.fingerprint.startsWith("e2_task_") : section === "tiers" ? r.fingerprint.startsWith("e2_phone_tier") : section === "phones" ? r.fingerprint.startsWith("e5") : r.fingerprint.startsWith("e6_")).map(r => <Notice key={r.commandKey} tone="warn" title="升级前的原提案待核查"><p>旧记录没存完整内容和理由，只能到操作记录与审批核对，不能重试或解除。<Explain label="技术信息" content={`原请求编号 ${r.commandKey}`} /></p></Notice>)}
+    <RecoveryPanel title={`${items.length} 项变更还没有结论`} tone={items.every(item => item.key.startsWith("waiting:")) ? "progress" : "warn"}
+      explain="原内容和理由都已保存；有结论前，这些对象不能提交新修改。点行首的箭头看提交时间、说明和原请求。" foot={m.canAudit ? <Link className="rd-link" href="/platform/audit?domain=E">到操作记录与审批核对</Link> : undefined} items={items} />
     {closing && (closing.payload.kind === "device" || closing.payload.kind === "risk") && <CommandClosureModal label={closing.label} commandKey={closing.commandKey} createdAt={closing.createdAt}
       facts={<>{closing.payload.kind === "device" && <Fact k="原状态">{closing.payload.input.before}</Fact>}<Fact k="原理由">{closing.payload.input.reason}</Fact></>}
       onClose={() => setClosing(null)} onSubmit={async evidence => {
@@ -299,6 +318,11 @@ export function E6PendingNotice({ section, onRead }: { section: E6Section; onRea
         }
         setClosing(null); onRead?.();
       }} />}
-    {m.release?.section === section && <ReleaseModal label={m.release.label} onCancel={() => m.setRelease(null)} onConfirm={() => { const record = m.release!; if (record.payload.kind === "proposal" && isRetryExpired(record) && record.absent) { void m.releaseMissing(record).then(() => { m.setRelease(null); onRead?.(); }, () => { /* check retains the failed lookup in the original notice. */ }); } else { m.forget(record); m.setRelease(null); onRead?.(); } }} />}
+    {release && (release.payload.kind === "proposal" && isRetryExpired(release) && release.absent
+      ? <MissingProposalReleaseModal label={release.label} createdAt={release.createdAt} onCancel={() => m.setRelease(null)} onConfirm={async () => {
+        try { const released = await m.releaseMissing(release); m.setRelease(null); onRead?.(); if (released) toast("已解除这条记录，可以重新提交", "success"); }
+        catch (failure) { throw new Error(release.ticketId ? TICKET_UNREAD : m.notes[release.commandKey] ?? eReadError(failure)); }
+      }} />
+      : <ReleaseModal label={release.label} onCancel={() => m.setRelease(null)} onConfirm={() => { m.forget(release); m.setRelease(null); onRead?.(); toast("已解除这条记录", "success"); }} />)}
   </>;
 }

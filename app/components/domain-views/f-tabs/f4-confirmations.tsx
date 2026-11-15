@@ -135,9 +135,9 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       spec = { briefKind: "config", name: "调整团队激励池比例", amplify: true, op: "param", paramKey: "F.pool.ratio",
               edit: { kind: "text", current: data.poolRatio, unit: "%" },
               title: "调整团队激励池比例", effect: approvalTag(), confirmLabel: "提交审批",
-              statedBrief: { impact: "批准后，还没结算的这周估算和之后每次结算按新比例放钱；已经发的不重算。", check: "后端只接受 0–30 的百分数，比如 5 表示 5%，0.05 表示 0.05%。" },
+              statedBrief: { impact: "批准后，还没结算的这周估算和之后每次结算按新比例放钱；已经发的不重算。", check: "只接受 0–30 的百分数：5 表示 5%，0.05 表示 0.05%。" },
               completionCopy: approvalCopy("F4 资金权限"),
-              detail: `每周已付款成交额中放进团队激励池的比例 · 当前 ${ratioEff}。` };
+              detail: `放进团队激励池的成交额比例，现在是 ${ratioEff}。` };
       break;
     }
     case action === "F.pool.monthlyCap": {

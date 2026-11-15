@@ -6,11 +6,26 @@
  */
 import type { ReactNode } from "react";
 import { Calculator, Coins, Settings2, Vote } from "lucide-react";
-import { Button, ConfigList, ConfigRow, Explain, KeyValues, Notice, Panel, StatusTag, StepBar } from "@/app/components/rd";
+import { BlockState, Button, ConfigList, ConfigRow, Explain, KeyValues, Notice, Panel, StatusTag, StepBar } from "@/app/components/rd";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import type { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
-import { count, describeSettleCron, settleCadenceNote, stamp, usdt, zoneNote } from "./f4-shared";
+import { count, decimalText, describeSettleCron, settleCadenceNote, stamp, usdt, zoneNote } from "./f4-shared";
 import type { FViewCtx } from "./types";
+import type { F4VoteProjection } from "@/lib/admin/f4-vote-projection";
+
+/** Exact product of two decimal texts (votes × USDT per vote); display only, never rounded. */
+function times(a: string | number, b: string) {
+  const parts = [String(a), b].map(value => { const [whole, fraction = ""] = value.split("."); return { digits: BigInt(whole + fraction), scale: fraction.length }; });
+  const scale = parts[0].scale + parts[1].scale, digits = String(parts[0].digits * parts[1].digits).padStart(scale + 1, "0");
+  return scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits;
+}
+const ESTIMATE_GONE: Record<string, string> = {
+  CURRENT_WEEK_SETTLED: "本周已经结算，不再估算；实发见右边。",
+  SETTLEMENT_CONFIG_UNAVAILABLE: "池的设置不完整，算不出本周估算。",
+  NO_ELIGIBLE_VOTERS: "现在没有人有资格分，本周估算里没有人能分到钱。",
+  NO_CURRENT_POOL: "本周池里还没有钱，算不出每票值。",
+};
+const weekName = (key: string) => /^\d{6}$/.test(key) ? `${key.slice(0, 4)} 年第 ${Number(key.slice(4))} 周` : key;
 import { f4Confirmation, presentText } from "./f4-confirmations";
 
 export { approvalCopy, approvalTag } from "./f4-confirmations";
@@ -40,6 +55,48 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
   const pool = data.currentWeekPoolAmount ?? data.currentWeekPoolUsd;
   const nextSettle = settlement.ready ? stamp(data.nextSettlementAt) : "—";
   const topShare = data.topN > 0 && data.topSharePct > 0 ? `前 ${data.topN} 名约占 ${data.topSharePct}%` : "—";
+
+  const projection = ctx.f4VoteProjection;
+  const estimate = projection.status === "ready" && projection.data.estimate.available ? projection.data.estimate : null;
+  const perVote = estimate?.perVoteUsd ?? null;
+  const byRank = new Map((estimate?.ranks ?? []).map(rank => [rank.rank, rank]));
+  const topRank = estimate && perVote !== null ? [...estimate.ranks].sort((a, b) => Number(b.totalVotes) - Number(a.totalVotes))[0] : undefined;
+  const voteValue = (title: string, tag: ReactNode, body: ReactNode) => <section className="f4-vote-value"><h3 className="f4-vote-title">{title}{tag}</h3>{body}</section>;
+  const estimateBlock = (() => {
+    if (projection.status !== "ready") return null;
+    const value = projection.data.estimate;
+    if (!value.available) return voteValue("本周估算", <StatusTag tone="neutral" icon={Calculator}>估算</StatusTag>, <p className="f4-vote-note">{ESTIMATE_GONE[value.reason]}</p>);
+    return voteValue("本周估算", <StatusTag tone="neutral" icon={Calculator}>估算</StatusTag>, <KeyValues rows={[
+      { key: "pool", label: "本周池", value: `${usdt(value.poolUsd)} USDT` },
+      { key: "votes", label: "总票数", value: `${decimalText(value.totalVotes).replace(/\.00$/, "")} 票` },
+      { key: "per", label: "每票约", value: perVote === null ? "—" : `${usdt(perVote)} USDT`, explain: perVote === null ? "总票数为 0 时算不出每票值。" : "本周池 ÷ 总票数，保留 6 位小数、多出的位数舍去，末位差额给最后一人；每人实收可能和估算差一点。" },
+      { key: "top", label: "钱最多的一级", value: topRank && perVote !== null ? `${topRank.rank} · 约 ${usdt(times(topRank.totalVotes, perVote))} USDT（${topRank.eligibleCount} 人）` : "—" },
+    ]} />);
+  })();
+  const settledBlock = (() => {
+    if (projection.status !== "ready") return null;
+    const value = projection.data.settled;
+    if (!value.available) return voteValue("最近已结算的一周", <StatusTag tone="done">实发</StatusTag>, <p className="f4-vote-note">还没有结算记录。</p>);
+    return voteValue(`最近已结算 · ${weekName(value.weekKey)}`, <StatusTag tone="done">实发</StatusTag>, <>
+      <KeyValues rows={[
+        { key: "pool", label: "奖池", value: `${usdt(value.poolUsd)} USDT` },
+        { key: "votes", label: "总票数", value: `${decimalText(value.totalVotes).replace(/\.00$/, "")} 票` },
+        { key: "per", label: "每票", value: value.perVoteUsd === null ? "—" : `${usdt(value.perVoteUsd)} USDT`, explain: value.perVoteUsd === null ? "这一周记下的总票数为 0，算不出每票值。" : "实发 ÷ 总票数，保留 6 位小数、多出的位数舍去；末位差额给了最后一人。" },
+        { key: "users", label: "分到的人", value: `${count(value.settledUsers)} 人` },
+      ]} />
+      <p className="f4-vote-note">结算记录只有全池的数，没有记各等级分了多少。</p>
+    </>);
+  })();
+  const projectionState = projection.status === "ready" ? null
+    : projection.status === "denied" ? <BlockState compact state="denied" title="没有查看每票值的权限" />
+      : projection.status === "error" ? <BlockState compact state="error" title="每票值没有读到" detail="请稍后重试；一直读不到请联系值班人员。" onRetry={() => void ctx.refreshF4()} retrying={ctx.f4Loading} />
+        : <BlockState compact state="loading" title="正在读取每票值…" />;
+  const rankShare = (rank: string) => {
+    if (projection.status !== "ready" || !projection.data.estimate.available) return undefined;
+    const row = byRank.get(rank);
+    if (!row) return "这周没人分";
+    return `${count(row.eligibleCount)} 人${perVote === null ? "" : ` · 每人约 ${usdt(times(row.votesPerMember, perVote))} USDT`}`;
+  };
 
   const openSettle = () => ctx.openActionConfirm(f4Confirmation(ctx, { action: "settle", overview: data, policy: ctx.f4AmbassadorPolicy }));
 
@@ -87,11 +144,13 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
       <Panel title="这周的钱怎么分" icon={Vote} tone="role-4" sub={`按等级票数 · 有资格的 ${count(data.participantCount)} 人`}
         explain={<>
           <p>每个等级每人的票数。结算时按「人数 × 票数」分池：票数越高，同一等级每人分得越多，池的总额不变。</p>
-          <p>只显示票数大于 0 的等级。各等级人数和每票值多少接口没有给，这里不显示。</p>
+          <p>只显示票数大于 0 的等级。每级的人数和「每人约」按现在有资格的人估算，人数按结算时的分法数，和「有资格分的人」统计方式不同，合计可能对不上。</p>
+          <p>每票值是平均数：保留 6 位小数、多出的位数舍去，末位差额给最后一人，所以每人实收可能和估算差一点。已结算的周只记了全池的数，没有各等级分了多少。</p>
         </>}>
         <StepBar label="各等级每人的票数" unit="票" state={data.voteWeights.length ? "ready" : "empty"}
           emptyText="票数还没设置：没有票数大于 0 的等级，结算时没有人能分到钱。"
-          items={data.voteWeights.map((row) => ({ key: row.v, label: row.v, value: row.votes, valueText: count(row.votes), actions: voteButton(row) }))} />
+          items={data.voteWeights.map((row) => ({ key: row.v, label: row.v, value: row.votes, valueText: count(row.votes), secondary: rankShare(row.v), actions: voteButton(row) }))} />
+        {projectionState ?? <div className="f4-vote-values">{estimateBlock}{settledBlock}</div>}
       </Panel>
 
       <Panel title="池的设置" icon={Settings2} tone="role-4" sub="批准后生效"

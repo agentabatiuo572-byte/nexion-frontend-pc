@@ -70,6 +70,7 @@ import { useE3Proposals } from "./e-tabs/e3-proposals";
 import { E3Lifecycle, E3_APPROVER_BATCH, E3_APPROVER_SINGLE, E3_COVERAGE_CHECK } from "./e-tabs/e3-lifecycle";
 import { E4Orders } from "./e-tabs/e4-orders";
 import { E5Ops } from "./e-tabs/e5-ops";
+import { eReadError } from "./e-tabs/e-command-check";
 import { E6ComputeConfig as E6ComputeConfigComp } from "./e-tabs/e6-compute-config";
 import { eDomainCommandAttempts as commandAttempts, isRedesignedELegacyCommand } from "@/lib/admin/e-domain-commands";
 import "./e-domain.css";
@@ -752,13 +753,13 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     } else {
       setE5Devices([]);
       setE5Total(0);
-      setE5DeviceError(`${tab === "E6" ? "手机列表" : "设备列表"}：${displayAdminError(deviceResult.reason)}`);
+      setE5DeviceError(`${tab === "E6" ? "手机列表" : "设备列表"}：${eReadError(deviceResult.reason)}`);
     }
     if (overviewResult.status === "fulfilled") {
       setE5Overview(overviewResult.value);
     } else {
       setE5Overview(null);
-      setE5OverviewError(`设备概览：${displayAdminError(overviewResult.reason)}`);
+      setE5OverviewError(`设备概览：${eReadError(overviewResult.reason)}`);
     }
     setE5Loading(false);
   }, [tab, e5ProductFilter, e5Keyword, e5SourceFilter, e5Page, e5PageSize, e5StateFilter]);

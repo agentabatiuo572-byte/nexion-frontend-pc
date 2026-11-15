@@ -495,13 +495,15 @@
 .a4-backlog-bars { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 @container adom (max-width: 860px) { .a4-backlog-sum { grid-template-columns: minmax(0, 1fr); } .a4-backlog-facts { max-width: 320px; } }
 .a4-backlog-table { table-layout: fixed; }
-.a4-backlog-table th:nth-child(1) { width: 28%; }
-.a4-backlog-table th:nth-child(2) { width: 20%; }
-.a4-backlog-table th:nth-child(3) { width: 168px; }
+.a4-backlog-table th:nth-child(1) { width: 26%; }
+.a4-backlog-table th:nth-child(2) { width: 112px; }  /* 用户编号 U+8 位 */
+.a4-backlog-table th:nth-child(3) { width: 18%; }
+.a4-backlog-table th:nth-child(4) { width: 168px; }
 @container adom (max-width: 860px) {
-  .a4-backlog-table th:nth-child(1) { width: 24%; }
+  .a4-backlog-table th:nth-child(1) { width: 22%; }
   .a4-backlog-table th:nth-child(2) { width: 104px; }
-  .a4-backlog-table th:nth-child(3) { width: 184px; }
+  .a4-backlog-table th:nth-child(3) { width: 104px; }
+  .a4-backlog-table th:nth-child(4) { width: 184px; }
 }
 .adom .a4-stack { display: inline-flex; flex-direction: column; }
 .adom .a4-mid { display: flex; min-width: 0; max-width: 100%; }
@@ -515,6 +517,7 @@
 .a4-redrive { display: flex; flex-direction: column; gap: 12px; }
 .a4-redrive-card { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: var(--rd-radius-panel); background: var(--rd-panel-inner); }
 .a4-redrive-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.a4-redrive-user { margin: 0; display: flex; align-items: center; gap: 4px; color: var(--rd-text-2); }
 .a4-redrive-type { font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: var(--rd-weight-semibold); }
 .a4-redrive-head [data-mono] { color: var(--rd-text-3); font-size: var(--rd-text-aux); overflow-wrap: anywhere; }
 .a4-layers { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }

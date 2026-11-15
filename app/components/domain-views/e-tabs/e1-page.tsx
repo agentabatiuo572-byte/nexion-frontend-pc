@@ -5,7 +5,7 @@ import { RefreshCw } from "lucide-react";
 import { BlockState, Button, Change, ConflictBar, DiffList, Facts, Fact, Fold, Notice, Drawer, PageHeader, RdPage, ReleaseModal, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { businessClock } from "@/lib/admin/business-time";
+import { businessClock, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { fetchE1Products, fetchE1GenerationGates, fetchE1Discount, type E1CatalogSnapshot, type E1BundleDiscount, type E1GenerationGateData, type E1InvalidSku } from "@/lib/admin/e1-client";
 import { fetchE3Snapshot } from "@/lib/admin/e3-client";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
@@ -22,19 +22,23 @@ import type { McSpec } from "./types";
 import type { SkuForm } from "./data";
 import { E1Catalog, type E1CatalogContext } from "./e1-catalog";
 import { E1Editor, type E1EditRequest } from "./e1-editor";
+import { MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, type RecoveryItem } from "./e-command-check";
 import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1Number, e1Decimal, e1TargetPrecision, e1Object, e1SkuDiff, e1Value, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
 
 type Confirmation = McSpec & { sku?: OpsSku; beforeSku?: OpsSku; form?: SkuForm; gates?: E1GenerationGateData | null; discount?: E1BundleDiscount | null; early?: Record<string, string> };
 type E1Receipt = ProposeSpec & { id: string; commandKey: string; object: string; status: string; reading?: boolean; readError?: string };
 const APPROVAL = "由另一位有批准及商品业务权限的管理员批准。批准前目录不变。";
 const RECEIPT_STATUS: Record<string, string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
+const E1_UNKNOWN = "结果还不确定，原请求和理由已保留；可以查询原结果，或按原请求重试。";
+const TICKET_UNREAD = "刚查过：还是没查到审批进度，稍后再查。";
+const endToast = (obj: string, id: string, status: string) => PROPOSAL_END[status] ? `${obj} · 审批单 ${id} ${PROPOSAL_END[status].tag}：${PROPOSAL_END[status].text}` : `${obj} · 审批单 ${id} 状态待核实`;
 
 function e1Error(error: unknown) {
-  if (isA2OutcomeUncertainError(error)) return "提交结果未确认。原对象、内容、理由和命令号已保留，请在本页按原操作重试或读回核对。";
+  if (isA2OutcomeUncertainError(error)) return E1_UNKNOWN;
   const value = error as { backendMessage?: string; message?: string } | null;
   const code = value?.backendMessage ?? value?.message ?? "";
   if (code.includes("TASK_POOL_FORMAT_RETIRED")) return "原商品操作使用旧任务格式，请先核对原申请，再从商品管理与上架条件重新配置任务等级。";
-  if (code.startsWith("IDEMPOTENCY_")) return "原命令状态仍需核查，请保留原请求和命令号；不要换号重发。";
+  if (code.startsWith("IDEMPOTENCY_")) return "原请求的结果还在核对，记录保留；请查询原结果或按原请求重试，不要重新填写提交。";
   return displayAdminError(error);
 }
 
@@ -143,8 +147,9 @@ export function E1Page() {
     try {
       if (!canQuery) throw new Error("当前账号不能读取审批状态，请保留审批单号核对");
       const result = await fetchA2ProposalByKey(receipt.commandKey, true);
-      if (!result || result.id !== receipt.id) throw new Error("没有读到原审批单，不能解除对象锁，请重试或到操作记录与审批核对");
+      if (!result || result.id !== receipt.id) throw new Error("没有查到这张审批单的进度，请稍后再查，或到操作记录与审批核对");
       setReceipts(rows => rows.map(row => row.id === receipt.id ? { ...row, status: result.status } : row));
+      if (result.status !== "pending" && receipt.status === "pending") toast(endToast(receipt.action, receipt.id, result.status));
     } catch (failure) {
       setReceipts(rows => rows.map(row => row.id === receipt.id ? { ...row, readError: displayAdminReadError(failure) } : row));
     } finally {
@@ -209,11 +214,11 @@ export function E1Page() {
         store.remember(record.fingerprint, record.commandKey, { ...record, retryRejection: e1Error(failure) });
         setRejected(keys => [...keys, record.commandKey]);
       }
-      setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) }));
+      const shown = record.receivedTicketId ? TICKET_UNREAD : e1Error(failure);
+      setNotes(n => ({ ...n, [record.commandKey]: shown }));
       if (!firstRejection && !isExplicitRejection(failure)) { setConfirmation(null); setEdit(null); }
       if (String((failure as Error).message).includes("VERSION_CONFLICT") || String((failure as { backendMessage?: string }).backendMessage).includes("VERSION_CONFLICT")) setConflict(true);
       // Throw the original error so OperationConfirmModal keeps reason and fields.
-      if (retry) toast(e1Error(failure));
       throw failure;
     } finally { sending.current = false; setBusy(""); syncPending(); }
   };
@@ -235,26 +240,31 @@ export function E1Page() {
     if (full) { store.remember(full.fingerprint, full.commandKey, { ...full, absent: false }); syncPending(); }
     try {
       const row = await fetchA2ProposalByKey(record.commandKey, true, "f");
-      if (row && full && (!row.mine || row.obj !== full.spec.obj || full.receivedTicketId && row.id !== full.receivedTicketId)) throw new A2OutcomeUncertainError("没有读到原审批单，不能解除对象锁，请重试或到操作记录与审批核对", record.commandKey);
-      if (!row && full?.receivedTicketId) throw new A2OutcomeUncertainError("没有读到原审批单，不能解除对象锁，请重试或到操作记录与审批核对", record.commandKey);
+      if (row && full && (!row.mine || row.obj !== full.spec.obj || full.receivedTicketId && row.id !== full.receivedTicketId)) throw new A2OutcomeUncertainError("查到的审批单和原请求对不上，记录保留；请到操作记录与审批核对。", record.commandKey);
+      if (!row && full?.receivedTicketId) throw new A2OutcomeUncertainError(TICKET_UNREAD, record.commandKey);
       if (!row && full) { store.remember(full.fingerprint, full.commandKey, { ...full, absent: true }); syncPending(); }
-      if (!row) { setNotes(n => ({ ...n, [record.commandKey]: "没有查到原审批单，不能据此认定没有提交；请保留原记录核对。" })); return; }
-      setNotes(n => ({ ...n, [record.commandKey]: `原审批单 ${row.id} · ${{ pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[row.status] ?? "状态待核实"}` }));
-      toast(`已找到原审批单 ${row.id}，原操作已有回执`);
+      if (!row) { setNotes(n => ({ ...n, [record.commandKey]: full ? "刚查过：没有这张审批单。" : "按原请求没有查到审批单。旧记录不能重试或解除，请到操作记录与审批核对。" })); return; }
+      setNotes(n => ({ ...n, [record.commandKey]: `审批单 ${row.id} · ${RECEIPT_STATUS[row.status] ?? "状态待核实"}` }));
+      toast(row.status === "pending" ? `查到了审批单 ${row.id}，还在等批准` : endToast(full?.spec.action ?? "原操作", row.id, row.status));
       if (full) {
         const spec = full.spec;
         setReceipts(rows => [...rows.filter(receipt => receipt.object !== e1Object(spec)), { ...spec, id: row.id, commandKey: record.commandKey, object: e1Object(spec), status: row.status }]);
         forgetE1(full); syncPending();
         if (row.status !== "pending") { await refresh(); await refreshEarly(); }
       }
-    } catch (failure) { setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) })); if (propagate) throw failure; }
+    } catch (failure) {
+      const message = full?.receivedTicketId ? TICKET_UNREAD : isA2OutcomeUncertainError(failure) ? (failure as Error).message : eReadError(failure);
+      setNotes(n => ({ ...n, [record.commandKey]: message }));
+      if (propagate) throw failure;
+    }
   };
 
   const releaseMissing = async (record: E1Pending) => {
     if (String(useAdminAuth.getState().session?.adminId ?? "") !== record.actorId || !isRetryExpired(record) || record.receivedTicketId) return;
     await check(record, true);
     const current = e1Pending(record.actorId).find(r => r.commandKey === record.commandKey);
-    if (current?.absent && !current.receivedTicketId) { forgetE1(current); syncPending(); }
+    if (current?.absent && !current.receivedTicketId) { forgetE1(current); syncPending(); return true; }
+    return false;
   };
 
   const confirm = async (reason: string, value?: string, business?: Record<string, string>) => {
@@ -342,25 +352,50 @@ export function E1Page() {
     forceUnlock, forceLock, locked, openSku, openActionConfirm: openConfirm, toast,
     delSku: (id, name) => openConfirm({ briefKind: "config", name: `删除商品 · ${name}`, op: "sku-delete", target: id, detail: "从商城移除后用户无法再购买，已售设备和原订单不受影响。", businessForm: { kind: "destructive-reason", target: name, impact: "从商城移除，用户无法再购买；已售设备和原订单不受影响。" } }),
   };
+  const copy = (text: string, done: string) => { void navigator.clipboard.writeText(text).then(() => toast(done), () => toast("复制失败，请手动选择原请求编号")); };
+  const sent = (at: number) => `${formatBusinessTimeCompact(new Date(at).toISOString(), "—")} 提交`;
+  const recovery: RecoveryItem[] = [
+    ...receipts.filter(row => row.status === "pending").map(row => ({ key: `receipt:${row.id}`, object: row.action,
+      tag: <StatusTag tone="progress">待审批</StatusTag>,
+      line: row.reading ? "正在查询审批进度…" : RECOVERY_LINE.pending,
+      note: row.readError ? `这次没查到审批进度：${row.readError}` : undefined,
+      actions: <Button size="sm" disabled={row.reading} onClick={() => openReceipt(row.id)}>{row.readError ? "重新查询" : "查看审批状态"}</Button>,
+      detail: <p>审批单 {row.id}；批准前目录不变，这个对象暂停新修改。</p> })),
+    ...pending.filter(record => record.commandKey !== busy).map(record => {
+      const expired = isRetryExpired(record), canRelease = rejected.includes(record.commandKey) && !expired || absent.includes(record.commandKey) && expired;
+      const state = record.receivedTicketId ? { tag: "已提交，状态未查到", line: RECOVERY_LINE.created, more: "审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。" }
+        : rejected.includes(record.commandKey) && !expired ? { tag: "重试被拒绝", line: RECOVERY_LINE.refused, more: "按原请求重试被明确拒绝；核对原操作的结果后，可以解除这条记录。" }
+          : absent.includes(record.commandKey) ? expired ? { tag: "没有建成", line: RECOVERY_LINE.missing, more: "按原请求查不到这张审批单，说明没建成；确认解除时会再查一次。" }
+            : { tag: "结果未知", line: RECOVERY_LINE.absent, more: "按原请求查不到这张审批单，现在还没建成；按原请求重试不会重复建单。" }
+            : expired ? { tag: "结果未知", line: RECOVERY_LINE.expired, more: "已超过 24 小时，不能再重试；查不到这张审批单时可以确认解除。" }
+              : { tag: "结果未知", line: RECOVERY_LINE.unknown, more: "可以查询原结果，或按原请求重试；重试用原来的请求，不会重复建单。" };
+      return { key: record.commandKey, object: record.spec.action,
+        tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? record.retryRejection,
+        actions: <>
+          {canQuery && !(rejected.includes(record.commandKey) && !expired) && <Button size="sm" disabled={!!busy} onClick={() => void check(record)}>查询原结果</Button>}
+          {!record.receivedTicketId && !expired && !rejected.includes(record.commandKey) && <Button size="sm" disabledReason={!canWrite ? "当前账号不能重试" : busy ? "正在提交原操作" : undefined} onClick={() => { void send(record, true).catch(failure => toast(e1Pending(actor).find(r => r.commandKey === record.commandKey)?.receivedTicketId ? TICKET_UNREAD : e1Error(failure))); }}>按原请求重试</Button>}
+          {canRelease && <Button size="sm" variant="primary" disabled={!!busy} onClick={() => setRelease(record)}>{expired ? "确认解除" : "解除待确认"}</Button>}
+        </>,
+        detail: <>
+          <p>{sent(record.createdAt)}，理由：{record.spec.reason}</p>
+          <p>{state.more}</p>
+          {!canOpenAudit && <p>请把原请求编号发给能查看操作记录与审批的管理员核对。</p>}</>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact k="原对象">{record.spec.obj}</Fact><Fact k="原请求编号"><span data-mono>{record.commandKey}</span></Fact></Facts><div className="e1-table-actions"><Button size="sm" onClick={() => copy(JSON.stringify(record.spec, null, 2), "已复制完整原请求")}>复制完整原请求</Button><Button size="sm" onClick={() => copy(record.commandKey, "已复制原请求编号")}>复制原请求编号</Button></div></Fold> };
+    }),
+    ...legacy.map(record => ({ key: record.commandKey, object: e1LegacyObject(record).split("|").slice(1).join("|") || "原对象未保留",
+      tag: <StatusTag tone="warn">缺完整原请求</StatusTag>, line: "旧记录缺原请求，只能查询，不能重试或解除。", note: notes[record.commandKey],
+      actions: canQuery ? <Button size="sm" onClick={() => void check(record)}>查询原结果</Button> : undefined,
+      detail: <><p>{sent(record.createdAt)}；升级前的记录没有原理由。</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Button size="sm" onClick={() => copy(JSON.stringify(record, null, 2), "已复制完整旧记录")}>复制完整旧记录</Button></Fold> })),
+    ...media.filter(record => record.commandKey !== mediaSending).map(record => ({ key: record.commandKey, object: record.fileName,
+      tag: <StatusTag tone="warn">上传结果未知</StatusTag>, line: isRetryExpired(record) ? RECOVERY_LINE.expired : "重新打开商品、选同一个文件，可以原样重试。",
+      actions: <Button size="sm" onClick={() => openSku(record.skuId || undefined)}>核对媒体上传</Button>,
+      detail: <p>{sent(record.createdAt)}；原文件摘要和原请求已保留。</p> })),
+  ];
   return <RdPage className="e1-page">
     <PageHeader pageId="E1" title="商品管理与上架条件" meta={!canRead ? "未读取目录" : error ? "目录读取失败" : readAt ? `${readAt} 读取 · 手动刷新` : "正在读取目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<><Button icon={<RefreshCw size={14} />} disabled={loading} onClick={() => { void refresh(); void refreshEarly(); receipts.filter(row => row.status === "pending").forEach(row => { void refreshReceipt(row); }); }}>刷新</Button>{canWrite && <Button variant="primary" disabledReason={skuReadBlock || (edit ? "请先完成当前商品草稿" : undefined)} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
     {!canRead ? <BlockState state="denied" title="没有商品目录读取权限" /> : <>
       {receipt && error && <Notice tone="warn" title="申请已提交，目录暂时读不到"><p>{receipt.obj} · 审批单 {receipt.id}</p></Notice>}
-      {receipts.filter(row => row.status === "pending").map(row => <Notice key={row.id} tone="warn" title={`${row.obj} · 变更待审批`} action={<Button disabled={row.reading} onClick={() => openReceipt(row.id)}>{row.readError ? "重试读取审批状态" : "查看审批状态"}</Button>}><p>审批单 {row.id} · {row.reading ? "正在核对审批状态…" : "审批结束前暂停此对象的新修改。"}</p>{row.readError && <p role="status">{row.readError}；对象锁保留。</p>}</Notice>)}
-      {pending.filter(record => record.commandKey !== busy).map(record => <Notice key={record.commandKey} tone="warn" title="结果未确认" actionBelow action={<>
-        <Button disabledReason={!canWrite ? "当前账号不能重试" : busy ? "正在提交原操作" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : undefined} onClick={() => { void send(record, true).catch(failure => toast(e1Error(failure))); }}>按原操作重试</Button>
-        {canQuery && <Button disabled={!!busy} onClick={() => void check(record)}>读回核对</Button>}
-        {(rejected.includes(record.commandKey) && !isRetryExpired(record) || absent.includes(record.commandKey) && isRetryExpired(record)) && <Button disabled={!!busy} onClick={() => setRelease(record)}>解除待确认</Button>}
-        {canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}
-      </>}>
-        <p><strong>{record.spec.obj}</strong> · {record.spec.action}</p>
-        <p>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "原对象、内容、理由和命令号已保留；此对象暂停新修改，只能原样重试。"}</p>
-        {!canOpenAudit && <p>可复制原命令号，请有权查看操作记录与审批的管理员核对。</p>}
-        {notes[record.commandKey] && <p role="status">{notes[record.commandKey]}</p>}
-        <Fold inset title="原操作与技术信息" summary={`${businessClock(record.createdAt)} · ${record.commandKey}`}><Facts><Fact k="原对象">{record.spec.obj}</Fact><Fact k="原操作">{record.spec.action}</Fact><Fact k="原理由">{record.spec.reason}</Fact><Fact k="命令号">{record.commandKey}</Fact></Facts><p>完整参数、原版本和理由随原操作保存，可复制后逐项核对。</p><div className="e1-table-actions"><Button size="sm" onClick={() => { void navigator.clipboard.writeText(JSON.stringify(record.spec, null, 2)).then(() => toast("已复制完整原操作"), () => toast("复制失败，请保留原命令号核对")); }}>复制完整原操作</Button><Button size="sm" onClick={() => { void navigator.clipboard.writeText(record.commandKey).then(() => toast("已复制命令号"), () => toast("复制失败，请选择命令号")); }}>复制命令号</Button></div></Fold>
-      </Notice>)}
-      {legacy.map(record => <Notice key={record.commandKey} tone="warn" title="旧商品操作结果未确认 · 缺完整原请求" action={canQuery && <Button onClick={() => void check(record)}>读回核对</Button>}><p><strong>{e1LegacyObject(record).split("|").slice(1).join("|") || "原对象未保留"}</strong></p><p>升级前记录缺少原理由，不能重试或解除；请保留原号，到操作记录与审批核对。</p><Fold inset title="旧记录技术信息" summary={record.commandKey}><Facts><Fact k="原对象">{e1LegacyObject(record).split("|").slice(1).join("|")}</Fact><Fact k="原命令号">{record.commandKey}</Fact><Fact k="原提交时间">{businessClock(record.createdAt)}</Fact></Facts><p>旧记录没有完整原请求和理由，只能核对原操作。</p><Button size="sm" onClick={() => { void navigator.clipboard.writeText(JSON.stringify(record, null, 2)).then(() => toast("已复制完整旧记录"), () => toast("复制失败，请保留原命令号核对")); }}>复制完整旧记录</Button></Fold>{notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}</Notice>)}
-      {media.filter(record => record.commandKey !== mediaSending).map(record => <Notice key={record.commandKey} tone="warn" title={`${record.fileName} · 媒体上传结果未确认`} action={<Button onClick={() => openSku(record.skuId || undefined)}>核对媒体上传</Button>}><p>{isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "原文件摘要和命令号已保留；重新打开商品选择同一文件后可原样重试。"}</p></Notice>)}
+      <RecoveryPanel tone={recovery.every(item => item.key.startsWith("receipt:")) ? "progress" : "warn"} title={`${recovery.length} 项变更还没有结论`}
+        explain="有结论前，这些对象不能提交新修改。点行首的箭头看提交时间、说明和原请求。" foot={canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined} items={recovery} />
       <E1Catalog ctx={ctx} />
     </>}
     <E1Editor request={edit} gates={gates} writable={skuWritesReady} writeBlockedReason={skuReadBlock} currentSku={edit?.sku ? skus.find(s => s.id === edit.sku!.id) : undefined} onClose={() => setEdit(null)} busy={!!busy} toast={toast} onMediaChange={key => { setMediaSending(key ?? ""); syncPending(); }} onReview={(sku, beforeSku, form) => { setConflict(false); setConflictLatest(null); setAttemptKey(""); setConfirmation({ briefKind: "config", name: `${beforeSku ? "编辑" : "新增"}商品 · ${sku.name}`, op: "sku-save", sku, beforeSku, form, gates, isNew: !beforeSku }); }} />
@@ -372,7 +407,7 @@ export function E1Page() {
       content={skuDiff ? !mc.beforeSku || skuDiff.filter(row => row.before !== row.after).length > 4
         ? <Fold inset title="完整商品变更" summary="展开核对所有字段的前后值"><DiffList rows={skuDiff} /></Fold>
         : <DiffList rows={skuDiff} /> : <>{mc.businessForm?.kind === "multi-field" && (mc.op === "bundle-discount" || mc.op === "early-access" || mc.op === "generation-gate-save" && !!mc.generationGateId || mc.op === "phase-save" && !!mc.phaseId) && <Facts>{mc.businessForm.fields.map(f => <Fact key={f.key} k={f.label}><Change from={f.optionLabels?.[f.current ?? ""] ?? (f.current || "未设置")} to={(f.optionLabels?.[businessValues[f.key] ?? f.current ?? ""] ?? (businessValues[f.key] ?? f.current)) || "未填写"} /></Fact>)}</Facts>}{mc.content}</>}
-      blockedReason={currentPending && currentPending.commandKey !== busy ? "提交结果未确认，原操作已保留，请在本页按原操作重试或读回核对" : conflict ? <>
+      blockedReason={currentPending && currentPending.commandKey !== busy ? "这个对象有一次结果未知的提交，先在页面上方查询原结果或按原请求重试" : conflict ? <>
         <ConflictBar message="商品或配置版本已变化，本地输入保留；读取最新后请重新核对。" onRead={async () => { const snapshot = await refresh(); if (!snapshot) throw new Error("目录暂时读不到"); setConflictLatest(snapshot); }} />
         {conflictLatest && <Notice tone="warn" title="请核对最新值，再决定是否沿用本地输入">
           {mc.op === "bundle-discount" ? <DiffList rows={[{ key: "two", label: "2件折扣", before: `${mc.discount?.twoItemsPct}%`, after: `${conflictLatest.bundleDiscount.twoItemsPct}%` }, { key: "three", label: "3件折扣", before: `${mc.discount?.threeItemsPct}%`, after: `${conflictLatest.bundleDiscount.threeItemsPct}%` }, { key: "four", label: "4+件折扣", before: `${mc.discount?.fourPlusItemsPct}%`, after: `${conflictLatest.bundleDiscount.fourPlusItemsPct}%` }]} /> : mc.sku && conflictLatest.skus.find(s => s.id === mc.sku!.id) ? <DiffList rows={e1SkuDiff(mc.beforeSku ?? mc.sku, conflictLatest.skus.find(s => s.id === mc.sku!.id)!)} /> : <p>原对象未读取到，请保留草稿并核查。</p>}
@@ -385,7 +420,9 @@ export function E1Page() {
       </> : !canWrite ? "当前不能提交，请先核对权限和读取状态" : readBlock(mc)}
       onClose={() => setConfirmation(null)} onConfirm={confirm} />}
     {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在读取…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptDetail.after}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? APPROVAL : "审批已结束，此回执不再锁定对象；请按当前目录重新核对后编辑。"}</p></Drawer>}
-    {release && <ReleaseModal label={`${release.spec.obj} · ${release.spec.action}`} onCancel={() => setRelease(null)} onConfirm={() => { if (isRetryExpired(release)) { void releaseMissing(release).then(() => setRelease(null), failure => toast(e1Error(failure))); } else { forgetE1(release); syncPending(); setRelease(null); } }} />}
+    {release && (isRetryExpired(release)
+      ? <MissingProposalReleaseModal label={release.spec.action} createdAt={release.createdAt} onCancel={() => setRelease(null)} onConfirm={async () => { const released = await releaseMissing(release); setRelease(null); if (released) toast("已解除这条记录，可以重新提交", "success"); }} />
+      : <ReleaseModal label={release.spec.action} onCancel={() => setRelease(null)} onConfirm={() => { forgetE1(release); syncPending(); setRelease(null); toast("已解除这条记录", "success"); }} />)}
     {toastNode}
   </RdPage>;
 }

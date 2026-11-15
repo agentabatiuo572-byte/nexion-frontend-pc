@@ -1,5 +1,5 @@
 "use client";
-import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
 import { useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -137,7 +137,7 @@ export function F3Placements() {
         {counts && <span className="f3-members-legs"><span className="f3-leg" data-leg="A">A 组 {counts.A}</span><span className="f3-leg" data-leg="B">B 组 {counts.B}</span><span>未分组 {counts.none}</span></span>}
       </p>
       <Table label="直接好友的分组" className="f3-member-table">
-        <thead><tr><Th>成员用户编号</Th><Th>所在组</Th><Th>分组方式</Th><Th>分组时间（北京时间）</Th><Th>操作人</Th><Th>操作</Th></tr></thead>
+        <thead><tr><Th>成员用户编号</Th><Th>所在组</Th><Th>分组方式</Th><Th>分组时间（{businessZone().label}）</Th><Th>操作人</Th><Th>操作</Th></tr></thead>
         <tbody>
           {data.records.map(row => <Tr key={row.memberUserId}>
             <Td><Cell main={<span data-mono>{row.memberUserId}</span>} /></Td>
