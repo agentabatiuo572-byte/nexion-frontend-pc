@@ -505,7 +505,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
           explain={<>
             <p>基准价 ×（1 + 买入点差），取整到十位。</p>
             <p>{nbsp(`${vnd(data.baseRateVndPerUsdt)} ₫/USDT ×（1 + ${valueText("buySpreadPct", data.buySpreadPct)}）= ${vnd(data.quoteRateVndPerUsdt)} ₫/USDT`)}</p>
-            <p>用户在 App 和 H5 用银行卡支付时按这个价算。充值页新建付款单时取当时的买入价；买设备用银行卡付款时取报价那一刻的价，报价有效期内建单沿用。</p>
+            <p>用户在 App 和 H5 用银行卡支付时按这个价算。充值页新建付款单时取当时的买入价；买设备用银行卡付款时取报价那一刻的价，报价有效期内建单沿用这个价。</p>
             <p>用户页面上的「牌价」可能还没刷新。</p>
           </>} />
         <Stat tone="role-other" icon={History} label="最近调整" value={latest ? minuteText(latest.createdAt) : "—"} unit={latest ? zone : undefined}
