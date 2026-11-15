@@ -4,6 +4,7 @@
  * H4 活动中心「既有活动与转盘」页签（第二部分）：既有活动、七类玩法、创世抽奖、转盘奖池与护栏。
  * 既有表单保留；H4 写入由共享命令层保存原请求、分流审批并恢复。
  */
+import type { BusinessFormValue } from "../design-kit";
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
@@ -171,10 +172,20 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const adminId = useAdminAuth(state => state.session?.adminId);
   const activeRecovery = useRef<string | null>(null);
   /** 直接保存被判定要走审批：换成审批确认，值和理由沿用（H-改走审批）。 */
-  const approvalReconfirm = (error: HApprovalRequired, req: ActionConfirmReq | ConfirmReq, reason: string, value?: string) => {
+  const approvalReconfirm = (error: HApprovalRequired, req: ActionConfirmReq | ConfirmReq, reason: string, value?: string, businessValue?: BusinessFormValue) => {
     const edit = "edit" in req ? req.edit : undefined;
     const facts = "facts" in req ? typeof req.facts === "function" ? req.facts(value) : req.facts : "content" in req ? req.content : undefined;
-    return hApprovalReconfirm(error, { action: req.action, title: req.title, reason, approver: "另一位超级管理员", holds: "这一项",
+    const fields = "businessForm" in req && req.businessForm?.kind === "multi-field" ? req.businessForm.fields : [];
+    const creating = (error.input as { method: string }).method === "POST";
+    const before = Object.fromEntries(fields.map(field => [field.key, field.current]));
+    const unit = (key: string, values: Record<string, string | undefined>) => key === "probabilityPct" ? "%"
+      : key === "rewardAmount" ? values.rewardKind === "coupon" ? "张" : wheelUnit({ kind: values.rewardKind })
+      : key === "guardValue" && values.guardKey === "budget" ? "USDT / 天" : undefined;
+    const changes = businessValue ? fields.map(field => ({ key: field.key, label: field.label,
+      before: creating ? null : field.current ?? null, after: businessValue[field.key] ?? null,
+      beforeUnit: creating ? undefined : unit(field.key, before), afterUnit: unit(field.key, businessValue),
+    })) : undefined;
+    return hApprovalReconfirm(error, { changes, action: req.action, title: req.title, reason, approver: "另一位超级管理员", holds: "这一项",
       change: edit && value !== undefined ? <Change from={`${edit.current || "—"}${edit.unit ? ` ${edit.unit}` : ""}`} to={`${value}${edit.unit ? ` ${edit.unit}` : ""}`} /> : undefined,
       context: edit ? undefined : facts, completed: async result => { await apply(result); } });
   };
@@ -195,7 +206,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         setStale(null);
         try { await req.run(reason, value, businessValue); }
         catch (cause) {
-          if (cause instanceof HApprovalRequired) { ctx.openActionConfirm(null); ctx.openConfirm(approvalReconfirm(cause, req, reason, value)); return; }
+          if (cause instanceof HApprovalRequired) { ctx.openActionConfirm(null); ctx.openConfirm(approvalReconfirm(cause, req, reason, value, businessValue)); return; }
           if (isHGrowthReadConflict(cause)) { setStale(typeof req.title === "string" ? req.title : typeof req.action === "string" ? req.action : "这次修改"); ctx.openActionConfirm(null); await reload(); }
           throw cause;
         }
@@ -620,7 +631,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       amplifies: true,
       coverageLead: "调高预算会让转盘每天多发真钱",
       reasonPlaceholder: "例如：活动期放宽每日真钱奖预算",
-      edit: { kind: "number", current: budgetNumber(current), min: 0.01, max: 1_000_000_000, step: 0.01, hint: "大于 0，最多两位小数，单位 USDT" },
+      edit: { kind: "number", current: budgetNumber(current), unit: "USDT / 天", min: 0.01, max: 1_000_000_000, step: 0.01, hint: "大于 0，最多两位小数，单位 USDT" },
       run: async (reason, value) => {
         if (!value) return;
         if (await apply(await updateH4WheelGuard(guard.key, value, current, reason))) toast("转盘安全限制「每日实际奖励预算（美元）」已更新");

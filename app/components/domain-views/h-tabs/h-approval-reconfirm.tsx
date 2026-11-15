@@ -9,6 +9,12 @@ import { Fact, Facts, StatusTag } from "@/app/components/rd";
 import type { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import type { ConfirmReq } from "./types";
 
+export type HApprovalChange = {
+  key: string; label: string; before: string | null; after: string | null;
+  beforeUnit?: string; afterUnit?: string;
+};
+export type HApprovalReconfirmReq = ConfirmReq & { approvalChanges?: HApprovalChange[] };
+
 let opened = 0;
 
 export function hApprovalReconfirm(error: HApprovalRequired, look: {
@@ -21,9 +27,12 @@ export function hApprovalReconfirm(error: HApprovalRequired, look: {
   /** 改动写不成一行「从多少到多少」时，原确认框的事实块整块放在这里。 */
   context?: ReactNode;
   completed?: (result: unknown) => Promise<void>;
-}): ConfirmReq {
+  /** Exact business-form facts for the visual confirmation handoff. */
+  changes?: HApprovalChange[];
+}): HApprovalReconfirmReq {
   return {
     formKey: ++opened,
+    approvalChanges: look.changes,
     briefKind: "config",
     action: look.action,
     title: look.title,
