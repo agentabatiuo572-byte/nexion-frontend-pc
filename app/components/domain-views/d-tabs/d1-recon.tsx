@@ -492,7 +492,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     if (path === "/vietqr/config") {
       const current = await loadD1VietQrOverview("inflight");
       setVietQr(current);
-      return `读回：银行卡支付单笔上限现在是 ${current.config.perTxLimitUsd.toLocaleString("en-US")} USDT。${kept}`;
+      return `读回：银行卡支付单笔上限现在是 ${current.config.perTxLimitUsd.toLocaleString("en-US")} USDT（第 ${current.config.version} 版）。${kept}`;
     }
     if (path.startsWith("/vietqr/orders/")) {
       const latest = await fetchD1BankOrders({ keyword: code, pageNum: 1, pageSize: 20 });
@@ -515,7 +515,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     key: command.commandKey,
     label: pendingLabel(command.path),
     createdAt: command.createdAt,
-    hint: "先读回核对；按原操作重试重发同一份原请求，不会重复执行。",
+    hint: "先点「读回核对」；按原操作重试重发同一份原请求，不会重复执行。",
     blocked: command.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : permitted ? undefined : "这个账号没有这项权限",
     auditHref: "/platform/audit?domain=D",
     verify: () => verifyCommand(command.path),

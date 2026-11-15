@@ -77,7 +77,7 @@ const REASON_TEXT: Record<string, string> = {
   NO_REGISTRATION_DENOMINATOR: "这个范围没有注册完成的用户，所以暂无法计算，不按 0% 算。",
   NO_STORE_VIEW_DENOMINATOR: "这个范围没有看过商城的用户，所以暂无法计算，不按 0% 算。",
   NO_DEVICE_HOLDER_DENOMINATOR: "这个范围没有设备持有者，所以暂无法计算，不按 0% 算。",
-  NO_PUSH_SENT_DENOMINATOR: "这个范围没有 Nova 站内通知发出事件，暂无法计算，不按 0% 算。",
+  NO_PUSH_SENT_DENOMINATOR: "这个范围没有发送过 Nova 消息推送，暂无法计算，不按 0% 算。",
   NO_DIRECT_REFERRAL_DENOMINATOR: "这个范围没有直接邀请的好友，所以暂无法计算，不按 0% 算。",
   NO_MATURE_DAY7_COHORT: "这个范围还没有注册满 7 天的用户，所以暂无法计算，不按 0% 算。",
   NO_GENESIS_PURCHASES: "这个范围没有创世节点购买记录，还没售罄，售罄天数暂无法计算。",
@@ -320,8 +320,8 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
 /** fx 公式渲染:fxBold 词高亮(cyan b),其余纯文本。 */
 /** 后端第 6 项写成了推送送达，事件实际是 Nova 站内通知发出。只改这页显示，等后端同步。 */
 const NOVA_FX = "nova.push_clicked ÷ nova.push_sent";
-const NOVA_PLAIN = "Nova 通知操作用户数 ÷ Nova 站内通知发出用户数";
-const NOVA_NOTE = "统计的是站内通知事件，不代表手机系统推送送达率。";
+const NOVA_PLAIN = "Nova 消息推送点击人数 ÷ 发送人数";
+const NOVA_NOTE = "统计的是 Nova 消息推送的发送和点击，不代表手机系统推送送达率。";
 
 function renderFx(fx: string, bold: string[]) {
   const firstYield = /^device\.first_yield_received\.latency_sec ≤ ([0-9.]+) ÷ auth\.register_completed$/.exec(fx);
@@ -330,7 +330,7 @@ function renderFx(fx: string, bold: string[]) {
     "store.viewed distinct user ÷ auth.register_completed": "浏览商城的用户数 ÷ 注册完成人数",
     "checkout.completed ÷ store.viewed": "支付完成的用户数 ÷ 浏览商城的用户数",
     "device holder referral.invite_sent ÷ device holders": "发出邀请的设备持有者人数 ÷ 设备持有者人数",
-    "nova.push_clicked ÷ nova.push_sent": "有 Nova 通知操作的用户数 ÷ 收到 Nova 站内通知的用户数（同一人只算一次）。不代表手机系统推送送达率。",
+    "nova.push_clicked ÷ nova.push_sent": "Nova 消息推送点击人数 ÷ 发送人数（同一人只算一次）。不代表手机系统推送送达率。",
     "L1 referred first commission.paid ÷ referral.bound": "直接邀请的好友中带来首笔团队奖励的人数 ÷ 直接邀请的好友人数",
     "genesis.purchased cumulative 1,000 days": "累计售出 1,000 个节点所用的自然日数",
   } as Record<string,string>)[fx] ?? fx;

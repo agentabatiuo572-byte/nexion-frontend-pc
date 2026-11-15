@@ -32,7 +32,7 @@ const PRODUCT_STATES = { PUBLISHED: "已发布", DRAFT: "草稿", DELISTED_WITH_
 const MINUTES = [{ value: 0, text: "0" }, { value: 60, text: "60" }, { value: 120, text: "120" }];
 const TASK_RULES = "等级只决定跑什么任务，收益由商品的月收益目标决定。当前任务保持原配置，修改只影响之后的新任务。每级最多 200 个启用任务、300 个任务（含停用）。";
 const GENERATION = "服务端生成同池唯一的英文名称，时长为 5 分钟整数倍：向量计算 30–60 分钟，语音处理 45–90 分钟，图像生成和大模型推理 60–120 分钟，模型微调和视频生成 90–120 分钟。新任务立即启用。";
-const RETRY_HELP = "重新发送保存的原请求，后端认得出是同一次提交，不会另加一批。这不是只读查询。";
+const RETRY_HELP = "重新发送保存的原请求，系统认得出是同一次提交，不会另加一批。这不是只读查询。";
 
 function readQuery(params: URLSearchParams): Query {
   const code = params.get("pool") ?? "", taskClass = params.get("taskClass") ?? "", enabled = params.get("enabled") ?? "";
@@ -348,7 +348,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       {releasing && dialog.original ? <div className="rd-stack"><ReleaseBody label={`${dialog.pool.code} ${dialog.pool.name} · ${e2CommandLabel(dialog.original)}`} explain="重试被拒说明不了原操作的结果，先核实。解除只移除本地待确认记录，不办理后端核查结案。" /><Facts><Fact k="首次提交">{businessStamp(dialog.original.createdAt)} · {businessZoneText()}</Fact><Fact k="原理由">{dialog.original.request.body.reason}</Fact></Facts></div>
         : <div className="rd-stack">
           {dialog.original && <Notice tone="warn" title={originalExpired ? "已超过 24 小时，不能再重试" : originalRejected ? "原样重试被明确拒绝" : "结果未确认，原操作已冻结"}>
-            {originalExpired ? "原请求继续保留，请核对操作记录；这个等级仍暂停新操作。" : originalRejected ? "先核实原操作结果，再决定是否解除本地待确认；这次拒绝不会自动清除原记录。" : retryBlock(dialog.original) ?? "只能按原操作重试：重发保存的原请求，后端认得出是同一次提交，不会重复执行。"}
+            {originalExpired ? "原请求继续保留，请核对操作记录；这个等级仍暂停新操作。" : originalRejected ? "先核实原操作结果，再决定是否解除本地待确认；这次拒绝不会自动清除原记录。" : retryBlock(dialog.original) ?? "只能按原操作重试：重发保存的原请求，系统认得出是同一次提交，不会重复执行。"}
           </Notice>}
           <Facts><Fact k="任务等级">{dialog.pool.code} {dialog.pool.name}</Fact>
             {dialog.original && <><Fact k="原操作">{e2CommandLabel(dialog.original)}</Fact><Fact k="首次提交">{businessStamp(dialog.original.createdAt)} · {businessZoneText()} · {dialog.original.actorName}</Fact></>}

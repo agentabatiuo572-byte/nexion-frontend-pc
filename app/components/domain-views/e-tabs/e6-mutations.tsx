@@ -238,7 +238,7 @@ export function E6PendingNotice({ section, onRead }: { section: E6Section; onRea
         <p>当前设置已重新读取，以下方「机型风控」显示的设置为准；这期间可能有人改过。</p>
       </>}
     </Notice>)}
-    {section === "phones" && m.devicePending.map(r => <Notice key={r.commandKey} tone="warn" title={`${r.label} · 设备管理有原操作待核对`}><p>原操作在设备管理保留，请到设备管理核对。相关设备和整个用户的新操作先暂停。</p><Link className="rd-link" href="/devices/ops">设备管理</Link></Notice>)}
+    {section === "phones" && m.devicePending.map(r => <Notice key={r.commandKey} tone="warn" title={`${r.label} · 设备管理有原操作待核对`}><p>原操作在设备管理保留，请到设备管理核对。原操作涉及的设备或用户，新操作先暂停。</p><Link className="rd-link" href="/devices/ops">设备管理</Link></Notice>)}
     {waiting.length === 1 && <Notice tone="progress" action={<Button size="sm" disabled={!!m.busy} onClick={() => void m.check(waiting[0])}>查审批结果</Button>}><p>{waiting[0].label}的变更已提交，等待审批 · <span data-mono>{waiting[0].ticketId}</span></p><TicketVerdict record={waiting[0]} /></Notice>}
     {waiting.length > 1 && <Notice tone="progress"><Fold title={`${waiting.length} 项变更等待审批`} summary="展开查看审批单" inset><div className="e6-pending-list">{waiting.map(r => <div key={r.commandKey} className="e6-pending-row"><span className="e6-pending-ticket"><span>{r.label} · <span data-mono>{r.ticketId}</span></span><TicketVerdict record={r} /></span><Button size="sm" disabled={!!m.busy} onClick={() => void m.check(r)}>查审批结果</Button></div>)}</div></Fold></Notice>}
     {records.filter(r => !r.ticketId || r.terminal).map(r => <Notice key={r.commandKey} tone={r.terminal ? "done" : "warn"} title={<>{r.label} · <span className="rd-keep">{r.terminal ? "原提案已结束" : m.rejected.includes(r.commandKey) ? "原操作重试已被明确拒绝" : "结果未知"}</span></>} actionBelow action={<>

@@ -97,7 +97,7 @@ const WAITING = "等待有批准权限的同事处理";
 const A2_WITHOUT_USER_DOMAIN = ["finance", "finance_lead", "growth", "content"];
 const AUDIT_ELSEWHERE = "请能查看「用户与账户」操作记录的同事按单号核对";
 const LARGE_EXPLAIN = "超过 500 USDT 等值，只有财务主管或超级管理员能发起。";
-const LARGE_REQUEST_RETIRED = "旧的大额申请入口已停用，不能重试。原记录保留，请到「操作记录与审批」核对。";
+const LARGE_REQUEST_RETIRED = "旧的大额申请入口已停用，不能重试。原记录保留，这个用户暂时不能再提交调整，请到「操作记录与审批」核对。";
 /** 状态已被别人或系统改了：框不关，读回写最新状态（D2-C89）。 */
 const MOVED_CODES = ["ASSET_ADJUSTMENT_REVIEW_RACE_LOST", "INVALID_STATE_TRANSITION", "C3_ADJUSTMENT_WITHDRAW_CONFLICT", "C3_ADJUSTMENT_WITHDRAW_RACE_LOST", "C3_ALREADY_REVERSED", "C3_ONLY_ORIGINAL_APPROVED_ADJUSTMENT_REVERSIBLE"];
 
