@@ -352,7 +352,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       || intent.picked === current.role || recovery && (current.role === "super" || intent.picked !== "super"))) throw new Error("A1_FRESH_OVERVIEW_REQUIRED");
     if (intent.kind === "enable" && recovery && (current.role !== "super" || !current.tfa)) throw new Error("ADMIN_GOVERNANCE_FROZEN");
     if (intent.kind === "2fa" && !current.tfa) throw new Error("ADMIN_MFA_NOT_BOUND");
-    if ((intent.kind === "disable" || intent.kind === "2fa" || intent.kind === "role" && intent.picked !== "super") && current.role === "super" && current.status === "enabled" && data.stats.effectiveSupers <= 2) throw new Error("MIN_EFFECTIVE_SUPER_REQUIRED");
+    if ((intent.kind === "disable" || intent.kind === "2fa" || intent.kind === "role" && intent.picked !== "super") && current.role === "super" && current.status === "enabled" && current.tfa && data.stats.effectiveSupers <= 2) throw new Error("MIN_EFFECTIVE_SUPER_REQUIRED");
     if ((intent.kind === "disable" && current.status !== "enabled") || (intent.kind === "enable" && current.status !== "disabled")) throw new Error("ACCOUNT_VERSION_STALE");
     if (intent.kind === "logout" || intent.kind === "session") {
       if (current.id === String(currentAdminId) || current.role === "super" || current.sessions === 0) throw new Error("FORCE_LOGOUT_FORBIDDEN");
@@ -565,7 +565,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           toast("新角色与当前角色相同");
           return;
         }
-        if (op.role === "super" && op.status === "enabled" && roleStr !== "super" && effectiveSupers - 1 < 2) {
+        if (op.role === "super" && op.status === "enabled" && op.tfa && roleStr !== "super" && effectiveSupers - 1 < 2) {
           toast("不能执行：有效的超级管理员会少于 2 人");
           return;
         }
@@ -737,7 +737,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   };
 
   const disableAcct = (op: A1Operator) => {
-    if (!restoring.current && op.role === "super" && op.status === "enabled" && effectiveSupers - 1 < 2) {
+    if (!restoring.current && op.role === "super" && op.status === "enabled" && op.tfa && effectiveSupers - 1 < 2) {
       toast("不能执行：有效的超级管理员会少于 2 人");
       return;
     }
