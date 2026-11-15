@@ -15,12 +15,14 @@ import { isOutcomeUnknownError } from "./outcome-classification";
 
 const NOT_A_VERDICT = new Set([401, 403, 408, 425, 429]);
 const BUSINESS_REJECTION_BEFORE_WRITE = new Set([
-  // Backend 66ecdb47, market/application/OpsNexMarketService.java:
+  // Backend 441c412b (f972feb4), market/application/OpsNexMarketService.java:
   // prepareMarketPolicy:1248–1250 rejects before review and A2 ticket/lock inserts;
   // updateWeeklyCurve:1413 rejects before applyWeeklyCurve's first config write (:1428);
   // updateOverride:1588–1589 rejects before applyCurrentPriceOverride writes/publishes (:1737–1748).
   // All three paths have made no market mutation; command/A2 requireSuccess also rolls back failure.
   // validateLegacyMarketProposal:1210 rejects older proposal commands before A2 ticket/lock inserts too.
+  // These four business guards now return 422 and use the ordinary 4xx verdict path.
+  // Keep the exact-code 403 exception for older responses; no other 403 is a verdict.
   "G3_MANUAL_TUNING_FORBIDDEN_IN_PRODUCTION",
 ]);
 
