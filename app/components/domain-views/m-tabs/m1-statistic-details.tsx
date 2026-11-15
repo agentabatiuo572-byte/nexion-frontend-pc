@@ -18,9 +18,9 @@ export type StatisticSource =
 type Result = { headings: string[]; rows: string[][]; total: number | null; next: boolean; summary: string; note?: string; version?: string; facts?: readonly { k: string; v: ReactNode }[]; tech?: string };
 type SuccessList = { version: string; rows: string[][]; restricted: number };
 const PAGE_SIZE = 10;
-const beijingTime = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Asia/Shanghai", hourCycle: "h23" });
+const beijingTime = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Shanghai", hourCycle: "h23" });
 /** TX-26 full time in Beijing time, 2026-11-05 14:30:00; callers state the zone once. */
-export const beijing = (time: string) => { const parts = Object.fromEntries(beijingTime.formatToParts(new Date(time)).map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`; };
+export const beijing = (time: string) => { const parts = Object.fromEntries(beijingTime.formatToParts(new Date(time)).map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`; };
 const changed = () => new SupportClientError(409, undefined, "SUPPORT_STATISTIC_CHANGED");
 const summaryCounts = (total: number, visible: number, restricted: number, unit: string) => "统计 " + total + unit + " · 你能看到 " + visible + unit + " · 看不到 " + restricted + unit;
 
@@ -98,7 +98,7 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
   const currency = query.currency ?? "USDT";
   const amountOf = (receipt: SupportAnalyticsResponse) => metric === "net" ? receipt.scopeSummary.financial.currencies.find(row => row.currency === currency)?.net : fundAmount(receipt.funds, metric, currency);
   const original = amountOf(origin);
-  const summary = "原统计 " + amountText(original) + " " + nexGridBrandText(currency);
+  const summary = "统计 " + amountText(original) + " " + nexGridBrandText(currency);
   const scopeGroups = origin.scopeSummary.groups.map(group => group.groupId).sort().join(",");
   const checkSummary = (receipt: SupportAnalyticsResponse) => {
     const amount = amountOf(receipt);

@@ -18,12 +18,12 @@ const STATUS_TEXT = { ENABLED: "已启用", DISABLED: "已停用", ARCHIVED: "�
 const KIND_TEXT = { SERVICE: "专属客服", SUPERVISOR: "主管" };
 const QUAL_OPTIONS = [{ value: "ENABLED", label: "启用" }, { value: "DISABLED", label: "停用" }, { value: "REMOVED", label: "移除" }];
 function errorStatus(error: unknown): number { return error && typeof error === "object" && "status" in error ? Number(error.status) : 0; }
-function errorText(error: unknown): string { if (error instanceof SupportClientError && error.backendMessage && ADMIN_ERROR_MESSAGES[error.backendMessage]) return displayAdminError(error); const code = errorStatus(error); return [401,403,404].includes(code) ? "你已无权查看这些资料，请返回后刷新。" : code === 409 ? "资料刚被修改过，已填写的内容还在，请刷新预览后再确认。" : code === 422 ? "当前账号、资格或组状态不允许此操作，请核对账号启用状态、成员和交接任务。" : "结果未知，原内容已保留；请先查询原结果。"; }
+function errorText(error: unknown): string { if (error instanceof SupportClientError && error.backendMessage && ADMIN_ERROR_MESSAGES[error.backendMessage]) return displayAdminError(error); const code = errorStatus(error); return [401,403,404].includes(code) ? "你已无权查看这些资料，请返回后刷新。" : code === 409 ? "资料刚被修改过，已填写的内容还在，请刷新预览后再确认。" : code === 422 ? "当前账号、资格或组状态不允许此操作，请核对账号启用状态、成员和交接任务。" : "这次操作结果未知，原内容和理由已保留。"; }
 function reasonValid(value: string) { const length = Array.from(value.trim()).length; return length >= 8 && length <= 200; }
 function authStamp() { const a = useAdminAuth.getState(); return adminShellSessionKey(a.session, a.authEpoch) + JSON.stringify(a.session?.menuNodes ?? null) + `|${a.isAuthenticated}|${a.logoutPending}|${a.logoutUnknown}`; }
 export function canManageSupportQualifications(session: { role: string; authorities: string[] } | null) { return !!session && ["SUPERADMIN", "SUPER_ADMIN", "SUPER"].includes(session.role.toUpperCase()) && session.authorities.includes("platform_a1_read") && session.authorities.includes("platform_a1_write"); }
 function expiredText() { return "原操作已超过 24 小时，不能再重试；请先核对它是否已经执行。原内容和理由仍保留。"; }
-const QUERY_PENDING_TEXT = "原操作结果未知，不能重复提交；请先查询原结果。原内容和理由不变。";
+const QUERY_PENDING_TEXT = "不能重复提交，先查询原结果。";
 type Intent = GroupPendingRecord["intent"];
 /** 作废拿到终局回执（成功或原操作没生效）、还没重读到新码时的那一格：旧码不可信（code 为空，不再给作废入口），显示「待刷新」，不和缺数据的「-」「读取失败」混在一起。 */
 const INVITE_REVOKED = { code: null, link: null, version: null, issuedAt: null };
