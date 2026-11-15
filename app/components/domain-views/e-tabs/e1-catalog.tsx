@@ -6,6 +6,7 @@ import { nexGridBrandText, datacenterNameText } from "@/lib/admin/brand-copy";
 import { operatorSkuTier } from "@/lib/admin/e-operator-display";
 import { supportsDeviceMonthlyTarget, SKU_MODEL_UNRECOGNIZED_REASON } from "@/lib/admin/device-monthly-target";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { E1GenerationRelease, E1Phase } from "@/lib/admin/e1-client";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { EViewCtx, McSpec } from "./types";
@@ -20,6 +21,9 @@ export type E1CatalogContext = Pick<EViewCtx, "skus" | "canWriteE1" | "e1Invalid
   pendingProposal: (id: string) => { id: string } | undefined; openPending: (id: string) => void; readPending: (id: string) => void;
   forceUnlock: boolean; forceLock: boolean; locked: (type: string, id: string) => boolean;
 };
+
+/** 后端时间按业务时区写到分钟（TX-25），时区跟在后面写一次。 */
+const zonedTime = (value?: string | null) => value ? `${formatBusinessTimeCompact(value, "—")}（${businessZone().label}）` : "—";
 
 function SkuMediaThumb({ sku }: { sku: OpsSku }) {
   const [src, setSrc] = useState("");
@@ -441,7 +445,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       ].map(group => <Fold inset key={group.title} title={group.title} summary={group.summary}><Facts>{E1_SKU_FIELDS.filter(f => group.keys.includes(f.key)).map(f => <Fact key={f.key} k={f.label}>{f.key === "purchaseGate" ? <E1PurchaseConditions sku={detail} /> : f.key === "unlock" ? detail.unlock ? phaseLabel(detail.unlock) : "无需阶段" : f.key === "features" ? detail.features?.length ? <ul>{detail.features.map((item, i) => <li key={i}>{item}</li>)}</ul> : "— · 未填写" : f.unit || f.key === "tradeinDiscount" ? detail[f.key] == null ? "— · 未填写" : <E1Amount value={detail[f.key] as number} precision={f.key === "monthlyTargetUsdt" ? e1TargetPrecision(detail) : f.unit === "%" ? e1Precision([detail[f.key] as number], 0) : undefined} unit={f.unit} /> : detail[f.key] == null || detail[f.key] === "" ? "— · 未填写" : e1Value(detail[f.key])}</Fact>)}</Facts>
         {group.title === "收益与任务" && <Facts><Fact k="派生日均"><E1Amount value={detail.derivedDailyEarnUsdt} unit="USDT/天" /></Fact>{detail.tier === "Share" && detail.monthlyTargetUsdt != null && detail.monthlyTargetBandPct != null && <><Fact k="预估日收益下限"><E1Amount value={(Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).low) / 30).toFixed(6)} unit="USDT/天" /></Fact><Fact k="预估日收益上限"><E1Amount value={(Number(e1Range(detail.monthlyTargetUsdt, detail.monthlyTargetBandPct).high) / 30).toFixed(6)} unit="USDT/天" /></Fact><Fact k="派生年奖励率下限"><E1Amount value={detail.derivedShareYieldMinPct} unit="%" /></Fact><Fact k="派生年奖励率上限"><E1Amount value={detail.derivedShareYieldMaxPct} unit="%" /></Fact></>}</Facts>}
       </Fold>)}
-      <Fold inset title="策略与修订" summary={`策略版本 ${detail.productTaskPolicyVersion ?? "—"}`}><Facts><Fact k="任务策略版本">{e1Number(detail.productTaskPolicyVersion)}</Fact><Fact k="策略生效时间">{detail.productTaskPolicyEffectiveAt?.replace("T", " ") || "—"}</Fact><Fact k="修订时间">{detail.updatedAt?.replace("T", " ") || "—"}</Fact></Facts></Fold>
+      <Fold inset title="策略与修订" summary={`策略版本 ${detail.productTaskPolicyVersion ?? "—"}`}><Facts><Fact k="任务策略版本">{e1Number(detail.productTaskPolicyVersion)}</Fact><Fact k="策略生效时间">{zonedTime(detail.productTaskPolicyEffectiveAt)}</Fact><Fact k="修订时间">{zonedTime(detail.updatedAt)}</Fact></Facts></Fold>
     </Drawer>}
   </>;
 }

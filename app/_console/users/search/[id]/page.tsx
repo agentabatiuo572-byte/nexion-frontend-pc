@@ -246,7 +246,8 @@ function statusTone(value: unknown) {
 }
 
 const shortTime = (value: unknown) => formatBusinessTimeCompact(value, "—");
-const fullTime = (value: unknown) => formatBusinessTimeFull(value, "—");
+/** 抽屉里写到分钟，悬停看到秒，对账用。 */
+const detailTime = (value: unknown) => <span title={formatBusinessTimeFull(value, "") || undefined}>{shortTime(value)}</span>;
 const yesNo = (value: unknown, on = "是", off = "否") => value == null ? "—" : value ? on : off;
 
 function sectionFailed(section: User360Section | null | undefined) {
@@ -420,11 +421,11 @@ const mono = (value: unknown) => <span data-mono>{asText(value)}</span>;
 /** 充值记录和不在列表里的那笔最近充值（待确认、失败的）共用一个抽屉。 */
 const DEPOSIT_RECORD = { title: "充值记录", sub: (row: JsonRecord) => mono(row.depositNo), facts: (row: JsonRecord) => [
   ["金额", amountText(row.amount, row.asset)], ["状态", depositStatus(row)], ["渠道", asText(row.channel)], ["币种", assetText(row.asset) || "—"],
-  ["发起时间", fullTime(row.createdAt)], ["确认时间", fullTime(row.confirmedAt)],
+  ["发起时间", detailTime(row.createdAt)], ["确认时间", detailTime(row.confirmedAt)],
 ] as const };
 const RECORD: Record<RecordKind, { title: string; sub: (row: JsonRecord) => ReactNode; facts: (row: JsonRecord) => readonly (readonly [string, ReactNode])[] }> = {
   session: { title: "登录记录", sub: (row) => platformSessionDeviceText(asText(row.deviceName)), facts: (row) => [
-    ["状态", sessionTag(row)], ["IP", asText(row.clientIpMasked)], ["登录时间", fullTime(row.issuedAt)], ["过期时间", fullTime(row.expiresAt)],
+    ["状态", sessionTag(row)], ["IP", asText(row.clientIpMasked)], ["登录时间", detailTime(row.issuedAt)], ["过期时间", detailTime(row.expiresAt)],
   ] },
   payment: { title: "支付方式", sub: (row) => `${asText(row.brand)} ···· ${asText(row.last4)}`, facts: (row) => [
     ["状态", paymentTag(row)], ["提供商", asText(row.provider)], ["有效期", asText(row.expiryLabel, "无到期信息")],
@@ -436,7 +437,7 @@ const RECORD: Record<RecordKind, { title: string; sub: (row: JsonRecord) => Reac
   topup: DEPOSIT_RECORD,
   withdrawal: { title: "提现记录", sub: (row) => mono(row.withdrawalNo), facts: (row) => [
     ["金额", amountText(row.amount, row.asset)], ["状态", withdrawalStatus(row)], ...(withdrawalReason(row) ? [["原因", withdrawalReason(row)] as const] : []),
-    ["风险分", asText(row.riskScore)], ["币种", assetText(row.asset) || "—"], ["链", asText(row.chain)], ["创建时间", fullTime(row.createdAt)],
+    ["风险分", asText(row.riskScore)], ["币种", assetText(row.asset) || "—"], ["链", asText(row.chain)], ["创建时间", detailTime(row.createdAt)],
   ] },
   device: { title: "设备明细", sub: (row) => mono(row.instanceNo), facts: (row) => [
     ["状态", deviceTag(row)], ["运行状态", formatC1RuntimeStatus(row.runtimeStatus)], ["名称", asText(row.name)], ["规格", formatC1DeviceTier(row.productTier)],
@@ -444,22 +445,22 @@ const RECORD: Record<RecordKind, { title: string; sub: (row: JsonRecord) => Reac
   ] },
   earning: { title: "收益明细", sub: (row) => mono(row.bizNo), facts: (row) => [
     ["金额", amountText(row.amount, row.asset)], ["余额", amountText(row.balanceAfter, row.asset)], ["类型", formatD4Subtype(row.bizType)],
-    ["方向", DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—"], ["币种", assetText(row.asset) || "—"], ["时间", fullTime(row.createdAt)],
+    ["方向", DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—"], ["币种", assetText(row.asset) || "—"], ["时间", detailTime(row.createdAt)],
   ] },
   member: { title: "推荐团队成员", sub: (row) => mono(row.memberNo), facts: (row) => [
-    ["昵称", operatorNicknameText(asText(row.nickname))], ["团队等级", asText(row.vRank)], ["相隔邀请次数", asText(row.level)], ["贡献额", amountText(row.volume)], ["加入时间", fullTime(row.createdAt)],
+    ["昵称", operatorNicknameText(asText(row.nickname))], ["团队等级", asText(row.vRank)], ["相隔邀请次数", asText(row.level)], ["贡献额", amountText(row.volume)], ["加入时间", detailTime(row.createdAt)],
   ] },
   engagement: { title: "互动与参与", sub: (row) => asText(row.name), facts: (row) => [
-    ["状态", asText(row.status)], ["进度", asText(row.progress)], ["更新时间", fullTime(row.updatedAt)],
+    ["状态", asText(row.status)], ["进度", asText(row.progress)], ["更新时间", detailTime(row.updatedAt)],
   ] },
   exchange: { title: "兑换记录", sub: (row) => mono(row.bizNo), facts: (row) => [
-    ["金额", amountText(row.amount, row.asset)], ["类型", formatD4Subtype(row.bizType)], ["方向", DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—"], ["币种", assetText(row.asset) || "—"], ["时间", fullTime(row.createdAt)],
+    ["金额", amountText(row.amount, row.asset)], ["类型", formatD4Subtype(row.bizType)], ["方向", DIRECTION[asText(row.direction, "").toUpperCase()] ?? "—"], ["币种", assetText(row.asset) || "—"], ["时间", detailTime(row.createdAt)],
   ] },
   notification: { title: "通知", sub: (row) => asText(row.notificationId), facts: (row) => [
-    ["标题", nexGridBrandText(asText(row.title))], ["类型", formatC1NotificationType(row.type)], ["推送", pushText(row)], ["已读", formatC1ReadFlag(row.readFlag)], ["创建时间", fullTime(row.createdAt)],
+    ["标题", nexGridBrandText(asText(row.title))], ["类型", formatC1NotificationType(row.type)], ["推送", pushText(row)], ["已读", formatC1ReadFlag(row.readFlag)], ["创建时间", detailTime(row.createdAt)],
   ] },
   order: { title: "商城订单", sub: (row) => mono(row.orderNo), facts: (row) => [
-    ["金额", amountText(row.amount)], ["状态", orderStatus(row)], ["商品", asText(row.skuName)], ["机房", datacenterNameText(asText(row.dcLocation))], ["下单时间", fullTime(row.orderedAt)],
+    ["金额", amountText(row.amount)], ["状态", orderStatus(row)], ["商品", asText(row.skuName)], ["机房", datacenterNameText(asText(row.dcLocation))], ["下单时间", detailTime(row.orderedAt)],
   ] },
 };
 

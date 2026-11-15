@@ -17,6 +17,8 @@ export type ActionConfirmReq = {
   coverageCheck?: string;
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
+  /** Refresh field constraints while retaining the mounted form inputs. */
+  businessFormRevision?: number;
   /** 与服务端理由长度约束保持一致；未指定时沿用共享弹窗的领域默认值。 */
   reasonMin?: number;
   reasonMax?: number;
@@ -60,6 +62,7 @@ export type ActionConfirmReq = {
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type ConfirmReq = {
+  /** A saved original freezes inputs while its result remains unresolved. */
   getPendingReason?: () => string | undefined;
   /** 原覆盖分，恢复时只展示保存的输入。 */
   getPendingValue?: () => string | undefined;

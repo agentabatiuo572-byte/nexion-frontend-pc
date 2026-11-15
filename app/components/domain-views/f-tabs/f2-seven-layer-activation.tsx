@@ -171,7 +171,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering }: { ctx: FVie
             <span className="f2-recovery-change">{change}{attempt.spec.reason !== "—" && <small title={attempt.spec.reason}>理由：{attempt.spec.reason}</small>}</span>
             <span className="f2-recovery-time">{businessStamp(attempt.createdAt)} 提交</span>
             <span>{attempt.ticket?.status === "pending"
-              ? <StatusTag tone="progress" icon={Clock3} explain="等另一位管理员在「操作记录与审批」批准；批准前不生效。">待审批</StatusTag>
+              ? <StatusTag tone="warn" icon={Clock3} explain="等另一位管理员在「操作记录与审批」批准；批准前不生效。">待审批</StatusTag>
               : attempt.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
                 : expired ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除待确认。">已过期</StatusTag>
                   : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>}</span>

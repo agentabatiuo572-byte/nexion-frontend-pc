@@ -484,7 +484,7 @@ function G2ExchangePage() {
         : `这些操作先只能查询原结果或在 24 小时内按原请求重试，不能改成别的值${directs.some((record) => record.path === "/exchange/queue/process") ? "；处理排队的原批次确认之前不能开新的一批" : ""}。`}
       explain={<>
         <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的参数申请，直接生效但没收到结果的参数修改、紧急暂停、取消排队，以及处理排队的原批次。原操作只能查询，或在 24 小时内按原内容重试，不能改值。</p>
-        <p>要改成别的值，等原操作有结论后再在「额度和手续费」里发起新修改。处理排队的原批次只能查原回执，不会重发。</p>
+        <p>要改成别的值，等原操作有结论后再在「额度和手续费」里发起新修改。处理排队的原批次只能查原结果，不会重发。</p>
       </>} />;
   };
 
@@ -512,9 +512,10 @@ function G2ExchangePage() {
           // POST 的原始错误仍是主证据；回读失败不能改写成确定失败。
         }
         requireBatchActor(batchAdminId);
-        const message = "处理结果暂未确认。可关闭确认框后选择「核对原处理」，查看原批次回执。";
+        const message = "处理结果未知。可以关掉确认框，在页面上方点「查询原结果」，查看原批次的结果。";
+        // 确认框这时一直开着，这句只在框里写一次：不弹提示，页面上方也不再写。
+        coveredErrors.current.add(message);
         setError(message);
-        toast(message);
         throw new Error(message);
       }
       const message = messageOf(err);
@@ -1022,7 +1023,7 @@ function G2ExchangePage() {
     <>
       {header}
       {confirmModal}
-      {error && !coveredErrors.current.has(error) && !/^(提交结果暂未确认|处理结果暂未确认)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
+      {error && !coveredErrors.current.has(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
       {conclusion}
       {recoveryNotice()}
 
@@ -1066,7 +1067,7 @@ function G2ExchangePage() {
           </div>
           <div className="g2x-quota g2x-quota-user">
             <div className="g2x-quota-head">
-              <span className="g2x-quota-name">单用户日额度<Explain label="单用户日额度怎么看" content="按人算，每个人用了多少接口不给，所以这里不画条；看今天有多少次因为个人额度被拦。" /></span>
+              <span className="g2x-quota-name">单用户日额度<Explain label="单用户日额度怎么看" content="按人算，系统没给每个人用了多少，所以这里不画条；看今天有多少次因为个人额度被拦。" /></span>
               <span className="g2x-quota-pct">{userCap ? `每人 ${paramValueText("userDailyCap", userCap.value)}` : "—"}</span>
             </div>
           </div>
@@ -1159,7 +1160,7 @@ function G2ExchangePage() {
       </Fold>
 
       {recoveryBatch && <Modal title="核对原处理" icon={ShieldCheck} busy={busy} onClose={() => setRecoveryKey(null)}
-        sub={<StatusTag tone="neutral">只查原回执，不发新批次</StatusTag>}
+        sub={<StatusTag tone="neutral">只查原结果，不发新批次</StatusTag>}
         footer={<>
           <Button disabled={busy} onClick={() => setRecoveryKey(null)}>取消</Button>
           <Button variant="primary" loading={busy} onClick={() => void checkOriginalBatch(recoveryBatch)}>{busy ? "核对中…" : "核对原处理"}</Button>
@@ -1169,9 +1170,10 @@ function G2ExchangePage() {
           <Fact k="原操作理由"><span className="g2x-wrap">{recoveryBatch.reason}</span></Fact>
           <Fact k="原批次编号"><span data-mono className="g2x-wrap">{recoveryBatch.commandKey}</span></Fact>
         </Facts>
-        {recoveryError && <Notice tone={recoveryError.notFound ? "warn" : "danger"} title={recoveryError.notFound ? "没有查到原回执" : "这次没核对成"}>
-          <p>{recoveryError.message}</p>
-          {recoveryError.notFound && <p>查不到不代表原批次没执行。原记录继续保留在这台电脑上，可以稍后再核对；要确认结果，到「操作记录与审批」或请后端核对这一批的账本。</p>}
+        {recoveryError && <Notice tone={recoveryError.notFound ? "warn" : "danger"} title={recoveryError.notFound ? "没有查到原批次的结果" : "这次没核对成"}>
+          {/* 查不到时标题已经说了，不再把同一句写一遍。 */}
+          {!recoveryError.notFound && <p>{recoveryError.message}</p>}
+          {recoveryError.notFound && <p>查不到不代表原批次没执行。原记录继续保留在这台电脑上，可以稍后再核对；要确认结果，到「操作记录与审批」核对，或请技术值班核对这一批的账本。</p>}
         </Notice>}
       </Modal>}
 
