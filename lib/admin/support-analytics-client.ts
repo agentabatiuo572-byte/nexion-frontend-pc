@@ -2,6 +2,8 @@ import { supportRequest } from "./m-support-client.ts";
 import { parseBusinessTime } from "./business-time.ts";
 
 const VIEWS = ["OVERVIEW", "AGENTS", "CUSTOMERS", "FINANCE", "DEVICES", "ACTIVITY"] as const;
+const DETAIL_VIEWS = ["NET_CONTRIBUTIONS", "FIRST_DEPOSITS", "FIRST_PURCHASES"] as const;
+export type SupportAnalyticsDetailView = typeof DETAIL_VIEWS[number];
 const BASES = ["CURRENT_CUSTOMER_HISTORY", "PERIOD_EVENT", "CURRENT_ASSET"] as const;
 const CATEGORIES = ["ALL", "BOUND", "PENDING", "ANOMALY"] as const;
 const FIRST = ["ALL", "CONFIRMED", "NONE", "UNKNOWN"] as const;
@@ -199,6 +201,37 @@ function financeRow(value: unknown) {
   const r = object(value, "customerId customerNo nickname kind currency amount succeededAt orderNo historyStatus");
   return { customerId: id(r.customerId), customerNo: nullableText(r.customerNo), nickname: nullableText(r.nickname), kind: enumeration(r.kind, KINDS), currency: enumeration(r.currency, CURRENCIES), amount: decimal(r.amount), succeededAt: nullableInstant(r.succeededAt), orderNo: nullableText(r.orderNo), historyStatus: enumeration(r.historyStatus, ["READY", "UNKNOWN"]) };
 }
+function detailRow(value: unknown) {
+  const r = object(value, "id customerId customerNo nickname kind currency amount succeededAt agentId groupId");
+  const amount = decimal(r.amount);
+  if (amount === null) malformed("detail.amount");
+  return { id: text(r.id), customerId: id(r.customerId), customerNo: nullableText(r.customerNo), nickname: nullableText(r.nickname),
+    kind: enumeration(r.kind, ["NET_CONTRIBUTION", "DEPOSIT", "DEVICE_PURCHASE"]), currency: enumeration(r.currency, CURRENCIES),
+    amount, succeededAt: instant(r.succeededAt), agentId: nullableId(r.agentId), groupId: nullableId(r.groupId) };
+}
+function detailSummary(value: unknown) {
+  const r = object(value, "currency status observedAmount totalAmount visibleAmount restrictedAmount totalCount visibleCount restrictedCount customerCount visibleCustomerCount restrictedCustomerCount");
+  const result = { currency: enumeration(r.currency, CURRENCIES), status: enumeration(r.status, ["AVAILABLE", "PARTIAL"]), observedAmount: decimal(r.observedAmount),
+    totalAmount: decimal(r.totalAmount), visibleAmount: decimal(r.visibleAmount), restrictedAmount: decimal(r.restrictedAmount),
+    totalCount: integer(r.totalCount), visibleCount: integer(r.visibleCount), restrictedCount: integer(r.restrictedCount), customerCount: integer(r.customerCount), visibleCustomerCount: integer(r.visibleCustomerCount), restrictedCustomerCount: integer(r.restrictedCustomerCount) };
+  if (result.totalAmount === null || result.visibleAmount === null || result.restrictedAmount === null || result.visibleCount + result.restrictedCount !== result.totalCount || result.visibleCustomerCount + result.restrictedCustomerCount !== result.customerCount) malformed("detail.coverage");
+  const amounts = [result.totalAmount!, result.visibleAmount!, result.restrictedAmount!];
+  const places = Math.max(...amounts.map(v => (v.split(".")[1] ?? "").length));
+  const units = (v: string) => { const [whole, fraction = ""] = v.split("."); return BigInt(whole + fraction.padEnd(places, "0")); };
+  if (units(amounts[1]) + units(amounts[2]) !== units(amounts[0])) malformed("detail.amountCoverage");
+  return result;
+}
+export type SupportAnalyticsDetailResponse = Metadata & { view: SupportAnalyticsDetailView; records: ReturnType<typeof detailRow>[]; detailSummary: ReturnType<typeof detailSummary> };
+function parseDetailResponse(value: unknown, expected: ReturnType<typeof query>, currency: string): SupportAnalyticsDetailResponse {
+  const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records detailSummary");
+  const view = enumeration(r.view, DETAIL_VIEWS), meta = metadata(r), summary = detailSummary(r.detailSummary);
+  if (view !== expected.view || meta.basis !== "PERIOD_EVENT" || meta.pageNum !== expected.pageNum || meta.pageSize !== expected.pageSize || meta.recordsStatus !== meta.versionState || expected.expectedVersion !== undefined && meta.queryVersion !== expected.expectedVersion) malformed("detail.queryMismatch");
+  const records = unique(array(r.records, detailRow), row => row.id);
+  const remaining = Math.max(0, meta.observedTotal - (meta.pageNum - 1) * meta.pageSize);
+  const kind = view === "NET_CONTRIBUTIONS" ? "NET_CONTRIBUTION" : view === "FIRST_DEPOSITS" ? "DEPOSIT" : "DEVICE_PURCHASE";
+  if (summary.currency !== currency || summary.visibleCount !== meta.observedTotal || meta.total !== null && meta.total !== summary.visibleCount || records.length !== Math.min(remaining, meta.pageSize) || meta.canContinue !== (meta.versionState === "READY" && remaining > records.length) || records.some(row => row.currency !== currency || row.kind !== kind)) malformed("detail.records");
+  return { ...meta, view, records, detailSummary: summary };
+}
 function deviceRow(value: unknown) {
   const r = object(value, "deviceId customerId deviceType hashrate holdingStatus connectionStatus acquisition activatedAt deactivatedAt");
   return { deviceId: id(r.deviceId), customerId: id(r.customerId), deviceType: nullableText(r.deviceType), hashrate: decimal(r.hashrate), holdingStatus: enumeration(r.holdingStatus, ["AVAILABLE", "UNKNOWN"]), connectionStatus: enumeration(r.connectionStatus, ["ONLINE", "OFFLINE", "UNKNOWN", "NOT_APPLICABLE"]), acquisition: enumeration(r.acquisition, ["PAID_PURCHASE", "UNKNOWN"]), activatedAt: nullableInstant(r.activatedAt), deactivatedAt: nullableInstant(r.deactivatedAt) };
@@ -221,7 +254,7 @@ function metadata(r: Record<string, unknown>) {
   if (total !== null && total !== observedTotal) malformed("total");
   return { basis: enumeration(r.basis, BASES), businessZone: enumeration(r.businessZone, ["Asia/Shanghai"]), asOf: instant(r.asOf), pageNum, pageSize, total, observedTotal, versionState, queryVersion, canContinue, recordsStatus, selectedCustomerCount: integer(r.selectedCustomerCount), selectedCurrent: current(r.selectedCurrent), scopeSummary: scopeSummary(r.scopeSummary), funds: selectedFunds(r.funds) };
 }
-export function parseSupportAnalyticsResponse(value: unknown, expected: { view: SupportAnalyticsView; basis: typeof BASES[number]; pageNum: number; pageSize: number; expectedVersion?: string }): SupportAnalyticsResponse {
+export function parseSupportAnalyticsResponse(value: unknown, expected: { view: SupportAnalyticsView | SupportAnalyticsDetailView; basis: typeof BASES[number]; pageNum: number; pageSize: number; expectedVersion?: string }): SupportAnalyticsResponse {
   const r = object(value, "view basis businessZone asOf pageNum pageSize total observedTotal versionState queryVersion canContinue recordsStatus selectedCustomerCount selectedCurrent scopeSummary funds records");
   const view = enumeration(r.view, VIEWS), meta = metadata(r);
   if (view !== expected.view || meta.basis !== expected.basis || meta.pageNum !== expected.pageNum || meta.pageSize !== expected.pageSize) malformed("queryMismatch");
@@ -239,18 +272,19 @@ export function parseSupportAnalyticsResponse(value: unknown, expected: { view: 
   }
 }
 function micros(value: string): bigint { return BigInt(parseBusinessTime(value)) * BigInt(1000) + BigInt((value.split(".")[1]?.slice(0, -1) ?? "").padEnd(6, "0").slice(3)); }
-function query(options: SupportAnalyticsQuery) {
+function query(options: Omit<SupportAnalyticsQuery, "view"> & { view: SupportAnalyticsView | SupportAnalyticsDetailView }) {
   object(options, `${PARAMETERS.join(" ")} signal`);
   if (Object.values(options).some(value => value === null)) malformed("queryNull");
-  const view = enumeration(options.view, VIEWS), basis = enumeration(options.basis ?? "CURRENT_CUSTOMER_HISTORY", BASES), category = enumeration(options.category ?? "ALL", CATEGORIES), firstState = enumeration(options.firstState ?? "ALL", FIRST), filter = enumeration(options.filter ?? "ALL", FILTERS);
+  const view = enumeration(options.view, [...VIEWS, ...DETAIL_VIEWS]), detail = DETAIL_VIEWS.includes(view as SupportAnalyticsDetailView), basis = enumeration(options.basis ?? "CURRENT_CUSTOMER_HISTORY", BASES), category = enumeration(options.category ?? "ALL", CATEGORIES), firstState = enumeration(options.firstState ?? "ALL", FIRST), filter = enumeration(options.filter ?? "ALL", FILTERS);
   const defaultSort = category === "PENDING" ? "POOL_ENTERED_AT" : firstState === "CONFIRMED" ? "FIRST_SUCCEEDED_AT" : firstState === "NONE" ? "REGISTERED_AT" : filter === "WAITING_REPLY" ? "WAITING_SINCE_AT" : filter === "FIRST_CONTACT" ? "ASSIGNED_AT" : filter === "DUE" ? "NEXT_DUE_AT" : filter === "STOPPED" ? "STATE_CHANGED_AT" : "LAST_ACTIVE_AT";
-  const sortKey = enumeration(options.sortKey ?? (view === "AGENTS" ? "BOUND_CUSTOMER_COUNT" : view === "FINANCE" ? "SUCCEEDED_AT" : defaultSort), SORTS);
+  const sortKey = enumeration(options.sortKey ?? (view === "AGENTS" ? "BOUND_CUSTOMER_COUNT" : (view === "FINANCE" || detail) ? "SUCCEEDED_AT" : defaultSort), SORTS);
   const direction = enumeration(options.direction ?? (category === "PENDING" || firstState === "NONE" || ["WAITING_REPLY", "FIRST_CONTACT", "DUE", "DORMANT"].includes(filter) ? "ASC" : "DESC"), ["ASC", "DESC"]);
-  const allowed = view === "AGENTS" ? ["BOUND_CUSTOMER_COUNT", "ACTIVE_CUSTOMER_COUNT", "FIRST_CONFIRMED_CUSTOMER_COUNT", "DEVICE_COUNT", "PERSONAL_DEPOSIT"] : view === "FINANCE" ? ["SUCCEEDED_AT", "AMOUNT"] : view === "DEVICES" ? ["HASHRATE", "LAST_ACTIVE_AT", "REGISTERED_AT", "DEVICE_COUNT"] : SORTS.filter(x => !["BOUND_CUSTOMER_COUNT", "ACTIVE_CUSTOMER_COUNT", "FIRST_CONFIRMED_CUSTOMER_COUNT", "HASHRATE", "SUCCEEDED_AT", "AMOUNT"].includes(x));
+  const allowed = view === "AGENTS" ? ["BOUND_CUSTOMER_COUNT", "ACTIVE_CUSTOMER_COUNT", "FIRST_CONFIRMED_CUSTOMER_COUNT", "DEVICE_COUNT", "PERSONAL_DEPOSIT"] : (view === "FINANCE" || detail) ? ["SUCCEEDED_AT", "AMOUNT"] : view === "DEVICES" ? ["HASHRATE", "LAST_ACTIVE_AT", "REGISTERED_AT", "DEVICE_COUNT"] : SORTS.filter(x => !["BOUND_CUSTOMER_COUNT", "ACTIVE_CUSTOMER_COUNT", "FIRST_CONFIRMED_CUSTOMER_COUNT", "HASHRATE", "SUCCEEDED_AT", "AMOUNT"].includes(x));
   if (sortKey === "NET_CONTRIBUTION" && basis !== "CURRENT_CUSTOMER_HISTORY") malformed("querySort");
   if (!allowed.includes(sortKey) || sortKey === "NEXT_DUE_AT" && filter !== "DUE" || sortKey === "WAITING_SINCE_AT" && filter !== "WAITING_REPLY" || sortKey === "STATE_CHANGED_AT" && filter !== "STOPPED" || sortKey === "POOL_ENTERED_AT" && category !== "PENDING" || basis === "CURRENT_ASSET" && (view === "FINANCE" || firstState !== "ALL" || ["PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "FIRST_SUCCEEDED_AT"].includes(sortKey))) malformed("querySort");
   const currency = options.currency === undefined ? undefined : enumeration(options.currency, CURRENCIES);
   if (["PERSONAL_DEPOSIT", "TEAM_DEPOSIT", "NET_CONTRIBUTION", "AMOUNT"].includes(sortKey) && currency === undefined) malformed("queryCurrency");
+  if (detail && (basis !== "PERIOD_EVENT" || currency === undefined || category !== "ALL" || firstState !== "ALL" || filter !== "ALL" || options.keyword?.trim())) malformed("detail.query");
   const pageNum = integer(options.pageNum ?? 1, 1), pageSize = integer(options.pageSize ?? 20, 1);
   if (pageSize > 100 || BigInt(pageNum) * BigInt(pageSize) > BigInt("9223372036854775807")) malformed("queryPage");
   if (options.expectedVersion !== undefined && !/^saq-v1:[0-9a-f]{64}$/.test(text(options.expectedVersion)) || pageNum > 1 && options.expectedVersion === undefined) malformed("queryVersion");
@@ -284,6 +318,10 @@ export function parseSupportAnalyticsMonths(value: unknown): SupportAnalyticsMon
   return months;
 }
 export const supportAnalyticsClient = {
+  details: (options: Omit<SupportAnalyticsQuery, "view"> & { view: SupportAnalyticsDetailView }): Promise<SupportAnalyticsDetailResponse> => {
+    const expected = query(options);
+    return supportRequest(`/support-workbench/analytics?${expected.params}`, value => parseDetailResponse(value, expected, options.currency!), { signal: options.signal });
+  },
   query: (options: SupportAnalyticsQuery): Promise<SupportAnalyticsResponse> => {
     const expected = query(options);
     return supportRequest(`/support-workbench/analytics?${expected.params}`, value => parseSupportAnalyticsResponse(value, expected), { signal: options.signal });

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Drawer, Button, BlockState, Fact, Facts, Fold, Table, Th, Tr, Td } from "@/app/components/rd";
 import { nexGridBrandText, operatorNicknameText } from "@/lib/admin/brand-copy";
 import { supportClient, SupportClientError, type PerformanceMetric, type SupportOverview } from "@/lib/admin/m-support-client";
-import { supportAnalyticsClient, type SupportAnalyticsCustomer, type SupportAnalyticsQuery, type SupportAnalyticsResponse } from "@/lib/admin/support-analytics-client";
+import { supportAnalyticsClient, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer, type SupportAnalyticsQuery, type SupportAnalyticsResponse } from "@/lib/admin/support-analytics-client";
 import "./m1-statistic-details.css";
 
 export const maintenanceLabels = { EXECUTION: "已执行维护", SUCCESSFUL_CYCLE: "成功周期", SUCCESSFUL_CUSTOMER: "成功客户", STOPPED: "暂停主动维护" } as const;
@@ -13,7 +13,7 @@ export type MaintenanceChoice = { metric: keyof typeof maintenanceLabels; day?: 
 export type FundMetric = keyof typeof fundLabels;
 export type StatisticSource =
   | { kind: "maintenance"; overview: SupportOverview; choice: MaintenanceChoice }
-  | { kind: "fund"; origin: SupportAnalyticsResponse; query: SupportAnalyticsQuery; metric: FundMetric };
+  | { kind: "fund"; origin: SupportAnalyticsResponse; query: SupportAnalyticsQuery; metric: FundMetric; detailView?: SupportAnalyticsDetailView };
 type Result = { headings: string[]; rows: string[][]; total: number | null; next: boolean; summary: string; note?: string; version?: string };
 type SuccessList = { version: string; rows: string[][]; restricted: number };
 const PAGE_SIZE = 10;
@@ -109,15 +109,20 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
     checkSummary(fresh);
     return fresh;
   };
-  if (metric === "net" && query.basis === "PERIOD_EVENT") {
-    const fresh = await confirmOrigin();
-    const groups = fresh.scopeSummary.groups.filter(group => query.groupId === undefined || String(query.groupId) === group.groupId);
-    const amounts = groups.map(group => group.period.currencies.find(row => row.currency === currency)?.net);
-    const known = amounts.flatMap(row => row?.confirmed == null ? [] : [row.confirmed]);
-    const matches = original?.confirmed != null && known.length === groups.length && exactGroupSum(known, original.confirmed);
-    const places = amountPlaces(amounts.map(row => row?.confirmed ?? row?.observed));
-    const rows = groups.map((group, i) => [group.name ?? "组名未知", group.groupId, amountText(amounts[i], places)]);
-    return { headings: ["负责组", "组编号", "期间净额 / " + nexGridBrandText(currency)], rows: origin.queryVersion ? rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : rows, total: origin.queryVersion ? groups.length : null, next: Boolean(origin.queryVersion) && page * PAGE_SIZE < groups.length, summary, note: (matches ? "已返回的分组净额之和与原统计一致。" : "已返回的分组数据无法完整核对原统计。") + " 期间按发生时归属统计，本页保留组级期间净额投影，不展开新的逐客户或逐笔净额投影。" + (origin.queryVersion ? "" : " 当前显示本次核权回执中的 " + rows.length + " 组。") };
+  if (source.detailView || metric === "net" && query.basis === "PERIOD_EVENT") {
+    const view = source.detailView ?? "NET_CONTRIBUTIONS";
+    const list = await supportAnalyticsClient.details({ view, basis: "PERIOD_EVENT", from: query.from, to: query.to, groupId: query.groupId, agentId: query.agentId,
+      currency: query.currency, sortKey: "SUCCEEDED_AT", direction: "DESC", pageNum: page, pageSize: PAGE_SIZE, expectedVersion: version, signal });
+    const expected = view === "NET_CONTRIBUTIONS" ? origin.scopeSummary.financial.currencies.find(row => row.currency === currency)?.net
+      : origin.scopeSummary.financial.firstSources.find(row => row.currency === currency)?.[view === "FIRST_DEPOSITS" ? "deposits" : "purchases"];
+    const detail = list.detailSummary;
+    if (expected?.confirmed == null || !exactGroupSum([detail.totalAmount!], expected.confirmed)) throw changed();
+    const title = view === "NET_CONTRIBUTIONS" ? fundLabels.net : view === "FIRST_DEPOSITS" ? "充值首充" : "付费购机首充";
+    return { headings: ["客户编号", "客户名称", title + " / " + nexGridBrandText(currency)],
+      rows: list.records.map(row => [row.customerNo ?? row.customerId, operatorNicknameText(row.nickname ?? "") || "未登记", row.amount]),
+      total: list.total, next: list.canContinue,
+      summary: "原统计 " + detail.totalAmount + " " + nexGridBrandText(currency) + " · 可见 " + detail.visibleAmount + " " + nexGridBrandText(currency) + " · 受限 " + detail.restrictedAmount + " " + nexGridBrandText(currency),
+      note: summaryCounts(detail.totalCount, detail.visibleCount, detail.restrictedCount, " 条"), version: list.queryVersion ?? undefined };
   }
   // Net uses the entire authorized scope. Wallet and withdrawal totals use the selected current customers.
   // Without a query version there is no next page, so this one read takes everything the backend allows instead of cutting the list at PAGE_SIZE.
@@ -149,9 +154,9 @@ export function M1StatisticDetails({ source, onClose, onInvalid }: { source: Sta
     });
     return () => controller.abort();
   }, [source, page, retry, onInvalid]);
-  const title = source.kind === "maintenance" ? maintenanceLabels[source.choice.metric] : fundLabels[source.metric];
+  const title = source.kind === "maintenance" ? maintenanceLabels[source.choice.metric] : source.detailView === "FIRST_DEPOSITS" ? "充值首充" : source.detailView === "FIRST_PURCHASES" ? "付费购机首充" : fundLabels[source.metric];
   const cutoff = source.kind === "maintenance" ? source.overview.evaluatedAt : source.origin.asOf;
-  const unit = source.kind === "fund" && source.metric === "net" && source.query.basis === "PERIOD_EVENT" ? "组" : "条";
+  const unit = "条";
   const move = (next: number) => { setResult(null); setPage(next); };
   const group = source.kind === "fund" && source.query.groupId != null ? source.origin.scopeSummary.groups.find(row => row.groupId === String(source.query.groupId)) : null;
   return <Drawer open title={title + "明细"} sub={"统计截至 " + beijing(cutoff) + "（北京时间）"} onClose={onClose} wide footer={<div className="m1-stat-footer"><Button type="button" onClick={onClose}>返回工作台</Button>{result && result.total !== null && <div className="m1-stat-pager"><Button type="button" disabled={page === 1} onClick={() => move(page - 1)}>上一页</Button><span>第 {page} 页</span><Button type="button" disabled={!result.next} onClick={() => move(page + 1)}>下一页</Button></div>}</div>}>

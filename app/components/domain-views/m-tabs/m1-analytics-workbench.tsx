@@ -10,7 +10,7 @@ import dynamic from "next/dynamic";
 import { BarChart3, Users } from "lucide-react";
 import { DomainModuleLoading } from "../domain-module-state";
 import { useRouter } from "next/navigation";
-import { supportAnalyticsClient, type SupportAnalyticsMonth, type SupportAnalyticsQuery, type SupportAnalyticsResponse, type SupportAnalyticsView, type SupportAnalyticsCustomer } from "@/lib/admin/support-analytics-client";
+import { supportAnalyticsClient, type SupportAnalyticsMonth, type SupportAnalyticsQuery, type SupportAnalyticsResponse, type SupportAnalyticsView, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer } from "@/lib/admin/support-analytics-client";
 import { SupportClientError, supportClient, SUPPORT_SESSION_ROLE_LABEL, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
@@ -270,6 +270,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [section, setSection] = useState<Section>("stats"), [personalView, setPersonalView] = useState<PersonalWorkbenchView>("dashboard");
   const lastDataView = useRef<SupportAnalyticsView>("OVERVIEW");
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [periodDetail, setPeriodDetail] = useState<SupportAnalyticsDetailView | null>(null);
   const [fundMetric, setFundMetric] = useState<FundMetric | null>(null);
   const [monthCalendar, setMonthCalendar] = useState<SupportAnalyticsMonth[] | null>(null);
   const [calendarError, setCalendarError] = useState(""), [calendarRetry, setCalendarRetry] = useState(0);
@@ -304,8 +305,12 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const isPersonal = scope?.scopeSummary.mode === "PERSONAL";
   const showStatistics = Boolean(scope && section === "stats");
   const statisticsCalendar = queryState.basis === "PERIOD_EVENT" ? monthCalendar : null;
-  const fundSource = useMemo<StatisticSource | null>(() => data && fundMetric && (queryState.basis !== "PERIOD_EVENT" || statisticsCalendar)
-    ? { kind: "fund", metric: fundMetric, origin: data, query: analyticsWireQuery(queryState, statisticsCalendar ?? []) } : null, [data, fundMetric, queryState, statisticsCalendar]);
+  const fundSource = useMemo<StatisticSource | null>(() => {
+    if (periodDetail && personalPeriod && monthCalendar) return { kind: "fund", metric: "net", detailView: periodDetail, origin: personalPeriod,
+      query: { view: "OVERVIEW", basis: "PERIOD_EVENT", ...analyticsMonthWindow(queryState.month, monthCalendar), currency: queryState.currency ?? "USDT" } };
+    return data && fundMetric && (queryState.basis !== "PERIOD_EVENT" || statisticsCalendar)
+      ? { kind: "fund", metric: fundMetric, origin: data, query: analyticsWireQuery(queryState, statisticsCalendar ?? []) } : null;
+  }, [periodDetail, personalPeriod, monthCalendar, data, fundMetric, queryState, statisticsCalendar]);
   const readModes = useAdminAuth(state => state.session?.supportReadModes);
   // A session hint only chooses the requested projection. The response still resolves current authority.
   const noReadableServiceScope = readModes?.length === 0 && authSession?.role !== "super" && authSession?.role !== "superadmin";
@@ -565,9 +570,9 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       <div><span>当前本人绑定</span><Numeric value={scope.scopeSummary.bound === null ? null : String(scope.scopeSummary.bound)} label="当前本人绑定客户" onClick={() => drill({ view: "CUSTOMERS", category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY", filter: "ALL", firstState: "ALL" })} /></div>
       <div><span>{scope.selectedCurrent.activity.window.days ? `近 ${scope.selectedCurrent.activity.window.days} 天活跃` : "当前统计期活跃"}</span><CountValue count={scope.selectedCurrent.activity.active} coverage={[scope.selectedCurrent.activity.status, scope.selectedCurrent.activity.window.status]} label="当前统计期活跃客户" onClick={() => drill({ view: "ACTIVITY", category: "BOUND", basis: "CURRENT_ASSET", filter: "WINDOW_ACTIVE" })} /></div>
       <div><span>期间首充（含付费购机）</span><CountValue count={personalFinancial?.firstCandidates ?? { observed: null, confirmed: null, status: "UNKNOWN" }} label="期间首充客户" onClick={() => drill({ view: "CUSTOMERS", basis: "PERIOD_EVENT", firstState: "CONFIRMED", filter: "ALL" })} /></div>
-      <div><span>期间净贡献 / {nexGridBrandText(currency)}</span><MoneyValue money={personalFinancial?.currencies.find(row => row.currency === currency)?.net} label={`期间净贡献 ${nexGridBrandText(currency)}`} onClick={() => drill({ view: "FINANCE", basis: "PERIOD_EVENT", filter: "ALL" })} /></div>
+      <div><span>期间净贡献 / {nexGridBrandText(currency)}</span><MoneyValue money={personalFinancial?.currencies.find(row => row.currency === currency)?.net} label={`期间净贡献 ${nexGridBrandText(currency)}`} onClick={() => setPeriodDetail("NET_CONTRIBUTIONS")} /></div>
     </div>
-    <div className="sa-personal-first-sources" aria-label="期间首充金额来源">{(["deposits", "purchases"] as const).map(source => <div key={source}><span>{source === "deposits" ? "充值首充" : "付费购机首充"} / {nexGridBrandText(currency)}</span><MoneyValue money={personalFinancial?.firstSources.find(row => row.currency === currency)?.[source]} label={source === "deposits" ? `充值首充金额 ${nexGridBrandText(currency)}` : `付费购机首充金额 ${nexGridBrandText(currency)}`} onClick={() => drill({ view: "FINANCE", basis: "PERIOD_EVENT" })} /></div>)}</div>
+    <div className="sa-personal-first-sources" aria-label="期间首充金额来源">{(["deposits", "purchases"] as const).map(source => <div key={source}><span>{source === "deposits" ? "充值首充" : "付费购机首充"} / {nexGridBrandText(currency)}</span><MoneyValue money={personalFinancial?.firstSources.find(row => row.currency === currency)?.[source]} label={source === "deposits" ? `充值首充金额 ${nexGridBrandText(currency)}` : `付费购机首充金额 ${nexGridBrandText(currency)}`} onClick={() => setPeriodDetail(source === "deposits" ? "FIRST_DEPOSITS" : "FIRST_PURCHASES")} /></div>)}</div>
   </section>} /></div>}
     {!isPersonal && section === "pool" && <M1SupervisorPool permission={leadPermission} />}
     {!isPersonal && section === "team" && <M1GroupManagement mode={mode} initialGroupId={queryState.groupId === undefined ? undefined : String(queryState.groupId)} actions={<SupportSeatRolesButton permission={leadPermission} ctx={ctx} />} onChanged={() => { teamChanged.current = true; controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); }} onViewCustomers={(groupId, category) => {
@@ -627,7 +632,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
           <AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} session={!isPersonal && queryState.view === "CUSTOMERS" ? sessionStart : undefined} /><footer className="sa-pager"><p>{data.total === null ? `已观测 ${data.observedTotal} 条；总数仍在统计` : `共 ${data.total} 条`} · 第 {queryState.pageNum} 页</p><div><Button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</Button><Button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</Button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">当前结果尚未确认，暂时无法继续翻页。请刷新后重试。</p>}</>}
       </>}
     </Panel>}
-    {showStatistics && fundSource && <M1StatisticDetails key={data?.asOf} source={fundSource} onClose={() => setFundMetric(null)} onInvalid={invalidateFund} />}
+    {(showStatistics || periodDetail) && fundSource && <M1StatisticDetails key={`${periodDetail ?? fundMetric}:${fundSource.kind === "fund" ? fundSource.origin.asOf : ""}`} source={fundSource} onClose={() => { setFundMetric(null); setPeriodDetail(null); }} onInvalid={invalidateFund} />}
     {sessionBusy && <SessionBusyDialog customer={customerName(sessionBusy.row)} hold={sessionBusy.hold} onClose={() => setSessionBusy(null)} onRead={() => { const row = sessionBusy.row; setSessionBusy(null); openSessions(row); }} />}
     {transferCustomer && <CustomerTransferDialog key={transferCustomer} customerId={transferCustomer} mode={mode === "ALL" ? "ALL" : "MANAGED"} onClose={() => closeTransfer()} onDone={notice => { closeTransfer(); setTransferNotice(notice); setTransferRevision(n => n + 1); setRetry(n => n + 1); }} onOpenOwn={canMine ? () => { closeTransfer(true); openTab("mine"); } : undefined} />}
     {bulkRecovery && <SupportBulkComposer ctx={ctx} onClose={() => setBulkRecovery(false)} />}
