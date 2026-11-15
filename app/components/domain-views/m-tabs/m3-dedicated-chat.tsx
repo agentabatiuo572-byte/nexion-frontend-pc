@@ -604,7 +604,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     setNoAdvisorToAssign(false);
     if (!selectedUnbound || !canWriteAssignment || pendingAssignment || !selected?.customerId) return;
     const controller = new AbortController();
-    void readSupportPoolCustomer(String(selected.customerId)).then(pool => supportClient.agents({ pageNum: 1, pageSize: 100, groupId: pool.routeGroupId ? Number(pool.routeGroupId) : undefined, signal: controller.signal })).then(page => { if (!controller.signal.aborted) setNoAdvisorToAssign(!page.records.some(agent => agent.assignmentEligible)); }).catch(() => undefined);
+    void readSupportPoolCustomer(String(selected.customerId)).then(pool => supportClient.agents({ pageNum: 1, pageSize: 100, groupId: pool.routeGroupId ? Number(pool.routeGroupId) : undefined, signal: controller.signal })).then(page => { if (!controller.signal.aborted) setNoAdvisorToAssign(!page.records.some(agent => agent.assignmentEligible && !agent.busy)); }).catch(() => undefined);
     return () => controller.abort();
   }, [selectedUnbound, canWriteAssignment, pendingAssignment, selected?.customerId, rosterSource, conversationSource, entryCheck]);
   // 发送时输入框被禁用会丢焦点，核对完归属后放回去，接着打下一条。

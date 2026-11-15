@@ -75,7 +75,7 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
       setDetail(current);
       if (members === null) setDenied("该客户不在你负责的组内，不能正式转绑。");
       else if (!current.assignmentId) setDenied("该客户当前没有专属客服，请到「待分配」处理。");
-      else setTargets(members.filter((agent) => agent.assignmentEligible === true && agent.adminId !== current.agentAdminId));
+      else setTargets(members.filter((agent) => agent.assignmentEligible === true && !agent.busy && agent.adminId !== current.agentAdminId));
     })().catch((cause: unknown) => {
       if (controller.signal.aborted) return;
       if (cause instanceof SupportClientError && [403, 404].includes(cause.status)) setDenied("当前无权办理该客户的转绑，归属可能已经变更。");
@@ -106,8 +106,8 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
     } catch (cause) {
       if (actor !== actorStamp()) return;
       if (written || !isDefiniteSupportRefusal(cause)) { setPending(record); setError("转绑结果未知，原操作已保留。请查询原结果，不要另发新的转绑。"); }
-      // A replay is refused by today's scope and version, which says nothing about the earlier attempt: only a first write's refusal releases the command.
-      else if (replay) setError(`重试被拒绝：${displayAdminError(cause)} 这说明不了原转绑没有成功，原操作已保留，请再查询原结果。`);
+      // The pause guard runs after successful command replay; its exact 422 settles the original request.
+      else if (replay && !(cause.status === 422 && cause.backendMessage === "SUPPORT_AGENT_UNAVAILABLE")) setError(`重试被拒绝：${displayAdminError(cause)} 这说明不了原转绑没有成功，原操作已保留，请再查询原结果。`);
       else {
         transferCommands.forget(record.fingerprint, record.commandKey);
         setPending(null); setError(`转绑没有成功：${displayAdminError(cause)}`); setReload((value) => value + 1);

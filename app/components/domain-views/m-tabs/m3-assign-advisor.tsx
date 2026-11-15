@@ -52,7 +52,7 @@ export function AssignAdvisorDialog({ adminId, customerId, customerName, canWrit
       const groupId = pool.routeGroupId ? Number(pool.routeGroupId) : undefined;
       const page = await supportClient.agents({ pageNum: 1, pageSize: 100, groupId, signal: controller.signal });
       if (controller.signal.aborted) return;
-      const eligible = page.records.filter((agent) => agent.assignmentEligible).sort(byLoad);
+      const eligible = page.records.filter((agent) => agent.assignmentEligible && !agent.busy).sort(byLoad);
       setItem(pool); setAgents(eligible); setTarget(previous => eligible.some(agent => agent.adminId === previous) ? previous : eligible[0]?.adminId ?? null);
     })().catch((cause: unknown) => { if (!controller.signal.aborted) setLoadError(cause instanceof Error && cause.message === "SUPPORT_RECOVERY_FACTS_UNAVAILABLE" ? "该客户已不在待分配池，可能已被分配。请刷新会话。" : displayAdminError(cause)); });
     return () => controller.abort();

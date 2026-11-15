@@ -174,7 +174,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
   const canWriteM1 = isSuperAdmin || Boolean(authorities?.includes("service_m1_write"));
   const canManageSupportSeats = canWriteM1 && (isSuperAdmin || isSupportSupervisor(currentSupportAgent));
   const seatAssignmentAgents = useMemo(
-    () => supportAgents.filter((agent) => agent.adminId > 0 && agent.assignmentEligible === true),
+    () => supportAgents.filter((agent) => agent.adminId > 0 && agent.assignmentEligible === true && !agent.busy),
     [supportAgents],
   );
   const assignableAgents = useMemo(
@@ -399,7 +399,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
                       <button
                         type="button"
                         className="btn btn-sec btn-sm"
-                        disabled={!l.agent.assignmentEligible || l.agent.adminId <= 0 || !isDedicatedSupportAgent(l.agent)}
+                        disabled={!l.agent.assignmentEligible || l.agent.busy || l.agent.adminId <= 0 || !isDedicatedSupportAgent(l.agent)}
                         title={isDedicatedSupportAgent(l.agent) ? "给此专属客服绑定服务用户" : "只有专属客服可以绑定服务用户"}
                         onClick={() => {
                           setAssignAgent(l.agent);
@@ -687,7 +687,7 @@ function SeatAssignmentModal({
   const [error, setError] = useState("");
   const [reason, setReason] = useState("");
   const agent = agents.find((row) => String(row.adminId) === agentAdminId) ?? agents[0] ?? null;
-  const agentCanAssign = agent?.assignmentEligible === true;
+  const agentCanAssign = agent?.assignmentEligible === true && !agent.busy;
   const allActiveAssignments = useMemo(
     () => parseParamArray<MAdvisorAssignment>(ctx.pget(ASSIGNMENT_LIST_KEY), [])
       .filter((row) => row.status === "ACTIVE"),
