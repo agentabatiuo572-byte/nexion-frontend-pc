@@ -112,7 +112,7 @@ function abnormalDimension(data: B5Radar): Dimension {
   };
 }
 
-const BACKLOG_STATE: Record<string, string> = { submitted: "已提交", "review-passed": "审核通过", processing: "处理中" };
+const BACKLOG_STATE: Record<string, string> = { submitted: "待放行", "review-passed": "已放行", processing: "处理中" };
 
 function backlogDimension(data: B5Radar): Dimension {
   const w = data.withdrawBacklog;
@@ -148,7 +148,7 @@ function backlogDimension(data: B5Radar): Dimension {
       </div>
     ),
     explain: <>
-      <p>已提交、审核通过、处理中这三类还没结束的提现。从提交起超过 {w.slaHours} 小时算超时，有超时的就标注意。</p>
+      <p>还没结束的提现分三段：待放行（已提交、待审核、冷却中、延迟复查、冻结）、已放行（等打款）、处理中。从提交起超过 {w.slaHours} 小时算超时，有超时的就标注意。</p>
       <p>单数和超时含全部币种；金额只加 USDT 的单，按原金额不取整，别的币种不换算、不计入。所以金额和单数不是同一批单。</p>
     </>,
   };
