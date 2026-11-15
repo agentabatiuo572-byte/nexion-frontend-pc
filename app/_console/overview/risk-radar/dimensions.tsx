@@ -209,7 +209,8 @@ function coverageDimension(data: B5Radar): Dimension {
     icon: Scale,
     level,
     headline: c.ratio === null ? <>目前没有应付款，不用算覆盖率</>
-      : c.light === "red" ? <>兑付覆盖率 <b>{ratio}</b>，低于红线 {red}</>
+      // 红灯用的是后端的精确判断：显示的比率四舍五入后可能和红线一样，这时写明是按精确值。
+      : c.light === "red" ? c.ratio >= c.redlinePct ? <>兑付覆盖率 <b>{ratio}</b>，按精确值已低于红线 {red}</> : <>兑付覆盖率 <b>{ratio}</b>，低于红线 {red}</>
         : c.light === "yellow" ? <>兑付覆盖率 <b>{ratio}</b>，低于健康线 {healthy}</>
           : <>兑付覆盖率 <b>{ratio}</b>，不低于健康线 {healthy}</>,
     quiet: c.ratio === null ? "没有应付款" : <>{ratio} <span className="b5-muted">· 红线 {red}</span></>,
