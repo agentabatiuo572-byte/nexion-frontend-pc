@@ -2,7 +2,7 @@
 
 /** H3 requests, approval routing and recovery use the existing redesigned markup.
  * The legacy H3/H4 component stays intact for its remaining callers. */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   ArrowLeftRight, Archive, CalendarClock, CircleAlert, CircleCheck, CircleSlash, Gift, History, Link2, ListChecks, Megaphone, Pause, Pencil, Play, Plus, RefreshCw,
@@ -874,7 +874,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   </Notice>;
 
   const savedForConfirm = confirmation.current?.target ? mutations.record(confirmation.current.target) : undefined;
-  const confirmModal = mc && (
+  // 固定 key：重读失败换成整页失败状态时，开着的确认框不重挂，填的值和理由留着。
+  const confirmModal = mc && (<Fragment key="h3-confirm">
         <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
           action={mc.action}
           title={mc.title}
@@ -925,7 +926,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             }
           }}
         />
-      );
+      </Fragment>);
+  // 新建任务抽屉同理：旧操作收尾后的重读失败时不卸掉，提示没读到、读到前不能进下一步。
+  const missionDrawer = creating && <H3MissionFormDrawer key="h3-mission-drawer" missionType={creating.type} onClose={() => setCreating(null)}
+    readFailed={error ? { retrying: loading, onRetry: () => void refresh().catch(cause => toast(displayAdminError(cause))) } : undefined}
+    onReview={(bv) => runCreateMission(creating.type, creating.type === "DAY_ONE" ? "新手任务" : creating.type === "WEEKLY_T1" ? "每周一档" : "每周二档", bv)} />;
 
   if (loading && !model) return <div className="h3-page">{header}{recovery}{confirmModal}{releaseModal}<BlockState state="loading" title="用户任务读取中…" /></div>;
   if (error || !model) return (
@@ -936,6 +941,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       {confirmModal}
       {releaseModal}
       <BlockState state="error" title="用户任务读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改。`} retryLabel="重试读取" onRetry={() => void refresh().catch(cause => toast(displayAdminError(cause)))} />
+      {missionDrawer}
     </div>
   );
 
@@ -1605,8 +1611,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         </>}
       </Drawer>
 
-      {creating && <H3MissionFormDrawer missionType={creating.type} onClose={() => setCreating(null)}
-        onReview={(bv) => runCreateMission(creating.type, creating.type === "DAY_ONE" ? "新手任务" : creating.type === "WEEKLY_T1" ? "每周一档" : "每周二档", bv)} />}
+      {missionDrawer}
 
       <PaginationExemptionList
         items={[

@@ -511,6 +511,12 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     />
   );
 
+  // 填写抽屉在两种状态里都渲染（同一个 key）：旧操作收尾后的重读失败时不卸掉，提示没读到、读到前不能进下一步。
+  const formDrawer = form && <H7VoucherForm key={form.key} voucher={form.voucher} initial={form.initial} latest={form.before} skuOptions={skuOptions} skuLabels={skuLabels} toMs={toMs}
+    readFailed={error ? { retrying: loading, onRetry: () => void reload(true) } : undefined}
+    onClose={closeForm}
+    onReview={(bv) => (form.voucher ? reviewEdit(form.voucher, form.before ?? form.initial, bv) : reviewAdd(bv))} />;
+
   if (loading && !readAt) return <div className="h7-page">{header}{recovery}{releaseModal}<BlockState state="loading" title="代金券读取中…" /></div>;
   if (error) return (
     <div className="h7-page">
@@ -518,6 +524,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       {recovery}
       {releaseModal}
       <BlockState state="error" title="代金券读取失败" detail={`${error} · 为避免误操作，读到之前不能新增、编辑和处置。`} onRetry={() => void reload()} />
+      {formDrawer}
     </div>
   );
 
@@ -705,9 +712,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         })()}
       </Drawer>
 
-      {form && <H7VoucherForm key={form.key} voucher={form.voucher} initial={form.initial} latest={form.before} skuOptions={skuOptions} skuLabels={skuLabels} toMs={toMs}
-        onClose={closeForm}
-        onReview={(bv) => (form.voucher ? reviewEdit(form.voucher, form.before ?? form.initial, bv) : reviewAdd(bv))} />}
+      {formDrawer}
     </div>
   );
 }

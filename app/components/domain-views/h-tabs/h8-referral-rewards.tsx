@@ -12,7 +12,7 @@ import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { useReach } from "@/lib/nav/use-reach";
 import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 
-import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeftRight, Check, Gift, Hourglass, ListChecks, Power, Route, ShieldAlert, SlidersHorizontal, UserPlus, Users } from "lucide-react";
 import {
@@ -550,7 +550,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       : "奖励配置或当月加成已变化。已读到最新值，你填的还在，核对后再提交。"}
   </Notice>;
 
-  const confirmModal = mc && (
+  // 固定 key，三种状态用同一个根元素：重读失败换成整页失败状态时，开着的确认框不重挂，填的值和理由留着。
+  const confirmModal = mc && (<Fragment key="h8-confirm">
     <OperationConfirmModal initialReason={mc.initialReason} briefKind={mc.briefKind}
       key={mc.formKey}
       action={mc.action}
@@ -592,21 +593,21 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         }
       }}
     />
-  );
+  </Fragment>);
 
   const header = <PageHeader pageId="H8" title="新人礼与邀请奖励"
     summary="新人礼和邀请奖励发多少、怎么发、结算到哪一步。"
     readOnly={!canWrite && !canSettle ? "只读：可以查看奖励和结算记录，不能改奖励、不能结算" : undefined} />;
 
-  if (loading && !data) return <>
+  if (loading && !data) return <div className="h8-page">
     {header}
     <Conclusion state="unknown">正在读取奖励设置和结算情况…</Conclusion>
     {recoveryNotice}
     {savedUnreadNotice}
     <BlockState state="loading" title="正在读取新人礼与邀请奖励…" />
     {confirmModal}
-  </>;
-  if (!data) return <>
+  </div>;
+  if (!data) return <div className="h8-page">
     {header}
     <Conclusion state="unknown">读不到奖励设置，现在判断不了奖励开没开、有多少在等结算</Conclusion>
     {recoveryNotice}
@@ -616,7 +617,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       detail={<>页面不显示任何旧数据。<Explain label="失败原因" content={error ?? "没有收到数据。"} /></>}
       retryLabel="重新加载" onRetry={() => void load()} />
     {confirmModal}
-  </>;
+  </div>;
 
   const targetUserId = Number(invitedUserIdInput.trim());
   const targetUserValid = /^[1-9]\d*$/.test(invitedUserIdInput.trim()) && Number.isSafeInteger(targetUserId);

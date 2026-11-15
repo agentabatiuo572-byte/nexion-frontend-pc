@@ -140,11 +140,13 @@ export function changedRows(before: H7FormValue, after: H7FormValue, skuLabels: 
     });
 }
 
-export function H7VoucherForm({ voucher, initial, latest, skuOptions, skuLabels, toMs, onClose, onReview }: {
+export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions, skuLabels, toMs, onClose, onReview }: {
   voucher?: H7Voucher;
   initial: H7FormValue;
   /** 保存被「别人先改过」拒绝后重开：最新读到的值。表单里还是运营填的，改动按最新值对照。 */
   latest?: H7FormValue;
+  /** 抽屉开着时页面重读失败：抽屉和填的内容留着，读到前不能进下一步。 */
+  readFailed?: { retrying: boolean; onRetry: () => void };
   skuOptions: string[];
   skuLabels: Record<string, string>;
   toMs: (date: string, end?: boolean) => number;
@@ -191,10 +193,14 @@ export function H7VoucherForm({ voucher, initial, latest, skuOptions, skuLabels,
       <Drawer open wide data-h7-form="" onClose={close} title={voucher ? "编辑代金券" : "新增代金券"} sub={voucher?.name ?? "保存后立即生效"} icon={Ticket} tone="role-4"
         explain="左边填，右边随时看这张券最后是什么意思。点「下一步」后核对改动、写理由再保存；保存后立即生效，不走审批。"
         footer={<Decision note={attempted && missing.length ? `还有 ${missing.length} 项要改：${missing.join("；")}` : voucher ? (changed.length ? `改了 ${changed.length} 项` : "还没有改动") : undefined}
-          primary={<Button variant="primary" onClick={review}>下一步：核对并保存</Button>}
+          primary={<Button variant="primary" disabledReason={readFailed ? "最新数据读到后才能继续" : undefined} onClick={review}>下一步：核对并保存</Button>}
           others={<Button onClick={close}>取消</Button>} />}>
         <div className="rd-split h7-form-split" data-detail="" data-preview="">
           <div className="h7-form">
+            {readFailed && <Notice tone="warn" title="最新数据没读到"
+              action={<Button size="sm" loading={readFailed.retrying} onClick={readFailed.onRetry}>重试读取</Button>}>
+              填的内容还在，读到以后才能继续。
+            </Notice>}
             {latest && <Notice tone="warn" title="没有保存：这张券刚被别人改过">
               {changed.length
                 ? `下面还是你填的内容，和最新值有 ${changed.length} 处不同：${changed.map((row) => row.label).join("、")}。核对后点「下一步」，确认框里逐项对照。`
