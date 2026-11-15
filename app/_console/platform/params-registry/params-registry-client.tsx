@@ -404,7 +404,7 @@ export function PlatformParamsRegistry() {
       <Fold title="数据来源" icon={Database}
         summary={`${overview.sources.length} 个来源，${partialSources.length === 0 ? "全部就绪" : `${partialSources.length} 个不完整`} · ${stats.registeredCount} 项参数 · ${stats.domainCount} 个模块 · ${stats.highSensitivityCount} 项修改需确认`}
         alert={partialSources.length > 0}
-        explain="「修改需确认」是系统标记的数量，不保证所在页面一定弹确认框，也不是走审批或敏感信息的数量。">
+        explain="「修改需确认」是系统的标记，不保证页面一定弹确认框，也不是审批或敏感信息的数量。">
         <Table label="数据来源">
           <thead><tr><Th>来源</Th><Th>状态</Th><Th align="right">条数</Th><Th>说明</Th></tr></thead>
           <tbody>

@@ -44,7 +44,7 @@ type ConfirmReq = {
 
 const directTag = () => <StatusTag tone="progress" filled explain="填写理由并确认后立即生效，不走审批，保留操作记录。">立即生效</StatusTag>;
 const ROUTE_HELP = "后台页面的地址，要和已上线页面的地址一模一样，比如 /platform/roles。对不上时这个菜单不会出现在左侧导航里；这里不会生成新页面。";
-const ICON_HELP = "改这里不会换左侧导航的图标，导航图标是系统固定的。";
+const ICON_HELP = "导航图标是固定的，改这里不会换。";
 
 function menuReferenceProblem(node: A7MenuTreeNode) {
   if (node.activePermissionCount !== undefined && node.activePermissionCount > 0) return "MENU_NODE_HAS_PERMISSIONS";

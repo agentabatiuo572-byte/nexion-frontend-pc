@@ -554,7 +554,7 @@ export default function A6Roles() {
       key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
       tag: expired
         ? <StatusTag tone="neutral" icon={Hourglass} explain={releasable ? "原请求超过 24 小时，不能再重试。按原请求查过，明确没有这张审批单，可以解除这条记录。" : "原请求超过 24 小时，不能再重试，只能查询原结果。"}>已过期</StatusTag>
-        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已经建了审批单。24 小时内可以按原请求重试，不会重复执行。">结果未知</StatusTag>,
+        : <StatusTag tone="warn" icon={CircleHelp} explain="没收到确定结果，可能已生效或已建审批单。24 小时内可以按原请求重试，不会重复执行。">结果未知</StatusTag>,
       actions: <>
         <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
         {!expired && <Button variant="ghost" onClick={() => restoreOriginal(record)}>按原请求重试</Button>}

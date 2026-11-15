@@ -23,7 +23,7 @@ import { Button, Checkbox, Decision, Drawer, Explain, Fold, Input, Notice, PageT
 
 const TYPE_LABEL: Record<string, string> = { HIGH: "敏感操作", WRITE: "修改", READ: "查看" };
 const TYPE_ICON = { HIGH: ShieldAlert, WRITE: PenLine, READ: Eye } as const;
-export const SENSITIVE_EXPLAIN = "权限清单里登记为「敏感操作」的权限：风险比普通修改高，比如放行资金、改账号和角色、紧急关停。";
+export const SENSITIVE_EXPLAIN = "权限清单里登记为「敏感操作」的权限，风险更高，比如放行资金、改账号和角色、紧急关停。";
 export const AMPLIFIES_EXPLAIN = "登记时标的记号：这项权限对应的操作可能让平台多付钱。老数据没有记号的按「可能」算。授权时不做资金检查。";
 
 export function TypeTag({ type }: { type: string }) {
