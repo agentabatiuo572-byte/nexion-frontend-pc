@@ -8,6 +8,7 @@ export type DeveloperAccessStatus = "PENDING" | "APPROVED" | "REJECTED" | "REVOK
 export type DeveloperAccessRequest = {
   requestNo: string;
   userId: number;
+  userNo: string | null;
   company: string;
   email: string;
   useCase: string;
@@ -68,7 +69,7 @@ export function parseDeveloperAccessRequest(value: unknown): DeveloperAccessRequ
     || !["PRODUCTION", "SANDBOX"].includes(environment) || row.source !== "server"
     || !/^DEV-[A-Z0-9]{16}$/.test(text(row.requestNo))) throw new Error("DEVELOPER_ACCESS_RESPONSE_INVALID");
   return {
-    requestNo: row.requestNo as string, userId: count(row.userId, 1), company: text(row.company), email: text(row.email),
+    requestNo: row.requestNo as string, userId: count(row.userId, 1), userNo: row.userNo == null ? null : text(row.userNo), company: text(row.company), email: text(row.email),
     useCase: text(row.useCase), status: status as DeveloperAccessStatus, sourceEnvironment: environment as DeveloperAccessRequest["sourceEnvironment"],
     runId: text(row.runId), reviewer: nullableText(row.reviewer), reviewReason: nullableText(row.reviewReason),
     reviewedAt: timestamp(row.reviewedAt), createdAt: timestamp(row.createdAt), updatedAt: timestamp(row.updatedAt), source: "server",

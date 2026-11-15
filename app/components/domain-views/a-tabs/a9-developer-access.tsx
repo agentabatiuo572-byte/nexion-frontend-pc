@@ -385,7 +385,7 @@ export function A9DeveloperAccess() {
   const columnCount = 6;
   const judgment: JudgmentRow[] = shown ? [
     { label: "申请人", icon: Building2, tone: "users", value: shown.company, reason: shown.email },
-    { label: "平台用户", icon: User, tone: "users", value: <>用户编号 {shown.userId}{reach("/users/search") && <> · 到<Link className="rd-link" href={`/users/search?q=${encodeURIComponent(String(shown.userId))}`}>查找用户与查看资料</Link>里打开</>}</> },
+    { label: "平台用户", icon: User, tone: "users", value: <>用户编号 {shown.userNo ?? "—"}{shown.userNo && reach("/users/search") && <> · 到<Link className="rd-link" href={`/users/search?q=${encodeURIComponent(shown.userNo)}`}>查找用户与查看资料</Link>里打开</>}</> },
     { label: "申请的环境", icon: Server, value: scopeText(shown), reason: shown.sourceEnvironment === "SANDBOX" ? "批准只对这个测试批次有效" : undefined },
     { label: "提交时间", icon: Clock3, value: shown.status === "PENDING" ? `${timeText(shown.createdAt)} · 已等 ${waitedText(shown.createdAt, now)}` : timeText(shown.createdAt) },
     { label: "现在", value: <StatusBadge status={shown.status} />, state: shown.status === "PENDING" ? "warn" : undefined,
@@ -466,7 +466,7 @@ export function A9DeveloperAccess() {
                   const pendingAttempt = attemptFor(row);
                   const look = STATUS_LOOK[row.status];
                   return <Tr key={row.requestNo} selected={row.requestNo === currentNo} onOpen={() => setCurrentNo(row.requestNo)}>
-                    <Td><Cell main={row.company} sub={row.email} title={`${row.company} · ${row.email} · 用户编号 ${row.userId}`} /></Td>
+                    <Td><Cell main={row.company} sub={row.email} title={`${row.company} · ${row.email} · 用户编号 ${row.userNo ?? "—"}`} /></Td>
                     <Td><Cell mono full main={row.requestNo} sub={timeText(row.createdAt)} /></Td>
                     <Td><Cell main={<EnvironmentTag row={row} />} sub={row.runId ? <span data-mono title={`批次 ${row.runId}`}>批次 {row.runId}</span> : undefined} /></Td>
                     <Td><Cell main={<StatusBadge bare status={row.status} quiet={Boolean(status) && Boolean(look)} />}
@@ -565,7 +565,7 @@ function ReviewDialog({ state, busy, failure, reason, touched, onReason, onTouch
         {retrying && previous && !previous.row && <Fact k="资料来源" tone="warn">旧记录没存当时的资料，下面的公司、邮箱和环境是现在读到的</Fact>}
         <Fact k="申请人">{row.company}</Fact>
         <Fact k="邮箱">{row.email}</Fact>
-        <Fact k="平台用户">用户编号 {row.userId}</Fact>
+        <Fact k="平台用户">用户编号 {row.userNo ?? "—"}</Fact>
         <Fact k="环境">{scopeText(row)}</Fact>
         <Fact k="申请编号"><span data-mono>{row.requestNo}</span></Fact>
         {retrying && previous && <Fact k="原请求提交">{`${businessStamp(previous.createdAt)}（${zone}）`}</Fact>}
