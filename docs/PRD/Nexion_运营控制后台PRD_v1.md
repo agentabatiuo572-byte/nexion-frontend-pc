@@ -4704,3 +4704,7 @@ M3 群发已有待确认原命令时，「查询原操作结果」独立于「�
 ### 2026-11-15 A3-BE-04 内容管理读取故障
 
 管理 GET developer/docs 与 content/how-it-works 的故障按非成功处理，现有 request 会抛错且不回填默认内容。开发文档已有错误/重试分支；说明内容首读失败不再同时呈现「暂无内容」，未读到的版本显示—；刷新失败保留原草稿和错误，刷新入口可重试。正常空配置由后端返回真实默认文档。后端 `04d11022` `PublishedDeveloperDocsService.adminView:57–70`、`PublishedHowContentService.adminView:91–105`：错误均 code503 对应 UNAVAILABLE；候选/真实故障业务未验。旧限定句和错误表「公开」措辞交视觉，不改文字。
+
+### 2026-11-15 A2 B44 资格单源
+
+`AuditCenterOverview.AuditOperationTicket:58–76` 六字段在当前全部工单读取/回执统一存在；`OpsAuditCenterService.ticketMetadata` 按当前查看者重算。PC fromTicket 要求两项 boolean，缺失不回落；canDecide 仅采用后端 canApprove/canReject，并保留会话/全局 A2 门禁。删除本地业务权限表值及 allowed/委托资格函数；动作识别仅服务现有说明，不授权。无当前待审票的原键恢复保留全局准入，由后端原键恢复规则核验，不从旧本地业务表推断。金额恢复段未改。出处 backend `04d11022`。

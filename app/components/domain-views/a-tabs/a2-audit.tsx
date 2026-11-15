@@ -1,5 +1,4 @@
 "use client";
-import { gParamAuthority } from "@/lib/admin/use-g-param-approval";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES } from "@/lib/admin/audit-action-names";
 import { a2ActionText, operatorCopyText, shareBaseRateText } from "@/lib/admin/operator-copy";
@@ -16,7 +15,7 @@ import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin
  * - 批准、驳回、撤回、调整机制参数、立即清理、导出：先把命令号和原内容（导出连同已应用的筛选）存进本标签页再发；
  *   结果未知时关框，转成页面上方的待确认条，这张单（这项设置、清理、导出）锁住，只能按原操作重试；
  *   重试被后端明确拒绝（isExplicitRejection）后才能解除，超过 24 小时只能核对（OP-92～OP-96、OP-153）。
- * - 批准、驳回入口按工单类型对齐后端的业务权限（decisionRule），没有权限的不显示入口（OP-124）。
+ * - 批准、驳回入口使用后端返回的当前资格，没有权限的不显示入口（OP-124）。
  * - 记录只追加：没有改、删记录的接口，页面也不给入口。所有写操作都要填理由。
  */
 import Link from "next/link";
@@ -193,19 +192,13 @@ function g3PolicyExecutionTiming(w: A2OperationRow) {
  * 标 backendChecks，页面写 BACKEND_CHECKS_NOTE；后端按权限拒绝时写清原因（decisionDeniedText）。
  */
 /** 一项要的权限；数组是有其中一个就行。 */
-type Need = string | readonly string[];
-type DecisionRule = { superadmin?: boolean; approveSuperadmin?: boolean; approve?: readonly Need[]; reject?: readonly Need[]; backendChecks?: boolean };
-/**
- * 后端 scopedMakerMayPropose 的增长委托例外：角色是增长、有发起审批权、没有 A2 写权限时，
- * E5 强制激活、解绑不要那两项设备权限（批准时 validateApproval 回到 validateProposal 用同一条，U03）。
- */
-const GROWTH_DELEGATE = "@growth-delegate";
+/** Display context retained for legacy pending records; never used to grant approval. */
+type DecisionRule = { backendChecks?: boolean };
 type TicketIdentity = Pick<A2OperationRow, "action" | "obj" | "operationCode" | "fundEffect" | "before" | "after">
   & Partial<Pick<A2OperationRow, "phoneCalibrationProposal" | "ambassadorMaterialProposal" | "roleGate" | "canApprove" | "canReject" | "ruleTaskAction">>;
 const A4_REGISTRY_CODES = ["a4_schema_register", "a4_schema_property_add", "a4_domain_extension_register"];
 const J4_CODE = /^SOP-[A-Z0-9-]{1,64}$/;
 /** 有专项审批、要另一位超管处理的单（各自的 validateChecker：超管＋A2 批准权，批准、驳回一样）。 */
-const SUPER_ONLY: DecisionRule = { superadmin: true };
 const SUPER_ACTIONS = new Set([
   "放宽任务定价", "变更正式任务目录", // E2TaskPricingApproval
   "降低兑付覆盖率红线", "提高提现压力红线", // TreasuryThresholdApproval
@@ -222,98 +215,31 @@ const SUPER_ACTION_PATTERNS = [/^首次配置验证码设置 · /, /^放宽 \S+ 
  * 后端写死的动作名 → 批准要的业务权限（validateApproval 走 approvalAuthority 或 requiredAuthority）。
  * 这些单驳回只要 A2 批准权（validateRejection 对它们放行）。
  */
-const CANONICAL_APPROVE: Readonly<Record<string, Need>> = {
-  调整设备型号: "device_e1_write",
-  "结束未确认任务（不计收益）": "device_e5_write",
-  发布手机校准规则: "device_e6_read",
-  发布手机换机策略: "device_e6_read",
-  开启手机换绑: "device_e6_read",
-  关闭手机换绑: "device_e6_read",
-  开启电脑共享算力入口: "device_e6_read",
-  关闭电脑共享算力入口: "device_e6_read",
-  发布手机可跑任务: "device_e1_write",
-  发布规则任务: "device_e2_write",
-  "USDT BEP20 充值政策": "finance_d1_channel_manage",
-  "首次配置 V0–V8": "network_f1_write",
-  七层结算启用: "network_f2_policy_amplify",
-  七层结算暂停: "network_f2_policy_amplify",
-  七层结算恢复: "network_f2_policy_amplify",
-  好友奖励双币政策: "network_f2_royalty_rate",
-  批准区域大使申请: "network_f4_ambassador_approve",
-  驳回区域大使申请: "network_f4_ambassador_approve",
-  调整每周任务地区映射: "growth_h3_write",
-  批准取消成交奖励: "growth_promotion_reward_cancel",
-  批准追回成交奖励: "growth_promotion_reward_reverse",
-  执行指定新人邀请奖励结算: "growth_h8_settle",
-  执行邀请奖励真实结算: "growth_h8_settle",
-};
+const CANONICAL_APPROVE = new Set(["调整设备型号", "结束未确认任务（不计收益）", "发布手机校准规则", "发布手机换机策略", "开启手机换绑", "关闭手机换绑", "开启电脑共享算力入口", "关闭电脑共享算力入口", "发布手机可跑任务", "发布规则任务", "USDT BEP20 充值政策", "首次配置 V0–V8", "七层结算启用", "七层结算暂停", "七层结算恢复", "好友奖励双币政策", "批准区域大使申请", "驳回区域大使申请", "调整每周任务地区映射", "批准取消成交奖励", "批准追回成交奖励", "执行指定新人邀请奖励结算", "执行邀请奖励真实结算"]);
 /** 后端写成「名字 · 对象」的（descriptor、deviceDescriptor），驳回同样只要 A2 批准权。 */
-const CANONICAL_WITH_OBJECT: Readonly<Record<string, Need>> = {
-  冻结账户: "user_c2_account_freeze",
-  恢复账户: "user_c2_account_unfreeze",
-  强制登出: ["user_c2_session_revoke_all", "user_c5_session_revoke_all"],
-  用户数据只读视图: "user_c2_impersonate_start",
-  加入信任名单: "user_c2_blocklist_add",
-  加入禁入名单: "user_c2_blocklist_add",
-  移出账户名单: "user_c2_blocklist_add",
-  终止模拟会话: "user_c2_impersonate_terminate",
-  批量冻结关联账户: "risk_k1_cluster_freeze",
-  解除误判: "risk_k1_cluster_release",
-  判定为正常: "risk_k1_cluster_cleared",
-  标记可疑账户簇: "risk_k1_cluster_flag",
-  标记套利账户: "risk_k2_row_flag",
-  拦截新人礼: "risk_k2_row_blockgift",
-  标记刷榜账户: "risk_k2_row_boardflag",
-  "联动 K1 批量冻结": "risk_k2_row_freeze",
-  强制激活设备: ["device_e5_device_force_activate", GROWTH_DELEGATE],
-  解绑设备资产: ["device_e5_device_unbind", GROWTH_DELEGATE],
-  编辑账号资料: "platform_a1_write",
-  变更角色: "platform_a1_account_role_change",
-  重置两步验证: "platform_a1_account_2fa_reset",
-  "启用/禁用账号": "platform_a1_account_disable",
-};
+const CANONICAL_WITH_OBJECT = new Set(["冻结账户", "恢复账户", "强制登出", "用户数据只读视图", "加入信任名单", "加入禁入名单", "移出账户名单", "终止模拟会话", "批量冻结关联账户", "解除误判", "判定为正常", "标记可疑账户簇", "标记套利账户", "拦截新人礼", "标记刷榜账户", "联动 K1 批量冻结", "强制激活设备", "解绑设备资产", "编辑账号资料", "变更角色", "重置两步验证", "启用/禁用账号"]);
 /** 动作名前面是后端写死的部分，后面接对象。 */
-const CANONICAL_APPROVE_PREFIX: readonly (readonly [string, Need])[] = [
-  ["更新 E3 生命周期配置 · ", "device_e3_read"],
-  ["批量更新算力配置参数 · ", "device_e6_read"],
-  ["调整通知优先级 CAP · ", "content_i3_cap_adjust"],
-  ["撤销奖励记录 ", "network_f5_commission_reverse"],
-  ["批量补发奖励 · ", "network_f5_commission_reissue"],
-  ["暂停用户奖励 ", "network_f5_commission_suspend"],
-  ["恢复用户奖励 ", "network_f5_commission_suspend"],
-  ["冻结奖励记录 ", "network_f5_commission_freeze"],
-  ["解冻奖励记录 ", "network_f5_commission_freeze"],
-  ["驳回奖励记录 ", "network_f5_commission_reverse"],
-  ["提前解锁奖励记录 ", "network_f5_commission_release"],
-  ["结算奖励记录 ", "network_f5_commission_release"],
-  ["发放奖励记录 ", "network_f5_commission_release"],
-  // 「操作员账号」页自己提交时写的动作名（后端按发起时同一项权限核批准人）。
-  ["编辑账号 · ", "platform_a1_write"],
-  ["变更角色 · ", "platform_a1_account_role_change"],
-  ["重置两步验证 · ", "platform_a1_account_2fa_reset"],
-  ["禁用账号 · ", "platform_a1_account_disable"],
-  ["启用账号 · ", "platform_a1_account_disable"],
-];
+const CANONICAL_APPROVE_PREFIX = ["更新 E3 生命周期配置 · ", "批量更新算力配置参数 · ", "调整通知优先级 CAP · ", "撤销奖励记录 ", "批量补发奖励 · ", "暂停用户奖励 ", "恢复用户奖励 ", "冻结奖励记录 ", "解冻奖励记录 ", "驳回奖励记录 ", "提前解锁奖励记录 ", "结算奖励记录 ", "发放奖励记录 ", "编辑账号 · ", "变更角色 · ", "重置两步验证 · ", "禁用账号 · ", "启用账号 · "];
 
 /** 「F 域配置调整 · 键」批准要的权限，照后端 fConfigAuthority 按键分（三种 F 配置命令的键不重叠）。 */
-function fConfigAuthority(key: string) {
+function knownFConfig(key: string) {
   if (/^F\.unilevel\.(?:nex\.)?L[1-7]$/.test(key) || ["directRoyaltyPct", "networkRoyaltyPct", "binaryPairRatePct", "maxCombinedOutflowPct",
-    "minPayoutUsdt", "F.promo.weekMultiplier", "F.peer.rate"].includes(key)) return "network_f2_royalty_rate";
-  if (["rankWindowDays", "hardwareQuotaPerRank"].includes(key)) return "network_f2_write";
-  if (["F.prize.name", "F.vrank.titles"].includes(key)) return "network_f1_write";
-  if (key === "F.vrank.permanent") return "network_f1_permanent_protection";
+    "minPayoutUsdt", "F.promo.weekMultiplier", "F.peer.rate"].includes(key)) return true;
+  if (["rankWindowDays", "hardwareQuotaPerRank"].includes(key)) return true;
+  if (["F.prize.name", "F.vrank.titles"].includes(key)) return true;
+  if (key === "F.vrank.permanent") return true;
   if (["F.influence.clampMin", "F.influence.clampMax", "F.cooldown", "F.partner.tiers", "F.royalty.minPayout", "F.unilevel.depthGate",
-    "F.unilevel.nexCap", "F.unilevel.backfill", "F.unilevel.depth", "F.sunset.exclusions"].includes(key) || /^F\.unilevel\.L[1-7]\.paused$/.test(key)) return "network_f2_policy_amplify";
-  if (key === "F.binary.paused") return "network_f3_engine_pause";
-  if (key.startsWith("F.binary.")) return "network_f3_match_rate";
-  if (key.startsWith("F3.dailyCap.")) return "network_f3_write";
-  if (key.startsWith("F.pool.votes.") || key.startsWith("F.quota.")) return "network_f4_write";
-  if (key.startsWith("F.ambassador.") && key.endsWith(".status")) return "network_f4_ambassador_approve";
-  if (["F.pool.monthlyCap", "F.pool.settleCron", "F.pool.unlockVRank", "F.leaderboard.minUsd"].includes(key)) return "network_f4_write";
-  if (key === "F.leaderboard.poolUsd") return "network_f4_pool_fund";
-  if (key.startsWith("F.leaderboard.")) return "network_f4_leaderboard_control";
-  if (key.startsWith("F.pool.")) return "network_f4_pool_fund";
-  return undefined;
+    "F.unilevel.nexCap", "F.unilevel.backfill", "F.unilevel.depth", "F.sunset.exclusions"].includes(key) || /^F\.unilevel\.L[1-7]\.paused$/.test(key)) return true;
+  if (key === "F.binary.paused") return true;
+  if (key.startsWith("F.binary.")) return true;
+  if (key.startsWith("F3.dailyCap.")) return true;
+  if (key.startsWith("F.pool.votes.") || key.startsWith("F.quota.")) return true;
+  if (key.startsWith("F.ambassador.") && key.endsWith(".status")) return true;
+  if (["F.pool.monthlyCap", "F.pool.settleCron", "F.pool.unlockVRank", "F.leaderboard.minUsd"].includes(key)) return true;
+  if (key === "F.leaderboard.poolUsd") return true;
+  if (key.startsWith("F.leaderboard.")) return true;
+  if (key.startsWith("F.pool.")) return true;
+  return false;
 }
 
 /** J4 执行应急预案：后端逐步执行，中途失败时前面的步骤可能已经生效（J4_EXECUTION_PARTIAL）。 */
@@ -337,60 +263,21 @@ function g4ChangesSupply(w: Pick<A2OperationRow, "before" | "after">) {
   return before && after ? before !== after : undefined;
 }
 
+/** Presentation-only: retain existing backend-check notes without copying business permissions. */
 function decisionRule(w: TicketIdentity): DecisionRule {
   const code = w.operationCode ?? "";
-  if (code === "h1_phase_dial") return { approveSuperadmin: true, approve: ["growth_h1_write"] };
-  if (code === "c2_session_revoke_all" || !code && w.action.startsWith("强制登出 · "))
-    return { approveSuperadmin: true, approve: [["user_c2_session_revoke_all", "user_c5_session_revoke_all"]] };
-  if (["h5_power_up_config", "h5_earn_milestone", "h5_streak_milestone"].includes(code)) return SUPER_ONLY;
-  if (code === "g2_exchange_param" || code === "g7_repurchase_param"
-      || w.action === `兑换参数调整 · ${w.obj}` || w.action === `回购参数调整 · ${w.obj}`) return SUPER_ONLY;
-  if (code === "g4_genesis_param" || w.action === `调整创世参数 · ${w.obj}`) {
-    const authority = gParamAuthority("G4", w.obj);
-    return { superadmin: true, approve: [authority], reject: [authority] };
-  }
-  if (w.fundEffect === "ORDER_REFUND" || code === "e4_order_refund") return { superadmin: true, approve: ["device_e4_order_refund"], reject: ["device_e4_order_refund"] };
-  if (code === "j1_gate_resume") return { superadmin: true, approve: ["emergency_j1_gate_resume"], reject: ["emergency_j1_gate_resume"] };
-  if (A4_REGISTRY_CODES.includes(code)) return SUPER_ONLY;
-  // 代金券删除和批量作废：有券操作权限的审批人就行，不要求超管（角色例外）。
-  if (isH7VoucherApproval(code)) return { approve: ["growth_h7_write"], reject: ["growth_h7_write"] };
-  if (code === "f5_commission_suspension") return { approve: ["network_f5_commission_suspend"] };
-  if (code === "h2_trial_charge") return { approve: ["growth_h2_session_charge"] };
-  if (w.obj === "current" && w.action === "调整敏感汇率") return { superadmin: true, approve: ["finance_d6_manage"], reject: ["finance_d6_manage"] };
-  if (w.obj === "current" && w.action === "放宽越南盾提现参数") {
-    const forced = d7ForceInverted(w.after);
-    return forced === undefined ? { superadmin: true, backendChecks: true } : { superadmin: true, approve: forced ? ["finance_d7_force_inverted"] : [] };
-  }
-  if (w.obj === "current" && w.action === "放宽提现参数") return SUPER_ONLY;
-  if (SUPER_ACTIONS.has(w.action) || SUPER_ACTION_PATTERNS.some((pattern) => pattern.test(w.action)) || isG3Policy(w)) return SUPER_ONLY;
-  // 创世节点价格档位：改价要价格权限，动了总供应量还要写权限（T03）；读不出动没动时由后端核写权限。
-  if (w.obj === "tiers" && w.action === "调整创世节点价格档位") {
-    const supply = g4ChangesSupply(w);
-    const need = supply ? ["finprod_g4_price_write", "finprod_g4_write"] : ["finprod_g4_price_write"];
-    return { superadmin: true, approve: need, reject: need, ...(supply === undefined ? { backendChecks: true } : {}) };
-  }
-  // 创世分红：改分红率要分红率权限，重跑一批分红要 G4 写权限。
-  if (w.action === "批准创世分红操作") {
-    const need = [w.obj === "dividend" ? "finprod_g4_dividend_rate_write" : "finprod_g4_write"];
-    return { superadmin: true, approve: need, reject: need };
-  }
-  // 课程奖励调整：动作名是发起页写的，前后值是后端按课程现状写的（「版本 · r修订 · 奖励 UVT」）。
-  if (w.roleGate === "超管" && /^.+ · r\d+ · \S+ UVT$/.test(w.before) && /^.+ · \S+ UVT$/.test(w.after)) {
-    return { superadmin: true, approve: ["content_i7_course_reward_adjust"], reject: ["content_i7_course_reward_adjust"] };
-  }
-  if (isJ4Execution(w)) return { approve: ["emergency_j4_playbook_execute"] };
-  if (w.phoneCalibrationProposal || w.obj === "phone-calibration") return { approve: ["device_e6_read"] };
-  if (w.ambassadorMaterialProposal) return { approve: ["network_f4_ambassador_approve"] };
-  if (w.obj.startsWith("E.compute.")) return { approve: ["device_e6_read"] };
-  const exact = CANONICAL_APPROVE[w.action];
-  if (exact) return { approve: [exact] };
+  if (["h1_phase_dial", "c2_session_revoke_all", "h5_power_up_config", "h5_earn_milestone", "h5_streak_milestone", "g2_exchange_param", "g7_repurchase_param", "g4_genesis_param", "e4_order_refund", "j1_gate_resume", "f5_commission_suspension", "h2_trial_charge"].includes(code)
+    || !code && w.action.startsWith("强制登出 · ") || w.fundEffect === "ORDER_REFUND" || A4_REGISTRY_CODES.includes(code) || isH7VoucherApproval(code)
+    || w.action === `兑换参数调整 · ${w.obj}` || w.action === `回购参数调整 · ${w.obj}` || w.action === `调整创世参数 · ${w.obj}`) return {};
+  if (w.obj === "current" && w.action === "放宽越南盾提现参数") return { backendChecks: d7ForceInverted(w.after) === undefined };
+  if (w.obj === "tiers" && w.action === "调整创世节点价格档位") return { backendChecks: g4ChangesSupply(w) === undefined };
+  if (w.obj === "current" && ["调整敏感汇率", "放宽提现参数"].includes(w.action) || SUPER_ACTIONS.has(w.action) || SUPER_ACTION_PATTERNS.some(pattern => pattern.test(w.action)) || isG3Policy(w)
+    || w.action === "批准创世分红操作" || w.roleGate === "超管" && /^.+ · r\d+ · \S+ UVT$/.test(w.before) && /^.+ · \S+ UVT$/.test(w.after)
+    || isJ4Execution(w) || w.phoneCalibrationProposal || w.obj === "phone-calibration" || w.ambassadorMaterialProposal || w.obj.startsWith("E.compute.") || CANONICAL_APPROVE.has(w.action)) return {};
   const suffix = ` · ${w.obj}`;
-  const named = w.obj && w.action.endsWith(suffix) ? CANONICAL_WITH_OBJECT[w.action.slice(0, -suffix.length)] : undefined;
-  if (named) return { approve: [named] };
-  const f = w.action === `F 域配置调整 · ${w.obj}` ? fConfigAuthority(w.obj) : undefined;
-  if (f) return { approve: [f] };
-  const prefixed = CANONICAL_APPROVE_PREFIX.find(([prefix]) => w.action.startsWith(prefix));
-  return prefixed ? { approve: [prefixed[1]] } : { backendChecks: true };
+  if (w.obj && w.action.endsWith(suffix) && CANONICAL_WITH_OBJECT.has(w.action.slice(0, -suffix.length))
+    || w.action === `F 域配置调整 · ${w.obj}` && knownFConfig(w.obj) || CANONICAL_APPROVE_PREFIX.some(prefix => w.action.startsWith(prefix))) return {};
+  return { backendChecks: true };
 }
 
 /** 手机规则申请带未来的生效时间时，批准只登记排程，到点才生效（M6）。effectiveAt 是毫秒，0 是批准后立即。 */
@@ -569,7 +456,7 @@ type A2PendingCommand = PendingMutationRecord & {
   operator: string;
   /** 机制参数的新值。 */
   value?: string;
-  /** 重试时按发出时这张单要的业务权限判断（decisionRule 的结果）。第二轮的记录没有这项，第三轮的可能是 null，第四轮的标记叫 unmapped。 */
+  /** 旧待确认的展示上下文；资格只读后端回执，原键恢复仍由服务端核权。 */
   rule?: (DecisionRule & { unmapped?: boolean }) | null;
   operationCode?: string;
   obj?: string;
@@ -989,20 +876,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     authorities: session?.authorities ?? [],
   } as AuthPrincipal;
   const canApprove = canApprovePending(principal);
-  /** 按读到的权限判断，不按角色名写死（B38 后财务主管有 D 域读权、没有批准权）。 */
-  const growthDelegate = principal.role === "growth" && principal.authorities.includes("platform_a2_proposal_create")
-    && !principal.authorities.includes("platform_a2_write");
-  const holds = (authority: string) => authority === GROWTH_DELEGATE ? growthDelegate : principal.authorities.includes(authority);
-  const has = (need: Need) => typeof need === "string" ? holds(need) : need.some(holds);
-  /** backendChecks 的单只看规则里能确认的部分（多数只剩 A2 批准权），其余由后端在批准时检查（第五轮）。 */
-  const allowed = (rule: DecisionRule, kind: "approve" | "reject") => {
-    if (!canApprove) return false;
-    if ((rule.superadmin || kind === "approve" && rule.approveSuperadmin) && principal.role !== "superadmin") return false;
-    return (kind === "approve" ? rule.approve : rule.reject)?.every(has) ?? true;
-  };
   const canDecide = (ticket: TicketIdentity, kind: "approve" | "reject") => {
     const qualified = kind === "approve" ? ticket.canApprove : ticket.canReject;
-    return canApprove && (qualified ?? allowed(decisionRule(ticket), kind));
+    return canApprove && qualified === true;
   };
   const canExport = canAccessA2Export(principal.authorities);
   // 和顶栏同一份兑付覆盖率；读不到时批准框写「暂时读不到」，批准时后端再查。
@@ -1397,7 +1273,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (record.kind === "param" || record.kind === "retention") return canWrite;
     if (record.kind === "export") return canExport;
     const queued = recordTicket(record);
-    return queued ? canDecide(queued, record.kind) : allowed(recordRule(record), record.kind);
+    return queued ? canDecide(queued, record.kind) : canApprove;
   };
 
   /** 重试前退款单要先读到退款金额，和新开的批准框同一个前提（F01）；读不到只能读回核对，原命令照旧保留。 */

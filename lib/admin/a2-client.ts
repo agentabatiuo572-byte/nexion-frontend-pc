@@ -345,6 +345,7 @@ function formatTime(value: string | null | undefined) {
 }
 
 function fromTicket(ticket: BackendTicket): A2OperationRow {
+  if (typeof ticket.canApprove !== "boolean" || typeof ticket.canReject !== "boolean") throw new Error("A2_TICKET_DECISION_CAPABILITY_INVALID");
   const ambassadorTicket = !!ticket.ambassadorMaterialProposal || /F\.ambassador\.\d+\.status|(?:批准|驳回)大使申请/.test(`${ticket.obj} ${ticket.action}`);
   let ambassadorMaterialProposal: F4AmbassadorMaterialProposal | undefined;
   let ambassadorMaterialError: string | undefined;
@@ -381,8 +382,8 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     ...(ambassadorMaterialError ? { ambassadorMaterialError } : {}),
     ...(phoneCalibrationProposal ? { phoneCalibrationProposal } : {}),
     ...(phoneCalibrationError ? { phoneCalibrationError } : {}),
-    ...(typeof ticket.canApprove === "boolean" ? { canApprove: ticket.canApprove } : {}),
-    ...(typeof ticket.canReject === "boolean" ? { canReject: ticket.canReject } : {}),
+    canApprove: ticket.canApprove,
+    canReject: ticket.canReject,
     ...(ticket.coverageCheckOnApproval === true ? { coverageCheckOnApproval: true } : {}),
     ...(ticket.operationCode ? { operationCode: ticket.operationCode } : {}),
     ...(ticket.retiredOperation === true ? { retiredOperation: true } : {}),
