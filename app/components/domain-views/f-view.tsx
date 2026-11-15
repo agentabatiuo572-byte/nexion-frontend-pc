@@ -697,12 +697,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (ambassadorId && value === "approved" && expectedMaterialRevision === undefined) throw new Error("缺少材料版本，请重新打开申请核对后提交。");
     const usdtLevel = key.match(/^F\.unilevel\.(L[2-7])$/)?.[1];
     const currentUsdt = usdtLevel ? f2Overview?.unilevel.find((row) => row.l === usdtLevel)?.usdt : undefined;
-    // F2 edits percentage points; percentRatio otherwise treats bare values <= 1 as ratios.
-    // Keep the entered decimal text intact, including in the approval summary.
+    // F2 548c8078 always parses percentage points. Keep '%' for older percentRatio
+    // backends too; both persist the same ratio without changing the entered text.
     const commandValue = usdtLevel ? `${value}%` : value;
     const nexLevel = key.match(/^F\.unilevel\.nex\.(L[1-7])$/)?.[1];
     const beforeF2 = nexLevel ? f2Overview?.unilevel.find(row => row.l === nexLevel)?.nex
       : f2Overview?.configValues[key];
+    // usdtPct and the backend's unilevelRuleValue oldValue are both percentage points.
     const rateAmplifies = usdtLevel && currentUsdt != null ? Number(value) > currentUsdt : undefined;
     await proposeStable(`f-config:${key}`, JSON.stringify(expectedMaterialRevision === undefined ? [commandValue, reason] : [commandValue, reason, expectedMaterialRevision]), {
       action: ambassadorId ? `${value === "approved" ? "批准" : "驳回"}大使申请 #${ambassadorId}` : `${def.action} · ${key}`,
