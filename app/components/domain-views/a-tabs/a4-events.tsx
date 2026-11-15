@@ -993,8 +993,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       actions: <>
         <Button size="sm" onClick={() => openRegistryRecovery()}>查询原结果</Button>
         {expired
-          ? <Button size="sm" onClick={() => releaseExpiredRegistry(pendingRegistry.commandKey)}>解除原操作记录</Button>
-          : <Button size="sm" disabledReason={!canWrite ? "你只有查看权限" : undefined} onClick={() => openRegistryRecovery(true)}>按原请求重试</Button>}
+          ? !pendingRegistry.received && <Button size="sm" onClick={() => releaseExpiredRegistry(pendingRegistry.commandKey)}>解除原操作记录</Button>
+          : !pendingRegistry.received && <Button size="sm" disabledReason={!canWrite ? "你只有查看权限" : undefined} onClick={() => openRegistryRecovery(true)}>按原请求重试</Button>}
       </>,
     });
   }

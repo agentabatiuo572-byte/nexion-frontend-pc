@@ -353,7 +353,7 @@ export type A4SchemaRegistrationInput = {
 
 type A4RegistryActor = Pick<AdminSession, "adminId" | "operator" | "username" | "role">;
 type A4RegistryProposal = Parameters<typeof createA2OperationProposal>[0];
-type A4RegistryAttempt = PendingMutationRecord & { input: A4RegistryProposal };
+type A4RegistryAttempt = PendingMutationRecord & { input: A4RegistryProposal; received?: boolean };
 const REGISTRY_STRING_FIELDS: Record<string, string[]> = {
   a4_schema_register: ["eventName", "ownerDomain", "producer", "consumer", "propertyName", "propertyType", "samplingPolicy", "expectedVersion"],
   a4_schema_property_add: ["eventName", "propertyName", "propertyType", "expectedVersion"],
@@ -396,8 +396,10 @@ async function postRegistryProposal(attempt: A4RegistryAttempt, retry = false) {
   if (!registryAttempts.isDurablyStored(attempt.fingerprint, attempt.commandKey)) throw new Error("A4_ORIGINAL_STORAGE_FAILED");
   let created = false;
   try {
-    const ticket = validateRegistryTicket(await createA2OperationProposal(attempt.input, attempt.commandKey, true, true), attempt);
+    const receipt = await createA2OperationProposal(attempt.input, attempt.commandKey, true, true);
     created = true;
+    registryAttempts.remember(attempt.fingerprint, attempt.commandKey, { ...attempt, received: true });
+    const ticket = validateRegistryTicket(receipt, attempt);
     // A replay proves the application was created, not its current approval state.
     const current = retry ? await fetchA2ProposalByKey(attempt.commandKey, true, "a") : ticket;
     if (!current) throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
@@ -428,6 +430,7 @@ export async function recoverA4RegistryProposal(adminId: number, retryOriginal =
     registryAttempts.forget(attempt.fingerprint, attempt.commandKey);
     return { ...ticket, a4CommandKey: attempt.commandKey };
   }
+  if (attempt.received) throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
   if (!retryOriginal) return null;
   if (Date.now() >= attempt.expiresAt) {
     throw new OutcomeUnknownError("A4_ORIGINAL_QUERY_ONLY");
@@ -438,8 +441,13 @@ export async function recoverA4RegistryProposal(adminId: number, retryOriginal =
 /** Call only after the operator confirms clearing an expired, authoritatively absent proposal. */
 export async function releaseExpiredA4RegistryProposal(adminId: number, commandKey: string) {
   const attempt = pendingA4RegistryProposal(adminId);
-  if (!attempt || attempt.commandKey !== commandKey || Date.now() < attempt.expiresAt) throw new Error("A4_ORIGINAL_UNRESOLVED");
-  if (await fetchA2ProposalByKey(commandKey, true, "a")) throw new Error("A4_ORIGINAL_UNRESOLVED");
+  if (!attempt || attempt.received || attempt.commandKey !== commandKey || Date.now() < attempt.expiresAt) throw new Error("A4_ORIGINAL_UNRESOLVED");
+  const ticket = await fetchA2ProposalByKey(commandKey, true, "a");
+  if (ticket) {
+    validateRegistryTicket(ticket, attempt);
+    registryAttempts.remember(attempt.fingerprint, commandKey, { ...attempt, received: true });
+    throw new Error("A4_ORIGINAL_UNRESOLVED");
+  }
   registryAttempts.forget(attempt.fingerprint, commandKey);
 }
 

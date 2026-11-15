@@ -146,6 +146,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   });
   const queryProposal = async (record: J4PendingProposal) => {
     forgetObservation(record.commandKey);
+    setAbsent(({ [record.commandKey]: _found, ...rest }) => rest);
     try {
       const row = await queryJ4Proposal(record);
       if (row) {
@@ -249,8 +250,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     submittedAt: record.createdAt, kind: "approval", expired: isRetryExpired(record),
     onQuery: () => void queryProposal(record),
     onRetry: !record.sopProposal.accepted && canRetry(record.sopProposal.context) ? () => restoreProposal(record) : undefined,
-    onRelease: absent[record.commandKey] ? () => setReleasing(record) : undefined,
-    note: absent[record.commandKey]
+    onRelease: absent[record.commandKey] && !record.sopProposal.accepted ? () => setReleasing(record) : undefined,
+    note: absent[record.commandKey] && !record.sopProposal.accepted
       ? `后端按原请求查不到这张申请，说明没建成；${isRetryExpired(record) ? "可以确认解除。" : "24 小时内可以按原请求重试。"}`
       : notes[record.commandKey] || (record.sopProposal.accepted ? formatAdminApiError("J4_PROPOSAL_STATUS_UNAVAILABLE", "J4_PROPOSAL_STATUS_UNAVAILABLE") : undefined),
   })));

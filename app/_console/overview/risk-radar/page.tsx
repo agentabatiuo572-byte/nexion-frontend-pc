@@ -546,15 +546,17 @@ export default function RiskRadarPage() {
     : null;
   const approvalPending = pendingApproval?.commandKey === approvalVerifiedKey && pendingApproval?.b5Ticket?.status === "pending" ? { redPct: pendingApproval.values.redPct, ticketId: pendingApproval.b5Ticket.id } : null;
   // 过期、并且过期后按原请求查询明确没有这张单，才可以解除（决定 R1-提案过期；判断在 releaseExpiredB5ThresholdApproval 里再核一次）。
-  const approvalReleasable = !!pendingApproval && pendingApproval.expiresAt <= Date.now() && !!pendingApproval.b5NotFound;
-  const releaseApproval = () => {
+  const approvalReleasable = !!pendingApproval && pendingApproval.expiresAt <= Date.now() && !!pendingApproval.b5NotFound && !pendingApproval.received && !pendingApproval.b5Ticket;
+  const releaseApproval = async () => {
     if (!session || !pendingApproval) return;
-    const released = releaseExpiredB5ThresholdApproval(session.adminId, pendingApproval.commandKey);
-    setReleasingApproval(false);
-    syncPending(value => value + 1);
-    if (!released) { setToast("这条记录现在不能解除，请先查询原结果。"); return; }
-    setThreshold(null); setApprovalRecovery(null); setNeedsFreshRadar(true); void radar.reload();
-    setToast("已解除本页的待确认记录");
+    try {
+      const released = await releaseExpiredB5ThresholdApproval(session.adminId, pendingApproval.commandKey);
+      setReleasingApproval(false);
+      if (!released) { setToast("这条记录现在不能解除，请先查询原结果。"); return; }
+      setThreshold(null); setApprovalRecovery(null); setNeedsFreshRadar(true); void radar.reload();
+      setToast("已解除本页的待确认记录");
+    } catch (error) { setToast(displayAdminError(error)); }
+    finally { syncPending(value => value + 1); }
   };
   const approvalTag = approvalPending
     ? <StatusTag tone="progress" explain={`审批单 ${approvalPending.ticketId}。另一位超级管理员批准前，红线不变。`}>红线提高到 {fmtConfigPct(approvalPending.redPct)} 待审批</StatusTag>

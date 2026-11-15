@@ -154,7 +154,7 @@ export async function submitB5ThresholdApproval<T>(
     command: { domain: "B", op: "b5_bankrun_thresholds", params: { values } },
     target: { domain: "B", type: "bankrun_thresholds", id: "current" },
   };
-  const extra = { input, b5Request: request, b5Facts: previous?.b5Facts ?? facts };
+  const extra = { ...previous, input, b5Request: request, b5Facts: previous?.b5Facts ?? facts, b5NotFound: undefined };
   attempts.remember(slot, key, extra);
   if (!attempts.isDurablyStored(slot, key)) {
     if (!previous) attempts.forget(slot, key);
@@ -168,7 +168,8 @@ export async function submitB5ThresholdApproval<T>(
         || ticket.operationCode !== "b5_bankrun_thresholds")) {
         throw new A2OutcomeUncertainError("回执与原审批不匹配，请继续核对。", key);
       }
-      attempts.remember(slot, key, { ...extra, ...(ticket ? { b5Ticket: ticket }
+      if (!ticket && (extra.received || extra.b5Ticket)) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
+      attempts.remember(slot, key, { ...extra, ...(ticket ? { b5Ticket: ticket, received: true }
         : previous && previous.expiresAt <= Date.now() ? { b5NotFound: true as const } : {}) });
       return ticket;
     } catch {
@@ -179,7 +180,7 @@ export async function submitB5ThresholdApproval<T>(
   let ticket = previous ? await queryOriginal() : null;
   if (!ticket) {
     if (mode === "query") return null;
-    if (previous && (previous.expiresAt <= Date.now() || previous.b5Ticket || !request)) {
+    if (previous && (previous.expiresAt <= Date.now() || previous.received || previous.b5Ticket || !request)) {
       throw new A2OutcomeUncertainError("原审批暂未查到，请继续查询，不能重新提交。", key);
     }
     if (!session.authorities.includes("overview_b5_threshold_write")) throw new Error("当前账号缺少调整黄线红线的权限。");
@@ -189,6 +190,8 @@ export async function submitB5ThresholdApproval<T>(
       if (isBCommandRejection(error, !!previous)) attempts.forget(slot, key);
       throw error;
     }
+    extra.received = true;
+    attempts.remember(slot, key, extra);
     ticket = await queryOriginal();
     if (!ticket) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
   }
@@ -204,12 +207,28 @@ export async function submitB5ThresholdApproval<T>(
 }
 
 /** Call only after the existing confirmation UI confirms R1-提案过期 release. */
-export function releaseExpiredB5ThresholdApproval(adminId: string | number, commandKey: string) {
-  const record = pendingThresholdConfigApproval("B5", adminId);
-  if (!record || record.commandKey !== commandKey || record.expiresAt > Date.now() || !record.b5NotFound) return false;
-  attempts.forget(approvalSlot("B5", adminId), commandKey);
+async function releaseExpiredThresholdApproval(source: "B1" | "B5", adminId: string | number, commandKey: string) {
+  const record = pendingThresholdConfigApproval(source, adminId);
+  const ticketField = source === "B1" ? "b1Ticket" : "b5Ticket";
+  const missingField = source === "B1" ? "b1NotFound" : "b5NotFound";
+  if (!record || record.commandKey !== commandKey || record.expiresAt > Date.now() || !record[missingField] || record.received || record[ticketField]) return false;
+  const slot = approvalSlot(source, adminId);
+  attempts.remember(slot, commandKey, { ...record, [missingField]: undefined });
+  const ticket = await fetchA2ProposalByKey(commandKey, true, "metadata");
+  if (ticket) {
+    const action = source === "B1" ? "降低兑付覆盖率红线" : "提高提现压力红线";
+    if (ticket.mine !== true || ticket.obj !== "current" || ticket.action !== action || ticket.operationCode !== commands[source].op) {
+      throw new A2OutcomeUncertainError("回执与原审批不匹配，请继续核对。", commandKey);
+    }
+    attempts.remember(slot, commandKey, { ...record, received: true, [ticketField]: ticket, [missingField]: undefined });
+    return false;
+  }
+  attempts.forget(slot, commandKey);
   return true;
 }
+
+export const releaseExpiredB5ThresholdApproval = (adminId: string | number, commandKey: string) => releaseExpiredThresholdApproval("B5", adminId, commandKey);
+export const releaseExpiredB1ThresholdApproval = (adminId: string | number, commandKey: string) => releaseExpiredThresholdApproval("B1", adminId, commandKey);
 
 /** B1 keeps the complete request and queries the live ticket after any replay. */
 export async function submitB1ThresholdApproval<T>(
@@ -233,7 +252,7 @@ export async function submitB1ThresholdApproval<T>(
     command: { domain: "B", op: "b1_coverage_thresholds", params: { values } },
     target: { domain: "B", type: "coverage_thresholds", id: "current" },
   };
-  const extra = { input, b1Request: request, b1Facts: previous?.b1Facts ?? facts };
+  const extra = { ...previous, input, b1Request: request, b1Facts: previous?.b1Facts ?? facts, b1NotFound: undefined };
   attempts.remember(slot, key, extra);
   if (!attempts.isDurablyStored(slot, key)) {
     if (!previous) attempts.forget(slot, key);
@@ -247,7 +266,8 @@ export async function submitB1ThresholdApproval<T>(
         || ticket.operationCode !== "b1_coverage_thresholds")) {
         throw new A2OutcomeUncertainError("回执与原审批不匹配，请继续核对。", key);
       }
-      attempts.remember(slot, key, { ...extra, ...(ticket ? { b1Ticket: ticket } : { b1NotFound: true as const }) });
+      if (!ticket && (extra.received || extra.b1Ticket)) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
+      attempts.remember(slot, key, { ...extra, ...(ticket ? { b1Ticket: ticket, received: true } : { b1NotFound: true as const }) });
       return ticket;
     } catch {
       // A saved creation receipt is not the current approval status.
@@ -258,7 +278,7 @@ export async function submitB1ThresholdApproval<T>(
   let ticket = previous ? await queryOriginal() : null;
   if (!ticket) {
     if (mode === "query") return null;
-    if (previous && (previous.expiresAt <= Date.now() || previous.b1Ticket || !request)) {
+    if (previous && (previous.expiresAt <= Date.now() || previous.received || previous.b1Ticket || !request)) {
       throw new A2OutcomeUncertainError("原审批暂未查到，请继续查询，不能重新提交。", key);
     }
     if (!session.authorities.includes("overview_b1_redline_write")) throw new Error("当前账号缺少设置兑付覆盖率阈值的权限。");
@@ -268,6 +288,8 @@ export async function submitB1ThresholdApproval<T>(
       if (isBCommandRejection(error, !!previous)) attempts.forget(slot, key);
       throw error;
     }
+    extra.received = true;
+    attempts.remember(slot, key, extra);
     ticket = await queryOriginal();
     if (!ticket) throw new A2OutcomeUncertainError("批没批准还没查到，请继续查询原审批单。", key);
   }

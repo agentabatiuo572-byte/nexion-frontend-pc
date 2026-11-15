@@ -371,14 +371,16 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       toast(displayAdminError(new Error("A1_READBACK_ONLY")));
       return false;
     }
+    a1PendingCommands.remember(record.fingerprint, record.commandKey, { ...record, proposalNotFound: false }); reloadPending();
     const ticket = await fetchA2ProposalByKey(record.commandKey, true, "a");
     if (useAdminAuth.getState().session?.adminId !== record.actorId) throw new Error("A1_SESSION_CHANGED");
     if (!ticket) {
+      if (record.received || record.ticket) throw new Error("A1_PROPOSAL_STATUS_UNKNOWN");
       a1PendingCommands.remember(record.fingerprint, record.commandKey, { ...record, ticket: undefined, proposalNotFound: true }); reloadPending();
       return false;
     }
     checkTicket(record, ticket);
-    a1PendingCommands.remember(record.fingerprint, record.commandKey, { ...record, ticket, proposalNotFound: false }); reloadPending();
+    a1PendingCommands.remember(record.fingerprint, record.commandKey, { ...record, received: true, ticket, proposalNotFound: false }); reloadPending();
     if (ticket.status === "pending") { if (announce) toast("已提交，等待审批后执行"); return true; }
     a1PendingCommands.forget(record.fingerprint, record.commandKey); reloadPending();
     if (announce) recoveryStarted();
@@ -411,6 +413,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     } finally { setMutatingAction(null); }
     if (useAdminAuth.getState().session?.adminId !== record.actorId) throw new Error("A1_SESSION_CHANGED");
     if (result.kind === "proposal") {
+      record = { ...record, received: true, proposalNotFound: false };
+      a1PendingCommands.remember(record.fingerprint, record.commandKey, record); reloadPending();
       checkTicket(record, result.ticket);
       // A replayed POST is the old creation receipt, never today's ticket state.
       if (retry) {
@@ -1183,7 +1187,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       <Fact k="提交时间">{`${businessStamp(record.createdAt)}（${businessZone().label}）`}</Fact>
     </Facts>,
     run: async () => {
-      if (Date.now() < record.expiresAt || record.request.kind !== "proposal" || await fetchA2ProposalByKey(record.commandKey, true, "a")) throw new Error("A1_ORIGINAL_OPERATION_PENDING");
+      const current = a1PendingCommands.list().find(item => item.commandKey === record.commandKey);
+      if (!current || current.received || current.ticket || Date.now() < current.expiresAt || current.request.kind !== "proposal" || await queryOriginal(current, false)) throw new Error("A1_ORIGINAL_OPERATION_PENDING");
       recoveryStarted(); await refreshOverview(true);
       a1PendingCommands.forget(record.fingerprint, record.commandKey); reloadPending();
     },
@@ -1210,8 +1215,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         : unknownTag(request.kind === "proposal" ? "approval" : "direct", request.kind === "proposal" ? undefined : DIRECT_UNKNOWN_NOTE[intent.kind]),
       actions: <>
         <Button size="sm" disabledReason={mutatingAction ? "正在提交，请稍候" : undefined} onClick={() => void queryOriginal(record).catch(error => toast(errorMessage(error)))}>查询原结果</Button>
-        {!record.ticket && !expired && <Button size="sm" variant="primary" disabledReason={mutatingAction ? "正在提交，请稍候" : retryBlock} onClick={() => restoreOperation(record)}>按原请求重试</Button>}
-        {request.kind === "proposal" && expired && record.proposalNotFound && <Button size="sm" onClick={() => releaseExpiredProposal(record)}>解除原操作记录</Button>}
+        {!record.ticket && !record.received && !expired && <Button size="sm" variant="primary" disabledReason={mutatingAction ? "正在提交，请稍候" : retryBlock} onClick={() => restoreOperation(record)}>按原请求重试</Button>}
+        {request.kind === "proposal" && expired && record.proposalNotFound && !record.received && !record.ticket && <Button size="sm" onClick={() => releaseExpiredProposal(record)}>解除原操作记录</Button>}
       </>,
     };
   });

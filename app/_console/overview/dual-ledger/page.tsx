@@ -17,7 +17,7 @@ import {
 } from "@/app/components/rd";
 import { useBDomainDashboard, type BLedger } from "@/lib/admin/b-client";
 import { downloadD3Csv, fetchD3NetExposure, type D3NetExposure } from "@/lib/admin/d-client";
-import { pendingThresholdConfigApproval, releaseConfigApproval, submitB1ThresholdApproval } from "@/lib/admin/withdrawal-config-approval";
+import { pendingThresholdConfigApproval, releaseExpiredB1ThresholdApproval, submitB1ThresholdApproval } from "@/lib/admin/withdrawal-config-approval";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { b1Commands, executeB1Command, type B1PendingWrite, type B1CommandFacts } from "@/lib/admin/b1-commands";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -435,6 +435,7 @@ export default function DualLedgerPage() {
   const queryApproval = async () => {
     if (!session || !pendingApproval) return;
     const expired = pendingApproval.expiresAt <= Date.now();
+    setReleasableApproval(null);
     try {
       const result = await submitB1ThresholdApproval(session, pendingApproval.values, pendingApproval.reason, readActive, "query");
       if (!result && expired) setReleasableApproval(pendingApproval.commandKey);
@@ -444,14 +445,17 @@ export default function DualLedgerPage() {
     } catch (error) { setToast(displayAdminReadError(error)); }
     finally { syncPending(); }
   };
-  const releaseApproval = () => {
+  const releaseApproval = async () => {
     if (!session || !pendingApproval) return;
-    releaseConfigApproval("B1", session.adminId, pendingApproval.commandKey);
-    setReleasing(false);
-    setReleasableApproval(null);
-    syncPending();
-    void refreshB1();
-    setToast("已解除本页的待确认记录");
+    try {
+      const released = await releaseExpiredB1ThresholdApproval(session.adminId, pendingApproval.commandKey);
+      setReleasing(false);
+      setReleasableApproval(null);
+      if (!released) { setToast(displayAdminReadError(new Error("OPERATION_RESULT_UNKNOWN"))); return; }
+      void refreshB1();
+      setToast("已解除本页的待确认记录");
+    } catch (error) { setToast(displayAdminReadError(error)); }
+    finally { syncPending(); }
   };
   const recoverApproval = () => {
     if (!pendingApproval?.b1Facts) { void queryApproval(); return; }
@@ -479,7 +483,7 @@ export default function DualLedgerPage() {
           : releasableApproval === pendingApproval.commandKey ? "已超过 24 小时，查询结果是没有这张审批单，可以解除待确认。" : "已超过 24 小时，不能重试，只能查询原审批单。",
       onRetry: verified ? undefined : recoverApproval,
       onQuery: () => void queryApproval(),
-      onRelease: expired && releasableApproval === pendingApproval.commandKey ? () => setReleasing(true) : undefined,
+      onRelease: expired && releasableApproval === pendingApproval.commandKey && !pendingApproval.received && !pendingApproval.b1Ticket ? () => setReleasing(true) : undefined,
     });
   }
   const openThreshold = () => setActionConfirm({
