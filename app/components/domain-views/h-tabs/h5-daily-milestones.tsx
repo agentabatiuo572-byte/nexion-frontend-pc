@@ -613,7 +613,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       <div className="h5-page">
         {header}
         {recovery}
-        <BlockState state="error" title="签到数据读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改签到规则和奖励；一直失败请联系值班同事。`} onRetry={() => void refresh()} retrying={loading} />
+        <BlockState state="error" title="签到数据读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改签到规则和奖励。`} onRetry={() => void refresh()} retrying={loading} />
         {confirmModal}
         {releaseModal}
       </div>
