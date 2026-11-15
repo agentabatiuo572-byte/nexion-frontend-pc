@@ -45,7 +45,7 @@ export function legacyName(value: unknown): { text: string; legacy: boolean } {
   return { text: nexGridBrandText(raw.replace(/\bNEX\b/gi, "UVT").replace(/\$\s?(?=\d)/g, "")).replace(/\bpoints\b/gi, "积分").replace(/\bdevice coupon\b/gi, "设备代金券"), legacy };
 }
 export function LegacyNameTag({ where }: { where: string }) {
-  return <StatusTag tone="warn" icon={CircleAlert} explain={`后端存的${where}还写着 NEX（产品已改名 UVT），这里按真实类型写成 UVT；App 显示的也是后端存的名称（只做品牌替换）。改${where}时写成 UVT。后端待办 BUG-426 已提。`}>旧名称</StatusTag>;
+  return <StatusTag tone="warn" icon={CircleAlert} explain={`后端存的${where}还写着 NEX（产品已改名 UVT），这里按真实类型写成 UVT；App 显示的也是后端存的名称（只做品牌替换）。改${where}时写成 UVT。`}>旧名称</StatusTag>;
 }
 
 // ===== 统一叫法 =====

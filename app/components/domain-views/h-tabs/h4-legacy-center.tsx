@@ -1019,7 +1019,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
   const todos: Array<{ key: string; tag: ReactNode; title: string; sub: string; onOpen: () => void }> = [
     ...(wheelBroken ? [{ key: "wheel", tag: <StatusTag tone="danger" icon={CircleAlert}>转盘抽不了</StatusTag>, title: "转盘奖池",
-      sub: [pointsTiers.length ? `${pointsTiers.length} 档积分奖型要退役` : "", nexTiers.length ? `${nexTiers.length} 档旧奖型 nex 等后端修` : "", probabilityOk ? "" : `概率合计 ${percentText(probabilitySum)}%，要正好 100%`].filter(Boolean).join("；"),
+      sub: [pointsTiers.length ? `${pointsTiers.length} 档积分奖型要退役` : "", nexTiers.length ? `${nexTiers.length} 档奖型还存着旧名，等后端改数据` : "", probabilityOk ? "" : `概率合计 ${percentText(probabilitySum)}%，要正好 100%`].filter(Boolean).join("；"),
       onOpen: () => go("wheel", "h4l-wheel") }] : []),
     ...(gapCount > 0 ? [{ key: "locale", tag: <StatusTag tone="warn">翻译没填</StatusTag>, title: `${gapsByEvent.length} 个既有活动`,
       sub: `${gapCount} 项中文、越南语内容没填，这些活动不能开放`, onOpen: () => go("events", "h4l-events") }] : []),
@@ -1120,7 +1120,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
               const kindKey = text(tier.kind, "").toLowerCase();
               const unit = wheelUnit(tier);
               const kindNode = wheelPointsTier(tier) ? <StatusTag tone="danger" explain="后端已不支持积分奖型，要退役">积分奖型</StatusTag>
-                  : wheelLegacyNexTier(tier) ? <StatusTag tone="warn" explain="奖型存成了旧名 nex，后端只认 uvt，等后端修数据（BUG-426）">UVT · 旧奖型</StatusTag>
+                  : wheelLegacyNexTier(tier) ? <StatusTag tone="warn" explain="这一档是 UVT 奖，但奖型还存着旧名，App 不认；要等后端改好数据。">UVT · 旧奖型</StatusTag>
                   : <span className="h4l-kind">{WHEEL_KIND_LABEL[kindKey] ?? "其他奖励"}{boolValue(tier.real) && <StatusTag tone="warn" explain="这一档发真钱（USDT）：抽中前还要过真钱奖开关、覆盖率和每日预算，不过就改发 UVT 安慰奖。">发真钱</StatusTag>}</span>;
               /** 1024 宽时类型列收起，奖品格第二行只留要人注意的标签（奖品名已带币种）。 */
               const kindTag = wheelPointsTier(tier) || wheelLegacyNexTier(tier) ? kindNode : boolValue(tier.real) ? <StatusTag tone="warn" explain="这一档发真钱（USDT）：抽中前还要过真钱奖开关、覆盖率和每日预算，不过就改发 UVT 安慰奖。">发真钱</StatusTag> : null;
@@ -1141,7 +1141,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
                 <Td sticky="end" data-fit=""><span className="h4-row h4l-ops">{wheelPointsTier(tier)
                   ? <Button size="sm" variant="danger-outline" aria-label={`退役 ${text(tier.tier)}（${name.text}）`} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openRetirePointsTier:1", tier.tier]), () => openRetirePointsTier(tier))}>退役</Button>
                   : <>
-                    <Button size="sm" aria-label={`编辑 ${text(tier.tier)}（${name.text}）`} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : wheelLegacyNexTier(tier) ? "这一档的奖型是旧名 nex，编辑保存会把它改成 UVT；等后端修正数据（BUG-426）后再编辑" : undefined} onClick={conflictDraft.register(JSON.stringify(["openEditWheelTier:1", tier.tier]), () => openEditWheelTier(tier))}>编辑</Button>
+                    <Button size="sm" aria-label={`编辑 ${text(tier.tier)}（${name.text}）`} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : wheelLegacyNexTier(tier) ? "这一档的奖型还存着旧名，现在编辑保存会连奖型一起改掉；等后端改好数据再编辑。" : undefined} onClick={conflictDraft.register(JSON.stringify(["openEditWheelTier:1", tier.tier]), () => openEditWheelTier(tier))}>编辑</Button>
                     <Button size="sm" icon={<Trash2 size={13} aria-hidden />} aria-label={`删除 ${text(tier.tier)}（${name.text}）`} disabledReason={numericValue(tier.prob) !== 0 ? "先把概率调成 0%" : !canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openDeleteWheelTier:1", tier.tier]), () => openDeleteWheelTier(tier))}>删除</Button>
                   </>}</span></Td>
               </Tr>;
