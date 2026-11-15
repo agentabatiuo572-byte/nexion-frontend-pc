@@ -11,9 +11,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Ban, Globe2, Replace, Unplug, History, ListOrdered, Plus, Radar, RefreshCw, ShieldMinus, Siren, Waypoints } from "lucide-react";
-import { BarList, BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, Input, KeyValues, Notice, PageHeader, Panel, ReleaseModal, SearchSelect, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
+import { BarList, BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, Input, KeepText, KeyValues, Notice, PageHeader, Panel, ReleaseModal, SearchSelect, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, releaseExpiredJLegacyCommand, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
+import { fetchJ2GeoHitSummary, getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, releaseExpiredJLegacyCommand, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoHitSummary, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -153,6 +153,16 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const [listOpen, setListOpen] = useState(false);
   useEffect(() => {
     if (data) setReadAt(businessClock(Date.now()));
+  }, [data]);
+  /** 所有国家和地区的近 24 小时合计（37d17aad），和概览的前 20 个国家分开读；读不到就只写前 20 个。 */
+  const [hitSummary, setHitSummary] = useState<{ state: "loading" } | { state: "ready"; data: GeoHitSummary } | { state: "error"; message: string }>({ state: "loading" });
+  useEffect(() => {
+    if (!data) return;
+    const controller = new AbortController();
+    setHitSummary({ state: "loading" });
+    fetchJ2GeoHitSummary(controller.signal).then((value) => { if (!controller.signal.aborted) setHitSummary({ state: "ready", data: value }); })
+      .catch((cause) => { if (!controller.signal.aborted) setHitSummary({ state: "error", message: displayAdminError(cause) }); });
+    return () => controller.abort();
   }, [data]);
 
   const countryNames = useMemo(() => Object.fromEntries((data?.countryOptions ?? []).map((option) => [option.value, option.label])), [data]);
@@ -872,11 +882,19 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   );
 
   const topHit = geoHits[0];
+  const allHits = hitSummary.state === "ready" ? hitSummary.data : null;
+  const allHitsFrom = allHits ? formatBusinessTimeCompact(allHits.windowStart, "—") : "";
+  const allHitsTo = allHits ? formatBusinessTimeCompact(allHits.capturedAt, "—") : "";
+  const allHitsWindow = allHits && <KeepText text={`所有国家和地区：${allHitsFrom} 至 ${allHitsTo}（${businessZone().label}）。前 20 个国家：这页读取时往前 24 小时。`} phrases={[allHitsFrom, allHitsTo]} />;
   const endpointHits = geoEndpoints.filter((entry) => entry.configurable && entry.hits > 0).sort((a, b) => b.hits - a.hits);
   const hitsFold = (
     <Fold title="拦截记录" icon={ListOrdered} tone="role-other"
-      summary={geoHits.length === 0 ? "近 24 小时没有拦截" : `近 24 小时 · 前 20 个国家合计 ${count(totalHits)} 次 · 最多 ${countryNames[topHit.cc] ?? topHit.nm} ${count(topHit.ct)} 次`}
-      explain="滚动 24 小时，不是自然日。只算识别出国家、又被名单或入口规则拒绝的请求；识别不出地区被拒的不算。按国家最多列 20 个，合计也只算这 20 个，所以可能比真实总数少。">
+      summary={geoHits.length === 0 ? "近 24 小时没有拦截" : allHits
+        ? `近 24 小时 · 共 ${count(allHits.totalBlockedEvents)} 次 · 前 20 个国家 ${count(totalHits)} 次 · 最多 ${countryNames[topHit.cc] ?? topHit.nm} ${count(topHit.ct)} 次`
+        : `近 24 小时 · 前 20 个国家合计 ${count(totalHits)} 次 · 最多 ${countryNames[topHit.cc] ?? topHit.nm} ${count(topHit.ct)} 次`}
+      explain={allHits
+        ? <><p>滚动 24 小时，不是自然日。只算识别出国家、又被名单或入口规则拒绝的请求，按次数算，不是人数；识别不出地区被拒的不算。</p><p>按国家最多列 20 个；「共」是所有国家和地区的合计。{allHitsWindow}</p></>
+        : "滚动 24 小时，不是自然日。只算识别出国家、又被名单或入口规则拒绝的请求；识别不出地区被拒的不算。按国家最多列 20 个，合计也只算这 20 个，所以可能比真实总数少。"}>
       {geoHits.length === 0
         ? <BlockState state="empty" compact title="近 24 小时没有拦截" detail="名单和入口规则都没有拦下请求。" />
         : <div className="j2-hits">
@@ -940,8 +958,11 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       <StatBand label="地区限制摘要">
         <Stat icon={Ban} tone="role-4" label="封锁的国家或地区" value={count(banned.length)} unit="个" explain="用户的 App 请求都被拒；后台、支付回调不受影响。" />
         <Stat icon={ShieldMinus} tone="role-4" label="受限的国家或地区" value={count(limited.length)} unit="个" explain="能登录浏览，资金和奖励类操作被拒。" />
-        <Stat icon={ListOrdered} tone="role-other" label="近 24 小时拦截" value={count(totalHits)} unit="次" sub="前 20 个国家合计"
-          explain="滚动 24 小时，不是自然日；只算识别出国家又被拒绝的请求，按国家最多算前 20 个，可能比真实总数少。" />
+        {allHits
+          ? <Stat icon={ListOrdered} tone="role-other" label="近 24 小时拦截" value={count(allHits.totalBlockedEvents)} unit="次" sub={allHits.countryCount === 0 ? "没有拦截" : allHits.countryCount > 20 ? `${count(allHits.countryCount)} 个国家和地区 · 前 20 个 ${count(totalHits)} 次` : `${count(allHits.countryCount)} 个国家和地区`}
+            explain={<><p>滚动 24 小时，不是自然日；只算识别出国家又被拒绝的请求，按次数算，不是人数。</p><p>{allHitsWindow}</p></>} />
+          : <Stat icon={ListOrdered} tone="role-other" label="近 24 小时拦截" value={count(totalHits)} unit="次" sub={hitSummary.state === "error" ? "前 20 个国家合计 · 总数没读到" : "前 20 个国家合计"}
+            explain={<>滚动 24 小时，不是自然日；只算识别出国家又被拒绝的请求，按国家最多算前 20 个，可能比真实总数少。{hitSummary.state === "error" && <>所有国家的合计没读到：{hitSummary.message}</>}</>} />}
         <Stat icon={Radar} tone={sourceBroken ? "danger" : currentHealth.tone === "ok" ? "role-other" : "warn"} label="地区识别" value={currentHealth.text} sub={currentEdgeLabel}
           explain={HEALTH_RULE} onOpen={() => document.getElementById("j2-edge")?.scrollIntoView({ block: "start" })} openLabel={`地区识别：${currentEdgeLabel}，${currentHealth.text}，查看识别源`} />
       </StatBand>
