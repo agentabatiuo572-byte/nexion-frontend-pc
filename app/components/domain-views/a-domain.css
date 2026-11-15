@@ -672,7 +672,7 @@
 .a6-page .a6-nums dd { display: flex; align-items: baseline; gap: 4px; margin: 4px 0 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; }
 .a6-page .a6-nums dd b { color: var(--rd-text); font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: var(--rd-weight-semibold); }
 .a6-page .a6-nums dd[data-empty] b { color: var(--rd-text-3); }
-.a6-page .a6-nums dd.a6-nums-sub { margin-top: 2px; }
+.a6-page .a6-nums dd.a6-nums-sub { margin-top: 2px; white-space: nowrap; }
 .a6-page .a6-kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--rd-space-2) var(--rd-space-4); margin: 0; }
 .a6-page .a6-kv > div { display: contents; }
 .a6-page .a6-kv dt { display: flex; align-items: center; gap: 4px; color: var(--rd-text-2); }
@@ -840,3 +840,12 @@
 .adom .a7-form { display: flex; flex-direction: column; gap: var(--rd-space-4); }
 .adom .a7-notes { display: flex; flex-direction: column; gap: var(--rd-space-3); }
 .adom .a7-code { color: var(--rd-text-3); font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); }
+.a6-page .a6-role-meta { display: flex; flex-wrap: wrap; column-gap: var(--rd-space-3); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; }
+.a6-page .a6-role-meta > span { white-space: nowrap; }
+.a7-page .a7-recovery { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--rd-space-3); }
+.a7-page .a7-recovery > li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--rd-space-3); }
+.a7-page .a7-recovery-name { font-weight: var(--rd-weight-semibold); }
+.a7-page .a7-recovery-change { color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.a7-page .a7-recovery-time { color: var(--rd-text-3); font-size: var(--rd-text-aux); font-variant-numeric: tabular-nums; }
+.a7-page .a7-recovery-actions { display: inline-flex; gap: var(--rd-space-2); margin-left: auto; }
+.a7-page .a7-recovery-zone { color: var(--rd-text-3); font-size: var(--rd-text-aux); }

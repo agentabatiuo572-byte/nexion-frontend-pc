@@ -205,7 +205,7 @@ export default function A8Permissions() {
       {view === "matrix" && matrixOpen ? (
         <Panel flush icon={Users} title="角色权限对照表"
           sub={rolesReady && records.length > 0 && grants.length > 0 ? `本页 ${records.length} 项权限 × ${grants.length} 个角色` : countText}
-          explain={`横向是角色，纵向是列表当前页的 ${records.length} 项权限，打勾表示该角色有这项权限。包括已停用的角色。翻页只换行，角色的授权不重新读取；要最新的就收起再展开。`}>
+          explain={`横向是角色，纵向是列表当前页的${!loading && !loadError ? ` ${records.length} 项` : ""}权限，打勾表示该角色有这项权限。包括已停用的角色。翻页只换行，角色的授权不重新读取；要最新的就收起再展开。`}>
           {loading ? <BlockState state="loading" title="加载中…" /> : loadError ? <BlockState state="error" title="权限列表加载失败，请重试。" detail={loadError} onRetry={() => setReloadKey((value) => value + 1)} /> : <>
           {matrixLoading ? (
               <BlockState state="loading" title="正在加载…" detail="要逐个读取每个角色的授权，角色多时要等几秒。" />
@@ -327,7 +327,7 @@ export default function A8Permissions() {
               <Fact k="登记的资源路径"><span data-mono>{detail.resourcePath || "—"}</span></Fact>
             </Facts>
             <nav className="rd-links" aria-label="去别的页面">
-              {rolesHref && <Link className="rd-link" href={rolesHref} prefetch={false}>去角色管理给角色授权</Link>}
+              {rolesHref && <Link className="rd-link" href={rolesHref} prefetch={false}>去角色管理看各角色的授权</Link>}
               {reach("/platform/rbac") && <Link className="rd-link" href="/platform/rbac" prefetch={false}>去运营账号与权限登记权限</Link>}
             </nav>
           </>

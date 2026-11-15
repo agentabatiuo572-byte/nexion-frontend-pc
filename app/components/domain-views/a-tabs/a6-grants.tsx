@@ -290,8 +290,8 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
           </Notice>
         )}
         {auditorWrites > 0 && (
-          <Notice tone="warn" title={`审计角色勾了 ${auditorWrites} 项修改或敏感权限`}>
-            <p>审计角色的默认职责是只读，加写权限前先和负责人确认。</p>
+          <Notice tone="danger" title={`审计角色勾了 ${auditorWrites} 项修改或敏感权限`}>
+            <p>审计角色只能有查看权限，这样提交不了：先取消这几项。</p>
           </Notice>
         )}
         {stoppedMenus.length > 0 && (

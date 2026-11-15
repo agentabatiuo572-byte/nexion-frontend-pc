@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Ban, CheckCircle2, ChevronDown, ChevronRight, Clock3, EyeOff, FolderTree, LayoutList, Minus, PanelLeft, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { Ban, CheckCircle2, ChevronDown, ChevronRight, CircleHelp, Clock3, EyeOff, FolderTree, Hourglass, LayoutList, Minus, PanelLeft, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
 import {
   fetchA7MenusOverview,
   type A7MenuOverview,
@@ -16,6 +16,7 @@ import { PlatformMutationReadbackError } from "@/lib/admin/platform-contracts";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { useRbacCommands, type A7Original, type RbacCommand } from "@/lib/admin/a6a7-mutations";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { CONSOLE_NAV, resolveVisibleDomains, type EffectiveMenuNode, type NavDomain } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import {
@@ -49,6 +50,17 @@ function menuReferenceProblem(node: A7MenuTreeNode) {
   if (node.activePermissionCount !== undefined && node.activePermissionCount > 0) return "MENU_NODE_HAS_PERMISSIONS";
   if (node.roleBindingCount !== undefined && node.roleBindingCount > 0) return "MENU_NODE_HAS_ROLE_BINDINGS";
 }
+
+/** 后端给了引用计数时，写清是哪几种引用挡住了删除或停用。只改文字，拦不拦照 menuReferenceProblem。 */
+function referenceBlockText(node: A7MenuTreeNode, verb: "删除" | "停用") {
+  const parts = [
+    node.roleBindingCount ? `${node.roleBindingCount} 个角色勾了它` : "",
+    node.activePermissionCount ? `挂着 ${node.activePermissionCount} 项启用的权限` : "",
+  ].filter(Boolean);
+  return parts.length ? `${parts.join("、")}，不能${verb}` : undefined;
+}
+const ROLE_COUNT_EXPLAIN = "勾了这个菜单的角色数，包括已停用的角色；不等于能看到它的账号数。";
+const PERM_COUNT_EXPLAIN = "挂在这个菜单下、启用中的权限条数。权限清单里没有改所属菜单的入口。";
 
 /**
  * 菜单在不在左侧导航里显示。用侧栏同一个函数 resolveVisibleDomains 算：拿全部启用的节点当作一个拥有全部菜单的账号，
@@ -272,7 +284,7 @@ export default function A7Menus() {
       confirmLabel: "确认删除",
       confirmTone: "danger",
       statedBrief: {
-        impact: "确认后立即删除，左侧导航不再有这个入口。",
+        impact: "确认后立即删除，左侧导航不再有这个入口；已打开的后台要重新读取登录信息才更新。",
         check: "不删下级、页面和角色授权。有下级菜单、启用的权限挂在它下面，或任何角色（含已停用的）勾了它，后端会拒绝，什么都不改。",
       },
       facts: <Facts>
@@ -280,21 +292,25 @@ export default function A7Menus() {
         <Fact k="位置">{parent ? `${menuNameText(parent)} 下的页面` : "一级菜单"}</Fact>
         {n.routePath && <Fact k="页面地址"><span data-mono>{n.routePath}</span></Fact>}
         <Fact k="下级菜单" tone={n.children.length ? "danger" : undefined}>{n.children.length ? `${n.children.length} 个，删除会被拒绝` : "没有"}</Fact>
-        <Fact k="权限和角色引用">这页读不到，由后端提交时检查</Fact>
+        {n.roleBindingCount !== undefined && <Fact k="勾了它的角色" tone={n.roleBindingCount ? "danger" : undefined}>{n.roleBindingCount ? `${n.roleBindingCount} 个（含已停用的），删除会被拒绝` : "没有"}</Fact>}
+        {n.activePermissionCount !== undefined && <Fact k="挂着的权限" tone={n.activePermissionCount ? "danger" : undefined}>{n.activePermissionCount ? `${n.activePermissionCount} 项启用的，删除会被拒绝` : "没有"}</Fact>}
+        {(n.roleBindingCount === undefined || n.activePermissionCount === undefined) && <Fact k="权限和角色引用">这页读不到，由后端提交时检查</Fact>}
       </Facts>,
       content: n.children.length ? (
         <Notice tone="danger" title={`还有 ${n.children.length} 个下级菜单`}>
           <p>后端不会连带删除，这次会被拒绝；先删除下级菜单。</p>
         </Notice>
-      ) : (
+      ) : referenceBlockText(n, "删除") ? (
+        <Notice tone="danger" title={referenceBlockText(n, "删除")} />
+      ) : n.roleBindingCount === undefined || n.activePermissionCount === undefined ? (
         <Notice tone="warn" title="有权限或角色引用时删不掉">
           <p>有启用的权限挂在它下面，或有角色勾了它，后端会拒绝；角色的勾选到「角色管理」取消。</p>
         </Notice>
-      ),
+      ) : undefined,
     }, recovery, rechecked);
   };
 
-  // The visual worker must connect the saved-command entry to this handler; A7 has no recovery-list markup yet.
+  // 恢复区「按原请求重试」接这里：打开原操作的确认框，按原请求重发。
   const restoreOriginal = (record: RbacCommand) => {
     const original = record.original;
     if (original.kind === "a7-delete") openDelete(original.node, original.parent, record);
@@ -337,6 +353,31 @@ export default function A7Menus() {
         actions={canWrite ? <Button variant="primary" disabledReason={readReason} onClick={() => setMode({ kind: "create" })}><Plus size={14} aria-hidden />新建一级菜单</Button> : undefined}
         readOnly={canWrite ? undefined : "只读：可以查看菜单树，不能修改"} />
       {conclusion}
+
+      {commands.records.length > 0 && (
+        <Notice tone="warn" title={`${commands.records.length} 个菜单原操作结果未知`}>
+          <ul className="a7-recovery" aria-label="结果未知的菜单原操作">
+            {commands.records.map((record) => {
+              const expired = isRetryExpired(record);
+              return (
+                <li key={record.commandKey}>
+                  <span className="a7-recovery-name">{record.name}</span>
+                  <span className="a7-recovery-change" data-mono>{record.change}</span>
+                  <span className="a7-recovery-time">{businessStamp(record.createdAt)} 提交</span>
+                  {expired
+                    ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试。菜单是直接写入的，没有按原请求查结果的接口，读到的菜单只能用来核对，这条记录不会自动解除。">已过期</StatusTag>
+                    : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，后端认得出是同一次提交，不会重复执行。">结果未知</StatusTag>}
+                  <span className="a7-recovery-actions">
+                    <Button variant="ghost" onClick={() => void queryOriginal().catch(error => setToast(displayAdminReadError(error)))}>重新读取菜单</Button>
+                    {!expired && <Button variant="ghost" disabledReason={canWrite ? undefined : displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN"))} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="a7-recovery-zone">提交时间为{businessZone().label}；读到的菜单只能核对现状，不能证明原操作成没成。</p>
+        </Notice>
+      )}
 
       <div className="a7-layout">
         <div className="rd-split a7-main" data-detail="">
@@ -505,14 +546,17 @@ function NodeDetail({ node, parent, canWrite, writeReason, nav, reach, onCreate,
             {Icon && <Icon size={14} aria-hidden className="a7-icon" />}{node.icon ? <span data-mono>{node.icon}</span> : "—"}
           </dd></div>
           <div><dt>排序<Explain label="排序" content="同一级里数字小的排前面，数字一样时按建的先后。改排序在「编辑」里填数字。" /></dt><dd>{node.sortOrder}</dd></div>
+          {node.roleBindingCount !== undefined && <div><dt>勾了它的角色<Explain label="勾了它的角色" content={ROLE_COUNT_EXPLAIN} /></dt><dd data-empty={node.roleBindingCount ? undefined : ""}>{node.roleBindingCount} 个</dd></div>}
+          {node.activePermissionCount !== undefined && <div><dt>挂着的权限<Explain label="挂着的权限" content={PERM_COUNT_EXPLAIN} /></dt><dd data-empty={node.activePermissionCount ? undefined : ""}>{node.activePermissionCount} 项</dd></div>}
           {isDomain && <div><dt>下级菜单</dt><dd data-empty={node.children.length ? undefined : ""}>{node.children.length} 个{node.children.some((child) => child.status !== 1) ? `，其中 ${node.children.filter((child) => child.status !== 1).length} 个已停用` : ""}</dd></div>}
         </dl>
         {canWrite && (
           <div className="a7-actions">
             <Button variant="primary" disabledReason={writeReason} aria-label={`编辑 ${targetName}`} onClick={onEdit}><Pencil size={14} aria-hidden />编辑</Button>
             {isDomain && <Button variant="secondary" disabledReason={writeReason ?? (node.status !== 1 ? displayAdminError(new Error("PARENT_MENU_NOT_FOUND")) : undefined)} aria-label={`为 ${targetName} 新建下级菜单`} onClick={onCreate}><Plus size={14} aria-hidden />新建下级菜单</Button>}
-            <Button variant="danger-outline" disabledReason={writeReason ?? (node.children.length ? displayAdminError(new Error("MENU_NODE_HAS_CHILDREN")) : referenceProblem ? displayAdminError(referenceProblem) : undefined)} aria-label={`删除 ${targetName}`} onClick={onDelete}><Trash2 size={14} aria-hidden />删除</Button>
-            {node.children.length > 0 && <span className="a7-note"><TriangleAlert size={14} aria-hidden />还有 {node.children.length} 个下级菜单，删除会被拒绝</span>}
+            <Button variant="danger-outline" disabledReason={writeReason ?? (node.children.length ? displayAdminError(new Error("MENU_NODE_HAS_CHILDREN")) : referenceProblem ? referenceBlockText(node, "删除") : undefined)} aria-label={`删除 ${targetName}`} onClick={onDelete}><Trash2 size={14} aria-hidden />删除</Button>
+            {node.children.length > 0 ? <span className="a7-note"><TriangleAlert size={14} aria-hidden />还有 {node.children.length} 个下级菜单，删除会被拒绝</span>
+              : referenceProblem && <span className="a7-note"><TriangleAlert size={14} aria-hidden />{referenceBlockText(node, "删除")}</span>}
           </div>
         )}
         {reach("/platform/roles") && <p className="a7-muted">给角色勾菜单：<Link className="rd-link" href="/platform/roles">角色管理</Link></p>}
@@ -616,9 +660,9 @@ function menuFormConfirmation(mode: Exclude<FormMode, null>, tree: A7MenuTreeNod
         confirmLabel: stopping ? "确认停用" : "确认保存",
         statedBrief: {
           impact: stopping
-            ? "确认后立即停用，左侧导航不再显示它；授权保留，重新启用后恢复。"
+            ? "确认后立即停用，左侧导航不再显示它。"
             : "确认后立即保存；左侧导航要等账号重新读取登录信息才更新。",
-          check: "留空的地址和图标不会清掉原值。每次保存都带启停状态，后端会再检查上一级是否启用。",
+          check: stopping ? "留空的地址和图标不会清掉原值。后端会再检查启用的下级、启用的权限和角色勾选。" : "留空的地址和图标不会清掉原值。保存为启用时，后端会再检查上一级是否启用。",
         },
         facts: <Facts>
           <Fact k="菜单">{menuNameText(existing)} <span className="a7-code" data-mono>{existing.menuCode}</span></Fact>
@@ -702,7 +746,7 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
       explain="填好后点「下一步：确认」，在确认框里核对并填理由。保存后直接生效，不走审批。"
       onClose={onClose}
       footer={<Decision others={<Button variant="secondary" onClick={onClose}>取消</Button>}
-        primary={<Button variant="primary" disabledReason={referenceProblem ? displayAdminError(referenceProblem) : undefined} onClick={submit}>下一步：确认</Button>} />}
+        primary={<Button variant="primary" disabledReason={referenceProblem && existing ? referenceBlockText(existing, "停用") : undefined} onClick={submit}>下一步：确认</Button>} />}
     >
       <div className="a7-form">
         <Field label="菜单标识" required={isCreate} hint={isCreate ? "最长 64 位" : "不能修改"} help={isCreate ? "大写字母开头，只用大写字母、数字和下划线。" : undefined} error={err("code")}
@@ -731,7 +775,8 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
           </Field>
         </div>
         {!isCreate && (
-          <Field label="状态" help={status === 0 && existing?.status === 1 ? "停用后左侧导航不再显示它；有启用的下级、启用的权限或角色勾了它时后端会拒绝。" : undefined}>
+          <Field label="状态" error={referenceProblem && existing ? referenceBlockText(existing, "停用") : undefined}
+            help={status === 0 && existing?.status === 1 && !referenceProblem ? "停用后左侧导航不再显示它；有启用的下级、启用的权限或角色勾了它时后端会拒绝。" : undefined}>
             <Segments label="状态" value={status} onChange={setStatus} items={[{ value: 1, label: "启用" }, { value: 0, label: "停用" }]} />
           </Field>
         )}

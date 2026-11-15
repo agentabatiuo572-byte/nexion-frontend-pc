@@ -88,8 +88,8 @@ function ownerLinkAccessibleName(row: A5RegistryRow) {
 
 const ERROR_COPY: Record<A5LoadErrorKind, { title: string; detail: string }> = {
   auth: { title: "登录已失效", detail: "正在清理旧会话，请重新登录后查看。" },
-  forbidden: { title: "没有查看平台参数的权限", detail: "请联系管理员开通「平台参数目录」的查看权限。" },
-  integrity: { title: "数据有误，已停止显示", detail: "参数数据存在重复或统计不一致，为避免误判已暂停显示，请联系技术人员。" },
+  forbidden: { title: "没有查看平台参数的权限", detail: "请联系管理员开通「平台参数目录」的查看权限；系统要求先改密码时，改完再打开。" },
+  integrity: { title: "数据有误，已停止显示", detail: "参数数据缺字段、格式不对、重复或统计对不上，为避免误判已暂停显示，请联系技术人员。" },
   server: { title: "平台参数加载失败", detail: "暂时无法显示参数，请重新加载；持续失败请联系技术人员。" },
   unavailable: { title: "平台参数暂时无法加载", detail: "参数设置没有被修改，请稍后重新加载。" },
 };
@@ -220,9 +220,9 @@ export function PlatformParamsRegistry() {
       有 {stopped.length} 个业务已紧急关停：{stopped.map((row) => operatorCopyText(row.displayName)).join("、")}
     </Conclusion>
   ) : partialSources.length > 0 ? (
-    <Conclusion state="warn" icon={SlidersHorizontal} hint="已读到的参数照常显示；没读到的是哪一类见下方提示"
-      explain="后端按来源分别读取，一个来源读不到不影响其他参数。没读到的值不会显示成正常或 0。">
-      部分参数没读到，已读到 {stats.registeredCount} 项
+    <Conclusion state="warn" icon={SlidersHorizontal} hint="已读到的参数照常显示；哪一类不完整、为什么，见下方提示"
+      explain="紧急开关、地区访问限制和系统健康分开读取，其中一类没读到不影响其他参数；系统参数本身读不到时整页读不到。没读到的值不会显示成正常或 0。">
+      有 {partialSources.length} 个来源不完整，已读到 {stats.registeredCount} 项
     </Conclusion>
   ) : (
     <Conclusion state="ok" icon={SlidersHorizontal}
@@ -233,7 +233,7 @@ export function PlatformParamsRegistry() {
 
   const ownerCell = (row: A5RegistryRow) => {
     const name = ownerName(row);
-    if (row.canonicalKey === H5_RETIRED_KEY) return <Cell main={<span className="a5-muted">没有修改入口</span>} sub="已停用，只保留旧值" />;
+    if (row.canonicalKey === H5_RETIRED_KEY) return <Cell main={<span className="a5-muted">没有修改入口</span>} sub="已停用，值固定为 0" />;
     const path = row.ownerRoute.split(/[?#]/, 1)[0];
     if (!findByPath(path)) return <Cell main={name} sub="这一页还没有上线" />;
     if (!reach(row.ownerRoute)) return <Cell main={name} sub="你的账号进不去这一页" />;
@@ -305,7 +305,7 @@ export function PlatformParamsRegistry() {
       {conclusion}
 
       {partialSources.length > 0 && (
-        <Notice tone="warn" title="部分来源没读到">
+        <Notice tone="warn" title="有的来源不完整">
           {partialSources.map((source) => <p key={source.key}>{source.label}：{source.key === "emergency" && emergencyShown ? "具体是哪一类没读到，见下方「紧急开关」" : operatorCopyText(source.detail)}</p>)}
         </Notice>
       )}
@@ -370,10 +370,11 @@ export function PlatformParamsRegistry() {
                         <Th>参数</Th>
                         <Th>当前值</Th>
                         <Th><Explain label="状态是什么意思" rows={[
-                          { k: "已启用", v: "这条配置是启用状态、读得到；不代表业务已经在用它。除已退役和实时读取的项，在所在页面修改时都会先弹确认框，不是审批" },
+                          { k: "已启用", v: "这条配置是启用状态、读得到；不代表业务已经在用它" },
                           { k: "实时读取", v: "每次打开这页时现查的系统健康指标，这页不会自己刷新" },
                           { k: "敏感信息", v: "后端只告诉这里已配置，值已脱敏，不代表一定可用" },
-                          { k: "已停用、已退役", v: "不再参与计算的旧参数，只保留旧值" },
+                          { k: "已停用", v: "H5 基础托管系数不再参与计算，值固定为 0" },
+                          { k: "已退役", v: "不再参与计算的旧参数，保留原值，只能查看" },
                         ]}>状态</Explain></Th>
                         <Th>最近修改<span className="a5-th-zone">{zone}</span></Th>
                         <Th>在哪改</Th>
@@ -401,9 +402,9 @@ export function PlatformParamsRegistry() {
       )}
 
       <Fold title="数据来源" icon={Database}
-        summary={`${overview.sources.length} 个来源，${partialSources.length === 0 ? "全部就绪" : `${partialSources.length} 个没读全`} · ${stats.registeredCount} 项参数 · ${stats.domainCount} 个模块 · ${stats.highSensitivityCount} 项修改需确认`}
+        summary={`${overview.sources.length} 个来源，${partialSources.length === 0 ? "全部就绪" : `${partialSources.length} 个不完整`} · ${stats.registeredCount} 项参数 · ${stats.domainCount} 个模块 · ${stats.highSensitivityCount} 项修改需确认`}
         alert={partialSources.length > 0}
-        explain="「修改需确认」数的是在所在页面修改时会弹确认框的参数，不是走审批的数量，也不是敏感信息的数量。">
+        explain="「修改需确认」是后端标记的数量，不保证所在页面一定弹确认框；不是走审批的数量，也不是敏感信息的数量。">
         <Table label="数据来源">
           <thead><tr><Th>来源</Th><Th>状态</Th><Th align="right">条数</Th><Th>说明</Th></tr></thead>
           <tbody>

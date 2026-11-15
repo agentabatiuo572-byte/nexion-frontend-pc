@@ -73,7 +73,7 @@ const STATUS_LOOK: Record<string, { tone: StateTone; icon: LucideIcon; explain: 
   PENDING: { tone: "warn", icon: Clock3, explain: "等运营批准或驳回。批准前他没有开发者资格。" },
   APPROVED: { tone: "ok", icon: CheckCircle2, explain: "开发者资格有效，可以撤销。" },
   REJECTED: { tone: "done", icon: XCircle, explain: "这条申请已结束，没有给资格。申请人可以在 App 重新申请。" },
-  REVOKED: { tone: "done", icon: Ban, explain: "资格已收回。申请人可以在 App 重新申请。" },
+  REVOKED: { tone: "done", icon: Ban, explain: "这条批准已撤销；同一环境没有别的有效批准时，资格随之收回。申请人可以在 App 重新申请。" },
   EXPIRED: { tone: "done", icon: Hourglass, explain: "已结束，只能查看。后台没有设为过期的操作，也不会到期自动过期。" },
 };
 const UNKNOWN_LOOK = { tone: "neutral" as StateTone, icon: CircleHelp, explain: "后端返回了这页不认识的状态，不能操作。" };
@@ -288,6 +288,11 @@ export function A9DeveloperAccess() {
     if (outcome.kind === "ok") {
       setDialog(null);
       const done = { approve: "已批准", reject: "已驳回", revoke: "已撤销访问" }[action];
+      if (dialog.mode !== "new") {
+        // 按原请求重试成功只证明当时那次成功，现在的状态以重新读到的列表为准。
+        toast(`原${reviewActionLabel[action]}请求已成功 ${row.requestNo}，现在的状态以列表为准`, "success");
+        return;
+      }
       // 在抽屉里处理完，自动到这一页的下一条还能处理的申请。
       if (currentNo === row.requestNo) {
         const rest = records.slice(shownIndex + 1).concat(records.slice(0, Math.max(0, shownIndex)));
@@ -341,8 +346,8 @@ export function A9DeveloperAccess() {
       if (total === 0) return <Conclusion state="ok" icon={CheckCircle2}>没有等待审批的申请</Conclusion>;
       const oldest = page === 1 ? records[0] : undefined;
       return <Conclusion state="warn" lead icon={Inbox}
-        explain="数的是「待审批」的申请条数，不是人数。列表按提交时间从新到旧排，最早的在最后一页。"
-        hint={oldest ? `最早的 ${timeText(oldest.createdAt)}（${zone}）提交，已等 ${waitedText(oldest.createdAt, now)}` : "最早提交的在最后一页"}>
+        explain="数的是「待审批」的申请条数，不是人数。待审批按提交时间从早到晚排，等得最久的在最前面。"
+        hint={oldest ? `最早的 ${timeText(oldest.createdAt)}（${zone}）提交，已等 ${waitedText(oldest.createdAt, now)}` : "最早提交的在第 1 页"}>
         {total} 个申请在等审批
       </Conclusion>;
     }
@@ -357,7 +362,7 @@ export function A9DeveloperAccess() {
     const row = record.row ?? current;
     const expired = record.expiresAt <= now;
     const reason = !reviewPermissions[action] ? `这个账号现在没有${reviewActionLabel[action]}的权限`
-      : expired ? "已超过 24 小时，不能再重试"
+      : !row ? "先点「查看申请现状」，读到这条申请后才能重试"
         : undefined;
     return (
       <li key={record.fingerprint}>
@@ -366,13 +371,12 @@ export function A9DeveloperAccess() {
         <span className="a9-rec-time">{businessStamp(record.createdAt)} 提交</span>
         <span className="a9-rec-state">
           {expired
-            ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试。">已过期</StatusTag>
+            ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试。记录会一直留着，可以查看申请现状来核对。">已过期</StatusTag>
             : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。按原请求重试用的是同一次提交的编号和备注，后端认得出，不会重复执行。">结果未知</StatusTag>}
         </span>
         <span className="a9-rec-actions">
-          {row || expired || !reviewPermissions[action]
-            ? <Button size="sm" disabled={!row} disabledReason={reason} onClick={() => restoreReview(record, current)}>按原请求重试</Button>
-            : <Button size="sm" onClick={() => findOriginal(record)}>在列表里找到它</Button>}
+          <Button size="sm" variant="ghost" onClick={() => findOriginal(record)}>查看申请现状</Button>
+          {!expired && <Button size="sm" disabledReason={reason} onClick={() => restoreReview(record, current)}>按原请求重试</Button>}
         </span>
       </li>
     );
@@ -422,7 +426,7 @@ export function A9DeveloperAccess() {
 
     {recoveryRows.length > 0 && <Notice tone="warn" title={<>{recoveryRows.length} 个操作结果未知<Explain label="结果未知怎么处理" content={<>
       <p>提交时没收到确定结果，可能已经生效。按原请求重试用同一次提交的编号和备注，后端认得出，不会重复执行。</p>
-      <p>这页没有按原请求查询结果的接口；列表里的状态只说明现在的状态，不能证明原操作成没成。</p>
+      <p>这页没有按原请求查询结果的接口。「查看申请现状」读的是这条申请现在的状态，不能证明原操作成没成，也不会解除这条记录。</p>
     </>} /></>}>
       <ul className="a9-rec" aria-label="结果未知的操作">{recoveryRows}</ul>
       <p className="a9-rec-zone">提交时间为{zone}</p>
@@ -430,7 +434,10 @@ export function A9DeveloperAccess() {
 
     <FilterBar
         scope={<Segments label="开发者访问申请状态筛选" value={status}
-          items={STATUS_ORDER.map((value) => ({ value, label: value ? developerStatusText(value) : "全部", count: value === status && data && !error ? data.total : undefined }))}
+          items={STATUS_ORDER.map((value) => ({ value, label: value ? developerStatusText(value) : "全部",
+            count: data?.statusCounts && !error
+              ? value ? data.statusCounts[value] : Object.values(data.statusCounts).reduce((sum, count) => sum + count, 0)
+              : value === status && data && !error ? data.total : undefined }))}
           onChange={(value) => { setStatus(value); setPage(1); }} />}
         onClear={keywordInput ? () => setKeywordInput("") : undefined} canClear clearLabel="清除搜索">
         <FilterField grow><Input aria-label="开发者访问申请搜索" placeholder="申请编号 / 公司 / 邮箱 / 用途" value={keywordInput} onChange={(event) => setKeywordInput(event.target.value)} /></FilterField>
@@ -489,7 +496,7 @@ export function A9DeveloperAccess() {
         onNext: () => { if (shownIndex < records.length - 1) setCurrentNo(records[shownIndex + 1].requestNo); } }}
       footer={shown && shownActions && (staleReason || missingNote || shownActions.approve || shownActions.reject || shownActions.revoke) && <Decision note={staleReason ?? missingNote}
         explain={shown.status === "PENDING" ? "批准：他在这个环境拿到开发者资格，可以自己创建 API 密钥、管理 Webhook；之后可以撤销。驳回：这条申请结束，他可以在 App 重新申请。都立即生效。"
-          : shown.status === "APPROVED" ? "撤销：他在这个环境的密钥认证和密钥、Webhook 管理随即被拒；已有密钥和 Webhook 不删除。他可以在 App 重新申请。" : undefined}
+          : shown.status === "APPROVED" ? "撤销：同一环境没有别的有效批准时，他的密钥认证和密钥、Webhook 管理随即被拒；已有密钥和 Webhook 不删除。他可以在 App 重新申请。" : undefined}
         danger={shownActions.reject ? <Button variant="danger-outline" disabledReason={staleReason} onClick={() => review(shown, "reject")}>驳回</Button>
           : shownActions.revoke ? <Button variant="danger-outline" disabledReason={staleReason} onClick={() => review(shown, "revoke")}>撤销访问</Button> : undefined}
         primary={shownActions.approve ? <Button variant="primary" disabledReason={staleReason} onClick={() => review(shown, "approve")}>批准</Button> : undefined} />}>
@@ -513,6 +520,9 @@ export function A9DeveloperAccess() {
   </div>;
 }
 
+/** 后端 AppDeveloperAccessService.PUBLIC_REVIEW_REASONS：只有这四个值会给申请人看到。 */
+const PUBLIC_REASON_CODES = ["IDENTITY_VERIFICATION_REQUIRED", "BUSINESS_INFORMATION_INSUFFICIENT", "POLICY_REQUIREMENTS_NOT_MET", "ACCESS_REVOKED_BY_POLICY"] as const;
+
 const DIALOG = {
   approve: { title: "批准开发者访问", icon: ShieldCheck, confirm: "批准申请", danger: false },
   reject: { title: "驳回开发者访问申请", icon: XCircle, confirm: "驳回申请", danger: true },
@@ -522,7 +532,7 @@ const DIALOG = {
 function afterText(action: ReviewAction): ReactNode {
   if (action === "approve") return "他可以在上面这个环境自己创建 API 密钥、管理 Webhook；批准不会替他发密钥。";
   if (action === "reject") return "这条申请结束，他拿不到开发者资格。他可以在 App 重新申请。";
-  return <>{`他在这个环境的密钥认证、密钥和 Webhook 管理随即被拒；已有密钥和 Webhook 不删除，已执行的请求不撤回。`}<Explain label="撤销的范围" content="按同一用户、同一环境（测试环境还按批次）判断：他在这个范围里没有别的有效批准时才会被拒。他之后可以在 App 重新申请。" /></>;
+  return <>{`同一环境没有别的有效批准时，他的密钥认证、密钥和 Webhook 管理随即被拒；已有密钥和 Webhook 不删除，已执行的请求不撤回。`}<Explain label="撤销的范围" content="按同一用户、同一环境（测试环境还按批次）判断：他在这个范围里没有别的有效批准时才会被拒。他之后可以在 App 重新申请。" /></>;
 }
 
 function ReviewDialog({ state, busy, failure, reason, touched, onReason, onTouch, onClose, onConfirm, onReload }: {
@@ -552,6 +562,7 @@ function ReviewDialog({ state, busy, failure, reason, touched, onReason, onTouch
         : "这条记录是旧版本保存的，没有存原备注。填上次提交的原备注，一字不差，后端才认得出是同一次提交。"}</Notice>}
       <Facts>
         {retrying && <Fact k="原操作">{reviewActionLabel[action]}</Fact>}
+        {retrying && previous && !previous.row && <Fact k="资料来源" tone="warn">旧记录没存当时的资料，下面的公司、邮箱和环境是现在读到的</Fact>}
         <Fact k="申请人">{row.company}</Fact>
         <Fact k="邮箱">{row.email}</Fact>
         <Fact k="平台用户">用户编号 {row.userId}</Fact>
@@ -561,7 +572,8 @@ function ReviewDialog({ state, busy, failure, reason, touched, onReason, onTouch
         {mode === "recovery" && <Fact k="原备注"><span className="a9-reason">{previous?.reason}</span></Fact>}
         {!retrying && <Fact k={{ approve: "批准后", reject: "驳回后", revoke: "撤销后" }[action]} >{afterText(action)}</Fact>}
       </Facts>
-      {mode !== "recovery" && <Field label={mode === "legacy" ? "上次提交的原备注" : "备注"} required hint="至少 8 字" error={reasonError} help="只留在后台记录里，申请人看不到。">
+      {mode !== "recovery" && <Field label={mode === "legacy" ? "上次提交的原备注" : "备注"} required hint="至少 8 字" error={reasonError} help="申请人在 App 里看不到这段备注。"
+        explain={<>例外：备注只填下面一个理由代码（不分大小写）时，App 会给申请人显示对应的理由：{PUBLIC_REASON_CODES.map((code, index) => <span key={code}>{index ? "、" : ""}<span data-mono>{code}</span></span>)}。</>}>
         {(control) => <Textarea {...control} rows={3} value={reason} disabled={busy} count={`${length}/500`}
           placeholder={action === "approve" ? "例如：已核实公司和用途" : "例如：用途和公司资料对不上"}
           onChange={(event) => onReason(event.target.value)} onBlur={onTouch} />}

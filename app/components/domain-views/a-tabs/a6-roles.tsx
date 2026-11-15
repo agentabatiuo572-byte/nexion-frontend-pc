@@ -3,7 +3,7 @@ import "../a-domain.css";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Ban, CheckCircle2, CircleHelp, Clock3, KeyRound, ListTree, Minus, Plus, ShieldCheck, TriangleAlert, UserCog, Users } from "lucide-react";
+import { Ban, CheckCircle2, CircleHelp, Clock3, Hourglass, KeyRound, ListTree, Minus, Plus, ShieldCheck, TriangleAlert, Undo2, UserCog, Users, XCircle, type LucideIcon } from "lucide-react";
 import {
   fetchA6RolesOverview, fetchA6RoleDetail,
   type A6RoleOverview, type A6RoleDetail, type A6RoleCreateInput, type A6RoleUpdateInput, type A6RoleSummary,
@@ -22,7 +22,7 @@ import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import {
   BarList, BlockState, Button, Change, Conclusion, Explain, Fact, Facts, Field, Fold, IconTile, Input, IrreversibleTag, Modal, Notice,
-  PageHeader, Panel, RdPage, StatusTag, Textarea,
+  PageHeader, Panel, RdPage, ReleaseModal, StatusTag, Textarea,
 } from "@/app/components/rd";
 import {
   AMPLIFIES_EXPLAIN, GrantsEditorDrawer, MenuChangeList, MismatchNotice, PermChangeList, SENSITIVE_EXPLAIN, flattenMenus, grantMismatch, setDiff,
@@ -59,7 +59,21 @@ type Submitted = {
 };
 
 /** 已备好的原操作提醒，由持久保存的完整请求驱动。 */
-type UnknownRow = { key: string; name: string; change: string; submittedAt: number; actions: ReactNode };
+type UnknownRow = { key: string; name: string; change: string; submittedAt: number; tag: ReactNode; actions: ReactNode };
+
+/** 审批单最后一次查到的状态；只有回执、还没查到状态时单独写。 */
+const TICKET_LOOK: Record<NonNullable<Submitted["status"]>, { label: string; tone: "progress" | "ok" | "neutral"; icon: LucideIcon }> = {
+  pending: { label: "待审批", tone: "progress", icon: Clock3 },
+  approved: { label: "已批准", tone: "ok", icon: CheckCircle2 },
+  rejected: { label: "已驳回", tone: "neutral", icon: XCircle },
+  withdrawn: { label: "已撤回", tone: "neutral", icon: Undo2 },
+  expired: { label: "审批已过期", tone: "neutral", icon: Hourglass },
+};
+const ticketTag = (status: Submitted["status"]) => {
+  if (!status) return <StatusTag tone="warn" icon={CircleHelp} explain="审批单已经建好，还没查到它现在的状态。点「查询原结果」再查。">已建单，状态未查到</StatusTag>;
+  const look = TICKET_LOOK[status];
+  return <StatusTag tone={look.tone} icon={look.icon} explain="上次查到的状态。重新进入这页会再查一次，也可以点「查询原结果」。">{look.label}</StatusTag>;
+};
 
 /**
  * 是否为自动验收残留的临时角色(zentao #101)。
@@ -88,6 +102,7 @@ const ROLE_DESC: Record<string, { desc: string; scope: string }> = {
 };
 
 const ADMIN_COUNT_EXPLAIN = "绑定到这个角色的账号记录数：不排除已停用的账号，也不是在线人数。账号分配在「运营账号与权限」。";
+const CARD_COUNT_EXPLAIN = "卡片上的权限数、菜单数是角色里绑定的条数，不等于实际生效的权限或导航里能看到的菜单；「启用」是其中启用中的账号数。";
 const approvalTag = (note: string, extra?: string) => (
   <StatusTag tone="progress" filled explain={`提交到「操作记录与审批」，另一位管理员批准后执行。${note}${extra ?? ""}`}>批准后生效</StatusTag>
 );
@@ -132,6 +147,7 @@ export default function A6Roles() {
   const [formMode, setFormMode] = useState<{ kind: "create" } | { kind: "update" } | null>(null);
   const [grantsOpen, setGrantsOpen] = useState(false);
   const [confirmReq, setConfirmReq] = useState<ConfirmReq | null>(null);
+  const [releasing, setReleasing] = useState<RbacCommand | null>(null);
   const freshOverview = useRef<A6RoleOverview | null>(null);
   const freshDetail = useRef<A6RoleDetail | null>(null);
   const busy = useRef(false);
@@ -486,13 +502,22 @@ export default function A6Roles() {
   const roleRecords = commands.records.filter(record => "role" in record.original && record.original.role.id === selectedId);
   const writeReason = readReason ?? (roleRecords.some(record => !record.ticket) ? displayAdminError(new Error("RBAC_ORIGINAL_UNRESOLVED")) : undefined);
   const approvalReason = writeReason ?? (roleRecords.some(record => record.ticket?.status === "pending") ? displayAdminError(new Error("OBJECT_ALREADY_PENDING")) : undefined);
-  const unknownRows: UnknownRow[] = commands.records.filter(record => !record.ticket && !record.receipt).map(record => ({
-    key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
-    actions: <>
-      <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
-      <Button variant="ghost" disabledReason={isRetryExpired(record) ? displayAdminError(new Error("RBAC_ORIGINAL_QUERY_ONLY")) : undefined} onClick={() => restoreOriginal(record)}>按原请求重试</Button>
-    </>,
-  }));
+  const unknownRows: UnknownRow[] = commands.records.filter(record => !record.ticket && !record.receipt).map(record => {
+    const expired = isRetryExpired(record);
+    // 决定表「R1-提案过期」：只有删除和改授权这两种一定建审批单的，过期且按原请求明确查不到才可解除。
+    const releasable = expired && record.proposalNotFound && (record.original.kind === "a6-delete" || record.original.kind === "a6-grants");
+    return {
+      key: record.commandKey, name: record.name, change: record.change, submittedAt: record.createdAt,
+      tag: expired
+        ? <StatusTag tone="neutral" icon={Hourglass} explain={releasable ? "原请求超过 24 小时，不能再重试。按原请求查过，明确没有这张审批单，可以解除这条记录。" : "原请求超过 24 小时，不能再重试，只能查询原结果。"}>已过期</StatusTag>
+        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已经建了审批单。24 小时内可以按原请求重试，后端认得出是同一次提交，不会重复执行。">结果未知</StatusTag>,
+      actions: <>
+        <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
+        {!expired && <Button variant="ghost" onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+        {releasable && <Button variant="ghost" onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+      </>,
+    };
+  });
   const submitted: Submitted[] = commands.records.flatMap(record => {
     const original = record.original;
     const evidence = record.ticket ?? record.receipt;
@@ -547,7 +572,7 @@ export default function A6Roles() {
                 <span className="a6-recovery-name">{row.name}</span>
                 <span className="a6-recovery-change">{row.change}</span>
                 <span className="a6-recovery-time">{businessStamp(row.submittedAt)} 提交</span>
-                <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已经建了审批单。24 小时内可以按原请求重试，后端认得出是同一次提交，不会重复执行。">结果未知</StatusTag>
+                {row.tag}
                 <span className="a6-recovery-actions">{row.actions}</span>
               </li>
             ))}
@@ -557,19 +582,19 @@ export default function A6Roles() {
       )}
 
       {submitted.length > 0 && (
-        <Notice tone="progress" title="本次打开页面后提交的审批">
+        <Notice tone={submitted.some(row => row.status === "pending" || !row.status) ? "progress" : "neutral"} title="已提交的审批">
           <ul className="a6-recovery" aria-label="已提交的审批">
             {submitted.map((row) => (
               <li key={`${row.ticket}-${row.at}`}>
                 <span className="a6-recovery-name">{row.label}</span>
                 <span className="a6-recovery-change">{row.change}</span>
                 <span className="a6-recovery-time">{businessStamp(row.at)} 提交</span>
-                <StatusTag tone="warn" icon={Clock3} explain="这是提交时的回执，批准或驳回后这里不会自己更新。最新状态在「操作记录与审批」。">已提交审批</StatusTag>
+                {ticketTag(row.status)}
                 <span className="a6-recovery-actions">
                   <Button variant="ghost" onClick={() => { const record = commands.records.find(record => (record.ticket ?? record.receipt)?.id === row.ticket); if (record) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error))); }}>查询原结果</Button>
                   {reach("/platform/audit") && <Link className="rd-link" href={`/platform/audit?domain=A&object=${encodeURIComponent(row.roleCode)}`}>看审批单 <span data-mono>{row.ticket}</span></Link>}
                 </span>
-                {row.desired && detail?.id === row.roleId && <SavedCheck desired={row.desired} detail={detail} approved={row.status === "approved"} permByCode={permByCode} onRetry={() => { const record = commands.records.find(record => (record.ticket ?? record.receipt)?.id === row.ticket); if (record) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error))); }} />}
+                {row.desired && detail?.id === row.roleId && <SavedCheck desired={row.desired} detail={detail} approved={row.status === "approved"} permByCode={permByCode} menuById={menuById} onRetry={() => { const record = commands.records.find(record => (record.ticket ?? record.receipt)?.id === row.ticket); if (record) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error))); }} />}
               </li>
             ))}
           </ul>
@@ -580,7 +605,7 @@ export default function A6Roles() {
       <div className="a6-layout">
         <div className="rd-split a6-main" data-detail="">
           <Panel title="角色目录" icon={Users} tone="role-3" sub={overview ? `${roles.length} 个` : undefined}
-            explain="点一个角色，在右边看它能做什么、能看哪些菜单、有多少账号在用。">
+            explain={<><p>点一个角色，在右边看它能做什么、能看哪些菜单、有多少账号在用。</p><p>{CARD_COUNT_EXPLAIN}</p></>}>
             {loading ? <BlockState state="loading" title="正在加载角色…" />
               : loadError ? <BlockState state="error" title="角色列表加载失败" detail={loadError} onRetry={() => void refreshOverview()} />
               : roles.length === 0 ? <BlockState state="empty" title="还没有角色" />
@@ -650,6 +675,19 @@ export default function A6Roles() {
           }} />
       )}
 
+      {releasing && (
+        <ReleaseModal label={<>{releasing.name}<br />{businessStamp(releasing.createdAt)} 提交</>}
+          explain={`提交时间为${businessZone().label}。确认后先按原请求再查一次审批单：明确没有这张单才解除，原操作不会执行；查到了就不解除，请点「查询原结果」。`}
+          onCancel={() => setReleasing(null)}
+          onConfirm={() => {
+            const record = releasing;
+            setReleasing(null);
+            void commands.releaseExpiredProposal(record, true)
+              .then(() => setToast("已解除原操作记录", "success"))
+              .catch(error => setToast(displayAdminError(error)));
+          }} />
+      )}
+
       {confirmReq && (
         <OperationConfirmModal briefKind={confirmReq.briefKind}
           initialReason={recoveryRecord?.reason} getPendingReason={() => confirmReq.getRecord()?.reason} inlineApproval={recovery}
@@ -690,9 +728,16 @@ function RoleGroup({ title, count, explain, roles, selectedId, onPick, empty }: 
                       {temp && <StatusTag tone="warn" icon={TriangleAlert}>测试用 · 建议删除</StatusTag>}
                     </span>
                     {desc && <span className="a6-role-desc" title={desc}>{desc}</span>}
+                    {(r.permissionCount !== undefined || r.menuGrantCount !== undefined) && (
+                      <span className="a6-role-meta">
+                        {r.permissionCount !== undefined && <span>已绑定权限 {r.permissionCount} 项</span>}
+                        {r.menuGrantCount !== undefined && <span>{r.permissionCount !== undefined ? "" : "已绑定"}菜单 {r.menuGrantCount} 个</span>}
+                      </span>
+                    )}
                   </span>
                   <span className="a6-role-count" data-empty={r.adminCount === 0 ? "" : undefined}>
                     <b>{r.adminCount}</b><small>个账号</small>
+                    {r.enabledAdminCount !== undefined && <small>启用 {r.enabledAdminCount}</small>}
                   </span>
                 </button>
               </li>
@@ -757,6 +802,7 @@ function RoleDetail({ detail, summary, canWrite, canGrant, writeReason, approval
           <div>
             <dt>绑定账号<Explain label="绑定账号" content={ADMIN_COUNT_EXPLAIN} /></dt>
             <dd data-empty={summary?.adminCount === 0 ? "" : undefined}><b>{summary?.adminCount ?? "—"}</b> 个</dd>
+            {summary?.enabledAdminCount !== undefined && <dd className="a6-nums-sub">启用中 {summary.enabledAdminCount} 个</dd>}
           </div>
           <div>
             <dt>能做的操作<Explain label="能做的操作" content={<><p>这个角色存着的、启用中的接口权限数。</p><p>{SENSITIVE_EXPLAIN}</p></>} /></dt>
@@ -831,17 +877,25 @@ function RoleDetail({ detail, summary, canWrite, canGrant, writeReason, approval
 }
 
 /** A6-PD01：提交的整组和现在读到的详情比，列出没存上的权限。审批还没批准时两边也会不一样，所以只陈述差别。 */
-function SavedCheck({ desired, detail, approved, permByCode, onRetry }: { desired: { permissionCodes: string[]; menuIds: number[] }; detail: A6RoleDetail; approved: boolean; permByCode: ReadonlyMap<string, A8Permission>; onRetry: () => void }) {
+function SavedCheck({ desired, detail, approved, permByCode, menuById, onRetry }: { desired: { permissionCodes: string[]; menuIds: number[] }; detail: A6RoleDetail; approved: boolean; permByCode: ReadonlyMap<string, A8Permission>; menuById: ReadonlyMap<number, A7MenuTreeNode>; onRetry: () => void }) {
   const missing = desired.permissionCodes.filter((code) => !detail.permissionCodes.includes(code));
   const extra = detail.permissionCodes.filter((code) => !desired.permissionCodes.includes(code));
   const menuSame = setDiff(desired.menuIds, detail.menuIds);
-  const same = missing.length === 0 && extra.length === 0 && menuSame.added.length === 0 && menuSame.removed.length === 0;
+  const menuDiffs = menuSame.added.length + menuSame.removed.length;
+  const same = missing.length === 0 && extra.length === 0 && menuDiffs === 0;
+  const parts = [missing.length ? `${missing.length} 项权限提交了、现在没有` : "", extra.length ? `多出 ${extra.length} 项权限` : "", menuDiffs ? `菜单有 ${menuDiffs} 个不同` : ""].filter(Boolean);
   return (
     <div className="a6-saved">
       {approved && (same ? <span>现在存着的和提交的一致</span> : (
-        <Fold inset title="和提交的不一样" alert summary={`${missing.length} 项提交了、现在没有${extra.length ? `；多出 ${extra.length} 项` : ""}`}
-          explain={`审批还没批准时也会这样。批准后仍不一样，就是没存上${detail.status === 0 ? "（停用角色新加的权限可能存不上，已提后端修）" : ""}。`}>
-          {missing.length > 0 ? <PermChangeList codes={missing} permByCode={permByCode} kind="missing" limit={20} /> : <p className="a6-muted">提交的权限都在，菜单或多出的权限有差别。</p>}
+        <Fold inset title="和提交的不一样" alert summary={parts.join("；")}
+          explain={`只说明现在存着的和这次申请不同：可能没存上，也可能之后又改过授权${detail.status === 0 ? "；停用角色新加的权限可能存不上，已提后端修" : ""}。`}>
+          {missing.length > 0 && <PermChangeList codes={missing} permByCode={permByCode} kind="missing" limit={20} />}
+          {menuDiffs > 0 && <>
+            <h4 className="a6-subhead">菜单：提交了、现在没有 {menuSame.removed.length} 个 · 现在多出 {menuSame.added.length} 个</h4>
+            <MenuChangeList ids={menuSame.removed} menuById={menuById} kind="remove" />
+            <MenuChangeList ids={menuSame.added} menuById={menuById} kind="add" />
+          </>}
+          {missing.length === 0 && menuDiffs === 0 && <p className="a6-muted">提交的权限都在，现在多出 {extra.length} 项权限。</p>}
         </Fold>
       ))}
       <Button variant="ghost" onClick={onRetry}>重新读取</Button>
@@ -890,7 +944,7 @@ function roleFormConfirmation(isCreate: boolean, detail: A6RoleDetail | null, ro
             <Fact k="角色标识"><span data-mono>{detail?.roleCode}</span></Fact>
             <Fact k="名称">{nextName === detail?.roleName ? nextName : <Change from={detail?.roleName ?? "—"} to={nextName} />}</Fact>
             {clearsRemark
-              ? <Fact k="备注" tone="warn">留空不会清掉原备注「{detail?.remark}」</Fact>
+              ? <Fact k="备注" tone="warn"><Change from={detail?.remark ?? "—"} to="清空" /></Fact>
               : <Fact k="备注">{nextRemark === (detail?.remark ?? "") ? nextRemark || "—" : <Change from={detail?.remark || "—"} to={nextRemark} />}</Fact>}
           </Facts>,
         }] as const;
@@ -933,7 +987,7 @@ function RoleFormModal({ mode, detail, onClose, onSubmit }: {
       <Field label="名称" required help="最多 64 字。" error={tried && nameMissing ? "填写名称" : undefined}>
         {(control) => <Input {...control} value={roleName} onChange={(e) => setRoleName(e.target.value)} placeholder="如 内容编辑员" />}
       </Field>
-      <Field label="备注" help={clearsRemark ? "清空备注现在保存不了：留空时会保留原备注（已登记待修）。" : "最多 255 字。"}>
+      <Field label="备注" help={clearsRemark ? "留空保存会清空原备注。" : "最多 255 字。"}>
         {(control) => <Textarea {...control} rows={2} value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="这个角色负责什么" />}
       </Field>
     </Modal>

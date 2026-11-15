@@ -145,16 +145,18 @@ function approvalCoverageCopy(w: A2OperationRow) {
 function approvalExecutorLabel(w: A2OperationRow) {
   if (w.operationCode === "h1_phase_dial") return "另一位有审批批准权限和运营阶段修改权限的超级管理员";
   if (w.operationCode === "c2_session_revoke_all" || !w.operationCode && w.action.startsWith("强制登出 · ")) return "另一位有审批批准权限和退出全部设备权限的超级管理员";
-  if (w.operationCode === "h5_streak_milestone") return "另一位有审批批准权限的超级管理员";
+  // H5GrowthApproval：三类成长审批都要超级管理员且有审批批准权限。
+  if (w.operationCode === "h5_streak_milestone" || w.operationCode === "h5_power_up_config" || w.operationCode === "h5_earn_milestone") return "另一位有审批批准权限的超级管理员";
   if (/^(?:兑换|回购)参数调整 · /.test(w.action)) return "另一位有审批批准权限的超级管理员";
   if (/^调整创世参数 · /.test(w.action)) return "另一位有审批批准权限和该参数业务权限的超级管理员";
   if (["提高旧活动奖励", "放宽转盘奖项配置", "新增转盘奖项", "删除转盘奖项并提高安慰奖", "提高转盘奖项概率",
     "首次发布奖励课程", "发布奖励课程版本", "回滚至有奖励的课程版本"].includes(w.action)) return "另一位有审批批准权限的超级管理员";
-  if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位有批准权限和商品修改权限的管理员";
-  if (w.action === "发布规则任务") return "另一位有批准权限和任务池修改权限的管理员";
+  if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位有审批批准权限和商品修改权限的管理员";
+  if (w.action === "发布规则任务") return "另一位有审批批准权限和任务池修改权限的管理员";
   return w.ambassadorMaterialProposal?.applicationDecision === "APPROVE"
     ? "另一位具有审批和大使批准权限、且未参与本版材料核验的管理员"
-    : w.roleGate === "超管" ? "超级管理员" : w.roleGate;
+    // 后端存的「门槛者」只是占位叫法（A2-BE-02）；只改显示，请求里带的值不动。
+    : w.roleGate === "超管" ? "超级管理员" : w.roleGate === "门槛者" ? "另一位有审批批准权限和对应业务权限的管理员" : w.roleGate;
 }
 
 function isCurrentOperator(w: A2OperationRow, username: string | undefined) {
