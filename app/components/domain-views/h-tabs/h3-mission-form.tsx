@@ -28,7 +28,7 @@ export function missionFormErrors(state: H3MissionForm): Record<string, string> 
 }
 
 const SUBJECT_TEXT: Record<string, string> = {
-  DAY_ONE: "首日任务",
+  DAY_ONE: "新手任务",
   WEEKLY_T1: "每周一档任务",
   WEEKLY_T2: "每周二档任务",
 };
@@ -95,7 +95,7 @@ export function H3MissionFormDrawer({ missionType, onClose, onReview }: {
               <div><dt>任务编号</dt><dd>不能和已有的重复，建好后不能改</dd></div>
               <div><dt>状态</dt><dd><StatusTag tone="neutral">已停用</StatusTag></dd></div>
               <div><dt>用户什么时候看到</dt><dd>绑定条件并启用后才发给用户</dd></div>
-              {missionType === "DAY_ONE" && <div><dt>奖励</dt><dd>做完全部首日任务才按「首日奖励」统一发</dd></div>}
+              {missionType === "DAY_ONE" && <div><dt>奖励</dt><dd>不单发，做完全部新手任务统一领「新手任务奖励」</dd></div>}
               {missionType !== "DAY_ONE" && <div><dt>怎么生效</dt><dd>{reward == null ? "—" : needsApproval ? "奖励大于 0：提交审批，批准前不建" : "奖励是 0：确认后直接建好"}</dd></div>}
             </dl>
             {missionType === "DAY_ONE" && needsApproval && <Notice tone="neutral">奖励大于 0 要提交审批，另一位超级管理员批准后才建。</Notice>}

@@ -91,11 +91,11 @@ export const H3_BINDING_EVENT_LABELS: Record<string, string> = {
   H3_COMPUTE_COMPLETED_50: "完成50笔已验证AI任务",
   H3_REFERRAL_REGISTERED: "有效邀请注册",
   H3_EXCHANGE_COMPLETED: "完成一次兑换",
-  H3_DAY_ONE_PROFILE_SAVED: "保存个人资料（首日）",
+  H3_DAY_ONE_PROFILE_SAVED: "保存个人资料（新手任务）",
   H3_DAY_ONE_CARD_BOUND: "绑定支付卡（需服务商确认）",
-  H3_DAY_ONE_EARN_PAGE_VIEWED: "查看收益页（首日）",
-  H3_DAY_ONE_STORE_PAGE_VIEWED: "查看商城页（首日）",
-  H3_DAY_ONE_S1_ROI_VIEWED: "查看 UVELBox S1 收益估算（首日）",
+  H3_DAY_ONE_EARN_PAGE_VIEWED: "查看收益页（新手任务）",
+  H3_DAY_ONE_STORE_PAGE_VIEWED: "查看商城页（新手任务）",
+  H3_DAY_ONE_S1_ROI_VIEWED: "查看 UVELBox S1 收益估算（新手任务）",
 };
 export const H3_BINDING_USER_FIELDS = ["user_id", "inviter_user_id"];
 export const H3_BINDING_USER_FIELD_LABELS: Record<string, string> = {
@@ -221,7 +221,7 @@ export const activeUnbound = (task: QuestTask) => taskStatusOf(task) === "active
 
 export function TaskStatusTag({ task }: { task: QuestTask }) {
   const status = taskStatusOf(task);
-  if (status === "active") return <StatusTag tone="ok" icon={CircleCheck} explain="已启用：之后注册的用户（首日任务）、之后发布的每周任务里会有它。已经发给用户的那一份不受影响。">已启用</StatusTag>;
+  if (status === "active") return <StatusTag tone="ok" icon={CircleCheck} explain="已启用：之后注册的用户（新手任务）、之后发布的每周任务里会有它。已经发给用户的那一份不受影响。">已启用</StatusTag>;
   if (status === "paused") return <StatusTag tone="neutral" icon={CircleSlash} explain="已停用：之后注册和之后发布的每周任务里没有它；已经发给用户的那一份照旧。新建的任务也是这个状态。">已停用</StatusTag>;
   if (status === "archived") return <StatusTag tone="done" icon={Archive} explain="已归档：不能再启用，名称、类别和文字不能改；奖励仍可维护。归档后才能删除。">已归档</StatusTag>;
   return <StatusTag tone="warn" icon={CircleAlert} explain="后端返回了这页不认识的状态，请联系后端核对。">状态未知</StatusTag>;
@@ -330,7 +330,7 @@ export function DayOneTimeline({ triReward, eligibilityHours }: { triReward: str
     : <b data-empty="">{fallback}</b>;
   const unset = triReward.trim() ? "读不懂" : "还没设置";
   return (
-    <figure className="h3-timeline" aria-label={`首日奖励时间线，按领取时刻：注册后 24 小时内全额${tri ? ` ${tri.full} UVT` : ""}，${grace ? `到注册后 ${hours} 小时宽限${tri ? ` ${tri.grace} UVT` : ""}，` : ""}之后过期`}>
+    <figure className="h3-timeline" aria-label={`新手任务奖励时间线，按领取时刻：注册后 24 小时内全额${tri ? ` ${tri.full} UVT` : ""}，${grace ? `到注册后 ${hours} 小时宽限${tri ? ` ${tri.grace} UVT` : ""}，` : ""}之后过期`}>
       <div className="h3-timeline-track" data-grace={grace ? String(Math.min(Math.max(Math.round((hours! - 24) / 24), 1), 6)) : "0"}>
         <div className="h3-tl-seg" data-kind="full">
           <span className="h3-tl-tick">注册</span>
@@ -349,7 +349,7 @@ export function DayOneTimeline({ triReward, eligibilityHours }: { triReward: str
           </div>
         )}
         <div className="h3-tl-seg" data-kind="expired">
-          <span className="h3-tl-tick">{hours == null ? "资格到期 —" : grace ? `${hours} 小时` : "24 小时"}</span>
+          <span className="h3-tl-tick">{hours == null ? "完成期限 —" : grace ? `${hours} 小时` : "24 小时"}</span>
           <i aria-hidden />
           <span className="h3-tl-name">过期</span>
           <span className="h3-tl-amount"><b data-empty="">0</b><span>UVT</span></span>
@@ -358,10 +358,10 @@ export function DayOneTimeline({ triReward, eligibilityHours }: { triReward: str
       </div>
       <figcaption className="h3-timeline-cap">
         按领取时离注册多久分档，全额时限固定 24 小时
-        <Explain label="首日时间怎么算" content={<>
-          <p>用户注册时，系统给他定下这一份首日任务：任务、完成条件、名称、类别、跳转、三档奖励、任务加成和资格期限都按那一刻的设置，之后改设置不影响他。</p>
-          <p>做完全部任务才能领。按领取那一刻算：注册后不到 24 小时领拿全额；之后、资格期限到之前领拿宽限奖励；到资格期限那一刻（含）按过期处理，不能领取。做完了没及时领，会落到后一档。</p>
-          <p>全额和宽限可以设成一样多，不一定「变少」。{hours == null ? "资格期限这次没读到。" : ""}</p>
+        <Explain label="奖励档位怎么算" content={<>
+          <p>用户注册时，系统给他定下这一份新手任务：任务、完成条件、名称、类别、跳转、三档奖励、任务加成和完成期限都按那一刻的设置，之后改设置不影响他。</p>
+          <p>做完全部任务才能领。按领取那一刻算：注册后不到 24 小时领拿全额；之后、完成期限到之前领拿宽限奖励；到了完成期限就过期，不能领取。做完了没及时领，会落到后一档。</p>
+          <p>全额和宽限可以设成一样多，不一定「变少」。{hours == null ? "完成期限这次没读到。" : ""}</p>
         </>} />
       </figcaption>
     </figure>
