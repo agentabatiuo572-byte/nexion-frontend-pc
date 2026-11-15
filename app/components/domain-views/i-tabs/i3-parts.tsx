@@ -219,7 +219,7 @@ export type I3RecoveryRow = { key: string; name: string; object: string; change?
  */
 export function I3RecoveryNotice({ rows }: { rows: I3RecoveryRow[] }) {
   if (rows.length === 0) return null;
-  const submitted = rows.filter((row) => row.submitted && !row.expired).length;
+  const submitted = rows.filter((row) => row.submitted).length;
   const title = [rows.length - submitted > 0 && `${rows.length - submitted} 项操作结果未知`, submitted > 0 && `${submitted} 张申请已提交，状态未查到`].filter(Boolean).join(" · ");
   return (
     <Notice tone="warn" title={<>{title}<Explain label="结果未知怎么处理" content={<>
