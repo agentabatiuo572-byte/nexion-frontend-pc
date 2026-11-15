@@ -18,9 +18,9 @@ import type { ConfirmReq } from "./types";
 
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
   const [pendingReason, setPendingReason] = useState(() => req.freezePendingInputs ? req.getPendingReason?.() : undefined);
-  const [draftReason, setReason] = useState(pendingReason ?? "");
+  const [draftReason, setReason] = useState(pendingReason ?? req.initialReason ?? "");
   const reason = pendingReason ?? draftReason;
-  const [value, setValue] = useState(() => req.freezePendingInputs ? req.getPendingValue?.() ?? "" : "");
+  const [value, setValue] = useState(() => (req.freezePendingInputs ? req.getPendingValue?.() : undefined) ?? req.initialValue ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 刚打开不报错：字数不够等失焦或点过提交才用警告色（DP-06）。

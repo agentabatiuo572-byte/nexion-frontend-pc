@@ -62,6 +62,9 @@ export type ActionConfirmReq = {
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type ConfirmReq = {
+  /** Editable inputs carried from an explicitly reviewed first-attempt conflict. */
+  initialReason?: string;
+  initialValue?: string;
   /** I1 retains the exact direct request after an unknown outcome; other callers keep their existing form behavior. */
   freezePendingInputs?: boolean;
   getPendingReason?: () => string | undefined;

@@ -532,7 +532,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   // ── 真实事件的五类概率:一次编辑全部类型，不静默改动另一类。──
   const [distDrawer, setDistDrawer] = useState(false);
   const [distDraft, setDistDraft] = useState<Record<string, string>>({});
+  const [distReason, setDistReason] = useState("");
   const openDistDrawer = () => {
+    setDistReason("");
     setDistDraft(Object.fromEntries(SOCIAL_DIST.map((item) => [item.key, String(item.pct)])));
     setDistDrawer(true);
   };
@@ -544,6 +546,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     })
     && distDraftTotal === 100;
   const submitDistribution = () => openConfirm({ briefKind: "config",
+    initialReason: distReason,
     errorHandled: true,
     action: <>保存 业务动态事件概率分布</>,
     title: "保存事件概率",
@@ -583,7 +586,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           rows={orderDist(latest).map((item) => conflictRow(operatorCopyText(item.name), `${Number(item.pct)}%`, distDraft[item.key] === undefined ? "—" : `${Number(distDraft[item.key])}%`))}
           note="你填的五类概率留在编辑框里；这个确认框带不回理由，保存时再填一次。"
           onReread={() => void conflictReview.reread()} onClose={conflictView.hide}
-          onRebuild={() => finish(() => setDistDrawer(true))} onDiscard={() => finish(() => setDistDrawer(false))} />
+          onRebuild={() => finish(() => { setDistReason(conflict.requested.reason); setDistDrawer(true); })} onDiscard={() => finish(() => setDistDrawer(false))} />
       : <IConflictPending subject={subject} onOpen={conflictView.show} />;
   })();
 
