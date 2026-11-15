@@ -13,7 +13,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { BlockState, Button, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Steps } from "@/app/components/rd";
 import { amountText, formatTime } from "./h4-promotion-ui";
 import { ApprovalFact, effectApproval, effectDirect } from "./h4-legacy-parts";
-import { H4ConflictCompare, h4ConflictGroups, type H4ConflictGroup } from "./h4-conflict-compare";
+import { H4ConflictCompare, h4ConflictGroups, type H4CompareSection, type H4ConflictGroup, type H4Overwrite } from "./h4-conflict-compare";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 
 const empty = (): RaffleDraft => ({ id: "", titleZh: "", titleEn: "", titleVi: "", startsAt: "", drawAt: "", prizes: [] });
@@ -139,21 +139,32 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
   // 三方对比：奖项逐项逐字段列，名称、金额、名额原样写，不舍入。
   const review = base && draft ? conflictReview.current : null;
   const PRIZE_FIELD: Record<string, string> = { nameZh: "中文名称", nameEn: "英文名称", nameVi: "越南语名称", rewardType: "奖励类型", amount: "每名金额", productNo: "设备商品编号", quantity: "中奖名额", id: "奖项" };
+  const prizeName = (id: string) => {
+    const leaf = review?.fields.find(field => field.path === `prizes.${encodeURIComponent(id).replace(/\./g, "%2E")}.nameZh`);
+    return String(leaf?.latest ?? leaf?.mine ?? leaf?.opened ?? "") || "未命名奖项";
+  };
   const compareGroups: H4ConflictGroup[] = review ? h4ConflictGroups(review.fields,
     path => path.startsWith("prizes.") ? path.split(".").slice(0, 3).join(".") : path.split(".")[0],
     key => {
       const [, id, field] = key.split(".");
-      if (key.startsWith("prizes.")) return `奖项 ${review.fields.filter(item => /^prizes\.[^.]+\.id$/.test(item.path)).findIndex(item => item.path === `prizes.${id}.id`) + 1} · ${PRIZE_FIELD[field] ?? "其他"}`;
+      if (key.startsWith("prizes.")) return `${prizeName(decodeURIComponent(id))} · ${PRIZE_FIELD[field] ?? "其他"}`;
       return ({ enabled: "开放报名", titleZh: "抽奖名称 · 中文", titleEn: "抽奖名称 · 英文", titleVi: "抽奖名称 · 越南语", startsAt: "报名开始", drawAt: "开奖时间", id: "本期编号" } as Record<string, string>)[key] ?? "其他";
     },
     (key, raw, which) => key === "enabled" ? raw === true ? "开放" : raw === false ? "关闭" : "—"
       : key === "startsAt" || key === "drawAt" ? raw ? `${formatTime(raw as string, "Asia/Shanghai")}（北京时间）` : "未配置"
       : key.endsWith(".rewardType") ? raw === "DEVICE" ? "设备" : raw === undefined ? "—" : String(raw)
-      : key.startsWith("prizes.") && raw === undefined ? "没有这一项"
-      : key.endsWith(".amount") ? `${amountText(String(raw))} ${PRIZE_UNIT[review.fields.find(field => field.path === `${key.slice(0, -7)}.rewardType`)?.[which] as RafflePrize["rewardType"]]}`
+      : key.startsWith("prizes.") && raw === undefined ? "—"
+      : key.endsWith(".amount") ? (type => type === "DEVICE" ? `${Number(raw)} 台` : `${amountText(String(raw))} ${PRIZE_UNIT[type]}`)(review.fields.find(field => field.path === `${key.slice(0, -7)}.rewardType`)?.[which] as RafflePrize["rewardType"])
       : raw === undefined || raw === null || raw === "" ? "—" : String(raw)) : [];
   // Identity sets are compared with the opened snapshot on both sides. Reordering is harmless;
   // additions/deletions require the explicit whole-draft choice, never an implicit replacement.
+  const prizeKey = (id: string) => encodeURIComponent(id).replace(/\./g, "%2E");
+  /** 从对比数据里按奖项拼回某一份的奖项；那一份没有这一项时是 undefined。 */
+  const prizeAt = (id: string, which: "opened" | "latest" | "mine") => {
+    const leaves = review?.fields.filter(field => field.path.startsWith(`prizes.${prizeKey(id)}.`)) ?? [];
+    if (leaves.find(field => field.path === `prizes.${prizeKey(id)}.id`)?.[which] === undefined) return undefined;
+    return Object.fromEntries(leaves.map(field => [field.path.split(".")[2], field[which]])) as unknown as RafflePrize;
+  };
   const prizeChanges = (which: "latest" | "mine") => {
     const ids = review?.fields.filter(field => /^prizes\.[^.]+\.id$/.test(field.path)) ?? [];
     return {
@@ -163,6 +174,49 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
   };
   const structureChanges = { latest: prizeChanges("latest"), mine: prizeChanges("mine") };
   const mergeBlocked = Object.values(structureChanges).some(change => change.added.length || change.removed.length);
+  // 对比表按奖项分组：最新的顺序，然后是你新加的、两边都没有了的；增删过的奖项整项比一行。
+  const prizeIds = [...new Set([...(base?.prizes.map(prize => prize.id) ?? []), ...(draft?.prizes.map(prize => prize.id) ?? []),
+    ...(review?.fields.filter(field => /^prizes\.[^.]+\.id$/.test(field.path)).map(field => String(field.opened)).filter(id => id !== "undefined") ?? [])])];
+  const prizeSummary = (prize: RafflePrize | undefined) => prize ? `${prize.nameZh || "未命名"} ${prizeText(prize)} × ${prize.quantity}` : "没有这一项";
+  const marks = (id: string) => [
+    structureChanges.latest.added.includes(id) && "别人新加", structureChanges.latest.removed.includes(id) && "别人删了",
+    structureChanges.mine.added.includes(id) && "你新加的", structureChanges.mine.removed.includes(id) && "你删了",
+  ].filter((mark): mark is string => !!mark);
+  /** 增删过的奖项按整份提交后会怎样；没有别人的修改被换掉时为空。 */
+  const overwriteNote = (id: string) => {
+    const opened = prizeAt(id, "opened"), latest = prizeAt(id, "latest"), mine = prizeAt(id, "mine");
+    if (!marks(id).length) return "";
+    return latest && !opened && !mine ? "别人新加的，提交后删掉"
+      : !latest && opened && mine ? "别人删了，提交后恢复"
+      : latest && opened && !mine && JSON.stringify(latest) !== JSON.stringify(opened) ? "别人改过、你删了，提交后删掉" : "";
+  };
+  const prizeSections: H4CompareSection[] = review ? [
+    { key: "raffle", rows: compareGroups.filter(group => !group.key.startsWith("prizes.")) },
+    ...prizeIds.map(id => {
+      const opened = prizeAt(id, "opened"), latest = prizeAt(id, "latest"), mine = prizeAt(id, "mine"), tags = marks(id);
+      const rows = compareGroups.filter(group => group.key.startsWith(`prizes.${prizeKey(id)}.`)).map(group => ({ ...group, label: PRIZE_FIELD[group.key.split(".")[2]] ?? "其他" }));
+      const lost = overwriteNote(id);
+      const whole = tags.length ? { opened: prizeSummary(opened), latest: prizeSummary(latest), byOther: JSON.stringify(opened) !== JSON.stringify(latest), byMe: JSON.stringify(opened) !== JSON.stringify(mine),
+        mine: <>{prizeSummary(mine)}{lost && <span className="h4-compare-lost">{`按我填的提交会${lost.slice(lost.lastIndexOf("提交后") + 3)}`}</span>}</> } : undefined;
+      return { key: id, title: prizeName(id), tags: tags.map(mark => <StatusTag key={mark} tone={mark.startsWith("别人") ? "warn" : "neutral"}>{mark}</StatusTag>), rows, whole };
+    }),
+  ].filter((section: H4CompareSection) => section.rows.length || section.whole) : [];
+  // 整份按我填的提交时，会被换掉的别人的修改：增删过的奖项按整项说，其余逐项写「别人改成 → 提交后」。
+  const overwrites: H4Overwrite[] = review ? [
+    ...compareGroups.filter(group => group.overwritesOther && !prizeIds.some(id => marks(id).length && group.key.startsWith(`prizes.${prizeKey(id)}.`)))
+      .map(group => ({ key: group.key, label: group.label, latest: group.latest, mine: group.mine })),
+    ...prizeIds.flatMap(id => { const note = overwriteNote(id); return note ? [{ key: `prize:${id}`, label: prizeName(id), note: `：${note}` }] : []; }),
+  ] : [];
+  const sideText = (side: { added: string[]; removed: string[] }) => [
+    side.removed.length && `删了${side.removed.map(id => `「${prizeName(id)}」`).join("")}`,
+    side.added.length && `加了${side.added.map(id => `「${prizeName(id)}」`).join("")}`,
+  ].filter(Boolean).join("，");
+  const structure = mergeBlocked ? <div className="h4-compare-structure">
+    <p><b>奖项有增删</b></p>
+    {sideText(structureChanges.latest) && <p>别人{sideText(structureChanges.latest)}。</p>}
+    {sideText(structureChanges.mine) && <p>你{sideText(structureChanges.mine)}。</p>}
+    <p>有增删时，系统不替你决定用哪份奖项表。可以按你填的整份提交，或关掉配置、重新打开最新的这一期再改。</p>
+  </div> : undefined;
   // Latest configuration plus only the draft's changed fields, matched by prize id.
   const mergeConflict = () => {
     if (!base || !draft || mergeBlocked) return;
@@ -223,7 +277,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
         others={<Button disabled={saving} onClick={close}>关闭配置</Button>}
         primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!write ? "没有修改创世抽奖的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : saveBlocked ? "这一期不能再改" : review ? "先在上面选一种继续" : undefined} onClick={() => save()}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
       {draft && <div className="h4-dialog-body">
-        {review && <H4ConflictCompare groups={compareGroups} mergeDisabledReason={mergeBlocked ? review.message : undefined} onMerge={mergeConflict} onKeepMine={keepMine} />}
+        {review && <H4ConflictCompare groups={compareGroups} sections={prizeSections} overwrites={overwrites} structure={structure} mergeDisabledReason={mergeBlocked ? "奖项有增删时不能合并。" : undefined} onMerge={mergeConflict} onKeepMine={keepMine} />}
         {merged > 0 && <Notice tone="neutral" title="已合并，还没保存" action={<Button size="sm" variant="ghost" onClick={() => setMerged(0)}>知道了</Button>}>{`表单是最新的这一期，放回了你改的 ${merged} 项。核对后点「保存配置」。`}</Notice>}
         <fieldset disabled={formLocked} className="h4-fieldset">
         {base && <Field label="开放报名" explain={enableBlocked ? (base.totalEntries > 0 ? "已有人报名，不能再关闭。" : "已开奖或正在开奖。") : "开放要另一位超级管理员批准；还没人报名时可以关回草稿。"}>
@@ -241,7 +295,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange, onApprovalCompleted
           </div>
           <ol className="h4l-prizes" aria-label="奖项">
             {draft.prizes.map((prize, index) => <li key={prize.id} className="h4l-prize">
-              <header><b>奖项 {index + 1}</b><span className="h4-dim">{prizeText(prize)} × {prize.quantity}</span><Button size="sm" variant="danger-outline" icon={<Trash2 size={13} aria-hidden />} disabled={formLocked || locked} onClick={() => setDraft({ ...draft, prizes: draft.prizes.filter(item => item.id !== prize.id) })}>移除</Button></header>
+              <header><b>奖项 {index + 1}{prize.nameZh.trim() ? ` · ${prize.nameZh.trim()}` : ""}</b><span className="h4-dim">{prizeText(prize)} × {prize.quantity}</span><Button size="sm" variant="danger-outline" icon={<Trash2 size={13} aria-hidden />} disabled={formLocked || locked} onClick={() => setDraft({ ...draft, prizes: draft.prizes.filter(item => item.id !== prize.id) })}>移除</Button></header>
               <div className="rd-form-grid" data-cols="2" data-dense="">
                 {(["Zh", "En", "Vi"] as const).map((lang, i) => <Field key={lang} label={`奖项名称 · ${["中文", "英文", "越南语"][i]}`}><Input value={prize[`name${lang}`]} onChange={event => prizePatch(prize.id, { [`name${lang}`]: event.target.value })} /></Field>)}
                 <Field label="奖励类型"><Select aria-label="奖励类型" disabled={formLocked || locked} value={prize.rewardType} onChange={v => prizePatch(prize.id, { rewardType: v as RafflePrize["rewardType"], ...(v === "DEVICE" ? { amount: 1 } : {}) })} options={[{ value: "UVT", label: "UVT" }, { value: "USDT", label: "USDT" }, { value: "DEVICE", label: "设备" }]} /></Field>

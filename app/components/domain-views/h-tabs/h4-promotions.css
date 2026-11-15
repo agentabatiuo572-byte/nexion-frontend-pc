@@ -348,3 +348,15 @@
 .h4-dialog-body .h4-compare-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .h4-dialog-body .h4-compare-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
 .h4-dialog-body .h4-compare-choice p { margin: 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.h4-dialog-body .h4-compare-table .h4-compare-section th { padding-top: 12px; color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.h4-dialog-body .h4-compare-section th > span { margin-right: 8px; }
+.h4-dialog-body .h4-compare-section .rd-tag + .rd-tag { margin-left: 6px; }
+.h4-dialog-body .h4-compare-lost { display: block; margin-top: 2px; color: var(--rd-warn); }
+.h4-dialog-body .h4-compare-lost-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; color: var(--rd-text-2); font-size: var(--rd-text-aux); }
+.h4-dialog-body .h4-compare-lost-list b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.h4-dialog-body .h4-compare-structure { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel); font-size: var(--rd-text-aux); color: var(--rd-text-2); }
+.h4-dialog-body .h4-compare-structure p { margin: 0; }
+.h4-dialog-body .h4-compare-structure b { color: var(--rd-text); font-weight: var(--rd-weight-semibold); }
+.h4-dialog-body .h4-compare-table tbody[data-section] tr:not(.h4-compare-section) th { padding-left: 24px; }
+.h4-dialog-body .h4-compare-table tbody[data-section] .h4-compare-section + tr > * { border-top: 0; }
+.h4-dialog-body .h4-compare-tags { display: flex; flex-wrap: wrap; gap: 6px; }
