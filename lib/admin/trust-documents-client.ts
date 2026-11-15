@@ -43,7 +43,7 @@ interface ApiResult<T> { code: number; message?: string; data?: T }
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const write = init?.method === "POST";
   const unknownMessage = path.endsWith("/restore-default")
-    ? "资料操作结果未知，文件可能已经对外公开；请重新读取核对。"
+    ? "App 可能已经改回随系统发布的默认文件。"
     : "上传结果未知，文件可能已经对外公开；请重新读取，核对文件指纹、大小和上传时间。";
   let response: Response;
   try { response = await guardedFetch(`/api/admin/content/trust-documents${path}`, { ...init, cache: "no-store" }); }

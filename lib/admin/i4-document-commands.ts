@@ -84,7 +84,8 @@ async function send(command: I4DocumentCommand, retry: boolean, file?: File): Pr
   if (updated.slot !== command.document.slot || (command.mode === "restore" ? updated.source !== "DEFAULT"
     : updated.source !== "UPLOADED" || updated.sha256 !== command.file!.sha256 || updated.sizeBytes !== command.file!.size
       || ["version", "language", "referenceNo", "verifyUrl"].some(key => (updated[key as keyof TrustDocument] ?? "") !== command.fields[key as keyof TrustDocumentUpload].trim()))) {
-    throw new OutcomeUnknownError("没能确认这次操作的结果，文件可能已经对外公开；记录会留着，请重新读取核对。");
+    throw new OutcomeUnknownError(command.mode === "restore" ? "App 可能已经改回随系统发布的默认文件。"
+      : "没能确认这次操作的结果，文件可能已经对外公开；记录会留着，请重新读取核对。");
   }
   await finish(command);
 }
