@@ -17,6 +17,7 @@ import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { FundCheckButtons, FundCheckResult, FundClosureModal, FundSettledNotices, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
@@ -83,7 +84,7 @@ type Param = (typeof PARAMS)[number];
 const paramOf = (key: ParamKey) => PARAMS.find((param) => param.key === key)!;
 
 const READING = "正在读取最新数据，读完再操作";
-const LOCKED = "先处理上方的待确认，再调整";
+const LOCKED = "先处理上方结果未知的修改，再调整";
 const NO_WRITE = "这个账号现在没有调整权限，不能重试，请在调整历史里核对";
 const RETRY_AGAIN = "原操作已被拒绝，再重试结果一样";
 
@@ -243,7 +244,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       if (!unknown) throw cause;
       loadEpoch.current += 1;
       setData(null);
-      toast("保存结果未确认，不要重新修改。先看页面上方的提示。", "warn");
+      toast("保存结果未知，不要重新修改。先看页面上方的提示。", "warn");
       await load();
       return;
     }
@@ -258,7 +259,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   const retryPending = async (record: PendingFx) => {
     if (record.expiresAt <= Date.now() || !canManage || retryRejected) return;
     if (!pendingFx.isDurablyStored(record.fingerprint, record.commandKey)) {
-      setPendingNote("浏览器里查不到这条记录，本次没有发送。待确认继续保留，请在调整历史里核对。");
+      setPendingNote("浏览器里查不到这条记录，本次没有发送。记录继续保留，请在调整历史里核对。");
       return;
     }
     setPendingNote("");
@@ -276,6 +277,8 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   };
 
   const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [closing, setClosing] = useState(false);
+  const [settled, setSettled] = useState<FundSettled[]>([]);
   const checkProposalInvestigation = async (record: PendingFx, evidence?: FundCommandEvidence) => {
     setRetrying(true);
     try {
@@ -283,22 +286,22 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (fundCommandSettled(receipt)) {
         pendingFx.forget(record.fingerprint, record.commandKey);
+        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: `把${paramOf(record.param).label}改成 ${valueText(record.param, record.after)}`, status: receipt!.originalStatus }]);
         syncPending(); setRetryRejected(""); setPendingNote(""); await load();
-      } else if (!receipt) setPendingNote(displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED")));
+      }
       return receipt;
     } catch (cause) {
       const error = displayAdminError(cause);
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
-      setPendingNote(error); throw cause;
+      throw cause;
     } finally { setRetrying(false); }
   };
   const releasePending = (record: PendingFx) => {
     setReleasing(false);
-    if (record.proposal) { void checkProposalInvestigation(record).catch(() => undefined); return; }
     // Direct D6_FX_QUOTE_UPDATE has no supported investigation origin in this backend.
     pendingFx.forget(record.fingerprint, record.commandKey);
     syncPending(); setRetryRejected(""); setPendingNote("");
-    toast("已解除本页待确认；后端原操作未结案时仍会阻止新提交", "success");
+    toast("已解除本页这条原操作记录；后端原操作没有结案时仍会阻止新提交", "success");
   };
 
   /** 查原审批单只收尾这次提交的未知结果，不把待批当成已生效。 */
@@ -306,14 +309,20 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     setRetrying(true);
     try {
       const ticket = await fetchA2ProposalByKey(record.commandKey, true);
-      if (!ticket) { setPendingNote("暂未查到原审批单，结果仍未知，原命令继续保留。"); return; }
+      if (!ticket) { setPendingNote("暂未查到原审批单，结果仍未知，记录继续保留。"); return; }
       pendingFx.forget(record.fingerprint, record.commandKey);
       syncPending();
       await load();
       toast(`已找回原审批单 ${ticket.id}，请核对审批进度；当前值以本页回读为准`, "success");
     } catch (cause) {
-      setPendingNote(`查询没有成功：${displayAdminReadError(cause)}。原命令继续保留。`);
+      setPendingNote(`查询没有成功：${displayAdminReadError(cause)}。记录继续保留。`);
     } finally { setRetrying(false); }
+  };
+  /** 查询原结果：先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录。两次都是读取。 */
+  const lookupProposal = async (record: PendingFx) => {
+    await queryOriginal(record);
+    const left = pendingFx.list()[0];
+    if (left?.commandKey === record.commandKey) await checkProposalInvestigation(left).catch(() => undefined);
   };
 
   /** 先填新值再进入共用确认框，方向和按钮始终一致；输入框不随方向跳动。 */
@@ -427,17 +436,18 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const what = `把${param.label}改成 ${valueText(pending.param, pending.after)}`;
     const retryBlock = expired ? "已超过 24 小时，不能再重试" : !canManage ? NO_WRITE : retryRejected ? RETRY_AGAIN : undefined;
     return (
-      <Notice tone="warn" title="保存结果未确认，已停止展示旧的买入价" actionBelow action={<>
+      <Notice tone="warn" title="保存结果未知，已停止展示旧的买入价" actionBelow action={<>
+        {pending.proposal && canQueryOriginal && <FundCheckButtons record={pending} outcome={investigationResults[pending.commandKey]} busy={retrying}
+          onCheck={() => void lookupProposal(pending)} onClose={() => setClosing(true)} />}
         <span data-pair="">
-          <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原操作重试</Button>
-          {!retryBlock && <Explain label="按原操作重试会怎样" content="重发原内容和原命令号，已成功的不会重复执行。" />}
+          <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原请求重试</Button>
+          {!retryBlock && <Explain label="按原请求重试会怎样" content="重发原内容，已成功的不会重复执行。" />}
         </span>
-        {pending.proposal && canQueryOriginal && <Button size="sm" loading={retrying} onClick={() => void queryOriginal(pending)}>查询原审批单</Button>}
-        {retryRejected && !expired && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除待确认</Button>}
+        {retryRejected && !expired && !pending.proposal && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
         {auditLink && !expired && <span>到{auditLink}核对</span>}
-        <Explain label="技术信息" content={`命令号 ${pending.commandKey} ｜ 原版本 ${pending.expectedVersion} ｜ 理由 ${pending.reason}`}>技术信息</Explain>
+        <Explain label="技术信息" content={`原请求编号 ${pending.commandKey} ｜ 原版本 ${pending.expectedVersion} ｜ 理由 ${pending.reason}`}>技术信息</Explain>
       </>}>
-        <p><KeepText text={`${when}（${zone}）${what} 的操作可能已经提交，${data ? "下面是重新读到的值。" : ""}确认前不能再改。`} phrases={["确认前不能再改。"]} /></p>
+        <p><KeepText text={`${when}（${zone}）${what} 的操作可能已经提交，${data ? "下面是重新读到的值。" : ""}有结果前不能再改。`} phrases={["有结果前不能再改。"]} /></p>
         {/* 过期后不能重试、不能解除，也不引导关标签页绕过：如实写怎么核对、交给谁（F4、BE-03）。 */}
         {expired && (canAudit
           ? <p>已超过 24 小时，不能再重试。请财务负责人到{auditLink}和下面的调整历史核对这次修改有没有生效。</p>
@@ -445,21 +455,26 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         {!expired && !canManage && <p>{NO_WRITE}。</p>}
         {retryRejected && !expired && <>
           <p>重试没有成功：{retryRejected}</p>
-          <p>先核对原审批单和调整历史；列表里找不到记录不能证明没执行。「解除待确认」只清本页记录，不会替后端原操作结案，后端仍可能阻止新提交。</p>
+          <p>{pending.proposal ? "先查询原结果；查不到审批单不能证明没执行。" : "先到调整历史核对；列表里找不到记录不能证明没执行。「解除原操作记录」只清本页这条记录，后端原操作没有结案时仍会阻止新提交。"}</p>
         </>}
         {pendingNote && <p>{pendingNote}</p>}
+        {pending.proposal && <FundCheckResult record={pending} outcome={investigationResults[pending.commandKey]} expired={expired} canRetry={!retryBlock} copy={{ where: "到操作记录与审批和下面的调整历史核对" }} hideTech />}
+        {!pending.proposal && <p>直接修改查不了原结果，请在下面的调整历史里核对。</p>}
       </Notice>
     );
   })();
-  const releaseModal = pending && releasing && (
-    <ReleaseModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} onCancel={() => setReleasing(false)} onConfirm={() => releasePending(pending)} />
-  );
+  const settledNotices = <FundSettledNotices items={settled} onDismiss={key => setSettled(current => current.filter(item => item.key !== key))} />;
+  const releaseModal = <>
+    {pending && releasing && <ReleaseModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} onCancel={() => setReleasing(false)} onConfirm={() => releasePending(pending)} />}
+    {pending && closing && <FundClosureModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} createdAt={pending.createdAt}
+      onClose={() => setClosing(false)} onSubmit={async evidence => { await checkProposalInvestigation(pending, evidence); setClosing(false); }} />}
+  </>;
 
   if (!data) {
     return (
       <>
         {header}
-        {pendingNotice}
+        {settledNotices}{pendingNotice}
         {loading
           ? <BlockState state="loading" title="正在读取汇率设置…" />
           : <BlockState state="error" title="汇率设置加载失败"
@@ -485,7 +500,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     <>
       {header}
 
-      {pendingNotice}
+      {settledNotices}{pendingNotice}
 
       {/* 正常时一句话、不放大（VS-23）；有待确认时上面的提示条就是结论。 */}
       {loading

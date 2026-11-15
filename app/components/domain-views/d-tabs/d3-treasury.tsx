@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Download, Landmark, RefreshCw, ShieldCheck } from "lucide-react";
 import { OperationConfirmModal, useToast, type OperatorBriefKind } from "../design-kit";
 import { ForecastConfigImpact } from "@/app/components/forecast-config-preview";
-import { KeepText, BlockState, Button, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Fold, Input, IrreversibleTag, Modal, Notice, PageHeader, PageTabs, RdPage, ReleaseModal, Select, StatusTag, useTabIds } from "@/app/components/rd";
+import { KeepText, BlockState, Button, Change, Conclusion, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Fold, Input, IrreversibleTag, Modal, Notice, PageHeader, PageTabs, RdPage, Select, StatusTag, useTabIds } from "@/app/components/rd";
 import { B2RequestError, previewB2ForecastConfig, type ForecastConfigPreview } from "@/lib/admin/b2-client";
 import { useB2LiquidityHistory } from "@/lib/admin/b-restoration-client";
 import { businessClock, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
@@ -36,6 +36,7 @@ import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-mess
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { FundCheckButtons, FundCheckResult, FundClosureModal, FundSettledNotices, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandRecord, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { exportScope, treasuryCommandKey, treasuryCommands, type TreasuryExportKind } from "@/lib/admin/treasury-commands";
 import { LeaveDialog, useLeaveGuard, type EditorSwitch } from "../i-tabs/i5-writes";
@@ -98,6 +99,8 @@ interface ConfirmRequest {
 /** 页面上方一条结果未知的操作。重试只发存下来的内容，这里没有能改的东西（OP-94）。 */
 interface PendingItem {
   investigationRecord: FundCommandRecord;
+  /** 结论条和核查结案框里的「原操作」。 */
+  label: string;
   commandKey: string;
   /** 完整原记录供核对和复制；不从当前表单重建。 */
   record: unknown;
@@ -222,7 +225,8 @@ export function D3Treasury() {
   const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
   /** 最近一次重试被后端明确拒绝的命令号，只有它们才能人工解除。按命令号记，解除后重新提交的新命令不沿用。 */
   const [retryRejected, setRetryRejected] = useState<string[]>([]);
-  const [releasing, setReleasing] = useState<PendingItem | null>(null);
+  const [closing, setClosing] = useState<PendingItem | null>(null);
+  const [settled, setSettled] = useState<FundSettled[]>([]);
   const [refreshAsk, setRefreshAsk] = useState(false);
   const [unknownTick, setUnknownTick] = useState(0);
 
@@ -349,7 +353,7 @@ export function D3Treasury() {
       setUnknownTick((tick) => tick + 1);
       if (!unknown) throw err;
       onUnknown?.();
-      toast("结果未确认，不要重复操作。到页面上方核对或按原操作重试。", "warn");
+      toast("结果未知，不要重复操作。到页面上方查询原结果，或按原请求重试。", "warn");
       return;
     }
     forget();
@@ -598,7 +602,7 @@ export function D3Treasury() {
   const runRetry = async () => {
     if (!retry) return;
     // 过期和查不到记录都不发送，也不解除：解除只在后端明确拒绝之后（OP-96、OP-153）。
-    const stale = retry.expiresAt <= Date.now() ? RETRY_EXPIRED : !retry.allowed ? RETRY_NO_PERMISSION : !retry.stored() ? "浏览器里查不到这条记录，本次没有发送。待确认继续保留，请到操作记录与审批核对。" : "";
+    const stale = retry.expiresAt <= Date.now() ? RETRY_EXPIRED : !retry.allowed ? RETRY_NO_PERMISSION : !retry.stored() ? "浏览器里查不到这条记录，本次没有发送。记录继续保留，请到操作记录与审批核对。" : "";
     if (stale) {
       setPendingNotes((current) => ({ ...current, [retry.commandKey]: `${businessClock(Date.now())} ${stale}` }));
       setRetry(null);
@@ -610,7 +614,7 @@ export function D3Treasury() {
       await retry.resend();
     } catch (err) {
       if (isPermissionDenied(err)) announcePermissionDenied();
-      setPendingNotes((current) => ({ ...current, [retry.commandKey]: `${businessClock(Date.now())} 重试没有成功：${errorText(err, "原因未知")} 这说明不了原操作的结果，原命令继续保留。` }));
+      setPendingNotes((current) => ({ ...current, [retry.commandKey]: `${businessClock(Date.now())} 重试没有成功：${errorText(err, "原因未知")} 这说明不了原操作的结果，记录继续保留。` }));
       if (isExplicitRejection(err)) setRetryRejected((current) => [...current, retry.commandKey]);
     } finally {
       setRetrying(false);
@@ -625,17 +629,15 @@ export function D3Treasury() {
       setInvestigationResults(current => ({ ...current, [item.commandKey]: { receipt } }));
       if (fundCommandSettled(receipt)) {
         item.forget();
+        setSettled(current => [...current.filter(entry => entry.key !== item.commandKey), { key: item.commandKey, label: item.label, status: receipt!.originalStatus }]);
         setUnknownTick(tick => tick + 1);
         setRetry(null); setConfirm(null); setInjectOpen(false);
         await load();
-      } else if (!receipt) {
-        setPendingNotes(current => ({ ...current, [item.commandKey]: displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED")) }));
       }
       return receipt;
     } catch (cause) {
       const error = displayAdminError(cause);
       setInvestigationResults(current => ({ ...current, [item.commandKey]: { error } }));
-      setPendingNotes(current => ({ ...current, [item.commandKey]: error }));
       throw cause;
     }
   };
@@ -643,10 +645,6 @@ export function D3Treasury() {
     try { if (fundCommandSettled(await checkInvestigation(item))) return; }
     catch { /* The existing notice retains the original and displays the query error. */ }
     refresh();
-  };
-  const releasePending = async (item: PendingItem) => {
-    await verifyPending(item);
-    setReleasing(null);
   };
 
   const crossLink = (href: string, label: string): CrossLink => ({
@@ -656,7 +654,7 @@ export function D3Treasury() {
   });
 
   const dataBlocked = !main ? "资金数据没读到，刷新后再试" : loading ? "正在刷新，稍等" : undefined;
-  const exportBlocked = (kind: ExportKind) => (unknownCommands.exports.some((record) => record.exportKind === kind) ? "上次导出结果未知，先在页面上方核对" : dataBlocked);
+  const exportBlocked = (kind: ExportKind) => (unknownCommands.exports.some((record) => record.exportKind === kind) ? "上次导出结果未知，先到页面上方查询原结果" : dataBlocked);
   const mainFailed = canReadMain && !main && !loading;
   // 读取失败只在页签上方写一条，带重新加载（VS-107）。
   const mainState = loading && !main ? <BlockState state="loading" title="正在读取资金数据…" /> : null;
@@ -705,15 +703,16 @@ export function D3Treasury() {
   const pendingItems: PendingItem[] = [
     ...unknownCommands.injections.map((record): PendingItem => ({
       investigationRecord: record,
+      label: `登记储备注入 ${money(Number(record.amount))}`,
       commandKey: record.commandKey,
       record,
       title: "登记储备注入结果未知，可能已经入账",
       body: <>{money(Number(record.amount))}，凭证号 {record.voucherNo}，{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
-      hint: "先看累计注入有没有变；重试不会重复登记。",
+      hint: "先查询原结果；按原请求重试不会重复登记。",
       expiresAt: record.expiresAt,
       allowed: canInject,
       auditHref: `/platform/audit?domain=D&object=${encodeURIComponent(record.voucherNo)}`,
-      retryTitle: "按原操作重试储备注入",
+      retryTitle: "按原请求重试储备注入",
       retryEffect: "立即生效",
       rows: [
         { key: "amount", label: "金额", value: amountText(Number(record.amount)), lead: true, unit: "USDT" },
@@ -726,15 +725,16 @@ export function D3Treasury() {
     })),
     ...(forecastRecord && savedForecast ? [{
       investigationRecord: { ...forecastRecord, commandOrigin: savedForecast.commandOrigin },
+      label: "保存预测设置",
       commandKey: forecastRecord.commandKey,
       record: forecastRecord,
       title: "预测设置保存结果未知，可能已经保存",
       body: <>{timeText(new Date(forecastRecord.createdAt).toISOString())} 提交。</>,
-      hint: "先看「预测设置」的版本有没有变；重试不会重复保存。",
+      hint: "先查询原结果；按原请求重试不会重复保存。",
       expiresAt: forecastRecord.expiresAt,
       allowed: canConfig && originalOwner(savedForecast),
       auditHref: "/platform/audit?domain=D",
-      retryTitle: "按原操作重试保存预测设置",
+      retryTitle: "按原请求重试保存预测设置",
       retryEffect: effectiveText(),
       rows: [
         { key: "version", label: "基于版本", value: `v${savedForecast.expectedVersion}` },
@@ -747,15 +747,16 @@ export function D3Treasury() {
     }] : []),
     ...unknownCommands.exports.map((record): PendingItem => ({
       investigationRecord: record,
+      label: `导出${EXPORT_LABEL[record.exportKind]}`,
       commandKey: record.commandKey,
       record,
       title: `${EXPORT_LABEL[record.exportKind]} 导出结果未知`,
       body: <>{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
-      hint: "文件可能没有下载下来，操作记录里可能已经有这次导出；重试不会多记一次。",
+      hint: "文件可能没有下载下来。先查询原结果；按原请求重试不会多记一次。",
       expiresAt: record.expiresAt,
       allowed: (record.exportKind === "liabilities" ? canExportLiabilities : canExportReconciliation) && originalOwner(record),
       auditHref: "/platform/audit?domain=D",
-      retryTitle: "按原操作重试导出",
+      retryTitle: "按原请求重试导出",
       retryEffect: "立即生效",
       rows: [
         { key: "kind", label: "内容", value: EXPORT_LABEL[record.exportKind] },
@@ -776,6 +777,7 @@ export function D3Treasury() {
           加载失败，已暂停显示旧数据。{mainError || "数据不完整。"}
         </Notice>
       )}
+      <FundSettledNotices items={settled} onDismiss={key => setSettled(current => current.filter(entry => entry.key !== key))} />
       {pendingItems.map((item) => (
         <Notice
           key={item.commandKey}
@@ -783,20 +785,20 @@ export function D3Treasury() {
           title={item.title}
           action={(
             <>
-              <Button size="sm" onClick={() => void verifyPending(item)}>刷新核对</Button>
-              <Button size="sm" disabledReason={item.expiresAt <= Date.now() ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原操作重试</Button>
-              {item.allowed && retryRejected.includes(item.commandKey) && <Button size="sm" onClick={() => setReleasing(item)}>解除待确认</Button>}
+              <FundCheckButtons record={item.investigationRecord} outcome={investigationResults[item.commandKey]} onCheck={() => void verifyPending(item)} onClose={() => setClosing(item)} />
+              <Button size="sm" disabledReason={item.expiresAt <= Date.now() ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原请求重试</Button>
             </>
           )}
         >
           {item.body}{item.expiresAt <= Date.now() ? `${RETRY_EXPIRED}。` : item.hint}
           {reach(item.auditHref, "platform_a2_read") && <> <Link className="rd-link" href={item.auditHref}>到操作记录与审批核对</Link></>}
-          <Fold inset title="原操作技术信息" summary="命令号、完整内容和提交时间">
-            <p className="rd-note d3-raw" data-mono>命令号 {item.commandKey}</p>
+          {pendingNotes[item.commandKey] && <div><KeepText text={pendingNotes[item.commandKey]} /></div>}
+          <FundCheckResult record={item.investigationRecord} outcome={investigationResults[item.commandKey]} expired={item.expiresAt <= Date.now()} canRetry={item.allowed} hideTech />
+          <Fold inset title="原操作技术信息" summary="原请求编号、完整内容和提交时间">
+            <p className="rd-note d3-raw" data-mono>原请求编号 {item.commandKey}</p>
             <pre className="rd-note d3-raw">{JSON.stringify(item.record, null, 2)}</pre>
             <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(JSON.stringify(item.record, null, 2)).then(() => toast("已复制原操作记录", "success"), () => toast("复制失败，请手动选择原操作记录", "error"))}>复制原操作记录</Button>
           </Fold>
-          {pendingNotes[item.commandKey] && <div><KeepText text={pendingNotes[item.commandKey]} /></div>}
         </Notice>
       ))}
       <PageTabs
@@ -926,7 +928,7 @@ export function D3Treasury() {
           sub={<StatusTag tone="progress" filled>{retry.retryEffect}</StatusTag>}
           busy={retrying}
           onClose={() => setRetry(null)}
-          footer={<><Button disabled={retrying} onClick={() => setRetry(null)}>取消</Button><Button variant="primary" loading={retrying} loadingText="提交中…" onClick={() => void runRetry()}>按原操作重试</Button></>}
+          footer={<><Button disabled={retrying} onClick={() => setRetry(null)}>取消</Button><Button variant="primary" loading={retrying} loadingText="提交中…" onClick={() => void runRetry()}>按原请求重试</Button></>}
         >
           <div className="rd-stack">
             <Facts>{retry.rows.map((row) => <Fact key={row.key} k={row.label} lead={row.lead} tone={row.lead ? "role-1" : undefined} unit={row.unit}>{row.value}</Fact>)}</Facts>
@@ -935,7 +937,8 @@ export function D3Treasury() {
         </Modal>
       )}
 
-      {releasing && <ReleaseModal label={releasing.title} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain="重试被拒说明不了原操作的结果，先到操作记录确认。解除后原操作不再重试。" />}
+      {closing && <FundClosureModal label={closing.label} createdAt={closing.investigationRecord.createdAt} facts={closing.rows.filter(row => row.key !== "reason").map(row => <Fact key={row.key} k={row.label}>{row.value}{row.unit ? ` ${row.unit}` : ""}</Fact>)}
+        onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}
 
       <LeaveDialog guard={leave} saveLabel="保存预测设置" saveBlocked={loading ? "正在刷新，稍等" : draft?.forecastWindow === "90d" ? FORECAST_90D_BLOCK : undefined} onSave={() => void saveConfig()} />
 
