@@ -854,14 +854,15 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (fundCommandSettled(receipt)) {
         pendingCommands.forget(record.fingerprint, record.commandKey);
-        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: record.label, status: receipt!.originalStatus }]);
+        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: record.label, status: receipt!.originalStatus, proposal: record.kind === "cluster" }]);
         syncPending();
         await Promise.all([ctx.reloadKRisk({ multiAccount: pageQuery }), refreshProtectedEntries()]);
       }
       return receipt;
     } catch (cause) {
       const error = displayAdminError(cause);
-      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
+      if (!evidence) setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
       throw cause;
     } finally { setChecking(""); }
   };
@@ -900,7 +901,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     if (record.kind === "registration-param") {
       // This K1 route writes A3_PLATFORM_PARAM, which is outside controlled investigation support.
       pendingCommands.forget(record.fingerprint, record.commandKey);
-      syncPending(); ctx.toast("已解除本页这条原操作记录，后端的结果和锁定不变", "success");
+      syncPending(); ctx.toast("已解除本页这条原操作记录；系统里原操作的结果和锁定不变", "success");
     }
   };
 
@@ -1780,7 +1781,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         );
       })()}
 
-      {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain="重试被拒说明不了原操作的结果，先到操作记录确认。解除只移除本页这条记录，不撤销原操作；后端仍可能锁住这项设置。" />}
+      {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain="重试被拒说明不了原操作的结果，先到操作记录确认。解除只移除本页这条记录，不撤销原操作；系统仍可能锁住这项设置。" />}
       {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt}
         onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}
     </>

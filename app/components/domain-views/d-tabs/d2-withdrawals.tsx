@@ -1497,7 +1497,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       return receipt;
     } catch (cause) {
       const error = displayAdminError(cause);
-      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
+      if (!evidence) setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
       throw cause;
     } finally { setSubmitting(""); }
   };

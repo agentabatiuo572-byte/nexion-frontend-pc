@@ -844,13 +844,14 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (fundCommandSettled(receipt)) {
         if (session) releaseConfigApproval("D5", session.adminId, record.commandKey);
-        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: "放宽提现参数", status: receipt!.originalStatus }]);
+        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: "放宽提现参数", status: receipt!.originalStatus, proposal: true }]);
         syncPending(); await load();
       }
       return receipt;
     } catch (cause) {
       const error = displayAdminError(cause);
-      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
+      if (!evidence) setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
       throw cause;
     } finally { setRecovering(""); }
   };
@@ -858,14 +859,14 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const lookupLoosen = async () => {
     await recoverLoosen("lookup");
     const original = session ? pendingConfigApproval("D5", session.adminId) : undefined;
-    if (original) await checkProposalInvestigation(original).catch(() => undefined);
+    if (original && !fundInvestigationAccess(original).unavailableReason) await checkProposalInvestigation(original).catch(() => undefined);
   };
   const releasePending = (record: ReleaseTarget) => {
     setReleasing(null);
     // D5_WITHDRAWAL_LIMITS_UPDATE is not in AdminCommandOrigin.supported; retain its existing local handling.
     tightenCommands.forget(record.slot, record.commandKey);
     syncPending();
-    toast("已解除本页这条原操作记录，后端的结果和锁定不变", "success");
+    toast("已解除本页这条原操作记录；系统里原操作的结果和锁定不变", "success");
   };
 
   const auditHref = "/platform/audit";
@@ -889,9 +890,10 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       const needQuery = canLookupOwn && !queryMissing.includes(key);
       const canRetry = !!loosenRecord.values && commandAuthorities(loosenRecord.values).every(can) && !proposeBlock;
       return { key, title: "放宽提现参数", record: loosenRecord, outcome: investigationResults[key], createdAt: loosenRecord.createdAt, expired, canRetry: !expired && canRetry,
+        canQuery: canLookupOwn, copy: { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
         status: !canLookupOwn && !expired ? { tone: "warn" as const, label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
         actions: <>
-          {canLookupOwn && <FundCheckButtons record={loosenRecord} outcome={investigationResults[key]} busy={!!recovering} checking={recovering === key}
+          {canLookupOwn && <FundCheckButtons record={loosenRecord} lookupWithoutOrigin outcome={investigationResults[key]} busy={!!recovering} checking={recovering === key}
             onCheck={() => void lookupLoosen()} onClose={() => setClosing(true)} />}
           {!expired && <Button size="sm" disabled={!!recovering}
             disabledReason={!canRetry ? NO_WRITE : needQuery ? "先查询原结果，明确查不到审批单才能重试" : undefined}
@@ -963,7 +965,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
 
   const releaseModal = releasing && (
     <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒说明不了原操作的结果，先到操作记录核对它有没有生效。解除只移除本地记录，不办理后端核查结案；后端仍可能阻止再次提交。" />
+      explain="重试被拒说明不了原操作的结果，先到操作记录核对它有没有生效。解除只清本页这条记录，不算核查结案；系统仍可能阻止再次提交。" />
   );
 
   const sections: SectionNavItem[] = [

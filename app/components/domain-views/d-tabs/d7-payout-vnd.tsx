@@ -511,7 +511,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     if (isRetryExpired(record)) { syncPending(); return; }
     // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
     if (!directCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
-      note(record.commandKey, "浏览器里查不到这条记录，本次没有发送。待确认继续保留，请先读回核对。");
+      note(record.commandKey, "浏览器里查不到这条记录，本次没有发送。记录继续保留，请先读回核对。");
       return;
     }
     setRecovering(`retry:${record.commandKey}`);
@@ -527,13 +527,13 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       if (isDOutcomeUnknownError(cause)) {
-        note(record.commandKey, "重试的结果也没有确认，原操作继续保留。稍后再读回核对或重试。");
+        note(record.commandKey, "重试的结果也未知，记录继续保留。稍后再读回核对或重试。");
       } else if (isExplicitRejection(cause)) {
-        note(record.commandKey, `重试被拒绝：${reasonOf(displayAdminError(cause))}。先点「读回核对」核实当前状态。本地解除不证明原操作未执行，也不办理后端核查结案。`);
+        note(record.commandKey, `重试被拒绝：${reasonOf(displayAdminError(cause))}。先点「读回核对」核实当前状态。本地解除不证明原操作未执行，也不算核查结案。`);
         setRetryRejected((current) => [...current, record.commandKey]);
       } else {
         // 登录、权限、限流这类不是对原操作的结论，不给解除（OP-153）。
-        note(record.commandKey, `重试没有完成：${reasonOf(displayAdminError(cause))}。原操作继续保留，稍后再读回核对或重试。`);
+        note(record.commandKey, `重试没有完成：${reasonOf(displayAdminError(cause))}。记录继续保留，稍后再读回核对或重试。`);
       }
     } finally {
       setRecovering("");
@@ -550,13 +550,14 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (fundCommandSettled(receipt)) {
         if (session) releaseConfigApproval("D7", session.adminId, record.commandKey);
-        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: "放宽提交", status: receipt!.originalStatus }]);
+        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: "放宽提交", status: receipt!.originalStatus, proposal: true }]);
         syncPending(); await reload(); await loadQueue();
       }
       return receipt;
     } catch (cause) {
       const error = displayAdminError(cause);
-      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
+      if (!evidence) setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
       throw cause;
     } finally { setRecovering(""); }
   };
@@ -564,14 +565,14 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const lookupApproval = async () => {
     await queryApproval();
     const original = session ? pendingConfigApproval("D7", session.adminId) : undefined;
-    if (original) await checkProposalInvestigation(original).catch(() => undefined);
+    if (original && !fundInvestigationAccess(original).unavailableReason) await checkProposalInvestigation(original).catch(() => undefined);
   };
   const releasePending = () => {
     if (!releasing || releasing.kind !== "direct") return;
     // The version-guarded direct update has no supported command origin in this backend.
     directCommands.forget(releasing.record.fingerprint, releasing.record.commandKey);
     syncPending(); setReleasing(null);
-    toast("已解除本页这条原操作记录，后端的结果和锁定不变", "success");
+    toast("已解除本页这条原操作记录；系统里原操作的结果和锁定不变", "success");
   };
 
   /** 放宽提交的结果未知：先按命令号查原审批单，查到就有了结果（OP-95）。 */
@@ -583,7 +584,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       const result = await submitConfigApproval("D7", session, null, "", loadPayoutVndConfig, true);
       if (!result) {
         setQueryMissing((current) => [...current, key]);
-        note(key, "没有查到原审批单。原操作继续保留，可以按原操作重试。");
+        note(key, "没有查到原审批单。记录继续保留，可以按原请求重试。");
         return;
       }
       syncPending();
@@ -595,7 +596,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     } catch (cause) {
       note(key, isA2OutcomeUncertainError(cause) && isRetryExpired(approval)
         ? `暂未查到原审批单，不能据此认定没有提交。${canReachAudit ? "请到「操作记录与审批」核对，不要重复提交。" : "核对后交财务负责人处理，不要重复提交。"}`
-        : `查询没有成功：${isA2OutcomeUncertainError(cause) ? uncertainDetail(cause) || "结果还没确认" : reasonOf(displayAdminError(cause))}。原操作继续保留。`);
+        : `查询没有成功：${isA2OutcomeUncertainError(cause) ? uncertainDetail(cause) || "结果仍未知" : reasonOf(displayAdminError(cause))}。记录继续保留。`);
     } finally {
       setRecovering("");
     }
@@ -624,17 +625,17 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       syncPending();
       if (isA2OutcomeUncertainError(cause)) {
-        note(key, `重试的结果也没有确认${uncertainDetail(cause) ? `：${uncertainDetail(cause)}` : ""}。原操作继续保留，稍后再查询或重试。`);
+        note(key, `重试的结果也未知${uncertainDetail(cause) ? `：${uncertainDetail(cause)}` : ""}。记录继续保留，稍后再查询原结果或重试。`);
         return;
       }
       const message = reasonOf(errorCode(cause) === "OBJECT_ALREADY_PENDING" ? (canReachAudit ? PENDING_HERE : PENDING_ELSEWHERE) : displayAdminError(cause));
       const kept = pendingConfigApproval("D7", session.adminId);
       if (kept && isExplicitRejection(cause)) {
-        note(key, `重试被拒绝：${message}。先核对原审批单；查不到不代表没有生成。本地解除不办理后端核查结案。`);
+        note(key, `重试被拒绝：${message}。先核对原审批单；查不到不代表没有生成。本地解除不算核查结案。`);
         setRetryRejected((current) => [...current, key]);
       } else if (kept) {
         // 登录、权限、限流这类不是对原操作的结论，不给解除（OP-153）。
-        note(key, `重试没有完成：${message}。原操作继续保留，稍后再查询或重试。`);
+        note(key, `重试没有完成：${message}。记录继续保留，稍后再查询原结果或重试。`);
       } else {
         setApprovalRejected(`${message}。原本地记录已清除，重新提交仍须通过服务端校验。`);
       }
@@ -677,9 +678,10 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       original = cause instanceof Error ? cause.message : "原审批内容读不到";
     }
     return { key: approval.commandKey, title: "放宽提交", record: approval, outcome: investigationResults[approval.commandKey], createdAt: approval.createdAt, expired, canRetry: showRetry && canManage,
+      canQuery: canQueryOriginal, copy: { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
       status: !canQueryOriginal && !expired ? { tone: "warn", label: "结果未知", line: "这个账号查不了原审批单，按原请求重试不会重复提交。" } : undefined,
       actions: <>
-        {canQueryOriginal && <FundCheckButtons record={approval} outcome={investigationResults[approval.commandKey]} busy={!!recovering} checking={recovering === "query" || recovering === approval.commandKey}
+        {canQueryOriginal && <FundCheckButtons record={approval} lookupWithoutOrigin outcome={investigationResults[approval.commandKey]} busy={!!recovering} checking={recovering === "query" || recovering === approval.commandKey}
           onCheck={() => void lookupApproval()} onClose={() => setClosing(true)} />}
         {showRetry && <Button size="sm" disabled={!!recovering} loading={recovering === "approval-retry"} disabledReason={canManage ? undefined : NO_WRITE} onClick={() => void retryApproval()}>按原请求重试</Button>}
       </>,

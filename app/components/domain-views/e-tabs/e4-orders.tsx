@@ -57,7 +57,7 @@ const REFUND_APPROVAL_NOTE = "要另一位有退款权和批准权的超级管�
 
 // 决定钱的规则一条一句，不写成一段（DT-02）。
 const REFUND_RULES = [
-  { title: "能退哪些", rules: ["只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款", "有退款权的财务主管或超级管理员发起，另一位超级管理员批准；提交时后端核实退款权限来源", "批准执行时会检查平台资金是否够退"] },
+  { title: "能退哪些", rules: ["只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款", "有退款权的财务主管或超级管理员发起，另一位超级管理员批准；提交时系统核实退款权限来源", "批准执行时会检查平台资金是否够退"] },
   { title: "退了以后", rules: ["批准后钱退回用户钱包，退款不可撤销", "仍属于原购买者且未退款、未回收的购买设备停用并标为已退款", "普通订单已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回", "已发放的赠品设备收回并停止任务，已到账的赠品收益不扣回，由平台承担", "试用转购奖励可能追回", "促销奖励另按售后规则追回，追不回的部分由平台承担"] },
 ];
 
@@ -198,6 +198,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         const ticket = record.receivedTicketId ? `审批单 ${record.receivedTicketId}` : "审批单";
         const expiredMissing = expired && ctx.e4ExpiredNotFound.includes(record.commandKey);
         return { key: record.fingerprint, title: record.label, record: created ? undefined : record, outcome, createdAt: record.createdAt, expired, canRetry: !expired && canRetry,
+          canQuery: ctx.canQueryE4, copy: { missingOrigin: expired ? "这条记录早于执行核查，查询原结果只查审批单。超过 24 小时不能再重试。" : "这条记录早于执行核查，查询原结果只查审批单。" },
           status: waiting ? { tone: "progress", label: "待审批", line: `${ticket}已建好，在等另一位超级管理员批准。` }
             : created ? { tone: "warn", label: "进度没读到", line: `${ticket}已建好，审批进度没读到，再查一次，不要重新提交。` }
               : expiredMissing ? { tone: "neutral", label: "没有建成", line: "超过 24 小时也查不到审批单，申请没有建成，可以解除这条记录。" } : undefined,
@@ -482,7 +483,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
                     <Fact k="用户">{o.user}</Fact>
                     {channel && <Fact k="退款去向">{REFUND_CHANNEL_LABELS[channel] ?? channel}</Fact>}
                     {/* 退款入口只在读到覆盖率时开。 */}
-                    <Fact k="兑付覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">全额估算 · 红线 {fmtConfigPct(e4Detail.coverageRedline!)}</span><Explain label="兑付覆盖率什么时候检查" content="这里按整单全额退款估算，少退时实际影响更小。批准执行时后端再查一次，当前或执行后低于红线就不退款。" /></Fact>
+                    <Fact k="兑付覆盖率"><Change from={fmtPct(e4Detail.coverageCurrent!)} to={fmtPct(e4Detail.coverageProjected!)} /><span className="rd-fact-unit">全额估算 · 红线 {fmtConfigPct(e4Detail.coverageRedline!)}</span><Explain label="兑付覆盖率什么时候检查" content="这里按整单全额退款估算，少退时实际影响更小。批准执行时系统再查一次，当前或执行后低于红线就不退款。" /></Fact>
                     {e4Detail.orderType === "TRIAL_CONVERT" && <Fact k="试用奖励">这单发给购买者的试用奖励可能追回，金额以执行结果为准<Explain label="试用奖励追回规则" content="按整期结算转购发出的试用奖励，退款后最多收回未花掉的部分；未追回部分转人工核查。" /></Fact>}
                   </Facts>
                   <Fold title="商品与购买设备" summary={purchaseDevices == null ? "明细未提供" : purchaseDevices.length ? `${purchaseDevices.length} 台` : "尚未生成"} inset>
@@ -490,7 +491,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
                       <Facts>
                         <Fact k="商品">{o.sku}</Fact>
                         <Fact k="购买设备"><KeepText text={refundDeviceLine} phrases={["已到账收益不扣回"]} /><Explain label="退款后设备和收益怎么处理" content={refundDeviceDetail} /></Fact>
-                        <Fact k="审批身份"><KeepText text="有退款权的财务主管或超级管理员发起，另一位有退款权和批准权的超级管理员批准" phrases={["另一位有退款权和批准权的超级管理员批准"]} /><Explain label="发起身份如何核实" content="会话不提供每项权限的角色来源，主角色不能证明退款权来源。这里仅开放申请入口，提交时由后端核实退款权来自财务主管，或发起人是超级管理员。" /></Fact>
+                        <Fact k="审批身份"><KeepText text="有退款权的财务主管或超级管理员发起，另一位有退款权和批准权的超级管理员批准" phrases={["另一位有退款权和批准权的超级管理员批准"]} /><Explain label="发起身份如何核实" content="会话不提供每项权限的角色来源，主角色不能证明退款权来源。这里仅开放申请入口，提交时由系统核实退款权来自财务主管，或发起人是超级管理员。" /></Fact>
                       </Facts>
                     </div>
                   </Fold>

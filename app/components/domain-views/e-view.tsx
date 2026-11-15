@@ -629,7 +629,8 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       return receipt;
     } catch (cause) {
       const error = displayAdminError(cause);
-      setE4InvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
+      if (!evidence) setE4InvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
       throw cause;
     } finally { setE4Retrying(""); }
   };

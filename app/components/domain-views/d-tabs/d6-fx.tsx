@@ -286,13 +286,14 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (fundCommandSettled(receipt)) {
         pendingFx.forget(record.fingerprint, record.commandKey);
-        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: `把${paramOf(record.param).label}改成 ${valueText(record.param, record.after)}`, status: receipt!.originalStatus }]);
+        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: `把${paramOf(record.param).label}改成 ${valueText(record.param, record.after)}`, status: receipt!.originalStatus, proposal: true }]);
         syncPending(); setRetryRejected(""); setPendingNote(""); await load();
       }
       return receipt;
     } catch (cause) {
       const error = displayAdminError(cause);
-      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
+      if (!evidence) setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
       throw cause;
     } finally { setRetrying(false); }
   };
@@ -301,7 +302,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     // Direct D6_FX_QUOTE_UPDATE has no supported investigation origin in this backend.
     pendingFx.forget(record.fingerprint, record.commandKey);
     syncPending(); setRetryRejected(""); setPendingNote("");
-    toast("已解除本页这条原操作记录；后端原操作没有结案时仍会阻止新提交", "success");
+    toast("已解除本页这条原操作记录；原操作没有结案时系统仍会阻止新提交", "success");
   };
 
   /** 查原审批单只收尾这次提交的未知结果，不把待批当成已生效。 */
@@ -322,7 +323,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   const lookupProposal = async (record: PendingFx) => {
     await queryOriginal(record);
     const left = pendingFx.list()[0];
-    if (left?.commandKey === record.commandKey) await checkProposalInvestigation(left).catch(() => undefined);
+    if (left?.commandKey === record.commandKey && !fundInvestigationAccess(left).unavailableReason) await checkProposalInvestigation(left).catch(() => undefined);
   };
 
   /** 先填新值再进入共用确认框，方向和按钮始终一致；输入框不随方向跳动。 */
@@ -435,9 +436,9 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const retryBlock = expired ? "已超过 24 小时，不能再重试" : !canManage ? NO_WRITE : retryRejected ? RETRY_AGAIN : undefined;
     return { key: pending.commandKey, title: what, record: pending.proposal ? pending : undefined, outcome: investigationResults[pending.commandKey], createdAt: pending.createdAt, expired, canRetry: !retryBlock,
       status: pending.proposal ? undefined : { tone: expired ? "warn" as const : "neutral" as const, label: expired ? "已过期" : "不能查询", line: "直接修改查不了原结果，到下面的调整历史核对。" },
-      copy: { where: "操作记录与审批和调整历史" },
+      canQuery: !!pending.proposal && canQueryOriginal, copy: { where: "操作记录与审批和调整历史", missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
       actions: <>
-        {pending.proposal && canQueryOriginal && <FundCheckButtons record={pending} outcome={investigationResults[pending.commandKey]} busy={retrying}
+        {pending.proposal && canQueryOriginal && <FundCheckButtons record={pending} lookupWithoutOrigin outcome={investigationResults[pending.commandKey]} busy={retrying}
           onCheck={() => void lookupProposal(pending)} onClose={() => setClosing(true)} />}
         <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原请求重试</Button>
         {retryRejected && !expired && !pending.proposal && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}

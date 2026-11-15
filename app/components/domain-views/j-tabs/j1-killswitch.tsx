@@ -291,14 +291,15 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       if (fundCommandSettled(receipt)) {
         if ("input" in record) restoreAttempts.forget(record.fingerprint, record.commandKey);
         else pendingKeys.forget(record.fingerprint, record.commandKey);
-        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: "input" in record ? record.input.action : record.label, status: receipt!.originalStatus }]);
+        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: "input" in record ? record.input.action : record.label, status: receipt!.originalStatus, proposal: "input" in record }]);
         syncPending();
         await actions.reloadJEmergency();
       }
       return receipt;
     } catch (cause) {
       const error = displayAdminError(cause);
-      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      // 结案失败由结案框自己说，不覆盖这一行上次查询的结果。
+      if (!evidence) setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
       throw cause;
     } finally { setSubmitting(""); }
   };
