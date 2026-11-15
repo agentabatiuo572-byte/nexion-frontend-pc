@@ -86,7 +86,7 @@ function savedCommands(adminId: number | undefined, operator: string): H3Pending
 }
 
 /** H3-only transport and recovery. The page owns all existing form markup. */
-export function useH3Mutations(toast: (message: string) => void, settled: () => Promise<void>, isFresh: () => boolean) {
+export function useH3Mutations(toast: (message: string) => void, settled: (commandKey?: string) => Promise<void>, isFresh: () => boolean) {
   const session = useAdminAuth(s => s.session);
   const adminId = session?.adminId;
   const operator = session?.operator || session?.username || "";
@@ -128,7 +128,7 @@ export function useH3Mutations(toast: (message: string) => void, settled: () => 
     if (!ticket) { if (!quiet) toast("暂未查到原审批单，原请求继续保留。"); return null; }
     checkTicket(r, ticket);
     if (ticket.status === "pending") { retain({ ...r, acknowledged: true, ticket: undefined }); confirmedTickets.current.set(r.commandKey, ticket); update(); }
-    else { forget(r); await settled(); }
+    else { forget(r); await settled(r.commandKey); }
     if (!quiet) toast(`审批单${({ pending: "待审批", approved: "已批准", rejected: "被拒", expired: "已过期", withdrawn: "已撤回" })[ticket.status]}：${ticket.before} → ${ticket.after}`);
     return ticket;
   };
@@ -161,7 +161,7 @@ export function useH3Mutations(toast: (message: string) => void, settled: () => 
       if (e.status !== undefined && e.status >= 200 && e.status < 300 && e.apiCode !== undefined && e.apiCode >= 400 && e.apiCode < 500) e.status = e.apiCode;
       if (recovering ? isExplicitRejection(error) : firstRejection(error)) {
         forget(r);
-        if (recovering || isHGrowthReadConflict(error)) await settled();
+        if (recovering || isHGrowthReadConflict(error)) await settled(recovering ? r.commandKey : undefined);
         throw error;
       }
       // Keep the key in storage, not in the shared A2 error renderer's operator copy.
@@ -173,14 +173,14 @@ export function useH3Mutations(toast: (message: string) => void, settled: () => 
       retain(acknowledged);
       const current = await query(acknowledged);
       if (!current) throw new OutcomeUnknownError("申请已建单，批没批准还没查到。请查询原结果，原请求继续保留。");
-      if (current.status === "pending") await settled();
+      if (current.status === "pending") await settled(r.commandKey);
       return;
     }
     forget(r);
-    await settled();
+    await settled(r.commandKey);
     toast(r.change.success);
   };
-  const run = async (write: H3Write, reason: string, approvalConfirmed = false) => {
+  const run = async (write: H3Write, reason: string, approvalConfirmed = false, onCommand?: (commandKey: string) => void) => {
     const actor = requireActor(true, write.store === "region");
     if (!isFresh()) throw new Error("请先成功刷新用户任务数据，再发起新的修改。");
     if (blocked(write.change.target)) throw new Error("这一项有未结束的原操作，请先查询原结果。");
@@ -201,9 +201,11 @@ export function useH3Mutations(toast: (message: string) => void, settled: () => 
         request: p ? { kind: "approval", body: p } : { kind: "direct", path: write.path, method: write.method, body: JSON.stringify({ ...write.body, reason, operator }) } };
     };
     const approval = approvalConfirmed || !!write.regionParams || (write.configKey ? h3ConfigNeedsApproval(write.configKey, String(write.body.expectedValue), String(write.body.value)) : write.path === "/quest-events/missions" && Number(write.body.rewardPoints) > 0);
-    try { await send(create(approval), false); } catch (error) {
+    const original = create(approval);
+    onCommand?.(original.commandKey);
+    try { await send(original, false); } catch (error) {
       const code = (error as { reasonCode?: string }).reasonCode;
-      if (!approval && firstRejection(error) && code === "H3_APPROVAL_REQUIRED" && (write.configKey || write.path === "/quest-events/missions")) throw new HApprovalRequired((error as Error).message, { write, reason }, () => run(write, reason, true));
+      if (!approval && firstRejection(error) && code === "H3_APPROVAL_REQUIRED" && (write.configKey || write.path === "/quest-events/missions")) throw new HApprovalRequired((error as Error).message, { write, reason }, () => run(write, reason, true, onCommand));
       else throw error;
     }
   };
@@ -235,13 +237,13 @@ export function useH3Mutations(toast: (message: string) => void, settled: () => 
       if (!current) throw new Error("原操作已处理，请刷新后重新操作。");
       if (current.request.kind !== "direct") {
         const ticket = await query(current);
-        if (ticket) { if (ticket.status === "pending") await settled(); return; }
+        if (ticket) { if (ticket.status === "pending") await settled(current.commandKey); return; }
       }
       await send(current, true);
     },
     async releaseExpired(r: H3PendingCommand) {
       if (r.request.kind === "direct" || !isRetryExpired(r) || await query(r, true) !== null) throw new Error("原申请不能解除，请查询原结果。");
-      forget(r); await settled();
+      forget(r); await settled(r.commandKey);
     },
     run,
   };

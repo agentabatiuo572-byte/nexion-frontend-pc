@@ -53,7 +53,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,
-    closeConfirm: () => setCf(null),
+    closeConfirm: (req) => setCf(current => !req || current === req ? null : current),
     can,
   };
 
@@ -99,11 +99,11 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           blockedReason={tab === "H4" || tab === "H9" ? mc.blockedReason : undefined}
           getPendingBusinessValue={tab === "H4" ? mc.getPendingBusinessValue : undefined}
           completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
-          onClose={() => setActionConfirm(null)}
+          onClose={() => setActionConfirm(current => current === mc ? null : current)}
           onConfirm={async (reason, newValue, businessValue) => {
             try {
               await mc.run(reason, newValue, businessValue);
-              setActionConfirm(null);
+              setActionConfirm(current => current === mc ? null : current);
             } catch (error) {
               // 免费试用设置的错误只写在框里，不再弹同一句（S01）。
               if (tab !== "H2") setToast(error instanceof Error ? displayAdminError(error) : "操作失败");
@@ -112,7 +112,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           }}
         />
       )}
-      {cf && <KConfirmModal key={cf.formKey} req={cf} onClose={() => setCf(null)} />}
+      {cf && <KConfirmModal key={cf.formKey} req={cf} onClose={() => setCf(current => current === cf ? null : current)} />}
       {toastNode}
     </>
   );

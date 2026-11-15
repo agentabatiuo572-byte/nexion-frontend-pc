@@ -87,41 +87,49 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const toast = shellCtx.toast;
   const canModuleWrite = shellCtx.can("growth_h3_write");
   const fresh = useRef(false);
-  const confirmation = useRef<{ action: string; title: string; target?: string; editValue?: string; businessValue?: Record<string, string>; commandKey?: string } | null>(null);
+  const confirmation = useRef<{ action: string; title: string; target?: string; editValue?: string; businessValue?: Record<string, string>; commandKey?: string; finish: () => void } | null>(null);
   const openActionConfirm = (req: H3ActionConfirmReq | null) => {
     if (!req) { setMc(null); return; }
     if (!fresh.current || req.target && mutations.blocked(req.target)) {
       toast("请先查询原结果并成功刷新用户任务数据，再发起新的修改。");
       return;
     }
-    req = conflictDraft.action(req, () => !!confirmation.current?.commandKey);
+    req = conflictDraft.action(req, () => !!(confirmation.current?.target && mutations.record(confirmation.current.target)));
     const attempt = { action: String(req.action), title: String(req.title ?? req.action), target: req.target } as NonNullable<typeof confirmation.current>;
     confirmation.current = attempt;
-    setMc({ ...req, getPendingReason: () => attempt.target ? mutations.record(attempt.target)?.change.reason : undefined,
+    const editor = creating;
+    const request: H3ActionConfirmReq = { ...req, getPendingReason: () => attempt.target ? mutations.record(attempt.target)?.change.reason : undefined,
       getPendingBusinessValue: () => (attempt.target ? mutations.record(attempt.target)?.change.businessValue : undefined) ?? req.getPendingBusinessValue?.(),
       run: async (reason, value, businessValue) => {
         attempt.editValue = value; attempt.businessValue = businessValue;
         confirmation.current = attempt;
         await req.run(reason, value, businessValue);
       },
-    });
+    };
+    attempt.finish = () => {
+      setMc(current => current === request ? null : current);
+      setCreating(current => current === editor ? null : current);
+    };
+    setMc(request);
   };
   const openConfirm = (req: ConfirmReq & { target?: string }) => {
     if (!fresh.current || req.target && mutations.blocked(req.target)) {
       toast("请先查询原结果并成功刷新用户任务数据，再发起新的修改。");
       return;
     }
-    req = { ...req, ...conflictDraft.confirm(req, () => !!confirmation.current?.commandKey) };
+    req = { ...req, ...conflictDraft.confirm(req, () => !!(confirmation.current?.target && mutations.record(confirmation.current.target))) };
     const attempt = { action: String(req.action), title: String(req.title ?? req.action), target: req.target } as NonNullable<typeof confirmation.current>;
     confirmation.current = attempt;
-    shellCtx.openConfirm({ ...req, freezePendingInput: true,
+    const request: ConfirmReq = { ...req, freezePendingInput: true,
       getPendingReason: () => attempt.target ? mutations.record(attempt.target)?.change.reason : undefined,
       getPendingBlockReason: () => {
         const saved = attempt.target ? mutations.record(attempt.target) : undefined;
         return saved && !mutations.canRetry(saved) ? isRetryExpired(saved) ? RETRY_EXPIRED_TEXT : "请查询原结果" : undefined;
       },
       run: async (reason) => { confirmation.current = attempt; await req.run(reason); },
-    });
+    };
+    attempt.finish = () => shellCtx.closeConfirm?.(request);
+    shellCtx.openConfirm(request);
   };
   const ctx: HCtx = { ...shellCtx, openActionConfirm, openConfirm };
   const reach = useReach();
@@ -134,7 +142,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const [readAt, setReadAt] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>("dayOne");
   const [detail, setDetail] = useState<{ list: ListKey; code: string } | null>(null);
-  const [creating, setCreating] = useState<"DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2" | null>(null);
+  const [creating, setCreating] = useState<{ type: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2" } | null>(null);
   const tabIds = useTabIds();
 
 
@@ -153,11 +161,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     }
   };
 
-  const mutations = useH3Mutations(toast, async () => {
+  const mutations = useH3Mutations(toast, async (commandKey) => {
     fresh.current = false;
-    setMc(null);
-    setCreating(null);
-    shellCtx.closeConfirm?.();
+    if (commandKey && confirmation.current?.commandKey === commandKey) confirmation.current.finish();
     await reload();
     await region.reload();
   }, () => fresh.current);
@@ -183,7 +189,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     }
     try {
       await mutations.run({ ...write, change: { target: write.target, action: attempt.action, title: attempt.title,
-        before: write.before, after: write.after, success: write.success, editValue: attempt.editValue, businessValue: attempt.businessValue } }, reason);
+        before: write.before, after: write.after, success: write.success, editValue: attempt.editValue, businessValue: attempt.businessValue } }, reason, false, commandKey => { attempt.commandKey = commandKey; });
       setStale(null);
     } catch (error) {
       if (isHGrowthReadConflict(error)) {
@@ -330,6 +336,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const runCreateMission = (missionType: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2", subject: string, bv: H3MissionForm) => {
     const reward = /^\d+$/.test(bv.rewardPoints?.trim() ?? "") ? bv.rewardPoints.trim() : null;
     const approval = Number(bv.rewardPoints) > 0;
+    const editor = creating;
     openActionConfirm({ briefKind: "config",
       action: `新建任务 · ${subject}`,
       title: `新建${subject}`,
@@ -359,7 +366,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           body: { missionCode, missionName, missionType, rewardPoints: Number(bv.rewardPoints), category: bv.category.trim(), actionRoute: bv.actionRoute.trim() },
           before: "任务不存在", after: `${missionName} · ${bv.rewardPoints} UVT · 已停用`,
           success: `任务「${missionName}」已新建（停用中，绑定完成条件后再启用）` }, reason);
-        setCreating(null);
+        setCreating(current => current === editor ? null : current);
       },
     } as H3ActionConfirmReq);
   };
@@ -808,14 +815,17 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   );
   const openRecovery = (original: H3PendingCommand) => {
     const c = original.change;
-    setMc({ briefKind: "config", action: c.action, title: c.title, detail: <Change from={shownValue(c.before)} to={shownValue(c.after)} />,
+    const request: H3ActionConfirmReq = { briefKind: "config", action: c.action, title: c.title, detail: <Change from={shownValue(c.before)} to={shownValue(c.after)} />,
       facts: <Facts><Fact k="改的是">{c.action}</Fact><Fact k="原请求"><Change from={shownValue(c.before)} to={shownValue(c.after)} /></Fact></Facts>,
       initialReason: c.reason, getPendingReason: () => mutations.record(c.target)?.change.reason,
       inlineApproval: { pending: true, initialRecovery: "retry", expired: isRetryExpired(original), resolve: () => undefined,
         disabledReason: mutations.canRetry(original) ? undefined : isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "请查询原结果",
         recover: async () => { await mutations.query(original); return true; }, retry: () => mutations.retry(original) },
       run: async () => { await mutations.retry(original); },
-    });
+    };
+    confirmation.current = { action: c.action, title: c.title, target: c.target, commandKey: original.commandKey,
+      finish: () => setMc(current => current === request ? null : current) };
+    setMc(request);
   };
   // 记录里存的是请求里的原值（状态码、类别码），显示时换成页面上的叫法。
   const shownValue = (value: string) => value.split(" · ").map(part => ({ active: "已启用", paused: "已停用", archived: "已归档", deleted: "已删除", __MISSING__: "—" })[part]
@@ -895,11 +905,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           getPendingReason={mc.getPendingReason}
           getPendingBusinessValue={mc.getPendingBusinessValue}
           completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
-          onClose={() => setMc(null)}
+          onClose={() => setMc(current => current === mc ? null : current)}
           onConfirm={async (reason, newValue, businessValue) => {
             try {
               await mc.run(reason, newValue, businessValue);
-              setMc(null);
+              setMc(current => current === mc ? null : current);
             } catch (error) {
               // 直接保存被判定要走审批：换成审批确认，值和理由沿用，运营再确认一次才建单（H-改走审批）。
               if (error instanceof HApprovalRequired) {
@@ -1174,7 +1184,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Panel>
       <Panel title="新手任务" icon={ListChecks} tone="role-2" sub={`${dayOne.length} 个 · 已启用 ${dayOneActive.length} 个`}
           explain="用户注册时拿到的是那一刻已启用、绑定了完成条件的新手任务；做完全部才能领奖。之后改任务不影响已经注册的用户。"
-          actions={canModuleWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating("DAY_ONE")}>新建新手任务</Button> : undefined}>
+          actions={canModuleWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating({ type: "DAY_ONE" })}>新建新手任务</Button> : undefined}>
           <div className="h3-tasks-layout">
           {cards("dayOne", dayOne)}
         <AppPreview kind="dayOne" tasks={dayOneActive.map((task) => previewTask(task, false))}
@@ -1257,7 +1267,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Panel>
       <Panel title="每周任务" icon={ListChecks} tone="role-2" sub={`一档 ${t1.length} 个 · 二档 ${t2.length} 个 · 已启用 ${t1Active.length + t2Active.length} 个`}
           explain="每周发布时，把那一刻已启用、绑定了完成条件的任务冻结成这一周的任务。之后改任务只影响之后发布的。"
-          actions={canModuleWrite ? <><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating("WEEKLY_T1")}>新建一档</Button><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating("WEEKLY_T2")}>新建二档</Button></> : undefined}>
+          actions={canModuleWrite ? <><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating({ type: "WEEKLY_T1" })}>新建一档</Button><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating({ type: "WEEKLY_T2" })}>新建二档</Button></> : undefined}>
           <div className="h3-tasks-layout"><div className="h3-tier-groups">
           <div className="h3-sub-head">
             <h3>{`一档 · ${t1.length} 个`}</h3>
@@ -1594,8 +1604,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         </>}
       </Drawer>
 
-      {creating && <H3MissionFormDrawer missionType={creating} onClose={() => setCreating(null)}
-        onReview={(bv) => runCreateMission(creating, creating === "DAY_ONE" ? "新手任务" : creating === "WEEKLY_T1" ? "每周一档" : "每周二档", bv)} />}
+      {creating && <H3MissionFormDrawer missionType={creating.type} onClose={() => setCreating(null)}
+        onReview={(bv) => runCreateMission(creating.type, creating.type === "DAY_ONE" ? "新手任务" : creating.type === "WEEKLY_T1" ? "每周一档" : "每周二档", bv)} />}
 
       <PaginationExemptionList
         items={[
