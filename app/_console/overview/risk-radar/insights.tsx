@@ -66,7 +66,7 @@ const TAMPER_PATH: Record<string, string> = {
 /** 排查类别和动作的叫法和「异常套利与刷量排查」一致。 */
 const K2_VIEW: Record<string, string> = { trial: "反复领试用", tradein: "置换套利", gift: "批量领新人礼", board: "排行榜刷榜" };
 const K2_ACTION: Record<string, string> = { mark: "标记套利", "block-gift": "拦截新人礼", "board-flag": "标记刷榜", "freeze-cluster": "冻结关联账户" };
-const FROZEN_SOURCE: Record<string, string> = { C2: "账户操作" };
+const FROZEN_SOURCE: Record<string, { page: string; line: string }> = { C2: { page: "「账户操作」", line: "在「账户操作」冻结" } };
 /** 单个金额：原文本加千分位，去掉末尾的 0、最少两位，不舍入。 */
 const usdt = (value: string) => `${b5AmountText(value, b5AmountDigits([value]))} USDT`;
 
@@ -108,9 +108,9 @@ export function signalFacts(alert: Alert): { line: string | null; rows: SignalFa
   }
   if (f.rowId !== undefined) tech.push({ k: "排查行号", v: <span data-mono>{f.rowId}</span> });
   if (f.source !== undefined) {
-    const page = FROZEN_SOURCE[f.source];
-    rows.push({ k: "冻结来源", v: page ? `「${page}」` : "其他来源" });
-    if (page) parts.push(`在「${page}」冻结`);
+    const known = FROZEN_SOURCE[f.source];
+    rows.push({ k: "冻结来源", v: known ? known.page : "其他来源" });
+    if (known) parts.push(known.line);
     tech.push({ k: "来源代码", v: <span data-mono>{f.source}</span> });
   }
   if (f.caseNo !== undefined || f.walletShortfallUsdt !== undefined || f.feeBufferShortfallUsdt !== undefined) {
