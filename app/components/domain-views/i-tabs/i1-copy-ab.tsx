@@ -838,6 +838,14 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     try { body = original ? JSON.parse(original.body) as Record<string, unknown> : {}; } catch { body = {}; }
     const part = (index: number) => decodeURIComponent(path.split("/")[index] ?? "");
     const ready = !!conflict.latest;
+    const findCopy = (key: string): CopyRow | undefined => {
+      const row = conflict.latest?.copies.find(copy => copy.key === key);
+      return row && { ...row, surface: normalizeCopyModule(row.surface), draftSurface: row.draftSurface ? normalizeCopyModule(row.draftSurface) : undefined };
+    };
+    const findVersion = (key: string, version?: string): VersionRow | undefined => {
+      const row = conflict.latest?.versions.find(item => item.copyKey === key && item.version === version);
+      return row && { ...row, v: row.version, st: row.status, surface: normalizeCopyModule(row.surface) };
+    };
     let subject: ReactNode = "这一项";
     let rows: IConflictRow[] = [];
     let columns: [string, string] = ["你打开时", "现在"];
@@ -876,7 +884,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       }
     } else if (path.startsWith("/copy-ab/version-options/")) {
       const key = part(3);
-      const option = VERSION_OPTIONS.find((row) => row.versionKey === key);
+      const option = conflict.latest?.versionOptions.find((row) => row.versionKey === key);
       subject = <>版本 <span data-mono="">{key}</span></>;
       if (ready && !option) gone = "这个版本在最新读取里没有了，不能按最新的重做。";
       if (original?.method === "PUT") {
@@ -890,7 +898,8 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       }
     } else if (path.startsWith("/copy-ab/framework/")) {
       const key = part(3);
-      const param = EXP_FRAMEWORK.find((row) => row.key === key);
+      const latestParam = conflict.latest?.frameworkParams.find((row) => row.key === key);
+      const param = latestParam && { ...latestParam, cur: latestParam.current };
       subject = <>{param?.name ?? key}</>;
       if (ready && !param) gone = "这个参数在最新读取里没有了。";
       rows = [conflictRow("值", body.expectedValue, param?.cur), conflictRow("你填的新值", body.value, body.value)];
