@@ -594,7 +594,7 @@
 .m4-page .m4-table th.m4-col-who { width: 164px; }
 .m4-page .m4-table th.m4-col-state { width: 88px; }
 .m4-page .m4-table th.m4-col-sort { width: 56px; }
-.m4-page .m4-table th.m4-col-upd { width: 104px; }
+.m4-page .m4-table th.m4-col-upd { width: 136px; }
 .m4-page .m4-table td[data-grow] { min-width: 160px; }
 .m4-page .m4-table td:not([data-grow]) { white-space: nowrap; }
 .m4-page .m4-row-actions { display: inline-flex; align-items: center; gap: var(--rd-space-1); white-space: nowrap; }

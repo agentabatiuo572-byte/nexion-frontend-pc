@@ -66,6 +66,10 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   // strict M4 response validator explicitly publishes a successful "1".
   const knowledgeAvailable = pget("I.support.knowledgeAvailable") === "1" && !needsRead;
   const faqs = useMemo(() => parseParamArray<SupportFaq>(pget(FAQ_KEY), []), [ctx.params, pget]);
+  // 当前版本的修改人：没有这项（旧后端）是 undefined，查不到是 null，不补成别人。
+  const faqAuthors = useMemo(() => { const raw = pget("I.support.faqLastModifiedBy"); return raw ? JSON.parse(raw) as Record<string, string | null> : null; }, [ctx.params, pget]);
+  const authorOf = (id: string) => faqAuthors ? faqAuthors[id] ?? null : undefined;
+  const versionLine = (f: SupportFaq) => authorOf(f.id) === undefined ? `第 ${f.version} 版` : `第 ${f.version} 版 · ${authorOf(f.id) ?? "修改人未记录"}`;
   const canEdit = canWriteM4 && knowledgeAvailable && !ctx.contentLoading;
 
   const [showAddFaq, setShowAddFaq] = useState(false);
@@ -415,7 +419,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
                         <Td><Cell main={surfaceName(f.surface)} sub={audienceSub(f)} /></Td>
                         <Td><FaqStatusTag status={f.status} /></Td>
                         <Td align="right"><Cell num main={f.sortOrder} /></Td>
-                        <Td><Cell num main={f.updatedAt.slice(0, 16)} sub={`第 ${f.version} 版`} /></Td>
+                        <Td><Cell num main={f.updatedAt.slice(0, 16)} sub={versionLine(f)} title={authorOf(f.id) === undefined ? undefined : versionLine(f)} /></Td>
                         {canEdit && <Td sticky="end" data-fit="">
                           <span className="m4-row-actions">
                             <Button size="sm" variant="ghost" icon={<Pencil size={14} aria-hidden />} disabled={writePending || blocked(f.id)} onClick={() => openEdit(f)}>编辑</Button>
@@ -432,7 +436,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         {knowledgeAvailable && filteredFaqs.length > 0 && <Pager label="问答列表" total={filteredFaqs.length} page={currentPage} pageSize={pageSize} sizes={[5, 10, 20, 50]} onPage={setPage} onPageSize={(size) => { setPageSize(size); setPage(1); }} />}
       </Panel>
 
-      <M4FaqDrawer faq={current} nav={drawerNav} busy={writePending} canWrite={canEdit && !blocked(current?.id)}
+      <M4FaqDrawer faq={current} author={current ? authorOf(current.id) : undefined} nav={drawerNav} busy={writePending} canWrite={canEdit && !blocked(current?.id)}
         onClose={() => setOpenId(null)} onEdit={() => current && openEdit(current)} onStatus={() => current && openStatus(current)} onDelete={() => current && requestDeleteFaq(current)} />
 
       {statusTarget && <M4StatusConfirm faq={statusTarget} busy={writePending} disabled={!canWriteM4 || (recovery ? isRetryExpired(recovery) : !canEdit)} failure={statusFailure} retry={recovery ? { expired: isRetryExpired(recovery) } : undefined}
@@ -442,13 +446,14 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
           if (await changeFaqStatus(statusTarget.id, statusTarget.status === "draft" ? "published" : "draft", setStatusFailure)) setStatusTarget(null);
         }} />}
 
-      {(showAddFaq || editFaq) && <FaqModal key={recovery?.commandKey ?? editFaq?.id ?? "new"} row={editFaq} recovery={recovery} pending={writePending} disabled={!canWriteM4 || (recovery ? isRetryExpired(recovery) : !canEdit)} onClose={() => { createFaqTempId.current = null; setRecovery(null); setShowAddFaq(false); setEditFaq(null); }} onSave={saveFaq} />}
+      {(showAddFaq || editFaq) && <FaqModal key={recovery?.commandKey ?? editFaq?.id ?? "new"} row={editFaq} authorOf={authorOf} recovery={recovery} pending={writePending} disabled={!canWriteM4 || (recovery ? isRetryExpired(recovery) : !canEdit)} onClose={() => { createFaqTempId.current = null; setRecovery(null); setShowAddFaq(false); setEditFaq(null); }} onSave={saveFaq} />}
     </>
   );
 }
 
 function FaqModal({
   row,
+  authorOf,
   pending,
   recovery,
   disabled,
@@ -456,6 +461,7 @@ function FaqModal({
   onSave,
 }: {
   row: SupportFaq | null;
+  authorOf: (id: string) => string | null | undefined;
   pending: boolean;
   recovery: MCommandRecord | null;
   disabled: boolean;
@@ -517,7 +523,7 @@ function FaqModal({
       dirty={dirty}
       sub={<>
         {live ? <StatusTag tone="progress" filled>{row?.status === "published" && status === "draft" ? "保存后立即下架" : "保存后立即生效"}</StatusTag> : <StatusTag tone="neutral" filled>保存草稿，线上不变</StatusTag>}
-        {row && <span className="m4-form-id" data-mono="">{row.id} · 第 {row.version} 版</span>}
+        {row && <span className="m4-form-id"><span data-mono="">{row.id} · 第 {row.version} 版</span>{authorOf(row.id) && <> · {authorOf(row.id)} 改</>}</span>}
       </>}
       onClose={onClose}
       footer={
@@ -530,7 +536,7 @@ function FaqModal({
       {row?.status === "published" && !recovery && <Notice tone="warn">这条在线上，保存后几分钟内用户就会看到新内容。</Notice>}
       {failure && !unknown && !latest && <Notice tone="danger" title="没有保存成功"><p>{failure}</p></Notice>}
       {latest && opened && <Notice tone="warn" title={failure ? "没有保存：这条问答刚被别人改过" : "这条问答刚被别人改过"}>
-        <p>现在是第 {latest.version} 版，你改的是第 {opened.version} 版。你填的内容还在，核对后再保存。</p>
+        <p>现在是第 {latest.version} 版{authorOf(latest.id) && <>（{authorOf(latest.id)} 改的）</>}，你改的是第 {opened.version} 版。你填的内容还在，核对后再保存。</p>
         {latestChanges.length > 0 && <ul className="m5-plain-list">{latestChanges.map((line) => <li key={line}>{line}</li>)}</ul>}
       </Notice>}
       {(unknown || recovery) && <Notice tone="warn" title="结果未知">

@@ -113,8 +113,10 @@ function Translations({ faq }: { faq: M4Faq }) {
   );
 }
 
-export function M4FaqDrawer({ faq, nav, busy, canWrite, onClose, onEdit, onStatus, onDelete }: {
+export function M4FaqDrawer({ faq, author, nav, busy, canWrite, onClose, onEdit, onStatus, onDelete }: {
   faq: M4Faq | null;
+  /** 当前这一版的修改人：undefined 后端没给，null 查不到。 */
+  author?: string | null;
   nav?: DrawerNav;
   busy: boolean;
   canWrite: boolean;
@@ -137,6 +139,7 @@ export function M4FaqDrawer({ faq, nav, busy, canWrite, onClose, onEdit, onStatu
         { label: "分类", value: catCN(faq.category) },
         { label: "排序", value: <span data-num="">{faq.sortOrder}</span>, reason: "小值靠前" },
         { label: "最近更新", value: <><span data-num="">{faq.updatedAt.slice(0, 16)}</span>（{businessZone().label}）· 第 {faq.version} 版</> },
+        ...(author === undefined ? [] : [{ label: "这一版谁改的", value: author ?? "未记录", reason: author === null ? "迁移或预置的问答、修改人账号已删除时查不到" : undefined }]),
       ]} />
       <section className="m4-drawer-block" aria-label={published ? "现在谁读得到" : "发布后谁读得到"}>
         <h3 className="m4-block-title">{published ? "现在谁读得到" : "发布后谁读得到"}</h3>
