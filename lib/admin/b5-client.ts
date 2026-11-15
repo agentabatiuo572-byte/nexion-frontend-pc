@@ -6,6 +6,7 @@ import { displayAdminError, displayAdminReadError, formatAdminApiError, guardedF
 import { normalizeB5Radar, PRESSURE_RED_LINE, type B5Radar } from "@/lib/admin/b5-radar-contract";
 import { parseStrictFiniteNumber } from "@/lib/admin/strict-number";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { parseB5MoneyJson } from "@/lib/admin/b5-money";
 
 export { normalizeB5Radar, PRESSURE_RED_LINE, type B5Radar };
 const B5_RADAR_ENDPOINT = "/api/admin/risk/radar";
@@ -149,15 +150,15 @@ async function request<T>(endpoint: string, init?: RequestInit, preserveRejectio
     if (commandKey) throw new B5OutcomeUnknownError(commandKey);
     throw error;
   }
-  const result = await response.json().catch(() => null);
+  const result = await response.text().then(parseB5MoneyJson).catch(() => null) as ApiResult<T> | null;
   const message = typeof result?.message === "string" ? result.message : undefined;
   const commandKey = new Headers(init?.headers).get("Idempotency-Key");
-  if (isAdminAuthFailure(response.status, message) || isAdminAuthFailure(result?.code, message)) resetAdminSession();
+  if (isAdminAuthFailure(response.status, message) || result && isAdminAuthFailure(result.code, message)) resetAdminSession();
   if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
     || !result || typeof result.code !== "number")) throw new B5OutcomeUnknownError(commandKey);
   if (!response.ok || !result || result.code !== 0 || result.data == null) {
     const error = new B5RequestError(formatAdminApiError(message, `B5_REQUEST_FAILED_${response.status}`),
-      response.ok && typeof result?.code === "number" ? result.code : response.status, result?.code, message);
+      response.ok && typeof result?.code === "number" ? result.code : response.status, result?.code ?? response.status, message);
     if (commandKey && !preserveRejections && !isExplicitRejection(error)) throw new B5OutcomeUnknownError(commandKey, error.message);
     throw error;
   }
@@ -293,7 +294,7 @@ export function useB5Radar() {
     const stream = new EventSource(`${B5_RADAR_ENDPOINT}/stream`);
     const onRadar = (event: Event) => {
       try {
-        const next = normalizeB5Radar(JSON.parse((event as MessageEvent<string>).data));
+        const next = normalizeB5Radar(parseB5MoneyJson((event as MessageEvent<string>).data));
         setData(next);
         setError(null);
         setStreamWarning(null);

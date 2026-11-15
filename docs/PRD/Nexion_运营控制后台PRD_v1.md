@@ -1569,6 +1569,12 @@ B4-BE-01元数据、BE-02快照与写入口范围、BE-03阶段名、BE-04预算
 
 #### [B5] 风险提醒
 
+2026-11-16 信号新数据上屏（hd-vb5）：最近风险信号每行写「类别 · 具体情况」，处理进度格写处理人和处理时间（发送状态仍在第二行）；点行打开信号详情抽屉，按「是什么事 → 现在谁在跟 → 去处理和标记」排，原始代码收进「技术信息」折叠。积压表头改为「单数（全部币种）」「USDT 金额」，处理人和去处理的旧问号按真实行为改写。
+
+2026-11-16 同步后端 `f7fec2da`（B5-BE-01/03/04/05/09 已交付代码，真实业务复验待后端升级）：积压金额在 GET、SSE 和写回快照首次 JSON 解析前保留十进制文本；风险信号接入来源事实和处理人字段；队列复用现有分诊请求与失败不导航规则；覆盖率红灯采用后端同次 B1 精确结论。现有屏幕布局、样式和固定文案保持，过期说明与新增信息的展示交视觉，详见外部 B5 重构说明和 hd-sync9 报告。
+
+2026-11-16 本轮验证：`npx tsc --noEmit --incremental false`、2GiB堆限制及8131后端地址的完整webpack构建均退出0；B5关卡第3、6项改前改后均通过（57条后端事实、0项不符）。849MiB构建产物已清空。按brief未开预览/浏览器；nexion_acc_e只读盘点已有处理人篡改信号、J3/K4去向，无积压/混币或K2信号。升级后用walk_risk验K2/J3/K4分诊审计，用ops_backup核信号，用walk_finance核积压；权限拒绝、金额精度、来源事实与同源红线边界的逐步页面/库对照留hd-sync9报告，不将静态通过当真实业务验收。
+
 2026-11-15 过期提案解除补修：收到建单回执或查到原票后保留建单证据；后续严格原号查无视为查询无结论，不可按无单解除。只有从未拿到过单的过期申请，才可在既有确认框再次严格查无后解除。B1/B5 查询失败保留已确认票据，确认解除现在会再次查询，不凭上次标记直接删除。
 
 2026-11-14按后端`111e00cd`核对。入口`/overview/risk-radar`。五维只读汇总；阈值、共享订阅、站内告警确认、信号进度可写。真正提现审核、账户处置、业务开关操作在目标页。
@@ -1578,10 +1584,11 @@ B4-BE-01元数据、BE-02快照与写入口范围、BE-03阶段名、BE-04预算
 - 提现压力=滚动24小时未失败/拒绝/取消的USDT提现申请÷已确认储备账本净额；黄线5–50%，红线10–80%且高于黄线。分母0时ratio=null：有提现灯红，两者0为不可计算。出金压力=(提现出金+佣金)÷全部流入，固定70%只提醒。
 - B5/J1共享阈值，统计不同源，B5亮红不保证J1同时停提。J1按自身指标>=红线执行，改线不会解除已有停提事件。B5-BE-02仍待后端统一。
 - 异常账户四类独立去重，总数跨类别去重；类别和可大于或等于总数。来源为滚动7天信号加全部冻结中提现。
-- 提现积压按submitted/review-passed/processing三组统计，created_at严格早于48小时为超时，任意超时灯黄。金额字段虽名Usdt，SQL未筛币种，页面按「各币种金额合计（未换算）」展示，PC不再求和/换汇，不当USDT金额。后端已舍入两位，B5-BE-01仍待后端按币种/原精度交付。
+- 提现积压按submitted/review-passed/processing三组统计，created_at严格早于48小时为超时，任意超时灯黄。amountUsdt/totalAmountUsdt仅合计USDT并保数据库原精度；笔数和SLA仍含全部匹配币种。前端保留金额文本，千分位、至少两位、同列按有效精度补零，不舍入；只校验后端合计，不按笔数计算平均值。卡里表头写「单数（全部币种）」「USDT 金额」，问号说明金额只加 USDT、不取整、和单数不是同一批单。
 - 开关固定提现/质押/创世节点/兑换/试用，不含地区。缺设置默认关闭；非空非法设置报错。质押可用性沿J1退役投影，不计入可用业务的关闭统计。
-- 覆盖率来自B1估值快照，<红线告警、<健康线注意，原应付款0时为null；估值不可靠整份读取失败。B5覆盖率字段名Usdt实际承接B1 USD等值，现有USDT文案已登记不符，由视觉/后端修正，PC不自行换算。
-- 一次雷达快照含8个业务日压力、7个业务日P0–P3分布/日量和最新20条信号；分布包含已处理/解决的信号。`recentAlerts`明确返回handlingStatus/handlingVersion，缺处置记录后端投影open/v0；不返回处理人/时间，PC不从这两个缺失字段推断处理结论。
+- 覆盖率来自B1估值快照，coverage.light的红灯采用该次快照的精确redlineBreached，不再按已舍入的ratio和红线重判；非红灯仍核原健康线规则。原应付款0时为null/unavailable，估值不可靠整份读取失败；单位按已定B1/B5口径为USDT，不自行换算。两页各自请求仍分别采样。
+- 一次雷达快照含8个业务日压力、7个业务日P0–P3分布/日量和最新20条信号；分布包含已处理/解决的信号。recentAlerts保留原字段，新增可空signalType/userNo/facts/handledBy/handledAt；缺处置记录仍open/v0，open的处理人/时间一律空。页面现有用户位置优先userNo，旧后端/旧恢复快照缺字段时保留#userId。表格一行写类别和一句具体情况（长的省略、悬停看全句），处理进度后写处理人（展示脱敏同审计主体）和处理时间（月-日 时:分，北京时间），待处理不占位；详情抽屉列出各项事实、处理人、处理时间和最近一次发送。signalType不直接显示，只把user_frozen写作「账户冻结」、d1_chargeback_shortfall写作「拒付追回有差额」，其余照后端message；原值只在技术信息里。
+- facts只接后端投影：篡改tamperPath/attackEffect；K2试用循环rowId/cycleCount/windowDays；K2套利或榜单速度rowId/view/action；C2冻结source；D1拒付caseNo/walletShortfallUsdt/feeBufferShortfallUsdt。均可部分缺失，未知或手工来源为空；不解析原evidence、不推断缺值，D1金额也保十进制文本，不恢复生产者舍入前精度。页面写法：篡改项按J3同一张名称表译名并写「企图「…」」；试用循环「N 天内开始试用 M 次」；K2动作「排查类别：已标记套利」等；C2冻结「在「账户操作」冻结」；D1「案件 号：钱包少追回 X USDT，手续费备用金不足 Y USDT」，金额千分位、不舍入。没有事实的只写类别，详情写「没有记录，到对应页面查看」。
 - 本人inApp收件箱最多100条，未送达PENDING/SENDING/FAILED_RETRY/DEAD的来源/送达时间合法可空；空值保持null，不当已送达。仅本人DELIVERED且未确认的行给新确认入口。
 
 **② 读取与刷新**
@@ -1595,11 +1602,11 @@ GET与SSE同源，SSE只给连接初始快照；前端每30秒GET，运输断线
 | 黄线/不提高红线 | `PUT /api/admin/risk/bankrun-thresholds`，yellowPct/redPct/expectedVersion/reason/operator，`overview_b5_threshold_write`；服务端同时接受ROLE_SUPER_ADMIN/ROLE_RISK_LEAD，PC仍逐实际写码；version+1、审计后返回完整radar |
 | 提高红线审批 | `POST /api/admin/platform/audit/operations`；sourceDomain=B5、obj=current、command=B/b5_bankrun_thresholds、params.values带原版本及两线、target=B/bankrun_thresholds/current，fund/amplifies=true；另一位有效超级管理员且有platform_a2_operation_approve批准，自己不能批；批准仍复核版本 |
 | 共享订阅 | GET/PUT `/api/admin/risk/alert-subscription`，`overview_b5_subscribe`；全平台与B1共用，保存者成为唯一subscriber；email不开放，webhook须HTTPS/≤500/公网DNS/允许名单/受控代理，保存不试发；队列发送使用当前URL |
-| 五维分诊 | `POST /api/admin/risk/radar/triage`，dimension/target/operator；triage+目标读权及菜单；FINANCE仅bankrun/withdraw-backlog/coverage；只审计后跳转，按B4-PD02可重新点，不套R1 |
+| 主卡及队列分诊 | `POST /api/admin/risk/radar/triage`，dimension/target/operator；triage+目标读权及菜单；FINANCE仅bankrun/withdraw-backlog/coverage。队列K1→abnormal-accounts、D2→withdraw-backlog、K2→abuse、J3→tamper、K4→scoring，均为精确固定目标；回执仅dimension/target，匹配后跳转，失败不导航，按B4-PD02可重新点，不套R1；403时提示只写没记上和原因、不叫人再点（裸「无权限访问」换成全站无权限说明）；无分诊资格的队列链接仍按useReach只导航 |
 | 确认已读 | `POST /api/admin/risk/radar/inbox/{id}/acknowledge`，Idempotency-Key、无body；`overview_b5_triage`；只更新本人DELIVERED的read_at/acknowledged_at，回deliveryId/acknowledged，不改信号进度 |
 | 处理进度 | `PATCH /api/admin/risk/radar/signals/{signalNo}/status`，targetStatus/expectedStatus/expectedVersion/reason/operator；triage，理由8–200，仅open→handled→resolved；回signalNo/handlingStatus/handlingVersion，不解冻/放款/重发/改已读 |
 
-按业务意图是11个动作（含五维分诊、两个进度方向），6类请求路径；所有业务写都追到后端idempotency.execute。队列指向K2/J3/K4等仅导航，不伪造五维分诊，按B5-PD01保留，B5-BE-03待后端。
+按业务意图是14个动作（原11个加abuse/tamper/scoring三维分诊），仍是6类请求路径；所有业务写都追到后端idempotency.execute。B5-BE-03由f7fec2da交付，原B5-PD01的后端前置已满足；队列现有Link外观及useReach可见性保持，主卡原五维不变。
 
 **④ 结果未知与审批当前状态**
 
