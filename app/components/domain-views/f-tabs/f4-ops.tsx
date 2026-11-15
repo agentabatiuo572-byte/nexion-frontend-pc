@@ -60,7 +60,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       change,
       submittedAt: original.createdAt,
       pending: record.kind === "proposal" && record.original.ticket?.status === "pending",
-      tag: record.kind === "proposal" && record.original.ticket?.status === "pending" ? <StatusTag tone="progress" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>
+      tag: record.kind === "proposal" && record.original.ticket?.status === "pending" ? <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>
         : record.kind === "proposal" && record.original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
           : isRetryExpired(original) ? <StatusTag tone="neutral" icon={Hourglass} explain={record.kind === "proposal"
             ? "原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除待确认。"
