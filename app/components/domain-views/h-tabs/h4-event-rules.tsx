@@ -133,7 +133,8 @@ export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }:
         const complete = async (result: unknown) => {
           if (own !== generation.current) return;
           if (isH4ApprovalReceipt(result)) await onApprovalCompleted?.();
-          await load(); setSelected(null); setDraft(null);
+          await load();
+          if (isH4ApprovalReceipt(result)) { setSelected(null); setDraft(null); }
           ctx.toast(isH4ApprovalReceipt(result) ? result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "活动规则已保存");
         };
         try {
