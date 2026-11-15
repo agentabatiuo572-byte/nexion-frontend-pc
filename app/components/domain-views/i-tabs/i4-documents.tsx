@@ -128,6 +128,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
       } finally { submitting.current = false; setSaving(false); onPendingChange(); }
       return;
     }
+    if (editor.mode === "restore" && editor.document.source === "DEFAULT") { setEditorError("现在已经是默认文件了，不用再恢复。"); return; }
     if (!fresh || loading || !editorBaselineReady) { setEditorError("请先成功重新读取最新资料后再修改。"); return; }
     if (!reasonPolicyReady) { setEditorError("理由规则加载失败，暂时无法提交。请关闭弹窗后重试。"); return; }
     const fields = editor.mode === "upload" ? editor.fields : { version: "", language: "", referenceNo: "", verifyUrl: "", reason: editor.reason };
@@ -151,7 +152,12 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
         ? "现在已经是默认文件了，不用再恢复。" : displayAdminError(cause));
       const pending = pendingI4DocumentCommands().find(row => row.document.slot === editor.document.slot);
       if (pending) setPendingKey(pending.commandKey);
-      else if (isIConflictRejection(cause)) {
+      else if (editor.mode === "restore" && (cause as { reasonCode?: string }).reasonCode === "TRUST_DOCUMENT_ALREADY_DEFAULT") {
+        setEditorBaselineReady(false); setFresh(false); setDocuments([]);
+        const document = (await refresh())?.find(row => row.slot === editor.document.slot);
+        if (document) { setEditor({ ...editor, document }); setEditorBaselineReady(true); }
+        else setEditor(null);
+      } else if (isIConflictRejection(cause)) {
         setConflicted(true);
         setEditorBaselineReady(false);
         await conflictReview.reject(cause, editor, async () => {
@@ -291,7 +297,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
         title={editor?.mode === "restore" ? "恢复默认文件" : "上传新版本"} sub={name} icon={editor?.mode === "restore" ? RotateCcw : Upload} tone="role-1"
         footer={editor && <Decision
           others={<Button onClick={close} disabled={saving}>取消</Button>}
-          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，请重新读取核对，不能重发原上传请求。" : isRetryExpired(pendingI4DocumentCommands().find(row => row.commandKey === pendingKey) ?? { expiresAt: 0 }) ? RETRY_EXPIRED_TEXT : i4DocumentPermission(editor.document.slot)) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : conflicted ? "先核对别人刚换上的文件" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : pendingKey ? "按原请求重试" : "恢复默认文件"}</Button>} />}>
+          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，请重新读取核对，不能重发原上传请求。" : isRetryExpired(pendingI4DocumentCommands().find(row => row.commandKey === pendingKey) ?? { expiresAt: 0 }) ? RETRY_EXPIRED_TEXT : i4DocumentPermission(editor.document.slot)) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : conflicted ? "先核对别人刚换上的文件" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : editor.mode === "restore" && editor.document.source === "DEFAULT" ? "现在已经是默认文件了，不用再恢复。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : pendingKey ? "按原请求重试" : "恢复默认文件"}</Button>} />}>
         {editor && <div className="rd-stack i4-doc-editor">
           {editor.mode === "upload"
             ? <Notice tone="warn" title={UPLOAD_PUBLIC}>不走审批；App 下次读取时换成这份，之后可以恢复成默认文件。</Notice>
