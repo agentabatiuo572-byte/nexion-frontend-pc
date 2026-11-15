@@ -147,10 +147,12 @@ export default function A6Roles() {
   const [formMode, setFormMode] = useState<{ kind: "create" } | { kind: "update" } | null>(null);
   const [grantsOpen, setGrantsOpen] = useState(false);
   const [confirmReq, setConfirmReq] = useState<ConfirmReq | null>(null);
+  const [recheckOriginal, setRecheckOriginal] = useState<A6Original | null>(null);
   const [releasing, setReleasing] = useState<RbacCommand | null>(null);
   const freshOverview = useRef<A6RoleOverview | null>(null);
   const freshDetail = useRef<A6RoleDetail | null>(null);
   const busy = useRef(false);
+  const needsRecheck = useRef(false);
   const queried = useRef(new Set<string>());
   const reach = useReach();
 
@@ -174,21 +176,22 @@ export default function A6Roles() {
     finally { setLoading(false); }
   }, [setToast]);
 
-  useEffect(() => {
-    void refreshOverview();
+  const refreshCatalogs = useCallback(async () => {
+    setMenuCatalogReady(false);
+    setPermissionCatalogReady(false);
     setCatalogFailed(null);
     if (!canGrant) {
       setMenuTree([]);
       setAllPerms([]);
       setMenuCatalogReady(false);
       setPermissionCatalogReady(false);
-      return;
+      return false;
     }
-    void fetchA7MenusOverview()
-      .then((o) => { setMenuTree(o.tree); setMenuCatalogReady(true); })
-      .catch((error) => { setCatalogFailed("菜单列表没读到，暂时不能改授权；刷新页面再试"); setToast(`菜单列表加载失败，暂时不能编辑授权：${displayAdminError(error)}`); });
+    const results = await Promise.all([fetchA7MenusOverview()
+      .then((o) => { setMenuTree(o.tree); setMenuCatalogReady(true); return true; })
+      .catch((error) => { setCatalogFailed("菜单列表没读到，暂时不能改授权；刷新页面再试"); setToast(`菜单列表加载失败，暂时不能编辑授权：${displayAdminError(error)}`); return false; }),
     // A8 分页有上限(pageSize 被后端收口),多页拉全权限全集供 GrantsEditor 分组(避免缺域/缺权限)
-    void (async () => {
+    (async () => {
       try {
         const all: A8Permission[] = [];
         let pageNum = 1;
@@ -209,12 +212,20 @@ export default function A6Roles() {
         if (all.length !== total) throw new Error("A8_CATALOG_INCOMPLETE");
         setAllPerms(all);
         setPermissionCatalogReady(true);
+        return true;
       } catch (error) {
         setCatalogFailed("权限列表没读到，暂时不能改授权；刷新页面再试");
         setToast(`权限列表加载失败，暂时不能编辑授权：${displayAdminError(error)}`);
+        return false;
       }
-    })();
-  }, [canGrant, refreshOverview, setToast]);
+    })()]);
+    return results.every(Boolean);
+  }, [canGrant, setToast]);
+
+  useEffect(() => {
+    void refreshOverview();
+    void refreshCatalogs();
+  }, [refreshOverview, refreshCatalogs]);
 
   useEffect(() => {
     // 只在首次读到角色目录或网址定位改变时选中；普通刷新不覆盖运营手动选择。
@@ -259,7 +270,7 @@ export default function A6Roles() {
   };
   const requireNew = (original: A6Original) => {
     requireActor(original, true);
-    if (busy.current || !freshOverview.current) throw new Error("RBAC_FRESH_READ_REQUIRED");
+    if (busy.current || needsRecheck.current || !freshOverview.current) throw new Error("RBAC_FRESH_READ_REQUIRED");
     if (commands.blocked(original)) throw new Error("RBAC_ORIGINAL_UNRESOLVED");
     if (original.kind === "a6-create") return;
     if (!freshDetail.current || JSON.stringify(freshDetail.current) !== JSON.stringify(original.role)) throw new Error("RBAC_FRESH_READ_REQUIRED");
@@ -271,13 +282,17 @@ export default function A6Roles() {
       if (problem) throw new Error(problem);
     }
   };
-  const reloadCurrent = async (roleId = selectedId) => {
+  const reloadCurrent = async (roleId = selectedId, keepConfirmation = false) => {
     freshDetail.current = null;
-    setFormMode(null); setGrantsOpen(false); setConfirmReq(null); setDetail(null);
+    setFormMode(null); setGrantsOpen(false);
+    if (!keepConfirmation) setConfirmReq(null);
+    setDetail(null);
     const next = await refreshOverview();
     if (!next) throw new Error("RBAC_FRESH_READ_REQUIRED");
     if (roleId == null) return;
-    if (!next.roles.some(role => role.id === roleId)) { setSelectedId(null); return; }
+    if (!next.roles.some(role => role.id === roleId)) {
+      setSelectedId(null); setConfirmReq(null); setRecheckOriginal(null); needsRecheck.current = false; return;
+    }
     setSelectedId(roleId);
     try {
       const latest = await fetchA6RoleDetail(roleId);
@@ -311,6 +326,8 @@ export default function A6Roles() {
   const executeOriginal = async (record: RbacCommand, retry: boolean) => {
     if (!record.original.kind.startsWith("a6-")) throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
     const original = record.original as A6Original;
+    const current = commands.saved(record.commandKey);
+    if (retry && (current?.ticket || current?.receipt)) { await queryOriginal(current); return; }
     requireActor(original, true);
     if (busy.current) throw new Error("RBAC_OPERATION_BUSY");
     busy.current = true;
@@ -319,7 +336,15 @@ export default function A6Roles() {
       let result;
       try { result = await commands.send(record, retry); }
       catch (error) {
-        if (retry && !commands.saved(record.commandKey)) { setConfirmReq(null); await reloadCurrent(); }
+        if (!commands.saved(record.commandKey)) {
+          if (retry) setConfirmReq(null);
+          else { needsRecheck.current = true; setRecheckOriginal(original); }
+          const reads = await Promise.allSettled([
+            reloadCurrent("role" in original ? original.role.id : selectedId, !retry),
+            ...(original.kind === "a6-grants" ? [refreshCatalogs()] : []),
+          ]);
+          for (const read of reads) if (read.status === "rejected") setToast(displayAdminReadError(read.reason));
+        }
         throw error;
       }
       requireActor();
@@ -358,7 +383,7 @@ export default function A6Roles() {
           requireNew(original);
           saved = commands.capture(original, reason, operator, String(view.action), describeOriginal(original));
         }
-        await executeOriginal(saved, retry);
+        await executeOriginal(getRecord() ?? saved, retry);
       } catch (error) { setToast(displayAdminError(error)); throw error; }
       finally { if (!recovery && saved && !commands.saved(saved.commandKey)) saved = undefined; }
     } });
@@ -477,8 +502,7 @@ export default function A6Roles() {
     }, recovery);
   };
 
-  const restoreOriginal = (record: RbacCommand) => {
-    const original = record.original;
+  const showOriginal = (original: A6Original, record?: RbacCommand) => {
     if (original.kind === "a6-status") openStatus(original, record);
     else if (original.kind === "a6-delete") openDelete(original, record);
     else if (original.kind === "a6-grants") openGrants(original, record);
@@ -490,6 +514,26 @@ export default function A6Roles() {
       openOperation(original, { briefKind: "config", action, detail: detailNode, ...view }, record);
     }
   };
+  const restoreOriginal = (record: RbacCommand) => {
+    if (record.original.kind.startsWith("a6-")) showOriginal(record.original as A6Original, record);
+  };
+  useEffect(() => {
+    if (!recheckOriginal || loading || !freshOverview.current || recheckOriginal.kind === "a6-grants" && !catalogsReady) return;
+    if (recheckOriginal.kind === "a6-create") {
+      needsRecheck.current = false;
+      setRecheckOriginal(null); showOriginal(recheckOriginal); return;
+    }
+    const role = freshDetail.current;
+    if (!role || role.id !== recheckOriginal.role.id) return;
+    setRecheckOriginal(null);
+    needsRecheck.current = false;
+    const bound = freshOverview.current.roles.find(row => row.id === role.id)?.adminCount;
+    if (recheckOriginal.kind === "a6-update") showOriginal({ ...recheckOriginal, role });
+    else if (recheckOriginal.kind === "a6-grants") showOriginal({ ...recheckOriginal, role, bound, menus: menuTree, permissions: allPerms });
+    else showOriginal({ ...recheckOriginal, role, bound });
+    // Keep the existing modal mounted so the operator's reason and requested changes survive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recheckOriginal, loading, loadedDetail, catalogsReady, menuTree, allPerms]);
   useEffect(() => {
     for (const record of commands.records) {
       if ((record.ticket || record.receipt) && !queried.current.has(record.commandKey)) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)));

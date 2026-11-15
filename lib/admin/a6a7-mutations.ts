@@ -187,9 +187,10 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
     forget(current);
   };
   const send = async (record: RbacCommand, retry: boolean) => {
+    const current = saved(record.commandKey);
     requireOriginalActor(record, true);
-    if (isRetryExpired(record) || record.ticket || record.receipt) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
-    if (!saved(record.commandKey) || !commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("RBAC_ORIGINAL_STORAGE_FAILED");
+    if (isRetryExpired(record) || current?.ticket || current?.receipt) throw new Error("RBAC_ORIGINAL_QUERY_ONLY");
+    if (!current || !commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("RBAC_ORIGINAL_STORAGE_FAILED");
     const request = wire(record.original, record.reason, record.operator);
     try {
       const response = await guardedFetch(`/api/admin/platform${request.path}`, { method: request.method, body: record.body, cache: "no-store",
@@ -208,7 +209,7 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
       const original = record.original;
       if (rbacProposal(original) && object(result.data) && typeof result.data.id === "string") {
         checkTicket(original, result.data);
-        commands.remember(record.fingerprint, record.commandKey, { ...record, receipt: result.data, ticket: retry ? record.ticket : result.data });
+        commands.remember(record.fingerprint, record.commandKey, { ...current, receipt: result.data, ticket: retry ? current.ticket : result.data });
         sync();
         return { kind: "proposal" as const, ticket: result.data };
       }
