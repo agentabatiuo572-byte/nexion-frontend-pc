@@ -56,7 +56,7 @@ const pendingWrites = createPendingMutationStore<I5Pending>({
   isValidRecord: (record) => typeof record.target === "string" && typeof record.label === "string" && typeof record.op === "object" && record.op !== null,
 });
 
-export const WRITE_LOCKED = "这个对象有结果未知的操作，先处理页面上方的提醒";
+export const WRITE_LOCKED = "这一项有一次操作结果未知，先到页面上方处理";
 export const CONFLICT_TEXT = "这项刚被别人改过。";
 const EXPIRED_TEXT = "已超过 24 小时，不能再重试，只能查询原结果。";
 
@@ -80,9 +80,9 @@ function dispatch(write: I5Write, key: string, actions: IContentActions, propose
 
 /** 这条操作能怎么恢复，只写接口真有的（OP-95）。放进提示图标。 */
 function recoveryText(op: I5Op, canQuery: boolean): string {
-  if (op.kind === "a2") return canQuery ? "审批单可能已经生成，批准前不会执行。可以先查原提案。" : "审批单可能已经生成，批准前不会执行。这个账号查不了原提案，可以请能看操作记录的同事核查。";
+  if (op.kind === "a2") return canQuery ? "审批单可能已经建好，批准前不会执行。可以先查询原结果。" : "审批单可能已经建好，批准前不会执行。这个账号查不了原审批单，请能看操作记录的同事核查。";
   if (op.kind === "content") return "可能已经保存。按原请求重试，系统认得出是同一次提交，不会重复执行。";
-  return "可能已经生效。重试不会写两次：原操作已生效时，重试会因内容已变被拒。";
+  return "可能已经生效。按原请求重试不会写两次：已生效的话，重试会被拒。";
 }
 
 /** 合并结果里要给人看的两类位置（路径）：别人改了的、两边都改了留下自己的。 */
@@ -286,7 +286,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
       await dispatch(write, key, actions, async (spec) => {
         // 失败写在确认框里，结果未知转成待确认条，都不再弹同一句；只有提交成功才提示。
         await propose(() => undefined, spec);
-        toast("已提交，等待审批后执行", "success");
+        toast("已提交审批，另一位管理员批准后执行", "success");
       });
     } catch (cause) {
       const unknown = isA2OutcomeUncertainError(cause) || isOutcomeUnknownError(cause);
@@ -330,26 +330,26 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
     try {
       if (record.op.kind === "a2") {
         if (!canQuery) {
-          note(record, "这个账号查不了原提案，请有操作记录查看权限的同事先核查。原操作继续保留。");
+          note(record, "这个账号查不了原审批单，请能看操作记录的同事核查。记录继续保留。");
           return;
         }
         let original;
         try { original = await fetchA2ProposalByKey(record.commandKey); }
         catch (cause) {
-          note(record, `查询没有成功：${displayAdminError(cause)} 原操作继续保留，这次没有重试。`);
+          note(record, `查询没有成功：${displayAdminError(cause)} 记录继续保留，这次没有重试。`);
           return;
         }
         if (original) {
           pendingWrites.forget(record.fingerprint, record.commandKey);
           sync();
-          toast(`查到原提案，${PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`, "info");
+          toast(`查到原审批单，${PROPOSAL_STATUS[original.status]}。进度到「操作记录与审批」看。`, "info");
           await onSettled(record);
           return;
         }
       }
       if (await execute({ target: record.target, label: record.label, op: record.op }, record.fingerprint, record.commandKey, true) === "done") toast("原操作已完成，请核对最新内容", "success");
     } catch (cause) {
-      note(record, `重试没有成功：${displayAdminError(cause)} 这说明不了原操作的结果，原操作继续保留。`);
+      note(record, `重试没有成功：${displayAdminError(cause)} 原操作结果仍未知，记录继续保留。`);
       const refusal = isExplicitRejection(cause) ? cause as { status: number; reasonCode?: string; backendMessage?: string } : undefined;
       pendingWrites.remember(record.fingerprint, record.commandKey, { target: record.target, label: record.label, op: record.op,
         rejection: refusal && { status: refusal.status, reasonCode: refusal.reasonCode, backendMessage: refusal.backendMessage } });
@@ -365,15 +365,15 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
     try {
       const original = await fetchA2ProposalByKey(record.commandKey);
       if (!original) {
-        note(record, "暂未查到原提案，结果仍待核实。原操作继续保留，不会重新提交。");
+        note(record, "没查到原审批单，结果仍未知，记录继续保留。");
         return;
       }
       pendingWrites.forget(record.fingerprint, record.commandKey);
       sync();
-      toast(`查到原提案，${PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`, "info");
+      toast(`查到原审批单，${PROPOSAL_STATUS[original.status]}。进度到「操作记录与审批」看。`, "info");
       await onSettled(record);
     } catch (cause) {
-      note(record, `查询没有成功：${displayAdminError(cause)} 原操作继续保留。`);
+      note(record, `查询没有成功：${displayAdminError(cause)} 记录继续保留。`);
     } finally {
       setRecovering("");
     }
@@ -383,9 +383,9 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
   const readBack = async (record: I5Pending) => {
     setRecovering(record.commandKey);
     try {
-      note(record, `${await onReadBack(record)} 这可能是别人改的，待确认继续保留。`);
+      note(record, `${await onReadBack(record)} 也可能是别人改的，记录继续保留。`);
     } catch (cause) {
-      note(record, `读回失败：${displayAdminError(cause)} 待确认继续保留。`);
+      note(record, `查询没有成功：${displayAdminError(cause)} 记录继续保留。`);
     } finally {
       setRecovering("");
     }
@@ -395,7 +395,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
     pendingWrites.forget(record.fingerprint, record.commandKey);
     sync();
     setReleasing(null);
-    toast("已解除这条记录，已有的结果和锁定不变", "success");
+    toast("已解除原操作记录，后台的结果和锁定不变", "success");
   };
 
   const auditHref = "/platform/audit?domain=I";
@@ -405,12 +405,12 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
       <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`} action={<>
         {record.op.kind === "a2" && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void check(record)}>查询原结果</Button>}
         {(record.op.kind === "legal-save" || record.op.kind === "legal-transition" || record.op.kind === "privacy") && <Button size="sm" disabled={!!recovering} onClick={() => void readBack(record)}>查询原结果</Button>}
-        {!expired && <Button size="sm" disabled={!!recovering} disabledReason={record.op.kind === "a2" && !canQuery ? "当前账号不能查询原提案，请联系有查看权限的同事核对" : undefined} onClick={() => void retry(record)}>按原请求重试</Button>}
-        {isExplicitRejection(record.rejection) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除待确认</Button>}
+        {!expired && <Button size="sm" disabled={!!recovering} disabledReason={record.op.kind === "a2" && !canQuery ? "这个账号查不了原审批单，请能看操作记录的同事核查" : undefined} onClick={() => void retry(record)}>按原请求重试</Button>}
+        {isExplicitRejection(record.rejection) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>}>
-        {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出。<KeepText text={expired ? EXPIRED_TEXT : "重发原内容，已成功的不会重复执行。"} />
+        {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出。<KeepText text={expired ? EXPIRED_TEXT : "按原请求重试不会重复执行。"} />
         {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link></>}
-        <Explain label="这条操作怎么恢复" rows={[{ k: "恢复", v: expired ? "原操作结果仍待核实，记录和对象锁继续保留。请到操作记录与审批核对。" : recoveryText(record.op, canQuery) }, { k: "请求编号", v: record.commandKey }]} />
+        <Explain label="这条操作怎么恢复" rows={[{ k: "恢复", v: expired ? "原操作结果仍未知，记录继续保留，这一项仍不能操作。请到操作记录与审批核对。" : recoveryText(record.op, canQuery) }, { k: "请求编号", v: record.commandKey }]} />
         {notes[record.commandKey] && <div><KeepText text={notes[record.commandKey]} /></div>}
       </Notice>
     );
