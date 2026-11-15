@@ -190,7 +190,7 @@ const caliberNote = () => (
   <>
     <p>同一批注册用户按时间先后走四步：注册 → 首购 → 锁定计划 → 提现，后一步必须晚于前一步，同一时刻不算。同一人只算一次，转化率 = 这一步人数 ÷ 上一步人数。</p>
     <p>锁定计划：首购之后，锁定计划和第二笔购买里先发生的那一个。提现：提交了提现申请，不代表已经到账。</p>
-    <p>只看最近 400 天系统记录的事件。按注册时的阶段、语言、渠道选人，不是用户现在的设置。日期按平台业务日（{businessZone().label}）算。晚到的事件下次查询时算进去。</p>
+    <p>只算最近 400 天服务器记下的事件，App 自己记的不算。按注册时的阶段、语言、渠道选人，不是用户现在的设置。日期按平台业务日（{businessZone().label}）算。晚到的事件下次查询时算进去。</p>
     <p>和「用户转化概览」是同一套四步规则：那边看全貌，这页按注册批次、阶段、语言、渠道细看，条件不同时两页的数可能不同。统计方式是固定的，这页改不了。</p>
     <p>{PROTECT_NOTE}</p>
   </>
@@ -757,7 +757,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const stepPanel = (
     <Panel id={DETAIL_ID} role="tabpanel" aria-labelledby={`l2-step-${safeStage}`}
       title={`第 ${safeStage + 1} 步 · ${s.stage}`} icon={Hourglass} tone="role-3"
-      explain={<><p>这一步怎么算：{STEP_RULE[safeStage]}</p><p>对应事件：{STAGE_EV[safeStage] ?? s.ev}；用户阶段编号：{s.lc}。</p></>}
+      explain={<><p>这一步怎么算：{STEP_RULE[safeStage]}</p><p>对应事件：{STAGE_EV[safeStage] ?? s.ev}；用户阶段：{s.lc}。</p></>}
       sub={s.suppressed ? SMALL_SAMPLE_LABEL : s.users == null ? undefined : `${people(s.users)} 人`}
       actions={<Button size="sm" variant="ghost" loading={queryLoading} onClick={() => void applySlice(L2_STAGE_EVENTS[safeStage])}>刷新这一步</Button>}>
       <div className="rd-stack">
