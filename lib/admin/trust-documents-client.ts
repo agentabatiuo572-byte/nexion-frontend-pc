@@ -42,12 +42,15 @@ interface ApiResult<T> { code: number; message?: string; data?: T }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const write = init?.method === "POST";
+  const unknownMessage = path.endsWith("/restore-default")
+    ? "资料操作结果未知，文件可能已经对外公开；请重新读取核对。"
+    : "上传结果未知，文件可能已经对外公开；请重新读取，核对文件指纹、大小和上传时间。";
   let response: Response;
   try { response = await guardedFetch(`/api/admin/content/trust-documents${path}`, { ...init, cache: "no-store" }); }
-  catch (error) { if (write) throw new OutcomeUnknownError("上传结果未知，文件可能已经对外公开；请重新读取，核对文件指纹、大小和上传时间。"); throw error; }
+  catch (error) { if (write) throw new OutcomeUnknownError(unknownMessage); throw error; }
   const body = await response.json().catch(() => null) as ApiResult<T> | null;
   if (!body || !Number.isInteger(body.code) || body.message !== undefined && typeof body.message !== "string") {
-    throw write ? new OutcomeUnknownError("资料操作结果未知，文件可能已经对外公开；请重新读取核对。") : new Error("TRUST_DOCUMENT_RESPONSE_INVALID");
+    throw write ? new OutcomeUnknownError(unknownMessage) : new Error("TRUST_DOCUMENT_RESPONSE_INVALID");
   }
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(body.message);
   if (!response.ok || body.code !== 0 || body.data == null || unknown) {
