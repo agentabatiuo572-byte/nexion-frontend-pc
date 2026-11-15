@@ -43,12 +43,12 @@ export const h1Pending = createPendingMutationStore<H1Pending>({
 
 export function rememberH1(row: H1Pending) {
   h1Pending.remember(row.fingerprint, row.commandKey, row);
-  if (!h1Pending.isDurablyStored(row.fingerprint, row.commandKey)) throw new Error("无法保存原操作记录，尚未继续提交，请检查浏览器存储设置");
+  if (!h1Pending.isDurablyStored(row.fingerprint, row.commandKey)) throw new Error("浏览器存不下这次的记录，没有提交；请检查浏览器的存储设置");
 }
 
 export function beginH1(input: Omit<H1Pending, keyof PendingMutationRecord | "state">): H1Pending {
   const fingerprint = `${input.actorId}|${input.scope}`;
-  if (h1Pending.get(fingerprint)) throw new Error("这个对象有待核对或待审批的提交，请先处理页面上方的原操作");
+  if (h1Pending.get(fingerprint)) throw new Error("这项有一次提交结果未知或在等审批，先到页面上方处理");
   const commandKey = input.requests[0].commandKey;
   const now = Date.now();
   const row: H1Pending = { ...input, fingerprint, commandKey, createdAt: now, expiresAt: now + 86400000, state: "unknown" };
@@ -87,11 +87,11 @@ export async function executeH1(row: H1Pending, onReceipt: (receipt: Partial<H1P
       else rememberH1({ ...current, state: explicit ? "rejected" : "unknown", retryRejected: retry && explicit,
         rejectionReason: explicit ? displayAdminError(error) : undefined });
       if (request.kind === "proposal" && isA2OutcomeUncertainError(error)) {
-        error.message = "申请提交结果待核对，可能已生成审批单；批准前参数不变。原内容与理由已保留，请查询原操作。";
+        error.message = "提交结果未知，可能已经建了审批单，批准前参数不变。原内容和理由已保留，请查询原结果。";
       }
       if (error instanceof Error && request.kind === "patch") {
-        if (!explicit) error.message = `${request.label}结果待核对。原内容与理由已保留，请先读回核对，再使用「重试原操作」继续。`;
-        else if (retry) error.message = `${request.label}重试已被拒绝。${error.message}`;
+        if (!explicit) error.message = `${request.label}结果未知。原内容和理由已保留，可以点「重试原操作」，不会重复执行。`;
+        else if (retry) error.message = `${request.label}重试被拒绝。${error.message}`;
         const saved = current.requests.filter((item) => item.acknowledged).map((item) => `${item.label}已保存`).join("，");
         if (saved) error.message = explicit && !retry ? `${saved}；${request.label}未保存。${error.message}` : `${saved}；${error.message}`;
       }
