@@ -4708,3 +4708,7 @@ M3 群发已有待确认原命令时，「查询原操作结果」独立于「�
 ### 2026-11-15 A2 B44 资格单源
 
 `AuditCenterOverview.AuditOperationTicket:58–76` 六字段在当前全部工单读取/回执统一存在；`OpsAuditCenterService.ticketMetadata` 按当前查看者重算。PC fromTicket 要求两项 boolean，缺失不回落；canDecide 仅采用后端 canApprove/canReject，并保留会话/全局 A2 门禁。删除本地业务权限表值及 allowed/委托资格函数；动作识别仅服务现有说明，不授权。无当前待审票的原键恢复保留全局准入，由后端原键恢复规则核验，不从旧本地业务表推断。金额恢复段未改。出处 backend `04d11022`。
+
+### 2026-11-15 复查 F01
+
+普通 GET profiles/{id}/360 的 users 代理在手机号脱敏的首次 JSON.parse 前调用 preserveUserFundAmounts，最近一笔和同回包钱包/账本/订单/提现费用/合计金额均保留原文本，count/id/状态和其他 users 路由行为不变。客服 full-profile 原文转发后用同一 helper。实际验收须后端侧回包经过真实 Next 代理，再比普通与客服页面，不可拦最终浏览器回包掩盖代理问题。依据 backend04d11022 OpsUser360Service.detail/UserAccountView/WithdrawalOrderView/TreasuryLedgerBillView/UserLatestFundActivityView。

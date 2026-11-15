@@ -1,3 +1,4 @@
+import { preserveUserFundAmounts } from "@/lib/admin/user-latest-funds-contract";
 import { cookies } from "next/headers";
 import { phoneUserRoute } from "@/lib/admin/phone-replacement-routes";
 import { paymentPasswordRoute } from "@/lib/admin/payment-password-routes";
@@ -244,7 +245,9 @@ async function proxy(request: Request, context: RouteContext) {
       targetPath.startsWith("/api/admin/users/")
     ) {
       try {
-        const sanitized = sanitizePhoneMasked(JSON.parse(new TextDecoder().decode(body)));
+        const text = new TextDecoder().decode(body);
+        const detail360 = request.method === "GET" && /^\/api\/admin\/users\/profiles\/[^/]+\/360$/.test(targetPath);
+        const sanitized = sanitizePhoneMasked(JSON.parse(detail360 ? preserveUserFundAmounts(text) : text));
         return new Response(JSON.stringify(sanitized), {
           status: upstream.status,
           headers: responseHeaders,

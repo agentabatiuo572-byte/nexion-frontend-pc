@@ -12,7 +12,7 @@ export interface UserLatestFundActivity extends Record<string, unknown> {
 
 /** Used at both 360 HTTP boundaries, before JSON.parse loses decimal digits. */
 export function preserveUserFundAmounts(text: string): string {
-  return text.replace(/("(?:amount|paymentAmount)"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"');
+  return text.replace(/("(?:amount|paymentAmount|refundAmountUsdt|balanceAfter|walletUsdt|walletNex|dailyUsdt|dailyNex|totalUsdt|totalNex|deviceDailyUsdt|deviceDailyNex|commissionUsdt|commissionNex|usdt|nex|currentUsdtBalance|currentNexBalance|confirmedUsd|completedUsd|requestedUsd|depositedUsd|withdrawnUsd|withdrawRequestedUsd|fee|grossFee|nexBurned|feeWaived|actualFee|netReceive|networkFee|networkFeeMin|networkFeeMax|creditedDepositTotal|successfulWithdrawalPrincipalTotal|successfulWithdrawalNetTotal|processingWithdrawalPrincipalTotal|processingWithdrawalNetTotal|balance)"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"');
 }
 
 export function parseUserLatestFunds(value: unknown) {
