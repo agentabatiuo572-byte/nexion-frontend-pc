@@ -702,7 +702,7 @@ function G2ExchangePage() {
         ? `${copy?.loosen ?? "放宽"}${name}会让平台多付 USDT，要另一位超级管理员批准`
         : `${copy?.loosen ?? "放宽"}${name}会让平台每天可能多付 USDT，要另一位超级管理员批准`,
       coverageCheck: cap.key === "fee" || cap.key === "feeMin"
-        ? "提交审批时和批准时，后端各检查一次：原值没被别人改过；把现在排队中的真实单（不含停用账户和测试账户）按新旧费用各算一次到手 USDT，多出来的加进应付款后，兑付覆盖率不低于红线。低于红线或算不准都拒绝。"
+        ? "提交审批时和批准时各检查一次：原值没被别人改过；把现在排队中、启用中的非测试账户的单按新旧费用各算一次到手 USDT，多出来的加进应付款后，兑付覆盖率不低于红线。低于红线或算不准都会被拒绝。"
         : "提交审批时和批准时，后端各检查一次：原值没被别人改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
       edit: isQueueMode
         ? { kind: "select", current: cap.displayValue, currentLabel: originalDirect ? "提交时" : undefined, disallowCurrent: true, initialValue: originalValue === undefined ? undefined : originalValue === "REJECT" ? "拒绝" : "排队", options: ["排队", "拒绝"], amplifiesWhen: { from: "拒绝", to: "排队" } }
@@ -929,7 +929,7 @@ function G2ExchangePage() {
         <Fact k="这一批" lead unit={count === undefined ? undefined : "单"}>{count === undefined ? "填写最多处理几单" : `最多 ${fmtCount(count)}`}</Fact>
         <Fact k="选哪几单">从最早排队的开始选，不限创建日期；不是列表里勾选的行。停用账户和测试账户的单不在这一批里</Fact>
         <Fact k="金额">{count === undefined ? `排队中 ${fmtCount(stats.queueDepth)} 单` : queueAllVisible && stats.queueDepth > 0
-          ? `最早的 ${fmtCount(Math.min(count, queue.length))} 单合计 ${fromMicros(oldestMicros)} USDT（实际以处理结果为准）`
+          ? `按列表估算：最早 ${fmtCount(Math.min(count, queue.length))} 单合计 ${fromMicros(oldestMicros)} USDT。列表里停用、测试账户的单也算进去了，以处理结果为准`
           : `列表只显示最近 ${fmtCount(queue.length)} 单，算不出这一批的金额；处理结果里逐单列出`}</Fact>
         <Fact k="每一单">依次检查兑换开关、用户、钱包、平台和个人日额度、地区、手续费；通过的马上成交，额度不够的留在队列；额度检查通过后地区被封锁的取消，有预占的退回</Fact>
         {swap.emergencyPaused === true && <Fact k="现在" tone="warn">兑换已暂停，后端会拒绝这一批</Fact>}
@@ -972,7 +972,7 @@ function G2ExchangePage() {
     : stats.queueDepth > 0
       ? <Conclusion state="warn" icon={ListOrdered}
           hint={canProcessBatch ? "排队的单不会自动成交，在下面「排队中的兑换」点「处理排队」。" : "排队的单不会自动成交，请有处理权限的同事处理。"}
-          explain="排队数是所有还在排队的单，不限哪天创建。后端没有定时处理队列的任务，单子上的「明天 00:00」是固定文字，不是排好的处理时间。">
+          explain="排队数是所有还在排队的单，不限哪天创建。系统不会定时处理队列，单子上的「明天 00:00」是固定文字，不是排好的处理时间。">
           兑换开着，有 {fmtCount(stats.queueDepth)} 单在排队等处理</Conclusion>
       : <Conclusion state="neutral" icon={ArrowLeftRight}
           explain="只说开关和队列：兑换开着、没有排队的单。今天的额度用量和拦截在下面。">
