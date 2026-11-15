@@ -133,7 +133,7 @@ export function IdlePolicyModal({
       className="m3-policy-modal"
       title={canSave ? "调整会话超时策略" : "会话超时策略"}
       icon="clock"
-      sub={canSave ? <StatusTag tone="progress" filled>确认保存后生效</StatusTag> : <StatusTag tone="neutral" filled icon={Lock} explain="只有超级管理员能改。">只读</StatusTag>}
+      sub={canSave ? <StatusTag tone="progress" filled>确认保存后生效</StatusTag> : <StatusTag tone="neutral" filled icon={Lock} explain="只有获得授权的超级管理员能改。">只读</StatusTag>}
       busy={saving}
       onClose={onClose}
       footer={<>
@@ -152,7 +152,7 @@ export function IdlePolicyModal({
       <div className="m3-policy-fields">
         {numField("待回复提醒", "客户消息等待回复达到该时长，标记待处理。", warn, setWarn, 1, 30, true, warnOk ? undefined : "填 1 到 30 的整数分钟")}
         {numField("严重超时", "超过该时长仍未回复，标记严重超时。须大于提醒时长。", close, setClose, 2, 120, true, !closeOk ? "填 2 到 120 的整数分钟" : warnOk && closeN <= warnN ? "要大于待回复提醒时长" : undefined)}
-        {numField("无人发言结束接待", endAvailable ? "后台最后一条消息发出后，这么久没人说话就结束接待，其他人可以接手；对话和待回复都保留。" : "暂不能在这里设置，其他两项照常保存。", end, setEnd, 2, 120, endAvailable, endOk ? undefined : "填 2 到 120 的整数分钟")}
+        {numField("无人发言结束接待", endAvailable ? "后台发出最后一条消息后，这么久没再发就结束接待（客户发消息不算），其他人可以接手；对话和待回复都保留。" : "暂不能在这里设置，其他两项照常保存。", end, setEnd, 2, 120, endAvailable, endOk ? undefined : "填 2 到 120 的整数分钟")}
       </div>
       {confirm && <div className="rd-confirm-facts m3-policy-preview" role="status">
         <DiffList rows={[
