@@ -1165,7 +1165,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
                 {(control) => <Select {...control} aria-label="通知类型" value={form.kind} disabled={frozen || !deliveryCatalog} onChange={(next) => set("kind", next)}
                   options={(deliveryCatalog?.kinds ?? []).map((option) => ({ value: option.value, label: option.label }))} />}
               </Field>
-              <Field label="点了去哪" help={form.ctaHref ? "通知里出现按钮，点按钮和左滑都去这里。" : form.kind === "system" ? "没有按钮，点了只标已读；系统通知左滑不跳。" : `没有按钮，点了只标已读；左滑仍按类型去默认页。`}>
+              <Field label="点了去哪" help={form.ctaHref ? (form.kind === "system" ? "通知里出现按钮，点按钮去这里；系统通知左滑不跳。" : "通知里出现按钮，点按钮和左滑都去这里。") : form.kind === "system" ? "没有按钮，点了只标已读；系统通知左滑不跳。" : `没有按钮，点了只标已读；左滑仍按类型去默认页。`}>
                 {(control) => <Select {...control} aria-label="点了去哪" value={form.ctaHref} disabled={frozen || !deliveryCatalog} onChange={(next) => set("ctaHref", next)}
                   options={(deliveryCatalog?.ctaRoutes ?? []).map((option) => ({ value: option.value, label: option.label }))} />}
               </Field>
