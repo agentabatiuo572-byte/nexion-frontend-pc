@@ -102,7 +102,7 @@ function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
 export async function queryF4Proposal(adminId: number, original: FDomainAttempt) {
   actor(adminId); // Read permission is adjudicated by the endpoint, independently of write grants.
   if (original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-  remember({ ...original, ticket: undefined, absent: false });
+  remember({ ...original, absent: false });
   const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
   if (!ticket) { remember({ ...original, ticket: undefined, absent: true }); return null; }
   checkTicket(original, ticket);

@@ -316,6 +316,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
   const searchParams = useSearchParams();
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
+  const canRead = session?.role === "superadmin" || authorities.includes("user_c1_read");
   const canReadRisk = session?.role === "superadmin" || authorities.includes("risk_k4_read");
   const canExport = authorities.includes("user_c1_export");
   const fullExport = FULL_EXPORT_ROLES.includes(session?.role ?? "");
@@ -364,6 +365,12 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
 
   useEffect(() => {
     const requestId = ++listRequest.current;
+    if (!canRead) {
+      setList(null); setListLoading(false); setReadAt(null);
+      setShape({ balance: false, device: false });
+      setListError(displayAdminReadError(new Error("ADMIN_PERMISSION_DENIED")));
+      return;
+    }
     setListLoading(true);
     setListError("");
     void fetchUserProfilesPage({ ...exportQueryOf(applied), pageNum: page, pageSize }).then((data) => {
@@ -382,10 +389,14 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     });
     // listKey 已含 applied、page、pageSize。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listKey, listReload]);
+  }, [canRead, listKey, listReload]);
 
   useEffect(() => {
     const requestId = ++overviewRequest.current;
+    if (!canRead) {
+      setOverview(null); setOverviewFailed(true); setOverviewLoading(false);
+      return;
+    }
     setOverviewLoading(true);
     void fetchC1Overview().then((data) => {
       if (requestId !== overviewRequest.current) return;
@@ -398,7 +409,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     }).finally(() => {
       if (requestId === overviewRequest.current) setOverviewLoading(false);
     });
-  }, [overviewReload]);
+  }, [canRead, overviewReload]);
 
   useEffect(() => {
     writeQuery(applied, page, pageSize);

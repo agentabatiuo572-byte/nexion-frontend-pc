@@ -291,7 +291,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     const held = mDataRef.current?.conversations;
     const target = held?.find((conversation) => conversation.id === event.conversationNo);
     const onlyThread = Boolean(target && !held!.some((conversation) => conversation.id !== target.id && conversation.customerId && conversation.customerId === target.customerId));
-    if (tab !== "M3" && (event.eventType === "MESSAGE" || event.eventType === "RECEIPT") && onlyThread) {
+    if ((event.eventType === "MESSAGE" || event.eventType === "RECEIPT") && onlyThread) {
       try {
         const reads = detailReads.current, running = reads.get(event.conversationNo);
         if (running) { running.again = true; return; }
@@ -364,7 +364,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       conversations[idx] = nextConvo;
       return { ...prev, conversations };
     });
-  }, [reconcileLiveConversationSnapshot, loadConversationDetail, tab]);
+  }, [reconcileLiveConversationSnapshot, loadConversationDetail]);
   // 鉴权：走同源 cookie（nexion_admin_token 由 Next route 转 Authorization 头）。
   // 仅走同源 httpOnly cookie 代理；JWT 永不进入 SSE URL。
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
@@ -607,6 +607,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     );
   }, [runM3DirectWrite]);
   const ctx: MCtx = {
+    actionConfirm: mc,
     unboundAlertMinutes: alertMinutes,
     pget: (k) => mergedParams[k] as string | undefined,
     params: mergedParams,

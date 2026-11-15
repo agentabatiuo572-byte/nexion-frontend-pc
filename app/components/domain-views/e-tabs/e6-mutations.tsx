@@ -3,9 +3,10 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import Link from "next/link";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
-import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey } from "@/lib/admin/a2-client";
+import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { isRetryExpired, RETRY_EXPIRED_TEXT, hasPersistedPendingCommandOwner } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import { eDomainLegacyCommands as legacyCommands, e5LegacyCommands as legacyPhones } from "@/lib/admin/e-domain-commands";
 import { e5Commands, type E5Command } from "@/lib/admin/e5-command";
 import { e6Commands as commands, type E6DeviceInput as DeviceInput, type E6Payload as Payload, type E6Pending, type E6Proposal, type E6Section } from "@/lib/admin/e6-command";
@@ -35,7 +36,9 @@ function useMutations() {
   const [release, setRelease] = useState<E6Pending | null>(null);
   const active = useRef(true), sending = useRef(false);
   const sync = () => {
-    setPending(commands.list().filter(r => r.owner === owner));
+    const saved = commands.list().filter(r => r.owner === owner);
+    setPending(saved);
+    setRejected(saved.filter(r => r.retryRejection).map(r => r.commandKey));
     setDevicePending(e5Commands.list().filter(r => r.actorId === String(owner)));
   };
   const canPropose = rights.some(r => ["platform_a2_write", "platform_a2_proposal_create"].includes(r));
@@ -71,21 +74,26 @@ function useMutations() {
   async function send(record: E6Pending, retry: boolean) {
     if (sending.current || !allowed(record)) throw new Error("当前没有这项操作的提交权限。");
     if (retry && !canRetry(record)) throw new Error("原操作仅可核查，不能重新发送。");
+    record = { ...record, retryRejection: undefined };
+    commands.remember(record.fingerprint, record.commandKey, record);
+    if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器无法保存原操作，本次未提交。请允许会话存储后重试。");
     sending.current = true; setBusy(record.commandKey);
+    let checkingProposal = retry && record.payload.kind === "proposal";
     try {
       if (retry && record.payload.kind === "proposal") {
-        const ticket = await fetchA2ProposalByKey(record.commandKey);
+        const ticket = await fetchA2ProposalByKey(record.commandKey, true, "f");
         if (ticket) {
-          if (!ticket.mine) throw new Error("原提案归属无法核实，请到操作记录核对。");
-          commands.remember(record.fingerprint, record.commandKey, { ...record, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal: ["approved", "rejected", "withdrawn", "expired"].includes(ticket.status) ? ticket.status : undefined });
+          if (!ticket.mine || ticket.obj !== record.payload.input.obj) throw new Error("原提案归属无法核实，请到操作记录核对。");
+          commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal: ["approved", "rejected", "withdrawn", "expired"].includes(ticket.status) ? ticket.status : undefined });
           if (active.current) sync();
           return;
         }
       }
+      checkingProposal = false;
       let writeResult: E6WriteReceipt | undefined;
       if (record.payload.kind === "proposal") {
         const ticket = await createA2OperationProposal(record.payload.input, record.commandKey, true);
-        commands.remember(record.fingerprint, record.commandKey, { ...record, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies } });
+        commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies } });
       } else if (record.payload.kind === "device") {
         const i = record.payload.input;
         if (i.action === "activate") { const result = await activateE5Device(i.deviceId, false, i.reason, i.operator, record.commandKey); writeResult = { pendingDeactivate: result.pendingDeactivate }; }
@@ -110,11 +118,19 @@ function useMutations() {
       if (active.current) { sync(); setNotes(n => ({ ...n, [record.commandKey]: record.payload.kind === "proposal" ? "已提交，等待审批后执行。" : "已取得操作回执，请刷新核对当前值。" })); }
       return writeResult;
     } catch (failure) {
-      if (!retry && isExplicitRejection(failure)) commands.forget(record.fingerprint, record.commandKey);
+      const response = failure as { status?: number; httpStatus?: number; apiCode?: number; backendMessage?: string };
+      const firstRejection = !retry && !isA2OutcomeUncertainError(failure) && !!response.backendMessage
+        && !isIdempotencyOutcomeOpen(response.backendMessage) && Number.isInteger(response.apiCode)
+        && response.apiCode! < 500 && response.status !== undefined
+        && isDeterministicRejection(response.httpStatus ?? response.status, response.apiCode);
+      if (firstRejection) commands.forget(record.fingerprint, record.commandKey);
+      else if (!checkingProposal && retry && isExplicitRejection(failure)) commands.remember(record.fingerprint, record.commandKey, {
+        ...record, retryRejection: displayAdminError(failure),
+      });
       if (active.current) {
         sync();
-        if (retry && isExplicitRejection(failure)) setRejected(r => [...r, record.commandKey]);
-        setNotes(n => ({ ...n, [record.commandKey]: isExplicitRejection(failure) ? "原操作重试已被明确拒绝，可核对后解除待确认。" : "原请求已保留，结果仍待核实。" }));
+        if (!checkingProposal && retry && isExplicitRejection(failure)) setRejected(r => [...r, record.commandKey]);
+        setNotes(n => ({ ...n, [record.commandKey]: !checkingProposal && isExplicitRejection(failure) ? "原操作重试已被明确拒绝，可核对后解除待确认。" : "原请求已保留，结果仍待核实。" }));
         setTechnicalErrors(n => ({ ...n, [record.commandKey]: JSON.stringify(failure instanceof Error ? { ...failure, name: failure.name, message: failure.message } : failure, null, 2) }));
       }
       throw failure;
@@ -134,17 +150,27 @@ function useMutations() {
     return start(scope, section, input.action, { kind: "proposal", evidence, input: { ...input, operator: session!.operator || session!.username,
       operatorRole: roleLabel(session!.role), sos: false, roleGate: section === "tasks" ? "另一位有批准权限和任务池修改权限的管理员" : section === "tiers" ? "另一位有批准权限和对应手机收益权限的管理员" : section === "phones" ? "另一位有批准权限和对应设备处置权限的管理员" : "另一位有批准权限和手机配置读取权限的管理员" } });
   }
-  async function check(record: E6Pending) {
+  async function check(record: E6Pending, propagate = false) {
+    if (record.owner !== useAdminAuth.getState().session?.adminId || record.payload.kind !== "proposal") throw new Error("原提案归属无法核实，请到操作记录核对。");
+    commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false }); sync();
     setBusy(record.commandKey);
     try {
-      const ticket = await fetchA2ProposalByKey(record.commandKey);
+      const ticket = await fetchA2ProposalByKey(record.commandKey, true, "f");
       if (!active.current) return;
-      if (!ticket || !ticket.mine) { setNotes(n => ({ ...n, [record.commandKey]: "暂未查到原审批单，结果仍未确认；原请求继续保留。" })); return; }
+      if (!ticket && record.ticketId) throw new A2OutcomeUncertainError("原提案归属无法核实，请到操作记录核对。", record.commandKey);
+      if (ticket && (!ticket.mine || ticket.obj !== record.payload.input.obj || record.ticketId && ticket.id !== record.ticketId)) throw new A2OutcomeUncertainError("原提案归属无法核实，请到操作记录核对。", record.commandKey);
+      if (!ticket) { commands.remember(record.fingerprint, record.commandKey, { ...record, absent: true }); sync(); setNotes(n => ({ ...n, [record.commandKey]: "暂未查到原审批单，结果仍未确认；原请求继续保留。" })); return; }
       const terminal = ["approved", "rejected", "withdrawn", "expired"].includes(ticket.status) ? ticket.status : undefined;
-      commands.remember(record.fingerprint, record.commandKey, { ...record, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal }); sync();
+      commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal }); sync();
       setNotes(n => ({ ...n, [record.commandKey]: `原提案 ${ticket.id}：${({ pending: "待审批", approved: "已批准，请刷新业务当前值", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" } as Record<string,string>)[ticket.status] ?? ticket.status}` }));
-    } catch (failure) { if (active.current) setNotes(n => ({ ...n, [record.commandKey]: displayAdminError(failure) })); }
+    } catch (failure) { if (active.current) setNotes(n => ({ ...n, [record.commandKey]: displayAdminError(failure) })); if (propagate) throw failure; }
     finally { if (active.current) setBusy(""); }
+  }
+  async function releaseMissing(record: E6Pending) {
+    if (record.payload.kind !== "proposal" || !isRetryExpired(record) || record.ticketId) throw new Error("原操作仅可核查，不能重新发送。");
+    await check(record, true);
+    const current = commands.list().find(r => r.commandKey === record.commandKey && r.owner === owner);
+    if (current?.absent && !current.ticketId) { commands.forget(current.fingerprint, current.commandKey); sync(); }
   }
   async function checkDirect(record: E6Pending, evidence?: ECommandEvidence) {
     if (!visible(record.section)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
@@ -177,7 +203,7 @@ function useMutations() {
       throw failure;
     } finally { if (active.current) { sync(); setBusy(""); } }
   }
-  return { pending, devicePending, legacy, busy, notes, technicalErrors, rejected, release, setRelease, sync, locked, visible, allowed, canRetry, canPropose, canAudit, proposal, start, check, checkDirect, send,
+  return { pending, devicePending, legacy, busy, notes, technicalErrors, rejected, release, setRelease, sync, locked, visible, allowed, canRetry, canPropose, canAudit, proposal, start, check, releaseMissing, checkDirect, send,
     canInvestigate: canInvestigateECommand("device_e5_read"),
     canInvestigateRisk: canInvestigateECommand("device_e6_read"),
     device: (scope: string, label: string, input: Omit<DeviceInput, "operator">) => start(scope, "phones", label, { kind: "device", input: { ...input, operator: session!.operator || session!.username } }),
@@ -250,7 +276,7 @@ export function E6PendingNotice({ section, onRead }: { section: E6Section; onRea
       {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && m.canInvestigateRisk && riskReceipts[r.commandKey]?.status !== "PROCESSING" && (closureOpen(outcomes[r.commandKey], isRetryExpired(r)) || riskReceipts[r.commandKey]?.status === "UNKNOWN") && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
       {r.payload.kind === "device" && m.canInvestigate && closureOpen(outcomes[r.commandKey], isRetryExpired(r)) && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
       {r.terminal && <Button size="sm" onClick={() => { m.forget(r); onRead?.(); }}>原提案已结束，准备新变更</Button>}
-      {m.rejected.includes(r.commandKey) && <Button variant="primary" size="sm" onClick={() => m.setRelease(r)}>解除待确认</Button>}
+      {(m.rejected.includes(r.commandKey) || r.payload.kind === "proposal" && r.absent && !r.ticketId && isRetryExpired(r)) && <Button variant="primary" size="sm" onClick={() => m.setRelease(r)}>解除待确认</Button>}
       {m.canAudit && <Link href="/platform/audit?domain=E">核对操作记录与审批</Link>}
     </>}>
       {!r.terminal && <p>原内容、理由和命令号已保存，这个对象暂不能提交新变更。{r.payload.kind === "risk" ? r.payload.receiptVersion === 1 ? isRetryExpired(r) ? "后端按命令号保留原保存结果，请先查原保存结果。当前设置相同不能证明原保存成功。" : "后端按命令号去重：先查原保存结果，也可以按原操作重试，不会重复保存。当前设置相同不能证明原保存成功。" : "这是升级前的记录，后端没有它的回执，只能读取当前设置核对；当前设置相同不能证明原保存成功。" : m.rejected.includes(r.commandKey) ? "请核对拒绝结果，再解除这条原操作。" : r.payload.kind === "device" ? "先查原操作结果；重试只能使用原内容、原理由和原命令号。" : "重试只能使用原内容、原理由和原命令号。"}</p>}
@@ -273,6 +299,6 @@ export function E6PendingNotice({ section, onRead }: { section: E6Section; onRea
         }
         setClosing(null); onRead?.();
       }} />}
-    {m.release?.section === section && <ReleaseModal label={m.release.label} onCancel={() => m.setRelease(null)} onConfirm={() => { m.forget(m.release!); m.setRelease(null); onRead?.(); }} />}
+    {m.release?.section === section && <ReleaseModal label={m.release.label} onCancel={() => m.setRelease(null)} onConfirm={() => { const record = m.release!; if (record.payload.kind === "proposal" && isRetryExpired(record) && record.absent) { void m.releaseMissing(record).then(() => { m.setRelease(null); onRead?.(); }, () => { /* check retains the failed lookup in the original notice. */ }); } else { m.forget(record); m.setRelease(null); onRead?.(); } }} />}
   </>;
 }

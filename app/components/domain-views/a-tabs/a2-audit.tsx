@@ -463,6 +463,7 @@ type A2PendingCommand = PendingMutationRecord & {
   fundEffect?: A2OperationRow["fundEffect"];
   /** 退款单的原订单号：重试前要先读到退款金额（F01）。 */
   refundOrderNo?: string;
+  refundAmountUsdtText?: string;
   /** 审批单的原动作，重试时写进标签。 */
   action?: string;
   ruleTaskAction?: A2OperationRow["ruleTaskAction"];
@@ -475,9 +476,11 @@ const a2Commands = createPendingMutationStore<A2PendingCommand>({
   storageKey: "nexion-admin-a2-commands-v1",
   // 过期后不能再用原号重试，记录和锁都留着（OP-96）。
   retainExpiredRecords: true,
+  isValidRecord: record => record.refundAmountUsdtText === undefined
+    || typeof record.refundAmountUsdtText === "string" && /^\d+(?:\.\d{1,6})?$/.test(record.refundAmountUsdtText) && /[1-9]/.test(record.refundAmountUsdtText),
 });
 
-type RefundAmount = { state: "loading" } | { state: "ok"; amount: number } | { state: "error"; message: string };
+type RefundAmount = { state: "loading" } | { state: "ok"; amount: string } | { state: "error"; message: string };
 const REFUND_AMOUNT_REQUIRED = "先读到退款金额才能批准";
 
 const DECISION_VERB: Record<"approve" | "reject" | "withdraw", string> = { approve: "批准", reject: "驳回", withdraw: "撤回" };
@@ -1117,7 +1120,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   // B37：退款金额来自这张提案，不能用订单总额替代；缺少权威金额仍禁用批准。
   const refundAmount = (w: A2OperationRow): RefundAmount | undefined => w.fundEffect === "ORDER_REFUND"
-    ? w.refundAmountUsdt !== undefined ? { state: "ok", amount: w.refundAmountUsdt }
+    ? w.refundAmountUsdtText != null && /[1-9]/.test(w.refundAmountUsdtText) ? { state: "ok", amount: w.refundAmountUsdtText }
       : { state: "error", message: "退款金额未读取" }
     : undefined;
   const refundAmountText = (amount: RefundAmount) => amount.state === "ok" ? `${orderAmount(amount.amount)} USDT`
@@ -1197,11 +1200,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
   };
 
-  type DecisionTicket = TicketIdentity & Pick<A2OperationRow, "id" | "refundOrderNo"> & { rule?: DecisionRule | null };
+  type DecisionTicket = TicketIdentity & Pick<A2OperationRow, "id" | "refundOrderNo" | "refundAmountUsdtText"> & { rule?: DecisionRule | null };
   const runDecision = (kind: "approve" | "reject" | "withdraw", w: DecisionTicket, reason: string, by = operator) => sendCommand(
     `${kind}|${w.id}`,
     { kind, label: `${DECISION_VERB[kind]} · ${actionName(w)}`, target: w.id, reason, operator: by, rule: w.rule !== undefined ? w.rule : decisionRule(w),
-      operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, action: w.action, ruleTaskAction: w.ruleTaskAction },
+      operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, refundAmountUsdtText: w.refundAmountUsdtText ?? undefined, action: w.action, ruleTaskAction: w.ruleTaskAction },
     `a2-${kind}-${w.id}`,
     (key) => kind === "approve" ? approveA2Operation(w.id, reason, key)
       : kind === "reject" ? rejectA2Operation(w.id, reason, key)
@@ -1279,6 +1282,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /** 重试前退款单要先读到退款金额，和新开的批准框同一个前提（F01）；读不到只能读回核对，原命令照旧保留。 */
   const retryAmount = (record: A2PendingCommand): RefundAmount | undefined => {
     if (record.kind !== "approve" || record.fundEffect !== "ORDER_REFUND") return undefined;
+    if (record.refundAmountUsdtText !== undefined) return { state: "ok", amount: record.refundAmountUsdtText };
     const ticket = main?.operationQueue.find((w) => w.id === record.target);
     return mainLoading ? { state: "loading" } : ticket ? refundAmount(ticket)
       : { state: "error", message: "退款金额未读取" };
@@ -1310,7 +1314,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       const ticketLike = { id: record.target, action: record.action ?? queued?.action ?? record.target, obj: record.obj ?? queued?.obj ?? "",
         ruleTaskAction: record.ruleTaskAction ?? queued?.ruleTaskAction,
         before: queued?.before ?? "", after: queued?.after ?? "", operationCode: record.operationCode ?? queued?.operationCode,
-        fundEffect: record.fundEffect ?? queued?.fundEffect, refundOrderNo: recordOrderNo(record), rule: recordRule(record) };
+        fundEffect: record.fundEffect ?? queued?.fundEffect, refundOrderNo: recordOrderNo(record),
+        refundAmountUsdtText: record.refundAmountUsdtText ?? queued?.refundAmountUsdtText, rule: recordRule(record) };
       const outcome = record.kind === "param" ? await runParam(record.target as "ttl" | "retention" | "schema", record.value ?? "", record.reason, record.operator)
         : record.kind === "retention" ? await runRetention(record.reason, record.operator)
           : record.kind === "export" ? await runExport(record.reason, record.filter ?? {}, record.operator)

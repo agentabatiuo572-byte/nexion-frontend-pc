@@ -360,7 +360,7 @@ export function D3Treasury() {
   const submitInjection = async (nextAmount: string, nextVoucher: string, reason: string, operator = OPERATOR()) => {
     const scope = injectionScope(nextVoucher, nextAmount);
     const retained = Boolean(pendingKeys.get(scope));
-    const key = treasuryCommandKey(scope, { amount: nextAmount, voucherNo: nextVoucher, reason, operator,
+    const key = treasuryCommandKey(scope, { amount: nextAmount, voucherNo: nextVoucher, reason, operator, ownerAdminId: session?.adminId,
       commandOrigin: fundCommandOrigin("POST", "/api/admin/treasury/reserve-injection", "finance_d3_read") });
     const clearForm = () => {
       setAmount("");
@@ -495,7 +495,7 @@ export function D3Treasury() {
       confirmLabel: "确认保存",
       run: async (reason) => {
         const operator = OPERATOR();
-        const fingerprint = JSON.stringify({ draft: values, expectedVersion: version, reason, operator,
+        const fingerprint = JSON.stringify({ draft: values, expectedVersion: version, reason, operator, ownerAdminId: session?.adminId,
           commandOrigin: fundCommandOrigin("PUT", "/api/admin/treasury/forecast-config", "finance_d3_read") });
         const commandKey = forecastCommand.resolve(FORECAST_SLOT, fingerprint, () => `b2-forecast-config-${crypto.randomUUID()}`);
         try {
@@ -549,7 +549,7 @@ export function D3Treasury() {
     if (!main || loading) throw new Error("资金数据没读到或正在刷新，读完再导出。");
     const scope = exportScope(kind);
     const retained = Boolean(pendingKeys.get(scope));
-    const key = treasuryCommandKey(scope, { exportKind: kind, reason, operator,
+    const key = treasuryCommandKey(scope, { exportKind: kind, reason, operator, ownerAdminId: session?.adminId,
       commandOrigin: fundCommandOrigin("POST", `/api/admin/treasury/${kind === "reconciliation" ? "reconciliation" : "liabilities"}/export`, "finance_d3_read") });
     await sendCommand({
       retained,
@@ -696,7 +696,9 @@ export function D3Treasury() {
   }
 
   const forecastRecord = unknownCommands.forecast;
-  const savedForecast = forecastRecord && JSON.parse(forecastRecord.inputFingerprint) as { draft: ForecastValues; expectedVersion: number; reason: string; operator: string; commandOrigin?: FundCommandOrigin };
+  const savedForecast = forecastRecord && JSON.parse(forecastRecord.inputFingerprint) as { draft: ForecastValues; expectedVersion: number; reason: string; operator: string; ownerAdminId?: number; commandOrigin?: FundCommandOrigin };
+  const originalOwner = (record: { ownerAdminId?: number; operator?: string }) => record.ownerAdminId === undefined
+    ? record.operator === OPERATOR() : record.ownerAdminId === session?.adminId;
   const savedChanges = savedForecast && baseValues
     ? forecastDiffRows(baseValues, savedForecast.draft).filter((row) => row.before !== row.after).map((row) => ({ key: row.key, label: row.label, value: <Change from={row.before} to={row.after} /> }))
     : [];
@@ -730,7 +732,7 @@ export function D3Treasury() {
       body: <>{timeText(new Date(forecastRecord.createdAt).toISOString())} 提交。</>,
       hint: "先看「预测设置」的版本有没有变；重试不会重复保存。",
       expiresAt: forecastRecord.expiresAt,
-      allowed: canConfig && savedForecast.operator === OPERATOR(),
+      allowed: canConfig && originalOwner(savedForecast),
       auditHref: "/platform/audit?domain=D",
       retryTitle: "按原操作重试保存预测设置",
       retryEffect: effectiveText(),
@@ -751,7 +753,7 @@ export function D3Treasury() {
       body: <>{timeText(new Date(record.createdAt).toISOString())} 提交。</>,
       hint: "文件可能没有下载下来，操作记录里可能已经有这次导出；重试不会多记一次。",
       expiresAt: record.expiresAt,
-      allowed: (record.exportKind === "liabilities" ? canExportLiabilities : canExportReconciliation) && record.operator === OPERATOR(),
+      allowed: (record.exportKind === "liabilities" ? canExportLiabilities : canExportReconciliation) && originalOwner(record),
       auditHref: "/platform/audit?domain=D",
       retryTitle: "按原操作重试导出",
       retryEffect: "立即生效",

@@ -679,7 +679,12 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     }
     throw error;
   }
-  const result = (await response.text().then(text => JSON.parse(path.endsWith("/360") ? preserveUserFundAmounts(text) : text)).catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(text => {
+    const exact = path.endsWith("/360") ? preserveUserFundAmounts(text) : text;
+    return JSON.parse(path.startsWith("/profiles")
+      ? exact.replace(/("(?:walletUsdt|walletNex)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')
+      : exact);
+  }).catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
     const authFailure = isAdminAuthFailure(response.status, result?.message);

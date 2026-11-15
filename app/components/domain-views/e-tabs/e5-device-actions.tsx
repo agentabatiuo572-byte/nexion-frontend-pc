@@ -13,7 +13,7 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { canResumeE5UserDevicesFrom, fetchLegacyUnknownCandidate, type E5Device } from "@/lib/admin/e5-client";
 import { sameLegacyUnknownProof, type LegacyUnknownCandidate } from "@/lib/admin/legacy-unknown-resolution";
-import { e5Commands, e5LegacyCommands, e5CommandBlocks, checkE5Command, sendE5Command, type E5Command, type E5Intent } from "@/lib/admin/e5-command";
+import { e5Commands, e5LegacyCommands, e5CommandBlocks, checkE5Command, queryE5Proposal, sendE5Command, type E5Command, type E5Intent } from "@/lib/admin/e5-command";
 import { canInvestigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { e6Commands, type E6Pending } from "@/lib/admin/e6-command";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -75,14 +75,16 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
   const [settled, setSettled] = useState<SettledCommand[]>([]);
   const [closing, setClosing] = useState<E5Command | null>(null);
   const sync = useCallback(() => {
-    setRecords(e5Commands.list().filter(r => r.actorId === actorId));
+    const saved = e5Commands.list().filter(r => r.actorId === actorId);
+    setRecords(saved);
+    setRejected(Object.fromEntries(saved.filter(r => r.retryRejection).map(r => [r.commandKey, r.retryRejection!])));
     setPhonePending(e6Commands.list().filter(r => String(r.owner) === actorId && r.section === "phones"));
   }, [actorId]);
   const phoneBlocks = (device: E5Device, intent?: E5Intent) => phonePending.some(r => r.scope === `user:${device.userId}`
     || r.scope === `phone:${device.deviceId}:${device.userId}`
     || (intent === "pause" || intent === "resume") && r.scope.startsWith("phone:") && r.scope.split(":")[2] === device.userId);
   useEffect(() => {
-    sync(); setRelease(null); setRejected({}); setReadResults({}); setOutcomes({}); setSettled([]); setClosing(null);
+    sync(); setRelease(null); setReadResults({}); setOutcomes({}); setSettled([]); setClosing(null);
     try { setOld(e5LegacyCommands()); } catch (cause) { setError(`旧操作记录无法读取：${displayAdminError(cause)}`); }
   }, [sync, epoch]);
   const allowed = (r: E5Command) => {
@@ -102,20 +104,27 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
       const message = submitted ? `A2 ${result.id} 已提交，等待审批后执行` : record.intent === "deactivate"
         ? result.pendingDeactivate ? "已申请停用，等待当前任务结算后自动停用" : "设备已取消激活"
         : record.intent === "pause" ? `暂停成功 · ${result.changedCount} 台设备` : record.intent === "resume" ? `已恢复 ${result.changedCount} 台运营暂停的设备` : "设备已激活";
-      toast(message);
-      await refresh(message);
+      if (!submitted || !retry || result.status === "pending") { toast(message); await refresh(message); }
+      else await refresh();
     } catch (cause) {
       if (cause instanceof Error && "status" in cause && (cause.status === 401 || cause.status === 403)) announcePermissionDenied();
       sync();
-      if (retry && isExplicitRejection(cause)) setRejected(rows => ({ ...rows, [record.commandKey]: displayAdminError(cause) }));
-      setError(isExplicitRejection(cause) ? displayAdminError(cause) : cause instanceof Error && cause.message === "提案缺少有效票号" ? "申请回执未包含审批单号，请到操作记录与审批核对。原请求已保留。" : "没有收到可确认的操作回执，原对象、内容、理由和命令号已保留。");
+      if (retry && !e5Commands.list().find(r => r.commandKey === record.commandKey)?.receivedTicketId && isExplicitRejection(cause)) setRejected(rows => ({ ...rows, [record.commandKey]: displayAdminError(cause) }));
+      setError((!retry && !e5Commands.get(record.fingerprint) || isExplicitRejection(cause)) ? displayAdminError(cause) : cause instanceof Error && cause.message === "提案缺少有效票号" ? "申请回执未包含审批单号，请到操作记录与审批核对。原请求已保留。" : "没有收到可确认的操作回执，原对象、内容、理由和命令号已保留。");
       if (cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "PAUSED_USER_DEVICES_NOT_FOUND") await refresh();
       throw cause;
     } finally { setBusy(""); }
   };
   const check = async (record: E5Command, evidence?: ECommandEvidence) => {
     setBusy(record.commandKey);
-    try { return await checkE5Command(record, evidence); }
+    try {
+      if (["force-activate", "unbind", "legacy"].includes(record.intent)) {
+        const ticket = await queryE5Proposal(record);
+        if (ticket && ticket.status !== "pending") await refresh();
+        return null;
+      }
+      return await checkE5Command(record, evidence);
+    }
     finally { sync(); setBusy(""); }
   };
   const direct = (record: E5Command) => ["activate", "deactivate", "pause", "resume"].includes(record.intent);

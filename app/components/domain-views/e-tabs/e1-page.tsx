@@ -8,11 +8,12 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessClock } from "@/lib/admin/business-time";
 import { fetchE1Products, fetchE1GenerationGates, fetchE1Discount, type E1CatalogSnapshot, type E1BundleDiscount, type E1GenerationGateData, type E1InvalidSku } from "@/lib/admin/e1-client";
 import { fetchE3Snapshot } from "@/lib/admin/e3-client";
-import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
@@ -76,11 +77,12 @@ export function E1Page() {
   const sending = useRef(false);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [rejected, setRejected] = useState<string[]>([]);
+  const [absent, setAbsent] = useState<string[]>([]);
   const [release, setRelease] = useState<E1Pending | null>(null);
   const [conflict, setConflict] = useState(false);
   const [conflictLatest, setConflictLatest] = useState<E1CatalogSnapshot | null>(null);
   const [attemptKey, setAttemptKey] = useState("");
-  const syncPending = useCallback(() => { setPending(e1Pending(actor)); setLegacy(e1LegacyCommands(actor)); setMedia(e1MediaCommands.list().filter(r => r.actorId === actor)); }, [actor]);
+  const syncPending = useCallback(() => { const records = e1Pending(actor); setPending(records); setAbsent(records.filter(r => r.absent && !r.receivedTicketId).map(r => r.commandKey)); setRejected(records.filter(r => r.retryRejection).map(r => r.commandKey)); setLegacy(e1LegacyCommands(actor)); setMedia(e1MediaCommands.list().filter(r => r.actorId === actor)); }, [actor]);
   useEffect(syncPending, [syncPending]);
   const refreshProducts = useCallback(async () => {
     setLoading(true); setError(null);
@@ -174,26 +176,41 @@ export function E1Page() {
     if (!canWrite || !actor || record.actorId !== actor || sending.current) throw new Error("账号、权限或提交状态不允许重试，请先核对原操作");
     if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
     const store = record.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands;
-    store.remember(record.fingerprint, record.commandKey, { actorId: record.actorId, spec: record.spec });
+    record = { ...record, retryRejection: undefined, absent: false };
+    store.remember(record.fingerprint, record.commandKey, record);
     if (!store.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器无法保存原操作，本次没有发送；原记录和对象锁仍保留。");
     sending.current = true; setBusy(record.commandKey); setRejected(keys => keys.filter(k => k !== record.commandKey));
     try {
       const spec = record.spec;
+      if (retry && record.receivedTicketId) { await check(record, true); return; }
       const result = await createA2OperationProposal({ action: spec.action, obj: spec.obj, beforeValue: spec.before, afterValue: spec.after,
         operator: session?.operator || session?.username || "", operatorRole: roleLabel(session!.role), type: spec.type,
         amplifies: !!spec.amplifies, sos: !!spec.sos, roleGate: spec.gateLabel, reason: spec.reason, sourceDomain: spec.sourceDomain,
         command: spec.command, target: spec.target, targets: spec.targets,
       }, record.commandKey, true);
+      record = { ...record, receivedTicketId: result.id };
+      store.remember(record.fingerprint, record.commandKey, record);
+      if (retry) {
+        setConfirmation(null); setEdit(null);
+        await check(record, true);
+        return;
+      }
       forgetE1(record); toast(`已提交，等待审批后执行 · 审批单 ${result.id}`);
       setReceipts(rows => [...rows.filter(row => row.object !== e1Object(spec)), { ...spec, id: result.id, commandKey: record.commandKey, object: e1Object(spec), status: result.status }]);
       setConfirmation(null); if (record.spec.command.op === "e1_sku_create" || record.spec.command.op === "e1_sku_update") setEdit(null);
       const latest = await refresh();
       if (!latest) toast("申请已提交，部分目录或关联设置未读取完整");
     } catch (failure) {
-      if (!retry && isExplicitRejection(failure) && !isA2OutcomeUncertainError(failure)) forgetE1(record);
-      else if (retry && isExplicitRejection(failure)) setRejected(keys => [...keys, record.commandKey]);
+      const response = failure as { httpStatus?: number; apiCode?: number };
+      const firstRejection = !record.receivedTicketId && !retry && !isA2OutcomeUncertainError(failure) && response.httpStatus !== undefined
+        && isDeterministicRejection(response.httpStatus, response.apiCode);
+      if (firstRejection) forgetE1(record);
+      else if (!record.receivedTicketId && retry && isExplicitRejection(failure)) {
+        store.remember(record.fingerprint, record.commandKey, { ...record, retryRejection: e1Error(failure) });
+        setRejected(keys => [...keys, record.commandKey]);
+      }
       setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) }));
-      if (!isExplicitRejection(failure)) { setConfirmation(null); setEdit(null); }
+      if (!firstRejection && !isExplicitRejection(failure)) { setConfirmation(null); setEdit(null); }
       if (String((failure as Error).message).includes("VERSION_CONFLICT") || String((failure as { backendMessage?: string }).backendMessage).includes("VERSION_CONFLICT")) setConflict(true);
       // Throw the original error so OperationConfirmModal keeps reason and fields.
       if (retry) toast(e1Error(failure));
@@ -212,19 +229,32 @@ export function E1Page() {
     setAttemptKey(commandKey);
     return send(e1Commands.list().find(r => r.commandKey === commandKey)!, false);
   };
-  const check = async (record: { commandKey: string }) => {
+  const check = async (record: { commandKey: string }, propagate = false) => {
+    const full = e1Pending(actor).find(r => r.commandKey === record.commandKey);
+    const store = full?.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands;
+    if (full) { store.remember(full.fingerprint, full.commandKey, { ...full, absent: false }); syncPending(); }
     try {
-      const row = await fetchA2ProposalByKey(record.commandKey, true);
+      const row = await fetchA2ProposalByKey(record.commandKey, true, "f");
+      if (row && full && (!row.mine || row.obj !== full.spec.obj || full.receivedTicketId && row.id !== full.receivedTicketId)) throw new A2OutcomeUncertainError("没有读到原审批单，不能解除对象锁，请重试或到操作记录与审批核对", record.commandKey);
+      if (!row && full?.receivedTicketId) throw new A2OutcomeUncertainError("没有读到原审批单，不能解除对象锁，请重试或到操作记录与审批核对", record.commandKey);
+      if (!row && full) { store.remember(full.fingerprint, full.commandKey, { ...full, absent: true }); syncPending(); }
       if (!row) { setNotes(n => ({ ...n, [record.commandKey]: "没有查到原审批单，不能据此认定没有提交；请保留原记录核对。" })); return; }
       setNotes(n => ({ ...n, [record.commandKey]: `原审批单 ${row.id} · ${{ pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[row.status] ?? "状态待核实"}` }));
       toast(`已找到原审批单 ${row.id}，原操作已有回执`);
-      const full = e1Pending(actor).find(r => r.commandKey === record.commandKey);
       if (full) {
         const spec = full.spec;
         setReceipts(rows => [...rows.filter(receipt => receipt.object !== e1Object(spec)), { ...spec, id: row.id, commandKey: record.commandKey, object: e1Object(spec), status: row.status }]);
         forgetE1(full); syncPending();
+        if (row.status !== "pending") { await refresh(); await refreshEarly(); }
       }
-    } catch (failure) { setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) })); }
+    } catch (failure) { setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) })); if (propagate) throw failure; }
+  };
+
+  const releaseMissing = async (record: E1Pending) => {
+    if (String(useAdminAuth.getState().session?.adminId ?? "") !== record.actorId || !isRetryExpired(record) || record.receivedTicketId) return;
+    await check(record, true);
+    const current = e1Pending(record.actorId).find(r => r.commandKey === record.commandKey);
+    if (current?.absent && !current.receivedTicketId) { forgetE1(current); syncPending(); }
   };
 
   const confirm = async (reason: string, value?: string, business?: Record<string, string>) => {
@@ -320,7 +350,7 @@ export function E1Page() {
       {pending.filter(record => record.commandKey !== busy).map(record => <Notice key={record.commandKey} tone="warn" title="结果未确认" actionBelow action={<>
         <Button disabledReason={!canWrite ? "当前账号不能重试" : busy ? "正在提交原操作" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : undefined} onClick={() => { void send(record, true).catch(failure => toast(e1Error(failure))); }}>按原操作重试</Button>
         {canQuery && <Button disabled={!!busy} onClick={() => void check(record)}>读回核对</Button>}
-        {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button disabled={!!busy} onClick={() => setRelease(record)}>解除待确认</Button>}
+        {(rejected.includes(record.commandKey) && !isRetryExpired(record) || absent.includes(record.commandKey) && isRetryExpired(record)) && <Button disabled={!!busy} onClick={() => setRelease(record)}>解除待确认</Button>}
         {canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}
       </>}>
         <p><strong>{record.spec.obj}</strong> · {record.spec.action}</p>
@@ -355,7 +385,7 @@ export function E1Page() {
       </> : !canWrite ? "当前不能提交，请先核对权限和读取状态" : readBlock(mc)}
       onClose={() => setConfirmation(null)} onConfirm={confirm} />}
     {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在读取…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptDetail.after}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? APPROVAL : "审批已结束，此回执不再锁定对象；请按当前目录重新核对后编辑。"}</p></Drawer>}
-    {release && <ReleaseModal label={`${release.spec.obj} · ${release.spec.action}`} onCancel={() => setRelease(null)} onConfirm={() => { forgetE1(release); syncPending(); setRelease(null); }} />}
+    {release && <ReleaseModal label={`${release.spec.obj} · ${release.spec.action}`} onCancel={() => setRelease(null)} onConfirm={() => { if (isRetryExpired(release)) { void releaseMissing(release).then(() => setRelease(null), failure => toast(e1Error(failure))); } else { forgetE1(release); syncPending(); setRelease(null); } }} />}
     {toastNode}
   </RdPage>;
 }

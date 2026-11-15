@@ -247,7 +247,10 @@ async function proxy(request: Request, context: RouteContext) {
       try {
         const text = new TextDecoder().decode(body);
         const detail360 = request.method === "GET" && /^\/api\/admin\/users\/profiles\/[^/]+\/360$/.test(targetPath);
-        const sanitized = sanitizePhoneMasked(JSON.parse(detail360 ? preserveUserFundAmounts(text) : text));
+        const exact = detail360 ? preserveUserFundAmounts(text)
+          : request.method === "GET" && targetPath === "/api/admin/users/profiles"
+            ? text.replace(/("(?:walletUsdt|walletNex)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"') : text;
+        const sanitized = sanitizePhoneMasked(JSON.parse(exact));
         return new Response(JSON.stringify(sanitized), {
           status: upstream.status,
           headers: responseHeaders,

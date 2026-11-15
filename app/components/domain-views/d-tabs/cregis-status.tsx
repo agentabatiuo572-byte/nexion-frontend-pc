@@ -529,7 +529,9 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     return `读回：收款状态已重新读取。${kept}`;
   };
   const pendingItems: D1PendingItem[] = pending.map((record): D1PendingItem => {
-    const refund = record.path.startsWith("/cregis/refunds") || record.path.startsWith("/cregis/auto-forward") || record.path.startsWith("/cregis/funds-preparation");
+    const refundChallenge = record.path === "/cregis/exception-ownership/challenges"
+      && exceptionObject(JSON.parse(record.body)).action === "REFUND_ORIGIN";
+    const refund = refundChallenge || record.path.startsWith("/cregis/refunds") || record.path.startsWith("/cregis/auto-forward") || record.path.startsWith("/cregis/funds-preparation");
     const replayable = d1CommandReplayable(record.path);
     return {
       key: record.commandKey,

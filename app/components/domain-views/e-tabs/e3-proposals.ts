@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
-import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey } from "@/lib/admin/a2-client";
+import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { eDomainLegacyCommands } from "@/lib/admin/e-domain-commands";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { displayAdminReadError } from "@/lib/admin/error-messages";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
@@ -75,12 +76,13 @@ export function useE3Proposals() {
 
   async function lookup(record: E3Proposal) {
     if (!canQuery) throw new Error("A2_PROPOSAL_READ_FORBIDDEN");
+    setMissing(keys => keys.filter(key => key !== record.commandKey));
     const ticket = await fetchA2ProposalByKey(record.commandKey, true);
     if (!ticket) {
+      if (record.ticketId) throw new Error("OPERATION_RESULT_UNKNOWN");
       if (isRetryExpired(record)) setMissing(keys => [...new Set([...keys, record.commandKey])]);
       return false;
     }
-    setMissing(keys => keys.filter(key => key !== record.commandKey));
     // E3 has no operationCode/version metadata. A09's object is normalized to 255 characters by A2.
     if (!ticket.mine || ticket.obj !== record.input.obj.slice(0, 255)) throw new Error("A2_BUSINESS_CONTEXT_MISMATCH");
     if (ticket.status === "pending" || ticket.status === "rejected") {
@@ -111,7 +113,9 @@ export function useE3Proposals() {
       commands.remember(record.fingerprint, record.commandKey, { ...record, state: retry ? "submitted" : "pending", ticketId: ticket.id });
     } catch (error) {
       // A2 performs object-lock checks inside command deduplication. A lock refusal is a verdict on this command.
-      if (isExplicitRejection(error)) commands.forget(record.fingerprint, record.commandKey);
+      const response = error as { httpStatus?: number; apiCode?: number };
+      if (retry ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error) && response.httpStatus !== undefined
+          && isDeterministicRejection(response.httpStatus, response.apiCode)) commands.forget(record.fingerprint, record.commandKey);
       throw error;
     } finally { sending.current = false; setBusy(""); sync(); }
   }
@@ -137,7 +141,7 @@ export function useE3Proposals() {
   /** Visual handoff: only an explicit operator action may release expired, authoritatively absent proposals. */
   async function releaseMissing(record: E3Proposal) {
     const current = commands.list().find(r => r.commandKey === record.commandKey && r.owner === owner);
-    if (!current || !isRetryExpired(current) || !canQuery) return false;
+    if (!current || current.ticketId || !isRetryExpired(current) || !canQuery) return false;
     if (await lookup(current)) return false;
     commands.forget(current.fingerprint, current.commandKey);
     setMissing(keys => keys.filter(key => key !== current.commandKey));
@@ -148,7 +152,7 @@ export function useE3Proposals() {
     if (!ticket || !ticket.mine || ticket.obj !== record.fingerprint.split("|")[1].slice(0, 255)) return false;
     // The old record cannot supply the original values. Keep it until a terminal result is authoritative.
     if (["approved", "rejected", "withdrawn", "expired"].includes(ticket.status)) eDomainLegacyCommands.forget(record.fingerprint, record.commandKey);
-    sync(); return true;
+    sync(); return ticket;
   }
   return { records, legacy, busy, canQuery, queryErrors, missing, releaseMissing, allowed, locked, sync, reconcile, lookup, lookupLegacy, submit, send,
     pendingReason: (keys: string[]) => commands.list().find(r => r.owner === owner && r.state === "unknown" && r.keys.some(k => keys.includes(k)))?.input.reason };
