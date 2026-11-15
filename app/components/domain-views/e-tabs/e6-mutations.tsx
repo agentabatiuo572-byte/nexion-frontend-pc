@@ -132,7 +132,7 @@ function useMutations() {
       if (active.current) {
         sync();
         if (!checkingProposal && retry && isExplicitRejection(failure)) setRejected(r => [...r, record.commandKey]);
-        setNotes(n => ({ ...n, [record.commandKey]: !checkingProposal && isExplicitRejection(failure) ? "原操作重试已被明确拒绝，可核对后解除待确认。" : "原请求已保留，结果仍待核实。" }));
+        setNotes(n => ({ ...n, [record.commandKey]: !checkingProposal && isExplicitRejection(failure) ? "按原请求重试被明确拒绝，核对后可以解除这条记录。" : "原请求已保留，结果仍待核实。" }));
         setTechnicalErrors(n => ({ ...n, [record.commandKey]: JSON.stringify(failure instanceof Error ? { ...failure, name: failure.name, message: failure.message } : failure, null, 2) }));
       }
       throw failure;
@@ -234,7 +234,7 @@ const RISK_STATUS: Partial<Record<PhoneRiskReceipt["status"], { tone: "progress"
   UNKNOWN: { tone: "warn", title: "结果仍未知", text: "原保存中途中断，再按原请求重试也是同样结果，需要按证据核查结案。" },
   FAILED: { tone: "neutral", title: "原保存以失败结束", text: "原保存没有成功。24 小时内可以按原请求重试，会按原内容再执行一次。" },
 };
-const GENERIC_NOTES = ["原请求已保留，结果仍待核实。", "原操作重试已被明确拒绝，可核对后解除待确认。", "已提交，等待审批后执行。"];
+const GENERIC_NOTES = ["原请求已保留，结果仍待核实。", "按原请求重试被明确拒绝，核对后可以解除这条记录。", "已提交，等待审批后执行。"];
 export function E6PendingNotice({ section, onRead, toast }: { section: E6Section; onRead?: (result?: E6WriteReceipt) => void; toast: (message: string, kind?: ToastKind) => void }) {
   const m = useE6Mutations();
   const records = m.pending.filter(r => r.section === section && m.visible(section));

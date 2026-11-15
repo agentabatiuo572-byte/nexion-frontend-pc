@@ -228,13 +228,13 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
       } catch (cause) { const shown = proposalQueryError(missing, cause); setQueryNotes(values => ({ ...values, [missing.commandKey]: shown })); throw new Error(shown); }
       finally { sync(); setBusy(""); }
     }} />}
-    {release && <Modal title="解除待确认" onClose={() => setRelease(null)} footer={<><Button onClick={() => setRelease(null)}>取消</Button><Button variant="primary" disabledReason={!releaseChecked ? "请先核对原操作的结果并勾选确认" : undefined} onClick={() => {
+    {release && <Modal title="解除原操作记录" onClose={() => setRelease(null)} footer={<><Button onClick={() => setRelease(null)}>取消</Button><Button variant="primary" disabledReason={!releaseChecked ? "请先核对原操作的结果并勾选确认" : undefined} onClick={() => {
       e5Commands.forget(release.fingerprint, release.commandKey); sync(); setRelease(null); setError(""); toast("已解除这条记录");
     }}>确认解除</Button></>}>
       <ReleaseBody label={`${release.label} · ${release.device.serial}`} />
       <Facts><Fact label="原操作时间" value={formatBusinessTimeCompact(new Date(release.createdAt).toISOString())} /><Fact label="原请求编号" value={release.commandKey} mono copy /></Facts>
       <Notice tone="danger" title="按原请求重试被拒绝">{rejected[release.commandKey]}</Notice>
-      <Check label="已核对原操作的结果，确认只解除本页待确认" checked={releaseChecked} onChange={event => setReleaseChecked(event.target.checked)} />
+      <Check label="已核对原操作的结果，确认只解除本页这条记录" checked={releaseChecked} onChange={event => setReleaseChecked(event.target.checked)} />
     </Modal>}
     {children}
   </CommandsContext.Provider>;

@@ -448,7 +448,7 @@ export default function DualLedgerPage() {
       const result = await submitB1ThresholdApproval(session, pendingApproval.values, pendingApproval.reason, readActive, "query");
       if (!result && expired) setReleasableApproval(pendingApproval.commandKey);
       setVerifiedPendingKey(result?.ticket.status === "pending" ? pendingApproval.commandKey : null);
-      setToast(result?.acknowledgement ?? (expired ? "没有这张审批单：原申请没有建成。核对后可以解除待确认。" : "暂未查到原审批单，可以按原请求重试，不会建第二张。"));
+      setToast(result?.acknowledgement ?? (expired ? "没有这张审批单：原申请没有建成。核对后可以解除这条记录。" : "暂未查到原审批单，可以按原请求重试，不会建第二张。"));
       if (result && result.ticket.status !== "pending") setActionConfirm(null);
     } catch (error) { setToast(displayAdminReadError(error)); }
     finally { syncPending(); }
