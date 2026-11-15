@@ -63,6 +63,7 @@ export default function H4Promotions({ ctx, legacy }: {
         const settled = (event: Event) => {
             const commandKey = (event as CustomEvent<string>).detail;
             setPending(current => current?.commandKey === commandKey ? null : current);
+            if (pendingPromotionCommands().some(record => record.commandKey === commandKey && record.receipt)) ctx.toast('原操作已确认成功，正在更新活动资料。');
             catalog.reload(); reloadList(); if (id) retryActivity();
         };
         window.addEventListener('admin-promotion-original-settled', settled);
@@ -93,9 +94,9 @@ export default function H4Promotions({ ctx, legacy }: {
         setActivityBusy(false); }); return () => { current = false; }; }, [id]);
     const changeStep=useCallback((step:number)=>{setEditStep(step);const url=new URL(location.href);url.searchParams.set('step',String(step));history.replaceState({},'',url);},[]);
     const refresh = async (nextStep?: number) => { if (!id)
-        return; const latest = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(id)}`); if(nextStep!==undefined)changeStep(nextStep); setActivity(latest); reloadList(); return latest; };
+        return; const latest = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(id)}`); if (ongoing.current.id === id) { if(nextStep!==undefined)changeStep(nextStep); setActivity(latest); } reloadList(); return latest; };
     const afterCreate = async (result: CommandReceipt, isCurrent: () => boolean = () => true) => { if (!result.resource)
-        throw new Error('创建结果暂无法确认，请核查原操作。'); const target = result.resource.type === 'VERSION' ? result.resource.id.slice(0, result.resource.id.lastIndexOf(':')) : result.resource.id; const saved = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(target)}`); if (!isCurrent()) return; setActivity(saved); setTemplate(null); setCreating(false); setCopy(null); setNotice(''); setDeletedId(''); reloadList(); navigate('edit', target); };
+        throw new Error('创建结果暂无法确认，请核查原操作。'); const target = result.resource.type === 'VERSION' ? result.resource.id.slice(0, result.resource.id.lastIndexOf(':')) : result.resource.id; const saved = await promotionRead<Promotion>(`/promotions/${encodeURIComponent(target)}`); reloadList(); if (!isCurrent()) return; setActivity(saved); setTemplate(null); setCreating(false); setCopy(null); setNotice(''); setDeletedId(''); reloadList(); navigate('edit', target); };
     const openDelete = async (target: string) => {
         if (!can('growth_promotion_archive') || deleteLoading) return;
         setDeleteLoading(true); setNotice(''); setDeletedId('');
@@ -106,7 +107,7 @@ export default function H4Promotions({ ctx, legacy }: {
         } catch (error) { setNotice(error instanceof Error ? error.message : '活动资料读取失败，请刷新后重试。'); }
         finally { setDeleteLoading(false); }
     };
-    const afterDelete = (result: CommandReceipt) => { setDeletedId(result.targetId); setDeleting(null); setActivity(null); setActivityError(null); setNotice('活动已删除，历史订单、奖励与操作记录保留。'); navigate('list', ''); reloadList(); };
+    const afterDelete = (result: CommandReceipt, isCurrent: () => boolean) => { setDeletedId(result.targetId); setNotice('活动已删除，历史订单、奖励与操作记录保留。'); reloadList(); if (!isCurrent()) return; setDeleting(null); setActivity(null); setActivityError(null); navigate('list', ''); };
     const pendingItems = pendingPromotionCommands();
     const legacyUnknown = pendingH4Commands().filter(r => !r.asset && (!r.acknowledged || "proposal" in r.request) && !h4CommandHasPendingTicket(r.commandKey)).length;
     const uploadUnknown = pendingH4Commands().filter(r => !r.asset && r.scope.includes('/h4_media/')).length;
@@ -206,7 +207,7 @@ export default function H4Promotions({ ctx, legacy }: {
             await afterCreate(result, () => isCurrent() && !hasOtherOperation());
             return;
         }
-        if (pending.operation === 'deletePromotion' && !hasOtherOperation() && (!ongoing.current.id || ongoing.current.id === pending.targetId)) { afterDelete(result); return; }
+        if (pending.operation === 'deletePromotion' && !hasOtherOperation() && (!ongoing.current.id || ongoing.current.id === pending.targetId)) { afterDelete(result, isCurrent); return; }
         if (pending.operation === 'createExport') {
             if (result.resource?.type !== 'EXPORT') throw new Error('导出结果暂无法确认，请核查原操作。');
             setRecoveredExport({ activityId: pending.targetId, exportId: result.resource.id });

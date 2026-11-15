@@ -205,8 +205,8 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     const payload = { ...body, reason, ...('evidenceRefs' in body ? { evidenceRefs: evidence } : {}) };
     const submit = async (retry = false) => { if (!writeAllowed || reloadNeeded || record && isRetryExpired(record)) return; setBusy(true); setError(null); try {
         const result = record?.receipt || await promotionCommand(record && retry ? record : { ...intent, body: payload }, retry);
-        if (active.current) await onSuccess(result, () => active.current);
-        if (record) window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: record.commandKey }));
+        await onSuccess(result, () => active.current);
+        window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: result.idempotencyKey }));
         acknowledgePromotionCommand(result);
     }
     catch (e) {
@@ -244,7 +244,7 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
         return; setBusy(true); setError(null); try {
         const result = record.receipt || await recoverPromotionCommand(record);
         if (result.status === 'SUCCEEDED') {
-            if (active.current) await onSuccess(result, () => active.current);
+            await onSuccess(result, () => active.current);
             window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: record.commandKey }));
             acknowledgePromotionCommand(result);
         }
