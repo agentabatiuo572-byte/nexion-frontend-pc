@@ -287,6 +287,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
 
   const queryOriginal = async (record: A3Command) => {
     setQuerying(record.commandKey);
+    if (record.original.kind === "docs" || record.original.kind === "how") setRecovery(record);
     try {
       switch (record.original.kind) {
         case "flag": case "param": if (!await refreshOverview()) return; break;
@@ -300,7 +301,6 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
             toast(record.original.mode === "PUBLISHED" ? record.original.kind === "docs" ? "开发者接口文档已发布" : "业务说明已发布" : "草稿已保存，App 读到的不变", "success");
             return;
           }
-          setRecovery(record);
           break;
         }
       }
