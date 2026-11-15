@@ -93,7 +93,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
     terms: [
       { name: "放宽", text: "让平台可能多付钱的方向：调高总量、单价、每日收益比例，调低转让手续费；要另一位超级管理员批准。" },
       { name: "收紧", text: "反方向的修改，确认后立即生效。" },
-      { name: "只是说明", text: "空投占比、收益发放曲线、锁仓天数和收益计算基数，后端只保存这段说明，不按它发放或计算；改动都要批准。" },
+      { name: "只是说明", text: "空投占比、收益发放曲线、锁仓天数和收益计算基数，只保存这段说明，不按它发放或计算；改动都要批准。" },
       { name: "原申请", text: "提交过、还没有结论的修改，只能查询或按原内容重试。" },
     ],
     more: "G4 /finance-products/genesis。读接口 GET /api/admin/market/nex/genesis?page&pageSize 和 /operations，打开时读一次，不自动刷新，写入后重新读取。参数 PATCH /params/{key}；放宽方向和首次比例、真实补发 POST /api/admin/platform/audit/operations 提交审批。紧急暂停 PATCH /market-status（只能暂停，恢复在紧急停用开关）；市场开闭 PATCH /market-open-state；档位 POST、PATCH、DELETE /tiers；发布系列 POST /series/initialize；补发 POST /dividend-batches/{批次}/rerun；认购设置 PATCH /operations/config/{key}；模拟 POST、DELETE /operations/simulations。",

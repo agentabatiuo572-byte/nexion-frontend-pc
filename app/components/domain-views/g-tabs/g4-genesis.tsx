@@ -139,7 +139,7 @@ const PARAM_COPY: Record<string, ParamCopy> = {
   dividend: {
     what: "每个合格节点每天按「所属系列单价 × 这个比例」发收益",
     loosen: "调高", tighten: "调低",
-    effect: "之后新建的分红批次按新比例算；已经建好的批次保留原比例和原金额",
+    effect: "所有合格节点的每日分红从下一批起按新比例算；已建好的批次保留原比例和原金额",
     money: "不直接付钱；调高后之后每天要发的分红变多",
     hint: "0–5，单位 %/日",
     unit: "%/日",
@@ -147,7 +147,7 @@ const PARAM_COPY: Record<string, ParamCopy> = {
   royalty: {
     what: "用户之间转让节点成交时，从卖方金额里扣的手续费比例",
     loosen: "调低", tighten: "调高",
-    effect: "只影响之后的转让成交，已成交的不重算；后端按整数基点（0.01%）比较方向",
+    effect: "只影响之后的转让成交，已成交的不重算；按 0.01% 为单位判断调高还是调低",
     money: "不付钱；调低后平台少收手续费",
     hint: "0–20，单位 %",
     unit: "%",
@@ -563,7 +563,7 @@ function G4GenesisPage() {
     <PageHeader pageId="G4" title="创世节点销售与收益"
       summary="管创世节点的总量、档位价、每日分红和展示开关。"
       actions={headerAction || undefined}
-      meta={overview ? "打开时读取，不自动刷新；改完重新读取" : undefined}
+      meta={overview ? "不自动刷新" : undefined}
       readOnly={overview && !anyWrite ? "你只能查看，这个账号没有修改权限。" : undefined} />
   );
 
@@ -697,9 +697,9 @@ function G4GenesisPage() {
             <Fact k="什么时候生效" tone={dir === "loose" ? "warn" : undefined}>{original
               ? original.ticket?.status === "pending"
                 ? "审批单在等另一位超级管理员批准；批准前参数不变"
-                : "原申请结果还没确认：有效期内按原内容重试，后端认得出是同一次提交，不会重复建单"
+                : "原申请结果未知：24 小时内可以按原请求重试，不会重复建单"
               : tighteningDividend
-                ? "这次只能调低或保持不变，确认后立即生效；原调高申请还在，但比例变了以后批准时后端会拒绝它，不会覆盖这次的值"
+                ? "这次只能调低或保持不变，确认后立即生效；原调高申请还在，但比例变了，批准时会被拒绝，不会覆盖这次的值"
                 : dir === "loose"
                   ? `${copy?.tighten ? "放宽" : "改动"}：提交审批，另一位超级管理员批准后才生效`
                   : dir === "tight"
@@ -709,11 +709,11 @@ function G4GenesisPage() {
                       : directionTag}</Fact>
             {dir === "loose" && <Fact k="谁来批">另一位超级管理员（需有审批批准权限和这项参数的修改权限）；你自己不能批</Fact>}
             {dir === "loose" && <Fact k="批准前">{param.key === "dividend"
-              ? `仍是 ${currentText}；待审批期间你还可以把比例调低，调低立即生效，原调高申请随后会被后端拒绝`
+              ? `仍是 ${currentText}；待审批期间你还可以把比例调低，调低立即生效，原调高申请批准时会被拒绝`
               : `仍是 ${currentText}；这一项被审批锁住，调高调低都改不了`}</Fact>}
-            {dir === "loose" && <Fact k="批准后">后端再核对一次原值{param.key === "dividend" ? "和当前比例版本" : "和当前系列"}、兑付覆盖率，通过后写入{nextText ? ` ${nextText}` : "新值"}</Fact>}
+            {dir === "loose" && <Fact k="批准后">再核对原值{param.key === "dividend" ? "和比例" : "和当前系列"}有没有被改过、兑付覆盖率够不够，通过后写入{nextText ? ` ${nextText}` : "新值"}</Fact>}
             {dir === "loose" && !canPropose && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，这个方向会被拦下；请有提案权和这项修改权限的同事发起</Fact>}
-            {param.key === "divBase" && !param.value.trim() && !original && <Fact k="现在是空的" tone="warn">后端目前不接受把空的计算基数通过审批改成有内容（已提后端），这次审批会被拒</Fact>}
+            {param.key === "divBase" && !param.value.trim() && !original && <Fact k="现在是空的" tone="warn">空的计算基数目前不能通过审批改成有内容（已在修），这次审批会被拒</Fact>}
             <Fact k="改了会怎样"><KeepText text={copy?.effect ?? operatorCopyText(param.note)} /></Fact>
             <Fact k="付不付钱"><KeepText text={copy?.money ?? "—"} /></Fact>
             {dir === "loose" && <Fact k="兑付覆盖率（现在）" tone={overview.coverage.redlineBreached ? "danger" : undefined}>{g4Plain(cov)}%，红线 {g4Plain(String(overview.coverage.redlinePct))}%</Fact>}
@@ -727,7 +727,7 @@ function G4GenesisPage() {
       title: original ? `${name}的原申请` : tighteningDividend ? "调低每日收益比例" : `调整${name}`,
       detail: <KeepText text={`${copy?.what ?? operatorCopyText(param.sub)}。`} />,
       effect: tighteningDividend
-        ? <StatusTag tone="progress" filled explain="你提交的调高申请在等批准。比例只能调低或保持不变，调低立即生效；原调高申请批准时后端发现比例变了会拒绝，不会覆盖这次的值。">只能调低 · 立即生效</StatusTag>
+        ? <StatusTag tone="progress" filled explain="你提交的调高申请在等批准。比例只能调低或保持不变，调低立即生效；原调高申请批准时比例已变，会被拒绝，不会覆盖这次的值。">只能调低 · 立即生效</StatusTag>
         : <StatusTag tone="neutral" icon={ArrowLeftRight} explain={copy?.tighten
           ? <><p>{copy.loosen}是放宽：先提交审批，另一位超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p><p>{copy.tighten}是收紧：确认后立即生效。新旧值一样时直接保存，参数不变。</p></>
           : <p>这一项目前只保存说明。值有任何变化都要提交审批，另一位超级管理员批准后才写入；一样的值直接保存。</p>}>{directionTag}</StatusTag>,
@@ -742,8 +742,8 @@ function G4GenesisPage() {
             : param.key === "royalty" ? "调低转让手续费要另一位超级管理员批准"
               : `改${name}要另一位超级管理员批准`,
       coverageCheck: param.key === "price" || param.key === "dividend"
-        ? "提交审批时和批准时，后端各检查一次：原值和当前系列没被改过；把同系列节点每天多出来的分红算进应付款后，兑付覆盖率不低于红线。低于红线或算不准都拒绝。"
-        : "提交审批时和批准时，后端各检查一次：原值和当前系列没被改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都拒绝。",
+        ? "提交和批准时各核对一次：原值和当前系列没被改过；把同系列节点每天多出的分红算进应付款后，兑付覆盖率不低于红线。低于红线或算不准都会被拒。"
+        : "提交和批准时各核对一次：原值和当前系列没被改过；兑付覆盖率不低于红线（这项改动本身不算新增应付款）。低于红线或算不准都会被拒。",
       edit: {
         ...(numeric ? { kind: "number", ...bounds } : { kind: "text" }),
         current: currentRaw,
@@ -852,7 +852,7 @@ function G4GenesisPage() {
         <Fact k="商城入口">不变，是另一个开关（「App 商城入口」）</Fact>
         <Fact k="App 上">不显示倒计时和剩余名额，显示下面选的提示</Fact>
       </Facts> : <Facts>
-        <Fact k="提交时后端检查">节点系列和价格档位设置完整；兑付覆盖率不低于红线（算不准也拒绝）</Fact>
+        <Fact k="提交时检查">节点系列和价格档位设置完整；兑付覆盖率不低于红线（算不准也拒绝）</Fact>
         <Fact k="恢复以后">只是市场状态改回开放；紧急暂停、预售时间、购买资格、地区和余额仍各自限制，不保证用户马上能买</Fact>
         {!marketOn && <Fact k="现在" tone="warn">还在紧急暂停中，恢复开放后用户仍不能买卖，要在「紧急停用开关」解除暂停</Fact>}
         <Fact k="兑付覆盖率（现在）" tone={overview.coverage.redlineBreached ? "danger" : undefined}>{g4Plain(cov)}%，红线 {g4Plain(String(overview.coverage.redlinePct))}%</Fact>
@@ -862,7 +862,7 @@ function G4GenesisPage() {
         : { impact: "市场状态改回开放；创世节点目前仅内部使用，恢复开放不等于正式开售授权。", check: "核对目录、紧急暂停和覆盖率，理由写清依据或工单号。" },
       amplifies: next === "open", // 恢复销售 = 放大流出方向,不豁免
       coverageLead: "恢复开放后用户可能继续认购",
-      coverageCheck: "提交时后端检查：目录设置完整，兑付覆盖率不低于红线；不走审批。",
+      coverageCheck: "提交时检查：节点系列和价格档位完整、兑付覆盖率不低于红线；不走审批。",
       // 🔴 文案变体必须是**下拉**,不是自由输入(规格 ③/⑥ 明写「禁自由文本」)。
       //   上一版用了 inputKind:"text" —— 打错一个字符前端会静默回退到默认文案,
       //   运营以为切了「维护中」,用户看到的却是「暂未开放」(2026-08-05 独立验收 P1-9)。
@@ -918,7 +918,7 @@ function G4GenesisPage() {
         <Fact k="市场">发布后仍是暂未开放，要单独恢复开放；不会自动开售</Fact>
         <Fact k="付不付钱">不付钱</Fact>
       </Facts>,
-      statedBrief: { impact: "建一个启用中的节点系列；已有用户持仓时后端会拒绝，不能用新系列替代原系列。", check: "核对系列编码和名称，理由写清依据或工单号。" },
+      statedBrief: { impact: "建一个启用中的节点系列；已有用户持仓时会被拒绝，不能用新系列替代原系列。", check: "核对系列编码和名称，理由写清依据或工单号。" },
       // Initializing the catalog does not start sales or create a payout. The
       // backend forces the market closed and requires a separate reviewed open.
       amplifies: false,
@@ -952,16 +952,16 @@ function G4GenesisPage() {
       action: `重新发放今日收益 ${dividend.batchNo}`,
       title: original ? "补发收益的原申请" : "重新发放今日收益",
       detail: "按这一批的真实待付明细发放：没发成功的（待发、失败）按原用户、原金额补，已发的不重复发；今天还没有批次时按合格持仓新建这一批。",
-      effect: <><StatusTag tone="warn" icon={Banknote} filled explain="提交时后端算这一批真实待付的金额：大于 0 就转成审批单，另一位超级管理员批准后才付款；没有待付或这一批已经完成时直接返回结果，不新付钱。">会真实付款</StatusTag><IrreversibleTag>付出后不能撤回</IrreversibleTag></>,
+      effect: <><StatusTag tone="warn" icon={Banknote} filled explain="提交时先算这一批真实待付的金额：大于 0 就转成审批单，另一位超级管理员批准后才付款；没有待付或这一批已完成时直接结束，不新付钱。">会真实付款</StatusTag><IrreversibleTag>付出后不能撤回</IrreversibleTag></>,
       confirmTone: "danger",
       confirmLabel: "确认发放",
       facts: <Facts>
         <Fact k="批次"><span data-mono>{dividend.batchNo || "—"}</span>{original ? "（原申请的批次）" : ""}</Fact>
         <Fact k="这一批现在">{dividend.paidCount > 0 ? `已发 ${fmtNumber(dividend.paidCount, 0)} 个节点 · ${g4Amount(dividend.paidAmountUsdt)} USDT` : batchRerun ? "这一批已完成" : "还没发"}</Fact>
-        <Fact k="今日估算应发">{g4Amount(dividend.payoutToday)} USDT（估算，实际以后端按每个节点算的待付为准）</Fact>
+        <Fact k="今日估算应发">{g4Amount(dividend.payoutToday)} USDT（估算，实际按每个节点算出的待付为准）</Fact>
         <Fact k="谁来批" tone="warn">有真实待付金额时，要另一位超级管理员（需有审批批准权）在「操作记录与审批」批准，你自己不能批；批准前不付款</Fact>
-        <Fact k="批准后">后端核对这一批的快照没变，给每个待付节点的持有人记 USDT 收益入账</Fact>
-        <Fact k="前提">「运营阶段设置」里的开始发放收益是开的，创世节点没有紧急暂停；否则后端拒绝</Fact>
+        <Fact k="批准后">核对这一批的待付明细没变，再给每个待付节点的持有人记 USDT 收益入账</Fact>
+        <Fact k="前提">「运营阶段设置」里的开始发放收益是开的，创世节点没有紧急暂停；否则会被拒绝</Fact>
       </Facts>,
       statedBrief: { impact: "会给用户钱包记 USDT 收益；已发的不重复发。", check: "决策编号写财务或产品决议号，理由写清为什么要发、工单号。" },
       reasonPlaceholder: "例如：财务决议号、工单号",
@@ -1054,7 +1054,7 @@ function G4GenesisPage() {
       facts: <Facts>
         <Fact k="起点">0（第一档从第 1 张开始）</Fact>
         <Fact k="创建以后">市场强制设为暂未开放；不会发布系列，也不会开售。还没有系列时，再点「发布系列」</Fact>
-        <Fact k="不能创建的情况">已有用户持仓却没有档位时，后端会拒绝，要先恢复原系列</Fact>
+        <Fact k="不能创建的情况">已有用户持仓却没有档位时会被拒绝，要先恢复原系列</Fact>
         <Fact k="付不付钱">不付钱</Fact>
       </Facts>,
       statedBrief: { impact: "确定节点总量和起始价格的第一档，只影响以后的销售。", check: "截止和单价都填整数，理由写清依据或工单号。" },
@@ -1156,7 +1156,7 @@ function G4GenesisPage() {
   const conclusion = !overview.catalogAvailable
     ? <Conclusion state="warn" icon={Layers}
         hint={overview.seriesRecoveryRequired ? "已有用户持仓，不能重新发布系列；请联系数据负责人恢复原系列。" : overview.seriesInitializationAvailable ? "可以按现有价格档位发布系列，见下面的提示。" : "先按下面的提示补齐系列或档位。"}
-        explain="后端判断节点系列和价格档位不完整时，用户不能认购、挂售或转让；市场开关这时也只能保持暂未开放。">
+        explain="节点系列和价格档位不完整时，用户不能认购、挂售或转让；市场开关这时也只能保持暂未开放。">
         创世节点设置不完整，目前不能交易：{catalogBlockText(overview.tradeBlockedReason)}</Conclusion>
     : !marketOn
       ? <Conclusion state="warn" icon={PauseCircle}
@@ -1270,7 +1270,7 @@ function G4GenesisPage() {
           explain="下一张节点按哪个价卖：累计售出数落在哪一档就按哪一档的价格。已下单的订单按下单时的价格，不跟着改。" />
         <Stat label="今日分红" icon={dividendState.icon} tone={dividendState.tone === "ok" ? "ok" : dividendState.tone === "warn" ? "warn" : "role-other"}
           value={dividendState.text} sub={dividendState.sub}
-          explain="今天这一批（按后端业务日）真实发出去的节点数和金额。后端目前查不到每天自动发放的任务（已提后端），要发请在「每日分红」里手动发放。" />
+          explain="今天这一批（按业务日）真实发出去的节点数和金额。系统目前没有每天自动发放（已提给技术同事），要发请在「每日分红」里手动发放。" />
         <Stat label="待确认的申请" icon={ListOrdered} tone={pendingCount > 0 ? "warn" : "role-3"} value={fmtInt(pendingCount)} unit="项"
           sub={pendingCount > 0 ? "见上面的提醒" : "没有压着的申请"}
           explain="你在这台电脑上提交过、还没处理完的申请：参数修改、每日收益比例、补发收益、价格档位。别人发起的审批在「操作记录与审批」里看。" />
@@ -1314,7 +1314,7 @@ function G4GenesisPage() {
           </div>
           <div className="g4x-tiers">
             <div className="g4x-tiers-head">
-              <span className="g4x-tiers-title">价格档位<Explain label="价格档位怎么看" content="柱高是这一档的单价。「当前档」是下一张节点的价格；后端不要求后面的档更贵。" /></span>
+              <span className="g4x-tiers-title">价格档位<Explain label="价格档位怎么看" content="柱高是这一档的单价。「当前档」是下一张节点的价格；后面的档不一定更贵。" /></span>
               {tiers && <span className="g4x-dir">共 {fmtInt(tiers.length)} 档 · 至少保留一档</span>}
             </div>
             {tiers === null
@@ -1331,10 +1331,10 @@ function G4GenesisPage() {
         <Panel title="每日分红" icon={Coins} tone="role-1"
           explain={<>
             <p>每个合格节点每天按「所属系列单价 × 每日收益比例」算，逐个节点算到 6 位小数再合计。收益计算基数和发放曲线目前只是说明，不参与计算。</p>
-            <p>发不发由「运营阶段设置」里的开始发放收益控制，这里只能查看。后端目前查不到每天自动发放的任务（已提后端），要发请点「重新发放今日收益」。</p>
+            <p>发不发由「运营阶段设置」里的开始发放收益控制，这里只能查看。系统目前没有每天自动发放（已提给技术同事），要发请点「重新发放今日收益」。</p>
           </>}
           actions={(allowed("finprod_g4_write") || paramApproval.record(dividend.batchNo))
-            ? <span className="g4x-head-actions">{batchRerun && <StatusTag tone="done" explain="今天这一批已经重新发放过；再点一次后端按真实待付金额判断，没有待付时不新付钱。">今天已重发</StatusTag>}<Button size="sm" variant={batchRerun ? "secondary" : "primary"} disabledReason={rerunDisabledReason} onClick={runRerunBatch}>重新发放今日收益</Button></span>
+            ? <span className="g4x-head-actions">{batchRerun && <StatusTag tone="done" explain="今天这一批已经重新发放过；再点一次会按真实待付金额判断，没有待付时不新付钱。">今天已重发</StatusTag>}<Button size="sm" variant={batchRerun ? "secondary" : "primary"} disabledReason={rerunDisabledReason} onClick={runRerunBatch}>重新发放今日收益</Button></span>
             : undefined}>
           <div className="g4x-block">
             <div className="g4x-block-head">
@@ -1358,7 +1358,7 @@ function G4GenesisPage() {
                 when={dividendUnset ? "现在是 0%（未配置，不发分红）。首次配置要另一位超级管理员批准，批准前仍是 0%" : "调高是放宽，提交审批，另一位超级管理员批准后生效；调低是收紧，确认后立即生效"}
                 effect={PARAM_COPY.dividend.effect}
                 note={dividendRecord?.ticket?.status === "pending"
-                  ? "你提交的调高申请在等批准，期间仍可把比例调低（立即生效）；调低后原调高申请批准时会被后端拒绝，不会覆盖新值。"
+                  ? "你提交的调高申请在等批准，期间仍可把比例调低（立即生效）；调低后原调高申请批准时会被拒绝，不会覆盖新值。"
                   : `付不付钱：${PARAM_COPY.dividend.money}`}
                 value={<span className="g4x-param">
                   <span className="g4x-value">
@@ -1400,7 +1400,7 @@ function G4GenesisPage() {
           <ConfigList label="市场开关">
             <ConfigRow key="marketOpen" name="创世市场"
               what="暂未开放时用户能浏览和查看持仓，不能购买和转让"
-              when="确认后立即生效；恢复开放时后端检查目录完整和兑付覆盖率"
+              when="确认后立即生效；恢复开放时检查目录完整和兑付覆盖率"
               value={<span className="g4x-param">
                 <span className="g4x-value"><span className="g4x-value-num">{marketClosed ? "暂未开放" : "开放中"}</span></span>
                 <span className="g4x-dir">{marketClosed ? `App 提示「${NOTICE_LABEL[overview.market.closedNoticeKey] ?? "当前市场暂未开放"}」` : "两个方向都在这页改"}</span>
@@ -1441,7 +1441,7 @@ function G4GenesisPage() {
 
       <Fold title="空投与释放说明" icon={Gift} tone="role-4"
         summary={`${[airdropPctParam, emissionCurveParam, airdropLockDaysParam].filter(Boolean).length} 项 · 目前只保存说明，不执行发放或释放`}
-        explain="这几项后端只保存说明，不会按它们发放 UVT、释放或锁仓。值有任何变化都要另一位超级管理员批准；空投占比和发放曲线还要填决策编号。">
+        explain="这几项只保存说明，不会按它们发放 UVT、释放或锁仓。值有任何变化都要另一位超级管理员批准；空投占比和发放曲线还要填决策编号。">
         <ConfigList label="空投与释放说明">
           {paramRow(airdropPctParam, { dir: "只是说明" })}
           {paramRow(emissionCurveParam, { dir: "只是说明" })}

@@ -83,14 +83,14 @@ const CONFIG_HELP: Record<string, { what: string; hint?: string; unit?: string; 
   "eligibility.minAccountAgeDays": { what: "开了资格限制时，账号注册满几天才能买", hint: "0–1,000,000 的整数", unit: "天", effect: "下一次购买时按这个天数检查" },
   "presale.enabled": { what: "开了以后，在预售开始和结束时间之间按预售规则卖", effect: "开启前要先填好开始和结束时间；开了也只在时间窗里生效，不等于提交后马上能买" },
   "presale.showCountdown": { what: "App 上显示不显示预售倒计时", effect: "暂未开放或暂停时 App 本来就不显示" },
-  "presale.unitPrice": { what: "预售规则里写的单价", hint: "最多 6 位小数", unit: "USDT", effect: "目前只作为预售规则展示，实际认购价仍按价格档位（后端现行行为）；填 0 时 App 的预售规则显示不可用", note: "改它不会改变用户实际付的价格。" },
+  "presale.unitPrice": { what: "预售规则里写的单价", hint: "最多 6 位小数", unit: "USDT", effect: "目前只作为预售规则展示，实际认购价仍按价格档位；填 0 时 App 的预售规则显示不可用", note: "改它不会改变用户实际付的价格。" },
   "presale.maxPerUser": { what: "预售期间每人最多买几个", hint: "0–1,000,000 的整数", unit: "个", effect: "和资格的每人上限取较小的那个；不回写已下的订单" },
   "presale.startAt": { what: "预售从什么时候开始（UTC）", hint: "例如 2026-08-01T00:00:00Z", effect: "要早于结束时间；另一端还没填时可以先单独保存" },
   "presale.endAt": { what: "预售到什么时候结束（UTC，不含这一刻）", hint: "例如 2026-08-31T00:00:00Z", effect: "要晚于开始时间；另一端还没填时可以先单独保存" },
   "holder.allocationNexPerHolding": { what: "每个节点给持有人预留多少 UVT", hint: "最多 6 位小数", unit: "UVT", effect: "只改预留规则，不铸币、不入账；填 0 时 App 的持有人权益显示不可用" },
-  "holder.priorityTop1Percent": { what: "持有排名前多少算「前 1%」的门槛", hint: "1–100 的整数", effect: "后端不检查前 1%、3%、5% 的大小顺序；顺序不对时 App 的持有人权益显示不可用" },
-  "holder.priorityTop3Percent": { what: "持有排名前多少算「前 3%」的门槛", hint: "1–100 的整数", effect: "后端不检查前 1%、3%、5% 的大小顺序；顺序不对时 App 的持有人权益显示不可用" },
-  "holder.priorityTop5Percent": { what: "持有排名前多少算「前 5%」的门槛", hint: "1–100 的整数", effect: "后端不检查前 1%、3%、5% 的大小顺序；顺序不对时 App 的持有人权益显示不可用" },
+  "holder.priorityTop1Percent": { what: "持有排名前多少算「前 1%」的门槛", hint: "1–100 的整数", effect: "保存时不检查前 1%、3%、5% 的大小顺序；顺序不对时 App 的持有人权益显示不可用" },
+  "holder.priorityTop3Percent": { what: "持有排名前多少算「前 3%」的门槛", hint: "1–100 的整数", effect: "保存时不检查前 1%、3%、5% 的大小顺序；顺序不对时 App 的持有人权益显示不可用" },
+  "holder.priorityTop5Percent": { what: "持有排名前多少算「前 5%」的门槛", hint: "1–100 的整数", effect: "保存时不检查前 1%、3%、5% 的大小顺序；顺序不对时 App 的持有人权益显示不可用" },
   "holder.policyVersion": { what: "持有人规则的版本号", effect: "只改版本号，不迁移历史数据" },
   "holder.effectiveAt": { what: "持有人规则从什么时候起生效（UTC）；还没到时 App 显示规则未生效", hint: "例如 2026-08-01T00:00:00Z", effect: "只保存时间，不另排定时任务" },
 };
@@ -103,8 +103,8 @@ export function g4ConfigValueShown(key: string, value: unknown) {
 
 const GROUPS: { key: string; title: string; explain: string; keys: readonly string[] }[] = [
   { key: "eligibility", title: "购买资格", explain: "资格只看这三项。以前的入金、旗舰设备、V 等级、邀请码条件已停用；设备商城的购买条件在另一个页面，不受影响。国家、地区限制、预售时间和市场开关另外限制购买。", keys: ["eligibility.enabled", "eligibility.maxPerUser", "eligibility.minAccountAgeDays"] },
-  { key: "presale", title: "预售", explain: "开始和结束时间可以分两次保存；开启预售时两端都要有效，后端在保存「开启预售」时检查。", keys: ["presale.enabled", "presale.showCountdown", "presale.unitPrice", "presale.maxPerUser", "presale.startAt", "presale.endAt"] },
-  { key: "holder", title: "持有人规则", explain: "可以分步配置：某一步保存后 App 的持有人权益可能暂时显示不可用（预留为 0、门槛顺序不对、生效时间没到），后端在 App 读取时检查，不在保存时拦。", keys: ["holder.allocationNexPerHolding", "holder.priorityTop1Percent", "holder.priorityTop3Percent", "holder.priorityTop5Percent", "holder.policyVersion", "holder.effectiveAt"] },
+  { key: "presale", title: "预售", explain: "开始和结束时间可以分两次保存；开启预售时两端都要填好，保存「开启预售」时检查。", keys: ["presale.enabled", "presale.showCountdown", "presale.unitPrice", "presale.maxPerUser", "presale.startAt", "presale.endAt"] },
+  { key: "holder", title: "持有人规则", explain: "可以分步配置：某一步保存后 App 的持有人权益可能暂时显示不可用（预留为 0、门槛顺序不对、生效时间没到），App 读取时才检查，保存时不拦。", keys: ["holder.allocationNexPerHolding", "holder.priorityTop1Percent", "holder.priorityTop3Percent", "holder.priorityTop5Percent", "holder.policyVersion", "holder.effectiveAt"] },
 ];
 
 export default function G4AdminOperations({ ctx, refreshVersion = 0, blocked = false }: { ctx: G4Ctx; refreshVersion?: number; blocked?: boolean }) {

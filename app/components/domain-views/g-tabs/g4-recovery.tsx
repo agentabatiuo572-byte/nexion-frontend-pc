@@ -53,11 +53,11 @@ export function g4ParamValueText(key: string, raw: string | undefined) {
 }
 
 /** 每日收益比例的调高申请在等批准时，仍可直接调低（立即生效）；调低后原申请批准时后端按当前值已变拒绝。其他参数待审批时调高调低都改不了。 */
-export const G4_DIVIDEND_PENDING_NOTE = "批准前仍是原比例；这期间仍可以把比例调低，调低立即生效，原调高申请批准时会因为比例变了被后端拒绝。";
+export const G4_DIVIDEND_PENDING_NOTE = "批准前仍是原比例；这期间仍可以把比例调低，调低立即生效，原调高申请批准时会因为比例变了被拒绝。";
 
 export function g4RecoveryTag(record: Pick<GParamRecovery, "status">, batch = false, obj?: string) {
   if (record.status === "unknown") return unknownTag("approval");
-  if (record.status === "pending") return pendingTag(batch ? "批准前不付款；批准时后端按原批次的待付明细发放。"
+  if (record.status === "pending") return pendingTag(batch ? "批准前不付款；批准时按原批次的待付明细发放。"
     : obj === "dividend" ? G4_DIVIDEND_PENDING_NOTE : "批准前参数不变；这一项被审批锁住，调高调低都改不了。");
   if (record.status === "expired") return expiredTag("approval");
   return resolvedTag(record.status);
@@ -94,9 +94,9 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
   const dividendWaiting = records.some((record) => record.request.obj === "dividend" && record.ticket?.status === "pending");
   const lockedWaiting = records.some((record) => record.request.obj !== "dividend" && record.request.command.op !== "g4_genesis_rerun_dividend" && record.ticket?.status === "pending");
   const waitingLead = dividendWaiting && !lockedWaiting
-    ? "批准前每日收益比例不变；这期间仍可以把比例调低（立即生效），调低后原调高申请批准时会被后端拒绝。其他参数照常可改。"
+    ? "批准前每日收益比例不变；这期间仍可以把比例调低（立即生效），调低后原调高申请批准时会被拒绝。其他参数照常可改。"
     : dividendWaiting
-      ? "批准前这几项不变。有待审批申请的参数调高调低都改不了，只有每日收益比例仍可调低（立即生效，原调高申请批准时会被后端拒绝）；其他参数照常可改。"
+      ? "批准前这几项不变。有待审批申请的参数调高调低都改不了，只有每日收益比例仍可调低（立即生效，原调高申请批准时会被拒绝）；其他参数照常可改。"
       : "批准前这几项不变；有待审批申请的参数调高调低都改不了，其他参数照常可改。";
   const rows: GRecoveryRow[] = [
     ...records.map((record) => {
