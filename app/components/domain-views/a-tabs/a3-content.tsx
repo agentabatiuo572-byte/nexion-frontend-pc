@@ -136,6 +136,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty 
     if (!conflictDraft.current) setError(null);
     try {
       const value = await fetchDeveloperDocsAdmin();
+      if (!commands.find("docs")) setMode(null);
       setDocument(draft => conflictDraft.current && draft ? { ...draft, revision: value.revision } : value);
       setBaseline(value);
       if (!conflictDraft.current) { setLocale(Object.keys(value.locales)[0] ?? "en"); setReason(""); }
@@ -344,6 +345,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty }: 
     if (!conflictDraft.current) setError(null);
     try {
       const value = await fetchHowContentAdmin();
+      if (!commands.find("how")) setMode(null);
       const next = Object.keys(value.contents).length ? value : { ...initialDocument(), ...value, contents: initialDocument().contents };
       const nextKey = next.contents[previous.key] ? previous.key : KEYS.find(item => next.contents[item]) ?? KEYS[0];
       const locales = row(row(next.contents[nextKey]).locales);

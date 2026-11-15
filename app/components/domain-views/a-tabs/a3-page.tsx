@@ -19,7 +19,6 @@ import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { a3Deduplicates, useA3Commands, type A3Command } from "@/lib/admin/a3-mutations";
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
 import { fetchPlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
-import { fetchDeveloperDocsAdmin, fetchHowContentAdmin } from "@/lib/admin/published-content-client";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import {
   fetchA3Overview,
@@ -288,14 +287,22 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
 
   const queryOriginal = async (record: A3Command) => {
     setQuerying(record.commandKey);
-    if (record.original.kind === "docs" || record.original.kind === "how") setRecovery(record);
     try {
       switch (record.original.kind) {
         case "flag": case "param": if (!await refreshOverview()) return; break;
         case "schedule": case "cancel": await fetchBusinessCalendar(); setCalendarNonce(value => value + 1); break;
         case "experience": await fetchPlatformExperienceConfig(); setReadNonce(value => ({ ...value, experience: value.experience + 1 })); break;
-        case "docs": await fetchDeveloperDocsAdmin(); setReadNonce(value => ({ ...value, docs: value.docs + 1 })); break;
-        case "how": await fetchHowContentAdmin(); setReadNonce(value => ({ ...value, how: value.how + 1 })); break;
+        case "docs": case "how": {
+          const result = await commands.queryContent(record);
+          setReadNonce(value => ({ ...value, [record.original.kind]: value[record.original.kind as "docs" | "how"] + 1 }));
+          if (result.matched) {
+            setRecovery(null);
+            toast(record.original.mode === "PUBLISHED" ? record.original.kind === "docs" ? "开发者接口文档已发布" : "业务说明已发布" : "草稿已保存，App 读到的不变", "success");
+            return;
+          }
+          setRecovery(record);
+          break;
+        }
       }
       toast(displayAdminError(new Error("A3_ORIGINAL_CURRENT_ONLY")), "warn");
     } catch (error) { toast(displayAdminError(error), "error"); }

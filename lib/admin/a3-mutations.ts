@@ -7,7 +7,7 @@ import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord 
 import type { A3FeatureFlag, A3PlatformParam } from "@/lib/admin/a3-client";
 import { parseBusinessCalendar, type BusinessCalendarView, type BusinessCalendarVersion, type BusinessZoneOption } from "@/lib/admin/business-calendar-client";
 import { parsePlatformExperienceConfig, type PlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
-import { parseDeveloperDocs, parseHowContent, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
+import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, parseDeveloperDocs, parseHowContent, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 
 export type A3Original =
   | { kind: "flag"; row: A3FeatureFlag; value: string }
@@ -32,6 +32,18 @@ const PATHS: Record<A3Original["kind"], string> = {
   experience: "/api/admin/platform/config/experience", docs: "/api/admin/developer/docs", how: "/api/admin/content/how-it-works",
 };
 export const a3Deduplicates = (record: Pick<A3Command, "original">) => record.original.kind !== "docs" && record.original.kind !== "how";
+export type A3ContentComparison = {
+  revision: { submitted: number; expected: number; current: number; matches: boolean };
+  version: { submitted: string; current: string; matches: boolean };
+  status: { submitted: "DRAFT" | "PUBLISHED"; current: PublishedContentDocument["status"]; matches: boolean };
+  contentMatches: boolean;
+};
+// JSON object key order is immaterial; array order and submitted values are not.
+function contentJSON(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(contentJSON).join(",")}]`;
+  if (value !== null && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${contentJSON(item)}`).join(",")}}`;
+  return JSON.stringify(value);
+}
 export const a3Slot = (original: A3Original) => original.kind === "flag" || original.kind === "param" ? `${original.kind}:${original.row.key}`
   : original.kind === "cancel" || original.kind === "schedule" ? "calendar" : original.kind;
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
@@ -107,6 +119,29 @@ export function useA3Commands() {
     sync();
     return commands.list().find(record => record.commandKey === key)!;
   };
+  const queryContent = async (record: A3Command) => {
+    const original = record.original;
+    if (original.kind !== "docs" && original.kind !== "how" || find(record.fingerprint)?.commandKey !== record.commandKey)
+      throw new Error("A3_ORIGINAL_UNRESOLVED");
+    const current = original.kind === "docs" ? await fetchDeveloperDocsAdmin() : await fetchHowContentAdmin();
+    const comparison: A3ContentComparison = {
+      revision: { submitted: original.document.revision, expected: original.document.revision + 1, current: current.revision, matches: current.revision === original.document.revision + 1 },
+      version: { submitted: original.document.version.trim(), current: current.version, matches: current.version === original.document.version.trim() },
+      status: { submitted: original.mode, current: current.status, matches: current.status === original.mode },
+      contentMatches: contentJSON("locales" in current ? current.locales : current.contents)
+        === contentJSON(original.kind === "docs" ? original.document.locales : original.document.contents),
+    };
+    const matched = comparison.revision.matches && comparison.version.matches && comparison.status.matches && comparison.contentMatches;
+    if (matched) { commands.forget(record.fingerprint, record.commandKey); sync(); }
+    return { current, comparison, matched };
+  };
+  // The visual worker must obtain confirmation before calling this. Read failure retains the record.
+  const releaseContent = async (record: A3Command, confirmed: boolean) => {
+    if (!confirmed) throw new Error("A3_ORIGINAL_QUERY_ONLY");
+    const result = await queryContent(record);
+    if (!result.matched) { commands.forget(record.fingerprint, record.commandKey); sync(); }
+    return { ...result, released: !result.matched };
+  };
   const send = async (record: A3Command, retry = false) => {
     if (retry && (!a3Deduplicates(record) || isRetryExpired(record))) throw new Error("A3_ORIGINAL_QUERY_ONLY");
     if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("A3_ORIGINAL_STORAGE_FAILED");
@@ -161,7 +196,7 @@ export function useA3Commands() {
       throw error instanceof OutcomeUnknownError ? error : new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN", { cause: error });
     }
   };
-  return { pending, find, capture, send, sync };
+  return { pending, find, capture, send, queryContent, releaseContent, sync };
 }
 export type A3Commands = ReturnType<typeof useA3Commands>;
 export type A3RecoveryProps = { commands: A3Commands; recovery: A3Command | null; onRecovered: () => void; nonce: number };
