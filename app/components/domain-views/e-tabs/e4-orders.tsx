@@ -12,6 +12,7 @@ import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time"
 import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, type E4PendingApproval, type E4RefundImpact } from "@/lib/admin/e4-client";
 import { operatorDeviceStatus, operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
+import { e4RefundAmountError } from "@/lib/admin/e4-refund-amount";
 import { useReach } from "@/lib/nav/use-reach";
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import type { E4PendingCommand, EViewCtx } from "./types";
@@ -159,7 +160,11 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   // 同一列按这一页最多的小数位补零，小数点对齐（ST-02）。
   const amountDigits = Math.max(2, ...orders.map((order) => orderAmountDigits(order.amt)));
   // 小数相加有浮点尾巴（0.1 + 0.2），收回到原始金额的位数再显示。toFixed 最多 100 位。
-  const activeAmount = Number(activated.reduce((sum, order) => sum + order.amt, 0).toFixed(Math.min(amountDigits, 100)));
+  const activeMicro = activated.some(order => order.amt === null) ? null : activated.reduce((sum, order) => {
+    const [whole, fraction = ""] = order.amt!.split(".");
+    return sum + BigInt(whole) * BigInt(1000000) + BigInt(fraction.padEnd(6, "0"));
+  }, BigInt(0));
+  const activeAmount = activeMicro === null ? null : `${activeMicro / BigInt(1000000)}.${String(activeMicro % BigInt(1000000)).padStart(6, "0").slice(0, amountDigits)}`;
   const tableColumns = ORDER_COLUMNS.filter((column) => columns.isVisible(column.key)).length;
   const countText = (state: string) => `${counts?.[state] ?? "—"} 单`;
 
@@ -340,9 +345,11 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   // 开通失败要读完详情才知道付没付款，没读完时先当能退，动作由读取锁挡着。
   const refundableState = ["paid", "provisioning", "activated", "inventory"].includes(eff)
     || (eff === "provisioning_failed" && (!e4Detail || e4Detail.paymentStatus.toUpperCase() === "PAID"));
-  const refundReady = canRefundE4 && refundableState && e4Detail?.refundAllowed === true && !pendingApproval;
   // 三个数缺一个就算不出能不能退，和资金不足是两回事，阻断相同（后端 refundCoverageBlocked）。
   const coverageKnown = e4Detail?.coverageCurrent != null && e4Detail.coverageProjected != null && e4Detail.coverageRedline != null;
+  // The full-refund projection cannot veto a smaller amount. Execution checks that amount.
+  const refundAvailable = o.amt !== null && coverageKnown && e4Detail!.coverageCurrent! >= e4Detail!.coverageRedline!;
+  const refundReady = canRefundE4 && refundableState && refundAvailable && !pendingApproval;
   // 覆盖率一位小数，红线是配置值，按原值写（TX-23）。
   const coverageText = coverageKnown
     ? `当前 ${fmtPct(e4Detail.coverageCurrent!)} → 执行后 ${fmtPct(e4Detail.coverageProjected!)} · 红线 ${fmtConfigPct(e4Detail.coverageRedline!)}`
@@ -394,7 +401,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
     : !refundableState ? { label: "退款", value: "不能退款", reason: "用户还没付款。只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款。" }
       : !e4Detail ? { label: "退款", ...pendingFact }
         : pendingApproval ? { label: "退款", value: "等待审批结束" }
-          : e4Detail.refundAllowed ? { label: "退款", value: canRefundE4 ? "可申请退款审批" : "符合退款条件，需具退款权限的财务主管或超管发起", reason: coverageReason }
+          : refundAvailable ? { label: "退款", value: canRefundE4 ? "可申请退款审批" : "符合退款条件，需具退款权限的财务主管或超管发起", reason: coverageReason }
           : { label: "退款", value: refundBlockText, reason: coverageKnown ? coverageReason : "要先读到兑付覆盖率才能退款。过一会儿重新打开这单。", state: coverageKnown ? "danger" : "warn" };
   const rows: JudgmentRow[] = [
     nextRow,
@@ -407,7 +414,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
     ...(refundRow ? [refundRow] : []),
   ];
 
-  const refundBlocked = canRefundE4 && refundableState && e4Detail?.refundAllowed === false;
+  const refundBlocked = canRefundE4 && refundableState && !!e4Detail && !refundAvailable;
   const hasAction = !!nextState || canCancel || (canWriteE4 && terminalOptions.length > 0) || (canRefundE4 && refundableState);
   // 常显的只有现在能不能做；按下去会怎样收进按钮旁的提示图标（DP-06）。
   const note = !canWriteE4 && !canRefundE4 ? "你只能查看这单。"
@@ -433,10 +440,16 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           // 只有一个去向时没得选，写成事实，不给下拉（OP-126）。
           const channel = channels.length === 1 ? channels[0] : undefined;
           const reasonField = { key: "refundReasonCode", label: "退款原因（用户可见）", current: "", inputKind: "select" as const, options: ["", ...E4_REFUND_REASONS], optionLabels: { "": "请选择退款原因", ...E4_REFUND_REASON_LABELS }, required: true, wide: !!channel };
+          const amountField = { key: "refundAmountUsdt", label: "退款金额（USDT）", current: o.amt ?? "", inputKind: "text" as const, required: true };
+          const amountFeedback = (value: Record<string, string>) => {
+            const message = e4RefundAmountError(value.refundAmountUsdt ?? "", o.amt);
+            return message ? { message, invalid: true, field: "refundAmountUsdt" } : { message: "", invalid: false };
+          };
           openActionConfirm({
             // 标题只写动作，单号进事实区；name 照旧记进操作记录（VS-101）。
             // amplify 只管框里的覆盖率提示：那句写「提交时检查」，后端实际在批准执行时才查，所以覆盖率写进事实区。提案里的 amplifies 照旧是 true。
             briefKind: "funds", name: "退款 · " + o.id, title: "退款订单", op: "order-refund", orderId: o.id, amplify: false, fixedVal: channel,
+            refundFacts: { originalAmountUsdt: o.amt, wholeOrderTerminal: true, promotionRecovery: "WHOLE_ORDER", coveragePreview: "FULL_REFUND" },
             effect: <><StatusTag tone="progress" filled explain={REFUND_APPROVAL_NOTE}>批准后生效</StatusTag><IrreversibleTag /></>, confirmLabel: "提交审批", confirmTone: "danger", reasonPlaceholder: reasonHint,
             statedBrief: { impact: `另一位有权超管批准后，钱退回用户钱包；符合条件的购买设备停用${giftClause}`, check: "核对用户、金额和退款原因，理由写清依据或工单号。" },
             facts: <div className="rd-stack">
@@ -469,8 +482,9 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
               </section>
             </div>,
             businessForm: channel
-              ? { kind: "multi-field", fields: [reasonField] }
-              : { kind: "multi-field", title: "退款渠道与原因", fields: [
+              ? { kind: "multi-field", fields: [amountField, reasonField], feedback: amountFeedback }
+              : { kind: "multi-field", title: "退款渠道与原因", feedback: amountFeedback, fields: [
+                amountField,
                 { key: "refundChannel", label: "退款渠道", current: channels[0], inputKind: "select", options: channels, optionLabels: REFUND_CHANNEL_LABELS, required: true, showDiff: true },
                 reasonField,
               ] },

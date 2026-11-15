@@ -4,6 +4,7 @@ import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-erro
 import type { F4AmbassadorMaterialProposal } from "@/lib/admin/f1-client";
 import { ambassadorApprovalBlocker } from "@/lib/admin/f4-ambassador-display";
 import { parsePhoneProposalView, type PhoneProposalView } from "@/lib/admin/phone-calibration-client";
+import { readE4Money } from "./e4-refund-amount";
 import {
   buildA2FilterQuery,
   resolveA2AuditObject,
@@ -88,7 +89,8 @@ interface BackendTicket {
   retiredOperation?: boolean | null;
   fundEffect?: A2FundEffect | null;
   refundOrderNo?: string | null;
-  refundAmountUsdt?: number | null;
+  originalAmountUsdt?: string | null;
+  refundAmountUsdt?: string | null;
   operator?: string | null;
   operatorRole?: string | null;
   type?: string | null;
@@ -191,6 +193,9 @@ export interface A2OperationRow {
   fundEffect?: A2FundEffect;
   refundOrderNo?: string;
   refundAmountUsdt?: number;
+  originalAmountUsdt?: string | null;
+  refundAmountUsdtText?: string | null;
+  refundReason?: string | null;
   id: string;
   action: string;
   obj: string;
@@ -383,8 +388,11 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     ...(ticket.retiredOperation === true ? { retiredOperation: true } : {}),
     fundEffect: ticket.fundEffect ?? undefined,
     refundOrderNo: ticket.refundOrderNo ?? undefined,
-    ...(typeof ticket.refundAmountUsdt === "number" && Number.isFinite(ticket.refundAmountUsdt) && ticket.refundAmountUsdt > 0
-      ? { refundAmountUsdt: ticket.refundAmountUsdt } : {}),
+    ...(ticket.refundAmountUsdt != null && Number(ticket.refundAmountUsdt) > 0
+      ? { refundAmountUsdt: Number(ticket.refundAmountUsdt) } : {}),
+    originalAmountUsdt: readE4Money(ticket.originalAmountUsdt),
+    refundAmountUsdtText: readE4Money(ticket.refundAmountUsdt),
+    refundReason: ticket.reason ?? null,
     id: ticket.id,
     action: ticket.action,
     obj: ticket.obj,
@@ -480,7 +488,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
     }
     throw error;
   }
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  const result = (await response.text().then(text => JSON.parse(text.replace(/("(?:originalAmountUsdt|refundAmountUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"'))).catch(() => null)) as ApiResult<T> | null;
   // classification-ok: Strict recovery rejects malformed envelopes and wrapped business 5xx even under HTTP 200; HTTP failure classification below remains shared.
   if (init?.commandKey && init.strictOutcome && (!result || !Number.isInteger(result.code)
       || init.strictOutcome === true && (result.code >= 500 || result.code !== 0 && result.code < 400))) {

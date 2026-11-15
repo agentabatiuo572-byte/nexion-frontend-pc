@@ -38,6 +38,8 @@ import {
 import { fetchE2PhoneTiers, fetchE2Tasks, type E2PhoneTier, type E2YieldComparison } from "@/lib/admin/e2-client";
 import { fetchE3Snapshot, type E3OperationMetric, type E3Stats } from "@/lib/admin/e3-client";
 import { E4_CLOSE_REASONS, E4_REFUND_REASONS, fetchE4OrderDetail, fetchE4OrderGroupPage, fetchE4OrderPage, type E4OrderDetail } from "@/lib/admin/e4-client";
+import { e4RefundAmountError } from "@/lib/admin/e4-refund-amount";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import {
   fetchE5Devices,
   fetchE5Overview,
@@ -531,7 +533,9 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       await rawPropose(() => undefined, { ...spec, commandKey: key });
     } catch (error) {
-      if (isExplicitRejection(error)) {
+      const firstRejected = !retained && error != null && typeof error === "object" && "httpStatus" in error
+        && isDeterministicRejection(Number(error.httpStatus), "apiCode" in error ? Number(error.apiCode) : undefined);
+      if (firstRejected || isExplicitRejection(error)) {
         if (!retained) e4PendingCommands.forget(scope, key);
         else setE4RetryRejected(current => [...current, key]);
       }
@@ -974,11 +978,14 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
             if (!refundChannel) { throw new Error("请选择退款渠道"); }
             const refundReasonCode = (businessValue?.refundReasonCode ?? "").trim();
             if (!(E4_REFUND_REASONS as readonly string[]).includes(refundReasonCode)) { throw new Error("请选择退款原因"); }
+            const refundAmountUsdt = businessValue?.refundAmountUsdt ?? "";
+            const amountError = e4RefundAmountError(refundAmountUsdt, mc.refundFacts?.originalAmountUsdt ?? null);
+            if (amountError) throw new Error(amountError);
             const def = findHighOp("e4_order_refund")!;
             await sendE4Proposal({
               action: mc.name, obj: mc.orderId, before: effOrderState(mc.orderId), after: "已退款", type: def.type, amplifies: true,
               gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E4",
-              command: def.buildCommand({ orderNo: mc.orderId, refundChannel, refundReasonCode }),
+              command: def.buildCommand({ orderNo: mc.orderId, refundChannel, refundReasonCode, refundAmountUsdt }),
               target: def.buildTarget({ orderNo: mc.orderId }),
             });
             setSelOrder(null);
