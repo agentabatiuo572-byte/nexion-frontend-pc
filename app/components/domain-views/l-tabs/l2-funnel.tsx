@@ -188,9 +188,9 @@ function scopeText(query: L2FunnelQuery) {
 
 const caliberNote = () => (
   <>
-    <p>同一批注册用户按时间先后走四步：注册 → 首购 → 锁定计划 → 提现，后一步必须晚于前一步，同一时刻不算。人数按用户去重，转化率 = 这一步人数 ÷ 上一步人数。</p>
+    <p>同一批注册用户按时间先后走四步：注册 → 首购 → 锁定计划 → 提现，后一步必须晚于前一步，同一时刻不算。同一人只算一次，转化率 = 这一步人数 ÷ 上一步人数。</p>
     <p>锁定计划：首购之后，锁定计划和第二笔购买里先发生的那一个。提现：提交了提现申请，不代表已经到账。</p>
-    <p>只看最近 400 天的服务器事件。按注册时的阶段、语言、渠道选人，不是用户现在的设置。日期按平台业务日（{businessZone().label}）算。晚到的事件下次查询时算进去。</p>
+    <p>只看最近 400 天系统记录的事件。按注册时的阶段、语言、渠道选人，不是用户现在的设置。日期按平台业务日（{businessZone().label}）算。晚到的事件下次查询时算进去。</p>
     <p>和「用户转化概览」是同一套四步规则：那边看全貌，这页按注册批次、阶段、语言、渠道细看，条件不同时两页的数可能不同。统计方式是固定的，这页改不了。</p>
     <p>{PROTECT_NOTE}</p>
   </>
@@ -209,7 +209,7 @@ function LiveStagesView({ stages, reason }: { stages: L2LiveStage[]; reason: str
   return (
     <>
       <Conclusion state="unknown" hint={coverage ? "有的事件缺少用户编号，算不出同一批人的转化；补齐前只能看四项各自的人数。" : "详细数据准备好之前，只能看四项各自的人数。"}
-        explain="四个数各自去重统计，不是同一批人，相除得出的不是转化率，所以页面不画漏斗、不算比例。">
+        explain="四个数各自统计，不是同一批人，相除得出的不是转化率，所以页面不画漏斗、不算比例。">
         用户转化：详细数据暂不可用
       </Conclusion>
       <StatBand label="四项各自的累计人数">
@@ -220,7 +220,7 @@ function LiveStagesView({ stages, reason }: { stages: L2LiveStage[]; reason: str
         })}
       </StatBand>
       <Panel title="这四个数从哪来" icon={Filter} tone="role-other" flush
-        explain={<><p>每项按事件里的用户去重，没有用户编号的按匿名编号或事件算，同一个人只算一次。</p><p>不限时间范围，和详细漏斗的「最近 400 天」不是同一个范围。{PROTECT_NOTE}</p></>}>
+        explain={<><p>每项按人数算，同一个人只算一次；没有用户编号的按匿名编号或单条事件算。</p><p>不限时间范围，和详细漏斗的「最近 400 天」不是同一个范围。{PROTECT_NOTE}</p></>}>
         <Table label="四项累计人数的来源">
           <thead><tr><Th>项目</Th><Th align="right">人数</Th><Th>统计的是</Th><Th>对应事件</Th></tr></thead>
           <tbody>
@@ -489,7 +489,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
           <Button icon={<Download size={14} aria-hidden />} disabledReason={exportBlocked} onClick={exportFunnel}>{exportLabel}</Button>
         </span>
       ) : undefined}
-      meta={<span className="rd-toolbar-note">打开页面时读取，不自动刷新</span>}
+      meta={<span className="rd-toolbar-note">不自动刷新</span>}
       readOnly={ctx.canExport ? undefined : "你可以调整筛选、保存本机视图；导出需要报表管理权限。"}
     />
   );
@@ -709,10 +709,10 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         explain="同一批注册用户里最后提交了提现申请的比例，不是到账率。" />
       <Stat label="第 7 天仍活跃" value={day7Value} tone={RETENTION_SOURCE_READY ? "role-3" : "role-other"} icon={CalendarCheck}
         sub={!RETENTION_SOURCE_READY ? `日活事件还没接上 · 目标 ${String(day7.target ?? 60)}%` : day7.value == null && day7.suppressed !== true ? "还没有注册满 7 天的周" : `最近满 7 天的注册周 · 目标 ${String(day7.target ?? 60)}%`}
-        explain={<><p>只看最近一个注册满 7 天的注册周（按月分组时也按周）：注册后第 7 天当天有日活记录的人 ÷ 这批注册人数，不是 7 天里任意一天。目标只用来对照，不触发任何操作。</p>{!RETENTION_SOURCE_READY && <p>日活事件还没接上，现在算出来会是 0%，所以先不显示；后端接上后再显示。</p>}</>} />
+        explain={<><p>只看最近一个注册满 7 天的注册周（按月分组时也按周）：注册后第 7 天当天有日活记录的人 ÷ 这批注册人数，不是 7 天里任意一天。目标只用来对照，不触发任何操作。</p>{!RETENTION_SOURCE_READY && <p>日活事件还没接上，现在算出来会是 0%，所以先不显示；接上后再显示。</p>}</>} />
       <Stat label="试用后购买比例" value={trialValue} tone={TRIAL_SOURCE_READY ? "role-3" : "role-other"} icon={Gift}
         sub={!TRIAL_SOURCE_READY ? "试用第一步的事件还没接上" : TRIAL_STEPS[1]?.suppressed || TRIAL_STEPS[2]?.suppressed ? "少于 5 人，不显示" : trialStarted && trialPurchased != null ? `${people(trialPurchased)} ÷ ${people(trialStarted)} 人` : "开始试用 0 人，算不出"}
-        explain={<><p>开始试用的人里，确认购买的比例。试用是另一条线，不算进首购转化率。</p>{!TRIAL_SOURCE_READY && <p>试用这条线从「看到领取弹窗」算起，这个事件还没有地方产生，三步都进不了统计，所以先不显示（不是 0 人）。</p>}</>} />
+        explain={<><p>开始试用的人里，确认购买的比例。试用是另一条线，不算进首购转化率。</p>{!TRIAL_SOURCE_READY && <p>试用这条线从「看到领取弹窗」算起，系统还没有记录这一步，三步都进不了统计，所以先不显示（不是 0 人）。</p>}</>} />
     </StatBand>
   );
 
@@ -751,7 +751,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       explain={<><p>试用单独统计三步：看到领取弹窗 → 开始试用 → 试用后购买，每一步要晚于上一步。不算进上面的首购转化率；同一笔试用购买两边都可能算到。</p><p>试用到期没有购买的会取消，不发奖励；只有用户确认购买才结算。试用规则在「免费试用设置」改。</p></>}>
       {TRIAL_SOURCE_READY
         ? <TrialLine steps={TRIAL_STEPS} />
-        : <Notice tone="neutral" title="数据来源还没接上">第一步「看到领取弹窗」还没有地方产生这个事件，三步都进不了统计，先不显示人数（不是 0 人）。等后端接上后显示。</Notice>}
+        : <Notice tone="neutral" title="数据来源还没接上">系统还没有记录第一步「看到领取弹窗」，三步都进不了统计，先不显示人数（不是 0 人）。接上后显示。</Notice>}
     </Panel>
   );
   const stepPanel = (
@@ -811,7 +811,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
           <RetentionHeatmap kind={cohortKind} cohorts={COHORTS} columns={retentionColumns} selected={safeCohort} curveFor={(index) => void loadCurve(index)} disabled={queryLoading} sourceReady={RETENTION_SOURCE_READY} />
         </Panel>
         <Panel title={`${selectedCohort.w} 的留存曲线`} icon={TrendingUp} tone="role-3"
-          explain={<><p>这批人注册后第 0、1、3、7、14、21、30、60 天当天有日活记录的比例，只画已经满了天数的点。接口里第 0 天固定是 100%（注册当天），不是实测，所以不画。</p><p>灰线是用来对比的另一批，可以选最近两批。</p></>}>
+          explain={<><p>这批人注册后第 0、1、3、7、14、21、30、60 天当天有日活记录的比例，只画已经满了天数的点。第 0 天（注册当天）固定是 100%，不是实测，所以不画。</p><p>灰线是用来对比的另一批，可以选最近两批。</p></>}>
           {!RETENTION_SOURCE_READY
             ? <BlockState state="empty" title="数据来源还没接上，曲线先不画" detail="接上前画出来会是一条掉到 0 的线，不代表没人用。" />
             : selectedCohort.suppressed
@@ -842,16 +842,16 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         <Segments<"cvr" | "ret" | "trial"> label="看哪项指标" value={metric}
           items={(["cvr", "ret", "trial"] as const).map((value) => ({ value, label: METRIC_NAME[value] }))}
           onChange={(value) => { if (!queryLoading) void loadCrossMetric(value); }} />
-        <span className="rd-toolbar-note l2-toolbar-end" role="status">{queryLoading ? "读取中…" : "换指标会重新读取 · 维度固定，没有排序"}</span>
+        <span className="rd-toolbar-note l2-toolbar-end" role="status">{queryLoading ? "读取中…" : "换指标会重新读取 · 行列固定，不能排序"}</span>
       </div>
       <Panel title={`各渠道、语言的${METRIC_NAME[metric]}`} icon={Languages} tone="role-3" sub={`按注册时的渠道、阶段和语言 · ${scope}`}
         explain={<>
           <p>{metric === "cvr" ? "注册后完成首购的人 ÷ 注册人数。" : metric === "ret" ? "注册后第 7 天当天有日活记录的人 ÷ 注册人数；还有人不满 7 天的组合不算。" : "开始试用的人里确认购买的比例，试用是另一条线。"}</p>
-          <p>行是注册时带的渠道和当时的运营阶段，列是注册时的语言。颜色越深越高，最高、最低的格子标了字，方便找最好和最差的组合。维度是固定的，没有排序和分页。</p>
+          <p>行是注册时带的渠道和当时的运营阶段，列是注册时的语言。颜色越深越高，最高、最低的格子标了字，方便找最好和最差的组合。行列固定，不能排序和分页。</p>
           <p>{PROTECT_NOTE}</p>
         </>}>
         {metricBlocked
-          ? <BlockState state="empty" title="数据来源还没接上" detail={metric === "ret" ? "日活事件还没接上，算出来会是 0%，先不显示。" : "试用第一步「看到领取弹窗」的事件还没有地方产生，算不出来，先不显示（不是 0）。"} />
+          ? <BlockState state="empty" title="数据来源还没接上" detail={metric === "ret" ? "日活事件还没接上，算出来会是 0%，先不显示。" : "系统还没有记录试用第一步「看到领取弹窗」，算不出来，先不显示（不是 0）。"} />
           : xd.rows.length && xd.columns.length
             ? <CrossTable metric={xd} name={METRIC_NAME[metric]} />
             : <BlockState state="empty" title="当前条件下没有可比较的渠道和语言" />}
