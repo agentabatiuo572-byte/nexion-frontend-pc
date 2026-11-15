@@ -311,6 +311,22 @@ export type K3Rule = {
   version: number;
 };
 export type K3RouteCount = { key: RuleAction; label: string; count: number; n: number; color: string };
+export type K3Coverage = { coverageRatio: number; redlinePct: number; reliable: boolean; redlineBreached: boolean };
+
+/** K3 overview has no coverage projection in 441c412b. Use the existing authorised B1 read. */
+export async function fetchK3Coverage(signal?: AbortSignal): Promise<K3Coverage> {
+  const response = await guardedFetch("/api/admin/treasury/coverage", { cache: "no-store", signal });
+  const payload: ApiResult<unknown> = await response.json();
+  if (!response.ok || payload.code !== 0) throw new Error(formatAdminApiError(payload.message, "COVERAGE_UNAVAILABLE"));
+  const data = requiredK3Record(payload.data, "coverage");
+  const decimal = (value: unknown) => (typeof value === "number" || typeof value === "string" && value.trim() !== "")
+    && Number.isFinite(Number(value)) ? Number(value) : null;
+  const ratio = decimal(data.valuedCoverageRatio), redline = decimal(data.redLine);
+  // redlineBreached uses exact B1 amounts, rather than the rounded display ratio.
+  const reliable = data.valuationReliable === true && ratio !== null && ratio >= 0 && redline !== null && redline > 0
+    && typeof data.redlineBreached === "boolean";
+  return { coverageRatio: ratio ?? 0, redlinePct: redline ?? 0, reliable, redlineBreached: data.redlineBreached !== false };
+}
 export type K3DryRunResult = {
   batchNo: string;
   status: "COMPLETED" | string;

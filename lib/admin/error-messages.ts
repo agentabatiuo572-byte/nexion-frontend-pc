@@ -1423,6 +1423,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   K1_RELEASE_PARAM_RELATION_INVALID: "审核起点须为 2–50 的整数，且不大于锁定起点。请在「规则与名单」核对这两项后再保存。",
   K1_RELEASE_VERSION_CONFLICT: "这项刚被别人改过。",
   K1_COVERAGE_UNAVAILABLE: "兑付覆盖率暂时无法可靠读取，本次操作被阻止；请到「资金与应付款」核对数据来源。",
+  K3_COVERAGE_UNAVAILABLE: "兑付覆盖率暂时无法可靠读取，本次操作被阻止；请到「资金与应付款」核对数据来源。",
   K1_RELEASE_CONFIG_UNAVAILABLE: "收益审核规则暂时无法读取；请联系风控值班人员核对配置，有待确认记录时先到操作记录核查。",
   K1_RELEASE_PARAM_INVALID: "这个收益规则参数不可用，请关闭修改框后重新选择。",
   K1_RELEASE_PARAM_RETIRED: "这项收益规则已停止使用，不能再调整。请关闭旧窗口，在「规则与名单」查看现行审核起点和锁定起点。",
