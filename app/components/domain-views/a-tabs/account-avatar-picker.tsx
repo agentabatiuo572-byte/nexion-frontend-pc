@@ -6,6 +6,7 @@ import { avatarDrafts, avatarDraftFingerprint, avatarFileHash, rememberAvatarDra
 import { type AvatarGender, type AvatarScope } from "@/lib/admin/account-avatar-contract";
 import { supportClient } from "@/lib/admin/m-support-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { SupportAvatar } from "../m-tabs/support-avatar";
@@ -51,7 +52,7 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
       if (policy.maxPixels !== null && pixels > policy.maxPixels) throw new Error("图片像素超过当前上限。");
       const hash = await avatarFileHash(nextFile);
       if (!active(token)) return;
-      if (draft?.fileHash && (draft.fileHash !== hash || draft.fileMime !== nextFile.type)) throw new Error("原上传结果尚未确认，请重新选择首次上传的同一张图片。");
+      if (draft?.fileHash && (draft.fileHash !== hash || draft.fileMime !== nextFile.type)) throw new Error("原上传结果未知，请重新选择首次上传的同一张图片。");
       const originalFile = draft ? new File([nextFile], draft.fileName!, { type: draft.fileMime }) : nextFile;
       resetFile(); setFile(originalFile); objectUrl.current = URL.createObjectURL(originalFile); setUrl(objectUrl.current); setInvalidSelection(false);
       if (!draft) setDraft({ fingerprint, actorId: actorId!, scope, kind: "UPLOAD", clientUploadId: crypto.randomUUID(), commandKey: crypto.randomUUID(), fileHash: hash, fileName: nextFile.name, fileMime: nextFile.type, createdAt: Date.now(), expiresAt: Date.now() + 86400000 });
@@ -89,7 +90,7 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
   }
   async function clear() {
     if (busy || disabled || expired) return;
-    if (draft && !draft.asset && avatarDrafts.list().some(row => row.commandKey === draft.commandKey)) { setError("头像准备结果尚未确认，请先重试；当前头像保持不变。"); return; }
+    if (draft && !draft.asset && avatarDrafts.list().some(row => row.commandKey === draft.commandKey)) { setError("头像准备结果未知，请先重试；当前头像保持不变。"); return; }
     if (!draft?.asset) { updateDraft(null); resetFile(); setInvalidSelection(false); setError(""); onBlocking(false); return; }
     if (scope === "admin" && draft.cancelKey) { setError(displayAdminError(new Error("A1_AVATAR_CANCEL_QUERY_ONLY"))); return; }
     let sent = false;
@@ -126,13 +127,13 @@ export function AccountAvatarPicker({ account, targetId, name, disabled, scope =
         {(draft?.asset || url) && <div><p>新头像</p>{draft?.asset ? <SupportAvatar name={name || "运营账号"} path={draft.asset.previewRef} size={64} /> : <img src={url} alt="待上传账号头像" width={64} height={64} style={{ objectFit: "cover", borderRadius: "50%" }} />}<small>尚未保存到账号</small></div>}
       </div>
     </div>
-    {canUpload && allowDefault && !draft && !invalidSelection && <button type="button" className="l-btn" onClick={() => void prepare(true)}>按所选性别准备默认头像</button>}
+    {canUpload && allowDefault && !draft && !invalidSelection && <button type="button" className="l-btn" onClick={() => void prepare(true)}>按所选分类准备默认头像</button>}
     {draft && <div className="account-avatar-actions">{!draft.asset && <button type="button" className="l-btn" disabled={expired || draft.kind === "UPLOAD" && !file} onClick={() => void prepare()}>{busy ? "正在准备…" : draft.kind === "DEFAULT" ? "重试获取默认头像" : "上传或重试"}</button>}
       {scope === "admin" && draft.cancelKey
-        ? <p>取消新头像的结果未知：不能再取消一次，后端也没有原请求回执。请联系值班人员核对，这条记录先保留。</p>
+        ? <p>取消新头像的结果未知：不能再取消一次，也查不到原结果。请联系值班人员核对，这条记录先保留。</p>
         : <button type="button" className="l-btn" disabled={expired || Boolean(!draft.asset && avatarDrafts.list().some(row => row.commandKey === draft.commandKey))} onClick={() => void clear()}>{draft.cancelKey ? "重试取消头像" : "取消新头像"}</button>}
-      {draft.kind === "UPLOAD" && !file && !draft.asset && <p>上传结果尚未确认，请选择首次上传的同一张图片后重试。</p>}
-      {draft.asset && <small>新头像有效期至 {new Date(draft.asset.expiresAt).toLocaleString("zh-CN")}</small>}
+      {draft.kind === "UPLOAD" && !file && !draft.asset && <p>上传结果未知，请选择首次上传的同一张图片后重试。</p>}
+      {draft.asset && <small>新头像有效期至 {businessStamp(new Date(draft.asset.expiresAt).getTime())}（{businessZone().label}）</small>}
       {(expired || assetExpired) && <p role="alert">{expired ? "重试期限已过，请联系管理员核对结果。" : "新头像已过期，请取消后重新选择。"}</p>}</div>}
     {invalidSelection && !draft && <button type="button" className="l-btn" onClick={() => void clear()}>取消失败的头像选择</button>}{error && <p role="alert">{error}</p>}
   </fieldset>;

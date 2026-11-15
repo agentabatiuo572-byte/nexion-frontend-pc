@@ -89,7 +89,7 @@ export function isHighRiskCode(code: string) {
   const parts = code.split("_");
   return parts[0] === "platform" && RISKY_PAGES.has(parts[1] ?? "") && parts[parts.length - 1] !== "read";
 }
-export const HIGH_RISK_EXPLAIN = "标「高风险」的是能改账号、角色、菜单、权限清单或批准审批单的权限（平台基础里不是只读的那些），拿到后就能改变谁能进后台做什么。只按权限码判断；其他页面的敏感操作在「权限清单」里看类型。";
+export const HIGH_RISK_EXPLAIN = "「高风险」指能改账号、角色、菜单、权限清单或批准审批单的权限，拿到就能改变谁能进后台、能做什么。其他页面的敏感操作到「权限清单」看。";
 
 /** 按模块分组的权限：模块名和项数在第一层，每页的权限码收进问号（第三层）。markRisk 时高风险的格标出来。 */
 export function PermGroups({ codes, label, tone, empty = "没有权限", markRisk = false }: { codes: readonly string[]; label: string; tone?: "gain" | "loss"; empty?: string; markRisk?: boolean }) {
@@ -126,8 +126,8 @@ export type A1RecoveryRow = { key: string; name: ReactNode; change: ReactNode; s
 /** 结果未知的说明按操作写：note 写「可能已经怎样、能不能按原请求重试」。 */
 export function unknownTag(kind: "direct" | "approval", note?: string) {
   return <StatusTag tone="warn" icon={CircleHelp} explain={note ?? (kind === "direct"
-    ? "提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，后端认得出是同一次提交。"
-    : "提交时没收到确定结果，可能已经建了审批单。点「查询原结果」按原请求查这张单。")}>结果未知</StatusTag>;
+    ? "提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。"
+    : "提交时没收到确定结果，可能已经建了审批单。点「查询原结果」核对。")}>结果未知</StatusTag>;
 }
 
 export function expiredTag(note = "原请求超过 24 小时，不能再重试，只能查询核对。") {
@@ -255,7 +255,7 @@ export function AccountDetailDrawer({ account, roles, roleCodes, materialPermiss
         <SupportAvatar name={operatorDisplayName(account)} path={account.avatarAssetId ? `/api/admin/platform/accounts/${account.id}/avatar` : undefined} version={account.avatarVersion ?? undefined} size={56} />
         <JudgmentPoints title="账号要点" rows={[
           { label: "角色", value: roleName(roles, account.role) },
-          { label: "两步验证", value: account.tfa ? "已绑定" : "未绑定", state: account.tfa ? undefined : "warn", reason: account.tfa ? undefined : account.username === "superadmin" ? "临时绕过开关打开时这个账号可免验证登录，发布前必须关闭" : "下次登录先绑定，绑定前不能正常使用后台" },
+          { label: "两步验证", value: account.tfa ? "已绑定" : "未绑定", state: account.tfa ? undefined : "warn", reason: account.tfa ? undefined : account.username === "superadmin" ? "系统临时允许这个账号不验证就登录，正式上线前要关掉" : "下次登录先绑定，绑定前不能正常使用后台" },
           { label: "状态", value: enabled ? "启用" : "已停用", state: enabled ? undefined : "neutral" },
           { label: "密码", value: credentialStatusText(account.credentialDeliveryStatus) },
           { label: "最近登录", value: `${minuteText(account.lastLogin)}${minuteText(account.lastLogin) === "—" ? "" : `（${businessZone().label}）`}` },
@@ -305,7 +305,7 @@ export function AccountDetailDrawer({ account, roles, roleCodes, materialPermiss
       </section>
 
       <Fold inset title="角色变更记录" summary={entries.length ? `${entries.length} 次变更` : onlyCurrent ? `当前：${roleName(roles, current?.toRole ?? account.role)}` : "没有记录"}
-        explain="只列能读到的角色变更审计，最多 20 条。只有当前角色时，可能是从没变过，也可能是更早的记录没有读到。">
+        explain="最多列 20 条能读到的角色变更。只有当前角色时，可能从没变过，也可能更早的记录没读到。">
         {entries.length ? <Timeline entries={entries} label="角色变更记录" />
           : <p className="a1-muted">{onlyCurrent ? `当前角色是${roleName(roles, current?.toRole ?? account.role)}，更早的变更记录没有读到。` : "暂无角色变更记录。"}</p>}
       </Fold>
@@ -422,7 +422,7 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
     !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
     !displayName.trim() ? "显示名未填写" : "",
     email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
-    recoveryMode && role !== "super" ? "恢复模式只能创建超级管理员账号" : "",
+    recoveryMode && role !== "super" ? "恢复期只能新建超级管理员" : "",
     !reason.trim() ? "操作理由未填写" : "",
   ].filter(Boolean);
   const disabledReason = disabled ? "正在加载，稍后再创建" : "";
