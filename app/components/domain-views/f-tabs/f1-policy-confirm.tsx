@@ -7,7 +7,7 @@
  */
 import { useState } from "react";
 import { CircleHelp, LockOpen, ShieldCheck, Zap } from "lucide-react";
-import { Change, DiffField, Fact, Facts, Field, Input, Notice, Select, StatusTag } from "@/app/components/rd";
+import { Change, DiffField, Fact, Facts, Field, Input, KeepText, Notice, Select, StatusTag } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { fetchF1VRankOverview } from "@/lib/admin/f1-client";
@@ -157,7 +157,15 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
         ? `调低是放宽：提交审批，${SUPER_APPROVER}（需有审批批准权限）批准后才生效，你自己不能批。调高或不变是收紧：确认后立即生效。`
         : `增加资金奖励（加金额、改成资金、按 UVT 现价折算后变多）要提交审批，${SUPER_APPROVER}（需有审批批准权限）批准后才生效。其余改动确认后立即生效。`}>
         {isCondition ? "调低要批准 · 调高立即生效" : "增加资金要批准 · 其余立即生效"}</StatusTag>;
+  // 第一次被拒后已按重读的当前值重算：值或估值变了时说一句，免得运营以为还是打开时的值（红色那句是按旧值判断的）。
+  const withUnit = (raw: string) => `${valueLabel(raw)}${UNIT[editor.field!] ? ` ${UNIT[editor.field!]}` : ""}`;
+  const changes = !opening.pending && baselineReady && baselineRevision > 0 ? isCondition
+    ? [(requested.row[editor.field!] ?? "") !== (editor.row[editor.field!] ?? "") && `打开时 ${withUnit(requested.row[editor.field!] ?? "")}，现在 ${withUnit(editor.row[editor.field!] ?? "")}`]
+    : [requested.reward && editor.reward && f1RewardPolicyLabel(requested.reward, ctx) !== currentLabel && `打开时 ${f1RewardPolicyLabel(requested.reward, ctx)}，现在 ${currentLabel}`,
+      requested.valuation !== editor.valuation && `UVT 估值 ${requested.valuation ?? "—"} → ${editor.valuation ?? "—"} USDT`] : [];
+  const rebased = changes.filter(Boolean).length ? `${changes.filter(Boolean).join("；")}；已按现在的值判断` : "";
   const facts = <Facts>
+    {rebased && <Fact k="刚被改过" tone="warn"><KeepText text={rebased} /></Fact>}
     {!isCondition && <Fact k={remove ? "要移除的奖励" : editor.reward ? "现在的奖励" : "等级"}>{editor.reward ? currentLabel : `${editor.row.v} · 现在 ${(ctx.rewards[editor.row.v] ?? []).length} 项奖励`}</Fact>}
     {isCondition && (prev || next) && <Fact k="相邻等级">{[prev, next].filter(Boolean).join(" · ")}</Fact>}
     {opening.pending && <Fact k="原操作提交于">{businessStamp(opening.pending.createdAt)}（{businessZone().label}）</Fact>}
@@ -223,7 +231,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
             ? <StatusTag tone="warn" icon={LockOpen}>放宽，要批准</StatusTag>
             : <StatusTag tone="neutral" icon={ShieldCheck}>收紧或不变，立即生效</StatusTag> : undefined;
           return <>
-            <DiffField before={currentLabel} unit={UNIT[editor.field!]} hint={editor.field === "legRank" ? "选比这一级低的等级，或者「未设置」" : RANGE[editor.field!]}
+            <DiffField before={currentLabel} unit={baselineReady ? UNIT[editor.field!] : undefined} hint={editor.field === "legRank" ? "选比这一级低的等级，或者「未设置」" : RANGE[editor.field!]}
               state={state} error={(values.value ?? "").trim() !== "" ? inputError : undefined}
               note={editor.field === "legCount" || editor.field === "legRank" ? "达标分支数为 0 时不看分支；大于 0 时要同时设好比这一级低的分支最低等级，否则这一项一律判不满足。" : undefined}>
               {(control) => editor.field === "legRank"
