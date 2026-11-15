@@ -7,7 +7,9 @@ import type { useE3Proposals } from "./e3-proposals";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E4OrderDetail, E4PendingApproval } from "@/lib/admin/e4-client";
 import type { PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import type { FundCommandOrigin, FundCommandEvidence, FundCommandInvestigation, FundInvestigationAccess, FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
+import type { createA2OperationProposal } from "@/lib/admin/a2-client";
 import type { E5Device, E5Overview } from "@/lib/admin/e5-client";
 import type { E6ComputeConfigView } from "@/lib/admin/e6-client";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
@@ -90,7 +92,7 @@ export interface McSpec {
 export type Mc = McSpec | null;
 
 /** E4 结果未确认的提案。原内容、理由和命令号一起存，重试只能原样发（OP-94）。 */
-export type E4PendingCommand = PendingMutationRecord & { label: string; orderNo: string; spec: ProposeSpec };
+export type E4PendingCommand = PendingMutationRecord & { label: string; orderNo: string; spec: ProposeSpec; commandOrigin?: FundCommandOrigin; request?: Parameters<typeof createA2OperationProposal>[0] };
 
 /** 订单行(队列 / 状态机派生)。 */
 export interface EOrder {
@@ -167,6 +169,9 @@ export interface EViewCtx {
   e4ReceiptAttempts: { fingerprint: string; commandKey: string; orderNo: string }[];
   checkE4Receipt: (record: EViewCtx["e4ReceiptAttempts"][number]) => Promise<void>;
   e4PendingNotes: Record<string, string>;
+  e4InvestigationResults: Record<string, FundInvestigationOutcome>;
+  e4InvestigationAccess: (record: E4PendingCommand) => FundInvestigationAccess;
+  checkE4Investigation: (record: E4PendingCommand, evidence?: FundCommandEvidence) => Promise<FundCommandInvestigation | null>;
   e4RetryRejected: string[];
   e4Retrying: string;
   retryE4Pending: (record: E4PendingCommand) => Promise<void>;

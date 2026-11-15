@@ -436,6 +436,8 @@ maxDevicesPerOrder 入口保留，但当前后端及 App 每次只取一个 sour
 
 #### [E4] 订单进度
 
+**2026-11-15 B38 接线**：新提案保存 A2 完整 request 与 commandOrigin，原样重试不改操作人/角色/业务内容。重试成功后查当前审批单，不把建单回放当成现在待批。checkE4Investigation(record,evidence?)、e4InvestigationResults、e4InvestigationAccess 提供核查数据；只有权威终态解除未知，关闭旧确认并重读当前数据。查不到、过期、本地解除和缺来源都不结案。核查输入/按钮/结果/联系人及旧框文字由视觉接。A2_COMMAND 成功仅证明建单命令完成，不证明退款执行。出处 eb08d01a OpsCommandInvestigationController、AdminCommandInvestigationService、AdminCommandOrigin。
+
 **① 目的 & 对齐**
 设备订单的进度核对与审批处置入口——列表、详情、按事实推进及退款；设备分配和激活在设备管理办理。对齐前端 §7.4(订单管理 `/store/orders`,4 阶段直通车)+ §9.11f(订单失败态补全:当前前端 `cancelled` 折叠所有失败为一类,后台须拆分缺失态)。服务的业务目标:履约可观测(订单从下单到激活的状态流转)、退款与资金回退的合规处置(联动 D 域)、失败态精细化(区分支付失败 / 过期 / 退款 / 拒付 / 配机失败)。**E4 持订单状态机权威,订单支付走 D1 / PSP、paid 写 D4 账本**。
 

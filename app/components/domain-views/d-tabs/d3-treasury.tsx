@@ -36,6 +36,7 @@ import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-mess
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandRecord, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { exportScope, treasuryCommandKey, treasuryCommands, type TreasuryExportKind } from "@/lib/admin/treasury-commands";
 import { LeaveDialog, useLeaveGuard, type EditorSwitch } from "../i-tabs/i5-writes";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -96,6 +97,7 @@ interface ConfirmRequest {
 
 /** 页面上方一条结果未知的操作。重试只发存下来的内容，这里没有能改的东西（OP-94）。 */
 interface PendingItem {
+  investigationRecord: FundCommandRecord;
   commandKey: string;
   /** 完整原记录供核对和复制；不从当前表单重建。 */
   record: unknown;
@@ -217,6 +219,7 @@ export function D3Treasury() {
   const [retrying, setRetrying] = useState(false);
   /** 待确认条上最近一次重试的结果，只是当下的事实，不影响待确认本身。 */
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
+  const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
   /** 最近一次重试被后端明确拒绝的命令号，只有它们才能人工解除。按命令号记，解除后重新提交的新命令不沿用。 */
   const [retryRejected, setRetryRejected] = useState<string[]>([]);
   const [releasing, setReleasing] = useState<PendingItem | null>(null);
@@ -357,7 +360,8 @@ export function D3Treasury() {
   const submitInjection = async (nextAmount: string, nextVoucher: string, reason: string, operator = OPERATOR()) => {
     const scope = injectionScope(nextVoucher, nextAmount);
     const retained = Boolean(pendingKeys.get(scope));
-    const key = treasuryCommandKey(scope, { amount: nextAmount, voucherNo: nextVoucher, reason, operator });
+    const key = treasuryCommandKey(scope, { amount: nextAmount, voucherNo: nextVoucher, reason, operator,
+      commandOrigin: fundCommandOrigin("POST", "/api/admin/treasury/reserve-injection", "finance_d3_read") });
     const clearForm = () => {
       setAmount("");
       setVoucherNo("");
@@ -491,7 +495,8 @@ export function D3Treasury() {
       confirmLabel: "确认保存",
       run: async (reason) => {
         const operator = OPERATOR();
-        const fingerprint = JSON.stringify({ draft: values, expectedVersion: version, reason, operator });
+        const fingerprint = JSON.stringify({ draft: values, expectedVersion: version, reason, operator,
+          commandOrigin: fundCommandOrigin("PUT", "/api/admin/treasury/forecast-config", "finance_d3_read") });
         const commandKey = forecastCommand.resolve(FORECAST_SLOT, fingerprint, () => `b2-forecast-config-${crypto.randomUUID()}`);
         try {
           await submitForecast(values, version, reason, operator, commandKey, fingerprint, false);
@@ -544,7 +549,8 @@ export function D3Treasury() {
     if (!main || loading) throw new Error("资金数据没读到或正在刷新，读完再导出。");
     const scope = exportScope(kind);
     const retained = Boolean(pendingKeys.get(scope));
-    const key = treasuryCommandKey(scope, { exportKind: kind, reason, operator });
+    const key = treasuryCommandKey(scope, { exportKind: kind, reason, operator,
+      commandOrigin: fundCommandOrigin("POST", `/api/admin/treasury/${kind === "reconciliation" ? "reconciliation" : "liabilities"}/export`, "finance_d3_read") });
     await sendCommand({
       retained,
       stored: () => pendingKeys.isDurablyStored(scope, key),
@@ -612,12 +618,35 @@ export function D3Treasury() {
     }
   };
 
-  /** 重试被拒后，人核实过原操作的结果才解除。不发请求。 */
-  const releasePending = (item: PendingItem) => {
-    item.forget();
-    setUnknownTick((tick) => tick + 1);
+  /** Query or submit evidence against the saved original; only server terminals settle it. */
+  const checkInvestigation = async (item: PendingItem, evidence?: FundCommandEvidence) => {
+    try {
+      const receipt = await checkFundCommand(item.investigationRecord, evidence);
+      setInvestigationResults(current => ({ ...current, [item.commandKey]: { receipt } }));
+      if (fundCommandSettled(receipt)) {
+        item.forget();
+        setUnknownTick(tick => tick + 1);
+        setRetry(null); setConfirm(null); setInjectOpen(false);
+        await load();
+      } else if (!receipt) {
+        setPendingNotes(current => ({ ...current, [item.commandKey]: displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED")) }));
+      }
+      return receipt;
+    } catch (cause) {
+      const error = displayAdminError(cause);
+      setInvestigationResults(current => ({ ...current, [item.commandKey]: { error } }));
+      setPendingNotes(current => ({ ...current, [item.commandKey]: error }));
+      throw cause;
+    }
+  };
+  const verifyPending = async (item: PendingItem) => {
+    try { if (fundCommandSettled(await checkInvestigation(item))) return; }
+    catch { /* The existing notice retains the original and displays the query error. */ }
+    refresh();
+  };
+  const releasePending = async (item: PendingItem) => {
+    await verifyPending(item);
     setReleasing(null);
-    toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
   const crossLink = (href: string, label: string): CrossLink => ({
@@ -667,12 +696,13 @@ export function D3Treasury() {
   }
 
   const forecastRecord = unknownCommands.forecast;
-  const savedForecast = forecastRecord && JSON.parse(forecastRecord.inputFingerprint) as { draft: ForecastValues; expectedVersion: number; reason: string; operator: string };
+  const savedForecast = forecastRecord && JSON.parse(forecastRecord.inputFingerprint) as { draft: ForecastValues; expectedVersion: number; reason: string; operator: string; commandOrigin?: FundCommandOrigin };
   const savedChanges = savedForecast && baseValues
     ? forecastDiffRows(baseValues, savedForecast.draft).filter((row) => row.before !== row.after).map((row) => ({ key: row.key, label: row.label, value: <Change from={row.before} to={row.after} /> }))
     : [];
   const pendingItems: PendingItem[] = [
     ...unknownCommands.injections.map((record): PendingItem => ({
+      investigationRecord: record,
       commandKey: record.commandKey,
       record,
       title: "登记储备注入结果未知，可能已经入账",
@@ -693,6 +723,7 @@ export function D3Treasury() {
       forget: () => pendingKeys.forget(record.fingerprint, record.commandKey),
     })),
     ...(forecastRecord && savedForecast ? [{
+      investigationRecord: { ...forecastRecord, commandOrigin: savedForecast.commandOrigin },
       commandKey: forecastRecord.commandKey,
       record: forecastRecord,
       title: "预测设置保存结果未知，可能已经保存",
@@ -713,6 +744,7 @@ export function D3Treasury() {
       forget: () => forecastCommand.forget(FORECAST_SLOT),
     }] : []),
     ...unknownCommands.exports.map((record): PendingItem => ({
+      investigationRecord: record,
       commandKey: record.commandKey,
       record,
       title: `${EXPORT_LABEL[record.exportKind]} 导出结果未知`,
@@ -749,7 +781,7 @@ export function D3Treasury() {
           title={item.title}
           action={(
             <>
-              <Button size="sm" onClick={refresh}>刷新核对</Button>
+              <Button size="sm" onClick={() => void verifyPending(item)}>刷新核对</Button>
               <Button size="sm" disabledReason={item.expiresAt <= Date.now() ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原操作重试</Button>
               {item.allowed && retryRejected.includes(item.commandKey) && <Button size="sm" onClick={() => setReleasing(item)}>解除待确认</Button>}
             </>

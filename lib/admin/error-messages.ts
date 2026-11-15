@@ -3090,6 +3090,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   INVESTIGATION_ORIGINAL_LOCATOR_INVALID: "原操作的命令号或请求路径无效，无法查询。原记录继续保留，请到操作记录与审批核对。",
   INVESTIGATION_ORIGINAL_IDENTITY_INVALID: "原操作的身份信息无效，无法核查。原记录继续保留，请重新查原操作结果。",
   INVESTIGATION_REQUEST_REQUIRED: "核查内容为空，请重新填写后提交。",
+  INVESTIGATION_SCOPE_UNSUPPORTED: "这类原操作尚不支持受控核查，不能结案。原记录继续保留，请到操作记录与审批核对。",
   INVESTIGATION_EVIDENCE_OR_CONCLUSION_INVALID: "请选择核查结论，并写明 512 字以内的核查依据；审计编号须为正整数。",
   PHONE_RISK_RECEIPT_NOT_FOUND: "后端查不到这次保存的回执：原请求可能没有送达，查不到不等于没有执行。原记录继续保留，24 小时内可以按原操作重试，后端按命令号去重。",
   PHONE_RISK_RECEIPT_LEGACY_ORIGIN_UNPROVEN: "这条保存回执缺少发起人来源，不能据此判断结果。原记录继续保留，请把命令号发给有调查权限的超级管理员核查。",

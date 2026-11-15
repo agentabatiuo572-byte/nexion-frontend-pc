@@ -427,7 +427,7 @@ export function AccountDeletionQueue({ ctx, canWrite, status, onStatus, refreshK
               <Fact k="审核时间">{formatBusinessTimeCompact(selected.reviewedAt, "—")}</Fact>
               <Fact k="完成时间">{formatBusinessTimeCompact(selected.completedAt, "—")}</Fact>
               {/* 已拒绝时理由就是上面那一行，同一句不写两次（DP-61）。 */}
-              <Fact k="原因">{reasonText(selected.originalReason)}</Fact>
+              <Fact k="原因">{selected.originalReason ?? "—"}</Fact>
             </Facts>
           </Panel>}
         </div>}

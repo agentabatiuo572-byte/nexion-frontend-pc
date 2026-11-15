@@ -211,7 +211,7 @@ function riskOf(account: Pick<User360Profile, "riskBand" | "riskScore"> | null |
 }
 
 /** 表格里只给中、高风险上色，低风险和没有档的不上色（VS-21）。 */
-function RiskCell({ account }: { account: Pick<User360Profile, "riskBand" | "riskScore"> }) {
+function RiskCell({ account }: { account?: Pick<User360Profile, "riskBand" | "riskScore"> }) {
   const risk = riskOf(account);
   return risk.tone === "danger" || risk.tone === "warn" ? <StatusTag tone={risk.tone}>{risk.text}</StatusTag> : <Cell main={risk.text} />;
 }
@@ -1636,7 +1636,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                         {/* 账户列伸缩，时间列按内容定宽，在线设备紧跟在后面（第 6 列的列宽）。 */}
                         <Td grow><Cell main={<span data-mono>{text(account.userNo, id)}</span>} sub={userNicknameText(text(account.nickname), account.phoneMasked)} /></Td>
                         <Td><AccountStatusTag status={account.status} table /></Td>
-                        <Td><Cell main="—" /></Td>
+                        <Td><RiskCell /></Td>
                         {/* 最近登录帮着判断账户还在不在用；列表是最近注册的 50 个，注册时间说明排在这里的是谁。 */}
                         <Td data-fit=""><Cell num main={timeText(account.registeredAt)} sub="—" /></Td>
                         <Td align="right"><Cell num main="—" /></Td>

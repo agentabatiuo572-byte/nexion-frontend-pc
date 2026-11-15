@@ -19,6 +19,7 @@ import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessT
 import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { fetchWithdrawalGateOpen } from "@/lib/admin/ops-dashboard-client";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { bankEvidenceLabels, bankEvidenceTime } from "@/lib/admin/bank-payout-evidence";
@@ -599,6 +600,7 @@ function operationKey(scope: string) {
 
 
 type D2PendingCommand = PendingMutationRecord & {
+  commandOrigin?: FundCommandOrigin;
   kind: "review" | "batch" | "cregis" | "bank" | "simulate";
   /** 待确认条上写的「做了什么」。 */
   label: string;
@@ -608,7 +610,7 @@ type D2PendingCommand = PendingMutationRecord & {
   operator: string;
   action?: D2ReviewAction;
   form?: BusinessFormValue;
-  /** 单笔操作发出时的状态，读回时状态变了就说明已经处理过。 */
+  /** 单笔操作发出时的状态；当前状态变化不能证明原命令的结果。 */
   fromStatus?: string;
   providerCid?: string;
   version?: number;
@@ -927,6 +929,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [pendingCommands, setPendingCommands] = useState<D2PendingCommand[]>([]);
   /** 待确认条上最近一次读回或重试的结果，只是当下的事实，不影响待确认本身。 */
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
+  const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
   /** 最近一次重试被后端明确拒绝的命令号，只有它们才能人工解除。按命令号记，解除后重新处理的新命令不沿用。 */
   const [retryRejected, setRetryRejected] = useState<string[]>([]);
   const [releasing, setReleasing] = useState<D2PendingCommand | null>(null);
@@ -1119,7 +1122,11 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const sendCommand = async <T,>(scope: string, extra: D2PendingExtra, send: (key: string) => Promise<T>, done: (result: T) => Promise<unknown>) => {
     const retained = pendingKeys.get(scope);
     const key = retained ?? operationKey(scope);
-    pendingKeys.remember(scope, key, extra);
+    const original = retained ? pendingKeys.list().find(record => record.commandKey === retained) : undefined;
+    const path = extra.kind === "batch" ? "/api/admin/finance/withdrawals/batch"
+      : extra.kind === "simulate" ? `/api/admin/finance/withdrawals/development/${encodeURIComponent(extra.nos[0])}/simulate-cooldown-expiry`
+        : `/api/admin/finance/withdrawals/${encodeURIComponent(extra.nos[0])}/${extra.kind === "review" ? "review" : extra.kind === "cregis" ? "cregis/recover" : "bank/requery"}`;
+    pendingKeys.remember(scope, key, { ...extra, commandOrigin: retained ? original?.commandOrigin : fundCommandOrigin("POST", path, "finance_d2_read") });
     if (!pendingKeys.isDurablyStored(scope, key)) {
       if (!retained) pendingKeys.forget(scope, key);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
@@ -1473,6 +1480,28 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   const notePending = (record: D2PendingCommand, note: string) => setPendingNotes((current) => ({ ...current, [record.fingerprint]: `${businessClock(Date.now())} ${note}` }));
 
+  /** Visual closure forms pass evidence here; the old record is removed only on an authoritative terminal. */
+  const checkInvestigation = async (record: D2PendingCommand, evidence?: FundCommandEvidence) => {
+    setSubmitting(record.fingerprint);
+    try {
+      const receipt = await checkFundCommand(record, evidence);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+      if (fundCommandSettled(receipt)) {
+        pendingKeys.forget(record.fingerprint, record.commandKey);
+        syncPending();
+        await Promise.all([refresh(), detailRef.current && record.nos.includes(detailRef.current.withdrawalNo) ? reopenDetail() : null]);
+      } else if (!receipt) {
+        notePending(record, displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED")));
+      }
+      return receipt;
+    } catch (cause) {
+      const error = displayAdminError(cause);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      notePending(record, error);
+      throw cause;
+    } finally { setSubmitting(""); }
+  };
+
   /** 重试也是写操作，按这个账号现在的权限判断，和原入口一样（OP-124）。读回核对不受影响。 */
   const canRetry = (record: D2PendingCommand) => {
     if (record.kind === "cregis") return hasAuthority("finance_d2_read") && hasAuthority("finance_d2_withdrawal_approve");
@@ -1519,21 +1548,26 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  /** 重试被拒后，人核实过原操作的结果才解除。只放开这笔的本地锁，不发请求，后端仍按这笔现在的状态校验。 */
-  const releasePending = (record: D2PendingCommand) => {
-    pendingKeys.forget(record.fingerprint, record.commandKey);
-    syncPending();
+  /** The old release control now queries authority; it cannot delete unresolved evidence. */
+  const releasePending = async (record: D2PendingCommand) => {
+    try { await checkInvestigation(record); }
+    catch { /* checkInvestigation retains the original and exposes the refusal in pendingNotes/results. */ }
     setReleasing(null);
-    toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
   /** 读回这笔单，只给现在的事实。状态变了可能是别人改的，不能当成原命令的回执，待确认和原命令都保留（OP-93、OP-95）。 */
   const verifyPending = async (record: D2PendingCommand) => {
+    let investigationNote = "";
+    try {
+      const receipt = await checkInvestigation(record);
+      if (fundCommandSettled(receipt)) return;
+      if (!receipt) investigationNote = displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED"));
+    } catch (cause) { investigationNote = displayAdminError(cause); }
     const [no] = record.nos;
     const latest = await fetchD2WithdrawalDetail(no).catch(() => null);
-    if (!latest) { notePending(record, "读回失败，这笔暂时读不到。待确认继续保留。"); return; }
+    if (!latest) { notePending(record, `${investigationNote} 读回失败，这笔暂时读不到。待确认继续保留。`); return; }
     const from = record.fromStatus ? `，发出时是「${statusLabel(record.fromStatus)}」` : "";
-    notePending(record, `读回：这笔现在是「${statusLabel(latest.status)}」${from}。状态可能是别人改的，待确认继续保留。`);
+    notePending(record, `${investigationNote} 读回：这笔现在是「${statusLabel(latest.status)}」${from}。状态可能是别人改的，待确认继续保留。`);
     await Promise.all([openDetail(latest), refresh()]);
   };
 

@@ -3,7 +3,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
 
 export type ECommandLocator = {
-  commandKey: string; originalMethod: "POST" | "PUT"; originalPath: string; originalAdminId: string;
+  commandKey: string; originalMethod: "POST" | "PUT" | "PATCH" | "DELETE"; originalPath: string; originalAdminId: string;
 };
 export type ECommandInvestigation = {
   originalRecordId: number;
@@ -37,7 +37,7 @@ export function eCommandSettled(receipt: ECommandInvestigation | null) {
 }
 
 /** UI eligibility only; the endpoint also enforces active employment, original read scope and evidence. */
-export function canInvestigateECommand(authority: "device_e2_read" | "device_e5_read" | "device_e6_read") {
+export function canInvestigateECommand(authority: "device_e2_read" | "device_e5_read" | "device_e6_read" | "device_e4_read" | "finance_d2_read" | "finance_d3_read") {
   const session = useAdminAuth.getState().session;
   return session?.role === "superadmin" && session.authorities.includes("platform_a2_unknown_investigate")
     && session.authorities.includes(authority);
@@ -46,8 +46,13 @@ export function canInvestigateECommand(authority: "device_e2_read" | "device_e5_
 function parseReceipt(value: unknown, locator: ECommandLocator): ECommandInvestigation {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   const row = value as Record<string, unknown>;
+  const scopeMatches = locator.originalPath === "/api/admin/platform/audit/operations" ? row.scope === "A2_COMMAND"
+    : locator.originalPath.startsWith("/api/admin/finance/withdrawals/") ? /^D2(?:[_:])/.test(String(row.scope))
+      : locator.originalPath.startsWith("/api/admin/treasury/") ? /^D3(?:[_:])/.test(String(row.scope))
+        : locator.originalPath.startsWith("/api/admin/devices/orders/") ? /^E4(?:[_:])/.test(String(row.scope))
+          : /^(E2_POOL_|E5_DEVICE_)/.test(String(row.scope)) || row.scope === "E6_PHONE_RISK_SETTINGS";
   if (!Number.isSafeInteger(row.originalRecordId) || Number(row.originalRecordId) < 1
-    || typeof row.scope !== "string" || !(/^(E2_POOL_|E5_DEVICE_)/.test(row.scope) || row.scope === "E6_PHONE_RISK_SETTINGS")
+    || typeof row.scope !== "string" || !scopeMatches
     || row.commandKey !== locator.commandKey || row.originalMethod !== locator.originalMethod || row.originalPath !== locator.originalPath
     || !Number.isSafeInteger(row.originalAdminId) || Number(row.originalAdminId) < 1
     || String(row.originalAdminId) !== locator.originalAdminId
@@ -96,11 +101,15 @@ export async function discoverECommand(locator: ECommandLocator): Promise<EComma
 /** Missing receipts, forbidden reads, processing writers and insufficient evidence never release a local record. */
 export async function investigateECommand(record: PendingMutationRecord, locator: ECommandLocator, evidence: ECommandEvidence) {
   const authority = locator.originalPath === "/api/admin/config/phone-calibration/risk" ? "device_e6_read"
+    : locator.originalPath.startsWith("/api/admin/finance/withdrawals/") ? "finance_d2_read"
+      : locator.originalPath.startsWith("/api/admin/treasury/") ? "finance_d3_read"
+        : locator.originalPath === "/api/admin/platform/audit/operations" || locator.originalPath.startsWith("/api/admin/devices/orders/") ? "device_e4_read"
     : locator.originalPath.includes("/task-pools/") ? "device_e2_read" : "device_e5_read";
   if (!canInvestigateECommand(authority)) throw Object.assign(new Error("COMMAND_INVESTIGATION_FORBIDDEN"), { status: 403, backendMessage: "COMMAND_INVESTIGATION_FORBIDDEN" });
   const original = await discoverECommand(locator);
   if (!original) throw new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED");
-  if (!isRetryExpired(record) && !original.locked) throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
+  const fundCommand = /^(?:D2|D3|E4)(?:[_:])/.test(original.scope) || original.scope === "A2_COMMAND";
+  if (!fundCommand && !isRetryExpired(record) && !original.locked) throw new Error("INVESTIGATION_KNOWN_RESULT_CONFLICT");
   // All conclusion fields are requests for server verification, never a client-supplied result.
   return parseReceipt(await request("", {
     scope: original.scope, commandKey: original.commandKey, requestHash: original.requestHash,

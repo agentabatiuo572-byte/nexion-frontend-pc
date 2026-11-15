@@ -142,7 +142,7 @@ export interface E4OrderDetail {
   refundImpact: E4RefundImpact | null;
 }
 
-interface BackendOrderDetail extends Omit<E4OrderDetail, "order" | "funding" | "refundImpact"> {
+interface BackendOrderDetail extends Omit<E4OrderDetail, "order" | "funding" | "refundImpact" | "refundReason"> {
   order: BackendOrder;
   funding?: Array<Omit<E4OrderFunding, "amount"> & { amount?: number | string | null }>;
   refundImpact?: unknown;

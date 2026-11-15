@@ -39,6 +39,7 @@ import { fetchE2PhoneTiers, fetchE2Tasks, type E2PhoneTier, type E2YieldComparis
 import { fetchE3Snapshot, type E3OperationMetric, type E3Stats } from "@/lib/admin/e3-client";
 import { E4_CLOSE_REASONS, E4_REFUND_REASONS, fetchE4OrderDetail, fetchE4OrderGroupPage, fetchE4OrderPage, type E4OrderDetail } from "@/lib/admin/e4-client";
 import { e4RefundAmountError } from "@/lib/admin/e4-refund-amount";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import {
   fetchE5Devices,
@@ -51,7 +52,8 @@ import {
 } from "@/lib/admin/e5-client";
 import { fetchE6ComputeConfig, isE6ParamKey, type E6ComputeConfigView } from "@/lib/admin/e6-client";
 import { usePropose } from "@/lib/admin/use-propose";
-import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { roleLabel } from "@/lib/nav/console-nav";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { summarizeSkuCreation, summarizeSkuProposal } from "@/lib/admin/e1-a2-proposal-summary";
@@ -486,6 +488,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
   // ── E4 结果未确认：做法同提现审核的 sendCommand、retryPending、releasePending ──
   const [e4Pending, setE4Pending] = useState<E4PendingCommand[]>([]);
   const [e4PendingNotes, setE4PendingNotes] = useState<Record<string, string>>({});
+  const [e4InvestigationResults, setE4InvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
   const [e4RetryRejected, setE4RetryRejected] = useState<string[]>([]);
   const [e4Retrying, setE4Retrying] = useState("");
   const [e4QueryMissing, setE4QueryMissing] = useState<string[]>([]);
@@ -522,7 +525,17 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     if (retained && isRetryExpired(retained)) throw new Error(RETRY_EXPIRED_TEXT);
     const key = retained?.commandKey ?? createA2CommandKey("e-domain-action");
-    e4PendingCommands.remember(scope, key, { label: spec.action, orderNo: spec.obj, spec });
+    const auth = useAdminAuth.getState();
+    const request = retained ? retained.request : {
+      action: spec.action, obj: spec.obj, beforeValue: spec.before, afterValue: spec.after,
+      operator: auth.session?.operator || auth.session?.username || auth.operator || "unknown-admin",
+      operatorRole: roleLabel(auth.session?.role ?? auth.role), type: spec.type,
+      amplifies: !!spec.amplifies, sos: !!spec.sos, roleGate: spec.gateLabel,
+      reason: spec.reason, sourceDomain: spec.sourceDomain, command: spec.command, target: spec.target, targets: spec.targets,
+    };
+    if (!request) throw new Error("旧操作缺少完整原请求与理由，只能核对原操作，不能重新发送。");
+    e4PendingCommands.remember(scope, key, { label: spec.action, orderNo: spec.obj, spec, request,
+      commandOrigin: retained ? retained.commandOrigin : fundCommandOrigin("POST", "/api/admin/platform/audit/operations", "device_e4_read") });
     if (!e4PendingCommands.isDurablyStored(scope, key)) {
       if (!retained) e4PendingCommands.forget(scope, key);
       throw new Error(retained
@@ -531,7 +544,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     if (retained) setE4RetryRejected(current => current.filter(commandKey => commandKey !== key));
     try {
-      await rawPropose(() => undefined, { ...spec, commandKey: key });
+      await createA2OperationProposal(request, key, true, true);
     } catch (error) {
       const firstRejected = !retained && error != null && typeof error === "object" && "httpStatus" in error
         && isDeterministicRejection(Number(error.httpStatus), "apiCode" in error ? Number(error.apiCode) : undefined);
@@ -542,12 +555,36 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       syncE4Pending();
       throw error;
     }
-    e4PendingCommands.forget(scope);
+    // A replay proves creation, not the ticket's current approval state.
+    const currentTicket = retained ? await fetchA2ProposalByKey(key, true) : null;
+    if (retained && (!currentTicket?.mine || currentTicket.obj !== spec.obj
+      || currentTicket.operationCode && currentTicket.operationCode !== spec.command.op)) throw new Error("OPERATION_RESULT_UNKNOWN");
+    e4PendingCommands.forget(scope, key);
     syncE4Pending();
-    setToast("已提交，等待审批后执行。等超级管理员批准，进度到「操作记录与审批」看。", "success");
+    if (currentTicket) setToast(`已找回原审批单 ${currentTicket.id}，${E4_PROPOSAL_STATUS[currentTicket.status]}。结果到「操作记录与审批」看。`, "success");
+    else setToast("已提交，等待审批后执行。等超级管理员批准，进度到「操作记录与审批」看。", "success");
     return true;
   };
   const noteE4Pending = (record: E4PendingCommand, note: string) => setE4PendingNotes((current) => ({ ...current, [record.fingerprint]: note }));
+  const checkE4Investigation = async (record: E4PendingCommand, evidence?: FundCommandEvidence) => {
+    setE4Retrying(record.fingerprint);
+    try {
+      const receipt = await checkFundCommand(record, evidence);
+      setE4InvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+      if (fundCommandSettled(receipt)) {
+        e4PendingCommands.forget(record.fingerprint, record.commandKey);
+        syncE4Pending();
+        setActionConfirm(null); setSelOrder(null); setE4Detail(null);
+        await refreshE4();
+      } else if (!receipt) noteE4Pending(record, displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED")));
+      return receipt;
+    } catch (cause) {
+      const error = displayAdminError(cause);
+      setE4InvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      noteE4Pending(record, error);
+      throw cause;
+    } finally { setE4Retrying(""); }
+  };
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有后端明确拒绝才给解除入口。 */
   const retryE4Pending = async (record: E4PendingCommand) => {
     if (record.expiresAt <= Date.now()) { syncE4Pending(); return; }
@@ -570,31 +607,35 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       setE4Retrying("");
     }
   };
-  /** 按命令号查原提案。查到就有了结果，可以解除；查不到说明不了没提交，继续保留（OP-93）。 */
+  /** Query bound authority and current ticket; a ticket alone cannot dismiss a still-unknown command. */
   const checkE4Pending = async (record: E4PendingCommand) => {
+    setE4Retrying(record.fingerprint);
+    let investigationNote = "";
+    try {
+      const receipt = await checkE4Investigation(record);
+      if (fundCommandSettled(receipt)) return;
+      if (!receipt) investigationNote = displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED"));
+    } catch (cause) { investigationNote = displayAdminError(cause); }
     setE4Retrying(record.fingerprint);
     try {
       const original = await fetchA2ProposalByKey(record.commandKey, true);
       if (!original) {
         setE4QueryMissing((current) => [...current, record.commandKey]);
-        noteE4Pending(record, "暂未查到原提案，结果仍待核实。原操作继续保留，不会重新提交。");
+        noteE4Pending(record, `${investigationNote} 暂未查到原提案，结果仍待核实。原操作继续保留，不会重新提交。`);
         return;
       }
-      e4PendingCommands.forget(record.fingerprint, record.commandKey);
-      syncE4Pending();
-      await refreshE4();
-      setToast(`已找回原审批单 ${original.id}，${E4_PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`, "success");
+      if (!original.mine || original.obj !== record.orderNo
+        || original.operationCode && original.operationCode !== record.spec.command.op) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+      noteE4Pending(record, `${investigationNote} 原审批单 ${original.id}：${E4_PROPOSAL_STATUS[original.status]}。原操作继续保留。`);
     } catch (error) {
       noteE4Pending(record, `查询没有成功：${displayAdminError(error)} 原操作继续保留。`);
     } finally {
       setE4Retrying("");
     }
   };
-  /** 重试被拒后，人核实过原操作的结果才解除。不发请求，不写操作记录。 */
+  /** The old local-release control now performs authoritative lookup without deleting unknown evidence. */
   const releaseE4Pending = (record: E4PendingCommand) => {
-    e4PendingCommands.forget(record.fingerprint, record.commandKey);
-    syncE4Pending();
-    setToast("已解除本页待确认；后端原操作未结案时仍会阻止新提交", "success");
+    void checkE4Pending(record);
   };
 
   // ── E5 设备管理:服务端 fleet / overview 为单一来源 ──
@@ -731,7 +772,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     canReadE2, canWriteE2, tasks, phoneTiers, yieldComparisons, e2Loading, e2Error, e2TaskCatalogReady, refreshE2, openAddTask, openEditTask,
     canWriteE3, e3Proposals, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4ReadBlock, e4Total, e4Query, e4KeywordInput, e4Counts, e4CountsFailed, e4ReadAt, updateE4Query, setE4KeywordInput, clearE4Filters, refreshE4,
-    orderState, e4Pending, e4ReceiptAttempts, checkE4Receipt, e4PendingNotes, e4RetryRejected, e4Retrying, retryE4Pending, checkE4Pending, canQueryE4, e4QueryMissing, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
+    orderState, e4Pending, e4ReceiptAttempts, checkE4Receipt, e4PendingNotes, e4InvestigationResults, e4InvestigationAccess: fundInvestigationAccess, checkE4Investigation, e4RetryRejected, e4Retrying, retryE4Pending, checkE4Pending, canQueryE4, e4QueryMissing, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
     canReadE5, canWriteE5, canForceActivateE5, canUnbindE5,
     runE5DeviceAction, runE5UserBatch,
     e5Devices, e5Overview, e5Loading, e5DeviceError, e5OverviewError, e5Page, e5PageSize, e5Total,
