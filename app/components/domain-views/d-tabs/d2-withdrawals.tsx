@@ -334,7 +334,7 @@ const STATUS_EXPLAIN: Record<string, string> = {
   SUBMITTED: "用户刚提交，系统处理后转入待审核，不用操作。",
   REVIEW_PENDING: "等人工审核。有权限的人可以放行、延迟、冻结或拒绝。",
   EXTENDED_HOLD: "等待复查时间，到期后系统自动处理，不用操作。人工延迟的回到待审核；系统冷却的重新检查，通过就放行，否则转待审核、冻结或再延迟一次。",
-  FROZEN: "资金已冻结。财务主管或风控主管解冻，或到复查时间，都回到待审核，不会直接打款。",
+  FROZEN: "资金已冻结。财务主管、风控主管或超级管理员解冻，或到复查时间，都回到待审核，不会直接打款。",
   REVIEW_PASSED: "审核已放行，等系统打款。打款前还能冻结。",
   PROCESSING: "系统正在打款，打款方未接手前还能冻结。",
   SENT: "已发给银行或链上，等返回结果。银行提现以支付商付款成功为完成。",
@@ -510,12 +510,12 @@ const REVIEW_TIME_EXPLAIN: Partial<Record<D2ReviewAction, string>> = {
 
 /** 谁能处理：按角色权限种子和后端的角色校验写（B9）。 */
 const ACTION_ROLE: Record<D2ReviewAction, string> = {
-  APPROVE: "财务或财务主管",
-  DELAY: "财务、财务主管、风控或风控主管",
-  REJECT: "财务、财务主管、风控或风控主管",
-  FREEZE: "财务主管或风控主管",
-  UNFREEZE: "财务主管或风控主管",
-  REFUND: "财务主管或风控主管",
+  APPROVE: "财务、财务主管或超级管理员",
+  DELAY: "财务、财务主管、风控、风控主管或超级管理员",
+  REJECT: "财务、财务主管、风控、风控主管或超级管理员",
+  FREEZE: "财务主管、风控主管或超级管理员",
+  UNFREEZE: "财务主管、风控主管或超级管理员",
+  REFUND: "财务主管或超级管理员",
 };
 
 const HOLD_DAYS = /^([1-9]|[1-3][0-9]|4[0-5])$/;
@@ -981,7 +981,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   // 冻结、解冻和手动退款另有角色门槛，动作权限仍按原权限码判断。
   const canManageRestricted = ["FINANCE_LEAD", "RISK_LEAD", "superadmin"].includes(session?.role ?? "");
   const roleBlock = (action?: D2ReviewAction) => !canManageRestricted && action && ["FREEZE", "UNFREEZE", "REFUND"].includes(action)
-    ? "冻结、解冻和手动退款需财务主管、风控主管或超级管理员操作"
+    ? `${actionLabel(action)}需${ACTION_ROLE[action]}操作`
     : undefined;
   /** 只看这一笔的情况就知道放行必被拒的原因，行、抽屉、批量共用（DP-42）。全局的开关和覆盖率在 approveGateText。 */
   const approvalRole = (row: D2Withdrawal) => row.addressVerificationRequired === true ? "财务主管或超级管理员" : ACTION_ROLE.APPROVE;
@@ -1775,7 +1775,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     <Panel flush icon={FileText} tone="role-1" title={currentGroup ? `${currentGroup.label}的提现` : "全部提现"} explain={canWriteAny && (query.group === "todo" || query.group === "all") ? "可单笔或批量处理" : undefined}
       actions={<>
         {showSelection && <Select aria-label="批量操作" value={batchAction} onChange={(value) => setBatchAction(value as D2BatchAction | "")} placeholder="选择批量操作"
-          options={[{ value: "", label: "选择批量操作" }, ...BATCH_ACTIONS.filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => ({ value: action, label: roleBlock(action) ? `${actionLabel(action)}（需财务主管、风控主管或超级管理员）` : action === "APPROVE" && !canReadD5 ? `${actionLabel(action)}（无额度权限）` : actionLabel(action), disabled: !availableBatchActions.includes(action) }))]} />}
+          options={[{ value: "", label: "选择批量操作" }, ...BATCH_ACTIONS.filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => ({ value: action, label: roleBlock(action) ? `${actionLabel(action)}（需${ACTION_ROLE[action]}）` : action === "APPROVE" && !canReadD5 ? `${actionLabel(action)}（无额度权限）` : actionLabel(action), disabled: !availableBatchActions.includes(action) }))]} />}
         <ColumnPicker columns={columns} />
       </>}>
       {showSelection && (batchAction || selected.size > 0) && (
