@@ -1126,5 +1126,5 @@ F3 读取可空 `assignedAtIso`，存在时按全站业务时区显示同一 ins
 ### 2026-11-15 E4 恢复补核
 
 四类提案 e4_order_refund/cancel/terminal/state 都走sendE4Proposal，首次可读4xx业务拒绝按R1清新记录，保留原输入；严格重试判断不放宽。幂等未收敛、上游unknown、5xx、网络/解析失败仍留。
-收到POST票号立即持久化receivedTicketId/creationConfirmed，不把该响应status当现在状态；共用readE4CurrentProposal按原key严格查询当前票据，校验mine/obj/op（历史无op核action）和已见票号一致。pending保留已确认待审批状态，终态清记录并读当前订单。查询开始清上次当前status，失败保原请求和建单证据，proposalStatus为空表示当前进度未知；不重发已建单，不用无单解除。
+收到POST票号立即持久化receivedTicketId/creationConfirmed，不把该响应status当现在状态；共用readE4CurrentProposal按原key严格查询当前票据，校验mine/obj/op（历史无op核action）和已见票号一致。pending保留已确认待审批状态，终态清记录并读当前订单。查询开始保留上次权威确认的proposalStatus，失败保原请求、建单证据和已确认状态；只有查到新的状态才更新，从未读到过状态的记录仍不标成待审批；不重发已建单，不用无单解除。
 受控核查成功同样只证明A2建单，须读当前票据；受控明确未执行按原终态规则收尾。过期严格A2_PROPOSAL_NOT_FOUND仅在从未见票号且无建单证据时授予确认解除资格。出处backend04d11022 OpsAuditCenterService.ticketReceipt:948–975（退款回当前票据，其他回建单快照）、proposalByIdempotencyKey:164–177及决定表R1-提案过期。

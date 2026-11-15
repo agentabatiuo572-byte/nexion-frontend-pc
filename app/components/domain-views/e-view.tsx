@@ -507,8 +507,6 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     setE4QueryMissing(current => current.filter(key => key !== saved.commandKey));
     setE4ExpiredNotFound(current => current.filter(key => key !== saved.commandKey));
     setE4RetryRejected(current => current.filter(key => key !== saved.commandKey));
-    e4PendingCommands.remember(saved.fingerprint, saved.commandKey, { ...saved, proposalStatus: undefined });
-    syncE4Pending();
     try {
       const ticket = await fetchA2ProposalByKey(saved.commandKey, true, "a");
       if (!ticket) {
