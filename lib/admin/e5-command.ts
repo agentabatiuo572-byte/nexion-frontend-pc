@@ -1,3 +1,4 @@
+import { A2OutcomeUncertainError, fetchA2ProposalByKey, type A2OperationRow } from "./a2-client";
 import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
 import { guardedFetch, formatAdminApiError } from "./error-messages";
 import { isExplicitRejection } from "./explicit-rejection";
@@ -20,10 +21,14 @@ export interface E5Command extends PendingMutationRecord {
   body: string;
   proof?: LegacyUnknownCandidate;
   retryRejection?: string;
+  receivedTicketId?: string;
+  proposalStatus?: A2OperationRow["status"];
 }
 export const e5Commands = createPendingMutationStore<E5Command>({
   storageKey: "nexion-admin-e5-full-commands-v1", retainExpiredRecords: true,
-  isValidRecord: row => (row.retryRejection === undefined || typeof row.retryRejection === "string")
+  isValidRecord: row => (row.receivedTicketId === undefined || typeof row.receivedTicketId === "string")
+    && (row.proposalStatus === undefined || ["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.proposalStatus))
+    && (row.retryRejection === undefined || typeof row.retryRejection === "string")
     && typeof row.actorId === "string" && !!row.actorId && Number.isInteger(row.authEpoch)
     && ["activate", "deactivate", "pause", "resume", "force-activate", "unbind", "legacy"].includes(row.intent)
     && typeof row.label === "string" && typeof row.reason === "string" && typeof row.body === "string"
@@ -68,10 +73,31 @@ export async function checkE5Command(record: E5Command, evidence?: ECommandEvide
   return receipt;
 }
 
+/** The POST receipt is creation evidence; only this lookup establishes current approval status. */
+export async function queryE5Proposal(record: E5Command) {
+  if (String(useAdminAuth.getState().session?.adminId ?? "") !== record.actorId
+      || !["force-activate", "unbind", "legacy"].includes(record.intent)) throw new Error("管理员会话已变化，请重新进入设备页面。");
+  const ticket = await fetchA2ProposalByKey(record.commandKey, true, true);
+  if (!ticket) {
+    if (record.receivedTicketId) throw new A2OutcomeUncertainError("提案缺少有效票号", record.commandKey);
+    return null;
+  }
+  if (!ticket.mine || ticket.obj !== String(record.device.deviceId) || record.receivedTicketId && record.receivedTicketId !== ticket.id)
+    throw new A2OutcomeUncertainError("提案缺少有效票号", record.commandKey);
+  if (ticket.status === "pending") e5Commands.remember(record.fingerprint, record.commandKey, { ...record, receivedTicketId: ticket.id, proposalStatus: ticket.status });
+  else e5Commands.forget(record.fingerprint, record.commandKey);
+  return ticket;
+}
+
 /** Only this saved envelope is sent, including on retries after a refresh. */
 export async function sendE5Command(record: E5Command, retry: boolean) {
   const auth = useAdminAuth.getState();
   if (String(auth.session?.adminId ?? "") !== record.actorId || !retry && auth.authEpoch !== record.authEpoch) throw new Error("管理员会话已变化，请重新进入设备页面。");
+  if (retry && record.receivedTicketId) {
+    const ticket = await queryE5Proposal(record);
+    if (!ticket) throw new A2OutcomeUncertainError("提案缺少有效票号", record.commandKey);
+    return { ...ticket } as Record<string, unknown>;
+  }
   if (isRetryExpired(record)) throw new Error("已超过 24 小时，只能读回核对，原操作仍保留。");
   e5Commands.remember(record.fingerprint, record.commandKey, { ...record, retryRejection: undefined });
   if (!e5Commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("原操作无法保存，暂不能提交。");
@@ -109,6 +135,13 @@ export async function sendE5Command(record: E5Command, retry: boolean) {
       ...record, retryRejection: cause instanceof Error ? cause.message : String(cause),
     });
     throw cause;
+  }
+  if (["force-activate", "unbind", "legacy"].includes(record.intent) && retry) {
+    record = { ...record, receivedTicketId: String(data.id), retryRejection: undefined };
+    e5Commands.remember(record.fingerprint, record.commandKey, record);
+    const ticket = await queryE5Proposal(record);
+    if (!ticket) throw new A2OutcomeUncertainError("提案缺少有效票号", record.commandKey);
+    return { ...ticket } as Record<string, unknown>;
   }
   e5Commands.forget(record.fingerprint, record.commandKey);
   return data;

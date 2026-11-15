@@ -13,7 +13,7 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { canResumeE5UserDevicesFrom, fetchLegacyUnknownCandidate, type E5Device } from "@/lib/admin/e5-client";
 import { sameLegacyUnknownProof, type LegacyUnknownCandidate } from "@/lib/admin/legacy-unknown-resolution";
-import { e5Commands, e5LegacyCommands, e5CommandBlocks, checkE5Command, sendE5Command, type E5Command, type E5Intent } from "@/lib/admin/e5-command";
+import { e5Commands, e5LegacyCommands, e5CommandBlocks, checkE5Command, queryE5Proposal, sendE5Command, type E5Command, type E5Intent } from "@/lib/admin/e5-command";
 import { canInvestigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { e6Commands, type E6Pending } from "@/lib/admin/e6-command";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -104,8 +104,8 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
       const message = submitted ? `A2 ${result.id} 已提交，等待审批后执行` : record.intent === "deactivate"
         ? result.pendingDeactivate ? "已申请停用，等待当前任务结算后自动停用" : "设备已取消激活"
         : record.intent === "pause" ? `暂停成功 · ${result.changedCount} 台设备` : record.intent === "resume" ? `已恢复 ${result.changedCount} 台运营暂停的设备` : "设备已激活";
-      toast(message);
-      await refresh(message);
+      if (!submitted || !retry || result.status === "pending") { toast(message); await refresh(message); }
+      else await refresh();
     } catch (cause) {
       if (cause instanceof Error && "status" in cause && (cause.status === 401 || cause.status === 403)) announcePermissionDenied();
       sync();
@@ -117,7 +117,14 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
   };
   const check = async (record: E5Command, evidence?: ECommandEvidence) => {
     setBusy(record.commandKey);
-    try { return await checkE5Command(record, evidence); }
+    try {
+      if (["force-activate", "unbind", "legacy"].includes(record.intent)) {
+        const ticket = await queryE5Proposal(record);
+        if (ticket && ticket.status !== "pending") await refresh();
+        return null;
+      }
+      return await checkE5Command(record, evidence);
+    }
     finally { sync(); setBusy(""); }
   };
   const direct = (record: E5Command) => ["activate", "deactivate", "pause", "resume"].includes(record.intent);
