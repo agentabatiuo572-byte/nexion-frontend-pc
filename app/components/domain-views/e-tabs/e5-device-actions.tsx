@@ -109,7 +109,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
     } catch (cause) {
       if (cause instanceof Error && "status" in cause && (cause.status === 401 || cause.status === 403)) announcePermissionDenied();
       sync();
-      if (retry && !e5Commands.get(record.fingerprint)?.receivedTicketId && isExplicitRejection(cause)) setRejected(rows => ({ ...rows, [record.commandKey]: displayAdminError(cause) }));
+      if (retry && !e5Commands.list().find(r => r.commandKey === record.commandKey)?.receivedTicketId && isExplicitRejection(cause)) setRejected(rows => ({ ...rows, [record.commandKey]: displayAdminError(cause) }));
       setError((!retry && !e5Commands.get(record.fingerprint) || isExplicitRejection(cause)) ? displayAdminError(cause) : cause instanceof Error && cause.message === "提案缺少有效票号" ? "申请回执未包含审批单号，请到操作记录与审批核对。原请求已保留。" : "没有收到可确认的操作回执，原对象、内容、理由和命令号已保留。");
       if (cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "PAUSED_USER_DEVICES_NOT_FOUND") await refresh();
       throw cause;
