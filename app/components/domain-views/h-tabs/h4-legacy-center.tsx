@@ -89,6 +89,8 @@ function hiCommandSubject(record: H4Command, eventName: (id: string) => string) 
   if (!("proposal" in record.request)) {
     const guard = /^\/quest-events\/wheel-guards\/([^/]+)$/.exec(record.request.path);
     if (guard) return `转盘护栏 · ${GUARD_NAME[decodeURIComponent(guard[1])] ?? decodeURIComponent(guard[1])}`;
+    const rule = /^\/event-rules\/([^/]+)$/.exec(record.request.path);
+    if (rule) return `保存玩法配置 · ${eventName(decodeURIComponent(rule[1]))}`;
     const event = /^\/quest-events\/events\/([^/]+)\/(reward|status|featured|content)(?:\/|$)/.exec(record.request.path);
     return event ? `${H4_EVENT_FIELD[event[2]]} · ${eventName(decodeURIComponent(event[1]))}` : record.action;
   }
