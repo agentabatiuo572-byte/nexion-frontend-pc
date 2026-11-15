@@ -365,10 +365,8 @@ export function normalizeB5Radar(value: unknown): B5Radar {
     if (coverageRatio !== null || coverageLight !== "unavailable") invalid("coverage.ratio");
   } else {
     if (coverageRatio === null || coverageLight === "unavailable") invalid("coverage.ratio");
-    const expectedCoverageLight = coverageRatio < coverageRedlinePct
-      ? "red"
-      : coverageRatio < coverageHealthyPct ? "yellow" : "green";
-    if (coverageLight !== expectedCoverageLight) invalid("coverage.light");
+    // Red is B1's exact redlineBreached decision, independent of display rounding.
+    if (coverageLight !== "red" && coverageLight !== (coverageRatio < coverageHealthyPct ? "yellow" : "green")) invalid("coverage.light");
     close(
       coverageRatio,
       authoritativePercentage(coverageRatioReserveUsdt, coverageRatioLiabilitiesUsdt),
