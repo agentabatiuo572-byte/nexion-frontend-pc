@@ -73,12 +73,23 @@ export default function PromotionReview({ activity: requestedActivity, catalog, 
         if (requestedHistoryScope.current !== historyScope) void readVersions().catch(() => undefined);
     }, [historyScope]);
     const versions = {...history, reload: () => { void readVersions().catch(() => undefined); }};
-    const [action, setAction] = useState<string | null>(null), [recheck, setRecheck] = useState(false), [simulation, setSimulation] = useState<AdminSimulation | null>(null), [simOpen, setSimOpen] = useState(false), [reservations, setReservations] = useState(false);
+    const [action, setAction] = useState<string | null>(null), [simulation, setSimulation] = useState<AdminSimulation | null>(null), [simOpen, setSimOpen] = useState(false), [reservations, setReservations] = useState(false);
     const [deletedError, setDeletedError] = useState<PromotionApiError | null>(null);
+    const [conflict, setConflict] = useState<{ action: string; opened: Promotion; latest: Promotion | null; view: ReactNode; contentChanged: boolean; error: PromotionApiError } | null>(null);
+    const recheck = conflict?.action === action && !!conflict?.latest && conflict.contentChanged;
     const deletedReview = deletedError && action ? { reloadNeeded: true, final: true, error: deletedError, view: <PromotionRecheck facts={[]} changes={[]} catalog={catalog} actionLabel={action === 'approve' ? '批准' : CONFIRM_LABELS[action]} confirmLabel={confirmLabel(action, false)} emphasize={false} blocked="这个活动已被删除。"/> } : undefined;
+    // A rejection locks every action using the stale page. A reviewed snapshot belongs to its action.
+    const blocked = conflict?.latest && action ? recheckBlocked(action, conflict.latest) : undefined;
+    const conflictReview = deletedReview || (conflict && (!conflict.latest || conflict.action === action) ? { reloadNeeded: !conflict.latest || !!blocked, final: !!blocked, view: conflict.view, error: conflict.latest ? null : conflict.error } : undefined);
     // Settlement reads may update the page behind a confirmation, never its approved snapshot.
-    useEffect(() => { if (!action) setActivity(requestedActivity); }, [requestedActivity, action]);
-    useEffect(() => { setRecheck(false); }, [action]);
+    useEffect(() => {
+        if (action) return;
+        setActivity(requestedActivity);
+        const baseline = conflict?.latest ?? conflict?.opened;
+        // Identity and both revision levels matter: approval changes the candidate revision alone.
+        if (baseline && (requestedActivity.activityId !== baseline.activityId || requestedActivity.revision !== baseline.revision
+            || requestedActivity.current?.version !== baseline.current?.version || requestedActivity.current?.revision !== baseline.current?.revision)) setConflict(null);
+    }, [requestedActivity, action]);
     const current = activity.current, active = versions.data?.items.find(v => v.version === activity.activeVersion), candidate = current || versions.data?.items.find(v => v.version === activity.draftVersion);
     const blockers = candidate?.policyResolutionErrors || [], impact = activity.impact;
     const missingRanks=[candidate?.draft.buyerAudience,candidate?.draft.inviterAudience].some(a=>a?.rankIds?.some(id=>!catalog.ranks.some(r=>r.id===id)));
@@ -104,8 +115,9 @@ export default function PromotionReview({ activity: requestedActivity, catalog, 
         setActivity(latest);
         setSimulation(null);
         onReload(latest);
-        setRecheck(contentChanges.length > 0);
-        return <PromotionRecheck facts={shownFacts} changes={contentChanges} opened={activity.current?.draft} latest={latest.current?.draft} catalog={catalog} actionLabel={label} confirmLabel={confirmLabel(key, contentChanges.length > 0)} emphasize={key === 'approve' || key === 'publish'} blocked={blocked}/>;
+        const view = <PromotionRecheck facts={shownFacts} changes={contentChanges} opened={activity.current?.draft} latest={latest.current?.draft} catalog={catalog} actionLabel={label} confirmLabel={confirmLabel(key, contentChanges.length > 0)} emphasize={key === 'approve' || key === 'publish'} blocked={blocked}/>;
+        setConflict(previous => previous ? { ...previous, action: key, latest, view, contentChanged: contentChanges.length > 0 } : previous);
+        return null;
     };
     const button = (key: string, disabled: boolean | string = false) => {
         const a = ACTIONS[key];
@@ -166,7 +178,7 @@ export default function PromotionReview({ activity: requestedActivity, catalog, 
         </aside>
     </div>}
     {!!versions.error && <ReadError target="活动历史版本" error={versions.error} retry={versions.reload}/>}
-    {action && <ConfirmCommand conflictReview={deletedReview || undefined} onVersionConflict={error => { if (error.reasonCode === 'PROMOTION_RESOURCE_NOT_FOUND') setDeletedError(error); }} onReload={reloadForConfirmation} writeAllowed={can('growth_promotion_'+ACTIONS[action].authority) && !versions.loading && !versions.error && (!ACTIONS[action].version || !!candidate && activity.draftVersion === candidate.version && !['ENDED', 'ARCHIVED'].includes(activity.state) && ({ submit: ['DRAFT'], withdraw: ['PENDING_APPROVAL', 'APPROVED'], approve: ['PENDING_APPROVAL'], reject: ['PENDING_APPROVAL'], publish: ['APPROVED'] }[action] ?? []).includes(candidate.state)) && (action !== 'pause' || ['ACTIVE', 'SCHEDULED'].includes(activity.state)) && (action !== 'resume' || activity.state === 'PAUSED') && (action !== 'end' || ['ACTIVE', 'SCHEDULED', 'PAUSED'].includes(activity.state)) && (action !== 'archive' || activity.state === 'ENDED' && !impact.unpaidOrders && !impact.unfulfilledRewards) && (action !== 'draft-versions' || !activity.draftVersion && !['ENDED', 'ARCHIVED'].includes(activity.state))} title={ACTIONS[action].label} confirmLabel={confirmLabel(action, recheck)} danger={['end', 'reject'].includes(action)} sub={action === 'end' || action === 'archive' ? <IrreversibleTag/> : <StatusTag tone="progress" filled>立即生效</StatusTag>} intent={{ operation: ACTIONS[action].operation, targetId: activity.activityId, path: `/promotions/${activity.activityId}/${action}`, method: 'POST' }} body={{ expectedRevision: ACTIONS[action].version ? candidate?.revision : activity.revision, evidenceRefs: [], ...(ACTIONS[action].version ? { version: candidate?.version } : {}) }} onClose={() => setAction(null)} onSuccess={async (result, isCurrent) => { if (action === 'copies') await onCopyCreated(result, isCurrent); else { await onRefresh(); versions.reload(); } if (isCurrent()) setAction(null); }}><Summary rows={[['活动', activity.name || activity.activityId], ['活动状态', labelState(activity.state)], ['改版草稿', activity.draftVersion ? `v${activity.draftVersion}` : '无'], ['版本', ACTIONS[action].version ? `候选 v${candidate?.version}` : `有效 v${activity.activeVersion ?? '—'}`], ['未支付订单', impact.unpaidOrders], ['未完成奖励', impact.unfulfilledRewards]]}/>{actionFacts(action, activity, candidate, catalog)}<Notice title="确认影响范围">{ACTIONS[action].copy}</Notice></ConfirmCommand>}
+    {action && <ConfirmCommand conflictReview={conflictReview} onVersionConflict={error => { if (error.reasonCode === 'PROMOTION_RESOURCE_NOT_FOUND') setDeletedError(error); else setConflict({ action, opened: activity, latest: null, view: null, contentChanged: false, error }); }} onReload={reloadForConfirmation} writeAllowed={can('growth_promotion_'+ACTIONS[action].authority) && !versions.loading && !versions.error && (!ACTIONS[action].version || !!candidate && activity.draftVersion === candidate.version && !['ENDED', 'ARCHIVED'].includes(activity.state) && ({ submit: ['DRAFT'], withdraw: ['PENDING_APPROVAL', 'APPROVED'], approve: ['PENDING_APPROVAL'], reject: ['PENDING_APPROVAL'], publish: ['APPROVED'] }[action] ?? []).includes(candidate.state)) && (action !== 'pause' || ['ACTIVE', 'SCHEDULED'].includes(activity.state)) && (action !== 'resume' || activity.state === 'PAUSED') && (action !== 'end' || ['ACTIVE', 'SCHEDULED', 'PAUSED'].includes(activity.state)) && (action !== 'archive' || activity.state === 'ENDED' && !impact.unpaidOrders && !impact.unfulfilledRewards) && (action !== 'draft-versions' || !activity.draftVersion && !['ENDED', 'ARCHIVED'].includes(activity.state))} title={ACTIONS[action].label} confirmLabel={confirmLabel(action, recheck)} danger={['end', 'reject'].includes(action)} sub={action === 'end' || action === 'archive' ? <IrreversibleTag/> : <StatusTag tone="progress" filled>立即生效</StatusTag>} intent={{ operation: ACTIONS[action].operation, targetId: activity.activityId, path: `/promotions/${activity.activityId}/${action}`, method: 'POST' }} body={{ expectedRevision: ACTIONS[action].version ? candidate?.revision : activity.revision, evidenceRefs: [], ...(ACTIONS[action].version ? { version: candidate?.version } : {}) }} onClose={() => setAction(null)} onSuccess={async (result, isCurrent) => { if (action === 'copies') await onCopyCreated(result, isCurrent); else { await onRefresh(); versions.reload(); } if (isCurrent()) setAction(null); }}><Summary rows={[['活动', activity.name || activity.activityId], ['活动状态', labelState(activity.state)], ['改版草稿', activity.draftVersion ? `v${activity.draftVersion}` : '无'], ['版本', ACTIONS[action].version ? `候选 v${candidate?.version}` : `有效 v${activity.activeVersion ?? '—'}`], ['未支付订单', impact.unpaidOrders], ['未完成奖励', impact.unfulfilledRewards]]}/>{actionFacts(action, activity, candidate, catalog)}<Notice title="确认影响范围">{ACTIONS[action].copy}</Notice></ConfirmCommand>}
     {simOpen && candidate && <SimulationDialog activity={activity} version={candidate} catalog={catalog} can={can} onClose={() => setSimOpen(false)} onResult={s => { setSimulation(s); setSimOpen(false); }}/>}
     {reservations && <Dialog title="原订单预留" wide onClose={() => setReservations(false)} sub={`${impact.reservedOrders.length} 单 · 关闭不释放订单`}><Table headers={['订单', '锁定版本', '原付款截止', '预留奖励']} rows={impact.reservedOrders.map(r => [<span className="h4-mono">{r.orderNo}</span>, `v${r.version}`, formatTime(r.payBy, zone), r.reservedRewards])}/>{!impact.reservedOrders.length && <BlockState state="empty" title="没有在途预留"/>}</Dialog>}
   </>;
@@ -177,6 +189,7 @@ const confirmLabel = (action: string, contentChanged: boolean) => contentChanged
 const VERSION_STATES: Record<string, string[]> = { submit: ['DRAFT'], withdraw: ['PENDING_APPROVAL', 'APPROVED'], approve: ['PENDING_APPROVAL'], reject: ['PENDING_APPROVAL'], publish: ['APPROVED'] };
 /** 只用来写「现在不能做」的原因；能不能提交仍由确认框的 writeAllowed 决定。 */
 function recheckBlocked(action: string, latest: Promotion): string | undefined {
+    if (latest.deleted) return '这个活动已被删除。';
     const c = latest.current;
     if (ACTIONS[action]?.version) {
         if (['ENDED', 'ARCHIVED'].includes(latest.state)) return `活动${labelState(latest.state)}。`;

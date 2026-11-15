@@ -168,7 +168,7 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSettl
     /** 读到最新后返回给运营看的对比；编辑器的对比由 conflictReview.view 自己画，这里返回 null。 */
     onReload?: () => Promise<ReactNode>;
     onVersionConflict?: (error: PromotionApiError) => void;
-    /** Editor-owned review survives closing and reopening this confirmation. */
+    /** Page-owned review survives closing and reopening this confirmation. */
     /** view 画核对前、核对后两种样子；final 表示读到的最新状态已经不能再提交，不再给「重新加载并核对」。 */
     conflictReview?: { reloadNeeded: boolean; view: ReactNode; final?: boolean; error: unknown };
     writeAllowed: boolean;
@@ -282,7 +282,7 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSettl
     const locked = !record && !!onReload && needsReload;
     const conflictBlock = record || !onReload ? null : conflictReview?.final ? conflictReview.view
         : locked && reloadFailed ? <RdNotice tone="danger" title="最新内容没读到">{displayAdminError(visibleError)}这一步还没做，填的内容都在；可以再点「重新加载并核对」。</RdNotice>
-        : conflictReview ? conflictReview.view
+        : conflictReview?.view ? conflictReview.view
         : locked ? <RdNotice tone="warn" title="这次没有执行：你打开后，别人改过这个活动">{`点「重新加载并核对」，看清变了什么再决定要不要${confirmLabel}。`}</RdNotice>
         : reviewed;
     const conflictExplains = !!conflictBlock && (locked || !!conflictReview?.final);
