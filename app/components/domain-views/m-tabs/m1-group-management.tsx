@@ -240,12 +240,12 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
   const QUERY_ICON = <SearchCheck size={14} aria-hidden />;
   /** 组操作和邀请码作废的结果未知记录收成一个面板，每条一行；按钮和可用条件照旧。 */
   const recoveryItems: RecoveryItem[] = [
-    ...(allowed && pending ? [{ key: pending.commandKey, object: pending.label,
+    ...(allowed && pending ? [{ key: pending.commandKey, object: pending.label, createdAt: pending.createdAt,
       tag: <StatusTag tone="warn">{canReplayGroupCommand(pending) ? "结果未知" : "已过期"}</StatusTag>,
       line: canReplayGroupCommand(pending) ? QUERY_PENDING_TEXT : "超过 24 小时不能再重试，先查询原结果。",
       actions: <Button size="sm" icon={QUERY_ICON} disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>,
       detail: <p>{canReplayGroupCommand(pending) ? "原内容和理由已保留，查到结果前不能重复提交。" : expiredText()}</p> }] : []),
-    ...revokePendings.map(r => { const refused = inviteRejected.includes(r.commandKey), expired = !canReplayGroupCommand(r); return { key: r.commandKey, object: `作废邀请码 · ${r.intent.payload.name}`,
+    ...revokePendings.map(r => { const refused = inviteRejected.includes(r.commandKey), expired = !canReplayGroupCommand(r); return { key: r.commandKey, object: `作废邀请码 · ${r.intent.payload.name}`, createdAt: r.createdAt,
       tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
       line: refused ? "重试被明确拒绝；查询原结果核对后，可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : "确认前不能修改或重新提交，先查询原结果。",
       actions: <><Button size="sm" icon={QUERY_ICON} disabled={inviteBusy} onClick={() => void checkInviteRevoke(r)}>查询原结果</Button>{replayButton(r) && <Button size="sm" disabled={inviteBusy} onClick={() => void replayInviteRevoke(r)}>按原请求重试</Button>}{refused && <Button size="sm" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteRelease(r); }}>解除原操作记录</Button>}</>,

@@ -395,7 +395,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SUPPORT_ANALYTICS_VERSION_REQUIRED: "缺少统计查询版本，请从第一页重新查询。",
   SUPPORT_ID_INVALID: "客户、客服或组编号无效，请从原名单重新选择。",
   SUPPORT_ANALYTICS_QUERY_CHANGED: "统计范围或条件已变化，请重新读取汇总和第一页。",
-  SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE: "业绩资料还没核对齐，这份统计暂时不显示；一直这样，请联系技术同事。",
+  SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE: "业绩统计现在核对不上，先不显示；稍后再看，一直这样请联系技术同事。",
   SUPPORT_ANALYTICS_DETAIL_QUERY_INVALID: "这项统计明细不支持当前查询，请返回原统计重新打开。",
   SUPPORT_ANALYTICS_CACHE_NOT_READY: "客服统计尚未生成完整版本，请稍后读取。",
   SUPPORT_ANALYTICS_CACHE_UNAVAILABLE: "客服统计完成版本暂不可读，请稍后重新读取。",

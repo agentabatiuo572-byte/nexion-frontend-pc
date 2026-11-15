@@ -1191,7 +1191,6 @@ export default function UserDetailPage() {
     canReadA2 && ["操作记录与审批", "/platform/audit"],
   ].filter((item): item is [string, string] => Array.isArray(item));
 
-  const auditLink = canReadA2 && <> <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录与审批核对</Link></>;
   /** 结果未知的操作收成一个面板（和资金页同一个样子）：每条一行，通用说明只在标题问号里说一次；按钮和可用条件照旧。 */
   const recoveryItems: RecoveryItem[] = [
     ...pendingCommands.map((command): RecoveryItem => {
@@ -1207,18 +1206,17 @@ export default function UserDetailPage() {
           ? hasWrite ? "客服入口不能重试，到用户详情处理。" : "这个账号现在没有这项操作的权限，不能重试，请有权限的同事处理。"
           : "按原请求重试只重发原请求，不会重复执行。";
       return {
-        key: command.fingerprint, object: command.label,
+        key: command.fingerprint, object: command.label, createdAt: command.createdAt,
         tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
-        line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先读回现在的状态。" : command.legacy ? "升级前的记录不能重试，先读回现在的状态。" : !writable ? "可能已经生效，这个账号只能读回核对。" : "可能已经生效，先读回现在的状态。",
+        line: refused ? "重试被明确拒绝；核对原操作后可以解除。" : expired ? "超过 24 小时不能再重试，先读回现在的状态。" : command.legacy ? "升级前的记录不能重试，先读回现在的状态。" : !writable ? hasWrite ? "可能已经生效，到用户详情读回或重试。" : "可能已经生效，这个账号只能读回现在的状态。" : "可能已经生效，先读回现在的状态。",
         note: pendingNotes[command.fingerprint],
         actions: <>
           <Button size="sm" disabled={!!busyReason} onClick={() => void verifyPending(command)}>读回现在的状态</Button>
           {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason} onClick={() => void retryPending(command)}>按原请求重试</Button>}
           {refused && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除原操作记录</Button>}
+          {supportScope && hasWrite && <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link>}
         </>,
-        detail: <p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{nextStep}
-          {supportScope && hasWrite && <> <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link></>}
-          {auditLink}</p>,
+        detail: <p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{nextStep}</p>,
         tech: <p><Explain label="技术信息" content={command.legacy ? `原请求编号 ${command.commandKey} ｜ 升级前的记录，没有存操作人和理由` : `原请求编号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`}>技术信息</Explain></p>,
       };
     }),
@@ -1226,17 +1224,18 @@ export default function UserDetailPage() {
       const expired = command.expiresAt <= Date.now();
       const id = command.preview.notificationId;
       return {
-        key: command.fingerprint, object: `校正通知 ${id} 的时间`,
+        key: command.fingerprint, object: `校正通知 ${id} 的时间`, createdAt: command.createdAt,
         tag: <StatusTag tone="warn">{expired ? "已过期" : "结果未知"}</StatusTag>,
         line: expired ? "超过 24 小时不能再重试，打开时间证据核对。" : "可能已经生效，在时间证据里按原请求重试。",
         actions: canReadNotificationEvidence && <Button size="sm" onClick={() => setNotificationEvidence({ userKey, authEpoch, id })}>打开时间证据</Button>,
-        detail: <p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{expired ? `${EXPIRED_TEXT}。` : ""}{auditLink}</p>,
+        detail: <p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{expired ? `${EXPIRED_TEXT}。` : ""}</p>,
         tech: <p><Explain label="技术信息" content={`原请求编号 ${command.commandKey} ｜ 理由 ${command.reason}`}>技术信息</Explain></p>,
       };
     }),
   ];
   const recoveryPanel = <RecoveryPanel title={recoveryTitle(recoveryItems.length)} explainLabel="结果未知怎么处理"
     explain="这些操作发出后没收到明确结果，可能已经生效。先读回现在的状态；按原请求重试只重发原请求，不会重复执行。有结果前，相关对象不能再操作。"
+    foot={canReadA2 ? <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录与审批核对</Link> : undefined}
     items={recoveryItems} />;
 
   const current = record && (record.kind === "withdrawal" && record.latest ? latestWithdrawal : recordRows[record.kind][record.index]);

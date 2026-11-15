@@ -505,7 +505,8 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
 
   const shown = list?.key === listKey ? list.data : null;
   const total = shown?.total ?? 0;
-  const exportBlocked = listLoading && !shown ? "名单还在读取，读完再导出"
+  const exportBlocked = !canRead ? "导出要先能查看用户名单，请管理员开通「查看用户资料」"
+    : listLoading && !shown ? "名单还在读取，读完再导出"
     : listError ? "用户列表加载失败，暂不能导出"
       : problem ? "查询条件有误，改好后再导出"
         : listLoading ? "名单还在读取，读完再导出"

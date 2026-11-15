@@ -299,7 +299,7 @@ function PeriodDetail({ period, summary }: { period: B0SummaryPeriod; summary: B
             </>}
             {withdrawals.inTransit && (
               <li>
-                <span><Explain label="等着到账的提现怎么算" content={`此刻还在走、用户还没收到钱的提现：等审核、冷却中、打款中、冻结和打款异常的单，不含测试账号，不随时段变。被拒、打款失败等着退回的单不算，所以比「风险与开关」里进行中的提现少。数据时间 ${formatBusinessTimeCompact(withdrawals.inTransit.asOf)}。`}>等着到账的提现</Explain></span>
+                <span><Explain label="等着到账的提现怎么算" content={`此刻还在走、用户还没收到钱的提现：等审核、冷却中、打款中、冻结和打款异常的单，不含测试账号，不随时段变。被拒、打款失败等着退回的单不算，所以不会多于「风险与开关」里进行中的提现。数据时间 ${formatBusinessTimeCompact(withdrawals.inTransit.asOf)}。`}>等着到账的提现</Explain></span>
                 <span className="cc-num">{fmtNum(withdrawals.inTransit.count)} 笔，{usdtText(withdrawals.inTransit.amountUsdt)}</span>
               </li>
             )}

@@ -369,7 +369,7 @@ export function E1Page() {
             : { tag: "结果未知", line: RECOVERY_LINE.absent, more: "按原请求查不到这张审批单，现在还没建成；按原请求重试不会重复建单。" }
             : expired ? { tag: "结果未知", line: RECOVERY_LINE.expired, more: "已超过 24 小时，不能再重试；查不到这张审批单时可以确认解除。" }
               : { tag: "结果未知", line: RECOVERY_LINE.unknown, more: "可以查询原结果，或按原请求重试；重试用原来的请求，不会重复建单。" };
-      return { key: record.commandKey, object: record.spec.action,
+      return { key: record.commandKey, object: record.spec.action, createdAt: record.createdAt,
         tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? record.retryRejection,
         actions: <>
           {canQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void check(record)}>查询原结果</Button>}
@@ -385,7 +385,7 @@ export function E1Page() {
       tag: <StatusTag tone="warn">缺完整原请求</StatusTag>, line: "旧记录缺原请求，只能查询，不能重试或解除。", note: notes[record.commandKey],
       actions: canQuery ? <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={() => void check(record)}>查询原结果</Button> : undefined,
       detail: <><p>{sent(record.createdAt)}；升级前的记录没有原理由。</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Button size="sm" onClick={() => copy(JSON.stringify(record, null, 2), "已复制完整旧记录")}>复制完整旧记录</Button></Fold> })),
-    ...media.filter(record => record.commandKey !== mediaSending).map(record => ({ key: record.commandKey, object: record.fileName,
+    ...media.filter(record => record.commandKey !== mediaSending).map(record => ({ key: record.commandKey, object: record.fileName, createdAt: record.createdAt,
       tag: <StatusTag tone="warn">上传结果未知</StatusTag>, line: isRetryExpired(record) ? RECOVERY_LINE.expired : "重新打开商品、选同一个文件，可以原样重试。",
       actions: <Button size="sm" onClick={() => openSku(record.skuId || undefined)}>核对媒体上传</Button>,
       detail: <p>{sent(record.createdAt)}；原文件摘要和原请求已保留。</p> })),

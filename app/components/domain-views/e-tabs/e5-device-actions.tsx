@@ -97,7 +97,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
     || r.scope === `phone:${device.deviceId}:${device.userId}`
     || (intent === "pause" || intent === "resume") && r.scope.startsWith("phone:") && r.scope.split(":")[2] === device.userId);
   useEffect(() => {
-    sync(); setRelease(null); setReadResults({}); setOutcomes({}); setClosing(null); setMissing(null); setQueryNotes({});
+    sync(); setRelease(null); setReadResults({}); setOutcomes({}); setSettled([]); setClosing(null); setMissing(null); setQueryNotes({});
     try { setOld(e5LegacyCommands()); } catch (cause) { setError(`旧操作记录无法读取：${displayAdminError(cause)}`); }
   }, [sync, epoch]);
   const allowed = (r: E5Command) => {
@@ -189,7 +189,7 @@ export function E5CommandScope({ children, refresh, readBack, toast }: { childre
       const note = busy === record.commandKey && !retryable ? "正在查询…" : direct(record)
         ? <>{outcomes[record.commandKey] ? <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={expired} /> : readResults[record.commandKey]}{!canInvestigate && closureOpen(outcomes[record.commandKey], expired) && <ClosureContact />}{errorKey === record.commandKey && error && error !== E5_UNKNOWN && <span role="alert">{error}</span>}</>
         : errorKey === record.commandKey && error && error !== E5_UNKNOWN ? error : queryNotes[record.commandKey];
-      return { key: proposal && record.proposalStatus === "pending" ? `waiting:${record.commandKey}` : record.commandKey,
+      return { key: proposal && record.proposalStatus === "pending" ? `waiting:${record.commandKey}` : record.commandKey, createdAt: record.createdAt,
         object: <span title={`${record.label} · ${record.device.serial}`}>{record.label} · {record.device.serial.slice(-8)}</span>, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line, note,
         noteKey: [readResults[record.commandKey], outcomes[record.commandKey] ? JSON.stringify(outcomes[record.commandKey]) : "", errorKey === record.commandKey ? error : ""].join("|").replace(/^\|+$/, ""),
         actions: <>

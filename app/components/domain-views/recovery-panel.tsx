@@ -3,11 +3,13 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronRight, X } from "lucide-react";
 import { Button, Explain, IconButton, Notice, type StateTone } from "@/app/components/rd";
 
+/** 两分钟内发出的才算运营刚做完操作产生的记录；页面分批读进来的旧记录不算。 */
+const FRESH_MS = 2 * 60 * 1000;
 /**
- * 新出现的记录排在最前面，并把面板滚进视野：已经有记录时再多一条，新的不会藏在「展开全部」后面。
- * 面板原来是空的就不用排：新面板本身就出现在页面上方。
+ * 运营刚做完操作产生的记录排在最前面，并把面板滚进视野：已经有记录时再多一条，新的不会藏在「展开全部」后面。
+ * 面板原来是空的就不用排：新面板本身就出现在页面上方。没有发出时间的行不排。
  */
-export function useFreshFirst<T extends { key: string }>(rows: readonly T[]) {
+export function useFreshFirst<T extends { key: string; createdAt?: number }>(rows: readonly T[]) {
   const known = useRef<Set<string> | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const [fresh, setFresh] = useState<string[]>([]);
@@ -17,7 +19,8 @@ export function useFreshFirst<T extends { key: string }>(rows: readonly T[]) {
     const before = known.current;
     known.current = new Set(keys);
     if (!before?.size) return;
-    const added = keys.filter(key => !before.has(key));
+    const now = Date.now();
+    const added = rows.filter(row => !before.has(row.key) && row.createdAt !== undefined && now - row.createdAt < FRESH_MS).map(row => row.key);
     setFresh(list => [...added, ...list.filter(key => !added.includes(key) && keys.includes(key))]);
     if (added.length) box.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -44,6 +47,8 @@ export type RecoveryItem = {
   key: string;
   /** 操作和对象，一行写得下。 */
   object: ReactNode;
+  /** 发出时间：两分钟内发出的新记录排到最前（见 useFreshFirst）。 */
+  createdAt?: number;
   /** 状态标签（StatusTag），六个字以内。 */
   tag: ReactNode;
   /** 紧跟标签的一句结论：这条现在怎样、下一步做什么。 */

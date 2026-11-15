@@ -649,7 +649,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   const conclusionExplain = <><p>兑付覆盖率 = 可用储备 ÷ 应付款，和「{overviewName}」是同一个数。低于红线时提现审核不能放行，低于健康线算警戒。</p><p>这页只能查看和导出，不会改账。</p></>;
   const conclusion = zone === "unknown"
     ? coverageUnread
-      ? <Conclusion state="unknown" icon={ShieldQuestion} explain={COVERAGE_UNREAD_NOTE} explainTitle="为什么不下结论" hint="储备、九类应付款、收入、提现和到期照常显示。" action={<Button size="sm" onClick={() => void ctx.reloadBi?.()}>重新加载</Button>}>资金状态：覆盖率暂时读不到，先不下结论</Conclusion>
+      ? <Conclusion state="unknown" icon={ShieldQuestion} explain={COVERAGE_UNREAD_NOTE} explainTitle="为什么不下结论" hint="储备、九类应付款、收入、提现和到期照常显示。" action={<Button size="sm" onClick={() => void ctx.reloadBi?.()}>重新加载</Button>}>资金状态：覆盖率暂不显示，先不下结论</Conclusion>
       : <Conclusion state="unknown" icon={ShieldQuestion} explain={VALUATION_NOTE} explainTitle="为什么不下结论" hint="储备、其余 8 类应付款、收入、提现和到期照常显示。">资金状态：UVT 暂时无法估值，覆盖率不下结论</Conclusion>
     : noLiability
       ? <Conclusion state="ok" icon={ShieldCheck} explain={conclusionExplain}>资金安全：目前没有应付款</Conclusion>

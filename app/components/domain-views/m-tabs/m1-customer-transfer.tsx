@@ -43,7 +43,7 @@ export async function readTransferTargets(agentAdminId: number, mode: "ALL" | "M
 /** Unconfirmed transfers of this operator; each row reopens the dialog on the original command. */
 export function TransferPendingNotes({ onOpen }: { onOpen: (customerId: string) => void }) {
   const adminId = useAdminAuth((state) => state.session?.adminId);
-  const items: RecoveryItem[] = transferCommands.list().filter((record) => record.actorId === adminId).map((record) => ({ key: record.commandKey,
+  const items: RecoveryItem[] = transferCommands.list().filter((record) => record.actorId === adminId).map((record) => ({ key: record.commandKey, createdAt: record.createdAt,
     object: `正式转绑 · ${record.customerName ?? m1CustomerCode(record.payload.customers[0].id)}`,
     tag: <StatusTag tone="warn">{canReplayGroupCommand(record) ? "结果未知" : "已过期"}</StatusTag>,
     line: "查到结果前不能再转绑这位客户，先查询原结果。",

@@ -242,6 +242,9 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
   /** Records the lookup found settled: one light line each above the panel until dismissed. */
   const [settled, setSettled] = useState<{ key: string; label: string; text: string }[]>([]);
   const settle = (record: E6Pending, text: string) => setSettled(list => [...list.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: record.label, text }]);
+  // Another operator signing in on the same mount must not see the previous operator's settled lines.
+  const operator = useAdminAuth(s => `${s.session?.adminId ?? ""}|${s.authEpoch}`);
+  useEffect(() => { setSettled([]); }, [operator]);
   const [riskReceipts, setRiskReceipts] = useState<Record<string, PhoneRiskReceipt>>({});
   const [closing, setClosing] = useState<E6Pending | null>(null);
   // A later successful lookup supersedes the failure note an earlier lookup left on the same record.
@@ -288,7 +291,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
         {r.payload.kind === "device" && !m.canInvestigate && closureOpen(outcomes[r.commandKey], expired) && <ClosureContact />}
         {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && !m.canInvestigateRisk && (closureOpen(outcomes[r.commandKey], expired) || riskReceipts[r.commandKey]?.status === "UNKNOWN") && <ClosureContact />}
       </>;
-      return { key: waiting ? `waiting:${r.commandKey}` : r.commandKey, object: r.label, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line,
+      return { key: waiting ? `waiting:${r.commandKey}` : r.commandKey, object: r.label, createdAt: r.createdAt, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line,
         note: noteOf(r) || outcomes[r.commandKey] || riskShown || closureOpen(outcomes[r.commandKey], expired) ? note : undefined,
         noteKey: [noteOf(r) ?? "", outcomes[r.commandKey] ? JSON.stringify(outcomes[r.commandKey]) : "", riskReceipts[r.commandKey]?.status ?? ""].join("|").replace(/^\|+$/, ""),
         actions: <>

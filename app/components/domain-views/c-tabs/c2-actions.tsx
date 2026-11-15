@@ -1495,7 +1495,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     ...pending.map((record) => {
       const expired = isRetryExpired(record), refused = retryRejected.includes(record.commandKey);
       return {
-        key: record.fingerprint, object: record.label,
+        key: record.fingerprint, object: record.label, createdAt: record.createdAt,
         tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
         line: refused ? "重试被明确拒绝；查询原结果核对后，可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : "可能已经生效，先查询原结果。",
         note: pendingNotes[record.fingerprint],
@@ -1511,7 +1511,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     ...revocations.map((record) => {
       const fingerprint = `revoke|${record.userId}`;
       return {
-        key: record.fingerprint, object: `退出全部设备 · ${record.label}`,
+        key: record.fingerprint, object: `退出全部设备 · ${record.label}`, createdAt: record.createdAt,
         tag: <StatusTag tone="warn">结果未知</StatusTag>,
         line: "审批可能已经提交；重试会先查原审批单，不会重复提交。",
         note: pendingNotes[fingerprint],

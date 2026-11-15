@@ -336,7 +336,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const listState = rowsLoading ? <BlockState state="loading" title="正在加载客户列表…" /> : rowsError ? <BlockState state="error" title={rowsError} onRetry={() => setRowsRefresh(n => n + 1)} /> : !listRecords.length ? <BlockState state="empty" title="当前筛选下没有客户。可切换筛选或等待主管分配。" /> : null;
 
   return <section className="m1-personal" data-proof="s5a-workbench">
-    <RecoveryPanel title={recoveryTitle(pendingRecords.length)} explainLabel="结果未知怎么处理" explain="维护调整发出后没收到明确结果，可能已经生效。先查询原结果；查到前这位客户不能再调整维护。" items={pendingRecords.map(record => ({ key: record.commandKey,
+    <RecoveryPanel title={recoveryTitle(pendingRecords.length)} explainLabel="结果未知怎么处理" explain="维护调整发出后没收到明确结果，可能已经生效。先查询原结果；查到前这位客户不能再调整维护。" items={pendingRecords.map(record => ({ key: record.commandKey, createdAt: record.createdAt,
       object: `${record.payload.enabled ? "恢复维护" : "不再维护"} · ${m1CustomerCode(record.payload.customerId)}`, tag: <StatusTag tone="warn">结果未知</StatusTag>,
       line: "原客户和理由已保留，先查询原结果。",
       actions: <Button size="sm" icon={<Search size={14} aria-hidden />} disabled={saving} onClick={() => void checkMaintenance(record)}>查询原结果</Button> }))} />
@@ -347,7 +347,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
         <SelfAvatarEditor name={selfAgent?.name ?? (operatorName || "本人账号")} ctx={ctx} onChanged={setSelfAvatarSnapshot} onSnapshot={setSelfAvatarSnapshot} />
       </div>
       <Fold title="我的邀请码" summary="生成、重置与分享" explain="注册时使用客服码建立专属客服绑定。重置会作废旧码，已有绑定保留。"><SelfInviteCodeBar key={sessionKey} toast={ctx.toast} /></Fold></section>
-      <Conclusion state={pendingRecords.length ? "warn" : todoTotal === null ? "unknown" : "neutral"} icon={!pendingRecords.length && todoTotal ? ListChecks : undefined} hint={pendingRecords.length ? "先查询原结果。" : overview?.counts.waitingReplyCustomers ? "先打开待回复客户，继续处理会话。" : "从下方客户卡开始联系。"} explain="待办客户取同一 PERSONAL TODO 快照的去重总数。三类待办可能重叠，不能相加。">{pendingRecords.length ? "有操作结果未知" : todoTotal === null ? "待办客户暂未读到" : todoTotal ? `有 ${todoTotal} 位待办客户` : "当前没有待办客户"}</Conclusion>
+      <Conclusion state={pendingRecords.length ? "warn" : todoTotal === null ? "unknown" : "neutral"} icon={!pendingRecords.length && todoTotal ? ListChecks : undefined} hint={pendingRecords.length ? "先查询原结果。" : overview?.counts.waitingReplyCustomers ? "先打开待回复客户，继续处理会话。" : "从下方客户卡开始联系。"} explain="待办客户数按人算，一位客户有几类待办也只算一次；三类待办会重叠，不能相加。">{pendingRecords.length ? "有操作结果未知" : todoTotal === null ? "待办客户暂未读到" : todoTotal ? `有 ${todoTotal} 位待办客户` : "当前没有待办客户"}</Conclusion>
       {overviewError && <BlockState state="error" compact title={overviewError} onRetry={() => setRowsRefresh(n => n + 1)} />}
       <StatBand label="今日服务待办"><Stat label="待办客户" value={todoTotal ?? "—"} unit="位" lead icon={Users} onOpen={() => showCustomers("TODO")} explain="按客户算的待办总数，同一客户只算一次。" />
         {([ ["waitingReplyCustomers", "待专属客服回复", "WAITING_REPLY", MessageSquare], ["firstContactCustomers", "首次待联系", "FIRST_CONTACT", UserRoundPlus], ["dueMaintenanceCustomers", "待维护", "DUE", Clock3] ] as const).map(([key, label, target, icon]) => <Stat key={key} label={label} value={overviewLoading ? "—" : overview?.counts[key] ?? "—"} unit="位" icon={icon} onOpen={() => showCustomers(target)} explain={key === "waitingReplyCustomers" ? "已读不会清除待回复，须由专属客服回复。" : key === "firstContactCustomers" ? "按当前绑定识别首次待联系。" : "需要主动联系的客户；暂停维护的客户不计入。"} />)}
