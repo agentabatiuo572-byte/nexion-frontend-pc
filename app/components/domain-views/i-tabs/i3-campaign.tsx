@@ -893,7 +893,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
               return (
                 <CapCard key={tier} tier={tier} cap={row.cap} policy={operatorCopyText(row.policy)} locked={row.locked}
                   pending={(() => { const item = pendingCaps.find((p) => p.tier === tier && p.ticketStatus === "pending"); return item ? `${item.after} 条` : undefined; })()}
-                  action={!row.locked && showCapAdjust ? <Button size="sm" aria-label={`调整${TIER[tier].label}优先级保留上限`} disabledReason={capPermission || newMutationReason || (pendingCaps.some((item) => item.tier === tier) ? (pendingCaps.some((item) => item.tier === tier && item.ticketStatus === "pending") ? "这一档有申请等批准，批准或驳回后才能再调。" : "此对象有原审批尚未处理，请查询原结果。") : undefined)} onClick={() => adjustCap(tier, cap)}>调整</Button> : undefined} />
+                  action={!row.locked && showCapAdjust ? <Button size="sm" aria-label={`调整${TIER[tier].label}优先级保留上限`} disabledReason={capPermission || newMutationReason || (pendingCaps.some((item) => item.tier === tier) ? (pendingCaps.some((item) => item.tier === tier && item.ticketStatus === "pending") ? "这一档有申请等另一位批准，批准或驳回后才能再调。" : pendingCaps.some((item) => item.tier === tier && item.receiptKnown) ? "这一档的申请已提交，审批状态还没查到；先点「查询原结果」。" : "这一档有结果未知的申请，先点「查询原结果」。") : undefined)} onClick={() => adjustCap(tier, cap)}>调整</Button> : undefined} />
               );
             })}
           </div>}

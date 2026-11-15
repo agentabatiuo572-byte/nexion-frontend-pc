@@ -263,7 +263,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     if (pendingI6Commands().some(record => record.scope === "unknown" || record.scope === scope)) return "此对象有结果未知的原操作，请先查询原结果。";
     const proposal = scope.startsWith("course:") ? pendingHIRewardCommands().find(record => record.payload.kind === "proposal"
       && record.payload.input.command.domain === "I" && record.payload.input.obj === scope.slice(7) && record.ticketStatus !== "pending") : undefined;
-    if (proposal) return "此对象有结果未知的原操作，请先查询原结果。";
+    if (proposal) return proposal.receiptKnown ? "这门课的申请已提交，审批状态还没查到；先点「查询原结果」。" : "此对象有结果未知的原操作，请先查询原结果。";
     return undefined;
   };
   const finishRecovery = async () => {
@@ -1239,7 +1239,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           }
         };
         const subject = (record: HIRewardCommand) => record.payload.kind === "proposal"
-          ? `${record.payload.input.action} · ${record.payload.input.obj} ${String(record.payload.input.command.params.version ?? "")}`.trim()
+          ? `${record.payload.input.action} · ${courseTitle(record.payload.input.obj)} ${String(record.payload.input.command.params.version ?? "")}`.trim()
           : "原操作";
         const change = (record: HIRewardCommand) => record.payload.kind === "proposal"
           ? <Change from={approvalValue(record.payload.input.beforeValue)} to={approvalValue(record.payload.input.afterValue)} /> : null;
@@ -1253,7 +1253,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               const queryOnly = expired || record.receiptKnown || !!i6CourseProposalPermission(record);
               const label = subject(record);
               return <li key={record.commandKey} role="status">
-                <StatusTag tone={record.ticketStatus === "pending" ? "progress" : expired || record.receiptKnown ? "done" : "warn"}>{record.ticketStatus === "pending" ? "待审批" : record.receiptKnown ? "已提交，状态未查到" : expired ? "已超过 24 小时" : "结果未知"}</StatusTag>
+                <StatusTag tone={record.ticketStatus === "pending" ? "progress" : expired || record.receiptKnown ? "neutral" : "warn"}>{record.ticketStatus === "pending" ? "等另一位批准" : record.receiptKnown ? "已提交，状态未查到" : expired ? "已超过 24 小时" : "结果未知"}</StatusTag>
                 <span className="i6-pending-what">{label}</span>
                 <span className="i6-pending-change">{change(record)}</span>
                 <span className="i6-pending-at">{businessStamp(record.createdAt)} 提交</span>
@@ -1287,7 +1287,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               </li>;
             })}
             {approvals.map((row) => <li key={row.id}>
-              <StatusTag tone="progress">待审批</StatusTag>
+              <StatusTag tone="progress">等另一位批准</StatusTag>
               <span className="i6-pending-what">{row.action} · {courseTitle(row.obj)}{row.mine ? <small>你发起的</small> : null}</span>
               <span className="i6-pending-change"><Change from={approvalValue(row.before)} to={approvalValue(row.after)} /></span>
               <span className="i6-pending-at">{row.rawTs ? `${formatBusinessTimeCompact(row.rawTs, row.ts)} 提交` : row.ts}</span>
@@ -1711,7 +1711,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                     <span className="i6-course-tags">
                       <StatusTag tone={status.tone} icon={status.text === "草稿" ? FilePen : undefined}>{status.text}</StatusTag>
                       {liveFeatured() === c.id && <StatusTag tone="progress" icon={Star}>首页推荐</StatusTag>}
-                      {approval && <StatusTag tone="progress">待审批</StatusTag>}
+                      {approval && <StatusTag tone="progress">等另一位批准</StatusTag>}
                       {unknown && <StatusTag tone={unknown.receiptKnown ? "neutral" : "warn"}>{unknown.receiptKnown ? "已提交，状态未查到" : "结果未知"}</StatusTag>}
                     </span>
                   </div>

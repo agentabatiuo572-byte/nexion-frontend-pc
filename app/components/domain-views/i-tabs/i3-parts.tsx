@@ -219,11 +219,13 @@ export type I3RecoveryRow = { key: string; name: string; object: string; change?
  */
 export function I3RecoveryNotice({ rows }: { rows: I3RecoveryRow[] }) {
   if (rows.length === 0) return null;
+  const submitted = rows.filter((row) => row.submitted && !row.expired).length;
+  const title = [rows.length - submitted > 0 && `${rows.length - submitted} 项操作结果未知`, submitted > 0 && `${submitted} 张申请已提交，状态未查到`].filter(Boolean).join(" · ");
   return (
-    <Notice tone="warn" title={<>{`${rows.length} 项操作结果未知`}<Explain label="结果未知怎么处理" content={<>
+    <Notice tone="warn" title={<>{title}<Explain label="结果未知怎么处理" content={<>
       <p>提交时没收到确定结果，可能已经执行。先「查询原结果」。</p>
-      <p>24 小时内可以「按原请求重试」，后端认得出是同一次提交，不会重复发送或重复建审批单；过了 24 小时只能查询。</p>
-      <p>保留上限的申请过期后，后端按原请求明确查不到这张单，说明没建成，可以确认解除。</p>
+      <p>24 小时内可以「按原请求重试」，系统认得出是同一次提交，不会重复发送或重复建审批单；过了 24 小时只能查询。</p>
+      <p>保留上限的申请过期后，按原请求明确查不到这张单，说明没建成，可以确认解除。</p>
     </>} /></>}>
       <ul className="i3-recovery" aria-label="结果未知的操作">
         {rows.map((row) => (
@@ -248,7 +250,7 @@ export type I3PendingCapRow = { key: string; tier: string; change: string; submi
 export function I3PendingCapNotice({ rows, link }: { rows: I3PendingCapRow[]; link?: ReactNode }) {
   if (rows.length === 0) return null;
   return (
-    <Notice tone="progress" title={<>{`${rows.length} 张保留上限申请等批准`}<Explain label="等批准的申请" content={<>
+    <Notice tone="progress" title={<>{`${rows.length} 张保留上限申请等另一位批准`}<Explain label="等批准的申请" content={<>
       <p>批准前上限不变。批准后按新上限立刻清理一次。</p>
       <p>这里只列你在这个标签页提交的申请；别人提交的到「操作记录与审批」看。</p>
     </>} /></>} action={link}>
@@ -258,7 +260,7 @@ export function I3PendingCapNotice({ rows, link }: { rows: I3PendingCapRow[]; li
             <span className="i3-recovery-name">调整保留上限</span>
             <span className="i3-recovery-object">{`${row.tier} · ${row.change}`}</span>
             <span className="i3-recovery-time">{`${businessStamp(row.submittedAt)} 提交`}</span>
-            <StatusTag tone="progress" icon={Hourglass}>等批准</StatusTag>
+            <StatusTag tone="progress" icon={Hourglass}>等另一位批准</StatusTag>
             <span className="i3-recovery-actions">{row.actions}</span>
           </li>
         ))}
