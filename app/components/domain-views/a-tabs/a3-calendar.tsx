@@ -236,16 +236,16 @@ export function A3Calendar({ commands, recovery, onRecovered, nonce, onSummary, 
     {success && <Notice tone="ok">{success}</Notice>}
 
     <Panel title="业务时区" icon={CalendarClock} tone="role-3"
-      sub={view.unified ? `${view.currentZoneLabel} · ${view.currentOffset}` : `两条轨道不一致 · 日期按各自时区`}
+      sub={view.unified ? `${view.currentZoneLabel} · ${view.currentOffset}` : `两组模块的时区不一致 · 日期按各自时区`}
       explain={<>
         <p>按日、周、月统计、结算和榜单切分「一天」用的时区。改的是以后：从安排的那一天起按新时区切日，已经过去的日子不重算。</p>
-        <p>不跟着变的：数据库存储时间（仍是北京时间）、会话过期、转盘按 UTC 零点重置、越南银行日和 D5 单日提现限额按越南时间。</p>
+        <p>不跟着变的：后台存的时间（北京时间）、登录过期、转盘（UTC 零点重置）、越南银行日和「USDT 提现参数」的单日限额（越南时间）。</p>
       </>}
       actions={canWrite ? (pending
         ? <Button size="sm" variant="danger-outline" icon={<CalendarX2 size={14} aria-hidden />} disabledReason={original ? "结果未知" : !readReady ? "正在读取" : saving ? "正在提交" : undefined} onClick={() => { setError(null); setSuccess(null); setCancelOpen(true); }}>撤销这次安排</Button>
         : <Button size="sm" variant="primary" icon={<CalendarPlus size={14} aria-hidden />} disabledReason={original ? "结果未知" : !readReady ? "正在读取" : undefined} onClick={openForm}>安排新的业务时区</Button>)
         : <span className="rd-note">只有超级管理员能安排和撤销</span>}>
-      {!view.unified && growthZone && <Notice tone="neutral">现在增长与团队按{zoneLabel(growthZone)}（{offsetOf(growthZone)}），其他模块按{view.currentZoneLabel}（{view.currentOffset}）。下一次安排对两条轨道同时生效，生效后统一。</Notice>}
+      {!view.unified && growthZone && <Notice tone="neutral">现在增长与团队按{zoneLabel(growthZone)}（{offsetOf(growthZone)}），其他模块按{view.currentZoneLabel}（{view.currentOffset}）。下一次安排对两组模块同时生效，生效后统一。</Notice>}
       {timeline}
       {hiddenPast > 0 && <p className="rd-note a3-cal-note">更早的 {hiddenPast} 个版本在下面的版本记录里</p>}
       {pending ? <div className="a3-switch">
@@ -260,7 +260,7 @@ export function A3Calendar({ commands, recovery, onRecovered, nonce, onSummary, 
           <Fact k="安排人">{operatorText(pending.operator)} · {formatBusinessTimeCompact(pending.createdAt, "—")}</Fact>
           <Fact k="理由">{pending.reason || "—"}</Fact>
         </Facts>
-        <p className="rd-note">切换时刻取新旧时区当天零点里最早的那个，不一定是新时区的 00:00；那一天之前的日子不重算。生效前可以撤销，生效后只能再安排新的。</p>
+        <p className="rd-note">切换时刻是新旧时区当天零点里较早的那个，不一定是新时区的 00:00。生效前可以撤销。</p>
       </div> : <p className="rd-note a3-cal-note">没有安排中的时区变更。同一时间只能有一个安排，最早可以安排 {view.earliestEffectiveDate} 生效。</p>}
     </Panel>
 

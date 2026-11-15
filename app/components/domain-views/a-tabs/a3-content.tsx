@@ -22,7 +22,7 @@ export type A3Restored =
   | { kind: "how"; document: PublishedHowContentDocument; baseline: PublishedHowContentDocument; reason: string };
 /** 读回和原提交对不上时的一句话（页面上方提示条和保存框里共用）。 */
 export const contentCheckLine = (check: A3ContentComparison) =>
-  `修订号应为 ${check.revision.expected}，现在是 ${check.revision.current}；内容${check.contentMatches ? "相同" : "不同"}。核对后可以解除。`;
+  `修改序号应为 ${check.revision.expected}，现在是 ${check.revision.current}；内容${check.contentMatches ? "相同" : "不同"}。核对后可以解除。`;
 type ReleaseProps = { checks: Record<string, A3ContentComparison>; onRelease: (record: A3Command) => void; restored: A3Restored | null; onRestored: () => void };
 type Toast = (text: string, kind?: "success" | "error" | "warn" | "info") => void;
 type Row = Record<string, unknown>;
@@ -51,7 +51,7 @@ function ConflictNotice({ ready, latestRevision, rows, error, loading, onReread,
 }) {
   return <Notice tone="warn" title="别人刚保存过，你的修改没有保存" action={<Button size="sm" loading={loading} onClick={onReread}>重新读取</Button>}>
     {ready
-      ? <>已读到最新修订 {latestRevision}，你改的都还在。{rows.length ? `和最新版本不同的有 ${rows.length} 处，核对后${submitHint}：` : "你改的和最新版本一样，不用再提交。"}
+      ? <>已读到最新版本，你改的都还在。{rows.length ? `和最新版本不同的有 ${rows.length} 处，核对后${submitHint}：` : "你改的和最新版本一样，不用再提交。"}
         {rows.length > 0 && <div className="a3-conflict-diff"><Facts>{rows.map((item) => <Fact key={item.key} k={item.label}>{item.text}</Fact>)}</Facts></div>}</>
       : loading ? "正在读取最新版本，你改的都还在。"
         : <>最新版本没读到，你改的都还在；先重新读取再核对。{error?.includes("；") ? <span className="rd-note"> {error.split("；").slice(1).join("；")}</span> : null}</>}
@@ -107,7 +107,7 @@ function SaveModal({ mode, title, busy, error, facts, extra, reason, onReason, r
 
 /** 结果未知的保存框里：读回对不上时给解除入口；点了先关保存框，再开页面上的解除框。 */
 function ReleaseNotice({ check, onOpen }: { check: A3ContentComparison; onOpen: () => void }) {
-  return <Notice tone="warn" title="读回和原提交对不上" actionBelow action={<Button size="sm" onClick={onOpen}>解除待确认…</Button>}>{contentCheckLine(check)}</Notice>;
+  return <Notice tone="warn" title="查询结果和原提交对不上" actionBelow action={<Button size="sm" onClick={onOpen}>解除原操作记录…</Button>}>{contentCheckLine(check)}</Notice>;
 }
 
 function Preview({ title, children }: { title: string; children: ReactNode }) {
@@ -176,7 +176,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty,
   const addLocale = () => {
     if (original || !readReady || loading || saving || !canWrite) return;
     const normalized = newLocale.trim().toLowerCase().replace("_", "-");
-    if (!/^(?:[a-z]{2}|fil)(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setError("语言 格式无效，例如 en、zh、vi 或 zh-cn。"); return; }
+    if (!/^(?:[a-z]{2}|fil)(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setError("语言代码格式无效，例如 en、zh、vi 或 zh-cn。"); return; }
     if (!document.locales[normalized] && Object.keys(document.locales).length >= 10) { setError("最多维护 10 种语言。"); return; }
     const empty = { example: { request: "", response: "" }, endpoints: [{ method: "GET", path: "/" }], events: [""] };
     setDocument({ ...document, locales: { ...document.locales, [normalized]: document.locales[normalized] ?? empty } });
@@ -240,7 +240,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty,
     <Panel title="开发者接口文档" icon={Code2} tone="role-2" sub={`${publicLine(document)} · 正文版本 ${versionName(document.version)}`}
       explain={<>
         <p>App 开发者页读取的接口示例、接口列表和事件。保存草稿不改 App 读到的内容，发布后才替换。</p>
-        <p>还没发布过自己的版本时，App 读的是系统自带的默认文档。修订号 {document.revision} 用来防止两人同时改互相覆盖，不是正文版本。</p>
+        <p>还没发布过自己的版本时，App 读的是系统自带的默认文档。</p>
       </>}
       actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void refresh()}>刷新</Button>}>
       <div className="rd-toolbar a3-locale-bar">
@@ -279,7 +279,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty,
             </div>)}
             {!disabled && events.length < 100 && <div><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => updateLocale({ ...current, events: [...events, ""] })}>新增事件</Button></div>}
           </fieldset>
-          {empties.length > 0 && <Notice tone="warn" title="这种语言还不完整">{empties.join("；")}。后端要求接口、事件至少各一项、示例不能空，不补齐会被拒绝保存。</Notice>}
+          {empties.length > 0 && <Notice tone="warn" title="这种语言还不完整">{empties.join("；")}。接口、事件至少各一项，示例不能空，不补齐保存不了。</Notice>}
         </div>
         <Preview title="开发者文档">
           <div className="a3-doc-preview" data-user-content="">
@@ -307,7 +307,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty,
         { key: "content", label: "有改动的语言", before: "—", after: changedLocales.map(localeName).join("、") || "—" },
       ]} />}
       extra={check && original ? <ReleaseNotice check={check} onOpen={() => { setMode(null); onRelease(original); }} />
-        : <Notice tone="neutral">后端不防重复：结果未知时先刷新核对，<KeepText text="不要直接再点一次。" /></Notice>} />}
+        : <Notice tone="neutral">这类保存不能重试：结果未知时先刷新核对，<KeepText text="不要直接再点一次。" /></Notice>} />}
   </div>;
 }
 
@@ -474,7 +474,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
   /** A3-PD01：检查全部页面/语言，草稿维护保留；发布不能把未解析占位符送到App。 */
   const publishBlockedReasons = Object.entries(document.contents).filter(([, entry]) => Object.values(row(entry.locales)).some(locale =>
     blocks(row(locale).blocks).some(block => block.kind === "ruleRef" || [block.title, block.body, ...list(block.items)].some(value => text(value).includes("{value}")))
-  )).map(([key]) => `${PAGE_LABELS[key] ?? key}：App 会拒收整页，{value} 没有换成数值`);
+  )).map(([key]) => `${PAGE_LABELS[key] ?? key}：App 会打不开整页，{value} 没有换成数值`);
   const entry = row(document.contents[key]);
   const localeKeys = Object.keys(row(entry.locales));
   const entryVersion = text(entry.version);
@@ -501,7 +501,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
     <Panel title="业务说明内容" icon={BookOpenText} tone="role-4" sub={`6 页 · ${publicLine(document)} · 文档版本 ${versionName(document.version)}`}
       explain={<>
         <p>App 的「怎么玩」「规则说明」读这六页内容；锁定计划说明的入口已退役，内容仍一起维护。六页一起保存、一起发布，发布时六页都要有内容。</p>
-        <p>还没发布过自己的版本时，App 读的是系统自带的默认说明。修订号 {document.revision} 用来防止两人同时改互相覆盖，六页共用一个。</p>
+        <p>还没发布过自己的版本时，App 读的是系统自带的默认说明。</p>
       </>}
       actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} disabledReason={saving ? "正在保存" : undefined} onClick={() => void refresh()}>刷新</Button>}>
       <div className="a3-pages" role="group" aria-label="内容页面">
@@ -526,7 +526,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
         <Segments label="内容语言" value={locale} onChange={(value) => setLocale(String(value))} items={localeKeys.map((item) => ({ value: item, label: localeName(item) }))} />
         {canWrite && <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={locked ? "正在读取或保存" : undefined} aria-expanded={addingLocale} onClick={() => setAddingLocale(!addingLocale)}>新增语言</Button>}
         <div className="a3-versions">
-        <Field label={`本页版本（${PAGE_LABELS[key] ?? key}）`} explain="不填就用文档版本；填过再清空，后端会拒绝保存。" hint="最多 64 字">
+        <Field label={`本页版本（${PAGE_LABELS[key] ?? key}）`} explain="不填就用文档版本；填过再清空会保存不了。" hint="最多 64 字">
           {(control) => <Input {...control} className="a3-version" value={entryVersion} maxLength={64} disabled={locked} placeholder="例如 2026.09.01-genesis-guide" onChange={(event) => patchEntryVersion(event.target.value)} />}
         </Field>
         <Field label="文档版本" hint="最多 64 字">{(control) => <Input {...control} className="a3-version" value={document.version} maxLength={64} disabled={locked} onChange={e => setDocument({ ...document, version: e.target.value })} />}</Field>
@@ -551,7 +551,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
               <Field label="标题">{(control) => <Input {...control} value={text(item.title)} maxLength={256} disabled={locked} onChange={e => patchBlock(index, { title: e.target.value })} />}</Field>
               <Field label="正文" help={item.kind === "ruleRef" ? <>规则块必须保留 {"{value}"} 占位符</> : undefined}>{(control) => <Textarea {...control} rows={3} value={text(item.body)} maxLength={20000} disabled={locked} onChange={e => patchBlock(index, { body: e.target.value })} />}</Field>
               {item.kind === "ruleRef" && <>
-                <Notice tone="warn" title="App 目前显示不了规则引用">后端只检查格式，不会把 {"{value}"} 换成数值；App 收到没换掉的占位符会整页拒收。可以保存草稿，先别发布含这种块的说明。</Notice>
+                <Notice tone="warn" title="App 目前显示不了规则引用">{"{value}"} 不会被换成数值，App 收到后会整页打不开。可以保存草稿，先别发布含这种块的说明。</Notice>
                 <div className="rd-form-grid" data-cols="2">
                   <Field label="规则标识">{(control) => <Input {...control} value={text(row(item.ref).key)} maxLength={160} disabled={locked} onChange={e => patchBlock(index, { ref: { ...row(item.ref), source: "canonical", key: e.target.value } })} />}</Field>
                   <Field label="引用版本">{(control) => <Input {...control} value={text(row(item.ref).version)} maxLength={128} disabled={locked} onChange={e => patchBlock(index, { ref: { ...row(item.ref), source: "canonical", version: e.target.value } })} />}</Field>
@@ -578,7 +578,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
               {text(item.title) && <h4>{text(item.title)}</h4>}
               {text(item.body) && <p>{item.kind === "ruleRef" ? text(item.body).split("{value}").flatMap((part, i) => i === 0 ? [part] : [<mark key={i}>{"{value}"}</mark>, part]) : text(item.body)}</p>}
               {item.kind === "list" && <ul>{list(item.items).map((value, i) => <li key={i}>{text(value)}</li>)}</ul>}
-              {item.kind === "ruleRef" && <span className="a3-preview-empty">App 会拒收整页：{"{value}"} 没有换成数值</span>}
+              {item.kind === "ruleRef" && <span className="a3-preview-empty">App 会打不开整页：{"{value}"} 没有换成数值</span>}
             </section>)}
           </div>
         </Preview>
@@ -596,7 +596,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
       extra={<>
         {mode === "PUBLISHED" && refPages.length > 0 && <Notice tone="danger" title="发布后 App 会打不开这些说明">{refPages.map((item) => PAGE_LABELS[item]).join("、")}含规则引用块，App 收到没换成数值的 {"{value}"} 会整页拒收。</Notice>}
         {check && original ? <ReleaseNotice check={check} onOpen={() => { setMode(null); onRelease(original); }} />
-          : <Notice tone="neutral">六页一起保存，后端不防重复：结果未知时先刷新核对，<KeepText text="不要直接再点一次。" /><Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>}
+          : <Notice tone="neutral">六页一起保存，不能重试：结果未知时先刷新核对，<KeepText text="不要直接再点一次。" /><Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>}
       </>} />}
   </div>;
 }
