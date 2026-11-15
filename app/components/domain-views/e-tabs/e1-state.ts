@@ -68,11 +68,12 @@ export function e1Object(spec: ProposeSpec): string {
   return target ? `${target.type}|${target.id}` : `${spec.command.op}|${spec.obj}`;
 }
 
-export type E1Pending = PendingMutationRecord & { actorId: string; spec: ProposeSpec; retryRejection?: string };
+export type E1Pending = PendingMutationRecord & { actorId: string; spec: ProposeSpec; receivedTicketId?: string; retryRejection?: string };
 const validProposal = (row: E1Pending) => typeof row.actorId === "string" && !!row.actorId
   && typeof row.spec?.reason === "string" && row.spec.sourceDomain === "E1"
   && typeof row.spec?.obj === "string" && typeof row.spec?.command?.op === "string"
   && row.spec.command.op.startsWith("e1_") && !!row.spec.command.params
+  && (row.receivedTicketId === undefined || typeof row.receivedTicketId === "string")
   && (row.retryRejection === undefined || typeof row.retryRejection === "string");
 export const e1Commands = createPendingMutationStore<E1Pending>({
   storageKey: "nexion-admin-e1-proposal-commands-v1", retainExpiredRecords: true, isValidRecord: validProposal,
@@ -83,7 +84,8 @@ export const e1MonthlyCommands = createPendingMutationStore<E1Pending>({
   isValidRecord: (row) => typeof row.actorId === "string" && !!row.actorId
     && row.fingerprint === `sku|${row.spec?.obj}` && typeof row.spec?.reason === "string"
     && ["e1_sku_create", "e1_sku_update"].includes(row.spec?.command?.op)
-    && (row.retryRejection === undefined || typeof row.retryRejection === "string"),
+    && (row.receivedTicketId === undefined || typeof row.receivedTicketId === "string")
+  && (row.retryRejection === undefined || typeof row.retryRejection === "string"),
 });
 export const e1Pending = (actorId: string) => [...e1Commands.list(), ...e1MonthlyCommands.list()].filter((row) => row.actorId === actorId);
 export const forgetE1 = (row: E1Pending) => (row.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands).forget(row.fingerprint, row.commandKey);

@@ -8,7 +8,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessClock } from "@/lib/admin/business-time";
 import { fetchE1Products, fetchE1GenerationGates, fetchE1Discount, type E1CatalogSnapshot, type E1BundleDiscount, type E1GenerationGateData, type E1InvalidSku } from "@/lib/admin/e1-client";
 import { fetchE3Snapshot } from "@/lib/admin/e3-client";
-import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
@@ -180,11 +180,19 @@ export function E1Page() {
     sending.current = true; setBusy(record.commandKey); setRejected(keys => keys.filter(k => k !== record.commandKey));
     try {
       const spec = record.spec;
+      if (retry && record.receivedTicketId) { await check(record, true); return; }
       const result = await createA2OperationProposal({ action: spec.action, obj: spec.obj, beforeValue: spec.before, afterValue: spec.after,
         operator: session?.operator || session?.username || "", operatorRole: roleLabel(session!.role), type: spec.type,
         amplifies: !!spec.amplifies, sos: !!spec.sos, roleGate: spec.gateLabel, reason: spec.reason, sourceDomain: spec.sourceDomain,
         command: spec.command, target: spec.target, targets: spec.targets,
       }, record.commandKey, true);
+      record = { ...record, receivedTicketId: result.id };
+      store.remember(record.fingerprint, record.commandKey, record);
+      if (retry) {
+        setConfirmation(null); setEdit(null);
+        await check(record, true);
+        return;
+      }
       forgetE1(record); toast(`已提交，等待审批后执行 · 审批单 ${result.id}`);
       setReceipts(rows => [...rows.filter(row => row.object !== e1Object(spec)), { ...spec, id: result.id, commandKey: record.commandKey, object: e1Object(spec), status: result.status }]);
       setConfirmation(null); if (record.spec.command.op === "e1_sku_create" || record.spec.command.op === "e1_sku_update") setEdit(null);
@@ -192,10 +200,10 @@ export function E1Page() {
       if (!latest) toast("申请已提交，部分目录或关联设置未读取完整");
     } catch (failure) {
       const response = failure as { httpStatus?: number; apiCode?: number };
-      const firstRejection = !retry && !isA2OutcomeUncertainError(failure) && response.httpStatus !== undefined
+      const firstRejection = !record.receivedTicketId && !retry && !isA2OutcomeUncertainError(failure) && response.httpStatus !== undefined
         && isDeterministicRejection(response.httpStatus, response.apiCode);
       if (firstRejection) forgetE1(record);
-      else if (retry && isExplicitRejection(failure)) {
+      else if (!record.receivedTicketId && retry && isExplicitRejection(failure)) {
         store.remember(record.fingerprint, record.commandKey, { ...record, retryRejection: e1Error(failure) });
         setRejected(keys => [...keys, record.commandKey]);
       }
@@ -219,19 +227,22 @@ export function E1Page() {
     setAttemptKey(commandKey);
     return send(e1Commands.list().find(r => r.commandKey === commandKey)!, false);
   };
-  const check = async (record: { commandKey: string }) => {
+  const check = async (record: { commandKey: string }, propagate = false) => {
     try {
-      const row = await fetchA2ProposalByKey(record.commandKey, true);
+      const row = await fetchA2ProposalByKey(record.commandKey, true, true);
+      const full = e1Pending(actor).find(r => r.commandKey === record.commandKey);
+      if (row && full && (!row.mine || row.obj !== full.spec.obj || full.receivedTicketId && row.id !== full.receivedTicketId)) throw new A2OutcomeUncertainError("没有读到原审批单，不能解除对象锁，请重试或到操作记录与审批核对", record.commandKey);
+      if (!row && full?.receivedTicketId) throw new A2OutcomeUncertainError("没有读到原审批单，不能解除对象锁，请重试或到操作记录与审批核对", record.commandKey);
       if (!row) { setNotes(n => ({ ...n, [record.commandKey]: "没有查到原审批单，不能据此认定没有提交；请保留原记录核对。" })); return; }
       setNotes(n => ({ ...n, [record.commandKey]: `原审批单 ${row.id} · ${{ pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[row.status] ?? "状态待核实"}` }));
       toast(`已找到原审批单 ${row.id}，原操作已有回执`);
-      const full = e1Pending(actor).find(r => r.commandKey === record.commandKey);
       if (full) {
         const spec = full.spec;
         setReceipts(rows => [...rows.filter(receipt => receipt.object !== e1Object(spec)), { ...spec, id: row.id, commandKey: record.commandKey, object: e1Object(spec), status: row.status }]);
         forgetE1(full); syncPending();
+        if (row.status !== "pending") { await refresh(); await refreshEarly(); }
       }
-    } catch (failure) { setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) })); }
+    } catch (failure) { setNotes(n => ({ ...n, [record.commandKey]: e1Error(failure) })); if (propagate) throw failure; }
   };
 
   const confirm = async (reason: string, value?: string, business?: Record<string, string>) => {
