@@ -9,6 +9,7 @@ import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-t
 import type { F1PolicyValues } from "./f1-policy-change";
 import { f3SpilloverState } from "./f3-policy";
 import { f4Decimal, f4MonthlyCap } from "./f4-money";
+import { readF4VoteProjection } from "./f4-vote-projection";
 import type { BusinessZone } from "./business-time";
 import {
   assertF1Overview,
@@ -1749,6 +1750,9 @@ async function f1Request<T>(
       const raw = await response.text();
       result = JSON.parse(raw.replace(/("(?:budgetUsdt|recognizedBudgetUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
         (_match, key: string, amount: string) => `${key}${JSON.stringify(f4Decimal(amount) ?? amount)}`)) as ApiResult<T>;
+    } else if (path === "/leadership-pool/vote-projection" && !isWrite) {
+      const raw = await response.text();
+      result = JSON.parse(raw.replace(/("(?:poolUsd|perVoteUsd|totalVotes)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"')) as ApiResult<T>;
     } else if (path === "/leadership-pool" && !isWrite) {
       const raw = await response.text();
       result = JSON.parse(raw.replace(/("(?:currentWeekPoolUsd|poolUsd)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
@@ -1817,7 +1821,7 @@ async function f1Request<T>(
       throw new F4MaterialReviewNotAppliedError(formatAdminApiError(reviewConflict, "F1_REQUEST_FAILED_409"), reviewConflict);
     }
     const error = new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
-    if (path.startsWith("/ranks/") || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
+    if (path === "/leadership-pool/vote-projection" || path.startsWith("/ranks/") || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
       status: response.ok && typeof result?.code === "number" ? result.code : response.status, httpStatus: response.status, apiCode: result?.code,
       backendMessage: result?.message, reasonCode: result?.message,
     });
@@ -1865,6 +1869,10 @@ export async function fetchF4LeadershipPoolOverview() {
   const data = await f1Request<unknown>("/leadership-pool");
   assertF4Overview(data);
   return normalizeF4Overview(data as BackendF4LeadershipPoolOverview);
+}
+
+export async function fetchF4VoteProjection() {
+  return readF4VoteProjection(await f1Request<unknown>("/leadership-pool/vote-projection"));
 }
 
 export async function fetchF5CommissionAuditOverview(query: F5CommissionQuery = {}) {

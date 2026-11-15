@@ -1296,6 +1296,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   K2_WRITE_RESULT_INVALID: "原操作回执不完整，结果仍未确认；请保留原请求和命令号，按原操作重试或到操作记录核对。",
   F4_OPERATION_STORAGE_UNAVAILABLE: "浏览器无法保存原请求，本次没有发送；请允许会话存储后重新提交。",
   F4_OVERVIEW_RESPONSE_INVALID: "奖励池、名额或材料数据不完整，暂不能按这些数据发起新修改；请重新读取，原操作仍可查询核对。",
+  F4_VOTE_PROJECTION_INVALID: "团队激励池的票数和每票金额数据不完整，请重新读取后核对。",
   F4_PROPOSAL_ORIGINAL_INCOMPLETE: "保存的原请求不完整，不能重发；请保留记录并查询原结果或到「操作记录与审批」核对。",
   AMBASSADOR_POLICY_REVISION_REQUIRED: "缺少大使规则修订号；请重新读取规则后提交。",
   AMBASSADOR_POLICY_VERSION_REQUIRED: "请填写大使规则版本后提交。",

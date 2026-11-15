@@ -16,7 +16,10 @@ function isNonEmpty(value: string | undefined) {
   return !!value && value.trim().length > 0;
 }
 
-function backendPath(parts: string[]) {
+function backendPath(parts: string[], method: string) {
+  if (method === "GET" && parts.length === 2 && parts.join("/") === "leadership-pool/vote-projection") {
+    return "/api/admin/teams/leadership-pool/vote-projection";
+  }
   if (parts.length === 1 && parts[0] === "direct-referral-policy") {
     return "/api/admin/teams/direct-referral-policy";
   }
@@ -144,7 +147,7 @@ function backendPath(parts: string[]) {
 
 async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
-  const targetPath = backendPath(path);
+  const targetPath = backendPath(path, request.method);
 
   if (!targetPath) {
     return jsonError(404, "TEAMS_ROUTE_NOT_FOUND");

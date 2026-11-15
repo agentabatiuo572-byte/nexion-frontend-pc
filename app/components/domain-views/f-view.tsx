@@ -21,6 +21,7 @@ import {
   addF1VRankReward,
   fetchF3BinaryOverview,
   fetchF4LeadershipPoolOverview,
+  fetchF4VoteProjection,
   fetchF4AmbassadorPolicy,
   fetchF5CommissionAuditOverview,
   downloadF5RedactedCsv,
@@ -61,6 +62,7 @@ import { pendingConfigApproval, submitConfigApproval, teamFundApprovalAuthority,
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { findHighOp, isFFundAmplifyingKey } from "@/lib/admin/high-ops-registry";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import type { F4VoteProjectionRead } from "@/lib/admin/f4-vote-projection";
 import type { Mc, McSpec, FViewCtx } from "./f-tabs/types";
 import { F1Vrank } from "./f-tabs/f1-vrank";
 import { RdPage } from "@/app/components/rd";
@@ -157,6 +159,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f2ActivationPendingLoading, setF2ActivationPendingLoading] = useState(tab === "F2");
   const [f2ActivationPendingError, setF2ActivationPendingError] = useState<string | null>(null);
   const canReadA2 = can("platform_a2_read");
+  const canReadF4 = can("network_f4_read");
   const [f2Loading, setF2Loading] = useState(tab === "F2");
   const [f2Error, setF2Error] = useState<string | null>(null);
   const [f3Proposals, setF3Proposals] = useState<FDomainAttempt[]>([]);
@@ -166,6 +169,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f3Loading, setF3Loading] = useState(tab === "F3");
   const [f3Error, setF3Error] = useState<string | null>(null);
   const [f4Overview, setF4Overview] = useState<F4LeadershipPoolOverview | null>(null);
+  const [f4VoteProjection, setF4VoteProjection] = useState<F4VoteProjectionRead>({ status: "idle" });
   const [f4AmbassadorPolicy, setF4AmbassadorPolicy] = useState<F4AmbassadorPolicy | null>(null);
   const [f4Loading, setF4Loading] = useState(tab === "F4");
   const [f4Error, setF4Error] = useState<string | null>(null);
@@ -424,6 +428,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     setF4PolicyWrites(owner === undefined ? [] : listF4PolicyWrites(owner));
     setF4Loading(true);
     setF4Error(null);
+    setF4VoteProjection(canReadF4 ? { status: "loading" } : { status: "denied" });
+    if (canReadF4) void fetchF4VoteProjection().then(data => {
+      if (request === f4Generation.current && owner === useAdminAuth.getState().session?.adminId) setF4VoteProjection({ status: "ready", data });
+    }, error => {
+      if (request === f4Generation.current && owner === useAdminAuth.getState().session?.adminId) setF4VoteProjection(
+        error?.status === 403 ? { status: "denied" } : { status: "error", message: errorMessage(error) });
+    });
     setActionConfirm(current => current?.f4Snapshot && !current.f4Recovery ? null : current);
     const [overview, ambassadorPolicy, calendar, queue, ...lookups] = await Promise.allSettled([
       fetchF4LeadershipPoolOverview(),
@@ -449,7 +460,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setActionConfirm(current => current?.f4Recovery && ![...proposals, ...direct].some(row => row.commandKey === current.f4Recovery!.original.commandKey) ? null : current);
     }
     setF4Loading(false);
-  }, [canReadA2, session?.adminId]);
+  }, [canReadA2, canReadF4, session?.adminId]);
 
   useEffect(() => {
     if (tab === "F4") void refreshF4();
@@ -463,6 +474,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!original) { setActionConfirm(null); return true; }
     f4Generation.current += 1;
     setF4Overview(null); setF4AmbassadorPolicy(null); setF4Loading(true);
+    setF4VoteProjection({ status: "idle" });
     setActionConfirm(current => current?.f4Snapshot && !current.f4Recovery ? null : current);
     let resolved = false;
     try {
@@ -1051,6 +1063,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       await proposeFConfig("F3", key, value, reason, undefined, amplifies, undefined, snapshot);
     },
     f4Overview,
+    f4VoteProjection,
     f4AmbassadorPolicy,
     refreshF4PolicyBaseline: async () => {
       setF4AmbassadorPolicy(null);
