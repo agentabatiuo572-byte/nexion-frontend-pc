@@ -42,7 +42,7 @@ const PARAMS = [
   {
     key: "baseRateVndPerUsdt", label: "基准价", unit: "₫/USDT", min: 20_000, max: 35_000, step: 1,
     what: "人工设定的 1 USDT 折合越南盾基准",
-    when: "基准价上调或买入价下降须另一位有权超管批准后生效；其他方向直接保存，已下的单不变",
+    when: "基准价上调或买入价下降，另一位超级管理员批准后生效；其他方向保存即生效，已下的单不变",
     where: "App 和 H5 充值页「银行卡支付」的「牌价」这一行；App 和 H5 银行卡提现确认页「每 USDT 兑换 VND」",
     effect: "买入价跟着变，银行卡提现的新报价也跟着变",
     scope: "影响之后的新付款单和新的提现报价，已下的单不变。",
@@ -55,7 +55,7 @@ const PARAMS = [
   {
     key: "buySpreadPct", label: "买入点差", unit: "%", min: 0, max: 3, step: 0.01, maxDecimals: 2,
     what: "基准价上加的比例，算出买入价",
-    when: "买入价下降须另一位有权超管批准后生效；其他方向直接保存，只影响新付款单",
+    when: "买入价下降，另一位超级管理员批准后生效；其他方向保存即生效，只影响新付款单",
     where: "App 和 H5 充值页「银行卡支付」的「牌价」这一行",
     effect: "买入价跟着变，提现报价不变",
     scope: "只影响之后的新付款单，已下的单不变。",
@@ -199,7 +199,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
             if (epoch !== loadEpoch.current) return null;
             setApprovalReadError(`待批新值暂时读不到：${displayAdminReadError(cause)}`);
           }
-        } else setApprovalReadError("这个账号不能读取原审批单的新值，请有权人员到「操作记录与审批」核对。");
+        } else setApprovalReadError("这个账号看不到原审批单的新值，请有权限的同事到「操作记录与审批」核对。");
       }
       setReadAt(businessClock(Date.now()));
       setError("");
@@ -252,7 +252,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     syncPending();
     // 写回执不包含最近审批，原号重试还可能拿到旧快照，始终回读当前配置和审批。
     await load();
-    toast(ticket ? `审批单 ${ticket.id} · ${ticket.status === "pending" ? "等待另一位有权超管批准，当前买入价不变" : "已找回原单，请核对审批结果"}` : paramOf(item.param).done, "success");
+    toast(ticket ? `审批单 ${ticket.id} · ${ticket.status === "pending" ? "等待另一位超级管理员批准，当前买入价不变" : "已找回原单，请核对审批结果"}` : paramOf(item.param).done, "success");
   };
 
   /** 按原操作重试：同命令号、同内容、同理由、同版本号，不接受新输入（OP-94）。 */
@@ -333,13 +333,13 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const newRate = d6QuoteRate(values.baseRateVndPerUsdt, values.buySpreadPct);
     const baseIncrease = values.baseRateVndPerUsdt > quote.baseRateVndPerUsdt;
     const approvalRequired = forceApproval || baseIncrease || newRate < quote.quoteRateVndPerUsdt;
-    const checkCopy = baseIncrease ? "基准价上调，提交和批准时都会检查可靠兑付覆盖率，低于红线或读不到时不能提交、批准。" : "本次仅降低充值买入价，不触发基准价上调的资金检查；仍需另一位有权超管批准。";
+    const checkCopy = baseIncrease ? "基准价上调：提交和批准时都查兑付覆盖率，低于红线或读不到可靠结果时不能提交、批准。" : "这次只降低买入价，不查兑付覆盖率，仍要另一位超级管理员批准。";
     const req: ActionConfirmReq = {
       briefKind: "config", action: `调整汇率 · ${param.label}`, title: `调整${param.label}`, formKey,
       detail: param.scope,
       blockedReason: value === quote[param.key] ? "最新值已与输入相同，没有需要提交的修改。" : undefined,
       approval: approvalRequired ? { coverageCheckCopy: checkCopy, disabledReason: proposalBlocked ?? (quote.approval?.status === "pending" ? "已有汇率审批单等待处理，请先核对原单" : undefined) } : undefined,
-      effect: approvalRequired ? <StatusTag tone="progress" filled explain="另一位有权超管批准前，当前配置不变；批准时重核双方权限和配置版本。">批准后生效</StatusTag> : <StatusTag tone="progress" filled>立即生效</StatusTag>,
+      effect: approvalRequired ? <StatusTag tone="progress" filled explain="另一位超级管理员批准前，当前值不变；批准时会再核对双方权限，以及这组汇率有没有被改过。">批准后生效</StatusTag> : <StatusTag tone="progress" filled>立即生效</StatusTag>,
       facts: <Facts>
         <Fact k={param.label}><Change from={valueText(param.key, quote[param.key])} to={valueText(param.key, value)} /></Fact>
         {param.key === "lockWindowMinutes" ? <>
@@ -347,12 +347,12 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
           <Fact k="不受影响"><KeepText text="买设备用银行卡付款的报价（最长 15 分钟）、提现报价" phrases={["提现报价"]} /></Fact>
         </> : <Fact k="买入价" unit="₫/USDT"><Change from={vnd(quote.quoteRateVndPerUsdt)} to={vnd(newRate)} /></Fact>}
         {approvalRequired && <Fact k="资金检查">{checkCopy}</Fact>}
-        {!approvalRequired && quote.approval?.status === "pending" && <Fact k="待批原单" tone="warn">直接保存会更新版本，原审批单批准时须重新核对版本。</Fact>}
+        {!approvalRequired && quote.approval?.status === "pending" && <Fact k="待批原单" tone="warn">直接保存会改掉这组汇率，这张待批单批准时会因已被改过而不能执行。</Fact>}
         {changed && <Fact k="刚被别人改过" tone="warn">{changed}<p className="rd-note">理由已清空，请按最新的值重写</p></Fact>}
       </Facts>,
       statedBrief: { impact: param.impact, check: param.check }, reasonMin: 8, reasonMax: 200, reasonPlaceholder: param.placeholder,
       confirmLabel: approvalRequired ? "提交审批" : "确认修改，立即生效",
-      completionCopy: approvalRequired ? "另一位有权超管批准后才生效，提交审批不改变当前买入价，旧单锁价不回写。" : undefined,
+      completionCopy: approvalRequired ? "另一位超级管理员批准后才生效；提交审批不改当前买入价，已下的单不变。" : undefined,
       run: async (reason) => {
         try {
           let proposal: FxCommand["proposal"];
@@ -377,7 +377,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
             confirmAdjust(param, latest, value, formKey + 1, changes || "内容有更新，上面已是最新");
           }} /> });
           if (code === "D6_FX_QUOTE_APPROVAL_REQUIRED") openActionConfirm({ ...req, blockedReason: <span className="rd-toolbar">这组调价需要审批，当前输入已保留。<Button size="sm" onClick={() => confirmAdjust(param, quote, value, formKey + 1, undefined, true)}>转为审批</Button></span> });
-          if (code === "D6_FX_QUOTE_NOT_APPROVAL_DIRECTION") openActionConfirm({ ...req, blockedReason: <ConflictBar message="后端确认这组调整不属于审批方向，请重新核对直接保存。" onRead={async () => { const latest = await load(); if (!latest) throw new Error("读取最新失败"); confirmAdjust(param, latest, value, formKey + 1); }} /> });
+          if (code === "D6_FX_QUOTE_NOT_APPROVAL_DIRECTION") openActionConfirm({ ...req, blockedReason: <ConflictBar message="这组调整不需要审批，请核对后直接保存。" onRead={async () => { const latest = await load(); if (!latest) throw new Error("读取最新失败"); confirmAdjust(param, latest, value, formKey + 1); }} /> });
           throw cause;
         }
       },
@@ -394,7 +394,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     if (editing.value === String(editing.quote[editing.param.key])) { setEditing(null); return; }
     ctx.openConfirm({ briefKind: "config", action: "放弃汇率修改", title: "放弃未提交的修改", detail: "新值还没有提交，放弃后需要重新填写。", reason: false, okLabel: "放弃修改", run: () => setEditing(null) });
   }} title={`调整${editing.param.label}`} icon={SlidersHorizontal} tone="role-4"
-    footer={<Decision note={editError ? undefined : editApproval ? "另一位有权超管批准前，当前值不变" : "直接保存后生效，旧单不变"} primary={<Button variant="primary" disabledReason={editError ? "先填有效的新值" : editValue === editing.quote[editing.param.key] ? "没有改动" : undefined} onClick={() => confirmAdjust(editing.param, editing.quote, editValue)}>继续填写理由</Button>} />}>
+    footer={<Decision note={editError ? undefined : editApproval ? "另一位超级管理员批准前，当前值不变" : "直接保存后生效，旧单不变"} primary={<Button variant="primary" disabledReason={editError ? "先填有效的新值" : editValue === editing.quote[editing.param.key] ? "没有改动" : undefined} onClick={() => confirmAdjust(editing.param, editing.quote, editValue)}>继续填写理由</Button>} />}>
     <Facts><Fact k="当前值">{valueText(editing.param.key, editing.quote[editing.param.key])}</Fact></Facts>
     <Field label="新值" required help={editing.param.hint} error={editing.touched ? editError : undefined}>
       <NumberInput value={editing.value} unit={editing.param.unit} min={editing.param.min} max={editing.param.max} step={editing.param.step} onChange={(event) => setEditing({ ...editing, value: event.target.value })} onBlur={() => setEditing({ ...editing, touched: true })} />
@@ -497,7 +497,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         ? <Conclusion state="unknown">{READING}</Conclusion>
         : !pending && (data.approval?.status === "pending"
           ? <Conclusion state="warn">有汇率调整等待批准，当前买入价不变</Conclusion>
-          : <Conclusion state="ok" explain="当前值来自汇率读取接口，最近审批状态也来自服务端。这句话不比较市场价。汇率不会自动更新，要人工调整。">当前买入价已读取</Conclusion>)}
+          : <Conclusion state="ok" explain="这句话不和市场价比较。汇率不会自动更新，要人工调整。">当前买入价已读取</Conclusion>)}
 
       {/* 只有两个数：每格从内容宽往外长，不拉成等宽的半格（DP-12）。 */}
       <StatBand label="汇率摘要" fit>
@@ -505,7 +505,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
           explain={<>
             <p>基准价 ×（1 + 买入点差），取整到十位。</p>
             <p>{nbsp(`${vnd(data.baseRateVndPerUsdt)} ₫/USDT ×（1 + ${valueText("buySpreadPct", data.buySpreadPct)}）= ${vnd(data.quoteRateVndPerUsdt)} ₫/USDT`)}</p>
-            <p>用户在 App 和 H5 用银行卡支付时按这个价算。充值页新建付款单时取服务端当时的买入价；买设备用银行卡付款时，在报价那一刻取价，报价有效期内建单沿用这个价。</p>
+            <p>用户在 App 和 H5 用银行卡支付时按这个价算。充值页新建付款单时取当时的买入价；买设备用银行卡付款时取报价那一刻的价，报价有效期内建单沿用。</p>
             <p>用户页面上的「牌价」可能还没刷新。</p>
           </>} />
         <Stat tone="role-other" icon={History} label="最近调整" value={latest ? minuteText(latest.createdAt) : "—"} unit={latest ? zone : undefined}
@@ -515,7 +515,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       {data.approval && <Panel title="最近审批" icon={History} tone="role-other">
         <Facts>
           <Fact k="审批单">{data.approval.operationId}{reach("/platform/audit", "platform_a2_read") && <> · <Link className="rd-link" href="/platform/audit?domain=D&object=current" prefetch={false}>操作记录与审批</Link></>}</Fact>
-          <Fact k="审批状态"><StatusTag tone={data.approval.status === "pending" ? "warn" : "done"}>{({ pending: "等待另一位有权超管批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" })[data.approval.status]}</StatusTag></Fact>
+          <Fact k="审批状态"><StatusTag tone={data.approval.status === "pending" ? "warn" : "done"}>{({ pending: "等待另一位超级管理员批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" })[data.approval.status]}</StatusTag></Fact>
           <Fact k="提交人">{maskAuditActor(data.approval.submittedBy)} · {minuteText(data.approval.submittedAt)}（{zone}）</Fact>
           {data.approval.status === "pending" && (approvalValues ? <>
             <Fact k="待批买入价" unit="₫/USDT">{vnd(d6QuoteRate(approvalValues.baseRateVndPerUsdt, approvalValues.buySpreadPct))}<span className="rd-fact-unit">尚未生效</span></Fact>
@@ -526,7 +526,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       </Panel>}
 
       <Panel title="报价参数" icon={SlidersHorizontal} tone="role-4"
-        explain="基准价和买入点差决定用户付多少越南盾，报价有效期决定充值付款单的买入价锁多久。每项是什么、显示在哪、什么时候生效，看名称旁的提示；改一项存一项。">
+        explain="基准价和买入点差决定用户付多少越南盾，报价有效期决定充值付款单的买入价锁多久。改一项存一项。">
         <ConfigList label="报价参数">
           {PARAMS.map((param) => (
             <ConfigRow key={param.key} name={param.label} what={param.what} when={param.when} where={param.where} effect={param.effect}
