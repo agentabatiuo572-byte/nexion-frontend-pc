@@ -1,3 +1,4 @@
+import { fundCommandOrigin, type FundCommandOrigin } from "./fund-command-investigation";
 import {
   A2OutcomeUncertainError,
   createA2CommandKey,
@@ -18,6 +19,8 @@ import type { B5ThresholdFacts } from "./b5-commands";
 
 export const configApprovalAttempts = createPendingMutationStore<PendingMutationRecord & Partial<FDomainAttempt> & {
   input: string;
+  commandOrigin?: FundCommandOrigin;
+  withdrawalRequest?: Parameters<typeof createA2OperationProposal>[0];
   g4Ticket?: A2OperationRow;
   g4Request?: Parameters<typeof createA2OperationProposal>[0];
   b1Request?: Parameters<typeof createA2OperationProposal>[0];
@@ -332,7 +335,7 @@ export async function submitConfigApproval<T>(
   const objectId = values && sourceDomain === "F3" && "ownerUserId" in values && "settlementDate" in values
     ? `${values.ownerUserId}:${values.settlementDate}`
     : sourceDomain === "F4" ? "default" : sourceDomain === "G4" ? "dividend" : scope?.objectId ?? "current";
-  const proposal = sourceDomain === "G4" && previous?.g4Request ? previous.g4Request : values ? {
+  const proposal = (sourceDomain === "D5" || sourceDomain === "D7") && previous?.withdrawalRequest ? previous.withdrawalRequest : sourceDomain === "G4" && previous?.g4Request ? previous.g4Request : values ? {
     action, obj: objectId, beforeValue: "—", afterValue: "—",
     operator: session.operator || session.username, operatorRole: roleLabel(session.role),
     type: "fund" as const, amplifies: true, sos: false, roleGate: "超管", reason, sourceDomain,
@@ -340,7 +343,9 @@ export async function submitConfigApproval<T>(
     target: { domain, type, id: objectId },
   } : undefined;
   if (!previous) {
-    attempts.remember(slot, key, { input, ...(sourceDomain === "G4" ? { g4Request: proposal } : {}) });
+    attempts.remember(slot, key, { input, ...(sourceDomain === "G4" ? { g4Request: proposal } : {}),
+      ...((sourceDomain === "D5" || sourceDomain === "D7") ? { withdrawalRequest: proposal,
+        commandOrigin: fundCommandOrigin("POST", "/api/admin/platform/audit/operations", sourceDomain === "D5" ? "finance_d5_read" : "finance_d7_read") } : {}) });
     if (!attempts.isDurablyStored(slot, key)) {
       attempts.forget(slot, key);
       throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");

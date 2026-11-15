@@ -53,6 +53,7 @@ import {
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from "@/lib/admin/config-help/d5-withdrawal";
+import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import {
   configApprovalOriginalInput,
@@ -831,12 +832,33 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  /** 重试被拒后，人核实过原操作的结果才解除。只放开本页的锁，不发请求，不写操作记录。 */
+  const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
+  const checkProposalInvestigation = async (record: NonNullable<ReturnType<typeof pendingConfigApproval>>, evidence?: FundCommandEvidence) => {
+    setRecovering(record.commandKey);
+    try {
+      const receipt = await checkFundCommand(record, evidence);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+      if (fundCommandSettled(receipt)) {
+        if (session) releaseConfigApproval("D5", session.adminId, record.commandKey);
+        syncPending(); await load();
+      } else if (!receipt) note(record.commandKey, displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED")));
+      return receipt;
+    } catch (cause) {
+      const error = displayAdminError(cause);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      note(record.commandKey, error); throw cause;
+    } finally { setRecovering(""); }
+  };
   const releasePending = (record: ReleaseTarget) => {
-    if (record.loosen) { if (session) releaseConfigApproval("D5", session.adminId, record.commandKey); }
-    else tightenCommands.forget(record.slot, record.commandKey);
-    syncPending();
     setReleasing(null);
+    if (record.loosen) {
+      const original = session ? pendingConfigApproval("D5", session.adminId) : undefined;
+      if (original?.commandKey === record.commandKey) void checkProposalInvestigation(original).catch(() => undefined);
+      return;
+    }
+    // D5_WITHDRAWAL_LIMITS_UPDATE is not in AdminCommandOrigin.supported; retain its existing local handling.
+    tightenCommands.forget(record.slot, record.commandKey);
+    syncPending();
     toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
   };
 
