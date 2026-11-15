@@ -14,7 +14,7 @@ import { Bell, CalendarClock, FilePen, Layers, Plus, RefreshCw, Route, Send, Tra
 import { BlockState, Button, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { PaginationExemptionList } from "../design-kit";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
-import { pendingI3Commands, retryI3Command, i3RetryPermission, parseI3Json, fetchI3CampaignOverview, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget } from "@/lib/admin/i-client";
+import { pendingI3Commands, retryI3Command, i3RetryPermission, parseI3Json, fetchI3CampaignOverview, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget, type NotificationCampaignRow } from "@/lib/admin/i-client";
 import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, releaseExpiredI3Cap, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
@@ -563,7 +563,15 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         rebuild = live ? () => { setScheduleRow(live); setScheduleVerified(false); } : undefined;
       } else if (live) {
         const opened = campaignCommand?.snapshot;
-        rows = [conflictRow("状态", opened ? stateText(opened) : "—", stateText(now)), conflictRow("中文内容", opened?.bodyZh, now?.bodyZh)];
+        const routeName = (href?: string) => href === undefined ? undefined : DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === href)?.label ?? href;
+        const budget = (row?: NotificationCampaignRow) => row?.budget === null || row?.budget === undefined ? undefined : `${row.budget} USD`;
+        // 别人改的可能是名称、预算这些，不只状态和正文；只比两项会出现「两边一样」却被拒。
+        rows = [conflictRow("状态", opened ? stateText(opened) : "—", stateText(now)), conflictRow("名称", opened?.name, now?.name),
+          conflictRow("通知类型", opened && kindLabel(opened.kind), now && kindLabel(now.kind)),
+          conflictRow("优先级", opened && TIER[opened.tier]?.label, now && TIER[now.tier]?.label),
+          conflictRow("发给谁", opened?.audience, now?.audience), conflictRow("点了去哪", routeName(opened?.ctaHref), routeName(now?.ctaHref)),
+          conflictRow("预算", budget(opened), budget(now)), conflictRow("中文内容", opened?.bodyZh, now?.bodyZh),
+          conflictRow("越南语内容", opened?.bodyVi, now?.bodyVi), conflictRow("英语内容", opened?.bodyEn, now?.bodyEn)];
         rows[0].changed = !opened || stateText(opened) !== stateText(now);
         rebuild = path.endsWith("/send-now") ? reopen(() => sendNow(live))
           : path.endsWith("/cancel") ? reopen(() => cancelScheduled(live))
