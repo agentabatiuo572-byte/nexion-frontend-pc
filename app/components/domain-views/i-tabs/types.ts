@@ -20,6 +20,7 @@ export type ICtx = Omit<DCtx, "toast"> & {
   actions: IContentActions;
   contentLoading: boolean;
   contentError: string | null;
+  activeActionConfirm: ActionConfirmReq | null;
   closeActionConfirm: (request?: ActionConfirmReq) => void;
   closeConfirm: () => void;
 };

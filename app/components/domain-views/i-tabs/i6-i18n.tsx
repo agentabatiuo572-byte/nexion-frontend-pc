@@ -327,7 +327,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         const currentData = latest.current.content.i18nLearning;
         const unchangedCourse = scope.startsWith("course:") && JSON.stringify(openedData?.courses.find(row => row.id === scope.slice(7)))
           === JSON.stringify(currentData?.courses.find(row => row.id === scope.slice(7)));
-        if (versions && JSON.stringify(versions) !== JSON.stringify(versionsRead.current) || openedData !== currentData && !unchangedCourse) {
+        if (versions && JSON.stringify(versions) !== JSON.stringify(versionsRead.current)) {
+          ctx.closeActionConfirm();
+          toast("这份草稿刚被别人改过，请重新打开再删。", "warn");
+          return false;
+        }
+        if (openedData !== currentData && !unchangedCourse) {
           ctx.closeActionConfirm(); throw new Error("数据已重新读取，请按最新内容重新打开修改入口。");
         }
         try {
@@ -368,7 +373,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         if (confirmation?.scope === `course:${versionCourseId}` && confirmation.versions
           && JSON.stringify(confirmation.versions) !== JSON.stringify(versions)
           && !pendingI6Commands().some(record => record.scope === confirmation.scope)) {
-          ctx.closeActionConfirm(confirmation.request);
+          if (latest.current.activeActionConfirm === confirmation.request) {
+            ctx.closeActionConfirm(confirmation.request);
+            toast("这份草稿刚被别人改过，请重新打开再删。", "warn");
+          }
           courseConfirm.current = null;
         }
         setCourseVersions(versions);

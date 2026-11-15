@@ -191,6 +191,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   const ctx: ICtx = {
     toast: setToast,
     openActionConfirm: setActionConfirm,
+    activeActionConfirm: mc,
     closeActionConfirm: (request) => setActionConfirm(current => !request || current === request ? null : current),
     openConfirm: setCf,
     closeConfirm: () => setCf(null),
