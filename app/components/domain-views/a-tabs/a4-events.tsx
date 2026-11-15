@@ -67,8 +67,8 @@ const eventNameValid = (value: string) => /^[a-z][a-z0-9_]*\.[a-z0-9]+(?:_[a-z0-
 const PROPERTY_TYPES = ["string", "number", "boolean", "enum", "timestamp", "id", "json"];
 const REGISTRY_FIELD_LABELS: Record<string, string> = {
   eventName: "事件名", ownerDomain: "归属域", domainName: "模块名", producer: "发送方", consumer: "使用方",
-  propertyName: "字段名", propertyType: "字段类型", pii: "含个人信息", serverAuthoritative: "服务端裁决",
-  samplingPolicy: "采样策略", expectedVersion: "事件目录版本",
+  propertyName: "字段名", propertyType: "字段类型", pii: "含个人信息", serverAuthoritative: "由服务器记录",
+  samplingPolicy: "采集比例", expectedVersion: "事件目录版本",
 };
 const REGISTRY_OP_TEXT: Record<string, string> = { a4_schema_register: "登记新事件", a4_schema_property_add: "给事件新增字段", a4_domain_extension_register: "登记新模块" };
 type RegistryConfirm = Pick<ActionConfirmReq, "action" | "detail" | "businessForm" | "briefKind" | "title" | "facts" | "statedBrief"> & {
@@ -507,8 +507,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     if (!original) checkNewWrite();
     const cur = saved?.param.value ?? liveSampling;
     openActionConfirm({ briefKind: "config",
-      action: "统计参数 · 采样率",
-      title: "调整浏览和会话的采样率",
+      action: "统计参数 · 采集比例",
+      title: "调整浏览和会话的采集比例",
       effect: effectNow,
       confirmLabel: "确认调整",
       statedBrief: {
@@ -517,7 +517,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       },
       detail: (
         <>
-          当前 <b>{cur}</b>。资金、风控、转化类事件始终全部记录，这里只能调浏览和会话类的抽样比例。
+          当前 <b>{cur}</b>。资金、风控、转化类事件始终全部记录，这里只能调浏览和会话类的采集比例。
         </>
       ),
       amplifies: false,
@@ -543,7 +543,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         }
         const percent = Number.parseInt(val.match(/\d{1,3}/)?.[0] || "", 10);
         if (!Number.isFinite(percent) || percent < 0 || percent > 100) { toast("浏览和会话类请输入 0–100%"); return false; }
-        return updateParam("sampling", String(percent), reason, `浏览/会话采样率已更新为 ${percent}%`);
+        return updateParam("sampling", String(percent), reason, `浏览和会话的采集比例已更新为 ${percent}%`);
       },
     });
   };
@@ -1366,7 +1366,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
                 note="和关键指标 #2 一致，不能修改。" value={param.value} sub={<StatusTag tone="neutral" icon={Lock}>系统固定</StatusTag>} />;
             }
             const meta = paramMeta[param.key] ?? paramMeta.sampling;
-            const name = param.key === "day0" ? "首笔收益到账时限" : param.key === "event_retention" ? "事件留存期" : param.key === "sampling" ? "采样率" : operatorCopyText(param.name);
+            const name = param.key === "day0" ? "首笔收益到账时限" : param.key === "event_retention" ? "事件留存期" : param.key === "sampling" ? "浏览和会话采集比例" : operatorCopyText(param.name);
             const live = param.key === "day0" ? liveDay0 : param.key === "event_retention" ? liveEventRetention : param.key === "sampling" ? liveSampling : param.value;
             return (
               <ConfigRow key={param.key} name={name} what={meta.what} when={meta.when} effect={meta.effect}

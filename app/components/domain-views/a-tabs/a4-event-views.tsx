@@ -27,7 +27,7 @@ export const LIFECYCLE_NOW: Record<A4Lifecycle, string> = {
 export const LIFECYCLE_AFTER: Record<Exclude<A4Lifecycle, "new">, string> = {
   pending_publish: "仍然不记录、也不投递，只是标成准备发布；下一步才开始分批开放。",
   gray: "服务器发的事件按归属对象（如订单、用户）抽约 10% 放行；App 发来的行为事件这一步仍不放行。",
-  full: "所有来源都按事件规则记录和投递，字段、来源和采样的检查照常。",
+  full: "所有来源都按事件规则记录和投递，字段、来源和采集比例的检查照常。",
   disabled: "之后不再记录也不再投递，已排队的也可能被拦下；旧事件不删，不能再开放。",
 };
 export const NEXT_LIFECYCLE: Partial<Record<A4Lifecycle, Exclude<A4Lifecycle, "new">>> = { new: "pending_publish", pending_publish: "gray", gray: "full", full: "disabled" };
