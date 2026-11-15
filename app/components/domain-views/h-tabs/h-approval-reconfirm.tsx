@@ -31,7 +31,8 @@ export function hApprovalReconfirm(error: HApprovalRequired, look: {
   changes?: HApprovalChange[];
 }): HApprovalReconfirmReq {
   return {
-    formKey: ++opened,
+    // Conflict rebuilds use nonnegative revisions; approval confirmations use negatives.
+    formKey: --opened,
     approvalChanges: look.changes,
     briefKind: "config",
     action: look.action,
