@@ -75,7 +75,7 @@ const languageText = (scope?: string) => {
 const count = (value: number) => value.toLocaleString("en-US");
 const ackText = (value: number) => `${value.toFixed(1)}%`;
 /** 少于 5 人不显示人数和比例（ST-44）。 */
-const SMALL_SAMPLE = "不到 5 人";
+const SMALL_SAMPLE = "样本过小";
 const isSmall = (value: number) => value > 0 && value < 5;
 const people = (value: number) => isSmall(value) ? SMALL_SAMPLE : `${count(value)} 人`;
 /** 列表时间按业务时区（TX-26）；只有日期的（2026-11-04、11-04）不换算。 */
