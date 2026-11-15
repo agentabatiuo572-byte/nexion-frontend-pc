@@ -159,11 +159,11 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
 
 export function M1StatisticDetails({ source, onClose, onInvalid }: { source: StatisticSource; onClose: () => void; onInvalid: (status: number) => void }) {
   const [page, setPage] = useState(1), [retry, setRetry] = useState(0);
-  const [result, setResult] = useState<Result | null>(null), [error, setError] = useState(false);
+  const [result, setResult] = useState<Result | null>(null), [error, setError] = useState<"" | "read" | "unreconciled">("");
   const version = useRef<string | undefined>(undefined), successList = useRef<SuccessList | null>(null);
   useEffect(() => {
     const controller = new AbortController();
-    setResult(null); setError(false);
+    setResult(null); setError("");
     const task = source.kind === "maintenance" ? maintenancePage(source, page, version.current, successList, controller.signal) : fundPage(source, page, version.current, controller.signal);
     void task.then(next => { if (!controller.signal.aborted) { version.current = next.version; setResult(next); } }).catch(cause => {
       if (controller.signal.aborted) return;
@@ -171,7 +171,8 @@ export function M1StatisticDetails({ source, onClose, onInvalid }: { source: Sta
         if (cause.status === 409) { version.current = undefined; successList.current = null; setPage(1); }
         onInvalid(cause.status);
       }
-      else setError(true);
+      // 后端在明细和已确认金额对不上、来源没读齐时回这个码：不是一次偶然的读取失败，重试一般还是一样。
+      else setError(cause instanceof SupportClientError && cause.backendMessage === "SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE" ? "unreconciled" : "read");
     });
     return () => controller.abort();
   }, [source, page, retry, onInvalid]);
@@ -183,7 +184,8 @@ export function M1StatisticDetails({ source, onClose, onInvalid }: { source: Sta
     <section className="m1-stat-detail" data-kind={source.kind} aria-label={title + "核对"}>
       {source.kind === "fund" && <p className="rd-note">{source.query.groupId != null ? group?.name ?? "组编号 " + source.query.groupId : "当前获准范围"}{source.query.agentId != null && " · 客服编号 " + source.query.agentId} · {nexGridBrandText(source.query.currency ?? "USDT")}{source.metric === "net" && source.query.from && source.query.to && " · 统计区间（北京时间）" + beijing(source.query.from) + " 至 " + beijing(source.query.to) + "，不含结束时刻。"}</p>}
       {!result && !error && <BlockState state="loading" title="正在读取明细…" />}
-      {error && <BlockState state="error" title="明细读取失败，请重试。" onRetry={() => setRetry(n => n + 1)} retryLabel="重试" />}
+      {error === "read" && <BlockState state="error" title="明细读取失败，请重试。" onRetry={() => setRetry(n => n + 1)} retryLabel="重试" />}
+      {error === "unreconciled" && <BlockState state="empty" title="业绩资料还没核对齐，明细暂时不显示" detail="工作台汇总卡写着「资料未同步」时就是这个原因；一直这样，请联系技术同事。" onRetry={() => setRetry(n => n + 1)} retryLabel="重新读取" />}
       {result && <><Facts>{result.facts ? result.facts.map(row => <Fact key={row.k} k={row.k}>{row.v}</Fact>) : <Fact k="核对摘要">{result.summary}</Fact>}</Facts><Fold title="统计口径" summary={result.version ? "和工作台是同一份统计" : "只能看这一页"}><p>{result.note}</p></Fold>{result.headings.length > 0 && <div className="m1-stat-table"><Table label={title + "明细"}><thead><Tr>{result.headings.map(header => <Th key={header} scope="col">{header}</Th>)}</Tr></thead><tbody>{result.rows.map((row, index) => <Tr key={index}>{row.map((cell, i) => <Td key={i}>{i === 3 && source.kind === "maintenance" ? <Fold inset title="关联记录" summary="查看完整编号"><span data-mono>{cell}</span></Fold> : <span title={cell} tabIndex={0}>{cell}</span>}</Td>)}</Tr>)}</tbody></Table></div>}{!result.rows.length && result.total !== null && <BlockState state="empty" title="没有你能看到的记录" />}{result.tech && <Fold title="技术信息" summary="记录编号"><p data-mono>{result.tech}</p></Fold>}</>}
     </section>
   </Drawer>;
