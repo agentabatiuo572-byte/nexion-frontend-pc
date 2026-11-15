@@ -16,7 +16,18 @@ function texts(row: Record<string, unknown>, keys: string[]) { if (!keys.every(k
 function natural(value: unknown) { if (!Number.isSafeInteger(value) || Number(value) < 0) invalid(); }
 function reward(value: unknown) {
   // Nullable DTO values stay missing; repository-produced zero remains the server's zero.
-  if (value !== null && !(typeof value === "string" && /^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value))) invalid();
+  if (value === null) return null;
+  if (typeof value !== "string" || !/^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value)) invalid();
+  const [mantissa, exponent] = value.toLowerCase().split("e");
+  if (exponent === undefined) return value;
+  const [whole, fraction = ""] = mantissa.split(".");
+  const digits = whole + fraction;
+  // Only the decimal-point position is an integer; the amount never enters floating point.
+  const point = whole.length + Number(exponent);
+  if (!Number.isSafeInteger(point)) invalid();
+  return point <= 0 ? `0.${"0".repeat(-point)}${digits}`
+    : point >= digits.length ? digits + "0".repeat(point - digits.length)
+      : `${digits.slice(0, point)}.${digits.slice(point)}`;
 }
 function quiz(value: unknown) {
   for (const item of list(value)) {
@@ -46,7 +57,7 @@ export function parseI6Issue(value: unknown): I18nIntegrityIssueView {
 export function parseI6Course(value: unknown): LearningCourseView {
   const row = object(value);
   texts(row, ["id", "title", "category", "format", "level", "duration", "version", "status", "body", "titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"]);
-  reward(row.rewardNex); natural(row.revision); quiz(row.quizQuestions);
+  row.rewardNex = reward(row.rewardNex); natural(row.revision); quiz(row.quizQuestions);
   if (typeof row.featured !== "boolean") invalid();
   for (const key of ["passScore", "retryLimit"]) if (row[key] != null) natural(row[key]);
   for (const key of ["completionCondition", "rewardEvent"]) if (row[key] != null && typeof row[key] !== "string") invalid();
@@ -61,7 +72,7 @@ export function parseI6CourseVersion(value: unknown): LearningCourseVersionView 
   const payload = object(row.payload);
   texts(payload, ["titleZh", "titleEn", "bodyZh", "bodyEn", "category", "format", "difficulty", "duration", "publishState"]);
   for (const key of ["titleVi", "bodyVi", "completionCondition", "rewardEvent", "version"]) if (payload[key] != null && typeof payload[key] !== "string") invalid();
-  reward(payload.rewardNex);
+  payload.rewardNex = reward(payload.rewardNex);
   if (payload.quizQuestions != null) quiz(payload.quizQuestions);
   for (const key of ["passScore", "retryLimit", "expectedRevision"]) if (payload[key] != null) natural(payload[key]);
   return row as LearningCourseVersionView;
