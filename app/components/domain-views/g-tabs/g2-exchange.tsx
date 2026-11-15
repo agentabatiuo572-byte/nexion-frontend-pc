@@ -512,10 +512,10 @@ function G2ExchangePage() {
           // POST 的原始错误仍是主证据；回读失败不能改写成确定失败。
         }
         requireBatchActor(batchAdminId);
-        const message = "处理结果未知。可以关掉确认框后点「核对原处理」，查看原批次的结果。";
+        const message = "处理结果未知。可以关掉确认框，在页面上方点「查询原结果」，查看原批次的结果。";
+        // 确认框这时一直开着，这句只在框里写一次：不弹提示，页面上方也不再写。
         coveredErrors.current.add(message);
         setError(message);
-        toast(message);
         throw new Error(message);
       }
       const message = messageOf(err);
@@ -1171,8 +1171,9 @@ function G2ExchangePage() {
           <Fact k="原批次编号"><span data-mono className="g2x-wrap">{recoveryBatch.commandKey}</span></Fact>
         </Facts>
         {recoveryError && <Notice tone={recoveryError.notFound ? "warn" : "danger"} title={recoveryError.notFound ? "没有查到原批次的结果" : "这次没核对成"}>
-          <p>{recoveryError.message}</p>
-          {recoveryError.notFound && <p>查不到不代表原批次没执行。原记录继续保留在这台电脑上，可以稍后再核对；要确认结果，到「操作记录与审批」或请后端核对这一批的账本。</p>}
+          {/* 查不到时标题已经说了，不再把同一句写一遍。 */}
+          {!recoveryError.notFound && <p>{recoveryError.message}</p>}
+          {recoveryError.notFound && <p>查不到不代表原批次没执行。原记录继续保留在这台电脑上，可以稍后再核对；要确认结果，到「操作记录与审批」核对，或请技术值班核对这一批的账本。</p>}
         </Notice>}
       </Modal>}
 
