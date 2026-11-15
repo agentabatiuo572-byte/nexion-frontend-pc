@@ -1,4 +1,6 @@
 "use client";
+
+import { HConflictReviewRequired, hConflictFields } from "@/lib/admin/h-conflict-review";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CalendarRange, CircleAlert, CircleCheck, Lock, Settings2, Sparkles } from "lucide-react";
@@ -54,10 +56,11 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
   const canRead = ctx.can("growth_h4_read"), canWrite = ctx.can("growth_h4_write");
   const canReadVouchers = ctx.can("growth_h7_read");
   const operator = currentAdminOperator();
-  const choose = (row: EventRuleView) => { setStale(""); setSelected(row); setDraft({ enabled: row.enabled, startsAt: row.startsAt, endsAt: row.endsAt, rules: eventRuleDraftRules(row) }); setRegions(eventRegionText(row.rules.regions)); setError(""); };
+  const choose = (row: EventRuleView) => { conflictReview.current = null; setStale(""); setSelected(row); setDraft({ enabled: row.enabled, startsAt: row.startsAt, endsAt: row.endsAt, rules: eventRuleDraftRules(row) }); setRegions(eventRegionText(row.rules.regions)); setError(""); };
   const [, pendingChanged] = useState(0);
   /** 保存被「别人先改过」拒绝、已重读后的提醒；只决定显示。 */
   const [stale, setStale] = useState("");
+  const conflictReview = useRef<HConflictReviewRequired | null>(null);
   const load = async (preserve = false) => {
     const own = ++generation.current; setLoading(true); setError("");
     try { const values = await fetchEventRules(); if (own === generation.current) { setRows(values); if (!preserve) { setSelected(null); setDraft(null); } return values; } return null; }
@@ -88,6 +91,7 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
   }, []);
   const patchRule = (key: string, value: unknown) => setDraft(current => current ? { ...current, rules: { ...current.rules, [key]: value } } : current);
   const save = (rebased?: { base: EventRuleView; draft: EventRuleChange; reason: string }) => {
+    if (conflictReview.current) { setError(displayAdminError(conflictReview.current)); return; }
     const base = rebased?.base ?? selected, input = rebased?.draft ?? draft;
     if (!base || !input || !rebased && saving || !canWrite) return;
     const next = { ...input, rules: { ...input.rules } };
@@ -131,7 +135,15 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
           if (isHGrowthReadConflict(cause) && !originalKey) {
             ctx.openActionConfirm(null);
             const values = await load(true), latest = values?.find(row => row.eventCode === base.eventCode);
-            if (latest) { setSelected(latest); setDraft(next); save({ base: latest, draft: next, reason }); }
+            if (latest) {
+              setSelected(latest); setDraft(next);
+              const opened = { enabled: base.enabled, startsAt: base.startsAt, endsAt: base.endsAt, rules: eventRuleDraftRules(base) };
+              const current = { enabled: latest.enabled, startsAt: latest.startsAt, endsAt: latest.endsAt, rules: eventRuleDraftRules(latest) };
+              conflictReview.current = new HConflictReviewRequired(displayAdminError(cause), hConflictFields(opened, current, next), () => {
+                conflictReview.current = null;
+                save({ base: latest, draft: next, reason });
+              });
+            }
           } else if (isHGrowthReadConflict(cause) || originalKey && !h4PendingFor(`H/h4_event_rule/${base.eventCode}`)) { ctx.openActionConfirm(null); await load(); }
           throw cause;
         }
@@ -139,7 +151,7 @@ export default function H4EventRules({ ctx, onRowsChange }: { ctx: HCtx; onRowsC
       },
     });
   };
-  const close = () => { setSelected(null); setDraft(null); setError(""); };
+  const close = () => { conflictReview.current = null; setSelected(null); setDraft(null); setError(""); };
   if (!canRead) return <BlockState state="denied" title="没有查看玩法规则的权限" detail="七类玩法需要「活动中心查看」权限。" />;
 
   const ended = (row: EventRuleView) => !!(row.rulesLocked && row.endsAt && Date.parse(row.endsAt) <= Date.now());

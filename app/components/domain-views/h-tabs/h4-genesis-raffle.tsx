@@ -1,4 +1,6 @@
 "use client";
+
+import { HConflictReviewRequired, hConflictFields } from "@/lib/admin/h-conflict-review";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { useEffect, useRef, useState } from "react";
 import { Plus, Ticket, Trash2, Trophy } from "lucide-react";
@@ -31,6 +33,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
   const [, pendingChanged] = useState(0);
   /** 保存被「别人先改过」拒绝、已重读后的提醒；只决定显示。 */
   const [stale, setStale] = useState("");
+  const conflictReview = useRef<HConflictReviewRequired | null>(null);
   const load = async () => {
     const own = ++generation.current; setLoading(true); setError("");
     try { const values = await fetchAdminRaffles(); if (own === generation.current) { setRows(values); return values; } return null; }
@@ -50,10 +53,11 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
     window.addEventListener("admin-h4-readback", readback);
     return () => { window.removeEventListener("admin-h4-pending-changed", changed); window.removeEventListener("admin-h4-readback", readback); };
   }, []);
-  const choose = (row: AdminRaffle | null) => { setStale(""); setBase(row); setDraft(row ? { id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes.map(prize => ({ ...prize })) } : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
+  const choose = (row: AdminRaffle | null) => { conflictReview.current = null; setStale(""); setBase(row); setDraft(row ? { id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi, startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes.map(prize => ({ ...prize })) } : empty()); setEnabled(row?.status === "OPEN"); setError(""); };
   const prizePatch = (id: string, values: Partial<RafflePrize>) => setDraft(current => current ? { ...current, prizes: current.prizes.map(prize => prize.id === id ? { ...prize, ...values } : prize) } : null);
   const saveBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0));
   const save = (rebased?: { base: AdminRaffle; draft: RaffleDraft; enabled: boolean; reason: string }) => {
+    if (conflictReview.current) { setError(displayAdminError(conflictReview.current)); return; }
     const savedDraft = rebased?.draft ?? draft, previous = rebased?.base ?? base, nextEnabled = rebased?.enabled ?? (!!base && enabled);
     if (!savedDraft || !write || !rebased && saving || (previous && (previous.status === "PROCESSING" || previous.status === "DRAWN" || (previous.status === "OPEN" && previous.totalEntries > 0)))) return;
     const invalid = raffleDraftError(savedDraft); if (invalid) { setError(invalid); return; }
@@ -95,7 +99,15 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
           if (isHGrowthReadConflict(cause) && !originalKey) {
             ctx.openActionConfirm(null);
             const values = await load(), latest = values?.find(row => row.id === savedDraft.id);
-            if (latest) { setBase(latest); setDraft(savedDraft); setEnabled(nextEnabled); save({ base: latest, draft: savedDraft, enabled: nextEnabled, reason }); }
+            if (latest && previous) {
+              setBase(latest); setDraft(savedDraft); setEnabled(nextEnabled);
+              const comparable = (row: AdminRaffle) => ({ id: row.id, titleZh: row.titleZh, titleEn: row.titleEn, titleVi: row.titleVi,
+                startsAt: row.startsAt, drawAt: row.drawAt, prizes: row.prizes, enabled: row.status === "OPEN" });
+              conflictReview.current = new HConflictReviewRequired(displayAdminError(cause), hConflictFields(comparable(previous), comparable(latest), { ...savedDraft, enabled: nextEnabled }), () => {
+                conflictReview.current = null;
+                save({ base: latest, draft: savedDraft, enabled: nextEnabled, reason });
+              });
+            }
           } else if (isHGrowthReadConflict(cause) || originalKey && !h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`)) { ctx.openActionConfirm(null); setDraft(null); setBase(null); await load(); }
           throw cause;
         }
@@ -103,7 +115,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
       },
     });
   };
-  const close = () => { setDraft(null); setBase(null); setError(""); };
+  const close = () => { conflictReview.current = null; setDraft(null); setBase(null); setError(""); };
   if (!read) return <BlockState state="denied" title="没有查看创世抽奖的权限" detail="创世抽奖需要「活动中心查看」权限。" />;
 
   const formLocked = !write || saving || !!draft && h4Blocked(`H/h4_genesis_raffle/${draft.id}`);
