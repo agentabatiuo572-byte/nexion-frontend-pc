@@ -257,7 +257,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         conversations[index] = includeCustomerProfile ? detail : { ...detail, profile: previous.conversations[index].profile, customer: previous.conversations[index].customer };
         return { ...previous, conversations };
       });
-      return;
+      return detail;
     }
     throw new Error("会话列表正在刷新，请稍后再打开详情。");
   }, [authEpoch]);

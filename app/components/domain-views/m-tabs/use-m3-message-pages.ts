@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchM3MessagePage, type M3MessagePage } from "@/lib/admin/m-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { compareM3Messages } from "@/lib/admin/m3-message-order";
-import type { SessionConvo, SessionMsg } from "./data";
+import type { ConversationWriteState, SessionConvo, SessionMsg } from "./data";
+import type { MCtx } from "./types";
 
 export function mergeM3Messages(previous: SessionMsg[], next: SessionMsg[]): SessionMsg[] {
   return [...new Map([...previous, ...next].map(message => [message.id, message])).values()].sort(compareM3Messages);
@@ -13,11 +14,14 @@ export type M3PagesState = { key: string; page: M3MessagePage | null; messages: 
 const empty = (key: string): M3PagesState => ({ key, page: null, messages: [], hasMore: false, cursor: null, loading: false, error: "", failed: "reset", change: "reset", revision: 0, gap: false });
 
 /** Pages are private to the current identity/customer/assignment and never persisted. */
-export function useM3MessagePages(summary: SessionConvo | null, scope: string, opening: number, onDenied: (no: string, customer?: string) => void) {
-  const key = summary ? `${scope}:${summary.customerId}:${summary.ownerAdminId}:${summary.assignmentId}:${opening}` : "";
+export function useM3MessagePages(summary: SessionConvo | null, scope: string, opening: number, onDenied: (no: string, customer?: string) => void, loadDetail: MCtx["loadConversationDetail"]) {
+  const key = summary ? `${scope}:${summary.id}:${summary.customerId}:${summary.ownerAdminId}:${summary.assignmentId}:${opening}` : "";
   const keyRef = useRef(key); keyRef.current = key;
   const summaryRef = useRef(summary); summaryRef.current = summary;
   const deniedRef = useRef(onDenied); deniedRef.current = onDenied;
+  const loadDetailRef = useRef(loadDetail); loadDetailRef.current = loadDetail;
+  const [writeState, setWriteState] = useState<{ key: string; value?: ConversationWriteState | null }>({ key: "" });
+  const detailController = useRef<AbortController | null>(null), detailSerial = useRef(0);
   const [state, setState] = useState(() => empty(key));
   const stateRef = useRef(state); stateRef.current = state.key === key ? state : empty(key);
   const controller = useRef<AbortController | null>(null), serial = useRef(0);
@@ -33,6 +37,20 @@ export function useM3MessagePages(summary: SessionConvo | null, scope: string, o
     const abort = new AbortController(), generation = ++serial.current;
     controller.current = abort;
     const isCurrent = () => !abort.signal.aborted && generation === serial.current && keyRef.current === requestKey;
+    if (kind !== "older") {
+      detailController.current?.abort();
+      const detailAbort = new AbortController(), detailGeneration = ++detailSerial.current;
+      detailController.current = detailAbort;
+      setWriteState({ key: requestKey });
+      // Read metadata beside the message page, without delaying or replacing its messages.
+      void loadDetailRef.current(current.id, detailAbort.signal, false).then(detail => {
+        if (!detailAbort.signal.aborted && detailGeneration === detailSerial.current && keyRef.current === requestKey) {
+          setWriteState({ key: requestKey, value: detail?.writeState });
+        }
+      }).catch(() => {
+        // This optional read cannot establish reply authority on failure: keep it unknown.
+      });
+    }
     setState(previous => ({ ...(kind === "reset" || previous.key !== requestKey ? empty(requestKey) : previous), loading: true, error: "", failed: kind }));
     try {
       const cursor = kind === "older" ? before.cursor! : contextCursor;
@@ -65,7 +83,10 @@ export function useM3MessagePages(summary: SessionConvo | null, scope: string, o
     versionRef.current = version;
     setState(empty(key));
     if (key) void request("reset");
-    return () => { serial.current++; controller.current?.abort(); controller.current = null; };
+    return () => {
+      serial.current++; controller.current?.abort(); controller.current = null;
+      detailSerial.current++; detailController.current?.abort(); detailController.current = null;
+    };
   }, [key, request]);
   useEffect(() => {
     if (versionRef.current === version) return;
@@ -74,6 +95,7 @@ export function useM3MessagePages(summary: SessionConvo | null, scope: string, o
   }, [version, key, request]);
   const safe = state.key === key ? state : empty(key);
   return { ...safe,
+    writeState: writeState.key === key ? writeState.value : undefined,
     readCursor: readCursor.current,
     readReady: Boolean(safe.page && safe.page.conversation.id === summary?.id && (safe.failed === "older" || !safe.loading && !safe.error) && safe.page.conversation.version >= (summary?.version ?? 0)),
     contextReady: Boolean(safe.page && safe.page.conversation.id === summary?.id && !safe.gap && (safe.failed === "older" || !safe.loading && !safe.error) && safe.page.conversation.version >= (summary?.version ?? 0)),

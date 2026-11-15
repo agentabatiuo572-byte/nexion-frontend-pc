@@ -378,9 +378,10 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
   const selectedCustomer = visible.find(row=>row.id===selectedId)?.customerId;
   const selectedSummary = requestedCustomerId ? requestedConvo ?? null : selectedId ? customerRows.find(row=>row.customerId===selectedCustomer) ?? null : customerRows.find(convo=>!convo.archived) ?? null;
   const pageScope = `${scopeIdentity}:${scopeGeneration.current}:${scopeRetry}:${qualificationUnknown}:${conversationsAvailable}`;
-  const messagePages = useM3MessagePages(qualificationUnknown || !conversationsAvailable ? null : selectedSummary, pageScope, messageOpening, ctx.invalidateScope);
+  const messagePages = useM3MessagePages(qualificationUnknown || !conversationsAvailable ? null : selectedSummary, pageScope, messageOpening, ctx.invalidateScope, ctx.loadConversationDetail);
   const pageConversation = messagePages.page?.conversation.id === selectedSummary?.id ? messagePages.page?.conversation : null;
   const selected = selectedSummary ? { ...selectedSummary, ...(pageConversation ?? {}),
+    writeState: messagePages.writeState,
     holder: selectedSummary.holder,
     version: Math.max(selectedSummary.version, pageConversation?.version ?? 0),
     messages: messagePages.messages, detailReady: Boolean(messagePages.page),
