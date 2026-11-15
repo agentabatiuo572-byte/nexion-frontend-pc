@@ -716,12 +716,27 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const nexLevel = key.match(/^F\.unilevel\.nex\.(L[1-7])$/)?.[1];
     const beforeF2 = nexLevel ? f2Overview?.unilevel.find(row => row.l === nexLevel)?.nex
       : f2Overview?.configValues[key];
+    const f4Snapshot = f4Submission.current ?? mc?.f4Snapshot;
+    const beforeF4Overview = f4Snapshot?.overview ?? f4Overview;
+    let beforeF4: string | undefined;
+    if (sourceDomain === "F4" && beforeF4Overview) {
+      const stored = beforeF4Overview.configValues[key];
+      if (stored?.trim()) beforeF4 = stored;
+      else if (key === "F.pool.top1MaxPct") beforeF4 = "未设置（按 25%）";
+      else if (key === "F.pool.top5MaxPct") beforeF4 = "未设置（按 60%）";
+      else if (mc?.paramKey === key && mc.edit) beforeF4 = mc.edit.current || "未配置";
+      else if (key === "F.pool.periodPrize" && mc?.businessForm?.kind === "multi-field") {
+        beforeF4 = JSON.stringify(Object.fromEntries(mc.businessForm.fields.map(field => [field.key, field.current ?? "—"])));
+      } else if (ambassadorId) beforeF4 = f4Snapshot?.application?.status;
+      else if (key.startsWith("F.quota.usage.")) beforeF4 = beforeF4Overview.quotaUsages.find(row => key === `F.quota.usage.${row.id}.status`)?.status;
+      else if (key === "F.leaderboard.paused") beforeF4 = beforeF4Overview.leaderboardPaused === undefined ? undefined : beforeF4Overview.leaderboardPaused ? "on" : "off";
+    }
     // usdtPct and the backend's unilevelRuleValue oldValue are both percentage points.
     const rateAmplifies = usdtLevel && currentUsdt != null ? Number(value) > currentUsdt : undefined;
     await proposeStable(`f-config:${key}`, JSON.stringify(expectedMaterialRevision === undefined ? [commandValue, reason] : [commandValue, reason, expectedMaterialRevision]), {
       action: ambassadorId ? `${value === "approved" ? "批准" : "驳回"}大使申请 #${ambassadorId}` : `${def.action} · ${key}`,
       obj: ambassadorId ?? key,
-      before: usdtLevel && currentUsdt != null ? `${currentUsdt}%` : sourceDomain === "F2" && beforeF2 != null && beforeF2 !== "__UNCONFIGURED__" ? String(beforeF2) : "—",
+      before: sourceDomain === "F4" ? beforeF4 ?? "—" : usdtLevel && currentUsdt != null ? `${currentUsdt}%` : sourceDomain === "F2" && beforeF2 != null && beforeF2 !== "__UNCONFIGURED__" ? String(beforeF2) : "—",
       after: commandValue,
       type: ambassadorId && value === "approved" ? "fund" : def.type === "fund" ? "fund" : "param",
       // F2 USDT and F3 edits compare current and proposed values in percentage points.
@@ -750,7 +765,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     await proposeStable(`f-config-batch:${sourceDomain}`, JSON.stringify([normalized, reason]), {
       action: `${def.action} · ${normalized.length} 项`,
       obj: normalized.map((item) => item.key).join(","),
-      before: sourceDomain === "F2" ? normalized.map(item => `${item.key}=${f2Overview?.configValues[item.key] ?? "—"}`).join(" / ") : "当前设置",
+      before: sourceDomain === "F2" ? normalized.map(item => `${item.key}=${f2Overview?.configValues[item.key] ?? "—"}`).join(" / ")
+        : sourceDomain === "F4" ? normalized.map(item => `${item.key}=${(f4Submission.current?.overview ?? f4Overview)?.configValues[item.key] ?? "—"}`).join(" / ") : "当前设置",
       after: normalized.map((item) => `${item.key}=${item.value}`).join(" / "),
       type: "fund",
       amplifies: normalized.some((item) => isFFundAmplifyingKey(item.key)),
@@ -1347,7 +1363,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKey}`);
             }
-            setToast(mc.name + (target ? " 已更新，下一轮评估使用新值" : " 已提交，等待确认"));
+            if (tab !== "F4") setToast(mc.name + (target ? " 已更新，下一轮评估使用新值" : " 已提交，等待确认"));
           } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
             // 多字段调参只生成一张 A2 票；后端 replay 在单事务内整批写入，任一失败整批回滚。
             if (tab === "F3") {
@@ -1361,7 +1377,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKeys.map((item) => item.paramKey).join(",")}`);
             }
-            setToast(mc.name + " 已提交，等待确认");
+            if (tab !== "F4") setToast(mc.name + " 已提交，等待确认");
           } else if (mc.op === "dispose" && mc.paramKey && mc.fixedVal) {
             if (tab === "F1") {
               await ctx.updateF1Config(mc.paramKey, mc.fixedVal, reason);
@@ -1379,7 +1395,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             }
             // dispose 一律走 A2 propose:此刻只是入了待执行队列,还没落库。原文案「已生效」
             // 会把冻结这种抢时间的动作误报成完成(票在队列里等执行期间冷却可能到期解锁)。
-            setToast(mc.name + " 已提交，等待确认");
+            if (tab !== "F4") setToast(mc.name + " 已提交，等待确认");
           } else {
             throw new Error("F_CONFIRM_SHAPE_UNKNOWN:" + (mc.op || mc.name)); // 未知确认形状必须响亮失败,禁静默假成功
           }
