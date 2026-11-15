@@ -529,7 +529,17 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         const part = (value?: string) => value === undefined ? { title: undefined, body: undefined } : splitNotificationBody(value);
         rows = [conflictRow("状态", stateText(now), "草稿"), conflictRow("名称", now?.name, form.name),
           conflictRow("中文标题", part(now?.bodyZh).title, form.titleZh), conflictRow("中文正文", part(now?.bodyZh).body, form.bodyZh),
-          conflictRow("越南语正文", part(now?.bodyVi).body, form.bodyVi), conflictRow("英语正文", part(now?.bodyEn).body, form.bodyEn)];
+          conflictRow("越南语标题", part(now?.bodyVi).title, form.titleVi), conflictRow("越南语正文", part(now?.bodyVi).body, form.bodyVi),
+          conflictRow("英语标题", part(now?.bodyEn).title, form.titleEn), conflictRow("英语正文", part(now?.bodyEn).body, form.bodyEn),
+          conflictRow("通知类型", now ? kindLabel(now.kind) : undefined, kindLabel(form.kind)),
+          conflictRow("点了去哪", now?.ctaHref, form.ctaHref),
+          conflictRow("按钮文字", now?.ctaLabel, DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === form.ctaHref)?.label),
+          conflictRow("优先级", now ? TIER[now.tier].label : undefined, TIER[form.tier].label),
+          conflictRow("P 阶段下限", now?.audienceTarget.phaseMin, form.phaseMin),
+          conflictRow("P 阶段上限", now?.audienceTarget.phaseMax, form.phaseMax),
+          conflictRow("语言", now?.audienceTarget.language, form.language),
+          conflictRow("注册满几天", now?.audienceTarget.registrationDaysMin, targetFromForm(form).registrationDaysMin),
+          conflictRow("预算", now?.budget === null || now?.budget === undefined ? undefined : `${now.budget} USD`, form.budget.trim() ? `${form.budget.trim()} USD` : undefined)];
         rows[0].changed = !!now && now.status !== "draft";
         if (!gone && now && now.status !== "draft") gone = `这条通知现在是${stateText(now)}，不能再改草稿。`;
         note = "保存会用你填的整份内容替换现在的草稿；别人改的要留，先在表单里补上。";
