@@ -710,7 +710,7 @@ function G4GenesisPage() {
             {dir === "loose" && <Fact k="谁来批">另一位超级管理员（需有审批批准权限和这项参数的修改权限）；你自己不能批</Fact>}
             {dir === "loose" && <Fact k="批准前">{param.key === "dividend"
               ? `仍是 ${currentText}；待审批期间你还可以把比例调低，调低立即生效，原调高申请批准时会被拒绝`
-              : `仍是 ${currentText}；这一项被审批锁住，调高调低都改不了`}</Fact>}
+              : `仍是 ${currentText}；审批期间这一项不能再改`}</Fact>}
             {dir === "loose" && <Fact k="批准后">再核对原值{param.key === "dividend" ? "和比例" : "和当前系列"}有没有被改过、兑付覆盖率够不够，通过后写入{nextText ? ` ${nextText}` : "新值"}</Fact>}
             {dir === "loose" && !canPropose(param.key) && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，这个方向会被拦下；请有提案权和这项修改权限的同事发起</Fact>}
             <Fact k="改了会怎样"><KeepText text={copy?.effect ?? operatorCopyText(param.note)} /></Fact>
