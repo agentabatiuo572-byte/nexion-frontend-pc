@@ -179,9 +179,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const runWrite = async (write: Omit<H3Write, "change"> & { target: string; before: string; after: string; success: string }, reason: string) => {
     const attempt = confirmation.current;
     if (!attempt) throw new Error("请重新打开原操作。");
-    if (!attempt.commandKey && mutations.blocked(write.target)) throw new Error("这一项有未结束的原操作，请先查询原结果。");
+    const recovering = !!attempt.commandKey;
+    if (!recovering && mutations.blocked(write.target)) throw new Error("这一项有未结束的原操作，请先查询原结果。");
     attempt.target = write.target;
-    if (attempt.commandKey) {
+    if (recovering) {
       const original = mutations.record(write.target);
       if (!original || original.commandKey !== attempt.commandKey) throw new Error("原操作已处理，请刷新后重新操作。");
       await mutations.retry(original);
@@ -194,7 +195,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     } catch (error) {
       if (isHGrowthReadConflict(error)) {
         setStale({ title: attempt.action, before: write.before, after: write.after });
-        if (write.store === "region" && !attempt.commandKey) await region.reload(true);
+        if (write.store === "region" && !recovering) await region.reload(true);
       }
       throw error;
     } finally {
