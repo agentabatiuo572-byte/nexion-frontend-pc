@@ -23,7 +23,7 @@ export function i4SectionPermission(sectionKey: string, highSensitivity = false)
   if (!auth.isAuthenticated || auth.logoutPending || !session) return "请先登录后再提交。";
   const sensitive = highSensitivity || ["financials", "nexnarrative", "nexstory", "compliancebadges", "auditsreserves"].includes(sectionKey.replace(/[^a-z0-9]/gi, "").toLowerCase());
   if (!session.authorities.includes(sensitive ? "content_i4_trust_section_manage" : "content_i4_publish_standard")) return "当前账号没有这个版块的发布权限，请查询原结果。";
-  if (!session.authorities.includes("platform_a2_write")) return "缺少提交审批权限";
+  if (!session.authorities.some(permission => ["platform_a2_write", "platform_a2_proposal_create"].includes(permission))) return "缺少提交审批权限";
   return undefined;
 }
 
