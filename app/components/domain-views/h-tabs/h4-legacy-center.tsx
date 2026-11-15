@@ -1002,7 +1002,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const probabilityOk = Math.abs(probabilitySum - 100) < 0.001;
   const pointsTiers = tiers.filter(wheelPointsTier);
   const nexTiers = tiers.filter(wheelLegacyNexTier);
-  const wheelBroken = pointsTiers.length > 0 || nexTiers.length > 0 || !probabilityOk;
+  const wheelBroken = pointsTiers.length > 0 || !probabilityOk;
   const legacyTierNames = tiers.filter((tier) => legacyName(tier.reward).legacy);
   const gapsByEvent = events.map((event) => ({ event, missing: missingFor(event) })).filter((row) => row.missing.length > 0);
   const gapCount = gapsByEvent.reduce((sum, row) => sum + row.missing.length, 0);
