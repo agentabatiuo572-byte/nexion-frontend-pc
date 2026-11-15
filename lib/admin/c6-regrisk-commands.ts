@@ -35,7 +35,7 @@ export function isCompleteC6Command(row: C6Pending): row is C6Pending & C6Origin
 }
 export function prepareC6Command(original: C6Original) {
   const scope = `param|${original.target}`;
-  if (pendingC6Commands(original.owner).some(row => !isCompleteC6Command(row) || row.target === original.target)) throw new Error("此对象有待确认的原操作，请先到页面上方核对。");
+  if (pendingC6Commands(original.owner).some(row => !isCompleteC6Command(row) || row.target === original.target)) throw new Error("这一项有一次提交结果未知，先在页面上方核对。");
   const key = createA2CommandKey("c6-command");
   commands.remember(scope, key, original);
   if (!commands.isDurablyStored(scope, key)) {
@@ -65,7 +65,7 @@ export function isC6ExplicitRejection(failure: unknown) {
 }
 
 export async function submitC6Command(row: C6Pending) {
-  if (!isCompleteC6Command(row) || row.expiresAt <= Date.now()) throw new Error("此原操作只能读回核对，不能重发。");
+  if (!isCompleteC6Command(row) || row.expiresAt <= Date.now()) throw new Error("原请求已超过 24 小时或没有保存完整，只能读回核对，不能重试。");
   const result = await updateUserRegistrationRiskParam(row.target, row.value, row.reason, row.operator, row.version, row.commandKey);
   // 66ecdb47 OpsUserService.registrationRiskParamView / updateCaptchaOffWindow:
   // lock values echo the normalized request; disabling returns an ISO deadline,
