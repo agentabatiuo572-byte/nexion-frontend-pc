@@ -107,7 +107,7 @@ type Row = UserAssetAdjustment;
 type Block<T> = { data: T | null; loading: boolean; error: string };
 type Kind = "create" | "large" | "approve" | "reject" | "withdraw" | "reverse";
 type CreateInput = { asset: Asset; direction: Direction; amount: string; reasonCode: string; reason: string; evidenceRef: string };
-type Coverage = { reliable: boolean; ratio: number; redline: number; reserve: number; liabilities: number };
+type Coverage = { reliable: boolean; ratio: number; redline: number; reserve: string | null; liabilities: string | null };
 
 /** 一条未确认的写操作：种类、对象、原内容、操作人、发出时的状态和命令号都存下，重试只能原样（OP-92、OP-94）。 */
 type C3Pending = PendingMutationRecord & {
@@ -309,16 +309,24 @@ function coverageOf(value: unknown): Coverage | null {
     reliable: source.reliable === true && Number.isFinite(ratio) && Number.isFinite(redline),
     ratio,
     redline,
-    reserve: Number(source.reserveUsd),
-    liabilities: Number(source.liabilitiesUsd),
+    reserve: decimal(source.reserveUsd),
+    liabilities: decimal(source.liabilitiesUsd),
   };
 }
 
 /** 和后端 projectedCoverageRatio 同一公式；应付款扣到 0 时返回 null（不写 999999.0%）。 */
 function projectedCoverage(coverage: Coverage, direction: Direction, amountUsd: number): number | null {
-  if (!(coverage.reserve > 0) || !(coverage.liabilities > 0)) return coverage.ratio;
-  const next = direction === "CREDIT" ? coverage.liabilities + amountUsd : Math.max(0, coverage.liabilities - amountUsd);
-  return next === 0 ? null : coverage.reserve * 100 / next;
+  const amount = decimal(amountUsd);
+  if (!coverage.reserve || !coverage.liabilities || !amount) return coverage.ratio;
+  const digits = Math.max(fractionOf(coverage.reserve).length, fractionOf(coverage.liabilities).length, fractionOf(amount).length);
+  const reserve = scaled(coverage.reserve, digits), liabilities = scaled(coverage.liabilities, digits);
+  if (reserve <= BigInt(0) || liabilities <= BigInt(0)) return coverage.ratio;
+  const delta = scaled(amount, digits);
+  const next = direction === "CREDIT" ? liabilities + delta : liabilities - delta;
+  if (next <= BigInt(0)) return null;
+  // OpsUserService.projectedCoverageRatio divides to six places with HALF_UP.
+  const numerator = reserve * BigInt(100_000_000);
+  return Number(unscaled((numerator * BigInt(2) + next) / (next * BigInt(2)), 6));
 }
 
 /** 增加余额被覆盖率挡住的原因（产品决定 2：批准和发起一样拦）。 */
@@ -625,13 +633,24 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const maxAmount = Number(context.data?.maxAdjustmentAmount ?? overview.data?.maxAdjustmentAmount ?? 10000);
   const largeThreshold = Number(context.data?.largeThresholdUsd ?? overview.data?.singleCreditReviewCapUsd ?? 500);
   const amountInput = amountText.trim();
-  const amountValid = /^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/.test(amountInput);
+  const amountValid = /^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/.test(amountInput) && Number.isFinite(Number(amountInput));
   const amountPositive = amountValid && /[1-9]/.test(amountInput);
-  const amountUsd = !amountPositive ? 0 : asset === "USDT" ? Number(amountInput) : rateOk ? Number(amountInput) * rate : Number.NaN;
+  let amountUsd = !amountPositive ? 0 : asset === "USDT" ? Number(amountInput) : Number.NaN;
+  if (amountPositive && asset === "UVT" && rateOk) {
+    const rateText = decimal(rate)!;
+    const rateDigits = fractionOf(rateText).length;
+    const product = scaled(amountInput, 6) * scaled(rateText, rateDigits);
+    const places = 6 + rateDigits - 8;
+    const divisor = BigInt(10) ** BigInt(Math.max(0, places));
+    const usdUnits = places < 0 ? product * BigInt(10) ** BigInt(-places)
+      : (product * BigInt(2) + divisor) / (divisor * BigInt(2));
+    // Match executeAssetAdjustment's eight-place conversion before the 500/10,000 checks.
+    amountUsd = Number(unscaled(usdUnits, 8));
+  }
   const balanceNow = contextAccount ? decimal(asset === "USDT" ? contextAccount.walletUsdt : contextAccount.walletNex) : null;
   const balanceAfter = balanceNow !== null && amountPositive ? shifted(balanceNow, amountInput, direction) : null;
   const debitInsufficient = direction === "DEBIT" && balanceAfter !== null && isNegative(balanceAfter);
-  const largeAdjustment = Number.isFinite(amountUsd) && amountUsd > largeThreshold;
+  const largeAdjustment = amountUsd > largeThreshold;
   const formCoverageBlock = direction === "CREDIT" && amountPositive && Number.isFinite(amountUsd) ? creditCoverageBlock(contextCoverage, amountUsd) : null;
   const reasonTrim = reason.trim();
   const evidenceTrim = evidenceRef.trim();
@@ -642,7 +661,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const amountIssue = !amountInput ? "请填写金额"
     : !amountValid ? "请输入数字，最多 6 位小数"
       : !amountPositive ? "金额必须大于 0"
-        : Number.isFinite(amountUsd) && amountUsd > maxAmount ? `单笔不能超过 ${maxAmount.toLocaleString("en-US")} USDT 等值` : "";
+        : amountUsd > maxAmount ? `单笔不能超过 ${maxAmount.toLocaleString("en-US")} USDT 等值` : "";
   const reasonIssue = reasonTrim.length < 8 || reasonTrim.length > 200 ? "详细原因至少 8 个字，最多 200 个字"
     : /^[{[]/.test(reasonTrim) || reasonTrim.toLowerCase().includes("://") ? "详细原因只写事实，链接和凭证号放到凭证里" : "";
   const evidenceIssue = !evidenceTrim ? "请填写工单号、凭证号等证据引用"
