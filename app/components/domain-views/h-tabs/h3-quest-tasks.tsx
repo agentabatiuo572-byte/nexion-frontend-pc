@@ -1180,7 +1180,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <AppPreview kind="dayOne" tasks={dayOneActive.map((task) => previewTask(task, false))}
           header={<><b>新手任务</b>{dayOneActive.length > 0 && <span>{`${dayOneActive.length} 项 · 倒计时 ${eligibility ? `${eligibility}:00:00` : "—"}`}</span>}</>}
           footer={dayOneActive.length > 0 ? <>做完全部出现「领取新手任务奖励」<br />到期显示「资格已结束」</> : undefined}
-          empty={<>未参加新手任务<br />（当前没有启用任务）</>} />
+          empty="未参加新手任务" />
           </div>
         </Panel>
     </div>
