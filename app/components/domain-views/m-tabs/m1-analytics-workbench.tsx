@@ -271,6 +271,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const lastDataView = useRef<SupportAnalyticsView>("OVERVIEW");
   const [profileId, setProfileId] = useState<string | null>(null);
   const [periodDetail, setPeriodDetail] = useState<SupportAnalyticsDetailView | null>(null);
+  const [personalPeriodRetry, setPersonalPeriodRetry] = useState(0);
   const [fundMetric, setFundMetric] = useState<FundMetric | null>(null);
   const [monthCalendar, setMonthCalendar] = useState<SupportAnalyticsMonth[] | null>(null);
   const [calendarError, setCalendarError] = useState(""), [calendarRetry, setCalendarRetry] = useState(0);
@@ -334,7 +335,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       .then(next => { if (!controller.signal.aborted && next.scopeSummary.mode === "PERSONAL") setPersonalPeriod(next); })
       .catch(cause => { if (!controller.signal.aborted) setPersonalPeriodError(analyticsErrorText(cause)); });
     return () => controller.abort();
-  }, [scope, queryState.month, queryState.currency, monthCalendar]);
+  }, [scope, queryState.month, queryState.currency, monthCalendar, personalPeriodRetry]);
   useEffect(() => {
     const controller = new AbortController();
     setMonthCalendar(null); setCalendarError("");
@@ -450,6 +451,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     if (status === 409) {
       setRestoreNotice("统计已变化，正在重新读取汇总和明细第一页。");
       setData(null);
+      setPersonalPeriod(null);
+      setPersonalPeriodRetry(n => n + 1);
       setQueryState(previous => ({ ...previous, pageNum: 1, expectedVersion: undefined }));
     } else {
       refreshScope();

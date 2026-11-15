@@ -149,7 +149,10 @@ export function M1StatisticDetails({ source, onClose, onInvalid }: { source: Sta
     const task = source.kind === "maintenance" ? maintenancePage(source, page, version.current, successList, controller.signal) : fundPage(source, page, version.current, controller.signal);
     void task.then(next => { if (!controller.signal.aborted) { version.current = next.version; setResult(next); } }).catch(cause => {
       if (controller.signal.aborted) return;
-      if (cause instanceof SupportClientError && [401, 403, 404, 409].includes(cause.status)) onInvalid(cause.status);
+      if (cause instanceof SupportClientError && [401, 403, 404, 409].includes(cause.status)) {
+        if (cause.status === 409) { version.current = undefined; successList.current = null; setPage(1); }
+        onInvalid(cause.status);
+      }
       else setError(true);
     });
     return () => controller.abort();
