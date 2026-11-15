@@ -137,11 +137,13 @@ const countOf = (value: string) => (/^\d+$/.test(value.trim()) ? Number(value.tr
 type I1Pending = { id: string; label: string; change: string; at: string; retryBlocked?: string; record: I1Command };
 
 function PendingNotice({ items, onQuery, onRetry }: { items: readonly I1Pending[]; onQuery: (record: I1Command) => void; onRetry: (record: I1Command) => void }) {
+  // 多条时默认露出三条，其余点开再看，首屏留给文案表（提示不盖正事）。
+  const [all, setAll] = useState(false);
   if (items.length === 0) return null;
   return (
     <Notice tone="warn" title={<>{`${items.length} 项操作结果未知`}<Explain label="结果未知怎么处理" content={<><p>提交时没收到确定结果，可能已经执行。「查询原结果」只重读现在的内容，不能证明原操作成没成，记录继续保留。</p><p>24 小时内可以「按原请求重试」，后端认得出是同一次提交，不会重复执行；过了 24 小时只能查询。</p></>} /></>} actionBelow>
       <ul className="i1-pending">
-        {items.map((item) => (
+        {(all ? items : items.slice(0, 3)).map((item) => (
           <li key={item.id}>
             <span className="i1-pending-what"><b>{item.label}</b>{item.change}</span>
             <span className="i1-weak">提交于 {item.at}（{ZONE}）</span>
@@ -152,6 +154,7 @@ function PendingNotice({ items, onQuery, onRetry }: { items: readonly I1Pending[
           </li>
         ))}
       </ul>
+      {items.length > 3 && <div className="i-recovery-more"><Button size="sm" variant="ghost" onClick={() => setAll((open) => !open)}>{all ? "只看前 3 条" : `显示全部 ${items.length} 条`}</Button></div>}
     </Notice>
   );
 }

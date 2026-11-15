@@ -22,7 +22,7 @@ import {
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessClock, businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useReach } from "@/lib/nav/use-reach";
@@ -33,7 +33,7 @@ import { conflictRow, IConflictModal, IConflictPending, useIConflictView } from 
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import {
   AppNotice, ChannelCard, DIST_SLOT, NO_SOURCE, PHASE_CHANNELS, PhaseNote, SOCIAL_CHANNEL, TEMPLATE_STATE_TEXT, TemplateTag,
-  catalogName, channelName, cooldownSentence, noticeCategory, readable, orderDist, placeholdersOf, previewText, sourceText, tickSentence,
+  catalogName, channelName, cooldownSentence, durationText, noticeCategory, readable, orderDist, placeholdersOf, previewText, sourceText, tickSentence,
 } from "./i2-parts";
 import { ChannelDrawer, DistDrawer, TemplateDrawer, UNREACHABLE_CTA, UNREACHABLE_TEXT, ctaLabel, type ChannelFormValue, type TemplateFormValue } from "./i2-forms";
 
@@ -80,6 +80,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     });
   const [pending, setPending] = useState<I2Command[]>([]);
   const [recovering, setRecovering] = useState<string | null>(null);
+  // 结果未知多于三条时默认只露前三条，首屏留给频道和模板。
+  const [unknownAll, setUnknownAll] = useState(false);
   const recoveryInFlight = useRef(false);
   const [requiresReload, setRequiresReload] = useState(false);
   const readBarrier = useRef(data);
@@ -790,12 +792,22 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       </span> : undefined}
       actions={canWriteI2 ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={lockReason("channel-create")} onClick={openNewNova}>新增频道</Button> : undefined} />
   );
+  // 恢复行写频道名字，不写频道键；新增、编辑频道的两个间隔写成中文。
+  const unknownObject = (row: I2Command) => {
+    const key = row.target.startsWith("channel:") ? row.target.slice("channel:".length) : "";
+    return key && row.object === key ? channelName(key, novas.find((n) => n.key === key)?.name ?? "") : row.object;
+  };
+  const unknownChange = (row: I2Command) => {
+    if (row.action !== "编辑频道" && row.action !== "新增频道") return row.change;
+    const [tick = "", cooldown = ""] = row.change.split(" · ");
+    return `扫描间隔 ${durationText(tick).text} · 个人间隔 ${durationText(cooldown).text}`;
+  };
   const unknownNotice = pending.length > 0 && (
     <Notice tone="warn" title={`${pending.length} 项操作结果未知`} actionBelow>
       <ul className="i2-unknown">
-        {pending.map((row) => (
+        {(unknownAll ? pending : pending.slice(0, 3)).map((row) => (
           <li key={row.commandKey}>
-            <span><b>{row.action}</b>{` · ${row.object} · ${row.change} · ${formatBusinessTimeCompact(row.createdAt, "—")} 提交`}</span>
+            <span><b>{row.action}</b>{` · ${[unknownObject(row), unknownChange(row), `${businessStamp(row.createdAt)} 提交`].filter(Boolean).join(" · ")}`}</span>
             {isRetryExpired(row) ? <StatusTag tone="done">已过 24 小时，只能查询</StatusTag> : <StatusTag tone="warn">结果未知</StatusTag>}
             <span className="rd-row-actions"><Button size="sm" disabledReason={!canReadI2 ? "当前账号没有读取权限" : recovering ? "等当前操作完成" : undefined} onClick={() => {
               void actions.reloadIContent().then(() => toast("已重新读取；现在的状态不能证明原操作的结果，记录继续保留。"));
@@ -803,6 +815,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           </li>
         ))}
       </ul>
+      {pending.length > 3 && <div className="i-recovery-more"><Button size="sm" variant="ghost" onClick={() => setUnknownAll((open) => !open)}>{unknownAll ? "只看前 3 条" : `显示全部 ${pending.length} 条`}</Button></div>}
+      <p className="i2-unknown-zone">{`提交时间为${businessZone().label}`}</p>
     </Notice>
   );
 

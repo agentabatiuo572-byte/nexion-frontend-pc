@@ -393,6 +393,7 @@ button.i2-channel-tpl-name { padding: 0; border: 0; background: none; font: inhe
 .i2-sample { display: grid; gap: var(--rd-space-2); max-width: 420px; margin-bottom: var(--rd-space-4); }
 .i2-unknown { display: grid; gap: var(--rd-space-2); margin: 0; padding: 0; list-style: none; }
 .i2-unknown li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.i2-unknown-zone { margin: 0; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 
 /* 事件详情里四个动作各一行：名称和后果在左，按钮在右。 */
 .i2-event-ops { display: grid; gap: var(--rd-space-3); }

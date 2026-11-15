@@ -216,6 +216,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const [notFoundKeys, setNotFoundKeys] = useState<string[]>([]);
   const [releasing, setReleasing] = useState<HIRewardCommand | null>(null);
   const [ordinaryBusy, setOrdinaryBusy] = useState("");
+  // 恢复列表多于三条时默认只露前三条（和 I3、I4 一样），首屏留给词条表和课程列表。
+  const [recoveryAll, setRecoveryAll] = useState(false);
   const courseConfirm = useRef<{ scope: string; request: ActionConfirmReq; versions?: LearningCourseVersionView[]; commandKey: () => string | undefined; finish: () => void } | null>(null);
   const recoveryConfirm = useRef<{ commandKey: () => string | undefined; finish: () => void } | null>(null);
   const reloadCourseApprovals = async () => {
@@ -340,7 +342,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           return false;
         }
         if (openedData !== currentData && !unchangedCourse) {
-          throw new Error("数据已重新读取，请按最新内容重新打开修改入口。");
+          throw new Error("页面刚重新读取过，这次没有提交；关掉后重新打开核对。");
         }
         try {
           const result = await request.run(reason, value, form);
@@ -1300,9 +1302,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     </li>;
   });
   const ordinaryExplain = "提交时没收到确定结果，可能已经生效。先「查询原结果」看现在的内容；24 小时内可以「按原请求重试」，系统认得出是同一次提交，不会重复执行；过了 24 小时只能查询。";
+  const recoveryMore = (total: number) => total > 3
+    ? <div className="i-recovery-more"><Button size="sm" variant="ghost" onClick={() => setRecoveryAll((open) => !open)}>{recoveryAll ? "只看前 3 条" : `显示全部 ${total} 条`}</Button></div> : null;
   const ordinaryRecovery = view === "i18n" && ordinaryItems.length > 0
     ? <Panel title="结果未知的文案操作" icon={TriangleAlert} tone="warn" sub={`${ordinaryItems.length} 项 · 时间为${BJ}`} explain={ordinaryExplain}>
-      <ul className="i6-pending" aria-label="结果未知的文案操作">{ordinaryItems}</ul>
+      <ul className="i6-pending" aria-label="结果未知的文案操作">{recoveryAll ? ordinaryItems : ordinaryItems.slice(0, 3)}</ul>
+      {recoveryMore(ordinaryItems.length)}
     </Panel> : null;
   const courseApprovalRows = (Array.isArray(courseApprovals) ? courseApprovals : []).filter(row => !courseRecords.some(record =>
     record.ticketStatus === "pending" && record.payload.kind === "proposal"
@@ -1337,11 +1342,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         const change = (record: HIRewardCommand) => record.payload.kind === "proposal"
           ? <Change from={approvalValue(record.payload.input.beforeValue)} to={approvalValue(record.payload.input.afterValue)} /> : null;
         const auditHref = "/platform/audit?domain=I";
-        return <Panel title="等批准和结果未知的课程操作" icon={TriangleAlert} tone="warn" sub={`${records.length + approvals.length + ordinaryItems.length} 项 · 时间为${BJ}`}
-          explain={<><p>有奖励的课程发布、发布新版本、回滚和调奖，都要另一位超级管理员批准；批准前课程不变。</p><p>发布、回滚在等批准时，这门课不能再提交发布或回滚；调奖单独审批，不受它拦。两张都批准时，后执行的那张可能因课程已变而失败。</p><p>{ordinaryExplain}</p></>}
-          actions={canReadA2 && <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reloadCourseApprovals()}>刷新审批进度</Button>}>
-          <ul className="i6-pending" aria-label="课程审批和结果未知列表">
-            {records.map((record) => {
+        const rows = [...records.map((record) => {
               const expired = isRetryExpired(record);
               const queryOnly = expired || record.receiptKnown || !!i6CourseProposalPermission(record);
               const label = subject(record);
@@ -1382,17 +1383,21 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 {record.receiptKnown && record.ticketStatus !== "pending" && <span className="i6-pending-note">审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。</span>}
                 {!record.receiptKnown && expired && notFoundKeys.includes(record.commandKey) && <span className="i6-pending-note">按原请求查不到这张审批单，说明没建成；核对后可以确认解除。</span>}
               </li>;
-            })}
-            {approvals.map((row) => <li key={row.id}>
+            }), ...approvals.map((row) => <li key={row.id}>
               <StatusTag tone="progress">等另一位批准</StatusTag>
               <span className="i6-pending-what">{row.action.split(" · ")[0]} · {courseTitle(row.obj)}{row.mine ? <small>你发起的</small> : null}</span>
               <span className="i6-pending-change"><Change from={approvalValue(row.before)} to={approvalValue(row.after)} /></span>
               <span className="i6-pending-at">{row.rawTs ? `${formatBusinessTimeCompact(row.rawTs, row.ts)} 提交` : row.ts}</span>
               {reach(auditHref, "platform_a2_read") ? <Link className="rd-link" href={auditHref} prefetch={false}>去审批中心看</Link> : <span />}
-            </li>)}
+            </li>), ...ordinaryItems];
+        return <Panel title="等批准和结果未知的课程操作" icon={TriangleAlert} tone="warn" sub={`${records.length + approvals.length + ordinaryItems.length} 项 · 时间为${BJ}`}
+          explain={<><p>有奖励的课程发布、发布新版本、回滚和调奖，都要另一位超级管理员批准；批准前课程不变。</p><p>发布、回滚在等批准时，这门课不能再提交发布或回滚；调奖单独审批，不受它拦。两张都批准时，后执行的那张可能因课程已变而失败。</p><p>{ordinaryExplain}</p></>}
+          actions={canReadA2 && <Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reloadCourseApprovals()}>刷新审批进度</Button>}>
+          <ul className="i6-pending" aria-label="课程审批和结果未知列表">
+            {recoveryAll ? rows : rows.slice(0, 3)}
             {courseApprovals === "error" && <li><Notice tone="danger">审批进度读取失败，请点「刷新审批进度」重试。</Notice></li>}
-            {ordinaryItems}
           </ul>
+          {recoveryMore(rows.length)}
           {releasing && <ReleaseModal label={<>{subject(releasing)}{change(releasing)}</>}
             explain="原申请超过 24 小时，按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
             onCancel={() => setReleasing(null)} onConfirm={() => {
