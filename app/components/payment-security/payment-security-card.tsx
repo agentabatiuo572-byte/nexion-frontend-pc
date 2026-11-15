@@ -98,7 +98,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
     try {
       const next = await port.detail(recordId);
       if (live.current && id === generation.current) { setDetail(next); if (!started.current) { setReviewing(initialAction && next.record.capabilities.releaseAllowed && !pendingPaymentRelease(owner, port.userId)); started.current = true; } }
-    } catch (failure) { if (live.current && id === generation.current) { if (failure instanceof PaymentPasswordApiError && [401, 403, 404].includes(failure.status)) clearInaccessibleDetail(); setError(pendingPaymentRelease(owner, port.userId) && failure instanceof PaymentPasswordApiError && (failure.status === 403 || failure.status === 404 && failure.backendMessage === "SUPPORT_CUSTOMER_NOT_FOUND") ? "当前无权查看这位客户，原操作已保留，恢复权限后可查询。" : message(failure)); } }
+    } catch (failure) { if (live.current && id === generation.current) { if (failure instanceof PaymentPasswordApiError && [401, 403, 404].includes(failure.status)) clearInaccessibleDetail(); setError(pendingPaymentRelease(owner, port.userId) && failure instanceof PaymentPasswordApiError && (failure.status === 403 || failure.status === 404 && failure.backendMessage === "SUPPORT_CUSTOMER_NOT_FOUND") ? "当前无权查看这个账户，原操作已保留，恢复权限后可查询。" : message(failure)); } }
     finally { if (live.current && id === generation.current) setLoading(false); }
   }, [port, recordId, initialAction, owner, epoch, clearInaccessibleDetail]);
   useEffect(() => { live.current = true; void load(); return () => { live.current = false; generation.current++; }; }, [load]);
