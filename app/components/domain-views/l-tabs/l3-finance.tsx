@@ -370,7 +370,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       {ctx.canExport && (
         <span className="l3-pair" data-pair="">
           <Button icon={<FileSpreadsheet size={14} aria-hidden />} loading={exporting} loadingText="正在生成…" disabledReason={summaryBlocked} onClick={exportAgg}>导出当前汇总（CSV）</Button>
-          <Explain label="当前汇总是什么" content={<><p>马上生成，不含个人信息：此刻的资金储备、九类应付款、未来 7 天到期和钱包账单分类计数。</p><p>是生成那一刻的快照，不跟页面上的周期和注册业务月走。到「{exportPageName}」下载。</p></>} />
+          <Explain label="当前汇总是什么" content={<><p>马上生成，不含个人信息：此刻的资金储备、九类应付款、未来 7 天到期和钱包账单分类计数。</p><p>是生成那一刻的数，不跟页面上的周期和注册业务月走。到「{exportPageName}」下载。</p></>} />
         </span>
       )}
       {ctx.canExportFinanceDetail ? (
@@ -392,7 +392,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       summary={summary}
       actions={actions}
       meta={<span className="rd-toolbar">
-        <span>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}打开页面时读取，不自动刷新</span>
+        <span>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}不自动刷新</span>
         <Button variant="ghost" size="sm" loading={ctx.biLoading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void ctx.reloadBi?.()}>刷新</Button>
       </span>}
       readOnly={!ctx.canExport && !ctx.canExportFinanceDetail ? "当前角色仅可查看 · 没有财务报表导出权限" : undefined}
@@ -413,7 +413,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     const close = <Button size="sm" onClick={() => setOutcome(null)}>知道了</Button>;
     if (outcome.kind === "summary-done") return (
       <Notice tone="ok" title="已生成财务当前汇总" action={close}>
-        是生成那一刻的资金快照，不含本期收入和提现。{exportPageLink(`到「${exportPageName}」下载`)}
+        是生成那一刻的资金数，不含本期收入和提现。{exportPageLink(`到「${exportPageName}」下载`)}
       </Notice>
     );
     if (outcome.kind === "summary-unknown") return (
@@ -435,7 +435,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       <Notice tone="warn" title={outcome.reportId ? "资金明细申请已创建，审批状态未知" : "资金明细申请结果未知"} actionBelow>
         <p>{request}{outcome.at && <> · <span className="rd-keep">{outcome.at} 提交（{businessZone().label}）</span></>}</p>
         <p>{outcome.reportId
-          ? <>后端已创建这份申请（报表号 {outcome.reportId}），当前审批状态没有读到。点「查询原结果」重新读取，不会重新提交。</>
+          ? <>申请已创建（报表号 {outcome.reportId}），审批状态没有读到。点「查询原结果」再查，不会重新提交。</>
           : pendingDetail && isRetryExpired(pendingDetail)
             ? <>申请可能已经提交。已超过 24 小时，只能核对：{canOpenExportPage ? exportPageLink(`到「${exportPageName}」看有没有这条待放行的申请`) : <>请找有「{exportPageName}」权限的同事核对</>}。</>
             : <>申请可能已经提交。先{canOpenExportPage ? <>点「查询原结果」到「{exportPageName}」看有没有</> : <>请有「{exportPageName}」权限的同事核对</>}；没有的话，24 小时内可以按原请求重试，不会重复申请。</>}</p>
@@ -714,7 +714,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
             : <TrendLines label="近几个时段的覆盖率" ticks={coverageTicks.map((tick) => tick.slice(-5))} format={pctText} axisFormat={(value) => `${Number(value.toFixed(1))}%`} height={120}
               series={[{ key: "coverage", label: "覆盖率", slot: 4, values: coverageSeries }]}
               marks={[{ key: "red", text: `红线 ${pctText(redLine)}`, value: redLine, tone: "danger" }, { key: "healthy", text: `健康线 ${pctText(healthyLine)}`, value: healthyLine, tone: "ok" }]} />}
-          <p className="rd-note">{breaches.length ? `越线记录：${breaches.map((item) => `${coverageTicks[item.i]} ${item.label}`).join("；")}` : "越线记录：后端目前不提供"}</p>
+          <p className="rd-note">{breaches.length ? `越线记录：${breaches.map((item) => `${coverageTicks[item.i]} ${item.label}`).join("；")}` : "越线记录：暂时没有这项数据"}</p>
         </div>
       </div>
     </Panel>
