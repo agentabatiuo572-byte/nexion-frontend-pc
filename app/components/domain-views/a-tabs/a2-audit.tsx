@@ -6,6 +6,7 @@ import { a2ActionText, operatorCopyText, shareBaseRateText } from "@/lib/admin/o
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
+import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin/f4-ambassador-display";
 
 /**
  * A2 操作记录与审批（列表页·队列模式，PG-44）。三个页签：待审批（默认）、操作记录（含审批结果）、机制设置。
@@ -909,6 +910,11 @@ function ReviewRows({ name, rows, labels = CHANGE_LABELS }: { name: string; rows
  * - 成组记录（等级、奖励）：小表，不拼成一大片文字（VS-109）；
  * - 变更前是空（首次配置）：不画变更前，标题旁写「新建」。
  */
+/** 大使申请单的变更前是后端拼的一句（类别代码、材料状态代码），只把两个代码换成页面上的叫法。 */
+const changeBefore = (row: { before: string; ambassadorMaterialProposal?: unknown }) => !row.ambassadorMaterialProposal ? row.before
+  : row.before.replace(/^类别 ([a-z]+)；/, (_, code: string) => `类别 ${ambassadorBucketLabel(code)}；`)
+    .replace(/；(NOT_SUBMITTED|PENDING|NEEDS_MORE|PASSED)$/, (_, state: string) => `；${ambassadorMaterialStateLabel(state)}`);
+
 export function A2ChangeReview({ before, after, omit = [], operationCode }: { before: string; after: string; omit?: readonly string[]; operationCode?: string }) {
   const { b, a, labels } = reviewPair(before, after, operationCode);
   const created = !b;
@@ -1572,7 +1578,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       facts: ticketFacts(w, "approve"),
       content: (
         <div className="rd-stack">
-          <A2ChangeReview operationCode={reviewOperation(w)} before={w.before} after={w.after} omit={g3 ? ["生效时间"] : undefined} />
+          <A2ChangeReview operationCode={reviewOperation(w)} before={changeBefore(w)} after={w.after} omit={g3 ? ["生效时间"] : undefined} />
           {w.phoneCalibrationProposal && <PhoneCalibrationReview proposal={w.phoneCalibrationProposal} />}
           {w.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={w.ambassadorMaterialProposal} expectedMaterialRevision={w.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? w.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
           {isRefund && w.refundOrderNo && <PromotionRefundImpact orderNo={w.refundOrderNo} />}
@@ -1957,7 +1963,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     {queueFiltered ? <>没有符合条件的待审批操作 <Button size="sm" onClick={() => { setQType("all"); setQOperator("all"); setQPage(1); }}>清除筛选</Button></> : "没有待审批的操作"}
                   </TableMessage>
                 ) : qPageRows.map((w) => {
-                  const change = changeSummary(w.before, w.after, g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w));
+                  const change = changeSummary(changeBefore(w), w.after, g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w));
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
@@ -2239,7 +2245,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {shown.sos && <Notice tone="danger">{isJ4Execution(shown)
             ? "应急预案逐步执行：中途失败时，前面的步骤可能已经生效。批准前核对值班授权和影响范围，失败后到「监管要求应急处理」的执行追溯里核对每一步。"
             : "应急操作：涉及紧急停用或恢复，请核对值班授权、影响范围和恢复条件后再处理。"}</Notice>}
-          <A2ChangeReview operationCode={reviewOperation(shown)} before={shown.before} after={shown.after} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
+          <A2ChangeReview operationCode={reviewOperation(shown)} before={changeBefore(shown)} after={shown.after} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} />
           {shown.phoneCalibrationProposal && <PhoneCalibrationReview proposal={shown.phoneCalibrationProposal} />}
           {shown.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={shown.ambassadorMaterialProposal} expectedMaterialRevision={shown.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? shown.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
         </>}

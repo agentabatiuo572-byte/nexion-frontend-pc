@@ -385,7 +385,7 @@ export function A9DeveloperAccess() {
   const columnCount = 6;
   const judgment: JudgmentRow[] = shown ? [
     { label: "申请人", icon: Building2, tone: "users", value: shown.company, reason: shown.email },
-    { label: "平台用户", icon: User, tone: "users", value: <>用户编号 {shown.userNo ?? "—"}{shown.userNo && reach("/users/search") && <> · 到<Link className="rd-link" href={`/users/search?q=${encodeURIComponent(shown.userNo)}`}>查找用户与查看资料</Link>里打开</>}</> },
+    { label: "平台用户", icon: User, tone: "users", value: <>用户编号 {shown.userNo ?? <>—<Explain label="为什么没有用户编号" content="你没有查看用户资料的权限，或这个用户不在你能查看的范围内、已被删除时，后端不给编号。" /></>}{shown.userNo && reach("/users/search") && <> · 到<Link className="rd-link" href={`/users/search?q=${encodeURIComponent(shown.userNo)}`}>查找用户与查看资料</Link>里打开</>}</> },
     { label: "申请的环境", icon: Server, value: scopeText(shown), reason: shown.sourceEnvironment === "SANDBOX" ? "批准只对这个测试批次有效" : undefined },
     { label: "提交时间", icon: Clock3, value: shown.status === "PENDING" ? `${timeText(shown.createdAt)} · 已等 ${waitedText(shown.createdAt, now)}` : timeText(shown.createdAt) },
     { label: "现在", value: <StatusBadge status={shown.status} />, state: shown.status === "PENDING" ? "warn" : undefined,

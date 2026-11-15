@@ -83,7 +83,7 @@ export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy):
         if (!requiresApproval(changes)) return undefined;
         return {
           heading: "提高预算 · 另一位超级管理员批准后生效",
-          completionCopy: "批准前 App 继续用现在的规则。提交和批准时都会检查兑付覆盖率，批准人需有大使规则资金权限和审批权限，不能是你自己。",
+          completionCopy: "批准前 App 继续用现在的规则。提交和批准时都会检查兑付覆盖率，批准人还需有审批批准权限。",
           comparison: <div className="f4-policy-diff">
             <Table label="预算变更对比">
               <thead><tr><Th>预算</Th><Th align="right">现在</Th><Th align="right">改后</Th></tr></thead>

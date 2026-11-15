@@ -13,7 +13,7 @@ import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { ambassadorApprovalBlocker, ambassadorBucketLabel, ambassadorMaterialStateLabel, F4_MATERIAL_PERMISSIONS } from "@/lib/admin/f4-ambassador-display";
 import { fetchF4AmbassadorMaterials, F4MaterialReviewNotAppliedError, reviewF4AmbassadorMaterials, type F4AmbassadorApplication, type F4AmbassadorMaterialPacket, type F4AmbassadorMaterialProposal, type F4AmbassadorReview, type F4AmbassadorReviewInput } from "@/lib/admin/f1-client";
-import { businessStamp, formatBusinessTime } from "@/lib/admin/business-time";
+import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { applicationStage } from "./f4-quota";
@@ -38,7 +38,7 @@ function ReviewRecord({ review, title }: { review: F4AmbassadorReview; title: st
     <div><b>{title}</b><span className={`bdg ${review.status === "PASSED" ? "ok" : review.status === "NEEDS_MORE" ? "warn" : "dim"}`}>
       {review.status === "PASSED" ? "通过" : review.status === "NEEDS_MORE" ? "需补材料" : "待核验"}
     </span></div>
-    {review.reviewerLabel && <p>核验人：{review.reviewerLabel} · {review.reviewedAt ? formatBusinessTime(review.reviewedAt, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "时间待核实"}</p>}
+    {review.reviewerLabel && <p>核验人：{review.reviewerLabel} · {review.reviewedAt ? `${formatBusinessTimeCompact(review.reviewedAt, "时间待核实")}（${businessZone().label}）` : "时间待核实"}</p>}
     {review.reason && <p>理由：{review.reason}</p>}
     {review.verifiedAttendees != null && <p>有效去重人数：{review.verifiedAttendees} 人</p>}
     {review.recognizedBudgetUsdt != null && <p>认可金额：<span className="mono">{money(review.recognizedBudgetUsdt)}</span></p>}
