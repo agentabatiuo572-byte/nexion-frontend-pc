@@ -10,6 +10,7 @@ import { finiteDashboardNumber } from "@/lib/admin/dashboard-number";
 import type { KpiTrendPoint } from "@/lib/admin/kpi-trend";
 import { fetchC1Overview, fetchUserProfilesPage } from "@/lib/admin/user360-client";
 import { businessDay } from "@/lib/admin/business-time";
+import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 
 type ApiResult<T> = { code: number; message?: string; data?: T };
 type Row = Record<string, unknown>;
@@ -19,6 +20,7 @@ async function read(endpoint: string): Promise<Row> {
   const result = (await response.json().catch(() => null)) as ApiResult<Row> | null;
   if (!response.ok || !result || result.code !== 0 || !result.data) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
+    if (response.status === 403) announcePermissionDenied();
     throw new Error(formatAdminApiError(result?.message, `B0_LOAD_FAILED_${response.status}`));
   }
   return result.data;
@@ -58,7 +60,7 @@ export async function fetchB0Sales() {
 /** 用户入金和已完成提现。按天的接口最多 31 天，够算本月和上周，不够算上月，所以本月没有对比。今天取接口最后一天，和后端切日一致。 */
 export async function fetchB0MoneyFlows() {
   const data = await read("/api/admin/bi/finance/daily-flows?days=31");
-  if (!Array.isArray(data.days) || data.days.length === 0) invalid("days");
+  if (!Array.isArray(data.days) || data.days.length !== 31) invalid("days");
   const days = (data.days as Row[]).map((row) => ({
     date: typeof row.date === "string" ? row.date : invalid("date"),
     topup: amount(row.userTopupUsdt, "userTopupUsdt"),
@@ -67,6 +69,9 @@ export async function fetchB0MoneyFlows() {
     withdrawalCount: amount(row.withdrawalCount, "withdrawalCount"),
   }));
   const today = days[days.length - 1].date;
+  const todayUtc = /^\d{4}-\d{2}-\d{2}$/.test(today) ? Date.parse(`${today}T00:00:00Z`) : Number.NaN;
+  if (!Number.isFinite(todayUtc) || days.some((row, index) =>
+    row.date !== new Date(todayUtc - (30 - index) * 86_400_000).toISOString().slice(0, 10))) invalid("days.date");
   const { yesterday, monday, lastMonday, lastSunday, monthStart } = b0PeriodDays(today);
   // 金额是两位小数，相加相减后回到分，净入金才不会出现 +0.00。
   const cents = (value: number) => Math.round(value * 100) / 100;
@@ -109,7 +114,10 @@ export async function fetchB0ActiveUsers() {
   const data = await read("/api/admin/users/active-summary");
   const count = (day: unknown, field: string) => {
     if (!day || typeof day !== "object") invalid(field);
-    return finiteDashboardNumber((day as Row).activeUsers);
+    const raw = (day as Row).activeUsers;
+    if (raw === null) return null;
+    const value = finiteDashboardNumber(raw);
+    return value !== null && Number.isInteger(value) && value >= 0 ? value : invalid(`${field}.activeUsers`);
   };
   return { today: count(data.today, "today"), yesterday: count(data.yesterday, "yesterday") };
 }
