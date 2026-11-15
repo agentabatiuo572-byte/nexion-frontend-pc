@@ -515,12 +515,12 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       const tier = capCommand.tier as TierK;
       const capRow = (conflict.latest?.capRules ?? []).find((row) => row.tier === tier);
       subject = <>{TIER[tier]?.label ?? tier}优先级保留上限</>;
-      rows = [conflictRow("上限", capCommand.before ? `${capCommand.before} 条` : "—", capRow?.cap)];
+      rows = [conflictRow("上限", capCommand.before ? `${capCommand.before.replace(/\s*条$/, "")} 条` : "—", capRow?.cap)];
       note = <>你填的新上限 {capCommand.after} 条会带回确认框。</>;
       rebuild = capRow ? reopen(() => adjustCap(tier, capRow.cap), capCommand.after) : undefined;
       if (ready && !capRow) gone = "这一档在最新读取里没有了。";
     } else {
-      subject = <>通知 <span data-mono="">{campaignId || "—"}</span></>;
+      subject = <>通知「{now?.name ?? live?.name ?? (campaignId || "—")}」</>;
       if (ready && campaignId && !now) gone = "这条通知在最新读取里没有了，不能按最新的重做。";
       if (requested.editing && requested.form) {
         const form = requested.form;
@@ -532,20 +532,21 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           conflictRow("越南语正文", part(now?.bodyVi).body, form.bodyVi), conflictRow("英语正文", part(now?.bodyEn).body, form.bodyEn)];
         rows[0].changed = !!now && now.status !== "draft";
         if (!gone && now && now.status !== "draft") gone = `这条通知现在是${stateText(now)}，不能再改草稿。`;
-        note = "你填的内容留在表单里，保存时按最新的版本提交。";
+        note = "保存会用你填的整份内容替换现在的草稿；别人改的要留，先在表单里补上。";
         rebuild = live ? () => setEditing(live) : undefined;
       } else if (requested.scheduleRow) {
         columns = ["现在", "你填的"];
         rebuildLabel = "按最新的重新填写";
-        rows = [conflictRow("状态", stateText(now), "草稿"), conflictRow("发送时间", now?.schedule, requested.scheduledAt),
+        rows = [conflictRow("状态", stateText(now), "草稿"), conflictRow("发送时间", now?.schedule, requested.scheduledAt?.replace("T", " ")),
           conflictRow("中文内容", now?.bodyZh, requested.scheduleRow.bodyZh)];
         rows[0].changed = !!now && now.status !== "draft";
         if (!gone && now && now.status !== "draft") gone = `这条通知现在是${stateText(now)}，不能再排期。`;
         note = "发送时间和理由留着；「已核对」要重新勾。";
         rebuild = live ? () => { setScheduleRow(live); setScheduleVerified(false); } : undefined;
       } else if (live) {
-        rows = [conflictRow("状态", "—", stateText(now)), conflictRow("中文正文", "—", now?.bodyZh)];
-        rows[0].changed = true;
+        const opened = campaignCommand?.snapshot;
+        rows = [conflictRow("状态", opened ? stateText(opened) : "—", stateText(now)), conflictRow("中文内容", opened?.bodyZh, now?.bodyZh)];
+        rows[0].changed = !opened || stateText(opened) !== stateText(now);
         rebuild = path.endsWith("/send-now") ? reopen(() => sendNow(live))
           : path.endsWith("/cancel") ? () => cancelScheduled(live)
             : campaignCommand?.original?.method === "DELETE" ? () => deleteDraft(live) : undefined;

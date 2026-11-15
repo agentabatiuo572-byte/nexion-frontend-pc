@@ -880,7 +880,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
     action: <>编辑课程草稿 · {nexGridBrandText(c.title)}</>,
     title: "保存课程草稿",
-    detail: <>只有草稿可以编辑；别人刚改过时保存会被拒，刷新后重改。</>,
+    detail: <>只有草稿可以编辑；别人刚改过时，会先让你核对再保存。</>,
     effect: draftEffect,
     confirmLabel: "保存草稿",
     statedBrief: { impact: "更新这门课的草稿，用户看不到。", check: "三种语言和测验核对过。" },
@@ -943,7 +943,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
       action: <>编辑课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
       title: "保存版本草稿",
-      detail: <>三语正文和三语测验都要填完整。如果别人刚改过，需要刷新后重改。</>,
+      detail: <>三语正文和测验都要填完整；别人刚改过时，会先让你核对再保存。</>,
       effect: draftEffect,
       confirmLabel: "保存草稿",
       statedBrief: { impact: `更新 ${row.version} 草稿；线上版本不变。`, check: "三种语言和测验核对过。" },
@@ -1105,9 +1105,20 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         if (!gone && conflict.latest && !version && now && !["draft", "ready"].includes(now.status)) gone = `这门课现在是 ${state(now)}，不能再改草稿。`;
         columns = ["现在", "你填的"];
         rebuildLabel = "按最新的重新填写";
+        // 正文长，只在不一样时列一行，截出开始不一样的那一段，全文放悬停。
+        const bodyRow = (label: string, left: unknown, right: unknown): IConflictRow[] => {
+          const a = String(left ?? ""), b = String(right ?? "");
+          if (a === b) return [];
+          let at = 0;
+          while (at < a.length && at < b.length && a[at] === b[at]) at++;
+          const from = Math.max(0, at - 8);
+          const cut = (text: string) => text ? `${from > 0 ? "…" : ""}${text.slice(from, from + 40)}${text.length > from + 40 ? "…" : ""}` : "—";
+          return [{ label, left: <span title={a}>{cut(a)}</span>, right: <span title={b}>{cut(b)}</span>, changed: true }];
+        };
         rows = [conflictRow("中文标题", base?.titleZh, input.titleZh), conflictRow("越南语标题", base?.titleVi, input.titleVi), conflictRow("英语标题", base?.titleEn, input.titleEn),
+          ...bodyRow("中文正文", base?.bodyZh, input.bodyZh), ...bodyRow("越南语正文", base?.bodyVi, input.bodyVi), ...bodyRow("英语正文", base?.bodyEn, input.bodyEn),
           conflictRow("学完发", reward(base?.rewardNex), reward(input.rewardNex)), conflictRow("测验", quiz(base), quiz(input))];
-        note = "你填的内容留在编辑框里，保存时按最新的草稿提交。";
+        note = "保存会用你填的整份内容替换现在的草稿；别人改的要留，先在编辑框里补上。";
         rebuild = course && (!version || nowVersion) ? () => carry() ?? setCourseEditor((current) => {
           const fresh = version ? editCourseVersionState(course, nowVersion!) : editCrsState(course);
           return current ? fresh : { ...fresh, spec: { ...fresh.spec, current: courseCurrent(course, version ?? course.v, input) } };
