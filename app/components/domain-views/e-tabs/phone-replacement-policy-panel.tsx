@@ -21,9 +21,10 @@ interface SavedProposal extends PendingMutationRecord {
     input: ProposalInput;
     ticketId?: string;
     terminal?: string;
+    absent?: boolean;
 }
 const proposals = createPendingMutationStore<SavedProposal>({ storageKey: "nexion-admin-phone-policy-proposals-v1", retainExpiredRecords: true,
-    isValidRecord: r => Number.isSafeInteger(r.owner) && record(r.input) && record(r.input.command) });
+    isValidRecord: r => (r.absent === undefined || typeof r.absent === "boolean") && Number.isSafeInteger(r.owner) && record(r.input) && record(r.input.command) });
 export function PhoneReplacementPolicyPanel({configReadFailed=false}:{configReadFailed?:boolean}) {
     const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
     if (!session?.authorities.includes("device_e6_read"))
@@ -153,17 +154,21 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
                 setBusy(false);
         }
     }
-    async function checkProposal() {
+    async function checkProposal(propagate = false) {
         if (!pending || !canRecover || mutation.current)
             return;
+        if (useAdminAuth.getState().session?.adminId !== pending.owner) throw new Error("审批记录查询失败，请重试或前往审批页面；原提案仍保留。");
         mutation.current = true;
         setBusy(true);
         setError("");
+        proposals.remember(pending.fingerprint, pending.commandKey, { ...pending, absent: false }); syncPending();
         try {
-            const original = await fetchA2ProposalByKey(pending.commandKey);
+            const original = await fetchA2ProposalByKey(pending.commandKey, true, true);
             if (!live.current)
                 return;
+            if (!original && pending.ticketId || original && (!original.mine || original.obj !== pending.input.obj || pending.ticketId && original.id !== pending.ticketId)) throw new Error("审批记录查询失败，请重试或前往审批页面；原提案仍保留。");
             if (!original) {
+                proposals.remember(pending.fingerprint, pending.commandKey, { ...pending, absent: true }); syncPending();
                 setMessage("暂未查到原提案，结果仍待核实。原操作标识已保留，不会重新提交。");
                 return;
             }
@@ -185,6 +190,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
                 }
                 setError("审批记录查询失败，请重试或前往审批页面；原提案仍保留。");
             }
+            if (propagate) throw failure;
         }
         finally {
             mutation.current = false;
@@ -227,13 +233,23 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
     async function retryOriginal() {
       if(!pending||mutation.current||isRetryExpired(pending)||!canWrite)return;
       mutation.current=true;setBusy(true);setError("");
+      let checking = true;
       try {
-        const original=await fetchA2ProposalByKey(pending.commandKey);
+        const original=await fetchA2ProposalByKey(pending.commandKey,true,true);
+        if(original&&(!original.mine||original.obj!==pending.input.obj))throw new Error("审批记录查询失败，请重试或前往审批页面；原提案仍保留。");
         if(original){await checkTicket(original.id,original.status);return;}
+        checking = false;
         const ticket=await createA2OperationProposal(pending.input,pending.commandKey,true);
         if(live.current){proposals.remember(pending.fingerprint,pending.commandKey,{owner,input:pending.input,ticketId:ticket.id});syncPending();setMessage("已找回原审批提案，请等待另一位审批人核对。");}
-      } catch(failure){if(live.current){setError(failure instanceof Error?failure.message:"原操作结果仍未确认");if(isExplicitRejection(failure))setRetryRejectedKey(pending.commandKey);}}
+      } catch(failure){if(live.current){setError(failure instanceof Error?failure.message:"原操作结果仍未确认");if(!checking&&isExplicitRejection(failure))setRetryRejectedKey(pending.commandKey);}}
       finally{mutation.current=false;if(live.current)setBusy(false);}
+    }
+    async function releaseMissing() {
+      if (!pending || !isRetryExpired(pending) || pending.ticketId || !canRecover || mutation.current) return;
+      await checkProposal(true);
+      const current = proposals.list().find(r => r.owner === owner && r.commandKey === pending.commandKey);
+      if (current?.absent && !current.ticketId) { proposals.forget(current.fingerprint,current.commandKey); syncPending(); }
+      setReleaseKey(null);
     }
     async function checkTicket(id:string,status:string){
       if(!pending||!live.current)return;
@@ -265,14 +281,14 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
         }
         {pending&&!canRecover&&<Notice tone="warn">有原操作待核实，恢复当前处置权限后才能查看；暂不能发起新提案。</Notice>}
         {pending&&canRecover&&pending.ticketId&&!pending.terminal&&<Notice tone="progress" action={<Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>查审批结果</Button>}>手机换机规则的变更已提交，等待审批 · <span data-mono>{pending.ticketId}</span></Notice>}
-        {pending&&canRecover&&(!pending.ticketId||pending.terminal)&&<Notice tone={pending.terminal?"done":"warn"} title={pending.terminal?"原换机提案已结束":retryRejectedKey===pending.commandKey?"原操作重试已被明确拒绝":"换机规则提交结果暂未确认"} actionBelow action={<><Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>查审批结果</Button>{!pending.ticketId&&!isRetryExpired(pending)&&canWrite&&retryRejectedKey!==pending.commandKey&&<Button size="sm" disabled={busy} onClick={()=>void retryOriginal()}>按原操作重试</Button>}{retryRejectedKey===pending.commandKey&&<Button variant="primary" size="sm" onClick={()=>setReleaseKey(pending.commandKey)}>解除待确认</Button>}{pending.terminal&&<Button size="sm" disabled={busy} onClick={()=>{proposals.forget(pending.fingerprint,pending.commandKey);syncPending();void refresh();}}>原提案已结束，准备新变更</Button>}</>}>
+        {pending&&canRecover&&(!pending.ticketId||pending.terminal)&&<Notice tone={pending.terminal?"done":"warn"} title={pending.terminal?"原换机提案已结束":retryRejectedKey===pending.commandKey?"原操作重试已被明确拒绝":"换机规则提交结果暂未确认"} actionBelow action={<><Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>查审批结果</Button>{!pending.ticketId&&!isRetryExpired(pending)&&canWrite&&retryRejectedKey!==pending.commandKey&&<Button size="sm" disabled={busy} onClick={()=>void retryOriginal()}>按原操作重试</Button>}{(retryRejectedKey===pending.commandKey||pending.absent&&!pending.ticketId&&isRetryExpired(pending))&&<Button variant="primary" size="sm" onClick={()=>setReleaseKey(pending.commandKey)}>解除待确认</Button>}{pending.terminal&&<Button size="sm" disabled={busy} onClick={()=>{proposals.forget(pending.fingerprint,pending.commandKey);syncPending();void refresh();}}>原提案已结束，准备新变更</Button>}</>}>
           <p>{pending.terminal?"请读回当前策略核对后，再准备新变更。":retryRejectedKey===pending.commandKey?"请核对拒绝结果，再解除这条原操作。":"原内容、理由和命令号已保存。请查询原提案，或按原操作重试。"}</p>{message&&<p>{message}</p>}<p>提交：{phoneTime(pending.createdAt)} · 审批单：{pending.ticketId??"结果待核实"}</p><p>原值：{pending.input.beforeValue}</p><p>目标：{pending.input.afterValue}</p>{isRetryExpired(pending)&&<p>{RETRY_EXPIRED_TEXT}</p>}
           <Fold title="原策略与目标策略技术记录" summary={pending.commandKey} inset><div className="e6-fold-content"><p>理由：{pending.input.reason}</p><p>原操作标识：<code>{pending.commandKey}</code></p>{error&&<p>{error}</p>}<pre className="e6-json">{JSON.stringify(pending.input,null,2)}</pre></div></Fold>
         </Notice>}
         {canRecover&&<Fold title="查询原发布结果" summary="按发布操作号或批准时的原标识查询" inset><div className="e6-fold-content"><p>提交提案的标识不能代替批准标识。原发布结果与当前策略分别显示。</p><div className="e6-form-grid"><Field label="查询方式"><Select aria-label="查询方式" value={mode} onChange={setMode} options={[{value:"id",label:"发布操作号"},{value:"key",label:"批准操作的原标识"}]}/></Field>{mode==="key"&&<Field label="发布类型"><Select aria-label="发布类型" value={type} onChange={setType} options={[{value:"PHONE_POLICY_PUBLISH",label:"整组手机策略"},{value:"PHONE_POLICY_PARAM_PUBLISH",label:"单项手机策略"}]}/></Field>}<Field label={mode==="id"?"发布操作号":"当前审批人的批准操作标识"}><Input maxLength={128} value={lookup} onChange={e=>setLookup(e.target.value)}/></Field></div><Button size="sm" disabled={busy||!lookup.trim()} onClick={()=>void query()}>只读查询原发布</Button>{queryMessage&&<Notice tone="neutral">{queryMessage}</Notice>}{queryError&&<Notice tone="warn">{queryError}</Notice>}{receipt&&<PhoneReceiptView receipt={receipt}/>}</div></Fold>}
         {rights.includes("platform_a2_read")&&<Link href="/platform/audit?domain=E">查看审批记录</Link>}
       </>}
-      {releaseKey&&pending&&<ReleaseModal label="原手机换机策略提案" onCancel={()=>setReleaseKey(null)} onConfirm={()=>{if(releaseKey!==pending.commandKey||retryRejectedKey!==pending.commandKey){setReleaseKey(null);return;}proposals.forget(pending.fingerprint,pending.commandKey);setRetryRejectedKey(null);syncPending();setReleaseKey(null);void refresh();}}/>}
+      {releaseKey&&pending&&<ReleaseModal label="原手机换机策略提案" onCancel={()=>setReleaseKey(null)} onConfirm={()=>{if(releaseKey===pending.commandKey&&pending.absent&&!pending.ticketId&&isRetryExpired(pending)){void releaseMissing().catch(()=>{/* The original notice retains the lookup failure. */});return;}if(releaseKey!==pending.commandKey||retryRejectedKey!==pending.commandKey){setReleaseKey(null);return;}proposals.forget(pending.fingerprint,pending.commandKey);setRetryRejectedKey(null);syncPending();setReleaseKey(null);void refresh();}}/>}
       {discard&&<Modal title="刷新会放弃未提交草稿" onClose={()=>setDiscard(false)} footer={<Decision primary={<Button variant="primary" onClick={()=>{setDiscard(false);void refresh();}}>放弃草稿并刷新</Button>} others={<Button onClick={()=>setDiscard(false)}>继续编辑</Button>}/> }><p>将放弃换机规则普通草稿；原提案和待确认记录继续保留。</p></Modal>}
     </Panel>;
 }
