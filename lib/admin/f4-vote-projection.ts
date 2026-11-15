@@ -27,11 +27,13 @@ function count(value: unknown): number { return typeof value === "number" && Num
 function decimal(value: unknown): string {
   return typeof value === "string" && /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value) ? value : invalid();
 }
+function plainDecimal(value: unknown): string {
+  return typeof value === "string" && /^-?\d+(?:\.\d+)?$/.test(value) ? value : invalid();
+}
 function voteValue(row: Record<string, unknown>): VoteValue {
   if (row.currency !== "USDT") invalid();
-  const perVoteUsd = row.perVoteUsd;
-  if (perVoteUsd !== null && (typeof perVoteUsd !== "string" || !/^-?\d+(?:\.\d+)?$/.test(perVoteUsd))) invalid();
-  return { available: true, currency: "USDT", poolUsd: decimal(row.poolUsd), totalVotes: decimal(row.totalVotes), perVoteUsd };
+  return { available: true, currency: "USDT", poolUsd: decimal(row.poolUsd), totalVotes: decimal(row.totalVotes),
+    perVoteUsd: row.perVoteUsd === null ? null : plainDecimal(row.perVoteUsd) };
 }
 
 export function readF4VoteProjection(value: unknown): F4VoteProjection {
@@ -49,7 +51,7 @@ export function readF4VoteProjection(value: unknown): F4VoteProjection {
       ranksAvailability: "CURRENT_ELIGIBILITY_ESTIMATE", ranks: estimate.ranks.map(value => {
         const row = record(value), rank = text(row.rank), eligibleCount = count(row.eligibleCount), votesPerMember = count(row.votesPerMember);
         if (!/^V[1-8]$/.test(rank) || eligibleCount === 0 || votesPerMember === 0) invalid();
-        return { rank, eligibleCount, votesPerMember, totalVotes: decimal(row.totalVotes) };
+        return { rank, eligibleCount, votesPerMember, totalVotes: plainDecimal(row.totalVotes) };
       }) };
   }
   let actual: F4VoteProjection["settled"];
