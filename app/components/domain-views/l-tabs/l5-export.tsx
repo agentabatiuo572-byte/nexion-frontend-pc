@@ -497,7 +497,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         <Fact k="文件">d4-bills-masked.csv，11 列<Explain label="11 列是什么" content="账单号、用户编号（脱敏）、类型、子类型、资产、方向、金额、变动后余额、状态、业务编号、创建时间。金额是原币原值，不换算、不舍入。" /></Fact>
         <Fact k="脱敏" tone="warn">用户编号只留首 1 位和末 2 位<Explain label="脱敏到什么程度" content="2 位以内的编号整个写成 **。业务编号里和该用户编号相同的一段会被替换，其余原样；不导出昵称、备注。" /></Fact>
         <Fact k="上限">最多 100,000 行，超过会被拒</Fact>
-        <Fact k="怎么拿到">确认后浏览器直接下载，不进任务列表，没有 24 小时链接</Fact>
+        <Fact k="怎么拿到">浏览器直接下载，不进任务列表，也没有下载链接</Fact>
         <Fact k="留什么记录">每次导出写进导出记录</Fact>
       </Facts>
     ),
@@ -510,7 +510,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const newExport = () => ctx.openActionConfirm({ briefKind: "export",
     action: "导出汇总数据",
     title: "导出汇总数据",
-    detail: <>这个账号能导：{aggregateNames(exportTypes)}。</>,
+    detail: <>能导：{aggregateNames(exportTypes)}</>,
     effect: <StatusTag tone="progress" filled>立即生成</StatusTag>,
     statedBrief: {
       impact: "按所选类型生成一份汇总 CSV，创建这一刻取数，以后下载还是这一刻的数；不改任何业务数据。",

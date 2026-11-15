@@ -456,7 +456,7 @@ export default function H1Phase({ ctx,
       },
       detail: "每月参数表按新的总月数重排。",
       facts: <Facts>
-        <Fact k="影响">缩短后当前月超出范围的，改成最后一个月并换用那个月的参数；换后会多付钱时先查兑付覆盖率，低于红线会被拒。</Fact>
+        <Fact k="影响">当前月超出新总月数时改成最后一个月并换参数；会多付钱时先查兑付覆盖率，低于红线会被拒。</Fact>
       </Facts>,
       effect: <StatusTag tone="progress" filled>保存后生效</StatusTag>,
       confirmLabel: "确认修改总月数",
