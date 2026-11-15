@@ -92,7 +92,7 @@ export interface McSpec {
 export type Mc = McSpec | null;
 
 /** E4 结果未确认的提案。原内容、理由和命令号一起存，重试只能原样发（OP-94）。 */
-export type E4PendingCommand = PendingMutationRecord & { label: string; orderNo: string; spec: ProposeSpec; commandOrigin?: FundCommandOrigin; request?: Parameters<typeof createA2OperationProposal>[0] };
+export type E4PendingCommand = PendingMutationRecord & { label: string; orderNo: string; spec: ProposeSpec; commandOrigin?: FundCommandOrigin; request?: Parameters<typeof createA2OperationProposal>[0]; receivedTicketId?: string; creationConfirmed?: boolean; proposalStatus?: "pending" | "approved" | "rejected" | "withdrawn" | "expired" };
 
 /** 订单行(队列 / 状态机派生)。 */
 export interface EOrder {

@@ -185,13 +185,14 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       const expired = record.expiresAt <= Date.now();
       // 能查原提案就先查，明确查不到才重试；重试要当前还有这项写权（OP-93）。
       const canRetry = record.spec.command.op === "e4_order_refund" ? ctx.canRefundE4 : ctx.canWriteE4;
+      const created = !!record.receivedTicketId || record.creationConfirmed === true;
       const needQuery = ctx.canQueryE4 && !ctx.e4QueryMissing.includes(record.commandKey);
       const retryBlock = expired ? undefined : !canRetry ? "这个账号已没有这项权限，请有权限的同事处理" : needQuery ? "先查原提案，明确查不到才能重试" : undefined;
-      return <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`} actionBelow
+      return <Notice key={record.fingerprint} tone="warn" title={`${record.label} · ${record.proposalStatus === "pending" ? "待审批" : "结果未确认"}`} actionBelow
         action={<>
           {ctx.canQueryE4 && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Pending(record)}>查询原提案</Button>}
-          {!expired && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原操作重试</Button>}
-          {((!expired && ctx.e4RetryRejected.includes(record.commandKey)) || (expired && ctx.e4ExpiredNotFound.includes(record.commandKey))) && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除待确认</Button>}
+          {!expired && !created && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原操作重试</Button>}
+          {(!created && ((!expired && ctx.e4RetryRejected.includes(record.commandKey)) || (expired && ctx.e4ExpiredNotFound.includes(record.commandKey)))) && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
         <p>{formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，可能已经提交。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? "这个账号已没有这项权限，不能重试。" : needQuery ? "先查原提案，查不到再按原操作重试。" : "重发原内容，已成功的不会重复执行。"}这单在有结论前不能再操作。解除待确认只清本页记录，不替后端原操作结案。
         {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(record.orderNo)}`}>到操作记录与审批核对</Link></>}

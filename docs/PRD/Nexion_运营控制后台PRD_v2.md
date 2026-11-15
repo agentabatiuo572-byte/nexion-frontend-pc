@@ -1085,8 +1085,14 @@ flowchart LR
 
 F3 读取可空 `assignedAtIso`，存在时按全站业务时区显示同一 instant，缺失/null 回退原 assignedAt；两者均空显示—。不把存储 +08:00 当业务展示时区，不重写历史时间。固定「北京时间」列名交视觉同步。后端 `04d11022` `team/mapper/BinaryCommissionSettlementMapper.AssignmentMemberRow.assignedAtIso:62–66`。
 
-2026-11-15 复查 F02：升级前仅label/orderNo/spec的 E4 提案仍可用原命令键取得当前票据；严格校验mine/obj及operationCode（历史无code则核原action），成功后解除未知记录并重读当前订单，pending由后端订单pendingApproval显示，终态按当前状态处理。查不到/失败/不匹配保留；不补来源、不重发。出处 backend04d11022 OpsAuditCenterService.proposalByIdempotencyKey/toTicket。
+2026-11-15 复查 F02：升级前仅label/orderNo/spec的 E4 提案仍可用原命令键取得当前票据；严格校验mine/obj及operationCode（历史无code则核原action），成功后pending保留为已确认待审批记录并重读订单，终态才清记录并按当前状态处理。查不到/失败/不匹配保留；不补来源、不重发。出处 backend04d11022 OpsAuditCenterService.proposalByIdempotencyKey/toTicket。
 
 2026-11-15 R1提案过期修正：E4仅在过期后严格原键查询返回 A2_PROPOSAL_NOT_FOUND 时记本标签页可解除资格；新查询开始撤销旧资格，查询错误/其他404/匹配票据均不授予资格。现有解除确认框承载确认，确认时重核过期和对应记录，再解除并重读订单。D2/D3直接写不适用。
 
 2026-11-15 I01：E4退款按有效小数精度校验，去掉小数尾零后不超过6位，70.1234560/70.0000000可在本金足够时提交，70.1234561拒绝；仅比较用规范化串，传给A2的金额和未知恢复仍保存原输入文本。后端 `04d11022 OpsDeviceService.refundAmount:1853–1863` 以 BigDecimal stripTrailingZeros().scale()≤6 校验，最终 setScale(6)，前端不先舍入。
+
+### 2026-11-15 E4 恢复补核
+
+四类提案 e4_order_refund/cancel/terminal/state 都走sendE4Proposal，首次可读4xx业务拒绝按R1清新记录，保留原输入；严格重试判断不放宽。幂等未收敛、上游unknown、5xx、网络/解析失败仍留。
+收到POST票号立即持久化receivedTicketId/creationConfirmed，不把该响应status当现在状态；共用readE4CurrentProposal按原key严格查询当前票据，校验mine/obj/op（历史无op核action）和已见票号一致。pending保留已确认待审批状态，终态清记录并读当前订单。查询开始清上次当前status，失败保原请求和建单证据，proposalStatus为空表示当前进度未知；不重发已建单，不用无单解除。
+受控核查成功同样只证明A2建单，须读当前票据；受控明确未执行按原终态规则收尾。过期严格A2_PROPOSAL_NOT_FOUND仅在从未见票号且无建单证据时授予确认解除资格。出处backend04d11022 OpsAuditCenterService.ticketReceipt:948–975（退款回当前票据，其他回建单快照）、proposalByIdempotencyKey:164–177及决定表R1-提案过期。
