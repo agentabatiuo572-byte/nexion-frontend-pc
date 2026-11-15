@@ -3025,7 +3025,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
   if (spec.kind === "day-one-window") {
     return (
       <div className="field" data-business-form="day-one-window">
-        <span className="bf-legend">首日任务完成期限</span>
+        <span className="bf-legend">新手任务完成期限</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("activeHours", "全额奖励期限（小时）", "24", "number")}
           {input("graceHours", "宽限期限（小时）", "72", "number")}
@@ -3040,7 +3040,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
   if (spec.kind === "day-one-tri-reward") {
     return (
       <div className="field" data-business-form="day-one-tri-reward">
-        <span className="bf-legend">首日任务分档奖励</span>
+        <span className="bf-legend">新手任务分档奖励</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("active", "按时完成奖励(UVT)", "500", "number")}
           {input("grace", "宽限期奖励(UVT)", "200", "number")}

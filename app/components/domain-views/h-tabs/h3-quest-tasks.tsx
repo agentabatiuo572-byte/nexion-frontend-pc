@@ -48,7 +48,7 @@ type Locale = "en" | "zh" | "vi";
 
 const LOCALE_LABEL: Record<Locale, string> = { en: "英文", zh: "中文", vi: "越南语" };
 const FUND_APPROVER = "另一位超级管理员";
-const TYPE_LABEL: Record<string, string> = { DAY_ONE: "首日任务", WEEKLY_T1: "每周一档", WEEKLY_T2: "每周二档", DAILY: "每日任务（签到页管理）", MONTHLY: "月度挑战" };
+const TYPE_LABEL: Record<string, string> = { DAY_ONE: "新手任务", WEEKLY_T1: "每周一档", WEEKLY_T2: "每周二档", DAILY: "每日任务（签到页管理）", MONTHLY: "月度挑战" };
 
 function directionOf(current: string | null, next: string | null): "up" | "down" | "same" | null {
   if (current == null || next == null) return null;
@@ -340,7 +340,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       facts: <Facts>
         <Fact k="任务名称">{String(bv.missionName ?? "").trim()}</Fact>
         <Fact k="任务编号"><span data-mono="">{String(bv.missionCode ?? "").trim()}</span></Fact>
-        <Fact k="奖励">{reward == null ? "—" : `${amountText(reward)} UVT${missionType === "DAY_ONE" ? "（首日任务按首日奖励统一发）" : ""}`}</Fact>
+        <Fact k="奖励">{reward == null ? "—" : `${amountText(reward)} UVT${missionType === "DAY_ONE" ? "（新手任务不单发，做完全部统一领新手任务奖励）" : ""}`}</Fact>
         <Fact k="类别和跳转">{`${TASK_CATEGORY_LABELS[bv.category] ?? bv.category} · ${TASK_ACTION_ROUTE_LABELS[bv.actionRoute] ?? bv.actionRoute}`}</Fact>
         <Fact k="建好后">已停用；绑定完成条件、启用以后用户才看得到</Fact>
         {approval ? <Fact k="什么时候生效" tone="warn">奖励大于 0：提交审批，批准后才建好</Fact> : <Fact k="什么时候生效">奖励是 0：确认后直接建好</Fact>}
@@ -590,7 +590,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <Fact k="状态"><Change from={enabled ? "已启用" : "已停用"} to={!nextEnabled ? "已停用" : "已启用"} /></Fact>
         <Fact k="已领到的用户">不变，按拿到时的条件算</Fact>
         <Fact k="以后的用户">{!nextEnabled ? "之后注册、之后发布的任务里，做这件事不再算完成" : "之后注册、之后发布的任务里，做这件事算完成"}</Fact>
-        {!nextEnabled && <Fact k="会被拒绝的情况">它是已启用首日任务的最后一条启用条件</Fact>}
+        {!nextEnabled && <Fact k="会被拒绝的情况">它是已启用新手任务的最后一条启用条件</Fact>}
       </Facts>,
       statedBrief: { impact: "只改以后的任务怎么算完成，不改已经发出的任务。", check: "核对条件和对应任务；理由写清依据。" },
       reason: true,
@@ -771,7 +771,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <Fact k="对应任务">{bindingTaskName(binding.questCode) ?? `不在本页任务里（${binding.questCode}）`}</Fact>
         <Fact k="已领到的用户">不变，按拿到时的条件算</Fact>
         <Fact k="以后的用户">之后注册、之后发布的任务里，做这件事不再算完成</Fact>
-        {enabled && <Fact k="会被拒绝的情况">它是已启用首日任务的最后一条启用条件</Fact>}
+        {enabled && <Fact k="会被拒绝的情况">它是已启用新手任务的最后一条启用条件</Fact>}
       </Facts>,
       statedBrief: { impact: "只删现在的设置；历史和已发出任务里的条件不删。", check: "只想暂时不算用「停用」；理由写清依据。" },
       reason: true,
@@ -799,7 +799,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   // ===== 渲染 =====
   const zone = businessZone().label;
   const header = (
-    <PageHeader pageId="H3" title="用户任务管理" summary="管 App 的首日任务、每周任务和它们的奖励。"
+    <PageHeader pageId="H3" title="用户任务管理" summary="管 App 的新手任务、每周任务和它们的奖励。"
       meta={readAt ? <span className="rd-toolbar">
         <span>{`${businessClock(readAt)} 读取（${zone}）· 打开时读取`}</span>
         <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void refresh().catch(cause => toast(displayAdminError(cause)))}>刷新</Button>
@@ -968,15 +968,15 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const conclusion = (
     <Conclusion state={conclusionState} icon={conclusionState === "warn" ? CircleAlert : undefined}
       explain={<>
-        <p>启用中按任务的状态数，只算首日和每周任务；历史月度挑战不算。</p>
+        <p>启用中按任务的状态数，只算新手任务和每周任务；历史月度挑战不算。</p>
         <p>「做不完」是已启用、但后端判定还没有启用的完成条件的任务：它会发给之后的用户，用户却完成不了。</p>
         {active.length === 0 && <p>没有启用的任务时，已发出的那一份不变；之后注册的用户、之后发布的每周任务都不会有新任务。</p>}
         <p>等批准的奖励和倍率修改：有查看审批权限时这页会读出来并锁住对应项；没有这个权限时只显示你在这个标签页提交过的。</p>
       </>}
       action={canAudit ? <Link className="rd-link" href="/platform/audit?domain=H" prefetch={false}>看待批准的申请</Link> : undefined}>
       {active.length === 0
-        ? "没有启用的首日或每周任务"
-        : `首日 ${dayOne.filter((task) => taskStatusOf(task) === "active").length} 个、每周 ${[...t1, ...t2].filter((task) => taskStatusOf(task) === "active").length} 个任务在启用`}
+        ? "没有启用的新手任务或每周任务"
+        : `新手任务 ${dayOne.filter((task) => taskStatusOf(task) === "active").length} 个、每周任务 ${[...t1, ...t2].filter((task) => taskStatusOf(task) === "active").length} 个在启用`}
       {unknownCount > 0 && `；${unknownCount} 个修改结果未知`}
       {attention.length > 0 ? `；${attention.length} 件要处理` : mutations.auditKnown ? "，没有要处理的事" : shellCtx.can("platform_a2_read") ? "；审批进度这次没读到，点刷新重试" : ""}
     </Conclusion>
@@ -985,18 +985,18 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const stats = (
     <StatBand label="任务概况">
       <Stat tone="role-2" icon={ListChecks} label="已启用的任务" value={String(active.length)} unit="个"
-        sub={`共 ${all.length} 个：首日 ${dayOne.length} · 每周 ${t1.length + t2.length}`}
-        explain="首日和每周任务里状态是已启用的。已启用的才会发给之后注册的用户和之后发布的每周任务。" />
+        sub={`共 ${all.length} 个：新手任务 ${dayOne.length} · 每周 ${t1.length + t2.length}`}
+        explain="新手任务和每周任务里状态是已启用的。已启用的才会发给之后注册的用户和之后发布的每周任务。" />
       <Stat tone={stuck.length ? "warn" : "role-other"} icon={CircleAlert} label="用户做不完的任务" value={String(stuck.length)} unit="个"
         sub={`另有 ${all.filter((task) => taskStatusOf(task) === "paused" && taskUnbound(task)).length} 个停用的还没绑定`}
         explain="已启用、但没有启用的完成条件的任务。停用的任务启用前要先绑定，后端会拦。" />
       <Stat tone="role-4" icon={Sparkles} label="任务加成（运营阶段设置）" value={h1Value ?? "—"} unit={h1Value ? "倍" : undefined}
         sub={currentPhase ? `现在是 ${currentPhase} · 只读` : "当前阶段没读到"} href={canPhase ? "/growth/phase" : undefined} openLabel="去运营阶段设置"
-        explain="首日和每周奖励都乘它，在「运营阶段设置」改。首日在注册时、每周在发布时把它冻结进那一份任务，之后改不影响已发出的。" />
+        explain="新手任务和每周任务的奖励都乘它，在「运营阶段设置」改。新手任务在用户注册时、每周任务在发布时定下倍数，之后改不影响已发出的。" />
       <Stat tone="role-other" icon={History} label="经营统计" value="—"
         sub="领取率 · 本周完成和发放 · 月度人数"
         explain={<>
-          <p>首日领取率（24 小时内、宽限）、本周完成（一档、二档）、本周发放 UVT、正在做月度挑战的人数：后端现在只给任务定义的数量，这几项没有数。</p>
+          <p>新手任务奖励领取率（全额、宽限）、本周完成（一档、二档）、本周发放 UVT、正在做月度挑战的人数：后端现在只给任务定义的数量，这几项没有数。</p>
           <p>显示「—」，不是 0，也不代表没有人。已提后端补统计。</p>
         </>} />
     </StatBand>
@@ -1016,7 +1016,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
 
   // ----- 任务卡和详情 -----
   const rewardOf = (task: QuestTask, list: ListKey) => {
-    if (list === "dayOne") return { reward: <span className="h3-card-muted">按首日奖励统一发</span>, note: undefined };
+    if (list === "dayOne") return { reward: <span className="h3-card-muted">按新手任务奖励统一发</span>, note: undefined };
     const base = decimalOf(task.reward);
     const result = mulDecimal(base, h1Value, weeklyValue);
     return {
@@ -1106,17 +1106,17 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const windowRaw = text(model.dayOneWindow, "");
   const dayOneTab = (
     <div {...tabIds.panel("dayOne")} className="h3-tabpanel">
-      <Panel title="首日奖励和时限" icon={Gift} tone="role-4" sub={`资格期限 ${eligibility ? `注册后 ${eligibility} 小时` : "—"}`}
-        explain="新用户注册后第一天的任务：做完全部才领一次奖励。三档奖励、资格期限都在用户注册时定下，之后改只影响之后注册的用户。">
+      <Panel title="新手任务奖励和期限" icon={Gift} tone="role-4" sub={`完成期限 ${eligibility ? `注册后 ${eligibility} 小时` : "—"}`}
+        explain="新用户注册后拿到一组新手任务，做完全部才领一次奖励。三档奖励和完成期限按注册那一刻的设置，之后改只影响之后注册的用户。">
         <DayOneTimeline triReward={triRaw} eligibilityHours={eligibility} />
-        <ConfigList label="首日参数">
-          <ConfigRow name="首日奖励" value={tri ? `全额 ${amountText(tri.full)} UVT · 宽限 ${amountText(tri.grace)} UVT · 过期 0` : triRaw ? operatorCopyText(triRaw) : "还没设置"}
+        <ConfigList label="新手任务设置">
+          <ConfigRow name="新手任务奖励" value={tri ? `全额 ${amountText(tri.full)} UVT · 宽限 ${amountText(tri.grace)} UVT · 过期 0` : triRaw ? operatorCopyText(triRaw) : "还没设置"}
             sub={lockTag("dayOne.triReward") ?? "调高或第一次设置要批准"}
-            what="做完全部首日任务后领取的奖励，按领取时离注册多久分全额、宽限、过期三档。"
+            what="做完全部新手任务后领一次。按领取时离注册多久分三档：注册后 24 小时内领是全额，之后到完成期限前领是宽限，过了完成期限是 0。"
             when={`调高或第一次设置：提交审批，${FUND_APPROVER}批准后生效；调低确认后立即生效。`}
             effect="只影响之后注册的用户；已经注册的按注册时定下的三档。"
-            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("dayOne.triReward")} onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:1"]), () => openSimpleConfig("dayOne.triReward", "首日任务奖励", text(model.dayOneTriReward), true, {
-              title: "改首日奖励",
+            action={canModuleWrite ? <Button size="sm" disabledReason={lockReason("dayOne.triReward")} onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:1"]), () => openSimpleConfig("dayOne.triReward", "新手任务奖励", text(model.dayOneTriReward), true, {
+              title: "改新手任务奖励",
               effect: directionEffect("注册用户"),
               facts: (value) => {
                 const next = parseTriReward(value);
@@ -1130,7 +1130,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                   {approverFacts(first || direction === "up")}
                 </Facts>;
               },
-              statedBrief: { impact: "只改之后注册用户的首日奖励，不立即发钱。", check: "全额大于 0，宽限不超过全额，最后一档是 0。" },
+              statedBrief: { impact: "只改之后注册用户的新手任务奖励，不立即发钱。", check: "全额大于 0，宽限不超过全额，最后一档是 0。" },
               confirmLabelForValue: (value) => {
                 const next = parseTriReward(value);
                 return !tri || (next && (Number(next.full) > Number(tri.full) || Number(next.grace) > Number(tri.grace))) ? "提交审批" : "确认修改";
@@ -1139,48 +1139,48 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               coverageCheck: "提交审批时和批准时，后端各检查一次兑付覆盖率；低于红线拒绝。",
               hint: "格式：全额 / 宽限 / 0 UVT，例如 100 / 50 / 0 UVT",
             }, <>全额、宽限、过期三档一起改。</>))}>调整</Button> : undefined} />
-          <ConfigRow name="资格期限" value={eligibility ? `注册后 ${eligibility} 小时` : "—"}
-            what="从注册算，到这个时间首日任务过期，不能再完成和领取。"
+          <ConfigRow name="完成期限" value={eligibility ? `注册后 ${eligibility} 小时` : "—"}
+            what="从注册算，过了这个时间新手任务过期，不能再完成和领取。"
             when="确认后立即生效，只对之后注册的用户。" effect="已经注册的用户按注册时定下的期限。"
-            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:2"]), () => openSimpleConfig("dayOne.eligibilityHours", "新手任务资格有效期（小时）", text(model.dayOneEligibilityHours), false, {
-              title: "改首日资格期限",
+            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:2"]), () => openSimpleConfig("dayOne.eligibilityHours", "新手任务完成期限", text(model.dayOneEligibilityHours), false, {
+              title: "改新手任务完成期限",
               effect: immediate,
               facts: <Facts>
                 <Fact k="已经注册的用户">不变：按注册时定下的期限</Fact>
                 <Fact k="之后注册的用户">按新期限</Fact>
                 <Fact k="全额时限">固定 24 小时，不跟着变</Fact>
               </Facts>,
-              statedBrief: { impact: "只改之后注册用户的首日资格期限。", check: "填 24–720 的整数小时。" },
+              statedBrief: { impact: "只改之后注册用户的新手任务完成期限。", check: "填 24–720 的整数小时。" },
               confirmLabel: "确认修改",
               hint: "24–720 的整数小时",
-              preview: (value) => /^\d+$/.test(value.trim()) ? `之后注册的用户，注册后 ${value.trim()} 小时首日任务过期。` : null,
-            }, <>从注册算，过了这个时间首日任务过期。</>))}>调整</Button> : undefined} />
+              preview: (value) => /^\d+$/.test(value.trim()) ? `之后注册的用户，注册后 ${value.trim()} 小时新手任务过期。` : null,
+            }, <>从注册算，过了这个时间新手任务过期。</>))}>调整</Button> : undefined} />
           <ConfigRow name="任务时长说明文字" value={windowRaw ? operatorCopyText(windowRaw) : "还没填"}
             sub={<StatusTag tone="neutral">只是展示文字，不改变倒计时</StatusTag>}
             what="后台记的一段说明文字。"
-            effect="不改变任何用户的倒计时：真实全额时限固定 24 小时。已提后端决定接上还是退役。"
-            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:3"]), () => openSimpleConfig("dayOne.windowMs", "首日任务时长", text(model.dayOneWindow), false, {
+            effect="不改变 App 的倒计时和奖励：倒计时按完成期限走，全额时限固定 24 小时。"
+            action={canModuleWrite ? <Button size="sm" onClick={conflictDraft.register(JSON.stringify(["openSimpleConfig:3"]), () => openSimpleConfig("dayOne.windowMs", "任务时长说明文字", text(model.dayOneWindow), false, {
               title: "改任务时长说明文字",
               effect: <StatusTag tone="neutral">只改文字</StatusTag>,
               facts: <Facts>
                 <Fact k="改的是">一段展示文字</Fact>
-                <Fact k="用户的倒计时">不变：全额时限固定 24 小时</Fact>
+                <Fact k="用户的倒计时">不变：按完成期限走</Fact>
               </Facts>,
-              statedBrief: { impact: "只改一段说明文字，不改变任何用户的首日倒计时。", check: "核对文字；理由写清依据。" },
+              statedBrief: { impact: "只改一段说明文字，不改变任何用户的倒计时。", check: "核对文字；理由写清依据。" },
               confirmLabel: "确认修改",
               hint: "最多 160 字",
             }, <>只是一段展示文字。</>))}>调整</Button> : undefined} />
         </ConfigList>
       </Panel>
-      <Panel title="首日任务" icon={ListChecks} tone="role-2" sub={`${dayOne.length} 个 · 已启用 ${dayOneActive.length} 个`}
-          explain="用户注册时拿到的是那一刻已启用、绑定了完成条件的首日任务；做完全部才能领奖。之后改任务不影响已经注册的用户。"
-          actions={canModuleWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating("DAY_ONE")}>新建首日任务</Button> : undefined}>
+      <Panel title="新手任务" icon={ListChecks} tone="role-2" sub={`${dayOne.length} 个 · 已启用 ${dayOneActive.length} 个`}
+          explain="用户注册时拿到的是那一刻已启用、绑定了完成条件的新手任务；做完全部才能领奖。之后改任务不影响已经注册的用户。"
+          actions={canModuleWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating("DAY_ONE")}>新建新手任务</Button> : undefined}>
           <div className="h3-tasks-layout">
           {cards("dayOne", dayOne)}
         <AppPreview kind="dayOne" tasks={dayOneActive.map((task) => previewTask(task, false))}
-          header={<><b>新手任务</b><span>{tri ? `注册 24 小时内领得 ${amountText(tri.full)} UVT` : "首日奖励还没设置"}</span></>}
-          footer={tri && eligibility ? `之后领得 ${amountText(tri.grace)} UVT · 注册 ${eligibility} 小时后过期` : undefined}
-          empty="新用户看不到首日任务卡" />
+          header={<><b>新手任务</b><span>{`${dayOneActive.length} 项 · 倒计时 ${eligibility ? `${eligibility}:00:00` : "—"}`}</span></>}
+          footer="完成全部任务后领取奖励；做完出现「领取新手任务奖励」，到期显示「资格已结束」"
+          empty="未参加新手任务（当前没有启用任务）" />
           </div>
         </Panel>
     </div>
@@ -1320,7 +1320,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             </tbody>
           </Table>}
         {orphans.length > 0 && <div className="h3-block-gap"><Notice tone="warn" title={`${orphans.length} 条启用的完成条件对应的任务不在这页`}>
-          <p>这页只列首日和每周任务。先到后台核查这个任务编号的真实目标，再决定修改或删除；不按它补任务。</p>
+          <p>这页只列新手任务和每周任务。先到后台核查这个任务编号的真实目标，再决定修改或删除；不按它补任务。</p>
         </Notice></div>}
       </Panel>
     </div>
@@ -1470,21 +1470,21 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   // ----- 数据口径（第三层） -----
   const monitor = model.taskMonitor ?? [];
   const contracts = (
-    <Fold title="数据口径（只读）" icon={Route} tone="role-other" summary={`任务定义 ${monitor.length} 类 · 首日任务 ${dayOne.length} 条`}
-      explain="给核对报表的同事看：任务定义的数量，以及首日任务的完成记录口径。这些不是完成人数或发奖数。">
+    <Fold title="数据口径（只读）" icon={Route} tone="role-other" summary={`任务定义 ${monitor.length} 类 · 新手任务 ${dayOne.length} 条`}
+      explain="给核对报表的同事看：任务定义的数量，以及新手任务的完成记录口径。这些不是完成人数或发奖数。">
       <div className="h3-contract">
         <div className="h3-sub-head"><h3>任务定义数量</h3><Explain label="任务定义数量怎么算" content="按任务类型数后台里的任务定义（含已停用、已归档），不是完成或领取人数。读取异常时后端会返回空，空不代表 0 个。" /></div>
         {monitor.length === 0
           ? <p className="h3-empty-line">后端没有返回，不能据此判断有 0 个。</p>
           : <dl className="h3-monitor">{monitor.map((item) => <div key={item.label}><dt>{TYPE_LABEL[item.label] ?? operatorCopyText(item.label)}</dt><dd>{operatorCopyText(item.note).replace(/\s*来自\s*nx_\w+/, "")}</dd></div>)}</dl>}
-        <div className="h3-sub-head"><h3>首日任务的完成记录口径</h3><Explain label="口径怎么算" content={<>
+        <div className="h3-sub-head"><h3>新手任务的完成记录口径</h3><Explain label="口径怎么算" content={<>
           <p>「过去一天新建的任务记录」是过去 24 小时新建的用户任务记录数，不管做没做完，不是完成数。</p>
           <p>「异常占比」是同一段时间里失败、异常、被拒的记录占比，后端算到 1 位小数；没有记录时是「—」。</p>
           <p>记录事件实际是任务编号；转化、留存几项是后端写死的值，不能据此认定发奖和报表数字一致。</p>
         </>} /></div>
         {dayOne.length === 0
-          ? <p className="h3-empty-line">还没有首日任务。</p>
-          : <Table label="首日任务的完成记录口径">
+          ? <p className="h3-empty-line">还没有新手任务。</p>
+          : <Table label="新手任务的完成记录口径">
             <thead><tr><Th>任务</Th><Th>记录事件</Th><Th align="right">过去一天新建的任务记录</Th><Th align="right">异常占比</Th><Th>其他口径</Th></tr></thead>
             <tbody>
               {dayOne.map((task, index) => {
@@ -1506,7 +1506,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   );
 
   const tabItems = [
-    { value: "dayOne" as const, label: "首日任务", count: stuckIn(dayOne) },
+    { value: "dayOne" as const, label: "新手任务", count: stuckIn(dayOne) },
     { value: "weekly" as const, label: "每周任务", count: stuckIn(t1) + stuckIn(t2) + (regionPending ? 1 : 0) },
     { value: "bindings" as const, label: "完成条件", count: orphans.length },
     { value: "monthly" as const, label: "历史月度挑战" },
@@ -1595,11 +1595,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Drawer>
 
       {creating && <H3MissionFormDrawer missionType={creating} onClose={() => setCreating(null)}
-        onReview={(bv) => runCreateMission(creating, creating === "DAY_ONE" ? "首日任务" : creating === "WEEKLY_T1" ? "每周一档" : "每周二档", bv)} />}
+        onReview={(bv) => runCreateMission(creating, creating === "DAY_ONE" ? "新手任务" : creating === "WEEKLY_T1" ? "每周一档" : "每周二档", bv)} />}
 
       <PaginationExemptionList
         items={[
-          { label: "首日任务", maxRows: dayOne.length, reason: "任务很少，需要一屏核对奖励" },
+          { label: "新手任务", maxRows: dayOne.length, reason: "任务很少，需要一屏核对奖励" },
           { label: "周任务", maxRows: t1.length + t2.length, reason: "需要一屏核对两档奖励" },
           { label: "月度任务", maxRows: monthly.length, reason: "主题很少，一屏核对更方便" },
         ]}
