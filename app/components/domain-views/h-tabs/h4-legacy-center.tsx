@@ -187,6 +187,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const changes = businessValue && !(isValidElement(facts) && facts.type === ProbabilityCompare) ? fields.filter(field => !field.key.startsWith("__")).map(field => ({ key: field.key, label: field.label, labels: field.optionLabels,
       before: creating ? null : field.current ?? null, after: businessValue[field.key] ?? null,
       beforeUnit: creating ? undefined : unit(field.key, before), afterUnit: unit(field.key, businessValue),
+      // 代金券不管填多少，每次只发 1 张（AppGrowthWheelService.award）。
+      ...(field.key === "rewardAmount" && !creating && before.rewardKind === "coupon" ? { beforeShown: "1 张" } : {}),
+      ...(field.key === "rewardAmount" && businessValue.rewardKind === "coupon" ? { afterShown: "1 张" } : {}),
     })) : undefined;
     return hApprovalReconfirm(error, { changes,
       hasPending: () => !!h4PendingFor(h4Scope((error.input as { path: string }).path, JSON.parse((error.input as { body: string }).body))),
@@ -1101,7 +1104,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         actions={<>{wheelPending && pendingTag("转盘奖池")}<Button variant="primary" disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openWheelProbabilities:1"]), openWheelProbabilities)}>调整概率</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!canWheelWrite ? "没有修改转盘奖池的权限" : undefined} onClick={conflictDraft.register(JSON.stringify(["openCreateWheelTier:1"]), openCreateWheelTier)}>新建奖项</Button></>}>
         {wheelBroken && <Notice tone="danger" title="抽不了的原因">
           {[pointsTiers.length ? `${pointsTiers.map((tier) => text(tier.tier)).join("、")} 是积分奖型，后端已不支持：点「退役」后补足概率。` : "",
-            nexTiers.length ? `${nexTiers.map((tier) => text(tier.tier)).join("、")} 的奖型存成旧名 nex，等后端修（BUG-426）。` : "",
+            nexTiers.length ? `${nexTiers.map((tier) => text(tier.tier)).join("、")} 是 UVT 奖，但奖型还存着旧名，App 不认；要等后端改好数据。` : "",
             probabilityOk ? "" : `概率合计 ${percentText(probabilitySum)}%，要在「调整概率」里补到 100%。`].filter(Boolean).map((line) => <p key={line}>{line}</p>)}
         </Notice>}
         {wheelDailyUsageError && <Notice tone="warn" title="今天的用量没读到" action={<Button size="sm" onClick={() => void reloadWheelUsage()}>重试</Button>}>已用次数和今天已发先显示「—」，不是 0；奖池其他内容照常。</Notice>}

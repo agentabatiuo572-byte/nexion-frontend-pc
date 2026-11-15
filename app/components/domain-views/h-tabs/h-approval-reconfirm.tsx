@@ -16,6 +16,8 @@ export type HApprovalChange = {
   beforeUnit?: string; afterUnit?: string;
   /** 下拉项的中文叫法（如 uvt → UVT、0 → 否），只用于显示。 */
   labels?: Record<string, string>;
+  /** 某一边按业务规则要写成固定说法时用（如代金券每次只发 1 张），只用于显示。 */
+  beforeShown?: string; afterShown?: string;
 };
 export type HApprovalReconfirmReq = ConfirmReq & { approvalChanges?: HApprovalChange[] };
 
@@ -26,16 +28,15 @@ function ChangeFacts({ changes }: { changes: HApprovalChange[] }) {
   const shown = (value: string | null, unit: string | undefined, labels?: Record<string, string>) =>
     value === null || value.trim() === "" ? "—" : `${labels?.[value] ?? value}${unit ? ` ${unit}` : ""}`;
   const creating = changes.every(change => change.before === null);
+  // 名称里已带单位（如「中奖概率（%）」）时值后不再重复。
+  const unit = (change: HApprovalChange, value?: string) => value && change.label.includes(`（${value}）`) ? undefined : value;
+  const before = (change: HApprovalChange) => change.beforeShown ?? shown(change.before, unit(change, change.beforeUnit), change.labels);
+  const after = (change: HApprovalChange) => change.afterShown ?? shown(change.after, unit(change, change.afterUnit), change.labels);
   const rows = creating ? changes.filter(change => change.after !== null && change.after.trim() !== "")
-    : changes.filter(change => (change.before ?? "") !== (change.after ?? "") || change.beforeUnit !== change.afterUnit);
+    : changes.filter(change => before(change) !== after(change));
   return <>
     {creating && <Fact k="改动">新建</Fact>}
-    {rows.map(change => {
-      // 名称里已带单位（如「中奖概率（%）」）时值后不再重复。
-      const unit = (value?: string) => value && change.label.includes(`（${value}）`) ? undefined : value;
-      return <Fact key={change.key} k={change.label}>{creating ? shown(change.after, unit(change.afterUnit), change.labels)
-        : <Change from={shown(change.before, unit(change.beforeUnit), change.labels)} to={shown(change.after, unit(change.afterUnit), change.labels)} />}</Fact>;
-    })}
+    {rows.map(change => <Fact key={change.key} k={change.label}>{creating ? after(change) : <Change from={before(change)} to={after(change)} />}</Fact>)}
   </>;
 }
 
