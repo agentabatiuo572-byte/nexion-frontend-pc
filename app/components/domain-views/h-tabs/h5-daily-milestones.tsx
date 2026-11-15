@@ -606,7 +606,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
             const change = err.input as H5Change;
             const op = change.target.startsWith("streak:") ? "h5_streak_milestone" : change.target.startsWith("power:") ? "h5_power_up_config" : "h5_earn_milestone";
             setMc(null);
-            ctx.openConfirm(hApprovalReconfirm(err, { action: change.action, title: change.name, reason: change.reason,
+            ctx.openConfirm(hApprovalReconfirm(err, { action: change.action, title: mc.title ?? change.name, reason: change.reason,
               change: <Change from={shownReward(change.before)} to={shownReward(change.after)} />, approver: FUND_APPROVER, rights: FUND_APPROVER_RIGHTS, holds: "这一项",
               extra: <Fact k="审批单名称">{`「${findHighOp(op)!.action}」`}</Fact> }));
             return;

@@ -906,7 +906,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                 const { write, reason: kept } = error.input as { write: H3Write; reason: string };
                 setMc(null);
                 shellCtx.openConfirm(hApprovalReconfirm(error, { action: write.change.action, title: write.change.title, reason: kept,
-                  change: <Change from={shownValue(write.change.before)} to={shownValue(write.change.after)} />, approver: FUND_APPROVER, holds: "这一项" }));
+                  change: <Change from={`${shownValue(write.change.before)}${mc.edit?.unit ? ` ${mc.edit.unit}` : ""}`} to={`${shownValue(write.change.after)}${mc.edit?.unit ? ` ${mc.edit.unit}` : ""}`} />, approver: FUND_APPROVER, holds: "这一项" }));
                 return;
               }
               toast(error instanceof Error ? displayAdminError(error) : "操作失败");

@@ -296,7 +296,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       facts: (
         <div className="rd-stack">
           {rows.length === 1
-            ? <Facts><Fact k="代金券">{v.name}</Fact><Fact k={rows[0].label}><Change from={rows[0].before} to={rows[0].after} /></Fact></Facts>
+            ? <Facts><Fact k="代金券">{v.name}</Fact><Fact k={rows[0].label}><Change from={rows[0].before} to={rows[0].after} /></Fact>
+              {"note" in rows[0] && rows[0].note?.startsWith("改了日期") && <Fact k="怎么算">{rows[0].note.split("；")[0]}</Fact>}</Facts>
             : <><Facts><Fact k="代金券">{v.name}</Fact></Facts><DiffList rows={rows} emptyNote="没有改动的项；仍会保存一次并记下理由。" /></>}
           {v.issuedCount > 0 && <Facts>
             <Fact k="已发出">{`${countText(v.issuedCount)} 张`}</Fact>

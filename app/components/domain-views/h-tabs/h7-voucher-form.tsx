@@ -255,7 +255,7 @@ export function H7VoucherForm({ voucher, initial, latest, skuOptions, skuLabels,
                   {(control) => <Input {...control} type="date" value={value.endDate} onChange={(e) => set("endDate", e.target.value)} />}
                 </Field>
               </div>
-              {legacyKept && <Notice tone="neutral" title="这张券不按整天算">改版前建的券，按上面写的时刻开始和截止。不改日期就保留；改了日期，按北京时间整天算（00:00 开始、23:59 截止）。</Notice>}
+              {legacyKept && <Notice tone="neutral" title="这张券不按整天算">按上面写的时刻开始和截止。不改日期就保留原时刻；改了日期，按北京时间整天算（00:00 开始、23:59 截止）。</Notice>}
             </section>
 
             <section className="h7-form-section" aria-labelledby="h7-f-issue">

@@ -142,6 +142,7 @@ export default function H4GenesisRaffle({ ctx, onRowsChange }: { ctx: HCtx; onRo
       : key === "startsAt" || key === "drawAt" ? raw ? `${formatTime(raw as string, "Asia/Shanghai")}（北京时间）` : "未配置"
       : key.endsWith(".rewardType") ? raw === "DEVICE" ? "设备" : raw === undefined ? "—" : String(raw)
       : key.startsWith("prizes.") && raw === undefined ? "没有这一项"
+      : key.endsWith(".amount") ? `${amountText(String(raw))} ${PRIZE_UNIT[(draft?.prizes[Number(key.split(".")[1])] ?? base?.prizes[Number(key.split(".")[1])])?.rewardType ?? "UVT"]}`
       : raw === undefined || raw === null || raw === "" ? "—" : String(raw)) : [];
   // 合并：最新的这一期为底，放回自己改过的项；奖项按位置逐字段放回，数量不同时奖项整份用你的。
   const mergeConflict = () => {
