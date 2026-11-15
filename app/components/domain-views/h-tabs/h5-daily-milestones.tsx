@@ -86,7 +86,7 @@ function ruleValueText(rule: CheckInRule) {
   return copy.unit === "%" ? `${cur}%` : `${cur} ${copy.unit}`;
 }
 
-type H5Confirm = ActionConfirmReq & { target: string; original?: H5PendingCommand; confirmLabelForValue?: (value?: string) => string };
+type H5Confirm = ActionConfirmReq & { target: string; commandKey?: string; original?: H5PendingCommand; confirmLabelForValue?: (value?: string) => string };
 
 type Tab = "rules" | "streak" | "power" | "earn" | "idle";
 
@@ -108,6 +108,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const [tab, setTab] = useState<Tab>("rules");
   const [mc, setMc] = useState<H5Confirm | null>(null);
   const fresh = useRef(false);
+  const confirmation = useRef(mc);
+  confirmation.current = mc;
   const conflictDraft = useHConflictDraft(!loading && !error && fresh.current);
   const [approvalLabel, setApprovalLabel] = useState(false);
   const openActionConfirm = (req: H5Confirm) => {
@@ -135,16 +137,17 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     }
   };
 
-  const mutations = useH5Mutations(toast, async () => {
+  const mutations = useH5Mutations(toast, async (commandKey) => {
     fresh.current = false;
-    setMc(null);
+    if (commandKey) setMc(current => current && (current.original?.commandKey ?? current.commandKey) === commandKey ? null : current);
     await reload();
   }, () => fresh.current);
   // 保存被「别人先改过」拒绝：页面已重读，留住这次要改的内容给运营对照。
   const [stale, setStale] = useState<{ name: string; before: string; after: string } | null>(null);
   const [releasing, setReleasing] = useState<H5PendingCommand | null>(null);
   const runChange = async (change: Parameters<typeof mutations.run>[0]) => {
-    try { await mutations.run(change); setStale(null); } catch (error) {
+    const request = confirmation.current;
+    try { await mutations.run(change, commandKey => { if (request) request.commandKey = commandKey; }); setStale(null); } catch (error) {
       if (isHGrowthReadConflict(error)) {
         setStale({ name: change.name, before: change.before, after: change.after });
       }
@@ -592,14 +595,14 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       coverageLead={mc.coverageLead}
       coverageCheck={mc.coverageCheck}
       reasonPlaceholder={mc.reasonPlaceholder}
-      onClose={() => setMc(null)}
+      onClose={() => setMc(current => current === mc ? null : current)}
       onConfirm={async (reason, newValue, businessValue) => {
         try {
           const original = mutations.record(mc.target);
           if (original) await mutations.retry(original);
           else if (mc.original) throw new Error("原操作已处理，请刷新后重新操作。");
           else await mc.run(reason, newValue, businessValue);
-          setMc(null);
+          setMc(current => current === mc ? null : current);
         } catch (err) {
           // 直接保存被判定要走审批：换成审批确认，值和理由沿用（H-改走审批）。
           if (err instanceof HApprovalRequired) {

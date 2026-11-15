@@ -96,7 +96,7 @@ function firstRejection(error: unknown) {
 }
 
 /** Requests and recovery only. All forms, facts, labels and status slots belong to H5's existing view. */
-export function useH5Mutations(toast: (message: string) => void, settled: () => Promise<void>, isFresh: () => boolean) {
+export function useH5Mutations(toast: (message: string) => void, settled: (commandKey?: string) => Promise<void>, isFresh: () => boolean) {
   const adminId = useAdminAuth(s => s.session?.adminId);
   const [, update] = useReducer(n => n + 1, 0);
   useEffect(() => { update(); }, [adminId]);
@@ -151,7 +151,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: () => 
       const status = { pending: "待审批", approved: "已批准", rejected: "被拒", expired: "已过期", withdrawn: "已撤回" }[ticket.status];
       toast(`审批单${status}：${ticket.before} → ${ticket.after}`);
     }
-    if (ticket.status !== "pending") await settled();
+    if (ticket.status !== "pending") await settled(original.commandKey);
     return ticket;
   };
   const send = async (original: H5PendingCommand, recovering: boolean) => {
@@ -169,7 +169,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: () => 
       } catch (error) {
         if (recovering ? isExplicitRejection(error) : firstRejection(error)) {
           forget(original);
-          if (recovering || isHGrowthReadConflict(error)) await settled();
+          if (recovering || isHGrowthReadConflict(error)) await settled(recovering ? original.commandKey : undefined);
         }
         throw error;
       }
@@ -179,7 +179,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: () => 
       retain(acknowledged);
       const current = await query(acknowledged);
       if (!current) throw new OutcomeUnknownError("申请已建单，批没批准还没查到。请查询原结果，原请求继续保留。");
-      if (recovering && current.status === "pending") await settled();
+      if (recovering && current.status === "pending") await settled(original.commandKey);
       return;
     }
     let result: Record<string, unknown>;
@@ -192,7 +192,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: () => 
       if (e.status !== undefined && e.status >= 200 && e.status < 300 && e.apiCode !== undefined && e.apiCode >= 400 && e.apiCode < 500) e.status = e.apiCode;
       if (recovering ? isExplicitRejection(error) : firstRejection(error)) {
         forget(original);
-        if (recovering || isHGrowthReadConflict(error)) await settled();
+        if (recovering || isHGrowthReadConflict(error)) await settled(recovering ? original.commandKey : undefined);
       }
       throw error;
     }
@@ -210,10 +210,10 @@ export function useH5Mutations(toast: (message: string) => void, settled: () => 
           : updated?.configKey === "growth.earn_milestone.tick_interval_seconds" && String(updated.seconds) === String(tickSeconds);
     if (!valid) throw new OutcomeUnknownError("保存回执与原修改不符，原请求继续保留，请查询原结果。");
     forget(original);
-    await settled();
+    await settled(original.commandKey);
     toast(original.change.success);
   };
-  const run = async (change: H5Change) => {
+  const run = async (change: H5Change, onCommand?: (commandKey: string) => void) => {
     const actor = requireActor(change.target, true);
     if (!isFresh()) throw new Error("请先成功刷新签到数据，再发起新的修改。");
     if (record(change.target)) throw new Error("这一项有未结束的原操作，请先查询原结果。");
@@ -231,13 +231,15 @@ export function useH5Mutations(toast: (message: string) => void, settled: () => 
       return { fingerprint, commandKey: createA2CommandKey(request.kind === "approval" ? "h5-proposal" : "h5-direct"), createdAt: now, expiresAt: now + PENDING_MUTATION_TTL_MS, adminId: actor.adminId, change, request };
     };
     try {
-      await send(create(change.approvalRequired), false);
+      const original = create(change.approvalRequired);
+      onCommand?.(original.commandKey);
+      await send(original, false);
     } catch (error) {
       const e = error as { reasonCode?: string; backendMessage?: string };
       // The streak read model has no stored amount. Its direct endpoint determines direction.
       // Only an explicit first-attempt no-write verdict may switch to a new A2 command.
       if (!change.approvalRequired && proposal && firstRejection(error) && (e.reasonCode ?? e.backendMessage) === "H5_APPROVAL_REQUIRED") {
-        throw new HApprovalRequired((error as Error).message, change, () => run({ ...change, approvalRequired: true }));
+        throw new HApprovalRequired((error as Error).message, change, () => run({ ...change, approvalRequired: true }, onCommand));
       } else {
         throw error;
       }
@@ -262,7 +264,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: () => 
       if (current.request.kind === "approval") {
         const ticket = await query(current);
         if (ticket) {
-          if (ticket.status === "pending") await settled();
+          if (ticket.status === "pending") await settled(original.commandKey);
           return;
         }
       }
@@ -272,7 +274,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: () => 
       if (original.request.kind !== "approval" || !isRetryExpired(original) || original.acknowledged || original.ticket
         || await query(original, true) !== null) throw new Error("原申请不能解除，请查询原结果。");
       forget(original);
-      await settled();
+      await settled(original.commandKey);
     },
     run,
   };
