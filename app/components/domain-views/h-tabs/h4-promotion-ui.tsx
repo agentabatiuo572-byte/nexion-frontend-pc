@@ -157,12 +157,13 @@ export function Dialog({ title, children, onClose, footer, wide = false, drawer 
     return <Modal title={title} sub={sub} tone={danger ? 'danger' : 'neutral'} wide={wide} onClose={onClose} footer={foot}><div className="h4-dialog-body">{children}</div></Modal>;
 }
 export const PROMOTION_COMMAND_PERMISSIONS: Record<string, string> = {createPromotion: 'edit', saveDraft: 'edit', copyPromotion: 'edit', createDraftVersion: 'edit', submitPromotion: 'submit', withdrawPromotion: 'submit', approvePromotion: 'approve', rejectPromotion: 'approve', publishPromotion: 'publish', pausePromotion: 'pause', resumePromotion: 'pause', endPromotion: 'end', archivePromotion: 'archive', deletePromotion: 'archive', retryReward: 'reward_retry', reconcileReward: 'reward_reconcile', cancelReward: 'reward_cancel', reverseReward: 'reward_reverse', resolveReward: 'reward_resolve', createExport: 'metrics_export', createPolicy: 'policy_write', approvePolicy: 'policy_approve', revokePolicy: 'policy_approve'};
-export function ConfirmCommand({ title, intent, body, children, onClose, onSuccess, onReload, onVersionConflict, writeAllowed, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload', confirmLabel = '确认操作', danger = false, sub, evidenceNote }: {
+export function ConfirmCommand({ title, intent, body, children, onClose, onSettled, onSuccess, onReload, onVersionConflict, writeAllowed, evidenceOptions = [], requireEvidence = false, evidenceMode = 'upload', confirmLabel = '确认操作', danger = false, sub, evidenceNote }: {
     title: string;
     intent: Omit<PromotionCommandIntent, 'body'>;
     body: Record<string, unknown>;
     children?: ReactNode;
     onClose: () => void;
+    onSettled?: () => void;
     onSuccess: (result: CommandReceipt, isCurrent: () => boolean) => void | Promise<void>;
     onReload?: () => Promise<string>;
     onVersionConflict?: () => void;
@@ -188,11 +189,11 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSucce
     useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
     useEffect(() => {
         const settled = (event: Event) => {
-            if ((event as CustomEvent<string>).detail === originalKey.current) onClose();
+            if ((event as CustomEvent<string>).detail === originalKey.current) { onSettled?.(); onClose(); }
         };
         window.addEventListener('admin-promotion-original-settled', settled);
         return () => window.removeEventListener('admin-promotion-original-settled', settled);
-    }, [onClose]);
+    }, [onClose, onSettled]);
     const restoredUploads = useRef(new Set<string>());
     const uploadTarget: H4UploadTarget = { kind: "evidence", objectId: intent.targetId, revision: Number(body.expectedRevision), position: "evidenceAssetId", operation: intent.operation };
     useEffect(() => {
