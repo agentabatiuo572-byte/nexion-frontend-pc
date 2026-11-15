@@ -249,9 +249,9 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
       const to = Number(value.to);
       const target = value.to?.trim() && Number.isInteger(to) && to > basis.from && to >= basis.sold
         ? `${number(to)} 张` : "待填写有效截止数量";
-      const supply = basis.seriesSetupRequired ? "系列总量：还没发布，发布系列时按最后一档的截止定。"
-        : `系列总量：${number(basis.totalSupply)} 张 → ${target}。`;
-      return { message: `最后一档截止：${number(basis.currentTo)} 张 → ${target}；${supply}两者都不能少于已售的 ${number(basis.sold)} 张。`, invalid: false };
+      return { message: basis.seriesSetupRequired
+        ? `最后一档截止不能少于已售的 ${number(basis.sold)} 张：截止 ${number(basis.currentTo)} 张 → ${target}；系列还没发布，发布时按最后一档的截止定总量。`
+        : `最后一档截止和系列总量都不能少于已售的 ${number(basis.sold)} 张：截止 ${number(basis.currentTo)} 张 → ${target}，总量 ${number(basis.totalSupply)} 张 → ${target}。`, invalid: false };
     } }}
     getPendingReason={() => opening.error ? undefined : pendingApproval(session.adminId)?.reason ?? (directOriginal() ? JSON.parse(directOriginal()!.body).reason : undefined)}
     getPendingBusinessValue={() => opening.error ? undefined : pendingApproval(session.adminId)?.form ?? (directOriginal() ? Object.fromEntries(Object.entries(JSON.parse(directOriginal()!.body)).map(([key, value]) => [key, String(value)])) : undefined)}
