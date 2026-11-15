@@ -402,7 +402,7 @@ export default function RiskRadarPage() {
       const reason = forbidden && cause.backendMessage === "无权限访问" ? formatAdminApiError("ADMIN_PERMISSION_DENIED", "ADMIN_PERMISSION_DENIED")
         : cause instanceof B5OutcomeUnknownError ? "" : cause instanceof Error ? displayAdminReadError(cause) : "";
       // 结果未知时记录可能已经记上了，不说「没记上」。
-      setToast(`${forbidden ? "没有跳转：分诊记录没记上。" : cause instanceof B5OutcomeUnknownError ? "没有跳转：分诊记录没有确认记上，请再点一次。" : "没有跳转：分诊记录没记上，请再点一次。"}${reason}`);
+      setToast(`${forbidden ? "没有跳转：分诊记录没记上。" : cause instanceof B5OutcomeUnknownError ? "没有跳转：分诊记录结果未知，请再点一次。" : "没有跳转：分诊记录没记上，请再点一次。"}${reason}`);
     } finally {
       setTriaging(null);
     }
