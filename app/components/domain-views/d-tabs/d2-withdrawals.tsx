@@ -478,8 +478,8 @@ const REVIEW_TITLE: Record<D2ReviewAction, string> = { APPROVE: "放行提现", 
 
 /** 确认框的影响和提交前检查，写这个操作的真实影响（OP-51、OP-53）。 */
 const REVIEW_BRIEF: Record<D2ReviewAction, { impact: string; check: string }> = {
-  APPROVE: { impact: "审核通过，交给系统打款；打款成功才算完成。", check: "核对用户、金额、收款地址和命中的风险规则，理由写清依据或工单号。" },
-  DELAY: { impact: "暂停审核，到复查时间自动回到待审核。", check: "复查时间跟着等待天数走，手动改过要核对，理由写清依据或工单号。" },
+  APPROVE: { impact: "确认后系统把钱打给用户，打款成功才算完成。", check: "核对用户、金额、收款地址和命中的风险规则，理由写清依据或工单号。" },
+  DELAY: { impact: "暂不打款，到复查时间自动回到待审核。", check: "复查时间跟着等待天数走，手动改过要核对，理由写清依据或工单号。" },
   FREEZE: { impact: "冻结资金、不会打款，到复查时间回到待审核。", check: "核对冻结期限、责任人和复查时间，理由写清依据或工单号。" },
   UNFREEZE: { impact: "这笔回到待审核重新决定，不会直接打款。", check: "确认冻结的原因已经核实，理由写清依据或工单号。" },
   REJECT: { impact: "申请金额全额退回用户余额，手续费不扣。", check: "核对用户和拒绝原因，理由写清依据或工单号。" },
@@ -1192,7 +1192,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       const latest = await fetchD2WithdrawalDetail(row.withdrawalNo).catch(() => null);
       if (seq !== reviewConfirmSeq.current || listSeq !== requestSeq.current || detailSeq !== detailRequestSeq.current) return;
       if (latest?.addressVerificationRequired == null) {
-        toast("大额放行核实要求暂不可用，暂不能放行，请重试。", "warn");
+        toast("暂时查不到这笔是不是大额，先不能放行，请重试。", "warn");
         return;
       }
       addressVerificationRequired = latest.addressVerificationRequired;
@@ -1523,7 +1523,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     if (record.kind === "review" && record.action === "REFUND") {
       const latest = await fetchD2WithdrawalDetail(record.nos[0]).catch(() => null);
       if (!latest) {
-        notePending(record, "暂时无法核对这笔提现的渠道和状态，本次没有重试。原操作继续保留，请稍后读回核对。");
+        notePending(record, "暂时读不到这笔提现现在的状态，本次没有重试，记录继续保留，请稍后再试。");
         return;
       }
       if (erc20ConfirmationLost(latest)) {
@@ -1543,7 +1543,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       // 只有后端明确拒绝才给「解除待确认」；登录、权限、限流这类不是对原命令的结论（OP-153）。
       if (isExplicitRejection(cause)) {
-        notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，记录继续保留。`);
+        notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 原操作结果仍未知，记录继续保留。`);
         setRetryRejected((current) => [...current, record.commandKey]);
       } else notePending(record, `这次没能确认结果：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 记录继续保留。`);
     }
@@ -1668,7 +1668,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   // 没有特别原因时只有状态名，和抽屉头重复，写全这个状态的下一步。
   const statusExplain = shown ? STATUS_EXPLAIN[shown.status.toUpperCase()] : undefined;
   const plainStatus = lifecycleNote === statusExplain?.split("。")[0];
-  const stateNote = !shown ? "" : detailProvider ? "按 Cregis 的打款结果结算，不会重新打款。" : shown.chain === "BANK-VND" && ["SENT", "TX_ORPHANED"].includes(shown.status.toUpperCase()) ? "已派发后以 HDPay 查单结果结算；结果不明不重发、不手工退款。" : orphaned ? "打款结果不明，不要重新放行" : plainStatus ? statusExplain : lifecycleNote;
+  const stateNote = !shown ? "" : detailProvider ? "按 Cregis 的打款结果结算，不会重新打款。" : shown.chain === "BANK-VND" && ["SENT", "TX_ORPHANED"].includes(shown.status.toUpperCase()) ? "已交给 HDPay，按 HDPay 查到的结果结算；结果不明时不重发、不手动退款。" : orphaned ? "打款结果不明，不要重新放行" : plainStatus ? statusExplain : lifecycleNote;
   // 待审核又没有特别原因时那句是套话，不占判断要点。
   const plainPending = shown ? isReviewPending(shown.status) && plainStatus : false;
   const judgment: JudgmentRow[] = shown ? [
@@ -1698,7 +1698,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       actions: <>
         <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={!!submitting} checking={submitting === record.fingerprint}
           onCheck={check} onClose={() => setClosing(record)} />
-        {unsupported && record.kind !== "batch" && <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>读回现在的状态</Button>}
+        {unsupported && record.kind !== "batch" && <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>看现在的状态</Button>}
         <Button size="sm" disabled={!!submitting} disabledReason={expired ? RETRY_EXPIRED : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>
       </>,
       detail: <>{RECOVERY_HINT[record.kind] && <p>{RECOVERY_HINT[record.kind]}</p>}{pendingNotes[record.fingerprint] && <p>{pendingNotes[record.fingerprint]}</p>}</>,
@@ -1712,15 +1712,15 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       meta={<span className="rd-toolbar">
         <span>
           {readAt ? `${readAt} 读取（${businessZone().label}），` : ""}不自动刷新 ·{" "}
-          <Explain label="到账时限怎么算" content="打开和操作后读取，不自动刷新。当前到账时限按「USDT 提现参数」的设置，已提交的提现按提交时的时限。">到账时限 {canReadD5 ? (resultsUnavailable || d5?.payoutSlaHours == null ? "—" : `${d5.payoutSlaHours} 小时`) : "无权限"}</Explain>
+          <Explain label="到账时限怎么算" content="按「USDT 提现参数」现在的设置；已提交的提现按提交时的时限。">到账时限 {canReadD5 ? (resultsUnavailable || d5?.payoutSlaHours == null ? "—" : `${d5.payoutSlaHours} 小时`) : "无权限"}</Explain>
         </span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void refresh()}>刷新</Button>
       </span>}
       readOnly={canWriteAny ? undefined : "你只能查看；处理提现需要对应的审核权限"} />
 
-    {withdrawGate === "closed" && <Notice tone="warn" title={<>提现已关停<Explain label="关停提现的范围" content="关停后暂停尚未提交通道的打款；已提交通道的继续核对和结算，不因关停退款。恢复后重新检查派发条件，符合的继续派发。" /></>}
+    {withdrawGate === "closed" && <Notice tone="warn" title={<>提现已关停<Explain label="关停提现的范围" content="关停后，还没交给打款方的提现暂停打款；已交给打款方的继续跟进到账，不因关停退款。恢复后符合条件的继续打款。" /></>}
       action={reach("/emergency/kill-switch", "emergency_j1_read") ? <Link className="rd-link" href="/emergency/kill-switch">去紧急停用开关</Link> : undefined}>
-      用户现在不能提交新提现。现在放行不会生效：系统会拒绝，这笔留在待审核，钱不动。拒绝、延迟、冻结、解冻和退款照常可用。
+      用户现在不能提交新提现；放行会被系统拒绝，单子和钱都不动。拒绝、延迟、冻结、解冻和退款照常可用。
     </Notice>}
     {withdrawGate === "unknown" && <Notice tone="warn">提现开关状态暂时读不到。放行时系统会再查，已关停时不会放行。</Notice>}
     {coverageBelow && d5 && hasAuthority(ACTION_AUTHORITY.APPROVE) && <Notice tone="danger" title="兑付覆盖率低于红线，放行已暂停"
@@ -1737,7 +1737,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       <Stat tone="role-1" icon={Coins} label="本页金额" value={resultsUnavailable ? "—" : amountText(visibleRows.reduce((sum, row) => sum + row.amount, 0))} unit={resultsUnavailable ? undefined : "USDT"}
         explain="只算当前页显示的提现单，不是全部；页里有已退款的单也算在内。" />
       <Stat tone={canReadD5 ? "role-4" : undefined} icon={Gauge} label="每日提现次数上限" value={!canReadD5 ? "无权限" : resultsUnavailable ? "—" : dailyLimit || "—"} unit={canReadD5 && !resultsUnavailable ? "次" : undefined}
-        sub={!canReadD5 ? "用到额度的放行已禁用" : undefined}
+        sub={!canReadD5 ? "不能放行" : undefined}
         explain={!canReadD5 ? undefined : reach("/finance/params", "finance_d5_read") ? <>在<Link className="rd-link" href="/finance/params">「USDT 提现参数」</Link>设置。</> : "在「USDT 提现参数」设置。"} />
     </StatBand>
 
