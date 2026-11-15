@@ -1,0 +1,6 @@
+/* 查询原结果：挂在待处理条（Notice）正文下面，和 E 域 e-check-outcome 同一个样子。 */
+.fund-check { display: grid; justify-items: start; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rd-line); }
+.fund-check p { margin: 0; }
+.fund-check-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fund-check-time, .fund-check-aux { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.fund-check-audit { width: 200px; max-width: 100%; font-variant-numeric: tabular-nums; }

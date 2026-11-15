@@ -12,14 +12,15 @@ import { AlertTriangle, ClipboardList, Coins, Copy, FileText, Flag, Gauge, Histo
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
   BatchBar, Button, Cell, Checkbox, ColumnPicker, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, IrreversibleTag,
-  JudgmentPoints, Modal, MoreMenu, Notice, PageHeader, Pager, Panel, RecordList, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, Timeline,
+  JudgmentPoints, Modal, MoreMenu, Notice, PageHeader, Pager, Panel, RecordList, Segments, Select, Stat, StatBand, StatusTag, Table, Timeline,
   TableLoading, TableMessage, Td, Th, Tr, useTableColumns, type JudgmentRow, type RecordListEntry, type SegmentItem, type StateTone, type TableColumn, type TimelineEntry,
 } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { fetchWithdrawalGateOpen } from "@/lib/admin/ops-dashboard-client";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { FundCheckButtons, FundCheckResult, FundClosureModal, FundSettledNotices, type FundSettled } from "../fund-command-check";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { bankEvidenceLabels, bankEvidenceTime } from "@/lib/admin/bank-payout-evidence";
@@ -783,10 +784,10 @@ const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请到操作记�
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请到操作记录与审批核对";
 
 const RECOVERY_HINT: Record<string, string> = {
-  review: "读回只看这笔现在的状态，说明不了这次操作的结果。可以按原操作重试，不会重复执行。",
-  batch: "请不要改变勾选直接重试，否则已放行的部分可能被重复放行",
-  cregis: "按原操作重试不会重新打款。",
-  bank: "按原操作重试只查询原单，不会重新打款。",
+  review: "先查询原结果。按原请求重试用的是原内容，不会多做一次。",
+  batch: "先查询原结果。按原请求重试会按原来那批提现单和理由原样重发，不会多做一次。",
+  cregis: "按原请求重试不会重新打款。",
+  bank: "按原请求重试只查原单，不会重新打款。",
   simulate: "只在本地开发环境出现。",
 };
 
@@ -932,7 +933,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
   /** 最近一次重试被后端明确拒绝的命令号，只有它们才能人工解除。按命令号记，解除后重新处理的新命令不沿用。 */
   const [retryRejected, setRetryRejected] = useState<string[]>([]);
-  const [releasing, setReleasing] = useState<D2PendingCommand | null>(null);
+  const [closing, setClosing] = useState<D2PendingCommand | null>(null);
+  const [settled, setSettled] = useState<FundSettled[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // 无默认动作：必须由运营显式选择后才可提交；但允许先勾选，再选动作。
   const [batchAction, setBatchAction] = useState<D2BatchAction | "">("");
@@ -1147,7 +1149,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         // 状态被别人改了：单笔审核的框留着，刷新成最新状态（D2-C89）；其余操作关框，列表已是最新（BUG-291）。重试的原命令继续走待确认。
         // 框留着时原因写在框里，不再弹同一句盖住标题；框关了才提示。
         if (unknown || (moved && !retained && extra.kind !== "review")) {
-          toast(unknown ? "结果未确认，不要重复操作。到页面上方读回核对或按原操作重试。" : "提现已被他人或系统处理，已刷新列表，请核对最新状态。", "warn");
+          toast(unknown ? "结果未知，不要重复操作。到页面上方查询原结果，或按原请求重试。" : "提现已被他人或系统处理，已刷新列表，请核对最新状态。", "warn");
           return;
         }
         throw cause;
@@ -1489,15 +1491,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       if (fundCommandSettled(receipt)) {
         pendingKeys.forget(record.fingerprint, record.commandKey);
         syncPending();
+        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: record.label, status: receipt!.originalStatus }]);
         await Promise.all([refresh(), detailRef.current && record.nos.includes(detailRef.current.withdrawalNo) ? reopenDetail() : null]);
-      } else if (!receipt) {
-        notePending(record, displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED")));
       }
       return receipt;
     } catch (cause) {
       const error = displayAdminError(cause);
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
-      notePending(record, error);
       throw cause;
     } finally { setSubmitting(""); }
   };
@@ -1516,7 +1516,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     if (record.expiresAt <= Date.now()) { notePending(record, RETRY_EXPIRED); return; }
     if (!canRetry(record)) { notePending(record, RETRY_NO_PERMISSION); return; }
     if (!pendingKeys.isDurablyStored(record.fingerprint, record.commandKey)) {
-      notePending(record, "浏览器里查不到这条记录，本次没有发送。待确认继续保留，请到操作记录与审批核对。");
+      notePending(record, "浏览器里查不到这条记录，本次没有发送。记录继续保留，请到操作记录与审批核对。");
       return;
     }
     if (record.kind === "review" && record.action === "REFUND") {
@@ -1542,32 +1542,23 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       // 只有后端明确拒绝才给「解除待确认」；登录、权限、限流这类不是对原命令的结论（OP-153）。
       if (isExplicitRejection(cause)) {
-        notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，原命令继续保留。`);
+        notePending(record, `重试没有成功：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 这说明不了原操作的结果，记录继续保留。`);
         setRetryRejected((current) => [...current, record.commandKey]);
-      } else notePending(record, `这次没能确认结果：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 原命令继续保留。`);
+      } else notePending(record, `这次没能确认结果：${cause instanceof Error ? displayAdminError(cause) : "原因未知"} 记录继续保留。`);
     }
-  };
-
-  /** The old release control now queries authority; it cannot delete unresolved evidence. */
-  const releasePending = async (record: D2PendingCommand) => {
-    try { await checkInvestigation(record); }
-    catch { /* checkInvestigation retains the original and exposes the refusal in pendingNotes/results. */ }
-    setReleasing(null);
   };
 
   /** 读回这笔单，只给现在的事实。状态变了可能是别人改的，不能当成原命令的回执，待确认和原命令都保留（OP-93、OP-95）。 */
   const verifyPending = async (record: D2PendingCommand) => {
-    let investigationNote = "";
     try {
       const receipt = await checkInvestigation(record);
       if (fundCommandSettled(receipt)) return;
-      if (!receipt) investigationNote = displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED"));
-    } catch (cause) { investigationNote = displayAdminError(cause); }
+    } catch { /* 查询失败、没查到都显示在这条记录的查询结果里。 */ }
     const [no] = record.nos;
     const latest = await fetchD2WithdrawalDetail(no).catch(() => null);
-    if (!latest) { notePending(record, `${investigationNote} 读回失败，这笔暂时读不到。待确认继续保留。`); return; }
+    if (!latest) { notePending(record, "这笔提现现在的状态暂时读不到。"); return; }
     const from = record.fromStatus ? `，发出时是「${statusLabel(record.fromStatus)}」` : "";
-    notePending(record, `${investigationNote} 读回：这笔现在是「${statusLabel(latest.status)}」${from}。状态可能是别人改的，待确认继续保留。`);
+    notePending(record, `这笔提现现在是「${statusLabel(latest.status)}」${from}。状态可能是别人改的，不能当成这次操作的结果。`);
     await Promise.all([openDetail(latest), refresh()]);
   };
 
@@ -1581,7 +1572,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   /** 现在不能做的原因，写给人看（OP-126）。没有权限的动作不走这里，直接隐藏（OP-124）。 */
   function blockedReason(row: D2Withdrawal, action?: D2ReviewAction) {
     if (action === "REFUND" && erc20ConfirmationLost(row)) return "这笔 ERC20 提现已丢失链上确认，保持冻结并继续占提现额度，不能退款；原操作记录继续保留，请核对链上结果";
-    if (pendingNos.has(row.withdrawalNo)) return "这笔有结果未确认的操作，先到页面上方核对";
+    if (pendingNos.has(row.withdrawalNo)) return "这笔有结果未知的操作，先到页面上方查询原结果";
     if (loading) return "正在刷新列表";
     if (!writesEnabled) return "列表读取失败，已暂停操作，请先重试";
     if (roleBlock(action)) return roleBlock(action);
@@ -1698,19 +1689,26 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const copyNo = (value: string) => {
     void navigator.clipboard?.writeText(value).then(() => toast("已复制提现单号", "success"), () => toast("复制失败，请手动选择单号", "error"));
   };
-  const pendingNotices = pendingCommands.map((record) => (
-    <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`}
+  const pendingNotices = pendingCommands.map((record) => {
+    const expired = record.expiresAt <= Date.now();
+    const unsupported = !!fundInvestigationAccess(record).unavailableReason;
+    const check = () => void (record.kind === "batch" ? checkInvestigation(record).catch(() => undefined) : verifyPending(record));
+    return <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`}
       action={<>
-        {record.kind !== "batch" && <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>读回核对</Button>}
-        <Button size="sm" disabled={!!submitting} disabledReason={record.expiresAt <= Date.now() ? RETRY_EXPIRED : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>
-        {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除待确认</Button>}
+        <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={!!submitting} checking={submitting === record.fingerprint}
+          onCheck={check} onClose={() => setClosing(record)} />
+        {unsupported && record.kind !== "batch" && <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>读回现在的状态</Button>}
+        <Button size="sm" disabled={!!submitting} disabledReason={expired ? RETRY_EXPIRED : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>
       </>}>
-      {timeText(new Date(record.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效。{record.expiresAt <= Date.now() ? `${RETRY_EXPIRED}。` : RECOVERY_HINT[record.kind]}
+      {timeText(new Date(record.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效。{expired ? `${RETRY_EXPIRED}。` : unsupported ? RECOVERY_HINT[record.kind].replace("先查询原结果。", "") : RECOVERY_HINT[record.kind]}
       {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=D&object=${encodeURIComponent(record.nos[0])}`}>到操作记录与审批核对</Link></>}
-      <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 操作人 ${record.operator} ｜ 理由 ${record.reason}`} />
       {pendingNotes[record.fingerprint] && <div>{pendingNotes[record.fingerprint]}</div>}
-    </Notice>
-  ));
+      <FundCheckResult record={record} outcome={investigationResults[record.commandKey]} expired={expired} canRetry={canRetry(record)}
+        copy={{ unsupported: record.kind === "cregis" ? "Cregis 打款恢复的结果系统还查不了。请到 Cregis 核对这笔打款；按原请求重试不会重新打款。"
+          : "银行查单的结果系统还查不了。请到 HDPay 核对这笔打款；按原请求重试只查原单，不会重新打款。" }}
+        techFacts={`操作人 ${record.operator} ｜ 理由 ${record.reason}`} />
+    </Notice>;
+  });
 
   return <>
     <PageHeader pageId="D2" title="提现审核" summary={<AutoGloss>审核用户提现，先看风险和兑付覆盖率。</AutoGloss>}
@@ -1732,6 +1730,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       action={reach("/finance/pool", "finance_d3_read") ? <Link className="rd-link" href="/finance/pool">去资金储备与应付款</Link> : undefined}>
       现在 {fmtPct(d5.coverageRatio)}，红线 {fmtConfigPct(d5.redlinePct)}。补足储备后再放行。拒绝、延迟、冻结、解冻和退款照常可用。
     </Notice>}
+    <FundSettledNotices items={settled} onDismiss={key => setSettled(current => current.filter(item => item.key !== key))} />
     {pendingNotices}
 
     <StatBand label="提现汇总">
@@ -1818,7 +1817,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                     const anyBatchAction = !pendingRow && batchSelectable(row, "", availableBatchActions, approveBlock);
                     const selectable = !pendingRow && batchSelectable(row, batchAction, availableBatchActions, approveBlock);
                     const selectionHint = pendingRow
-                      ? "这笔有结果未确认的操作，不能批量处理"
+                      ? "这笔有结果未知的操作，不能批量处理"
                       : !anyBatchAction
                         ? noBatchHint(row)
                         : batchAction === "APPROVE" && approveBlock(row)
@@ -1838,7 +1837,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                       {columns.isVisible("user") && <Td><Cell main={operatorNicknameText(row.nickname)} sub={canReadUserDetail ? <Link className="rd-link" href={`/users/search/${encodeURIComponent(row.userNo)}`}>{row.userNo}</Link> : row.userNo} /></Td>}
                       {columns.isVisible("amount") && <Td align="right"><Cell num main={amountText(row.amount)} sub={`${row.chain === "BANK-VND" ? "兑换" : "到账"} ${amountText(row.netReceive)}`} /></Td>}
                       <Td><Cell title={`低风险 ≤ ${row.k4BandLowMax ?? "—"}，高风险 ≥ ${row.k4BandHighMin ?? "—"}，加强审核 ≥ ${row.k4AutoEscalateScore ?? "—"}`} main={tone ? <StatusTag tone={tone} icon={tone === "danger" ? ShieldAlert : Flag}>{riskLabel}</StatusTag> : riskLabel} sub={hitCount ? reviewBasis : undefined} /></Td>
-                      <Td><Cell main={<StatusTag tone={statusTone(row.status)} icon={STATUS_ICON[row.status.toUpperCase()]}>{bankStatusLabel(row)}</StatusTag>} sub={pendingRow ? "有操作结果未确认" : isReviewPending(row.status) ? (mainAction === "APPROVE" ? approveBlock(row) : undefined) : lifecycleSummary(row)} title={(mainAction === "APPROVE" && approveBlock(row)) || lifecycleSummary(row)} /></Td>
+                      <Td><Cell main={<StatusTag tone={statusTone(row.status)} icon={STATUS_ICON[row.status.toUpperCase()]}>{bankStatusLabel(row)}</StatusTag>} sub={pendingRow ? "有操作结果未知" : isReviewPending(row.status) ? (mainAction === "APPROVE" ? approveBlock(row) : undefined) : lifecycleSummary(row)} title={(mainAction === "APPROVE" && approveBlock(row)) || lifecycleSummary(row)} /></Td>
                       {columns.isVisible("asset") && <Td><Cell main={<span title={`${row.asset} / ${row.chain}`} aria-label={`资产与渠道：${row.asset} / ${row.chain}`}>{row.chain === "BANK-VND" ? "越南银行卡 · HDPay" : chainText(row)}</span>} sub={<span title={row.targetAddress}>{row.chain === "BANK-VND" ? "账户信息见详情" : shortAddress(row.targetAddress)}</span>} /></Td>}
                       {columns.isVisible("fee") && <Td align="right"><Cell num main={amountText(row.actualFee)} sub={<button type="button" className="rd-link" onClick={() => void openDetail(row)}>详情中查看完整费用</button>} /></Td>}
                       {columns.isVisible("account") && <Td><Cell main={`账户 ${userStatusLabel(row.userStatus)}`} sub={`近 24h ${row.withdrawalCount24h} 笔 · 每日上限 ${canReadD5 ? `${dailyLimit || "—"} 笔` : "无权限"}`} /></Td>}
@@ -1872,7 +1871,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           {(["UNFREEZE", "APPROVE"] as const).filter((action) => detailActions.includes(action)).map((action) => decisionButton(shown, action))}
         </>} />}>
       {shown && <>
-        {pendingCommands.some((record) => record.nos.includes(shown.withdrawalNo)) && <Notice tone="warn">这笔有结果未确认的操作，不要重复处理。状态变了也不算确认。到页面上方核对。</Notice>}
+        {pendingCommands.some((record) => record.nos.includes(shown.withdrawalNo)) && <Notice tone="warn">这笔有结果未知的操作，不要重复处理。状态变了也不算有了结果。到页面上方查询原结果。</Notice>}
         {detailError && <Notice tone="danger" title="详情读取失败" action={<Button size="sm" onClick={() => void openDetail(shown)}>重试</Button>}>{detailError}</Notice>}
         <JudgmentPoints title={`判断要点 · 时间均为${businessZone().label}`} loading={detailLoading} rows={judgment} />
         <Fold inset title="风险规则" summary={ruleCount ? `${ruleCount} 条命中` : "没有命中"} alert={ruleCount > 0} icon={Shield} tone="risk">
@@ -1982,8 +1981,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       </>}
     </Drawer>
 
-    {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒说明不了原操作的结果，先到操作记录或打款方确认。解除只移除本地记录，不办理后端核查结案；后端仍可能锁住这笔提现。" />}
+    {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt} facts={<Fact k="涉及提现单">{closing.nos.length === 1 ? closing.nos[0] : `${closing.nos.length} 笔`}</Fact>}
+      onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}
 
     {batchResult && <Modal title={`批量${actionLabel(batchResult.action)}结果`} icon={ClipboardList} onClose={() => setBatchResult(null)} footer={<Button variant="primary" onClick={() => setBatchResult(null)}>知道了</Button>}>
       <Facts>
