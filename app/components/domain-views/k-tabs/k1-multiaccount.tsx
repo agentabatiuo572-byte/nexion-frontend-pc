@@ -21,6 +21,7 @@ import { K1_PARAM_HELP, type K1ParamHelp } from "@/lib/admin/config-help/k1-mult
 import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1ProtectedEntry, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { FundCheckButtons, FundCheckResult, FundClosureModal, FundSettledNotices, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -840,10 +841,12 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   /** 现在不能重试的原因。处置查得到回执，明确查不到才能重发；查询失败不算查不到（OP-95 甲档）。其他写入没有查询接口，走乙档。 */
   const retryBlocked = (record: K1PendingCommand) => record.expiresAt <= Date.now() ? EXPIRED_TEXT
     : !mayRetry(record) ? "这个账号没有这项权限，不能重试，请有权限的同事核对。"
-      : record.kind === "cluster" && canQueryProposal && !proposalNotFound.includes(record.commandKey) ? "先查询原提案，明确查不到才能重试。"
+      : record.kind === "cluster" && canQueryProposal && !proposalNotFound.includes(record.commandKey) ? "先查询原结果，明确查不到审批单才能重试。"
         : undefined;
 
   const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [closing, setClosing] = useState<K1PendingCommand | null>(null);
+  const [settled, setSettled] = useState<FundSettled[]>([]);
   const checkInvestigation = async (record: K1PendingCommand, evidence?: FundCommandEvidence) => {
     setChecking(record.fingerprint);
     try {
@@ -851,14 +854,14 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
       if (fundCommandSettled(receipt)) {
         pendingCommands.forget(record.fingerprint, record.commandKey);
+        setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: record.label, status: receipt!.originalStatus }]);
         syncPending();
         await Promise.all([ctx.reloadKRisk({ multiAccount: pageQuery }), refreshProtectedEntries()]);
-      } else if (!receipt) setPendingNotes(current => ({ ...current, [record.fingerprint]: displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED")) }));
+      }
       return receipt;
     } catch (cause) {
       const error = displayAdminError(cause);
       setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
-      setPendingNotes(current => ({ ...current, [record.fingerprint]: error }));
       throw cause;
     } finally { setChecking(""); }
   };
@@ -871,7 +874,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       const original = await fetchA2ProposalByKey(record.commandKey, true, "a");
       if (!original) {
         setProposalNotFound(current => [...current, record.commandKey]);
-        setPendingNotes(current => ({ ...current, [record.fingerprint]: "暂未查到原提案，结果仍待核实。" }));
+        setPendingNotes(current => ({ ...current, [record.fingerprint]: "暂未查到原审批单，结果仍未知。" }));
         return;
       }
       if (!original.mine || original.obj !== record.target || original.action !== `${LEGACY_CLUSTER_RECEIPTS[record.clusterAction!][1]} · ${record.target}`
@@ -883,18 +886,22 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       syncPending();
       await reloadAfter(`已找回原审批单 ${original.id}，${PROPOSAL_STATUS[original.status]}。`, `已找回原审批单 ${original.id}，但页面刷新失败；请重新加载核对。`);
     } catch (cause) {
-      setPendingNotes(current => ({ ...current, [record.fingerprint]: `查询没有成功：${errorText(cause)} 原操作继续保留。` }));
+      setPendingNotes(current => ({ ...current, [record.fingerprint]: `查询没有成功：${errorText(cause)} 记录继续保留。` }));
     } finally { setChecking(""); }
+  };
+  /** 查询原结果：处置先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录；其他写入直接查执行记录。都是读取。 */
+  const lookupPending = async (record: K1PendingCommand) => {
+    await checkPending(record);
+    if (record.kind === "cluster" && canQueryProposal && fundInvestigationAccess(record).canRead
+      && pendingCommands.list().some(item => item.commandKey === record.commandKey)) await checkInvestigation(record).catch(() => undefined);
   };
   const releasePending = (record: K1PendingCommand) => {
     setReleasing(null);
     if (record.kind === "registration-param") {
       // This K1 route writes A3_PLATFORM_PARAM, which is outside controlled investigation support.
       pendingCommands.forget(record.fingerprint, record.commandKey);
-      syncPending(); ctx.toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
-      return;
+      syncPending(); ctx.toast("已解除本页这条原操作记录，后端的结果和锁定不变", "success");
     }
-    void checkPending(record);
   };
 
   const pendingBlocks = new Set(pending.map((record) => `${PENDING_GROUP[record.kind]}:${record.target}`));
@@ -1388,19 +1395,25 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         </Notice>
       )}
 
+      <FundSettledNotices items={settled} onDismiss={key => setSettled(current => current.filter(item => item.key !== key))} />
       {pending.map((record) => {
         const blocked = retryBlocked(record);
         const expired = record.expiresAt <= Date.now();
         return (
         <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`} action={<>
-          {record.kind === "cluster" && (canQueryProposal || fundInvestigationAccess(record).canRead) && <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>查询原结果</Button>}
+          {record.kind === "cluster" && canQueryProposal && !fundInvestigationAccess(record).canRead
+            ? <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>查询原结果</Button>
+            : record.kind !== "registration-param" && <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} busy={Boolean(retrying || checking)} checking={checking === record.fingerprint}
+              onCheck={() => void lookupPending(record)} onClose={() => setClosing(record)} />}
           {!expired && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原请求重试</Button>}
-          {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>解除待确认</Button>}
+          {record.kind === "registration-param" && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
         </>}>
-          {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，<KeepText text={expired ? EXPIRED_TEXT : `${RECOVERY_HINT[record.kind]}${blocked ?? "重发原内容，已成功的不会重复执行。"}`} />
+          {formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，<KeepText text={expired ? EXPIRED_TEXT : `${RECOVERY_HINT[record.kind]}${blocked ?? "按原请求重试会重发原内容，已成功的不会重复执行。"}`} />
+          {record.kind === "registration-param" && "注册设置的修改查不了原结果。"}
           {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=K&object=${encodeURIComponent(record.target)}`}>到操作记录与审批核对</Link></>}
-          {" "}<Explain label="技术信息" content={`原请求编号 ${record.commandKey} ｜ 操作人 ${record.operator} ｜ 理由 ${record.reason}`} />
+          {record.kind === "registration-param" && <>{" "}<Explain label="技术信息" content={`原请求编号 ${record.commandKey} ｜ 操作人 ${record.operator} ｜ 理由 ${record.reason}`} /></>}
           {pendingNotes[record.fingerprint] && !(expired && pendingNotes[record.fingerprint].includes("重试")) && <div><KeepText text={pendingNotes[record.fingerprint]} /></div>}
+          {record.kind !== "registration-param" && <FundCheckResult record={record} outcome={investigationResults[record.commandKey]} expired={expired} canRetry={!blocked} techFacts={`操作人 ${record.operator} ｜ 理由 ${record.reason}`} />}
         </Notice>
         );
       })}
@@ -1767,7 +1780,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         );
       })()}
 
-      {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain={releasing.expiresAt <= Date.now() ? "先到操作记录与审批确认原操作结果。解除只移除本页待确认记录，不撤销原操作，不解除后端对象锁。" : "重试被拒说明不了原操作的结果，先到操作记录确认。解除只移除本地记录，不办理后端核查结案；后端仍可能锁住这个对象。"} />}
+      {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)} explain="重试被拒说明不了原操作的结果，先到操作记录确认。解除只移除本页这条记录，不撤销原操作；后端仍可能锁住这项设置。" />}
+      {closing && <FundClosureModal label={closing.label} createdAt={closing.createdAt}
+        onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}
     </>
   );
 }
