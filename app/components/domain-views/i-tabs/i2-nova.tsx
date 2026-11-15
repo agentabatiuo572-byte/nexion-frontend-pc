@@ -823,7 +823,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         source={social ? "提现到账等五类真实事件" : sourceText(n.trigger, n.name, RUNTIME_SOURCE_OPTIONS)}
         tick={n.tick} cooldown={n.cd} phase={phase ? <PhaseNote text={n.phaseKeyed} /> : undefined}
         template={t ? { name: t.name, version: t.v } : undefined} templateState={st} warn={warn}
-        stats={social ? <div><dt><Send size={14} aria-label="推送量" /></dt><dd>{`今日 ${I2_STATS.todayDelivered} 条 · 累计 ${I2_STATS.weeklySocial} 批`}</dd></div> : undefined}
+        stats={social ? <div><dt><Send size={14} aria-label="推送量" /></dt><dd>{`今日 ${I2_STATS.todayDelivered} 条 · 累计 ${I2_STATS.weeklySocial} 次`}</dd></div> : undefined}
         ctr={Number.isFinite(n.ctr) ? `${n.ctr}%` : "—"}
         actions={cardActions} onTemplate={t ? () => setDetailTpl(t.ch) : undefined} />
     );

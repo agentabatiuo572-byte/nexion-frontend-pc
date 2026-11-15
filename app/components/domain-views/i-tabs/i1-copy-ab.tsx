@@ -291,7 +291,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   };
   const pendingNotice = <PendingNotice items={pending.map((record) => ({
     id: record.commandKey, label: `${record.label} · ${record.target.slice(record.target.indexOf(":") + 1)}`, change: record.change,
-    at: new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(record.createdAt),
+    at: new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(record.createdAt),
     retryBlocked: retrying ? "提交中…" : isRetryExpired(record) ? "已超过 24 小时，不能再重试，只能查询。" : !record.original ? "原操作记录不完整，只能查询核对，不能重试。"
       : !(isSuperadmin || session?.authorities.includes(record.permission)) ? "当前账号没有这项操作权限，请查询原结果。" : undefined,
     record,
@@ -943,12 +943,12 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       statedBrief: { impact: "后端按真实转化率选唯一最高的一组，把它的版本发布为现在的版本；同名词条一起更新。", check: "每组至少 100 人看到、转化率唯一最高才能采纳；后端不重跑发布时的内容检查，先核对内容对比。没有显著性检验。" },
       facts: exp && <Facts>
         {experimentFacts(exp)}
-        <Fact k="按页面的数" tone={winner ? "ok" : "warn"}>{winner ? `${winner.name} 组 ${winner.version} 最高（${winner.impressions != null && winner.conversions != null ? `${winner.conversions.toLocaleString()} / ${winner.impressions.toLocaleString()} 人，` : ""}${winner.cvr.toFixed(2)}%）` : "没有唯一最高的一组，后端会拒绝"}</Fact>
+        <Fact k="按页面的数" tone={winner ? "ok" : "warn"}>{winner ? `${winner.name} 组 ${winner.version} 最高（${winner.impressions != null && winner.conversions != null ? `看到 ${winner.impressions.toLocaleString()}、转化 ${winner.conversions.toLocaleString()} 人，` : ""}${winner.cvr.toFixed(2)}%）` : "没有唯一最高的一组，后端会拒绝"}</Fact>
         {copy && i18nFact(copy.i18nKey)}
       </Facts>,
       content: <>
         {copy && crowdNotice(winnerVersion?.copyPosition ?? copy.copyPosition, copy.key)}
-        {copy?.draftVersion && <Notice tone="warn" title="这条文案存了草稿">{`采纳后仍是草稿状态，按位置取文案取不到；要发布或删掉草稿 ${copy.draftVersion}。`}</Notice>}
+        {copy?.draftVersion && <Notice tone="warn" title="这条文案存了草稿">{`采纳后仍取不到，发布或删掉草稿 ${copy.draftVersion} 才恢复投放。`}</Notice>}
         {copy && winnerVersion && <CompareTexts beforeLabel={`现在 ${copy.version}`} afterLabel={`采纳后 ${winnerVersion.v}`} before={textsOf(findVersion(copy.key, copy.version))} after={textsOf(winnerVersion)!} />}
       </>,
       run: (reason) => {

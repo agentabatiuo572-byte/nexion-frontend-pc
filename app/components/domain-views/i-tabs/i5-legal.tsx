@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { FileCheck2, FilePen, FileText, History, Scale } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterField, Fold, Input, IrreversibleTag, MoreMenu, Notice, Panel, RecordList, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, type StateTone } from "@/app/components/rd";
-import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { fetchLegalTermsAdmin, type LegalTermsSection, type LegalTermsVersion } from "@/lib/admin/legal-terms-client";
 import { currentLegalTermsDateTime, normalizeLegalTermsDateTime } from "@/lib/admin/legal-terms-contract";
@@ -26,7 +26,7 @@ const STATUS: Record<string, { text: string; tone: StateTone }> = {
   REVOKED: { text: "已撤回", tone: "warn" },
 };
 const statusOf = (row: LegalTermsVersion) => STATUS[row.status] ?? { text: "版本状态待核实", tone: "warn" as StateTone };
-const timeText = (value: string) => formatBusinessTimeFull(value, value);
+const timeText = (value: string) => formatBusinessTimeCompact(value, value);
 const validTime = (value: string) => { try { normalizeLegalTermsDateTime(value); return true; } catch { return false; } };
 
 const sameContent = (left: LegalTermsVersion, right: LegalTermsVersion) => JSON.stringify([left.title, left.summary, left.sections]) === JSON.stringify([right.title, right.summary, right.sections]);

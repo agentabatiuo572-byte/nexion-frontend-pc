@@ -705,7 +705,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         <p>等着发是已排期和发送中的活动；时间是北京时间。到点后由后台自动发出，后台每 30 秒检查一次，排队多时会晚。</p>
         <p>保留上限的修改要批准后才生效。这页只查得到你在这个标签页提交的申请，别人提交的到「操作记录与审批」看。</p>
       </>}
-      action={auditReachable ? <Link className="rd-link" href={AUDIT_HREF} prefetch={false}>看等批准的上限修改</Link> : undefined}>
+      action={auditReachable && pendingCapRows.length === 0 ? <Link className="rd-link" href={AUDIT_HREF} prefetch={false}>看等批准的上限修改</Link> : undefined}>
       {scheduledN + sendingN > 0
         ? <><b>{scheduledN + sendingN}</b>{" 条等着发"}{nextScheduled && <>，<span className="rd-keep">{`最近一条 ${whenText(nextScheduled)}`}</span></>}{sendingN > 0 && <>，<span className="rd-keep">{`${sendingN} 条正在发送`}</span></>}</>
         : "没有等着发的通知"}
@@ -1050,6 +1050,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
         others={<Button disabled={submitting} onClick={onClose}>取消</Button>} />}>
       <div className="rd-split i3-form-split" data-detail="" data-preview="">
         <div className="i3-form">
+          {frozen && <Notice tone="warn" title="结果未知">原请求已冻结，只能按原请求重试或在页面上方查询原结果。</Notice>}
           <section className="i3-form-section" aria-labelledby="i3-f-base">
             <h3 id="i3-f-base" className="i3-sub-title">基本信息</h3>
             <Field label="名称" required help="只给后台看，最多 160 字。">
