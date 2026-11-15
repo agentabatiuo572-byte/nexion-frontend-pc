@@ -153,10 +153,10 @@ function AuxStats({ aux }: { aux: B3Dashboard["auxMetrics"] }) {
         explain={<><p>注册之后看过商城的人 ÷ 注册人数，按人算，不是访问次数。</p><p>看它能判断：新用户有没有找到商城入口。偏低先查注册后的引导。</p></>} />
       <Stat tone="role-3" icon={ShoppingCart} label="浏览商城后首购" value={value("purchaseFromStoreRate", aux.purchaseFromStoreRate)}
         sub={frac("purchaseFromStoreRate", aux.purchaseFromStoreNumerator, aux.purchaseFromStoreDenominator)}
-        explain={<><p>看过商城后又购买的人 ÷ 看过商城的人。这一单不一定是首购，先买过、再看商城又买的也算。</p><p>看它能判断：进了商城的人买不买。偏低先看商品和价格。主漏斗的首购不要求先看商城，所以两个人数可能不同。</p></>} />
+        explain={<><p>注册后看过商城、之后又购买的人 ÷ 注册后看过商城的人。这一单不一定是首购，先买过、再看商城又买的也算。</p><p>看它能判断：进了商城的人买不买。偏低先看商品和价格。主漏斗的首购不要求先看商城，所以两个人数可能不同。</p></>} />
       <Stat tone="role-3" icon={Zap} label={`首笔收益到账（${aux.day0WindowSeconds} 秒内）`} value={value("day0AccessRate", aux.day0AccessRate)}
         sub={hidden("day0AccessRate") ? "少于 5 人，不显示" : withTarget(frac("day0AccessRate", aux.day0Numerator, aux.day0Denominator), aux.day0Target)}
-        explain={<><p>注册后首笔收益在 {aux.day0WindowSeconds} 秒内到账的人 ÷ 注册人数。用时以收益记录上写的为准，不是收益时间减注册时间，也不是「注册当天」；时限在「用户行为事件」里设置。</p><p>看它能判断：新用户是不是很快看到收益。目标只用来对照，不会拦截任何操作。</p></>} />
+        explain={<><p>注册后首笔收益在 {aux.day0WindowSeconds} 秒内到账的人 ÷ 注册人数。用时看收益记录上记的数，不拿收益时间减注册时间，也不按「注册当天」算；时限在「用户行为事件」里设置。</p><p>看它能判断：新用户是不是很快看到收益。目标只用来对照，不会拦截任何操作。</p></>} />
       <Stat tone="role-3" icon={CalendarCheck} label="第 7 天仍活跃" value={value("day7Retention", aux.day7Retention)}
         sub={hidden("day7Retention") ? (aux.day7Mature ? "少于 5 人，不显示" : "还没有注册满 7 天的用户") : withTarget(frac("day7Retention", aux.day7Numerator, aux.day7Denominator), aux.day7Target)}
         explain={<><p>只算注册满 7 天的人：注册后第 7 天当天打开过 App 的人 ÷ 注册满 7 天的人。不是第 7 天以后任意一天活跃。</p><p>看它能判断：用户第一周之后还留不留下。</p></>} />
