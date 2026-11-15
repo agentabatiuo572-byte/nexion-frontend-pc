@@ -1,6 +1,7 @@
 import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "./pending-mutation-store";
 import { guardedFetch, formatAdminApiError } from "./error-messages";
 import { isExplicitRejection } from "./explicit-rejection";
+import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "./outcome-classification";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { E5Device } from "./e5-client";
 import type { LegacyUnknownCandidate } from "./legacy-unknown-resolution";
@@ -56,7 +57,7 @@ export function e5CommandBlocks(record: E5Command, device: E5Device, intent?: E5
 }
 
 export class E5CommandError extends Error {
-  constructor(message: string, readonly status?: number, readonly backendMessage = "", readonly unknownOutcome = false) { super(message); }
+  constructor(message: string, readonly status?: number, readonly backendMessage = "", readonly unknownOutcome = false, readonly httpStatus?: number, readonly apiCode?: number) { super(message); }
 }
 
 export async function checkE5Command(record: E5Command, evidence?: ECommandEvidence) {
@@ -88,7 +89,8 @@ export async function sendE5Command(record: E5Command, retry: boolean) {
       const status = response.ok && typeof result.code === "number" && result.code >= 400 && result.code < 500 ? result.code : response.status;
       const code = typeof result.message === "string" ? result.message : "";
       throw new E5CommandError(formatAdminApiError(code, "原操作结果未确认，请核查"), status, code,
-        status >= 500 || !code || result.code == null || retry && record.intent === "legacy" && code.startsWith("LEGACY_UNKNOWN_"));
+        status >= 500 || !code || result.code == null || isIdempotencyOutcomeOpen(code) || retry && record.intent === "legacy" && code.startsWith("LEGACY_UNKNOWN_"),
+        response.status, typeof result.code === "number" ? result.code : undefined);
     }
     if (!result.data || typeof result.data !== "object" || Array.isArray(result.data)) throw new E5CommandError("原操作缺少有效回执", undefined, "", true);
     data = result.data as Record<string, unknown>;
@@ -101,7 +103,8 @@ export async function sendE5Command(record: E5Command, retry: boolean) {
       throw new E5CommandError("设备操作回执不完整", undefined, "", true);
     }
   } catch (cause) {
-    if (!retry && isExplicitRejection(cause)) e5Commands.forget(record.fingerprint, record.commandKey);
+    if (!retry && cause instanceof E5CommandError && !cause.unknownOutcome && cause.httpStatus !== undefined
+        && isDeterministicRejection(cause.httpStatus, cause.apiCode)) e5Commands.forget(record.fingerprint, record.commandKey);
     else if (retry && isExplicitRejection(cause)) e5Commands.remember(record.fingerprint, record.commandKey, {
       ...record, retryRejection: cause instanceof Error ? cause.message : String(cause),
     });
