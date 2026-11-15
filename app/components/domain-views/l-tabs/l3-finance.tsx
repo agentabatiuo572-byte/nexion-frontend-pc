@@ -561,13 +561,17 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
 
   /* The authoritative treasury snapshot owns valuation, not the separately read legacy overview. */
   const valuationUnavailable = data.valuationReliable === false;
+  const coverage = treasuryRaw.valuedCoverageRatio as number | null;
+  const coverageUnavailable = coverage === null || valuationUnavailable;
 
   const reserve = num(ledgerRaw.reserveUsd);
   const liabilityTotal = valuationUnavailable ? null : data.valuedLiabilitiesUsd as number;
-  const coverage = num(treasuryRaw.coverageRatio);
   const redLine = num(treasuryRaw.redLine);
   const healthyLine = num(treasuryRaw.yellowLine);
-  const netExposure = valuationUnavailable ? null : num(treasuryRaw.netExposure);
+  const netExposureText = coverageUnavailable ? null : treasuryRaw.valuedNetExposureUsdt as string | null;
+  const netExposure = netExposureText === null ? null : Number(netExposureText);
+  const [netWhole, netFraction] = (netExposureText ?? "").replace(/^-/, "").split(".");
+  const netAmount = netWhole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (netFraction === undefined ? "" : `.${netFraction}`);
   const noLiability = liabilityTotal === 0;
   const moneyDigits = amountDigits([reserve, liabilityTotal, netExposure]);
 
@@ -631,7 +635,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   const peakPart = peakGroup ? peakGroup.values.reduce((best, value, index) => (value > peakGroup.values[best] ? index : best), 0) : 0;
 
   /* ---------------- 结论：付不付得起，和资金与应付款总览同一种说法 ---------------- */
-  const zone = valuationUnavailable ? "unknown" : noLiability ? "ok" : coverage < redLine ? "danger" : coverage === redLine || coverage <= healthyLine ? "warn" : "ok";
+  const zone = coverageUnavailable ? "unknown" : noLiability ? "ok" : coverage < redLine ? "danger" : coverage === redLine || coverage <= healthyLine ? "warn" : "ok";
   const coverageTone = zone === "danger" ? "danger" : zone === "warn" ? "warn" : zone === "ok" ? "ok" : "neutral";
   const overviewName = findByPath(OVERVIEW_PAGE)?.l2.name ?? "资金与应付款总览";
   const overviewLink = reach(OVERVIEW_PAGE) ? <Link className="rd-link" href={OVERVIEW_PAGE}>去「{overviewName}」看处理建议</Link> : null;
@@ -657,9 +661,9 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       <Stat tone="role-2" icon={ArrowUpFromLine} label="本期提现确认" value={count(redemption.confirmed)} unit="笔" sub={`申请 ${count(redemption.submitted)} 笔`}
         explain="提现只统计笔数，没有金额。按报表周期和注册业务月统计；本期确认的可能是上期申请的。" />
       <Stat tone={zone === "danger" || zone === "warn" ? zone : "role-4"} icon={Gauge} label="兑付覆盖率"
-        value={valuationUnavailable ? TREASURY_VALUATION_UNAVAILABLE : noLiability ? "无应付款" : pctText(coverage)}
+        value={coverageUnavailable ? TREASURY_VALUATION_UNAVAILABLE : noLiability ? "无应付款" : pctText(coverage)}
         sub={`红线 ${pctText(redLine)} · 健康线 ${pctText(healthyLine)}`}
-        explain={<><p>可用储备 ÷ 应付款，读取那一刻的数，不随周期变。</p>{valuationUnavailable && <p>{VALUATION_NOTE}</p>}</>} />
+        explain={<><p>可用储备 ÷ 应付款，读取那一刻的数，不随周期变。</p>{coverageUnavailable && <p>{VALUATION_NOTE}</p>}</>} />
       <Stat tone="role-3" icon={CalendarClock} label="未来 7 天到期" value={amountText(due7Total, statDigits)} unit="USDT" sub={`未来 30 天 ${usdt(due30Total, statDigits)}`}
         explain="提现、质押奖励利息、创世节点收益三类相加，从今天（业务日）算起。质押只算利息，不含本金。" />
     </StatBand>
@@ -685,7 +689,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
 
   /* ---------------- 兑付覆盖率 | 九类应付款 ---------------- */
   const seriesRange = coverageTicks.length ? `${coverageTicks[0]} 至 ${coverageTicks[coverageTicks.length - 1]}` : "";
-  const trendWord = coverageSeries.length >= 2
+  const trendWord = !coverageUnavailable && coverageSeries.length >= 2
     ? coverageSeries[coverageSeries.length - 1] - coverageSeries[0] > 0.01 ? "这段时间储备在增加" : coverageSeries[0] - coverageSeries[coverageSeries.length - 1] > 0.01 ? "这段时间储备在减少" : "这段时间储备没有明显变化"
     : "";
   const treasuryName = findByPath(TREASURY_PAGE)?.l2.name ?? "资金储备与应付款";
@@ -693,7 +697,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     <Panel title="兑付覆盖率" icon={Gauge} tone="role-4" sub={`读取那一刻 · 红线 ${pctText(redLine)} · 健康线 ${pctText(healthyLine)}`}
       explain={<><p>可用储备 ÷ 应付款，和「{overviewName}」同一个数，不随报表周期变。</p><p>红线和健康线在「{overviewName}」设置，这页只读。</p></>}>
       <div className="rd-stack">
-        {valuationUnavailable
+        {coverageUnavailable
           ? <BlockState state="empty" title={`覆盖率${TREASURY_VALUATION_UNAVAILABLE}`} detail="UVT 锁仓到期应付缺少有效价格，算不出应付款合计。红线和健康线照常生效。" />
           : noLiability
             ? <p className="rd-note">目前没有应付款，不画覆盖率尺。</p>
@@ -703,13 +707,13 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
         <KeyValues rows={[
           { key: "reserve", label: "可用储备", value: usdt(reserve, moneyDigits), explain: "平台现在能动用的钱，和「资金与应付款总览」同一个数。不是用户钱包余额。" },
           { key: "liability", label: "应付款", value: usdt(liabilityTotal, moneyDigits), explain: valuationUnavailable ? VALUATION_NOTE : "右边九类相加，是之后要付给用户的全部钱，不是都能马上提现。" },
-          { key: "net", label: "差额（储备 − 应付款）", value: netExposure === null ? TREASURY_VALUATION_UNAVAILABLE : <span className="l3-delta" data-dir={netExposure > 0 ? "up" : netExposure < 0 ? "down" : undefined}>{`${netExposure > 0 ? "+" : netExposure < 0 ? "−" : ""}${amountText(Math.abs(netExposure), moneyDigits)} USDT`}</span>,
-            explain: valuationUnavailable ? VALUATION_NOTE : "负数表示储备不够付全部应付款，不等于某一笔提现会马上失败。" },
+          { key: "net", label: "差额（储备 − 应付款）", value: netExposure === null ? TREASURY_VALUATION_UNAVAILABLE : <span className="l3-delta" data-dir={netExposure > 0 ? "up" : netExposure < 0 ? "down" : undefined}>{`${netExposure > 0 ? "+" : netExposure < 0 ? "−" : ""}${netAmount} USDT`}</span>,
+            explain: coverageUnavailable ? VALUATION_NOTE : "负数表示储备不够付全部应付款，不等于某一笔提现会马上失败。" },
         ]} />
         <div className="l3-trend">
           <h3 className="l3-sub">近 {coverageSeries.length} 个时段（{seriesRange}）<Explain label="覆盖率走势怎么算" content="系统按资金账本倒推每个时段当时的储备，应付款一律用现在的值（应付款没有历史记录），所以这条线不是当时真实的覆盖率，起伏只来自储备进出。时间按服务器时间。" /></h3>
           <p className="l3-caliber">历史点 = 当时的储备 ÷ 现在的应付款，只反映储备变化{trendWord ? ` · ${trendWord}` : ""}</p>
-          {valuationUnavailable
+          {coverageUnavailable
             ? <p className="rd-note">覆盖率{TREASURY_VALUATION_UNAVAILABLE}，走势不画。</p>
             : <TrendLines label="近几个时段的覆盖率" ticks={coverageTicks.map((tick) => tick.slice(-5))} format={pctText} axisFormat={(value) => `${Number(value.toFixed(1))}%`} height={120}
               series={[{ key: "coverage", label: "覆盖率", slot: 4, values: coverageSeries }]}

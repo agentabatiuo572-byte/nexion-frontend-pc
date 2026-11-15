@@ -215,7 +215,10 @@ async function apiRequest<T>(path: string, init?: RequestInit, businessErrorStat
   if (isReportCreation && res.status >= 500) throw networkFailure(true);
   let payload: ApiResult<T> = {};
   try {
-    const text = await res.text();
+    const raw = await res.text();
+    // This coverage amount is displayed as its decimal text, before any JSON number conversion.
+    const text = path === "/finance/treasury-snapshot"
+      ? raw.replace(/("valuedNetExposureUsdt"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"') : raw;
     if (text) payload = (JSON.parse(text) ?? {}) as ApiResult<T>;
   } catch (cause) {
     if (!isReportCreation) throw cause;
@@ -635,6 +638,10 @@ async function fetchL3FinanceOverview(query?: L3FinanceQuery): Promise<LBiData> 
       redLine: num(coverage.redLine),
       yellowLine: num(coverage.yellowLine),
       netExposure: num(coverage.netExposureUsdt),
+      valuationReliable: coverage.valuationReliable,
+      valuationStatus: coverage.valuationStatus,
+      valuedCoverageRatio: coverage.valuedCoverageRatio,
+      valuedNetExposureUsdt: coverage.valuedNetExposureUsdt,
     },
     revenueExt: rows<Record<string, unknown>>(revenue.streams).map((row, index) => {
       const delta = row.momDelta === null || row.momDelta === undefined ? undefined : num(row.momDelta);
