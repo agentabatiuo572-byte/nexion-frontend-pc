@@ -376,9 +376,10 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 |---|---|---|---|---|
 | `/api/admin/auth/login` / `/api/admin/auth/mfa/verify` / `/api/admin/auth/logout` | POST | 密码阶段只发 MFA challenge；challenge 与 TOTP 时间步均防并发/跨 challenge 重放；TOTP 通过后发 JWT/session；登出确认撤销服务端 session 后才清 cookie，撤销不可用则保留凭据并失败重试 | — | A1 |
 | `/api/admin/platform/accounts/overview` / `/api/admin/platform/accounts` | GET / POST | 账号、安全基线与会话总览 / 创建(默认专属客服；显式空角色仍不分配；客服个人资格与档案原子创建) | A1-MD1(POST) | A1 |
-| `/api/admin/platform/accounts/:id/profile\|role\|status` | PATCH | 资料/角色/启停；角色来自 A6 | A1-MD2~MD4 | A1 |
-| `/api/admin/platform/accounts/:id/reset-2fa\|password/reset` | POST | 重置 MFA/密码并吊销旧会话；MFA 重置先校验有效超管下限 | A1-MD5 | A1 |
-| `/api/admin/platform/accounts/:id/sessions/revoke` / `.../sessions/:sessionId/revoke` | POST | 吊销全部/单条运营 session(仅超管、非自己、非超管目标) | A1-MD6 | A1 |
+| `/api/admin/platform/accounts/:id/profile\|role\|status` | PATCH | 资料/角色/启停只在A2批准回放实际写入，直写409 A2_CONFIRMATION_REQUIRED；无变化资料原值返回。降级/停用只扣减super+enabled+已绑MFA的有效目标，最低两人（e83c9ce7） | A1-MD2~MD4 | A1 |
+| `/api/admin/platform/accounts/:id/reset-2fa` | POST | A2批准回放重置MFA并吊销旧会话，直写409；未绑定仍拒绝，仅有效super扣减人数，最低两人（e83c9ce7） | A1-MD5 | A1 |
+| `/api/admin/platform/accounts/:id/password/reset` | POST | 直接重置密码并吊销旧会话；此次A2回放守卫不覆盖密码重置 | A1-MD5 | A1 |
+| `/api/admin/platform/accounts/:id/sessions/revoke` / `.../sessions/:sessionId/revoke` | POST | 全部撤销只在A2批准回放执行，单条仍直写；仅超管、非自己、非超管目标（e83c9ce7） | A1-MD6 | A1 |
 | `/api/admin/platform/roles` / `/api/admin/platform/permissions` | GET | A6 角色授权 / A8 权限码字典权威视图 | — | A6/A8 |
 | `/api/admin/platform/audit/overview` | GET | 主总览无筛选、操作记录按六条件另读；真实范围由后端裁剪，列表最近200条 | — | A2 |
 | `/api/admin/platform/audit/operations/:id/{approve\|reject\|withdraw}` | POST | 批准／驳回按已知业务规则，本人仅撤回；未知类型保留入口并提示后端批准时检查，待B44 | A2-MD2/MD3及撤回框 | A2 |

@@ -251,6 +251,8 @@ V1 聚焦"看得见资金与用户态势、管得住资金流出、调得动运�
 
 最后更新：2026-11-15；本章按后端 `111e00cd` 和 PC `rd/a-domain` 本次接线核实。浏览器验收集中到本域最后一项，本章不代表真实写入已验收。
 
+2026-11-15 约束同步（hd-sync5）：五项账号方法逐条按后端 `acafc33c` 重核，重构说明的32行相关事实保留原句并更新核对提交及条件；A1-BE-01、A1-BE-06由 `e83c9ce7` 交付，PC提交检查已同步。批准时点仍以各动作确认框为准，行操作摘要的省略说法交视觉核实；真实业务验收须在运行后端升级后执行。
+
 **① 目的与权威**
 
 A1 管理内部运营账号的创建、资料、角色、登录凭证、后台会话与客服资格，和 C 域终端用户账户分离。新建审批回执须带与原请求完全一致的 operationCode；缺失或不符时保留原请求并按结果未知处理，不把历史无命令票的可空字段套到新提案。A6 管角色及角色授权，A8 管权限字典，A7 管菜单。A1 使用 A6 角色详情的 `permissionCodes` 比较两个角色，不维护第二份授权矩阵，不按角色说明文字推断权限；权限详情缺失时不显示成零差异并禁止新改角色。当前会话的真实授权来自后端有效角色关联查询。
@@ -4452,12 +4454,12 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 |---|---|---|---|---|---|---|
 | A1 | `/api/admin/platform/accounts/overview` | GET | 运营账号列表、角色引用、安全基线与逐条活跃 session 详情 | Ch2 A1 | — | — |
 | A1 | `/api/admin/platform/accounts` | POST | 创建运营账号；省略角色默认专属客服，显式空角色为暂不分配；客服原子建立个人服务资格与档案 | Ch2 A1 | 是 | 是 |
-| A1 | `/api/admin/platform/accounts/:id/profile` | PATCH | 编辑登录名、显示名、邮箱及客服性别/头像；沿原授权、版本与审计 | Ch2 A1 | 是 | 是 |
-| A1 | `/api/admin/platform/accounts/:id/role` | PATCH | 从 A6 启用角色中变更或清空角色；提交前展示权限差异 | Ch2 A1 / A6 | 是 | 是 |
-| A1 | `/api/admin/platform/accounts/:id/status` | PATCH | 禁用或重新启用；不得破坏有效双超管下限 | Ch2 A1 | 是 | 是 |
-| A1 | `/api/admin/platform/accounts/:id/reset-2fa` | POST | 身份核验后重置 MFA；未绑定账号不可执行 | Ch2 A1 | 是 | 是 |
+| A1 | `/api/admin/platform/accounts/:id/profile` | PATCH | A2批准回放编辑资料/头像；有变化的直写409 A2_CONFIRMATION_REQUIRED，无变化仍返回当前资料 | Ch2 A1 | 是 | 是 |
+| A1 | `/api/admin/platform/accounts/:id/role` | PATCH | A2批准回放分配A6角色；仅原目标为启用且已绑MFA的super且降级时扣减有效人数 | Ch2 A1 / A6 | 是 | 是 |
+| A1 | `/api/admin/platform/accounts/:id/status` | PATCH | A2批准回放启停；仅停用有效super才减一，最低两人 | Ch2 A1 | 是 | 是 |
+| A1 | `/api/admin/platform/accounts/:id/reset-2fa` | POST | A2批准回放重置MFA；未绑定仍拒绝，仅有效super才减一，最低两人 | Ch2 A1 | 是 | 是 |
 | A1 | `/api/admin/platform/accounts/:id/password/reset` | POST | 生成一次性临时强密码并吊销旧会话 | Ch2 A1 | 是 | 是 |
-| A1 | `/api/admin/platform/accounts/:id/sessions/revoke` | POST | 吊销目标账号全部 session(仅超管、非自己、非超管目标、须 reason) | Ch2 A1 | 是 | 是 |
+| A1 | `/api/admin/platform/accounts/:id/sessions/revoke` | POST | A2批准回放吊销全部session；直接新写409；仅超管、非自己、非超管目标、须reason | Ch2 A1 | 是 | 是 |
 | A1 | `/api/admin/platform/accounts/:id/sessions/:sessionId/revoke` | POST | 吊销目标账号指定 session，约束同上 | Ch2 A1 | 是 | 是 |
 | A6 / A8 | `/api/admin/platform/roles/*` / `/api/admin/platform/permissions/*` | GET / 写操作 | 角色定义及角色授权权威归 A6，权限码字典权威归 A8；A1 只读引用 | Ch2 A6 / A8 | 按对应写操作 | 按对应写操作 |
 | A2 | `/api/admin/platform/audit/overview` | GET | 无筛选队列总览及已筛选操作记录；服务端范围、最近200条 | Ch2 A2 | — | — |
