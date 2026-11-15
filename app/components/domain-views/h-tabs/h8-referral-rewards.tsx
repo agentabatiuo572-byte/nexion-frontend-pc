@@ -415,11 +415,12 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     const proposeBlock = withdrawalApprovalDisabledReason(session?.authorities ?? []);
     const settleFacts = (value?: string) => {
       const limit = targeted ? 1 : Math.max(1, Math.min(100, Number(value) || 20));
-      const pendingNow = Number(snapshot?.pending ?? 0);
+      const pendingNow = snapshot.pending;
+      const batchCount = Math.min(limit, pendingNow);
       return <Facts>
         {targeted
           ? <Fact k="新人用户编号" lead>{invitedUserId}</Fact>
-          : <Fact k="这一批最多" lead unit={value ? "位新人" : undefined}>{value ? countText(limit) : "—"}</Fact>}
+          : <Fact k="这一批最多" lead unit={value ? "位新人" : undefined}>{value ? countText(batchCount) : "—"}</Fact>}
         {targeted
           ? <Fact k="这位新人">{loaded
             ? "已结算过，不会再发一份"
@@ -433,7 +434,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           : <Fact k="现在待结算">{countText(pendingNow)} 位，从最早注册的开始发；实际结算时还要核对钱包，可能更少</Fact>}
         <Fact k="每位新人">{amountText(rewards?.["newcomer.usdt"], usdtDecimals)} USDT + {amountText(rewards?.["newcomer.nex"], uvtDecimals)} UVT</Fact>
         <Fact k="每位邀请人">{amountText(rewards?.["inviter.nex"], uvtDecimals)} UVT，没有邀请人的不发</Fact>
-        {!targeted && value && <Fact k="这一批最多发出">{timesText(rewards?.["newcomer.usdt"], limit, usdtDecimals)} USDT + {timesText(rewards?.["newcomer.nex"], limit, uvtDecimals, rewards?.["inviter.nex"])} UVT</Fact>}
+        {!targeted && value && <Fact k="这一批最多发出">{timesText(rewards?.["newcomer.usdt"], batchCount, usdtDecimals)} USDT + {timesText(rewards?.["newcomer.nex"], batchCount, uvtDecimals, rewards?.["inviter.nex"])} UVT</Fact>}
         <Fact k="会冻结的">注册时标了首购冻结的，新人礼冻结到首笔实付订单；有几位页面算不出</Fact>
         <Fact k="钱从哪出">平台出钱，进新人和邀请人的钱包，记进资金账本</Fact>
         <Fact k="谁来批准">{SETTLE_APPROVER}（需有审批批准权限和邀请奖励结算权限）</Fact>
@@ -478,7 +479,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       const request = {
         action: targeted ? "给指定新人结算邀请奖励" : "结算邀请奖励",
         obj: targeted ? `新人 ${invitedUserId}` : "待结算邀请批次",
-        beforeValue: `待结算 ${Number(snapshot.pending ?? 0)} 条 · 设置版本 v${snapshot.version ?? "—"} · 第 ${snapshot.rhythmMonth ?? "—"} 个月`,
+        beforeValue: `待结算 ${snapshot.pending} 条 · 设置版本 v${snapshot.version} · 第 ${snapshot.rhythmMonth} 个月`,
         afterValue: `${targeted ? `仅结算新人 ${invitedUserId} 的邀请奖励` : `最多结算 ${limit} 条`} · 新人 ${snapshot.effectiveRewards["newcomer.usdt"] ?? "—"} USDT + ${snapshot.effectiveRewards["newcomer.nex"] ?? "—"} UVT · 邀请人 ${snapshot.effectiveRewards["inviter.nex"] ?? "—"} UVT · 快照 ${snapshot.rewardSnapshotHash.slice(0, 12) ?? "—"}…`,
         operator: actor.operator || actor.username, operatorRole: roleLabel(actor.role),
         type: "fund" as const, amplifies: true, sos: false, roleGate: def.gateLabel, reason, sourceDomain: "H8",
