@@ -750,8 +750,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       await propose(toast, {
         action: `禁用账号 · ${displayName}`,
         obj: String(op.id),
-        before: "启用",
-        after: "禁用",
+        before: "已启用",
+        after: "已停用",
         type: "acct",
         amplifies: false,
         gate: { roles: [] },
@@ -799,8 +799,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       await propose(toast, {
         action: `启用账号 · ${operatorDisplayName(op)}`,
         obj: String(op.id),
-        before: "禁用",
-        after: "启用",
+        before: "已停用",
+        after: "已启用",
         type: "acct",
         amplifies: false,
         gate: { roles: [] },
@@ -845,8 +845,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         await propose(toast, {
           action: `强制登出 · ${displayName}`,
           obj: String(op.id),
-          before: `${op.sessions} active sessions`,
-          after: "0 active sessions",
+          before: `${op.sessions} 个在线会话`,
+          after: "0 个在线会话",
           type: "acct",
           amplifies: false,
           gate: { roles: [] },
