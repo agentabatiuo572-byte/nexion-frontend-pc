@@ -305,7 +305,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
             : conflicted
               ? <Notice tone="warn" title={editor.mode === "upload" ? "这次没有上传" : "这次没有恢复"}
                 action={<Button size="sm" onClick={conflictView.show}>核对</Button>} actionBelow>
-                这份资料刚被别人换过。核对现在用的文件后，再决定要不要继续。
+                这份资料刚被别人换过；核对完之前，下面的内容都改不了。
               </Notice>
               : <Notice tone="danger" title={editor.mode === "upload" ? "这次没有上传" : "这次没有恢复"}>{editorError}</Notice>)}
           <Facts>
