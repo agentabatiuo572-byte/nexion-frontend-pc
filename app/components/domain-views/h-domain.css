@@ -124,7 +124,7 @@
 .h9-app-number { display: flex; flex-direction: column; gap: var(--rd-space-1); min-width: 0; }
 .h9-app-label, .h9-app-sub { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .h9-app-value { font-size: var(--rd-text-title); line-height: var(--rd-lh-title); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--rd-text); overflow-wrap: anywhere; }
-.h9-app-value small { margin-left: var(--rd-space-1); font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
+.h9-app-value small { display: inline-flex; margin-left: var(--rd-space-1); font-size: var(--rd-text-aux); font-weight: 400; color: var(--rd-text-3); }
 .h9-app-number[data-empty] .h9-app-value { color: var(--rd-text-3); }
 .h9-app-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); margin-top: var(--rd-space-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .h9-chart, .h9-confirm-chart { display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; }
