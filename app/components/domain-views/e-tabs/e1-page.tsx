@@ -176,7 +176,8 @@ export function E1Page() {
     if (!canWrite || !actor || record.actorId !== actor || sending.current) throw new Error("账号、权限或提交状态不允许重试，请先核对原操作");
     if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
     const store = record.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands;
-    store.remember(record.fingerprint, record.commandKey, { ...record, retryRejection: undefined });
+    record = { ...record, retryRejection: undefined, absent: false };
+    store.remember(record.fingerprint, record.commandKey, record);
     if (!store.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器无法保存原操作，本次没有发送；原记录和对象锁仍保留。");
     sending.current = true; setBusy(record.commandKey); setRejected(keys => keys.filter(k => k !== record.commandKey));
     try {
