@@ -646,11 +646,17 @@ function hasProposalTicketFacts(row: BackendTicket) {
     && ["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "");
 }
 
-export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket = false): Promise<A2OperationRow | null> {
+export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket = false, strictOperationTicket = false): Promise<A2OperationRow | null> {
   try {
     const row = await a2Request<BackendTicket>(`/operations/proposals/by-idempotency-key?${new URLSearchParams({ idempotencyKey: commandKey })}`);
     if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new Error("提交结果不完整，请稍后再查。");
     if (strictTicket && !hasProposalTicketFacts(row)) throw new Error("提交结果不完整，请稍后再查。");
+    // B5 opts in before using the live receipt to show pending or release its original record.
+    // A-domain callers retain the separate exact-status contract above.
+    if (strictOperationTicket && (!['pending', 'approved', 'rejected', 'withdrawn', 'expired'].includes(row.status.trim().toLowerCase())
+      || typeof row.mine !== "boolean" || typeof row.action !== "string" || typeof row.obj !== "string" || typeof row.operationCode !== "string")) {
+      throw new Error("提交结果不完整，请稍后再查。");
+    }
     return fromTicket(row);
   } catch (failure) {
     if (failure && typeof failure === "object" && "status" in failure && failure.status === 404

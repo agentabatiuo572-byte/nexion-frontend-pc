@@ -638,6 +638,29 @@ export const supportWelcomeMessageClient = {
     request("/support-agents/welcome-message", welcomeMessage, json("PUT", { ...input, expectedVersion: positive(input.expectedVersion, "welcome.expectedVersion") }, idempotencyKey, signal)),
 };
 
+type M5RulesInput = Parameters<typeof supportClient.updateRules>[0];
+type M5WelcomeInput = Parameters<typeof supportWelcomeMessageClient.update>[0];
+function savedM5Rules(value: unknown, input: M5RulesInput) {
+  const result = rules(value);
+  if (result.version !== input.expectedVersion + 1
+    || (["dormantDays", "maintenanceDays", "activityWindowDays", "inheritanceMode", "maxInheritanceDepth", "unboundAssignmentMode"] as const)
+      .some(field => result[field] !== input[field])) malformed("rules.receipt");
+  return result;
+}
+function savedM5Welcome(value: unknown, input: M5WelcomeInput) {
+  const result = welcomeMessage(value);
+  if (result.version !== input.expectedVersion + 1 || result.reason !== input.reason
+    || (["zh", "en", "vi"] as const).some(language => result.texts[language] !== input.texts[language])) malformed("welcome.receipt");
+  return result;
+}
+/** M5-only receipt validation; other support pages keep their existing contracts. */
+export const m5ManagementClient = {
+  rules: (input: M5RulesInput, key: string) => request("/support-agents/rules", value => savedM5Rules(value, input), json("PUT", input, key)),
+  rulesCommand: (key: string, input: M5RulesInput) => readManagementCommand(key, "SUPPORT_RULES", value => savedM5Rules(value, input)),
+  welcome: (input: M5WelcomeInput, key: string) => request("/support-agents/welcome-message", value => savedM5Welcome(value, input), json("PUT", input, key)),
+  welcomeCommand: (key: string, input: M5WelcomeInput) => readManagementCommand(key, "SUPPORT_WELCOME", value => savedM5Welcome(value, input)),
+};
+
 export type SupportPersonalPhrase = { id: string; content: string };
 const phraseList = (value: unknown): SupportPersonalPhrase[] => {
   if (!Array.isArray(value)) malformed("phrases");

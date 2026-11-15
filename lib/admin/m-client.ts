@@ -1,5 +1,7 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { parseBusinessTime } from "@/lib/admin/business-time";
+import type { M4FaqCommand } from "./m4-faq-command";
+import type { M5Command } from "./m5-command";
+import { formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
 import { compareM3Messages } from "./m3-message-order";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
@@ -231,6 +233,7 @@ type SupportFaqView = {
   sortOrder?: number;
   version?: number;
   updatedAt?: string;
+  translations?: Record<string, { question: string; answer: string }>;
 };
 
 type SupportSlaView = {
@@ -256,6 +259,27 @@ type SupportKnowledgeOverview = {
 
 const SLA_CATEGORIES = ["account", "withdrawal", "deposit", "hardware", "earnings", "genesis", "technical", "other"] as const;
 
+function assertSupportFaq(value: unknown): asserts value is SupportFaqView {
+  const faq = value as SupportFaqView | null;
+  if (!faq || typeof faq !== "object" || Array.isArray(faq)
+    || typeof faq.id !== "string" || !faq.id.trim()
+    || typeof faq.question !== "string" || !faq.question.trim()
+    || typeof faq.answer !== "string" || !faq.answer.trim()
+    || typeof faq.category !== "string" || typeof faq.surface !== "string"
+    || !["zh-CN", "en-US", "vi-VN", "id", "ms", "fil", "ru", "kk", "uz"].includes(faq.language ?? "")
+    || !["PUBLISHED", "DRAFT"].includes(faq.status?.toUpperCase() ?? "")
+    || !Number.isSafeInteger(faq.sortOrder) || Number(faq.sortOrder) < 0 || Number(faq.sortOrder) > 999999
+    || !Number.isSafeInteger(faq.version) || Number(faq.version) < 1
+    || typeof faq.updatedAt !== "string" || !Number.isFinite(parseBusinessTime(faq.updatedAt))) {
+    throw new Error("M4_KNOWLEDGE_OVERVIEW_MALFORMED");
+  }
+  if (faq.translations !== undefined && (!faq.translations || typeof faq.translations !== "object" || Array.isArray(faq.translations)
+    || Object.entries(faq.translations).some(([code, text]) => !["id", "ms", "fil", "ru", "kk", "uz"].includes(code)
+      || !text || typeof text.question !== "string" || !text.question.trim() || typeof text.answer !== "string" || !text.answer.trim()))) {
+    throw new Error("M4_KNOWLEDGE_OVERVIEW_MALFORMED");
+  }
+}
+
 function assertSupportKnowledgeOverview(value: unknown): SupportKnowledgeOverview {
   const malformed = () => {
     throw new Error("M4_KNOWLEDGE_OVERVIEW_MALFORMED");
@@ -275,18 +299,7 @@ function assertSupportKnowledgeOverview(value: unknown): SupportKnowledgeOvervie
   if (!arrays.every(Array.isArray)) malformed();
   const faqs = overview.faqs as SupportFaqView[];
   const sla = overview.sla as SupportSlaView[];
-  if (!faqs.every((faq) =>
-    typeof faq.id === "string" && faq.id.trim().length > 0
-    && typeof faq.question === "string" && faq.question.trim().length > 0
-    && typeof faq.answer === "string" && faq.answer.trim().length > 0
-    && typeof faq.category === "string"
-    && typeof faq.surface === "string"
-    && typeof faq.language === "string"
-    && typeof faq.status === "string"
-    && Number.isSafeInteger(faq.sortOrder)
-    && Number.isSafeInteger(faq.version) && Number(faq.version) >= 1
-    && typeof faq.updatedAt === "string" && !Number.isNaN(Date.parse(faq.updatedAt))
-  )) malformed();
+  faqs.forEach(assertSupportFaq);
   if (new Set(faqs.map((faq) => faq.id)).size !== faqs.length) {
     throw new Error("M4_KNOWLEDGE_FAQ_ID_COLLISION");
   }
@@ -518,13 +531,13 @@ export type MLoadConfigWrite = Omit<MLoadConfig, "version"> & {
 const CATEGORY_LABEL: Record<string, string> = {
   advisor: "专属客服服务",
   support: "普通客服",
-  ai: "Nova AI 顾问",
+  ai: "Nova 智能问答（已下线）",
 };
 
 const MANAGED_BY: Record<string, string> = {
   advisor: "增长 / 客服坐席",
   support: "客服坐席",
-  ai: "Nova 自动（在「Nova 消息推送」设置）",
+  ai: "已下线，用户看不到；只剩历史会话",
 };
 
 function idempotencyKey() {
@@ -1367,10 +1380,11 @@ function adaptFaq(row: SupportFaqView): SupportFaq {
     answer: str(row.answer, ""),
     status: status(row.status),
     surface: surface(row.surface),
-    language: (["zh-CN", "en-US", "vi-VN"].includes(str(row.language)) ? row.language : "zh-CN") as SupportFaq["language"],
+    language: row.language as SupportFaq["language"],
+    ...(row.translations ? { translations: row.translations } : {}),
     sortOrder: num(row.sortOrder, 0),
     version: num(row.version, 1),
-    updatedAt: asDate(row.updatedAt),
+    updatedAt: formatBusinessTimeFull(row.updatedAt),
   };
 }
 
@@ -1389,10 +1403,11 @@ function adaptCategory(row: SessionCategoryView): SessionCategory {
   const type = (["advisor", "support", "ai"].includes(str(row.type)) ? row.type : "support") as SessionType;
   return {
     type,
-    name: str(row.name, CATEGORY_LABEL[type] || type),
+    // ai 是已下线的 Nova 智能问答（决定表「全站-Nova」）：不管后端种子叫什么，显示统一名字；类别值不变。
+    name: type === "ai" ? CATEGORY_LABEL.ai : str(row.name, CATEGORY_LABEL[type] || type),
     roleKey: str(row.roleKey, type === "advisor" ? "conversations.roleAdvisor" : type === "ai" ? "conversations.roleAi" : "conversations.roleSupport"),
     enabled: bool(row.enabled, true),
-    managedBy: str(row.managedBy, MANAGED_BY[type] || "客服坐席"),
+    managedBy: type === "ai" ? MANAGED_BY.ai : str(row.managedBy, MANAGED_BY[type] || "客服坐席"),
   };
 }
 
@@ -1610,6 +1625,89 @@ function isMContentSessionCurrent(sessionKey: string): boolean {
 }
 
 /** One read of the knowledge base, shared by the full M load and the FAQ picker's retry. */
+/** Materialize once, before persistence; replay never re-derives operator, reason or CAS values. */
+export function buildM4FaqCommand(kind: M4FaqCommand["kind"], row: SupportFaq, before: SupportFaq | null, reason: string, actorId: number): M4FaqCommand {
+  const path = `/knowledge/faqs${before ? `/${encodeURIComponent(before.id)}` : ""}`;
+  const payload = { category: row.category, question: row.question, answer: row.answer, status: row.status, surface: row.surface, language: row.language, sortOrder: row.sortOrder };
+  const statusOnly = !!before && row.status !== before.status && row.category === before.category && row.question === before.question
+    && row.answer === before.answer && row.surface === before.surface && row.language === before.language && row.sortOrder === before.sortOrder;
+  const expectation = before ? { expectedStatus: before.status, expectedVersion: before.version } : {};
+  const body = kind === "delete" ? expectation : statusOnly ? { status: row.status, ...expectation } : { ...payload, ...expectation };
+  return { actorId, kind, row, before, request: { method: kind === "create" ? "POST" : kind === "delete" ? "DELETE" : "PATCH", path: statusOnly && kind !== "delete" ? `${path}/status` : path, body: JSON.stringify(withReason(body, reason)) } };
+}
+
+export async function sendM4FaqCommand(command: M4FaqCommand, commandKey: string): Promise<void> {
+  const result = await apiRequest<unknown>(command.request.path, { method: command.request.method, body: command.request.body, headers: { "Idempotency-Key": commandKey } });
+  if (command.kind === "delete") {
+    if (result !== null) throw new Error("CONTENT_API_MALFORMED_RESPONSE");
+    return;
+  }
+  assertSupportFaq(result);
+  if (command.kind !== "create" && result.id !== command.row.id || result.version !== (command.before ? command.before.version + 1 : 1)
+    || result.status?.toLowerCase() !== command.row.status) throw new Error("CONTENT_API_MALFORMED_RESPONSE");
+}
+
+/** M5 materializes its existing REST adapter before saving the original request. */
+export function buildM5Command(key: string, value: string, params: Record<string, string>, meta: { reason: string; action: string }, actorId: number, successMessage: string, profile?: MSupportAgent): M5Command {
+  let path: string, body: Record<string, unknown>, method: "POST" | "PATCH" = "PATCH";
+  let beforeValue = params[key] ?? "", text = "", audience = "";
+  if (key === "I.support.agentProfile.__update") {
+    body = JSON.parse(value);
+    path = `/support-agents/${body.adminId}/profile`;
+    beforeValue = JSON.stringify(profile);
+  } else if (key === "I.session.script.__create") {
+    const row = JSON.parse(value);
+    body = { scriptGroup: row.scriptGroup || "开场", text: row.text, ctaPath: row.ctaPath || "—", audience: row.audience.trim(), status: row.status || "draft" };
+    path = "/session-templates/scripts"; method = "POST"; text = row.text; audience = row.audience;
+  } else if (key === "I.session.replyTemplates") {
+    const previous = JSON.parse(params[key] ?? "[]") as SessionReplyTpl[];
+    const row = (JSON.parse(value) as SessionReplyTpl[]).find(item => !previous.some(before => before.id === item.id));
+    if (!row) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+    body = { type: row.type, text: row.text, status: row.status };
+    path = "/session-templates/reply-templates"; method = "POST"; text = row.text; beforeValue = "";
+  } else {
+    const category = /^I\.session\.cat\.(advisor)\.enabled$/.exec(key);
+    const policy = /^I\.session\.advisor\.policy\.(enabled|delayMs|cooldownHours|maxPerSession|audience)$/.exec(key);
+    const status = /^I\.session\.(script|tpl)\.(.+)\.status$/.exec(key);
+    if (category) {
+      body = { enabled: value === "on", expectedEnabled: beforeValue === "on" };
+      path = `/session-templates/categories/${category[1]}`;
+      text = (JSON.parse(params["I.session.categories"] ?? "[]") as SessionCategory[]).find(row => row.type === "advisor")?.name ?? "";
+    } else if (policy) {
+      body = { value, expectedValue: beforeValue };
+      path = `/session-templates/advisor-policy/${policy[1]}`;
+    } else if (status) {
+      body = { status: templateStatus(value), expectedStatus: templateStatus(beforeValue) };
+      path = `/session-templates/${status[1] === "script" ? "scripts" : "reply-templates"}/${encodeURIComponent(status[2])}/status`;
+      const rows = JSON.parse(params[status[1] === "script" ? "I.session.scripts" : "I.session.replyTemplates"] ?? "[]") as (AdvisorScript | SessionReplyTpl)[];
+      text = rows.find(row => row.id === status[2])?.text ?? "";
+    } else throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  }
+  return { actorId, key, value: key === "I.session.replyTemplates" ? JSON.stringify(body) : value, reason: meta.reason, action: meta.action, successMessage,
+    resource: key === "I.support.agentProfile.__update" ? `profile:${profile?.adminId}` : key,
+    beforeValue, text, audience, profile, request: { path, method, body: JSON.stringify(withReason(body, meta.reason)) } };
+}
+
+export async function sendM5Command(command: M5Command, commandKey: string): Promise<void> {
+  const value = await apiRequest<unknown>(command.request.path, { method: command.request.method, body: command.request.body, headers: { "Idempotency-Key": commandKey } });
+  const result = supportObject(value, "m5.receipt"), input = JSON.parse(command.request.body);
+  if (command.profile) {
+    if (result.adminId !== command.profile.adminId || result.version !== command.profile.version + 1
+      || result.maxConcurrent !== input.maxConcurrent || result.enabled !== input.enabled || result.transferable !== input.transferable || result.busy !== input.busy
+      || JSON.stringify(result.tags) !== JSON.stringify(input.tags)) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  } else if (command.request.path.includes("/categories/")) {
+    if (result.type !== "advisor" || result.enabled !== input.enabled) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  } else if (command.request.path.includes("/advisor-policy/")) {
+    const field = command.request.path.split("/").at(-1)!;
+    const expected = field === "enabled" ? input.value === "on" : field === "audience" ? input.value : Number(input.value);
+    if (result[field] !== expected) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  } else {
+    if (typeof result.id !== "string" || !result.id || typeof result.text !== "string" || result.status !== input.status
+      || command.request.method === "POST" && result.text !== input.text
+      || command.request.method === "PATCH" && result.id !== decodeURIComponent(command.request.path.split("/").at(-2)!)) throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  }
+}
+
 export async function readSupportKnowledge() {
   const knowledge = assertSupportKnowledgeOverview(await apiRequest<unknown>("/knowledge/overview"));
   return { faqs: knowledge.faqs!.map(adaptFaq), sla: knowledge.sla!.map(adaptSla), knowledgeAvailable: true };
