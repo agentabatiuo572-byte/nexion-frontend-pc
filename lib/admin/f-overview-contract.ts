@@ -304,6 +304,7 @@ export function assertF4Overview(value: unknown): asserts value is JsonRecord {
   }
   if (row.coverage != null) {
     const coverage = object(row, "coverage", "F4");
+    if (coverage.reliable !== undefined && typeof coverage.reliable !== "boolean") invalid("F4", "coverage.reliable");
     for (const key of ["coverageRatio", "redlinePct"]) if (coverage[key] != null) finite(coverage[key], "F4", `coverage.${key}`);
   }
 }

@@ -1271,6 +1271,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         coverageCheck={mc.coverageCheck}
         detail={mc.detail ?? "从下一笔结算开始生效，已经算好的不变。"}
         amplifies={!!mc.amplify}
+        coverageReliable={tab === "F4" ? (mc.f4Snapshot ? mc.f4Snapshot.overview.coverage : f4Overview?.coverage)?.reliable === true : undefined}
+        coverageUnavailableBlocks={tab === "F4" && (mc.f4Snapshot?.action === "approve" || mc.f4Snapshot?.action === "policy")}
         // coverage 按当前 tab 选源(A1 批1b 修复):原硬编码 f1Overview?.coverage → 切到 F2-F5 时仍显示 F1 覆盖率(跨域误用)。
         // 现按 tab 路由到对应 overview 的 coverage,与后端 rates()/binary()/leadershipPool()/commissions() 注入的 B1 快照一致。
         coverage={(tab === "F1" ? f1Overview?.coverage

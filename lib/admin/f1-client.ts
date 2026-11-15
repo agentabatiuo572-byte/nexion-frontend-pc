@@ -87,6 +87,7 @@ interface BackendOverview {
 }
 
 interface BackendCoverage {
+  reliable?: boolean;
   coverageRatio?: number | string | null;
   redlinePct?: number | string | null;
 }
@@ -908,7 +909,7 @@ export interface F4LeadershipPoolOverview {
   commissionPolicy: Record<string, unknown>;
   guardrails: string[];
   configValues: Record<string, string>;
-  coverage?: { coverageRatio: number; redlinePct: number };
+  coverage?: { coverageRatio: number; redlinePct: number; reliable?: boolean };
   sources: string[];
 }
 
@@ -1566,7 +1567,7 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     configValues: data?.configValues ?? {},
     // A01/A18 have no execution-time B1 check. Missing values never become zero.
     coverage: finiteDashboardNumber(data?.coverage?.coverageRatio) !== null && finiteDashboardNumber(data?.coverage?.redlinePct) !== null
-      ? { coverageRatio: Number(data!.coverage!.coverageRatio), redlinePct: Number(data!.coverage!.redlinePct) }
+      ? { coverageRatio: Number(data!.coverage!.coverageRatio), redlinePct: Number(data!.coverage!.redlinePct), reliable: data!.coverage!.reliable === true }
       : undefined,
     sources: data?.sources ?? [],
   };
