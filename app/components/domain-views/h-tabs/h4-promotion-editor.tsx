@@ -171,16 +171,17 @@ export default function PromotionEditor({ activity: requestedActivity, catalog, 
     const limitsFormatInvalid = limitErrors.length > 0;
     const limitsIncomplete = !!buyerLimit !== !!inviterLimit;
     const dirty = !!conflict || bannerUploading || limitsFormatInvalid || JSON.stringify(draft) !== JSON.stringify(version.draft);
+    const deleted = conflict?.error.reasonCode === 'PROMOTION_RESOURCE_NOT_FOUND';
     const reviewedVersion = conflict?.latest?.current;
-    const reviewCanSave = !!reviewedVersion && reviewedVersion.version === version.version && reviewedVersion.state === 'DRAFT'
+    const reviewCanSave = !deleted && !!reviewedVersion && reviewedVersion.version === version.version && reviewedVersion.state === 'DRAFT'
         && conflict?.latest?.draftVersion === version.version && !conflict.latest.deleted && !['ENDED', 'ARCHIVED'].includes(conflict.latest.state);
     const changes = reviewedVersion ? promotionDraftChanges(version.draft, reviewedVersion.draft, draft) : [];
     const latestState = conflict?.latest;
-    const blocked = !latestState || reviewCanSave ? undefined : latestState.deleted ? { reason: '这个活动已被删除', next: '你填的不会保存；点「不保存，返回活动」离开。' }
+    const blocked = deleted || latestState?.deleted ? { reason: '这个活动已被删除', next: '你填的不会保存；点「不保存，返回活动」离开。' } : !latestState || reviewCanSave ? undefined
         : latestState.state === 'ENDED' || latestState.state === 'ARCHIVED' ? { reason: `活动${labelState(latestState.state)}`, next: '你填的不会保存；点「不保存，返回活动」看现在的情况。' }
         : !reviewedVersion || reviewedVersion.version !== version.version || latestState.draftVersion !== version.version ? { reason: '你编辑的这一版已经发布，或换成了新的改版草稿', next: '回到活动，打开现在的草稿再改。' }
         : { reason: `这一版现在是「${labelState(reviewedVersion.state)}」，不能再改`, next: '撤回审核后才能再编辑；先点「不保存，返回活动」。' };
-    const conflictView = conflict && <PromotionSaveConflict stage={!latestState ? 'locked' : blocked ? 'blocked' : 'reviewed'} blocked={blocked} changes={changes} opened={version.draft} latest={reviewedVersion?.draft} mine={draft} catalog={catalog}/>;
+    const conflictView = conflict && <PromotionSaveConflict stage={blocked ? 'blocked' : !latestState ? 'locked' : 'reviewed'} blocked={blocked} changes={changes} opened={version.draft} latest={reviewedVersion?.draft} mine={draft} catalog={catalog}/>;
     useEffect(() => {
         if (dirty || saving || rule || budgetOpen || limitsOpen || combinationOpen || policiesOpen || template) return;
         setActivity(requestedActivity);

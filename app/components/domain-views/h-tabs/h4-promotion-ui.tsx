@@ -230,7 +230,7 @@ export function ConfirmCommand({ title, intent, body, children, onClose, onSettl
             window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: record.commandKey }));
         }
         if (!record && e instanceof PromotionApiError && !e.unknownOutcome && !e.bodyUnreadable
-            && ['PROMOTION_REVISION_CONFLICT', 'PROMOTION_CONCURRENT_CHANGE', 'PROMOTION_VERSION_NOT_CURRENT', 'PROMOTION_VERSION_STATE_INVALID'].includes(e.reasonCode || '')) {
+            && ['PROMOTION_REVISION_CONFLICT', 'PROMOTION_CONCURRENT_CHANGE', 'PROMOTION_VERSION_NOT_CURRENT', 'PROMOTION_VERSION_STATE_INVALID', 'PROMOTION_RESOURCE_NOT_FOUND'].includes(e.reasonCode || '')) {
             // A rejection never authorizes a read-and-rebase or a second write.
             setReloadNeeded(true);
             setNote('');
