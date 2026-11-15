@@ -1318,3 +1318,7 @@
 - **产生(admin 审计)**:`admin.voucher_config_changed` · `admin.voucher_status_changed` · `admin.voucher_deleted`(A2 审计,归 §2.4.5 ⑥ admin family)。
 - **产生(用户侧,server)**:`voucher.claimed`(用户领取,属性 `voucher_id / surface / audience / ts`)· `voucher.redeemed`(下单核销,属性 `voucher_id / order_id / sku / discount_usd / ts`,`is_server_authoritative=true`)—— `voucher.*` 为新增 domain,**须向 A4 申请 domain 枚举扩展(§2.4.3),blocking 依赖,登记为 V3 起始工单**(体例参 V2 `order` / V3 G3 `nex`);扩展落地前暂记 `admin` family 占位、临时编号(范式同 H6 ⑧ `milestone.*`)。
 - **喂给**:`voucher.claimed` / `voucher.redeemed` → 转化漏斗 B3(注册→首购转化,§2.4.7)/ 促销 BI(L 域:各券核销率 / GMV 让利 / 获客 ROI)/ §1.4 收入支柱① 设备销售归因;config 审计 → 促销预算复盘。代金券**不喂 B1**(非负债流出)。
+
+### 2026-11-15 G2-BE-04 本人原批次读取
+
+原批次 GET 查询和待确认入口按当前登录身份与 `finprod_g2_read` 放行；后端继续按认证 owner 校验原回执。重试原 POST 保持 `finprod_g2_write`。GET 404 `G2_BATCH_RECEIPT_NOT_FOUND`（无 owner、非本人、失败/未知/处理中、缺失等）保留原记录，不代表未执行。出处 backend `04d11022` `OpsExchangeController.queueBatchReceipt:83–90`、`G2G3AdminCommandService.queueBatchReceipt`；候选源码已接，真实业务未验。

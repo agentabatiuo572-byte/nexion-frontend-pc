@@ -136,7 +136,7 @@ function normalizeCapSubmitValue(cap: G2Cap, value: string | undefined) {
 function requireBatchActor(adminId: number, write = true) {
   const auth = useAdminAuth.getState();
   if (!auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== adminId
-      || write && !auth.session.authorities.includes(BATCH_AUTHORITY)) {
+      || !auth.session.authorities.includes(write ? BATCH_AUTHORITY : "finprod_g2_read")) {
     throw new Error("登录身份或兑换处理权限已变化，请关闭后重新打开。");
   }
 }
@@ -299,7 +299,7 @@ function G2ExchangePage() {
   const [recoveryError, setRecoveryError] = useState<{ message: string; notFound: boolean } | null>(null);
   /** 只用于显示：直接修改时后端答复这一项被审批锁住，在这一行标出来。下一次提交仍由后端核对。 */
   const [lockedParams, setLockedParams] = useState<Record<string, string>>({});
-  const ownPendingBatch = pendingBatch?.adminId === batchAdminId ? pendingBatch : undefined;
+  const ownPendingBatch = authorities.includes("finprod_g2_read") && pendingBatch?.adminId === batchAdminId ? pendingBatch : undefined;
   const recoveryBatch = ownPendingBatch?.commandKey === recoveryKey ? ownPendingBatch : undefined;
   const [recoverBusy, setRecoverBusy] = useState(false);
   /** 只用于显示：这些错误句已经由原操作提醒里的一行承接，不再在「操作提示」里重复。 */
