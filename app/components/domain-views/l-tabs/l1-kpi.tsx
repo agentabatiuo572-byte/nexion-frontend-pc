@@ -16,6 +16,7 @@ import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { KeepText, BlockState, Button, Cell, Check, Conclusion, DiffField, Explain, Fact, Facts, Figure, FilterBar, FilterField, Fold, Input, Modal, Notice, NumberInput, PageHeader, Panel, RecordList, ReleaseModal, Segments, Select, Sparkline, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr, TrendLines, type ChartSlot, type StateTone } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { businessClock, businessDay, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
 import { PaginationExemptionList } from "../design-kit";
@@ -204,7 +205,11 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     try {
       await createReport(input, reason, key);
     } catch (cause) {
-      const unknown = isLOutcomeUnknownError(cause);
+      const failure = cause as { status?: number; reasonCode?: string; hadUncertainAttempt?: boolean };
+      const rejected = retained || failure.hadUncertainAttempt ? isExplicitRejection(cause)
+        : !isLOutcomeUnknownError(cause) && !failure.reasonCode?.startsWith("IDEMPOTENCY_")
+          && isDeterministicRejection(failure.status ?? 0);
+      const unknown = !rejected;
       if (!unknown && !retained) pendingExports.forget(EXPORT_SCOPE);
       syncPending();
       if (!unknown) throw cause;
