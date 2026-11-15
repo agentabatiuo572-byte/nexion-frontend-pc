@@ -187,7 +187,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       const rejected = isC6ExplicitRejection(err);
       if (row && rejected) { forgetC6Command(row); invalidate(); }
       else if (row) { readEpoch.current += 1; overviewRef.current = null; setOverview(null); setLoading(false); }
-      const message = `${row && !rejected ? "结果未知" : "操作失败"} · ${errorMessage(err)}`;
+      const message = row && !rejected ? "结果未知 · 已保留原请求，在页面上方读回核对或按原请求重试" : `操作失败 · ${errorMessage(err)}`;
       setError(message);
       toast(message, row && !rejected ? "warn" : "error");
       return false;
@@ -333,7 +333,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       amplifies: false,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: `确认调整${name}`,
-      reasonPlaceholder: "例如：近期撞库尝试增多，依据风控工单收紧短锁次数",
+      reasonPlaceholder: "例如：近期批量试密码增多，依据风控工单调整锁定规则",
       facts: (
         <Facts>
           <Fact k="现在">{ruleText(lockRule(param, durationUnit), param)}</Fact>
