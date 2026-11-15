@@ -1606,6 +1606,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     <div className="rd-stack">
       {/* 右端写列表的范围：为什么要用查找框，也让定宽的框右边不空着（量尺 P2-side）。 */}
       <FilterBar onSubmit={() => void findAccount()} querying={lookup.state === "loading"}
+        scope={<div className="rd-filter-scope-row"><Segments label="账户状态" value={accountStatus} items={ACCOUNT_FILTERS} onChange={(next) => { setAccountStatus(next); setAccountPage(1); }} /></div>}
         action={<Button type="submit" loading={lookup.state === "loading"}>打开</Button>}
         sort={<span className="rd-filter-result">下面按账户状态列出全部账户</span>}
         notice={lookup.state === "empty" ? "填用户编码、系统编号、邀请码或邮箱。" : lookup.state === "error" ? <>{lookup.error} <InlineRetry onRetry={() => void findAccount()} /></> : undefined}>
@@ -1620,8 +1621,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       {staleNotice}
       <Panel title="账户" icon={UserRound} tone="role-3" flush
         sub={accountList.data && !accountList.error ? `共 ${accountList.data.total.toLocaleString("en-US")} 个${frozenView ? "冻结" : statusName}账户 · ${zoneNote}` : zoneNote}
-        explain={frozenView ? "按冻结时间从新到旧排。随账户组冻结、充值异常冻结的不能在这里恢复，到对应页面处理。冻结的来源单号在账户详情里。" : "找具体用户用上面的查找。"}
-        actions={<Segments label="账户状态" value={accountStatus} items={ACCOUNT_FILTERS} onChange={(next) => { setAccountStatus(next); setAccountPage(1); }} />}>
+        explain={frozenView ? "按冻结时间从新到旧排。随账户组冻结、充值异常冻结的不能在这里恢复，到对应页面处理。冻结的来源单号在账户详情里。" : "找具体用户用上面的查找。"}>
         {accountList.error ? <BlockState state="error" title={`${statusName}账户读取失败，不显示旧数据`} detail={accountList.error} onRetry={() => void loadAccountList()} retrying={accountList.loading} /> : (
           <Table label="账户">
             <thead><tr>
