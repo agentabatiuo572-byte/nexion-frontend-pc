@@ -54,7 +54,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
       store.remember(fingerprint, key, { actorId, payload, before });
       if (!store.isDurablyStored(fingerprint, key)) {
         store.forget(fingerprint, key);
-        setMessage("浏览器未能保存原操作，尚未提交。请恢复会话存储后重试。");
+        setMessage("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
         return;
       }
       record = store.list().find(row => row.commandKey === key);
@@ -66,7 +66,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
       return;
     }
     if (action !== "query" && !store.isDurablyStored(record.fingerprint, record.commandKey)) {
-      setMessage("浏览器未能保存原操作，尚未提交。请恢复会话存储后重试。");
+      setMessage("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
       return;
     }
     const current = () => actorId === useAdminAuth.getState().session?.adminId && epoch === useAdminAuth.getState().authEpoch;

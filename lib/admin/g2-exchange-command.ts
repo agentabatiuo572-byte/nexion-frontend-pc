@@ -132,7 +132,7 @@ async function send(original: G2PendingCommand, recovering = false) {
   }
   const epoch = requireActor(original.adminId, original.path, true);
   if (!commands.isDurablyStored(original.fingerprint, original.commandKey)) {
-    throw new Error("浏览器无法保存原操作，请允许会话存储后重试。");
+    throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   }
   try {
     const response = await g2Request<BackendOverview>(original.path, {
@@ -176,7 +176,7 @@ async function execute(path: string, method: "PATCH" | "POST", input: CommandBod
   commands.remember(fingerprint, key, { adminId, context });
   if (!commands.isDurablyStored(fingerprint, key)) {
     commands.forget(fingerprint, key);
-    throw new Error("无法保存原命令，请允许浏览器会话存储后再提交。");
+    throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   }
   return send(pendingG2ExchangeCommand(adminId, path)!);
 }

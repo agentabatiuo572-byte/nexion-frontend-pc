@@ -73,7 +73,7 @@ export function SupportRandomAssignment({ customers, onClose, onDone }: { custom
     const fingerprint = `${actorId}:random`, commandKey = crypto.randomUUID();
     randomAssignmentCommands.remember(fingerprint, commandKey, { actorId, payload: { previewId: preview.id, expectedRulesVersion: preview.rulesVersion, reason: reason.trim() }, customers, preview });
     const record = randomAssignmentCommands.list().find(r => r.commandKey === commandKey)!;
-    if (!randomAssignmentCommands.isDurablyStored(fingerprint, commandKey)) { randomAssignmentCommands.forget(fingerprint, commandKey); setError("浏览器无法保存原操作，未提交分配。请恢复会话存储后重试。"); return; }
+    if (!randomAssignmentCommands.isDurablyStored(fingerprint, commandKey)) { randomAssignmentCommands.forget(fingerprint, commandKey); setError("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。"); return; }
     setPending(record); await send(record);
   }
   async function query() {

@@ -67,7 +67,7 @@ export async function submitH2TrialApproval(
     attempts.remember(slot, key, original);
     if (!attempts.isDurablyStored(slot, key)) {
       attempts.forget(slot, key);
-      throw new Error("浏览器无法保存本次审批命令号，请允许会话存储后重试。");
+      throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
   }
 

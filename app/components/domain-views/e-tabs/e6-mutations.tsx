@@ -78,7 +78,7 @@ function useMutations() {
     if (retry && !canRetry(record)) throw new Error("原操作仅可核查，不能重新发送。");
     record = { ...record, retryRejection: undefined, absent: false };
     commands.remember(record.fingerprint, record.commandKey, record);
-    if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器无法保存原操作，本次未提交。请允许会话存储后重试。");
+    if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     sending.current = true; setBusy(record.commandKey);
     let checkingProposal = retry && record.payload.kind === "proposal";
     try {
@@ -144,7 +144,7 @@ function useMutations() {
     const commandKey = createA2CommandKey("e6"), fingerprint = `${owner}|${scope}`;
     const body = JSON.stringify(payload.kind === "risk" ? { ...payload.input, expectedRevision: payload.revision, confirmed: true } : payload.kind === "device" ? payload.input.action === "pause" || payload.input.action === "resume" ? { userId: payload.input.userId, reason: payload.input.reason, operator: payload.input.operator } : { reason: payload.input.reason, operator: payload.input.operator } : payload.input);
     commands.remember(fingerprint, commandKey, { owner, epoch, scope, section, label, payload: JSON.parse(JSON.stringify(payload)), body });
-    if (!commands.isDurablyStored(fingerprint, commandKey)) { commands.forget(fingerprint, commandKey); throw new Error("浏览器无法保存原操作，本次未提交。请允许会话存储后重试。"); }
+    if (!commands.isDurablyStored(fingerprint, commandKey)) { commands.forget(fingerprint, commandKey); throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。"); }
     const saved = commands.list().find(r => r.commandKey === commandKey)!;
     sync(); return await send(saved, false);
   }

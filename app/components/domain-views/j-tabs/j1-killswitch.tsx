@@ -334,7 +334,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       restoreAttempts.remember(slot, key, { input, commandOrigin: fundCommandOrigin("POST", "/api/admin/platform/audit/operations", "emergency_j1_read") });
       if (!restoreAttempts.isDurablyStored(slot, key)) {
         restoreAttempts.forget(slot, key);
-        throw new Error("浏览器存不下这次申请，没有提交。请允许会话存储后重试。");
+        throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
       }
     }
     setCheckingRestore(g.key);

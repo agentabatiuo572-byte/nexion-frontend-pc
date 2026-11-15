@@ -468,7 +468,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
       original: rule ?? null, activeRules: dimensions.map((dimension) => dimension.ruleId), businessValue,
       request: { path, method: kind === "create" || kind === "dry-run" ? "POST" : "PATCH", body: JSON.stringify({ ...body, operator: currentAdminOperator(), reason }) } });
     if (!commands.isDurablyStored(fingerprint, commandKey)) {
-      commands.forget(fingerprint, commandKey); throw new Error("无法安全保存原操作，本次未提交；请检查浏览器会话存储后重试");
+      commands.forget(fingerprint, commandKey); throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
     const record = commands.list().find((item) => item.commandKey === commandKey)!;
     if (!isSavedCommand(record)) throw new Error("无法恢复完整原请求，本次未提交");

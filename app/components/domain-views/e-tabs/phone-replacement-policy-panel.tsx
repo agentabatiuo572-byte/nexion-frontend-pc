@@ -114,7 +114,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
         proposals.remember(fingerprint, key, { owner, input });
         if (!proposals.isDurablyStored(fingerprint, key)) {
             proposals.forget(fingerprint, key);
-            setError("浏览器无法保存恢复记录，请允许会话存储后再提交。");
+            setError("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
             setBusy(false);
             mutation.current = false;
             return;
@@ -234,7 +234,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
     async function retryOriginal() {
       if(!pending||mutation.current||isRetryExpired(pending)||!canWrite)return;
       proposals.remember(pending.fingerprint,pending.commandKey,{...pending,absent:false});syncPending();setMessage("");
-      if(!proposals.isDurablyStored(pending.fingerprint,pending.commandKey)){setError("浏览器无法保存恢复记录，请允许会话存储后再提交。");return;}
+      if(!proposals.isDurablyStored(pending.fingerprint,pending.commandKey)){setError("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");return;}
       mutation.current=true;setBusy(true);setError("");
       let checking = true;
       try {

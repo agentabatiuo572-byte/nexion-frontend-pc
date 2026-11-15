@@ -73,7 +73,7 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
     original = listF1Proposals(adminId).find(row => row.commandKey === key)!;
     if (!fCommands.isDurablyStored(slot, key)) {
       fCommands.forget(slot, key);
-      throw new Error("浏览器无法保存原操作，请允许会话存储后重试。");
+      throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
   }
   if (original.received || original.ticket) {

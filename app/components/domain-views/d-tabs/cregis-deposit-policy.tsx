@@ -93,7 +93,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
           target: { domain: "D", type: "cregis_deposit_policy", id: "current" } };
         const key = createA2CommandKey("cregis-deposit-policy"), fingerprint = `${owner}|${key}`;
         proposals.remember(fingerprint, key, { owner, input });
-        if (!proposals.isDurablyStored(fingerprint, key)) { proposals.forget(fingerprint, key); mutation.current = false; setBusy(false); throw new Error("浏览器无法保存恢复记录，请允许会话存储后重试。"); }
+        if (!proposals.isDurablyStored(fingerprint, key)) { proposals.forget(fingerprint, key); mutation.current = false; setBusy(false); throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。"); }
         syncPending();
         try {
           const ticket = await createA2OperationProposal(input, key, true);

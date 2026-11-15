@@ -60,7 +60,7 @@ export async function submitPaymentPolicy(owner: number, values: PaymentPolicyVa
   const commandKey = createA2CommandKey("payment-policy");
   const fingerprint = `payment-policy|${owner}|${commandKey}`;
   pending.remember(fingerprint, commandKey, { owner, ...original, oldValues: { ...oldValues }, body, operator: currentAdminOperator(`admin:${owner}`) });
-  if (!pending.isDurablyStored(fingerprint, commandKey)) { pending.forget(fingerprint, commandKey); throw new Error("浏览器无法保存查询记录，请允许会话存储后重试。"); }
+  if (!pending.isDurablyStored(fingerprint, commandKey)) { pending.forget(fingerprint, commandKey); throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。"); }
   try {
     await request(base, original, commandKey, body);
   } catch (failure) {
@@ -140,7 +140,7 @@ export async function submitPaymentRelease(owner: number, port: PaymentSecurityP
   if (pendingPaymentRelease(owner, port.userId)) throw new Error("请先查询该用户上一笔解除结果，不能重复提交。");
   const commandKey = createA2CommandKey("payment-release"), fingerprint = `payment-release|${owner}|${port.userId}`;
   releases.remember(fingerprint, commandKey, { owner, portKey: port.key, userId: port.userId, recordId: record.id, operation: record.type === "PAYMENT_PASSWORD_LOCK" ? "RELEASE_LOCK" : "CLEAR_EXCEPTION", expectedVersion: record.version, reason: reason.trim(), confirmed: true, body: releaseBody(port.userId, record.id, record.type === "PAYMENT_PASSWORD_LOCK" ? "RELEASE_LOCK" : "CLEAR_EXCEPTION", record.version, reason.trim()), path: `${paymentRecordsPath(port.surface, port.userId)}/${encodeURIComponent(record.id)}/release`, operator: currentAdminOperator(`admin:${owner}`) });
-  if (!releases.isDurablyStored(fingerprint, commandKey)) { releases.forget(fingerprint, commandKey); throw new Error("浏览器无法保存查询记录，未提交解除。请允许会话存储后重试。"); }
+  if (!releases.isDurablyStored(fingerprint, commandKey)) { releases.forget(fingerprint, commandKey); throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。"); }
   try { await port.release(record, reason.trim(), commandKey); }
   catch (failure) { if (isExplicitRejection(failure)) releases.forget(fingerprint, commandKey); throw failure; }
   return queryPaymentRelease(owner, port);

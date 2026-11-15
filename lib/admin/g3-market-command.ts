@@ -214,7 +214,7 @@ export async function executeG3MarketChange(
     commands.remember(fingerprint, key, { input: JSON.stringify(payload) });
     if (!commands.isDurablyStored(fingerprint, key)) {
       commands.forget(fingerprint, key);
-      throw new Error("浏览器无法保存原操作，请允许会话存储后重试。");
+      throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
     command = pendingG3MarketCommand(session.adminId, change)!;
   }
@@ -243,7 +243,7 @@ export async function executeG3MarketChange(
     throw new Error("已读到现在的配置，但不能据此确认原操作的结果。原记录继续保留，可以到「操作记录与审批」核对。");
   }
   if (g3MarketCommandExpired(command)) throw new A2OutcomeUncertainError("原命令已过期或本机时间异常，只能继续核对，不能重试或另建编号。", key);
-  if (!store.isDurablyStored(command.fingerprint, key)) throw new Error("浏览器无法保存原操作，请允许会话存储后重试。");
+  if (!store.isDurablyStored(command.fingerprint, key)) throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   try {
     ensureOwner(true);
     if (command.request.kind === "approval") {

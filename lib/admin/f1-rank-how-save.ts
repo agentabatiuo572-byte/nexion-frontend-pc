@@ -64,7 +64,7 @@ export async function saveF1RankHow(adminId: number, document: PublishedContentD
   saves.remember(fingerprint, key, { adminId, document, reason });
   if (!saves.isDurablyStored(fingerprint, key)) {
     saves.forget(fingerprint, key);
-    throw new Error("浏览器无法保存原操作，请允许会话存储后重试。");
+    throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   }
   inFlight.add(adminId);
   try {
