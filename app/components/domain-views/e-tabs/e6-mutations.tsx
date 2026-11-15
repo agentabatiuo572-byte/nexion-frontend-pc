@@ -120,7 +120,8 @@ function useMutations() {
     } catch (failure) {
       const response = failure as { status?: number; httpStatus?: number; apiCode?: number; backendMessage?: string };
       const firstRejection = !retry && !isA2OutcomeUncertainError(failure) && !!response.backendMessage
-        && !isIdempotencyOutcomeOpen(response.backendMessage) && response.status !== undefined
+        && !isIdempotencyOutcomeOpen(response.backendMessage) && Number.isInteger(response.apiCode)
+        && response.apiCode! < 500 && response.status !== undefined
         && isDeterministicRejection(response.httpStatus ?? response.status, response.apiCode);
       if (firstRejection) commands.forget(record.fingerprint, record.commandKey);
       else if (!checkingProposal && retry && isExplicitRejection(failure)) commands.remember(record.fingerprint, record.commandKey, {
