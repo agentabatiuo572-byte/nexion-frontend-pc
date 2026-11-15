@@ -672,6 +672,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     if (form.avatarAssetId !== undefined) changes.push(["头像", op.avatarAssetId ?? "", form.avatarAssetId]);
     if (form.avatarGender !== undefined) changes.push(["头像性别", AVATAR_GENDER_OPTIONS.find(item => item.value === op.avatarGender)?.label ?? "", AVATAR_GENDER_OPTIONS.find(item => item.value === form.avatarGender)!.label]);
     const changed = changes.filter(([, before, after]) => before !== after);
+    const genderLabel = (value?: string | null) => AVATAR_GENDER_OPTIONS.find(item => item.value === value)?.label ?? "未指定";
+    const genderFrom = genderLabel(op.avatarGender), genderTo = form.avatarGender === undefined ? genderFrom : genderLabel(form.avatarGender);
     openOperation({ kind: "profile", account: op, form }, { briefKind: "security",
       action: `编辑账号 · ${operatorDisplayName(op)}`,
       title: "提交资料修改",
@@ -686,6 +688,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           {form.displayName !== operatorDisplayName(op) && <Fact k="显示名"><Change from={operatorDisplayName(op)} to={form.displayName} /></Fact>}
           {(form.email ?? "") !== (op.email || "") && <Fact k="工作邮箱"><Change from={op.email || "未填写"} to={form.email || "未填写"} /></Fact>}
           {form.avatarAssetId && form.avatarAssetId !== op.avatarAssetId && <Fact k="头像">换成新头像</Fact>}
+          {genderFrom !== genderTo && <Fact k="头像分类"><Change from={genderFrom} to={genderTo} /></Fact>}
           {approverFact()}
         </Facts>
       ),

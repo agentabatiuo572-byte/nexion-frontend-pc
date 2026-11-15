@@ -428,7 +428,7 @@ export default function A6Roles() {
         impact: bound !== undefined && bound > 0
           ? `批准后，${bound} 个账号和它解绑、失去它的权限；授权清空，角色从列表消失。`
           : "批准后授权清空，角色从列表消失。",
-        check: "账号本身、其他角色和历史记录不删。账号数是现在读到的，批准时按当时实际绑定执行。以后用同一个标识新建，得到的是没有任何权限的角色。",
+        check: "账号本身、其他角色和历史记录不删。账号数含停用的账号，是现在读到的，批准时按当时实际绑定执行。以后用同一个标识新建，得到的是没有任何权限的角色。",
       },
       facts: <Facts>
         <Fact k="会解绑的账号" lead unit="个" tone={bound !== undefined && bound > 0 ? "warn" : undefined}>{bound ?? "—"}</Fact>

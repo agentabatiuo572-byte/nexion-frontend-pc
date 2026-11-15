@@ -910,6 +910,14 @@ function ReviewRows({ name, rows, labels = CHANGE_LABELS }: { name: string; rows
  * - 成组记录（等级、奖励）：小表，不拼成一大片文字（VS-109）；
  * - 变更前是空（首次配置）：不画变更前，标题旁写「新建」。
  */
+/** 两边都是「字段：值」（多项用「；」连起来）、字段一一对应时，返回 [字段, 原值, 新值]。 */
+function fieldPairs(before: string, after: string): Array<[string, string, string]> | null {
+  const split = (text: string) => text.split("；").map((part) => /^([^：；]{1,12})：(.*)$/.exec(part));
+  const b = split(before), a = split(after);
+  if (a.length !== b.length || a.some((m, i) => !m || !b[i] || m[1] !== b[i]![1])) return null;
+  return a.map((m, i) => [m![1], b[i]![2] || "未设置", m![2] || "未设置"]);
+}
+
 /** 大使申请单的变更前是后端拼的一句（类别代码、材料状态代码），只把两个代码换成页面上的叫法。 */
 const changeBefore = (row: { before: string; ambassadorMaterialProposal?: unknown }) => !row.ambassadorMaterialProposal ? row.before
   : row.before.replace(/^类别 ([a-z]+)；/, (_, code: string) => `类别 ${ambassadorBucketLabel(code)}；`)
@@ -921,6 +929,9 @@ export function A2ChangeReview({ before, after, omit = [], operationCode }: { be
   let body: ReactNode;
   if (!a) {
     body = <Facts><Fact k="变更后">—</Fact></Facts>;
+  } else if (a.kind === "text" && b?.kind === "text" && fieldPairs(b.text, a.text)) {
+    // 「显示名：甲；工作邮箱：乙」这类逐项摘要：两边字段一一对应时每项一行，不拼成一长句折行。
+    body = <Facts>{fieldPairs(b.text, a.text)!.map(([label, from, to]) => <Fact key={label} k={label}><Change from={from} to={to} /></Fact>)}</Facts>;
   } else if (a.kind === "text") {
     body = <Facts><Fact k={created ? "内容" : "变更"}>{!b ? a.text : <Change from={b.kind === "text" ? b.text : valueText(undefined, b.kind === "object" ? b.value : b.rows, labels)} to={a.text} />}</Fact></Facts>;
   } else if (a.kind === "rows") {
