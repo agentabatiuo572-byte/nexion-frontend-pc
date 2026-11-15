@@ -78,7 +78,8 @@ function reportScopeText(value: string): string {
     const label = key === "window" ? ({"7d":"近 7 天","30d":"近 30 天",custom:"自定义日期"} as Record<string,string>)[raw] ?? raw : raw;
     return `${labels[key] ?? key}：${label}`;
   }).filter(Boolean);
-  return `${scope[1]} · ${parts.join(" · ") || "默认范围"}`;
+  // L1–L4 是内部页码，不显示；其他写法的前半段是真实说明，照留。
+  return /^L[1-4]$/.test(scope[1]) ? parts.join(" · ") || "默认范围" : `${scope[1]} · ${parts.join(" · ") || "默认范围"}`;
 }
 
 type ExportParam = { k: string; v: string; fixed?: boolean; cur?: string; s: string };
@@ -424,12 +425,12 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     ctx.openActionConfirm({ briefKind: "record",
     action: "审批脱敏资金明细",
     title: "放行脱敏资金明细",
-    detail: <>任务 <span className="mono">{t.id}</span> 用的是申请时生成的那份文件。每次下载生成一个 24 小时内有效的链接。</>,
+    detail: <>任务 <span className="mono">{t.id}</span> 用的是申请时生成的那份文件；下载链接只给下载的本人用。</>,
     effect: <><StatusTag tone="warn" icon={LockKeyhole} filled>放行后有权限的人就能下载</StatusTag><IrreversibleTag>放行后不能撤回</IrreversibleTag></>,
     confirmTone: "danger",
     confirmLabel: "确认放行",
     statedBrief: {
-      impact: "放行后这份脱敏明细就能下载，不解密、不重新取数、不改余额；放行后不能收回。",
+      impact: "放行后这份脱敏明细就能下载，不解密、不重新取数、不改余额。",
       check: "核对范围、内容和行数是不是申请人工单里要的；看不懂就先别放行，找申请人确认。",
     },
     facts: (
@@ -442,9 +443,9 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
         <Fact k="申请人">{requester}</Fact>
         <Fact k="申请时间">{formatBusinessTimeCompact(t.requestedAt, "—")}（{businessZone().label}）</Fact>
         <Fact k="放行后谁能下载">有资金明细导出权限的管理员，含申请人<Explain label="谁能下载" content="下载要「财务资金明细导出」权限。你放行不需要这项权限；没有它，你自己下载不了。" /></Fact>
-        <Fact k="能下多久">任务一直保留；每次下载签发一个只给本人用、24 小时内有效的链接</Fact>
+        <Fact k="能下多久">任务一直保留，每次下载的链接 24 小时内有效</Fact>
         <Fact k="留什么记录">放行写进「{pageName(AUDIT_PAGE, "操作记录与审批")}」，每次下载也会记录</Fact>
-        <Fact k="谁能放行">另一位管理员，需有导出任务审批权限；申请人不能放行自己的申请</Fact>
+        <Fact k="谁能放行">另一位有导出审批权限的管理员，不能是申请人</Fact>
       </Facts>
     ),
     reasonPlaceholder: "写放行依据，例如：已核对申请人的工单号和用途",
@@ -509,7 +510,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const newExport = () => ctx.openActionConfirm({ briefKind: "export",
     action: "导出汇总数据",
     title: "导出汇总数据",
-    detail: <>你可以导出：{exportTypes.map(exportTypeText).join("、")}。导出的是汇总数据，不含用户明细和隐私信息，确认后就能下载。</>,
+    detail: <>这个账号能导：{aggregateNames(exportTypes)}。</>,
     effect: <StatusTag tone="progress" filled>立即生成</StatusTag>,
     statedBrief: {
       impact: "按所选类型生成一份汇总 CSV，创建这一刻取数，以后下载还是这一刻的数；不改任何业务数据。",
