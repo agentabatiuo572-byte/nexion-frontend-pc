@@ -154,7 +154,7 @@ export function StageTable({ funnel, events }: { funnel: readonly FunnelRow[]; e
       <thead>
         <tr>
           <Th>步骤</Th>
-          <Th>用户阶段<Explain label="用户阶段的说明" content="后台内部的用户阶段编号。和「用户转化概览」的阶段编号来自不同的统计，可能写法不同。" /></Th>
+          <Th>用户阶段<Explain label="用户阶段的说明" content="系统给用户分的阶段。和「用户转化概览」的阶段来自不同的统计，写法可能不同。" /></Th>
           <Th align="right">人数</Th><Th align="right">上一步人数</Th><Th align="right">转化率</Th>
           <Th>对应事件</Th>
         </tr>

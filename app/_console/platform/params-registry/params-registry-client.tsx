@@ -52,7 +52,7 @@ function rowValueEffective(row: A5RegistryRow): boolean {
 /** 参数索引只呈现可读摘要；结构化正文在归属菜单编辑，原配置值保留在 DTO 中。 */
 function parameterValueText(row: A5RegistryRow): string {
   const value = row.currentValue.trim();
-  if (!value) return "空值";
+  if (!value) return "未填写";
   if (E6_DOWNLOAD_COPY_KEYS.has(row.canonicalKey)) return value;
   if (/^[\[{]/.test(value)) {
     try {
@@ -87,9 +87,9 @@ function ownerLinkAccessibleName(row: A5RegistryRow) {
 }
 
 const ERROR_COPY: Record<A5LoadErrorKind, { title: string; detail: string }> = {
-  auth: { title: "登录已失效", detail: "正在清理旧会话，请重新登录后查看。" },
+  auth: { title: "登录已失效", detail: "请重新登录后查看。" },
   forbidden: { title: "没有查看平台参数的权限", detail: "请联系管理员开通「平台参数目录」的查看权限；系统要求先改密码时，改完再打开。" },
-  integrity: { title: "数据有误，已停止显示", detail: "参数数据缺字段、格式不对、重复或统计对不上，为避免误判已暂停显示，请联系技术人员。" },
+  integrity: { title: "数据有误，已停止显示", detail: "读到的参数数据有误，为避免误判已暂停显示，请联系技术人员。" },
   server: { title: "平台参数加载失败", detail: "暂时无法显示参数，请重新加载；持续失败请联系技术人员。" },
   unavailable: { title: "平台参数暂时无法加载", detail: "参数设置没有被修改，请稍后重新加载。" },
 };
@@ -255,7 +255,7 @@ export function PlatformParamsRegistry() {
 
   const timeCell = (row: A5RegistryRow) => {
     if (row.live) {
-      return row.observedAt ? <Cell num main={<TimeText value={row.observedAt} />} sub="采样时间" /> : <Cell main={<span className="a5-muted">—</span>} sub="这次没有采样" />;
+      return row.observedAt ? <Cell num main={<TimeText value={row.observedAt} />} sub="检测时间" /> : <Cell main={<span className="a5-muted">—</span>} sub="这次没有检测" />;
     }
     if (row.updatedAt === "默认值") return <Cell main={<span className="a5-muted">默认值</span>} sub="还没有保存过" />;
     if (!row.updatedAt || row.updatedAt === "未知") return <Cell main={<span className="a5-muted">—</span>} sub="时间未知" />;
@@ -265,7 +265,7 @@ export function PlatformParamsRegistry() {
   const valueCell = (row: A5RegistryRow) => {
     const text = displayValue(row);
     const secret = row.valueType === "SECRET";
-    const weak = text === "空值" || text === "—";
+    const weak = text === "未填写" || text === "—";
     return (
       <Cell title={text} main={<span className="a5-value" data-tone={row.stale || !rowValueEffective(row) ? "warn" : weak ? "weak" : undefined}>
         {secret && <Lock size={12} aria-hidden />}{text}{row.unit ? <span className="a5-unit">{operatorCopyText(row.unit)}</span> : null}
@@ -372,7 +372,7 @@ export function PlatformParamsRegistry() {
                         <Th><Explain label="状态是什么意思" rows={[
                           { k: "已启用", v: "这条配置是启用状态、读得到；不代表业务已经在用它" },
                           { k: "实时读取", v: "每次打开这页时现查的系统健康指标，这页不会自己刷新" },
-                          { k: "敏感信息", v: "后端只告诉这里已配置，值已脱敏，不代表一定可用" },
+                          { k: "敏感信息", v: "只知道已配置，值已隐藏，不代表一定可用" },
                           { k: "已停用", v: "H5 基础托管系数不再参与计算，值固定为 0" },
                           { k: "已退役", v: "不再参与计算的旧参数，保留原值，只能查看" },
                         ]}>状态</Explain></Th>
@@ -404,7 +404,7 @@ export function PlatformParamsRegistry() {
       <Fold title="数据来源" icon={Database}
         summary={`${overview.sources.length} 个来源，${partialSources.length === 0 ? "全部就绪" : `${partialSources.length} 个不完整`} · ${stats.registeredCount} 项参数 · ${stats.domainCount} 个模块 · ${stats.highSensitivityCount} 项修改需确认`}
         alert={partialSources.length > 0}
-        explain="「修改需确认」是后端标记的数量，不保证所在页面一定弹确认框；不是走审批的数量，也不是敏感信息的数量。">
+        explain="「修改需确认」是系统的标记，不保证页面一定弹确认框，也不是审批或敏感信息的数量。">
         <Table label="数据来源">
           <thead><tr><Th>来源</Th><Th>状态</Th><Th align="right">条数</Th><Th>说明</Th></tr></thead>
           <tbody>

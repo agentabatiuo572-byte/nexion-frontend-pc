@@ -25,7 +25,7 @@ function versionChanged(error: unknown): boolean {
 }
 function message(error: unknown): string {
   return status(error) === 403 || status(error) === 401 ? "当前账号不能查看此榜单，请重新确认登录和客服权限。"
-    : versionChanged(error) ? "榜单版本或可见范围已变化，请从第一页重新加载。"
+    : versionChanged(error) ? "榜单已更新，或你能看的范围变了，请从第一页重新加载。"
       : error instanceof SupportClientError ? displayAdminReadError(error) : "榜单加载失败，请重试。";
 }
 function scopeValue(scope: string, groupId?: string) { return groupId ? `${scope}:${groupId}` : scope; }
@@ -184,7 +184,7 @@ export function M6Leaderboard() {
   const missingAmounts = board === "netContribution" ? rows.filter(row => row.amount.coverage === "unavailable").length : 0;
   const pages = data ? Math.max(1, Math.ceil(data.matched / data.pageSize)) : 1;
   const emptyText = !data ? undefined : query.keyword
-    ? <span className="m6-empty">{provisional ? "参榜资料还在汇总，" : ""}没有匹配「{query.keyword}」的客服。按姓名或完整的客服账号 ID 查找。<button type="button" className="rd-link" onClick={clearSearch}>清除搜索</button></span>
+    ? <span className="m6-empty">{provisional ? "参榜资料还在汇总，" : ""}没有匹配「{query.keyword}」的客服。按姓名或完整的客服账号编号查找。<button type="button" className="rd-link" onClick={clearSearch}>清除搜索</button></span>
     : provisional ? "参榜资料还在汇总，暂无法显示完整榜单。请稍后重试。" : "当前范围暂无参榜客服。";
   const detailName = visibleDetail ? detailRow?.name ?? [...rows, ...podiumRows, ...(selfRow ? [selfRow] : [])].find(row => row.id === visibleDetail.agentId)?.name : undefined;
   return <RdPage className="m6-page">
@@ -218,7 +218,7 @@ export function M6Leaderboard() {
             <div ref={rankingRef} tabIndex={-1} className="m6-ranking-anchor">
               <RankingPanel sub={data && data.candidateCoverage === "COMPLETE" ? query.keyword ? `匹配 ${data.matched} 人` : `共 ${data.total} 人` : undefined}
                 search={<form className="m6-search" role="search" onSubmit={search}>
-                  <Input aria-label="查找客服" data-search="" placeholder="姓名或完整客服账号 ID" value={keyword} maxLength={200} disabled={!enabled} onChange={event => setKeyword(event.target.value)} />
+                  <Input aria-label="查找客服" data-search="" placeholder="姓名或完整客服账号编号" value={keyword} maxLength={200} disabled={!enabled} onChange={event => setKeyword(event.target.value)} />
                   <Button type="submit" disabled={!enabled}>搜索</Button>
                   {!!query.keyword && <Button variant="ghost" onClick={clearSearch}>清除搜索</Button>}
                 </form>}>

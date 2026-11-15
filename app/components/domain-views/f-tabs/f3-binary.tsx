@@ -309,7 +309,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   );
 
   const proposalTag = (original: FDomainAttempt, approver: string) => original.ticket?.status === "pending"
-    ? <StatusTag tone="progress" icon={Clock3} explain={`等${approver}在「操作记录与审批」批准；批准前不生效。`}>待审批</StatusTag>
+    ? <StatusTag tone="warn" icon={Clock3} explain={`等${approver}在「操作记录与审批」批准；批准前不生效。`}>待审批</StatusTag>
     : original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
       : original.expiresAt <= Date.now()
         ? <StatusTag tone="neutral" icon={Hourglass} explain="原请求超过 24 小时，不能再重试，只能查询原审批单。查询明确没有这张单时，可以解除待确认。">已过期</StatusTag>

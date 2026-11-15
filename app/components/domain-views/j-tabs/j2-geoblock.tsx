@@ -648,8 +648,6 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     <Conclusion state="danger" hint={switchHint} explainTitle="识别源没登记会怎样" explain="现在设置的识别源不在登记表里，要判断地区的 App 请求都会被拒绝（提示无法确认地区）。">识别源没有登记，地区判断不可用；{counts}</Conclusion>
   ) : healthStatus === "degraded" ? (
     <Conclusion state="danger" hint={switchHint} explainTitle="识别源异常会怎样" explain={`当前识别源给不出国家时，刚切换的 5 分钟内先试旧源，仍给不出才拒绝（提示无法确认地区）；这类拒绝不算进拦截次数。${HEALTH_RULE}`}>识别源「{currentEdgeLabel}」异常，识别失败太多；{counts}</Conclusion>
-  ) : recoveryRows.length > 0 ? (
-    <Conclusion state="warn" hint="到上方逐条查询原结果。">{recoveryRows.length} 项修改结果未知；{counts}</Conclusion>
   ) : healthStatus === "stale" ? (
     <Conclusion state="warn" explainTitle="没有新样本是什么意思" explain={`近 5 分钟没有经过可信代理的 App 请求，识别源健康不健康判断不了。${HEALTH_RULE}`}>{counts}；识别源近 5 分钟没有新样本</Conclusion>
   ) : healthStatus !== "healthy" ? (
@@ -657,7 +655,8 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   ) : pendingEndpoints.length > 0 || geoEndpoints.length === 0 ? (
     <Conclusion state="neutral" explainTitle="没接入的入口怎么管" explain="没接入的入口不能单独设规则，单独规则也不会生效；封锁名单和受限名单照常管它们。">{counts}；识别源正常，{geoEndpoints.length === 0 ? "还没有登记功能入口" : `${count(pendingEndpoints.length)} 个入口还没接入`}</Conclusion>
   ) : (
-    <Conclusion state="ok">{counts}；识别源正常，入口都已接入</Conclusion>
+    // 上方还有结果未知的修改时不报绿：那几项由上方的提醒逐条说。
+    <Conclusion state={recoveryRows.length > 0 ? "neutral" : "ok"}>{counts}；识别源正常，入口都已接入</Conclusion>
   );
 
   // ---------- 名单卡 ----------

@@ -116,7 +116,7 @@ const PARAM: Record<string, {
     what: "用户加入锁定计划时可以直接点选的金额",
     existing: "不影响已有订单",
     future: "保存后后端给 App 的快捷金额换成新列表；App 入口目前不开放，用户看不到",
-    hint: "用 / 分隔，1–12 个大于 0 的金额；后端保存时四舍五入到两位小数、去重并从小到大排",
+    hint: "用 / 分隔，1–12 个大于 0 的金额；保存时四舍五入到两位小数，去掉重复，从小到大排",
     unit: "USDT",
   },
 };
@@ -212,7 +212,7 @@ function paramEditValue(param: Pick<G7Param, "value" | "displayValue">) {
 function orderStatus(status: string) {
   const key = status.toLowerCase();
   const name = STATE_NAME[key];
-  if (!name) return <StatusTag tone="warn" icon={CircleHelp} explain={`后端返回的状态是 ${status}，这页不认识，没有换成别的状态。`}>未知状态</StatusTag>;
+  if (!name) return <StatusTag tone="warn" icon={CircleHelp} explain={`系统给的状态是 ${status}，这页还不认识，没有换成别的状态。`}>未知状态</StatusTag>;
   if (key === "active") return <StatusTag tone="progress" icon={Lock}>{name}</StatusTag>;
   if (key === "pending_lock" || key === "mature_unclaimed") return <StatusTag tone="neutral" icon={Clock3}>{name}</StatusTag>;
   return <StatusTag tone="done">{name}</StatusTag>;

@@ -8,7 +8,7 @@ import {
 } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
-import { businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { E4_CLOSE_REASONS, E4_CLOSE_REASON_LABELS, E4_REFUND_REASONS, E4_REFUND_REASON_LABELS, e4FundingLedgerHref, type E4PendingApproval, type E4RefundImpact } from "@/lib/admin/e4-client";
 import { operatorDeviceStatus, operatorOrderFact, operatorOrderHistoryActor, operatorOrderHistoryReason } from "@/lib/admin/e-operator-display";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
@@ -51,7 +51,7 @@ const TERMINAL_REFUND: Record<string, string> = {
 };
 // 每个审批框都一样的话，收进生效标签的提示图标，不和金额、用户同档（N09）。发起人不能批自己的单（后端 A2_MAKER_CHECKER_REQUIRED）。
 const APPROVAL_NOTE = "超级管理员批准后才执行，批准前这单不变。发起人不能批自己提交的单。";
-const REFUND_APPROVAL_NOTE = "退款须由另一位具退款权限和批准权的真实超管处理。发起人不能批自己提交的单；直接退款接口统一拒绝。";
+const REFUND_APPROVAL_NOTE = "要另一位有退款权和批准权的超级管理员批准，发起人不能批自己的单。";
 
 // 决定钱的规则一条一句，不写成一段（DT-02）。
 const REFUND_RULES = [
@@ -66,7 +66,7 @@ function OrdinaryRefundImpact({ impact, compact = false }: { impact: E4RefundImp
   const runtimeText = reason === "SIMULATED_TASK_RUNTIME_UNRESOLVED" ? "任务的运行关联暂无法核实"
     : reason === "COMPUTE_V2_COMPLETION_OUTCOME_UNKNOWN" ? "任务完成结果暂无法核实" : "任务运行状态暂无法核实";
   return <section aria-label="普通订单退款影响" className={compact ? "e4-refund-impact e4-refund-impact-compact" : "e4-refund-impact"}>
-    <h3 className="rd-form-group-title">退款影响 · {compact ? "普通购买设备" : "购买设备"}{compact && <Explain label="普通订单任务如何处理" content="已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回。只含普通购买设备，不含促销赠品；这是任务影响快照，不是收益已经到账的证明，也不改变应退金额。" />}</h3>
+    <h3 className="rd-form-group-title">退款影响 · {compact ? "普通购买设备" : "购买设备"}{compact && <Explain label="普通订单任务如何处理" content="已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回。只含普通购买设备，不含促销赠品；这是读取时的任务影响，不代表收益已到账，也不改变应退金额。" />}</h3>
     {!compact && <p className="rd-note"><KeepText text="已完成任务按原规则结算一次，未完成任务随退款停止，已到账收益不扣回。" /></p>}
     {!impact ? <Notice tone="warn">暂未读到普通订单的任务影响，不能按没有任务处理。</Notice> : <>
       {!impact.runtimeComplete && <Notice tone="warn"><KeepText text={`${runtimeText}，部分任务统计未知。`} /><Explain label="任务状态技术信息" content={reason ?? "运行状态未提供"} /></Notice>}
@@ -88,7 +88,7 @@ function OrdinaryRefundImpact({ impact, compact = false }: { impact: E4RefundImp
         <Fact k="保留 USDT">{orderAmount(impact.creditedRetained.usdtAmount)}</Fact>
         <Fact k="保留 UVT">{orderAmount(impact.creditedRetained.uvtAmount)}</Fact>
       </Facts>}
-      <p className="rd-note"><KeepText text={`${compact ? "" : "普通购买设备 · "}截至 ${formatBusinessTimeFull(impact.asOf, "—")}（${businessZone().label}）`} phrases={[businessZone().label]} /><Explain label="退款影响范围" content="只含普通购买设备，不含促销赠品；这是任务影响快照，不是收益已经到账的证明，也不改变应退金额。" /></p>
+      <p className="rd-note"><KeepText text={`${compact ? "" : "普通购买设备 · "}截至 ${formatBusinessTimeCompact(impact.asOf, "—")}（${businessZone().label}）`} phrases={[businessZone().label]} /><Explain label="退款影响范围" content="只含普通购买设备，不含促销赠品；这是读取时的任务影响，不代表收益已到账，也不改变应退金额。" /></p>
     </>}
   </section>;
 }
@@ -114,7 +114,7 @@ export function E4PendingApprovalDetails({ approval }: { approval: E4PendingAppr
     <span className="rd-approval-meta">
       {approval.action && <span>{approval.action}</span>}
       {approval.submittedBy && <span> · {approval.submittedBy}</span>}
-      {approval.submittedAt && <span> · <time dateTime={`${approval.submittedAt}+08:00`}>{formatBusinessTimeFull(approval.submittedAt, "—")}（{businessZone().label}）</time></span>}
+      {approval.submittedAt && <span> · <time dateTime={`${approval.submittedAt}+08:00`}>{formatBusinessTimeCompact(approval.submittedAt, "—")}（{businessZone().label}）</time></span>}
     </span>
   );
 }
@@ -172,25 +172,25 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       </span>}
       readOnly={ctx.canWriteE4 || ctx.canRefundE4 ? undefined : "你只能查看；处理订单需要对应的修改权限"} />
 
-    {ctx.e4ReceiptAttempts.map((record) => <Notice key={record.commandKey} tone="warn" title={`${record.orderNo} · 原提交结果未确认`}
-      action={ctx.canQueryE4 && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Receipt(record)}>查询原提交结果</Button>}>
-      保留了原命令号，查到原审批单前不要重复处理。{!ctx.canQueryE4 && "请有操作记录读取权限的同事核对。"}
+    {ctx.e4ReceiptAttempts.map((record) => <Notice key={record.commandKey} tone="warn" title={`${record.orderNo} · 结果未知`}
+      action={ctx.canQueryE4 && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Receipt(record)}>查询原结果</Button>}>
+      可能已经建了审批单，查到原审批单前不要重复处理。{!ctx.canQueryE4 && "请有操作记录读取权限的同事核对。"}
     </Notice>)}
     {ctx.e4Pending.map((record) => {
       const expired = record.expiresAt <= Date.now();
       // 能查原提案就先查，明确查不到才重试；重试要当前还有这项写权（OP-93）。
       const canRetry = record.spec.command.op === "e4_order_refund" ? ctx.canRefundE4 : ctx.canWriteE4;
       const needQuery = ctx.canQueryE4 && !ctx.e4QueryMissing.includes(record.commandKey);
-      const retryBlock = expired ? undefined : !canRetry ? "这个账号已没有这项权限，请有权限的同事处理" : needQuery ? "先查原提案，明确查不到才能重试" : undefined;
-      return <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未确认`} actionBelow
+      const retryBlock = expired ? undefined : !canRetry ? "这个账号已没有这项权限，请有权限的同事处理" : needQuery ? "先查询原结果，明确查不到才能重试" : undefined;
+      return <Notice key={record.fingerprint} tone="warn" title={`${record.label} · 结果未知`} actionBelow
         action={<>
-          {ctx.canQueryE4 && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Pending(record)}>查询原提案</Button>}
-          {!expired && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原操作重试</Button>}
+          {ctx.canQueryE4 && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Pending(record)}>查询原结果</Button>}
+          {!expired && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原请求重试</Button>}
           {!expired && ctx.e4RetryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除待确认</Button>}
         </>}>
-        <p>{formatBusinessTimeFull(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，可能已经提交。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? "这个账号已没有这项权限，不能重试。" : needQuery ? "先查原提案，查不到再按原操作重试。" : "重发原内容，已成功的不会重复执行。"}这单在有结论前不能再操作。解除待确认只清本页记录，不替后端原操作结案。
+        <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，可能已经提交。{expired ? "已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? "这个账号已没有这项权限，不能重试。" : needQuery ? "先查询原结果，查不到再按原请求重试。" : "重发原内容，已成功的不会重复执行。"}有结论前这单不能再操作。{ctx.e4RetryRejected.includes(record.commandKey) && "解除待确认只清本页的记录，不改原操作的结果。"}
         {reach("/platform/audit", "platform_a2_read") && <> <Link className="rd-link" href={`/platform/audit?domain=E&object=${encodeURIComponent(record.orderNo)}`}>到操作记录与审批核对</Link></>}
-        <Explain label="技术信息" content={`命令号 ${record.commandKey} ｜ 理由 ${record.spec.reason}`} /></p>
+        <Explain label="技术信息" content={`原请求编号 ${record.commandKey} ｜ 理由 ${record.spec.reason}`} /></p>
         {!expired && ctx.e4PendingNotes[record.fingerprint] && <p><KeepText text={ctx.e4PendingNotes[record.fingerprint]} phrases={["本次没有发送", "结果仍未知", "原命令继续保留", "原操作继续保留", "请查询原操作"]} /></p>}
       </Notice>;
     })}
@@ -204,6 +204,8 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
                 {!!flowWait && <Button size="sm" onClick={() => ctx.updateE4Query({ group: "flow", state: "" })}>看进行中的订单</Button>}
                 {refundWait > 0 && <Button size="sm" onClick={() => ctx.updateE4Query({ group: "failed", state: "provisioning_failed" })}>看开通失败的订单</Button>}
               </>}>{waitTitle}</Conclusion>
+          : error ? <Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshE4()}>重试</Button>}>订单列表没读到；按计数没有要处理的订单</Conclusion>
+          : ctx.e4Pending.length + ctx.e4ReceiptAttempts.length > 0 ? <Conclusion state="warn">除了上方结果未知的 {new Set([...ctx.e4Pending, ...ctx.e4ReceiptAttempts].map((record) => record.orderNo)).size} 单，没有要处理的订单</Conclusion>
           : <Conclusion state="ok" hint={counts?.placed ? `${counts.placed} 单在等用户付款，不用操作。` : undefined} explain={searchNote || undefined}>没有要处理的订单</Conclusion>}
 
     <StatBand label="订单汇总">
@@ -355,7 +357,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const pendingFact = e4DetailError ? { value: "读取失败", state: "danger" as const } : { value: "正在读取…" };
   // 读完详情才能做决定（OP-150）：下一步、退款条件都靠详情里的事实。
   const orderPending = ctx.e4Pending.some((record) => record.orderNo === o.id) || ctx.e4ReceiptAttempts.some((record) => record.orderNo === o.id);
-  const waitReason = pendingApproval ? "这单已有待审批操作，审批结束后才能再次处理" : orderPending ? "这单有结果未确认的操作，先到页面上方处理" : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在读取订单事实" : ctx.e4ReadBlock;
+  const waitReason = pendingApproval ? "这单已有待审批操作，审批结束后才能再次处理" : orderPending ? "这单有结果未知的操作，先到页面上方处理" : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在读取订单事实" : ctx.e4ReadBlock;
   const approvalTag = <StatusTag tone="progress" filled explain={APPROVAL_NOTE}>批准后生效</StatusTag>;
   // 批准后收不回来的操作：不能撤销，红按钮（VS-25、VS-106）。
   const irreversibleApproval = <>{approvalTag}<IrreversibleTag /></>;
@@ -509,7 +511,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Button>}
       />}>
       {!finalized && <Steps label="订单进度" items={orderFlow.map((state, position) => ({ label: stateLabel(state), state: position < idx ? "done" as const : position === idx ? "current" as const : "todo" as const }))} />}
-      {orderPending && <Notice tone="warn">这单有结果未确认的操作，不要重复处理。状态变了也不算确认。到页面上方核查结果，或看操作记录核查。</Notice>}
+      {orderPending && <Notice tone="warn">{ctx.canQueryE4 ? "这单有结果未知的操作，先到页面上方查询原结果，不要重复处理。状态变了也不算确认。" : "这单有结果未知的操作，不要重复处理，状态变了也不算确认。请有操作记录读取权限的同事核对。"}</Notice>}
       {pendingApproval && <Notice tone="warn" title="这单已有待审批操作">批准后才执行原操作。审批结束后才能发起新操作。<E4PendingApprovalDetails approval={pendingApproval} /></Notice>}
       {e4DetailError && <Notice tone="danger" title="详情加载失败" actionBelow action={<Button size="sm" onClick={() => ctx.openOrder(o)}>重试</Button>}>
         {e4DetailError} · 为避免按旧数据操作，已暂停处理。
@@ -519,7 +521,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
       <Fold inset title="订单信息" icon={Package} tone="devices" open={infoOpen} onOpenChange={setInfoOpen} summary={infoOpen ? undefined : `${o.dc === "—" ? "托管机房标签未提供" : o.dc} · 下单 ${o.age}前`}>
         <Facts>
           <Fact k="托管机房标签">{o.dc}</Fact>
-          <Fact k="下单时间">{o.orderedAt ? `${formatBusinessTimeFull(o.orderedAt, "—")}（${businessZone().label}）` : "—"}</Fact>
+          <Fact k="下单时间">{o.orderedAt ? <span title={formatBusinessTimeFull(o.orderedAt, "") || undefined}>{formatBusinessTimeCompact(o.orderedAt, "—")}（{businessZone().label}）</span> : "—"}</Fact>
           {e4Detail && !finalized && !refundableState && <Fact k="兑付覆盖率">{coverageText}</Fact>}
         </Facts>
       </Fold>
@@ -531,7 +533,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
               id: String(device.deviceId),
               value: device.kind === "PROMOTION_GIFT" ? "赠品设备" : "购买设备",
               status: <StatusTag tone={deviceTone(device.status, device.ownershipStatus)}>{operatorDeviceStatus(device.status)} · {({ OWNED: "持有中", REFUNDED: "已退款", REVOKED: "已收回", RECYCLED: "已回收", UNBOUND: "已解绑" } as Record<string, string>)[device.ownershipStatus ?? ""] ?? device.ownershipStatus ?? "持有状态未提供"}</StatusTag>,
-              object: <>设备编号 {device.deviceId} <Explain label="设备原始字段" rows={[{ k: "设备编号", v: String(device.deviceId) }, { k: "来源", v: device.sourceChannel ?? "未提供" }, { k: "设备状态", v: device.status ?? "未提供" }, { k: "持有状态", v: device.ownershipStatus ?? "未提供" }]} /></>,
+              object: <>设备编号 {device.deviceId} <Explain label="设备原始信息" rows={[{ k: "设备编号", v: String(device.deviceId) }, { k: "来源", v: device.sourceChannel ?? "未提供" }, { k: "设备状态", v: device.status ?? "未提供" }, { k: "持有状态", v: device.ownershipStatus ?? "未提供" }]} /></>,
               reference: device.deviceInstanceNo ?? undefined,
             }))} />}
         </Fold>
@@ -540,7 +542,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           {e4Detail.history.length === 1
             ? e4Detail.history.map((item) => <Facts key={item.createdAt}>
               <Fact k="状态变化">{stateLabel(item.fromState)} → {stateLabel(item.toState)}</Fact>
-              <Fact k="时间">{formatBusinessTimeFull(item.createdAt, "—")}（{businessZone().label}）</Fact>
+              <Fact k="时间"><span title={formatBusinessTimeFull(item.createdAt, "") || undefined}>{formatBusinessTimeCompact(item.createdAt, "—")}（{businessZone().label}）</span></Fact>
               <Fact k="操作人">{maskAuditActor(operatorOrderHistoryActor(item.operator))}</Fact>
               {item.reason && <Fact k="原因">{operatorOrderHistoryReason(item.reason, e4Detail.paymentMethod)}</Fact>}
             </Facts>)
@@ -561,7 +563,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
               value: orderAmount(item.amount),
               unit: "USDT",
               at: item.occurredAt,
-              object: <>{operatorOrderFact("source", item.source)} · {operatorOrderFact("direction", item.direction)} <Explain label="资金原始字段" rows={[{ k: "来源", v: item.source }, { k: "收支", v: item.direction }, { k: "状态", v: item.status }]} />{ledgerHref && reach(ledgerHref, "finance_d4_read") && <> · <Link className="rd-link" href={ledgerHref}>到账本与账单核对查看</Link></>}</>,
+              object: <>{operatorOrderFact("source", item.source)} · {operatorOrderFact("direction", item.direction)} <Explain label="资金原始信息" rows={[{ k: "来源", v: item.source }, { k: "收支", v: item.direction }, { k: "状态", v: item.status }]} />{ledgerHref && reach(ledgerHref, "finance_d4_read") && <> · <Link className="rd-link" href={ledgerHref}>到账本与账单核对查看</Link></>}</>,
               status: <StatusTag tone={fundingTone(item.status)}>{operatorOrderFact("fundingStatus", item.status)}</StatusTag>,
               reference: item.bizNo,
             };

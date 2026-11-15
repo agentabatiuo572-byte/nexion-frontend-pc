@@ -30,7 +30,7 @@ function TypeTag({ type }: { type: string }) {
   return <StatusTag tone={type === "HIGH" ? "warn" : "neutral"} icon={Icon}>{LABEL_BY_TYPE[type] || "未知类型"}</StatusTag>;
 }
 
-const AMPLIFIES_EXPLAIN = "登记时标了这个记号：这项权限对应的操作可能让平台多付钱。老数据没有记号时后端按「可能」处理。这只是登记的标记，查看这页时不做任何资金检查。";
+const AMPLIFIES_EXPLAIN = "登记时标的记号：这项权限对应的操作可能让平台多付钱。老数据没有记号的按「可能」算。这页不做资金检查。";
 
 /** A8 权限清单（只读）。服务端分页 + 搜索 debounce + 模块和类型筛选 + 详情抽屉 + 按需读取的角色对照。 */
 export default function A8Permissions() {
@@ -176,7 +176,7 @@ export default function A8Permissions() {
     <Conclusion state="unknown" icon={KeyRound}>权限列表没读到，这页没有判断</Conclusion>
   ) : (
     <Conclusion state="neutral" icon={KeyRound}
-      explain="只算启用中的接口权限；数量跟着搜索和筛选变。权限由运营账号与权限登记，授权在角色管理。">
+      explain="只算启用中的权限；数量跟着搜索和筛选变。权限由运营账号与权限登记，授权在角色管理。">
       {filtered ? `当前筛选下有 ${total} 项权限` : `共 ${total} 项已登记的权限`}
     </Conclusion>
   );
