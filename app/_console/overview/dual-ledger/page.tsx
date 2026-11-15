@@ -578,7 +578,7 @@ export default function DualLedgerPage() {
   const coveragePanel = (
     <Panel title="兑付覆盖率" icon={Gauge} tone="role-other" sub={`红线 ${fmtConfigPct(effRedline)} · 健康线 ${fmtConfigPct(healthyPct)}`}
       explain="覆盖率低于红线时，提现审核不能放行，会让平台多付钱的调整也会被拒，这是各业务自己的检查。覆盖率低于健康线算警戒。红线可设 80%–150%，健康线 100%–200%。"
-      actions={canConfigureThresholds ? <Button size="sm" icon={<SlidersHorizontal size={14} aria-hidden />} disabledReason={newWriteBlocked || !!pendingApproval || pendingWrites.some(record => record.kind === "threshold") ? "请先重新读取并核对原操作，再发起新修改。" : undefined} onClick={openThreshold}>调整红线和健康线</Button> : undefined}>
+      actions={canConfigureThresholds ? <Button size="sm" icon={<SlidersHorizontal size={14} aria-hidden />} disabledReason={pendingApproval && verifiedPendingKey === pendingApproval.commandKey ? displayAdminError("OBJECT_LOCKED_BY_A2") : newWriteBlocked || !!pendingApproval || pendingWrites.some(record => record.kind === "threshold") ? "请先重新读取并核对原操作，再发起新修改。" : undefined} onClick={openThreshold}>调整红线和健康线</Button> : undefined}>
       {valuationReliable ? (
         <div className="b1-coverage">
           <ThresholdMeter label="覆盖率和红线、健康线"
