@@ -239,6 +239,8 @@ export default function H1Phase({ ctx,
     setPending] = useState<H1Pending[]>([]);
   const [confirm,
     setConfirm] = useState<Confirm | null>(null);
+  const confirmation = useRef(confirm);
+  confirmation.current = confirm;
   const [detail,
     setDetail] = useState<H1Pending | null>(null);
   const [release,
@@ -357,6 +359,7 @@ export default function H1Phase({ ctx,
     setChecked(undefined);
     setFeedback(undefined);
     setSending(row.commandKey);
+    const request = confirmation.current;
     try {
       const result = await executeH1(row,
         applyReceipt,
@@ -372,7 +375,7 @@ export default function H1Phase({ ctx,
       } else if (await reload()) ctx.toast(`${row.label}已保存`,
         "success");
       else setFeedback(`${row.label}已保存，但刷新没成功；请刷新核对，不要再次提交。`);
-      setConfirm(null);
+      setConfirm(current => current === request && current?.scope === row.scope ? null : current);
     } catch (failure) { syncPending(); throw failure; }
     finally { setSending(undefined); }
   };
@@ -608,7 +611,8 @@ export default function H1Phase({ ctx,
         recover: async () => {
           const original = h1Pending.list().find((item) => item.scope === scope);
           if (!original) return false;
-          const ticket = await lookupH1(original); syncPending(); if (ticket) { setConfirm(null); return true; } return false;
+          const request = confirmation.current;
+          const ticket = await lookupH1(original); syncPending(); if (ticket) { setConfirm(current => current === request ? null : current); return true; } return false;
         },
         retry: async () => {
           const original = h1Pending.list().find((item) => item.scope === scope); if (original) await afterWrite(original,
@@ -948,7 +952,7 @@ export default function H1Phase({ ctx,
         <Fact k="当前阶段">{phaseLabel}</Fact>
         <Fact k="保存顺序">先存月份并换用那个月的参数，再存进度；进度没存上时月份不会退回。</Fact>
       </Facts> : typeof confirm.facts === "function" ? confirm.facts(value) : confirm.facts}
-    </div>} onClose={() => setConfirm(null)} onConfirm={async (reason,
+    </div>} onClose={() => setConfirm(current => current === confirm ? null : current)} onConfirm={async (reason,
       value,
       form) => {
       await confirm.run(reason,
