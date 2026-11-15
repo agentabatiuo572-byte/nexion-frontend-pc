@@ -960,10 +960,10 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
         summary={<AutoGloss>{summary}</AutoGloss>}
         actions={exporting.button}
         meta={<span className="rd-toolbar">
-          <span>{readAt ? `${readAt} 读取（${businessZone().label}）· ` : ""}打开时读取，不自动刷新</span>
+          {readAt && <span>{readAt} 读取（{businessZone().label}）<Explain label="数据时间说明" content="打开时读取，不自动刷新；点「刷新」重读。" /></span>}
           <Button variant="ghost" size="sm" loading={refreshing} icon={<RefreshCw size={14} aria-hidden />} onClick={() => reloadKpi(applied)}>刷新</Button>
         </span>}
-        readOnly={ctx.canExport ? "调整和保存只改本机显示，不改业务数据" : "调整和保存只改本机显示，不改业务数据 · 导出需报表管理权限"}
+        readOnly={ctx.canExport ? undefined : "只能查看，导出需报表管理权限"}
       />
       {exporting.notices}
       {queryBar}
