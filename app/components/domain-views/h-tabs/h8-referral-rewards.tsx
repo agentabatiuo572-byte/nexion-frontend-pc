@@ -158,6 +158,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const sendCommand = async (record: H8RewardCommand, recovering: boolean) => {
     try {
       const ticket = await sendH8RewardCommand(record, recovering);
+      // 重建后提交成功，「没有保存」的提示随之清掉（同 H3、H5）。
+      setStale(null);
       await finishCommand(record, ticket);
     } catch (error) {
       changed();
@@ -188,7 +190,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const editParam = (param: H8Param, fixedValue?: string, recovered?: H8RewardCommand, lookupOnly = false) => {
     if (!session) return;
     if (fixedValue !== undefined) fixedValue = conflictDraft.intent ?? fixedValue;
-    setStale(null);
+    // 冲突后重建打开时留着「已被别人改过」的提示，普通打开才清掉。
+    if (conflictDraft.business === undefined && conflictDraft.intent === undefined) setStale(null);
     const pending = recovered ?? commandForParam(param);
     if (pending && !pending.original) {
       void queryCommand(pending).catch(cause => ctx.toast(displayAdminError(cause)));
@@ -200,7 +203,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     const isEnabled = param.key === "enabled";
     const numeric = param.kind === "number";
     const rawCurrent = String(snapshot.params[param.key]);
-    if (fixedValue !== undefined && fixedValue === rawCurrent) { ctx.toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "和现在一样"); return; }
+    if (fixedValue !== undefined && fixedValue === rawCurrent) { setStale(null); ctx.toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "和现在一样"); return; }
     const current = isEnabled
       ? ENABLED_LABELS[rawCurrent] ?? ENABLED_LABELS.false
       : param.kind === "select" ? LOCK_MODE_LABELS[rawCurrent] ?? LOCK_MODE_LABELS.risk_bucket : rawCurrent;
