@@ -1296,7 +1296,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           onOpen={() => pickFilter("super")} openLabel="只看超级管理员" selected={filter === "super"} selectedText="已筛选" aria-pressed={filter === "super"} />
         <Stat icon={ShieldCheck} tone={unboundOps.length ? "warn" : "role-3"} label="未绑定两步验证" value={String(unboundOps.length)} unit="个"
           sub={`启用账号 ${enabledOps.length} 个`}
-          explain="启用中、还没绑定两步验证的账号，登录时要先绑定才能用后台。superadmin 账号目前临时可以不验证就登录，正式上线前要关掉。点这格只看这些账号。"
+          explain="启用中、还没绑定两步验证的账号，登录时要先绑定才能用后台。superadmin 账号临时可以不验证就登录，上线前要关掉。点这格只看这些账号。"
           onOpen={() => pickFilter("unbound")} openLabel="只看未绑定两步验证的账号" selected={filter === "unbound"} selectedText="已筛选" aria-pressed={filter === "unbound"} />
         <Stat icon={ClipboardCheck} tone="role-3" label="待审批的账号变更" value={pending === undefined || pending === null ? "—" : String(pending)} unit={pending === undefined || pending === null ? undefined : "件"}
           explain="资料、角色、两步验证、启停、撤销全部登录的申请可能没算进来，数字会偏少，以「操作记录与审批」为准。"
@@ -1359,7 +1359,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
             ))}
           </ConfigList>
         ) : <BlockState compact state="empty" title="暂未获取到登录安全设置。" />}
-        <p className="a1-help">账号疑似被盗：先在详情里「让此设备下线」，再「重置密码」；要彻底收回，停用账号。<Explain label="锁定规则原文" content={`系统里的锁定规则原文：${operatorCopyText(lockBaseline)}`} /></p>
+        <p className="a1-help">账号疑似被盗：先在详情里「让此设备下线」，再「重置密码」；要彻底收回，停用账号。<Explain label="锁定规则原文" content={`锁定规则原文：${operatorCopyText(lockBaseline)}`} /></p>
       </Fold>
 
       <Fold icon={ShieldPlus} title="登记新权限" summary="登记后不会自动分给任何角色"
