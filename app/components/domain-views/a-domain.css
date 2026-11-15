@@ -129,6 +129,8 @@
 .a1-page .a1-self { display: inline-flex; align-items: center; margin-left: var(--rd-space-2); padding: 0 var(--rd-space-2); border-radius: var(--rd-radius-tag); background: var(--rd-brand-soft); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-medium); }
 .a1-page .a1-sessions-count { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .a1-page .a1-sessions-count[data-empty] { color: var(--rd-text-3); }
+/* 状态格：启用／已停用和「××待审批」标记同一行，放不下时标记换到下一行。 */
+.a1-page .a1-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-1) var(--rd-space-2); }
 
 /* 原操作提醒（结果未知、已过期）：一条一行，和 G 域提醒同一排法 */
 .a1-page .a1-recovery { display: grid; gap: var(--rd-space-2); margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }

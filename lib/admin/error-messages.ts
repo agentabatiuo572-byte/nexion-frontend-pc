@@ -969,7 +969,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   AVATAR_SELF_FORBIDDEN: "当前账号没有有效的本人头像修改资格，请联系管理员核对客服或主管资格。",
   AVATAR_NOT_FOUND: "头像素材不存在或已失效，原头像保持不变；请重新加载当前头像。",
   AVATAR_STATE_CONFLICT: "头像素材状态已变化，请先查询原操作结果，原头像保持不变。",
-  ACCOUNT_VERSION_STALE: "账号资料已变化，本次未覆盖旧头像；请重新加载资料后再确认。",
+  ACCOUNT_VERSION_STALE: "账号刚被改过，这次没有执行；请按最新的账号资料核对后再提交。",
   AVATAR_STORAGE_UNAVAILABLE: "头像服务暂不可用，请保留原资料并使用原命令查询或重试。",
   AVATAR_SNAPSHOT_UNREADABLE: "本人头像资料暂无法核对，请重新加载；尚未确认的命令继续保留。",
   AVATAR_SAVE_READBACK_MISMATCH: "当前头像与原保存图片尚未核对一致，请继续查询原保存结果，不要重复更换。",

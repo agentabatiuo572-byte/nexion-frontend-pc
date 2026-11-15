@@ -3,7 +3,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { KeyRound, LogOut, PencilLine, RefreshCw, ShieldCheck, ShieldPlus, ShieldUser, UserCog, UserMinus, UserPlus, Users, MonitorSmartphone, ClipboardCheck, Headset, UsersRound, LockKeyhole } from "lucide-react";
+import { KeyRound, LogOut, PencilLine, RefreshCw, ShieldCheck, ShieldPlus, ShieldUser, UserCog, UserMinus, UserPlus, Users, MonitorSmartphone, ClipboardCheck, Headset, UsersRound, LockKeyhole, Clock3 } from "lucide-react";
 import { BlockState, Button, Cell, Check, ConfigList, ConfigRow, Conclusion, Explain, Fact, Facts, Change, Field, Fold, Input, MoreMenu, Notice, PageHeader, Pager, Panel, Select, Stat, StatBand, StatusDistributionBar, StatusTag, Table, TableMessage, Td, Th, Tr, type MoreMenuItem } from "@/app/components/rd";
 import { readAdminSessionBaseline } from "@/lib/admin/session-baseline";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
@@ -1113,6 +1113,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     const pending = pendingFor({ kind: "password", account: op });
     return list.map(action => ({ ...action, disabledReason: action.disabledReason ?? (pending ? pending.ticket?.status === "pending" ? "已提交，等待审批后执行" : errorMessage(new Error("A1_ORIGINAL_OPERATION_PENDING")) : null) }));
   };
+  /** 账号行上的「等批准」标记：和操作菜单的「已提交，等待审批后执行」用同一个判断。 */
+  const PENDING_KIND: Partial<Record<A1Intent["kind"], string>> = { profile: "资料修改", role: "改角色", "2fa": "重置两步验证", disable: "停用", enable: "启用", logout: "撤销全部登录" };
+  const pendingTag = (op: A1Operator) => {
+    const pending = pendingFor({ kind: "password", account: op });
+    if (!pending?.ticket || pending.ticket.status !== "pending") return null;
+    return <StatusTag tone="warn" icon={Clock3} explain={`审批单 ${pending.ticket.id}，在「操作记录与审批」批准后执行；批准前这个账号的其他操作先不能提交。`}>{PENDING_KIND[pending.intent.kind] ?? "申请"}待审批</StatusTag>;
+  };
   const menuItems = (op: A1Operator): MoreMenuItem[] => accountActions(op).map((action) => ({ key: action.key, label: action.label, danger: action.danger, disabledReason: action.disabledReason ?? undefined, onSelect: action.onSelect }));
 
   const canWriteSomething = canCreateAccount || canEditAccount || canChangeRole || canReset2fa || canResetPassword || canChangeStatus || canRegisterPermission || canManageQualifications;
@@ -1329,7 +1336,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                   </Td>
                   <Td><Cell main={roleName(restoring.current?.snapshot.roles ?? roles, op.role)} sub={permissionDiffReady ? permSummary(codesOf(op.role)) : undefined} /></Td>
                   <Td>{op.tfa ? <StatusTag tone="ok" icon={ShieldCheck}>已绑定</StatusTag> : <StatusTag tone="warn" icon={LockKeyhole}>未绑定</StatusTag>}</Td>
-                  <Td><Cell main={op.status === "enabled" ? "启用" : <StatusTag tone="done">已停用</StatusTag>} sub={op.credentialDeliveryStatus === "PASSWORD_CHANGE_REQUIRED" ? credentialStatusText(op.credentialDeliveryStatus) : undefined} /></Td>
+                  <Td><Cell main={<span className="a1-status">{op.status === "enabled" ? "启用" : <StatusTag tone="done">已停用</StatusTag>}{pendingTag(op)}</span>} sub={op.credentialDeliveryStatus === "PASSWORD_CHANGE_REQUIRED" ? credentialStatusText(op.credentialDeliveryStatus) : undefined} /></Td>
                   <Td align="right"><Cell num main={minuteText(op.lastLogin)} /></Td>
                   <Td align="right"><span className="a1-sessions-count" data-empty={op.sessions > 0 ? undefined : ""}>{op.sessions > 0 ? `${op.sessions.toLocaleString("en-US")} 台` : "未登录"}</span></Td>
                   <Td sticky="end" data-fit=""><MoreMenu label={`账号操作 ${operatorDisplayLabel(op)}`} items={menuItems(op)} /></Td>
