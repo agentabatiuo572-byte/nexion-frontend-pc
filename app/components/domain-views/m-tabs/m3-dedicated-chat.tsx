@@ -16,7 +16,7 @@ import { markM3MessagePageRead, fetchMConversationTimeoutPolicy, updateMConversa
 import { businessClock, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { shouldSendOnEnter } from "@/lib/keyboard-submit";
-import type { SessionConvo, SessionMsg } from "./data";
+import type { ConversationWriteState, SessionConvo, SessionMsg } from "./data";
 import type { MCtx } from "./types";
 import { M3CustomerProfile } from "./m3-customer-profile";
 import { SupportContentTools, type SelectedSupportContent } from "./support-content-tools";
@@ -556,6 +556,17 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
     return () => { sendAdminTyping(false); watchAdminConversation(null); };
   }, [selected?.id, conversationsAvailable, adminId, authEpoch]);
   const selectedUnbound = selected?.ownerUnbound === true;
+  /** 后端说这条会话不是客户当前能回的那条：分清原归属、现在分给谁、当前会话在哪；读不到就照实说。 */
+  const threadNotice = (state: ConversationWriteState) => {
+    const reassigned = Boolean(state.threadOwnerAgentId && state.currentAssignmentAgentId && state.threadOwnerAgentId !== state.currentAssignmentAgentId);
+    const otherNo = state.writableConversationNo && state.writableConversationNo !== selected?.id ? state.writableConversationNo : null;
+    const current = otherNo ? visible.find((convo) => convo.id === otherNo) : undefined;
+    const text = reassigned ? `这条会话原属${state.threadOwnerAgentName ?? "其他客服"}，客户已改分给${state.currentAssignmentAgentName ?? "其他客服"}，这里不能再回复。`
+      : otherNo ? "这是旧会话，客户现在的会话是另一条，这里不能再回复。"
+      : "读不到这条会话现在归谁，暂时不能回复。";
+    return <Notice tone="neutral" action={current ? <Button size="sm" onClick={() => select(current)}>打开当前会话</Button>
+      : !reassigned && !otherNo ? <Button size="sm" onClick={() => void ctx.refreshConversations()}>刷新会话</Button> : undefined}>{text}</Notice>;
+  };
   // M-25: only a thread this account can answer shows the editor; unassigned and supervisor review get one clear next step.
   const composerMode: "write" | "unbound" | "review" | "locked" | "checking" = selected && selectedUnbound ? "unbound" : heldByOther ? "locked" : !selected || actsAsAdvisor || holdAllowsOther ? "write" : canReviewAll && canWriteM3 && hold === undefined ? "checking" : "review";
   const canReadAssignment = Boolean(canReviewAll && !qualificationUnknown && selected?.customerId && session?.authorities.includes("service_m1_read"));
@@ -1639,7 +1650,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
           <SupportAvatar name={title} path={selected?.customerAvatarRef ?? undefined} size={36} />
           <div className="m3s-chat-id">
             <h2 title={title}>{title}</h2>
-            <div className="m3s-chat-sub">{selected ? <>当前专属客服：{ownerLabel(selected.owner)}{actsAsAdvisor && (hold?.state === "MINE" || heldByOther) ? "（你）" : ""} · {hold?.state === "MINE" ? <span className="m3s-hold" data-hold="mine">你正在接待{hold.autoEndAt && `，约 ${holdClock(hold.autoEndAt)} 自动结束`}{!actsAsAdvisor && <> <Explain label="接待是什么意思" content={`接待期间其他人不能给该客户发消息。${hold.endMinutes !== null ? `无人发言 ${hold.endMinutes} 分钟后自动结束。` : ""}`} /></>}</span> : heldByOther ? <span className="m3s-hold" data-hold="other">{holderRole} {hold.holder?.name} 接待中</span> : selected.status === "transferred" ? "已转出 · 只读" : selected.status === "open" ? "当前会话" : "历史会话"}{presence?.online ? " · 客户在线" : ""}</> : requestedCustomerId ? hold?.state === "MINE" ? <span className="m3s-hold" data-hold="mine">你正在接待</span> : heldByOther ? <span className="m3s-hold" data-hold="other">{holderRole} {hold.holder?.name} 接待中</span> : "首次联系" : conversationsAvailable ? "选择客户查看会话" : "暂时读不到"}</div>
+            <div className="m3s-chat-sub">{selected ? <>当前专属客服：{ownerLabel(selected.owner)}{actsAsAdvisor && (hold?.state === "MINE" || heldByOther) ? "（你）" : ""} · {hold?.state === "MINE" ? <span className="m3s-hold" data-hold="mine">你正在接待{hold.autoEndAt && `，约 ${holdClock(hold.autoEndAt)} 自动结束`}{!actsAsAdvisor && <> <Explain label="接待是什么意思" content={`接待期间其他人不能给该客户发消息。${hold.endMinutes !== null ? `无人发言 ${hold.endMinutes} 分钟后自动结束。` : ""}`} /></>}</span> : heldByOther ? <span className="m3s-hold" data-hold="other">{holderRole} {hold.holder?.name} 接待中</span> : selected.status === "transferred" ? "已转出 · 只读" : selected.status === "open" ? selected.writeState?.canReply === false ? "旧会话 · 只读" : "当前会话" : "历史会话"}{presence?.online ? " · 客户在线" : ""}</> : requestedCustomerId ? hold?.state === "MINE" ? <span className="m3s-hold" data-hold="mine">你正在接待</span> : heldByOther ? <span className="m3s-hold" data-hold="other">{holderRole} {hold.holder?.name} 接待中</span> : "首次联系" : conversationsAvailable ? "选择客户查看会话" : "暂时读不到"}</div>
           </div>
           <div className="m3s-chat-actions">
             {(selected || profileCustomerId) && <Button size="sm" className="m3s-profile-toggle" onClick={() => setScreen("profile")}>客户资料</Button>}
@@ -1677,6 +1688,7 @@ export function M3DedicatedChat({ ctx, back, summary, banner, streamReady, recon
             : !canWriteM3 ? <Notice tone="neutral">你只能查看会话，发消息需要会话操作权限。</Notice>
             : selected.status !== "open" ? <Notice tone="neutral">{historyReadOnlyHint}</Notice>
             : selectedUnbound ? <Notice tone="warn">该客户还没有专属客服，等待主管分配后回复。</Notice>
+            : selected.writeState?.canReply === false ? threadNotice(selected.writeState)
             : !currentProfileDetail ? <Notice tone="danger" action={<Button size="sm" onClick={() => setProfileRetry((value) => value + 1)}>重试</Button>}>客户归属核对失败：{profileError}</Notice>
             : !currentProfileDetail.assignmentId || currentProfileDetail.agentAdminId !== selected.ownerAdminId ? <Notice tone="warn" action={<Button size="sm" onClick={() => void ctx.refreshConversations()}>刷新会话</Button>}>客户归属已变化，请刷新会话后重试。</Notice>
             : conversationError ? null

@@ -1515,6 +1515,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated }: { ctx: MCtx; hidden: b
       {pendingDock && isRetryExpired(pendingDock) && <div role="status" className="m-dock-note">{RETRY_EXPIRED_TEXT}</div>}
       {pendingDock && canAbandon && <div><button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => void copyOriginal(draft)}>复制原文</button><button type="button" className="btn btn-sec btn-sm" disabled={sending} onClick={() => abandonQuery(pendingDock)}>放弃查询</button></div>}
       {!canWriteM3 && <div role="status" style={{ padding: "8px 11px", fontSize: 12 }}>你只能查看会话，发消息需要会话操作权限。</div>}
+      {canWriteM3 && owned && conv.writeState?.canReply === false && <div role="status" style={{ padding: "8px 11px", fontSize: 12 }}>这不是客户当前的会话，不能在这里回复；到「专属会话」查看。</div>}
       <div style={{ padding: "9px 11px", borderTop: "1px solid var(--border)", display: "flex", gap: 8, alignItems: "flex-end" }}>
         <textarea
           className="ta"
