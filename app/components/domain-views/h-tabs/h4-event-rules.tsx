@@ -74,7 +74,7 @@ export default function H4EventRules({ ctx, onRowsChange, onApprovalCompleted }:
     finally { if (own === generation.current) setLoading(false); }
   };
   useEffect(() => { setSaving(false); setError(""); setRows([]); setSelected(null); setDraft(null); if (canRead) void load(); else setLoading(false); return () => { generation.current += 1; }; }, [canRead, operator]);
-  useEffect(() => { onRowsChange?.(loading || !!error || !canRead ? null : rows); }, [rows, loading, canRead, error]);
+  useEffect(() => { onRowsChange?.(loading || readFailed || !canRead ? null : rows); }, [rows, loading, canRead, readFailed]);
   useEffect(() => {
     let alive = true; setVouchers([]); setVoucherError(""); setVoucherLoading(false);
     if (selected?.kind !== "seasonal" || !canRead || !canReadVouchers) return;
