@@ -12,7 +12,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchRankHowPolicyAdmin, type PublishedContentDocument } from "@/lib/admin/published-content-client";
-import { pendingF1RankHow, queryF1RankHow, saveF1RankHow } from "@/lib/admin/f1-rank-how-save";
+import { pendingF1RankHow, queryF1RankHow, saveF1RankHow, type F1RankHowComparison } from "@/lib/admin/f1-rank-how-save";
 import type { F1VRankRow } from "@/lib/admin/f1-client";
 
 type Row = Record<string, unknown>;
@@ -60,7 +60,10 @@ export function F1RankHow({ ladder, onPendingChange }: { ladder: F1VRankRow[]; o
   const [newLocale, setNewLocale] = useState("");
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [unknown, setUnknown] = useState(() => session ? !!pendingF1RankHow(session.adminId) : false);
+  const [recovery, setRecovery] = useState<{ unknown: boolean; comparison: F1RankHowComparison | null }>(() => ({
+    unknown: session ? !!pendingF1RankHow(session.adminId) : false, comparison: null,
+  }));
+  const { unknown } = recovery;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const baselineStale = useRef(false);
@@ -71,11 +74,11 @@ export function F1RankHow({ ladder, onPendingChange }: { ladder: F1VRankRow[]; o
     const original = session ? pendingF1RankHow(session.adminId) : undefined;
     if (original) {
       setDocument(original.document); setBaseline(original.document); setReason(original.reason);
-      setLocale(Object.keys(original.document.locales)[0] ?? "en"); setUnknown(true);
+      setLocale(Object.keys(original.document.locales)[0] ?? "en"); setRecovery({ unknown: true, comparison: null });
       setLoading(false);
       return;
     }
-    setUnknown(false);
+    setRecovery({ unknown: false, comparison: null });
     try {
       const value = await fetchRankHowPolicyAdmin();
       if (preserveDraft.current) {
@@ -98,12 +101,16 @@ export function F1RankHow({ ladder, onPendingChange }: { ladder: F1VRankRow[]; o
   const checkOriginal = async () => {
     if (!session || loading) return;
     setLoading(true); setError(null);
+    setRecovery(current => ({ ...current, comparison: null }));
     try {
       const result = await queryF1RankHow(session.adminId);
       if (result.matched) {
         preserveDraft.current = false; baselineStale.current = false;
-        setDocument(result.current); setBaseline(result.current); setReason(""); setUnknown(false);
-      } else setError("当前读取与原提交内容或修订号不一致，保存结果仍未知，请保留原内容并到操作记录核对。");
+        setDocument(result.current); setBaseline(result.current); setReason(""); setRecovery({ unknown: false, comparison: null });
+      } else {
+        setRecovery({ unknown: true, comparison: result.comparison });
+        setError("当前读取与原提交内容或修订号不一致，保存结果仍未知，请保留原内容并到操作记录核对。");
+      }
     } catch (cause) { setError(displayAdminError(cause)); }
     finally { setLoading(false); onPendingChange(); }
   };
@@ -128,14 +135,14 @@ export function F1RankHow({ ladder, onPendingChange }: { ladder: F1VRankRow[]; o
     if (baselineStale.current) { await refresh(); return; }
     if (reason.trim().length < 8 || reason.trim().length > 500) { setError("变更理由需为 8–500 个字符。"); return; }
     if (!hasChanges) { setError("内容没有变化，无需提交。"); return; }
-    setSaving(true); setError(null); setUnknown(false);
+    setSaving(true); setError(null); setRecovery({ unknown: false, comparison: null });
     try {
       const payload = { ...document, status: document.status === "UNPUBLISHED" ? "DRAFT" as const : document.status };
       const value = await saveF1RankHow(session.adminId, payload, reason.trim());
       preserveDraft.current = false;
       setDocument(value); setBaseline(value); setReason("");
     } catch (cause) {
-      setError(displayAdminError(cause)); setUnknown(cause instanceof OutcomeUnknownError);
+      setError(displayAdminError(cause)); setRecovery({ unknown: cause instanceof OutcomeUnknownError, comparison: null });
       if (!(cause instanceof OutcomeUnknownError) && (cause as { reasonCode?: string }).reasonCode === "RANK_HOW_POLICY_VERSION_CONFLICT") {
         baselineStale.current = true;
         preserveDraft.current = true;

@@ -329,12 +329,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       if (overview.status === "fulfilled") setF2Overview(overview.value);
       else { setF2Overview(null); setF2Error(errorMessage(overview.reason)); }
       const observed = session ? listF2Proposals(session.adminId).filter(row => row.ticket) : [];
-      const observedIds = new Set(observed.map(row => row.ticket!.id));
+      const receipts = session ? await Promise.allSettled(observed.map(row => queryF2Proposal(session.adminId, row))) : [];
+      if (request !== f2Generation.current) return null;
+      // Only successful lookups supersede the queue, including authoritative terminal states.
+      const observedIds = new Set(observed.filter((_, index) => receipts[index].status === "fulfilled").map(row => row.ticket!.id));
       if (audit.status === "fulfilled" && audit.value) setF2ApprovalRows(audit.value.operationQueue.filter(row => !observedIds.has(row.id)));
       else { setF2ApprovalRows([]); setF2ActivationPendingError(audit.status === "rejected" ? errorMessage(audit.reason) : "审批进度没读到"); }
       if (session) {
-        const receipts = await Promise.allSettled(observed.map(row => queryF2Proposal(session.adminId, row)));
-        if (request !== f2Generation.current) return null;
         if (receipts.some(row => row.status === "rejected")) setF2ActivationPendingError("审批进度没读到");
         setF2Proposals(listF2Proposals(session.adminId));
       }
@@ -589,6 +590,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (f2Proposals.some(row => !row.ticket && (row.fingerprint === slot || layer && row.spec.target?.type === "unilevel_rule" && row.spec.target.id === layer))) return "上一次申请结果未知，先按原请求重试或去核对";
     return undefined;
   };
+  const markF2Loading = () => {
+    setF2Loading(true); setF2DirectPolicyLoading(true); setF2ActivationPendingLoading(true);
+  };
   const sendF2 = async (slot: string, spec?: ProposeSpec) => {
     if (!session) throw new Error("ADMIN_PERMISSION_DENIED");
     if (spec) {
@@ -597,18 +601,18 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     } else {
       // Recovery invalidates all open new-edit snapshots, even when the lookup fails.
       setF2ReadEpoch(value => value + 1);
+      markF2Loading();
       setF2Overview(null);
       setF2DirectPolicy(null);
       setF2ApprovalRows([]);
     }
     try {
       const ticket = await sendF2Proposal(session.adminId, slot, spec);
-      if (!spec) await refreshF2();
       setToast(ticket.status === "pending" ? "已提交，等待审批后执行" : "原申请已处理，请刷新后核对。");
-    } catch (error) {
-      if (!spec && !f2ProposalRecord(session.adminId, slot)) await refreshF2();
-      throw error;
-    } finally { setF2Proposals(listF2Proposals(session.adminId)); }
+    } finally {
+      if (!spec) await refreshF2();
+      setF2Proposals(listF2Proposals(session.adminId));
+    }
   };
 
   const refreshF1Approvals = useCallback(async () => {
@@ -962,22 +966,23 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       const original = f2Record(slot);
       if (!original) throw new Error("F2_PROPOSAL_ORIGINAL_MISSING");
       setF2ReadEpoch(value => value + 1);
+      markF2Loading();
       setF2Overview(null); setF2DirectPolicy(null); setF2ApprovalRows([]);
       try {
         const ticket = await queryF2Proposal(session.adminId, original);
-        if (ticket) await refreshF2();
-        else setToast(displayAdminError(original.expiresAt <= Date.now() ? "F2_PROPOSAL_RETRY_EXPIRED" : "A2_PROPOSAL_NOT_FOUND"));
+        if (!ticket) setToast(displayAdminError(original.expiresAt <= Date.now() ? "F2_PROPOSAL_RETRY_EXPIRED" : "A2_PROPOSAL_NOT_FOUND"));
         return ticket;
-      } finally { setF2Proposals(listF2Proposals(session.adminId)); }
+      } finally { await refreshF2(); setF2Proposals(listF2Proposals(session.adminId)); }
     },
     releaseF2Proposal: async slot => {
       if (!session) throw new Error("ADMIN_PERMISSION_DENIED");
       const original = f2Record(slot);
       if (!original) return;
       setF2ReadEpoch(value => value + 1);
+      markF2Loading();
       setF2Overview(null); setF2DirectPolicy(null); setF2ApprovalRows([]);
-      try { await releaseF2Proposal(session.adminId, original); await refreshF2(); }
-      finally { setF2Proposals(listF2Proposals(session.adminId)); }
+      try { await releaseF2Proposal(session.adminId, original); }
+      finally { await refreshF2(); setF2Proposals(listF2Proposals(session.adminId)); }
     },
     recoverF2SevenLayerActivation: () => sendF2(F2_ACTIVATION_SLOT),
     changeF2SevenLayerActivation: async (action, expectedSevenLayerRevision, expectedPolicyVersion, reason) => {

@@ -110,7 +110,8 @@ function checkTicket(original: F2Proposal, ticket: A2OperationRow) {
 
 export async function queryF2Proposal(adminId: number, original: F2Recovery) {
   actor(adminId); // Lookup is independent of current write grants.
-  remember({ ...original, ticket: undefined, absent: false });
+  // A failed read does not undo an earlier authoritative pending observation.
+  remember({ ...original, absent: false });
   const ticket = await fetchA2ProposalByKey(original.commandKey, true, true);
   if (!ticket) {
     remember({ ...original, ticket: undefined, absent: true });
