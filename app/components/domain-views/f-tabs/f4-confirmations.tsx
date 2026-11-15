@@ -102,7 +102,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     },
     completionCopy: approvalCopy("F4 资金权限"),
     coverageLead: "这次结算按算出的金额真实发钱",
-    coverageCheck: "后端执行这次结算时不检查兑付覆盖率。下面是确认框打开时记下的覆盖率，后端没读到时也是 0，请自己判断。",
+    coverageCheck: "执行这次结算时不检查兑付覆盖率，请按这里的数自己判断。",
     facts: <Facts>
       <Fact k={settled ? "本周已结算（实发）" : "本周池（估算）"} lead tone="role-1" unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
       <Fact k="有资格分的人">{count(data.participantCount)} 人（{unlockLabel}且有票）</Fact>
@@ -232,11 +232,11 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     title: "发放总榜奖励", effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: "批准后按执行那一刻的总榜，把总榜奖池按名次分给累计已解锁奖励最多的前 100 名（不足 100 名按实际人数），作为已解锁的 USDT 奖励真实入账。",
-      check: "总榜成功派过一次后再执行不会再发；奖池为 0 或没有人上榜时不发钱。后端执行时不检查兑付覆盖率。",
+      check: "总榜成功派过一次后再执行不会再发；奖池为 0 或没有人上榜时不发钱。执行时不检查兑付覆盖率。",
     },
     completionCopy: approvalCopy("F4 资金权限"),
     coverageLead: "这次派奖按算出的金额真实发钱",
-    coverageCheck: "后端执行这次派奖时不检查兑付覆盖率。下面是确认框打开时记下的覆盖率，后端没读到时也是 0，请自己判断。",
+    coverageCheck: "执行这次派奖时不检查兑付覆盖率，请按这里的数自己判断。",
     facts: <Facts>
       <Fact k="总榜奖池" lead tone="role-1" unit={ppAllTime === "" ? undefined : "USDT"}>{prizeShown(ppAllTime)}</Fact>
       <Fact k="每个名次发多少">按名次分份数：第 1 名 N 份，往后每名少 1 份，最后一名 1 份；N 是上榜人数</Fact>
@@ -346,7 +346,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       },
       completionCopy: "提交后由另一位管理员在「操作记录与审批」批准才生效。批准人需有大使最终批准权限和审批权限，不能核验过这一版材料，也不能是你自己。",
       coverageLead: "批准会开通一笔预算额度",
-      coverageCheck: "批准执行时检查兑付覆盖率；下面的覆盖率后端没读到时也是 0。",
+      coverageCheck: "批准执行时还会检查兑付覆盖率，读不到也不执行。",
       facts: <Facts>
         <Fact k="申请金额" lead tone="role-1" unit="USDT">{decimalText(packet!.budgetUsdt)}</Fact>
         <Fact k="认可金额">{packet!.financeReview.recognizedBudgetUsdt == null ? "尚未认可" : `${decimalText(packet!.financeReview.recognizedBudgetUsdt)} USDT`}</Fact>

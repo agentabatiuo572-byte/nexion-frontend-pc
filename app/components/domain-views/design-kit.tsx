@@ -3823,7 +3823,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   // F4 preserves the backend's raw ratio gate; ambassador budget checks also require reliability.
   const coverageUnknown = coverageReliable === false;
   const covBlocked = Boolean(effectiveAmplifies && ((coverage && coverage.coverageRatio < coverage.redlinePct) || (coverageUnknown && coverageUnavailableBlocks)));
-  const coverageBlockText = coverageUnknown ? "兑付覆盖率暂时读不到" : "兑付覆盖率低于红线，暂时无法提交";
+  const coverageBlockText = coverageUnknown ? "兑付覆盖率暂时读不到，读到之前不能提交" : "兑付覆盖率低于红线，暂时无法提交";
   const coverageRatioText = coverageUnknown || !coverage ? "—" : fmtPct(coverage.coverageRatio);
   const coverageRedlineText = coverageUnknown || !coverage ? "—" : fmtConfigPct(coverage.redlinePct);
   // 改版页面里的整组审批（不带自定标题、不是内嵌审批）和直接生效的框一个样子：生效方式是标题下的标签，
@@ -3978,10 +3978,10 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     surface ? <div className="rd-confirm-funding">
       <RdNotice tone={covBlocked ? "danger" : "warn"} title={<>{coverageLead}{!coverage && auditSink !== "local-history" && <Explain label="什么时候检查" content={checkCopy} />}</>}>
         {(coverage || coverageUnknown) && <div className="rd-funding-coverage">
-          兑付覆盖率 <b>{coverageRatioText}</b>，红线 <b>{coverageRedlineText}</b>
+          兑付覆盖率 <b>{coverageRatioText}</b>，红线 <b>{coverageRedlineText}</b>{coverageUnknown && "，暂时读不到"}
           <Explain label="这项操作对资金的影响" content={<><p>{checkCopy}</p>{coverage?.healthyPct !== undefined && !coverageUnknown && <p>健康线 {fmtConfigPct(coverage.healthyPct)}。</p>}</>} />
         </div>}
-        {covBlocked && <p>{coverageUnknown ? coverageBlockText : <>{checkCopy}低于红线，暂时无法提交。</>}</p>}
+        {covBlocked && <p>{coverageUnknown ? "读到之前不能提交。" : <>{checkCopy}低于红线，暂时无法提交。</>}</p>}
         {!coverage && auditSink === "local-history" && <p>{checkCopy}本页暂不自动检查覆盖率，请自行确认资金影响。</p>}
       </RdNotice>
     </div> : <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
@@ -4060,14 +4060,14 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
             {!approval.heading && <>
               <div>{completionCopy}</div>
               <div>{approval.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。"}{covBlocked && `${coverageBlockText}。`}</div>
-              {(coverage || coverageUnknown) && <div>兑付覆盖率 <b className="mono">{coverageRatioText}</b> · 红线 <span className="mono">{coverageRedlineText}</span></div>}
+              {(coverage || coverageUnknown) && <div>兑付覆盖率 <b className="mono">{coverageRatioText}</b> · 红线 <span className="mono">{coverageRedlineText}</span>{coverageUnknown && !covBlocked && " · 暂时读不到"}</div>}
             </>}
             {approval.disabledReason && <div role="status">{approval.disabledReason}</div>}
           </div>
         </div>
         {approval.heading ? <>
           <p style={{ margin: "0 0 14px", lineHeight: 1.5 }}>{completionCopy}</p>
-          {(coverage || coverageUnknown) && <p className="operation-approval-coverage">兑付覆盖率 <b>{coverageRatioText}</b> · 红线 <b>{coverageRedlineText}</b></p>}
+          {(coverage || coverageUnknown) && <p className="operation-approval-coverage">兑付覆盖率 <b>{coverageRatioText}</b> · 红线 <b>{coverageRedlineText}</b>{coverageUnknown && (covBlocked ? " · 暂时读不到，读到之前不能提交" : " · 暂时读不到")}</p>}
           {approval.comparison}
         </> : !compareEdit && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
         {(approval.heading || compareEdit) && effectiveStatedBrief && <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} auditSink={auditSink} kind={effectiveBriefKind} stated={effectiveStatedBrief} />}
