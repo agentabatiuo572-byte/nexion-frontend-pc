@@ -24,6 +24,7 @@ import { readL1LiveTotals } from "./l1-l2-live-data";
 import { L1LiveTotals } from "./l1-l2-live-fallback";
 import type { LCtx } from "./types";
 import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, isLOutcomeUnknownError, type L1KpiQuery, type LReportCreateInput } from "@/lib/admin/l-client";
+import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-kpi-contract";
 import { L1_EXPORT_RECIPIENT, l1ReportInput, resolveL1ExportMode, resolveL1ExportUnavailableReason, type L1ExportMode, type L1ExportSource } from "./l1-export-contract";
@@ -154,7 +155,7 @@ function queryScope(query: L1KpiQuery) {
   return [time, ...SLICES.filter((key) => query[key]).map((key) => `${SLICE_NAME[key]} ${query[key]}`)].join("，");
 }
 
-type L1PendingExport = PendingMutationRecord & { label: string; mode: L1ExportMode; input: LReportCreateInput; reason: string };
+type L1PendingExport = PendingMutationRecord & { label: string; mode: L1ExportMode; input: LReportCreateInput; reason: string; commandOrigin?: FundCommandOrigin };
 
 const EXPORT_SCOPE = "l1-export";
 const EXPORT_PAGE = "/analytics/export";
@@ -168,7 +169,7 @@ const pendingExports = createPendingMutationStore<L1PendingExport>({
 });
 
 /** 导出的全部状态：按钮、确认框、待确认条、成功条。写法同提现审核的 sendCommand、retryPending、releasePending。 */
-function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
+function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, reread: () => void) {
   const reach = useReach();
   const [pending, setPending] = useState<L1PendingExport | null>(null);
   const [retrying, setRetrying] = useState(false);
@@ -196,7 +197,8 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     if (!createReport) throw new Error("关键指标暂时不能导出，请刷新后再试");
     const retained = pendingExports.get(EXPORT_SCOPE);
     const key = retained ?? `l1-export-${crypto.randomUUID()}`;
-    pendingExports.remember(EXPORT_SCOPE, key, { label, mode, input, reason });
+    const original = pendingExports.list().find(record => record.commandKey === key);
+    pendingExports.remember(EXPORT_SCOPE, key, { label, mode, input, reason, commandOrigin: retained ? original?.commandOrigin : fundCommandOrigin("POST", "/api/admin/bi/reports", "bi_l1_read") });
     if (!pendingExports.isDurablyStored(EXPORT_SCOPE, key)) {
       pendingExports.forget(EXPORT_SCOPE, key);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
@@ -273,19 +275,32 @@ function useL1Export(ctx: LCtx, source?: L1ExportSource | null) {
     }
   };
 
-  /** 只放开这页的锁，不发请求，不写操作记录。 */
-  const release = (record: L1PendingExport) => {
-    pendingExports.forget(record.fingerprint, record.commandKey);
-    syncPending();
-    setRetryRejected(false);
-    setRetryNote("");
-    setReleasing(false);
-    ctx.toast("已移除本地待确认记录，后端结果和锁定状态不变", "success");
+  const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
+  const checkInvestigation = async (record: L1PendingExport, evidence?: FundCommandEvidence) => {
+    setRetrying(true);
+    try {
+      const receipt = await checkFundCommand(record, evidence);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { receipt } }));
+      if (fundCommandSettled(receipt)) {
+        pendingExports.forget(record.fingerprint, record.commandKey);
+        syncPending();
+        setRetryRejected(false); setRetryNote("");
+        reread();
+      } else if (!receipt) setRetryNote(displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED")));
+      return receipt;
+    } catch (cause) {
+      const error = displayAdminError(cause);
+      setInvestigationResults(current => ({ ...current, [record.commandKey]: { error } }));
+      setRetryNote(error);
+      throw cause;
+    } finally { setRetrying(false); }
   };
+  const release = (record: L1PendingExport) => { setReleasing(false); void checkInvestigation(record).catch(() => undefined); };
 
   const expired = pending ? pending.expiresAt <= Date.now() : false;
 
   return {
+    investigation: { check: checkInvestigation, results: investigationResults, access: pending ? fundInvestigationAccess(pending) : null },
     button: ctx.canExport ? (<>
       <Button
         icon={<Download size={14} aria-hidden />}
@@ -371,7 +386,7 @@ function OffsetModal({ current, onApply, onClose }: { current: number; onApply: 
 
 export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LCtx; onExportSource?: (source: L1ExportSource) => void; source?: L1ExportSource | null; title: ReactNode; summary: string }) {
   const reach = useReach();
-  const exporting = useL1Export(ctx, source);
+  const exporting = useL1Export(ctx, source, () => retryFirstRead());
   const [picked, setPicked] = useState<number | null>(null); // 没点过时跟着排在最前的那一项
   const [ylOffset, setYlOffset] = useState(10);
   const [phaseOn, setPhaseOn] = useState(true);
