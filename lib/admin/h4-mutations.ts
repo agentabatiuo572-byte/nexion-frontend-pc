@@ -301,12 +301,12 @@ export async function h4CommandRequest(path: string, init: Omit<Direct, "path">,
       : { guardKey: key, guardLabel: body.guardLabel, guardValue: body.guardValue, note: body.note ?? "" };
     const on = (v: string) => ["1", "true", "on", "enabled", "open", "开"].includes(v.trim().toLowerCase());
     const number = (v: string) => Number(v.replace(/[$,\s]/g, ""));
-    approval = key === "kill" ? on(body.value ?? body.guardValue) && (!parts[3] || !on(body.expectedValue))
-      : key === "budget" && number(body.value ?? body.guardValue) > (parts[3] ? number(body.expectedValue) : 0);
+    approval = approval || (key === "kill" ? on(body.value ?? body.guardValue) && (!parts[3] || !on(body.expectedValue))
+      : key === "budget" && number(body.value ?? body.guardValue) > (parts[3] ? number(body.expectedValue) : 0));
   } else if (parts[2] === "events" && ["reward", "status"].includes(parts[4])) {
     op = parts[4] === "reward" ? "h4_legacy_event_reward_update" : body.value === "ongoing" ? "h4_legacy_event_open" : undefined;
     values = { eventCode: parts[3], value: body.value, expectedValue: body.expectedValue };
-    if (op === "h4_legacy_event_open") {
+    if (op === "h4_legacy_event_open" && !approval) {
       const preview = await growthRequest<{ approvalRequired: boolean }>(`${path}/preview`, { method: "POST", body: init.body });
       if (!preview || typeof preview.approvalRequired !== "boolean") throw new Error("H4_RESPONSE_INVALID");
       approval = preview.approvalRequired;
@@ -323,7 +323,10 @@ export async function h4CommandRequest(path: string, init: Omit<Direct, "path">,
       operator: actor.operator || actor.username, operatorRole: roleLabel(actor.role), type: def.type, amplifies: true, sos: false, roleGate: def.gateLabel,
       reason: body.reason, sourceDomain: "H4", command: def.buildCommand(values), target });
   };
-  if (approval && op) return propose();
+  if (approval) {
+    if (!op) throw new Error("H4_APPROVAL_REQUIRED");
+    return propose();
+  }
   const now = Date.now();
   try {
     return await send({ store: "direct", owner: actor.adminId, scope, fingerprint: `${actor.adminId}:${scope}`, commandKey: createA2CommandKey("h4-direct"),
