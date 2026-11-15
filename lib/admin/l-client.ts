@@ -828,9 +828,11 @@ async function regulatoryRequest<T>(path: string, init?: RequestInit): Promise<T
   let raw: unknown;
   try {
     raw = await response.json();
-  } catch (error) {
+  } catch {
     if (creating && response.ok) throw new LOutcomeUnknownError();
-    throw error;
+    throw Object.assign(new Error(formatAdminApiError(undefined, `REGULATORY_API_${response.status}`)), {
+      status: response.status,
+    });
   }
   const payload = rec(raw) as ApiResult<T>;
   if (creating && (isIdempotencyOutcomeOpen(payload.message)
