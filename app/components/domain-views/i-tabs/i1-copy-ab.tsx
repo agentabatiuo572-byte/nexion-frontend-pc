@@ -180,7 +180,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const [focusExp, setFocusExp] = useState<string | null>(null);
   const [reloading, setReloading] = useState(false);
   const data = content.copyAb;
-  const conflictReview = useIConflictReview<CopyAbOverview, { reason: string; value?: string; form?: Record<string, string> }>();
+  const conflictReview = useIConflictReview<CopyAbOverview, { reason: string; value?: string; form?: Record<string, string> }, I1Command>();
   const reviewConflict = (error: unknown, reason: string, value?: string, form?: Record<string, string>) =>
     conflictReview.reject(error, { reason, value, form }, async () => {
       const latest = await fetchI1CopyOverview();
@@ -832,7 +832,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
   const conflictUi = (() => {
     const conflict = conflictReview.review;
     if (!conflict) return null;
-    const original = (conflict.rejectedCommand as I1Command | undefined)?.original;
+    const original = conflict.rejectedCommand?.original;
     const path = original?.path ?? "";
     let body: Record<string, unknown> = {};
     try { body = original ? JSON.parse(original.body) as Record<string, unknown> : {}; } catch { body = {}; }

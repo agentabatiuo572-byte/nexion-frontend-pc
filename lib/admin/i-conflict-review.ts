@@ -25,10 +25,10 @@ export function isIConflictRejection(error: unknown): boolean {
   return CONFLICTS.has(failure.reasonCode ?? failure.backendMessage ?? "");
 }
 
-export type IConflictReview<Latest, Input> = {
+export type IConflictReview<Latest, Input, Command = unknown> = {
   requested: Input;
   /** Complete rejected command, including the original body/reason and opening snapshot where available. */
-  rejectedCommand: unknown;
+  rejectedCommand?: Command;
   rejection: string;
   latest?: Latest;
   reading: boolean;
@@ -36,11 +36,11 @@ export type IConflictReview<Latest, Input> = {
 };
 
 /** Logic only: the page must show latest against requested before calling confirm to rebuild its editor. */
-export function useIConflictReview<Latest, Input>() {
-  const [review, setReview] = useState<IConflictReview<Latest, Input> | null>(null);
+export function useIConflictReview<Latest, Input, Command = unknown>() {
+  const [review, setReview] = useState<IConflictReview<Latest, Input, Command> | null>(null);
   const current = useRef(review);
   const reader = useRef<(() => Promise<Latest>) | null>(null);
-  const publish = (next: IConflictReview<Latest, Input> | null) => { current.current = next; setReview(next); };
+  const publish = (next: IConflictReview<Latest, Input, Command> | null) => { current.current = next; setReview(next); };
   const reread = async () => {
     const previous = current.current;
     if (!previous || !reader.current) return;
@@ -57,14 +57,14 @@ export function useIConflictReview<Latest, Input>() {
     reject: async (error: unknown, requested: Input, read: () => Promise<Latest>) => {
       if (!isIConflictRejection(error)) return false;
       reader.current = read;
-      publish({ requested, rejectedCommand: (error as { rejectedCommand?: unknown }).rejectedCommand,
+      publish({ requested, rejectedCommand: (error as { rejectedCommand?: Command }).rejectedCommand,
         rejection: displayAdminError(error), reading: true });
       await reread();
       return true;
     },
     reread,
     /** Call only from the operator's explicit review; rebuild all facts and CAS fields together, never retry the old closure. */
-    confirm: (reviewed: IConflictReview<Latest, Input>, rebuild: (requested: Input, latest: Latest) => void) => {
+    confirm: (reviewed: IConflictReview<Latest, Input, Command>, rebuild: (requested: Input, latest: Latest) => void) => {
       if (current.current !== reviewed || reviewed.reading || reviewed.readError || reviewed.latest === undefined) return false;
       rebuild(reviewed.requested, reviewed.latest);
       publish(null);

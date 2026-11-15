@@ -165,7 +165,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const conflictReview = useIConflictReview<NotificationCampaignOverview, {
     reason: string; value?: string; business?: Record<string, string>; form?: NewForm;
     editing?: CampaignRow | null; scheduleRow?: CampaignRow | null; scheduledAt?: string;
-  }>();
+  }, I3Command | I3CapCommand>();
   const conflictView = useIConflictView(conflictReview.review);
   /** 核对冲突后重开确认框时带回的理由和新值，只给紧接着打开的那一个框用。 */
   const prefill = useRef<{ reason: string; value?: string } | null>(null);
@@ -493,10 +493,12 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     const conflict = conflictReview.review;
     if (!conflict) return null;
     const requested = conflict.requested;
-    const rejected = conflict.rejectedCommand as { original?: { method: string; path: string; body: string }; tier?: string; before?: string; after?: string } | undefined;
+    const rejected = conflict.rejectedCommand;
+    const campaignCommand = rejected && "target" in rejected ? rejected : undefined;
+    const capCommand = rejected && "tier" in rejected ? rejected : undefined;
     const latestRows = conflict.latest?.campaigns ?? [];
     const ready = !!conflict.latest;
-    const path = rejected?.original?.path ?? "";
+    const path = campaignCommand?.original?.path ?? "";
     let subject: ReactNode = "这一项";
     let rows: IConflictRow[] = [];
     let columns: [string, string] = ["你打开时", "现在"];
@@ -506,16 +508,16 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     let rebuild: (() => void) | undefined;
     const reopen = (task: () => void, value?: string) => () => { prefill.current = { reason: requested.reason, value }; task(); prefill.current = null; };
     const stateText = (row?: { status?: string; st?: string; schedule: string }) => row ? `${STATUS_TEXT[(row.status ?? row.st) as CampaignRow["st"]] ?? "状态未知"}${row.schedule ? ` · ${row.schedule}` : ""}` : "没有了";
-    const campaignId = requested.editing?.id ?? requested.scheduleRow?.id ?? decodeURIComponent(path.split("/")[2] ?? "");
+    const campaignId = requested.editing?.id ?? requested.scheduleRow?.id ?? campaignCommand?.target ?? "";
     const now = latestRows.find((row) => row.id === campaignId);
     const live = CAMPAIGNS.find((row) => row.id === campaignId);
-    if (rejected?.tier) {
-      const tier = rejected.tier as TierK;
+    if (capCommand) {
+      const tier = capCommand.tier as TierK;
       const capRow = (conflict.latest?.capRules ?? []).find((row) => row.tier === tier);
       subject = <>{TIER[tier]?.label ?? tier}优先级保留上限</>;
-      rows = [conflictRow("上限", rejected.before ? `${rejected.before} 条` : "—", capRow?.cap)];
-      note = <>你填的新上限 {rejected.after} 条会带回确认框。</>;
-      rebuild = capRow ? reopen(() => adjustCap(tier, capRow.cap), rejected.after) : undefined;
+      rows = [conflictRow("上限", capCommand.before ? `${capCommand.before} 条` : "—", capRow?.cap)];
+      note = <>你填的新上限 {capCommand.after} 条会带回确认框。</>;
+      rebuild = capRow ? reopen(() => adjustCap(tier, capRow.cap), capCommand.after) : undefined;
       if (ready && !capRow) gone = "这一档在最新读取里没有了。";
     } else {
       subject = <>通知 <span data-mono="">{campaignId || "—"}</span></>;
@@ -546,7 +548,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         rows[0].changed = true;
         rebuild = path.endsWith("/send-now") ? reopen(() => sendNow(live))
           : path.endsWith("/cancel") ? () => cancelScheduled(live)
-            : rejected?.original?.method === "DELETE" ? () => deleteDraft(live) : undefined;
+            : campaignCommand?.original?.method === "DELETE" ? () => deleteDraft(live) : undefined;
         if (!path.endsWith("/send-now") && rebuild) note = "这个确认框带不回理由，重新打开后再填一次。";
       }
     }

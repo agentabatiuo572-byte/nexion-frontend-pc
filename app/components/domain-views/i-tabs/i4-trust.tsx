@@ -107,8 +107,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const [refreshing, setRefreshing] = useState(false);
   const data = content.trustDisclosure;
   const conflictReview = useIConflictReview<TrustDisclosureOverview, {
-    draftEditor?: DraftEditor | null; reason: string; value?: string; form?: Record<string, string>;
-  }>();
+    sectionKey?: string; draftEditor?: DraftEditor | null; reason: string; value?: string; form?: Record<string, string>;
+  }, I4DraftCommand | I4SectionCommand>();
   const reviewConflict = (error: unknown, requested: NonNullable<typeof conflictReview.review>["requested"]) =>
     conflictReview.reject(error, requested, async () => {
       const latest = await fetchI4TrustOverview();
@@ -249,7 +249,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           const retained = saved();
           if (retained) throw new OutcomeUnknownError("request" in retained && retained.receiptKnown
             ? "申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。" : "结果未知，请查询原结果或按原请求重试。");
-          if (await reviewConflict(error, { reason, value, form })) ctx.closeActionConfirm();
+          if (await reviewConflict(error, { sectionKey: key, reason, value, form })) ctx.closeActionConfirm();
           throw new Error(`提交失败：${displayAdminError(error)}`);
         }
         finally { originalKey = saved()?.commandKey; syncCommands(); }
@@ -705,9 +705,9 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     const conflict = conflictReview.review;
     if (!conflict) return null;
     const latestData = conflict.latest;
-    const rejected = conflict.rejectedCommand as Partial<I4DraftCommand> & Partial<I4SectionCommand> | undefined;
+    const rejected = conflict.rejectedCommand;
     const editorAtReject = conflict.requested.draftEditor;
-    const key = editorAtReject?.sectionKey ?? rejected?.sectionKey ?? "";
+    const key = conflict.requested.sectionKey ?? editorAtReject?.sectionKey ?? rejected?.sectionKey ?? "";
     const nowSection = latestData?.trustSections.find((row) => row.key === key);
     const section = TRUST_SECTIONS.find((row) => row.key === key);
     const nowCurrent = latestData?.trustSectionVersions.find((row) => row.sectionKey === key && row.version === nowSection?.version);
@@ -747,7 +747,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       if (!gone && latestData && nowDraft?.status.toLowerCase() !== "draft") gone = `${rejected.version ?? ""} 已经不是草稿了（被删除或已发布）。`;
       rows = [conflictRow("草稿最近保存", saved(rejected.snapshot ?? undefined), saved(nowDraft)), conflictRow("字段", `${rejected.snapshot?.fields.length ?? "—"} 个`, `${nowDraft?.fields.length ?? "—"} 个`)];
       rebuild = nowDraft ? () => { carry(); deleteSectionDraft(nowDraft); } : undefined;
-    } else if (rejected?.action) {
+    } else if (rejected && "before" in rejected) {
       const snap = rejected.snapshot;
       rows = [{ label: "版块", left: snap ? state(snap.section) : rejected.before ?? "—", right: state(nowSection), changed: !!snap && state(snap.section) !== state(nowSection) }];
       const target = rejected.action === "publish" ? latestData?.trustSectionVersions.find((row) => row.sectionKey === key && row.version === rejected.after) : undefined;
