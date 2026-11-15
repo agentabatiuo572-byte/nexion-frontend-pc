@@ -379,7 +379,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         <Fact k="编号"><span data-mono="">{c.id}</span></Fact>
       </Facts>
     ),
-    statedBrief: { impact: "从列表里删掉这条活动；它没有发出过，用户手里的通知不受影响。", check: "后端保留记录用于操作记录，页面上没有恢复入口；要再发就新建一条。" },
+    statedBrief: { impact: "从列表里删掉这条活动；它没有发出过，用户手里的通知不受影响。", check: "删除后页面上不能恢复，操作记录里还查得到；要再发就新建一条。" },
     confirmTone: "danger",
     reasonPlaceholder: "例如：重复建了一条、内容作废",
     reason: true,
@@ -746,7 +746,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     ...pendingCaps.filter((row) => row.ticketStatus !== "pending").map((row) => ({ key: row.commandKey, name: "调整通知保留数量", object: `${TIER[row.tier as TierK].label}优先级`,
       change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt, expired: isRetryExpired(row), submitted: !!row.receiptKnown,
       note: absentCaps[row.commandKey]
-        ? `后端按原请求查不到这张审批单，说明没建成；${isRetryExpired(row) ? "可以确认解除。" : "24 小时内可以按原请求重试。"}`
+        ? `按原请求查不到这张审批单，说明没建成；${isRetryExpired(row) ? "可以确认解除。" : "24 小时内可以按原请求重试。"}`
         : row.receiptKnown ? "审批单已建，批没批准还没查到；点「查询原结果」看当前状态。" : undefined,
       actions: <>
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button>
@@ -838,7 +838,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       {conflictUi}
       <I3PendingCapNotice rows={pendingCapRows} link={auditReachable ? <Link className="rd-link" href={AUDIT_HREF} prefetch={false}>到操作记录与审批看</Link> : undefined} />
       {releasing && <ReleaseModal label={`调整${TIER[releasing.tier as TierK].label}优先级保留上限 · ${releasing.before} → ${releasing.after} 条`}
-        explain="原申请超过 24 小时，后端按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
+        explain="原申请超过 24 小时，按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
         onCancel={() => setReleasing(null)} onConfirm={() => void releaseCap(releasing)} />}
       {!data ? contentLoading ? <BlockState state="loading" title="通知活动加载中…" /> : <BlockState state="error" title="通知活动读取失败" detail={errorText ?? "暂时读不到，请稍后重试。"} onRetry={() => void actions.reloadIContent()} /> : <>
       {conclusion}
@@ -1002,7 +1002,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             <Fact k="优先级" tone={scheduleRow.tier === "critical" ? "danger" : undefined}>{`${I3_TIER_STATE[scheduleRow.tier][0]}${scheduleRow.tier === "critical" ? "（不看用户的通知设置）" : ""}`}</Fact>
             <Fact k="能不能撤">发出前可以取消，取消后不能再排期；发出后撤不回</Fact>
           </Facts>
-          {scheduleRow.reach.trim() === "0" && <Notice tone="warn">保存时估算是 0 人。排期时后端会重新估算，还是 0 人会被拒绝。</Notice>}
+          {scheduleRow.reach.trim() === "0" && <Notice tone="warn">保存时估算是 0 人。排期时会重新估算，还是 0 人就排不上。</Notice>}
           <Field label={`发送时间（${businessZone().label}）`} required help="要晚于现在。到点后自动发出，排队多时会晚；按那时符合条件的用户发送。">
             {(control) => <Input {...control} disabled={!!schedulePendingKey} type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />}
           </Field>
@@ -1047,7 +1047,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
                 ]} />
               </div>
               <NotificationPreview lang={detailLang} title={lang.title} body={lang.body} ctaLabel={c.ctaHref ? (c.ctaLabel || ctaLabelOf(c.ctaHref)) : ""} tier={c.tier} kindLabel={kindLabel(c.kind)}
-                missing={detailLang === "en" && enMissing} fallback="英语没填：英语用户收到后端默认的英文；其他语言有译文用译文，没有也用默认英文。" />
+                missing={detailLang === "en" && enMissing} fallback="英语没填：英语用户收到系统默认的英文；其他语言有译文用译文，没有也用默认英文。" />
             </section>
             <Facts>
               <Fact k="送达 / 已读">{c.st === "sent" ? `${quantityText(c.sent)} / ${quantityText(c.read)}` : "—"}</Fact>
@@ -1089,7 +1089,7 @@ function capPreview(tier: TierK, now: string, value: string): ReactNode {
   const name = `${TIER[tier].label}优先级`;
   if (next < current) return `调低到 ${next} 条：批准执行时，每位用户的${name}通知只留最新 ${next} 条，多出的立刻删除，未读的也删。会删多少条这页读不到。`;
   if (next > current) return `调高到 ${next} 条：以后每位用户多留一些；已经删掉的不会恢复。`;
-  return "和现在一样，后端会拒绝。";
+  return "和现在一样，提交会被拒绝。";
 }
 
 type FormProps = {
@@ -1174,7 +1174,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
 
           <section className="i3-form-section" aria-labelledby="i3-f-text">
             <div className="i3-form-head">
-              <h3 id="i3-f-text" className="i3-sub-title">通知内容<Explain label="字数怎么算" content="这里按字符数。保存上限（标题 160、正文 4000）后端另按长度算，表情等特殊字符算 2 个，可能没到上限就被拒。" /></h3>
+              <h3 id="i3-f-text" className="i3-sub-title">通知内容<Explain label="字数怎么算" content="这里按字符数。保存上限（标题 160、正文 4000）另按长度算，表情等特殊字符算 2 个，可能没到上限就被拒。" /></h3>
               <LocaleTabs label="内容语言" value={lang} onChange={setLang} items={[
                 { value: "zh", label: "中文", missing: langMissing("zh") },
                 { value: "vi", label: "越南语", missing: langMissing("vi") },
@@ -1184,7 +1184,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
             <Field label={`${LANG_NAME[lang]}标题`} required={required} help={lengthHelp(titleLen, TITLE_SENT, SAVE_TITLE_MAX) ?? `${titleLen}/${TITLE_SENT} 字，App 收到前 ${TITLE_SENT} 字`}>
               {(control) => <Input {...control} disabled={frozen} value={title} placeholder={lang === "vi" ? "Dòng đầu tiên" : lang === "en" ? "First line in the list" : "通知列表里的第一行"} onChange={(e) => set(TITLE_KEY[lang], e.target.value)} />}
             </Field>
-            <Field label={`${LANG_NAME[lang]}正文`} required={required} help={lengthHelp(bodyLen, BODY_SENT, SAVE_BODY_MAX) ?? (lang === "en" && enEmpty ? "不填时英语用户收到后端默认的英文；只填标题或正文时，缺的那部分用默认。" : "{name} 这类占位符三种语言要一致。")}>
+            <Field label={`${LANG_NAME[lang]}正文`} required={required} help={lengthHelp(bodyLen, BODY_SENT, SAVE_BODY_MAX) ?? (lang === "en" && enEmpty ? "不填时英语用户收到系统默认的英文；只填标题或正文时，缺的那部分用默认。" : "{name} 这类占位符三种语言要一致。")}>
               {(control) => <Textarea {...control} disabled={frozen} rows={6} value={body} count={`${bodyLen}/${BODY_SENT}`} placeholder={lang === "vi" ? "Nội dung thông báo" : lang === "en" ? "Notification body" : "点开后看到的正文"} onChange={(e) => set(BODY_KEY[lang], e.target.value)} />}
             </Field>
           </section>
@@ -1245,7 +1245,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, submitting,
             <span className="i3-weak">{LANG_NAME[lang]}</span>
           </div>
           <NotificationPreview lang={lang} title={title.trim()} body={body.trim()} ctaLabel={selectedCta?.value ? selectedCta.label : ""} tier={form.tier} kindLabel={kindLabel(form.kind)}
-            missing={lang === "en" && enEmpty} fallback="英语没填：英语用户收到后端默认的英文；其他语言有译文用译文，没有也用默认英文。" />
+            missing={lang === "en" && enEmpty} fallback="英语没填：英语用户收到系统默认的英文；其他语言有译文用译文，没有也用默认英文。" />
           <p className="i3-weak">示意图，实际样式以 App 为准。</p>
         </aside>
       </div>

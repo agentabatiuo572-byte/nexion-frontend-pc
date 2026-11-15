@@ -193,7 +193,7 @@ export function CapCard({ tier, cap, policy, locked, pending, action }: { tier: 
     <div className="i3-cap" data-tier={tier}>
       <div className="i3-cap-head">
         <TierTag tier={tier} />
-        {locked && <StatusTag tone="neutral" icon={Lock} explain="后端把这一档锁定了，不能调整。">锁定</StatusTag>}
+        {locked && <StatusTag tone="neutral" icon={Lock} explain="这一档是固定的，不能调整。">锁定</StatusTag>}
         {pending && <StatusTag tone="progress" icon={Hourglass} explain="批准前上限不变。">{`等批准 → ${pending}`}</StatusTag>}
       </div>
       <div className="i3-cap-value">

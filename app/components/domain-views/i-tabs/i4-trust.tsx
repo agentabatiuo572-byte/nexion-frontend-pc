@@ -630,7 +630,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       const ticket = await queryI4SectionCommand(record);
       if (!ticket && isRetryExpired(record)) setSectionNotFound(keys => keys.includes(record.commandKey) ? keys : [...keys, record.commandKey]);
       toast(ticket ? ticket.status === "pending" ? "已提交，等待审批后执行" : `原申请${statusZh(ticket.status)}`
-        : isRetryExpired(record) ? "后端按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" : "还没查到原审批单，记录继续保留。");
+        : isRetryExpired(record) ? "按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" : "还没查到原审批单，记录继续保留。");
       if (ticket && ticket.status !== "pending") await rereadAfterResolution();
     } catch (error) { toast(displayAdminError(error)); }
     finally { inFlight.current = false; setRecovering(null); syncCommands(); }
@@ -674,7 +674,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         name: `${sectionName(record.sectionKey)} · ${{ publish: "提交发布", rollback: "回滚历史版", archive: "下架" }[record.action]}`,
         change: `${record.before} → ${record.after === "archived" ? "已下架" : record.after}`, submittedAt: timeText(new Date(record.createdAt).toISOString()),
         tag: pending ? <StatusTag tone="progress" icon={Hourglass}>等另一位批准</StatusTag> : record.receiptKnown ? <StatusTag tone="neutral" icon={Hourglass}>已提交，状态未查到</StatusTag> : unknownTag(),
-        note: releasable ? "后端按原请求查不到这张审批单，说明没建成；核对后可以确认解除。"
+        note: releasable ? "按原请求查不到这张审批单，说明没建成；核对后可以确认解除。"
           : !pending && record.receiptKnown ? "审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。" : undefined,
         actions: <><Button size="sm" loading={recovering === record.commandKey} onClick={() => void recoverSection(record)}>查询原结果</Button>
           {releasable && <Button size="sm" variant="primary" onClick={() => setReleasingSection(record)}>确认解除</Button>}
@@ -689,7 +689,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     finally { setSectionNotFound(keys => keys.filter(key => key !== record.commandKey)); syncCommands(); }
   };
   const releaseModal = releasingSection && <ReleaseModal label={`${sectionName(releasingSection.sectionKey)} · ${{ publish: "提交发布", rollback: "回滚历史版", archive: "下架" }[releasingSection.action]} · ${releasingSection.before} → ${releasingSection.after === "archived" ? "已下架" : releasingSection.after}`}
-    explain="原申请超过 24 小时，后端按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
+    explain="原申请超过 24 小时，按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
     onCancel={() => setReleasingSection(null)} onConfirm={() => void releaseSection(releasingSection)} />;
 
   /* ---------- 刚被别人改过：看最新的和自己填的，确认后按最新的重建编辑器或确认框 ---------- */
@@ -935,7 +935,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       <Panel title="用户现在看到的" icon={LayoutList} tone="role-2" sub={`受管 ${I4_STATS.managedSections} 个 · 公开中 ${publicCount} 个`}
         explain="按 App 合同里的顺序排。卡里是现在公开的中文内容；点卡片看三种语言、历史版本和草稿。">
         {cards.length === 0
-          ? <BlockState state="empty" title="没有读到信任版块" detail="后端没有返回版块，这页不补示例内容。" />
+          ? <BlockState state="empty" title="没有读到信任版块" detail="没有读到版块，这页不补示例内容。" />
           : <div className="i4-cards">{cards.map((card) => <SectionCard key={card.key} card={card} />)}</div>}
       </Panel>
 

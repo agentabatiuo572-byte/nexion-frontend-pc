@@ -688,7 +688,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     try { target = (await actions.fetchI7CourseVersions(c.id)).find(row => row.status === "DRAFT")
       ?? latest.current.content.i18nLearning?.courses.find(row => row.id === c.id); }
     catch (error) { toast(displayAdminError(error), "warn"); return; }
-    if (!target) { toast("目标课程版本读不到，请重新读取版本列表后核对。", "warn"); return; }
+    if (!target) { toast("这门课没读到，请刷新后再核对。", "warn"); return; }
     const rawReward = "payload" in target ? target.payload.rewardNex : target.rewardNex;
     if (i6Amount(rawReward) === undefined) { toast("目标版本奖励读不到，本次未提交；请重新读取课程版本后核对。", "warn"); return; }
     const reward = Number(rawReward);
@@ -771,7 +771,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     });
   };
 
-  const archiveProblem = (c: Course) => c.featured || liveFeatured() === c.id ? "这门是首页推荐课，后端不允许下架，先换推荐课。" : undefined;
+  const archiveProblem = (c: Course) => c.featured || liveFeatured() === c.id ? "这门是首页推荐课，不能下架，先换推荐课。" : undefined;
   const archiveCrs = (c: Course) => {
     const blocked = archiveProblem(c);
     if (blocked) { toast(blocked, "warn"); return; }
@@ -789,12 +789,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       confirmTone: "danger",
       facts: <div className="rd-stack">
         <Facts><Fact k="课程">{nexGridBrandText(c.title)} · {c.v}</Fact><Fact k="状态"><Change from="在线" to="已下架" /></Fact></Facts>
-        {liveFeatured() === c.id && <Notice tone="warn">这门是首页推荐课，后端不允许下架，先换推荐课。</Notice>}
+        {liveFeatured() === c.id && <Notice tone="warn">这门是首页推荐课，不能下架，先换推荐课。</Notice>}
       </div>,
       amplifies: false,
       run: (reason) => {
         const current = latest.current.content.i18nLearning?.courses.find(course => course.id === c.id);
-        if (current?.featured || latest.current.content.i18nLearning?.featuredCourseId === c.id) throw new Error("这门是首页推荐课，后端不允许下架，先换推荐课。");
+        if (current?.featured || latest.current.content.i18nLearning?.featuredCourseId === c.id) throw new Error("这门是首页推荐课，不能下架，先换推荐课。");
         return runBackend(actions.archiveI6Course(c.id, reason), `${nexGridBrandText(c.title)} 已下架`);
       },
     });
@@ -1187,7 +1187,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         : record.scope === "rescan" ? `问题报告现在 ${count(Math.max(0, result.overview.stats.integrityIssues))} 处`
           : message ? `${record.target} 现在 ${message.version} · ${statusLabel(message.status)}`
             : course ? `${record.target} 现在 ${course.version} · ${(COURSE_STATUS[course.status] ?? { text: "状态未知" }).text}` : `${record.target || "原对象"} 现在读不到`;
-      toast(`已重新读取：${now}。这不能证明原操作的结果，记录继续保留。`, "warn");
+      toast(`已重新读取：${now}。从这里看不出原操作成没成，记录留着。`, "warn");
       await actions.reloadIContent();
     } catch (error) { toast(displayAdminError(error), "warn"); }
     finally { setOrdinaryBusy(""); updateRecovery((value) => value + 1); }
@@ -1217,7 +1217,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       </span>
     </li>;
   });
-  const ordinaryExplain = "提交时没收到确定结果，可能已经生效。先「查询原结果」看现在的内容；24 小时内可以「按原请求重试」，后端认得出是同一次提交，不会重复执行；过了 24 小时只能查询。";
+  const ordinaryExplain = "提交时没收到确定结果，可能已经生效。先「查询原结果」看现在的内容；24 小时内可以「按原请求重试」，系统认得出是同一次提交，不会重复执行；过了 24 小时只能查询。";
   const ordinaryRecovery = view === "i18n" && ordinaryItems.length > 0
     ? <Panel title="结果未知的文案操作" icon={TriangleAlert} tone="warn" sub={`${ordinaryItems.length} 项 · 时间为${BJ}`} explain={ordinaryExplain}>
       <ul className="i6-pending" aria-label="结果未知的文案操作">{ordinaryItems}</ul>
@@ -1239,7 +1239,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             if (!ticket && isRetryExpired(record)) setNotFoundKeys((keys) => keys.includes(record.commandKey) ? keys : [...keys, record.commandKey]);
             toast(ticket?.status === "pending" ? "已提交，等待审批后执行"
               : ticket ? "已查询到原审批单，请在操作记录核对执行状态"
-                : isRetryExpired(record) ? "后端按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" : "还没查到原审批单，记录继续保留。", "warn");
+                : isRetryExpired(record) ? "按原请求查不到这张审批单，说明没建成；核对后可以确认解除。" : "还没查到原审批单，记录继续保留。", "warn");
             if (ticket && ticket.status !== "pending") await finishRecovery();
             else await reloadCourseApprovals();
           } catch (error) {
@@ -1294,7 +1294,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 })}>按原请求重试</Button>}
                 </span>
                 {record.receiptKnown && record.ticketStatus !== "pending" && <span className="i6-pending-note">审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。</span>}
-                {expired && notFoundKeys.includes(record.commandKey) && <span className="i6-pending-note">后端按原请求查不到这张审批单，说明没建成；核对后可以确认解除。</span>}
+                {expired && notFoundKeys.includes(record.commandKey) && <span className="i6-pending-note">按原请求查不到这张审批单，说明没建成；核对后可以确认解除。</span>}
               </li>;
             })}
             {approvals.map((row) => <li key={row.id}>
@@ -1308,7 +1308,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             {ordinaryItems}
           </ul>
           {releasing && <ReleaseModal label={<>{subject(releasing)}{change(releasing) && <> · {change(releasing)}</>}</>}
-            explain="原申请超过 24 小时，后端按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
+            explain="原申请超过 24 小时，按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
             onCancel={() => setReleasing(null)} onConfirm={() => {
               const record = releasing;
               setReleasing(null);
@@ -1690,11 +1690,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     <StatBand label="课程概况">
       <Stat tone="role-2" icon={GraduationCap} label="在线课程" value={count(I6_STATS.coursesOnline)} unit="门" sub={`共 ${count(allCourses.length)} 门 · 草稿 ${count(counts.draft)} · 已下架 ${count(counts.archived)}`} />
       <Stat tone="role-1" icon={BookOpen} label="近 7 天学完发出" value={weeklyValue} unit="UVT"
-        explain="过去 7 天（滚动，不是自然周）已发到用户的课程奖励合计，只算正式用户；后端已按两位小数四舍五入。" />
+        explain="过去 7 天（滚动，不是自然周）已发到用户的课程奖励合计，只算正式用户；已按两位小数四舍五入。" />
       <Stat tone="role-4" icon={Star} label="首页推荐" value={featuredCourse ? nexGridBrandText(featuredCourse.title) : "未设置"}
         explain="推荐位只有一个。App 首页先推用户没学完、正在学的课，其次才推这门。" />
       <Stat tone="role-4" icon={ListChecks} label="单课奖励范围" value={`${TUTORIAL_REWARD_RANGE.min}–${TUTORIAL_REWARD_RANGE.max}`} unit="UVT"
-        explain="后端固定的范围，这页改不了；每门课的具体数在课程上调。" />
+        explain="系统固定的范围，这页改不了；每门课的具体数在课程上调。" />
     </StatBand>
 
     <Panel title="课程" icon={GraduationCap} tone="role-2" sub={`${count(filteredCrs.length)} 门`}
@@ -1752,10 +1752,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       </Facts>
     </Fold>
 
-    <Fold title="课程效果" icon={ListChecks} summary={TUTORIAL_METRICS.length ? `${count(TUTORIAL_METRICS.length)} 项指标` : "后端还没提供指标"}
-      explain="开始学习、学完、测验通过都会记录，奖励记进用户的 UVT 账。完课率等指标后端还没算出来给这页。">
+    <Fold title="课程效果" icon={ListChecks} summary={TUTORIAL_METRICS.length ? `${count(TUTORIAL_METRICS.length)} 项指标` : "还没有指标"}
+      explain="开始学习、学完、测验通过都会记录，奖励记进用户的 UVT 账。完课率等指标还没有数据。">
       {TUTORIAL_METRICS.length === 0
-        ? <BlockState state="empty" title="还没有指标" detail="后端暂未提供完课率、通过率、学完人数。" />
+        ? <BlockState state="empty" title="还没有指标" detail="完课率、通过率、学完人数暂时算不出来。" />
         : <Facts>{TUTORIAL_METRICS.map((m) => <Fact key={operatorCopyText(String(m.k))} k={operatorCopyText(String(m.k))}>{operatorCopyText(String(m.v))}</Fact>)}</Facts>}
     </Fold>
 
@@ -1830,7 +1830,6 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       <Td><StatusTag tone={status.tone}>{status.text}</StatusTag></Td>
                       <Td grow><Cell main={title} title={title} /></Td>
                       <Td align="right"><Cell num main={`${uvtText(row.payload.rewardNex)} UVT`} /></Td>
-                      <Td align="right"><Cell num main={String(row.revision)} /></Td>
                       <Td><Cell main={row.updatedAt ? formatBusinessTimeCompact(row.updatedAt, "—") : "—"} /></Td>
                       <Td align="right" data-fit=""><span className="i6-row-actions">
                         {row.status === "DRAFT" && canWriteI7 && <>

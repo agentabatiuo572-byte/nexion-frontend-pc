@@ -320,7 +320,7 @@ export function DraftEditorBody({ editor, published, publishedVersion, onChange,
 export type RecoveryRow = { key: string; kind: "unknown" | "submitted" | "pending"; name: string; change: ReactNode; submittedAt?: string; tag: ReactNode; actions: ReactNode; note?: ReactNode };
 export const RECOVERY_PLACEHOLDER: RecoveryRow[] = [];
 export function unknownTag() {
-  return <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先「查询原结果」；24 小时内也可以「按原请求重试」，后端认得出是同一次提交，不会建第二张。">结果未知</StatusTag>;
+  return <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先「查询原结果」；24 小时内也可以「按原请求重试」，系统认得出是同一次提交，不会建第二张。">结果未知</StatusTag>;
 }
 export function I4RecoveryNotice({ rows }: { rows: RecoveryRow[] }) {
   if (!rows.length) return null;
@@ -330,8 +330,8 @@ export function I4RecoveryNotice({ rows }: { rows: RecoveryRow[] }) {
   const title = [open > 0 && `${open} 项操作结果未知`, submitted > 0 && `${submitted} 张申请已提交，状态未查到`, pending > 0 && `${pending} 张申请等另一位批准`].filter(Boolean).join(" · ");
   return (
     <Notice tone={open + submitted > 0 ? "warn" : "progress"} title={<>{title}<Explain label="这些操作怎么处理" content={<>
-      <p>结果未知：提交时没收到确定结果，可能已经生效。先「查询原结果」；24 小时内也可以「按原请求重试」，后端认得出是同一次提交，过了 24 小时只能查询。</p>
-      <p>申请过期后，后端按原请求查不到这张审批单，说明没建成，可以确认解除。</p>
+      <p>结果未知：提交时没收到确定结果，可能已经生效。先「查询原结果」；24 小时内也可以「按原请求重试」，系统认得出是同一次提交，过了 24 小时只能查询。</p>
+      <p>申请过期后，按原请求查不到这张审批单，说明没建成，可以确认解除。</p>
       <p>PDF 上传不能重发，只能查询核对。</p>
     </>} /></>}>
       <ul className="i4-recovery" aria-label="结果未知的操作">

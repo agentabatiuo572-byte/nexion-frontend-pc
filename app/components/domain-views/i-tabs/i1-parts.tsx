@@ -238,7 +238,7 @@ export function ExperimentCard({ id, title, sub, state, variants, impressions, c
           <div><dt>合计看到</dt><dd data-empty={impressions ? undefined : ""}>{started && impressions !== null ? `${impressions.toLocaleString()} 人` : "—"}</dd></div>
           <div><dt>转化</dt><dd data-empty={conversions ? undefined : ""}>{started && conversions !== null ? `${conversions.toLocaleString()} 人` : "—"}</dd></div>
           <div>
-            <dt>样本<Explain label="样本怎么判断" content={<><p>采纳要求每一组都至少 100 人看到，并且转化率唯一最高；不满足时后端拒绝采纳。合计再多，有一组不到 100 人也不够。</p><p>人数是累计去重数。转化只算已付款或已完成的订单，一人只算一次。</p></>} /></dt>
+            <dt>样本<Explain label="样本怎么判断" content={<><p>采纳要求每一组都至少 100 人看到，并且转化率唯一最高，否则不能采纳。合计再多，有一组不到 100 人也不够。</p><p>人数按人累计，同一人只算一次。转化只算已付款或已完成的订单，一人只算一次。</p></>} /></dt>
             <dd>{sample.tone ? <StatusTag tone={sample.tone}>{sample.text}</StatusTag> : sample.text}</dd>
           </div>
           <div className="i1-exp-aud"><dt>受众</dt><dd>{audience}</dd></div>

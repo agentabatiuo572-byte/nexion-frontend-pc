@@ -677,7 +677,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     effect: <IrreversibleTag>不能恢复</IrreversibleTag>,
     confirmTone: "danger",
     confirmLabel: "确认删除",
-    statedBrief: { impact: "这个版本从目录里删掉，不能恢复；用过的版本后端会拒绝删除。", check: "核对版本标识；不想再用可以改成停用。" },
+    statedBrief: { impact: "这个版本从目录里删掉，不能恢复；用过的版本删不掉。", check: "核对版本标识；不想再用可以改成停用。" },
     facts: <Facts><Fact k="版本">{option.versionKey} · {option.name}</Fact><Fact k="被用过">{option.usageCount} 次</Fact></Facts>,
     run: (reason) => runBackend(actions.deleteI1CopyVersionOption(option.versionKey, option.revision, reason), `文案版本 ${option.versionKey} 已删除`),
   });
@@ -720,7 +720,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       effect: <IrreversibleTag>不能恢复</IrreversibleTag>,
       confirmTone: "danger",
       confirmLabel: "确认删除",
-      statedBrief: { impact: "这个位置从目录里删掉，不能恢复；有文案或版本用到它时后端会拒绝删除。", check: "核对位置标识。" },
+      statedBrief: { impact: "这个位置从目录里删掉，不能恢复；有文案或版本用到它时删不掉。", check: "核对位置标识。" },
       facts: <Facts>
         <Fact k="位置">{position?.name ?? "—"} · <span data-mono="">{positionKey}</span></Fact>
         <Fact k="模块">{moduleLabel(normalizeCopyModule(position?.surface))}</Fact>
@@ -739,7 +739,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       amplifies: false,
       effect: LIVE,
       confirmLabel: "确认回滚",
-      statedBrief: { impact: `${v} 重新发布，现在的 ${copy.version} 转为已归档，位置和模块按 ${v} 的；草稿和实验记录保留，同名词条一起更新。`, check: "核对内容对比；历史版本缺位置或受众时后端会拒绝。" },
+      statedBrief: { impact: `${v} 重新发布，现在的 ${copy.version} 转为已归档，位置和模块按 ${v} 的；草稿和实验记录保留，同名词条一起更新。`, check: "核对内容对比；历史版本缺位置或受众时会被拒绝。" },
       facts: <Facts>
         <Fact k="文案">{copy.desc} · <span data-mono="">{copy.key}</span></Fact>
         <Fact k="位置">{positionName(target?.copyPosition)} · {moduleLabel(target?.surface)}</Fact>
@@ -766,7 +766,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     amplifies: false,
     effect: LIVE,
     confirmLabel: "确认下架",
-    statedBrief: { impact: "下架后这条文案没有发布中的内容，按位置取不到它，同名词条一起下架；App 已缓存的内容要等它重新读取才变。", check: "常规换内容直接发新版本，不用先下架。" },
+    statedBrief: { impact: "下架后这条文案没有发布中的内容，按位置取不到它，同名词条一起下架；App 上已经拿到的内容，要等它重新读取才变。", check: "常规换内容直接发新版本，不用先下架。" },
     facts: <Facts>
       <Fact k="文案">{copy.desc} · <span data-mono="">{copy.key}</span></Fact>
       <Fact k="下架的版本">{version}{optionName(version) ? ` · ${optionName(version)}` : ""}</Fact>
@@ -1017,7 +1017,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       amplifies: false,
       effect: LIVE,
       confirmLabel: "确认停止",
-      statedBrief: { impact: "停止后不再分组，按位置取文案回到已发布的版本；这条文案存了草稿时仍取不到。数据保留，之后可以采纳或弃用。", check: "App 已缓存的内容要等它重新读取才变。" },
+      statedBrief: { impact: "停止后不再分组，按位置取文案回到已发布的版本；这条文案存了草稿时仍取不到。数据保留，之后可以采纳或弃用。", check: "App 上已经拿到的内容，要等它重新读取才变。" },
       facts: exp && <Facts>
         {experimentFacts(exp)}
         <Fact k="合计看到">{countOf(exp.impressions) === null ? "—" : `${countOf(exp.impressions)!.toLocaleString()} 人`}</Fact>
@@ -1042,7 +1042,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       amplifies: false,
       effect: LIVE,
       confirmLabel: "确认采纳",
-      statedBrief: { impact: "后端按真实转化率选唯一最高的一组，把它的版本发布为现在的版本；同名词条一起更新。", check: "每组至少 100 人看到、转化率唯一最高才能采纳；后端不重跑发布时的内容检查，先核对内容对比。没有显著性检验。" },
+      statedBrief: { impact: "按真实转化率选唯一最高的一组，把它的版本发布为现在的版本；同名词条一起更新。", check: "每组至少 100 人看到、转化率唯一最高才能采纳；采纳不重跑发布时的内容检查，先核对内容对比；没有显著性检验。" },
       facts: exp && <Facts>
         {experimentFacts(exp)}
         <Fact k="按页面的数" tone={winner ? "ok" : "warn"}>{winner ? `${winner.name} 组 ${winner.version} 最高（${winner.impressions != null && winner.conversions != null ? `看到 ${winner.impressions.toLocaleString()}、转化 ${winner.conversions.toLocaleString()} 人，` : ""}${winner.cvr.toFixed(2)}%）` : "没有唯一最高的一组，后端会拒绝"}</Fact>
@@ -1123,7 +1123,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           ? <BlockState state="loading" title="文案数据加载中…" />
           : errorText
             ? <BlockState state="error" title="文案数据读取失败" detail={errorText} onRetry={() => void reload()} retrying={reloading} retryLabel="重新加载" />
-            : <BlockState state="empty" title="暂无文案数据" detail="后端没有返回文案位置和文案。" />}
+            : <BlockState state="empty" title="暂无文案数据" detail="没有读到文案位置和文案。" />}
       </>
     );
   }
@@ -1265,7 +1265,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       <Fold title="实验全局设置" icon={Settings2} tone="role-other" summary={EXP_FRAMEWORK.length ? `${EXP_FRAMEWORK.length} 项 · 目前不影响实验运行` : "没有设置项"}
         explain="这些值只保存，创建、启动和运行实验都不读它们；采纳要求每组至少 100 人是固定规则，不在这里。后端已登记待处理。">
         {EXP_FRAMEWORK.length === 0
-          ? <BlockState state="empty" title="后端没有返回全局设置" />
+          ? <BlockState state="empty" title="没有读到全局设置" />
           : <ConfigList label="实验全局设置">
               {EXP_FRAMEWORK.map((p) => {
                 const cur = liveFw(p.key, p.cur);
@@ -1311,7 +1311,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
             options={[{ value: "all", label: "全部文案" }, ...COPY_POOL.map((copy) => ({ value: copy.key, label: `${copy.desc} · ${copy.key}` }))]} />
         </FilterField>
       </FilterBar>
-      <Panel title="内容历史" icon={History} tone="role-3" flush sub={`${filteredVersions.length} 条 · ${ZONE}`} explain="每条文案各个版本的内容、状态和最近一次操作。时间只到月日时分，后端没给年份。" data-proof="copy-version-list">
+      <Panel title="内容历史" icon={History} tone="role-3" flush sub={`${filteredVersions.length} 条 · ${ZONE}`} explain="每条文案各个版本的内容、状态和最近一次操作。时间只有月日时分，没有年份。" data-proof="copy-version-list">
         <Table label="内容历史" className="i1-history">
           <thead><tr><Th>文案</Th><Th>版本</Th><Th>中文内容</Th><Th>位置</Th><Th>最近操作</Th><Th align="right">操作</Th></tr></thead>
           <tbody>
@@ -1483,7 +1483,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       {errorText && <Notice tone="warn" title="数据没有读到最新" action={<Button size="sm" loading={reloading} onClick={() => void reload()}>重新加载</Button>}>{errorText} 下面是上次读到的内容。</Notice>}
       <Notice tone="neutral" title="App 还没接上位置文案">
         App 目前只显示普通文案键能覆盖的内容，位置文案还没有接上。
-        <Explain label="现在 App 能看到什么" content={<><p>发布、回滚、采纳会同步「多语言与课程」里的同名词条，App 用到这个词条的地方会跟着变。</p><p>按位置取文案和实验分组的接口已经有，App 还没有页面调用，所以实验分组现在不会真正发生在 App 上。</p></>} />
+        <Explain label="现在 App 能看到什么" content={<><p>发布、回滚、采纳会同步「多语言与课程」里的同名词条，App 用到这个词条的地方会跟着变。</p><p>App 还没接上按位置取文案和实验分组，所以实验分组现在不会真正发生在 App 上。</p></>} />
       </Notice>
       {pendingNotice}
       {conflictUi}
@@ -1492,7 +1492,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         <Stat icon={MapPin} tone="role-2" label="文案位置" value={String(COPY_POSITION_ROWS.length)} unit="个" sub={`启用 ${activePositions}`} />
         <Stat icon={BookOpen} tone="role-2" label="文案" value={String(I1_STATS.managedCopies)} unit="条" sub={`已发布 ${publishedCount}`} explain="所有没删除的文案，不是位置数。" />
         <Stat icon={FlaskConical} tone="role-3" label="进行中实验" value={String(I1_STATS.runningExps)} unit="个" sub={scheduled.length ? `待启动 ${scheduled.length}` : undefined} />
-        <Stat icon={Eye} tone="role-3" label="累计看到" value={String(I1_STATS.weeklyExposures)} unit="人" explain="所有实验累计看到的人数之和，不限本周；后端给的是约数。" />
+        <Stat icon={Eye} tone="role-3" label="累计看到" value={String(I1_STATS.weeklyExposures)} unit="人" explain="所有实验累计看到的人数之和，不限本周；这是约数。" />
       </StatBand>
       <PageTabs ids={tabIds} label="页面文案对比测试内容" value={tab} onChange={setTab} items={[
         { value: "positions", label: "文案位置" },
