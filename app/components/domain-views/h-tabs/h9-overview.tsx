@@ -72,7 +72,7 @@ export function H9ModuleCards({ data, failed, rank, rankUnknown, module, onSelec
         <Stat {...tab("home", "首页数字增长")} icon={Activity} tone="role-2"
           head={<>首页数字增长{values ? <StatusTag tone={values.homeDisplayEnabled ? "progress" : "neutral"}>{values.homeDisplayEnabled ? "增长中" : "已暂停"}</StatusTag> : unreadTag}</>}
           label="在线设备 · 设定值" value={values ? count(values.homeOnlineCurrent) : "—"} unit={values ? "台" : undefined}
-          explain="最近一次设定的当前值。增长开着时 App 上的数每秒在涨，通常比这里大；这页读不到 App 此刻的数。累计已发放在 App 上显示为 $，这里照原样写。">
+          explain="最近一次设定的当前值。增长开着时 App 上的数每秒在涨，通常比这里大；App 显示的数在「App 上的样子」里。累计已发放在 App 上显示为 $，这里照原样写。">
           <dl className="rd-stat-rows">
             <div className="rd-stat-row"><dt>累计已发放 · 设定值</dt><dd data-empty={values ? undefined : ""}>{values ? paid(values.homePaidCurrent) : "—"}</dd></div>
             <div className="rd-stat-row"><dt>每秒增加</dt><dd data-empty={values ? undefined : ""}>{values ? `${count(values.homeOnlineStepMin)}–${count(values.homeOnlineStepMax)} 台 · ${paid(values.homePaidStepMin)}–${paid(values.homePaidStepMax)}` : "—"}</dd></div>
@@ -83,7 +83,7 @@ export function H9ModuleCards({ data, failed, rank, rankUnknown, module, onSelec
           surface={values && !tick ? "warn" : undefined}
           head={<>网络脉搏注册人数{values ? tick ? <StatusTag tone="progress">按跳动增长</StatusTag> : <StatusTag tone="warn">部分位置不显示</StatusTag> : unreadTag}</>}
           label="现在约" value={members == null ? "—" : count(members)} unit={members == null ? undefined : "人"}
-          explain={tick ? "按读取这页的时刻推算的参考数，不是 App 此刻的数；App 上还会加一个固定的随机偏移，两边可能差几人。" : "只配了月增长率：网络脉搏卡片照常显示这个数，网络快照等位置会显示「不可用」。"}>
+          explain={tick ? "按读取这页的时刻推算的参考数，不含 App 上的随机偏移，两边可能差几人；App 显示的数在「App 上的样子」里。" : "只配了月增长率：网络脉搏卡片照常显示这个数，网络快照等位置会显示「不可用」。"}>
           <dl className="rd-stat-rows">
             <div className="rd-stat-row"><dt>增长方式</dt><dd data-empty={values ? undefined : ""}>{!values ? "—" : tick ? `每 ${count(tick.intervalSec)} 秒 +${count(tick.stepMin)}–${count(tick.stepMax)} 人` : `每月 +${values.registeredUsersMonthlyGrowthPct}%`}</dd></div>
           </dl>

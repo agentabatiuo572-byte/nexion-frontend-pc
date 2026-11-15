@@ -17,9 +17,11 @@ import { PaginationExemption } from "../design-kit";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import {
   H9_FIELDS,
+  fetchH9AppDisplay,
   fetchH9PublicStats,
   prepareH9PublicStats,
   updateH9PublicStats,
+  type H9AppDisplay,
   type H9EditableValues,
   type H9FieldDef,
   type H9PercentileBand,
@@ -48,7 +50,7 @@ import { reconcileH9Editor, type H9EditorState } from "@/lib/admin/h9-module-dra
 import { canRetryH9Command, pendingH9Command, type H9Command } from "@/lib/admin/h9-command";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useSearchParams } from "next/navigation";
-import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
 type ScalarKey = H9FieldDef["key"];
 type ScalarDrafts = Record<ScalarKey, string>;
@@ -120,6 +122,26 @@ function valueText(key: ScalarKey, value: number | null | undefined): string {
   return MONEY_KEYS.has(key) ? paid(value) : `${count(value)} ${field.unit}`;
 }
 
+
+type AppDisplayRead = { state: "loading" } | { state: "ready"; data: H9AppDisplay } | { state: "error"; message: string };
+const APP_PAID_NOTE = "服务端给的是金额本身，没有写币种；App 上显示为 $，这里不另加。";
+const APP_DISPLAY_REASON: Record<string, string> = {
+  HOME_DISPLAY_SNAPSHOT_UNAVAILABLE: "服务端这一刻没有可用的展示数据",
+  HOME_DISPLAY_SANDBOX_UNAVAILABLE: "测试环境不生成首页展示数据",
+};
+/** 按分算的金额写成两位小数加千分位，不舍入、不补币种（paid 是 JSON 数字，末尾的 0 会丢，所以用 paidCents）。 */
+function centsAmount(cents: number) {
+  return `${Math.floor(cents / 100).toLocaleString("en-US")}.${String(cents % 100).padStart(2, "0")}`;
+}
+/** App 示意卡下的一行：读到时写取样时间，读不到写原因和上面显示的是什么。 */
+function AppSample({ read, found, fallback }: { read: AppDisplayRead; found: boolean; fallback: "设定值" | "推算" }) {
+  if (read.state === "loading") return <p className="h9-chart-note">正在读取 App 显示的数…</p>;
+  if (read.state === "error") return <p className="h9-chart-note">App 显示的数没读到，上面是{fallback}<Explain label="失败原因" content={read.message} /></p>;
+  if (found) return <p className="h9-chart-note">App 显示的数 · 取样 {formatBusinessTimeCompact(read.data.capturedAt, "—")}（{businessZone().label}）{read.data.sourceEnvironment === "SANDBOX" ? " · 测试环境" : ""}</p>;
+  const reason = fallback === "设定值" ? APP_DISPLAY_REASON[read.data.reason ?? ""] ?? "服务端没给出原因" : "服务端算不出这个数";
+  return <p className="h9-chart-note">App 显示的数读不到：{reason}，上面是{fallback}</p>;
+}
+
 export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   const canWrite = ctx.can("growth_h9_write");
   const ids = useTabIds();
@@ -142,6 +164,16 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
   const [saveError, setSaveError] = useState<SaveIssue | null>(null);
   const [editor, setEditor] = useState<H9EditorState | null>(null);
   const [readAt, setReadAt] = useState(0);
+  /** App 此刻实际显示的数（5f8f1053 app-display），跟着每次主配置读取重读；读不到不拿设定值冒充。 */
+  const [appDisplay, setAppDisplay] = useState<AppDisplayRead>({ state: "loading" });
+  useEffect(() => {
+    if (!readAt) return;
+    const controller = new AbortController();
+    setAppDisplay({ state: "loading" });
+    fetchH9AppDisplay(controller.signal).then((value) => { if (!controller.signal.aborted) setAppDisplay({ state: "ready", data: value }); })
+      .catch((cause) => { if (!controller.signal.aborted) setAppDisplay({ state: "error", message: formatAdminApiError(cause instanceof Error ? cause.message : null, "H9_DATA_LOAD_FAILED") }); });
+    return () => controller.abort();
+  }, [readAt]);
   const currentVersion = useRef(data?.version);
   currentVersion.current = data?.version;
   const drafts = editor?.drafts ?? null;
@@ -535,7 +567,10 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     你填的内容还在。刷新会读最新值并放弃这一块没保存的改动，再按最新值重新改，避免盖掉别人的设置。
   </Notice>;
 
-  // 首页：增长推算（只算增加量：App 上此刻的数这页读不到）。
+  // 首页：App 显示的数读得到就放大写它、设定值退到下面；增长推算只算增加量。
+  const display = appDisplay.state === "ready" ? appDisplay.data : null;
+  const shown = display?.homeDisplay ?? null;
+  const appMembers = display?.registeredUsers ?? null;
   const homeDraftValid = HOME_KEYS.every((key) => !fieldErrors[key]);
   const homeStepsDirty = (["homeOnlineStepMin", "homeOnlineStepMax", "homePaidStepMin", "homePaidStepMax"] as const).some((key) => drafts[key].trim() !== h9DraftText(values[key]));
   const homeSeries = (min: number, max: number) => HOUR_TICKS.map((hour) => averageGain(min, max, hour));
@@ -560,9 +595,12 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       <AppPreview where="App 介绍页 · 网络脉搏"
         explain={<><p>增长开着时，两个数每秒在区间里随机增加，所有用户看到同一个数；暂停后停在暂停那一刻，再开启从那里接着涨。保存参数不会改开关。</p><p>App 页面开着时一般 60 秒内读到新参数，退到后台或断网时不保证。</p></>}
         status={values.homeDisplayEnabled ? <><StatusTag tone="progress">增长中</StatusTag>每秒在区间里随机增加</> : <><StatusTag tone="neutral">已暂停</StatusTag>App 上的数停住不动</>}>
-        <AppNumber label="在线设备 · 设定值" value={count(values.homeOnlineCurrent)} unit="台" />
-        <AppNumber label={<>累计已发放 · 设定值<Explain label="累计已发放的单位" content={PAID_UNIT_NOTE} /></>} value={paid(values.homePaidCurrent)} />
+        <AppNumber label={shown ? "在线设备 · App 显示" : "在线设备 · 设定值"} value={count(shown ? shown.onlineDevices : values.homeOnlineCurrent)} unit="台"
+          sub={shown ? `设定值 ${count(values.homeOnlineCurrent)} 台` : undefined} />
+        <AppNumber label={<>{shown ? "累计已发放 · App 显示" : "累计已发放 · 设定值"}<Explain label="累计已发放的单位" content={shown ? APP_PAID_NOTE : PAID_UNIT_NOTE} /></>}
+          value={shown ? centsAmount(shown.paidCents) : paid(values.homePaidCurrent)} sub={shown ? `设定值 ${paid(values.homePaidCurrent)}` : undefined} />
       </AppPreview>
+      <AppSample read={appDisplay} found={!!shown} fallback="设定值" />
       {growthChart("online")}
       {growthChart("paid")}
     </Panel>
@@ -593,11 +631,14 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     <Panel title="App 上的样子" icon={Smartphone} tone="role-3" explain="注册人数是按参数推算的展示数字，不改真实账户，也不参与设备预估排名。">
       <AppPreview where="App 首页 · 网络脉搏"
         explain={savedTick
-          ? <>按读取这页的时刻、用后端同一个公式推算。每跳一次另有 0–{count(spread)} 人的固定随机偏移，所以 App 上会比这里多 0–{count(spread)} 人，所有用户一致。</>
+          ? <>{appMembers != null && <>App 显示的是服务端算出的数。</>}推算按读取这页的时刻、用后端同一个公式。每跳一次另有 0–{count(spread)} 人的固定随机偏移，所以 App 上会比推算多 0–{count(spread)} 人，所有用户一致。</>
           : <>只配了月增长率：网络脉搏卡片显示这个数，网络快照等位置会显示「不可用」。</>}
-        status={savedTick ? `App 上比这里多 0–${count(spread)} 人` : <><StatusTag tone="warn">部分位置不显示</StatusTag>网络快照显示「不可用」</>}>
-        <AppNumber label="注册用户 · 现在约" value={members == null ? "—" : count(members)} unit={members == null ? undefined : "人"} empty={members == null} />
+        status={savedTick ? `App 上比推算多 0–${count(spread)} 人` : <><StatusTag tone="warn">部分位置不显示</StatusTag>网络快照显示「不可用」</>}>
+        {appMembers != null
+          ? <AppNumber label="注册用户 · App 显示" value={count(appMembers)} unit="人" sub={members == null ? undefined : `按参数推算约 ${count(members)} 人`} />
+          : <AppNumber label="注册用户 · 推算约" value={members == null ? "—" : count(members)} unit={members == null ? undefined : "人"} empty={members == null} />}
       </AppPreview>
+      <AppSample read={appDisplay} found={appMembers != null} fallback="推算" />
       <div className="h9-chart">
         <p className="h9-chart-title">接下来 30 天</p>
         <TrendLines label="接下来 30 天注册人数推算" ticks={DAY_LABELS} height={140} format={(value) => `${count(value)} 人`} axisFormat={axisShort("人")}
