@@ -216,7 +216,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const [notFoundKeys, setNotFoundKeys] = useState<string[]>([]);
   const [releasing, setReleasing] = useState<HIRewardCommand | null>(null);
   const [ordinaryBusy, setOrdinaryBusy] = useState("");
-  const courseConfirm = useRef<{ scope: string; request: ActionConfirmReq } | null>(null);
+  const courseConfirm = useRef<{ scope: string; request: ActionConfirmReq; versions?: LearningCourseVersionView[] } | null>(null);
   const reloadCourseApprovals = async () => {
     if (view !== "learn") return;
     const records = pendingHIRewardCommands().filter(record => record.scope.startsWith("I/"));
@@ -291,7 +291,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     updateRecovery(value => value + 1);
   };
   /** The first request owns its original confirmation; a retry never re-enters the editable callback. */
-  const confirmI6 = (scope: string, request: ActionConfirmReq) => {
+  const confirmI6 = (scope: string, request: ActionConfirmReq, versions?: LearningCourseVersionView[]) => {
     const blocked = newWriteProblem(scope);
     if (blocked) { toast(blocked, "warn"); return; }
     const openedData = latest.current.content.i18nLearning;
@@ -327,7 +327,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         const currentData = latest.current.content.i18nLearning;
         const unchangedCourse = scope.startsWith("course:") && JSON.stringify(openedData?.courses.find(row => row.id === scope.slice(7)))
           === JSON.stringify(currentData?.courses.find(row => row.id === scope.slice(7)));
-        if (openedData !== currentData && !unchangedCourse) {
+        if (versions && JSON.stringify(versions) !== JSON.stringify(versionsRead.current) || openedData !== currentData && !unchangedCourse) {
           ctx.closeActionConfirm(); throw new Error("数据已重新读取，请按最新内容重新打开修改入口。");
         }
         try {
@@ -352,7 +352,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         } finally { updateRecovery(current => current + 1); }
       },
     };
-    courseConfirm.current = { scope, request: confirmation };
+    courseConfirm.current = { scope, request: confirmation, versions };
     openActionConfirm(confirmation);
   };
   useEffect(() => {
@@ -362,7 +362,17 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     let active = true;
     setVersionsLoading(true);
     actions.fetchI7CourseVersions(versionCourseId)
-      .then((versions) => { if (active) setCourseVersions(versions); })
+      .then((versions) => {
+        if (!active) return;
+        const confirmation = courseConfirm.current;
+        if (confirmation?.scope === `course:${versionCourseId}` && confirmation.versions
+          && JSON.stringify(confirmation.versions) !== JSON.stringify(versions)
+          && !pendingI6Commands().some(record => record.scope === confirmation.scope)) {
+          ctx.closeActionConfirm(confirmation.request);
+          courseConfirm.current = null;
+        }
+        setCourseVersions(versions);
+      })
       .catch((error) => {
         if (active) {
           setVersionsError(displayAdminError(error));
@@ -974,7 +984,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     facts: <Facts><Fact k="课程">{nexGridBrandText(c.title)}</Fact><Fact k="版本">{row.version}（草稿）</Fact></Facts>,
     amplifies: false,
     run: (reason) => runBackend(actions.deleteI7CourseVersion(c.id, row.version, reason), `${row.version} 草稿已删除`),
-  });
+  }, courseVersions);
 
   const versionTarget = (row: LearningCourseVersionView) => ({
     version: row.version, reward: row.payload.rewardNex, title: row.payload.titleZh as string,
