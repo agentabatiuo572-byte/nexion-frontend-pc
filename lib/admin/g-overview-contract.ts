@@ -205,6 +205,8 @@ export function assertG2OverviewContract<T>(value: T): T {
     else numeric(module, row.value, `${path}.value`);
     bool(module, row.loosen, `${path}.loosen`);
     if (row.meterPct !== undefined && row.meterPct !== null) numeric(module, row.meterPct, `${path}.meterPct`);
+    if (row.pendingApproval !== undefined && typeof row.pendingApproval !== "boolean") fail(module, `${path}.pendingApproval`);
+    if (row.pendingOperationId !== undefined && row.pendingOperationId !== null) text(module, row.pendingOperationId, `${path}.pendingOperationId`);
   });
   if (capKeys.size !== G2_CAP_KEYS.size) fail(module, "data.caps");
   array(module, root.queue, "data.queue").forEach((row, index) => validateG2Order(module, row, `data.queue[${index}]`));

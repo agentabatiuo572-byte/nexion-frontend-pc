@@ -305,6 +305,17 @@ function G2ExchangePage() {
   const [recoveryError, setRecoveryError] = useState<{ message: string; notFound: boolean } | null>(null);
   /** 只用于显示：直接修改时后端答复这一项被审批锁住，在这一行标出来。下一次提交仍由后端核对。 */
   const [lockedParams, setLockedParams] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!overview || loading || readFailed) return;
+    setLockedParams(current => {
+      const next = { ...current };
+      for (const cap of overview.caps) {
+        // False is authoritative only with the exact write grant used by the projection.
+        if (cap.pendingApproval === false && authorities.includes(capAuthority(cap.key))) delete next[cap.key];
+      }
+      return next;
+    });
+  }, [overview, loading, readFailed, authorities]);
   const ownPendingBatch = authorities.includes("finprod_g2_read") && pendingBatch?.adminId === batchAdminId ? pendingBatch : undefined;
   const recoveryBatch = ownPendingBatch?.commandKey === recoveryKey ? ownPendingBatch : undefined;
   const [recoverBusy, setRecoverBusy] = useState(false);
@@ -635,6 +646,7 @@ function G2ExchangePage() {
       await readOriginalCommand(originalDirect);
       return;
     }
+    if (!originalDirect && !paramApproval.record(cap.key) && requestedCap.pendingApproval === true) return;
     if (!originalDirect && !paramApproval.record(cap.key) && overview?.swap.emergencyPaused === true && !["fee", "feeMin"].includes(cap.key)) return;
     const original = originalDirect ? undefined : await paramApproval.open(cap.key);
     if (original === false) return;
@@ -732,6 +744,7 @@ function G2ExchangePage() {
         const view = latest.current;
         const currentCap = view.overview?.caps.find(row => row.key === cap.key);
         const auth = useAdminAuth.getState();
+        if (!saved && currentCap?.pendingApproval === true) throw new Error(messageOf("OBJECT_LOCKED_BY_A2"));
         if (!saved && (!currentCap || view.loading || view.busyKey || view.readFailed || view.rereadPending
           || (view.overview!.swap.emergencyPaused === true && !["fee", "feeMin"].includes(cap.key))
           || !auth.isAuthenticated || auth.logoutPending || auth.session?.adminId !== session?.adminId
@@ -988,7 +1001,7 @@ function G2ExchangePage() {
     const recovery = record ? paramApproval.list().find((row) => row.commandKey === record.commandKey) : undefined;
     const pausedBlocked = swap.emergencyPaused === true && !["fee", "feeMin"].includes(cap.key);
     const canEdit = allowed(capAuthority(cap.key));
-    const disabledReason = busyReason ?? (!record && !direct && newWriteBlockedReason ? newWriteBlockedReason
+    const disabledReason = busyReason ?? (!record && !direct && cap.pendingApproval === true ? messageOf("OBJECT_LOCKED_BY_A2") : !record && !direct && newWriteBlockedReason ? newWriteBlockedReason
       : !record && !direct && pausedBlocked ? "兑换已暂停，额度和超额度处置策略暂时不能改；手续费仍可改" : undefined);
     return (
       <ConfigRow key={cap.key} name={name}
@@ -998,14 +1011,14 @@ function G2ExchangePage() {
         note={[
           copy?.extra,
           canEdit && !canPropose && copy ? `这个账号没有发起审批的权限，只能${copy.tighten}；${copy.loosen}请有提案权的同事发起。` : undefined,
-          lockedParams[cap.key] && !record ? "这一项有一张审批单还没处理完，页面看不到单号；批准、驳回或撤回之前，调高调低都改不了。" : undefined,
+          (cap.pendingApproval === true || lockedParams[cap.key]) && !record && !cap.pendingOperationId ? "这一项有一张审批单还没处理完，页面看不到单号；批准、驳回或撤回之前，调高调低都改不了。" : undefined,
         ].filter(Boolean).join(" ") || undefined}
         value={<span className="g2x-param">
           <span className="g2x-value">
             <span className="g2x-value-num">{paramValueText(cap.key, cap.value, cap.displayValue)}</span>
             {recovery && recoveryTag(recovery)}
             {!recovery && direct && (g2ExchangeCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct"))}
-            {!record && lockedParams[cap.key] && <StatusTag tone="warn" icon={Lock} explain={lockedParams[cap.key]}>审批锁定中</StatusTag>}
+            {!record && (cap.pendingApproval === true || lockedParams[cap.key]) && <StatusTag tone="warn" icon={Lock} explain={lockedParams[cap.key] || messageOf("OBJECT_LOCKED_BY_A2")}>审批锁定中{cap.pendingApproval === true && cap.pendingOperationId && ` · ${cap.pendingOperationId}`}</StatusTag>}
           </span>
           {copy && <span className="g2x-dir">{copy.short}要批准</span>}
         </span>}

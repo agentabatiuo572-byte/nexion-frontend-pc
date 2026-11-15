@@ -285,9 +285,17 @@ async function g7Request<T>(path: string, init?: RequestInit) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
+    let pendingApproval: { pending: true; operationId: string | null } | undefined;
+    if (result?.message === "OBJECT_LOCKED_BY_A2" && result.data && typeof result.data === "object") {
+      const lock = result.data as Record<string, unknown>;
+      if (lock.pending === true && (lock.operationId === undefined || typeof lock.operationId === "string" && lock.operationId.trim())) {
+        pendingApproval = { pending: true, operationId: lock.operationId === undefined ? null : lock.operationId as string };
+      }
+    }
     throw Object.assign(new Error(formatAdminApiError(result?.message, `G7_REQUEST_FAILED_${response.status}`)), {
       status: response.ok && result && result.code >= 400 && result.code < 500 ? result.code : response.status,
       backendMessage: result?.message,
+      pendingApproval,
       unknownOutcome: response.headers.get("X-Nexion-Upstream-Outcome") === "unknown",
     });
   }

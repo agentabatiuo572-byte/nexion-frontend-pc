@@ -27,6 +27,8 @@ interface BackendCap {
   note?: string | null;
   loosen?: boolean | string | null;
   meterPct?: number | string | null;
+  pendingApproval?: boolean;
+  pendingOperationId?: string | null;
 }
 
 interface BackendOrder {
@@ -119,6 +121,8 @@ export interface G2Cap {
   note: string;
   loosen: boolean;
   meterPct?: number;
+  pendingApproval?: boolean;
+  pendingOperationId?: string | null;
 }
 
 export interface G2ExchangeOrder {
@@ -282,6 +286,8 @@ function normalizeCap(row: BackendCap): G2Cap {
     note: asText(row.note),
     loosen: toBool(row.loosen, false),
     meterPct: row.meterPct == null ? undefined : toNumber(row.meterPct),
+    pendingApproval: row.pendingApproval,
+    pendingOperationId: row.pendingOperationId,
   };
 }
 

@@ -1,6 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { normalizeOutboxDiagnostics, nullableA4UserNo, outboxDiagnosticsQuery, type OutboxFilters } from "./a4-outbox-diagnostics";
+import { normalizeOutboxDeadLetters, normalizeOutboxDiagnostics, nullableA4UserNo, outboxDiagnosticsQuery, type OutboxFilters } from "./a4-outbox-diagnostics";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "./a2-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import type { AdminSession } from "@/lib/store/admin-auth";
@@ -317,6 +317,10 @@ export async function fetchA4Overview() {
 
 export async function fetchA4OutboxDiagnostics(filters: OutboxFilters, cursor = "0") {
   return normalizeOutboxDiagnostics(await a4Request<unknown>(`/events/outbox-diagnostics?${outboxDiagnosticsQuery(filters, cursor)}`, { method: "GET" }));
+}
+
+export async function fetchA4OutboxDeadLetters() {
+  return normalizeOutboxDeadLetters(await a4Request<unknown>("/events/outbox-dead-letters", { method: "GET" }));
 }
 
 /** Read one known schema by exact event name; this deliberately is not a registry search/list API. */

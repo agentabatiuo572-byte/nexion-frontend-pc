@@ -279,7 +279,7 @@ function G7RepurchasePage() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   /** 只用于显示：直接修改时后端答复这一项被审批锁住，在这一行标出来。下一次提交仍由后端核对。 */
-  const [lockedParams, setLockedParams] = useState<Record<string, string>>({});
+  const [lockedParams, setLockedParams] = useState<Record<string, { message: string; operationId?: string | null }>>({});
   const requestGeneration = useRef(0);
   const moreInFlight = useRef(false);
   const latest = useRef({ overview, loading, busyKey, readFailed });
@@ -634,7 +634,10 @@ function G7RepurchasePage() {
           }
         } catch (err) {
           const code = (err as { backendMessage?: string } | null)?.backendMessage;
-          if (code === "OBJECT_LOCKED_BY_A2" || code === "OBJECT_ALREADY_PENDING") setLockedParams((rows) => ({ ...rows, [param.key]: messageOf(err) }));
+          if (code === "OBJECT_LOCKED_BY_A2" || code === "OBJECT_ALREADY_PENDING") {
+            const lock = (err as { pendingApproval?: { pending: true; operationId: string | null } }).pendingApproval;
+            setLockedParams((rows) => ({ ...rows, [param.key]: { message: messageOf(err), operationId: lock?.operationId } }));
+          }
           if (paramApproval.record(param.key) || directRecord(param.key)) coveredErrors.current.add(messageOf(err));
           setError(messageOf(err));
           if (saved && !paramApproval.record(saved.request.obj)) openActionConfirm(null);
@@ -703,14 +706,14 @@ function G7RepurchasePage() {
         note={[
           copy?.note,
           editable && copy?.loosen && !canPropose ? `这个账号没有发起审批的权限，只能${copy.tighten}；${copy.loosen}请有提案权的同事发起。` : undefined,
-          lockedParams[param.key] && !record ? "这一项有一张审批单还没处理完，页面看不到单号；批准、驳回或撤回之前，调高调低都改不了。" : undefined,
+          lockedParams[param.key] && !record && !lockedParams[param.key].operationId ? "这一项有一张审批单还没处理完，页面看不到单号；批准、驳回或撤回之前，调高调低都改不了。" : undefined,
         ].filter(Boolean).join(" ") || undefined}
         value={<span className="g7x-param">
           <span className="g7x-value">
             <span className="g7x-value-num" data-empty={param.value.trim() ? undefined : ""}>{paramValueText(param.key, param.value)}</span>
             {recovery && recoveryTag(recovery)}
             {!recovery && direct && (g7DirectCommandExpired(direct) ? expiredTag("direct") : unknownTag("direct"))}
-            {!record && lockedParams[param.key] && <StatusTag tone="warn" icon={LockKeyhole} explain={lockedParams[param.key]}>审批锁定中</StatusTag>}
+            {!record && lockedParams[param.key] && <StatusTag tone="warn" icon={LockKeyhole} explain={lockedParams[param.key].message}>审批锁定中{lockedParams[param.key].operationId && ` · ${lockedParams[param.key].operationId}`}</StatusTag>}
           </span>
           <span className="g7x-dir">{copy?.loosen ? `${copy.loosen}要批准` : "改了立即生效"}</span>
         </span>}
@@ -762,7 +765,7 @@ function G7RepurchasePage() {
     <>
       {header}
       {confirmModal}
-      {error && !Object.values(lockedParams).includes(error) && !coveredErrors.current.has(error) && !/^提交结果(暂未确认|未知)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
+      {error && !Object.values(lockedParams).some(lock => lock.message === error) && !coveredErrors.current.has(error) && !/^提交结果(暂未确认|未知)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
       {conclusion}
       {recoveryNotice()}
 

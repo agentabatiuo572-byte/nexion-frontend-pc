@@ -8,6 +8,18 @@ export type OutboxDiagnostics = {
     receipts: { status: string; count: number }[] }[];
   nextCursor: string | null; hasMore: boolean;
 };
+export type OutboxDeadLetters = {
+  types: {
+    questCode: string;
+    eventType: string;
+    outboxDeadCount: number;
+    /** Current DEAD in both layers, not a complete redrive eligibility decision. */
+    bothLayersDeadCount: number;
+    oldestOutboxLastStateAt: string | null;
+    oldestBothLayersDeadObservedAt: string | null;
+    bothLayersDeadTimeComplete: boolean;
+  }[];
+};
 const errorCodes = new Set(["OTHER_ERROR", "C1_AUDIT_EVIDENCE_NOT_UNIQUE", "C1_AUDIT_ENVELOPE_INVALID",
   "C1_AUDIT_PAYLOAD_INVALID", "C1_AUDIT_DELIVERY_NOT_COMPLETE", "C1_AUDIT_RECEIPT_NOT_PERSISTED",
   "C1_AUDIT_SOURCE_INVALID", "H3_EVENT_BINDING_PENDING", "L6_EVIDENCE_FACT_MISSING",
@@ -69,4 +81,35 @@ export function outboxDiagnosticsQuery(filters: OutboxFilters, cursor = "0"): UR
   if (filters.status) query.set("status", filters.status);
   if (filters.unresolvedOnly) query.set("unresolvedOnly", "true");
   return query;
+}
+
+export function normalizeOutboxDeadLetters(value: unknown): OutboxDeadLetters {
+  const definitions: Record<string, string> = {
+    weekly_t2_browse_store: "H3_STOREFRONT_THREE_PRODUCTS_VIEWED",
+    weekly_t2_genesis_browse: "H3_GENESIS_SECONDARY_MARKET_VIEWED",
+    weekly_t2_ai_jobs_50: "H3_COMPUTE_COMPLETED_50",
+    weekly_t2_invite_friend: "H3_REFERRAL_REGISTERED",
+    weekly_t2_nex_swap: "H3_EXCHANGE_COMPLETED",
+  };
+  const nullableTime = (value: unknown): string | null => {
+    if (value === null) return null;
+    const result = text(value);
+    return /^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d{1,9})?)?$/.test(result) ? result : invalid();
+  };
+  const types = rows(obj(value).types, 5).map(value => {
+    const row = obj(value);
+    const questCode = text(row.questCode), eventType = text(row.eventType);
+    const outboxDeadCount = count(row.outboxDeadCount), bothLayersDeadCount = count(row.bothLayersDeadCount);
+    const oldestOutboxLastStateAt = nullableTime(row.oldestOutboxLastStateAt);
+    const oldestBothLayersDeadObservedAt = nullableTime(row.oldestBothLayersDeadObservedAt);
+    const bothLayersDeadTimeComplete = bool(row.bothLayersDeadTimeComplete);
+    if (definitions[questCode] !== eventType || bothLayersDeadCount > outboxDeadCount
+      || outboxDeadCount === 0 && oldestOutboxLastStateAt !== null
+      || bothLayersDeadCount === 0 && oldestBothLayersDeadObservedAt !== null
+      || !bothLayersDeadTimeComplete && oldestBothLayersDeadObservedAt !== null) invalid();
+    return { questCode, eventType, outboxDeadCount, bothLayersDeadCount, oldestOutboxLastStateAt,
+      oldestBothLayersDeadObservedAt, bothLayersDeadTimeComplete };
+  });
+  if (types.length !== 5 || new Set(types.map(row => row.questCode)).size !== 5) invalid();
+  return { types };
 }
