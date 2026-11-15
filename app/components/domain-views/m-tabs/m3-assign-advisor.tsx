@@ -71,15 +71,15 @@ export function AssignAdvisorDialog({ adminId, customerId, customerName, canWrit
 
   if (pending) return <Modal title="核对上次分配" icon="users" busy={saving} onClose={onClose} footer={<>
     <Button disabled={saving} onClick={onClose}>关闭</Button>
-    <Button variant={command.canReplay ? "secondary" : "primary"} disabled={saving} onClick={() => void command.run("query")}>查询原操作</Button>
-    {canWrite && <Button variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={isRetryExpired(pending) ? RETRY_EXPIRED_TEXT : command.canReplay ? undefined : "先查询原操作，查不到才能按原操作重试"} onClick={() => void command.run("replay")}>按原操作重试</Button>}
+    <Button variant={command.canReplay ? "secondary" : "primary"} disabled={saving} onClick={() => void command.run("query")}>查询原结果</Button>
+    {canWrite && <Button variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={isRetryExpired(pending) ? RETRY_EXPIRED_TEXT : command.canReplay ? undefined : "先查询原结果，查不到才能按原请求重试"} onClick={() => void command.run("replay")}>按原请求重试</Button>}
   </>}>
     <div className="m3s-assign">
-      <Notice tone="warn">{saving ? "正在核对原操作…" : error || "上次分配结果待确认，请先查询原操作。"}</Notice>
+      <Notice tone="warn">{saving ? "正在查询原结果…" : error || "上次分配结果未知，请先查询原结果。"}</Notice>
       {!command.denied && <Facts>
         <Fact k="客户">{customerName}</Fact>
-        <Fact k="原分配目标客服">{pending.payload.targetName} · 客服编号 {pending.payload.request.targetAgentAdminId}</Fact>
-        <Fact k="系统编号">{customerId}</Fact>
+        <Fact k="原定的专属客服">{pending.payload.targetName} · 客服编号 {pending.payload.request.targetAgentAdminId}</Fact>
+        <Fact k="客户编号">{customerId}</Fact>
         <Fact k="原分配原因">{pending.payload.request.reason}</Fact>
       </Facts>}
       <Fold inset title="技术信息" summary="原操作编号与版本"><Facts><Fact k="原待分配版本">{pending.payload.request.customers[0].expectedVersion}</Fact><Fact k="原操作编号"><span data-mono="">{pending.commandKey}</span></Fact></Facts><Button size="sm" onClick={() => { void navigator.clipboard.writeText(pending.commandKey).then(() => setLoadError("原操作编号已复制。"), () => setLoadError("自动复制失败，请选择原操作编号手动复制。")); }}>复制原操作编号</Button>{loadError && <p role="status">{loadError}</p>}</Fold>
@@ -94,7 +94,7 @@ export function AssignAdvisorDialog({ adminId, customerId, customerName, canWrit
       <Facts><Fact k="客户">{customerName}</Fact></Facts>
       {loadError ? <Notice tone="danger" action={<Button size="sm" onClick={() => setRetry((value) => value + 1)}>重试</Button>}>{loadError}</Notice>
         : !agents ? <p className="m3s-aux" role="status">正在加载可分配的专属客服…</p>
-        : agents.length === 0 ? <Notice tone="warn">该客户所在组暂无可接待的专属客服。请先在「客服资格」里启用接待资格，或调整客户分组。</Notice>
+        : agents.length === 0 ? <Notice tone="warn">该客户所在组暂无可接待的专属客服。请先到「客服工作台 › 客服与分组」启用接待资格，或调整客户分组。</Notice>
         : <div className="m3-assign-list" role="radiogroup" aria-label="选择专属客服">
           {agents.map((agent, index) => <label key={agent.adminId} className={`m3-assign-card${target === agent.adminId ? " on" : ""}`}>
             <input type="radio" name="m3-assign-target" checked={target === agent.adminId} disabled={saving} onChange={() => setTarget(agent.adminId)} />
