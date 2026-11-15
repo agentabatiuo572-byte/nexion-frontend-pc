@@ -169,7 +169,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       } catch (error) {
         if (recovering ? isExplicitRejection(error) : firstRejection(error)) {
           forget(original);
-          if (recovering || isHGrowthReadConflict(error)) await settled(recovering ? original.commandKey : undefined);
+          if (recovering || isHGrowthReadConflict(error)) await settled(original.commandKey);
         }
         throw error;
       }
@@ -192,7 +192,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       if (e.status !== undefined && e.status >= 200 && e.status < 300 && e.apiCode !== undefined && e.apiCode >= 400 && e.apiCode < 500) e.status = e.apiCode;
       if (recovering ? isExplicitRejection(error) : firstRejection(error)) {
         forget(original);
-        if (recovering || isHGrowthReadConflict(error)) await settled(recovering ? original.commandKey : undefined);
+        if (recovering || isHGrowthReadConflict(error)) await settled(original.commandKey);
       }
       throw error;
     }

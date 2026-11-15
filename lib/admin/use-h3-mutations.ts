@@ -161,7 +161,7 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
       if (e.status !== undefined && e.status >= 200 && e.status < 300 && e.apiCode !== undefined && e.apiCode >= 400 && e.apiCode < 500) e.status = e.apiCode;
       if (recovering ? isExplicitRejection(error) : firstRejection(error)) {
         forget(r);
-        if (recovering || isHGrowthReadConflict(error)) await settled(recovering ? r.commandKey : undefined);
+        if (recovering || isHGrowthReadConflict(error)) await settled(r.commandKey);
         throw error;
       }
       // Keep the key in storage, not in the shared A2 error renderer's operator copy.
